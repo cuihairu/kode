@@ -29,7 +29,10 @@ pub enum TypedValue {
     Text(String),
     /// 时间(DATETIME/TIMESTAMP/DATE/TIME);offset_minutes 为相对 UTC 的时区
     /// 偏移,None 表示行源未给出显式偏移(字符串行源形态)。
-    DateTime { value: String, offset_minutes: Option<i32> },
+    DateTime {
+        value: String,
+        offset_minutes: Option<i32>,
+    },
 }
 
 /// 一行:值序与计划查询的列序一一对应。
@@ -57,9 +60,13 @@ impl TypedValue {
         match base {
             "tinyint" | "smallint" | "mediumint" | "int" => {
                 if unsigned {
-                    raw.parse::<u64>().map(TypedValue::UInt).unwrap_or_else(|_| TypedValue::Text(raw.to_string()))
+                    raw.parse::<u64>()
+                        .map(TypedValue::UInt)
+                        .unwrap_or_else(|_| TypedValue::Text(raw.to_string()))
                 } else {
-                    raw.parse::<i64>().map(TypedValue::Int).unwrap_or_else(|_| TypedValue::Text(raw.to_string()))
+                    raw.parse::<i64>()
+                        .map(TypedValue::Int)
+                        .unwrap_or_else(|_| TypedValue::Text(raw.to_string()))
                 }
             }
             "bigint" => {
@@ -73,8 +80,14 @@ impl TypedValue {
                         .unwrap_or_else(|_| TypedValue::Text(raw.to_string()))
                 }
             }
-            "float" => raw.parse::<f32>().map(TypedValue::Float).unwrap_or(TypedValue::Text(raw.to_string())),
-            "double" => raw.parse::<f64>().map(TypedValue::Double).unwrap_or(TypedValue::Text(raw.to_string())),
+            "float" => raw
+                .parse::<f32>()
+                .map(TypedValue::Float)
+                .unwrap_or(TypedValue::Text(raw.to_string())),
+            "double" => raw
+                .parse::<f64>()
+                .map(TypedValue::Double)
+                .unwrap_or(TypedValue::Text(raw.to_string())),
             "decimal" | "numeric" => TypedValue::Decimal(raw.to_string()),
             "blob" | "binary" | "varbinary" | "tinyblob" | "mediumblob" | "longblob" => {
                 TypedValue::Bytes(hex_encode(raw.as_bytes()))
@@ -132,10 +145,16 @@ mod tests {
     fn parses_integer_families() {
         assert_eq!(TypedValue::parse(Some("42"), "int"), TypedValue::Int(42));
         assert_eq!(TypedValue::parse(Some("-7"), "int"), TypedValue::Int(-7));
-        assert_eq!(TypedValue::parse(Some("9"), "tinyint unsigned"), TypedValue::UInt(9));
+        assert_eq!(
+            TypedValue::parse(Some("9"), "tinyint unsigned"),
+            TypedValue::UInt(9)
+        );
         // bigint unsigned 全域(u64::MAX 不经 f64 精度损失)。
         let max = u64::MAX.to_string();
-        assert_eq!(TypedValue::parse(Some(&max), "bigint(20) unsigned"), TypedValue::BigUInt(u64::MAX));
+        assert_eq!(
+            TypedValue::parse(Some(&max), "bigint(20) unsigned"),
+            TypedValue::BigUInt(u64::MAX)
+        );
         assert_eq!(TypedValue::parse(Some("-1"), "bigint"), TypedValue::Int(-1));
     }
 

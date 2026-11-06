@@ -192,7 +192,8 @@ describe('parseClientSdkEntity', () => {
     expect(byName.get('loot')).toMatchObject({
       type: 'ARRAY',
       elementType: 'UINT8',
-      domains: ['client']
+      // KR-AUD-87:OWN_CLIENT ∈ ENTITY_CELL_DATA_FLAGS(common.h:43)→ cell+client
+      domains: ['cell', 'client']
     });
     expect(byName.get('bag')).toMatchObject({
       type: 'AvatarProps',
@@ -278,7 +279,8 @@ describe('parseClientSdkEntity', () => {
     expect(entity).not.toBeNull();
     expect(entity?.properties).toEqual([
       { name: 'noType', type: '', elementType: null, flags: 'BASE', domains: ['base'] },
-      { name: 'emptyOf', type: 'ARRAY', elementType: null, flags: 'OWN_CLIENT', domains: ['client'] },
+      // KR-AUD-87:OWN_CLIENT ∈ ENTITY_CELL_DATA_FLAGS(common.h:43)→ cell+client
+      { name: 'emptyOf', type: 'ARRAY', elementType: null, flags: 'OWN_CLIENT', domains: ['cell', 'client'] },
       { name: 'noFlags', type: 'UINT8', elementType: null, flags: '', domains: [] }
     ]);
   });

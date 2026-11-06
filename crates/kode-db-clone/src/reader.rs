@@ -170,7 +170,10 @@ impl<'a> SourceReader<'a> {
         let mut children: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for q in &plan.queries {
             if let Some(parent) = &q.parent_table {
-                children.entry(parent.clone()).or_default().push(q.table.clone());
+                children
+                    .entry(parent.clone())
+                    .or_default()
+                    .push(q.table.clone());
             }
         }
         let root = plan
@@ -180,10 +183,14 @@ impl<'a> SourceReader<'a> {
             .table
             .clone();
 
-        let result = self.walk(plan, &root, root_id, &children, sink, budget, control, started, &mut stats);
+        let result = self.walk(
+            plan, &root, root_id, &children, sink, budget, control, started, &mut stats,
+        );
         match result {
             Ok(cancelled) => {
-                let _ = self.executor.execute(if cancelled { "ROLLBACK" } else { "COMMIT" });
+                let _ = self
+                    .executor
+                    .execute(if cancelled { "ROLLBACK" } else { "COMMIT" });
                 stats.duration = started.elapsed();
                 Ok(ExportOutcome { stats, cancelled })
             }
@@ -214,7 +221,9 @@ impl<'a> SourceReader<'a> {
             .find(|q| q.table == table)
             .ok_or_else(|| CloneError::UnknownTable(table.to_string()))?;
         let param = SqlValue::U64(parent_id);
-        let rows = self.executor.query(&query.select_sql, std::slice::from_ref(&param))?;
+        let rows = self
+            .executor
+            .query(&query.select_sql, std::slice::from_ref(&param))?;
         let mut count = 0u64;
         for row in rows {
             if control.is_cancelled() || started.elapsed() > budget.timeout {
@@ -244,7 +253,9 @@ impl<'a> SourceReader<'a> {
             let child_id = child_id_of(&typed);
             if let Some(kids) = children.get(table) {
                 for kid in kids {
-                    if self.walk(plan, kid, child_id, children, sink, budget, control, started, stats)? {
+                    if self.walk(
+                        plan, kid, child_id, children, sink, budget, control, started, stats,
+                    )? {
                         return Ok(true);
                     }
                 }
@@ -294,10 +305,13 @@ fn child_id_of(row: &TypedRow) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
     use crate::planner::ExportPlanner;
     use crate::rules::RuleSet;
-    use crate::schema::{CloneSchema, DerivedField, DerivedTable, PhysicalTable, SchemaResolver, SchemaSource, VirtualSchema};
+    use crate::schema::{
+        CloneSchema, DerivedField, DerivedTable, PhysicalTable, SchemaResolver, SchemaSource,
+        VirtualSchema,
+    };
+    use std::cell::RefCell;
 
     fn field(name: &str, ty: &str) -> DerivedField {
         DerivedField {
@@ -350,23 +364,51 @@ mod tests {
         .unwrap();
         let mut phys = VirtualSchema::default();
         for (name, cols) in [
-            ("tbl_Avatar", vec![("id", "bigint unsigned"), ("sm_autoLoad", "tinyint"), ("sm_name", "varchar(255)")]),
-            ("tbl_Avatar_items", vec![("id", "bigint unsigned"), ("parentID", "bigint unsigned"), ("sm_autoLoad", "tinyint"), ("sm_value", "varchar(255)")]),
-            ("tbl_Avatar_items_mods", vec![("id", "bigint unsigned"), ("parentID", "bigint unsigned"), ("sm_autoLoad", "tinyint"), ("sm_value", "varchar(255)")]),
+            (
+                "tbl_Avatar",
+                vec![
+                    ("id", "bigint unsigned"),
+                    ("sm_autoLoad", "tinyint"),
+                    ("sm_name", "varchar(255)"),
+                ],
+            ),
+            (
+                "tbl_Avatar_items",
+                vec![
+                    ("id", "bigint unsigned"),
+                    ("parentID", "bigint unsigned"),
+                    ("sm_autoLoad", "tinyint"),
+                    ("sm_value", "varchar(255)"),
+                ],
+            ),
+            (
+                "tbl_Avatar_items_mods",
+                vec![
+                    ("id", "bigint unsigned"),
+                    ("parentID", "bigint unsigned"),
+                    ("sm_autoLoad", "tinyint"),
+                    ("sm_value", "varchar(255)"),
+                ],
+            ),
         ] {
             phys.tables.insert(
                 name.to_string(),
                 PhysicalTable {
                     name: name.to_string(),
                     engine: "InnoDB".into(),
-                    columns: cols.iter().map(|(c, t)| ((*c).to_string(), (*t).to_string())).collect(),
+                    columns: cols
+                        .iter()
+                        .map(|(c, t)| ((*c).to_string(), (*t).to_string()))
+                        .collect(),
                     primary_key: vec!["id".into()],
                     indexes: vec![],
                 },
             );
         }
         let resolved = SchemaResolver::resolve(&schema, &phys).unwrap();
-        let plan = ExportPlanner::new(10_000).plan(&schema, &resolved, &RuleSet::default(), None).unwrap();
+        let plan = ExportPlanner::new(10_000)
+            .plan(&schema, &resolved, &RuleSet::default(), None)
+            .unwrap();
         (plan, schema)
     }
 
@@ -382,20 +424,43 @@ mod tests {
 
     impl FakeExecutor {
         fn new(rows: BTreeMap<String, Vec<Vec<Option<String>>>>) -> Self {
-            Self { rows, statements: RefCell::new(vec![]), selects: RefCell::new(vec![]), commits: RefCell::new(0), rollbacks: RefCell::new(0), fail_combined_start: RefCell::new(false) }
+            Self {
+                rows,
+                statements: RefCell::new(vec![]),
+                selects: RefCell::new(vec![]),
+                commits: RefCell::new(0),
+                rollbacks: RefCell::new(0),
+                fail_combined_start: RefCell::new(false),
+            }
         }
         fn write_count(&self) -> usize {
-            self.statements.borrow().iter().filter(|s| {
-                let w = s.trim_start().to_ascii_uppercase();
-                w.starts_with("INSERT") || w.starts_with("UPDATE") || w.starts_with("DELETE") || w.starts_with("DROP") || w.starts_with("ALTER") || w.starts_with("CREATE")
-            }).count()
+            self.statements
+                .borrow()
+                .iter()
+                .filter(|s| {
+                    let w = s.trim_start().to_ascii_uppercase();
+                    w.starts_with("INSERT")
+                        || w.starts_with("UPDATE")
+                        || w.starts_with("DELETE")
+                        || w.starts_with("DROP")
+                        || w.starts_with("ALTER")
+                        || w.starts_with("CREATE")
+                })
+                .count()
         }
     }
 
     impl ReadOnlyExecutor for FakeExecutor {
         fn query(&self, sql: &str, params: &[SqlValue]) -> CloneResult<Vec<Vec<Option<String>>>> {
-            self.selects.borrow_mut().push((sql.to_string(), params.to_vec()));
-            let table = sql.split("FROM `").nth(1).and_then(|s| s.split('`').next()).unwrap_or("").to_string();
+            self.selects
+                .borrow_mut()
+                .push((sql.to_string(), params.to_vec()));
+            let table = sql
+                .split("FROM `")
+                .nth(1)
+                .and_then(|s| s.split('`').next())
+                .unwrap_or("")
+                .to_string();
             // 按绑定参数过滤行(模拟真实 `?` 语义):任一单元格等于参数值即保留。
             let all = self.rows.get(&table).cloned().unwrap_or_default();
             let filtered: Vec<_> = all
@@ -407,7 +472,8 @@ mod tests {
                             SqlValue::I64(v) => v.to_string(),
                             SqlValue::Str(s) => s.clone(),
                         };
-                        row.iter().any(|cell| cell.as_deref() == Some(want.as_str()))
+                        row.iter()
+                            .any(|cell| cell.as_deref() == Some(want.as_str()))
                     })
                 })
                 .collect();
@@ -415,10 +481,18 @@ mod tests {
         }
         fn execute(&self, sql: &str) -> CloneResult<()> {
             let w = sql.trim_start().to_ascii_uppercase();
-            if w.starts_with("COMMIT") { *self.commits.borrow_mut() += 1; }
-            if w.starts_with("ROLLBACK") { *self.rollbacks.borrow_mut() += 1; }
-            if *self.fail_combined_start.borrow() && w.starts_with("START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY") {
-                return Err(CloneError::UnsupportedDbInterface("combined form unsupported".into()));
+            if w.starts_with("COMMIT") {
+                *self.commits.borrow_mut() += 1;
+            }
+            if w.starts_with("ROLLBACK") {
+                *self.rollbacks.borrow_mut() += 1;
+            }
+            if *self.fail_combined_start.borrow()
+                && w.starts_with("START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY")
+            {
+                return Err(CloneError::UnsupportedDbInterface(
+                    "combined form unsupported".into(),
+                ));
             }
             self.statements.borrow_mut().push(sql.to_string());
             Ok(())
@@ -446,14 +520,56 @@ mod tests {
     fn export_reads_all_tables_read_only_and_commits() {
         let (plan, _schema) = fixture();
         let rows = BTreeMap::from([
-            ("tbl_Avatar".to_string(), vec![vec![Some("100".into()), Some("0".into()), Some("Alice".into())]]),
-            ("tbl_Avatar_items".to_string(), vec![vec![Some("1001".into()), Some("100".into()), Some("0".into()), Some("sword".into())], vec![Some("1002".into()), Some("100".into()), Some("0".into()), Some("shield".into())]]),
-            ("tbl_Avatar_items_mods".to_string(), vec![vec![Some("9001".into()), Some("1001".into()), Some("0".into()), Some("sharp".into())]]),
+            (
+                "tbl_Avatar".to_string(),
+                vec![vec![
+                    Some("100".into()),
+                    Some("0".into()),
+                    Some("Alice".into()),
+                ]],
+            ),
+            (
+                "tbl_Avatar_items".to_string(),
+                vec![
+                    vec![
+                        Some("1001".into()),
+                        Some("100".into()),
+                        Some("0".into()),
+                        Some("sword".into()),
+                    ],
+                    vec![
+                        Some("1002".into()),
+                        Some("100".into()),
+                        Some("0".into()),
+                        Some("shield".into()),
+                    ],
+                ],
+            ),
+            (
+                "tbl_Avatar_items_mods".to_string(),
+                vec![vec![
+                    Some("9001".into()),
+                    Some("1001".into()),
+                    Some("0".into()),
+                    Some("sharp".into()),
+                ]],
+            ),
         ]);
         let exec = FakeExecutor::new(rows);
         let reader = SourceReader::new(&exec);
-        let mut sink = CollectSink { rows: vec![], counts: BTreeMap::new() };
-        let out = reader.export(&plan, 100, &mut sink, &ExportBudget::unlimited(), &ExportControl::new()).unwrap();
+        let mut sink = CollectSink {
+            rows: vec![],
+            counts: BTreeMap::new(),
+        };
+        let out = reader
+            .export(
+                &plan,
+                100,
+                &mut sink,
+                &ExportBudget::unlimited(),
+                &ExportControl::new(),
+            )
+            .unwrap();
         assert!(!out.cancelled);
         assert_eq!(out.stats.total_rows, 4);
         assert_eq!(out.stats.per_table["tbl_Avatar_items"], 2);
@@ -474,10 +590,26 @@ mod tests {
 
     #[test]
     fn validate_readonly_refuses_dml() {
-        for bad in ["INSERT INTO t VALUES (1)", "UPDATE t SET x=1", "DELETE FROM t", "DROP TABLE t", "ALTER TABLE t ADD c int", "CREATE TABLE t (id int)"] {
+        for bad in [
+            "INSERT INTO t VALUES (1)",
+            "UPDATE t SET x=1",
+            "DELETE FROM t",
+            "DROP TABLE t",
+            "ALTER TABLE t ADD c int",
+            "CREATE TABLE t (id int)",
+        ] {
             assert!(validate_readonly(bad).is_err(), "refuse: {bad}");
         }
-        for good in ["SELECT 1", "SHOW TABLES", "DESCRIBE t", "EXPLAIN SELECT 1", "SET SESSION TRANSACTION READ ONLY", "START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY", "COMMIT", "ROLLBACK"] {
+        for good in [
+            "SELECT 1",
+            "SHOW TABLES",
+            "DESCRIBE t",
+            "EXPLAIN SELECT 1",
+            "SET SESSION TRANSACTION READ ONLY",
+            "START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY",
+            "COMMIT",
+            "ROLLBACK",
+        ] {
             assert!(validate_readonly(good).is_ok(), "allow: {good}");
         }
     }
@@ -486,14 +618,38 @@ mod tests {
     fn budget_exceeded_rolls_back() {
         let (plan, _schema) = fixture();
         let rows = BTreeMap::from([
-            ("tbl_Avatar".to_string(), vec![vec![Some("100".into()), Some("0".into()), Some("Alice".into())]]),
-            ("tbl_Avatar_items".to_string(), vec![vec![Some("1001".into()), Some("100".into()), Some("0".into()), Some("sword".into())]]),
+            (
+                "tbl_Avatar".to_string(),
+                vec![vec![
+                    Some("100".into()),
+                    Some("0".into()),
+                    Some("Alice".into()),
+                ]],
+            ),
+            (
+                "tbl_Avatar_items".to_string(),
+                vec![vec![
+                    Some("1001".into()),
+                    Some("100".into()),
+                    Some("0".into()),
+                    Some("sword".into()),
+                ]],
+            ),
         ]);
         let exec = FakeExecutor::new(rows);
         let reader = SourceReader::new(&exec);
-        let mut sink = CollectSink { rows: vec![], counts: BTreeMap::new() };
-        let budget = ExportBudget { max_rows: 1, max_bytes: u64::MAX, timeout: Duration::from_secs(10) };
-        let err = reader.export(&plan, 100, &mut sink, &budget, &ExportControl::new()).unwrap_err();
+        let mut sink = CollectSink {
+            rows: vec![],
+            counts: BTreeMap::new(),
+        };
+        let budget = ExportBudget {
+            max_rows: 1,
+            max_bytes: u64::MAX,
+            timeout: Duration::from_secs(10),
+        };
+        let err = reader
+            .export(&plan, 100, &mut sink, &budget, &ExportControl::new())
+            .unwrap_err();
         assert!(matches!(err, CloneError::BudgetExceeded { .. }));
         assert_eq!(*exec.rollbacks.borrow(), 1, "预算超限必须回滚");
         assert_eq!(*exec.commits.borrow(), 0);
@@ -503,15 +659,35 @@ mod tests {
     fn cancel_returns_cancelled_and_rolls_back() {
         let (plan, _schema) = fixture();
         let rows = BTreeMap::from([
-            ("tbl_Avatar".to_string(), vec![vec![Some("100".into()), Some("0".into()), Some("Alice".into())]]),
-            ("tbl_Avatar_items".to_string(), vec![vec![Some("1001".into()), Some("100".into()), Some("0".into()), Some("sword".into())]]),
+            (
+                "tbl_Avatar".to_string(),
+                vec![vec![
+                    Some("100".into()),
+                    Some("0".into()),
+                    Some("Alice".into()),
+                ]],
+            ),
+            (
+                "tbl_Avatar_items".to_string(),
+                vec![vec![
+                    Some("1001".into()),
+                    Some("100".into()),
+                    Some("0".into()),
+                    Some("sword".into()),
+                ]],
+            ),
         ]);
         let exec = FakeExecutor::new(rows);
         let reader = SourceReader::new(&exec);
-        let mut sink = CollectSink { rows: vec![], counts: BTreeMap::new() };
+        let mut sink = CollectSink {
+            rows: vec![],
+            counts: BTreeMap::new(),
+        };
         let control = ExportControl::new();
         control.cancel();
-        let out = reader.export(&plan, 100, &mut sink, &ExportBudget::unlimited(), &control).unwrap();
+        let out = reader
+            .export(&plan, 100, &mut sink, &ExportBudget::unlimited(), &control)
+            .unwrap();
         assert!(out.cancelled);
         assert_eq!(*exec.rollbacks.borrow(), 1, "取消必须回滚");
         assert_eq!(*exec.commits.borrow(), 0);
@@ -520,24 +696,62 @@ mod tests {
     #[test]
     fn combined_start_falls_back_to_plain_snapshot() {
         let (plan, _schema) = fixture();
-        let rows = BTreeMap::from([("tbl_Avatar".to_string(), vec![vec![Some("100".into()), Some("0".into()), Some("Alice".into())]])]);
+        let rows = BTreeMap::from([(
+            "tbl_Avatar".to_string(),
+            vec![vec![
+                Some("100".into()),
+                Some("0".into()),
+                Some("Alice".into()),
+            ]],
+        )]);
         let exec = FakeExecutor::new(rows);
         *exec.fail_combined_start.borrow_mut() = true;
         let reader = SourceReader::new(&exec);
-        let mut sink = CollectSink { rows: vec![], counts: BTreeMap::new() };
-        let out = reader.export(&plan, 100, &mut sink, &ExportBudget::unlimited(), &ExportControl::new()).unwrap();
+        let mut sink = CollectSink {
+            rows: vec![],
+            counts: BTreeMap::new(),
+        };
+        let out = reader
+            .export(
+                &plan,
+                100,
+                &mut sink,
+                &ExportBudget::unlimited(),
+                &ExportControl::new(),
+            )
+            .unwrap();
         assert!(!out.cancelled);
-        assert!(exec.statements.borrow().iter().any(|s| s == "START TRANSACTION WITH CONSISTENT SNAPSHOT"), "回退到非组合形态");
+        assert!(
+            exec.statements
+                .borrow()
+                .iter()
+                .any(|s| s == "START TRANSACTION WITH CONSISTENT SNAPSHOT"),
+            "回退到非组合形态"
+        );
     }
 
     #[test]
     fn row_arity_mismatch_is_drift_error() {
         let (plan, _schema) = fixture();
-        let rows = BTreeMap::from([("tbl_Avatar".to_string(), vec![vec![Some("100".into()), Some("0".into())]])]); // 3 列计划,2 值
+        let rows = BTreeMap::from([(
+            "tbl_Avatar".to_string(),
+            vec![vec![Some("100".into()), Some("0".into())]],
+        )]); // 3 列计划,2 值
         let exec = FakeExecutor::new(rows);
         let reader = SourceReader::new(&exec);
-        let mut sink = CollectSink { rows: vec![], counts: BTreeMap::new() };
-        let err = reader.export(&plan, 100, &mut sink, &ExportBudget::unlimited(), &ExportControl::new()).unwrap_err();
+        let mut sink = CollectSink {
+            rows: vec![],
+            counts: BTreeMap::new(),
+        };
+        let err = reader
+            .export(
+                &plan,
+                100,
+                &mut sink,
+                &ExportBudget::unlimited(),
+                &ExportControl::new(),
+            )
+            .unwrap_err();
         assert!(matches!(err, CloneError::DriftMismatch(_)));
     }
 

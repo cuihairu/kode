@@ -39,7 +39,13 @@ impl FileKeyStore {
         // id 只允许安全字符,防路径穿越。
         let safe: String = id
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         self.root.join(format!("{safe}.key"))
     }
@@ -47,7 +53,9 @@ impl FileKeyStore {
 
 impl std::fmt::Debug for FileKeyStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FileKeyStore").field("root", &self.root).finish()
+        f.debug_struct("FileKeyStore")
+            .field("root", &self.root)
+            .finish()
     }
 }
 
@@ -103,7 +111,9 @@ fn key_absolutize(p: &Path) -> PathBuf {
     if p.is_absolute() {
         p.to_path_buf()
     } else {
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join(p)
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(p)
     }
 }
 
@@ -153,5 +163,43 @@ mod tests {
         assert!(ensure_key_outside_archive(&archive.join("elsewhere"), &archive).is_err());
         let outside = std::env::temp_dir().join("kode-keys-elsewhere");
         assert!(ensure_key_outside_archive(&outside, &archive).is_ok());
+    }
+
+    #[test]
+    fn debug_impl_exposes_root_only() {
+        let dir = std::env::temp_dir().join(format!("kode-key-dbg-{}", std::process::id()));
+        let store = FileKeyStore::new(&dir);
+        let rendered = format!("{store:?}");
+        assert!(rendered.contains("FileKeyStore"), "{rendered}");
+        assert!(rendered.contains("kode-key-dbg"), "{rendered}");
+        // 密钥材料本就不在结构里(仅 root 路径)。
+        assert!(!rendered.contains("key:"));
+    }
+
+    #[test]
+    fn relative_paths_are_absolutized_for_containment() {
+        // 相对密钥目录按 cwd 解析后判定包含关系(覆盖非绝对路径分支)。
+        let cwd = std::env::current_dir().unwrap();
+        let archive = cwd.join("kode-rel-arch");
+        // cwd 下的相对兄弟目录 → 不在归档路径之内,放行。
+        let sibling_rel = std::path::Path::new("kode-rel-keys");
+        assert!(ensure_key_outside_archive(sibling_rel, &archive).is_ok());
+        // 相对路径解析后落在归档路径之内 → 拒绝。
+        let nested_rel = std::path::Path::new("kode-rel-arch/keys");
+        assert!(ensure_key_outside_archive(nested_rel, &archive).is_err());
+    }
+
+    #[test]
+    fn corrupted_key_file_is_rejected_with_clear_error() {
+        let dir = std::env::temp_dir().join(format!("kode-key-corrupt-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("short.key"), b"too-short").unwrap();
+        let store = FileKeyStore::new(&dir);
+        match store.get_or_create("short") {
+            Err(CloneError::InvalidRule(m)) => assert!(m.contains("not 32 bytes"), "{m}"),
+            other => panic!("expected length rejection, got {other:?}"),
+        }
+        let _ = fs::remove_dir_all(&dir);
     }
 }

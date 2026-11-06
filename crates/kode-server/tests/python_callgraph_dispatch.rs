@@ -426,3 +426,19 @@ fn kr_aud_91_multi_workspace_same_relative_path_keeps_separate_nodes() {
         assert_eq!(edge["calleeId"], id_of(path, "boot"));
     }
 }
+
+/// KR-AUD-89(RSV-8 防回归登记):`file_stem` 只按 `/` 分割
+/// (python_callgraph.rs:161)——斜杠归一由上游负责(TS RPC 边界
+/// `normalizeCallGraphPath`),Rust 侧 debug_assert 锁死契约:Windows 反斜杠
+/// 路径若漏归一在此红,不静默产出 `dir\mod` 错 stem。
+#[test]
+#[should_panic(expected = "KR-AUD-89")]
+fn kr_aud_89_backslash_path_trips_upstream_normalization_contract() {
+    let _ = callgraph(json!({
+        "files": [
+            {"path": "scripts\\cell\\Avatar.py", "text": "def f():\n    pass\n"}
+        ],
+        "manifestXmlText": ""
+    }));
+}
+

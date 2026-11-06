@@ -326,4 +326,71 @@ mod tests {
         let uri = CanonicalUri::parse("file://LOCALHOST/w/a.def").unwrap();
         assert_eq!(uri.as_path(), "/w/a.def");
     }
+
+    #[test]
+    fn uri_error_messages_are_stable() {
+        assert_eq!(
+            UriError::UnsupportedScheme("ftp".into()).to_string(),
+            "unsupported URI scheme: ftp"
+        );
+        assert_eq!(
+            UriError::NotAbsolute.to_string(),
+            "file URI has no absolute path"
+        );
+        assert_eq!(
+            UriError::InvalidEncoding.to_string(),
+            "invalid percent-encoding"
+        );
+        assert_eq!(UriError::Empty.to_string(), "empty URI");
+    }
+
+    #[test]
+    fn file_uri_without_absolute_path_is_rejected() {
+        // file:def / file:./x.def(无绝对路径)→ NotAbsolute,不猜测工作目录。
+        assert!(matches!(
+            CanonicalUri::parse("file:def"),
+            Err(UriError::NotAbsolute)
+        ));
+        assert!(matches!(
+            CanonicalUri::parse("file:./x.def"),
+            Err(UriError::NotAbsolute)
+        ));
+    }
+
+    #[test]
+    fn reserved_and_control_chars_are_percent_encoded() {
+        let uri = CanonicalUri::from_path("/w/a b#c?d\"e<f>g[h]i|j^k%l");
+        let s = uri.to_uri_string();
+        for token in [
+            "%20", "%23", "%3F", "%22", "%3C", "%3E", "%5B", "%5D", "%7C", "%5E", "%25",
+        ] {
+            assert!(s.contains(token), "`{s}` should contain `{token}`");
+        }
+        // 控制字符同样编码。
+        let ctrl = CanonicalUri::from_path("/w/a\u{7}b");
+        assert!(ctrl.to_uri_string().contains("%07"));
+        // 编码后再解析回到同一身份。
+        assert_eq!(CanonicalUri::parse(&uri.to_uri_string()).unwrap(), uri);
+        assert_eq!(CanonicalUri::parse(&ctrl.to_uri_string()).unwrap(), ctrl);
+    }
+
+    #[test]
+    fn display_matches_uri_string() {
+        let uri = CanonicalUri::from_path("/w/x.def");
+        assert_eq!(format!("{uri}"), uri.to_uri_string());
+    }
+
+    #[test]
+    fn basename_of_root_and_bare_segment() {
+        assert_eq!(CanonicalUri::from_path("/").basename(), "");
+        assert_eq!(CanonicalUri::from_path("file").basename(), "file");
+    }
+
+    #[test]
+    fn relative_paths_keep_leading_dotdot_after_overflow() {
+        // 相对路径的 .. 越出顶部时保留字面 ..(不越出根,也不吞掉)。
+        assert_eq!(CanonicalUri::from_path("a/../..").as_path(), "..");
+        assert_eq!(CanonicalUri::from_path("a/b/../..").as_path(), "/");
+        assert_eq!(CanonicalUri::from_path("a/./b").as_path(), "a/b");
+    }
 }

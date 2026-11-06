@@ -203,7 +203,8 @@ impl ArchiveWriter {
                 .map_err(|e| CloneError::ArchiveError(format!("write frame payload: {e}")))?;
         }
         self.written += frame_len;
-        self.files_sha.insert(name.to_string(), hex_encode(sha.as_slice()));
+        self.files_sha
+            .insert(name.to_string(), hex_encode(sha.as_slice()));
         Ok(())
     }
 
@@ -361,8 +362,8 @@ impl Archive {
     /// 开档并做全部校验:魔数/格式版本/大小上限/加密旗标与密钥匹配/逐帧
     /// SHA-256/帧集与清单一致/逐表与逐文件校验和互核。任一不符即拒绝。
     pub fn open(path: &Path, key: Option<&ArchiveKey>) -> CloneResult<Self> {
-        let file = File::open(path)
-            .map_err(|e| CloneError::ArchiveError(format!("open archive: {e}")))?;
+        let file =
+            File::open(path).map_err(|e| CloneError::ArchiveError(format!("open archive: {e}")))?;
         let file_len = file
             .metadata()
             .map_err(|e| CloneError::ArchiveError(format!("stat archive: {e}")))?
@@ -455,7 +456,10 @@ impl Archive {
         for t in &meta.tables {
             let fname = format!("data/{}.rows.jsonl", t.name);
             let data = files.get(&fname).ok_or_else(|| {
-                CloneError::ArchiveError(format!("manifest lists table `{}` with no data frame", t.name))
+                CloneError::ArchiveError(format!(
+                    "manifest lists table `{}` with no data frame",
+                    t.name
+                ))
             })?;
             let got = hex_encode(Sha256::digest(data).as_slice());
             if got != t.sha256 {
@@ -607,19 +611,41 @@ fn read_u32_or_eof(r: &mut dyn Read) -> CloneResult<Option<u32>> {
     Ok(Some(u32::from_le_bytes(buf)))
 }
 
-fn aead_seal(key: &ArchiveKey, nonce: &[u8; 12], plaintext: &[u8], aad: &[u8]) -> CloneResult<Vec<u8>> {
+fn aead_seal(
+    key: &ArchiveKey,
+    nonce: &[u8; 12],
+    plaintext: &[u8],
+    aad: &[u8],
+) -> CloneResult<Vec<u8>> {
     let cipher = ChaCha20Poly1305::new_from_slice(key)
         .map_err(|_| CloneError::ArchiveError("archive key must be 32 bytes".into()))?;
     cipher
-        .encrypt(Nonce::from_slice(nonce), Payload { msg: plaintext, aad })
+        .encrypt(
+            Nonce::from_slice(nonce),
+            Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
         .map_err(|_| CloneError::ArchiveError("frame encryption failed".into()))
 }
 
-fn aead_open(key: &ArchiveKey, nonce: &[u8; 12], ciphertext: &[u8], aad: &[u8]) -> CloneResult<Vec<u8>> {
+fn aead_open(
+    key: &ArchiveKey,
+    nonce: &[u8; 12],
+    ciphertext: &[u8],
+    aad: &[u8],
+) -> CloneResult<Vec<u8>> {
     let cipher = ChaCha20Poly1305::new_from_slice(key)
         .map_err(|_| CloneError::ArchiveError("archive key must be 32 bytes".into()))?;
     cipher
-        .decrypt(Nonce::from_slice(nonce), Payload { msg: ciphertext, aad })
+        .decrypt(
+            Nonce::from_slice(nonce),
+            Payload {
+                msg: ciphertext,
+                aad,
+            },
+        )
         .map_err(|_| {
             CloneError::ArchiveError(
                 "frame authentication failed (wrong key or corrupted archive)".into(),
@@ -659,7 +685,8 @@ pub fn write_archive(
 ) -> CloneResult<ArchiveMeta> {
     let mut writer = ArchiveWriter::new(path, key, &plan.entity_name)?;
     let mut redacting = RedactingSink::new(&mut writer, policy, plan);
-    let outcome = SourceReader::new(executor).export(plan, root_id, &mut redacting, budget, control)?;
+    let outcome =
+        SourceReader::new(executor).export(plan, root_id, &mut redacting, budget, control)?;
     if outcome.cancelled {
         return Err(CloneError::ArchiveError(
             "export cancelled or timed out before completion; no archive was written".into(),
@@ -759,7 +786,8 @@ mod tests {
         let mut w = ArchiveWriter::new(&plain, None, "Avatar").unwrap();
         w.write_row("tbl_Avatar", &row).unwrap();
         w.end_table("tbl_Avatar", 1).unwrap();
-        w.finalize(&[], &RedactionReport { entries: vec![] }).unwrap();
+        w.finalize(&[], &RedactionReport { entries: vec![] })
+            .unwrap();
         assert!(Archive::open(&plain, Some(&key)).is_err());
         let _ = fs::remove_dir_all(&dir);
     }
@@ -771,7 +799,8 @@ mod tests {
         let mut w = ArchiveWriter::new(&path, None, "Avatar").unwrap();
         w.write_row("tbl_Avatar", &avatar_row(1, "A")).unwrap();
         w.end_table("tbl_Avatar", 1).unwrap();
-        w.finalize(&[], &RedactionReport { entries: vec![] }).unwrap();
+        w.finalize(&[], &RedactionReport { entries: vec![] })
+            .unwrap();
         let bytes = fs::read(&path).unwrap();
 
         // 翻转末字节(清单载荷)→ SHA 不符。
@@ -816,7 +845,9 @@ mod tests {
         let mut w = ArchiveWriter::new(&path, None, "Avatar").unwrap();
         w.write_row("tbl_Avatar", &avatar_row(1, "A")).unwrap();
         w.end_table("tbl_Avatar", 5).unwrap();
-        assert!(w.finalize(&[], &RedactionReport { entries: vec![] }).is_err());
+        assert!(w
+            .finalize(&[], &RedactionReport { entries: vec![] })
+            .is_err());
         // 目标路径不存在(finalize 未到 rename),临时文件被 Drop 清理。
         assert!(!path.exists());
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
@@ -857,6 +888,388 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    #[test]
+    fn frame_names_are_guarded() {
+        let dir = test_dir("framename");
+        let path = dir.join("a.kdp");
+        let mut w = ArchiveWriter::new(&path, None, "Avatar").unwrap();
+        w.write_frame("relations.json", b"{}").unwrap();
+        // 重复帧名拒绝。
+        assert!(w.write_frame("relations.json", b"{}").is_err());
+        // 空名/超长名拒绝。
+        assert!(w.write_frame("", b"{}").is_err());
+        let long = "x".repeat(256);
+        assert!(w.write_frame(&long, b"{}").is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn internal_writer_states_are_refused() {
+        let dir = test_dir("writerstate");
+        let path = dir.join("a.kdp");
+        // 加密旗标与密钥不一致 → 写帧拒绝。
+        let mut w = ArchiveWriter::new(&path, None, "Avatar").unwrap();
+        w.encrypted = true;
+        w.key = None;
+        assert!(w.write_frame("x.json", b"{}").is_err());
+        drop(w);
+        // 已收口的写入器(重复 finalize)再写帧 → 拒绝。
+        let path2 = dir.join("b.kdp");
+        let mut w = ArchiveWriter::new(&path2, None, "Avatar").unwrap();
+        w.file = None;
+        assert!(w.write_frame("x.json", b"{}").is_err());
+        drop(w);
+        // 临时目录建不出来的目标路径 → new 报 ArchiveError。
+        let bad = dir.join("no-such-dir").join("c.kdp");
+        assert!(matches!(
+            ArchiveWriter::new(&bad, None, "Avatar"),
+            Err(CloneError::ArchiveError(_))
+        ));
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn finalize_and_sink_guards_are_enforced() {
+        let dir = test_dir("sinkguard");
+        let path = dir.join("a.kdp");
+        // 流入行但从未 end_table → finalize 拒绝且不产档。
+        {
+            let mut w = ArchiveWriter::new(&path, None, "Avatar").unwrap();
+            w.write_row("tbl_Avatar", &avatar_row(1, "A")).unwrap();
+            assert!(w
+                .finalize(&[], &RedactionReport { entries: vec![] })
+                .is_err());
+        }
+        assert!(!path.exists());
+        // 行声称的表与流入表不一致 → write_row 拒绝。
+        let mut w = ArchiveWriter::new(&path, None, "Avatar").unwrap();
+        let mut liar = avatar_row(2, "B");
+        liar.table = "tbl_Other".into();
+        assert!(w.write_row("tbl_Avatar", &liar).is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_frames_rejects_malformed_frame_stream() {
+        use std::io::Cursor;
+        // 帧名长度越界(0 / >255)。
+        let mut bad = Vec::new();
+        bad.extend_from_slice(&0u32.to_le_bytes());
+        assert!(read_frames(&mut Cursor::new(&bad), false, None).is_err());
+        let mut big = Vec::new();
+        big.extend_from_slice(&300u32.to_le_bytes());
+        assert!(read_frames(&mut Cursor::new(&big), false, None).is_err());
+        // 半个帧头 = 截断,不猜测。
+        let partial = [1u8, 2];
+        match read_frames(&mut Cursor::new(&partial), false, None) {
+            Err(CloneError::ArchiveError(m)) => assert!(m.contains("truncated"), "{m}"),
+            other => panic!("expected truncation, got {other:?}"),
+        }
+        // 帧长溢出(u64 顶格 + AEAD 标签)。
+        let name = b"f.json";
+        let mut overflow = Vec::new();
+        overflow.extend_from_slice(&(name.len() as u32).to_le_bytes());
+        overflow.extend_from_slice(name);
+        overflow.extend_from_slice(&u64::MAX.to_le_bytes());
+        overflow.extend_from_slice(&[0u8; 32]);
+        assert!(read_frames(&mut Cursor::new(&overflow), false, None).is_err());
+        // 重复帧名。
+        let sha: [u8; 32] = Sha256::digest(b"payload").into();
+        let mut dup = Vec::new();
+        for _ in 0..2 {
+            dup.extend_from_slice(&(name.len() as u32).to_le_bytes());
+            dup.extend_from_slice(name);
+            dup.extend_from_slice(&(7u64).to_le_bytes());
+            dup.extend_from_slice(&sha);
+            dup.extend_from_slice(b"payload");
+        }
+        assert!(read_frames(&mut Cursor::new(&dup), false, None).is_err());
+        // 加密帧流但未提供密钥。
+        let mut enc = Vec::new();
+        enc.extend_from_slice(&(name.len() as u32).to_le_bytes());
+        enc.extend_from_slice(name);
+        enc.extend_from_slice(&[0u8; 12]); // nonce
+        enc.extend_from_slice(&16u64.to_le_bytes());
+        enc.extend_from_slice(&sha);
+        enc.extend_from_slice(&[0u8; 32]); // 密文 = 明文 16 + 标签 16
+        assert!(read_frames(&mut Cursor::new(&enc), true, None).is_err());
+    }
+
+    #[test]
+    fn open_rejects_bad_magic_and_verify_rejects_tampered_manifests() {
+        let dir = test_dir("verify");
+        // 坏魔数。
+        let bad_magic = dir.join("magic.kdp");
+        fs::write(&bad_magic, b"NOTAKODE!0000").unwrap();
+        match Archive::open(&bad_magic, None) {
+            Err(CloneError::ArchiveError(m)) => assert!(m.contains("magic"), "{m}"),
+            other => panic!("expected bad magic, got {other:?}"),
+        }
+
+        let data = serde_json::to_vec(&TypedRow {
+            table: "tbl_A".into(),
+            values: vec![TypedValue::Text("x".into())],
+        })
+        .unwrap();
+        let sha = hex_encode(Sha256::digest(&data).as_slice());
+        let frame = ("data/tbl_A.rows.jsonl", data.as_slice());
+        let manifest =
+            |files: &[&str], tables: serde_json::Value, rows: u64, bytes: u64, fmt: &str| {
+                serde_json::json!({
+                    "format": fmt,
+                    "version": 1,
+                    "entity": "Avatar",
+                    "created_at_unix": 0,
+                    "encrypted": false,
+                    "total_rows": rows,
+                    "total_bytes": bytes,
+                    "tables": tables,
+                    "files": files,
+                })
+                .to_string()
+                .into_bytes()
+            };
+        let good_list = [frame.0, "checksums.json", "manifest.json"];
+        let tables =
+            serde_json::json!([{"name": "tbl_A", "rows": 1, "bytes": data.len(), "sha256": sha}]);
+        let checksums = format!("{{\"{}\": \"{}\"}}", frame.0, sha).into_bytes();
+
+        let build = |extra: &[(&str, Vec<u8>)]| {
+            let mut files = BTreeMap::new();
+            files.insert(frame.0.to_string(), data.to_vec());
+            files.insert("checksums.json".to_string(), checksums.clone());
+            for (n, b) in extra {
+                files.insert(n.to_string(), b.clone());
+            }
+            files
+        };
+
+        // 1) 缺 manifest。
+        match Archive::verify(build(&[]), false) {
+            Err(CloneError::ArchiveError(m)) => assert!(m.contains("manifest"), "{m}"),
+            other => panic!("expected missing manifest, got {other:?}"),
+        }
+        // 2) manifest 不是 JSON。
+        match Archive::verify(build(&[("manifest.json", b"not json".to_vec())]), false) {
+            Err(CloneError::ArchiveError(m)) => assert!(m.contains("not valid"), "{m}"),
+            other => panic!("expected invalid manifest, got {other:?}"),
+        }
+        // 3) format 名不符。
+        let wrong_fmt_files = build(&[(
+            "manifest.json",
+            manifest(&good_list, tables.clone(), 1, data.len() as u64, "other"),
+        )]);
+        match Archive::verify(wrong_fmt_files, false) {
+            Err(CloneError::ArchiveError(m)) => assert!(m.contains("format"), "{m}"),
+            other => panic!("expected format mismatch, got {other:?}"),
+        }
+        // 4) manifest 加密旗标与帧流不符。
+        let mut enc_files = build(&[(
+            "manifest.json",
+            manifest(&good_list, tables.clone(), 1, data.len() as u64, "kdpclone"),
+        )]);
+        // 重写 manifest 置 encrypted: true(直接构造,避免 helper 只出 false)。
+        enc_files.insert(
+            "manifest.json".to_string(),
+            serde_json::json!({
+                "format": "kdpclone", "version": 1, "entity": "Avatar",
+                "created_at_unix": 0, "encrypted": true,
+                "total_rows": 1, "total_bytes": data.len(),
+                "tables": tables, "files": good_list,
+            })
+            .to_string()
+            .into_bytes(),
+        );
+        match Archive::verify(enc_files, false) {
+            Err(CloneError::ArchiveError(m)) => assert!(m.contains("encrypted"), "{m}"),
+            other => panic!("expected encrypted flag mismatch, got {other:?}"),
+        }
+        // 5) 帧集与清单不一致(多帧)。
+        let extra = build(&[
+            (
+                "manifest.json",
+                manifest(&good_list, tables.clone(), 1, data.len() as u64, "kdpclone"),
+            ),
+            ("sneaky.json", b"x".to_vec()),
+        ]);
+        match Archive::verify(extra, false) {
+            Err(CloneError::ArchiveError(m)) => assert!(m.contains("do not match"), "{m}"),
+            other => panic!("expected frame list mismatch, got {other:?}"),
+        }
+        // 6) 缺 checksums.json(帧集与清单都不含它 → 文件清单比对通过,查 checksums 时失败)。
+        let short_list = [frame.0, "manifest.json"];
+        let no_sum: BTreeMap<String, Vec<u8>> = [
+            (frame.0.to_string(), data.to_vec()),
+            (
+                "manifest.json".to_string(),
+                manifest(
+                    &short_list,
+                    tables.clone(),
+                    1,
+                    data.len() as u64,
+                    "kdpclone",
+                ),
+            ),
+        ]
+        .into_iter()
+        .collect();
+        match Archive::verify(no_sum, false) {
+            Err(CloneError::ArchiveError(m)) => assert!(m.contains("checksums.json"), "{m}"),
+            other => panic!("expected missing checksums, got {other:?}"),
+        }
+        // 7) checksums.json 引用不存在的文件。
+        let ghost = format!(
+            "{{\"{}\": \"{}\", \"data/tbl_Ghost.rows.jsonl\": \"{}\"}}",
+            frame.0,
+            sha,
+            hex_encode(Sha256::digest(b"g").as_slice())
+        )
+        .into_bytes();
+        match Archive::verify(
+            build(&[
+                (
+                    "manifest.json",
+                    manifest(&good_list, tables.clone(), 1, data.len() as u64, "kdpclone"),
+                ),
+                ("checksums.json", ghost),
+            ]),
+            false,
+        ) {
+            Err(CloneError::ArchiveError(m)) => assert!(m.contains("tbl_Ghost"), "{m}"),
+            other => panic!("expected ghost checksum entry, got {other:?}"),
+        }
+        // 8) 校验和不符。
+        let bad_sum = format!(
+            "{{\"{}\": \"{}\"}}",
+            frame.0,
+            hex_encode(Sha256::digest(b"tampered").as_slice())
+        )
+        .into_bytes();
+        match Archive::verify(
+            build(&[
+                (
+                    "manifest.json",
+                    manifest(&good_list, tables.clone(), 1, data.len() as u64, "kdpclone"),
+                ),
+                ("checksums.json", bad_sum),
+            ]),
+            false,
+        ) {
+            Err(CloneError::ArchiveError(m)) => assert!(m.contains("checksum mismatch"), "{m}"),
+            other => panic!("expected checksum mismatch, got {other:?}"),
+        }
+        // 9) 清单里的表缺数据帧。
+        let ghost_table = serde_json::json!([
+            {"name": "tbl_A", "rows": 1, "bytes": data.len(), "sha256": sha},
+            {"name": "tbl_B", "rows": 0, "bytes": 0, "sha256": hex_encode(Sha256::digest(b"").as_slice())},
+        ]);
+        match Archive::verify(
+            build(&[(
+                "manifest.json",
+                manifest(&good_list, ghost_table, 1, data.len() as u64, "kdpclone"),
+            )]),
+            false,
+        ) {
+            Err(CloneError::ArchiveError(m)) => assert!(m.contains("tbl_B"), "{m}"),
+            other => panic!("expected missing table frame, got {other:?}"),
+        }
+        // 10) 表 SHA 不符 + 行声称的表与文件名互核。
+        let wrong_sha = serde_json::json!([
+            {"name": "tbl_A", "rows": 1, "bytes": data.len(), "sha256": hex_encode(Sha256::digest(b"other").as_slice())},
+        ]);
+        match Archive::verify(
+            build(&[(
+                "manifest.json",
+                manifest(&good_list, wrong_sha, 1, data.len() as u64, "kdpclone"),
+            )]),
+            false,
+        ) {
+            Err(CloneError::ArchiveError(m)) => assert!(m.contains("sha256 mismatch"), "{m}"),
+            other => panic!("expected table sha mismatch, got {other:?}"),
+        }
+        // 11) 清单合计与表条目不符。
+        match Archive::verify(
+            build(&[(
+                "manifest.json",
+                manifest(
+                    &good_list,
+                    tables.clone(),
+                    99,
+                    data.len() as u64,
+                    "kdpclone",
+                ),
+            )]),
+            false,
+        ) {
+            Err(CloneError::ArchiveError(m)) => assert!(m.contains("totals disagree"), "{m}"),
+            other => panic!("expected totals mismatch, got {other:?}"),
+        }
+        // 12) 合法构造通过 + 行表名与文件名互核(table_rows)。
+        let ok_files = build(&[(
+            "manifest.json",
+            manifest(&good_list, tables, 1, data.len() as u64, "kdpclone"),
+        )]);
+        let arc = Archive::verify(ok_files, false).unwrap();
+        assert_eq!(arc.meta().entity, "Avatar");
+        assert_eq!(arc.table_rows("tbl_A").unwrap().len(), 1);
+        // 行内 table 与文件名不符 → 拒绝。
+        let liar_row = b"{\"table\":\"tbl_Liar\",\"values\":[]}\n";
+        let liar_sha = hex_encode(Sha256::digest(liar_row).as_slice());
+        let liar_frame = ("data/tbl_A.rows.jsonl", liar_row);
+        let liar_tables = serde_json::json!([
+            {"name": "tbl_A", "rows": 1, "bytes": liar_row.len(), "sha256": liar_sha},
+        ]);
+        let liar_files: BTreeMap<String, Vec<u8>> = [
+            (frame.0.to_string(), liar_row.to_vec()),
+            (
+                "checksums.json".to_string(),
+                format!("{{\"{}\": \"{}\"}}", liar_frame.0, liar_sha).into_bytes(),
+            ),
+            (
+                "manifest.json".to_string(),
+                manifest(
+                    &good_list,
+                    liar_tables,
+                    1,
+                    liar_row.len() as u64,
+                    "kdpclone",
+                ),
+            ),
+        ]
+        .into_iter()
+        .collect();
+        match Archive::verify(liar_files, false)
+            .unwrap()
+            .table_rows("tbl_A")
+        {
+            Err(CloneError::ArchiveError(m)) => assert!(m.contains("tbl_Liar"), "{m}"),
+            other => panic!("expected liar row, got {other:?}"),
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn crafted_manifest_helpers_match_real_writer_shape() {
+        // 交叉验证:真实 writer 的 checksums.json/manifest 形状可被 verify 接受,
+        // 防止上面手工构造的清单与实现漂移。
+        let dir = test_dir("shape");
+        let path = dir.join("shape.kdp");
+        let mut w = ArchiveWriter::new(&path, None, "Shape").unwrap();
+        let row = TypedRow {
+            table: "tbl_Shape".into(),
+            values: vec![TypedValue::Text("S".into())],
+        };
+        w.write_row("tbl_Shape", &row).unwrap();
+        w.end_table("tbl_Shape", 1).unwrap();
+        w.finalize(&[], &RedactionReport { entries: vec![] })
+            .unwrap();
+        let arc = Archive::open(&path, None).unwrap();
+        assert!(arc.meta().files.contains(&"manifest.json".to_string()));
+        assert_eq!(arc.table_rows("tbl_Shape").unwrap(), vec![row]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     fn plan_fixture() -> QueryPlan {
         QueryPlan {
             entity_name: "Avatar".into(),
@@ -883,8 +1296,9 @@ mod tests {
                         "bigint unsigned".into(),
                         "int".into(),
                     ],
-                    select_sql: "SELECT `id`, `parentID`, `count` FROM `tbl_Bag` WHERE `parentID` = ?"
-                        .into(),
+                    select_sql:
+                        "SELECT `id`, `parentID`, `count` FROM `tbl_Bag` WHERE `parentID` = ?"
+                            .into(),
                     estimated_rows: None,
                 },
             ],
@@ -918,7 +1332,11 @@ mod tests {
                 ])
             } else if sql.contains("tbl_Bag") {
                 if matches!(params.first(), Some(SqlValue::U64(1001))) {
-                    Ok(vec![vec![Some("2001".into()), Some("1001".into()), Some("3".into())]])
+                    Ok(vec![vec![
+                        Some("2001".into()),
+                        Some("1001".into()),
+                        Some("3".into()),
+                    ]])
                 } else {
                     Ok(vec![])
                 }
@@ -965,7 +1383,8 @@ mod tests {
         assert_eq!(bags[0].values[2], TypedValue::Int(3));
 
         // 关系记录进了档。
-        let rels: Vec<Relation> = serde_json::from_slice(arc.file("relations.json").unwrap()).unwrap();
+        let rels: Vec<Relation> =
+            serde_json::from_slice(arc.file("relations.json").unwrap()).unwrap();
         assert_eq!(rels.len(), 1);
         assert_eq!(rels[0].child_table, "tbl_Bag");
         assert_eq!(rels[0].parent_table, "tbl_Avatar");
@@ -976,7 +1395,9 @@ mod tests {
         assert!(calls.iter().any(|c| c.starts_with("START TRANSACTION")));
         assert_eq!(calls.last().unwrap(), "COMMIT");
         assert!(
-            calls.iter().all(|c| crate::reader::validate_readonly(c).is_ok()),
+            calls
+                .iter()
+                .all(|c| crate::reader::validate_readonly(c).is_ok()),
             "every executed statement must pass the read-only whitelist"
         );
         let _ = fs::remove_dir_all(&dir);
