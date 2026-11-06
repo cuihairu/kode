@@ -87,3 +87,11 @@ describe('KR-AUD-37 审核轮收口:根边界与混合语境', () => {
     expect(plan.userPaths).toContain('${workspaceFolder}/Scripts');
   });
 });
+
+describe('KR-AUD-37 三轮收口:POSIX 目录名不得与盘符根碰撞', () => {
+  it('POSIX `/C:`(名为 C: 的目录)保持 POSIX 形态,不与盘符根 c:/ 同键', () => {
+    expect(normalizeFileIdentity('/C:')).toBe('/C:');
+    expect(normalizeFileIdentity('/C:')).not.toBe(normalizeFileIdentity('c:/'));
+    expect(normalizeFileIdentity('/C:/x.py')).toBe('/C:/x.py');
+  });
+});

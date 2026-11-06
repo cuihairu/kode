@@ -138,4 +138,51 @@ describe('KR-AUD-36 布局解析按 rootConfigGeneration 缓存', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it('非首项候选后建出也触发重算:配置主路径缺失时选次选,后建主路径被采纳(审核轮 P1 二轮)', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kraud36c-'));
+    const original = vscode.workspace.getConfiguration;
+    try {
+      fs.mkdirSync(path.join(root, 'entity_defs'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'entity_defs', 'Avatar.def'), '<root/>');
+      // 配置主路径 `cfgdefs` 不存在(首项 miss),布局选中次选 `entity_defs`
+      (vscode as unknown as { workspace: { getConfiguration: unknown } }).workspace.getConfiguration = () =>
+        ({ get: (_key: string, fallback: string) => (_key === 'entityDefsPath' ? 'cfgdefs' : fallback) }) as never;
+      const first = getDefinitionWorkspaceLayout(root);
+      expect(first.entityDefsRoot).toBe(path.join(root, 'entity_defs'));
+      // 后建首项候选(优先级更高但探针集合里非「已选路径」)
+      fs.mkdirSync(path.join(root, 'cfgdefs'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'cfgdefs', 'Avatar.def'), '<root/>');
+      const second = getDefinitionWorkspaceLayout(root);
+      expect(second).not.toBe(first);
+      expect(second.entityDefsRoot).toBe(path.join(root, 'cfgdefs'));
+    } finally {
+      (vscode as unknown as { workspace: { getConfiguration: unknown } }).workspace.getConfiguration = original;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('同代单槽:配置 A/B 反复切变条目数恒 ≤1(审核轮 P2 二轮)', () => {
+    const root = makeLayoutRoot();
+    const original = vscode.workspace.getConfiguration;
+    try {
+      const withConfig = (defsPath: string): void => {
+        (vscode as unknown as { workspace: { getConfiguration: unknown } }).workspace.getConfiguration = () =>
+          ({ get: (_key: string, fallback: string) => (_key === 'entityDefsPath' ? defsPath : fallback) }) as never;
+      };
+      withConfig('scripts/entity_defs');
+      getDefinitionWorkspaceLayout(root);
+      for (let i = 0; i < 3; i += 1) {
+        withConfig('entity_defs');
+        getDefinitionWorkspaceLayout(root);
+        expect(layoutCacheSizeForTests()).toBe(1);
+        withConfig('scripts/entity_defs');
+        getDefinitionWorkspaceLayout(root);
+        expect(layoutCacheSizeForTests()).toBe(1);
+      }
+    } finally {
+      (vscode as unknown as { workspace: { getConfiguration: unknown } }).workspace.getConfiguration = original;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

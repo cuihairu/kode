@@ -31,9 +31,9 @@ export function normalizeFileIdentity(filePath: string): string {
     }
     parts.push(part);
   }
-  // 审核 P2:盘符根收尾形态固定为 `X:/` 并大小写归一——`C:/a/..` 与 `c:/`
-  // 必须同键(裸盘符段不再因缺 `:/` 逃过归一)
-  if (parts.length === 1 && /^[A-Za-z]:$/.test(parts[0])) {
+  // 审核 P2 收口:裸盘符段收尾仅对无前缀路径(真 Windows 盘符根)生效——
+  // POSIX 绝对路径 `/C:`(名为 `C:` 的目录)不得与盘符根 `c:/` 碰撞同键
+  if (prefix === '' && parts.length === 1 && /^[A-Za-z]:$/.test(parts[0])) {
     return `${parts[0].toLowerCase()}/`;
   }
   const normalized = prefix + parts.join('/');

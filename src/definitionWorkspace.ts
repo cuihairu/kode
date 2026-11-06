@@ -284,20 +284,14 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
       || resolveDiscoveredTypesXmlPath(workspaceRoot),
     userTypeRoots
   };
-  // KR-AUD-36(审核轮 P1/P2 收口):命中探针记录「构建时的世界状态」——
-  // 已解析路径的存在性 + 首选候选(配置主路径/推导主路径)的存在性 + 发现
-  // 选择记忆。命中时逐一复核:任一翻转(文件被建/被删、发现学习出新选择)
-  // 即重算,消除「缓存回看旧盘面」;跨代旧条目落盘即剪,Map 不随
-  // generation/配置变化无界涨。
+  // KR-AUD-36(审核轮 P1/P2 二轮收口):命中探针记录「构建时的世界状态」——
+  // 三面候选全列表的存在性快照(任一候选被建/被删都可能改变优先序选点,
+  // 只探首项不够:非首项的高优先候选后建出也该触发重算)+ 三面发现选择
+  // 记忆。命中时逐一复核,任一翻转即重算。
   const probePaths = uniquePaths(
-    [
-      layout.entityDefsRoot,
-      layout.entitiesXmlPath,
-      layout.typesXmlPath,
-      entityDefsCandidates[0],
-      entitiesXmlCandidates[0],
-      typesXmlCandidates[0]
-    ].filter((p): p is string => Boolean(p))
+    [...entityDefsCandidates, ...entitiesXmlCandidates, ...typesXmlCandidates].filter(
+      (p): p is string => Boolean(p)
+    )
   );
   layoutCache.set(layoutCacheKey, {
     generation: layoutGeneration,
@@ -309,7 +303,9 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
       typesXml: getDiscoveryChoice(workspaceRoot, 'typesXml')
     }
   });
-  pruneLayoutCache(layoutGeneration);
+  // P2:同代单槽——落盘即剪掉其余条目(含同代其他配置形态键)。配置 A/B
+  // 反复切变按「每代只留最新键」有界:每次切换重算一次,Map 规模恒 ≤1。
+  pruneLayoutCache(layoutCacheKey);
   return layout;
 }
 
@@ -317,19 +313,19 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
 interface DefinitionLayoutCacheEntry {
   generation: number;
   layout: DefinitionWorkspaceLayout;
-  /** 构建时已解析路径与首选候选的存在性快照(命中复核用) */
+  /** 构建时三面候选全列表的存在性快照(命中复核用) */
   probes: Array<{ path: string; existed: boolean }>;
   /** 构建时三面的发现选择记忆(命中时比对,学习出新选择即重算) */
   choices: Record<'entityDefs' | 'entitiesXml' | 'typesXml', string | null>;
 }
 
-/** KR-AUD-36 布局缓存:键=根+generation+布局配置读值;跨代条目落盘即剪 */
+/** KR-AUD-36 布局缓存:同代单槽(只留最新键),跨代旧条目随落盘剪除 */
 const layoutCache = new Map<string, DefinitionLayoutCacheEntry>();
 
 /**
- * 命中复核:全部探针的存在性与构建时一致、三面发现选择记忆未变才复用。
- * 代价=≤6 次 existsSync + 发现选择的记忆读取(有记忆时各 1 次 stat),
- * 远低于全量重算(整串候选 existsSync + 深扫描兜底)。
+ * 命中复核:全部候选探针的存在性与构建时一致、三面发现选择记忆未变才复用。
+ * 代价=候选全列表 existsSync(与 findExistingPath 同量级,省去深扫描兜底与
+ * 重复候选归一)+ 发现选择的记忆读取(有记忆时各 1 次 stat)。
  */
 function layoutCacheProbeValid(workspaceRoot: string, cached: DefinitionLayoutCacheEntry): boolean {
   for (const probe of cached.probes) {
@@ -341,10 +337,10 @@ function layoutCacheProbeValid(workspaceRoot: string, cached: DefinitionLayoutCa
     .every(key => getDiscoveryChoice(workspaceRoot, key) === cached.choices[key]);
 }
 
-/** 落盘新条目时剪掉其余代/其余配置形态的旧条目(只留当前键代内有效) */
-function pruneLayoutCache(currentGeneration: number): void {
-  for (const [key, entry] of layoutCache) {
-    if (entry.generation !== currentGeneration) {
+/** 落盘新条目时剪掉其余条目(跨代旧代 + 同代其他配置形态键),同代单槽 */
+function pruneLayoutCache(keepKey: string): void {
+  for (const key of layoutCache.keys()) {
+    if (key !== keepKey) {
       layoutCache.delete(key);
     }
   }
