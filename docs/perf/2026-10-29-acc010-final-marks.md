@@ -76,3 +76,26 @@ definitionPass 双双硬断言(src/finalMarksVerdict.ts),采样/争用口径预�
   (争用窗数值,不入池化口径)。
 - 结论:双指标保留**未测(争用)**,待共享机安静窗(load1≤28)重跑;
   按条目口径「现场未复现事项保留开放」,不冒充通过。
+
+## 2026-11-06 安静窗重跑(两轮全留痕)
+
+共享机安静窗(load1 3.3-7.9,全程低于预登记 loadLimit=28;在场共租户
+python3 ~21% CPU+htop)。同策略同口径连跑两轮,证据各自独立成档:
+
+- **第 1 轮**(docs/perf/2026-11-06-acc010-final-marks-attempt1.txt,
+  startLoad1=6.41-7.9):全突发 30/30 命中,量规排干 0;definition 池化
+  P95=28.609ms≤50 **pass**;hover 池化 P95=51.599ms>30 **fail**——首突发
+  暖起整轮偏慢(burst1 p50=33.2ms/p95=100.3ms,burst2 p95=32.2ms,
+  burst3 p95=7.1ms)拖垮池化,套件如实红,证据如实入档不平摊不隐藏。
+- **第 2 轮**(docs/perf/2026-11-06-acc010-final-marks-run.txt,
+  startLoad1=5.52):全突发 30/30 命中,量规排干 0(测前测后 pendingWork
+  全零);hover 池化 P95=23.620ms≤30 **assessed+pass**;definition 池化
+  P95=12.877ms≤50 **assessed+pass**;逐突发 hover p95=36.5/19.3/3.4ms、
+  definition p95=17.0/5.5/6.1ms。
+- **判定**:双指标在预登记争用闸内取得 assessed+pass,ACC-010 关闭。
+  第 1 轮的失败保留在档——首突发暖起(burst1 显著慢于后续)是真实形态,
+  池化口径下对窗口内共租户敏感,后续若复跑仍按同口径两轮全留。
+
+(复核链:2026-10-29 首轮 best-of-3 口径→2026-10-30 深审 F17 重开→
+2026-11-05 AUD-019/020 修复后池化口径重跑被争用闸 not-assessed→
+2026-11-06 安静窗两轮 assessed+pass 关闭。)

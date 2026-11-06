@@ -1,0 +1,46 @@
+# ACC-010 quiet-window attempt 2 (PASS, both metrics) 2026-11-06T21:19:21+08:00
+# pre-run loadavg: 7.08→5.52 4.37 8.33; startLoad1=5.52 全轮低于 loadLimit=28 → assessed。
+
+[acc010] evidence:
+acc010.hover.burst1.hits=30/30
+acc010.hover.burst1.p50Ms=8.170
+acc010.hover.burst1.p95Ms=36.456
+acc010.hover.burst1.maxMs=38.383
+acc010.hover.burst1.startLoad1=5.52
+acc010.definition.burst1.hits=30/30
+acc010.definition.burst1.p50Ms=8.717
+acc010.definition.burst1.p95Ms=16.996
+acc010.definition.burst1.maxMs=21.095
+acc010.definition.burst1.startLoad1=5.52
+acc010.hover.burst2.hits=30/30
+acc010.hover.burst2.p50Ms=6.257
+acc010.hover.burst2.p95Ms=19.328
+acc010.hover.burst2.maxMs=23.620
+acc010.hover.burst2.startLoad1=5.52
+acc010.definition.burst2.hits=30/30
+acc010.definition.burst2.p50Ms=2.400
+acc010.definition.burst2.p95Ms=5.521
+acc010.definition.burst2.maxMs=5.762
+acc010.definition.burst2.startLoad1=5.52
+acc010.hover.burst3.hits=30/30
+acc010.hover.burst3.p50Ms=2.439
+acc010.hover.burst3.p95Ms=3.426
+acc010.hover.burst3.maxMs=3.532
+acc010.hover.burst3.startLoad1=5.52
+acc010.definition.burst3.hits=30/30
+acc010.definition.burst3.p50Ms=2.263
+acc010.definition.burst3.p95Ms=6.149
+acc010.definition.burst3.maxMs=9.104
+acc010.definition.burst3.startLoad1=5.52
+acc010.policy={"hoverBoundMs":30,"definitionBoundMs":50,"loadLimit":28,"cores":14} (pre-registered: pooled-P95 over bursts with startLoad1<=loadLimit, excluded bursts kept on record; not best-of-N)
+acc010.hover.verdict=assessed
+acc010.hover.pooledP95Ms=23.620
+acc010.hover.excluded=[]
+acc010.hover.pass=true
+acc010.definition.verdict=assessed
+acc010.definition.pooledP95Ms=12.877
+acc010.definition.excluded=[]
+acc010.definition.pass=true
+acc010.hostLoadAvg=5.52 4.37 8.33 2/11759 1879769
+acc010.pendingWorkAtMeasure={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"caches":{"parsedDocuments":{"entries":8,"maxEntries":8,"bytes":5304,"maxBytes":8388608},"databaseSchemas":{"entries":6,"capacity":32},"annotationIndex":{"entries":0,"ttlMs":3000}},"worker":{"running":0,"queued":0,"queuedBytes":0,"maxQueuedBytes":8388608,"peakQueuedBytes":0,"budgetRejects":0,"postedBytes":0,"maxPostedJobs":16,"maxPostedBytes":8388608},"annotationBuilds":{"running":0,"waiting":0,"cancelled":0},"indexTasksQueued":0,"schemaColdBuilds":0}
+acc010.pendingWorkAfterBurst={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"caches":{"parsedDocuments":{"entries":8,"maxEntries":8,"bytes":5304,"maxBytes":8388608},"databaseSchemas":{"entries":6,"capacity":32},"annotationIndex":{"entries":0,"ttlMs":3000}},"worker":{"running":0,"queued":0,"queuedBytes":0,"maxQueuedBytes":8388608,"peakQueuedBytes":0,"budgetRejects":0,"postedBytes":0,"maxPostedJobs":16,"maxPostedBytes":8388608},"annotationBuilds":{"running":0,"waiting":0,"cancelled":0},"indexTasksQueued":0,"schemaColdBuilds":0}
