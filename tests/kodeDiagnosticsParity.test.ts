@@ -246,8 +246,16 @@ const recomputeDiagnostics = (file: CorpusFile, env: CorpusEnv): Face[] => {
       }
     } else if (node.name === 'Flags') {
       const raw = nodeValue(node);
+      // KR-AUD-84:整串查表;'|' 组合形态单独出「引擎不支持」诊断(与 Rust
+      // scalar_pass / UnknownFlagValueRule 同文案)。
       const normalized = raw.toUpperCase();
-      if (normalized && !KNOWN_FLAGS.has(normalized)) {
+      if (raw.includes('|')) {
+        out.push({
+          range: valueRange(text, node, raw),
+          severity: 1,
+          message: `未知的 KBEngine Flags 值: ${raw}。引擎按单个映射值整串查表，不支持 '|' 组合形态；请改为单个词表值。`
+        });
+      } else if (normalized && !KNOWN_FLAGS.has(normalized)) {
         out.push({
           range: valueRange(text, node, raw),
           severity: 1,

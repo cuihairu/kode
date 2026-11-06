@@ -162,6 +162,52 @@ fn unknown_flag_value_fires_and_not_on_known_aliases() {
     );
 }
 
+/// KR-AUD-84:'|' 组合形态单独出「引擎不支持」诊断——引擎按单个映射值
+/// 整串查表,不拆词;旧实现经 normalize_flag_tokens 拆词后零诊断。
+#[test]
+fn flag_pipe_form_gets_dedicated_engine_unsupported_finding() {
+    let pipe = prop(
+        "hp",
+        "\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>BASE|CELL</Flags>\n",
+    );
+    let findings = analyze_def(&pipe, &Default::default(), &[]).expect("analyze_def ok");
+    let pipe_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| f.check == "unknown-flag-value")
+        .collect();
+    assert_eq!(
+        pipe_findings.len(),
+        1,
+        "'|' 形态恰一条 unknown-flag-value: {findings:?}"
+    );
+    assert!(
+        pipe_findings[0].message.contains("不支持 '|' 组合形态"),
+        "'|' 形态应为专属「引擎不支持」文案: {findings:?}"
+    );
+}
+
+/// KR-AUD-84:整串查表——空格/小写混合形态不再被归一折叠放过。
+#[test]
+fn flag_lookup_is_whole_string_not_normalized_tokens() {
+    let spaced = prop(
+        "hp",
+        "\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>all clients</Flags>\n",
+    );
+    assert!(
+        checks(&spaced).contains(&"unknown-flag-value".to_string()),
+        "整串查表: 'all clients' 不在引擎词表,应命中"
+    );
+    // trim+大写后整串命中的仍放行(与引擎/TS 同口径)。
+    let tidy = prop(
+        "hp",
+        "\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags> cell_public </Flags>\n",
+    );
+    assert!(
+        !checks(&tidy).contains(&"unknown-flag-value".to_string()),
+        "trim+大写整串命中应放行"
+    );
+}
+
 #[test]
 fn unknown_detail_level_fires_and_not_on_known_level() {
     let bad = prop(
