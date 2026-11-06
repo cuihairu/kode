@@ -1,0 +1,60 @@
+{
+  "propertyLines": {
+    "Account": {
+      "accountName": 19,
+      "lastLoginTime": 21
+    },
+    "Avatar": {
+      "bag": 48,
+      "hp": 50,
+      "level": 52,
+      "name": 54,
+      "position": 56,
+      "sight": 58,
+      "skillSlots": 60
+    },
+    "Critical": {
+      "unrelated": 79
+    },
+    "EliteMonster": {
+      "attackPower": 92,
+      "coins": 94,
+      "experience": 96,
+      "hp": 98,
+      "maxHp": 100,
+      "potions": 102,
+      "rewardCoins": 104,
+      "rewardXp": 106
+    },
+    "Monster": {
+      "aiState": 132,
+      "bag": 134,
+      "hp": 136,
+      "level": 138,
+      "name": 140,
+      "position": 142,
+      "sight": 144,
+      "skillSlots": 146
+    },
+    "TrainingAvatar": {
+      "attackPower": 183,
+      "coins": 185,
+      "experience": 187,
+      "hp": 189,
+      "maxHp": 191,
+      "potions": 193,
+      "rewardCoins": 195,
+      "rewardXp": 197
+    },
+    "TrainingMonster": {
+      "attackPower": 222,
+      "coins": 224,
+      "experience": 226,
+      "hp": 228,
+      "maxHp": 230,
+      "potions": 232,
+      "rewardCoins": 234,
+      "rewardXp": 236
+    }
+  }
+}

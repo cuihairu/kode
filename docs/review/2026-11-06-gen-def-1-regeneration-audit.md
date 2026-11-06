@@ -60,16 +60,19 @@
    同口径守卫;简单别名(PLAYER_ID→UINT32)不守卫——tests/genDef1GuardConvention
    .test.ts 三条别名用例锁死。
 
-## 红先行证据(审核轮 1 勘误后的如实口径)
+## 红先行证据(审核轮 2 勘误后的如实口径)
 
 红跑(基线实现,`.red-logs/gen-def-1-red.log`,7 failed / 7 passed):
-- **6 项为守卫缺失行为证据**:FIXED_DICT 守卫、ARRAY 守卫、行映射随守卫段
-  迁移、混合实体、codeGenerator base/cell 守卫、段间越域——基线实现即
-  「无守卫」变体,这些断言在其上全数失败(等价于守卫判定恒假的变异验证)。
+- **6 项为守卫缺失行为证据**:FIXED_DICT 守卫、ARRAY 守卫、混合实体、
+  codeGenerator base 段守卫、cell 段守卫、段间越域——基线实现即「无守卫」
+  变体,这些断言在其上全数失败(等价于守卫判定恒假的变异验证)。
 - **1 项为测试自身缺陷**:行映射用例首版把 plan.content(含 kbe_types 导入
   行)与无模块语境的 lineMap 渲染按同一索引对比,差 1 行——系测试比较语境
   错误而非守卫断言,当轮已修(同 customTypeModules 语境对比 + 守卫段剔除
   基线复核)。
+- **审核轮 1 补的别名用例**(ARRAY 别名/FIXED_DICT 别名/简单别名负例)在
+  修复前实现上跑过:前两条红(守卫缺失),简单别名负例按设计绿(负回归
+  锁,不要求红)——见 commit 89cbddd 描述。
 
 ## 覆盖面清单(生成器 × 守卫点)
 

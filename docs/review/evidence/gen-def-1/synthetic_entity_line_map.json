@@ -1,0 +1,9 @@
+{
+  "propertyLines": {
+    "Hero": {
+      "hp": 18,
+      "profile": 20,
+      "talent": 22
+    }
+  }
+}

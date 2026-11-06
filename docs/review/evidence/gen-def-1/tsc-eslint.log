@@ -7,3 +7,13 @@ ESLINT_SRC_EXIT=0
 == eslint tests --ext ts (baseline comparison)
   7 errors and 0 warnings potentially fixable with the `--fix` option.
 
+HEAD=14f81f7bebe179fe3d13b00e09a8952d366dd111
+DATE=2026-11-06T22:14:58+08:00
+== eslint tests --ext ts @ HEAD
+  7 errors and 0 warnings potentially fixable with the `--fix` option.
+
+HEAD_TESTS_ESLINT_EXIT=0
+== eslint tests --ext ts @ baseline ae36cd7 (/tmp/kode-gen1-base)
+  7 errors and 0 warnings potentially fixable with the `--fix` option.
+
+BASELINE_TESTS_ESLINT_EXIT=0

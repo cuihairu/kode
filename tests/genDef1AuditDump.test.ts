@@ -125,9 +125,15 @@ const dumpEntityArtifacts = (
     modules.set(entry.name, 'scripts.entity_defs.kbe_types');
   }
   const lineMap = buildEntityTypeStubLineMap(plan.entries, customTypes, modules);
-  // Map 必须显式序列化(JSON.stringify(Map) → {} 是假审计)
+  // 行映射必须真出条目(Map 显式序列化 + 非空断言;JSON.stringify(Map) → {}
+  // 与空回落都是假审计)
+  const propertyLines = mapToObject(lineMap?.propertyLines ?? new Map());
+  expect(
+    Object.keys(propertyLines).length,
+    `${label}: property line map must be populated`
+  ).toBeGreaterThan(0);
   writeFileSync(join(OUT_DIR, `${label}_entity_line_map.json`), JSON.stringify({
-    propertyLines: mapToObject(lineMap?.propertyLines ?? new Map())
+    propertyLines
   }, null, 2));
   const text = plan.content ?? '';
   writeFileSync(join(OUT_DIR, `${label}_guard_audit.txt`), [
@@ -178,10 +184,15 @@ describe('GEN-DEF-1 regeneration audit dump', () => {
     expect(typePlan.content, 'demo kbe_types content must not be null').not.toBeNull();
     writeFileSync(join(OUT_DIR, 'demo_kbe_types.pyi'), typePlan.content ?? '');
     const demoTypeMap = buildPythonTypeStubLineMap(typePlan.entries);
+    const demoEntryLines = mapToObject(demoTypeMap?.entryLines ?? new Map());
+    expect(
+      Object.keys(demoEntryLines).length,
+      'demo kbe_types entry line map must be populated'
+    ).toBeGreaterThan(0);
     writeFileSync(
       join(OUT_DIR, 'demo_kbe_types_line_map.json'),
       JSON.stringify({
-        entryLines: mapToObject(demoTypeMap?.entryLines ?? new Map()),
+        entryLines: demoEntryLines,
         propertyLines: mapToObject(demoTypeMap?.propertyLines ?? new Map())
       }, null, 2)
     );
@@ -198,10 +209,15 @@ describe('GEN-DEF-1 regeneration audit dump', () => {
     expect(typePlan.content, 'fantasydemo kbe_types content must not be null').not.toBeNull();
     writeFileSync(join(OUT_DIR, 'fantasydemo_kbe_types.pyi'), typePlan.content ?? '');
     const fantasyTypeMap = buildPythonTypeStubLineMap(typePlan.entries);
+    const fantasyEntryLines = mapToObject(fantasyTypeMap?.entryLines ?? new Map());
+    expect(
+      Object.keys(fantasyEntryLines).length,
+      'fantasydemo kbe_types entry line map must be populated'
+    ).toBeGreaterThan(0);
     writeFileSync(
       join(OUT_DIR, 'fantasydemo_kbe_types_line_map.json'),
       JSON.stringify({
-        entryLines: mapToObject(fantasyTypeMap?.entryLines ?? new Map()),
+        entryLines: fantasyEntryLines,
         propertyLines: mapToObject(fantasyTypeMap?.propertyLines ?? new Map())
       }, null, 2)
     );
