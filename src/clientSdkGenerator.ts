@@ -21,8 +21,8 @@ import {
   getElementText,
   getDirectChildElement,
   getDirectChildElements,
+  getDirectChildElementsByName,
   getScalarChildValue,
-  getScalarChildValues,
   getDirectTextNodes,
   hasTruthyChildTag,
   parseDefDocument
@@ -136,10 +136,19 @@ export interface ClientSdkProperty {
   readonly inheritedViaParent?: boolean;
 }
 
+/** KR-AUD-79:`<Arg>` 类型面——与属性同构(type + `<of>` 元素类型)。
+ * 旧实现只取直文本,`<Arg>ARRAY<of>X</of></Arg>` 得 "ARRAY"、元素类型丢失。 */
+export interface ClientSdkArgType {
+  /** `<Arg>` 直文本;ARRAY 为 `ARRAY` */
+  readonly type: string;
+  /** ARRAY 的 `<of>` 文本;非容器为 null(嵌套 ARRAY 与属性面同口径,只取一层) */
+  readonly elementType: string | null;
+}
+
 export interface ClientSdkMethod {
   readonly name: string;
   /** def 的 `<Arg>` 只有类型、没有名字 */
-  readonly argTypes: string[];
+  readonly argTypes: readonly ClientSdkArgType[];
   /** KR-AUD-73:合并自接口/父链 def 时的来源 def 名;自身成员无此字段 */
   readonly inheritedFrom?: string;
   /** KR-AUD-73:经父链合并(含父链上各 def 的接口)时为 true——基类承载,不重复声明 */
@@ -491,7 +500,11 @@ function readDefMethods(root: DefElementNode, sectionName: string, onlyExposed: 
 
     methods.push({
       name: methodNode.name,
-      argTypes: getScalarChildValues(methodNode, 'Arg')
+      // KR-AUD-79:逐 Arg 走 readDefTypeNode——ARRAY 的 <of> 子元素一并收;
+      // 空文本 Arg 照旧剔除(与 definitionSemantics 口径一致,保持 1:1)
+      argTypes: getDirectChildElementsByName(methodNode, 'Arg')
+        .map(argNode => readDefTypeNode(argNode))
+        .filter(arg => arg.type !== '')
     });
   }
   return methods;
@@ -563,8 +576,13 @@ function resolvePropertyType(typeMap: ClientSdkTypeMap, property: ClientSdkPrope
   return resolveClientSdkTypeName(typeMap, property.type, property.elementType);
 }
 
-function resolveArgType(typeMap: ClientSdkTypeMap, type: string): string {
+/** 无 `<of>` 的裸类型名(FIXED_DICT 字段等)。 */
+function resolveNamedType(typeMap: ClientSdkTypeMap, type: string): string {
   return resolveClientSdkTypeName(typeMap, type, null);
+}
+
+function resolveArgType(typeMap: ClientSdkTypeMap, arg: ClientSdkArgType): string {
+  return resolveClientSdkTypeName(typeMap, arg.type, arg.elementType);
 }
 
 function clientVisibleProperties(entity: ClientSdkEntity): ClientSdkProperty[] {
@@ -625,17 +643,17 @@ function toPascalCase(name: string): string {
 /** def 的 `<Arg>` 只有类型没有名字，统一给 `arg0/arg1…` 编号。 */
 function formatArgTypes(
   typeMap: ClientSdkTypeMap,
-  argTypes: string[],
+  argTypes: readonly ClientSdkArgType[],
   language: ClientSdkLanguage
 ): string {
   return argTypes
-    .map((type, index) => language === 'typescript'
-      ? `_arg${index}: ${resolveArgType(typeMap, type)}`
-      : `${resolveArgType(typeMap, type)} arg${index}`)
+    .map((arg, index) => language === 'typescript'
+      ? `_arg${index}: ${resolveArgType(typeMap, arg)}`
+      : `${resolveArgType(typeMap, arg)} arg${index}`)
     .join(', ');
 }
 
-function formatArgIds(argTypes: string[], underscored: boolean): string {
+function formatArgIds(argTypes: readonly ClientSdkArgType[], underscored: boolean): string {
   return argTypes
     .map((_, index) => `${underscored ? '_' : ''}arg${index}`)
     .join(', ');
@@ -992,7 +1010,7 @@ export function generateClientSdkFixedDictsFile(
       lines.push(`export interface ${type.name} {`);
       for (const property of type.properties) {
         lines.push(`  /** source: types.xml:${property.sourceLine ?? 'unknown'} */`);
-        lines.push(`  ${property.name}: ${property.typeName ? resolveArgType(typeMap, property.typeName) : 'unknown'};`);
+        lines.push(`  ${property.name}: ${property.typeName ? resolveNamedType(typeMap, property.typeName) : 'unknown'};`);
       }
       lines.push('}');
       lines.push('');
@@ -1007,7 +1025,7 @@ export function generateClientSdkFixedDictsFile(
       lines.push(`  {`);
       for (const property of type.properties) {
         lines.push(`    // source: types.xml:${property.sourceLine ?? 'unknown'}`);
-        lines.push(`    public ${property.typeName ? resolveArgType(typeMap, property.typeName) : 'object'} ${toPascalCase(property.name)} { get; set; }`);
+        lines.push(`    public ${property.typeName ? resolveNamedType(typeMap, property.typeName) : 'object'} ${toPascalCase(property.name)} { get; set; }`);
       }
       lines.push(`  }`);
     }

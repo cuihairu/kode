@@ -210,14 +210,40 @@ describe('parseClientSdkEntity', () => {
     const entity = parseClientSdkEntity(FULL_DEF, 'Avatar');
 
     expect(entity?.exposedBaseMethods).toEqual([
-      { name: 'createAvatar', argTypes: ['UINT8'] }
+      { name: 'createAvatar', argTypes: [{ type: 'UINT8', elementType: null }] }
     ]);
     expect(entity?.exposedCellMethods).toEqual([
-      { name: 'moveTo', argTypes: ['VECTOR3'] }
+      { name: 'moveTo', argTypes: [{ type: 'VECTOR3', elementType: null }] }
     ]);
     expect(entity?.clientMethods).toEqual([
-      { name: 'onHPChanged', argTypes: ['UINT32', 'UINT32'] }
+      { name: 'onHPChanged', argTypes: [
+        { type: 'UINT32', elementType: null },
+        { type: 'UINT32', elementType: null }
+      ] }
     ]);
+  });
+
+  // KR-AUD-79:<Arg>ARRAY<of>X</of></Arg> 旧实现只取直文本 "ARRAY",元素类型丢失
+  it('读取 Arg 内 ARRAY 的 <of> 子元素(引擎 FixedArrayType 口径)', () => {
+    const def = `<root>
+  <ClientMethods>
+    <onSkillCast>
+      <Arg>ARRAY<of>UINT32</of></Arg>
+      <Arg>STRING</Arg>
+    </onSkillCast>
+  </ClientMethods>
+</root>
+`;
+    const entity = parseClientSdkEntity(def, 'Avatar')!;
+    expect(entity.clientMethods[0].argTypes).toEqual([
+      { type: 'ARRAY', elementType: 'UINT32' },
+      { type: 'STRING', elementType: null }
+    ]);
+
+    const typeMap = buildClientSdkTypeMap([], 'typescript');
+    const content = generateClientSdkEntityFile(entity, 'typescript', typeMap, GENERATED_AT);
+    expect(content).toContain('_arg0: number[]');
+    expect(content).toContain('_arg1: string');
   });
 
   it('最小定义:无 Parent、无方法面时为空数组', () => {
