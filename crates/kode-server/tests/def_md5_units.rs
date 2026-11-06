@@ -34,22 +34,34 @@ fn hex(bytes: &[u8]) -> String {
 fn rfc1321_vectors() {
     let mut m = Md5::new();
     m.update(b"");
-    assert_eq!(hex(&m.clone().finalize()), "d41d8cd98f00b204e9800998ecf8427e");
+    assert_eq!(
+        hex(&m.clone().finalize()),
+        "d41d8cd98f00b204e9800998ecf8427e"
+    );
 
     let mut m = Md5::new();
     m.update(b"abc");
-    assert_eq!(hex(&m.clone().finalize()), "900150983cd24fb0d6963f7d28e17f72");
+    assert_eq!(
+        hex(&m.clone().finalize()),
+        "900150983cd24fb0d6963f7d28e17f72"
+    );
 
     let mut m = Md5::new();
     m.update(b"message digest");
-    assert_eq!(hex(&m.clone().finalize()), "f96b697d7cb7938d525a2f31aaf161d0");
+    assert_eq!(
+        hex(&m.clone().finalize()),
+        "f96b697d7cb7938d525a2f31aaf161d0"
+    );
 
     // 跨块长串(RFC 标准 "a"×1e6)。
     let mut m = Md5::new();
     for _ in 0..1_000_000 {
         m.update(b"a");
     }
-    assert_eq!(hex(&m.clone().finalize()), "7707d6ae4e027c70eea2a935c2296f21");
+    assert_eq!(
+        hex(&m.clone().finalize()),
+        "7707d6ae4e027c70eea2a935c2296f21"
+    );
 
     // 分块边界(56/64/65 字节)。
     for len in [55usize, 56, 57, 63, 64, 65, 128] {
@@ -147,7 +159,9 @@ fn minimal_auto_match_comp_own_three_int32() {
     let result = compute_def_md5(sample.params).unwrap();
     let s = &result.stream_hex;
     // Gate 在 entities.xml 声明 hasCell="true" → hasClient=-1 hasCell=1 hasBase=-1。
-    let idx = s.find("ffffffff01000000ffffffff").expect("autoMatchCompOwn tail");
+    let idx = s
+        .find("ffffffff01000000ffffffff")
+        .expect("autoMatchCompOwn tail");
     let _ = idx;
     assert!(s.ends_with("ffffffff01000000ffffffff"));
 }
@@ -160,8 +174,16 @@ fn determinism_and_md5_format() {
         assert_eq!(a.md5_hex, b.md5_hex, "{}: deterministic", sample.name);
         assert_eq!(a.stream_hex, b.stream_hex, "{}: deterministic", sample.name);
         assert_eq!(a.md5_hex.len(), 32, "{}: 32 hex", sample.name);
-        assert!(a.md5_hex.chars().all(|c| c.is_ascii_hexdigit()), "{}", sample.name);
-        assert!(a.md5_hex.chars().all(|c| !c.is_ascii_lowercase()), "{}: uppercase", sample.name);
+        assert!(
+            a.md5_hex.chars().all(|c| c.is_ascii_hexdigit()),
+            "{}",
+            sample.name
+        );
+        assert!(
+            a.md5_hex.chars().all(|c| !c.is_ascii_lowercase()),
+            "{}: uppercase",
+            sample.name
+        );
         assert_eq!(
             a.md5_hex.to_lowercase(),
             a.md5_hex.to_lowercase(),
@@ -244,10 +266,7 @@ fn nested_array_before_host_bytes() {
 #[test]
 fn golden_samples_load_fixtures() {
     // demo-assets 与 parity-project 夹具可装载(至少一个样本)。
-    let names: Vec<&str> = golden_samples(repo_root())
-        .iter()
-        .map(|s| s.name)
-        .collect();
+    let names: Vec<&str> = golden_samples(repo_root()).iter().map(|s| s.name).collect();
     assert!(names.contains(&"kbengine-demo-assets"));
     assert!(names.contains(&"parity-project"));
     assert!(names.contains(&"minimal-single-entity"));

@@ -560,10 +560,17 @@ function engineApiVersionStubNote(entry: Pick<KbeSymbolEntry, 'version'>): strin
  */
 export function getKbeAliases(documentText: string): Set<string> {
   const aliases = new Set<string>();
-  const importPattern = /^\s*import\s+(KBEngine|kbe)\b(?:\s+as\s+(\w+))?/gm;
+  // KR-AUD-33:先取整条 import 名单(逗号可混排其他模块),再逐名识别 kbe/
+  // KBEngine——旧正则要求 kbe 紧跟 `import`,`import os, kbe` 整行落空。
+  const importPattern = /^\s*import\s+([^\n#]+)/gm;
   let match: RegExpExecArray | null;
   while ((match = importPattern.exec(documentText)) !== null) {
-    aliases.add(match[2] ?? match[1]);
+    for (const part of match[1].split(',')) {
+      const name = /^\s*(KBEngine|kbe)(?:\s+as\s+(\w+))?\s*$/.exec(part);
+      if (name) {
+        aliases.add(name[2] ?? name[1]);
+      }
+    }
   }
   return aliases;
 }

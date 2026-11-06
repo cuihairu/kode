@@ -55,7 +55,10 @@ impl CloneSchema {
     pub fn new(entity_name: String, tables: Vec<DerivedTable>) -> CloneResult<Self> {
         let mut table_index = BTreeMap::new();
         for table in &tables {
-            if table_index.insert(table.name.clone(), table.clone()).is_some() {
+            if table_index
+                .insert(table.name.clone(), table.clone())
+                .is_some()
+            {
                 return Err(CloneError::InvalidRule(format!(
                     "duplicate derived table `{}`",
                     table.name
@@ -213,8 +216,9 @@ impl SchemaResolver {
             if !derived.table_index.contains_key(&name) {
                 denied.push(DeniedTable {
                     name,
-                    reason: "physical-only table not in derived schema; refusing to guess a relation"
-                        .into(),
+                    reason:
+                        "physical-only table not in derived schema; refusing to guess a relation"
+                            .into(),
                 });
             }
         }
@@ -269,7 +273,10 @@ mod tests {
             kind: "root".into(),
             parent_table_name: None,
             property_path: None,
-            fields: vec![field("id", "bigint unsigned"), field("sm_autoLoad", "tinyint")],
+            fields: vec![
+                field("id", "bigint unsigned"),
+                field("sm_autoLoad", "tinyint"),
+            ],
         }
     }
 
@@ -289,9 +296,11 @@ mod tests {
 
     #[test]
     fn resolve_matches_derived_and_physical() {
-        let derived =
-            CloneSchema::new("Avatar".into(), vec![root("tbl_Avatar"), child("tbl_Avatar_items", "tbl_Avatar")])
-                .unwrap();
+        let derived = CloneSchema::new(
+            "Avatar".into(),
+            vec![root("tbl_Avatar"), child("tbl_Avatar_items", "tbl_Avatar")],
+        )
+        .unwrap();
         let physical = VirtualSchema::new(vec![
             PhysicalTable {
                 name: "tbl_Avatar".into(),
@@ -392,8 +401,11 @@ mod tests {
 
     #[test]
     fn duplicate_table_rejected() {
-        let err = CloneSchema::new("Avatar".into(), vec![root("tbl_Avatar"), root("tbl_Avatar")])
-            .unwrap_err();
+        let err = CloneSchema::new(
+            "Avatar".into(),
+            vec![root("tbl_Avatar"), root("tbl_Avatar")],
+        )
+        .unwrap_err();
         assert!(matches!(err, CloneError::InvalidRule(_)));
     }
 }

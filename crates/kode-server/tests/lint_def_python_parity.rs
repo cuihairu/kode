@@ -53,8 +53,8 @@ fn no_python_context_is_noop() {
 fn def_has_python_missing_fires_exactly_once() {
     // def 有 3 方法;base 上下文已实现 reqPos/onTick,缺 onDeath → 恰好 1 条。
     let input = base_ctx(&["reqPos", "onTick"]);
-    let findings = analyze_def_with_python(AVATAR_DEF, &Default::default(), &[], input)
-        .expect("analyze ok");
+    let findings =
+        analyze_def_with_python(AVATAR_DEF, &Default::default(), &[], input).expect("analyze ok");
     let parity: Vec<_> = findings
         .iter()
         .filter(|f| f.check == "def-method-missing-in-python")
@@ -92,8 +92,8 @@ fn implemented_methods_zero_false_positive() {
 fn missing_section_context_skips_that_section() {
     // 只有 base 上下文(cell 缺)→ 只核验 BaseMethods;onTick(CellMethods)不产。
     let input = base_ctx(&["reqPos", "onDeath"]);
-    let findings = analyze_def_with_python(AVATAR_DEF, &Default::default(), &[], input)
-        .expect("analyze ok");
+    let findings =
+        analyze_def_with_python(AVATAR_DEF, &Default::default(), &[], input).expect("analyze ok");
     let parity: Vec<_> = findings
         .iter()
         .filter(|f| f.check == "def-method-missing-in-python")
@@ -112,8 +112,8 @@ fn per_section_missing_fires_on_that_section_file() {
         }),
         ..Default::default()
     };
-    let findings = analyze_def_with_python(AVATAR_DEF, &Default::default(), &[], input)
-        .expect("analyze ok");
+    let findings =
+        analyze_def_with_python(AVATAR_DEF, &Default::default(), &[], input).expect("analyze ok");
     let parity: Vec<_> = findings
         .iter()
         .filter(|f| f.check == "def-method-missing-in-python")

@@ -31,7 +31,10 @@ fn response_of(out: &[Outgoing]) -> &Value {
 /// 走完整 `$/kode/rpc` 链路调 `$/kode/dependency/graph`,返回图 JSON。
 fn graph(params: Value) -> Value {
     let mut state = ServerState::new();
-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
+    handle_message(
+        &mut state,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
     let out = handle_message(
         &mut state,
         request(
@@ -162,17 +165,32 @@ fn full_graph_nodes_edges_reverse_and_paths() {
         .collect();
     assert_eq!(types, vec!["Base", "Cell", "Client"]);
     assert_eq!(node_named(&g, "def:Hero")["kind"], "def");
-    assert_eq!(node_named(&g, "def:Hero")["filePath"], "/defs/entitys/Hero.def");
+    assert_eq!(
+        node_named(&g, "def:Hero")["filePath"],
+        "/defs/entitys/Hero.def"
+    );
     assert_eq!(node_named(&g, "def:Monster")["kind"], "def");
     assert_eq!(node_named(&g, "interface:IMove")["kind"], "interface");
     assert_eq!(node_named(&g, "component:CWeapon")["kind"], "component");
     assert_eq!(node_named(&g, "type:Vec3")["kind"], "type");
-    assert_eq!(node_named(&g, "type:Vec3")["filePath"], "/defs/entitys/types.xml");
-    assert_eq!(node_named(&g, "python:/scripts/types/Vec3.py")["kind"], "python");
-    assert_eq!(node_named(&g, "python:/scripts/entities/Hero.py")["kind"], "python");
+    assert_eq!(
+        node_named(&g, "type:Vec3")["filePath"],
+        "/defs/entitys/types.xml"
+    );
+    assert_eq!(
+        node_named(&g, "python:/scripts/types/Vec3.py")["kind"],
+        "python"
+    );
+    assert_eq!(
+        node_named(&g, "python:/scripts/entities/Hero.py")["kind"],
+        "python"
+    );
     // Monster 仅 cell 域
     assert_eq!(
-        node_named(&g, "entity:Monster")["types"].as_array().unwrap().len(),
+        node_named(&g, "entity:Monster")["types"]
+            .as_array()
+            .unwrap()
+            .len(),
         1
     );
 
@@ -183,8 +201,18 @@ fn full_graph_nodes_edges_reverse_and_paths() {
     assert!(has_edge(&g, "def:Hero", "component:CWeapon", "has-a"));
     assert!(has_edge(&g, "def:Hero", "type:Vec3", "property-type"));
     assert!(has_edge(&g, "def:Hero", "def:Hero", "property-type")); // arr 引用 Hero 自身
-    assert!(has_edge(&g, "type:Vec3", "python:/scripts/types/Vec3.py", "implements"));
-    assert!(has_edge(&g, "def:Hero", "python:/scripts/entities/Hero.py", "method-impl"));
+    assert!(has_edge(
+        &g,
+        "type:Vec3",
+        "python:/scripts/types/Vec3.py",
+        "implements"
+    ));
+    assert!(has_edge(
+        &g,
+        "def:Hero",
+        "python:/scripts/entities/Hero.py",
+        "method-impl"
+    ));
     // 组件槽边 label=槽名,属性边 label=属性名
     let weapon_edge = edges_of(&g)
         .iter()
@@ -200,20 +228,28 @@ fn full_graph_nodes_edges_reverse_and_paths() {
     // 反向索引
     assert!(reverse_of(&g, "def:Hero")
         .iter()
-        .any(|e| e.get("from").and_then(|v| v.as_str()) == Some("entity:Hero")
-            && e.get("kind").and_then(|v| v.as_str()) == Some("registration")));
+        .any(
+            |e| e.get("from").and_then(|v| v.as_str()) == Some("entity:Hero")
+                && e.get("kind").and_then(|v| v.as_str()) == Some("registration")
+        ));
     assert!(reverse_of(&g, "type:Vec3")
         .iter()
-        .any(|e| e.get("from").and_then(|v| v.as_str()) == Some("def:Hero")
-            && e.get("kind").and_then(|v| v.as_str()) == Some("property-type")));
+        .any(
+            |e| e.get("from").and_then(|v| v.as_str()) == Some("def:Hero")
+                && e.get("kind").and_then(|v| v.as_str()) == Some("property-type")
+        ));
     assert!(reverse_of(&g, "python:/scripts/types/Vec3.py")
         .iter()
-        .any(|e| e.get("from").and_then(|v| v.as_str()) == Some("type:Vec3")
-            && e.get("kind").and_then(|v| v.as_str()) == Some("implements")));
+        .any(
+            |e| e.get("from").and_then(|v| v.as_str()) == Some("type:Vec3")
+                && e.get("kind").and_then(|v| v.as_str()) == Some("implements")
+        ));
     assert!(reverse_of(&g, "python:/scripts/entities/Hero.py")
         .iter()
-        .any(|e| e.get("from").and_then(|v| v.as_str()) == Some("def:Hero")
-            && e.get("kind").and_then(|v| v.as_str()) == Some("method-impl")));
+        .any(
+            |e| e.get("from").and_then(|v| v.as_str()) == Some("def:Hero")
+                && e.get("kind").and_then(|v| v.as_str()) == Some("method-impl")
+        ));
 
     // 三路径
     let paths = &g["paths"];
@@ -288,11 +324,21 @@ fn implemented_by_only_type_gets_type_node_and_non_dangling_edge() {
     }));
     // type:Vec3 节点必须存在
     assert_eq!(node_named(&g, "type:Vec3")["kind"], "type");
-    assert_eq!(node_named(&g, "type:Vec3")["filePath"], "/defs/entitys/types.xml");
+    assert_eq!(
+        node_named(&g, "type:Vec3")["filePath"],
+        "/defs/entitys/types.xml"
+    );
     // implements 边 from 端有落点(type:Vec3),不悬空
-    assert!(has_edge(&g, "type:Vec3", "python:/scripts/types/Vec3.py", "implements"));
+    assert!(has_edge(
+        &g,
+        "type:Vec3",
+        "python:/scripts/types/Vec3.py",
+        "implements"
+    ));
     assert!(reverse_of(&g, "python:/scripts/types/Vec3.py")
         .iter()
-        .any(|e| e.get("from").and_then(|v| v.as_str()) == Some("type:Vec3")
-            && e.get("kind").and_then(|v| v.as_str()) == Some("implements")));
+        .any(
+            |e| e.get("from").and_then(|v| v.as_str()) == Some("type:Vec3")
+                && e.get("kind").and_then(|v| v.as_str()) == Some("implements")
+        ));
 }

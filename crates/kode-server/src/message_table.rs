@@ -445,7 +445,6 @@ fn parse_utype(text: Option<&str>) -> i64 {
     text.and_then(|t| t.trim().parse::<i64>().ok()).unwrap_or(0)
 }
 
-
 /// 已解析 doc 上构造视图(Source::load 复用同一 doc,免二次解析)。
 fn parse_def_view_with(doc: &Document, text: &str) -> DefView {
     let lines = LineMap::new(text);
@@ -488,19 +487,19 @@ fn parse_def_view_with(doc: &Document, text: &str) -> DefView {
     if let Some(root) = root {
         if let Some(props) = doc.child_element(root, "Properties") {
             for child in doc.child_elements(props) {
-                properties.push(parse_prop(&doc, &lines, child));
+                properties.push(parse_prop(doc, &lines, child));
             }
         }
         for section in METHOD_LOAD_ORDER {
             if let Some(sec) = doc.child_element(root, section) {
                 for child in doc.child_elements(sec) {
-                    methods.push(parse_method(&doc, &lines, child, section));
+                    methods.push(parse_method(doc, &lines, child, section));
                 }
             }
         }
         if let Some(comps) = doc.child_element(root, "Components") {
             for child in doc.child_elements(comps) {
-                if let Some(cv) = parse_comp(&doc, &lines, child) {
+                if let Some(cv) = parse_comp(doc, &lines, child) {
                     components.push(cv);
                 }
             }
@@ -531,7 +530,12 @@ fn parse_prop(doc: &Document, lines: &LineMap, child: usize) -> PropView {
     }
 }
 
-fn parse_method(doc: &Document, lines: &LineMap, child: usize, section: &'static str) -> MethodView {
+fn parse_method(
+    doc: &Document,
+    lines: &LineMap,
+    child: usize,
+    section: &'static str,
+) -> MethodView {
     let e = doc.element(child);
     let mut args = Vec::new();
     for arg_node in doc.child_elements_named(child, "Arg") {
@@ -768,7 +772,11 @@ fn build_table(params: &Value) -> Result<Value, String> {
                 file_path: s.file_path.clone(),
             })
             .collect(),
-        client_methods: methods.iter().filter(|m| m.visible_to_client).cloned().collect(),
+        client_methods: methods
+            .iter()
+            .filter(|m| m.visible_to_client)
+            .cloned()
+            .collect(),
         methods,
         client_properties: properties
             .iter()
@@ -788,7 +796,7 @@ fn build_table(params: &Value) -> Result<Value, String> {
             })
             .collect(),
     };
-    Ok(serde_json::to_value(&table).map_err(|e| e.to_string())?)
+    serde_json::to_value(&table).map_err(|e| e.to_string())
 }
 
 /// 单份 def 并入模块(TS loadDefIntoModule):属性 → Cell → Base → Client 方法
@@ -940,7 +948,9 @@ fn load_types_xml(origin: &str, types_xml: &str, asm: &mut Assembly) {
                     kind: "types-parse-error",
                     fatal: true,
                     line: Some(line),
-                    message: format!("DataTypes::loadTypes: parse FIXED_DICT [{alias_name}] error!"),
+                    message: format!(
+                        "DataTypes::loadTypes: parse FIXED_DICT [{alias_name}] error!"
+                    ),
                 });
                 consume_user_type(asm, &alias_name, Some(line), "fixed-dict", origin);
                 continue;
@@ -999,7 +1009,14 @@ fn load_types_xml(origin: &str, types_xml: &str, asm: &mut Assembly) {
             });
             continue;
         }
-        register_user_type(asm, &alias_name, Some(line), "alias", Some(&child_text), origin);
+        register_user_type(
+            asm,
+            &alias_name,
+            Some(line),
+            "alias",
+            Some(&child_text),
+            origin,
+        );
     }
 }
 
@@ -1183,7 +1200,11 @@ fn simulate_property(
         return;
     }
 
-    let declared = if property.utype > 0 { Some(property.utype) } else { None };
+    let declared = if property.utype > 0 {
+        Some(property.utype)
+    } else {
+        None
+    };
     asm.properties.last_mut().unwrap().declared_utype = declared;
     let utype = allocate_property_utype(
         declared,
@@ -1210,7 +1231,10 @@ fn simulate_property(
             kind,
             fatal: true,
             line: Some(property.line),
-            message: format!("EntityDef::addPropertyDescription({}): {root_name}.", asm.entity_name),
+            message: format!(
+                "EntityDef::addPropertyDescription({}): {root_name}.",
+                asm.entity_name
+            ),
         });
     };
 
@@ -1240,7 +1264,12 @@ fn simulate_property(
 
     let mut name_rejected = false;
     for domain in &registered_domains {
-        if asm.property_domains.get_mut(domain).unwrap().contains(&property.name) {
+        if asm
+            .property_domains
+            .get_mut(domain)
+            .unwrap()
+            .contains(&property.name)
+        {
             asm.issues.push(AsmIssue {
                 kind: "property-name-conflict",
                 fatal: true,
@@ -1254,7 +1283,10 @@ fn simulate_property(
             name_rejected = true;
             continue;
         }
-        asm.property_domains.get_mut(domain).unwrap().insert(property.name.clone());
+        asm.property_domains
+            .get_mut(domain)
+            .unwrap()
+            .insert(property.name.clone());
     }
     if name_rejected {
         asm.issues.push(AsmIssue {
@@ -1315,11 +1347,16 @@ fn allocate_property_utype(
             return None;
         }
         asm.property_used_utypes.insert(declared);
-        asm.property_holders
-            .insert(declared, (name.to_string(), domains.iter().copied().collect()));
+        asm.property_holders.insert(
+            declared,
+            (name.to_string(), domains.iter().copied().collect()),
+        );
         return Some(declared);
     }
-    while asm.property_used_utypes.contains(&asm.property_auto_counter) {
+    while asm
+        .property_used_utypes
+        .contains(&asm.property_auto_counter)
+    {
         asm.property_auto_counter += 1;
     }
     let utype = asm.property_auto_counter;
@@ -1475,7 +1512,12 @@ fn slot_domains(has_base: bool, has_cell: bool, has_client: bool) -> Vec<&'stati
     domains
 }
 
-fn register_component_slot(module_name: &str, component: &CompView, source: &Source, asm: &mut Assembly) {
+fn register_component_slot(
+    module_name: &str,
+    component: &CompView,
+    source: &Source,
+    asm: &mut Assembly,
+) {
     if LIMITED_PROPERTY_NAMES.contains(&component.slot_name.as_str()) {
         asm.issues.push(AsmIssue {
             kind: "property-name-limited",
@@ -1492,33 +1534,30 @@ fn register_component_slot(module_name: &str, component: &CompView, source: &Sou
     // 组件 def 域面(缺失/结构错误 → 报 issue + 既有硬编码三域回落,宽容续行
     // 与缺失 parent/interface 同口径;引擎该情形整表失败,此处按 message_table
     // 既有宽容口径报 issue 续行)。
-    let (flags, has_client, domains) = match analyze_component_module(
-        &component.type_name,
-        source,
-        &mut HashSet::new(),
-    ) {
-        Some(face) => (
-            derive_component_slot_flags(face.has_base, face.has_cell, face.has_client),
-            face.has_client,
-            slot_domains(face.has_base, face.has_cell, face.has_client),
-        ),
-        None => {
-            asm.issues.push(AsmIssue {
-                kind: "component-def-missing",
-                fatal: true,
-                line: Some(component.line),
-                message: format!(
+    let (flags, has_client, domains) =
+        match analyze_component_module(&component.type_name, source, &mut HashSet::new()) {
+            Some(face) => (
+                derive_component_slot_flags(face.has_base, face.has_cell, face.has_client),
+                face.has_client,
+                slot_domains(face.has_base, face.has_cell, face.has_client),
+            ),
+            None => {
+                asm.issues.push(AsmIssue {
+                    kind: "component-def-missing",
+                    fatal: true,
+                    line: Some(component.line),
+                    message: format!(
                     "EntityDef::loadComponents: failed to load component:{} (components/{}.def).",
                     component.type_name, component.type_name
                 ),
-            });
-            (
-                "BASE|CELL_PUBLIC|ENTITY_CLIENT_DATA_FLAGS".to_string(),
-                true,
-                vec!["cell", "base", "client"],
-            )
-        }
-    };
+                });
+                (
+                    "BASE|CELL_PUBLIC|ENTITY_CLIENT_DATA_FLAGS".to_string(),
+                    true,
+                    vec!["cell", "base", "client"],
+                )
+            }
+        };
 
     let origin = origin_label(module_name, "own");
     let entry = AsmProperty {
@@ -1550,7 +1589,11 @@ fn register_component_slot(module_name: &str, component: &CompView, source: &Sou
         });
     }
 
-    let declared = if component.utype > 0 { Some(component.utype) } else { None };
+    let declared = if component.utype > 0 {
+        Some(component.utype)
+    } else {
+        None
+    };
     asm.properties.last_mut().unwrap().declared_utype = declared;
     let Some(utype) = allocate_property_utype(
         declared,
@@ -1587,7 +1630,12 @@ fn register_component_slot(module_name: &str, component: &CompView, source: &Sou
     } else {
         let mut registered = false;
         for domain in &domains {
-            if asm.property_domains.get_mut(domain).unwrap().contains(&component.slot_name) {
+            if asm
+                .property_domains
+                .get_mut(domain)
+                .unwrap()
+                .contains(&component.slot_name)
+            {
                 asm.issues.push(AsmIssue {
                     kind: "property-name-conflict",
                     fatal: true,
@@ -1654,7 +1702,16 @@ fn simulate_method(
     for arg in &method.args {
         let arg_entry = parse_method_arg(method, arg, &origin, asm);
         asm.methods.last_mut().unwrap().args.push(arg_entry);
-        if asm.methods.last().unwrap().args.last().unwrap().utype.is_none() {
+        if asm
+            .methods
+            .last()
+            .unwrap()
+            .args
+            .last()
+            .unwrap()
+            .utype
+            .is_none()
+        {
             args_ok = false;
         }
     }
@@ -1708,7 +1765,11 @@ fn simulate_method(
         return;
     }
 
-    let declared = if method.utype > 0 { Some(method.utype) } else { None };
+    let declared = if method.utype > 0 {
+        Some(method.utype)
+    } else {
+        None
+    };
     asm.methods.last_mut().unwrap().declared_utype = declared;
     let resolved_utype = match declared {
         Some(declared) => {
@@ -1760,7 +1821,12 @@ fn simulate_method(
     asm.all_method_names.insert(method.name.clone());
 }
 
-fn parse_method_arg(method: &MethodView, arg: &ArgView, origin: &str, asm: &mut Assembly) -> AsmArg {
+fn parse_method_arg(
+    method: &MethodView,
+    arg: &ArgView,
+    origin: &str,
+    asm: &mut Assembly,
+) -> AsmArg {
     let line = method.line;
     let section_label = section_name(method.section);
     if arg.name != "ARRAY" {

@@ -222,7 +222,10 @@ fn handle_rpc(state: &mut ServerState, request: Request) -> Response {
         .and_then(|m| m.as_str())
         .unwrap_or("")
         .to_string();
-    let params = payload.get("params").cloned().unwrap_or(serde_json::Value::Null);
+    let params = payload
+        .get("params")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
     match state.rpc.dispatch(&method, params) {
         Ok(value) => Response::success(request.id, value),
         Err(msg) => {

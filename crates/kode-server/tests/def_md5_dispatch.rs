@@ -25,7 +25,10 @@ fn response_of(out: &[Outgoing]) -> &Value {
 
 fn call_md5(params: Value) -> Value {
     let mut state = ServerState::new();
-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
+    handle_message(
+        &mut state,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
     let out = handle_message(
         &mut state,
         request(
@@ -55,7 +58,9 @@ fn dispatch_minimal_anchor() {
     }));
     let md5 = r["md5"].as_str().expect("md5");
     assert_eq!(md5.len(), 32);
-    assert!(md5.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
+    assert!(md5
+        .chars()
+        .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
     // 与 frozen golden 的最小锚点一致(规范推导锚点)。
     let golden = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -73,15 +78,21 @@ fn dispatch_minimal_anchor() {
         .find(|s| s["name"] == "minimal-single-entity")
         .expect("anchor");
     assert_eq!(md5, anchor["md5"].as_str().unwrap());
-    assert_eq!(r["streamHex"].as_str().unwrap(), anchor["streamHex"].as_str().unwrap());
-    assert!(r["trace"].as_array().unwrap().len() > 0);
+    assert_eq!(
+        r["streamHex"].as_str().unwrap(),
+        anchor["streamHex"].as_str().unwrap()
+    );
+    assert!(!r["trace"].as_array().unwrap().is_empty());
 }
 
 #[test]
 fn dispatch_error_channel() {
     // 缺 def → error 经 RPC error 返回,不 panic。
     let mut state = ServerState::new();
-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
+    handle_message(
+        &mut state,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
     let out = handle_message(
         &mut state,
         request(

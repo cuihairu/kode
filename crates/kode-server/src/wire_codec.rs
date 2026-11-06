@@ -186,8 +186,12 @@ impl fmt::Display for WireError {
             WireError::AliasIdOverflow(id) => {
                 write!(f, "alias id {id} exceeds uint8 bound (use utype mode)")
             }
-            WireError::ArgumentCountMismatch { expected, actual } => write!(f, "expected {expected} arguments, got {actual}"),
-            WireError::MethodModeMismatch => write!(f, "method identifier does not match encoding mode"),
+            WireError::ArgumentCountMismatch { expected, actual } => {
+                write!(f, "expected {expected} arguments, got {actual}")
+            }
+            WireError::MethodModeMismatch => {
+                write!(f, "method identifier does not match encoding mode")
+            }
             WireError::NonAsciiString => write!(f, "STRING value contains non-ASCII bytes"),
             WireError::EmbeddedNulString => write!(f, "STRING value contains embedded NUL byte"),
             WireError::InvalidHex(s) => write!(f, "invalid hex string: {s}"),
@@ -271,11 +275,15 @@ impl<'a> WireCursor<'a> {
     }
 
     pub fn read_f32(&mut self) -> Result<f32, WireError> {
-        Ok(f32::from_le_bytes(self.take(4)?.try_into().expect("4 bytes")))
+        Ok(f32::from_le_bytes(
+            self.take(4)?.try_into().expect("4 bytes"),
+        ))
     }
 
     pub fn read_f64(&mut self) -> Result<f64, WireError> {
-        Ok(f64::from_le_bytes(self.take(8)?.try_into().expect("8 bytes")))
+        Ok(f64::from_le_bytes(
+            self.take(8)?.try_into().expect("8 bytes"),
+        ))
     }
 
     /// STRING(NUL 结尾无前缀;遇 NUL 或**非 ASCII** 字节即停,终止字节被消费)。
@@ -379,9 +387,7 @@ pub fn encode_value(
         }
         (WireLayout::Array(elem), WireValue::Array(items)) => {
             if items.len() as u64 > u64::from(u32::MAX) {
-                return Err(WireError::ArraySizeTooLarge {
-                    size: u32::MAX,
-                });
+                return Err(WireError::ArraySizeTooLarge { size: u32::MAX });
             }
             push_le_u32(out, items.len() as u32);
             for item in items {
@@ -594,7 +600,11 @@ impl WireSchema {
         self.resolve_inner(name, &mut visiting)
     }
 
-    fn resolve_inner(&self, name: &str, visiting: &mut BTreeSet<String>) -> Result<WireLayout, WireError> {
+    fn resolve_inner(
+        &self,
+        name: &str,
+        visiting: &mut BTreeSet<String>,
+    ) -> Result<WireLayout, WireError> {
         if let Some(layout) = builtin_layout(name) {
             return Ok(layout);
         }
@@ -610,10 +620,15 @@ impl WireSchema {
         Ok(layout)
     }
 
-    fn raw_to_layout(&self, raw: &RawType, visiting: &mut BTreeSet<String>) -> Result<WireLayout, WireError> {
+    fn raw_to_layout(
+        &self,
+        raw: &RawType,
+        visiting: &mut BTreeSet<String>,
+    ) -> Result<WireLayout, WireError> {
         match raw {
-            RawType::Builtin(b) => builtin_layout(b)
-                .ok_or_else(|| WireError::UnknownType(b.clone())),
+            RawType::Builtin(b) => {
+                builtin_layout(b).ok_or_else(|| WireError::UnknownType(b.clone()))
+            }
             RawType::Named(n) => self.resolve_inner(n, visiting),
             RawType::Array(elem) => Ok(WireLayout::Array(Box::new(
                 self.raw_to_layout(elem, visiting)?,
@@ -806,7 +821,10 @@ pub enum PropKind {
     /// SPACEID(u32)。
     SpaceId(u32),
     /// 普通属性(布局 + 值)。
-    Regular { layout: WireLayout, value: WireValue },
+    Regular {
+        layout: WireLayout,
+        value: WireValue,
+    },
 }
 
 /// 属性更新条目(parent/child id + 载荷)。
@@ -895,7 +913,11 @@ where
             let value = decode_value(&layout, &mut cur)?;
             PropKind::Regular { layout, value }
         };
-        entries.push(PropertyEntry { parent, child, kind });
+        entries.push(PropertyEntry {
+            parent,
+            child,
+            kind,
+        });
     }
     Ok((entity, entries))
 }
@@ -958,9 +980,15 @@ pub fn encode_method_args(
     out: &mut Vec<u8>,
 ) -> Result<(), WireError> {
     if call.arg_layouts.len() != call.args.len() {
-        return Err(WireError::ArgumentCountMismatch { expected: call.arg_layouts.len(), actual: call.args.len() });
+        return Err(WireError::ArgumentCountMismatch {
+            expected: call.arg_layouts.len(),
+            actual: call.args.len(),
+        });
     }
-    if !matches!((mode, call.method), (PropertyMode::Alias, MethodRef::Alias(_)) | (PropertyMode::Utype, MethodRef::Utype(_))) {
+    if !matches!(
+        (mode, call.method),
+        (PropertyMode::Alias, MethodRef::Alias(_)) | (PropertyMode::Utype, MethodRef::Utype(_))
+    ) {
         return Err(WireError::MethodModeMismatch);
     }
     match mode {
@@ -1088,7 +1116,7 @@ pub fn to_hex(bytes: &[u8]) -> String {
 
 /// 解析小写/大写 hex。
 pub fn from_hex(s: &str) -> Result<Vec<u8>, WireError> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return Err(WireError::InvalidHex(s.to_string()));
     }
     let mut out = Vec::with_capacity(s.len() / 2);
@@ -1267,19 +1295,25 @@ pub fn dump_wire_golden() -> String {
             "py_dict_pickle_frame",
             "datatype.cpp:1288-1296 PyDict=同 pickle 框架",
             WireLayout::PyDict,
-            WireValue::PyDict(vec![0x80, 0x04, 0x95, 0x04, 0x00, 0x00, 0x00, 0x7d, 0x94, 0x2e]),
+            WireValue::PyDict(vec![
+                0x80, 0x04, 0x95, 0x04, 0x00, 0x00, 0x00, 0x7d, 0x94, 0x2e,
+            ]),
         ),
         (
             "py_tuple_pickle_frame",
             "datatype.cpp:1344-1352 PyTuple=同 pickle 框架",
             WireLayout::PyTuple,
-            WireValue::PyTuple(vec![0x80, 0x04, 0x95, 0x04, 0x00, 0x00, 0x00, 0x29, 0x94, 0x2e]),
+            WireValue::PyTuple(vec![
+                0x80, 0x04, 0x95, 0x04, 0x00, 0x00, 0x00, 0x29, 0x94, 0x2e,
+            ]),
         ),
         (
             "py_list_pickle_frame",
             "datatype.cpp:1400-1408 PyList=同 pickle 框架",
             WireLayout::PyList,
-            WireValue::PyList(vec![0x80, 0x04, 0x95, 0x04, 0x00, 0x00, 0x00, 0x5d, 0x94, 0x2e]),
+            WireValue::PyList(vec![
+                0x80, 0x04, 0x95, 0x04, 0x00, 0x00, 0x00, 0x5d, 0x94, 0x2e,
+            ]),
         ),
         (
             "entitycall_full",
@@ -1358,8 +1392,7 @@ pub fn dump_wire_golden() -> String {
     let item_ids_layout = schema.resolve("ITEM_IDS").expect("resolve ITEM_IDS");
     let item_ids_value = WireValue::Array(vec![WireValue::U16(7), WireValue::U16(9)]);
     let mut out = Vec::new();
-    encode_value(&item_ids_layout, &item_ids_value, &mut out)
-        .expect("golden ITEM_IDS encode");
+    encode_value(&item_ids_layout, &item_ids_value, &mut out).expect("golden ITEM_IDS encode");
     let mut cur = WireCursor::new(&out);
     let back = decode_value(&item_ids_layout, &mut cur).expect("golden ITEM_IDS decode");
     assert_eq!(back, item_ids_value, "ITEM_IDS round-trip mismatch");
@@ -1400,7 +1433,12 @@ pub fn dump_wire_golden() -> String {
             &mut out,
         )
         .expect("golden prop stream alias encode");
-        (out, EntityRef::Full(100), PropertyMode::Alias, BasePropUtype::default())
+        (
+            out,
+            EntityRef::Full(100),
+            PropertyMode::Alias,
+            BasePropUtype::default(),
+        )
     };
     {
         let layouts: BTreeMap<u16, WireLayout> = account_entries_alias
@@ -1410,21 +1448,19 @@ pub fn dump_wire_golden() -> String {
                 _ => None,
             })
             .collect();
-        let (back_entity, back_entries) = decode_property_stream(
-            &out,
-            EntityRefKind::Full,
-            mode,
-            &base,
-            |_parent, child| {
+        let (back_entity, back_entries) =
+            decode_property_stream(&out, EntityRefKind::Full, mode, &base, |_parent, child| {
                 layouts
                     .get(&child)
                     .cloned()
                     .ok_or_else(|| WireError::UnknownType(format!("child {child}")))
-            },
-        )
-        .expect("golden prop stream alias decode");
+            })
+            .expect("golden prop stream alias decode");
         assert_eq!(back_entity, entity, "prop stream entity round-trip");
-        assert_eq!(back_entries, account_entries_alias, "prop stream alias entries");
+        assert_eq!(
+            back_entries, account_entries_alias,
+            "prop stream alias entries"
+        );
     }
     samples.push(serde_json::json!({
         "name": "prop_stream_account_alias",
@@ -1487,7 +1523,10 @@ pub fn dump_wire_golden() -> String {
         )
         .expect("golden prop stream utype decode");
         assert_eq!(back_entity, EntityRef::Full(100));
-        assert_eq!(back_entries, account_entries_utype, "prop stream utype entries");
+        assert_eq!(
+            back_entries, account_entries_utype,
+            "prop stream utype entries"
+        );
     }
     samples.push(serde_json::json!({
         "name": "prop_stream_account_utype",
@@ -1508,7 +1547,11 @@ pub fn dump_wire_golden() -> String {
         PropertyEntry {
             parent: 0,
             child: 1,
-            kind: PropKind::Position { x: 1.5, y: 2.5, z: 3.5 },
+            kind: PropKind::Position {
+                x: 1.5,
+                y: 2.5,
+                z: 3.5,
+            },
         },
         PropertyEntry {
             parent: 0,
@@ -1542,7 +1585,11 @@ pub fn dump_wire_golden() -> String {
             |_parent, child| Err(WireError::UnknownType(format!("child {child}"))),
         )
         .expect("golden prop stream special decode");
-        assert_eq!(back_entity, EntityRef::Alias(7), "alias entity id round-trip");
+        assert_eq!(
+            back_entity,
+            EntityRef::Alias(7),
+            "alias entity id round-trip"
+        );
         assert_eq!(back_entries, special_entries, "special base prop entries");
     }
     samples.push(serde_json::json!({
@@ -1563,11 +1610,15 @@ pub fn dump_wire_golden() -> String {
         PropertyEntry {
             parent: 0,
             child: 40000, // Property::position fixed msgid(messages_fixed_defaults.xml:388)
-            kind: PropKind::Position { x: -1.0, y: 0.0, z: 8.25 },
+            kind: PropKind::Position {
+                x: -1.0,
+                y: 0.0,
+                z: 8.25,
+            },
         },
         PropertyEntry {
             parent: 6, // 组件属性 utype(此处示意 6)
-            child: 1, // 组件内子属性 utype
+            child: 1,  // 组件内子属性 utype
             kind: PropKind::Regular {
                 layout: WireLayout::U16,
                 value: WireValue::U16(910),
@@ -1690,8 +1741,7 @@ pub fn dump_wire_golden() -> String {
     ];
     for (name, provenance, msg_id, body, variable) in frame_bodies {
         let mut out = Vec::new();
-        encode_message_frame(*msg_id, body, *variable, &mut out)
-            .expect("golden frame encode");
+        encode_message_frame(*msg_id, body, *variable, &mut out).expect("golden frame encode");
         let mut cur = WireCursor::new(&out);
         let (back_id, back_body) = decode_message_frame(&mut cur, *variable, Some(body.len()))
             .expect("golden frame decode");
@@ -1728,9 +1778,8 @@ fn encode_handler(params: serde_json::Value) -> Result<serde_json::Value, String
     let layout: WireLayout =
         serde_json::from_value(params.get("layout").cloned().unwrap_or_default())
             .map_err(|e| e.to_string())?;
-    let value: WireValue =
-        serde_json::from_value(params.get("value").cloned().unwrap_or_default())
-            .map_err(|e| e.to_string())?;
+    let value: WireValue = serde_json::from_value(params.get("value").cloned().unwrap_or_default())
+        .map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     encode_value(&layout, &value, &mut out).map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "hex": to_hex(&out) }))

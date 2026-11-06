@@ -313,11 +313,7 @@ mod tests {
             ],
         )
         .unwrap();
-        let phys = physical(&[
-            "tbl_Avatar",
-            "tbl_Avatar_items",
-            "tbl_Avatar_items_mods",
-        ]);
+        let phys = physical(&["tbl_Avatar", "tbl_Avatar_items", "tbl_Avatar_items_mods"]);
         let resolved = SchemaResolver::resolve(&schema, &phys).unwrap();
         (schema, resolved)
     }
@@ -326,7 +322,9 @@ mod tests {
     fn plan_orders_parent_first_and_binds_parent_id() {
         let (schema, resolved) = resolved();
         let planner = ExportPlanner::new(1000);
-        let plan = planner.plan(&schema, &resolved, &RuleSet::default(), None).unwrap();
+        let plan = planner
+            .plan(&schema, &resolved, &RuleSet::default(), None)
+            .unwrap();
         let tables: Vec<&str> = plan.queries.iter().map(|q| q.table.as_str()).collect();
         assert_eq!(
             tables,
@@ -335,7 +333,10 @@ mod tests {
         assert_eq!(plan.queries[0].filter, PlanFilter::RootId);
         assert_eq!(plan.queries[1].filter, PlanFilter::ParentId);
         assert_eq!(plan.queries[1].parent_table.as_deref(), Some("tbl_Avatar"));
-        assert_eq!(plan.queries[2].parent_table.as_deref(), Some("tbl_Avatar_items"));
+        assert_eq!(
+            plan.queries[2].parent_table.as_deref(),
+            Some("tbl_Avatar_items")
+        );
         assert_eq!(
             plan.queries[0].select_sql,
             "SELECT `id`, `sm_autoLoad`, `sm_name` FROM `tbl_Avatar` WHERE `id` = ?"
@@ -405,7 +406,9 @@ mod tests {
         );
         let resolved = SchemaResolver::resolve(&schema, &phys).unwrap();
         let planner = ExportPlanner::new(1000);
-        let plan = planner.plan(&schema, &resolved, &RuleSet::default(), None).unwrap();
+        let plan = planner
+            .plan(&schema, &resolved, &RuleSet::default(), None)
+            .unwrap();
         assert_eq!(plan.missing, vec!["tbl_Avatar_ghost".to_string()]);
         assert!(plan.denied.iter().any(|d| d.name == "kbe_entitylog"));
         // 缺失表不入查询序列。
@@ -425,8 +428,15 @@ mod tests {
         };
         let planner = ExportPlanner::new(1000);
         let plan = planner.plan(&schema, &resolved, &rules, None).unwrap();
-        let items = plan.queries.iter().find(|q| q.table == "tbl_Avatar_items").unwrap();
-        assert_eq!(items.columns, vec!["id", "parentID", "sm_autoLoad", "sm_value"]);
+        let items = plan
+            .queries
+            .iter()
+            .find(|q| q.table == "tbl_Avatar_items")
+            .unwrap();
+        assert_eq!(
+            items.columns,
+            vec!["id", "parentID", "sm_autoLoad", "sm_value"]
+        );
     }
 
     #[test]

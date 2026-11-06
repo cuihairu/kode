@@ -26,7 +26,10 @@ fn response_of(out: &[Outgoing]) -> &Value {
 
 fn rpc(params: Value) -> Value {
     let mut state = ServerState::new();
-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
+    handle_message(
+        &mut state,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
     let out = handle_message(
         &mut state,
         request(
@@ -69,7 +72,10 @@ fn registered_and_returns_findings_array() {
     let findings = result.get("findings").unwrap().as_array().unwrap();
     // 正确五进程拓扑 + Avatar(有 base/cell/persistent)+ dbmgr/baseapp/cellapp
     // 全在 → 零发现。
-    assert!(findings.is_empty(), "expected zero findings, got {findings:#?}");
+    assert!(
+        findings.is_empty(),
+        "expected zero findings, got {findings:#?}"
+    );
 }
 
 #[test]
@@ -87,7 +93,9 @@ fn missing_cellapp_produces_warning() {
     let findings = result.get("findings").unwrap().as_array().unwrap();
     let d1 = findings
         .iter()
-        .find(|f| f.get("code").and_then(|v| v.as_str()) == Some("kbengine.processTopologyMissingCellapp"))
+        .find(|f| {
+            f.get("code").and_then(|v| v.as_str()) == Some("kbengine.processTopologyMissingCellapp")
+        })
         .expect("D1 finding");
     assert_eq!(d1.get("target").unwrap(), "def");
     assert_eq!(d1.get("line").unwrap(), 5); // CellMethods <respawn> 行(AVATAR_DEF 第 5 行)

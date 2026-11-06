@@ -129,8 +129,8 @@ impl ServerHandler for KodeMcpServer {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListToolsResult, McpError>> + Send + '_ {
-        let mut result = ListToolsResult::default();
-        result.tools = vec![
+        let result = ListToolsResult {
+            tools: vec![
                 Self::tool(
                     "search_entities",
                     "Search KBEngine entity defs by entity name or tag (property/method name). Case-insensitive substring match.",
@@ -199,7 +199,9 @@ impl ServerHandler for KodeMcpServer {
                         &[],
                     ),
                 ),
-            ];
+            ],
+            ..Default::default()
+        };
         std::future::ready(Ok(result))
     }
 
