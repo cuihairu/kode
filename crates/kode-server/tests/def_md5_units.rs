@@ -727,3 +727,236 @@ fn kr_aud_85_duplicate_utype_in_same_module_still_errors() {
     let err = compute_def_md5(p).expect_err("同模块 Utype 冲突必须报错");
     assert!(err.contains("conflict"), "报错口径: {err}");
 }
+
+// ===========================================================================
+// KR-AUD-80/81(RSV-1/2):接口/组件导航引擎对拍夹具。
+// 引擎真值(本机 kbengine 源码取证):
+// - xml.cpp:113-119 getKey = kbe_trim(node->Value()):元素取标签名,文本取
+//   解码文本 trim;
+// - xml.cpp:72-95 enterNode = 沿 node 起兄弟链找 getKey==key 的**元素**,
+//   命中返回其**首个非注释子节点**(文本或元素皆可,非具名子元素查找);
+//   tinyxml2 DOM 无纯空白文本节点(Identify 先 SkipWhiteSpace 再分类,
+//   tinyxml2.cpp:715-723/782-786),首子节点扫描须跳过纯空白文本;
+// - entitydef.cpp:562-585 loadInterfaces:条目 getKey 必属
+//   {interface,Interface,type,Type} 否则 continue;interfaceNode 依次试四键;
+//   interfaceName = getKey(interfaceNode);接口内容经 loadAllDefDescriptions
+//   并入当前模块流(接口名本身不入流),def 缺失 → return false(md5 报错);
+// - entitydef.cpp:655-671 loadComponents:componentName=getKey(条目),
+//   componentNode=enterNode(条目,componentName),componentTypeName=
+//   getKey(enterNode(componentNode,"Type"))=<Type> 文本(trim),空 → false。
+// 修前(RSV-1/2):child_el 具名查找+取元素名——接口名恒 "Interface"、组件
+// 类型恒 "Type",接口内容整体缺席 md5。
+// ===========================================================================
+
+/// KR-AUD-80 夹具:Avatar 引一个接口,接口 def 带 1 属性 + 1 Cell 方法。
+fn kr_aud_80_params(interface_entry: &str, include_combat: bool) -> DefMd5Params {
+    let combat_def = "<root>\
+        <Properties>\
+            <hp>\
+                <Type> UINT32 </Type>\
+                <Flags> CELL_PUBLIC </Flags>\
+                <Persistent> true </Persistent>\
+            </hp>\
+        </Properties>\
+        <CellMethods>\
+            <onMove>\
+                <Arg> VECTOR3 </Arg>\
+            </onMove>\
+        </CellMethods>\
+    </root>"
+        .to_string();
+    let mut defs = [(
+        "Avatar".to_string(),
+        format!("<root><Interfaces>{interface_entry}</Interfaces></root>"),
+    )]
+    .into_iter()
+    .collect::<std::collections::HashMap<_, _>>();
+    if include_combat {
+        defs.insert("Combat".to_string(), combat_def);
+    }
+    DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs,
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    }
+}
+
+/// 引擎导航归一:文本/元素两形态 + 大小写四键 + 缩进排版,trim 后
+/// interfaceName 均为 "Combat" → md5 逐字节相同(entitydef.cpp:567-585,
+/// xml.cpp:72-95/113-119)。单形态入流已由上方 text/element 两测试覆盖,
+/// 此处锁**跨形态 md5 相等**——修前 interface_name 恒为元素名
+/// "Interface" → defs 无 Interface.def → Err(红)。
+#[test]
+fn kr_aud_80_interface_text_element_forms_engine_parity() {
+    let text_compact = compute_def_md5(kr_aud_80_params("<Interface> Combat </Interface>", true))
+        .expect("文本形态必须可计算(引擎 getKey(trim(text)))");
+    let text_pretty = compute_def_md5(kr_aud_80_params(
+        "<Interface>\n\t\tCombat\n\t</Interface>",
+        true,
+    ))
+    .expect("缩进文本形态:连续文本是单一节点,trim 后仍为 Combat");
+    let element_compact =
+        compute_def_md5(kr_aud_80_params("<Interface><Combat/></Interface>", true))
+            .expect("元素形态必须可计算(引擎 getKey(元素)=标签名)");
+    // 小写 interface/type 键同属引擎四键过滤(entitydef.cpp:562-565)。
+    let lowercase = compute_def_md5(kr_aud_80_params("<type> Combat </type>", true))
+        .expect("小写 type 键同样放行");
+
+    assert_eq!(text_compact.md5_hex, text_pretty.md5_hex, "文本两排版等价");
+    assert_eq!(
+        text_compact.md5_hex, element_compact.md5_hex,
+        "文本/元素两形态引擎导航归一(接口名不入流,内容相同)"
+    );
+    assert_eq!(text_compact.md5_hex, lowercase.md5_hex, "四键大小写等价");
+}
+
+/// 引擎对拍:缩进的**元素**形态照样解析——tinyxml2 的 DOM 里不存在
+/// 纯空白文本节点:Identify(tinyxml2.cpp:715-723)先 SkipWhiteSpace 再
+/// 分类,只有空白后跟真实文本才回退 p=start 建含空白前缀的文本节点
+/// (:782-786);默认 PRESERVE_WHITESPACE(xml.h:1732,引擎 new
+/// XMLDocument() 走默认)。故 `<Interface>\n<Combat/>\n</Interface>` 的
+/// 首个子节点就是 Combat 元素,interfaceName="Combat",md5 与紧凑形态
+/// 一致(Rust DOM 会保留纯空白文本节点,须在 enterNode 首子节点扫描里
+/// 跳过才能对齐引擎)。
+#[test]
+fn kr_aud_80_pretty_element_form_resolves_like_engine() {
+    let pretty = compute_def_md5(kr_aud_80_params(
+        "<Interface>\n\t\t<Combat/>\n\t</Interface>",
+        true,
+    ))
+    .expect("缩进元素形态:引擎 DOM 无纯空白文本节点,照样解析出 Combat");
+    let compact = compute_def_md5(kr_aud_80_params("<Interface><Combat/></Interface>", true))
+        .expect("紧凑元素形态");
+    // CRLF 排版同理:原始字节全是 C locale 空白,引擎照样不建节点。
+    let crlf = compute_def_md5(kr_aud_80_params(
+        "<Interface>\r\n\t\t<Combat/>\r\n\t</Interface>",
+        true,
+    ))
+    .expect("CRLF 缩进元素形态");
+    assert_eq!(
+        pretty.md5_hex, compact.md5_hex,
+        "缩进/紧凑元素形态 md5 归一"
+    );
+    assert_eq!(
+        crlf.md5_hex, compact.md5_hex,
+        "CRLF 与紧凑元素形态 md5 归一"
+    );
+}
+
+/// 实体解码晚于空白分类:引擎照建 `&#32;` 文本节点(GetStr 解码,
+/// tinyxml2.cpp:286-360;分类时原始字节 '&' 非空白),getKey=trim→空名
+/// → 走 ".def" 报错路径——与纯空白缩进(引擎不建节点)不同口径。
+#[test]
+fn kr_aud_80_entity_decoded_whitespace_is_a_real_node() {
+    let err = compute_def_md5(kr_aud_80_params(
+        "<Interface>&#32;<Combat/></Interface>",
+        true,
+    ))
+    .expect_err("实体解码出的空白文本节点引擎照建 → 接口名为空 → return false");
+    assert_eq!(err, "interface def not found: .def", "空名报错口径: {err}");
+}
+
+/// 接口 def 缺失 → 引擎 openSection 失败 return false;报错带解析出的接口名。
+#[test]
+fn kr_aud_80_missing_interface_def_errors_with_resolved_name() {
+    let err = compute_def_md5(kr_aud_80_params("<Interface> Combat </Interface>", false))
+        .expect_err("Combat.def 缺失必须报错");
+    assert_eq!(
+        err, "interface def not found: Combat.def",
+        "报错口径: {err}"
+    );
+}
+
+/// KR-AUD-81 夹具:Avatar 带 bag 组件,组件 def 带 1 属性 + 1 Base 方法。
+fn kr_aud_81_params(component_entry: &str, include_inventory: bool) -> DefMd5Params {
+    let inventory_def = "<root>\
+        <Properties>\
+            <slots>\
+                <Type> UINT32 </Type>\
+                <Flags> BASE </Flags>\
+                <Persistent> true </Persistent>\
+            </slots>\
+        </Properties>\
+        <BaseMethods>\
+            <pack>\
+                <Arg> UINT32 </Arg>\
+            </pack>\
+        </BaseMethods>\
+    </root>"
+        .to_string();
+    let avatar_def = format!("<root><Components>{component_entry}</Components></root>");
+    let mut defs = [("Avatar".to_string(), avatar_def)]
+        .into_iter()
+        .collect::<std::collections::HashMap<_, _>>();
+    if include_inventory {
+        defs.insert("Inventory".to_string(), inventory_def);
+    }
+    DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs,
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    }
+}
+
+/// KR-AUD-81:缩进排版鲁棒性——componentNode 可为纯空白文本节点,引擎
+/// enterNode 沿兄弟链(xml.cpp:72-95)仍命中 `<Type>` → md5 与紧凑形态
+/// 一致;流内含 bag 名 + EntityComponent 类型 + Inventory 模块名。
+#[test]
+fn kr_aud_81_component_type_name_reads_type_text() {
+    let result = compute_def_md5(kr_aud_81_params(
+        "<bag><Type> Inventory </Type><Persistent> true </Persistent></bag>",
+        true,
+    ))
+    .expect("组件按 <Type> 文本装载 Inventory.def");
+    assert!(
+        result.stream_hex.contains(&hex(b"Inventory")),
+        "Inventory 模块名(scriptdef_module.cpp:60)缺席: {}",
+        result.stream_hex
+    );
+    assert!(
+        result.stream_hex.contains(&hex(b"EntityComponent")),
+        "EntityComponent 类型(property.cpp:55)缺席: {}",
+        result.stream_hex
+    );
+    let pretty = compute_def_md5(kr_aud_81_params(
+        "<bag>\n\t\t<Type> Inventory </Type>\n\t\t<Persistent> true </Persistent>\n\t</bag>",
+        true,
+    ))
+    .expect("缩进组件形态引擎同样可装载");
+    assert_eq!(
+        result.md5_hex, pretty.md5_hex,
+        "组件导航对空白排版鲁棒(引擎 DOM 丢弃纯空白文本节点,兄弟链语义)"
+    );
+}
+
+/// <Type> 文本确实参与组件名解析:指向缺失 def 时报错点名该文本,
+/// 而非修前的 "Type"(元素名字面量)。
+#[test]
+fn kr_aud_81_type_text_is_the_component_name_not_the_literal() {
+    let err = compute_def_md5(kr_aud_81_params("<bag><Type> Ghost </Type></bag>", false))
+        .expect_err("Ghost.def 缺失必须报错");
+    assert!(
+        err.contains("Ghost"),
+        "报错必须点 <Type> 文本名(修前会点 \"Type\"): {err}"
+    );
+}
+
+/// 引擎 entitydef.cpp:668-671:<Type> 节点缺失时 componentTypeNameNode 为
+/// NULL → componentTypeName="" → return false(与 <Type> 文本为空白同一
+/// 报错口径,但走的是 enterNode 落空的 None 分支)。
+#[test]
+fn kr_aud_81_missing_type_element_errors_like_engine() {
+    let err = compute_def_md5(kr_aud_81_params(
+        "<bag><Persistent> true </Persistent></bag>",
+        true,
+    ))
+    .expect_err("无 <Type> 必须报错");
+    assert!(
+        err.contains("component name is NULL"),
+        "报错口径(entitydef.cpp:668-671): {err}"
+    );
+}
