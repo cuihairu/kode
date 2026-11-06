@@ -40,8 +40,10 @@ interface UriMergeState {
 }
 
 /** 盘上版本 token(异步):两次 stat 相同 = 同一版本(纯重复);不同 = 有真实写入。
- *  KR-AUD-30:事件热路径不再 statSync(同步 IO 阻塞主线程),改 promises.stat。 */
-const statVersionToken = async (fsPath: string): Promise<string | undefined> => {
+ *  KR-AUD-30:事件热路径不再 statSync(同步 IO 阻塞主线程),改 promises.stat。
+ *  HOT-VER:导出给文件版本簿(hotReloadFileVersion)复用——同一 token 口径,
+ *  watcher 事件流与手动触发路径共用,不另造第二套盘上版本判据。 */
+export const statVersionToken = async (fsPath: string): Promise<string | undefined> => {
   try {
     const stats = await fs.promises.stat(fsPath);
     return `${stats.mtimeMs}:${stats.size}`;
