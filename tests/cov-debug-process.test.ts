@@ -67,10 +67,25 @@ const makeTempDir = (prefix: string): string => {
 };
 
 /** 假解释器:可执行 shell 脚本冒充 python3(spawn 面只看存在与退出码) */
-const writeFakeInterpreter = (dir: string, body: string): string => {
+/** 假解释器:POSIX 写 sh 脚本;win32 写 python3.js(node 主体)+ .cmd 转发
+ * (Windows 无 shebang 语义,绝对路径经 spawnProcess→cmd /c 运行)。
+ * 返回可直接作为 interpreterPath 传给被测 spawn 面的路径。 */
+const writeFakeInterpreter = (dir: string, shBody: string, jsBody: string): string => {
   fs.mkdirSync(dir, { recursive: true });
+  if (process.platform === 'win32') {
+    const jsFile = path.join(dir, 'python3.js');
+    fs.writeFileSync(jsFile, `${jsBody}\n`, 'utf8');
+    const cmdFile = path.join(dir, 'python3.cmd');
+    // node 走绝对路径:被测用例会把 PATH 收窄到本 bin,@node 按 PATH 找不到。
+    fs.writeFileSync(
+      cmdFile,
+      `@echo off\r\n@"${process.execPath}" "%~dp0python3.js" %*\r\n`,
+      'utf8'
+    );
+    return cmdFile;
+  }
   const file = path.join(dir, 'python3');
-  fs.writeFileSync(file, `#!/bin/sh\n${body}\n`, 'utf8');
+  fs.writeFileSync(file, `#!/bin/sh\n${shBody}\n`, 'utf8');
   fs.chmodSync(file, 0o755);
   return file;
 };
@@ -191,7 +206,11 @@ describe('defaultDebugpyInstallRunner(真实 spawn 安装通道)', () => {
     // 假解释器无视 -m pip 参数直接 sleep 10s(等价 pip 挂起);300ms 截止组杀
     setDebugpyInstallTimeoutMsForTests(300);
     const bin = makeTempDir('kode-pip-hang-');
-    const interpreter = writeFakeInterpreter(bin, 'sleep 10');
+    const interpreter = writeFakeInterpreter(
+      bin,
+      'sleep 10',
+      'setInterval(function () {}, 10000);'
+    );
     const started = Date.now();
     try {
       const result = await defaultDebugpyInstallRunner(interpreter);
@@ -206,8 +225,12 @@ describe('defaultDebugpyInstallRunner(真实 spawn 安装通道)', () => {
 
   it('假解释器零退出:ok 带输出尾三行(更早行剔除)', async () => {
     const bin = makeTempDir('kode-pip-');
-    writeFakeInterpreter(bin, 'printf \'l1\\nl2\\nl3\\nl4\\n\'');
-    const result = await defaultDebugpyInstallRunner(path.join(bin, 'python3'));
+    const interp = writeFakeInterpreter(
+      bin,
+      'printf \'l1\\nl2\\nl3\\nl4\\n\'',
+      'console.log(\'l1\');console.log(\'l2\');console.log(\'l3\');console.log(\'l4\');'
+    );
+    const result = await defaultDebugpyInstallRunner(interp);
     expect(result.ok).toBe(true);
     expect(result.detail).toContain('l2 | l3 | l4');
     expect(result.detail).not.toContain('l1');
@@ -227,11 +250,16 @@ describe('defaultDebugpyInstallRunner(真实 spawn 安装通道)', () => {
 describe('debugpyPreflightDeps(真实 spawn 探测面)', () => {
   it('PATH 上的假解释器:版本探测零退出,预检 kind=ok 带版本', async () => {
     const bin = makeTempDir('kode-preflight-');
-    writeFakeInterpreter(bin, 'printf \'1.8.0\\n\'');
+    writeFakeInterpreter(bin, 'printf \'1.8.0\\n\'', 'console.log(\'1.8.0\');');
     process.env.PATH = bin;
     const status = await checkInterpreterDebugpy(debugpyPreflightDeps());
     expect(status.kind).toBe('ok');
-    expect(status.interpreterPath).toBe(path.join(bin, 'python3'));
+    // WIN-3:win32 PATH 候选含 python3.cmd(.cmd shim 形态),期望随平台取后缀。
+    const expectedInterpreter =
+      process.platform === 'win32'
+        ? path.join(bin, 'python3.cmd')
+        : path.join(bin, 'python3');
+    expect(status.interpreterPath).toBe(expectedInterpreter);
     expect(status.version).toBe('1.8.0');
   }, 8000);
 
@@ -281,7 +309,11 @@ describe('syncDebugpyPackage 默认依赖链(真实 spawn + 真 fs)', () => {
     fs.mkdirSync(src, { recursive: true });
     fs.writeFileSync(path.join(src, '__init__.py'), "__version__ = '1.8.0'\n", 'utf8');
     fs.writeFileSync(path.join(src, 'server.py'), '# payload\n', 'utf8');
-    writeFakeInterpreter(bin, `printf '{"version":"1.8.0","dir":"${src}"}\\n'`);
+    writeFakeInterpreter(
+      bin,
+      `printf '{"version":"1.8.0","dir":"${src}"}\\n'`,
+      `console.log(${JSON.stringify(JSON.stringify({ version: '1.8.0', dir: src }))});`
+    );
     process.env.PATH = bin;
 
     const memento = makeMemento();
@@ -305,7 +337,7 @@ describe('syncDebugpyPackage 默认依赖链(真实 spawn + 真 fs)', () => {
   }, 8000);
 
   it('解释器输出非 JSON:解析失败如实 error 带原文截断', async () => {
-    writeFakeInterpreter(bin, 'printf \'not-json-at-all\\n\'');
+    writeFakeInterpreter(bin, 'printf \'not-json-at-all\\n\'', 'console.log(\'not-json-at-all\');');
     process.env.PATH = bin;
 
     const result = await syncDebugpyPackage({ workspaceState: makeMemento() }, assets);
@@ -316,7 +348,11 @@ describe('syncDebugpyPackage 默认依赖链(真实 spawn + 真 fs)', () => {
   }, 8000);
 
   it('报出的目录不在盘:如实 error 带路径', async () => {
-    writeFakeInterpreter(bin, 'printf \'{"version":"1.8.0","dir":"/nonexistent-kode-debugpy-dir"}\\n\'');
+    writeFakeInterpreter(
+      bin,
+      'printf \'{"version":"1.8.0","dir":"/nonexistent-kode-debugpy-dir"}\\n\'',
+      `console.log(${JSON.stringify(JSON.stringify({ version: '1.8.0', dir: '/nonexistent-kode-debugpy-dir' }))});`
+    );
     process.env.PATH = bin;
 
     const result = await syncDebugpyPackage({ workspaceState: makeMemento() }, assets);
@@ -329,7 +365,11 @@ describe('syncDebugpyPackage 默认依赖链(真实 spawn + 真 fs)', () => {
     const src = path.join(makeTempDir('kode-sync-src2-'), 'debugpy');
     fs.mkdirSync(src, { recursive: true });
     fs.writeFileSync(path.join(src, '__init__.py'), 'pass\n', 'utf8');
-    writeFakeInterpreter(bin, `printf '{"version":"1.8.0","dir":"${src}"}\\n'`);
+    writeFakeInterpreter(
+      bin,
+      `printf '{"version":"1.8.0","dir":"${src}"}\\n'`,
+      `console.log(${JSON.stringify(JSON.stringify({ version: '1.8.0', dir: src }))});`
+    );
     process.env.PATH = bin;
     const target = path.join(assets, 'scripts', 'common', 'debugpy');
     fs.mkdirSync(target, { recursive: true });
@@ -760,16 +800,21 @@ describe('debugpyWaitAtStartup 补角', () => {
 
 describe('collectPythonServiceFacts(注册/配置/磁盘三面)', () => {
   const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
   let home = '';
 
   beforeEach(() => {
     home = makeTempDir('kode-pylance-');
+    // WIN:os.homedir() 在 win32 读 USERPROFILE(非 HOME)——两头都喂假家目录,
+    // 否则 installDirExists 探到开发者真实家目录里的 Pylance 残留。
     process.env.HOME = home;
+    process.env.USERPROFILE = home;
     fakeExtensionList.splice(0);
   });
 
   afterEach(() => {
     process.env.HOME = originalHome;
+    process.env.USERPROFILE = originalUserProfile;
     fakeExtensionList.splice(0);
   });
 

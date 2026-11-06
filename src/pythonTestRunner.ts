@@ -8,7 +8,7 @@
  * 器没有 pytest 时如实 errored 一条指明缺口,不冒充测试失败。
  */
 
-import { spawn } from 'child_process';
+import { spawnProcess } from './processManager';
 
 /** 一个待跑条目(来自 TSK-004 的发现面) */
 export interface PythonTestRunItem {
@@ -77,7 +77,9 @@ interface PytestNodeResult {
 export function parsePytestOutput(output: string): Map<string, PytestNodeResult> {
   const results = new Map<string, PytestNodeResult>();
   const outcomeRank: Record<PythonTestOutcome, number> = { failed: 0, errored: 1, skipped: 2, passed: 3 };
-  for (const line of output.split('\n')) {
+  // WIN-3:Windows 上 pytest 输出为 CRLF——按 \r?\n 切行;残留 \r 会击穿
+  // SUMMARY_PATTERN(`.` 不匹配 \r,$ 不能回退过 \r),失败摘要的 message 挂不上。
+  for (const line of output.split(/\r?\n/)) {
     const verbose = VERBOSE_OUTCOME_PATTERN.exec(line);
     if (verbose) {
       const node = verbose[1];
@@ -299,7 +301,7 @@ export function spawnTestProcess(
 ): Promise<PythonTestExecResult> {
   const timeoutMs = options.timeoutMs ?? PYTEST_PROCESS_TIMEOUT_MS;
   return new Promise(resolve => {
-    const child = spawn(request.command, request.args, { cwd: request.cwd });
+    const child = spawnProcess(request.command, request.args, { cwd: request.cwd });
     let stdout = '';
     let stderr = '';
     let timedOut = false;

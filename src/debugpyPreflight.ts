@@ -7,7 +7,7 @@
  * (debugpyPreflightAllowsInjection)。
  */
 
-import { spawn } from 'child_process';
+import { spawnProcess } from './processManager';
 import { compareVersions, EMBEDDED_PYTHON_VERSION, MIN_DEBUGPY_VERSION } from './autoDebugpy';
 import { resolveProfileInterpreter, type InterpreterResolution } from './profileInterpreter';
 
@@ -98,7 +98,7 @@ const runInterpreterCodeDefault = (
 ): Promise<{ stdout: string; exitCode: number | null }> =>
   new Promise(resolve => {
     try {
-      const child = spawn(interpreterPath, ['-c', code], { windowsHide: true });
+      const child = spawnProcess(interpreterPath, ['-c', code], { windowsHide: true });
       let stdout = '';
       let settled = false;
       const finish = (exitCode: number | null): void => {

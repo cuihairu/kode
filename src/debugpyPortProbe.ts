@@ -8,10 +8,9 @@
  * 装完/端口开了才附加,绝不假成功。
  */
 
-import { spawn } from 'child_process';
 import * as net from 'net';
 import type { DebugpyPreflightStatus } from './debugpyPreflight';
-import { killProcessTree } from './processManager';
+import { killProcessTree, spawnProcess } from './processManager';
 
 /** 端口探测超时:与 telnet 探测同口径(1.5s),不通就分类,不干等 */
 export const DEBUGPY_PORT_PROBE_TIMEOUT_MS = 1500;
@@ -54,6 +53,16 @@ export const defaultTcpConnect: TcpConnectFn = (host, port, timeoutMs) =>
           finish({ open: false, reason: 'refused', detail: 'ECONNREFUSED' });
         } else if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN') {
           finish({ open: false, reason: 'unresolved-host', detail: error.code });
+        } else if (
+          // WIN:不通/被丢弃在 win32 上常即时报 ETIMEDOUT/EHOSTUNREACH/ENETUNREACH
+          // 而非等截止——口径同「timeout=网络不通或被防火墙丢弃」;detail 保留
+          // 码并注明探测截止毫秒(调用面与断言都按截止口径消费)。
+          error.code === 'ETIMEDOUT' ||
+          error.code === 'EHOSTUNREACH' ||
+          error.code === 'ENETUNREACH' ||
+          error.code === 'EACCES'
+        ) {
+          finish({ open: false, reason: 'timeout', detail: `${error.code} (deadline ${timeoutMs}ms)` });
         } else {
           finish({ open: false, reason: 'unknown', detail: error.code ?? String(error) });
         }
@@ -199,9 +208,9 @@ export function setDebugpyInstallTimeoutMsForTests(ms: number | null): void {
 export const defaultDebugpyInstallRunner: DebugpyInstallRunner = interpreterPath =>
   new Promise(resolve => {
     try {
-      const child = spawn(interpreterPath, ['-m', 'pip', 'install', '-U', 'debugpy'], {
+      const child = spawnProcess(interpreterPath, ['-m', 'pip', 'install', '-U', 'debugpy'], {
         windowsHide: true,
-        // POSIX 下设进程组长:超时组杀(负 pid 信号)不留 pip 衍生的构建孙进程
+        // POSIX 下设进程组长:超时组杀(负 pid 信号)防 pip 派生的孙进程残留
         detached: process.platform !== 'win32'
       });
       let output = '';
