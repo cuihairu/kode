@@ -266,6 +266,7 @@
 | `kbengine.logAutoConnect` | `true` | 启动服务器时自动连接日志收集器 |
 | `kbengine.maxLogEntries` | `10000` | 最大日志条目数 |
 | `kbengine.webviewConsoleLogs` | `true` | 把 Logs 面板页面的 console 输出与未捕获异常收进 LogHub（src/webviewConsoleBridge.ts） |
+| `kbengine.webviewLocale` | `"auto"` | Webview 面板显示语言；`auto` 跟随 VS Code 显示语言 |
 | `kbengine.generator.defOutputPath` | `"scripts/entity_defs"` | 代码生成器：.def 输出目录 |
 | `kbengine.generator.pythonOutputPath` | `"scripts"` | 代码生成器：Python 输出目录 |
 | `kbengine.generator.generatePython` | `true` | 代码生成器：是否同时生成 Python 文件 |

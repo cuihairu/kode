@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { randomNonce } from './webviewSecurity';
+import { WEBVIEW_THEME_CSS } from './webviewTheme';
+import { htmlLang, resolvePanelLocale, strings } from './webviewStrings';
 import {
   discoverLocalComponents,
   querySpaces,
@@ -207,12 +209,12 @@ export class RuntimeQueryWebView {
     if (message.command === 'addWatcher') {
       const path = typeof message.path === 'string' ? message.path.trim() : '';
       if (!path) {
-        this.error = { kind: 'watchList', message: 'Enter a watcher path to add.' };
+        this.error = { kind: 'watchList', message: strings(resolvePanelLocale()).runtimeQuery.errEnterPathToAdd };
         this.postState();
         return;
       }
       if (this.watchPaths.includes(path)) {
-        this.error = { kind: 'watchList', message: `Watcher path already on the list: ${path}` };
+        this.error = { kind: 'watchList', message: strings(resolvePanelLocale()).runtimeQuery.errDuplicatePath(path) };
         this.postState();
         return;
       }
@@ -228,7 +230,7 @@ export class RuntimeQueryWebView {
       this.error = {
         kind: message.command === 'querySpaces' ? 'spaces' : 'watcher',
         componentKey,
-        message: 'Select a running component first.'
+        message: strings(resolvePanelLocale()).runtimeQuery.errSelectComponent
       };
       this.postState();
       return;
@@ -254,7 +256,7 @@ export class RuntimeQueryWebView {
       if (!this.options.enabled?.()) {
         this.error = {
           kind: 'watchList',
-          message: 'Result stream is off by default; enable kbengine.runtimeQuery.enabled.'
+          message: strings(resolvePanelLocale()).runtimeQuery.errStreamDisabled
         };
         this.postState();
         return;
@@ -267,7 +269,7 @@ export class RuntimeQueryWebView {
 
     const path = typeof message.path === 'string' ? message.path.trim() : '';
     if (!path) {
-      this.error = { kind: 'watcher', componentKey, message: 'Enter a watcher path.' };
+      this.error = { kind: 'watcher', componentKey, message: strings(resolvePanelLocale()).runtimeQuery.errEnterPath };
       this.postState();
       return;
     }
@@ -366,55 +368,138 @@ export class RuntimeQueryWebView {
 
   private render(): string {
     const nonce = randomNonce();
+    const locale = resolvePanelLocale();
+    const t = strings(locale).runtimeQuery;
     return `<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';"></head>
+<html lang="${htmlLang(locale)}">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<style>
+${WEBVIEW_THEME_CSS}
+body { padding: 0; }
+/* UI-04:左操作轨 + 右结果页签(原型 #rt) */
+.rt-body { flex: 1; display: flex; min-height: calc(100vh - 49px); }
+#rt-rail { width: 280px; flex: none; border-right: 1px solid var(--kode-border); padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; background: var(--kode-surface); }
+#rt-rail .fld label { display: block; font-size: var(--kode-t-tag); color: var(--kode-fg-3); margin-bottom: 4px; }
+#rt-rail .row { display: flex; gap: 8px; }
+#rt-rail .sel, #rt-rail .inp { width: 100%; }
+#rt-rail .inp.mono { font-family: var(--kode-mono); }
+#watch-list { list-style: none; }
+#watch-list li { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-bottom: 1px solid var(--kode-border-soft); font-family: var(--kode-mono); font-size: 12px; color: var(--kode-accent); }
+#watch-list li .x { margin-left: auto; color: var(--kode-fg-4); cursor: pointer; border: none; background: none; font-size: 12px; }
+#watch-list li .x:hover { color: var(--kode-err); }
+#rt-rail .hint { font-size: var(--kode-t-tag); color: var(--kode-fg-4); line-height: 1.5; }
+#rt-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.rt-tabs { display: flex; border-bottom: 1px solid var(--kode-border); flex: none; }
+.rt-tab { padding: 8px 18px; font-size: var(--kode-t-meta); color: var(--kode-fg-3); cursor: pointer; border: none; background: none; border-bottom: 2px solid transparent; }
+.rt-tab.on { color: #fff; border-bottom-color: var(--kode-accent); font-weight: 600; }
+.rt-pane { flex: 1; overflow: auto; }
+#watcher-result th, #spaces-result th { font-weight: 500; color: var(--kode-fg-3); text-align: left; padding: 7px 14px; border-bottom: 1px solid var(--kode-border); font-size: var(--kode-t-tag); }
+#watcher-result td, #spaces-result td { padding: 6px 14px; border-bottom: 1px solid var(--kode-border-soft); font-family: var(--kode-mono); font-size: 12px; color: var(--kode-fg-2); }
+#watcher-result td.path, #spaces-result td.path { color: var(--kode-fg); }
+#message { padding: 6px 14px; color: var(--kode-err); font-size: var(--kode-t-meta); min-height: 1.2em; }
+#spaces-result td.path { color: var(--kode-fg); }
+.rt-empty { padding: 40px 0; text-align: center; color: var(--kode-fg-4); font-size: var(--kode-t-meta); }
+</style>
+</head>
 <body>
-  <main>
-    <header><h1>Runtime Queries</h1><button id="refresh" type="button">Refresh components</button></header>
-    <section>
-      <label for="component">Component</label>
-      <select id="component"></select>
-      <button id="spaces" type="button">Query spaces</button>
-    </section>
-    <section>
-      <label for="path">Watcher path</label>
-      <input id="path" type="text" value="/" spellcheck="false">
-      <button id="watcher" type="button">Query watcher</button>
-    </section>
-    <section>
-      <button id="add-watcher" type="button">Add to watch list</button>
-      <button id="stream" type="button" disabled>Start stream</button>
-    </section>
-    <ul id="watch-list"></ul>
-    <output id="message" aria-live="polite"></output>
-    <table id="watcher-result" hidden>
-      <caption>Watcher query results</caption>
-      <thead>
-        <tr>
-          <th scope="col">Path</th>
-          <th scope="col">Kind</th>
-          <th scope="col">Value</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-    <p id="empty" hidden>No watcher results yet.</p>
-    <p><strong>Spaces</strong></p>
-    <pre id="result" hidden></pre>
-  </main>
+  <header class="kode-head">
+    <h1>${t.title}</h1>
+    <button id="refresh" class="kode-btn primary" type="button">${t.refreshComponents}</button>
+  </header>
+  <div class="rt-body">
+    <nav id="rt-rail">
+      <div class="fld">
+        <label for="component">${t.component}</label>
+        <select id="component" class="sel"></select>
+      </div>
+      <div class="fld">
+        <label for="path">${t.watcherPath}</label>
+        <div class="row">
+          <input id="path" class="inp mono" type="text" value="/" spellcheck="false">
+          <button id="watcher" class="kode-btn primary" type="button">${t.query}</button>
+        </div>
+      </div>
+      <div class="fld">
+        <label>${t.watchList}</label>
+        <ul id="watch-list"></ul>
+        <div class="row" style="margin-top:10px">
+          <button id="add-watcher" class="kode-btn" style="flex:1" type="button">${t.addToWatch}</button>
+          <button id="stream" class="kode-btn primary" style="flex:1" type="button" disabled>▶ ${t.startStream}</button>
+        </div>
+        <div class="hint" style="margin-top:6px">${t.streamHint}</div>
+      </div>
+    </nav>
+    <main id="rt-main">
+      <div class="rt-tabs">
+        <button id="tab-watcher" class="rt-tab on" type="button">${t.watcherTab}</button>
+        <button id="tab-spaces" class="rt-tab" type="button">${t.spacesTab}</button>
+      </div>
+      <output id="message" aria-live="polite"></output>
+      <section class="rt-pane" id="pane-watcher">
+        <table id="watcher-result" hidden class="kode-table">
+          <caption hidden>${t.watcherTab}</caption>
+          <thead>
+            <tr>
+              <th scope="col">${t.colPath}</th>
+              <th scope="col">${t.colKind}</th>
+              <th scope="col">${t.colValue}</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p id="empty" class="rt-empty" hidden>${t.emptyWatcher}</p>
+      </section>
+      <section class="rt-pane" id="pane-spaces" hidden>
+        <div style="padding:8px 14px;border-bottom:1px solid var(--kode-border-soft)">
+          <button id="spaces" class="kode-btn primary" type="button">${t.spacesQuery}</button>
+        </div>
+        <table id="spaces-result" hidden class="kode-table">
+          <thead>
+            <tr>
+              <th scope="col">${t.colSpaceId}</th>
+              <th scope="col">${t.colCellappId}</th>
+              <th scope="col">${t.colScriptModule}</th>
+              <th scope="col">${t.colCells}</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p id="spaces-empty" class="rt-empty" hidden>${t.emptySpaces}</p>
+      </section>
+    </main>
+  </div>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
+    const kindLabels = ${JSON.stringify({ value: t.kindValue, child: t.kindChild })};
+    const streamLabels = ${JSON.stringify({ start: `▶ ${t.startStream}`, stop: `■ ${t.stopStream}` })};
+    const removeLabel = ${JSON.stringify(t.remove)};
     const component = document.getElementById('component');
     const path = document.getElementById('path');
     const message = document.getElementById('message');
-    const result = document.getElementById('result');
     const watcherTable = document.getElementById('watcher-result');
     const watcherBody = document.getElementById('watcher-result').querySelector('tbody');
+    const spacesTable = document.getElementById('spaces-result');
+    const spacesBody = spacesTable.querySelector('tbody');
+    const spacesEmpty = document.getElementById('spaces-empty');
     const empty = document.getElementById('empty');
     const addWatcher = document.getElementById('add-watcher');
     const stream = document.getElementById('stream');
     const watchList = document.getElementById('watch-list');
+    const paneWatcher = document.getElementById('pane-watcher');
+    const paneSpaces = document.getElementById('pane-spaces');
+    const tabWatcher = document.getElementById('tab-watcher');
+    const tabSpaces = document.getElementById('tab-spaces');
+    const setTab = (which) => {
+      const watcher = which !== 'spaces';
+      paneWatcher.hidden = !watcher;
+      paneSpaces.hidden = watcher;
+      tabWatcher.classList.toggle('on', watcher);
+      tabSpaces.classList.toggle('on', !watcher);
+    };
+    tabWatcher.addEventListener('click', () => setTab('watcher'));
+    tabSpaces.addEventListener('click', () => setTab('spaces'));
     document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
     document.getElementById('spaces').addEventListener('click', () => vscode.postMessage({ command: 'querySpaces', componentKey: component.value }));
     document.getElementById('watcher').addEventListener('click', () => vscode.postMessage({ command: 'queryWatcher', componentKey: component.value, path: path.value }));
@@ -424,13 +509,14 @@ export class RuntimeQueryWebView {
       watcherBody.replaceChildren(...rows.map(row => {
         const tr = document.createElement('tr');
         const cells = [
-          { tag: 'th', scope: 'row', text: row.path },
-          { tag: 'td', text: row.kind },
+          { tag: 'th', scope: 'row', text: row.path, cls: 'path' },
+          { tag: 'td', text: kindLabels[row.kind] || row.kind },
           { tag: 'td', text: row.value }
         ];
         for (const cell of cells) {
           const element = document.createElement(cell.tag);
           if (cell.scope) element.scope = cell.scope;
+          if (cell.cls) element.className = cell.cls;
           element.textContent = cell.text;
           tr.append(element);
         }
@@ -438,6 +524,20 @@ export class RuntimeQueryWebView {
       }));
       watcherTable.hidden = rows.length === 0;
       empty.hidden = rows.length !== 0;
+    };
+    const renderSpaces = (groups) => {
+      const snapshots = groups.flatMap(group => group.spaces || []);
+      spacesBody.replaceChildren(...snapshots.map(snapshot => {
+        const tr = document.createElement('tr');
+        for (const text of [snapshot.spaceID, snapshot.cellappID, snapshot.scriptModuleName, (snapshot.cells || []).join(', ')]) {
+          const td = document.createElement('td');
+          td.textContent = String(text);
+          tr.append(td);
+        }
+        return tr;
+      }));
+      spacesTable.hidden = snapshots.length === 0;
+      spacesEmpty.hidden = snapshots.length !== 0;
     };
     window.addEventListener('message', event => {
       const state = event.data;
@@ -453,6 +553,7 @@ export class RuntimeQueryWebView {
       const error = state.error ? state.error.kind + ': ' + state.error.message : '';
       message.textContent = error;
       renderWatchers(state.result ? state.result.watcherRows || [] : []);
+      renderSpaces(state.result ? state.result.spaces || [] : []);
       const watchPaths = state.watchPaths || [];
       watchList.replaceChildren(...watchPaths.map(item => {
         const li = document.createElement('li');
@@ -460,16 +561,14 @@ export class RuntimeQueryWebView {
         label.textContent = item;
         const remove = document.createElement('button');
         remove.type = 'button';
-        remove.textContent = 'Remove';
+        remove.className = 'x';
+        remove.textContent = removeLabel;
         remove.addEventListener('click', () => vscode.postMessage({ command: 'removeWatcher', path: item }));
         li.append(label, remove);
         return li;
       }));
-      stream.textContent = state.streaming ? 'Stop stream' : 'Start stream';
+      stream.textContent = state.streaming ? streamLabels.stop : streamLabels.start;
       stream.disabled = !state.streaming && watchPaths.length === 0;
-      const spaces = state.result ? state.result.spaces || [] : [];
-      result.textContent = spaces.length ? JSON.stringify(spaces, null, 2) : '';
-      result.hidden = spaces.length === 0;
     });
     vscode.postMessage({ command: 'refresh' });
   </script>

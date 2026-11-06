@@ -269,6 +269,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.logAutoConnect` | `true` | Auto-connect the log collector when starting the server |
 | `kbengine.maxLogEntries` | `10000` | Maximum number of log entries kept |
 | `kbengine.webviewConsoleLogs` | `true` | Capture the Logs panel page console output and uncaught exceptions into LogHub (src/webviewConsoleBridge.ts) |
+| `kbengine.webviewLocale` | `"auto"` | Webview panel display language; `auto` follows the VS Code display language |
 | `kbengine.generator.defOutputPath` | `"scripts/entity_defs"` | Code generator: output directory for .def files |
 | `kbengine.generator.pythonOutputPath` | `"scripts"` | Code generator: output directory for Python files |
 | `kbengine.generator.generatePython` | `true` | Code generator: whether to also emit Python files |
