@@ -163,7 +163,29 @@ const zh = {
     groupQuality: '质量'
   },
   entityFlow: {
-    title: 'KBEngine 实体架构流程'
+    title: 'KBEngine 实体架构流程',
+    statProperties: '属性',
+    statMethods: '方法',
+    statExposed: '客户端可调',
+    statCallbacks: '客户端回调',
+    statPersistent: '持久属性',
+    statBlocked: '客户端调不到',
+    refresh: '刷新',
+    exportMarkdown: '导出 Markdown',
+    exportSvg: '导出 SVG',
+    exportPng: '导出 PNG',
+    engineCitation: '引擎出处',
+    blockedHeading: '客户端调不到的方法',
+    actorClient: '客户端实体',
+    actorBase: 'baseapp 实体',
+    actorCell: 'cellapp 实体',
+    actorAoi: '空间广播（其它 cell / 其它客户端）',
+    actorDb: 'dbmgr（MySQL）',
+    notExposed: '非 Exposed',
+    colMember: '成员',
+    colDescription: '说明',
+    colSource: '来源',
+    colLocation: '声明位置'
   },
   defCallChain: {
     title: 'KBEngine Def 调用链'
@@ -323,7 +345,29 @@ const en: typeof zh = {
     groupQuality: 'Quality'
   },
   entityFlow: {
-    title: 'KBEngine Entity Architecture Flow'
+    title: 'KBEngine Entity Architecture Flow',
+    statProperties: 'Properties',
+    statMethods: 'Methods',
+    statExposed: 'Client-callable',
+    statCallbacks: 'Client callbacks',
+    statPersistent: 'Persistent properties',
+    statBlocked: 'Client-unreachable',
+    refresh: 'Refresh',
+    exportMarkdown: 'Export Markdown',
+    exportSvg: 'Export SVG',
+    exportPng: 'Export PNG',
+    engineCitation: 'Engine citation',
+    blockedHeading: 'Methods unreachable from clients',
+    actorClient: 'Client entity',
+    actorBase: 'baseapp entity',
+    actorCell: 'cellapp entity',
+    actorAoi: 'Space broadcast (other cells / other clients)',
+    actorDb: 'dbmgr (MySQL)',
+    notExposed: 'Not exposed',
+    colMember: 'Member',
+    colDescription: 'Description',
+    colSource: 'Source',
+    colLocation: 'Declared at'
   },
   defCallChain: {
     title: 'KBEngine Def Call Chain'
