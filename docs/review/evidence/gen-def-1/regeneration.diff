@@ -1,6 +1,6 @@
-diff -ru /tmp/gen-def-1-audit/base3/synthetic_entity_types.pyi /tmp/gen-def-1-audit/current3/synthetic_entity_types.pyi
---- /tmp/gen-def-1-audit/base3/synthetic_entity_types.pyi	2026-11-06 22:14:48.686807924 +0800
-+++ /tmp/gen-def-1-audit/current3/synthetic_entity_types.pyi	2026-11-06 22:14:50.454654973 +0800
+diff -ru /tmp/gen-def-1-audit/base4/synthetic_entity_types.pyi /tmp/gen-def-1-audit/current4/synthetic_entity_types.pyi
+--- /tmp/gen-def-1-audit/base4/synthetic_entity_types.pyi	2026-11-06 22:27:03.632221884 +0800
++++ /tmp/gen-def-1-audit/current4/synthetic_entity_types.pyi	2026-11-06 22:27:04.933109334 +0800
 @@ -22,5 +22,11 @@
      # source: .def:6 -> types.xml:8
      talent: FixedArray[TALENT_NODE]
@@ -13,9 +13,9 @@ diff -ru /tmp/gen-def-1-audit/base3/synthetic_entity_types.pyi /tmp/gen-def-1-au
 +
      # source: .def:40 (CellMethods)
      def shout(arg1: int) -> None: ...
-diff -ru /tmp/gen-def-1-audit/base3/synthetic_guard_audit.txt /tmp/gen-def-1-audit/current3/synthetic_guard_audit.txt
---- /tmp/gen-def-1-audit/base3/synthetic_guard_audit.txt	2026-11-06 22:14:48.686807924 +0800
-+++ /tmp/gen-def-1-audit/current3/synthetic_guard_audit.txt	2026-11-06 22:14:50.454654973 +0800
+diff -ru /tmp/gen-def-1-audit/base4/synthetic_guard_audit.txt /tmp/gen-def-1-audit/current4/synthetic_guard_audit.txt
+--- /tmp/gen-def-1-audit/base4/synthetic_guard_audit.txt	2026-11-06 22:27:03.633221798 +0800
++++ /tmp/gen-def-1-audit/current4/synthetic_guard_audit.txt	2026-11-06 22:27:04.933109334 +0800
 @@ -1,4 +1,4 @@
  entities = 1
 -is None guards = 0

@@ -1,17 +1,17 @@
-HEAD=7c51b6d8328f16bdfd2bbd3fa95e66fc6c8146e0
-DATE=2026-11-06T22:21:04+08:00
-GATE=vitest run --maxWorkers=4 (final rebind; reduced contention to keep wall-clock budget tests stable)
+HEAD=ac2f0a82d629c732c33ab8da8e320e9b9eb35769
+DATE=2026-11-06T22:27:45+08:00
+GATE=vitest run --maxWorkers=4 (final rebind; reduced contention for wall-clock budget tests)
+NOTE: later commits touching only log/doc evidence files do not change test outcomes.
 
  RUN  v5.1.0 /home/cui/wt-kode-gen1
 
 
  Test Files  562 passed | 4 skipped (566)
       Tests  6945 passed | 21 skipped (6966)
-   Start at  22:21:04
-   Duration  115.25s (tests 65%, import 32%, worker 2%, transform 2%)
+   Start at  22:27:45
+   Duration  88.76s (tests 68%, import 29%, worker 2%, transform 1%)
 
-    Isolate  566 workers spawned · ~241ms startup each (spawn + environment, per file)
-             at least ~33.92s faster with isolate: false — reuses workers across files instead of one per file
+    Isolate  566 workers spawned · ~182ms startup each (spawn + environment, per file)
+             at least ~25.63s faster with isolate: false — reuses workers across files instead of one per file
 
 EXIT=0
-NOTE: log binds code-under-test 7c51b6d8328f16bdfd2bbd3fa95e66fc6c8146e0; later commits are evidence-only (log/doc files, no src/tests changes).

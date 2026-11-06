@@ -32,3 +32,5 @@ TSC_EXIT=0
 -- eslint tests --ext ts @ baseline ae36cd7
 101 problems (101 errors, 0 warnings)
 -- note: vitest-full.log binds code-under-test 7c51b6d; commits 3c08eb9..HEAD are evidence-only (log/doc files), no src/tests changes
+
+== gate log rebind @ 2026-11-06T22:29:23+08:00: final evidence commit 2c3b507 (test-file changes of 3c08eb9..HEAD covered by this run's code-under-test)

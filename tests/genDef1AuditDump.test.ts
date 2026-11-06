@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { beforeAll, afterEach, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
 import { EntityMappingManager } from '../src/entityMapping';
 import { buildEntityTypeStubPlan, buildEntityTypeStubLineMap } from '../src/entityTypeStubs';
@@ -125,9 +125,9 @@ const dumpEntityArtifacts = (
     modules.set(entry.name, 'scripts.entity_defs.kbe_types');
   }
   const lineMap = buildEntityTypeStubLineMap(plan.entries, customTypes, modules);
-  // 行映射必须真出条目(Map 显式序列化 + 非空断言;JSON.stringify(Map) → {}
-  // 与空回落都是假审计)
-  const propertyLines = mapToObject(lineMap?.propertyLines ?? new Map());
+  // 行映射必须真出条目(无空回落;JSON.stringify(Map) → {} 是假审计)
+  expect(lineMap, `${label}: line map must exist`).not.toBeNull();
+  const propertyLines = mapToObject(lineMap!.propertyLines);
   expect(
     Object.keys(propertyLines).length,
     `${label}: property line map must be populated`
@@ -184,7 +184,8 @@ describe('GEN-DEF-1 regeneration audit dump', () => {
     expect(typePlan.content, 'demo kbe_types content must not be null').not.toBeNull();
     writeFileSync(join(OUT_DIR, 'demo_kbe_types.pyi'), typePlan.content ?? '');
     const demoTypeMap = buildPythonTypeStubLineMap(typePlan.entries);
-    const demoEntryLines = mapToObject(demoTypeMap?.entryLines ?? new Map());
+    expect(demoTypeMap, 'demo kbe_types line map must exist').not.toBeNull();
+    const demoEntryLines = mapToObject(demoTypeMap!.entryLines);
     expect(
       Object.keys(demoEntryLines).length,
       'demo kbe_types entry line map must be populated'
@@ -193,7 +194,7 @@ describe('GEN-DEF-1 regeneration audit dump', () => {
       join(OUT_DIR, 'demo_kbe_types_line_map.json'),
       JSON.stringify({
         entryLines: demoEntryLines,
-        propertyLines: mapToObject(demoTypeMap?.propertyLines ?? new Map())
+        propertyLines: mapToObject(demoTypeMap!.propertyLines)
       }, null, 2)
     );
   });
@@ -209,7 +210,8 @@ describe('GEN-DEF-1 regeneration audit dump', () => {
     expect(typePlan.content, 'fantasydemo kbe_types content must not be null').not.toBeNull();
     writeFileSync(join(OUT_DIR, 'fantasydemo_kbe_types.pyi'), typePlan.content ?? '');
     const fantasyTypeMap = buildPythonTypeStubLineMap(typePlan.entries);
-    const fantasyEntryLines = mapToObject(fantasyTypeMap?.entryLines ?? new Map());
+    expect(fantasyTypeMap, 'fantasydemo kbe_types line map must exist').not.toBeNull();
+    const fantasyEntryLines = mapToObject(fantasyTypeMap!.entryLines);
     expect(
       Object.keys(fantasyEntryLines).length,
       'fantasydemo kbe_types entry line map must be populated'
@@ -218,7 +220,7 @@ describe('GEN-DEF-1 regeneration audit dump', () => {
       join(OUT_DIR, 'fantasydemo_kbe_types_line_map.json'),
       JSON.stringify({
         entryLines: fantasyEntryLines,
-        propertyLines: mapToObject(fantasyTypeMap?.propertyLines ?? new Map())
+        propertyLines: mapToObject(fantasyTypeMap!.propertyLines)
       }, null, 2)
     );
   });
