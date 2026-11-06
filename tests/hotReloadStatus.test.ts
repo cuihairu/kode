@@ -10,17 +10,21 @@ import {
   type OutputChannelLike,
   type StatusBarItemLike
 } from '../src/hotReloadStatus';
+import { HOT_RELOAD_TOGGLE_COMMAND } from '../src/hotReloadToggle';
 import {
   channels,
   configurationOverrides,
   lastFileSystemWatcher,
   statusBars,
-  workspaceEvents
+  workspaceEvents,
+  workspaceState
 } from './helpers/vscodeStub';
 
 // 热更新状态栏反馈(KODE2 backlog HR-UI-001):状态机 Watch Off → Ready →
 // Sending → Sent(未确认) → Failed。口径:动作完成且无错只记未确认,禁标
-// 成功/Applied;点击状态栏项开日志;状态渲染节流合并;deactivate 释放。
+// 成功/Applied;用户令 2026-11-06:点击状态栏项 = 一键关/开(执行
+// kbengine.hotReload.toggle,写回配置),开日志走 showLog 命令(提示里的
+// 「打开日志」按钮同源);状态渲染节流合并;deactivate 释放。
 // 控制器用注入假体直测;装配级转移表经 setupHotReload 的 status 注入驱动。
 
 const OFF_FACE = '$(eye-closed) 热更: 关';
@@ -92,13 +96,13 @@ const makeStatus = (timers: HotReloadTimerDeps) => {
       channelState.disposed = true;
     }
   };
-  let handler: (() => void) | undefined;
+  const handlers = new Map<string, () => void>();
   const commandState = { disposed: false };
   const controller = new HotReloadStatusController({
     createStatusBarItem: () => bar,
     createOutputChannel: () => channel,
-    registerCommand: (_command, registered) => {
-      handler = registered;
+    registerCommand: (command, registered) => {
+      handlers.set(command, registered);
       return {
         dispose: (): void => {
           commandState.disposed = true;
@@ -116,9 +120,27 @@ const makeStatus = (timers: HotReloadTimerDeps) => {
     showCalls,
     channelState,
     commandState,
-    clickBar: (): void => handler?.()
+    /** 按状态栏项当前绑定的命令执行(点击 = 走 bar.command) */
+    clickBar: (): void => {
+      const command = typeof bar.command === 'string' ? bar.command : undefined;
+      if (command !== undefined) {
+        handlers.get(command)?.();
+      }
+    },
+    /** 直接执行某条已注册命令(开日志等旁路面) */
+    run: (command: string): void => {
+      handlers.get(command)?.();
+    },
+    /** 已注册命令 id(双向对账断言用) */
+    registeredCommands: (): string[] => [...handlers.keys()]
   };
 };
+
+/** 让注入的异步链跑完(命令写回与默认热更发送都在微任务里) */
+const flushMicrotasks = (): Promise<void> =>
+  new Promise(resolve => {
+    setImmediate(resolve);
+  });
 
 /** 排干节流窗:尾沿渲染后再开的空窗一并收敛(有界循环防挂死) */
 const settle = (clock: { pending: () => number; tick: () => number }): void => {
@@ -135,15 +157,25 @@ describe('formatHotReloadTime(时间格式)', () => {
 });
 
 describe('HotReloadStatusController(渲染与节流)', () => {
-  it('构造即上屏 Watch Off 并挂点击开日志命令', () => {
+  it('构造即上屏 Watch Off,状态栏点击绑定一键关命令(写回配置)', async () => {
     const clock = makeTimers();
     const fake = makeStatus(clock.timers);
+    workspaceState.workspaceConfigurationUpdates.length = 0;
 
     expect(fake.bar.text).toBe(OFF_FACE);
     expect(fake.bar.visible).toBe(true);
-    expect(fake.bar.command).toBe(HOT_RELOAD_SHOW_LOG_COMMAND);
+    expect(fake.bar.command).toBe(HOT_RELOAD_TOGGLE_COMMAND);
     settle(clock);
+
     fake.clickBar();
+    await flushMicrotasks();
+
+    expect(workspaceState.workspaceConfigurationUpdates).toContainEqual(
+      expect.objectContaining({ key: 'kbengine.hotReload.enabled', value: false })
+    );
+    // 开日志命令仍独立注册(提示里的「打开日志」按钮走它)
+    expect(fake.registeredCommands()).toContain(HOT_RELOAD_SHOW_LOG_COMMAND);
+    fake.run(HOT_RELOAD_SHOW_LOG_COMMAND);
     expect(fake.showCalls).toHaveLength(1);
   });
 
@@ -262,7 +294,8 @@ describe('setupHotReload 状态机转移表(装配级)', () => {
     });
   };
 
-  it('默认关:初始态 Watch Off;配置改开 → Ready', () => {
+  it('显式关:初始态 Watch Off;配置改开 → Ready', () => {
+    configurationOverrides.set('kbengine', { hotReload: { enabled: false } });
     const clock = makeTimers();
     const statusClock = makeTimers();
     const fake = makeStatus(statusClock.timers);
@@ -378,26 +411,39 @@ describe('setupHotReload 状态机转移表(装配级)', () => {
     expect(fake.bar.text).toBe(OFF_FACE);
   });
 
-  it('转移表:到点但未配动作名 → 状态回落 Ready 不悬在 Sending', () => {
+  it('转移表:到点未配动作名 → 走默认热更请求(2xx 记已发送(未确认),不悬在 Sending)', async () => {
     configurationOverrides.set('kbengine', { hotReload: { enabled: true } });
     const clock = makeTimers();
     const statusClock = makeTimers();
     const fake = makeStatus(statusClock.timers);
     const runCalls: string[] = [];
+    const sent: string[] = [];
 
     setupHotReload(makeContext(), name => void runCalls.push(name), {
       timers: clock.timers,
-      status: fake.controller
+      status: fake.controller,
+      defaultHotfix: {
+        transport: request => {
+          sent.push(`${request.method} ${request.url} ${request.body}`);
+          return Promise.resolve({ ok: true, status: 200, durationMs: 1, body: 'ok' });
+        }
+      }
     });
     settle(statusClock);
 
     lastFileSystemWatcher.current!.fireChange({ fsPath: '/a.py' } as never);
     clock.tick();
     settle(statusClock);
+    expect(fake.bar.text).toBe(SENDING_FACE);
+    await flushMicrotasks();
+    settle(statusClock);
 
     expect(runCalls).toEqual([]);
-    expect(fake.bar.text).toBe(READY_FACE);
-    expect(fake.lines.some(line => line.includes('触发到点但未配动作名'))).toBe(true);
+    expect(sent).toEqual(['POST http://127.0.0.1:8090/hotfix module_name=a']);
+    expect(fake.bar.text).toBe(SENT_FACE);
+    expect(fake.bar.text).not.toMatch(/成功|Applied/i);
+    expect(fake.lines.some(line => line.includes('默认热更: POST http://127.0.0.1:8090/hotfix'))).toBe(true);
+    expect(fake.lines.some(line => line.includes('结果: 已发送(未确认)'))).toBe(true);
   });
 
   it('deactivate:复合 disposable 释放 watcher 与状态栏/通道/命令', () => {
@@ -440,7 +486,7 @@ describe('setupHotReload 状态机转移表(装配级)', () => {
     expect(bar).toBeDefined();
     expect(bar.alignment).toBe(vscode.StatusBarAlignment.Right);
     expect(bar.priority).toBe(98);
-    expect(bar.command).toBe(HOT_RELOAD_SHOW_LOG_COMMAND);
+    expect(bar.command).toBe(HOT_RELOAD_TOGGLE_COMMAND);
     expect(bar.visible).toBe(true);
     expect(bar.text).toBe(OFF_FACE);
     expect(channels[channelCount].name).toBe(HOT_RELOAD_LOG_CHANNEL_NAME);

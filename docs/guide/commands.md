@@ -713,10 +713,20 @@ The flow graph panel supports:
 - Title: `Show Hot Reload Log`
 - Purpose: open the 「KBEngine 热更」 OUTPUT channel — the audit log behind the hot-reload status bar item (HR-UI-001)
 - Behavior:
-  - The status bar item `$(eye…) 热更: …` reflects the watch state machine: Watch Off (`kbengine.hotReload.enabled=false` or empty globs) → Ready (watchers built) → Sending (debounce elapsed, quick action fired) → Sent(unverified) → Failed; clicking the item runs this command
+  - The status bar item `$(eye…) 热更: …` reflects the watch state machine: Watch Off (`kbengine.hotReload.enabled=false` or empty globs) → Ready (watchers built) → Sending (debounce elapsed, request fired) → Sent(unverified) → Failed; clicking the item runs `kbengine.hotReload.toggle` (one-key on/off), and the toggle notice's 「打开日志」 button opens this log
   - Honest semantics: a completed action without errors is only 「已发送(未确认)」 (sent, unverified) — no business receipt is verified, so the UI never claims the module was applied (receipt verification belongs to the HR-STATE series)
-  - Each trigger logs time / trigger files (merged by debounce) / the debounce value, plus the outcome line (sent-unverified / failed / skipped-no-action-name); log lines are appended immediately and are not subject to the status-bar throttle
-  - Hidden from the command palette (`when: false`) — the status bar item is the intended entry
+  - Each trigger logs time / trigger files (merged by debounce) / the debounce value, plus the request line and the outcome line (sent-unverified / failed); log lines are appended immediately and are not subject to the status-bar throttle
+  - Hidden from the command palette (`when: false`) — reach it from the toggle notice's 「打开日志」 button or the first-run notice
+
+### `kbengine.hotReload.toggle`
+
+- Title: `Hot Reload: Toggle Auto Watch On/Off`
+- Purpose: one-key on/off of automatic hot reload — writes `kbengine.hotReload.enabled` back to configuration (workspace settings when the window has a workspace file, otherwise user settings) instead of flipping an in-memory flag
+- Behavior:
+  - Hot reload is **on by default** (user order 2026-11-06); the command flips the effective value, and the configuration-changed listener tears down / rebuilds the watchers immediately — no window restart
+  - Bound to the 「热更」 status bar item, so clicking the status bar is the one-key off; a non-modal notice confirms the new state and offers 「打开日志」
+  - With no `kbengine.hotReload.actionName` set, a save sends the default hot-reload request `POST http://127.0.0.1:8090/hotfix` with body `module_name=<module>`; an unreachable engine is reported as **failed** in the status bar and log, never as success
+  - A failed configuration write is reported honestly (log + error notification) and leaves the status machine face untouched
 
 
 ### `kbengine.hotReload.showBatchSummary`

@@ -5574,6 +5574,15 @@ export function activate(context: vscode.ExtensionContext) {
     status: hotReloadStatus,
     targetState: hotReloadTargetStateWiring,
     defGate: hotReloadDefGate,
+    // 默认热更请求(用户令 2026-11-06):未配 actionName 时保存即 POST
+    // http://127.0.0.1:8090/hotfix,body 带 module_name=<模块名>。包探针与
+    // HTTP 快捷请求同一口径(__init__.py 才算包段);脚本根取双名称配置,
+    // 未配则回落 ${module} 包边界扫描(hotReloadDefaultHotfix 内部)。
+    defaultHotfix: {
+      isPackageDir: dirPath => fs.existsSync(path.join(dirPath, '__init__.py')),
+      resolveScriptRoot: () =>
+        vscode.workspace.getConfiguration('kbengine').get<string>('hotReload.tempEdit.scriptRoot', '') ?? ''
+    },
     noteEngineDigest: (key, file, body) => hotReloadEngineDigestRegister.note(key, file, body),
     // IDE-HOT-100:def 结构闸拦下 → 状态机标 RESTART_REQUIRED 呈现(与日志
     // 同源;拦下本身是 HOT-005 既有面)。targetId 经动作名反查,解不到该

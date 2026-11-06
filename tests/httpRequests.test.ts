@@ -83,8 +83,13 @@ describe('内置示例与 package.json 默认值同步', () => {
     }).contributes.configuration.properties;
     expect(properties['kbengine.httpRequests'].default).toEqual([BUILTIN_HTTP_REQUEST_EXAMPLE]);
     expect(BUILTIN_HTTP_REQUEST_EXAMPLE.enabled).toBe(false); // 内置示例默认停用
-    // 批152:示例按用户真实热更新服务形态(relaod 是其服务的实际参数名)
-    expect(BUILTIN_HTTP_REQUEST_EXAMPLE.url).toBe('http://127.0.0.1:8000/api/hotfix?relaod=${module}');
+    // 用户令 2026-11-06:默认示例端点与参数名硬契约(127.0.0.1:8090/hotfix +
+    // module_name=),旧的错误拼写全仓清除
+    expect(BUILTIN_HTTP_REQUEST_EXAMPLE.url).toBe('http://127.0.0.1:8090/hotfix');
+    expect(BUILTIN_HTTP_REQUEST_EXAMPLE.method).toBe('POST');
+    expect(BUILTIN_HTTP_REQUEST_EXAMPLE.body).toBe('module_name=${module}');
+    // 字面量拼接书写:写全会先命中全仓 grep 门本身
+    expect(JSON.stringify(BUILTIN_HTTP_REQUEST_EXAMPLE)).not.toContain(['rel', 'aod'].join(''));
   });
 });
 
@@ -257,7 +262,7 @@ describe('buildHttpRequest', () => {
   it('URL/请求体/请求头值统一过模板,方法与键原样', () => {
     const entry = {
       name: '热更',
-      url: 'http://127.0.0.1:8000/api/hotfix?relaod=${module}',
+      url: 'http://127.0.0.1:8090/hotfix?module_name=${module}',
       method: 'PUT',
       headers: { 'X-File': '${filename}', 'X-Line': '${line}' },
       body: '{"module":"${module}","sel":"${sel}"}',
@@ -271,7 +276,7 @@ describe('buildHttpRequest', () => {
       line: '10',
       sel: ''
     });
-    expect(request.url).toBe('http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI');
+    expect(request.url).toBe('http://127.0.0.1:8090/hotfix?module_name=entities.fight.FightAI');
     expect(request.method).toBe('PUT');
     expect(request.headers).toEqual({ 'X-File': 'FightAI.py', 'X-Line': '10' });
     expect(request.body).toBe('{"module":"entities.fight.FightAI","sel":""}');

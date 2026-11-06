@@ -11,11 +11,21 @@ import { applyAcceptedReceipt } from './hotReloadReceipt';
 import { HOT_RELOAD_APPLIED_SETTLE_MS, settleAppliedStatus, verifyAppliedReceipt } from './hotReloadAppliedCheck';
 import { createDefStructuralGate, type DefStructuralGate } from './hotReloadDefGate';
 import { sendFilesViaReloadChannel } from './hotReloadChannelSend';
+import { sendDefaultHotfix } from './hotReloadDefaultHotfix';
+import { showHotReloadFirstRunNotice, HOT_RELOAD_NOTICE_KEY } from './hotReloadNotice';
+import { writeHotReloadEnabled } from './hotReloadToggle';
 import type { ReloadTransport } from './hotReloadTransport';
+import type { HttpTransport } from './httpRequestService';
+import type { PackageDirProbe } from './httpRequests';
+
+export { HOT_RELOAD_TOGGLE_COMMAND } from './hotReloadToggle';
 
 // 自动热重载(功能差距盘点 G5,docs/reference-feature-gap.md):文件保存/监视 →
-// 触发指定 quick action。门控默认关防误触;启用后才按 kbengine.hotReload.globs
-// 建 watcher,事件去抖合并连发保存,配置变更联动拆建 watcher。
+// 触发指定 quick action。用户令 2026-11-06:门控默认开启(配置缺失也开,
+// 显式写死 false 仍关);启用后按 kbengine.hotReload.globs 建 watcher,
+// 事件去抖合并连发保存,配置变更联动拆建 watcher。未配动作名时保存即按
+// 默认热更请求 POST http://127.0.0.1:8090/hotfix(body 带 module_name=<模块名>),
+// 一键关 = 状态栏点击 / kbengine.hotReload.toggle(写回配置)。
 // 状态栏反馈(HR-UI-001):装配内建状态机控制器,Watch Off/Ready/Sending/
 // Sent(未确认)/Failed 上屏;动作完成且无错只记未确认,不校验业务回执。
 // IDE-REV-021:注入 targetState 即按「rootId × targetId」双维台账逐发送
@@ -51,13 +61,15 @@ const readGlobs = (raw: unknown): string[] => {
   return kept.length > 0 ? kept : [...HOT_RELOAD_DEFAULT_GLOBS];
 };
 
-/** 容忍式读取:类型不符或负去抖一律回落默认,配置写坏也不会拖垮装配 */
+/** 容忍式读取:类型不符或负去抖一律回落默认,配置写坏也不会拖垮装配。
+ * enabled 缺省/类型错一律回落「开」(用户令 2026-11-06 默认开启),显式
+ * 写死 false 原样读出仍关——用户显式关要生效。 */
 export function readHotReloadSettings(reader: ConfigReader): HotReloadSettings {
-  const enabled = reader.get<boolean>('enabled', false);
+  const enabled = reader.get<boolean>('enabled', true);
   const actionName = reader.get<string>('actionName', '');
   const debounceMs = reader.get<number>('debounceMs', HOT_RELOAD_DEFAULT_DEBOUNCE_MS);
   return {
-    enabled: typeof enabled === 'boolean' ? enabled : false,
+    enabled: typeof enabled === 'boolean' ? enabled : true,
     actionName: typeof actionName === 'string' ? actionName : '',
     globs: readGlobs(reader.get<unknown>('globs', undefined)),
     debounceMs:
@@ -151,6 +163,19 @@ export interface SetupHotReloadOptions {
   /** 时钟注入口(测试用);缺省真 Date.now,用于 applied 核验窗口结算 */
   readonly now?: () => number;
   /**
+   * 默认热更请求注入面(用户令 2026-11-06):未配 actionName 时保存即发
+   * `POST http://127.0.0.1:8090/hotfix`(body 带 module_name=<模块名>)。
+   * 三件均可缺省——transport 缺省走真 node http,包探针/脚本根由装配注入。
+   */
+  readonly defaultHotfix?: {
+    /** 传输通道(测试注入脚本化应答);缺省 httpRequestService 的真传输 */
+    readonly transport?: HttpTransport;
+    /** ${module} 包边界探针(目录含 __init__.py 判定) */
+    readonly isPackageDir?: PackageDirProbe;
+    /** 双名称解析的脚本资源根(kbengine.hotReload.tempEdit.scriptRoot) */
+    readonly resolveScriptRoot?: () => string;
+  };
+  /**
    * IDE-HOT-102 部署通道接线:返回本 profile 配置的 ReloadTransport 与目标
    * 标识(经 resolveReloadTransport 解出;未配返回 null)。注入即该次发送走
    * 部署通道(回执流直喂台账),不注入则回落既有 actionName 通道。
@@ -242,12 +267,30 @@ export function setupHotReload(
     const settings = readHotReloadSettings(hotReloadSectionReader());
     const triggers = [...pendingTriggers];
     pendingTriggers.clear();
-    if (settings.actionName.length === 0) {
-      // 到点但无动作名:状态回落就绪,跳过仍记日志,不能悬在 Sending
-      status.setSkippedNoAction(triggers);
-      return;
-    }
     status.setSending(triggers, settings.debounceMs);
+    // 默认热更请求(用户令 2026-11-06):未配动作名时保存即 POST
+    // http://127.0.0.1:8090/hotfix,body 带 module_name=<模块名>;成败按传输
+    // 事实——引擎没起(ECONNREFUSED)如实 failed,2xx 也只到「已发送(未确认)」。
+    const runDefaultHotfix = (): void => {
+      const injected = options.defaultHotfix ?? {};
+      void sendDefaultHotfix([...triggers], {
+        transport: injected.transport,
+        isPackageDir: injected.isPackageDir,
+        scriptRoot: injected.resolveScriptRoot?.() ?? '',
+        onRequest: request => status.log(`默认热更: ${request.method} ${request.url} · body=${request.body}`)
+      }).then(
+        result => {
+          if (result.ok) {
+            status.setSentUnverified();
+            return;
+          }
+          status.setFailed(result.detail.length > 0 ? result.detail : '默认热更请求失败');
+        },
+        (error: unknown) => {
+          status.setFailed(error instanceof Error ? error.message : String(error));
+        }
+      );
+    };
     // IDE-HOT-102:审计五要素(谁/何时/文件/通道/结果)的「谁」与日志行——
     // 触发源缺省 watcher-auto(自动监视);通道面、actionName 回落面与 def 闸
     // 拦下面共用同一行式(「何时」由 OUTPUT 通道行前缀时间承担)。
@@ -256,6 +299,12 @@ export function setupHotReload(
       status.log(`审计: 触发源=${channelAuditSource} | 文件=${files.length} 个 | 通道=${channelLabel} | 结果=${resultText}`);
     };
     const proceed = (): void => {
+      if (settings.actionName.length === 0) {
+        // 未配动作名不再空转(旧行为 setSkippedNoAction):改发默认热更请求。
+        // 走到这里说明 def 结构闸已放行本批,结构性 def 变更照旧拦下不发。
+        runDefaultHotfix();
+        return;
+      }
       const fail = (error: unknown): void => {
         status.setFailed(error instanceof Error ? error.message : String(error));
         reportActionError(error);
@@ -645,4 +694,30 @@ export function setupHotReload(
     }
   });
   apply();
+  // 首激活一次性非模态提示(用户令 2026-11-06):默认开 + 保存即自动发请求,
+  // 用户该知道发到哪、怎么一键关;弹出即记 flag(可永久关闭),不挡编辑器。
+  // 极简装配上下文(无 workspaceState)不弹——没有地方记 flag,不能每次激活都扰。
+  const noticeState: typeof context.workspaceState | undefined = context.workspaceState;
+  if (noticeState !== undefined && readHotReloadSettings(hotReloadSectionReader()).enabled) {
+    void showHotReloadFirstRunNotice({
+      isShown: () => noticeState.get<boolean>(HOT_RELOAD_NOTICE_KEY) === true,
+      markShown: () => noticeState.update(HOT_RELOAD_NOTICE_KEY, true),
+      show: async (message, ...items) => {
+        const choice = await vscode.window.showInformationMessage(message, ...items);
+        if (choice === '打开日志') {
+          status.showLog();
+        }
+        return choice;
+      },
+      // 「立即关闭」写回失败必须如实上报(不静默吞):状态栏日志 + 错误提示
+      turnOff: () =>
+        writeHotReloadEnabled(false).catch((error: unknown) => {
+          const detail = error instanceof Error ? error.message : String(error);
+          status.log(`首激活提示「立即关闭」写回配置失败: ${detail}`);
+          void Promise.resolve(vscode.window.showErrorMessage(`热更开关写回配置失败: ${detail}`)).catch(
+            () => undefined
+          );
+        })
+    }).catch(() => undefined);
+  }
 }

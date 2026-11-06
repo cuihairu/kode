@@ -576,10 +576,20 @@
 - 标题：`Show Hot Reload Log`
 - 作用：打开「KBEngine 热更」OUTPUT 通道——热更状态栏项(HR-UI-001)背后的审计日志
 - 行为：
-  - 状态栏项 `$(eye…) 热更: …` 即监视状态机:关(`kbengine.hotReload.enabled=false` 或 globs 为空)→ 就绪(watcher 建好)→ 发送中(去抖到点、动作已触发)→ 已发送(未确认)→ 失败;点击状态栏项即执行本命令
+  - 状态栏项 `$(eye…) 热更: …` 即监视状态机:关(`kbengine.hotReload.enabled=false` 或 globs 为空)→ 就绪(watcher 建好)→ 发送中(去抖到点、请求已发)→ 已发送(未确认)→ 失败;点击状态栏项执行 `kbengine.hotReload.toggle`(一键关/开),开关提示里的「打开日志」按钮打开本日志
   - 诚实口径:动作完成且无错只记「已发送(未确认)」——不校验业务回执,界面绝不声称模块已生效(回执校验属 HR-STATE 系列,另立项)
-  - 每次触发记 time/触发文件(去抖合并到的)/去抖值,外加结果行(已发送未确认/失败/未配动作名跳过);日志行即时落账,不随状态栏节流合并
-  - 不进命令面板(`when: false`)——状态栏项才是正入口
+  - 每次触发记 time/触发文件(去抖合并到的)/去抖值,外加请求行与结果行(已发送未确认/失败);日志行即时落账,不随状态栏节流合并
+  - 不进命令面板(`when: false`)——从开关提示的「打开日志」按钮或首激活提示进入
+
+### `kbengine.hotReload.toggle`
+
+- 标题：`Hot Reload: Toggle Auto Watch On/Off`
+- 作用：热更一键关/开——把 `kbengine.hotReload.enabled` **写回配置**（窗口有工作区文件写工作区设置，否则写用户设置），不是内存开关
+- 行为：
+  - 热更**默认开启**（用户令 2026-11-06）；命令取反写回，配置变更监听随即拆除/重建 watcher，即时生效不必重启窗口
+  - 绑定在状态栏「热更」项上，点状态栏即一键关；非模态提示告知新状态并给「打开日志」入口
+  - `kbengine.hotReload.actionName` 留空时，保存 .py 即发默认热更请求 `POST http://127.0.0.1:8090/hotfix`，body 带 `module_name=<模块名>`；引擎不可达如实显示**失败**（状态栏 + 日志），绝不假成功
+  - 写回配置失败如实上报（日志 + 错误提示），不改状态机脸面
 
 
 ### `kbengine.hotReload.showBatchSummary`

@@ -219,6 +219,9 @@ describe('kbengine.database.showDriftEvidence 命令(activate 真装配)', () =>
   };
 
   const activateWith = (memento: { get(key: string): unknown; update(key: string, value: unknown): Promise<void> }): void => {
+    // 首激活热更提示与本文件主题无关:预置「已提示过」flag,免得它混进
+    // messages.info 断言(提示本身由 tests/hotReload.test.ts 覆盖)
+    memento.update('kbengine.hotReload.firstRunNotice', true);
     activate({ subscriptions: [], extensionUri: Uri.file('/workspace/ext'), workspaceState: memento } as ExtensionContext);
   };
 

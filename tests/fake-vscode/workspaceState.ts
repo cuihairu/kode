@@ -4,7 +4,7 @@
 // re-export 本模块的 `workspace`,既有用例对它的 monkey-patch 语义不变
 // (共享同一可变对象)。
 
-import { EventEmitter, RelativePattern, Uri } from './core';
+import { ConfigurationTarget, EventEmitter, RelativePattern, Uri } from './core';
 
 // 内存文件系统:debugConfig 的 loadConfig/updateLaunchJson 等经
 // workspace.fs 读写真实路径内容;文件不存在时按实现语义抛错(进 catch)。
@@ -27,9 +27,21 @@ export const memoryFileSystem = {
   }
 };
 
+// 用户级(Global)覆写:ConfigurationTarget.Global 的写入落这里,读取时作为
+// 工作区级的兜底(作用域优先级:工作区 > 用户)。没有这层,一键开关写错作用域
+// 也会在同一个表里「看起来生效」,生效值核对咬不出来。
+export const globalConfigurationOverrides = new Map<string, Record<string, unknown>>();
+
 // 按配置段覆写 getConfiguration 返回值(如 hover.showValueDocs=false);
-// 未覆写的键回落到实现提供的默认值。
-export const configurationOverrides = new Map<string, Record<string, unknown>>();
+// 未覆写的键回落到实现提供的默认值。clear() 连用户级表一并清——测试的
+// 「清配置」语义是回到零配置,只清一张会跨用例漏作用域。
+class ConfigurationOverrideMap extends Map<string, Record<string, unknown>> {
+  clear(): void {
+    super.clear();
+    globalConfigurationOverrides.clear();
+  }
+}
+export const configurationOverrides = new ConfigurationOverrideMap();
 
 // entityMapping 的 watchPythonFiles 需要可观察的 watcher:记录回调并允许
 // 测试主动 fire。
@@ -126,8 +138,11 @@ export const workspace = {
   findFiles: async () => [] as Uri[],
   getConfiguration: (section?: string, scope?: unknown) => ({
     get: <T>(key: string, defaultValue: T): T => {
+      // 作用域优先级:工作区级 > 用户级(Global) > 实现默认值
       const overrides = section ? configurationOverrides.get(section) : undefined;
-      const value = overrides ? overrides[key] : undefined;
+      const globals = section ? globalConfigurationOverrides.get(section) : undefined;
+      const workspaceValue = overrides ? overrides[key] : undefined;
+      const value = workspaceValue !== undefined ? workspaceValue : globals ? globals[key] : undefined;
       return (value === undefined ? defaultValue : value) as T;
     },
     update: async (key: string, value: unknown, target: unknown): Promise<void> => {
@@ -137,6 +152,31 @@ export const workspace = {
         scope: target,
         folder: scope
       });
+      // 同步写回覆写表:模拟真实 VS Code「写配置后 get 立即读到新值」——
+      // 一键开关(kbengine.hotReload.toggle)写回后,配置事件驱动的重建面
+      // 才能按新值生效(嵌套段按 . 拆首段落表)。落哪张表按作用域分:
+      // Global 进用户级表,其余(Workspace/WorkspaceFolder/未指定)进工作区级表。
+      if (section) {
+        const store =
+          target === ConfigurationTarget.Global ? globalConfigurationOverrides : configurationOverrides;
+        const parts = key.split('.');
+        const base = store.get(section) ?? {};
+        let node: Record<string, unknown> = base;
+        for (const part of parts.slice(0, -1)) {
+          const next = node[part];
+          if (typeof next !== 'object' || next === null || Array.isArray(next)) {
+            node[part] = {};
+          }
+          node = node[part] as Record<string, unknown>;
+        }
+        const leaf = parts[parts.length - 1];
+        if (value === undefined) {
+          delete node[leaf];
+        } else {
+          node[leaf] = value;
+        }
+        store.set(section, base);
+      }
     }
   }),
   openTextDocument: async (uri: unknown): Promise<unknown> => {
@@ -254,5 +294,6 @@ export const workspaceState = {
     allFileSystemWatchers.length = 0;
     memoryFileSystem.reset();
     configurationOverrides.clear();
+    globalConfigurationOverrides.clear();
   }
 };

@@ -295,7 +295,8 @@ describe('extension activate 装配', () => {
     expect(telnetBar.visible).toBe(false);
     const hotReloadBar = windowState.statusBars.find(item => item.priority === 98)!;
     expect(hotReloadBar.alignment).toBe(StatusBarAlignment.Right);
-    expect(hotReloadBar.command).toBe('kbengine.hotReload.showLog');
+    // 用户令 2026-11-06:状态栏点击 = 一键关(kbengine.hotReload.toggle)
+    expect(hotReloadBar.command).toBe('kbengine.hotReload.toggle');
     expect(hotReloadBar.text).toBe('$(eye-closed) 热更: 关');
     expect(hotReloadBar.visible).toBe(true);
     const interpreterBar = windowState.statusBars.find(item => item.priority === 97)!;

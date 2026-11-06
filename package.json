@@ -134,6 +134,7 @@
     "onCommand:kbengine.messagetable.preview",
     "onCommand:kbengine.messagetable.export",
     "onCommand:kbengine.hotReload.showLog",
+    "onCommand:kbengine.hotReload.toggle",
     "onCommand:kbengine.hotReload.showBatchSummary",
     "onCommand:kbengine.hotReload.retryFailed",
     "onCommand:kbengine.hotReload.showRevisionEvidence",
@@ -798,6 +799,11 @@
       {
         "command": "kbengine.hotReload.showLog",
         "title": "Show Hot Reload Log"
+      },
+      {
+        "command": "kbengine.hotReload.toggle",
+        "title": "Hot Reload: Toggle Auto Watch On/Off",
+        "category": "KBEngine"
       },
       {
         "command": "kbengine.hotReload.showBatchSummary",
@@ -1552,10 +1558,12 @@
           "default": [
             {
               "name": "热更新(示例)",
-              "url": "http://127.0.0.1:8000/api/hotfix?relaod=${module}",
-              "method": "GET",
-              "headers": {},
-              "body": "",
+              "url": "http://127.0.0.1:8090/hotfix",
+              "method": "POST",
+              "headers": {
+                "Content-Type": "application/x-www-form-urlencoded"
+              },
+              "body": "module_name=${module}",
               "enabled": false,
               "keybinding": ""
             }
@@ -1695,13 +1703,13 @@
         },
         "kbengine.hotReload.enabled": {
           "type": "boolean",
-          "default": false,
-          "description": "文件保存/监视时自动触发指定快速动作（默认关防误触；开启后按 globs 各建一个文件监视，配置改动即时生效）"
+          "default": true,
+          "description": "文件保存/监视时自动触发热更（默认开启；开启后按 globs 各建一个文件监视，配置改动即时生效）。一键关：点击状态栏「热更」项或运行命令 kbengine.hotReload.toggle（写回本配置）。未配 actionName 时保存即发默认热更请求 POST http://127.0.0.1:8090/hotfix（body 带 `module_name=<模块名>`），引擎未启动如实显示失败"
         },
         "kbengine.hotReload.actionName": {
           "type": "string",
           "default": "",
-          "description": "要触发的 quickActions 动作名（须在 .kbengine/debug.json 的 quickActions 数组里存在；留空则监视有事件也不触发）"
+          "description": "要触发的 quickActions 动作名（须在 .kbengine/debug.json 的 quickActions 数组里存在；留空 = 走默认热更请求 POST http://127.0.0.1:8090/hotfix，body 带 `module_name=<模块名>`）"
         },
         "kbengine.hotReload.globs": {
           "type": "array",
@@ -1721,7 +1729,7 @@
         "kbengine.hotReload.tempEdit.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "临时编辑热更新 quick action 总开关（默认关防误触，与 hotReload.enabled 同口径）。开启后命令 kbengine.hotReload.tempEdit.run 才会执行：写入临时编辑 → 按 autoRestore 决定是否还原 → 经既有 quick action 通道（HTTP/终端）发 reloadScript → 结果回显输出/问题通道"
+          "description": "临时编辑热更新 quick action 总开关（默认关；与自动热更总开关 hotReload.enabled 相互独立——后者默认开，本命令默认关）。开启后命令 kbengine.hotReload.tempEdit.run 才会执行：写入临时编辑 → 按 autoRestore 决定是否还原 → 经既有 quick action 通道（HTTP/终端）发 reloadScript → 结果回显输出/问题通道"
         },
         "kbengine.hotReload.tempEdit.actionName": {
           "type": "string",

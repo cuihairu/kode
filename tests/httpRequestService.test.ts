@@ -94,7 +94,7 @@ describe('注入 transport:流水与回执语义', () => {
   it('批153:base 角色目录无 __init__.py 不算模块段,${module} 即文件名', async () => {
     const seen: OutgoingHttpRequest[] = [];
     const { service } = makeService([entry({
-      url: 'http://127.0.0.1:8000/api/hotfix?relaod=${module}'
+      url: 'http://127.0.0.1:8090/hotfix?module_name=${module}'
     })], {
       transport: async request => {
         seen.push(request);
@@ -108,13 +108,13 @@ describe('注入 transport:流水与回执语义', () => {
     });
 
     await expect(service.runByName('热更')).resolves.toBe(true);
-    expect(seen[0].url).toBe('http://127.0.0.1:8000/api/hotfix?relaod=FightAI');
+    expect(seen[0].url).toBe('http://127.0.0.1:8090/hotfix?module_name=FightAI');
   });
 
   it('批152:官方变量族与 ${moduleBasename} 随 runByName 单趟透传', async () => {
     const seen: OutgoingHttpRequest[] = [];
     const { service } = makeService([entry({
-      url: 'http://127.0.0.1:8000/api/hotfix?relaod=${moduleBasename}&ws=${workspaceFolderBasename}'
+      url: 'http://127.0.0.1:8090/hotfix?module_name=${moduleBasename}&ws=${workspaceFolderBasename}'
     })], {
       transport: async request => {
         seen.push(request);
@@ -127,7 +127,7 @@ describe('注入 transport:流水与回执语义', () => {
     });
 
     await expect(service.runByName('热更')).resolves.toBe(true);
-    expect(seen[0].url).toBe('http://127.0.0.1:8000/api/hotfix?relaod=FightAI&ws=ws');
+    expect(seen[0].url).toBe('http://127.0.0.1:8090/hotfix?module_name=FightAI&ws=ws');
   });
 
   it('失败:✗ 标记行 + 错误弹窗,回 false', async () => {
