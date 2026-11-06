@@ -17,6 +17,7 @@ pub mod message_table;
 pub mod process_topology;
 pub mod python_callgraph;
 pub mod rpc;
+pub mod ruff_lint;
 pub mod server;
 pub mod wire_codec;
 
