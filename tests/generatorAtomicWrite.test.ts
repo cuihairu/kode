@@ -229,6 +229,8 @@ describe('multi-file rollback (IDE-GEN-006)', () => {
 
   it('rolls back the def file when the python write fails', async () => {
     const defPath = path.join(root, 'scripts', 'entity_defs', 'Rollback.def');
+    // KR-AUD-74 起 python 落盘按引擎分段约定 scripts/<part>/<Name>.py
+    // (Base-only 向导 → base 段);单文件 scripts/<Name>.py 不再生成
     const pyPath = path.join(root, 'scripts', 'base', 'Rollback.py');
     const entitiesXml = path.join(root, 'scripts', 'entities.xml');
     const entitiesBefore = fs.readFileSync(entitiesXml, 'utf8');
@@ -248,6 +250,8 @@ describe('multi-file rollback (IDE-GEN-006)', () => {
 
   it('keeps files and registration when the post-commit open step fails (AUD-064)', async () => {
     const defPath = path.join(root, 'scripts', 'entity_defs', 'Rollback.def');
+    // KR-AUD-74 起 python 落盘按引擎分段约定 scripts/<part>/<Name>.py
+    // (Base-only 向导 → base 段);单文件 scripts/<Name>.py 不再生成
     const pyPath = path.join(root, 'scripts', 'base', 'Rollback.py');
     const entitiesXml = path.join(root, 'scripts', 'entities.xml');
     const entitiesBefore = fs.readFileSync(entitiesXml, 'utf8');
@@ -322,6 +326,8 @@ describe('multi-file rollback (IDE-GEN-006)', () => {
 
   it('template flow rolls back the same way', async () => {
     const defPath = path.join(root, 'scripts', 'entity_defs', 'Rollback.def');
+    // KR-AUD-74 起 python 落盘按引擎分段约定 scripts/<part>/<Name>.py
+    // (Base-only 向导 → base 段);单文件 scripts/<Name>.py 不再生成
     const pyPath = path.join(root, 'scripts', 'base', 'Rollback.py');
     interruptState.targets = [pyPath];
     windowish.showInputBox = async (): Promise<string | undefined> => 'Rollback';
