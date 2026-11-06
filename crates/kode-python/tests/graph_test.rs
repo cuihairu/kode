@@ -320,9 +320,9 @@ fn module_import_does_not_bypass_param_shadow() {
 }
 
 #[test]
-fn same_scope_import_overrides_param() {
-    // 复审第六轮残余③:同一函数作用域内 import 重绑定参数名——import
-    // 显式绑定优先于同作用域遮蔽(avatar 此时确是模块)。
+fn same_scope_conflict_gives_up_edge() {
+    // 复审第七轮用例改口径(第六轮残余③):同作用域 import 与参数并存,
+    // 静态不裁决先后(需数据流)——保守放弃该边(宁缺毋滥;伪边向优先防)。
     let zcaller = "def f(avatar):\n    import avatar\n    avatar.heal()\n";
     let afoo = "def heal():\n    pass\n";
     let zk = key("scripts/zcaller.py");
@@ -337,8 +337,8 @@ fn same_scope_import_overrides_param() {
     }
     let rev = build_call_reverse_index(&file_edges, &file_symbols);
     assert!(
-        rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
-        "同作用域 import 重绑定应优先于参数遮蔽, got {rev:?}"
+        !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "import+参数并存的静态歧义应放弃该边, got {rev:?}"
     );
 }
 
@@ -408,6 +408,29 @@ fn rebind_after_import_blocks_vouch() {
     assert!(
         !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
         "import 后的本地重绑定应阻断模块保放, got {rev:?}"
+    );
+}
+
+#[test]
+fn multi_line_comprehension_shadow_blocks_vouch() {
+    // 复审第八轮残余②:多行推导式的迭代变量遮蔽自身元素接收者——元素
+    // 调用行仍落推导式区间内,模块 import 不作保。
+    let zcaller = "import avatar\nrows = [avatar.heal()\n        for avatar in items]\n";
+    let afoo = "def heal():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/avatar.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, afoo)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "多行推导式的迭代变量遮蔽应阻断模块保放, got {rev:?}"
     );
 }
 

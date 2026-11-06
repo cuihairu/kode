@@ -137,14 +137,19 @@ fn resolve_callee_file(
     // 模块绑定接收者:`module.func` → 按模块名找文件(排除调用方自身)。
     // KODE-AUD-008 复审残余:接收者首段也可能是实例变量(`avatar.heal()`,
     // avatar 是局部对象而非模块)——不经 import 绑定核验就按 basename 找
-    // 文件,会把唯一同名文件误指为被调方(伪跨文件边)。绑定核验按调用点
-    // 可见作用域(裸名解析链,Python 语义):Function/Comprehension 层从
-    // 内层向外走查,层内按行序裁决——调用点行号 >= 最近 import 行(且晚于
-    // 最近本地绑定行)→ 模块绑定;调用点 >= 最近本地绑定行(且晚于最近
-    // import)→ 本地对象,不产边;本层未决继续向外。类体层不参与裸名链。
-    // 函数链未决才回退模块顶层 imports(最外层)。全链未决 → 宁缺毋滥
-    // 不产边。已知粒度限制:同一行内 lambda 参数遮蔽与外层调用无法区分
-    // (行粒度,保守漏边向)。
+    // 文件,会把唯一同名文件误指为被调方(伪跨文件边)。
+    //
+    // 绑定核验契约(保守歧义即放弃,复审第七/八轮定版):沿调用点所在的
+    // Function/Comprehension 作用域层自内向外走查——
+    // · 层内「只有」import 绑定且调用行不早于绑定行 → 模块绑定,放行
+    //   basename 唯一性核验;
+    // · 层内「只有」本地绑定(参数/Store 赋值)→ 本地对象,不产边;
+    // · 层内两类并存 → 静态歧义(先后需数据流),放弃该边(宁缺毋滥);
+    // · 层内未提及 → 继续向外;
+    // · 全链未决 → 模块顶层 imports(最外层回退)。
+    // 已知粒度限制(保守漏边向,如实记录):同一行内 lambda 参数遮蔽与
+    // 外层调用行粒度不可分;调用行早于函数内 import 行时向外回退(该调用
+    // 在运行时本就 UnboundLocal,边无意义)。
     if let Some(module) = receiver.split('.').next() {
         let imported = file_symbols
             .get(caller_file)
@@ -158,36 +163,23 @@ fn resolve_callee_file(
                             && edge.caller_line <= sc.end_line
                     })
                     .collect();
-                // 内层(起始行更大)先看;层内按行序裁决,未决继续向外。
+                // 内层(起始行更大)先看;层内裁决,未决继续向外。
                 in_scope.sort_by_key(|sc| std::cmp::Reverse(sc.start_line));
                 for sc in in_scope {
-                    let import_line = sc.bindings.get(module);
-                    let local_line = sc.shadows.get(module);
-                    match (import_line, local_line) {
-                        // 两类绑定都在:最近一次生效(同行保守按本地遮蔽)。
-                        (Some(&i), Some(&l)) => {
-                            if l >= i {
-                                if edge.caller_line >= l {
-                                    return false;
-                                }
-                            } else if edge.caller_line >= i {
-                                return true;
-                            }
-                        }
+                    match (sc.bindings.get(module), sc.shadows.get(module)) {
+                        // 本地绑定存在即本地名(Python 静态局部性:作用域内
+                        // 任意位置赋值,全作用域皆局部);叠加 import = 歧义。
+                        (Some(_), Some(_)) => return false,
                         (Some(&i), None) => {
                             if edge.caller_line >= i {
                                 return true;
                             }
                         }
-                        (None, Some(&l)) => {
-                            if edge.caller_line >= l {
-                                return false;
-                            }
-                        }
+                        (None, Some(_)) => return false,
                         (None, None) => {}
                     }
                 }
-                // 函数/推导式链未决 → 模块顶层 import(最外层回退)。
+                // 作用域链未决 → 模块顶层 import(最外层回退)。
                 s.imports.iter().any(|i| i.binding == module)
             })
             .unwrap_or(false);
