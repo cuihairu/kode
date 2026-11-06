@@ -243,3 +243,169 @@ export async function runPyspyDump(
     output: needsPtraceHint ? `${cause}\n${PYSPY_PTRACE_GUIDANCE}` : cause
   };
 }
+
+// ---- IDE-PYSPY-001:py-spy record 火焰图面(record --format flamegraph)----
+//
+// 与 dump 面的分工:dump 拿当前调用栈文本(秒级快照),record 在时长窗口内
+// 按采样率取样并落盘为火焰图。record 输出是 --output 文件而非 stdout,
+// 成功判据=退出码 0 且文件存在非空(注入 fileExistsNonEmpty 供测试替身)。
+
+/** record 傻瓜化默认参数:窗口 10s、采样 100/s、flamegraph、非阻塞 */
+export const PYSPY_RECORD_DEFAULTS = {
+  durationSec: 10,
+  rateHz: 100,
+  format: 'flamegraph',
+  nonblocking: true
+} as const;
+
+export type PyspyRecordFormat = 'flamegraph' | 'raw' | 'speedscope' | 'chrometrace';
+
+export interface PyspyRecordOptions {
+  durationSec?: number;
+  rateHz?: number;
+  format?: PyspyRecordFormat;
+  nonblocking?: boolean;
+  native?: boolean;
+  threads?: boolean;
+}
+
+/** 纯参数拼装(镜像 py-spy record --help v0.4.3 标志,忠实不臆造) */
+export function buildPyspyRecordArgs(
+  pid: number,
+  outFile: string,
+  options: PyspyRecordOptions = {}
+): string[] {
+  const opts = { ...PYSPY_RECORD_DEFAULTS, ...options };
+  const args = [
+    'record',
+    '--pid',
+    String(pid),
+    '--format',
+    opts.format,
+    '--output',
+    outFile,
+    '--duration',
+    String(opts.durationSec),
+    '--rate',
+    String(opts.rateHz)
+  ];
+  if (opts.nonblocking) {
+    args.push('--nonblocking');
+  }
+  if (opts.native) {
+    args.push('--native');
+  }
+  if (opts.threads) {
+    args.push('--threads');
+  }
+  return args;
+}
+
+/** 文件存在非空的注入面(测试替身不真落盘) */
+export interface PyspyFileDeps {
+  fileExistsNonEmpty: (filePath: string) => boolean;
+}
+
+const realFileDeps: PyspyFileDeps = {
+  fileExistsNonEmpty: filePath => {
+    try {
+      return fs.existsSync(filePath) && fs.statSync(filePath).size > 0;
+    } catch {
+      return false;
+    }
+  }
+};
+
+/** record 超时 = 采样窗口 + 15s 宽限(record 窗口满才收尾,宽限防慢盘) */
+export const PYSPY_RECORD_GRACE_MS = 15_000;
+
+/**
+ * `py-spy record --pid <pid> --format <f> --output <file> --duration <d>
+ * --rate <r> [--nonblocking] [--native] [--threads]`:窗口内取样落盘火焰图。
+ * 成功=退出码 0 且输出文件存在非空(输出在文件,stdout 不承载);失败把
+ * ptrace 权限指引拼在原因后(与 dump 同一段话)。
+ */
+export async function runPyspyRecord(
+  runner: SpawnRunner,
+  pid: number,
+  outFile: string,
+  options: PyspyRecordOptions = {},
+  pyspyCommand?: string | null,
+  deps: PyspyFileDeps = realFileDeps
+): Promise<PyspyDumpResult> {
+  const opts = { ...PYSPY_RECORD_DEFAULTS, ...options };
+  const timeoutMs = Math.max(0, opts.durationSec) * 1000 + PYSPY_RECORD_GRACE_MS;
+  const run = await runner(
+    pyspyCommand ?? 'py-spy',
+    buildPyspyRecordArgs(pid, outFile, opts),
+    timeoutMs
+  );
+  if (run.exitCode === 0 && deps.fileExistsNonEmpty(outFile)) {
+    return { ok: true, output: outFile };
+  }
+  const cause = run.stderr.trim() || run.stdout.trim() || `py-spy 退出码 ${run.exitCode}`;
+  const needsPtraceHint = PTRACE_FAILURE_MARKERS.some(marker =>
+    cause.toLowerCase().includes(marker.toLowerCase())
+  );
+  return {
+    ok: false,
+    output: needsPtraceHint ? `${cause}\n${PYSPY_PTRACE_GUIDANCE}` : cause
+  };
+}
+
+export interface PyspyScheduleOptions extends PyspyRecordOptions {
+  /** 采集次数 X(每 N 秒采一次,共 X 次) */
+  count: number;
+  /** 相邻两次采集之间的间隔秒 N */
+  intervalSec: number;
+  /** 输出目录(每次采集落一个 flame-<ts>-<i>.svg) */
+  outDir: string;
+}
+
+export interface PyspyScheduleRun {
+  index: number;
+  file: string;
+  ok: boolean;
+  output: string;
+}
+
+export interface PyspyScheduleDeps extends PyspyFileDeps {
+  /** 间隔等待注入面(测试不真睡) */
+  sleep: (ms: number) => Promise<void>;
+  /** 当前时间戳注入面(测试锁文件名) */
+  now: () => number;
+}
+
+const realScheduleDeps: PyspyScheduleDeps = {
+  ...realFileDeps,
+  sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
+  now: () => Date.now()
+};
+
+/**
+ * 周期采集编排:每 N 秒采一次共 X 次,各次落独立 SVG;任一次失败即止
+ * (附着的进程采不到后续样本,继续无意义),已成功的文件保留。返回逐次
+ * 结果,调用方据 ok 汇总展示。
+ */
+export async function runPyspySchedule(
+  runner: SpawnRunner,
+  pid: number,
+  options: PyspyScheduleOptions,
+  pyspyCommand?: string | null,
+  deps: PyspyScheduleDeps = realScheduleDeps
+): Promise<PyspyScheduleRun[]> {
+  const runs: PyspyScheduleRun[] = [];
+  const stamp = deps.now();
+  for (let index = 0; index < options.count; index++) {
+    if (index > 0) {
+      await deps.sleep(Math.max(0, options.intervalSec) * 1000);
+    }
+    const file = path.join(options.outDir, `flame-${stamp}-${index}.svg`);
+    const result = await runPyspyRecord(runner, pid, file, options, pyspyCommand, deps);
+    runs.push({ index, file, ok: result.ok, output: result.output });
+    if (!result.ok) {
+      break;
+    }
+  }
+  return runs;
+}

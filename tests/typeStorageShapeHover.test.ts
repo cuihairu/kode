@@ -82,19 +82,31 @@ describe('describeTypeStorageShape wordings', () => {
   it('describes builtin shapes with or without a mapped column type', () => {
     expect(describeTypeStorageShape({
       kind: 'builtin', rawType: 'ITEM_ID', typeName: 'UINT16', columnType: 'smallint unsigned'
-    })).toEqual(['主表单列（`smallint unsigned`）']);
+    })).toEqual([
+      '主表单列（`smallint unsigned`）',
+      '容量：显示宽度可配:DatabaseLength 落成 (N) 显示宽度,不改取值范围/精度;未配置时引擎剥掉 (N) 建裸类型'
+    ]);
     expect(describeTypeStorageShape({
       kind: 'builtin', rawType: 'VECTOR9', typeName: 'VECTOR9', columnType: null
-    })).toEqual(['主表单列']);
+    })).toEqual([
+      '主表单列',
+      '容量：容量不可配:VECTOR 合成列恒 float(CLIENT_NO_FLOAT 下为 int),无长度参数'
+    ]);
   });
 
   it('describes fixed dict shapes with or without top level keys', () => {
     expect(describeTypeStorageShape({
       kind: 'fixedDict', rawType: 'SKILL_SLOT', topLevelKeys: ['slot_list', 'count']
-    })).toEqual(['平铺成列，不成表；顶层键各占一列：slot_list、count']);
+    })).toEqual([
+      '平铺成列，不成表；顶层键各占一列：slot_list、count',
+      '容量：逐键按其键类型——STRING 键可配长度（未配置引擎默认 255），整型/浮点键为显示宽度，blob 族键不可配'
+    ]);
     expect(describeTypeStorageShape({
       kind: 'fixedDict', rawType: 'EMPTY', topLevelKeys: []
-    })).toEqual(['平铺成列，不成表']);
+    })).toEqual([
+      '平铺成列，不成表',
+      '容量：逐键按其键类型——STRING 键可配长度（未配置引擎默认 255），整型/浮点键为显示宽度，blob 族键不可配'
+    ]);
   });
 
   it('describes array shapes through every element kind', () => {
@@ -102,39 +114,60 @@ describe('describeTypeStorageShape wordings', () => {
       kind: 'array', rawType: 'ITEM_IDS', element: {
         kind: 'builtin', rawType: 'ITEM_ID', typeName: 'UINT16', columnType: 'smallint unsigned'
       }
-    })).toEqual(['成子表 `tbl_<实体>_<属性>`，元素各占一行；元素落列：`sm_value`（`smallint unsigned`）']);
+    })).toEqual([
+      '成子表 `tbl_<实体>_<属性>`，元素各占一行；元素落列：`sm_value`（`smallint unsigned`）',
+      '容量：逐元素按其元素类型，规则同主表单列'
+    ]);
     expect(describeTypeStorageShape({
       kind: 'array', rawType: 'X', element: {
         kind: 'builtin', rawType: 'Q', typeName: 'Q', columnType: null
       }
-    })).toEqual(['成子表 `tbl_<实体>_<属性>`，元素各占一行；元素落列：`sm_value`']);
+    })).toEqual([
+      '成子表 `tbl_<实体>_<属性>`，元素各占一行；元素落列：`sm_value`',
+      '容量：逐元素按其元素类型，规则同主表单列'
+    ]);
     expect(describeTypeStorageShape({
       kind: 'array', rawType: 'X', element: {
         kind: 'fixedDict', rawType: 'SKILL_SLOT', topLevelKeys: ['count']
       }
-    })).toEqual(['成子表 `tbl_<实体>_<属性>`，元素各占一行；元素落列：键平铺：count']);
+    })).toEqual([
+      '成子表 `tbl_<实体>_<属性>`，元素各占一行；元素落列：键平铺：count',
+      '容量：逐元素按其元素类型，规则同主表单列'
+    ]);
     expect(describeTypeStorageShape({
       kind: 'array', rawType: 'X', element: {
         kind: 'fixedDict', rawType: 'EMPTY', topLevelKeys: []
       }
-    })).toEqual(['成子表 `tbl_<实体>_<属性>`，元素各占一行；元素落列：键平铺']);
+    })).toEqual([
+      '成子表 `tbl_<实体>_<属性>`，元素各占一行；元素落列：键平铺',
+      '容量：逐元素按其元素类型，规则同主表单列'
+    ]);
     expect(describeTypeStorageShape({
       kind: 'array', rawType: 'X', element: {
         kind: 'array', rawType: 'Y', element: {
           kind: 'builtin', rawType: 'Q', typeName: 'Q', columnType: null
         }
       }
-    })).toEqual(['成子表 `tbl_<实体>_<属性>`，元素各占一行；元素落列：`sm_value`（套更深层子表）']);
+    })).toEqual([
+      '成子表 `tbl_<实体>_<属性>`，元素各占一行；元素落列：`sm_value`（套更深层子表）',
+      '容量：逐元素按其元素类型，规则同主表单列'
+    ]);
     expect(describeTypeStorageShape({
       kind: 'array', rawType: 'X', element: {
         kind: 'array', rawType: 'Y', element: null
       }
-    })).toEqual(['成子表 `tbl_<实体>_<属性>`，元素各占一行；元素落列：`sm_value`']);
+    })).toEqual([
+      '成子表 `tbl_<实体>_<属性>`，元素各占一行；元素落列：`sm_value`',
+      '容量：逐元素按其元素类型，规则同主表单列'
+    ]);
     expect(describeTypeStorageShape({
       kind: 'array', rawType: 'X', element: {
         kind: 'unresolved', rawType: 'NOPE'
       }
-    })).toEqual(['成子表 `tbl_<实体>_<属性>`，元素各占一行；元素落列：未知元素类型']);
+    })).toEqual([
+      '成子表 `tbl_<实体>_<属性>`，元素各占一行；元素落列：未知元素类型',
+      '容量：逐元素按其元素类型，规则同主表单列'
+    ]);
   });
 
   it('describes unresolved shapes as engine load failures', () => {
@@ -148,6 +181,8 @@ describe('type declaration hover carries the storage shape', () => {
     const text = hoverAt(TYPES_XML.replace('<ITEM_ID>', '<ITEM_|ID>'));
     expect(text).toContain('落库形态');
     expect(text).toContain('主表单列（`smallint unsigned`）');
+    // IDE-DB-001:内建形态附容量说明(可指定与否/未配置默认/上限)
+    expect(text).toContain('容量：显示宽度可配:DatabaseLength 落成 (N) 显示宽度');
   });
 
   it('shows a fixed dict alias flattening into columns', () => {

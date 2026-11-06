@@ -1,15 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   SERVER_CONFIG_FIELD_DOCS,
+  SERVER_CONFIG_FIELD_DOCS_EN,
   SERVER_CONFIG_SELECTOR,
   ServerConfigHoverProvider,
-  provideServerConfigHover
+  provideServerConfigHover,
+  serverConfigFieldDoc
 } from '../src/serverConfigHover';
 import { configurationOverrides, makeTextDocument, Position } from './helpers/vscodeStub';
 
 // 元件 kbengine.xml / 引擎 kbengine_defaults.xml 字段悬浮文档(批112 用户令):
 // 行级标签 + 就近整行 opener 段定位,先查 `段.标签` 再查裸标签。文档内容
 // 逐条对照引擎 defaults 注释整理,此处锁解析口径与代表性键,不逐键枚举。
+// IDE-I18N-002:文案语言随 kbengine.hover.language——既有断言锁中文包,
+// 显式钉 zh-cn 与宿主时区/界面语言解耦(CI 为 UTC+0 英文环境,auto 会落英文)。
 
 const hoverText = (doc: ReturnType<typeof makeTextDocument>, line: number, needle: string) => {
   const character = doc.lineAt(line).text.indexOf(needle);
@@ -27,6 +31,14 @@ const hoverValue = (hover: { contents: unknown } | null): string | null => {
 };
 
 describe('provideServerConfigHover', () => {
+  // IDE-I18N-002:本组断言锁中文包原口径,钉 zh-cn 摆脱宿主环境
+  beforeEach(() => {
+    configurationOverrides.set('kbengine', { 'hover.language': 'zh-cn' });
+  });
+  afterEach(() => {
+    configurationOverrides.delete('kbengine');
+  });
+
   const doc = makeTextDocument(
     [
       '<root>',
@@ -127,5 +139,61 @@ describe('provideServerConfigHover', () => {
     } finally {
       configurationOverrides.delete('kbengine');
     }
+  });
+});
+
+describe('hover 文案语言面(IDE-I18N-002)', () => {
+  afterEach(() => {
+    configurationOverrides.delete('kbengine');
+  });
+
+  const doc = makeTextDocument(
+    [
+      '<root>',
+      '  <baseapp>',
+      '    <telnet_service>',
+      '      <port> 40000 </port>',
+      '    </telnet_service>',
+      '    <entryScriptFile> baseapp.py </entryScriptFile>',
+      '  </baseapp>',
+      '</root>'
+    ].join('\n'),
+    { fileName: '/proj/server/kbengine.xml', languageId: 'xml' }
+  );
+
+  it('英文包与中文包同键同数、逐键互异、值非空(真翻译,非复制)', () => {
+    const zhKeys = Object.keys(SERVER_CONFIG_FIELD_DOCS).sort();
+    const enKeys = Object.keys(SERVER_CONFIG_FIELD_DOCS_EN).sort();
+    expect(enKeys).toEqual(zhKeys);
+    for (const key of zhKeys) {
+      expect(SERVER_CONFIG_FIELD_DOCS[key].length).toBeGreaterThan(0);
+      expect(SERVER_CONFIG_FIELD_DOCS_EN[key].length).toBeGreaterThan(0);
+      // 同文=假翻译(与 manifestI18n 契约 ⑥ 同口径)
+      expect(SERVER_CONFIG_FIELD_DOCS_EN[key]).not.toBe(SERVER_CONFIG_FIELD_DOCS[key]);
+    }
+  });
+
+  it('显式 en → 英文包命中;显式 zh-cn → 中文包命中(与宿主环境解耦)', () => {
+    const at = (line: number, needle: string) =>
+      hoverValue(
+        provideServerConfigHover(doc as never, new Position(line, doc.lineAt(line).text.indexOf(needle)))
+      );
+    configurationOverrides.set('kbengine', { 'hover.language': 'en' });
+    expect(at(5, '<entryScriptFile')).toBe(SERVER_CONFIG_FIELD_DOCS_EN.entryScriptFile);
+    expect(at(3, '<port')).toBe(SERVER_CONFIG_FIELD_DOCS_EN['telnet_service.port']);
+    configurationOverrides.set('kbengine', { 'hover.language': 'zh-cn' });
+    expect(at(5, '<entryScriptFile')).toBe(SERVER_CONFIG_FIELD_DOCS.entryScriptFile);
+  });
+
+  it('serverConfigFieldDoc:双查序(带段键→裸键)与缺键口径', () => {
+    expect(serverConfigFieldDoc('telnet_service.port', 'port', 'zh-cn')).toBe(
+      SERVER_CONFIG_FIELD_DOCS['telnet_service.port']
+    );
+    expect(serverConfigFieldDoc('telnet_service.port', 'port', 'en')).toBe(
+      SERVER_CONFIG_FIELD_DOCS_EN['telnet_service.port']
+    );
+    // 两语言面皆未登记 → undefined → 悬停面交回既有体系(null)
+    expect(serverConfigFieldDoc('unregistered.key', 'unknown', 'en')).toBeUndefined();
+    expect(serverConfigFieldDoc('unregistered.key', 'unknown', 'zh-cn')).toBeUndefined();
   });
 });

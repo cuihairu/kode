@@ -94,6 +94,10 @@ export async function sendFilesViaReloadChannel(deps: ReloadChannelSendDeps): Pr
   const attemptFor = (rootId: string, file: string): number | undefined => attempts.get(`${rootId}\n${file}`);
   // 冻结基准读取 await 到完成——读取完成先于发送发起,冻结 digest=实际发送
   // 内容(此后文件再变不影响本次基准);读取失败=无基准(如实 undefined)。
+  // KR-AUD-47:核验窗口锚定「发送发起时点」=冻结基准完成、transport.send 即将
+  // 发起之时(与 fire 回落路径 start() 的 sentAt 同语义)——冻结读取耗时不得
+  // 吃掉核验窗口;台账发起记录的 recordedAt 保持记账时刻(先于冻结),两处
+  // 语义不同,不得混用。锚点在分组循环内逐组紧贴 send 取(二轮)。
   const reader = deps.readFileContent;
   const sentDigests = new Map<string, string | undefined>();
   if (reader) {
@@ -164,7 +168,7 @@ export async function sendFilesViaReloadChannel(deps: ReloadChannelSendDeps): Pr
   }
   // 核验窗口到点结算:仍未确认只注解超时(不冒充失败也不冒充 applied);
   // 结算绑定所属发送代际,记录已换代(更新的发送在途)则不动;窗口锚定发送
-  // 发起时点(响应晚到不后移)
+  // 发起时点(KR-AUD-47:冻结完成后的 sendStartedAt,响应晚到不后移)
   const scheduleAppliedSettle = (rootId: string, file: string, anchor: number, attempt: number): void => {
     if (!store || rootId === '') {
       return;
@@ -195,6 +199,10 @@ export async function sendFilesViaReloadChannel(deps: ReloadChannelSendDeps): Pr
   let failedCount = 0;
   await Promise.all(
     [...groups.entries()].map(async ([rootId, groupFiles]) => {
+      // KR-AUD-47 二轮:窗口锚点紧贴本组 transport.send 发起——冻结完成后的
+      // 分组/root 解析/冻结 digest 落账(同步但真实耗时)不占核验窗口;多根
+      // 批次各组各取各的锚点
+      const groupSendStartedAt = now();
       try {
         await transport.send(
           { rootId, targetId },
@@ -205,7 +213,7 @@ export async function sendFilesViaReloadChannel(deps: ReloadChannelSendDeps): Pr
             const scheduleUnconfirmedSettle = (): void => {
               const attempt = attemptFor(rootId, file);
               if (attempt !== undefined) {
-                scheduleAppliedSettle(rootId, file, sentAt, attempt);
+                scheduleAppliedSettle(rootId, file, groupSendStartedAt, attempt);
               }
             };
             switch (receipt.status) {
@@ -268,7 +276,17 @@ export async function sendFilesViaReloadChannel(deps: ReloadChannelSendDeps): Pr
                 break;
               }
               case 'accepted':
-                recordOutcome(rootId, file, 'accepted');
+                // KR-AUD-46:accepted 语义与 fire 回落路径对齐——台账同样带
+                // HOT-003 注解(「应用仍需核验,仍等 applied」),不冒充终局
+                // 成功;注解结算口(noteStillUnverified)两路径一致只认
+                // sent-unverified,accepted 不排注解结算(派生状态机按
+                // recordedAt+窗口把过期 accepted 结算为 FAILED,两路径同语义)
+                recordOutcome(
+                  rootId,
+                  file,
+                  'accepted',
+                  receipt.note ?? '回执 accepted:应用仍需核验,仍等 applied(HOT-003)'
+                );
                 noteSentDigest(rootId, file);
                 break;
               case 'failed':

@@ -765,6 +765,42 @@ export class KBEngineCodeGenerator {
   }
 
   /**
+   * GEN-DEF-1(用户令 2026-11-02):属性类型 → __init__ is None 守卫复位值。
+   * 仅容器引用型生成:ARRAY(<of> 内联或裸)→ '[]';本实体在 types.xml 登记
+   * 的 FIXED_DICT 命名类型(entityWizard.fixedDictTypeName:<Entity>State)
+   * → '{}';其余(内建/别名/未知名)一律 null 不守卫——没有注册表可依时
+   * 不猜,与向导 containerGuardProperties 同口径。已知取舍:该生成器运行时
+   * 无 types.xml 注册表(FIXED_DICT 命名类型恰由同事务
+   * appendFixedDictTypeToTypesXml 首次登记),<Entity>State 判定是命名约定
+   * 耦合——漏守(他名 FIXED_DICT)保守安全;误守仅在用户手工把同名注册成
+   * 简单别名的边缘出现(如实记录于 docs/review 审计报告)。
+   */
+  private containerGuardEmptyOf(typeName: string, entityName: string): '[]' | '{}' | null {
+    const trimmed = typeName.trim();
+    if (/^ARRAY\b/.test(trimmed)) {
+      return '[]';
+    }
+    if (trimmed === fixedDictTypeName(entityName)) {
+      return '{}';
+    }
+    return null;
+  }
+
+  /** 本段(Flags 域)的属性列表:base/cell/client 三段各取自己的属性数组 */
+  private partPropertiesOf(
+    entity: EntityDefinition,
+    part: EntityWizardPart
+  ): PropertyDefinition[] {
+    if (part === 'base') {
+      return entity.baseProperties ?? [];
+    }
+    if (part === 'cell') {
+      return entity.cellProperties ?? [];
+    }
+    return entity.clientProperties ?? [];
+  }
+
+  /**
    * 生成某段 Python 实体脚本内容。
    * KR-AUD-74:引擎约定——类名=实体名(entities.xml/def 登记名,引擎按类名
    * 加载脚本,HeroCell/HeroBase 之类后缀类名永远不会被实例化);base/cell/
@@ -792,6 +828,18 @@ export class KBEngineCodeGenerator {
     lines.push('');
     lines.push('    def __init__(self):');
     lines.push('        KBEngine.Entity.__init__(self)');
+    // GEN-DEF-1(用户令 2026-11-02):容器属性 __init__ 初始化守卫——仅该段
+    // (Flags 域)的 FIXED_DICT/ARRAY 引用型生成 `if self.<prop> is None:`,
+    // 简单类型不生成,绝不 `if not self.`(falsy 判断会把引擎合法默认
+    // 0/""/[] 误判并重建,引用失效;口径同 entityWizard.containerGuardProperties)。
+    for (const property of this.partPropertiesOf(entity, part)) {
+      const guardEmpty = this.containerGuardEmptyOf(property.type, name);
+      if (guardEmpty === null) {
+        continue;
+      }
+      lines.push(`        if self.${property.name} is None:`);
+      lines.push(`            self.${property.name} = ${guardEmpty}`);
+    }
     lines.push('');
     lines.push('    def onTimer(self, id, userArg):');
     lines.push('        """');

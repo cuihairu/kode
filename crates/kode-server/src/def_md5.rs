@@ -465,6 +465,14 @@ fn engine_get_key(doc: &Document, node: usize) -> String {
 
 /// 引擎 xml.cpp:72-95 enterNode:沿 node 起的兄弟链找 getKey==key 的元素,
 /// 命中返回其**首个非注释子节点**——文本或元素皆可(非具名子元素查找)。
+/// 另:tinyxml2 的 DOM 不存在"原始字节纯空白"的文本节点——Identify
+/// (tinyxml2.cpp:715-723)先按**原始字节** SkipWhiteSpace 再分类,只有
+/// 空白后跟真实文本才回退 p=start 建含空白前缀的文本节点(:782-786);
+/// 默认 PRESERVE_WHITESPACE(xml.h:1732,引擎 new XMLDocument() 走默认)。
+/// 实体解码发生在 GetStr(tinyxml2.cpp:286-360),晚于分类——`&#32;` 这类
+/// 解码后才成空白的节点引擎**照建**(getKey=trim→空名)。故本仓按原始
+/// 字节分类跳过:文本 span 内全是 C locale 空白才视作引擎不存在的节点;
+/// CDATA 是显式节点照建不跳。
 fn engine_enter_node(doc: &Document, node: usize, key: &str) -> Option<usize> {
     let mut cur = Some(node);
     while let Some(idx) = cur {
@@ -474,7 +482,13 @@ fn engine_enter_node(doc: &Document, node: usize, key: &str) -> Option<usize> {
                 .children
                 .iter()
                 .copied()
-                .find(|&c| !matches!(doc.nodes[c].data, NodeData::Comment { .. }));
+                .find(|&c| match &doc.nodes[c].data {
+                    NodeData::Comment { .. } => false,
+                    NodeData::Text { span, .. } => !doc.source[span.start..span.end]
+                        .bytes()
+                        .all(is_engine_whitespace),
+                    _ => true,
+                });
         }
         cur = doc.nodes[idx].parent.and_then(|parent| {
             let siblings = &doc.element(parent).children;
@@ -483,6 +497,12 @@ fn engine_enter_node(doc: &Document, node: usize, key: &str) -> Option<usize> {
         });
     }
     None
+}
+
+/// C locale isspace(tinyxml2 XMLUtil::IsWhiteSpace 底层,tinyxml2.h:569-572
+/// 经由 isspace();UTF-8 续字节不算空白)。
+fn is_engine_whitespace(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1489,7 +1509,77 @@ fn minimal_params() -> DefMd5Params {
     }
 }
 
-/// 黄金样本集(demo-assets 全实体 + parity-project + 最小锚点)。
+/// KR-AUD-80/81 引擎对拍夹具(xml.cpp:72-95/113-119 + entitydef.cpp:551-639/
+/// 642-818):接口文本/元素两形态归一 + 组件 <Type> 文本导航。手推规范推导:
+/// 接口名本身不入流,两形态 md5 必须相同;组件类型名取 <Type> 文本。
+fn kr_aud_80_interface_params(interface_entry: &str) -> DefMd5Params {
+    let combat_def = "<root>\
+        <Properties>\
+            <hp>\
+                <Type> UINT32 </Type>\
+                <Flags> CELL_PUBLIC </Flags>\
+                <Persistent> true </Persistent>\
+            </hp>\
+        </Properties>\
+        <CellMethods>\
+            <onMove>\
+                <Arg> VECTOR3 </Arg>\
+            </onMove>\
+        </CellMethods>\
+    </root>"
+        .to_string();
+    DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs: [
+            (
+                "Avatar".to_string(),
+                format!("<root><Interfaces>{interface_entry}</Interfaces></root>"),
+            ),
+            ("Combat".to_string(), combat_def),
+        ]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    }
+}
+
+fn kr_aud_81_component_params() -> DefMd5Params {
+    let inventory_def = "<root>\
+        <Properties>\
+            <slots>\
+                <Type> UINT32 </Type>\
+                <Flags> BASE </Flags>\
+                <Persistent> true </Persistent>\
+            </slots>\
+        </Properties>\
+        <BaseMethods>\
+            <pack>\
+                <Arg> UINT32 </Arg>\
+            </pack>\
+        </BaseMethods>\
+    </root>"
+        .to_string();
+    DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs: [
+            (
+                "Avatar".to_string(),
+                "<root><Components><bag><Type> Inventory </Type><Persistent> true </Persistent></bag></Components></root>".to_string(),
+            ),
+            ("Inventory".to_string(), inventory_def),
+        ]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    }
+}
+
+/// 黄金样本集(demo-assets 全实体 + parity-project + 最小锚点
+/// + KR-AUD-80/81 接口/组件引擎对拍)。
 pub fn golden_samples(repo_root: &Path) -> Vec<GoldenSample> {
     let fixtures = repo_root.join("tests/fixtures");
     let mut samples = Vec::new();
@@ -1516,6 +1606,21 @@ pub fn golden_samples(repo_root: &Path) -> Vec<GoldenSample> {
     samples.push(GoldenSample {
         name: "minimal-single-entity",
         params: minimal_params(),
+    });
+    // KR-AUD-80:接口文本/元素两形态——引擎导航(getKey(enterNode·) =
+    // trim(首个非注释子节点 Value))归一,两样本 md5 必须相同。
+    samples.push(GoldenSample {
+        name: "kr-aud-80-interface-text",
+        params: kr_aud_80_interface_params("<Interface> Combat </Interface>"),
+    });
+    samples.push(GoldenSample {
+        name: "kr-aud-80-interface-element",
+        params: kr_aud_80_interface_params("<Interface><Combat/></Interface>"),
+    });
+    // KR-AUD-81:组件类型名=<Type> 文本(Inventory),非元素名字面量 "Type"。
+    samples.push(GoldenSample {
+        name: "kr-aud-81-component-type",
+        params: kr_aud_81_component_params(),
     });
     samples
 }

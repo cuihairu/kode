@@ -42,6 +42,19 @@ fn def_md5_golden_covers_anchor_and_fixtures() {
     assert!(names.contains(&"minimal-single-entity"), "锚点样本");
     assert!(names.contains(&"kbengine-demo-assets"), "回归锁样本");
     assert!(names.contains(&"parity-project"), "对拍样本");
+    // KR-AUD-80/81 引擎对拍样本(接口文本/元素两形态 + 组件 <Type> 文本)。
+    assert!(
+        names.contains(&"kr-aud-80-interface-text"),
+        "接口文本形态样本"
+    );
+    assert!(
+        names.contains(&"kr-aud-80-interface-element"),
+        "接口元素形态样本"
+    );
+    assert!(
+        names.contains(&"kr-aud-81-component-type"),
+        "组件 <Type> 文本样本"
+    );
     for s in samples {
         let md5 = s["md5"].as_str().expect("md5");
         assert_eq!(md5.len(), 32, "{}: 32 hex", s["name"]);

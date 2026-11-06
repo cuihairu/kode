@@ -35,9 +35,15 @@ const hoverText = (hover: unknown): string => {
 };
 
 describe('package.json 开关注册(默认值断言)', () => {
+  // KODE-I18N-001 起描述文案外置 package.nls*.json(%key% 占位),契约按解析后默认包文案断言
+  const nls = JSON.parse(
+    readFileSync(path.join(__dirname, '..', 'package.nls.json'), 'utf8')
+  ) as Record<string, string>;
   const pkg = JSON.parse(
     readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')
   ) as { contributes: { configuration: { properties: Record<string, { type: string; default: boolean; markdownDescription: string }> } } };
+  const resolveNls = (value: string): string =>
+    value.replace(/^%([^%]+)%$/, (_m, key: string) => nls[key] ?? key);
   const properties = pkg.contributes.configuration.properties;
 
   const expectedKeys = [
@@ -58,7 +64,7 @@ describe('package.json 开关注册(默认值断言)', () => {
       expect(entry.type).toBe('boolean');
       expect(entry.default, `${key} 默认开`).toBe(true);
       // 2026-11-06 起配置键提示统一 markdownDescription,裸 description 已移除
-      expect(entry.markdownDescription.toLowerCase()).toContain('default: enabled');
+      expect(resolveNls(entry.markdownDescription).toLowerCase()).toContain('default: enabled');
     }
   });
 });

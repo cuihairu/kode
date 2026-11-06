@@ -124,6 +124,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.hover.defChain` | boolean | `true` | 悬停 `Parent`/`Interfaces` 等声明元素时的归并 def 链 |
 | `kbengine.hover.eventStats` | boolean | `true` | python 侧悬停事件名时的注册/触发统计 |
 | `kbengine.hover.serverConfig` | boolean | `true` | 悬停 `kbengine.xml` 服务配置字段时的取值与说明(批112 悬停面整体关断) |
+| `kbengine.hover.language` | string | `auto` | 悬停文案语言(IDE-I18N-002):`auto` 探测——VS Code 界面语言/系统 locale 为中文或 UTC+8 时区取中文,否则英文;亦可显式 `en`/`zh-cn`。服务配置悬停面已接入,其余悬停面逐步接入 |
 | `kbengine.hover.startupScript` | boolean | `true` | 悬停/补全 .sh/.bat 启动脚本里的 KBEngine 启动参数与说明——CLI 参数 `--cid`/`--gus`/`--hide`/`--KBE_ROOT`/`--KBE_RES_PATH`/`--KBE_BIN_PATH`、环境变量 `KBE_ROOT`/`KBE_RES_PATH`/`KBE_BIN_PATH`/`KBE_TIMING_METHOD`/`KBE_COMPONENTID`/`KBE_BOOTIDX_GLOBAL`/`KBE_BOOTIDX_GROUP`/`UID`/`UUID`(双语,附引擎源码行);`--` 前缀补全参数、`KBE_` 前缀补全环境变量;关闭即同时关断悬浮与补全两面 |
 | `kbengine.hover.asyncBudgetMs` | number | `2500` | 悬停 def 方法/接收者调用/内建属性三条异步链的总预算(毫秒):超预算即截断该层并记 LogHub(过滤 `[kode-hover][timeout]`),不再永转 loading;`<= 0` 关闭预算闸(旧的无限等待) |
 
@@ -136,6 +137,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.codeLens.rpc` | boolean | `true` | Python 实现脚本里 def 声明的方法声明行上方的 RPC 标记(批126) |
 | `kbengine.codeLens.eventCallbacks` | boolean | `true` | 事件回调标记——`addEvent`/`registerEvent` 的回调 def 声明处标事件名,`emitEvent` 处标监听数(批154 起从 RPC 镜链拆出独立注册) |
 | `kbengine.codeLens.property` | boolean | `true` | Python 脚本 `self.<属性>` 访问处的属性标记(批135) |
+| `kbengine.codeLens.propertyInitOrder` | boolean | `true` | 实体类 `__init__` 声明处标「属性先于 __init__ 装载 · 来自 <实体>.def」(IDE-PROP-001;引擎在 __init__ 前装载 Entity.def 属性,脚本未必有同名赋值;点击回 def) |
 | `kbengine.codeLens.typesXml` | boolean | `true` | types.xml 类型声明行的落库镜链(批134) |
 | `kbengine.inlayHints.typeData` | boolean | `true` | python 侧 `self.<属性>` 访问处以内联提示显示解析到底的类型注解(types.xml 别名逐层解析到底层内建,如 SERVER_ID→int;PYTHON/未知落 Any 不显示);`self.base/cell/client` RPC 调用点每实参后内联显示 def 已声明的形参类型(`: 类型`,只显类型不带合成形参名,只做已声明的,过段闸);数组 `<of>` 元素类型在 `for item in self.<属性>:` 迭代目标与 `x = self.<属性>[i]` 下标赋值局部变量后内联显示(同一解析链),与属性 F12 同一解析索引(批154;解析到底口径 2026-10-29;元素类型 2026-11-04) |
 | `kbengine.inlayHints.defParams` | boolean | `true` | entity 脚本区块(ClientMethods/BaseMethods/CellMethods)内 def 定义点的内联提示:未手写标注的形参名后内联 def 声明的 `<Arg>` 类型(`: 类型`),声明 `<ReturnType>` 时闭括号后内联 `-> 类型`;跨行 def 不出(与调用点 inlay 同规则) |
@@ -407,6 +409,8 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 | `kbengine.hotReload.tempEdit.actionName` | string | 空 | 第 3 步 reloadScript 按名触发的 quick action(HTTP/终端均可);留空按配置错误中止 |
 | `kbengine.hotReload.tempEdit.autoRestore` | boolean | `true` | 发送 reloadScript 前自动还原原始内容;还原失败即中止请求 |
 | `kbengine.hotReload.tempEdit.scriptRoot` | string | 空 | 双名称解析的脚本资源根(fullModule/requestModule);留空回显模块名未解析,不猜 |
+
+状态栏版本号(HOT-VER):状态栏在五种监视状态之上**正交叠加**每文件版本号——单号(`热更: 就绪 v3`)= 盘上内容与已核验基线一致(已同步),双号(`热更: … v2→v3`)= 基线 → 盘上当前版本(待同步)。版本台账存在热更台账里,**独立于 `enabled` 开关**:监视关着时手动触发路径(`kbengine.hotReload.showFileState`、`kbengine.hotReload.retryFailed`、右键手动跑一次热更动作)照样出号,与开监视时同文件同版本逐字相等——是否在监视范围只看 `globs`,watcher 只是版本簿的默认事件来源,不是前提。不在 `globs` 范围的文件不显版本号;开日志命令 `kbengine.hotReload.showLog`(状态栏开关提示的「打开日志」入口)会把版本台账(当前文件、基线版本、盘上版本、每次版本跃迁的时间/attempt/digest 前 8 位/accepted-applied-failed 回执)追加进「KBEngine 热更新」OUTPUT 通道。版本号只数盘上变了几次、标基线在哪,绝不声称重载已生效。
 
 行为口径:
 

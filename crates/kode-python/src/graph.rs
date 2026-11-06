@@ -134,9 +134,20 @@ fn resolve_callee_file(
         }
         return find_module_function(file_symbols, &edge.callee, caller_file);
     }
-    // 模块绑定接收者:`module.func` → 按模块名找文件(排除调用方自身)
+    // 模块绑定接收者:`module.func` → 按模块名找文件(排除调用方自身)。
+    // KODE-AUD-008 复审残余:接收者首段也可能是实例变量(`avatar.heal()`,
+    // avatar 是局部对象而非模块)——不经 import 绑定核验就按 basename 找
+    // 文件,会把唯一同名文件误指为被调方(伪跨文件边)。调用方未绑定该名
+    // → 静态不可解析,宁缺毋滥不产边。
     if let Some(module) = receiver.split('.').next() {
-        return find_module_file(file_symbols, module, caller_file);
+        let imported = file_symbols
+            .get(caller_file)
+            .map(|s| s.imports.iter().any(|i| i.binding == module))
+            .unwrap_or(false);
+        if imported {
+            return find_module_file(file_symbols, module, caller_file);
+        }
+        return None;
     }
     None
 }

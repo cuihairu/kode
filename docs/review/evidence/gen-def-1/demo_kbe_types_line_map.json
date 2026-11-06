@@ -1,0 +1,20 @@
+{
+  "entryLines": {
+    "POSITION": 12,
+    "SKILL_SLOT": 22,
+    "ITEM_DESC": 30,
+    "ITEM_ID": 34,
+    "ITEM_IDS": 38
+  },
+  "propertyLines": {
+    "POSITION": {
+      "x": 14,
+      "y": 16,
+      "z": 18
+    },
+    "SKILL_SLOT": {
+      "count": 24,
+      "slot_list": 26
+    }
+  }
+}

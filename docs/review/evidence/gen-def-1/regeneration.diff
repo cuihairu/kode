@@ -1,0 +1,27 @@
+diff -ru /tmp/gen-def-1-audit/base4/synthetic_entity_types.pyi /tmp/gen-def-1-audit/current4/synthetic_entity_types.pyi
+--- /tmp/gen-def-1-audit/base4/synthetic_entity_types.pyi	2026-11-06 22:27:03.632221884 +0800
++++ /tmp/gen-def-1-audit/current4/synthetic_entity_types.pyi	2026-11-06 22:27:04.933109334 +0800
+@@ -22,5 +22,11 @@
+     # source: .def:6 -> types.xml:8
+     talent: FixedArray[TALENT_NODE]
+ 
++    def __init__(self) -> None:
++        if self.profile is None:
++            self.profile = {}
++        if self.talent is None:
++            self.talent = []
++
+     # source: .def:40 (CellMethods)
+     def shout(arg1: int) -> None: ...
+diff -ru /tmp/gen-def-1-audit/base4/synthetic_guard_audit.txt /tmp/gen-def-1-audit/current4/synthetic_guard_audit.txt
+--- /tmp/gen-def-1-audit/base4/synthetic_guard_audit.txt	2026-11-06 22:27:03.633221798 +0800
++++ /tmp/gen-def-1-audit/current4/synthetic_guard_audit.txt	2026-11-06 22:27:04.933109334 +0800
+@@ -1,4 +1,4 @@
+ entities = 1
+-is None guards = 0
++is None guards = 2
+ if not self. = 0
+-__init__ blocks = 0
+\ No newline at end of file
++__init__ blocks = 1
+\ No newline at end of file

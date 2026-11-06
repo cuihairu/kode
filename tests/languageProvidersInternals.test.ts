@@ -937,8 +937,9 @@ describe('persistent property database storage hover', () => {
     expect(text).toContain('**数据库存储**');
     expect(text).toContain('`tbl_Stor`');
     expect(text).toContain('`sm_hp`');
-    // 批131:完整表.列全名 + 引擎 DDL 片段 + 具体取值区间
-    expect(text).toContain('`tbl_Stor`.`sm_hp` = int unsigned not null DEFAULT 0(取值 0..4294967295)');
+    // 批131:完整表.列全名 + 引擎 DDL 片段 + 具体取值区间;IDE-DB-001 再附容量说明
+    expect(text).toContain('`tbl_Stor`.`sm_hp` = int unsigned not null DEFAULT 0(取值 0..4294967295');
+    expect(text).toContain('容量: 显示宽度可配——未配置 DatabaseLength,引擎剥掉 (N) 建裸 int unsigned,取值范围由类型本身决定)');
   });
 
   it('lists every vector column of a persistent VECTOR3', () => {

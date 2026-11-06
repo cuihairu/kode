@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { getHoverLanguage, HoverLanguage } from './hoverLocale';
 
 /**
  * 元件 kbengine.xml / 引擎 kbengine_defaults.xml 字段悬浮文档(批112 用户令:
@@ -6,6 +7,11 @@ import * as vscode from 'vscode';
  * kbengine_defaults.xml 的双语注释与引擎文档整理,不臆造语义;键为
  * `<所在段>.<字段名>`(就近向上找整行 opener)或裸 `<字段名>`(无歧义时),
  * 先查带段的键、再查裸键。
+ *
+ * IDE-I18N-002:文案语言跟 `kbengine.hover.language` 配置(auto 探测中文
+ * 系统/UTC+8,默认英文;见 hoverLocale.ts)。下表为中文包,英文包
+ * SERVER_CONFIG_FIELD_DOCS_EN 同键同数(测试锁两表全等与逐键互异),
+ * 逐键取文优先所选语言,缺键回落本表——既有中文悬停不因语言面引入空悬停。
  */
 
 /**
@@ -115,9 +121,133 @@ export const SERVER_CONFIG_FIELD_DOCS: Record<string, string> = {
 };
 
 /**
+ * 英文包(IDE-I18N-002):与 SERVER_CONFIG_FIELD_DOCS 同键同数,措辞对照引擎
+ * kbengine_defaults.xml 注释的英文括注与引擎文档整理,不另造语义。
+ */
+export const SERVER_CONFIG_FIELD_DOCS_EN: Record<string, string> = {
+  // —— 组件段(裸键:段 opener 行自身悬停,向上无段时也落这里) ——
+  machine:
+    '**machine** process: gandalf-style probe/network daemon; handles multi-machine networking and process discovery',
+  logger: '**logger** process: standalone process collecting logs from all components',
+  dbmgr: '**dbmgr** process: database manager; handles account verification and entity data read/write',
+  interfaces: '**interfaces** process: connects third-party billing/order and other external systems',
+  baseapp: '**baseapp** process: manages base entities, backup archives and client login forwarding',
+  cellapp: '**cellapp** process: manages cell entities, View/space and load balancing',
+  loginapp: '**loginapp** process: login gateway; handles login, account creation and server list delivery',
+  bots: '**bots** process: robot stress-testing process',
+  root: 'Component kbengine.xml root node; contains the config sections of all component processes',
+
+  // —— 嵌套段 ——
+  telnet_service:
+    'Telnet console service (enabling it in the component config opens each component telnet port); if the port is taken it tries +1 (e.g. 34001)',
+  witness: 'Witness (each player is a witness): entity information it observes is synced to the client',
+  shutdown: 'Server shutdown process parameters (batched destruction pacing, etc.)',
+  profiles: 'Program profiling switches',
+  ids: 'entityID allocator: requests new ID ranges when entering the overflow range',
+  coordinate_system: 'Coordinate system: 1 = grid-based, 2 = range-based',
+  databaseInterfaces: 'Additional interfaces can be added to the address pool to share load',
+  account_system: 'Account system config (dbmgr)',
+  account_registration: 'Account registration (dbmgr)',
+  account_resetPassword: 'Password find/reset (dbmgr)',
+
+  // —— 通用字段(裸键,语义全组件一致) ——
+  entryScriptFile: 'Script entry module, equivalent to the main function',
+  internalInterface: 'Internal network interface address: NIC name, MAC or IP',
+  externalAddress:
+    'Externally exposed address; empty lets the engine auto-detect the NIC (set explicitly with multiple NICs/public NAT)',
+  externalTcpPorts_min: 'Lower bound of the TCP port range exposed to clients',
+  externalTcpPorts_max: 'Upper bound of the TCP port range exposed to clients',
+  externalUdpPorts_min: 'Lower bound of the UDP port range exposed to clients',
+  externalUdpPorts_max: 'Upper bound of the UDP port range exposed to clients',
+  SOMAXCONN: 'Maximum listen backlog queue size',
+  orders_timeout: 'Order timeout (seconds)',
+  debug: 'debug mode can print read/write operation info',
+  shareDB: 'Whether to share the database',
+  allowEmptyDigest: 'Whether to check the defs-MD5 digest (false = verify, for asset sync consistency)',
+  addDefaultAddress:
+    'true adds the configured Interfaces address to the address pool automatically, so changing the Interfaces port does not require edits in multiple places',
+  host: 'Server address (IP/hostname)',
+  default_layer: 'Default telnet command layer (e.g. python)',
+  defaultViewRadius: 'Default View radius; scripts can change it',
+  aliasEntityID:
+    'EntityID optimization: with fewer than 255 entities in View range, the EntityID sent to the client uses a 1-byte alias',
+  entitydefAliasID:
+    'Broadcast bandwidth optimization: with no more than 255 entity client properties or methods, they are transferred by alias',
+  cprofile: 'true starts recording profile info at engine startup and exports a report on process exit',
+  loadSmoothingBias: 'Load balance filter metric value',
+  ghostUpdateHertz: 'ghost (remote entity mirror) update frequency',
+  rangemgr_y:
+    'Whether to manage the y-axis: gives View/Trap etc. a height dimension; better when entities in a space are sparse',
+  entity_posdir_additional_updates:
+    'After an entity stops moving, the engine keeps sending position updates to the client for this many ticks; 0 = always update',
+  entity_posdir_updates: 'Entity position update mode (1 = key frames, 2 = every movement packet)',
+  perSecsDestroyEntitySize: 'Number of entities with a base part destroyed per second',
+  archivePeriod: 'Entity archive period (seconds)',
+  backupPeriod: 'Entity backup period (seconds)',
+  backUpUndefinedProperties: 'Whether to back up properties undefined by scripts',
+  downloadStreaming: 'Resource download bandwidth limit',
+  bitsPerSecondPerClient: 'Per-client bandwidth bit rate',
+  entityRestoreSize: 'Number of entities restored per batch during baseapp disaster recovery',
+  buffer_size: 'Resource pool buffer size (KB): only resources within this size enter the resource pool',
+  checktick: 'Resource pool check tick (seconds)',
+  encrypt_login:
+    'Login encryption: 0 = none, 1 = Blowfish, 2 = RSA (res/key/kbengine_private.key)',
+  account_type:
+    'Account type: 1 = normal account, 2 = email account (needs activation), 3 = smart account (auto-detects email/normal)',
+  http_cbhost:
+    'http callback interface: handles authentication, password reset etc. (usually replaced by the engine with externalInterface/externalAddress; only the first loginapp enables it)',
+  http_cbport: 'http callback port',
+  forceInternalLogin:
+    'Resolution for baseapp externalAddress: when a public IP is forced for login, internal connections still use the internal network',
+  isOnInitCallPropertysSetMethods: 'Whether to call property set methods on initialization',
+  defaultAddBots: 'Automatically add this many bots after processes start, by default',
+  account_name_prefix: 'Prefix of bot account names',
+  account_name_suffix_inc: 'Bot account name suffix increment: 0 = random increment, otherwise increments by the given number',
+  tick_max_buffered_logs: 'Maximum logs buffered per tick on one app process',
+  tick_sync_logs: 'Maximum logs synced to the logger per tick on one app process',
+  addresses:
+    'When multi-machine networking is blocked by routers forbidding UDP broadcast, list all relevant machine addresses here; the engine sends directed probe packets to complete networking',
+  accountEntityScriptType: 'Name of the account Entity',
+  accountDefaultFlags: 'Default flags of new accounts (combinable; enter in decimal)',
+  accountDefaultDeadline: 'Default deadline of new accounts',
+  loginAutoCreate: 'Auto-create the game account when login is valid but it is not found in the game database',
+  databaseName: 'Database name',
+  numConnections: 'Database connection pool size',
+  auth: 'Database authentication method',
+  timeout:
+    'Timeout (seconds): witness section — restore delay after an entity stops being observed; baseapp section — idle destroy time of pooled resources',
+
+  // —— 歧义字段带段键 ——
+  'telnet_service.port': 'telnet listen port (0 = disabled)',
+  'telnet_service.password': 'telnet login password (engine default pwd123456)'
+};
+
+/**
+ * 语言取文:先查所选语言的带段键,再查裸键;英文面缺键回落中文表
+ * (既有中文悬停永不为空,语言配置不引入空悬停)。
+ */
+export function serverConfigFieldDoc(
+  qualifiedKey: string,
+  bareKey: string,
+  language: HoverLanguage
+): string | undefined {
+  const primary =
+    language === 'en' ? SERVER_CONFIG_FIELD_DOCS_EN : SERVER_CONFIG_FIELD_DOCS;
+  const hit = primary[qualifiedKey] ?? primary[bareKey];
+  if (hit !== undefined) {
+    return hit;
+  }
+  if (language === 'en') {
+    return SERVER_CONFIG_FIELD_DOCS[qualifiedKey] ?? SERVER_CONFIG_FIELD_DOCS[bareKey];
+  }
+  return undefined;
+}
+
+/**
  * 悬停解析(行级口径):当前行取第一个标签名作悬停目标;所在段自当前位置
  * 向上找最近的整行 opener(`^\s*<(\w+)>\s*$`)。先查 `段.标签` 再查裸标签,
  * 命中即产出 Markdown 悬停,否则 null(交回既有 .def/xml 悬停体系)。
+ * 文案语言随 `kbengine.hover.language`(IDE-I18N-002,见 hoverLocale.ts)。
  */
 export function provideServerConfigHover(
   document: vscode.TextDocument,
@@ -136,9 +266,7 @@ export function provideServerConfigHover(
       break;
     }
   }
-  const doc =
-    SERVER_CONFIG_FIELD_DOCS[`${section}.${tagMatch[1]}`] ??
-    SERVER_CONFIG_FIELD_DOCS[tagMatch[1]];
+  const doc = serverConfigFieldDoc(`${section}.${tagMatch[1]}`, tagMatch[1], getHoverLanguage());
   if (doc === undefined) {
     return null;
   }

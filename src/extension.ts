@@ -174,10 +174,12 @@ import {
 } from './logErrorScan';
 import { DEBUG_ATTACH_MODE_STATE_KEY, DebugConfigManager } from './debugConfig';
 import {
+  PYSPY_RECORD_DEFAULTS,
   defaultSpawnRunner,
   ensurePyspyReady,
   resolvePyspyCommand,
-  runPyspyDump
+  runPyspyDump,
+  runPyspySchedule
 } from './pyspyDump';
 import {
   locateInterpreterOnPath,
@@ -243,7 +245,9 @@ import { normalizeVenvDirectoryNames } from './quickActionConfig';
 import { QuickActionTreeProvider } from './quickActionTree';
 import {
   HOT_RELOAD_APPLIED_SETTLE_MS,
+  hotReloadSectionReader,
   realHotReloadTimerDeps,
+  readHotReloadSettings,
   setupHotReload,
   type HotReloadSendOptions,
   type HotReloadTargetStateWiring
@@ -251,6 +255,7 @@ import {
 import { HotReloadStatusController } from './hotReloadStatus';
 import { createFileChangeRouter, registerRustFileChangeConsumer } from './fileChangeBypass';
 import { HOT_RELOAD_CHANNEL_STATUS_PRIORITY, HotReloadChannelQuickSwitch, runHotReloadChannelConfigCommand } from './hotReloadChannelConfig';
+import { HotReloadVersionTracker, matchesHotReloadGlob } from './hotReloadFileVersion';
 import { resolveReloadTransport, type ReloadTransport } from './hotReloadTransport';
 import { runHotReloadBatchSummaryCommand } from './hotReloadBatchSummaryCommand';
 import { runHotReloadRetryCommand } from './hotReloadRetryCommand';
@@ -316,6 +321,11 @@ import {
   updateTelnetStatusBar
 } from './telnetService';
 import { TelnetWebView } from './telnetWebView';
+import {
+  runBotsAddCommand,
+  runBotsCountCommand,
+  type BotsControlDeps
+} from './botsControl';
 import {
   KBEngineCallHierarchyProvider,
   KBEngineReferencesProvider,
@@ -4262,6 +4272,31 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(telnetStateSubscription);
   updateTelnetStatusBar(telnetService, telnetStatusBarItem);
 
+  // 机器人控制(IDE-BOT-001 A 案:本地单机闭环):经 bots 进程 telnet
+  // python 层 addBots/计数;引擎无逐个减员 API,减员=停进程(编排层与
+  // 命令提示都如实说明)。白名单闸在 telnet 服务层,此处只做编排。
+  const botsChannel = vscode.window.createOutputChannel('KBEngine 机器人');
+  const botsControlDeps: BotsControlDeps = {
+    getBotsTarget: () => telnetService.getTargets().find(target => target.component === 'bots') ?? null,
+    connectTarget: key => telnetService.connectTarget(key),
+    getSessionState: key => telnetService.getSessionState(key),
+    sendCommand: (key, command) => telnetService.sendCommand(key, command),
+    getOutput: key => telnetService.getOutput(key),
+    sleep: ms => new Promise<void>(resolve => setTimeout(resolve, ms)),
+    withInput: (prompt, placeholder, validate) =>
+      vscode.window.showInputBox({ prompt, placeHolder: placeholder, validateInput: validate }),
+    showInformationMessage: message => vscode.window.showInformationMessage(message),
+    showErrorMessage: message => vscode.window.showErrorMessage(message),
+    channel: botsChannel
+  };
+  const botsAddCommand = vscode.commands.registerCommand('kbengine.bots.add', () => {
+    void runBotsAddCommand(botsControlDeps);
+  });
+  const botsCountCommand = vscode.commands.registerCommand('kbengine.bots.count', () => {
+    void runBotsCountCommand(botsControlDeps);
+  });
+  context.subscriptions.push(botsChannel, botsAddCommand, botsCountCommand);
+
   // HTTP 快捷请求(批105):OUTPUT 流水 + 列表 quick pick + 具名运行
   // (实际快捷键经「键盘快捷方式」为本命令配 args.name 绑定)
   const quickActionManagerRef: { current?: QuickActionManager } = {};
@@ -5154,6 +5189,109 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(pyspyDumpCommand);
 
+  // IDE-PYSPY-001:py-spy 火焰图采集(record --format flamegraph)。傻瓜化
+  // 默认参数(10s 窗口、100/s 采样、非阻塞)一键采集;定时/周期采集经两次
+  // 输入框提示(每 N 秒采 X 次)。record 落盘 SVG,采集成功后在编辑器打开
+  // (VS Code 原生图像预览呈现,不另造渲染面);逐次结果记同一输出通道。
+  // 本批仅本地:远端 record 的文件产出需 scp 回传,先如实提示用 dump 拿栈。
+  const pyspyFlamegraphCommand = vscode.commands.registerCommand(
+    'kbengine.debug.pyspyFlamegraph',
+    async (target: unknown) => {
+      const fromTree = resolveServerComponent(target);
+      const component = fromTree ?? (await pickServerComponent('选择要采集火焰图的组件'));
+      if (!component) {
+        return;
+      }
+      const connection = debugConfigManager.getConnectionFor(component.name);
+      if (connection !== 'local') {
+        vscode.window.showWarningMessage(
+          '火焰图 record 暂仅支持本地组件(远端文件需回传);远端组件先用 py-spy dump 拿调用栈'
+        );
+        return;
+      }
+      const runner = defaultSpawnRunner;
+      const uiFace = {
+        warn: (message: string, ...actions: string[]) =>
+          vscode.window.showWarningMessage(message, ...actions),
+        info: (message: string) => vscode.window.showInformationMessage(message),
+        error: (message: string) => vscode.window.showErrorMessage(message)
+      };
+      const resolution =
+        resolveProfileInterpreter(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
+      const ready = await ensurePyspyReady(
+        runner,
+        uiFace,
+        () => resolution ?? { interpreterPath: '', interpreterSource: 'setting' }
+      );
+      if (!ready) {
+        return;
+      }
+      const pid = await debugConfigManager.pickProcessId(component.name);
+      if (pid === undefined || !Number.isFinite(pid) || pid <= 0) {
+        return;
+      }
+      // 采集配置:缺省值即傻瓜化口径(1 次 / 每 5 秒);输入非整数/越界即拒
+      const countRaw = await vscode.window.showInputBox({
+        prompt: '采集次数 X(每 N 秒采一次,共 X 次)',
+        value: '1',
+        validateInput: text => (/^[1-9][0-9]*$/.test(text) ? null : '请输入正整数(如 1)')
+      });
+      if (countRaw === undefined) {
+        return;
+      }
+      const intervalRaw = await vscode.window.showInputBox({
+        prompt: '采集间隔秒 N(相邻两次采集之间的秒数)',
+        value: '5',
+        validateInput: text => (/^[1-9][0-9]*$/.test(text) ? null : '请输入正整数秒(如 5)')
+      });
+      if (intervalRaw === undefined) {
+        return;
+      }
+      const outDir = path.join(os.tmpdir(), 'kode-pyspy-flamegraphs');
+      try {
+        fs.mkdirSync(outDir, { recursive: true });
+      } catch (error) {
+        vscode.window.showErrorMessage(`创建输出目录失败: ${String(error)}`);
+        return;
+      }
+      pyspyChannel.appendLine(
+        `\n===== py-spy flamegraph ${component.name} pid=${pid} ×${countRaw} 次/${intervalRaw}s ${new Date().toISOString()} =====`
+      );
+      pyspyChannel.show(true);
+      const runs = await runPyspySchedule(
+        runner,
+        pid,
+        {
+          count: Number(countRaw),
+          intervalSec: Number(intervalRaw),
+          outDir,
+          durationSec: PYSPY_RECORD_DEFAULTS.durationSec,
+          rateHz: PYSPY_RECORD_DEFAULTS.rateHz,
+          format: PYSPY_RECORD_DEFAULTS.format,
+          nonblocking: PYSPY_RECORD_DEFAULTS.nonblocking
+        },
+        resolution && resolvePyspyCommand(resolution.interpreterPath)
+      );
+      for (const run of runs) {
+        pyspyChannel.appendLine(
+          run.ok
+            ? `第 ${run.index + 1} 次: ${run.file}`
+            : `第 ${run.index + 1} 次: 采集失败(已中止后续采集)——${run.output}`
+        );
+        if (run.ok) {
+          void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(run.file));
+        }
+      }
+      const succeeded = runs.filter(run => run.ok).length;
+      if (succeeded === 0) {
+        vscode.window.showErrorMessage('py-spy 火焰图采集失败,详情见「KBEngine py-spy」输出通道');
+      } else {
+        pyspyChannel.appendLine(`共 ${succeeded}/${runs.length} 次采集成功,SVG 已在编辑器打开`);
+      }
+    }
+  );
+  context.subscriptions.push(pyspyFlamegraphCommand);
+
   // 初始化监控面板
   const monitoringCollector = new MonitoringCollector(context);
   const monitoringWebView = new MonitoringWebView(context, monitoringCollector);
@@ -5437,9 +5575,12 @@ export function activate(context: vscode.ExtensionContext) {
     getActions: () => quickActionManager.getTreeData()
   });
   context.subscriptions.push(vscode.window.registerTreeDataProvider('kbengine.quickActions', quickActionTreeProvider));
+  // HOT-VER:手动跑一次动作(右键/命令面板)后重采版本并重画徽标——监视开关
+  // 关着也一样:版本簿独立于 watcher,手动触发路径与 watcher 同口径同台账。
   const runQuickActionByNameCommand = vscode.commands.registerCommand(
     'kbengine.quickActions.runByName',
-    (name: string) => quickActionManager.runByName(name)
+    (name: string) =>
+      Promise.resolve(quickActionManager.runByName(name)).finally(() => hotReloadVersionRefresh.refresh?.(true))
   );
   context.subscriptions.push(runQuickActionByNameCommand);
   const showQuickActionsCommand = vscode.commands.registerCommand('kbengine.quickActions.show', () =>
@@ -5456,7 +5597,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(rescanQuickActionScriptsCommand);
   const runDefaultQuickActionCommand = vscode.commands.registerCommand(
     'kbengine.quickActions.runDefault',
-    () => quickActionManager.runDefault()
+    () => Promise.resolve(quickActionManager.runDefault()).finally(() => hotReloadVersionRefresh.refresh?.(true))
   );
   context.subscriptions.push(runDefaultQuickActionCommand);
 
@@ -5470,9 +5611,41 @@ export function activate(context: vscode.ExtensionContext) {
   // IDE-HOT-100:台账落账即时刷呈现面(角标/状态点跟住回执落地,不等下次
   // 保存);呈现面 provider 在后面才建,这里挂前向引用
   const hotReloadStateViewRefresh: { refresh?: () => void } = {};
+  // HOT-VER:版本簿的前向引用——回执落账/采样变化 → 重采版本并补渲染状态栏
+  const hotReloadVersionRefresh: { refresh?: (forceRender?: boolean) => void } = {};
   const hotReloadTargetStateStore = new HotReloadTargetStateStore({
     now: () => Date.now(),
-    onRecorded: () => hotReloadStateViewRefresh.refresh?.()
+    onRecorded: () => {
+      hotReloadStateViewRefresh.refresh?.();
+      // applied 回执落账 → 重采盘上版本并结算基线追平(单号/双号跟住回执)
+      hotReloadVersionRefresh.refresh?.();
+    }
+  });
+  // HOT-VER:文件版本簿(状态栏版本号)。台账独立于 watcher——监视范围只看
+  // globs(与 enabled 开关正交),采样口缺省走 fs.stat 的 mtimeMs:size;watcher
+  // 事件、回执落账、手动触发(showFileState/retryFailed/手动跑动作)都写同一份
+  // 台账同一实现,不产生两套计数;watcher 只是它的默认事件来源,不是前提。
+  const hotReloadGlobsNow = (): string[] => readHotReloadSettings(hotReloadSectionReader()).globs;
+  const hotReloadRelativePath = (file: string): string | null => {
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      const root = folder.uri.fsPath;
+      if (file === root) {
+        return '';
+      }
+      if (file.startsWith(`${root}/`) || file.startsWith(`${root}${path.sep}`)) {
+        return file.slice(root.length + 1);
+      }
+    }
+    return null;
+  };
+  const hotReloadVersions = new HotReloadVersionTracker({
+    store: hotReloadTargetStateStore,
+    activeFile: () => vscode.window.activeTextEditor?.document.uri.fsPath,
+    isWatched: file => {
+      const relative = hotReloadRelativePath(file);
+      return relative !== null && matchesHotReloadGlob(relative, hotReloadGlobsNow());
+    },
+    now: () => Date.now()
   });
   // IDE-REV-027 引擎 digest 证据册:fire 路径与失败目标重发的回包体都喂
   // 进来(册内判协议:非空 digest+逐字回显该文件才入册),证据展示命令读
@@ -5482,7 +5655,8 @@ export function activate(context: vscode.ExtensionContext) {
     createStatusBarItem: (alignment, priority) => vscode.window.createStatusBarItem(alignment, priority),
     createOutputChannel: name => vscode.window.createOutputChannel(name),
     registerCommand: (command, handler) => vscode.commands.registerCommand(command, handler),
-    timers: realHotReloadTimerDeps
+    timers: realHotReloadTimerDeps,
+    versions: hotReloadVersions
   });
   // 快捷切换本批:热更通道状态栏灯——显示当前通道(如 `热更:自研HTTP`),点击弹
   // 三选 QuickPick 即切,选中即探活:绿(默认底+$(plug))=通并落 profile,红
@@ -5519,6 +5693,25 @@ export function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(hotReloadChannelSwitch);
   context.subscriptions.push(onDidChangeActiveProfile(() => hotReloadChannelSwitch.refresh()));
+
+  // 重采 → 有变化才补渲染;forceRender=true 给「换了活动文档但版本没变」的场景
+  // (徽标换文件本身也要重画)。渲染自身也会 kick 一次重采,两头收敛不空转。
+  hotReloadVersionRefresh.refresh = (forceRender = false): void => {
+    void hotReloadVersions
+      .refresh()
+      .then(changed => {
+        if (changed || forceRender) {
+          hotReloadStatus.versionsChanged();
+        }
+      })
+      .catch(() => undefined);
+  };
+  // 活动文档切换 → 徽标跟住当前文档(在监视范围且已跟踪才显示它的版本)
+  if (typeof vscode.window.onDidChangeActiveTextEditor === 'function') {
+    context.subscriptions.push(
+      vscode.window.onDidChangeActiveTextEditor(() => hotReloadVersionRefresh.refresh?.(true))
+    );
+  }
   // IDE-HOT-100 文件热更状态机:台账之上派生 CLEAN/DIRTY/SENT/APPLIED/FAILED/
   // RESTART_REQUIRED 生命周期态(依据=内容 sha256+既有回执协议,不靠 mtime);
   // 台账是事实源,状态机是派生视图,键同形不另立身份。def 结构闸拦下经
@@ -5637,6 +5830,18 @@ export function activate(context: vscode.ExtensionContext) {
     // sha256/version),与 python 索引日志同一格式;懒异步,不阻塞发送。
     fileChangeMeta: fileChangeMetaResolver,
     noteEngineDigest: (key, file, body) => hotReloadEngineDigestRegister.note(key, file, body),
+    // HOT-VER:watcher 事件 → 版本簿采样建档/跳号(版本簿的默认事件来源;
+    // 手动触发路径不经这里,写同一台账同一实现,同 token 只 +1)
+    onWatchedFileChange: file => {
+      void hotReloadVersions
+        .noteFile(file)
+        .then(changed => {
+          if (changed) {
+            hotReloadStatus.versionsChanged();
+          }
+        })
+        .catch(() => undefined);
+    },
     // IDE-HOT-100:def 结构闸拦下 → 状态机标 RESTART_REQUIRED 呈现(与日志
     // 同源;拦下本身是 HOT-005 既有面)。targetId 经动作名反查,解不到该
     // 次如实不标(无目标身份,不虚构);rootId 逐文件解析,解不到跳过。
@@ -5875,20 +6080,34 @@ export function activate(context: vscode.ExtensionContext) {
         hotReloadStatus.log('无活动文件:状态点点击需带文件参数');
         return;
       }
-      void runShowHotReloadFileStateCommand(
-        {
-          stateMachine: hotReloadFileStateMachine,
-          ledger: hotReloadTargetStateStore,
-          readFileContent: hotReloadStateReadFile,
-          resolveRootId: filePath => hotReloadTargetStateWiring.resolveRootId(filePath),
-          targetsForRoot: hotReloadTargetsForRoot
-        },
-        {
-          logBlock: text => hotReloadStatus.log(text),
-          show: () => hotReloadStatus.showLog()
-        },
-        file
-      );
+      // HOT-VER:手动触发路径先建档采样(监视开关关也一样)再落状态明细,
+      // 版本行与状态栏徽标同源——与 watcher 路径共用同一台账同一实现。
+      void hotReloadVersions
+        .noteFile(file)
+        .catch(() => undefined)
+        .then(() => {
+          hotReloadStatus.versionsChanged();
+          const versionLine = hotReloadVersions.describeVersion(file);
+          return runShowHotReloadFileStateCommand(
+            {
+              stateMachine: hotReloadFileStateMachine,
+              ledger: hotReloadTargetStateStore,
+              readFileContent: hotReloadStateReadFile,
+              resolveRootId: filePath => hotReloadTargetStateWiring.resolveRootId(filePath),
+              targetsForRoot: hotReloadTargetsForRoot
+            },
+            {
+              logBlock: text => {
+                if (versionLine !== undefined) {
+                  hotReloadStatus.log(versionLine);
+                }
+                hotReloadStatus.log(text);
+              },
+              show: () => hotReloadStatus.showLog()
+            },
+            file
+          );
+        });
     })
   );
 

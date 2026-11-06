@@ -1,0 +1,36 @@
+HEAD=89cbddd8db7534f6fad447167e7426455f9d3ac1
+DATE=2026-11-06T22:09:17+08:00
+== tsc --noEmit -p tsconfig.json
+TSC_EXIT=0
+== eslint src --ext ts
+ESLINT_SRC_EXIT=0
+== eslint tests --ext ts (baseline comparison)
+  7 errors and 0 warnings potentially fixable with the `--fix` option.
+
+HEAD=14f81f7bebe179fe3d13b00e09a8952d366dd111
+DATE=2026-11-06T22:14:58+08:00
+== eslint tests --ext ts @ HEAD
+  7 errors and 0 warnings potentially fixable with the `--fix` option.
+
+HEAD_TESTS_ESLINT_EXIT=0
+== eslint tests --ext ts @ baseline ae36cd7 (/tmp/kode-gen1-base)
+  7 errors and 0 warnings potentially fixable with the `--fix` option.
+
+BASELINE_TESTS_ESLINT_EXIT=0
+
+== re-bind @ 7229b34 2026-11-06T22:16:23+08:00
+-- eslint tests --ext ts @ 7229b34
+✖ 101 problems (101 errors, 0 warnings)
+-- eslint src --ext ts @ 7229b34
+0 problems
+-- tsc --noEmit @ 7229b34
+TSC_EXIT=0
+
+== evidence-completion @ 2026-11-06T22:24:57+08:00 (code-under-test=3c08eb9)
+-- eslint tests --ext ts @ HEAD 3c08eb9
+101 problems (101 errors, 0 warnings)
+-- eslint tests --ext ts @ baseline ae36cd7
+101 problems (101 errors, 0 warnings)
+-- note: vitest-full.log binds code-under-test 7c51b6d; commits 3c08eb9..HEAD are evidence-only (log/doc files), no src/tests changes
+
+== gate log rebind @ 2026-11-06T22:29:23+08:00: final evidence commit 2c3b507 (test-file changes of 3c08eb9..HEAD covered by this run's code-under-test)

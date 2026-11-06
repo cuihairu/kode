@@ -58,7 +58,8 @@ interface UriMergeState {
 
 /** 盘上版本 token 口径(KR-AUD-30):两次 stat 相同 = 同一版本(纯重复)。
  *  共享给旁路事件(fileChangeBypass)——两边必须逐字同口径,否则去重/版本
- *  判定各写各的必漂移。 */
+ *  判定各写各的必漂移。HOT-VER:文件版本簿(hotReloadFileVersion)复用同一
+ *  口径——watcher 事件流、旁路与手动触发路径共用,不另造第二套判据。 */
 export const fileVersionTokenFromStats = (stats: { mtimeMs: number; size: number }): string =>
   `${stats.mtimeMs}:${stats.size}`;
 

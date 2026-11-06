@@ -10,6 +10,12 @@ import { HOT_RELOAD_TOGGLE_COMMAND, toggleHotReloadEnabled } from './hotReloadTo
 // kbengine.hotReload.toggle,写回配置),开日志仍走 kbengine.hotReload.showLog
 // 命令面;开与关的说明提示随开关出。状态变更经节流合并(HR-UI-007 同思路):
 // 首个状态即时上屏,节流窗内的后续变更合并成一次尾沿渲染。
+//
+// HOT-VER(文件版本号):五种状态与版本号正交组合,不新增状态——单号=已同步
+// (`热更: 就绪 v3`),双号=待同步(`热更: … v2→v3`,左=基线/上次发送版本,
+// 右=盘上当前版本)。版本数据来自 HotReloadVersionSource(台账内版本簿,独立于
+// watcher 开关);未注入=纯五态文案,既有断言不回归。点击状态栏先刷新版本再把
+// 版本台账写进 OUTPUT。
 
 export const HOT_RELOAD_SHOW_LOG_COMMAND = 'kbengine.hotReload.showLog';
 export const HOT_RELOAD_LOG_CHANNEL_NAME = 'KBEngine 热更新';
@@ -58,6 +64,37 @@ const STATUS_FACES: Record<HotReloadStatusKind, { text: string; tooltip: string 
   }
 };
 
+/**
+ * 单文件版本徽标(HOT-VER):baseline=基线/上次已核验同步版本,current=盘上
+ * 当前版本。二者相等=已同步(单号),不等=待同步(双号,基线→盘上)。
+ */
+export interface HotReloadVersionBadgeView {
+  readonly file: string;
+  readonly baseline: number;
+  readonly current: number;
+}
+
+/**
+ * 版本数据源(状态栏与 OUTPUT 报告共用):badge/pending/report 同步读台账内
+ * 版本簿,refresh 异步重采盘上 token 并结算 applied 基线追平,返回是否有变化。
+ * 数据源独立于 watcher 开关——watcher 只是它的默认事件来源之一,手动触发路径
+ * (showFileState/retryFailed/右键手动发一次热更)写同一份台账同一实现。
+ */
+export interface HotReloadVersionSource {
+  /** 当前活动文档的版本;不在监视范围/未跟踪则回落最近变更文件;全无=undefined */
+  badge(): HotReloadVersionBadgeView | undefined;
+  /** 全部待同步文件(基线 ≠ 盘上当前),按文件路径排序 */
+  pending(): HotReloadVersionBadgeView[];
+  /** OUTPUT 版本台账行(当前文件/基线/盘上/每次版本跃迁与回执);无=空数组 */
+  report(): string[];
+  /** 重采盘上版本 + applied 基线追平;返回是否有变化(供补渲染收敛) */
+  refresh(): Promise<boolean>;
+}
+
+/** 版本号后缀:单号=已同步,双号=基线→盘上(不暴露 mtime:size 原始 token) */
+export const formatHotReloadVersionSuffix = (baseline: number, current: number): string =>
+  baseline === current ? `v${current}` : `v${baseline}→v${current}`;
+
 /** 状态栏项最小面:真 vscode.StatusBarItem 的结构子集,测试用假体同形 */
 export interface StatusBarItemLike {
   text: string;
@@ -84,6 +121,8 @@ export interface HotReloadStatusDeps {
   readonly throttleMs?: number;
   /** 时间源(日志行前缀);测试注固定值,缺省真时钟 */
   readonly now?: () => number;
+  /** 版本数据源(可选):注入即状态栏带文件版本徽标;不注入=纯五态文案 */
+  readonly versions?: HotReloadVersionSource;
 }
 
 /** 本地时间 HH:MM:SS;纯函数便于直测 */
@@ -113,6 +152,9 @@ export class HotReloadStatusController {
   private windowOpen = false;
   private pendingKind: HotReloadStatusKind | undefined;
   private windowHandle: unknown;
+  /** 版本重采在飞标记:渲染触发的补渲染收敛为「变了才再渲染」,不空转 */
+  private refreshInFlight = false;
+  private disposedFlag = false;
 
   constructor(deps: HotReloadStatusDeps) {
     this.deps = deps;
@@ -122,8 +164,10 @@ export class HotReloadStatusController {
     // 点击状态栏 = 一键关/开(用户令 2026-11-06);开日志命令仍单独注册
     this.bar.command = HOT_RELOAD_TOGGLE_COMMAND;
     this.channel = deps.createOutputChannel(HOT_RELOAD_LOG_CHANNEL_NAME);
+    // 命令面并集:开关命令(HOT-VER 之前已有)与开日志命令都注册;
+    // 开日志走带版本台账的入口(无版本数据源时退回纯开通道,原样)。
     this.commandRegistrations = [
-      deps.registerCommand(HOT_RELOAD_SHOW_LOG_COMMAND, () => this.showLog()),
+      deps.registerCommand(HOT_RELOAD_SHOW_LOG_COMMAND, () => this.showLogWithVersions()),
       deps.registerCommand(HOT_RELOAD_TOGGLE_COMMAND, () => this.toggleEnabled())
     ];
     this.render('watch-off');
@@ -202,6 +246,7 @@ export class HotReloadStatusController {
     this.log(`结构性 def 变更需重启,不作为普通 reload 发送: ${reasons.join(';')} | 触发: ${triggerText}`);
   }
 
+  /** 开日志通道(既有各命令面共用,只开通道不加工) */
   showLog(): void {
     this.channel.show();
   }
@@ -222,11 +267,12 @@ export class HotReloadStatusController {
         const message = next
           ? '自动热更已开启:保存 .py 即向 http://127.0.0.1:8090/hotfix?module_name=<模块名> 发送(query 与 body 各带一份)'
           : '自动热更已关闭(kbengine.hotReload.enabled=false);点击状态栏「热更」项或再运行 kbengine.hotReload.toggle 可开启';
-        // 提示里保留开日志入口:状态栏点击已让位给一键关,日志面从这里走
+        // 提示里保留开日志入口:状态栏点击已让位给一键关,日志面从这里走;
+        // 开日志带 HOT-VER 版本台账(无版本数据源时退回纯开通道)
         void Promise.resolve(
           vscode.window.showInformationMessage(message, '打开日志').then(choice => {
             if (choice === '打开日志') {
-              this.showLog();
+              this.showLogWithVersions();
             }
           })
         ).catch(() => undefined);
@@ -240,7 +286,42 @@ export class HotReloadStatusController {
       });
   }
 
+  /**
+   * 开日志命令(HOT-VER):先重采盘上版本,把版本台账(当前文件/基线/
+   * 盘上/每次版本跃迁的时间与发送回执)落进 OUTPUT 再开通道;无版本数据源
+   * =原样开通道。
+   */
+  showLogWithVersions(): void {
+    const source = this.deps.versions;
+    if (!source) {
+      this.channel.show();
+      return;
+    }
+    void Promise.resolve()
+      .then(() => source.refresh())
+      .catch(() => undefined)
+      .then(() => {
+        if (this.disposedFlag) {
+          return;
+        }
+        for (const line of source.report()) {
+          this.channel.appendLine(line);
+        }
+        this.channel.show();
+        this.versionsChanged();
+      });
+  }
+
+  /** 版本数据变化(采样/回执/活动文档切换)→ 走同一节流窗补渲染一次 */
+  versionsChanged(): void {
+    if (this.disposedFlag) {
+      return;
+    }
+    this.render(this.kind);
+  }
+
   dispose(): void {
+    this.disposedFlag = true;
     if (this.windowHandle !== undefined) {
       this.deps.timers.clear(this.windowHandle);
       this.windowHandle = undefined;
@@ -298,7 +379,62 @@ export class HotReloadStatusController {
 
   private apply(kind: HotReloadStatusKind): void {
     const face = STATUS_FACES[kind];
-    this.bar.text = face.text;
-    this.bar.tooltip = this.tooltipNote ? `${face.tooltip};${this.tooltipNote}` : face.tooltip;
+    const source = this.deps.versions;
+    const badge = source?.badge();
+    const pending = source?.pending() ?? [];
+    this.bar.text =
+      badge === undefined ? face.text : `${face.text} ${formatHotReloadVersionSuffix(badge.baseline, badge.current)}`;
+    // 状态 tooltip 的来源/模式附注(§11.4)与版本块叠在一起,两个口径都保留
+    const base = this.tooltipNote ? `${face.tooltip};${this.tooltipNote}` : face.tooltip;
+    this.bar.tooltip = this.buildTooltip(base, badge, pending);
+    this.kickRefresh();
+  }
+
+  /** 状态 tooltip + 版本块:当前文件版本对 + 全部待同步文件版本对 */
+  private buildTooltip(
+    base: string,
+    badge: HotReloadVersionBadgeView | undefined,
+    pending: readonly HotReloadVersionBadgeView[]
+  ): string {
+    if (badge === undefined && pending.length === 0) {
+      return base;
+    }
+    const lines = [base];
+    if (badge !== undefined) {
+      const sync = formatHotReloadVersionSuffix(badge.baseline, badge.current);
+      lines.push(`当前文件 ${badge.file}: ${badge.baseline === badge.current ? `${sync}(已同步)` : `${sync}(待同步)`}`);
+    }
+    if (pending.length > 0) {
+      lines.push(`待同步 ${pending.length} 个:`);
+      for (const item of pending) {
+        lines.push(`  ${item.file} ${formatHotReloadVersionSuffix(item.baseline, item.current)}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  /**
+   * 渲染后异步重采盘上版本:任何路径(watcher 事件/回执/手动触发/活动文档切换)
+   * 都经这一口收敛——采到变化才补渲染一次,没变化就地停,不空转。
+   */
+  private kickRefresh(): void {
+    const source = this.deps.versions;
+    if (!source || this.refreshInFlight || this.disposedFlag) {
+      return;
+    }
+    this.refreshInFlight = true;
+    void Promise.resolve()
+      .then(() => source.refresh())
+      .then(
+        changed => {
+          this.refreshInFlight = false;
+          if (changed) {
+            this.versionsChanged();
+          }
+        },
+        () => {
+          this.refreshInFlight = false;
+        }
+      );
   }
 }

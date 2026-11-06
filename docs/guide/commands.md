@@ -333,6 +333,18 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Behavior (remote, IDE-PDBG-004/005): on a component dispatched to a remote server, py-spy runs over `ssh <host> -- …` and the process list comes from the same `ps` over ssh — the picker keeps the local shape (component matches pinned ✓); a listing that cannot be fetched reports the host and ssh cause honestly and opens no picker (never the local list as a stand-in)
 - Prerequisite: the target process must be a Python process visible to py-spy; ptrace permission per the guidance above
 
+### `kbengine.debug.pyspyFlamegraph`
+
+- Title: `Collect Flame Graph with py-spy`
+- Purpose: py-spy flame graph entry (IDE-PYSPY-001) on the Servers tree, flame icon (`$(flame)`) after the dump icon; runs `py-spy record --format flamegraph` on the target component process, landing a sampling-window call stack as an SVG flame graph and opening it in the editor
+- Entry: Servers tree inline icon (after the dump icon), or the command palette
+- Behavior:
+  - Frictionless defaults: 10s window, 100 samples/s, `--nonblocking` (never pauses the target) — one click collects
+  - Timed/periodic collection: two input boxes configure "collect X times every N seconds" (defaults 1 run / every 5s, integer-validated); with X>1 each run lands `flame-<timestamp>-<index>.svg` (output dir `~/.tmp/kode-pyspy-flamegraphs`), any failure stops the run and keeps already-collected files
+  - Missing py-spy reuses the one-click install chain (same as dump); a successful collect opens the SVG in the editor (VS Code native image preview), per-run results go to the `KBEngine py-spy` output channel
+- Behavior (remote): flame graph record supports local components only for now — a remote dispatch says so honestly and suggests `py-spy dump` for call stacks (remote file retrieval is a follow-up)
+- Prerequisite: the target process must be a Python process visible to py-spy; ptrace permission as with dump
+
 ### `kbengine.remoteServers.select`
 
 - Title: `Select Remote Server`
@@ -661,6 +673,27 @@ The flow graph panel supports:
   - The session panel's currently selected target goes first; with nothing selected or no session on it, the first connected target is taken
   - With no connected session it says so honestly, no spinning
 
+### `kbengine.bots.add`
+
+- Title: `KBEngine: Add Bots (telnet addBots)`
+- Purpose: drive the engine `bots` process (the client-simulator load tool) to add simulated clients at runtime — the local closed loop (IDE-BOT-001); the bots process carries its own telnet python layer (default port 51000), so no process restart is involved
+- Inputs: total count (≥1, required); optional batching — per-batch count (≥1) and interval seconds (≥0, empty = 0); leaving the batch empty sends one-shot
+- Behavior:
+  - The command string mirrors the engine API form exactly: one-shot `KBEngine.addBots(5)`, batched `KBEngine.addBots(1000, 5, 10)`
+  - The whitelist gate is never bypassed: addBots is a write operation (mass login), so with `"KBEngine.addBots"` missing from `kbengine.telnet.enableCommands` the command refuses to send and names the exact entry to add
+  - When the count query is whitelisted too (`"len(KBEngine.bots)"`), the current bot count is queried right after adding and written to the output channel
+  - Honest bounds: the engine has no per-bot destroy API (the `KBEngine.bots` dict is read-only) — reducing bots = stopping the bots process; every send writes this into the output channel, and no per-bot metrics are fabricated
+  - Failure modes are honest: no bots telnet target (telnet not configured, or a single custom port excludes component targets) → told how the target derives; session not ready within the bounded wait → reported, nothing sent
+
+### `kbengine.bots.count`
+
+- Title: `KBEngine: Query Bot Count (len(KBEngine.bots))`
+- Purpose: query the current bot count through the bots telnet python layer
+- Behavior:
+  - Sends `len(KBEngine.bots)` over the bots target's session and reads the result line within a bounded wait (~2s); the parsed number goes to the output channel
+  - No numeric line in time is reported as such — no fabricated count
+  - Requires `"len(KBEngine.bots)"` in `kbengine.telnet.enableCommands` (read-only, but not a built-in quick command); a missing entry is named in the error
+
 ### `kbengine.playerData.refresh`
 
 - Title: `Refresh Player Data Profile`
@@ -725,6 +758,7 @@ The flow graph panel supports:
   - The status bar item `$(eye…) 热更: …` reflects the watch state machine: Watch Off (`kbengine.hotReload.enabled=false` or empty globs) → Ready (watchers built) → Sending (debounce elapsed, request fired) → Sent(unverified) → Failed; clicking the item runs `kbengine.hotReload.toggle` (one-key on/off), and the toggle notice's 「打开日志」 button opens this log
   - Honest semantics: a completed action without errors is only 「已发送(未确认)」 (sent, unverified) — no business receipt is verified, so the UI never claims the module was applied (receipt verification belongs to the HR-STATE series)
   - Each trigger logs time / trigger files (merged by debounce) / the debounce value, plus the request line and the outcome line (sent-unverified / failed); log lines are appended immediately and are not subject to the status-bar throttle
+  - Running this command re-samples the disk versions and appends the HOT-VER version ledger (per in-scope tracked file: baseline version, disk version, then every version jump with its time, attempt, digest prefix and accepted/applied/failed outcome) before opening the channel; with no tracked file nothing extra is written
   - Hidden from the command palette (`when: false`) — reach it from the toggle notice's 「打开日志」 button or the first-run notice
 
 ### `kbengine.hotReload.toggle`

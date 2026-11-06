@@ -1,0 +1,21 @@
+{
+  "propertyLines": {
+    "Account": {
+      "character": 17,
+      "playerName": 19
+    },
+    "Avatar": {
+      "playerName": 39,
+      "prop1": 41,
+      "prop2": 43,
+      "prop3": 45
+    },
+    "ClientOnly": {
+      "name": 67,
+      "prop1": 69
+    },
+    "Guard": {
+      "name": 76
+    }
+  }
+}

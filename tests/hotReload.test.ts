@@ -22,6 +22,8 @@ import {
 } from './helpers/vscodeStub';
 import { readHotReloadEnabled } from '../src/hotReloadToggle';
 import packageJson from '../package.json';
+import * as fs from 'fs';
+import * as path from 'path';
 
 /** 「KBEngine 热更新」审计通道的全部行(装配逐次建通道,取同名通道并集) */
 const hotReloadLogLines = (): string[] =>
@@ -284,13 +286,17 @@ describe('setupHotReload(装配)', () => {
   });
 
   it('package.json 默认 enabled=true,markdownDescription 不再是「默认关防误触」', () => {
-    const properties = (packageJson as unknown as {
+    const raw = packageJson as unknown as {
       contributes: { configuration: { properties: Record<string, { default: unknown; markdownDescription: string }> } };
-    }).contributes.configuration.properties;
-    expect(properties['kbengine.hotReload.enabled'].default).toBe(true);
+    };
+    // KODE-I18N-001 起描述文案外置 package.nls*.json(%key% 占位),契约按解析后默认包文案断言
+    const nls = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.nls.json'), 'utf8')) as Record<string, string>;
+    const desc = raw.contributes.configuration.properties['kbengine.hotReload.enabled'].markdownDescription
+      .replace(/^%([^%]+)%$/, (_m, key: string) => nls[key] ?? key);
+    expect(raw.contributes.configuration.properties['kbengine.hotReload.enabled'].default).toBe(true);
     // 2026-11-06 起配置键提示统一 markdownDescription,裸 description 已移除
-    expect(properties['kbengine.hotReload.enabled'].markdownDescription).not.toContain('默认关防误触');
-    expect(properties['kbengine.hotReload.enabled'].markdownDescription).toContain('127.0.0.1:8090/hotfix');
+    expect(desc).not.toContain('默认关防误触');
+    expect(desc).toContain('127.0.0.1:8090/hotfix');
   });
 
   it('启用即按模式各建一个 watcher,保存事件去抖后按名执行', () => {

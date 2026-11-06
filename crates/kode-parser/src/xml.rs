@@ -87,6 +87,10 @@ pub struct Document {
     pub roots: Vec<usize>,
     pub diagnostics: Vec<Diagnostic>,
     pub len: usize,
+    /// 实际被解析的字节序列(UTF-8;mask_pseudo_comments 时是掩码后的副本),
+    /// 所有 span 以此为坐标系——供需要按**原始**字节分类的消费者使用
+    /// (如 tinyxml2 Identify 在实体解码前做空白分类)。
+    pub source: String,
 }
 
 impl Document {
@@ -181,6 +185,7 @@ pub fn parse(text: &str, mask_pseudo_comments: bool) -> Document {
         roots: p.roots,
         diagnostics: p.diagnostics,
         len: bytes.len(),
+        source: String::from_utf8_lossy(bytes).into_owned(),
     }
 }
 

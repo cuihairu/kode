@@ -322,6 +322,18 @@
 - 行为（远程，IDE-PDBG-004/005）：组件分派到远程服务器时，py-spy 经 `ssh <host> -- …` 在远端跑，进程清单同样经 ssh 上的 `ps` 取得——选择器保持本地形状（组件名命中置顶 ✓）；清单取不到如实报主机与 ssh 原因、不弹选择器（绝不拿本地清单顶替）
 - 前提：目标进程是 py-spy 可见的 Python 进程；ptrace 权限按上面口径
 
+### `kbengine.debug.pyspyFlamegraph`
+
+- 标题：`Collect Flame Graph with py-spy`
+- 作用：py-spy 火焰图采集入口（IDE-PYSPY-001），服务器树 debug 图标后 flame 图标呈现（`$(flame)`）；对目标组件进程跑 `py-spy record --format flamegraph` 把采样窗口内的调用栈落盘为 SVG 火焰图并在编辑器打开
+- 入口：服务器树 inline 图标（dump 图标后）或命令面板
+- 行为：
+  - 傻瓜化默认参数：窗口 10s、采样率 100/s、`--nonblocking`（不暂停目标进程）——一键即采
+  - 定时/周期采集：两次输入框配置「每 N 秒采 X 次」（缺省 1 次/每 5 秒，整数校验）；X>1 时逐次落盘 `flame-<时间戳>-<序号>.svg`（输出目录 `~/.tmp/kode-pyspy-flamegraphs`），任一次失败即止并保留已成功文件
+  - 未装 py-spy 复用一键安装（与 dump 同链）；采集成功在编辑器打开 SVG（VS Code 原生图像预览），逐次结果进「KBEngine py-spy」输出通道
+- 行为（远程）：火焰图 record 暂仅支持本地组件——远程分派时如实提示先用 `py-spy dump` 拿调用栈（远端文件回传待后续）
+- 前提：目标进程是 py-spy 可见的 Python 进程；ptrace 权限同 dump
+
 ### `kbengine.remoteServers.select`
 
 - 标题：`Select Remote Server`
@@ -643,6 +655,27 @@ callgraph 模式面板支持：
   - 优先断开会话面板当前选中的目标；未选中或选中目标无会话时取首个已连接目标
   - 没有已连接的会话时如实提示，不空转
 
+### `kbengine.bots.add`
+
+- 标题：`KBEngine: Add Bots (telnet addBots)`
+- 作用：驱动引擎 `bots` 进程（模拟客户端压测工具）在运行时添加模拟客户端——本地单机闭环（IDE-BOT-001）；bots 进程自带 telnet python 层（默认端口 51000），无需重启进程
+- 输入：机器人总数（≥1，必填）；可选分批——每批数量（≥1）与批次间隔秒（≥0，留空按 0）；每批数量留空则一次性添加
+- 行为：
+  - 命令串严格镜像引擎 API 形态：一次性 `KBEngine.addBots(5)`，分批 `KBEngine.addBots(1000, 5, 10)`
+  - 白名单闸不绕：addBots 是写操作（批量登录），`kbengine.telnet.enableCommands` 缺 `"KBEngine.addBots"` 时拒绝发送并报出该加的条目
+  - 计数命令也在白名单（`"len(KBEngine.bots)"`）时，添加后随即查询当前 bot 数并写入输出通道
+  - 诚实边界：引擎无逐个销毁 API（`KBEngine.bots` 字典只读）——减员 = 停止 bots 进程；每次发送都把这一点写进输出通道，不编造逐机器人指标
+  - 失败形态如实：无 bots telnet 目标（telnet 未配置，或显式单一端口不含组件目标）→ 提示目标派生方式；有界等待内会话未就绪 → 如实报告，不发送
+
+### `kbengine.bots.count`
+
+- 标题：`KBEngine: Query Bot Count (len(KBEngine.bots))`
+- 作用：经 bots telnet python 层查询当前机器人数量
+- 行为：
+  - 在 bots 目标会话上发送 `len(KBEngine.bots)`，有界等待（约 2 秒）内读结果行；解析出的数字写入输出通道
+  - 到时未读到数字行就如实说未读到，不编造数量
+  - 需 `kbengine.telnet.enableCommands` 含 `"len(KBEngine.bots)"`（只读，但不在内置快捷命令内）；缺项时错误信息点名该条目
+
 ### `kbengine.playerData.refresh`
 
 - 标题：`Refresh Player Data Profile`
@@ -707,6 +740,7 @@ callgraph 模式面板支持：
   - 状态栏项 `$(eye…) 热更: …` 即监视状态机:关(`kbengine.hotReload.enabled=false` 或 globs 为空)→ 就绪(watcher 建好)→ 发送中(去抖到点、请求已发)→ 已发送(未确认)→ 失败;点击状态栏项执行 `kbengine.hotReload.toggle`(一键关/开),开关提示里的「打开日志」按钮打开本日志
   - 诚实口径:动作完成且无错只记「已发送(未确认)」——不校验业务回执,界面绝不声称模块已生效(回执校验属 HR-STATE 系列,另立项)
   - 每次触发记 time/触发文件(去抖合并到的)/去抖值,外加请求行与结果行(已发送未确认/失败);日志行即时落账,不随状态栏节流合并
+  - 运行本命令时先重采盘上版本,再把 HOT-VER 版本台账(在监视范围的已跟踪文件:基线版本、盘上版本,随后逐条版本跃迁的时间/attempt/digest 前 8 位/accepted-applied-failed 回执)追加进通道再打开;无已跟踪文件时不追加
   - 不进命令面板(`when: false`)——从开关提示的「打开日志」按钮或首激活提示进入
 
 ### `kbengine.hotReload.toggle`

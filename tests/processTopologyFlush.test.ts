@@ -62,7 +62,7 @@ describe('KODE-AUD-001 进程拓扑编辑冲刷接线(编辑事件→requestQueu
       const scheduler = getProcessTopologySchedulerForTests();
       expect(scheduler, 'activate 应已装配并暴露进程拓扑调度器').not.toBeNull();
 
-      // 激活期对已打开清单文档走 'immediate' 通道立即计算(extension.ts:2041),
+      // 激活期对已打开清单文档走 'immediate' 通道立即计算(extension.ts:2044),
       // 先等它落定再取基线,否则初始异步计算干扰 computed 断言
       await scheduler!.pendingComputations();
       await waitMs(10);

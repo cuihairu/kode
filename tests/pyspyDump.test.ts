@@ -11,6 +11,9 @@ import {
   installPyspy,
   resolvePyspyCommand,
   runPyspyDump,
+  runPyspyRecord,
+  runPyspySchedule,
+  buildPyspyRecordArgs,
   type CommandRunResult,
   type PyspyUi,
   type SpawnRunner
@@ -19,8 +22,9 @@ import type { InterpreterResolution } from '../src/profileInterpreter';
 
 // IDE-PDBG-003 py-spy 性能分析面:探测/一键安装/dump(--nonblocking,权限
 // 失败拼 ptrace 指引)的纯函数行为 + ensurePyspyReady 编排(未装弹安装、
-// 装失败如实报错不假成功)+ package.json 清单锁(serverControl 树 inline
-// 组里 py-spy 图标紧排在 debug 附加图标后,$(pulse) 级)。
+// 装失败如实报错不假成功)+ IDE-PYSPY-001 record 火焰图面(傻瓜化默认
+// 参数/周期采集编排)+ package.json 清单锁(serverControl 树 inline 组里
+// py-spy dump 图标紧排在 debug 附加图标后,$(pulse) 级,flamegraph 在其后)。
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -305,9 +309,140 @@ describe('package.json 清单锁(serverControl 树 py-spy 图标位次)', () => 
   });
 
   it('命令贡献带 $(pulse) 图标并按需激活', () => {
+    // KODE-I18N-001 起命令标题外置 package.nls*.json(%key% 占位),契约按解析后默认包文案断言
+    const nls = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.nls.json'), 'utf8')) as Record<string, string>;
     const command = pkg.contributes.commands.find(entry => entry.command === 'kbengine.debug.pyspyDump');
     expect(command?.icon).toBe('$(pulse)');
-    expect(command?.title).toContain('py-spy');
+    const title = (command?.title ?? '').replace(/^%([^%]+)%$/, (_m, key: string) => nls[key] ?? key);
+    expect(title).toContain('py-spy');
     expect(pkg.activationEvents).toContain('onCommand:kbengine.debug.pyspyDump');
+  });
+
+  it('火焰图命令带 $(flame) 图标、标题与激活事件,dump 之后位次(IDE-PYSPY-001)', () => {
+    const nls = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.nls.json'), 'utf8')) as Record<string, string>;
+    const command = pkg.contributes.commands.find(entry => entry.command === 'kbengine.debug.pyspyFlamegraph');
+    expect(command?.icon).toBe('$(flame)');
+    const title = (command?.title ?? '').replace(/^%([^%]+)%$/, (_m, key: string) => nls[key] ?? key);
+    expect(title).toContain('py-spy');
+    expect(pkg.activationEvents).toContain('onCommand:kbengine.debug.pyspyFlamegraph');
+    const order = serverControlInline();
+    expect(order.indexOf('kbengine.debug.pyspyFlamegraph')).toBe(order.indexOf('kbengine.debug.pyspyDump') + 1);
+  });
+});
+
+describe('buildPyspyRecordArgs(IDE-PYSPY-001)', () => {
+  it('傻瓜化默认参数齐备:flamegraph/10s/100/s/非阻塞', () => {
+    const args = buildPyspyRecordArgs(1234, '/tmp/out.svg');
+    expect(args[0]).toBe('record');
+    expect(args).toContain('--pid');
+    expect(args[args.indexOf('--pid') + 1]).toBe('1234');
+    expect(args[args.indexOf('--format') + 1]).toBe('flamegraph');
+    expect(args[args.indexOf('--output') + 1]).toBe('/tmp/out.svg');
+    expect(args[args.indexOf('--duration') + 1]).toBe('10');
+    expect(args[args.indexOf('--rate') + 1]).toBe('100');
+    expect(args).toContain('--nonblocking');
+    expect(args).not.toContain('--native');
+    expect(args).not.toContain('--threads');
+  });
+
+  it('覆盖项生效且开关只按需追加', () => {
+    const args = buildPyspyRecordArgs(7, '/tmp/a.svg', {
+      durationSec: 3,
+      rateHz: 50,
+      format: 'speedscope',
+      nonblocking: false,
+      native: true,
+      threads: true
+    });
+    expect(args[args.indexOf('--duration') + 1]).toBe('3');
+    expect(args[args.indexOf('--rate') + 1]).toBe('50');
+    expect(args[args.indexOf('--format') + 1]).toBe('speedscope');
+    expect(args).not.toContain('--nonblocking');
+    expect(args).toContain('--native');
+    expect(args).toContain('--threads');
+  });
+});
+
+describe('runPyspyRecord(IDE-PYSPY-001)', () => {
+  const fileDeps = (exists: boolean): { fileExistsNonEmpty: (p: string) => boolean } => ({
+    fileExistsNonEmpty: () => exists
+  });
+
+  it('退出码 0 且输出文件存在非空 → 成功(output=文件路径)', async () => {
+    const { runner } = makeRunner([{ match: (c, a) => c === 'py-spy' && a[0] === 'record', result: run('', '') }]);
+    const result = await runPyspyRecord(runner, 42, '/tmp/x.svg', {}, null, fileDeps(true));
+    expect(result.ok).toBe(true);
+    expect(result.output).toBe('/tmp/x.svg');
+  });
+
+  it('退出码 0 但输出文件缺失(未落盘)→ 失败如实报', async () => {
+    const { runner } = makeRunner([{ match: (c, a) => c === 'py-spy' && a[0] === 'record', result: run('', '') }]);
+    const result = await runPyspyRecord(runner, 42, '/tmp/x.svg', {}, null, fileDeps(false));
+    expect(result.ok).toBe(false);
+    expect(result.output).toContain('退出码 0');
+  });
+
+  it('权限类失败拼 ptrace 指引(与 dump 同一段话)', async () => {
+    const { runner } = makeRunner([
+      { match: (c, a) => c === 'py-spy' && a[0] === 'record', result: run('', 'Operation not permitted') }
+    ]);
+    const result = await runPyspyRecord(runner, 42, '/tmp/x.svg', {}, null, fileDeps(false));
+    expect(result.ok).toBe(false);
+    expect(result.output).toContain('Operation not permitted');
+    expect(result.output).toContain(PYSPY_PTRACE_GUIDANCE);
+  });
+});
+
+describe('runPyspySchedule(IDE-PYSPY-001)', () => {
+  const deps = (sleeps: number[], existing: Set<string>, now = 1000) => {
+    const calls: string[] = [];
+    return {
+      deps: {
+        fileExistsNonEmpty: (p: string) => existing.has(p),
+        sleep: async (ms: number) => {
+          calls.push(`sleep:${ms}`);
+        },
+        now: () => now
+      },
+      sleepCalls: calls
+    };
+  };
+
+  it('按 X 次/间隔 N 秒采集,逐次独立文件,成功即续', async () => {
+    const files = new Set(['/d/flame-1000-0.svg', '/d/flame-1000-1.svg', '/d/flame-1000-2.svg']);
+    const { deps: sd, sleepCalls } = deps([], files);
+    const { runner } = makeRunner([{ match: (c, a) => c === 'py-spy' && a[0] === 'record', result: run('', '') }]);
+    const runs = await runPyspySchedule(runner, 9, {
+      count: 3,
+      intervalSec: 5,
+      outDir: '/d',
+      durationSec: 10,
+      rateHz: 100,
+      format: 'flamegraph',
+      nonblocking: true
+    }, null, sd);
+    expect(runs).toHaveLength(3);
+    expect(runs.map(r => r.file)).toEqual(['/d/flame-1000-0.svg', '/d/flame-1000-1.svg', '/d/flame-1000-2.svg']);
+    expect(runs.every(r => r.ok)).toBe(true);
+    expect(sleepCalls).toEqual(['sleep:5000', 'sleep:5000']);
+  });
+
+  it('某次失败即止,已成功文件保留,不再睡后续间隔', async () => {
+    const files = new Set(['/d/flame-2000-0.svg']);
+    const { deps: sd, sleepCalls } = deps([], files, 2000);
+    const { runner } = makeRunner([{ match: (c, a) => c === 'py-spy' && a[0] === 'record', result: run('', 'record 中断') }]);
+    const runs = await runPyspySchedule(runner, 9, {
+      count: 4,
+      intervalSec: 5,
+      outDir: '/d',
+      durationSec: 10,
+      rateHz: 100,
+      format: 'flamegraph',
+      nonblocking: true
+    }, null, sd);
+    expect(runs).toHaveLength(2);
+    expect(runs[0].ok).toBe(true);
+    expect(runs[1].ok).toBe(false);
+    expect(sleepCalls).toEqual(['sleep:5000']);
   });
 });
