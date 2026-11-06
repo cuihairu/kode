@@ -349,17 +349,20 @@ impl DataTypesState {
         self.by_name.get(name).copied()
     }
 
-    /// 该类型是否(或其数组元素链是否)ENTITYCALL(datatype.cpp:2104/2141 的判定)。
+    /// 该类型是否 ENTITYCALL——引擎三处判定都是**类身份**且不递归数组链
+    /// (KR-AUD-86):
+    /// - property.cpp:48-51 `strcmp(dataType_->getName(),"ENTITYCALL")`;
+    /// - datatype.cpp:2141 `dataType->type()`;
+    /// - datatype.cpp:2104 数组键 `dataType->getDataType()->type()`——只看
+    ///   **一层**元素(元素是嵌套 FixedArrayType 时 type()==FIXEDARRAY),
+    ///   由调用方传入元素 id 即等价。
+    ///
+    /// 别名注册不改类身份(KR-AUD-82)。
     fn is_entitycall(&self, id: u16) -> bool {
-        match self.info.get(&id) {
-            Some(info) => match info.kind {
-                TypeKind::Array => info.element.map(|e| self.is_entitycall(e)).unwrap_or(false),
-                // 构造期即知的类身份(property.cpp:48-51 getName() /
-                // datatype.cpp:2104,2141 type()),别名注册不再影响判定。
-                _ => info.kind == TypeKind::EntityCall,
-            },
-            None => false,
-        }
+        matches!(
+            self.info.get(&id).map(|info| info.kind),
+            Some(TypeKind::EntityCall)
+        )
     }
 }
 

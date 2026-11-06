@@ -34,22 +34,34 @@ fn hex(bytes: &[u8]) -> String {
 fn rfc1321_vectors() {
     let mut m = Md5::new();
     m.update(b"");
-    assert_eq!(hex(&m.clone().finalize()), "d41d8cd98f00b204e9800998ecf8427e");
+    assert_eq!(
+        hex(&m.clone().finalize()),
+        "d41d8cd98f00b204e9800998ecf8427e"
+    );
 
     let mut m = Md5::new();
     m.update(b"abc");
-    assert_eq!(hex(&m.clone().finalize()), "900150983cd24fb0d6963f7d28e17f72");
+    assert_eq!(
+        hex(&m.clone().finalize()),
+        "900150983cd24fb0d6963f7d28e17f72"
+    );
 
     let mut m = Md5::new();
     m.update(b"message digest");
-    assert_eq!(hex(&m.clone().finalize()), "f96b697d7cb7938d525a2f31aaf161d0");
+    assert_eq!(
+        hex(&m.clone().finalize()),
+        "f96b697d7cb7938d525a2f31aaf161d0"
+    );
 
     // 跨块长串(RFC 标准 "a"×1e6)。
     let mut m = Md5::new();
     for _ in 0..1_000_000 {
         m.update(b"a");
     }
-    assert_eq!(hex(&m.clone().finalize()), "7707d6ae4e027c70eea2a935c2296f21");
+    assert_eq!(
+        hex(&m.clone().finalize()),
+        "7707d6ae4e027c70eea2a935c2296f21"
+    );
 
     // 分块边界(56/64/65 字节)。
     for len in [55usize, 56, 57, 63, 64, 65, 128] {
@@ -147,7 +159,9 @@ fn minimal_auto_match_comp_own_three_int32() {
     let result = compute_def_md5(sample.params).unwrap();
     let s = &result.stream_hex;
     // Gate 在 entities.xml 声明 hasCell="true" → hasClient=-1 hasCell=1 hasBase=-1。
-    let idx = s.find("ffffffff01000000ffffffff").expect("autoMatchCompOwn tail");
+    let idx = s
+        .find("ffffffff01000000ffffffff")
+        .expect("autoMatchCompOwn tail");
     let _ = idx;
     assert!(s.ends_with("ffffffff01000000ffffffff"));
 }
@@ -160,8 +174,16 @@ fn determinism_and_md5_format() {
         assert_eq!(a.md5_hex, b.md5_hex, "{}: deterministic", sample.name);
         assert_eq!(a.stream_hex, b.stream_hex, "{}: deterministic", sample.name);
         assert_eq!(a.md5_hex.len(), 32, "{}: 32 hex", sample.name);
-        assert!(a.md5_hex.chars().all(|c| c.is_ascii_hexdigit()), "{}", sample.name);
-        assert!(a.md5_hex.chars().all(|c| !c.is_ascii_lowercase()), "{}: uppercase", sample.name);
+        assert!(
+            a.md5_hex.chars().all(|c| c.is_ascii_hexdigit()),
+            "{}",
+            sample.name
+        );
+        assert!(
+            a.md5_hex.chars().all(|c| !c.is_ascii_lowercase()),
+            "{}: uppercase",
+            sample.name
+        );
         assert_eq!(
             a.md5_hex.to_lowercase(),
             a.md5_hex.to_lowercase(),
@@ -244,10 +266,7 @@ fn nested_array_before_host_bytes() {
 #[test]
 fn golden_samples_load_fixtures() {
     // demo-assets 与 parity-project 夹具可装载(至少一个样本)。
-    let names: Vec<&str> = golden_samples(repo_root())
-        .iter()
-        .map(|s| s.name)
-        .collect();
+    let names: Vec<&str> = golden_samples(repo_root()).iter().map(|s| s.name).collect();
     assert!(names.contains(&"kbengine-demo-assets"));
     assert!(names.contains(&"parity-project"));
     assert!(names.contains(&"minimal-single-entity"));
@@ -544,5 +563,68 @@ fn kr_aud_82_entitycall_alias_keeps_persistent_override() {
         &s[persistent..persistent + 2],
         "00",
         "ENTITYCALL 别名注册后属性 persistent 必须仍被引擎口径置 false"
+    );
+}
+
+/// KR-AUD-86(RSV-7):is_entitycall 一层判定——引擎 FixedDictType::initialize
+/// 对 ARRAY 键取 `dataType->getDataType()->type()`(datatype.cpp:2104,一层元素),
+/// 属性面取 `dataType_->getName()`(property.cpp:48-51,FixedArrayType::getName
+/// =="ARRAY"),两处都**不**递归嵌套 ARRAY。`<of>ENTITYCALL</of>` 的数组属性
+/// 引擎 persistent 保持 true;修前递归穿透数组链误置 false。
+#[test]
+fn kr_aud_86_array_of_entitycall_does_not_force_persistent_false() {
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs: [(
+            "Avatar".to_string(),
+            "<root><Properties><callList><Type>ARRAY<of>ENTITYCALL</of></Type><Flags> BASE </Flags><Persistent> true </Persistent></callList></Properties></root>".to_string(),
+        )]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let result = compute_def_md5(p).expect("数组属性可计算");
+    let s = &result.stream_hex;
+    // 属性 ctor:name(8) + type "ARRAY"(5) + utype(2) + flags(4)(default 空 0 字节)
+    let name_hex = "63616c6c4c697374"; // "callList"
+    let idx = s.find(name_hex).expect("属性名入流");
+    let persistent = idx + (8 + 5 + 2 + 4) * 2;
+    assert_eq!(
+        &s[persistent..persistent + 2],
+        "01",
+        "数组属性(getName()==\"ARRAY\")不触发 ENTITYCALL persistent 覆盖"
+    );
+}
+
+/// KR-AUD-86(RSV-7)字典面:嵌套 ARRAY<ARRAY<ENTITYCALL>> 键——外层数组的
+/// getDataType() 是内层 FixedArrayType(type()==DATA_TYPE_FIXEDARRAY),
+/// 引擎 datatype.cpp:2104 判非 ENTITYCALL,persistent 保持 true。
+#[test]
+fn kr_aud_86_nested_array_dict_key_keeps_persistent() {
+    let p = DefMd5Params {
+        types_xml: "<root><CallDict>FIXED_DICT<Properties><entry><Type>ARRAY<of>ARRAY<of>ENTITYCALL</of></of></Type></entry></Properties></CallDict></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs: [(
+            "Avatar".to_string(),
+            "<root><Properties><bag><Type> CallDict </Type><Flags> BASE </Flags></bag></Properties></root>".to_string(),
+        )]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let result = compute_def_md5(p).expect("字典可计算");
+    let s = &result.stream_hex;
+    // 字典键 ctor(datatype.cpp:2096-2112):uid u16 + strType "ARRAY"(5)
+    // + keyName "entry"(5) → persistent bool(紧跟键名)。
+    let name_hex = "656e747279"; // "entry"
+    let idx = s.find(name_hex).expect("字典键名入流");
+    let persistent = idx + 5 * 2;
+    assert_eq!(
+        &s[persistent..persistent + 2],
+        "01",
+        "嵌套数组键(getDataType()->type()==FIXEDARRAY)不触发 persistent 覆盖"
     );
 }
