@@ -12,6 +12,13 @@
 // (mtimeMs:size),窗口到期核对:版本已前进则补投一条同 kind 尾随事件
 // ——第二次更新最多延迟一个窗口到达,绝不永久丢失。delete 是终态(缺file
 // 即目标态)不补投;盘上版本不可得(路径不存在/stat 失败)无法核对,不补投。
+//
+// 文件变化元信息(方案 B):去重那次 stat 的产物顺手随事件交付
+// (SharedFileEvent.version),下游懒解析器按 identity+version 记忆化——同一
+// 版本只读一次,不为 version 另开 IO。首报/kind 变更是同步交付而 stat 是异步
+// (KR-AUD-30),故首报的 version 落定后回填同一事件对象;窗口尾随补投在补投
+// 时已 await 核对 stat,直接带补投时点已前进的版本。口径见
+// docs/design/file-change-meta.md。
 import * as fs from 'fs';
 import { normalizeFileIdentity } from './pathIdentity';
 
@@ -23,6 +30,16 @@ export interface SharedFileEvent {
   /** 归一身份键(合并口径) */
   readonly identity: string;
   readonly kind: SharedFileEventKind;
+  /**
+   * 交付时点的盘上版本 token(`${mtimeMs}:${size}`),复用合并去重那次 stat,
+   * 零新增 IO。三条交付口径:
+   * - 首报 / 窗口内 kind 变化:同步交付,异步 stat 此刻未落定 → 先 undefined,
+   *   落定后回填**同一事件对象**(合并器是唯一写方,消费端只读;不重投);
+   * - 窗口尾随补投:补投前已 await 核对 stat,直接带补投时点已前进的版本
+   *   (带旧版本会让下游按同版本命中缓存,第二次写入的元信息就丢了)。
+   * 拿不到 version 的消费端走 fileChangeMeta 懒解析自行 stat,不猜。
+   */
+  readonly version?: string;
 }
 
 export type SharedFileEventHandler = (event: SharedFileEvent) => void;
@@ -67,8 +84,34 @@ export function createSharedFileEventMerger(windowMs: number = DEFAULT_MERGE_WIN
   const mergeByUri = new Map<string, UriMergeState>();
   let disposed = false;
 
-  const deliver = (fsPath: string, identity: string, kind: SharedFileEventKind): void => {
-    const event: SharedFileEvent = { fsPath, identity, kind };
+  /**
+   * 交付一条合并后事件。`versionSource`:
+   * - 字符串 = 交付时点已解析的版本(窗口尾随补投);
+   * - Promise = 在途的去重 stat(首报/kind 变化):同步先交付(首报即达口径
+   *   不变),落定后回填同一事件对象的 version,不重投;
+   * - undefined = 无版本可得(如 delete 后 stat 失败)。
+   */
+  const deliver = (
+    fsPath: string,
+    identity: string,
+    kind: SharedFileEventKind,
+    versionSource: string | Promise<string | undefined> | undefined
+  ): void => {
+    let settled: string | undefined = typeof versionSource === 'string' ? versionSource : undefined;
+    const event: SharedFileEvent = {
+      fsPath,
+      identity,
+      kind,
+      get version(): string | undefined {
+        return settled;
+      }
+    };
+    if (typeof versionSource !== 'string' && versionSource !== undefined) {
+      void versionSource.then(
+        value => { settled = value; },
+        () => undefined // statVersionToken 自吞错误;双保险不让回填产生未处理拒绝
+      );
+    }
     for (const handler of [...subscribers]) {
       handler(event);
     }
@@ -87,7 +130,9 @@ export function createSharedFileEventMerger(windowMs: number = DEFAULT_MERGE_WIN
     void Promise.all([state.deliveredVersion, statVersionToken(state.fsPath)]).then(
       ([delivered, current]) => {
         if (delivered !== undefined && current !== undefined && current !== delivered) {
-          deliver(state.fsPath, identity, state.deliveredKind);
+          // 补投带的是**已前进的 current**(不是首报那份 deliveredVersion):
+          // 下游按 version 记忆化,带旧版本会命中旧缓存吞掉第二次写入的元信息
+          deliver(state.fsPath, identity, state.deliveredKind, current);
         }
       }
     );
@@ -113,7 +158,7 @@ export function createSharedFileEventMerger(windowMs: number = DEFAULT_MERGE_WIN
         existing.fsPath = fsPath;
         existing.deliveredKind = kind;
         existing.deliveredVersion = statVersionToken(fsPath);
-        deliver(fsPath, identity, kind);
+        deliver(fsPath, identity, kind, existing.deliveredVersion);
         return;
       }
       const state: UriMergeState = {
@@ -123,7 +168,7 @@ export function createSharedFileEventMerger(windowMs: number = DEFAULT_MERGE_WIN
         timer: setTimeout(() => { endWindow(identity); }, windowMs)
       };
       mergeByUri.set(identity, state);
-      deliver(fsPath, identity, kind);
+      deliver(fsPath, identity, kind, state.deliveredVersion);
     },
     subscribe(handler: SharedFileEventHandler): () => void {
       subscribers.add(handler);

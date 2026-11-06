@@ -19,6 +19,8 @@ import {
   renderPythonServiceMessage
 } from './pythonLanguageServiceStatus';
 import { setJumpLogEnabled } from './navigationLog';
+import { createFileChangeMetaResolver } from './fileChangeMeta';
+import { logIndexFileChangeMeta } from './fileChangeMetaLog';
 import {
   setAnnotationSourceLogEnabled,
   setAnnotationSourceLogSink
@@ -1183,6 +1185,19 @@ export function activate(context: vscode.ExtensionContext) {
   // IDE-SNP-008:watcher 原始通知先入本索引的合并器(同 URI 同 kind 的重复
   // 通知只应用一次;窗口内 kind 变化补投终态),pythonClassIndex 经订阅收单。
   const pythonIndexFileEvents = createSharedFileEventMerger();
+  // 文件变化元信息(方案 B):热更审计与 python 索引日志共用同一行格式。
+  // scriptRoot 取 tempEdit 的脚本资源根(与双名称解析同口径),留空由解析器
+  // 按 `<assetsRoot>/scripts` 约定兜底;assetsRoot 每次现取(配置热切换)。
+  const fileChangeMetaResolver = createFileChangeMetaResolver({
+    scriptRoot: () =>
+      readTempEditReloadSettings(
+        tempEditSectionReader(vscode.workspace.getConfiguration('kbengine').get<unknown>('hotReload', undefined))
+      ).scriptRoot,
+    assetsRoot: () => {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+      return root ? resolveAssetsRootForWorkspace(root) : '';
+    }
+  });
   context.subscriptions.push(
     { dispose: () => pythonIndexFileEvents.dispose() },
     { dispose: pythonIndexFileEvents.subscribe(event => {
@@ -1191,6 +1206,12 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       void pythonClassIndex.onFileChanged(event.fsPath);
+    }) },
+    // 文件变化元信息(方案 B):索引事件的元信息行沿用既有 jumpLog 开关与
+    // 通道(默认关 → 关时零 IO、不新增设置项)。与上面的索引接线分属两个
+    // 订阅者:老消费端同步收单的口径不动,元信息解析是懒异步的。
+    { dispose: pythonIndexFileEvents.subscribe(event => {
+      logIndexFileChangeMeta(fileChangeMetaResolver, event);
     }) }
   );
   const watchPythonIndex = () => {
@@ -5584,6 +5605,9 @@ export function activate(context: vscode.ExtensionContext) {
       resolveScriptRoot: () =>
         vscode.workspace.getConfiguration('kbengine').get<string>('hotReload.tempEdit.scriptRoot', '') ?? ''
     },
+    // 文件变化元信息(方案 B):审计行后逐文件补元信息行(module/process/
+    // sha256/version),与 python 索引日志同一格式;懒异步,不阻塞发送。
+    fileChangeMeta: fileChangeMetaResolver,
     noteEngineDigest: (key, file, body) => hotReloadEngineDigestRegister.note(key, file, body),
     // IDE-HOT-100:def 结构闸拦下 → 状态机标 RESTART_REQUIRED 呈现(与日志
     // 同源;拦下本身是 HOT-005 既有面)。targetId 经动作名反查,解不到该

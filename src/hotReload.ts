@@ -14,6 +14,8 @@ import { sendFilesViaReloadChannel } from './hotReloadChannelSend';
 import { sendDefaultHotfix } from './hotReloadDefaultHotfix';
 import { showHotReloadFirstRunNotice, HOT_RELOAD_NOTICE_KEY } from './hotReloadNotice';
 import { writeHotReloadEnabled } from './hotReloadToggle';
+import { formatFileChangeMeta, type FileChangeMetaResolver } from './fileChangeMeta';
+import { normalizeFileIdentity } from './pathIdentity';
 import type { ReloadTransport } from './hotReloadTransport';
 import type { HttpTransport } from './httpRequestService';
 import type { PackageDirProbe } from './httpRequests';
@@ -187,6 +189,13 @@ export interface SetupHotReloadOptions {
   /** IDE-HOT-102 审计「触发源」(谁):默认 'watcher-auto' 自动监视 */
   readonly auditSource?: string;
   /**
+   * 文件变化元信息解析器(方案 B,src/fileChangeMeta.ts):注入即在审计行后
+   * 逐文件补一行元信息(module/process/sha256/version,与 python 索引日志
+   * 同一格式);不注入则审计行保持原样(未接线场景零 IO)。解析是懒异步的,
+   * 不阻塞发送,失败静默(审计缺行好过拖垮发送)。
+   */
+  readonly fileChangeMeta?: FileChangeMetaResolver;
+  /**
    * def 结构闸注入(RT-3):与失败目标重试共用同一闸实例与同一会话基线册,
    * 两路径判定逐字一致。不注入则本装配自建(基线册私有,重试侧拿不到)。
    */
@@ -300,6 +309,18 @@ export function setupHotReload(
     const channelAuditSource = options.auditSource ?? 'watcher-auto';
     const auditLine = (channelLabel: string, files: readonly string[], resultText: string): void => {
       status.log(`审计: 触发源=${channelAuditSource} | 文件=${files.length} 个 | 通道=${channelLabel} | 结果=${resultText}`);
+      // 文件变化元信息(方案 B):审计行之后逐文件补一行元信息(module/process/
+      // sha256/version),与 python 索引日志同一格式。懒异步解析,不阻塞发送;
+      // 未注入解析器(测试/未接线)零 IO,解析失败只少一行审计不抛。
+      const metaResolver = options.fileChangeMeta;
+      if (!metaResolver) {
+        return;
+      }
+      for (const file of files) {
+        void metaResolver
+          .metaFor({ fsPath: file, identity: normalizeFileIdentity(file), kind: 'change' })
+          .then(meta => status.log(`文件元信息: ${formatFileChangeMeta(meta)}`), () => undefined);
+      }
     };
     const proceed = (): void => {
       if (settings.actionName.length === 0) {

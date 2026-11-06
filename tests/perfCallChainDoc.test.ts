@@ -119,20 +119,27 @@ const ANCHORS: Array<[string, number, string]> = [
   // 逐符号真位重探(相对 origin/main 的 1043/1094/1157/961/1461/664/677/
   // 2330/2410,再叠加 BG-WARM +2):1045/1096/1159/963/1463/666/679/2332/2412,
   // 出处随 baseline 锁步。
-  ['src/extension.ts', 1045, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1096, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1159, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 963, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1463, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 666, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 679, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-06(十一):fileChangeMeta(方案 B)——extension.ts 顶部 import 由 1 行
+  // 变 3 行(setJumpLogEnabled 保留,新增 createFileChangeMetaResolver /
+  // logIndexFileChangeMeta,+2),python 索引订阅处新增解析器装配块 +13 与
+  // 第二订阅者 +6(共 +19,落在 1159 与 1463 之间):
+  // 1159 前锚点 +2(666/679/963/1045/1096→668/681/965/1047/1098),
+  // 1159 本身 +2(→1161),其后锚点 +21(1463/2332/2412→1484/2353/2433),
+  // 出处随 baseline 锁步。
+  ['src/extension.ts', 1047, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1098, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1161, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 965, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1484, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 668, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 681, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
   // 锚点整体 +12(真位重探 1778/1837/1861/1989/4713/5121/5227/7038 →
   // 1790/1849/1873/2001/4725/5133/5239/7050)。
-  ['src/extension.ts', 2332, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2412, 'flushQueued()'],
+  ['src/extension.ts', 2353, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2433, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面

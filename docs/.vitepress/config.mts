@@ -89,7 +89,8 @@ export default withMermaid(defineConfig({
                 { text: 'Quick actions and db hint design', link: '/design/quick-actions-and-db-hint' },
                 { text: 'Def/utype to .pyi stubs feasibility', link: '/design/def-pyi-stubs' },
                 { text: 'Player Data Clone plan (v0.2.1)', link: '/design/v0.2.1-player-data-clone-plan' },
-                { text: 'Space Viewer / Watcher protocol forensics', link: '/design/space-viewer-watcher' }
+                { text: 'Space Viewer / Watcher protocol forensics', link: '/design/space-viewer-watcher' },
+                { text: 'File change meta (identity + version)', link: '/design/file-change-meta' }
               ]
             }
           ]
@@ -175,7 +176,8 @@ export default withMermaid(defineConfig({
                 { text: '文档一致性审计', link: '/zh/审计-文档一致性' },
                 { text: '快捷动作与数据库提示设计', link: '/zh/design/quick-actions-and-db-hint' },
                 { text: '.pyi 类型桩可行性分析', link: '/zh/design/def-pyi-stubs' },
-                { text: 'Space Viewer/Watcher 协议取证', link: '/zh/design/space-viewer-watcher' }
+                { text: 'Space Viewer/Watcher 协议取证', link: '/zh/design/space-viewer-watcher' },
+                { text: '文件变化元信息(identity+version)', link: '/zh/design/file-change-meta' }
               ]
             }
           ]
