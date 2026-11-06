@@ -118,7 +118,10 @@ describe('IDE-REV-013:type storage 冷索引逐实体分阶段', () => {
     // 主导(≈400ms),属 F13 推导成本非解析段;解析段排除见下方 IDE-REV-039 用例。
   });
 
-  it('大 def 解析段移出宿主不入量规:ParseDefPhase 交驱动,解析后重置 sliceStart(IDE-REV-039)', async () => {
+  // timeout 放宽到 20s:CI 共享 runner 上本用例整墙钟压在 5s 默认值边缘
+  // (实测 5031ms 超时,8cde654/1ed9070 两连红);用例自身的预算断言
+  // (slice < 上限)不受影响,放宽的只是宿主墙钟容忍。
+  it('大 def 解析段移出宿主不入量规:ParseDefPhase 交驱动,解析后重置 sliceStart(IDE-REV-039)', { timeout: 20000 }, async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-rev39-'));
     temporaryDirectories.push(root);
     fs.mkdirSync(path.join(root, 'scripts/entity_defs'), { recursive: true });
