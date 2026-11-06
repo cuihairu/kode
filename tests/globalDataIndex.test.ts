@@ -3070,7 +3070,15 @@ describe('KR-AUD-35 rebuild 并发上限(IDX-11)', () => {
     try {
       index.invalidate();
       const deadline = Date.now() + 10_000;
-      while ((completed.size < files.length || inflight > 0) && Date.now() < deadline) {
+      // 稳定态=读盘收齐且首个键站点可查(rebuild 发布面在末次读盘后还有异步尾,
+      // win32 上慢一拍;只等读盘会在发布前抢跑)
+      const k0Text = 'KBEngine.globalData["k0"]';
+      const k0Accesses = findKbeDataDictAccesses(k0Text, KBE);
+      const settled = (): boolean => {
+        if (completed.size < files.length || inflight > 0) return false;
+        return queryDataDictSitesForAccess(index, k0Accesses[0]).length > 0;
+      };
+      while (!settled() && Date.now() < deadline) {
         await new Promise(resolve => setTimeout(resolve, 10));
       }
       expect(completed.size).toBe(files.length);

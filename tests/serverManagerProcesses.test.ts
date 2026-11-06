@@ -112,6 +112,7 @@ afterAll(() => {
   delete (stubWorkspace as unknown as Record<string, unknown>).getConfiguration;
 });
 
+// WIN-3:win32 假组件 .cmd→node 链路与树杀收尾慢,hook 平台化超时
 beforeEach(async () => {
   bin = await FakeComponentBin.create();
   root = bin.root;
@@ -129,7 +130,8 @@ beforeEach(async () => {
   stubWorkspace.workspaceFolders = [
     { uri: { fsPath: path.join(root, 'ws') } as vscode.Uri, name: 'ws', index: 0 }
   ];
-});
+// WIN-3:win32 .cmd→node 预热/建目录慢,hook 平台化超时
+}, 20000);
 
 afterEach(async () => {
   const running = currentManager?.getRunningServers();
@@ -151,7 +153,8 @@ afterEach(async () => {
   currentManager = undefined;
   stubWorkspace.workspaceFolders = [];
   fs.rmSync(root, { recursive: true, force: true });
-});
+// WIN-3:win32 树杀与 rm EPERM 重试收尾慢,hook 平台化超时
+}, 20000);
 
 describe('KBEngineServerManager startComponent preflight', () => {
   it('warns and refuses when the component is already running', async () => {

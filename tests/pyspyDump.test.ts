@@ -423,7 +423,11 @@ describe('runPyspySchedule(IDE-PYSPY-001)', () => {
       nonblocking: true
     }, null, sd);
     expect(runs).toHaveLength(3);
-    expect(runs.map(r => r.file)).toEqual(['/d/flame-1000-0.svg', '/d/flame-1000-1.svg', '/d/flame-1000-2.svg']);
+    expect(runs.map(r => r.file)).toEqual([
+      path.join('/d', 'flame-1000-0.svg'),
+      path.join('/d', 'flame-1000-1.svg'),
+      path.join('/d', 'flame-1000-2.svg')
+    ]);
     expect(runs.every(r => r.ok)).toBe(true);
     expect(sleepCalls).toEqual(['sleep:5000', 'sleep:5000']);
   });

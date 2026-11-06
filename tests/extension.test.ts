@@ -353,7 +353,8 @@ describe('extension activate 装配', () => {
 
     fs.rmSync(root, { recursive: true, force: true });
     disposeAll(context);
-  });
+  // WIN-3:win32 诊断命令链路(发现扫描+报告)慢,平台化超时
+  }, 15000);
 
   it('发现与定位诊断:未打开工作区时提示且不写报告', async () => {
     const context = makeContext();

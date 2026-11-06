@@ -50,7 +50,15 @@ const makeEditor = (
 const activateAndWait = async (): Promise<ExtensionContext> => {
   const context = makeContext();
   activate(context);
-  await new Promise(resolve => setTimeout(resolve, 300));
+  // WIN-3:激活注册面是异步尾,win32 上 300ms 固定等待会抢跑在命令注册前——
+  // 轮询等目标命令在册(有界)
+  const deadline = Date.now() + 8000;
+  while (
+    !commandRegistry.allRegisteredCommandIds().includes('kbengine.snippets.generateFromSelection') &&
+    Date.now() < deadline
+  ) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
   return context;
 };
 
@@ -167,7 +175,7 @@ describe('kbengine.snippets.generateFromSelection 命令', () => {
     }
   });
 
-  it('描述提示取消时按空描述继续(不写 description 字段)', async () => {
+  it('描述提示取消时按空描述继续(不写 description 字段)', async () => { // timeout below
     windowish.activeTextEditor = makeEditor('Plain', { line: 0, character: 0 }, { line: 0, character: 5 });
     scriptInputBox(['NoDesc', 'kbe-nodesc', undefined]);
 
@@ -183,7 +191,8 @@ describe('kbengine.snippets.generateFromSelection 命令', () => {
     for (const disposable of context.subscriptions) {
       disposable.dispose();
     }
-  });
+  // WIN-3:win32 输入流与命令链路慢,平台化超时
+  }, 15000);
 
   it('无活动编辑器或空选区给出提示且不落盘', async () => {
     const context = await activateAndWait();

@@ -24,7 +24,8 @@ import { runGitReadOnly, type GitRunOutcome } from '../src/gitRunner';
  */
 
 const realDeps: GitSelectionMapDeps = {
-  runGit: (args, cwd) => runGitReadOnly(args, { cwd, timeoutMs: 10000, maxOutputBytes: 2097152 }),
+  // WIN-3:win32 git.exe 冷启动慢(全量并发下可超 10s/次),平台化放宽单次超时
+  runGit: (args, cwd) => runGitReadOnly(args, { cwd, timeoutMs: 60000, maxOutputBytes: 2097152 }),
 };
 
 const ok = (stdout: string): GitRunOutcome => ({ kind: 'ok', stdout, stderr: '' });
@@ -313,6 +314,8 @@ describe('IDE-GIT-008 真实临时仓库:偏移换算与内容对拍', () => {
   function makeRepo(): string {
     const root = mkdtempSync(join(tmpdir(), 'kode-selmap-'));
     execFileSync('git', ['init', '-q'], { cwd: root });
+    // WIN-3:imac 全局 autocrlf=true 会给 add/commit 注入 CRLF 噪声,仓库级关掉
+    execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd: root });
     execFileSync('git', ['config', 'user.email', 't@example.com'], { cwd: root });
     execFileSync('git', ['config', 'user.name', 'T'], { cwd: root });
     return root;
@@ -436,7 +439,7 @@ describe('IDE-GIT-008 真实临时仓库:偏移换算与内容对拍', () => {
     const r2 = await mapSelectionToHeadRange(join(root, 'staged.py'), root, { startLine: 1, endLine: 2 }, realDeps);
     expect(r2).toMatchObject({ kind: 'has-uncommitted', unmappedLines: 2, segments: [] });
   // WIN-3:win32 逐次 git.exe spawn 慢,平台化超时
-  }, 20000);
+  }, 30000);
 
   it('无提交仓库 → no-commits', async () => {
     const root = makeRepo();
