@@ -217,6 +217,31 @@ interface ReloadTransport {
     修后按已清洗防碰撞的报文相对路径展开到 `<root>/.staged/<相对路径>`（与
     产物映射同一套防碰撞防逃逸规则），同批互不覆盖，也碰不到任何源文件或
     应用台账。
+- F3 九轮（2026-11-06 第九轮复审，暂存命名空间隔离 + 暂存路径 symlink 防护
+  + 收尾清理 dev/ino 比对）：
+  - **源命名空间与暂存命名空间不相交**：八轮的 `.staged` 前缀仍在允许源
+    文件树内——同批含既有 `<root>/.staged/X.py` 源文件时，`<root>/X.py` 的
+    暂存副本 `copyFileSync` 直接覆盖该源文件。修后源路径第一段为 `.staged`
+    → 属接收端暂存命名空间，拒绝整批（与路径清洗同一防线）。**symlink
+    别名补口**：词法排除挡不住指向暂存树的别名（`root/alias → root/.staged`
+    时同批暂存副本仍覆盖别名指向的源文件），修后对每个源文件 realpath
+    解析，解析结果落在暂存树（`<root>/.staged` realpath）内 → 拒绝整批。
+  - **暂存路径写前双重验证**（`safeStagingTarget`）：暂存写入此前无 symlink
+    检查，`.staged` 链上任一级被换成 symlink 时 `copyFileSync` 沿链接逃逸/
+    错写。修后对暂存父目录链取**最深已存在祖先**验证：包含性（在暂存根
+    realpath 内）+ 一致性（**相对比较**：解析路径与原路径相对暂存根的相对
+    路径逐字一致——树内 symlink 组件被拒，暂存根自身的合法 symlink 祖先
+    （如 macOS `/tmp`）不误判）+ realpath 失败但组件存在（悬空 symlink 链）
+    直接拒绝 + `lstat` 最终组件拒 symlink；任一不过即拒绝本文件暂存。
+    **残余窗口如实记录**：检查→mkdir→copy 一瞬的竞态与 rename 同级，不以
+    「已消除」自称。
+  - **收尾清理 dev/ino 比对**：「确认自建」标志位防不住「创建后、收尾前
+    路径被竞态替换」（替换文件与创建判定无关联）。修后创建成功点
+    `fstatSync(fd)` 捕获临时文件 dev/ino，收尾 unlink 前 `lstat` 比对路径
+    当前 dev/ino 与捕获一致才删；不符或捕获缺失（身份无法确认）→ 跳过并
+    如实报 `rollback_skipped`。**残余窗口如实记录**：`lstat` 比对→unlink
+    一瞬之间路径仍可能被竞态替换（窗口=相邻系统调用间隔，无法归零），与
+    realpath→rename 窗口同级，如实为已知限制。
 - 回执 = 响应体走既有 accepted/applied 解析（HOT-003/004）；这是**唯一**
   能产生 applied 证据的通道（AUD-007：`{"status":"applied",...}` 是扩展侧
   自定契约，作用于用户配置的 `@http:` URL 的回包体）。

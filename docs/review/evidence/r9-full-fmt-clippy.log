@@ -1,0 +1,10 @@
+# gate evidence — branch feat/kode-fix-f1f4
+# HEAD: 735aa4afca89c14658cff48dfb098060a8763d80
+# started: 2026-11-06 15:50:04 +0800
+# cmd: cargo fmt --check ; cargo clippy --workspace --all-targets -- -D warnings
+
+--- fmt exit=0 ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.35s
+--- clippy exit=0 ---
+
+# finished: 2026-11-06 15:50:08 +0800 exit=0 (fmt) / 0 (clippy)

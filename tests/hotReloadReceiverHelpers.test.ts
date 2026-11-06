@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { closeSync, existsSync, fstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -10,14 +10,25 @@ import { afterEach, describe, expect, it } from 'vitest';
 //   (中间目录被竞态换成 symlink 后,六轮只验包含性、不验一致性,rename 会
 //   沿真实父目录落盘;一致性验证把该路径钉死为拒绝)。
 // 参考接收端以 ES 模块导出这两个内部助手(脚本直接运行行为不变)。
+// F3 九轮(2026-11-06 复审):收尾清理在「确认自建」之上再钉 **dev/ino 比对**——
+// 创建时 fstatSync(fd) 捕获临时文件 dev/ino;收尾 unlink 前 lstat 比对路径
+// 当前 dev/ino 与捕获一致才删,不符或捕获缺失跳过并如实报 rollback_skipped。
+// lstat 比对→unlink 一瞬的残余竞态窗口如实为已知限制(见 design §4.3)。
 interface TempCleanupReceipt {
   status: string;
   reason: string;
   rollback_failed?: string;
+  rollback_skipped?: string;
 }
 
 const receiverModule = (await import('../scripts/hot-reload-receiver/referenceReceiver.mjs')) as {
-  tempCleanupReceipt: (file: string, tempArtifact: string, reasonBase: string, created: boolean) => TempCleanupReceipt;
+  tempCleanupReceipt: (
+    file: string,
+    tempArtifact: string,
+    reasonBase: string,
+    created: boolean,
+    createdStat?: { dev: number; ino: number }
+  ) => TempCleanupReceipt;
   verifiedRealParentForRename: (dir: string, artifactDirReal: string) => string | undefined;
 };
 
@@ -57,8 +68,12 @@ describe('F3 八轮:接收端失败收尾清理标志位 + rename 父目录双�
     const dir = scratch();
     const mine = path.join(dir, '.kode-artifact-tmp-mine');
     writeFileSync(mine, 'SELF_CREATED_BYTES', 'utf8');
+    // 九轮起收尾清理要求创建点 dev/ino 捕获(缺失=身份无法确认→跳过不删)
+    const fd = openSync(mine, 'r');
+    const createdStat = { dev: fstatSync(fd).dev, ino: fstatSync(fd).ino };
+    closeSync(fd);
 
-    const receipt = tempCleanupReceipt('/engine/Avatar.py', mine, '应用产物 sha256 与 sender_digest 不一致', true);
+    const receipt = tempCleanupReceipt('/engine/Avatar.py', mine, '应用产物 sha256 与 sender_digest 不一致', true, createdStat);
 
     expect(receipt.status).toBe('failed');
     expect(existsSync(mine)).toBe(false);
@@ -71,6 +86,66 @@ describe('F3 八轮:接收端失败收尾清理标志位 + rename 父目录双�
     const gone = path.join(dir, '.kode-artifact-tmp-gone');
     const receipt = tempCleanupReceipt('/engine/Avatar.py', gone, '应用产物落盘失败:x', true);
     expect(receipt).not.toHaveProperty('rollback_failed');
+  });
+
+  // F3 九轮:路径被竞态替换后按路径 unlink 会删掉不是本次创建的文件——
+  // 创建时 fstat 捕获 dev/ino,收尾 unlink 前 lstat 比对当前路径与之一致才删,
+  // 不符跳过报 rollback_skipped
+  it('清理标志位=true 且 dev/ino 与创建时不符(路径已被替换)→ 跳过清理报 rollback_skipped,不按路径盲删', () => {
+    const dir = scratch();
+    const mine = path.join(dir, '.kode-artifact-tmp-mine');
+    // 创建后路径被竞态替换:同路径上现在是别的文件(dev/ino 已变)。替换文件
+    // 先于目标文件存在(rename 保其原 inode)——两文件曾同时存在,inode 必不同,
+    // 避免「删除后同 inode 复用」造成假通过
+    const replacement = path.join(dir, '.kode-artifact-tmp-replacement');
+    writeFileSync(replacement, 'RACED_FOREIGN_BYTES', 'utf8');
+    writeFileSync(mine, 'SELF_CREATED_BYTES', 'utf8');
+    const fd = openSync(mine, 'r');
+    const createdStat = { dev: fstatSync(fd).dev, ino: fstatSync(fd).ino };
+    closeSync(fd);
+    renameSync(replacement, mine);
+
+    const receipt = tempCleanupReceipt('/engine/Avatar.py', mine, '应用产物落盘失败:x', true, createdStat);
+
+    expect(receipt.status).toBe('failed');
+    expect(receipt.rollback_skipped).toBe(mine);
+    expect(receipt).not.toHaveProperty('rollback_failed');
+    // 被替换上去的文件原样保留(旧实现按路径 unlink 直接删掉;修后比对不符
+    // 即跳过。lstat 比对→unlink 一瞬的残余竞态窗口如实为已知限制)
+    expect(readFileSync(mine, 'utf8')).toBe('RACED_FOREIGN_BYTES');
+  });
+
+  it('清理标志位=true 且 dev/ino 与创建时一致 → 照常清理自建临时文件', () => {
+    const dir = scratch();
+    const mine = path.join(dir, '.kode-artifact-tmp-mine');
+    writeFileSync(mine, 'SELF_CREATED_BYTES', 'utf8');
+    const fd = openSync(mine, 'r');
+    const createdStat = { dev: fstatSync(fd).dev, ino: fstatSync(fd).ino };
+    closeSync(fd);
+
+    const receipt = tempCleanupReceipt('/engine/Avatar.py', mine, '应用产物 sha256 与 sender_digest 不一致', true, createdStat);
+
+    expect(receipt.status).toBe('failed');
+    expect(existsSync(mine)).toBe(false);
+    expect(receipt).not.toHaveProperty('rollback_failed');
+    expect(receipt).not.toHaveProperty('rollback_skipped');
+    expect(receipt.reason).toContain('无残留');
+  });
+
+  // F3 九轮复审 FAIL-2:创建点 dev/ino 捕获缺失(created=true 但 createdStat
+  // 不可用,如 fstatSync 失败)时,身份无法确认——宁留残留也不按路径盲删,
+  // 如实报 rollback_skipped(旧实现直接按路径 unlink)
+  it('清理标志位=true 但 dev/ino 捕获缺失 → 跳过清理报 rollback_skipped,不按路径盲删', () => {
+    const dir = scratch();
+    const mine = path.join(dir, '.kode-artifact-tmp-mine');
+    writeFileSync(mine, 'UNVERIFIABLE_BYTES', 'utf8');
+
+    const receipt = tempCleanupReceipt('/engine/Avatar.py', mine, '应用产物落盘失败:x', true, undefined);
+
+    expect(receipt.status).toBe('failed');
+    expect(receipt.rollback_skipped).toBe(mine);
+    expect(receipt).not.toHaveProperty('rollback_failed');
+    expect(readFileSync(mine, 'utf8')).toBe('UNVERIFIABLE_BYTES');
   });
 
   it('rename 父目录验证:无 symlink 的真实目录 → 返回解析路径', () => {

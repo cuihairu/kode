@@ -1,0 +1,25 @@
+# Windows rename-overwrite + 九轮回环证据(F3 九轮,2026-11-06 九轮收尾重跑,八场景含悬空别名)
+# 被测 commit: 9a5c7eec845730ba5991d3467e51dd6748fc673c (feat/kode-fix-f1f4,接收端脚本取自该 commit 工作树;至门禁 commit 735aa4a 该文件逐字节未变)
+# 触发时间: 2026-11-06 16:03 +0800 (CST)
+# 主机: openclaw (Windows Server 2022, node v24.22.1)
+# 探针: r9-win-probe2.mjs(场景1-8);同探针在 Linux 本机(HEAD 735aa4a)对拍同样八场景全 PASS,见 docs/review/evidence/r9-winprobe-local-linux.log
+# 场景 1-5 复现八轮 rename 覆盖证据并补被测 commit hash;场景 6-8 为九轮新增(.staged 源拒绝/悬空别名拒绝/.staged symlink 拒绝)
+receiver port: pending
+receiver port: 8922
+platform: win32 10.0.20348 node v24.22.1
+1) fresh apply     -> HTTP 200 {"status":"applied","file":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root-9HLvgl\\Avatar.py","digest":"55e7536d201268affc2cc3039cadaa9c3a581d70cb7e41fd38c106e742c6b317","revision":1}
+   artifact bytes  : "class Avatar:\n    HP = 100\n"
+2) overwrite apply -> HTTP 200 {"status":"applied","file":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root-9HLvgl\\Avatar.py","digest":"28c058d4490c9ee7f7bb2140f285839b126f511799dd931efb66df777f6fa8c7","revision":2}
+   artifact bytes  : "class Avatar:\n    HP = 200\n"
+3) idempotent apply-> HTTP 200 {"status":"applied","file":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root-9HLvgl\\Avatar.py","digest":"28c058d4490c9ee7f7bb2140f285839b126f511799dd931efb66df777f6fa8c7","revision":3}
+4) staged copy     : true
+5) symlink parent  -> HTTP 200 {"status":"failed","file":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root-9HLvgl\\sub\\X.py","reason":"产物路径经符号链接解析后逃逸引擎目录或最终组件为符号链接(C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root-9HLvgl\\engine\\sub\\X.py):拒绝写入不落盘"}
+   leak check      : other/X.py exists = false
+   link intact     : true
+6) .staged source reject -> HTTP 200 all-failed=true sources-intact=true
+7) dangling alias  -> HTTP 200 all-failed=true engine-x=false staged-x=false
+8) .staged symlink -> HTTP 200 {"status":"failed","file":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root2-mmJyjV\\X.py","reason":"接收端暂存路径经符号链接解析后逃逸暂存根或含符号链接组件(C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root2-mmJyjV\\.staged\\X.py):拒绝暂存"}
+   escape dir empty: true
+VERDICT: PASS (rename overwrite + staged namespace isolation + staged symlink rejection + dangling alias rejection hold on this platform)
+FINAL_VERDICT=PASS
+PROBE_EXIT=0

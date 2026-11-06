@@ -1,0 +1,1149 @@
+# gate evidence — branch feat/kode-fix-f1f4
+# HEAD: 735aa4afca89c14658cff48dfb098060a8763d80
+# started: 2026-11-06 15:48:45 +0800
+# cmd: cargo test --workspace
+
+warning: output filename collision at /home/cui/wt-kode-codex/target/debug/dump-golden
+  |
+  = note: the bin target `dump-golden` in package `kode-root v0.2.0 (/home/cui/wt-kode-codex/crates/kode-root)` has the same output filename as the bin target `dump-golden` in package `kode-parser v0.2.0 (/home/cui/wt-kode-codex/crates/kode-parser)`
+  = note: this may become a hard error in the future; see <https://github.com/rust-lang/cargo/issues/6313>
+  = help: consider changing their names to be unique or compiling them separately
+warning: output filename collision at /home/cui/wt-kode-codex/target/debug/dump-golden.dwp
+  |
+  = note: the bin target `dump-golden` in package `kode-root v0.2.0 (/home/cui/wt-kode-codex/crates/kode-root)` has the same output filename as the bin target `dump-golden` in package `kode-parser v0.2.0 (/home/cui/wt-kode-codex/crates/kode-parser)`
+  = note: this may become a hard error in the future; see <https://github.com/rust-lang/cargo/issues/6313>
+  = help: consider changing their names to be unique or compiling them separately
+   Compiling kode-parser v0.2.0 (/home/cui/wt-kode-codex/crates/kode-parser)
+   Compiling kode-corpus v0.2.0 (/home/cui/wt-kode-codex/crates/kode-corpus)
+   Compiling kode-vfs v0.2.0 (/home/cui/wt-kode-codex/crates/kode-vfs)
+   Compiling kode-python v0.2.0 (/home/cui/wt-kode-codex/crates/kode-python)
+   Compiling kode-index v0.2.0 (/home/cui/wt-kode-codex/crates/kode-index)
+   Compiling kode-types v0.2.0 (/home/cui/wt-kode-codex/crates/kode-types)
+   Compiling kode-scheduler v0.2.0 (/home/cui/wt-kode-codex/crates/kode-scheduler)
+   Compiling kode-server v0.2.0 (/home/cui/wt-kode-codex/crates/kode-server)
+   Compiling kode-mcp v0.2.0 (/home/cui/wt-kode-codex/crates/kode-mcp)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 22.13s
+     Running unittests src/lib.rs (target/debug/deps/kode_corpus-151d2e5f64987a56)
+
+running 30 tests
+test encoding::tests::bom_wins_but_declared_cookie_is_retained ... ok
+test encoding::tests::decodes_latin1_and_cp1252_cookies ... ok
+test encoding::tests::ignores_cookie_outside_comment_or_after_two_lines ... ok
+test encoding::tests::recognizes_common_cookie_aliases ... ok
+test encoding::tests::detects_and_strips_utf8_bom ... ok
+test encoding::tests::strict_utf8_reports_valid_prefix_offset ... ok
+test encoding::tests::detects_and_decodes_utf16_boms ... ok
+test encoding::tests::utf16_odd_length_and_lone_surrogate_fail ... ok
+test encoding::tests::heuristic_bomless_utf16_only_for_unambiguous_nul_distribution ... ok
+test encoding::tests::unsupported_codec_is_detected_but_not_decoded ... ok
+test index::tests::fingerprint_is_stable_and_content_sensitive ... ok
+test encoding::tests::reads_pep263_cookie_on_first_and_second_line ... ok
+test enumerate::tests::enumerates_sorted_python_only ... ok
+test enumerate::tests::rejects_non_directory_root ... ok
+test enumerate::tests::honors_user_globs_and_max_files_after_sort ... ok
+test symbols::tests::records_module_level_instance_assignments ... ok
+test symbols::tests::extracts_classes_bases_methods_and_attributes ... ok
+test symbols::tests::parses_import_aliases_and_parenthesized_bindings ... ok
+test symbols::tests::last_method_attribute_and_import_definition_wins ... ok
+test symbols::tests::nested_class_in_function_is_not_indexed ... ok
+test symbols::tests::line_count_and_crlf_match_ts_split_semantics ... ok
+test golden::tests::rendered_snapshot_is_deterministic ... ok
+test index::tests::reuses_unchanged_files_by_content_fingerprint ... ok
+test enumerate::tests::applies_python_specific_default_excludes ... ok
+test symbols::tests::parses_multiline_class_headers_and_decorators ... ok
+test symbols::tests::ignores_comments_strings_and_fake_scope_traps ... ok
+test index::tests::reparses_only_changed_content ... ok
+test golden::tests::generated_table_is_sorted_and_non_empty ... ok
+test index::tests::reports_decode_failures_without_indexing_mojibake ... ok
+test symbols::tests::utf16_columns_cover_non_ascii_prefixes ... ok
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/python_golden.rs (target/debug/deps/python_golden-9db28fedb99e83f8)
+
+running 2 tests
+test build_generated_golden_matches_decoder_and_lexer ... ok
+test fixture_enumeration_and_index_cover_the_golden_table ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/kode_index-faab1009c8272ce3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dump-symbol-golden.rs (target/debug/deps/dump_symbol_golden-3b29bf821108148d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/index_units.rs (target/debug/deps/index_units-dcce78309ff2da30)
+
+running 7 tests
+test root_scoped_invalidation_touches_only_that_root ... ok
+test full_scan_then_rescan_is_zero_rebuild ... ok
+test reverse_deps_and_inheritance_chain_with_cycle_termination ... ok
+test single_file_edit_rebuilds_exactly_one_file ... ok
+test non_declaration_files_are_reported_not_indexed ... ok
+test queries_cover_all_kinds_and_prefix_scan ... ok
+test removal_and_rename_clean_every_lookup_path ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/symbol_golden.rs (target/debug/deps/symbol_golden-1a3e42ac17c26995)
+
+running 2 tests
+test symbol_golden_structure_is_complete ... ok
+test symbol_golden_matches_regenerated_dump ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/kode_mcp-a55a9d65418d6c16)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/kode_mcp-d408bc1df4e168e0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/e2e.rs (target/debug/deps/e2e-96fbed4a1429f060)
+
+running 3 tests
+test tool_level_errors_come_back_as_is_error_results ... ok
+test list_tools_exposes_all_seven ... ok
+test call_tools_return_real_data ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/units.rs (target/debug/deps/units-582ecc0a1c2b9f5e)
+
+running 8 tests
+test type_graph_resolves_alias_array_and_fixed_dict ... ok
+test search_entities_matches_names_and_tags ... ok
+test wire_sample_roundtrips_alias_type ... ok
+test loads_defs_with_categories_and_tolerates_missing_dirs ... ok
+test validate_defs_clean_fixture_zero_findings_and_topology_hook ... ok
+test entity_model_carries_flags_domains_and_process_ownership ... ok
+test message_entry_same_source_with_kode_server ... ok
+test db_schema_preview_derives_persistent_tables ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (target/debug/deps/kode_parser-7e638efde4b86fed)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dump-config-golden.rs (target/debug/deps/dump_config_golden-8484a2603de8a224)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dump-config-merge-golden.rs (target/debug/deps/dump_config_merge_golden-1b81d1083df5f4f2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dump-golden.rs (target/debug/deps/dump_golden-dd7203f6eb043937)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/blind.rs (target/debug/deps/blind-8734a7d093fda0c3)
+
+running 2 tests
+test blind_truncations_keep_prefix_tree ... ok
+test blind_mutations_never_panic ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+
+     Running tests/config_derive_units.rs (target/debug/deps/config_derive_units-508621ba1e284ccc)
+
+running 22 tests
+test debug_degraded_but_ready_with_reason ... ok
+test debug_ready_clean_derivation ... ok
+test debug_not_ready_when_no_scan_root ... ok
+test debug_reason_for_missing_entry_script ... ok
+test def_scan_root_changes_with_path ... ok
+test def_scan_root_derives_from_custom_path ... ok
+test def_scan_root_missing_anchor_falls_back_to_workspace ... ok
+test def_scan_root_no_custom_falls_back_to_workspace ... ok
+test def_scan_root_res_anchor_is_deepest_segment ... ok
+test empty_custom_section_does_not_panic ... ok
+test entry_scripts_passthrough_from_facts ... ok
+test non_numeric_port_treated_as_absent ... ok
+test telnet_enabled_by_section ... ok
+test telnet_password_sets_flag ... ok
+test telnet_section_without_port_uses_defaults_ports ... ok
+test def_scan_root_no_root_no_workspace_is_empty_degraded ... ok
+test telnet_disabled_without_section ... ok
+test telnet_section_nested_component_matches_regex_first ... ok
+test weird_paths_do_not_panic ... ok
+test telnet_port_change_updates_endpoint ... ok
+test telnet_section_without_port_uses_writein_table ... ok
+test real_defaults_per_component_telnet_ports ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/config_merge_units.rs (target/debug/deps/config_merge_units-edd75d6328501555)
+
+running 14 tests
+test merge_base_only_kept ... ok
+test merge_nested_deep_recursion ... ok
+test merge_repeat_table_replaced ... ok
+test merge_both_containers_recurse ... ok
+test sanitize_collapses_ws_and_trims ... ok
+test merge_comments_override_priority_dedup ... ok
+test sanitize_keeps_middle_content ... ok
+test sanitize_collapses_dashes ... ok
+test merge_leaf_override_wins ... ok
+test merge_container_vs_leaf_takes_override_shape ... ok
+test merge_top_level_name_text_from_override ... ok
+test merge_name_order_base_first_then_override_new ... ok
+test merge_override_only_added ... ok
+test config_merge_golden_matches_regenerated_dump ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/config_units.rs (target/debug/deps/config_units-6bc2c4f8416017b3)
+
+running 20 tests
+test basic_tree_name_text_children ... ok
+test attributes_ignored_self_closing ... ok
+test comment_after_self_closing_attaches_next ... ok
+test comments_only_returns_none ... ok
+test empty_returns_none ... ok
+test comment_body_raw_not_trimmed ... ok
+test inline_comment_attaches_last_closed ... ok
+test file_tail_comment_attaches_nearest_container ... ok
+test malformed_extra_close_ignored ... ok
+test malformed_mismatched_close_ignored ... ok
+test malformed_unclosed_tag_dropped ... ok
+test nested_deep ... ok
+test pending_attaches_container_on_close ... ok
+test no_panic_on_arbitrary_inputs ... ok
+test pi_declaration_dropped ... ok
+test pending_lead_attaches_next_open ... ok
+test text_space_joined ... ok
+test text_before_first_element_skipped_for_root ... ok
+test unknown_tags_attrs_duplicates_tolerated ... ok
+test config_golden_matches_regenerated_dump ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/fixtures_golden.rs (target/debug/deps/fixtures_golden-3a54154e7f645860)
+
+running 2 tests
+test corpus_parses_with_expected_semantics ... ok
+test golden_matches_regenerated_dump ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/incremental.rs (target/debug/deps/incremental-374d2f7a68516b0e)
+
+running 5 tests
+test file_kind_by_uri ... ok
+test content_change_invalidates_and_rebuilds ... ok
+test dependency_index_reverse_lookup_and_invalidation ... ok
+test negative_cache_for_untracked_kinds ... ok
+test same_content_rebuilds_exactly_once ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/parser_units.rs (target/debug/deps/parser_units-6f8f07d42efc9620)
+
+running 18 tests
+test byte_spans_are_exact ... ok
+test attributes_keep_name_and_value_spans ... ok
+test duplicate_attribute_keeps_first ... ok
+test entity_decoding_in_text_and_attributes ... ok
+test def_model_extracts_sections ... ok
+test entities_types_alias_models ... ok
+test legacy_tag_and_flag_spellings_are_tolerated ... ok
+test line_map_line_numbers ... ok
+test empty_alias_entry_is_skipped_like_ts ... ok
+test pseudo_comment_mask_is_byte_length_preserving ... ok
+test mismatched_and_stray_close_recover ... ok
+test unterminated_comment_and_cdata_report_but_keep_tree ... ok
+test error_recovery_truncated_never_panics_never_drops_tree ... ok
+test standalone_hash_line_outside_tag_is_masked ... ok
+test flag_normalization_and_domains ... ok
+test parent_chain_and_cycle_detection ... ok
+test unknown_entity_keeps_literal_with_diag ... ok
+test text_and_cdata_nodes_are_distinguishable ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/kode_protocol-1224421d4c969613)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/framing.rs (target/debug/deps/framing-797e0dbbcec79bd9)
+
+running 11 tests
+test decodes_multiple_frames_in_single_chunk ... ok
+test decodes_single_frame ... ok
+test encodes_lsp_framed_message ... ok
+test handles_short_read_header_split_across_chunks ... ok
+test illegal_frame_reports_error_and_resyncs_to_next_valid_frame ... ok
+test non_numeric_content_length_reports_invalid_header ... ok
+test invalid_json_body_surfaces_as_invalid_body ... ok
+test frame_spanning_multiple_chunks_never_yields_partial_message ... ok
+test request_id_round_trips_number_and_string_forms ... ok
+test handles_short_read_body_split_across_chunks ... ok
+test missing_content_length_reports_invalid_header ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/kode_python-482555471b3492ee)
+
+running 3 tests
+test parse::tests::tolerant_of_syntax_errors ... ok
+test parse::tests::parses_valid_module ... ok
+test parse::tests::utf16_columns ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/callgraph_test.rs (target/debug/deps/callgraph_test-394a1d3bac781a94)
+
+running 10 tests
+test empty_and_invalid_source_tolerant ... ok
+test module_level_call_edges_captured ... ok
+test imported_function_is_local ... ok
+test nested_def_calls_recorded ... ok
+test callers_of_lists_affected_call_sites ... ok
+test nested_calls_and_control_flow_walked ... ok
+test nested_class_method_calls_recorded ... ok
+test unknown_bare_name_not_local ... ok
+test match_guard_calls_recorded ... ok
+test extracts_kbengine_specialized_edges ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/dataflow_test.rs (target/debug/deps/dataflow_test-15a84ee1547aea26)
+
+running 9 tests
+test augassign_reads_old_value ... ok
+test del_kills_chain ... ok
+test for_loop_var_is_def ... ok
+test comprehension_target_defined ... ok
+test namedexpr_target_defined ... ok
+test self_attribute_tracked ... ok
+test redefinition_starts_new_chain ... ok
+test subscript_write_reads_container ... ok
+test def_use_chain_straight_line ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/graph_test.rs (target/debug/deps/graph_test-5173191453771239)
+
+running 6 tests
+test self_calls_do_not_cross_files ... ok
+test rust7_cross_process_edge_marked_uncertain_not_silent ... ok
+test cross_file_call_builds_reverse_index ... ok
+test local_bare_name_no_cross_file_pseudo_edge ... ok
+test callers_of_sorted_and_deduped_query ... ok
+test of_kind_filters_visualization_edges ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/symbols_test.rs (target/debug/deps/symbols_test-320e225d3553ae46)
+
+running 6 tests
+test extracts_module_functions_and_imports ... ok
+test extracts_classes_methods_attributes ... ok
+test downgrades_to_corpus_shape ... ok
+test match_case_self_attribute_collected ... ok
+test tolerant_of_syntax_errors ... ok
+test class_index_maps_name_to_class ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/kode_root-4b48ef15abef8a06)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dump-golden.rs (target/debug/deps/dump_golden-3436b72feb08994e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/discovery.rs (target/debug/deps/discovery-e3958e2d9312dd77)
+
+running 24 tests
+test root002_platform_case_folding_matrix ... ok
+test root002_wsl_unc_semantics ... ok
+test root003_linux_assets_tree ... ok
+test root003_multi_ambiguous_tree ... ok
+test root001_config_root_priority ... ok
+test root004_submodule_and_vendored_boundaries ... ok
+test root008_config_probe_predicate ... ok
+test root007_default_mode_never_follows_dir_symlinks ... ok
+test root006_path_alias_same_identity ... ok
+test root011_uri_and_path_dual_input ... ok
+test root009_sensitive_dirs_pruned_with_ledger ... ok
+test root001_priority_chain_and_no_guess ... ok
+test root003_engine_repo_tree ... ok
+test root012_diagnostics_only_on_fresh_run ... ok
+test scan_visited_counts_every_entry_like_ts ... ok
+test root013_bounded_scan_truncation ... ok
+test root004_foreign_anchors_demoted_in_resolution ... ok
+test root015_messages_four_level_fallback ... ok
+test root014_multi_root_registration_and_attribution ... ok
+test root008_conventions_match_ts_evidence ... ok
+test root005_root007_follow_mode_terminates_on_cycles ... ok
+test root015_kbe_source_root_and_messages ... ok
+test root010_golden_matches_regenerated_dump ... ok
+test root012_truncation_diagnostic_on_fresh_only ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/kode_scheduler-8dea4c88412bf639)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dump-scheduler-golden.rs (target/debug/deps/dump_scheduler_golden-a0d794728c93e37d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/invalidation_units.rs (target/debug/deps/invalidation_units-1b8aa6f440e8f016)
+
+running 8 tests
+test affected_set_terminates_on_dependency_cycle ... ok
+test affected_set_includes_call_dependents_overlay ... ok
+test call_dependents_overlay_dedupes_and_skips_self ... ok
+test dependency_task_planning_labels_changed_file_and_batches ... ok
+test affected_set_includes_reverse_dependents_via_inheritance ... ok
+test affected_set_via_type_alias_dependency ... ok
+test rebuild_batches_are_deterministic_and_capped ... ok
+test affected_set_propagates_transitive_chain ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/journal_units.rs (target/debug/deps/journal_units-2867d664cd687acf)
+
+running 4 tests
+test journal_skips_corrupt_lines_without_losing_good_ones ... ok
+test journal_roundtrip_with_field_escaping ... ok
+test journal_write_is_atomic_replacement ... ok
+test crash_recovery_replays_pending_and_drops_stale ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+     Running tests/scheduler_golden.rs (target/debug/deps/scheduler_golden-90fa0ed6f55ba9c0)
+
+running 3 tests
+test golden_key_scenarios_assert_expected_semantics ... ok
+test golden_covers_ten_scenarios_with_decisions ... ok
+test golden_matches_regenerated_dump ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/scheduler_units.rs (target/debug/deps/scheduler_units-c8a0501144f95f96)
+
+running 18 tests
+test cancel_queued_batch_and_individual ... ok
+test bounded_queue_evicts_lowest_and_rejects_lowest_incoming ... ok
+test cancel_running_task_is_not_interruptible ... ok
+test keyed_ensure_rejected_queue_full_writes_no_fake_entry_and_retries ... ok
+test cancel_token_reaches_run_body ... ok
+test interactive_cooldown_postpones_background_and_recovers ... ok
+test newer_version_cancels_older_queued ... ok
+test older_version_new_task_dropped ... ok
+test same_file_same_version_merges_and_upgrades_priority ... ok
+test pause_blocks_pump_but_not_enqueue_resume_drains ... ok
+test same_priority_runs_in_enqueue_order ... ok
+test starvation_promotion_bypasses_cooldown ... ok
+test storm_buffer_coalesces_same_file_and_flushes_deterministically ... ok
+test keyed_ensure_stale_dropped_writes_no_fake_entry_and_retries ... ok
+test keyed_task_reuses_inflight_and_recovers_after_failure ... ok
+test ensure_reentry_correct_after_terminal_eviction ... ok
+test cancelled_tasks_stay_bounded_under_version_churn ... ok
+test terminal_tasks_stay_bounded_under_did_change_churn ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (target/debug/deps/kode_server-10d88840ab5fb2cc)
+
+running 1 test
+test client_sdk::tests::builtin_tables_cover_engine_registry ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dump-completion-golden.rs (target/debug/deps/dump_completion_golden-f29a8928748b8829)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dump-def-md5-golden.rs (target/debug/deps/dump_def_md5_golden-291c6d392ef3c7c8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dump-definition-golden.rs (target/debug/deps/dump_definition_golden-e24de80cb61e0714)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dump-diagnostics-golden.rs (target/debug/deps/dump_diagnostics_golden-bb1315fd852862dd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dump-flag-domains-golden.rs (target/debug/deps/dump_flag_domains_golden-ea06b12cfd914437)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dump-hover-golden.rs (target/debug/deps/dump_hover_golden-39792f0b0bc967c7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dump-wire-golden.rs (target/debug/deps/dump_wire_golden-068655292f97cf2c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/kode_server-01b41dd9a4e271de)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/validate-process-topology.rs (target/debug/deps/validate_process_topology-7892583cce9c3fc4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/client_sdk_dispatch.rs (target/debug/deps/client_sdk_dispatch-818ebe26fa07bdd3)
+
+running 14 tests
+test component_slot_missing_def_skipped ... ok
+test dispatch_generates_entity_and_fixed_dicts ... ok
+test minimal_def_generates_entity_only ... ok
+test unknown_language_is_error ... ok
+test rejects_member_name_collision_with_auxiliary ... ok
+test component_slot_client_visible_properties_into_sdk ... ok
+test ts_int64_maps_to_bigint_with_boundary_note ... ok
+test fixed_dicts_includes_component_only_references ... ok
+test full_def_filters_client_visible_properties ... ok
+test malformed_defs_are_skipped ... ok
+test fixed_dicts_only_referenced_types ... ok
+test no_member_conflict_generates_normally ... ok
+test type_mapping_resolves_typescript_and_csharp ... ok
+test engine_trace_defaults_to_unknown_and_echoes_input ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/completion_dispatch.rs (target/debug/deps/completion_dispatch-efc1c84d3ed0dbdc)
+
+running 9 tests
+test completion_before_initialize_is_rejected ... ok
+test completion_with_invalid_params_is_invalid_request ... ok
+test completion_on_unopened_document_returns_null_result ... ok
+test cancelled_completion_yields_request_cancelled_error ... ok
+test initialize_advertises_completion_provider ... ok
+test completion_without_detectable_context_returns_null_result ... ok
+test did_change_updates_completion_items ... ok
+test completion_on_open_document_returns_items ... ok
+test did_close_drops_completion ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/completion_golden.rs (target/debug/deps/completion_golden-1bab1fb446321871)
+
+running 2 tests
+test completion_golden_structure_is_complete ... ok
+test completion_golden_matches_regenerated_dump ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/completion_units.rs (target/debug/deps/completion_units-4c1b199218a4e392)
+
+running 11 tests
+test inheritance_cycle_terminates_in_members_face ... ok
+test entities_root_context_lists_registered_entities ... ok
+test components_context_lists_entity_items ... ok
+test fragment_filters_items ... ok
+test parent_value_context_lists_corpus_entities ... ok
+test lsp_projection_maps_kinds_and_details ... ok
+test type_value_context_lists_types_then_aliases ... ok
+test utf16_position_cuts_prefix_on_astral_chars_without_panic ... ok
+test properties_open_tag_lists_own_then_inherited_with_shadowing ... ok
+test methods_context_filters_by_facet_and_marks_inherited_from ... ok
+test unknown_contexts_yield_none ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/database_schema_dispatch.rs (target/debug/deps/database_schema_dispatch-34721489e096c057)
+
+running 5 tests
+test malformed_params_yield_error ... ok
+test empty_properties_yield_fixed_root_columns ... ok
+test full_fixture_builds_root_and_child_tables ... ok
+test empty_prefix_uses_entity_name_only ... ok
+test no_cell_skips_base_less_component_and_position_columns ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/def_md5_dispatch.rs (target/debug/deps/def_md5_dispatch-dee125edd0f407b8)
+
+running 2 tests
+test dispatch_error_channel ... ok
+test dispatch_minimal_anchor ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/def_md5_golden.rs (target/debug/deps/def_md5_golden-e561a35ebc36242b)
+
+running 2 tests
+test def_md5_golden_covers_anchor_and_fixtures ... ok
+test def_md5_golden_matches_regenerated_dump ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/def_md5_units.rs (target/debug/deps/def_md5_units-6ff4840354467462)
+
+running 18 tests
+test kr_aud_80_interface_element_form_enters_md5 ... ok
+test kr_aud_81_component_without_body_skipped ... ok
+test kr_aud_81_component_type_name_takes_type_text ... ok
+test component_cycle_does_not_overflow ... ok
+test parent_cycle_does_not_overflow ... ok
+test minimal_auto_match_comp_own_three_int32 ... ok
+test nested_array_before_host_bytes ... ok
+test minimal_property_ctor_bytes ... ok
+test minimal_method_utype_always_zero_and_exposed ... ok
+test golden_samples_load_fixtures ... ok
+test builtin_uid_sequence_1_to_21 ... ok
+test interface_cycle_does_not_overflow ... ok
+test malformed_inputs_error_not_panic ... ok
+test kr_aud_81_component_without_type_errors ... ok
+test kr_aud_80_interface_text_form_enters_md5 ... ok
+test kr_aud_80_non_interface_entry_skipped ... ok
+test determinism_and_md5_format ... ok
+test rfc1321_vectors ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests/definition_dispatch.rs (target/debug/deps/definition_dispatch-f2f6891835154a05)
+
+running 10 tests
+test definition_before_initialize_is_rejected ... ok
+test definition_on_unopened_document_returns_null ... ok
+test definition_with_invalid_params_is_invalid_request ... ok
+test diagnostic_on_unopened_document_returns_empty_items ... ok
+test diagnostic_with_invalid_params_is_invalid_request ... ok
+test initialize_advertises_definition_provider ... ok
+test did_close_clears_diagnostic_items ... ok
+test definition_property_word_lands_on_entities_registration_line ... ok
+test definition_on_open_document_returns_location ... ok
+test diagnostic_returns_full_report_with_items ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/definition_golden.rs (target/debug/deps/definition_golden-c15641dd5d51d821)
+
+running 2 tests
+test definition_golden_structure_is_complete ... ok
+test definition_golden_matches_regenerated_dump ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/definition_units.rs (target/debug/deps/definition_units-56988c4f9f556c6f)
+
+running 11 tests
+test def_component_word_returns_none_like_ts_provider ... ok
+test def_builtin_type_value_is_null ... ok
+test def_declaration_word_without_registry_falls_back_to_def_head ... ok
+test def_parent_value_without_corpus_def_is_null ... ok
+test def_declaration_word_lands_on_entities_registration_line ... ok
+test def_parent_value_word_lands_on_corpus_parent_def_head ... ok
+test entities_registry_word_lands_on_corpus_def_head ... ok
+test def_type_value_word_lands_on_types_xml_declaration_line ... ok
+test unopened_or_unknown_words_are_null ... ok
+test types_declaration_word_lands_on_line_start ... ok
+test utf16_position_crosses_astral_boundary ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/dependency_graph_dispatch.rs (target/debug/deps/dependency_graph_dispatch-24f5fe12692ada5b)
+
+running 5 tests
+test empty_params_yields_deterministic_empty_graph ... ok
+test missing_def_text_keeps_stub_node_and_registration_edge ... ok
+test cycle_guard_terminates_without_duplicate_edges ... ok
+test implemented_by_only_type_gets_type_node_and_non_dangling_edge ... ok
+test full_graph_nodes_edges_reverse_and_paths ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/diagnostics_golden.rs (target/debug/deps/diagnostics_golden-9abfa73aa8f07ed0)
+
+running 2 tests
+test diagnostics_golden_structure_is_complete ... ok
+test diagnostics_golden_matches_regenerated_dump ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/diagnostics_units.rs (target/debug/deps/diagnostics_units-7fb963cf5ecf6857)
+
+running 12 tests
+test duplicate_methods_and_components_are_warning_plus_info ... ok
+test flag_aliases_and_case_folding_are_known ... ok
+test malformed_xml_yields_no_diagnostics_like_ts_null_ast ... ok
+test missing_property_fields_are_errors_on_node_range ... ok
+test duplicate_properties_are_scope_aware ... ok
+test builtin_and_alias_names_are_known_types ... ok
+test non_def_documents_get_empty_face ... ok
+test scalar_checks_run_over_whole_tree_in_dfs_order ... ok
+test unknown_flags_value_is_error_with_verbatim_raw ... ok
+test unknown_detail_level_is_error ... ok
+test unknown_type_reference_is_error_with_candidate_range ... ok
+test type_known_via_types_or_entities_corpus_is_clean ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/dispatch.rs (target/debug/deps/dispatch-77eaa723a6abf7db)
+
+running 18 tests
+test cancellation_before_request_yields_request_cancelled_error ... ok
+test did_change_on_unknown_uri_is_ignored ... ok
+test health_report_contains_probe_fields ... ok
+test initialize_echoes_client_restart_generation ... ok
+test did_open_change_close_transitions_track_documents ... ok
+test initialize_root_uri_registers_root_and_documents_attach_to_it ... ok
+test initialize_negotiates_capabilities_and_server_info ... ok
+test notifications_before_initialize_are_dropped ... ok
+test request_before_initialize_is_rejected_with_lsp_code ... ok
+test reinitialize_is_idempotent ... ok
+test request_id_is_echoed_verbatim_through_response ... ok
+test shutdown_then_exit_is_clean_lifecycle ... ok
+test ranged_did_change_applies_utf16_precise_edit ... ok
+test unknown_request_method_is_method_not_found ... ok
+test stale_did_open_is_ignored ... ok
+test stale_did_change_is_rejected_and_text_preserved ... ok
+test unknown_notifications_are_dropped_silently ... ok
+test wait_request_completes_with_waited_ms ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/flag_domains_golden.rs (target/debug/deps/flag_domains_golden-2dab1ebf341da07a)
+
+running 2 tests
+test flag_domains_golden_covers_all_canonical_tokens ... ok
+test flag_domains_golden_matches_regenerated_dump ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/hover_dispatch.rs (target/debug/deps/hover_dispatch-90b6f92001195b8e)
+
+running 8 tests
+test hover_with_invalid_params_is_invalid_request ... ok
+test did_change_updates_hover_text ... ok
+test hover_on_unopened_document_returns_null_result ... ok
+test hover_on_open_document_returns_markdown_contents ... ok
+test initialize_advertises_hover_provider ... ok
+test hover_before_initialize_is_rejected ... ok
+test hover_on_unknown_word_returns_null_result ... ok
+test did_close_drops_hover_and_corpus_view ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/hover_golden.rs (target/debug/deps/hover_golden-7ec76808ef32841b)
+
+running 3 tests
+test hover_golden_structure_is_complete ... ok
+test each_hover_has_one_face_and_xml_face_matches_source ... ok
+test hover_golden_matches_regenerated_dump ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/hover_units.rs (target/debug/deps/hover_units-565d23e893748adf)
+
+running 13 tests
+test non_declaration_files_have_no_hover ... ok
+test chain_cycle_is_truncated_and_reported ... ok
+test word_at_handles_emoji_utf16_and_crlf ... ok
+test word_at_finds_words_at_cursor_and_word_end ... ok
+test remove_drops_corpus_view_and_symbols ... ok
+test missing_parent_is_marked_not_invented ... ok
+test component_hover_carries_component_type_and_persistent ... ok
+test parent_tag_hover_triggers_chain_face ... ok
+test def_entity_hover_carries_chain_and_members ... ok
+test entities_registration_hover_reports_def_existence ... ok
+test property_hover_carries_type_flags_detaillevel_persistent ... ok
+test types_and_alias_hover_carry_kind_and_alias_targets ... ok
+test method_hover_carries_facet_args_exposed ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/lint_def_python_parity.rs (target/debug/deps/lint_def_python_parity-8fbdcb61d15dcd23)
+
+running 7 tests
+test default_three_arg_analyze_still_works ... ok
+test def_has_python_missing_fires_exactly_once ... ok
+test empty_python_class_is_noop ... ok
+test implemented_methods_zero_false_positive ... ok
+test missing_section_context_skips_that_section ... ok
+test no_python_context_is_noop ... ok
+test per_section_missing_fires_on_that_section_file ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lint_dispatch.rs (target/debug/deps/lint_dispatch-a620611732b72650)
+
+running 7 tests
+test analyze_def_missing_text_is_invalid_params ... ok
+test registry_lists_lint_method ... ok
+test analyze_def_clean_def_returns_empty ... ok
+test analyze_def_python_parity_fires_with_related ... ok
+test analyze_def_inherited_name_collision_fires ... ok
+test unknown_lint_method_is_method_not_found ... ok
+test analyze_def_reports_kitchen_sink_rules ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lint_rules.rs (target/debug/deps/lint_rules-bbdf7f66c1ea5d37)
+
+running 17 tests
+test cell_alias_normalizes_to_cell_domain_and_collides ... ok
+test duplicate_type_tag_fires_with_two_types_and_not_with_one ... ok
+test duplicate_definition_fires_warning_info_pair_and_not_on_distinct_scopes ... ok
+test inherited_name_collision_fires_on_ancestor_method_and_not_on_clean ... ok
+test malformed_xml_yields_empty_findings ... ok
+test heavy_sync_broadcast_fires_on_all_clients_heavy_and_not_scalar ... ok
+test missing_type_fires_without_type_and_not_with_type ... ok
+test engine_limited_name_fires_on_limited_and_not_on_normal ... ok
+test phantom_type_fires_on_engine_unregistered_name_and_not_on_builtin ... ok
+test invalid_identifier_fires_on_python_keyword_and_not_on_normal_name ... ok
+test own_client_not_in_cell_domain_no_false_duplicate ... ok
+test missing_flags_fires_without_flags_and_not_with_flags ... ok
+test unknown_type_reference_fires_without_corpus_and_not_with_known_type ... ok
+test unknown_flag_value_fires_and_not_on_known_aliases ... ok
+test method_property_collision_fires_and_not_when_disjoint ... ok
+test unknown_detail_level_fires_and_not_on_known_level ... ok
+test redundant_detail_level_fires_without_client_flag_and_not_with_client_flag ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/message_table_dispatch.rs (target/debug/deps/message_table_dispatch-5014d198bde016ee)
+
+running 19 tests
+test alias_ids_disabled_are_null ... ok
+test alias_ids_assigned_when_enabled ... ok
+test component_slot_flags_cell_only_no_client ... ok
+test component_slot_persistent_surfaced ... ok
+test component_slot_flags_derived_from_component_def ... ok
+test component_slot_utype_conflicts_with_property ... ok
+test component_def_parent_interface_recursion ... ok
+test empty_def_text_builds_empty_table ... ok
+test explicit_utype_conflict_second_not_added ... ok
+test component_slot_registers_property_and_component_type ... ok
+test component_slot_missing_def_reports_issue_and_falls_back ... ok
+test missing_def_text_is_param_error ... ok
+test empty_def_21_primitives_no_issues ... ok
+test method_utype_auto_assign_cell_base_client_order ... ok
+test property_flags_domain_registration_and_has_client ... ok
+test missing_parent_reports_file_missing ... ok
+test property_flags_missing_and_unknown_report_errors ... ok
+test parent_and_interface_defs_merge_recursively ... ok
+test types_xml_registers_user_types ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/process_topology_bin.rs (target/debug/deps/process_topology_bin-7328e485b8ff46f7)
+
+running 3 tests
+test no_manifest_exits_zero ... ok
+test missing_dbmgr_exits_one ... ok
+test correct_topology_exits_zero ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/process_topology_dispatch.rs (target/debug/deps/process_topology_dispatch-10563a05419262e3)
+
+running 3 tests
+test registered_and_returns_findings_array ... ok
+test params_shape_contract_surfaces ... ok
+test missing_cellapp_produces_warning ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/process_topology_units.rs (target/debug/deps/process_topology_units-406a758a80f5bb1f)
+
+running 21 tests
+test dependency_cycle_reports_m6 ... ok
+test closure_merges_parent_and_interface_content ... ok
+test five_process_topology_zero_findings ... ok
+test interface_cycle_a_to_b_to_a_terminates ... ok
+test component_persistent_counts_toward_dbmgr ... ok
+test manifest_with_no_processes_zero_findings ... ok
+test custom_role_bypassed_m4 ... ok
+test duplicate_port_reports_m2 ... ok
+test missing_dbmgr_reports_d3_on_persistent_property_line ... ok
+test missing_baseapp_reports_d2 ... ok
+test duplicate_singleton_role_reports_m3 ... ok
+test missing_cellapp_reports_d1_on_cell_line ... ok
+test hosts_contradiction_reports_o1 ... ok
+test hosts_consistent_no_o1 ... ok
+test malformed_manifest_no_panic ... ok
+test no_manifest_zero_findings ... ok
+test parent_cycle_a_to_b_to_a_terminates ... ok
+test property_flags_map_to_domains ... ok
+test unknown_dependency_reports_m5 ... ok
+test unknown_role_reports_m4_without_custom ... ok
+test unknown_hosted_entity_reports_o2 ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/python_callgraph_dispatch.rs (target/debug/deps/python_callgraph_dispatch-a0db9f33860950e4)
+
+running 11 tests
+test callgraph_empty_files_contract ... ok
+test symbols_tolerates_syntax_error_reports_errors ... ok
+test callgraph_cross_file_reverse_index ... ok
+test kr_aud_91_multi_workspace_same_relative_path_keeps_separate_nodes ... ok
+test kr_aud_91_nested_scope_edges_carry_file_identity ... ok
+test symbols_per_file_shape_and_self_calls ... ok
+test symbols_empty_files_contract ... ok
+test kr_aud_91_same_stem_functions_keep_separate_nodes ... ok
+test callgraph_tolerates_syntax_error ... ok
+test callgraph_keeps_same_named_methods_separate_across_files ... ok
+test callgraph_full_shape_and_all_kinds ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/rpc_dispatch.rs (target/debug/deps/rpc_dispatch-5a7fc47f80142a17)
+
+running 9 tests
+test rpc_before_initialize_is_rejected ... ok
+test config_derive_dispatch_degraded_diagnostics ... ok
+test rpc_registry_lists_registered_methods ... ok
+test echo_without_params_returns_null ... ok
+test config_derive_dispatch_parses_tree_and_rejects_bad_shape ... ok
+test echo_round_trips_params ... ok
+test unknown_rpc_method_is_method_not_found ... ok
+test config_derive_dispatch_def_scan_root_from_path ... ok
+test rpc_registry_rejects_duplicate_registration - should panic ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/wire_codec_units.rs (target/debug/deps/wire_codec_units-1b18c4fe6ee5e070)
+
+running 17 tests
+test method_encoding_rejects_arity_and_identifier_mode_before_writing ... ok
+test method_encoding_accepts_legal_mode_id_pairs ... ok
+test component_identity_selects_property_and_method_layouts ... ok
+test wire_alias_mode_id_overflow ... ok
+test wire_entity_call_is_16_bytes ... ok
+test wire_partial_array_early_stop ... ok
+test wire_string_non_ascii_stop ... ok
+test wire_string_embedded_nul_rejected ... ok
+test wire_string_ascii_roundtrip ... ok
+test wire_message_frame_extended_length ... ok
+test wire_schema_cycle_detected ... ok
+test wire_rpc_dispatch_smoke ... ok
+test wire_schema_resolves_fixture ... ok
+test wire_golden_matches_regenerated_dump ... ok
+test wire_golden_stream_samples_bidirectional ... ok
+test wire_golden_value_samples_bidirectional ... ok
+test wire_golden_no_panic_on_truncation ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/kode_types-08a1454d20c84413)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dump-type-golden.rs (target/debug/deps/dump_type_golden-3aaef49317a40936)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/type_golden.rs (target/debug/deps/type_golden-3244fb288f109fe8)
+
+running 2 tests
+test type_golden_structure_is_complete ... ok
+test type_golden_matches_regenerated_dump ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/types_units.rs (target/debug/deps/types_units-428e7f5c6053cd00)
+
+running 6 tests
+test alias_cycle_is_diagnosed_and_terminates ... ok
+test alias_xml_and_types_xml_chains_interoperate ... ok
+test def_components_and_property_refs_become_edges ... ok
+test find_cycles_reports_each_graph_cycle ... ok
+test inheritance_chain_missing_and_cycle ... ok
+test types_xml_builds_containers_and_alias_nodes ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/kode_vfs-b8828f5ef21e6a1a)
+
+running 35 tests
+test disk::tests::missing_file_is_none_not_error ... ok
+test line_index::tests::buffer_full_edit_and_cow_snapshot_semantics ... ok
+test line_index::tests::buffer_ranged_edit_replaces_exactly ... ok
+test disk::tests::non_utf8_file_errors_cleanly ... ok
+test line_index::tests::line_index_basics_lf ... ok
+test line_index::tests::line_index_crlf_content_excludes_cr ... ok
+test parse_cache::tests::fingerprint_is_stable_and_length_sensitive ... ok
+test parse_cache::tests::invalidate_and_invalidate_root ... ok
+test parse_cache::tests::keeps_only_latest_valid_snapshot ... ok
+test parse_cache::tests::negative_cache_hits_same_input_only ... ok
+test store::tests::did_open_change_close_version_transitions ... ok
+test store::tests::ranged_edit_via_store_keeps_versions_monotonic ... ok
+test store::tests::unrooted_documents_use_reserved_root_zero ... ok
+test uri::tests::dot_and_dotdot_segments_are_resolved_lexically ... ok
+test store::tests::change_without_open_is_rejected ... ok
+test tests::windows_canonical_path_maps_back_to_drive_path ... ok
+test store::tests::root_registry_longest_prefix_wins_and_respects_boundaries ... ok
+test uri::tests::duplicate_slashes_collapse ... ok
+test uri::tests::localhost_case_insensitive ... ok
+test uri::tests::invalid_inputs_error_not_panic ... ok
+test line_index::tests::utf16_offset_helpers_round_trip ... ok
+test uri::tests::parses_file_uri_and_plain_path_to_same_identity ... ok
+test uri::tests::percent_encoding_round_trips ... ok
+test uri::tests::non_file_schemes_are_rejected ... ok
+test uri::tests::remote_host_file_uri_is_rejected ... ok
+test uri::tests::windows_drive_is_normalized ... ok
+test walk::tests::glob_component_matching ... ok
+test uri::tests::non_ascii_paths_round_trip ... ok
+test line_index::tests::emoji_surrogate_pair_positions ... ok
+test walk::tests::classification_covers_kbengine_kinds ... ok
+test walk::tests::symlinked_directories_are_not_followed ... ok
+test walk::tests::scan_survives_unreadable_dir ... ok
+test walk::tests::scan_excludes_default_dirs_and_honors_user_globs ... ok
+test disk::tests::disk_cache_reuses_when_fingerprint_unchanged ... ok
+test disk::tests::fingerprint_includes_size_and_mtime ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/coordinates.rs (target/debug/deps/coordinates-aed3ff6a63cfba8f)
+
+running 6 tests
+test cross_check_ascii_lf ... ok
+test cross_check_crlf ... ok
+test documented_samples ... ok
+test ranged_edits_on_emoji_and_crlf_text ... ok
+test cross_check_emoji_and_astral ... ok
+test cross_check_mixed_everything ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/vfs.rs (target/debug/deps/vfs-48cb7d5e6c50c85e)
+
+running 8 tests
+test default_registry_reserves_unrooted_and_matches_filesystem_root ... ok
+test drive_root_and_nested_roots_keep_correct_identity ... ok
+test root_registry_priority_and_conflict_diagnostics ... ok
+test rename_and_remove_invalidate_old_identity ... ok
+test unsaved_changes_are_observable_against_disk ... ok
+test root_switch_keeps_documents_isolated ... ok
+test one_hundred_incremental_edits ... ok
+test save_race_disk_changes_behind_open_overlay ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+   Doc-tests kode_corpus
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kode_index
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kode_mcp
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kode_parser
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kode_protocol
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kode_python
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kode_root
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kode_scheduler
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kode_server
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kode_types
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kode_vfs
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+# finished: 2026-11-06 15:49:11 +0800 exit=0

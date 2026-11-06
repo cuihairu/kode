@@ -1,0 +1,23 @@
+# gate evidence — branch feat/kode-fix-f1f4
+# HEAD: 8411a7279ac6c366ef48a56678e72730cb3c9ede
+# worktree status (git status --porcelain at capture): clean (empty)
+# started: 2026-11-06 16:23:23 +0800  load:6.56 31.36 51.70
+# cmd: npx vitest run
+
+npm warn Unknown project config "shamefully-hoist". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown project config "strict-peer-dependencies". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown project config "verify-deps-before-run". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+ RUN  v5.1.0 /home/cui/wt-kode-codex
+
+
+ Test Files  514 passed | 4 skipped (518)
+      Tests  6390 passed | 20 skipped (6410)
+   Start at  16:23:24
+   Duration  47.37s (tests 65%, import 31%, worker 2%, transform 2%)
+
+    Isolate  518 workers spawned · ~235ms startup each (spawn + environment, per file)
+             at least ~14.99s faster with isolate: false — reuses workers across files instead of one per file
+
+
+# finished: 2026-11-06 16:24:12 +0800 exit=0

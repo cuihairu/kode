@@ -1,0 +1,79 @@
+# gate evidence — branch feat/kode-fix-f1f4
+# HEAD: 9a5c7eec845730ba5991d3467e51dd6748fc673c
+# started: 2026-11-06 15:11:53 +0800
+# cmd: npx vitest run
+
+npm warn Unknown project config "shamefully-hoist". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown project config "strict-peer-dependencies". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown project config "verify-deps-before-run". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+ RUN  v5.1.0 /home/cui/wt-kode-codex
+
+stdout | tests/covExtensionCommands.test.ts > extension 激活链命令面(活动 profile 侧)
+KBEngine Language Extension is now active!
+
+stdout | tests/covExtensionCommands.test.ts > extension 激活链命令面(活动 profile 侧)
+KBEngine Language Extension is now deactivated!
+
+ ❯ tests/covExtensionCommands.test.ts (80 tests | 3 failed) 4169ms
+   ❯ extension 激活链命令面(活动 profile 侧) (22)
+     × 测试面板 Run 档:真实执行 pytest 并把结果记到面板条目 219ms
+     × 测试面板 Run 档:pytest skip 用例标记跳过 308ms
+     × 测试面板 Run 档:进程退出非零且无失败节点 → 会话错误显示+stderr,节点保留 passed (R2-F19) 57ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/covExtensionCommands.test.ts > extension 激活链命令面(活动 profile 侧) > 测试面板 Run 档:真实执行 pytest 并把结果记到面板条目
+AssertionError: expected 0 to be greater than 0
+ ❯ tests/covExtensionCommands.test.ts:1025:37
+    1023|     expect(run).toBeDefined();
+    1024|     expect(run?.ended).toBe(true);
+    1025|     expect(run?.passedItems.length).toBeGreaterThan(0);
+       |                                     ^
+    1026|     expect(run?.failedItems.length).toBeGreaterThan(0);
+    1027|   }, 60000);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/covExtensionCommands.test.ts > extension 激活链命令面(活动 profile 侧) > 测试面板 Run 档:pytest skip 用例标记跳过
+AssertionError: expected 0 to be greater than 0
+ ❯ tests/covExtensionCommands.test.ts:1187:38
+    1185|     await profile?.runHandler({ include: [] }, tokenStub);
+    1186|     const run = controller?.createdRuns.at(-1);
+    1187|     expect(run?.skippedItems.length).toBeGreaterThan(0);
+       |                                      ^
+    1188|   }, 60000);
+    1189|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/covExtensionCommands.test.ts > extension 激活链命令面(活动 profile 侧) > 测试面板 Run 档:进程退出非零且无失败节点 → 会话错误显示+stderr,节点保留 passed (R2-F19)
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/covExtensionCommands.test.ts:1218:96
+    1216|       expect(run).toBeDefined();
+    1217|       // 节点主体真实结果:test_ok 仍标 passed(不整个运行冒充成功也不误判失败)
+    1218|       expect(run?.passedItems.some(item => item.id.includes('test_sess…
+       |                                                                                                ^
+    1219|       // 会话错误及 stderr:输出面板横幅 + 工作台如实报错
+    1220|       expect(run?.outputChunks.some(chunk => chunk.output.includes('测试…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed | 513 passed | 4 skipped (518)
+      Tests  3 failed | 6386 passed | 21 skipped (6410)
+   Start at  15:11:54
+   Duration  44.52s (tests 65%, import 31%, transform 2%, worker 2%)
+
+    Isolate  518 workers spawned · ~213ms startup each (spawn + environment, per file)
+             at least ~13.58s faster with isolate: false — reuses workers across files instead of one per file
+
+
+# finished: 2026-11-06 15:12:39 +0800 exit=1

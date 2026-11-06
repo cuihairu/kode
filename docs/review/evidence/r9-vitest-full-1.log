@@ -1,0 +1,116 @@
+# gate evidence — branch feat/kode-fix-f1f4
+# HEAD: 9a5c7eec845730ba5991d3467e51dd6748fc673c
+# started: 2026-11-06 15:09:49 +0800
+# cmd: npx vitest run
+
+npm warn Unknown project config "shamefully-hoist". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown project config "strict-peer-dependencies". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown project config "verify-deps-before-run". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+ RUN  v5.1.0 /home/cui/wt-kode-codex
+
+stdout | tests/covExtensionCommands.test.ts > extension 激活链命令面(活动 profile 侧)
+KBEngine Language Extension is now active!
+
+stdout | tests/covExtensionCommands.test.ts > extension 激活链命令面(活动 profile 侧)
+KBEngine Language Extension is now deactivated!
+
+ ❯ tests/covExtensionCommands.test.ts (80 tests | 3 failed) 8386ms
+   ❯ extension 激活链命令面(活动 profile 侧) (22)
+     × 测试面板 Run 档:真实执行 pytest 并把结果记到面板条目 984ms
+     × 测试面板 Run 档:pytest skip 用例标记跳过 1279ms
+     × 测试面板 Run 档:进程退出非零且无失败节点 → 会话错误显示+stderr,节点保留 passed (R2-F19) 227ms
+ ❯ tests/typeStorageColdBuildPhased.test.ts (6 tests | 1 failed) 9893ms
+   ❯ IDE-REV-013:type storage 冷索引逐实体分阶段 (6)
+     × 深组件链让路:递归不整块阻塞,最大连续片入预算(F13) 3279ms
+ ❯ tests/hoverDeadlineContext.test.ts (10 tests | 1 failed) 278ms
+   ❯ IDE-BUD-001:createHoverRequestDeadline (4)
+     × 到期是纯时间判定,不自动取消 token;remainingMs 单调递减 65ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/covExtensionCommands.test.ts > extension 激活链命令面(活动 profile 侧) > 测试面板 Run 档:真实执行 pytest 并把结果记到面板条目
+AssertionError: expected 0 to be greater than 0
+ ❯ tests/covExtensionCommands.test.ts:1025:37
+    1023|     expect(run).toBeDefined();
+    1024|     expect(run?.ended).toBe(true);
+    1025|     expect(run?.passedItems.length).toBeGreaterThan(0);
+       |                                     ^
+    1026|     expect(run?.failedItems.length).toBeGreaterThan(0);
+    1027|   }, 60000);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/covExtensionCommands.test.ts > extension 激活链命令面(活动 profile 侧) > 测试面板 Run 档:pytest skip 用例标记跳过
+AssertionError: expected 0 to be greater than 0
+ ❯ tests/covExtensionCommands.test.ts:1187:38
+    1185|     await profile?.runHandler({ include: [] }, tokenStub);
+    1186|     const run = controller?.createdRuns.at(-1);
+    1187|     expect(run?.skippedItems.length).toBeGreaterThan(0);
+       |                                      ^
+    1188|   }, 60000);
+    1189|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/covExtensionCommands.test.ts > extension 激活链命令面(活动 profile 侧) > 测试面板 Run 档:进程退出非零且无失败节点 → 会话错误显示+stderr,节点保留 passed (R2-F19)
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/covExtensionCommands.test.ts:1218:96
+    1216|       expect(run).toBeDefined();
+    1217|       // 节点主体真实结果:test_ok 仍标 passed(不整个运行冒充成功也不误判失败)
+    1218|       expect(run?.passedItems.some(item => item.id.includes('test_sess…
+       |                                                                                                ^
+    1219|       // 会话错误及 stderr:输出面板横幅 + 工作台如实报错
+    1220|       expect(run?.outputChunks.some(chunk => chunk.output.includes('测试…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/hoverDeadlineContext.test.ts > IDE-BUD-001:createHoverRequestDeadline > 到期是纯时间判定,不自动取消 token;remainingMs 单调递减
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/hoverDeadlineContext.test.ts:70:34
+     68|     expect(deadline.budgetMs).toBe(15);
+     69|     expect(deadline.remainingMs()).toBeLessThanOrEqual(15);
+     70|     expect(deadline.isExpired()).toBe(false);
+       |                                  ^
+     71|
+     72|     await tick(20);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  tests/typeStorageColdBuildPhased.test.ts > IDE-REV-013:type storage 冷索引逐实体分阶段 > 深组件链让路:递归不整块阻塞,最大连续片入预算(F13)
+AssertionError: expected 213 to be less than 150
+ ❯ tests/typeStorageColdBuildPhased.test.ts:188:32
+    186|     // 深组件链(150 层×40 属性)同单实体预算:递归与属性循环都按预算让路
+    187|     expect(outcome.yields).toBeGreaterThan(1);
+    188|     expect(outcome.maxSliceMs).toBeLessThan(150);
+       |                                ^
+    189|   });
+    190|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  3 failed | 511 passed | 4 skipped (518)
+      Tests  5 failed | 6384 passed | 21 skipped (6410)
+   Start at  15:09:52
+   Duration  120.88s (tests 53%, import 41%, transform 4%, worker 3%)
+
+    Isolate  518 workers spawned · ~645ms startup each (spawn + environment, per file)
+             at least ~41.12s faster with isolate: false — reuses workers across files instead of one per file
+
+
+# finished: 2026-11-06 15:11:53 +0800 exit=1

@@ -1,0 +1,26 @@
+# gate evidence — branch feat/kode-fix-f1f4
+# HEAD: 735aa4afca89c14658cff48dfb098060a8763d80
+# started: 2026-11-06 16:04:29 +0800
+# cmd: node r9-win-probe2.mjs scripts/hot-reload-receiver/referenceReceiver.mjs (local Linux cross-check of the openclaw probe)
+
+receiver port: pending
+receiver port: 36623
+platform: linux 7.0.0-42-generic node v24.21.0
+1) fresh apply     -> HTTP 200 {"status":"applied","file":"/home/cui/.hermes/cache/scratch/kode-win-probe-root-yEceN3/Avatar.py","digest":"55e7536d201268affc2cc3039cadaa9c3a581d70cb7e41fd38c106e742c6b317","revision":1}
+   artifact bytes  : "class Avatar:\n    HP = 100\n"
+2) overwrite apply -> HTTP 200 {"status":"applied","file":"/home/cui/.hermes/cache/scratch/kode-win-probe-root-yEceN3/Avatar.py","digest":"28c058d4490c9ee7f7bb2140f285839b126f511799dd931efb66df777f6fa8c7","revision":2}
+   artifact bytes  : "class Avatar:\n    HP = 200\n"
+3) idempotent apply-> HTTP 200 {"status":"applied","file":"/home/cui/.hermes/cache/scratch/kode-win-probe-root-yEceN3/Avatar.py","digest":"28c058d4490c9ee7f7bb2140f285839b126f511799dd931efb66df777f6fa8c7","revision":3}
+4) staged copy     : true
+5) symlink parent  -> HTTP 200 {"status":"failed","file":"/home/cui/.hermes/cache/scratch/kode-win-probe-root-yEceN3/sub/X.py","reason":"产物路径经符号链接解析后逃逸引擎目录或最终组件为符号链接(/home/cui/.hermes/cache/scratch/kode-win-probe-root-yEceN3/engine/sub/X.py):拒绝写入不落盘"}
+   leak check      : other/X.py exists = false
+   link intact     : true
+6) .staged source reject -> HTTP 200 all-failed=true sources-intact=true
+7) dangling alias  -> HTTP 200 all-failed=true engine-x=false staged-x=false
+8) .staged symlink -> HTTP 200 {"status":"failed","file":"/home/cui/.hermes/cache/scratch/kode-win-probe-root2-J4075y/X.py","reason":"接收端暂存路径经符号链接解析后逃逸暂存根或含符号链接组件(/home/cui/.hermes/cache/scratch/kode-win-probe-root2-J4075y/.staged/X.py):拒绝暂存"}
+   escape dir empty: true
+VERDICT: PASS (rename overwrite + staged namespace isolation + staged symlink rejection + dangling alias rejection hold on this platform)
+FINAL_VERDICT=PASS
+probe_exit=0
+
+# finished: 2026-11-06 16:04:30 +0800
