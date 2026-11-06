@@ -32,10 +32,7 @@ fn error_code_of(out: &[Outgoing]) -> i64 {
 }
 
 fn init(state: &mut ServerState) {
-    handle_message(
-        state,
-        request(0, "initialize", json!({"capabilities": {}})),
-    );
+    handle_message(state, request(0, "initialize", json!({"capabilities": {}})));
 }
 
 /// 经 `$/kode/rpc` 派发 `$/kode/lint/analyzeDef`,返回 findings 数组。
@@ -267,8 +264,14 @@ fn analyze_def_python_parity_fires_with_related() {
         .filter(|f| f.get("check").and_then(|c| c.as_str()) == Some("def-method-missing-in-python"))
         .collect();
     assert_eq!(parity.len(), 1, "恰好 1 条 warning");
-    assert_eq!(parity[0].get("severity").and_then(|s| s.as_str()), Some("warning"));
-    assert_eq!(parity[0].get("name").and_then(|n| n.as_str()), Some("onTick"));
+    assert_eq!(
+        parity[0].get("severity").and_then(|s| s.as_str()),
+        Some("warning")
+    );
+    assert_eq!(
+        parity[0].get("name").and_then(|n| n.as_str()),
+        Some("onTick")
+    );
     let related = parity[0].get("related").expect("related key");
     assert_eq!(
         related.get("file").and_then(|f| f.as_str()),

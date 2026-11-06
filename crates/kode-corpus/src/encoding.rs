@@ -236,7 +236,7 @@ fn bomless_utf16(bytes: &[u8]) -> Option<Encoding> {
     }
     let mut even_zeros = 0;
     let mut odd_zeros = 0;
-    for pair in sample.chunks_exact(2) {
+    for pair in sample.as_chunks::<2>().0 {
         even_zeros += usize::from(pair[0] == 0);
         odd_zeros += usize::from(pair[1] == 0);
     }
@@ -342,12 +342,12 @@ fn decode_ascii(bytes: &[u8]) -> Result<String, DecodeError> {
 }
 
 fn decode_utf16(bytes: &[u8], little_endian: bool) -> Result<String, DecodeError> {
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return Err(DecodeError::InvalidUtf16 {
             offset: bytes.len() - 1,
         });
     }
-    let units = bytes.chunks_exact(2).map(|pair| {
+    let units = bytes.as_chunks::<2>().0.iter().map(|pair| {
         if little_endian {
             u16::from_le_bytes([pair[0], pair[1]])
         } else {

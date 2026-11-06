@@ -57,7 +57,9 @@ fn search_entities_matches_names_and_tags() {
         .collect();
     assert!(names.contains(&"Avatar"));
     assert!(names.contains(&"TrainingAvatar"));
-    assert!(names.contains(&"TrainingMonster") == false || names.contains(&"TrainingMonster"));
+    // 审核发现:旧断言 `!contains || contains` 恒真,零覆盖。按查询语义
+    // "avatar" 不命中 TrainingMonster——如实断言不命中。
+    assert!(!names.contains(&"TrainingMonster"), "{names:?}");
     // 按标签:属性名命中,matchedTags 非空。
     let by_tag = knowledge.search_entities("accountName", 20);
     let first = &by_tag["matches"].as_array().unwrap()[0];

@@ -121,9 +121,14 @@ pub fn extract_call_graph_detailed(ast: &ParsedAst, symbols: &AstSymbols) -> Vec
                 });
             }
             _ => {
-                walk_stmt(ast, &ctx, stmt, None, MODULE_CALLER, &mut |edge, character| {
-                    out.push((edge, character))
-                });
+                walk_stmt(
+                    ast,
+                    &ctx,
+                    stmt,
+                    None,
+                    MODULE_CALLER,
+                    &mut |edge, character| out.push((edge, character)),
+                );
             }
         }
     }

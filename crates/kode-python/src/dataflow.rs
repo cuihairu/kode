@@ -57,8 +57,7 @@ pub fn dataflow_for_module(ast: &ParsedAst) -> Vec<MethodDataflow> {
                 let class_name = cls.name.as_str().to_string();
                 for s in &cls.body {
                     if let Stmt::FunctionDef(f) = s {
-                        let params =
-                            crate::symbols::method_params(&f.parameters);
+                        let params = crate::symbols::method_params(&f.parameters);
                         out.push(MethodDataflow {
                             class: Some(class_name.clone()),
                             method: f.name.as_str().to_string(),

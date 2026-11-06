@@ -232,11 +232,20 @@ fn default_registry_reserves_unrooted_and_matches_filesystem_root() {
     let root = registry.register("/");
     assert_ne!(root, RootId::UNROOTED);
     assert_eq!(registry.register("/"), root);
-    assert_eq!(registry.root_for(&CanonicalUri::from_path("/project/a.py")), root);
+    assert_eq!(
+        registry.root_for(&CanonicalUri::from_path("/project/a.py")),
+        root
+    );
     let nested = registry.register("/project");
     assert_ne!(root, nested);
-    assert_eq!(registry.root_for(&CanonicalUri::from_path("/project/a.py")), nested);
-    assert_eq!(registry.root_for(&CanonicalUri::from_path("/project2/a.py")), root);
+    assert_eq!(
+        registry.root_for(&CanonicalUri::from_path("/project/a.py")),
+        nested
+    );
+    assert_eq!(
+        registry.root_for(&CanonicalUri::from_path("/project2/a.py")),
+        root
+    );
 }
 
 #[test]
@@ -245,8 +254,20 @@ fn drive_root_and_nested_roots_keep_correct_identity() {
     let drive = registry.register("C:/");
     let nested = registry.register("C:/project");
     assert_eq!(registry.root_for(&CanonicalUri::from_path("C:/")), drive);
-    assert_eq!(registry.root_for(&CanonicalUri::from_path("C:/other/a.py")), drive);
-    assert_eq!(registry.root_for(&CanonicalUri::from_path("C:/project/a.py")), nested);
-    assert_eq!(registry.root_for(&CanonicalUri::from_path("C:/project2/a.py")), drive);
-    assert_eq!(registry.root_for(&CanonicalUri::from_path("D:/a.py")), RootId::UNROOTED);
+    assert_eq!(
+        registry.root_for(&CanonicalUri::from_path("C:/other/a.py")),
+        drive
+    );
+    assert_eq!(
+        registry.root_for(&CanonicalUri::from_path("C:/project/a.py")),
+        nested
+    );
+    assert_eq!(
+        registry.root_for(&CanonicalUri::from_path("C:/project2/a.py")),
+        drive
+    );
+    assert_eq!(
+        registry.root_for(&CanonicalUri::from_path("D:/a.py")),
+        RootId::UNROOTED
+    );
 }

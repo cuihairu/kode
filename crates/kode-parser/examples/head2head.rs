@@ -43,7 +43,10 @@ fn collect(dir: &Path, rel_prefix: &str, out: &mut BTreeMap<String, (Kind, Strin
     };
     entries.sort();
     for path in entries {
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
         let rel = format!("{rel_prefix}/{name}");
         if path.is_dir() {
             collect(&path, &rel, out);
@@ -97,9 +100,11 @@ fn vm_hwm_kib() -> u64 {
     std::fs::read_to_string("/proc/self/status")
         .ok()
         .and_then(|s| {
-            s.lines()
-                .find(|l| l.starts_with("VmHWM:"))
-                .and_then(|l| l.split_whitespace().nth(1).and_then(|v| v.parse::<u64>().ok()))
+            s.lines().find(|l| l.starts_with("VmHWM:")).and_then(|l| {
+                l.split_whitespace()
+                    .nth(1)
+                    .and_then(|v| v.parse::<u64>().ok())
+            })
         })
         .unwrap_or(0)
 }
@@ -197,7 +202,6 @@ fn main() {
     //    fp_only 只跑内容指纹(不解析),用于把指纹成本与解析成本拆开。
     let keys: Vec<(String, _)> = files
         .keys()
-        .cloned()
         .map(|rel| (rel.clone(), key_for(RootId(7), &format!("/h2h/{rel}"))))
         .collect();
     let mut scan1s: Vec<f64> = Vec::new();
