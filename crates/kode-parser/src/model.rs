@@ -9,7 +9,7 @@
 //! - 未知子标签/未知段落**保留**在 `extra_*`,不因未知标签失败(SYNTAX-005)。
 
 use crate::diag::{Diagnostic, LineMap, Span};
-use crate::xml::Document;
+use crate::xml::{Document, NodeData};
 
 // ---------------------------------------------------------------------------
 // .def
@@ -156,7 +156,31 @@ pub fn extract_def(doc: &Document, raw_text: &str) -> DefFile {
             }
             "interfaces" => {
                 for iface in doc.child_elements(child) {
-                    let name = doc.element(iface).text(doc).trim().to_string();
+                    // KR-AUD-88:引擎 loadInterfaces(entitydef.cpp:561-585)口径——
+                    // 条目 getKey 必属 {interface,Interface,type,Type},接口名 =
+                    // 条目首个非注释子节点的 getKey(trim(Value),xml.cpp:72-95/
+                    // 113-119):文本形态取 trim 文本、元素形态取元素名(与
+                    // KR-AUD-80 def_md5 同根;修前只取直文本,元素形态整体丢失)。
+                    let entry = doc.element(iface).name.as_str();
+                    if !matches!(entry, "interface" | "Interface" | "type" | "Type") {
+                        continue;
+                    }
+                    let first = doc
+                        .element(iface)
+                        .children
+                        .iter()
+                        .copied()
+                        .find(|&c| !matches!(doc.nodes[c].data, NodeData::Comment { .. }));
+                    let name = match first {
+                        Some(idx) => match &doc.nodes[idx].data {
+                            NodeData::Element(e) => e.name.trim().to_string(),
+                            NodeData::Text { decoded, .. } | NodeData::Cdata { decoded, .. } => {
+                                decoded.trim().to_string()
+                            }
+                            _ => String::new(),
+                        },
+                        None => String::new(),
+                    };
                     if !name.is_empty() {
                         out.interfaces.push(name);
                     }
@@ -397,7 +421,13 @@ pub fn flag_domains(flags: &[String]) -> Vec<&'static str> {
                 has_cell = true;
                 has_client = true;
             }
-            "OWN_CLIENT" | "OTHER_CLIENTS" => has_client = true,
+            // KR-AUD-87:ED_FLAG_OWN_CLIENT(0x10)/ED_FLAG_OTHER_CLIENTS(0x80)
+            // 都在 ENTITY_CELL_DATA_FLAGS(common.h:43)内——引擎
+            // loadDefPropertys 按 hasCellFlags 把它们注册进 cell map。
+            "OWN_CLIENT" | "OTHER_CLIENTS" => {
+                has_cell = true;
+                has_client = true;
+            }
             _ => {}
         }
     }
