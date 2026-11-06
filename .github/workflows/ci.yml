@@ -100,6 +100,18 @@ jobs:
       timeout-minutes: 5
       run: pnpm run lint
 
+    # mocha 烟测门(编译产物装配 + manifest 激活事件 + 状态栏灯位):pnpm test
+    # 的后半段。此前 push CI 只跑 vitest,这段只在 nightly 触达——venv 席漏注册
+    # 激活事件、状态栏灯位断言过时两类红都拖到次日才暴露。vitest 半段已在上面
+    # 带覆盖率跑过,这里只补 mocha 半段;必须在打包步之前:vsce 的
+    # vscode:prepublish 会用 esbuild bundle 覆盖 out/extension.js,而本门验的
+    # 正是 tsc 产物的模块图。
+    - name: 运行 mocha 烟测门(编译产物)
+      timeout-minutes: 10
+      run: |
+        pnpm exec tsc -p tsconfig.mocha.json
+        node ./out/test/runTest.js
+
     - name: 打包 VSIX 扩展
       timeout-minutes: 15
       # 先清 codecov-action 落在工作区的上传器（vscodeignore 已兜底，双保险）

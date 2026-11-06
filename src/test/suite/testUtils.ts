@@ -37,6 +37,8 @@ export interface CompiledVscodeStub {
       alignment: number;
       priority: number;
       text: string;
+      /** 点击命令(状态灯归属:服务器/telnet/热更/解释器/通道切换) */
+      command: string | undefined;
       visible: boolean;
       disposed: boolean;
     }>;
