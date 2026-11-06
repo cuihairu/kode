@@ -41,6 +41,11 @@
 | KBE-DEF-011 | def 声明方法在 Python 缺实现 | 已有实时 Warning | `def-method-missing-in-python`；`defMethodConsistency.ts` |
 | KBE-DEF-012 | Python 方法在 def 无声明 | 已有实时 Warning | `kbengine.pythonMethodNotInDef`；`defMethodConsistency.ts` |
 | KBE-DEF-013 | 进程拓扑定义与定义期错配预警 | 已有实时 Warning | `kbengine.processTopology`；`processTopologyDiagnostics.ts` |
+| KBE-CFG-001 | 工作区配置层:debug.json components 空/缺(unparsable/telnet 段整段被注释同族) | 已有实时 Warning | `kbengine.configContract.debugComponentsEmpty`；`configContractDiagnostics.ts` |
+| KBE-CFG-002 | 工作区配置层:已知组件 telnet 端口缺失或偏离引擎默认(31000/32000/40000/50000 等) | 已有实时 Warning | `kbengine.configContract.debugTelnetPortMismatch`；`configContractDiagnostics.ts` |
+| KBE-CFG-003 | 工作区配置层:extraPaths 双层上跳(`../..`)或指向不存在目录 | 已有实时 Warning | `kbengine.configContract.extraPathsDoubleUp`；`configContractDiagnostics.ts` |
+| KBE-CFG-004 | 工作区配置层:.gitignore 缺 `.kbengine/` 托管目录条目 | 已有实时 Warning | `kbengine.configContract.gitignoreMissingKbengine`；`configContractDiagnostics.ts` |
+| KBE-CFG-005 | 工作区配置层:CLAUDE.md/README 声明的 telnet 密码/端口与 debug.json 实值冲突 | 已有实时 Warning | `kbengine.configContract.telnetPasswordDocConflict`；`configContractDiagnostics.ts` |
 
 ## EntityCall 判空：属性存在不代表另一端存在
 

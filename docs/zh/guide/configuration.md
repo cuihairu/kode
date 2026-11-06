@@ -72,6 +72,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.enableDiagnostics` | boolean | `true` | `.def` 诊断总开关(批147 起同管 entities.xml 同名重复登记检查) |
 | `kbengine.enableStructureDiagnostics` | boolean | `true` | 结构化校验开关(重复属性/方法、子标签位置、缺字段、字段重复定义) |
 | `kbengine.receiverNoneDiagnostics` | boolean | `true` | Python 侧诊断:`self.client`/`self.cell`/`self.base` 成员引用无判空 guard(正向 if、早退、别名；hasattr 不代表非 None)报 Warning 并附引擎源码;同时检查 `.def` 段错配(经接收者调用其对应 section 未声明的方法) |
+| `kbengine.configContractDiagnostics` | boolean | `true` | 工作区配置层只读契约检查(工作区级):`.kbengine/debug.json` 的 `components` 空/缺、已知组件 telnet 端口缺失或偏离引擎默认、telnet 段被注释、JSON 不可解析;`python.analysis.extraPaths` 含 `../..` 双层上跳或指向不存在目录;`.gitignore` 缺 `.kbengine/`;CLAUDE.md/README 声明的 telnet 密码/端口与 debug.json 实值冲突。每条 finding 报 Warning 附中英修复建议;激活首扫、契约文件打开/保存即扫、变更即重算。仅在存在 `.kbengine/` 托管目录的工作区启用(其余工作区零噪声) |
 | `kbengine.attributeNoneDiagnostics` | boolean | `true` | Python 侧诊断:用户自管属性(非 `.def` 声明)`self.<属性>` 的类型收敛含 None 且当前位未窄化时,成员访问/调用前判空报 Warning(流敏感:`__init__` 赋值收敛、`is None`/`is not None` 守卫与早退均参与窄化) |
 | `kbengine.propertyDirectionDiagnostics` | boolean | `true` | Python 侧诊断:def 属性访问方向违规——`self.<属性>`/`self.<role>.<属性>` 的访问位置(裸访问取进程作用域、接收者限定取接收者角色)不在属性 Flags 推导的三域位内时报 Warning;文件作用域无法确定(不在 `scripts/base|cell|client`)时降级为 Information(不标 Error) |
 | `kbengine.readOnlyWriteDiagnostics` | boolean | `true` | Python 侧诊断:实体脚本对引擎内建只读属性(`self.id`/`self.isDestroyed`/`self.className` 及各面只读项)的普通赋值/增强赋值/注解赋值/del 报 Warning(引擎仅 GET,写入运行时被拒);合法可写属性(`self.position`、`self.shouldAutoBackup` 等)与非实体脚本同名字段不报 |
@@ -94,6 +95,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `enableDiagnostics` | `.def` 的类型、Flags、结构问题与 entities.xml 同名重复登记全部不再提示 | 忘了重开,以为代码没写错 |
 | `enableStructureDiagnostics` | 重复属性/方法、子标签位置错、缺 `Type`/`Flags`、字段重复定义都不报 | 与上一项搞混:这项只管结构,类型名拼错归 `checkUnknownTypes` |
 | `receiverNoneDiagnostics` | Python 脚本里无判空的 `self.cell`/`self.base`/`self.client` 引用与 `.def` 段错配不再提示 | 接收者在对端不在时(玩家离线、丢 cell)就是 None;关掉只是不告警,调用并不会因此安全 |
+| `configContractDiagnostics` | 配置层契约违规(components 空、telnet 端口偏离默认、extraPaths 双层上跳、缺 `.kbengine/` ignore 条目、文档与配置密码/端口冲突)不再提示 | 这些正是一个真实内网开发机暴露过的事故形态(Start Debugging 无预设目标、照文档密码连不上 telnet、一次 `git add -A` 把含明文密码的 debug.json 提交进仓);关掉只是不告警,问题本身还在 |
 | `propertyDirectionDiagnostics` | Python 脚本里方向违规的 def 属性访问不再提示 | base 段访问 cell 域属性是真实引擎侧失效(该域不存在此属性);关掉只是不告警 |
 | `startupScriptDiagnostics` | 启动脚本诊断(未知 `--参数`、`--cid`/`--gus` 非数字、`$KBE_RES_PATH`/`$KBE_BIN_PATH`/`$KBE_ROOT` 引用未赋值)不再提示 | 关掉只是不告警;本文件从不赋值 `$KBE_RES_PATH` 的进程照样找不到资源 |
 | `diagnostics.checkUnknownTypes` | 类型名拼错不再报 | 自定义类型要能找到才不误报:先查 `entity_defs/types.xml`、`scripts/entity_defs/types.xml`、`assets/scripts/entity_defs/types.xml`,再到 `user_type/<Type>.py`、`scripts/user_type/<Type>.py`、`assets/scripts/user_type/<Type>.py` |

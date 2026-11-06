@@ -44,7 +44,7 @@
 ## 2. 离线可用性（Offline Usability）
 
 - **问题**：三个图视 webview 从公网 CDN 拉库——`src/entityDependencyWebView.ts:1220` 与 `src/entityFlowWebView.ts:280` 加载 `https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js`，`src/monitoringWebView.ts:17` 加载 `chart.js@3.9.1` CDN 常量；CSP（`script-src`）把源钉死在同一路径。内网无外网 → mermaid/chart.js 永远 404/超时，依赖图、实体流图、监控图表空白。
-- **kode 现状**：main 上三处 CDN 引用原样在盘；**KR-AUD 批 C（`feat/kode-kr-c`）已做过这批修复——commit `2491152` "fix(webview): vendor mermaid/chart.js, nonce CSP + strict, escape all dynamic labels (KR-AUD-43/50/53/08)"**，把 mermaid/chart.js 本地 vendor 进包并改 nonce CSP。⚠️ **该分支尚未合入 origin/main**（main 上 `git grep cdn.jsdelivr` 仍命中三个文件），内网可用性修复处于「做了没上主干」状态。
+- **kode 现状**：本审核启动时 main 上三处 CDN 引用原样在盘；**KR-AUD 批 C（`feat/kode-kr-c`）已做过这批修复——commit `2491152` "fix(webview): vendor mermaid/chart.js, nonce CSP + strict, escape all dynamic labels (KR-AUD-43/50/53/08)"**，把 mermaid/chart.js 本地 vendor 进包并改 nonce CSP。✅ **状态更新（本审核落地当日）：该批已随 PR #16（merge `6a50747`）合入 origin/main**——审核时点处于「做了没上主干」状态，现主干已含；内网机拉新版后需复验三个 webview 断网渲染，回归门禁建议补一条「media/vendor 内资源可离线加载」烟测。
 - **建议**：合入 `feat/kode-kr-c`（或摘 cherry-pick `2491152`）后在内网机复验三个 webview 断网渲染；后续回归门禁里加一条「media/vendor 内资源可离线加载」的烟测。
 
 ## 3. telnet / 调试集成（Telnet & Debug Integration）
@@ -80,6 +80,6 @@
 | 维度 | 判定 |
 |------|------|
 | 工作区配置契约 | 4 项事实全部无覆盖 → 本次以诊断规则补上 |
-| 离线可用性 | 修复在 `feat/kode-kr-c` 已做未合 → 需合入 + 内网复验 |
+| 离线可用性 | 修复（`feat/kode-kr-c` vendor mermaid/chart.js + nonce CSP）已随 PR #16 合入 main → 内网机拉新后复验断网渲染 |
 | telnet/调试集成 | 执行面齐全，输入质量面由新规则补 |
 | 配置层诊断真空 | 是本次全部配置类事故的共同根因 → 新规则即杠杆 |

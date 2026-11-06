@@ -111,20 +111,20 @@ const ANCHORS: Array<[string, number, string]> = [
   // 后不累计),onDidChangeTextDocument/flushQueued 锚点 +3:真位重探
   // 2155/2235,出处随 baseline 锁步;并发会话在途 extension.ts 未提交编辑
   // 不入本批校准,其提交时须自行再探。
-  ['src/extension.ts', 1010, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1061, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1124, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 928, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1428, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 631, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 644, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 1014, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1065, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1128, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 932, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1432, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 635, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 648, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
   // 锚点整体 +12(真位重探 1778/1837/1861/1989/4713/5121/5227/7038 →
   // 1790/1849/1873/2001/4725/5133/5239/7050)。
-  ['src/extension.ts', 2155, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2235, 'flushQueued()'],
+  ['src/extension.ts', 2295, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2375, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面
@@ -163,6 +163,11 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/pythonClassIndex.ts', 657, 'ensureCompositionRoots'],
   ['src/pythonClassIndex.ts', 1264, 'resolveClassBase'],
   ['src/pythonClassIndex.ts', 1376, '①② 两段查询']
+  // 2026-11-06:KBE-CFG-001..005(2a87d77)工作区配置契约诊断——extension.ts
+  // 顶部 import +4(1014 前锚点全 +4),activate 装配块 +136 落在 1432 之后:
+  // onDidChangeTextDocument/flushQueued 锚点 +140(2155→2295/2235→2375);
+  // languageProviders/diagnosticScheduler 等其余锚点经合并后真位复核不变
+  // (本侧 6947a63 与 origin 9947c55 两路重探收敛同值)。出处随 baseline 锁步。
 ];
 
 describe('perf baseline §7 调用链图结构面', () => {
