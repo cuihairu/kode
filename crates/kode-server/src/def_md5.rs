@@ -1489,7 +1489,44 @@ fn minimal_params() -> DefMd5Params {
     }
 }
 
-/// 黄金样本集(demo-assets 全实体 + parity-project + 最小锚点)。
+/// KR-AUD-80/81 引擎对拍夹具(xml.cpp:72-95/113-119 + entitydef.cpp:551-639/
+/// 642-818):接口文本/元素两形态归一 + 组件 <Type> 文本导航。手推规范推导:
+/// 接口名本身不入流,两形态 md5 必须相同;组件类型名取 <Type> 文本。
+fn kr_aud_80_interface_params(interface_entry: &str) -> DefMd5Params {
+    let combat_def = "<root>\
+        <Properties>\
+            <hp>\
+                <Type> UINT32 </Type>\
+                <Flags> CELL_PUBLIC </Flags>\
+                <Persistent> true </Persistent>\
+            </hp>\
+        </Properties>\
+        <CellMethods>\
+            <onMove>\
+                <Arg> VECTOR3 </Arg>\
+            </onMove>\
+        </CellMethods>\
+    </root>"
+        .to_string();
+    DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs: [
+            (
+                "Avatar".to_string(),
+                format!("<root><Interfaces>{interface_entry}</Interfaces></root>"),
+            ),
+            ("Combat".to_string(), combat_def),
+        ]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    }
+}
+
+/// 黄金样本集(demo-assets 全实体 + parity-project + 最小锚点
+/// + KR-AUD-80/81 接口/组件引擎对拍)。
 pub fn golden_samples(repo_root: &Path) -> Vec<GoldenSample> {
     let fixtures = repo_root.join("tests/fixtures");
     let mut samples = Vec::new();
@@ -1516,6 +1553,16 @@ pub fn golden_samples(repo_root: &Path) -> Vec<GoldenSample> {
     samples.push(GoldenSample {
         name: "minimal-single-entity",
         params: minimal_params(),
+    });
+    // KR-AUD-80:接口文本/元素两形态——引擎导航(getKey(enterNode·) =
+    // trim(首个非注释子节点 Value))归一,两样本 md5 必须相同。
+    samples.push(GoldenSample {
+        name: "kr-aud-80-interface-text",
+        params: kr_aud_80_interface_params("<Interface> Combat </Interface>"),
+    });
+    samples.push(GoldenSample {
+        name: "kr-aud-80-interface-element",
+        params: kr_aud_80_interface_params("<Interface><Combat/></Interface>"),
     });
     samples
 }

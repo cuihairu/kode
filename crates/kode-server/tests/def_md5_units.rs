@@ -727,3 +727,112 @@ fn kr_aud_85_duplicate_utype_in_same_module_still_errors() {
     let err = compute_def_md5(p).expect_err("同模块 Utype 冲突必须报错");
     assert!(err.contains("conflict"), "报错口径: {err}");
 }
+
+// ===========================================================================
+// KR-AUD-80/81(RSV-1/2):接口/组件导航引擎对拍夹具。
+// 引擎真值(本机 kbengine 源码取证):
+// - xml.cpp:113-119 getKey = kbe_trim(node->Value()):元素取标签名,文本取
+//   解码文本 trim;
+// - xml.cpp:72-95 enterNode = 沿 node 起兄弟链找 getKey==key 的**元素**,
+//   命中返回其**首个非注释子节点**(文本或元素皆可,非具名子元素查找);
+// - entitydef.cpp:562-585 loadInterfaces:条目 getKey 必属
+//   {interface,Interface,type,Type} 否则 continue;interfaceNode 依次试四键;
+//   interfaceName = getKey(interfaceNode);接口内容经 loadAllDefDescriptions
+//   并入当前模块流(接口名本身不入流),def 缺失 → return false(md5 报错);
+// - entitydef.cpp:655-671 loadComponents:componentName=getKey(条目),
+//   componentNode=enterNode(条目,componentName),componentTypeName=
+//   getKey(enterNode(componentNode,"Type"))=<Type> 文本(trim),空 → false。
+// 修前(RSV-1/2):child_el 具名查找+取元素名——接口名恒 "Interface"、组件
+// 类型恒 "Type",接口内容整体缺席 md5。
+// ===========================================================================
+
+/// KR-AUD-80 夹具:Avatar 引一个接口,接口 def 带 1 属性 + 1 Cell 方法。
+fn kr_aud_80_params(interface_entry: &str, include_combat: bool) -> DefMd5Params {
+    let combat_def = "<root>\
+        <Properties>\
+            <hp>\
+                <Type> UINT32 </Type>\
+                <Flags> CELL_PUBLIC </Flags>\
+                <Persistent> true </Persistent>\
+            </hp>\
+        </Properties>\
+        <CellMethods>\
+            <onMove>\
+                <Arg> VECTOR3 </Arg>\
+            </onMove>\
+        </CellMethods>\
+    </root>"
+        .to_string();
+    let mut defs = [(
+        "Avatar".to_string(),
+        format!("<root><Interfaces>{interface_entry}</Interfaces></root>"),
+    )]
+    .into_iter()
+    .collect::<std::collections::HashMap<_, _>>();
+    if include_combat {
+        defs.insert("Combat".to_string(), combat_def);
+    }
+    DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs,
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    }
+}
+
+/// 引擎导航归一:文本/元素两形态 + 大小写四键 + 缩进排版,trim 后
+/// interfaceName 均为 "Combat" → md5 逐字节相同(entitydef.cpp:567-585,
+/// xml.cpp:72-95/113-119)。单形态入流已由上方 text/element 两测试覆盖,
+/// 此处锁**跨形态 md5 相等**——修前 interface_name 恒为元素名
+/// "Interface" → defs 无 Interface.def → Err(红)。
+#[test]
+fn kr_aud_80_interface_text_element_forms_engine_parity() {
+    let text_compact = compute_def_md5(kr_aud_80_params("<Interface> Combat </Interface>", true))
+        .expect("文本形态必须可计算(引擎 getKey(trim(text)))");
+    let text_pretty = compute_def_md5(kr_aud_80_params(
+        "<Interface>\n\t\tCombat\n\t</Interface>",
+        true,
+    ))
+    .expect("缩进文本形态:连续文本是单一节点,trim 后仍为 Combat");
+    let element_compact =
+        compute_def_md5(kr_aud_80_params("<Interface><Combat/></Interface>", true))
+            .expect("元素形态必须可计算(引擎 getKey(元素)=标签名)");
+    // 小写 interface/type 键同属引擎四键过滤(entitydef.cpp:562-565)。
+    let lowercase = compute_def_md5(kr_aud_80_params("<type> Combat </type>", true))
+        .expect("小写 type 键同样放行");
+
+    assert_eq!(text_compact.md5_hex, text_pretty.md5_hex, "文本两排版等价");
+    assert_eq!(
+        text_compact.md5_hex, element_compact.md5_hex,
+        "文本/元素两形态引擎导航归一(接口名不入流,内容相同)"
+    );
+    assert_eq!(text_compact.md5_hex, lowercase.md5_hex, "四键大小写等价");
+}
+
+/// 引擎怪癖对拍:缩进的**元素**形态首非注释子节点是纯空白文本节点
+/// (tinyxml2 PRESERVE,xml.cpp:85-91 只跳注释)→ interfaceName="" →
+/// openSection("interfaces/.def") 失败 → return false(md5 报错)。
+#[test]
+fn kr_aud_80_pretty_element_form_errors_like_engine() {
+    let err = compute_def_md5(kr_aud_80_params(
+        "<Interface>\n\t\t<Combat/>\n\t</Interface>",
+        true,
+    ))
+    .expect_err("空白首子节点 → 接口名为空 → 引擎 return false");
+    assert_eq!(
+        err, "interface def not found: .def",
+        "接口名为空的报错口径: {err}"
+    );
+}
+
+/// 接口 def 缺失 → 引擎 openSection 失败 return false;报错带解析出的接口名。
+#[test]
+fn kr_aud_80_missing_interface_def_errors_with_resolved_name() {
+    let err = compute_def_md5(kr_aud_80_params("<Interface> Combat </Interface>", false))
+        .expect_err("Combat.def 缺失必须报错");
+    assert_eq!(
+        err, "interface def not found: Combat.def",
+        "报错口径: {err}"
+    );
+}
