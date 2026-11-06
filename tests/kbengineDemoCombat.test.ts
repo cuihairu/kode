@@ -64,16 +64,31 @@ describe('DEMO-GAME-003 战斗与成长(夹具内容契约)', () => {
     expect(monster).toMatch(/self\.destroy\(\)/);
   });
 
-  it('bots/Avatar.py:受击反击(cell.reqAttack,bots 无实体计时器面)+ onLevelUp', () => {
+  it('bots/Avatar.py:雷达走位+回击完整回路(回调驱动,bots 无实体计时器/索敌面)', () => {
     const bots = read('scripts', 'bots', 'Avatar.py');
-    // 引擎取证:bots 客户端实体 addTimer 断言失败(g_pApp),攻击走受击反击
+    // 引擎取证:bots 无 KBEngine.entities 模块面/实体 entities 描述子/addTimer 断言失败
+    expect(bots).not.toMatch(/KBEngine\.entities\./);
     expect(bots).not.toMatch(/addTimer\(/);
-    expect(bots).toMatch(/def\s+_retaliate\(self\)/);
-    expect(bots).toMatch(/onHPChanged[\s\S]*_retaliate\(\)/);
-    expect(bots).toMatch(/self\.cell\.reqAttack\(best\.id\)/);
-    expect(bots).toMatch(/className/, '客户端实体按 className 拾 Monster');
+    expect(bots).toMatch(/def\s+onMonsterNear\(self,\s*x,\s*z,\s*monsterId\)/);
+    expect(bots).toMatch(/def\s+onEnterWorld\(self\)/);
+    expect(bots).toMatch(/def\s+onMoveOver\(self,\s*controllerId,\s*userarg\)/);
+    // 走位改服务端权威:reqGoto(exposed)→ cell moveToPoint(client_lib 计时器在 bots 不泵)
+    expect(bots).toMatch(/self\.cell\.reqGoto\(\)/);
+    expect(bots).toMatch(/self\.cell\.reqAttack\(monsterId\)/);
     expect(bots).toMatch(/def\s+onLevelUp\(self,\s*newLevel\)/);
     expect(read('scripts', 'client', 'Avatar.py')).toMatch(/def\s+onLevelUp\(self,\s*newLevel\)/);
+    // 服务端雷达面:cell 侧 self.client 依赖 witness 链(bots 真机恒 None),
+    // 受击推送走基座中继:onRadarPush(BaseMethods)→ base.client.onMonsterNear
+    const def = read('scripts', 'entity_defs', 'Avatar.def');
+    expect(def).toMatch(/<onMonsterNear>\s*<Arg>\s*FLOAT\s*<\/Arg>\s*<Arg>\s*FLOAT\s*<\/Arg>\s*<Arg>\s*UINT32\s*<\/Arg>\s*<\/onMonsterNear>/);
+    expect(def).toMatch(/<onRadarPush>\s*<Arg>\s*FLOAT\s*<\/Arg>\s*<Arg>\s*FLOAT\s*<\/Arg>\s*<Arg>\s*UINT32\s*<\/Arg>\s*<\/onRadarPush>/);
+    const cell = read('scripts', 'cell', 'Avatar.py');
+    expect(cell).toMatch(/base\.onRadarPush\(/);
+    expect(cell).toMatch(/DEMO_BOTS_MOVE_VELOCITY/);
+    expect(cell).toMatch(/def\s+reqGoto\(self\)/);
+    expect(cell).toMatch(/def\s+onMoveOver\(self,\s*controllerId,\s*userarg\)/);
+    const base = read('scripts', 'base', 'Avatar.py');
+    expect(base).toMatch(/self\.client\.onMonsterNear\(/);
   });
 
   it('Space 刷怪表扩容(8 怪 waves 一局)', () => {

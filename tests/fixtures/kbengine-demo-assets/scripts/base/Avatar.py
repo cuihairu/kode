@@ -102,6 +102,20 @@ class Avatar(KBEngine.Proxy):
 		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
+	def onRadarPush(self, x, z, attackerId):
+		"""
+		Cell method.(Avatar.def BaseMethods,cell 雷达推送中继:
+		cell 侧 self.client 依赖 witness 链、bots 真机恒 None,故受击时
+		攻击者位置经本基座转发客户端 onMonsterNear,bots 据此走位接敌)
+		"""
+		msg = "Avatar[%i].onRadarPush attacker=%i client=%s" % (
+			self.id, attackerId, "set" if self.client is not None else "NONE",
+		)
+		print("[demo-evidence] %s" % msg, flush=True)
+		evidenceLog(msg)
+		if self.client is not None:
+			self.client.onMonsterNear(x, z, attackerId)
+
 	def onClientDeath(self):
 		"""
 		KBEngine method.

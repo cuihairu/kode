@@ -83,39 +83,45 @@ describe('rustSymbolsToIndexedMethodLocations', () => {
       sym('onMove', 45, 1, 54),
       sym('onMoveOver', 55, 1, 60),
       sym('onMoveFailure', 61, 1, 67),
-      sym('receiveDamage', 68, 1, 87, [['onDamaged', 74, 2], ['destroy', 86, 3]]),
-      sym('think', 88, 1, 91, [['respawn', 90, 2]]),
-      sym('_pickTarget', 92, 1, 115, [['entitiesInRange', 105, 11]]),
-      sym('_setState', 116, 1, 128),
-      sym('_moveToPoint', 129, 1, 132, [['moveToPoint', 131, 2]]),
-      sym('onTimer', 133, 1, 183, [
-        ['_pickTarget', 141, 11],
-        ['_setState', 156, 2],
-        ['_moveToPoint', 160, 4],
-        ['moveToEntity', 167, 4],
-        ['_moveToPoint', 181, 4]
+      sym('receiveDamage', 68, 1, 90, [['onDamaged', 74, 2], ['destroy', 88, 3]]),
+      sym('think', 90, 1, 93, [['respawn', 92, 2]]),
+      sym('_pickTarget', 94, 1, 119, [['entitiesInRange', 108, 11]]),
+      sym('_setState', 121, 1, 132),
+      sym('_moveToPoint', 134, 1, 137, [['moveToPoint', 136, 2]]),
+      sym('onTimer', 138, 1, 188, [
+        ['_pickTarget', 146, 11],
+        ['_setState', 161, 2],
+        ['_moveToPoint', 165, 4],
+        ['moveToEntity', 172, 4],
+        ['_moveToPoint', 186, 4]
       ])
     ]);
     const rust = rustSymbolsToIndexedMethodLocations([{ path, text }], symbols);
     expect(normalized(rust)).toEqual(normalized(parsePythonMethodBlocks(text, path)));
   });
 
-  it('Avatar.py:同一口径(notifyMove 的 onMove 调用 0-based 62 col 2 → 1-based 63 col 7)', () => {
+  it('Avatar.py:同一口径(notifyMove 的 onMove 调用 0-based 234 col 2 → 1-based 235 col 7)', () => {
     const path = 'tests/fixtures/kbengine-demo-assets/scripts/cell/Avatar.py';
     const text = readFixture('Avatar.py');
     const symbols = fileSymbols(path, [
       // 2026-11-07:DEMO-GAME-002 receiveDamage 插入(cell/Avatar.py onEnterSpace 后),
-      // onLeaveSpace 之后锚点 +18(锚点证据块见 docs/acceptance-evidence/DEMO-GAME-002.md)
+      // onLeaveSpace 之后锚点 +18(锚点证据块见 docs/acceptance-evidence/DEMO-GAME-002.md);
+      // 2026-11-07:DEMO-GAME-004 入场雷达 reqRadarPing + 受击基座中继 + reqGoto/
+      // onMoveOver/onMoveFailure 走位组,后续锚点随插入位移。
       sym('__init__', 10, 1, 16, [['addTimer', 15, 2]]),
       sym('onTimer', 17, 1, 34, [['entitiesInRange', 24, 11], ['_attack', 33, 3]]),
       sym('_attack', 35, 1, 47),
       sym('reqAttack', 48, 1, 63, [['_attack', 62, 2]]),
       sym('respawn', 64, 1, 70),
-      sym('onEnterSpace', 71, 1, 80),
-      sym('receiveDamage', 81, 1, 108),
-      sym('onLeaveSpace', 109, 1, 115),
-      sym('onMove', 116, 1, 125),
-      sym('notifyMove', 126, 1, 129, [['onMove', 128, 2]])
+      sym('onEnterSpace', 71, 1, 82, [['reqRadarPing', 82, 2]]),
+      sym('reqRadarPing', 84, 1, 127),
+      sym('receiveDamage', 129, 1, 175),
+      sym('onLeaveSpace', 177, 1, 182),
+      sym('onMove', 184, 1, 192),
+      sym('reqGoto', 194, 1, 213, [['moveToPoint', 211, 2]]),
+      sym('onMoveOver', 216, 1, 221),
+      sym('onMoveFailure', 224, 1, 230),
+      sym('notifyMove', 232, 1, 234, [['onMove', 234, 2]])
     ]);
     const rust = rustSymbolsToIndexedMethodLocations([{ path, text }], symbols);
     expect(normalized(rust)).toEqual(normalized(parsePythonMethodBlocks(text, path)));
