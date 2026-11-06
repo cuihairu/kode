@@ -297,6 +297,75 @@ fn local_assign_shadow_blocks_outer_import_vouch() {
 }
 
 #[test]
+fn module_import_does_not_bypass_param_shadow() {
+    // 复审第六轮残余①:模块顶层 import 是最外层回退——内层参数遮蔽
+    // 必须先生效,不能被模块级 import 短路。
+    let zcaller = "import avatar\n\ndef f(avatar):\n    avatar.heal()\n";
+    let afoo = "def heal():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/avatar.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, afoo)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "参数遮蔽应阻断模块级 import 的保放, got {rev:?}"
+    );
+}
+
+#[test]
+fn same_scope_import_overrides_param() {
+    // 复审第六轮残余③:同一函数作用域内 import 重绑定参数名——import
+    // 显式绑定优先于同作用域遮蔽(avatar 此时确是模块)。
+    let zcaller = "def f(avatar):\n    import avatar\n    avatar.heal()\n";
+    let afoo = "def heal():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/avatar.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, afoo)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "同作用域 import 重绑定应优先于参数遮蔽, got {rev:?}"
+    );
+}
+
+#[test]
+fn comprehension_target_does_not_shadow_function_import() {
+    // 复审第六轮残余②:推导式目标是独立隐式作用域,不遮蔽函数局部
+    // import——推导式目标的 Store 不应污染函数 shadows。
+    let zcaller = "def f():\n    import avatar\n    rows = [str(avatar) for avatar in items]\n    return avatar.heal()\n";
+    let afoo = "def heal():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/avatar.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, afoo)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "推导式目标不应遮蔽函数局部 import 的真边, got {rev:?}"
+    );
+}
+
+#[test]
 fn rust7_cross_process_edge_marked_uncertain_not_silent() {
     // RUST-7:`self.cell.*`/`self.base.*` 跨进程边被调方文件无法静态解析
     // (实体类在另一进程侧文件里)。旧行为:落进 self.* 分支按「同类」折叠

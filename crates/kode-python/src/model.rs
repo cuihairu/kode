@@ -29,18 +29,31 @@ pub struct AstSymbols {
     pub function_import_bindings: Vec<ScopeImportBindings>,
 }
 
+/// 函数作用域的类别(裸名解析链建模:函数链参与解析,类体/推导式是
+/// 独立隐式作用域——其绑定/遮蔽不参与函数裸名链,只作自身层的隔离)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopeKind {
+    /// 函数/方法/嵌套 def/lambda:参与裸名解析链。
+    Function,
+    /// 类体:裸名解析链不含类层(Python 语义),仅作绑定隔离。
+    Class,
+    /// 推导式(List/Set/Dict/Generator 的隐式函数作用域)。
+    Comprehension,
+}
+
 /// 单个函数作用域的 import 绑定(行 0-based,与仓内口径一致)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopeImportBindings {
+    pub kind: ScopeKind,
     /// 函数起始行(def 行)。
     pub start_line: usize,
     /// 函数结束行(体末行)。
     pub end_line: usize,
     /// 该函数子树内(含嵌套 def/分支体)import 的绑定名,排序去重。
     pub bindings: std::collections::BTreeSet<String>,
-    /// 该函数直接作用域内被本地绑定的名(参数+Store 赋值目标,含推导式
-    /// 目标,排序去重)——外层解析向内层看时,内层遮蔽即止(复审第五轮
-    /// 残余:同名参数/局部赋值遮蔽外层 import,外层不作保)。
+    /// 该函数直接作用域内被本地绑定的名(参数+Store 赋值目标,排序去重)
+    /// ——同作用域内 import 显式绑定优先于遮蔽(重绑定),遮蔽用于阻断
+    /// 向外层的回退(复审第五/六轮残余)。
     pub shadows: std::collections::BTreeSet<String>,
 }
 

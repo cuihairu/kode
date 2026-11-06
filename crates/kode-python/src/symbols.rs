@@ -10,6 +10,7 @@ use ruff_python_ast::{self as ast, Expr, Stmt};
 
 use crate::model::{
     AstAttribute, AstClass, AstFunction, AstImport, AstMethod, AstSymbols, ScopeImportBindings,
+    ScopeKind,
 };
 use crate::parse::ParsedAst;
 
@@ -115,6 +116,26 @@ struct ImportBindingCollector<'a> {
 }
 
 impl<'a> ImportBindingCollector<'a> {
+    fn push_scope_layer(&mut self, kind: ScopeKind, start: usize, end: usize) {
+        self.scope_stack.push(ScopeImportBindings {
+            kind,
+            start_line: start,
+            end_line: end,
+            bindings: Default::default(),
+            shadows: Default::default(),
+        });
+    }
+
+    /// 退出当前作用域层:转存记录(空层丢弃——既无绑定也无遮蔽的层对
+    /// 解析无影响)。
+    fn pop_scope_layer(&mut self) {
+        if let Some(scope) = self.scope_stack.pop() {
+            if !scope.bindings.is_empty() || !scope.shadows.is_empty() {
+                self.collected.push(scope);
+            }
+        }
+    }
+
     fn push_binding(&mut self, binding: String) {
         // 记到最内层函数区间;外层区间覆盖嵌套体,调用点行号包含判定
         // 即可实现闭包可见语义,无需重复记到外层。
@@ -153,19 +174,20 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
             Stmt::FunctionDef(f) => {
                 let start = self.ast.line_col(f.range.start().to_u32()).0;
                 let end = self.ast.line_col(f.range.end().to_u32()).0;
-                self.scope_stack.push(ScopeImportBindings {
-                    start_line: start,
-                    end_line: end,
-                    bindings: Default::default(),
-                    shadows: Default::default(),
-                });
+                self.push_scope_layer(ScopeKind::Function, start, end);
                 self.collect_param_shadows(&f.parameters);
                 ast::visitor::walk_stmt(self, stmt);
-                // 每个函数作用域都保留(无 import 也可能有遮蔽名,阻断
-                // 外层向内的保放)。
-                if let Some(scope) = self.scope_stack.pop() {
-                    self.collected.push(scope);
-                }
+                self.pop_scope_layer();
+                return;
+            }
+            Stmt::ClassDef(cls) => {
+                // 类体是独立作用域层:类内 Store 名不污染外层函数 shadows
+                // (Python 裸名解析链不含类层,graph.rs 按 kind 过滤跳过)。
+                let start = self.ast.line_col(cls.range.start().to_u32()).0;
+                let end = self.ast.line_col(cls.range.end().to_u32()).0;
+                self.push_scope_layer(ScopeKind::Class, start, end);
+                ast::visitor::walk_stmt(self, stmt);
+                self.pop_scope_layer();
                 return;
             }
             Stmt::Import(imp) => {
@@ -195,14 +217,41 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
     }
 
     fn visit_expr(&mut self, expr: &Expr) {
-        // Store 上下文的 Name = 本地绑定(赋值/增强赋值/walrus/for/with/
-        // 推导式目标)——计入遮蔽集,阻断外层 import 对该名的保放。
-        if let Expr::Name(n) = expr {
-            if n.ctx.is_store() {
-                self.push_shadow(n.id.as_str());
+        // 推导式与 lambda 是独立隐式作用域:目标 Store 名进自身层,不污染
+        // 外层函数 shadows(复审第六轮残余②)。
+        match expr {
+            Expr::ListComp(e) => self.enter_comp_scope(e.range, expr),
+            Expr::SetComp(e) => self.enter_comp_scope(e.range, expr),
+            Expr::DictComp(e) => self.enter_comp_scope(e.range, expr),
+            Expr::Generator(e) => self.enter_comp_scope(e.range, expr),
+            Expr::Lambda(e) => {
+                let start = self.ast.line_col(e.range.start().to_u32()).0;
+                let end = self.ast.line_col(e.range.end().to_u32()).0;
+                self.push_scope_layer(ScopeKind::Function, start, end);
+                if let Some(params) = &e.parameters {
+                    self.collect_param_shadows(params);
+                }
+                ast::visitor::walk_expr(self, expr);
+                self.pop_scope_layer();
+                return;
             }
+            // Store 上下文的 Name = 本地绑定(赋值/增强赋值/walrus/for/with/
+            // 推导式目标)——计入当前层遮蔽集。
+            Expr::Name(n) if n.ctx.is_store() => self.push_shadow(n.id.as_str()),
+            _ => {}
         }
         ast::visitor::walk_expr(self, expr);
+    }
+}
+
+impl<'a> ImportBindingCollector<'a> {
+    /// 进入推导式隐式作用域层,走查完整个表达式后退出(配对,不残留层)。
+    fn enter_comp_scope(&mut self, range: ruff_text_size::TextRange, expr: &Expr) {
+        let start = self.ast.line_col(range.start().to_u32()).0;
+        let end = self.ast.line_col(range.end().to_u32()).0;
+        self.push_scope_layer(ScopeKind::Comprehension, start, end);
+        ast::visitor::walk_expr(self, expr);
+        self.pop_scope_layer();
     }
 }
 
