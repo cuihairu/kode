@@ -244,10 +244,14 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 ### Python 集成
 
+**解释器解析链（PY-ENV）** —— profile 解释器按此链解析：`kbengine.python.interpreterPath` 设置（文件存在才采用，支持 `${workspaceFolder}`）→ 工作区虚拟环境扫描 → PATH 上的 `python3`/`python` → 如实记缺失状态（绝不伪造路径）。工作区扫描（PY-ENV 二期）以工作区根为起点按深度封顶（3）走查，跳过 `node_modules`/`target`/`.git` 等依赖/构建目录，且只认真实证据——`pyvenv.cfg`（venv）或 `conda-meta/`（conda）加盘上已验证的解释器二进制（`bin/python`，Windows 走 `Scripts/python.exe`）；损坏目录绝不认领。`kbengine.python.venvDirectories` 名单作为同深度优先提示，不是门。
+
+**解释器状态栏与一键创建 venv** —— 状态栏项显示当前解释器及其来源徽标（`auto` 发现 / `configured` 设置 / `PATH`），点击（`kbengine.python.selectInterpreter`）进 QuickPick，选中即写入 `kbengine.python.interpreterPath`（workspace 级）并即刻生效；列表尾「创建新 venv…」（`kbengine.python.createVenv`）在进度通知里跑 `python -m venv`（基础解释器只走 PATH 链——缺失时在任何 spawn 之前如实拒绝），并自动选用验真的新环境。命令面见 commands 指南的 `kbengine.python.selectInterpreter` / `kbengine.python.createVenv` 小节。
+
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `kbengine.python.interpreterPath` | string | 空 | 项目 profile 连来源一并记录的 Python 解释器路径:本设置存在才采用(支持 `${workspaceFolder}`);否则按工作区 venv 目录名清单自动发现(见 `venvDirectories`,探测 `<root>/<name>/bin/python`,Windows 走 `Scripts/python.exe`);否则定位 PATH 里的 python3/python;都找不到时 profile 如实记缺失状态,不伪造路径 |
-| `kbengine.python.venvDirectories` | string[] | `[".venv", "venv", ".kbenv"]` | 虚拟环境目录名清单(单段目录名,不含路径分隔符):快速执行动作启用 venv 且未写 `venv.path` 时,按此清单在动作目录与配置根逐名探测(动作目录优先);解释器链在 `interpreterPath` 为空时按此清单在 workspaceRoot 下探测 `<name>/bin/python`(Windows 走 `Scripts/python.exe`)。非数组或全无效回落默认 |
+| `kbengine.python.interpreterPath` | string | 空 | 项目 profile 连来源一并记录的 Python 解释器路径:本设置存在才采用(支持 `${workspaceFolder}`);否则工作区扫描已验证环境(`pyvenv.cfg`/`conda-meta` 证据 + 解释器二进制,深度封顶、依赖/构建目录剪枝);否则定位 PATH 里的 python3/python;都找不到时 profile 如实记缺失状态,不伪造路径 |
+| `kbengine.python.venvDirectories` | string[] | `[".venv", "venv", ".kbenv"]` | 虚拟环境目录名清单(单段目录名,不含路径分隔符):快速执行动作启用 venv 且未写 `venv.path` 时,按此清单在动作目录与配置根逐名探测(动作目录优先);解释器链在 `interpreterPath` 为空时把该清单作为工作区环境扫描的同深度优先提示。非数组或全无效回落默认 |
 | `kbengine.python.extraPathsSync` | boolean | `true` | 自动把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`(WorkspaceFolder 级)。生成的 `python.analysis.extraPaths` 条目一律写成 `${workspaceFolder}/...` 变量形态;工作区前缀可替换的存量绝对路径在下次同步时自动迁移,不可替换的绝对路径由 `kbengine.configContract.extraPathsAbsolute` 报出。只管理本扩展写入的那一段(除该工作区前缀迁移外用户手填路径原样保留;无变化不写)。关掉后 `kbengine.python.syncExtraPaths` 命令只说明不写 |
 | `kbengine.python.stubExport` | boolean | `true` | 自动把内置 KBEngine Python API 索引(与补全/悬停/跳转同源)导出为 `KBEngine.pyi` 存根,并把 types.xml 自定义类型导出为 `kbe_types.py` 类型桩(`FIXED_DICT`→`TypedDict`、别名→类型名),配合 extraPaths 接线供 Pylance 解析 `import KBEngine`/`import kbe_types`(虚拟桩文档 Python 扩展看不见)。激活期静默自动一次,`kbengine.python.exportStubs`/`kbengine.python.exportTypeStubs` 手动入口 |
 | `kbengine.python.stubDir` | string | 空 | `.pyi` 存根目录,三级解析:设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `.kbengine/stubs`。支持 `${workspaceFolder}`/`${env:NAME}` 等 VS Code 变量;相对路径按工作区根拼接,绝对路径原样使用 |
