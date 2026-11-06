@@ -18,6 +18,31 @@
  *
  * F3(2026-11-05 审核):applied 必须是「真实应用后」的协议证据,不是读取
  * +复制就能自称的状态——
+ *  - F3 九轮(2026-11-06 第九轮复审):暂存命名空间与源文件树隔离 + 暂存路径
+ *    symlink 防护 + 收尾清理 dev/ino 比对——八轮的暂存唯一子目录仍有两个残余:
+ *    ①'.staged' 前缀仍在允许源文件树内:同批含既有 <root>/.staged/X.py 源文件
+ *      时,<root>/X.py 的暂存副本 copyFileSync 直接覆盖该**源文件**(读回污染,
+ *      digest 不符);修后源路径第一段为 '.staged' → 属接收端暂存命名空间,
+ *      拒绝整批(与路径清洗同一防线),源命名空间与暂存命名空间从映射规则上
+ *      不相交;
+ *    ②暂存路径写入无 symlink 检查:.staged(或更深目录)被换成指向暂存根外
+ *      的 symlink 时,copyFileSync 沿链接把暂存副本写到暂存根外;修后暂存写前
+ *      做与 rename 目标同一套双重验证(包含性:父目录链 realpath 必须在暂存根
+ *      real 内;一致性:解析结果与原路径逐字一致)+ lstat 最终组件拒 symlink,
+ *      任一不过即拒绝本文件暂存(同 realpath→copy 一瞬的残余窗口,如实记录);
+ *    ③收尾清理在「确认自建」之上再钉 **dev/ino 比对**:创建时 fstatSync(fd)
+ *      捕获临时文件 dev/ino,收尾 unlink 前 lstat 比对路径当前 dev/ino 与捕获
+ *      一致才删;路径已被竞态替换(不符)则跳过并如实报 rollback_skipped——
+ *      八轮只按「创建成功点标志位」判断,路径被替换后按路径 unlink 仍会删掉
+ *      不是本次创建的文件(替换文件与自建判定无关联,标志位防不住)。
+ *    ④复审补口:词法 '.staged' 排除挡不住指向暂存树的 symlink 别名(root/alias
+ *      → root/.staged 时同批暂存副本仍可覆盖别名指向的源文件)——修后对每个
+ *      源文件 realpath 解析,解析结果落在暂存树(<root>/.staged realpath)内
+ *      → 拒绝整批;
+ *    ⑤复审补口:创建点 dev/ino 捕获缺失(fstatSync 失败)时身份无法确认,
+ *      收尾宁留残留也不按路径盲删(如实 rollback_skipped);lstat 比对→unlink
+ *      一瞬的残余竞态窗口与 realpath→rename 同级,如实为已知限制,不自称
+ *      「绝不删错」。
  *  - F3 八轮(2026-11-08 第八轮复审):目录竞争包含性验证 + 收尾清理标志位 +
  *    暂存唯一子目录——
  *    ①rename 目标父目录**双重验证**(verifiedRealParentForRename):rename 前
@@ -124,6 +149,7 @@ import {
   appendFileSync,
   closeSync,
   copyFileSync,
+  fstatSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -161,10 +187,37 @@ const sha256Hex = content => createHash('sha256').update(Buffer.isBuffer(content
 // 下,失败路径里引擎目录里的既有产物从头到尾未被触碰(原产物天然原样保留,
 // 五/六轮的「还原原内容」回滚通路退役);清理失败如实返回残留路径,由回执
 // rollback_failed 字段上报,绝不谎称无残留
-const cleanupTempArtifact = (tempArtifact, created) => {
+// F3 九轮(2026-11-06 第九轮复审):「确认自建」之上再钉 **dev/ino 比对**——
+// 八轮的标志位只回答「这个路径上的文件是不是我创建的」,防不住「创建后、
+// 收尾前路径被竞态替换成别的文件」:替换文件与创建判定无关联,按路径 unlink
+// 仍会删掉不是本次创建的文件。修后创建成功点 fstatSync(fd) 捕获 dev/ino,
+// 收尾 unlink 前 lstat 比对路径当前 dev/ino 与捕获一致才删;不符或捕获缺失
+// (身份无法确认)→ 跳过,返回 {skipped:true, path} 由回执 rollback_skipped
+// 字段如实上报,不触碰。**残余窗口如实记录**:lstat 比对→unlink 一瞬之间
+// 路径仍可能被竞态替换(窗口=相邻系统调用间隔,无法归零),与 realpath→rename
+// 窗口同级,如实为已知限制,不自称「绝不删错」
+const cleanupTempArtifact = (tempArtifact, created, createdStat) => {
   // 非自建(创建即失败):收尾目标=不动任何既有文件,天然达成
   if (!created) {
     return undefined;
+  }
+  if (createdStat === undefined) {
+    // 身份无法确认(创建点捕获缺失):宁留残留也不按路径盲删
+    return { skipped: true, path: tempArtifact };
+  }
+  let currentState;
+  try {
+    currentState = lstatSync(tempArtifact);
+  } catch (error) {
+    if (error && typeof error === 'object' && error.code === 'ENOENT') {
+      // 已不存在:清理目标已达成
+      return undefined;
+    }
+    return tempArtifact;
+  }
+  if (currentState.dev !== createdStat.dev || currentState.ino !== createdStat.ino) {
+    // 路径已被替换为其他文件:不是本次创建的那个,跳过不触碰
+    return { skipped: true, path: tempArtifact };
   }
   try {
     unlinkSync(tempArtifact);
@@ -177,14 +230,22 @@ const cleanupTempArtifact = (tempArtifact, created) => {
     return tempArtifact;
   }
 };
-const tempCleanupReceipt = (file, tempArtifact, reasonBase, created) => {
-  const residual = cleanupTempArtifact(tempArtifact, created);
-  const outcome =
-    residual !== undefined
-      ? `(回滚失败,残留:${residual})`
-      : '(临时文件已清理,引擎目录原产物未动无残留)';
+const tempCleanupReceipt = (file, tempArtifact, reasonBase, created, createdStat) => {
+  const residual = cleanupTempArtifact(tempArtifact, created, createdStat);
+  let outcome;
+  let skippedPath;
+  if (residual === undefined) {
+    outcome = '(临时文件已清理,引擎目录原产物未动无残留)';
+  } else if (residual !== null && typeof residual === 'object') {
+    skippedPath = residual.path;
+    outcome = `(回滚跳过:临时文件身份无法确认(创建点 dev/ino 捕获缺失或路径已被竞态替换),不触碰,残留:${skippedPath})`;
+  } else {
+    outcome = `(回滚失败,残留:${residual})`;
+  }
   const receipt = { status: 'failed', file, reason: `${reasonBase}${outcome}:不自称 applied` };
-  if (residual !== undefined) {
+  if (skippedPath !== undefined) {
+    receipt.rollback_skipped = skippedPath;
+  } else if (residual !== undefined) {
     receipt.rollback_failed = residual;
   }
   return receipt;
@@ -198,30 +259,32 @@ let appliedRevision = 0;
 // 祖先),验证解析结果仍在 artifact-dir(realpath)内,否则返回 undefined 由
 // 调用方拒绝(报错,不写不删)。artifactDir 本身也按 realpath 对齐(目录本身
 // 是合法 symlink 时不误判)。
+const realPathWithinBase = (target, baseReal) => {
+  let probe = target;
+  for (;;) {
+    try {
+      probe = realpathSync(probe);
+      break;
+    } catch (error) {
+      if (error && typeof error === 'object' && error.code === 'ENOENT') {
+        const parent = path.dirname(probe);
+        if (parent === probe) {
+          break;
+        }
+        probe = parent;
+        continue;
+      }
+      return undefined;
+    }
+  }
+  // probe 是目标或其最深已存在祖先:等于 baseReal(直接子文件)或在其内
+  // 都算安全,只有解析到 baseReal 之外('..' 前缀/绝对路径)才是逃逸
+  const rel = path.relative(baseReal, probe);
+  return !rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel) ? probe : undefined;
+};
 const realPathWithinArtifactDir = target => {
   try {
-    const dirReal = realpathSync(artifactDir);
-    let probe = target;
-    for (;;) {
-      try {
-        probe = realpathSync(probe);
-        break;
-      } catch (error) {
-        if (error && typeof error === 'object' && error.code === 'ENOENT') {
-          const parent = path.dirname(probe);
-          if (parent === probe) {
-            break;
-          }
-          probe = parent;
-          continue;
-        }
-        return undefined;
-      }
-    }
-    // probe 是目标或其最深已存在祖先:等于 artifactDir(直接子文件)或在其内
-    // 都算安全,只有解析到 artifactDir 之外('..' 前缀/绝对路径)才是逃逸
-    const rel = path.relative(dirReal, probe);
-    return !rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel) ? probe : undefined;
+    return realPathWithinBase(target, realpathSync(artifactDir));
   } catch {
     return undefined;
   }
@@ -295,10 +358,104 @@ const verifiedRealParentForRename = (dir, artifactDirReal) => {
     return undefined;
   }
 };
+// F3 九轮(2026-11-06 第九轮复审):暂存路径写前双重验证——暂存副本此前无
+// symlink 检查:.staged(或更深目录)被换成指向暂存根外/内的 symlink 时,
+// copyFileSync 沿链接把暂存副本写到别处(外=逃逸;内=覆盖暂存根内其他文件)。
+// 修后对暂存父目录链取**最深已存在祖先**判定:①包含性——已存在链的
+// realpath 必须在暂存根 real 内;②一致性——相对比较(解析路径相对暂存根
+// real 的相对路径,与原路径相对暂存根字面值的相对路径逐字一致):树内出现
+// symlink 组件即不等被拒,而暂存根自身的合法 symlink 祖先(如 macOS
+// /tmp → /private/tmp)不误判;③realpath 失败但组件存在(悬空 symlink 链)
+// → 直接拒绝;④lstat 最终组件——是 symlink(无论悬空与否)一律拒绝;任一
+// 不过返回 undefined 由调用方拒绝本文件暂存(检查→mkdir→copy 一瞬的残余
+// 窗口,与 rename 同级,如实记录)
+const verifiedRealAncestorWithin = (dir, baseReal, baseLiteral) => {
+  let probe = dir;
+  for (;;) {
+    let real;
+    try {
+      real = realpathSync(probe);
+    } catch (error) {
+      if (error && typeof error === 'object' && error.code === 'ENOENT') {
+        // realpath 失败但组件存在 → 悬空 symlink 链:拒绝(不向上回落——
+        // 「不存在的组件无从是 symlink」的推断只对真不成立,悬空链也是 symlink)
+        try {
+          lstatSync(probe);
+          return undefined;
+        } catch {
+          const parent = path.dirname(probe);
+          if (parent === probe) {
+            return undefined;
+          }
+          probe = parent;
+          continue;
+        }
+      }
+      return undefined;
+    }
+    const relReal = path.relative(baseReal, real);
+    if (relReal.startsWith(`..${path.sep}`) || relReal === '..' || path.isAbsolute(relReal)) {
+      // 包含性:已存在链解析到暂存根外
+      return undefined;
+    }
+    // 一致性:按相对比较(树内 symlink 组件 → 两个相对路径不等);暂存根自身
+    // 的合法 symlink 祖先不影响(baseReal/baseLiteral 各自为基准)
+    if (path.relative(baseLiteral, probe) !== relReal) {
+      return undefined;
+    }
+    return real;
+  }
+};
+// 源路径祖先链 symlink 探测(九轮复审 FAIL-A):源文件 realpath 解析失败
+// (如悬空别名)时,无法证明它不在暂存树内——批内更早文件的暂存动作可能
+// 恰好补齐其目标,读取阶段经别名「复活」。祖先链(至暂存根为止)任一级是
+// symlink → 疑似别名,由调用方拒绝整批;祖先全为真实目录 = 路径真不存在,
+// 交由读取阶段如实回「接收端读不到所发文件」。暂存根自身是合法 symlink
+// (FAIL-4 兼容)不算可疑,故从 dirname 向上、不含基准本身。
+const hasSymlinkAncestor = (file, base) => {
+  let probe = path.dirname(file);
+  for (;;) {
+    // 停止条件先行:基准(暂存根)自身是合法 symlink(FAIL-4 兼容)不算可疑,
+    // 也绝不越出其字面路径向上探
+    const rel = path.relative(base, probe);
+    if (rel === '' || rel.startsWith(`..${path.sep}`) || rel === '..') {
+      return false;
+    }
+    try {
+      if (lstatSync(probe).isSymbolicLink()) {
+        return true;
+      }
+    } catch {
+      // 组件不存在:继续向上探
+    }
+    probe = path.dirname(probe);
+  }
+};
+const safeStagingTarget = (staged, rootReal, rootLiteral) => {
+  const realAncestor = verifiedRealAncestorWithin(path.dirname(staged), rootReal, rootLiteral);
+  if (realAncestor === undefined) {
+    return undefined;
+  }
+  try {
+    const finalState = lstatSync(staged);
+    // 最终组件存在:是 symlink(悬空与否)一律拒绝
+    if (finalState.isSymbolicLink()) {
+      return undefined;
+    }
+    return realPathWithinBase(staged, rootReal);
+  } catch (error) {
+    if (error && typeof error === 'object' && error.code === 'ENOENT') {
+      // 最终组件真不存在:已存在链已验(包含性+一致性),安全
+      return realAncestor;
+    }
+    return undefined;
+  }
+};
 
 // F3 八轮:内部助手按 ES 模块导出(单元测试直接钉收尾标志位与 rename 父目录
-// 验证的语义);脚本被 node 直接运行时行为不变(main 守卫见文件末尾)。
-export { cleanupTempArtifact, tempCleanupReceipt, verifiedRealParentForRename };
+// 验证的语义;九轮再加暂存路径验证);脚本被 node 直接运行时行为不变(main
+// 守卫见文件末尾)。
+export { cleanupTempArtifact, tempCleanupReceipt, verifiedRealParentForRename, safeStagingTarget };
 
 const recordApplied = entry => {
   appendFileSync(APPLIED_LEDGER, `${JSON.stringify(entry)}\n`, 'utf8');
@@ -380,6 +537,13 @@ const server = createServer((request, response) => {
     let batchRejectReason;
     if (stringFiles.length > 0) {
       const byKey = new Map();
+      // F3 九轮复审补口:暂存树 realpath(存在时)——源路径别名检查基准
+      let stagedTreeReal;
+      try {
+        stagedTreeReal = realpathSync(path.join(root, '.staged'));
+      } catch {
+        stagedTreeReal = undefined;
+      }
       for (const file of stringFiles) {
         // F3 七轮(2026-11-07 第七轮复审 FAIL-1):根内外命名空间碰撞消除——
         // 六轮对暂存根之外的文件回落「绝对路径全结构展开」,但那个回落与根内
@@ -396,6 +560,45 @@ const server = createServer((request, response) => {
         const segments = relative.split(path.sep);
         if (relative === '' || segments.some(segment => segment === '..' || segment === '.' || segment === '')) {
           batchRejectReason = `产物相对路径清洗后不安全(${relative}):拒绝整批,不写盘`;
+          break;
+        }
+        // F3 九轮:'.staged' 前缀属接收端暂存命名空间——八轮的暂存唯一子目录把
+        // 暂存副本展开到 <root>/.staged/<相对路径>,源路径若不排除该前缀,同批
+        // 含既有 <root>/.staged/X.py 时 <root>/X.py 的暂存副本会直接覆盖该源
+        // 文件。修后源命名空间与暂存命名空间从映射规则上不相交(拒绝整批,与
+        // 路径清洗同一防线)
+        if (segments[0] === '.staged') {
+          batchRejectReason = `所发文件进入接收端暂存命名空间(.staged)(${file}):拒绝整批,不写盘`;
+          break;
+        }
+        // F3 九轮复审补口:词法排除挡不住指向暂存树的 symlink 别名——root/alias
+        // → root/.staged 时,同批 <root>/X.py 的暂存副本覆盖的正是 alias/X.py
+        // 实际指向的源文件。修后对源文件 realpath 解析,解析结果落在暂存树
+        // realpath 内 → 拒绝整批;realpath 失败但祖先链含 symlink 组件(悬空
+        // 别名)= 无法证明不在暂存树内——批内更早文件的暂存动作可能补齐其
+        // 目标,读取阶段经别名「复活」——同样拒绝;祖先全为真实目录 = 路径真
+        // 不存在,交由读取阶段如实回「接收端读不到所发文件」
+        let sourceReal;
+        try {
+          sourceReal = realpathSync(file);
+        } catch {
+          sourceReal = undefined;
+        }
+        if (sourceReal === undefined) {
+          // 文件自身是 symlink(悬空与否——悬空才走到这里)或祖先链含 symlink
+          // 组件 → 无法证明不在暂存树内,写入前拒绝整批
+          let finalIsSymlink = false;
+          try {
+            finalIsSymlink = lstatSync(file).isSymbolicLink();
+          } catch {
+            finalIsSymlink = false;
+          }
+          if (finalIsSymlink || hasSymlinkAncestor(file, root)) {
+            batchRejectReason = `所发文件无法解析真实路径(疑似悬空符号链接别名)(${file}):拒绝整批,不写盘`;
+            break;
+          }
+        } else if (stagedTreeReal !== undefined && realPathWithinBase(sourceReal, stagedTreeReal) !== undefined) {
+          batchRejectReason = `所发文件经符号链接解析后落入接收端暂存命名空间(.staged)(${file}):拒绝整批,不写盘`;
           break;
         }
         const key = segments.join('/');
@@ -438,6 +641,19 @@ const server = createServer((request, response) => {
         stagedSegments !== undefined ? path.join(root, '.staged', ...stagedSegments) : undefined;
       try {
         if (staged !== undefined && staged !== file) {
+          // F3 九轮:暂存写前双重验证(包含性+相对一致性)+ lstat 拒 symlink——
+          // .staged 链上任一级被换成 symlink 时,copyFileSync 沿链接逃逸/错写,
+          // 修后任一不过即拒绝本文件暂存(残余 realpath→copy 一瞬窗口如实记录)
+          if (safeStagingTarget(staged, realpathSync(root), root) === undefined) {
+            receipts.push(
+              withTarget({
+                status: 'failed',
+                file,
+                reason: `接收端暂存路径经符号链接解析后逃逸暂存根或含符号链接组件(${staged}):拒绝暂存`
+              })
+            );
+            continue;
+          }
           mkdirSync(path.dirname(staged), { recursive: true });
           copyFileSync(file, staged);
         }
@@ -588,20 +804,24 @@ const server = createServer((request, response) => {
       // 的失败才允许收尾 unlink;openSync 即败(EEXIST 等)→ created=false,
       // 收尾绝不触碰该路径上的既有文件
       let tempCreated = false;
+      // F3 九轮:创建成功点同时 fstatSync(fd) 捕获 dev/ino,收尾 unlink 前
+      // 与路径当前状态比对,不符或捕获缺失均跳过报 rollback_skipped
+      let tempCreatedStat;
+      let tempFd;
       try {
         mkdirSync(path.dirname(artifact), { recursive: true });
         // 'wx' 独占创建:同位已有任何东西(含 symlink)→ EEXIST 直接失败,
         // 绝不沿既有路径写入
-        const fd = openSync(tempArtifact, 'wx');
+        tempFd = openSync(tempArtifact, 'wx');
         tempCreated = true;
-        try {
-          const payload = Buffer.from(content, 'utf8');
-          const written = writeSync(fd, payload);
-          if (written !== payload.length) {
-            throw new Error(`临时文件写入不完整(${written}/${payload.length} 字节)`);
-          }
-        } finally {
-          closeSync(fd);
+        // 创建点身份捕获:fstatSync 失败 → createdStat 缺失,收尾按「身份无法
+        // 确认」跳过不盲删(异常经外层 catch 如实上报应用失败)
+        const createdState = fstatSync(tempFd);
+        tempCreatedStat = { dev: createdState.dev, ino: createdState.ino };
+        const payload = Buffer.from(content, 'utf8');
+        const written = writeSync(tempFd, payload);
+        if (written !== payload.length) {
+          throw new Error(`临时文件写入不完整(${written}/${payload.length} 字节)`);
         }
         // 临时文件写前同样 lstat/realpath 校验:必须是自己刚建的普通文件,
         // 且 realpath 在引擎目录内
@@ -611,10 +831,19 @@ const server = createServer((request, response) => {
         }
       } catch (error) {
         tempWriteError = error;
+      } finally {
+        // fd 任何路径下都关闭,不泄漏(fstatSync 失败/写入失败亦然)
+        if (tempFd !== undefined) {
+          try {
+            closeSync(tempFd);
+          } catch {
+            // 关闭失败不影响错误上报
+          }
+        }
       }
       if (tempWriteError !== undefined) {
         const reasonBase = `应用产物落盘失败:${tempWriteError instanceof Error ? tempWriteError.message : String(tempWriteError)}`;
-        receipts.push(withTarget(tempCleanupReceipt(file, tempArtifact, reasonBase, tempCreated)));
+        receipts.push(withTarget(tempCleanupReceipt(file, tempArtifact, reasonBase, tempCreated, tempCreatedStat)));
         continue;
       }
       // 写后重算产物 sha256(按原始字节,在临时文件上与发送方冻结基准比对,
@@ -629,7 +858,8 @@ const server = createServer((request, response) => {
               file,
               tempArtifact,
               `应用后读不到应用产物(临时文件 ${tempArtifact}),无法核验应用内容`,
-              true
+              true,
+              tempCreatedStat
             )
           )
         );
@@ -639,7 +869,7 @@ const server = createServer((request, response) => {
         // 哈希不符:清理临时文件即可——既有产物从未被触碰(无需还原)
         receipts.push(
           withTarget(
-            tempCleanupReceipt(file, tempArtifact, '应用产物 sha256 与 sender_digest 不一致', true)
+            tempCleanupReceipt(file, tempArtifact, '应用产物 sha256 与 sender_digest 不一致', true, tempCreatedStat)
           )
         );
         continue;
@@ -661,7 +891,7 @@ const server = createServer((request, response) => {
       }
       if (renameError !== undefined) {
         const reasonBase = `应用产物原子替换失败:${renameError instanceof Error ? renameError.message : String(renameError)}`;
-        receipts.push(withTarget(tempCleanupReceipt(file, tempArtifact, reasonBase, true)));
+        receipts.push(withTarget(tempCleanupReceipt(file, tempArtifact, reasonBase, true, tempCreatedStat)));
         continue;
       }
       appliedRevision += 1;

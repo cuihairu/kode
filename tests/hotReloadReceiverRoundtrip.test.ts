@@ -48,9 +48,10 @@ const startReceiver = async (
   mode: string,
   scenario: string,
   extraArgs: string[] = [],
-  shellPrelude?: string
+  shellPrelude?: string,
+  rootOverride?: string
 ): Promise<ReceiverHandle> => {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-receiver-'));
+  const root = rootOverride ?? mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-receiver-'));
   const argv = ['--port', '0', '--root', root, '--mode', mode, '--scenario', scenario, ...extraArgs];
   // shellPrelude:经 sh 包裹启动(如 ulimit 资源上限注入),仅测试构造资源型
   // 失败用;默认直接 spawn node。路径均无空格,单引号包裹足够。
@@ -111,8 +112,8 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     outsideDirs = [];
   });
 
-  const start = async (mode: string, scenario: string, extraArgs: string[] = [], shellPrelude?: string): Promise<ReceiverHandle> => {
-    const handle = await startReceiver(mode, scenario, extraArgs, shellPrelude);
+  const start = async (mode: string, scenario: string, extraArgs: string[] = [], shellPrelude?: string, rootOverride?: string): Promise<ReceiverHandle> => {
+    const handle = await startReceiver(mode, scenario, extraArgs, shellPrelude, rootOverride);
     handles.push(handle);
     return handle;
   };
@@ -865,6 +866,209 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(engineEntries).toHaveLength(0);
   });
 
+  // F3 九轮(复审窄点 1):暂存命名空间仍在允许源文件树内——八轮把暂存副本
+  // 展开到 <root>/.staged/<相对路径>,但源路径清洗不排除 .staged 前缀:同批
+  // 含既有 <root>/.staged/X.py 源文件时,<root>/X.py 的暂存副本 copyFileSync
+  // 直接覆盖该源文件。修后 .staged 前缀源路径属接收端暂存命名空间,拒绝整批。
+  it('F3 九轮回归:同批含 .staged 命名空间源文件 → 拒绝整批,既有 .staged/X.py 源文件不被暂存覆盖', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    const topFile = path.join(receiver.root, 'X.py');
+    const stagedSource = path.join(receiver.root, '.staged', 'X.py');
+    const topContent = 'X_AT_TOP = 91\n';
+    const stagedContent = 'X_STAGED_SRC = 92\n';
+    mkdirSync(path.dirname(stagedSource), { recursive: true });
+    writeFileSync(topFile, topContent, 'utf8');
+    writeFileSync(stagedSource, stagedContent, 'utf8');
+
+    const response = await postReload(receiver.port, {
+      files: [topFile, stagedSource],
+      sender_digests: { [topFile]: sha256(topContent), [stagedSource]: sha256(stagedContent) }
+    });
+    const receipts = JSON.parse(response.body) as Array<{ status: string; file: string; reason?: string }>;
+    expect(receipts).toHaveLength(2);
+    // 拒绝整批:两个文件都 failed 且 reason 点名 .staged 暂存命名空间
+    for (const receipt of receipts) {
+      expect(receipt.status).toBe('failed');
+      expect(receipt.reason).toContain('.staged');
+    }
+    // 旧实现:topFile 的暂存副本落 <root>/.staged/X.py,直接覆盖既有源文件——
+    // 修后两个源文件都逐字原样
+    expect(readFileSync(stagedSource, 'utf8')).toBe(stagedContent);
+    expect(readFileSync(topFile, 'utf8')).toBe(topContent);
+    // 整批拒绝:无任何产物落盘、无暂存副本、无应用台账
+    expect(existsSync(path.join(engineDir, 'X.py'))).toBe(false);
+    expect(existsSync(path.join(engineDir, '.staged', 'X.py'))).toBe(false);
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+  });
+
+  // F3 九轮(复审窄点 1,暂存路径 symlink):暂存写入此前无 symlink 检查——
+  // .staged(或更深目录)被换成指向暂存根外的 symlink 时,copyFileSync 沿
+  // 链接把暂存副本写到暂存根外。修后暂存写前做与 rename 目标同一套双重验证
+  // (包含性+一致性)+ lstat 最终组件拒 symlink,任一不过即拒绝本文件暂存。
+  it('F3 九轮回归:.staged 是指向暂存根外的 symlink → 拒绝暂存,副本不沿链接逃逸', async () => {
+    const outsideDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-outside-'));
+    outsideDirs.push(outsideDir);
+    const receiver = await start('stage', 'accepted');
+    // 接收端尚未自建暂存目录,.staged 预置为指向暂存根外的目录 symlink
+    const escapeDir = path.join(outsideDir, 'escape');
+    mkdirSync(escapeDir, { recursive: true });
+    symlinkSync(escapeDir, path.join(receiver.root, '.staged'), 'dir');
+    const file = path.join(receiver.root, 'X.py');
+    const content = 'X_STAGE_LINK = 93\n';
+    writeFileSync(file, content, 'utf8');
+
+    const response = await postReload(receiver.port, { files: [file] });
+    const receipt = JSON.parse(response.body) as { status: string; reason?: string };
+    expect(receipt.status).toBe('failed');
+    expect(receipt.reason).toContain('符号链接');
+    // 暂存副本绝不沿链接落到暂存根外,链接原样
+    expect(readdirSync(escapeDir)).toHaveLength(0);
+    expect(lstatSync(path.join(receiver.root, '.staged')).isSymbolicLink()).toBe(true);
+  });
+
+  // F3 九轮复审 FAIL-1 补口:词法 '.staged' 排除挡不住指向暂存树的 symlink
+  // 别名——root/alias → root/.staged 时,同批发送 [root/X.py, root/alias/A.py]
+  // (A.py 预置于暂存树内),X.py 的暂存目标 .staged/X.py 虽不直接覆盖 A.py,
+  // 但 alias/A.py 读取经别名落到暂存树内、内容可被批内暂存动作影响——整批
+  // 必须在写入前拒绝。
+  it('F3 九轮复审回归:源路径 symlink 别名指向暂存树 → 拒绝整批', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    // 既有真实源文件落在暂存树内,另经别名 symlink 指向暂存树
+    const stagedSource = path.join(receiver.root, '.staged', 'A.py');
+    const aliasFile = path.join(receiver.root, 'alias', 'A.py');
+    const topFile = path.join(receiver.root, 'X.py');
+    const stagedContent = 'A_IN_STAGED = 61\n';
+    const topContent = 'X_AT_TOP = 62\n';
+    mkdirSync(path.dirname(stagedSource), { recursive: true });
+    writeFileSync(stagedSource, stagedContent, 'utf8');
+    symlinkSync(path.join(receiver.root, '.staged'), path.dirname(aliasFile), 'dir');
+    writeFileSync(topFile, topContent, 'utf8');
+
+    const response = await postReload(receiver.port, {
+      files: [topFile, aliasFile],
+      sender_digests: { [topFile]: sha256(topContent), [aliasFile]: sha256(stagedContent) }
+    });
+    const receipts = JSON.parse(response.body) as Array<{ status: string; file: string; reason?: string }>;
+    expect(receipts).toHaveLength(2);
+    for (const receipt of receipts) {
+      expect(receipt.status).toBe('failed');
+    }
+    // 暂存树内既有源文件不被批内暂存动作覆盖
+    expect(readFileSync(stagedSource, 'utf8')).toBe(stagedContent);
+    expect(existsSync(path.join(engineDir, 'X.py'))).toBe(false);
+    expect(existsSync(path.join(engineDir, 'alias', 'A.py'))).toBe(false);
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+  });
+
+  // F3 九轮复审 FAIL-A 补口:悬空别名源 + 批内暂存补齐目标——alias/X.py 在
+  // 批处理起点指向不存在的 .staged/X.py,同批 X.py 的暂存动作恰好把它「补齐」,
+  // 旧实现预检放行后读取阶段经别名读到 X.py 的暂存副本内容并照常 applied。
+  // 修后预检 realpath 失败但 lstat 成功(悬空链接)= 无法证明不在暂存树内 →
+  // 写入前拒绝整批。
+  it('F3 九轮复审回归:悬空别名源被批内暂存补齐 → 预检拒绝整批,不产生经别名的 applied', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    const aliasDir = path.join(receiver.root, 'alias');
+    const aliasFile = path.join(aliasDir, 'X.py');
+    const topFile = path.join(receiver.root, 'X.py');
+    const topContent = 'X_DANGLING_ALIAS = 64\n';
+    // 暂存树目录预存在(上一批残留),目标文件尚不存在 → alias 悬空
+    mkdirSync(path.join(receiver.root, '.staged'), { recursive: true });
+    symlinkSync(path.join(receiver.root, '.staged'), aliasDir, 'dir');
+    writeFileSync(topFile, topContent, 'utf8');
+
+    const response = await postReload(receiver.port, {
+      files: [topFile, aliasFile],
+      sender_digests: { [topFile]: sha256(topContent), [aliasFile]: sha256(topContent) }
+    });
+    const receipts = JSON.parse(response.body) as Array<{ status: string; file: string; reason?: string }>;
+    expect(receipts).toHaveLength(2);
+    // 旧实现:X.py 暂存补齐 .staged/X.py 后,alias/X.py 读取成功且 digest 恰与
+    // 所发一致 → 两个 applied(经别名的应用通路);修后整批在写入前拒绝
+    for (const receipt of receipts) {
+      expect(receipt.status).toBe('failed');
+      expect(receipt.reason).toContain('符号链接');
+    }
+    expect(existsSync(path.join(engineDir, 'X.py'))).toBe(false);
+    expect(existsSync(path.join(engineDir, 'alias', 'X.py'))).toBe(false);
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+  });
+
+  // F3 九轮复审 FAIL-4 兼容性回归:--root 自身经合法 symlink 祖先到达(如
+  // macOS /tmp → /private/tmp)时,一致性验证必须相对已解析的暂存根比较,
+  // 不误拒正常暂存;树内 symlink 组件仍拒绝(由既有八/九轮回归钉住)。
+  it('F3 九轮复审回归:暂存根经 symlink 祖先到达 → 正常暂存不误拒', async () => {
+    const baseDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-rootbase-'));
+    engineDirs.push(baseDir); // 复用 afterEach 清理
+    const engineDir = path.join(baseDir, 'engine');
+    mkdirSync(engineDir, { recursive: true });
+    // 真实根 + 经 symlink 到达的路径别名作为 --root
+    const rootReal = path.join(baseDir, 'root-real');
+    mkdirSync(rootReal, { recursive: true });
+    symlinkSync(rootReal, path.join(baseDir, 'root-link'), 'dir');
+    const rootViaLink = path.join(baseDir, 'root-link');
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir], undefined, rootViaLink);
+    const file = path.join(rootViaLink, 'X.py');
+    const content = 'X_ROOT_ALIAS = 63\n';
+    writeFileSync(file, content, 'utf8');
+
+    const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: sha256(content) } });
+    const receipt = JSON.parse(response.body) as { status: string; reason?: string };
+    expect(receipt.status).toBe('applied');
+    expect(readFileSync(path.join(engineDir, 'X.py'), 'utf8')).toBe(content);
+    // 暂存副本按解析后的相对路径落盘,内容正确
+    expect(readFileSync(path.join(rootReal, '.staged', 'X.py'), 'utf8')).toBe(content);
+
+    // 三轮 FAIL-2 补口:根自身是合法 symlink 时,真实缺失的源文件不得被祖先
+    // 链探测误判为「疑似悬空别名」而整批拒绝——保持「读不到所发文件」逐文件
+    // 失败语义,另一文件照常 applied
+    const missingFile = path.join(rootViaLink, 'missing.py');
+    const response2 = await postReload(receiver.port, {
+      files: [file, missingFile],
+      sender_digests: { [file]: sha256(content), [missingFile]: sha256('whatever') }
+    });
+    const receipts2 = JSON.parse(response2.body) as Array<{ status: string; file: string; reason?: string }>;
+    const missingReceipt = receipts2.find(r => r.file === missingFile);
+    const goodReceipt = receipts2.find(r => r.file === file);
+    expect(missingReceipt?.status).toBe('failed');
+    expect(missingReceipt?.reason).toContain('读不到');
+    expect(goodReceipt?.status).toBe('applied');
+  });
+
+  // F3 九轮复审三轮 FAIL-1 补口:源文件**自身**是悬空 symlink(final 组件)
+  // 时同样会在批内暂存补齐目标后经别名复活——预检必须连文件自身一起查。
+  it('F3 九轮复审回归:源文件自身为悬空 symlink → 预检拒绝整批', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    const aliasFile = path.join(receiver.root, 'alias.py');
+    const topFile = path.join(receiver.root, 'X.py');
+    const topContent = 'X_FILE_ALIAS = 65\n';
+    // 暂存树目录预存在,alias.py → .staged/X.py(尚不存在,悬空)
+    mkdirSync(path.join(receiver.root, '.staged'), { recursive: true });
+    symlinkSync(path.join(receiver.root, '.staged', 'X.py'), aliasFile, 'file');
+    writeFileSync(topFile, topContent, 'utf8');
+
+    const response = await postReload(receiver.port, {
+      files: [topFile, aliasFile],
+      sender_digests: { [topFile]: sha256(topContent), [aliasFile]: sha256(topContent) }
+    });
+    const receipts = JSON.parse(response.body) as Array<{ status: string; file: string; reason?: string }>;
+    expect(receipts).toHaveLength(2);
+    for (const receipt of receipts) {
+      expect(receipt.status).toBe('failed');
+      expect(receipt.reason).toContain('符号链接');
+    }
+    expect(existsSync(path.join(engineDir, 'X.py'))).toBe(false);
+    expect(existsSync(path.join(engineDir, 'alias.py'))).toBe(false);
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+  });
+
   it('F3 三轮:通道发送自动附带 sender_digests(发送方冻结 digest 随报文下发)', async () => {
     let capturedBody: string | undefined;
     const transport = new HttpReloadTransport(
@@ -909,6 +1113,11 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(source).toContain('verifiedRealParentForRename');
     expect(source).toContain("'.staged'");
     expect(source).toContain('unlinkSync');
+    // F3 九轮:.staged 源命名空间排除、暂存路径 symlink 双重验证、
+    // 收尾清理 dev/ino 与创建时比对(不符跳过报 rollback_skipped)
+    expect(source).toContain('safeStagingTarget');
+    expect(source).toContain('rollback_skipped');
+    expect(source).toContain('fstatSync');
     // F3 七轮:temp+rename 原子写 + lstat 拒链接——源码钉住新写入机制
     expect(source).toContain('renameSync');
     expect(source).toContain('lstatSync');
