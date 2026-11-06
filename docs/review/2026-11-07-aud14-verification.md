@@ -26,7 +26,7 @@
 | AUD-005 GlobalDataIndex 旧版覆盖 | 已修已勾 | 4d62ade | noteSaved 同步分支清 editBuffers + runEditRecompute 源复核；tests/globalDataIndex.test.ts 在册 | 134 过批次内 |
 | AUD-006 Rust def 递归环 | 已修已勾 | 6a2e005 | process_topology.rs visiting 活动栈 + def_md5.rs loading 活动栈三处守卫在码。**口径注明**：环守卫为静默截断（walk_def 再遇即 return、load_* 跳过），不产「环」专项诊断；验收「循环返回诊断不溢出」按「循环返回、不栈溢出」兑现（def_md5 面无诊断输出通道），A→B→A 测试锁不溢出+Ok 返回 | process_topology_units 31 过 + def_md5_units 12 过* |
 | AUD-007 dataflow AST 语义 | 已修已勾 | b26396e | AugAssign 读旧值/Delete 终结链/walrus/Comprehension target/Subscript 读容器均在码 | dataflow_test 17 过 |
-| AUD-008 callgraph/symbols/graph 遗漏 | 已修已勾（含 2026-11-07 复审残余返工，见 §返工） | dd869b5 + 8c2b7411 | 嵌套 def/class、Match guard、Match 属性写、本地裸名不产跨文件伪边均在码；模块接收者补 import 绑定核验 | callgraph 12 + graph 8（含返工新 2 例）+ symbols 7 过 |
+| AUD-008 callgraph/symbols/graph 遗漏 | 已修已勾（含 2026-11-07 两轮复审返工，见 §返工） | dd869b5 + 8c2b7411 + bc8a06cf | 嵌套 def/class、Match guard、Match 属性写、本地裸名不产跨文件伪边均在码；模块接收者补 import 绑定核验（全作用域） | callgraph 12 + graph 9（含返工新 3 例）+ symbols 7 过 |
 
 \* 单测文件随后续批次自然增长，数字为当前 HEAD 实跑，非勾账时数字。
 
@@ -48,14 +48,18 @@
 
 - **P1 · AUD-008 残余（实例接收者伪边）**：`resolve_callee_file` 对非 self、非空的接收者一律取首段按 basename 找文件，不经 import 绑定核验——`avatar.heal()`（avatar 为实例变量）会把唯一同名文件 avatar.py 误指为被调方。修（8c2b7411）：模块接收者分支先核调用方 `imports` 绑定（含 `import avatar` / `from pkg import avatar` 的 binding 面），未绑定 → None 宁缺毋滥。红证=graph_test.rs `receiver_without_import_no_cross_file_pseudo_edge`（修前红：伪边在产）+正向 `imported_module_receiver_resolves_cross_file`（真模块调用不切断）；门禁=graph_test 8/8、kode-python 全绿（45）、workspace cargo test --exclude kode-scheduler 0 failed、kode-scheduler 14 过、clippy kode-python 0 告警。todo AUD-008 勾账行已补注。
 
-## 本日复跑数字（起核 HEAD e7af5cba + 返工后 HEAD 8c2b7411，0 failed）
+## 返工（codex luna 第二轮 FAIL 项）
+
+- **P2 · 函数内导入被漏判**：第二轮修复的绑定核验只看顶层 `imports` 表，`def battle(): import avatar; avatar.heal()` 这类函数内真绑定被漏判、断边。修（bc8a06cf）：symbols.rs 增 `ImportBindingCollector`（ruff visitor 递归函数/类/分支体）采全作用域 import 绑定，`AstSymbols` 增 `import_bindings` 字段（顶层 `imports` 语义面口径不动，既有消费面零影响），graph.rs 核验改用全作用域。红证=graph_test.rs `function_scoped_import_receiver_resolves_cross_file`（修前红）；门禁=graph_test 9/9、kode-python 全绿（48）、workspace(excl scheduler) 103 个 test-target 全 0 failed、kode-scheduler 绿、clippy kode-python 0 告警。todo AUD-008 勾账行已补注。
+
+## 本日复跑数字（起核 HEAD e7af5cba → 返工后 HEAD bc8a06cf，0 failed）
 
 - vitest：9 文件 266 过（e7af5cba）→ 复跑 267 过（8c2b7411 前身，含 KR-AUD-35 新用例）0 败（cov-debug-process/serverManager/processTopologyFlush/defPythonParity/hotReloadTargetState/selfAttributeFlowTypes=132 批次；globalDataIndex/workspaceIndexColdYield/workspaceEventIndex=134 批次）。
-- cargo：kode-server（process_topology_units 31 / def_md5_units 12 / dependency_graph_dispatch 2 / lint_rules 19 / flag_domains_golden 5）+ kode-parser parser_units 19 + kode-python（callgraph 12 / dataflow 17 / graph 8 / symbols 7 / lib 3）+ kode-scheduler 14，全 0 failed。
+- cargo：kode-server（process_topology_units 31 / def_md5_units 12 / dependency_graph_dispatch 2 / lint_rules 19 / flag_domains_golden 5）+ kode-parser parser_units 19 + kode-python（callgraph 12 / dataflow 17 / graph 9 / symbols 7 / lib 3）+ kode-scheduler 14，全 0 failed。
 
 ## 记账说明
 
-本批复核：14 项勾账行与代码事实一致；返工残余（AUD-008 接收者伪边）已修并在
-AUD-008 勾账行补 8c2b7411 证据，AUD-006 勾账行补口径注明（静默截断，无环专项诊断）。
-报告 v1 的三处表述（14 计数口径、debugpy/py-spy commit 归因、workspaceIndex :304 漂移）
-已按复审意见改到本版。
+本批复核：14 项勾账行与代码事实一致；两轮复审残余（AUD-008 接收者伪边 8c2b7411、
+函数内导入漏判 bc8a06cf）已修并在 AUD-008 勾账行补证据，AUD-006 勾账行补口径注明
+（静默截断，无环专项诊断）。报告 v1 的三处表述（14 计数口径、debugpy/py-spy commit
+归因、workspaceIndex :304 漂移）已按复审意见改到本版。
