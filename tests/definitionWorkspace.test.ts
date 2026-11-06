@@ -17,11 +17,21 @@ import {
   getDefinitionWorkspaceLayout,
   getEntityRuntimeProfile,
   getRegisteredCustomTypes,
+  getDefinitionLayoutComputeCountForTests,
   getRegisteredEntities,
+  resetDefinitionLayoutCacheForTests,
   resolveEntityAnnotationType,
   resolveEntityFixedDictMember
 } from '../src/definitionWorkspace';
 import { getSemanticIndex } from '../src/semanticIndex';
+import {
+  resetDiscoveryState,
+  setDiscoveryChoice
+} from '../src/workspaceDiscovery';
+import {
+  bumpRootConfigGeneration,
+  resetRootConfigGenerationForTests
+} from '../src/rootConfigGeneration';
 import { makeTextDocument, workspace } from './helpers/vscodeStub';
 
 // definitionWorkspace 的纯路径/解析逻辑:临时 workspace 真实文件树,
@@ -548,6 +558,48 @@ describe('resolveEntityAnnotationType(异常兜底)', () => {
       expect(() => resolveEntityAnnotationType(root, 'TIMESTAMP')).toThrow('configuration provider unavailable');
     } finally {
       (workspace as unknown as Record<string, unknown>).getConfiguration = originalGetConfig;
+    }
+  });
+});
+
+// KR-AUD-36(IDX-12):布局解析在悬停热路径反复执行,原每次全量 existsSync +
+// 发现探针(深扫兜底可达 20000 条目 walk)。修复后按 workspaceRoot 缓存
+// (rootConfigGeneration / 发现状态代 / 新鲜度窗口三重过期轴),同根重复查询
+// 零重算。
+describe('KR-AUD-36 布局解析缓存(IDX-12)', () => {
+  it('同根热路径重复查询零重算;根配置代前进后重建', () => {
+    resetDefinitionLayoutCacheForTests();
+    try {
+      const first = getDefinitionWorkspaceLayout(root);
+      expect(getDefinitionLayoutComputeCountForTests()).toBeGreaterThan(0);
+
+      const before = getDefinitionLayoutComputeCountForTests();
+      const again = getDefinitionWorkspaceLayout(root);
+      expect(again).toEqual(first);
+      // 修复前:每次都重算候选链 → 计数 +1(红)
+      expect(getDefinitionLayoutComputeCountForTests()).toBe(before);
+
+      // 根配置代前进 → 缓存过期,重建
+      bumpRootConfigGeneration('kr-aud-36-test');
+      getDefinitionWorkspaceLayout(root);
+      expect(getDefinitionLayoutComputeCountForTests()).toBe(before + 1);
+    } finally {
+      resetDefinitionLayoutCacheForTests();
+      resetRootConfigGenerationForTests();
+    }
+  });
+
+  it('发现记忆选择变化使布局缓存失效', () => {
+    resetDefinitionLayoutCacheForTests();
+    try {
+      getDefinitionWorkspaceLayout(root);
+      const before = getDefinitionLayoutComputeCountForTests();
+      setDiscoveryChoice(root, 'entitiesXml', p('scripts/entities.xml'));
+      getDefinitionWorkspaceLayout(root);
+      expect(getDefinitionLayoutComputeCountForTests()).toBe(before + 1);
+    } finally {
+      resetDefinitionLayoutCacheForTests();
+      resetDiscoveryState();
     }
   });
 });

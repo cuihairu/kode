@@ -3,10 +3,12 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import {
   getDiscoveryChoice,
+  getDiscoveryEpoch,
   resolveDiscoveredEntitiesXmlPath,
   resolveDiscoveredEntityDefsRoot,
   resolveDiscoveredTypesXmlPath
 } from './workspaceDiscovery';
+import { getRootConfigGeneration } from './rootConfigGeneration';
 import {
   DefDocument,
   DefElementNode,
@@ -167,7 +169,65 @@ export function getWorkspaceRootForDocument(
   return folder?.uri.fsPath || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || null;
 }
 
+// KR-AUD-36(IDX-12):布局解析在悬停/补全/跳转热路径反复执行,每次全量
+// existsSync + 发现探针(深扫兜底可达 20000 条目 walk)。按 workspaceRoot 缓存,
+// 三重过期轴:rootConfigGeneration 前进(根/域配置变)、发现状态代前进(记忆
+// 选择/缓存重置)、新鲜度窗口(与发现链缓存同级 TTL——盘上新建 entity_defs
+// 仍可经窗口过期被发现,不被布局缓存永久挡住)。
+const LAYOUT_CACHE_TTL_MS = 30_000;
+let layoutCacheTtlMs = LAYOUT_CACHE_TTL_MS;
+const layoutCache = new Map<
+  string,
+  { value: DefinitionWorkspaceLayout; at: number; generation: number; epoch: number }
+>();
+
+/** 测试注入布局缓存新鲜度窗口(ms) */
+export function setLayoutCacheTtlForTests(ms: number): void {
+  layoutCacheTtlMs = ms;
+}
+
+/** 测试面:清空布局缓存 */
+export function resetDefinitionLayoutCacheForTests(): void {
+  layoutCache.clear();
+}
+
+// 布局解析实际计算次数(缓存命中不计)——测试用「重复查询零重算」判别面。
+let layoutComputeCount = 0;
+
+/** 测试面:布局解析实际计算次数 */
+export function getDefinitionLayoutComputeCountForTests(): number {
+  return layoutComputeCount;
+}
+
+// 布局的配置输入(与 compute 内读取同键同默认值)进缓存键:配置值变
+// (entityDefsPath/entitiesXmlPath)不经 rootConfigGeneration,须即时重算。
+function layoutCacheKey(workspaceRoot: string): string {
+  const config = vscode.workspace.getConfiguration('kbengine');
+  const entityDefsPath = config.get<string>('entityDefsPath', 'scripts/entity_defs');
+  const entitiesXmlPath = config.get<string>('entitiesXmlPath', 'scripts/entities.xml');
+  return `${workspaceRoot}\u0000${entityDefsPath}\u0000${entitiesXmlPath}`;
+}
+
 export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionWorkspaceLayout {
+  const key = layoutCacheKey(workspaceRoot);
+  const generation = getRootConfigGeneration();
+  const epoch = getDiscoveryEpoch();
+  const cached = layoutCache.get(key);
+  if (
+    cached &&
+    cached.generation === generation &&
+    cached.epoch === epoch &&
+    Date.now() - cached.at < layoutCacheTtlMs
+  ) {
+    return cached.value;
+  }
+  const value = computeDefinitionWorkspaceLayout(workspaceRoot);
+  layoutCache.set(key, { value, at: Date.now(), generation, epoch });
+  return value;
+}
+
+function computeDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionWorkspaceLayout {
+  layoutComputeCount += 1;
   const config = vscode.workspace.getConfiguration('kbengine');
   const entityDefsCandidates = buildWorkspaceCandidates(
     workspaceRoot,

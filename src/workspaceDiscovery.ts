@@ -232,6 +232,7 @@ let discoveryCacheTtlMs = DISCOVERY_CACHE_TTL_MS;
 /** 测试注入缓存新鲜度窗口(ms) */
 export function setDiscoveryCacheTtlForTests(ms: number): void {
   discoveryCacheTtlMs = ms;
+  discoveryEpoch += 1;
 }
 
 interface CacheEntry<T> {
@@ -251,6 +252,15 @@ export type DiscoveryKey = 'entityDefs' | 'entitiesXml' | 'typesXml' | 'configRo
 
 const rememberedChoices = new Map<string, Partial<Record<DiscoveryKey, string>>>();
 
+// KR-AUD-36:发现状态代(记忆选择/缓存重置前进一代)——下游布局缓存
+// (definitionWorkspace)按此判过期,不必逐个订阅失效点。
+let discoveryEpoch = 0;
+
+/** 发现状态代:记忆选择与缓存重置时前进(布局缓存过期轴之一) */
+export function getDiscoveryEpoch(): number {
+  return discoveryEpoch;
+}
+
 /** 激活期把 workspaceState 里持久化的选择灌进会话记忆(整组覆盖) */
 export function applyDiscoveryChoices(
   workspaceRoot: string,
@@ -259,6 +269,7 @@ export function applyDiscoveryChoices(
   if (choices) {
     rememberedChoices.set(workspaceRoot, choices);
     scanCache.delete(workspaceRoot);
+    discoveryEpoch += 1;
   }
 }
 
@@ -266,6 +277,7 @@ export function setDiscoveryChoice(workspaceRoot: string, key: DiscoveryKey, val
   const current = rememberedChoices.get(workspaceRoot) ?? {};
   rememberedChoices.set(workspaceRoot, { ...current, [key]: value });
   scanCache.delete(workspaceRoot);
+  discoveryEpoch += 1;
 }
 
 export function getDiscoveryChoice(workspaceRoot: string, key: DiscoveryKey): string | null {
@@ -284,6 +296,7 @@ export function resetDiscoveryState(): void {
 export function resetDiscoveryMemo(): void {
   conventionalRootsMemo.clear();
   engineProbeMemo.clear();
+  discoveryEpoch += 1;
 }
 
 /**
