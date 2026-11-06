@@ -272,6 +272,44 @@ describe('IDE-GIT-010 提供者(依赖注入 mock)', () => {
     }
   });
 
+  it('多段(超队列门限)串行查询:任意时刻至多一段在途,不灌满 gate 队列', async () => {
+    // 审核发现:Promise.all 并发发起全部段查询,段数超过门限(range 并发 1 +
+    // 队列 8)时后段被「历史查询队列已满」拒绝,整个查询失败。修复后串行——
+    // 以在途峰值断言(旧并发实现 peak=段数,prove-red)。
+    let inFlight = 0;
+    let peak = 0;
+    const queryTimeline = vi.fn(async (_f: string, _r: string, range: SelectionRange): Promise<RangeTimelineResult> => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      inFlight -= 1;
+      return {
+        kind: 'timeline',
+        status: 'ok',
+        entries: [entry(`h-${range.startLine}`, `段@${range.startLine}`)],
+        boundary: { kind: 'origin', atCommit: `h-${range.startLine}`, atPath: 'src/a.py' },
+      };
+    });
+    const provider = new GitRangeHistoryTreeProvider({
+      locateGitRepo: () => repoLocation(),
+      mapSelection: async () => ({
+        kind: 'mapped',
+        segments: Array.from({ length: 12 }, (_, i) => ({
+          firstLine: i + 1,
+          lastLine: i + 1,
+          headFirstLine: i + 1,
+          headLastLine: i + 1,
+        })),
+        selectionLineCount: 12,
+      }),
+      queryTimeline,
+    });
+    await provider.showSelectionHistory('/repo/src/a.py', { startLine: 1, endLine: 12 }, true);
+    expect(queryTimeline).toHaveBeenCalledTimes(12);
+    expect(peak).toBe(1);
+    expect(provider.getState().kind).toBe('loaded');
+  });
+
   it('多段合并:跨段时间交错提交全局降序 + 边界取全体段最早', async () => {
     // 段1(先查):新 A(11-03)+ 老 C(11-01);段2(后查):中 B(11-02)。
     // 旧码按段序拼接 → [A, C, B](乱序),boundary 取末段=B(11-02);

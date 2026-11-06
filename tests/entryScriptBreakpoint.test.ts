@@ -1,4 +1,4 @@
-// KODE-CFG-006 验收(按 todo.md:1010):entryScriptFile 自动断点。
+﻿// KODE-CFG-006 验收(按 todo.md:1010):entryScriptFile 自动断点。
 //
 //   1. 断点预填:attach/端口模式调试目标启动 → 按配置派生结果在入口脚本
 //      (kbengine.py)自动预填断点——addBreakpoints 收到入口路径(行 0)。
@@ -39,7 +39,7 @@ const scriptsFromConfig = (p: string | null): string | null => {
     return null;
   }
   // 贪婪 .* 取最后一次 res/server/kbengine.xml 出现(Rust rfind 语义)。
-  const m = /^(.*\/)res\/server\/kbengine\.xml$/.exec(p);
+  const m = /^(.*[\\/])res[\\/]server[\\/]kbengine\.xml$/.exec(p);
   return m ? `${m[1]}scripts` : null;
 };
 
@@ -209,5 +209,35 @@ describe('KODE-CFG-006 entryScriptFile 自动断点', () => {
     // 零断点预填 + 诊断上报。
     expect(addCount).toBe(0);
     expect(reported).toEqual(['entry script missing: baseapp/kbengine']);
+  });
+
+  it('assetsRoot 用 ${env:...} 占位:展开后照常解析入口脚本(审核发现分叉修复)', async () => {
+    // 审核发现:resolveEntryScriptFacts 此前只展开 ${workspaceFolder},
+    // ${env:...} 原样落进 path.isAbsolute → 错路径 → 误报 missing。
+    const ws = mk('env-var');
+    roots.push(ws);
+    const tools = path.join(ws, 'tools');
+    fs.mkdirSync(tools, { recursive: true });
+    const assets = path.join(ws, 'assets');
+    writeFile(path.join(assets, 'res', 'server', 'kbengine.xml'), '<root/>');
+    writeFile(path.join(assets, 'scripts', 'entity_defs', '.keep'), '');
+    writeFile(path.join(assets, 'scripts', 'kbengine.py'), 'import kbe\n');
+    const entryPath = path.join(assets, 'scripts', 'kbengine.py');
+
+    process.env.KODE_CFG006_ASSETS = assets;
+    try {
+      configurationOverrides.set('kbengine', { assetsRoot: '${env:KODE_CFG006_ASSETS}' });
+      stubWorkspace.workspaceFolders = [{ uri: Uri.file(tools), name: 'tools', index: 0 }];
+      setKodeCoreShadowGate(makeGate(calls));
+
+      await ensureConfigDerivedScanRoot();
+      const sent = calls[0].params as { facts?: DeriveFacts };
+      expect(sent.facts?.entryScripts).toEqual([
+        { process: 'baseapp', module: 'kbengine', path: entryPath, exists: true }
+      ]);
+      expect(getConfigDerivedScanRootState()?.debug.reasons.some(r => r.startsWith('entry script missing'))).toBe(false);
+    } finally {
+      delete process.env.KODE_CFG006_ASSETS;
+    }
   });
 });

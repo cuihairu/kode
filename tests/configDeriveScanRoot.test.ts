@@ -1,4 +1,4 @@
-// KODE-CFG-005 验收:def 扫描根按配置派生(CFG-004 链消费端)。
+﻿// KODE-CFG-005 验收:def 扫描根按配置派生(CFG-004 链消费端)。
 //
 // 两测试(按 todo.md:1009 验收):
 //   1. 定位到不同 kbengine.xml 段时扫描根随之变化——workspace=工具子目录,
@@ -59,7 +59,7 @@ const scriptsFromConfig = (p: string | null): string | null => {
     return null;
   }
   // 贪婪 .* 取最后一次 res/server/kbengine.xml 出现(Rust rfind 语义)。
-  const m = /^(.*\/)res\/server\/kbengine\.xml$/.exec(p);
+  const m = /^(.*[\\/])res[\\/]server[\\/]kbengine\.xml$/.exec(p);
   return m ? `${m[1]}scripts` : null;
 };
 
