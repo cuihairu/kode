@@ -114,8 +114,8 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/extension.ts', 631, "startLanguageServiceOperation('diagnostics'"],
   ['src/extension.ts', 644, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
-  ['src/extension.ts', 2152, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2232, 'flushQueued()'],
+  ['src/extension.ts', 2155, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2235, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面
