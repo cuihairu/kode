@@ -16,26 +16,29 @@ export function usesPosixPath(targetPath: string): boolean {
 }
 
 /**
- * WIN-3:纯路径逻辑按输入路径风格选 path 实现。POSIX 平台 path 即 posix;
- * win32 上反斜杠是平台风格信号(盘符/绝对 fsPath)——含 `\` 走平台 path,
+ * WIN-3:纯路径逻辑按输入路径风格选 path 实现(平台参数化纯函数,可测)。
+ * POSIX 平台 path 即 posix;win32 上反斜杠与盘符前缀(驱动+正/反斜杠,
+ * `C:/` 与 `C:\`)都是平台风格信号——含 `\` 或盘符前缀走 path.win32,
  * `/` 开头与相对纯 `/` 形态走 path.posix(单测与 uri.path 派生面)。混用会
  * 让 win32 的 join/resolve/relative 把 /ws/repo 归一成 \ws\repo 并锚到当
  * 前盘,或把合法 cwd 内路径判成越界,输出与消费方期望双双失真。
- *
- * 审核发现:盘符+正斜杠(`C:/repo/...`)此前被 `includes('\\')` 误判为
- * posix——path.posix.resolve 会锚到 cwd。与 usesPosixPath 同口径
- * (`^[A-Za-z]:[\\/]` 认盘符),两种分隔形态都归 win32。
+ * 审核发现修复:旧实现只以 includes('\\') 判风格,盘符+正斜杠路径
+ * (`C:/repo/...`) 被误判为 posix,path.posix.resolve 会错误锚到 cwd;
+ * 与 usesPosixPath(同样认 `^[A-Za-z]:[\\/]` 盘符)保持一致。
  */
-export function pathApiFor(samplePath: string): path.PlatformPath {
-  if (process.platform !== 'win32') {
+export function selectPathApiForPlatform(
+  platform: NodeJS.Platform,
+  samplePath: string
+): path.PlatformPath {
+  if (platform !== 'win32') {
     return path;
   }
-  // 盘符形态(两种分隔)或含反斜杠 → win32;其余(含无分隔符相对名)posix,
-  // 与既有消费口径(相对纯 / 形态走 posix)保持一致。
-  if (/^[A-Za-z]:[\\/]/.test(samplePath) || samplePath.includes('\\')) {
-    return path.win32;
-  }
-  return path.posix;
+  return /^[A-Za-z]:[\\/]/.test(samplePath) || samplePath.includes('\\') ? path.win32 : path.posix;
+}
+
+/** 按当前宿主平台选 path 实现(经 selectPathApiForPlatform 参数化)。 */
+export function pathApiFor(samplePath: string): path.PlatformPath {
+  return selectPathApiForPlatform(process.platform, samplePath);
 }
 
 /**
