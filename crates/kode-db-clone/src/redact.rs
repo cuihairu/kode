@@ -168,7 +168,11 @@ impl std::fmt::Debug for RedactingSink<'_> {
 }
 
 impl<'a> RedactingSink<'a> {
-    pub fn new(inner: &'a mut dyn RowSink, policy: &'a SensitivityPolicy, plan: &QueryPlan) -> Self {
+    pub fn new(
+        inner: &'a mut dyn RowSink,
+        policy: &'a SensitivityPolicy,
+        plan: &QueryPlan,
+    ) -> Self {
         let columns = plan
             .queries
             .iter()
@@ -312,7 +316,10 @@ mod tests {
             !out.contains("hunter2") && !out.contains("abc123"),
             "引号值明文不得泄漏: {out}"
         );
-        assert!(!out.contains('"') && !out.contains('\''), "引号自身也不残留: {out}");
+        assert!(
+            !out.contains('"') && !out.contains('\''),
+            "引号自身也不残留: {out}"
+        );
     }
 
     #[test]
@@ -324,5 +331,141 @@ mod tests {
         assert!(out.contains("password=***"), "密码掩掉: {out}");
         assert!(out.contains("name=Alice"), "公开字段保留: {out}");
         assert!(!out.contains("my secret pass"), "含空白引号值不泄漏: {out}");
+    }
+
+    #[test]
+    fn labels_cover_all_sensitivities() {
+        assert_eq!(Sensitivity::Credential.label(), "credential");
+        assert_eq!(Sensitivity::Personal.label(), "personal");
+        assert_eq!(Sensitivity::Public.label(), "public");
+    }
+
+    #[test]
+    fn short_personal_values_are_fully_masked() {
+        assert_eq!(mask_personal("ab"), "**");
+        assert_eq!(mask_personal("abc"), "***");
+        assert_eq!(mask_personal(""), "");
+        // 多字节字符按字符数掩码,不按字节;>4 保留首尾。
+        assert_eq!(mask_personal("王小明同学"), "王***学");
+    }
+
+    #[test]
+    fn debug_impls_are_present() {
+        let p = SensitivityPolicy::default();
+        assert!(format!("{p:?}").contains("overrides"));
+        assert!(format!("{p:?}").contains("SensitivityPolicy"));
+    }
+
+    /// 行捕获汇:记录流经的行,供断言脱敏前后差异。
+    struct CaptureSink {
+        rows: Vec<TypedRow>,
+        ended: Vec<(String, u64)>,
+    }
+
+    impl RowSink for CaptureSink {
+        fn write_row(&mut self, _table: &str, row: &TypedRow) -> CloneResult<u64> {
+            self.rows.push(row.clone());
+            Ok(1)
+        }
+
+        fn end_table(&mut self, table: &str, count: u64) -> CloneResult<()> {
+            self.ended.push((table.to_string(), count));
+            Ok(())
+        }
+    }
+
+    fn plan_with_columns(columns: &[&str]) -> QueryPlan {
+        use crate::planner::{PlanFilter, PlannedQuery};
+        QueryPlan {
+            entity_name: "Avatar".into(),
+            row_budget: 100,
+            queries: vec![PlannedQuery {
+                sequence: 0,
+                table: "tbl_Avatar".into(),
+                parent_table: None,
+                filter: PlanFilter::RootId,
+                columns: columns.iter().map(|c| c.to_string()).collect(),
+                column_types: columns.iter().map(|_| "varchar".to_string()).collect(),
+                select_sql: "SELECT 1".into(),
+                estimated_rows: None,
+            }],
+            denied: vec![],
+            missing: vec![],
+            identity: None,
+            estimated_rows_total: None,
+        }
+    }
+
+    fn text_row(table: &str, values: &[&str]) -> TypedRow {
+        TypedRow {
+            table: table.to_string(),
+            values: values
+                .iter()
+                .map(|v| TypedValue::Text(v.to_string()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn sink_masks_sensitive_text_columns_and_reports() {
+        let plan = plan_with_columns(&["sm_name", "email", "sm_password"]);
+        let policy = SensitivityPolicy::default();
+        let mut capture = CaptureSink {
+            rows: Vec::new(),
+            ended: Vec::new(),
+        };
+        {
+            let mut sink = RedactingSink::new(&mut capture, &policy, &plan);
+            sink.write_row(
+                "tbl_Avatar",
+                &text_row("tbl_Avatar", &["Alice", "a@b.com", "hunter2"]),
+            )
+            .unwrap();
+            sink.end_table("tbl_Avatar", 1).unwrap();
+            // 计划外的表:直通,不改写。
+            sink.write_row("tbl_Unknown", &text_row("tbl_Unknown", &["a@b.com"]))
+                .unwrap();
+            let report = sink.report();
+            assert_eq!(report.entries.len(), 2, "掩码过的列才进报告: {report:?}");
+            let mut by_col: BTreeMap<_, _> = report
+                .entries
+                .iter()
+                .map(|e| (e.column.as_str(), (e.sensitivity.as_str(), e.masked_count)))
+                .collect();
+            assert_eq!(by_col.remove("email"), Some(("personal", 1)));
+            assert_eq!(by_col.remove("sm_password"), Some(("credential", 1)));
+            assert_eq!(by_col.remove("sm_name"), None, "公开列不进报告");
+            assert!(!sink.masked_counts().is_empty());
+        }
+        // 首行:敏感列被掩,公开列保留;end_table 直通。
+        assert_eq!(capture.rows[0].values[0], TypedValue::Text("Alice".into()));
+        assert_eq!(
+            capture.rows[0].values[1],
+            TypedValue::Text("a*****m".into())
+        );
+        assert_eq!(capture.rows[0].values[2], TypedValue::Text("***".into()));
+        assert_eq!(capture.ended, vec![("tbl_Avatar".to_string(), 1)]);
+        // 未知表行原样直通。
+        assert_eq!(
+            capture.rows[1].values[0],
+            TypedValue::Text("a@b.com".into())
+        );
+    }
+
+    #[test]
+    fn sink_passes_rows_through_when_masking_is_noop() {
+        let plan = plan_with_columns(&["sm_name"]);
+        let policy = SensitivityPolicy::default();
+        let mut capture = CaptureSink {
+            rows: Vec::new(),
+            ended: Vec::new(),
+        };
+        let mut sink = RedactingSink::new(&mut capture, &policy, &plan);
+        // 掩码后与原值相同(公开列)→ 不改写、不计数。
+        sink.write_row("tbl_Avatar", &text_row("tbl_Avatar", &["Alice"]))
+            .unwrap();
+        assert_eq!(sink.masked_counts().len(), 0);
+        assert!(sink.report().entries.is_empty());
+        assert_eq!(capture.rows.len(), 1);
     }
 }

@@ -287,7 +287,10 @@ mod tests {
         let rows = canned_rows();
         let reader = InformationSchemaReader::new(&rows, "kbe'game");
         let sql = reader.tables_sql();
-        assert!(sql.contains("TABLE_SCHEMA = 'kbe''game'"), "单引号转义: {sql}");
+        assert!(
+            sql.contains("TABLE_SCHEMA = 'kbe''game'"),
+            "单引号转义: {sql}"
+        );
         assert!(!sql.contains("`kbe"), "schema 值不得作反引号标识符: {sql}");
         for s in [reader.columns_sql(), reader.statistics_sql()] {
             assert!(s.contains("TABLE_SCHEMA = 'kbe''game'"), "单引号转义: {s}");

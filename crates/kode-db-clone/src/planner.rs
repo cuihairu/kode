@@ -146,8 +146,11 @@ impl ExportPlanner {
                 PlanFilter::RootId
             };
             let columns: Vec<String> = projected.fields.iter().map(|f| f.name.clone()).collect();
-            let column_types: Vec<String> =
-                projected.fields.iter().map(|f| f.type_label.clone()).collect();
+            let column_types: Vec<String> = projected
+                .fields
+                .iter()
+                .map(|f| f.type_label.clone())
+                .collect();
             let select_sql = render_select(name, &columns, filter);
             let estimated_rows = estimates.and_then(|m| m.get(name).copied());
             if let Some(rows) = estimated_rows {
@@ -227,7 +230,11 @@ fn render_select(table: &str, columns: &[String], filter: PlanFilter) -> String 
         PlanFilter::RootId => "`id` = ?",
         PlanFilter::ParentId => "`parentID` = ?",
     };
-    format!("SELECT {} FROM {} WHERE {predicate}", quoted.join(", "), quote_ident(table))
+    format!(
+        "SELECT {} FROM {} WHERE {predicate}",
+        quoted.join(", "),
+        quote_ident(table)
+    )
 }
 
 #[cfg(test)]
@@ -463,11 +470,18 @@ mod tests {
     #[test]
     fn render_select_escapes_backticks_in_identifiers() {
         // 表/列名含反引号:转义为 ````,否则生成畸形/可注入 SELECT。
-        let sql = render_select("tbl`Avatar", &["id".into(), "weird`col".into()], PlanFilter::RootId);
+        let sql = render_select(
+            "tbl`Avatar",
+            &["id".into(), "weird`col".into()],
+            PlanFilter::RootId,
+        );
         assert!(sql.contains("FROM `tbl``Avatar`"), "表名反引号转义: {sql}");
         assert!(sql.contains("`weird``col`"), "列名反引号转义: {sql}");
         assert!(sql.contains("WHERE `id` = ?"), "谓词不变: {sql}");
         let parent = render_select("tbl_Bag", &["parentID".into()], PlanFilter::ParentId);
-        assert!(parent.contains("WHERE `parentID` = ?"), "子表谓词不变: {parent}");
+        assert!(
+            parent.contains("WHERE `parentID` = ?"),
+            "子表谓词不变: {parent}"
+        );
     }
 }
