@@ -44,19 +44,23 @@ function toCall<T>(
   return { status: 'ok', result: response.result };
 }
 
-/** inspectArchive:归档路径 → 清单(不回行值)。 */
-export async function inspectCloneArchive(path: string): Promise<RustCall<ArchiveMetaWire>> {
+/** inspectArchive:归档路径 → 清单(不回行值)。keyRoot=密钥存储根(加密档取钥)。 */
+export async function inspectCloneArchive(
+  path: string,
+  keyRoot?: string
+): Promise<RustCall<ArchiveMetaWire>> {
   const gate = getKodeCoreShadowGate();
   if (!gate) {
     return { status: 'no-gate' };
   }
-  const response = await gate.runInRust('$/kode/dbClone/inspectArchive', { path });
+  const response = await gate.runInRust('$/kode/dbClone/inspectArchive', { path, keyRoot });
   return toCall(response, isArchiveMeta, 'inspectArchive');
 }
 
 /** readArchiveRows:归档行(有类型;导入预演唯一值探测与 Apply 绑定值面)。 */
 export async function readCloneArchiveRows(
-  path: string
+  path: string,
+  keyRoot?: string
 ): Promise<RustCall<{ tables: Array<{ name: string; rows: TypedRowWire[] }> }>> {
   const gate = getKodeCoreShadowGate();
   if (!gate) {
@@ -64,7 +68,7 @@ export async function readCloneArchiveRows(
   }
   const response = await gate.runInRust(
     '$/kode/dbClone/readArchiveRows',
-    { path },
+    { path, keyRoot },
     { timeoutMs: DEFAULT_TIMEOUT_MS }
   );
   if (!response.ok) {
@@ -97,12 +101,14 @@ export async function planCloneExport(
   return toCall(response, isQueryPlan, 'planExport');
 }
 
-/** export:有类型行 + 计划列序 → 写 .kdpclone(脱敏默认开)。 */
+/** export:有类型行 + 计划列序 → 写 .kdpclone(脱敏默认开;传 keyRoot 即
+ * 加密落盘——钥在 Rust 侧 FileKeyStore 0600 独立存,密钥材料不过 TS)。 */
 export async function writeCloneArchive(
   path: string,
   entity: string,
   rows: TypedRowWire[],
-  plan: QueryPlanWire
+  plan: QueryPlanWire,
+  keyRoot?: string
 ): Promise<RustCall<{ entity: string; total_rows: number; tables: unknown[] }>> {
   const gate = getKodeCoreShadowGate();
   if (!gate) {
@@ -110,7 +116,7 @@ export async function writeCloneArchive(
   }
   const response = await gate.runInRust(
     '$/kode/dbClone/export',
-    { path, entity, rows, plan, redactSensitive: true },
+    { path, entity, rows, plan, redactSensitive: true, keyRoot },
     { timeoutMs: DEFAULT_TIMEOUT_MS }
   );
   if (!response.ok) {
@@ -134,7 +140,8 @@ export async function planCloneImport(
   target: TargetProfileWire,
   derivation: unknown,
   physicalTables: PhysicalTableWire[],
-  snapshot: TargetSnapshotWire
+  snapshot: TargetSnapshotWire,
+  keyRoot?: string
 ): Promise<RustCall<ImportPlanWire>> {
   const gate = getKodeCoreShadowGate();
   if (!gate) {
@@ -142,7 +149,7 @@ export async function planCloneImport(
   }
   const response = await gate.runInRust(
     '$/kode/dbClone/planImport',
-    { path, target, derivation, physicalTables, snapshot },
+    { path, target, derivation, physicalTables, snapshot, keyRoot },
     { timeoutMs: DEFAULT_TIMEOUT_MS }
   );
   return toCall(response, isImportPlan, 'planImport');

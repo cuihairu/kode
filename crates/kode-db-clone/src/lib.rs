@@ -28,7 +28,9 @@ pub use apply::{
     DuplicateImport, FieldConsistency, ImportApplier, ImportRun, ImportRunStore, LoadVerification,
     MemoryRunStore, NoopRunStore, VerifyCheck, VerifyReport, WriteExecutor,
 };
-pub use archive::{relations_from_plan, write_archive, Archive, ArchiveMeta, ArchiveWriter};
+pub use archive::{
+    is_encrypted, relations_from_plan, write_archive, Archive, ArchiveMeta, ArchiveWriter,
+};
 pub use error::{CloneError, CloneResult};
 pub use idmap::{IdCategory, IdMap, IdMapEntry, IdMapKey, ImportMode, MappedId};
 pub use import::{

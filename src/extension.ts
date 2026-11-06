@@ -3423,6 +3423,10 @@ export function activate(context: vscode.ExtensionContext) {
         return null;
       }
     },
+    // 归档加密密钥根(globalStorage 下 clone-keys:机器域,不落工作区/VCS,
+    // 归档移机时钥匙不跟走→读侧如实报密钥缺失)。目录由 Rust 侧按需创建;
+    // 密钥材料全程留 Rust(FileKeyStore 0600),TS 只传目录路径。
+    getKeyRoot: () => vscode.Uri.joinPath(context.globalStorageUri, 'clone-keys').fsPath,
     channel: playerCloneChannel,
     now: () => Date.now()
     };

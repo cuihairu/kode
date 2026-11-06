@@ -68,6 +68,11 @@ export interface PlayerCloneCommandDeps {
   writeAuditFile(name: string, content: string): Promise<string>;
   listAuditFiles(): Promise<string[]>;
   readAuditFile(path: string): Promise<string | null>;
+  /**
+   * 归档加密密钥根目录(globalStorage 下的 clone-keys;密钥材料全程留
+   * Rust,TS 只传目录路径)。undefined=不加密(测试替身/旧装配兼容)。
+   */
+  getKeyRoot(): string | undefined;
   channel: { appendLine(line: string): void; show(preserveFocus?: boolean): void };
   now(): number;
 }
@@ -199,7 +204,7 @@ export async function runInspectCloneArchiveCommand(
   if (!path) {
     return;
   }
-  const inspected = await inspectCloneArchive(path);
+  const inspected = await inspectCloneArchive(path, deps.getKeyRoot());
   if (inspected.status === 'no-gate') {
     await deps.showErrorMessage(noGateMessage);
     return;
@@ -297,7 +302,13 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
         await deps.showWarningMessage(`DBID=${dbidText} 在源库没有读到任何行(未导出)。`);
         return;
       }
-      const written = await writeCloneArchive(savePath, entityName, rows, plan.result);
+      const written = await writeCloneArchive(
+        savePath,
+        entityName,
+        rows,
+        plan.result,
+        deps.getKeyRoot()
+      );
       if (written.status === 'no-gate') {
         await deps.showErrorMessage(noGateMessage);
         return;
@@ -341,7 +352,7 @@ export async function runImportCloneCommand(
     return;
   }
 
-  const inspected = await inspectCloneArchive(path);
+  const inspected = await inspectCloneArchive(path, deps.getKeyRoot());
   if (inspected.status !== 'ok') {
     await deps.showErrorMessage(
       inspected.status === 'no-gate' ? noGateMessage : describeCallFailure('读取归档清单', inspected.reason)
@@ -386,7 +397,8 @@ export async function runImportCloneCommand(
         },
         { tables: derivationTables },
         physicalTables,
-        { uniqueKeys, existingValues: [] }
+        { uniqueKeys, existingValues: [] },
+        deps.getKeyRoot()
       );
       if (pass1.status === 'no-gate') {
         await deps.showErrorMessage(noGateMessage);
@@ -399,7 +411,7 @@ export async function runImportCloneCommand(
       columnOrder = columnOrderFromPlan(pass1.result);
 
       // 归档行 → 唯一值候选 → 目标既有值有界探测 → pass-2 冲突预演。
-      const rowsCall = await readCloneArchiveRows(path);
+      const rowsCall = await readCloneArchiveRows(path, deps.getKeyRoot());
       if (rowsCall.status === 'no-gate') {
         await deps.showErrorMessage(noGateMessage);
         return;
@@ -425,7 +437,8 @@ export async function runImportCloneCommand(
         },
         { tables: derivationTables },
         physicalTables,
-        { uniqueKeys, existingValues }
+        { uniqueKeys, existingValues },
+        deps.getKeyRoot()
       );
       if (pass2.status !== 'ok') {
         await deps.showErrorMessage(

@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
+use sha2::{Digest, Sha256};
+
 use crate::error::{CloneError, CloneResult};
 
 /// 32 字节密钥(chacha20poly1305 密钥长度)。
@@ -22,6 +24,18 @@ pub trait KeyStore {
     fn get_or_create(&self, id: &str) -> CloneResult<ArchiveKey>;
     /// 密钥是否已存在(不读取)。
     fn exists(&self, id: &str) -> bool;
+}
+
+/// 归档路径 → 密钥 id:绝对化路径的 SHA-256 十六进制(64 hex,字符全在
+/// `FileKeyStore` 安全集内)。不直接用路径字符串作 id——`/`/`\`/`:` 等会被
+/// 消毒成 `_`,不同路径可能撞名;哈希确定、无碰撞。id 稳定绑定归档所在
+/// 位置:归档移动/改名后 id 变化,读侧按「密钥缺失」如实报错,不猜。
+pub fn key_id_for_archive(path: &Path) -> String {
+    let abs = key_absolutize(path);
+    let mut hasher = Sha256::new();
+    hasher.update(abs.to_string_lossy().as_bytes());
+    let digest = hasher.finalize();
+    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// 文件密钥存储:独立目录 + 0600 权限。

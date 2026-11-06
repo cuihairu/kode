@@ -653,6 +653,28 @@ fn aead_open(
         })
 }
 
+/// 只读头部加密位(不解析帧)。读侧用它决定是否需要向密钥存储要钥匙:
+/// 加密档无钥在 [`Archive::open`] 报错,提前探位可给「密钥缺失」更准的话术。
+pub fn is_encrypted(path: &Path) -> CloneResult<bool> {
+    let mut f =
+        File::open(path).map_err(|e| CloneError::ArchiveError(format!("open archive: {e}")))?;
+    let mut head = [0u8; HEADER_LEN];
+    f.read_exact(&mut head)
+        .map_err(|_| CloneError::ArchiveError("archive is smaller than its header".into()))?;
+    if &head[0..MAGIC.len()] != MAGIC {
+        return Err(CloneError::ArchiveError(
+            "not a kode player clone archive (bad magic)".into(),
+        ));
+    }
+    let version = head[MAGIC.len()];
+    if version != FORMAT_VERSION {
+        return Err(CloneError::ArchiveError(format!(
+            "unsupported archive version {version} (expected {FORMAT_VERSION}); refusing to guess"
+        )));
+    }
+    Ok(head[MAGIC.len() + 1] & FLAG_ENCRYPTED != 0)
+}
+
 /// 由计划收集关系记录(归档 relations.json 的内容;子表 → 父表 parentID 关系)。
 pub fn relations_from_plan(plan: &QueryPlan) -> Vec<Relation> {
     plan.queries
