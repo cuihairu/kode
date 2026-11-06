@@ -873,6 +873,20 @@ The flow graph panel supports:
 - Purpose: one-shot venv creation: pick a target directory (default `<workspaceRoot>/.venv`) → run `python -m venv <dir>` inside a progress notification → verify the created directory directly (`pyvenv.cfg` + interpreter binary, independent of the scan depth so a target outside the scan range still qualifies) → auto-select and write the new interpreter into `kbengine.python.interpreterPath`
 - Honesty rules: the base interpreter resolves through the PATH chain only (never through workspace discovery, which may be the environment being rebuilt) — when PATH has no python3/python the flow refuses with an explicit message and never spawns; an occupied (existing, non-empty) target directory aborts before any write; a non-zero venv exit reports the stderr tail; a created directory that verification cannot confirm (no `pyvenv.cfg` or no interpreter binary) is reported as such and never selected
 
+### `kbengine.python.ruffLint`
+
+- Title: `Ruff Lint Python Files (py37)`
+- Purpose: lint the workspace's `.py` files via the Rust backend (`$/kode/ruff/lint`, crates/kode-server/src/ruff_lint.rs): the backend spawns ruff with `--target-version py37` locked (KBEngine 3.7.3) and `--no-cache` (never writes `.ruff_cache` into the workspace), then the command publishes the results as VS Code diagnostics (E9xx → error, everything else → warning; files with no findings are cleared)
+- Bounds: at most 2000 files per call (the same cap on both the TS and Rust sides); beyond it the command reports the real count and the cap and runs nothing; a workspace with no `.py` files says so and runs nothing
+- Honesty rules: ruff missing is reported as-is (`available:false` from the backend — never a silent empty pass); the backend unavailable (kode-server not reachable) is reported as a backend problem, not as 「no issues」
+- Consent-based install (never silent): when ruff is missing the command asks first — 「安装(Install via pip)」 runs `<selected interpreter> -m pip install ruff` (on success the ruff binary is located in the interpreter's own bin directory and the lint re-runs with it), 「手动安装命令(Show command)」 prints the exact manual command into the 「KBEngine Ruff」 output channel; a failed install reports the error with the same manual command to run yourself, and the raw pip output always lands in the channel
+
+### `kbengine.python.installRuff`
+
+- Title: `Install Ruff via pip (Selected Interpreter)`
+- Purpose: manual install entry — runs `<selected interpreter> -m pip install ruff`, then probes ruff again and reports the version found (or 未检出, honestly)
+- Honesty rules: no selected interpreter refuses up front (pointing to `Select Python Interpreter` instead of guessing a python); a failed install reports the error together with the exact manual command (`"<python>" -m pip install ruff`, quoted when the path has spaces) so the user can run it themselves; the full pip log stays in the 「KBEngine Ruff」 output channel
+
 ### `kbengine.project.import`
 
 - Title: `Import Existing KBEngine Project`

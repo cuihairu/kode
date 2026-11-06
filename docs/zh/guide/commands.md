@@ -865,6 +865,20 @@ callgraph 模式面板支持：
 - 用途：一键创建 venv：选目标目录（默认 `<workspaceRoot>/.venv`）→ 在进度通知里跑 `python -m venv <目录>` → 直接对目标目录验真（`pyvenv.cfg` + 解释器二进制，不依赖扫描范围，深层/工作区外目标照常选用）→ 自动选用并把新解释器写入 `kbengine.python.interpreterPath`
 - 诚实口径：基础解释器只走设置→PATH 链（绝不走工作区发现——那可能正是要被重建的环境）；PATH 上没有 python3/python 时在任何 spawn 之前如实拒绝并给出提示；目标目录已存在且非空则在任何写入前中止；`venv` 命令非零退出报出 stderr 尾部；建成但验不过的目录（缺 `pyvenv.cfg` 或缺解释器二进制）如实报告且绝不选用
 
+### `kbengine.python.ruffLint`
+
+- 标题：`Ruff Lint Python Files (py37)`
+- 用途：经 Rust 后端（`$/kode/ruff/lint`，crates/kode-server/src/ruff_lint.rs）lint 工作区 `.py` 文件：后端 spawn ruff，`--target-version py37` 锁死（KBEngine 3.7.3）+`--no-cache`（绝不向工作区写 `.ruff_cache`），结果发布为 VS Code 诊断（E9xx → error，其余 → warning；无发现的文件清空诊断）
+- 有界：单次至多 2000 个文件（TS/Rust 两侧同值）；超出时如实报出实际数量与上限并不执行；工作区没有 `.py` 文件时如实说明并不执行
+- 诚实口径：ruff 缺失如实上报（后端返回 `available:false`——绝不静默装作零问题）；后端不可用（kode-server 未连上）如实报为后端问题，不冒充「没有问题」
+- 同意式安装（绝不静默装）：ruff 缺失时先询问——「安装(Install via pip)」执行 `<选定解释器> -m pip install ruff`（成功后按解释器自身 bin 目录定位 ruff 并带其路径复跑 lint），「手动安装命令(Show command)」把准确的手动命令打进「KBEngine Ruff」输出通道；安装失败时报错并附同一条手动命令供自行执行，pip 原始输出始终落通道
+
+### `kbengine.python.installRuff`
+
+- 标题：`Install Ruff via pip (Selected Interpreter)`
+- 用途：手动安装入口——执行 `<选定解释器> -m pip install ruff`，随后复检 ruff 并如实报出版本（检不出就报未检出）
+- 诚实口径：未选定解释器时前置拒绝（指向 `Select Python Interpreter`，不瞎猜某个 python）；安装失败时报错并附准确的手动命令（`"<python>" -m pip install ruff`，路径带空格时加引号）供自行执行；pip 完整日志留在「KBEngine Ruff」输出通道
+
 ### `kbengine.project.import`
 
 - 标题：`Import Existing KBEngine Project`
