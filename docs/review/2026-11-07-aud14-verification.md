@@ -88,10 +88,14 @@
 
 - **P1 ×2 · 模块回退/函数层冲突判定残余**：①有别名 `import a.b as c` 的绑定 c 指向模块 a.b，模块回退却因第十轮「取首段」口径误取 a（同名无关 a.py 被误指）；②函数层 from-import 目标身份冲突（`from pkg import x as avatar` + `from other import x as avatar`）basename 同为 x 即被判定一致、按 find 首条误指。修（ad9a2c7c）：①回退 basename 三分——from-import 取 symbol、无别名绑顶层首段、有别名取目标模块末段 b；②ScopeImportBindings bindings 值扩为 `(行, basename, 目标身份 id)`，push_binding 对 basename 或 id 不一致的同名 import 记空串歧义标记、解析层放弃（守第八轮定版「保守歧义即放弃」契约）；from-import 的 id 带 level 前缀点，不同相对层级同名目标不混同。红证=graph_test.rs `module_fallback_aliased_dotted_import_uses_last_segment`（修前红：a.py 被误指）+`function_layer_from_import_conflict_gives_up_edge`（修前红：伪边在产）；门禁=graph_test 26/26、kode-python 全绿、workspace 全量 cargo test 0 failed、clippy --workspace --all-targets 0。todo AUD-008 勾账行已补注。
 
-## 本日复跑数字（起核 HEAD e7af5cba → 返工后 HEAD ad9a2c7c，0 failed）
+## 返工（codex luna 第十二轮 FAIL 项）
+
+- **P1 ×1（两审项同根）· 回退别名判定用「绑定名==首段」近似**：`import a.b as a` 显式别名恰为顶层首段名，graph.rs 用绑定名是否等于首段代替「是否有别名」，该例被判成绑包本体、误指无关 a.py；AstImport 未保存显式别名信息（symbols.rs 采集即丢失）。修（16ad72e8）：AstImport 增 `aliased: bool`（asname.is_some()，import/from 两处采集），回退分支改按显式标志三分；顶层 imports 目标一致性检查加 `aliased` 项——`import a.b` 与 `import a.b as a` 绑定名同为 a 但目标身份不同，冲突即放弃（守「保守歧义即放弃」契约）。红证=graph_test.rs `aliased_dotted_import_alias_equals_first_segment_uses_last_segment`（修前红：a.py 被误指）+`aliased_and_unaliased_same_binding_conflict_gives_up_edge`（修前红：伪边在产；stash src 实测 26 过 2 败）；门禁=graph_test 28/28、kode-python 全绿、workspace 全量 cargo test 0 failed、clippy --workspace --all-targets 0。todo AUD-008 勾账行已补注。
+
+## 本日复跑数字（起核 HEAD e7af5cba → 返工后 HEAD 16ad72e8，0 failed）
 
 - vitest：9 文件 266 过（e7af5cba）→ 复跑 267 过（8c2b7411 前身，含 KR-AUD-35 新用例）0 败（cov-debug-process/serverManager/processTopologyFlush/defPythonParity/hotReloadTargetState/selfAttributeFlowTypes=132 批次；globalDataIndex/workspaceIndexColdYield/workspaceEventIndex=134 批次）。
-- cargo：kode-server（process_topology_units 31 / def_md5_units 12 / dependency_graph_dispatch 2 / lint_rules 19 / flag_domains_golden 5）+ kode-parser parser_units 19 + kode-python（callgraph 12 / dataflow 17 / graph 26 / symbols 7 / lib 3）+ kode-scheduler 14，全 0 failed。
+- cargo：kode-server（process_topology_units 31 / def_md5_units 12 / dependency_graph_dispatch 2 / lint_rules 19 / flag_domains_golden 5）+ kode-parser parser_units 19 + kode-python（callgraph 12 / dataflow 17 / graph 28 / symbols 7 / lib 3）+ kode-scheduler 14，全 0 failed。
 
 ## 记账说明
 
@@ -100,6 +104,7 @@
 遮蔽保放 3dcecb48 → 遮蔽/分层交互三缺陷 e61c7c2c → 推导式/重绑定位置语义三缺陷
 b9edefd1 → 行序裁决不完备定版保守歧义契约 f3276040 → 回退面伪边源两例 faa168c7 →
 回退 basename/目标一致性两例 82b7ab59 → 模块回退别名点导入/
-函数层 from-import 目标 id 冲突两例 ad9a2c7c）已修并在 AUD-008 勾账行补证据，AUD-006
+函数层 from-import 目标 id 冲突两例 ad9a2c7c → 回退别名判定近似
+（import a.b as a 误指）AstImport 增显式别名标志 16ad72e8）已修并在 AUD-008 勾账行补证据，AUD-006
 勾账行补口径注明（静默截断，无环专项诊断）。报告 v1 的三处表述（14 计数口径、
 debugpy/py-spy commit 归因、workspaceIndex :304 漂移）已按复审意见改到本版。
