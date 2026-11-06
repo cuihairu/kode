@@ -106,7 +106,8 @@ describe('jumpLog 决策路径日志', () => {
     expect(logs).toMatch(/\[kode-jump\]\[info\] F12 .*SKILL_SLOT_DATA\.py:12/);
     expect(logs, '对象类应入日志').toContain('对象类=serializer_base');
     expect(logs).toMatch(/层1 entity-def 落空\(/);
-    expect(logs, '层2 命中并给出落点与耗时').toMatch(/层2 python-mro 命中 → .*SKILL_SLOT_DATA\.py:16.*ms/);
+    // 2026-11-07:夹具 SKILL_SLOT_DATA.py 组合根验收注释块扩容,reindex 落点 16→20
+    expect(logs, '层2 命中并给出落点与耗时').toMatch(/层2 python-mro 命中 → .*SKILL_SLOT_DATA\.py:20.*ms/);
     // 决策链之外不得倾倒整文件:每行封顶
     for (const line of getRecentJumpLogs()) {
       expect(line.length, `日志行超长(疑似倾倒文件): ${line.slice(0, 80)}…`).toBeLessThan(600);

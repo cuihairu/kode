@@ -1,8 +1,8 @@
 <root>
+	<!-- 引擎 loadParentClass(entitydef.cpp:915)会把父类 def 连同其接口重灌进本
+	     模块:Avatar 已带 ROLE,子类再声明一次接口方法即双注册(onMove is exist)。
+	     故本 def 不重复声明 ROLE,引擎与 kode(组合根父链继承)都经 Avatar 收录。 -->
 	<Parent> Avatar </Parent>
-	<Interfaces>
-		<interface> ROLE </interface>
-	</Interfaces>
 
 	<Properties>
 		<aiState>
@@ -13,7 +13,7 @@
 
 	<CellMethods>
 		<onAggro>
-			<Arg> ENTITY_ID </Arg>
+			<Arg> UINT32 </Arg>
 		</onAggro>
 	</CellMethods>
 

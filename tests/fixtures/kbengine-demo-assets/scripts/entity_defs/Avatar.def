@@ -20,12 +20,12 @@
 			<Type> UINT32 </Type>
 			<Flags> ALL_CLIENTS </Flags>
 		</hp>
-		<position>
-			<Type> VECTOR3 </Type>
-			<Flags> CELL_PUBLIC_AND_OWN </Flags>
-		</position>
+		<!-- 引擎保留字:cell 实体自带 position/direction(引擎建列),def 里再声明
+		     position 即 EntityDef::loadDefPropertys "position is limited" 拒载——
+		     真引擎起服验证发现后移除(DEMO-GAME-001)。 -->
 		<sight>
 			<Type> UINT16 </Type>
+			<Flags> CELL_PUBLIC </Flags>
 			<DetailLevel> MEDIUM </DetailLevel>
 		</sight>
 		<skillSlots>

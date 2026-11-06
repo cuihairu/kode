@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 import KBEngine
+from Avatar import Avatar
 from KBEDebug import *
 
 
-class Monster(KBEngine.Entity):
+# def 侧 <Parent> Avatar 的脚本面镜像:引擎 checkDefMethod 要求父类 def 合并
+# 进来的方法(respawn/onMove)在子类脚本类上可达,脚本继承让它们经 MRO 命中。
+class Monster(Avatar):
 	def __init__(self):
 		KBEngine.Entity.__init__(self)
 

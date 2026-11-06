@@ -1,3 +1,3 @@
 <root>
-    <Properties><unrelated><Type>UINT8</Type></unrelated></Properties>
+    <Properties><unrelated><Type>UINT8</Type><Flags>CELL_PRIVATE</Flags></unrelated></Properties>
 </root>

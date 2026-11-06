@@ -7,6 +7,8 @@
 
 	<!-- kode 演示资产:在官方模板之上补齐 Avatar/Monster 实体模型 -->
 	<Account hasClient="true"></Account>
+	<Spaces hasBase="true"></Spaces>
+	<Space hasBase="true" hasCell="true"></Space>
 	<Avatar hasBase="true" hasCell="true" hasClient="true"></Avatar>
 	<Monster hasCell="true"></Monster>
 	<TrainingAvatar hasBase="true" hasCell="true" hasClient="true"></TrainingAvatar>

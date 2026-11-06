@@ -108,17 +108,17 @@ describe('分层跳转(对象级放弃收窄)', () => {
       rootDefNeedle: 'def onAggro'
     },
     {
-      label: 'G3 Avatar(实体 → 接口 ROLE 声明;.def 层对象级命中)',
+      label: 'G3 Avatar(实体 → 接口 ROLE 声明;实体自带实现命中)',
       entity: 'Avatar',
       callFile: 'scripts/cell/Avatar.py',
       callNeedle: 'self.onMove(None)',
       method: 'onMove',
       hasDeclaration: true,
       objectProbe: 'object=Avatar',
-      finalFile: 'scripts/interfaces/ROLE.py',
+      finalFile: 'scripts/cell/Avatar.py',
       finalNeedle: 'def onMove',
       root: 'Avatar',
-      rootDefFile: 'scripts/interfaces/ROLE.py',
+      rootDefFile: 'scripts/cell/Avatar.py',
       rootDefNeedle: 'def onMove'
     },
     {

@@ -5,7 +5,7 @@ from KBEDebug import *
 class Account(KBEngine.Proxy):
 	def __init__(self):
 		KBEngine.Proxy.__init__(self)
-		
+
 	def onTimer(self, id, userArg):
 		"""
 		KBEngine method.
@@ -14,7 +14,7 @@ class Account(KBEngine.Proxy):
 		@param userArg	: addTimer 最后一个参数所给入的数据
 		"""
 		DEBUG_MSG(id, userArg)
-		
+
 	def onClientEnabled(self):
 		"""
 		KBEngine method.
@@ -22,7 +22,9 @@ class Account(KBEngine.Proxy):
 		cell部分。
 		"""
 		INFO_MSG("account[%i] entities enable. entityCall:%s" % (self.id, self.client))
-			
+		# 通知客户端:账号就绪(client/Account.onLoginOK)
+		self.client.onLoginOK()
+
 	def onLogOnAttempt(self, ip, port, password):
 		"""
 		KBEngine method.
@@ -30,7 +32,7 @@ class Account(KBEngine.Proxy):
 		"""
 		INFO_MSG(ip, port, password)
 		return KBEngine.LOG_ON_ACCEPT
-		
+
 	def onClientDeath(self):
 		"""
 		KBEngine method.
@@ -42,6 +44,15 @@ class Account(KBEngine.Proxy):
 	def reqCreateAvatar(self, name):
 		"""
 		exposed.
-		客户端请求创建角色
+		客户端请求创建角色:本地建 Avatar(Proxy,其 __init__ 内入空间建 cell),
+		随后把客户端交接到 Avatar。
 		"""
 		INFO_MSG("Account[%i].reqCreateAvatar: %s" % (self.id, name))
+		msg = "Account[%i].reqCreateAvatar: %s" % (self.id, name)
+		print("[demo-evidence] %s" % msg, flush=True)
+		evidenceLog(msg)
+		avatar = KBEngine.createEntityLocally("Avatar", {"name": name})
+		if avatar is None:
+			ERROR_MSG("Account[%i].reqCreateAvatar: create avatar failed" % self.id)
+			return
+		self.giveClientTo(avatar)

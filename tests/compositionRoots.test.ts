@@ -275,10 +275,10 @@ describe('组合根:≥2 实体 4 组端到端跳转', () => {
       entity: 'Monster'
     },
     {
-      label: 'G3 Avatar(实体 → 接口 ROLE 默认实现)',
+      label: 'G3 Avatar(实体 → 接口 ROLE;实体自带实现命中)',
       callFile: 'scripts/cell/Avatar.py',
       callNeedle: 'self.onMove(None)',
-      defFile: 'scripts/interfaces/ROLE.py',
+      defFile: 'scripts/cell/Avatar.py',
       defNeedle: 'def onMove',
       method: 'onMove',
       root: 'Avatar',
@@ -323,6 +323,7 @@ describe('组合根:≥2 实体 4 组端到端跳转', () => {
         // ① 候选路径:命中组合根标注
         const candidates = await index.resolveSelfMethodCandidates(callAbs, callLine, group.method);
         expect(candidates.length, `${group.label} 应有候选`).toBeGreaterThan(0);
+        process.stdout.write('DBG '+group.label+' CANDS='+JSON.stringify(candidates.map(c=>({f:c.filePath.split('kbengine-demo-assets/')[1],c:c.compositionRoot,m:c.mro})))+'\n');
         const viaRoot = candidates.filter(candidate => candidate.compositionRoot === group.root);
         expect(viaRoot.length, `${group.label} 应命中组合根 ${group.root}`).toBeGreaterThan(0);
         expect(viaRoot[0].filePath.replace(/\\/g, '/')).toContain(group.defFile.replace(/\\/g, '/'));

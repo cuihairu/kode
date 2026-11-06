@@ -185,10 +185,13 @@ describe('定义导航:实体/类型/接口/DetailLevel/方法/属性', () => {
   });
 
   it('<Interfaces> 内接口名 → interfaces/ROLE.def', async () => {
-    const def = fs.readFileSync(p('scripts/entity_defs/Monster.def'), 'utf8');
+    // DEMO-GAME-001:引擎 loadParentClass 会把父类(Avatar)def 连同接口重灌进
+    // Monster 模块,Monster.def 再声明 ROLE 即双注册(onMove is exist)——
+    // 故 Monster.def 不再声明接口,接口跳转样例改走 Avatar.def(同样 <Interfaces> 面)。
+    const def = fs.readFileSync(p('scripts/entity_defs/Avatar.def'), 'utf8');
     const { document, position } = docAt(
       def.replace('<interface> ROLE </interface>', '<interface> R|OLE </interface>'),
-      'scripts/entity_defs/Monster.def'
+      'scripts/entity_defs/Avatar.def'
     );
     const loc = (await provider.provideDefinition(document, position)) as unknown as LocationLike | null;
     expect(loc?.uri.fsPath).toBe(p('scripts/entity_defs/interfaces/ROLE.def'));
