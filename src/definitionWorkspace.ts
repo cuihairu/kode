@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { getRootConfigGeneration } from './rootConfigGeneration';
 import {
   getDiscoveryChoice,
   resolveDiscoveredEntitiesXmlPath,
@@ -170,7 +171,21 @@ export function getWorkspaceRootForDocument(
 }
 
 export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionWorkspaceLayout {
+  // KR-AUD-36(IDX-12):布局解析按 rootConfigGeneration + 布局配置读值键控缓存
+  // ——悬停热路径(languageProviders 等)每次调用重算要 existsSync 一整串候选+
+  // 发现兜底扫描。代内配置读值(entityDefsPath/entitiesXmlPath)并入键:配置
+  // 变化即使未经 bump(如测试直改 getConfiguration)也不喂旧布局;getConfiguration
+  // 为内存读不触盘,键计算代价可忽略。bump(def-paths/assetsRoot/根集/profile
+  // 变化点)覆盖发现兜底记忆与盘上目录面。
   const config = vscode.workspace.getConfiguration('kbengine');
+  const layoutGeneration = getRootConfigGeneration();
+  const entityDefsPathConfig = config.get<string>('entityDefsPath', 'scripts/entity_defs');
+  const entitiesXmlPathConfig = config.get<string>('entitiesXmlPath', 'scripts/entities.xml');
+  const layoutCacheKey = `${workspaceRoot}\n${layoutGeneration}\n${entityDefsPathConfig}\n${entitiesXmlPathConfig}`;
+  const cachedLayout = layoutCache.get(layoutCacheKey);
+  if (cachedLayout) {
+    return cachedLayout;
+  }
   const entityDefsCandidates = buildWorkspaceCandidates(
     workspaceRoot,
     config.get<string>('entityDefsPath', 'scripts/entity_defs'),
@@ -250,7 +265,7 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
     joinWorkspacePath(workspaceRoot, 'assets/scripts/user_type')
   ]);
 
-  return {
+  const layout: DefinitionWorkspaceLayout = {
     workspaceRoot,
     entityDefsRoot,
     entityScriptsRoot,
@@ -269,6 +284,16 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
       || resolveDiscoveredTypesXmlPath(workspaceRoot),
     userTypeRoots
   };
+  layoutCache.set(layoutCacheKey, layout);
+  return layout;
+}
+
+/** KR-AUD-36 布局缓存:键=根+generation+布局配置读值;条目随键失效,无泄漏面 */
+const layoutCache = new Map<string, DefinitionWorkspaceLayout>();
+
+/** 测试面:清空布局缓存(generation 复位由 resetRootConfigGenerationForTests 负责) */
+export function resetDefinitionLayoutCacheForTests(): void {
+  layoutCache.clear();
 }
 
 export function getRegisteredEntities(workspaceRoot: string): RegisteredEntityInfo[] {
