@@ -58,8 +58,15 @@ describe('resolved manifest (VS Code actual %key% resolution)', () => {
       this.skip();
       return;
     }
-    // 双段启动的第一段只注册语言包,locale 尚未生效;跳过留给第二段断言
+    // 双段启动的第一段只注册语言包,locale 尚未生效:register 段跳过;
+    // verify 段 runner 已要求 zh-cn 必须生效,未生效 = 直接红(不是 skip),
+    // 防「两段都 skip 也全绿」的假阳性门
     if (vscode.env.language !== 'zh-cn') {
+      if (process.env.KODE_MANIFEST_LAUNCH === 'verify') {
+        assert.fail(
+          `verify launch requires an active zh-cn locale, got vscode.env.language=${vscode.env.language}`
+        );
+      }
       this.skip();
       return;
     }

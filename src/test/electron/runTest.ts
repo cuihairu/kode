@@ -67,6 +67,8 @@ async function main(): Promise<void> {
   let localeArgs: string[] = [];
   if (manifestFallbackMode) {
     const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-manifest-fallback-'));
+    // 失败路径也不留临时副本:清理挂在创建之后立刻注册(先于下载/解包等易败操作)
+    process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
     for (const name of ['package.json', 'package.nls.json', 'package.nls.zh-cn.json', 'language-configuration.json']) {
       fs.copyFileSync(path.join(extensionDevelopmentPath, name), path.join(temporaryRoot, name));
     }
@@ -87,8 +89,11 @@ async function main(): Promise<void> {
       `MS-CEINTL.vscode-language-pack-zh-hans-${lpVersion}.vsix`);
     if (!fs.existsSync(lpVsix)) {
       fs.mkdirSync(path.dirname(lpVsix), { recursive: true });
-      execFileSync('curl', ['-fsSL', '--retry', '3', '-o', lpVsix,
+      // 先下 .part 再原子改名:断流残留的 .part 不会被下次的存在性检查误当缓存
+      const lpPart = `${lpVsix}.part`;
+      execFileSync('curl', ['-fsSL', '--retry', '3', '-o', lpPart,
         `https://open-vsx.org/api/MS-CEINTL/vscode-language-pack-zh-hans/${lpVersion}/file/MS-CEINTL.vscode-language-pack-zh-hans-${lpVersion}.vsix`]);
+      fs.renameSync(lpPart, lpVsix);
     }
     const lpUnpack = path.join(temporaryRoot, 'lp-unpack');
     execFileSync('unzip', ['-o', '-q', lpVsix, '-d', lpUnpack]);
@@ -104,7 +109,6 @@ async function main(): Promise<void> {
     process.env.KODE_ELECTRON_SUITE = 'manifestnls';
     process.env.KODE_MANIFEST_FALLBACK_TEMP = temporaryRoot;
     localeArgs = ['--extensions-dir', extensionsDir, '--user-data-dir', userDataDir, '--locale=zh-cn'];
-    process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
   }
   if (demoMode) {
     const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-demo-'));
@@ -706,10 +710,16 @@ async function main(): Promise<void> {
     ]
   });
   if (manifestFallbackMode) {
-    // 双段:第一段注册语言包(回退用例自 skip),第二段 zh-cn 生效跑真断言
+    // 双段:第一段注册语言包(回退用例自 skip),第二段 zh-cn 必须生效并跑
+    // 真断言(verify 段 locale 未生效会红,不会双 skip 全绿)
+    process.env.KODE_MANIFEST_LAUNCH = 'register';
+    await electronLaunch();
+    process.env.KODE_MANIFEST_LAUNCH = 'verify';
+    await electronLaunch();
+    delete process.env.KODE_MANIFEST_LAUNCH;
+  } else {
     await electronLaunch();
   }
-  await electronLaunch();
 }
 
 main().catch(error => {
