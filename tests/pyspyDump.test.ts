@@ -398,7 +398,8 @@ describe('runPyspySchedule(IDE-PYSPY-001)', () => {
     const calls: string[] = [];
     return {
       deps: {
-        fileExistsNonEmpty: (p: string) => existing.has(p),
+        // WIN-3:产品用 path.join 拼文件路径(win32 反斜杠),查找键同口径归一
+        fileExistsNonEmpty: (p: string) => existing.has(p.replace(/\\/g, '/')),
         sleep: async (ms: number) => {
           calls.push(`sleep:${ms}`);
         },

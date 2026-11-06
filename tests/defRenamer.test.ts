@@ -760,7 +760,8 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     expect(results.find(entry => entry.filePath === wandPath)).toBeUndefined();
   });
 
-  it('扫描中途不可读的后代文件被跳过', () => {
+  // Windows:chmod 000 不产生 EACCES,故障注入手法不可用,跳过
+  it.skipIf(process.platform === 'win32')('扫描中途不可读的后代文件被跳过', () => {
     // chmod 000 让 readFileSync 抛 EACCES(批24 同款故障注入手法);
     // 内容读盘即失败,闭包与编辑面共用缓存,Boss 整体缺席
     fs.chmodSync(bossPath, 0o000);

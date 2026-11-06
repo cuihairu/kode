@@ -889,7 +889,8 @@ describe('entityMapping 散点分支', () => {
     expect(logs).toContain('全项目回退');
   });
 
-  it('不可读目录被静默跳过:其中的方法不参与全局回退', async () => {
+  // Windows:chmod 000 不产生读权限缺失(EACCES 前提不成立),跳过
+  it.skipIf(process.platform === 'win32')('不可读目录被静默跳过:其中的方法不参与全局回退', async () => {
     // scripts/noperm chmod 000:walk 层 readdir 失败即跳过该目录
     expect(await manager!.resolveMethodImplementationGlobally('hidden')).toBeNull();
   });

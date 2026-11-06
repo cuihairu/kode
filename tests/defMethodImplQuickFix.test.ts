@@ -149,8 +149,8 @@ describe('缺实现方法生成空方法(IDE-NAV-014)', () => {
       // C-19 交付②:编辑应用后重算源 def 一致性(诊断消除),命令按 def URI 寻址
       expect(action.command).toBeDefined();
       expect(action.command!.command).toBe('kbengine.defMethodConsistency.revalidate');
-      // 测试桩 Uri.toString() 的 file 面是纯路径(与真机含 scheme 不同)
-      expect(action.command!.arguments).toEqual([ws.avatarDef]);
+      // 测试桩 Uri.toString() 的 file 面现与真机一致含 file:// 前缀
+      expect(action.command!.arguments).toEqual([Uri.file(ws.avatarDef).toString()]);
 
       const edits = editsByPath(action.edit!, ws.basePy);
       expect(edits, '只碰目标属主脚本,不动 def/别的文件').toHaveLength(1);

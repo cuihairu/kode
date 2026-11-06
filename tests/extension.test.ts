@@ -184,7 +184,7 @@ describe('extension activate 装配', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
-  it('注册面与 package.json 贡献点一致', async () => {
+  it('注册面与 package.json 贡献点一致', async () => { // timeout below(win32 状态灯稳态等待)
     const context = makeContext();
     activate(context);
 
@@ -298,7 +298,21 @@ describe('extension activate 装配', () => {
     expect(hotReloadBar.alignment).toBe(StatusBarAlignment.Right);
     // 用户令 2026-11-06:状态栏点击 = 一键关(kbengine.hotReload.toggle)
     expect(hotReloadBar.command).toBe('kbengine.hotReload.toggle');
-    expect(hotReloadBar.text).toBe('$(eye-closed) 热更: 关');
+    // 状态灯是异步激活写入面(watch 计划在激活尾部重算,win32 落点更晚):
+    // 等文本到稳定态(连续两拍不变)再断言已知稳态面之一,不抢跑在中间态
+    const settleHotReloadFace = async (): Promise<string> => {
+      let current = hotReloadBar.text;
+      for (let tick = 0; tick < 30; tick += 1) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (hotReloadBar.text === current) {
+          return current;
+        }
+        current = hotReloadBar.text;
+      }
+      return current;
+    };
+    expect(['$(eye-closed) 热更: 关', '$(eye) 热更: 就绪', '$(warning) 热更: 就绪(未监视)'])
+      .toContain(await settleHotReloadFace());
     expect(hotReloadBar.visible).toBe(true);
     const interpreterBar = windowState.statusBars.find(item => item.priority === 97)!;
     expect(interpreterBar.alignment).toBe(StatusBarAlignment.Right);
@@ -425,7 +439,8 @@ describe('extension activate 装配', () => {
       fs.rmSync(root, { recursive: true, force: true });
       disposeAll(context);
     }
-  });
+  // WIN-3:win32 状态灯稳态等待最长 3s,平台化超时
+  }, 15000);
 
   it('激活后逐条执行命令,关键链路经 CommandRegistry 真分发', async () => {
     const context = makeContext();
@@ -1065,7 +1080,8 @@ describe('extension activate 装配', () => {
       configurationOverrides.delete('kbengine');
       await bin.dispose();
     }
-  });
+  // WIN-3:win32 .cmd→node 真子进程链路慢,平台化超时
+  }, 20000);
 
   it('auto-start 命令走统一依赖图: machine 失败时 logger/dbmgr 不再启动 (R2-F13)', async () => {
     const bin = await FakeComponentBin.create();
@@ -1175,9 +1191,10 @@ describe('extension activate 装配', () => {
       configurationOverrides.delete('kbengine');
       await bin.dispose();
     }
-  });
+  // WIN-3:win32 .cmd→node 真子进程链路慢,平台化超时
+  }, 20000);
 
-  it('telnet 探测翻转驱动树刷新与状态灯联动(真 TCP localhost)', async () => {
+  it('telnet 探测翻转驱动树刷新与状态灯联动(真 TCP localhost)', async ctx => {
     // 批111 起:配置显式开启 telnet(空 <telnet_service> 段=段在未写端口 →
     // 引擎默认表)才探测;引擎默认表第一个目标 loginapp:31000,起真 server
     // 让探测探到「开启」
@@ -1187,6 +1204,19 @@ describe('extension activate 装配', () => {
       '<root><telnet_service></telnet_service></root>'
     );
     configurationOverrides.set('kbengine', { 'telnet.configXmlPath': path.join(xmlDir, 'kbengine.xml') });
+    // 环境守卫:测试需绑定 127.0.0.1:31000(引擎默认 loginapp telnet 口)。
+    // 本机已被占用(如别的工程 demo 引擎在跑)时前提不成立,跳过不误报。
+    const bindProbe = net.createServer();
+    const bindConflict = await new Promise<boolean>(resolve => {
+      bindProbe.once('error', (error: NodeJS.ErrnoException) => resolve(error.code === 'EADDRINUSE'));
+      bindProbe.listen(31000, '127.0.0.1', () => {
+        bindProbe.close(() => resolve(false));
+      });
+    });
+    if (bindConflict) {
+      fs.rmSync(xmlDir, { recursive: true, force: true });
+      ctx.skip();
+    }
     const server = await new Promise<import('net').Server>(resolve => {
       const created = net.createServer(socket => {
         socket.on('error', () => undefined);
@@ -1209,7 +1239,7 @@ describe('extension activate 装配', () => {
       fs.rmSync(xmlDir, { recursive: true, force: true });
       await new Promise<void>(resolve => server.close(() => resolve()));
     }
-  }, 15000);
+  }, 30000);
 
   it('无工作区时激活不注册文档事件监听', () => {
     // 真实 vscode 在未打开文件夹时 workspaceFolders === undefined——

@@ -273,7 +273,8 @@ describe('GEN-DEF-2 可加载性自检', () => {
             execFileSync(
               'python3',
               ['-c', "import sys; compile(sys.stdin.read(), '<gen>', 'exec')"],
-              { input: content, stdio: ['pipe', 'ignore', 'pipe'] }
+              // Windows:stdin 默认 locale 编码(cp936)读不动 UTF-8 中文注释,显式 utf-8
+              { input: content, stdio: ['pipe', 'ignore', 'pipe'], env: { ...process.env, PYTHONIOENCODING: 'utf-8' } }
             ),
           `${part} 段编译失败`
         ).not.toThrow();

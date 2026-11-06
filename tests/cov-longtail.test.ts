@@ -22,6 +22,12 @@ import type { DatabaseInterfaceConfig } from '../src/serverConfigMerge';
 import type { DatabaseSchemaSnapshot, TableFieldDescriptor } from '../src/databaseSchema';
 import { openSshTunnel, pickFreeLocalPort } from '../src/remoteConnection';
 import { defaultRuntimeQueryProtocol, RuntimeQueryWebView } from '../src/runtimeQueryWebView';
+// 环境守卫探测:本机有真 KBEngine machine daemon(UDP 20086 应答,如 demo 引擎
+// 在跑)时回环广播必有人应答——相关「无人应答」前提用例跳过,不误报
+import { discoverLocalComponents } from '../src/kbengineProtocol';
+const runtimeDiscoveryHasResponder: boolean = await discoverLocalComponents({ timeoutMs: 400 })
+  .then(components => components.length > 0)
+  .catch(() => false);
 import type {
   KBEngineComponentInfo,
   SpaceQueryResult,
@@ -643,7 +649,9 @@ describe('runtimeQueryWebView(边角分支)', () => {
     }
   });
 
-  it('默认协议发现面:回环广播无人应答,空清单收场', async () => {
+  // 环境守卫:本机有真 KBEngine machine daemon(UDP 20086 应答,如 demo 引擎在
+  // 跑)时回环广播必有人应答,「无人应答空清单」前提不成立——跳过不误报
+  it.skipIf(runtimeDiscoveryHasResponder)('默认协议发现面:回环广播无人应答,空清单收场', async () => {
     await expect(defaultRuntimeQueryProtocol.discoverComponents(10)).resolves.toEqual([]);
   }, 5000);
 
@@ -736,7 +744,8 @@ describe('logHub(告警与文件监控边角)', () => {
     }
   });
 
-  it('watchFile 路径是目录:读取失败入账错误行(Linux 上 read EISDIR)', () => {
+  // Windows:目录不可由 chmod 000 变成不可读,读取也不复现错误入账路径,跳过
+  it.skipIf(process.platform === 'win32')('watchFile 路径是目录:读取失败入账错误行(Linux 上 read EISDIR)', () => {
     const hub = new LogHub({ flushIntervalMs: 60_000 });
     try {
       hub.watchFile('kb', tmp(), 60_000);
@@ -899,7 +908,8 @@ describe('scanRoots(回退与遍历边角)', () => {
     expect(await findFilesAcrossRoots('**/*.def', '**/node_modules/**')).toHaveLength(1);
   });
 
-  it.skipIf(process.getuid?.() === 0)('外部根不可读(readdir EACCES):遍历降级为空,不外抛', async () => {
+  // Windows:chmod 000 不产生 EACCES,前提不成立
+  it.skipIf(process.getuid?.() === 0 || process.platform === 'win32')('外部根不可读(readdir EACCES):遍历降级为空,不外抛', async () => {
     const ws = makeTmpDir('denied-ws');
     const assets = makeTmpDir('denied-assets');
     useWorkspace(ws);
@@ -1178,7 +1188,8 @@ describe('pythonTestRunner(判读与进程边角)', () => {
     expect(failed.spawnError).toBeDefined();
   }, 15_000);
 
-  it('spawnTestProcess:子进程被信号终止 → code null + signal 显式记录 (R2-F19)', async () => {
+  // Windows:进程终止退出码不携带 POSIX 信号语义(code=1 而非 null/SIGTERM),跳过
+  it.skipIf(process.platform === 'win32')('spawnTestProcess:子进程被信号终止 → code null + signal 显式记录 (R2-F19)', async () => {
     const result = await spawnTestProcess({
       command: process.execPath,
       args: ['-e', 'process.kill(process.pid, "SIGTERM")'],

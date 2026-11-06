@@ -89,6 +89,10 @@ export class Uri {
     // 带自定义 scheme 的虚拟 URI(如 kbengine-db-schema:/Hero.schema):
     // scheme 单独记账,剩余部分作为 fsPath/path 供文档定位使用;
     // query(若有)与 path 分开记账,避免把 ?root=… 吃进 path。
+    // file:// 前缀(toString 的 file 面输出)剥离后按 file 面处理。
+    if (value.startsWith('file://')) {
+      return Uri.splitQuery(value.slice('file://'.length), 'file');
+    }
     const match = URI_SCHEME_PATTERN.exec(value);
     if (match && match[1] !== 'file') {
       return Uri.splitQuery(value.slice(match[0].length), match[1]);
@@ -122,8 +126,11 @@ export class Uri {
 
   toString(): string {
     const query = this.query ? `?${this.query}` : '';
-    // 真机 vscode.Uri.toString() 含 scheme;file 面保持纯路径,不动既有断言。
-    return this.scheme === 'file' ? `${this.fsPath}${query}` : `${this.scheme}:${this.fsPath}${query}`;
+    // 真机 vscode.Uri.toString() 恒含 scheme;file 面补 file:// 前缀,
+    // 否则 Windows 纯路径 `C:\…` 会被 normalizeDocumentKey 当成 scheme 'C:'。
+    return this.scheme === 'file'
+      ? `file://${this.fsPath}${query}`
+      : `${this.scheme}:${this.fsPath}${query}`;
   }
 }
 

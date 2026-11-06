@@ -357,7 +357,8 @@ describe('IDE-GIT-008 真实临时仓库:偏移换算与内容对拍', () => {
       expect(work[6]).toBe(head[5]);
       expect(work[7]).toBe(head[6]);
     }
-  });
+  // WIN-3:win32 逐次 git.exe spawn 慢,平台化超时
+  }, 20000);
 
   it('选区含修改/插入行:如实 has-uncommitted,干净行仍给出 HEAD 段', async () => {
     const root = makeRepo();
@@ -384,7 +385,8 @@ describe('IDE-GIT-008 真实临时仓库:偏移换算与内容对拍', () => {
     // 纯新增区(单行):零段全 unmapped
     const r2 = await mapSelectionToHeadRange(join(root, 'a.py'), root, { startLine: 1, endLine: 1 }, realDeps);
     expect(r2).toMatchObject({ kind: 'has-uncommitted', unmappedLines: 1, segments: [] });
-  });
+  // WIN-3:win32 逐次 git.exe spawn 慢(冷启动/AV 扫描),平台化超时
+  }, 20000);
 
   it('干净工作区:恒等映射,单行与多行选区', async () => {
     const root = makeRepo();
@@ -400,7 +402,8 @@ describe('IDE-GIT-008 真实临时仓库:偏移换算与内容对拍', () => {
       kind: 'mapped',
       segments: [{ firstLine: 2, lastLine: 4, headFirstLine: 2, headLastLine: 4 }],
     });
-  });
+  // WIN-3:win32 逐次 git.exe spawn 慢,平台化超时
+  }, 20000);
 
   it('中文与空格文件名:路径逐字往返,映射不受影响', async () => {
     const root = makeRepo();
@@ -416,7 +419,8 @@ describe('IDE-GIT-008 真实临时仓库:偏移换算与内容对拍', () => {
       kind: 'mapped',
       segments: [{ firstLine: 2, lastLine: 2, headFirstLine: 2, headLastLine: 2 }],
     });
-  });
+  // WIN-3:win32 逐次 git.exe spawn 慢,平台化超时
+  }, 20000);
 
   it('未跟踪文件 → untracked;已暂存新文件(仓库有提交)→ 整文件无 HEAD 对应', async () => {
     const root = makeRepo();
@@ -431,7 +435,8 @@ describe('IDE-GIT-008 真实临时仓库:偏移换算与内容对拍', () => {
     execFileSync('git', ['add', 'staged.py'], { cwd: root });
     const r2 = await mapSelectionToHeadRange(join(root, 'staged.py'), root, { startLine: 1, endLine: 2 }, realDeps);
     expect(r2).toMatchObject({ kind: 'has-uncommitted', unmappedLines: 2, segments: [] });
-  });
+  // WIN-3:win32 逐次 git.exe spawn 慢,平台化超时
+  }, 20000);
 
   it('无提交仓库 → no-commits', async () => {
     const root = makeRepo();

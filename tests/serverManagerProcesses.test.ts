@@ -251,7 +251,7 @@ describe('KBEngineServerManager startComponent preflight', () => {
 });
 
 describe('KBEngineServerManager real process lifecycle', () => {
-  it('starts a real process and promotes it to running after the grace period', async () => {
+  it('starts a real process and promotes it to running after the grace period', async () => { // timeout below
     writeScript('long', { kind: 'run', stdoutMarker: 'ready', printCwd: true, echoEnv: ['KBE_BIN_PATH'] });
     const manager = makeManager();
     let statusFires = 0;
@@ -291,7 +291,8 @@ describe('KBEngineServerManager real process lifecycle', () => {
     expect(channelText('Long')).toContain('[INFO] 可执行文件:');
     expect(channelText('Long')).toContain(`[INFO] 启动参数: --flag`);
     await manager.stopComponent('long');
-  });
+  // WIN-3:win32 .cmd→node 真子进程链路慢,平台化超时
+  }, 20000);
 
   it('routes child stderr into the [ERROR] output channel', async () => {
     writeScript('noisy', { kind: 'run', stderr: 'boom' });
@@ -302,7 +303,7 @@ describe('KBEngineServerManager real process lifecycle', () => {
 
     expect(channelText('Noisy')).toContain('[ERROR] boom');
     await manager.stopComponent('noisy');
-  });
+  }, 20000);
 
   it('removes an exiting child and logs its exit code', async () => {
     writeScript('flash', { kind: 'exit', code: 3 });
@@ -315,7 +316,7 @@ describe('KBEngineServerManager real process lifecycle', () => {
     expect(channelText('Flash')).toContain('[INFO] 进程退出: code=3, signal=null');
     // 提前退出的进程不会等到 1 秒宽限期的“启动成功”提示
     expect(messages.info).toEqual([]);
-  });
+  }, 20000);
 
   // WIN-5:chmod 000 在 Windows 无执行权限语义(文件照常可执行)——剥权限产
   // EACCES 的口径仅 POSIX;win32 由真实 .exe/.cmd 存在性与 spawn 错误面覆盖。
@@ -433,7 +434,7 @@ describe('KBEngineServerManager batch orchestration', () => {
     expect(manager.getRunningServers().size).toBe(0);
     expect(manager.getServerStatus('alpha')).toBe(ServerStatus.Stopped);
     expect(manager.getServerStatus('beta')).toBe(ServerStatus.Stopped);
-  }, 8000);
+  }, process.platform === 'win32' ? 20000 : 8000);
 
   it('restarts an unknown component as a plain failure', async () => {
     expect(await makeManager().restartComponent('nope')).toBe(false);

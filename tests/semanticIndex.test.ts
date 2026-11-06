@@ -408,7 +408,8 @@ describe('EntityMappingManager 兼容层(A4-4:getMappingForPythonFile 系改走�
       // 语义索引取证:根显式登记,实体条目挂扫描根 rootId
       const semantic = manager.getSemanticIndex();
       expect(semantic.getRoots().map(item => item.rootId)).toContain(normalizeFileIdentity(root));
-      expect(semantic.findEntityByName('Hero')?.defFile).toContain('Hero.def');
+      // WIN-3:win32 归一化把整路径折小写(盘符口径延伸到 basename),断言同走大小写不敏感
+      expect(semantic.findEntityByName('Hero')?.defFile?.toLowerCase()).toContain('hero.def');
     } finally {
       manager.dispose();
     }
