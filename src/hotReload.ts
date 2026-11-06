@@ -24,7 +24,8 @@ export { HOT_RELOAD_TOGGLE_COMMAND } from './hotReloadToggle';
 // 触发指定 quick action。用户令 2026-11-06:门控默认开启(配置缺失也开,
 // 显式写死 false 仍关);启用后按 kbengine.hotReload.globs 建 watcher,
 // 事件去抖合并连发保存,配置变更联动拆建 watcher。未配动作名时保存即按
-// 默认热更请求 POST http://127.0.0.1:8090/hotfix(body 带 module_name=<模块名>),
+// 默认热更请求 POST http://127.0.0.1:8090/hotfix?module_name=<模块名>(body 同带
+// module_name=<模块名>,两处都带是兼容不同服务端读参口径,同值重复无害),
 // 一键关 = 状态栏点击 / kbengine.hotReload.toggle(写回配置)。
 // 状态栏反馈(HR-UI-001):装配内建状态机控制器,Watch Off/Ready/Sending/
 // Sent(未确认)/Failed 上屏;动作完成且无错只记未确认,不校验业务回执。
@@ -164,7 +165,8 @@ export interface SetupHotReloadOptions {
   readonly now?: () => number;
   /**
    * 默认热更请求注入面(用户令 2026-11-06):未配 actionName 时保存即发
-   * `POST http://127.0.0.1:8090/hotfix`(body 带 module_name=<模块名>)。
+   * `POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`(body 同带
+   * module_name=<模块名>,双带兼容不同服务端实现)。
    * 三件均可缺省——transport 缺省走真 node http,包探针/脚本根由装配注入。
    */
   readonly defaultHotfix?: {
@@ -269,7 +271,8 @@ export function setupHotReload(
     pendingTriggers.clear();
     status.setSending(triggers, settings.debounceMs);
     // 默认热更请求(用户令 2026-11-06):未配动作名时保存即 POST
-    // http://127.0.0.1:8090/hotfix,body 带 module_name=<模块名>;成败按传输
+    // http://127.0.0.1:8090/hotfix?module_name=<模块名>,body 同带
+    // module_name=<模块名>(双带);成败按传输
     // 事实——引擎没起(ECONNREFUSED)如实 failed,2xx 也只到「已发送(未确认)」。
     const runDefaultHotfix = (): void => {
       const injected = options.defaultHotfix ?? {};

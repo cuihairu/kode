@@ -272,7 +272,7 @@ ${componentExampleLines().join('\n')}
   //   script:跑本地脚本   { "name": "起服", "type": "script", "script": "\${workspaceFolder}/start_server.bat", "background": true }
   //   venv:需要 Python 环境时加 "venv": { "enabled": true },按 kbengine.python.venvDirectories 自动查找(默认 .venv/venv/.kbenv)
   //   command:跑引擎命令 { "name": "导出配置表", "type": "command", "command": "exportTables" }
-  //   http:发 HTTP     { "name": "热更接口", "type": "http", "url": "http://127.0.0.1:8090/hotfix", "method": "POST", "body": "module_name=${module}" }
+  //   http:发 HTTP     { "name": "热更接口", "type": "http", "url": "http://127.0.0.1:8090/hotfix?module_name=\${module}", "method": "POST", "body": "module_name=\${module}" }
   "quickActions": ${actionJson}
 }
 `;

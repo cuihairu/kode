@@ -10,8 +10,8 @@
 export const HOT_RELOAD_NOTICE_KEY = 'kbengine.hotReload.firstRunNotice';
 
 export const HOT_RELOAD_NOTICE_MESSAGE =
-  '自动热更已默认开启:保存 .py 即向 http://127.0.0.1:8090/hotfix 发送热更请求' +
-  '(body 带 module_name=<模块名>);引擎未启动会如实显示失败。' +
+  '自动热更已默认开启:保存 .py 即向 http://127.0.0.1:8090/hotfix?module_name=<模块名> 发送热更请求' +
+  '(query 与 body 各带一份 module_name,兼容不同服务端,同值重复无害);引擎未启动会如实显示失败。' +
   '一键关:点击底部状态栏「热更」项,或运行命令 kbengine.hotReload.toggle。';
 
 export interface HotReloadNoticeDeps {

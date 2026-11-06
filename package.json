@@ -1558,7 +1558,7 @@
           "default": [
             {
               "name": "热更新(示例)",
-              "url": "http://127.0.0.1:8090/hotfix",
+              "url": "http://127.0.0.1:8090/hotfix?module_name=${module}",
               "method": "POST",
               "headers": {
                 "Content-Type": "application/x-www-form-urlencoded"
@@ -1704,12 +1704,12 @@
         "kbengine.hotReload.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "文件保存/监视时自动触发热更（默认开启；开启后按 globs 各建一个文件监视，配置改动即时生效）。一键关：点击状态栏「热更」项或运行命令 kbengine.hotReload.toggle（写回本配置）。未配 actionName 时保存即发默认热更请求 POST http://127.0.0.1:8090/hotfix（body 带 `module_name=<模块名>`），引擎未启动如实显示失败"
+          "description": "文件保存/监视时自动触发热更（默认开启；开启后按 globs 各建一个文件监视，配置改动即时生效）。一键关：点击状态栏「热更」项或运行命令 kbengine.hotReload.toggle（写回本配置）。未配 actionName 时保存即发默认热更请求 POST http://127.0.0.1:8090/hotfix?module_name=<模块名>（query 与 body 各带一份 `module_name=<模块名>`，兼容不同服务端实现，同值重复无害），引擎未启动如实显示失败"
         },
         "kbengine.hotReload.actionName": {
           "type": "string",
           "default": "",
-          "description": "要触发的 quickActions 动作名（须在 .kbengine/debug.json 的 quickActions 数组里存在；留空 = 走默认热更请求 POST http://127.0.0.1:8090/hotfix，body 带 `module_name=<模块名>`）"
+          "description": "要触发的 quickActions 动作名（须在 .kbengine/debug.json 的 quickActions 数组里存在；留空 = 走默认热更请求 POST http://127.0.0.1:8090/hotfix?module_name=<模块名>（body 同带 `module_name=<模块名>`，双带兼容不同服务端实现））"
         },
         "kbengine.hotReload.globs": {
           "type": "array",

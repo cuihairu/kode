@@ -439,10 +439,10 @@ describe('setupHotReload 状态机转移表(装配级)', () => {
     settle(statusClock);
 
     expect(runCalls).toEqual([]);
-    expect(sent).toEqual(['POST http://127.0.0.1:8090/hotfix module_name=a']);
+    expect(sent).toEqual(['POST http://127.0.0.1:8090/hotfix?module_name=a module_name=a']);
     expect(fake.bar.text).toBe(SENT_FACE);
     expect(fake.bar.text).not.toMatch(/成功|Applied/i);
-    expect(fake.lines.some(line => line.includes('默认热更: POST http://127.0.0.1:8090/hotfix'))).toBe(true);
+    expect(fake.lines.some(line => line.includes('默认热更: POST http://127.0.0.1:8090/hotfix?module_name=a'))).toBe(true);
     expect(fake.lines.some(line => line.includes('结果: 已发送(未确认)'))).toBe(true);
   });
 

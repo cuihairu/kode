@@ -326,7 +326,11 @@ describe('setupHotReload(装配)', () => {
 
     expect(runCalls).toEqual([]);
     expect(sent).toEqual([
-      { url: 'http://127.0.0.1:8090/hotfix', method: 'POST', body: 'module_name=Account' }
+      {
+        url: 'http://127.0.0.1:8090/hotfix?module_name=Account',
+        method: 'POST',
+        body: 'module_name=Account'
+      }
     ]);
     // 发出面只到「已发送(未确认)」,绝不标已生效
     expect(probe.calls).toContainEqual(['sent-unverified']);

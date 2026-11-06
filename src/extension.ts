@@ -5575,7 +5575,8 @@ export function activate(context: vscode.ExtensionContext) {
     targetState: hotReloadTargetStateWiring,
     defGate: hotReloadDefGate,
     // 默认热更请求(用户令 2026-11-06):未配 actionName 时保存即 POST
-    // http://127.0.0.1:8090/hotfix,body 带 module_name=<模块名>。包探针与
+    // http://127.0.0.1:8090/hotfix?module_name=<模块名>,body 同带
+    // module_name=<模块名>(query 与 body 双带,兼容不同服务端)。包探针与
     // HTTP 快捷请求同一口径(__init__.py 才算包段);脚本根取双名称配置,
     // 未配则回落 ${module} 包边界扫描(hotReloadDefaultHotfix 内部)。
     defaultHotfix: {

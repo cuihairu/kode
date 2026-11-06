@@ -1,9 +1,12 @@
 /**
  * 默认热更请求(用户令 2026-11-06):新工作区零配置时,保存 .py 即向
- * `http://127.0.0.1:8090/hotfix` 发一条 POST,body 带 `module_name=<模块名>`。
+ * `http://127.0.0.1:8090/hotfix?module_name=<模块名>` 发一条 POST,body 同带
+ * `module_name=<模块名>`——query 与 body 各带一份,兼容读 query / 读 body 的
+ * 不同服务端实现,同值重复无害。
  *
  * - 端点与参数名取自内置示例(BUILTIN_HTTP_REQUEST_EXAMPLE,测试锁同步),
- *   两处不各写一份,避免默认值漂移;
+ *   两处不各写一份,避免默认值漂移;query 的 `?module_name=` 与 body 的
+ *   `module_name=` 同源于该示例,双带口径不在此另写;
  * - 模块名优先 resolveModuleDualName 口径(书 §19.1,file-change-meta 同源);
  *   未配脚本资源根(kbengine.hotReload.tempEdit.scriptRoot)或解析不支持时,
  *   回落 ${module} 的 __init__.py 包边界扫描——与默认示例模板同一占位来源,

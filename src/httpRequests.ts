@@ -43,14 +43,15 @@ export interface HttpRequestEntry {
 
 /**
  * 内置示例(默认停用):用户令 2026-11-06 定型的默认热更服务形态——
- * `POST http://127.0.0.1:8090/hotfix`,body 带 `module_name=${module}`
- * (${module}=按 __init__.py 包边界扫出的模块路径)。与 package.json 默认值
- * 由测试锁同步;零配置自动热更(src/hotReloadDefaultHotfix.ts)同源取此模板,
- * 端点与参数名只此一处定义。
+ * `POST http://127.0.0.1:8090/hotfix?module_name=${module}`,body 也带
+ * `module_name=${module}`(${module}=按 __init__.py 包边界扫出的模块路径)。
+ * query 与 body 各带一份是兼容不同服务端实现(读 query 还是读 body 的都有),
+ * 同值重复无害。与 package.json 默认值由测试锁同步;零配置自动热更
+ * (src/hotReloadDefaultHotfix.ts)同源取此模板,端点与参数名只此一处定义。
  */
 export const BUILTIN_HTTP_REQUEST_EXAMPLE: Readonly<HttpRequestEntry> = Object.freeze({
   name: '热更新(示例)',
-  url: 'http://127.0.0.1:8090/hotfix',
+  url: 'http://127.0.0.1:8090/hotfix?module_name=${module}',
   method: 'POST',
   headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   body: 'module_name=${module}',

@@ -84,10 +84,13 @@ describe('内置示例与 package.json 默认值同步', () => {
     expect(properties['kbengine.httpRequests'].default).toEqual([BUILTIN_HTTP_REQUEST_EXAMPLE]);
     expect(BUILTIN_HTTP_REQUEST_EXAMPLE.enabled).toBe(false); // 内置示例默认停用
     // 用户令 2026-11-06:默认示例端点与参数名硬契约(127.0.0.1:8090/hotfix +
-    // module_name=),旧的错误拼写全仓清除
-    expect(BUILTIN_HTTP_REQUEST_EXAMPLE.url).toBe('http://127.0.0.1:8090/hotfix');
+    // module_name=),旧的错误拼写全仓清除;本席拍板 query 与 body 双带
+    // module_name(服务端读哪个都取得到),两处断言都要,缺一即红
+    expect(BUILTIN_HTTP_REQUEST_EXAMPLE.url).toBe('http://127.0.0.1:8090/hotfix?module_name=${module}');
+    expect(BUILTIN_HTTP_REQUEST_EXAMPLE.url).toContain('?module_name=');
     expect(BUILTIN_HTTP_REQUEST_EXAMPLE.method).toBe('POST');
     expect(BUILTIN_HTTP_REQUEST_EXAMPLE.body).toBe('module_name=${module}');
+    expect(BUILTIN_HTTP_REQUEST_EXAMPLE.body).toContain('module_name=');
     // 字面量拼接书写:写全会先命中全仓 grep 门本身
     expect(JSON.stringify(BUILTIN_HTTP_REQUEST_EXAMPLE)).not.toContain(['rel', 'aod'].join(''));
   });

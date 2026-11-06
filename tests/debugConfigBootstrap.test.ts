@@ -139,6 +139,13 @@ describe('buildDebugConfigSkeleton', () => {
     expect(skeleton).toContain('pathMappings');
   });
 
+  it('http 示例注释是字面 ${module} 占位(query+body 双带,不被模板插值吞掉)', () => {
+    const skeleton = buildDebugConfigSkeleton({ workspace, actions: [] });
+    expect(skeleton).toContain('http://127.0.0.1:8090/hotfix?module_name=${module}');
+    expect(skeleton).toContain('"body": "module_name=${module}"');
+    expect(skeleton).not.toContain('[object Object]');
+  });
+
   it('骨架剥注释后是合法 JSON 且带 version/debug/quickActions 三段', () => {
     const parsed = parseDebugConfigText(buildDebugConfigSkeleton({ workspace, actions: [] }));
     expect(parsed).not.toBeNull();
