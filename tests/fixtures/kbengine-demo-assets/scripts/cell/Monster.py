@@ -6,6 +6,7 @@ import KBEngine
 import monster_ai
 from Avatar import Avatar
 from KBEDebug import *
+from DemoConsts import DEMO_GOLD_PER_KILL, DEMO_XP_PER_KILL
 
 
 # def 侧 <Parent> Avatar 的脚本面镜像:引擎 checkDefMethod 要求父类 def 合并
@@ -64,6 +65,26 @@ class Monster(Avatar):
 		"""
 		self.aiMoving = False
 		self.aiTargetId = 0
+
+	def receiveDamage(self, damage, attackerId):
+		"""
+		KBEngine method.(覆写 Avatar.receiveDamage)
+		受击三段:onDamaged 反击仇恨 → 父类扣血/死亡锚 → 死亡时给击杀者结算
+		(金币进 Inventory 组件、经验走基座 cellAddExperience)后自毁。
+		"""
+		self.onDamaged(attackerId)
+		Avatar.receiveDamage(self, damage, attackerId)
+		if self.hp <= 0:
+			killer = KBEngine.entities.get(attackerId)
+			if killer is not None and hasattr(killer, "base"):
+				killer.bag.gold += DEMO_GOLD_PER_KILL
+				killer.base.cellAddExperience(DEMO_XP_PER_KILL)
+				msg = "Monster[%i] KILLED by Avatar[%i] reward gold+=%i exp+=%i" % (
+					self.id, attackerId, DEMO_GOLD_PER_KILL, DEMO_XP_PER_KILL,
+				)
+				print("[demo-evidence] %s" % msg, flush=True)
+				evidenceLog(msg)
+			self.destroy()
 
 	def think(self):
 		"""测试模型补充(组合根验收):跨类调用父实体 Avatar 的方法(<Parent> Avatar 链)。"""

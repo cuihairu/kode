@@ -8,9 +8,16 @@ from Spaces import spaceByIndex
 DEMO_SPACE_INDEX = 1
 
 
+# 迷你 ARPG 战斗常数:见 common/DemoConsts.py(base/cell 共用)
+from DemoConsts import DEMO_LEVEL_UP_STEP, DEMO_RESPAWN_DELAY
+
+TIMER_RESPAWN = 1
+
+
 class Avatar(KBEngine.Proxy):
 	def __init__(self):
 		KBEngine.Proxy.__init__(self)
+		self.lastAttackAt = 0.0
 		INFO_MSG("Avatar[%i] created, name=%s" % (self.id, self.name))
 		msg = "Avatar[%i] created, name=%s -> enterSpace(%i)" % (self.id, self.name, DEMO_SPACE_INDEX)
 		print("[demo-evidence] %s" % msg, flush=True)
@@ -28,6 +35,46 @@ class Avatar(KBEngine.Proxy):
 			ERROR_MSG("Avatar[%i].enterSpace: space(%i) not ready" % (self.id, spaceIndex))
 			return
 		self.createCellEntity(space.cell)
+
+	def onAvatarDead(self):
+		"""
+		KBEngine method.(Avatar.def BaseMethods,cell 侧死亡结算回调)
+		销 cell(destroyCellEntity 是基座面 API,cellapp 脚本无此方法) +
+		排重生计时:DEMO_RESPAWN_DELAY 后 enterSpace 回出生点满血回归
+		"""
+		if self.cell is not None:
+			self.destroyCellEntity()
+		msg = "Avatar[%i] base respawn scheduled in %.1fs" % (self.id, DEMO_RESPAWN_DELAY)
+		print("[demo-evidence] %s" % msg, flush=True)
+		evidenceLog(msg)
+		self.addTimer(DEMO_RESPAWN_DELAY, 0, TIMER_RESPAWN)
+
+	def onTimer(self, timerID, userArg):
+		"""
+		KBEngine method.(基座计时器:重生回调)
+		"""
+		if userArg != TIMER_RESPAWN:
+			return
+		msg = "Avatar[%i] RESPAWN -> enterSpace(%i) (fresh cell, full hp)" % (self.id, DEMO_SPACE_INDEX)
+		print("[demo-evidence] %s" % msg, flush=True)
+		evidenceLog(msg)
+		self.enterSpace(DEMO_SPACE_INDEX)
+
+	def cellAddExperience(self, xp):
+		"""
+		KBEngine method.(Avatar.def BaseMethods,cell 击杀结算回调)
+		经验累加与升级判定(基座持有 experience/level,cell 死亡销毁不丢);
+		跨过 DEMO_LEVEL_UP_STEP 整数倍即升 1 级并 onLevelUp 通知客户端。
+		"""
+		self.experience += xp
+		newLevel = self.experience // DEMO_LEVEL_UP_STEP + 1
+		if newLevel != self.level:
+			self.level = newLevel
+			msg = "Avatar[%i] LEVEL UP -> %i (experience=%i)" % (self.id, newLevel, self.experience)
+			print("[demo-evidence] %s" % msg, flush=True)
+			evidenceLog(msg)
+			if self.client is not None:
+				self.client.onLevelUp(newLevel)
 
 	def onGetCell(self):
 		"""

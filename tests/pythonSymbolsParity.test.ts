@@ -77,22 +77,23 @@ describe('rustSymbolsToIndexedMethodLocations', () => {
     const text = readFixture('Monster.py');
     const symbols = fileSymbols(path, [
       // 2026-11-07:DEMO-GAME-002 AI 状态机落地(决策/执行分离),方法面全量锁定
-      sym('__init__', 16, 1, 26, [['addTimer', 25, 2]]),
-      sym('onAggro', 27, 1, 33),
-      sym('onDamaged', 34, 1, 43),
-      sym('onMove', 44, 1, 53),
-      sym('onMoveOver', 54, 1, 59),
-      sym('onMoveFailure', 60, 1, 66),
-      sym('think', 67, 1, 70, [['respawn', 69, 2]]),
-      sym('_pickTarget', 71, 1, 94, [['entitiesInRange', 84, 11]]),
-      sym('_setState', 95, 1, 107),
-      sym('_moveToPoint', 108, 1, 111, [['moveToPoint', 110, 2]]),
-      sym('onTimer', 112, 1, 162, [
-        ['_pickTarget', 120, 11],
-        ['_setState', 135, 2],
-        ['_moveToPoint', 139, 4],
-        ['moveToEntity', 146, 4],
-        ['_moveToPoint', 160, 4]
+      sym('__init__', 17, 1, 27, [['addTimer', 26, 2]]),
+      sym('onAggro', 28, 1, 34),
+      sym('onDamaged', 35, 1, 44),
+      sym('onMove', 45, 1, 54),
+      sym('onMoveOver', 55, 1, 60),
+      sym('onMoveFailure', 61, 1, 67),
+      sym('receiveDamage', 68, 1, 87, [['onDamaged', 74, 2], ['destroy', 86, 3]]),
+      sym('think', 88, 1, 91, [['respawn', 90, 2]]),
+      sym('_pickTarget', 92, 1, 115, [['entitiesInRange', 105, 11]]),
+      sym('_setState', 116, 1, 128),
+      sym('_moveToPoint', 129, 1, 132, [['moveToPoint', 131, 2]]),
+      sym('onTimer', 133, 1, 183, [
+        ['_pickTarget', 141, 11],
+        ['_setState', 156, 2],
+        ['_moveToPoint', 160, 4],
+        ['moveToEntity', 167, 4],
+        ['_moveToPoint', 181, 4]
       ])
     ]);
     const rust = rustSymbolsToIndexedMethodLocations([{ path, text }], symbols);
@@ -105,13 +106,16 @@ describe('rustSymbolsToIndexedMethodLocations', () => {
     const symbols = fileSymbols(path, [
       // 2026-11-07:DEMO-GAME-002 receiveDamage 插入(cell/Avatar.py onEnterSpace 后),
       // onLeaveSpace 之后锚点 +18(锚点证据块见 docs/acceptance-evidence/DEMO-GAME-002.md)
-      sym('__init__', 6, 1, 8),
-      sym('respawn', 9, 1, 15),
-      sym('onEnterSpace', 16, 1, 25),
-      sym('receiveDamage', 26, 1, 43),
-      sym('onLeaveSpace', 44, 1, 50),
-      sym('onMove', 51, 1, 60),
-      sym('notifyMove', 61, 1, 64, [['onMove', 63, 2]])
+      sym('__init__', 10, 1, 16, [['addTimer', 15, 2]]),
+      sym('onTimer', 17, 1, 34, [['entitiesInRange', 24, 11], ['_attack', 33, 3]]),
+      sym('_attack', 35, 1, 47),
+      sym('reqAttack', 48, 1, 63, [['_attack', 62, 2]]),
+      sym('respawn', 64, 1, 70),
+      sym('onEnterSpace', 71, 1, 80),
+      sym('receiveDamage', 81, 1, 108),
+      sym('onLeaveSpace', 109, 1, 115),
+      sym('onMove', 116, 1, 125),
+      sym('notifyMove', 126, 1, 129, [['onMove', 128, 2]])
     ]);
     const rust = rustSymbolsToIndexedMethodLocations([{ path, text }], symbols);
     expect(normalized(rust)).toEqual(normalized(parsePythonMethodBlocks(text, path)));

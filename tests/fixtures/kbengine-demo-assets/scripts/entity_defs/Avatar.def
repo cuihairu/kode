@@ -21,6 +21,12 @@
 			<Flags> ALL_CLIENTS </Flags>
 			<Default> 100 </Default>
 		</hp>
+		<experience>
+			<!-- 基座持有(BASE_AND_CLIENT):cell 死亡销毁后经验不丢,重生满血回归 -->
+			<Type> UINT32 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 0 </Default>
+		</experience>
 		<!-- 引擎保留字:cell 实体自带 position/direction(引擎建列),def 里再声明
 		     position 即 EntityDef::loadDefPropertys "position is limited" 拒载——
 		     真引擎起服验证发现后移除(DEMO-GAME-001)。 -->
@@ -66,6 +72,9 @@
 		<onHPChanged>
 			<Arg> UINT32 </Arg>
 		</onHPChanged>
+		<onLevelUp>
+			<Arg> UINT32 </Arg>
+		</onLevelUp>
 	</ClientMethods>
 
 	<BaseMethods>
@@ -73,6 +82,11 @@
 			<Exposed> true </Exposed>
 			<Arg> UINT32 </Arg>
 		</reqCastSkill>
+		<cellAddExperience>
+			<Arg> UINT32 </Arg>
+		</cellAddExperience>
+		<onAvatarDead>
+		</onAvatarDead>
 	</BaseMethods>
 
 	<CellMethods>
@@ -82,6 +96,10 @@
 			<Arg> UINT32 </Arg>
 			<Arg> UINT32 </Arg>
 		</receiveDamage>
+		<reqAttack>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+		</reqAttack>
 	</CellMethods>
 
 </root>

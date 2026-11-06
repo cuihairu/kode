@@ -38,7 +38,7 @@ WANDER_RADIUS = 8.0      # 巢点周围游走半径
 MOVE_VELOCITY = 3.0       # 游走/回巢速度
 CHASE_VELOCITY = 5.0      # 追击速度
 ATTACK_PERIOD = 2.0       # 近身攻击冷却(秒)
-DEMO_DAMAGE = 10          # 单次近身伤害(Avatar.hp UINT32)
+DEMO_DAMAGE = 25          # 单次近身伤害(Avatar hp 100 → 4 击倒地,死亡重生可见)
 
 ACTIONS = ("idle", "wander", "chase", "attack", "return", "hold")
 
