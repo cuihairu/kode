@@ -124,7 +124,7 @@
 |---|---|---|
 | A 引擎确定关系 | 主表→ARRAY 子表(`ETM.cpp:1218-1289`)、主表→组件子表(`ETM.cpp:1507-1560`)、`parentID` 逻辑关联(无 FK,引擎写读删维护) | 自动发现与复制 |
 | B 真实数据库约束 | 引擎 DDL **无任何 FOREIGN KEY/REFERENCES**(db_mysql 全目录零命中;`ETM.cpp:380` 仅 `INDEX(parentID)`)——B 类在引擎生成数据中**为空**,除非工程手工加过 FK | 无需处理(默认空) |
-| C 显式业务关系 | 属性值存实体 ID(如 `Account.characters` ARRAY<INT64> 存 Avatar dbid、`guildDBID` INT64)——引擎当纯数据处理,不可自动识别 | 用户声明规则才跟随/重写 |
+| C 显式业务关系 | 属性值存实体 ID(如 `Account.characters` `ARRAY<INT64>` 存 Avatar dbid、`guildDBID` INT64)——引擎当纯数据处理,不可自动识别 | 用户声明规则才跟随/重写 |
 | D 不明结构 | PYTHON/PY_DICT/PY_TUPLE/PY_LIST/BLOB 列(pickle 字节内可能嵌实体 ID,不可内省) | 默认不改、标风险,必要时插件 codec |
 | E 外部资源 | `kbe_` 内部表:`kbe_accountinfos`(`kbe_table_mysql.cpp:584-595`)、`kbe_entitylog`(`:41-50`)、`kbe_serverlog`(`:304-309`)、`kbe_email_verification`(`:1302-1308`) | 默认排除,提供缺失报告 |
 

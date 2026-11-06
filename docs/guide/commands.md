@@ -670,7 +670,7 @@ The flow graph panel supports:
 ### `kbengine.playerData.queryByDbid`
 
 - Title: `Query Player by DBID (Read-Only)`
-- Purpose: run a single read-only `SELECT * FROM \`tbl_Account\` WHERE \`id\` = <dbid>` (table prefix from `kbengine.db.tablePrefix`, default `tbl_`) and print the rows to the "KBEngine 玩家数据(只读)" output channel
+- Purpose: run a single read-only ``SELECT * FROM `tbl_Account` WHERE `id` = <dbid>`` (table prefix from `kbengine.db.tablePrefix`, default `tbl_`) and print the rows to the "KBEngine 玩家数据(只读)" output channel
 - Input validation: the dbid must be a decimal positive integer; anything else is rejected before any connection is made
 - Read-only constraint: results are displayed only; no editing, no export side effects (export/import live in the dedicated Player Data Clone lane)
 
