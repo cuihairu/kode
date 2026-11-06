@@ -282,21 +282,25 @@
           "name": "%kbengine.view.quickActions%"
         },
         {
-          "id": "kbengine.entityExplorer",
-          "name": "%kbengine.view.entityExplorer%"
-        },
-        {
           "id": "kbengine.serverControl",
           "name": "%kbengine.view.serverControl%"
-        },
-        {
-          "id": "kbengine.debugTargets",
-          "name": "%kbengine.view.debugTargets%"
         },
         {
           "id": "kbengine.telnetStatus",
           "name": "%kbengine.view.telnetStatus%",
           "when": "kbengine.telnetConfigured"
+        },
+        {
+          "id": "kbengine.remoteServers",
+          "name": "%kbengine.view.remoteServers%"
+        },
+        {
+          "id": "kbengine.entityExplorer",
+          "name": "%kbengine.view.entityExplorer%"
+        },
+        {
+          "id": "kbengine.debugTargets",
+          "name": "%kbengine.view.debugTargets%"
         },
         {
           "id": "kbengine.config",
@@ -311,10 +315,6 @@
           "id": "kbengine.gitRangeHistory",
           "name": "%kbengine.view.gitRangeHistory%",
           "when": "kode.gitHistoryEnabled"
-        },
-        {
-          "id": "kbengine.remoteServers",
-          "name": "%kbengine.view.remoteServers%"
         }
       ]
     },
@@ -1350,17 +1350,21 @@
           "description": "启动服务器时自动连接日志收集器"
         },
         "kbengine.webviewLocale": {
-  "type": "string",
-  "enum": ["auto", "zh", "en"],
-  "enumDescriptions": [
-   "跟随 VS Code 显示语言(zh-cn/zh-tw → 中文,其余 → 英文)",
-   "中文",
-   "English"
-  ],
-  "default": "auto",
-  "description": "Webview 面板显示语言"
- },
- "kbengine.webviewConsoleLogs": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "zh",
+            "en"
+          ],
+          "enumDescriptions": [
+            "跟随 VS Code 显示语言(zh-cn/zh-tw → 中文,其余 → 英文)",
+            "中文",
+            "English"
+          ],
+          "default": "auto",
+          "description": "Webview 面板显示语言"
+        },
+        "kbengine.webviewConsoleLogs": {
           "type": "boolean",
           "default": true,
           "description": "采集日志面板页面 console 与未捕获异常并写入日志面板"
