@@ -42,7 +42,10 @@ const GOLDEN = {
   // (性能优化不得漂移分词行为)不变,后续优化仍受本摘要约束
   tokenDigest: 'c4ba7ccb',
   diagnosticCount: 400,
-  diagnosticDigest: '910801f9',
+  // KR-AUD-84(00fdd82)flags 查表切引擎全串表 → 400 条诊断的个别文案/区间
+  // 摘要变化,digest 重录 910801f9 → 8e243bf9(条数/finding 面不变;与该提交
+  // 的行为变更同源,锁意图「此后不漂移」不变)
+  diagnosticDigest: '8e243bf9',
   findingCount: 620,
   findingDigest: '827fa39f',
   reportDigest: '77945013',
