@@ -1224,8 +1224,8 @@
         },
         "kbengine.binPath": {
           "type": "string",
-          "default": "${workspaceFolder}/../kbe/bin/server",
-          "description": "KBEngine 二进制文件路径，支持 ${workspaceFolder} 和 ${env:VAR}"
+          "default": "${workspaceFolder}/kbe/bin/server",
+          "description": "KBEngine 二进制文件路径，支持 ${workspaceFolder} 和 ${env:VAR}。未显式配置时默认值在盘即生效；不在盘回落自动发现扫描；扫描也落空才在启动检查链报警（CFG-01）"
         },
         "kbengine.assetsRoot": {
           "type": "string",

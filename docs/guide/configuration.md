@@ -159,7 +159,7 @@ The four CodeLens switches take effect on change, no window reload needed; inlay
 | --- | --- | --- | --- |
 | `kbengine.entityDefsPath` | string | `scripts/entity_defs` | Entity definitions directory (entity explorer list, `entities.xml` navigation, generator `.def` output) |
 | `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` path (dependency graph reads and entity registration) |
-| `kbengine.binPath` | string | `${workspaceFolder}/../kbe/bin/server` | Engine binaries directory; also derives the engine root (`KBE_ROOT`) and the engine default config path |
+| `kbengine.binPath` | string | `${workspaceFolder}/kbe/bin/server` | Engine binaries directory; also derives the engine root (`KBE_ROOT`) and the engine default config path. Unset (CFG-01): the default takes effect when present on disk, otherwise the auto-discovery scan runs, and only a full miss warns through the launch check chain |
 | `kbengine.assetsRoot` | string | `""` | Assets root (containing `res/`, `scripts/` below); empty = auto-discover |
 | `kbengine.engineVersion` | string | `3.7.3` | Integrated KBEngine engine version (fork builds use custom values like `fork-3.12`); knowledge-base layering and diagnostics gate features by this value; a `fork`-prefixed value also suppresses the 需 fork annotation on fork-tier KBEngine API reference entries in completion and exported stubs, while a custom fork version without the prefix keeps the annotation (conservative — annotate rather than under-report); at project open the value is suggested from the engine install's version marker when it differs (a one-click offer, never auto-applied; ignoring is remembered per workspace) |
 | `kbengine.gitHistory.enabled` | boolean | `true` | File Git history feature gate (IDE-GIT-001): on = the 「查看文件历史 / 查看选中范围历史」 entries appear (explorer/editor context menus + command palette) and Git is queried only when the user opens one (never at activation/file-open/cursor/selection, no prefetch, no polling); off = entries hidden and direct command invocations run nothing Git |
@@ -181,10 +181,10 @@ The four path settings are "optional overrides": a configured value is honored a
 
 #### `kbengine.binPath`
 
-- Type: string; default `${workspaceFolder}/../kbe/bin/server`
+- Type: string; default `${workspaceFolder}/kbe/bin/server` (CFG-01: the default assumes the engine lives inside the workspace; the previous `${workspaceFolder}/../kbe/bin/server` remains covered by the sibling-directory scan)
 - Placeholders supported: `${workspaceFolder}`, `${env:VAR}`
 - Used for: ① starting/stopping component processes; ② deriving the engine root (`KBE_ROOT`) and the engine default config path — replacing the trailing `kbe/bin/server` with `kbe/res/server/kbengine_defaults.xml`
-- Since batch 125, when unset it first derives `kbe/bin/server` via engine source-root anchors (`kbe/src/lib/entitydef/entitydef.cpp`, `entity_table_mysql.cpp`, etc.), then falls back to sibling-directory guessing
+- Three-branch resolution (CFG-01): a user-configured value is authoritative (a nonexistent explicit value is kept as-is so the launch check chain reports it); when unset, the default is used if present on disk, otherwise the auto-discovery scan runs (engine source-root anchors → sibling directories → `KBENGINE_HOME`), and only when the scan also misses does `getBinPath` return empty and the launch check chain warn 「engine not found」
 - Misconfiguration: not pointing at the `kbe/bin/server` level → server start fails, and the final config view and defaults value fallback become unavailable; `kbengine.config.showFinal` then errors plainly, and the activation auto-open silently skips
 
 #### `kbengine.assetsRoot`
@@ -581,7 +581,7 @@ Sub-paths inferable from existing files never become settings: the def root deri
 | --- | --- | --- | --- |
 | `kbengine.entityDefsPath` | Explicit config → 4 conventional layouts → unique deep-scan hit → multi-candidate quick pick with memory | **Yes** (conventional layouts + deep scan) | **Auto-discover**; config serves only as override |
 | `kbengine.entitiesXmlPath` | Same chain; additionally prefers the def root's parent directory | **Yes** | **Auto-discover**; config serves only as override |
-| `kbengine.binPath` | Explicit config → engine source-root anchor derives `kbe/bin/server` → sibling-directory/environment-variable guessing | **Yes** (source-root anchors `entitydef.cpp`/`entity_table_mysql.cpp`) | **Auto-discover**; config serves only as override |
+| `kbengine.binPath` | Explicit config (authoritative; nonexistent explicit values kept for the launch check chain to report) → default `${workspaceFolder}/kbe/bin/server` when it exists on disk (CFG-01) → engine source-root anchor derives `kbe/bin/server` → sibling-directory/environment-variable guessing; a full miss returns empty and the launch check chain warns | **Yes** (source-root anchors `entitydef.cpp`/`entity_table_mysql.cpp`) | **Auto-discover**; config serves only as override |
 | `kbengine.generator.defOutputPath` | The default value itself uses the discovered def root (`resolveDefOutputPath`) | **Yes** (reuses def-root discovery) | **Auto-discover**; config serves only as override |
 | `kbengine.generator.pythonOutputPath` | When the default `scripts` applies, derived from the discovered def root's parent; derived outside the workspace or empty segments keep the default | **Yes** (def root's parent) | **Auto-discover**; config serves only as override |
 | `kbengine.assetsRoot` | Explicit config (default empty = auto-discover); since batch 128, when the original value fails the `res/server/kbengine.xml` probe it auto-discovers: convention chain (workspace root, `assets/`, `server_assets/`, and since batch 129 first-level `*_assets` directories like `flyff_assets`) → remembered choice → unique deep-scan hit; multi-candidate asks during activation | **Yes** (validated by the engine-loading probe, done in batch 128) | **Auto-discover**; config serves only as override; the probe's criterion = the engine's real loading location, eliminating the risk of a wrong guess failing to start |
