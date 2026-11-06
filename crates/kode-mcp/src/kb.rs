@@ -527,30 +527,36 @@ fn hex(bytes: &[u8]) -> String {
 
 /// 朴素 JSON → 线值:按布局选 WireValue 变体;带标签对象(`{"U16": 7}`)直取。
 fn wire_from_json(layout: &WireLayout, value: &Value) -> Result<WireValue, String> {
-    // 带标签形式优先(与 WireValue 的 serde 形状一致)。
-    if let Some(map) = value.as_object() {
-        if map.len() == 1 {
-            let (tag, inner) = map.iter().next().unwrap();
-            let from_inner: Result<WireValue, String> = match tag.as_str() {
-                "U8" => inner.as_u64().map(|v| WireValue::U8(v as u8)),
-                "U16" => inner.as_u64().map(|v| WireValue::U16(v as u16)),
-                "U32" => inner.as_u64().map(|v| WireValue::U32(v as u32)),
-                "U64" => inner.as_u64().map(WireValue::U64),
-                "I8" => inner.as_i64().map(|v| WireValue::I8(v as i8)),
-                "I16" => inner.as_i64().map(|v| WireValue::I16(v as i16)),
-                "I32" => inner.as_i64().map(|v| WireValue::I32(v as i32)),
-                "I64" => inner.as_i64().map(WireValue::I64),
-                "F32" => inner.as_f64().map(|v| WireValue::F32(v as f32)),
-                "F64" => inner.as_f64().map(WireValue::F64),
-                "Bool" => inner.as_bool().map(WireValue::Bool),
-                "Str" => inner.as_str().map(|s| WireValue::Str(s.to_string())),
-                _ => None,
+    // 带标签形式只在**标量**布局下优先(与 WireValue 的 serde 形状一致);
+    // 复合布局(容器/结构)的单键对象是普通字典/结构,不得当带标签值——
+    // 否则单字段 FIXED_DICT `{"hp":100}` 被误判为 `tagged value hp ...`,
+    // 且字段名恰为 tag 名(如字段 `Str`)也被误认(审核发现)。
+    let is_scalar_layout = !matches!(layout, WireLayout::FixedDict(_) | WireLayout::Array(_));
+    if is_scalar_layout {
+        if let Some(map) = value.as_object() {
+            if map.len() == 1 {
+                let (tag, inner) = map.iter().next().unwrap();
+                let from_inner: Result<WireValue, String> = match tag.as_str() {
+                    "U8" => inner.as_u64().map(|v| WireValue::U8(v as u8)),
+                    "U16" => inner.as_u64().map(|v| WireValue::U16(v as u16)),
+                    "U32" => inner.as_u64().map(|v| WireValue::U32(v as u32)),
+                    "U64" => inner.as_u64().map(WireValue::U64),
+                    "I8" => inner.as_i64().map(|v| WireValue::I8(v as i8)),
+                    "I16" => inner.as_i64().map(|v| WireValue::I16(v as i16)),
+                    "I32" => inner.as_i64().map(|v| WireValue::I32(v as i32)),
+                    "I64" => inner.as_i64().map(WireValue::I64),
+                    "F32" => inner.as_f64().map(|v| WireValue::F32(v as f32)),
+                    "F64" => inner.as_f64().map(WireValue::F64),
+                    "Bool" => inner.as_bool().map(WireValue::Bool),
+                    "Str" => inner.as_str().map(|s| WireValue::Str(s.to_string())),
+                    _ => None,
+                }
+                .ok_or_else(|| format!("tagged value {tag} payload type mismatch"));
+                if from_inner.is_ok() || !inner.is_object() {
+                    return from_inner;
+                }
+                return serde_json::from_value(value.clone()).map_err(|e| format!("value: {e}"));
             }
-            .ok_or_else(|| format!("tagged value {tag} payload type mismatch"));
-            if from_inner.is_ok() || !inner.is_object() {
-                return from_inner;
-            }
-            return serde_json::from_value(value.clone()).map_err(|e| format!("value: {e}"));
         }
     }
     match layout {
@@ -685,5 +691,44 @@ fn collect_defs(dir: &Path, prefix: &str, kb: &mut AssetKnowledge) {
                 Err(error) => kb.load_errors.push(format!("{rel}: {error}")),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kode_server::wire_codec::WireField;
+
+    #[test]
+    fn single_key_object_is_plain_fixed_dict_not_tagged() {
+        // 单字段 FIXED_DICT `{"hp":100}`:键 hp 非已知 tag → 必须是普通结构,
+        // 不得被误判为带标签值(审核发现旧码返回 tagged value hp ... 错误)。
+        let layout = WireLayout::FixedDict(vec![WireField {
+            name: "hp".into(),
+            layout: WireLayout::U32,
+        }]);
+        let value = serde_json::json!({"hp": 100});
+        let wire = wire_from_json(&layout, &value).unwrap();
+        assert_eq!(wire, WireValue::FixedDict(vec![WireValue::U32(100)]));
+    }
+
+    #[test]
+    fn dict_field_named_like_tag_is_not_mistaken_for_tagged() {
+        // 字段名恰为 tag 名(如 `Str`):单字段 FIXED_DICT `{"Str":"x"}` 按布局
+        // 解码为 Str 字段值,而非把整个对象当带标签 Str 值。
+        let layout = WireLayout::FixedDict(vec![WireField {
+            name: "Str".into(),
+            layout: WireLayout::Str,
+        }]);
+        let value = serde_json::json!({"Str": "x"});
+        let wire = wire_from_json(&layout, &value).unwrap();
+        assert_eq!(wire, WireValue::FixedDict(vec![WireValue::Str("x".into())]));
+    }
+
+    #[test]
+    fn scalar_layout_still_accepts_tagged_form() {
+        // 标量布局的带标签形式不受影响(往返无损入口)。
+        let wire = wire_from_json(&WireLayout::U16, &serde_json::json!({"U16": 7})).unwrap();
+        assert_eq!(wire, WireValue::U16(7));
     }
 }
