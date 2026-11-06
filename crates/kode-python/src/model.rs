@@ -49,12 +49,13 @@ pub struct ScopeImportBindings {
     pub start_line: usize,
     /// 函数结束行(体末行)。
     pub end_line: usize,
-    /// 该函数子树内(含嵌套 def/分支体)import 的绑定名,排序去重。
-    pub bindings: std::collections::BTreeSet<String>,
-    /// 该函数直接作用域内被本地绑定的名(参数+Store 赋值目标,排序去重)
-    /// ——同作用域内 import 显式绑定优先于遮蔽(重绑定),遮蔽用于阻断
-    /// 向外层的回退(复审第五/六轮残余)。
-    pub shadows: std::collections::BTreeSet<String>,
+    /// 该函数子树内(含嵌套 def/分支体)import 的绑定名 → 最近一次 import
+    /// 绑定行(0-based)。
+    pub bindings: std::collections::BTreeMap<String, usize>,
+    /// 该函数直接作用域内被本地绑定的名(参数+Store 赋值目标) → 最近一次
+    /// 本地绑定行。解析时与 bindings 按行序比较(后者生效),调用点行号
+    /// 参与判定(复审第七轮残余:同作用域重绑定/遮蔽须按位置裁决)。
+    pub shadows: std::collections::BTreeMap<String, usize>,
 }
 
 /// 类声明(AST 级)。

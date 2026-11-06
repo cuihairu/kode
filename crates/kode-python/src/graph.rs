@@ -138,11 +138,13 @@ fn resolve_callee_file(
     // KODE-AUD-008 复审残余:接收者首段也可能是实例变量(`avatar.heal()`,
     // avatar 是局部对象而非模块)——不经 import 绑定核验就按 basename 找
     // 文件,会把唯一同名文件误指为被调方(伪跨文件边)。绑定核验按调用点
-    // 可见作用域(裸名解析链,Python 语义):函数作用域层从内层向外走查,
-    // 同层 import 绑定优先于遮蔽(import 显式重绑定),遇遮蔽即止;函数链
-    // 未决才回退模块顶层 imports(最外层,不能短路内层遮蔽——复审第六轮
-    // 残余)。类体/推导式层不参与裸名链(独立隐式作用域)。未绑定 → 宁缺
-    // 毋滥不产边。
+    // 可见作用域(裸名解析链,Python 语义):Function/Comprehension 层从
+    // 内层向外走查,层内按行序裁决——调用点行号 >= 最近 import 行(且晚于
+    // 最近本地绑定行)→ 模块绑定;调用点 >= 最近本地绑定行(且晚于最近
+    // import)→ 本地对象,不产边;本层未决继续向外。类体层不参与裸名链。
+    // 函数链未决才回退模块顶层 imports(最外层)。全链未决 → 宁缺毋滥
+    // 不产边。已知粒度限制:同一行内 lambda 参数遮蔽与外层调用无法区分
+    // (行粒度,保守漏边向)。
     if let Some(module) = receiver.split('.').next() {
         let imported = file_symbols
             .get(caller_file)
@@ -151,23 +153,41 @@ fn resolve_callee_file(
                     .function_import_bindings
                     .iter()
                     .filter(|sc| {
-                        sc.kind == crate::model::ScopeKind::Function
+                        sc.kind != crate::model::ScopeKind::Class
                             && sc.start_line <= edge.caller_line
                             && edge.caller_line <= sc.end_line
                     })
                     .collect();
-                // 内层(起始行更大)先看;同层 import 绑定优先于遮蔽,遇
-                // 遮蔽即止(外层不再看)。
+                // 内层(起始行更大)先看;层内按行序裁决,未决继续向外。
                 in_scope.sort_by_key(|sc| std::cmp::Reverse(sc.start_line));
                 for sc in in_scope {
-                    if sc.bindings.contains(module) {
-                        return true;
-                    }
-                    if sc.shadows.contains(module) {
-                        return false;
+                    let import_line = sc.bindings.get(module);
+                    let local_line = sc.shadows.get(module);
+                    match (import_line, local_line) {
+                        // 两类绑定都在:最近一次生效(同行保守按本地遮蔽)。
+                        (Some(&i), Some(&l)) => {
+                            if l >= i {
+                                if edge.caller_line >= l {
+                                    return false;
+                                }
+                            } else if edge.caller_line >= i {
+                                return true;
+                            }
+                        }
+                        (Some(&i), None) => {
+                            if edge.caller_line >= i {
+                                return true;
+                            }
+                        }
+                        (None, Some(&l)) => {
+                            if edge.caller_line >= l {
+                                return false;
+                            }
+                        }
+                        (None, None) => {}
                     }
                 }
-                // 函数链未决 → 模块顶层 import(最外层回退)。
+                // 函数/推导式链未决 → 模块顶层 import(最外层回退)。
                 s.imports.iter().any(|i| i.binding == module)
             })
             .unwrap_or(false);

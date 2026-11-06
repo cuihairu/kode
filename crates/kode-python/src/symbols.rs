@@ -136,17 +136,17 @@ impl<'a> ImportBindingCollector<'a> {
         }
     }
 
-    fn push_binding(&mut self, binding: String) {
-        // 记到最内层函数区间;外层区间覆盖嵌套体,调用点行号包含判定
-        // 即可实现闭包可见语义,无需重复记到外层。
+    fn push_binding(&mut self, binding: &str, line: usize) {
+        // 记到最内层作用域层,保留最近一次绑定行(同作用域重绑定取后者;
+        // 外层区间覆盖嵌套体,调用点行号包含判定实现闭包可见语义)。
         if let Some(top) = self.scope_stack.last_mut() {
-            top.bindings.insert(binding);
+            top.bindings.insert(binding.to_string(), line);
         }
     }
 
-    fn push_shadow(&mut self, name: &str) {
+    fn push_shadow(&mut self, name: &str, line: usize) {
         if let Some(top) = self.scope_stack.last_mut() {
-            top.shadows.insert(name.to_string());
+            top.shadows.insert(name.to_string(), line);
         }
     }
 
@@ -157,13 +157,16 @@ impl<'a> ImportBindingCollector<'a> {
             .chain(parameters.args.iter())
             .chain(parameters.kwonlyargs.iter())
         {
-            self.push_shadow(pwd.parameter.name.as_str());
+            let line = self.ast.line_col(pwd.parameter.range.start().to_u32()).0;
+            self.push_shadow(pwd.parameter.name.as_str(), line);
         }
         if let Some(p) = &parameters.vararg {
-            self.push_shadow(p.name.as_str());
+            let line = self.ast.line_col(p.range.start().to_u32()).0;
+            self.push_shadow(p.name.as_str(), line);
         }
         if let Some(p) = &parameters.kwarg {
-            self.push_shadow(p.name.as_str());
+            let line = self.ast.line_col(p.range.start().to_u32()).0;
+            self.push_shadow(p.name.as_str(), line);
         }
     }
 }
@@ -191,16 +194,18 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
                 return;
             }
             Stmt::Import(imp) => {
+                let line = self.ast.line_col(imp.range.start().to_u32()).0;
                 for alias in &imp.names {
                     let binding = alias
                         .asname
                         .as_ref()
                         .map(|n| n.as_str().to_string())
                         .unwrap_or_else(|| top_level_binding(alias.name.as_str()));
-                    self.push_binding(binding);
+                    self.push_binding(&binding, line);
                 }
             }
             Stmt::ImportFrom(impf) => {
+                let line = self.ast.line_col(impf.range.start().to_u32()).0;
                 for alias in &impf.names {
                     // `from pkg import x` 的绑定名就是 `x`(无 asname 时)。
                     let binding = alias
@@ -208,7 +213,7 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
                         .as_ref()
                         .map(|n| n.as_str().to_string())
                         .unwrap_or_else(|| alias.name.as_str().to_string());
-                    self.push_binding(binding);
+                    self.push_binding(&binding, line);
                 }
             }
             _ => {}
@@ -220,10 +225,12 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
         // 推导式与 lambda 是独立隐式作用域:目标 Store 名进自身层,不污染
         // 外层函数 shadows(复审第六轮残余②)。
         match expr {
-            Expr::ListComp(e) => self.enter_comp_scope(e.range, expr),
-            Expr::SetComp(e) => self.enter_comp_scope(e.range, expr),
-            Expr::DictComp(e) => self.enter_comp_scope(e.range, expr),
-            Expr::Generator(e) => self.enter_comp_scope(e.range, expr),
+            // 推导式:enter_comp_scope 内部完成整棵子树的走查并退出该层,
+            // 直接 return,防外层 walk_expr 二次走查把目标漏进外层 shadows。
+            Expr::ListComp(e) => return self.enter_comp_scope(e.range, expr),
+            Expr::SetComp(e) => return self.enter_comp_scope(e.range, expr),
+            Expr::DictComp(e) => return self.enter_comp_scope(e.range, expr),
+            Expr::Generator(e) => return self.enter_comp_scope(e.range, expr),
             Expr::Lambda(e) => {
                 let start = self.ast.line_col(e.range.start().to_u32()).0;
                 let end = self.ast.line_col(e.range.end().to_u32()).0;
@@ -236,8 +243,12 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
                 return;
             }
             // Store 上下文的 Name = 本地绑定(赋值/增强赋值/walrus/for/with/
-            // 推导式目标)——计入当前层遮蔽集。
-            Expr::Name(n) if n.ctx.is_store() => self.push_shadow(n.id.as_str()),
+            // 推导式目标)——计入当前层遮蔽集(带行号,供与 import 绑定按
+            // 位置裁决)。
+            Expr::Name(n) if n.ctx.is_store() => {
+                let line = self.ast.line_col(n.range.start().to_u32()).0;
+                self.push_shadow(n.id.as_str(), line);
+            }
             _ => {}
         }
         ast::visitor::walk_expr(self, expr);

@@ -366,6 +366,52 @@ fn comprehension_target_does_not_shadow_function_import() {
 }
 
 #[test]
+fn comprehension_target_shadow_blocks_module_vouch() {
+    // 复审第七轮残余②:推导式目标遮蔽其自身的接收者——模块 import 不为
+    // 推导式元素内的迭代变量接收者作保(伪边向)。
+    let zcaller = "import avatar\nrows = [avatar.heal() for avatar in items]\n";
+    let afoo = "def heal():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/avatar.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, afoo)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "推导式目标遮蔽应阻断模块 import 保放迭代变量接收者, got {rev:?}"
+    );
+}
+
+#[test]
+fn rebind_after_import_blocks_vouch() {
+    // 复审第七轮残余③:同作用域 import 后又被本地赋值重绑定——调用点
+    // 接收者是本地对象,模块 import 不作保(伪边向)。
+    let zcaller = "def f():\n    import avatar\n    avatar = obj\n    avatar.heal()\n";
+    let afoo = "def heal():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/avatar.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, afoo)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "import 后的本地重绑定应阻断模块保放, got {rev:?}"
+    );
+}
+
+#[test]
 fn rust7_cross_process_edge_marked_uncertain_not_silent() {
     // RUST-7:`self.cell.*`/`self.base.*` 跨进程边被调方文件无法静态解析
     // (实体类在另一进程侧文件里)。旧行为:落进 self.* 分支按「同类」折叠
