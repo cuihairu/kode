@@ -124,6 +124,8 @@
     "onCommand:kbengine.quickActions.runDefault",
     "onCommand:kbengine.quickActions.runByName",
     "onCommand:kbengine.python.syncExtraPaths",
+    "onCommand:kbengine.python.ruffLint",
+    "onCommand:kbengine.python.installRuff",
     "onCommand:kbengine.jsoncAssociation.off",
     "onCommand:kbengine.python.debugpySync",
     "onCommand:kbengine.debug.waitAtStartup.on",
@@ -637,6 +639,16 @@
         "command": "kbengine.python.createVenv",
         "title": "Create Virtual Environment (venv)",
         "icon": "$(add)"
+      },
+      {
+        "command": "kbengine.python.ruffLint",
+        "title": "Ruff Lint Python Files (py37)",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "kbengine.python.installRuff",
+        "title": "Install Ruff via pip (Selected Interpreter)",
+        "icon": "$(cloud-download)"
       },
       {
         "command": "kbengine.generator.templates",

@@ -1,4 +1,5 @@
 import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace, setActiveProfileScanRoot } from './scanRoots';
+import { execFile } from 'child_process';
 import {
   CONFIG_CONTRACT_DIAGNOSTICS_ENABLED_DEFAULT,
   computeConfigContractFindings
@@ -183,6 +184,12 @@ import {
   resolveInterpreterWith,
   resolveProfileInterpreter
 } from './profileInterpreter';
+import {
+  RUFF_MAX_FILES,
+  runInstallRuffCommand,
+  runRuffLintCommand,
+  type RuffDiag
+} from './ruffLint';
 import { scanVenvs, verifyVenvDirectory } from './venvDiscovery';
 import {
   createVenvFlow,
@@ -6839,6 +6846,69 @@ export function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(selectInterpreterCommand, createVenvCommand, interpreterConfigListener);
   void refreshInterpreterStatusBar();
+
+  // .py lint via ruff(IDE-RUST-005,A 案 shell out):Rust 侧 `$/kode/ruff/lint`
+  // 恒 --target-version py37 + --no-cache(不写工作区);缺 ruff 如实
+  // available:false → 这里同意式 pip 安装(选定解释器),失败亮手动命令
+  // (用户令 2026-11-06),绝不静默装。
+  const ruffChannel = vscode.window.createOutputChannel('KBEngine Ruff');
+  const ruffDiagnostics = vscode.languages.createDiagnosticCollection('kode-ruff');
+  context.subscriptions.push(ruffChannel, ruffDiagnostics);
+  const ruffLintDeps = {
+    getWorkspacePythonFiles: async () =>
+      (
+        await vscode.workspace.findFiles('**/*.py', '**/node_modules/**', RUFF_MAX_FILES + 1)
+      ).map(uri => uri.fsPath),
+    getInterpreterPath: () => {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      return resolveProfileInterpreter(root).interpreterPath || null;
+    },
+    runPipInstall: (interpreterPath: string) =>
+      new Promise<{ ok: boolean; output: string }>(resolve => {
+        execFile(interpreterPath, ['-m', 'pip', 'install', 'ruff'], (error, stdout, stderr) => {
+          resolve({ ok: !error, output: `${stdout ?? ''}\n${stderr ?? ''}`.trim() });
+        });
+      }),
+    showInformationMessage: (message: string, ...items: string[]) =>
+      vscode.window.showInformationMessage(message, ...items),
+    showErrorMessage: async (message: string) => {
+      await vscode.window.showErrorMessage(message);
+    },
+    setDiagnostics: (entries: Array<{ file: string; diags: RuffDiag[] }>) => {
+      ruffDiagnostics.clear();
+      for (const { file, diags } of entries) {
+        ruffDiagnostics.set(
+          vscode.Uri.file(file),
+          diags.map(
+            d =>
+              new vscode.Diagnostic(
+                new vscode.Range(d.line - 1, d.col - 1, d.endLine - 1, d.endCol - 1),
+                `${d.code ? `${d.code}: ` : ''}${d.message}`,
+                d.severity === 'error'
+                  ? vscode.DiagnosticSeverity.Error
+                  : vscode.DiagnosticSeverity.Warning
+              )
+          )
+        );
+      }
+    },
+    channel: ruffChannel
+  };
+  const ruffLintCommand = vscode.commands.registerCommand('kbengine.python.ruffLint', async () => {
+    const summary = await runRuffLintCommand(ruffLintDeps);
+    ruffChannel.appendLine(`[ruff] ${summary}`);
+    ruffChannel.show(true);
+    await vscode.window.showInformationMessage(summary);
+  });
+  const installRuffCommand = vscode.commands.registerCommand(
+    'kbengine.python.installRuff',
+    async () => {
+      const summary = await runInstallRuffCommand(ruffLintDeps);
+      ruffChannel.appendLine(`[ruff] ${summary}`);
+      await vscode.window.showInformationMessage(summary);
+    }
+  );
+  context.subscriptions.push(ruffLintCommand, installRuffCommand);
 
   // 激活期发现完成后自动落一份报告;有问题时提示用户到输出面板看/复制回传
   const discoveryRoot = primaryWorkspaceRoot;
