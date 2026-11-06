@@ -431,4 +431,4 @@ If this project helps you, consider giving it a star.
 
 ---
 
-Latest release v0.1.3, published to the Marketplace as `cuihairu.kode-kbengine`. 95 commands and 92 configuration settings are in place; the feature catalog in [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) is a 0.1.x snapshot, and [TESTING.md](./TESTING.md) carries the testing record.
+Latest release v0.1.3, published to the Marketplace as `cuihairu.kode-kbengine`. 121 commands and 110 configuration settings are in place; the feature catalog in [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) is a 0.1.x snapshot, and [TESTING.md](./TESTING.md) carries the testing record.

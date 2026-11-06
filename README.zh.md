@@ -3,7 +3,7 @@
 <h1 align="center">Kode — KBEngine Development Environment</h1>
 
 <p align="center">
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a> <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.82.0+-blue.svg" alt="VS Code" /></a> <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a> <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.3-blue" alt="VS Code Marketplace" /></a> <a href="https://codecov.io/gh/cuihairu/kode"><img src="https://codecov.io/gh/cuihairu/kode/branch/main/graph/badge.svg" alt="codecov" /></a> <a href="https://cuihairu.github.io/kode/zh/"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a> <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.82.0+-blue.svg" alt="VS Code" /></a> <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a> <a href="https://github.com/cuihairu/kode/blob/v0.2/docs/kode2/KODE_2_COMPLETE_TODO.md"><img src="https://img.shields.io/badge/Rust%20Core-v0.2%20WIP-CE422B.svg" alt="Rust Core (v0.2, work in progress)" /></a> <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.3-blue" alt="VS Code Marketplace" /></a> <a href="https://codecov.io/gh/cuihairu/kode"><img src="https://codecov.io/gh/cuihairu/kode/branch/main/graph/badge.svg" alt="codecov" /></a> <a href="https://cuihairu.github.io/kode/zh/"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
 </p>
 
 [English](README.md) | [中文](README.zh.md)
@@ -440,4 +440,4 @@ pnpm test:coverage  # vitest + 覆盖率
 
 ---
 
-当前发布版本 v0.1.3，已以 `cuihairu.kode-kbengine` 发布到 Marketplace。已落地 95 条命令、92 个配置项；[COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) 的功能清单是 0.1.x 时点快照，测试口径见 [TESTING.md](./TESTING.md)。
+当前发布版本 v0.1.3，已以 `cuihairu.kode-kbengine` 发布到 Marketplace。已落地 121 条命令、110 个配置项；[COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) 的功能清单是 0.1.x 时点快照，测试口径见 [TESTING.md](./TESTING.md)。

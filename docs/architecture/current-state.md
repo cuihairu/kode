@@ -50,6 +50,35 @@
   （processTopologyRust/databaseSchemaRust 等 TS 封装），但进程管理/
   telnet/log/webview 仍在宿主内；「脚本执行须独立服务」的书目标未达成。
 
+## 现状刷新（2026-11-06 · main 当日批量合入）
+
+- **规模更新**（package.json 实测）：contributes 增至 121 命令、110 配置项、
+  3 键位（telnet `ctrl+]`/`ctrl+d`、热更通道 `ctrl+alt+r`）。
+- **后台索引预热（BG-WARM，59eaaf5）**【已测】：激活即五阶段后台管线
+  （发现链首扫等待→共享事件/方法全量首扫→依赖图→定义布局预热→逐实体
+  流程图，阶段间让出主线程，可取消），面板只读消费产物缓存三态——
+  done 首帧秒出（零 findFiles 零 analyze）、running 先进度页再接同一条
+  在跑 Promise、missing/failed/cancelled 回落既有现算；完成标记
+  `kbengine.backgroundWarmup.completed` 带代际（扩展版本+排序根指纹）。
+  src/backgroundWarmup.ts、src/warmupStages.ts；台账条目见
+  docs/features.md（BG-WARM）。
+- **热更默认开启与快捷启用（b17ca3d / 5347782 / 6fc034b）**【已测】：
+  `kbengine.hotReload.enabled` 默认 `true`；`actionName` 留空时保存 .py 即发
+  默认热更请求 `POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`，
+  query 与 body 双带 `module_name`（src/hotReloadDefaultHotfix.ts，模块名
+  resolveModuleDualName 双名称优先）；`kbengine.hotReload.configureChannel`
+  按 profile 配部署级通道（三预设一键启用/高级配置/探活通过才写盘），
+  状态栏通道灯与 `kbengine.hotReload.switchChannel`，
+  `ctrl+alt+r` 默认键位。现状细节 docs/hotreload/current-implementation.md。
+- **路径模板单一真源（10ccf1f）**【事实】：`renderPathTemplate`
+  （src/workspacePath.ts:58）统一渲染 `${workspaceFolder}` 等占位，手工输入链
+  （src/definitionWorkspace.ts:1284）与发现链（src/workspaceDiscovery.ts:882）
+  两链同源——此前手工链漏渲染导致 def 根定位错位的问题就此收口。
+- **文件变更元信息（f08cfbd 合 410e262）**【已测】：src/fileChangeMeta.ts 按
+  identity+version 懒解析 module/package/processKind（module/package 仅 .py，
+  大小写不敏感；记忆化键 = identity + version + 路径形态）；设计文档
+  docs/design/file-change-meta.md（en/zh）与实现对齐。
+
 - 日期:2026-10-23 · 分支:v0.2 · 执行协议:docs/kode2/KODE_2_COMPLETE_TODO.md 第 16 章
 - 性质:代码取证快照。三栏口径——【事实】=源码 file:line / git 可查;【已测】=有 commit + 报告/原始输出;【推断】=由事实推出的判断,需后续验证;【待测】=无数据,不造数。
 - 引用的 PR1-7 数据一律带 commit;测试为 fake-vscode + 真实索引实现的服务层口径,不含真实 VS Code UI 端到端(该项待测)。

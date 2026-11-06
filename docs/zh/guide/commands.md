@@ -222,6 +222,14 @@
 - 标题：`Show Logs`
 - 作用：聚焦某个组件的日志上下文
 
+### `kbengine.server.retry`
+
+- 标题：`Retry Failed Target`
+- 作用：
+  - 带元件参数时重试该单个失败目标
+  - 不带时给出组启动失败目标的选择器（含失败原因），重试所选
+  - 已就绪目标报已在运行，不重启
+
 ## 日志相关
 
 ### `kbengine.logs.showViewer`
@@ -368,6 +376,39 @@
 - 标题：`Show Lint Rules Capability Report`
 - 作用：在输出通道 `Kode Lint Rules` 输出 lint 规则能力清单——每条规则的规范编号/诊断 code/严重度/适用角色/配置开关/触发入口/修复支持/证据源码模块/实现状态，按「已实现/仅提示/待实现」分组并逐条标注当前配置下的启用/停用态（IDE-LINT-011；清单单一事实源 `src/lintRuleRegistry.ts`，规则编号与 `kbengine-lint-rules.md` 规则总表对应）
 
+### `kbengine.metrics.showSummary`
+
+- 标题：`Show Language Service Metrics Summary`
+- 作用：打开「Kode Language Service Metrics」输出通道，给出聚合性能记录报告（PR1 观测层，无行为变化）
+- 行为：
+  - 每个事件族一行（`hover`、`definition`、`completion`、`diagnostics`、`python-index-scan`、`python-composition-roots`、`entity-mapping-scan`、`semantic-query`、`type-registry-query`、`file-discovery`、`document-parse`）
+  - 每行报告请求数、P50/P95/P99/max/avg 耗时（单调时钟，ms）、缓存命中率、等待初始化数、文件发现/读取/解析总量与状态计数
+  - 逐请求明细采样默认关；开启 `kbengine.metrics.detailed` 后 `[kode-lsm]` 样本同时流入日志时间线
+
+### `kbengine.metrics.startCpuProfile`
+
+- 标题：`Kode: Start Extension Host CPU Profile`
+- 作用：在扩展宿主进程启动 V8 CPU 采样（IDE-MET-007 卡顿证据入口）
+- 行为：
+  - 经 Node inspector `Profiler` 域以 1000us 采样间隔运行；运行中再次启动以警告拒绝
+  - 输出目录为扩展全局存储（不可用时回落系统临时目录）
+
+### `kbengine.metrics.stopCpuProfile`
+
+- 标题：`Kode: Stop Extension Host CPU Profile`
+- 作用：停止采样并把捕获连同请求窗上下文落盘
+- 行为：
+  - 写 `kode-cpu-profile-<timestamp>.cpuprofile`（可在 VS Code / Chrome DevTools 打开）及同级 `.window.txt`
+  - `.window.txt` 记录窗口起止 ISO 时间、时长、语言服务指标汇总与事件循环延迟报告，把 profile 与请求窗关联
+
+### `kbengine.metrics.showActiveTasks`
+
+- 标题：`Kode: Show Active Language Service Tasks`
+- 作用：导出待处理与取消后残留在途任务数（IDE-MET-008）
+- 行为：
+  - 逐族列出在途语言服务操作（started..ended 台账；取消的收尾也留台账）与诊断调度器 queued/inFlight 负载
+  - 读该台账对比取消请求前后的活跃任务数；不要从 provider 空返回值推断工作已停
+
 ### `kbengine.python.debugpySync`
 
 - 标题：`Copy System debugpy into Assets`
@@ -444,6 +485,20 @@
 - 导出 SVG
 - 导出 PNG
 
+### `kbengine.pythonCallGraph.show`
+
+- 标题：`Show Python Call Graph`
+- 作用：打开 Python 方法级调用图（与实体依赖图同一面板，callgraph 模式）
+
+callgraph 模式面板支持：
+
+- 收集工作区根下全部 `*.py`（排除 `node_modules`/`out`/`.vscode-test`/`.git`）并把文本送入 Rust 核心
+- 方法级调用边分 8 类（local / method / self-method / kbe-broadcast / kbe-base-clients / kbe-cross-process / kbe-api / unknown），各有专属箭头与颜色
+- 未解析被调渲染为桩节点（`ext:` / `kbe:` 前缀），调用点绝不丢
+- 跨文件调用方（经 `reverseIndex`）喂给 kode-scheduler 失效 DAG
+- 点击节点打开对应 `.py` 文件
+- 导出 SVG / PNG
+
 ### `kbengine.flow.show`
 
 - 标题：`Show Entity Flow Graph`
@@ -505,6 +560,46 @@
 - profile 绑定：有活动 profile 时，实体注册顺序与类型数据只取该 profile 的资产根（`src/sdkGenerationProfile.ts`）；其他扫描根的同名实体拒收并在完成通知里逐个点名，绝不静默合并；无活动 profile 回落工作区首根
 - 引擎溯源：每个生成文件头部记录输入引擎的版本与提交（`src/sdkGenerationTrace.ts`，经 `readEngineApiMetadata` 探测，profile 记录的引擎根优先）；定位不到引擎时两行如实写 `unknown`
 
+### `kbengine.project.doctor`
+
+- 标题：`Run Project Doctor`
+- 作用：审计 def 引用图并报告结构问题
+
+### `kbengine.symbolReferences.show`
+
+- 标题：`Show Symbol References Graph`
+- 作用：以 Mermaid 与纯文本预览展示 def 符号引用图
+
+### `kbengine.profile.start`
+
+- 标题：`Start Runtime Profile`
+- 作用：查询运行中 KBEngine 元件的 profile 数据并展示响应
+
+### `kbengine.spaces.query`
+
+- 标题：`Query Spaces`
+- 作用：向本地 cellappmgr 查询当前 space 记录
+
+### `kbengine.runtimeQuery.show`
+
+- 标题：`Show Runtime Query Panel`
+- 作用：从一个面板发现运行元件、查询 cellappmgr spaces、查询 watcher 值
+
+### `kbengine.python.showCallChain`
+
+- 标题：`Show Call Chain`
+- 作用：为选中方法生成配置的 Python 调用链预览
+
+### `kbengine.compatibility.check`
+
+- 标题：`Check Engine Compatibility`
+- 作用：把扩展预期的引擎面与定位到的引擎 checkout 做对比
+
+### `kbengine.workbench.show`
+
+- 标题：`Show KBEngine Workbench`
+- 作用：展示一个命令启动器，覆盖发现、运行时查询、schema、SDK 与兼容性工具
+
 ## 性能分析
 
 ### `kbengine.def.analyze`
@@ -548,6 +643,28 @@
   - 优先断开会话面板当前选中的目标；未选中或选中目标无会话时取首个已连接目标
   - 没有已连接的会话时如实提示，不空转
 
+### `kbengine.playerData.refresh`
+
+- 标题：`Refresh Player Data Profile`
+- 作用：从引擎配置重新推导 MySQL 连接 profile 并刷新只读「Player Data」树
+- 真相源：Rust `derive_database` 从元件 `kbengine.xml` + 引擎 `kbengine_defaults.xml` 读 `dbmgr/databaseInterfaces/default`（叶子默认值随引擎：host `localhost`、port 0 → 3306、用户 `kbe`、库 `kbe`、字符集 `utf8mb4`）
+- 只读约束：视图不提供任何可编辑字段——连接事实只来自引擎配置
+
+### `kbengine.playerData.testConnection`
+
+- 标题：`Test Database Connection (Read-Only SELECT 1)`
+- 作用：对推导出的 MySQL 端点经只读执行器（`SET SESSION TRANSACTION READ ONLY` + 语句白名单）探一条白名单 `SELECT 1`
+- 行为：
+  - 成功报 host:port/database 与时延；失败如实降级为消息（绝不阻塞其他功能）
+  - 引擎密码为 RSA 加密（`<encrypt>` 非 `false`）时绝不解密——命令如实报「未测试」，不猜
+
+### `kbengine.playerData.queryByDbid`
+
+- 标题：`Query Player by DBID (Read-Only)`
+- 作用：执行单条只读 ``SELECT * FROM `tbl_Account` WHERE `id` = <dbid>``（表前缀取 `kbengine.db.tablePrefix`，默认 `tbl_`），把行打印进「KBEngine 玩家数据(只读)」输出通道
+- 输入校验：dbid 必须是十进制正整数；其余在任何连接前拒绝
+- 只读约束：结果仅展示；无编辑、无导出副作用（导出/导入走玩家数据克隆专道）
+
 ### `kbengine.httpRequests.run`
 
 - 标题：`Run HTTP Quick Request`
@@ -570,6 +687,17 @@
   - `${line}`：光标行（1 起）
   - `${sel}`：选中文本
   - 无活动编辑器时各变量替换为空串
+
+### `kbengine.hotReload.tempEdit.run`
+
+- 标题：`Temp-Edit Hot Reload (Active File)`
+- 作用：对活动文件做临时编辑热更——写入临时编辑（一行尾注标记）→ 可选恢复原文 → 按名触发配置的重载快速动作 → 回显结果
+- 行为：
+  - 默认**关闭**门控（`kbengine.hotReload.tempEdit.enabled`）；关闭时命令如实拒绝
+  - 重载步骤复用既有快速动作通道（HTTP 与终端动作一致）——不另起第二套 HTTP 实现
+  - 回显进输出通道「KBEngine HTTP 快捷请求」与问题面板（文件上的诊断；成功即清除）
+  - 成功语义保持诚实：可用的传输回执只是「已发送(未确认)」——没有可信 applied 回执，UI 绝不声称模块已热更（accepted ≠ applied）
+  - 自动恢复失败时中止重载（绝不发送带标记的临时内容），并报告文件停留在临时编辑态
 
 ### `kbengine.hotReload.showLog`
 
@@ -622,6 +750,25 @@
   - 缺的种类如实缺席：内容读不到就没有 fileHash/semanticHash 行，运行时没回执过就没有 engineDigest 行，`.py` 文件没有 semanticHash 行——不填空不冒充
   - 两条发送路径都喂证据册：fire 路径与失败目标重发都把真实 HTTP 回包体转给它；空台账如实报 无投递记录
 
+### `kbengine.hotReload.filterByState`
+
+- 标题：`Hot Reload: Show Changed Files (Dirty/Sent)`
+- 作用：把热更关注集——改了还没（重）载的文件——渲染进「KBEngine 热更新」通道并打开（IDE-HOT-100 / 设计 §3.4）
+- 行为：
+  - 关注集 = 仅 DIRTY ∪ SENT（「看哪些改了还没重载」）；FAILED 与 RESTART_REQUIRED 各有专属命令面，绝不混进本过滤
+  - 状态从交付台账（rootId × targetId × file）以内容 sha256 为变更基准推导——绝不用 mtime，touch/纯权限改动不会标脏
+  - 每个列出的文件显示状态、基线 hash 前缀与台账明细（发送代次 / accepted 注记）——关注集为空时如实报无待处理文件
+  - 对命令面板隐藏（`when: false`）——状态栏项才是预期入口
+
+### `kbengine.hotReload.showFileState`
+
+- 标题：`Hot Reload: Show File State`
+- 作用：把单文件的热更生命周期状态按引用它的全部目标渲染（从 CodeLens 状态点调起；IDE-HOT-100）
+- 行为：
+  - 状态点（CodeLens）从同一台账派生状态机取色：CLEAN（无标记）/ DIRTY（橙）/ SENT（蓝）/ APPLIED（绿）/ FAILED（红）/ RESTART_REQUIRED（紫）
+  - 工作区根内的文件按目标逐行显示状态、基线 hash 前缀、发送代次与明细；根外文件如实报不在工作区根内
+  - RESTART_REQUIRED 即 HOT-005 结构 def 闸：结构性 def 变更拦下整批并呈现为需重启（保守滞留，绝不冒充失败）——原因文本点名该闸
+
 ### `kbengine.hotReload.configureChannel`
 
 - 标题：`Hot Reload: Configure Deployment Channel`
@@ -665,6 +812,24 @@
   - 绿/红只反映最近一次探活结论；结论按「激活 profile + 该 profile 通道配置身份」归属，profile 切换、改参数、面板写盘都会让它作废；探活等待期间 profile 被切换则该次结果直接作废（不写盘）
   - 探活期间状态若变（切 profile/改通道），本次结果如实作废并提示，不把旧状态的结论写到新状态上
   - 既有发送态灯（`kbengine.hotReload.showLog` 背后那盏）只渲染发送态；两灯优先级不同（96 / 98），不抢位不抢色
+
+### `kbengine.hotReload.confirmDefBaseline`
+
+- 标题：`Hot Reload: Confirm Restart (Rebuild def Structure Baselines)`
+- 作用：真实重启引擎后重建 def 结构闸基线（F1，2026-11-05 评审）——基线代表目标引擎实际加载的结构版本，只随真实发送（`commit`）或本次显式重启确认前进
+- 行为：
+  - 把闸本会话见过的每个 def 文件按当前盘上内容重定基线，在热更日志 + 信息提示报告确认文件数
+  - 被拦批次（结构变更 / 无基线 / 不可读）永不前进基线——无重启确认时同一被拦内容的第二次保存仍被拦，不会借滚动基线静默放行
+  - 不可读文件跳过（不伪造）；报告数就是实际重定基线的文件数
+
+### `kbengine.core.showShadowDiffLog`
+
+- 标题：`Kode Core Shadow: Show Diff Log`
+- 作用：打开承载双轨 shadow diff 日志的「KBEngine Core Shadow」输出通道（kode2 PR-012）。仅 `kbengine.core.backend=shadow` 模式下才有条目：TS 照常服务，同参数请求镜像发给 kode-server，逐请求记录结果（match / diff / rust-error / rust-timeout / rust-unavailable）
+- 行为：
+  - `shadow` 模式：展示通道（首条 shadow 条目时创建）；还没有条目时如实报告汇总
+  - `ts`/`rust` 模式：通道不存在——信息提示当前 `backend` 取值且日志为空；不创建任何东西
+  - 任何模式下 Rust 结果都不影响用户可见行为；该日志是 parity 扩量与回滚演练的诊断证据，不是服务路径
 
 ### `kbengine.discovery.report`
 
@@ -744,6 +909,16 @@
   - 无活动 profile → 如实说明并指向选择命令，不开选择器
   - 全部健康 → 一条健康消息，无警告无选择器
   - 有问题 → 警告报出问题数，QuickPick 逐条列出（标签=类别，description=判定事实，detail=定位入口）；选中一行跳到对应入口（命令或设置），Esc 只看不跳
+
+### `kbengine.extension.identity`
+
+- 标题：`Show Extension Identity Report`
+- 作用：报告本发布者下每个已安装扩展的身份与宿主位置，让 bug 报告能说清用户跑的是哪个构建
+- 报告内容（输出通道「Kode 扩展身份」，整段可复制）：
+  - 宿主位置：设置了 `vscode.env.remoteName` 时为 `remote(<name>)`，否则 `local`，外加宿主应用名
+  - 每个匹配安装（按发布者前缀的扩展 ID 排序）：完整 ID 与版本；`installed=yes|no`——安装目录当前是否存在于文件系统（目录消失如实报告）；`active=yes|no`——当前窗口是否已激活（安装与激活是两个正交事实，绝不合并）；`side=workspace host|ui host`——哪个扩展宿主在跑
+  - 无匹配安装时如实说明，不出空清单
+- 行为：命令从不扫描工作区；只读 `vscode.extensions.all` 并 stat 安装目录
 
 ### `kbengine.quickActions.show`
 
@@ -835,6 +1010,73 @@
   - 工作区没有自定义类型时不生成文件、不提示打扰；导出成功后链一次 extraPaths 同步
 - `types.xml` 落盘即自动重生成：保存/新建/删除后由 watcher 静默重导出（不设去抖、不加开关——零写纪律保证重复触发无副作用；`kbengine.python.stubExport` 关掉时实际停摆）
 - 设置 `kbengine.python.stubExport: false` 可整体关闭（与 KBEngine.pyi 存根共用开关）
+
+### `kbengine.source.reveal`
+
+- 标题：`Reveal Source Location`
+- 作用：内部导航助手，对定义跳转目标强制编辑器 reveal。定义 provider 用 `vscode.open` 打开一个本已是活动编辑器的文档时，VS Code 会跳过 reveal——表现为「返回后再点同一 def 链接没反应」；本命令打开文档并转发选区，目标行必然露出（批159 def 链镜像链接）
+- 行为：
+  - 第二参数收 `{ selection: vscode.Range }`，经 `showTextDocument(uri, { selection })` 应用
+  - 无 URI 调用为 no-op
+  - 为定义 provider 而存在，不是用户入口：与其他贡献命令一样注册（含 `onCommand:` 激活事件），面板保持为空，程序化跳转可靠依赖它
+
+### `kbengine.git.showHistory`
+
+- 标题：`Kode: 查看文件历史 (View File History)`
+- 作用：打开文件历史视图（IDE-GIT-001 门控，IDE-GIT-005）。仅 `kbengine.gitHistory.enabled` 开启时入口可见（资源管理器文件右键、编辑器右键/标签右键、命令面板）；它只是入口——历史只在用户打开时按需查询，激活、打开文件、移动光标、改变选区都不触发，无预取无轮询
+- 行为：
+  - 同一开关门控：功能关闭时命令从菜单隐藏，直接调用不跑任何 Git
+  - 从调用参数（右键 URI）或活动编辑器解析目标；按需定位所属 Git 仓库，把第 0 页查进 `kbengine.gitHistory` 侧边栏树并聚焦
+  - 树行显示 subject + `author · time` 与 tooltip（hash、作者邮箱、时间、body）；行尾「加载下一页」仅在点击时追加下一页；视图标题标明文件与基线提交（`a.py @ 01234567`）
+  - 查询沿重命名追踪（IDE-GIT-007）：重命名前后提交都列出，每行带该提交时点的路径；追踪以复制/删除而非干净重命名收尾时，如实给出 copy-or-move 边界行，不假装历史连续
+  - 空闲视图显示引导行、零 Git 调用；终态（untracked / staged-no-history / 空仓库 / 定位失败 / 有界执行器结果）如实报告
+
+### `kbengine.git.historyNextPage`
+
+- 标题：`Kode: 加载下一页文件历史 (Load Next History Page)`
+- 作用：`kbengine.gitHistory` 视图的内部树节点动作（IDE-GIT-005）；点击时按需追加下一页有界提交记录。对命令面板隐藏（`when: false`）——不是用户入口
+- 行为：
+  - 仅当视图处于已加载且 has-more 状态才查询；终态或已到末页不查询
+  - 追加下一页不重不漏；下一页失败/为空时保留已加载行并清除 has-more
+
+### `kbengine.git.showRangeHistory`
+
+- 标题：`Kode: 查看选中范围历史 (View Selection History)`
+- 作用：打开选区历史入口（IDE-GIT-001 门控，IDE-GIT-010 入口），编辑器右键仅在有选区时显示，命令面板常驻；门控与文件历史入口一致
+- 行为：
+  - 受 `kbengine.gitHistory.enabled` 门控；功能关闭时入口隐藏，直接调用不跑任何 Git
+  - 有选区：把工作副本选区映射到其已提交（HEAD）行跨度（IDE-GIT-008），查询该跨度的逐提交时间线（IDE-GIT-009），展示在 `kbengine.gitRangeHistory` 侧边栏视图——标题写明查询基准（`file @ HEAD 行 N-M`）并保留原始选区用于展示；未提交/未保存的行如实警告，只展示已提交部分
+  - 无选区：右键入口隐藏（要求 `editorHasSelection`）；直接调用提示先选中代码，不跑 Git
+  - 视图持有自身状态——切换编辑器或移动光标绝不重查询，也绝不把过期选区套到别的编辑器（无激活/文件打开/光标/选区监听）
+
+### `kbengine.git.openRangeHistoryDiff`
+
+- 标题：`Kode: 打开版本差异并定位范围 (Open Version Diff and Locate)`
+- 作用：把范围历史条目的提交版本与其父版本以只读 diff 打开，并定位到该版本中条目的行范围（IDE-GIT-010）。绑定 `kbengine.gitRangeHistory` 视图的条目行点击；对命令面板隐藏（`when: false`）
+- 行为：
+  - 以 `(entry, filePath, repoRoot, parentFilePath?)` 调用；先打开与 `kbengine.git.openVersionDiff` 相同的版本对父版本 diff（IDE-GIT-006 虚拟文档），再在非预览标签打开该提交的版本内容并选中条目行范围（`Range(rangeStart-1, 0, rangeEnd-1, 0)`）
+  - 行范围逐条目记录自 `-L` diff hunk 的新侧（`RangeChangeEntry.rangeStart/rangeEnd`），范围在提交间移动也能定位
+  - 跨重命名时左侧用父代路径（IDE-GIT-007）；受 `kbengine.gitHistory.enabled` 门控，功能关闭不跑任何 Git
+
+### `kbengine.git.openVersionDiff`
+
+- 标题：`Kode: 打开版本差异 (Open Version Diff)`
+- 作用：在编辑器以只读 diff 打开历史提交的文件版本与其父版本（IDE-GIT-006）。绑定 `kbengine.gitHistory` 视图的提交行点击；对命令面板隐藏（`when: false`）
+- 行为：
+  - 以 `(commit, filePath, repoRoot, parentFilePath?)` 调用；经 `git rev-list --parents -n1` 解析父提交；根提交左侧为空，整文件按新增呈现
+  - 跨重命名左侧用父代路径（IDE-GIT-007），纯重命名显示无变化，不伪造整文件新增
+  - 两侧都以虚拟文档（`kode-git-version` scheme，按 repo/commit/path 键）打开——绝不覆盖工作区文件或当真实文件打开
+  - 该提交时点不存在的路径（已删除或尚未创建）显示空侧；有界读失败如实报错，不静默给空
+  - 受 `kbengine.gitHistory.enabled` 门控；功能关闭不跑任何 Git
+
+### `kbengine.git.openVersionContent`
+
+- 标题：`Kode: 打开版本内容 (Open Version Content)`
+- 作用：只读打开历史提交版本的文件（IDE-GIT-006）。绑定 `kbengine.gitHistory` 视图的提交行右键菜单；对命令面板隐藏（`when: false`）
+- 行为：
+  - 在非预览编辑器标签打开该 repo/commit/path 的 `kode-git-version` 虚拟文档——不写、不替换任何工作区文件
+  - 该提交时点不存在的路径（已删除）打开为空；有界读失败如实报错
+  - 受 `kbengine.gitHistory.enabled` 门控；功能关闭不跑任何 Git
 
 ## 典型使用流程
 
@@ -974,6 +1216,29 @@ KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Pytho
   - 缺声明与预览同样如实警告——不弹保存
   - 写失败如实带原因呈现；成功提示点名写入路径
 - 边界：只做导出；预览命令是 SDK-001
+
+### `kbengine.infer.run`
+
+- 标题：`KBEngine: Run pyrefly Infer (无标注函数 stub 推断)`
+- 作用：跑 pyrefly 推断管线（KODE-CFG-017）——把 scripts 树镜像到 `.kbengine/inferred/`，以 `.kbengine/stubs`（def/types.xml 验真过的存根）为类型环境对副本跑 `pyrefly infer`，让未标注函数拿到推断注解，不碰用户源码
+- 入口：命令面板
+- 行为：
+  - 已禁用（`kbengine.infer.enabled=false`）：如实提示，不运行
+  - 找不到 pyrefly 二进制（未配置、不在 PATH、不在 pipx 默认位置）：如实提示 `pipx install pyrefly` 或设置 `kbengine.infer.pyreflyPath`——功能降级，不抛错
+  - 任一 scripts 根非零退出按原文带退出码报告；成功报 scripts 根数
+  - 所有写路径先过写域闸——默认 `managed` 域只放行 `.kbengine/**`，写用户源码需显式 `kbengine.infer.sourceWrite=user`
+- 边界：只做推断；消费层（native providers 读标注副本）属后续批次
+
+### `kbengine.managedDir.syncExclusions`
+
+- 标题：`KBEngine: Sync .kbengine Exclusions (搜索/watcher/gitignore)`
+- 作用：重新落 `.kbengine` 隔离——`search.exclude` 与 `files.watcherExclude` 补上 `.kbengine/**` 条目（只动 kode 自己写过的键，用户条目绝不删），git 仓库根 `.gitignore` 已存在时幂等追加 `.kbengine/` 行
+- 入口：命令面板
+- 行为：
+  - 跑与激活期静默同步同一面，但报告写了什么（哪些工作区拿到 `search.exclude` / `watcherExclude`，哪些 git 根追加了 `.gitignore`）
+  - 绝不创建 `.gitignore`（SVN / 无 VCS 工作区不做任何 git 侧写入）
+  - 幂等：无变化时二次运行零写入
+- 边界：只做隔离；镜像与推断步骤见 `kbengine.infer.run`
 
 ### `kbengine.diagnostics.exportReproSummary`
 
