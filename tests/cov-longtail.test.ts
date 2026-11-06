@@ -668,7 +668,7 @@ describe('runtimeQueryWebView(边角分支)', () => {
     await flush();
     panelRegistry.fireMessage(panelRegistry.panels[0], { command: 'queryWatcher', componentKey: '5:9001', path: '   ' });
     await flush();
-    expect(lastState().error).toEqual({ kind: 'watcher', componentKey: '5:9001', message: 'Enter a watcher path.' });
+    expect(lastState().error).toEqual({ kind: 'watcher', componentKey: '5:9001', message: '请输入 Watcher 路径。' });
   });
 
   it('流轮询查询失败:watchList 面如实带错误原因', async () => {
