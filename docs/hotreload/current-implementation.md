@@ -2,7 +2,8 @@
 
 - Fixed audit SHA: `36052c47cb26290b6829632c6c3ca31341161c96` (branch `v0.2`).
 - Scope: HR-AUDIT-001..012, book `docs/kode2/KODE_2_COMPLETE_TODO.md` §19.2.
-- Red lines honored: Watch/Hash/success-confirmation implementation degree is reported as evidence-backed facts or `unknown`; the `relaod` spelling in HTTP examples is preserved verbatim as compatibility input, never corrected.
+- Red lines honored: Watch/Hash/success-confirmation implementation degree is reported as evidence-backed facts or `unknown`.
+- Superseded 2026-11-06 (user order): the example endpoint/parameter were corrected repo-wide to `POST http://127.0.0.1:8090/hotfix` with `module_name=<module>`; the old mis-spelled parameter recorded at the audit SHA is no longer carried anywhere, and a repo-wide grep gate keeps it out.
 - This PR changes no behavior. Audit only.
 
 ## 1. Fact table (verified against source at the SHA above)
@@ -14,9 +15,9 @@
 | Commands | `kbengine.httpRequests.run` (quick pick over merged list), `kbengine.httpRequest.run` (named, needs `args.name`) | `package.json` contributes.commands; `src/extension.ts:1135,1163` |
 | Keybindings | None registered for the two HTTP commands (only display string `keybinding` per entry; real binding is manual via VS Code keybindings UI) | `package.json` keybindings (telnet only); `src/httpRequests.ts:36-41` |
 | Views | No hot-reload view. `kbengine.quickActions` TreeView lists HTTP request entries as runnable nodes | `package.json` contributes.views; `src/quickActions.ts:507` |
-| Config: `kbengine.httpRequests` | array; default = one **disabled** example `{"name":"热更新(示例)","url":"http://127.0.0.1:8000/api/hotfix?relaod=${module}","method":"GET"}` | `package.json` configuration default; `src/httpRequests.ts:45-53` (test-locked sync) |
-| Config: `kbengine.hotReload.*` | `enabled=false`, `actionName=""`, `globs=["**/*.py"]`, `debounceMs=500` | `package.json`; `src/hotReload.ts:7-8` |
-| README/docs | `README.md:174`, `README.zh.md`, `docs/guide/configuration.md` (HTTP Quick Requests section), `docs/zh/guide/configuration.md`, `docs/features.md:134` all document the settings list, the `${module}` package-boundary semantics, and the real-service shape `curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'` | files at fixed SHA |
+| Config: `kbengine.httpRequests` | array; default = one **disabled** example `{"name":"热更新(示例)","url":"http://127.0.0.1:8090/hotfix","method":"POST","body":"module_name=${module}"}` (updated 2026-11-06) | `package.json` configuration default; `src/httpRequests.ts` `BUILTIN_HTTP_REQUEST_EXAMPLE` (test-locked sync) |
+| Config: `kbengine.hotReload.*` | `enabled=true` (default on since 2026-11-06), `actionName=""` (= send the default hotfix request), `globs=["**/*.py"]`, `debounceMs=500` | `package.json`; `src/hotReload.ts` `readHotReloadSettings` |
+| README/docs | `README.md`, `README.zh.md`, `docs/guide/configuration.md` (HTTP Quick Requests section), `docs/zh/guide/configuration.md`, `docs/features.md` all document the settings list, the `${module}` package-boundary semantics, and the default endpoint shape `curl -X POST 'http://127.0.0.1:8090/hotfix' -d 'module_name=entities.fight.FightAI'` (updated 2026-11-06) | files at fixed SHA |
 | Old gap ledger | `docs/reference-feature-gap.md` G5 claims "automatic hot reload implemented (batch 136)" — that claim covers **watch→trigger a quick action** only, not the §19 state/confirmation model | `docs/reference-feature-gap.md:40,55` |
 
 ### HR-AUDIT-002 — rg sweep: all implementation and registration entry points
@@ -33,7 +34,7 @@ Sweeps run: `httpRequests|reload|hotfix|hotReload|watch|\.def|digest|md5|sha256|
 | `src/variableSubstitution.ts` | Official VS Code variable family (single source of truth) |
 | `src/hotReload.ts` | Auto hot reload: config gate, per-glob `FileSystemWatcher`, global debounce, runs quick action by name |
 | `src/debugJsonSchema.ts` | Schema for `.kbengine/debug.json` incl. `httpRequests` and quick-action `type:"http"` |
-| `src/debugConfigBootstrap.ts` | Generates `.kbengine/debug.json` template with commented `http` hot-update action example (`/hotfix`, POST) |
+| `src/debugConfigBootstrap.ts` | Generates `.kbengine/debug.json` template with commented `http` hot-update action example (`http://127.0.0.1:8090/hotfix`, POST, body `module_name=${module}` — aligned 2026-11-06) |
 | Registration | `src/extension.ts:1113-1180` (channel + service + 2 commands), `:1591-1592` (settings entries injected into QuickActionManager), `:1624-1626` (`setupHotReload` → `quickActionManager.runByName(name, {suppressConfirm:true})`) |
 | Engine-side metadata | `src/kbengineMetadata.ts:114-116` documents `KBEngine.reloadScript(fullReload)` (baseapp/cellapp only) — hover/snippet surface, no HTTP involved |
 
@@ -122,8 +123,8 @@ A `buildCurlCommand` helper supporting headers exists (`src/quickActions.ts:178`
 
 ### HR-AUDIT-009 — Server-side protocol evidence
 
-- No server implementation ships in this repo. The only protocol evidence is the endpoint shape recorded from the user's real local service: `GET http://127.0.0.1:8000/api/hotfix?relaod=<module>` (README.md:174, docs/guide/configuration.md, builtin example, debug.json template comment shows a POST `/hotfix` variant on port 8080).
-- `relaod` spelling: kept as-is everywhere per book rule; treated as compatibility input, not corrected pending server verification.
+- No server implementation ships in this repo. The endpoint shape in force is the one fixed by the 2026-11-06 user order: `POST http://127.0.0.1:8090/hotfix` with `module_name=<module>` (README, docs/guide/configuration.md, builtin example, and the zero-config auto hot-reload sender `src/hotReloadDefaultHotfix.ts` all take it from the same constant).
+- Parameter naming: corrected repo-wide on 2026-11-06 by explicit user order; the old mis-spelled parameter recorded at the audit SHA is no longer carried anywhere (grep gate `tests/hotfixSpellingGate.test.ts`).
 - Response JSON fields, target-process identification, applied-revision query: **unknown — no evidence in repo**.
 
 ### HR-AUDIT-010 — Real-project test record
@@ -142,7 +143,7 @@ A `buildCurlCommand` helper supporting headers exists (`src/quickActions.ts:178`
 | Success confirmation | **no** — `ok` means transport answered, 2xx not distinguished | accepted/applied semantics entirely unknown |
 | Status/history/UI for reload | **no** | all of §19.6/§19.7 |
 | `.def` file/semantic/engine hash | **no** | engine Digest algorithm |
-| Server response contract | request shape only (user's real service) | response fields, applied revision, target/process, `relaod` param true spelling |
+| Server response contract | request shape only (user's real service) | response fields, applied revision, target/process, server-side parameter naming |
 
 ## 3. Keep / Wrap / Replace matrix (HR-AUDIT-011)
 
@@ -170,4 +171,4 @@ A `buildCurlCommand` helper supporting headers exists (`src/quickActions.ts:178`
 | Config schema surfaces | `package.json` (`kbengine.httpRequests`, `kbengine.hotReload.*`), `src/debugJsonSchema.ts` | — | cuihairu |
 | Engine-side API metadata | `src/kbengineMetadata.ts` (`KBEngine.reloadScript`), `KBENGINE_SOURCE_AUDIT_PLAN.md` §14 | — | cuihairu |
 
-Items without source evidence above are recorded as `unknown`: server response contract, engine Digest algorithm, applied-revision queryability, `relaod` server-side truth, all real-project behaviors (HR-AUDIT-010 untested).
+Items without source evidence above are recorded as `unknown`: server response contract, engine Digest algorithm, applied-revision queryability, server-side parameter naming, all real-project behaviors (HR-AUDIT-010 untested).

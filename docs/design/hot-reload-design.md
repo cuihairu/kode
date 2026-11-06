@@ -336,3 +336,53 @@ interface ReloadTransport {
 
 每步门禁 = lint + tsc + test:unit + xvfb demo，勾行带 commit hash，
 文档（features.md/zh）同步对账。
+
+## 8. 默认行为（用户令 2026-11-06 · 已落地）
+
+1. **默认开启**：`kbengine.hotReload.enabled` 默认 `true`——`package.json`
+   贡献默认值与 `readHotReloadSettings` 的缺省同改，配置缺失时也开；
+   **显式写死 `false` 仍关**（用户显式关要生效）。默认 `globs` 不动
+   （`**/*.py`），默认去抖 `500ms` 不动。
+2. **零配置开箱即用**：`kbengine.hotReload.actionName` 留空（默认）时，
+   保存 .py → 去抖 → 默认热更请求 `POST http://127.0.0.1:8090/hotfix`，
+   body 带 `module_name=<模块名>`。端点与参数名只在
+   `BUILTIN_HTTP_REQUEST_EXAMPLE` 一处定义，`src/hotReloadDefaultHotfix.ts`
+   同源取用，与 `package.json` 默认值测试锁同步；全仓旧拼写由
+   `tests/hotfixSpellingGate.test.ts` 全量 grep 断言清零。
+3. **模块名口径**：优先 `resolveModuleDualName`（书 §19.1，与
+   file-change-meta 同一口径）；未配 `kbengine.hotReload.tempEdit.scriptRoot`
+   或该文件解析不支持时，回落 `${module}` 的 `__init__.py` 包边界扫描
+   （与默认示例模板同一占位来源，不新造占位）。
+4. **诚实回报**：连接拒绝/超时/非 2xx 一律 `failed`（状态栏 + 日志带原因，
+   引擎未起如实报失败）；2xx 也只到「已发送（未确认）」，状态栏不标已生效。
+   默认路径不弹错误窗（每次保存都弹会刷屏），原因落审计日志。
+5. **一键关**：状态栏「热更」项点击 = 执行 `kbengine.hotReload.toggle`，
+   把 `kbengine.hotReload.enabled` **写回配置**（有工作区文件写 Workspace，
+   否则写 Global），配置变更监听随即拆/建 watcher，即时生效不必重启窗口；
+   非模态提示新状态并给「打开日志」入口。命令面与状态栏点击同一条路。
+6. **首激活提示**：第一次激活弹一次非模态提示（点名端点与一键关入口），
+   弹出即记 `workspaceState` flag，此后不再打扰；选「立即关闭」直接写回
+   配置关掉热更。极简装配上下文（无 `workspaceState`）不弹。
+7. **结构性 def 仍拦**：默认路径同样在 def 结构闸之后执行，结构性变更
+   照旧整批拦下并标 `RESTART_REQUIRED`（不放宽）。
+
+## 9. 架构分界：HTTP 热更请求由 TS 发起（不可再议）
+
+**结论（用户令 2026-11-06，写入即为准）：HTTP 热更请求由扩展（TS）发起，
+不由 rust 发起。**
+
+理由：
+
+1. `HttpReloadTransport`（`src/hotReloadTransport.ts`）已实现全套——
+   占位替换 / sender_digests 冻结 / targetId / 回执解析 / 台账；
+2. rust 13 个 crate 零 HTTP 客户端依赖，加 reqwest 撞「零依赖铁律」；
+3. 事件源已定为 VS Code watcher，事件、元信息、模块名、版本台账全在 TS，
+   rust 发送要反向绕 IPC；
+4. rust 挂了热更照常（结构闸等判定已在 TS 侧），rust 发送会把热更绑死在
+   rust 进程上。
+
+**分界**：TS 管编排与传输（状态机、台账、回执、HTTP 请求）；rust 管纯计算
+（解析 / 索引 / 克隆）。rust 是被 spawn 的纯函数服务，不承担 I/O 与状态。
+
+**例外**：将来若需要 rust 常驻长连接/连接池对接引擎（高频批量推送），再评估
+下沉——前提是事件与元信息协议已纯数据化，届时可换实现不改契约。

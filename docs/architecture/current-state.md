@@ -171,16 +171,16 @@
 ## AUDIT-016 HR-AUDIT:HTTP/Watch/Hash 代码真相与差异清单
 
 - 【事实】HTTP 快捷请求**已实现**:httpRequests.ts(条目解析校验 + 模板变量)+ httpRequestService.ts(出站请求/超时/输出);命令 kbengine.httpRequest.run、kbengine.httpRequests.run。模板变量:`${module}`=按 `__init__.py` 包边界上扫(httpRequests.ts:108-116;base/cell 无 `__init__.py` 不算包段)、`${moduleBasename}`=末段一层、`${filename}`、`${line}`、`${sel}` + VS Code 官方变量族(经 variableSubstitution 单一真源);字面替换,无 URL 编码。
-- 【事实】`relaod` 拼写存在于内置示例:`http://127.0.0.1:8000/api/hotfix?relaod=${module}`(src/httpRequests.ts:47、package.json:895、docs/zh/guide/configuration.md:273)——与书 19 章口径一致:这是兼容输入,**不得未核实服务端实现就擅自更正**。服务端(KBEngine 管理接口)实现不在本仓库——HR-AUDIT-009 待测。
-- 【事实】Watch:hotReload.ts 是「保存/监视→去抖(默认 500ms)→触发指定 quick action」,默认关,与 HTTP 热更新**无任何连线**;不存在 HTTP 自动热更。
+- 【事实】内置示例端点/参数名以 2026-11-06 用户令为准:`POST http://127.0.0.1:8090/hotfix`,body 带 `module_name=${module}`(src/httpRequests.ts、package.json `kbengine.httpRequests` 默认值、docs/zh/guide/configuration.md,测试锁同步);旧的错误拼写(批152 记录的 `8000/api/hotfix?…`)已全仓清零,`tests/hotfixSpellingGate.test.ts` 全量 grep 断言。服务端(KBEngine 管理接口)实现不在本仓库——HR-AUDIT-009 待测。
+- 【事实】Watch:hotReload.ts 是「保存/监视→去抖(默认 500ms)→触发热更」,**默认开**(2026-11-06 用户令;显式 `enabled=false` 仍关);未配 `actionName` 时经 TS 发默认 HTTP 热更请求 `POST http://127.0.0.1:8090/hotfix`(body `module_name=<模块名>`,src/hotReloadDefaultHotfix.ts),一键关 = 状态栏点击 / `kbengine.hotReload.toggle`。
 - 【事实】Hash/Digest:src/ 无 .def/.xml 哈希或引擎 Digest 实现(仅 logHub.ts:101 用 sha256 做日志去重指纹);热更新成功确认(transport_success/accepted/applied 分类)无任何代码。
 - 【差异清单(现状 → 书 19 章规范)】
   1. 模块名:现 `${module}`=完整包路径(entities.fight.FightAI),书要求双名称模型 requestModule=fight.FightAI(父目录名+文件短名)+ fullModule 展示——需 HR-MOD 改造;
   2. 成功语义:现仅展示 HTTP 响应预览,无 accepted/applied 区分、无「请求已发送/待确认」状态——需 HR-STATE;
-  3. Watch→HTTP:无连线,quick action 触发 ≠ 热更——需 HR-WATCH adapter 复用 hotReload 触发器;
+  3. Watch→HTTP:2026-11-06 起默认路径已连线(保存 → 默认热更 POST `http://127.0.0.1:8090/hotfix`,src/hotReloadDefaultHotfix.ts);走 quick action 的按目标/幂等语义仍需 HR-WATCH adapter;
   4. Hash:全缺——HR-HASH 全量待建;
   5. 记录唯一化:无 targetId+rootId+URI 记录模型;
-  6. 安全:无 workspace 白名单/endpoint 批准/默认关的 per-target 开关(hotReload 默认关可复用)。
+  6. 安全:无 workspace 白名单/endpoint 批准/默认关的 per-target 开关(hotReload 的一键开关与默认端点约束可复用)。
 - 【事实】逐项实现路径落点:本文件即差异清单指针;HR-AUDIT-012 的 docs/hotreload/current-implementation.md 已由并行 HR-PR-01 落库(commit 1e30ff8,与本审计同一基点 SHA 36052c4),HR 差异清单以该文件为准。
 
 ## PERF-002/003/004 fixtures 规格(现状与差距)

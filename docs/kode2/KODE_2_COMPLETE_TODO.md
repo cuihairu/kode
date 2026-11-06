@@ -456,7 +456,7 @@ kode/
 
 > 本节覆盖手动热更新与自动 Watch，不能做第二套彼此分离的 HTTP 功能。用户已确认：**HTTP 热更新的模块名只需文件名（去掉 .py）和直接父目录名；界面完整展示模块路径**。
 > 已知 Kode 文档存在可配置 HTTP Quick Requests、模块变量、手动调用与结果输出；Watch、Hash、成功确认的**代码实现程度未证实**，下面均为审计/开发任务，禁止标成已完成。
-> HTTP 示例中若出现 `relaod`，视为兼容性输入：不得不核查服务器实现就自行更正请求字段。
+> HTTP 示例的端点与参数名以 2026-11-06 用户令为准（`http://127.0.0.1:8090/hotfix` + `module_name=`）；历史上的错误拼写不再作为兼容输入携带，全仓 grep 门保证其不回潮。
 
 ### 19.1 不可变的功能规范和示例
 
@@ -537,7 +537,7 @@ scripts/common/utils/math.py      -> requestModule=utils.math,    fullModule=com
 - [ ] HR-HTTP-001 从现有 Quick Requests 抽取可复用 RequestExecutor；不可破坏普通通用 HTTP 功能。
 - [ ] HR-HTTP-002 `HotReloadProvider` 接受 module identity、target、revision、request correlation id，产生结构化 outcome。
 - [ ] HR-HTTP-003 保持自定义 URL/method/headers/body/变量模板，处理 URL query encoding、JSON escaping 与 HTTP method semantics。
-- [ ] HR-HTTP-004 保留已有不规范 HTTP 字段拼写作为用户兼容输入，不未经核验自动更正 `relaod`。
+- [x] HR-HTTP-004 HTTP 字段拼写口径：2026-11-06 用户令更正为 `http://127.0.0.1:8090/hotfix` + `module_name=`，旧错误拼写全仓清零（`tests/hotfixSpellingGate.test.ts` 门断言）。
 - [ ] HR-HTTP-005 所有自动 HTTP 请求仅能发送到用户明确批准的 target endpoint；Workspaces 未信任时禁止发送。
 - [ ] HR-HTTP-006 配置网络超时（连接/请求）、最大响应体、header/body redaction；HTTP client 连接池复用。
 - [ ] HR-HTTP-007 按目标维护有界并发队列，默认同目标串行；其他目标允许独立并发且全局上限。

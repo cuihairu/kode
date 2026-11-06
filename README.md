@@ -190,7 +190,7 @@ Monitoring data requires both `machine` discovery and `watcher` queries. When th
 - [Honest "telnet off" notice with the kbengine.xml enablement snippet when the port is closed]
 
 ### HTTP Quick Requests
-- [`kbengine.httpRequests` settings list: name / URL template / method / headers / body / enable switch / keybinding hint, with one bundled example (disabled by default) shaped after a real hot-reload endpoint — `curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'`]
+- [`kbengine.httpRequests` settings list: name / URL template / method / headers / body / enable switch / keybinding hint, with one bundled example (disabled by default) shaped after the default hot-reload endpoint — `curl -X POST 'http://127.0.0.1:8090/hotfix' -d 'module_name=entities.fight.FightAI'`]
 - [Custom template variables: `${module}` (module path scanned along `__init__.py` package boundaries — `entities/fight/FightAI.py` → `entities.fight.FightAI`; `base`/`cell` role directories have no `__init__.py` and do not count, so the module name falls back to the bare file name), `${moduleBasename}` (last segment only, `FightAI`), `${filename}` (file name), `${line}`, `${sel}`; substituted literally, no URL encoding]
 - [Official VS Code variable family also resolves in templates (`${file}`=absolute path, `${workspaceFolder}`, `${fileBasenameNoExtension}`, `${env:NAME}`, ...); placeholders unknown to both tables are kept as-is]
 - [Two trigger paths: the command-palette quick pick, or a keybinding on `kbengine.httpRequest.run` with `args.name` via keybindings.json — open a .py file and press the shortcut to fire a hot reload]

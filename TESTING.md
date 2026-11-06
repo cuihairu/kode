@@ -4789,10 +4789,12 @@ tsc/lint/vitepress/mocha 11 全绿;extension.ts 509/510 语句(languageProviders
 
 ## 批152:HTTP 快捷请求真实示例 + 官方变量族 + ${moduleBasename}(2026-10-17)
 
-背景:用户指出内置示例 URL 是瞎写的,给了真实热更新服务形态
-`http://127.0.0.1:8000/api/hotfix?relaod=xx.yy`(relaod 为其服务的实际
-参数名,非笔误不改);xx.yy 需取当前打开文件的模块名,无模块时直接文件
+背景:用户指出内置示例 URL 是瞎写的,给了当时记录的真实热更新服务形态
+`http://127.0.0.1:8000/api/hotfix?<参数名>=xx.yy`(该批按「不核实服务端实现
+就不改」的口径原样保留);xx.yy 需取当前打开文件的模块名,无模块时直接文件
 名;再令「只需要一层的 module」,增 ${moduleBasename} 一层粒度占位。
+(2026-11-06 用户令:默认端点与参数名更正为 `http://127.0.0.1:8090/hotfix` +
+`module_name=`,旧拼写全仓清零。)
 
 实现:httpRequests 增 ${moduleBasename}(末段模块名,buildTemplateVars 由
 module.lastIndexOf('.') 切,回落形态与 ${module} 一致,共五枚自定义占位);
