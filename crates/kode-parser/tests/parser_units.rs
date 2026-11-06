@@ -363,3 +363,15 @@ fn text_and_cdata_nodes_are_distinguishable() {
         .collect();
     assert_eq!(kinds, vec!["cdata", "text"]);
 }
+
+/// KR-AUD-88(RSV-9):元素形态接口引用——引擎 loadInterfaces
+/// (entitydef.cpp:561-585)条目 getKey 必属 {interface,Interface,type,Type},
+/// 接口名取条目首个非注释子节点 getKey(trim(Value),xml.cpp:72-95/113-119):
+/// `<Interface><MoveIface/></Interface>` 取元素名、`<interface> Text </interface>`
+/// 取 trim 文本;非四拼写条目不产出。修前只取直文本,元素形态整体丢失。
+#[test]
+fn interfaces_element_form_and_wrapper_spellings() {
+    let text = "<root><Interfaces><Interface><MoveIface/></Interface><interface> TextIface </interface><Foo> NoIface </Foo><type>TypeIface</type></Interfaces></root>";
+    let def = parse_def(text);
+    assert_eq!(def.interfaces, vec!["MoveIface", "TextIface", "TypeIface"]);
+}
