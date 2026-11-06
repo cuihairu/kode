@@ -35,6 +35,18 @@ export interface ConfigDeriveResult {
         passwordSet: boolean;
       }>;
     };
+    /** CLONE-P5 骨架:Rust 派生数据库连接档案(明文密码不回传) */
+    database: {
+      available: boolean;
+      dbType: string;
+      host: string;
+      port: number;
+      username: string;
+      databaseName: string;
+      characterSet: string;
+      encrypt: boolean;
+      passwordAvailable: boolean;
+    };
     entryScripts: Array<{
       process: string;
       module: string;
@@ -80,6 +92,23 @@ export interface ConfigDerivedScanRootState {
       passwordSet: boolean;
     }>;
   };
+  /**
+   * 派生数据库连接档案(CLONE-P5 骨架,「玩家数据」只读面板读):连接要素
+   * 真源在 Rust derive_database(engine config 两棵树);密码不回传值——
+   * passwordAvailable 仅标记 encrypt=false 明文可连,明文由连接面读同
+   * 一份引擎配置(serverConfigMerge),派生不可用时 available:false。
+   */
+  database: {
+    available: boolean;
+    dbType: string;
+    host: string;
+    port: number;
+    username: string;
+    databaseName: string;
+    characterSet: string;
+    encrypt: boolean;
+    passwordAvailable: boolean;
+  };
   /** RPC 调用是否成功(失败=该代仅一次尝试,回退旧链,不再锤 Rust) */
   ok: boolean;
   reason: string | null;
@@ -87,6 +116,19 @@ export interface ConfigDerivedScanRootState {
 
 let cached: ConfigDerivedScanRootState | null = null;
 let inflight: Promise<ConfigDerivedScanRootState> | null = null;
+
+/** 派生不可用时的数据库档案占位(available:false,叶子留空如实降级) */
+const DATABASE_PROFILE_UNAVAILABLE: ConfigDerivedScanRootState['database'] = {
+  available: false,
+  dbType: '',
+  host: '',
+  port: 0,
+  username: '',
+  databaseName: '',
+  characterSet: '',
+  encrypt: true,
+  passwordAvailable: false
+};
 
 /** 同步读派生扫描根(仅取有效非降级且目录存在的第一个);不可用 → null(旧链兜底) */
 export function getConfigDerivedScanRoot(): string | null {
@@ -105,6 +147,19 @@ export function getConfigDerivedScanRoot(): string | null {
 /** 当前代缓存状态;代不匹配(根配置已变未刷新)/从未取过 → null */
 export function getConfigDerivedScanRootState(): ConfigDerivedScanRootState | null {
   return currentState();
+}
+
+/**
+ * 派生数据库连接档案(CLONE-P5 骨架,只读):仅派生成功(available)时给出,
+ * 供「玩家数据」面板与只读查询命令消费;不可用 → null(调用方如实降级,
+ * 不虚构连接)。明文密码不在此面——连接期经 serverConfigMerge 就地读取。
+ */
+export function getDerivedDatabaseProfile(): ConfigDerivedScanRootState['database'] | null {
+  const state = currentState();
+  if (!state || !state.ok || !state.database.available) {
+    return null;
+  }
+  return state.database;
 }
 
 function currentState(): ConfigDerivedScanRootState | null {
@@ -160,6 +215,7 @@ async function refresh(generation: number): Promise<ConfigDerivedScanRootState> 
       entryScripts,
       debug: { ready: false, reasons: ['gate unavailable'] },
       telnet: { enabled: false, endpoints: [] },
+      database: DATABASE_PROFILE_UNAVAILABLE,
       ok: false,
       reason: 'gate unavailable'
     };
@@ -188,6 +244,7 @@ async function refresh(generation: number): Promise<ConfigDerivedScanRootState> 
       entryScripts,
       debug: { ready: false, reasons: [outcome.reason] },
       telnet: { enabled: false, endpoints: [] },
+      database: DATABASE_PROFILE_UNAVAILABLE,
       ok: false,
       reason: outcome.reason
     };
@@ -204,6 +261,7 @@ async function refresh(generation: number): Promise<ConfigDerivedScanRootState> 
     entryScripts: derive.entryScripts,
     debug: derive.debug,
     telnet: derive.telnet,
+    database: derive.database,
     ok: true,
     reason: null
   };

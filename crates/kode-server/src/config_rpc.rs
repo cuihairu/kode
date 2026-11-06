@@ -177,6 +177,19 @@ fn derive_to_json(caps: &DeriveCapabilities) -> Value {
                 "passwordSet": e.password_set,
             })).collect::<Vec<_>>(),
         },
+        // CLONE-P5 骨架:Rust 派生数据库连接档案(明文密码不回传,
+        // passwordAvailable 仅标记 encrypt=false 且配置非空)。
+        "database": {
+            "available": caps.database.available,
+            "dbType": caps.database.db_type,
+            "host": caps.database.host,
+            "port": caps.database.port,
+            "username": caps.database.username,
+            "databaseName": caps.database.database_name,
+            "characterSet": caps.database.character_set,
+            "encrypt": caps.database.encrypt,
+            "passwordAvailable": caps.database.password_available,
+        },
         "entryScripts": caps.entry_scripts.iter().map(|s| json!({
             "process": s.process,
             "module": s.module,

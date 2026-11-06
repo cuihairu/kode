@@ -92,6 +92,17 @@ const makeGate = (calls: Array<{ method: string; params: unknown }>): KodeCoreGa
           derive: {
             defScanRoots: derive.defScanRoots,
             telnet: { enabled: false, endpoints: [] },
+    database: {
+      available: false,
+      dbType: '',
+      host: '',
+      port: 0,
+      username: '',
+      databaseName: '',
+      characterSet: '',
+      encrypt: true,
+      passwordAvailable: false
+    },
             entryScripts: [],
             debug: { ready: !derive.defScanRoots.degraded, reasons: [] }
           },

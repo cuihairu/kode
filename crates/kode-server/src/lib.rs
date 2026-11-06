@@ -5,6 +5,7 @@ pub mod client_sdk;
 pub mod completion;
 pub mod config_rpc;
 pub mod database_schema;
+pub mod db_clone;
 pub mod def_md5;
 pub mod definition;
 pub mod dependency_graph;

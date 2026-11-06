@@ -55,6 +55,7 @@
 | KBEngineDefPythonParityCodeActionProvider | languageProviders.ts:6058 | :1776 | 诊断面(context.diagnostics,code=def-method-missing-in-python)+双向定位面(目标 Python 文件/类)+当前文档 def 结构(签名类型映射) | 编辑提案(WorkspaceEdit,类尾插方法骨架) |
 | KBEngineReceiverNoneGuardCodeActionProvider | languageProviders.ts:5594 | :1784 | 诊断面(context.diagnostics,code=kbengine.receiverNone)+当前文档文本 | 编辑提案(WorkspaceEdit,包裹式首选+早退式) |
 | HotReloadFileStateCodeLensProvider | hotReloadFileStateLens.ts:43 | :4456 | HotReloadFileStateMachine 派生视图(台账事实源,IDE-HOT-100) | 纯读;状态点点击命令 kbengine.hotReload.showFileState |
+| PlayerDataTreeProvider | playerDataPanel.ts:108 | :3465 | CloneProfileStore(configDerive 缓存)+ databaseDrift 只读执行器(MySQL 档案,CLONE-P5) | 纯读(零编辑字段);刷新命令 kbengine.playerData.refresh |
 
 命令查询面(非 register\*Provider,同口径记录):符号引用面板 `kbengine.symbolReferences.show` 走 defReferenceGraph 自定义引用图(与 LSP references provider 并存);实体依赖图 `kbengine.dependency.show` 走 dependencyGraph.ts + webview。数据源同为 EntityMappingManager 快照,副作用限于 webview。
 

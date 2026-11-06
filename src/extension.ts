@@ -387,6 +387,16 @@ import { runTablePreviewCommand } from './databaseTablePreviewCommand';
 import { createPreviewColumnSourceTableResolver } from './databasePreviewColumnSource';
 import { runSchemaImpactCommand } from './databaseSchemaImpactCommand';
 import {
+  runConfigureCloneProfileCommand,
+  runExportCloneCommand,
+  runImportCloneCommand,
+  runInspectCloneArchiveCommand,
+  runShowCloneAuditCommand,
+  runTestCloneConnectionCommand,
+  type PlayerCloneCommandDeps
+} from './playerDataCloneCommands';
+import { CloneProfileStore } from './playerDataCloneProfiles';
+import {
   guardConnectionFactoryWithQueryLifecycle,
   type QueryGuard
 } from './databaseQueryLifecycleIntegration';
@@ -503,6 +513,12 @@ import {
   stopHostVitalsMonitor
 } from './hostVitals';
 import { TelnetTreeProvider } from './telnetTree';
+import { ensureConfigDerivedScanRoot } from './configDerive';
+import {
+  PlayerDataTreeProvider,
+  queryPlayerByDbid,
+  testPlayerDatabaseConnection
+} from './playerDataPanel';
 /**
  * Kode - KBEngine Development Environment
  * KBEngine VSCode 扩展主入口
@@ -3271,6 +3287,135 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(previewSchemaImpactCommand);
 
+  // CLONE-P5 玩家数据克隆(导出/导入/归档浏览/审计):编排面在
+  // playerDataCloneCommands(UI/连接/文件全注入,单测驱动纯编排),此处接
+  // 真实 vscode 面。Profile 台账 = workspaceState + SecretStorage(密码不
+  // 落配置);实体表推导 = databaseSchema 快照按工作区根逐个取首个命中;
+  // 审计落盘 .kode/clone-runs(首工作区根)。Rust 桥($/kode/dbClone/*)
+  // 无 TS 兜底,gate 缺席时命令层如实报「需要 Rust 后端」。deps 惰性组装
+  // (首个克隆命令才建台账/通道)——测试替身的极简 context 不带
+  // workspaceState/secrets,activate 期急切构造会炸装配。
+  let playerCloneDeps: PlayerCloneCommandDeps | null = null;
+  const getPlayerCloneDeps = (): PlayerCloneCommandDeps => {
+    if (playerCloneDeps) {
+      return playerCloneDeps;
+    }
+    const playerCloneChannel = vscode.window.createOutputChannel('KBEngine Player Clone');
+    context.subscriptions.push(playerCloneChannel);
+    const cloneRunsDir = (): vscode.Uri | null => {
+      const folder = vscode.workspace.workspaceFolders?.[0];
+      return folder ? vscode.Uri.joinPath(folder.uri, '.kode', 'clone-runs') : null;
+    };
+    playerCloneDeps = {
+    profiles: new CloneProfileStore({
+      load: () => context.workspaceState.get('kode.playerClone.profiles'),
+      save: data => {
+        void context.workspaceState.update('kode.playerClone.profiles', data);
+      },
+      secrets: {
+        get: async key => context.secrets.get(key),
+        store: async (key, value) => context.secrets.store(key, value),
+        delete: async key => context.secrets.delete(key)
+      }
+    }),
+    listEntityNames: () =>
+      (vscode.workspace.workspaceFolders ?? []).flatMap(folder =>
+        getRegisteredEntities(folder.uri.fsPath).map(entity => entity.name)
+      ),
+    resolveEntityTables: entityName => {
+      for (const folder of vscode.workspace.workspaceFolders ?? []) {
+        const snapshot = getDatabaseSchemaSnapshot(entityName, folder.uri.fsPath);
+        if (snapshot && snapshot.tables.length > 0) {
+          return snapshot.tables;
+        }
+      }
+      return null;
+    },
+    showQuickPick: async (items, options) => vscode.window.showQuickPick(items, options),
+    showInputBox: async options => vscode.window.showInputBox(options),
+    showInformationMessage: async message => vscode.window.showInformationMessage(message),
+    showWarningMessage: async message => vscode.window.showWarningMessage(message),
+    showErrorMessage: async message => vscode.window.showErrorMessage(message),
+    withProgress: async (options, task) =>
+      vscode.window.withProgress(
+        { ...options, location: vscode.ProgressLocation.Notification },
+        (_progress, token) => Promise.resolve(task(token))
+      ),
+    pickArchiveSavePath: async defaultName => {
+      const picked = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(defaultName),
+        filters: { 'KBEngine Player Data Clone': ['kdpclone'] }
+      });
+      return picked?.fsPath;
+    },
+    pickArchiveOpenPath: async () => {
+      const picked = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        openLabel: '选择归档(Select archive)',
+        filters: { 'KBEngine Player Data Clone': ['kdpclone'] }
+      });
+      return picked?.[0]?.fsPath;
+    },
+    writeAuditFile: async (name, content) => {
+      const dir = cloneRunsDir();
+      if (!dir) {
+        throw new Error('Player Clone 审计需要至少一个工作区文件夹(.kode/clone-runs)。');
+      }
+      await vscode.workspace.fs.createDirectory(dir);
+      const file = vscode.Uri.joinPath(dir, name);
+      await vscode.workspace.fs.writeFile(file, Buffer.from(content, 'utf8'));
+      return file.fsPath;
+    },
+    listAuditFiles: async () => {
+      const dir = cloneRunsDir();
+      if (!dir) {
+        return [];
+      }
+      try {
+        const entries = await vscode.workspace.fs.readDirectory(dir);
+        return entries
+          .filter(([name, type]) => type === vscode.FileType.File && name.endsWith('.json'))
+          .map(([name]) => name)
+          .sort()
+          .reverse();
+      } catch {
+        return [];
+      }
+    },
+    readAuditFile: async name => {
+      const dir = cloneRunsDir();
+      if (!dir) {
+        return null;
+      }
+      try {
+        const bytes = await vscode.workspace.fs.readFile(vscode.Uri.joinPath(dir, name));
+        return Buffer.from(bytes).toString('utf8');
+      } catch {
+        return null;
+      }
+    },
+    channel: playerCloneChannel,
+    now: () => Date.now()
+    };
+    return playerCloneDeps;
+  };
+  const cloneCommandEntries: Array<[string, (uri?: vscode.Uri) => Promise<void>]> = [
+    ['kbengine.clone.configureSource', () => runConfigureCloneProfileCommand(getPlayerCloneDeps(), 'source')],
+    ['kbengine.clone.configureTarget', () => runConfigureCloneProfileCommand(getPlayerCloneDeps(), 'target')],
+    ['kbengine.clone.testSource', () => runTestCloneConnectionCommand(getPlayerCloneDeps(), 'source')],
+    ['kbengine.clone.testTarget', () => runTestCloneConnectionCommand(getPlayerCloneDeps(), 'target')],
+    [
+      'kbengine.clone.inspectArchive',
+      uri => runInspectCloneArchiveCommand(getPlayerCloneDeps(), uri?.fsPath)
+    ],
+    ['kbengine.clone.export', () => runExportCloneCommand(getPlayerCloneDeps())],
+    ['kbengine.clone.import', uri => runImportCloneCommand(getPlayerCloneDeps(), uri?.fsPath)],
+    ['kbengine.clone.showAudit', () => runShowCloneAuditCommand(getPlayerCloneDeps())]
+  ];
+  for (const [id, run] of cloneCommandEntries) {
+    context.subscriptions.push(vscode.commands.registerCommand(id, run));
+  }
+
   // 初始化服务器管理器
   const serverManager = new KBEngineServerManager(context);
   setDefaultScriptRuntime(serverManager.processManager, serverManager.logHub);
@@ -3313,6 +3458,46 @@ export function activate(context: vscode.ExtensionContext) {
     telnetTreeProvider
   );
   context.subscriptions.push(telnetTreeRegistration);
+
+  // CLONE-P5 骨架:「玩家数据」专用只读面板(用户令 2026-11-06:不做通用
+  // MySQL 客户端、零编辑字段、只能查询)。连接档案真源在 Rust
+  // derive_database(configDerive 缓存);查询经 databaseDrift 只读执行器。
+  const playerDataProvider = new PlayerDataTreeProvider();
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider('kbengine.playerData', playerDataProvider),
+    vscode.commands.registerCommand('kbengine.playerData.refresh', async () => {
+      await ensureConfigDerivedScanRoot().catch(() => {
+        /* 派生失败:面板如实展示未找到 */
+      });
+      playerDataProvider.refresh();
+    }),
+    vscode.commands.registerCommand('kbengine.playerData.testConnection', async () => {
+      await ensureConfigDerivedScanRoot().catch(() => {
+        /* 同上:派生失败走降级文案 */
+      });
+      playerDataProvider.refresh();
+      const message = await testPlayerDatabaseConnection();
+      void vscode.window.showInformationMessage(message);
+    }),
+    vscode.commands.registerCommand('kbengine.playerData.queryByDbid', async () => {
+      await ensureConfigDerivedScanRoot().catch(() => {
+        /* 同上 */
+      });
+      const dbid = await vscode.window.showInputBox({
+        prompt: '玩家 DBID(十进制正整数;只读查询 tbl_Account)',
+        placeHolder: '如 1',
+        validateInput: value =>
+          /^\d+$/.test(value.trim()) || value.trim() === ''
+            ? null
+            : '仅接受十进制正整数'
+      });
+      if (dbid === undefined || dbid.trim() === '') {
+        return;
+      }
+      const message = await queryPlayerByDbid(dbid);
+      void vscode.window.showInformationMessage(message);
+    })
+  );
 
   // IDE-PDBG-004 远程服务器管理视图:~/.ssh/config 主机 + 手动项,「本地」
   // 恒首位默认选中;选中态供 debug/py-spy 分派(debug.json 组件级声明仍最

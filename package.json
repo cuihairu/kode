@@ -51,6 +51,14 @@
     "onCommand:kbengine.database.previewTable",
     "onCommand:kbengine.database.previewSchemaImpact",
     "onCommand:kbengine.database.showDriftEvidence",
+    "onCommand:kbengine.clone.configureSource",
+    "onCommand:kbengine.clone.configureTarget",
+    "onCommand:kbengine.clone.testSource",
+    "onCommand:kbengine.clone.testTarget",
+    "onCommand:kbengine.clone.inspectArchive",
+    "onCommand:kbengine.clone.export",
+    "onCommand:kbengine.clone.import",
+    "onCommand:kbengine.clone.showAudit",
     "onCommand:kbengine.server.start",
     "onCommand:kbengine.server.stop",
     "onCommand:kbengine.server.restart",
@@ -103,6 +111,9 @@
     "onCommand:kbengine.snippets.generateFromSelection",
     "onCommand:kbengine.telnet.showPanel",
     "onCommand:kbengine.telnet.disconnect",
+    "onCommand:kbengine.playerData.refresh",
+    "onCommand:kbengine.playerData.testConnection",
+    "onCommand:kbengine.playerData.queryByDbid",
     "onCommand:kbengine.httpRequests.run",
     "onCommand:kbengine.httpRequest.run",
     "onCommand:kbengine.discovery.report",
@@ -291,6 +302,10 @@
           "when": "kbengine.telnetConfigured"
         },
         {
+          "id": "kbengine.playerData",
+          "name": "%kbengine.view.playerData%"
+        },
+        {
           "id": "kbengine.remoteServers",
           "name": "%kbengine.view.remoteServers%"
         },
@@ -377,6 +392,46 @@
         "command": "kbengine.database.showDriftEvidence",
         "title": "Show Drift Evidence",
         "icon": "$(history)"
+      },
+      {
+        "command": "kbengine.clone.configureSource",
+        "title": "Configure Clone Source Connection",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "kbengine.clone.configureTarget",
+        "title": "Configure Clone Target Connection",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "kbengine.clone.testSource",
+        "title": "Test Clone Source Connection",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "kbengine.clone.testTarget",
+        "title": "Test Clone Target Connection",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "kbengine.clone.inspectArchive",
+        "title": "Inspect Player Clone Archive",
+        "icon": "$(file-zip)"
+      },
+      {
+        "command": "kbengine.clone.export",
+        "title": "Export Player Data to Archive",
+        "icon": "$(export)"
+      },
+      {
+        "command": "kbengine.clone.import",
+        "title": "Import Player Data from Archive",
+        "icon": "$(import)"
+      },
+      {
+        "command": "kbengine.clone.showAudit",
+        "title": "Show Player Clone Import Audits",
+        "icon": "$(output)"
       },
       {
         "command": "kbengine.server.start",
@@ -646,6 +701,21 @@
         "icon": "$(debug-disconnect)"
       },
       {
+        "command": "kbengine.playerData.refresh",
+        "title": "Refresh Player Data Profile",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "kbengine.playerData.testConnection",
+        "title": "Test Database Connection (Read-Only SELECT 1)",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "kbengine.playerData.queryByDbid",
+        "title": "Query Player by DBID (Read-Only)",
+        "icon": "$(search)"
+      },
+      {
         "command": "kbengine.httpRequests.run",
         "title": "Run HTTP Quick Request"
       },
@@ -827,6 +897,21 @@
           "group": "navigation"
         },
         {
+          "command": "kbengine.playerData.refresh",
+          "when": "view == kbengine.playerData",
+          "group": "navigation@0"
+        },
+        {
+          "command": "kbengine.playerData.testConnection",
+          "when": "view == kbengine.playerData",
+          "group": "navigation@1"
+        },
+        {
+          "command": "kbengine.playerData.queryByDbid",
+          "when": "view == kbengine.playerData",
+          "group": "navigation@2"
+        },
+        {
           "command": "kbengine.quickActions.show",
           "when": "view == kbengine.serverControl",
           "group": "navigation"
@@ -961,6 +1046,16 @@
           "command": "kbengine.entity.new",
           "when": "explorerResourceIsFolder",
           "group": "creation"
+        },
+        {
+          "command": "kbengine.clone.inspectArchive",
+          "when": "resourceExtname == .kdpclone",
+          "group": "navigation@60"
+        },
+        {
+          "command": "kbengine.clone.import",
+          "when": "resourceExtname == .kdpclone",
+          "group": "navigation@61"
         },
         {
           "command": "kbengine.git.showHistory",
