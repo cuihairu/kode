@@ -758,6 +758,7 @@ The flow graph panel supports:
   - The status bar item `$(eye…) 热更: …` reflects the watch state machine: Watch Off (`kbengine.hotReload.enabled=false` or empty globs) → Ready (watchers built) → Sending (debounce elapsed, request fired) → Sent(unverified) → Failed; clicking the item runs `kbengine.hotReload.toggle` (one-key on/off), and the toggle notice's 「打开日志」 button opens this log
   - Honest semantics: a completed action without errors is only 「已发送(未确认)」 (sent, unverified) — no business receipt is verified, so the UI never claims the module was applied (receipt verification belongs to the HR-STATE series)
   - Each trigger logs time / trigger files (merged by debounce) / the debounce value, plus the request line and the outcome line (sent-unverified / failed); log lines are appended immediately and are not subject to the status-bar throttle
+  - Running this command re-samples the disk versions and appends the HOT-VER version ledger (per in-scope tracked file: baseline version, disk version, then every version jump with its time, attempt, digest prefix and accepted/applied/failed outcome) before opening the channel; with no tracked file nothing extra is written
   - Hidden from the command palette (`when: false`) — reach it from the toggle notice's 「打开日志」 button or the first-run notice
 
 ### `kbengine.hotReload.toggle`

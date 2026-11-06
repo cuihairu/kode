@@ -134,6 +134,72 @@ never conflated with FAILED.
 6. Retry → new SENT (attempt advances), then APPLIED on success.
 7. State filter lists only DIRTY/SENT ("changed but not reloaded").
 
+### 3.6 状态栏文件版本号(HOT-VER)
+
+状态栏在五种既有状态(`watch-off / ready / sending / sent-unverified / failed`)
+之上**正交叠加**每文件版本号:不新增状态、不改五态原文案,版本号只描述
+「盘上内容变了几次/基线在哪」。
+
+| 情形 | 状态栏文案 | 含义 |
+|---|---|---|
+| 已同步 | `$(eye) 热更: 就绪 v3` | 单号 = 盘上当前版本,基线已追平 |
+| 待同步 | `$(cloud-upload) 热更: 已发送(未确认) v2→v3` | 双号 = 基线/上次发送版本 → 盘上当前版本 |
+| 未跟踪 / 不在监视范围 | `$(eye-closed) 热更: 关` | 不显版本号 |
+| watch-off 且无版本上下文 | 同上 | 五态原文案逐字不变 |
+
+- **版本 = 每文件单调递增整数**:首次跟踪记 v1;盘上 version token(异步
+  stat 的 `mtimeMs:size`,与 `src/sharedFileEvents.ts` 合并窗口同一口径)变则
+  +1;回退到旧内容也算新一次变化,版本**绝不倒退**。原始 token 不上屏,只显示
+  `vN`。
+- **基线随台账**:`HotReloadTargetStateStore` 内的文件版本簿与投递台账同
+  生命周期(不新开存储)。回执 `applied` 且 digest 与**当前盘上内容**一致时
+  基线追平到当前版本(转单号);盘上已变则不追平,双号如实保留——未校验回执
+  不标成功,版本号也不声称已生效。
+- **版本台账独立于 watcher**:`kbengine.hotReload.enabled=false` 时手动触发
+  路径(`kbengine.hotReload.showFileState`、`kbengine.hotReload.retryFailed`、
+  右键手动跑一次热更动作)照样建档出号,与开监视时**同文件同版本逐字相等**
+  ——watcher 只是版本簿的默认事件来源,不是它的前提;两条路径写同一份台账
+  同一实现(`noteFileVersion` 按 token 判重,同 token 只 +1,不产生两套计数)。
+  监视范围只看 `kbengine.hotReload.globs`(与 `enabled` 正交)。
+- **活动文档优先**:活动文档在监视范围且已跟踪 → 显示它的版本;否则回落
+  「最近变更文件」的版本;tooltip 列出全部待同步文件及其版本对;开日志命令
+  `kbengine.hotReload.showLog`(状态栏开关提示的「打开日志」入口)→ 「KBEngine
+  热更新」OUTPUT 列版本台账(当前文件、基线版本、盘上版本,以及
+  每次版本跃迁的时间、发送状态与回执:attempt、digest 前 8 位、
+  accepted/applied/failed)。
+- **红线**:版本号与五种状态正交,不构成新状态;applied 只来自双证核验,
+  未校验回执不标成功。
+
+> **English (status bar version badge).** The status bar stacks a per-file
+> version number orthogonally on the five existing states — no new state, no
+> rewritten face. One number (`热更: 就绪 v3`) means the on-disk content
+> matches the verified baseline (synced); a pair (`热更: … v2→v3`) means
+> baseline → current on-disk version (pending). Versions are monotonically
+> increasing integers per file: first observation = v1, each change of the
+> `mtimeMs:size` version token (same helper as `src/sharedFileEvents.ts`) = +1,
+> reverting to older content still counts as a change — the number never goes
+> down, and the raw token is never displayed. The baseline lives in the
+> target-state ledger (`HotReloadTargetStateStore`, same lifetime, no extra
+> store) and catches up to the current version only when an `applied` receipt's
+> digest matches the **current** disk content; if the disk moved on, the pair
+> stays. The ledger is **independent of the watcher switch**: with
+> `kbengine.hotReload.enabled=false`, the manual paths
+> (`kbengine.hotReload.showFileState`, `kbengine.hotReload.retryFailed`, a
+> hand-run hot reload action) produce the same numbers for the same file as
+> the watched path — the watcher is only the default event source, never a
+> prerequisite, and both paths write one ledger through one implementation
+> (`noteFileVersion` de-duplicates by token, so one token = one increment, no
+> second counter). Scope is decided by `kbengine.hotReload.globs` alone,
+> orthogonal to `enabled`. An active document in scope that is tracked shows
+> its own version, otherwise the badge falls back to the most recently changed
+the tooltip lists every pending file with its version pair; running
+`kbengine.hotReload.showLog` (the 「打开日志」 button in the toggle notice)
+appends the version ledger (current file, baseline, disk version, and every
+version jump with time, attempt, digest prefix and accepted/applied/failed
+outcome) to the 「KBEngine 热更新」 OUTPUT channel.
+> Version numbers only describe how many times the disk changed and where the
+> baseline sits — they never claim a reload took effect.
+
 ## 4. IDE-HOT-101 [P1] Reload channel abstraction (the transport interface)
 
 ### 4.1 Interface

@@ -410,6 +410,8 @@ Conflict rule: when another command shares the key, Keyboard Shortcuts lists bot
 | `kbengine.hotReload.tempEdit.autoRestore` | boolean | `true` | Restore the original content before sending the reload request; a failed restore aborts the request |
 | `kbengine.hotReload.tempEdit.scriptRoot` | string | empty | Script resource root for dual-name resolution (fullModule / requestModule); empty echoes the module name as unresolved, no guessing |
 
+Status-bar version numbers (HOT-VER): the status bar stacks a per-file version number on the five watch states — one number (`热更: 就绪 v3`) = on-disk content matches the verified baseline (synced), a pair (`热更: … v2→v3`) = baseline → current on-disk version (pending). The version ledger lives inside the hot-reload ledger and is **independent of the `enabled` switch**: with watching off, the manual paths (`kbengine.hotReload.showFileState`, `kbengine.hotReload.retryFailed`, running a hot-reload action by hand) still show numbers, byte-identical to the watched path for the same file — `globs` alone decides whether a file is in scope, and the watcher is only the ledger's default event source. Files outside `globs` show no version number; running `kbengine.hotReload.showLog` (the 「打开日志」 button in the toggle notice) appends the version ledger (current file, baseline version, disk version, every version jump with time / attempt / digest prefix / accepted-applied-failed outcome) to the 「KBEngine 热更新」 OUTPUT channel. Versions only count disk changes and mark where the baseline is — they never claim a reload took effect.
+
 Behavior rules:
 
 - **All three channels trigger**: a file's change, creation, and deletion all count as save events; any of them enters debounce.
