@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPythonCallGraphInRust,
-  buildPythonSymbolsInRust
+  buildPythonSymbolsInRust,
+  normalizeCallGraphPath
 } from '../src/pythonCallGraphRust';
 import type { KodeCoreGate } from '../src/kodeCoreGate';
 import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
@@ -263,3 +264,36 @@ describe('buildPythonSymbolsInRust(符号表 Rust 主路径)', () => {
     }
   });
 });
+
+
+// KR-AUD-89(RSV-8 防回归登记):Rust file_stem 只按 '/' 分割
+// (python_callgraph.rs:161)——斜杠归一在 RPC 边界完成,契约由两侧断言锁死。
+describe('normalizeCallGraphPath (KR-AUD-89 上游斜杠归一)', () => {
+  it('反斜杠路径归一为 /,POSIX 路径不变', () => {
+    expect(normalizeCallGraphPath('C:\\ws\\scripts\\cell\\Avatar.py')).toBe(
+      'C:/ws/scripts/cell/Avatar.py'
+    );
+    expect(normalizeCallGraphPath('/already/posix.py')).toBe('/already/posix.py');
+  });
+
+  it('buildPythonCallGraphInRust 发出的 files.path 全为 / 分隔', async () => {
+    let calledParams: unknown = null;
+    const fakeGate = {
+      runInRust: async (_method: string, p: unknown) => {
+        calledParams = p;
+        return { ok: true, result: cannedGraph() };
+      }
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(fakeGate);
+    try {
+      await buildPythonCallGraphInRust({
+        files: [{ path: 'scripts\\cell\\Avatar.py', text: 'def f():\n    pass\n' }]
+      });
+      const files = (calledParams as { files: Array<{ path: string }> }).files;
+      expect(files[0].path).toBe('scripts/cell/Avatar.py');
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+});
+

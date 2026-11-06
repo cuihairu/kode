@@ -144,6 +144,12 @@ struct FileAnalysis {
 }
 
 fn analyze(path: &str, text: &str) -> FileAnalysis {
+    // KR-AUD-89:路径分隔只认 '/',斜杠归一在上游 RPC 边界完成
+    // (TS normalizeCallGraphPath)——断言锁死契约,漏归一即红。
+    debug_assert!(
+        !path.contains('\\'),
+        "KR-AUD-89: callgraph path must be '/'-separated upstream: {path}"
+    );
     let ast = ParsedAst::new(text);
     let symbols = extract(&ast);
     let error_count = ast.errors().len();
