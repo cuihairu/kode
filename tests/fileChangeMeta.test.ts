@@ -400,3 +400,72 @@ describe('fileChangeMeta:进程归属(按 KBEngine 脚本目录约定,判不出�
     }
   });
 });
+
+describe('fileChangeMeta:module/package 仅 .py 才解析(Python 概念不外溢)', () => {
+  // module/package 是 Python 概念:非 py 文件(如 cell/Avatar.json)两字段
+  // 恒缺省(undefined,不用 '-'/空串冒充;'-' 只在渲染层 formatFileChangeMeta)。
+  // 其余字段面对非 py 照常:processKind 按目录判(路径归属与语言无关)、
+  // sha256/size/version 照读——只有模块名不解析。
+
+  it.each([
+    ['.json', `${SCRIPTS}/cell/Avatar.json`],
+    ['.tab', `${SCRIPTS}/cell/Avatar.tab`],
+    ['.txt', `${SCRIPTS}/cell/Avatar.txt`]
+  ])('非 py(%s):module/package 缺省,processKind/sha256/size 照常', async (_ext, file) => {
+    const io = fakeIo();
+    const content = '{"Avatar": {}}';
+    io.put(file, content, 1_700_000_000_000);
+    const resolver = createFileChangeMetaResolver(io.deps);
+
+    const meta = await resolver.metaFor(ev(file, 'change', '1700000000000:13'));
+
+    expect(meta.module, `${file}: 非 py 不带 module`).toBeUndefined();
+    expect(meta.package, `${file}: 非 py 不带 package`).toBeUndefined();
+    expect(meta.fileName, '文件短名照给').toBe(file.slice(SCRIPTS.length + 1).split('/').pop());
+    expect(meta.ext, '扩展名字段本身照给(大小写原样)').toBe(file.slice(file.lastIndexOf('.')));
+    expect(meta.processKind, '路径归属与语言无关:cell/ 仍归 cellapp').toBe('cellapp');
+    expect(meta.sha256, '非 py 的 sha256/读取口径不变').toBe(sha256Of(content));
+    expect(meta.size).toBe(13);
+    expect(meta.reason).toBeUndefined();
+  });
+
+  it('py 文件不受影响:同目录同名的 .py 仍解析出 module/package', async () => {
+    const io = fakeIo();
+    const file = `${SCRIPTS}/cell/Avatar.py`;
+    io.put(file, 'class Avatar: pass\n');
+    const resolver = createFileChangeMetaResolver(io.deps);
+
+    const meta = await resolver.metaFor(ev(file, 'change', '1700000000000:19'));
+
+    expect(meta.module).toBe('cell.Avatar');
+    expect(meta.package).toBe('cell');
+    expect(meta.processKind).toBe('cellapp');
+  });
+
+  it('大小写 .PY:仓内口径大小写不敏感(与 resolveModuleDualName 同源),仍解析', async () => {
+    const io = fakeIo();
+    const file = `${SCRIPTS}/cell/Avatar.PY`;
+    io.put(file, 'class Avatar: pass\n');
+    const resolver = createFileChangeMetaResolver(io.deps);
+
+    const meta = await resolver.metaFor(ev(file, 'change', '1700000000000:19'));
+
+    expect(meta.ext).toBe('.PY');
+    expect(meta.module).toBe('cell.Avatar');
+    expect(meta.package).toBe('cell');
+  });
+
+  it('渲染层对非 py:module=- package=-(缺省只在渲染层落 -),进程照常', async () => {
+    const io = fakeIo();
+    const file = `${SCRIPTS}/cell/Avatar.json`;
+    io.put(file, '{}');
+    const resolver = createFileChangeMetaResolver(io.deps);
+
+    const line = formatFileChangeMeta(await resolver.metaFor(ev(file, 'change', '1:2')));
+
+    expect(line).toContain('Avatar.json');
+    expect(line).toContain('module=-');
+    expect(line).toContain('package=-');
+    expect(line).toContain('process=cellapp');
+  });
+});
