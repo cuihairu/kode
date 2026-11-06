@@ -10,6 +10,8 @@
  */
 
 import * as vscode from 'vscode';
+import { WEBVIEW_THEME_CSS } from './webviewTheme';
+import { htmlLang, resolvePanelLocale, strings } from './webviewStrings';
 import { baseNameOf } from './quickActionConfig';
 import { LogLevel, LogParser } from './logParser';
 
@@ -384,22 +386,23 @@ export class LogErrorScanView {
   }
 
   private getHtml(report: RawLogScanReport): string {
+    const t = strings(resolvePanelLocale()).errorScan;
     const fileItems = report.files
       .map(
         file =>
-          `<li class="scan-file"><span class="scan-file-name">${this.escapeHtml(file.name)}</span> — ${
+          `<span class="scan-file-chip${file.readError === null ? '' : ' bad'}"><span class="scan-file-name">${this.escapeHtml(file.name)}</span> ${
             file.readError === null
-              ? `${file.lineCount} 行 / ${file.errorCount} 条`
-              : `<span class="scan-file-error">读取失败: ${this.escapeHtml(file.readError)}</span>`
-          }</li>`
+              ? `<span class="scan-file-meta">${file.lineCount} ${t.linesUnit} / ${file.errorCount} ${t.countUnit}</span>`
+              : `<span class="scan-file-error">${t.readFail}: ${this.escapeHtml(file.readError)}</span>`
+          }</span>`
       )
       .join('');
 
     const hitsSection =
       report.hits.length === 0
-        ? '<div class="empty-state">未发现 ERROR/CRITICAL 行</div>'
+        ? `<div class="empty-state">${t.noHits}</div>`
         : `<table class="hit-table"><thead><tr>
-             <th>计数</th><th>级别</th><th>组件</th><th>签名</th><th>最近时间</th>
+             <th>${t.colCount}</th><th>${t.colLevel}</th><th>${t.colComponent}</th><th>${t.colSignature}</th><th>${t.colLast}</th>
            </tr></thead><tbody id="hitBody">${report.hits
              .map(
                hit =>
@@ -417,38 +420,44 @@ export class LogErrorScanView {
              .join('')}</tbody></table>`;
 
     return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${htmlLang(resolvePanelLocale())}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KBEngine ERROR 扫描</title>
+<title>${t.title}</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    font-family: var(--vscode-font-family);
-    font-size: var(--vscode-font-size);
-    background-color: var(--vscode-editor-background);
-    color: var(--vscode-editor-foreground);
-    padding: 10px;
-  }
+  ${WEBVIEW_THEME_CSS}
+  body { padding: 10px; }
+  /* UI-08:汇总改中性大数字条,错误感只留给真正的错误数据 */
+  .scan-sum { display: flex; border-bottom: 1px solid var(--kode-border); margin-bottom: 10px; }
+  .scan-sum .cell { flex: 1; padding: 12px 16px; border-right: 1px solid var(--kode-border-soft); }
+  .scan-sum .cell:last-child { border-right: none; }
+  .scan-sum .sum-v { font-family: var(--kode-mono); font-size: 24px; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums; }
+  .scan-sum .sum-v.err { color: var(--kode-err); }
+  .scan-sum .sum-l { font-size: var(--kode-t-meta); color: var(--kode-fg-3); margin-top: 2px; }
   .toolbar { display: flex; gap: 10px; padding: 8px 0; margin-bottom: 10px; }
   .toolbar button {
     padding: 4px 14px;
-    background-color: var(--vscode-button-background);
-    color: var(--vscode-button-foreground);
-    border: none; border-radius: 2px; cursor: pointer;
+    background-color: var(--kode-btn);
+    color: #fff;
+    border: none; border-radius: 3px; cursor: pointer;
   }
-  .toolbar button:hover { background-color: var(--vscode-button-hoverBackground); }
+  .toolbar button:hover { background-color: var(--kode-btn-hover); }
   .summary {
-    padding: 8px 10px; margin-bottom: 10px; line-height: 1.6;
-    color: var(--vscode-descriptionForeground);
-    border-left: 3px solid var(--vscode-testing-iconFailed);
-    background-color: var(--vscode-inputValidation-errorBackground);
+    padding: 4px 0; margin-bottom: 10px; line-height: 1.6;
+    color: var(--kode-fg-3); font-size: var(--kode-t-meta);
   }
-  .section-title { font-size: 12px; color: var(--vscode-descriptionForeground); margin: 10px 0 4px; }
-  .scan-file { padding: 3px 0 3px 14px; list-style: none; }
-  .scan-file-name { font-family: var(--vscode-editor-font-family); }
-  .scan-file-error { color: var(--vscode-testing-iconFailed); }
+  .section-title { font-size: var(--kode-t-meta); font-weight: 600; color: var(--kode-fg-3); margin: 10px 0 6px; }
+  .scan-files { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .scan-file-chip {
+    display: inline-flex; gap: 8px; align-items: baseline;
+    background: var(--kode-surface); border: 1px solid var(--kode-border);
+    border-radius: var(--kode-r); padding: 4px 12px; font-size: var(--kode-t-meta);
+  }
+  .scan-file-chip.bad { border-color: rgba(241, 76, 76, 0.4); }
+  .scan-file-name { font-family: var(--kode-mono); color: var(--kode-fg-2); }
+  .scan-file-meta { color: var(--kode-fg-4); font-size: var(--kode-t-tag); font-family: var(--kode-mono); }
+  .scan-file-error { color: var(--kode-err); font-size: var(--kode-t-tag); }
   .hit-table { width: 100%; border-collapse: collapse; }
   .hit-table th, .hit-table td {
     text-align: left; padding: 5px 8px; font-size: 12px;
@@ -461,25 +470,26 @@ export class LogErrorScanView {
   .hit-count { font-weight: bold; color: var(--vscode-testing-iconFailed); }
   .hit-signature { font-family: var(--vscode-editor-font-family); }
   .hit-time { white-space: nowrap; color: var(--vscode-descriptionForeground); }
-  .level-badge { padding: 1px 6px; border-radius: 2px; color: white; font-size: 11px; }
-  .level-error { background-color: #F44336; }
-  .level-critical { background-color: #D32F2F; }
+  .level-badge { padding: 1px 7px; border-radius: 3px; font-family: var(--kode-mono); font-size: 10px; font-weight: 600; letter-spacing: .03em; }
+  .level-error { background: var(--kode-err-dim); color: var(--kode-err); }
+  .level-critical { background: rgba(241, 76, 76, 0.32); color: #ff8a80; }
   .empty-state { text-align: center; padding: 40px; color: var(--vscode-descriptionForeground); }
 </style>
 </head>
 <body>
 <div class="toolbar">
-  <button id="rescanBtn">重新扫描</button>
-  <span class="summary" style="border: none; background: none; padding: 0;">
-    点击命中行打开源文件对应行
-  </span>
+  <button id="rescanBtn">${t.rescan}</button>
+  <span class="summary">${t.hint}</span>
 </div>
-<div class="summary">
-  ${report.files.length} 个文件 · ${report.totalLines} 行 · ${report.totalErrors} 条 ERROR/CRITICAL · ${report.hits.length} 种签名
+<div class="scan-sum">
+  <div class="cell"><div class="sum-v err">${report.totalErrors}</div><div class="sum-l">${t.sumErrors}</div></div>
+  <div class="cell"><div class="sum-v">${report.totalLines}</div><div class="sum-l">${t.sumLines}</div></div>
+  <div class="cell"><div class="sum-v">${report.hits.length}</div><div class="sum-l">${t.sumSignatures}</div></div>
+  <div class="cell"><div class="sum-v">${report.files.length}</div><div class="sum-l">${t.sumFiles}</div></div>
 </div>
-<div class="section-title">扫描文件</div>
-<ul>${fileItems}</ul>
-<div class="section-title">ERROR/CRITICAL 聚合(按计数降序)</div>
+<div class="section-title">${t.filesSection}</div>
+<div class="scan-files">${fileItems || `<div class="empty-state">${t.noFiles}</div>`}</div>
+<div class="section-title">${t.hitsSection}</div>
 ${hitsSection}
 <script>
   const vscode = acquireVsCodeApi();

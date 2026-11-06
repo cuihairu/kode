@@ -197,7 +197,27 @@ const zh = {
     legendClient: 'ClientMethods'
   },
   errorScan: {
-    title: 'KBEngine ERROR 扫描'
+    title: 'KBEngine ERROR 扫描',
+    rescan: '重新扫描',
+    hint: '点击命中行打开源文件对应行',
+    filesSection: '扫描文件',
+    hitsSection: 'ERROR/CRITICAL 聚合（按计数降序）',
+    noFiles: '没有可扫描的日志文件',
+    noHits: '未发现 ERROR/CRITICAL 行',
+    readFail: '读取失败',
+    linesUnit: '行',
+    countUnit: '条',
+    filesUnit: '个文件',
+    signaturesUnit: '种签名',
+    colCount: '计数',
+    colLevel: '级别',
+    colComponent: '组件',
+    colSignature: '签名（数字已折 N）',
+    colLast: '最近时间',
+    sumErrors: 'ERROR / CRITICAL 行',
+    sumLines: '扫描总行数',
+    sumSignatures: '归一签名',
+    sumFiles: '扫描文件'
   }
 };
 
@@ -385,7 +405,27 @@ const en: typeof zh = {
     legendClient: 'ClientMethods'
   },
   errorScan: {
-    title: 'KBEngine ERROR Scan'
+    title: 'KBEngine ERROR Scan',
+    rescan: 'Rescan',
+    hint: 'Click a hit row to open the source line',
+    filesSection: 'Scanned files',
+    hitsSection: 'ERROR/CRITICAL aggregate (by count)',
+    noFiles: 'No log files to scan',
+    noHits: 'No ERROR/CRITICAL lines found',
+    readFail: 'Read failed',
+    linesUnit: 'lines',
+    countUnit: 'hits',
+    filesUnit: 'files',
+    signaturesUnit: 'signatures',
+    colCount: 'Count',
+    colLevel: 'Level',
+    colComponent: 'Component',
+    colSignature: 'Signature (numbers folded to N)',
+    colLast: 'Last seen',
+    sumErrors: 'ERROR / CRITICAL lines',
+    sumLines: 'Total lines scanned',
+    sumSignatures: 'Folded signatures',
+    sumFiles: 'Files scanned'
   }
 };
 
