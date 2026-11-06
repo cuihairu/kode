@@ -612,14 +612,17 @@ export class KBEngineServerManager {
       return false;
     }
 
-    if (!fs.existsSync(configPath)) {
+    // KR-AUD-48:目录存在性用单次 statSync 判定(入 try)——原 existsSync+
+    // statSync 两段式在检查间隙目录被删/被换时 statSync 会裸抛给调用方
+    let configStat: fs.Stats;
+    try {
+      configStat = fs.statSync(configPath);
+    } catch {
       vscode.window.showErrorMessage(
         `找不到 KBEngine 配置目录：${configPath}（应指向资产根，其下应有 res/server/kbengine.xml 与 scripts/）`
       );
       return false;
     }
-
-    const configStat = fs.statSync(configPath);
     if (!configStat.isDirectory()) {
       vscode.window.showErrorMessage(`KBEngine 配置路径不是目录：${configPath}`);
       return false;

@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { KBEngineCodeGenerator } from '../src/codeGenerator';
+import type { EntityWizardPart } from '../src/entityWizard';
 import { configurationOverrides, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { resetDiscoveryState, setDiscoveryChoice } from '../src/workspaceDiscovery';
 import type {
@@ -27,7 +28,7 @@ const internals = generator as unknown as {
   generateMethodCode: (method: MethodDefinition, indent: string, supportsExposed: boolean) => string;
   generatePythonMethodCode: (method: MethodDefinition) => string;
   generateDefContent: (entity: EntityDefinition) => string;
-  generatePythonContent: (entity: EntityDefinition) => string;
+  generatePythonContent: (entity: EntityDefinition, part: EntityWizardPart) => string;
   resolveDefOutputPath: (configuredPath: string, workspaceRoot: string) => string;
   getTemplateEntity: (templateType: string) => EntityDefinition;
 };
@@ -132,42 +133,52 @@ describe('generateDefContent', () => {
   });
 });
 
-describe('generatePythonContent', () => {
-  it('suffixes the class name by domain and orders hook/method sections', () => {
+describe('generatePythonContent (KR-AUD-74 engine-aligned part scripts)', () => {
+  it('base part: class name = entity name, KBEngine.Entity base, base methods only', () => {
     const py = internals.generatePythonContent({
       config: { name: 'Hero', hasCell: true, hasBase: true, hasClient: true },
       baseMethods: [{ name: 'saveData' }],
       cellMethods: [{ name: 'dash', exposed: true }]
-    });
+    }, 'base');
 
     expect(py.startsWith('# -*- coding: utf-8 -*-')).toBe(true);
     expect(py).toContain('import KBEngine');
-    // hasCell 优先于 hasBase
-    expect(py).toContain('class HeroCell():');
-    expect(py).toContain('def __init__(self):');
-    expect(py).toContain('def onCreate(self):');
-    expect(py).toContain('def onEnterWorld(self):');
+    // 引擎口径:类名=实体名(entities.xml/def 登记名),不带 Cell/Base 后缀
+    expect(py).toContain('class Hero(KBEngine.Entity):');
+    expect(py).not.toContain('HeroCell');
+    expect(py).not.toContain('HeroBase');
+    expect(py).toContain('KBEngine.Entity.__init__(self)');
+    expect(py).toContain('def onWriteToDB(self, cellData):');
     expect(py).toContain('Base 方法');
     expect(py).toContain('def saveData(self):');
+    expect(py).not.toContain('def dash(self):');
+    expect(py).not.toContain('onEnterWorld');
+  });
+
+  it('cell part: cell hooks + cell methods', () => {
+    const py = internals.generatePythonContent({
+      config: { name: 'Hero', hasCell: true, hasBase: true, hasClient: true },
+      cellMethods: [{ name: 'dash', exposed: true }]
+    }, 'cell');
+
+    expect(py).toContain('class Hero(KBEngine.Entity):');
+    expect(py).toContain('KBEngine.Entity.__init__(self)');
+    expect(py).toContain('def onEnterWorld(self):');
+    expect(py).toContain('def onLeaveWorld(self):');
     expect(py).toContain('Cell 方法');
     expect(py).toContain('def dash(self):');
+    expect(py).not.toContain('onWriteToDB');
+    expect(py).not.toContain('def saveData(self):');
   });
 
-  it('falls back to the Base suffix and skips the cell hook without a cell', () => {
-    const py = internals.generatePythonContent({
-      config: { name: 'Account', hasCell: false, hasBase: true, hasClient: true }
-    });
-
-    expect(py).toContain('class AccountBase():');
-    expect(py).not.toContain('def onEnterWorld(self):');
-  });
-
-  it('keeps the plain class name for pure-client entities', () => {
+  it('client part: onClientEnabled hook, plain stub', () => {
     const py = internals.generatePythonContent({
       config: { name: 'Ghost', hasCell: false, hasBase: false, hasClient: true }
-    });
+    }, 'client');
 
-    expect(py).toContain('class Ghost():');
+    expect(py).toContain('class Ghost(KBEngine.Entity):');
+    expect(py).toContain('KBEngine.Entity.__init__(self)');
+    expect(py).toContain('def onClientEnabled(self):');
   });
 });
 

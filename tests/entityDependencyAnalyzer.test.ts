@@ -272,8 +272,9 @@ describe('EntityDependencyAnalyzer graph construction', () => {
     expect(graph.stats.baseEntities).toBe(5);
     expect(graph.stats.cellEntities).toBe(1);
     expect(graph.stats.clientEntities).toBe(1);
-    // 实现现状:深度只从无 parent 的根节点起算,父链方向不展开,恒为 1
-    expect(graph.stats.maxDepth).toBe(1);
+    // KR-AUD-63:链深真实计算——Monster 继承 Hero,链深 2(此前种子/递归
+    // 互相矛盾恒统计 1)
+    expect(graph.stats.maxDepth).toBe(2);
     // Hero 与 Item 并列被引 2 次,先入序者胜
     expect(graph.stats.mostReferenced).toBe('Hero');
   });

@@ -338,35 +338,13 @@ export class EntityDependencyAnalyzer {
   }
 
   /**
-   * 计算继承树的最大深度
+   * 计算继承树的最大深度(KR-AUD-63):对每个实体沿 parent 链向上数链长,
+   * 取最大值;parent 环用访问集截断。原实现的种子循环只对 `!node.parent`
+   * 的实体起步、递归臂又只看 parent——种子恒无父,递归臂永不进入,任何
+   * 继承链深都只统计到 1(istanbul ignore 自证不可达)。
    */
   private calculateMaxDepth(): number {
-    let maxDepth = 0;
-
-    const calculateDepth = (entityName: string, currentDepth: number): void => {
-      if (currentDepth > maxDepth) {
-        maxDepth = currentDepth;
-      }
-
-      const node = this.entities.get(entityName);
-      // 不可达(批62 定性,见 TESTING.md 批62 段):种子循环只对 `!node.parent` 的
-      // 实体调用 calculateDepth,被选中节点的 parent 恒为空,递归臂因此永不进入;
-      // 结果是 stats.maxDepth 在任何继承链上都只到 1(链深未被真正计算),
-      // 修正会改变图统计口径,属功能改动,本批只登记不修。
-      /* istanbul ignore start */
-      if (node && node.parent) {
-        calculateDepth(node.parent, currentDepth + 1);
-      }
-      /* istanbul ignore stop */
-    };
-
-    for (const [name, node] of this.entities) {
-      if (!node.parent) {
-        calculateDepth(name, 1);
-      }
-    }
-
-    return maxDepth;
+    return calculateInheritanceMaxDepth(this.entities);
   }
 
   /**
@@ -529,6 +507,31 @@ export class EntityDependencyAnalyzer {
  * (扫描覆盖整个工作区的 def 文件,而 defParser 的严格分词会拒绝引擎允许的
  * `<Type>ARRAY<X></Type>` 混合内容,整份 def 连父类一并丢)。
  */
+/**
+ * 继承链最大深度(KR-AUD-63):每个实体沿 parent 链向上数链长取最大;
+ * 环用访问集截断(环成员链长以环入口计 1)。统计口径自此为真实链深
+ * (此前种子/递归互相矛盾,任何链恒统计为 1)。
+ */
+export function calculateInheritanceMaxDepth(entities: ReadonlyMap<string, Pick<EntityNode, 'parent'>>): number {
+  let maxDepth = 0;
+  const depthOf = (entityName: string, visited: Set<string>): number => {
+    if (visited.has(entityName)) {
+      return 0;
+    }
+    const node = entities.get(entityName);
+    // parent 未装载进图(与边构建同口径:只数图内实体)→ 链到此为止
+    if (!node?.parent || !entities.has(node.parent)) {
+      return 1;
+    }
+    visited.add(entityName);
+    return 1 + depthOf(node.parent, visited);
+  };
+  for (const name of entities.keys()) {
+    maxDepth = Math.max(maxDepth, depthOf(name, new Set()));
+  }
+  return maxDepth;
+}
+
 export function resolveParentReferenceName(text: string): string | undefined {
   const wrapper = /<Parent>([\s\S]*?)<\/Parent>/.exec(text);
   if (!wrapper) {

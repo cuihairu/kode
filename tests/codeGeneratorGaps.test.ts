@@ -152,8 +152,8 @@ describe('generatePythonFile guards', () => {
       config: { name: 'Hero', hasBase: true, hasCell: false, hasClient: false }
     });
 
-    expect(written).toBe(path.join(root, 'gen', 'out', 'deep', 'Hero.py'));
-    const content = fs.readFileSync(written, 'utf8');
+    expect(written).toEqual([path.join(root, 'gen', 'out', 'deep', 'base', 'Hero.py')]);
+    const content = fs.readFileSync(written[0], 'utf8');
     expect(content).toContain('class Hero');
     // 内嵌生成时间戳,只断言存在性字段
     expect(content).toContain('生成时间');

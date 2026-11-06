@@ -480,3 +480,21 @@ describe('行内类型提示(内建属性 inlay)', () => {
     expect(common.map(target => target.property.name)).toEqual(['id']);
   });
 });
+
+/* ---------------- KR-AUD-62: 内建属性 inlay 掩码先行 ---------------- */
+
+describe('KR-AUD-62: 内建属性 inlay 目标跑词法掩码(注释/字符串不产提示)', () => {
+  it('注释与字符串里的 self.position / self.cellData 提及不进目标', () => {
+    const lines = [
+      'class Hero:',
+      '    def tick(self):',
+      '        # self.position 参考这里',
+      "        s = 'self.cellData 总览'",
+      '        log("move to self.position")',
+      '        self.position = 1'
+    ];
+    const targets = collectEntityBuiltinPropertyInlayTargets(lines, 'cellapp', null);
+    expect(targets).toHaveLength(1);
+    expect(targets[0]).toMatchObject({ line: 5 });
+  });
+});

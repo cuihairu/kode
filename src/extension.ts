@@ -254,12 +254,14 @@ import { disableJsoncAssociation, syncJsoncAssociation } from './jsoncAssociatio
 import { exportKbeStubs, fileSystemStubExportDeps, readManagedDirSetting, resolveManagedDirName } from './pythonStubExport';
 import {
   PYTHON_TYPE_STUB_FILE_NAME,
+  buildPythonTypeStubLineMap,
   buildPythonTypeStubPlan,
   exportPythonTypeStubs,
   setupTypeStubRegeneration
 } from './pythonTypeStubs';
 import { GeneratedSourceCodeLensProvider } from './generatedSourceLenses';
 import {
+  buildEntityTypeStubLineMap,
   buildEntityTypeStubPlan,
   exportEntityTypeStubs
 } from './entityTypeStubs';
@@ -1307,7 +1309,13 @@ export function activate(context: vscode.ExtensionContext) {
     buildPythonTypeStubPlan(
       getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
     ).entries,
-    []
+    [],
+    // KR-AUD-78:来源镜按渲染期记录的真实行映射,不再硬编码 0/2
+    buildPythonTypeStubLineMap(
+      buildPythonTypeStubPlan(
+        getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
+      ).entries
+    )
   );
   const generatedSourceLensProvider = vscode.languages.registerCodeLensProvider(
     pythonDocumentSelector,
@@ -1886,9 +1894,10 @@ export function activate(context: vscode.ExtensionContext) {
   setProcessTopologySchedulerForTests(processTopologyScheduler);
   const processTopologyManifestName = 'process_topology.xml';
 
-  /** workspace 根下清单路径(缺 workspace 根 → null,静默)。 */
-  const resolveProcessTopologyManifestPath = (): string | null => {
-    const root = getWorkspaceRootForDocument();
+  /** workspace 根下清单路径(缺 workspace 根 → null,静默)。KR-AUD-54:
+   *  根按触发文档定位,无参回落第一根在多根工作区会读错根的清单。 */
+  const resolveProcessTopologyManifestPath = (document?: vscode.TextDocument): string | null => {
+    const root = getWorkspaceRootForDocument(document);
     if (!root) {
       return null;
     }
@@ -1905,9 +1914,10 @@ export function activate(context: vscode.ExtensionContext) {
     return snapshot?.content ?? null;
   };
 
-  /** 收集 defs 原文集合(实体/接口/组件三根,闭包走查用)。 */
-  const collectTopologyDefInputs = (): Array<{ name: string; category: string; filePath: string; text: string }> => {
-    const root = getWorkspaceRootForDocument();
+  /** 收集 defs 原文集合(实体/接口/组件三根,闭包走查用)。KR-AUD-54:同
+   *  清单路径口径,根随触发文档定位,不无参回落第一根。 */
+  const collectTopologyDefInputs = (document?: vscode.TextDocument): Array<{ name: string; category: string; filePath: string; text: string }> => {
+    const root = getWorkspaceRootForDocument(document);
     if (!root) {
       return [];
     }
@@ -1990,7 +2000,8 @@ export function activate(context: vscode.ExtensionContext) {
     channel: 'immediate' | 'queued'
   ): void => {
     const capturedVersion = document.version;
-    const manifestPath = resolveProcessTopologyManifestPath();
+    // KR-AUD-54:清单路径与 defs 集合的根都随触发文档定位(多根不串)
+    const manifestPath = resolveProcessTopologyManifestPath(document);
     if (!manifestPath) {
       return;
     }
@@ -2008,7 +2019,7 @@ export function activate(context: vscode.ExtensionContext) {
         if (!enabled || document.version !== capturedVersion) {
           return [];
         }
-        const root = getWorkspaceRootForDocument();
+        const root = getWorkspaceRootForDocument(document);
         if (!root) {
           return [];
         }
@@ -2020,7 +2031,7 @@ export function activate(context: vscode.ExtensionContext) {
         const result = await validateProcessTopologyInRust({
           manifestText,
           entitiesXmlText,
-          defs: collectTopologyDefInputs()
+          defs: collectTopologyDefInputs(document)
         });
         if (!result) {
           // Rust 不可用/失败 → 零发现(静默,不误报)。
@@ -2430,6 +2441,16 @@ export function activate(context: vscode.ExtensionContext) {
       bumpRootConfigGeneration('db-config');
       // IDE-SCH-005:表前缀/连接配置切换 → 打开中的 schema 预览与模拟文档
       // 立即重取(新表名不等文件保存;快照面由 tablePrefix/generation 轴判过期)
+      databaseSchemaProvider.refresh();
+      databaseSimulationProvider.refresh();
+    }
+
+    // KR-AUD-55:defs 布局两键(entityDefsPath/entitiesXmlPath)变更同样进
+    // 失效清单——entities.xml 与 entity_defs 是 schema/实体索引的数据源,
+    // 指向切换不 bump 会继续喂旧路径的快照;口径与 db-config 分支一致。
+    if (event.affectsConfiguration('kbengine.entityDefsPath') ||
+        event.affectsConfiguration('kbengine.entitiesXmlPath')) {
+      bumpRootConfigGeneration('def-paths');
       databaseSchemaProvider.refresh();
       databaseSimulationProvider.refresh();
     }
@@ -5404,7 +5425,15 @@ export function activate(context: vscode.ExtensionContext) {
     buildEntityTypeStubPlan(
       entityMappingManager.getAllMappings(),
       getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
-    ).entries
+    ).entries,
+    null,
+    // KR-AUD-78:同 python 侧——渲染期记录的真实行映射
+    buildEntityTypeStubLineMap(
+      buildEntityTypeStubPlan(
+        entityMappingManager.getAllMappings(),
+        getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
+      ).entries
+    )
   );
   const generatedEntitySourceLensProvider = vscode.languages.registerCodeLensProvider(
     pythonDocumentSelector,
@@ -6164,7 +6193,8 @@ export function activate(context: vscode.ExtensionContext) {
     dispose: async () => {
       telnetService.dispose();
       telnetWebView.dispose();
-      serverManager.dispose();
+      // KR-AUD-57:serverManager.dispose 只调一次(await)——原处多出一次
+      // 裸调(丢弃 promise),进程表清理被连跑两遍
       await serverManager.dispose();
       logHub.dispose();
       logCollector.dispose();

@@ -366,7 +366,8 @@ describe('definition semantics corner cases and clone propagation', () => {
 
   const FILES2: Array<[string, string]> = [
     ['scripts/entity_defs/Hero2.def', HERO2_DEF],
-    // 接口的 <Parent> 按 entity 类别查找(parentCategory 分支),须落 entity 目录
+    // 接口 Parent 不再并入语义(KR-AUD-72 引擎口径);MoveIfaceBase 仅作为
+    // Hero2 的直读接口条目出现在 parse 面
     ['scripts/entity_defs/MoveIfaceBase.def', MOVE_IFACE_BASE_DEF],
     ['scripts/entity_defs/interfaces/MoveIface2.def', MOVE_IFACE2_DEF],
     ['scripts/entity_defs/components/HealthComp2.def', HEALTH_COMP2_DEF],
@@ -429,11 +430,9 @@ describe('definition semantics corner cases and clone propagation', () => {
     expect(loader.loadResolved('Hero2', 'entity')).toBe(resolved); // resolved 缓存命中
     // resolved 阶段:同名槽去重 + 空 Type 槽剔除 + 接口引入的 svc 槽
     expect(resolved.components.map(slot => slot.slotName)).toEqual(['healthPack', 'svc']);
-    // 未解析的接口(GhostIface 无 def)不产生继承组,父接口产生嵌套组
-    expect(resolved.inheritanceGroups.map(group => group.owner.name)).toEqual([
-      'MoveIface2',
-      'MoveIfaceBase'
-    ]);
+    // 未解析的接口(GhostIface 无 def)不产生继承组;接口 Parent 不并入
+    // (KR-AUD-72:引擎对接口 def 不调 loadParentClass,entitydef.cpp:611-638)
+    expect(resolved.inheritanceGroups.map(group => group.owner.name)).toEqual(['MoveIface2']);
   });
 
   it('propagates cloned sources for array elements, methods and nested mixins', () => {
@@ -448,10 +447,10 @@ describe('definition semantics corner cases and clone propagation', () => {
     expect(bag.source.chain).toContain('MoveIface2');
     // 接口方法段的克隆
     expect(mixin.methodsBySection.CellMethods.map(method => method.name)).toEqual(['dash']);
-    // 父接口组(Mixin 链)带 baseProp
-    const base = resolved.inheritanceGroups[1];
-    expect(base.properties.map(property => property.name)).toEqual(['baseProp']);
-    expect(base.label).toContain('MoveIfaceBase');
+    // 父接口组不再产生:KR-AUD-72 引擎口径——接口 Parent(MoveIfaceBase)
+    // 对语义不可见(entitydef.cpp:611-638 只走 loadAllDefDescriptions),
+    // 继承组仅剩 MoveIface2 自身
+    expect(resolved.inheritanceGroups.map(group => group.owner.name)).toEqual(['MoveIface2']);
 
     // 组件槽递归解析其 Parent 链(HealthComp2 → CompBase)
     const healthPack = resolved.components.find(slot => slot.slotName === 'healthPack')!;
@@ -710,5 +709,65 @@ describe('IDE-SNP-002:语义 loader 读取共享快照', () => {
   it('既未打开也不在磁盘 → null(缺失口径不变)', () => {
     const loader = createDefinitionSemanticsLoader(path.join(snapRoot, 'nowhere'))!;
     expect(loader.loadLocal('Missing', 'entity')).toBeNull();
+  });
+});
+
+describe('KR-AUD-72 interface parent is invisible to resolved semantics', () => {
+  let krRoot = '';
+
+  beforeAll(() => {
+    krRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-semantics-kr72-'));
+    const write = (relative: string, content: string): void => {
+      const target = path.join(krRoot, relative);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, content, 'utf8');
+    };
+    // 引擎接口装载只走 loadAllDefDescriptions(entitydef.cpp:611-638),
+    // loadParentClass 不会对接口 def 调用——接口的 Parent 对语义不可见,
+    // 且经实体消费接口时也不得传递并入。
+    write('scripts/entity_defs/interfaces/MoveIface.def', [
+      '<root>',
+      '  <Parent>Ghost</Parent>',
+      '  <Properties>',
+      '    <speed> <Type>UINT32</Type> </speed>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'));
+    write('scripts/entity_defs/Ghost.def', [
+      '<root>',
+      '  <Properties>',
+      '    <haunt> <Type>UINT8</Type> </haunt>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'));
+    write('scripts/entity_defs/Hero.def', [
+      '<root>',
+      '  <Interfaces>',
+      '    <interface>MoveIface</interface>',
+      '  </Interfaces>',
+      '  <Properties>',
+      '    <hp> <Type>UINT32</Type> </hp>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'));
+  });
+
+  afterAll(() => {
+    fs.rmSync(krRoot, { recursive: true, force: true });
+  });
+
+  it('interface def parent is not merged into its resolved semantics', () => {
+    const loader = createDefinitionSemanticsLoader(krRoot)!;
+    const resolved = loader.loadResolved('MoveIface', 'interface')!;
+    expect(resolved.inheritanceGroups).toEqual([]);
+    expect(resolved.effectiveProperties.map(property => property.name)).toEqual(['speed']);
+    expect(resolved.effectiveMethodsBySection.BaseMethods).toEqual([]);
+  });
+
+  it('entity consuming the interface does not inherit the interface parent either', () => {
+    const loader = createDefinitionSemanticsLoader(krRoot)!;
+    const resolved = loader.loadResolved('Hero', 'entity')!;
+    expect(resolved.effectiveProperties.map(property => property.name)).toEqual(['hp', 'speed']);
+    expect(resolved.inheritanceGroups.map(group => group.owner.name)).toEqual(['MoveIface']);
   });
 });
