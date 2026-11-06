@@ -200,3 +200,12 @@ jobs:
         flags: rust
         disable_search: true
         fail_ci_if_error: false
+
+    # PDC-0606:clippy 门禁此前不在任何 workflow(本地手跑才拦),Rust 测试门禁
+    # 只 cover cargo test。clippy 组件由 rust-toolchain.toml 声明(rustup 首次
+    # 调用即装),无需额外 install。放在覆盖率上传之后:clippy 失败仍让 job 红
+    # (门禁生效),但已上传的覆盖率不因 clippy 步失败而丢失。口径与本地门禁
+    # 一致:--workspace --all-targets -D warnings。
+    - name: 运行 Rust clippy（-D warnings 门禁）
+      timeout-minutes: 10
+      run: cargo clippy --workspace --all-targets -- -D warnings
