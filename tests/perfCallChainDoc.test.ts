@@ -111,20 +111,25 @@ const ANCHORS: Array<[string, number, string]> = [
   // 后不累计),onDidChangeTextDocument/flushQueued 锚点 +3:真位重探
   // 2155/2235,出处随 baseline 锁步;并发会话在途 extension.ts 未提交编辑
   // 不入本批校准,其提交时须自行再探。
-  ['src/extension.ts', 1014, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1065, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1128, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 932, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1432, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 635, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-06(七):PY-ENV 二期 venv 自动发现——extension.ts 顶部新增 13 行
+  // import(venvDiscovery/venvInterpreterPicker/quickActionConfig/child_process
+  // 与 profileInterpreter 命名扩列),全部 extension.ts 锚点 +13(真位重探
+  // 648/661/945/1027/1078/1141/1445/2308/2388,出处随 baseline 锁步);
+  // 解释器状态栏/命令装配块 +130 落在全部锚点之后,不再位移。
+  ['src/extension.ts', 1027, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1078, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1141, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 945, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1445, "startLanguageServiceOperation('completion'"],
   ['src/extension.ts', 648, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 661, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
   // 锚点整体 +12(真位重探 1778/1837/1861/1989/4713/5121/5227/7038 →
   // 1790/1849/1873/2001/4725/5133/5239/7050)。
-  ['src/extension.ts', 2295, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2375, 'flushQueued()'],
+  ['src/extension.ts', 2308, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2388, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面
