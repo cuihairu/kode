@@ -372,7 +372,7 @@ curl -X POST 'http://127.0.0.1:8090/hotfix?module_name=entities.fight.FightAI' -
 
 ### 自动热重载
 
-文件保存/监视 → 按名触发 `quickActions` 动作。**默认开启**(用户令 2026-11-06):新工作区不写任何配置也会按 `globs` 各建一个文件监视;`actionName` 留空(默认)时,保存 .py 即发默认热更请求 `POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`,body 带 `module_name=<模块名>`(query 与 body 双带,兼容不同服务端)——引擎未启动如实显示**失败**,绝不假成功。一键关:点击状态栏「热更」项或运行命令 `kbengine.hotReload.toggle`(写回本配置);首次激活弹一次非模态提示,可永久关闭。`enabled` 改成 `false` 即刻拆除监视,配置变更即时生效,不必重启窗口。结构性 `.def` 变更仍被拦下(需重启),不会当普通 reload 发出。
+文件保存/监视 → 按名触发 `quickActions` 动作。**默认开启**(用户令 2026-11-06):新工作区不写任何配置也会建监视——`globs` 未设时范围**按 `kbengine.assetsRoot` 派生**为 `<assetsRoot>/**/*.py`(写了 `globs` 则按模式各建一个);解析不到有效 assetsRoot 时状态栏报 ready-with-error 并给出补救,绝不静默改为全工作区扫;`actionName` 留空(默认)时,保存 .py 即发默认热更请求 `POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`,body 带 `module_name=<模块名>`(query 与 body 双带,兼容不同服务端)——引擎未启动如实显示**失败**,绝不假成功。一键关:点击状态栏「热更」项或运行命令 `kbengine.hotReload.toggle`(写回本配置);首次激活弹一次非模态提示,可永久关闭。`enabled` 改成 `false` 即刻拆除监视,配置变更即时生效,不必重启窗口。结构性 `.def` 变更仍被拦下(需重启),不会当普通 reload 发出。
 
 **快捷启用键位(默认开箱即用)**:`ctrl+alt+r`(macOS `cmd+alt+r`)默认绑定 `kbengine.hotReload.configureChannel`,无 `when` 收窄——编辑器/工作区任意位置都能按,扩展装上即生效。按下直接进「预设一键启用」首屏(自研接收器[推荐] / KBEngine 官方 / 未配置 + 「高级配置」):单 profile 直接进预设列表、多 profile 先选 profile,合计 ≤2 步;选中即按默认本机端口/路径探活、通过即启用;零配置也不静默(无 profile 会如实提示先建 profile)。预设默认参数 = `http://127.0.0.1:8000/reload` + POST + 体 `{"files":${files}}`(JSON 对象体,能带 `targetId`/`sender_digests`,接收端核对后才回 applied);接收器要按 **`node scripts/hot-reload-receiver/referenceReceiver.mjs --port 8000 --root <暂存根> --mode apply`** 启动(脚本默认 `--port 0` 随机端口,不改则 8000 探活如实报不通)。
 
@@ -396,11 +396,12 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 
 冲突口径:同一键位还绑着别的命令时,「键盘快捷方式」把两条并列并标冲突;按键绑定规则**自下而上取第一条命中 `when` 的规则**——用户规则排在默认规则之后,故用户自绑(或上面的解除行)优先,同一层再以实际顺序与上下文为准。默认键位刻意避开仓内既占键位:`ctrl+alt+h` 已是本指南 HTTP 快捷请求的示例键位、`ctrl+]`/`ctrl+d` 是 telnet 面板键位,故热更快捷启用取 `ctrl+alt+r`(有测试锁,键位互撞即红)。
 
+
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `kbengine.hotReload.enabled` | boolean | `true` | 总开关,**默认开启**;开时按 `globs` 各建一个文件监视,关则拆除 |
+| `kbengine.hotReload.enabled` | boolean | `true` | 总开关,**默认开启**;开时按 `globs` 各建一个文件监视(未设 `globs` 则范围按 `assetsRoot` 派生,见下),关则拆除 |
 | `kbengine.hotReload.actionName` | string | 空 | 要触发的动作名,须在 `quickActions` 数组里存在;留空(默认)= 发默认热更请求 `POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`(body `module_name=<模块名>`,两处都带) |
-| `kbengine.hotReload.globs` | string[] | `["**/*.py"]` | 监视模式(VS Code glob),每个模式各建一个文件监视 |
+| `kbengine.hotReload.globs` | string[] | 未设 → 按 `kbengine.assetsRoot` 派生 | 监视模式(VS Code glob),每个模式各建一个文件监视。未设时派生 `<assetsRoot>/**/*.py`(只盯 .py,绝不全工作区扫);显式填空数组 = 不建监视 |
 | `kbengine.hotReload.debounceMs` | number | `500` | 触发前去抖毫秒数,`0` 为不去抖 |
 | `kbengine.hotReload.tempEdit.enabled` | boolean | `false` | 临时编辑热更新命令总开关(默认关;与 `hotReload.enabled` 相互独立——后者默认开,本命令默认关) |
 | `kbengine.hotReload.tempEdit.actionName` | string | 空 | 第 3 步 reloadScript 按名触发的 quick action(HTTP/终端均可);留空按配置错误中止 |
@@ -413,7 +414,9 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 - **去抖合并**:一次触发到下一次触发之间的连发事件合并成一次执行;去抖期间关掉开关会取消尚未触发的计时。
 - **无人值守**:触发路径跳过执行确认框(即使动作 `confirm` 为 `true`);动作自身的失败仍照常弹窗报错——那是执行结果,不是交互确认。执行记录照常写入「上次执行」记忆,因此 Explorer 顶栏 ▶ 也指向最近一次触发的动作。
 - **找不到名字不打扰**:`actionName` 留空,或匹配不到任何动作时,事件照常触发但只往 OUTPUT 通道「KBEngine 快速执行动作」落一行流水,不弹窗、不执行。
-- **配置容错**:类型写错(`enabled` 不是布尔、`globs` 不是数组、`debounceMs` 是负数或非数字)一律回落默认,不报错不中断装配;`globs` 里的空串与非字符串项被剔除,剔空则回落默认 `**/*.py`。
+- **默认范围锚 assetsRoot**:没写 `globs` 时按 `<assetsRoot>/**/*.py` 派生,只盯资产树。解析不到有效的 `kbengine.assetsRoot` 时,状态栏 ready-with-error 显式报错并指明补救(配置 `kbengine.assetsRoot`,或把工作区设为资产根的父目录),绝不静默全工作区扫。
+- **非 py 变化走旁路通道**:assetsRoot 下非 `.py` 的文件变化照捕但不进热更投递(零投递、零状态跃迁),没有消费者时只如实记一行「待路由」;按扩展名/路径前缀注册消费者后,可经现有 LSP 通知帧 `$/kode/fileChanged` 按需转给 rust 解析(rust 不可用静默降级)。
+- **配置容错**:类型写错(`enabled` 不是布尔、`globs` 不是数组、`debounceMs` 是负数或非数字)一律回落默认,不报错不中断装配;`globs` 里的空串与非字符串项被剔除——剔空按「显式空数组」处理(watch-off),没写或类型写坏则派生 `<assetsRoot>/**/*.py`,绝不回落裸的全工作区模式。
 
 ### 运行时查询
 

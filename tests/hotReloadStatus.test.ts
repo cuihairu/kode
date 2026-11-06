@@ -183,7 +183,7 @@ describe('HotReloadStatusController(渲染与节流)', () => {
     const clock = makeTimers();
     const fake = makeStatus(clock.timers);
 
-    fake.controller.setReady(1, 500);
+    fake.controller.setReady(['**/*.py'], 'derived', 500);
     settle(clock);
     expect(fake.bar.text).toBe(READY_FACE);
     fake.controller.setSending(['/a.py'], 500);
@@ -212,7 +212,7 @@ describe('HotReloadStatusController(渲染与节流)', () => {
     const fake = makeStatus(clock.timers);
     settle(clock); // 构造渲染开的窗先关掉,驱动序列从干净基线开始
 
-    fake.controller.setReady(1, 500);
+    fake.controller.setReady(['**/*.py'], 'derived', 500);
     expect(fake.bar.text).toBe(READY_FACE);
     expect(clock.pending()).toBe(1);
 
@@ -229,14 +229,14 @@ describe('HotReloadStatusController(渲染与节流)', () => {
     const clock = makeTimers();
     const fake = makeStatus(clock.timers);
 
-    fake.controller.setReady(1, 500);
+    fake.controller.setReady(['**/*.py'], 'derived', 500);
     fake.controller.setSending(['/ws/a.py', '/ws/b.py'], 500);
     fake.controller.setSentUnverified();
     fake.controller.setFailed('boom');
     fake.controller.setSkippedNoAction(['/ws/c.py']);
 
     expect(fake.lines).toEqual([
-      `[12:34:56] 监视就绪: 1 个模式, 去抖 500ms`,
+      `[12:34:56] 监视就绪: 1 个模式, 去抖 500ms | 来源=derived | 模式=**/*.py`,
       `[12:34:56] 触发: /ws/a.py, /ws/b.py (去抖 500ms 到点)`,
       `[12:34:56] 结果: 已发送(未确认)——未校验业务回执`,
       `[12:34:56] 结果: 失败: boom`,
@@ -246,14 +246,20 @@ describe('HotReloadStatusController(渲染与节流)', () => {
     expect(clock.pending()).toBeGreaterThan(0);
   });
 
-  it('同类状态不重复记变更日志(防配置抖动刷屏)', () => {
+  it('同态内容变了照记(来源/模式上屏 §11.4),逐字重复压掉(防配置抖动刷屏)', () => {
     const clock = makeTimers();
     const fake = makeStatus(clock.timers);
 
-    fake.controller.setReady(2, 500);
-    fake.controller.setReady(3, 300);
+    fake.controller.setReady(['**/*.py', '**/*.def'], 'derived', 500);
+    // derived → explicit 切换不换态:日志必须跟上(否则日志留旧来源、tooltip 已新)
+    fake.controller.setReady(['**/*.def'], 'explicit', 300);
+    // 逐字相同的重复仍只记一次
+    fake.controller.setReady(['**/*.def'], 'explicit', 300);
 
-    expect(fake.lines).toEqual(['[12:34:56] 监视就绪: 2 个模式, 去抖 500ms']);
+    expect(fake.lines).toEqual([
+      '[12:34:56] 监视就绪: 2 个模式, 去抖 500ms | 来源=derived | 模式=**/*.py, **/*.def',
+      '[12:34:56] 监视就绪: 1 个模式, 去抖 300ms | 来源=explicit | 模式=**/*.def'
+    ]);
   });
 
   it('dispose:清节流计时、释放命令/状态栏/通道,之后无迟到渲染', () => {
@@ -261,7 +267,7 @@ describe('HotReloadStatusController(渲染与节流)', () => {
     const fake = makeStatus(clock.timers);
     settle(clock);
 
-    fake.controller.setReady(1, 500);
+    fake.controller.setReady(['**/*.py'], 'derived', 500);
     fake.controller.setSending(['/a.py'], 500); // 留在节流窗内
     fake.controller.dispose();
 
@@ -309,7 +315,7 @@ describe('setupHotReload 状态机转移表(装配级)', () => {
     expect(fake.bar.text).toBe(OFF_FACE);
 
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
     });
     fireConfig('kbengine');
     settle(statusClock);
@@ -319,7 +325,7 @@ describe('setupHotReload 状态机转移表(装配级)', () => {
 
   it('事件→去抖到点→Sending→动作无错完成→Sent(未确认)+结果日志', async () => {
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
     });
     const clock = makeTimers();
     const statusClock = makeTimers();
@@ -352,7 +358,7 @@ describe('setupHotReload 状态机转移表(装配级)', () => {
 
   it('动作异步拒绝 → Failed(保留既有错误报告通道)', async () => {
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更' }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更' }
     });
     const clock = makeTimers();
     const statusClock = makeTimers();
@@ -384,7 +390,7 @@ describe('setupHotReload 状态机转移表(装配级)', () => {
 
   it('转移表:debounce 期间关开关 → Watch Off(动作不执行、去抖取消)', () => {
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
     });
     const clock = makeTimers();
     const statusClock = makeTimers();
@@ -412,7 +418,7 @@ describe('setupHotReload 状态机转移表(装配级)', () => {
   });
 
   it('转移表:到点未配动作名 → 走默认热更请求(2xx 记已发送(未确认),不悬在 Sending)', async () => {
-    configurationOverrides.set('kbengine', { hotReload: { enabled: true } });
+    configurationOverrides.set('kbengine', { hotReload: { enabled: true, globs: ['**/*.py'] } });
     const clock = makeTimers();
     const statusClock = makeTimers();
     const fake = makeStatus(statusClock.timers);
@@ -448,7 +454,7 @@ describe('setupHotReload 状态机转移表(装配级)', () => {
 
   it('deactivate:复合 disposable 释放 watcher 与状态栏/通道/命令', () => {
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更' }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更' }
     });
     const clock = makeTimers();
     const statusClock = makeTimers();

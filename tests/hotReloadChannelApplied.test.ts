@@ -83,7 +83,7 @@ describe('部署通道 applied digest 核验与结算(RT-9 / RT-10 / IDE-HOT-004
       }
     };
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
     });
     setupHotReload(makeContext(), name => void runCalls.push(name), {
       timers: clock.timers,
@@ -229,7 +229,7 @@ describe('部署通道 applied digest 核验与结算(RT-9 / RT-10 / IDE-HOT-004
       }
     };
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
     });
     setupHotReload(makeContext(), () => undefined, {
       timers: clock.timers,
@@ -298,7 +298,7 @@ describe('部署通道 applied digest 核验与结算(RT-9 / RT-10 / IDE-HOT-004
       }
     };
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
     });
     setupHotReload(makeContext(), () => undefined, {
       timers: clock.timers,
@@ -337,7 +337,7 @@ describe('部署通道 applied digest 核验与结算(RT-9 / RT-10 / IDE-HOT-004
       }
     };
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
     });
     setupHotReload(makeContext(), () => undefined, {
       timers: clock.timers,
@@ -392,7 +392,7 @@ describe('部署通道 applied digest 核验与结算(RT-9 / RT-10 / IDE-HOT-004
       }
     };
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
     });
     setupHotReload(makeContext(), () => undefined, {
       timers: clock.timers,
@@ -441,7 +441,7 @@ describe('部署通道 applied digest 核验与结算(RT-9 / RT-10 / IDE-HOT-004
     const clock = makeTimers();
     const store = new HotReloadTargetStateStore({ now: () => 7 });
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
     });
     setupHotReload(
       makeContext(),
