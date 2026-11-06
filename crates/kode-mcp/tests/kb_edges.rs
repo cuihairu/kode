@@ -129,11 +129,9 @@ fn wire_reports_structural_mismatches_precisely() {
     assert!(kb.encode_decode_sample("FD", &json!(5)).is_err());
     assert!(kb.encode_decode_sample("FD", &json!({"a": 1})).is_err());
     // FD 全字段成功(嵌套布局:字段 b 是 T_U8 别名)。
-    assert!(
-        kb.encode_decode_sample("FD", &json!({"a": 1, "b": 2}))
-            .is_err()
-            == false
-    );
+    assert!(kb
+        .encode_decode_sample("FD", &json!({"a": 1, "b": 2}))
+        .is_ok());
     // ARRAY:非数组 / 元素型错误 / 正常数组。
     assert!(kb.encode_decode_sample("ARR", &json!(5)).is_err());
     assert!(kb.encode_decode_sample("ARR", &json!([1, "x"])).is_err());
