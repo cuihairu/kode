@@ -136,7 +136,31 @@ const zh = {
     streamHint: '流式轮询按 kbengine.runtimeQuery.pollIntervalMs(默认 2s)循环查询清单内全部路径。'
   },
   entityDependency: {
-    title: '实体依赖关系'
+    title: '实体依赖关系',
+    nodes: '节点',
+    edges: '边',
+    entities: '实体',
+    defs: 'def',
+    interfaces: '接口',
+    components: '组件',
+    types: '类型',
+    python: 'Python',
+    totalEntities: '总实体数',
+    baseEntities: 'Base 实体',
+    cellEntities: 'Cell 实体',
+    clientEntities: 'Client 实体',
+    maxDepth: '最大继承深度',
+    mostReferenced: '最常引用',
+    files: '文件',
+    callEdges: '调用边',
+    syntaxErrors: '语法错误',
+    processRoles: '进程角色',
+    groupGraph: '图结构',
+    groupDefs: '定义源',
+    groupInheritance: '继承结构',
+    groupHotspot: '引用热点',
+    groupScale: '规模',
+    groupQuality: '质量'
   },
   entityFlow: {
     title: 'KBEngine 实体架构流程'
@@ -272,7 +296,31 @@ const en: typeof zh = {
     streamHint: 'Stream polling queries every path on the watch list each kbengine.runtimeQuery.pollIntervalMs (default 2s).'
   },
   entityDependency: {
-    title: 'Entity Dependencies'
+    title: 'Entity Dependencies',
+    nodes: 'Nodes',
+    edges: 'Edges',
+    entities: 'Entities',
+    defs: 'Defs',
+    interfaces: 'Interfaces',
+    components: 'Components',
+    types: 'Types',
+    python: 'Python',
+    totalEntities: 'Total entities',
+    baseEntities: 'Base entities',
+    cellEntities: 'Cell entities',
+    clientEntities: 'Client entities',
+    maxDepth: 'Max inheritance depth',
+    mostReferenced: 'Most referenced',
+    files: 'Files',
+    callEdges: 'Call edges',
+    syntaxErrors: 'Syntax errors',
+    processRoles: 'Process roles',
+    groupGraph: 'Graph structure',
+    groupDefs: 'Definition sources',
+    groupInheritance: 'Inheritance',
+    groupHotspot: 'Reference hotspot',
+    groupScale: 'Scale',
+    groupQuality: 'Quality'
   },
   entityFlow: {
     title: 'KBEngine Entity Architecture Flow'

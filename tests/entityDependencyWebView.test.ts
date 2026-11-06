@@ -162,9 +162,9 @@ describe('EntityDependencyWebView.generateMermaidGraph(TS 兜底源)', () => {
     })));
 
     expect(mermaid.startsWith('graph TD\n')).toBe(true);
-    expect(mermaid).toContain('classDef baseNode fill:#e1f5fe,stroke:#01579b,stroke-width:2px;');
-    expect(mermaid).toContain('classDef cellNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px;');
-    expect(mermaid).toContain('classDef clientNode fill:#fffde7,stroke:#f57f17,stroke-width:2px;');
+    expect(mermaid).toContain('classDef baseNode fill:#173a5e,stroke:#3794ff,stroke-width:2px;');
+    expect(mermaid).toContain('classDef cellNode fill:#1d3a2a,stroke:#89d185,stroke-width:2px;');
+    expect(mermaid).toContain('classDef clientNode fill:#3a2d10,stroke:#cca700,stroke-width:2px;');
     expect(mermaid).toContain('  class Hero baseNode;');
     expect(mermaid).toContain('  class Hero clientNode;');
     expect(mermaid).not.toContain('  class Hero cellNode');
@@ -180,9 +180,9 @@ describe('EntityDependencyWebView.generateMermaidGraph(TS 兜底源)', () => {
     expect(mermaid).toBe([
       'graph TD',
       '',
-      '  classDef baseNode fill:#e1f5fe,stroke:#01579b,stroke-width:2px;',
-      '  classDef cellNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px;',
-      '  classDef clientNode fill:#fffde7,stroke:#f57f17,stroke-width:2px;',
+      '  classDef baseNode fill:#173a5e,stroke:#3794ff,stroke-width:2px;',
+      '  classDef cellNode fill:#1d3a2a,stroke:#89d185,stroke-width:2px;',
+      '  classDef clientNode fill:#3a2d10,stroke:#cca700,stroke-width:2px;',
       ''
     ].join('\n'));
   });
@@ -219,12 +219,12 @@ describe('EntityDependencyWebView.generateMermaidGraph(Rust 核心源)', () => {
     const impl = internals(makeWebView());
     const mermaid = impl.generateMermaidGraph(normalizeRustGraph(rustGraph()));
 
-    expect(mermaid).toContain('classDef entityNode fill:#e1f5fe,stroke:#01579b,stroke-width:2px;');
-    expect(mermaid).toContain('classDef defNode fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px;');
-    expect(mermaid).toContain('classDef interfaceNode fill:#e0f7fa,stroke:#006064,stroke-width:2px;');
-    expect(mermaid).toContain('classDef componentNode fill:#fff3e0,stroke:#e65100,stroke-width:2px;');
-    expect(mermaid).toContain('classDef typeNode fill:#e8eaf6,stroke:#283593,stroke-width:2px;');
-    expect(mermaid).toContain('classDef pythonNode fill:#e0f2f1,stroke:#004d40,stroke-width:2px;');
+    expect(mermaid).toContain('classDef entityNode fill:#173a5e,stroke:#3794ff,stroke-width:2px;');
+    expect(mermaid).toContain('classDef defNode fill:#243a44,stroke:#75beff,stroke-width:2px;');
+    expect(mermaid).toContain('classDef interfaceNode fill:#103a35,stroke:#4ec9b0,stroke-width:2px;');
+    expect(mermaid).toContain('classDef componentNode fill:#2d1d3a,stroke:#c586c0,stroke-width:2px;');
+    expect(mermaid).toContain('classDef typeNode fill:#3a2d10,stroke:#cca700,stroke-width:2px;');
+    expect(mermaid).toContain('classDef pythonNode fill:#1d3a2a,stroke:#89d185,stroke-width:2px;');
     expect(mermaid).toContain('  class entity_Hero entityNode;');
     expect(mermaid).toContain('  class type_Vec3 typeNode;');
     expect(mermaid).toContain('  class python__ws_scripts_base_Hero_py pythonNode;');
@@ -400,8 +400,8 @@ describe('EntityDependencyWebView.callgraph mode(renderCallGraphMermaid)', () =>
     expect(mermaid).toContain('  Avatar_act -.-> Avatar_notify');
     expect(mermaid).toContain('  Avatar_act ==> kbe_onDamage');
     // classDef 按出现 kind 规范序(method/function/module/external)
-    expect(mermaid).toContain('classDef methodCall fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;');
-    expect(mermaid).toContain('classDef externalCall fill:#eceff1,stroke:#455a64,stroke-width:1px,stroke-dasharray:3 3');
+    expect(mermaid).toContain('classDef methodCall fill:#173a5e,stroke:#3794ff,stroke-width:2px;');
+    expect(mermaid).toContain('classDef externalCall fill:#333333,stroke:#808080,stroke-width:1px,stroke-dasharray:3 3');
     expect(mermaid).toContain('  class Avatar_act methodCall;');
     expect(mermaid).toContain('  class kbe_onDamage externalCall;');
     // click 跳转:节点 + openFilePath + 文件路径
