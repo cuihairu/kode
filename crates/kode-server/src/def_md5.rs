@@ -1525,6 +1525,39 @@ fn kr_aud_80_interface_params(interface_entry: &str) -> DefMd5Params {
     }
 }
 
+fn kr_aud_81_component_params() -> DefMd5Params {
+    let inventory_def = "<root>\
+        <Properties>\
+            <slots>\
+                <Type> UINT32 </Type>\
+                <Flags> BASE </Flags>\
+                <Persistent> true </Persistent>\
+            </slots>\
+        </Properties>\
+        <BaseMethods>\
+            <pack>\
+                <Arg> UINT32 </Arg>\
+            </pack>\
+        </BaseMethods>\
+    </root>"
+        .to_string();
+    DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs: [
+            (
+                "Avatar".to_string(),
+                "<root><Components><bag><Type> Inventory </Type><Persistent> true </Persistent></bag></Components></root>".to_string(),
+            ),
+            ("Inventory".to_string(), inventory_def),
+        ]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    }
+}
+
 /// 黄金样本集(demo-assets 全实体 + parity-project + 最小锚点
 /// + KR-AUD-80/81 接口/组件引擎对拍)。
 pub fn golden_samples(repo_root: &Path) -> Vec<GoldenSample> {
@@ -1563,6 +1596,11 @@ pub fn golden_samples(repo_root: &Path) -> Vec<GoldenSample> {
     samples.push(GoldenSample {
         name: "kr-aud-80-interface-element",
         params: kr_aud_80_interface_params("<Interface><Combat/></Interface>"),
+    });
+    // KR-AUD-81:组件类型名=<Type> 文本(Inventory),非元素名字面量 "Type"。
+    samples.push(GoldenSample {
+        name: "kr-aud-81-component-type",
+        params: kr_aud_81_component_params(),
     });
     samples
 }

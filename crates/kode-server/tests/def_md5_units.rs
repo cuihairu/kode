@@ -836,3 +836,95 @@ fn kr_aud_80_missing_interface_def_errors_with_resolved_name() {
         "报错口径: {err}"
     );
 }
+
+/// KR-AUD-81 夹具:Avatar 带 bag 组件,组件 def 带 1 属性 + 1 Base 方法。
+fn kr_aud_81_params(component_entry: &str, include_inventory: bool) -> DefMd5Params {
+    let inventory_def = "<root>\
+        <Properties>\
+            <slots>\
+                <Type> UINT32 </Type>\
+                <Flags> BASE </Flags>\
+                <Persistent> true </Persistent>\
+            </slots>\
+        </Properties>\
+        <BaseMethods>\
+            <pack>\
+                <Arg> UINT32 </Arg>\
+            </pack>\
+        </BaseMethods>\
+    </root>"
+        .to_string();
+    let avatar_def = format!("<root><Components>{component_entry}</Components></root>");
+    let mut defs = [("Avatar".to_string(), avatar_def)]
+        .into_iter()
+        .collect::<std::collections::HashMap<_, _>>();
+    if include_inventory {
+        defs.insert("Inventory".to_string(), inventory_def);
+    }
+    DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs,
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    }
+}
+
+/// KR-AUD-81:缩进排版鲁棒性——componentNode 可为纯空白文本节点,引擎
+/// enterNode 沿兄弟链(xml.cpp:72-95)仍命中 `<Type>` → md5 与紧凑形态
+/// 一致;流内含 bag 名 + EntityComponent 类型 + Inventory 模块名。
+#[test]
+fn kr_aud_81_component_type_name_reads_type_text() {
+    let result = compute_def_md5(kr_aud_81_params(
+        "<bag><Type> Inventory </Type><Persistent> true </Persistent></bag>",
+        true,
+    ))
+    .expect("组件按 <Type> 文本装载 Inventory.def");
+    assert!(
+        result.stream_hex.contains(&hex(b"Inventory")),
+        "Inventory 模块名(scriptdef_module.cpp:60)缺席: {}",
+        result.stream_hex
+    );
+    assert!(
+        result.stream_hex.contains(&hex(b"EntityComponent")),
+        "EntityComponent 类型(property.cpp:55)缺席: {}",
+        result.stream_hex
+    );
+    let pretty = compute_def_md5(kr_aud_81_params(
+        "<bag>\n\t\t<Type> Inventory </Type>\n\t\t<Persistent> true </Persistent>\n\t</bag>",
+        true,
+    ))
+    .expect("缩进组件形态引擎同样可装载");
+    assert_eq!(
+        result.md5_hex, pretty.md5_hex,
+        "组件导航对空白排版鲁棒(引擎兄弟链语义)"
+    );
+}
+
+/// <Type> 文本确实参与组件名解析:指向缺失 def 时报错点名该文本,
+/// 而非修前的 "Type"(元素名字面量)。
+#[test]
+fn kr_aud_81_type_text_is_the_component_name_not_the_literal() {
+    let err = compute_def_md5(kr_aud_81_params("<bag><Type> Ghost </Type></bag>", false))
+        .expect_err("Ghost.def 缺失必须报错");
+    assert!(
+        err.contains("Ghost"),
+        "报错必须点 <Type> 文本名(修前会点 \"Type\"): {err}"
+    );
+}
+
+/// 引擎 entitydef.cpp:668-671:<Type> 节点缺失时 componentTypeNameNode 为
+/// NULL → componentTypeName="" → return false(与 <Type> 文本为空白同一
+/// 报错口径,但走的是 enterNode 落空的 None 分支)。
+#[test]
+fn kr_aud_81_missing_type_element_errors_like_engine() {
+    let err = compute_def_md5(kr_aud_81_params(
+        "<bag><Persistent> true </Persistent></bag>",
+        true,
+    ))
+    .expect_err("无 <Type> 必须报错");
+    assert!(
+        err.contains("component name is NULL"),
+        "报错口径(entitydef.cpp:668-671): {err}"
+    );
+}
