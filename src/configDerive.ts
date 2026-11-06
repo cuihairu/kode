@@ -16,6 +16,7 @@ import { findEngineEntryScript } from './debugpyWaitAtStartup';
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 import { getRootConfigGeneration } from './rootConfigGeneration';
 import { buildConfigTreePair } from './serverConfigMerge';
+import { expandWorkspacePlaceholders } from './workspacePath';
 
 /** `$/kode/config/derive` 的 `{ derive, diagnostics }` 结果(镜像 Rust 序列化) */
 export interface ConfigDeriveResult {
@@ -221,7 +222,11 @@ function resolveEntryScriptFacts(workspaceRoot: string): ConfigDeriveResult['der
   let assetsRoot = '';
   try {
     const raw = (vscode.workspace.getConfiguration('kbengine').get<string>('assetsRoot', '') ?? '').trim();
-    const expanded = raw.replace(/\$\{workspaceFolder\}/g, workspaceRoot);
+    // 审核发现:此前只手工展开 ${workspaceFolder},assetsRoot 用 ${env:...}
+    // 时解析到错路径 → 误报「entry script missing」且断点预填失效。改走
+    // expandWorkspacePlaceholders(与 serverManager.getBinPath 同口径,支持
+    // ${workspaceFolder}/${env:};未解析落空串的既有约定不变)。
+    const expanded = expandWorkspacePlaceholders(raw, workspaceRoot || undefined);
     assetsRoot = expanded
       ? path.isAbsolute(expanded)
         ? path.resolve(expanded)

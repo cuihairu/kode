@@ -1,4 +1,4 @@
-// KODE-CFG-007 验收(todo.md:1011):telnet 按配置启用。
+﻿// KODE-CFG-007 验收(todo.md:1011):telnet 按配置启用。
 //
 //   开:telnet 段开启 → 自动列出 Telnet/Debug Targets 目标(含派生端口);
 //   关:telnet 段不在 → 不列(空目标)。
@@ -46,7 +46,7 @@ const scriptsFromConfig = (p: string | null): string | null => {
   if (!p) {
     return null;
   }
-  const m = /^(.*\/)res\/server\/kbengine\.xml$/.exec(p);
+  const m = /^(.*[\\/])res[\\/]server[\\/]kbengine\.xml$/.exec(p);
   return m ? `${m[1]}scripts` : null;
 };
 
@@ -313,6 +313,28 @@ describe('KODE-CFG-007 telnet 按配置启用', () => {
         enableCommands: []
       }
     ]);
+  });
+
+  it('显式 telnet.configXmlPath:派生可用也回旧路径(读该文件,审核发现分叉修复)', async () => {
+    const { ws } = makeFixture('explicit-xml',
+      '<root>\n  <telnet_service>\n    <port>40009</port>\n  </telnet_service>\n</root>\n');
+    // configXmlPath 指向**另一份**元件 xml(端口 47777):旧路径优先读它,
+    // 派生半只认 assetsRoot 发现链——若不走旧路径会误报 40009。
+    const otherXml = path.join(ws, 'other', 'res', 'server', 'kbengine.xml');
+    writeFile(otherXml,
+      '<root>\n  <telnet_service>\n    <port>47777</port>\n    <password>x</password>\n  </telnet_service>\n</root>\n');
+    configurationOverrides.set('kbengine', {
+      ...configurationOverrides.get('kbengine'),
+      'telnet.configXmlPath': otherXml
+    });
+    setKodeCoreShadowGate(makeGate(calls));
+
+    await ensureConfigDerivedScanRoot();
+    expect(getConfigDerivedScanRootState()?.telnet.enabled).toBe(true);
+
+    const targets = readDerivedTelnetTargets();
+    expect(targets).toHaveLength(1);
+    expect(targets[0]).toMatchObject({ port: 47777, password: 'x' });
   });
 
   it('buildDerivedTelnetTargets 纯映射:settings 半覆盖 host/密码/命令白名单', () => {

@@ -7,6 +7,8 @@
 //
 // 独立模块而非并入 telnetService:serverConfigMerge(→ telnetService)与
 // configDerive 已有依赖边,telnetService 再引 configDerive 即成环。
+import * as vscode from 'vscode';
+
 import { ensureConfigDerivedScanRoot, getConfigDerivedScanRootState } from './configDerive';
 import {
   readTelnetSettings,
@@ -58,10 +60,11 @@ export function buildDerivedTelnetTargets(
 
 /**
  * telnet 目标读取(消费口,extension 接线处):派生可用走派生半;显式端口
- * 「自定义目标」是 settings 半(旧路径即其实现)与密码保护且 settings 未
- * 覆盖密码时回落旧路径——旧路径读同一份配置文件,端口与派生一致,仅密码
- * 来源不同(保留「settings || 元件 xml || defaults」链,telnet 面板既有
- * 行为);派生不可用/失败亦回退旧路径,不假称派生、不静默空列。
+ * 「自定义目标」是 settings 半(旧路径即其实现)、显式 telnet.configXmlPath
+ * (旧路径优先读该文件,派生半不读此设置,见函数内审核注)与密码保护且
+ * settings 未覆盖密码时回落旧路径——旧路径读同一份配置文件,端口与派生
+ * 一致,仅密码来源不同(保留「settings || 元件 xml || defaults」链,telnet
+ * 面板既有行为);派生不可用/失败亦回退旧路径,不假称派生、不静默空列。
  */
 export function readDerivedTelnetTargets(): TelnetTarget[] {
   // 派生按代缓存;消费面只读缓存不阻塞宿主。首取未就绪(激活后、首次扫描
@@ -75,8 +78,15 @@ export function readDerivedTelnetTargets(): TelnetTarget[] {
   }
   const settings = readTelnetSettings();
   const derived = state.telnet;
+  // 审核发现:显式 telnet.configXmlPath 时旧路径优先读**该文件**,派生半却
+  // 走 assetsRoot/发现链不读此设置——两半端口/密码会分叉。配置了就回旧路径。
+  const explicitConfigXml = vscode.workspace
+    .getConfiguration('kbengine')
+    .get<string>('telnet.configXmlPath', '')
+    .trim();
   if (
     settings.port > 0 ||
+    explicitConfigXml.length > 0 ||
     (settings.password === '' && derived.endpoints.some(ep => ep.passwordSet))
   ) {
     // 显式端口「自定义目标」(settings 半)+ 密码保护未覆盖:旧路径保留

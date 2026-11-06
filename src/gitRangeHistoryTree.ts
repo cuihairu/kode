@@ -410,24 +410,30 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
     }
     // 审核发现:多段不连续映射不得合并成 min..max——否则会漏进中间未选中行的
     // 修改。逐段查询,再按提交 hash 去重合并时间线。
-    const results = await Promise.all(
-      segments.map(segment =>
-        this.deps.queryTimeline(
-          filePath,
-          repoRoot,
-          { startLine: segment.headFirstLine, endLine: segment.headLastLine },
-          { token: this.viewToken }
-        )
-      )
-    );
+    // 审核发现(并发面):Promise.all 同时发起全部段查询,段数超过门限
+    // (range 并发 1 + 队列 8)时后段被 gate 以「历史查询队列已满」拒绝,
+    // 整个范围历史查询失败。改串行逐段:gate 面天然串行 range 查询,不再
+    // 瞬时灌满队列;首段失败即停,段间查代际——选区已换/视图已关早停。
+    const results: RangeTimelineResult[] = [];
+    for (const segment of segments) {
+      if (gen !== this.generation) {
+        return;
+      }
+      const result = await this.deps.queryTimeline(
+        filePath,
+        repoRoot,
+        { startLine: segment.headFirstLine, endLine: segment.headLastLine },
+        { token: this.viewToken }
+      );
+      if (result.kind !== 'timeline') {
+        this.state = this.applyTimelineFailure(result);
+        this.fire();
+        return;
+      }
+      results.push(result);
+    }
     // 代际已更替(新选区/视图关闭)→ 丢弃旧结果,不覆盖最新状态。
     if (gen !== this.generation) return;
-    const firstFailure = results.find(result => result.kind !== 'timeline');
-    if (firstFailure && firstFailure.kind !== 'timeline') {
-      this.state = this.applyTimelineFailure(firstFailure);
-      this.fire();
-      return;
-    }
     const timelines = results.map(result => result as Extract<RangeTimelineResult, { kind: 'timeline' }>);
     if (timelines.length > 0) {
       const entriesByKey = new Map<string, RangeChangeEntry>();

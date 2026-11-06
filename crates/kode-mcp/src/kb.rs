@@ -604,7 +604,9 @@ fn wire_from_json(layout: &WireLayout, value: &Value) -> Result<WireValue, Strin
         WireLayout::Blob => Ok(WireValue::Blob(
             value
                 .as_str()
-                .ok_or("expected string (base64/hex) for Blob")?
+                // 字节按字符串原文逐字节入 blob,不做 base64/hex 解码——
+                // 提示不得宣称解码(审核发现:文案与行为不符)。
+                .ok_or("expected string for Blob (bytes taken verbatim)")?
                 .as_bytes()
                 .to_vec(),
         )),

@@ -17,9 +17,10 @@ const snapshot = (overrides: Partial<PendingWorkSnapshot> = {}): PendingWorkSnap
   diagnosticsInFlight: 0,
   annotationUpdates: 0,
   caches: {
-    parsedDocuments: 12,
-    databaseSchemas: 3,
-    annotationIndex: 5
+    // 审核发现修复:字段形态对齐真实量规(容量对象而非 number)。
+    parsedDocuments: { entries: 12, maxEntries: 64, bytes: 4096, maxBytes: 8192 },
+    databaseSchemas: { entries: 3, capacity: 16 },
+    annotationIndex: { entries: 5, ttlMs: 60000 }
   },
   worker: {
     running: 0,

@@ -15,8 +15,8 @@
  * 3) addSpaceGeometryMapping 的 params dict 键必须是 int 字面量
  *    —— 引擎 PyDict_Next 后 PyLong_Check(key) 失败即
  *    "args(params) error!" AssertionError(spacememory.cpp:194);
- *    字符串层键({"0": "..."} )运行时必炸。仅检字典字面量内的
- *    引号包键,不猜变量/表达式求值结果。
+ *    字符串层键({"0": "..."} )运行时必炸。仅检字典**顶层**字面量键
+ *    (嵌套 dict 的字符串键引擎不校验),不猜变量/表达式求值结果。
  *
  * 纯函数,无 vscode 依赖;extension 侧转 vscode.Diagnostic 并挂
  * DiagnosticScheduler(与 receiverNone/startupScript 同一生命周期)。
@@ -43,8 +43,55 @@ const MAPPING_KEY_RE =
 // 任意对象(avatar.navigate 等)不当作引擎方法,避免无关告警。
 const NAV_CALL_RE = /\bself\s*\.\s*(navigate|navigatePathPoints)\s*\(/g;
 const CAN_NAVIGATE_RE = /\bcanNavigate\b/g;
-/** params dict 内的引号包键: "0": 或 'layer': (紧跟冒号才算键位) */
-const QUOTED_DICT_KEY_RE = /("|')((?:\\.|[^\\])*?)\1\s*:/g;
+
+/**
+ * dict 体内的**顶层**引号键(嵌套 dict/list 里的不收):返回 [体偏移, 原文
+ * token]。引擎 PyDict_Next 只见顶层键(spacememory.cpp:194 只查顶层),
+ * 嵌套 {"a": 1} 的字符串键不是 params 键。逐字符扫描:字符串整体跳过
+ * (含转义),闭引号后跳空白紧跟 `:` 且深度为 0 才算键位。
+ */
+function topLevelQuotedKeys(body: string): Array<[number, string]> {
+  const out: Array<[number, string]> = [];
+  let depth = 0;
+  let i = 0;
+  const n = body.length;
+  while (i < n) {
+    const ch = body[i];
+    if (ch === '"' || ch === "'") {
+      let j = i + 1;
+      while (j < n) {
+        if (body[j] === '\\') {
+          j += 2;
+          continue;
+        }
+        if (body[j] === ch) {
+          break;
+        }
+        j += 1;
+      }
+      if (j >= n) {
+        return out; // 未闭合:保守收手
+      }
+      const token = body.slice(i, j + 1);
+      let k = j + 1;
+      while (k < n && /\s/.test(body[k])) {
+        k += 1;
+      }
+      if (depth === 0 && k < n && body[k] === ':') {
+        out.push([i, token]);
+      }
+      i = j + 1;
+      continue;
+    }
+    if (ch === '{' || ch === '[') {
+      depth += 1;
+    } else if (ch === '}' || ch === ']') {
+      depth -= 1;
+    }
+    i += 1;
+  }
+  return out;
+}
 
 function lineStarts(text: string): number[] {
   const starts = [0];
@@ -231,7 +278,9 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
       if (!inCode(offset)) continue; // 注释/字符串里的调用不报
       // 方法名起点(self. 之后),用于定位列。
       const methodOffset = offset + match[0].indexOf(match[1]);
-      const line = offsetToLine(starts, offset);
+      // 审核发现:`\s*` 可跨行(self\n.navigate)——行号必须取方法名所在行,
+      // 与列同源;取 self 行会把范围放到错行且列越出行尾。
+      const line = offsetToLine(starts, methodOffset);
       findings.push({
         line,
         start: offsetToCol(starts, methodOffset),
@@ -256,18 +305,19 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
     }
     const [dictOpen, dictClose] = span;
     const dictBody = text.slice(dictOpen + 1, dictClose);
-    QUOTED_DICT_KEY_RE.lastIndex = 0;
-    let keyMatch: RegExpExecArray | null;
-    while ((keyMatch = QUOTED_DICT_KEY_RE.exec(dictBody)) !== null) {
-      const keyOffset = dictOpen + 1 + keyMatch.index;
-      const keyLen = keyMatch[0].length - 1; // 不含尾冒号
+    // 审核发现:引擎只校验 params **顶层**键(PyDict_Next 收到的就是顶层键,
+    // spacememory.cpp:194),嵌套 dict 的字符串键不校验——旧实现对整个 dict 体
+    // 正则扫描,`{0: {"a": 1}}` 里嵌套键 "a" 被误报。深度感知只收顶层键位。
+    for (const [bodyOffset, token] of topLevelQuotedKeys(dictBody)) {
+      const keyOffset = dictOpen + 1 + bodyOffset;
+      const keyLen = token.length;
       const line = offsetToLine(starts, keyOffset);
       findings.push({
         line,
         start: offsetToCol(starts, keyOffset),
         end: offsetToCol(starts, keyOffset) + keyLen,
         message:
-          `params 层键 ${keyMatch[0].slice(0, keyMatch[0].length - 1).trim()} 是字符串字面量,` +
+          `params 层键 ${token} 是字符串字面量,` +
           '引擎要求 int 键(PyLong_Check 失败即 AssertionError "args(params) error!")。' +
           '请写成 {0: "xx.navmesh"}。(spacememory.cpp:194)',
         code: SPACE_NAV_DIAGNOSTIC_CODE

@@ -21,12 +21,21 @@ export function usesPosixPath(targetPath: string): boolean {
  * `/` 开头与相对纯 `/` 形态走 path.posix(单测与 uri.path 派生面)。混用会
  * 让 win32 的 join/resolve/relative 把 /ws/repo 归一成 \ws\repo 并锚到当
  * 前盘,或把合法 cwd 内路径判成越界,输出与消费方期望双双失真。
+ *
+ * 审核发现:盘符+正斜杠(`C:/repo/...`)此前被 `includes('\\')` 误判为
+ * posix——path.posix.resolve 会锚到 cwd。与 usesPosixPath 同口径
+ * (`^[A-Za-z]:[\\/]` 认盘符),两种分隔形态都归 win32。
  */
 export function pathApiFor(samplePath: string): path.PlatformPath {
   if (process.platform !== 'win32') {
     return path;
   }
-  return samplePath.includes('\\') ? path.win32 : path.posix;
+  // 盘符形态(两种分隔)或含反斜杠 → win32;其余(含无分隔符相对名)posix,
+  // 与既有消费口径(相对纯 / 形态走 posix)保持一致。
+  if (/^[A-Za-z]:[\\/]/.test(samplePath) || samplePath.includes('\\')) {
+    return path.win32;
+  }
+  return path.posix;
 }
 
 /**
