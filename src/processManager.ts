@@ -1,4 +1,4 @@
-import { ChildProcess, spawn } from 'child_process';
+import { ChildProcess, ChildProcessWithoutNullStreams, spawn, SpawnOptionsWithoutStdio } from 'child_process';
 import { EventEmitter } from 'events';
 
 import { LogHubLike, normalizeText } from './logHub';
@@ -59,12 +59,31 @@ export type ProcessSpawnRunner = (request: ProcessSpawnRequest) => ChildProcess;
  * 不解析 PATHEXT——.cmd/.bat 统一经 `cmd /d /c` 运行(`@` 抑制命令回显)。
  * 组件 defaultArgs 为无空格 token(--key=value 口径),透传安全;其余平台/
  * 扩展原样 spawn。真实 .exe 引擎不受影响。
+ *
+ * 双签名镜像 child_process.spawn:未给 stdio 的调用面拿
+ * ChildProcessWithoutNullStreams(stdout/stderr 非空可直接挂)。
  */
-export function spawnProcess(command: string, args: readonly string[], options: Parameters<typeof spawn>[2]): ChildProcess {
+export function spawnProcess(
+  command: string,
+  args: readonly string[],
+  options?: SpawnOptionsWithoutStdio
+): ChildProcessWithoutNullStreams;
+export function spawnProcess(
+  command: string,
+  args: readonly string[],
+  options?: Parameters<typeof spawn>[2]
+): ChildProcess;
+export function spawnProcess(
+  command: string,
+  args: readonly string[],
+  options?: Parameters<typeof spawn>[2]
+): ChildProcess {
   if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)) {
-    return spawn('cmd.exe', ['/d', '/c', `@${command}`, ...args], options);
+    // ComSpec 绝对路径:调用面可能收窄 PATH(测试/沙箱),PATH 里找不到 cmd.exe。
+    const shell = process.env.ComSpec || 'cmd.exe';
+    return spawn(shell, ['/d', '/c', `@${command}`, ...args], options ?? {});
   }
-  return spawn(command, [...args], options);
+  return spawn(command, [...args], options ?? {});
 }
 
 
@@ -391,7 +410,13 @@ export class ProcessManager {
         // 不来——等待面按时终结,stop 绝不悬挂。先给 SIGKILL 一个短暂的真
         // 实终局窗口,让 exit/error 正常触发(日志/状态完整),窗口内不来
         // 才兜底 resolve。
-        setTimeout(resolveExited, 250);
+        setTimeout(() => {
+          // WIN:极端调度下 taskkill 的 error/exit 事件迟到,窗口内 child.kill
+          // 也没跑到——兜底前补一次单进程 kill,保证 exit 先于 resolve:否则
+          // 进程滞留 processes,后续 start 复用旧实例(restart 断裂面)。
+          managed.process.kill('SIGKILL');
+          resolveExited();
+        }, 250);
       }, timeoutMs);
       // RUN-007:停止即进程树终止(POSIX 负 pid 组信号/Windows taskkill /T)
       void killProcessTree(managed.pid, 'SIGTERM', managed.process);

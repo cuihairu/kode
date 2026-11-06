@@ -54,7 +54,9 @@ export function locateInterpreterOnPath(
     }
     for (const name of PATH_CANDIDATES) {
       const candidates =
-        platform === 'win32' ? [`${name}.exe`, name] : [name];
+        // WIN-3:.cmd shim(pipx/部分分发的 PATH 形态)与 .exe 同列——找到的
+        // 绝对路径交给 spawnProcess 经 cmd /c 运行。
+        platform === 'win32' ? [`${name}.exe`, `${name}.cmd`, name] : [name];
       for (const candidate of candidates) {
         const fullPath = path.join(dir, candidate);
         if (fs.existsSync(fullPath)) {
