@@ -62,6 +62,7 @@ import {
   propertyAccessKey,
   PropertyCodeLensHit
 } from './propertyCodeLens';
+import { buildPropertyInitOrderLensSpecs } from './propertyInitOrderLens';
 import {
   describePropertyDatabaseStoragePublished,
   findDatabaseSchemaFieldAtPosition,
@@ -312,6 +313,9 @@ function getLanguageFeatureConfig() {
     codeLensRpc: config.get<boolean>('codeLens.rpc', true),
     codeLensEventCallbacks: config.get<boolean>('codeLens.eventCallbacks', true),
     codeLensProperty: config.get<boolean>('codeLens.property', true),
+    // IDE-PROP-001:属性先于 __init__ 装载提示镜,与属性访问镜同 provider 但
+    // 独立开关(关访问镜不关装载语义提示)
+    codeLensPropertyInitOrder: config.get<boolean>('codeLens.propertyInitOrder', true),
     codeLensTypesXml: config.get<boolean>('codeLens.typesXml', true),
     // 实体脚本新功能各一枚独立开关(用户令 2026-10-21:新功能都要配置开关,
     // 默认开)。builtinProperties 管内建属性 hover+self. 补全(内建属性相关
@@ -3904,7 +3908,8 @@ function findPropertyScriptLocationInDef(document: vscode.TextDocument): vscode.
 // 属性落点四档:与 def 同名的类定义行 → __init__ 行 → 首个类行(类名与
 // def 不一致时)→ 脚本首行。引擎在 __init__ 之前装载属性,脚本里没有同名
 // 赋值时类/__init__ 仍是唯一可定位的锚点。
-function resolvePropertyLandingLine(lines: string[], entityName: string): number {
+// 导出供四档落点锁测试(IDE-PROP-001 回归面,provider 不经此函数)。
+export function resolvePropertyLandingLine(lines: string[], entityName: string): number {
   let firstInitLine = -1;
   let firstClassLine = -1;
 
@@ -5688,8 +5693,38 @@ export class PropertyCodeLensProvider implements vscode.CodeLensProvider {
 
   async provideCodeLenses(document: vscode.TextDocument, token?: vscode.CancellationToken): Promise<vscode.CodeLens[]> {
     const cancelled = () => !!token?.isCancellationRequested || document.isClosed;
-    if (cancelled() || !getLanguageFeatureConfig().codeLensProperty) {
+    if (cancelled()) {
       return [];
+    }
+    const config = getLanguageFeatureConfig();
+    if (!config.codeLensProperty && !config.codeLensPropertyInitOrder) {
+      return [];
+    }
+
+    // IDE-PROP-001:「属性先于 __init__ 装载 · 来自 <实体>.def」镜——实体类
+    // __init__ 声明处标引擎装载语义,点击回 def(独立开关,与访问镜互不影响)。
+    // 类名 → def 用 findEntityDefinitionFile(与属性 F12 的实体解析同源)。
+    const lenses: vscode.CodeLens[] = [];
+    if (config.codeLensPropertyInitOrder) {
+      for (const spec of buildPropertyInitOrderLensSpecs(
+        document.getText(),
+        entityName => findEntityDefinitionFile(entityName, document)
+      )) {
+        if (cancelled()) return [];
+        lenses.push(
+          new vscode.CodeLens(
+            new vscode.Range(spec.line, spec.character, spec.line, spec.character + 3),
+            {
+              title: spec.title,
+              command: KBENGINE_SOURCE_REVEAL_COMMAND,
+              arguments: [vscode.Uri.file(spec.defPath), { selection: createDefinitionSelection(0) }]
+            }
+          )
+        );
+      }
+    }
+    if (!config.codeLensProperty) {
+      return lenses;
     }
     const accesses = findPythonSelfPropertyAccesses(document.getText());
 
@@ -5720,26 +5755,29 @@ export class PropertyCodeLensProvider implements vscode.CodeLensProvider {
         : null);
     }
 
-    return buildPropertyCodeLenses(accesses, access => hits.get(propertyAccessKey(access))).map(
-      spec =>
-        new vscode.CodeLens(
-          new vscode.Range(
-            new vscode.Position(spec.access.line, spec.access.character),
-            new vscode.Position(
-              spec.access.line,
-              spec.access.character + spec.access.rootSymbol.length
-            )
-          ),
-          {
-            title: spec.title,
-            command: KBENGINE_SOURCE_REVEAL_COMMAND,
-            arguments: [
-              vscode.Uri.file(spec.hit.defFile),
-              { selection: createDefinitionSelection(spec.hit.defLine) }
-            ]
-          }
-        )
-    );
+    return [
+      ...lenses,
+      ...buildPropertyCodeLenses(accesses, access => hits.get(propertyAccessKey(access))).map(
+        spec =>
+          new vscode.CodeLens(
+            new vscode.Range(
+              new vscode.Position(spec.access.line, spec.access.character),
+              new vscode.Position(
+                spec.access.line,
+                spec.access.character + spec.access.rootSymbol.length
+              )
+            ),
+            {
+              title: spec.title,
+              command: KBENGINE_SOURCE_REVEAL_COMMAND,
+              arguments: [
+                vscode.Uri.file(spec.hit.defFile),
+                { selection: createDefinitionSelection(spec.hit.defLine) }
+              ]
+            }
+          )
+      )
+    ];
   }
 }
 

@@ -165,23 +165,30 @@ const ANCHORS: Array<[string, number, string]> = [
   // providePythonPropertyReferences / enclosingPythonClassAt 方法面,§7 的
   // languageProviders.ts 锚点逐点重探:724/814/1622/1681/1705/1833/4474/4895/
   // 5001 各 -1,provideCompletionItems 6707→6776(非均匀),出处随 baseline 锁步
-  ['src/languageProviders.ts', 849, 'getDocumentLines(document)'],
-  ['src/languageProviders.ts', 939, 'provideHover('],
-  ['src/languageProviders.ts', 1790, 'shadowCompareDefinition'],
-  ['src/languageProviders.ts', 1849, 'export function validateDocument('],
-  ['src/languageProviders.ts', 1873, 'shadowObserveDefDocument'],
-  ['src/languageProviders.ts', 2001, 'validateEntitiesXmlDocument'],
-  ['src/languageProviders.ts', 4725, 'provideDefinitionTracedImpl'],
+  // 2026-11-06(十五):属性先装载镜批次(IDE-PROP-001)——languageProviders.ts
+  // 顶部 import +1(propertyInitOrderLens)+ getLanguageFeatureConfig 配置键 +3
+  // (313)+ resolvePropertyLandingLine 导出注释 +1(3908)+ PropertyCodeLensProvider
+  // provideCodeLenses 重构 +33(5693,双开关分流):3908 前锚点 +4,
+  // 3908~5688 锚点 +5,其后锚点(provider 重构后)+38(真位重探 853/943/1794/
+  // 1853/1877/2005/4730/5151/5257/7101);出处随 baseline 锁步(4691/5151/5257
+  // 三处 baseline 原引 4673/5133/5133 系既有漂移,本批一并修到真位)。
+  ['src/languageProviders.ts', 853, 'getDocumentLines(document)'],
+  ['src/languageProviders.ts', 943, 'provideHover('],
+  ['src/languageProviders.ts', 1794, 'shadowCompareDefinition'],
+  ['src/languageProviders.ts', 1853, 'export function validateDocument('],
+  ['src/languageProviders.ts', 1877, 'shadowObserveDefDocument'],
+  ['src/languageProviders.ts', 2005, 'validateEntitiesXmlDocument'],
+  ['src/languageProviders.ts', 4730, 'provideDefinitionTracedImpl'],
   // 2026-11-06(六):二次并入 origin main(KR-AUD-84 引擎整串开关表在 4725 后
   // +13)——层0 接收者段闸/withInitialScanTimeout/provideCompletionItems 锚点
   // 再 +13(真位重探 5146/5252/7063,出处随 baseline 锁步)。
-  ['src/languageProviders.ts', 5146, '层0 接收者段闸'],
-  ['src/languageProviders.ts', 5252, 'withInitialScanTimeout'],
+  ['src/languageProviders.ts', 5151, '层0 接收者段闸'],
+  ['src/languageProviders.ts', 5257, 'withInitialScanTimeout'],
   // 2026-11-06:IDE-LINT-012 快速修复边界——languageProviders.ts 在 receiver
   // 守卫 provider 前新增 receiverFromDiagnosticLine helper(区间归属提取)+
   // 提取块重写,+31 行,7007 后锚点随之 +31(真位重探 7038;其余 languageProviders
   // 锚点均在 helper 之前,不受影响;出处随 baseline 锁步)。
-  ['src/languageProviders.ts', 7063, 'provideCompletionItems('],
+  ['src/languageProviders.ts', 7101, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)
