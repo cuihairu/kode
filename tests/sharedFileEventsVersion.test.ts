@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { createSharedFileEventMerger } from '../src/sharedFileEvents';
+import { createSharedFileEventMerger, type SharedFileEvent } from '../src/sharedFileEvents';
 
 // 2026-10-28 审核整改(SNP-008 重开):窗口内同 kind 吞并必须区分「同一版本
 // 的重复通知」与「两次真实写入」——窗口到期核对盘上版本(mtime+size),
@@ -82,6 +82,72 @@ describe('审核整改:合并窗口按盘上版本区分重复与二次写入', 
 
     await wait(60);
     expect(seen).toEqual(['change', 'delete']);
+    merger.dispose();
+  });
+});
+
+// 文件变化元信息(方案 B):merger 交付时附带它为去重已经 stat 过的盘上版本
+// token(mtimeMs:size)——同一份 stat,不为 version 另开 IO;下游懒解析器按
+// identity+version 记忆化,同版本只读一次。首报/尾随补投两条交付路径都带。
+describe('交付事件携带盘上版本 token(SharedFileEvent.version)', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('首报交付的事件带 version,且不为 version 新增 stat(mock 计数=1)', async () => {
+    const file = realFile('v1.py', 'x = 1\n', new Date('2026-01-01T00:00:00Z'));
+    const stat = vi.spyOn(fs.promises, 'stat');
+    const merger = createSharedFileEventMerger(50);
+    const events: SharedFileEvent[] = [];
+    merger.subscribe(event => { events.push(event); });
+
+    const before = stat.mock.calls.length;
+    merger.emit(file, 'change');
+    expect(events).toHaveLength(1); // 首报即达(同步口径不变)
+    await wait(20); // KR-AUD-30:版本是异步 stat,落定后回填同一事件对象
+
+    const onDisk = fs.statSync(file);
+    expect(events[0].version, '首报事件落定后带盘上版本 token')
+      .toBe(`${onDisk.mtimeMs}:${onDisk.size}`);
+    expect(stat.mock.calls.length - before, 'version 复用去重那一次 stat,不新增')
+      .toBe(1);
+    merger.dispose();
+  });
+
+  it('窗口尾随补投的事件同样带 version(补投前已 await 核对 stat)', async () => {
+    const file = realFile('v2.py', 'x = 1\n', new Date('2026-01-01T00:00:00Z'));
+    const stat = vi.spyOn(fs.promises, 'stat');
+    const merger = createSharedFileEventMerger(20);
+    const events: SharedFileEvent[] = [];
+    merger.subscribe(event => { events.push(event); });
+
+    const before = stat.mock.calls.length;
+    merger.emit(file, 'change');
+    await wait(10); // 首报版本落定为 v1
+    fs.writeFileSync(file, 'x = 22\n', 'utf8');
+    const later = new Date('2026-01-01T00:00:07Z');
+    fs.utimesSync(file, later, later);
+    merger.emit(file, 'change'); // 窗口内同 kind:立即仍吞
+    expect(events).toHaveLength(1);
+
+    await wait(60); // 窗口到期:版本前进 → 补投
+    expect(events).toHaveLength(2);
+    const current = fs.statSync(file);
+    expect(events[1].version, '尾随补投带补投时点的盘上版本(已前进的 current)')
+      .toBe(`${current.mtimeMs}:${current.size}`);
+    expect(events[1].version, '补投版本 ≠ 首报版本(否则下游按同版本命中旧缓存)')
+      .not.toBe(events[0].version);
+    // emit 一次 stat + 窗口到期核对一次 stat;补投不再另 stat(复用核对结果)
+    expect(stat.mock.calls.length - before).toBe(2);
+    merger.dispose();
+  });
+
+  it('首报交付仍是同步的:老消费端不 await、不读 version 也照常收单', () => {
+    const merger = createSharedFileEventMerger(20);
+    const seen: string[] = [];
+    merger.subscribe(event => { seen.push(`${event.fsPath}:${event.kind}`); }); // 不读 version
+
+    merger.emit('/ws/legacy.py', 'change');
+    expect(seen).toEqual(['/ws/legacy.py:change']); // 首报即达,不因 version 变异步
+    merger.flushForTests();
     merger.dispose();
   });
 });
