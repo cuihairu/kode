@@ -37,48 +37,30 @@ const NLS_TOKEN = /^%([^%]+)%$/;
 const commands = manifest.contributes.commands;
 const properties = manifest.contributes.configuration.properties;
 
-/** 逐值收集 %key% 引用:命令 title + 配置 markdownDescription + 枚举说明(键级与 items 级) */
+/** 全量收集 %key% 引用:直接扫 package.json 原文,覆盖任意嵌套路径
+ * (displayName/description、命令、视图、配置含 items.properties 字段说明) */
 const collectManifestRefs = (): string[] => {
-  const refs: string[] = [];
-  for (const cmd of commands) {
-    const match = NLS_TOKEN.exec(cmd.title);
-    if (match) {
-      refs.push(match[1]);
+  const raw = fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8');
+  return [...raw.matchAll(/%([a-zA-Z0-9._-]+)%/g)].map(m => m[1]);
+};
+
+/** 递归校验配置子树无残留裸描述(description/markdownDescription 字面量) */
+const collectBareNestedDescriptions = (): string[] => {
+  const bare: string[] = [];
+  const walk = (node: unknown, pathStr: string): void => {
+    if (!node || typeof node !== 'object') return;
+    for (const [field, value] of Object.entries(node as Record<string, unknown>)) {
+      if ((field === 'description' || field === 'markdownDescription') && typeof value === 'string' && !NLS_TOKEN.test(value)) {
+        bare.push(`${pathStr}.${field}=${value.slice(0, 40)}`);
+      } else if (value && typeof value === 'object') {
+        walk(value, `${pathStr}.${field}`);
+      }
     }
-  }
-  for (const container of (manifest.contributes.viewsContainers
-    ? Object.values(manifest.contributes.viewsContainers).flat()
-    : []) as Array<{ id: string; title: string }>) {
-    const m = NLS_TOKEN.exec(container.title);
-    if (m) {
-      refs.push(m[1]);
-    }
-  }
-  for (const view of (manifest.contributes.views?.['kbengine-explorer'] ?? []) as Array<{ name: string }>) {
-    const m = NLS_TOKEN.exec(view.name);
-    if (m) {
-      refs.push(m[1]);
-    }
-  }
+  };
   for (const [propKey, prop] of Object.entries(properties)) {
-    const desc = NLS_TOKEN.exec(prop.markdownDescription ?? '');
-    if (desc) {
-      refs.push(desc[1]);
-    }
-    for (const [, doc] of (prop.markdownEnumDescriptions ?? []).entries()) {
-      const m = NLS_TOKEN.exec(doc);
-      if (m) {
-        refs.push(m[1]);
-      }
-    }
-    for (const [, doc] of (prop.items?.markdownEnumDescriptions ?? []).entries()) {
-      const m = NLS_TOKEN.exec(doc);
-      if (m) {
-        refs.push(m[1]);
-      }
-    }
+    walk(prop, propKey);
   }
-  return refs;
+  return bare;
 };
 
 describe('manifest 全量 nls 占位(KODE-I18N-001)', () => {
@@ -111,6 +93,15 @@ describe('manifest 全量 nls 占位(KODE-I18N-001)', () => {
       });
     }
     expect(literals).toEqual([]);
+  });
+  it('configuration 子树无残留裸描述(含嵌套 items.properties 字段说明)', () => {
+    expect(collectBareNestedDescriptions()).toEqual([]);
+  });
+
+  it('displayName 与 description 走 %key% nls 占位', () => {
+    const pkg = manifest as unknown as { displayName: string; description: string };
+    expect(pkg.displayName).toMatch(NLS_TOKEN);
+    expect(pkg.description).toMatch(NLS_TOKEN);
   });
 });
 
@@ -153,20 +144,30 @@ describe('两语言包一致性(KODE-I18N-003)', () => {
     expect(drifted).toEqual([]);
   });
 
-  it('locale 包缺 key 回落默认包(VS Code 回退行为)', () => {
+  it('locale 包缺 key 回落默认包(模拟 VS Code 回退语义:locale 缺键取默认包)', () => {
+    // VS Code 对 package.json %key% 的回退:locale 包缺键时用默认包文案。
+    // 单测无法起真机 locale 解析,这里按同一语义建模,断言到值级(不是只断言"不是占位符")。
     const resolve = (value: string, locale: Record<string, string>): string =>
       value.replace(NLS_TOKEN, (_m, key: string) => locale[key] ?? nlsDefault[key] ?? key);
 
-    // 合成删键:zh-cn 包缺键时解析结果必须等于默认包文案,而不是裸 key
+    // 合成删键:zh-cn 包缺键时解析结果必须逐字等于默认包文案
     const victim = 'kbengine.view.quickActions';
     const zhMissing = { ...nlsZhCn };
     delete zhMissing[victim];
     expect(resolve('%kbengine.view.quickActions%', zhMissing)).toBe(nlsDefault[victim]);
 
-    // 真实键:两包都能解析出文案(不落裸 key)
+    // 键在两包都不存在:落裸 key(退化路径,显式锁定该行为)
+    expect(resolve('%kbengine.synthetic.missing%', {})).toBe('kbengine.synthetic.missing');
+
+    // 真实键:两包解析结果都等于各自包内文案(不落裸 key、不误回默认)
     for (const cmd of commands) {
-      expect(resolve(cmd.title, nlsDefault)).not.toMatch(NLS_TOKEN);
-      expect(resolve(cmd.title, nlsZhCn)).not.toMatch(NLS_TOKEN);
+      const match = NLS_TOKEN.exec(cmd.title);
+      if (!match) {
+        continue;
+      }
+      const key = match[1];
+      expect(resolve(cmd.title, nlsDefault)).toBe(nlsDefault[key]);
+      expect(resolve(cmd.title, nlsZhCn)).toBe(nlsZhCn[key]);
     }
   });
 

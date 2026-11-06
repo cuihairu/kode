@@ -269,5 +269,19 @@
   "kbengine.config.python.builtinTypeInlayHints.description": "Inline `: <type>` hints after `self.<builtin property>` accesses in entity scripts (default: enabled); double-gated by kbengine.entity.builtinProperties (master switch) and this key, disabled renders no builtin-property inlay hints\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#entity-script-enhancements-2026-10-21)",
   "kbengine.config.types.aliasDiscovery.description": "Discover custom types from scripts/entity_defs/alias.xml in addition to types.xml (default: enabled); disabled falls back to types.xml only\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#entity-script-enhancements-2026-10-21)",
   "kbengine.config.runtimeQuery.enabled.description": "Enable the Runtime Queries panel operation surface (watcher watch-list add/remove and the result subscription stream; default: disabled). Off keeps the panel to single manual queries\n\n默认值：关闭（`false`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#runtime-queries)",
-  "kbengine.config.runtimeQuery.pollIntervalMs.description": "Result subscription stream interval in milliseconds for the Runtime Queries panel (default: 2000); applies only when kbengine.runtimeQuery.enabled is on\n\n默认值：`2000`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#runtime-queries)"
+  "kbengine.config.runtimeQuery.pollIntervalMs.description": "Result subscription stream interval in milliseconds for the Runtime Queries panel (default: 2000); applies only when kbengine.runtimeQuery.enabled is on\n\n默认值：`2000`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#runtime-queries)",
+  "kbengine.displayName": "Kode - KBEngine Development Environment",
+  "kbengine.description": "Complete language support for KBEngine game server framework with syntax highlighting, IntelliSense, and more",
+  "kbengine.config.debug.remoteTargets.items.name.description": "目标名（quick pick 展示，如「外网 baseapp」）",
+  "kbengine.config.debug.remoteTargets.items.host.description": "服务器 IP / 主机名",
+  "kbengine.config.debug.remoteTargets.items.port.description": "debugpy 监听端口，缺省 5678",
+  "kbengine.config.debug.remoteTargets.items.localRoot.description": "本机源码根（pathMappings 的 localRoot；须与 remoteRoot 成对提供，半配不生效）",
+  "kbengine.config.debug.remoteTargets.items.remoteRoot.description": "远端源码根（pathMappings 的 remoteRoot；须与 localRoot 成对提供，半配不生效）",
+  "kbengine.config.httpRequests.items.name.description": "请求名（quick pick 与日志标识）",
+  "kbengine.config.httpRequests.items.url.description": "URL 模板，可含 ${module}/${file}/${line}/${sel}",
+  "kbengine.config.httpRequests.items.method.description": "HTTP 方法，缺省 GET",
+  "kbengine.config.httpRequests.items.headers.description": "请求头（值同样走模板替换）",
+  "kbengine.config.httpRequests.items.body.description": "请求体（非空才随请求发送，同样走模板替换）",
+  "kbengine.config.httpRequests.items.enabled.description": "启停开关，缺省启用",
+  "kbengine.config.httpRequests.items.keybinding.description": "键位展示串（quick pick 详情列显示）"
 }

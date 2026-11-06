@@ -1,7 +1,7 @@
 {
   "name": "kode-kbengine",
-  "displayName": "Kode - KBEngine Development Environment",
-  "description": "Complete language support for KBEngine game server framework with syntax highlighting, IntelliSense, and more",
+  "displayName": "%kbengine.displayName%",
+  "description": "%kbengine.description%",
   "version": "0.2.0",
   "publisher": "cuihairu",
   "author": {
@@ -1428,23 +1428,23 @@
             "properties": {
               "name": {
                 "type": "string",
-                "description": "目标名（quick pick 展示，如「外网 baseapp」）"
+                "description": "%kbengine.config.debug.remoteTargets.items.name.description%"
               },
               "host": {
                 "type": "string",
-                "description": "服务器 IP / 主机名"
+                "description": "%kbengine.config.debug.remoteTargets.items.host.description%"
               },
               "port": {
                 "type": "number",
-                "description": "debugpy 监听端口，缺省 5678"
+                "description": "%kbengine.config.debug.remoteTargets.items.port.description%"
               },
               "localRoot": {
                 "type": "string",
-                "description": "本机源码根（pathMappings 的 localRoot；须与 remoteRoot 成对提供，半配不生效）"
+                "description": "%kbengine.config.debug.remoteTargets.items.localRoot.description%"
               },
               "remoteRoot": {
                 "type": "string",
-                "description": "远端源码根（pathMappings 的 remoteRoot；须与 localRoot 成对提供，半配不生效）"
+                "description": "%kbengine.config.debug.remoteTargets.items.remoteRoot.description%"
               }
             }
           },
@@ -1636,31 +1636,31 @@
             "properties": {
               "name": {
                 "type": "string",
-                "description": "请求名（quick pick 与日志标识）"
+                "description": "%kbengine.config.httpRequests.items.name.description%"
               },
               "url": {
                 "type": "string",
-                "description": "URL 模板，可含 ${module}/${file}/${line}/${sel}"
+                "description": "%kbengine.config.httpRequests.items.url.description%"
               },
               "method": {
                 "type": "string",
-                "description": "HTTP 方法，缺省 GET"
+                "description": "%kbengine.config.httpRequests.items.method.description%"
               },
               "headers": {
                 "type": "object",
-                "description": "请求头（值同样走模板替换）"
+                "description": "%kbengine.config.httpRequests.items.headers.description%"
               },
               "body": {
                 "type": "string",
-                "description": "请求体（非空才随请求发送，同样走模板替换）"
+                "description": "%kbengine.config.httpRequests.items.body.description%"
               },
               "enabled": {
                 "type": "boolean",
-                "description": "启停开关，缺省启用"
+                "description": "%kbengine.config.httpRequests.items.enabled.description%"
               },
               "keybinding": {
                 "type": "string",
-                "description": "键位展示串（quick pick 详情列显示）"
+                "description": "%kbengine.config.httpRequests.items.keybinding.description%"
               }
             }
           },
