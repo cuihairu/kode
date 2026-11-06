@@ -278,3 +278,43 @@
 - `npm test`：vitest 全量三轮（本机负载均值 177–193，同机另有 apollo C++ 构建/gradle/dotnet/go 测试并行）：**6367 passed、20 skipped**，每轮 5–6 failed 且**每轮失败的用例集互不相同**、全部是预算/截止时间/真实子进程类测试（`typeStorageColdBuildPhased`、`processTopologyPerf`、`hoverDeadlineContext`、`receiverNoneAsyncSharedParse`、`globalDataIndex`、`pythonTestRunner`、`debugConfigAttach`），**零热更换路失败**；失败文件离线单跑**全部通过（113 tests）**，判定为满载抖动（六轮首轮 11 个同类抖动同因）。日志 `/tmp/r7-npm-test-full.log`、`/tmp/r7-npm-test-full2.log`、`/tmp/r7-npm-test-full3.log`。链上其余段直跑验证：compile 退出 0（`/tmp/r7-compile.log`）、`tsc -p tsconfig.mocha.json` 干净、VS Code 集成冒烟 **12 passing**（首轮 1 个激活 hook 2s 超时为同因抖动，复跑干净；`/tmp/r7-electron2.log`）。
 - `eslint src --ext ts`：退出 0 干净；`tsc -p tsconfig.json --noEmit` 干净。
 - 逐项 red 日志：`/tmp/r7-red-both.log`（3 failed | 25 passed）、`/tmp/r7-f1-after.log`（2 failed | 26 passed）。
+
+## 第八轮返工记录（2026-11-06，八轮复审三项：rename 父目录竞态 / 清理标志位 / 暂存唯一子目录，分支 `feat/kode-fix-f1f4`）
+
+本轮处理八轮复审对参考接收端的三项缺陷：rename 前父目录缺少包含性与组件同一性双重验证（目录换入竞态可逃逸）、失败清理不以确认自建为门（可能删非本进程创建的文件）、暂存按 basename 平铺互相覆盖（同批可污染源文件）。均先在修码前源码实测失败测试（red 日志见下），修码转绿后逐项独立 commit。`todo.md` 未改。
+
+### R7-F1：rename 父目录双重验证 + 清理以确认自建为门（commit `87fcbed`）
+
+- 问题①：rename 直接用产物父目录 realpath 构建目标，未验证包含性与组件同一性——与目录换入竞态时（父目录被换成指向外部的 symlink）realpath 照样通过，产物被 rename 到引擎目录外。
+- 修法①（`referenceReceiver.mjs`）：新增 `verifiedRealParentForRename()`——rename 前立即 realpath 父目录，要求**包含性**（解析路径在 `--artifact-dir` realpath 内）与**组件同一性**（解析路径与原路径逐字相同，链上无 symlink 组件）同时成立，rename 目标改用验证后的真实父目录；JS 无 `O_NOFOLLOW`，realpath→rename 的残余竞态窗口在 design §4.3 如实记载而非假装消除。
+- 问题②：失败清理无条件 unlink 临时文件——`'wx'` 独占创建本身失败（如 EEXIST）时也会删除**不是本进程创建**的文件。
+- 修法②：创建是独立成功点——`openSync 'wx'` 成功才置 created 标志，其后才允许最终 unlink；创建失败不碰任何文件、不报 `rollback_failed`；部分写入（EFBIG）残留照清（fd 创建成功在先）。
+- 内部辅助经 ES module 导出供单测钉住（main guard 保持直接执行行为不变）。
+- 回归（`tests/hotReloadReceiverHelpers.test.ts` 新增 + `tests/hotReloadReceiverRoundtrip.test.ts` 新增）：rename 父目录 symlink 组件拒绝、创建失败不清理他文件、部分写入残留清理。**red：9 failed | 28 passed**（修码前两文件实测，`/tmp/r8-red.log`；roundtrip 单文件 **2 failed | 28 passed**，`/tmp/r8-red-roundtrip.log`）→ 修后仅剩八轮暂存回归 **1 failed | 36 passed**（`/tmp/r8-f1-green.log`）。
+
+### R7-F2：暂存逐文件唯一子目录（commit `3428c8c`）
+
+- 问题：暂存把每个收到的文件按 `basename` 平铺到暂存根顶层——同批 `<root>/sub/X.py` 与 `<root>/X.py` 时，前者的暂存副本覆盖后者的**源文件**（读回污染、digest 不符、源文件被暂存动作改写）。
+- 修法：暂存按报文相对路径展开到 `<root>/.staged/<relative path>`（与产物映射同一套逃逸清洗与批内碰撞规则），同批暂存副本互不碰撞，不碰任何源文件与 applied 台账。
+- 回归（roundtrip 新增八轮回归）：同批 sub/X.py + X.py → 双 applied、源文件逐字原样、暂存互不覆盖。**red：R7-F1 提交上 1 failed | 36 passed**（`/tmp/r8-f1-green.log`）→ **green 37 passed**（`/tmp/r8-f2-green.log`、`/tmp/r8-f2-green2.log`）；源锁测试同步钉新创建/清理/暂存机制。
+
+### R7-F3：design §4.3 与接收端头部契约收口（commit `44bbcc3`）
+
+- `docs/design/hot-reload-design.md` §4.3 落八轮契约：rename 父目录双重验证（包含性+组件同一性）与残余 realpath→rename 窗口如实注记；临时文件验证顺序锚定 `'wx'` 创建成功点、清理以确认自建为门；暂存逐文件唯一 `.staged` 子目录（与产物映射同规则）。同时移除五轮「回滚 best-effort / 还原原内容」与六轮「根外绝对路径回落」两条已废除承诺，七轮清理措辞对齐创建点标志位。
+- 接收端脚本头部契约注记同步（五轮回滚通路、六轮根外回落标为 history）；`roundtripProbe` 线样本按新基线重跑（`docs/perf/2026-11-05-aud007-receiver-roundtrip.txt`）。
+
+### Windows 真机 rename 覆盖证据（openclaw，随本轮入库 `docs/perf/2026-11-08-win-rename-overwrite-roundtrip.txt`）
+
+- openclaw（Windows Server 2022，node v24.22.1）参考接收端真实回环：fresh apply → applied revision1；**overwrite apply → applied revision2，产物字节逐字替换（`HP = 100`→`HP = 200`，digest 随内容变化）——rename 覆盖既有目标在 Windows 成立**；幂等重放 revision3 同 digest；暂存独立子目录 `true`；父目录 symlink 组件 → failed 回执（reason 含「rename 目标父目录含符号链接组件…不自称 applied」），泄漏检查 `other/X.py exists = false`、链接原样。
+- **VERDICT: PASS (rename replaces existing target on this platform; contract holds)；FINAL_VERDICT=PASS**。
+
+### 第八轮门禁数字（2026-11-06）
+
+- 本机（14C，负载 100–291）：
+  - `cargo test --workspace --exclude kode-scheduler`：**退出 0**；87 结果块 **525 passed、0 failed、0 ignored**（`/tmp/r8-cargo-full.log`）。
+  - `eslint src --ext ts`：**退出 0** 干净（`/tmp/r8-eslint2.log`）；`tsc -p tsconfig.json --noEmit`：**退出 0** 干净（`/tmp/r8-tsc2.log`）。
+  - vitest 全量：第 1 轮 **2 failed | 6379 passed | 20 skipped（6401）**——两失败均为预算/真跑型（`globalDataIndex` 切片扫描预算 2891ms、`pythonTestRunner` 真 pytest 5042ms，满载抖动）；**第 2 轮全绿：退出 0，514 文件 passed | 4 skipped，6381 passed | 20 skipped（6401）**（`/tmp/r8-local-vitest.log`、`/tmp/r8-local-vitest2.log`）。失败文件隔离复跑：`globalDataIndex` **3/3 过**、`serverGroupLaunch` **3/3 过**；`pythonTestRunner` 在本机极端负载（load 291）下 1/3 过、idle 机器 3/3 过（见 imac 行），判定负载依赖。
+- imac（192.168.5.117）：
+  - 原生 Windows 口径全量：**69 failed | 6291 passed | 34 skipped（6394），38 文件失败**——全部为平台性差异（路径分隔符 `scripts\` vs `scripts/`、Windows 大小写折叠、`getuid` 等），非本仓门禁口径，弃用（`/tmp/r8-imac-vitest.log`）。
+  - **WSL2 Ubuntu（20C/62G，Linux 口径=门禁口径）**：node v24.21.0 + pnpm 12.10.1 + pytest 9.2.0，`pnpm install --frozen-lockfile`。全量复跑：pytest 补齐后 8 轮中前 7 轮每轮 **2–5 failed**、失败集逐轮变化且全为时机型——根因是 **WSL2 墙钟跳变**：0.1s 采样实测 `CLOCK_REALTIME` 每 ~5s 跳 ±33s（max_fwd **+33.084s** / max_bwd **−33.084s**；Windows 宿主同期 max_delta 0.48s 稳定），`until()` 的 `Date.now` 截止被假超时（失败用例报出时长远小于自身 5s deadline，如 1170ms/256ms）；root 下 mask `systemd-timesyncd` 后 60s 采样 **0 次跳变**，**mask 前循环第 8 轮 + mask 后连续 4 轮（x1–x4）共 5 轮全绿：退出 0，513 文件 passed | 5 skipped，6373 passed | 28 skipped（6401），0 failed**（`/tmp/r8-wsl-loop.log`、`/tmp/r8-wsl-xrounds.log`）。
+  - 失败文件隔离复跑 ×3（取真）：mask 后 `serverGroupLaunch`、`serverReadiness`、`logHub`、`serverManagerRunner`、`pythonTestRunner`、`serverManagerProcesses`、`autoDebugpy` 全部 **3/3 通过**；`covExtensionCommands`（原失败为环境缺 pytest，补装后）**3/3 通过**。与本机全绿轮共同证明残余失败为环境时钟/依赖问题而非代码问题。
