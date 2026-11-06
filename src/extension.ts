@@ -176,7 +176,19 @@ import {
   resolvePyspyCommand,
   runPyspyDump
 } from './pyspyDump';
-import { resolveProfileInterpreter } from './profileInterpreter';
+import {
+  locateInterpreterOnPath,
+  resolveInterpreterWith,
+  resolveProfileInterpreter
+} from './profileInterpreter';
+import { scanVenvs, verifyVenvDirectory } from './venvDiscovery';
+import {
+  createVenvFlow,
+  interpreterStatusBarText,
+  probePythonVersion,
+  runVenvModuleProcess,
+  selectInterpreter
+} from './venvInterpreterPicker';
 import { buildSshExecArgs, readSshHostsFromHome, type SshHostsSnapshot } from './remoteConnection';
 import { listRemoteProcesses, pickRemoteProcessId } from './remoteProcessList';
 import {
@@ -218,6 +230,7 @@ import { resolveServerComponent } from './serverCommandTarget';
 import { parseHttpRequestEntries } from './httpRequests';
 import { HttpRequestService } from './httpRequestService';
 import { QuickActionManager, setDefaultScriptRuntime } from './quickActions';
+import { normalizeVenvDirectoryNames } from './quickActionConfig';
 import { QuickActionTreeProvider } from './quickActionTree';
 import {
   HOT_RELOAD_APPLIED_SETTLE_MS,
@@ -1534,8 +1547,14 @@ export function activate(context: vscode.ExtensionContext) {
           ? { exists: true, text: readIfExists('.kbengine/debug.json') }
           : { exists: false },
         extraPaths,
-        // 相对条目按工作区根解析(与 Pylance 的根基准语义一致);存在性注入
-        extraPathExists: (entry) => fs.existsSync(path.resolve(root, entry)),
+        // 相对条目按工作区根解析(与 Pylance 的根基准语义一致);CFG-02 起
+        // 生成面写 ${workspaceFolder}/... 变量形态,先展开前缀再解析
+        extraPathExists: (entry) => {
+          const relative = entry.startsWith('${workspaceFolder}')
+            ? entry.slice('${workspaceFolder}'.length).replace(/^[\\/]+/, '')
+            : entry;
+          return fs.existsSync(path.resolve(root, relative));
+        },
         gitignore: fs.existsSync(path.join(root, '.gitignore'))
           ? { exists: true, text: readIfExists('.gitignore') }
           : { exists: false },
@@ -6615,6 +6634,128 @@ export function activate(context: vscode.ExtensionContext) {
     () => showProfileHealthSummary(context)
   );
   context.subscriptions.push(profileHealthCommand);
+
+  // 解释器状态栏与选择(PY-ENV 二期):状态栏项显示当前解释器(venv 名/
+  // 版本/来源徽标 auto|configured|PATH|缺失),点击进 QuickPick——选中写入
+  // kbengine.python.interpreterPath(workspace 级)即刻生效(解析链每次读
+  // 实时配置);列表尾「创建新 venv…」走创建流(选放置 venv 的父目录,目标
+  // 固定 .venv;基础解释器=设置→PATH 链,缺失如实拒绝;完成后对目标直接
+  // 验真再选用)。
+  const interpreterStatusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    97
+  );
+  interpreterStatusBarItem.command = 'kbengine.python.selectInterpreter';
+  context.subscriptions.push(interpreterStatusBarItem);
+
+  const venvPreferredNames = (): string[] =>
+    normalizeVenvDirectoryNames(
+      vscode.workspace.getConfiguration('kbengine').get('python.venvDirectories')
+    );
+  const refreshInterpreterStatusBar = async (): Promise<void> => {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const resolution = resolveProfileInterpreter(root);
+    interpreterStatusBarItem.text = interpreterStatusBarText(resolution);
+    interpreterStatusBarItem.tooltip = resolution.interpreterPath
+      ? resolution.interpreterPath
+      : 'Python 解释器缺失(点击可选择或创建)';
+    interpreterStatusBarItem.show();
+    // 版本探测失败如实省略版本段,不影响徽标与路径显示
+    if (resolution.interpreterPath) {
+      const version = await probePythonVersion(resolution.interpreterPath);
+      if (version) {
+        interpreterStatusBarItem.text = interpreterStatusBarText(resolution, version);
+      }
+    }
+  };
+
+  const runCreateVenvFlow = (): Promise<'created' | null> =>
+    createVenvFlow({
+      workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      // 对话框只能选已存在目录:选放置 venv 的父目录(默认工作区根),
+      // 目标固定为其中的 .venv(python -m venv 自己落目录)
+      pickTargetParentDir: async defaultDir => {
+        const picks = await vscode.window.showOpenDialog({
+          canSelectFolders: true,
+          canSelectMany: false,
+          defaultUri: vscode.Uri.file(defaultDir),
+          openLabel: '选择放置 venv 的目录'
+        });
+        return picks?.[0]?.fsPath ?? null;
+      },
+      // 基础解释器走 设置存在才采用 → PATH 链(不走工作区发现——那可能
+      // 正是要被重建的环境);与缺失提示的补救入口一致
+      baseInterpreter: () => {
+        const configured = vscode.workspace
+          .getConfiguration('kbengine')
+          .get<string>('python.interpreterPath', '');
+        return resolveInterpreterWith({
+          interpreterSetting: configured,
+          pathEnv: process.env.PATH,
+          platform: process.platform
+        }).interpreterPath;
+      },
+      targetDirectoryExistsNonEmpty: dir => {
+        try {
+          return fs.readdirSync(dir).length > 0;
+        } catch {
+          return false;
+        }
+      },
+      // withProgress 返回 Thenable,await 归一成 Promise(依赖面签名)
+      runVenvModule: async (base, target) =>
+        await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: `创建 venv: python -m venv ${target}` },
+          () => runVenvModuleProcess(base, target)
+        ),
+      // 直接对目标验真(不依赖扫描范围,深层/工作区外目标照常选用)
+      verifyTarget: dir => verifyVenvDirectory(dir, process.platform),
+      writeInterpreterSetting: async value =>
+        await vscode.workspace
+          .getConfiguration('kbengine')
+          .update('python.interpreterPath', value, vscode.ConfigurationTarget.Workspace),
+      report: async message => {
+        await vscode.window.showInformationMessage(message);
+      }
+    });
+
+  const selectInterpreterCommand = vscode.commands.registerCommand(
+    'kbengine.python.selectInterpreter',
+    async () => {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      await selectInterpreter({
+        current: () => resolveProfileInterpreter(root),
+        discovered: () => (root ? scanVenvs(root, { preferredNames: venvPreferredNames() }) : []),
+        pathInterpreter: () => locateInterpreterOnPath(process.env.PATH, process.platform),
+        showQuickPick: async items =>
+          await vscode.window.showQuickPick(items, {
+            placeHolder: '选择 Python 解释器(写入 kbengine.python.interpreterPath 即刻生效)'
+          }),
+        writeInterpreterSetting: async value =>
+          await vscode.workspace
+            .getConfiguration('kbengine')
+            .update('python.interpreterPath', value, vscode.ConfigurationTarget.Workspace),
+        report: async message => {
+          await vscode.window.showInformationMessage(message);
+        },
+        createVenv: () => runCreateVenvFlow()
+      });
+      await refreshInterpreterStatusBar();
+    }
+  );
+
+  const createVenvCommand = vscode.commands.registerCommand('kbengine.python.createVenv', async () => {
+    await runCreateVenvFlow();
+    await refreshInterpreterStatusBar();
+  });
+
+  const interpreterConfigListener = vscode.workspace.onDidChangeConfiguration(event => {
+    if (event.affectsConfiguration('kbengine.python.interpreterPath')) {
+      void refreshInterpreterStatusBar();
+    }
+  });
+  context.subscriptions.push(selectInterpreterCommand, createVenvCommand, interpreterConfigListener);
+  void refreshInterpreterStatusBar();
 
   // 激活期发现完成后自动落一份报告;有问题时提示用户到输出面板看/复制回传
   const discoveryRoot = primaryWorkspaceRoot;

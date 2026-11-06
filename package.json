@@ -627,6 +627,16 @@
         "title": "Check Python Language Service Status"
       },
       {
+        "command": "kbengine.python.selectInterpreter",
+        "title": "Select Python Interpreter",
+        "icon": "$(python)"
+      },
+      {
+        "command": "kbengine.python.createVenv",
+        "title": "Create Virtual Environment (venv)",
+        "icon": "$(add)"
+      },
+      {
         "command": "kbengine.generator.templates",
         "title": "Create Entity from Template",
         "icon": "$(file-template)"
@@ -1319,8 +1329,8 @@
         },
         "kbengine.binPath": {
           "type": "string",
-          "default": "${workspaceFolder}/../kbe/bin/server",
-          "description": "KBEngine 二进制文件路径，支持 ${workspaceFolder} 和 ${env:VAR}"
+          "default": "${workspaceFolder}/kbe/bin/server",
+          "description": "KBEngine 二进制文件路径，支持 ${workspaceFolder} 和 ${env:VAR}。未显式配置时默认值在盘即生效；不在盘回落自动发现扫描；扫描也落空才在启动检查链报警（CFG-01）"
         },
         "kbengine.assetsRoot": {
           "type": "string",
@@ -1582,7 +1592,7 @@
         "kbengine.python.interpreterPath": {
           "type": "string",
           "default": "",
-          "description": "Python 解释器路径（绝对路径，支持 ${workspaceFolder} 变量）。项目 profile 记录解释器来源：本设置存在才采用；否则取 PATH 里的 python3/python；都找不到记录缺失状态（不伪造路径）"
+          "description": "Python 解释器路径（绝对路径，支持 ${workspaceFolder} 变量）。项目 profile 记录解释器来源：本设置存在才采用；否则深扫工作区已验证环境（pyvenv.cfg/conda-meta 证据 + 解释器二进制，深度封顶剪枝）；再取 PATH 里的 python3/python；都找不到记录缺失状态（不伪造路径）。状态栏项展示当前解释器（kbengine.python.selectInterpreter 可选择或创建 venv，选中即刻生效）"
         },
         "kbengine.python.venvDirectories": {
           "type": "array",

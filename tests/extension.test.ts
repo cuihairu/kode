@@ -278,12 +278,13 @@ describe('extension activate 装配', () => {
     expect(stubWithMetadata).toContain('# Source describe:');
     expect(workspaceState.contentProviders.has('kbengine-config')).toBe(true);
 
-    // 状态栏三条:server 灯(右对齐/优先级 100/命令指向扩展视图)、
-    // telnet 灯(优先级 99/命令指向 telnet 面板)与热更状态灯(HR-UI-001,
-    // 优先级 98/命令指向热更日志,默认 Watch Off 常显);无运行组件时
-    // server 灯隐藏。批111 用户令:配置未开 telnet 时 telnet 灯同样隐藏,
-    // context key 落 false
-    expect(windowState.statusBars).toHaveLength(3);
+    // 状态栏四条:server 灯(右对齐/优先级 100/命令指向扩展视图)、
+    // telnet 灯(优先级 99/命令指向 telnet 面板)、热更状态灯(HR-UI-001,
+    // 优先级 98/命令指向热更日志,默认 Watch Off 常显)与解释器灯(PY-ENV
+    // 二期,优先级 97/命令指向解释器选择,常显);无运行组件时 server 灯
+    // 隐藏。批111 用户令:配置未开 telnet 时 telnet 灯同样隐藏,context
+    // key 落 false
+    expect(windowState.statusBars).toHaveLength(4);
     const bar = windowState.statusBars.find(item => item.priority === 100)!;
     expect(bar.alignment).toBe(StatusBarAlignment.Right);
     expect(bar.command).toBe('workbench.view.extension.kbengine-explorer');
@@ -296,6 +297,10 @@ describe('extension activate 装配', () => {
     expect(hotReloadBar.command).toBe('kbengine.hotReload.showLog');
     expect(hotReloadBar.text).toBe('$(eye-closed) 热更: 关');
     expect(hotReloadBar.visible).toBe(true);
+    const interpreterBar = windowState.statusBars.find(item => item.priority === 97)!;
+    expect(interpreterBar.alignment).toBe(StatusBarAlignment.Right);
+    expect(interpreterBar.command).toBe('kbengine.python.selectInterpreter');
+    expect(interpreterBar.visible).toBe(true);
     expect(commandRegistry.contexts.get('kbengine.telnetConfigured')).toBe(false);
 
     // 所有 subscription 都可 dispose
