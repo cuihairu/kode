@@ -267,11 +267,12 @@ export class HotReloadStatusController {
         const message = next
           ? '自动热更已开启:保存 .py 即向 http://127.0.0.1:8090/hotfix?module_name=<模块名> 发送(query 与 body 各带一份)'
           : '自动热更已关闭(kbengine.hotReload.enabled=false);点击状态栏「热更」项或再运行 kbengine.hotReload.toggle 可开启';
-        // 提示里保留开日志入口:状态栏点击已让位给一键关,日志面从这里走
+        // 提示里保留开日志入口:状态栏点击已让位给一键关,日志面从这里走;
+        // 开日志带 HOT-VER 版本台账(无版本数据源时退回纯开通道)
         void Promise.resolve(
           vscode.window.showInformationMessage(message, '打开日志').then(choice => {
             if (choice === '打开日志') {
-              this.showLog();
+              this.showLogWithVersions();
             }
           })
         ).catch(() => undefined);

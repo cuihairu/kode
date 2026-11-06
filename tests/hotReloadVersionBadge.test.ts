@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import { describe, expect, it } from 'vitest';
 import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
 import { HotReloadVersionTracker } from '../src/hotReloadFileVersion';
+import { HOT_RELOAD_TOGGLE_COMMAND } from '../src/hotReloadToggle';
 import {
   HOT_RELOAD_SHOW_LOG_COMMAND,
   HotReloadStatusController,
@@ -13,8 +14,10 @@ import {
 // 热更状态栏文件版本号(用户令 2026-11-09):五种既有状态与版本号正交组合,
 // 不新增状态——单号=同步(`热更: 就绪 v3`),双号=待同步(`热更: … v2→v3`,
 // 箭头左=基线/上次发送版本,右=盘上当前版本)。未跟踪/不在监视范围的文件
-// 不显号;无活动文档回落最近变更文件;tooltip 列全部待同步版本对;点击状态栏
-// 进 OUTPUT 列版本台账。补充约束:版本台账独立于 watcher——enabled=false 的
+// 不显号;无活动文档回落最近变更文件;tooltip 列全部待同步版本对;开日志命令
+// (kbengine.hotReload.showLog,开关提示的「打开日志」入口)进 OUTPUT 列版本台账;
+// 状态栏点击本身=一键关/开(主干架构 HOT_RELOAD_TOGGLE_COMMAND),不承载台账。
+// 补充约束:版本台账独立于 watcher——enabled=false 的
 // 手动触发路径同样出号,且与 watcher 开启同口径(同一台账同一实现)。
 
 const OFF_FACE = '$(eye-closed) 热更: 关';
@@ -82,7 +85,8 @@ interface Harness {
   tokens: Map<string, string>;
   contents: Map<string, string>;
   setActive(file: string | undefined): void;
-  clickBar(): void;
+  /** 跑开日志命令(状态栏开关提示的「打开日志」入口)= 列版本台账 */
+  runShowLog(): void;
 }
 
 const makeHarness = (): Harness => {
@@ -121,12 +125,12 @@ const makeHarness = (): Harness => {
     show: () => void showCalls.push(showCalls.length),
     dispose: (): void => undefined
   };
-  let handler: (() => void) | undefined;
+  const handlers = new Map<string, () => void>();
   const controller = new HotReloadStatusController({
     createStatusBarItem: () => bar,
     createOutputChannel: () => channel,
-    registerCommand: (_command, registered) => {
-      handler = registered;
+    registerCommand: (command, registered) => {
+      handlers.set(command, registered);
       return { dispose: (): void => undefined };
     },
     timers: clock.timers,
@@ -144,7 +148,7 @@ const makeHarness = (): Harness => {
     tokens,
     contents,
     setActive: file => void (active = file),
-    clickBar: (): void => handler?.()
+    runShowLog: (): void => handlers.get(HOT_RELOAD_SHOW_LOG_COMMAND)?.()
   };
 };
 
@@ -169,7 +173,7 @@ describe('热更状态栏版本徽标(五态正交,不新增状态)', () => {
     expect(h.bar.text).toBe(OFF_FACE);
     expect(h.bar.text).not.toMatch(/\bv\d/);
 
-    await drive(h, () => h.controller.setReady(1, 500));
+    await drive(h, () => h.controller.setReady(['**/*.py'], 'derived', 500));
     expect(h.bar.text).toBe(READY_FACE);
     await drive(h, () => h.controller.setSending([A], 500));
     expect(h.bar.text).toBe(SENDING_FACE);
@@ -187,7 +191,7 @@ describe('热更状态栏版本徽标(五态正交,不新增状态)', () => {
     h.tokens.set(A, 'T0');
     await drive(h, () => void h.tracker.noteFile(A));
     h.setActive(A);
-    await drive(h, () => h.controller.setReady(1, 500));
+    await drive(h, () => h.controller.setReady(['**/*.py'], 'derived', 500));
     expect(h.bar.text).toBe(`${READY_FACE} v1`);
 
     h.tokens.set(A, 'T1');
@@ -232,7 +236,7 @@ describe('热更状态栏版本徽标(五态正交,不新增状态)', () => {
     await drive(h, () => void h.tracker.noteFile(A)); // 最近变更=A
 
     h.setActive(undefined);
-    await drive(h, () => h.controller.setReady(1, 500));
+    await drive(h, () => h.controller.setReady(['**/*.py'], 'derived', 500));
     expect(h.bar.text).toBe(`${READY_FACE} v1→v2`);
 
     h.setActive(B);
@@ -251,7 +255,7 @@ describe('热更状态栏版本徽标(五态正交,不新增状态)', () => {
     h.tokens.set(B, 'T1');
     await drive(h, () => void h.tracker.noteFile(B));
     h.setActive(A);
-    await drive(h, () => h.controller.setReady(1, 500));
+    await drive(h, () => h.controller.setReady(['**/*.py'], 'derived', 500));
 
     expect(h.bar.text).toBe(`${READY_FACE} v1→v2`);
     const tooltip = String(h.bar.tooltip);
@@ -278,10 +282,10 @@ describe('热更状态栏版本徽标(五态正交,不新增状态)', () => {
       attempt: 1,
       now: new Date(2026, 0, 1, 12, 0, 2).getTime()
     });
-    await drive(h, () => h.controller.setReady(1, 500));
+    await drive(h, () => h.controller.setReady(['**/*.py'], 'derived', 500));
     h.setActive(A);
 
-    h.clickBar();
+    h.runShowLog();
     await flush();
     settle(h.clock);
 
@@ -295,14 +299,15 @@ describe('热更状态栏版本徽标(五态正交,不新增状态)', () => {
     expect(text).toContain(`digest=${digest.slice(0, 8)}`);
     expect(text).toContain('attempt=1');
     expect(text).toContain('outcome=applied');
-    expect(h.bar.command).toBe(HOT_RELOAD_SHOW_LOG_COMMAND);
+    // 主干架构:状态栏点击=一键关/开(toggle),台账走开日志命令面
+    expect(h.bar.command).toBe(HOT_RELOAD_TOGGLE_COMMAND);
   });
 
   it('节流与释放:版本补渲染走同一节流窗;dispose 后无迟到渲染', async () => {
     const h = makeHarness();
     h.tokens.set(A, 'T0');
     await drive(h, () => void h.tracker.noteFile(A));
-    await drive(h, () => h.controller.setReady(1, 500));
+    await drive(h, () => h.controller.setReady(['**/*.py'], 'derived', 500));
     expect(h.bar.text).toBe(`${READY_FACE} v1`);
 
     h.tokens.set(A, 'T1');

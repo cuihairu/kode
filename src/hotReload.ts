@@ -1034,7 +1034,7 @@ export function setupHotReload(
       show: async (message, ...items) => {
         const choice = await vscode.window.showInformationMessage(message, ...items);
         if (choice === '打开日志') {
-          status.showLog();
+          status.showLogWithVersions();
         }
         return choice;
       },
