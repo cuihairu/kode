@@ -4,6 +4,7 @@ import { resendHotReloadTarget } from '../src/hotReloadRetryCommand';
 import { createDefStructuralGate } from '../src/hotReloadDefGate';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
 import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
+import type { ReloadTransport } from '../src/hotReloadTransport';
 import { configurationOverrides, lastFileSystemWatcher } from './helpers/vscodeStub';
 
 // RT-3(外部深审 2026-11-04)/IDE-HOT-005:失败目标重试不得绕过 def 结构闸——
@@ -245,5 +246,95 @@ describe('重试路径 def 结构闸(RT-3 / IDE-HOT-005)', () => {
     const { result: retryResult, runCalls: retryCalls } = await resend(store, sharedGate);
     expect(retryResult.ok).toBe(true);
     expect(retryCalls).toEqual(['热更']);
+  });
+});
+
+// KR-AUD-40:失败目标重试的「部署通道分支」同样不得绕过 def 结构闸——
+// 重试目标=当前部署通道目标(profile ID)时,resendHotReloadTarget 接回
+// resolveChannelTransport 走通道发送;闸判定必须先于该分支(拦下时不发
+// transport.send、不发动作、不落账),否则结构性 def 变更经「重试→部署
+// 通道」仍会以普通 reload 下发。
+describe('重试路径 def 结构闸 × 部署通道分支(KR-AUD-40)', () => {
+  const CHANNEL_KEY = { rootId: '/ws', targetId: 'profile-9' };
+  let baselines: Map<string, string>;
+  let content: string | null;
+  let restartNotices: Array<{ targetId: string; files: string[]; reasons: string[] }>;
+  const makeGate = () => createDefStructuralGate(async () => content, baselines);
+
+  beforeEach(() => {
+    baselines = new Map();
+    content = BASE_DEF;
+    restartNotices = [];
+    configurationOverrides.clear();
+    lastFileSystemWatcher.current = null;
+  });
+
+  const makeChannelStore = (): HotReloadTargetStateStore => {
+    const store = new HotReloadTargetStateStore({ now: () => 1 });
+    store.record(CHANNEL_KEY, '/ws/entities/Avatar.def', 'failed', { detail: 'ECONNREFUSED' });
+    store.record(CHANNEL_KEY, '/ws/scripts/cell/Avatar.py', 'failed', { detail: 'ECONNREFUSED' });
+    return store;
+  };
+
+  const resendViaChannel = async (store: HotReloadTargetStateStore, gate = makeGate()) => {
+    const runCalls: string[] = [];
+    const sends: string[][] = [];
+    const clock = makeTimers();
+    const transport: ReloadTransport = {
+      kind: 'http',
+      probe: async () => ({ ok: true, detail: 'ok' }),
+      send: async (_target, fileSet) => {
+        sends.push([...fileSet]);
+        return { kind: 'http', receipts: [] };
+      }
+    };
+    const result = await resendHotReloadTarget(store, CHANNEL_KEY, {
+      runAction: name => {
+        runCalls.push(name);
+        return true;
+      },
+      resolveActionNameForTarget: () => '热更',
+      targetState: {
+        store,
+        resolveTargetId: () => 'baseapp#1',
+        resolveRootId: () => '/ws'
+      },
+      timers: clock.timers,
+      settleHandles: new Set<unknown>(),
+      defGate: gate,
+      resolveChannelTransport: () => ({ transport, targetId: 'profile-9' }),
+      onRestartRequired: (targetId, files, reasons) => {
+        restartNotices.push({ targetId, files: [...files], reasons: [...reasons] });
+      }
+    });
+    return { result, runCalls, sends };
+  };
+
+  it('结构性 def 变更:通道目标重试被闸拦下,不走 transport.send 不落账,发需重启通知', async () => {
+    content = STRUCTURAL_DEF;
+    baselines.set('/ws/entities/Avatar.def', BASE_DEF);
+    const store = makeChannelStore();
+    const { result, runCalls, sends } = await resendViaChannel(store);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain('结构性 def 变更需要重启');
+    expect(sends).toEqual([]);
+    expect(runCalls).toEqual([]);
+    expect(restartNotices).toHaveLength(1);
+    expect(restartNotices[0].targetId).toBe('profile-9');
+    // 拦下是保守拦截不是投递失败:台账保留 failed 旧账原样
+    expect(store.get(CHANNEL_KEY, '/ws/entities/Avatar.def')?.outcome).toBe('failed');
+  });
+
+  it('非结构 def 变更:通道目标重试照常经部署通道重发(闸放行,不走动作反查)', async () => {
+    content = NONSTRUCTURAL_DEF;
+    baselines.set('/ws/entities/Avatar.def', BASE_DEF);
+    const store = makeChannelStore();
+    const { result, runCalls, sends } = await resendViaChannel(store);
+    expect(result.ok).toBe(true);
+    expect(sends).toHaveLength(1);
+    expect(sends[0]).toContain('/ws/entities/Avatar.def');
+    expect(sends[0]).toContain('/ws/scripts/cell/Avatar.py');
+    expect(runCalls).toEqual([]);
+    expect(restartNotices).toEqual([]);
   });
 });
