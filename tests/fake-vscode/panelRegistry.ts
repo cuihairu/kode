@@ -14,6 +14,8 @@ export interface FakeWebviewPanel {
   webview: {
     html: string;
     options: unknown;
+    cspSource: string;
+    asWebviewUri(uri: { fsPath?: string; path?: string }): { toString(): string };
     postedMessages: Array<{ message: unknown }>;
     postMessage(message: unknown): Promise<boolean>;
     onDidReceiveMessage(listener: (message: unknown) => void): { dispose(): void };
@@ -45,6 +47,12 @@ function createPanel(viewType: string, title: string, showOptions: unknown, opti
     webview: {
       html: '',
       options: undefined,
+      // 真实 webview 的 CSP 源与本地资源 URI(KR-AUD-43/50/53 本地打包断言用):
+      // 形态对齐 VS Code——cspSource 是 asWebviewUri 产物的源
+      cspSource: 'vscode-webview:',
+      asWebviewUri: (uri: { fsPath?: string; path?: string }) => ({
+        toString: (): string => `vscode-webview:${uri.fsPath ?? uri.path ?? ''}`
+      }),
       postedMessages: [],
       postMessage: async (message: unknown): Promise<boolean> => {
         panel.webview.postedMessages.push({ message });
