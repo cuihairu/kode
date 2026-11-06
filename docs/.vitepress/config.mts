@@ -89,6 +89,8 @@ export default withMermaid(defineConfig({
                 { text: 'Quick actions and db hint design', link: '/design/quick-actions-and-db-hint' },
                 { text: 'Def/utype to .pyi stubs feasibility', link: '/design/def-pyi-stubs' },
                 { text: 'Player Data Clone plan (v0.2.1)', link: '/design/v0.2.1-player-data-clone-plan' },
+                { text: 'Player data clone (db-clone)', link: '/player-clone/' },
+                { text: 'db-clone capability & pipeline overview', link: '/player-clone/db-clone-overview' },
                 { text: 'Space Viewer / Watcher protocol forensics', link: '/design/space-viewer-watcher' },
                 { text: 'File change meta (identity + version)', link: '/design/file-change-meta' }
               ]
@@ -177,6 +179,8 @@ export default withMermaid(defineConfig({
                 { text: '快捷动作与数据库提示设计', link: '/zh/design/quick-actions-and-db-hint' },
                 { text: '.pyi 类型桩可行性分析', link: '/zh/design/def-pyi-stubs' },
                 { text: '玩家数据克隆计划 (v0.2.1)', link: '/zh/design/v0.2.1-player-data-clone-plan' },
+                { text: '玩家数据克隆 (db-clone)', link: '/zh/player-clone/' },
+                { text: 'db-clone 能力边界与克隆全链路', link: '/zh/player-clone/db-clone-overview' },
                 { text: 'Space Viewer/Watcher 协议取证', link: '/zh/design/space-viewer-watcher' },
                 { text: '文件变化元信息(identity+version)', link: '/zh/design/file-change-meta' }
               ]
