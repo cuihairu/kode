@@ -413,3 +413,111 @@ fn real_defaults_per_component_telnet_ports() {
         assert_eq!(endpoint.host, "127.0.0.1");
     }
 }
+
+// --- database(CLONE-P5 骨架:Rust 读引擎配置派生连接,镜像 extractDatabaseInterfaceConfig) ---
+
+#[test]
+fn database_defaults_only_derives_engine_interface() {
+    // 引擎 defaults 完整段 → 全要素可得;encrypt=true(默认)→ 密文明文不可读。
+    let defaults = parse(
+        "<root><dbmgr><databaseInterfaces><default>\
+         <pure>false</pure><type>mysql</type><host>localhost</host><port>0</port>\
+         <auth><username>kbe</username><password>pwd123456</password><encrypt>true</encrypt></auth>\
+         <databaseName>kbe</databaseName><numConnections>5</numConnections>\
+         <unicodeString><characterSet>utf8mb4</characterSet><collation>utf8mb4_bin</collation></unicodeString>\
+         </default></databaseInterfaces></dbmgr></root>",
+    );
+    let cap = derive_capabilities(None, Some(&defaults), &facts());
+    assert!(cap.database.available);
+    assert_eq!(cap.database.db_type, "mysql");
+    assert_eq!(cap.database.host, "localhost");
+    // 引擎语义:端口 0 → mysql 默认 3306
+    assert_eq!(cap.database.port, 3306);
+    assert_eq!(cap.database.username, "kbe");
+    assert_eq!(cap.database.database_name, "kbe");
+    assert_eq!(cap.database.character_set, "utf8mb4");
+    assert!(cap.database.encrypt);
+    assert!(!cap.database.password_available);
+}
+
+#[test]
+fn database_custom_overrides_defaults_per_leaf() {
+    // 改配置(元件 kbengine.xml 非空叶子)→ 派生变:custom host/port 覆盖,
+    // 未覆盖的 username/databaseName 沿 defaults。
+    let defaults = parse(
+        "<root><dbmgr><databaseInterfaces><default><host>db.internal</host><port>13306</port>\
+         <auth><username>kbe</username></auth><databaseName>kbe</databaseName></default>\
+         </databaseInterfaces></dbmgr></root>",
+    );
+    let custom = parse(
+        "<root><dbmgr><databaseInterfaces><default><host>127.0.0.1</host><port>3307</port>\
+         </default></databaseInterfaces></dbmgr></root>",
+    );
+    let cap = derive_capabilities(Some(&custom), Some(&defaults), &facts());
+    assert_eq!(cap.database.host, "127.0.0.1");
+    assert_eq!(cap.database.port, 3307);
+    assert_eq!(cap.database.username, "kbe");
+    assert_eq!(cap.database.database_name, "kbe");
+}
+
+#[test]
+fn database_plaintext_password_marks_available() {
+    // encrypt=false(明文配置)且有非空密码 → password_available=true;
+    // 派生面不回传明文值(结构里没有该字段,由编译器保证)。
+    let defaults = parse(
+        "<root><dbmgr><databaseInterfaces><default><host>localhost</host>\
+         <auth><username>kbe</username><password>plain</password><encrypt>false</encrypt></auth>\
+         </default></databaseInterfaces></dbmgr></root>",
+    );
+    let cap = derive_capabilities(None, Some(&defaults), &facts());
+    assert!(!cap.database.encrypt);
+    assert!(cap.database.password_available);
+    // 改配置:encrypt 回 true → 明文不可读
+    let encrypted = parse(
+        "<root><dbmgr><databaseInterfaces><default>\
+         <auth><password>rsa-cipher</password><encrypt>true</encrypt></auth>\
+         </default></databaseInterfaces></dbmgr></root>",
+    );
+    let cap2 = derive_capabilities(None, Some(&encrypted), &facts());
+    assert!(cap2.database.encrypt);
+    assert!(!cap2.database.password_available);
+}
+
+#[test]
+fn database_missing_section_falls_back_to_engine_constants() {
+    // 无 dbmgr/databaseInterfaces/default 段 → available=false,叶子回落引擎
+    // 常量(与 TS extractDatabaseInterfaceConfig 返回 null 的语义对应:展示面
+    // 如实标「未找到配置段」,不虚构连接)。
+    let custom = parse("<root><baseapp>1</baseapp></root>");
+    let cap = derive_capabilities(Some(&custom), None, &facts());
+    assert!(!cap.database.available);
+    assert_eq!(cap.database.host, "localhost");
+    assert_eq!(cap.database.port, 3306);
+    assert_eq!(cap.database.username, "kbe");
+    assert_eq!(cap.database.database_name, "kbe");
+    assert_eq!(cap.database.character_set, "utf8mb4");
+    assert_eq!(cap.database.db_type, "mysql");
+}
+
+#[test]
+fn database_redis_type_is_reported_but_not_connectable() {
+    // type=redis 如实上报(连接面仅 mysql,UI 据此不建连)。
+    let defaults = parse(
+        "<root><dbmgr><databaseInterfaces><default><type>redis</type><host>r1</host>\
+         </default></databaseInterfaces></dbmgr></root>",
+    );
+    let cap = derive_capabilities(None, Some(&defaults), &facts());
+    assert_eq!(cap.database.db_type, "redis");
+    assert_eq!(cap.database.host, "r1");
+}
+
+#[test]
+fn database_invalid_port_falls_back_to_3306() {
+    // 端口非法文本(非数字)→ 与 0 同语义:3306(NaN>0 为假,TS 同口径)。
+    let defaults = parse(
+        "<root><dbmgr><databaseInterfaces><default><port>not-a-number</port>\
+         </default></databaseInterfaces></dbmgr></root>",
+    );
+    let cap = derive_capabilities(None, Some(&defaults), &facts());
+    assert_eq!(cap.database.port, 3306);
+}

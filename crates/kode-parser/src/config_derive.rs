@@ -88,11 +88,38 @@ pub struct DebugReady {
     pub reasons: Vec<String>,
 }
 
+/// 数据库连接档案(CLONE-P5 骨架,用户令 2026-11-06:Rust 读引擎配置派生
+/// MySQL 连接;镜像 TS `extractDatabaseInterfaceConfig`,`serverConfigMerge.ts:538`)。
+///
+/// 只取 `<dbmgr><databaseInterfaces><default>`(与 TS 同口径;多接口后续按需)。
+/// 密码**不回传明文**(镜像 telnet `passwordSet` 口径):`password_available`
+/// 仅表示「encrypt=false 且配置有非空明文可连」;明文由 TS 连接面就地读同
+/// 一份引擎配置(RSA 密文两侧都不解读)。
+#[derive(Debug, Clone, PartialEq)]
+pub struct DatabaseProfile {
+    /// `dbmgr/databaseInterfaces/default` 段是否可得(不可得=引擎配置未找到,
+    /// 其余字段回落引擎叶子缺省,如实展示「未找到配置段」)。
+    pub available: bool,
+    /// `<type>`(mysql/redis);redis 只展示不建连(连接面仅 mysql)。
+    pub db_type: String,
+    pub host: String,
+    /// 已按引擎语义落定:0/非法/缺省 → 3306(db_interface_mysql.cpp:166-167)。
+    pub port: u16,
+    pub username: String,
+    pub database_name: String,
+    pub character_set: String,
+    /// `<auth><encrypt>` 非 `false` 即 true(引擎默认 RSA 密文)。
+    pub encrypt: bool,
+    /// encrypt=false 且 `<auth><password>` 非空 → true(明文可连,不回传值)。
+    pub password_available: bool,
+}
+
 /// 派生能力集合(设计 §5.2 `derive` 形状)。
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeriveCapabilities {
     pub def_scan_roots: DefScanRoots,
     pub telnet: TelnetCapabilities,
+    pub database: DatabaseProfile,
     pub entry_scripts: Vec<EntryScriptFact>,
     pub debug: DebugReady,
 }
@@ -109,11 +136,13 @@ pub fn derive_capabilities(
 ) -> DeriveCapabilities {
     let def_scan_roots = derive_def_scan_roots(facts);
     let telnet = derive_telnet(custom_tree, defaults_tree);
+    let database = derive_database(custom_tree, defaults_tree);
     let entry_scripts = facts.entry_scripts.clone();
     let debug = derive_debug(&def_scan_roots, &entry_scripts);
     DeriveCapabilities {
         def_scan_roots,
         telnet,
+        database,
         entry_scripts,
         debug,
     }
@@ -312,10 +341,152 @@ fn derive_telnet(
     TelnetCapabilities { enabled, endpoints }
 }
 
+/// 引擎叶子缺省(镜像 TS `ENGINE_DB_INTERFACE_DEFAULTS`,
+/// kbengine_defaults.xml `<dbmgr><databaseInterfaces><default>`)。
+const ENGINE_DB_HOST: &str = "localhost";
+const ENGINE_DB_PORT: u16 = 3306;
+const ENGINE_DB_USERNAME: &str = "kbe";
+const ENGINE_DB_NAME: &str = "kbe";
+const ENGINE_DB_CHARSET: &str = "utf8mb4";
+const ENGINE_DB_TYPE: &str = "mysql";
+
+/// 一份配置树里的 default 接口原始叶子(缺省 None;已 trim,空文本当 None)。
+struct RawDbInterface {
+    db_type: Option<String>,
+    host: Option<String>,
+    port_text: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
+    encrypt_text: Option<String>,
+    database_name: Option<String>,
+    character_set: Option<String>,
+}
+
+fn read_default_interface(tree: Option<&ConfigNode>) -> Option<RawDbInterface> {
+    let dbmgr = tree.and_then(|t| first_node(t, "dbmgr"))?;
+    // 与 TS 同口径:databaseInterfaces 与 default 都是 dbmgr 的**直接**子节点。
+    let interfaces = dbmgr
+        .children
+        .iter()
+        .find(|c| c.name == "databaseInterfaces")?;
+    let iface = interfaces.children.iter().find(|c| c.name == "default")?;
+    let leaf = |name: &str| {
+        iface
+            .children
+            .iter()
+            .find(|c| c.name == name)
+            .map(|c| c.text.trim().to_string())
+            .filter(|t| !t.is_empty())
+    };
+    let auth = iface.children.iter().find(|c| c.name == "auth");
+    let auth_leaf = |name: &str| {
+        auth.and_then(|a| {
+            a.children
+                .iter()
+                .find(|c| c.name == name)
+                .map(|c| c.text.trim().to_string())
+                .filter(|t| !t.is_empty())
+        })
+    };
+    let unicode = iface.children.iter().find(|c| c.name == "unicodeString");
+    let charset = unicode.and_then(|u| {
+        u.children
+            .iter()
+            .find(|c| c.name == "characterSet")
+            .map(|c| c.text.trim().to_string())
+            .filter(|t| !t.is_empty())
+    });
+    Some(RawDbInterface {
+        db_type: leaf("type"),
+        host: leaf("host"),
+        port_text: leaf("port"),
+        username: auth_leaf("username"),
+        password: auth_leaf("password"),
+        encrypt_text: auth_leaf("encrypt"),
+        database_name: leaf("databaseName"),
+        character_set: charset,
+    })
+}
+
+/// 数据库连接档案派生(CLONE-P5 骨架):`dbmgr/databaseInterfaces/default`
+/// 连接要素,custom(元件 kbengine.xml)非空叶子覆盖 defaults,叶子缺省回落
+/// 引擎常量;端口 0/非法/缺省 → 3306;encrypt 非 `false` 即密文(默认)。
+/// 密码不回传值——`password_available` 仅标记「明文可读」(encrypt=false 且
+/// 非空),明文由 TS 连接面读同一份引擎配置,两侧都不解读 RSA 密文。
+fn derive_database(
+    custom_tree: Option<&ConfigNode>,
+    defaults_tree: Option<&ConfigNode>,
+) -> DatabaseProfile {
+    let defaults_raw = read_default_interface(defaults_tree);
+    let custom_raw = read_default_interface(custom_tree);
+    let available = defaults_raw.is_some() || custom_raw.is_some();
+    let pick = |custom: Option<String>, defaults: Option<String>| -> Option<String> {
+        custom.or(defaults)
+    };
+    let db_type = pick(
+        custom_raw.as_ref().and_then(|r| r.db_type.clone()),
+        defaults_raw.as_ref().and_then(|r| r.db_type.clone()),
+    )
+    .unwrap_or_else(|| ENGINE_DB_TYPE.to_string());
+    let host = pick(
+        custom_raw.as_ref().and_then(|r| r.host.clone()),
+        defaults_raw.as_ref().and_then(|r| r.host.clone()),
+    )
+    .unwrap_or_else(|| ENGINE_DB_HOST.to_string());
+    let port_text = pick(
+        custom_raw.as_ref().and_then(|r| r.port_text.clone()),
+        defaults_raw.as_ref().and_then(|r| r.port_text.clone()),
+    );
+    let port = port_text
+        .as_deref()
+        .and_then(|t| t.parse::<u16>().ok())
+        .filter(|p| *p > 0)
+        .unwrap_or(ENGINE_DB_PORT);
+    let username = pick(
+        custom_raw.as_ref().and_then(|r| r.username.clone()),
+        defaults_raw.as_ref().and_then(|r| r.username.clone()),
+    )
+    .unwrap_or_else(|| ENGINE_DB_USERNAME.to_string());
+    let database_name = pick(
+        custom_raw.as_ref().and_then(|r| r.database_name.clone()),
+        defaults_raw.as_ref().and_then(|r| r.database_name.clone()),
+    )
+    .unwrap_or_else(|| ENGINE_DB_NAME.to_string());
+    let character_set = pick(
+        custom_raw.as_ref().and_then(|r| r.character_set.clone()),
+        defaults_raw.as_ref().and_then(|r| r.character_set.clone()),
+    )
+    .unwrap_or_else(|| ENGINE_DB_CHARSET.to_string());
+    // encrypt:引擎语义「非 false 即密文」(缺省 = true,TS 同口径)。
+    let encrypt_text = pick(
+        custom_raw.as_ref().and_then(|r| r.encrypt_text.clone()),
+        defaults_raw.as_ref().and_then(|r| r.encrypt_text.clone()),
+    );
+    let encrypt = encrypt_text
+        .map(|t| !t.eq_ignore_ascii_case("false"))
+        .unwrap_or(true);
+    let password = pick(
+        custom_raw.as_ref().and_then(|r| r.password.clone()),
+        defaults_raw.as_ref().and_then(|r| r.password.clone()),
+    );
+    let password_available = !encrypt && password.is_some();
+    DatabaseProfile {
+        available,
+        db_type,
+        host,
+        port,
+        username,
+        database_name,
+        character_set,
+        encrypt,
+        password_available,
+    }
+}
+
 fn derive_debug(def: &DefScanRoots, entry_scripts: &[EntryScriptFact]) -> DebugReady {
     let mut reasons = Vec::new();
     if def.degraded {
-        reasons.push("defScanRoots degraded: workspace root fallback".to_string());
+        reasons.push("def scan root degraded: workspace root fallback".to_string());
     }
     for es in entry_scripts {
         if !es.exists {

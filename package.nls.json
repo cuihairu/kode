@@ -8,5 +8,6 @@
   "kbengine.view.config": "Config",
   "kbengine.view.gitHistory": "File History",
   "kbengine.view.remoteServers": "Remote Servers",
-  "kbengine.view.gitRangeHistory": "Selection History"
+  "kbengine.view.gitRangeHistory": "Selection History",
+  "kbengine.view.playerData": "Player Data (Read-Only)"
 }

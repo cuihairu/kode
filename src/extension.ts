@@ -490,6 +490,12 @@ import {
   stopHostVitalsMonitor
 } from './hostVitals';
 import { TelnetTreeProvider } from './telnetTree';
+import { ensureConfigDerivedScanRoot } from './configDerive';
+import {
+  PlayerDataTreeProvider,
+  queryPlayerByDbid,
+  testPlayerDatabaseConnection
+} from './playerDataPanel';
 /**
  * Kode - KBEngine Development Environment
  * KBEngine VSCode 扩展主入口
@@ -3300,6 +3306,46 @@ export function activate(context: vscode.ExtensionContext) {
     telnetTreeProvider
   );
   context.subscriptions.push(telnetTreeRegistration);
+
+  // CLONE-P5 骨架:「玩家数据」专用只读面板(用户令 2026-11-06:不做通用
+  // MySQL 客户端、零编辑字段、只能查询)。连接档案真源在 Rust
+  // derive_database(configDerive 缓存);查询经 databaseDrift 只读执行器。
+  const playerDataProvider = new PlayerDataTreeProvider();
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider('kbengine.playerData', playerDataProvider),
+    vscode.commands.registerCommand('kbengine.playerData.refresh', async () => {
+      await ensureConfigDerivedScanRoot().catch(() => {
+        /* 派生失败:面板如实展示未找到 */
+      });
+      playerDataProvider.refresh();
+    }),
+    vscode.commands.registerCommand('kbengine.playerData.testConnection', async () => {
+      await ensureConfigDerivedScanRoot().catch(() => {
+        /* 同上:派生失败走降级文案 */
+      });
+      playerDataProvider.refresh();
+      const message = await testPlayerDatabaseConnection();
+      void vscode.window.showInformationMessage(message);
+    }),
+    vscode.commands.registerCommand('kbengine.playerData.queryByDbid', async () => {
+      await ensureConfigDerivedScanRoot().catch(() => {
+        /* 同上 */
+      });
+      const dbid = await vscode.window.showInputBox({
+        prompt: '玩家 DBID(十进制正整数;只读查询 tbl_Account)',
+        placeHolder: '如 1',
+        validateInput: value =>
+          /^\d+$/.test(value.trim()) || value.trim() === ''
+            ? null
+            : '仅接受十进制正整数'
+      });
+      if (dbid === undefined || dbid.trim() === '') {
+        return;
+      }
+      const message = await queryPlayerByDbid(dbid);
+      void vscode.window.showInformationMessage(message);
+    })
+  );
 
   // IDE-PDBG-004 远程服务器管理视图:~/.ssh/config 主机 + 手动项,「本地」
   // 恒首位默认选中;选中态供 debug/py-spy 分派(debug.json 组件级声明仍最

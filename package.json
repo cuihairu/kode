@@ -103,6 +103,9 @@
     "onCommand:kbengine.snippets.generateFromSelection",
     "onCommand:kbengine.telnet.showPanel",
     "onCommand:kbengine.telnet.disconnect",
+    "onCommand:kbengine.playerData.refresh",
+    "onCommand:kbengine.playerData.testConnection",
+    "onCommand:kbengine.playerData.queryByDbid",
     "onCommand:kbengine.httpRequests.run",
     "onCommand:kbengine.httpRequest.run",
     "onCommand:kbengine.discovery.report",
@@ -297,6 +300,10 @@
           "id": "kbengine.telnetStatus",
           "name": "%kbengine.view.telnetStatus%",
           "when": "kbengine.telnetConfigured"
+        },
+        {
+          "id": "kbengine.playerData",
+          "name": "%kbengine.view.playerData%"
         },
         {
           "id": "kbengine.config",
@@ -636,6 +643,21 @@
         "icon": "$(debug-disconnect)"
       },
       {
+        "command": "kbengine.playerData.refresh",
+        "title": "Refresh Player Data Profile",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "kbengine.playerData.testConnection",
+        "title": "Test Database Connection (Read-Only SELECT 1)",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "kbengine.playerData.queryByDbid",
+        "title": "Query Player by DBID (Read-Only)",
+        "icon": "$(search)"
+      },
+      {
         "command": "kbengine.httpRequests.run",
         "title": "Run HTTP Quick Request"
       },
@@ -815,6 +837,21 @@
           "command": "kbengine.telnet.disconnect",
           "when": "view == kbengine.telnetStatus",
           "group": "navigation"
+        },
+        {
+          "command": "kbengine.playerData.refresh",
+          "when": "view == kbengine.playerData",
+          "group": "navigation@0"
+        },
+        {
+          "command": "kbengine.playerData.testConnection",
+          "when": "view == kbengine.playerData",
+          "group": "navigation@1"
+        },
+        {
+          "command": "kbengine.playerData.queryByDbid",
+          "when": "view == kbengine.playerData",
+          "group": "navigation@2"
         },
         {
           "command": "kbengine.quickActions.show",

@@ -8,5 +8,6 @@
   "kbengine.view.config": "配置",
   "kbengine.view.gitHistory": "文件历史",
   "kbengine.view.remoteServers": "远程服务器",
-  "kbengine.view.gitRangeHistory": "选区历史"
+  "kbengine.view.gitRangeHistory": "选区历史",
+  "kbengine.view.playerData": "玩家数据(只读)"
 }

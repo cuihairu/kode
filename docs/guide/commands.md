@@ -575,6 +575,28 @@ The flow graph panel supports:
   - The session panel's currently selected target goes first; with nothing selected or no session on it, the first connected target is taken
   - With no connected session it says so honestly, no spinning
 
+### `kbengine.playerData.refresh`
+
+- Title: `Refresh Player Data Profile`
+- Purpose: re-derive the MySQL connection profile from the engine config and refresh the read-only "Player Data" tree
+- Source of truth: Rust `derive_database` reads `dbmgr/databaseInterfaces/default` from the component `kbengine.xml` + engine `kbengine_defaults.xml` (leaf defaults per the engine: host `localhost`, port 0 → 3306, username `kbe`, database `kbe`, charset `utf8mb4`)
+- Read-only constraint: the view never offers editable fields — connection facts come from the engine config only
+
+### `kbengine.playerData.testConnection`
+
+- Title: `Test Database Connection (Read-Only SELECT 1)`
+- Purpose: probe the derived MySQL endpoint with a whitelisted `SELECT 1` through the read-only executor (`SET SESSION TRANSACTION READ ONLY` + statement whitelist)
+- Behavior:
+  - Success reports host:port/database plus latency; failure degrades honestly to a message (never blocks other features)
+  - When the engine password is RSA-encrypted (`<encrypt>` not `false`) it is never decrypted — the command reports "not tested" instead of guessing
+
+### `kbengine.playerData.queryByDbid`
+
+- Title: `Query Player by DBID (Read-Only)`
+- Purpose: run a single read-only `SELECT * FROM \`tbl_Account\` WHERE \`id\` = <dbid>` (table prefix from `kbengine.db.tablePrefix`, default `tbl_`) and print the rows to the "KBEngine 玩家数据(只读)" output channel
+- Input validation: the dbid must be a decimal positive integer; anything else is rejected before any connection is made
+- Read-only constraint: results are displayed only; no editing, no export side effects (export/import live in the dedicated Player Data Clone lane)
+
 ### `kbengine.httpRequests.run`
 
 - Title: `Run HTTP Quick Request`

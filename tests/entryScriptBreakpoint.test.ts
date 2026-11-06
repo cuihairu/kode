@@ -69,6 +69,17 @@ const contractDerive = (facts: DeriveFacts): ConfigDeriveResult['derive'] => {
   return {
     defScanRoots,
     telnet: { enabled: false, endpoints: [] },
+    database: {
+      available: false,
+      dbType: '',
+      host: '',
+      port: 0,
+      username: '',
+      databaseName: '',
+      characterSet: '',
+      encrypt: true,
+      passwordAvailable: false
+    },
     entryScripts,
     debug: { ready: defScanRoots.roots.length > 0, reasons }
   };
