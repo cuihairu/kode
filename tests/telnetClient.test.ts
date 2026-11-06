@@ -1,4 +1,5 @@
 import * as net from 'net';
+import { EventEmitter } from 'events';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   BUILTIN_QUICK_COMMANDS,
@@ -458,6 +459,67 @@ describe('KBEngineTelnetClient 引擎真实字节流(逐段取自 telnet_handler
     expect(client.sendCommand('len(entities)')).toBe(true);
     await new Promise(resolve => setTimeout(resolve, 40));
     expect(collected.chunks.join('')).toContain('\r\n3\r\n');
+    client.disconnect();
+  });
+});
+
+/* ---------------- KR-AUD-51: connect 超时 ---------------- */
+
+/** 永不连上的假 socket:不发任何事件,记录 write/destroy */
+class FakeNeverSocket extends EventEmitter {
+  wrote: string[] = [];
+  destroyed = false;
+  override write(data: string): boolean {
+    this.wrote.push(data);
+    return true;
+  }
+  override destroy(): void {
+    this.destroyed = true;
+    this.emit('close', true);
+  }
+}
+
+describe('KR-AUD-51: connect 无响应超时销毁 socket', () => {
+  it('超时后 socket.destroy + 状态落 closed + onClose 一次', async () => {
+    const socket = new FakeNeverSocket();
+    const events: Array<{ state: TelnetClientState; detail: string }> = [];
+    const closes: boolean[] = [];
+    const client = new KBEngineTelnetClient({
+      host: '127.0.0.1',
+      port: 1,
+      connectTimeoutMs: 40,
+      events: {
+        onStateChange: (state, detail) => events.push({ state, detail }),
+        onClose: hadError => closes.push(hadError)
+      },
+      socketFactory: () => socket as unknown as net.Socket
+    });
+    client.connect();
+    expect(client.state).toBe('connecting');
+    await untilState(client, 'closed', 1000);
+    expect(socket.destroyed).toBe(true);
+    expect(closes).toEqual([true]);
+    expect(events.at(-1)?.detail).toContain('超时');
+  });
+
+  it('正常握手在超时窗内完成:不误杀,连接保持 ready', async () => {
+    const port = await listen(socket => {
+      socket.write('[cellapp@python ~]# ');
+    });
+    const closes: boolean[] = [];
+    const client = new KBEngineTelnetClient({
+      host: '127.0.0.1',
+      port,
+      connectTimeoutMs: 400,
+      events: {
+        onClose: hadError => closes.push(hadError)
+      }
+    });
+    client.connect();
+    await untilState(client, 'ready');
+    await new Promise(resolve => setTimeout(resolve, 500));
+    expect(client.state).toBe('ready');
+    expect(closes).toEqual([]);
     client.disconnect();
   });
 });

@@ -40,9 +40,23 @@ export interface ReloadTarget {
  */
 export type ReloadReceipt =
   | { status: 'sent'; file?: string; detail: string }
-  | { status: 'accepted'; file: string; digest?: string }
-  | { status: 'applied'; file: string; digest?: string }
-  | { status: 'failed'; file?: string; reason: string };
+  | {
+      status: 'accepted';
+      file: string;
+      digest?: string;
+      note?: string;
+      /** F4:回执显式 targetId(与预期目标不一致的回执在解析层被拒绝) */
+      targetId?: string;
+    }
+  | {
+      status: 'applied';
+      file: string;
+      digest?: string;
+      revision?: number;
+      /** F4:回执显式 targetId(与预期目标不一致的回执在解析层被拒绝) */
+      targetId?: string;
+    }
+  | { status: 'failed'; file?: string; reason: string; targetId?: string };
 
 export interface ReloadSendSummary {
   readonly kind: ReloadTransportKind;
@@ -57,17 +71,23 @@ export interface ReloadTransport {
    * 发送一组文件重载。回执逐条经 onReceipt 推送;返回汇总(同批回执)。
    * 实现保证:官方通道不产生 applied;HTTP 通道仅在回包协议符合时产生
    * accepted/applied,未认到的文件落 'sent'(已送达无协议回执)。
+   * F3 三轮:senderDigests=发送时点冻结的内容 sha256(file → hex,可选)——
+   * 随报文下发(sender_digests 字段),接收端据此对应用产物核验后才能回
+   * applied;不给则接收端无法按发送方冻结基准核验,不会回 applied。
    */
   send(
     target: ReloadTarget,
     fileSet: readonly string[],
-    onReceipt: (receipt: ReloadReceipt) => void
+    onReceipt: (receipt: ReloadReceipt) => void,
+    senderDigests?: ReadonlyMap<string, string>
   ): Promise<ReloadSendSummary>;
 }
 
 /** ${files} 文件列表占位(JSON 数组)与 ${fileList}(逗号分隔) */
 export const RELOAD_FILES_PLACEHOLDER = '${files}';
 export const RELOAD_FILE_LIST_PLACEHOLDER = '${fileList}';
+/** F4:${targetId}=发送目标标识(通道侧替换,请求可区分/寻址目标实例) */
+export const RELOAD_TARGET_ID_PLACEHOLDER = '${targetId}';
 
 /**
  * 替换重载专用占位 + 既有变量表:
@@ -133,9 +153,16 @@ export const defaultReloadHttpRunner: ReloadHttpRunner = request =>
  * - 数组=逐条;单对象=单条;非 JSON=全 'sent'(已送达,无协议回执)。
  * - 只认 file 与所发文件集逐字一致的条目;status 只认
  *   accepted/applied/failed,其余未记录状态不认。
+ * - F4:expectedTargetId 给定时,条目显式携带的 targetId 必须与之一致,
+ *   不一致的回执整条拒绝(该文件落 'sent',不 claim applied)——回执带
+ *   错误 targetId 不得当作该目标的 accepted/applied 证据。
  * - 未认到的文件补 'sent'(送达成功但无匹配回执,不 claim applied)。
  */
-export function parseReloadHttpReceipts(body: string, fileSet: readonly string[]): ReloadReceipt[] {
+export function parseReloadHttpReceipts(
+  body: string,
+  fileSet: readonly string[],
+  expectedTargetId?: string
+): ReloadReceipt[] {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
@@ -149,6 +176,7 @@ export function parseReloadHttpReceipts(body: string, fileSet: readonly string[]
   const items = Array.isArray(parsed) ? parsed : [parsed];
   const receipts: ReloadReceipt[] = [];
   const seen = new Set<string>();
+  const mismatched = new Set<string>();
   for (const item of items) {
     if (typeof item !== 'object' || item === null || Array.isArray(item)) {
       continue;
@@ -158,25 +186,60 @@ export function parseReloadHttpReceipts(body: string, fileSet: readonly string[]
     if (file === undefined || seen.has(file) || !fileSet.includes(file)) {
       continue;
     }
+    // F4:回执显式 targetId 与预期目标不一致 → 整条拒绝(不认状态、不认
+    // digest);F4 二轮:显式「非字符串」targetId(null/数字/对象)是畸形
+    // 回执,绝不归一化成 undefined 按「未提供」处理——同样整条拒绝。字段
+    // 缺失才是真的未提供(可选字段,给了就必须是匹配目标的字符串)。
+    const hasTargetIdField = 'targetId' in record;
+    const receiptTargetId = typeof record.targetId === 'string' ? record.targetId : undefined;
+    const malformedTargetId = hasTargetIdField && receiptTargetId === undefined;
+    if (
+      malformedTargetId ||
+      (expectedTargetId !== undefined && receiptTargetId !== undefined && receiptTargetId !== expectedTargetId)
+    ) {
+      mismatched.add(file);
+      continue;
+    }
     const digest = typeof record.digest === 'string' ? record.digest : undefined;
+    const note = typeof record.note === 'string' ? record.note : undefined;
+    const revision = typeof record.revision === 'number' ? record.revision : undefined;
     const status = record.status;
     if (status === 'accepted') {
       seen.add(file);
-      receipts.push({ status: 'accepted', file, ...(digest !== undefined ? { digest } : {}) });
+      receipts.push({
+        status: 'accepted',
+        file,
+        ...(digest !== undefined ? { digest } : {}),
+        ...(note !== undefined ? { note } : {}),
+        ...(receiptTargetId !== undefined ? { targetId: receiptTargetId } : {})
+      });
     } else if (status === 'applied') {
       seen.add(file);
-      receipts.push({ status: 'applied', file, ...(digest !== undefined ? { digest } : {}) });
+      receipts.push({
+        status: 'applied',
+        file,
+        ...(digest !== undefined ? { digest } : {}),
+        ...(revision !== undefined ? { revision } : {}),
+        ...(receiptTargetId !== undefined ? { targetId: receiptTargetId } : {})
+      });
     } else if (status === 'failed') {
       seen.add(file);
       receipts.push({
         status: 'failed',
         file,
-        reason: typeof record.reason === 'string' ? record.reason : '回执 failed 无原因'
+        reason: typeof record.reason === 'string' ? record.reason : '回执 failed 无原因',
+        ...(receiptTargetId !== undefined ? { targetId: receiptTargetId } : {})
       });
     }
   }
   for (const file of fileSet) {
-    if (!seen.has(file)) {
+    if (mismatched.has(file)) {
+      receipts.push({
+        status: 'sent',
+        file,
+        detail: `回执 targetId 与目标 ${expectedTargetId} 不一致:整条拒绝该回执(不 claim applied)`
+      });
+    } else if (!seen.has(file)) {
       receipts.push({
         status: 'sent',
         file,
@@ -222,19 +285,77 @@ export class HttpReloadTransport implements ReloadTransport {
   }
 
   async send(
-    _target: ReloadTarget,
+    target: ReloadTarget,
     fileSet: readonly string[],
-    onReceipt: (receipt: ReloadReceipt) => void
+    onReceipt: (receipt: ReloadReceipt) => void,
+    senderDigests?: ReadonlyMap<string, string>
   ): Promise<ReloadSendSummary> {
+    // F4:${targetId} 占位先于变量替换替换为发送目标标识(请求侧区分/寻址
+    // 目标实例;未知占位原样保留的批量口径不受影响)
     const substitute = (text: string): string =>
-      substituteReloadVariables(text, fileSet, this.deps.context);
+      substituteReloadVariables(
+        text.split(RELOAD_TARGET_ID_PLACEHOLDER).join(target.targetId),
+        fileSet,
+        this.deps.context
+      );
+    // F4 二轮:JSON 对象请求体自动附加 targetId 字段——目标寻址不依赖模板
+    // 作者记得写 ${targetId} 占位符;模板已显式给出(占位符替换产物或写死)
+    // 则不覆盖;非 JSON 对象(数组/纯文本)无处附加,如实保持原样。
+    const autoAttachTargetId = (text: string): string => {
+      try {
+        const parsed: unknown = JSON.parse(text);
+        if (
+          parsed !== null &&
+          typeof parsed === 'object' &&
+          !Array.isArray(parsed) &&
+          !('targetId' in (parsed as Record<string, unknown>))
+        ) {
+          return JSON.stringify({ ...(parsed as Record<string, unknown>), targetId: target.targetId });
+        }
+      } catch {
+        // 非 JSON:无处附加,保持原样
+      }
+      return text;
+    };
+    // F3 三轮:JSON 对象请求体自动附带 sender_digests——发送方冻结 digest
+    // 随报文下发,接收端对应用产物核验后才回 applied(协议级防假应用)。
+    // 模板已显式给出 sender_digests 字段则不覆盖;非 JSON 对象(数组/纯文本)
+    // 无处附加,如实保持原样。digest 缺失(基准不可读)的文件不进字段。
+    const autoAttachSenderDigests = (text: string): string => {
+      const entries =
+        senderDigests !== undefined
+          ? [...senderDigests.entries()].filter(
+              ([file, digest]) => fileSet.includes(file) && typeof digest === 'string' && digest.length > 0
+            )
+          : [];
+      if (entries.length === 0) {
+        return text;
+      }
+      try {
+        const parsed: unknown = JSON.parse(text);
+        if (
+          parsed !== null &&
+          typeof parsed === 'object' &&
+          !Array.isArray(parsed) &&
+          !('sender_digests' in (parsed as Record<string, unknown>))
+        ) {
+          return JSON.stringify({
+            ...(parsed as Record<string, unknown>),
+            sender_digests: Object.fromEntries(entries)
+          });
+        }
+      } catch {
+        // 非 JSON:无处附加,保持原样
+      }
+      return text;
+    };
     const request: ReloadHttpRequest = {
       url: substitute(this.entry.url),
       method: this.entry.method,
       headers: Object.fromEntries(
         Object.entries(this.entry.headers).map(([key, value]) => [key, substitute(value)])
       ),
-      body: substitute(this.entry.body)
+      body: autoAttachSenderDigests(autoAttachTargetId(substitute(this.entry.body)))
     };
     let response: ReloadHttpResponse;
     try {
@@ -255,7 +376,8 @@ export class HttpReloadTransport implements ReloadTransport {
       }
       return { kind: this.kind, receipts };
     }
-    const receipts = parseReloadHttpReceipts(response.body, fileSet);
+    // F4:目标传入回执解析——显式 targetId 与该目标不一致的回执整条拒绝
+    const receipts = parseReloadHttpReceipts(response.body, fileSet, target.targetId);
     for (const receipt of receipts) {
       onReceipt(receipt);
     }
@@ -406,7 +528,9 @@ export class KbengineOfficialTransport implements ReloadTransport {
   async send(
     _target: ReloadTarget,
     fileSet: readonly string[],
-    onReceipt: (receipt: ReloadReceipt) => void
+    onReceipt: (receipt: ReloadReceipt) => void,
+    // F3 三轮:官方通道无回执协议,冻结 digest 不随控制台命令下发(忽略)
+    _senderDigests?: ReadonlyMap<string, string>
   ): Promise<ReloadSendSummary> {
     const conn = this.connector()(this.config);
     try {

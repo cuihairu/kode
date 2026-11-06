@@ -478,18 +478,68 @@ function normalizeAttributes(rawAttributes: unknown): Record<string, string> {
 
 function tokenizeXml(text: string): XmlTagToken[] {
   const tokens: XmlTagToken[] = [];
-  const tagRegex = /<\s*(\/)?\s*([A-Za-z_][A-Za-z0-9_]*)\b[^>]*?(\/)?\s*>/g;
-  let match: RegExpExecArray | null;
+  const openTagRegex = /<\s*(\/)?\s*([A-Za-z_][A-Za-z0-9_]*)\b/;
+  let cursor = 0;
 
-  while ((match = tagRegex.exec(text)) !== null) {
+  // KR-AUD-75:逐 '<' 扫描替代全量正则——属性值内的 '>'(引号包裹)不算标签
+  // 边界;注释/CDATA 段整体跳过,内部伪标签不再注入 token 造成定位 desync。
+  while (cursor < text.length) {
+    const lt = text.indexOf('<', cursor);
+    if (lt === -1) break;
+
+    if (text.startsWith('<!--', lt)) {
+      const commentEnd = text.indexOf('-->', lt + 4);
+      cursor = commentEnd === -1 ? text.length : commentEnd + 3;
+      continue;
+    }
+    if (text.startsWith('<![CDATA[', lt)) {
+      const cdataEnd = text.indexOf(']]>', lt + 9);
+      cursor = cdataEnd === -1 ? text.length : cdataEnd + 3;
+      continue;
+    }
+    if (text[lt + 1] === '!' || text[lt + 1] === '?') {
+      const declEnd = text.indexOf('>', lt + 1);
+      cursor = declEnd === -1 ? text.length : declEnd + 1;
+      continue;
+    }
+
+    const match = openTagRegex.exec(text.slice(lt, lt + 256));
+    if (match === null) {
+      cursor = lt + 1;
+      continue;
+    }
+
+    const tagStart = lt;
+    let scan = tagStart + match[0].length;
+    let quote = '';
+    let tagEnd = -1;
+    while (scan < text.length) {
+      const ch = text[scan];
+      if (quote !== '') {
+        if (ch === quote) quote = '';
+      } else if (ch === '"' || ch === "'") {
+        quote = ch;
+      } else if (ch === '>') {
+        tagEnd = scan + 1;
+        break;
+      }
+      scan++;
+    }
+    if (tagEnd === -1) {
+      // 未闭合标签:跳过,等待下一个 '<'
+      cursor = lt + 1;
+      continue;
+    }
+
     const isClosingTag = match[1] === '/';
-    const isSelfClosingTag = match[3] === '/';
+    const isSelfClosingTag = !isClosingTag && /\/\s*>$/.test(text.slice(tagStart, tagEnd));
     tokens.push({
       name: match[2],
       kind: isClosingTag ? 'close' : (isSelfClosingTag ? 'self' : 'open'),
-      start: match.index,
-      end: match.index + match[0].length
+      start: tagStart,
+      end: tagEnd
     });
+    cursor = tagEnd;
   }
 
   return tokens;

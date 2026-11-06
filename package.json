@@ -127,6 +127,7 @@
     "onCommand:kbengine.hotReload.retryFailed",
     "onCommand:kbengine.hotReload.showRevisionEvidence",
     "onCommand:kbengine.hotReload.configureChannel",
+    "onCommand:kbengine.hotReload.confirmDefBaseline",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.exportTypeStubs",
     "onCommand:kbengine.python.showCallChain",
@@ -740,6 +741,10 @@
       {
         "command": "kbengine.hotReload.configureChannel",
         "title": "Hot Reload: Configure Deployment Channel"
+      },
+      {
+        "command": "kbengine.hotReload.confirmDefBaseline",
+        "title": "Hot Reload: Confirm Restart (Rebuild def Structure Baselines)"
       },
       {
         "command": "kbengine.debug.focusTarget",

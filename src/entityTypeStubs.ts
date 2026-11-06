@@ -302,6 +302,35 @@ export function buildEntityTypeStubContent(
   customTypes: readonly CustomTypeInfo[] = [],
   customTypeModules: ReadonlyMap<string, string> = new Map()
 ): string {
+  return renderEntityTypeStub(entries, customTypes, customTypeModules, null);
+}
+
+/** KR-AUD-78:生成文档行映射——entity 名 → 属性名 → 属性行(0 起)。
+ * 来源镜按行精确映射,不再硬编码 0/2。 */
+export interface EntityTypeStubLineMap {
+  readonly propertyLines: ReadonlyMap<string, Readonly<Record<string, number>>>;
+}
+
+export function buildEntityTypeStubLineMap(
+  entries: readonly EntityTypeStubEntry[],
+  customTypes: readonly CustomTypeInfo[] = [],
+  customTypeModules: ReadonlyMap<string, string> = new Map()
+): EntityTypeStubLineMap {
+  const propertyLines = new Map<string, Record<string, number>>();
+  renderEntityTypeStub(entries, customTypes, customTypeModules, (entity, property, line) => {
+    const bucket = propertyLines.get(entity) ?? {};
+    bucket[property] = line;
+    propertyLines.set(entity, bucket);
+  });
+  return { propertyLines };
+}
+
+function renderEntityTypeStub(
+  entries: readonly EntityTypeStubEntry[],
+  customTypes: readonly CustomTypeInfo[],
+  customTypeModules: ReadonlyMap<string, string>,
+  recordPropertyLine: ((entity: string, property: string, line: number) => void) | null
+): string {
   // mailbox 面(pyi ④ 任务1):有方法面的实体配 <Entity>MB(EntityCall)
   // 远端句柄类,方法签名与实体类同源同链(同一 methodArgAnnotation)。
   const anyMailbox = entries.some(entry => entry.methods.length > 0);
@@ -409,6 +438,7 @@ export function buildEntityTypeStubContent(
       }
       lines.push(`    # source: ${sourceParts.join(' -> ')}`);
       lines.push(`    ${property.name}: ${property.annotation}`);
+      recordPropertyLine?.(entry.entity, property.name, lines.length - 1);
     }
     for (const method of entry.methods) {
       lines.push('', ...methodFaceLines(method, customTypes));

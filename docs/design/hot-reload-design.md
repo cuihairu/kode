@@ -24,6 +24,7 @@
 |---|---|---|
 | 投递结果台账 | `src/hotReloadTargetState.ts` | 四态 `sent-unverified \| accepted \| applied \| failed`；键 = `rootId × targetId × file`（rootId=文件归属扫描根，targetId=服务实例）；`attempt`=发送代际（IDE-AUD-005）；`sentDigest`=发送时点冻结内容 sha256（IDE-AUD-006） |
 | accepted 回执协议 | `src/hotReloadReceipt.ts` | JSON `{"status":"accepted","file":"<逐字回显>"}`（可选 targetId 一致） |
+| 热更请求报文 | `src/hotReloadTransport.ts` + `scripts/hot-reload-receiver/referenceReceiver.mjs` | 请求体 `{"files":[...],"targetId"?,"sender_digests"?}`；`sender_digests` = 发送时点冻结 sha256（F3 三轮随报文下发），接收端自己把该内容写盘引擎目录后对产物重算 sha256 与之比对一致才回 applied（F3 四轮） |
 | applied 回执协议 | `src/hotReloadAppliedCheck.ts` | JSON `{"status":"applied","file":"<逐字回显>","digest":"<sha256>"}`；digest 与发送时点冻结基准比对；`settleAppliedStatus` 超时保持未确认 |
 | HTTP 投递分类 | `src/hotReloadDelivery.ts` | 只认传输事实：2xx→sent-unverified，非 2xx/传输失败→failed；回包 body 一律不作为应用证据 |
 | 状态栏反馈 | `src/hotReloadStatus.ts` | `watch-off \| ready \| sending \| sent-unverified \| failed`；结构性 def 变更回落 ready（IDE-REV-024） |
@@ -125,7 +126,8 @@ interface ReloadTransport {
   send(
     target: { rootId: string; targetId: string },
     fileSet: readonly string[],
-    onReceipt: (receipt: ReloadReceipt) => void
+    onReceipt: (receipt: ReloadReceipt) => void,
+    senderDigests?: ReadonlyMap<string, string>
   ): Promise<ReloadSendSummary>;
 }
 ```
@@ -149,6 +151,48 @@ interface ReloadTransport {
 - 按部署配置 `HttpRequestEntry` 形状（url/method/headers/body 模板），
   占位符替换文件列表（既有 `${module}`/`${filename}` 等 + 本设计扩展
   `${files}` = 文件列表 JSON / `${fileList}` = 逗号分隔）。
+- F3 三轮（2026-11-06 复审）：请求体自动附带 `sender_digests` 字段——
+  发送时点冻结的内容 sha256（IDE-AUD-006 基准）随报文下发，形如
+  `{"files":[...],"targetId":"...","sender_digests":{"<file>":"<sha256 hex>"}}`。
+- F3 四轮（2026-11-06 复审，设计级）：applied 路径改为**接收端自己写产物**
+  ——按报文 files 读到内容后由接收端自身代码直接落盘引擎目录
+  （`--artifact-dir`），写后对产物重算 sha256 与 `sender_digest` 比对一致才回
+  applied。
+- F3 五轮（2026-11-06 复审硬化，回滚契约对齐实现）：落盘失败/哈希不符一律
+  failed，回滚 best-effort。外部应用命令模式（`--apply-command`）降级：命令
+  副作用不可证实（接收端证明不了产物是本次命令写的），退出 0 也最多
+  accepted，绝不 applied、不落应用台账；命令执行失败仍 failed。空操作场景
+  从设计上不存在假 applied。参考实现：
+  `scripts/hot-reload-receiver/referenceReceiver.mjs`。
+- F3 七轮（2026-11-07 第七轮复审，命名空间唯一 + 悬空 symlink 封死 +
+  temp+rename 原子写）：
+  - **产物命名空间只认暂存根（`--root`）内路径**：根外绝对路径直接拒绝整批
+    （failed 回执，不写盘、不落台账）——六轮的「根外回落按绝对路径全结构
+    展开」与根内相对路径共享同一命名空间（`/stage/tmp/X.py` 与 `/tmp/X.py`
+    都映射 `tmp/X.py`，分批发送互覆盖），修后碰撞从映射规则上不存在。发送
+    侧同步只发暂存根内路径：参考发送方（`roundtripProbe.mjs`）发送前校验
+    所发文件在暂存根内，越界拒绝发送。
+  - **符号链接逃逸防护（lstat 拒链接）**：写前对产物路径先做父目录链
+    realpath 解析（任一级解析到 `--artifact-dir` 外即拒绝），再 lstat 最终
+    组件——是 symlink（无论悬空与否）一律拒绝（failed 回执，不写不删）。
+    六轮只做 realpath：对「指向目录外不存在文件」的悬空 symlink，realpath
+    抛 ENOENT 回落到最深已存在祖先（引擎目录本身）误判安全，写入沿悬空链接
+    逃逸；lstat 不跟随链接，悬空也拿到 symlink 状态，此路封死。
+  - **temp+rename 原子写（检查-写入 TOCTOU 消除）**：产物先写为引擎目录内
+    `'wx'` 独占创建的自建临时文件（进程级唯一名字，绝不碰撞；O_EXCL 绝不沿
+    既有任何路径——含 symlink——写入），内容 sha256 与 `sender_digest` 的
+    核验全部在临时文件上完成，最后 `fs.rename` 原子替换到产物位——rename
+    不跟随目标 symlink，即使竞态在检查后把产物位换成 symlink 也是被整体
+    替换而非被沿写逃逸；rename 目标的目录组件用 realpath 解析后的真实父
+    目录构建（路径中无 symlink 中间层）。临时文件写前同样过 lstat/realpath
+    校验。
+  - **失败收尾只清理自建临时文件**：落盘失败/读回失败/哈希不符/rename 失败
+    一律 failed，best-effort unlink 临时文件，失败如实 `rollback_failed`
+    （=残留临时文件路径），清干净才注明无残留——引擎目录里的既有产物从头到
+    尾不被触碰，原产物天然原样保留（五/六轮的「还原原内容」回滚通路退役，
+    预存在产物不会被误删或改写）。写前读旧产物的 ENOENT-only 语义保留：非
+    ENOENT 读异常（`EACCES`/`EISDIR` 等）仍如实拒绝写入且不触碰，不覆盖
+    不可核验的预存在产物。
 - 回执 = 响应体走既有 accepted/applied 解析（HOT-003/004）；这是**唯一**
   能产生 applied 证据的通道（AUD-007：`{"status":"applied",...}` 是扩展侧
   自定契约，作用于用户配置的 `@http:` URL 的回包体）。

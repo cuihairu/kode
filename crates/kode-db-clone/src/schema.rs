@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use crate::error::{CloneError, CloneResult};
 
 /// 列的来源(plan §5.4 manifest 溯源)。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SchemaSource {
     /// 来自 `.def`/`types.xml` 属性声明。
     Def,
@@ -20,7 +20,7 @@ pub enum SchemaSource {
 }
 
 /// 派生表字段(镜像推导输出 FieldSchema 的语义)。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DerivedField {
     pub name: String,
     pub type_label: String,
@@ -30,7 +30,7 @@ pub struct DerivedField {
 }
 
 /// 派生表(镜像推导输出 TableSchema 的语义)。`kind` ∈ {root, array, component}。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DerivedTable {
     pub name: String,
     pub kind: String,
@@ -152,7 +152,7 @@ pub struct ResolvedCloneSchema {
     pub missing: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeniedTable {
     pub name: String,
     pub reason: String,

@@ -420,6 +420,67 @@ export async function runInfer(
 // ---------------------------------------------------------------------------
 
 /**
+ * 副本同步调度器(KR-AUD-56):watcher 事件高频到达,此前每个事件直接
+ * `void syncInferredCopy(...)` ——无防抖(一次保存多事件×整树镜像)且无
+ * 互斥(并发两轮同时 unlink/write 同一棵副本树,竞态)。这里收口:
+ * - 防抖:窗口内连发折叠为一次尾触发;
+ * - 在途互斥:运行中的同步不开第二轮,期间到达的 schedule 只置 dirty,
+ *   本轮结束后补恰一轮(不丢最后一次变更)。
+ */
+export interface CopySyncScheduler {
+  schedule(): void;
+  dispose(): void;
+}
+
+export function createCopySyncScheduler(
+  run: () => Promise<unknown>,
+  debounceMs = 200
+): CopySyncScheduler {
+  let timer: NodeJS.Timeout | null = null;
+  let inFlight = false;
+  let dirty = false;
+
+  const startRound = (): void => {
+    inFlight = true;
+    void Promise.resolve()
+      .then(run)
+      .catch(() => undefined)
+      .finally(() => {
+        inFlight = false;
+        if (dirty) {
+          dirty = false;
+          startRound();
+        }
+      });
+  };
+
+  return {
+    schedule(): void {
+      if (inFlight) {
+        dirty = true;
+        return;
+      }
+      if (timer) {
+        clearTimeout(timer);
+      }
+      timer = setTimeout(() => {
+        timer = null;
+        startRound();
+      }, debounceMs);
+    },
+    dispose(): void {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    }
+  };
+}
+
+/** 副本同步防抖窗(激活接线用;watcher 连发折叠) */
+const COPY_SYNC_DEBOUNCE_MS = 200;
+
+/**
  * 激活接线：注册 `kbengine.infer.run` 命令 + 激活期静默同步（隔离面 + 副本）
  * + 脚本变更 watcher（用户源码改后同步覆盖副本；排除 managedDir 防自环）。
  */
@@ -437,17 +498,24 @@ export function activateInferPipeline(context: vscode.ExtensionContext): void {
   context.subscriptions.push(syncExclusionsCommand);
   const managedDir = managedDirName();
   const watcher = vscode.workspace.createFileSystemWatcher('**/*.py');
+  // KR-AUD-56:watcher 事件经调度器进副本同步(防抖 + 在途互斥),不再
+  // 每事件直发 syncInferredCopy(并发 unlink/write 竞态)
+  const copySyncScheduler = createCopySyncScheduler(
+    () => syncInferredCopy(context, fileSystemInferDeps, { silent: true }),
+    COPY_SYNC_DEBOUNCE_MS
+  );
   const onChange = (uri: vscode.Uri): void => {
     const fsPath = uri.fsPath.replace(/\\/g, '/');
     if (fsPath.includes(`/${managedDir}/`)) {
       return;
     }
-    void syncInferredCopy(context, fileSystemInferDeps, { silent: true });
+    copySyncScheduler.schedule();
   };
   watcher.onDidChange(onChange);
   watcher.onDidCreate(onChange);
   watcher.onDidDelete(onChange);
   context.subscriptions.push(watcher);
+  context.subscriptions.push({ dispose: () => copySyncScheduler.dispose() });
   void (async () => {
     await applyManagedDirExclusions(context, fileSystemInferDeps, { silent: true });
     await syncInferredCopy(context, fileSystemInferDeps, { silent: true });

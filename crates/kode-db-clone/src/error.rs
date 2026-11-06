@@ -22,6 +22,8 @@ pub enum CloneError {
     BudgetExceeded { limit: u64, requested: u64 },
     /// 物理层(信息表)与派生 schema 不一致,按 fail-closed 拒绝。
     DriftMismatch(String),
+    /// 归档写入/读取/校验失败(IO、格式、哈希、大小、加密)。
+    ArchiveError(String),
 }
 
 impl fmt::Display for CloneError {
@@ -51,6 +53,7 @@ impl fmt::Display for CloneError {
                 f,
                 "derived and physical schema disagree ({s}); failing closed rather than guessing"
             ),
+            CloneError::ArchiveError(s) => write!(f, "archive error: {s}"),
         }
     }
 }

@@ -147,13 +147,24 @@ export interface TelnetClientOptions {
   password?: string;
   events: TelnetClientEvents;
   socketFactory?: SocketFactory;
+  /**
+   * connect 超时毫秒数(KR-AUD-51):无响应 socket 此前会永远停在
+   * connecting;超时即 destroy socket 并落 closed。默认 10s。
+   */
+  connectTimeoutMs?: number;
 }
+
+/** connect 默认超时(KR-AUD-51) */
+export const TELNET_CONNECT_TIMEOUT_MS = 10_000;
 
 export class KBEngineTelnetClient {
   private socket: net.Socket | null = null;
   private _state: TelnetClientState = 'closed';
   private pending = Buffer.alloc(0);
   private passwordSent = false;
+  private connectTimer: NodeJS.Timeout | null = null;
+  /** 超时自毁后抑制 close 处理器二次收尾(KR-AUD-51) */
+  private timedOut = false;
 
   constructor(private readonly options: TelnetClientOptions) {}
 
@@ -175,13 +186,19 @@ export class KBEngineTelnetClient {
     }
     const factory = this.options.socketFactory ?? defaultSocketFactory;
     this.setState('connecting', `${this.options.host}:${this.options.port}`);
+    this.timedOut = false;
     this.socket = factory({ host: this.options.host, port: this.options.port });
 
     this.socket.on('data', chunk => this.handleData(chunk));
     this.socket.on('close', hadError => {
+      this.clearConnectTimer();
       this.socket = null;
       this.passwordSent = false;
       this.pending = Buffer.alloc(0);
+      if (this.timedOut) {
+        // 超时路径已在定时器里收尾(状态/onClose),此处不再重复
+        return;
+      }
       const wasAuthRejected = this._state === 'auth-rejected';
       this.setState('closed', wasAuthRejected ? '认证被拒后连接关闭' : '连接已关闭');
       this.options.events.onClose?.(Boolean(hadError));
@@ -189,9 +206,36 @@ export class KBEngineTelnetClient {
     this.socket.on('error', () => {
       // close 事件随后必然触发,状态在 close 统一翻转;此处不重复发状态
     });
+
+    // KR-AUD-51:connect 超时——无响应 socket(防火墙静默丢包等)此前会
+    // 永远停在 connecting;到点即 destroy 并统一按 closed 收尾一次。
+    const timeoutMs = this.options.connectTimeoutMs ?? TELNET_CONNECT_TIMEOUT_MS;
+    this.connectTimer = setTimeout(() => {
+      this.connectTimer = null;
+      if (!this.socket || this._state !== 'connecting') {
+        return;
+      }
+      const socket = this.socket;
+      this.socket = null;
+      this.timedOut = true;
+      socket.destroy();
+      this.setState('closed', `连接超时(${timeoutMs}ms 无响应,已销毁 socket)`);
+      this.options.events.onClose?.(true);
+    }, timeoutMs);
+    this.connectTimer.unref?.();
+  }
+
+  /** 取消 connect 超时定时器(KR-AUD-51):close/服务端首包即解除 */
+  private clearConnectTimer(): void {
+    if (this.connectTimer) {
+      clearTimeout(this.connectTimer);
+      this.connectTimer = null;
+    }
   }
 
   private handleData(chunk: Buffer): void {
+    // 服务端有字节回来即视为连接建立,解除 connect 超时(KR-AUD-51)
+    this.clearConnectTimer();
     this.pending = Buffer.concat([this.pending, chunk]);
     // 逐到达块清洗;引擎协商字节集中在前几字节,不做跨块 IAC 半包拼装。
     // 引擎五条 IAC 协商命令的数组末尾各带字面 '\0' 终止字节
@@ -241,6 +285,7 @@ export class KBEngineTelnetClient {
   }
 
   disconnect(): void {
+    this.clearConnectTimer();
     if (this.socket) {
       this.socket.end();
       this.socket = null;
