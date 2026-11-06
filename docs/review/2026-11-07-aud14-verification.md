@@ -109,6 +109,10 @@
 - vitest：9 文件 266 过（e7af5cba）→ 复跑 267 过（8c2b7411 前身，含 KR-AUD-35 新用例）0 败（cov-debug-process/serverManager/processTopologyFlush/defPythonParity/hotReloadTargetState/selfAttributeFlowTypes=132 批次；globalDataIndex/workspaceIndexColdYield/workspaceEventIndex=134 批次）。
 - cargo：kode-server（process_topology_units 31 / def_md5_units 12 / dependency_graph_dispatch 2 / lint_rules 19 / flag_domains_golden 5）+ kode-parser parser_units 19 + kode-python（callgraph 12 / dataflow 17 / graph 32 / symbols 7 / lib 3）+ kode-scheduler 14，全 0 failed。
 
+## 复审通过（codex luna 第十六轮 PASS，审核对象 HEAD 270ff14e）
+
+- 第 16 轮（270ff14e）逐项 A/B/C 全 PASS，总体判断「可合并」：测试有效性缺口已消除（断言对象=回退查找真实唯一候选 y.py）、变异验证路径静态确认一致、adeb35d8 纯测试无 src 改动、账目与代码事实一致。第 11→16 轮审核收敛闭环：11 轮残余两 P1（ad9a2c7c）→ 12 轮别名近似 P1（16ad72e8）→ 13 轮 aliased 误作身份 P2（22794ef7）→ 14 轮 basename≠身份 P1（3eb96406）→ 15 轮测试判别力 P2（adeb35d8）→ 16 轮 PASS。
+
 ## 记账说明
 
 本批复核：14 项勾账行与代码事实一致；十轮复审残余（AUD-008 接收者伪边 8c2b7411 →
