@@ -465,6 +465,14 @@ fn engine_get_key(doc: &Document, node: usize) -> String {
 
 /// 引擎 xml.cpp:72-95 enterNode:沿 node 起的兄弟链找 getKey==key 的元素,
 /// 命中返回其**首个非注释子节点**——文本或元素皆可(非具名子元素查找)。
+/// 另:tinyxml2 的 DOM 不存在"原始字节纯空白"的文本节点——Identify
+/// (tinyxml2.cpp:715-723)先按**原始字节** SkipWhiteSpace 再分类,只有
+/// 空白后跟真实文本才回退 p=start 建含空白前缀的文本节点(:782-786);
+/// 默认 PRESERVE_WHITESPACE(xml.h:1732,引擎 new XMLDocument() 走默认)。
+/// 实体解码发生在 GetStr(tinyxml2.cpp:286-360),晚于分类——`&#32;` 这类
+/// 解码后才成空白的节点引擎**照建**(getKey=trim→空名)。故本仓按原始
+/// 字节分类跳过:文本 span 内全是 C locale 空白才视作引擎不存在的节点;
+/// CDATA 是显式节点照建不跳。
 fn engine_enter_node(doc: &Document, node: usize, key: &str) -> Option<usize> {
     let mut cur = Some(node);
     while let Some(idx) = cur {
@@ -474,7 +482,13 @@ fn engine_enter_node(doc: &Document, node: usize, key: &str) -> Option<usize> {
                 .children
                 .iter()
                 .copied()
-                .find(|&c| !matches!(doc.nodes[c].data, NodeData::Comment { .. }));
+                .find(|&c| match &doc.nodes[c].data {
+                    NodeData::Comment { .. } => false,
+                    NodeData::Text { span, .. } => !doc.source[span.start..span.end]
+                        .bytes()
+                        .all(is_engine_whitespace),
+                    _ => true,
+                });
         }
         cur = doc.nodes[idx].parent.and_then(|parent| {
             let siblings = &doc.element(parent).children;
@@ -483,6 +497,12 @@ fn engine_enter_node(doc: &Document, node: usize, key: &str) -> Option<usize> {
         });
     }
     None
+}
+
+/// C locale isspace(tinyxml2 XMLUtil::IsWhiteSpace 底层,tinyxml2.h:569-572
+/// 经由 isspace();UTF-8 续字节不算空白)。
+fn is_engine_whitespace(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

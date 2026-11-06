@@ -735,6 +735,8 @@ fn kr_aud_85_duplicate_utype_in_same_module_still_errors() {
 //   解码文本 trim;
 // - xml.cpp:72-95 enterNode = 沿 node 起兄弟链找 getKey==key 的**元素**,
 //   命中返回其**首个非注释子节点**(文本或元素皆可,非具名子元素查找);
+//   tinyxml2 DOM 无纯空白文本节点(Identify 先 SkipWhiteSpace 再分类,
+//   tinyxml2.cpp:715-723/782-786),首子节点扫描须跳过纯空白文本;
 // - entitydef.cpp:562-585 loadInterfaces:条目 getKey 必属
 //   {interface,Interface,type,Type} 否则 continue;interfaceNode 依次试四键;
 //   interfaceName = getKey(interfaceNode);接口内容经 loadAllDefDescriptions
@@ -810,20 +812,50 @@ fn kr_aud_80_interface_text_element_forms_engine_parity() {
     assert_eq!(text_compact.md5_hex, lowercase.md5_hex, "四键大小写等价");
 }
 
-/// 引擎怪癖对拍:缩进的**元素**形态首非注释子节点是纯空白文本节点
-/// (tinyxml2 PRESERVE,xml.cpp:85-91 只跳注释)→ interfaceName="" →
-/// openSection("interfaces/.def") 失败 → return false(md5 报错)。
+/// 引擎对拍:缩进的**元素**形态照样解析——tinyxml2 的 DOM 里不存在
+/// 纯空白文本节点:Identify(tinyxml2.cpp:715-723)先 SkipWhiteSpace 再
+/// 分类,只有空白后跟真实文本才回退 p=start 建含空白前缀的文本节点
+/// (:782-786);默认 PRESERVE_WHITESPACE(xml.h:1732,引擎 new
+/// XMLDocument() 走默认)。故 `<Interface>\n<Combat/>\n</Interface>` 的
+/// 首个子节点就是 Combat 元素,interfaceName="Combat",md5 与紧凑形态
+/// 一致(Rust DOM 会保留纯空白文本节点,须在 enterNode 首子节点扫描里
+/// 跳过才能对齐引擎)。
 #[test]
-fn kr_aud_80_pretty_element_form_errors_like_engine() {
-    let err = compute_def_md5(kr_aud_80_params(
+fn kr_aud_80_pretty_element_form_resolves_like_engine() {
+    let pretty = compute_def_md5(kr_aud_80_params(
         "<Interface>\n\t\t<Combat/>\n\t</Interface>",
         true,
     ))
-    .expect_err("空白首子节点 → 接口名为空 → 引擎 return false");
+    .expect("缩进元素形态:引擎 DOM 无纯空白文本节点,照样解析出 Combat");
+    let compact = compute_def_md5(kr_aud_80_params("<Interface><Combat/></Interface>", true))
+        .expect("紧凑元素形态");
+    // CRLF 排版同理:原始字节全是 C locale 空白,引擎照样不建节点。
+    let crlf = compute_def_md5(kr_aud_80_params(
+        "<Interface>\r\n\t\t<Combat/>\r\n\t</Interface>",
+        true,
+    ))
+    .expect("CRLF 缩进元素形态");
     assert_eq!(
-        err, "interface def not found: .def",
-        "接口名为空的报错口径: {err}"
+        pretty.md5_hex, compact.md5_hex,
+        "缩进/紧凑元素形态 md5 归一"
     );
+    assert_eq!(
+        crlf.md5_hex, compact.md5_hex,
+        "CRLF 与紧凑元素形态 md5 归一"
+    );
+}
+
+/// 实体解码晚于空白分类:引擎照建 `&#32;` 文本节点(GetStr 解码,
+/// tinyxml2.cpp:286-360;分类时原始字节 '&' 非空白),getKey=trim→空名
+/// → 走 ".def" 报错路径——与纯空白缩进(引擎不建节点)不同口径。
+#[test]
+fn kr_aud_80_entity_decoded_whitespace_is_a_real_node() {
+    let err = compute_def_md5(kr_aud_80_params(
+        "<Interface>&#32;<Combat/></Interface>",
+        true,
+    ))
+    .expect_err("实体解码出的空白文本节点引擎照建 → 接口名为空 → return false");
+    assert_eq!(err, "interface def not found: .def", "空名报错口径: {err}");
 }
 
 /// 接口 def 缺失 → 引擎 openSection 失败 return false;报错带解析出的接口名。
@@ -897,7 +929,7 @@ fn kr_aud_81_component_type_name_reads_type_text() {
     .expect("缩进组件形态引擎同样可装载");
     assert_eq!(
         result.md5_hex, pretty.md5_hex,
-        "组件导航对空白排版鲁棒(引擎兄弟链语义)"
+        "组件导航对空白排版鲁棒(引擎 DOM 丢弃纯空白文本节点,兄弟链语义)"
     );
 }
 
