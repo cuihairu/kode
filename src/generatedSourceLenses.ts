@@ -5,14 +5,18 @@ import {
   resolvePythonTypeStubSource
 } from './generatedSourceMap';
 import { getCustomTypeInfos } from './definitionWorkspace';
-import type { EntityTypeStubEntry } from './entityTypeStubs';
-import type { PythonTypeStubEntry } from './pythonTypeStubs';
+import type { EntityTypeStubEntry, EntityTypeStubLineMap } from './entityTypeStubs';
+import type { PythonTypeStubEntry, PythonTypeStubLineMap } from './pythonTypeStubs';
 
 export class GeneratedSourceCodeLensProvider implements vscode.CodeLensProvider {
   constructor(
     private readonly fileName: string,
     private readonly pythonEntries: readonly PythonTypeStubEntry[],
-    private readonly entityEntries: readonly EntityTypeStubEntry[]
+    private readonly entityEntries: readonly EntityTypeStubEntry[],
+    // KR-AUD-78:渲染期记录的真实行映射;缺映射(未渲染)时不出镜,
+    // 禁止硬编码生成行号
+    private readonly pythonLines: PythonTypeStubLineMap | null = null,
+    private readonly entityLines: EntityTypeStubLineMap | null = null
   ) {}
 
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
@@ -29,8 +33,8 @@ export class GeneratedSourceCodeLensProvider implements vscode.CodeLensProvider 
     }
     const lenses: vscode.CodeLens[] = [];
     for (let line = 0; line < document.lineCount; line += 1) {
-      const source = resolvePythonTypeStubSource(this.pythonEntries, line)
-        ?? resolveEntityTypeStubSource(this.entityEntries, line);
+      const source = resolvePythonTypeStubSource(this.pythonEntries, this.pythonLines, line)
+        ?? resolveEntityTypeStubSource(this.entityEntries, this.entityLines, line);
       if (!source) {
         continue;
       }

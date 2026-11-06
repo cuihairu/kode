@@ -8,6 +8,7 @@ import {
   MAX_GIT_LOG_PAGE_SIZE,
   clampGitLogPageSize,
   queryGitCommitLog,
+  unquoteGitPath,
   type GitCommitLogDeps,
 } from '../src/gitCommitLog';
 import { runGitReadOnly, type GitRunOutcome } from '../src/gitRunner';
@@ -280,5 +281,59 @@ describe('IDE-GIT-004 真实仓库', () => {
       expect(byRel.entries[0]?.hash).toBe(h);
       expect(byAbs.entries[0]?.hash).toBe(h);
     }
+  });
+});
+
+// ---------- unquoteGitPath 控制字符命名转义(审核发现修复) ----------
+
+describe('unquoteGitPath 控制字符反解', () => {
+  it('C 风格命名转义 \\t \\n \\r \\a \\b \\v \\f 反解为实际控制字符', () => {
+    expect(unquoteGitPath('"a\\tb"')).toBe('a\tb');
+    expect(unquoteGitPath('"a\\nb"')).toBe('a\nb');
+    expect(unquoteGitPath('"a\\rb"')).toBe('a\rb');
+    expect(unquoteGitPath('"a\\ab"')).toBe('a\x07b');
+    expect(unquoteGitPath('"a\\bb"')).toBe('a\x08b');
+    expect(unquoteGitPath('"a\\vb"')).toBe('a\x0bb');
+    expect(unquoteGitPath('"a\\fb"')).toBe('a\x0cb');
+    expect(unquoteGitPath('"\\t\\n\\r\\a\\b\\v\\f"')).toBe('\t\n\r\x07\x08\x0b\x0c');
+  });
+
+  it('与八进制/反斜杠/引号转义混排;未带引号原样;未知转义保留字面', () => {
+    // \t 实际制表符 + \344\270\255(中的 UTF-8 八进制) + \\ 与 \" 逐字
+    expect(unquoteGitPath('"a\\tb\\344\\270\\255c\\\\d\\"e"')).toBe('a\tb中c\\d"e');
+    expect(unquoteGitPath('plain.py')).toBe('plain.py');
+    expect(unquoteGitPath('"a\\xb"')).toBe('a\\xb');
+  });
+});
+
+describe('真实仓库:含制表符文件名的重命名历史(审核发现修复)', () => {
+  it('follow 追踪含 TAB 文件名重命名:pathAtCommit 反解出实际制表符', async () => {
+    const repo = makeRealRepo();
+    const oldName = 'src/a\tb.py';
+    const newName = 'src/c\td.py';
+    const gitEnv = (iso: string) => ({
+      ...process.env,
+      GIT_AUTHOR_NAME: 'a',
+      GIT_AUTHOR_EMAIL: 'a@e.c',
+      GIT_AUTHOR_DATE: iso,
+      GIT_COMMITTER_NAME: 'c',
+      GIT_COMMITTER_EMAIL: 'c@e.c',
+      GIT_COMMITTER_DATE: iso,
+    });
+    writeFileSync(join(repo, oldName), 'x=1\n');
+    execFileSync('git', ['add', '--', oldName], { cwd: repo });
+    execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: repo, env: gitEnv('2026-11-01T10:00:00+08:00') });
+    execFileSync('git', ['mv', oldName, newName], { cwd: repo });
+    execFileSync('git', ['commit', '-q', '-m', 'rename'], { cwd: repo, env: gitEnv('2026-11-02T10:00:00+08:00') });
+
+    const r = await queryGitCommitLog({ repoRoot: repo, filePath: newName, follow: true }, realDeps);
+    expect(r.kind).toBe('page');
+    if (r.kind !== 'page') return;
+    expect(r.entries.length).toBe(2);
+    // 重命名提交树上路径=新名,更老提交=旧名;均反解出实际 TAB 而非字面 "\t"
+    expect(r.entries[0].pathAtCommit).toBe(newName);
+    expect(r.entries[1].pathAtCommit).toBe(oldName);
+    expect(r.entries.every((e) => (e.pathAtCommit ?? '').includes('\t'))).toBe(true);
+    expect(r.entries.every((e) => !(e.pathAtCommit ?? '').includes('\\t'))).toBe(true);
   });
 });

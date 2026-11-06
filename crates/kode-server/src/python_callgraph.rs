@@ -144,6 +144,12 @@ struct FileAnalysis {
 }
 
 fn analyze(path: &str, text: &str) -> FileAnalysis {
+    // KR-AUD-89:路径分隔只认 '/',斜杠归一在上游 RPC 边界完成
+    // (TS normalizeCallGraphPath)——断言锁死契约,漏归一即红。
+    debug_assert!(
+        !path.contains('\\'),
+        "KR-AUD-89: callgraph path must be '/'-separated upstream: {path}"
+    );
     let ast = ParsedAst::new(text);
     let symbols = extract(&ast);
     let error_count = ast.errors().len();
@@ -191,7 +197,9 @@ fn build_handler(params: Value) -> Result<Value, String> {
 }
 
 fn symbol_id(path: &str, kind: &str, scope: &str, name: &str) -> String {
-    fn hex(s: &str) -> String { s.as_bytes().iter().map(|b| format!("{b:02x}")).collect() }
+    fn hex(s: &str) -> String {
+        s.as_bytes().iter().map(|b| format!("{b:02x}")).collect()
+    }
     format!("sym_{}_{}_{}_{}", hex(path), kind, hex(scope), hex(name))
 }
 
@@ -256,9 +264,19 @@ fn build_callgraph(input: &CallgraphParams) -> Value {
                 symbol_id(&a.path, "function", "", &e.caller)
             };
             let callee_id = match e.kind {
-                EdgeKind::SelfMethod => symbol_id(&a.path, "method", e.caller_class.as_deref().unwrap_or(""), &e.callee),
+                EdgeKind::SelfMethod => symbol_id(
+                    &a.path,
+                    "method",
+                    e.caller_class.as_deref().unwrap_or(""),
+                    &e.callee,
+                ),
                 EdgeKind::Local => symbol_id(&a.path, "function", "", &e.callee),
-                _ => symbol_id(&a.path, "external", e.receiver.as_deref().unwrap_or(""), &e.callee),
+                _ => symbol_id(
+                    &a.path,
+                    "external",
+                    e.receiver.as_deref().unwrap_or(""),
+                    &e.callee,
+                ),
             };
             edges.push(EdgeOut {
                 caller_id,

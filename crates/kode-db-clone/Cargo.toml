@@ -9,6 +9,10 @@ license.workspace = true
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# PDC-0204/0205:归档 SHA-256 校验与 chacha20poly1305 加密(默认加密归档,密钥独立存储)。
+sha2 = "0.10"
+chacha20poly1305 = "0.10"
+getrandom = "0.2"
 
 [lints]
 workspace = true

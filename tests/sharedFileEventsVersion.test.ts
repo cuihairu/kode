@@ -38,6 +38,7 @@ describe('审核整改:合并窗口按盘上版本区分重复与二次写入', 
     merger.emit(file, 'change');
     expect(seen).toHaveLength(1); // 首报即达
 
+    await wait(10); // KR-AUD-30:交付时版本改异步 stat 取,先让它落定为 v1
     // 第二次真实写入(mtime 与内容都前进),窗口内再次上报
     fs.writeFileSync(file, 'x = 2\n', 'utf8');
     const later = new Date('2026-01-01T00:00:01Z');

@@ -227,3 +227,43 @@ fn call_dependents_overlay_dedupes_and_skips_self() {
     // 自身被受影响集去重后仅出现一次
     assert_eq!(affected.iter().filter(|k| **k == callee).count(), 1);
 }
+
+/// KR-AUD-23:plan_dependency_tasks 旧实现把 changed 与依赖一起按切块排序,
+/// max_batch 足够大时 changed 混进依赖批,SingleFileUpdate 高优先级丢失。
+/// 修复:changed 强制单独成批,恒 SingleFileUpdate + changed_priority。
+#[test]
+fn changed_file_always_gets_own_single_file_batch_kraud23() {
+    let index = indexed_workspace();
+    let graph = InvalidationGraph::new(&index);
+    let changed = key("/proj/alias.xml");
+    let exec: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+    let exec_for_run = exec.clone();
+    let specs = plan_dependency_tasks(&graph, &changed, 0, 2, 10, move |batch| {
+        let mut paths: Vec<String> = batch.iter().map(|k| k.uri.as_path().to_string()).collect();
+        let sink = exec_for_run.clone();
+        Box::new(move |_| {
+            sink.borrow_mut().append(&mut paths);
+            Ok(())
+        })
+    });
+    let single_count = specs
+        .iter()
+        .filter(|s| s.kind == TaskKind::SingleFileUpdate)
+        .count();
+    let single_priority = specs
+        .iter()
+        .find(|s| s.kind == TaskKind::SingleFileUpdate)
+        .map(|s| s.priority);
+    assert_eq!(single_count, 1, "changed 恒单独成批: {specs:?}");
+    assert_eq!(single_priority, Some(0), "changed 批保持 changed_priority");
+    // 执行面:changed 只在一个批出现。
+    for spec in specs {
+        (spec.run)(&kode_scheduler::CancelToken::new()).unwrap();
+    }
+    let executed = exec.borrow();
+    assert_eq!(
+        executed.iter().filter(|p| p.ends_with("alias.xml")).count(),
+        1,
+        "alias.xml 只在一个批出现"
+    );
+}

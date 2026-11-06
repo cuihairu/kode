@@ -14,7 +14,7 @@ use crate::rules::RuleSet;
 use crate::schema::{CloneSchema, DeniedTable, ResolvedCloneSchema};
 
 /// 单条计划查询:一张表的只读 SELECT 及其参数绑定形态。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct PlannedQuery {
     /// 执行序(父先子后,0 起)。
     pub sequence: usize,
@@ -25,6 +25,8 @@ pub struct PlannedQuery {
     pub filter: PlanFilter,
     /// 显式列清单(投影后;结构列恒含)。
     pub columns: Vec<String>,
+    /// 与列序一一对应的派生列型(PDC-0203 有类型行编码的依据)。
+    pub column_types: Vec<String>,
     /// 只读 SELECT 语句(`?` 为绑定参数)。
     pub select_sql: String,
     /// 该表估计行数(无估计时为 None)。
@@ -32,7 +34,7 @@ pub struct PlannedQuery {
 }
 
 /// 参数绑定形态。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum PlanFilter {
     /// `WHERE id = ?`(根表,实体主键)。
@@ -42,7 +44,7 @@ pub enum PlanFilter {
 }
 
 /// 完整导出计划(可序列化为 manifest 片段)。
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize)]
 pub struct QueryPlan {
     pub entity_name: String,
     pub row_budget: u64,
@@ -59,7 +61,7 @@ pub struct QueryPlan {
 }
 
 /// 身份列声明。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct IdentityColumn {
     pub table: String,
     pub column: String,
@@ -144,6 +146,11 @@ impl ExportPlanner {
                 PlanFilter::RootId
             };
             let columns: Vec<String> = projected.fields.iter().map(|f| f.name.clone()).collect();
+            let column_types: Vec<String> = projected
+                .fields
+                .iter()
+                .map(|f| f.type_label.clone())
+                .collect();
             let select_sql = render_select(name, &columns, filter);
             let estimated_rows = estimates.and_then(|m| m.get(name).copied());
             if let Some(rows) = estimated_rows {
@@ -156,6 +163,7 @@ impl ExportPlanner {
                 parent_table: edge.map(|e| e.parent_table.clone()),
                 filter,
                 columns,
+                column_types,
                 select_sql,
                 estimated_rows,
             });
@@ -209,14 +217,24 @@ impl ExportPlanner {
     }
 }
 
+/// 标识符引用(反引号转义):表名/列名来自派生 schema,但标识符若含反引号
+/// 仍须转义,否则生成畸形/可注入 SELECT(与 information_schema 同口径)。
+fn quote_ident(name: &str) -> String {
+    format!("`{}`", name.replace('`', "``"))
+}
+
 /// 渲染只读 SELECT:显式反引号列 + `?` 绑定参数。仅生成 SELECT(白名单语句面)。
 fn render_select(table: &str, columns: &[String], filter: PlanFilter) -> String {
-    let quoted: Vec<String> = columns.iter().map(|c| format!("`{c}`")).collect();
+    let quoted: Vec<String> = columns.iter().map(|c| quote_ident(c)).collect();
     let predicate = match filter {
         PlanFilter::RootId => "`id` = ?",
         PlanFilter::ParentId => "`parentID` = ?",
     };
-    format!("SELECT {} FROM `{table}` WHERE {predicate}", quoted.join(", "))
+    format!(
+        "SELECT {} FROM {} WHERE {predicate}",
+        quoted.join(", "),
+        quote_ident(table)
+    )
 }
 
 #[cfg(test)]
@@ -302,11 +320,7 @@ mod tests {
             ],
         )
         .unwrap();
-        let phys = physical(&[
-            "tbl_Avatar",
-            "tbl_Avatar_items",
-            "tbl_Avatar_items_mods",
-        ]);
+        let phys = physical(&["tbl_Avatar", "tbl_Avatar_items", "tbl_Avatar_items_mods"]);
         let resolved = SchemaResolver::resolve(&schema, &phys).unwrap();
         (schema, resolved)
     }
@@ -315,7 +329,9 @@ mod tests {
     fn plan_orders_parent_first_and_binds_parent_id() {
         let (schema, resolved) = resolved();
         let planner = ExportPlanner::new(1000);
-        let plan = planner.plan(&schema, &resolved, &RuleSet::default(), None).unwrap();
+        let plan = planner
+            .plan(&schema, &resolved, &RuleSet::default(), None)
+            .unwrap();
         let tables: Vec<&str> = plan.queries.iter().map(|q| q.table.as_str()).collect();
         assert_eq!(
             tables,
@@ -324,7 +340,10 @@ mod tests {
         assert_eq!(plan.queries[0].filter, PlanFilter::RootId);
         assert_eq!(plan.queries[1].filter, PlanFilter::ParentId);
         assert_eq!(plan.queries[1].parent_table.as_deref(), Some("tbl_Avatar"));
-        assert_eq!(plan.queries[2].parent_table.as_deref(), Some("tbl_Avatar_items"));
+        assert_eq!(
+            plan.queries[2].parent_table.as_deref(),
+            Some("tbl_Avatar_items")
+        );
         assert_eq!(
             plan.queries[0].select_sql,
             "SELECT `id`, `sm_autoLoad`, `sm_name` FROM `tbl_Avatar` WHERE `id` = ?"
@@ -394,7 +413,9 @@ mod tests {
         );
         let resolved = SchemaResolver::resolve(&schema, &phys).unwrap();
         let planner = ExportPlanner::new(1000);
-        let plan = planner.plan(&schema, &resolved, &RuleSet::default(), None).unwrap();
+        let plan = planner
+            .plan(&schema, &resolved, &RuleSet::default(), None)
+            .unwrap();
         assert_eq!(plan.missing, vec!["tbl_Avatar_ghost".to_string()]);
         assert!(plan.denied.iter().any(|d| d.name == "kbe_entitylog"));
         // 缺失表不入查询序列。
@@ -414,8 +435,15 @@ mod tests {
         };
         let planner = ExportPlanner::new(1000);
         let plan = planner.plan(&schema, &resolved, &rules, None).unwrap();
-        let items = plan.queries.iter().find(|q| q.table == "tbl_Avatar_items").unwrap();
-        assert_eq!(items.columns, vec!["id", "parentID", "sm_autoLoad", "sm_value"]);
+        let items = plan
+            .queries
+            .iter()
+            .find(|q| q.table == "tbl_Avatar_items")
+            .unwrap();
+        assert_eq!(
+            items.columns,
+            vec!["id", "parentID", "sm_autoLoad", "sm_value"]
+        );
     }
 
     #[test]
@@ -437,6 +465,23 @@ mod tests {
                 table: "tbl_Avatar".into(),
                 column: "sm_name".into()
             })
+        );
+    }
+    #[test]
+    fn render_select_escapes_backticks_in_identifiers() {
+        // 表/列名含反引号:转义为 ````,否则生成畸形/可注入 SELECT。
+        let sql = render_select(
+            "tbl`Avatar",
+            &["id".into(), "weird`col".into()],
+            PlanFilter::RootId,
+        );
+        assert!(sql.contains("FROM `tbl``Avatar`"), "表名反引号转义: {sql}");
+        assert!(sql.contains("`weird``col`"), "列名反引号转义: {sql}");
+        assert!(sql.contains("WHERE `id` = ?"), "谓词不变: {sql}");
+        let parent = render_select("tbl_Bag", &["parentID".into()], PlanFilter::ParentId);
+        assert!(
+            parent.contains("WHERE `parentID` = ?"),
+            "子表谓词不变: {parent}"
         );
     }
 }

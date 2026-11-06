@@ -75,7 +75,10 @@ fn codes(findings: &[kode_server::process_topology::Finding]) -> Vec<&str> {
 fn five_process_topology_zero_findings() {
     let xml = std::fs::read_to_string(fixture("five-process.xml")).unwrap();
     let findings = validate_manifest(&xml);
-    assert!(findings.is_empty(), "expected zero findings, got {findings:#?}");
+    assert!(
+        findings.is_empty(),
+        "expected zero findings, got {findings:#?}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -196,9 +199,7 @@ fn missing_dbmgr_reports_d3_on_persistent_property_line() {
     );
     let f = findings
         .iter()
-        .find(|f| {
-            f.code == "kbengine.processTopologyMissingDbmgr" && f.message.contains("Avatar")
-        })
+        .find(|f| f.code == "kbengine.processTopologyMissingDbmgr" && f.message.contains("Avatar"))
         .expect("Avatar D3 finding");
     assert_eq!(f.target, "def");
     assert_eq!(f.file_path, "/defs/entity_defs/Avatar.def");
@@ -360,9 +361,14 @@ fn closure_merges_parent_and_interface_content() {
         codes(&findings)
     );
     let monster = findings.iter().find(|f| {
-        f.file_path == "/defs/entity_defs/Monster.def" && f.code == "kbengine.processTopologyMissingCellapp"
+        f.file_path == "/defs/entity_defs/Monster.def"
+            && f.code == "kbengine.processTopologyMissingCellapp"
     });
-    assert!(monster.is_some(), "Monster D1 应存在, got {:?}", codes(&findings));
+    assert!(
+        monster.is_some(),
+        "Monster D1 应存在, got {:?}",
+        codes(&findings)
+    );
 }
 
 /// 组件 Persistent 并入持久性(组件 def 在 components/ 子目录)。
@@ -411,7 +417,7 @@ fn property_flags_map_to_domains() {
             <name><Type>STRING</Type><Flags>BASE</Flags></name>
           </Properties>
         </root>"#
-        .into(),
+            .into(),
     }];
     // 缺 cellapp → E 有 cell 内容 → D1;缺 baseapp → D2。
     let xml = r#"<processTopology>
@@ -419,8 +425,14 @@ fn property_flags_map_to_domains() {
     </processTopology>"#;
     let findings = validate_process_topology(xml, None, defs);
     let codes = codes(&findings);
-    assert!(codes.contains(&"kbengine.processTopologyMissingCellapp"), "got {codes:?}");
-    assert!(codes.contains(&"kbengine.processTopologyMissingBaseapp"), "got {codes:?}");
+    assert!(
+        codes.contains(&"kbengine.processTopologyMissingCellapp"),
+        "got {codes:?}"
+    );
+    assert!(
+        codes.contains(&"kbengine.processTopologyMissingBaseapp"),
+        "got {codes:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -198,3 +198,86 @@ describe('buildDefChain', () => {
     expect(info.components).toEqual([]);
   });
 });
+
+// KR-AUD-76:引擎 loadInterfaces 对接口 def 递归装载其自身 Interfaces
+// (entitydef.cpp:611-638,KR-AUD-67 同源),链式视图此前只平铺入口与父链的
+// 一层接口名——嵌套接口(接口的接口)及其组件槽缺席。
+describe('KR-AUD-76 nested interface closure enters the chain view', () => {
+  let nestedRoot = '';
+
+  beforeAll(() => {
+    nestedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-defchain-kr76-'));
+    const writeNested = (relative: string, content: string): void => {
+      const target = path.join(nestedRoot, ...relative.split('/'));
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, content, 'utf8');
+    };
+    writeNested('scripts/entities.xml', '<root>\n  <Avatar/>\n</root>');
+    writeNested('scripts/entity_defs/Avatar.def', [
+      '<root>',
+      '  <Interfaces>',
+      '    <interface>IAura</interface>',
+      '  </Interfaces>',
+      '</root>'
+    ].join('\n'));
+    // 接口的接口:IAura → IShield → ICore(两跳),IShield 带组件槽
+    writeNested('scripts/entity_defs/interfaces/IAura.def', [
+      '<root>',
+      '  <Interfaces>',
+      '    <interface>IShield</interface>',
+      '  </Interfaces>',
+      '</root>'
+    ].join('\n'));
+    writeNested('scripts/entity_defs/interfaces/IShield.def', [
+      '<root>',
+      '  <Interfaces>',
+      '    <interface>ICore</interface>',
+      '  </Interfaces>',
+      '  <Components>',
+      '    <orb>',
+      '      <Type>ShieldOrb</Type>',
+      '    </orb>',
+      '  </Components>',
+      '</root>'
+    ].join('\n'));
+    writeNested('scripts/entity_defs/interfaces/ICore.def', '<root>\n</root>');
+    writeNested('scripts/entity_defs/components/ShieldOrb.def', '<root>\n</root>');
+    // 环:IDoom → IRuin → IDoom,不得死循环
+    writeNested('scripts/entity_defs/interfaces/IDoom.def', [
+      '<root>',
+      '  <Interfaces>',
+      '    <interface>IRuin</interface>',
+      '  </Interfaces>',
+      '</root>'
+    ].join('\n'));
+    writeNested('scripts/entity_defs/interfaces/IRuin.def', [
+      '<root>',
+      '  <Interfaces>',
+      '    <interface>IDoom</interface>',
+      '  </Interfaces>',
+      '</root>'
+    ].join('\n'));
+  });
+
+  afterAll(() => {
+    fs.rmSync(nestedRoot, { recursive: true, force: true });
+  });
+
+  it('collects interface-of-interface members across multiple hops', () => {
+    const chain = buildDefChain(path.join(nestedRoot, 'scripts/entity_defs/Avatar.def'))!;
+    const names = chain.interfaces.map(node => node.name);
+    expect(names).toContain('IAura');
+    expect(names).toContain('IShield');
+    expect(names).toContain('ICore');
+    // 嵌套接口的组件槽同样入链(引擎 loadInterfaces 调 loadComponents)
+    expect(chain.components.map(node => node.name)).toContain('ShieldOrb');
+  });
+
+  it('terminates on an interface reference cycle', () => {
+    const chain = buildDefChain(path.join(nestedRoot, 'scripts/entity_defs/interfaces/IDoom.def'))!;
+    const names = chain.interfaces.map(node => node.name);
+    expect(names.filter(name => name === 'IDoom')).toHaveLength(1);
+    expect(names.filter(name => name === 'IRuin')).toHaveLength(1);
+    expect(chain.cycleTruncated === true || names.length <= 2).toBe(true);
+  });
+});

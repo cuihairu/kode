@@ -224,7 +224,7 @@ import {
 } from './hotReload';
 import { HotReloadStatusController } from './hotReloadStatus';
 import { runHotReloadChannelConfigCommand } from './hotReloadChannelConfig';
-import { resolveReloadTransport } from './hotReloadTransport';
+import { resolveReloadTransport, type ReloadTransport } from './hotReloadTransport';
 import { runHotReloadBatchSummaryCommand } from './hotReloadBatchSummaryCommand';
 import { runHotReloadRetryCommand } from './hotReloadRetryCommand';
 import { createDefStructuralGate } from './hotReloadDefGate';
@@ -254,12 +254,14 @@ import { disableJsoncAssociation, syncJsoncAssociation } from './jsoncAssociatio
 import { exportKbeStubs, fileSystemStubExportDeps, readManagedDirSetting, resolveManagedDirName } from './pythonStubExport';
 import {
   PYTHON_TYPE_STUB_FILE_NAME,
+  buildPythonTypeStubLineMap,
   buildPythonTypeStubPlan,
   exportPythonTypeStubs,
   setupTypeStubRegeneration
 } from './pythonTypeStubs';
 import { GeneratedSourceCodeLensProvider } from './generatedSourceLenses';
 import {
+  buildEntityTypeStubLineMap,
   buildEntityTypeStubPlan,
   exportEntityTypeStubs
 } from './entityTypeStubs';
@@ -1307,7 +1309,13 @@ export function activate(context: vscode.ExtensionContext) {
     buildPythonTypeStubPlan(
       getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
     ).entries,
-    []
+    [],
+    // KR-AUD-78:来源镜按渲染期记录的真实行映射,不再硬编码 0/2
+    buildPythonTypeStubLineMap(
+      buildPythonTypeStubPlan(
+        getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
+      ).entries
+    )
   );
   const generatedSourceLensProvider = vscode.languages.registerCodeLensProvider(
     pythonDocumentSelector,
@@ -5017,13 +5025,38 @@ export function activate(context: vscode.ExtensionContext) {
     }
   };
   // RT-3(IDE-HOT-005):def 结构闸判定面 fire 与失败目标重试共用同一实例与
-  // 同一会话基线册(逐次滚动语义一致)——重试不复用闸判定,结构性 def 变更
-  // 会经「重试」通道以普通 reload 下发。
+  // 同一会话基线册(放行即真实发送时前滚,见 F1)——重试不复用闸判定,
+  // 结构性 def 变更会经「重试」通道以普通 reload 下发。
   const hotReloadDefBaselines = new Map<string, string>();
   const hotReloadDefGate = createDefStructuralGate(
     hotReloadTargetStateWiring.readFileContent,
     hotReloadDefBaselines
   );
+  // F1(2026-11-05 审核):被拦批次不前滚基线,基线只随真实发送或明确重启
+  // 确认建立——本命令是重启确认口:用户确认引擎已重启并加载当前 def 内容
+  // 后调用,基线重建为当前内容,其上的非结构 def 变更才可走普通热更。
+  context.subscriptions.push(
+    vscode.commands.registerCommand('kbengine.hotReload.confirmDefBaseline', async () => {
+      const confirmed = (await hotReloadDefGate.confirmLoaded?.()) ?? 0;
+      hotReloadStatus.log(`def 结构基线重建(重启确认):${confirmed} 个文件基线已对齐当前内容(结构性变更仍会在下次发送前拦下)`);
+      void Promise.resolve(vscode.window.showInformationMessage(`def 结构基线已对齐当前内容(${confirmed} 个文件)`)).catch(
+        () => undefined
+      );
+    })
+  );
+  // IDE-HOT-102:部署通道发送口(fire 路径与失败目标重试共用同一解出口)——
+  // 当前激活 profile 配了 hotReload 段才解出通道(经 resolveReloadTransport
+  // 校验),未配返回 null,调用方回落既有 actionName 通道。targetId=profile.id
+  // (稳定身份,台账键用,改名不漂移)。交叉修复(二轮):失败重试的目标=
+  // 此目标时接回同一发送通道,不再只反查 quick action 动作。
+  const resolveHotReloadChannelTransport = (): { transport: ReloadTransport; targetId: string } | null => {
+    const activeProfile = resolveActiveProfile(context.workspaceState);
+    if (!activeProfile?.hotReload) {
+      return null;
+    }
+    const transport = resolveReloadTransport(activeProfile.hotReload);
+    return transport ? { transport, targetId: activeProfile.id } : null;
+  };
   setupHotReload(context, runQuickActionForHotReload, {
     status: hotReloadStatus,
     targetState: hotReloadTargetStateWiring,
@@ -5049,14 +5082,9 @@ export function activate(context: vscode.ExtensionContext) {
     // IDE-HOT-102:部署通道接线——当前激活 profile 配了 hotReload 段才解出
     // 通道(经 resolveReloadTransport 校验),未配返回 null,发送回落既有
     // actionName 通道。targetId=profile.id(稳定身份,台账键用,改名不漂移)。
-    resolveChannelTransport: () => {
-      const activeProfile = resolveActiveProfile(context.workspaceState);
-      if (!activeProfile?.hotReload) {
-        return null;
-      }
-      const transport = resolveReloadTransport(activeProfile.hotReload);
-      return transport ? { transport, targetId: activeProfile.id } : null;
-    }
+    // 交叉修复(二轮):同一解出口给失败目标重试用——部署通道目标(profile
+    // ID)失败后的重试接回同一发送通道,不再只反查 quick action 动作。
+    resolveChannelTransport: resolveHotReloadChannelTransport
   });
   // IDE-HOT-102:部署级热更通道配置面板(官方/HTTP + 连通性测试)——按
   // profile 读/写 hotReload 段;未配回落既有 actionName 通道。探测只走
@@ -5117,6 +5145,9 @@ export function activate(context: vscode.ExtensionContext) {
               runAction: runQuickActionForHotReload,
               resolveActionNameForTarget: resolveHotReloadActionNameForTarget,
               targetState: hotReloadTargetStateWiring,
+              // 交叉修复(二轮):部署通道目标(profile ID)失败后的重试接回
+              // 同一发送通道(与 fire 路径同一解出口)
+              resolveChannelTransport: resolveHotReloadChannelTransport,
               noteEngineDigest: (key, file, body) => hotReloadEngineDigestRegister.note(key, file, body),
               timers: realHotReloadTimerDeps,
               settleHandles: hotReloadRetrySettleHandles,
@@ -5394,7 +5425,15 @@ export function activate(context: vscode.ExtensionContext) {
     buildEntityTypeStubPlan(
       entityMappingManager.getAllMappings(),
       getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
-    ).entries
+    ).entries,
+    null,
+    // KR-AUD-78:同 python 侧——渲染期记录的真实行映射
+    buildEntityTypeStubLineMap(
+      buildEntityTypeStubPlan(
+        entityMappingManager.getAllMappings(),
+        getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
+      ).entries
+    )
   );
   const generatedEntitySourceLensProvider = vscode.languages.registerCodeLensProvider(
     pythonDocumentSelector,

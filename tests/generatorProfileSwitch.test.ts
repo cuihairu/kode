@@ -175,16 +175,16 @@ describe('entity wizard follows the active profile', () => {
 
     // 写入路径全部落在 profile 资产根,工作区同名落点零写入
     expect(fs.existsSync(path.join(profileARoot, 'scripts', 'entity_defs', 'Hero.def'))).toBe(true);
-    expect(fs.existsSync(path.join(profileARoot, 'scripts', 'Hero.py'))).toBe(true);
+    expect(fs.existsSync(path.join(profileARoot, 'scripts', 'base', 'Hero.py'))).toBe(true);
     expect(fs.readFileSync(path.join(profileARoot, 'scripts', 'entities.xml'), 'utf8')).toContain('<Hero ');
     expect(fs.existsSync(path.join(wsRoot, 'scripts', 'entity_defs', 'Hero.def'))).toBe(false);
-    expect(fs.existsSync(path.join(wsRoot, 'scripts', 'Hero.py'))).toBe(false);
+    expect(fs.existsSync(path.join(wsRoot, 'scripts', 'base', 'Hero.py'))).toBe(false);
 
     // 预览路径=写入路径,都来自所选 profile
     expect(previewItems.find(item => item.label === '新增 .def')?.description)
       .toBe(path.join(profileARoot, 'scripts', 'entity_defs', 'Hero.def'));
-    expect(previewItems.find(item => item.label === '新增 Python')?.description)
-      .toBe(path.join(profileARoot, 'scripts', 'Hero.py'));
+    expect(previewItems.find(item => item.label.includes('Python'))?.description)
+      .toBe(path.join(profileARoot, 'scripts', 'base', 'Hero.py'));
     expect(previewItems.find(item => item.label === '注册 entities.xml')?.description)
       .toContain(path.join(profileARoot, 'scripts', 'entities.xml'));
   }, 15000);
@@ -214,7 +214,7 @@ describe('entity wizard follows the active profile', () => {
     // 旧预览的 profile A 落点零写入,重算后按 profile B 落盘
     expect(fs.existsSync(path.join(profileARoot, 'scripts', 'entity_defs', 'Hero.def'))).toBe(false);
     expect(fs.existsSync(path.join(profileBRoot, 'scripts', 'entity_defs', 'Hero.def'))).toBe(true);
-    expect(fs.existsSync(path.join(profileBRoot, 'scripts', 'Hero.py'))).toBe(true);
+    expect(fs.existsSync(path.join(profileBRoot, 'scripts', 'base', 'Hero.py'))).toBe(true);
     expect(fs.readFileSync(path.join(profileBRoot, 'scripts', 'entities.xml'), 'utf8')).toContain('<Hero ');
   }, 15000);
 

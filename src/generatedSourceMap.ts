@@ -1,48 +1,72 @@
 import type {
-  EntityTypePropertyEntry,
-  EntityTypeStubEntry
+  EntityTypeStubEntry,
+  EntityTypeStubLineMap
 } from './entityTypeStubs';
-import type { PythonTypeStubEntry } from './pythonTypeStubs';
+import type {
+  PythonTypeStubEntry,
+  PythonTypeStubLineMap
+} from './pythonTypeStubs';
 
 export interface GeneratedSourceLocation {
   origin: string;
   line: number;
 }
 
+/**
+ * KR-AUD-78:按生成文档真实行映射来源——python 侧行映射来自
+ * buildPythonTypeStubLineMap(渲染期记录),不再硬编码 line 0/2,
+ * 多条目同名键覆盖问题随之消除。
+ */
 export function resolvePythonTypeStubSource(
   entries: readonly PythonTypeStubEntry[],
+  lineMap: PythonTypeStubLineMap | null,
   documentLine: number
 ): GeneratedSourceLocation | null {
-  const locationByDocumentLine = new Map<number, GeneratedSourceLocation>();
+  if (!lineMap) {
+    return null;
+  }
   for (const entry of entries) {
+    const declaredLine = lineMap.entryLines.get(entry.name);
+    if (declaredLine === documentLine && entry.sourceLine !== null && entry.sourceLine !== undefined) {
+      return { origin: entry.name, line: entry.sourceLine };
+    }
     if (entry.kind !== 'class') {
-      if (entry.sourceLine !== null) {
-        locationByDocumentLine.set(0, { origin: entry.name, line: entry.sourceLine as number });
-      }
       continue;
     }
-    if (entry.sourceLine !== null) {
-      locationByDocumentLine.set(0, { origin: entry.name, line: entry.sourceLine as number });
+    const propertyLines = lineMap.propertyLines.get(entry.name);
+    if (!propertyLines) {
+      continue;
     }
-    const property = entry.properties.find(
-      candidate => entry.propertySourceLines?.[candidate.name] !== null
-    );
-    if (property && entry.sourceLine !== null) {
-      locationByDocumentLine.set(2, { origin: entry.name, line: entry.sourceLine as number });
+    for (const property of entry.properties) {
+      if (propertyLines[property.name] !== documentLine) {
+        continue;
+      }
+      const sourceLine = entry.propertySourceLines?.[property.name];
+      if (sourceLine !== null && sourceLine !== undefined) {
+        return { origin: entry.name, line: sourceLine };
+      }
     }
   }
-  return locationByDocumentLine.get(documentLine) ?? null;
+  return null;
 }
 
 export function resolveEntityTypeStubSource(
   entries: readonly EntityTypeStubEntry[],
+  lineMap: EntityTypeStubLineMap | null,
   documentLine: number
 ): GeneratedSourceLocation | null {
+  if (!lineMap) {
+    return null;
+  }
   for (const entry of entries) {
-    const property: EntityTypePropertyEntry | undefined = documentLine === 0
-      ? entry.properties[0]
-      : undefined;
-    if (property) {
+    const propertyLines = lineMap.propertyLines.get(entry.entity);
+    if (!propertyLines) {
+      continue;
+    }
+    for (const property of entry.properties) {
+      if (propertyLines[property.name] !== documentLine) {
+        continue;
+      }
       return {
         origin: entry.entity,
         line: property.customTypeLine ?? property.sourceLine

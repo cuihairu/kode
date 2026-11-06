@@ -71,8 +71,9 @@ describe('propertyFlagDomainList delegates to the generated mirror', () => {
     expect(propertyFlagDomainList('CELL_PRIVATE')).toEqual(['cell']);
     expect(propertyFlagDomainList('ALL_CLIENTS')).toEqual(['cell', 'client']);
     expect(propertyFlagDomainList('CELL_PUBLIC_AND_OWN')).toEqual(['cell', 'client']);
-    expect(propertyFlagDomainList('OWN_CLIENT')).toEqual(['client']);
-    expect(propertyFlagDomainList('OTHER_CLIENTS')).toEqual(['client']);
+    // KR-AUD-87:OWN_CLIENT/OTHER_CLIENTS ∈ ENTITY_CELL_DATA_FLAGS(common.h:43)
+    expect(propertyFlagDomainList('OWN_CLIENT')).toEqual(['cell', 'client']);
+    expect(propertyFlagDomainList('OTHER_CLIENTS')).toEqual(['cell', 'client']);
   });
 
   test('CELL alias and legacy spellings resolve like the engine', () => {

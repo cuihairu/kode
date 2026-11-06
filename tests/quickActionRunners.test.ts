@@ -25,7 +25,19 @@ afterEach(async () => {
   );
   stubWorkspace.workspaceFolders = [];
   while (tempDirs.length > 0) {
-    fs.rmSync(tempDirs.pop() as string, { recursive: true, force: true });
+    const dir = tempDirs.pop() as string;
+    // WIN:后台 spawn 的子进程退出/句柄释放有延迟,rm 首轮常 EPERM——短重试收尾。
+    for (let attempt = 0; ; attempt++) {
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+        break;
+      } catch (error) {
+        if (attempt >= 40) {
+          throw error;
+        }
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
   }
 });
 

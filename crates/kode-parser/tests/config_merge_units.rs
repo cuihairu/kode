@@ -44,10 +44,7 @@ fn sanitize_keeps_middle_content() {
 
 #[test]
 fn merge_leaf_override_wins() {
-    let root = merged_root(
-        "<root><a>1</a></root>",
-        "<root><a>2</a></root>",
-    );
+    let root = merged_root("<root><a>1</a></root>", "<root><a>2</a></root>");
     assert_eq!(root.children.len(), 1);
     assert_eq!(root.children[0].name, "a");
     assert_eq!(root.children[0].text, "2");
@@ -55,10 +52,7 @@ fn merge_leaf_override_wins() {
 
 #[test]
 fn merge_base_only_kept() {
-    let root = merged_root(
-        "<root><a>1</a><b>2</b></root>",
-        "<root><a>3</a></root>",
-    );
+    let root = merged_root("<root><a>1</a><b>2</b></root>", "<root><a>3</a></root>");
     assert_eq!(root.children.len(), 2);
     assert_eq!(root.children[0].name, "a");
     assert_eq!(root.children[0].text, "3");
@@ -68,10 +62,7 @@ fn merge_base_only_kept() {
 
 #[test]
 fn merge_override_only_added() {
-    let root = merged_root(
-        "<root><a>1</a></root>",
-        "<root><a>2</a><b>3</b></root>",
-    );
+    let root = merged_root("<root><a>1</a></root>", "<root><a>2</a><b>3</b></root>");
     assert_eq!(root.children.len(), 2);
     assert_eq!(root.children[0].name, "a");
     assert_eq!(root.children[0].text, "2");

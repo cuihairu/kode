@@ -477,3 +477,17 @@ describe('KB-VER-002 版本分层标注', () => {
     expect(buildKbeStubExportContent()).toContain('版本标注 / version:');
   });
 });
+
+// KR-AUD-33:`import os, kbe` 逗号行此前不匹配 `/^\s*import\s+(KBEngine|kbe)\b/`
+// (kbe 不紧跟 import),别名集合为空 → 本文件不接管导航/补全。修复:先取
+// import 名单再逐名识别,逗号混入其他模块不影响 kbe 别名注册。
+describe('KR-AUD-33: 逗号混排 import 的 kbe 别名', () => {
+  it('import os, kbe 注册 kbe 别名(整文件接管前提)', async () => {
+    const { getKbeAliases } = await import('../src/kbeModuleIndex');
+    expect(getKbeAliases('import os, kbe\n')).toEqual(new Set(['kbe']));
+    expect(getKbeAliases('import kbe, os\n')).toEqual(new Set(['kbe']));
+    expect(getKbeAliases('import os, kbe as kb\n')).toEqual(new Set(['kb']));
+    expect(getKbeAliases('import sys, json\n')).toEqual(new Set());
+    expect(getKbeAliases('import kbe as kb, os\nimport KBEngine\n')).toEqual(new Set(['kb', 'KBEngine']));
+  });
+});

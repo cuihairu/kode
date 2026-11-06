@@ -205,3 +205,83 @@ describe('parseDefDocument edge cases', () => {
     expect(root.children[0]).toMatchObject({ kind: 'text' });
   });
 });
+
+
+// KR-AUD-75:tokenizeXml 的 [^>]*? 在属性值含 '>' 时把标签边界提前截断,
+// 注释/CDATA 内的伪标签也会注入 token —— 两者都会让后续节点的定位 desync。
+describe('KR-AUD-75 tokenizeXml survives > in attribute values, comments and CDATA', () => {
+  const DOC = [
+    '<root>',
+    '  <Properties>',
+    '    <hp> <Type> UINT32 </Type> </hp>',
+    '  </Properties>',
+    '  <!-- comment with pseudo tag <fake attr="x>y"/> inside -->',
+    '  <BaseMethods>',
+    '    <roar note="a>b"> <Arg> UINT8 </Arg> </roar>',
+    '  </BaseMethods>',
+    '  <Desc>',
+    '    <![CDATA[ raw <tag/> text ]]>',
+    '  </Desc>',
+    '</root>'
+  ].join('\n');
+
+  const document = parseDefDocument(DOC);
+  const find = (name: string): DefElementNode => {
+    const stack: DefElementNode[] = document.root ? [document.root] : [];
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      if (current.name === name) return current;
+      for (const child of current.children) {
+        if (child.kind === 'element') stack.push(child);
+      }
+    }
+    throw new Error(`element not found: ${name}`);
+  };
+
+  it('attribute value containing > does not truncate the tag span', () => {
+    const roar = find('roar');
+    expect(DOC.slice(roar.tagStart, roar.tagEnd)).toBe('<roar note="a>b">');
+    expect(DOC.slice(roar.closeTagStart, roar.closeTagEnd)).toBe('</roar>');
+    // desync 会把 <Arg> 定位吞进属性串 → 子节点/兄弟节点全部错位
+    const arg = find('Arg');
+    expect(DOC.slice(arg.tagStart, arg.tagEnd)).toBe('<Arg>');
+    expect(DOC.slice(arg.closeTagStart, arg.closeTagEnd)).toBe('</Arg>');
+    expect(DOC.slice(arg.contentStart, arg.contentEnd)).toBe(' UINT8 ');
+    // 后续兄弟节点仍对齐
+    const methods = find('BaseMethods');
+    expect(DOC.slice(methods.tagStart, methods.tagEnd)).toBe('<BaseMethods>');
+  });
+
+  it('pseudo tags inside comments do not inject tokens or shift positions', () => {
+    const commentStart = DOC.indexOf('<!--');
+    const commentEnd = DOC.indexOf('-->') + 3;
+    for (const node of collectElements(document.root)) {
+      // 注释区间内不得出现任何真实节点的标签定位
+      expect(node.tagStart >= commentStart && node.tagStart < commentEnd).toBe(false);
+    }
+    const desc = find('Desc');
+    expect(DOC.slice(desc.tagStart, desc.tagEnd)).toBe('<Desc>');
+    expect(DOC.slice(desc.closeTagStart, desc.closeTagEnd)).toBe('</Desc>');
+  });
+
+  it('CDATA raw markup does not shift positions', () => {
+    // CDATA 之后文档结束,root 闭合定位必须精确
+    expect(DOC.slice(document.root!.closeTagStart, document.root!.closeTagEnd)).toBe('</root>');
+    const cdata = DOC.indexOf('<![CDATA[');
+    const rootChildren = collectElements(document.root);
+    for (const node of rootChildren) {
+      if (node.name === 'root') continue;
+      // 不被 CDATA 内部伪标签吞位
+      expect(node.tagStart).not.toBe(cdata);
+    }
+  });
+});
+
+function collectElements(node: DefElementNode | null): DefElementNode[] {
+  if (!node) return [];
+  const out: DefElementNode[] = [node];
+  for (const child of node.children) {
+    if (child.kind === 'element') out.push(...collectElements(child));
+  }
+  return out;
+}

@@ -59,8 +59,22 @@ describe('queryTouchesHead', () => {
 
   it('不误伤固定 hash/普通 ref/路径参数', () => {
     expect(queryTouchesHead(['show', 'abc123:a.py'])).toBe(false);
-    expect(queryTouchesHead(['log', '--', 'a.py'])).toBe(false);
+    // 显式固定 hash 修订范围 = 不触 HEAD(结果不随提交变化,可缓存)
+    expect(queryTouchesHead(['log', 'abc123', '--skip=50', '--', 'a.py'])).toBe(false);
     expect(queryTouchesHead(['ls-files', '--', 'a.py'])).toBe(false);
+  });
+
+  it('git log 无显式修订范围默认 HEAD 为起点(审核发现修复)', () => {
+    // gitRangeTimeline:git log -L s,e:path(分离/附值形式均隐式 HEAD)
+    expect(queryTouchesHead(['log', '-L', '10,20:a.py', '--format=x'])).toBe(true);
+    expect(queryTouchesHead(['log', '-L10,20:a.py', '--format=x'])).toBe(true);
+    // gitCommitLog 非续查页:git log --skip=N --max-count=M -- path 隐式 HEAD
+    expect(
+      queryTouchesHead(['log', '--skip=50', '--max-count=51', '--format=x', '--follow', '--name-status', '--', 'a.py'])
+    ).toBe(true);
+    expect(queryTouchesHead(['log', '--', 'a.py'])).toBe(true);
+    // 显式固定 hash(续查起点)= 不触 HEAD,可缓存
+    expect(queryTouchesHead(['log', 'abc123', '--skip=50', '--max-count=51', '--format=x', '--', 'a.py'])).toBe(false);
   });
 });
 
@@ -447,7 +461,9 @@ describe('宿主影响测量探针(IDE-GIT-012)', () => {
   it('查询启动记 1 次 spawn;成功入缓存(条目+字节);缓存命中不再 spawn', async () => {
     const { spawn, calls } = makeSpawn();
     const gate = new GitQueryGate(undefined, { spawn });
-    const p = gate.run(['log', '--', 'a.py'], runOpts());
+    // 显式固定 hash 修订范围(续查起点形态)= 非易变,可缓存;`git log -- a.py`
+    // 是隐式 HEAD(审核发现修复后判易变,不入缓存)。
+    const p = gate.run(['log', 'abc123', '--', 'a.py'], runOpts());
     expect(gate.spawnCount()).toBe(1);
     expect(gate.runningCount()).toBe(1);
     calls[0].resolve(ok('hello'));
@@ -457,7 +473,7 @@ describe('宿主影响测量探针(IDE-GIT-012)', () => {
     expect(gate.cacheBytes()).toBe(5);
 
     // 缓存命中:不启动新子进程,spawn 计数不增。
-    const again = await gate.run(['log', '--', 'a.py'], runOpts());
+    const again = await gate.run(['log', 'abc123', '--', 'a.py'], runOpts());
     expect(again).toEqual(ok('hello'));
     expect(gate.spawnCount()).toBe(1);
     expect(calls).toHaveLength(1);

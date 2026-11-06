@@ -27,7 +27,10 @@ fn response_of(out: &[Outgoing]) -> &Value {
 
 fn rpc(method: &str, params: Value) -> Value {
     let mut state = ServerState::new();
-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
+    handle_message(
+        &mut state,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
     let out = handle_message(
         &mut state,
         request(1, "$/kode/rpc", json!({"method": method, "params": params})),
@@ -90,9 +93,13 @@ fn callgraph_full_shape_and_all_kinds() {
     // 方法节点 Avatar.act / Avatar.notify,模块级函数 helper / standalone,
     // 模块伪节点(有顶层调用边)。
     for name in ["act", "notify", "helper", "standalone"] {
-        assert!(nodes.iter().any(|n| n["name"] == name && n["id"].as_str().unwrap().starts_with("sym_")));
+        assert!(nodes
+            .iter()
+            .any(|n| n["name"] == name && n["id"].as_str().unwrap().starts_with("sym_")));
     }
-    assert!(nodes.iter().any(|n| n["kind"] == "module" && n["name"] == "Avatar"));
+    assert!(nodes
+        .iter()
+        .any(|n| n["kind"] == "module" && n["name"] == "Avatar"));
 
     // 8 类边全部出现(去重统计)。
     let edges = result.get("edges").unwrap().as_array().unwrap();
@@ -104,17 +111,32 @@ fn callgraph_full_shape_and_all_kinds() {
         assert!(e["callerLine"].is_number());
     }
     for expected in [
-        "local", "method", "self-method", "kbe-broadcast", "kbe-base-clients",
-        "kbe-cross-process", "kbe-api", "unknown",
+        "local",
+        "method",
+        "self-method",
+        "kbe-broadcast",
+        "kbe-base-clients",
+        "kbe-cross-process",
+        "kbe-api",
+        "unknown",
     ] {
-        assert!(kinds.contains(expected), "missing kind {expected}, got {kinds:?}");
+        assert!(
+            kinds.contains(expected),
+            "missing kind {expected}, got {kinds:?}"
+        );
     }
 
     // stats.byKind 固定 8 键(0 计数也保留)。
     let by_kind = result["stats"]["byKind"].as_object().unwrap();
     assert_eq!(by_kind.len(), 8);
-    assert_eq!(result["stats"]["nodeCount"].as_u64().unwrap(), nodes.len() as u64);
-    assert_eq!(result["stats"]["edgeCount"].as_u64().unwrap(), edges.len() as u64);
+    assert_eq!(
+        result["stats"]["nodeCount"].as_u64().unwrap(),
+        nodes.len() as u64
+    );
+    assert_eq!(
+        result["stats"]["edgeCount"].as_u64().unwrap(),
+        edges.len() as u64
+    );
     assert_eq!(result["stats"]["errorCount"].as_u64().unwrap(), 0);
     assert_eq!(result["stats"]["fileCount"].as_u64().unwrap(), 1);
 
@@ -154,7 +176,11 @@ def run():
         ],
     }));
     let reverse = result.get("reverseIndex").unwrap().as_object().unwrap();
-    let callers = reverse.get("/scripts/cell/avatar.py").unwrap().as_array().unwrap();
+    let callers = reverse
+        .get("/scripts/cell/avatar.py")
+        .unwrap()
+        .as_array()
+        .unwrap();
     let caller_paths: Vec<&str> = callers.iter().map(|v| v.as_str().unwrap()).collect();
     assert!(
         caller_paths.contains(&"/scripts/game.py"),
@@ -182,7 +208,12 @@ fn callgraph_empty_files_contract() {
     assert_eq!(result["stats"]["fileCount"].as_u64().unwrap(), 0);
     assert_eq!(result["nodes"].as_array().unwrap().len(), 0);
     assert_eq!(result["edges"].as_array().unwrap().len(), 0);
-    assert!(result.get("processRoles").unwrap().as_array().unwrap().is_empty());
+    assert!(result
+        .get("processRoles")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -215,7 +246,10 @@ fn symbols_per_file_shape_and_self_calls() {
 
     // 模块级函数表 + 导入表。
     let functions = f["functions"].as_array().unwrap();
-    let helper = functions.iter().find(|fn_| fn_["name"] == "helper").unwrap();
+    let helper = functions
+        .iter()
+        .find(|fn_| fn_["name"] == "helper")
+        .unwrap();
     assert_eq!(helper["params"].as_array().unwrap().len(), 1);
     let imports = f["imports"].as_array().unwrap();
     let kb = imports.iter().find(|i| i["binding"] == "KBEngine").unwrap();
@@ -250,15 +284,25 @@ fn callgraph_keeps_same_named_methods_separate_across_files() {
     ]}));
     let nodes = result["nodes"].as_array().unwrap();
     let edges = result["edges"].as_array().unwrap();
-    let id = |path: &str, name: &str| nodes.iter().find(|n| n["filePath"] == path && n["name"] == name).unwrap()["id"].as_str().unwrap().to_string();
+    let id = |path: &str, name: &str| {
+        nodes
+            .iter()
+            .find(|n| n["filePath"] == path && n["name"] == name)
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
     assert_ne!(id("/base/Avatar.py", "act"), id("/cell/Avatar.py", "act"));
     for path in ["/base/Avatar.py", "/cell/Avatar.py"] {
-        let edge = edges.iter().find(|e| e["filePath"] == path && e["callee"] == "target").unwrap();
+        let edge = edges
+            .iter()
+            .find(|e| e["filePath"] == path && e["callee"] == "target")
+            .unwrap();
         assert_eq!(edge["callerId"], id(path, "act"));
         assert_eq!(edge["calleeId"], id(path, "target"));
     }
 }
-
 
 // --- KR-AUD-91 验收:跨文件身份(嵌套作用域/同 stem/多工作区) ---
 
@@ -266,9 +310,11 @@ fn callgraph_keeps_same_named_methods_separate_across_files() {
 fn kr_aud_91_nested_scope_edges_carry_file_identity() {
     // 嵌套 def 的调用边两端必须是带文件身份的 sym_ ID;
     // 两文件中同名嵌套函数 callerId 不混淆。
-    let src = |which: &str| format!(
+    let src = |which: &str| {
+        format!(
         "class Foo:\n def run(self):\n  def inner():\n   helper()\n  inner()\n\ndef helper():\n pass\n# {which}\n"
-    );
+    )
+    };
     let result = callgraph(json!({"files": [
         {"path": "/p/one/A.py", "text": src("one")},
         {"path": "/p/two/A.py", "text": src("two")}
@@ -280,14 +326,24 @@ fn kr_aud_91_nested_scope_edges_carry_file_identity() {
         .filter_map(|e| e["callerId"].as_str())
         .collect();
     assert_eq!(nested_caller_ids.len(), 2, "两文件各一条嵌套调用边");
-    assert_ne!(nested_caller_ids[0], nested_caller_ids[1], "同名嵌套函数必须按文件区分");
+    assert_ne!(
+        nested_caller_ids[0], nested_caller_ids[1],
+        "同名嵌套函数必须按文件区分"
+    );
     for e in edges {
         let caller_id = e["callerId"].as_str().expect("边缺 callerId");
         let callee_id = e["calleeId"].as_str().expect("边缺 calleeId");
-        assert!(caller_id.starts_with("sym_"), "callerId 非文件身份: {caller_id}");
-        assert!(callee_id.starts_with("sym_"), "calleeId 非文件身份: {callee_id}");
         assert!(
-            caller_id.contains("2f702f6f6e652f412e7079") || caller_id.contains("2f702f74776f2f412e7079"),
+            caller_id.starts_with("sym_"),
+            "callerId 非文件身份: {caller_id}"
+        );
+        assert!(
+            callee_id.starts_with("sym_"),
+            "calleeId 非文件身份: {callee_id}"
+        );
+        assert!(
+            caller_id.contains("2f702f6f6e652f412e7079")
+                || caller_id.contains("2f702f74776f2f412e7079"),
             "callerId 不含本文件路径 hex: {caller_id}"
         );
     }
@@ -326,8 +382,16 @@ fn kr_aud_91_same_stem_functions_keep_separate_nodes() {
             .iter()
             .find(|e| e["filePath"] == path && e["callee"] == "helper")
             .unwrap_or_else(|| panic!("{path} 缺 entry->helper 边"));
-        assert_eq!(edge["callerId"], node_id(path, "entry"), "callerId 未指向本文件节点");
-        assert_eq!(edge["calleeId"], node_id(path, "helper"), "calleeId 未指向本文件节点");
+        assert_eq!(
+            edge["callerId"],
+            node_id(path, "entry"),
+            "callerId 未指向本文件节点"
+        );
+        assert_eq!(
+            edge["calleeId"],
+            node_id(path, "helper"),
+            "calleeId 未指向本文件节点"
+        );
     }
 }
 
@@ -362,3 +426,19 @@ fn kr_aud_91_multi_workspace_same_relative_path_keeps_separate_nodes() {
         assert_eq!(edge["calleeId"], id_of(path, "boot"));
     }
 }
+
+/// KR-AUD-89(RSV-8 防回归登记):`file_stem` 只按 `/` 分割
+/// (python_callgraph.rs:161)——斜杠归一由上游负责(TS RPC 边界
+/// `normalizeCallGraphPath`),Rust 侧 debug_assert 锁死契约:Windows 反斜杠
+/// 路径若漏归一在此红,不静默产出 `dir\mod` 错 stem。
+#[test]
+#[should_panic(expected = "KR-AUD-89")]
+fn kr_aud_89_backslash_path_trips_upstream_normalization_contract() {
+    let _ = callgraph(json!({
+        "files": [
+            {"path": "scripts\\cell\\Avatar.py", "text": "def f():\n    pass\n"}
+        ],
+        "manifestXmlText": ""
+    }));
+}
+

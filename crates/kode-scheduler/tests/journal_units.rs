@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use kode_scheduler::{load_journal, write_journal, TaskKind};
+use kode_scheduler::{load_journal, write_journal, TaskKind, TaskRecord};
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let dir =
@@ -164,4 +164,19 @@ fn crash_recovery_replays_pending_and_drops_stale() {
     assert!(after.status().keyed_tasks.is_empty());
     assert_eq!(after.status().queued, 0);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn journal_tmp_name_has_no_double_dot_kraud24() {
+    // 旧实现 with_extension 拼临时名,无扩展名路径实测产出 `journal..tmp`(双点)。
+    // 修复后临时名 = 完整路径 + ".tmp"。
+    let no_ext = std::path::Path::new("/run/kbe/journal");
+    let tmp = kode_scheduler::journal::journal_tmp_path(no_ext);
+    assert_eq!(tmp, std::path::Path::new("/run/kbe/journal.tmp"));
+    assert!(!tmp.to_string_lossy().contains(".."));
+    // 带扩展名路径:临时名保持唯一后缀,不覆盖台账本体。
+    let with_ext = std::path::Path::new("/run/kbe/sched.bin");
+    let tmp2 = kode_scheduler::journal::journal_tmp_path(with_ext);
+    assert_eq!(tmp2, std::path::Path::new("/run/kbe/sched.bin.tmp"));
+    assert_ne!(tmp2, with_ext);
 }

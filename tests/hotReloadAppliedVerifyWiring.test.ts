@@ -357,13 +357,19 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
     receiver: { port: number },
     store: HotReloadTargetStateStore,
     clock: ReturnType<typeof makeTimers>,
-    realFile: string
+    realFile: string,
+    sentDigest?: string
   ): Promise<void> => {
     enableHotReload();
     setupHotReload(
       makeContext(),
       async (_name, sendOptions) => {
-        const response = await realHttpPost(receiver.port, JSON.stringify({ files: [realFile] }));
+        // F3 三轮:发送方冻结 digest 随报文下发(sender_digests)
+        const body: Record<string, unknown> = { files: [realFile] };
+        if (sentDigest !== undefined) {
+          body.sender_digests = { [realFile]: sentDigest };
+        }
+        const response = await realHttpPost(receiver.port, JSON.stringify(body));
         sendOptions?.onHttpResponse?.(response);
         return true;
       },
@@ -388,13 +394,22 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
     }
   };
 
-  it('真实接收端 applied 回包(digest=接收端重算):火线双证核验升格 applied', async () => {
-    const receiver = await startReferenceReceiver('apply', 'applied');
+  it('真实接收端 applied 回包(接收端自己写产物,digest=接收端重算):火线双证核验升格 applied', async () => {
+    // F3 四轮:applied 路径=接收端自己写产物——按报文 files 读到内容后由接收
+    // 端自身代码直接落盘引擎目录(--artifact-dir),写后重算 sha256 与报文
+    // sender_digests 比对一致才回 applied;外部应用命令模式已降级 accepted,
+    // 故这里不配 --apply-command,只配引擎产物目录。
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-engine-'));
+    const receiver = await startReferenceReceiver('apply', 'applied', undefined, engineDir);
     try {
-      const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-')), 'Avatar.py');
+      // F3 七轮:产物命名空间只认接收端暂存根内路径(根外整批拒绝)——所发
+      // 真实文件放进接收端暂存根;产物落位=根内相对路径映射(此处即 basename),
+      // 不再回落「绝对路径全结构展开」。
+      const realFile = path.join(receiver.root, 'Avatar.py');
       writeFileSync(realFile, CONTENT, 'utf8');
       const store = new HotReloadTargetStateStore({ now: () => 5 });
-      await wireRealReceiver(receiver, store, makeTimers(), realFile);
+      const sentDigest = createHash('sha256').update(Buffer.from(CONTENT, 'utf8')).digest('hex');
+      await wireRealReceiver(receiver, store, makeTimers(), realFile, sentDigest);
       await flush();
       await waitFor(() => store.get(KEY, realFile)?.outcome === 'applied');
 
@@ -403,19 +418,29 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
       expect(record?.detail).toContain('digest 一致');
       // 接收端重算的 digest 与所发内容一致(真实 wire 双证)
       expect(record?.sentDigest).toBe(createHash('sha256').update(Buffer.from(CONTENT, 'utf8')).digest('hex'));
-      rmSync(path.dirname(realFile), { recursive: true, force: true });
+      // 真实应用证据:引擎目录写入的产物与所发内容逐字一致(不是空操作假应用)。
+      // F3 七轮:realFile 在接收端暂存根内,产物落位=根内相对路径(basename)。
+      const artifactPath = path.join(engineDir, 'Avatar.py');
+      expect(readFileSync(artifactPath, 'utf8')).toBe(CONTENT);
     } finally {
       receiver.dispose();
+      rmSync(engineDir, { recursive: true, force: true });
     }
   });
 
   it('真实接收端 digest 不符回包(真 wire):保持未确认并注解阻塞', async () => {
-    const receiver = await startReferenceReceiver('apply', 'digest-mismatch');
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-engine-'));
+    // F3 四轮:接收端自己写产物模式(digest-mismatch 场景=回包 digest 故意报错)
+    const receiver = await startReferenceReceiver('apply', 'digest-mismatch', undefined, engineDir);
     try {
-      const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-')), 'Avatar.py');
+      // F3 七轮:产物命名空间只认接收端暂存根内路径(根外整批拒绝)——所发
+      // 真实文件放进接收端暂存根;产物落位=根内相对路径映射(此处即 basename),
+      // 不再回落「绝对路径全结构展开」。
+      const realFile = path.join(receiver.root, 'Avatar.py');
       writeFileSync(realFile, CONTENT, 'utf8');
       const store = new HotReloadTargetStateStore({ now: () => 5 });
-      await wireRealReceiver(receiver, store, makeTimers(), realFile);
+      const sentDigest = createHash('sha256').update(Buffer.from(CONTENT, 'utf8')).digest('hex');
+      await wireRealReceiver(receiver, store, makeTimers(), realFile, sentDigest);
       await flush();
       await waitFor(() => (store.get(KEY, realFile)?.detail ?? '').includes('digest 与所发内容不符'));
 
@@ -425,6 +450,7 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
       rmSync(path.dirname(realFile), { recursive: true, force: true });
     } finally {
       receiver.dispose();
+      rmSync(engineDir, { recursive: true, force: true });
     }
   });
 });

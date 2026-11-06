@@ -78,24 +78,21 @@ fn redundant_detail_level_fires_without_client_flag_and_not_with_client_flag() {
         "seed",
         "\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>CELL_PRIVATE</Flags>\n\t\t\t<DetailLevel>FAR</DetailLevel>\n",
     );
-    assert!(
-        checks(&redundant).contains(&"redundant-detail-level".to_string())
-    );
+    assert!(checks(&redundant).contains(&"redundant-detail-level".to_string()));
     let synced = prop(
         "pos",
         "\t\t\t<Type>VECTOR3</Type>\n\t\t\t<Flags>OTHER_CLIENTS</Flags>\n\t\t\t<DetailLevel>NEAR</DetailLevel>\n",
     );
-    assert!(
-        !checks(&synced).contains(&"redundant-detail-level".to_string())
-    );
+    assert!(!checks(&synced).contains(&"redundant-detail-level".to_string()));
 }
 
 #[test]
 fn invalid_identifier_fires_on_python_keyword_and_not_on_normal_name() {
-    let keyword = prop("class", "\t\t\t<Type>UINT8</Type>\n\t\t\t<Flags>BASE</Flags>\n");
-    assert!(
-        checks(&keyword).contains(&"invalid-identifier".to_string())
+    let keyword = prop(
+        "class",
+        "\t\t\t<Type>UINT8</Type>\n\t\t\t<Flags>BASE</Flags>\n",
     );
+    assert!(checks(&keyword).contains(&"invalid-identifier".to_string()));
     assert!(!checks(CLEAN_PROP).contains(&"invalid-identifier".to_string()));
 }
 
@@ -105,9 +102,7 @@ fn method_property_collision_fires_and_not_when_disjoint() {
 \t<Properties>\n\t\t<hp>\n\t\t\t<Type>UINT8</Type>\n\t\t\t<Flags>BASE</Flags>\n\t\t</hp>\n\t</Properties>\n\
 \t<BaseMethods>\n\t\t<hp>\n\t\t\t<Arg>INT8</Arg>\n\t\t</hp>\n\t</BaseMethods>\n\
 </root>\n";
-    assert!(
-        checks(colliding).contains(&"method-property-collision".to_string())
-    );
+    assert!(checks(colliding).contains(&"method-property-collision".to_string()));
     assert!(!checks(CLEAN_PROP).contains(&"method-property-collision".to_string()));
 }
 
@@ -117,9 +112,7 @@ fn engine_limited_name_fires_on_limited_and_not_on_normal() {
         "position",
         "\t\t\t<Type>VECTOR3</Type>\n\t\t\t<Flags>BASE</Flags>\n",
     );
-    assert!(
-        checks(&limited).contains(&"engine-limited-name".to_string())
-    );
+    assert!(checks(&limited).contains(&"engine-limited-name".to_string()));
     assert!(!checks(CLEAN_PROP).contains(&"engine-limited-name".to_string()));
 }
 
@@ -157,9 +150,7 @@ fn unknown_flag_value_fires_and_not_on_known_aliases() {
         "hp",
         "\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>NOT_A_FLAG</Flags>\n",
     );
-    assert!(
-        checks(&bad).contains(&"unknown-flag-value".to_string())
-    );
+    assert!(checks(&bad).contains(&"unknown-flag-value".to_string()));
     // CELL 别名(12 词表内)不命中。
     let alias = prop(
         "hp",
@@ -177,9 +168,7 @@ fn unknown_detail_level_fires_and_not_on_known_level() {
         "hp",
         "\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>BASE</Flags>\n\t\t\t<DetailLevel>ULTRA</DetailLevel>\n",
     );
-    assert!(
-        checks(&bad).contains(&"unknown-detail-level".to_string())
-    );
+    assert!(checks(&bad).contains(&"unknown-detail-level".to_string()));
     assert!(!checks(CLEAN_PROP).contains(&"unknown-detail-level".to_string()));
 }
 
@@ -191,8 +180,7 @@ fn duplicate_definition_fires_warning_info_pair_and_not_on_distinct_scopes() {
 \t\t<hp>\n\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>BASE</Flags>\n\t\t</hp>\n\
 \t</Properties>\n\
 </root>\n";
-    let findings = analyze_def(dup, &Default::default(), &[])
-        .expect("analyze_def ok");
+    let findings = analyze_def(dup, &Default::default(), &[]).expect("analyze_def ok");
     let dup_count = findings
         .iter()
         .filter(|f| f.check == "duplicate-definition")
@@ -220,9 +208,7 @@ fn duplicate_definition_fires_warning_info_pair_and_not_on_distinct_scopes() {
 #[test]
 fn missing_flags_fires_without_flags_and_not_with_flags() {
     let no_flags = prop("hp", "\t\t\t<Type>UINT32</Type>\n");
-    assert!(
-        checks(&no_flags).contains(&"missing-flags".to_string())
-    );
+    assert!(checks(&no_flags).contains(&"missing-flags".to_string()));
     assert!(!checks(CLEAN_PROP).contains(&"missing-flags".to_string()));
 }
 
@@ -239,8 +225,7 @@ fn unknown_type_reference_fires_without_corpus_and_not_with_known_type() {
     assert!(!checks(CLEAN_PROP).contains(&"unknown-type-reference".to_string()));
     // 语料提供 GHOST_TYPE 后不再报。
     assert!(
-        !checks_with_known(&ghost, &["GHOST_TYPE"])
-            .contains(&"unknown-type-reference".to_string()),
+        !checks_with_known(&ghost, &["GHOST_TYPE"]).contains(&"unknown-type-reference".to_string()),
         "语料已知类型不命中"
     );
 }
@@ -251,15 +236,17 @@ fn malformed_xml_yields_empty_findings() {
 }
 
 #[test]
-fn own_client_not_in_cell_domain_no_false_duplicate() {
-    // 同名属性一个 OWN_CLIENT(仅 client)、一个 CELL_PUBLIC(仅 cell):
-    // 域不相交,引擎允许共存,不应报 duplicate-definition。
-    // 旧 flag_scopes 把 OWN_CLIENT 归入 cell → 误报,此断言先红后绿。
+fn own_client_in_cell_domain_collides_like_engine() {
+    // KR-AUD-87 真值:ED_FLAG_OWN_CLIENT(0x10)∈ ENTITY_CELL_DATA_FLAGS
+    // (entitydef/common.h:43),引擎 loadDefPropertys 按 hasCellFlags 把
+    // OWN_CLIENT 属性注册进 cell map(entitydef.cpp:1288-1290),同名
+    // CELL_PUBLIC 属性在 cell map 命中 "is exist!"
+    // (scriptdef_module.cpp:588-593)→ 必须判重。
     let text = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>OWN_CLIENT</Flags>\n\t\t</hp>\n\t\t<hp>\n\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>CELL_PUBLIC</Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n";
     let findings = checks(text);
     assert!(
-        !findings.contains(&"duplicate-definition".to_string()),
-        "OWN_CLIENT 与 CELL_PUBLIC 域不相交,不应判重: {findings:?}"
+        findings.contains(&"duplicate-definition".to_string()),
+        "OWN_CLIENT 入 cell 域后与 CELL_PUBLIC 判重(引擎 cell map 冲突): {findings:?}"
     );
 }
 

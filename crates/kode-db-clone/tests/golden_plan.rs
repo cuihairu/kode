@@ -73,11 +73,7 @@ fn avatar_derived() -> CloneSchema {
     let mut gold = child_struct("tbl_Avatar_gold", "tbl_Avatar", "component");
     gold.fields.push(field("sm_amount", "int"));
 
-    CloneSchema::new(
-        "Avatar".into(),
-        vec![root, items, mods, inventory, gold],
-    )
-    .unwrap()
+    CloneSchema::new("Avatar".into(), vec![root, items, mods, inventory, gold]).unwrap()
 }
 
 /// 物理侧:与派生完全一致 + kbe_ 内部表 + 一张物理独有表(均须 deny)。
@@ -151,7 +147,10 @@ fn avatar_physical() -> VirtualSchema {
         ],
     );
     // 引擎内部表:派生侧无,kbe_ 前缀 → deny。
-    add("kbe_entitylog", &[("id", "bigint(20) unsigned"), ("log", "text")]);
+    add(
+        "kbe_entitylog",
+        &[("id", "bigint(20) unsigned"), ("log", "text")],
+    );
     // 物理独有未派生表:deny(禁止猜关系)。
     add("tbl_Unknown", &[("id", "bigint(20) unsigned")]);
     v

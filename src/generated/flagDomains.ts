@@ -27,8 +27,8 @@ export const FLAG_TOKEN_DOMAINS: Readonly<Record<string, readonly FlagDomain[]>>
   CELL_PRIVATE: ['cell'],
   ALL_CLIENTS: ['cell', 'client'],
   CELL_PUBLIC_AND_OWN: ['cell', 'client'],
-  OWN_CLIENT: ['client'],
-  OTHER_CLIENTS: ['client']
+  OWN_CLIENT: ['cell', 'client'],
+  OTHER_CLIENTS: ['cell', 'client']
 };
 
 /** 旗标别名归一(g_entityFlagMapping,entitydef.cpp L161:CELL → CELL_PUBLIC)。 */

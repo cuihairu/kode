@@ -31,7 +31,9 @@ export function classifySemanticFile(filePath: string): SemanticFileKind {
   if (normalized.endsWith('/alias.xml')) {
     return 'alias-xml';
   }
-  if (normalized.endsWith('entities.xml')) {
+  if (normalized === 'entities.xml' || normalized.endsWith('/entities.xml')) {
+    // KR-AUD-31:与 types.xml/alias.xml 同口径加 `/` 段锚(或裸文件名),
+    // `xxxentities.xml` 不再误判为实体注册表。
     return 'entities-xml';
   }
   if (normalized.endsWith('.py')) {
