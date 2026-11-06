@@ -159,15 +159,12 @@ describe('两语言包一致性(KODE-I18N-003)', () => {
     // 键在两包都不存在:落裸 key(退化路径,显式锁定该行为)
     expect(resolve('%kbengine.synthetic.missing%', {})).toBe('kbengine.synthetic.missing');
 
-    // 真实键:两包解析结果都等于各自包内文案(不落裸 key、不误回默认)
-    for (const cmd of commands) {
-      const match = NLS_TOKEN.exec(cmd.title);
-      if (!match) {
-        continue;
-      }
-      const key = match[1];
-      expect(resolve(cmd.title, nlsDefault)).toBe(nlsDefault[key]);
-      expect(resolve(cmd.title, nlsZhCn)).toBe(nlsZhCn[key]);
+    // 真实键:两包解析结果都等于各自包内文案(不落裸 key、不误回默认)——全键域
+    const allKeys = Object.keys(nlsDefault);
+    expect(Object.keys(nlsZhCn).sort()).toEqual(allKeys.sort());
+    for (const key of allKeys) {
+      expect(resolve(`%${key}%`, nlsDefault)).toBe(nlsDefault[key]);
+      expect(resolve(`%${key}%`, nlsZhCn)).toBe(nlsZhCn[key]);
     }
   });
 

@@ -49,6 +49,13 @@ async function main(): Promise<void> {
   if (panelOpenMode) {
     process.env.KODE_ELECTRON_SUITE = 'panelopen';
   }
+  // KODE-I18N-001 manifest %key% 真机解析:默认工作区即可,读解析后的
+  // extension.packageJSON 断言无裸 token 残留(真机层唯一能触达 VS Code
+  // 实际 locale 解析路径的面)
+  const manifestNlsMode = process.argv.includes('--manifestnls');
+  if (manifestNlsMode) {
+    process.env.KODE_ELECTRON_SUITE = 'manifestnls';
+  }
   const dirtyMode = process.argv.includes('--dirty');
   let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
