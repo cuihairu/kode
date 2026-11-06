@@ -1236,9 +1236,14 @@ impl Replayer {
             Some(p) => p,
             None => return Ok(()),
         };
-        // 引擎:parentClassName = getKey(enterNode("Parent")) = <Parent> 文本
-        // (entitydef.cpp:897-899),非元素名。
-        let parent_name = first_text(doc, parent_el);
+        // 引擎 entitydef.cpp:897-899:parentClassName =
+        // getKey(enterNode(defNode,"Parent"))——enterNode 返回 <Parent> 首个
+        // 非注释子节点,getKey=trim(Value)(xml.cpp:72-95/113-119):文本形态
+        // `<Parent> A </Parent>` 得 "A",元素形态 `<Parent><A/></Parent>` 得
+        // 元素名 "A"(KR-AUD-83;修前只取 first_text,元素形态得空串)。
+        let parent_name = engine_enter_node(doc, parent_el, "Parent")
+            .map(|node| engine_get_key(doc, node))
+            .unwrap_or_default();
         // KODE-AUD-006:活动栈保护——parent 链成环(A→B→A)不查 loaded_modules,
         // 递归无限栈溢出;loading 再遇即截断。处理完移除(错误传播前必先移除)。
         if !self.loading.insert(parent_name.clone()) {

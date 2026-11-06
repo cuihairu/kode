@@ -628,3 +628,47 @@ fn kr_aud_86_nested_array_dict_key_keeps_persistent() {
         "嵌套数组键(getDataType()->type()==FIXEDARRAY)不触发 persistent 覆盖"
     );
 }
+
+/// KR-AUD-83(RSV-4):`<Parent><Avatar/></Parent>` 元素形态——引擎
+/// entitydef.cpp:897-899 `parentClassName = getKey(enterNode(defNode,"Parent"))`,
+/// enterNode 返回 `<Parent>` 首个非注释子节点、getKey=trim(Value):
+/// 文本形态 `<Parent> BaseEnt </Parent>` 得 "BaseEnt",元素形态
+/// `<Parent><BaseEnt/></Parent>` 得元素名 "BaseEnt"(xml.cpp:72-95/113-119)。
+/// 修前只取 first_text,元素形态得空串 → "parent def not found: .def" 装载失败。
+#[test]
+fn kr_aud_83_parent_element_form_loads_parent_def() {
+    let mk = |parent_block: &str| {
+        DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Ghost hasCell=\"true\"></Ghost></root>".into(),
+        defs: [
+            (
+                "Ghost".to_string(),
+                format!("<root>{parent_block}</root>"),
+            ),
+            (
+                "BaseEnt".to_string(),
+                "<root><Properties><hp><Type> UINT32 </Type><Flags> BASE </Flags></hp></Properties></root>".to_string(),
+            ),
+        ]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    }
+    };
+    // 文本形态基线(引擎既有口径)。
+    let text_form = compute_def_md5(mk("<Parent> BaseEnt </Parent>")).expect("文本形态父类可装载");
+    // 元素形态:修前 Err,修后与文本形态同一父 def 内容 → 流相等。
+    let element_form =
+        compute_def_md5(mk("<Parent><BaseEnt/></Parent>")).expect("元素形态父类可装载");
+    assert_eq!(
+        text_form.stream_hex, element_form.stream_hex,
+        "文本/元素两形态解析出同一父类,md5 流必须一致"
+    );
+    // 父 def 的属性 hp 确实入流。
+    assert!(element_form.stream_hex.contains("6870"), "父类属性 hp 缺席");
+    // 无父基线必须不同(父内容真的并入)。
+    let without = compute_def_md5(mk("")).expect("无父基线");
+    assert_ne!(text_form.stream_hex, without.stream_hex, "父类内容必须入流");
+}
