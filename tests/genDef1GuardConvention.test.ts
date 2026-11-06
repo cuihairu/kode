@@ -215,6 +215,62 @@ describe('GEN-DEF-1: entity_types.pyi 实体类 __init__ is None 守卫', () => 
     expect(plan.content).not.toContain('__init__');
     expect(plan.content).not.toContain('is None');
   });
+
+  it('ARRAY 别名属性同口径守卫(别名链解析到容器)', () => {
+    // 用户令口径「FIXED_DICT/ARRAY 等引用型」含命名别名:ROOM_LIST 别名
+    // ARRAY<of UINT32>,kbe_types 发射 ROOM_LIST = FixedArray[int],运行时
+    // 容器是引擎 FixedArray——实体侧必须同守卫,不得因「注解是别名名」漏守。
+    const arrayAlias: CustomTypeInfo = {
+      ...fixedDictType,
+      name: 'ROOM_LIST',
+      aliasType: 'ARRAY',
+      rawValue: 'ARRAY',
+      structure: { name: 'ARRAY', rawValue: 'ARRAY', children: [], line: 4 },
+      properties: []
+    };
+    const mapping = mappingOf(
+      'Gatekeeper',
+      { rooms: { line: 11 } },
+      [{ name: 'rooms', line: 11, typeName: 'ROOM_LIST' }]
+    );
+    const plan = buildEntityTypeStubPlan([mapping], [arrayAlias, plainAlias]);
+    expect(plan.content).toContain('    rooms: ROOM_LIST');
+    expect(plan.content).toContain('        if self.rooms is None:');
+    expect(plan.content).toContain('            self.rooms = []');
+  });
+
+  it('FIXED_DICT 别名(别名指向命名类型)同口径守卫', () => {
+    // 别名链 CHAR_PROFILE → ITEM_INFO(FIXED_DICT):kbe_types 发射
+    // CHAR_PROFILE = ITEM_INFO,运行时 FixedDict——实体侧同守卫 '{}'.
+    const dictAlias: CustomTypeInfo = {
+      ...fixedDictType,
+      name: 'CHAR_PROFILE',
+      aliasType: 'ITEM_INFO',
+      rawValue: 'ITEM_INFO',
+      structure: { name: 'ITEM_INFO', rawValue: 'ITEM_INFO', children: [], line: 5 },
+      properties: []
+    };
+    const mapping = mappingOf(
+      'Knight',
+      { profile: { line: 13 } },
+      [{ name: 'profile', line: 13, typeName: 'CHAR_PROFILE' }]
+    );
+    const plan = buildEntityTypeStubPlan([mapping], [fixedDictType, dictAlias]);
+    expect(plan.content).toContain('    profile: CHAR_PROFILE');
+    expect(plan.content).toContain('        if self.profile is None:');
+    expect(plan.content).toContain('            self.profile = {}');
+  });
+
+  it('简单别名(UINT32)不守卫(别名链解析到简单类型)', () => {
+    const mapping = mappingOf(
+      'Squire',
+      { hp: { line: 9 } },
+      [{ name: 'hp', line: 9, typeName: 'PLAYER_ID' }]
+    );
+    const plan = buildEntityTypeStubPlan([mapping], [fixedDictType, plainAlias]);
+    expect(plan.content).toContain('    hp: PLAYER_ID');
+    expect(plan.content).not.toContain('__init__');
+  });
 });
 
 describe('GEN-DEF-1: codeGenerator 实体脚本 __init__ 守卫', () => {

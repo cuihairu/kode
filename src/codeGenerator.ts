@@ -769,7 +769,11 @@ export class KBEngineCodeGenerator {
    * 仅容器引用型生成:ARRAY(<of> 内联或裸)→ '[]';本实体在 types.xml 登记
    * 的 FIXED_DICT 命名类型(entityWizard.fixedDictTypeName:<Entity>State)
    * → '{}';其余(内建/别名/未知名)一律 null 不守卫——没有注册表可依时
-   * 不猜,与向导 containerGuardProperties 同口径。
+   * 不猜,与向导 containerGuardProperties 同口径。已知取舍:该生成器运行时
+   * 无 types.xml 注册表(FIXED_DICT 命名类型恰由同事务
+   * appendFixedDictTypeToTypesXml 首次登记),<Entity>State 判定是命名约定
+   * 耦合——漏守(他名 FIXED_DICT)保守安全;误守仅在用户手工把同名注册成
+   * 简单别名的边缘出现(如实记录于 docs/review 审计报告)。
    */
   private containerGuardEmptyOf(typeName: string, entityName: string): '[]' | '{}' | null {
     const trimmed = typeName.trim();

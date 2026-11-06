@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { beforeAll, afterEach, describe, it } from 'vitest';
+import { beforeAll, afterEach, describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
 import { EntityMappingManager } from '../src/entityMapping';
 import { buildEntityTypeStubPlan, buildEntityTypeStubLineMap } from '../src/entityTypeStubs';
@@ -102,13 +102,22 @@ const syntheticTypes: CustomTypeInfo[] = [
   }
 ];
 
+const mapToObject = (map: ReadonlyMap<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries([...map.entries()].map(([key, value]) => [
+    key,
+    value instanceof Map ? mapToObject(value) : value
+  ]));
+
 const dumpEntityArtifacts = (
   label: string,
   mappings: readonly EntityMapping[],
   customTypes: readonly CustomTypeInfo[],
   workspaceRoot: string | undefined
 ): void => {
+  // 审计有效性闸:夹具必须真出实体存根,空产物即审计失效(防夹具缺席假绿)
+  expect(mappings.length, `${label}: entity mappings must be populated`).toBeGreaterThan(0);
   const plan = buildEntityTypeStubPlan(mappings, customTypes, { workspaceRoot });
+  expect(plan.content, `${label}: entity stub content must not be null`).not.toBeNull();
   writeFileSync(join(OUT_DIR, `${label}_entity_types.pyi`), plan.content ?? '');
   const modules = new Map<string, string>();
   const typePlan = buildPythonTypeStubPlan(customTypes);
@@ -116,9 +125,13 @@ const dumpEntityArtifacts = (
     modules.set(entry.name, 'scripts.entity_defs.kbe_types');
   }
   const lineMap = buildEntityTypeStubLineMap(plan.entries, customTypes, modules);
-  writeFileSync(join(OUT_DIR, `${label}_entity_line_map.json`), JSON.stringify(lineMap, null, 2));
+  // Map 必须显式序列化(JSON.stringify(Map) → {} 是假审计)
+  writeFileSync(join(OUT_DIR, `${label}_entity_line_map.json`), JSON.stringify({
+    propertyLines: mapToObject(lineMap?.propertyLines ?? new Map())
+  }, null, 2));
   const text = plan.content ?? '';
   writeFileSync(join(OUT_DIR, `${label}_guard_audit.txt`), [
+    `entities = ${plan.entries.length}`,
     `is None guards = ${(text.match(/is None/g) ?? []).length}`,
     `if not self. = ${(text.match(/if not self\./g) ?? []).length}`,
     `__init__ blocks = ${(text.match(/def __init__/g) ?? []).length}`
@@ -162,10 +175,15 @@ describe('GEN-DEF-1 regeneration audit dump', () => {
       dumpEntityArtifacts('demo', mappings, getCustomTypeInfos(DEMO_ROOT), DEMO_ROOT);
     });
     const typePlan = buildPythonTypeStubPlan(getCustomTypeInfos(DEMO_ROOT));
+    expect(typePlan.content, 'demo kbe_types content must not be null').not.toBeNull();
     writeFileSync(join(OUT_DIR, 'demo_kbe_types.pyi'), typePlan.content ?? '');
+    const demoTypeMap = buildPythonTypeStubLineMap(typePlan.entries);
     writeFileSync(
       join(OUT_DIR, 'demo_kbe_types_line_map.json'),
-      JSON.stringify(buildPythonTypeStubLineMap(typePlan.entries), null, 2)
+      JSON.stringify({
+        entryLines: mapToObject(demoTypeMap?.entryLines ?? new Map()),
+        propertyLines: mapToObject(demoTypeMap?.propertyLines ?? new Map())
+      }, null, 2)
     );
   });
 
@@ -177,10 +195,15 @@ describe('GEN-DEF-1 regeneration audit dump', () => {
       dumpEntityArtifacts('fantasydemo', mappings, getCustomTypeInfos(fantasyRoot), fantasyRoot);
     });
     const typePlan = buildPythonTypeStubPlan(getCustomTypeInfos(fantasyRoot));
+    expect(typePlan.content, 'fantasydemo kbe_types content must not be null').not.toBeNull();
     writeFileSync(join(OUT_DIR, 'fantasydemo_kbe_types.pyi'), typePlan.content ?? '');
+    const fantasyTypeMap = buildPythonTypeStubLineMap(typePlan.entries);
     writeFileSync(
       join(OUT_DIR, 'fantasydemo_kbe_types_line_map.json'),
-      JSON.stringify(buildPythonTypeStubLineMap(typePlan.entries), null, 2)
+      JSON.stringify({
+        entryLines: mapToObject(fantasyTypeMap?.entryLines ?? new Map()),
+        propertyLines: mapToObject(fantasyTypeMap?.propertyLines ?? new Map())
+      }, null, 2)
     );
   });
 

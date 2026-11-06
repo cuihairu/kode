@@ -131,6 +131,8 @@ interface EntityStubContext {
   customTypes: ReadonlyMap<string, CustomTypeInfo>;
   /** kbe_types.pyi 真实发射的自定义类型名(类 + 别名)→ 其分件镜像模块路径 */
   customTypeModules: ReadonlyMap<string, string>;
+  /** 守卫判定别名链解析用(pythonTypeStubs 解析链吃数组形态) */
+  customTypeList: readonly CustomTypeInfo[];
 }
 
 function annotationForDefType(
@@ -202,7 +204,8 @@ export function buildEntityTypeStubPlan(
 ): EntityTypeStubPlan {
   const context: EntityStubContext = {
     customTypes: new Map(customTypes.map(info => [info.name, info])),
-    customTypeModules: collectCustomTypeModules(customTypes, options.workspaceRoot)
+    customTypeModules: collectCustomTypeModules(customTypes, options.workspaceRoot),
+    customTypeList: customTypes
   };
   // 方法面开关(用户令 2026-10-21):默认含方法面;includeMethods=false 时
   // 方法表整体留空,只有方法的实体随之落出存根(属性面不受影响)。
@@ -285,10 +288,13 @@ export function buildEntityTypeStubPlan(
 
 /**
  * GEN-DEF-1(用户令 2026-11-02,源码已核实):容器属性的 __init__ is None 守卫
- * 复位值——仅引用型(FIXED_DICT/ARRAY)生成;简单类型与落 Any 的 poisoned 名
- * 返回 undefined(不守卫)。判定与注解同链:FixedArray[...] → '[]';注解名恰
- * 为 kbe_types.pyi 实际发射的 FIXED_DICT 自定义类型 → '{}'。禁 `if not self.`
- * 形态(falsy 判断会把引擎合法默认 0/""/[] 误判并重建,引用失效)。
+ * 复位值——仅引用型(FIXED_DICT/ARRAY,含命名别名)生成;简单类型与落 Any 的
+ * poisoned 名返回 undefined(不守卫)。判定与注解同链:a) FixedArray[...] 直译
+ * → '[]';b) 其余走 pythonTypeStubs 同一别名解析链(resolveAnnotationType-
+ * WithRegistry,环检测/级联跳过全复用,禁第二套)——链尾落到 FixedArray[...]
+ * (ARRAY 别名)→ '[]';链尾是 kbe_types.pyi 实际发射的 FIXED_DICT 类名
+ * (直接定义或别名指向)→ '{}'。禁 `if not self.` 形态(falsy 判断会把引擎
+ * 合法默认 0/""/[] 误判并重建,引用失效)。
  */
 function guardNoneEmptyOf(
   annotation: string,
@@ -297,10 +303,14 @@ function guardNoneEmptyOf(
   if (annotation.startsWith('FixedArray[')) {
     return '[]';
   }
-  const customType = context.customTypes.get(annotation);
+  const resolved = resolveAnnotationTypeWithRegistry(annotation, context.customTypeList);
+  if (resolved.startsWith('FixedArray[')) {
+    return '[]';
+  }
+  const target = context.customTypes.get(resolved);
   if (
-    customType?.aliasType === 'FIXED_DICT' &&
-    context.customTypeModules.has(annotation)
+    target?.aliasType === 'FIXED_DICT' &&
+    context.customTypeModules.has(resolved)
   ) {
     return '{}';
   }
