@@ -44,6 +44,11 @@ async function main(): Promise<void> {
   const lintFixMode = process.argv.includes('--lintfix');
   const delFileMode = process.argv.includes('--delfile');
   const renameMode = process.argv.includes('--rename');
+  // 面板打开冒烟(热更/运行时查询等):默认工作区即可,不装配 demo/field 夹具
+  const panelOpenMode = process.argv.includes('--panelopen');
+  if (panelOpenMode) {
+    process.env.KODE_ELECTRON_SUITE = 'panelopen';
+  }
   const dirtyMode = process.argv.includes('--dirty');
   let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
