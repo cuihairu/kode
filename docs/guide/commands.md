@@ -661,6 +661,27 @@ The flow graph panel supports:
   - The session panel's currently selected target goes first; with nothing selected or no session on it, the first connected target is taken
   - With no connected session it says so honestly, no spinning
 
+### `kbengine.bots.add`
+
+- Title: `KBEngine: Add Bots (telnet addBots)`
+- Purpose: drive the engine `bots` process (the client-simulator load tool) to add simulated clients at runtime — the local closed loop (IDE-BOT-001); the bots process carries its own telnet python layer (default port 51000), so no process restart is involved
+- Inputs: total count (≥1, required); optional batching — per-batch count (≥1) and interval seconds (≥0, empty = 0); leaving the batch empty sends one-shot
+- Behavior:
+  - The command string mirrors the engine API form exactly: one-shot `KBEngine.addBots(5)`, batched `KBEngine.addBots(1000, 5, 10)`
+  - The whitelist gate is never bypassed: addBots is a write operation (mass login), so with `"KBEngine.addBots"` missing from `kbengine.telnet.enableCommands` the command refuses to send and names the exact entry to add
+  - When the count query is whitelisted too (`"len(KBEngine.bots)"`), the current bot count is queried right after adding and written to the output channel
+  - Honest bounds: the engine has no per-bot destroy API (the `KBEngine.bots` dict is read-only) — reducing bots = stopping the bots process; every send writes this into the output channel, and no per-bot metrics are fabricated
+  - Failure modes are honest: no bots telnet target (telnet not configured, or a single custom port excludes component targets) → told how the target derives; session not ready within the bounded wait → reported, nothing sent
+
+### `kbengine.bots.count`
+
+- Title: `KBEngine: Query Bot Count (len(KBEngine.bots))`
+- Purpose: query the current bot count through the bots telnet python layer
+- Behavior:
+  - Sends `len(KBEngine.bots)` over the bots target's session and reads the result line within a bounded wait (~2s); the parsed number goes to the output channel
+  - No numeric line in time is reported as such — no fabricated count
+  - Requires `"len(KBEngine.bots)"` in `kbengine.telnet.enableCommands` (read-only, but not a built-in quick command); a missing entry is named in the error
+
 ### `kbengine.playerData.refresh`
 
 - Title: `Refresh Player Data Profile`

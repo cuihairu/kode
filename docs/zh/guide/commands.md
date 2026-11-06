@@ -643,6 +643,27 @@ callgraph 模式面板支持：
   - 优先断开会话面板当前选中的目标；未选中或选中目标无会话时取首个已连接目标
   - 没有已连接的会话时如实提示，不空转
 
+### `kbengine.bots.add`
+
+- 标题：`KBEngine: Add Bots (telnet addBots)`
+- 作用：驱动引擎 `bots` 进程（模拟客户端压测工具）在运行时添加模拟客户端——本地单机闭环（IDE-BOT-001）；bots 进程自带 telnet python 层（默认端口 51000），无需重启进程
+- 输入：机器人总数（≥1，必填）；可选分批——每批数量（≥1）与批次间隔秒（≥0，留空按 0）；每批数量留空则一次性添加
+- 行为：
+  - 命令串严格镜像引擎 API 形态：一次性 `KBEngine.addBots(5)`，分批 `KBEngine.addBots(1000, 5, 10)`
+  - 白名单闸不绕：addBots 是写操作（批量登录），`kbengine.telnet.enableCommands` 缺 `"KBEngine.addBots"` 时拒绝发送并报出该加的条目
+  - 计数命令也在白名单（`"len(KBEngine.bots)"`）时，添加后随即查询当前 bot 数并写入输出通道
+  - 诚实边界：引擎无逐个销毁 API（`KBEngine.bots` 字典只读）——减员 = 停止 bots 进程；每次发送都把这一点写进输出通道，不编造逐机器人指标
+  - 失败形态如实：无 bots telnet 目标（telnet 未配置，或显式单一端口不含组件目标）→ 提示目标派生方式；有界等待内会话未就绪 → 如实报告，不发送
+
+### `kbengine.bots.count`
+
+- 标题：`KBEngine: Query Bot Count (len(KBEngine.bots))`
+- 作用：经 bots telnet python 层查询当前机器人数量
+- 行为：
+  - 在 bots 目标会话上发送 `len(KBEngine.bots)`，有界等待（约 2 秒）内读结果行；解析出的数字写入输出通道
+  - 到时未读到数字行就如实说未读到，不编造数量
+  - 需 `kbengine.telnet.enableCommands` 含 `"len(KBEngine.bots)"`（只读，但不在内置快捷命令内）；缺项时错误信息点名该条目
+
 ### `kbengine.playerData.refresh`
 
 - 标题：`Refresh Player Data Profile`
