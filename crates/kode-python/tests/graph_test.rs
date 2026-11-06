@@ -661,6 +661,30 @@ fn aliased_and_unaliased_same_binding_conflict_gives_up_edge() {
 }
 
 #[test]
+fn same_target_import_with_and_without_alias_keeps_edge() {
+    // 复审第十三轮残余:别名与否不是目标身份——`import a` 与 `import a as a`
+    // (或 `from p import x` 与 `from p import x as x`)绑定名相同且解析后
+    // 目标相同,一致性检查不得因 aliased 标志不同判冲突放弃(漏边向)。
+    let zcaller = "import a\nimport a as a\n\ndef battle():\n    a.f()\n";
+    let amod = "def f():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/a.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, amod)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "同目标的别名/无别名重复 import 应保留真边, got {rev:?}"
+    );
+}
+
+#[test]
 fn rust7_cross_process_edge_marked_uncertain_not_silent() {
     // RUST-7:`self.cell.*`/`self.base.*` 跨进程边被调方文件无法静态解析
     // (实体类在另一进程侧文件里)。旧行为:落进 self.* 分支按「同类」折叠

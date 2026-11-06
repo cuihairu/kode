@@ -16,7 +16,7 @@ use std::collections::BTreeSet;
 
 use kode_vfs::store::DocumentKey;
 
-use crate::model::{AstSymbols, CallEdge};
+use crate::model::{AstImport, AstSymbols, CallEdge};
 
 /// 调用图(按文件分组或聚合)。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -205,33 +205,32 @@ fn resolve_callee_file(
                             return None;
                         }
                         // 同名多次 import 目标不同 = 目标身份冲突,静态不
-                        // 裁决 → 放弃(复审第十/十二轮残余:别名与否同为
-                        // 目标身份,`import a.b` 与 `import a.b as a` 绑定
-                        // 名相同但目标不同,不得判一致)。
+                        // 裁决 → 放弃(复审第十/十二轮残余)。一致性按解析
+                        // 后目标 basename 判:别名与否不是目标身份,`from p
+                        // import x` 与 `from p import x as x`(或 `import a`
+                        // 与 `import a as a`)目标相同不得判冲突(第十三轮
+                        // 残余);`import a.b` 与 `import a.b as a` 解析后
+                        // 分别为 a 与 b,仍冲突。
+                        let resolve_base = |i: &AstImport| -> String {
+                            if i.is_from {
+                                i.symbol.clone().unwrap_or_else(|| i.binding.clone())
+                            } else if !i.aliased {
+                                i.module.split('.').next().unwrap_or("").to_string()
+                            } else {
+                                i.module.rsplit('.').next().unwrap_or("").to_string()
+                            }
+                        };
                         let first = hits[0];
                         let consistent = hits.iter().all(|t| {
                             t.is_from == first.is_from
                                 && t.module == first.module
                                 && t.symbol == first.symbol
-                                && t.aliased == first.aliased
+                                && resolve_base(t) == resolve_base(first)
                         });
                         if !consistent {
                             return None;
                         }
-                        let base = if first.is_from {
-                            // from pkg import x → 目标模块 basename=x(pkg/x.py)。
-                            first.symbol.clone().unwrap_or_else(|| module.to_string())
-                        } else if !first.aliased {
-                            // 无别名 import a.b 绑定的是顶层包 a → basename=a
-                            // (与函数层收集器同口径;复审第十轮残余①)。
-                            first.module.split('.').next().unwrap_or("").to_string()
-                        } else {
-                            // 有别名 import a.b as c 绑定 c=a.b → basename=b
-                            // (复审第十一轮残余①;按显式别名标志判定,别名恰
-                            // 为首段名 `import a.b as a` 亦取末段,不误指 a.py
-                            // ——复审第十二轮残余)。
-                            first.module.rsplit('.').next().unwrap_or("").to_string()
-                        };
+                        let base = resolve_base(first);
                         find_module_file(file_symbols, &base, caller_file)
                     }
                 }
