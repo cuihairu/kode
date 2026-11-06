@@ -72,7 +72,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.enableDiagnostics` | boolean | `true` | `.def` 诊断总开关(批147 起同管 entities.xml 同名重复登记检查) |
 | `kbengine.enableStructureDiagnostics` | boolean | `true` | 结构化校验开关(重复属性/方法、子标签位置、缺字段、字段重复定义) |
 | `kbengine.receiverNoneDiagnostics` | boolean | `true` | Python 侧诊断:`self.client`/`self.cell`/`self.base` 成员引用无判空 guard(正向 if、早退、别名；hasattr 不代表非 None)报 Warning 并附引擎源码;同时检查 `.def` 段错配(经接收者调用其对应 section 未声明的方法) |
-| `kbengine.configContractDiagnostics` | boolean | `true` | 工作区配置层只读契约检查(工作区级):`.kbengine/debug.json` 的 `components` 空/缺、已知组件 telnet 端口缺失或偏离引擎默认、telnet 段被注释、JSON 不可解析;`python.analysis.extraPaths` 含 `../..` 双层上跳或指向不存在目录;`.gitignore` 缺 `.kbengine/`;CLAUDE.md/README 声明的 telnet 密码/端口与 debug.json 实值冲突。每条 finding 报 Warning 附中英修复建议;激活首扫、契约文件打开/保存即扫、变更即重算。仅在存在 `.kbengine/` 托管目录的工作区启用(其余工作区零噪声) |
+| `kbengine.configContractDiagnostics` | boolean | `true` | 工作区配置层只读契约检查(工作区级):`.kbengine/debug.json` 的 `components` 空/缺、已知组件 telnet 端口缺失或偏离引擎默认、telnet 段被注释、JSON 不可解析;`python.analysis.extraPaths` 含 `../..` 双层上跳、指向不存在目录,或 `python.analysis.extraPaths` 绝对路径条目(`kbengine.configContract.extraPathsAbsolute`);`.gitignore` 缺 `.kbengine/`;CLAUDE.md/README 声明的 telnet 密码/端口与 debug.json 实值冲突。每条 finding 报 Warning 附中英修复建议;激活首扫、契约文件打开/保存即扫、变更即重算。仅在存在 `.kbengine/` 托管目录的工作区启用(其余工作区零噪声) |
 | `kbengine.attributeNoneDiagnostics` | boolean | `true` | Python 侧诊断:用户自管属性(非 `.def` 声明)`self.<属性>` 的类型收敛含 None 且当前位未窄化时,成员访问/调用前判空报 Warning(流敏感:`__init__` 赋值收敛、`is None`/`is not None` 守卫与早退均参与窄化) |
 | `kbengine.propertyDirectionDiagnostics` | boolean | `true` | Python 侧诊断:def 属性访问方向违规——`self.<属性>`/`self.<role>.<属性>` 的访问位置(裸访问取进程作用域、接收者限定取接收者角色)不在属性 Flags 推导的三域位内时报 Warning;文件作用域无法确定(不在 `scripts/base|cell|client`)时降级为 Information(不标 Error) |
 | `kbengine.readOnlyWriteDiagnostics` | boolean | `true` | Python 侧诊断:实体脚本对引擎内建只读属性(`self.id`/`self.isDestroyed`/`self.className` 及各面只读项)的普通赋值/增强赋值/注解赋值/del 报 Warning(引擎仅 GET,写入运行时被拒);合法可写属性(`self.position`、`self.shouldAutoBackup` 等)与非实体脚本同名字段不报 |
@@ -159,7 +159,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | --- | --- | --- | --- |
 | `kbengine.entityDefsPath` | string | `scripts/entity_defs` | 实体定义目录(实体浏览器列表、`entities.xml` 跳转、生成器 `.def` 输出) |
 | `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` 路径(依赖图读取与实体注册) |
-| `kbengine.binPath` | string | `${workspaceFolder}/../kbe/bin/server` | 引擎二进制目录;兼推引擎根(`KBE_ROOT`)与引擎默认配置路径 |
+| `kbengine.binPath` | string | `${workspaceFolder}/kbe/bin/server` | 引擎二进制目录;兼推引擎根(`KBE_ROOT`)与引擎默认配置路径。未显式配置时(CFG-01):默认值在盘即生效,不在盘回落自动发现扫描,扫描也落空才由启动检查链报警 |
 | `kbengine.assetsRoot` | string | `""` | 资产根目录(其下含 `res/`、`scripts/`),留空自动发现 |
 | `kbengine.engineVersion` | string | `3.7.3` | 集成的 KBEngine 引擎版本(魔改 fork 填自定义版本号如 `fork-3.12`);知识库分层标注与诊断按此值做版本门控;`fork-` 前缀值还会对 fork 档 KBEngine API 参考条目抑制「需 fork」标注(补全与导出存根),自定义 fork 版本未带前缀则保留标注(保守口径——宁多提示不漏报);打开项目时若引擎安装目录版本标记与此值不同会给出设置建议(一键提供、绝不自动改、忽略按工作区记住) |
 | `kbengine.gitHistory.enabled` | boolean | `true` | 文件 Git 历史功能开关(IDE-GIT-001):开启时出现「查看文件历史 / 查看选中范围历史」入口(资源管理器/编辑器右键+命令面板),仅在用户点开入口时按需查询 Git(激活/打开文件/光标/选区变化绝不运行 Git,不预取不轮询);关闭后入口隐藏,直接调用命令也不运行任何 Git |
@@ -181,10 +181,10 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 #### `kbengine.binPath`
 
-- 类型:string;默认 `${workspaceFolder}/../kbe/bin/server`
+- 类型:string;默认 `${workspaceFolder}/kbe/bin/server`(CFG-01:默认假设引擎在工作区自身内;旧默认 `${workspaceFolder}/../kbe/bin/server` 仍由兄弟目录扫描候选覆盖)
 - 支持占位符:`${workspaceFolder}`、`${env:VAR}`
 - 用途:① 启动/停止组件进程;② 推导引擎根(`KBE_ROOT`)与引擎默认配置路径——把路径末尾的 `kbe/bin/server` 换成 `kbe/res/server/kbengine_defaults.xml`
-- 批125 起未配置时优先按引擎源码根锚点(`kbe/src/lib/entitydef/entitydef.cpp`、`entity_table_mysql.cpp` 等)推导 `kbe/bin/server`,再退兄弟目录猜测
+- 三分支解析(CFG-01):用户显式配置值权威(显式值不在盘也原样保留,由启动检查链报警);未配置时默认值在盘即直接生效,不在盘回落自动发现扫描(引擎源码根锚点 → 兄弟目录 → `KBENGINE_HOME`),扫描也落空 `getBinPath` 返回空串,由启动检查链报「找不到引擎」
 - 误配:没指到 `kbe/bin/server` 这一级 → 服务器启动失败,最终配置视图和 defaults 数值回落也不可用;此时 `kbengine.config.showFinal` 会明示报错,激活自动打开则静默跳过
 
 #### `kbengine.assetsRoot`
@@ -244,11 +244,15 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 ### Python 集成
 
+**解释器解析链（PY-ENV）** —— profile 解释器按此链解析：`kbengine.python.interpreterPath` 设置（文件存在才采用，支持 `${workspaceFolder}`）→ 工作区虚拟环境扫描 → PATH 上的 `python3`/`python` → 如实记缺失状态（绝不伪造路径）。工作区扫描（PY-ENV 二期）以工作区根为起点按深度封顶（3）走查，跳过 `node_modules`/`target`/`.git` 等依赖/构建目录，且只认真实证据——`pyvenv.cfg`（venv）或 `conda-meta/`（conda）加盘上已验证的解释器二进制（`bin/python`，Windows 走 `Scripts/python.exe`）；损坏目录绝不认领。`kbengine.python.venvDirectories` 名单作为同深度优先提示，不是门。
+
+**解释器状态栏与一键创建 venv** —— 状态栏项显示当前解释器及其来源徽标（`auto` 发现 / `configured` 设置 / `PATH`），点击（`kbengine.python.selectInterpreter`）进 QuickPick，选中即写入 `kbengine.python.interpreterPath`（workspace 级）并即刻生效；列表尾「创建新 venv…」（`kbengine.python.createVenv`）在进度通知里跑 `python -m venv`（基础解释器只走 PATH 链——缺失时在任何 spawn 之前如实拒绝），并自动选用验真的新环境。命令面见 commands 指南的 `kbengine.python.selectInterpreter` / `kbengine.python.createVenv` 小节。
+
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `kbengine.python.interpreterPath` | string | 空 | 项目 profile 连来源一并记录的 Python 解释器路径:本设置存在才采用(支持 `${workspaceFolder}`);否则按工作区 venv 目录名清单自动发现(见 `venvDirectories`,探测 `<root>/<name>/bin/python`,Windows 走 `Scripts/python.exe`);否则定位 PATH 里的 python3/python;都找不到时 profile 如实记缺失状态,不伪造路径 |
-| `kbengine.python.venvDirectories` | string[] | `[".venv", "venv", ".kbenv"]` | 虚拟环境目录名清单(单段目录名,不含路径分隔符):快速执行动作启用 venv 且未写 `venv.path` 时,按此清单在动作目录与配置根逐名探测(动作目录优先);解释器链在 `interpreterPath` 为空时按此清单在 workspaceRoot 下探测 `<name>/bin/python`(Windows 走 `Scripts/python.exe`)。非数组或全无效回落默认 |
-| `kbengine.python.extraPathsSync` | boolean | `true` | 自动把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`(WorkspaceFolder 级;只管理本扩展写入的那一段,用户手填路径不动;无变化不写)。关掉后 `kbengine.python.syncExtraPaths` 命令只说明不写 |
+| `kbengine.python.interpreterPath` | string | 空 | 项目 profile 连来源一并记录的 Python 解释器路径:本设置存在才采用(支持 `${workspaceFolder}`);否则工作区扫描已验证环境(`pyvenv.cfg`/`conda-meta` 证据 + 解释器二进制,深度封顶、依赖/构建目录剪枝);否则定位 PATH 里的 python3/python;都找不到时 profile 如实记缺失状态,不伪造路径 |
+| `kbengine.python.venvDirectories` | string[] | `[".venv", "venv", ".kbenv"]` | 虚拟环境目录名清单(单段目录名,不含路径分隔符):快速执行动作启用 venv 且未写 `venv.path` 时,按此清单在动作目录与配置根逐名探测(动作目录优先);解释器链在 `interpreterPath` 为空时把该清单作为工作区环境扫描的同深度优先提示。非数组或全无效回落默认 |
+| `kbengine.python.extraPathsSync` | boolean | `true` | 自动把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`(WorkspaceFolder 级)。生成的 `python.analysis.extraPaths` 条目一律写成 `${workspaceFolder}/...` 变量形态;工作区前缀可替换的存量绝对路径在下次同步时自动迁移,不可替换的绝对路径由 `kbengine.configContract.extraPathsAbsolute` 报出。只管理本扩展写入的那一段(除该工作区前缀迁移外用户手填路径原样保留;无变化不写)。关掉后 `kbengine.python.syncExtraPaths` 命令只说明不写 |
 | `kbengine.python.stubExport` | boolean | `true` | 自动把内置 KBEngine Python API 索引(与补全/悬停/跳转同源)导出为 `KBEngine.pyi` 存根,并把 types.xml 自定义类型导出为 `kbe_types.py` 类型桩(`FIXED_DICT`→`TypedDict`、别名→类型名),配合 extraPaths 接线供 Pylance 解析 `import KBEngine`/`import kbe_types`(虚拟桩文档 Python 扩展看不见)。激活期静默自动一次,`kbengine.python.exportStubs`/`kbengine.python.exportTypeStubs` 手动入口 |
 | `kbengine.python.stubDir` | string | 空 | `.pyi` 存根目录,三级解析:设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `.kbengine/stubs`。支持 `${workspaceFolder}`/`${env:NAME}` 等 VS Code 变量;相对路径按工作区根拼接,绝对路径原样使用 |
 | `kbengine.python.stubEngineTypings` | boolean | `true` | `KBEngine.pyi` 导出优先拼接本地引擎 checkout 的 typings 全量 API(默认开);关掉回落 kode 自带精选目录。总闸仍是 `kbengine.python.stubExport` |
@@ -277,6 +281,8 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 `kbengine.python.stubDir` 留空(默认)时目录是 kode 自管的 `.kbengine/stubs`:内容一致零写、陈旧(索引更新后)自动重写、手改不保留,建议在 `.gitignore` 里忽略。**配了目录则目录归用户所有**:kode 只扫描不覆盖——目录里已有任何 `.pyi` 一律当用户资产不碰,没有 `.pyi` 才生成一份;目录读不到(不存在/无权限)如实提示,不盲写。
 
 边界:extraPaths 的管理段只认默认约定目录 `.kbengine/stubs`(导出开且 `KBEngine.pyi` 或 `kbe_types.py` 在盘时并入,两份生成物同居一个目录);用户配置的 `kbengine.python.stubDir` 目录不并入管理段,需要时自行加入 `python.analysis.extraPaths`。
+
+Pylance 对 `KBEngine` 这类模块的解析优先级(从高到低):同名 .pyi → stubPath → extraPaths。kode 把这个顺序显式化:接线 `python.analysis.extraPaths` 的同一次同步会写 `python.analysis.stubPath` = `${workspaceFolder}/.kbengine/stubs`(随 `kbengine.managedDir` 同迁,不跟用户自配的 `kbengine.python.stubDir`;且仅在 `kbengine.python.stubExport` 开启时写)。你自己设的 `python.analysis.stubPath` 永不覆盖;现值已对齐时零写入。
 
 ### 代码生成器
 
@@ -581,7 +587,7 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 | --- | --- | --- | --- |
 | `kbengine.entityDefsPath` | 显式配置 → 约定 4 布局 → 深扫描唯一命中 → 多候选 quick pick 记忆 | **能**(约定布局 + 深扫描) | **自动发现**,配置只作覆盖 |
 | `kbengine.entitiesXmlPath` | 同上链;另优先取 def 根同父目录 | **能** | **自动发现**,配置只作覆盖 |
-| `kbengine.binPath` | 显式配置 → 引擎源码根锚点推 `kbe/bin/server` → 逐个猜兄弟目录/环境变量 | **能**(源码根锚点 `entitydef.cpp`/`entity_table_mysql.cpp`) | **自动发现**,配置只作覆盖 |
+| `kbengine.binPath` | 显式配置(权威;显式值不在盘也保留,交启动检查链报)→ 默认 `${workspaceFolder}/kbe/bin/server` 在盘即用(CFG-01)→ 引擎源码根锚点推 `kbe/bin/server` → 逐个猜兄弟目录/环境变量;全落空返回空串由启动检查链报警 | **能**(源码根锚点 `entitydef.cpp`/`entity_table_mysql.cpp`) | **自动发现**,配置只作覆盖 |
 | `kbengine.generator.defOutputPath` | 默认值即走发现出的 def 根(`resolveDefOutputPath`) | **能**(复用 def 根发现) | **自动发现**,配置只作覆盖 |
 | `kbengine.generator.pythonOutputPath` | 默认值 `scripts` 时从发现出的 def 根父目录推导;推出工作区/空段保持默认 | **能**(def 根父目录) | **自动发现**,配置只作覆盖 |
 | `kbengine.assetsRoot` | 显式配置(默认空 = 自动发现);批128 起原值未过 `res/server/kbengine.xml` 探针时自动发现:约定链(工作区根、`assets/`、`server_assets/`,批129 起含工作区一级 `*_assets` 目录如 `flyff_assets`)→ 记忆选择 → 深扫描唯一命中,多候选激活期询问 | **能**(引擎装载探针验收,批128 已做) | **自动发现**,配置只作覆盖;探针口径 = 引擎真实装载位置,猜错起不来的风险由探针验收消除 |

@@ -110,6 +110,8 @@ describe('workspace venv discovery in the interpreter chain (PY-ENV)', () => {
     fs.mkdirSync(binDir, { recursive: true });
     const exe = path.join(binDir, platform === 'win32' ? 'python.exe' : 'python');
     fs.writeFileSync(exe, '', 'utf8');
+    // 二期验真口径:真实 venv 都带 pyvenv.cfg,夹具同构
+    fs.writeFileSync(path.join(root, name, 'pyvenv.cfg'), 'home = /usr\n', 'utf8');
     return exe;
   };
   const rm = (dir: string) => fs.rmSync(dir, { recursive: true, force: true });
@@ -202,6 +204,56 @@ describe('workspace venv discovery in the interpreter chain (PY-ENV)', () => {
     fs.mkdirSync(path.join(root, '.venv', 'bin'), { recursive: true });
     const result = resolveInterpreterWith({ workspaceRoot: root, pathEnv: '', platform: 'linux' });
     expect(result).toEqual({ interpreterPath: null, interpreterSource: 'missing' });
+    rm(root);
+  });
+});
+
+describe('deep workspace discovery in the interpreter chain (PY-ENV 二期)', () => {
+  const rm = (dir: string) => fs.rmSync(dir, { recursive: true, force: true });
+  const makeVerifiedVenv = (dir: string, platform: NodeJS.Platform = 'linux') => {
+    const binDir = path.join(dir, platform === 'win32' ? 'Scripts' : 'bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    const exe = path.join(binDir, platform === 'win32' ? 'python.exe' : 'python');
+    fs.writeFileSync(exe, '', 'utf8');
+    fs.writeFileSync(path.join(dir, 'pyvenv.cfg'), 'home = /usr\n', 'utf8');
+    return exe;
+  };
+
+  it('discovers a nested verified venv (pyvenv.cfg + python) beyond root-level names', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-venv-deep-'));
+    const nested = path.join(root, 'envs', 'team');
+    const exe = makeVerifiedVenv(nested);
+    const result = resolveInterpreterWith({ workspaceRoot: root, pathEnv: '', platform: 'linux' });
+    expect(result).toEqual({ interpreterPath: exe, interpreterSource: 'venv' });
+    rm(root);
+  });
+
+  it('a broken nested env (marker without python) falls through to PATH', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-venv-deep-broken-'));
+    const broken = path.join(root, 'envs', 'broken');
+    fs.mkdirSync(path.join(broken, 'bin'), { recursive: true });
+    fs.writeFileSync(path.join(broken, 'pyvenv.cfg'), 'home = /usr\n', 'utf8');
+    const pathDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-venv-deep-path-'));
+    fs.writeFileSync(path.join(pathDir, 'python3'), '', 'utf8');
+    const result = resolveInterpreterWith({
+      workspaceRoot: root,
+      pathEnv: pathDir,
+      platform: 'linux'
+    });
+    expect(result).toEqual({
+      interpreterPath: path.join(pathDir, 'python3'),
+      interpreterSource: 'path'
+    });
+    rm(root);
+    rm(pathDir);
+  });
+
+  it('a root-level venv still outranks a deeper one (configured > workspace > PATH unchanged)', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-venv-deep-prio-'));
+    const rootExe = makeVerifiedVenv(path.join(root, '.venv'));
+    makeVerifiedVenv(path.join(root, 'envs', 'deep'));
+    const result = resolveInterpreterWith({ workspaceRoot: root, pathEnv: '', platform: 'linux' });
+    expect(result).toEqual({ interpreterPath: rootExe, interpreterSource: 'venv' });
     rm(root);
   });
 });

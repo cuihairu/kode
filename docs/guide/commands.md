@@ -819,6 +819,19 @@ The flow graph panel supports:
 - Classification inputs: registration in `vscode.extensions.all`, its `isActive` flag, and the `<id>-<version>` install directory under the local user extensions dir (disabled extensions never appear in `extensions.all`, so the disk probe is the fallback evidence)
 - Honesty rule: whether `python.analysis.extraPaths` has been written never participates in the availability decision; when it has a value, the message appends the explicit caveat 「extraPaths 已写入不等于语言服务可用」 (written ≠ available)
 
+### `kbengine.python.selectInterpreter`
+
+- Title: `Select Python Interpreter`
+- Purpose: the interpreter status bar item's click target — the item itself shows the current interpreter (venv directory name, Python version when the probe succeeds, and a source badge: `auto` = workspace discovery, `configured` = the `kbengine.python.interpreterPath` setting, `PATH` = interpreter found on PATH; a missing interpreter says so plainly)
+- QuickPick contents: the active interpreter first (✓), then every environment the workspace scan verified (evidence `pyvenv.cfg` for venv / `conda-meta` for conda, plus a real interpreter binary on disk — `bin/python` / `Scripts/python.exe`; broken environments without both are never listed), then the PATH interpreter, and 「创建新 venv…」 (create a new venv) last
+- Effect: picking an entry writes `kbengine.python.interpreterPath` at workspace level and takes effect immediately (the resolution chain reads live configuration; no reload); Esc writes nothing
+
+### `kbengine.python.createVenv`
+
+- Title: `Create Virtual Environment (venv)`
+- Purpose: one-shot venv creation: pick a target directory (default `<workspaceRoot>/.venv`) → run `python -m venv <dir>` inside a progress notification → verify the created directory directly (`pyvenv.cfg` + interpreter binary, independent of the scan depth so a target outside the scan range still qualifies) → auto-select and write the new interpreter into `kbengine.python.interpreterPath`
+- Honesty rules: the base interpreter resolves through the PATH chain only (never through workspace discovery, which may be the environment being rebuilt) — when PATH has no python3/python the flow refuses with an explicit message and never spawns; an occupied (existing, non-empty) target directory aborts before any write; a non-zero venv exit reports the stderr tail; a created directory that verification cannot confirm (no `pyvenv.cfg` or no interpreter binary) is reported as such and never selected
+
 ### `kbengine.project.import`
 
 - Title: `Import Existing KBEngine Project`

@@ -298,10 +298,34 @@ function debugJsonFindings(input: ConfigContractWorkspaceInput): ConfigContractF
   return findings;
 }
 
-/** extraPaths 维度:../../ 双层上跳、指向不存在目录 */
+/**
+ * 绝对路径判定(CFG-02):Windows 盘符根(`C:\`/`C:/`)、UNC/根相对反斜杠、
+ * POSIX 根。`${workspaceFolder}/...` 变量形态与相对条目不算绝对。
+ */
+const isAbsolutePathEntry = (entry: string): boolean =>
+  /^[A-Za-z]:[\\/]/.test(entry) || entry.startsWith('/') || entry.startsWith('\\');
+
+/** extraPaths 维度:绝对路径(CFG-02,先报根因)、../../ 双层上跳、指向不存在目录 */
 function extraPathsFindings(input: ConfigContractWorkspaceInput): ConfigContractFinding[] {
   const findings: ConfigContractFinding[] = [];
   for (const entry of input.extraPaths ?? []) {
+    if (isAbsolutePathEntry(entry)) {
+      findings.push(finding(
+        'kbengine.configContract.extraPathsAbsolute',
+        'settings.json',
+        0,
+        `extraPaths 条目 "${entry}" 是绝对路径:换机器/换盘符即失效,不可移植。`
+        + '生成面已一律写 ${workspaceFolder}/... 变量形态,工作区前缀可替换的存量绝对路径'
+        + '会在下次同步时自动迁移;此条不可替换,需人工处理。'
+        + ` (English: extraPaths entry "${entry}" is an absolute path — it breaks on another machine or drive `
+        + 'letter. The generator now always writes ${workspaceFolder}/... variable form, and legacy absolute '
+        + 'entries with the workspace prefix migrate automatically on the next sync; this one is not migratable '
+        + 'and needs a manual fix.)'
+        + ' 修复:改为 ${workspaceFolder}/... 形态或删除该条目。'
+        + ' (Fix: rewrite it as ${workspaceFolder}/... or remove the entry.)'
+      ));
+      continue;
+    }
     if (entry.includes('../..') || entry.includes('..\\..')) {
       findings.push(finding(
         'kbengine.configContract.extraPathsDoubleUp',
