@@ -187,7 +187,7 @@ impl AssetKnowledge {
                     || model.properties.iter().any(|p| flag_domains(&p.flags).contains(&"cell")),
                 "baseSide": !model.base_methods.is_empty()
                     || model.properties.iter().any(|p| flag_domains(&p.flags).contains(&"base")),
-                "componentTypes": component_types_deep(self, model),
+                "componentTypes": component_types_deep(self, model, &mut Vec::new()),
             },
             "parseDiagnostics": parse_diagnostics,
         }))
@@ -485,7 +485,14 @@ fn summarize(model: &DefFile) -> Value {
     })
 }
 
-fn component_types_deep(kb: &AssetKnowledge, model: &DefFile) -> Vec<Value> {
+/// 组件槽类型树(带递归路径去环守卫):沿 component 槽解析组件 def 并递归。
+/// `seen` 为当前递归路径上的 def 名;再遇同名 def 即环(自引用/互引组件),
+/// 以 `"cycle": true` 标记该槽、不再展开,避免无限递归栈溢出(审核发现)。
+fn component_types_deep(
+    kb: &AssetKnowledge,
+    model: &DefFile,
+    seen: &mut Vec<String>,
+) -> Vec<Value> {
     let mut out = Vec::new();
     for slot in &model.components {
         let Some(component_type) = &slot.component_type else {
@@ -502,7 +509,15 @@ fn component_types_deep(kb: &AssetKnowledge, model: &DefFile) -> Vec<Value> {
         });
         if let Some(component_def) = resolved {
             entry["file"] = json!(component_def.rel_path);
-            entry["componentTypes"] = json!(component_types_deep(kb, &component_def.model));
+            if seen.contains(&component_def.name) {
+                // 环:该 def 已在当前路径上(自引用/互引)→ 标记循环,不递归。
+                entry["cycle"] = json!(true);
+            } else {
+                seen.push(component_def.name.clone());
+                entry["componentTypes"] =
+                    json!(component_types_deep(kb, &component_def.model, seen));
+                seen.pop();
+            }
         }
         out.push(entry);
     }
@@ -527,30 +542,36 @@ fn hex(bytes: &[u8]) -> String {
 
 /// 朴素 JSON → 线值:按布局选 WireValue 变体;带标签对象(`{"U16": 7}`)直取。
 fn wire_from_json(layout: &WireLayout, value: &Value) -> Result<WireValue, String> {
-    // 带标签形式优先(与 WireValue 的 serde 形状一致)。
-    if let Some(map) = value.as_object() {
-        if map.len() == 1 {
-            let (tag, inner) = map.iter().next().unwrap();
-            let from_inner: Result<WireValue, String> = match tag.as_str() {
-                "U8" => inner.as_u64().map(|v| WireValue::U8(v as u8)),
-                "U16" => inner.as_u64().map(|v| WireValue::U16(v as u16)),
-                "U32" => inner.as_u64().map(|v| WireValue::U32(v as u32)),
-                "U64" => inner.as_u64().map(WireValue::U64),
-                "I8" => inner.as_i64().map(|v| WireValue::I8(v as i8)),
-                "I16" => inner.as_i64().map(|v| WireValue::I16(v as i16)),
-                "I32" => inner.as_i64().map(|v| WireValue::I32(v as i32)),
-                "I64" => inner.as_i64().map(WireValue::I64),
-                "F32" => inner.as_f64().map(|v| WireValue::F32(v as f32)),
-                "F64" => inner.as_f64().map(WireValue::F64),
-                "Bool" => inner.as_bool().map(WireValue::Bool),
-                "Str" => inner.as_str().map(|s| WireValue::Str(s.to_string())),
-                _ => None,
+    // 带标签形式只在**标量**布局下优先(与 WireValue 的 serde 形状一致);
+    // 复合布局(容器/结构)的单键对象是普通字典/结构,不得当带标签值——
+    // 否则单字段 FIXED_DICT `{"hp":100}` 被误判为 `tagged value hp ...`,
+    // 且字段名恰为 tag 名(如字段 `Str`)也被误认(审核发现)。
+    let is_scalar_layout = !matches!(layout, WireLayout::FixedDict(_) | WireLayout::Array(_));
+    if is_scalar_layout {
+        if let Some(map) = value.as_object() {
+            if map.len() == 1 {
+                let (tag, inner) = map.iter().next().unwrap();
+                let from_inner: Result<WireValue, String> = match tag.as_str() {
+                    "U8" => inner.as_u64().map(|v| WireValue::U8(v as u8)),
+                    "U16" => inner.as_u64().map(|v| WireValue::U16(v as u16)),
+                    "U32" => inner.as_u64().map(|v| WireValue::U32(v as u32)),
+                    "U64" => inner.as_u64().map(WireValue::U64),
+                    "I8" => inner.as_i64().map(|v| WireValue::I8(v as i8)),
+                    "I16" => inner.as_i64().map(|v| WireValue::I16(v as i16)),
+                    "I32" => inner.as_i64().map(|v| WireValue::I32(v as i32)),
+                    "I64" => inner.as_i64().map(WireValue::I64),
+                    "F32" => inner.as_f64().map(|v| WireValue::F32(v as f32)),
+                    "F64" => inner.as_f64().map(WireValue::F64),
+                    "Bool" => inner.as_bool().map(WireValue::Bool),
+                    "Str" => inner.as_str().map(|s| WireValue::Str(s.to_string())),
+                    _ => None,
+                }
+                .ok_or_else(|| format!("tagged value {tag} payload type mismatch"));
+                if from_inner.is_ok() || !inner.is_object() {
+                    return from_inner;
+                }
+                return serde_json::from_value(value.clone()).map_err(|e| format!("value: {e}"));
             }
-            .ok_or_else(|| format!("tagged value {tag} payload type mismatch"));
-            if from_inner.is_ok() || !inner.is_object() {
-                return from_inner;
-            }
-            return serde_json::from_value(value.clone()).map_err(|e| format!("value: {e}"));
         }
     }
     match layout {
@@ -687,3 +708,94 @@ fn collect_defs(dir: &Path, prefix: &str, kb: &mut AssetKnowledge) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kode_server::wire_codec::WireField;
+
+    #[test]
+    fn single_key_object_is_plain_fixed_dict_not_tagged() {
+        // 单字段 FIXED_DICT `{"hp":100}`:键 hp 非已知 tag → 必须是普通结构,
+        // 不得被误判为带标签值(审核发现旧码返回 tagged value hp ... 错误)。
+        let layout = WireLayout::FixedDict(vec![WireField {
+            name: "hp".into(),
+            layout: WireLayout::U32,
+        }]);
+        let value = serde_json::json!({"hp": 100});
+        let wire = wire_from_json(&layout, &value).unwrap();
+        assert_eq!(wire, WireValue::FixedDict(vec![WireValue::U32(100)]));
+    }
+
+    #[test]
+    fn dict_field_named_like_tag_is_not_mistaken_for_tagged() {
+        // 字段名恰为 tag 名(如 `Str`):单字段 FIXED_DICT `{"Str":"x"}` 按布局
+        // 解码为 Str 字段值,而非把整个对象当带标签 Str 值。
+        let layout = WireLayout::FixedDict(vec![WireField {
+            name: "Str".into(),
+            layout: WireLayout::Str,
+        }]);
+        let value = serde_json::json!({"Str": "x"});
+        let wire = wire_from_json(&layout, &value).unwrap();
+        assert_eq!(wire, WireValue::FixedDict(vec![WireValue::Str("x".into())]));
+    }
+
+    #[test]
+    fn scalar_layout_still_accepts_tagged_form() {
+        // 标量布局的带标签形式不受影响(往返无损入口)。
+        let wire = wire_from_json(&WireLayout::U16, &serde_json::json!({"U16": 7})).unwrap();
+        assert_eq!(wire, WireValue::U16(7));
+    }
+}
+
+    #[test]
+    fn component_types_deep_marks_self_reference_cycle_without_infinite_recursion() {
+        // 自引用组件:A 的槽 Type=A → 递归再入 A,旧码无限递归栈溢出;
+        // 修复后以 cycle 标记不再展开,深度有界。
+        let mut kb = AssetKnowledge::default();
+        let text =
+            "<root><Components><selfSlot><Type>A</Type></selfSlot></Components></root>";
+        let model = parse_def(text);
+        kb.defs.insert(
+            "A".into(),
+            ParsedDef {
+                name: "A".into(),
+                category: "component".into(),
+                rel_path: "scripts/entity_defs/components/A.def".into(),
+                text: text.into(),
+                model,
+            },
+        );
+        let out = component_types_deep(&kb, &kb.defs["A"].model, &mut Vec::new());
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0]["type"], "A");
+        // 环标记落在再入层,不再展开 componentTypes。
+        let nested = out[0]["componentTypes"].as_array().unwrap();
+        assert_eq!(nested.len(), 1);
+        assert_eq!(nested[0]["cycle"], true);
+        assert!(nested[0].get("componentTypes").is_none());
+    }
+
+    #[test]
+    fn component_types_deep_marks_mutual_reference_cycle() {
+        // 互引组件 A↔B:A→B→A→B… 旧码无限递归;修复后有界并以 cycle 标记。
+        let mut kb = AssetKnowledge::default();
+        let a_text = "<root><Components><bSlot><Type>B</Type></bSlot></Components></root>";
+        let b_text = "<root><Components><aSlot><Type>A</Type></aSlot></Components></root>";
+        let def = |name: &str, text: &str| ParsedDef {
+            name: name.into(),
+            category: "component".into(),
+            rel_path: format!("scripts/entity_defs/components/{name}.def"),
+            text: text.into(),
+            model: parse_def(text),
+        };
+        kb.defs.insert("A".into(), def("A", a_text));
+        kb.defs.insert("B".into(), def("B", b_text));
+        let out = component_types_deep(&kb, &kb.defs["A"].model, &mut Vec::new());
+        // A→B→A→B:第二层 B 的 bSlot 命中路径上的 B → cycle。
+        assert_eq!(out[0]["type"], "B");
+        let lvl2 = out[0]["componentTypes"].as_array().unwrap();
+        assert_eq!(lvl2[0]["type"], "A");
+        let lvl3 = lvl2[0]["componentTypes"].as_array().unwrap();
+        assert_eq!(lvl3[0]["cycle"], true);
+    }

@@ -319,7 +319,9 @@ fn parse_component_properties(
             let element = doc.element(property);
             let (type_name, element_type) =
                 read_def_type_node(doc, doc.child_element(property, "Type"));
-            let flags = doc.scalar_child_value(property, "Flags").unwrap_or_default();
+            let flags = doc
+                .scalar_child_value(property, "Flags")
+                .unwrap_or_default();
             let domains = flag_domains(&normalize_flag_tokens(&flags));
             if domains.contains(&"client") && seen.insert(element.name.clone()) {
                 out.push(SdkProperty {
@@ -379,8 +381,11 @@ fn parse_entity(def_text: &str, name: &str, component_defs: &ComponentDefs) -> O
     if let Some(properties_node) = doc.child_element(root, "Properties") {
         for property in doc.child_elements(properties_node) {
             let element = doc.element(property);
-            let (type_name, element_type) = read_def_type_node(&doc, doc.child_element(property, "Type"));
-            let flags = doc.scalar_child_value(property, "Flags").unwrap_or_default();
+            let (type_name, element_type) =
+                read_def_type_node(&doc, doc.child_element(property, "Type"));
+            let flags = doc
+                .scalar_child_value(property, "Flags")
+                .unwrap_or_default();
             let domains = flag_domains(&normalize_flag_tokens(&flags));
             properties.push(SdkProperty {
                 name: element.name.clone(),
@@ -427,7 +432,11 @@ fn parse_entity(def_text: &str, name: &str, component_defs: &ComponentDefs) -> O
 }
 
 fn client_visible_properties(entity: &SdkEntity) -> Vec<&SdkProperty> {
-    entity.properties.iter().filter(|p| p.client_visible()).collect()
+    entity
+        .properties
+        .iter()
+        .filter(|p| p.client_visible())
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -508,9 +517,7 @@ fn extract_custom_type_alias_type(raw_value: &str) -> String {
         return "ALIAS".to_string();
     }
     let mut end = 1;
-    while end < bytes.len()
-        && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_')
-    {
+    while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
         end += 1;
     }
     raw_value[..end].to_string()
@@ -558,7 +565,10 @@ fn build_client_sdk_type_map(types_xml: Option<&str>, language: &str) -> TypeMap
             for type_node in doc.child_elements(root) {
                 let element = doc.element(type_node);
                 let raw_value = extract_custom_type_raw_value(&doc, type_node);
-                aliases.insert(element.name.clone(), extract_custom_type_alias_type(&raw_value));
+                aliases.insert(
+                    element.name.clone(),
+                    extract_custom_type_alias_type(&raw_value),
+                );
                 let properties = parse_custom_type_properties(&doc, type_node, &lines);
                 if !properties.is_empty() {
                     fixed_dicts.insert(
@@ -586,11 +596,7 @@ fn build_client_sdk_type_map(types_xml: Option<&str>, language: &str) -> TypeMap
 // 类型名解析与发射(与 TS resolveClientSdkTypeName / generate* 同口径)
 // ---------------------------------------------------------------------------
 
-fn resolve_type_name(
-    type_map: &TypeMap,
-    type_name: &str,
-    element_type: Option<&str>,
-) -> String {
+fn resolve_type_name(type_map: &TypeMap, type_name: &str, element_type: Option<&str>) -> String {
     if let Some(element) = element_type {
         return format!("{}[]", resolve_type_name(type_map, element, None));
     }
@@ -614,7 +620,11 @@ fn resolve_type_name(
 }
 
 fn resolve_property_type(type_map: &TypeMap, property: &SdkProperty) -> String {
-    resolve_type_name(type_map, &property.type_name, property.element_type.as_deref())
+    resolve_type_name(
+        type_map,
+        &property.type_name,
+        property.element_type.as_deref(),
+    )
 }
 
 fn resolve_arg_type(type_map: &TypeMap, type_name: &str) -> String {
@@ -678,10 +688,7 @@ fn engine_trace_lines(engine_trace: Option<&EngineTrace>) -> Vec<String> {
                     field.to_string()
                 }
             };
-            (
-                value(&trace.engine_version),
-                value(&trace.engine_commit),
-            )
+            (value(&trace.engine_version), value(&trace.engine_commit))
         }
         None => (TRACE_UNKNOWN.to_string(), TRACE_UNKNOWN.to_string()),
     };
@@ -696,7 +703,11 @@ fn def_header(language: &str, generated_at: &str, trace_lines: &[String]) -> Vec
         GENERATED_HEADER_LINE.to_string(),
         format!(
             "// 目标语言: {}",
-            if language == "typescript" { "TypeScript" } else { "C#" }
+            if language == "typescript" {
+                "TypeScript"
+            } else {
+                "C#"
+            }
         ),
         format!("// 生成时间: {generated_at}"),
     ];
@@ -728,7 +739,11 @@ fn generate_ts_entity(
 
     let used = used_fixed_dict_types(entity, type_map);
     if !used.is_empty() {
-        let names = used.iter().map(|dict| dict.name.clone()).collect::<Vec<_>>().join(", ");
+        let names = used
+            .iter()
+            .map(|dict| dict.name.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
         lines.push(format!(
             "import {{ {names} }} from './{FIXED_DICTS_BASENAME}';"
         ));
@@ -763,7 +778,10 @@ fn generate_ts_entity(
     for component in &entity.components {
         lines.push(String::new());
         lines.push(format!("  /** 组件槽: {} */", component.type_name));
-        lines.push(format!("  public {}: {};", component.slot, component.type_name));
+        lines.push(format!(
+            "  public {}: {};",
+            component.slot, component.type_name
+        ));
     }
 
     lines.push(String::new());
@@ -855,7 +873,10 @@ fn generate_cs_entity(
     } else {
         format!(
             "（固定字典: {}）",
-            used.iter().map(|dict| dict.name.clone()).collect::<Vec<_>>().join(", ")
+            used.iter()
+                .map(|dict| dict.name.clone())
+                .collect::<Vec<_>>()
+                .join(", ")
         )
     };
     lines.push(format!(
@@ -868,7 +889,10 @@ fn generate_cs_entity(
     lines.push("    public long EntityId { get; }".to_string());
 
     for property in client_visible_properties(entity) {
-        lines.push(format!("    /// <summary>Flags: {}</summary>", property.flags));
+        lines.push(format!(
+            "    /// <summary>Flags: {}</summary>",
+            property.flags
+        ));
         lines.push(format!(
             "    public {} {} {{ get; set; }}",
             resolve_property_type(type_map, property),
@@ -876,7 +900,10 @@ fn generate_cs_entity(
         ));
     }
     for component in &entity.components {
-        lines.push(format!("    /// <summary>组件槽: {}</summary>", component.type_name));
+        lines.push(format!(
+            "    /// <summary>组件槽: {}</summary>",
+            component.type_name
+        ));
         lines.push(format!(
             "    public {} {} {{ get; set; }}",
             component.type_name,
@@ -922,7 +949,10 @@ fn generate_cs_entity(
         for method in methods {
             let args = format_arg_types(type_map, &method.arg_types, "csharp");
             let call_args = format_arg_ids(&method.arg_types, false);
-            lines.push(format!("    /// <summary>{label}: {}</summary>", method.name));
+            lines.push(format!(
+                "    /// <summary>{label}: {}</summary>",
+                method.name
+            ));
             lines.push(format!(
                 "    public void {}{}({args})",
                 prefix,
@@ -938,11 +968,15 @@ fn generate_cs_entity(
     }
 
     lines.push("    /// <summary>发送接缝: 按客户端插件的 base 调用通道实现</summary>".to_string());
-    lines.push("    protected virtual void OnBaseOutgoing(string method, object[] args)".to_string());
+    lines.push(
+        "    protected virtual void OnBaseOutgoing(string method, object[] args)".to_string(),
+    );
     lines.push("    {".to_string());
     lines.push("    }".to_string());
     lines.push("    /// <summary>发送接缝: 按客户端插件的 cell 调用通道实现</summary>".to_string());
-    lines.push("    protected virtual void OnCellOutgoing(string method, object[] args)".to_string());
+    lines.push(
+        "    protected virtual void OnCellOutgoing(string method, object[] args)".to_string(),
+    );
     lines.push("    {".to_string());
     lines.push("    }".to_string());
     lines.push("  }".to_string());
@@ -1024,7 +1058,10 @@ fn generate_fixed_dicts_file(
                 "  // source: types.xml:{}",
                 format_source_line(dict.source_line)
             ));
-            lines.push(format!("  /// <summary>{} FIXED_DICT 别名</summary>", dict.name));
+            lines.push(format!(
+                "  /// <summary>{} FIXED_DICT 别名</summary>",
+                dict.name
+            ));
             lines.push(format!("  public class {}", dict.name));
             lines.push("  {".to_string());
             for property in &dict.properties {
@@ -1091,7 +1128,9 @@ fn generate_components_file(
     if language == "typescript" {
         if !fixed_names.is_empty() {
             let names = fixed_names.join(", ");
-            lines.push(format!("import {{ {names} }} from './{FIXED_DICTS_BASENAME}';"));
+            lines.push(format!(
+                "import {{ {names} }} from './{FIXED_DICTS_BASENAME}';"
+            ));
             lines.push(String::new());
         }
         for comp in &used {
@@ -1112,11 +1151,17 @@ fn generate_components_file(
         lines.push(format!("namespace {namespace}"));
         lines.push("{".to_string());
         for comp in &used {
-            lines.push(format!("  /// <summary>实体组件: {}</summary>", comp.type_name));
+            lines.push(format!(
+                "  /// <summary>实体组件: {}</summary>",
+                comp.type_name
+            ));
             lines.push(format!("  public class {}", comp.type_name));
             lines.push("  {".to_string());
             for property in &comp.properties {
-                lines.push(format!("    /// <summary>Flags: {}</summary>", property.flags));
+                lines.push(format!(
+                    "    /// <summary>Flags: {}</summary>",
+                    property.flags
+                ));
                 lines.push(format!(
                     "    public {} {} {{ get; set; }}",
                     resolve_property_type(type_map, property),
@@ -1160,13 +1205,37 @@ fn collect_emitted_members(entity: &SdkEntity, language: &str) -> HashMap<String
     let mut members: HashMap<String, Vec<String>> = HashMap::new();
 
     if language == "typescript" {
-        add_member(&mut members, "entityId", "辅助字段 entityId（实体 id）".to_string());
-        add_member(&mut members, "onBaseOutgoing", "辅助方法 onBaseOutgoing（发送接缝）".to_string());
-        add_member(&mut members, "onCellOutgoing", "辅助方法 onCellOutgoing（发送接缝）".to_string());
+        add_member(
+            &mut members,
+            "entityId",
+            "辅助字段 entityId（实体 id）".to_string(),
+        );
+        add_member(
+            &mut members,
+            "onBaseOutgoing",
+            "辅助方法 onBaseOutgoing（发送接缝）".to_string(),
+        );
+        add_member(
+            &mut members,
+            "onCellOutgoing",
+            "辅助方法 onCellOutgoing（发送接缝）".to_string(),
+        );
     } else {
-        add_member(&mut members, "EntityId", "辅助字段 EntityId（实体 id）".to_string());
-        add_member(&mut members, "OnBaseOutgoing", "辅助方法 OnBaseOutgoing（发送接缝）".to_string());
-        add_member(&mut members, "OnCellOutgoing", "辅助方法 OnCellOutgoing（发送接缝）".to_string());
+        add_member(
+            &mut members,
+            "EntityId",
+            "辅助字段 EntityId（实体 id）".to_string(),
+        );
+        add_member(
+            &mut members,
+            "OnBaseOutgoing",
+            "辅助方法 OnBaseOutgoing（发送接缝）".to_string(),
+        );
+        add_member(
+            &mut members,
+            "OnCellOutgoing",
+            "辅助方法 OnCellOutgoing（发送接缝）".to_string(),
+        );
     }
 
     for property in client_visible_properties(entity) {
@@ -1191,7 +1260,11 @@ fn collect_emitted_members(entity: &SdkEntity, language: &str) -> HashMap<String
         } else {
             to_pascal_case(&method.name)
         };
-        add_member(&mut members, &name, format!("ClientMethods 回调 {}", method.name));
+        add_member(
+            &mut members,
+            &name,
+            format!("ClientMethods 回调 {}", method.name),
+        );
     }
     for method in &entity.exposed_base_methods {
         let name = if language == "typescript" {
@@ -1199,7 +1272,11 @@ fn collect_emitted_members(entity: &SdkEntity, language: &str) -> HashMap<String
         } else {
             format!("BaseCall{}", to_pascal_case(&method.name))
         };
-        add_member(&mut members, &name, format!("Exposed BaseMethods 包装 {}", method.name));
+        add_member(
+            &mut members,
+            &name,
+            format!("Exposed BaseMethods 包装 {}", method.name),
+        );
     }
     for method in &entity.exposed_cell_methods {
         let name = if language == "typescript" {
@@ -1207,14 +1284,22 @@ fn collect_emitted_members(entity: &SdkEntity, language: &str) -> HashMap<String
         } else {
             format!("CellCall{}", to_pascal_case(&method.name))
         };
-        add_member(&mut members, &name, format!("Exposed CellMethods 包装 {}", method.name));
+        add_member(
+            &mut members,
+            &name,
+            format!("Exposed CellMethods 包装 {}", method.name),
+        );
     }
 
     members
 }
 
 fn find_member_conflicts(entities: &[SdkEntity], language: &str) -> Vec<String> {
-    let lang = if language == "typescript" { "TypeScript" } else { "C#" };
+    let lang = if language == "typescript" {
+        "TypeScript"
+    } else {
+        "C#"
+    };
     let mut conflicts = Vec::new();
     for entity in entities {
         for (name, sources) in collect_emitted_members(entity, language) {
@@ -1327,7 +1412,10 @@ fn parse_params(params: Value) -> Result<SdkGenerateParams, String> {
                 .collect()
         })
         .unwrap_or_default();
-    let types_xml = params.get("typesXml").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let types_xml = params
+        .get("typesXml")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let component_defs = params
         .get("defs")
         .and_then(|v| v.as_object())
@@ -1342,12 +1430,26 @@ fn parse_params(params: Value) -> Result<SdkGenerateParams, String> {
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string();
-    let engine_trace = params.get("engineTrace").and_then(|v| {
-        let engine_version = v.get("engineVersion").and_then(|x| x.as_str()).unwrap_or("").to_string();
-        let engine_commit = v.get("engineCommit").and_then(|x| x.as_str()).unwrap_or("").to_string();
-        Some(EngineTrace { engine_version, engine_commit })
+    let engine_trace = params.get("engineTrace").map(|v| {
+        let engine_version = v
+            .get("engineVersion")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let engine_commit = v
+            .get("engineCommit")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        EngineTrace {
+            engine_version,
+            engine_commit,
+        }
     });
-    let namespace = params.get("namespace").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let namespace = params
+        .get("namespace")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     Ok(SdkGenerateParams {
         language,
         entities,

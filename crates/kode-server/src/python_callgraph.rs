@@ -197,7 +197,9 @@ fn build_handler(params: Value) -> Result<Value, String> {
 }
 
 fn symbol_id(path: &str, kind: &str, scope: &str, name: &str) -> String {
-    fn hex(s: &str) -> String { s.as_bytes().iter().map(|b| format!("{b:02x}")).collect() }
+    fn hex(s: &str) -> String {
+        s.as_bytes().iter().map(|b| format!("{b:02x}")).collect()
+    }
     format!("sym_{}_{}_{}_{}", hex(path), kind, hex(scope), hex(name))
 }
 
@@ -262,9 +264,19 @@ fn build_callgraph(input: &CallgraphParams) -> Value {
                 symbol_id(&a.path, "function", "", &e.caller)
             };
             let callee_id = match e.kind {
-                EdgeKind::SelfMethod => symbol_id(&a.path, "method", e.caller_class.as_deref().unwrap_or(""), &e.callee),
+                EdgeKind::SelfMethod => symbol_id(
+                    &a.path,
+                    "method",
+                    e.caller_class.as_deref().unwrap_or(""),
+                    &e.callee,
+                ),
                 EdgeKind::Local => symbol_id(&a.path, "function", "", &e.callee),
-                _ => symbol_id(&a.path, "external", e.receiver.as_deref().unwrap_or(""), &e.callee),
+                _ => symbol_id(
+                    &a.path,
+                    "external",
+                    e.receiver.as_deref().unwrap_or(""),
+                    &e.callee,
+                ),
             };
             edges.push(EdgeOut {
                 caller_id,

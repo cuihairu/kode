@@ -3,6 +3,7 @@ import * as path from 'path';
 
 import { recordLanguageServiceOperation } from './languageServiceMetrics';
 import { annotationSourceLog } from './annotationSourceLog';
+import { maskPythonNonCode } from './pythonLexicalMask';
 
 /**
  * 局部变量返回类型推导(用户令 2026-10-21:「data = activity_data.get_data()
@@ -851,9 +852,13 @@ function locateModuleBucket(
  * `x=original(); x=0` 此前仍推导 EXPECTED)。
  */
 function matchingAssignments(lines: readonly string[], hoverLine: number, word: string): LocalAssignmentCall[] {
+  // KR-AUD-64:掩码先行——全文掩一次(pythonLexicalMask 跨行记三引号态,
+  // 保行保列),三引号字符串体内的 `名 = 调用` 形行不再被当成真实赋值候选。
+  // 单行 maskCodeLine 只能处理同行引号,跨行三引号体必须全文掩。
+  const maskedLines = maskPythonNonCode(lines.join('\n')).split('\n');
   let scopeIndentLimit = Number.POSITIVE_INFINITY;
-  for (let line = Math.min(hoverLine, lines.length - 1); line >= 0; line -= 1) {
-    const text = lines[line] ?? '';
+  for (let line = Math.min(hoverLine, maskedLines.length - 1); line >= 0; line -= 1) {
+    const text = maskedLines[line] ?? '';
     const indent = text.length - text.trimStart().length;
     if (indent < scopeIndentLimit) {
       const write = ASSIGNMENT_PATTERN.exec(text);

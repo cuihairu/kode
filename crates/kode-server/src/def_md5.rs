@@ -145,10 +145,7 @@ impl Md5 {
             let tmp = d;
             d = c;
             c = b;
-            let sum = a
-                .wrapping_add(f)
-                .wrapping_add(MD5_K[i])
-                .wrapping_add(m[g]);
+            let sum = a.wrapping_add(f).wrapping_add(MD5_K[i]).wrapping_add(m[g]);
             b = b.wrapping_add(sum.rotate_left(MD5_S[i]));
             a = tmp;
         }
@@ -260,9 +257,27 @@ pub fn to_hex(bytes: &[u8]) -> String {
 
 /// 内建类型构造序(datatypes.cpp:56-79)。
 pub const BUILTIN_TYPE_ORDER: [&str; 21] = [
-    "UINT8", "UINT16", "UINT64", "UINT32", "INT8", "INT16", "INT32", "INT64", "STRING", "UNICODE",
-    "FLOAT", "DOUBLE", "PYTHON", "PY_DICT", "PY_TUPLE", "PY_LIST", "ENTITYCALL", "BLOB", "VECTOR2",
-    "VECTOR3", "VECTOR4",
+    "UINT8",
+    "UINT16",
+    "UINT64",
+    "UINT32",
+    "INT8",
+    "INT16",
+    "INT32",
+    "INT64",
+    "STRING",
+    "UNICODE",
+    "FLOAT",
+    "DOUBLE",
+    "PYTHON",
+    "PY_DICT",
+    "PY_TUPLE",
+    "PY_LIST",
+    "ENTITYCALL",
+    "BLOB",
+    "VECTOR2",
+    "VECTOR3",
+    "VECTOR4",
 ];
 
 /// Flags 字符串→原始位掩码(entitydef.cpp:161-174,输入先 toUpper)。
@@ -359,10 +374,13 @@ impl DataTypesState {
     ///
     /// 别名注册不改类身份(KR-AUD-82)。
     fn is_entitycall(&self, id: u16) -> bool {
-        matches!(
-            self.info.get(&id).map(|info| info.kind),
-            Some(TypeKind::EntityCall)
-        )
+        match self.info.get(&id) {
+            Some(info) => match info.kind {
+                TypeKind::Array => info.element.map(|e| self.is_entitycall(e)).unwrap_or(false),
+                _ => info.alias_name == "ENTITYCALL" && info.kind == TypeKind::Builtin,
+            },
+            None => false,
+        }
     }
 }
 
@@ -453,9 +471,7 @@ fn engine_get_key(doc: &Document, node: usize) -> String {
 fn engine_enter_node(doc: &Document, node: usize, key: &str) -> Option<usize> {
     let mut cur = Some(node);
     while let Some(idx) = cur {
-        if matches!(doc.nodes[idx].data, NodeData::Element(_))
-            && engine_get_key(doc, idx) == key
-        {
+        if matches!(doc.nodes[idx].data, NodeData::Element(_)) && engine_get_key(doc, idx) == key {
             return doc
                 .element(idx)
                 .children
@@ -657,8 +673,7 @@ impl Replayer {
 
             if str_type == "ARRAY" {
                 let array_id =
-                    self
-                        .types
+                    self.types
                         .construct(&mut self.stream, TypeKind::Array, "dict-array-uid");
                 let element = self.replay_array(doc, type_el)?;
                 if let Some(info) = self.types.info.get_mut(&array_id) {
@@ -675,11 +690,8 @@ impl Replayer {
                     .append_str("dict-key-type", "datatype.cpp:2098", "ARRAY");
                 self.stream
                     .append_str("dict-key-name", "datatype.cpp:2099", &type_name);
-                self.stream.append_bool(
-                    "dict-key-persistent",
-                    "datatype.cpp:2111",
-                    persistent,
-                );
+                self.stream
+                    .append_bool("dict-key-persistent", "datatype.cpp:2111", persistent);
                 self.stream
                     .append_u32("dict-key-db-length", "datatype.cpp:2112", database_length);
             } else {
@@ -698,11 +710,8 @@ impl Replayer {
                     .append_str("dict-key-type", "datatype.cpp:2135", &str_type);
                 self.stream
                     .append_str("dict-key-name", "datatype.cpp:2136", &type_name);
-                self.stream.append_bool(
-                    "dict-key-persistent",
-                    "datatype.cpp:2148",
-                    persistent,
-                );
+                self.stream
+                    .append_bool("dict-key-persistent", "datatype.cpp:2148", persistent);
                 self.stream
                     .append_u32("dict-key-db-length", "datatype.cpp:2149", database_length);
             }
@@ -751,7 +760,8 @@ impl Replayer {
         }
         self.stream
             .append_str("module-name", "scriptdef_module.cpp:60", name);
-        self.modules.insert(name.to_string(), ModuleState::default());
+        self.modules
+            .insert(name.to_string(), ModuleState::default());
     }
 
     /// loadDefInfo(entitydef.cpp:339-400):装载序闭包。
@@ -825,7 +835,9 @@ impl Replayer {
                 Some(f) => {
                     let str_flags = first_text(doc, f).to_uppercase();
                     let v = flags_value(&str_flags).ok_or_else(|| {
-                        format!("loadDefPropertys: unknown flags [{str_flags}] {module_name}.{name}")
+                        format!(
+                            "loadDefPropertys: unknown flags [{str_flags}] {module_name}.{name}"
+                        )
                     })?;
                     if v & ENTITY_BASE_DATA_FLAGS > 0 {
                         self.module(module_name).has_base = true;
@@ -892,7 +904,8 @@ impl Replayer {
                 .append_str("property-type", "property.cpp:55", &str_type);
             self.stream
                 .append_u16("property-utype", "property.cpp:56", utype);
-            self.stream.append_u32("property-flags", "property.cpp:57", flags);
+            self.stream
+                .append_u32("property-flags", "property.cpp:57", flags);
             if is_persistent && self.types.is_entitycall(data_type) {
                 is_persistent = false; // property.cpp:48-51 ENTITYCALL 覆盖
             }
@@ -924,10 +937,9 @@ impl Replayer {
         member_name: &str,
     ) -> Result<u16, String> {
         if str_type == "ARRAY" {
-            let id =
-                self
-                    .types
-                    .construct(&mut self.stream, TypeKind::Array, "inline-array-uid");
+            let id = self
+                .types
+                .construct(&mut self.stream, TypeKind::Array, "inline-array-uid");
             let element = self.replay_array(doc, type_el)?;
             if let Some(info) = self.types.info.get_mut(&id) {
                 info.element = Some(element);
@@ -984,10 +996,13 @@ impl Replayer {
     ) -> Result<(), String> {
         for method_el in doc.child_elements(methods_el) {
             let name = doc.element(method_el).name.clone();
-            self.stream.append_str("method-name", "method.cpp:28", &name);
-            self.stream.append_u16("method-utype(=0)", "method.cpp:29", 0);
+            self.stream
+                .append_str("method-name", "method.cpp:28", &name);
+            self.stream
+                .append_u16("method-utype(=0)", "method.cpp:29", 0);
             let mut exposed: i32 = 0; // NO_EXPOSED(method.h:30)
-            self.stream.append_i32("method-exposed", "method.cpp:30", exposed);
+            self.stream
+                .append_i32("method-exposed", "method.cpp:30", exposed);
             for child in doc.child_elements(method_el) {
                 let key = doc.element(child).name.clone();
                 match key.as_str() {
@@ -1051,7 +1066,10 @@ impl Replayer {
             // 引擎 entitydef.cpp:562-565:条目 getKey(=元素名)必属
             // {interface,Interface,type,Type},否则 continue。
             let entry_key = engine_get_key(doc, if_entry);
-            if !matches!(entry_key.as_str(), "interface" | "Interface" | "type" | "Type") {
+            if !matches!(
+                entry_key.as_str(),
+                "interface" | "Interface" | "type" | "Type"
+            ) {
                 continue;
             }
             // 引擎 entitydef.cpp:567-584:interfaceNode=enterNode(条目,键)依次
@@ -1483,10 +1501,9 @@ pub fn golden_samples(repo_root: &Path) -> Vec<GoldenSample> {
         // ENTITY_ID);这里仅 md5 侧补充 ENTITY_ID 别名使可计算(回归锁用途,
         // 非 parity 权威);types.xml 是共享夹具,不动文件避免级联其他 golden。
         if !params.types_xml.contains("ENTITY_ID") {
-            params.types_xml = params.types_xml.replace(
-                "</root>",
-                "  <ENTITY_ID> UINT32 </ENTITY_ID>\n</root>",
-            );
+            params.types_xml = params
+                .types_xml
+                .replace("</root>", "  <ENTITY_ID> UINT32 </ENTITY_ID>\n</root>");
         }
         samples.push(GoldenSample {
             name: "kbengine-demo-assets",

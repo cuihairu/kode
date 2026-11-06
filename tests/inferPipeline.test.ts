@@ -418,8 +418,58 @@ describe('activateInferPipeline(激活接线)', () => {
     const { root } = makeTmpWorkspace();
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     watcher.fireChange(Uri.file(path.join(root, 'scripts', 'main.py')));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // KR-AUD-56:watcher 同步走 200ms 防抖,等防抖窗过 + 同步落盘
+    await new Promise((resolve) => setTimeout(resolve, 350));
     expect(fs.readFileSync(path.join(root, '.kbengine', 'inferred', 'scripts', 'main.py'), 'utf-8')).toContain('import KBEngine');
     expect(messages.info).toHaveLength(0);
+  });
+});
+
+/* ---------------- KR-AUD-56: watcher 防抖 + 在途互斥 ---------------- */
+
+describe('KR-AUD-56: 副本同步调度器(防抖 + 在途互斥,dirty 补一轮)', () => {
+  it('连发多次 schedule 折叠为一轮(防抖窗内不执行)', async () => {
+    const { createCopySyncScheduler } = await import('../src/inferPipeline');
+    let runs = 0;
+    const scheduler = createCopySyncScheduler(async () => { runs += 1; }, 60);
+    try {
+      scheduler.schedule();
+      scheduler.schedule();
+      scheduler.schedule();
+      await new Promise(resolve => setTimeout(resolve, 25));
+      expect(runs, '防抖窗内不得执行').toBe(0);
+      await new Promise(resolve => setTimeout(resolve, 80));
+      expect(runs, '防抖窗过后恰好执行一轮').toBe(1);
+    } finally {
+      scheduler.dispose();
+    }
+  });
+
+  it('在途时 schedule 不并发:运行结束后 dirty 补恰一轮', async () => {
+    const { createCopySyncScheduler } = await import('../src/inferPipeline');
+    let runs = 0;
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>(resolve => { releaseFirst = resolve; });
+    const scheduler = createCopySyncScheduler(async () => {
+      runs += 1;
+      if (runs === 1) {
+        await firstGate;
+      }
+    }, 10);
+    try {
+      scheduler.schedule();
+      await new Promise(resolve => setTimeout(resolve, 30));
+      expect(runs).toBe(1);
+      // 在途期间连发多次:不并发开第二轮,只置 dirty
+      scheduler.schedule();
+      scheduler.schedule();
+      await new Promise(resolve => setTimeout(resolve, 40));
+      expect(runs, '在途期间不得并发第二轮').toBe(1);
+      releaseFirst();
+      await new Promise(resolve => setTimeout(resolve, 60));
+      expect(runs, '结束后 dirty 补恰一轮(多次置位折叠)').toBe(2);
+    } finally {
+      scheduler.dispose();
+    }
   });
 });

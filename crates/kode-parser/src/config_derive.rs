@@ -150,14 +150,21 @@ fn scripts_root_from_config_path(path: &str) -> Option<String> {
 }
 
 fn derive_def_scan_roots(facts: &DeriveFacts) -> DefScanRoots {
-    match facts.custom_config_path.and_then(scripts_root_from_config_path) {
+    match facts
+        .custom_config_path
+        .and_then(scripts_root_from_config_path)
+    {
         Some(root) => DefScanRoots {
             roots: vec![root],
             fallback: None,
             degraded: false,
         },
         None => {
-            let roots: Vec<String> = facts.workspace_root.map(str::to_string).into_iter().collect();
+            let roots: Vec<String> = facts
+                .workspace_root
+                .map(str::to_string)
+                .into_iter()
+                .collect();
             DefScanRoots {
                 roots,
                 fallback: Some("workspaceRoot".to_string()),
@@ -312,7 +319,10 @@ fn derive_debug(def: &DefScanRoots, entry_scripts: &[EntryScriptFact]) -> DebugR
     }
     for es in entry_scripts {
         if !es.exists {
-            reasons.push(format!("entry script missing: {}/{}", es.process, es.module));
+            reasons.push(format!(
+                "entry script missing: {}/{}",
+                es.process, es.module
+            ));
         }
     }
     // 致命:无任何可扫描根(无 res 锚点且无工作区根)——派生无法继续。

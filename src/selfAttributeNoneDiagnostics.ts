@@ -1,3 +1,4 @@
+import { maskPythonNonCode } from './pythonLexicalMask';
 import { inferSelfAttributeFlow, type SelfAttributeFlowOptions } from './selfAttributeFlowTypes';
 
 /**
@@ -63,15 +64,18 @@ export function computeSelfAttributeNoneFindings(
   options?: SelfAttributeFlowOptions,
   versionKey?: string
 ): SelfAttributeNoneFinding[] {
-  const lines = source.split(/\r?\n/);
+  // KR-AUD-58:匹配跑词法掩码文本(注释/字符串字面量替换为同长空白,行/列
+  // 偏移不变)——原文行匹配会把字符串/注释里的 self.x.y 提及当真实访问误报。
+  const masked = maskPythonNonCode(source);
+  const lines = masked.split(/\r?\n/);
   const findings: SelfAttributeNoneFinding[] = [];
   const memo = new Map<string, boolean>();
   // KODE-PERF-002:行起始偏移表一次建好,匹配 index 单调递增 → 双指针推进
-  const lineStarts = buildLineStarts(source);
+  const lineStarts = buildLineStarts(masked);
   let lineStartIdx = 0;
   SELF_MEMBER_ACCESS.lastIndex = 0;
   let match: RegExpExecArray | null;
-  while ((match = SELF_MEMBER_ACCESS.exec(source)) !== null) {
+  while ((match = SELF_MEMBER_ACCESS.exec(masked)) !== null) {
     const attr = match[1];
     if (BUILTIN_RECEIVERS.has(attr)) {
       continue;

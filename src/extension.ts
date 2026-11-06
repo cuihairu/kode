@@ -224,7 +224,7 @@ import {
 } from './hotReload';
 import { HotReloadStatusController } from './hotReloadStatus';
 import { runHotReloadChannelConfigCommand } from './hotReloadChannelConfig';
-import { resolveReloadTransport } from './hotReloadTransport';
+import { resolveReloadTransport, type ReloadTransport } from './hotReloadTransport';
 import { runHotReloadBatchSummaryCommand } from './hotReloadBatchSummaryCommand';
 import { runHotReloadRetryCommand } from './hotReloadRetryCommand';
 import { createDefStructuralGate } from './hotReloadDefGate';
@@ -1894,9 +1894,10 @@ export function activate(context: vscode.ExtensionContext) {
   setProcessTopologySchedulerForTests(processTopologyScheduler);
   const processTopologyManifestName = 'process_topology.xml';
 
-  /** workspace 根下清单路径(缺 workspace 根 → null,静默)。 */
-  const resolveProcessTopologyManifestPath = (): string | null => {
-    const root = getWorkspaceRootForDocument();
+  /** workspace 根下清单路径(缺 workspace 根 → null,静默)。KR-AUD-54:
+   *  根按触发文档定位,无参回落第一根在多根工作区会读错根的清单。 */
+  const resolveProcessTopologyManifestPath = (document?: vscode.TextDocument): string | null => {
+    const root = getWorkspaceRootForDocument(document);
     if (!root) {
       return null;
     }
@@ -1913,9 +1914,10 @@ export function activate(context: vscode.ExtensionContext) {
     return snapshot?.content ?? null;
   };
 
-  /** 收集 defs 原文集合(实体/接口/组件三根,闭包走查用)。 */
-  const collectTopologyDefInputs = (): Array<{ name: string; category: string; filePath: string; text: string }> => {
-    const root = getWorkspaceRootForDocument();
+  /** 收集 defs 原文集合(实体/接口/组件三根,闭包走查用)。KR-AUD-54:同
+   *  清单路径口径,根随触发文档定位,不无参回落第一根。 */
+  const collectTopologyDefInputs = (document?: vscode.TextDocument): Array<{ name: string; category: string; filePath: string; text: string }> => {
+    const root = getWorkspaceRootForDocument(document);
     if (!root) {
       return [];
     }
@@ -1998,7 +2000,8 @@ export function activate(context: vscode.ExtensionContext) {
     channel: 'immediate' | 'queued'
   ): void => {
     const capturedVersion = document.version;
-    const manifestPath = resolveProcessTopologyManifestPath();
+    // KR-AUD-54:清单路径与 defs 集合的根都随触发文档定位(多根不串)
+    const manifestPath = resolveProcessTopologyManifestPath(document);
     if (!manifestPath) {
       return;
     }
@@ -2016,7 +2019,7 @@ export function activate(context: vscode.ExtensionContext) {
         if (!enabled || document.version !== capturedVersion) {
           return [];
         }
-        const root = getWorkspaceRootForDocument();
+        const root = getWorkspaceRootForDocument(document);
         if (!root) {
           return [];
         }
@@ -2028,7 +2031,7 @@ export function activate(context: vscode.ExtensionContext) {
         const result = await validateProcessTopologyInRust({
           manifestText,
           entitiesXmlText,
-          defs: collectTopologyDefInputs()
+          defs: collectTopologyDefInputs(document)
         });
         if (!result) {
           // Rust 不可用/失败 → 零发现(静默,不误报)。
@@ -2438,6 +2441,16 @@ export function activate(context: vscode.ExtensionContext) {
       bumpRootConfigGeneration('db-config');
       // IDE-SCH-005:表前缀/连接配置切换 → 打开中的 schema 预览与模拟文档
       // 立即重取(新表名不等文件保存;快照面由 tablePrefix/generation 轴判过期)
+      databaseSchemaProvider.refresh();
+      databaseSimulationProvider.refresh();
+    }
+
+    // KR-AUD-55:defs 布局两键(entityDefsPath/entitiesXmlPath)变更同样进
+    // 失效清单——entities.xml 与 entity_defs 是 schema/实体索引的数据源,
+    // 指向切换不 bump 会继续喂旧路径的快照;口径与 db-config 分支一致。
+    if (event.affectsConfiguration('kbengine.entityDefsPath') ||
+        event.affectsConfiguration('kbengine.entitiesXmlPath')) {
+      bumpRootConfigGeneration('def-paths');
       databaseSchemaProvider.refresh();
       databaseSimulationProvider.refresh();
     }
@@ -5012,13 +5025,38 @@ export function activate(context: vscode.ExtensionContext) {
     }
   };
   // RT-3(IDE-HOT-005):def 结构闸判定面 fire 与失败目标重试共用同一实例与
-  // 同一会话基线册(逐次滚动语义一致)——重试不复用闸判定,结构性 def 变更
-  // 会经「重试」通道以普通 reload 下发。
+  // 同一会话基线册(放行即真实发送时前滚,见 F1)——重试不复用闸判定,
+  // 结构性 def 变更会经「重试」通道以普通 reload 下发。
   const hotReloadDefBaselines = new Map<string, string>();
   const hotReloadDefGate = createDefStructuralGate(
     hotReloadTargetStateWiring.readFileContent,
     hotReloadDefBaselines
   );
+  // F1(2026-11-05 审核):被拦批次不前滚基线,基线只随真实发送或明确重启
+  // 确认建立——本命令是重启确认口:用户确认引擎已重启并加载当前 def 内容
+  // 后调用,基线重建为当前内容,其上的非结构 def 变更才可走普通热更。
+  context.subscriptions.push(
+    vscode.commands.registerCommand('kbengine.hotReload.confirmDefBaseline', async () => {
+      const confirmed = (await hotReloadDefGate.confirmLoaded?.()) ?? 0;
+      hotReloadStatus.log(`def 结构基线重建(重启确认):${confirmed} 个文件基线已对齐当前内容(结构性变更仍会在下次发送前拦下)`);
+      void Promise.resolve(vscode.window.showInformationMessage(`def 结构基线已对齐当前内容(${confirmed} 个文件)`)).catch(
+        () => undefined
+      );
+    })
+  );
+  // IDE-HOT-102:部署通道发送口(fire 路径与失败目标重试共用同一解出口)——
+  // 当前激活 profile 配了 hotReload 段才解出通道(经 resolveReloadTransport
+  // 校验),未配返回 null,调用方回落既有 actionName 通道。targetId=profile.id
+  // (稳定身份,台账键用,改名不漂移)。交叉修复(二轮):失败重试的目标=
+  // 此目标时接回同一发送通道,不再只反查 quick action 动作。
+  const resolveHotReloadChannelTransport = (): { transport: ReloadTransport; targetId: string } | null => {
+    const activeProfile = resolveActiveProfile(context.workspaceState);
+    if (!activeProfile?.hotReload) {
+      return null;
+    }
+    const transport = resolveReloadTransport(activeProfile.hotReload);
+    return transport ? { transport, targetId: activeProfile.id } : null;
+  };
   setupHotReload(context, runQuickActionForHotReload, {
     status: hotReloadStatus,
     targetState: hotReloadTargetStateWiring,
@@ -5044,14 +5082,9 @@ export function activate(context: vscode.ExtensionContext) {
     // IDE-HOT-102:部署通道接线——当前激活 profile 配了 hotReload 段才解出
     // 通道(经 resolveReloadTransport 校验),未配返回 null,发送回落既有
     // actionName 通道。targetId=profile.id(稳定身份,台账键用,改名不漂移)。
-    resolveChannelTransport: () => {
-      const activeProfile = resolveActiveProfile(context.workspaceState);
-      if (!activeProfile?.hotReload) {
-        return null;
-      }
-      const transport = resolveReloadTransport(activeProfile.hotReload);
-      return transport ? { transport, targetId: activeProfile.id } : null;
-    }
+    // 交叉修复(二轮):同一解出口给失败目标重试用——部署通道目标(profile
+    // ID)失败后的重试接回同一发送通道,不再只反查 quick action 动作。
+    resolveChannelTransport: resolveHotReloadChannelTransport
   });
   // IDE-HOT-102:部署级热更通道配置面板(官方/HTTP + 连通性测试)——按
   // profile 读/写 hotReload 段;未配回落既有 actionName 通道。探测只走
@@ -5112,6 +5145,9 @@ export function activate(context: vscode.ExtensionContext) {
               runAction: runQuickActionForHotReload,
               resolveActionNameForTarget: resolveHotReloadActionNameForTarget,
               targetState: hotReloadTargetStateWiring,
+              // 交叉修复(二轮):部署通道目标(profile ID)失败后的重试接回
+              // 同一发送通道(与 fire 路径同一解出口)
+              resolveChannelTransport: resolveHotReloadChannelTransport,
               noteEngineDigest: (key, file, body) => hotReloadEngineDigestRegister.note(key, file, body),
               timers: realHotReloadTimerDeps,
               settleHandles: hotReloadRetrySettleHandles,
@@ -6157,7 +6193,8 @@ export function activate(context: vscode.ExtensionContext) {
     dispose: async () => {
       telnetService.dispose();
       telnetWebView.dispose();
-      serverManager.dispose();
+      // KR-AUD-57:serverManager.dispose 只调一次(await)——原处多出一次
+      // 裸调(丢弃 promise),进程表清理被连跑两遍
       await serverManager.dispose();
       logHub.dispose();
       logCollector.dispose();

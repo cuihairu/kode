@@ -37,7 +37,7 @@ fn wire_golden_matches_regenerated_dump() {
     let committed = std::fs::read_to_string(&golden_path)
         .expect("golden 文件缺失: crates/kode-server/tests/golden/wire-parity.json");
     // Windows autocrlf 会把 golden 检出为 CRLF;dump 输出恒 LF,两侧都剥 \r\n。
-    let committed = committed.trim_end_matches(|c| c == '\r' || c == '\n');
+    let committed = committed.trim_end_matches(['\r', '\n']);
     assert_eq!(
         regenerated, committed,
         "wire golden 与重生成不一致。\n重新运行:\n  cargo run -p kode-server --bin dump-wire-golden > crates/kode-server/tests/golden/wire-parity.json"
@@ -53,10 +53,7 @@ fn wire_golden_matches_regenerated_dump() {
 fn wire_golden_value_samples_bidirectional() {
     let value = golden_json();
     let samples = value["samples"].as_array().unwrap();
-    let value_samples: Vec<&Value> = samples
-        .iter()
-        .filter(|s| s["kind"] == "value")
-        .collect();
+    let value_samples: Vec<&Value> = samples.iter().filter(|s| s["kind"] == "value").collect();
     assert!(!value_samples.is_empty(), "value 样本不应为空");
 
     for s in &value_samples {
@@ -76,8 +73,7 @@ fn wire_golden_value_samples_bidirectional() {
         // decode(hex) → value
         let raw = from_hex(hex).expect("hex");
         let mut cur = WireCursor::new(&raw);
-        let back = decode_value(&layout, &mut cur)
-            .unwrap_or_else(|e| panic!("{name} decode: {e}"));
+        let back = decode_value(&layout, &mut cur).unwrap_or_else(|e| panic!("{name} decode: {e}"));
         assert_eq!(back, sample_value, "{name} decode value");
 
         // 消费干净(无尾随字节)
@@ -97,12 +93,9 @@ fn wire_golden_stream_samples_bidirectional() {
             "property_stream" => {
                 let name = s["name"].as_str().unwrap();
                 let input = &s["input"];
-                let entity: EntityRef =
-                    serde_json::from_value(input["entity"].clone()).unwrap();
-                let mode: PropertyMode =
-                    serde_json::from_value(input["mode"].clone()).unwrap();
-                let base: BasePropUtype =
-                    serde_json::from_value(input["base"].clone()).unwrap();
+                let entity: EntityRef = serde_json::from_value(input["entity"].clone()).unwrap();
+                let mode: PropertyMode = serde_json::from_value(input["mode"].clone()).unwrap();
+                let base: BasePropUtype = serde_json::from_value(input["base"].clone()).unwrap();
                 let entries: Vec<PropertyEntry> =
                     serde_json::from_value(input["entries"].clone()).unwrap();
                 let entity_kind = EntityRefKind::of(&entity);
@@ -116,9 +109,9 @@ fn wire_golden_stream_samples_bidirectional() {
                         }
                     }
                     move |_parent: u16, child: u16| {
-                        map.get(&child).cloned().ok_or_else(|| {
-                            WireError::UnknownType(format!("child {child}"))
-                        })
+                        map.get(&child)
+                            .cloned()
+                            .ok_or_else(|| WireError::UnknownType(format!("child {child}")))
                     }
                 };
 
@@ -141,22 +134,16 @@ fn wire_golden_stream_samples_bidirectional() {
             "method_call" => {
                 let name = s["name"].as_str().unwrap();
                 let input = &s["input"];
-                let mode: PropertyMode =
-                    serde_json::from_value(input["mode"].clone()).unwrap();
-                let call: MethodCall =
-                    serde_json::from_value(input["call"].clone()).unwrap();
+                let mode: PropertyMode = serde_json::from_value(input["mode"].clone()).unwrap();
+                let call: MethodCall = serde_json::from_value(input["call"].clone()).unwrap();
                 let hex = s["hex"].as_str().unwrap();
 
                 let arg_layouts_of = {
                     let layouts = call.arg_layouts.clone();
                     move |_component: Option<u8>, _m: MethodRef| Ok(layouts.clone())
                 };
-                let back = decode_method_args(
-                    &from_hex(hex).expect("hex"),
-                    mode,
-                    arg_layouts_of,
-                )
-                .unwrap_or_else(|e| panic!("{name} decode: {e}"));
+                let back = decode_method_args(&from_hex(hex).expect("hex"), mode, arg_layouts_of)
+                    .unwrap_or_else(|e| panic!("{name} decode: {e}"));
                 assert_eq!(back, call, "{name} method call");
 
                 let mut out = Vec::new();
@@ -201,15 +188,13 @@ fn wire_golden_no_panic_on_truncation() {
             let prefix = &bytes[..cut];
             match s["kind"].as_str().unwrap() {
                 "value" => {
-                    let layout: WireLayout =
-                        serde_json::from_value(s["layout"].clone()).unwrap();
+                    let layout: WireLayout = serde_json::from_value(s["layout"].clone()).unwrap();
                     let mut cur = WireCursor::new(prefix);
                     let _ = decode_value(&layout, &mut cur);
                 }
                 "property_stream" => {
                     let input = &s["input"];
-                    let mode: PropertyMode =
-                        serde_json::from_value(input["mode"].clone()).unwrap();
+                    let mode: PropertyMode = serde_json::from_value(input["mode"].clone()).unwrap();
                     let base: BasePropUtype =
                         serde_json::from_value(input["base"].clone()).unwrap();
                     let entity: EntityRef =
@@ -311,10 +296,7 @@ fn wire_entity_call_is_16_bytes() {
     let mut out = Vec::new();
     encode_value(&layout, &v, &mut out).expect("encode entity call");
     assert_eq!(out.len(), 16);
-    assert_eq!(
-        to_hex(&out),
-        "ffffffff050000000000000002000700"
-    );
+    assert_eq!(to_hex(&out), "ffffffff050000000000000002000700");
     let mut cur = WireCursor::new(&out);
     let back = decode_value(&layout, &mut cur).expect("decode entity call");
     assert_eq!(back, v);
@@ -332,13 +314,8 @@ fn wire_alias_mode_id_overflow() {
         },
     };
     let mut out = Vec::new();
-    let err = encode_property_stream(
-        EntityRef::Full(1),
-        PropertyMode::Alias,
-        &[entry],
-        &mut out,
-    )
-    .expect_err("child 300 超 uint8 应报错");
+    let err = encode_property_stream(EntityRef::Full(1), PropertyMode::Alias, &[entry], &mut out)
+        .expect_err("child 300 超 uint8 应报错");
     assert_eq!(err, WireError::AliasIdOverflow(300));
 }
 
@@ -391,9 +368,18 @@ fn wire_schema_resolves_fixture() {
     assert_eq!(
         schema.resolve("POSITION").unwrap(),
         WireLayout::FixedDict(vec![
-            WireField { name: "x".into(), layout: WireLayout::F32 },
-            WireField { name: "y".into(), layout: WireLayout::F32 },
-            WireField { name: "z".into(), layout: WireLayout::F32 },
+            WireField {
+                name: "x".into(),
+                layout: WireLayout::F32
+            },
+            WireField {
+                name: "y".into(),
+                layout: WireLayout::F32
+            },
+            WireField {
+                name: "z".into(),
+                layout: WireLayout::F32
+            },
         ])
     );
     // 未注册 → UnknownType
@@ -407,10 +393,7 @@ fn wire_schema_resolves_fixture() {
 #[test]
 fn wire_schema_cycle_detected() {
     let schema = WireSchema::from_sources("<root><A>B</A><B>A</B></root>", "");
-    assert!(matches!(
-        schema.resolve("A"),
-        Err(WireError::Cycle(_))
-    ));
+    assert!(matches!(schema.resolve("A"), Err(WireError::Cycle(_))));
 }
 
 // ---------------------------------------------------------------------------
@@ -436,7 +419,10 @@ fn response_of(out: &[Outgoing]) -> &Value {
 #[test]
 fn wire_rpc_dispatch_smoke() {
     let mut state = ServerState::new();
-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
+    handle_message(
+        &mut state,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
 
     let out = handle_message(
         &mut state,
@@ -506,8 +492,18 @@ fn wire_rpc_dispatch_smoke() {
 #[test]
 fn method_encoding_rejects_arity_and_identifier_mode_before_writing() {
     for (mode, method, args, layouts) in [
-        (PropertyMode::Alias, MethodRef::Alias(1), vec![WireValue::U8(1), WireValue::U8(2)], vec![WireLayout::U8]),
-        (PropertyMode::Alias, MethodRef::Alias(1), vec![], vec![WireLayout::U8]),
+        (
+            PropertyMode::Alias,
+            MethodRef::Alias(1),
+            vec![WireValue::U8(1), WireValue::U8(2)],
+            vec![WireLayout::U8],
+        ),
+        (
+            PropertyMode::Alias,
+            MethodRef::Alias(1),
+            vec![],
+            vec![WireLayout::U8],
+        ),
         (PropertyMode::Alias, MethodRef::Utype(257), vec![], vec![]),
         (PropertyMode::Utype, MethodRef::Alias(1), vec![], vec![]),
         // KR-AUD-94 边界:Utype 值 255/256 在 Alias 模式同样必须拒绝(模式不匹配,
@@ -518,7 +514,12 @@ fn method_encoding_rejects_arity_and_identifier_mode_before_writing() {
         (PropertyMode::Utype, MethodRef::Alias(255), vec![], vec![]),
     ] {
         let mut output = vec![42];
-        let call = MethodCall { component_alias: None, method, args, arg_layouts: layouts };
+        let call = MethodCall {
+            component_alias: None,
+            method,
+            args,
+            arg_layouts: layouts,
+        };
         assert!(encode_method_args(&call, mode, &mut output).is_err());
         assert_eq!(output, vec![42]);
     }
@@ -528,7 +529,11 @@ fn method_encoding_rejects_arity_and_identifier_mode_before_writing() {
 fn method_encoding_accepts_legal_mode_id_pairs() {
     // KR-AUD-94 正例:合法模式组合编码成功且不改写输出缓冲前缀。
     // Utype 模式下 Utype(255/256/257) 全部合法(u16 容纳),写入 u16 LE。
-    for method in [MethodRef::Utype(255), MethodRef::Utype(256), MethodRef::Utype(257)] {
+    for method in [
+        MethodRef::Utype(255),
+        MethodRef::Utype(256),
+        MethodRef::Utype(257),
+    ] {
         let mut output = vec![42];
         let call = MethodCall {
             component_alias: None,
@@ -570,24 +575,64 @@ fn method_encoding_accepts_legal_mode_id_pairs() {
 #[test]
 fn component_identity_selects_property_and_method_layouts() {
     let entries = vec![
-        PropertyEntry { parent: 6, child: 1, kind: PropKind::Regular { layout: WireLayout::U8, value: WireValue::U8(7) } },
-        PropertyEntry { parent: 7, child: 1, kind: PropKind::Regular { layout: WireLayout::U16, value: WireValue::U16(513) } },
+        PropertyEntry {
+            parent: 6,
+            child: 1,
+            kind: PropKind::Regular {
+                layout: WireLayout::U8,
+                value: WireValue::U8(7),
+            },
+        },
+        PropertyEntry {
+            parent: 7,
+            child: 1,
+            kind: PropKind::Regular {
+                layout: WireLayout::U16,
+                value: WireValue::U16(513),
+            },
+        },
     ];
     let mut bytes = Vec::new();
-    encode_property_stream(EntityRef::Full(1), PropertyMode::Utype, &entries, &mut bytes).unwrap();
-    let (_, actual) = decode_property_stream(&bytes, EntityRefKind::Full, PropertyMode::Utype, &BasePropUtype::default(), |parent, child| match (parent, child) {
-        (6, 1) => Ok(WireLayout::U8), (7, 1) => Ok(WireLayout::U16), _ => Err(WireError::UnknownType("property".into())),
-    }).unwrap();
+    encode_property_stream(
+        EntityRef::Full(1),
+        PropertyMode::Utype,
+        &entries,
+        &mut bytes,
+    )
+    .unwrap();
+    let (_, actual) = decode_property_stream(
+        &bytes,
+        EntityRefKind::Full,
+        PropertyMode::Utype,
+        &BasePropUtype::default(),
+        |parent, child| match (parent, child) {
+            (6, 1) => Ok(WireLayout::U8),
+            (7, 1) => Ok(WireLayout::U16),
+            _ => Err(WireError::UnknownType("property".into())),
+        },
+    )
+    .unwrap();
     assert_eq!(actual, entries);
-    for (component, layout, value) in [(1, WireLayout::U8, WireValue::U8(7)), (2, WireLayout::U16, WireValue::U16(513))] {
-        let call = MethodCall { component_alias: Some(component), method: MethodRef::Alias(1), args: vec![value], arg_layouts: vec![layout] };
+    for (component, layout, value) in [
+        (1, WireLayout::U8, WireValue::U8(7)),
+        (2, WireLayout::U16, WireValue::U16(513)),
+    ] {
+        let call = MethodCall {
+            component_alias: Some(component),
+            method: MethodRef::Alias(1),
+            args: vec![value],
+            arg_layouts: vec![layout],
+        };
         let mut bytes = Vec::new();
         encode_method_args(&call, PropertyMode::Alias, &mut bytes).unwrap();
-        let actual = decode_method_args(&bytes, PropertyMode::Alias, |component, method| match (component, method) {
-            (Some(1), MethodRef::Alias(1)) => Ok(vec![WireLayout::U8]),
-            (Some(2), MethodRef::Alias(1)) => Ok(vec![WireLayout::U16]),
-            _ => Err(WireError::UnknownType("method".into())),
-        }).unwrap();
+        let actual = decode_method_args(&bytes, PropertyMode::Alias, |component, method| {
+            match (component, method) {
+                (Some(1), MethodRef::Alias(1)) => Ok(vec![WireLayout::U8]),
+                (Some(2), MethodRef::Alias(1)) => Ok(vec![WireLayout::U16]),
+                _ => Err(WireError::UnknownType("method".into())),
+            }
+        })
+        .unwrap();
         assert_eq!(actual, call);
     }
 }

@@ -14,6 +14,12 @@ import { createHash } from 'crypto';
 
 import type { HotReloadDeliveryRecord, HotReloadTargetKey, HotReloadTargetStateStore } from './hotReloadTargetState';
 
+/**
+ * applied 核验窗口(IDE-REV-023):到点仍未确认只注解超时,不冒充任何终态。
+ * 常量落在本模块(结算语义的归属地),hotReload/通道发送/重试路径共用同一值。
+ */
+export const HOT_RELOAD_APPLIED_SETTLE_MS = 10_000;
+
 export type AppliedReceiptVerdict =
   | { kind: 'applied'; digest: string }
   | { kind: 'not-applied'; reason: string }

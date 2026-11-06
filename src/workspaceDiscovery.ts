@@ -53,15 +53,15 @@ export const DISCOVERY_CONVENTIONS = {
  * 交互路径(扫描根发现/布局解析)每次调用都会重探约定链,巨仓上逐次 stat
  * 纯属重复;失效口径与 scanCache 同级(resetDiscoveryState/resetDiscoveryMemo)。
  */
-const engineProbeMemo = new Map<string, boolean>();
+const engineProbeMemo = new Map<string, CacheEntry<boolean>>();
 
 export function hasEngineConfigProbe(configPath: string): boolean {
   const cached = engineProbeMemo.get(configPath);
-  if (cached !== undefined) {
-    return cached;
+  if (cached && isFresh(cached)) {
+    return cached.value;
   }
   const result = fs.existsSync(path.join(configPath, 'res', 'server', 'kbengine.xml'));
-  engineProbeMemo.set(configPath, result);
+  engineProbeMemo.set(configPath, { value: result, at: Date.now() });
   return result;
 }
 
@@ -77,8 +77,8 @@ export function conventionalConfigRoots(workspaceRoot: string): string[] {
   // 书 PR-002 ③(交互路径 Top3 之约定 readdir):一级目录枚举按根 memo,
   // 失效口径与 scanCache 同级;命中验收仍是探针谓词,目录名只是准入。
   const cached = conventionalRootsMemo.get(workspaceRoot);
-  if (cached) {
-    return cached;
+  if (cached && isFresh(cached)) {
+    return cached.value;
   }
   const statics = DISCOVERY_CONVENTIONS.configRoots.map(relative =>
     path.join(workspaceRoot, relative)
@@ -93,7 +93,7 @@ export function conventionalConfigRoots(workspaceRoot: string): string[] {
     .filter(entry => entry.isDirectory() && entry.name.endsWith('_assets'))
     .map(entry => path.join(workspaceRoot, entry.name));
   const merged = [...new Set([...statics, ...dynamics])];
-  conventionalRootsMemo.set(workspaceRoot, merged);
+  conventionalRootsMemo.set(workspaceRoot, { value: merged, at: Date.now() });
   return merged;
 }
 
@@ -222,10 +222,30 @@ function findKbeRootAnchor(filePath: string): string | null {
 
 // ---- 会话内缓存与多候选记忆 ----
 
-const scanCache = new Map<string, DiscoveredCandidateSet>();
+// KR-AUD-34:缓存条目带新鲜度窗口——首扫早于 entity_defs 创建(或约定探针
+// 瞬时失败)时,空/失败结果此前被永久缓存,新建目录不可发现、瞬时失败不可
+// 重试。过期(默认 30s)后重扫;窗口内重复查询仍走缓存(交互路径免重复
+// readdir/stat 的口径不变)。测试可注入短窗。
+const DISCOVERY_CACHE_TTL_MS = 30_000;
+let discoveryCacheTtlMs = DISCOVERY_CACHE_TTL_MS;
+
+/** 测试注入缓存新鲜度窗口(ms) */
+export function setDiscoveryCacheTtlForTests(ms: number): void {
+  discoveryCacheTtlMs = ms;
+}
+
+interface CacheEntry<T> {
+  value: T;
+  at: number;
+}
+
+const isFresh = (entry: CacheEntry<unknown>): boolean =>
+  Date.now() - entry.at < discoveryCacheTtlMs;
+
+const scanCache = new Map<string, CacheEntry<DiscoveredCandidateSet>>();
 // 书 PR-002 ③(交互路径 Top3 memo):约定根枚举与引擎探针的按目录缓存,
 // 与 scanCache 同级失效——交互路径每查询重复 readdir/stat 属纯重复。
-const conventionalRootsMemo = new Map<string, string[]>();
+const conventionalRootsMemo = new Map<string, CacheEntry<string[]>>();
 
 export type DiscoveryKey = 'entityDefs' | 'entitiesXml' | 'typesXml' | 'configRoot';
 
@@ -278,11 +298,11 @@ export function preheatDiscoveryScan(workspaceRoot: string): void {
 
 function cachedScan(workspaceRoot: string, options?: ScanOptions): DiscoveredCandidateSet {
   const cached = scanCache.get(workspaceRoot);
-  if (cached) {
-    return cached;
+  if (cached && isFresh(cached)) {
+    return cached.value;
   }
   const result = scanWorkspaceAnchors(workspaceRoot, options);
-  scanCache.set(workspaceRoot, result);
+  scanCache.set(workspaceRoot, { value: result, at: Date.now() });
   return result;
 }
 

@@ -10,7 +10,7 @@ use crate::error::{CloneError, CloneResult};
 use crate::schema::{CloneSchema, DerivedTable};
 
 /// 关系类别(plan §4.2 A–E,命名对齐计划书 PDC-0104)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RelationKind {
     /// 引擎生成(§4.2-A):ARRAY/组件子表 + parentID 列(无 DB 外键,纯逻辑)。
     EngineGenerated,
@@ -37,7 +37,7 @@ impl RelationKind {
 }
 
 /// 一条关系:子表经 parentID 挂到父表(或显式声明)。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Relation {
     pub child_table: String,
     pub parent_table: String,
@@ -90,7 +90,10 @@ impl RelationGraph {
                         payload_columns: payload,
                     },
                 );
-                children.entry(parent.clone()).or_default().push(table.name.clone());
+                children
+                    .entry(parent.clone())
+                    .or_default()
+                    .push(table.name.clone());
             }
         }
 
@@ -142,7 +145,11 @@ impl RelationGraph {
 }
 
 /// DFS 三色环检测(0 未访/1 在访/2 已访)。
-fn visit(node: &str, edges: &BTreeMap<String, Relation>, state: &mut BTreeMap<String, u8>) -> CloneResult<()> {
+fn visit(
+    node: &str,
+    edges: &BTreeMap<String, Relation>,
+    state: &mut BTreeMap<String, u8>,
+) -> CloneResult<()> {
     if state.get(node) == Some(&1) {
         return Err(CloneError::CycleDetected(format!("cycle through `{node}`")));
     }
@@ -197,7 +204,10 @@ mod tests {
     }
 
     fn table(name: &str, kind: &str, parent: Option<&str>) -> DerivedTable {
-        let mut fields = vec![field("id", "bigint unsigned"), field("sm_autoLoad", "tinyint")];
+        let mut fields = vec![
+            field("id", "bigint unsigned"),
+            field("sm_autoLoad", "tinyint"),
+        ];
         if parent.is_some() {
             fields.insert(1, field("parentID", "bigint unsigned"));
             fields.push(field("sm_value", "varchar"));
@@ -232,7 +242,10 @@ mod tests {
             graph.edges["tbl_Avatar_items"].kind,
             RelationKind::EngineGenerated
         );
-        assert_eq!(graph.edges["tbl_Avatar_items"].payload_columns, vec!["sm_value"]);
+        assert_eq!(
+            graph.edges["tbl_Avatar_items"].payload_columns,
+            vec!["sm_value"]
+        );
     }
 
     #[test]

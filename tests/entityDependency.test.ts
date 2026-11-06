@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DependencyType,
+  calculateInheritanceMaxDepth,
   extractNamedChildBlocks,
   extractTagBodies,
   dedupeReferences,
@@ -131,5 +132,36 @@ describe('dedupeReferences', () => {
 
   it('returns an empty list unchanged', () => {
     expect(dedupeReferences([])).toEqual([]);
+  });
+});
+
+/* ---------------- KR-AUD-63: 继承链最大深度真实计算 ---------------- */
+
+describe('KR-AUD-63: calculateInheritanceMaxDepth 真实链深', () => {
+  const node = (name: string, parent?: string) => ({ name, parent });
+
+  it('三级继承链链深为 3(原实现恒 1)', () => {
+    const entities = new Map([
+      ['Avatar', node('Avatar')],
+      ['Monster', node('Monster', 'Avatar')],
+      ['Boss', node('Boss', 'Monster')]
+    ]);
+    expect(calculateInheritanceMaxDepth(entities)).toBe(3);
+  });
+
+  it('孤立实体链深 1,parent 缺失链不上溯', () => {
+    const entities = new Map([
+      ['Hero', node('Hero')],
+      ['Ghost', node('Ghost', 'NoSuchParent')]
+    ]);
+    expect(calculateInheritanceMaxDepth(entities)).toBe(1);
+  });
+
+  it('parent 环截断,不死循环', () => {
+    const entities = new Map([
+      ['A', node('A', 'B')],
+      ['B', node('B', 'A')]
+    ]);
+    expect(calculateInheritanceMaxDepth(entities)).toBeLessThan(10);
   });
 });

@@ -3,6 +3,7 @@ import * as path from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
+import { createDefStructuralGate } from '../src/hotReloadDefGate';
 import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
 import {
   channels,
@@ -90,7 +91,8 @@ describe('setupHotReload def 结构闸接线(IDE-REV-024)', () => {
   const makeContext = (): vscode.ExtensionContext =>
     ({ subscriptions: [] }) as unknown as vscode.ExtensionContext;
 
-  // 同一装配实例上多发:content 可变,模拟 def 文件被逐次编辑
+  // 同一装配实例上多发:content 可变,模拟 def 文件被逐次编辑。
+  // F1:闸实例显式注入,测试拿到同一实例的 confirmLoaded(重启确认口)。
   const wire = (
     options: { withReader?: boolean } = {}
   ): {
@@ -98,10 +100,16 @@ describe('setupHotReload def 结构闸接线(IDE-REV-024)', () => {
     runCalls: string[];
     setContent: (value: string | null) => void;
     fire: (file: string) => void;
+    confirm: () => Promise<number>;
   } => {
     const clock = makeTimers();
     const runCalls: string[] = [];
     let content: string | null = BASE_DEF;
+    const baselines = new Map<string, string>();
+    const gate = createDefStructuralGate(
+      options.withReader === false ? undefined : async () => content,
+      baselines
+    );
     configurationOverrides.set('kbengine', {
       hotReload: { enabled: true, actionName: '热更', debounceMs: 100, globs: ['**/*.py', '**/*.def'] }
     });
@@ -113,6 +121,7 @@ describe('setupHotReload def 结构闸接线(IDE-REV-024)', () => {
       },
       {
         timers: clock.timers,
+        defGate: gate,
         targetState: {
           store: new HotReloadTargetStateStore({ now: () => 1 }),
           resolveTargetId: () => 't1',
@@ -133,18 +142,22 @@ describe('setupHotReload def 结构闸接线(IDE-REV-024)', () => {
       },
       fire: (file: string): void => {
         lastFileSystemWatcher.current!.fireChange({ fsPath: file } as never);
-      }
+      },
+      confirm: () => Promise.resolve(gate.confirmLoaded!())
     };
   };
 
   it('结构性 def 变更(属性 Type 变化):实际发送器未收到 reload,日志与警告提示需重启', async () => {
     const run = wire();
-    // 第一发:会话首见,建基线(证明不了无结构变化,保守不发)
+    // 第一发:会话首见,证明不了无结构变化,保守不发(基线不前滚,见 F1)
     run.fire('/ws/scripts/Avatar.def');
     run.clock.tick();
     await flush();
     expect(run.runCalls).toEqual([]);
     expect(hotReloadLog().some(line => line.includes('无基线'))).toBe(true);
+
+    // 重启确认:引擎已加载当前内容,基线由此建立(F1 的明确重启确认通道)
+    expect(await run.confirm()).toBe(1);
 
     // 第二发:属性 Type INT32→FLOAT = 序列化面结构变化 → 拦下不发
     run.setContent(STRUCTURAL_DEF);
@@ -158,15 +171,68 @@ describe('setupHotReload def 结构闸接线(IDE-REV-024)', () => {
     expect(messages.warning.some(text => text.includes('需要重启') && text.includes('不发普通 reload'))).toBe(true);
   });
 
-  it('非结构 def 变更(只加注释):基线之后照常发送', async () => {
+  // F1 回归:被拦发送不得前滚基线——结构变化被拦后,未重启再次保存同一
+  // 内容(或其非结构变体)必须持续拦下,第二次发送不得绕过需重启。
+  it('F1 回归:被拦批次不前滚基线,未重启再次保存持续拦下(含只改注释变体)', async () => {
+    const run = wire();
+    run.setContent(BASE_DEF);
+    run.fire('/ws/scripts/Avatar.def');
+    run.clock.tick();
+    await flush();
+    expect(await run.confirm()).toBe(1);
+
+    // 结构变化第一次拦下
+    run.setContent(STRUCTURAL_DEF);
+    run.fire('/ws/scripts/Avatar.def');
+    run.clock.tick();
+    await flush();
+    expect(run.runCalls).toEqual([]);
+    expect(hotReloadLog().some(line => line.includes('属性结构变化'))).toBe(true);
+
+    // 第二次保存同一结构内容:基线未被前滚 → 仍拦下(旧实现此处放行)
+    run.fire('/ws/scripts/Avatar.def');
+    run.clock.tick();
+    await flush();
+    expect(run.runCalls).toEqual([]);
+    expect(hotReloadLog().some(line => line.includes('属性结构变化'))).toBe(true);
+
+    // 只改注释(相对被拦内容非结构):与引擎已加载基线比仍是结构变化 → 仍拦
+    const commented = `<!-- 注释不进指纹 -->\n${STRUCTURAL_DEF}`;
+    run.setContent(commented);
+    run.fire('/ws/scripts/Avatar.def');
+    run.clock.tick();
+    await flush();
+    expect(run.runCalls).toEqual([]);
+    expect(hotReloadLog().some(line => line.includes('属性结构变化'))).toBe(true);
+
+    // 放行路径仍前滚基线:重启确认(内容=注释变体)后再发其非结构变体 → 发送
+    run.setContent(commented);
+    expect(await run.confirm()).toBe(1);
+    const commentedAgain = `<!-- 再加一行注释 -->\n${commented}`;
+    run.setContent(commentedAgain);
+    run.fire('/ws/scripts/Avatar.def');
+    run.clock.tick();
+    await flush();
+    expect(run.runCalls).toEqual(['热更']);
+  });
+
+  it('非结构 def 变更(只加注释):重启确认建立基线之后照常发送', async () => {
     const run = wire();
     run.setContent(NONSTRUCTURAL_DEF);
     run.fire('/ws/scripts/Avatar.def');
     run.clock.tick();
     await flush();
-    // 首见建基线:保守不发
+    // 首见无基线:保守不发,且基线不前滚(F1)——不确认重启,再发也拦
     expect(run.runCalls).toEqual([]);
 
+    run.fire('/ws/scripts/Avatar.def');
+    run.clock.tick();
+    await flush();
+    expect(run.runCalls).toEqual([]);
+    expect(hotReloadLog().some(line => line.includes('无基线'))).toBe(true);
+
+    // 明确重启确认后基线建立,其上的非结构变体照常发送
+    expect(await run.confirm()).toBe(1);
     run.fire('/ws/scripts/Avatar.def');
     run.clock.tick();
     await flush();
@@ -257,9 +323,10 @@ describe('setupHotReload def 结构闸接线(IDE-REV-024)', () => {
     run.fire('/ws/scripts/Avatar.def');
     run.clock.tick();
     await flush();
-    // 首见建基线:保守不发
+    // 首见无基线:保守不发(F1:基线不随拦截建立/滚动)
     expect(run.runCalls).toEqual([]);
-
+    // 重启确认建立基线后,Parent 改名=继承根变化 → 拦下
+    expect(await run.confirm()).toBe(1);
     run.setContent(PARENT_CHANGED_DEF);
     run.fire('/ws/scripts/Avatar.def');
     run.clock.tick();
@@ -269,12 +336,13 @@ describe('setupHotReload def 结构闸接线(IDE-REV-024)', () => {
     expect(hotReloadLog().some(line => line.includes('装载面变化: parent'))).toBe(true);
   });
 
-  it('装载面组件槽 Persistent 变化:拦下;之后非结构变化放行(火线路径重新核验)', async () => {
+  it('装载面组件槽 Persistent 变化:拦下;未重启持续拦下,重启确认后非结构变化放行(火线路径重新核验)', async () => {
     const run = wire();
     run.setContent(COMPONENT_BASE_DEF);
     run.fire('/ws/scripts/Avatar.def');
     run.clock.tick();
     await flush();
+    expect(await run.confirm()).toBe(1);
     run.setContent(COMPONENT_CHANGED_DEF);
     run.fire('/ws/scripts/Avatar.def');
     run.clock.tick();
@@ -282,15 +350,18 @@ describe('setupHotReload def 结构闸接线(IDE-REV-024)', () => {
     expect(run.runCalls).toEqual([]);
     expect(hotReloadLog().some(line => line.includes('装载面变化: component.bag'))).toBe(true);
 
-    // 基线逐次滚动(保守口径):改回去同样是相对新基线的结构变化,仍拦
-    run.setContent(COMPONENT_BASE_DEF);
+    // F1:被拦批次不前滚基线——未重启再次保存同一被拦内容仍持续拦下
+    // (旧实现基线滚到被拦内容,第二次保存指纹相同即放行)
     run.fire('/ws/scripts/Avatar.def');
     run.clock.tick();
     await flush();
     expect(run.runCalls).toEqual([]);
     expect(hotReloadLog().some(line => line.includes('装载面变化: component.bag'))).toBe(true);
 
-    // 之后只加注释(相对当前基线非结构)→ 照常发送
+    // 改回已加载内容 + 重启确认(引擎加载 COMPONENT_BASE_DEF)后,
+    // 只加注释(非结构)→ 照常发送
+    run.setContent(COMPONENT_BASE_DEF);
+    expect(await run.confirm()).toBe(1);
     const commented = `<!-- 注释不进指纹 -->\n${COMPONENT_BASE_DEF}`;
     run.setContent(commented);
     run.fire('/ws/scripts/Avatar.def');

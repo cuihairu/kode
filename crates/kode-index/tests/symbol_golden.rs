@@ -96,7 +96,13 @@ fn parse_json(text: &str) -> Value {
             let rest = cap.split(marker.as_str()).nth(1)?;
             let rest = rest.trim_start();
             if rest.starts_with('"') {
-                Some(rest.strip_prefix('"')?.split('"').next().unwrap_or("").to_string())
+                Some(
+                    rest.strip_prefix('"')?
+                        .split('"')
+                        .next()
+                        .unwrap_or("")
+                        .to_string(),
+                )
             } else {
                 let num: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
                 if num.is_empty() {

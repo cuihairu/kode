@@ -137,16 +137,23 @@ where
     F: FnMut(Vec<DocumentKey>) -> Box<RunFn>,
 {
     let mut specs: Vec<TaskSpec> = Vec::new();
-    let affected = graph.affected_by(changed);
+    let mut affected = graph.affected_by(changed);
+    // KR-AUD-23:changed 强制单独成批——旧实现把 changed 混进受影响集统一
+    // 切块,max_batch 足够大时 changed 与依赖同批,SingleFileUpdate 高优先级
+    // 丢失(整批降为 DependencyUpdate)。先摘出 changed 单发,余量再切块。
+    affected.remove(changed);
+    specs.push(TaskSpec {
+        kind: TaskKind::SingleFileUpdate,
+        priority: changed_priority.min(priority::NON_INTERACTIVE),
+        file: None,
+        version: None,
+        target: Some("batch:1:1".to_string()),
+        run: make_run(vec![changed.clone()]),
+    });
     let batches = plan_batches(&affected, max_batch);
     for (i, batch) in batches.into_iter().enumerate() {
-        let is_changed_file = batch.len() == 1 && batch[0] == *changed;
-        let (kind, prio) = if is_changed_file {
-            (TaskKind::SingleFileUpdate, changed_priority)
-        } else {
-            (TaskKind::DependencyUpdate, dep_priority)
-        };
-        let target = Some(format!("batch:{}:{}", i + 1, batch.len()));
+        let (kind, prio) = (TaskKind::DependencyUpdate, dep_priority);
+        let target = Some(format!("batch:{}:{}", i + 2, batch.len()));
         specs.push(TaskSpec {
             kind,
             priority: prio.min(priority::NON_INTERACTIVE),

@@ -207,8 +207,8 @@ fn config_golden_matches_regenerated_dump() {
         .expect("repo root");
     let regenerated = kode_parser::json::dump_config_corpus(&repo_root);
     let golden_path = repo_root.join("crates/kode-parser/tests/golden/config-parity.json");
-    let committed =
-        std::fs::read_to_string(&golden_path).expect("golden 缺失: crates/kode-parser/tests/golden/config-parity.json");
+    let committed = std::fs::read_to_string(&golden_path)
+        .expect("golden 缺失: crates/kode-parser/tests/golden/config-parity.json");
     let committed = committed.trim_end_matches('\n');
     if regenerated != committed {
         let diff_at = regenerated

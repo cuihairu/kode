@@ -443,20 +443,56 @@ pub fn dump_config_node(w: &mut JsonWriter, node: &crate::config::ConfigNode) {
 /// 输出 merge(base, override) 树记录)。
 pub const CONFIG_MERGE_PAIRS: &[(&str, &str)] = &[
     // 真实路径:引擎 defaults 为基、元件 kbengine.xml 覆盖(顶层单 `<root>` 递归下钻)
-    ("tests/fixtures/config/kbengine_defaults.xml", "tests/fixtures/config/kbengine.xml"),
+    (
+        "tests/fixtures/config/kbengine_defaults.xml",
+        "tests/fixtures/config/kbengine.xml",
+    ),
     // 分支覆盖:单名叶子替换 / 仅 base / 仅 override / 双容器递归 / 容器↔叶子双向 /
     // 重复名整表替换双向 / 注释合并去重与 override 优先 / 名字序 / 深层递归
-    ("tests/fixtures/config/merge/m01_leaf_base.xml", "tests/fixtures/config/merge/m01_leaf_override.xml"),
-    ("tests/fixtures/config/merge/m02_base_only_base.xml", "tests/fixtures/config/merge/m02_base_only_override.xml"),
-    ("tests/fixtures/config/merge/m03_override_only_base.xml", "tests/fixtures/config/merge/m03_override_only_override.xml"),
-    ("tests/fixtures/config/merge/m04_both_containers_base.xml", "tests/fixtures/config/merge/m04_both_containers_override.xml"),
-    ("tests/fixtures/config/merge/m05_container_vs_leaf_base.xml", "tests/fixtures/config/merge/m05_container_vs_leaf_override.xml"),
-    ("tests/fixtures/config/merge/m06_leaf_vs_container_base.xml", "tests/fixtures/config/merge/m06_leaf_vs_container_override.xml"),
-    ("tests/fixtures/config/merge/m07_repeat_base.xml", "tests/fixtures/config/merge/m07_repeat_override.xml"),
-    ("tests/fixtures/config/merge/m08_repeat_override_base.xml", "tests/fixtures/config/merge/m08_repeat_override_override.xml"),
-    ("tests/fixtures/config/merge/m09_comment_base.xml", "tests/fixtures/config/merge/m09_comment_override.xml"),
-    ("tests/fixtures/config/merge/m10_order_base.xml", "tests/fixtures/config/merge/m10_order_override.xml"),
-    ("tests/fixtures/config/merge/m11_nested_base.xml", "tests/fixtures/config/merge/m11_nested_override.xml"),
+    (
+        "tests/fixtures/config/merge/m01_leaf_base.xml",
+        "tests/fixtures/config/merge/m01_leaf_override.xml",
+    ),
+    (
+        "tests/fixtures/config/merge/m02_base_only_base.xml",
+        "tests/fixtures/config/merge/m02_base_only_override.xml",
+    ),
+    (
+        "tests/fixtures/config/merge/m03_override_only_base.xml",
+        "tests/fixtures/config/merge/m03_override_only_override.xml",
+    ),
+    (
+        "tests/fixtures/config/merge/m04_both_containers_base.xml",
+        "tests/fixtures/config/merge/m04_both_containers_override.xml",
+    ),
+    (
+        "tests/fixtures/config/merge/m05_container_vs_leaf_base.xml",
+        "tests/fixtures/config/merge/m05_container_vs_leaf_override.xml",
+    ),
+    (
+        "tests/fixtures/config/merge/m06_leaf_vs_container_base.xml",
+        "tests/fixtures/config/merge/m06_leaf_vs_container_override.xml",
+    ),
+    (
+        "tests/fixtures/config/merge/m07_repeat_base.xml",
+        "tests/fixtures/config/merge/m07_repeat_override.xml",
+    ),
+    (
+        "tests/fixtures/config/merge/m08_repeat_override_base.xml",
+        "tests/fixtures/config/merge/m08_repeat_override_override.xml",
+    ),
+    (
+        "tests/fixtures/config/merge/m09_comment_base.xml",
+        "tests/fixtures/config/merge/m09_comment_override.xml",
+    ),
+    (
+        "tests/fixtures/config/merge/m10_order_base.xml",
+        "tests/fixtures/config/merge/m10_order_override.xml",
+    ),
+    (
+        "tests/fixtures/config/merge/m11_nested_base.xml",
+        "tests/fixtures/config/merge/m11_nested_override.xml",
+    ),
 ];
 
 /// 整个合并语料的 golden JSON(与 tests/configMergeParity.test.ts 的 TS 提取器

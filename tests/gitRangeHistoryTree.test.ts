@@ -272,6 +272,96 @@ describe('IDE-GIT-010 提供者(依赖注入 mock)', () => {
     }
   });
 
+  it('多段合并:跨段时间交错提交全局降序 + 边界取全体段最早', async () => {
+    // 段1(先查):新 A(11-03)+ 老 C(11-01);段2(后查):中 B(11-02)。
+    // 旧码按段序拼接 → [A, C, B](乱序),boundary 取末段=B(11-02);
+    // 修复:全局按提交时间降序 → [A, B, C],boundary=最早 C(11-01)。
+    let call = 0;
+    const queryTimeline = vi.fn(
+      async (_f: string, _r: string, _range: SelectionRange): Promise<RangeTimelineResult> => {
+        call += 1;
+        if (call === 1) {
+          return {
+            kind: 'timeline',
+            status: 'ok',
+            entries: [
+              entry('aaa111', '新A', { date: '2026-11-03T10:00:00+08:00' }),
+              entry('ccc333', '老C', { date: '2026-11-01T10:00:00+08:00' }),
+            ],
+            boundary: { kind: 'origin', atCommit: 'ccc333', atPath: 'src/a.py' },
+          };
+        }
+        return {
+          kind: 'timeline',
+          status: 'ok',
+          entries: [entry('bbb222', '中B', { date: '2026-11-02T10:00:00+08:00' })],
+          boundary: { kind: 'origin', atCommit: 'bbb222', atPath: 'src/a.py' },
+        };
+      }
+    );
+    const provider = new GitRangeHistoryTreeProvider({
+      locateGitRepo: () => repoLocation(),
+      mapSelection: async () => ({
+        kind: 'mapped',
+        segments: [
+          { firstLine: 1, lastLine: 1, headFirstLine: 2, headLastLine: 2 },
+          { firstLine: 3, lastLine: 3, headFirstLine: 9, headLastLine: 9 },
+        ],
+        selectionLineCount: 3,
+      }),
+      queryTimeline,
+    });
+    await provider.showSelectionHistory('/repo/src/a.py', { startLine: 1, endLine: 3 }, true);
+    const state = provider.getState();
+    expect(state.kind).toBe('loaded');
+    if (state.kind === 'loaded') {
+      expect(state.entries.map(e => e.subject)).toEqual(['新A', '中B', '老C']);
+      expect(state.boundary).toEqual({ kind: 'origin', atCommit: 'ccc333', atPath: 'src/a.py' });
+    }
+  });
+
+  it('多段合并边界:同刻 origin 优先于 stopped(追溯完整性优先)', async () => {
+    let call = 0;
+    const queryTimeline = vi.fn(
+      async (): Promise<RangeTimelineResult> => {
+        call += 1;
+        const base = '2026-11-01T10:00:00+08:00';
+        if (call === 1) {
+          return {
+            kind: 'timeline',
+            status: 'ok',
+            entries: [entry('aaa111', '段1', { date: base })],
+            boundary: { kind: 'origin', atCommit: 'aaa111', atPath: 'src/a.py' },
+          };
+        }
+        return {
+          kind: 'timeline',
+          status: 'ok',
+          entries: [entry('bbb222', '段2', { date: base })],
+          boundary: { kind: 'stopped', atCommit: 'bbb222', atPath: 'src/a.py' },
+        };
+      }
+    );
+    const provider = new GitRangeHistoryTreeProvider({
+      locateGitRepo: () => repoLocation(),
+      mapSelection: async () => ({
+        kind: 'mapped',
+        segments: [
+          { firstLine: 1, lastLine: 1, headFirstLine: 2, headLastLine: 2 },
+          { firstLine: 3, lastLine: 3, headFirstLine: 9, headLastLine: 9 },
+        ],
+        selectionLineCount: 3,
+      }),
+      queryTimeline,
+    });
+    await provider.showSelectionHistory('/repo/src/a.py', { startLine: 1, endLine: 3 }, true);
+    const state = provider.getState();
+    expect(state.kind).toBe('loaded');
+    if (state.kind === 'loaded') {
+      expect(state.boundary).toEqual({ kind: 'origin', atCommit: 'aaa111', atPath: 'src/a.py' });
+    }
+  });
+
   it('has-uncommitted 且有已提交段:装载 + 未映射行数如实', async () => {
     const { provider } = makeProvider({
       mapped: {

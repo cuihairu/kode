@@ -177,11 +177,13 @@ fn parse_manifest(text: &str) -> Manifest {
             .map(|a| lines.line_of(a.value_span.start))
             .unwrap_or_else(|| lines.line_of(e.name_span.start));
         let (role, role_line) = match e.attribute("role") {
-            Some(a) => (a.value.trim().to_string(), lines.line_of(a.value_span.start)),
+            Some(a) => (
+                a.value.trim().to_string(),
+                lines.line_of(a.value_span.start),
+            ),
             None => (String::new(), lines.line_of(e.name_span.start)),
         };
-        let port = scalar_child(&doc, child, "port")
-            .and_then(|v| v.trim().parse::<u32>().ok());
+        let port = scalar_child(&doc, child, "port").and_then(|v| v.trim().parse::<u32>().ok());
         let port_line = doc
             .child_element(child, "port")
             .map(|idx| lines.line_of(doc.element(idx).name_span.start));
@@ -227,9 +229,8 @@ fn parse_manifest(text: &str) -> Manifest {
 
 /// 首个匹配子元素的直接文本 trim(空 → None)。
 fn scalar_child(doc: &Document, idx: usize, name: &str) -> Option<String> {
-    doc.child_element(idx, name).map(|child| {
-        doc.element(child).text(doc).trim().to_string()
-    })
+    doc.child_element(idx, name)
+        .map(|child| doc.element(child).text(doc).trim().to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +277,12 @@ fn parse_entity_registry(text: &str) -> Vec<RegistryEntity> {
         let e = doc.element(idx);
         let truthy = |attr: &str| {
             e.attribute(attr)
-                .map(|a| matches!(a.value.trim().to_ascii_lowercase().as_str(), "true" | "1" | "yes"))
+                .map(|a| {
+                    matches!(
+                        a.value.trim().to_ascii_lowercase().as_str(),
+                        "true" | "1" | "yes"
+                    )
+                })
                 .unwrap_or(false)
         };
         out.push(RegistryEntity {
@@ -408,12 +414,7 @@ enum Section {
 
 /// 走查一个 def(含闭包),累积内容。`origin` 区分实体/接口(接口不成环守卫,
 /// 与 message_table 一致)。
-fn walk_def(
-    name: &str,
-    corpus: &DefCorpus,
-    origin: &str,
-    acc: &mut ContentAcc,
-) {
+fn walk_def(name: &str, corpus: &DefCorpus, origin: &str, acc: &mut ContentAcc) {
     if origin != "interface" && !acc.visited.insert(name.to_string()) {
         // 父类链成环:引擎递归装载无法终止,kode 截断(与 message_table 同路)。
         return;
@@ -458,11 +459,10 @@ fn walk_def(
 // ---------------------------------------------------------------------------
 
 fn build_handler(params: Value) -> Result<Value, String> {
-    let input: BuildParams =
-        serde_json::from_value(params).map_err(|e| format!("processTopology/validate params: {e}"))?;
+    let input: BuildParams = serde_json::from_value(params)
+        .map_err(|e| format!("processTopology/validate params: {e}"))?;
     let findings = validate(input);
-    serde_json::to_value(BTreeMap::from([("findings", findings)]))
-        .map_err(|e| e.to_string())
+    serde_json::to_value(BTreeMap::from([("findings", findings)])).map_err(|e| e.to_string())
 }
 
 /// 公共入口(CI bin 用):给定清单原文 + entities.xml 原文 + defs 集合,返回全部发现。
@@ -587,12 +587,12 @@ fn validate(input: BuildParams) -> Vec<Finding> {
                         WrongRole,
                     }
                     let issue = match process.role.as_str() {
-                        "cellapp" if !content.has_cell => {
-                            Some(HostIssue::ContentMismatch("cellapp 承载的实体无 cell 内容(CellMethods/cell 域属性)"))
-                        }
-                        "baseapp" if !content.has_base => {
-                            Some(HostIssue::ContentMismatch("baseapp 承载的实体无 base 内容(BaseMethods/base 域属性)"))
-                        }
+                        "cellapp" if !content.has_cell => Some(HostIssue::ContentMismatch(
+                            "cellapp 承载的实体无 cell 内容(CellMethods/cell 域属性)",
+                        )),
+                        "baseapp" if !content.has_base => Some(HostIssue::ContentMismatch(
+                            "baseapp 承载的实体无 base 内容(BaseMethods/base 域属性)",
+                        )),
                         "cellapp" | "baseapp" => None,
                         _ => Some(HostIssue::WrongRole),
                     };
@@ -648,7 +648,10 @@ fn collect_contents(
             .get(&entry.name)
             .map(|d| d.file_path.clone())
             .unwrap_or_else(|| "<entities.xml>".into());
-        let line = corpus.get(&entry.name).map(|_| acc_or(acc.cell_line, entry.line)).unwrap_or(entry.line);
+        let line = corpus
+            .get(&entry.name)
+            .map(|_| acc_or(acc.cell_line, entry.line))
+            .unwrap_or(entry.line);
         contents.insert(
             entry.name.clone(),
             EntityContent {
@@ -728,10 +731,7 @@ fn check_manifest(manifest: &Manifest, manifest_path: &str, findings: &mut Vec<F
                 file_path: manifest_path.into(),
                 line,
                 severity: SEVERITY_WARNING,
-                message: format!(
-                    "端口冲突:{} 与 {} 都监听 {}",
-                    process.name, owner, port
-                ),
+                message: format!("端口冲突:{} 与 {} 都监听 {}", process.name, owner, port),
                 code: "kbengine.processTopologyDuplicatePort".into(),
                 related: Vec::new(),
             });
@@ -811,10 +811,7 @@ fn check_manifest(manifest: &Manifest, manifest_path: &str, findings: &mut Vec<F
             file_path: manifest_path.into(),
             line,
             severity: SEVERITY_WARNING,
-            message: format!(
-                "依赖成环:{}",
-                cycle.1.join(" → ")
-            ),
+            message: format!("依赖成环:{}", cycle.1.join(" → ")),
             code: "kbengine.processTopologyDependencyCycle".into(),
             related: Vec::new(),
         });
