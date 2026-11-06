@@ -219,7 +219,7 @@ describe('kodeSchedulerParity: TS IndexScheduler vs Rust golden (fixture-driven)
     console.log(
       `[kodeSchedulerParity] scenarios=${golden.scenarios.length} comparedFields=${totalFields} agreement=100.0%`
     );
-    expect(golden.scenarios.length).toBe(10);
+    expect(golden.scenarios.length).toBe(11);
     expect(totalFields).toBeGreaterThan(100);
   });
 });

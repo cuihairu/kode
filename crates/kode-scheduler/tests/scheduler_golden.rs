@@ -26,9 +26,9 @@ fn golden_matches_regenerated_dump() {
 }
 
 #[test]
-fn golden_covers_ten_scenarios_with_decisions() {
+fn golden_covers_eleven_scenarios_with_decisions() {
     let scenarios = build_scenarios();
-    assert_eq!(scenarios.len(), 10);
+    assert_eq!(scenarios.len(), 11);
     for scenario in &scenarios {
         let outcome = replay(scenario);
         assert!(
