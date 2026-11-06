@@ -122,7 +122,7 @@ export interface GeneratorConfig {
  * 的成功文件(R3-F08)。AUD-030:缓冲登记插入单记账(bufferEdits),回收只撤
  * 本次插入,不把缓冲内容当盘上前值写回。
  */
-interface GenerationRollbackLedger {
+export interface GenerationRollbackLedger {
   createdFiles: string[];
   overwrittenFiles: Array<{ filePath: string; previous: string }>;
   bufferEdits: Array<{ filePath: string; uri: vscode.Uri; offset: number; text: string }>;
@@ -618,7 +618,7 @@ export class KBEngineCodeGenerator {
    * 落盘(引擎按 <part>/<类名>.py 加载,单文件 scripts/<Name>.py 不被装载)。
    * IDE-GEN-002:任一段同名实现已存在时整体拒绝——保留使用者代码,不写半套。
    */
-  async generatePythonFile(entity: EntityDefinition): Promise<string[]> {
+  async generatePythonFile(entity: EntityDefinition, ledger?: GenerationRollbackLedger): Promise<string[]> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       throw new Error('没有打开的工作区');
@@ -651,6 +651,9 @@ export class KBEngineCodeGenerator {
       // 写入文件(IDE-GEN-005:原子替换,中断不留半截)
       writeFileAtomic(partFilePath, content);
       written.push(partFilePath);
+      // KR-AUD-74 分段后落盘即入账:某段失败抛错时,已落盘的段随事务回滚
+      // 回收(等全部段成功才登记会漏删已写段,违反 IDE-GEN-006 不留半套)
+      ledger?.createdFiles.push(partFilePath);
     }
 
     return written;
@@ -1110,8 +1113,8 @@ export class KBEngineCodeGenerator {
       vscode.window.showInformationMessage(`✅ 已生成 .def 文件: ${defFile}`);
 
       if (this.config.generatePython) {
-        const pythonFiles = await this.generatePythonFile(entity);
-        ledger.createdFiles.push(...pythonFiles);
+        // 段级入账见 generatePythonFile(失败段前的已写段随事务回收)
+        const pythonFiles = await this.generatePythonFile(entity, ledger);
         vscode.window.showInformationMessage(`✅ 已生成 Python 文件: ${pythonFiles.join(', ')}`);
       }
 
@@ -1550,8 +1553,8 @@ export class KBEngineCodeGenerator {
       vscode.window.showInformationMessage(`✅ 已生成 .def 文件: ${defFile}`);
 
       if (this.config.generatePython) {
-        const pythonFiles = await this.generatePythonFile(entity);
-        ledger.createdFiles.push(...pythonFiles);
+        // 段级入账见 generatePythonFile(失败段前的已写段随事务回收)
+        const pythonFiles = await this.generatePythonFile(entity, ledger);
         vscode.window.showInformationMessage(`✅ 已生成 Python 文件: ${pythonFiles.join(', ')}`);
       }
 
