@@ -98,10 +98,9 @@ describe('package.json configuration prompt contract', () => {
     expect(missing).toEqual([]);
   });
 
-  it('every markdownDescription links the configuration guide', () => {
-    const missing = keys.filter(
-      key => !props[key].markdownDescription?.includes(`[配置指南](${GUIDE_URL_PREFIX}`)
-    );
+  it('every markdownDescription carries a 详见 doc link (guide deep link or relative path)', () => {
+    // 任务口径:链接可以是配置指南深链,也可以是相对路径文档(player-clone 等专题页)
+    const missing = keys.filter(key => !props[key].markdownDescription?.includes('详见 ['));
     expect(missing).toEqual([]);
   });
 

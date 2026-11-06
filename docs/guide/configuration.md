@@ -63,7 +63,7 @@ Two boundaries:
 
 ## Overview of `kbengine.*` Settings (by Feature Area)
 
-The 110 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 76-row table. To find a setting, locate the feature area first, then the row within it.
+The 111 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 76-row table. To find a setting, locate the feature area first, then the row within it.
 
 Every key's tip in the VS Code settings UI is authored as `markdownDescription` — one sentence of purpose, a 「默认值」 (default value) section, and a deep link into this guide. The settings UI renders `markdownDescription` only (markdown inside a bare `description` never renders). `tests/configMarkdownDescription.test.ts` locks package.json against this page: every key must carry `markdownDescription` with a default section, every enum must document every option, and every guide-link anchor must exist as a heading on this page.
 
@@ -467,6 +467,12 @@ The child-table JOIN also appears in the hover line of ARRAY / component propert
 `kbengine.database.checkDrift`'s connection info **all comes from the engine config, with no new settings**: the composed `<dbmgr><databaseInterfaces><default>` (engine `kbengine_defaults.xml` + component `kbengine.xml` same-key override); port `0` lands on the MySQL default 3306.
 
 The credentials must be stored in plaintext (`<encrypt>false</encrypt>`). The engine default `encrypt=true` is RSA ciphertext, which kode does not decrypt; the command then honestly reports 「未校验」 (not verified) — it never asks you to change the engine config or type a password just to run one check. The verification rules and the read-only red line: see [Database Drift Check](./database-drift-check.md).
+
+### Player Data Clone
+
+| Setting | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `kbengine.clone.archiveEncryption` | `"encrypted" \| "plain"` | `"encrypted"` | Player-clone archive encryption default. `encrypted` (default) = exports write chacha20poly1305-encrypted archives, the key stored in this machine's globalStorage `clone-keys/` (0600) — move the archive to another machine and you must fetch the key from the original one; `plain` = exports write plaintext archives (sensitive columns still masked), for archives that must cross machines. This is only the default: the export confirm step can toggle it per run. Per-option trade-offs live in the setting's `markdownEnumDescriptions`; ops and key handling: see [Player Data Clone Ops & Security](/player-clone/ops-and-security) |
 
 ## Debug Configuration File (`.kbengine/debug.json`)
 

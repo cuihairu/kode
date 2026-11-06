@@ -63,7 +63,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 ## kbengine.* 设置项总览(按功能分区)
 
-110 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 76 行的大表。找一个设置,先按功能定位分区,再在区内对行。
+111 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 76 行的大表。找一个设置,先按功能定位分区,再在区内对行。
 
 VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话作用 + 「默认值」段 + 跳回本指南的深链。设置 UI 只渲染 `markdownDescription`(裸 `description` 里的 markdown 不渲染)。`tests/configMarkdownDescription.test.ts` 把 package.json 与本页对账锁定:每键必须有含默认值段的 `markdownDescription`、每个 enum 必须逐选项给说明、提示里的指南链接锚点必须真存在于本页标题。
 
@@ -467,6 +467,12 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 `kbengine.database.checkDrift` 的连接信息**全部来自引擎配置，不新增设置项**：合成后的 `<dbmgr><databaseInterfaces><default>`（引擎 `kbengine_defaults.xml` + 元件 `kbengine.xml` 同键覆盖），端口 `0` 落 MySQL 默认 3306。
 
 账号密码需明文存放（`<encrypt>false</encrypt>`）。引擎默认的 `encrypt=true` 是 RSA 密文，kode 不解读，此时命令如实提示「未校验」——不会为了跑一次校验要求改引擎配置或手填密码。校验口径与只读红线见 [数据库漂移校验](./database-drift-check.md)。
+
+### 玩家数据克隆
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.clone.archiveEncryption` | `"encrypted" \| "plain"` | `"encrypted"` | 玩家数据克隆归档的加密默认值。`encrypted`（默认）= 导出写 chacha20poly1305 加密归档，密钥存本机 globalStorage `clone-keys/`（0600）——归档移机后须回原机取钥；`plain` = 导出写明文归档（敏感列仍脱敏），适合需要跨机转移的场景。该值只是默认：导出确认页每次可切换。逐项取舍见设置的 `markdownEnumDescriptions`；运维与密钥处理见 [玩家数据克隆运维与安全](/player-clone/ops-and-security)（英文站页） |
 
 ## 调试配置文件(`.kbengine/debug.json`)
 

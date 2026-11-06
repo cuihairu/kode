@@ -1131,7 +1131,11 @@
           "enum": ["encrypted", "plain"],
           "default": "encrypted",
           "scope": "window",
-          "markdownDescription": "玩家数据克隆归档加密默认值（Player clone archive encryption default）。`encrypted`（默认）= 导出写 chacha20poly1305 加密归档，密钥存本机 globalStorage `clone-keys/`（0600），归档移机/挪目录后需回原机取钥；`plain` = 导出写明文归档（敏感列仍脱敏），适合需要跨机转移归档的场景。该值只是默认：导出确认页每次可切换（Archive encryption default; the export confirm step can toggle it per run）\n\n默认值：`encrypted`\n\n详见 `docs/player-clone/ops-and-security.md` §2.2"
+          "markdownDescription": "玩家数据克隆归档加密默认值（Player clone archive encryption default）。`encrypted`（默认）= 导出写 chacha20poly1305 加密归档，密钥存本机 globalStorage `clone-keys/`（0600），归档移机/挪目录后需回原机取钥；`plain` = 导出写明文归档（敏感列仍脱敏），适合需要跨机转移归档的场景。该值只是默认：导出确认页每次可切换（Archive encryption default; the export confirm step can toggle it per run）\n\n默认值：`encrypted`\n\n详见 [玩家数据克隆运维与安全 §2.2](https://cuihairu.github.io/kode/player-clone/ops-and-security)",
+          "markdownEnumDescriptions": [
+           "encrypted：导出写 chacha20poly1305 加密归档（默认）——密钥只存本机 globalStorage `clone-keys/`（0600）；归档移机/挪目录后须回原机取钥，跨机迁移前先走密钥导出流程。",
+           "plain：导出写明文归档——需要跨机直接转移归档时选它；敏感列仍脱敏，但归档本体失去加密保护，落地后要自行妥善保管。"
+          ]
         },
         "kbengine.metrics.fileReadDetail": {
           "type": "boolean",

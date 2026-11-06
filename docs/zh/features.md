@@ -425,3 +425,4 @@
 | `kbengine.runtimeQuery.enabled` | `false` | 运行时查询面板操作面（watcher 观察清单增删与结果订阅流；默认关时面板只剩单次手动查询）— `src/runtimeQueryWebView.ts` |
 | `kbengine.metrics.fileReadDetail` | `false` | 文件读取明细审计（路径+字节数，环形缓冲 256 条，`kbengine.metrics.showSummary` 可查；默认关=只累计计数，开销有界）— `src/fileReadMetrics.ts` |
 | `kbengine.runtimeQuery.pollIntervalMs` | `2000` | 运行时查询面板结果订阅流轮询间隔毫秒数（下限 500；仅在 `kbengine.runtimeQuery.enabled` 开启时生效）— `src/runtimeQueryWebView.ts` |
+| `kbengine.clone.archiveEncryption` | `"encrypted"` | 玩家数据克隆归档加密默认值（`encrypted` = chacha20poly1305 加密归档,密钥机器域存 globalStorage `clone-keys/`;`plain` = 脱敏明文归档,适合跨机转移;导出确认页每次可切换）— `src/playerDataCloneCommands.ts` |

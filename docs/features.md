@@ -459,4 +459,5 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.runtimeQuery.enabled` | `false` | Runtime Queries panel operation surface (watcher watch-list add/remove and the result subscription stream; default off keeps the panel to single manual queries) — `src/runtimeQueryWebView.ts` |
 | `kbengine.metrics.fileReadDetail` | `false` | File-read audit detail (path+bytes, 256-entry ring shown by `kbengine.metrics.showSummary`; off keeps only cumulative counters) — `src/fileReadMetrics.ts` |
 | `kbengine.runtimeQuery.pollIntervalMs` | `2000` | Result subscription stream interval in ms for the Runtime Queries panel (floor 500; applies only when `kbengine.runtimeQuery.enabled` is on) — `src/runtimeQueryWebView.ts` |
+| `kbengine.clone.archiveEncryption` | `"encrypted"` | Player-clone archive encryption default (`encrypted` = chacha20poly1305 archive, machine-scoped key in globalStorage `clone-keys/`; `plain` = redacted plaintext archive for cross-machine transfer; toggled per run at the export confirm step) — `src/playerDataCloneCommands.ts` |
 
