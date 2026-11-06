@@ -22,13 +22,22 @@ pub struct AstSymbols {
     /// `import` / `from ... import ...` 绑定(仅模块顶层,语义表,与既有
     /// 消费面口径一致)。模块顶层绑定对全文件可见。
     pub imports: Vec<AstImport>,
-    /// 函数作用域 import 绑定:键=外层函数名(CallEdge.caller 同口径——
-    /// 嵌套 def 以自身名、类方法以方法名),值=该函数子树内 import 的绑定
-    /// 名(含嵌套 def/分支体,排序去重;闭包可捕获外层,故同时记到栈上每
-    /// 一层函数名)。供调用图接收者解析做「调用点可见作用域绑定过该名」
-    /// 核验——只看顶层表漏函数内导入,文件级合并又会让无关函数的导入
-    /// 为实例接收者作保(复审第三轮残余)。
-    pub function_import_bindings: std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+    /// 函数作用域 import 绑定(按行区间定位调用点可见作用域)。每条 =
+    /// 一个函数的行区间与其子树内 import 的绑定名。调用图接收者解析用
+    /// 调用点行号落进哪个区间判可见性——不按函数名(同名方法会串;复审
+    /// 第四轮残余),区间天然嵌套(外层区间覆盖嵌套体,闭包可见语义)。
+    pub function_import_bindings: Vec<ScopeImportBindings>,
+}
+
+/// 单个函数作用域的 import 绑定(行 0-based,与仓内口径一致)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScopeImportBindings {
+    /// 函数起始行(def 行)。
+    pub start_line: usize,
+    /// 函数结束行(体末行)。
+    pub end_line: usize,
+    /// 该函数子树内(含嵌套 def/分支体)import 的绑定名,排序去重。
+    pub bindings: std::collections::BTreeSet<String>,
 }
 
 /// 类声明(AST 级)。

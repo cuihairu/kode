@@ -147,10 +147,11 @@ fn resolve_callee_file(
             .get(caller_file)
             .map(|s| {
                 s.imports.iter().any(|i| i.binding == module)
-                    || s.function_import_bindings
-                        .get(&edge.caller)
-                        .map(|b| b.contains(module))
-                        .unwrap_or(false)
+                    || s.function_import_bindings.iter().any(|scope| {
+                        scope.start_line <= edge.caller_line
+                            && edge.caller_line <= scope.end_line
+                            && scope.bindings.contains(module)
+                    })
             })
             .unwrap_or(false);
         if imported {

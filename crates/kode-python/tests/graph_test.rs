@@ -205,6 +205,52 @@ fn cross_function_import_no_pseudo_edge() {
 }
 
 #[test]
+fn same_name_method_import_no_pseudo_edge() {
+    // 复审第四轮残余①:裸函数名键会合并无关同名方法——A.run 里的函数内
+    // import 不能为 B.run 的实例接收者作保。作用域必须按行区间定位。
+    let zcaller = "class A:\n    def run(self):\n        import avatar\n\nclass B:\n    def run(self, avatar):\n        avatar.heal()\n";
+    let afoo = "def heal():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/avatar.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, afoo)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "同名方法的他函数 import 不应保放 B.run 实例接收者伪边, got {rev:?}"
+    );
+}
+
+#[test]
+fn outer_import_visible_to_nested_call() {
+    // 复审第四轮残余②:外层 import、嵌套 def 内调用——闭包可见,应产边
+    // (绑定按行区间归属,外层区间覆盖嵌套体,漏边方向)。
+    let zcaller = "def outer():\n    import avatar\n\n    def inner():\n        avatar.heal()\n";
+    let afoo = "def heal():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/avatar.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, afoo)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "外层 import 应对嵌套 def 内调用可见(闭包), got {rev:?}"
+    );
+}
+
+#[test]
 fn rust7_cross_process_edge_marked_uncertain_not_silent() {
     // RUST-7:`self.cell.*`/`self.base.*` 跨进程边被调方文件无法静态解析
     // (实体类在另一进程侧文件里)。旧行为:落进 self.* 分支按「同类」折叠

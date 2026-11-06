@@ -8,7 +8,9 @@
 use kode_corpus::{AttributeSymbol, ClassSymbol, ImportSymbol, MethodSymbol, PythonModule};
 use ruff_python_ast::{self as ast, Expr, Stmt};
 
-use crate::model::{AstAttribute, AstClass, AstFunction, AstImport, AstMethod, AstSymbols};
+use crate::model::{
+    AstAttribute, AstClass, AstFunction, AstImport, AstMethod, AstSymbols, ScopeImportBindings,
+};
 use crate::parse::ParsedAst;
 
 /// 符号抽取结果(AST 符号表 + 解析错误,供诊断面)。
@@ -36,7 +38,11 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
         imports: Vec::new(),
         function_import_bindings: Default::default(),
     };
-    let mut all_bindings = ImportBindingCollector::default();
+    let mut all_bindings = ImportBindingCollector {
+        ast,
+        scope_stack: Vec::new(),
+        collected: Vec::new(),
+    };
     for stmt in &ast.module().body {
         ast::visitor::Visitor::visit_stmt(&mut all_bindings, stmt);
         match stmt {
@@ -84,7 +90,7 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
             _ => {}
         }
     }
-    out.function_import_bindings = all_bindings.bindings;
+    out.function_import_bindings = all_bindings.collected;
     out
 }
 
@@ -94,37 +100,47 @@ fn top_level_binding(name: &str) -> String {
     name.split('.').next().unwrap_or(name).to_string()
 }
 
-/// 函数作用域 import 绑定收集器(ruff visitor 递归,带函数栈)。
+/// 函数作用域 import 绑定收集器(ruff visitor 递归,带行区间栈)。
 /// 与顶层 `imports` 表互补:顶层表是语义面(模块级绑定全文件可见),
-/// 本收集器把函数/类/分支体内的 import 绑定按「可见作用域」归属——
-/// 记到当前栈上每一层函数名(闭包捕获语义:内层 import 外层函数也能
-/// 看到)。键与 CallEdge.caller 同口径(嵌套 def 以自身名、类方法以
-/// 方法名),供调用图接收者解析按调用点作用域核验。
-#[derive(Default)]
-struct ImportBindingCollector {
-    /// 当前函数栈(外层在前;空栈=模块顶层,顶层绑定走 imports 表)。
-    function_stack: Vec<String>,
-    bindings: std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+/// 本收集器把函数体内的 import 绑定按「内层函数行区间」归属——调用图
+/// 解析用调用点行号落区间判可见性:外层区间覆盖嵌套体(闭包可见),
+/// 兄弟/同名函数区间不相交(互不作保)。不按函数名键(裸名非作用域
+/// 唯一标识,复审第四轮残余)。
+struct ImportBindingCollector<'a> {
+    ast: &'a ParsedAst,
+    /// 当前函数区间栈(外层在前)。
+    scope_stack: Vec<ScopeImportBindings>,
+    /// 已完成的函数作用域记录(函数退出时从栈转存)。
+    collected: Vec<ScopeImportBindings>,
 }
 
-impl ImportBindingCollector {
+impl<'a> ImportBindingCollector<'a> {
     fn push_binding(&mut self, binding: String) {
-        for name in &self.function_stack {
-            self.bindings
-                .entry(name.clone())
-                .or_default()
-                .insert(binding.clone());
+        // 记到最内层函数区间;外层区间覆盖嵌套体,调用点行号包含判定
+        // 即可实现闭包可见语义,无需重复记到外层。
+        if let Some(top) = self.scope_stack.last_mut() {
+            top.bindings.insert(binding);
         }
     }
 }
 
-impl ast::visitor::Visitor<'_> for ImportBindingCollector {
+impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::FunctionDef(f) => {
-                self.function_stack.push(f.name.as_str().to_string());
+                let start = self.ast.line_col(f.range.start().to_u32()).0;
+                let end = self.ast.line_col(f.range.end().to_u32()).0;
+                self.scope_stack.push(ScopeImportBindings {
+                    start_line: start,
+                    end_line: end,
+                    bindings: Default::default(),
+                });
                 ast::visitor::walk_stmt(self, stmt);
-                self.function_stack.pop();
+                if let Some(scope) = self.scope_stack.pop() {
+                    if !scope.bindings.is_empty() {
+                        self.collected.push(scope);
+                    }
+                }
                 return;
             }
             Stmt::Import(imp) => {
