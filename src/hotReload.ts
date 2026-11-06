@@ -110,8 +110,10 @@ export class HotReloadTrigger {
   }
 }
 
-/** 读 kbengine.hotReload 段:覆写表按段存扁平键,段内嵌套对象由本仓自己解开 */
-const hotReloadSectionReader = (): ConfigReader => {
+/** 读 kbengine.hotReload 段:覆写表按段存扁平键,段内嵌套对象由本仓自己解开。
+ *  HOT-VER:导出给装配面复用——版本徽标的监视范围判定读同一份 globs 配置,
+ *  与 watcher 建/拆的口径同源,不另开第二套配置读取。 */
+export const hotReloadSectionReader = (): ConfigReader => {
   const section = vscode.workspace
     .getConfiguration('kbengine')
     .get<Record<string, unknown> | undefined>('hotReload', undefined);
@@ -150,6 +152,12 @@ export interface SetupHotReloadOptions {
   readonly onRestartRequired?: (actionName: string, files: string[], reasons: string[]) => void;
   /** 时钟注入口(测试用);缺省真 Date.now,用于 applied 核验窗口结算 */
   readonly now?: () => number;
+  /**
+   * HOT-VER 监视事件外发:watcher 每条事件把文件交给版本簿采样(建档/跳号)。
+   * 这是版本簿的默认事件来源,不是它的前提——手动触发路径不经过这里,写同一
+   * 份台账同一实现。注入即回调;不注入则版本簿只经手动/回执路径采样。
+   */
+  readonly onWatchedFileChange?: (file: string) => void;
   /**
    * IDE-HOT-102 部署通道接线:返回本 profile 配置的 ReloadTransport 与目标
    * 标识(经 resolveReloadTransport 解出;未配返回 null)。注入即该次发送走
@@ -616,6 +624,8 @@ export function setupHotReload(
       const schedule = (uri?: vscode.Uri): void => {
         if (uri) {
           pendingTriggers.add(uri.fsPath);
+          // HOT-VER:watcher 事件 → 版本簿采样(与手动触发路径共用同一台账)
+          options.onWatchedFileChange?.(uri.fsPath);
         }
         trigger.schedule(settings.debounceMs);
       };

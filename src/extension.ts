@@ -234,12 +234,15 @@ import { normalizeVenvDirectoryNames } from './quickActionConfig';
 import { QuickActionTreeProvider } from './quickActionTree';
 import {
   HOT_RELOAD_APPLIED_SETTLE_MS,
+  hotReloadSectionReader,
   realHotReloadTimerDeps,
+  readHotReloadSettings,
   setupHotReload,
   type HotReloadSendOptions,
   type HotReloadTargetStateWiring
 } from './hotReload';
 import { HotReloadStatusController } from './hotReloadStatus';
+import { HotReloadVersionTracker, matchesHotReloadGlob } from './hotReloadFileVersion';
 import { runHotReloadChannelConfigCommand } from './hotReloadChannelConfig';
 import { resolveReloadTransport, type ReloadTransport } from './hotReloadTransport';
 import { runHotReloadBatchSummaryCommand } from './hotReloadBatchSummaryCommand';
@@ -5261,9 +5264,12 @@ export function activate(context: vscode.ExtensionContext) {
     getActions: () => quickActionManager.getTreeData()
   });
   context.subscriptions.push(vscode.window.registerTreeDataProvider('kbengine.quickActions', quickActionTreeProvider));
+  // HOT-VER:手动跑一次动作(右键/命令面板)后重采版本并重画徽标——监视开关
+  // 关着也一样:版本簿独立于 watcher,手动触发路径与 watcher 同口径同台账。
   const runQuickActionByNameCommand = vscode.commands.registerCommand(
     'kbengine.quickActions.runByName',
-    (name: string) => quickActionManager.runByName(name)
+    (name: string) =>
+      Promise.resolve(quickActionManager.runByName(name)).finally(() => hotReloadVersionRefresh.refresh?.(true))
   );
   context.subscriptions.push(runQuickActionByNameCommand);
   const showQuickActionsCommand = vscode.commands.registerCommand('kbengine.quickActions.show', () =>
@@ -5280,7 +5286,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(rescanQuickActionScriptsCommand);
   const runDefaultQuickActionCommand = vscode.commands.registerCommand(
     'kbengine.quickActions.runDefault',
-    () => quickActionManager.runDefault()
+    () => Promise.resolve(quickActionManager.runDefault()).finally(() => hotReloadVersionRefresh.refresh?.(true))
   );
   context.subscriptions.push(runDefaultQuickActionCommand);
 
@@ -5294,9 +5300,41 @@ export function activate(context: vscode.ExtensionContext) {
   // IDE-HOT-100:台账落账即时刷呈现面(角标/状态点跟住回执落地,不等下次
   // 保存);呈现面 provider 在后面才建,这里挂前向引用
   const hotReloadStateViewRefresh: { refresh?: () => void } = {};
+  // HOT-VER:版本簿的前向引用——回执落账/采样变化 → 重采版本并补渲染状态栏
+  const hotReloadVersionRefresh: { refresh?: (forceRender?: boolean) => void } = {};
   const hotReloadTargetStateStore = new HotReloadTargetStateStore({
     now: () => Date.now(),
-    onRecorded: () => hotReloadStateViewRefresh.refresh?.()
+    onRecorded: () => {
+      hotReloadStateViewRefresh.refresh?.();
+      // applied 回执落账 → 重采盘上版本并结算基线追平(单号/双号跟住回执)
+      hotReloadVersionRefresh.refresh?.();
+    }
+  });
+  // HOT-VER:文件版本簿(状态栏版本号)。台账独立于 watcher——监视范围只看
+  // globs(与 enabled 开关正交),采样口缺省走 fs.stat 的 mtimeMs:size;watcher
+  // 事件、回执落账、手动触发(showFileState/retryFailed/手动跑动作)都写同一份
+  // 台账同一实现,不产生两套计数;watcher 只是它的默认事件来源,不是前提。
+  const hotReloadGlobsNow = (): string[] => readHotReloadSettings(hotReloadSectionReader()).globs;
+  const hotReloadRelativePath = (file: string): string | null => {
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      const root = folder.uri.fsPath;
+      if (file === root) {
+        return '';
+      }
+      if (file.startsWith(`${root}/`) || file.startsWith(`${root}${path.sep}`)) {
+        return file.slice(root.length + 1);
+      }
+    }
+    return null;
+  };
+  const hotReloadVersions = new HotReloadVersionTracker({
+    store: hotReloadTargetStateStore,
+    activeFile: () => vscode.window.activeTextEditor?.document.uri.fsPath,
+    isWatched: file => {
+      const relative = hotReloadRelativePath(file);
+      return relative !== null && matchesHotReloadGlob(relative, hotReloadGlobsNow());
+    },
+    now: () => Date.now()
   });
   // IDE-REV-027 引擎 digest 证据册:fire 路径与失败目标重发的回包体都喂
   // 进来(册内判协议:非空 digest+逐字回显该文件才入册),证据展示命令读
@@ -5306,8 +5344,27 @@ export function activate(context: vscode.ExtensionContext) {
     createStatusBarItem: (alignment, priority) => vscode.window.createStatusBarItem(alignment, priority),
     createOutputChannel: name => vscode.window.createOutputChannel(name),
     registerCommand: (command, handler) => vscode.commands.registerCommand(command, handler),
-    timers: realHotReloadTimerDeps
+    timers: realHotReloadTimerDeps,
+    versions: hotReloadVersions
   });
+  // 重采 → 有变化才补渲染;forceRender=true 给「换了活动文档但版本没变」的场景
+  // (徽标换文件本身也要重画)。渲染自身也会 kick 一次重采,两头收敛不空转。
+  hotReloadVersionRefresh.refresh = (forceRender = false): void => {
+    void hotReloadVersions
+      .refresh()
+      .then(changed => {
+        if (changed || forceRender) {
+          hotReloadStatus.versionsChanged();
+        }
+      })
+      .catch(() => undefined);
+  };
+  // 活动文档切换 → 徽标跟住当前文档(在监视范围且已跟踪才显示它的版本)
+  if (typeof vscode.window.onDidChangeActiveTextEditor === 'function') {
+    context.subscriptions.push(
+      vscode.window.onDidChangeActiveTextEditor(() => hotReloadVersionRefresh.refresh?.(true))
+    );
+  }
   // IDE-HOT-100 文件热更状态机:台账之上派生 CLEAN/DIRTY/SENT/APPLIED/FAILED/
   // RESTART_REQUIRED 生命周期态(依据=内容 sha256+既有回执协议,不靠 mtime);
   // 台账是事实源,状态机是派生视图,键同形不另立身份。def 结构闸拦下经
@@ -5406,6 +5463,18 @@ export function activate(context: vscode.ExtensionContext) {
     targetState: hotReloadTargetStateWiring,
     defGate: hotReloadDefGate,
     noteEngineDigest: (key, file, body) => hotReloadEngineDigestRegister.note(key, file, body),
+    // HOT-VER:watcher 事件 → 版本簿采样建档/跳号(版本簿的默认事件来源;
+    // 手动触发路径不经这里,写同一台账同一实现,同 token 只 +1)
+    onWatchedFileChange: file => {
+      void hotReloadVersions
+        .noteFile(file)
+        .then(changed => {
+          if (changed) {
+            hotReloadStatus.versionsChanged();
+          }
+        })
+        .catch(() => undefined);
+    },
     // IDE-HOT-100:def 结构闸拦下 → 状态机标 RESTART_REQUIRED 呈现(与日志
     // 同源;拦下本身是 HOT-005 既有面)。targetId 经动作名反查,解不到该
     // 次如实不标(无目标身份,不虚构);rootId 逐文件解析,解不到跳过。
@@ -5641,20 +5710,34 @@ export function activate(context: vscode.ExtensionContext) {
         hotReloadStatus.log('无活动文件:状态点点击需带文件参数');
         return;
       }
-      void runShowHotReloadFileStateCommand(
-        {
-          stateMachine: hotReloadFileStateMachine,
-          ledger: hotReloadTargetStateStore,
-          readFileContent: hotReloadStateReadFile,
-          resolveRootId: filePath => hotReloadTargetStateWiring.resolveRootId(filePath),
-          targetsForRoot: hotReloadTargetsForRoot
-        },
-        {
-          logBlock: text => hotReloadStatus.log(text),
-          show: () => hotReloadStatus.showLog()
-        },
-        file
-      );
+      // HOT-VER:手动触发路径先建档采样(监视开关关也一样)再落状态明细,
+      // 版本行与状态栏徽标同源——与 watcher 路径共用同一台账同一实现。
+      void hotReloadVersions
+        .noteFile(file)
+        .catch(() => undefined)
+        .then(() => {
+          hotReloadStatus.versionsChanged();
+          const versionLine = hotReloadVersions.describeVersion(file);
+          return runShowHotReloadFileStateCommand(
+            {
+              stateMachine: hotReloadFileStateMachine,
+              ledger: hotReloadTargetStateStore,
+              readFileContent: hotReloadStateReadFile,
+              resolveRootId: filePath => hotReloadTargetStateWiring.resolveRootId(filePath),
+              targetsForRoot: hotReloadTargetsForRoot
+            },
+            {
+              logBlock: text => {
+                if (versionLine !== undefined) {
+                  hotReloadStatus.log(versionLine);
+                }
+                hotReloadStatus.log(text);
+              },
+              show: () => hotReloadStatus.showLog()
+            },
+            file
+          );
+        });
     })
   );
 

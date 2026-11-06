@@ -291,7 +291,7 @@ describe('def-method-missing-in-python 一键生成 CodeAction(C-19)', () => {
     expect(DEF_METHOD_MISSING_DIAGNOSTIC_CODE).toBe(DEF_PYTHON_PARITY_DIAGNOSTIC_CODE);
     expect(DEF_METHOD_MISSING_DIAGNOSTIC_CODE).toBe('def-method-missing-in-python');
 
-    // 喂 producer 的 code(真实诊断经 extension.ts:1374 赋此 code)→ 命中。
+    // 喂 producer 的 code(真实诊断经 extension.ts:1377 赋此 code)→ 命中。
     const producerDiagnostic = {
       code: DEF_METHOD_MISSING_DIAGNOSTIC_CODE,
       range: onDeathRange,
