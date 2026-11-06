@@ -305,9 +305,12 @@ describe('package.json 清单锁(serverControl 树 py-spy 图标位次)', () => 
   });
 
   it('命令贡献带 $(pulse) 图标并按需激活', () => {
+    // KODE-I18N-001 起命令标题外置 package.nls*.json(%key% 占位),契约按解析后默认包文案断言
+    const nls = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.nls.json'), 'utf8')) as Record<string, string>;
     const command = pkg.contributes.commands.find(entry => entry.command === 'kbengine.debug.pyspyDump');
     expect(command?.icon).toBe('$(pulse)');
-    expect(command?.title).toContain('py-spy');
+    const title = (command?.title ?? '').replace(/^%([^%]+)%$/, (_m, key: string) => nls[key] ?? key);
+    expect(title).toContain('py-spy');
     expect(pkg.activationEvents).toContain('onCommand:kbengine.debug.pyspyDump');
   });
 });
