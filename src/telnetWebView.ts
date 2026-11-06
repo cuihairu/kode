@@ -16,24 +16,26 @@ import * as vscode from 'vscode';
 import { BUILTIN_QUICK_COMMANDS } from './telnetClient';
 import { TelnetProbeState, TelnetService, TelnetTarget } from './telnetService';
 import { randomNonce, webviewScriptCsp } from './webviewSecurity';
+import { KODE_STATUS_COLORS, WEBVIEW_THEME_CSS, type KodeStatusLevel } from './webviewTheme';
+import { htmlLang, resolvePanelLocale, strings, telnetStateLabels, type WebviewLocale } from './webviewStrings';
 
-const STATE_LABELS: Record<TelnetProbeState, string> = {
-  unconfigured: '未配置',
-  closed: '未开启',
-  open: '已开启(未接会话)',
-  'auth-required': '端口开·未配密码',
-  'auth-rejected': '密码被拒',
-  connected: '已连接'
+/** 六态 → 统一状态色板(诊断 §四:telnet closed/auth-rejected 重新赋值 err,
+ *  已随重设计批准呈报;Bootstrap 5cb85c/d9534f/f0ad4e 退场) */
+const STATE_STATUS_LEVEL: Record<TelnetProbeState, KodeStatusLevel> = {
+  unconfigured: 'neutral',
+  closed: 'err',
+  open: 'ok',
+  'auth-required': 'warn',
+  'auth-rejected': 'err',
+  connected: 'ok'
 };
 
-const STATE_COLORS: Record<TelnetProbeState, string> = {
-  unconfigured: '#888888',
-  closed: '#d9534f',
-  open: '#5cb85c',
-  'auth-required': '#f0ad4e',
-  'auth-rejected': '#d9534f',
-  connected: '#5cb85c'
-};
+const stateColors: Record<TelnetProbeState, string> = Object.fromEntries(
+  (Object.keys(STATE_STATUS_LEVEL) as TelnetProbeState[]).map(state => [
+    state,
+    KODE_STATUS_COLORS[STATE_STATUS_LEVEL[state]]
+  ])
+) as Record<TelnetProbeState, string>;
 
 const KBENGINE_XML_SNIPPET = [
   '<telnet_service>',
@@ -224,47 +226,50 @@ export class TelnetWebView {
     this.panel.webview.html = this.getHtml();
   }
 
-  private renderTargets(): string {
+  private renderTargets(locale: WebviewLocale): string {
     const targets = this.service.getTargets();
     if (targets.length === 0) {
-      return '<p class="muted">telnet 未配置:请在设置中填写 kbengine.telnet.host / kbengine.telnet.port,或在元件 kbengine.xml 的 &lt;telnet_service&gt; 段开启。</p>';
+      const t = strings(locale).telnet;
+      return `<p class="muted">${escapeHtml(t.notConfigured)}</p>`;
     }
+    const labels = telnetStateLabels(locale);
     return targets
       .map(target => {
         const state = this.service.getState(target.key);
         const selected = target.key === this.selectedKey ? ' selected' : '';
         return [
           `<div class="target${selected}" data-key="${escapeHtml(target.key)}">`,
-          `  <span class="light" style="background:${STATE_COLORS[state]}"></span>`,
+          `  <span class="light" style="background:${stateColors[state]}"></span>`,
           `  <span class="label">${escapeHtml(target.label)}</span>`,
           `  <span class="addr">${escapeHtml(target.host)}:${target.port}</span>`,
-          `  <span class="state">${STATE_LABELS[state]}</span>`,
+          `  <span class="state">${labels[state]}</span>`,
           '</div>'
         ].join('\n');
       })
       .join('\n');
   }
 
-  private renderSession(target: TelnetTarget): string {
+  private renderSession(target: TelnetTarget, locale: WebviewLocale): string {
+    const t = strings(locale).telnet;
     const state = this.service.getState(target.key);
     if (state === 'closed') {
       return [
         '<div class="hint">',
-        `  <p><strong>${escapeHtml(target.label)}(${escapeHtml(target.host)}:${target.port})的 telnet 未开启。</strong></p>`,
-        '  <p>在元件配置 kbengine.xml 中加入以下段落并重启该组件即可开启:</p>',
+        `  <p><strong>${escapeHtml(t.closedTitle(target.label, `${target.host}:${target.port}`))}</strong></p>`,
+        `  <p>${escapeHtml(t.closedGuide)}</p>`,
         `  <pre>${escapeHtml(KBENGINE_XML_SNIPPET)}</pre>`,
         '</div>'
       ].join('\n');
     }
     const connectButton =
       state === 'connected'
-        ? `<button class="connect" data-key="${escapeHtml(target.key)}" data-action="disconnect">断开会话</button>`
-        : `<button class="connect" data-key="${escapeHtml(target.key)}" data-action="connect">连接会话(自动登录)</button>`;
+        ? `<button class="connect" data-key="${escapeHtml(target.key)}" data-action="disconnect">${t.disconnectSession}</button>`
+        : `<button class="connect" data-key="${escapeHtml(target.key)}" data-action="connect">${t.connectSession}</button>`;
     if (state === 'auth-required') {
       return [
         '<div class="hint">',
-        `  <p><strong>${escapeHtml(target.label)} 的 telnet 端口已开启,但未配置密码。</strong></p>`,
-        '  <p>在设置 kbengine.telnet.password 或 kbengine.xml <telnet_service><password> 中填写密码后即可自动登录。</p>',
+        `  <p><strong>${escapeHtml(t.authTitle(target.label))}</strong></p>`,
+        `  <p>${escapeHtml(t.authGuide)}</p>`,
         `  ${connectButton}`,
         '</div>'
       ].join('\n');
@@ -281,60 +286,74 @@ export class TelnetWebView {
     return [
       `<div class="session" data-session-state="${escapeHtml(sessionState ?? '')}">`,
       `  <div class="quickrow">${connectButton}</div>`,
-      output.length > 0 ? `<div class="output">${output}</div>` : '<div class="output muted">暂无输出</div>',
+      output.length > 0 ? `<div class="output">${output}</div>` : `<div class="output muted">${t.noOutput}</div>`,
       `<div class="quickrow">${quickButtons}</div>`,
-      `  <input class="cmd" data-key="${escapeHtml(target.key)}" placeholder="${sessionState === 'ready' ? '输入白名单内命令(回车发送)' : '等待会话就绪…'}" />`,
-      `  <div class="keyshint">Ctrl+] / Ctrl+D 断开会话</div>`,
+      `  <input class="cmd" data-key="${escapeHtml(target.key)}" placeholder="${sessionState === 'ready' ? t.inputReady : t.inputWaiting}" />`,
+      `  <div class="keyshint">${t.keyshint}</div>`,
       '</div>'
     ].join('\n');
   }
 
   private getHtml(): string {
     const nonce = randomNonce();
+    const locale = resolvePanelLocale();
+    const t = strings(locale).telnet;
+    const labels = telnetStateLabels(locale);
     const targets = this.service.getTargets();
     // 未显式选中时默认看第一个目标:打开面板即见状态与指引,不留空面板
     const selected =
       targets.find(target => target.key === this.selectedKey) ?? targets[0] ?? null;
-    const sessionHtml = selected ? this.renderSession(selected) : '';
+    const sessionHtml = selected ? this.renderSession(selected, locale) : '';
     return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${htmlLang(locale)}">
 <head>
 <meta charset="UTF-8" />
 <!-- 最小 CSP:内联脚本只认本次渲染的 nonce,断掉一切外联/外帧/连接 -->
 <meta http-equiv="Content-Security-Policy" content="${webviewScriptCsp(nonce)}" />
 <style>
-  body { font-family: var(--vscode-font-family); color: var(--vscode-editor-foreground); padding: 8px; }
-  .muted { color: var(--vscode-descriptionForeground); }
-  .target { display: flex; gap: 8px; align-items: center; padding: 4px 6px; cursor: pointer; border-radius: 4px; }
-  .target:hover { background: var(--vscode-list-hoverBackground); }
-  .target.selected { background: var(--vscode-list-activeSelectionBackground); }
-  .light { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-  .label { font-weight: bold; }
-  .addr, .state { color: var(--vscode-descriptionForeground); }
-  .hint { margin-top: 12px; line-height: 1.6; }
-  .hint pre { background: var(--vscode-textCodeBlock-background); padding: 8px; border-radius: 4px; }
-  .output { margin-top: 12px; max-height: 320px; overflow-y: auto; font-family: monospace;
-            background: var(--vscode-terminal-background, #111); padding: 8px; border-radius: 4px; }
+  ${WEBVIEW_THEME_CSS}
+  body { padding: 8px; }
+  /* UI-03:左目标列表 + 右会话区双栏(原型 #tel .body) */
+  .tel-body { display: flex; gap: 12px; align-items: flex-start; }
+  #targets { width: 260px; flex: none; }
+  #session { flex: 1; min-width: 0; }
+  .muted { color: var(--kode-fg-3); }
+  .target { display: flex; gap: 8px; align-items: center; padding: 6px 8px; cursor: pointer; border-radius: var(--kode-r); border-bottom: 1px solid var(--kode-border-soft); }
+  .target:hover { background: rgba(255,255,255,.04); }
+  .target.selected { background: var(--kode-info-dim); box-shadow: inset 2px 0 0 var(--kode-accent); }
+  .light { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+  .label { font-weight: 600; font-family: var(--kode-mono); }
+  .addr, .state { color: var(--kode-fg-3); font-size: var(--kode-t-tag); }
+  .state { margin-left: auto; }
+  h3 { font-size: var(--kode-t-h1); color: #fff; margin-bottom: 8px; }
+  .hint { margin-top: 12px; line-height: 1.6; background: var(--kode-surface); border: 1px solid var(--kode-border); border-radius: var(--kode-r); padding: 10px 12px; }
+  .hint pre { background: var(--kode-surface-2); border: 1px solid var(--kode-border); padding: 8px; border-radius: var(--kode-r); color: var(--kode-fg-2); font-size: 11px; }
+  .output { margin-top: 12px; max-height: 320px; overflow-y: auto; font-family: var(--kode-mono); font-size: 12.5px;
+            background: var(--kode-surface-2); padding: 8px; border-radius: var(--kode-r); border: 1px solid var(--kode-border); }
   .line { white-space: pre-wrap; word-break: break-all; }
   .quickrow { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
-  button.quick { cursor: pointer; }
-  input.cmd { width: 100%; margin-top: 8px; }
-  .keyshint { font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 4px; }
-  .rejected { color: var(--vscode-errorForeground); }
+  button.quick, button.connect { cursor: pointer; font-family: var(--kode-mono); font-size: var(--kode-t-meta); background: var(--kode-surface-2); border: 1px solid var(--kode-border); color: var(--kode-fg-2); border-radius: 3px; padding: 3px 10px; }
+  button.quick:hover, button.connect:hover { border-color: var(--kode-accent); color: var(--kode-fg); }
+  input.cmd { width: 100%; margin-top: 8px; background: var(--kode-surface-2); color: var(--kode-fg); border: 1px solid var(--kode-border); border-radius: 3px; padding: 4px 8px; font-family: var(--kode-mono); }
+  .keyshint { font-size: var(--kode-t-tag); color: var(--kode-fg-4); margin-top: 4px; }
+  .rejected { color: var(--kode-err); }
 </style>
 </head>
 <body>
-<h3>KBEngine Telnet 探测</h3>
+<h3>${t.title}</h3>
+<div class="tel-body">
 <div id="targets">
-${this.renderTargets()}
+${this.renderTargets(locale)}
 </div>
 <div id="session">
 ${sessionHtml}
 </div>
+</div>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
-  const stateLabels = ${JSON.stringify(STATE_LABELS)};
-  const stateColors = ${JSON.stringify(STATE_COLORS)};
+  const stateLabels = ${JSON.stringify(labels)};
+  const stateColors = ${JSON.stringify(stateColors)};
+  const rejectedPrefix = ${JSON.stringify(t.rejected(''))};
   document.getElementById('targets').addEventListener('click', event => {
     const item = event.target.closest('.target');
     if (item) {
@@ -396,7 +415,7 @@ ${sessionHtml}
       return;
     }
     if (message.command === 'rejected') {
-      appendLines(['已拒绝(白名单外或会话未就绪): ' + message.text], 'rejected');
+      appendLines([rejectedPrefix + message.text], 'rejected');
       return;
     }
     if (message.command === 'states') {

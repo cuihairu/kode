@@ -215,6 +215,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.loggerPort` | number | `20022` | 日志收集器连接端口,须与引擎 logger 的监听端口一致;不一致时面板连不上(内部按间隔重连) |
 | `kbengine.logAutoConnect` | boolean | `true` | 激活即尝试连接一次 logger;失败静默,走重连 |
 | `kbengine.webviewConsoleLogs` | boolean | `true` | 采集日志面板页面 `console` 输出与未捕获异常,并入同一日志流 |
+| `kbengine.webviewLocale` | `"auto" \| "zh" \| "en"` | `"auto"` | Webview 面板显示语言;`auto` 跟随 VS Code 显示语言(zh-cn/zh-tw → 中文,其余 → 英文) |
 | `kbengine.maxLogEntries` | number | `10000` | 日志 WebView 缓存上限(条)。日志量大调低省内存,想留更长历史调高 |
 
 ### 远程调试

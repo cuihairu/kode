@@ -96,10 +96,10 @@ describe('RuntimeQueryWebView', () => {
 
     const panel = panelRegistry.panels[0];
     expect(panel.viewType).toBe('kbengine.runtimeQuery');
-    expect(panel.webview.html).toContain('Query watcher');
+    expect(panel.webview.html).toContain('Watcher 路径');
     // C-2:结果以表格呈现(不再是整包 JSON 倾倒),列头固定 Path/Kind/Value
-    expect(panel.webview.html).toContain('<table id="watcher-result" hidden>');
-    for (const column of ['Path', 'Kind', 'Value']) {
+    expect(panel.webview.html).toContain('<table id="watcher-result" hidden class="kode-table">');
+    for (const column of ['路径', '类型', '值']) {
       expect(panel.webview.html).toContain(`<th scope="col">${column}</th>`);
     }
     expect(postState().components).toEqual([
@@ -165,7 +165,7 @@ describe('RuntimeQueryWebView', () => {
     expect(postState().error).toEqual({
       kind: 'spaces',
       componentKey: 'missing',
-      message: 'Select a running component first.'
+      message: '请先选择运行中的组件。'
     });
 
     panelRegistry.reset();
@@ -288,13 +288,13 @@ describe('RuntimeQueryWebView 操作面(增删 watcher、结果订阅流)', () =
     await flush();
     expect(postState().error).toEqual({
       kind: 'watchList',
-      message: 'Watcher path already on the list: /cellapp/uptime'
+      message: '监视清单已存在该路径：/cellapp/uptime'
     });
     expect(postState().watchPaths).toEqual(['/cellapp/uptime']);
 
     panelRegistry.fireMessage(panel, { command: 'addWatcher', path: '   ' });
     await flush();
-    expect(postState().error).toEqual({ kind: 'watchList', message: 'Enter a watcher path to add.' });
+    expect(postState().error).toEqual({ kind: 'watchList', message: '请输入要加入监视的 Watcher 路径。' });
 
     panelRegistry.fireMessage(panel, { command: 'removeWatcher', path: '/cellapp/uptime' });
     await flush();
@@ -314,7 +314,7 @@ describe('RuntimeQueryWebView 操作面(增删 watcher、结果订阅流)', () =
 
     expect(postState().error).toEqual({
       kind: 'watchList',
-      message: 'Result stream is off by default; enable kbengine.runtimeQuery.enabled.'
+      message: '结果流默认关闭：请启用 kbengine.runtimeQuery.enabled。'
     });
     expect(postState().streaming).toBe(false);
     expect(calls()).toBe(0);
@@ -521,7 +521,8 @@ describe('webview 内联脚本渲染 watcher 结果表格', () => {
       addEventListener: (type: string, listener: () => void): void => {
         element.listeners[type] = listener;
       },
-      querySelector: (): FakeElement | undefined => undefined
+      querySelector: (): FakeElement | undefined => undefined,
+      classList: { toggle: (): void => undefined }
     } as FakeElement;
     return element;
   };
@@ -544,20 +545,28 @@ describe('webview 内联脚本渲染 watcher 结果表格', () => {
       'component',
       'path',
       'message',
-      'result',
       'empty',
+      'spaces-empty',
       'refresh',
       'spaces',
       'watcher',
       'add-watcher',
       'stream',
-      'watch-list'
+      'watch-list',
+      'pane-watcher',
+      'pane-spaces',
+      'tab-watcher',
+      'tab-spaces'
     ]) {
       elements.set(id, makeElement(id === 'component' ? 'select' : id === 'path' ? 'input' : 'div'));
     }
     const watcherTable = makeElement('table');
     watcherTable.querySelector = (selector: string) => (selector === 'tbody' ? tbody : undefined);
     elements.set('watcher-result', watcherTable);
+    const spacesTable = makeElement('table');
+    const spacesTbody = makeElement('tbody');
+    spacesTable.querySelector = (selector: string) => (selector === 'tbody' ? spacesTbody : undefined);
+    elements.set('spaces-result', spacesTable);
 
     let onMessage: ((event: { data: Record<string, unknown> }) => void) | undefined;
     const load = new Function(
@@ -617,13 +626,13 @@ describe('webview 内联脚本渲染 watcher 结果表格', () => {
     expect(first.tag).toBe('tr');
     expect(first.children.map(cell => `${cell.tag}:${cell.scope ?? ''}:${cell.textContent}`)).toEqual([
       'th:row:/cellapp/uptime',
-      'td::value',
+      'td::数值',
       'td::42'
     ]);
-    expect(second.children.map(cell => cell.textContent)).toEqual(['/cellapp/load', 'child', '']);
+    expect(second.children.map(cell => cell.textContent)).toEqual(['/cellapp/load', '目录', '']);
   });
 
-  it('watcherRows 为空时表格隐藏、空态可见;spaces 结果仍走 JSON 前置块', () => {
+  it('watcherRows 为空时表格隐藏、空态可见;spaces 快照走字段表格(UI-04 表格化)', () => {
     const { elements, dispatch } = runWebviewScript(htmlOf());
     const table = elements.get('watcher-result') as FakeElement;
 
@@ -631,14 +640,40 @@ describe('webview 内联脚本渲染 watcher 结果表格', () => {
       command: 'state',
       components: [],
       error: null,
-      result: { spaces: [{ componentType: 4, componentID: '1', spaces: [] }], watcherRows: [] }
+      result: {
+        spaces: [
+          {
+            componentType: 4,
+            componentID: '1',
+            spaces: [
+              {
+                componentType: 4,
+                componentID: '3',
+                cellappID: '7',
+                spaceID: 3,
+                geomappingPath: '',
+                scriptModuleName: 'spaces/monster_scene',
+                cells: [1, 2]
+              }
+            ]
+          }
+        ],
+        watcherRows: []
+      }
     });
 
     expect(table.hidden).toBe(true);
     expect(elements.get('empty')?.hidden).toBe(false);
-    const result = elements.get('result');
-    expect(result?.hidden).toBe(false);
-    expect(result?.textContent).toContain('"componentType": 4');
+    const spacesTable = elements.get('spaces-result') as FakeElement;
+    expect(spacesTable.hidden).toBe(false);
+    const spacesTbody = spacesTable.querySelector('tbody') as FakeElement;
+    expect(spacesTbody.children).toHaveLength(1);
+    expect(spacesTbody.children[0].children.map(cell => cell.textContent)).toEqual([
+      '3',
+      '7',
+      'spaces/monster_scene',
+      '1, 2'
+    ]);
   });
 
   it('watch list 渲染为可移除条目,流按钮标签随 streaming 切换、空清单禁用', () => {
@@ -660,10 +695,10 @@ describe('webview 内联脚本渲染 watcher 结果表格', () => {
     expect(first.tag).toBe('li');
     expect(first.children.map(cell => `${cell.tag}:${cell.textContent}`)).toEqual([
       'span:/cellapp/uptime',
-      'button:Remove'
+      'button:移除'
     ]);
     expect(second.children[0].textContent).toBe('/cellapp/load');
-    expect(stream.textContent).toBe('Stop stream');
+    expect(stream.textContent).toBe('■ 停止流式轮询');
     expect(stream.disabled).toBe(false);
 
     dispatch({
@@ -675,7 +710,7 @@ describe('webview 内联脚本渲染 watcher 结果表格', () => {
       result: { spaces: [], watcherRows: [] }
     });
     expect(list.children).toHaveLength(0);
-    expect(stream.textContent).toBe('Start stream');
+    expect(stream.textContent).toBe('▶ 开始流式轮询');
     expect(stream.disabled).toBe(true);
   });
 });

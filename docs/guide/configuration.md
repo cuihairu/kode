@@ -215,6 +215,7 @@ The four path settings are "optional overrides": a configured value is honored a
 | `kbengine.loggerPort` | number | `20022` | Log collector connection port; must match the engine logger's listen port — a mismatch leaves the panel unconnected (it retries on an interval internally) |
 | `kbengine.logAutoConnect` | boolean | `true` | Try connecting to the logger once on activation; failure is silent and goes through reconnection |
 | `kbengine.webviewConsoleLogs` | boolean | `true` | Collect the log panel page's `console` output and uncaught exceptions into the same log stream |
+| `kbengine.webviewLocale` | `"auto" \| "zh" \| "en"` | `"auto"` | Webview panel display language; `auto` follows the VS Code display language (zh-cn/zh-tw → Chinese, otherwise English) |
 | `kbengine.maxLogEntries` | number | `10000` | Log WebView cache cap (entries). Lower it to save memory on heavy log volume; raise it to keep longer history |
 
 ### Remote Debugging

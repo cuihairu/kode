@@ -11,6 +11,8 @@ import {
   SystemOverview
 } from './monitoringCollector';
 import { randomNonce, toJsonForScript, webviewAssetUri, webviewScriptCsp } from './webviewSecurity';
+import { WEBVIEW_THEME_CSS } from './webviewTheme';
+import { htmlLang, resolvePanelLocale, strings } from './webviewStrings';
 
 
 /**
@@ -248,6 +250,8 @@ export class MonitoringWebView {
     diagnostics: MonitoringDiagnostic[]
   ): string {
     const nonce = randomNonce();
+    const t = strings(resolvePanelLocale()).monitoring;
+    const c = strings(resolvePanelLocale()).common;
     const componentTypes = [...new Set(metrics.map(metric => metric.componentType))].sort();
     const metricsHtml = metrics.map(m => this.formatMetricCard(m)).join('\n');
     const diagnosticsHtml = diagnostics.map(item => this.formatDiagnostic(item)).join('\n');
@@ -257,7 +261,7 @@ export class MonitoringWebView {
     const historySeries = this.buildHistorySeries(metrics, this.historyWindow);
 
     return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${htmlLang(resolvePanelLocale())}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -266,22 +270,19 @@ export class MonitoringWebView {
   <meta http-equiv="Content-Security-Policy" content="${webviewScriptCsp(nonce, [this.panel?.webview.cspSource ?? 'vscode-webview:'])}">
   <script src="${webviewAssetUri(this.panel?.webview, this.context.extensionUri, 'media', 'chart.min.js')}"></script>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
+    ${WEBVIEW_THEME_CSS}
     body {
-      font-family: var(--vscode-font-family);
-      font-size: var(--vscode-font-size);
-      background-color: var(--vscode-editor-background);
-      color: var(--vscode-editor-foreground);
       padding: 20px;
     }
 
     .header {
       margin-bottom: 20px;
+    }
+
+    .header h1 {
+      font-size: var(--kode-t-h1);
+      font-weight: 600;
+      color: #fff;
     }
 
     .overview {
@@ -340,15 +341,15 @@ export class MonitoringWebView {
       width: 10px;
       height: 10px;
       border-radius: 50%;
-      background-color: #4CAF50;
+      background-color: var(--kode-ok);
     }
 
     .metric-status.warning {
-      background-color: #FF9800;
+      background-color: var(--kode-warn);
     }
 
     .metric-status.error {
-      background-color: #F44336;
+      background-color: var(--kode-err);
     }
 
     .metric-row {
@@ -383,16 +384,16 @@ export class MonitoringWebView {
 
     .progress-fill {
       height: 100%;
-      background-color: #4CAF50;
+      background-color: var(--kode-ok);
       transition: width 0.3s ease;
     }
 
     .progress-fill.warning {
-      background-color: #FF9800;
+      background-color: var(--kode-warn);
     }
 
     .progress-fill.error {
-      background-color: #F44336;
+      background-color: var(--kode-err);
     }
 
     .toolbar {
@@ -429,10 +430,12 @@ export class MonitoringWebView {
 
     .notice {
       margin-bottom: 20px;
-      padding: 12px 14px;
-      border-left: 3px solid var(--vscode-testing-iconFailed);
-      background-color: var(--vscode-inputValidation-errorBackground);
-      color: var(--vscode-editor-foreground);
+      padding: 8px 12px;
+      background-color: var(--kode-surface);
+      border: 1px solid var(--kode-border);
+      border-radius: var(--kode-r);
+      color: var(--kode-fg-2);
+      font-size: var(--kode-t-meta);
       line-height: 1.5;
     }
 
@@ -468,20 +471,20 @@ export class MonitoringWebView {
     }
 
     .diagnostic-item {
-      background-color: var(--vscode-editorGroupHeader-tabsBackground);
-      border: 1px solid var(--vscode-panel-border);
-      border-left: 3px solid #4CAF50;
-      border-radius: 4px;
+      background-color: var(--kode-surface);
+      border: 1px solid var(--kode-border);
+      border-left: 3px solid var(--kode-info);
+      border-radius: var(--kode-r);
       padding: 10px 12px;
       line-height: 1.5;
     }
 
     .diagnostic-item.warning {
-      border-left-color: #FF9800;
+      border-left-color: var(--kode-warn);
     }
 
     .diagnostic-item.error {
-      border-left-color: #F44336;
+      border-left-color: var(--kode-err);
     }
 
     .diagnostic-meta {
@@ -514,18 +517,68 @@ export class MonitoringWebView {
     }
 
     .metric-detail-label {
-      color: var(--vscode-descriptionForeground);
+      color: var(--kode-fg-3);
+    }
+
+    /* 业务域分组(UI-01):组头可折叠 + 条目计数 */
+    .mgroup {
+      border-top: 1px dashed var(--kode-border-soft);
+    }
+
+    .mgroup > summary {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0 2px;
+      cursor: pointer;
+      list-style: none;
+      color: var(--kode-fg-3);
+      font-size: var(--kode-t-meta);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .mgroup > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .mgroup > summary::before {
+      content: '▸';
+      color: var(--kode-fg-4);
+      font-size: 10px;
+    }
+
+    .mgroup[open] > summary::before {
+      content: '▾';
+    }
+
+    .mgroup > summary:hover {
+      color: var(--kode-fg-2);
+    }
+
+    .mgroup .mcount {
+      background: var(--kode-surface-2);
+      border: 1px solid var(--kode-border);
+      border-radius: 8px;
+      color: var(--kode-fg-3);
+      font-family: var(--kode-mono);
+      font-size: var(--kode-t-tag);
+      font-weight: 400;
+      padding: 0 7px;
+      text-transform: none;
+      letter-spacing: 0;
     }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>KBEngine 服务器监控</h1>
+    <h1>${t.title}</h1>
   </div>
 
   <div class="toolbar">
     <select id="componentFilter">
-      <option value="">全部组件</option>
+      <option value="">${c.allComponents}</option>
       ${componentTypes
         .map(
           type =>
@@ -534,88 +587,88 @@ export class MonitoringWebView {
         .join('')}
     </select>
     <select id="diagnosticFilter">
-      <option value=""${this.diagnosticFilter === '' ? ' selected' : ''}>全部诊断</option>
-      <option value="info"${this.diagnosticFilter === 'info' ? ' selected' : ''}>信息</option>
-      <option value="warning"${this.diagnosticFilter === 'warning' ? ' selected' : ''}>警告</option>
-      <option value="error"${this.diagnosticFilter === 'error' ? ' selected' : ''}>错误</option>
+      <option value=""${this.diagnosticFilter === '' ? ' selected' : ''}>${t.filterAllDiagnostics}</option>
+      <option value="info"${this.diagnosticFilter === 'info' ? ' selected' : ''}>${t.diagInfo}</option>
+      <option value="warning"${this.diagnosticFilter === 'warning' ? ' selected' : ''}>${t.diagWarning}</option>
+      <option value="error"${this.diagnosticFilter === 'error' ? ' selected' : ''}>${t.diagError}</option>
     </select>
-    <input id="keywordFilter" type="text" placeholder="搜索组件/诊断..." value="${this.escapeHtml(this.keywordFilter)}" />
+    <input id="keywordFilter" type="text" placeholder="${t.searchPlaceholder}" value="${this.escapeHtml(this.keywordFilter)}" />
     <select id="refreshInterval">
-      <option value="1000"${refreshInterval === 1000 ? ' selected' : ''}>1 秒</option>
-      <option value="2000"${refreshInterval === 2000 ? ' selected' : ''}>2 秒</option>
-      <option value="5000"${refreshInterval === 5000 ? ' selected' : ''}>5 秒</option>
-      <option value="10000"${refreshInterval === 10000 ? ' selected' : ''}>10 秒</option>
+      <option value="1000"${refreshInterval === 1000 ? ' selected' : ''}>1 ${t.second}</option>
+      <option value="2000"${refreshInterval === 2000 ? ' selected' : ''}>2 ${t.second}</option>
+      <option value="5000"${refreshInterval === 5000 ? ' selected' : ''}>5 ${t.second}</option>
+      <option value="10000"${refreshInterval === 10000 ? ' selected' : ''}>10 ${t.second}</option>
     </select>
     <select id="historyWindow">
-      <option value="30"${this.historyWindow === 30 ? ' selected' : ''}>最近 30 点</option>
-      <option value="60"${this.historyWindow === 60 ? ' selected' : ''}>最近 60 点</option>
-      <option value="120"${this.historyWindow === 120 ? ' selected' : ''}>最近 120 点</option>
+      <option value="30"${this.historyWindow === 30 ? ' selected' : ''}>${t.historyWindow(30)}</option>
+      <option value="60"${this.historyWindow === 60 ? ' selected' : ''}>${t.historyWindow(60)}</option>
+      <option value="120"${this.historyWindow === 120 ? ' selected' : ''}>${t.historyWindow(120)}</option>
     </select>
-    <button id="refreshBtn">刷新</button>
-    <button id="pauseBtn">${isPaused ? '恢复' : '暂停'}</button>
-    <button id="exportBtn">导出数据</button>
+    <button id="refreshBtn">${c.refresh}</button>
+    <button id="pauseBtn">${isPaused ? c.resume : c.pause}</button>
+    <button id="exportBtn">${c.export}</button>
   </div>
 
-  <div class="notice">连接状态：${statusSummary} | 自动刷新：${isPaused ? '已暂停' : `${refreshInterval / 1000} 秒`} | 历史窗口：最近 ${this.historyWindow} 点</div>
+  <div class="notice">${t.statusPrefix}：${statusSummary} | ${t.autoRefreshPrefix}：${isPaused ? t.pausedLabel : `${refreshInterval / 1000} ${t.second}`} | ${t.historyWindow(this.historyWindow)}</div>
 
   <div class="overview">
     <div class="overview-card">
-      <div class="overview-title">运行组件</div>
+      <div class="overview-title">${t.kpiComponents}</div>
       <div class="overview-value">${overview.runningComponents}</div>
     </div>
     <div class="overview-card">
-      <div class="overview-title">总实体数</div>
+      <div class="overview-title">${t.kpiEntities}</div>
       <div class="overview-value">${overview.totalEntities}</div>
     </div>
     <div class="overview-card">
-      <div class="overview-title">总连接数</div>
+      <div class="overview-title">${t.kpiConnections}</div>
       <div class="overview-value">${overview.totalConnections}</div>
     </div>
     <div class="overview-card">
-      <div class="overview-title">消息/秒</div>
+      <div class="overview-title">${t.kpiMessages}</div>
       <div class="overview-value">${overview.totalMessagesPerSecond}</div>
     </div>
     <div class="overview-card">
-      <div class="overview-title">总内存</div>
+      <div class="overview-title">${t.kpiMemory}</div>
       <div class="overview-value">${overview.totalMemoryUsage.toFixed(1)} MB</div>
     </div>
     <div class="overview-card">
-      <div class="overview-title">总 CPU</div>
+      <div class="overview-title">${t.kpiCpu}</div>
       <div class="overview-value">${overview.totalCpuUsage.toFixed(1)}%</div>
     </div>
   </div>
 
   <div class="metrics-grid">
-    ${metricsHtml || '<div class="empty-state">暂无监控数据<br><small>启动 KBEngine 服务器后，监控数据将在此显示</small></div>'}
+    ${metricsHtml || `<div class="empty-state">${t.empty}<br><small>${t.emptyHint}</small></div>`}
   </div>
 
   <div class="diagnostics">
-    ${diagnosticsHtml || '<div class="empty-state">暂无诊断信息</div>'}
+    ${diagnosticsHtml || `<div class="empty-state">${t.noDiagnostics}</div>`}
   </div>
 
   <div class="charts-container">
     <div class="chart-card">
-      <div class="chart-title">CPU 使用率</div>
+      <div class="chart-title">${t.chartCpu}</div>
       <canvas id="cpuChart"></canvas>
     </div>
     <div class="chart-card">
-      <div class="chart-title">内存使用</div>
+      <div class="chart-title">${t.chartMemory}</div>
       <canvas id="memoryChart"></canvas>
     </div>
     <div class="chart-card">
-      <div class="chart-title">负载变化</div>
+      <div class="chart-title">${t.chartLoad}</div>
       <canvas id="loadChart"></canvas>
     </div>
     <div class="chart-card">
-      <div class="chart-title">消息速率</div>
+      <div class="chart-title">${t.chartMessages}</div>
       <canvas id="messagesChart"></canvas>
     </div>
     <div class="chart-card">
-      <div class="chart-title">Cell 对象池内存</div>
+      <div class="chart-title">${t.chartObjectPoolMemory}</div>
       <canvas id="objectPoolChart"></canvas>
     </div>
     <div class="chart-card">
-      <div class="chart-title">Cell 对象池容量</div>
+      <div class="chart-title">${t.chartObjectPoolSize}</div>
       <canvas id="objectPoolSizeChart"></canvas>
     </div>
   </div>
@@ -685,13 +738,14 @@ export class MonitoringWebView {
           second: '2-digit'
         });
       });
+      // UI-01:图表线色取统一状态色板/强调色(旧 Material 随机彩退场)
       const colors = [
-        'rgba(33, 150, 243, 1)',
-        'rgba(156, 39, 176, 1)',
-        'rgba(76, 175, 80, 1)',
-        'rgba(233, 30, 99, 1)',
-        'rgba(255, 152, 0, 1)',
-        'rgba(121, 85, 72, 1)'
+        '#75beff', // info
+        '#3794ff', // accent
+        '#89d185', // ok
+        '#cca700', // warn
+        '#f14c4c', // err
+        '#808080'  // neutral
       ];
 
       const createDatasets = (field, fill = false) =>
@@ -1053,9 +1107,13 @@ export class MonitoringWebView {
   }
 
   /**
-   * 格式化指标卡片
+   * 格式化指标卡片(UI-01 分类管理重设计):原 13 行平铺按真实业务域分组
+   * ——服务进程(组件类型/状态/运行时间/PID)、性能(CPU/内存/负载/消息)、
+   * 连接(连接数/监听地址)、存储(实体数/对象池),组头 <details> 可折叠
+   * 并带条目计数;文案走字符串表(zh/en)。
    */
   private formatMetricCard(metric: ComponentMetrics): string {
+    const t = strings(resolvePanelLocale()).monitoring;
     const cpuPercent = metric.cpuUsage.toFixed(1);
     const cpuClass = metric.cpuUsage > 80 ? 'error' : (metric.cpuUsage > 50 ? 'warning' : '');
     const memoryMB = metric.memoryUsage.toFixed(1);
@@ -1067,7 +1125,7 @@ export class MonitoringWebView {
       : metric.statusLevel === 'warning'
         ? 'warning'
         : '';
-    const detailTitle = metric.componentType === 'cellapp' ? 'Object Pools' : 'Watcher Details';
+    const detailTitle = metric.componentType === 'cellapp' ? t.objectPools : t.watcherDetails;
     const detailHtml = metric.details
       .map(
         detail => `<div class="metric-detail">
@@ -1077,66 +1135,66 @@ export class MonitoringWebView {
       )
       .join('\n');
 
+    const hasObjectPool = metric.objectPoolSize > 0 || metric.objectPoolMemory > 0;
+    const group = (
+      domain: string,
+      label: string,
+      rows: Array<{ render: string } | null>
+    ): string => {
+      const visible = rows.filter(row => row !== null);
+      return `<details class="mgroup" data-domain="${domain}" open>
+      <summary><span>${label}</span><span class="mcount" data-count="${visible.length}">${visible.length}</span></summary>
+      ${visible.map(row => (row as { render: string }).render).join('\n')}
+    </details>`;
+    };
+    const row = (label: string, value: string): { render: string } => ({
+      render: `<div class="metric-row">
+        <span class="metric-label">${label}</span>
+        <span class="metric-value">${value}</span>
+      </div>`
+    });
+
+    // 运行时间的值在 label 中(既有口径 "10 分钟"),行结构保持 label+value
+    const processRows = group('process', t.domainProcess, [
+      row(t.rowComponentType, this.escapeHtml(metric.componentType)),
+      row(t.rowStatus, this.escapeHtml(metric.status)),
+      { render: `<div class="metric-row">
+        <span class="metric-label">${t.rowUptime(uptimeMin)}</span>
+        <span class="metric-value"></span>
+      </div>` },
+      row(t.rowPid, String(metric.pid))
+    ]);
+    const performanceGroup = group('performance', t.domainPerformance, [
+      { render: `<div class="metric-row">
+        <span class="metric-label">${t.rowCpu}</span>
+        <span class="metric-value">${cpuPercent}%</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill ${cpuClass}" style="width: ${cpuPercent}%"></div>
+      </div>` },
+      row(t.rowMemory, `${memoryMB} MB`),
+      row(t.rowLoad, `${loadPercent}%`),
+      row(t.rowMessages, String(metric.messagesPerSecond))
+    ]);
+    const connectionsGroup = group('connections', t.domainConnections, [
+      row(t.rowConnections, String(metric.connections)),
+      row(t.rowAddress, this.escapeHtml(metric.internalAddress))
+    ]);
+    const storageGroup = group('storage', t.domainStorage, [
+      row(t.rowEntities, String(metric.entityCount)),
+      hasObjectPool ? row(t.rowObjectPoolSize, String(metric.objectPoolSize)) : null,
+      hasObjectPool ? row(t.rowObjectPoolMemory, `${objectPoolMemoryMB} B`) : null
+    ]);
+
     return `<div class="metric-card">
       <div class="metric-header">
         <div class="metric-name">${this.escapeHtml(metric.component.toUpperCase())}</div>
         <div class="metric-status ${statusClass}"></div>
       </div>
-      <div class="metric-row">
-        <span class="metric-label">组件类型</span>
-        <span class="metric-value">${this.escapeHtml(metric.componentType)}</span>
-      </div>
-      <div class="metric-row">
-        <span class="metric-label">状态</span>
-        <span class="metric-value">${this.escapeHtml(metric.status)}</span>
-      </div>
-      <div class="metric-row">
-        <span class="metric-label">CPU 使用率</span>
-        <span class="metric-value">${cpuPercent}%</span>
-      </div>
-      <div class="progress-bar">
-        <div class="progress-fill ${cpuClass}" style="width: ${cpuPercent}%"></div>
-      </div>
-      <div class="metric-row">
-        <span class="metric-label">内存使用</span>
-        <span class="metric-value">${memoryMB} MB</span>
-      </div>
-      <div class="metric-row">
-        <span class="metric-label">负载</span>
-        <span class="metric-value">${loadPercent}%</span>
-      </div>
-      <div class="metric-row">
-        <span class="metric-label">连接数</span>
-        <span class="metric-value">${metric.connections}</span>
-      </div>
-      <div class="metric-row">
-        <span class="metric-label">实体数</span>
-        <span class="metric-value">${metric.entityCount}</span>
-      </div>
-      <div class="metric-row">
-        <span class="metric-label">消息/秒</span>
-        <span class="metric-value">${metric.messagesPerSecond}</span>
-      </div>
-      ${metric.objectPoolSize > 0 || metric.objectPoolMemory > 0 ? `<div class="metric-row">
-        <span class="metric-label">对象池容量</span>
-        <span class="metric-value">${metric.objectPoolSize}</span>
-      </div>
-      <div class="metric-row">
-        <span class="metric-label">对象池内存</span>
-        <span class="metric-value">${objectPoolMemoryMB} B</span>
-      </div>` : ''}
-      <div class="metric-row">
-        <span class="metric-label">运行时间</span>
-        <span class="metric-value">${uptimeMin} 分钟</span>
-      </div>
-      <div class="metric-row">
-        <span class="metric-label">进程 PID</span>
-        <span class="metric-value">${metric.pid}</span>
-      </div>
-      <div class="metric-row">
-        <span class="metric-label">监听地址</span>
-        <span class="metric-value">${this.escapeHtml(metric.internalAddress)}</span>
-      </div>
+      ${processRows}
+      ${performanceGroup}
+      ${connectionsGroup}
+      ${storageGroup}
       <div class="metric-details">
         <div class="metric-details-title">${detailTitle}</div>
         ${detailHtml}

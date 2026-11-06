@@ -134,8 +134,8 @@ describe('package.nls 视图分类(侧栏分类标签)', () => {
   it('默认英文 locale 出英文,中文 locale 出中文(正反两态)', () => {
     const en = resolve(nlsDefault);
     const zh = resolve(nlsZhCn);
-    expect(en).toEqual(['Quick Actions', 'Entities', 'Servers', 'Debug Targets', 'Telnet', 'Config', 'File History', 'Selection History', 'Remote Servers']);
-    expect(zh).toEqual(['快速执行', '实体', '服务器', '调试目标', 'Telnet', '配置', '文件历史', '选区历史', '远程服务器']);
+    expect(en).toEqual(['Quick Actions', 'Servers', 'Telnet', 'Remote Servers', 'Entities', 'Debug Targets', 'Config', 'File History', 'Selection History']);
+    expect(zh).toEqual(['快速执行', '服务器', 'Telnet', '远程服务器', '实体', '调试目标', '配置', '文件历史', '选区历史']);
     expect(zh).not.toEqual(en);
   });
 });
