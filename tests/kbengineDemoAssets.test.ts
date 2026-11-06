@@ -337,7 +337,7 @@ describe('types.xml implementedBy:双向跳转', () => {
       'python'
     );
     const typesXml = fs.readFileSync(p('scripts/entity_defs/types.xml'), 'utf8');
-    // Python 文档的注册 provider 是 PythonDefinitionProvider(extension.ts:186),
+    // Python 文档的注册 provider 是 PythonDefinitionProvider(extension.ts:189),
     // 反向 implementedBy 跳转走它——不是 .def 侧的 KBEngineDefinitionProvider
     const pyProvider = new PythonDefinitionProvider(new EntityMappingManager({ subscriptions: [] }));
     const loc = (await pyProvider.provideDefinition(document, position)) as unknown as LocationLike | null;

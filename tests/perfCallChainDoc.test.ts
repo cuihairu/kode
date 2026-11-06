@@ -140,23 +140,30 @@ const ANCHORS: Array<[string, number, string]> = [
   // 新增 botsControl 导入块 5 行,全部 extension.ts 锚点再 +5(真位重探
   // 683/696/980/1062/1113/1176/1499/2368/2448);bots 命令装配(约 4269)在
   // 全部锚点之后不再位移;出处随 baseline 锁步。
-  ['src/extension.ts', 1064, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1115, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1178, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 982, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1501, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 685, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 698, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-09(HOT-VER 集成):状态栏版本号批次——extension.ts 顶部 import
+  // +3(hotReloadSectionReader / readHotReloadSettings 各 +1,新增
+  // hotReloadFileVersion +1),叠在 IDE-PYSPY-001 的 +2 之上:全部 extension.ts
+  // 锚点 = PYSPY 批次真位再 +3(版本簿装配块约 5506 起,在全部锚点之后不再
+  // 位移)。逐符号真位重探 685/698/982/1064/1115/1178/1501 →
+  // 688/701/985/1067/1118/1181/1504,出处随 baseline 锁步。
+  ['src/extension.ts', 1067, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1118, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1181, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 985, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1504, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 688, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 701, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
   // 锚点整体 +12(真位重探 1778/1837/1861/1989/4713/5121/5227/7038 →
   // 1790/1849/1873/2001/4725/5133/5239/7050)。
-  ['src/extension.ts', 2370, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2450, 'flushQueued()'],
   // 2026-11-06(六):IDE-PYSPY-001 extension.ts 顶部 import +2 行(PYSPY_RECORD_DEFAULTS/
   // runPyspySchedule 引入)→ 上列 9 处 extension.ts 锚点整体 +2(真位重探 683/696/980/
-  // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450)。
+  // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450);
+  // HOT-VER 再 +3(见上)→ 后段锚点 2373/2453。
+  ['src/extension.ts', 2373, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2453, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面
