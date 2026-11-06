@@ -138,6 +138,7 @@
     "onCommand:kbengine.hotReload.retryFailed",
     "onCommand:kbengine.hotReload.showRevisionEvidence",
     "onCommand:kbengine.hotReload.configureChannel",
+    "onCommand:kbengine.hotReload.switchChannel",
     "onCommand:kbengine.hotReload.confirmDefBaseline",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.exportTypeStubs",
@@ -823,6 +824,10 @@
         "title": "Hot Reload: Configure Deployment Channel"
       },
       {
+        "command": "kbengine.hotReload.switchChannel",
+        "title": "Hot Reload: Switch Channel (Status Bar Quick Switch)"
+      },
+      {
         "command": "kbengine.hotReload.confirmDefBaseline",
         "title": "Hot Reload: Confirm Restart (Rebuild def Structure Baselines)"
       },
@@ -1093,6 +1098,11 @@
         "command": "kbengine.telnet.disconnect",
         "key": "ctrl+d",
         "when": "activeWebviewPanelId == kbengine.telnetPanel"
+      },
+      {
+        "command": "kbengine.hotReload.configureChannel",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r"
       }
     ],
     "configuration": {

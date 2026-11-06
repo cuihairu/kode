@@ -370,6 +370,28 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 
 文件保存/监视 → 按名触发 `quickActions` 动作。门控**默认关**防误触:开启前不建任何文件监视,装配链与激活期行为零变化;`enabled` 改成 `true` 即刻按 `globs` 建监视、改成 `false` 拆除,配置变更即时生效,不必重启窗口。
 
+**快捷启用键位(默认开箱即用)**:`ctrl+alt+r`(macOS `cmd+alt+r`)默认绑定 `kbengine.hotReload.configureChannel`,无 `when` 收窄——编辑器/工作区任意位置都能按,扩展装上即生效。按下直接进「预设一键启用」首屏(自研接收器[推荐] / KBEngine 官方 / 未配置 + 「高级配置」):单 profile 直接进预设列表、多 profile 先选 profile,合计 ≤2 步;选中即按默认本机端口/路径探活、通过即启用;零配置也不静默(无 profile 会如实提示先建 profile)。预设默认参数 = `http://127.0.0.1:8000/reload` + POST + 体 `{"files":${files}}`(JSON 对象体,能带 `targetId`/`sender_digests`,接收端核对后才回 applied);接收器要按 **`node scripts/hot-reload-receiver/referenceReceiver.mjs --port 8000 --root <暂存根> --mode apply`** 启动(脚本默认 `--port 0` 随机端口,不改则 8000 探活如实报不通)。
+
+改键:在「键盘快捷方式」里改,或在 `keybindings.json` **先解除默认绑定再绑新键**(只加一条同命令的新绑定不会自动删掉默认键)——
+
+```json
+[
+  { "key": "ctrl+alt+r", "command": "-kbengine.hotReload.configureChannel" },
+  { "key": "ctrl+shift+r", "command": "kbengine.hotReload.configureChannel" }
+]
+```
+
+macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不写 `mac`）：
+
+```json
+[
+  { "key": "cmd+alt+r", "command": "-kbengine.hotReload.configureChannel" },
+  { "key": "cmd+shift+r", "command": "kbengine.hotReload.configureChannel" }
+]
+```
+
+冲突口径:同一键位还绑着别的命令时,「键盘快捷方式」把两条并列并标冲突;按键绑定规则**自下而上取第一条命中 `when` 的规则**——用户规则排在默认规则之后,故用户自绑(或上面的解除行)优先,同一层再以实际顺序与上下文为准。默认键位刻意避开仓内既占键位:`ctrl+alt+h` 已是本指南 HTTP 快捷请求的示例键位、`ctrl+]`/`ctrl+d` 是 telnet 面板键位,故热更快捷启用取 `ctrl+alt+r`(有测试锁,键位互撞即红)。
+
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `kbengine.hotReload.enabled` | boolean | `false` | 总开关,开时按 `globs` 各建一个文件监视 |

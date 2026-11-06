@@ -771,14 +771,45 @@ The flow graph panel supports:
 ### `kbengine.hotReload.configureChannel`
 
 - Title: `Hot Reload: Configure Deployment Channel`
-- Purpose: per-ProjectProfile deploy-level hot-reload channel panel — pick a profile, pick a channel (unset / KBEngine official / custom HTTP), collect its parameters, then save or run a connectivity test (IDE-HOT-102 / design §5.1)
+- Default keybinding: `ctrl+alt+r` (macOS `cmd+alt+r`), **no `when` narrowing** — available in any editor/workspace context out of the box, no user setup needed. Avoidance rationale: `ctrl+alt+h` is already the documented example key for `kbengine.httpRequest.run` in the configuration guide, and `ctrl+]` / `ctrl+d` belong to the telnet panel, so the hot-reload quick enable uses `ctrl+alt+r`
+- How to change: edit it in Keyboard Shortcuts, or in `keybindings.json` **remove the default binding first, then bind the new key** (adding a new entry for the same `command` alone does not drop the default) —
+  ```json
+  [
+    { "key": "ctrl+alt+r", "command": "-kbengine.hotReload.configureChannel" },
+    { "key": "ctrl+shift+r", "command": "kbengine.hotReload.configureChannel" }
+  ]
+  ```
+  On macOS write the **user** rule with a `key` field too (`keybindings.json` holds user rules, `mac` is not used there):
+  ```json
+  [
+    { "key": "cmd+alt+r", "command": "-kbengine.hotReload.configureChannel" },
+    { "key": "cmd+shift+r", "command": "kbengine.hotReload.configureChannel" }
+  ]
+  ```
+- Conflict rule: when another command shares the key, Keyboard Shortcuts lists both and marks the conflict; keybindings are resolved **bottom-up, first rule whose `when` matches wins** — user rules sit after default rules, so a user binding (or the removal line above) takes precedence, with ties within one layer decided by actual order and context; this extension's own bindings never collide (test-locked)
+- Purpose: per-ProjectProfile deploy-level hot-reload channel panel — the **first screen is a three-preset quick enable** (in-house receiver [recommended] / KBEngine official / unset, plus an "advanced" entry); picking a preset auto-fills the default parameters (local port/path), runs **one-shot connectivity probe, and enables only when the probe passes** (a single profile goes straight to the preset screen, multiple profiles pick one first — ≤2 steps total, zero input boxes). The multi-step flow (pick a channel → collect parameters → save or probe) stays under "advanced" (IDE-HOT-102 / design §5.1)
 - Behavior:
   - Channel is stored per profile (`profile.hotReload`); **unset** restores the fallback to the existing `kbengine.hotReload.actionName` quick-action channel (the channel-less behavior is unchanged)
-  - Two channels: `kbengine-official` (engine built-in `reloadScript` via console — host / port / optional password) and `http` (third-party HTTP with a custom accepted/applied receipt contract — URL template with `${files}` / `${fileList}`, method, body template, optional headers)
-  - A **connectivity test** runs `transport.probe()` on the collected config without saving (probe never writes the profile); a malformed config is reported honestly (通道配置不完整) rather than guessed
+  - Two channels: `kbengine-official` (**depends on the engine `reloadScript`**, via console — host / port / optional password) and `http` (**the in-house receiver**, `scripts/hot-reload-receiver/referenceReceiver.mjs` in this repo, with the custom accepted/applied receipt contract — URL template with `${files}` / `${fileList}`, method, body template, optional headers)
+  - **Preset quick enable**: the in-house receiver defaults to `http://127.0.0.1:8000/reload`, POST, body `{"files":${files}}` (**JSON object body** — only an object body gets `targetId`/`sender_digests` auto-attached by the transport, which is what lets the receiver answer `applied` after checking the digest; a bare `${files}` array body never reaches applied); parameters already configured on the same channel are kept rather than reset. The selection runs `transport.probe()` and **writes the profile only when the probe passes** — an unreachable endpoint is reported honestly as 探活不通,未启用 and points back to the advanced flow to check port/path; never silently enabled
+  - Start the receiver on the preset port: `scripts/hot-reload-receiver/referenceReceiver.mjs` defaults to `--port 0` (random), so run **`node referenceReceiver.mjs --port 8000 --root <staging root> --mode apply`** — otherwise the preset URL's port 8000 honestly probes as unreachable
+  - A **connectivity test** (inside the advanced flow) runs `transport.probe()` on the collected config without saving (probe never writes the profile); a malformed config is reported honestly (通道配置不完整) rather than guessed
   - Every step is cancellable and nothing is written until the final 保存 — cancel at any step reports `false` and leaves the profile untouched
   - The panel is a quick-pick + input flow (the existing profile-edit pattern); unknown ids save as 保存失败 and never silently create
+  - **Callable with zero configuration**: with no profile it says so honestly (无部署 profile); with a single profile but no channel the first screen is already the preset list (multiple profiles pick one first), and passing `{ entry: 'advanced', profileId }` goes straight to that profile's advanced flow — never a silent no-op
 - When a profile has a channel configured and is active, the fire path sends the whole reload batch through `transport.send` (receipts feed the per-target ledger directly) instead of the quick action; with no channel configured the actionName path is unchanged
+
+### `kbengine.hotReload.switchChannel`
+
+- Title: `Hot Reload: Switch Channel (Status Bar Quick Switch)`
+- Purpose: the status-bar channel lamp's click entry — a three-preset QuickPick (in-house receiver [recommended] / KBEngine official / unset) that switches the active profile's hot-reload channel in one pick, probing immediately after the selection
+- Behavior:
+  - The lamp shows the current channel: `热更:自研HTTP` / `热更:KBEngine官方` / `热更:未配置`; with no active profile it honestly reads 未配置
+  - Each option carries a `(当前)` marker; the selection writes the active profile's `hotReload` section (same persistence surface as `configureChannel`)
+  - **Probe feedback**: green = default background + `$(plug)` + an "探活通过" info notice, then the profile is written; red = `$(error)` + the status-bar error background + an error notice carrying a **one-click repair** button (打开高级配置修参数) that jumps straight into that profile's advanced flow — the channel is neither switched nor written
+  - The lamp text always names the **configured** channel (a failed probe leaves the config untouched, so the text stays on the old channel while the red mark and tooltip name the attempted one)
+  - Green/red reflect only the latest probe verdict; as soon as the channel changes (profile switch or panel write) the stale verdict is dropped
+  - The existing send-state lamp (behind `kbengine.hotReload.showLog`) keeps rendering only the send state; the two lamps sit at different priorities (96 / 98) so they never fight for the slot or the color
 
 ### `kbengine.hotReload.confirmDefBaseline`
 

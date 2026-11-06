@@ -12,8 +12,9 @@
 
 1. **文件热更状态可视化**：每个脚本文件要有状态标识——未修改 / 已修改未重载 /
    已发送待回执 / 已重载生效 / 重载失败。
-2. **重载通道双方案**：KBEngine 官方方案 + 第三方方案（第三方通常要自己配置，
-   如 HTTP 请求触发）。
+2. **重载通道双方案**：KBEngine 官方方案（依赖引擎 `reloadScript`，经控制台）+
+   自研接收器方案（本仓 HTTP 接收器 `scripts/hot-reload-receiver/`，端点由使用者
+   自己配置）。
 
 ## 2. 既有地基（现状核对，实现前必须复核）
 
@@ -135,7 +136,7 @@ interface ReloadTransport {
 `ReloadReceipt` 复用既有回执形状（`{status:'accepted'|'applied',file,digest?}`
 或 `{status:'failed',file,reason}`），不新造协议。
 
-### 4.2 内置实现 A：KBEngine 官方方案
+### 4.2 内置实现 A：KBEngine 官方方案（依赖引擎 reloadScript，经控制台）
 
 - 引擎官方重载面 = Python `KBEngine.reloadScript(fullReload)`（AUD-007 实勘，
   baseapp/cellapp 均注册），**无 HTTP 回执**。
@@ -146,7 +147,7 @@ interface ReloadTransport {
   「命令已发送/控制台已回显」级证据，绝不声称 applied（AUD-007 口径：
   引擎无 applied 回执，applied 只能来自扩展侧自定契约的 HTTP 通道）。
 
-### 4.3 内置实现 B：第三方 HTTP 方案
+### 4.3 内置实现 B：自研接收器（HTTP 方案，本仓自研）
 
 - 按部署配置 `HttpRequestEntry` 形状（url/method/headers/body 模板），
   占位符替换文件列表（既有 `${module}`/`${filename}` 等 + 本设计扩展
@@ -269,10 +270,30 @@ interface ReloadTransport {
 
 ### 5.1 配置面板
 
-- 部署级重载通道配置面板（官方/HTTP 自定义）：`ProjectProfile` 下挂
-  `hotReload` 段，通道选择 + 参数（HTTP：url/method/headers/body 模板；
+- 部署级重载通道配置面板（自研接收器 / KBEngine 官方）：`ProjectProfile` 下挂
+  `hotReload` 段，通道选择 + 参数（自研接收器：url/method/headers/body 模板；
   官方：fullReload 默认）。
+- **预设一键启用（快捷启用）**：首屏三预设——自研接收器[推荐]（默认参数
+  `http://127.0.0.1:8000/reload`、POST、体 `{"files":${files}}`——**JSON 对象体**，
+  只有对象体才会被 transport 自动附 `targetId`/`sender_digests`，接收端核对
+  digest 后才回 applied；裸 `${files}` 数组体到不了 applied，故预设与高级配置
+  的默认体同为此形）/ KBEngine 官方（默认 `127.0.0.1:2560`）/ 未配置，外加
+  「高级配置」入口。单 profile 直接进预设首屏、多 profile 先选 profile，合计
+  ≤2 步、零输入框；选预设即 `transport.probe()` 一键探活，**通过才写 profile
+  启用**，不通如实报「探活不通,未启用」指回高级配置。多步流（选通道 → 逐项
+  收参数 → 保存/探测）保留在高级配置内（命令带 `{ entry: 'advanced', profileId }`
+  即直达该 profile 的高级流）。接收器端口须对齐：以
+  `node scripts/hot-reload-receiver/referenceReceiver.mjs --port 8000 --root <暂存根>
+  --mode apply` 启动（脚本缺省 `--port 0` 随机端口）。
 - **连通性测试按钮**：调 `transport.probe()`，面板内显示 ok/detail。
+- **状态栏快捷开关**：通道灯显示**当前已配置**通道（`热更:自研HTTP` 等），点击弹三选
+  QuickPick 即切（选中即探活：绿=通并落盘 / 红=不写盘，红标与 tooltip 点名这次试的
+  通道，灯文字不冒充未落盘状态）；一键修直达该 profile 的高级流；探活结论按
+  「激活 profile + 通道配置身份」归属，profile 切换/改参数/面板写盘即作废，探活等待
+  期间状态变化则该次结果作废不写。与既有发送态灯（优先级 98）分灯分色，通道灯 96。
+- **默认键位**：`contributes.keybindings` 为 `kbengine.hotReload.configureChannel`
+  注册 `ctrl+alt+r`（macOS `cmd+alt+r`，无 `when` 收窄），零配置可直接调起；
+  键位避让 `ctrl+alt+h`（配置指南 HTTP 快捷请求示例键）与 telnet 面板键位。
 - 结构性 def 的「需重启」提示与既有 `setRestartRequired` 同源。
 
 ### 5.2 审计

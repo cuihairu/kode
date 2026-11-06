@@ -278,13 +278,14 @@ describe('extension activate 装配', () => {
     expect(stubWithMetadata).toContain('# Source describe:');
     expect(workspaceState.contentProviders.has('kbengine-config')).toBe(true);
 
-    // 状态栏四条:server 灯(右对齐/优先级 100/命令指向扩展视图)、
+    // 状态栏五条:server 灯(右对齐/优先级 100/命令指向扩展视图)、
     // telnet 灯(优先级 99/命令指向 telnet 面板)、热更状态灯(HR-UI-001,
-    // 优先级 98/命令指向热更日志,默认 Watch Off 常显)与解释器灯(PY-ENV
-    // 二期,优先级 97/命令指向解释器选择,常显);无运行组件时 server 灯
-    // 隐藏。批111 用户令:配置未开 telnet 时 telnet 灯同样隐藏,context
-    // key 落 false
-    expect(windowState.statusBars).toHaveLength(4);
+    // 优先级 98/命令指向热更日志,默认 Watch Off 常显)、解释器灯(PY-ENV
+    // 二期,优先级 97/命令指向解释器选择,常显)与热更通道灯(快捷切换本批,
+    // 优先级 96/命令指向三选切换,无激活 profile 时显示未配置);无运行组件
+    // 时 server 灯隐藏。批111 用户令:配置未开 telnet 时 telnet 灯同样隐藏,
+    // context key 落 false
+    expect(windowState.statusBars).toHaveLength(5);
     const bar = windowState.statusBars.find(item => item.priority === 100)!;
     expect(bar.alignment).toBe(StatusBarAlignment.Right);
     expect(bar.command).toBe('workbench.view.extension.kbengine-explorer');
@@ -301,6 +302,13 @@ describe('extension activate 装配', () => {
     expect(interpreterBar.alignment).toBe(StatusBarAlignment.Right);
     expect(interpreterBar.command).toBe('kbengine.python.selectInterpreter');
     expect(interpreterBar.visible).toBe(true);
+    // 热更通道灯(快捷切换):显示当前通道,点击进三选 QuickPick;零配置
+    // (无激活 profile)如实显示未配置,不虚构通道
+    const channelBar = windowState.statusBars.find(item => item.priority === 96)!;
+    expect(channelBar.alignment).toBe(StatusBarAlignment.Right);
+    expect(channelBar.command).toBe('kbengine.hotReload.switchChannel');
+    expect(channelBar.text).toContain('未配置');
+    expect(channelBar.visible).toBe(true);
     expect(commandRegistry.contexts.get('kbengine.telnetConfigured')).toBe(false);
 
     // 所有 subscription 都可 dispose
@@ -1934,6 +1942,153 @@ describe('激活期语言索引响应 profile 切换(IDE-PRJ-011)', () => {
       disposeAll(context);
       setActiveProfileScanRoot(null);
       resetScanRootCache();
+      fs.rmSync(dirA, { recursive: true, force: true });
+      fs.rmSync(dirB, { recursive: true, force: true });
+    }
+  }, 8000);
+});
+
+describe('热更通道快捷启用命令的零配置入口(快捷切换本批)', () => {
+  it('零 profile 时 configureChannel 如实报告(不抛错不静默)', async () => {
+    const context = makeContext();
+    const originalInfoCount = messages.info.length;
+    try {
+      activate(context);
+      await commands.executeCommand('kbengine.hotReload.configureChannel');
+      expect(messages.info.slice(originalInfoCount).some(entry => entry.includes('无部署 profile'))).toBe(
+        true
+      );
+    } finally {
+      messages.info.length = originalInfoCount;
+      disposeAll(context);
+    }
+  });
+
+  it('有 profile 但零通道配置 → 首屏即预设一键启用列表(自研接收器/官方/未配置/高级配置)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-hot-quick-'));
+    const map = new Map<string, unknown>([
+      [
+        'kbengine.projectProfiles.v1',
+        [
+          {
+            id: 'p1',
+            displayName: '主线服',
+            assetsRoot: dir,
+            engineRoot: dir,
+            interpreterPath: null,
+            interpreterSource: 'missing'
+          }
+        ]
+      ]
+    ]);
+    const mementoLike = {
+      get: <T,>(key: string, defaultValue?: T): T | undefined =>
+        map.has(key) ? (map.get(key) as T) : defaultValue,
+      update: (key: string, value: unknown): Promise<void> => {
+        map.set(key, value);
+        return Promise.resolve();
+      }
+    };
+    const context: ExtensionContext = { ...makeContext(), workspaceState: mementoLike };
+    const windowish = fakeWindow as unknown as Record<string, unknown>;
+    const originalPick = windowish.showQuickPick;
+    const titles: string[] = [];
+    const labelSets: string[][] = [];
+    try {
+      activate(context);
+      windowish.showQuickPick = async (
+        items: Array<{ label: string }>,
+        options?: { title?: string }
+      ): Promise<unknown> => {
+        titles.push(options?.title ?? '');
+        labelSets.push(items.map(item => item.label));
+        // 零配置不触网:首屏看一眼即取消
+        return undefined;
+      };
+
+      await commands.executeCommand('kbengine.hotReload.configureChannel');
+
+      // 单 profile:不弹 profile 选择,首屏就是预设一键启用列表
+      expect(titles).toHaveLength(1);
+      expect(titles[0]).toContain('预设');
+      const presetLabels = labelSets[0].join('\n');
+      expect(presetLabels).toContain('自研接收器');
+      expect(presetLabels).toContain('未配置');
+      expect(presetLabels).toContain('高级配置');
+      // 取消不写盘:profile 仍无 hotReload 段
+      const stored = map.get('kbengine.projectProfiles.v1') as Array<{ hotReload?: unknown }>;
+      expect(stored[0].hotReload).toBeUndefined();
+    } finally {
+      windowish.showQuickPick = originalPick;
+      disposeAll(context);
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 8000);
+
+  it('一键修直达:entry=advanced + profileId 首屏即该 profile 的高级配置通道选择', async () => {
+    const dirA = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-hot-adv-a-'));
+    const dirB = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-hot-adv-b-'));
+    const map = new Map<string, unknown>([
+      [
+        'kbengine.projectProfiles.v1',
+        [
+          {
+            id: 'p1',
+            displayName: '主线服',
+            assetsRoot: dirA,
+            engineRoot: dirA,
+            interpreterPath: null,
+            interpreterSource: 'missing'
+          },
+          {
+            id: 'p2',
+            displayName: '压测服',
+            assetsRoot: dirB,
+            engineRoot: dirB,
+            interpreterPath: null,
+            interpreterSource: 'missing'
+          }
+        ]
+      ]
+    ]);
+    const mementoLike = {
+      get: <T,>(key: string, defaultValue?: T): T | undefined =>
+        map.has(key) ? (map.get(key) as T) : defaultValue,
+      update: (key: string, value: unknown): Promise<void> => {
+        map.set(key, value);
+        return Promise.resolve();
+      }
+    };
+    const context: ExtensionContext = { ...makeContext(), workspaceState: mementoLike };
+    const windowish = fakeWindow as unknown as Record<string, unknown>;
+    const originalPick = windowish.showQuickPick;
+    const titles: string[] = [];
+    try {
+      activate(context);
+      windowish.showQuickPick = async (
+        _items: Array<{ label: string }>,
+        options?: { title?: string }
+      ): Promise<unknown> => {
+        titles.push(options?.title ?? '');
+        return undefined;
+      };
+
+      // 状态栏「打开高级配置修参数」的直达路径:跳过 profile 选择与预设首屏
+      await commands.executeCommand('kbengine.hotReload.configureChannel', {
+        entry: 'advanced',
+        profileId: 'p2'
+      });
+
+      expect(titles).toHaveLength(1);
+      expect(titles[0]).toContain('高级配置');
+      // 目标 profile 对上:标题点名 p2(压测服),不是 p1 也不是通用选择屏
+      expect(titles[0]).toContain('压测服');
+      expect(titles[0]).not.toContain('主线服');
+      const stored = map.get('kbengine.projectProfiles.v1') as Array<{ hotReload?: unknown }>;
+      expect(stored.every(entry => entry.hotReload === undefined)).toBe(true);
+    } finally {
+      windowish.showQuickPick = originalPick;
+      disposeAll(context);
       fs.rmSync(dirA, { recursive: true, force: true });
       fs.rmSync(dirB, { recursive: true, force: true });
     }

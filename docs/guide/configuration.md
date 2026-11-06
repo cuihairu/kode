@@ -370,6 +370,28 @@ The run log goes to the OUTPUT channel 「KBEngine HTTP 快捷请求」 (KBEngin
 
 File save/watch → trigger the `quickActions` action by name. Gated **off by default** against accidental fires: before enabling, no file watchers are created and the assembly chain and activation behavior are unchanged; switching `enabled` to `true` immediately creates watchers per `globs`, switching to `false` tears them down — config changes take effect immediately, no window restart needed.
 
+**Quick-enable keybinding (on by default):** `ctrl+alt+r` (macOS `cmd+alt+r`) is bound to `kbengine.hotReload.configureChannel` out of the box with **no `when` narrowing** — it works in any editor/workspace context the moment the extension is installed. Pressing it opens the three-preset quick-enable screen (in-house receiver [recommended] / KBEngine official / unset, plus an "advanced" entry): a single profile goes straight to the preset list, multiple profiles pick one first — ≤2 steps total; a preset auto-fills the local port/path defaults, probes, and enables only on a passing probe; with zero configuration it reports honestly instead of doing nothing. Preset defaults are `http://127.0.0.1:8000/reload` + POST + body `{"files":${files}}` (JSON object body, which is what carries `targetId`/`sender_digests` so the receiver can answer `applied`); start the receiver with **`node scripts/hot-reload-receiver/referenceReceiver.mjs --port 8000 --root <staging root> --mode apply`** (the script defaults to `--port 0`, a random port, otherwise the port-8000 probe honestly reports unreachable).
+
+To change it: edit it in Keyboard Shortcuts, or in `keybindings.json` **remove the default binding first, then bind the new key** (a new entry for the same command alone does not drop the default):
+
+```json
+[
+  { "key": "ctrl+alt+r", "command": "-kbengine.hotReload.configureChannel" },
+  { "key": "ctrl+shift+r", "command": "kbengine.hotReload.configureChannel" }
+]
+```
+
+On macOS do the same with a `key` field in the **user** rule (`keybindings.json` does not take `mac`):
+
+```json
+[
+  { "key": "cmd+alt+r", "command": "-kbengine.hotReload.configureChannel" },
+  { "key": "cmd+shift+r", "command": "kbengine.hotReload.configureChannel" }
+]
+```
+
+Conflict rule: when another command shares the key, Keyboard Shortcuts lists both and marks the conflict; keybindings resolve **bottom-up, first rule whose `when` matches wins** — user rules sit after default rules, so a user binding (or the removal line above) takes precedence, with ties within one layer decided by actual order and context. The default key deliberately avoids keys already taken in this repo: `ctrl+alt+h` is this guide's HTTP quick-request example key, and `ctrl+]` / `ctrl+d` belong to the telnet panel, so the hot-reload quick enable uses `ctrl+alt+r` (test-locked: any collision goes red).
+
 | Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
 | `kbengine.hotReload.enabled` | boolean | `false` | Master switch; when on, one file watcher per `globs` pattern |

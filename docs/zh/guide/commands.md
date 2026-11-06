@@ -615,14 +615,46 @@
 ### `kbengine.hotReload.configureChannel`
 
 - 标题：`Hot Reload: Configure Deployment Channel`
-- 作用：按 ProjectProfile 的部署级热更通道面板——选 profile → 选通道（未配/官方/自定义 HTTP）→ 逐项收参数 → 保存或连通性测试（IDE-HOT-102 / 设计 §5.1）
+- 默认键位：`ctrl+alt+r`（macOS `cmd+alt+r`），**不带 `when` 收窄**——编辑器/工作区任意位置可用，扩展装上即生效，无需用户自己配。避让依据：`ctrl+alt+h` 已是配置指南里 `kbengine.httpRequest.run` 的既有示例键位，`ctrl+]`/`ctrl+d` 是 telnet 面板键位，故热更快捷启用改用 `ctrl+alt+r`
+- 改键：在「键盘快捷方式」里改，或在 `keybindings.json` **先解除默认绑定再绑新键**（只加一条同命令的新绑定并不会自动删掉默认键）——
+  ```json
+  [
+    { "key": "ctrl+alt+r", "command": "-kbengine.hotReload.configureChannel" },
+    { "key": "ctrl+shift+r", "command": "kbengine.hotReload.configureChannel" }
+  ]
+  ```
+  macOS 的**用户**键位规则同样用 `key` 字段写（`keybindings.json` 是用户规则，不写 `mac`）：
+  ```json
+  [
+    { "key": "cmd+alt+r", "command": "-kbengine.hotReload.configureChannel" },
+    { "key": "cmd+shift+r", "command": "kbengine.hotReload.configureChannel" }
+  ]
+  ```
+- 冲突口径：同一键位还绑着别的命令时，VS Code「键盘快捷方式」把两条并列标冲突；按键绑定规则**自下而上取第一条命中 `when` 的规则**——用户规则排在默认规则之后，故用户自绑（或上方解除行）优先，同一层再以实际顺序与上下文为准；本扩展自身的键位互不冲突（有测试锁）
+- 作用：按 ProjectProfile 的部署级热更通道面板——**首屏三预设一键启用**（自研接收器[推荐] / KBEngine 官方 / 未配置 + 「高级配置」入口），选预设即按默认参数（本机端口/路径）自动填好并**一键探活，通过即启用**（单 profile 直接进预设首屏、多 profile 先选 profile，合计 ≤2 步、零输入框）；多步流（选通道 → 逐项收参数 → 保存或连通性测试）保留在「高级配置」（IDE-HOT-102 / 设计 §5.1）
 - 行为：
   - 通道按 profile 存（`profile.hotReload`）；**未配** 恢复回落既有 `kbengine.hotReload.actionName` quick action 通道（未配行为与现状一致）
-  - 两通道：`kbengine-official`（引擎内建 `reloadScript` 经控制台——host/port/可选密码）与 `http`（第三方 HTTP，自定 accepted/applied 回执契约——URL 模板可含 `${files}`/`${fileList}`、方法、请求体模板、可选 headers）
-  - **连通性测试** 对收集到的配置跑 `transport.probe()`，不保存（探测绝不写 profile）；畸形配置如实报（通道配置不完整）不猜
+  - 两通道：`kbengine-official`（**依赖引擎 `reloadScript`**，经控制台——host/port/可选密码）与 `http`（**自研接收器**，本仓 `scripts/hot-reload-receiver/referenceReceiver.mjs`，accepted/applied 回执契约——URL 模板可含 `${files}`/`${fileList}`、方法、请求体模板、可选 headers）
+  - **预设一键启用**：自研接收器默认 `http://127.0.0.1:8000/reload`、POST、请求体 `{"files":${files}}`（**JSON 对象体**——只有对象体才会被 transport 自动附上 `targetId`/`sender_digests`，接收端核对 digest 后才回 `applied`；裸 `${files}` 数组体到不了 applied）；同通道已配过的参数优先沿用，不冲回默认。选中即跑 `transport.probe()`，**探活通过才写盘启用**；不通如实报「探活不通,未启用」并指回「高级配置」核对端口/路径，绝不静默启用
+  - 接收器端口要与预设对齐：参考接收器 `scripts/hot-reload-receiver/referenceReceiver.mjs` 默认 `--port 0`（随机端口），快捷启用按 **`node referenceReceiver.mjs --port 8000 --root <暂存根> --mode apply`** 启动，否则预设 URL 的 8000 端口探活会如实报不通
+  - **连通性测试**（高级配置内）对收集到的配置跑 `transport.probe()`，不保存（探测绝不写 profile）；畸形配置如实报（通道配置不完整）不猜
   - 每步可取消，最后一步「保存」前零写入——任一步取消返回 false 且 profile 原样
   - 面板走 quick-pick + input 流（仓内 profile 编辑既有模式）；未知 id 报 保存失败，绝不静默新建
+  - **零配置可直接调起**：无 profile 时如实提示「无部署 profile」；单 profile 未配通道时首屏就是预设列表（多 profile 才先选 profile），带 `{ entry: 'advanced', profileId }` 参数则直达该 profile 的高级配置——不因未配置而静默失败
 - 激活 profile 配了通道时，fire 路径整批走 `transport.send`（回执直喂双维台账）不再走 quick action；未配通道则 actionName 路径原样
+
+### `kbengine.hotReload.switchChannel`
+
+- 标题：`Hot Reload: Switch Channel (Status Bar Quick Switch)`
+- 作用：状态栏通道灯的点击入口——三选 QuickPick（自研接收器[推荐] / KBEngine 官方 / 未配置）一键切换激活 profile 的热更通道，选中即探活
+- 行为：
+  - 通道灯显示当前通道：`热更:自研HTTP` / `热更:KBEngine官方` / `热更:未配置`；无激活 profile 如实显示未配置
+  - 三选项带「(当前)」标记；选中写的是激活 profile 的 `hotReload` 段（与 `configureChannel` 同一保存面）
+  - **探活反馈**：通 = 默认底 + `$(plug)` + 「探活通过」信息提示并落盘；不通 = `$(error)` + 状态栏错误色（红底）+ 错误提示带「打开高级配置修参数」**一键修**按钮——**直达该 profile 的高级配置**（跳过 profile/预设首屏），通道不切换、不写盘
+  - 灯上文字**始终显示当前已配置的通道**：探活失败时配置没动，文字仍是原通道，红标与 tooltip 才点名这次试的通道——未落盘的通道不冒充当前状态
+  - 绿/红只反映最近一次探活结论；结论按「激活 profile + 该 profile 通道配置身份」归属，profile 切换、改参数、面板写盘都会让它作废；探活等待期间 profile 被切换则该次结果直接作废（不写盘）
+  - 探活期间状态若变（切 profile/改通道），本次结果如实作废并提示，不把旧状态的结论写到新状态上
+  - 既有发送态灯（`kbengine.hotReload.showLog` 背后那盏）只渲染发送态；两灯优先级不同（96 / 98），不抢位不抢色
 
 ### `kbengine.discovery.report`
 

@@ -240,7 +240,7 @@ import {
   type HotReloadTargetStateWiring
 } from './hotReload';
 import { HotReloadStatusController } from './hotReloadStatus';
-import { runHotReloadChannelConfigCommand } from './hotReloadChannelConfig';
+import { HOT_RELOAD_CHANNEL_STATUS_PRIORITY, HotReloadChannelQuickSwitch, runHotReloadChannelConfigCommand } from './hotReloadChannelConfig';
 import { resolveReloadTransport, type ReloadTransport } from './hotReloadTransport';
 import { runHotReloadBatchSummaryCommand } from './hotReloadBatchSummaryCommand';
 import { runHotReloadRetryCommand } from './hotReloadRetryCommand';
@@ -5442,6 +5442,41 @@ export function activate(context: vscode.ExtensionContext) {
     registerCommand: (command, handler) => vscode.commands.registerCommand(command, handler),
     timers: realHotReloadTimerDeps
   });
+  // 快捷切换本批:热更通道状态栏灯——显示当前通道(如 `热更:自研HTTP`),点击弹
+  // 三选 QuickPick 即切,选中即探活:绿(默认底+$(plug))=通并落 profile,红
+  // ($(error)+errorBackground)=不通不写盘并给「一键修=打开高级配置」。发送态灯
+  // (hotReloadStatus,优先级 98)照旧只渲染发送态,通道灯走 96 不抢位不抢色;
+  // profile 切换事件与配置面板写盘后都 refresh 跟住当前通道。
+  const hotReloadChannelSwitch = new HotReloadChannelQuickSwitch({
+    getActiveProfile: () => {
+      const activeProfile = resolveActiveProfile(context.workspaceState);
+      return activeProfile ? { profile: activeProfile } : null;
+    },
+    saveHotReload: (id, config) => new ProjectProfileStore(context.workspaceState).saveHotReload(id, config),
+    createStatusBarItem: () => vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, HOT_RELOAD_CHANNEL_STATUS_PRIORITY),
+    registerCommand: (command, handler) => vscode.commands.registerCommand(command, handler),
+    // 红=探活不通:状态栏错误色(真 ThemeColor,主题可换;绿=默认底)
+    dangerBackgroundColor: new vscode.ThemeColor('statusBarItem.errorBackground'),
+    // 一键修:带 profile id 直达该 profile 的高级配置(多步流),跳过 profile/
+    // 预设首屏;写盘成功即刷新状态栏
+    runAdvancedConfig: async profileId =>
+      (await vscode.commands.executeCommand('kbengine.hotReload.configureChannel', {
+        entry: 'advanced',
+        profileId
+      })) === true,
+    ui: {
+      showQuickPick: (items, options) => Promise.resolve(vscode.window.showQuickPick(items, { title: options.title })),
+      showInformationMessage: message => Promise.resolve(vscode.window.showInformationMessage(message)),
+      showErrorMessage: (message, actions) =>
+        Promise.resolve(
+          actions === undefined || actions.length === 0
+            ? vscode.window.showErrorMessage(message)
+            : vscode.window.showErrorMessage(message, ...actions)
+        )
+    }
+  });
+  context.subscriptions.push(hotReloadChannelSwitch);
+  context.subscriptions.push(onDidChangeActiveProfile(() => hotReloadChannelSwitch.refresh()));
   // IDE-HOT-100 文件热更状态机:台账之上派生 CLEAN/DIRTY/SENT/APPLIED/FAILED/
   // RESTART_REQUIRED 生命周期态(依据=内容 sha256+既有回执协议,不靠 mtime);
   // 台账是事实源,状态机是派生视图,键同形不另立身份。def 结构闸拦下经
@@ -5568,9 +5603,9 @@ export function activate(context: vscode.ExtensionContext) {
   // profile 读/写 hotReload 段;未配回落既有 actionName 通道。探测只走
   // transport.probe()(经 resolveReloadTransport 建真实通道),不写 profile。
   context.subscriptions.push(
-    vscode.commands.registerCommand('kbengine.hotReload.configureChannel', () => {
+    vscode.commands.registerCommand('kbengine.hotReload.configureChannel', async (options?: { entry?: 'preset' | 'advanced'; profileId?: string }) => {
       const profileStore = new ProjectProfileStore(context.workspaceState);
-      return runHotReloadChannelConfigCommand({
+      const saved = await runHotReloadChannelConfigCommand({
         listProfiles: () => profileStore.list(),
         saveHotReload: (id, config) => profileStore.saveHotReload(id, config),
         ui: {
@@ -5580,7 +5615,10 @@ export function activate(context: vscode.ExtensionContext) {
           showInformationMessage: message => Promise.resolve(vscode.window.showInformationMessage(message)),
           showErrorMessage: message => Promise.resolve(vscode.window.showErrorMessage(message))
         }
-      });
+      }, options ?? {});
+      // 写盘/取消都重读一次:状态栏通道灯跟住面板结果(绿/红不残留)
+      hotReloadChannelSwitch.refresh();
+      return saved;
     })
   );
   // IDE-REV-025:多目标批次聚合的展示入口——台账全量归并,partial 点名失败目标

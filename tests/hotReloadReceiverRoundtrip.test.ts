@@ -6,6 +6,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { buildHttpPresetConfig } from '../src/hotReloadChannelConfig';
 import {
   applyAcceptedReceipt
 } from '../src/hotReloadReceipt';
@@ -204,6 +205,34 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     // applied 证据落版本台账(接收端自己写的产物哈希)
     const ledger = readFileSync(path.join(receiver.root, 'applied-revisions.jsonl'), 'utf8');
     expect(JSON.parse(ledger.trim().split('\n')[0])).toMatchObject({ file, digest: sentDigest });
+  });
+
+  it('预设一键启用的默认配置真发一遍:JSON 对象体带 targetId/sender_digests → applied', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    const file = path.join(receiver.root, 'Avatar.py');
+    const content = 'class Avatar:\n    HP = 7\n';
+    writeFileSync(file, content, 'utf8');
+    const sentDigest = sha256(content);
+
+    // 快捷启用预设的默认参数(本机端口/路径 + JSON 对象体);只把端口换成实测端口
+    const preset = buildHttpPresetConfig(undefined);
+    expect(preset.http?.body).toBe('{\"files\":${files}}');
+    const entry = { ...preset.http!, url: `http://127.0.0.1:${receiver.port}/reload` };
+    const transport = new HttpReloadTransport(entry, {
+      run: request => defaultReloadHttpRunner(request)
+    });
+    const summary = await transport.send(
+      { rootId: '/ws', targetId: 'baseapp-1' },
+      [file],
+      () => {},
+      new Map([[file, sentDigest]])
+    );
+    // 对象体才会被 transport 自动附上 targetId/sender_digests:接收端核对 digest
+    // 后自己写产物才回 applied(裸 ${files} 数组体到不了这一步)
+    expect(summary.receipts[0]).toMatchObject({ status: 'applied', file });
+    expect(readFileSync(path.join(engineDir, 'Avatar.py'), 'utf8')).toBe(content);
   });
 
   it('digest 不符:接收端回包 digest 与所发内容不一致,保持未确认不升格', async () => {
