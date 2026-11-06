@@ -672,3 +672,58 @@ fn kr_aud_83_parent_element_form_loads_parent_def() {
     let without = compute_def_md5(mk("")).expect("无父基线");
     assert_ne!(text_form.stream_hex, without.stream_hex, "父类内容必须入流");
 }
+
+/// KR-AUD-85(RSV-5):显式 Utype 去重是**同模块**判定——引擎
+/// calcDefPropertyUType(entitydef.cpp:1018-1093)在 g_propertyUtypes 命中后
+/// 只查 `pScriptModule->findPropertyDescription(futype, base/cell/client)`,
+/// 同名冲突才 return false;跨模块复用同一 Utype 引擎容忍(继续
+/// push_back)。修前全局查重比引擎更严,跨模块合法 def 被拒。
+#[test]
+fn kr_aud_85_same_utype_across_modules_is_tolerated() {
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Alpha hasCell=\"true\"></Alpha><Beta hasCell=\"true\"></Beta></root>"
+            .into(),
+        defs: [
+            (
+                "Alpha".to_string(),
+                "<root><Properties><hp><Type> UINT32 </Type><Flags> BASE </Flags><Utype> 7 </Utype></hp></Properties></root>".to_string(),
+            ),
+            (
+                "Beta".to_string(),
+                "<root><Properties><mp><Type> UINT32 </Type><Flags> BASE </Flags><Utype> 7 </Utype></mp></Properties></root>".to_string(),
+            ),
+        ]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let result = compute_def_md5(p).expect("跨模块同 Utype 必须容忍(引擎口径)");
+    // 两处属性 ctor 的 utype 均为 0x0007。
+    assert!(
+        result.stream_hex.contains("0700"),
+        "Utype 7 必须入流: {}",
+        result.stream_hex
+    );
+}
+
+/// KR-AUD-85 对齐面:同模块内显式 Utype 重复仍是冲突(引擎
+/// findPropertyDescription 命中 → return false)。
+#[test]
+fn kr_aud_85_duplicate_utype_in_same_module_still_errors() {
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Alpha hasCell=\"true\"></Alpha></root>".into(),
+        defs: [(
+            "Alpha".to_string(),
+            "<root><Properties><hp><Type> UINT32 </Type><Flags> BASE </Flags><Utype> 7 </Utype></hp><mp><Type> UINT32 </Type><Flags> BASE </Flags><Utype> 7 </Utype></mp></Properties></root>".to_string(),
+        )]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let err = compute_def_md5(p).expect_err("同模块 Utype 冲突必须报错");
+    assert!(err.contains("conflict"), "报错口径: {err}");
+}

@@ -376,6 +376,9 @@ struct ModuleState {
     cell_exposed_methods: usize,
     /// isComponentModule(scriptdef_module.cpp:304 早退判定)。
     is_component: bool,
+    /// 本模块已用显式/自动 Utype(KR-AUD-85:冲突判定限同模块,
+    /// 引擎 findPropertyDescription 只查本模块)。
+    prop_utypes: Vec<u16>,
 }
 
 /// 计算入参(镜像 message_table 输入形态;componentScripts 为可选的
@@ -878,7 +881,7 @@ impl Replayer {
                 Some(u) => first_text(doc, u).trim().parse::<i64>().unwrap_or(-1),
                 None => -1,
             };
-            let utype = self.calc_property_utype(i_utype)?;
+            let utype = self.calc_property_utype(i_utype, module_name)?;
 
             // PropertyDescription 构造字节(property.cpp:53-64;顺序严格)。
             self.stream
@@ -938,16 +941,22 @@ impl Replayer {
         }
     }
 
-    /// calcDefPropertyUType(entitydef.cpp:1018-1093)。
-    fn calc_property_utype(&mut self, i_utype: i64) -> Result<u16, String> {
+    /// calcDefPropertyUType(entitydef.cpp:1018-1093)。显式 Utype 的冲突判定
+    /// 是**同模块**的:全局 g_propertyUtypes 命中后引擎只查
+    /// `pScriptModule->findPropertyDescription(futype, base/cell/client)`,
+    /// 本模块没有该属性就照常 push_back——跨模块复用同一 Utype 引擎容忍
+    /// (KR-AUD-85;修前全局查重更严,拒掉合法 def)。全局表仍收全量 utype
+    /// 供 auto 计数器跳号。
+    fn calc_property_utype(&mut self, i_utype: i64, module_name: &str) -> Result<u16, String> {
         let futype: u16;
         if i_utype > 0 {
             futype =
                 u16::try_from(i_utype).map_err(|_| format!("'Utype' overflowed: {i_utype}"))?;
-            if self.prop_utypes.contains(&futype) {
+            if self.module(module_name).prop_utypes.contains(&futype) {
                 return Err(format!("'Utype' conflict: {futype}"));
             }
             self.prop_utypes.push(futype);
+            self.module(module_name).prop_utypes.push(futype);
         } else {
             let mut candidate = self.prop_utype_auto;
             self.prop_utype_auto += 1;
@@ -956,6 +965,7 @@ impl Replayer {
                 self.prop_utype_auto += 1;
             }
             self.prop_utypes.push(candidate);
+            self.module(module_name).prop_utypes.push(candidate);
             futype = candidate;
         }
         Ok(futype)
@@ -1126,7 +1136,7 @@ impl Replayer {
                 Some(u) => first_text(doc, u).trim().parse::<i64>().unwrap_or(-1),
                 None => -1,
             };
-            let utype = self.calc_property_utype(i_utype)?;
+            let utype = self.calc_property_utype(i_utype, module_name)?;
 
             if !self.loaded_modules.contains(&component_type_name) {
                 // 新组件:注册(名字入流)+装 def(接口忽略组件:765)
