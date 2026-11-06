@@ -251,15 +251,17 @@ fn malformed_xml_yields_empty_findings() {
 }
 
 #[test]
-fn own_client_not_in_cell_domain_no_false_duplicate() {
-    // 同名属性一个 OWN_CLIENT(仅 client)、一个 CELL_PUBLIC(仅 cell):
-    // 域不相交,引擎允许共存,不应报 duplicate-definition。
-    // 旧 flag_scopes 把 OWN_CLIENT 归入 cell → 误报,此断言先红后绿。
+fn own_client_in_cell_domain_collides_like_engine() {
+    // KR-AUD-87 真值:ED_FLAG_OWN_CLIENT(0x10)∈ ENTITY_CELL_DATA_FLAGS
+    // (entitydef/common.h:43),引擎 loadDefPropertys 按 hasCellFlags 把
+    // OWN_CLIENT 属性注册进 cell map(entitydef.cpp:1288-1290),同名
+    // CELL_PUBLIC 属性在 cell map 命中 "is exist!"
+    // (scriptdef_module.cpp:588-593)→ 必须判重。
     let text = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>OWN_CLIENT</Flags>\n\t\t</hp>\n\t\t<hp>\n\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>CELL_PUBLIC</Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n";
     let findings = checks(text);
     assert!(
-        !findings.contains(&"duplicate-definition".to_string()),
-        "OWN_CLIENT 与 CELL_PUBLIC 域不相交,不应判重: {findings:?}"
+        findings.contains(&"duplicate-definition".to_string()),
+        "OWN_CLIENT 入 cell 域后与 CELL_PUBLIC 判重(引擎 cell map 冲突): {findings:?}"
     );
 }
 

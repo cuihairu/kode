@@ -397,7 +397,13 @@ pub fn flag_domains(flags: &[String]) -> Vec<&'static str> {
                 has_cell = true;
                 has_client = true;
             }
-            "OWN_CLIENT" | "OTHER_CLIENTS" => has_client = true,
+            // KR-AUD-87:ED_FLAG_OWN_CLIENT(0x10)/ED_FLAG_OTHER_CLIENTS(0x80)
+            // 都在 ENTITY_CELL_DATA_FLAGS(common.h:43)内——引擎
+            // loadDefPropertys 按 hasCellFlags 把它们注册进 cell map。
+            "OWN_CLIENT" | "OTHER_CLIENTS" => {
+                has_cell = true;
+                has_client = true;
+            }
             _ => {}
         }
     }

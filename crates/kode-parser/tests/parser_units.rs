@@ -262,7 +262,12 @@ fn flag_normalization_and_domains() {
         flag_domains(&["BASE_AND_CLIENT".into()]),
         vec!["base", "client"]
     );
-    assert_eq!(flag_domains(&["OTHER_CLIENTS".into()]), vec!["client"]);
+    // KR-AUD-87:OWN_CLIENT/OTHER_CLIENTS 同属 cell(common.h:43)。
+    assert_eq!(
+        flag_domains(&["OTHER_CLIENTS".into()]),
+        vec!["cell", "client"]
+    );
+    assert_eq!(flag_domains(&["OWN_CLIENT".into()]), vec!["cell", "client"]);
     assert!(flag_domains(&["UNKNOWN_FLAG".into()]).is_empty());
     assert_eq!(canonical_tag("Client Flags"), "clientflags");
     assert_eq!(canonical_tag("Detail-Level_"), "detaillevel");
