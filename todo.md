@@ -1342,7 +1342,7 @@
 ## 审核 942424540716c9c17cdf62d26a92ea06a0873c18..HEAD（2026-11-06，只审不改）
 
 - [x] 审核发现：`queryTouchesHead` 只识别字面 `HEAD` 引用，而 `git log`/`git log -L s,e:path`/`git log --skip=N -- path`（gitRangeTimeline.ts:191、gitCommitLog.ts:164）不带显式提交时**默认以 HEAD 为起点**——这类查询被 `queryTouchesHead` 判为 volatile=false 而进缓存，提交后重查范围历史/日志页仍读到过期结果，与 3c04ab2「HEAD 触达查询不缓存」的修复声明相悖（src/gitQueryGate.ts:78）`d044ba2`
-- [ ] 审核发现：只读写入判定的 `AUGMENTED_OPS` 含 `**=`/`//=`/`<<=`/`>>=`，但第 77 行只拼 `c + line[i+1]` 两字符（`**`/`//`/`<<`/`>>`）永不命中——`self.id **= 1`、`self.id //= 2` 等三字符增强赋值全部漏检，不报只读写入告警（src/readOnlyWriteDiagnostics.ts:77）
+- [x] 审核发现：只读写入判定的 `AUGMENTED_OPS` 含 `**=`/`//=`/`<<=`/`>>=`，但第 77 行只拼 `c + line[i+1]` 两字符（`**`/`//`/`<<`/`>>`）永不命中——`self.id **= 1`、`self.id //= 2` 等三字符增强赋值全部漏检，不报只读写入告警（src/readOnlyWriteDiagnostics.ts:77）`40087e3`
 - [ ] 审核发现：def 结构闸在**被拦批次上仍滚动基线**（`baselines.set(file, after)` 无条件执行）——结构性 def 变更被 fire 拦下后基线已推进到新内容，同目标失败重试再过闸因基线一致而放行，把结构性 def 经「重试」通道以普通 reload 下发，RT-3/IDE-HOT-005 声称防住的场景仍可复现（src/hotReloadDefGate.ts:56）
 - [ ] 审核发现：`pathApiFor` 在 win32 下仅以 `includes('\\')` 判风格，盘符+正斜杠路径（`C:/repo/...`）被误判为 posix，`path.posix.resolve` 会错误锚到 cwd；与 `usesPosixPath`（workspacePath.ts:15，`^[A-Za-z]:[\\/]` 正确认盘符）不一致，WIN-3 风格选径在盘符正斜杠输入下失配（src/workspacePath.ts:29）
 - [ ] 审核发现：多段映射用 `Promise.all` 并发发起全部段查询，选区不连续段数超过门限（range 并发 1 + 队列 8）时后段被 gate 以「历史查询队列已满」拒绝，整段范围历史查询整体失败（src/gitRangeHistoryTree.ts:383）
