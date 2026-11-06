@@ -1,34 +1,41 @@
-# G9 Space Viewer / Watcher 面板 · 引擎协议取证
+# G9 Space Viewer / Watcher Panel · Engine Protocol Forensics
 
-> 状态：取证完成（2026-10-24）。本文只记录 kbengine 引擎源码树中真实存在的
-> 消息面与收发两侧实现位置，供 C-2「最小查询面板」与 C-3「面板操作面」使用；
-> 不代表扩展已实现任何面板能力。
+> Status: forensics complete (2026-10-24). This document only records the
+> message surfaces that really exist in the kbengine engine source tree and
+> the implementation locations on both the send and receive sides, for use
+> by C-2 "minimal query panel" and C-3 "panel operation surface"; it does
+> not mean the extension has implemented any panel capability.
 >
-> 取证树：`/home/cui/workspaces/kbengine`（`kode` 仓 `../kbengine` 兄弟目录，
-> 与 `tests/helpers/engineTree.ts` 的兜底探测口径同源）。下文所有 `file:line`
-> 均为该树实测行号。
+> Forensics tree: `/home/cui/workspaces/kbengine` (the `kode` repo's
+> `../kbengine` sibling, the same source as `tests/helpers/engineTree.ts`'s
+> fallback probing discipline). All `file:line` below are measured line
+> numbers in that tree.
 
-## 1. 两条协议线
+## 1. The two protocol lines
 
-引擎的控制台观测面分两条互不复用的线：
+The engine's console observation surface splits into two lines that share
+nothing with each other:
 
-| 线 | 请求消息族 | 回执 | 语义 |
+| Line | Request message family | Receipt | Semantics |
 |---|---|---|---|
-| Watcher | `41001`–`41008`（按进程类型分号，共 8 个） | `65502` | 树状 watcher 值读取（`KBEngine.addWatcher` 注册的路径） |
-| SpaceViewer | `50001`–`50005` | `65503` | Space/Cell 拓扑与实体分布快照 |
+| Watcher | `41001`–`41008` (numbered per process type, 8 total) | `65502` | tree-shaped watcher value reads (paths registered via `KBEngine.addWatcher`) |
+| SpaceViewer | `50001`–`50005` | `65503` | Space/Cell topology and entity distribution snapshots |
 
-两条线**回执消息号不同**：watcher 线走 `CONSOLE_WATCHERCB_MSGID = 65502`
-（`kbe/src/lib/helper/console_helper.h:11`、`Watcher.py:10`，服务端回执
-`console_helper.h:175`），SpaceViewer / 组件负载线走
-`CONSOLE_PROFILECB_MSGID = 65503`（`console_helper.h:12`、`:227`/`:249`/`:271`）。
-客户端侧对应地各自注册：`Watcher.py:60` 注册 `65502`，
-`SpaceViews.py:56`/`:128`/`:186` 与 `Component_Status.py:42` 注册 `65503`。
-面板侧若同时收两条线，必须**两个回执都注册**——只注册 `65503` 会静默丢掉
-watcher 回执，这是本表最早一版误记为「两条线共用 65503」的根因。
+The two lines use **different receipt message numbers**: the watcher line
+uses `CONSOLE_WATCHERCB_MSGID = 65502` (`kbe/src/lib/helper/console_helper.h:11`,
+`Watcher.py:10`; the server receipt at `console_helper.h:175`), while the
+SpaceViewer / component-load line uses `CONSOLE_PROFILECB_MSGID = 65503`
+(`console_helper.h:12`, `:227`/`:249`/`:271`). The client side registers
+each correspondingly: `Watcher.py:60` registers `65502`, and
+`SpaceViews.py:56`/`:128`/`:186` together with `Component_Status.py:42`
+register `65503`. If a panel receives both lines it must **register both
+receipts** — registering only `65503` silently drops watcher receipts; this
+is the root cause of this table's earliest version mis-recording "both lines
+share 65503".
 
-## 2. 消息号表（真实来源：`kbe/tools/server/pycommon/`）
+## 2. Message number table (real source: `kbe/tools/server/pycommon/`)
 
-Watcher 请求号，`kbe/tools/server/pycommon/Watcher.py:32-40`：
+Watcher request numbers, `kbe/tools/server/pycommon/Watcher.py:32-40`:
 
 ```python
 CMD_ID_queryWatcher = {
@@ -44,64 +51,75 @@ CMD_ID_queryWatcher = {
 }
 ```
 
-SpaceViewer / 组件负载请求号：
-`kbe/tools/server/pycommon/SpaceViews.py:33-37`（SpaceViewer）与
-`kbe/tools/server/pycommon/Component_Status.py:33-34`（queryAppsLoads）：
+SpaceViewer / component-load request numbers:
+`kbe/tools/server/pycommon/SpaceViews.py:33-37` (SpaceViewer) and
+`kbe/tools/server/pycommon/Component_Status.py:33-34` (queryAppsLoads):
 
-| 消息号 | 消息名 | 目标进程 | 声明位置 |
+| Message number | Message name | Target process | Declaration site |
 |---|---|---|---|
 | 50001 | `Baseappmgr::queryAppsLoads` | baseappmgr | `kbe/src/server/baseappmgr/baseappmgr_interface.h:116` |
 | 50002 | `Cellappmgr::queryAppsLoads` | cellappmgr | `kbe/src/server/cellappmgr/cellappmgr_interface.h:91` |
 | 50003 | `Cellappmgr::querySpaces` | cellappmgr | `kbe/src/server/cellappmgr/cellappmgr_interface.h:94` |
-| 50004 | `Cellapp::querySpaceViewer`（单 Space 视图） | cellapp | `SpaceViews.py:142` 客户端直发 |
-| 50005 | `Cellapp::querySpaces`（全量） | cellapp | `SpaceViews.py:36` 客户端直发 |
+| 50004 | `Cellapp::querySpaceViewer` (single-Space view) | cellapp | `SpaceViews.py:142`, sent directly by the client |
+| 50005 | `Cellapp::querySpaces` (full) | cellapp | `SpaceViews.py:36`, sent directly by the client |
 
-服务侧对应实现（同树实测）：
+Server-side implementations (measured in the same tree):
 - `kbe/src/server/cellappmgr/cellappmgr.cpp:559` `Cellappmgr::querySpaces`
 - `kbe/src/server/cellappmgr/cellappmgr.cpp:631` `Cellappmgr::setSpaceViewer`
 - `kbe/src/server/cellapp/cellapp.cpp:2259` `Cellapp::setSpaceViewer`
-- `kbe/src/server/cellapp/cellapp_interface.h:165` `setSpaceViewer` 消息声明
-- `kbe/src/server/cellapp/cellapp_interface.h:135` `queryWatcher` 消息声明
+- `kbe/src/server/cellapp/cellapp_interface.h:165` `setSpaceViewer` message declaration
+- `kbe/src/server/cellapp/cellapp_interface.h:135` `queryWatcher` message declaration
 
-回执号分两号（见 §1）：
-- watcher 线 `CONSOLE_WATCHERCB_MSGID = 65502`——`Watcher.py:10`，
-  服务端消息头 `kbe/src/lib/helper/console_helper.h:11`（客户端处理器
-  `ConsoleWatcherCBMessageHandler`，消息名 `"console::queryWatcher"`，
-  `console_helper.h:175` 强制 `msgID = CONSOLE_WATCHERCB_MSGID`）。
-- SpaceViewer / 负载线 `CONSOLE_PROFILECB_MSGID = 65503`——`SpaceViews.py:13`、
-  `Component_Status.py:13`、`Watcher.py:11` 三处同值定义，
-  服务端 `console_helper.h:12`、`:227`/`:249`/`:271`。
+Receipts split across two numbers (see §1):
+- watcher line `CONSOLE_WATCHERCB_MSGID = 65502` — `Watcher.py:10`; the
+  server message header `kbe/src/lib/helper/console_helper.h:11` (client
+  handler `ConsoleWatcherCBMessageHandler`, message name
+  `"console::queryWatcher"`; `console_helper.h:175` forces
+  `msgID = CONSOLE_WATCHERCB_MSGID`).
+- SpaceViewer / load line `CONSOLE_PROFILECB_MSGID = 65503` — defined at the
+  same value in three places, `SpaceViews.py:13`, `Component_Status.py:13`,
+  `Watcher.py:11`; server side `console_helper.h:12`, `:227`/`:249`/`:271`.
 
-注意 `Watcher.py` **两个常量都定义了**（`:10` 是 65502、`:11` 是 65503），
-但实际注册回执的是 `:60` 的 65502；早先按「同一文件里两个常量都存在」
-误记成回执为 65503。
+Note that `Watcher.py` **defines both constants** (`:10` is 65502, `:11` is
+65503), but what actually registers the receipt is `:60`'s 65502; earlier
+notes mistakenly recorded the receipt as 65503 because "both constants exist
+in the same file".
 
-## 3. 控制台连接时序
+## 3. Console connection sequence
 
-真实参考实现 = 引擎自带 webconsole 的 Python 客户端（面板可直接对照抄）：
+The real reference implementation = the engine webconsole's bundled Python
+client (the panel can copy against it directly):
 
-1. **建连**：从 `Machines.ComponentInfo.{intaddr,intport}` 取目标进程地址，
-   `ServerApp.connect(host, port)` 直连该进程（`SpaceViews.py:44-46` 用法样例注释）。
-2. **注册回执**：`registerMsg(65503, onXxxMsg)`（`SpaceViews.py:56`）；
-   watcher 线对应注册 `registerMsg(65502, onWatcherMsg)`（`Watcher.py:60`）。
-3. **发请求**：`MessageStreamWriter(<请求号>)` 后 `self.send(msg)`
-   （`SpaceViews.py:66-70`；SpaceViewer 请求体为空，只带消息号）。
-4. **收回执**：流式读取，见 §4；读到 EOF 结束一轮。
-5. **轮询**：webconsole 在 websocket 循环里重复 3-5（`views_spaceviewer.py:131-149`）。
+1. **Connect**: take the target process address from
+   `Machines.ComponentInfo.{intaddr,intport}` and connect directly via
+   `ServerApp.connect(host, port)` (usage sample comments at
+   `SpaceViews.py:44-46`).
+2. **Register receipts**: `registerMsg(65503, onXxxMsg)` (`SpaceViews.py:56`);
+   the watcher line correspondingly registers
+   `registerMsg(65502, onWatcherMsg)` (`Watcher.py:60`).
+3. **Send requests**: `MessageStreamWriter(<request number>)` then
+   `self.send(msg)` (`SpaceViews.py:66-70`; the SpaceViewer request body is
+   empty — only the message number).
+4. **Receive receipts**: streamed reads, see §4; reading to EOF ends one
+   round.
+5. **Poll**: webconsole repeats 3-5 in its websocket loop
+   (`views_spaceviewer.py:131-149`).
 
-`CellAppMgrViewer` 类另有 cellappmgr 侧拓扑视图（`SpaceViews.py:118-142`），
-请求号 `50004`，回执同 `65503`。
+The `CellAppMgrViewer` class additionally has a cellappmgr-side topology
+view (`SpaceViews.py:118-142`), request number `50004`, same receipt
+`65503`.
 
-## 4. 回执流格式（`kbe/tools/server/pycommon/SpaceViews.py:73-113`）
+## 4. Receipt stream format (`kbe/tools/server/pycommon/SpaceViews.py:73-113`)
 
-`onSpaceViewerMsg` 的真实读取顺序（**这是 C-2 解码面的唯一依据**）：
+`onSpaceViewerMsg`'s real read order (**the sole basis for C-2's decoding
+surface**):
 
 ```python
-componentType = streamReader.readInt32()      # 目标进程类型
-componentID   = streamReader.readInt64()      # 目标进程组件 ID
+componentType = streamReader.readInt32()      # target process type
+componentID   = streamReader.readInt64()      # target process component ID
 while not streamReader.EOF():
-    CellAppCID  = streamReader.readUint64()   # cellapp 组件 ID
-    SpacesSize  = streamReader.readUint32()   # 该 cellapp 的 Space 数
+    CellAppCID  = streamReader.readUint64()   # cellapp component ID
+    SpacesSize  = streamReader.readUint32()   # that cellapp's Space count
     for i in range(SpacesSize):
         SpaceID        = streamReader.readUint32()
         SpacePath      = streamReader.readString()
@@ -111,90 +129,120 @@ while not streamReader.EOF():
             CELL_ID = streamReader.readUint32()
 ```
 
-即：**进程头（int32 + int64）→ 逐 cellapp 变长段 → 逐 Space 定长段 → 逐 Cell 定长段**。
-`queryAppsLoads` 的回执走同一 `65503`，由 `Component_Status.py:42-54` 解码。
+That is: **process header (int32 + int64) → variable-length section per
+cellapp → fixed-length section per Space → fixed-length section per Cell**.
+`queryAppsLoads`' receipt uses the same `65503`, decoded by
+`Component_Status.py:42-54`.
 
-值类型枚举（watcher 线与 SpaceViewer 线共用同一套数值语义）：
-`SpaceViews.py:15-30` 与 `Watcher.py:14-30` 均为 `UNKNOWN=0 … COMPONENT_TYPE=14`
-（uint8/16/32/64、int8/16/32/64、float、double、char、string、bool、component_type）。
+Value type enums (the watcher line and the SpaceViewer line share the same
+numeric semantics): both `SpaceViews.py:15-30` and `Watcher.py:14-30` use
+`UNKNOWN=0 … COMPONENT_TYPE=14` (uint8/16/32/64, int8/16/32/64, float,
+double, char, string, bool, component_type).
 
-## 5. Watcher 注册面（面板「增删 watcher」C-3 的引擎侧依据）
+## 5. The watcher registration surface (the engine-side basis for C-3's "add/remove watcher")
 
-脚本侧 API：`kbe/src/server/tools/guiconsole` 引用的 `KBEngine.addWatcher`
-由 `kbe/src/lib/pyscript/pywatcher.cpp` 实现：
+Script-side API: `KBEngine.addWatcher`, referenced by
+`kbe/src/server/tools/guiconsole`, is implemented in
+`kbe/src/lib/pyscript/pywatcher.cpp`:
 
-- `pywatcher.cpp:28` `addWatcher(PyObject*, PyObject*)`：两形态
-  `addWatcher(watcherName, deftype, pyCallable)` 与 `addWatcher(watcherPath, deftype, pyCallable)`；
-  deftype 只认 `UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|CHAR|STRING`，
-  传错即 `PyErr_Format`（`pywatcher.cpp:32,44,52,60,73,83`）。
-- `pywatcher.cpp:93-137` 按 deftype 分派 `_addWatcher<T>`；
-  `pywatcher.cpp:149-165` `delWatcher`；`pywatcher.cpp:184` 模块方法注册。
-- 值对象与路径表：`pywatcher.h` / `pywatcher.inl`（`pywatcher.cpp:4-7` include）；
-  watcher 定义本体在 `kbe/src/lib/helper/watcher.h`
-  （`watcher.h:227` 直接监视一个值、`:260` 监视方法返回值、`:294` 监视成员函数返回值）。
+- `pywatcher.cpp:28` `addWatcher(PyObject*, PyObject*)`: two forms,
+  `addWatcher(watcherName, deftype, pyCallable)` and
+  `addWatcher(watcherPath, deftype, pyCallable)`; deftype accepts only
+  `UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|CHAR|STRING`;
+  a wrong value raises `PyErr_Format`
+  (`pywatcher.cpp:32,44,52,60,73,83`).
+- `pywatcher.cpp:93-137` dispatches `_addWatcher<T>` by deftype;
+  `pywatcher.cpp:149-165` `delWatcher`; `pywatcher.cpp:184` module method
+  registration.
+- Value objects and the path table: `pywatcher.h` / `pywatcher.inl`
+  (included at `pywatcher.cpp:4-7`); the watcher definitions proper live in
+  `kbe/src/lib/helper/watcher.h` (`watcher.h:227` watches a value directly,
+  `:260` watches a method's return value, `:294` watches a member function's
+  return value).
 
-## 6. 对 C-2「最小查询面板」的接口含义
+## 6. Interface implications for C-2's "minimal query panel"
 
-面板最小闭环只需三件事：
+The panel's minimal loop needs only three things:
 
-1. **取地址**：复用 `Machines.ComponentInfo`（`Component_Status.py` 已有同源读法），
-   得到 cellappmgr 的 `intaddr/intport`。
-2. **发 50003**：空体请求 `Cellappmgr::querySpaces`，回执 `65503`。
-3. **按 §4 顺序解码**：表格列 = `componentID`（进程）、`SpaceID`、`SpacePath`、
-   `ScriptModuleName`、`CELL_ID[]`；空段（某 cellapp `SpacesSize=0`）如实显示空，
-   不补默认行。
+1. **Get the address**: reuse `Machines.ComponentInfo`
+   (`Component_Status.py` already has the same-source reading) to obtain
+   cellappmgr's `intaddr/intport`.
+2. **Send 50003**: an empty-body `Cellappmgr::querySpaces`, receipt `65503`.
+3. **Decode in §4's order**: table columns = `componentID` (process),
+   `SpaceID`, `SpacePath`, `ScriptModuleName`, `CELL_ID[]`; empty sections
+   (a cellapp with `SpacesSize=0`) display honestly as empty, with no
+   default rows padded in.
 
-不依赖引擎 Python 运行时——`MessageStreamWriter` 的写出面只是「消息号 + 空体」，
-扩展侧用自己的连接实现即可，但**解码顺序必须逐字段照抄 §4**，
-否则 `readString` 错位会整帧废掉。
+No dependency on the engine's Python runtime — `MessageStreamWriter`'s write
+surface is just "message number + empty body", so the extension side can use
+its own connection implementation, but **the decode order must copy §4 field
+by field**; otherwise a misaligned `readString` wrecks the whole frame.
 
-## 7. 边界与未取证项
+## 7. Boundaries and un-forensic'd items
 
-- `queryAppsLoads`（50001/50002）回执字段构成未逐字段展开，只确认
-  客户端入口在 `Component_Status.py:54`；C-2 若顺带做负载列需另取证。
-- watcher 线的 `queryWatcher` 请求体已取证：`Watcher.py:70-76`
-  `requireQueryWatcher` 只写一个字符串 `msg.writeString(path)`（`:75`），
-  没有深度字段；回执走 `65502` 由 `Watcher.py:78` `onWatcherMsg` 解码。
-  C-3 面板的 watch-list 因此只是查询目标登记，不涉及引擎侧 watcher 增删
-  （见 §5，`KBEngine.addWatcher` / `delWatcher` 是进程内脚本 API，
-  没有控制台协议消息）。
-- 本取证不涉及 `guiconsole`（MFC 桌面端）的实现细节，其
-  `guiconsoleDlg.cpp:1206-1210` 只作为「同一消息族可被 C++ 客户端复用」的旁证。
+- `queryAppsLoads` (50001/50002) receipt field composition not expanded
+  field by field; only the client entry at `Component_Status.py:54` is
+  confirmed. If C-2 also builds a load column, separate forensics is needed.
+- The watcher line's `queryWatcher` request body is forensics'd:
+  `Watcher.py:70-76` `requireQueryWatcher` writes only one string,
+  `msg.writeString(path)` (`:75`), with no depth field; the receipt uses
+  `65502`, decoded by `Watcher.py:78` `onWatcherMsg`. C-3's panel watch-list
+  is therefore only a registry of query targets and does not involve
+  engine-side watcher add/remove (see §5: `KBEngine.addWatcher` /
+  `delWatcher` are in-process script APIs with no console protocol
+  messages).
+- This forensics does not cover `guiconsole`'s (MFC desktop) implementation
+  details; its `guiconsoleDlg.cpp:1206-1210` serves only as corroborating
+  evidence that "the same message family can be reused by a C++ client".
 
-## 8. V-08 边界注记：真实管理协议（外部条件）
+## 8. V-08 boundary note: the real management protocol (external conditions)
 
-C-2 / C-3 在仓库内的可验收面是 **mock 测试**，端到端真跑被一条外部条件卡住：
-本文取证的 `41001`–`41008` / `50001`–`50005` / `65502` / `65503` 全部属于
-引擎**运行期控制台观测协议**，只对正在运行的 KBEngine 服务端可达——
-没有 `loginserver` / `cellappmgr` 进程实际监听在 `intaddr:intport` 上，
-任何一帧都发不出去。仓库与 CI 不保证有这样一个实例，因此端到端断言进不了
-门禁。这是外部条件，不是工程缺口，**不硬造实现**。
+C-2 / C-3's verifiable surface within the repo is **mock tests**; end-to-end
+real runs are blocked by one external condition: the
+`41001`–`41008` / `50001`–`50005` / `65502` / `65503` documented here all
+belong to the engine's **runtime console observation protocol**, reachable
+only against a running KBEngine server — without `loginserver` /
+`cellappmgr` processes actually listening on `intaddr:intport`, not a single
+frame can be sent. The repo and CI do not guarantee such an instance, so
+end-to-end assertions cannot enter the gate. This is an external condition,
+not an engineering gap; **no implementation is fabricated**.
 
-**重开触发条件**（三条同时满足才把 C-2 / C-3 从 mock 面推进到真协议面）：
+**Reopen triggers** (all three must hold to advance C-2 / C-3 from the mock
+surface to the real-protocol surface):
 
-1. **可达实例**：存在一个已知 `host:intport` 的在跑引擎（或容器化 fixture），
-   且 `Machines.ComponentInfo` 里能读到 cellappmgr 条目。在此之前面板侧只能
-   对连接层做 mock 测试。
-2. **消息号表对账通过**：目标引擎版本的 `Watcher.py` / `SpaceViews.py` /
-   `console_helper.h` 与本表逐条一致。这些号是引擎**内部常量、不是公开 ABI**，
-   版本漂移直接打断解析，换引擎版本必须重跑一次取证核对而不是沿用。
-3. **版本可判定**：`src/engineApiMetadata.ts` 能报出真实版本而不是 `unknown`。
-   在 C-14 落地前本机树上它恒报 `unknown`，面板缺「版本不匹配就拒连」的依据，
-   贸然连错版本的引擎只会解出乱帧。
+1. **A reachable instance**: a running engine (or containerized fixture) with
+   a known `host:intport`, whose `Machines.ComponentInfo` yields a cellappmgr
+   entry. Until then the panel side can only mock-test the connection layer.
+2. **Message-number table reconciliation passes**: the target engine
+   version's `Watcher.py` / `SpaceViews.py` / `console_helper.h` match this
+   table item by item. These numbers are engine **internal constants, not a
+   public ABI**; version drift breaks parsing directly, so changing engine
+   versions requires re-running the forensics check rather than carrying it
+   forward.
+3. **Version determinable**: `src/engineApiMetadata.ts` can report a real
+   version instead of `unknown`. On the local tree it reports `unknown`
+   until C-14 lands, leaving the panel without the basis to "refuse
+   connection on version mismatch"; blindly connecting to a wrong-version
+   engine only yields garbled frames.
 
-**已经留好的钩子**（不需要外部条件，现状即可用）：
+**Hooks already in place** (no external condition needed; usable now):
 
-- 消息号走常量表而非写死在收发函数里：`src/kbengineProtocol.ts:54-58`
-  （`CONSOLE_WATCHER_CB_MSG_ID` / `CONSOLE_PROFILE_CB_MSG_ID` /
-  `CELLAPPMGR_QUERY_SPACES_MSG_ID` / `MACHINE_BROADCAST_PORT`）、
-  `src/kbengineProtocol.ts:80-89` `WATCHER_QUERY_MSG_IDS`
-  （按引擎进程类型映射 8 个 watcher 请求号，与 `Watcher.py:33-40` 逐条对应）。
-  对账失败（条件 2）时可整表停用，不必逐处改。
-- 组帧集中在 `src/kbengineProtocol.ts:283` `buildFrame`，
-  连接层与业务解码分离：连接可 mock，业务解码按 §4 字段顺序逐字段断言。
-- 面板开关默认关是 C-3 的任务口径；条件 1/2/3 未同时满足前，
-  不得让面板随扩展启动自动建连。
+- Message numbers live in a constants table rather than hard-coded in the
+  send/receive functions: `src/kbengineProtocol.ts:54-58`
+  (`CONSOLE_WATCHER_CB_MSG_ID` / `CONSOLE_PROFILE_CB_MSG_ID` /
+  `CELLAPPMGR_QUERY_SPACES_MSG_ID` / `MACHINE_BROADCAST_PORT`) and
+  `src/kbengineProtocol.ts:80-89` `WATCHER_QUERY_MSG_IDS` (mapping 8 watcher
+  request numbers per engine process type, item-by-item matching
+  `Watcher.py:33-40`). If reconciliation fails (condition 2), the whole
+  table can be disabled rather than patched site by site.
+- Framing is centralized in `src/kbengineProtocol.ts:283` `buildFrame`,
+  separating the connection layer from business decoding: the connection can
+  be mocked while business decoding asserts field by field in §4's order.
+- The panel switch defaulting off is C-3's task discipline; before
+  conditions 1/2/3 all hold, the panel must not auto-connect at extension
+  startup.
 
-C-1 完成的是**源码取证**，不是**协议可用性**；本节把这两者的边界画清。
-`src/kbengineProtocol.ts` 的传输面（组帧 / 解帧 / UDP 发现）已按上述常量实现，
-缺的是上面三条外部条件，不是代码。
+C-1 delivered **source forensics**, not **protocol usability**; this section
+draws the boundary between the two. `src/kbengineProtocol.ts`'s transport
+surface (framing / deframing / UDP discovery) is implemented per the
+constants above; what's missing is the three external conditions, not code.

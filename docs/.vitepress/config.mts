@@ -176,6 +176,7 @@ export default withMermaid(defineConfig({
                 { text: '文档一致性审计', link: '/zh/审计-文档一致性' },
                 { text: '快捷动作与数据库提示设计', link: '/zh/design/quick-actions-and-db-hint' },
                 { text: '.pyi 类型桩可行性分析', link: '/zh/design/def-pyi-stubs' },
+                { text: '玩家数据克隆计划 (v0.2.1)', link: '/zh/design/v0.2.1-player-data-clone-plan' },
                 { text: 'Space Viewer/Watcher 协议取证', link: '/zh/design/space-viewer-watcher' },
                 { text: '文件变化元信息(identity+version)', link: '/zh/design/file-change-meta' }
               ]

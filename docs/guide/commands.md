@@ -121,6 +121,15 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - Connect and the query run under `kbengine.databaseQueryTimeoutMs` in a cancellable progress notification (IDE-REV-017): timeout or cancel returns with that reason; the connection is closed afterwards in every branch
   - The report header states the read-only scope explicitly; zero differences are stated as such (无结构差异)
 
+### `kbengine.source.reveal`
+
+- Title: `Reveal Source Location`
+- Purpose: internal navigation helper that forces an editor reveal for a definition-jump target. When a definition provider opens a document with `vscode.open` while that document is already the active editor, VS Code skips the reveal — observed as "clicking the same def link again after going back does nothing"; this command opens the document and forwards the selection so the target line is always revealed (batch 159 def-chain mirror links)
+- Behavior:
+  - Takes `{ selection: vscode.Range }` as the second argument and applies it via `showTextDocument(uri, { selection })`
+  - No-op when invoked without a URI
+  - Exists for definition providers, not as a user-facing entry point: it is registered like every contributed command (with its `onCommand:` activation event) so the palette stays empty while programmatic jumps can rely on it
+
 ## Player Data Clone
 
 ### `kbengine.clone.configureSource`
@@ -1041,14 +1050,7 @@ The flow graph panel supports:
 - `types.xml` on disk regenerates automatically: after a save/create/delete the watcher silently re-exports (no debouncing, no extra setting — the zero-write discipline makes repeated triggers side-effect free; with `kbengine.python.stubExport` off it effectively stops)
   - Setting `kbengine.python.stubExport: false` turns it all off (shared with the KBEngine.pyi stub export)
 
-### `kbengine.source.reveal`
-
-- Title: `Reveal Source Location`
-- Purpose: internal navigation helper that forces an editor reveal for a definition-jump target. When a definition provider opens a document with `vscode.open` while that document is already the active editor, VS Code skips the reveal — observed as "clicking the same def link again after going back does nothing"; this command opens the document and forwards the selection so the target line is always revealed (batch 159 def-chain mirror links)
-- Behavior:
-  - Takes `{ selection: vscode.Range }` as the second argument and applies it via `showTextDocument(uri, { selection })`
-  - No-op when invoked without a URI
-  - Exists for definition providers, not as a user-facing entry point: it is registered like every contributed command (with its `onCommand:` activation event) so the palette stays empty while programmatic jumps can rely on it
+## Git History
 
 ### `kbengine.git.showHistory`
 
@@ -1107,6 +1109,84 @@ The flow graph panel supports:
   - Opens the `kode-git-version` virtual document for that repo/commit/path in a non-preview editor tab — no workspace file is written or replaced
   - A path absent at that commit (deleted) opens empty; a bounded read failure surfaces an honest error
   - Gated by `kbengine.gitHistory.enabled`; a disabled feature runs nothing Git
+
+## Build and Tests
+
+### `kbengine.build.previewTask`
+
+- Title: `Build: Preview Task Description`
+- Purpose: preview the exact build task derived from the active profile (IDE-TSK-001) — a script compile check of the profile's assets: the shown command line, working directory and environment are literally what the task runs (the Tasks view registration arrives with TSK-002's TaskProvider, using this same spec)
+- Entries: command palette
+- Behavior:
+  - resolves the active profile (assets root + interpreter) and derives the spec: `<interpreter> -m compileall -q <assets>/scripts` with cwd `<assets>` and `PYTHONUTF8=1` (stable UTF-8 output for compileall error lines, no garbled paths on GBK consoles)
+  - a profile without an interpreter falls back to `python3` from PATH, and the fallback is stated in the preview itself — what you see is what runs
+  - the preview dialog shows the task type, name, `cd` line, full command line (paths with spaces quoted per shell word-splitting), each env entry, and the interpreter-provenance line
+  - no active profile: an honest message points at picking one first
+- Boundary: this command only previews; executing the build is TSK-002's task registration, and mapping compile errors to source locations is TSK-003's problem matcher
+
+### `kbengine.tests.list`
+
+- Title: `Tests: List Project Python Tests`
+- Purpose: discover the Python tests the project declares (IDE-TSK-004) — a QuickPick of the test files found, scoped strictly to the selected profile
+- Entries: command palette
+- Behavior:
+  - resolves the active profile and scans only its scripts root (`<assets>/scripts`, recursively) for `test_*.py` / `*_test.py` — pytest/unittest's common naming convention; other `*_assets` roots and the engine checkout in the workspace are dependency libraries and structurally never enter the list (discovery starts from the profile's scripts root and takes no other entry)
+  - hidden directories and `__pycache__` are skipped; within each file, statically visible cases are parsed (`def test_*` functions and `class Test*` methods) with line and column, shown as the item's case count and names
+  - picking a file opens it in the editor; Esc opens nothing
+  - nothing found: one honest message names the scripts root and the naming convention — no empty list
+  - no active profile: an honest message points at picking one first
+- Boundary: this command discovers and lists; running individual tests in the Testing panel is TSK-005
+
+## Entity Message Table
+
+### `kbengine.messagetable.preview`
+
+- Title: `MessageTable: Preview Entity Message Table`
+- Purpose: preview a single entity's message table (IDE-SDK-001) — pick an entity and view the existing computed result (methods by section, utypes, alias config, issue list) as markdown
+- Entries: command palette
+- Behavior:
+  - waits for the entity index's initial scan, then offers the indexed entity names in a sorted QuickPick
+  - picking an entity builds the table from the same scan-roots/def-loader formula the index uses and shows the rendered markdown in a preview document
+  - missing declaration (the entity's def cannot be loaded — not registered or the `.def` file is absent): one honest warning naming the entity and the cause — no empty preview, no guessing
+  - no entities indexed at all: an honest warning says so; Esc quietly exits
+- Boundary: preview only; JSON export is SDK-002
+
+### `kbengine.messagetable.export`
+
+- Title: `MessageTable: Export Entity Message Table JSON`
+- Purpose: export a single entity's message table as JSON (IDE-SDK-002) — the output preserves the method sections, utypes, alias configuration, and the issue list (renderMessageTableJson's existing face)
+- Entries: command palette
+- Behavior:
+  - same entity QuickPick and the same shared build face as the preview command
+  - a save dialog proposes `<entity>.messagetable.json`; cancelling it creates no file (nothing is written)
+  - a missing declaration gets the same honest warning as preview — no file is proposed
+  - a write failure is reported verbatim with the cause; success names the written path
+- Boundary: export only; the preview command is SDK-001
+
+## .kbengine Managed Directory
+
+### `kbengine.infer.run`
+
+- Title: `KBEngine: Run pyrefly Infer (无标注函数 stub 推断)`
+- Purpose: run the pyrefly inference pipeline (KODE-CFG-017) — mirror the scripts tree to `.kbengine/inferred/`, then run `pyrefly infer` on the copy with `.kbengine/stubs` (def/types.xml-verified stubs) as the type environment, so un-annotated functions get inferred annotations without touching user source
+- Entries: command palette
+- Behavior:
+  - disabled (`kbengine.infer.enabled=false`): an honest notice says so and nothing runs
+  - pyrefly binary not found (no setting, not on PATH, not in the pipx default location): an honest notice tells the user to `pipx install pyrefly` or set `kbengine.infer.pyreflyPath` — the feature degrades, no error is thrown
+  - a non-zero exit from any scripts root is reported verbatim with the exit codes; success names the scripts-root count
+  - every write path passes the write-scope gate first — default `managed` scope only allows `.kbengine/**`, user source needs the explicit `kbengine.infer.sourceWrite=user` opt-in
+- Boundary: inference only; the consumer layer (native providers reading the annotated copy) is a later batch
+
+### `kbengine.managedDir.syncExclusions`
+
+- Title: `KBEngine: Sync .kbengine Exclusions (搜索/watcher/gitignore)`
+- Purpose: re-apply the `.kbengine` isolation — `search.exclude` and `files.watcherExclude` get the `.kbengine/**` entry (own-segment discipline: only kode's previously-written keys are touched, user entries are never removed) and the git repo root `.gitignore` gets an idempotent `.kbengine/` line when the file already exists
+- Entries: command palette
+- Behavior:
+  - runs the same face as the activation-time silent sync, but reports what it wrote (which workspaces got `search.exclude` / `watcherExclude`, which git roots got a `.gitignore` append)
+  - `.gitignore` is never created (SVN / no-VCS workspaces get no git-specific write at all)
+  - idempotent: a second run with no changes writes nothing
+- Boundary: isolation only; the mirror and infer steps are `kbengine.infer.run`
 
 ## Typical Workflows
 
@@ -1197,75 +1277,3 @@ If `Attach to Component` fails, check these first:
 3. Whether `telnetEnableCommands` in `.kbengine/debug.json` matches the project's real command (affects only `Start Debugging`'s instructions, not the telnet connection itself)
 4. Whether `pathMappings` in `.kbengine/debug.json` maps to the current workspace's source directory
 5. Whether `ms-python.debugpy` is installed and enabled on this machine
-
-### `kbengine.build.previewTask`
-
-- Title: `Build: Preview Task Description`
-- Purpose: preview the exact build task derived from the active profile (IDE-TSK-001) — a script compile check of the profile's assets: the shown command line, working directory and environment are literally what the task runs (the Tasks view registration arrives with TSK-002's TaskProvider, using this same spec)
-- Entries: command palette
-- Behavior:
-  - resolves the active profile (assets root + interpreter) and derives the spec: `<interpreter> -m compileall -q <assets>/scripts` with cwd `<assets>` and `PYTHONUTF8=1` (stable UTF-8 output for compileall error lines, no garbled paths on GBK consoles)
-  - a profile without an interpreter falls back to `python3` from PATH, and the fallback is stated in the preview itself — what you see is what runs
-  - the preview dialog shows the task type, name, `cd` line, full command line (paths with spaces quoted per shell word-splitting), each env entry, and the interpreter-provenance line
-  - no active profile: an honest message points at picking one first
-- Boundary: this command only previews; executing the build is TSK-002's task registration, and mapping compile errors to source locations is TSK-003's problem matcher
-
-### `kbengine.tests.list`
-
-- Title: `Tests: List Project Python Tests`
-- Purpose: discover the Python tests the project declares (IDE-TSK-004) — a QuickPick of the test files found, scoped strictly to the selected profile
-- Entries: command palette
-- Behavior:
-  - resolves the active profile and scans only its scripts root (`<assets>/scripts`, recursively) for `test_*.py` / `*_test.py` — pytest/unittest's common naming convention; other `*_assets` roots and the engine checkout in the workspace are dependency libraries and structurally never enter the list (discovery starts from the profile's scripts root and takes no other entry)
-  - hidden directories and `__pycache__` are skipped; within each file, statically visible cases are parsed (`def test_*` functions and `class Test*` methods) with line and column, shown as the item's case count and names
-  - picking a file opens it in the editor; Esc opens nothing
-  - nothing found: one honest message names the scripts root and the naming convention — no empty list
-  - no active profile: an honest message points at picking one first
-- Boundary: this command discovers and lists; running individual tests in the Testing panel is TSK-005
-
-### `kbengine.messagetable.preview`
-
-- Title: `MessageTable: Preview Entity Message Table`
-- Purpose: preview a single entity's message table (IDE-SDK-001) — pick an entity and view the existing computed result (methods by section, utypes, alias config, issue list) as markdown
-- Entries: command palette
-- Behavior:
-  - waits for the entity index's initial scan, then offers the indexed entity names in a sorted QuickPick
-  - picking an entity builds the table from the same scan-roots/def-loader formula the index uses and shows the rendered markdown in a preview document
-  - missing declaration (the entity's def cannot be loaded — not registered or the `.def` file is absent): one honest warning naming the entity and the cause — no empty preview, no guessing
-  - no entities indexed at all: an honest warning says so; Esc quietly exits
-- Boundary: preview only; JSON export is SDK-002
-
-### `kbengine.messagetable.export`
-
-- Title: `MessageTable: Export Entity Message Table JSON`
-- Purpose: export a single entity's message table as JSON (IDE-SDK-002) — the output preserves the method sections, utypes, alias configuration, and the issue list (renderMessageTableJson's existing face)
-- Entries: command palette
-- Behavior:
-  - same entity QuickPick and the same shared build face as the preview command
-  - a save dialog proposes `<entity>.messagetable.json`; cancelling it creates no file (nothing is written)
-  - a missing declaration gets the same honest warning as preview — no file is proposed
-  - a write failure is reported verbatim with the cause; success names the written path
-- Boundary: export only; the preview command is SDK-001
-
-### `kbengine.infer.run`
-
-- Title: `KBEngine: Run pyrefly Infer (无标注函数 stub 推断)`
-- Purpose: run the pyrefly inference pipeline (KODE-CFG-017) — mirror the scripts tree to `.kbengine/inferred/`, then run `pyrefly infer` on the copy with `.kbengine/stubs` (def/types.xml-verified stubs) as the type environment, so un-annotated functions get inferred annotations without touching user source
-- Entries: command palette
-- Behavior:
-  - disabled (`kbengine.infer.enabled=false`): an honest notice says so and nothing runs
-  - pyrefly binary not found (no setting, not on PATH, not in the pipx default location): an honest notice tells the user to `pipx install pyrefly` or set `kbengine.infer.pyreflyPath` — the feature degrades, no error is thrown
-  - a non-zero exit from any scripts root is reported verbatim with the exit codes; success names the scripts-root count
-  - every write path passes the write-scope gate first — default `managed` scope only allows `.kbengine/**`, user source needs the explicit `kbengine.infer.sourceWrite=user` opt-in
-- Boundary: inference only; the consumer layer (native providers reading the annotated copy) is a later batch
-
-### `kbengine.managedDir.syncExclusions`
-
-- Title: `KBEngine: Sync .kbengine Exclusions (搜索/watcher/gitignore)`
-- Purpose: re-apply the `.kbengine` isolation — `search.exclude` and `files.watcherExclude` get the `.kbengine/**` entry (own-segment discipline: only kode's previously-written keys are touched, user entries are never removed) and the git repo root `.gitignore` gets an idempotent `.kbengine/` line when the file already exists
-- Entries: command palette
-- Behavior:
-  - runs the same face as the activation-time silent sync, but reports what it wrote (which workspaces got `search.exclude` / `watcherExclude`, which git roots got a `.gitignore` append)
-  - `.gitignore` is never created (SVN / no-VCS workspaces get no git-specific write at all)
-  - idempotent: a second run with no changes writes nothing
-- Boundary: isolation only; the mirror and infer steps are `kbengine.infer.run`
