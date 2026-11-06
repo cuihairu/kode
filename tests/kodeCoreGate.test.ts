@@ -421,3 +421,55 @@ describe('runInRust 命令级 RPC 面(Phase0 接线)', () => {
     expect(result).toEqual({ ok: false, reason: 'boom' });
   });
 });
+
+describe('notifyFileChanged 通知面(热更旁路 §11.3)', () => {
+  it('client 已存活 → 发 $/kode/fileChanged 通知帧并回 true', async () => {
+    const notes: Array<{ method: string; params?: unknown }> = [];
+    const client = {
+      start: vi.fn(async () => ({})),
+      request: vi.fn(async () => ({})),
+      notify: vi.fn((method: string, params?: unknown) => {
+        notes.push({ method, params });
+      }),
+      dispose: vi.fn(async () => undefined),
+    } as unknown as ShadowClientLike;
+    const gate = new KodeCoreGate({ clientFactory: () => client });
+    gate.setConfig({ backend: 'ts', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    // 既有命令面把 client 拉活(与生产同链路),通知面复用同一 stdio 进程
+    await gate.runInRust('$/kode/echo', {});
+    const params = { fsPath: '/ws/assets/res/types.xml', ext: '.xml', kind: 'change' };
+
+    expect(gate.notifyFileChanged(params)).toBe(true);
+
+    expect(notes).toEqual([{ method: '$/kode/fileChanged', params }]);
+    // 单向通知:不占请求 id,不改任何请求/响应语义
+    expect(client.request).toHaveBeenCalledTimes(1);
+  });
+
+  it('client 未启动 → 静默降级 false,不为发通知拉起进程', () => {
+    const factory = vi.fn();
+    const gate = new KodeCoreGate({ clientFactory: factory });
+    gate.setConfig({ backend: 'ts', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+
+    expect(gate.notifyFileChanged({ fsPath: '/a.xml' })).toBe(false);
+
+    expect(factory).not.toHaveBeenCalled();
+    expect(gate.state.clientAlive).toBe(false);
+  });
+
+  it('通知口抛错 → 收口成 false,不外抛阻塞热更', () => {
+    const client = {
+      start: vi.fn(async () => ({})),
+      request: vi.fn(async () => ({})),
+      notify: vi.fn(() => {
+        throw new Error('stdio closed');
+      }),
+      dispose: vi.fn(async () => undefined),
+    } as unknown as ShadowClientLike;
+    const gate = new KodeCoreGate({ clientFactory: () => client });
+    gate.setConfig({ backend: 'ts', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+
+    expect(() => gate.notifyFileChanged({ fsPath: '/a.xml' })).not.toThrow();
+    expect(gate.notifyFileChanged({ fsPath: '/a.xml' })).toBe(false);
+  });
+});

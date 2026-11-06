@@ -56,16 +56,24 @@ interface UriMergeState {
   timer: NodeJS.Timeout;
 }
 
-/** 盘上版本 token(异步):两次 stat 相同 = 同一版本(纯重复);不同 = 有真实写入。
- *  KR-AUD-30:事件热路径不再 statSync(同步 IO 阻塞主线程),改 promises.stat。 */
-const statVersionToken = async (fsPath: string): Promise<string | undefined> => {
+/** 盘上版本 token 口径(KR-AUD-30):两次 stat 相同 = 同一版本(纯重复)。
+ *  共享给旁路事件(fileChangeBypass)——两边必须逐字同口径,否则去重/版本
+ *  判定各写各的必漂移。 */
+export const fileVersionTokenFromStats = (stats: { mtimeMs: number; size: number }): string =>
+  `${stats.mtimeMs}:${stats.size}`;
+
+/** 读盘上版本 token(异步):stat 失败返回 undefined(不编造版本) */
+export const readFileVersionToken = async (fsPath: string): Promise<string | undefined> => {
   try {
     const stats = await fs.promises.stat(fsPath);
-    return `${stats.mtimeMs}:${stats.size}`;
+    return fileVersionTokenFromStats(stats);
   } catch {
     return undefined;
   }
 };
+
+/** 旧名内部实现:语义不变,统一走 fileVersionTokenFromStats 口径 */
+const statVersionToken = readFileVersionToken;
 
 export interface SharedFileEventMerger {
   /** 上报一条原始文件事件(经合并后投递给本合并器的全部订阅者) */
