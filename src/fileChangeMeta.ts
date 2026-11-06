@@ -8,8 +8,10 @@
  * - 字段面:fsPath/identity/kind/fileName/ext/module/package/process*
  *   /sha256/size/mtimeMs/version/reason;路径可解的字段恒给,读/stat 失败
  *   的字段如实缺省并带 reason,**绝不抛**(消费端常不 await)。
- * - 同口径模块名:复用 hotReloadTempEdit.resolveModuleDualName(书 §19.1
- *   双名称规则),脚本根外/非 .py/__init__/单层脚本一律缺省,不编造。
+ * - 同口径模块名:module/package 是 Python 概念,**仅 .py(大小写不敏感,
+ *   与 resolveModuleDualName 同源)才解析**,非 py(如 cell/Avatar.json)
+ *   两字段恒缺省不外溢;py 内再复用 hotReloadTempEdit.resolveModuleDualName
+ *   (书 §19.1 双名称规则),脚本根外/__init__/单层脚本一律缺省,不编造。
  * - hash:node:crypto createHash('sha256'),与 hotReloadDefHash/hotReload
  *   的 sentDigest 同一原语(不自创哈希、不换算法)。
  * - 版本键:事件带 version 就零 stat(size/mtime 从 token 解出);没带才由
@@ -63,7 +65,7 @@ export interface FileChangeMeta {
   readonly fileName: string;
   /** 扩展名含点:.py;无扩展为空串 */
   readonly ext: string;
-  /** 脚本根相对全名模块(cell.Avatar);解析不出即缺省,不编造 */
+  /** 脚本根相对全名模块(cell.Avatar);仅 .py(大小写不敏感)才解析,其余恒缺省 */
   readonly module?: string;
   /** 模块名首段(cell);随 module 同生同灭 */
   readonly package?: string;
@@ -346,11 +348,17 @@ export function createFileChangeMetaResolver(deps: FileChangeMetaDeps): FileChan
     }
 
     const build = (): Promise<FileChangeMeta> => {
-      const dual = resolveModuleDualName(fsPath, scriptRoot);
-      const moduleName = 'fullModule' in dual ? dual.fullModule : undefined;
-      const processVerdict = resolveProcessKind(scriptRoot, fsPath);
       const posixPath = toPosix(fsPath);
       const fileName = posixPath.slice(posixPath.lastIndexOf('/') + 1);
+      // module/package 是 Python 概念:仅 .py(仓内口径大小写不敏感,与
+      // resolveModuleDualName 同源)才解析;非 py(如 cell/Avatar.json)两字段
+      // 恒缺省——本模块自守这条边界,不依赖双名称解析器的内部拒绝。
+      const isPythonSource = fileName.toLowerCase().endsWith('.py');
+      const dual = isPythonSource
+        ? resolveModuleDualName(fsPath, scriptRoot)
+        : ({ unsupported: `非 .py 文件不解析模块名: ${posixPath}` } as const);
+      const moduleName = 'fullModule' in dual ? dual.fullModule : undefined;
+      const processVerdict = resolveProcessKind(scriptRoot, fsPath);
       const compute = async (): Promise<FileChangeMeta> => {
         const reasons: string[] = statReason !== undefined ? [statReason] : [];
         let sha256: string | undefined;
