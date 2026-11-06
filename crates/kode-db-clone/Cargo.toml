@@ -14,5 +14,15 @@ sha2 = "0.10"
 chacha20poly1305 = "0.10"
 getrandom = "0.2"
 
+# PDC-0601:真实 MySQL 集成测试(testcontainers + mysql 驱动)。测试在
+# tests/mysql_real.rs,`#[ignore]` 门控(需 Docker + KODE_DB_CLONE_MYSQL=1),
+# 默认 `cargo test` 不运行;crate 库自身保持无 MySQL 驱动依赖。
+[dev-dependencies]
+# testcontainers 直接依赖(启用 blocking 特性,使 SyncRunner/IntoContainerPort
+# 可用)。就绪条件由本测试自实现 MysqlImage(见 mysql_real.rs),不依赖
+# testcontainers-modules(其 mysql 模块等待条件对 5.7 永不满足)。
+testcontainers = { version = "0.27", default-features = false, features = ["blocking"] }
+mysql = "26"
+
 [lints]
 workspace = true

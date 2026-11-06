@@ -260,7 +260,11 @@ impl FakeExec {
             ]);
         }
         Self {
-            root_rows: vec![vec![Some("7".into()), Some("0".into()), Some("Alice".into())]],
+            root_rows: vec![vec![
+                Some("7".into()),
+                Some("0".into()),
+                Some("Alice".into()),
+            ]],
             sub_rows: sub,
         }
     }
@@ -380,7 +384,10 @@ fn large_subtable_exceeding_row_budget_fails_closed() {
     let err = reader
         .export(&scale_plan(), 7, &mut sink, &budget, &ExportControl::new())
         .unwrap_err();
-    assert!(matches!(err, CloneError::BudgetExceeded { limit: 10, .. }), "{err:?}");
+    assert!(
+        matches!(err, CloneError::BudgetExceeded { limit: 10, .. }),
+        "{err:?}"
+    );
 }
 
 /// 预取消:取消旗标在首行前即生效 → cancelled=true,不报成功。
