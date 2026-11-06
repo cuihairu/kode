@@ -75,6 +75,7 @@
     "onCommand:kbengine.debug.attachRemote",
     "onCommand:kbengine.debug.resetAttachMode",
     "onCommand:kbengine.debug.pyspyDump",
+    "onCommand:kbengine.debug.pyspyFlamegraph",
     "onCommand:kbengine.remoteServers.select",
     "onCommand:kbengine.remoteServers.add",
     "onCommand:kbengine.remoteServers.remove",
@@ -511,6 +512,12 @@
         "title": "%kbengine.command.debug.pyspyDump.title%",
         "category": "KBEngine",
         "icon": "$(pulse)"
+      },
+      {
+        "command": "kbengine.debug.pyspyFlamegraph",
+        "title": "%kbengine.command.debug.pyspyFlamegraph.title%",
+        "category": "KBEngine",
+        "icon": "$(flame)"
       },
       {
         "command": "kbengine.remoteServers.select",
@@ -1011,6 +1018,11 @@
         },
         {
           "command": "kbengine.debug.pyspyDump",
+          "when": "view == kbengine.serverControl",
+          "group": "inline"
+        },
+        {
+          "command": "kbengine.debug.pyspyFlamegraph",
           "when": "view == kbengine.serverControl",
           "group": "inline"
         },

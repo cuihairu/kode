@@ -174,10 +174,12 @@ import {
 } from './logErrorScan';
 import { DEBUG_ATTACH_MODE_STATE_KEY, DebugConfigManager } from './debugConfig';
 import {
+  PYSPY_RECORD_DEFAULTS,
   defaultSpawnRunner,
   ensurePyspyReady,
   resolvePyspyCommand,
-  runPyspyDump
+  runPyspyDump,
+  runPyspySchedule
 } from './pyspyDump';
 import {
   locateInterpreterOnPath,
@@ -5183,6 +5185,109 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(pyspyDumpCommand);
+
+  // IDE-PYSPY-001:py-spy 火焰图采集(record --format flamegraph)。傻瓜化
+  // 默认参数(10s 窗口、100/s 采样、非阻塞)一键采集;定时/周期采集经两次
+  // 输入框提示(每 N 秒采 X 次)。record 落盘 SVG,采集成功后在编辑器打开
+  // (VS Code 原生图像预览呈现,不另造渲染面);逐次结果记同一输出通道。
+  // 本批仅本地:远端 record 的文件产出需 scp 回传,先如实提示用 dump 拿栈。
+  const pyspyFlamegraphCommand = vscode.commands.registerCommand(
+    'kbengine.debug.pyspyFlamegraph',
+    async (target: unknown) => {
+      const fromTree = resolveServerComponent(target);
+      const component = fromTree ?? (await pickServerComponent('选择要采集火焰图的组件'));
+      if (!component) {
+        return;
+      }
+      const connection = debugConfigManager.getConnectionFor(component.name);
+      if (connection !== 'local') {
+        vscode.window.showWarningMessage(
+          '火焰图 record 暂仅支持本地组件(远端文件需回传);远端组件先用 py-spy dump 拿调用栈'
+        );
+        return;
+      }
+      const runner = defaultSpawnRunner;
+      const uiFace = {
+        warn: (message: string, ...actions: string[]) =>
+          vscode.window.showWarningMessage(message, ...actions),
+        info: (message: string) => vscode.window.showInformationMessage(message),
+        error: (message: string) => vscode.window.showErrorMessage(message)
+      };
+      const resolution =
+        resolveProfileInterpreter(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
+      const ready = await ensurePyspyReady(
+        runner,
+        uiFace,
+        () => resolution ?? { interpreterPath: '', interpreterSource: 'setting' }
+      );
+      if (!ready) {
+        return;
+      }
+      const pid = await debugConfigManager.pickProcessId(component.name);
+      if (pid === undefined || !Number.isFinite(pid) || pid <= 0) {
+        return;
+      }
+      // 采集配置:缺省值即傻瓜化口径(1 次 / 每 5 秒);输入非整数/越界即拒
+      const countRaw = await vscode.window.showInputBox({
+        prompt: '采集次数 X(每 N 秒采一次,共 X 次)',
+        value: '1',
+        validateInput: text => (/^[1-9][0-9]*$/.test(text) ? null : '请输入正整数(如 1)')
+      });
+      if (countRaw === undefined) {
+        return;
+      }
+      const intervalRaw = await vscode.window.showInputBox({
+        prompt: '采集间隔秒 N(相邻两次采集之间的秒数)',
+        value: '5',
+        validateInput: text => (/^[1-9][0-9]*$/.test(text) ? null : '请输入正整数秒(如 5)')
+      });
+      if (intervalRaw === undefined) {
+        return;
+      }
+      const outDir = path.join(os.tmpdir(), 'kode-pyspy-flamegraphs');
+      try {
+        fs.mkdirSync(outDir, { recursive: true });
+      } catch (error) {
+        vscode.window.showErrorMessage(`创建输出目录失败: ${String(error)}`);
+        return;
+      }
+      pyspyChannel.appendLine(
+        `\n===== py-spy flamegraph ${component.name} pid=${pid} ×${countRaw} 次/${intervalRaw}s ${new Date().toISOString()} =====`
+      );
+      pyspyChannel.show(true);
+      const runs = await runPyspySchedule(
+        runner,
+        pid,
+        {
+          count: Number(countRaw),
+          intervalSec: Number(intervalRaw),
+          outDir,
+          durationSec: PYSPY_RECORD_DEFAULTS.durationSec,
+          rateHz: PYSPY_RECORD_DEFAULTS.rateHz,
+          format: PYSPY_RECORD_DEFAULTS.format,
+          nonblocking: PYSPY_RECORD_DEFAULTS.nonblocking
+        },
+        resolution && resolvePyspyCommand(resolution.interpreterPath)
+      );
+      for (const run of runs) {
+        pyspyChannel.appendLine(
+          run.ok
+            ? `第 ${run.index + 1} 次: ${run.file}`
+            : `第 ${run.index + 1} 次: 采集失败(已中止后续采集)——${run.output}`
+        );
+        if (run.ok) {
+          void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(run.file));
+        }
+      }
+      const succeeded = runs.filter(run => run.ok).length;
+      if (succeeded === 0) {
+        vscode.window.showErrorMessage('py-spy 火焰图采集失败,详情见「KBEngine py-spy」输出通道');
+      } else {
+        pyspyChannel.appendLine(`共 ${succeeded}/${runs.length} 次采集成功,SVG 已在编辑器打开`);
+      }
+    }
+  );
+  context.subscriptions.push(pyspyFlamegraphCommand);
 
   // 初始化监控面板
   const monitoringCollector = new MonitoringCollector(context);

@@ -333,6 +333,18 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Behavior (remote, IDE-PDBG-004/005): on a component dispatched to a remote server, py-spy runs over `ssh <host> -- …` and the process list comes from the same `ps` over ssh — the picker keeps the local shape (component matches pinned ✓); a listing that cannot be fetched reports the host and ssh cause honestly and opens no picker (never the local list as a stand-in)
 - Prerequisite: the target process must be a Python process visible to py-spy; ptrace permission per the guidance above
 
+### `kbengine.debug.pyspyFlamegraph`
+
+- Title: `Collect Flame Graph with py-spy`
+- Purpose: py-spy flame graph entry (IDE-PYSPY-001) on the Servers tree, flame icon (`$(flame)`) after the dump icon; runs `py-spy record --format flamegraph` on the target component process, landing a sampling-window call stack as an SVG flame graph and opening it in the editor
+- Entry: Servers tree inline icon (after the dump icon), or the command palette
+- Behavior:
+  - Frictionless defaults: 10s window, 100 samples/s, `--nonblocking` (never pauses the target) — one click collects
+  - Timed/periodic collection: two input boxes configure "collect X times every N seconds" (defaults 1 run / every 5s, integer-validated); with X>1 each run lands `flame-<timestamp>-<index>.svg` (output dir `~/.tmp/kode-pyspy-flamegraphs`), any failure stops the run and keeps already-collected files
+  - Missing py-spy reuses the one-click install chain (same as dump); a successful collect opens the SVG in the editor (VS Code native image preview), per-run results go to the `KBEngine py-spy` output channel
+- Behavior (remote): flame graph record supports local components only for now — a remote dispatch says so honestly and suggests `py-spy dump` for call stacks (remote file retrieval is a follow-up)
+- Prerequisite: the target process must be a Python process visible to py-spy; ptrace permission as with dump
+
 ### `kbengine.remoteServers.select`
 
 - Title: `Select Remote Server`

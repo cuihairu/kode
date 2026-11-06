@@ -322,6 +322,18 @@
 - 行为（远程，IDE-PDBG-004/005）：组件分派到远程服务器时，py-spy 经 `ssh <host> -- …` 在远端跑，进程清单同样经 ssh 上的 `ps` 取得——选择器保持本地形状（组件名命中置顶 ✓）；清单取不到如实报主机与 ssh 原因、不弹选择器（绝不拿本地清单顶替）
 - 前提：目标进程是 py-spy 可见的 Python 进程；ptrace 权限按上面口径
 
+### `kbengine.debug.pyspyFlamegraph`
+
+- 标题：`Collect Flame Graph with py-spy`
+- 作用：py-spy 火焰图采集入口（IDE-PYSPY-001），服务器树 debug 图标后 flame 图标呈现（`$(flame)`）；对目标组件进程跑 `py-spy record --format flamegraph` 把采样窗口内的调用栈落盘为 SVG 火焰图并在编辑器打开
+- 入口：服务器树 inline 图标（dump 图标后）或命令面板
+- 行为：
+  - 傻瓜化默认参数：窗口 10s、采样率 100/s、`--nonblocking`（不暂停目标进程）——一键即采
+  - 定时/周期采集：两次输入框配置「每 N 秒采 X 次」（缺省 1 次/每 5 秒，整数校验）；X>1 时逐次落盘 `flame-<时间戳>-<序号>.svg`（输出目录 `~/.tmp/kode-pyspy-flamegraphs`），任一次失败即止并保留已成功文件
+  - 未装 py-spy 复用一键安装（与 dump 同链）；采集成功在编辑器打开 SVG（VS Code 原生图像预览），逐次结果进「KBEngine py-spy」输出通道
+- 行为（远程）：火焰图 record 暂仅支持本地组件——远程分派时如实提示先用 `py-spy dump` 拿调用栈（远端文件回传待后续）
+- 前提：目标进程是 py-spy 可见的 Python 进程；ptrace 权限同 dump
+
 ### `kbengine.remoteServers.select`
 
 - 标题：`Select Remote Server`
