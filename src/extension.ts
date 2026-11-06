@@ -317,6 +317,11 @@ import {
 } from './telnetService';
 import { TelnetWebView } from './telnetWebView';
 import {
+  runBotsAddCommand,
+  runBotsCountCommand,
+  type BotsControlDeps
+} from './botsControl';
+import {
   KBEngineCallHierarchyProvider,
   KBEngineReferencesProvider,
   KBEngineDocumentSymbolProvider,
@@ -4261,6 +4266,31 @@ export function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(telnetStateSubscription);
   updateTelnetStatusBar(telnetService, telnetStatusBarItem);
+
+  // 机器人控制(IDE-BOT-001 A 案:本地单机闭环):经 bots 进程 telnet
+  // python 层 addBots/计数;引擎无逐个减员 API,减员=停进程(编排层与
+  // 命令提示都如实说明)。白名单闸在 telnet 服务层,此处只做编排。
+  const botsChannel = vscode.window.createOutputChannel('KBEngine 机器人');
+  const botsControlDeps: BotsControlDeps = {
+    getBotsTarget: () => telnetService.getTargets().find(target => target.component === 'bots') ?? null,
+    connectTarget: key => telnetService.connectTarget(key),
+    getSessionState: key => telnetService.getSessionState(key),
+    sendCommand: (key, command) => telnetService.sendCommand(key, command),
+    getOutput: key => telnetService.getOutput(key),
+    sleep: ms => new Promise<void>(resolve => setTimeout(resolve, ms)),
+    withInput: (prompt, placeholder, validate) =>
+      vscode.window.showInputBox({ prompt, placeHolder: placeholder, validateInput: validate }),
+    showInformationMessage: message => vscode.window.showInformationMessage(message),
+    showErrorMessage: message => vscode.window.showErrorMessage(message),
+    channel: botsChannel
+  };
+  const botsAddCommand = vscode.commands.registerCommand('kbengine.bots.add', () => {
+    void runBotsAddCommand(botsControlDeps);
+  });
+  const botsCountCommand = vscode.commands.registerCommand('kbengine.bots.count', () => {
+    void runBotsCountCommand(botsControlDeps);
+  });
+  context.subscriptions.push(botsChannel, botsAddCommand, botsCountCommand);
 
   // HTTP 快捷请求(批105):OUTPUT 流水 + 列表 quick pick + 具名运行
   // (实际快捷键经「键盘快捷方式」为本命令配 args.name 绑定)

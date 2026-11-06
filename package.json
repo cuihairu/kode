@@ -111,6 +111,8 @@
     "onCommand:kbengine.snippets.generateFromSelection",
     "onCommand:kbengine.telnet.showPanel",
     "onCommand:kbengine.telnet.disconnect",
+    "onCommand:kbengine.bots.add",
+    "onCommand:kbengine.bots.count",
     "onCommand:kbengine.playerData.refresh",
     "onCommand:kbengine.playerData.testConnection",
     "onCommand:kbengine.playerData.queryByDbid",
@@ -715,6 +717,14 @@
         "command": "kbengine.telnet.disconnect",
         "title": "Disconnect Telnet Session",
         "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "kbengine.bots.add",
+        "title": "KBEngine: Add Bots (telnet addBots)"
+      },
+      {
+        "command": "kbengine.bots.count",
+        "title": "KBEngine: Query Bot Count (len(KBEngine.bots))"
       },
       {
         "command": "kbengine.playerData.refresh",

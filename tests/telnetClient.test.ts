@@ -116,11 +116,14 @@ describe('telnet 文本清洗纯函数', () => {
     expect(looksLikePrompt('')).toBe(false);
   });
 
-  it('isCommandAllowed:精确/带参前缀/空命令/:quit 恒拒/空白白名单项', () => {
+  it('isCommandAllowed:精确/带参前缀(空格与 python 括号两种形态)/空命令/:quit 恒拒/空白白名单项', () => {
     const whitelist = ['getCtrlEntities', 'set', '  '];
     expect(isCommandAllowed('getCtrlEntities', whitelist)).toBe(true);
     expect(isCommandAllowed('  getCtrlEntities  ', whitelist)).toBe(true);
     expect(isCommandAllowed('set foo bar', whitelist)).toBe(true);
+    // python 调用形态:项 + ( 前缀放行(IDE-BOT-001,如 KBEngine.addBots(5))
+    expect(isCommandAllowed('set(1, 2)', whitelist)).toBe(true);
+    expect(isCommandAllowed('KBEngine.addBots(1000, 5, 10)', ['KBEngine.addBots'])).toBe(true);
     expect(isCommandAllowed('setfoo', whitelist)).toBe(false);
     expect(isCommandAllowed('len(entities)', whitelist)).toBe(false);
     expect(isCommandAllowed('', whitelist)).toBe(false);

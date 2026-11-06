@@ -91,7 +91,8 @@ export function looksLikePrompt(text: string): boolean {
 }
 
 /**
- * 命令白名单:命令与白名单项完全一致,或以「项 + 空格」为前缀(带参放行)。
+ * 命令白名单:命令与白名单项完全一致,或以「项 + 空格」(CLI 带参形态)或
+ * 「项 + (」(python 调用带参形态,如 KBEngine.addBots(5))为前缀。
  * 空命令一律拒绝;`:quit` 会关闭服务端进程,即使被误配进白名单也恒拒。
  */
 export function isCommandAllowed(command: string, whitelist: readonly string[]): boolean {
@@ -107,7 +108,7 @@ export function isCommandAllowed(command: string, whitelist: readonly string[]):
     if (name.length === 0) {
       return false;
     }
-    return trimmed === name || trimmed.startsWith(`${name} `);
+    return trimmed === name || trimmed.startsWith(`${name} `) || trimmed.startsWith(`${name}(`);
   });
 }
 
