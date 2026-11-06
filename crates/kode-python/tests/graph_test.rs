@@ -685,6 +685,76 @@ fn same_target_import_with_and_without_alias_keeps_edge() {
 }
 
 #[test]
+fn conflicting_target_identity_same_basename_gives_up_edge() {
+    // 复审第十四轮残余:`import a.a`(身份=包 a)与 `import a.a as a`(身份=
+    // 模块 a.a)查找 basename 同为 a,但实际目标身份不同——一致性按目标身份
+    // 判,应弃边,不得因 basename 相同判一致而误指 a.py。
+    let zcaller = "import a.a\nimport a.a as a\n\ndef battle():\n    a.f()\n";
+    let amod = "def f():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/a.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, amod)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "目标身份冲突(包 vs 模块)应弃边, got {rev:?}"
+    );
+}
+
+#[test]
+fn same_target_from_import_with_and_without_alias_keeps_edge() {
+    // 复审第十四轮残余(from 面):`from p import x` 与 `from p import x as x`
+    // 绑定名同 x、目标身份同 p.x——不因 aliased 标志不同弃边,真边保留。
+    let zcaller = "from p import x\nfrom p import x as x\n\ndef battle():\n    x.f()\n";
+    let xmod = "def f():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let xk = key("scripts/x.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&xk, xmod)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        rev.get(&xk).map(|s| s.contains(&zk)).unwrap_or(false),
+        "同目标 from-import 别名/无别名重复应保留真边, got {rev:?}"
+    );
+}
+
+#[test]
+fn different_relative_level_from_import_gives_up_edge() {
+    // 复审第十四轮残余(层级面):`from .x import y` 与 `from ..x import y`
+    // 模块名/symbol 全同但相对层级不同=不同目标——目标身份含 level,应弃边。
+    let zcaller = "from .x import y\nfrom ..x import y\n\ndef battle():\n    y.f()\n";
+    let xmod = "def f():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let xk = key("scripts/x.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&xk, xmod)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        !rev.get(&xk).map(|s| s.contains(&zk)).unwrap_or(false),
+        "相对层级不同的同名 from-import 应弃边, got {rev:?}"
+    );
+}
+
+#[test]
 fn rust7_cross_process_edge_marked_uncertain_not_silent() {
     // RUST-7:`self.cell.*`/`self.base.*` 跨进程边被调方文件无法静态解析
     // (实体类在另一进程侧文件里)。旧行为:落进 self.* 分支按「同类」折叠

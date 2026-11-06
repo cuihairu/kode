@@ -67,6 +67,7 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
                         line: ast.line_col(imp.range.start().to_u32()).0,
                         is_from: false,
                         aliased: alias.asname.is_some(),
+                        level: 0,
                     });
                 }
             }
@@ -89,6 +90,7 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
                         line,
                         is_from: true,
                         aliased: alias.asname.is_some(),
+                        level: impf.level,
                     });
                 }
             }

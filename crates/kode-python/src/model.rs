@@ -131,6 +131,9 @@ pub struct AstImport {
     /// 末段)」,不得用绑定名==首段近似——`import a.b as a` 的别名恰为首段
     /// 名,近似会误指无关 a.py(复审第十二轮残余)。
     pub aliased: bool,
+    /// from-import 的相对层级(`from .x import y` = 1)。目标身份一致性判定
+    /// 需要:不同层级同名目标(`.x.y` vs `..x.y`)不得混同(复审第十四轮残余)。
+    pub level: u32,
     pub line: usize,
     pub is_from: bool,
 }

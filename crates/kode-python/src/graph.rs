@@ -205,12 +205,23 @@ fn resolve_callee_file(
                             return None;
                         }
                         // 同名多次 import 目标不同 = 目标身份冲突,静态不
-                        // 裁决 → 放弃(复审第十/十二轮残余)。一致性按解析
-                        // 后目标 basename 判:别名与否不是目标身份,`from p
-                        // import x` 与 `from p import x as x`(或 `import a`
-                        // 与 `import a as a`)目标相同不得判冲突(第十三轮
-                        // 残余);`import a.b` 与 `import a.b as a` 解析后
-                        // 分别为 a 与 b,仍冲突。
+                        // 裁决 → 放弃(复审第十/十二轮残余)。一致性按**实际
+                        // 目标身份**判(复审第十四轮残余):from=(层级,模块,
+                        // symbol);无别名普通 import 绑包本体=顶层首段身份;
+                        // 有别名普通 import 绑完整模块=全段身份。文件查找仍
+                        // 用 resolve_base 的 basename(查找口径与身份口径分
+                        // 离):`import a.a`(身份 a)与 `import a.a as a`(身份
+                        // a.a)basename 同为 a 但目标不同 → 弃边;`import a`
+                        // 与 `import a as a`(身份同为 a)不弃边。
+                        let resolve_target = |i: &AstImport| -> String {
+                            if i.is_from {
+                                format!("{}|{}|{}", i.level, i.module, i.symbol.clone().unwrap_or_default())
+                            } else if !i.aliased {
+                                i.module.split('.').next().unwrap_or("").to_string()
+                            } else {
+                                i.module.clone()
+                            }
+                        };
                         let resolve_base = |i: &AstImport| -> String {
                             if i.is_from {
                                 i.symbol.clone().unwrap_or_else(|| i.binding.clone())
@@ -221,12 +232,9 @@ fn resolve_callee_file(
                             }
                         };
                         let first = hits[0];
-                        let consistent = hits.iter().all(|t| {
-                            t.is_from == first.is_from
-                                && t.module == first.module
-                                && t.symbol == first.symbol
-                                && resolve_base(t) == resolve_base(first)
-                        });
+                        let consistent = hits
+                            .iter()
+                            .all(|t| resolve_target(t) == resolve_target(first));
                         if !consistent {
                             return None;
                         }
