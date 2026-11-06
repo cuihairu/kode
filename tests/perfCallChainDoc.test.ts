@@ -143,13 +143,16 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/languageProviders.ts', 1873, 'shadowObserveDefDocument'],
   ['src/languageProviders.ts', 2001, 'validateEntitiesXmlDocument'],
   ['src/languageProviders.ts', 4725, 'provideDefinitionTracedImpl'],
-  ['src/languageProviders.ts', 5133, '层0 接收者段闸'],
-  ['src/languageProviders.ts', 5239, 'withInitialScanTimeout'],
+  // 2026-11-06(六):二次并入 origin main(KR-AUD-84 引擎整串开关表在 4725 后
+  // +13)——层0 接收者段闸/withInitialScanTimeout/provideCompletionItems 锚点
+  // 再 +13(真位重探 5146/5252/7063,出处随 baseline 锁步)。
+  ['src/languageProviders.ts', 5146, '层0 接收者段闸'],
+  ['src/languageProviders.ts', 5252, 'withInitialScanTimeout'],
   // 2026-11-06:IDE-LINT-012 快速修复边界——languageProviders.ts 在 receiver
   // 守卫 provider 前新增 receiverFromDiagnosticLine helper(区间归属提取)+
   // 提取块重写,+31 行,7007 后锚点随之 +31(真位重探 7038;其余 languageProviders
   // 锚点均在 helper 之前,不受影响;出处随 baseline 锁步)。
-  ['src/languageProviders.ts', 7050, 'provideCompletionItems('],
+  ['src/languageProviders.ts', 7063, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)
