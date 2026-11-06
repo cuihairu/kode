@@ -114,7 +114,11 @@ function classifyWriteKindAfter(line: string, afterIndex: number): ReadOnlyWrite
     }
     return null;
   }
-  if (AUGMENTED_OPS.has(c + (line[i + 1] ?? ''))) { return 'augmented'; }
+  const two = c + (line[i + 1] ?? '');
+  if (AUGMENTED_OPS.has(two)) { return 'augmented'; }
+  // 三字符增强赋值(**= //= <<= >>=):两字符前缀不在集合,再拼一位判定;
+  // 旧实现只拼两字符永不命中,`self.id **= 1` 等漏检(审核发现修复)。
+  if (AUGMENTED_OPS.has(two + (line[i + 2] ?? ''))) { return 'augmented'; }
   if (c === '<' || c === '>' || c === '!') { return null; } // <= >= !=
   return null; // 单目算术 + - * / % & | ^ @ << >> 等:值上下文,非写目标
 }

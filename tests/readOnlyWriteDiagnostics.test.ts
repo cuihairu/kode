@@ -45,6 +45,20 @@ describe('IDE-LINT-007 引擎只读属性写入 lint(纯逻辑)', () => {
     expect(findings[0].kind).toBe('augmented');
   });
 
+  it('三字符增强赋值 **= //= <<= >>= 报告;移位/幂值上下文不误报(审核发现修复)', () => {
+    for (const op of ['**=', '//=', '<<=', '>>=']) {
+      const findings = find(`self.id ${op} 1\n`, 'baseapp');
+      expect(findings, op).toHaveLength(1);
+      expect(findings[0].kind, op).toBe('augmented');
+      expect(findings[0].propertyName, op).toBe('id');
+    }
+    // 值上下文(移位/幂/整除)不是写目标,不得误报
+    expect(find('y = self.id << 2\n', 'baseapp')).toHaveLength(0);
+    expect(find('y = self.id >> 2\n', 'baseapp')).toHaveLength(0);
+    expect(find('y = self.id ** 2\n', 'baseapp')).toHaveLength(0);
+    expect(find('y = self.id // 2\n', 'baseapp')).toHaveLength(0);
+  });
+
   it('注解赋值 self.id: int = 5 报告', () => {
     const findings = find('self.id: int = 5\n', 'baseapp');
     expect(findings).toHaveLength(1);
