@@ -255,13 +255,14 @@ describe('setupHotReload(装配)', () => {
     expect(lastFileSystemWatcher.current).not.toBeNull();
   });
 
-  it('package.json 默认 enabled=true,描述不再是「默认关防误触」', () => {
+  it('package.json 默认 enabled=true,markdownDescription 不再是「默认关防误触」', () => {
     const properties = (packageJson as unknown as {
-      contributes: { configuration: { properties: Record<string, { default: unknown; description: string }> } };
+      contributes: { configuration: { properties: Record<string, { default: unknown; markdownDescription: string }> } };
     }).contributes.configuration.properties;
     expect(properties['kbengine.hotReload.enabled'].default).toBe(true);
-    expect(properties['kbengine.hotReload.enabled'].description).not.toContain('默认关防误触');
-    expect(properties['kbengine.hotReload.enabled'].description).toContain('127.0.0.1:8090/hotfix');
+    // 2026-11-06 起配置键提示统一 markdownDescription,裸 description 已移除
+    expect(properties['kbengine.hotReload.enabled'].markdownDescription).not.toContain('默认关防误触');
+    expect(properties['kbengine.hotReload.enabled'].markdownDescription).toContain('127.0.0.1:8090/hotfix');
   });
 
   it('启用即按模式各建一个 watcher,保存事件去抖后按名执行', () => {

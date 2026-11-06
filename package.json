@@ -1118,13 +1118,13 @@
           "type": "string",
           "default": "3.7.3",
           "scope": "window",
-          "description": "集成的 KBEngine 引擎版本（Engine version of the integrated KBEngine）。默认 3.7.3（官方稳定基线）；魔改 fork 各异，填自定义版本号（如 fork-3.12）。知识库分层标注与诊断按此值做版本门控：不同版本支持的特性不同，fork-only 特性在基线版本下会显式标注。常见预设：3.7.3 / 3.7.2 / 3.6.3 / fork-3.12 / 2.5.10"
+          "markdownDescription": "集成的 KBEngine 引擎版本（Engine version of the integrated KBEngine）。默认 3.7.3（官方稳定基线）；魔改 fork 各异，填自定义版本号（如 fork-3.12）。知识库分层标注与诊断按此值做版本门控：不同版本支持的特性不同，fork-only 特性在基线版本下会显式标注。常见预设：3.7.3 / 3.7.2 / 3.6.3 / fork-3.12 / 2.5.10\n\n默认值：`3.7.3`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#paths-and-workspace-discovery)"
         },
         "kbengine.gitHistory.enabled": {
           "type": "boolean",
           "default": true,
           "scope": "resource",
-          "description": "文件 Git 历史查询功能开关（File Git history feature toggle）。默认开启：资源管理器/编辑器右键与命令面板出现「查看文件历史/查看选中范围历史」入口；历史只在用户打开入口时按需查询 Git，绝不在激活、打开文件、光标或选区变化时自动运行 Git，不预取、不轮询。关闭后入口隐藏，直接调用命令也不运行 Git（Enabled by default: adds \"View File History / View Selection History\" entries and queries Git only on demand; when disabled the entries hide and the commands never spawn Git）"
+          "markdownDescription": "文件 Git 历史查询功能开关（File Git history feature toggle）。默认开启：资源管理器/编辑器右键与命令面板出现「查看文件历史/查看选中范围历史」入口；历史只在用户打开入口时按需查询 Git，绝不在激活、打开文件、光标或选区变化时自动运行 Git，不预取、不轮询。关闭后入口隐藏，直接调用命令也不运行 Git（Enabled by default: adds \"View File History / View Selection History\" entries and queries Git only on demand; when disabled the entries hide and the commands never spawn Git）\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#paths-and-workspace-discovery)"
         },
         "kbengine.clone.archiveEncryption": {
           "type": "string",
@@ -1136,254 +1136,253 @@
         "kbengine.metrics.fileReadDetail": {
           "type": "boolean",
           "default": false,
-          "description": "记录文件读取明细(路径+字节数,环形缓冲 256 条,kbengine.metrics.showSummary 可查);关闭时仅累计计数,开销有界"
+          "markdownDescription": "记录文件读取明细(路径+字节数,环形缓冲 256 条,kbengine.metrics.showSummary 可查);关闭时仅累计计数,开销有界\n\n默认值：关闭（`false`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#runtime-queries)"
         },
         "kbengine.db.tablePrefix": {
           "type": "string",
           "default": "",
-          "description": "数据库表名前缀（缺省空 = 引擎默认 tbl_；自定义前缀用于指向改过前缀的工程，schema 视图与 SQL 模板同源替换）"
+          "markdownDescription": "数据库表名前缀（缺省空 = 引擎默认 tbl_；自定义前缀用于指向改过前缀的工程，schema 视图与 SQL 模板同源替换）\n\n默认值：空（留空即未显式配置，走该键自身的回落/自动行为）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#database)"
         },
         "kbengine.databaseQueryTimeoutMs": {
           "type": "number",
           "default": 10000,
           "minimum": 0,
-          "description": "只读数据库命令（漂移校验/表预览）单条建连与查询的超时毫秒数。执行期间显示可取消的进度通知：超时或取消即按原因返回并释放连接（挂死的连接强制销毁），不永久等待；在通知上取消走同一返回路径。0 或负值不限时（等到底，手动取消仍可用）"
+          "markdownDescription": "只读数据库命令（漂移校验/表预览）单条建连与查询的超时毫秒数。执行期间显示可取消的进度通知：超时或取消即按原因返回并释放连接（挂死的连接强制销毁），不永久等待；在通知上取消走同一返回路径。0 或负值不限时（等到底，手动取消仍可用）\n\n默认值：`10000`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#database)"
         },
         "kbengine.enableDiagnostics": {
           "type": "boolean",
           "default": true,
-          "description": "启用 KBEngine 实时语法检查"
+          "markdownDescription": "启用 KBEngine 实时语法检查\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.enableStructureDiagnostics": {
           "type": "boolean",
           "default": true,
-          "description": "启用 .def 结构化校验（重复定义、标签位置、缺失字段等）"
+          "markdownDescription": "启用 .def 结构化校验（重复定义、标签位置、缺失字段等）\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.receiverNoneDiagnostics": {
           "type": "boolean",
           "default": true,
-          "description": "Python 侧诊断：self.client/self.cell/self.base 无判空 guard 的引用报 Warning，含 .def 段错配检查（default: enabled）；关闭后 Python 文档零诊断产出"
+          "markdownDescription": "Python 侧诊断：self.client/self.cell/self.base 无判空 guard 的引用报 Warning，含 .def 段错配检查（default: enabled）；关闭后 Python 文档零诊断产出\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.configContractDiagnostics": {
           "type": "boolean",
           "default": true,
-          "description": "配置契约检查诊断：工作区配置层的只读契约检查——.kbengine/debug.json 的 components 空/缺、已知组件 telnet 端口缺失或偏离引擎默认（loginapp 31000/dbmgr 32000/interfaces 33000/logger 34000/baseapp 40000/cellapp 50000/bots 51000）、telnet 段被注释、python.analysis.extraPaths 含 ../../ 双层上跳或指向不存在目录、.gitignore 缺 .kbengine/、CLAUDE.md/README 声明的密码/端口与 debug.json 实值冲突，均报 Warning 附中英修复建议（default: enabled）。配置文件打开/保存即扫、变更即重算；关闭后零诊断产出"
+          "markdownDescription": "配置契约检查诊断：工作区配置层的只读契约检查——.kbengine/debug.json 的 components 空/缺、已知组件 telnet 端口缺失或偏离引擎默认（loginapp 31000/dbmgr 32000/interfaces 33000/logger 34000/baseapp 40000/cellapp 50000/bots 51000）、telnet 段被注释、python.analysis.extraPaths 含 ../../ 双层上跳或指向不存在目录、.gitignore 缺 .kbengine/、CLAUDE.md/README 声明的密码/端口与 debug.json 实值冲突，均报 Warning 附中英修复建议（default: enabled）。配置文件打开/保存即扫、变更即重算；关闭后零诊断产出\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.attributeNoneDiagnostics": {
           "type": "boolean",
           "default": true,
-          "description": "Python 侧诊断：用户自管属性 self.<attr> 流敏感类型含 None 且当前位未窄化的成员访问/方法调用报 Warning（default: enabled）；if self.<attr> is None 守卫/__init__ 赋值窄化后不报；关闭后 Python 文档零诊断产出"
+          "markdownDescription": "Python 侧诊断：用户自管属性 self.<attr> 流敏感类型含 None 且当前位未窄化的成员访问/方法调用报 Warning（default: enabled）；if self.<attr> is None 守卫/__init__ 赋值窄化后不报；关闭后 Python 文档零诊断产出\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.propertyDirectionDiagnostics": {
           "type": "boolean",
           "default": true,
-          "description": "Python 侧诊断：def 属性访问方向违规——self.<属性>/self.<role>.<属性> 访问位置不在属性 Flags 域位内报 Warning，文件作用域不足降级为 Information（default: enabled）；关闭后 Python 文档零诊断产出"
+          "markdownDescription": "Python 侧诊断：def 属性访问方向违规——self.<属性>/self.<role>.<属性> 访问位置不在属性 Flags 域位内报 Warning，文件作用域不足降级为 Information（default: enabled）；关闭后 Python 文档零诊断产出\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.readOnlyWriteDiagnostics": {
           "type": "boolean",
           "default": true,
-          "description": "Python 侧诊断：实体脚本对引擎内建只读属性（self.id/self.isDestroyed/self.className 及各面只读项）的普通赋值/增强赋值/注解赋值/del 报 Warning（引擎仅 GET，写入运行时被拒）（default: enabled）；合法可写属性（self.position 等）与非实体脚本同名字段不报；关闭后 Python 文档零诊断产出"
+          "markdownDescription": "Python 侧诊断：实体脚本对引擎内建只读属性（self.id/self.isDestroyed/self.className 及各面只读项）的普通赋值/增强赋值/注解赋值/del 报 Warning（引擎仅 GET，写入运行时被拒）（default: enabled）；合法可写属性（self.position 等）与非实体脚本同名字段不报；关闭后 Python 文档零诊断产出\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.startupScriptDiagnostics": {
           "type": "boolean",
           "default": true,
-          "description": "启动脚本诊断：sh/.bat 启动行上的服务器进程（machine/dbmgr/baseapp 等）未知 --参数、--cid/--gus 非数字值、引用 $KBE_RES_PATH/$KBE_BIN_PATH/$KBE_ROOT 但未赋值且未 source 的报 Warning（default: enabled）；非启动行不检"
+          "markdownDescription": "启动脚本诊断：sh/.bat 启动行上的服务器进程（machine/dbmgr/baseapp 等）未知 --参数、--cid/--gus 非数字值、引用 $KBE_RES_PATH/$KBE_BIN_PATH/$KBE_ROOT 但未赋值且未 source 的报 Warning（default: enabled）；非启动行不检\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.spaceNavDiagnostics": {
           "type": "boolean",
           "default": true,
-          "description": "空间/导航语义诊断：setSpaceData/delSpaceData 使用保留键 _mapping、调用 navigate/navigatePathPoints 但全文无 canNavigate、addSpaceGeometryMapping params 字典的字符串层键 报 Warning（default: enabled）"
+          "markdownDescription": "空间/导航语义诊断：setSpaceData/delSpaceData 使用保留键 _mapping、调用 navigate/navigatePathPoints 但全文无 canNavigate、addSpaceGeometryMapping params 字典的字符串层键 报 Warning（default: enabled）\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.rpcArgCountDiagnostics": {
           "type": "boolean",
           "default": true,
-          "description": "RPC 实参数量诊断：self.base/cell/client.<method>(...) 调用点顶层实参数与 .def 该方法 <Arg> 数明确不符时报 Warning（default: enabled）；星号实参/动态接收者/声明未就绪/段外声明保留未知不报，inlay 提示不替代诊断"
+          "markdownDescription": "RPC 实参数量诊断：self.base/cell/client.<method>(...) 调用点顶层实参数与 .def 该方法 <Arg> 数明确不符时报 Warning（default: enabled）；星号实参/动态接收者/声明未就绪/段外声明保留未知不报，inlay 提示不替代诊断\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.roleMisuseDiagnostics": {
           "type": "boolean",
           "default": true,
-          "description": "角色错用诊断：实体脚本里 self.<内建属性> 属于其他角色面（baseapp/cellapp/client）而当前面未注册时报 Warning，引注册面引擎源码取证（default: enabled）；角色不明与普通 Python 类不猜，属性面表与内建属性 hover 元数据同源"
+          "markdownDescription": "角色错用诊断：实体脚本里 self.<内建属性> 属于其他角色面（baseapp/cellapp/client）而当前面未注册时报 Warning，引注册面引擎源码取证（default: enabled）；角色不明与普通 Python 类不猜，属性面表与内建属性 hover 元数据同源\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.postDestroyDiagnostics": {
           "type": "boolean",
           "default": true,
-          "description": "销毁后访问诊断：同一函数内可确定的 self.destroy() 之后直接访问 self.<成员>（id/isDestroyed/className/destroy 除外）报 Warning（default: enabled）；跨回调/异常/跨块/条件销毁/def 声明 destroy（动态分派）不猜，不做全文件误报"
+          "markdownDescription": "销毁后访问诊断：同一函数内可确定的 self.destroy() 之后直接访问 self.<成员>（id/isDestroyed/className/destroy 除外）报 Warning（default: enabled）；跨回调/异常/跨块/条件销毁/def 声明 destroy（动态分派）不猜，不做全文件误报\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.diagnostics.checkUnknownTypes": {
           "type": "boolean",
           "default": true,
-          "description": "诊断：检查未知的 KBEngine 类型"
+          "markdownDescription": "诊断：检查未知的 KBEngine 类型\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.diagnostics.checkUnknownFlags": {
           "type": "boolean",
           "default": true,
-          "description": "诊断：检查未知的 Flags 值"
+          "markdownDescription": "诊断：检查未知的 Flags 值\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.diagnostics.checkUnknownDetailLevels": {
           "type": "boolean",
           "default": true,
-          "description": "诊断：检查未知的 DetailLevel 值"
+          "markdownDescription": "诊断：检查未知的 DetailLevel 值\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.diagnostics.checkDuplicateDefinitions": {
           "type": "boolean",
           "default": true,
-          "description": "诊断：检查属性和方法的重复定义"
+          "markdownDescription": "诊断：检查属性和方法的重复定义\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.diagnostics.checkMissingPropertyFields": {
           "type": "boolean",
           "default": true,
-          "description": "诊断：检查属性缺少 Type/Flags 或重复定义字段"
+          "markdownDescription": "诊断：检查属性缺少 Type/Flags 或重复定义字段\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.diagnostics.checkDefMethodMissingInPython": {
           "type": "boolean",
           "default": true,
-          "description": "诊断（C-19）：.def 声明的方法在对应同名 Python 实体类中无实现时报告 Warning，定位在 def 方法行并关联目标 Python 文件与类名（default: enabled）。关闭后不产出 def-method-missing-in-python 诊断"
+          "markdownDescription": "诊断（C-19）：.def 声明的方法在对应同名 Python 实体类中无实现时报告 Warning，定位在 def 方法行并关联目标 Python 文件与类名（default: enabled）。关闭后不产出 def-method-missing-in-python 诊断\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.diagnostics.checkPythonMethodNotInDef": {
           "type": "boolean",
           "default": false,
-          "description": "诊断（C-19，反向，默认关）：Python 实体类方法在 .def 中无声明时报告 Warning（跳过引擎钩子与 dunder，仍属启发式防误报）。默认关闭，开启后产出 python-method-not-in-def 诊断"
+          "markdownDescription": "诊断（C-19，反向，默认关）：Python 实体类方法在 .def 中无声明时报告 Warning（跳过引擎钩子与 dunder，仍属启发式防误报）。默认关闭，开启后产出 python-method-not-in-def 诊断\n\n默认值：关闭（`false`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.diagnostics.checkProcessTopology": {
           "type": "boolean",
           "default": true,
-          "description": "诊断（C-17）：进程拓扑定义期错配预警——校验 process_topology.xml 清单与实体 def 归属（方法节/持久属性 vs 拓扑角色、进程名/端口/单例角色重复、未知角色/依赖、hosts 归属矛盾等），全部 Warning 定位精确行。workspace 根无 process_topology.xml 时功能静默（零误报）。默认开启"
+          "markdownDescription": "诊断（C-17）：进程拓扑定义期错配预警——校验 process_topology.xml 清单与实体 def 归属（方法节/持久属性 vs 拓扑角色、进程名/端口/单例角色重复、未知角色/依赖、hosts 归属矛盾等），全部 Warning 定位精确行。workspace 根无 process_topology.xml 时功能静默（零误报）。默认开启\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#diagnostics)"
         },
         "kbengine.hover.showTagDocs": {
           "type": "boolean",
           "default": true,
-          "description": "悬停时显示 .def 标签说明"
+          "markdownDescription": "悬停时显示 .def 标签说明\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)"
         },
         "kbengine.hover.showValueDocs": {
           "type": "boolean",
           "default": true,
-          "description": "悬停时显示类型、Flags、DetailLevel 等值的说明"
+          "markdownDescription": "悬停时显示类型、Flags、DetailLevel 等值的说明\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)"
         },
         "kbengine.hover.showSymbolDocs": {
           "type": "boolean",
           "default": true,
-          "description": "悬停时显示自定义属性名和方法名的摘要信息"
+          "markdownDescription": "悬停时显示自定义属性名和方法名的摘要信息\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)"
         },
         "kbengine.hover.returnTypeInference": {
           "type": "boolean",
           "default": true,
-          "description": "悬停时根据 Python 函数返回注解推导局部变量类型"
+          "markdownDescription": "悬停时根据 Python 函数返回注解推导局部变量类型\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)"
         },
         "kbengine.hover.typeStorage": {
           "type": "boolean",
           "default": true,
-          "description": "悬停时显示 types.xml 自定义数据类型的存储信息(落库表/列/类型)"
+          "markdownDescription": "悬停时显示 types.xml 自定义数据类型的存储信息(落库表/列/类型)\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)"
         },
         "kbengine.hover.implementedBy": {
           "type": "boolean",
           "default": true,
-          "description": "悬停时显示 def 方法的脚本实现位置(Implemented-By 反链)"
+          "markdownDescription": "悬停时显示 def 方法的脚本实现位置(Implemented-By 反链)\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)"
         },
         "kbengine.hover.entityRegistration": {
           "type": "boolean",
           "default": true,
-          "description": "悬停时显示 entities.xml 实体注册信息(Utype/清单位置)"
+          "markdownDescription": "悬停时显示 entities.xml 实体注册信息(Utype/清单位置)\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)"
         },
         "kbengine.hover.defChain": {
           "type": "boolean",
           "default": true,
-          "description": "悬停时显示 def 属性/方法的声明链(文件与区块来源)"
+          "markdownDescription": "悬停时显示 def 属性/方法的声明链(文件与区块来源)\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)"
         },
         "kbengine.hover.eventStats": {
           "type": "boolean",
           "default": true,
-          "description": "悬停时显示事件常量的注册与监听统计(事件回调反链)"
+          "markdownDescription": "悬停时显示事件常量的注册与监听统计(事件回调反链)\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)"
         },
         "kbengine.hover.serverConfig": {
           "type": "boolean",
           "default": true,
-          "description": "悬停时显示 kbengine.xml 服务配置项的取值与说明"
+          "markdownDescription": "悬停时显示 kbengine.xml 服务配置项的取值与说明\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)"
         },
         "kbengine.hover.startupScript": {
           "type": "boolean",
           "default": true,
-          "description": "悬停/补全时显示 .sh/.bat 启动脚本里的 KBEngine 启动参数(--cid/--gus/--hide/--KBE_*)与环境变量(KBE_ROOT/KBE_RES_PATH/KBE_BIN_PATH/KBE_TIMING_METHOD/UID/UUID)说明；`--` 前缀补全参数、KBE_ 前缀补全环境变量"
+          "markdownDescription": "悬停/补全时显示 .sh/.bat 启动脚本里的 KBEngine 启动参数(--cid/--gus/--hide/--KBE_*)与环境变量(KBE_ROOT/KBE_RES_PATH/KBE_BIN_PATH/KBE_TIMING_METHOD/UID/UUID)说明；`--` 前缀补全参数、KBE_ 前缀补全环境变量\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)"
         },
         "kbengine.hover.asyncBudgetMs": {
           "type": "number",
           "default": 2500,
           "minimum": 0,
-          "description": "悬停异步链总预算(毫秒):def 方法/接收者/内建属性标注链超预算即截断返回,不再永转 loading,超时层记 LogHub(过滤 [kode-hover][timeout])。≤0 关闭预算闸(旧行为)。"
+          "markdownDescription": "悬停异步链总预算(毫秒):def 方法/接收者/内建属性标注链超预算即截断返回,不再永转 loading,超时层记 LogHub(过滤 [kode-hover][timeout])。≤0 关闭预算闸(旧行为)。\n\n默认值：`2500`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)"
         },
         "kbengine.codeLens.rpc": {
           "type": "boolean",
           "default": true,
-          "description": "Python 实现脚本中显示 RPC 方法标记 CodeLens(def 声明方法声明行)"
+          "markdownDescription": "Python 实现脚本中显示 RPC 方法标记 CodeLens(def 声明方法声明行)\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#codelens-and-inlay-hints)"
         },
         "kbengine.codeLens.eventCallbacks": {
           "type": "boolean",
           "default": true,
-          "description": "Python 脚本中显示事件回调标记 CodeLens(事件回调/监听数)"
+          "markdownDescription": "Python 脚本中显示事件回调标记 CodeLens(事件回调/监听数)\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#codelens-and-inlay-hints)"
         },
         "kbengine.codeLens.property": {
           "type": "boolean",
           "default": true,
-          "description": "Python 脚本中显示 self.<属性> 访问处的属性标记 CodeLens"
+          "markdownDescription": "Python 脚本中显示 self.<属性> 访问处的属性标记 CodeLens\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#codelens-and-inlay-hints)"
         },
         "kbengine.codeLens.typesXml": {
           "type": "boolean",
           "default": true,
-          "description": "types.xml 类型声明行显示落库镜链 CodeLens(引用反扫)"
+          "markdownDescription": "types.xml 类型声明行显示落库镜链 CodeLens(引用反扫)\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#codelens-and-inlay-hints)"
         },
         "kbengine.inlayHints.typeData": {
           "type": "boolean",
           "default": true,
-          "description": "Python 脚本 self.<属性> 访问处以 inlay hint 内联显示 def 声明的 types.xml 数据类型;self.base/cell/client RPC 调用点每实参后内联显示 def 已声明的形参类型(argN: 类型)"
+          "markdownDescription": "Python 脚本 self.<属性> 访问处以 inlay hint 内联显示 def 声明的 types.xml 数据类型;self.base/cell/client RPC 调用点每实参后内联显示 def 已声明的形参类型(argN: 类型)\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#codelens-and-inlay-hints)"
         },
         "kbengine.inlayHints.defParams": {
           "type": "boolean",
           "default": true,
-          "description": "Entity 脚本区块(ClientMethods/BaseMethods/CellMethods)内 def 定义点,未手写标注的形参后内联显示 def 声明的 <Arg> 类型,声明 <ReturnType> 时闭括号后内联 -> 提示(default: enabled);关闭后定义点零 inlay"
+          "markdownDescription": "Entity 脚本区块(ClientMethods/BaseMethods/CellMethods)内 def 定义点,未手写标注的形参后内联显示 def 声明的 <Arg> 类型,声明 <ReturnType> 时闭括号后内联 -> 提示(default: enabled);关闭后定义点零 inlay\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#codelens-and-inlay-hints)"
         },
         "kbengine.entityDefsPath": {
           "type": "string",
           "default": "scripts/entity_defs",
-          "description": "实体定义文件的默认路径"
+          "markdownDescription": "实体 .def 文件的默认路径（相对工作区根，支持 `${workspaceFolder}`、`${env:NAME}` 等变量展开）。解析口径：先按本配置解析；仍 miss 时依次探测约定候选 `entity_defs` → `scripts/entity_defs` → `assets/scripts/entity_defs` → `server_assets/scripts/entity_defs`（官方 newassets 布局），最后有界深扫描兜底（多候选时记忆选择，下次激活只问一次）。影响：诊断、悬停、跳转、代码生成等 .def 功能都以这里解析出的 def 根为起点，配错会导致 .def 索引为空。示例：`${workspaceFolder}/assets/scripts/entity_defs`\n\n默认值：`scripts/entity_defs`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#paths-and-workspace-discovery)"
         },
         "kbengine.entitiesXmlPath": {
           "type": "string",
           "default": "scripts/entities.xml",
-          "description": "entities.xml 文件的默认路径"
+          "markdownDescription": "实体注册表 entities.xml 的默认路径（相对工作区根，支持 VS Code 变量展开）。解析口径：优先取 def 根同级的 `<def根>/entities.xml`，再按本配置与约定候选 `entities.xml` → `scripts/entities.xml` → `assets/scripts/entities.xml` → `server_assets/scripts/entities.xml` 探测，最后发现兜底。影响：实体注册悬停（Utype/清单位置）、实体清单与生成器自动注册都以这里解析出的文件为源。\n\n默认值：`scripts/entities.xml`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#paths-and-workspace-discovery)"
         },
         "kbengine.binPath": {
           "type": "string",
           "default": "${workspaceFolder}/kbe/bin/server",
-          "description": "KBEngine 二进制文件路径，支持 ${workspaceFolder} 和 ${env:VAR}。未显式配置时默认值在盘即生效；不在盘回落自动发现扫描；扫描也落空才在启动检查链报警（CFG-01）"
+          "markdownDescription": "KBEngine 二进制文件路径，支持 ${workspaceFolder} 和 ${env:VAR}。未显式配置时默认值在盘即生效；不在盘回落自动发现扫描；扫描也落空才在启动检查链报警（CFG-01）\n\n默认值：`${workspaceFolder}/kbe/bin/server`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#paths-and-workspace-discovery)"
         },
         "kbengine.assetsRoot": {
           "type": "string",
           "default": "",
-          "description": "KBEngine 资产根目录（其下应有 res/server/kbengine.xml 与 scripts/，如 flyff_assets）；留空自动发现（约定位置与深扫描）"
+          "markdownDescription": "KBEngine 资产根目录（其下应有 res/server/kbengine.xml 与 scripts/，如 flyff_assets）；留空自动发现（约定位置与深扫描）\n\n默认值：空（留空即未显式配置，走该键自身的回落/自动行为）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#paths-and-workspace-discovery)"
         },
         "kbengine.jumpLog": {
           "type": "boolean",
           "default": false,
-          "description": "跳转决策路径日志开关:开启后每次 F12 把「入口/对象类/.def 索引/PythonClassIndex MRO/组合根/类作用域/各层落空原因/放弃点/耗时」打到输出面板 KBEngine Navigation(过滤 [kode-jump])。默认关闭,关闭时零开销。"
+          "markdownDescription": "跳转决策路径日志开关:开启后每次 F12 把「入口/对象类/.def 索引/PythonClassIndex MRO/组合根/类作用域/各层落空原因/放弃点/耗时」打到输出面板 KBEngine Navigation(过滤 [kode-jump])。默认关闭,关闭时零开销。\n\n默认值：关闭（`false`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#jumps-and-navigation)"
         },
         "kbengine.showFinalConfigOnOpen": {
           "type": "boolean",
           "default": true,
-          "description": "扩展激活且能定位引擎默认配置(经 kbengine.binPath 推导 kbe/res/server/kbengine_defaults.xml)时,自动在后台打开合成的最终配置只读视图(kbengine-final.xml);定位失败静默跳过。kbengine.config.showFinal 命令可随时手动打开"
+          "markdownDescription": "扩展激活且能定位引擎默认配置(经 kbengine.binPath 推导 kbe/res/server/kbengine_defaults.xml)时,自动在后台打开合成的最终配置只读视图(kbengine-final.xml);定位失败静默跳过。kbengine.config.showFinal 命令可随时手动打开\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#viewing-the-final-config)"
         },
         "kbengine.autoRefreshFinalConfig": {
           "type": "boolean",
           "default": true,
-          "description": "引擎默认配置或元件 kbengine.xml 文件变更/增删后,自动重算并刷新已打开的最终配置视图内容"
+          "markdownDescription": "引擎默认配置或元件 kbengine.xml 文件变更/增删后,自动重算并刷新已打开的最终配置视图内容\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#viewing-the-final-config)"
         },
         "kbengine.finalConfigComments": {
           "type": "boolean",
           "default": true,
-          "description": "合成的最终配置视图(kbengine-final.xml)里为每个配置元素在元素内部加作用注释,并按段内功能子分类排序(查不到含义的自定义项归入「自定义配置」并标「未识别」);注释内容逐条取证自 KBEngine 引擎默认配置与源码,语言跟随 VS Code 显示语言(中文环境出中文注释)。关闭则按原顺序、无注释展示"
+          "markdownDescription": "合成的最终配置视图(kbengine-final.xml)里为每个配置元素在元素内部加作用注释,并按段内功能子分类排序(查不到含义的自定义项归入「自定义配置」并标「未识别」);注释内容逐条取证自 KBEngine 引擎默认配置与源码,语言跟随 VS Code 显示语言(中文环境出中文注释)。关闭则按原顺序、无注释展示\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#final-config-view)"
         },
         "kbengine.debug.remoteTargets": {
           "type": "array",
           "default": [],
-          "description": "远程调试目标列表（「Attach to Remote Component」命令弹出的选择项）。远端组件需已起 debugpy 监听（通常先经 telnet 发开启调试命令），扩展以 debugpy connect 模式附加；条目带成对 localRoot/remoteRoot 时附加配置与 launch.json 远程条目会写 pathMappings，半配或未配则省略。命令 kbengine.debug.attachRemote，同时会把这些目标追加进 launch.json",
           "items": {
             "type": "object",
             "required": [
@@ -1412,17 +1411,18 @@
                 "description": "远端源码根（pathMappings 的 remoteRoot；须与 localRoot 成对提供，半配不生效）"
               }
             }
-          }
+          },
+          "markdownDescription": "远程调试目标列表（「Attach to Remote Component」命令弹出的选择项）。远端组件需已起 debugpy 监听（通常先经 telnet 发开启调试命令），扩展以 debugpy connect 模式附加；条目带成对 localRoot/remoteRoot 时附加配置与 launch.json 远程条目会写 pathMappings，半配或未配则省略。命令 kbengine.debug.attachRemote，同时会把这些目标追加进 launch.json\n\n默认值：空数组（`[]`，不启用任何项）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#remote-debugging)"
         },
         "kbengine.debug.autoDebugpy": {
           "type": "boolean",
           "default": false,
-          "description": "组件启动成功后自动经 telnet :python 层注入 debugpy.listen（逐组件端口 baseapp 5678/cellapp 5679/loginapp 5680/dbmgr 5681/logger 5682，只本机 127.0.0.1；单组件失败只记日志不阻塞启动；注入走 telnet，entitydef/早期 config 阶段已过，进程级第一行断点属二期）。注入前先对所选解释器（kbengine.python.interpreterPath→PATH 链）做 debugpy 预检，缺解释器/缺包/版本过老提前给可操作状态。开启后 kbengine.debug.updateLaunchJson 会为每组件生成 debugpy attach 配置；debugpy 包先用 kbengine.python.debugpySync 命令复制进 <assets>/scripts/common/debugpy"
+          "markdownDescription": "组件启动成功后自动经 telnet :python 层注入 debugpy.listen（逐组件端口 baseapp 5678/cellapp 5679/loginapp 5680/dbmgr 5681/logger 5682，只本机 127.0.0.1；单组件失败只记日志不阻塞启动；注入走 telnet，entitydef/早期 config 阶段已过，进程级第一行断点属二期）。注入前先对所选解释器（kbengine.python.interpreterPath→PATH 链）做 debugpy 预检，缺解释器/缺包/版本过老提前给可操作状态。开启后 kbengine.debug.updateLaunchJson 会为每组件生成 debugpy attach 配置；debugpy 包先用 kbengine.python.debugpySync 命令复制进 <assets>/scripts/common/debugpy\n\n默认值：关闭（`false`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#remote-debugging)"
         },
         "kbengine.debug.waitAtStartup": {
           "type": "boolean",
           "default": false,
-          "description": "启动前等待调试器连接（显式 opt-in，默认关）。开启命令会在入口脚本 scripts/kbengine.py 顶部插入带标记的引导块：组件启动最早期 import debugpy 并 listen + wait_for_client，停在用户入口脚本早期断点之前，不依赖启动后 telnet 注入；组件将停住直到 VS Code 附加对应的 debugpy attach 配置。引导块读环境变量 KODE_DEBUGPY_WAIT_PORT（端口同逐组件分配表，默认实例口径；命名实例暂不覆盖仍走 telnet 注入），无该变量或没有 debugpy 包时静默放行不阻塞启动。关闭命令删除引导块逐字节还原"
+          "markdownDescription": "启动前等待调试器连接（显式 opt-in，默认关）。开启命令会在入口脚本 scripts/kbengine.py 顶部插入带标记的引导块：组件启动最早期 import debugpy 并 listen + wait_for_client，停在用户入口脚本早期断点之前，不依赖启动后 telnet 注入；组件将停住直到 VS Code 附加对应的 debugpy attach 配置。引导块读环境变量 KODE_DEBUGPY_WAIT_PORT（端口同逐组件分配表，默认实例口径；命名实例暂不覆盖仍走 telnet 注入），无该变量或没有 debugpy 包时静默放行不阻塞启动。关闭命令删除引导块逐字节还原\n\n默认值：关闭（`false`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#remote-debugging)"
         },
         "kbengine.debug.sessionEndBehavior": {
           "type": "string",
@@ -1431,17 +1431,21 @@
             "stop-process"
           ],
           "default": "detach",
-          "description": "调试会话结束时对目标进程的行为。detach（默认）：断开调试器，进程照跑，其他实例与未关联进程一律不动。stop-process：只停止该会话附加的那个目标进程（按组件+实例精确定位，同一组件的其他实例不受牵连）；仅对扩展生成的 attach 配置（条目名带目标身份）生效，用户自建调试会话不受影响"
+          "markdownEnumDescriptions": [
+            "detach：断开调试器、目标进程照跑（默认）——附加观察、不惊动现场；其他实例与未关联进程一律不动，误停风险为零。",
+            "stop-process：会话结束时按「组件+实例」精确定位，只停止该会话附加的那个目标进程（同一组件的其他实例不受牵连）；仅对扩展生成的 attach 配置（条目名带目标身份）生效，用户自建调试会话不受影响；适合反复重启单个组件的调试回路。"
+          ],
+          "markdownDescription": "调试会话结束时对目标进程的行为。detach（默认）：断开调试器，进程照跑，其他实例与未关联进程一律不动。stop-process：只停止该会话附加的那个目标进程（按组件+实例精确定位，同一组件的其他实例不受牵连）；仅对扩展生成的 attach 配置（条目名带目标身份）生效，用户自建调试会话不受影响\n\n默认值：`detach`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#remote-debugging)"
         },
         "kbengine.debug.attachTimeoutMs": {
           "type": "number",
           "default": 15000,
-          "description": "附加调试的截止毫秒数（Attach to Component / Attach to Remote Component）。附加期间显示可取消的进度通知：无人监听的端口到点即停掉卡住的调试会话并提示，入口不会永久等待，本次不再重试；进度通知上取消走同一停止路径。0 或负值不限时（等到底，仍可手动取消）"
+          "markdownDescription": "附加调试的截止毫秒数（Attach to Component / Attach to Remote Component）。附加期间显示可取消的进度通知：无人监听的端口到点即停掉卡住的调试会话并提示，入口不会永久等待，本次不再重试；进度通知上取消走同一停止路径。0 或负值不限时（等到底，仍可手动取消）\n\n默认值：`15000`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#remote-debugging)"
         },
         "kbengine.jsoncAssociation": {
           "type": "boolean",
           "default": true,
-          "description": "自动把 \"**/.kbengine/debug.json\": \"jsonc\" 写进工作区 .vscode/settings.json 的 files.associations（debug.json 是带注释的 JSONC，按 json 处理会划红线；WorkspaceFolder 级，只写自己这一个键、已有值不覆盖；kbengine.jsoncAssociation.off 命令可关闭并回收本扩展写入的条目）"
+          "markdownDescription": "自动把 \"**/.kbengine/debug.json\": \"jsonc\" 写进工作区 .vscode/settings.json 的 files.associations（debug.json 是带注释的 JSONC，按 json 处理会划红线；WorkspaceFolder 级，只写自己这一个键、已有值不覆盖；kbengine.jsoncAssociation.off 命令可关闭并回收本扩展写入的条目）\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#remote-debugging)"
         },
         "kbengine.autoStart": {
           "type": "array",
@@ -1450,7 +1454,6 @@
             "logger",
             "dbmgr"
           ],
-          "description": "自动启动的组件列表",
           "items": {
             "type": "string",
             "enum": [
@@ -1464,18 +1467,31 @@
               "cellapp",
               "bots",
               "interfaces"
+            ],
+            "markdownEnumDescriptions": [
+              "machine：网络/进程管理器，组件依赖链的根——绝大多数部署必选，它起不来下游全不起。",
+              "logger：日志收集器——不看日志面板可不选，但排障场景建议保留。",
+              "dbmgr：数据库管理器——用到实体存档（dbms/mysql）必选。",
+              "baseappmgr：baseapp 管理器——有客户端登录/base 侧功能时选。",
+              "cellappmgr：cellapp 管理器——有 cell 侧空间/玩法时选。",
+              "loginapp：登录入口——客户端要登录时选。",
+              "baseapp：base 应用——实体 base 逻辑运行处。",
+              "cellapp：cell 应用——实体 cell 逻辑与空间运行处。",
+              "bots：压测机器人——只在跑机器人压测时选，常规部署不选。",
+              "interfaces：第三方账号/计费接口桥——接了第三方账号系统才需要。"
             ]
-          }
+          },
+          "markdownDescription": "运行「启动服务器」时自动拉起的组件列表：按组件声明序过滤后经依赖就绪图统一启动（machine 启动失败/未就绪时，依赖它的下游组件不再启动，失败沿组传染）。可选值：machine、logger、dbmgr、baseappmgr、cellappmgr、loginapp、baseapp、cellapp、bots、interfaces。影响：只影响一键自动启动面，单组件手动启动不受此列表限制。\n\n默认值：`[\"machine\", \"logger\", \"dbmgr\"]`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#server-and-logs)"
         },
         "kbengine.loggerPort": {
           "type": "number",
           "default": 20022,
-          "description": "KBEngine Logger 端口号（默认 20022）"
+          "markdownDescription": "KBEngine Logger 端口号（默认 20022）\n\n默认值：`20022`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#server-and-logs)"
         },
         "kbengine.logAutoConnect": {
           "type": "boolean",
           "default": true,
-          "description": "启动服务器时自动连接日志收集器"
+          "markdownDescription": "启动服务器时自动连接日志收集器\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#server-and-logs)"
         },
         "kbengine.webviewLocale": {
           "type": "string",
@@ -1484,81 +1500,81 @@
             "zh",
             "en"
           ],
-          "enumDescriptions": [
-            "跟随 VS Code 显示语言(zh-cn/zh-tw → 中文,其余 → 英文)",
-            "中文",
-            "English"
-          ],
           "default": "auto",
-          "description": "Webview 面板显示语言"
+          "markdownDescription": "Webview 面板（日志、telnet、调用链等）显示语言：`auto` 跟随 VS Code 显示语言（zh-cn/zh-tw → 中文，其余 → 英文）；显式 `zh`/`en` 强制覆盖。影响：只改面板文案，不影响编辑器内诊断与悬停输出。\n\n默认值：`auto`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#server-and-logs)",
+          "markdownEnumDescriptions": [
+            "auto：跟随 VS Code 显示语言（zh-cn/zh-tw → 中文，其余 → 英文）（默认）——不想手动管面板语言就选它。",
+            "zh：强制中文面板文案——VS Code 界面是其他语言、但想统一看中文面板时选它。",
+            "en：强制英文面板文案——中文 VS Code 界面下也想统一英文时选它。"
+          ]
         },
         "kbengine.webviewConsoleLogs": {
           "type": "boolean",
           "default": true,
-          "description": "采集日志面板页面 console 与未捕获异常并写入日志面板"
+          "markdownDescription": "采集日志面板页面 console 与未捕获异常并写入日志面板\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#server-and-logs)"
         },
         "kbengine.maxLogEntries": {
           "type": "number",
           "default": 10000,
-          "description": "最大日志条目数"
+          "markdownDescription": "日志面板的内存缓冲上限（条数），超出后从最旧开始丢弃，保证扩展宿主内存有界。影响：调大可回看更久的历史日志但增加内存占用；调小降低内存但丢失早期输出；重启窗口后缓冲清零。\n\n默认值：`10000`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#server-and-logs)"
         },
         "kbengine.generator.defOutputPath": {
           "type": "string",
           "default": "scripts/entity_defs",
-          "description": "代码生成器：.def 文件输出目录"
+          "markdownDescription": "代码生成器：.def 文件输出目录\n\n默认值：`scripts/entity_defs`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#code-generators)"
         },
         "kbengine.generator.pythonOutputPath": {
           "type": "string",
           "default": "scripts",
-          "description": "代码生成器：Python 文件输出目录"
+          "markdownDescription": "代码生成器：Python 文件输出目录\n\n默认值：`scripts`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#code-generators)"
         },
         "kbengine.generator.generatePython": {
           "type": "boolean",
           "default": true,
-          "description": "代码生成器：是否生成 Python 文件"
+          "markdownDescription": "代码生成器：是否生成 Python 文件\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#code-generators)"
         },
         "kbengine.generator.registerInEntitiesXml": {
           "type": "boolean",
           "default": true,
-          "description": "代码生成器：是否在 entities.xml 中自动注册实体"
+          "markdownDescription": "代码生成器：是否在 entities.xml 中自动注册实体\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#code-generators)"
         },
         "kbengine.clientSdk.outputDir": {
           "type": "string",
           "default": "scripts/client_entities",
-          "description": "客户端实体 SDK 生成器的输出目录（相对工作区根；语言清单在命令内选择，默认不覆盖已存在文件）"
+          "markdownDescription": "客户端实体 SDK 生成器的输出目录（相对工作区根；语言清单在命令内选择，默认不覆盖已存在文件）\n\n默认值：`scripts/client_entities`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#kbengineclientsdkoutputdir)"
         },
         "kbengine.telnet.host": {
           "type": "string",
           "default": "127.0.0.1",
-          "description": "telnet 探测目标主机"
+          "markdownDescription": "telnet 探测与连接的目标主机。远程调试引擎时改成引擎所在主机地址。端口与密码不在本键设置——按「本扩展设置 → 元件 kbengine.xml `<telnet_service>` 段 → 引擎 kbengine_defaults.xml」顺序取第一个非空值（见 kbengine.telnet.port 的说明）。\n\n默认值：`127.0.0.1`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#how-the-telnet-portpassword-are-read)"
         },
         "kbengine.telnet.port": {
           "type": "number",
           "default": 0,
-          "description": "telnet 探测端口（0 = 未显式指定，改按元件 kbengine.xml 的 <telnet_service> 段；设置与 kbengine.xml 都未开启 telnet 时，扩展不展示任何 telnet 内容。kbengine.xml 有 <telnet_service> 段但未写端口时，逐组件端口优先读引擎 kbengine_defaults.xml 的 <telnet_service> 段（经 kbengine.binPath 推导 <引擎根>/kbe/res/server/kbengine_defaults.xml），读不到再按引擎默认端口表：loginapp 31000 / dbmgr 32000 / interfaces 33000 / logger 34000 / baseapp 40000 / cellapp 50000 / bots 51000）"
+          "markdownDescription": "telnet 探测端口（0 = 未显式指定，改按元件 kbengine.xml 的 <telnet_service> 段；设置与 kbengine.xml 都未开启 telnet 时，扩展不展示任何 telnet 内容。kbengine.xml 有 <telnet_service> 段但未写端口时，逐组件端口优先读引擎 kbengine_defaults.xml 的 <telnet_service> 段（经 kbengine.binPath 推导 <引擎根>/kbe/res/server/kbengine_defaults.xml），读不到再按引擎默认端口表：loginapp 31000 / dbmgr 32000 / interfaces 33000 / logger 34000 / baseapp 40000 / cellapp 50000 / bots 51000）\n\n默认值：`0`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#how-the-telnet-portpassword-are-read)"
         },
         "kbengine.telnet.password": {
           "type": "string",
           "default": "",
-          "description": "telnet 登录密码（仅用于自动握手写 socket，不写入日志；留空则按元件 kbengine.xml 段 → 引擎 kbengine_defaults.xml 段的顺序回落取密码；都没有则不自动登录，状态灯停在「端口开·未配密码」）"
+          "markdownDescription": "telnet 登录密码（仅用于自动握手写 socket，不写入日志；留空则按元件 kbengine.xml 段 → 引擎 kbengine_defaults.xml 段的顺序回落取密码；都没有则不自动登录，状态灯停在「端口开·未配密码」）\n\n默认值：空（留空即未显式配置，走该键自身的回落/自动行为）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#how-the-telnet-portpassword-are-read)"
         },
         "kbengine.telnet.enableCommands": {
           "type": "array",
           "default": [],
-          "description": "telnet 面板允许发送的命令白名单（精确匹配或「命令 + 空格 + 参数」前缀匹配；:quit 恒被拒绝，会关闭服务端进程）",
           "items": {
             "type": "string"
-          }
+          },
+          "markdownDescription": "telnet 面板允许发送的命令白名单（精确匹配或「命令 + 空格 + 参数」前缀匹配；:quit 恒被拒绝，会关闭服务端进程）\n\n默认值：空数组（`[]`，不启用任何项）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#telnet-probing)"
         },
         "kbengine.telnet.configXmlPath": {
           "type": "string",
           "default": "",
-          "description": "可选：元件 kbengine.xml 路径，解析其 <telnet_service> 段作为端口/密码回落（支持 ${workspaceFolder}；设置显式 port > 0 时优先设置）。未设置时按约定路径探测工作区根：kbengine.xml、res/server/kbengine.xml、assets/res/server/kbengine.xml，取第一个存在的文件。元件配置未写的端口/密码继续向引擎 kbengine_defaults.xml 回落"
+          "markdownDescription": "可选：元件 kbengine.xml 路径，解析其 <telnet_service> 段作为端口/密码回落（支持 ${workspaceFolder}；设置显式 port > 0 时优先设置）。未设置时按约定路径探测工作区根：kbengine.xml、res/server/kbengine.xml、assets/res/server/kbengine.xml，取第一个存在的文件。元件配置未写的端口/密码继续向引擎 kbengine_defaults.xml 回落\n\n默认值：空（留空即未显式配置，走该键自身的回落/自动行为）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#telnet-probing)"
         },
         "kbengine.telnet.probeIntervalSeconds": {
           "type": "number",
           "default": 5,
-          "description": "telnet 端口探测轮询间隔（秒，低频探测）"
+          "markdownDescription": "telnet 端口探测轮询间隔（秒，低频探测）\n\n默认值：`5`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#telnet-probing)"
         },
         "kbengine.httpRequests": {
           "type": "array",
@@ -1575,7 +1591,6 @@
               "keybinding": ""
             }
           ],
-          "description": "HTTP 快捷请求列表（增删改走设置界面列表编辑器，启停=条目 enabled 开关）。模板变量：${module}=按 __init__.py 包边界扫出的模块路径（entities/、fight/ 各带 __init__.py 时 entities/fight/FightAI.py → entities.fight.FightAI；base/cell 等无 __init__.py 的角色目录不算模块段，模块名即文件名去 .py）、${moduleBasename}=末段一层模块名（FightAI）、${filename}=文件名（FightAI.py）、${line}=光标行（1 起）、${sel}=选中文本；另支持 VS Code 官方变量族（${file}=绝对路径/${workspaceFolder}/${workspaceFolderBasename}/${fileBasename}/${fileBasenameNoExtension}/${fileDirname}/${fileExtname}/${relativeFile}/${relativeFileDirname}/${env:NAME}/${cwd}/${userHome}/${pathSeparator}）。变量按字面替换、不做 URL 编码；两表都不认识的占位原样保留；无活动编辑器时各变量为空串。实际快捷键经「键盘快捷方式」为命令 kbengine.httpRequest.run 配 args.name 绑定，条目 keybinding 字段仅作展示",
           "items": {
             "type": "object",
             "required": [
@@ -1612,12 +1627,13 @@
                 "description": "键位展示串（quick pick 详情列显示）"
               }
             }
-          }
+          },
+          "markdownDescription": "HTTP 快捷请求列表（增删改走设置界面列表编辑器，启停=条目 enabled 开关）。模板变量：${module}=按 __init__.py 包边界扫出的模块路径（entities/、fight/ 各带 __init__.py 时 entities/fight/FightAI.py → entities.fight.FightAI；base/cell 等无 __init__.py 的角色目录不算模块段，模块名即文件名去 .py）、${moduleBasename}=末段一层模块名（FightAI）、${filename}=文件名（FightAI.py）、${line}=光标行（1 起）、${sel}=选中文本；另支持 VS Code 官方变量族（${file}=绝对路径/${workspaceFolder}/${workspaceFolderBasename}/${fileBasename}/${fileBasenameNoExtension}/${fileDirname}/${fileExtname}/${relativeFile}/${relativeFileDirname}/${env:NAME}/${cwd}/${userHome}/${pathSeparator}）。变量按字面替换、不做 URL 编码；两表都不认识的占位原样保留；无活动编辑器时各变量为空串。实际快捷键经「键盘快捷方式」为命令 kbengine.httpRequest.run 配 args.name 绑定，条目 keybinding 字段仅作展示\n\n默认值：内置示例条目（一条 `enabled: false` 的热更新请求示例，不会自动发送）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#http-quick-requests)"
         },
         "kbengine.python.interpreterPath": {
           "type": "string",
           "default": "",
-          "description": "Python 解释器路径（绝对路径，支持 ${workspaceFolder} 变量）。项目 profile 记录解释器来源：本设置存在才采用；否则深扫工作区已验证环境（pyvenv.cfg/conda-meta 证据 + 解释器二进制，深度封顶剪枝）；再取 PATH 里的 python3/python；都找不到记录缺失状态（不伪造路径）。状态栏项展示当前解释器（kbengine.python.selectInterpreter 可选择或创建 venv，选中即刻生效）"
+          "markdownDescription": "Python 解释器路径（绝对路径，支持 ${workspaceFolder} 变量）。项目 profile 记录解释器来源：本设置存在才采用；否则深扫工作区已验证环境（pyvenv.cfg/conda-meta 证据 + 解释器二进制，深度封顶剪枝）；再取 PATH 里的 python3/python；都找不到记录缺失状态（不伪造路径）。状态栏项展示当前解释器（kbengine.python.selectInterpreter 可选择或创建 venv，选中即刻生效）\n\n默认值：空（留空即未显式配置，走该键自身的回落/自动行为）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#remote-debugging)"
         },
         "kbengine.python.venvDirectories": {
           "type": "array",
@@ -1629,27 +1645,27 @@
             "venv",
             ".kbenv"
           ],
-          "description": "虚拟环境目录名清单（单段目录名，不含路径分隔符）：快速执行动作启用 venv 且未写 venv.path 时，按此清单在动作目录与配置根逐名探测（动作目录优先）。默认 ['.venv','venv','.kbenv']；非数组或全无效回落默认"
+          "markdownDescription": "虚拟环境目录名清单（单段目录名，不含路径分隔符）：快速执行动作启用 venv 且未写 venv.path 时，按此清单在动作目录与配置根逐名探测（动作目录优先）。默认 ['.venv','venv','.kbenv']；非数组或全无效回落默认\n\n默认值：`[\".venv\", \"venv\", \".kbenv\"]`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#python-integration)"
         },
         "kbengine.python.extraPathsSync": {
           "type": "boolean",
           "default": true,
-          "description": "自动把工作区发现的 KBEngine scripts 根写入 python.analysis.extraPaths（WorkspaceFolder 级；只管理本扩展写入的那一段，用户手填路径不动；无变化不写）"
+          "markdownDescription": "自动把工作区发现的 KBEngine scripts 根写入 python.analysis.extraPaths（WorkspaceFolder 级；只管理本扩展写入的那一段，用户手填路径不动；无变化不写）\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#python-integration)"
         },
         "kbengine.infer.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "启用 pyrefly 无标注函数 stub 推断管道（KODE-CFG-017）：.kbengine/inferred 副本镜像 scripts 树，pyrefly infer 以 .kbengine/stubs（def 真值）为类型环境在副本上写注解；用户真码默认不改"
+          "markdownDescription": "启用 pyrefly 无标注函数 stub 推断管道（KODE-CFG-017）：.kbengine/inferred 副本镜像 scripts 树，pyrefly infer 以 .kbengine/stubs（def 真值）为类型环境在副本上写注解；用户真码默认不改\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#un-annotated-function-stub-inference-2026-11-03-pyrefly)"
         },
         "kbengine.infer.pyreflyPath": {
           "type": "string",
           "default": "",
-          "description": "pyrefly 可执行文件绝对路径（留空则按 PATH 再 ~/.local/bin/pipx 默认位发现；找不到时 kbengine.infer.run 如实提示，功能降级不报错）"
+          "markdownDescription": "pyrefly 可执行文件绝对路径（留空则按 PATH 再 ~/.local/bin/pipx 默认位发现；找不到时 kbengine.infer.run 如实提示，功能降级不报错）\n\n默认值：空（留空即未显式配置，走该键自身的回落/自动行为）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#un-annotated-function-stub-inference-2026-11-03-pyrefly)"
         },
         "kbengine.infer.pythonVersion": {
           "type": "string",
           "default": "3.7",
-          "description": "pyrefly infer --python-version 目标（KBEngine 内嵌解释器版本；官方最小支持 3.5）"
+          "markdownDescription": "pyrefly infer --python-version 目标（KBEngine 内嵌解释器版本；官方最小支持 3.5）\n\n默认值：`3.7`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#un-annotated-function-stub-inference-2026-11-03-pyrefly)"
         },
         "kbengine.infer.sourceWrite": {
           "type": "string",
@@ -1658,37 +1674,41 @@
             "user"
           ],
           "default": "managed",
-          "description": "写权限闸 scope：managed=仅 .kbengine/** 可写（默认）；user=另允许写用户 scripts/**（须用户显式开启；scope 外写一律拒绝不静默）"
+          "markdownEnumDescriptions": [
+            "managed：只允许向 `.kbengine/**` 写入（推断产物/stub 落点），用户 `scripts/**` 只读（默认）——推断器误改业务脚本的风险为零。",
+            "user：在 managed 基础上额外允许写用户 `scripts/**`（须用户显式开启）——确认要让推断器代写脚本实现时才选；scope 外的写一律拒绝、绝不静默。"
+          ],
+          "markdownDescription": "写权限闸 scope：managed=仅 .kbengine/** 可写（默认）；user=另允许写用户 scripts/**（须用户显式开启；scope 外写一律拒绝不静默）\n\n默认值：`managed`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#un-annotated-function-stub-inference-2026-11-03-pyrefly)"
         },
         "kbengine.infer.exclusionsSync": {
           "type": "boolean",
           "default": true,
-          "description": "自动把 .kbengine 从 search.exclude / files.watcherExclude 排除，并在 git 仓根 .gitignore 已存在时幂等追加（绝不创建；SVN/无 VCS 不写任何 git 专属物）"
+          "markdownDescription": "自动把 .kbengine 从 search.exclude / files.watcherExclude 排除，并在 git 仓根 .gitignore 已存在时幂等追加（绝不创建；SVN/无 VCS 不写任何 git 专属物）\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#un-annotated-function-stub-inference-2026-11-03-pyrefly)"
         },
         "kbengine.python.stubExport": {
           "type": "boolean",
           "default": true,
-          "description": "自动把内置 KBEngine Python API 索引导出为 KBEngine.pyi 存根（内容与补全/悬停同源；与 extraPaths 接线配合供 Pylance 解析 import KBEngine；目录见 kbengine.python.stubDir）"
+          "markdownDescription": "自动把内置 KBEngine Python API 索引导出为 KBEngine.pyi 存根（内容与补全/悬停同源；与 extraPaths 接线配合供 Pylance 解析 import KBEngine；目录见 kbengine.python.stubDir）\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#python-integration)"
         },
         "kbengine.python.stubDir": {
           "type": "string",
           "default": "",
-          "description": "`.pyi` 存根目录（留空则用默认约定 .kbengine/stubs，该目录归 kode 自管、内容一致时零写、陈旧才刷新；配了目录则以配置为准并在目录里扫描，已有 .pyi 视为用户资产不覆盖，没有 .pyi 才生成。支持 ${workspaceFolder}/${env:NAME} 等 VS Code 变量；也可用环境变量 KBENGINE_STUB_DIR 指定，设置优先于环境变量）"
+          "markdownDescription": "`.pyi` 存根目录（留空则用默认约定 .kbengine/stubs，该目录归 kode 自管、内容一致时零写、陈旧才刷新；配了目录则以配置为准并在目录里扫描，已有 .pyi 视为用户资产不覆盖，没有 .pyi 才生成。支持 ${workspaceFolder}/${env:NAME} 等 VS Code 变量；也可用环境变量 KBENGINE_STUB_DIR 指定，设置优先于环境变量）\n\n默认值：空（留空即未显式配置，走该键自身的回落/自动行为）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#python-integration)"
         },
         "kbengine.python.enableMroJump": {
           "type": "boolean",
           "default": true,
-          "description": "Python 跨文件 C3-MRO 与 mixin 组合根导航开关，默认开；方法使用处优先寻找 Python 实现，找不到再回退 .def 声明；关闭后不做全仓扫描，保留当前文件继承解析和 .def 导航"
+          "markdownDescription": "Python 跨文件 C3-MRO 与 mixin 组合根导航开关，默认开；方法使用处优先寻找 Python 实现，找不到再回退 .def 声明；关闭后不做全仓扫描，保留当前文件继承解析和 .def 导航\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#jumps-and-navigation)"
         },
         "kbengine.python.enableDataDictIndex": {
           "type": "boolean",
           "default": true,
-          "description": "KBEngine.globalData/baseAppData/cellAppData 跨进程数据字典键索引开关，默认开；键访问写点 `[K]=RHS` 与读点 `[K]`/`.get(K)` 按键签名互链，支持 Shift+F12 引用与 F12 跳转（读点跳写点）；关闭后不查索引，引用/跳转交回常规链"
+          "markdownDescription": "KBEngine.globalData/baseAppData/cellAppData 跨进程数据字典键索引开关，默认开；键访问写点 `[K]=RHS` 与读点 `[K]`/`.get(K)` 按键签名互链，支持 Shift+F12 引用与 F12 跳转（读点跳写点）；关闭后不查索引，引用/跳转交回常规链\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#jumps-and-navigation)"
         },
         "kbengine.python.callChainHints": {
           "type": "boolean",
           "default": true,
-          "description": "Python 实体方法 Call Chain 提示与命令开关，默认开；关闭后不显示链入口，Show Call Chain 也不会生成预览"
+          "markdownDescription": "Python 实体方法 Call Chain 提示与命令开关，默认开；关闭后不显示链入口，Show Call Chain 也不会生成预览\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#jumps-and-navigation)"
         },
         "kbengine.python.callChainView": {
           "type": "string",
@@ -1697,26 +1717,26 @@
             "text"
           ],
           "default": "graph",
-          "enumDescriptions": [
-            "Graph：面板内嵌 mermaid(npm 打包,离线可用)渲染真图",
-            "Text：文本链(兜底视图)"
-          ],
-          "description": "Show Call Chain 面板初始视图，默认 graph；面板内可切 Tab，选择持久到工作区状态并优先于本配置"
+          "markdownDescription": "Show Call Chain 面板初始视图，默认 graph；面板内可切 Tab，选择持久到工作区状态并优先于本配置\n\n默认值：`graph`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#jumps-and-navigation)",
+          "markdownEnumDescriptions": [
+            "graph：面板内嵌 mermaid（npm 打包，离线可用）渲染真图（默认）——链路分支多时更直观；渲染失败可在面板内切回 Text。",
+            "text：文本链兜底视图——大链路或低端机上比图渲染轻；面板内可随时切 Tab，选择持久到工作区状态并优先于本配置。"
+          ]
         },
         "kbengine.python.apiMetadata": {
           "type": "boolean",
           "default": true,
-          "description": "Engine-aware KBEngine API metadata (version, source commit/description and original declaration locations; default enabled). Missing source identity shows unknown instead of invented values"
+          "markdownDescription": "Engine-aware KBEngine API metadata (version, source commit/description and original declaration locations; default enabled). Missing source identity shows unknown instead of invented values\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#jumps-and-navigation)"
         },
         "kbengine.hotReload.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "文件保存/监视时自动触发热更（默认开启；开启后按 globs 各建一个文件监视，配置改动即时生效）。一键关：点击状态栏「热更」项或运行命令 kbengine.hotReload.toggle（写回本配置）。未配 actionName 时保存即发默认热更请求 POST http://127.0.0.1:8090/hotfix?module_name=<模块名>（query 与 body 各带一份 `module_name=<模块名>`，兼容不同服务端实现，同值重复无害），引擎未启动如实显示失败"
+          "markdownDescription": "文件保存/监视时自动触发热更（默认开启；开启后按 globs 各建一个文件监视，配置改动即时生效）。一键关：点击状态栏「热更」项或运行命令 kbengine.hotReload.toggle（写回本配置）。未配 actionName 时保存即发默认热更请求 POST http://127.0.0.1:8090/hotfix?module_name=<模块名>（query 与 body 各带一份 `module_name=<模块名>`，兼容不同服务端实现，同值重复无害），引擎未启动如实显示失败\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#auto-hot-reload)"
         },
         "kbengine.hotReload.actionName": {
           "type": "string",
           "default": "",
-          "description": "要触发的 quickActions 动作名（须在 .kbengine/debug.json 的 quickActions 数组里存在；留空 = 走默认热更请求 POST http://127.0.0.1:8090/hotfix?module_name=<模块名>（body 同带 `module_name=<模块名>`，双带兼容不同服务端实现））"
+          "markdownDescription": "要触发的 quickActions 动作名（须在 .kbengine/debug.json 的 quickActions 数组里存在；留空 = 走默认热更请求 POST http://127.0.0.1:8090/hotfix?module_name=<模块名>（body 同带 `module_name=<模块名>`，双带兼容不同服务端实现））\n\n默认值：空（留空即未显式配置，走该键自身的回落/自动行为）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#auto-hot-reload)"
         },
         "kbengine.hotReload.globs": {
           "type": "array",
@@ -1726,32 +1746,32 @@
           "default": [
             "**/*.py"
           ],
-          "description": "监视的文件匹配模式（VS Code glob；每个模式各建一个文件监视）"
+          "markdownDescription": "监视的文件匹配模式（VS Code glob；每个模式各建一个文件监视）\n\n默认值：`[\"**/*.py\"]`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#auto-hot-reload)"
         },
         "kbengine.hotReload.debounceMs": {
           "type": "number",
           "default": 500,
-          "description": "触发前的去抖毫秒数（连发保存合并成一次触发；0 为不去抖）"
+          "markdownDescription": "触发前的去抖毫秒数（连发保存合并成一次触发；0 为不去抖）\n\n默认值：`500`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#auto-hot-reload)"
         },
         "kbengine.hotReload.tempEdit.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "临时编辑热更新 quick action 总开关（默认关；与自动热更总开关 hotReload.enabled 相互独立——后者默认开，本命令默认关）。开启后命令 kbengine.hotReload.tempEdit.run 才会执行：写入临时编辑 → 按 autoRestore 决定是否还原 → 经既有 quick action 通道（HTTP/终端）发 reloadScript → 结果回显输出/问题通道"
+          "markdownDescription": "临时编辑热更新 quick action 总开关（默认关；与自动热更总开关 hotReload.enabled 相互独立——后者默认开，本命令默认关）。开启后命令 kbengine.hotReload.tempEdit.run 才会执行：写入临时编辑 → 按 autoRestore 决定是否还原 → 经既有 quick action 通道（HTTP/终端）发 reloadScript → 结果回显输出/问题通道\n\n默认值：关闭（`false`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#auto-hot-reload)"
         },
         "kbengine.hotReload.tempEdit.actionName": {
           "type": "string",
           "default": "",
-          "description": "第 3 步 reloadScript 按名触发的 quick action 名（HTTP 或终端动作均可；留空视为配置错误中止，不编辑不发请求）"
+          "markdownDescription": "第 3 步 reloadScript 按名触发的 quick action 名（HTTP 或终端动作均可；留空视为配置错误中止，不编辑不发请求）\n\n默认值：空（留空即未显式配置，走该键自身的回落/自动行为）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#auto-hot-reload)"
         },
         "kbengine.hotReload.tempEdit.autoRestore": {
           "type": "boolean",
           "default": true,
-          "description": "发送 reloadScript 前是否自动还原原始内容；还原失败会中止请求并在问题通道报错（文件停留在临时编辑态需手工处理）"
+          "markdownDescription": "发送 reloadScript 前是否自动还原原始内容；还原失败会中止请求并在问题通道报错（文件停留在临时编辑态需手工处理）\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#auto-hot-reload)"
         },
         "kbengine.hotReload.tempEdit.scriptRoot": {
           "type": "string",
           "default": "",
-          "description": "脚本资源根（双名称解析起点：fullModule=根相对全部目录段+短名，requestModule=直接父目录+短名）；留空则回显模块名未解析，不猜测"
+          "markdownDescription": "脚本资源根（双名称解析起点：fullModule=根相对全部目录段+短名，requestModule=直接父目录+短名）；留空则回显模块名未解析，不猜测\n\n默认值：空（留空即未显式配置，走该键自身的回落/自动行为）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#auto-hot-reload)"
         },
         "kbengine.core.backend": {
           "type": "string",
@@ -1760,34 +1780,34 @@
             "rust",
             "shadow"
           ],
-          "enumDescriptions": [
-            "TS 单轨（默认）：现状真相，Rust 路径完全不参与",
-            "保留值：切流前置条件未全绿前被 serving 门禁拒绝，生效轨道仍是 ts（见 docs/kode2/pr-012.md）",
-            "影子比对：TS 照常服务，同参请求镜像给 kode-server 只记差异日志，Rust 结果不影响任何用户可见行为"
-          ],
           "default": "ts",
-          "description": "双轨后端开关（kill-switch）：默认 ts。任何非 shadow/rust 值（含拼错）一律回落 ts；改回 ts 立即停用 Rust 进程，用户无感回退。"
+          "markdownDescription": "双轨后端开关（kill-switch）：默认 ts。任何非 shadow/rust 值（含拼错）一律回落 ts；改回 ts 立即停用 Rust 进程，用户无感回退。\n\n默认值：`ts`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#dual-track-backend-gate-kode2-rust-core)",
+          "markdownEnumDescriptions": [
+            "ts：TS 单轨（默认）——现状真相，Rust 路径完全不参与；改回 ts 立即停用 Rust 进程，用户无感回退。",
+            "rust：保留值——切流前置条件未全绿前会被 serving 门禁拒绝，生效轨道仍是 ts（见 docs/kode2/pr-012.md）。",
+            "shadow：影子比对——TS 照常服务，同参请求镜像给 kode-server 只记差异日志，Rust 结果不影响任何用户可见行为；用于切流前的等价性验证。"
+          ]
         },
         "kbengine.core.serverPath": {
           "type": "string",
           "default": "",
-          "description": "kode-server 二进制路径（cargo build -p kode-server 产物）。仅在 backend=shadow 时使用；留空则影子比对记 rust-unavailable，不启动进程"
+          "markdownDescription": "kode-server 二进制路径（cargo build -p kode-server 产物）。仅在 backend=shadow 时使用；留空则影子比对记 rust-unavailable，不启动进程\n\n默认值：空（留空即未显式配置，走该键自身的回落/自动行为）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#dual-track-backend-gate-kode2-rust-core)"
         },
         "kbengine.core.shadow.timeoutMs": {
           "type": "number",
           "default": 2000,
           "minimum": 0,
-          "description": "影子比对镜像请求超时（毫秒）：超时只记差异日志 rust-timeout，不影响 TS 服务路径"
+          "markdownDescription": "影子比对镜像请求超时（毫秒）：超时只记差异日志 rust-timeout，不影响 TS 服务路径\n\n默认值：`2000`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#dual-track-backend-gate-kode2-rust-core)"
         },
         "kbengine.entity.builtinProperties": {
           "type": "boolean",
           "default": true,
-          "description": "Entity builtin property hover and self. completion for entity scripts (default: enabled); disabled falls back to the plain symbol chain"
+          "markdownDescription": "Entity builtin property hover and self. completion for entity scripts (default: enabled); disabled falls back to the plain symbol chain\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#entity-script-enhancements-2026-10-21)"
         },
         "kbengine.entity.receiverSections": {
           "type": "boolean",
           "default": true,
-          "description": "Filter def method candidates by receiver section on self.cell./self.base./self.client. hover, go-to-definition and RPC CodeLens (default: enabled); disabled falls back to section-unaware resolution while the def signature (arg/type) gate stays on"
+          "markdownDescription": "Filter def method candidates by receiver section on self.cell./self.base./self.client. hover, go-to-definition and RPC CodeLens (default: enabled); disabled falls back to section-unaware resolution while the def signature (arg/type) gate stays on\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#entity-script-enhancements-2026-10-21)"
         },
         "kbengine.entity.methodStubBody": {
           "type": "string",
@@ -1796,38 +1816,42 @@
             "raise"
           ],
           "default": "pass",
-          "description": "C-19 一键生成实现骨架的体：pass（空体，default）或 raise（raise NotImplementedError）。形参自 .def <Arg> 类型映射（内建注解 int/float/str/bool/bytes，其余裸参数名）"
+          "markdownEnumDescriptions": [
+            "pass：生成空体 `pass`（默认）——先跑通骨架再逐个补实现，调用不报错但也没有实现语义。",
+            "raise：生成 `raise NotImplementedError`——未实现的方法一调用就显式报错，便于发现漏实现；适合生成后立刻逐个补齐的场景。"
+          ],
+          "markdownDescription": "C-19 一键生成实现骨架的体：pass（空体，default）或 raise（raise NotImplementedError）。形参自 .def <Arg> 类型映射（内建注解 int/float/str/bool/bytes，其余裸参数名）\n\n默认值：`pass`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#entity-script-enhancements-2026-10-21)"
         },
         "kbengine.python.stubEngineTypings": {
           "type": "boolean",
           "default": true,
-          "description": "Prefer the full KBEngine.pyi concatenated from a local engine typings checkout over the built-in curated catalog (default: enabled); kbengine.python.stubExport still masters the whole export"
+          "markdownDescription": "Prefer the full KBEngine.pyi concatenated from a local engine typings checkout over the built-in curated catalog (default: enabled); kbengine.python.stubExport still masters the whole export\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#python-integration)"
         },
         "kbengine.python.entityStubMethods": {
           "type": "boolean",
           "default": true,
-          "description": "Include the def method surface (Base/Cell/ClientMethods) in generated entity_types.pyi stubs (default: enabled); disabled keeps the properties-only stub surface"
+          "markdownDescription": "Include the def method surface (Base/Cell/ClientMethods) in generated entity_types.pyi stubs (default: enabled); disabled keeps the properties-only stub surface\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#python-integration)"
         },
         "kbengine.python.builtinTypeInlayHints": {
           "type": "boolean",
           "default": true,
-          "description": "Inline `: <type>` hints after `self.<builtin property>` accesses in entity scripts (default: enabled); double-gated by kbengine.entity.builtinProperties (master switch) and this key, disabled renders no builtin-property inlay hints"
+          "markdownDescription": "Inline `: <type>` hints after `self.<builtin property>` accesses in entity scripts (default: enabled); double-gated by kbengine.entity.builtinProperties (master switch) and this key, disabled renders no builtin-property inlay hints\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#entity-script-enhancements-2026-10-21)"
         },
         "kbengine.types.aliasDiscovery": {
           "type": "boolean",
           "default": true,
-          "description": "Discover custom types from scripts/entity_defs/alias.xml in addition to types.xml (default: enabled); disabled falls back to types.xml only"
+          "markdownDescription": "Discover custom types from scripts/entity_defs/alias.xml in addition to types.xml (default: enabled); disabled falls back to types.xml only\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#entity-script-enhancements-2026-10-21)"
         },
         "kbengine.runtimeQuery.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Enable the Runtime Queries panel operation surface (watcher watch-list add/remove and the result subscription stream; default: disabled). Off keeps the panel to single manual queries"
+          "markdownDescription": "Enable the Runtime Queries panel operation surface (watcher watch-list add/remove and the result subscription stream; default: disabled). Off keeps the panel to single manual queries\n\n默认值：关闭（`false`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#runtime-queries)"
         },
         "kbengine.runtimeQuery.pollIntervalMs": {
           "type": "number",
           "minimum": 500,
           "default": 2000,
-          "description": "Result subscription stream interval in milliseconds for the Runtime Queries panel (default: 2000); applies only when kbengine.runtimeQuery.enabled is on"
+          "markdownDescription": "Result subscription stream interval in milliseconds for the Runtime Queries panel (default: 2000); applies only when kbengine.runtimeQuery.enabled is on\n\n默认值：`2000`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#runtime-queries)"
         }
       }
     },

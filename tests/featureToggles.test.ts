@@ -37,7 +37,7 @@ const hoverText = (hover: unknown): string => {
 describe('package.json 开关注册(默认值断言)', () => {
   const pkg = JSON.parse(
     readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')
-  ) as { contributes: { configuration: { properties: Record<string, { type: string; default: boolean; description: string }> } } };
+  ) as { contributes: { configuration: { properties: Record<string, { type: string; default: boolean; markdownDescription: string }> } } };
   const properties = pkg.contributes.configuration.properties;
 
   const expectedKeys = [
@@ -51,13 +51,14 @@ describe('package.json 开关注册(默认值断言)', () => {
     'kbengine.inlayHints.defParams'
   ];
 
-  it('八枚键逐项注册:boolean、default true、description 标明默认开', () => {
+  it('八枚键逐项注册:boolean、default true、markdownDescription 标明默认开', () => {
     for (const key of expectedKeys) {
       const entry = properties[key];
       expect(entry, key).toBeDefined();
       expect(entry.type).toBe('boolean');
       expect(entry.default, `${key} 默认开`).toBe(true);
-      expect(entry.description.toLowerCase()).toContain('default: enabled');
+      // 2026-11-06 起配置键提示统一 markdownDescription,裸 description 已移除
+      expect(entry.markdownDescription.toLowerCase()).toContain('default: enabled');
     }
   });
 });
