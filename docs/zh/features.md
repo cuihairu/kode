@@ -39,6 +39,7 @@
 - **悬停：def 声明链合并** —— Parent 链 + interfaces + 组件槽整理为一条继承闭包悬停 ——（证据：package.json#configuration `kbengine.hover.defChain`；todo.md:31；src/defChain.ts）
 - **悬停：事件统计** —— 事件常量的注册/监听计数（事件回调反链）——（证据：package.json#configuration `kbengine.hover.eventStats`；src/eventApi.ts）
 - **悬停：服务配置取值** —— kbengine.xml 服务配置项的取值与说明 ——（证据：package.json#configuration `kbengine.hover.serverConfig`；src/serverConfigHover.ts）
+- **悬停文案语言可配置（IDE-I18N-002）** —— 悬停文案语言随 `kbengine.hover.language`（`auto`/`en`/`zh-cn`）：`auto` 在 VS Code 界面语言或系统 locale 为中文、或时区为 UTC+8 时取中文，否则英文；服务配置悬停面已双语化（en/zh 表、逐键回落），其余悬停面逐步接入 ——（证据：package.json#configuration `kbengine.hover.language`；src/hoverLocale.ts `resolveHoverLanguage`/`getHoverLanguage`；src/serverConfigHover.ts `SERVER_CONFIG_FIELD_DOCS_EN`；tests/hoverLocale.test.ts、tests/serverConfigHover.test.ts）
 - **启动参数与启动脚本（KBEXP-1）** —— .sh/.bat 启动脚本分析：悬停/补全 KBEngine 启动参数（CLI `--cid`/`--gus`/`--hide`/`--KBE_ROOT`/`--KBE_RES_PATH`/`--KBE_BIN_PATH`，环境变量 `KBE_ROOT`/`KBE_RES_PATH`/`KBE_BIN_PATH`/`KBE_TIMING_METHOD`/`KBE_COMPONENTID`/`KBE_BOOTIDX_GLOBAL`/`KBE_BOOTIDX_GROUP`/`UID`/`UUID`）出双语文档并附引擎源码行（kbemain.h `parseMainCommandArgs`）；
   启动诊断只对真实服务器进程启动行检查——未知 `--参数`（拼写错）、`--cid`/`--gus` 非数字、`$KBE_RES_PATH`/`$KBE_BIN_PATH`/`$KBE_ROOT` 引用未赋值且未 source——非启动行（echo/pkill/注释）一律不检，`--help` 之类不误报 ——（证据：package.json#configuration `kbengine.startupScriptDiagnostics`、`kbengine.hover.startupScript`；src/kbengineStartupScript.ts；src/extension.ts 悬停/补全/诊断装配；tests/kbengineStartupScript.test.ts；引擎源 kbe/src/lib/server/kbemain.h:238、kbe/src/lib/resmgr/resmgr.cpp:140）
 - **悬停：持久化属性数据库落点** —— 持久化属性显示完整 `` `db`.`tbl`.`col` `` 全名、引擎 DDL 片段与具体限制数值 ——（证据：todo.md:69、todo.md:124；src/databaseSchema.ts `describePropertyDatabaseStorage`）
@@ -352,6 +353,7 @@
 | `kbengine.hover.defChain` | `true` | 悬停显示 def 属性/方法声明链（文件与区块来源） |
 | `kbengine.hover.eventStats` | `true` | 悬停显示事件常量注册/监听统计 |
 | `kbengine.hover.serverConfig` | `true` | 悬停显示 kbengine.xml 服务配置取值与说明 |
+| `kbengine.hover.language` | `"auto"` | 悬停文案语言:auto 探测中文界面语言/系统 locale 或 UTC+8 时区,否则英文;可显式 `en`/`zh-cn`(服务配置悬停面已接入) |
 | `kbengine.hover.startupScript` | `true` | .sh/.bat 启动脚本里 KBEngine 启动参数的悬浮/补全说明——CLI 参数与环境变量,双语附引擎源码行(`--` 补全参数、`KBE_` 补全环境变量) |
 | `kbengine.hover.asyncBudgetMs` | `2500` | 悬停 def 方法 / 接收者调用 / 内建属性三条异步链的总预算（毫秒）；超预算截断该层不再永转，超时行写 LogHub（`[kode-hover][timeout]`）；`<= 0` 关闸（src/hoverBudget.ts、src/languageProviders.ts） |
 | `kbengine.codeLens.rpc` | `true` | Python 实现脚本中 def 声明方法的 RPC 标记 CodeLens |
