@@ -49,10 +49,9 @@ pub struct WireField {
 /// 从 kode-server 推导输出 JSON 构建 [`CloneSchema`](crate::CloneSchema)。
 impl CloneSchema {
     pub fn from_derivation(json: &str) -> CloneResult<Self> {
-        let wire: DerivationWire =
-            serde_json::from_str(json).map_err(|e| CloneError::InvalidRule(format!(
-                "cannot parse kode-server derivation output: {e}"
-            )))?;
+        let wire: DerivationWire = serde_json::from_str(json).map_err(|e| {
+            CloneError::InvalidRule(format!("cannot parse kode-server derivation output: {e}"))
+        })?;
         if wire.tables.is_empty() {
             return Err(CloneError::InvalidRule(
                 "derivation output has no tables".into(),
@@ -91,7 +90,11 @@ impl CloneSchema {
                     .collect();
                 // kode-server 根表 kind 为 "entity"(database_schema.rs),本层以
                 // "root" 归一,使 CloneSchema::new 的「恰一根表」校验成立。
-                let kind = if t.kind == "entity" { "root".to_string() } else { t.kind };
+                let kind = if t.kind == "entity" {
+                    "root".to_string()
+                } else {
+                    t.kind
+                };
                 DerivedTable {
                     name: t.name,
                     kind,
@@ -180,7 +183,8 @@ mod tests {
 
     #[test]
     fn rejects_empty_tables() {
-        let err = CloneSchema::from_derivation(r#"{ "tables": [], "tableIndex": {} }"#).unwrap_err();
+        let err =
+            CloneSchema::from_derivation(r#"{ "tables": [], "tableIndex": {} }"#).unwrap_err();
         assert!(matches!(err, CloneError::InvalidRule(_)));
     }
 }

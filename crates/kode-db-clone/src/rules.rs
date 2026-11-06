@@ -90,7 +90,11 @@ impl RuleSet {
     }
 
     /// 应用关系规则(把声明的关系归为 ExplicitBusiness / Skip / Error)。
-    pub fn apply_relation(&self, entity: &str, property_path: &str) -> CloneResult<Option<RelationRuleAction>> {
+    pub fn apply_relation(
+        &self,
+        entity: &str,
+        property_path: &str,
+    ) -> CloneResult<Option<RelationRuleAction>> {
         for rule in &self.relations {
             if rule.entity == entity && rule.property_path == property_path {
                 return match rule.action {
@@ -116,7 +120,10 @@ impl RuleSet {
     pub fn validate(&self, schema: &CloneSchema) -> CloneResult<()> {
         for rule in &self.projections {
             let table = schema.table_index.get(&rule.table).ok_or_else(|| {
-                CloneError::InvalidRule(format!("projection references unknown table `{}`", rule.table))
+                CloneError::InvalidRule(format!(
+                    "projection references unknown table `{}`",
+                    rule.table
+                ))
             })?;
             let known: Vec<&str> = table.fields.iter().map(|f| f.name.as_str()).collect();
             if let Some(included) = &rule.include_columns {
@@ -140,7 +147,10 @@ impl RuleSet {
         }
         for rule in &self.identities {
             let table = schema.table_index.get(&rule.table).ok_or_else(|| {
-                CloneError::InvalidRule(format!("identity references unknown table `{}`", rule.table))
+                CloneError::InvalidRule(format!(
+                    "identity references unknown table `{}`",
+                    rule.table
+                ))
             })?;
             if !table.fields.iter().any(|f| f.name == rule.column) {
                 return Err(CloneError::InvalidRule(format!(
@@ -229,9 +239,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        let err = rules
-            .apply_relation("Account", "characters")
-            .unwrap_err();
+        let err = rules.apply_relation("Account", "characters").unwrap_err();
         assert!(matches!(err, CloneError::InvalidRule(_)));
     }
 

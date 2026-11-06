@@ -31,10 +31,7 @@ fn error_code_of(out: &[Outgoing]) -> i64 {
 }
 
 fn init(state: &mut ServerState) {
-    handle_message(
-        state,
-        request(0, "initialize", json!({"capabilities": {}})),
-    );
+    handle_message(state, request(0, "initialize", json!({"capabilities": {}})));
 }
 
 /// echo 内建 handler:params 原样回显,验 dispatch 链路贯穿。
@@ -72,7 +69,11 @@ fn unknown_rpc_method_is_method_not_found() {
     init(&mut state);
     let out = handle_message(
         &mut state,
-        request(3, "$/kode/rpc", json!({"method": "$/kode/nope", "params": {}})),
+        request(
+            3,
+            "$/kode/rpc",
+            json!({"method": "$/kode/nope", "params": {}}),
+        ),
     );
     assert_eq!(error_code_of(&out), error_codes::METHOD_NOT_FOUND);
 }
@@ -83,7 +84,11 @@ fn rpc_before_initialize_is_rejected() {
     let mut state = ServerState::new();
     let out = handle_message(
         &mut state,
-        request(4, "$/kode/rpc", json!({"method": "$/kode/echo", "params": {}})),
+        request(
+            4,
+            "$/kode/rpc",
+            json!({"method": "$/kode/echo", "params": {}}),
+        ),
     );
     assert_eq!(error_code_of(&out), error_codes::SERVER_NOT_INITIALIZED);
 }
@@ -234,5 +239,9 @@ fn config_derive_dispatch_parses_tree_and_rejects_bad_shape() {
         Outgoing::Response(r) => r.error.as_ref().expect("应返回错误"),
         Outgoing::Notification(_) => panic!("expected response"),
     };
-    assert!(err.message.contains("应为对象"), "错误文案: {}", err.message);
+    assert!(
+        err.message.contains("应为对象"),
+        "错误文案: {}",
+        err.message
+    );
 }

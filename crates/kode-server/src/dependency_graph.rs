@@ -260,10 +260,19 @@ impl Builder {
     }
 
     fn push_edge(&mut self, from: &str, to: &str, kind: &'static str, label: Option<&str>) {
-        let key = (from.to_string(), to.to_string(), kind, label.map(|s| s.to_string()));
+        let key = (
+            from.to_string(),
+            to.to_string(),
+            kind,
+            label.map(|s| s.to_string()),
+        );
         if self.edge_seen.insert(key) {
-            self.edges
-                .push((from.to_string(), to.to_string(), kind, label.map(|s| s.to_string())));
+            self.edges.push((
+                from.to_string(),
+                to.to_string(),
+                kind,
+                label.map(|s| s.to_string()),
+            ));
         }
     }
 
@@ -296,7 +305,10 @@ impl Builder {
         let d = extract_def(&doc, &text);
         // Parent/Interfaces 双形态覆盖(kode-parser extract_def 只认文本形态)。
         let parent = doc.root().and_then(|r| node_value(&doc, r, "Parent"));
-        let interfaces = doc.root().map(|r| parse_interfaces(&doc, r)).unwrap_or_default();
+        let interfaces = doc
+            .root()
+            .map(|r| parse_interfaces(&doc, r))
+            .unwrap_or_default();
 
         // Parent → inheritance
         if let Some(parent) = parent {
@@ -311,14 +323,23 @@ impl Builder {
         for iface in &interfaces {
             let ik = self.resolve_kind(iface, NodeKind::Interface);
             let to_id = format!("{}:{iface}", ik.as_str());
-            self.ensure_node(&to_id, NodeKind::Interface, iface, &self.def_path_of(iface), None);
+            self.ensure_node(
+                &to_id,
+                NodeKind::Interface,
+                iface,
+                &self.def_path_of(iface),
+                None,
+            );
             self.push_edge(&from_id, &to_id, "is-a", None);
             self.walk_def(iface, NodeKind::Interface);
         }
 
         // Components → has-a(槽名 label)
         for comp in &d.components {
-            let t = comp.component_type.clone().unwrap_or_else(|| comp.name.clone());
+            let t = comp
+                .component_type
+                .clone()
+                .unwrap_or_else(|| comp.name.clone());
             let ck = self.resolve_kind(&t, NodeKind::Component);
             let to_id = format!("{}:{t}", ck.as_str());
             self.ensure_node(&to_id, NodeKind::Component, &t, &self.def_path_of(&t), None);

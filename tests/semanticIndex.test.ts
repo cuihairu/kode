@@ -589,3 +589,16 @@ describe('同名符号跨根稳定性(A6-5,接 PR5 版本轴)', () => {
     }
   });
 });
+
+// KR-AUD-31:entities.xml 判定此前缺 `/` 前缀锚,`xxxentities.xml` 这类
+// 恰好以 entities.xml 结尾的文件被误判为实体注册表。与 types.xml/alias.xml
+// 同口径:必须整段路径段命中(或裸文件名恰为 entities.xml)。
+describe('KR-AUD-31: entities.xml 判定带路径段锚', () => {
+  it('xxxentities.xml 不再误判为 entities-xml', async () => {
+    const { classifySemanticFile } = await import('../src/dependencyGraph');
+    expect(classifySemanticFile('/ws/myxxxentities.xml')).toBe('other');
+    expect(classifySemanticFile('/ws/entities.xml')).toBe('entities-xml');
+    expect(classifySemanticFile('/entities.xml')).toBe('entities-xml');
+    expect(classifySemanticFile('entities.xml')).toBe('entities-xml');
+  });
+});

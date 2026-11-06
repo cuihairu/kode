@@ -41,12 +41,15 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
             Stmt::FunctionDef(f) => out.functions.push(extract_function(ast, f)),
             Stmt::Import(imp) => {
                 for alias in &imp.names {
+                    // KR-AUD-11:`import a.b` 绑定顶层名 `a`(Python 语义;
+                    // 跨文件解析按顶层名匹配),无 asname 时不再取全段 "a.b"。
+                    let binding = alias
+                        .asname
+                        .as_ref()
+                        .map(|n| n.as_str().to_string())
+                        .unwrap_or_else(|| top_level_binding(alias.name.as_str()));
                     out.imports.push(AstImport {
-                        binding: alias
-                            .asname
-                            .as_ref()
-                            .map(|n| n.as_str().to_string())
-                            .unwrap_or_else(|| alias.name.as_str().to_string()),
+                        binding,
                         module: alias.name.as_str().to_string(),
                         symbol: None,
                         line: ast.line_col(imp.range.start().to_u32()).0,
@@ -79,6 +82,12 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
         }
     }
     out
+}
+
+/// `import x.y.z`(无 asname)的绑定名 = 顶层首段 `x`(KR-AUD-11;含 asname
+/// 分支由调用方处理,此处只收无 asname 的全段名)。
+fn top_level_binding(name: &str) -> String {
+    name.split('.').next().unwrap_or(name).to_string()
 }
 
 /// 类名 → 类索引(供 C-19/wt-parity 查类方法)。
@@ -156,7 +165,7 @@ fn extract_function(ast: &ParsedAst, f: &ast::StmtFunctionDef) -> AstFunction {
     }
 }
 
-/// 形参名(posonly → pos → kwonly → vararg → kwarg 顺序;`self` 不计入)。
+/// 形参名(posonly → pos → vararg → kwonly → kwarg 顺序;`self` 不计入)。
 ///
 /// 公开供 kode-server 的 dataflow 消费面复用(同一排序口径,防两套语义漂移)。
 pub fn method_params(p: &ast::Parameters) -> Vec<String> {

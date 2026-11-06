@@ -176,7 +176,8 @@ fn empty_and_invalid_source_tolerant() {
 /// 边全漏);外层函数调用仍由外层走查记录,不重叠。
 #[test]
 fn nested_def_calls_recorded() {
-    let src = "def foo():\n    pass\n\ndef outer():\n    def inner():\n        foo()\n    return 1\n";
+    let src =
+        "def foo():\n    pass\n\ndef outer():\n    def inner():\n        foo()\n    return 1\n";
     let es = edges_of(src);
     let hit = es.iter().find(|e| e.caller == "inner" && e.callee == "foo");
     let e = hit.expect("嵌套函数 inner 内 foo() 应有边");
@@ -206,5 +207,49 @@ fn match_guard_calls_recorded() {
     assert!(
         es.iter().any(|e| e.caller == "f" && e.callee == "foo"),
         "match guard 内 foo() 应有边, got {es:?}"
+    );
+}
+
+/// KR-AUD-20(KODE-AUD-008 残留面):方法体内嵌套 def 此前继承外层
+/// caller_class,产伪 (Foo, inner) 类方法边。修复:嵌套 def 体走查传
+/// caller_class=None——嵌套函数不是外层类的方法。
+#[test]
+fn nested_def_in_method_has_no_class_method_edge_kraud20() {
+    let src = "class Foo:\n    def method(self):\n        def inner():\n            helper()\n        inner()\n\ndef helper():\n    pass\n";
+    let es = edges_of(src);
+    let fake: Vec<&kode_python::CallEdge> = es
+        .iter()
+        .filter(|e| e.caller == "inner" && e.caller_class.is_some())
+        .collect();
+    assert!(fake.is_empty(), "嵌套 def 不应带 caller_class: {fake:#?}");
+    let e = es
+        .iter()
+        .find(|e| e.caller == "inner" && e.callee == "helper")
+        .expect("嵌套 def 体内调用边保持");
+    assert_eq!(e.caller_class, None);
+    // 外层方法的调用边不受影响。
+    assert!(
+        es.iter()
+            .any(|e| e.caller == "method" && e.callee == "inner"),
+        "外层方法走查保持"
+    );
+}
+
+/// KR-AUD-21:口径统一——lambda 体内调用此前归外层 caller,嵌套 def 归自身
+/// (KODE-AUD-008 口径)。统一为 lambda 体同样以自身 "<lambda>" 为 caller,
+/// caller_class=None(与 KR-AUD-20 嵌套 def 不继承 caller_class 同口径)。
+#[test]
+fn lambda_body_calls_recorded_as_own_caller_kraud21() {
+    let src = "def foo():\n    pass\n\ndef outer():\n    f = lambda: foo()\n    return f()\n";
+    let es = edges_of(src);
+    let e = es
+        .iter()
+        .find(|e| e.callee == "foo")
+        .expect("lambda 体内 foo() 应有边");
+    assert_eq!(e.caller, "<lambda>");
+    assert_eq!(e.caller_class, None);
+    assert!(
+        !es.iter().any(|e| e.caller == "outer" && e.callee == "foo"),
+        "lambda 体调用不再归外层 caller: {es:?}"
     );
 }

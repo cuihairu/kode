@@ -34,7 +34,10 @@ fn response_of(out: &[Outgoing]) -> &Value {
 /// 走完整 `$/kode/rpc` 链路调 `$/kode/messageTable/build`,返回表 JSON。
 fn build(params: Value) -> Value {
     let mut state = ServerState::new();
-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
+    handle_message(
+        &mut state,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
     let out = handle_message(
         &mut state,
         request(
@@ -98,8 +101,24 @@ fn empty_def_21_primitives_no_issues() {
     let table = build_single("Empty", "<root></root>");
     assert_eq!(table.get("module").unwrap(), "Empty");
     assert_eq!(methods_of(&table).len(), 0);
-    assert_eq!(table.get("clientMethods").unwrap().as_array().unwrap().len(), 0);
-    assert_eq!(table.get("clientProperties").unwrap().as_array().unwrap().len(), 0);
+    assert_eq!(
+        table
+            .get("clientMethods")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(
+        table
+            .get("clientProperties")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
     assert_eq!(table.get("issues").unwrap().as_array().unwrap().len(), 0);
     assert_eq!(table.get("loadFailed").unwrap(), false);
     assert_eq!(table.get("fatalCount").unwrap(), 0);
@@ -152,10 +171,19 @@ fn method_utype_auto_assign_cell_base_client_order() {
     let mut sorted = client_names.clone();
     sorted.sort();
     assert_eq!(sorted, vec!["onMove", "onUpdate", "reqQuest"]);
-    assert_eq!(method_named(&table, "onTick")["direction"], "server-internal");
+    assert_eq!(
+        method_named(&table, "onTick")["direction"],
+        "server-internal"
+    );
     assert_eq!(method_named(&table, "onTick")["visibleToClient"], false);
-    assert_eq!(method_named(&table, "onMove")["direction"], "client-to-server");
-    assert_eq!(method_named(&table, "onUpdate")["direction"], "server-to-client");
+    assert_eq!(
+        method_named(&table, "onMove")["direction"],
+        "client-to-server"
+    );
+    assert_eq!(
+        method_named(&table, "onUpdate")["direction"],
+        "server-to-client"
+    );
     assert_eq!(method_named(&table, "onMove")["visibleToClient"], true);
 }
 
@@ -295,7 +323,15 @@ fn component_slot_flags_derived_from_component_def() {
     );
     assert_eq!(slot["hasClient"], true);
     // 客户端可见 → 入 clientProperties
-    assert_eq!(table.get("clientProperties").unwrap().as_array().unwrap().len(), 1);
+    assert_eq!(
+        table
+            .get("clientProperties")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 /// 纯 cell 组件(CELL_PRIVATE 仅 cell 域):派生 CELL_PUBLIC,无客户端可见。
@@ -324,7 +360,15 @@ fn component_slot_flags_cell_only_no_client() {
     assert_eq!(slot["flags"], "CELL_PUBLIC");
     assert_eq!(slot["hasClient"], false);
     // 无客户端可见 → 不入 clientProperties
-    assert_eq!(table.get("clientProperties").unwrap().as_array().unwrap().len(), 0);
+    assert_eq!(
+        table
+            .get("clientProperties")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
 }
 
 /// 缺失组件 def:报 component-def-missing 且回落硬编码三域(既有行为)。
@@ -400,7 +444,10 @@ fn component_slot_utype_conflicts_with_property() {
         conflicts[0]["message"],
         "EntityDef::calcDefPropertyUType: E.healthPack, 'Utype' 5 Conflict(E.foo 'Utype' 5)!"
     );
-    assert!(property_named(&table, "healthPack").get("utype").unwrap().is_null());
+    assert!(property_named(&table, "healthPack")
+        .get("utype")
+        .unwrap()
+        .is_null());
 }
 
 /// 组件 def 自身 Parent/Interfaces 递归:父属性 base 域 + 接口 ClientMethods
@@ -489,7 +536,10 @@ fn alias_ids_disabled_are_null() {
       </Properties>\
     </root>";
     let table = build_single("E", def);
-    assert!(property_named(&table, "p").get("aliasID").unwrap().is_null());
+    assert!(property_named(&table, "p")
+        .get("aliasID")
+        .unwrap()
+        .is_null());
 }
 
 #[test]
@@ -627,7 +677,10 @@ fn missing_def_text_is_param_error() {
     // 契约:defText 缺失 → 参数校验错误(非 null result);TS 侧缺文件在调
     // Rust 前已由 loadDef 返回 null 短路,此错误仅防御性。
     let mut state = ServerState::new();
-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
+    handle_message(
+        &mut state,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
     let out = handle_message(
         &mut state,
         request(

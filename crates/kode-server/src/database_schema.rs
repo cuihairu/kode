@@ -140,11 +140,12 @@ fn derive_database_tables(input: BuildParams) -> TablesResult {
         input.has_cell_content,
         &input.table_prefix,
     );
-    let table_index: BTreeMap<String, TableSchema> = tables
-        .iter()
-        .map(|t| (t.name.clone(), t.clone()))
-        .collect();
-    TablesResult { tables, table_index }
+    let table_index: BTreeMap<String, TableSchema> =
+        tables.iter().map(|t| (t.name.clone(), t.clone())).collect();
+    TablesResult {
+        tables,
+        table_index,
+    }
 }
 
 fn build_mysql_table_schemas(
@@ -163,8 +164,20 @@ fn build_mysql_table_schemas(
         parent_table_name: None,
         property_path: Some(entity_name.into()),
         fields: vec![
-            synthetic_field("id", "bigint unsigned", "id", entity_source, Some("PRIMARY")),
-            synthetic_field("sm_autoLoad", "tinyint", "autoLoad", entity_source, Some("INDEX")),
+            synthetic_field(
+                "id",
+                "bigint unsigned",
+                "id",
+                entity_source,
+                Some("PRIMARY"),
+            ),
+            synthetic_field(
+                "sm_autoLoad",
+                "tinyint",
+                "autoLoad",
+                entity_source,
+                Some("INDEX"),
+            ),
         ],
     };
 
@@ -209,7 +222,7 @@ fn append_property_to_table(
     tables: &mut Vec<TableSchema>,
     property: &PropertyNode,
     current_table_name: &str,
-    parent_table_name: &str,
+    _parent_table_name: &str,
     name_chain: &[String],
     entity_has_cell: bool,
     fixed_dict_prefix: &str,
@@ -227,7 +240,15 @@ fn append_property_to_table(
             tables.push(child);
             if let Some(element) = &property.array_element {
                 let child_name = table_name.clone();
-                append_property_to_table(tables, element, &child_name, &child_name, &[], entity_has_cell, "");
+                append_property_to_table(
+                    tables,
+                    element,
+                    &child_name,
+                    &child_name,
+                    &[],
+                    entity_has_cell,
+                    "",
+                );
             }
         }
         "ENTITY_COMPONENT" => {
@@ -272,7 +293,7 @@ fn append_property_to_table(
                         tables,
                         child_property,
                         current_table_name,
-                        parent_table_name,
+                        _parent_table_name,
                         &chain,
                         entity_has_cell,
                         &next_prefix,
@@ -294,7 +315,11 @@ fn append_property_to_table(
     }
 }
 
-fn build_array_table_name(current_table_name: &str, name_chain: &[String], array_name: &str) -> String {
+fn build_array_table_name(
+    current_table_name: &str,
+    name_chain: &[String],
+    array_name: &str,
+) -> String {
     let mut table_name = current_table_name.to_string();
     for segment in name_chain {
         if !segment.is_empty() {
@@ -304,11 +329,19 @@ fn build_array_table_name(current_table_name: &str, name_chain: &[String], array
     }
     // 数组自身名出自标签名或 'value',恒非空。
     table_name.push('_');
-    table_name.push_str(if array_name.is_empty() { "values" } else { array_name });
+    table_name.push_str(if array_name.is_empty() {
+        "values"
+    } else {
+        array_name
+    });
     table_name
 }
 
-fn create_array_table(table_name: &str, parent_table_name: &str, property: &PropertyNode) -> TableSchema {
+fn create_array_table(
+    table_name: &str,
+    parent_table_name: &str,
+    property: &PropertyNode,
+) -> TableSchema {
     let source_path = source_path(property);
     TableSchema {
         name: table_name.into(),
@@ -318,14 +351,36 @@ fn create_array_table(table_name: &str, parent_table_name: &str, property: &Prop
         parent_table_name: Some(parent_table_name.into()),
         property_path: Some(source_path),
         fields: vec![
-            synthetic_field("id", "bigint unsigned", "id", &property.source, Some("PRIMARY")),
-            synthetic_field("parentID", "bigint unsigned", "parentID", &property.source, Some("INDEX")),
-            synthetic_field("sm_autoLoad", "tinyint", "autoLoad", &property.source, Some("INDEX")),
+            synthetic_field(
+                "id",
+                "bigint unsigned",
+                "id",
+                &property.source,
+                Some("PRIMARY"),
+            ),
+            synthetic_field(
+                "parentID",
+                "bigint unsigned",
+                "parentID",
+                &property.source,
+                Some("INDEX"),
+            ),
+            synthetic_field(
+                "sm_autoLoad",
+                "tinyint",
+                "autoLoad",
+                &property.source,
+                Some("INDEX"),
+            ),
         ],
     }
 }
 
-fn create_component_table(table_name: &str, parent_table_name: &str, property: &PropertyNode) -> TableSchema {
+fn create_component_table(
+    table_name: &str,
+    parent_table_name: &str,
+    property: &PropertyNode,
+) -> TableSchema {
     let source_path = source_path(property);
     TableSchema {
         name: table_name.into(),
@@ -335,12 +390,30 @@ fn create_component_table(table_name: &str, parent_table_name: &str, property: &
         parent_table_name: Some(parent_table_name.into()),
         property_path: Some(source_path),
         fields: vec![
-            synthetic_field("id", "bigint unsigned", "id", &property.source, Some("PRIMARY")),
+            synthetic_field(
+                "id",
+                "bigint unsigned",
+                "id",
+                &property.source,
+                Some("PRIMARY"),
+            ),
             // 组件子表同属引擎 child 表(isChild(true),entity_table_mysql.cpp:1525):
             // syncToDB 给全部 child 表追加 parentID 结构列(entity_table_mysql.cpp:
             // 379-380),与 ARRAY 子表同形——TS 派生已含,此处补齐对齐(parity bug #1)。
-            synthetic_field("parentID", "bigint unsigned", "parentID", &property.source, Some("INDEX")),
-            synthetic_field("sm_autoLoad", "tinyint", "autoLoad", &property.source, Some("INDEX")),
+            synthetic_field(
+                "parentID",
+                "bigint unsigned",
+                "parentID",
+                &property.source,
+                Some("INDEX"),
+            ),
+            synthetic_field(
+                "sm_autoLoad",
+                "tinyint",
+                "autoLoad",
+                &property.source,
+                Some("INDEX"),
+            ),
         ],
     }
 }
@@ -398,10 +471,20 @@ fn expand_column_names(property: &PropertyNode, fixed_dict_prefix: &str) -> Vec<
         "VECTOR2" => 2,
         "VECTOR3" => 3,
         "VECTOR4" => 4,
-        _ => return vec![format!("{DB_COLUMN_PREFIX}{fixed_dict_prefix}{}", property.name)],
+        _ => {
+            return vec![format!(
+                "{DB_COLUMN_PREFIX}{fixed_dict_prefix}{}",
+                property.name
+            )]
+        }
     };
     (0..count)
-        .map(|index| format!("{DB_COLUMN_PREFIX}{index}_{fixed_dict_prefix}{}", property.name))
+        .map(|index| {
+            format!(
+                "{DB_COLUMN_PREFIX}{index}_{fixed_dict_prefix}{}",
+                property.name
+            )
+        })
         .collect()
 }
 
@@ -437,7 +520,7 @@ fn resolve_effective_database_length(property: &PropertyNode) -> Option<Number> 
             .database_length
             .as_ref()
             .and_then(Number::as_f64)
-            .map_or(false, |value| value > 0.0);
+            .is_some_and(|value| value > 0.0);
         if has_declared {
             property.database_length.clone()
         } else {

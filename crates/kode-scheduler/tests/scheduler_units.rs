@@ -525,3 +525,32 @@ fn ensure_reentry_correct_after_terminal_eviction() {
     assert_eq!(s.status().queued, 0);
     assert_eq!(s.status().completed, 1102);
 }
+
+/// KR-AUD-22:run 闭包 panic 此前无 catch_unwind——panic 掀翻 pump,任务卡
+/// Running、调度器死锁。修复:panic 按 Failed 终态落账,后续任务照常执行。
+#[test]
+fn run_body_panic_lands_failed_and_scheduler_stays_live_kraud22() {
+    let mut s = Scheduler::default();
+    let boom = s.enqueue(TaskSpec {
+        kind: TaskKind::SingleFileUpdate,
+        priority: 0,
+        file: Some("/a.def".to_string()),
+        version: Some(1),
+        target: None,
+        run: Box::new(|_| panic!("boom")),
+    });
+    let after = s.enqueue(spec(TaskKind::SingleFileUpdate, 0, Some("/b.def"), Some(1)));
+    s.drain(200);
+    assert_eq!(
+        s.task_state(boom.id),
+        Some(kode_scheduler::TaskState::Failed),
+        "panic 应按 Failed 终态落账"
+    );
+    assert_eq!(
+        s.task_state(after.id),
+        Some(kode_scheduler::TaskState::Completed),
+        "panic 后调度器不应卡死"
+    );
+    assert_eq!(s.status().failed, 1);
+    assert_eq!(s.status().completed, 1);
+}

@@ -111,12 +111,18 @@ fn decode_record(line: &str) -> Option<TaskRecord> {
     })
 }
 
+/// 台账临时名 = 完整路径 + ".tmp"(KR-AUD-24:旧实现经 `with_extension`
+/// 拼接,无扩展名路径产出 `journal..tmp` 双点形态)。
+#[doc(hidden)]
+pub fn journal_tmp_path(path: &Path) -> PathBuf {
+    let mut s = path.as_os_str().to_os_string();
+    s.push(JOURNAL_TMP_SUFFIX);
+    PathBuf::from(s)
+}
+
 /// 写台账:临时文件 + 原子 rename;返回写入记录数。
 pub fn write_journal(path: &Path, records: &[TaskRecord]) -> io::Result<usize> {
-    let tmp: PathBuf = path.with_extension(format!(
-        "{}{JOURNAL_TMP_SUFFIX}",
-        path.extension().and_then(|e| e.to_str()).unwrap_or("")
-    ));
+    let tmp = journal_tmp_path(path);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }

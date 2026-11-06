@@ -33,15 +33,17 @@ interface UriMergeState {
   /** 交付时上报的原样路径(尾随补投沿用) */
   fsPath: string;
   deliveredKind: SharedFileEventKind;
-  /** 交付时的盘上版本(mtimeMs:size);stat 不可得为 undefined */
-  deliveredVersion: string | undefined;
+  /** 交付时的盘上版本(mtimeMs:size);stat 不可得为 undefined。
+   *  KR-AUD-30:改异步 fs.stat,promise 在窗口到期核对时 await。 */
+  deliveredVersion: Promise<string | undefined>;
   timer: NodeJS.Timeout;
 }
 
-/** 盘上版本 token:两次 stat 相同 = 同一版本(纯重复);不同 = 有真实写入 */
-const fileVersionToken = (fsPath: string): string | undefined => {
+/** 盘上版本 token(异步):两次 stat 相同 = 同一版本(纯重复);不同 = 有真实写入。
+ *  KR-AUD-30:事件热路径不再 statSync(同步 IO 阻塞主线程),改 promises.stat。 */
+const statVersionToken = async (fsPath: string): Promise<string | undefined> => {
   try {
-    const stats = fs.statSync(fsPath);
+    const stats = await fs.promises.stat(fsPath);
     return `${stats.mtimeMs}:${stats.size}`;
   } catch {
     return undefined;
@@ -72,20 +74,23 @@ export function createSharedFileEventMerger(windowMs: number = DEFAULT_MERGE_WIN
     }
   };
 
-  /** 窗口到期:核对盘上版本,已前进则补投同 kind 尾随事件 */
+  /** 窗口到期:核对盘上版本(KR-AUD-30:异步 stat),已前进则补投同 kind 尾随事件 */
   const endWindow = (identity: string): void => {
     const state = mergeByUri.get(identity);
     if (!state) {
       return;
     }
     mergeByUri.delete(identity);
-    if (state.deliveredKind === 'delete' || state.deliveredVersion === undefined) {
-      return; // 终态或版本不可知:无尾随核对
+    if (state.deliveredKind === 'delete') {
+      return; // 终态:无尾随核对
     }
-    const current = fileVersionToken(state.fsPath);
-    if (current !== undefined && current !== state.deliveredVersion) {
-      deliver(state.fsPath, identity, state.deliveredKind);
-    }
+    void Promise.all([state.deliveredVersion, statVersionToken(state.fsPath)]).then(
+      ([delivered, current]) => {
+        if (delivered !== undefined && current !== undefined && current !== delivered) {
+          deliver(state.fsPath, identity, state.deliveredKind);
+        }
+      }
+    );
   };
 
   const armWindow = (state: UriMergeState, identity: string): void => {
@@ -107,14 +112,14 @@ export function createSharedFileEventMerger(windowMs: number = DEFAULT_MERGE_WIN
         }
         existing.fsPath = fsPath;
         existing.deliveredKind = kind;
-        existing.deliveredVersion = fileVersionToken(fsPath);
+        existing.deliveredVersion = statVersionToken(fsPath);
         deliver(fsPath, identity, kind);
         return;
       }
       const state: UriMergeState = {
         fsPath,
         deliveredKind: kind,
-        deliveredVersion: fileVersionToken(fsPath),
+        deliveredVersion: statVersionToken(fsPath),
         timer: setTimeout(() => { endWindow(identity); }, windowMs)
       };
       mergeByUri.set(identity, state);

@@ -19,9 +19,9 @@ use std::collections::BTreeSet;
 
 use kode_parser::xml::Document;
 
-use crate::lint::{RelatedFace, RuleContext};
 use crate::lint::{make_finding, Finding, Rule};
 use crate::lint::{PythonParityInput, PythonParitySection};
+use crate::lint::{RelatedFace, RuleContext};
 
 /// 三方法段内 (方法元素下标, 段名) 列表(段序 Base → Cell → Client)。
 /// 与 `rules::all_methods_with_section` 同口径;本规则独立持有,避免改动
@@ -47,10 +47,7 @@ fn methods_with_section(doc: &Document) -> Vec<(usize, &'static str)> {
 }
 
 /// 段名 → 该段 Python 上下文(缺失 = 该段无法核验,不产 finding)。
-fn section_input<'a>(
-    py: &'a PythonParityInput,
-    section: &str,
-) -> Option<&'a PythonParitySection> {
+fn section_input<'a>(py: &'a PythonParityInput, section: &str) -> Option<&'a PythonParitySection> {
     match section {
         "base" => py.base.as_ref(),
         "cell" => py.cell.as_ref(),

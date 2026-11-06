@@ -86,7 +86,10 @@ fn walk(dir: &Path, out: &mut Vec<DefInput>) {
 
 /// 按 scripts 子目录归类 def(闭包走查用 category 决定实体优先)。
 fn classify(path: &Path) -> String {
-    let parent = path.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str());
+    let parent = path
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|s| s.to_str());
     match parent {
         Some("entity_defs") => "entity".into(),
         Some("interfaces") => "interface".into(),

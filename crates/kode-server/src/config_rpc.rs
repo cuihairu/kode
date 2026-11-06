@@ -47,7 +47,10 @@ fn config_node_from_json(v: Option<&Value>) -> Result<Option<ConfigNode>, String
     match v {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Object(map)) => Ok(Some(node_from_map(map)?)),
-        Some(other) => Err(format!("tree/defaultsTree 应为对象,得到 {}", kind_of(other))),
+        Some(other) => Err(format!(
+            "tree/defaultsTree 应为对象,得到 {}",
+            kind_of(other)
+        )),
     }
 }
 
@@ -83,9 +86,7 @@ fn node_from_map(map: &Map<String, Value>) -> Result<ConfigNode, String> {
                     .ok_or_else(|| "sourceComments 项应为字符串".to_string())
             })
             .collect::<Result<Vec<_>, _>>()?,
-        Some(other) => {
-            return Err(format!("sourceComments 应为数组,得到 {}", kind_of(other)))
-        }
+        Some(other) => return Err(format!("sourceComments 应为数组,得到 {}", kind_of(other))),
     };
     Ok(ConfigNode {
         name,

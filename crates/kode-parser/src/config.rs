@@ -61,7 +61,10 @@ fn next_token(xml: &str, pos: usize) -> Option<Token> {
     let mut i = pos;
     while i < b.len() {
         if b[i] == b'<' {
-            if b.get(i + 1) == Some(&b'!') && b.get(i + 2) == Some(&b'-') && b.get(i + 3) == Some(&b'-') {
+            if b.get(i + 1) == Some(&b'!')
+                && b.get(i + 2) == Some(&b'-')
+                && b.get(i + 3) == Some(&b'-')
+            {
                 if let Some(close) = find_from(xml, i + 4, "-->") {
                     let body = &xml[i + 4..close];
                     return Some(Token {
@@ -193,7 +196,7 @@ pub fn parse_config(xml: &str) -> Option<ConfigNode> {
                     if top != 0 && arena[top].name == name {
                         stack.pop();
                         if !pending.is_empty() {
-                            arena[top].source_comments.extend(pending.drain(..));
+                            arena[top].source_comments.append(&mut pending);
                         }
                         last_closed = Some(top);
                     }
@@ -209,7 +212,7 @@ pub fn parse_config(xml: &str) -> Option<ConfigNode> {
                     let top = *stack.last().expect("stack never empty");
                     arena[top].children.push(idx);
                     if !pending.is_empty() {
-                        arena[idx].source_comments.extend(pending.drain(..));
+                        arena[idx].source_comments.append(&mut pending);
                     }
                     if !is_self_closing(&attrs) {
                         stack.push(idx);
@@ -228,7 +231,7 @@ pub fn parse_config(xml: &str) -> Option<ConfigNode> {
             arena[0].children.first().copied()
         };
         if let Some(t) = target {
-            arena[t].source_comments.extend(pending.drain(..));
+            arena[t].source_comments.append(&mut pending);
         }
     }
     if arena[0].children.is_empty() {
@@ -254,20 +257,14 @@ pub fn parse_config(xml: &str) -> Option<ConfigNode> {
 fn is_js_ws(c: char) -> bool {
     matches!(
         c,
-        ' ' | '\t'
-            | '\n'
-            | '\u{0b}'
-            | '\u{0c}'
-            | '\r'
-            | '\u{00a0}'
-            | '\u{1680}'
-            | '\u{2000}'..='\u{200a}'
-            | '\u{2028}'
-            | '\u{2029}'
-            | '\u{202f}'
-            | '\u{205f}'
-            | '\u{3000}'
-            | '\u{feff}'
+        ' ' | '\t' | '\n' | '\u{0b}' | '\u{0c}' | '\r' | '\u{00a0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200a}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202f}'
+                | '\u{205f}'
+                | '\u{3000}'
+                | '\u{feff}'
     )
 }
 
@@ -323,7 +320,7 @@ fn merge_source_comments(base: &ConfigNode, over: &ConfigNode) -> Option<Vec<Str
         .chain(base.source_comments.iter())
     {
         let normalized = sanitize_xml_comment(comment);
-        if normalized.is_empty() || seen.iter().any(|s| *s == normalized) {
+        if normalized.is_empty() || seen.contains(&normalized) {
             continue;
         }
         seen.push(normalized);
@@ -345,11 +342,7 @@ fn merge_source_comments(base: &ConfigNode, over: &ConfigNode) -> Option<Vec<Str
 pub fn merge_config_xml(base: &ConfigNode, override_node: &ConfigNode) -> ConfigNode {
     // 名字序:base.children 全序在前,override 新名追加在后(各自保序去重)
     let mut names: Vec<&str> = Vec::new();
-    for child in base
-        .children
-        .iter()
-        .chain(override_node.children.iter())
-    {
+    for child in base.children.iter().chain(override_node.children.iter()) {
         if !names.contains(&child.name.as_str()) {
             names.push(&child.name);
         }
