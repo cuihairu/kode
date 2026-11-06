@@ -1200,7 +1200,7 @@
 - [x] KR-AUD-32 [P3] IDX-8 pythonParser.ts:147-157 `from . import mod` 兄弟模块解析落空（解析侧轻核）。验收：`helper.Cls()` 跳转命中。（对账勾账：3e007fb 修复已落 main）
 - [x] KR-AUD-33 [P3] IDX-9 kbeModuleIndex.ts:408-412 `import os, kbe` 逗号行不注册别名。验收：该写法整文件接管。（对账勾账：add206a 修复已落 main）
 - [x] KR-AUD-34 [P3] IDX-10 workspaceDiscovery.ts:225,279-287 发现链缓存会话内不失效（轻核）。验收：新建 entity_defs 可发现+瞬时失败可重试。（对账勾账：0d436fa 修复已落 main）
-- [ ] KR-AUD-35 [P3] IDX-11 globalDataIndex.ts:2076 rebuild 无界并发。验收：并发上限常量+测试。
+- [x] KR-AUD-35 [P3] IDX-11 globalDataIndex.ts:2076 rebuild 无界并发。验收：并发上限常量+测试。（2026-11-07 修复：rebuild 由 `Promise.all(files.map(indexFile))` 改为有界 worker 池——新增导出常量 `REBUILD_SCAN_CONCURRENCY=8`（与初扫 INITIAL_SCAN_CONCURRENCY 同口径），循环头复核 disposed/generation（与初扫 KR-AUD-29 同口径防升代脏提交）；globalDataIndex.ts:2084-2094。判别测试 tests/globalDataIndex.test.ts 新增 1 例——24 文件 readFile 计数并发峰值断言 ≤8 且 24 键站点全可查防空转假绿；prove-red：修复前峰值=24（无界 Promise.all 实录）红。门禁：tests/globalDataIndex.test.ts 109/109 绿；tsc --noEmit 0 错；eslint 改动 2 文件 4 错全为 HEAD 既有（stash 对拍同数）。ae18d24）
 - [ ] KR-AUD-36 [P3] IDX-12 definitionWorkspace.ts:172-200 布局解析无缓存，悬停热路径多次 existsSync。验收：按 rootConfigGeneration 缓存。
 - [ ] KR-AUD-37 [P3级] IDX-注 pathIdentity 不折叠 `..`/pythonExtraPaths 大小写敏感/noteSaved 每键两遍正则——原稿备注级，未逐项复核，动手前先自行取证。
 - [x] KR-AUD-38 [P1] RT-1=UI-1 logWebView.ts:602-605 title(log.raw)/component 未转义直进 innerHTML——webview XSS。验收：两处 escapeHtml+判别测试（恶意日志行不产生标签）。（159d626;title=log.raw 与 component 全量 escapeHtml,整页 nonce CSP;tests/webviewSecurity.test.ts:86 两面判别恶意 raw/component 不产生标签+无 unsafe-inline;26 文件 602 过|2 跳）
