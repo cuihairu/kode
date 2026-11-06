@@ -154,7 +154,8 @@ describe('discoverLocalComponents identity fallbacks', () => {
     expect(capturedA).toHaveLength(1);
     const requestA = decodeRequest(capturedA[0].raw);
     expect(requestA.messageId).toBe(MACHINE_MSG_QUERY_ALL_INTERFACES);
-    expect(requestA.uid).toBe(4321);
+    // Windows:无 getuid,uid 回落链取 os.userInfo().uid = -1(POSIX 专属口径)
+    expect(requestA.uid).toBe(process.platform === 'win32' ? -1 : 4321);
     expect(requestA.username).toBe('tester');
     // 端口字段按实现语义回填客户端自身绑定端口(网络序字节交换)
     expect(requestA.portField).toBe(swapUint16(capturedA[0].sourcePort));

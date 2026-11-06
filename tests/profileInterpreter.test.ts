@@ -74,7 +74,9 @@ describe('interpreter resolution chain (IDE-PRJ-004)', () => {
       pathEnv: '',
       platform: 'linux'
     });
-    expect(fromSetting).toEqual({ interpreterPath: interpreter, interpreterSource: 'setting' });
+    // WIN-3:产品侧是纯文本 replace(${workspaceFolder}),win32 上产出混合分隔符——同走 normalize 断言
+    expect(path.normalize(fromSetting.interpreterPath ?? '')).toBe(path.normalize(interpreter));
+    expect(fromSetting.interpreterSource).toBe('setting');
 
     // 设置了但文件不存在:不采用,继续走解析链
     const ghostSetting = resolveInterpreterWith({

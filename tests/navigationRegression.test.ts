@@ -314,7 +314,8 @@ describe('管理器路径:约定链落空弹提示、约定链命中真落点', 
       .findIndex(line => line.includes('<Tick'));
     expect(location?.range.start.line).toBe(tickLine);
     expect(
-      messages.info.some(entry => entry.includes('onBeat') && entry.includes('cell/Tick.py'))
+      // (win32 提示里的路径是反斜杠,断言前归一化分隔符)
+      messages.info.some(entry => entry.replace(/\\/g, '/').includes('onBeat') && entry.replace(/\\/g, '/').includes('cell/Tick.py'))
     ).toBe(true);
   });
 
@@ -569,8 +570,8 @@ describe('引擎官方模板形态(base/cell/bots + interface 单数)与生成�
       messages.info.length = 0;
       const location = await probe(heroDef(), '<onGone>', provider);
       expect(location?.uri.fsPath).toBe(p(tmplRoot, 'scripts', 'entities.xml'));
-      expect(messages.info.some(entry => entry.includes('onGone') && entry.includes('bots/Hero.py'))).toBe(true);
-      expect(messages.info.some(entry => entry.includes('scripts/Hero.py'))).toBe(true);
+      expect(messages.info.some(entry => entry.replace(/\\/g, '/').includes('onGone') && entry.replace(/\\/g, '/').includes('bots/Hero.py'))).toBe(true);
+      expect(messages.info.some(entry => entry.replace(/\\/g, '/').includes('scripts/Hero.py'))).toBe(true);
     });
   });
 });

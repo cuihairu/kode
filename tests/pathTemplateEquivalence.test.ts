@@ -82,15 +82,16 @@ describe('路径模板两链等价(renderPathTemplate 单一真源)', () => {
     const expected = path.join(root, 'scripts', 'entity_defs');
 
     // 单一真源先证对
-    expect(renderPathTemplate(setting, root)).toBe(expected);
+    // WIN-3:纯文本替换不走 path.join,win32 上产出混合分隔符——两侧同走 normalize 断言等价
+    expect(path.normalize(renderPathTemplate(setting, root))).toBe(path.normalize(expected));
 
     setEntityDefsPath(setting);
     // 先在**目录尚不存在**时取 layout:def 根此时只能来自候选首项(渲染结果)。
     // 目录一旦先建成,发现兜底约定链会命中 scripts/entity_defs 并把修前的
     // 字面错位路径掩盖成正确值,等价性断言就假绿了。
-    expect(getDefinitionWorkspaceLayout(root).entityDefsRoot).toBe(expected);
+    expect(path.normalize(getDefinitionWorkspaceLayout(root).entityDefsRoot ?? '')).toBe(path.normalize(expected));
     // 发现链(字符串级)
-    expect(resolveAgainstWorkspace(root, setting)).toBe(expected);
+    expect(path.normalize(resolveAgainstWorkspace(root, setting))).toBe(path.normalize(expected));
 
     fs.mkdirSync(expected, { recursive: true });
     // 发现链报告面:渲染后目录才存在;未渲染字面量 `<root>/${workspaceFolder}/...`
@@ -104,8 +105,8 @@ describe('路径模板两链等价(renderPathTemplate 单一真源)', () => {
     const expected = path.join(root, 'scripts', 'entity_defs');
 
     setEntityDefsPath(setting);
-    expect(getDefinitionWorkspaceLayout(root).entityDefsRoot).toBe(expected);
-    expect(resolveAgainstWorkspace(root, setting)).toBe(expected);
+    expect(path.normalize(getDefinitionWorkspaceLayout(root).entityDefsRoot ?? '')).toBe(path.normalize(expected));
+    expect(path.normalize(resolveAgainstWorkspace(root, setting))).toBe(path.normalize(expected));
 
     fs.mkdirSync(expected, { recursive: true });
     expect(discoveryField(setting)?.explicitConfigExists).toBe(true);

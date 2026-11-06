@@ -399,6 +399,11 @@ describe('generateGeneratorForm 附带改写', () => {
     });
     expect(outcome.notes).toEqual([]);
 
+    // WIN-3:首调写下的 components/Inventory.def 在 win32 大小写不敏感 FS 上
+    // 会与 INVENTORY.def 撞主产品文件冲突门,把本测的挂载重复守卫短路掉——
+    // 先移除该组件文件,让两平台都走到 attach 的大小写不敏感重复属性判定。
+    fs.rmSync(path.join(root, 'scripts', 'entity_defs', 'components', 'Inventory.def'), { force: true });
+
     const second = await generateGeneratorForm(
       { kind: 'component', value: { name: 'INVENTORY', properties: [] } },
       root,

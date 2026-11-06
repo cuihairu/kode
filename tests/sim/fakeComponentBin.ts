@@ -110,6 +110,9 @@ const scriptBody = (behavior: FakeComponentBehavior): { shebang: string; body: s
   }
 };
 
+/** WIN-3:win32 cmd→node 冷启动预热只做一次(进程级) */
+let cmdNodePrewarmed = false;
+
 export class FakeComponentBin {
   private constructor(readonly root: string, readonly binPath: string) {}
 
@@ -117,7 +120,18 @@ export class FakeComponentBin {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-fakebin-'));
     const binPath = path.join(root, 'bin');
     fs.mkdirSync(binPath, { recursive: true });
-    return new FakeComponentBin(root, binPath);
+    const bin = new FakeComponentBin(root, binPath);
+    if (process.platform === 'win32' && !cmdNodePrewarmed) {
+      // WIN-3:win32 首次 cmd→node 冷启动(Defender 扫描等)可达秒级,会让
+      // exit(3) 假组件活过宽限期、扰乱依赖门时序——进程内只预热一次
+      cmdNodePrewarmed = true;
+      try {
+        childProcess.execSync('cmd /c node -e "process.exit(0)"', { timeout: 8_000, stdio: 'ignore' });
+      } catch {
+        /* 预热失败不阻塞:后续用例如实暴露 */
+      }
+    }
+    return bin;
   }
 
   /** 生成一个假组件可执行文件,返回其绝对路径 */

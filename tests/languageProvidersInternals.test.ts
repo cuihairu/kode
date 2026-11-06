@@ -823,7 +823,8 @@ describe('def method implementation jumps', () => {
       .split('\n')
       .findIndex(line => line.includes('<Hero'));
     expect(typed.range.start.line).toBe(declaredLine);
-    expect(messages.info.some(entry => entry.includes('onKill') && entry.includes('base/Hero.py'))).toBe(true);
+    // (win32 提示里的路径是反斜杠,断言前归一化分隔符)
+    expect(messages.info.some(entry => entry.replace(/\\/g, '/').includes('onKill') && entry.replace(/\\/g, '/').includes('base/Hero.py'))).toBe(true);
   });
 
   it('falls back to the registry declaration with a hint when the implementation is missing', async () => {
@@ -839,7 +840,7 @@ describe('def method implementation jumps', () => {
       .split('\n')
       .findIndex(line => line.includes('<Hero'));
     expect(typed.range.start.line).toBe(declaredLine);
-    expect(messages.info.some(entry => entry.includes('onKill') && entry.includes('base/Hero.py'))).toBe(true);
+    expect(messages.info.some(entry => entry.replace(/\\/g, '/').includes('onKill') && entry.replace(/\\/g, '/').includes('base/Hero.py'))).toBe(true);
   });
 
   it('jumps to the python implementation when the identity resolves', async () => {

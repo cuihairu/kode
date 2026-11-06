@@ -342,7 +342,8 @@ describe('真 python3+pytest 实跑(格式不是抄文档)', () => {
     expect(entries[1].output).toContain('FAILED');
 
     rmSync(dir, { recursive: true, force: true });
-  });
+  // WIN-3:win32 pytest 冷启动慢,平台化超时
+  }, 30000);
 });
 
 describe('spawnTestProcess(KR-AUD-05 挂死兜底与输出上限)', () => {

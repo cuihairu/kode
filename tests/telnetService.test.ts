@@ -378,18 +378,29 @@ describe('TelnetService 联动会话(真 TCP localhost 仿真)', () => {
       socket.on('end', () => socket.end());
       socket.write('password:');
       let authed = false;
+      // WIN-3:真 TCP 分包不可假设一 chunk=一行(Windows 下 password 与命令
+      // 常被合并/拆散)——按行缓冲切分,每行独立走密码/命令语义
+      let lineBuffer = '';
       socket.on('data', chunk => {
-        const command = chunk.toString().trim();
-        if (!authed) {
-          // 首条下行即密码:回欢迎横幅 + 提示符(引擎握手语义)
-          authed = true;
-          socket.write('Welcome dbmgr\r\n[dbmgr@python ~]# ');
-          return;
-        }
-        if (command === 'getStatus') {
-          socket.write('status: ok\r\n[dbmgr@python ~]# ');
-        } else {
-          socket.write(`echo: ${command}\r\n[dbmgr@python ~]# `);
+        lineBuffer += chunk.toString();
+        let newlineIndex: number;
+        while ((newlineIndex = lineBuffer.indexOf('\n')) >= 0) {
+          const command = lineBuffer.slice(0, newlineIndex).replace(/\r$/, '').trim();
+          lineBuffer = lineBuffer.slice(newlineIndex + 1);
+          if (!command) {
+            continue;
+          }
+          if (!authed) {
+            // 首条下行即密码:回欢迎横幅 + 提示符(引擎握手语义)
+            authed = true;
+            socket.write('Welcome dbmgr\r\n[dbmgr@python ~]# ');
+            continue;
+          }
+          if (command === 'getStatus') {
+            socket.write('status: ok\r\n[dbmgr@python ~]# ');
+          } else {
+            socket.write(`echo: ${command}\r\n[dbmgr@python ~]# `);
+          }
         }
       });
     });
