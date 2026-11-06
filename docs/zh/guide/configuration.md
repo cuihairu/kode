@@ -63,7 +63,9 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 ## kbengine.* 设置项总览(按功能分区)
 
-102 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 76 行的大表。找一个设置,先按功能定位分区,再在区内对行。
+110 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 76 行的大表。找一个设置,先按功能定位分区,再在区内对行。
+
+VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话作用 + 「默认值」段 + 跳回本指南的深链。设置 UI 只渲染 `markdownDescription`(裸 `description` 里的 markdown 不渲染)。`tests/configMarkdownDescription.test.ts` 把 package.json 与本页对账锁定:每键必须有含默认值段的 `markdownDescription`、每个 enum 必须逐选项给说明、提示里的指南链接锚点必须真存在于本页标题。
 
 ### 诊断
 
@@ -170,13 +172,15 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 - 类型:string;默认 `scripts/entity_defs`(相对工作区根)
 - 用途:实体浏览器列表、`entities.xml` 跳转、生成器 `.def` 输出
-- 批125 起未配置/默认路径不存在时自动发现(约定布局 → 深扫描唯一命中 → 多候选激活期询问一次并记忆),配置只作覆盖
+- 批125 起未配置/默认路径不存在时自动发现(约定链 `entity_defs` → `scripts/entity_defs` → `assets/scripts/entity_defs` → `server_assets/scripts/entity_defs`(官方 newassets 布局) → 深扫描唯一命中 → 多候选激活期询问一次并记忆),配置只作覆盖
+- 变量展开:`${workspaceFolder}`/`${env:VAR}` 先展开再相对工作区根拼接(与 `kbengine.binPath` 同一路径模板单一真源)
 - 误配:指错目录则实体浏览器为空
 
 #### `kbengine.entitiesXmlPath`
 
 - 类型:string;默认 `scripts/entities.xml`
 - 用途:依赖图读取与实体注册。项目把注册文件放在自定义位置时改这项
+- 解析顺序:先取 `<def根>/entities.xml`(def 根同级),再按本配置与约定链 `entities.xml` → `scripts/entities.xml` → `assets/scripts/entities.xml` → `server_assets/scripts/entities.xml` 探测
 - 批125 起约定候选全 miss 时深扫描兜底(优先 def 根同父目录),配置只作覆盖
 
 #### `kbengine.binPath`
@@ -211,12 +215,12 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `kbengine.autoStart` | string[] | `["machine","logger","dbmgr"]` | 不带参数启动时拉起的组件。合法值取自组件注册表(`src/serverManager.ts`):`machine`、`logger`、`interfaces`、`dbmgr`、`baseappmgr`、`cellappmgr`、`loginapp`、`baseapp`、`cellapp`、`bots` |
+| `kbengine.autoStart` | string[] | `["machine","logger","dbmgr"]` | 不带参数启动时拉起的组件。合法值取自组件注册表(`src/serverManager.ts`)——每个组件的取舍见设置的 `markdownEnumDescriptions`:`machine`、`logger`、`interfaces`、`dbmgr`、`baseappmgr`、`cellappmgr`、`loginapp`、`baseapp`、`cellapp`、`bots`。列表按组件声明序过滤后经依赖就绪图统一启动——machine 启动失败/未就绪时,依赖它的下游组件不再启动 |
 | `kbengine.loggerPort` | number | `20022` | 日志收集器连接端口,须与引擎 logger 的监听端口一致;不一致时面板连不上(内部按间隔重连) |
 | `kbengine.logAutoConnect` | boolean | `true` | 激活即尝试连接一次 logger;失败静默,走重连 |
 | `kbengine.webviewConsoleLogs` | boolean | `true` | 采集日志面板页面 `console` 输出与未捕获异常,并入同一日志流 |
-| `kbengine.webviewLocale` | `"auto" \| "zh" \| "en"` | `"auto"` | Webview 面板显示语言;`auto` 跟随 VS Code 显示语言(zh-cn/zh-tw → 中文,其余 → 英文) |
-| `kbengine.maxLogEntries` | number | `10000` | 日志 WebView 缓存上限(条)。日志量大调低省内存,想留更长历史调高 |
+| `kbengine.webviewLocale` | `"auto" \| "zh" \| "en"` | `"auto"` | Webview 面板显示语言;`auto` 跟随 VS Code 显示语言(zh-cn/zh-tw → 中文,其余 → 英文);`zh`/`en` 显式强制覆盖。只改面板文案,编辑器内诊断与悬停不受影响 |
+| `kbengine.maxLogEntries` | number | `10000` | 日志 WebView 缓存上限(条)。超出后从最旧开始丢弃,重启窗口缓冲清零。日志量大调低省内存,想留更长历史调高 |
 
 ### 远程调试
 

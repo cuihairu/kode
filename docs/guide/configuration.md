@@ -63,7 +63,9 @@ Two boundaries:
 
 ## Overview of `kbengine.*` Settings (by Feature Area)
 
-The 102 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 76-row table. To find a setting, locate the feature area first, then the row within it.
+The 110 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 76-row table. To find a setting, locate the feature area first, then the row within it.
+
+Every key's tip in the VS Code settings UI is authored as `markdownDescription` — one sentence of purpose, a 「默认值」 (default value) section, and a deep link into this guide. The settings UI renders `markdownDescription` only (markdown inside a bare `description` never renders). `tests/configMarkdownDescription.test.ts` locks package.json against this page: every key must carry `markdownDescription` with a default section, every enum must document every option, and every guide-link anchor must exist as a heading on this page.
 
 ### Diagnostics
 
@@ -170,13 +172,15 @@ The four path settings are "optional overrides": a configured value is honored a
 
 - Type: string; default `scripts/entity_defs` (relative to the workspace root)
 - Used by: the entity explorer list, `entities.xml` navigation, generator `.def` output
-- Since batch 125, when unset or the default path does not exist it auto-discovers (conventional layouts → unique deep-scan hit → multi-candidate asks once during activation and remembers); config serves only as override
+- Since batch 125, when unset or the default path does not exist it auto-discovers (convention chain `entity_defs` → `scripts/entity_defs` → `assets/scripts/entity_defs` → `server_assets/scripts/entity_defs` (official newassets layout) → unique deep-scan hit → multi-candidate asks once during activation and remembers); config serves only as override
+- Variable expansion: `${workspaceFolder}` / `${env:VAR}` are expanded before the value joins against the workspace root (same single-source path renderer as `kbengine.binPath`)
 - Misconfiguration: pointing at the wrong directory leaves the entity explorer empty
 
 #### `kbengine.entitiesXmlPath`
 
 - Type: string; default `scripts/entities.xml`
 - Used by: dependency graph reads and entity registration. Change this when the project puts the registry file in a custom location
+- Resolution order: `<def root>/entities.xml` first (the def root's directory), then this setting and the convention chain `entities.xml` → `scripts/entities.xml` → `assets/scripts/entities.xml` → `server_assets/scripts/entities.xml`
 - Since batch 125, a deep-scan fallback covers all-missed conventions (preferring the def root's parent); config serves only as override
 
 #### `kbengine.binPath`
@@ -211,12 +215,12 @@ The four path settings are "optional overrides": a configured value is honored a
 
 | Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.autoStart` | string[] | `["machine","logger","dbmgr"]` | Components brought up by a start without arguments. Legal values come from the component registry (`src/serverManager.ts`): `machine`, `logger`, `interfaces`, `dbmgr`, `baseappmgr`, `cellappmgr`, `loginapp`, `baseapp`, `cellapp`, `bots` |
+| `kbengine.autoStart` | string[] | `["machine","logger","dbmgr"]` | Components brought up by a start without arguments. Legal values come from the component registry (`src/serverManager.ts`) — each documented in the setting's `markdownEnumDescriptions`: `machine`, `logger`, `interfaces`, `dbmgr`, `baseappmgr`, `cellappmgr`, `loginapp`, `baseapp`, `cellapp`, `bots`. The list is filtered in declared component order and started through the dependency-readiness graph — if `machine` fails or never becomes ready, dependents downstream are not started |
 | `kbengine.loggerPort` | number | `20022` | Log collector connection port; must match the engine logger's listen port — a mismatch leaves the panel unconnected (it retries on an interval internally) |
 | `kbengine.logAutoConnect` | boolean | `true` | Try connecting to the logger once on activation; failure is silent and goes through reconnection |
 | `kbengine.webviewConsoleLogs` | boolean | `true` | Collect the log panel page's `console` output and uncaught exceptions into the same log stream |
-| `kbengine.webviewLocale` | `"auto" \| "zh" \| "en"` | `"auto"` | Webview panel display language; `auto` follows the VS Code display language (zh-cn/zh-tw → Chinese, otherwise English) |
-| `kbengine.maxLogEntries` | number | `10000` | Log WebView cache cap (entries). Lower it to save memory on heavy log volume; raise it to keep longer history |
+| `kbengine.webviewLocale` | `"auto" \| "zh" \| "en"` | `"auto"` | Webview panel display language; `auto` follows the VS Code display language (zh-cn/zh-tw → Chinese, otherwise English); `zh`/`en` force-override. Panel copy only — editor diagnostics and hovers are unaffected |
+| `kbengine.maxLogEntries` | number | `10000` | Log WebView cache cap (entries). Oldest entries are dropped first and the buffer resets on window reload. Lower it to save memory on heavy log volume; raise it to keep longer history |
 
 ### Remote Debugging
 
