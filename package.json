@@ -1126,6 +1126,13 @@
           "scope": "resource",
           "description": "文件 Git 历史查询功能开关（File Git history feature toggle）。默认开启：资源管理器/编辑器右键与命令面板出现「查看文件历史/查看选中范围历史」入口；历史只在用户打开入口时按需查询 Git，绝不在激活、打开文件、光标或选区变化时自动运行 Git，不预取、不轮询。关闭后入口隐藏，直接调用命令也不运行 Git（Enabled by default: adds \"View File History / View Selection History\" entries and queries Git only on demand; when disabled the entries hide and the commands never spawn Git）"
         },
+        "kbengine.clone.archiveEncryption": {
+          "type": "string",
+          "enum": ["encrypted", "plain"],
+          "default": "encrypted",
+          "scope": "window",
+          "markdownDescription": "玩家数据克隆归档加密默认值（Player clone archive encryption default）。`encrypted`（默认）= 导出写 chacha20poly1305 加密归档，密钥存本机 globalStorage `clone-keys/`（0600），归档移机/挪目录后需回原机取钥；`plain` = 导出写明文归档（敏感列仍脱敏），适合需要跨机转移归档的场景。该值只是默认：导出确认页每次可切换（Archive encryption default; the export confirm step can toggle it per run）\n\n默认值：`encrypted`\n\n详见 `docs/player-clone/ops-and-security.md` §2.2"
+        },
         "kbengine.metrics.fileReadDetail": {
           "type": "boolean",
           "default": false,

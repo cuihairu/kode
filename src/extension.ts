@@ -3427,6 +3427,13 @@ export function activate(context: vscode.ExtensionContext) {
     // 归档移机时钥匙不跟走→读侧如实报密钥缺失)。目录由 Rust 侧按需创建;
     // 密钥材料全程留 Rust(FileKeyStore 0600),TS 只传目录路径。
     getKeyRoot: () => vscode.Uri.joinPath(context.globalStorageUri, 'clone-keys').fsPath,
+    // 加密默认值读设置(PDC-0609):window 域,plain=跨机转移场景;导出确认页
+    // 每次可切换,这里只给初始态。读面不受影响(加密位探测定)。
+    getArchiveEncryptionDefault: () =>
+      vscode.workspace.getConfiguration('kbengine.clone').get<string>('archiveEncryption') ===
+      'plain'
+        ? 'plain'
+        : 'encrypted',
     channel: playerCloneChannel,
     now: () => Date.now()
     };

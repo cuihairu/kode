@@ -73,6 +73,12 @@ export interface PlayerCloneCommandDeps {
    * Rust,TS 只传目录路径)。undefined=不加密(测试替身/旧装配兼容)。
    */
   getKeyRoot(): string | undefined;
+  /**
+   * 归档加密默认值(kbengine.clone.archiveEncryption;缺省 = 'encrypted')。
+   * 只作导出确认页的初始态,导出时每次可切换(PDC-0609);读面不受影响
+   * (加密位探测定,明文/加密归档都能读)。
+   */
+  getArchiveEncryptionDefault?(): 'encrypted' | 'plain';
   channel: { appendLine(line: string): void; show(preserveFocus?: boolean): void };
   now(): number;
 }
@@ -85,6 +91,48 @@ const noGateMessage =
 
 function describeCallFailure(what: string, reason: string): string {
   return `${what}失败: ${reason}`;
+}
+
+// ---------------------------------------------------------------------------
+// 0609 导出加密选择(设置默认 + 导出确认页逐次切换)
+// ---------------------------------------------------------------------------
+
+export const EXPORT_CONFIRM_ITEM = '导出(Export)';
+export const EXPORT_CANCEL_ITEM = '取消(Cancel)';
+const ENCRYPTED_LABEL = '加密(本机钥匙)';
+const PLAIN_LABEL = '明文(可跨机转移)';
+
+/**
+ * 导出确认页的加密选择循环:确认项文案携带当前加密态,切换项反复翻转,
+ * 直至导出/取消。confirmed=false 即退出导出流程(取消/关窗)。
+ */
+export async function pickExportEncryption(
+  pick: (
+    items: readonly string[],
+    options: { placeHolder: string }
+  ) => Promise<string | undefined>,
+  queryCount: number,
+  defaultEncrypt: boolean
+): Promise<{ confirmed: boolean; encrypt: boolean }> {
+  let encrypt = defaultEncrypt;
+  for (;;) {
+    const picked = await pick(
+      [
+        `${EXPORT_CONFIRM_ITEM},${encrypt ? ENCRYPTED_LABEL : PLAIN_LABEL}`,
+        `切换加密 → ${encrypt ? PLAIN_LABEL : ENCRYPTED_LABEL}`,
+        EXPORT_CANCEL_ITEM
+      ],
+      { placeHolder: `确认导出 ${queryCount} 条只读查询的结果到归档?` }
+    );
+    if (!picked || picked === EXPORT_CANCEL_ITEM) {
+      return { confirmed: false, encrypt };
+    }
+    if (picked.startsWith('切换加密')) {
+      encrypt = !encrypt;
+      continue;
+    }
+    return { confirmed: true, encrypt };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -285,10 +333,12 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
       deps.channel.appendLine(preview.join('\n'));
       deps.channel.show(true);
 
-      const confirmed = await deps.showQuickPick(['导出(Export)', '取消(Cancel)'], {
-        placeHolder: `确认导出 ${plan.result.queries.length} 条只读查询的结果到归档?`
-      });
-      if (confirmed !== '导出(Export)') {
+      const encryptionChoice = await pickExportEncryption(
+        deps.showQuickPick,
+        plan.result.queries.length,
+        (deps.getArchiveEncryptionDefault?.() ?? 'encrypted') === 'encrypted'
+      );
+      if (!encryptionChoice.confirmed) {
         return;
       }
 
@@ -307,7 +357,7 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
         entityName,
         rows,
         plan.result,
-        deps.getKeyRoot()
+        encryptionChoice.encrypt ? deps.getKeyRoot() : undefined
       );
       if (written.status === 'no-gate') {
         await deps.showErrorMessage(noGateMessage);
@@ -318,7 +368,8 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
         return;
       }
       await deps.showInformationMessage(
-        `导出完成:${written.result.total_rows} 行 → ${savePath}(敏感列已脱敏)。${PERSISTED_NOT_LIVE}`
+        `导出完成:${written.result.total_rows} 行 → ${savePath}(敏感列已脱敏,` +
+          `${encryptionChoice.encrypt ? '归档已加密' : '归档为明文(未加密)'})。${PERSISTED_NOT_LIVE}`
       );
     } finally {
       await connection.end();
