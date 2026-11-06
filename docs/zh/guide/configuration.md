@@ -278,6 +278,8 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 边界:extraPaths 的管理段只认默认约定目录 `.kbengine/stubs`(导出开且 `KBEngine.pyi` 或 `kbe_types.py` 在盘时并入,两份生成物同居一个目录);用户配置的 `kbengine.python.stubDir` 目录不并入管理段,需要时自行加入 `python.analysis.extraPaths`。
 
+Pylance 对 `KBEngine` 这类模块的解析优先级(从高到低):同名 .pyi → stubPath → extraPaths。kode 把这个顺序显式化:接线 `python.analysis.extraPaths` 的同一次同步会写 `python.analysis.stubPath` = `${workspaceFolder}/.kbengine/stubs`(随 `kbengine.managedDir` 同迁,不跟用户自配的 `kbengine.python.stubDir`;且仅在 `kbengine.python.stubExport` 开启时写)。你自己设的 `python.analysis.stubPath` 永不覆盖;现值已对齐时零写入。
+
 ### 代码生成器
 
 | 配置项 | 类型 | 默认值 | 说明 |

@@ -278,6 +278,8 @@ With `kbengine.python.stubDir` left empty (the default), the directory is kode-m
 
 Boundary: the extraPaths managed segment recognizes only the default convention directory `.kbengine/stubs` (joined when export is on and `KBEngine.pyi` or `kbe_types.py` is on disk; both generated artifacts share the one directory); a user-configured `kbengine.python.stubDir` directory does not join the managed segment — add it to `python.analysis.extraPaths` yourself if needed.
 
+Pylance resolution priority for a module like `KBEngine` (highest first): same-name .pyi → stubPath → extraPaths. kode makes that order explicit: the same sync that wires `python.analysis.extraPaths` also writes `python.analysis.stubPath` as `${workspaceFolder}/.kbengine/stubs` (it follows `kbengine.managedDir`, not a custom `kbengine.python.stubDir`, and is only written while `kbengine.python.stubExport` is on). A `python.analysis.stubPath` you set yourself is never overwritten; when it is already aligned, nothing is written.
+
 ### Code Generators
 
 | Setting | Type | Default | Purpose |

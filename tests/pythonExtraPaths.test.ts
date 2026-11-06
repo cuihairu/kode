@@ -3,6 +3,8 @@ import * as vscode from 'vscode';
 import {
   PYTHON_EXTRA_PATHS_MANAGED_KEY,
   PYTHON_EXTRA_PATHS_SETTING,
+  PYTHON_STUB_PATH_MANAGED_KEY,
+  PYTHON_STUB_PATH_SETTING,
   normalizeExtraPath,
   planPythonExtraPaths,
   pythonScriptRootCandidates,
@@ -24,7 +26,8 @@ import {
 // 同步段走替身 workspace.updateWorkspaceConfiguration 记账。
 //
 // CFG-02:生成的条目一律 ${workspaceFolder} 变量形态(工作区可移植),
-// 存量绝对路径带工作区前缀的自动迁移。
+// 存量绝对路径带工作区前缀的自动迁移;CFG-03:显式写
+// python.analysis.stubPath=${workspaceFolder}/.kbengine/stubs。
 
 const memento = new Map<string, unknown>();
 
@@ -324,14 +327,14 @@ describe('syncPythonExtraPaths(装配层)', () => {
     expect(collisionMessage).toContain('不会因顺序跨角色误解析');
   });
 
-  it('写 WorkspaceFolder 级配置并记忆管理段,第二次同步零写入(CFG-02 变量形态)', async () => {
+  it('写 WorkspaceFolder 级配置并记忆管理段,第二次同步零写入(CFG-02 变量形态 + CFG-03 stubPath)', async () => {
     stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
     const deps = { exists: (): boolean => true, listSubdirs: (): string[] => [] };
     const context = makeContext();
 
     await syncPythonExtraPaths(context, deps);
 
-    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(1);
+    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(2);
     expect(workspaceState.workspaceConfigurationUpdates[0]).toEqual({
       key: PYTHON_EXTRA_PATHS_SETTING,
       value: [
@@ -343,6 +346,13 @@ describe('syncPythonExtraPaths(装配层)', () => {
       scope: vscode.ConfigurationTarget.WorkspaceFolder,
       folder: stubWorkspace.workspaceFolders[0]
     });
+    // CFG-03:同一轮同步显式写 python.analysis.stubPath(默认约定目录)
+    expect(workspaceState.workspaceConfigurationUpdates[1]).toEqual({
+      key: PYTHON_STUB_PATH_SETTING,
+      value: '${workspaceFolder}/.kbengine/stubs',
+      scope: vscode.ConfigurationTarget.WorkspaceFolder,
+      folder: stubWorkspace.workspaceFolders[0]
+    });
     const managedKey = `${PYTHON_EXTRA_PATHS_MANAGED_KEY}:/ws`;
     expect(memento.get(managedKey)).toEqual([
       '${workspaceFolder}/scripts',
@@ -350,6 +360,7 @@ describe('syncPythonExtraPaths(装配层)', () => {
       '${workspaceFolder}/server_assets/scripts',
       '${workspaceFolder}/.kbengine/stubs'
     ]);
+    expect(memento.get(`${PYTHON_STUB_PATH_MANAGED_KEY}:/ws`)).toBe('${workspaceFolder}/.kbengine/stubs');
     expect(messages.info[0]).toContain('ws');
 
     configurationOverrides.set('python', {
@@ -358,7 +369,8 @@ describe('syncPythonExtraPaths(装配层)', () => {
         '${workspaceFolder}/assets/scripts',
         '${workspaceFolder}/server_assets/scripts',
         '${workspaceFolder}/.kbengine/stubs'
-      ]
+      ],
+      'analysis.stubPath': '${workspaceFolder}/.kbengine/stubs'
     });
     workspaceState.workspaceConfigurationUpdates.length = 0;
     await syncPythonExtraPaths(context, deps);
@@ -392,7 +404,7 @@ describe('syncPythonExtraPaths(装配层)', () => {
       listSubdirs: (): string[] => []
     });
 
-    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(1);
+    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(2);
     expect(memento.size).toBe(0);
     stubWorkspace.workspaceFolders = [];
   });
@@ -423,7 +435,7 @@ describe('syncPythonExtraPaths(装配层)', () => {
       listSubdirs: (): string[] => []
     }, { silent: true });
 
-    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(1);
+    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(2);
     expect(messages.info).toHaveLength(0);
     stubWorkspace.workspaceFolders = [];
   });
@@ -484,7 +496,7 @@ describe('syncPythonExtraPaths(装配层)', () => {
     stubWorkspace.workspaceFolders = [];
   });
 
-  it('G2 存根导出关闭时,存根文件在盘也不并入', async () => {
+  it('G2 存根导出关闭时,存根文件在盘也不并入,stubPath 也不写', async () => {
     configurationOverrides.set('kbengine', { 'python.stubExport': false });
     stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
     const stubFile = '/ws/.kbengine/stubs/KBEngine.pyi';
@@ -507,7 +519,7 @@ describe('syncPythonExtraPaths(装配层)', () => {
     stubWorkspace.workspaceFolders = [];
   });
 
-  it('G2 存根文件不在盘时(尚未导出),不写不存在的目录', async () => {
+  it('G2 存根文件不在盘时(尚未导出),extraPaths 不写不存在的目录,stubPath 仍显式写', async () => {
     stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
     const deps = {
       exists: (candidate: string): boolean =>
@@ -523,6 +535,46 @@ describe('syncPythonExtraPaths(装配层)', () => {
       '${workspaceFolder}/assets/scripts',
       '${workspaceFolder}/server_assets/scripts'
     ]);
+    expect(workspaceState.workspaceConfigurationUpdates[1]).toMatchObject({
+      key: PYTHON_STUB_PATH_SETTING,
+      value: '${workspaceFolder}/.kbengine/stubs'
+    });
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('用户已自设 python.analysis.stubPath 时永不覆盖(只管自己那段,CFG-03)', async () => {
+    configurationOverrides.set('python', { 'analysis.stubPath': '/my/custom/stubs' });
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+
+    await syncPythonExtraPaths(makeContext(), {
+      exists: (): boolean => true,
+      listSubdirs: (): string[] => []
+    });
+
+    const stubPathWrites = workspaceState.workspaceConfigurationUpdates.filter(
+      entry => entry.key === PYTHON_STUB_PATH_SETTING
+    );
+    expect(stubPathWrites).toHaveLength(0);
+    // extraPaths 照常接线,互不影响
+    expect(workspaceState.workspaceConfigurationUpdates[0].key).toBe(PYTHON_EXTRA_PATHS_SETTING);
+    configurationOverrides.delete('python');
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('stubPath 随 kbengine.managedDir 托管目录同迁(不写死 .kbengine)', async () => {
+    configurationOverrides.set('kbengine', { managedDir: 'kbe-managed' });
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+
+    await syncPythonExtraPaths(makeContext(), {
+      exists: (): boolean => true,
+      listSubdirs: (): string[] => []
+    });
+
+    const stubPathWrite = workspaceState.workspaceConfigurationUpdates.find(
+      entry => entry.key === PYTHON_STUB_PATH_SETTING
+    );
+    expect(stubPathWrite?.value).toBe('${workspaceFolder}/kbe-managed/stubs');
+    configurationOverrides.delete('kbengine');
     stubWorkspace.workspaceFolders = [];
   });
 

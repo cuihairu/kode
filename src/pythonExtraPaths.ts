@@ -14,7 +14,9 @@
  *
  * CFG-02:生成的条目一律 `${workspaceFolder}/...` 变量形态(换机器/换盘符
  * 不失效),存量绝对路径带工作区前缀的在下次同步时自动迁移,不可迁移的
- * 绝对路径由配置契约诊断 extraPathsAbsolute 报。
+ * 绝对路径由配置契约诊断 extraPathsAbsolute 报;CFG-03:同一次同步显式写
+ * `python.analysis.stubPath`(Pylance 三级优先级:同名 .pyi → stubPath →
+ * extraPaths),用户已自设的 stubPath 永不覆盖。
  */
 
 import * as fs from 'fs';
@@ -37,6 +39,9 @@ export const PYTHON_EXTRA_PATHS_SETTING = 'python.analysis.extraPaths';
 export const PYTHON_EXTRA_PATHS_MANAGED_KEY = 'kbengine.python.extraPaths.managed';
 /** 同步开关(kbengine.python.extraPathsSync,默认开) */
 export const PYTHON_EXTRA_PATHS_SYNC_ENABLED_DEFAULT = true;
+/** CFG-03:显式 stubPath 键与「本扩展写过」的记忆键(用户自设值永不覆盖) */
+export const PYTHON_STUB_PATH_SETTING = 'python.analysis.stubPath';
+export const PYTHON_STUB_PATH_MANAGED_KEY = 'kbengine.python.stubPath.managed';
 /** VS Code 工作区变量前缀(CFG-02:生成面一律变量形态,工作区可移植) */
 export const WORKSPACE_FOLDER_VAR = '${workspaceFolder}';
 
@@ -288,6 +293,32 @@ export async function syncPythonExtraPaths(
       // 极简装配上下文没有 workspaceState:写入照做,只是不记忆(下次按首次处理)
       await context.workspaceState?.update(managedKey, plan.managedPaths);
       written.push(folder.name);
+    }
+    // CFG-03:显式写 python.analysis.stubPath(默认约定 ${workspaceFolder}/.kbengine/stubs,
+    // 随 kbengine.managedDir 同迁)——Pylance 三级优先级(同名 .pyi → stubPath →
+    // extraPaths)由此确定。只管自己那段:用户已自设的值永不覆盖;存根导出关
+    // 时 kode 的存根面整个关掉,也不写。与 extraPaths 差量解耦:现值已对齐即零写。
+    if (stubExportEnabled) {
+      const stubPathValue = toWorkspaceFolderVar(kbeStubDir(workspaceRoot, managedDirName), workspaceRoot);
+      const stubPathKey = `${PYTHON_STUB_PATH_MANAGED_KEY}:${workspaceRoot}`;
+      const currentStubPath = scoped.get<string>('analysis.stubPath', '') ?? '';
+      const storedStubPath = context.workspaceState?.get<string>(stubPathKey) ?? '';
+      const owned =
+        currentStubPath === '' ||
+        currentStubPath === storedStubPath ||
+        currentStubPath === stubPathValue;
+      if (owned) {
+        if (currentStubPath !== stubPathValue) {
+          await scoped.update(
+            'analysis.stubPath',
+            stubPathValue,
+            vscode.ConfigurationTarget.WorkspaceFolder
+          );
+        }
+        if (storedStubPath !== stubPathValue) {
+          await context.workspaceState?.update(stubPathKey, stubPathValue);
+        }
+      }
     }
   }
   if (written.length > 0 && !options.silent) {
