@@ -381,6 +381,8 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 | `kbengine.hotReload.tempEdit.autoRestore` | boolean | `true` | 发送 reloadScript 前自动还原原始内容;还原失败即中止请求 |
 | `kbengine.hotReload.tempEdit.scriptRoot` | string | 空 | 双名称解析的脚本资源根(fullModule/requestModule);留空回显模块名未解析,不猜 |
 
+状态栏版本号(HOT-VER):状态栏在五种监视状态之上**正交叠加**每文件版本号——单号(`热更: 就绪 v3`)= 盘上内容与已核验基线一致(已同步),双号(`热更: … v2→v3`)= 基线 → 盘上当前版本(待同步)。版本台账存在热更台账里,**独立于 `enabled` 开关**:监视关着时手动触发路径(`kbengine.hotReload.showFileState`、`kbengine.hotReload.retryFailed`、右键手动跑一次热更动作)照样出号,与开监视时同文件同版本逐字相等——是否在监视范围只看 `globs`,watcher 只是版本簿的默认事件来源,不是前提。不在 `globs` 范围的文件不显版本号;点击状态栏会把版本台账(当前文件、基线版本、盘上版本、每次版本跃迁的时间/attempt/digest 前 8 位/accepted-applied-failed 回执)追加进「KBEngine 热更新」OUTPUT 通道。版本号只数盘上变了几次、标基线在哪,绝不声称重载已生效。
+
 行为口径:
 
 - **三通道都触发**:文件的变更、创建、删除都算保存事件,任一触发都进入去抖。
