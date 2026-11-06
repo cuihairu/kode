@@ -238,12 +238,26 @@ function parseFollowStatus(line: string): FollowStatus | null {
 }
 
 /**
+ * core.quotepath 对控制字符输出的 C 风格命名转义(非八进制)。
+ */
+const C_NAMED_ESCAPES: Record<string, string> = {
+  a: '\x07',
+  b: '\x08',
+  t: '\x09',
+  n: '\x0a',
+  v: '\x0b',
+  f: '\x0c',
+  r: '\x0d'
+};
+
+/**
  * 反解 git `core.quotepath=true` 对非 ASCII/需引号路径的引号转义
  * (审核发现修复):git 会把中文/空格等路径输出为 `"\\344\\270\\255..."`
- * (C 风格八进制转义),pathAtCommit 若保留转义串会让 `git show
- * <commit>:<path>` 取不到版本。仅当整段带引号才反解,普通路径原样返回。
+ * (C 风格八进制转义),制表/换行等控制字符输出为 `"a\\tb"`(C 风格命名转义),
+ * pathAtCommit 若保留转义串会让 `git show <commit>:<path>` 取不到版本。
+ * 仅当整段带引号才反解,普通路径原样返回。导出供测试直测反解语义。
  */
-function unquoteGitPath(raw: string): string {
+export function unquoteGitPath(raw: string): string {
   if (raw.length < 2 || raw[0] !== '"' || raw[raw.length - 1] !== '"') {
     return raw;
   }
@@ -265,6 +279,15 @@ function unquoteGitPath(raw: string): string {
       if (next === '\\' || next === '"') {
         flush();
         out += next;
+        i += 1;
+        continue;
+      }
+      // 控制字符命名转义 \t \n \r \a \b \v \f(审核发现修复:旧实现漏掉,
+      // 保留字面转义串致含控制字符文件名的重命名历史路径错误)
+      const named = C_NAMED_ESCAPES[next];
+      if (named !== undefined) {
+        flush();
+        out += named;
         i += 1;
         continue;
       }
