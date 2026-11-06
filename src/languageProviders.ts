@@ -2197,15 +2197,28 @@ function validateScalarTagValues(
     if (node.name === 'Flags') {
       const rawValue = getNodeValue(node);
       const normalizedValue = rawValue.toUpperCase();
-      if (featureConfig.diagnosticsCheckUnknownFlags && normalizedValue && !knownFlags.has(normalizedValue)) {
-        pushDiagnosticForNodeValue(
-          document,
-          diagnosticsList,
-          node,
-          rawValue,
-          `未知的 KBEngine Flags 值: ${rawValue}。KBEngine 源码按单个映射值解析 <Flags>，不支持此写法。`,
-          vscode.DiagnosticSeverity.Error
-        );
+      if (featureConfig.diagnosticsCheckUnknownFlags && normalizedValue) {
+        // KR-AUD-84:引擎按单个映射值整串查表,不拆词。'|' 组合形态单独出
+        // 「引擎不支持」诊断(与 Rust UnknownFlagValueRule 同文案)。
+        if (rawValue.includes('|')) {
+          pushDiagnosticForNodeValue(
+            document,
+            diagnosticsList,
+            node,
+            rawValue,
+            `未知的 KBEngine Flags 值: ${rawValue}。引擎按单个映射值整串查表，不支持 '|' 组合形态；请改为单个词表值。`,
+            vscode.DiagnosticSeverity.Error
+          );
+        } else if (!knownFlags.has(normalizedValue)) {
+          pushDiagnosticForNodeValue(
+            document,
+            diagnosticsList,
+            node,
+            rawValue,
+            `未知的 KBEngine Flags 值: ${rawValue}。KBEngine 源码按单个映射值解析 <Flags>，不支持此写法。`,
+            vscode.DiagnosticSeverity.Error
+          );
+        }
       }
       return;
     }

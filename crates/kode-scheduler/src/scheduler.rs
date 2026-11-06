@@ -745,6 +745,13 @@ impl Scheduler {
         task.state = TaskState::Cancelled;
         task.cancel_reason = Some(reason.to_string());
         self.cancelled += 1;
+        // 回写 keyed 台账(KR-AUD-90):execute 不会再跑,停留 Queued 会让
+        // 后续 ensure 恒 Reused(死 id,任务永不重跑)。
+        for entry in self.keyed.values_mut() {
+            if entry.id == Some(id) {
+                entry.state = TaskState::Cancelled;
+            }
+        }
         self.record_terminal(id);
         if reason == "stale-version" {
             self.metrics.stale_dropped += 1;

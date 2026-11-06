@@ -554,3 +554,34 @@ fn run_body_panic_lands_failed_and_scheduler_stays_live_kraud22() {
     assert_eq!(s.status().failed, 1);
     assert_eq!(s.status().completed, 1);
 }
+/// KR-AUD-90(RUST-5):keyed 任务被 stale-version/队满淘汰取消后,`cancel_queued`
+/// 必须回写 keyed 台账——execute 不会再跑,条目停留 Queued 会让后续 ensure
+/// 恒 Reused(死 id,任务永不重跑)。
+#[test]
+fn keyed_cancelled_by_newer_version_writes_back_ledger() {
+    let mut s = Scheduler::new(SchedulerOptions::default());
+    let (d1, id1) = s.ensure(
+        "initial-scan",
+        spec(TaskKind::InitialScan, 3, Some("/a.def"), Some(1)),
+    );
+    assert_eq!(d1, EnsureDecision::Queued);
+
+    // 新版本入队 → 同文件旧(刚被 ensure 排的)keyed 任务被 stale-version 取消。
+    let _ = s.enqueue(spec(TaskKind::SingleFileUpdate, 1, Some("/a.def"), Some(2)));
+
+    assert_eq!(
+        s.status()
+            .keyed_tasks
+            .get("initial-scan")
+            .map(String::as_str),
+        Some("cancelled"),
+        "cancel 路径必须回写 keyed 台账(KR-AUD-90)"
+    );
+
+    let (d2, id2) = s.ensure(
+        "initial-scan",
+        spec(TaskKind::InitialScan, 3, Some("/a.def"), Some(3)),
+    );
+    assert_eq!(d2, EnsureDecision::Recovered, "后续 ensure 走恢复路径");
+    assert_ne!(id2, id1, "必须是新任务,而不是死 id 复用");
+}

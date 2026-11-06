@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use kode_scheduler::{load_journal, write_journal, TaskKind, TaskRecord};
+use kode_scheduler::{load_journal, write_journal, TaskKind};
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let dir =

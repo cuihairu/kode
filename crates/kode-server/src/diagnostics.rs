@@ -263,8 +263,19 @@ fn scalar_pass(
         "Type" => validate_type_node(text, doc, node, ctx, out),
         "Flags" => {
             let raw = node_value(doc, node);
+            // KR-AUD-84:整串查表;'|' 组合形态单独出「引擎不支持」诊断
+            // (与 lint/rules.rs UnknownFlagValueRule、TS validateScalarTagValues
+            // 三处同文案)。
             let normalized = raw.to_uppercase();
-            if !normalized.is_empty() && !KNOWN_FLAGS.contains(&normalized.as_str()) {
+            if raw.contains('|') {
+                out.push(DiagnosticFace {
+                    range: value_range(text, data, &raw),
+                    severity: SEVERITY_ERROR,
+                    message: format!(
+                        "未知的 KBEngine Flags 值: {raw}。引擎按单个映射值整串查表，不支持 '|' 组合形态；请改为单个词表值。"
+                    ),
+                });
+            } else if !normalized.is_empty() && !KNOWN_FLAGS.contains(&normalized.as_str()) {
                 out.push(DiagnosticFace {
                     range: value_range(text, data, &raw),
                     severity: SEVERITY_ERROR,

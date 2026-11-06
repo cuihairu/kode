@@ -748,54 +748,53 @@ mod tests {
     }
 }
 
-    #[test]
-    fn component_types_deep_marks_self_reference_cycle_without_infinite_recursion() {
-        // 自引用组件:A 的槽 Type=A → 递归再入 A,旧码无限递归栈溢出;
-        // 修复后以 cycle 标记不再展开,深度有界。
-        let mut kb = AssetKnowledge::default();
-        let text =
-            "<root><Components><selfSlot><Type>A</Type></selfSlot></Components></root>";
-        let model = parse_def(text);
-        kb.defs.insert(
-            "A".into(),
-            ParsedDef {
-                name: "A".into(),
-                category: "component".into(),
-                rel_path: "scripts/entity_defs/components/A.def".into(),
-                text: text.into(),
-                model,
-            },
-        );
-        let out = component_types_deep(&kb, &kb.defs["A"].model, &mut Vec::new());
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0]["type"], "A");
-        // 环标记落在再入层,不再展开 componentTypes。
-        let nested = out[0]["componentTypes"].as_array().unwrap();
-        assert_eq!(nested.len(), 1);
-        assert_eq!(nested[0]["cycle"], true);
-        assert!(nested[0].get("componentTypes").is_none());
-    }
-
-    #[test]
-    fn component_types_deep_marks_mutual_reference_cycle() {
-        // 互引组件 A↔B:A→B→A→B… 旧码无限递归;修复后有界并以 cycle 标记。
-        let mut kb = AssetKnowledge::default();
-        let a_text = "<root><Components><bSlot><Type>B</Type></bSlot></Components></root>";
-        let b_text = "<root><Components><aSlot><Type>A</Type></aSlot></Components></root>";
-        let def = |name: &str, text: &str| ParsedDef {
-            name: name.into(),
+#[test]
+fn component_types_deep_marks_self_reference_cycle_without_infinite_recursion() {
+    // 自引用组件:A 的槽 Type=A → 递归再入 A,旧码无限递归栈溢出;
+    // 修复后以 cycle 标记不再展开,深度有界。
+    let mut kb = AssetKnowledge::default();
+    let text = "<root><Components><selfSlot><Type>A</Type></selfSlot></Components></root>";
+    let model = parse_def(text);
+    kb.defs.insert(
+        "A".into(),
+        ParsedDef {
+            name: "A".into(),
             category: "component".into(),
-            rel_path: format!("scripts/entity_defs/components/{name}.def"),
+            rel_path: "scripts/entity_defs/components/A.def".into(),
             text: text.into(),
-            model: parse_def(text),
-        };
-        kb.defs.insert("A".into(), def("A", a_text));
-        kb.defs.insert("B".into(), def("B", b_text));
-        let out = component_types_deep(&kb, &kb.defs["A"].model, &mut Vec::new());
-        // A→B→A→B:第二层 B 的 bSlot 命中路径上的 B → cycle。
-        assert_eq!(out[0]["type"], "B");
-        let lvl2 = out[0]["componentTypes"].as_array().unwrap();
-        assert_eq!(lvl2[0]["type"], "A");
-        let lvl3 = lvl2[0]["componentTypes"].as_array().unwrap();
-        assert_eq!(lvl3[0]["cycle"], true);
-    }
+            model,
+        },
+    );
+    let out = component_types_deep(&kb, &kb.defs["A"].model, &mut Vec::new());
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0]["type"], "A");
+    // 环标记落在再入层,不再展开 componentTypes。
+    let nested = out[0]["componentTypes"].as_array().unwrap();
+    assert_eq!(nested.len(), 1);
+    assert_eq!(nested[0]["cycle"], true);
+    assert!(nested[0].get("componentTypes").is_none());
+}
+
+#[test]
+fn component_types_deep_marks_mutual_reference_cycle() {
+    // 互引组件 A↔B:A→B→A→B… 旧码无限递归;修复后有界并以 cycle 标记。
+    let mut kb = AssetKnowledge::default();
+    let a_text = "<root><Components><bSlot><Type>B</Type></bSlot></Components></root>";
+    let b_text = "<root><Components><aSlot><Type>A</Type></aSlot></Components></root>";
+    let def = |name: &str, text: &str| ParsedDef {
+        name: name.into(),
+        category: "component".into(),
+        rel_path: format!("scripts/entity_defs/components/{name}.def"),
+        text: text.into(),
+        model: parse_def(text),
+    };
+    kb.defs.insert("A".into(), def("A", a_text));
+    kb.defs.insert("B".into(), def("B", b_text));
+    let out = component_types_deep(&kb, &kb.defs["A"].model, &mut Vec::new());
+    // A→B→A→B:第二层 B 的 bSlot 命中路径上的 B → cycle。
+    assert_eq!(out[0]["type"], "B");
+    let lvl2 = out[0]["componentTypes"].as_array().unwrap();
+    assert_eq!(lvl2[0]["type"], "A");
+    let lvl3 = lvl2[0]["componentTypes"].as_array().unwrap();
+    assert_eq!(lvl3[0]["cycle"], true);
+}
