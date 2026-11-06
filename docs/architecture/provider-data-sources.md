@@ -55,7 +55,6 @@
 | KBEngineDefPythonParityCodeActionProvider | languageProviders.ts:6058 | :1776 | 诊断面(context.diagnostics,code=def-method-missing-in-python)+双向定位面(目标 Python 文件/类)+当前文档 def 结构(签名类型映射) | 编辑提案(WorkspaceEdit,类尾插方法骨架) |
 | KBEngineReceiverNoneGuardCodeActionProvider | languageProviders.ts:5594 | :1784 | 诊断面(context.diagnostics,code=kbengine.receiverNone)+当前文档文本 | 编辑提案(WorkspaceEdit,包裹式首选+早退式) |
 | HotReloadFileStateCodeLensProvider | hotReloadFileStateLens.ts:43 | :4456 | HotReloadFileStateMachine 派生视图(台账事实源,IDE-HOT-100) | 纯读;状态点点击命令 kbengine.hotReload.showFileState |
-| PlayerDataTreeProvider | playerDataPanel.ts:108 | :3465 | CloneProfileStore(configDerive 缓存)+ databaseDrift 只读执行器(MySQL 档案,CLONE-P5) | 纯读(零编辑字段);刷新命令 kbengine.playerData.refresh |
 
 命令查询面(非 register\*Provider,同口径记录):符号引用面板 `kbengine.symbolReferences.show` 走 defReferenceGraph 自定义引用图(与 LSP references provider 并存);实体依赖图 `kbengine.dependency.show` 走 dependencyGraph.ts + webview。数据源同为 EntityMappingManager 快照,副作用限于 webview。
 
@@ -83,6 +82,7 @@
 | FinalConfigTreeProvider | serverConfigMerge.ts:2808 | :2756 | kbengine.xml 合成树 | 树刷新事件 |
 | GitHistoryTreeProvider | gitHistoryTree.ts:165 | :4089 | GitCommitLog 分页(IDE-GIT-004,仅用户入口按需查询;空闲零 Git),经共享查询门(IDE-GIT-011:去重/并发上限 2 且范围追踪 1/有界队列/LRU 缓存/视图隐藏-禁用-卸载取消) | 树刷新事件 + 用户触发「加载下一页」 |
 | GitRangeHistoryTreeProvider | gitRangeHistoryTree.ts:208 | :4140 | 选区→HEAD 行段映射(IDE-GIT-008)+ 逐提交修改时间线(IDE-GIT-009,仅用户入口按需查询;空闲零 Git,不挂编辑器切换/选区监听),经共享查询门(IDE-GIT-011,重复选区只留最新) | 树刷新事件(标题随状态) |
+| PlayerDataTreeProvider | playerDataPanel.ts:108 | :3471 | Rust derive_database 单一真源的 mysql 连接 profile(`configDerive.getDerivedDatabaseProfile`,零手填/改写)+ databaseDrift 只读执行器(连接测试 `SELECT 1`、按 dbid 只读 SELECT;语句白名单 + READ ONLY 会话双保险,CLONE-P5 骨架) | 树刷新事件;只读查询输出到「KBEngine 玩家数据(只读)」通道,零写入;密码永不出值(掩码标记) |
 
 ### 2d. 文件树角标 provider(vscode.window.registerFileDecorationProvider,IDE-HOT-100)
 

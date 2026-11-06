@@ -68,12 +68,15 @@ describe('extraPaths plan isolation (IDE-PRJ-006)', () => {
       deps
     });
 
-    expect(plan.nextPaths).toEqual(['/ws/scripts']);
-    expect(plan.managedPaths).toEqual(['/ws/scripts']);
+    // CFG-02:条目为 ${workspaceFolder} 变量形态
+    expect(plan.nextPaths).toEqual(['${workspaceFolder}/scripts']);
+    expect(plan.managedPaths).toEqual(['${workspaceFolder}/scripts']);
     // 角色目录在盘上也不进合并列表:base/Avatar 与 cell/Avatar 不会因
     // extraPaths 顺序跨角色误解析
     expect(plan.nextPaths).not.toContain('/ws/scripts/base');
     expect(plan.nextPaths).not.toContain('/ws/scripts/cell');
+    expect(plan.nextPaths).not.toContain('${workspaceFolder}/scripts/base');
+    expect(plan.nextPaths).not.toContain('${workspaceFolder}/scripts/cell');
   });
 
   it('user-entered role dirs are left untouched (own-segment-only policy)', () => {
@@ -90,6 +93,7 @@ describe('extraPaths plan isolation (IDE-PRJ-006)', () => {
     });
 
     // 用户手填的角色目录不动(只管自己那段);本扩展管理段只收 scripts 根
-    expect(plan.nextPaths).toEqual(['/my/base', '/ws/scripts']);
+    // (CFG-02 变量形态;/my/base 无工作区前缀,原样保留)
+    expect(plan.nextPaths).toEqual(['/my/base', '${workspaceFolder}/scripts']);
   });
 });

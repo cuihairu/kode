@@ -207,3 +207,55 @@ describe('features.md Settings 表与 package.json 对账', () => {
     expect(mismatches, `默认值漂移: ${mismatches.join('; ')}`).toEqual([]);
   });
 });
+
+// CFG-02/CFG-03 文档对账锁:extraPaths 变量形态 + 存量迁移、stubPath 显式值、
+// Pylance 三级优先级必须同时写进中英 configuration.md;features.md 的接线/
+// 契约条目同步。与上方 Settings 表锁同一形状——防只补一边或改代码忘改文档。
+describe('configuration.md / features.md 的 Pylance 解析面锁(CFG-02/CFG-03)', () => {
+  const enFeatures = readFileSync(join(root, 'docs', 'features.md'), 'utf8');
+  const zhFeatures = readFileSync(join(root, 'docs', 'zh', 'features.md'), 'utf8');
+
+  it('中英 configuration.md 都写明 stubPath 显式值与 Pylance 三级优先级', () => {
+    for (const [label, text] of [
+      ['docs/guide/configuration.md', enConfigurationMd],
+      ['docs/zh/guide/configuration.md', zhConfigurationMd]
+    ] as const) {
+      expect(text, `${label}: 缺 python.analysis.stubPath`).toContain('python.analysis.stubPath');
+      expect(text, `${label}: 缺 stubPath 显式值`).toContain('${workspaceFolder}/.kbengine/stubs');
+      expect(text, `${label}: 缺三级优先级链`).toContain('→ stubPath → extraPaths');
+    }
+    // 优先级链的完整语义(同名 .pyi 打头)双语各写一遍
+    expect(enConfigurationMd).toContain('same-name .pyi → stubPath → extraPaths');
+    expect(zhConfigurationMd).toContain('同名 .pyi → stubPath → extraPaths');
+  });
+
+  it('中英 configuration.md 都写明 extraPaths 变量形态与存量绝对路径迁移', () => {
+    expect(enConfigurationMd).toContain('`python.analysis.extraPaths` entries are always written as `${workspaceFolder}/...`');
+    expect(enConfigurationMd).toContain('migrate automatically');
+    expect(zhConfigurationMd).toContain('一律写成 `${workspaceFolder}/...` 变量形态');
+    expect(zhConfigurationMd).toContain('自动迁移');
+  });
+
+  it('中英 configuration.md 的契约诊断行点名绝对路径检查', () => {
+    expect(enConfigurationMd).toContain('absolute `python.analysis.extraPaths` entries');
+    expect(zhConfigurationMd).toContain('`python.analysis.extraPaths` 绝对路径条目');
+  });
+
+  it('中英 features.md 的 extraPaths 接线条目同步变量形态与 stubPath', () => {
+    for (const [label, text] of [
+      ['docs/features.md', enFeatures],
+      ['docs/zh/features.md', zhFeatures]
+    ] as const) {
+      expect(text, `${label}: 缺变量形态`).toContain('${workspaceFolder}');
+      expect(text, `${label}: 缺 stubPath`).toContain('stubPath');
+      expect(text, `${label}: 缺三级优先级`).toContain('→ stubPath → extraPaths');
+    }
+    expect(enFeatures).toContain('legacy absolute paths');
+    expect(zhFeatures).toContain('存量绝对路径');
+  });
+
+  it('中英 features.md 的配置契约条目点名绝对路径检查', () => {
+    expect(enFeatures).toContain('absolute `python.analysis.extraPaths` entries');
+    expect(zhFeatures).toContain('`python.analysis.extraPaths` 绝对路径条目');
+  });
+});

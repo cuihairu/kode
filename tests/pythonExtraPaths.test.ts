@@ -3,10 +3,13 @@ import * as vscode from 'vscode';
 import {
   PYTHON_EXTRA_PATHS_MANAGED_KEY,
   PYTHON_EXTRA_PATHS_SETTING,
+  PYTHON_STUB_PATH_MANAGED_KEY,
+  PYTHON_STUB_PATH_SETTING,
   normalizeExtraPath,
   planPythonExtraPaths,
   pythonScriptRootCandidates,
-  syncPythonExtraPaths
+  syncPythonExtraPaths,
+  toWorkspaceFolderVar
 } from '../src/pythonExtraPaths';
 import {
   configurationOverrides,
@@ -21,6 +24,10 @@ import {
 // python.analysis.extraPaths,让 Python 扩展(Pylance)解析 import KBEngine。
 // 纯计划段(normalize/candidates/plan)注入 exists/listSubdirs 不碰真 fs;
 // 同步段走替身 workspace.updateWorkspaceConfiguration 记账。
+//
+// CFG-02:生成的条目一律 ${workspaceFolder} 变量形态(工作区可移植),
+// 存量绝对路径带工作区前缀的自动迁移;CFG-03:显式写
+// python.analysis.stubPath=${workspaceFolder}/.kbengine/stubs。
 
 const memento = new Map<string, unknown>();
 
@@ -73,7 +80,7 @@ describe('pythonScriptRootCandidates(scripts 根发现)', () => {
 describe('planPythonExtraPaths(只管理自己那一段)', () => {
   const deps = { exists: (): boolean => true, listSubdirs: (): string[] => [] };
 
-  it('首次同步:发现的根全部追加在用户手填段之后', () => {
+  it('首次同步:发现的根全部追加在用户手填段之后,条目为 ${workspaceFolder} 变量形态(CFG-02)', () => {
     const plan = planPythonExtraPaths({
       workspaceRoot: '/ws',
       currentPaths: ['/user/lib'],
@@ -81,12 +88,16 @@ describe('planPythonExtraPaths(只管理自己那一段)', () => {
       deps
     });
 
-    expect(plan.managedPaths).toEqual(['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts']);
+    expect(plan.managedPaths).toEqual([
+      '${workspaceFolder}/scripts',
+      '${workspaceFolder}/assets/scripts',
+      '${workspaceFolder}/server_assets/scripts'
+    ]);
     expect(plan.nextPaths).toEqual([
       '/user/lib',
-      '/ws/scripts',
-      '/ws/assets/scripts',
-      '/ws/server_assets/scripts'
+      '${workspaceFolder}/scripts',
+      '${workspaceFolder}/assets/scripts',
+      '${workspaceFolder}/server_assets/scripts'
     ]);
     expect(plan.changed).toBe(true);
   });
@@ -114,19 +125,36 @@ describe('planPythonExtraPaths(只管理自己那一段)', () => {
 
     expect(plan.nextPaths).toContain('/user/lib');
     expect(plan.nextPaths).not.toContain('/old/gone/scripts');
-    expect(plan.managedPaths).toEqual(['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts']);
+    expect(plan.managedPaths).toEqual([
+      '${workspaceFolder}/scripts',
+      '${workspaceFolder}/assets/scripts',
+      '${workspaceFolder}/server_assets/scripts'
+    ]);
   });
 
   it('尾分隔符差异不影响相等判断,空串条目被丢弃', () => {
     const plan = planPythonExtraPaths({
       workspaceRoot: '/ws',
-      currentPaths: ['/ws/scripts/', '/ws/assets/scripts/', '/ws/server_assets/scripts/', ''],
-      previouslyManaged: ['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts'],
+      currentPaths: [
+        '${workspaceFolder}/scripts/',
+        '${workspaceFolder}/assets/scripts/',
+        '${workspaceFolder}/server_assets/scripts/',
+        ''
+      ],
+      previouslyManaged: [
+        '${workspaceFolder}/scripts',
+        '${workspaceFolder}/assets/scripts',
+        '${workspaceFolder}/server_assets/scripts'
+      ],
       deps: { exists: (): boolean => true, listSubdirs: (): string[] => [] }
     });
 
     expect(plan.changed).toBe(false);
-    expect(plan.nextPaths).toEqual(['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts']);
+    expect(plan.nextPaths).toEqual([
+      '${workspaceFolder}/scripts',
+      '${workspaceFolder}/assets/scripts',
+      '${workspaceFolder}/server_assets/scripts'
+    ]);
   });
 
   it('根全不存在时管理段为空,只剩用户段', () => {
@@ -152,17 +180,17 @@ describe('planPythonExtraPaths(只管理自己那一段)', () => {
     });
 
     expect(plan.managedPaths).toEqual([
-      '/ws/scripts',
-      '/ws/assets/scripts',
-      '/ws/server_assets/scripts',
-      '/ws/.kbengine/stubs'
+      '${workspaceFolder}/scripts',
+      '${workspaceFolder}/assets/scripts',
+      '${workspaceFolder}/server_assets/scripts',
+      '${workspaceFolder}/.kbengine/stubs'
     ]);
     expect(plan.nextPaths).toEqual([
       '/user/lib',
-      '/ws/scripts',
-      '/ws/assets/scripts',
-      '/ws/server_assets/scripts',
-      '/ws/.kbengine/stubs'
+      '${workspaceFolder}/scripts',
+      '${workspaceFolder}/assets/scripts',
+      '${workspaceFolder}/server_assets/scripts',
+      '${workspaceFolder}/.kbengine/stubs'
     ]);
     expect(plan.changed).toBe(true);
   });
@@ -175,7 +203,11 @@ describe('planPythonExtraPaths(只管理自己那一段)', () => {
       deps
     });
 
-    expect(plan.managedPaths).toEqual(['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts']);
+    expect(plan.managedPaths).toEqual([
+      '${workspaceFolder}/scripts',
+      '${workspaceFolder}/assets/scripts',
+      '${workspaceFolder}/server_assets/scripts'
+    ]);
     expect(plan.changed).toBe(true);
   });
 
@@ -187,7 +219,55 @@ describe('planPythonExtraPaths(只管理自己那一段)', () => {
       deps
     });
 
-    expect(plan.nextPaths).toEqual(['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts']);
+    expect(plan.nextPaths).toEqual([
+      '${workspaceFolder}/scripts',
+      '${workspaceFolder}/assets/scripts',
+      '${workspaceFolder}/server_assets/scripts'
+    ]);
+  });
+});
+
+describe('planPythonExtraPaths(存量绝对路径迁移,CFG-02)', () => {
+  it('带工作区前缀的存量绝对路径(含上次管理段)自动迁移为 ${workspaceFolder} 形态并触发重写', () => {
+    const plan = planPythonExtraPaths({
+      workspaceRoot: '/ws',
+      currentPaths: ['/ws/scripts/', '/ws/flyff_assets/scripts'],
+      previouslyManaged: ['/ws/scripts'],
+      deps: { exists: (): boolean => true, listSubdirs: (): string[] => ['flyff_assets'] }
+    });
+
+    expect(plan.nextPaths).toEqual([
+      '${workspaceFolder}/flyff_assets/scripts',
+      '${workspaceFolder}/scripts',
+      '${workspaceFolder}/assets/scripts',
+      '${workspaceFolder}/server_assets/scripts'
+    ]);
+    // 现值仍是绝对形态:与变量形态的 next 不同,必须写一次完成迁移
+    expect(plan.changed).toBe(true);
+  });
+
+  it('无工作区前缀的绝对路径不可替换,原样保留(交配置契约诊断报)', () => {
+    const plan = planPythonExtraPaths({
+      workspaceRoot: '/ws',
+      currentPaths: ['/opt/kbe/typings', 'C:\\kbengine\\libs'],
+      previouslyManaged: [],
+      deps: { exists: (): boolean => false, listSubdirs: (): string[] => [] }
+    });
+
+    expect(plan.nextPaths).toEqual(['/opt/kbe/typings', 'C:\\kbengine\\libs']);
+    expect(plan.managedPaths).toEqual([]);
+    expect(plan.changed).toBe(false);
+  });
+
+  it('toWorkspaceFolderVar:POSIX/Windows 前缀替换与不匹配原样透传', () => {
+    expect(toWorkspaceFolderVar('/home/u/proj/scripts', '/home/u/proj')).toBe('${workspaceFolder}/scripts');
+    expect(toWorkspaceFolderVar('D:\\kbengine\\scripts', 'd:\\kbengine')).toBe('${workspaceFolder}/scripts');
+    expect(toWorkspaceFolderVar('/home/u/proj', '/home/u/proj')).toBe('${workspaceFolder}');
+    // 前缀不匹配(同前缀不同目录)不替换
+    expect(toWorkspaceFolderVar('/home/u/proj2/scripts', '/home/u/proj')).toBe('/home/u/proj2/scripts');
+    // 已是变量形态/相对路径不动
+    expect(toWorkspaceFolderVar('${workspaceFolder}/scripts', '/ws')).toBe('${workspaceFolder}/scripts');
+    expect(toWorkspaceFolderVar('../kbe/typings', '/ws')).toBe('../kbe/typings');
   });
 });
 
@@ -236,52 +316,61 @@ describe('syncPythonExtraPaths(装配层)', () => {
         dir === '/ws/scripts/base' ? ['Avatar.py'] : dir === '/ws/scripts/cell' ? ['Avatar.py', 'Monster.py'] : []
     });
 
-    // 写入的合并列表只有 scripts 根,base/cell 角色目录不在其中
+    // 写入的合并列表只有 scripts 根,base/cell 角色目录不在其中(CFG-02 变量形态)
     const written = workspaceState.workspaceConfigurationUpdates.find(
       entry => entry.key === PYTHON_EXTRA_PATHS_SETTING
     );
-    expect(written?.value).toEqual(['/ws/scripts']);
+    expect(written?.value).toEqual(['${workspaceFolder}/scripts']);
     // 播报点名同名模块与隔离口径
     const collisionMessage = messages.info.find(message => message.includes('同名模块'));
     expect(collisionMessage).toContain('Avatar');
     expect(collisionMessage).toContain('不会因顺序跨角色误解析');
   });
 
-  it('写 WorkspaceFolder 级配置并记忆管理段,第二次同步零写入', async () => {
+  it('写 WorkspaceFolder 级配置并记忆管理段,第二次同步零写入(CFG-02 变量形态 + CFG-03 stubPath)', async () => {
     stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
     const deps = { exists: (): boolean => true, listSubdirs: (): string[] => [] };
     const context = makeContext();
 
     await syncPythonExtraPaths(context, deps);
 
-    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(1);
+    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(2);
     expect(workspaceState.workspaceConfigurationUpdates[0]).toEqual({
       key: PYTHON_EXTRA_PATHS_SETTING,
       value: [
-        '/ws/scripts',
-        '/ws/assets/scripts',
-        '/ws/server_assets/scripts',
-        '/ws/.kbengine/stubs'
+        '${workspaceFolder}/scripts',
+        '${workspaceFolder}/assets/scripts',
+        '${workspaceFolder}/server_assets/scripts',
+        '${workspaceFolder}/.kbengine/stubs'
       ],
+      scope: vscode.ConfigurationTarget.WorkspaceFolder,
+      folder: stubWorkspace.workspaceFolders[0]
+    });
+    // CFG-03:同一轮同步显式写 python.analysis.stubPath(默认约定目录)
+    expect(workspaceState.workspaceConfigurationUpdates[1]).toEqual({
+      key: PYTHON_STUB_PATH_SETTING,
+      value: '${workspaceFolder}/.kbengine/stubs',
       scope: vscode.ConfigurationTarget.WorkspaceFolder,
       folder: stubWorkspace.workspaceFolders[0]
     });
     const managedKey = `${PYTHON_EXTRA_PATHS_MANAGED_KEY}:/ws`;
     expect(memento.get(managedKey)).toEqual([
-      '/ws/scripts',
-      '/ws/assets/scripts',
-      '/ws/server_assets/scripts',
-      '/ws/.kbengine/stubs'
+      '${workspaceFolder}/scripts',
+      '${workspaceFolder}/assets/scripts',
+      '${workspaceFolder}/server_assets/scripts',
+      '${workspaceFolder}/.kbengine/stubs'
     ]);
+    expect(memento.get(`${PYTHON_STUB_PATH_MANAGED_KEY}:/ws`)).toBe('${workspaceFolder}/.kbengine/stubs');
     expect(messages.info[0]).toContain('ws');
 
     configurationOverrides.set('python', {
       'analysis.extraPaths': [
-        '/ws/scripts',
-        '/ws/assets/scripts',
-        '/ws/server_assets/scripts',
-        '/ws/.kbengine/stubs'
-      ]
+        '${workspaceFolder}/scripts',
+        '${workspaceFolder}/assets/scripts',
+        '${workspaceFolder}/server_assets/scripts',
+        '${workspaceFolder}/.kbengine/stubs'
+      ],
+      'analysis.stubPath': '${workspaceFolder}/.kbengine/stubs'
     });
     workspaceState.workspaceConfigurationUpdates.length = 0;
     await syncPythonExtraPaths(context, deps);
@@ -299,10 +388,10 @@ describe('syncPythonExtraPaths(装配层)', () => {
     });
 
     expect(workspaceState.workspaceConfigurationUpdates[0].value).toEqual([
-      '/ws/scripts',
-      '/ws/assets/scripts',
-      '/ws/server_assets/scripts',
-      '/ws/.kbengine/stubs'
+      '${workspaceFolder}/scripts',
+      '${workspaceFolder}/assets/scripts',
+      '${workspaceFolder}/server_assets/scripts',
+      '${workspaceFolder}/.kbengine/stubs'
     ]);
     stubWorkspace.workspaceFolders = [];
   });
@@ -315,7 +404,7 @@ describe('syncPythonExtraPaths(装配层)', () => {
       listSubdirs: (): string[] => []
     });
 
-    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(1);
+    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(2);
     expect(memento.size).toBe(0);
     stubWorkspace.workspaceFolders = [];
   });
@@ -346,7 +435,7 @@ describe('syncPythonExtraPaths(装配层)', () => {
       listSubdirs: (): string[] => []
     }, { silent: true });
 
-    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(1);
+    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(2);
     expect(messages.info).toHaveLength(0);
     stubWorkspace.workspaceFolders = [];
   });
@@ -378,10 +467,10 @@ describe('syncPythonExtraPaths(装配层)', () => {
 
     const update = workspaceState.workspaceConfigurationUpdates[0];
     expect(update.value).toEqual([
-      '/ws/scripts',
-      '/ws/assets/scripts',
-      '/ws/server_assets/scripts',
-      '/ws/.kbengine/stubs'
+      '${workspaceFolder}/scripts',
+      '${workspaceFolder}/assets/scripts',
+      '${workspaceFolder}/server_assets/scripts',
+      '${workspaceFolder}/.kbengine/stubs'
     ]);
     stubWorkspace.workspaceFolders = [];
   });
@@ -399,15 +488,15 @@ describe('syncPythonExtraPaths(装配层)', () => {
 
     const update = workspaceState.workspaceConfigurationUpdates[0];
     expect(update.value).toEqual([
-      '/ws/scripts',
-      '/ws/assets/scripts',
-      '/ws/server_assets/scripts',
-      '/ws/.kbengine/stubs'
+      '${workspaceFolder}/scripts',
+      '${workspaceFolder}/assets/scripts',
+      '${workspaceFolder}/server_assets/scripts',
+      '${workspaceFolder}/.kbengine/stubs'
     ]);
     stubWorkspace.workspaceFolders = [];
   });
 
-  it('G2 存根导出关闭时,存根文件在盘也不并入', async () => {
+  it('G2 存根导出关闭时,存根文件在盘也不并入,stubPath 也不写', async () => {
     configurationOverrides.set('kbengine', { 'python.stubExport': false });
     stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
     const stubFile = '/ws/.kbengine/stubs/KBEngine.pyi';
@@ -419,12 +508,18 @@ describe('syncPythonExtraPaths(装配层)', () => {
 
     await syncPythonExtraPaths(makeContext(), deps);
 
+    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(1);
     const update = workspaceState.workspaceConfigurationUpdates[0];
-    expect(update.value).toEqual(['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts']);
+    expect(update.key).toBe(PYTHON_EXTRA_PATHS_SETTING);
+    expect(update.value).toEqual([
+      '${workspaceFolder}/scripts',
+      '${workspaceFolder}/assets/scripts',
+      '${workspaceFolder}/server_assets/scripts'
+    ]);
     stubWorkspace.workspaceFolders = [];
   });
 
-  it('G2 存根文件不在盘时(尚未导出),不写不存在的目录', async () => {
+  it('G2 存根文件不在盘时(尚未导出),extraPaths 不写不存在的目录,stubPath 仍显式写', async () => {
     stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
     const deps = {
       exists: (candidate: string): boolean =>
@@ -435,7 +530,51 @@ describe('syncPythonExtraPaths(装配层)', () => {
     await syncPythonExtraPaths(makeContext(), deps);
 
     const update = workspaceState.workspaceConfigurationUpdates[0];
-    expect(update.value).toEqual(['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts']);
+    expect(update.value).toEqual([
+      '${workspaceFolder}/scripts',
+      '${workspaceFolder}/assets/scripts',
+      '${workspaceFolder}/server_assets/scripts'
+    ]);
+    expect(workspaceState.workspaceConfigurationUpdates[1]).toMatchObject({
+      key: PYTHON_STUB_PATH_SETTING,
+      value: '${workspaceFolder}/.kbengine/stubs'
+    });
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('用户已自设 python.analysis.stubPath 时永不覆盖(只管自己那段,CFG-03)', async () => {
+    configurationOverrides.set('python', { 'analysis.stubPath': '/my/custom/stubs' });
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+
+    await syncPythonExtraPaths(makeContext(), {
+      exists: (): boolean => true,
+      listSubdirs: (): string[] => []
+    });
+
+    const stubPathWrites = workspaceState.workspaceConfigurationUpdates.filter(
+      entry => entry.key === PYTHON_STUB_PATH_SETTING
+    );
+    expect(stubPathWrites).toHaveLength(0);
+    // extraPaths 照常接线,互不影响
+    expect(workspaceState.workspaceConfigurationUpdates[0].key).toBe(PYTHON_EXTRA_PATHS_SETTING);
+    configurationOverrides.delete('python');
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('stubPath 随 kbengine.managedDir 托管目录同迁(不写死 .kbengine)', async () => {
+    configurationOverrides.set('kbengine', { managedDir: 'kbe-managed' });
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+
+    await syncPythonExtraPaths(makeContext(), {
+      exists: (): boolean => true,
+      listSubdirs: (): string[] => []
+    });
+
+    const stubPathWrite = workspaceState.workspaceConfigurationUpdates.find(
+      entry => entry.key === PYTHON_STUB_PATH_SETTING
+    );
+    expect(stubPathWrite?.value).toBe('${workspaceFolder}/kbe-managed/stubs');
+    configurationOverrides.delete('kbengine');
     stubWorkspace.workspaceFolders = [];
   });
 
