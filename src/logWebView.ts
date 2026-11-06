@@ -9,6 +9,15 @@ import { KBEngineLogCollector } from './logCollector';
 import { LogEvent, LogHub, RuntimeLogLevel } from './logHub';
 import { getWebviewConsoleScript, WEBVIEW_LOG_COMMAND, WebviewLogMessage } from './webviewConsoleBridge';
 import { randomNonce, webviewScriptCsp } from './webviewSecurity';
+import { WEBVIEW_THEME_CSS } from './webviewTheme';
+import { htmlLang, resolvePanelLocale, strings } from './webviewStrings';
+
+/** 组件过滤业务域分组(UI-02):真实组件域 → 过滤器 optgroup */
+const LOG_COMPONENT_GROUPS: Array<{ domain: 'core' | 'manager' | 'game'; components: string[] }> = [
+  { domain: 'core', components: ['machine', 'logger', 'dbmgr'] },
+  { domain: 'manager', components: ['baseappmgr', 'cellappmgr', 'loginapp'] },
+  { domain: 'game', components: ['baseapp', 'cellapp'] }
+];
 
 /**
  * 日志过滤器配置
@@ -387,11 +396,12 @@ export class LogViewerWebView {
    */
   private getHtml(logs: LogEntry[]): string {
     const nonce = randomNonce();
+    const t = strings(resolvePanelLocale()).logs;
     const logsHtml = logs.map(log => this.formatLogEntry(log)).join('\n');
     const statusSummary = this.escapeHtml(this.collector.getStatusSummary());
 
     return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${htmlLang(resolvePanelLocale())}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -399,17 +409,8 @@ export class LogViewerWebView {
   <meta http-equiv="Content-Security-Policy" content="${webviewScriptCsp(nonce)}">
   <title>KBEngine Logs</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
+    ${WEBVIEW_THEME_CSS}
     body {
-      font-family: var(--vscode-font-family);
-      font-size: var(--vscode-font-size);
-      background-color: var(--vscode-editor-background);
-      color: var(--vscode-editor-foreground);
       padding: 10px;
     }
 
@@ -451,10 +452,12 @@ export class LogViewerWebView {
 
     .notice {
       margin-bottom: 10px;
-      padding: 10px 12px;
-      border-left: 3px solid var(--vscode-testing-iconFailed);
-      background-color: var(--vscode-inputValidation-errorBackground);
-      color: var(--vscode-editor-foreground);
+      padding: 8px 12px;
+      background-color: var(--kode-surface);
+      border: 1px solid var(--kode-border);
+      border-radius: var(--kode-r);
+      color: var(--kode-fg-2);
+      font-size: var(--kode-t-meta);
       line-height: 1.5;
     }
 
@@ -478,26 +481,26 @@ export class LogViewerWebView {
     }
 
     .log-entry.level-debug {
-      border-left-color: #888888;
+      border-left-color: var(--kode-neutral);
     }
 
     .log-entry.level-info {
-      border-left-color: #2196F3;
+      border-left-color: var(--kode-info);
     }
 
     .log-entry.level-warning {
-      border-left-color: #FF9800;
-      background-color: rgba(255, 152, 0, 0.1);
+      border-left-color: var(--kode-warn);
+      background-color: var(--kode-warn-dim);
     }
 
     .log-entry.level-error {
-      border-left-color: #F44336;
-      background-color: rgba(244, 67, 54, 0.1);
+      border-left-color: var(--kode-err);
+      background-color: var(--kode-err-dim);
     }
 
     .log-entry.level-critical {
-      border-left-color: #D32F2F;
-      background-color: rgba(211, 47, 47, 0.2);
+      border-left-color: var(--kode-err);
+      background-color: rgba(241, 76, 76, 0.22);
     }
 
     .log-timestamp {
@@ -527,9 +530,9 @@ export class LogViewerWebView {
 </head>
 <body>
   <div class="toolbar">
-    <input type="text" id="search" placeholder="搜索日志..." />
+    <input type="text" id="search" placeholder="${t.searchPlaceholder}" />
     <select id="levelFilter">
-      <option value="">所有级别</option>
+      <option value="">${t.allLevels}</option>
       <option value="0">DEBUG</option>
       <option value="1">INFO</option>
       <option value="2">WARNING</option>
@@ -537,27 +540,25 @@ export class LogViewerWebView {
       <option value="4">CRITICAL</option>
     </select>
     <select id="componentFilter">
-      <option value="">所有组件</option>
-      <option value="machine">Machine</option>
-      <option value="logger">Logger</option>
-      <option value="dbmgr">DBMgr</option>
-      <option value="baseappmgr">BaseAppMgr</option>
-      <option value="cellappmgr">CellAppMgr</option>
-      <option value="loginapp">LoginApp</option>
-      <option value="baseapp">BaseApp</option>
-      <option value="cellapp">CellApp</option>
+      <option value="">${t.componentAll}</option>
+      ${LOG_COMPONENT_GROUPS.map(group => {
+        const label = group.domain === 'core' ? t.groupCore : group.domain === 'manager' ? t.groupManager : t.groupGame;
+        return `      <optgroup label="${label}">${group.components
+          .map(component => `<option value="${component}">${component}</option>`)
+          .join('')}</optgroup>`;
+      }).join('\n')}
     </select>
-    <button id="clearBtn">清空</button>
-    <button id="exportBtn">导出</button>
-    <button id="connectBtn">连接</button>
-    <button id="disconnectBtn">断开</button>
+    <button id="clearBtn">${t.clear}</button>
+    <button id="exportBtn">${t.export}</button>
+    <button id="connectBtn">${t.connect}</button>
+    <button id="disconnectBtn">${t.disconnect}</button>
   </div>
-  <div class="notice">连接状态：${statusSummary}</div>
+  <div class="notice">${t.statusPrefix}：${statusSummary}</div>
   <div class="stats" id="logStats" data-displayed="${logs.length}" data-total="${this.currentLogs.length}">
-    显示 ${logs.length} 条日志（总计 ${this.currentLogs.length} 条）
+    ${t.statsPrefix}${logs.length}${t.statsMid}${this.currentLogs.length}${t.statsSuffix}
   </div>
   <div class="log-container" id="logContainer">
-    ${logsHtml || '<div class="empty-state">暂无日志<br><small>启动 KBEngine 服务器后，日志将在此显示</small></div>'}
+    ${logsHtml || `<div class="empty-state">${t.empty}<br><small>${t.emptyHint}</small></div>`}
   </div>
 
   <script nonce="${nonce}">
@@ -655,7 +656,9 @@ export class LogViewerWebView {
             const total = Number(message.total ?? stats.dataset.total ?? displayed);
             stats.dataset.displayed = String(displayed);
             stats.dataset.total = String(total);
-            stats.textContent = '显示 ' + displayed + ' 条日志（总计 ' + total + ' 条）';
+            // 统计文案模板由宿主按 locale 注入(UI-02):prefix + d + mid + total + suffix
+            const statsFmt = ${JSON.stringify([t.statsPrefix, t.statsMid, t.statsSuffix])};
+            stats.textContent = statsFmt[0] + displayed + statsFmt[1] + total + statsFmt[2];
           }
         }
         events.forEach(event => appendEvent(event, message.displayLimit ?? 5000));

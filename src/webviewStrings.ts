@@ -73,7 +73,19 @@ const zh = {
     componentAll: '所有组件',
     groupCore: '核心服务',
     groupManager: '管理进程',
-    groupGame: '游戏进程'
+    groupGame: '游戏进程',
+    searchPlaceholder: '搜索日志...',
+    allLevels: '所有级别',
+    clear: '清空',
+    export: '导出',
+    connect: '连接',
+    disconnect: '断开',
+    statusPrefix: '连接状态',
+    statsPrefix: '显示 ',
+    statsMid: ' 条日志（总计 ',
+    statsSuffix: ' 条）',
+    empty: '暂无日志',
+    emptyHint: '启动 KBEngine 服务器后，日志将在此显示'
   },
   telnet: {
     title: 'KBEngine Telnet 探测'
@@ -184,7 +196,19 @@ const en: typeof zh = {
     componentAll: 'All components',
     groupCore: 'Core services',
     groupManager: 'Managers',
-    groupGame: 'Game processes'
+    groupGame: 'Game processes',
+    searchPlaceholder: 'Search logs...',
+    allLevels: 'All levels',
+    clear: 'Clear',
+    export: 'Export',
+    connect: 'Connect',
+    disconnect: 'Disconnect',
+    statusPrefix: 'Connection status',
+    statsPrefix: 'Showing ',
+    statsMid: ' entries (total ',
+    statsSuffix: ')',
+    empty: 'No logs yet',
+    emptyHint: 'Start the KBEngine server to see logs here'
   },
   telnet: {
     title: 'KBEngine Telnet Probe'
