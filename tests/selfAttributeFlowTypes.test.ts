@@ -278,3 +278,117 @@ describe('语义引擎流敏感窄化(纯函数面)', () => {
     expect(inferSelfAttributeFlow(lines, 7, 'F')!.annotation).toBe('str');
   });
 });
+
+describe('KR-AUD-59 增强赋值不误捕获 RHS(UI-9)', () => {
+  it('self.items += [1] 不作为赋值解;流类型保持 __init__ 的 list', () => {
+    const lines = [
+      'class Foo:',
+      '    def __init__(self):',
+      '        self.items = []',
+      '    def add(self):',
+      '        self.items += [1]',
+      '    def use(self):',
+      '        x = self.items'
+    ];
+    // 查询位 = 行 6(`x = self.items`)
+    const flow = inferSelfAttributeFlow(lines, 6, 'items', {});
+    expect(flow).not.toBeNull();
+    // `+= [1]` 不是重新赋值:类型保持 __init__ 的 list,不得被 RHS `+ [1]` 污染
+    expect(flow!.annotation).toBe('list');
+    expect(flow!.hasNone).toBe(false);
+  });
+});
+
+describe('KR-AUD-59 增强赋值不误捕获 RHS(UI-9)·判别面', () => {
+  it('同方法内增强赋值不得以误捕获 RHS 清 None', () => {
+    const lines = [
+      'class Foo:',
+      '    def __init__(self):',
+      '        self.items = None',
+      '    def use(self):',
+      '        self.items += [1]',
+      '        x = self.items'
+    ];
+    // 查询位 = 行 5。增强赋值不是重新赋值:不得以 RHS `+ [1]`(解不出类型,
+    // 旧实现误捕获为空集)覆盖流状态 —— None 保持(保守正确)
+    const flow = inferSelfAttributeFlow(lines, 5, 'items', {});
+    expect(flow).not.toBeNull();
+    expect(flow!.hasNone).toBe(true);
+  });
+
+  it('裸赋值仍正常覆盖:同方法内 = [] 覆盖去 None 为 list', () => {
+    const lines = [
+      'class Foo:',
+      '    def __init__(self):',
+      '        self.items = None',
+      '    def use(self):',
+      '        self.items = []',
+      '        x = self.items'
+    ];
+    const flow = inferSelfAttributeFlow(lines, 5, 'items', {});
+    expect(flow).not.toBeNull();
+    expect(flow!.hasNone).toBe(false);
+    expect(flow!.annotation).toBe('list');
+  });
+});
+
+describe('KR-AUD-59 取证钉面:增强/比较形态不作为赋值(UI-9)', () => {
+  it('`+=` 增强赋值不匹配赋值正则:流状态保持(None 不被清)', () => {
+    const lines = [
+      'class Foo:',
+      '    def __init__(self):',
+      '        self.items = None',
+      '    def use(self):',
+      '        self.items += [1]',
+      '        x = self.items'
+    ];
+    const flow = inferSelfAttributeFlow(lines, 5, 'items', {});
+    expect(flow).not.toBeNull();
+    expect(flow!.hasNone).toBe(true);
+  });
+
+  it('`!=` 比较语句不得误捕获 RHS 清 None(残边)', () => {
+    const lines = [
+      'class Foo:',
+      '    def __init__(self):',
+      '        self.items = None',
+      '    def use(self):',
+      '        self.items != []',
+      '        x = self.items'
+    ];
+    const flow = inferSelfAttributeFlow(lines, 5, 'items', {});
+    expect(flow).not.toBeNull();
+    expect(flow!.hasNone).toBe(true);
+  });
+});
+
+describe('KR-AUD-59 取证钉面:类型保持与裸赋值对照', () => {
+  it('`+=` 行不打断类型:__init__=[] 后 augmented 行,查询位仍 list', () => {
+    const lines = [
+      'class Foo:',
+      '    def __init__(self):',
+      '        self.items = []',
+      '    def use(self):',
+      '        self.items += [1]',
+      '        x = self.items'
+    ];
+    const flow = inferSelfAttributeFlow(lines, 5, 'items', {});
+    expect(flow).not.toBeNull();
+    expect(flow!.annotation).toBe('list');
+    expect(flow!.hasNone).toBe(false);
+  });
+
+  it('`!=` 行不打断类型:__init__=[] 后比较语句,查询位仍 list', () => {
+    const lines = [
+      'class Foo:',
+      '    def __init__(self):',
+      '        self.items = []',
+      '    def use(self):',
+      '        self.items != []',
+      '        x = self.items'
+    ];
+    const flow = inferSelfAttributeFlow(lines, 5, 'items', {});
+    expect(flow).not.toBeNull();
+    expect(flow!.annotation).toBe('list');
+  });
+});
