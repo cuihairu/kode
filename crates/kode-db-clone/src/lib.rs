@@ -6,6 +6,7 @@
 //! mechanical field mapping. See docs/player-clone/source-evidence.md for the
 //! engine facts (parentID, child tables, autoLoad) this encodes.
 
+pub mod apply;
 pub mod archive;
 pub mod error;
 pub mod idmap;
@@ -22,6 +23,11 @@ pub mod target;
 pub mod value;
 pub mod wire;
 
+pub use apply::{
+    archive_fingerprint, ApplyControl, ApplyOutcome, BindingOutcome, CleanupPlan, CleanupStatement,
+    DuplicateImport, FieldConsistency, ImportApplier, ImportRun, ImportRunStore, LoadVerification,
+    MemoryRunStore, NoopRunStore, VerifyCheck, VerifyReport, WriteExecutor,
+};
 pub use archive::{relations_from_plan, write_archive, Archive, ArchiveMeta, ArchiveWriter};
 pub use error::{CloneError, CloneResult};
 pub use idmap::{IdCategory, IdMap, IdMapEntry, IdMapKey, ImportMode, MappedId};
