@@ -49,6 +49,7 @@
 - **CodeLens：RPC 方法标记** —— def 声明的 Exposed 方法在 Python 实现行出镜 ——（证据：package.json#configuration `kbengine.codeLens.rpc`；todo.md:74；src/rpcCodeLens.ts）
 - **CodeLens：事件回调标记** —— Python 脚本中事件回调/订阅数标记 ——（证据：package.json#configuration `kbengine.codeLens.eventCallbacks`；todo.md:27；src/eventApi.ts）
 - **CodeLens：属性访问反向跳转** —— `self.<属性>` 访问行回链 def 声明，附类型/可见域/持久化信息 ——（证据：package.json#configuration `kbengine.codeLens.property`；todo.md:21；src/propertyCodeLens.ts）
+- **CodeLens：属性先于 __init__ 装载提示** —— 实体类 `__init__` 声明处标「属性先于 __init__ 装载 · 来自 <实体>.def」（引擎在 `__init__` 前装载 Entity.def 属性，脚本未必有同名赋值；类名解析到 def 才出镜，点击回 def；独立开关，与属性访问镜互不影响）；`__init__` 内 `self.<属性>` F12 四档落点（类定义行→`__init__` 行→首个类行→脚本首行）不受影响 ——（证据：package.json#configuration `kbengine.codeLens.propertyInitOrder`；todo.md:817；src/propertyInitOrderLens.ts）
 - **CodeLens：types.xml 落库镜链** —— 类型声明行「落库到表 X」镜链带引用反扫，超 10 处折叠为计数镜；冷 usage 索引逐实体后台构建——每个实体边界检查取消，连续执行超 25ms 预算即让出宿主，被取消的构建弃置部分记录（下一次只读查询重新调度）；单文件大 def 的 XML 解析（vendor 整块 opaque，不可内部让路）移出宿主线程——≥64KiB 的 def 文本经专用 worker（`out/defParserWorker.js`）解析，解析段不计入宿主最大连续片量规（解析后重置 sliceStart），小输入或 worker 不可用兜底回同步共享缓存解析（REV-039） 
   ——（证据：package.json#configuration `kbengine.codeLens.typesXml`；todo.md:20、todo.md:591；src/languageProviders.ts `TypesXmlCodeLensProvider`、src/databaseSchema.ts `buildTypeStorageUsageIndexPhased`、src/defParserWorkerHost.ts `parseDefDocumentResponsive`、tests/typeStorageColdBuildPhased.test.ts）
 - **Inlay hint：def 声明数据类型** —— `self.<属性>` 访问处内联显示解析到底的类型注解(types.xml 别名逐层解析到底层内建,如 SERVER_ID→int、VECTOR3→KBEngine.Vector3;PYTHON/未知落 Any 不显示,2026-10-29;GEN-DEF-1c 起 VECTOR2/3/4→KBEngine.Vector2/3/4、PY_DICT/PY_TUPLE/PY_LIST→dict/tuple/list 且按 `<Default>` 字面量精化);`self.base/cell/client` RPC 调用点每实参后内联显示 def 已声明的形参类型(`: 类型`,只显类型不带合成形参名——.def `<Arg>` 无名可考);数组 `<of>` 元素类型在 `for item in self.<属性>:` 迭代目标与 `x = self.<属性>[i]` 下标赋值局部变量后内联显示(与 hover 面同一解析链)
@@ -354,6 +355,7 @@
 | `kbengine.codeLens.rpc` | `true` | Python 实现脚本中 def 声明方法的 RPC 标记 CodeLens |
 | `kbengine.codeLens.eventCallbacks` | `true` | Python 脚本中事件回调/订阅 CodeLens |
 | `kbengine.codeLens.property` | `true` | `self.<属性>` 访问处属性 CodeLens（回跳 def） |
+| `kbengine.codeLens.propertyInitOrder` | `true` | 实体类 `__init__` 声明处「属性先于 __init__ 装载 · 来自 <实体>.def」CodeLens（点击回 def） |
 | `kbengine.codeLens.typesXml` | `true` | types.xml 类型声明行落库镜链 CodeLens（引用反扫） |
 | `kbengine.inlayHints.typeData` | `true` | `self.<属性>` 访问处内联显示 def 声明的 types.xml 数据类型;`self.base/cell/client` RPC 调用点内联显示 def 已声明的形参类型;数组 `<of>` 元素类型在 `for ... in self.<属性>` 目标与下标赋值局部变量后内联显示 |
 | `kbengine.inlayHints.defParams` | `true` | entity 脚本区块内 def 未标注形参内联 def 声明的 `<Arg>` 类型;声明 `<ReturnType>` 时内联 `-> 类型` |
