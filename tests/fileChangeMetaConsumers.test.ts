@@ -212,6 +212,49 @@ describe('fileChangeMeta 消费端①:热更投递审计行', () => {
     expect(lines.some(line => line.startsWith('文件元信息: '))).toBe(false);
     context.subscriptions.forEach(disposable => disposable.dispose());
   });
+
+  it('非 py 投递(globs 可配场景):审计元信息行 module=- package=-,不编造模块名', async () => {
+    const { tmp, scripts } = realScriptFile();
+    const jsonFile = path.join(scripts, 'cell', 'Avatar.json');
+    fs.writeFileSync(jsonFile, '{"Avatar": {}}', 'utf8');
+    configurationOverrides.set('kbengine', {
+      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+    });
+    const clock = makeTimers();
+    const { lines, status } = fakeStatus();
+    const resolver = createFileChangeMetaResolver({
+      scriptRoot: () => scripts,
+      assetsRoot: () => tmp
+    });
+    const store = new HotReloadTargetStateStore({ now: () => 1 });
+    const context = { subscriptions: [] } as unknown as vscode.ExtensionContext;
+
+    setupHotReload(context, () => Promise.resolve(true), {
+      timers: clock.timers,
+      status,
+      fileChangeMeta: resolver,
+      targetState: {
+        store,
+        resolveTargetId: () => 't1',
+        resolveRootId: () => '/root'
+      }
+    });
+
+    // 默认 globs 是 **/*.py,但 globs 可配置——锁住即便非 py 文件真被投递,
+    // 元信息行也不带 module_name(module/package 是 Python 概念,渲染层落 -)
+    lastFileSystemWatcher.current!.fireChange({ fsPath: jsonFile } as never);
+    clock.tick();
+    await waitFor(() => lines.some(line => line.startsWith('文件元信息: ')));
+
+    const metaLine = lines.find(line => line.startsWith('文件元信息: '));
+    expect(metaLine, `非 py 投递也应有元信息行: ${JSON.stringify(lines)}`).toBeDefined();
+    expect(metaLine).toContain('Avatar.json');
+    expect(metaLine).toContain('module=-');
+    expect(metaLine).toContain('package=-');
+    expect(metaLine).toContain('process=cellapp');
+    expect(metaLine).not.toContain('module=cell');
+    context.subscriptions.forEach(disposable => disposable.dispose());
+  });
 });
 
 describe('fileChangeMeta 消费端②:python 索引事件', () => {
@@ -255,5 +298,31 @@ describe('fileChangeMeta 消费端②:python 索引事件', () => {
     expect(line).toContain('process=cellapp');
     expect(line).toMatch(/sha256=[0-9a-f]{12}…/);
     expect(line).toMatch(/version=\d+(\.\d+)?:\d+/);
+  });
+
+  it('非 py 索引事件(watcher 面 **/*.{py,def,xml}):module=- package=-,不编造模块名', async () => {
+    const { tmp, scripts } = realScriptFile();
+    const defFile = path.join(scripts, 'cell', 'Avatar.def');
+    fs.writeFileSync(defFile, '<root/>', 'utf8');
+    const { deps, reads } = countingDeps(() => scripts, () => tmp);
+    const resolver = createFileChangeMetaResolver(deps);
+    setJumpLogEnabled(true);
+    clearRecentJumpLogs();
+
+    // 索引 watcher 面含 .def/.xml:非 py 事件真的会流进本腿——锁住元信息行
+    // 不带模块名(module/package 仅 .py 解析),渲染层落 -,进程归属照常
+    logIndexFileChangeMeta(resolver, {
+      fsPath: defFile,
+      identity: normalizeFileIdentity(defFile),
+      kind: 'change'
+    });
+    await waitFor(() => getRecentJumpLogs().some(text => text.includes('Avatar.def')));
+
+    expect(reads, '非 py 照读(sha256 口径不变)').toEqual([defFile]);
+    const line = getRecentJumpLogs().find(text => text.includes('Avatar.def'));
+    expect(line, `索引日志应含非 py 元信息行: ${JSON.stringify(getRecentJumpLogs())}`).toBeDefined();
+    expect(line).toContain('module=-');
+    expect(line).toContain('package=-');
+    expect(line).toContain('process=cellapp');
   });
 });
