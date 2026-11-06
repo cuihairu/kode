@@ -122,6 +122,80 @@
   - 建连与查询都在 `kbengine.databaseQueryTimeoutMs` 时限和可取消的进度通知下运行（IDE-REV-017）：超时或取消即按该原因返回；所有分支收尾都关连接
   - 报告头部明示只读范围；无差异如实写「无结构差异」
 
+## 玩家数据克隆
+
+### `kbengine.clone.configureSource`
+
+- 标题：`Configure Clone Source Connection`
+- 作用：保存玩家数据导出用的只读源库台账（CLONE-P5）
+- 入口：命令面板
+- 行为：
+  - 依次输入：主机、端口（仅数字，留空 = 3306）、用户名、密码（只存 SecretStorage、绝不落 profile；留空 = 不保存）、数据库名
+  - 任一步取消即结束，什么都不保存
+
+### `kbengine.clone.configureTarget`
+
+- 标题：`Configure Clone Target Connection`
+- 作用：保存玩家数据导入用的可写目标库台账（CLONE-P5）
+- 入口：命令面板
+- 行为：
+  - 与源台账同一套输入流程，另加环境选择器——只认 `local` / `test`,prod / staging 在此配置闸即拒（不等 Rust 规划器 fail-closed 复核）
+  - 密码只进 SecretStorage；清除配置即同时清除密钥
+
+### `kbengine.clone.testSource`
+
+- 标题：`Test Clone Source Connection`
+- 作用：用真实 `SELECT VERSION()` 验证已存的源台账（CLONE-P5）
+- 入口：命令面板
+- 行为：
+  - 成功回报服务器版本；失败如实报连接原因；未配置台账如实说明、不建连接
+
+### `kbengine.clone.testTarget`
+
+- 标题：`Test Clone Target Connection`
+- 作用：用真实 `SELECT VERSION()` 验证已存的目标台账（CLONE-P5）
+- 入口：命令面板
+- 行为：
+  - 成功回报服务器版本；失败如实报连接原因；未配置台账如实说明、不建连接
+
+### `kbengine.clone.export`
+
+- 标题：`Export Player Data to Archive`
+- 作用：把一个玩家实体的已持久化行导出为 `.kdpclone` 归档（CLONE-P5）
+- 入口：命令面板
+- 行为：
+  - 选注册实体、输根 DBID（仅数字）、选保存路径（`.kdpclone`）
+  - 源会话只读打开;物理表经 `information_schema` 探测（标识符校验），只读 SELECT 计划来自 Rust 核心（`$/kode/dbClone/planExport`）；Rust 后端缺席时命令如实报告、不假装算过
+  - 计划预览（表 / 行预算 / 缺失表）写进「KBEngine Player Clone」通道，显式确认后才执行；执行可取消（只读面取消即停，无回滚问题）
+  - 敏感列写归档时默认脱敏；DBID 零行如实不导出
+
+### `kbengine.clone.inspectArchive`
+
+- 标题：`Inspect Player Clone Archive`
+- 作用：查看 `.kdpclone` 归档清单（CLONE-P5）
+- 入口：命令面板；资源管理器 `.kdpclone` 文件右键
+- 行为：
+  - 只回实体、格式/版本、逐表行数、加密位、`checksums.json` / `redaction-report.json` 存在性——不回显任何行值
+  - 每次查看都重复告示：这是数据库已持久化数据副本（Persisted copy），不代表在线当前状态（Live state）
+
+### `kbengine.clone.import`
+
+- 标题：`Import Player Data from Archive`
+- 作用：把 `.kdpclone` 归档导入已配置的本地/测试目标库（CLONE-P5）
+- 入口：命令面板；资源管理器 `.kdpclone` 文件右键
+- 行为：
+  - 两遍计划：pass-1 定列序 → 归档内实际出现的唯一值有界 `WHERE IN` 只读探测 → pass-2 冲突预演（本地重建 `_imported` 后缀）
+  - 预览通道给出逐表语句、ID 变更类别、唯一冲突、账号绑定、未解决引用风险与告警——随后需要两次显式确认（继续、确认对本地库真实写入）
+  - 整份计划以 mysql2 单事务执行：新键绑 NULL 交 AUTO_INCREMENT、insertId 回填进键引用，任何失败或取消即回滚——绝不留半个角色；随后逐表 COUNT 复核、生成但不执行的逆拓扑清理计划、`.kode/clone-runs/` 审计 JSON
+  - 引擎侧原生加载验证如实未接线（`load_verification.attempted=false`）；已接线复核面是 COUNT 核对
+
+### `kbengine.clone.showAudit`
+
+- 标题：`Show Player Clone Import Audits`
+- 作用：回放 `.kode/clone-runs/` 里的历史导入审计 JSON（CLONE-P5）
+- 入口：命令面板
+- 行为：
+  - 在既有审计文件中选择并打印到「KBEngine Player Clone」通道；暂无审计如实说明
 ## 服务器控制
 
 ### `kbengine.server.start`

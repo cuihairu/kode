@@ -3273,26 +3273,32 @@ export function activate(context: vscode.ExtensionContext) {
   // 真实 vscode 面。Profile 台账 = workspaceState + SecretStorage(密码不
   // 落配置);实体表推导 = databaseSchema 快照按工作区根逐个取首个命中;
   // 审计落盘 .kode/clone-runs(首工作区根)。Rust 桥($/kode/dbClone/*)
-  // 无 TS 兜底,gate 缺席时命令层如实报「需要 Rust 后端」。
-  const playerCloneChannel = vscode.window.createOutputChannel('KBEngine Player Clone');
-  context.subscriptions.push(playerCloneChannel);
-  const cloneProfileStore = new CloneProfileStore({
-    load: () => context.workspaceState.get('kode.playerClone.profiles'),
-    save: data => {
-      void context.workspaceState.update('kode.playerClone.profiles', data);
-    },
-    secrets: {
-      get: async key => context.secrets.get(key),
-      store: async (key, value) => context.secrets.store(key, value),
-      delete: async key => context.secrets.delete(key)
+  // 无 TS 兜底,gate 缺席时命令层如实报「需要 Rust 后端」。deps 惰性组装
+  // (首个克隆命令才建台账/通道)——测试替身的极简 context 不带
+  // workspaceState/secrets,activate 期急切构造会炸装配。
+  let playerCloneDeps: PlayerCloneCommandDeps | null = null;
+  const getPlayerCloneDeps = (): PlayerCloneCommandDeps => {
+    if (playerCloneDeps) {
+      return playerCloneDeps;
     }
-  });
-  const cloneRunsDir = (): vscode.Uri | null => {
-    const folder = vscode.workspace.workspaceFolders?.[0];
-    return folder ? vscode.Uri.joinPath(folder.uri, '.kode', 'clone-runs') : null;
-  };
-  const playerCloneDeps: PlayerCloneCommandDeps = {
-    profiles: cloneProfileStore,
+    const playerCloneChannel = vscode.window.createOutputChannel('KBEngine Player Clone');
+    context.subscriptions.push(playerCloneChannel);
+    const cloneRunsDir = (): vscode.Uri | null => {
+      const folder = vscode.workspace.workspaceFolders?.[0];
+      return folder ? vscode.Uri.joinPath(folder.uri, '.kode', 'clone-runs') : null;
+    };
+    playerCloneDeps = {
+    profiles: new CloneProfileStore({
+      load: () => context.workspaceState.get('kode.playerClone.profiles'),
+      save: data => {
+        void context.workspaceState.update('kode.playerClone.profiles', data);
+      },
+      secrets: {
+        get: async key => context.secrets.get(key),
+        store: async (key, value) => context.secrets.store(key, value),
+        delete: async key => context.secrets.delete(key)
+      }
+    }),
     listEntityNames: () =>
       (vscode.workspace.workspaceFolders ?? []).flatMap(folder =>
         getRegisteredEntities(folder.uri.fsPath).map(entity => entity.name)
@@ -3371,19 +3377,21 @@ export function activate(context: vscode.ExtensionContext) {
     },
     channel: playerCloneChannel,
     now: () => Date.now()
+    };
+    return playerCloneDeps;
   };
   const cloneCommandEntries: Array<[string, (uri?: vscode.Uri) => Promise<void>]> = [
-    ['kbengine.clone.configureSource', () => runConfigureCloneProfileCommand(playerCloneDeps, 'source')],
-    ['kbengine.clone.configureTarget', () => runConfigureCloneProfileCommand(playerCloneDeps, 'target')],
-    ['kbengine.clone.testSource', () => runTestCloneConnectionCommand(playerCloneDeps, 'source')],
-    ['kbengine.clone.testTarget', () => runTestCloneConnectionCommand(playerCloneDeps, 'target')],
+    ['kbengine.clone.configureSource', () => runConfigureCloneProfileCommand(getPlayerCloneDeps(), 'source')],
+    ['kbengine.clone.configureTarget', () => runConfigureCloneProfileCommand(getPlayerCloneDeps(), 'target')],
+    ['kbengine.clone.testSource', () => runTestCloneConnectionCommand(getPlayerCloneDeps(), 'source')],
+    ['kbengine.clone.testTarget', () => runTestCloneConnectionCommand(getPlayerCloneDeps(), 'target')],
     [
       'kbengine.clone.inspectArchive',
-      uri => runInspectCloneArchiveCommand(playerCloneDeps, uri?.fsPath)
+      uri => runInspectCloneArchiveCommand(getPlayerCloneDeps(), uri?.fsPath)
     ],
-    ['kbengine.clone.export', () => runExportCloneCommand(playerCloneDeps)],
-    ['kbengine.clone.import', uri => runImportCloneCommand(playerCloneDeps, uri?.fsPath)],
-    ['kbengine.clone.showAudit', () => runShowCloneAuditCommand(playerCloneDeps)]
+    ['kbengine.clone.export', () => runExportCloneCommand(getPlayerCloneDeps())],
+    ['kbengine.clone.import', uri => runImportCloneCommand(getPlayerCloneDeps(), uri?.fsPath)],
+    ['kbengine.clone.showAudit', () => runShowCloneAuditCommand(getPlayerCloneDeps())]
   ];
   for (const [id, run] of cloneCommandEntries) {
     context.subscriptions.push(vscode.commands.registerCommand(id, run));
