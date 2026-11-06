@@ -144,6 +144,8 @@
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.exportTypeStubs",
     "onCommand:kbengine.python.showCallChain",
+    "onCommand:kbengine.python.selectInterpreter",
+    "onCommand:kbengine.python.createVenv",
     "onCommand:kbengine.hotReload.tempEdit.run",
     "onCommand:kbengine.core.showShadowDiffLog",
     "onCommand:kbengine.source.reveal",
