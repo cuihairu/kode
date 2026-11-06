@@ -59,6 +59,53 @@ async function main(): Promise<void> {
   const dirtyMode = process.argv.includes('--dirty');
   let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
+  // KODE-I18N-003 缺 key 回退真机验证:临时扩展副本删 zh-cn 包一个键,以
+  // --locale=zh-cn 拉起真 VS Code,断言该键解析结果=默认包文案(回落),
+  // 未删键的对照键=zh-cn 文案(locale 生效证明)。--manifestnls 的无残留
+  // 断言在此副本上继续有效。
+  const manifestFallbackMode = process.argv.includes('--manifestfallback');
+  let localeArgs: string[] = [];
+  if (manifestFallbackMode) {
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-manifest-fallback-'));
+    for (const name of ['package.json', 'package.nls.json', 'package.nls.zh-cn.json', 'language-configuration.json']) {
+      fs.copyFileSync(path.join(extensionDevelopmentPath, name), path.join(temporaryRoot, name));
+    }
+    fs.cpSync(path.join(extensionDevelopmentPath, 'out'), path.join(temporaryRoot, 'out'), { recursive: true });
+    fs.cpSync(path.join(extensionDevelopmentPath, 'snippets'), path.join(temporaryRoot, 'snippets'), { recursive: true });
+    const zhPath = path.join(temporaryRoot, 'package.nls.zh-cn.json');
+    const zhBundle = JSON.parse(fs.readFileSync(zhPath, 'utf8')) as Record<string, string>;
+    delete zhBundle['kbengine.command.refreshExplorer.title'];
+    fs.writeFileSync(zhPath, JSON.stringify(zhBundle, null, 2) + '\n');
+    // zh-cn 显示语言需要语言包(离线 VS Code 1.145 无内置中文):从 open-vsx
+    // 拉 ms-ceintl 语言包 vsix(缓存进 .vscode-test/,已 gitignore),解包成
+    // extensions-dir 里的安装布局,--locale=zh-cn 才会真正生效
+    const cacheRoot = path.join(extensionDevelopmentPath, '.vscode-test', 'manifest-nls');
+    const extensionsDir = path.join(cacheRoot, 'extensions');
+    fs.mkdirSync(extensionsDir, { recursive: true });
+    const lpVersion = '1.131.0';
+    const lpVsix = path.join(extensionDevelopmentPath, '.vscode-test',
+      `MS-CEINTL.vscode-language-pack-zh-hans-${lpVersion}.vsix`);
+    if (!fs.existsSync(lpVsix)) {
+      fs.mkdirSync(path.dirname(lpVsix), { recursive: true });
+      execFileSync('curl', ['-fsSL', '--retry', '3', '-o', lpVsix,
+        `https://open-vsx.org/api/MS-CEINTL/vscode-language-pack-zh-hans/${lpVersion}/file/MS-CEINTL.vscode-language-pack-zh-hans-${lpVersion}.vsix`]);
+    }
+    const lpUnpack = path.join(temporaryRoot, 'lp-unpack');
+    execFileSync('unzip', ['-o', '-q', lpVsix, '-d', lpUnpack]);
+    const lpRoot = path.join(extensionsDir, `ms-ceintl.vscode-language-pack-zh-hans-${lpVersion}`);
+    fs.cpSync(path.join(lpUnpack, 'extension'), lpRoot, { recursive: true });
+    // locale 生效需要「注册语言包 → 重启应用」两段:语言包目录与 user-data
+    // (含 argv.json locale)持久化在 .vscode-test/ 下,本模式连跑两次 runTests,
+    // 第一段注册,第二段 NLS 真正以 zh-cn 起宿主
+    const userDataDir = path.join(cacheRoot, 'user-data');
+    fs.mkdirSync(userDataDir, { recursive: true });
+    fs.writeFileSync(path.join(userDataDir, 'argv.json'), JSON.stringify({ locale: 'zh-cn' }));
+    devPath = temporaryRoot;
+    process.env.KODE_ELECTRON_SUITE = 'manifestnls';
+    process.env.KODE_MANIFEST_FALLBACK_TEMP = temporaryRoot;
+    localeArgs = ['--extensions-dir', extensionsDir, '--user-data-dir', userDataDir, '--locale=zh-cn'];
+    process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  }
   if (demoMode) {
     const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-demo-'));
     const demoSource = path.resolve(extensionDevelopmentPath, 'tests/fixtures/kbengine-demo-assets');
@@ -641,12 +688,13 @@ async function main(): Promise<void> {
     executableName
   );
 
-  await runTests({
+  const electronLaunch = () => runTests({
     extensionDevelopmentPath: devPath,
     extensionTestsPath,
     ...(fs.existsSync(cachedExecutable) ? { vscodeExecutablePath: cachedExecutable } : {}),
     launchArgs: [
       workspacePath,
+      ...localeArgs,
       // 无显示环境(headless/CI)必需:xvfb 下禁 GPU 与沙箱
       '--disable-gpu',
       '--no-sandbox',
@@ -657,6 +705,11 @@ async function main(): Promise<void> {
       '--skip-release-notes'
     ]
   });
+  if (manifestFallbackMode) {
+    // 双段:第一段注册语言包(回退用例自 skip),第二段 zh-cn 生效跑真断言
+    await electronLaunch();
+  }
+  await electronLaunch();
 }
 
 main().catch(error => {
