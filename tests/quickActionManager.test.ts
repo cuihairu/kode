@@ -1363,7 +1363,9 @@ describe('QuickActionManager venv', () => {
   it('adds the selected virtual environment to the child process environment', async () => {
     const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'kode-venv-'));
     const venvPath = path.join(tempRoot, '.venv');
-    mkdirSync(path.join(venvPath, 'bin'), { recursive: true });
+    // WIN-3:venv PATH 首段按平台 bin/Scripts 注入(产品 process.platform 分支)
+    const venvBin = path.join(venvPath, process.platform === 'win32' ? 'Scripts' : 'bin');
+    mkdirSync(venvBin, { recursive: true });
     try {
       const manager = new QuickActionManager(makeContext(), makeDeps());
       const run = (manager as unknown as { run: (action: unknown) => Promise<boolean> }).run.bind(manager);
@@ -1373,7 +1375,7 @@ describe('QuickActionManager venv', () => {
       });
       expect(ok).toBe(true);
       expect(scriptEnvs[0]?.VIRTUAL_ENV).toBe(venvPath);
-      expect(scriptEnvs[0]?.PATH?.split(path.delimiter)[0]).toBe(path.join(venvPath, 'bin'));
+      expect(scriptEnvs[0]?.PATH?.split(path.delimiter)[0]).toBe(venvBin);
 
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });

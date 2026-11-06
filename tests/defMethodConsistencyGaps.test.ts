@@ -4,6 +4,7 @@ import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { normalizeFileIdentity } from '../src/pathIdentity';
 
 // C-19 交付①:entityMapping 查询面的 def↔Python 方法集合差。正向
 // (collectDefMethodImplementationGaps)只看 rootCategory='entity' 的根、只标
@@ -165,7 +166,9 @@ describe('collectDefMethodImplementationGaps(正向:def 有 Python 无)', () => 
     roots.push(ws.root);
     await withStubbedDefs([ws.avatarDef], async () => {
       const manager = await makeManager();
-      expect(path.basename(manager.getDefFileForPythonFile(ws.basePy) ?? '')).toBe('Avatar.def');
+      // WIN-3:返回值经 normalizeFileIdentity(win32 盘符路径归一小写),两侧同口径比身份键
+      expect(normalizeFileIdentity(manager.getDefFileForPythonFile(ws.basePy) ?? ''))
+        .toBe(normalizeFileIdentity(ws.avatarDef));
       expect(manager.getDefFileForPythonFile(path.join(ws.root, 'unrelated.py'))).toBeUndefined();
     });
   });

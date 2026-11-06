@@ -11,6 +11,7 @@ import {
 import { SemanticDependencyGraph } from '../src/dependencyGraph';
 import { EntityMappingManager } from '../src/entityMapping';
 import { resolveEntityAnnotationType } from '../src/definitionWorkspace';
+import { normalizeFileIdentity } from '../src/pathIdentity';
 import { configurationOverrides, Uri, workspace } from './helpers/vscodeStub';
 
 // PR4 统一语义查询(用户令 2026-10-23):
@@ -395,12 +396,18 @@ describe('EntityMappingManager 兼容层(A4-4:getMappingForPythonFile 系改走�
       const fallbackHit = manager.getMappingForPythonFile(path.join(root, 'scripts', 'base', 'Avatar.py'));
       expect(fallbackHit?.name).toBe('Avatar');
       // POSIX owner 路径保留大小写，不将不同文件归为同一 owner。
-      expect(manager.getMappingForPythonFile(path.join(root, 'scripts', 'base', 'HERO.py'))).toBeUndefined();
+      // WIN-3:win32 文件系统大小写不敏感,HERO.py 与 Hero.py 是同一文件,
+      // 身份归一后命中同一 owner 是正确行为——大小写保留语义仅 POSIX 可验。
+      if (process.platform !== 'win32') {
+        expect(manager.getMappingForPythonFile(path.join(root, 'scripts', 'base', 'HERO.py'))).toBeUndefined();
+      } else {
+        expect(manager.getMappingForPythonFile(path.join(root, 'scripts', 'base', 'Hero.py'))?.name).toBe('Hero');
+      }
       // 无 owner 归属 + 实体名大小写不符仍 miss(既有大小写敏感回落口径)
       expect(manager.getMappingForPythonFile(path.join(root, 'scripts', 'cell', 'hero.py'))).toBeUndefined();
       // 语义索引取证:根显式登记,实体条目挂扫描根 rootId
       const semantic = manager.getSemanticIndex();
-      expect(semantic.getRoots().map(item => item.rootId)).toContain(root.replace(/\\/g, '/'));
+      expect(semantic.getRoots().map(item => item.rootId)).toContain(normalizeFileIdentity(root));
       expect(semantic.findEntityByName('Hero')?.defFile).toContain('Hero.def');
     } finally {
       manager.dispose();
@@ -455,7 +462,7 @@ describe('EntityMappingManager 兼容层(A4-4:getMappingForPythonFile 系改走�
       // 依赖图取证:两条 def 依赖边均在,变更计划只含自身
       const graph = manager.getDependencyGraph();
       expect(graph.planInvalidation(heroDef, 'change').invalidateFiles)
-        .toEqual([path.join(root, 'scripts/entity_defs/Hero.def').replace(/\\/g, '/')]);
+        .toEqual([normalizeFileIdentity(path.join(root, 'scripts/entity_defs/Hero.def'))]);
       // 删除:仅该实体离场
       defWatcher.fireDelete(Uri.file(heroDef));
       await new Promise(resolve => setImmediate(resolve));

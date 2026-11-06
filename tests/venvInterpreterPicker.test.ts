@@ -175,7 +175,8 @@ describe('createVenvFlow (mocked venv module run)', () => {
       // 选放置 venv 的父目录(对话框只能选已存在目录);目标=父目录/.venv
       pickTargetParentDir: async () => state.parent,
       baseInterpreter: (): string | null => state.base,
-      targetDirectoryExistsNonEmpty: (dir: string) => dir === '/ws/occupied/.venv',
+      // WIN-3:产品用 path.join(parent, '.venv') 拼目标目录(win32 反斜杠),mock 同口径
+      targetDirectoryExistsNonEmpty: (dir) => dir === join('/ws/occupied', '.venv'),
       runVenvModule: async function (_base: string, target: string) {
         state.runs.push([_base, target]);
         return { exitCode: 0, stderr: '' };
