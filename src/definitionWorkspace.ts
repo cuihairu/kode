@@ -182,9 +182,9 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
   const entityDefsPathConfig = config.get<string>('entityDefsPath', 'scripts/entity_defs');
   const entitiesXmlPathConfig = config.get<string>('entitiesXmlPath', 'scripts/entities.xml');
   const layoutCacheKey = `${workspaceRoot}\n${layoutGeneration}\n${entityDefsPathConfig}\n${entitiesXmlPathConfig}`;
-  const cachedLayout = layoutCache.get(layoutCacheKey);
-  if (cachedLayout) {
-    return cachedLayout;
+  const cached = layoutCache.get(layoutCacheKey);
+  if (cached && layoutCacheProbeValid(workspaceRoot, cached)) {
+    return cached.layout;
   }
   const entityDefsCandidates = buildWorkspaceCandidates(
     workspaceRoot,
@@ -284,16 +284,80 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
       || resolveDiscoveredTypesXmlPath(workspaceRoot),
     userTypeRoots
   };
-  layoutCache.set(layoutCacheKey, layout);
+  // KR-AUD-36(审核轮 P1/P2 收口):命中探针记录「构建时的世界状态」——
+  // 已解析路径的存在性 + 首选候选(配置主路径/推导主路径)的存在性 + 发现
+  // 选择记忆。命中时逐一复核:任一翻转(文件被建/被删、发现学习出新选择)
+  // 即重算,消除「缓存回看旧盘面」;跨代旧条目落盘即剪,Map 不随
+  // generation/配置变化无界涨。
+  const probePaths = uniquePaths(
+    [
+      layout.entityDefsRoot,
+      layout.entitiesXmlPath,
+      layout.typesXmlPath,
+      entityDefsCandidates[0],
+      entitiesXmlCandidates[0],
+      typesXmlCandidates[0]
+    ].filter((p): p is string => Boolean(p))
+  );
+  layoutCache.set(layoutCacheKey, {
+    generation: layoutGeneration,
+    layout,
+    probes: probePaths.map(p => ({ path: p, existed: fs.existsSync(p) })),
+    choices: {
+      entityDefs: getDiscoveryChoice(workspaceRoot, 'entityDefs'),
+      entitiesXml: getDiscoveryChoice(workspaceRoot, 'entitiesXml'),
+      typesXml: getDiscoveryChoice(workspaceRoot, 'typesXml')
+    }
+  });
+  pruneLayoutCache(layoutGeneration);
   return layout;
 }
 
-/** KR-AUD-36 布局缓存:键=根+generation+布局配置读值;条目随键失效,无泄漏面 */
-const layoutCache = new Map<string, DefinitionWorkspaceLayout>();
+/** KR-AUD-36 布局缓存条目:构建期快照 + 命中复核探针 */
+interface DefinitionLayoutCacheEntry {
+  generation: number;
+  layout: DefinitionWorkspaceLayout;
+  /** 构建时已解析路径与首选候选的存在性快照(命中复核用) */
+  probes: Array<{ path: string; existed: boolean }>;
+  /** 构建时三面的发现选择记忆(命中时比对,学习出新选择即重算) */
+  choices: Record<'entityDefs' | 'entitiesXml' | 'typesXml', string | null>;
+}
+
+/** KR-AUD-36 布局缓存:键=根+generation+布局配置读值;跨代条目落盘即剪 */
+const layoutCache = new Map<string, DefinitionLayoutCacheEntry>();
+
+/**
+ * 命中复核:全部探针的存在性与构建时一致、三面发现选择记忆未变才复用。
+ * 代价=≤6 次 existsSync + 发现选择的记忆读取(有记忆时各 1 次 stat),
+ * 远低于全量重算(整串候选 existsSync + 深扫描兜底)。
+ */
+function layoutCacheProbeValid(workspaceRoot: string, cached: DefinitionLayoutCacheEntry): boolean {
+  for (const probe of cached.probes) {
+    if (fs.existsSync(probe.path) !== probe.existed) {
+      return false;
+    }
+  }
+  return (Object.keys(cached.choices) as Array<keyof DefinitionLayoutCacheEntry['choices']>)
+    .every(key => getDiscoveryChoice(workspaceRoot, key) === cached.choices[key]);
+}
+
+/** 落盘新条目时剪掉其余代/其余配置形态的旧条目(只留当前键代内有效) */
+function pruneLayoutCache(currentGeneration: number): void {
+  for (const [key, entry] of layoutCache) {
+    if (entry.generation !== currentGeneration) {
+      layoutCache.delete(key);
+    }
+  }
+}
 
 /** 测试面:清空布局缓存(generation 复位由 resetRootConfigGenerationForTests 负责) */
 export function resetDefinitionLayoutCacheForTests(): void {
   layoutCache.clear();
+}
+
+/** 测试面:当前缓存条目数(跨代剪枝不泄漏的取证面) */
+export function layoutCacheSizeForTests(): number {
+  return layoutCache.size;
 }
 
 export function getRegisteredEntities(workspaceRoot: string): RegisteredEntityInfo[] {
