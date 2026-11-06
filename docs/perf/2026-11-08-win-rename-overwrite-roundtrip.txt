@@ -1,0 +1,18 @@
+# Windows rename-over-existing-target roundtrip 证据(F3 八轮门禁,2026-11-08)
+# 主机: openclaw (Administrator@10.240.0.3, Windows Server 2022, node v24.22.1)
+# 探针: 参考接收端 referenceReceiver.mjs 真实回环(temp+rename 原子写),覆盖:
+#   1) 首次应用(rename 目标不存在); 2) 覆盖既有目标(revision 2,内容逐字替换);
+#   3) 幂等重放(同内容再应用); 4) 暂存独立子目录; 5) 父目录 symlink 组件拒绝(八轮验证在 Windows 同样生效,无逃逸无残留)。
+receiver port: 14854
+platform: win32 10.0.20348 node v24.22.1
+1) fresh apply     -> HTTP 200 {"status":"applied","file":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root-lp0pgu\\Avatar.py","digest":"55e7536d201268affc2cc3039cadaa9c3a581d70cb7e41fd38c106e742c6b317","revision":1}
+   artifact bytes  : "class Avatar:\n    HP = 100\n"
+2) overwrite apply -> HTTP 200 {"status":"applied","file":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root-lp0pgu\\Avatar.py","digest":"28c058d4490c9ee7f7bb2140f285839b126f511799dd931efb66df777f6fa8c7","revision":2}
+   artifact bytes  : "class Avatar:\n    HP = 200\n"
+3) idempotent apply-> HTTP 200 {"status":"applied","file":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root-lp0pgu\\Avatar.py","digest":"28c058d4490c9ee7f7bb2140f285839b126f511799dd931efb66df777f6fa8c7","revision":3}
+4) staged copy     : true
+5) symlink parent  -> HTTP 200 {"status":"failed","file":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root-lp0pgu\\sub\\X.py","reason":"应用产物原子替换失败:rename 目标父目录含符号链接组件或解析到引擎目录外(临时文件已清理,引擎目录原产物未动无残留):不自称 applied"}
+   leak check      : other/X.py exists = false
+   link intact     : true
+VERDICT: PASS (rename replaces existing target on this platform; contract holds)
+FINAL_VERDICT=PASS
