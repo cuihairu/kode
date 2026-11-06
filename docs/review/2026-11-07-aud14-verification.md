@@ -26,7 +26,7 @@
 | AUD-005 GlobalDataIndex 旧版覆盖 | 已修已勾 | 4d62ade | noteSaved 同步分支清 editBuffers + runEditRecompute 源复核；tests/globalDataIndex.test.ts 在册 | 134 过批次内 |
 | AUD-006 Rust def 递归环 | 已修已勾 | 6a2e005 | process_topology.rs visiting 活动栈 + def_md5.rs loading 活动栈三处守卫在码。**口径注明**：环守卫为静默截断（walk_def 再遇即 return、load_* 跳过），不产「环」专项诊断；验收「循环返回诊断不溢出」按「循环返回、不栈溢出」兑现（def_md5 面无诊断输出通道），A→B→A 测试锁不溢出+Ok 返回 | process_topology_units 31 过 + def_md5_units 12 过* |
 | AUD-007 dataflow AST 语义 | 已修已勾 | b26396e | AugAssign 读旧值/Delete 终结链/walrus/Comprehension target/Subscript 读容器均在码 | dataflow_test 17 过 |
-| AUD-008 callgraph/symbols/graph 遗漏 | 已修已勾（含 2026-11-07 六轮复审返工，见 §返工） | dd869b5 + 8c2b7411 + bc8a06cf + 086f13c1 + 96a30607 + 3dcecb48 + e61c7c2c | 嵌套 def/class、Match guard、Match 属性写、本地裸名不产跨文件伪边均在码；模块接收者补调用点作用域 import 绑定核验（ScopeKind 分层+最近作用域优先+遮蔽即止+模块回退最外层） | callgraph 12 + graph 17（含返工新 11 例）+ symbols 7 过 |
+| AUD-008 callgraph/symbols/graph 遗漏 | 已修已勾（含 2026-11-07 七轮复审返工，见 §返工） | dd869b5 + 8c2b7411 + bc8a06cf + 086f13c1 + 96a30607 + 3dcecb48 + e61c7c2c + b9edefd1 | 嵌套 def/class、Match guard、Match 属性写、本地裸名不产跨文件伪边均在码；模块接收者补调用点作用域 import 绑定核验（ScopeKind 分层+行序裁决+遮蔽即止+模块回退最外层） | callgraph 12 + graph 19（含返工新 13 例）+ symbols 7 过 |
 
 \* 单测文件随后续批次自然增长，数字为当前 HEAD 实跑，非勾账时数字。
 
@@ -68,16 +68,21 @@
 
 - **P1 ×3 · 遮蔽/分层交互缺陷**：①模块顶层 import 短路内层参数遮蔽（module import 先查→伪边）；②推导式目标与函数内类体 Store 名污染外层函数 shadows（断真边）；③同作用域 import 与参数共存时遮蔽优先误判（断真边）。修（e61c7c2c）：①函数作用域链未决才回退模块 imports（最外层）；②`ScopeKind{Function,Class,Comprehension}` 分层——类体/推导式/lambda 各自独立层（推导式 `enter_comp_scope` 配对进出），graph.rs 按 kind 过滤只走 Function 层；③同层 bindings 优先于 shadows（import 显式重绑定语义）。红证=graph_test.rs `module_import_does_not_bypass_param_shadow`/`same_scope_import_overrides_param`/`comprehension_target_does_not_shadow_function_import`（修前三红）；门禁=graph_test 17/17、kode-python 全绿（56）、workspace(excl scheduler) 103 target 0 failed、kode-scheduler 绿、clippy kode-python 0。todo AUD-008 勾账行已补注。
 
-## 本日复跑数字（起核 HEAD e7af5cba → 返工后 HEAD e61c7c2c，0 failed）
+## 返工（codex luna 第七轮 FAIL 项）
+
+- **P1 ×3 · 推导式/重绑定位置语义缺陷**：①推导式节点被外层 walk_expr 二次走查，目标 Store 漏进外层函数 shadows（断真边）；②Comprehension 层被解析链过滤，推导式元素内迭代变量接收者的伪边放行（模块 import 作保）；③同作用域 import 后本地重绑定恒 binding 优先（伪边向）。修（b9edefd1）：①enter_comp_scope 内部走查整棵子树后配对退出，visit_expr 对推导式直接 return（消二次走查）；②解析链含 Comprehension 层（shadow 阻断向）；③bindings/shadows 改 `BTreeMap<name, 最近行>`，层内按行序裁决（call ≥ 最近 import 且晚于最近本地 → 模块绑定；call ≥ 最近本地且晚于最近 import → 本地对象；层内未决继续向外；模块 imports 仍为最外层回退）。已知粒度限制如实记录：同一行内 lambda 参数遮蔽与外层调用行粒度不可分（保守漏边向）。红证=graph_test.rs `comprehension_target_shadow_blocks_module_vouch` + `rebind_after_import_blocks_vouch`（修前双红）；门禁=graph_test 19/19、kode-python 全绿（58）、workspace(excl scheduler) 103 target 0 failed（首轮 ruff_lint_dispatch 一例负载抖动，隔离复跑过+全量复跑全绿）、clippy kode-python 0。todo AUD-008 勾账行已补注。
+
+## 本日复跑数字（起核 HEAD e7af5cba → 返工后 HEAD b9edefd1，0 failed）
 
 - vitest：9 文件 266 过（e7af5cba）→ 复跑 267 过（8c2b7411 前身，含 KR-AUD-35 新用例）0 败（cov-debug-process/serverManager/processTopologyFlush/defPythonParity/hotReloadTargetState/selfAttributeFlowTypes=132 批次；globalDataIndex/workspaceIndexColdYield/workspaceEventIndex=134 批次）。
-- cargo：kode-server（process_topology_units 31 / def_md5_units 12 / dependency_graph_dispatch 2 / lint_rules 19 / flag_domains_golden 5）+ kode-parser parser_units 19 + kode-python（callgraph 12 / dataflow 17 / graph 17 / symbols 7 / lib 3）+ kode-scheduler 14，全 0 failed。
+- cargo：kode-server（process_topology_units 31 / def_md5_units 12 / dependency_graph_dispatch 2 / lint_rules 19 / flag_domains_golden 5）+ kode-parser parser_units 19 + kode-python（callgraph 12 / dataflow 17 / graph 19 / symbols 7 / lib 3）+ kode-scheduler 14，全 0 failed。
 
 ## 记账说明
 
-本批复核：14 项勾账行与代码事实一致；六轮复审残余（AUD-008 接收者伪边 8c2b7411 →
+本批复核：14 项勾账行与代码事实一致；七轮复审残余（AUD-008 接收者伪边 8c2b7411 →
 函数内导入漏判 bc8a06cf → 文件级合并重开伪边 086f13c1 → 裸名键两缺陷 96a30607 →
-遮蔽保放 3dcecb48 → 遮蔽/分层交互三缺陷 e61c7c2c，最终形态=ScopeKind 分层+函数链
-内层向外+同层 binding 优先+遮蔽即止+模块回退最外层）已修并在 AUD-008 勾账行补证据，
-AUD-006 勾账行补口径注明（静默截断，无环专项诊断）。报告 v1 的三处表述（14 计数
-口径、debugpy/py-spy commit 归因、workspaceIndex :304 漂移）已按复审意见改到本版。
+遮蔽保放 3dcecb48 → 遮蔽/分层交互三缺陷 e61c7c2c → 推导式/重绑定位置语义三缺陷
+b9edefd1，最终形态=ScopeKind 分层+行区间+行序裁决+遮蔽即止+模块回退最外层）已修
+并在 AUD-008 勾账行补证据，AUD-006 勾账行补口径注明（静默截断，无环专项诊断）。
+报告 v1 的三处表述（14 计数口径、debugpy/py-spy commit 归因、workspaceIndex :304
+漂移）已按复审意见改到本版。
