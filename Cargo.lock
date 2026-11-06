@@ -694,6 +694,7 @@ dependencies = [
 name = "kode-server"
 version = "0.2.0"
 dependencies = [
+ "kode-db-clone",
  "kode-index",
  "kode-parser",
  "kode-protocol",

@@ -51,6 +51,14 @@
     "onCommand:kbengine.database.previewTable",
     "onCommand:kbengine.database.previewSchemaImpact",
     "onCommand:kbengine.database.showDriftEvidence",
+    "onCommand:kbengine.clone.configureSource",
+    "onCommand:kbengine.clone.configureTarget",
+    "onCommand:kbengine.clone.testSource",
+    "onCommand:kbengine.clone.testTarget",
+    "onCommand:kbengine.clone.inspectArchive",
+    "onCommand:kbengine.clone.export",
+    "onCommand:kbengine.clone.import",
+    "onCommand:kbengine.clone.showAudit",
     "onCommand:kbengine.server.start",
     "onCommand:kbengine.server.stop",
     "onCommand:kbengine.server.restart",
@@ -377,6 +385,46 @@
         "command": "kbengine.database.showDriftEvidence",
         "title": "Show Drift Evidence",
         "icon": "$(history)"
+      },
+      {
+        "command": "kbengine.clone.configureSource",
+        "title": "Configure Clone Source Connection",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "kbengine.clone.configureTarget",
+        "title": "Configure Clone Target Connection",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "kbengine.clone.testSource",
+        "title": "Test Clone Source Connection",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "kbengine.clone.testTarget",
+        "title": "Test Clone Target Connection",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "kbengine.clone.inspectArchive",
+        "title": "Inspect Player Clone Archive",
+        "icon": "$(file-zip)"
+      },
+      {
+        "command": "kbengine.clone.export",
+        "title": "Export Player Data to Archive",
+        "icon": "$(export)"
+      },
+      {
+        "command": "kbengine.clone.import",
+        "title": "Import Player Data from Archive",
+        "icon": "$(import)"
+      },
+      {
+        "command": "kbengine.clone.showAudit",
+        "title": "Show Player Clone Import Audits",
+        "icon": "$(output)"
       },
       {
         "command": "kbengine.server.start",
@@ -951,6 +999,16 @@
           "command": "kbengine.entity.new",
           "when": "explorerResourceIsFolder",
           "group": "creation"
+        },
+        {
+          "command": "kbengine.clone.inspectArchive",
+          "when": "resourceExtname == .kdpclone",
+          "group": "navigation@60"
+        },
+        {
+          "command": "kbengine.clone.import",
+          "when": "resourceExtname == .kdpclone",
+          "group": "navigation@61"
         },
         {
           "command": "kbengine.git.showHistory",
