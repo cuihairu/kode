@@ -3,7 +3,7 @@
 
 
 class ROLE(object):
-	def onMove(self, position):
+	def onMove(self, position, userData=None):
 		pass
 
 	def requestAggro(self, entityId):

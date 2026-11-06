@@ -277,7 +277,7 @@ describe('组合根:≥2 实体 4 组端到端跳转', () => {
     {
       label: 'G3 Avatar(实体 → 接口 ROLE;实体自带实现命中)',
       callFile: 'scripts/cell/Avatar.py',
-      callNeedle: 'self.onMove(None)',
+      callNeedle: 'self.onMove(None, None)',
       defFile: 'scripts/cell/Avatar.py',
       defNeedle: 'def onMove',
       method: 'onMove',

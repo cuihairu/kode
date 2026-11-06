@@ -15,6 +15,9 @@
 		<onAggro>
 			<Arg> UINT32 </Arg>
 		</onAggro>
+		<onDamaged>
+			<Arg> UINT32 </Arg>
+		</onDamaged>
 	</CellMethods>
 
 </root>

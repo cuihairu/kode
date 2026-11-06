@@ -111,7 +111,7 @@ describe('分层跳转(对象级放弃收窄)', () => {
       label: 'G3 Avatar(实体 → 接口 ROLE 声明;实体自带实现命中)',
       entity: 'Avatar',
       callFile: 'scripts/cell/Avatar.py',
-      callNeedle: 'self.onMove(None)',
+      callNeedle: 'self.onMove(None, None)',
       method: 'onMove',
       hasDeclaration: true,
       objectProbe: 'object=Avatar',

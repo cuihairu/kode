@@ -76,26 +76,42 @@ describe('rustSymbolsToIndexedMethodLocations', () => {
     const path = 'tests/fixtures/kbengine-demo-assets/scripts/cell/Monster.py';
     const text = readFixture('Monster.py');
     const symbols = fileSymbols(path, [
-      sym('__init__', 9, 1, 10),
-      sym('onAggro', 12, 1, 17),
-      sym('onMove', 19, 1, 24),
-      sym('think', 26, 1, 28, [['respawn', 28, 2]])
+      // 2026-11-07:DEMO-GAME-002 AI 状态机落地(决策/执行分离),方法面全量锁定
+      sym('__init__', 16, 1, 26, [['addTimer', 25, 2]]),
+      sym('onAggro', 27, 1, 33),
+      sym('onDamaged', 34, 1, 43),
+      sym('onMove', 44, 1, 53),
+      sym('onMoveOver', 54, 1, 59),
+      sym('onMoveFailure', 60, 1, 66),
+      sym('think', 67, 1, 70, [['respawn', 69, 2]]),
+      sym('_pickTarget', 71, 1, 94, [['entitiesInRange', 84, 11]]),
+      sym('_setState', 95, 1, 107),
+      sym('_moveToPoint', 108, 1, 111, [['moveToPoint', 110, 2]]),
+      sym('onTimer', 112, 1, 162, [
+        ['_pickTarget', 120, 11],
+        ['_setState', 135, 2],
+        ['_moveToPoint', 139, 4],
+        ['moveToEntity', 146, 4],
+        ['_moveToPoint', 160, 4]
+      ])
     ]);
     const rust = rustSymbolsToIndexedMethodLocations([{ path, text }], symbols);
     expect(normalized(rust)).toEqual(normalized(parsePythonMethodBlocks(text, path)));
   });
 
-  it('Avatar.py:同一口径(notifyMove 的 onMove 调用 0-based 18 col 2 → 1-based 19 col 7)', () => {
+  it('Avatar.py:同一口径(notifyMove 的 onMove 调用 0-based 62 col 2 → 1-based 63 col 7)', () => {
     const path = 'tests/fixtures/kbengine-demo-assets/scripts/cell/Avatar.py';
     const text = readFixture('Avatar.py');
     const symbols = fileSymbols(path, [
-      sym('__init__', 6, 1, 7),
-      sym('respawn', 9, 1, 14),
-      sym('onEnterSpace', 16, 1, 21),
-      // 2026-11-07:DEMO-GAME-001 锚点 evidenceLog 落文件链,onEnterSpace 块 +2 行
-      sym('onLeaveSpace', 26, 1, 31),
-      sym('onMove', 33, 1, 40),
-      sym('notifyMove', 42, 1, 44, [['onMove', 44, 2]])
+      // 2026-11-07:DEMO-GAME-002 receiveDamage 插入(cell/Avatar.py onEnterSpace 后),
+      // onLeaveSpace 之后锚点 +18(锚点证据块见 docs/acceptance-evidence/DEMO-GAME-002.md)
+      sym('__init__', 6, 1, 8),
+      sym('respawn', 9, 1, 15),
+      sym('onEnterSpace', 16, 1, 25),
+      sym('receiveDamage', 26, 1, 43),
+      sym('onLeaveSpace', 44, 1, 50),
+      sym('onMove', 51, 1, 60),
+      sym('notifyMove', 61, 1, 64, [['onMove', 63, 2]])
     ]);
     const rust = rustSymbolsToIndexedMethodLocations([{ path, text }], symbols);
     expect(normalized(rust)).toEqual(normalized(parsePythonMethodBlocks(text, path)));
