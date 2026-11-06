@@ -26,7 +26,7 @@
 | AUD-005 GlobalDataIndex 旧版覆盖 | 已修已勾 | 4d62ade | noteSaved 同步分支清 editBuffers + runEditRecompute 源复核；tests/globalDataIndex.test.ts 在册 | 134 过批次内 |
 | AUD-006 Rust def 递归环 | 已修已勾 | 6a2e005 | process_topology.rs visiting 活动栈 + def_md5.rs loading 活动栈三处守卫在码。**口径注明**：环守卫为静默截断（walk_def 再遇即 return、load_* 跳过），不产「环」专项诊断；验收「循环返回诊断不溢出」按「循环返回、不栈溢出」兑现（def_md5 面无诊断输出通道），A→B→A 测试锁不溢出+Ok 返回 | process_topology_units 31 过 + def_md5_units 12 过* |
 | AUD-007 dataflow AST 语义 | 已修已勾 | b26396e | AugAssign 读旧值/Delete 终结链/walrus/Comprehension target/Subscript 读容器均在码 | dataflow_test 17 过 |
-| AUD-008 callgraph/symbols/graph 遗漏 | 已修已勾（含 2026-11-07 九轮复审返工，见 §返工） | dd869b5 + 8c2b7411 + bc8a06cf + 086f13c1 + 96a30607 + 3dcecb48 + e61c7c2c + b9edefd1 + f3276040 + faa168c7 | 嵌套 def/class、Match guard、Match 属性写、本地裸名不产跨文件伪边均在码；模块接收者补调用点作用域 import 绑定核验（保守歧义契约：ScopeKind 分层+行区间+歧义即放弃+目标 basename+模块重绑定遮蔽+模块回退最外层） | callgraph 12 + graph 22（含返工新 16 例）+ symbols 7 过 |
+| AUD-008 callgraph/symbols/graph 遗漏 | 已修已勾（含 2026-11-07 十轮复审返工，见 §返工） | dd869b5 + 8c2b7411 + bc8a06cf + 086f13c1 + 96a30607 + 3dcecb48 + e61c7c2c + b9edefd1 + f3276040 + faa168c7 + 82b7ab59 | 嵌套 def/class、Match guard、Match 属性写、本地裸名不产跨文件伪边均在码；模块接收者补调用点作用域 import 绑定核验（保守歧义契约：ScopeKind 分层+行区间+歧义即放弃+目标 basename+模块重绑定遮蔽+目标一致性+模块回退最外层） | callgraph 12 + graph 24（含返工新 18 例）+ symbols 7 过 |
 
 \* 单测文件随后续批次自然增长，数字为当前 HEAD 实跑，非勾账时数字。
 
@@ -80,17 +80,21 @@
 
 - **P1 ×2 · 回退面伪边源**：①模块顶层 `import avatar; avatar = obj` 后，函数链未决回退只查 imports 表、不看顶层重绑定遮蔽 → 伪边；②`import other as avatar` 按绑定名 basename 误指同名的无关 avatar.py（目标身份歧义）。修（faa168c7）：AstSymbols 增 `module_shadows`（顶层 Store 名，回退先查）；作用域层 bindings 值改 `(行, 目标模块 basename)`（无别名=顶层首段、有别名=模块末段、from-import=symbol），解析链与回退统一按目标 basename 查文件。红证=graph_test.rs `module_rebind_blocks_module_fallback` + `aliased_import_resolves_target_module_not_binding_name`（修前双红）；门禁=graph_test 22/22、kode-python 全绿（61）、workspace(excl scheduler) 103 target 0 failed、kode-scheduler 绿、clippy kode-python 0。todo AUD-008 勾账行已补注。
 
-## 本日复跑数字（起核 HEAD e7af5cba → 返工后 HEAD faa168c7，0 failed）
+## 返工（codex luna 第十轮 FAIL 项）
+
+- **P1 ×2 · 模块回退面**：①无别名 `import a.b` 回退取末段 b，同名无关 b.py 被误指（应取顶层首段 a——绑定的就是包本体，与函数层收集器同口径）；②同名多次 import 目标不同（other/actual 争 avatar 绑定）按 find 首条误指。修（82b7ab59）：回退 basename 无别名取首段；imports 表目标一致性检查（is_from/module/symbol 全同才放行，否则放弃）；作用域层 push_binding 同名换 basename 记空串歧义标记、解析层放弃。红证=graph_test.rs `module_fallback_dotted_import_uses_first_segment`（修前红：b.py 被误指）+`conflicting_import_targets_give_up_edge`（修前红：伪边在产）；门禁=graph_test 24/24、kode-python 全绿（63）、workspace(excl scheduler) 103 target 0 failed、kode-scheduler 绿、clippy kode-python 0。todo AUD-008 勾账行已补注。
+
+## 本日复跑数字（起核 HEAD e7af5cba → 返工后 HEAD 82b7ab59，0 failed）
 
 - vitest：9 文件 266 过（e7af5cba）→ 复跑 267 过（8c2b7411 前身，含 KR-AUD-35 新用例）0 败（cov-debug-process/serverManager/processTopologyFlush/defPythonParity/hotReloadTargetState/selfAttributeFlowTypes=132 批次；globalDataIndex/workspaceIndexColdYield/workspaceEventIndex=134 批次）。
-- cargo：kode-server（process_topology_units 31 / def_md5_units 12 / dependency_graph_dispatch 2 / lint_rules 19 / flag_domains_golden 5）+ kode-parser parser_units 19 + kode-python（callgraph 12 / dataflow 17 / graph 22 / symbols 7 / lib 3）+ kode-scheduler 14，全 0 failed。
+- cargo：kode-server（process_topology_units 31 / def_md5_units 12 / dependency_graph_dispatch 2 / lint_rules 19 / flag_domains_golden 5）+ kode-parser parser_units 19 + kode-python（callgraph 12 / dataflow 17 / graph 24 / symbols 7 / lib 3）+ kode-scheduler 14，全 0 failed。
 
 ## 记账说明
 
-本批复核：14 项勾账行与代码事实一致；九轮复审残余（AUD-008 接收者伪边 8c2b7411 →
+本批复核：14 项勾账行与代码事实一致；十轮复审残余（AUD-008 接收者伪边 8c2b7411 →
 函数内导入漏判 bc8a06cf → 文件级合并重开伪边 086f13c1 → 裸名键两缺陷 96a30607 →
 遮蔽保放 3dcecb48 → 遮蔽/分层交互三缺陷 e61c7c2c → 推导式/重绑定位置语义三缺陷
-b9edefd1 → 行序裁决不完备定版保守歧义契约 f3276040 → 回退面伪边源两例 faa168c7）
-已修并在 AUD-008 勾账行补证据，AUD-006 勾账行补口径注明（静默截断，无环专项诊断）。
-报告 v1 的三处表述（14 计数口径、debugpy/py-spy commit 归因、workspaceIndex :304
-漂移）已按复审意见改到本版。
+b9edefd1 → 行序裁决不完备定版保守歧义契约 f3276040 → 回退面伪边源两例 faa168c7 →
+回退 basename/目标一致性两例 82b7ab59）已修并在 AUD-008 勾账行补证据，AUD-006
+勾账行补口径注明（静默截断，无环专项诊断）。报告 v1 的三处表述（14 计数口径、
+debugpy/py-spy commit 归因、workspaceIndex :304 漂移）已按复审意见改到本版。
