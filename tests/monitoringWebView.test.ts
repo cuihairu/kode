@@ -276,7 +276,7 @@ describe('MonitoringWebView.formatMetricCard', () => {
 
     expect(html).toContain('progress-fill warning');
     expect(html).toContain('metric-status warning');
-    expect(html).toContain('Watcher Details');
+    expect(html).toContain('Watcher 详情');
     expect(html).not.toContain('对象池容量');
   });
 

@@ -18,10 +18,13 @@
  */
 
 import * as vscode from 'vscode';
+import { WEBVIEW_THEME_CSS } from './webviewTheme';
+import { htmlLang, resolvePanelLocale, strings } from './webviewStrings';
 import { EntityDependencyAnalyzer, DependencyGraph } from './entityDependency';
 import { buildDependencyGraphInRust } from './dependencyGraphRust';
 import type { DependencyGraphRust } from './dependencyGraphRust';
 import { buildPythonCallGraphInRust } from './pythonCallGraphRust';
+import { randomNonce, webviewAssetUri, webviewScriptCsp } from './webviewSecurity';
 import type {
   PythonCallGraphRustResult,
   PythonCallGraphNode
@@ -109,18 +112,19 @@ const KIND_EMOJI: Record<RenderNodeKind, string> = {
 
 /** Rust 源按 kind 的 classDef 样式(entity 沿用 legacy baseNode 配色)。 */
 const KIND_STYLE: Record<RenderNodeKind, string> = {
-  entity: 'fill:#e1f5fe,stroke:#01579b,stroke-width:2px',
-  def: 'fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px',
-  interface: 'fill:#e0f7fa,stroke:#006064,stroke-width:2px',
-  component: 'fill:#fff3e0,stroke:#e65100,stroke-width:2px',
-  type: 'fill:#e8eaf6,stroke:#283593,stroke-width:2px',
-  python: 'fill:#e0f2f1,stroke:#004d40,stroke-width:2px'
+  entity: 'fill:#173a5e,stroke:#3794ff,stroke-width:2px',
+  def: 'fill:#243a44,stroke:#75beff,stroke-width:2px',
+  interface: 'fill:#103a35,stroke:#4ec9b0,stroke-width:2px',
+  component: 'fill:#2d1d3a,stroke:#c586c0,stroke-width:2px',
+  type: 'fill:#3a2d10,stroke:#cca700,stroke-width:2px',
+  python: 'fill:#1d3a2a,stroke:#89d185,stroke-width:2px'
 };
 
 /** Rust 源边 kind → mermaid 箭头;未登记 kind 回落 -->。 */
 const RUST_ARROW: Record<string, string> = {
   inheritance: '-->',
-  registration: '--',
+  // `--` 在 mermaid 12 语法里是断链(必须 `---`/`-->`),整图报语法错
+  registration: '---',
   'is-a': '-.->',
   'has-a': '--o',
   implements: '==>',
@@ -247,9 +251,13 @@ function renderLegacyMermaid(graph: RenderGraph): string {
     mermaid += `  ${node.id}["${node.label}"]\n`;
   }
 
-  // 添加边(继承/组合等一律实线箭头,与迁移前口径一致)
+  // 添加边(继承/组合等一律实线箭头)。空标签不输出管道段:离线打包的
+  // mermaid(@mermaid-js/tiny 12)对 `-->||` 直接报语法错,整图渲染失败。
   for (const edge of graph.edges) {
-    mermaid += `  ${edge.from} -->|${edge.label ?? ''}| ${edge.to}\n`;
+    const label = edge.label ?? '';
+    mermaid += label
+      ? `  ${edge.from} -->|${label}| ${edge.to}\n`
+      : `  ${edge.from} --> ${edge.to}\n`;
   }
 
   // 添加点击跳转
@@ -260,9 +268,9 @@ function renderLegacyMermaid(graph: RenderGraph): string {
   }
 
   // 添加样式
-  mermaid += '\n  classDef baseNode fill:#e1f5fe,stroke:#01579b,stroke-width:2px;\n';
-  mermaid += '  classDef cellNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px;\n';
-  mermaid += '  classDef clientNode fill:#fffde7,stroke:#f57f17,stroke-width:2px;\n';
+  mermaid += '\n  classDef baseNode fill:#173a5e,stroke:#3794ff,stroke-width:2px;\n';
+  mermaid += '  classDef cellNode fill:#1d3a2a,stroke:#89d185,stroke-width:2px;\n';
+  mermaid += '  classDef clientNode fill:#3a2d10,stroke:#cca700,stroke-width:2px;\n';
 
   for (const node of graph.nodes) {
     const types = node.types ?? [];
@@ -407,10 +415,10 @@ const CALL_KIND_ARROW: Record<string, string> = {
 
 /** 边 kind → classDef 填充色(kind 独立配色,图例可辨)。 */
 const CALL_KIND_STYLE: Record<CallGraphNodeKind, string> = {
-  method: 'fill:#e3f2fd,stroke:#1565c0,stroke-width:2px',
-  function: 'fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px',
-  module: 'fill:#fff3e0,stroke:#e65100,stroke-width:2px',
-  external: 'fill:#eceff1,stroke:#455a64,stroke-width:1px,stroke-dasharray:3 3'
+  method: 'fill:#173a5e,stroke:#3794ff,stroke-width:2px',
+  function: 'fill:#243a44,stroke:#75beff,stroke-width:2px',
+  module: 'fill:#2d1d3a,stroke:#c586c0,stroke-width:2px',
+  external: 'fill:#333333,stroke:#808080,stroke-width:1px,stroke-dasharray:3 3'
 };
 
 /** 边 kind → 中文图例(未登记回落「未知」)。 */
@@ -950,10 +958,22 @@ export class EntityDependencyWebView {
     return graph.source === 'rust' ? renderRustMermaid(graph) : renderLegacyMermaid(graph);
   }
 
+  /** UI-05:统计卡按业务域分组,组头 <details> 可折叠并带条目计数 */
+  private statGroup(domain: string, label: string, cards: string[]): string {
+    return `      <details class="stat-group" data-domain="${domain}" open>
+        <summary><span>${label}</span><span class="gcount" data-count="${cards.length}">${cards.length}</span></summary>
+        <div class="stat-cards">
+${cards.join('\n')}
+        </div>
+      </details>`;
+  }
+
   private statCard(label: string, value: string | number): string {
+    // KR-AUD-53:value 面会落到进程角色串/最常引用实体名等来自扫描结果的
+    // 字符串面,与 label 一并转义(标签注入)
     return `      <div class="stat-card">
-        <div class="stat-label">${label}</div>
-        <div class="stat-value">${value}</div>
+        <div class="stat-label">${escapeHtml(String(label))}</div>
+        <div class="stat-value">${escapeHtml(String(value))}</div>
       </div>`;
   }
 
@@ -967,7 +987,19 @@ export class EntityDependencyWebView {
     callGraph: CallGraphGraph | null,
     rustUnavailable: boolean
   ): string {
+    const t = strings(resolvePanelLocale()).entityDependency;
     const title = this.panelTitle();
+    // KR-AUD-50/53:整页 nonce CSP + mermaid 离线打包(media/mermaid.tiny.js,
+    // 经 asWebviewUri 取与 cspSource 同源的 URI),脚本不再依赖 CDN;
+    // 图片源只给导出用的 data:/blob: 开洞。
+    const nonce = randomNonce();
+    const cspSource = this.panel?.webview.cspSource ?? 'vscode-webview:';
+    const mermaidUri = webviewAssetUri(
+      this.panel?.webview,
+      this.context.extensionUri,
+      'media',
+      'mermaid.tiny.js'
+    );
     const isCallGraph = this.mode === 'callgraph';
     const sourceBadge = isCallGraph
       ? rustUnavailable
@@ -995,22 +1027,30 @@ export class EntityDependencyWebView {
       ].join('\n')
       : graph && graph.source === 'rust'
         ? [
-          this.statCard('节点', graph.stats.nodeCount),
-          this.statCard('边', graph.stats.edgeCount),
-          this.statCard('实体', graph.stats.entityCount),
-          this.statCard('def', graph.stats.defCount),
-          this.statCard('接口', graph.stats.interfaceCount),
-          this.statCard('组件', graph.stats.componentCount),
-          this.statCard('类型', graph.stats.typeCount),
-          this.statCard('Python', graph.stats.pythonCount)
+          this.statGroup('graph', t.groupGraph, [
+            this.statCard(t.nodes, graph.stats.nodeCount),
+            this.statCard(t.edges, graph.stats.edgeCount)
+          ]),
+          this.statGroup('defs', t.groupDefs, [
+            this.statCard(t.entities, graph.stats.entityCount),
+            this.statCard(t.defs, graph.stats.defCount),
+            this.statCard(t.interfaces, graph.stats.interfaceCount),
+            this.statCard(t.components, graph.stats.componentCount),
+            this.statCard(t.types, graph.stats.typeCount),
+            this.statCard(t.python, graph.stats.pythonCount)
+          ])
         ].join('\n')
         : [
-          this.statCard('总实体数', graph?.legacyStats?.totalEntities ?? 0),
-          this.statCard('Base 实体', graph?.legacyStats?.baseEntities ?? 0),
-          this.statCard('Cell 实体', graph?.legacyStats?.cellEntities ?? 0),
-          this.statCard('Client 实体', graph?.legacyStats?.clientEntities ?? 0),
-          this.statCard('最大继承深度', graph?.legacyStats?.maxDepth ?? 0),
-          this.statCard('最常引用', graph?.legacyStats?.mostReferenced || '-')
+          this.statGroup('inheritance', t.groupInheritance, [
+            this.statCard(t.totalEntities, graph?.legacyStats?.totalEntities ?? 0),
+            this.statCard(t.baseEntities, graph?.legacyStats?.baseEntities ?? 0),
+            this.statCard(t.cellEntities, graph?.legacyStats?.cellEntities ?? 0),
+            this.statCard(t.clientEntities, graph?.legacyStats?.clientEntities ?? 0),
+            this.statCard(t.maxDepth, graph?.legacyStats?.maxDepth ?? 0)
+          ]),
+          this.statGroup('hotspot', t.groupHotspot, [
+            this.statCard(t.mostReferenced, graph?.legacyStats?.mostReferenced || '-')
+          ])
         ].join('\n');
 
     const pathsHtml =
@@ -1047,15 +1087,15 @@ ${mermaidGraph}
       ? callGraphLegendHtml()
       : `
     <div class="legend-item">
-      <div class="legend-dot" style="background-color: #e1f5fe; border: 2px solid #01579b;"></div>
+      <div class="legend-dot" style="background-color: #173a5e; border: 2px solid #3794ff;"></div>
       <span>Base 实体</span>
     </div>
     <div class="legend-item">
-      <div class="legend-dot" style="background-color: #e8f5e9; border: 2px solid #1b5e20;"></div>
+      <div class="legend-dot" style="background-color: #1d3a2a; border: 2px solid #89d185;"></div>
       <span>Cell 实体</span>
     </div>
     <div class="legend-item">
-      <div class="legend-dot" style="background-color: #fffde7; border: 2px solid #f57f17;"></div>
+      <div class="legend-dot" style="background-color: #3a2d10; border: 2px solid #cca700;"></div>
       <span>Client 实体</span>
     </div>
     <div class="legend-item">
@@ -1063,22 +1103,59 @@ ${mermaidGraph}
     </div>`;
 
     return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${htmlLang(resolvePanelLocale())}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- 最小 CSP:default-src 'none' 断掉一切外联/外帧/连接,脚本源钉死 mermaid 固定 CDN 路径。
-       未能收 nonce:mermaid securityLevel=loose 的 SVG 点击回调(openFilePath)与工具栏
-       都走内联事件处理器,需 mermaid 本地化+回调改造后才能收紧(已单独登记 todo)。 -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js 'unsafe-inline';">
+  <!-- 最小 CSP(KR-AUD-50/53):default-src 'none' 断掉一切外联/外帧/连接,
+       脚本只认本次渲染 nonce + 扩展自带 media/mermaid.tiny.js(离线打包,
+       与 cspSource 同源);mermaid securityLevel=strict 下其自带 click 回调被
+       丢弃,打开文件改由面板脚本按 click 指令自绑(见下方事件委托)。 -->
+  <meta http-equiv="Content-Security-Policy" content="${webviewScriptCsp(nonce, [cspSource], ['data:', 'blob:', cspSource])}">
   <title>${title}</title>
   <style>
+    ${WEBVIEW_THEME_CSS}
     body {
-      font-family: var(--vscode-font-family);
-      background-color: var(--vscode-editor-background);
-      color: var(--vscode-editor-foreground);
       margin: 0;
       padding: 20px;
+    }
+
+    /* UI-05:统计卡按业务域分组(与 monitoring 同一分类管理范式) */
+    .stat-group {
+      border: 1px solid var(--kode-border);
+      border-radius: var(--kode-r);
+      background: var(--kode-surface);
+      margin-bottom: 8px;
+    }
+    .stat-group > summary {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      cursor: pointer;
+      list-style: none;
+      color: var(--kode-fg-3);
+      font-size: var(--kode-t-meta);
+      font-weight: 600;
+    }
+    .stat-group > summary::-webkit-details-marker { display: none; }
+    .stat-group > summary::before { content: '▸'; color: var(--kode-fg-4); font-size: 10px; }
+    .stat-group[open] > summary::before { content: '▾'; }
+    .stat-group .gcount {
+      background: var(--kode-surface-2);
+      border: 1px solid var(--kode-border);
+      border-radius: 8px;
+      color: var(--kode-fg-3);
+      font-family: var(--kode-mono);
+      font-size: var(--kode-t-tag);
+      font-weight: 400;
+      padding: 0 7px;
+    }
+    .stat-group .stat-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px;
+      padding: 0 14px 12px;
     }
 
     .header {
@@ -1217,7 +1294,7 @@ ${mermaidGraph}
       font-size: 13px;
     }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script src="${mermaidUri}"></script>
 </head>
 <body>
   <div class="header">
@@ -1225,13 +1302,13 @@ ${mermaidGraph}
     <div style="display: flex; align-items: center; gap: 10px;">
       <span class="source-badge">${sourceBadge}</span>
       <div class="toolbar">
-        <select id="mode-select" onchange="setMode(this.value)" style="padding: 8px; background-color: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border);">
+        <select id="mode-select" style="padding: 8px; background-color: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border);">
           <option value="dependency" ${isCallGraph ? '' : 'selected'}>实体依赖</option>
           <option value="callgraph" ${isCallGraph ? 'selected' : ''}>调用图</option>
         </select>
-        <button onclick="refreshGraph()">刷新</button>
-        <button onclick="exportGraph('png')">导出 PNG</button>
-        <button onclick="exportGraph('svg')">导出 SVG</button>
+        <button id="refresh-graph-btn">刷新</button>
+        <button id="export-png-btn">导出 PNG</button>
+        <button id="export-svg-btn">导出 SVG</button>
       </div>
     </div>
   </div>
@@ -1250,14 +1327,15 @@ ${graphHtml}
 ${legendHtml}
   </div>
 
-  <script>
+  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
 
-    // 初始化 Mermaid
+    // 初始化 Mermaid(KR-AUD-53:securityLevel=strict——标签经 DOMPurify 清洗,
+    // 自带 click 回调在此级别被 mermaid 丢弃,故下方改为面板自绑)
     mermaid.initialize({
       startOnLoad: true,
       theme: 'default',
-      securityLevel: 'loose',
+      securityLevel: 'strict',
       flowchart: {
         useMaxWidth: true,
         htmlLabels: true,
@@ -1265,13 +1343,80 @@ ${legendHtml}
       }
     });
 
-    // 节点点击 → 打开对应文件(entities.xml / .def / types.xml / python)
+    // click 指令回调名保留(strict 下 mermaid 不再调用,图文本口径不变);
+    // 真正的点击打开走下方事件委托,映射同样来自这些 click 指令。
     window.openFilePath = function(filePath) {
       vscode.postMessage({
         command: 'openNode',
         filePath: filePath
       });
     };
+
+    // 节点 → 文件路径映射:渲染前从 .mermaid 源文本读 click 指令
+    // (mermaid 渲染会替换该元素内容,必须在 DOMContentLoaded 前抓取)
+    const openPaths = new Map();
+    const openLabels = new Map();
+    const mermaidSource = document.querySelector('#graph-container .mermaid');
+    if (mermaidSource) {
+      const text = mermaidSource.textContent || '';
+      const nodeLabelRe = /^\\s*([A-Za-z0-9_]+)\\["((?:[^"\\\\]|\\\\.)*)"\\]/gm;
+      const clickRe = /^\\s*click\\s+([A-Za-z0-9_]+)\\s+openFilePath\\s+"((?:[^"\\\\]|\\\\.)*)"/gm;
+      const labels = new Map();
+      let nodeMatch;
+      while ((nodeMatch = nodeLabelRe.exec(text)) !== null) {
+        labels.set(nodeMatch[1], nodeMatch[2]);
+      }
+      let clickMatch;
+      while ((clickMatch = clickRe.exec(text)) !== null) {
+        const filePath = clickMatch[2].replace(/\\\\"/g, '"');
+        openPaths.set(clickMatch[1], filePath);
+        const label = labels.get(clickMatch[1]);
+        if (label !== undefined && !openLabels.has(label)) {
+          openLabels.set(label, filePath);
+        }
+      }
+    }
+
+    // 事件委托:mermaid 渲染出的 g.node id 形如 <前缀><节点 id>-<序号>
+    // (可带 diagramId 前缀),解析不出时回落节点标签文本
+    function resolveOpenPath(node) {
+      const domId = node.id || '';
+      const idMatch = /(?:^|[^A-Za-z0-9_])([A-Za-z0-9_]+)-\\d+$/.exec(domId);
+      if (idMatch && openPaths.has(idMatch[1])) {
+        return openPaths.get(idMatch[1]);
+      }
+      if (openPaths.has(domId)) {
+        return openPaths.get(domId);
+      }
+      const labelEl = node.querySelector('.label');
+      const label = labelEl ? (labelEl.textContent || '').trim() : '';
+      return openLabels.get(label) || null;
+    }
+
+    const graphContainer = document.getElementById('graph-container');
+    if (graphContainer) {
+      graphContainer.addEventListener('click', event => {
+        const target = event.target;
+        const node = target && typeof target.closest === 'function'
+          ? target.closest('g.node')
+          : null;
+        if (!node) {
+          return;
+        }
+        const filePath = resolveOpenPath(node);
+        if (filePath) {
+          vscode.postMessage({ command: 'openNode', filePath: filePath });
+        }
+      });
+    }
+
+    // 工具栏:nonce CSP 下内联事件处理器不执行,一律脚本绑定
+    document.getElementById('mode-select')?.addEventListener('change', event => {
+      setMode(event.target.value);
+    });
+    document.getElementById('refresh-graph-btn')?.addEventListener('click', refreshGraph);
+    document.getElementById('export-png-btn')?.addEventListener('click', () => exportGraph('png'));
+    document.getElementById('export-svg-btn')?.addEventListener('click', () => exportGraph('svg'));
 
     // 模式切换 → 扩展侧重绘
     function setMode(mode) {

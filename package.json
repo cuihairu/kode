@@ -51,6 +51,14 @@
     "onCommand:kbengine.database.previewTable",
     "onCommand:kbengine.database.previewSchemaImpact",
     "onCommand:kbengine.database.showDriftEvidence",
+    "onCommand:kbengine.clone.configureSource",
+    "onCommand:kbengine.clone.configureTarget",
+    "onCommand:kbengine.clone.testSource",
+    "onCommand:kbengine.clone.testTarget",
+    "onCommand:kbengine.clone.inspectArchive",
+    "onCommand:kbengine.clone.export",
+    "onCommand:kbengine.clone.import",
+    "onCommand:kbengine.clone.showAudit",
     "onCommand:kbengine.server.start",
     "onCommand:kbengine.server.stop",
     "onCommand:kbengine.server.restart",
@@ -73,6 +81,7 @@
     "onCommand:kbengine.remoteServers.refresh",
     "onCommand:kbengine.debug.updateLaunchJson",
     "onCommand:kbengine.config.showFinal",
+    "onCommand:kbengine.lintRules.showReport",
     "onCommand:kbengine.metrics.showSummary",
     "onCommand:kbengine.metrics.startCpuProfile",
     "onCommand:kbengine.metrics.stopCpuProfile",
@@ -102,6 +111,9 @@
     "onCommand:kbengine.snippets.generateFromSelection",
     "onCommand:kbengine.telnet.showPanel",
     "onCommand:kbengine.telnet.disconnect",
+    "onCommand:kbengine.playerData.refresh",
+    "onCommand:kbengine.playerData.testConnection",
+    "onCommand:kbengine.playerData.queryByDbid",
     "onCommand:kbengine.httpRequests.run",
     "onCommand:kbengine.httpRequest.run",
     "onCommand:kbengine.discovery.report",
@@ -281,21 +293,29 @@
           "name": "%kbengine.view.quickActions%"
         },
         {
-          "id": "kbengine.entityExplorer",
-          "name": "%kbengine.view.entityExplorer%"
-        },
-        {
           "id": "kbengine.serverControl",
           "name": "%kbengine.view.serverControl%"
-        },
-        {
-          "id": "kbengine.debugTargets",
-          "name": "%kbengine.view.debugTargets%"
         },
         {
           "id": "kbengine.telnetStatus",
           "name": "%kbengine.view.telnetStatus%",
           "when": "kbengine.telnetConfigured"
+        },
+        {
+          "id": "kbengine.playerData",
+          "name": "%kbengine.view.playerData%"
+        },
+        {
+          "id": "kbengine.remoteServers",
+          "name": "%kbengine.view.remoteServers%"
+        },
+        {
+          "id": "kbengine.entityExplorer",
+          "name": "%kbengine.view.entityExplorer%"
+        },
+        {
+          "id": "kbengine.debugTargets",
+          "name": "%kbengine.view.debugTargets%"
         },
         {
           "id": "kbengine.config",
@@ -310,10 +330,6 @@
           "id": "kbengine.gitRangeHistory",
           "name": "%kbengine.view.gitRangeHistory%",
           "when": "kode.gitHistoryEnabled"
-        },
-        {
-          "id": "kbengine.remoteServers",
-          "name": "%kbengine.view.remoteServers%"
         }
       ]
     },
@@ -376,6 +392,46 @@
         "command": "kbengine.database.showDriftEvidence",
         "title": "Show Drift Evidence",
         "icon": "$(history)"
+      },
+      {
+        "command": "kbengine.clone.configureSource",
+        "title": "Configure Clone Source Connection",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "kbengine.clone.configureTarget",
+        "title": "Configure Clone Target Connection",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "kbengine.clone.testSource",
+        "title": "Test Clone Source Connection",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "kbengine.clone.testTarget",
+        "title": "Test Clone Target Connection",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "kbengine.clone.inspectArchive",
+        "title": "Inspect Player Clone Archive",
+        "icon": "$(file-zip)"
+      },
+      {
+        "command": "kbengine.clone.export",
+        "title": "Export Player Data to Archive",
+        "icon": "$(export)"
+      },
+      {
+        "command": "kbengine.clone.import",
+        "title": "Import Player Data from Archive",
+        "icon": "$(import)"
+      },
+      {
+        "command": "kbengine.clone.showAudit",
+        "title": "Show Player Clone Import Audits",
+        "icon": "$(output)"
       },
       {
         "command": "kbengine.server.start",
@@ -480,6 +536,10 @@
         "title": "Show Final Server Config"
       },
       {
+        "command": "kbengine.lintRules.showReport",
+        "title": "Show Lint Rules Capability Report"
+      },
+      {
         "command": "kbengine.debug.updateLaunchJson",
         "title": "Update launch.json",
         "icon": "$(refresh)"
@@ -567,6 +627,16 @@
         "title": "Check Python Language Service Status"
       },
       {
+        "command": "kbengine.python.selectInterpreter",
+        "title": "Select Python Interpreter",
+        "icon": "$(python)"
+      },
+      {
+        "command": "kbengine.python.createVenv",
+        "title": "Create Virtual Environment (venv)",
+        "icon": "$(add)"
+      },
+      {
         "command": "kbengine.generator.templates",
         "title": "Create Entity from Template",
         "icon": "$(file-template)"
@@ -629,6 +699,21 @@
         "command": "kbengine.telnet.disconnect",
         "title": "Disconnect Telnet Session",
         "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "kbengine.playerData.refresh",
+        "title": "Refresh Player Data Profile",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "kbengine.playerData.testConnection",
+        "title": "Test Database Connection (Read-Only SELECT 1)",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "kbengine.playerData.queryByDbid",
+        "title": "Query Player by DBID (Read-Only)",
+        "icon": "$(search)"
       },
       {
         "command": "kbengine.httpRequests.run",
@@ -812,6 +897,21 @@
           "group": "navigation"
         },
         {
+          "command": "kbengine.playerData.refresh",
+          "when": "view == kbengine.playerData",
+          "group": "navigation@0"
+        },
+        {
+          "command": "kbengine.playerData.testConnection",
+          "when": "view == kbengine.playerData",
+          "group": "navigation@1"
+        },
+        {
+          "command": "kbengine.playerData.queryByDbid",
+          "when": "view == kbengine.playerData",
+          "group": "navigation@2"
+        },
+        {
           "command": "kbengine.quickActions.show",
           "when": "view == kbengine.serverControl",
           "group": "navigation"
@@ -948,6 +1048,16 @@
           "group": "creation"
         },
         {
+          "command": "kbengine.clone.inspectArchive",
+          "when": "resourceExtname == .kdpclone",
+          "group": "navigation@60"
+        },
+        {
+          "command": "kbengine.clone.import",
+          "when": "resourceExtname == .kdpclone",
+          "group": "navigation@61"
+        },
+        {
           "command": "kbengine.git.showHistory",
           "when": "kode.gitHistoryEnabled && explorerResourceIsFile",
           "group": "navigation@50"
@@ -1031,6 +1141,11 @@
           "default": true,
           "description": "Python 侧诊断：self.client/self.cell/self.base 无判空 guard 的引用报 Warning，含 .def 段错配检查（default: enabled）；关闭后 Python 文档零诊断产出"
         },
+        "kbengine.configContractDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "配置契约检查诊断：工作区配置层的只读契约检查——.kbengine/debug.json 的 components 空/缺、已知组件 telnet 端口缺失或偏离引擎默认（loginapp 31000/dbmgr 32000/interfaces 33000/logger 34000/baseapp 40000/cellapp 50000/bots 51000）、telnet 段被注释、python.analysis.extraPaths 含 ../../ 双层上跳或指向不存在目录、.gitignore 缺 .kbengine/、CLAUDE.md/README 声明的密码/端口与 debug.json 实值冲突，均报 Warning 附中英修复建议（default: enabled）。配置文件打开/保存即扫、变更即重算；关闭后零诊断产出"
+        },
         "kbengine.attributeNoneDiagnostics": {
           "type": "boolean",
           "default": true,
@@ -1055,6 +1170,21 @@
           "type": "boolean",
           "default": true,
           "description": "空间/导航语义诊断：setSpaceData/delSpaceData 使用保留键 _mapping、调用 navigate/navigatePathPoints 但全文无 canNavigate、addSpaceGeometryMapping params 字典的字符串层键 报 Warning（default: enabled）"
+        },
+        "kbengine.rpcArgCountDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "RPC 实参数量诊断：self.base/cell/client.<method>(...) 调用点顶层实参数与 .def 该方法 <Arg> 数明确不符时报 Warning（default: enabled）；星号实参/动态接收者/声明未就绪/段外声明保留未知不报，inlay 提示不替代诊断"
+        },
+        "kbengine.roleMisuseDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "角色错用诊断：实体脚本里 self.<内建属性> 属于其他角色面（baseapp/cellapp/client）而当前面未注册时报 Warning，引注册面引擎源码取证（default: enabled）；角色不明与普通 Python 类不猜，属性面表与内建属性 hover 元数据同源"
+        },
+        "kbengine.postDestroyDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "销毁后访问诊断：同一函数内可确定的 self.destroy() 之后直接访问 self.<成员>（id/isDestroyed/className/destroy 除外）报 Warning（default: enabled）；跨回调/异常/跨块/条件销毁/def 声明 destroy（动态分派）不猜，不做全文件误报"
         },
         "kbengine.diagnostics.checkUnknownTypes": {
           "type": "boolean",
@@ -1199,8 +1329,8 @@
         },
         "kbengine.binPath": {
           "type": "string",
-          "default": "${workspaceFolder}/../kbe/bin/server",
-          "description": "KBEngine 二进制文件路径，支持 ${workspaceFolder} 和 ${env:VAR}"
+          "default": "${workspaceFolder}/kbe/bin/server",
+          "description": "KBEngine 二进制文件路径，支持 ${workspaceFolder} 和 ${env:VAR}。未显式配置时默认值在盘即生效；不在盘回落自动发现扫描；扫描也落空才在启动检查链报警（CFG-01）"
         },
         "kbengine.assetsRoot": {
           "type": "string",
@@ -1323,6 +1453,21 @@
           "type": "boolean",
           "default": true,
           "description": "启动服务器时自动连接日志收集器"
+        },
+        "kbengine.webviewLocale": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "zh",
+            "en"
+          ],
+          "enumDescriptions": [
+            "跟随 VS Code 显示语言(zh-cn/zh-tw → 中文,其余 → 英文)",
+            "中文",
+            "English"
+          ],
+          "default": "auto",
+          "description": "Webview 面板显示语言"
         },
         "kbengine.webviewConsoleLogs": {
           "type": "boolean",
@@ -1447,7 +1592,7 @@
         "kbengine.python.interpreterPath": {
           "type": "string",
           "default": "",
-          "description": "Python 解释器路径（绝对路径，支持 ${workspaceFolder} 变量）。项目 profile 记录解释器来源：本设置存在才采用；否则取 PATH 里的 python3/python；都找不到记录缺失状态（不伪造路径）"
+          "description": "Python 解释器路径（绝对路径，支持 ${workspaceFolder} 变量）。项目 profile 记录解释器来源：本设置存在才采用；否则深扫工作区已验证环境（pyvenv.cfg/conda-meta 证据 + 解释器二进制，深度封顶剪枝）；再取 PATH 里的 python3/python；都找不到记录缺失状态（不伪造路径）。状态栏项展示当前解释器（kbengine.python.selectInterpreter 可选择或创建 venv，选中即刻生效）"
         },
         "kbengine.python.venvDirectories": {
           "type": "array",

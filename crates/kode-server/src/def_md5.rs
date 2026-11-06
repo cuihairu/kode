@@ -309,12 +309,13 @@ enum TypeKind {
     Array,
     Dict,
     EntityComponent,
+    /// EntityCallType(datatype.h:633-635)——getName()/type() 类身份构造期即定,
+    /// KR-AUD-82:与 aliasName 注册名解耦(引擎 addDataType 不动类身份)。
+    EntityCall,
 }
 
 #[derive(Clone, Debug)]
 struct TypeInfo {
-    /// 最后一次注册名(getName();别名注册会覆盖,datatypes.cpp:194)。
-    alias_name: String,
     kind: TypeKind,
     /// Array 的元素类型 id(FixedArrayType::getDataType)。
     element: Option<u16>,
@@ -345,7 +346,6 @@ impl DataTypesState {
         self.info.insert(
             id,
             TypeInfo {
-                alias_name: String::new(),
                 kind,
                 element: None,
             },
@@ -353,27 +353,31 @@ impl DataTypesState {
         id
     }
 
-    /// addDataType(name, dt):别名注册(aliasName 后置,不入流;datatypes.cpp:190-218)。
+    /// addDataType(name, dt):只写名字→id 表(aliasName 后置,不入流;
+    /// datatypes.cpp:190-218——`dataType->aliasName(name)` 只改 aliasName_,
+    /// 不改 getName()/type() 类身份)。KR-AUD-82:register 不得覆写类型元信息。
     fn register(&mut self, name: &str, id: u16) {
         self.by_name.insert(name.to_string(), id);
-        if let Some(info) = self.info.get_mut(&id) {
-            info.alias_name = name.to_string();
-        }
     }
 
     fn lookup(&self, name: &str) -> Option<u16> {
         self.by_name.get(name).copied()
     }
 
-    /// 该类型是否(或其数组元素链是否)ENTITYCALL(datatype.cpp:2104/2141 的判定)。
+    /// 该类型是否 ENTITYCALL——引擎三处判定都是**类身份**且不递归数组链
+    /// (KR-AUD-86):
+    /// - property.cpp:48-51 `strcmp(dataType_->getName(),"ENTITYCALL")`;
+    /// - datatype.cpp:2141 `dataType->type()`;
+    /// - datatype.cpp:2104 数组键 `dataType->getDataType()->type()`——只看
+    ///   **一层**元素(元素是嵌套 FixedArrayType 时 type()==FIXEDARRAY),
+    ///   由调用方传入元素 id 即等价。
+    ///
+    /// 别名注册不改类身份(KR-AUD-82)。
     fn is_entitycall(&self, id: u16) -> bool {
-        match self.info.get(&id) {
-            Some(info) => match info.kind {
-                TypeKind::Array => info.element.map(|e| self.is_entitycall(e)).unwrap_or(false),
-                _ => info.alias_name == "ENTITYCALL" && info.kind == TypeKind::Builtin,
-            },
-            None => false,
-        }
+        matches!(
+            self.info.get(&id).map(|info| info.kind),
+            Some(TypeKind::EntityCall)
+        )
     }
 }
 
@@ -387,6 +391,9 @@ struct ModuleState {
     cell_exposed_methods: usize,
     /// isComponentModule(scriptdef_module.cpp:304 早退判定)。
     is_component: bool,
+    /// 本模块已用显式/自动 Utype(KR-AUD-85:冲突判定限同模块,
+    /// 引擎 findPropertyDescription 只查本模块)。
+    prop_utypes: Vec<u16>,
 }
 
 /// 计算入参(镜像 message_table 输入形态;componentScripts 为可选的
@@ -552,9 +559,13 @@ impl Replayer {
 
     fn replay_builtin_types(&mut self) {
         for name in BUILTIN_TYPE_ORDER {
-            let id = self
-                .types
-                .construct(&mut self.stream, TypeKind::Builtin, "builtin-uid");
+            // ENTITYCALL 构造期即带类身份(EntityCallType),KR-AUD-82。
+            let kind = if name == "ENTITYCALL" {
+                TypeKind::EntityCall
+            } else {
+                TypeKind::Builtin
+            };
+            let id = self.types.construct(&mut self.stream, kind, "builtin-uid");
             self.types.register(name, id);
         }
     }
@@ -879,7 +890,7 @@ impl Replayer {
                 Some(u) => first_text(doc, u).trim().parse::<i64>().unwrap_or(-1),
                 None => -1,
             };
-            let utype = self.calc_property_utype(i_utype)?;
+            let utype = self.calc_property_utype(i_utype, module_name)?;
 
             // PropertyDescription 构造字节(property.cpp:53-64;顺序严格)。
             self.stream
@@ -939,16 +950,22 @@ impl Replayer {
         }
     }
 
-    /// calcDefPropertyUType(entitydef.cpp:1018-1093)。
-    fn calc_property_utype(&mut self, i_utype: i64) -> Result<u16, String> {
+    /// calcDefPropertyUType(entitydef.cpp:1018-1093)。显式 Utype 的冲突判定
+    /// 是**同模块**的:全局 g_propertyUtypes 命中后引擎只查
+    /// `pScriptModule->findPropertyDescription(futype, base/cell/client)`,
+    /// 本模块没有该属性就照常 push_back——跨模块复用同一 Utype 引擎容忍
+    /// (KR-AUD-85;修前全局查重更严,拒掉合法 def)。全局表仍收全量 utype
+    /// 供 auto 计数器跳号。
+    fn calc_property_utype(&mut self, i_utype: i64, module_name: &str) -> Result<u16, String> {
         let futype: u16;
         if i_utype > 0 {
             futype =
                 u16::try_from(i_utype).map_err(|_| format!("'Utype' overflowed: {i_utype}"))?;
-            if self.prop_utypes.contains(&futype) {
+            if self.module(module_name).prop_utypes.contains(&futype) {
                 return Err(format!("'Utype' conflict: {futype}"));
             }
             self.prop_utypes.push(futype);
+            self.module(module_name).prop_utypes.push(futype);
         } else {
             let mut candidate = self.prop_utype_auto;
             self.prop_utype_auto += 1;
@@ -957,6 +974,7 @@ impl Replayer {
                 self.prop_utype_auto += 1;
             }
             self.prop_utypes.push(candidate);
+            self.module(module_name).prop_utypes.push(candidate);
             futype = candidate;
         }
         Ok(futype)
@@ -1133,7 +1151,7 @@ impl Replayer {
                 Some(u) => first_text(doc, u).trim().parse::<i64>().unwrap_or(-1),
                 None => -1,
             };
-            let utype = self.calc_property_utype(i_utype)?;
+            let utype = self.calc_property_utype(i_utype, module_name)?;
 
             if !self.loaded_modules.contains(&component_type_name) {
                 // 新组件:注册(名字入流)+装 def(接口忽略组件:765)
@@ -1243,9 +1261,14 @@ impl Replayer {
             Some(p) => p,
             None => return Ok(()),
         };
-        // 引擎:parentClassName = getKey(enterNode("Parent")) = <Parent> 文本
-        // (entitydef.cpp:897-899),非元素名。
-        let parent_name = first_text(doc, parent_el);
+        // 引擎 entitydef.cpp:897-899:parentClassName =
+        // getKey(enterNode(defNode,"Parent"))——enterNode 返回 <Parent> 首个
+        // 非注释子节点,getKey=trim(Value)(xml.cpp:72-95/113-119):文本形态
+        // `<Parent> A </Parent>` 得 "A",元素形态 `<Parent><A/></Parent>` 得
+        // 元素名 "A"(KR-AUD-83;修前只取 first_text,元素形态得空串)。
+        let parent_name = engine_enter_node(doc, parent_el, "Parent")
+            .map(|node| engine_get_key(doc, node))
+            .unwrap_or_default();
         // KODE-AUD-006:活动栈保护——parent 链成环(A→B→A)不查 loaded_modules,
         // 递归无限栈溢出;loading 再遇即截断。处理完移除(错误传播前必先移除)。
         if !self.loading.insert(parent_name.clone()) {

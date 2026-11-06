@@ -1,0 +1,20 @@
+
+=== IDE-LINT-012 quick-fix boundaries 2026-11-05T16:32:44.979Z ===
+lintfix.multiline=applied ok; unrelated-line "        self.base.notify()" unchanged
+lintfix.sameline=cell actions 2, client actions 2, no cross-attribution
+lintfix.eof=wrap applied ok, no trailing newline, position in-bounds
+lintfix.eof.guard=insert applied ok
+
+=== IDE-LINT-012 quick-fix boundaries 2026-11-05T16:33:41.351Z ===
+lintfix.multiline=applied ok; unrelated-line "        self.base.notify()" unchanged
+lintfix.sameline=cell actions 2, client actions 2, no cross-attribution
+lintfix.eof=wrap applied ok, no trailing newline, position in-bounds
+lintfix.eof.guard=insert applied ok
+lintfix.siblings=wrap truncated before self.base.other(); unrelated line unchanged
+
+=== IDE-LINT-012 quick-fix boundaries 2026-11-05T16:34:08.713Z ===
+lintfix.multiline=applied ok; unrelated-line "        self.base.notify()" unchanged
+lintfix.sameline=cell actions 2, client actions 2, no cross-attribution
+lintfix.eof=wrap applied ok, no trailing newline, position in-bounds
+lintfix.eof.guard=insert applied ok
+lintfix.siblings=wrap truncated before self.base.other(); unrelated line unchanged

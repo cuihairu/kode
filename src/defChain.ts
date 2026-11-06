@@ -81,7 +81,17 @@ export function buildDefChain(
       }
       seenInterfaceNames.add(name);
       const defPath = path.join(defsRoot, 'interfaces', `${name}.def`);
-      interfaces.push({ name, defPath: fs.existsSync(defPath) ? defPath : null });
+      const defExists = fs.existsSync(defPath);
+      interfaces.push({ name, defPath: defExists ? defPath : null });
+      // KR-AUD-76:引擎 loadInterfaces 对接口 def 递归装载其自身 Interfaces
+      // (entitydef.cpp:611-638)并连带 loadComponents——嵌套接口与嵌套接口的
+      // 组件槽同样入链;seenInterfaceNames 防环(每名只展开一次)。
+      if (defExists) {
+        const defContent = readText(defPath);
+        if (defContent !== null) {
+          collectFlatDecls(defPath, defContent);
+        }
+      }
     }
     for (const name of semantics.componentTypeNames) {
       if (seenComponentNames.has(name)) {

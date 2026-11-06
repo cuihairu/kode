@@ -244,13 +244,17 @@ describe('extension activate 装配', () => {
     // C-17 起进程拓扑独立诊断集再一份(kbengine-process-topology);
     // GEN-DEF-1e 起 user_type 三契约缺方法独立诊断集再一份(kbengine-user-type-contract);
     // GEN-DEF-1e ④ 方向违规诊断集再一份(kbengine-property-direction);
-    // IDE-LINT-007 只读写入诊断集再一份(kbengine-readonly-write)
+    // IDE-LINT-007 只读写入诊断集再一份(kbengine-readonly-write);
+    // IDE-LINT-009 角色错用诊断集再一份(kbengine-role-misuse);
+    // IDE-LINT-010 销毁后访问诊断集再一份(kbengine-post-destroy)
     expect(languagesRegistry.diagnosticCollections.map(entry => entry.name)).toEqual([
       'kbengine',
       'kbengine-def-method-consistency',
       'kbengine-user-type-contract',
       'kbengine-property-direction',
       'kbengine-readonly-write',
+      'kbengine-role-misuse',
+      'kbengine-post-destroy',
       'kbengine-process-topology',
       'KBEngine 临时编辑热更新',
       'kbengine-def-analysis'
@@ -274,12 +278,13 @@ describe('extension activate 装配', () => {
     expect(stubWithMetadata).toContain('# Source describe:');
     expect(workspaceState.contentProviders.has('kbengine-config')).toBe(true);
 
-    // 状态栏三条:server 灯(右对齐/优先级 100/命令指向扩展视图)、
-    // telnet 灯(优先级 99/命令指向 telnet 面板)与热更状态灯(HR-UI-001,
-    // 优先级 98/命令指向热更日志,默认 Watch Off 常显);无运行组件时
-    // server 灯隐藏。批111 用户令:配置未开 telnet 时 telnet 灯同样隐藏,
-    // context key 落 false
-    expect(windowState.statusBars).toHaveLength(3);
+    // 状态栏四条:server 灯(右对齐/优先级 100/命令指向扩展视图)、
+    // telnet 灯(优先级 99/命令指向 telnet 面板)、热更状态灯(HR-UI-001,
+    // 优先级 98/命令指向热更日志,默认 Watch Off 常显)与解释器灯(PY-ENV
+    // 二期,优先级 97/命令指向解释器选择,常显);无运行组件时 server 灯
+    // 隐藏。批111 用户令:配置未开 telnet 时 telnet 灯同样隐藏,context
+    // key 落 false
+    expect(windowState.statusBars).toHaveLength(4);
     const bar = windowState.statusBars.find(item => item.priority === 100)!;
     expect(bar.alignment).toBe(StatusBarAlignment.Right);
     expect(bar.command).toBe('workbench.view.extension.kbengine-explorer');
@@ -292,6 +297,10 @@ describe('extension activate 装配', () => {
     expect(hotReloadBar.command).toBe('kbengine.hotReload.showLog');
     expect(hotReloadBar.text).toBe('$(eye-closed) 热更: 关');
     expect(hotReloadBar.visible).toBe(true);
+    const interpreterBar = windowState.statusBars.find(item => item.priority === 97)!;
+    expect(interpreterBar.alignment).toBe(StatusBarAlignment.Right);
+    expect(interpreterBar.command).toBe('kbengine.python.selectInterpreter');
+    expect(interpreterBar.visible).toBe(true);
     expect(commandRegistry.contexts.get('kbengine.telnetConfigured')).toBe(false);
 
     // 所有 subscription 都可 dispose

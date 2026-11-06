@@ -241,9 +241,182 @@ fn comprehension_target_defined() {
     let result = dataflow_for_body(&ast, &["items".to_string()], &body);
     let x = chain(&result, "x");
     assert_eq!(x.def_line, Some(1), "comprehension target 应定义 x");
-    assert_eq!(x.use_lines, vec![2]);
+    // KR-AUD-09 语义更新:elt 本身的 `x` 读在 target def 之后,也连上链
+    // (旧实现 elt 先读,漏记这次 use)。
+    assert_eq!(x.use_lines, vec![1, 2]);
     // items 参数被 iter 读。
     let items = chain(&result, "items");
     assert!(items.is_param);
     assert_eq!(items.use_lines, vec![1]);
+}
+
+/// KR-AUD-09:推导式 elt 读先于 generator target 写,elt 内 def-use 断链
+/// (`[str(x) for x in xs]` 的 str(x) 读不到 x 链)。修复:先按序走完
+/// generators(iter 读/target 写/ifs 读),最后读 elt。
+#[test]
+fn comprehension_elt_use_links_to_generator_target_kraud09() {
+    let src = "def f(xs):\n    r = [str(x) for x in xs]\n    return r\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &["xs".to_string()], &body);
+    // elt 内 str(x) 的读必须连上 generator target 定义的 x 链。
+    let x = chain(&result, "x");
+    assert_eq!(x.def_line, Some(1), "generator target 应定义 x");
+    assert_eq!(x.use_lines, vec![1], "elt 内 use 应连上 target 链");
+    let xs = chain(&result, "xs");
+    assert_eq!(xs.use_lines, vec![1]);
+}
+
+/// KR-AUD-10:dataflow 侧 match pattern 捕获名不 def、guard 不读(callgraph
+/// 半边已由 KODE-AUD-008 闭合,本测只修 dataflow)。`case [a, b] if b > 0:`
+/// 捕获 a/b 各 def 一条链,guard 内 b 的读、case 体内 a 的读均连上链。
+#[test]
+fn match_pattern_captures_def_and_guard_reads_kraud10() {
+    let src = "def f(v):\n    match v:\n        case [a, b] if b > 0:\n            return a\n        case _:\n            return None\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &["v".to_string()], &body);
+    let a = chain(&result, "a");
+    assert_eq!(a.def_line, Some(2), "pattern 捕获 a 应在 case 行 def");
+    assert_eq!(a.use_lines, vec![3], "case 体内 return a 应连上捕获链");
+    let b = chain(&result, "b");
+    assert_eq!(b.def_line, Some(2), "pattern 捕获 b 应在 case 行 def");
+    assert_eq!(b.use_lines, vec![2], "guard 内 b 的读应连上捕获链");
+    let v = chain(&result, "v");
+    assert_eq!(v.use_lines, vec![1], "match subject 读保持");
+}
+
+/// KR-AUD-11:`import a.b` 的绑定名是顶层名 `a`(Python 语义),旧实现取全段
+/// "a.b" 造链,后续 `a.attr` 的读断链。修复:无 asname 时取首段。
+#[test]
+fn dotted_import_binds_top_level_name_kraud11() {
+    let src = "def f():\n    import a.b\n    return a.c\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &[], &body);
+    let a = chain(&result, "a");
+    assert_eq!(a.def_line, Some(1), "import a.b 应按顶层名 a def");
+    assert_eq!(a.use_lines, vec![2], "a.c 的读应连上 import 链");
+}
+
+/// KR-AUD-16:`raise err` / `assert cond, msg` / `raise X(e) from c` 的表达式
+/// 侧此前整体不走读(Stmt::Raise/Assert 落在无语义分支)。修复:exc/cause/
+/// test/msg 全按读走查。
+#[test]
+fn raise_and_assert_expressions_are_reads_kraud16() {
+    let src = "def f(err, cond, msg):\n    raise err\n    assert cond, msg\n    raise ValueError(err) from cond\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &["err".into(), "cond".into(), "msg".into()], &body);
+    let err = chain(&result, "err");
+    assert_eq!(
+        err.use_lines,
+        vec![1, 3],
+        "raise err 与 raise X(err) 均应读 err"
+    );
+    let cond = chain(&result, "cond");
+    assert_eq!(
+        cond.use_lines,
+        vec![2, 3],
+        "assert test 与 from cause 均应读 cond"
+    );
+    let msg = chain(&result, "msg");
+    assert_eq!(msg.use_lines, vec![2], "assert msg 应读 msg");
+}
+
+/// KR-AUD-17:except 捕获名的 def 行此前记在 try 语句行,应为 handler 自己的行。
+#[test]
+fn except_capture_def_line_is_handler_line_kraud17() {
+    let src = "def f():\n    try:\n        risky()\n    except ValueError as e:\n        log(e)\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &[], &body);
+    let e = chain(&result, "e");
+    assert_eq!(e.def_line, Some(3), "except 捕获名 def 行应为 handler 行");
+    assert_eq!(e.use_lines, vec![4]);
+}
+
+/// KR-AUD-18:lambda 形参此前不建模遮蔽——`lambda x: x + 1` 体内对 x 的读
+/// 连到外层参数 x 的链。修复:lambda 形参入独立子作用域,体内读先查子
+/// 作用域,外层链不受影响。
+#[test]
+fn lambda_param_shadows_outer_var_kraud18() {
+    let src = "def f(x):\n    g = lambda x: x + 1\n    return g(x)\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &["x".to_string()], &body);
+    let x_chains: Vec<&kode_python::DefUseChain> =
+        result.chains.iter().filter(|c| c.var == "x").collect();
+    assert_eq!(
+        x_chains.len(),
+        2,
+        "外层参数与 lambda 形参各一条链: {:#?}",
+        result.chains
+    );
+    let outer = x_chains[0];
+    assert!(outer.is_param);
+    assert_eq!(outer.use_lines, vec![2], "外层 x 只应在 return g(x) 被读");
+    let lam = x_chains[1];
+    assert!(lam.is_param, "lambda 形参按参数链记");
+    assert_eq!(lam.def_line, None);
+    assert_eq!(lam.use_lines, vec![1], "lambda 体内读连 lambda 形参链");
+}
+
+/// KR-AUD-19:`global x` / `nonlocal x` 之后的赋值写的是外层绑定,不应建
+/// 函数内局部 def 链(旧实现照常 def_var,产假局部链)。
+#[test]
+fn global_declared_assignment_makes_no_local_chain_kraud19() {
+    let src = "def f():\n    global counter\n    counter = 1\n    return counter\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &[], &body);
+    assert!(
+        !result.chains.iter().any(|c| c.var == "counter"),
+        "global 名不应产局部链: {:#?}",
+        result.chains
+    );
+}
+
+/// KR-AUD-19(nonlocal 面):`nonlocal x` 后赋值同样不产局部链;未声明
+/// nonlocal 的外层同名变量遮蔽语义不回归。
+#[test]
+fn nonlocal_declared_assignment_makes_no_local_chain_kraud19() {
+    let src = "def f():\n    nonlocal total\n    total = 0\n    other = 1\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &[], &body);
+    assert!(!result.chains.iter().any(|c| c.var == "total"));
+    assert!(result.chains.iter().any(|c| c.var == "other"));
 }

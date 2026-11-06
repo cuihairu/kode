@@ -333,6 +333,11 @@ export class IndexScheduler {
     task.state = 'cancelled';
     task.cancelReason = reason;
     this.cancelled += 1;
+    // 同步回写 keyed 台账(KR-AUD-90):promise 拒绝回调要等微任务,这里
+    // 不回写的话后续 ensureTask 会把死 id 当作 queued 复用(reused 而非 recovered)。
+    for (const entry of this.keyed.values()) {
+      if (entry.id === task.id) { entry.state = 'cancelled'; }
+    }
     this.metrics.staleDropped += reason === 'stale-version' ? 1 : 0;
     for (const listener of task.settleListeners.splice(0)) { listener(); }
     // 取消即终态:同样出表,避免过期版本任务(快速连续保存)在表里积压

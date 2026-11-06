@@ -573,4 +573,198 @@ mod tests {
             DecodeError::InvalidUtf16 { offset: 2 }
         );
     }
+
+    #[test]
+    fn canonical_names_are_stable_literals() {
+        assert_eq!(Encoding::Utf8.canonical_name(), "utf-8");
+        assert_eq!(Encoding::Utf8Bom.canonical_name(), "utf-8-sig");
+        assert_eq!(Encoding::Utf16Le.canonical_name(), "utf-16-le");
+        assert_eq!(Encoding::Utf16Be.canonical_name(), "utf-16-be");
+        assert_eq!(Encoding::Latin1.canonical_name(), "latin-1");
+        assert_eq!(Encoding::Cp1252.canonical_name(), "cp1252");
+        assert_eq!(Encoding::Ascii.canonical_name(), "ascii");
+        assert_eq!(Encoding::Other("gbk".into()).canonical_name(), "gbk");
+    }
+
+    #[test]
+    fn decode_error_display_names_offset_and_byte() {
+        assert_eq!(
+            DecodeError::InvalidUtf8 { offset: 3 }.to_string(),
+            "invalid UTF-8 at byte offset 3"
+        );
+        assert_eq!(
+            DecodeError::InvalidUtf16 { offset: 4 }.to_string(),
+            "invalid UTF-16 sequence at byte offset 4"
+        );
+        assert_eq!(
+            DecodeError::InvalidAscii { offset: 7 }.to_string(),
+            "non-ASCII byte at offset 7"
+        );
+        assert_eq!(
+            DecodeError::InvalidCp1252 {
+                offset: 5,
+                byte: 0x81
+            }
+            .to_string(),
+            "undefined CP1252 byte 0x81 at offset 5"
+        );
+        assert_eq!(
+            DecodeError::UnsupportedEncoding("gbk".into()).to_string(),
+            "unsupported source encoding: gbk"
+        );
+    }
+
+    #[test]
+    fn ascii_cookie_decodes_and_rejects_non_ascii_with_shifted_offset() {
+        let ok = b"# coding: ascii\nprint('ok')\n";
+        let decoded = decode_source(ok).unwrap();
+        assert_eq!(decoded.detection.encoding, Encoding::Ascii);
+        assert_eq!(decoded.text, "# coding: ascii\nprint('ok')\n");
+        // 非 ASCII 字节:offset 为全文件偏移(cookie 场景 BOM 为 0,分支仍执行 shifted)。
+        let err = decode_source(b"# coding: ascii\nx = '\xFF'\n").unwrap_err();
+        assert_eq!(err, DecodeError::InvalidAscii { offset: 21 });
+    }
+
+    #[test]
+    fn cp1252_undefined_byte_reports_offset_and_byte() {
+        let err = decode_source(b"# coding: cp1252\n# \x81\x8d\n").unwrap_err();
+        assert_eq!(
+            err,
+            DecodeError::InvalidCp1252 {
+                offset: 19,
+                byte: 0x81
+            }
+        );
+    }
+
+    #[test]
+    fn cp1252_punctuation_table_maps_every_defined_byte() {
+        // 0x80..=0x9F 中除未定义位(0x81/0x8D/0x8F/0x90/0x9D)外全部有映射。
+        let undefined = [0x81u8, 0x8D, 0x8F, 0x90, 0x9D];
+        let defined: Vec<u8> = (0x80..=0x9F).filter(|b| !undefined.contains(b)).collect();
+        let mut body = b"# coding: cp1252\n".to_vec();
+        body.extend_from_slice(&defined);
+        let decoded = decode_source(&body).unwrap();
+        // 17 个前缀字符之后,每个定义字节各产出 1 个字符(无未定义报错)。
+        assert_eq!(decoded.text.chars().skip(17).count(), defined.len());
+        // 抽查关键映射。
+        assert!(decoded.text.contains('\u{20AC}')); // 0x80 → €
+        assert!(decoded.text.contains('\u{2019}')); // 0x92 → ’
+        assert!(decoded.text.contains('\u{2014}')); // 0x97 → —
+                                                    // 未定义字节:0x81 报 InvalidCp1252。
+        let mut bad = b"# coding: cp1252\n".to_vec();
+        bad.push(0x81);
+        assert!(matches!(
+            decode_source(&bad),
+            Err(DecodeError::InvalidCp1252 { byte: 0x81, .. })
+        ));
+    }
+
+    #[test]
+    fn utf32_boms_are_detected_but_not_decoded() {
+        let mut le = UTF32LE_BOM.to_vec();
+        le.extend_from_slice(&0x41u32.to_le_bytes());
+        let detected = detect_encoding(&le);
+        assert_eq!(detected.encoding, Encoding::Other("utf-32-le".to_string()));
+        assert_eq!(detected.bom_len, 4);
+        assert_eq!(
+            decode_source(&le).unwrap_err(),
+            DecodeError::UnsupportedEncoding("utf-32-le".to_string())
+        );
+        let mut be = UTF32BE_BOM.to_vec();
+        be.extend_from_slice(0x41u32.to_be_bytes().as_slice());
+        assert_eq!(
+            detect_encoding(&be).encoding,
+            Encoding::Other("utf-32-be".to_string())
+        );
+    }
+
+    #[test]
+    fn bomless_heuristic_rejects_short_or_ambiguous_input() {
+        // <4 字节:不启用启发式。
+        assert_eq!(detect_encoding(b"ab").source, EncodingSource::Default);
+        assert_eq!(detect_encoding(b"").source, EncodingSource::Default);
+        // 偶数对但无 NUL:普通文本,不判 UTF-16。
+        assert_eq!(
+            detect_encoding(b"class Avatar: pass").source,
+            EncodingSource::Default
+        );
+        // 首字节全零(高位在前)= BOM-less UTF-16 BE。
+        let mut be = Vec::new();
+        for unit in "class Monster: pass\n".encode_utf16() {
+            be.extend_from_slice(&unit.to_be_bytes());
+        }
+        let detected = detect_encoding(&be);
+        assert_eq!(detected.encoding, Encoding::Utf16Be);
+        assert_eq!(detected.source, EncodingSource::Heuristic);
+        assert_eq!(decode_source(&be).unwrap().text, "class Monster: pass\n");
+    }
+
+    #[test]
+    fn cookie_without_separator_or_name_is_not_a_cookie() {
+        // "coding" 后无 :/= → 不是 cookie。
+        assert_eq!(
+            detect_encoding(b"# coding latin-1\nclass A:\n").source,
+            EncodingSource::Default
+        );
+        // 有分隔符但声明名为空 → 不是 cookie。
+        assert_eq!(
+            detect_encoding(b"# coding:\nclass A:\n").source,
+            EncodingSource::Default
+        );
+        // 声明名带点/下划线等合法字符。
+        assert_eq!(
+            detect_encoding(b"# coding: iso_8859-1.default\nclass A:\n").encoding,
+            Encoding::Other("iso-8859-1.default".to_string())
+        );
+    }
+
+    #[test]
+    fn surrogate_pairs_decode_to_supplementary_chars() {
+        let text = "class 胜利:\n    emoji = '🎉'\n";
+        let mut le = UTF16LE_BOM.to_vec();
+        let mut be = UTF16BE_BOM.to_vec();
+        for unit in text.encode_utf16() {
+            le.extend_from_slice(&unit.to_le_bytes());
+            be.extend_from_slice(&unit.to_be_bytes());
+        }
+        assert_eq!(decode_source(&le).unwrap().text, text);
+        assert_eq!(decode_source(&be).unwrap().text, text);
+        // 高位代理后跟非低位代理 → 定位到代理起始 offset(BOM 后 2)。
+        let mut bad = UTF16LE_BOM.to_vec();
+        bad.extend_from_slice(&0xD800u16.to_le_bytes());
+        bad.extend_from_slice(&0x0041u16.to_le_bytes());
+        assert_eq!(
+            decode_source(&bad).unwrap_err(),
+            DecodeError::InvalidUtf16 { offset: 2 }
+        );
+        // 孤立低位代理开头 → 非法。
+        let mut low = UTF16LE_BOM.to_vec();
+        low.extend_from_slice(&0xDC00u16.to_le_bytes());
+        assert_eq!(
+            decode_source(&low).unwrap_err(),
+            DecodeError::InvalidUtf16 { offset: 2 }
+        );
+    }
+
+    #[test]
+    fn cookie_line_ending_edge_cases() {
+        // 第二行以 \r 结尾且无换行:cookie 仍识别。
+        let cr_end = b"#!/usr/bin/env python\r\n# coding: latin-1\r";
+        let detected = detect_encoding(cr_end);
+        assert_eq!(detected.encoding, Encoding::Latin1);
+        assert_eq!(detected.cookie_line, Some(1));
+        // 单行无换行符。
+        let one_line = b"# coding: cp1252";
+        assert_eq!(detect_encoding(one_line).encoding, Encoding::Cp1252);
+        // utf-16 cookie(无 BOM)按 LE 解码;整体奇数字节 → 奇数长度报错(offset 为末字节)。
+        let mut odd = b"# coding: utf-16\n".to_vec();
+        odd.extend_from_slice(&0x41u16.to_le_bytes());
+        odd.push(0x41);
+        odd.push(0x42);
+        assert_eq!(
+            decode_source(&odd).unwrap_err(),
+            DecodeError::InvalidUtf16 { offset: 20 }
+        );
+    }
 }

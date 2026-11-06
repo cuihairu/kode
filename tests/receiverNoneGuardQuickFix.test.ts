@@ -311,6 +311,76 @@ describe('KBEngineReceiverNoneGuardCodeActionProvider(B-7)', () => {
   });
 });
 
+describe('IDE-LINT-012 同行两个不同 receiver 归属', () => {
+  const MIXED_TEXT = [
+    'class Avatar(kbe.KBEntity):',
+    '    def onTimer(self):',
+    '        self.cell.a(); self.base.b()',
+    ''
+  ].join('\n');
+  // 行 2(0 基):col 18..19 = a 方法名(cell 调用),col 33..34 = b 方法名(base 调用)
+  const mixedDoc = (): MinimalTextDocument =>
+    makeTextDocument(MIXED_TEXT, { fileName: '/tmp/ws/scripts/base/Avatar.py', languageId: 'python' });
+
+  const diagnosticAt = (startChar: number, endChar: number, message = 'self.X 可能为 None…'): Diagnostic => {
+    const d = new Diagnostic(
+      new Range(new Position(2, startChar), new Position(2, endChar)),
+      message,
+      DiagnosticSeverity.Warning
+    );
+    d.code = RECEIVER_NONE_DIAGNOSTIC_CODE;
+    return d;
+  };
+
+  it('cell 诊断只出 cell 守卫(包裹 if self.cell:),不套 base', () => {
+    const provider = new KBEngineReceiverNoneGuardCodeActionProvider();
+    const cellDiag = diagnosticAt(18, 19);
+    const actions = provider.provideCodeActions(
+      mixedDoc(), cellDiag.range, { diagnostics: [cellDiag] }, undefined
+    )!;
+    expect(actions).toHaveLength(2);
+    expect(actions[0].title).toContain('if self.cell:');
+    expect(actions[1].title).toContain('if not self.cell:');
+  });
+
+  it('base 诊断只出 base 守卫(不把第一个 receiver 的修复套给第二个)', () => {
+    const provider = new KBEngineReceiverNoneGuardCodeActionProvider();
+    const baseDiag = diagnosticAt(33, 34);
+    const actions = provider.provideCodeActions(
+      mixedDoc(), baseDiag.range, { diagnostics: [baseDiag] }, undefined
+    )!;
+    expect(actions).toHaveLength(2);
+    expect(actions[0].title).toContain('if self.base:');
+    expect(actions[1].title).toContain('if not self.base:');
+    // 编辑文本确实守卫 base,不是 cell
+    const [, wrapEdits] = actions[0].edit!.entries()[0];
+    expect(wrapEdits[0].newText).toContain('if self.base:');
+    expect(wrapEdits[0].newText).not.toContain('if self.cell:');
+  });
+
+  it('两条诊断同行(不同 receiver)→ 各出各的守卫,共 4 条动作', () => {
+    const provider = new KBEngineReceiverNoneGuardCodeActionProvider();
+    const cellDiag = diagnosticAt(18, 19);
+    const baseDiag = diagnosticAt(33, 34);
+    const actions = provider.provideCodeActions(
+      mixedDoc(), new Range(new Position(2, 0), new Position(2, 40)),
+      { diagnostics: [cellDiag, baseDiag] }, undefined
+    )!;
+    expect(actions).toHaveLength(4);
+    const titles = actions.map(a => a.title);
+    expect(titles.filter(t => t.includes('self.cell')).length).toBe(2);
+    expect(titles.filter(t => t.includes('self.base')).length).toBe(2);
+  });
+
+  it('区间内无 self.<receiver>.<方法>(别名调用/诊断与文本错位)→ 不出,不猜', () => {
+    const provider = new KBEngineReceiverNoneGuardCodeActionProvider();
+    const aliasDiag = diagnosticAt(40, 41); // 行 2 没有第 41 列方法名
+    expect(provider.provideCodeActions(
+      mixedDoc(), aliasDiag.range, { diagnostics: [aliasDiag] }, undefined
+    )).toEqual([]);
+  });
+});
+
 describe('诊断项 code 对账面(B-7)', () => {
   it('receiver-none/段错配各自携带稳定 code,provider 与诊断同链', () => {
     const items = receiverNoneDiagnosticItems(PY_TEXT, '/avatar.py', undefined, true);

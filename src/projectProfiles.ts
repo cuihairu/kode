@@ -118,7 +118,10 @@ export class ProjectProfileStore {
       assetsRoot: input.assetsRoot,
       engineRoot: input.engineRoot,
       interpreterPath: input.interpreterPath ?? null,
-      interpreterSource: input.interpreterSource ?? 'missing'
+      interpreterSource: input.interpreterSource ?? 'missing',
+      // KR-AUD-66:新建输入同样携带 hotReload 段(此前字面量漏拷贝,
+      // create 路径配的通道静默丢失,只有 update/saveHotReload 路径能落)
+      ...(input.hotReload ? { hotReload: input.hotReload } : {})
     };
     await this.persist([...profiles, created]);
     return { ...created };

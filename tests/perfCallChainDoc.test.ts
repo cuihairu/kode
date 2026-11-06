@@ -81,16 +81,57 @@ const ANCHORS: Array<[string, number, string]> = [
   // import(readOnlyWriteDiagnostics 三符号),诊断集合块 +47 行(1669 后锚点),
   // 触发行 open/close/change 各 +1:567 前锚点全部 +5,1921/1995 锚点分别
   // +63/+65(真位重探:1984/2060,出处随 baseline 锁步)。
-  ['src/extension.ts', 972, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1023, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1086, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 890, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1384, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 613, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 626, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-06:IDE-LINT-011 lint 规则注册表——extension.ts 顶部新增 1 行
+  // import(renderLintRulesReport),全部 extension.ts 锚点 +1(真位重探
+  // 973/1024/1087/891/1385/614/627/1985/2061,命令装配块在全部锚点之后不再
+  // 位移;出处随 baseline 锁步)。
+  // 2026-11-06(二):IDE-LINT-008 RPC 实参数量诊断——extension.ts 顶部新增
+  // 5 行 import(rpcArgCountDiagnostics 三符号),全部锚点 +5;诊断装配块
+  // (entityMapping 提升 + rpcArgCountItems +20)在 632 后,其后锚点再 +20:
+  // 真位重探 998/1049/1112/916/1410/619/632/2010/2086,出处随 baseline 锁步。
+  // 2026-11-06(三):IDE-LINT-009 角色错用诊断——顶部再 +5 行 import
+  // (roleMisuseDiagnostics 三符号),全部锚点 +5;独立集合装配块 +54 在
+  // 1415 后,其后锚点再 +54;open/close 触发 +2/+3、change 触发 +2 依次
+  // 累计,onDidChangeTextDocument 锚点 +64、flushQueued 锚点 +66(flush
+  // 触发 +2 在锚点后不累计):真位重探 624/637/921/1003/1054/1117/1415/
+  // 2074/2152,出处随 baseline 锁步。
+  // 2026-11-06(四):IDE-LINT-010 销毁后访问诊断——顶部再 +5 行 import
+  // (postDestroyDiagnostics 三符号),全部锚点再 +5;独立集合装配块 +55
+  // 在 1420 后,其后锚点再 +55;open/close 触发 +2/+3、change 触发 +2、
+  // flush 触发 +2 依次累计,onDidChangeTextDocument 锚点 +70、flushQueued
+  // 锚点 +72(flush 触发在两者之间):真位重探 629/642/926/1008/1059/1122/
+  // 1420/2144/2224,出处随 baseline 锁步。
+  // 2026-11-06(五):KR-AUD-78 来源镜真实行映射——extension.ts 顶部 +2 行
+  // import(buildPythonTypeStubLineMap / buildEntityTypeStubLineMap),1309 处
+  // python 来源镜装配块 +6 行,1309 前锚点 +2、其后锚点 +8(5389 处 entity
+  // 来源镜装配块 +8 在全部锚点之后不再位移):真位重探 631/644/928/1010/
+  // 1061/1124/1428/2152/2232,出处随 baseline 锁步。
+  // 2026-11-06(六):KR-AUD-54 拓扑根随触发文档(48bccec)——1894/1913/1998
+  // 三处闭包签名各 +1(2016/2028 行内改写无净增,2442 后 KR-AUD-55 块在锚点
+  // 后不累计),onDidChangeTextDocument/flushQueued 锚点 +3:真位重探
+  // 2155/2235,出处随 baseline 锁步;并发会话在途 extension.ts 未提交编辑
+  // 不入本批校准,其提交时须自行再探。
+  // 2026-11-06(七+八):并发合流——PY-ENV 二期 venv 自动发现(顶部 +13 行
+  // import)与 CLONE-P5 玩家数据克隆(顶部 +10 行 import)先后落在 extension.ts
+  // 顶部(前段锚点累计 +23);CFG-02 configContract 展开 +6 落在 1532,只推
+  // 后段锚点(onDidChangeTextDocument/flushQueued)再 +6,前段锚点不再位移。
+  // 逐符号真位重探(相对 origin/main e00637d 的 651/664/948/1030/1081/1144/
+  // 1448/2317/2397):前段 + venv 13 → 664/677/961/1043/1094/1157/1461,
+  // 后段 +6 → 2330/2410,出处随 baseline 锁步。
+  ['src/extension.ts', 1043, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1094, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1157, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 961, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1461, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 664, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 677, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
-  ['src/extension.ts', 1984, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2060, 'flushQueued()'],
+  // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
+  // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
+  // 锚点整体 +12(真位重探 1778/1837/1861/1989/4713/5121/5227/7038 →
+  // 1790/1849/1873/2001/4725/5133/5239/7050)。
+  ['src/extension.ts', 2330, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2410, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面
@@ -104,14 +145,21 @@ const ANCHORS: Array<[string, number, string]> = [
   // 5001 各 -1,provideCompletionItems 6707→6776(非均匀),出处随 baseline 锁步
   ['src/languageProviders.ts', 849, 'getDocumentLines(document)'],
   ['src/languageProviders.ts', 939, 'provideHover('],
-  ['src/languageProviders.ts', 1778, 'shadowCompareDefinition'],
-  ['src/languageProviders.ts', 1837, 'export function validateDocument('],
-  ['src/languageProviders.ts', 1861, 'shadowObserveDefDocument'],
-  ['src/languageProviders.ts', 1989, 'validateEntitiesXmlDocument'],
-  ['src/languageProviders.ts', 4713, 'provideDefinitionTracedImpl'],
-  ['src/languageProviders.ts', 5121, '层0 接收者段闸'],
-  ['src/languageProviders.ts', 5227, 'withInitialScanTimeout'],
-  ['src/languageProviders.ts', 7007, 'provideCompletionItems('],
+  ['src/languageProviders.ts', 1790, 'shadowCompareDefinition'],
+  ['src/languageProviders.ts', 1849, 'export function validateDocument('],
+  ['src/languageProviders.ts', 1873, 'shadowObserveDefDocument'],
+  ['src/languageProviders.ts', 2001, 'validateEntitiesXmlDocument'],
+  ['src/languageProviders.ts', 4725, 'provideDefinitionTracedImpl'],
+  // 2026-11-06(六):二次并入 origin main(KR-AUD-84 引擎整串开关表在 4725 后
+  // +13)——层0 接收者段闸/withInitialScanTimeout/provideCompletionItems 锚点
+  // 再 +13(真位重探 5146/5252/7063,出处随 baseline 锁步)。
+  ['src/languageProviders.ts', 5146, '层0 接收者段闸'],
+  ['src/languageProviders.ts', 5252, 'withInitialScanTimeout'],
+  // 2026-11-06:IDE-LINT-012 快速修复边界——languageProviders.ts 在 receiver
+  // 守卫 provider 前新增 receiverFromDiagnosticLine helper(区间归属提取)+
+  // 提取块重写,+31 行,7007 后锚点随之 +31(真位重探 7038;其余 languageProviders
+  // 锚点均在 helper 之前,不受影响;出处随 baseline 锁步)。
+  ['src/languageProviders.ts', 7063, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)
@@ -122,6 +170,11 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/pythonClassIndex.ts', 657, 'ensureCompositionRoots'],
   ['src/pythonClassIndex.ts', 1264, 'resolveClassBase'],
   ['src/pythonClassIndex.ts', 1376, '①② 两段查询']
+  // 2026-11-06:KBE-CFG-001..005(2a87d77)工作区配置契约诊断——extension.ts
+  // 顶部 import +4(1014 前锚点全 +4),activate 装配块 +136 落在 1432 之后:
+  // onDidChangeTextDocument/flushQueued 锚点 +140(2155→2295/2235→2375);
+  // languageProviders/diagnosticScheduler 等其余锚点经合并后真位复核不变
+  // (本侧 6947a63 与 origin 9947c55 两路重探收敛同值)。出处随 baseline 锁步。
 ];
 
 describe('perf baseline §7 调用链图结构面', () => {

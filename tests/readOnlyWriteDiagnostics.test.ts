@@ -45,6 +45,20 @@ describe('IDE-LINT-007 引擎只读属性写入 lint(纯逻辑)', () => {
     expect(findings[0].kind).toBe('augmented');
   });
 
+  it('三字符增强赋值 **= //= <<= >>= 报告;移位/幂值上下文不误报(审核发现修复)', () => {
+    for (const op of ['**=', '//=', '<<=', '>>=']) {
+      const findings = find(`self.id ${op} 1\n`, 'baseapp');
+      expect(findings, op).toHaveLength(1);
+      expect(findings[0].kind, op).toBe('augmented');
+      expect(findings[0].propertyName, op).toBe('id');
+    }
+    // 值上下文(移位/幂/整除)不是写目标,不得误报
+    expect(find('y = self.id << 2\n', 'baseapp')).toHaveLength(0);
+    expect(find('y = self.id >> 2\n', 'baseapp')).toHaveLength(0);
+    expect(find('y = self.id ** 2\n', 'baseapp')).toHaveLength(0);
+    expect(find('y = self.id // 2\n', 'baseapp')).toHaveLength(0);
+  });
+
   it('注解赋值 self.id: int = 5 报告', () => {
     const findings = find('self.id: int = 5\n', 'baseapp');
     expect(findings).toHaveLength(1);
@@ -119,6 +133,35 @@ describe('IDE-LINT-007 引擎只读属性写入 lint(纯逻辑)', () => {
     const findings = find('self.id = \\\n  1\n', 'baseapp');
     expect(findings).toHaveLength(1);
     expect(findings[0].kind).toBe('assign');
+  });
+
+  it('单行复合语句(if/while/for 一行体)不把体内顶层 = 误判为注解赋值', () => {
+    // 审核发现:冒号分支自 `:` 起对 `=` 无括号深度/语句边界判定,`if self.isDestroyed: self.counter = 0`
+    // 等把体里的 `=` 当成对只读内建属性的注解赋值 → 误报。修复后体语句的 `=` 不再牵连条件里的属性。
+    expect(find('if self.id: self.counter = 0\n', 'baseapp')).toHaveLength(0);
+    expect(find('if self.isDestroyed: self.counter = 0\n', 'baseapp')).toHaveLength(0);
+    expect(find('if self.cell: self.x = 1\n', 'baseapp')).toHaveLength(0);
+    expect(find('while self.id: self.counter = 0\n', 'baseapp')).toHaveLength(0);
+    expect(find('for x in self.id: self.counter = 0\n', 'baseapp')).toHaveLength(0);
+  });
+
+  it('单行复合语句多行形态对照(证伪):同样不报', () => {
+    expect(find('if self.isDestroyed:\n    self.counter = 0\n', 'baseapp')).toHaveLength(0);
+    expect(find('while self.id:\n    self.counter = 0\n', 'baseapp')).toHaveLength(0);
+  });
+
+  it('单行复合语句体内的真实注解赋值仍报(注解冒号≠套件冒号)', () => {
+    const findings = find('if self.isDestroyed: self.id: int = 5\n', 'baseapp');
+    expect(findings).toHaveLength(1);
+    expect(findings[0].propertyName).toBe('id');
+    expect(findings[0].kind).toBe('annotated');
+  });
+
+  it('注解赋值语句边界:; 后的 = 不冒充注解赋值', () => {
+    // `self.id: int`(仅注解无赋值)+ `x = 1`:不是对 id 的写 → 不报。
+    expect(find('self.id: int; x = 1\n', 'baseapp')).toHaveLength(0);
+    // `self.id: int = 5; x = 1`:自身注解赋值在 ; 前 → 仍报。
+    expect(find('self.id: int = 5; x = 1\n', 'baseapp')).toHaveLength(1);
   });
 });
 

@@ -10,8 +10,8 @@ The [detailed rule catalog](../zh/guide/kbengine-lint-rules.md) records the sour
 | Attribute existence | `hasattr(self, "cell")` no longer suppresses the None warning | The getter may exist while returning None; check the returned value |
 | RPC routing | `kbengine.sectionMismatch` compares known declarations with receiver sections | Unknown declarations cannot establish a mismatch; adding a None guard does not fix routing |
 | `.def` structure and scalar values | Type, Flags, DetailLevel, duplicates and required fields have checks | On-demand analysis suggestions are separate from diagnostics on edit |
-| Readonly attributes and role restrictions | Metadata and hints exist | Dedicated assignment and comprehensive wrong-role lint remain planned |
-| RPC argument misuse and lifecycle hazards | Some signatures and hints exist | Complete argument and post-destroy flow checks remain planned |
+| Readonly attributes and role restrictions | `kbengine.readOnlyWrite` reports writes to engine readonly properties; `kbengine.roleMisuse` reports `self.<property>` uses whose registered face set (baseapp/cellapp/client) does not include the current script's face, citing the registering face's engine source | Assignment checks and property wrong-role checks are implemented; wrong-role *API* (method) checks remain hint-only until a role table for methods exists |
+| RPC argument misuse and lifecycle hazards | `kbengine.rpcArgCount` reports a call-site argument count that definitely mismatches the `.def` method's `<Arg>` count for the routed section (star-args, dynamic receivers, out-of-section declarations and declaration-not-ready stay unknown); `kbengine.postDestroy` reports a `self.<member>` access (excluding identity/state items and `destroy`) that a determinable same-block `self.destroy()` precedes within one function | Argument *type* checks remain planned; post-destroy covers only the determinable same-function same-block core (conditional destroys, cross-callback/cross-block flows, exceptions and def-declared `destroy` are never guessed) |
 
 ## EntityCall values can be None
 

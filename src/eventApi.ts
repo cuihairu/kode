@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as fsp from 'node:fs/promises';
 import type { EntityMappingManager } from './entityMapping';
 import type { EventCall, EventCallIndex } from './eventIndexTypes';
 import { KBENGINE_SOURCE_REVEAL_COMMAND } from './sourceRevealCommand';
@@ -27,6 +28,35 @@ function atCallBoundary(text: string, end: number): boolean {
   return next === ',' || next === ')';
 }
 
+/**
+ * KR-AUD-61:事件定义候选文件的行缓存——stat(mtime) 键控,命中即复用,
+ * 不重读;上限截断防无界。openTextDocument 逐文件注册文本文档是大仓 F12
+ * 秒卡主因,磁盘可达的候选一律走这里,读不到(虚拟面/权限)才回落。
+ */
+interface CachedEventFileLines { mtimeMs: number; lines: string[]; }
+const eventDefFileCache = new Map<string, CachedEventFileLines>();
+const EVENT_DEF_FILE_CACHE_LIMIT = 500;
+
+async function readFileLinesCached(uri: vscode.Uri): Promise<string[] | null> {
+  const fsPath = uri.fsPath;
+  try {
+    const stat = await fsp.stat(fsPath);
+    const cached = eventDefFileCache.get(fsPath);
+    if (cached && cached.mtimeMs === stat.mtimeMs) {
+      return cached.lines;
+    }
+    const text = await fsp.readFile(fsPath, 'utf8');
+    const lines = text.split(/\r?\n/);
+    if (eventDefFileCache.size >= EVENT_DEF_FILE_CACHE_LIMIT) {
+      eventDefFileCache.clear();
+    }
+    eventDefFileCache.set(fsPath, { mtimeMs: stat.mtimeMs, lines });
+    return lines;
+  } catch {
+    return null;
+  }
+}
+
 // Parse only literal/identifier event names and literal or attribute callbacks.
 // Expressions and variables stay silent.
 export function findEventCalls(text: string): EventCall[] {
@@ -48,9 +78,60 @@ export function findEventCalls(text: string): EventCall[] {
   return result;
 }
 
+/**
+ * KR-AUD-65(UI-16):事件调用扫描按文档版本键记忆化(有界 LRU)。悬停热路径
+ * 此前每次 hover 都全文正则扫描;同文档同版本的多次查询(hover/定义)共享一次
+ * 结果,版本前进或换文档自然换键,旧键靠有界淘汰回收。versionKey 缺省
+ * (纯函数/测试无版本)不读写缓存,行为与 findEventCalls 逐字节一致。
+ */
+const EVENT_CALL_CACHE_LIMIT = 8;
+const eventCallCache = new Map<string, EventCall[]>();
+let eventCallScans = 0;
+
+/** 清缓存并归零扫描计数(测试注入口;生产不用) */
+export function resetEventCallCacheForTests(): void {
+  eventCallCache.clear();
+  eventCallScans = 0;
+}
+
+/** 真实全文扫描次数(缓存命中不计;测试断言「同版本重复悬停只扫一次」用) */
+export function eventCallScanCountForTests(): number {
+  return eventCallScans;
+}
+
+/** 版本键取/建事件调用表;无键 = 每次现扫(纯函数回退) */
+export function findEventCallsCached(text: string, versionKey?: string): EventCall[] {
+  if (versionKey === undefined) {
+    return findEventCalls(text);
+  }
+  const cached = eventCallCache.get(versionKey);
+  if (cached) {
+    // LRU 触碰:移到尾(最近使用)
+    eventCallCache.delete(versionKey);
+    eventCallCache.set(versionKey, cached);
+    return cached;
+  }
+  const calls = findEventCalls(text);
+  eventCallScans += 1;
+  eventCallCache.set(versionKey, calls);
+  if (eventCallCache.size > EVENT_CALL_CACHE_LIMIT) {
+    const oldest = eventCallCache.keys().next().value;
+    if (oldest !== undefined) {
+      eventCallCache.delete(oldest);
+    }
+  }
+  return calls;
+}
+
+/** 文档身份+版本 → 缓存键(版本未知 = 不缓存,防不同文本同键串味) */
+export function documentEventCacheKey(document: { uri: { toString(): string }; version: number }): string | undefined {
+  const version: number | undefined = document.version;
+  return version === undefined ? undefined : `${document.uri.toString()}|${version}`;
+}
+
 export async function eventDefinitionAt(document: vscode.TextDocument, position: vscode.Position, manager?: EntityMappingManager): Promise<vscode.Location | null> {
   const text = document.getText();
-  const calls = findEventCalls(text);
+  const calls = findEventCallsCached(text, documentEventCacheKey(document));
   const offset = document.offsetAt(position);
   const callback = calls.find(c => c.callback && c.callbackOffset !== undefined && offset >= c.callbackOffset && offset <= c.callbackOffset + (c.callback?.length || 0));
   if (callback?.callback) {
@@ -67,8 +148,17 @@ export async function eventDefinitionAt(document: vscode.TextDocument, position:
   const sourceClasses = [...sourcePrefix.matchAll(/^\s*class\s+(\w+)\b/gm)];
   const sourceScope = sourceClasses.length ? sourceClasses[sourceClasses.length - 1][1] : undefined;
   for (const uri of candidates) {
-    const doc = await vscode.workspace.openTextDocument(uri);
-    const lines = doc.getText().split(/\r?\n/);
+    // KR-AUD-61:磁盘候选走 stat(mtime)+readFile 缓存路径,不逐文件
+    // openTextDocument(大仓 F12 秒卡主因;openTextDocument 还会把每个候选
+    // 注册成文本文档)。虚拟/不可达面(测试替身)回落 openTextDocument。
+    let lines: string[];
+    const cachedLines = await readFileLinesCached(uri);
+    if (cachedLines) {
+      lines = cachedLines;
+    } else {
+      const doc = await vscode.workspace.openTextDocument(uri);
+      lines = doc.getText().split(/\r?\n/);
+    }
     const escaped = selected.event.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     lines.forEach((value, line) => {
       let match: RegExpMatchArray | null = null;

@@ -14,6 +14,8 @@ import {
   normalizeCallChainTab,
   resolveInitialCallChainTab
 } from './defCallChainViewLogic';
+import { WEBVIEW_THEME_CSS } from './webviewTheme';
+import { htmlLang, resolvePanelLocale, strings } from './webviewStrings';
 
 export interface CallChainPickItem extends vscode.QuickPickItem {
   line: number;
@@ -283,26 +285,61 @@ export class CallChainController {
       configView: this.configuredView(),
       storedTab: initialTab
     });
+    const t = strings(resolvePanelLocale()).defCallChain;
 
     return [
       '<!DOCTYPE html>',
-      '<html>',
+      `<html lang="${htmlLang(resolvePanelLocale())}">`,
       '<head>',
       '<meta charset="utf-8">',
       // CSP:脚本只认扩展自带 bundle(nonce),不加载任何外部/CDN 资源
       `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: ${cspSource}; style-src 'unsafe-inline'; script-src ${cspSource} 'nonce-${nonce}';">`,
-      '<title>KBEngine Def Call Chain</title>',
+      `<title>${t.title}</title>`,
+      '<style>',
+      WEBVIEW_THEME_CSS,
+      `
+/* UI-07:唯一零 CSS 壳面板补上系统——样式化页签 + warn notice + 三色图例 */
+body { padding: 0; }
+header { padding: 10px 16px 0; border-bottom: 1px solid var(--kode-border); background: var(--kode-surface); }
+.call-chain-tabs { display: flex; gap: 4px; }
+.call-chain-tabs [role="tab"] {
+  padding: 6px 16px; font-size: var(--kode-t-meta); color: var(--kode-fg-3);
+  border: 1px solid transparent; border-bottom: none; border-radius: 4px 4px 0 0;
+  cursor: pointer; background: transparent; font-family: var(--kode-ui);
+}
+.call-chain-tabs [role="tab"]:hover { color: var(--kode-fg-2); }
+.call-chain-tabs [role="tab"][aria-selected="true"] {
+  color: #fff; background: var(--kode-surface-2); border-color: var(--kode-border);
+}
+.call-chain-notice { margin: 10px 16px; }
+.call-chain-hint { padding: 0 16px 6px; font-size: var(--kode-t-tag); color: var(--kode-fg-4); }
+.call-chain-legend {
+  display: flex; gap: 16px; align-items: center; padding: 8px 16px;
+  border-top: 1px solid var(--kode-border); background: var(--kode-surface);
+  font-size: var(--kode-t-meta); color: var(--kode-fg-3); position: fixed; bottom: 0; left: 0; right: 0;
+}
+.call-chain-legend .li { display: flex; gap: 6px; align-items: center; }
+.call-chain-legend .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+main { padding: 12px 16px 56px; }
+pre { font-family: var(--kode-mono); font-size: 12.5px; color: var(--kode-fg-2); white-space: pre-wrap; }`,
+      '</style>',
       '</head>',
       '<body>',
       '<header>',
-      '<div role="tablist" id="call-chain-tabs">',
-      `<button type="button" role="tab" id="call-chain-tab-graph" data-call-chain-tab="graph" aria-selected="${initialTab === 'graph' ? 'true' : 'false'}">Graph</button>`,
-      `<button type="button" role="tab" id="call-chain-tab-text" data-call-chain-tab="text" aria-selected="${initialTab === 'text' ? 'true' : 'false'}">Text</button>`,
+      '<div role="tablist" id="call-chain-tabs" class="call-chain-tabs">',
+      `<button type="button" role="tab" id="call-chain-tab-graph" data-call-chain-tab="graph" aria-selected="${initialTab === 'graph' ? 'true' : 'false'}">${t.tabGraph}</button>`,
+      `<button type="button" role="tab" id="call-chain-tab-text" data-call-chain-tab="text" aria-selected="${initialTab === 'text' ? 'true' : 'false'}">${t.tabText}</button>`,
       '</div>',
-      '<div id="call-chain-notice" role="status" hidden></div>',
+      `<div class="call-chain-hint">${t.tabHint}</div>`,
+      '<div id="call-chain-notice" role="status" class="call-chain-notice kode-notice warn" hidden></div>',
       '</header>',
       `<main><div data-call-chain-pane="graph" data-mermaid="${encodeURIComponent(mermaid)}"${initialTab === 'graph' ? '' : ' hidden'}></div>`,
       `<pre data-call-chain-pane="text"${initialTab === 'text' ? '' : ' hidden'}>${escapeHtml(this.chainText(chain))}</pre></main>`,
+      `<div class="call-chain-legend" id="call-chain-legend">` +
+      `<span class="li"><span class="dot" style="background:#1d3a2a;border:1px solid #89d185"></span>${t.legendCell}</span>` +
+      `<span class="li"><span class="dot" style="background:#173a5e;border:1px solid #3794ff"></span>${t.legendBase}</span>` +
+      `<span class="li"><span class="dot" style="background:#3a2d10;border:1px solid #cca700"></span>${t.legendClient}</span>` +
+      `</div>`,
       `<script type="application/json" id="call-chain-payload" nonce="${nonce}">${payload}</script>`,
       `<script nonce="${nonce}" src="${scriptUri}"></script>`,
       '</body>',

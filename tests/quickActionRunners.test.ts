@@ -25,7 +25,19 @@ afterEach(async () => {
   );
   stubWorkspace.workspaceFolders = [];
   while (tempDirs.length > 0) {
-    fs.rmSync(tempDirs.pop() as string, { recursive: true, force: true });
+    const dir = tempDirs.pop() as string;
+    // WIN:后台 spawn 的子进程退出/句柄释放有延迟,rm 首轮常 EPERM——短重试收尾。
+    for (let attempt = 0; ; attempt++) {
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+        break;
+      } catch (error) {
+        if (attempt >= 40) {
+          throw error;
+        }
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
   }
 });
 
@@ -213,5 +225,33 @@ describe('fetchHttp', () => {
     await expect(fetchHttp({ url: `http://127.0.0.1:${port}/reload`, method: 'GET' }, 80)).rejects.toThrow(
       /请求超时/
     );
+  });
+});
+
+/* ---------------- KR-AUD-52: Windows cmd 回显转义 ---------------- */
+
+describe('KR-AUD-52: Windows cmd echo 回显转义(% → %%,&|<>^ 加 caret)', () => {
+  it('公告含 % 时 Windows 分支写成 %%,不被 cmd 当变量展开', async () => {
+    const calls: unknown[][] = [];
+    const vscode = await import('vscode');
+    const original = vscode.window.createTerminal;
+    vscode.window.createTerminal = ((options: unknown) => {
+      calls.push([options]);
+      return { sendText: (...args: unknown[]) => calls.push(args) } as never;
+    }) as never;
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    try {
+      await terminalScript({ name: 'win-echo', script: 'run.bat --pct 100%', background: false, cwd: 'C:\\assets' });
+      const echoLine = calls.find(c => typeof c[0] === 'string' && String(c[0]).startsWith('echo'))?.[0] as string;
+      expect(echoLine).toBeDefined();
+      expect(echoLine).toContain('100%%');
+      // 单个裸 %(后随非 %)不允许出现:'100%%' 本身含子串 '100%',
+      // 用负向前瞻断言不存在奇数个 %
+      expect(echoLine).not.toMatch(/100%(?!%)/);
+    } finally {
+      Object.defineProperty(process, 'platform', platformDescriptor as PropertyDescriptor);
+      vscode.window.createTerminal = original;
+    }
   });
 });

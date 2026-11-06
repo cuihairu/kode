@@ -5,9 +5,9 @@ import type * as vscode from 'vscode';
 import { commands, Uri } from './helpers/vscodeStub';
 
 // MonitoringWebView 的 updateWebView 无面板早退:不 show 直接调用,
-// 不触碰 collector 的数据读取。updateTimer 字段只有声明与两处清理
-// (面板 onDidDispose 与 dispose),没有任何调度赋值点,清理分支内部
-// 语句为结构死分支,如实记录不补用例。
+// 不触碰 collector 的数据读取。updateTimer 字段由 KR-AUD-44 的
+// scheduleUpdate(数据更新尾沿节流)调度,两处清理(面板 onDidDispose
+// 与 dispose)现在是可达分支,行为由 krAud44WebviewThrottle 覆盖。
 
 const internals = (webview: MonitoringWebView) =>
   webview as unknown as { updateWebView: () => void; panel: unknown };

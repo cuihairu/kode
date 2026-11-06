@@ -122,7 +122,7 @@ export interface GeneratorConfig {
  * 的成功文件(R3-F08)。AUD-030:缓冲登记插入单记账(bufferEdits),回收只撤
  * 本次插入,不把缓冲内容当盘上前值写回。
  */
-interface GenerationRollbackLedger {
+export interface GenerationRollbackLedger {
   createdFiles: string[];
   overwrittenFiles: Array<{ filePath: string; previous: string }>;
   bufferEdits: Array<{ filePath: string; uri: vscode.Uri; offset: number; text: string }>;
@@ -333,7 +333,7 @@ export class KBEngineCodeGenerator {
    * 预检全部生成目标(IDE-GEN-003):逐项报出冲突(def/python),
    * 调用方在写出任何文件前整体中止,不留半套
    */
-  private collectGenerationConflicts(entityName: string): string[] {
+  private collectGenerationConflicts(entity: EntityTypeConfig): string[] {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       throw new Error('没有打开的工作区');
@@ -342,19 +342,23 @@ export class KBEngineCodeGenerator {
     const conflicts: string[] = [];
     const defFilePath = joinWorkspacePath(
       this.resolveDefOutputRoot(workspaceFolder.uri.fsPath),
-      `${entityName}.def`
+      `${entity.name}.def`
     );
     if (fs.existsSync(defFilePath)) {
       conflicts.push(`def 文件已存在，保留原文件未覆盖: ${defFilePath}`);
     }
 
     if (this.config.generatePython) {
-      const pythonFilePath = joinWorkspacePath(
-        this.resolvePythonOutputRoot(workspaceFolder.uri.fsPath),
-        `${entityName}.py`
-      );
-      if (fs.existsSync(pythonFilePath)) {
-        conflicts.push(`Python 文件已存在，保留原代码未覆盖: ${pythonFilePath}`);
+      // KR-AUD-74:分段路径逐段预检(任一段冲突即整体中止,不写半套)
+      for (const part of this.entityScriptParts(entity)) {
+        const partFilePath = joinWorkspacePath(
+          this.resolvePythonOutputRoot(workspaceFolder.uri.fsPath),
+          part,
+          `${entity.name}.py`
+        );
+        if (fs.existsSync(partFilePath)) {
+          conflicts.push(`Python 文件已存在，保留原代码未覆盖: ${partFilePath}`);
+        }
       }
     }
 
@@ -406,13 +410,17 @@ export class KBEngineCodeGenerator {
     ];
 
     if (this.config.generatePython) {
-      planItems.push({
-        label: '新增 Python',
-        description: joinWorkspacePath(
-          this.resolvePythonOutputRoot(workspaceRoot),
-          `${config.name}.py`
-        )
-      });
+      // KR-AUD-74:分段路径逐段列出(引擎 scripts/<part>/ 布局)
+      for (const part of this.entityScriptParts(config)) {
+        planItems.push({
+          label: `新增 Python (${part} 段)`,
+          description: joinWorkspacePath(
+            this.resolvePythonOutputRoot(workspaceRoot),
+            part,
+            `${config.name}.py`
+          )
+        });
+      }
     }
 
     if (this.config.registerInEntitiesXml) {
@@ -605,37 +613,50 @@ export class KBEngineCodeGenerator {
   }
 
   /**
-   * 生成 Python 文件
+   * 生成 Python 脚本(KR-AUD-74 引擎布局):hasBase→scripts/base/<Name>.py、
+   * hasCell→scripts/cell/<Name>.py、hasClient→scripts/client/<Name>.py 分段
+   * 落盘(引擎按 <part>/<类名>.py 加载,单文件 scripts/<Name>.py 不被装载)。
+   * IDE-GEN-002:任一段同名实现已存在时整体拒绝——保留使用者代码,不写半套。
    */
-  async generatePythonFile(entity: EntityDefinition): Promise<string> {
+  async generatePythonFile(entity: EntityDefinition, ledger?: GenerationRollbackLedger): Promise<string[]> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       throw new Error('没有打开的工作区');
     }
 
-    const pythonFilePath = joinWorkspacePath(
-      this.resolvePythonOutputRoot(workspaceFolder.uri.fsPath),
-      `${entity.config.name}.py`
+    const pythonOutputRoot = this.resolvePythonOutputRoot(workspaceFolder.uri.fsPath);
+    const partPaths = this.entityScriptParts(entity.config).map(part =>
+      joinWorkspacePath(pythonOutputRoot, part, `${entity.config.name}.py`)
     );
 
     // IDE-GEN-002:同名实现已存在时拒绝覆盖——保留使用者代码,
     // 不能因生成 def 顺带覆盖实现文件;两个生成入口同守
-    if (fs.existsSync(pythonFilePath)) {
-      throw new Error(`Python 文件已存在，保留原代码未覆盖: ${pythonFilePath}`);
+    for (const partFilePath of partPaths) {
+      if (fs.existsSync(partFilePath)) {
+        throw new Error(`Python 文件已存在，保留原代码未覆盖: ${partFilePath}`);
+      }
     }
 
-    const content = this.generatePythonContent(entity);
+    const written: string[] = [];
+    for (const [index, part] of this.entityScriptParts(entity.config).entries()) {
+      const partFilePath = partPaths[index];
+      const content = this.generatePythonContent(entity, part);
 
-    // 确保目录存在
-    const dir = path.dirname(pythonFilePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+      // 确保目录存在
+      const dir = path.dirname(partFilePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+
+      // 写入文件(IDE-GEN-005:原子替换,中断不留半截)
+      writeFileAtomic(partFilePath, content);
+      written.push(partFilePath);
+      // KR-AUD-74 分段后落盘即入账:某段失败抛错时,已落盘的段随事务回滚
+      // 回收(等全部段成功才登记会漏删已写段,违反 IDE-GEN-006 不留半套)
+      ledger?.createdFiles.push(partFilePath);
     }
 
-    // 写入文件(IDE-GEN-005:原子替换,中断不留半截)
-    writeFileAtomic(pythonFilePath, content);
-
-    return pythonFilePath;
+    return written;
   }
 
   /**
@@ -744,82 +765,105 @@ export class KBEngineCodeGenerator {
   }
 
   /**
-   * 生成 Python 文件内容
+   * 生成某段 Python 实体脚本内容。
+   * KR-AUD-74:引擎约定——类名=实体名(entities.xml/def 登记名,引擎按类名
+   * 加载脚本,HeroCell/HeroBase 之类后缀类名永远不会被实例化);base/cell/
+   * client 三段分别落 scripts/<part>/<Name>.py,继承 KBEngine.Entity 并先调
+   * 基类构造(对齐 GEN-DEF-2 新建实体向导 entityWizard 的段脚本骨架)。
    */
-  private generatePythonContent(entity: EntityDefinition): string {
+  private generatePythonContent(entity: EntityDefinition, part: EntityWizardPart): string {
+    const name = entity.config.name;
     const lines: string[] = [];
 
     // 文件头
     lines.push('# -*- coding: utf-8 -*-');
     lines.push(`#`);
-    lines.push(`# ${entity.config.name}`);
+    lines.push(`# ${name} (${part} 段)`);
     if (entity.config.description) {
       lines.push(`# ${entity.config.description}`);
     }
     lines.push(`# 生成时间: ${new Date().toISOString()}`);
     lines.push(`#`);
     lines.push('');
-
-    // 导入
     lines.push('import KBEngine');
     lines.push('');
-
-    // 类定义
-    let className = entity.config.name;
-    if (entity.config.hasCell) {
-      className += 'Cell';
-    } else if (entity.config.hasBase) {
-      className += 'Base';
-    }
-
-    lines.push(`class ${className}():`);
     lines.push('');
-
-    // 构造函数
+    lines.push(`class ${name}(KBEngine.Entity):`);
+    lines.push('');
     lines.push('    def __init__(self):');
+    lines.push('        KBEngine.Entity.__init__(self)');
+    lines.push('');
+    lines.push('    def onTimer(self, id, userArg):');
+    lines.push('        """');
+    lines.push('        KBEngine method.');
+    lines.push('        使用 addTimer 后, 当时间到达则该接口被调用');
+    lines.push('        @param id: addTimer 的返回值 ID');
+    lines.push('        @param userArg: addTimer 最后一个参数所给入的数据');
+    lines.push('        """');
     lines.push('        pass');
     lines.push('');
 
-    // 钩子方法
-    lines.push('    # ----------------------- 钩子方法 -----------------------');
-    lines.push('');
-    lines.push('    def onCreate(self):');
-    lines.push('        """');
-    lines.push('        实体创建时调用');
-    lines.push('        """');
-    lines.push('        pass');
-    lines.push('');
-
-    if (entity.config.hasCell) {
+    if (part === 'base') {
+      // base 段:onWriteToDB(self, cellData) —— cellData 即「cell 数据字典」约定
+      lines.push('    def onWriteToDB(self, cellData):');
+      lines.push('        """');
+      lines.push('        KBEngine method.');
+      lines.push('        将 cell 数据持久化到数据库时调用, cellData 为需要保存的 cell 数据字典。');
+      lines.push('        """');
+      lines.push('        pass');
+      lines.push('');
+      if (entity.baseMethods && entity.baseMethods.length > 0) {
+        lines.push('    # ----------------------- Base 方法 -----------------------');
+        lines.push('');
+        for (const method of entity.baseMethods) {
+          lines.push(this.generatePythonMethodCode(method));
+        }
+      }
+    } else if (part === 'cell') {
       lines.push('    def onEnterWorld(self):');
       lines.push('        """');
-      lines.push('        进入世界时调用（仅 Cell 实体）');
+      lines.push('        KBEngine method.');
+      lines.push('        进入世界时调用（仅 Cell 段实体）');
+      lines.push('        """');
+      lines.push('        pass');
+      lines.push('');
+      lines.push('    def onLeaveWorld(self):');
+      lines.push('        """');
+      lines.push('        KBEngine method.');
+      lines.push('        离开世界时调用（仅 Cell 段实体）');
+      lines.push('        """');
+      lines.push('        pass');
+      lines.push('');
+      if (entity.cellMethods && entity.cellMethods.length > 0) {
+        lines.push('    # ----------------------- Cell 方法 -----------------------');
+        lines.push('');
+        for (const method of entity.cellMethods) {
+          lines.push(this.generatePythonMethodCode(method));
+        }
+      }
+    } else {
+      lines.push('    def onClientEnabled(self):');
+      lines.push('        """');
+      lines.push('        KBEngine method.');
+      lines.push('        该 entity 被正式激活为可使用, 此时已建立 client 对应实体。');
       lines.push('        """');
       lines.push('        pass');
       lines.push('');
     }
 
-    // Base 方法
-    if (entity.baseMethods && entity.baseMethods.length > 0) {
-      lines.push('    # ----------------------- Base 方法 -----------------------');
-      lines.push('');
-
-      for (const method of entity.baseMethods) {
-        lines.push(this.generatePythonMethodCode(method));
-      }
-    }
-
-    // Cell 方法
-    if (entity.cellMethods && entity.cellMethods.length > 0) {
-      lines.push('    # ----------------------- Cell 方法 -----------------------');
-      lines.push('');
-
-      for (const method of entity.cellMethods) {
-        lines.push(this.generatePythonMethodCode(method));
-      }
-    }
-
     return lines.join('\n');
+  }
+
+  /**
+   * 引擎段清单:hasBase→base、hasCell→cell、hasClient→client(对齐新向导
+   * entityWizardPartsToGenerate 的段映射)。
+   */
+  private entityScriptParts(config: EntityTypeConfig): EntityWizardPart[] {
+    const parts: EntityWizardPart[] = [];
+    if (config.hasBase) parts.push('base');
+    if (config.hasCell) parts.push('cell');
+    if (config.hasClient) parts.push('client');
+    return parts;
   }
 
   /**
@@ -1051,7 +1095,7 @@ export class KBEngineCodeGenerator {
     // 生成文件
     try {
       // IDE-GEN-003:落盘前预检全部目标,任一冲突即整体中止,不写半套
-      const conflicts = this.collectGenerationConflicts(entity.config.name);
+      const conflicts = this.collectGenerationConflicts(entity.config);
       if (conflicts.length > 0) {
         for (const conflict of conflicts) {
           vscode.window.showErrorMessage(conflict);
@@ -1069,9 +1113,9 @@ export class KBEngineCodeGenerator {
       vscode.window.showInformationMessage(`✅ 已生成 .def 文件: ${defFile}`);
 
       if (this.config.generatePython) {
-        const pythonFile = await this.generatePythonFile(entity);
-        ledger.createdFiles.push(pythonFile);
-        vscode.window.showInformationMessage(`✅ 已生成 Python 文件: ${pythonFile}`);
+        // 段级入账见 generatePythonFile(失败段前的已写段随事务回收)
+        const pythonFiles = await this.generatePythonFile(entity, ledger);
+        vscode.window.showInformationMessage(`✅ 已生成 Python 文件: ${pythonFiles.join(', ')}`);
       }
 
       if (this.config.registerInEntitiesXml) {
@@ -1491,7 +1535,7 @@ export class KBEngineCodeGenerator {
     // 生成文件
     try {
       // IDE-GEN-003:落盘前预检全部目标,任一冲突即整体中止,不写半套
-      const conflicts = this.collectGenerationConflicts(entity.config.name);
+      const conflicts = this.collectGenerationConflicts(entity.config);
       if (conflicts.length > 0) {
         for (const conflict of conflicts) {
           vscode.window.showErrorMessage(conflict);
@@ -1509,9 +1553,9 @@ export class KBEngineCodeGenerator {
       vscode.window.showInformationMessage(`✅ 已生成 .def 文件: ${defFile}`);
 
       if (this.config.generatePython) {
-        const pythonFile = await this.generatePythonFile(entity);
-        ledger.createdFiles.push(pythonFile);
-        vscode.window.showInformationMessage(`✅ 已生成 Python 文件: ${pythonFile}`);
+        // 段级入账见 generatePythonFile(失败段前的已写段随事务回收)
+        const pythonFiles = await this.generatePythonFile(entity, ledger);
+        vscode.window.showInformationMessage(`✅ 已生成 Python 文件: ${pythonFiles.join(', ')}`);
       }
 
       if (this.config.registerInEntitiesXml) {

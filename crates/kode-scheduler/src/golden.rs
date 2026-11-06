@@ -170,6 +170,27 @@ pub fn build_scenarios() -> Vec<Scenario> {
             ],
         },
         Scenario {
+            name: "keyed-cancelled-by-batch-reset-recovers",
+            ops: vec![
+                Op::Ensure {
+                    key: "initial-scan",
+                    kind: "initial-scan",
+                    priority: 3,
+                    fail: false,
+                },
+                Op::CancelQueued {
+                    reason: "test-reset",
+                },
+                Op::Ensure {
+                    key: "initial-scan",
+                    kind: "initial-scan",
+                    priority: 3,
+                    fail: false,
+                },
+                Op::Drain { ms: 200 },
+            ],
+        },
+        Scenario {
             name: "same-priority-fair-order",
             ops: vec![
                 enq("single-file-update", 1, Some("/a1.def"), Some(1)),

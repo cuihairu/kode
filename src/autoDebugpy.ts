@@ -18,14 +18,13 @@
  * 面板会话零感知。单组件失败只记 LogHub,不阻塞启动也不炸调用方。
  */
 
-import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { KBEngineTelnetClient, type TelnetClientEvents } from './telnetClient';
 import { resolveProfileInterpreter } from './profileInterpreter';
 import type { TelnetTarget } from './telnetService';
-import { killProcessTree } from './processManager';
+import { killProcessTree, spawnProcess } from './processManager';
 
 /** 同步开关(kbengine.debug.autoDebugpy,默认关:注入是显式 opt-in) */
 export const AUTO_DEBUGPY_ENABLED_DEFAULT = false;
@@ -156,7 +155,9 @@ export const defaultRunPython = async (code: string): Promise<{ stdout: string; 
   for (const command of candidates) {
     const result = await new Promise<{ stdout: string; exitCode: number | null } | null>(resolve => {
       try {
-        const child = spawn(command, ['-c', code], {
+        // WIN-3:所选解释器可能是 .cmd shim(绝对路径)——直 spawn 被拒
+        // (EINVAL,CVE-2024-27980),经 spawnProcess 经 cmd /c 运行。
+        const child = spawnProcess(command, ['-c', code], {
           windowsHide: true,
           // POSIX 下设进程组长:超时组杀(负 pid 信号)不留解释器衍生孙进程
           detached: process.platform !== 'win32'

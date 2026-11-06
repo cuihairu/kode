@@ -1,7 +1,9 @@
+import * as path from 'path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   expandWorkspacePlaceholders,
   joinWorkspacePath,
+  selectPathApiForPlatform,
   usesPosixPath
 } from '../src/workspacePath';
 
@@ -36,6 +38,30 @@ describe('usesPosixPath', () => {
     expect(usesPosixPath('C:\\work')).toBe(false);
     expect(usesPosixPath('C:/work')).toBe(false);
     expect(usesPosixPath('plainname')).toBe(false);
+  });
+});
+
+describe('selectPathApiForPlatform(WIN-3:盘符+正斜杠判 win32 风格,审核发现修复)', () => {
+  it('win32 平台:盘符+正斜杠路径选 win32 实现,resolve 不锚 cwd', () => {
+    // 旧实现只认 `\`,`C:/repo/src` 被误判为 posix,posix.resolve 会锚到 cwd;
+    // 修复后按盘符前缀认 win32,`C:/repo/src` + 'a' → `C:\repo\src\a`。
+    const api = selectPathApiForPlatform('win32', 'C:/repo/src');
+    expect(api.resolve('C:/repo/src', 'a')).toBe('C:\\repo\\src\\a');
+  });
+
+  it('win32 平台:反斜杠路径仍选 win32 实现', () => {
+    const api = selectPathApiForPlatform('win32', 'C:\\repo\\src');
+    expect(api.resolve('C:\\repo\\src', 'a')).toBe('C:\\repo\\src\\a');
+  });
+
+  it('win32 平台:纯 posix 路径(/ws/repo)选 posix 实现', () => {
+    const api = selectPathApiForPlatform('win32', '/ws/repo');
+    expect(api.resolve('/ws/repo', 'a')).toBe('/ws/repo/a');
+  });
+
+  it('非 win32 平台:一律走宿主默认 path(行为不变)', () => {
+    const api = selectPathApiForPlatform('linux', 'C:/repo');
+    expect(api).toBe(path);
   });
 });
 

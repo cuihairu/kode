@@ -12,11 +12,11 @@
  * 把 ptrace 指引拼在原因后面,不吞不猜。
  */
 
-import { spawn } from 'child_process';
-import { killProcessTree } from './processManager';
+import { killProcessTree, spawnProcess } from './processManager';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { pathApiFor } from './workspacePath';
 import type { InterpreterResolution } from './profileInterpreter';
 
 export interface CommandRunResult {
@@ -36,7 +36,7 @@ export type SpawnRunner = (
 export const defaultSpawnRunner: SpawnRunner = (command, args, timeoutMs) =>
   new Promise(resolve => {
     try {
-      const child = spawn(command, args, {
+      const child = spawnProcess(command, args, {
         windowsHide: true,
         // POSIX 下设进程组长(与 ProcessManager 同口径):超时按组杀,
         // py-spy 派生的孙进程不残留成孤儿
@@ -99,9 +99,12 @@ export function resolvePyspyCommand(
     return null;
   }
   const exe = process.platform === 'win32' ? 'py-spy.exe' : 'py-spy';
+  // WIN-3:按解释器路径风格选 path——POSIX 解释器(/ 开头)保持 / 拼装,win 盘符
+  // 走平台 join;否则 win32 把 /proj/.venv/bin 拼成反斜杠形态与探针/夹具错配。
+  const P = pathApiFor(interpreterPath);
   const candidates = [
-    path.join(path.dirname(interpreterPath), exe),
-    path.join(os.homedir(), '.local', 'bin', exe)
+    P.join(P.dirname(interpreterPath), exe),
+    P.join(os.homedir(), '.local', 'bin', exe)
   ];
   return candidates.find(candidate => exists(candidate)) ?? null;
 }

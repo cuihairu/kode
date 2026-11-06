@@ -148,6 +148,15 @@ export type PythonSymbolsRustResult = PythonSymbolsFile[];
  * 调用图(经 Rust):文件集 → 节点/边/反索引/数据流;Rust 不可用/失败/形状
  * 不合规返回 null(面板降级:不可用徽标,不抛错)。
  */
+/**
+ * KR-AUD-89:Rust `file_stem` 只按 `/` 分割(python_callgraph.rs:161)——
+ * Windows 面 `uri.fsPath` 是反斜杠,发送前在 RPC 边界统一归一;Rust 侧
+ * analyze() 有 debug_assert 锁死该契约(上游归一化,非 Rust 容错)。
+ */
+export function normalizeCallGraphPath(path: string): string {
+  return path.replace(/\\/g, '/');
+}
+
 export async function buildPythonCallGraphInRust(
   params: PythonCallGraphRustParams
 ): Promise<PythonCallGraphRustResult | null> {
@@ -158,7 +167,7 @@ export async function buildPythonCallGraphInRust(
   const response = await gate.runInRust<PythonCallGraphRustResult>(
     '$/kode/python/callgraph',
     {
-      files: params.files,
+      files: params.files.map(file => ({ ...file, path: normalizeCallGraphPath(file.path) })),
       manifestXmlText: params.manifestXmlText ?? ''
     }
   );

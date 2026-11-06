@@ -202,6 +202,36 @@ function headSpanFromSegments(
 }
 
 /**
+ * 全体段边界中追溯最远(最早)的一个。解析器保证 boundary.atCommit 即该段
+ * 最老条目(`entries[last].hash`),以其提交时刻比较;更老者胜,同刻 origin
+ * (「引入于此」)优先于 stopped(合并/复制停点);无条目段(解析器空档
+ * atCommit='')不参与,全不参与回落末段边界(与旧行为一致)。
+ */
+function earliestBoundary(
+  timelines: readonly { entries: RangeChangeEntry[]; boundary: RangeTimelineBoundary }[]
+): RangeTimelineBoundary {
+  let best: RangeTimelineBoundary | null = null;
+  let bestTime = -Infinity;
+  let bestOrigin = false;
+  for (const timeline of timelines) {
+    const at = timeline.entries.find(e => e.hash === timeline.boundary.atCommit);
+    if (!at) continue; // 边界提交不在条目中(空档/异常)→ 该段不参与比较
+    const time = Date.parse(at.commitDate);
+    const origin = timeline.boundary.kind === 'origin';
+    if (
+      best === null ||
+      time < bestTime ||
+      (time === bestTime && origin && !bestOrigin)
+    ) {
+      best = timeline.boundary;
+      bestTime = time;
+      bestOrigin = origin;
+    }
+  }
+  return best ?? timelines[timelines.length - 1].boundary;
+}
+
+/**
  * 范围历史树(侧边栏 kbengine.gitRangeHistory)。
  * showSelectionHistory 只在用户入口触发;不挂编辑器切换/选区变化监听
  * (视图持有自身状态,切换编辑器不重查、不错套)。
@@ -380,24 +410,30 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
     }
     // 审核发现:多段不连续映射不得合并成 min..max——否则会漏进中间未选中行的
     // 修改。逐段查询,再按提交 hash 去重合并时间线。
-    const results = await Promise.all(
-      segments.map(segment =>
-        this.deps.queryTimeline(
-          filePath,
-          repoRoot,
-          { startLine: segment.headFirstLine, endLine: segment.headLastLine },
-          { token: this.viewToken }
-        )
-      )
-    );
+    // 审核发现(并发面):Promise.all 同时发起全部段查询,段数超过门限
+    // (range 并发 1 + 队列 8)时后段被 gate 以「历史查询队列已满」拒绝,
+    // 整个范围历史查询失败。改串行逐段:gate 面天然串行 range 查询,不再
+    // 瞬时灌满队列;首段失败即停,段间查代际——选区已换/视图已关早停。
+    const results: RangeTimelineResult[] = [];
+    for (const segment of segments) {
+      if (gen !== this.generation) {
+        return;
+      }
+      const result = await this.deps.queryTimeline(
+        filePath,
+        repoRoot,
+        { startLine: segment.headFirstLine, endLine: segment.headLastLine },
+        { token: this.viewToken }
+      );
+      if (result.kind !== 'timeline') {
+        this.state = this.applyTimelineFailure(result);
+        this.fire();
+        return;
+      }
+      results.push(result);
+    }
     // 代际已更替(新选区/视图关闭)→ 丢弃旧结果,不覆盖最新状态。
     if (gen !== this.generation) return;
-    const firstFailure = results.find(result => result.kind !== 'timeline');
-    if (firstFailure && firstFailure.kind !== 'timeline') {
-      this.state = this.applyTimelineFailure(firstFailure);
-      this.fire();
-      return;
-    }
     const timelines = results.map(result => result as Extract<RangeTimelineResult, { kind: 'timeline' }>);
     if (timelines.length > 0) {
       const entriesByKey = new Map<string, RangeChangeEntry>();
@@ -408,6 +444,13 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
           }
         }
       }
+      // 审核发现:段序拼接≠时间序——逐段 git log -L 各自最新在前,跨段时间
+      // 交错的提交按段序拼接会乱序,且父路径链 entries[index+1](注释明示为
+      // 更老提交)在段边界取到别段更新提交。合并后按提交时间全局降序(稳定
+      // 排序,同刻保持首见段序),entries[index+1] 恒为不新于当前条 → 链向正确。
+      const entries = [...entriesByKey.values()].sort(
+        (a, b) => Date.parse(b.commitDate) - Date.parse(a.commitDate)
+      );
       const span = headSpanFromSegments(segments)!;
       this.state = {
         kind: 'loaded',
@@ -417,8 +460,8 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
         headEnd: span.end,
         selectionStart: range.startLine,
         selectionEnd: range.endLine,
-        entries: [...entriesByKey.values()],
-        boundary: timelines[timelines.length - 1].boundary,
+        entries,
+        boundary: earliestBoundary(timelines),
         unmappedLines,
       };
     }

@@ -525,3 +525,63 @@ fn ensure_reentry_correct_after_terminal_eviction() {
     assert_eq!(s.status().queued, 0);
     assert_eq!(s.status().completed, 1102);
 }
+
+/// KR-AUD-22:run 闭包 panic 此前无 catch_unwind——panic 掀翻 pump,任务卡
+/// Running、调度器死锁。修复:panic 按 Failed 终态落账,后续任务照常执行。
+#[test]
+fn run_body_panic_lands_failed_and_scheduler_stays_live_kraud22() {
+    let mut s = Scheduler::default();
+    let boom = s.enqueue(TaskSpec {
+        kind: TaskKind::SingleFileUpdate,
+        priority: 0,
+        file: Some("/a.def".to_string()),
+        version: Some(1),
+        target: None,
+        run: Box::new(|_| panic!("boom")),
+    });
+    let after = s.enqueue(spec(TaskKind::SingleFileUpdate, 0, Some("/b.def"), Some(1)));
+    s.drain(200);
+    assert_eq!(
+        s.task_state(boom.id),
+        Some(kode_scheduler::TaskState::Failed),
+        "panic 应按 Failed 终态落账"
+    );
+    assert_eq!(
+        s.task_state(after.id),
+        Some(kode_scheduler::TaskState::Completed),
+        "panic 后调度器不应卡死"
+    );
+    assert_eq!(s.status().failed, 1);
+    assert_eq!(s.status().completed, 1);
+}
+/// KR-AUD-90(RUST-5):keyed 任务被 stale-version/队满淘汰取消后,`cancel_queued`
+/// 必须回写 keyed 台账——execute 不会再跑,条目停留 Queued 会让后续 ensure
+/// 恒 Reused(死 id,任务永不重跑)。
+#[test]
+fn keyed_cancelled_by_newer_version_writes_back_ledger() {
+    let mut s = Scheduler::new(SchedulerOptions::default());
+    let (d1, id1) = s.ensure(
+        "initial-scan",
+        spec(TaskKind::InitialScan, 3, Some("/a.def"), Some(1)),
+    );
+    assert_eq!(d1, EnsureDecision::Queued);
+
+    // 新版本入队 → 同文件旧(刚被 ensure 排的)keyed 任务被 stale-version 取消。
+    let _ = s.enqueue(spec(TaskKind::SingleFileUpdate, 1, Some("/a.def"), Some(2)));
+
+    assert_eq!(
+        s.status()
+            .keyed_tasks
+            .get("initial-scan")
+            .map(String::as_str),
+        Some("cancelled"),
+        "cancel 路径必须回写 keyed 台账(KR-AUD-90)"
+    );
+
+    let (d2, id2) = s.ensure(
+        "initial-scan",
+        spec(TaskKind::InitialScan, 3, Some("/a.def"), Some(3)),
+    );
+    assert_eq!(d2, EnsureDecision::Recovered, "后续 ensure 走恢复路径");
+    assert_ne!(id2, id1, "必须是新任务,而不是死 id 复用");
+}

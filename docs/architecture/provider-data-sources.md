@@ -82,6 +82,7 @@
 | FinalConfigTreeProvider | serverConfigMerge.ts:2808 | :2756 | kbengine.xml 合成树 | 树刷新事件 |
 | GitHistoryTreeProvider | gitHistoryTree.ts:165 | :4089 | GitCommitLog 分页(IDE-GIT-004,仅用户入口按需查询;空闲零 Git),经共享查询门(IDE-GIT-011:去重/并发上限 2 且范围追踪 1/有界队列/LRU 缓存/视图隐藏-禁用-卸载取消) | 树刷新事件 + 用户触发「加载下一页」 |
 | GitRangeHistoryTreeProvider | gitRangeHistoryTree.ts:208 | :4140 | 选区→HEAD 行段映射(IDE-GIT-008)+ 逐提交修改时间线(IDE-GIT-009,仅用户入口按需查询;空闲零 Git,不挂编辑器切换/选区监听),经共享查询门(IDE-GIT-011,重复选区只留最新) | 树刷新事件(标题随状态) |
+| PlayerDataTreeProvider | playerDataPanel.ts:108 | :3471 | Rust derive_database 单一真源的 mysql 连接 profile(`configDerive.getDerivedDatabaseProfile`,零手填/改写)+ databaseDrift 只读执行器(连接测试 `SELECT 1`、按 dbid 只读 SELECT;语句白名单 + READ ONLY 会话双保险,CLONE-P5 骨架) | 树刷新事件;只读查询输出到「KBEngine 玩家数据(只读)」通道,零写入;密码永不出值(掩码标记) |
 
 ### 2d. 文件树角标 provider(vscode.window.registerFileDecorationProvider,IDE-HOT-100)
 
@@ -113,9 +114,9 @@
 
 ## 5. watcher 分布
 
-watcher 分布(基线 499d34a,按**源码调用位**计,测试逐文件对账;GLOBDATA-001 起 globalDataIndex 增 1 处;AUD-035 起 workspaceIndex 增 1 处=workspace py glob+外部根 RelativePattern;KODE-CFG-017 起 inferPipeline 增 1 处=infer 管道 py watcher):src/extension.ts=3 src/typeStorageIndexWatchers.ts=1 src/entityMapping.ts=3 src/hotReload.ts=1 src/pythonTypeStubs.ts=1 src/debugConfig.ts=1 src/workspaceIndex.ts=2 src/globalDataIndex.ts=1 src/inferPipeline.ts=1(合计 14 处调用位)
+watcher 分布(基线 499d34a,按**源码调用位**计,测试逐文件对账;GLOBDATA-001 起 globalDataIndex 增 1 处;AUD-035 起 workspaceIndex 增 1 处=workspace py glob+外部根 RelativePattern;KODE-CFG-017 起 inferPipeline 增 1 处=infer 管道 py watcher;配置契约检查诊断起 extension.ts 增 1 处=.kbengine/debug.json/.gitignore/.vscode/settings.json/CLAUDE.md/README 契约文件 watcher):src/extension.ts=4 src/typeStorageIndexWatchers.ts=1 src/entityMapping.ts=3 src/hotReload.ts=1 src/pythonTypeStubs.ts=1 src/debugConfig.ts=1 src/workspaceIndex.ts=2 src/globalDataIndex.ts=1 src/inferPipeline.ts=1(合计 15 处调用位)
 
-- 装配层自持:extension.ts ×3、typeStorageIndexWatchers.ts ×1 调用位(循环建 def/types.xml/entities.xml 3 枚 watcher,ARC-005)。
+- 装配层自持:extension.ts ×4、typeStorageIndexWatchers.ts ×1 调用位(循环建 def/types.xml/entities.xml 3 枚 watcher,ARC-005;另 1 枚为配置契约检查的契约文件 watcher)。
 - 模块自持(见 §6 标注):entityMapping ×3、hotReload ×1(显式 dispose/重建)、pythonTypeStubs ×1、debugConfig ×1。
 - workspaceIndex ×1(py glob)住类内,但 WorkspaceIndex 全仓唯一构造位在装配层,Disposable 随 context.subscriptions 释放——生命周期口径已符合 ARC-005,不算未完成。
 

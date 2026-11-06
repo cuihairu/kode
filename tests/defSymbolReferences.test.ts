@@ -315,3 +315,70 @@ describe('provideDefSymbolReferences(工作区级引用查询)', () => {
   });
 
 });
+
+// KR-AUD-77:引擎在 <Interfaces> 下认四种 wrapper 拼写(entitydef.cpp:563-566,
+// defRenamer.INTERFACE_WRAPPER_NAMES 同源)——引用扫描此前只认 'Interface'
+// 一种,小写/Type 形态的接口引用位缺失;<Interfaces> 外的同名 <Type>(属性
+// 类型面)不得误计为接口引用。
+describe('KR-AUD-77 interface reference sites cover all four wrapper spellings', () => {
+  let wsRoot = '';
+  let heroPath = '';
+  let imovePath = '';
+  const originalFindFiles = stubWorkspace.findFiles;
+  const originalFolders = stubWorkspace.workspaceFolders;
+  const originalDocuments = stubWorkspace.textDocuments;
+
+  beforeEach(() => {
+    wsRoot = makeTmpDir('ws-kr77');
+    const defsDir = path.join(wsRoot, 'scripts', 'entity_defs');
+    const interfacesDir = path.join(defsDir, 'interfaces');
+    heroPath = path.join(defsDir, 'Hero2.def');
+    imovePath = path.join(interfacesDir, 'IMove.def');
+    fs.mkdirSync(interfacesDir, { recursive: true });
+    fs.writeFileSync(heroPath, [
+      '<root>',
+      '  <Interfaces>',
+      '    <Type>IMove</Type>',
+      '  </Interfaces>',
+      '  <Properties>',
+      '    <shape> <Type>IMove</Type> </shape>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'));
+    fs.writeFileSync(imovePath, '<root>\n</root>');
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
+    stubWorkspace.textDocuments = [];
+    stubWorkspace.findFiles = (async (glob?: string) => {
+      if (glob === '**/*.def') {
+        return [Uri.file(heroPath), Uri.file(imovePath)];
+      }
+      return [];
+    }) as typeof stubWorkspace.findFiles;
+  });
+
+  afterEach(() => {
+    stubWorkspace.findFiles = originalFindFiles;
+    stubWorkspace.workspaceFolders = originalFolders;
+    stubWorkspace.textDocuments = originalDocuments;
+    for (const dir of tmpRoots.splice(0)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('<Type> wrapper under <Interfaces> yields the usage site; property <Type> does not', async () => {
+    const content = fs.readFileSync(heroPath, 'utf8');
+    const doc = makeTextDocument(content, { fileName: heroPath, languageId: 'kbengine-def' }) as never;
+    // 光标放 <Interfaces> 包裹内的 IMove(第一处)
+    const re = /\bIMove\b/g;
+    const match = re.exec(content)!;
+    const before = content.slice(0, match.index).split('\n');
+    const pos = new Position(before.length - 1, before[before.length - 1].length);
+
+    const refs = await provideDefSymbolReferences(doc, pos, false);
+    expect(refs).not.toBeNull();
+    const line = content.split('\n')[refs![0].range.start.line];
+    // 引用位落在 <Type>IMove</Type>(Interfaces 内)那一行,而非属性 shape 行
+    expect(line).toContain('<Type>IMove</Type>');
+    expect(line).not.toContain('shape');
+  });
+});

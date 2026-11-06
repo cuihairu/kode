@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { eventDefinitionAt, findEventCalls } from './eventApi';
+import { documentEventCacheKey, eventDefinitionAt, findEventCallsCached } from './eventApi';
 export { EventCodeLensProvider } from './eventApi';
 import { getScanRootForFile, findFilesAcrossRoots } from './scanRoots';
 import {
@@ -1131,15 +1131,26 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     // GLOBDATA-002 数据字典键悬停由下方该面专管:本面若不排除 dict 访问位,
     // 会在解析不出时落回 provideKnownHover 短路掉下方数据字典面(丢同键写点
     // 类型)。仅当数据字典索引装配且命中 dict 访问位时不接管(与下方同闸)。
+    // KR-AUD-65(UI-16)口径统一:数据字典落点判定与 definition/references 同源
+    // ——行级快筛(便宜,绝大多数落点在此落空)→ getDataDictAccessInCodeContext
+    // 全文词法上下文复核(贵,只在真命中时才建掩码)。行级口径单独判会把跨行
+    // 三引号/外层字符串里的伪访问当真:同一位置 hover 接管而 F12 不跳。
+    // 一次解析,下方自属性面闸门与数据字典面共用。
+    const dictDocumentText = document.getText();
     const dictLineText = document.lineAt(position.line).text;
-    const isDataDictPosition =
-      !!this.dataDictIndex &&
+    const dictAliases = getKbeAliases(dictDocumentText);
+    const dictAccess =
+      this.dataDictIndex &&
       isPythonDataDictIndexEnabled() &&
-      !!getKbeDataDictAccessAtPosition(
-        dictLineText,
-        position.character,
-        getKbeAliases(document.getText())
-      );
+      getKbeDataDictAccessAtPosition(dictLineText, position.character, dictAliases)
+        ? getDataDictAccessInCodeContext(
+          dictDocumentText,
+          position.line,
+          position.character,
+          dictAliases
+        )
+        : null;
+    const isDataDictPosition = dictAccess !== null;
     if (
       manager &&
       document.languageId === 'python' &&
@@ -1173,13 +1184,9 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     // 同源),后续查询零成本。
     if (document.languageId === 'python' && this.dataDictIndex && isPythonDataDictIndexEnabled()) {
       const dataDictIndex = this.dataDictIndex;
-      const lineText = document.lineAt(position.line).text;
-      const dictAccess = getKbeDataDictAccessAtPosition(
-        lineText,
-        position.character,
-        getKbeAliases(document.getText())
-      );
-      if (dictAccess && !isKeyInsideLineComment(lineText, dictAccess.keyStart)) {
+      // dictAccess 已在上方按 definition 同源口径算好(此处不再行级重判);
+      // 行内注释由 isKeyInsideLineComment 继续排除(与词法掩码双保险)
+      if (dictAccess && !isKeyInsideLineComment(dictLineText, dictAccess.keyStart)) {
         // AUD-073:发布前复核启用代际——等待期间开关被改过则不发布旧结果
         const enabledGeneration = getPythonDataDictIndexGeneration();
         // AUD-075(R4-F10):源文档身份/版本复核(与 definition/references 同口径)
@@ -1509,7 +1516,12 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     word: string
   ): vscode.Hover | null {
     if (document.languageId === 'python' && featureConfig.hoverEventStats) {
-      const calls = findEventCalls(document.getText());
+      // KR-AUD-65(UI-16):同文档同版本共享一次全文扫描(此前每次悬停都全扫),
+      // 版本前进/换文档自然换键
+      const calls = findEventCallsCached(
+        document.getText(),
+        documentEventCacheKey(document)
+      );
       const current = calls.find(call => position && document.offsetAt(position) >= call.eventOffset && document.offsetAt(position) <= call.eventOffset + call.event.length);
       if (current) {
         const registrations = calls.filter(call => (call.api === 'addEvent' || call.api === 'registerEvent') && call.event === current.event).length;
@@ -2185,15 +2197,28 @@ function validateScalarTagValues(
     if (node.name === 'Flags') {
       const rawValue = getNodeValue(node);
       const normalizedValue = rawValue.toUpperCase();
-      if (featureConfig.diagnosticsCheckUnknownFlags && normalizedValue && !knownFlags.has(normalizedValue)) {
-        pushDiagnosticForNodeValue(
-          document,
-          diagnosticsList,
-          node,
-          rawValue,
-          `未知的 KBEngine Flags 值: ${rawValue}。KBEngine 源码按单个映射值解析 <Flags>，不支持此写法。`,
-          vscode.DiagnosticSeverity.Error
-        );
+      if (featureConfig.diagnosticsCheckUnknownFlags && normalizedValue) {
+        // KR-AUD-84:引擎按单个映射值整串查表,不拆词。'|' 组合形态单独出
+        // 「引擎不支持」诊断(与 Rust UnknownFlagValueRule 同文案)。
+        if (rawValue.includes('|')) {
+          pushDiagnosticForNodeValue(
+            document,
+            diagnosticsList,
+            node,
+            rawValue,
+            `未知的 KBEngine Flags 值: ${rawValue}。引擎按单个映射值整串查表，不支持 '|' 组合形态；请改为单个词表值。`,
+            vscode.DiagnosticSeverity.Error
+          );
+        } else if (!knownFlags.has(normalizedValue)) {
+          pushDiagnosticForNodeValue(
+            document,
+            diagnosticsList,
+            node,
+            rawValue,
+            `未知的 KBEngine Flags 值: ${rawValue}。KBEngine 源码按单个映射值解析 <Flags>，不支持此写法。`,
+            vscode.DiagnosticSeverity.Error
+          );
+        }
       }
       return;
     }
@@ -6679,6 +6704,30 @@ function findMethodElementByName(root: DefElementNode, name: string): DefElement
   return null;
 }
 
+/**
+ * IDE-LINT-012:诊断行上按区间归属取 receiver——扫描 `self.<cell|base|client>.<方法>`
+ * 调用,取方法名 token 与诊断区间 `[startChar, endChar)` 相交的那个 receiver;
+ * 返回其角色,或 null(区间不覆盖任何 self.<receiver>.<方法>,不猜)。真实诊断
+ * 区间紧贴方法名 token(交集即唯一);宽松区间也按第一个相交归属,同行两个
+ * 不同 receiver 不会互串。
+ */
+export function receiverFromDiagnosticLine(
+  lineText: string,
+  startChar: number,
+  endChar: number
+): 'cell' | 'base' | 'client' | null {
+  const callRe = /\bself\.(cell|base|client)\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)/g;
+  let match: RegExpExecArray | null;
+  while ((match = callRe.exec(lineText)) !== null) {
+    const methodStart = match.index + match[0].length - match[2].length;
+    const methodEnd = methodStart + match[2].length;
+    if (startChar < methodEnd && endChar > methodStart) {
+      return match[1] as 'cell' | 'base' | 'client';
+    }
+  }
+  return null;
+}
+
 export class KBEngineReceiverNoneGuardCodeActionProvider implements vscode.CodeActionProvider {
   /**
    * B-7(2026-10-29 用户令):receiver-none 诊断的快速修复——使用行之前
@@ -6708,11 +6757,18 @@ export class KBEngineReceiverNoneGuardCodeActionProvider implements vscode.CodeA
         continue;
       }
       const line = diagnostic.range.start.line;
-      const receiverMatch = /\bself\.(cell|base|client)\s*\./.exec(document.lineAt(line).text);
-      if (!receiverMatch) {
+      // IDE-LINT-012:接收者从诊断锚定的调用取——诊断区间覆盖 `self.<r>.<方法>` 的
+      // 方法名 token,同行两个不同 receiver(如 `self.cell.a(); self.base.b()`)时
+      // 必须按区间归属取对应 receiver,不能取行首个 self.<r>. 否则会把第一个
+      // receiver 的修复错套给第二个的诊断。区间内定位不到 receiver 则不出(不猜)。
+      const receiver = receiverFromDiagnosticLine(
+        document.lineAt(line).text,
+        diagnostic.range.start.character,
+        diagnostic.range.end.character
+      );
+      if (receiver === null) {
         continue;
       }
-      const receiver = receiverMatch[1] as 'cell' | 'base' | 'client';
       const dedupeKey = `${receiver}:${line}`;
       if (seen.has(dedupeKey)) {
         continue;

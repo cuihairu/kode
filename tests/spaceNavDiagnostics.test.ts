@@ -84,6 +84,17 @@ describe('space/nav semantic diagnostics (SP-4)', () => {
         computeSpaceNavFindings('def f(self):\n    self.navigatePath()\n')
       ).toEqual([]);
     });
+
+    it('cross-line self\\n.navigate range lands on the method line', () => {
+      // 审核发现:`\s*` 跨行时旧行号取 self 行、列取方法名列——行列不同源,
+      // 范围落错行且越出行尾。修复后行/列同取方法名偏移(navigate 实际行)。
+      const text = 'def f(self, dest):\n    (self\n        .navigate(dest))\n';
+      const findings = computeSpaceNavFindings(text);
+      expect(findings).toHaveLength(1);
+      const lineText = text.split('\n')[findings[0].line];
+      // 行内截取 [start,end) 必须恰是方法名本体(而非越界/错行)。
+      expect(lineText.slice(findings[0].start, findings[0].end)).toBe('navigate');
+    });
   });
 
   describe('addSpaceGeometryMapping params key type', () => {
@@ -108,6 +119,25 @@ describe('space/nav semantic diagnostics (SP-4)', () => {
       expect(
         computeSpaceNavFindings('KBEngine.addSpaceGeometryMapping(0, None, path)\n')
       ).toEqual([]);
+    });
+
+    it('does not flag quoted keys nested inside params values', () => {
+      // 审核发现:引擎只校验 params 顶层键(PyDict_Next),嵌套 dict 的字符串
+      // 键不校验——旧实现对整个 dict 体扫描,`{0: {"a": 1}}` 误报键 "a"。
+      expect(
+        computeSpaceNavFindings(
+          'KBEngine.addSpaceGeometryMapping(0, None, path, True, {0: {"a": 1}, 1: [ {"b": 2} ]})\n'
+        )
+      ).toEqual([]);
+    });
+
+    it('still flags top-level quoted keys when nested dicts are present', () => {
+      // 顶层键仍是引号包键 → 照报(嵌套不误报≠顶层放行)。
+      const findings = computeSpaceNavFindings(
+        'KBEngine.addSpaceGeometryMapping(0, None, path, True, {"0": {"a": 1}})\n'
+      );
+      expect(findings).toHaveLength(1);
+      expect(findings[0].message).toContain('"0"');
     });
   });
 

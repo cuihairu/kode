@@ -69,13 +69,37 @@ export function gitQueryIdentity(cwd: string, args: readonly string[]): string {
 }
 
 /**
+ * git log 不带显式修订范围时默认以 HEAD 为起点(审核发现修复):`git log`、
+ * `git log -L s,e:path`、`git log --skip=N -- path` 等查询的结果随提交变化,
+ * 须判 volatile 而不缓存(与 3c04ab2 的「HEAD 触达查询不缓存」一致)。
+ * 判定 = 扫描 `--` 分隔符前的裸位置参数;`-L` 及其取值、其余选项不计入。
+ */
+function gitLogHasExplicitRevision(args: readonly string[]): boolean {
+  for (let i = 1; i < args.length; i += 1) {
+    const a = args[i];
+    if (a === '--') return false; // 分隔符后全为路径,此前无裸修订 → 隐式 HEAD
+    if (a.startsWith('-L')) {
+      // -L 行段追踪:分离形式取下一参为值(附值形式无下一参)
+      if (a === '-L') i += 1;
+      continue;
+    }
+    if (a.startsWith('-')) continue; // 其余选项(附值形式,不吞下一参)
+    return true; // 首个裸位置参数 = 显式修订范围
+  }
+  return false;
+}
+
+/**
  * 判查询是否含易变引用:HEAD 引用（含裸 `HEAD` 与 `HEAD:<path>`、`HEAD~N` 等）
  * 的结果随提交/工作区变化——缓存这类查询会把过期 diff/HEAD 供后续用
  * （审核发现：修改/提交后再查范围历史会读到旧映射/旧历史）。
  * 固定 hash/路径/reflog/日期等不受影响；只读门仍放行全部查询。
  */
 export function queryTouchesHead(args: readonly string[]): boolean {
-  return args.some((arg) => /(^|[/~^])HEAD([:~^/]|$)/.test(arg));
+  if (args.some((arg) => /(^|[/~^])HEAD([:~^/]|$)/.test(arg))) return true;
+  // 隐式 HEAD:git log 无显式修订范围 → 默认 HEAD 为起点(审核发现修复)
+  if (args[0] === 'log' && !gitLogHasExplicitRevision(args)) return true;
+  return false;
 }
 
 /** 协调门限制与缓存上限(全部有界,绝不无界堆积)。 */

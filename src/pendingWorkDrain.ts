@@ -23,10 +23,17 @@ export interface PendingWorkSnapshot {
   diagnosticsQueued: number;
   diagnosticsInFlight: number;
   annotationUpdates: number;
+  /**
+   * 容量量规(不进排干口径):字段形态对齐真实量规函数返回——
+   * parsedDocuments=getParsedDocumentCacheGauge(defParser)、
+   * databaseSchemas=getDatabaseSchemaCacheGauge(databaseSchema)、
+   * annotationIndex=getReturnAnnotationCacheGauge(pythonReturnTypeInference)。
+   * 审核发现:此前声明为 number,真实 pendingWork() 喂入即类型不符。
+   */
   caches: {
-    parsedDocuments: number;
-    databaseSchemas: number;
-    annotationIndex: number;
+    parsedDocuments: { entries: number; maxEntries: number; bytes: number; maxBytes: number };
+    databaseSchemas: { entries: number; capacity: number };
+    annotationIndex: { entries: number; ttlMs: number };
   };
   worker: {
     running: number;

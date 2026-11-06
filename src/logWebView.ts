@@ -9,6 +9,15 @@ import { KBEngineLogCollector } from './logCollector';
 import { LogEvent, LogHub, RuntimeLogLevel } from './logHub';
 import { getWebviewConsoleScript, WEBVIEW_LOG_COMMAND, WebviewLogMessage } from './webviewConsoleBridge';
 import { randomNonce, webviewScriptCsp } from './webviewSecurity';
+import { WEBVIEW_THEME_CSS } from './webviewTheme';
+import { htmlLang, resolvePanelLocale, strings } from './webviewStrings';
+
+/** 组件过滤业务域分组(UI-02):真实组件域 → 过滤器 optgroup */
+const LOG_COMPONENT_GROUPS: Array<{ domain: 'core' | 'manager' | 'game'; components: string[] }> = [
+  { domain: 'core', components: ['machine', 'logger', 'dbmgr'] },
+  { domain: 'manager', components: ['baseappmgr', 'cellappmgr', 'loginapp'] },
+  { domain: 'game', components: ['baseapp', 'cellapp'] }
+];
 
 /**
  * 日志过滤器配置
@@ -41,6 +50,16 @@ export class LogViewerWebView {
     keyword: '',
     useRegex: false
   };
+  /**
+   * KR-AUD-44:collector 直连路径的攒批窗口。此前每条日志都整页重渲
+   * (getHtml 全量重建 + nonce CSP + 过滤重算),高频日志下是热路径;logHub
+   * 增量 appendLogs 路径早就存在却没接过来。现在按窗口攒批,窗口末一次性
+   * 追加(过滤在宿主侧先算,页面只 append),整页重渲只留给用户动作
+   * (开面板/改过滤/清空)。
+   */
+  private static readonly COLLECTOR_FLUSH_MS = 250;
+  private pendingCollectorEntries: LogEntry[] = [];
+  private collectorFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -51,10 +70,49 @@ export class LogViewerWebView {
     // 监听日志事件
     collector.onLogEntry(entry => {
       this.currentLogs.push(entry);
+      if (this.currentLogs.length > this.displayedLimit) {
+        this.currentLogs.splice(0, this.currentLogs.length - this.displayedLimit);
+      }
       if (this.panel) {
-        this.updateWebView();
+        this.enqueueCollectorEntry(entry);
       }
     });
+  }
+
+  /** collector 条目入窗口批:窗口内零重渲,首条起一个定时器(尾沿) */
+  private enqueueCollectorEntry(entry: LogEntry): void {
+    this.pendingCollectorEntries.push(entry);
+    if (this.collectorFlushTimer !== null) {
+      return;
+    }
+    this.collectorFlushTimer = setTimeout(
+      () => this.flushCollectorEntries(),
+      LogViewerWebView.COLLECTOR_FLUSH_MS
+    );
+  }
+
+  /** 窗口到期:按当前过滤筛过的一批走增量 appendLogs(append-only) */
+  private flushCollectorEntries(): void {
+    this.collectorFlushTimer = null;
+    const pending = this.pendingCollectorEntries;
+    this.pendingCollectorEntries = [];
+    if (pending.length === 0 || !this.panel) {
+      return;
+    }
+    const matched = this.applyFilter(pending);
+    if (matched.length === 0) {
+      return;
+    }
+    this.enqueueWebviewBatch(matched.map(toLogEvent), 0, this.displayedLimit);
+  }
+
+  /** 作废待发批(整页重渲已含窗口内条目,再追加即重复) */
+  private cancelCollectorFlush(): void {
+    if (this.collectorFlushTimer !== null) {
+      clearTimeout(this.collectorFlushTimer);
+      this.collectorFlushTimer = null;
+    }
+    this.pendingCollectorEntries = [];
   }
 
   subscribeLogHub(hub: LogHub): void {
@@ -65,7 +123,14 @@ export class LogViewerWebView {
         this.currentLogs.splice(0, this.currentLogs.length - this.displayedLimit);
       }
       if (!this.panel) return;
-      this.enqueueWebviewBatch(batch.events, batch.dropped, batch.capacity);
+      // 增量追加同样过当前过滤(KR-AUD-44 口径统一):过滤激活时新条目不再照登
+      const displayEvents = batch.events.filter(event => this.matchesFilter({
+        level: event.level as unknown as LogLevel,
+        component: event.component,
+        message: event.text
+      }));
+      if (displayEvents.length === 0) return;
+      this.enqueueWebviewBatch(displayEvents, batch.dropped, batch.capacity);
     });
   }
 
@@ -99,7 +164,9 @@ export class LogViewerWebView {
       dropped,
       capacity,
       displayLimit: this.displayedLimit,
-      webviewDropped: this.webviewDropped
+      webviewDropped: this.webviewDropped,
+      // 宿主侧累计条目数(过滤前),页面用它刷新「总计」计数
+      total: this.currentLogs.length
     }).then(settled, settled);
   }
 
@@ -166,25 +233,26 @@ export class LogViewerWebView {
       return;
     }
 
+    // 整页重渲包含窗口内全部条目:作废待发批,避免随后又追加一遍(KR-AUD-44)
+    this.cancelCollectorFlush();
     const filteredLogs = this.applyFilter(this.currentLogs.map(toLegacyEntry));
     const html = this.getHtml(filteredLogs);
     this.panel.webview.html = html;
   }
 
   /**
-   * 应用过滤器
+   * 单条是否命中当前过滤(KR-AUD-44:整页渲染与两条增量追加路径共用同一
+   * 口径——此前只有整页渲染过滤,增量批追加无视过滤,过滤激活时新条目照登)。
    */
-  private applyFilter(logs: LogEntry[]): LogEntry[] {
-    let filtered = logs;
-
+  private matchesFilter(log: { level: LogLevel; component: string; message: string }): boolean {
     // 按级别过滤
-    if (this.filter.levels.length > 0) {
-      filtered = filtered.filter(log => this.filter.levels.includes(log.level));
+    if (this.filter.levels.length > 0 && !this.filter.levels.includes(log.level)) {
+      return false;
     }
 
     // 按组件过滤
-    if (this.filter.components.length > 0) {
-      filtered = filtered.filter(log => this.filter.components.includes(log.component));
+    if (this.filter.components.length > 0 && !this.filter.components.includes(log.component)) {
+      return false;
     }
 
     // 按关键词过滤
@@ -192,18 +260,33 @@ export class LogViewerWebView {
       if (this.filter.useRegex) {
         try {
           const regex = new RegExp(this.filter.keyword, 'i');
-          filtered = filtered.filter(log => regex.test(log.message));
+          if (!regex.test(log.message)) {
+            return false;
+          }
         } catch {
           // 正则表达式错误，不过滤
         }
-      } else {
-        filtered = filtered.filter(log =>
-          log.message.toLowerCase().includes(this.filter.keyword.toLowerCase())
-        );
+      } else if (!log.message.toLowerCase().includes(this.filter.keyword.toLowerCase())) {
+        return false;
       }
     }
 
-    return filtered;
+    return true;
+  }
+
+  /**
+   * 应用过滤器
+   */
+  private applyFilter(logs: LogEntry[]): LogEntry[] {
+    // 空过滤:原样返回(调用方依赖同一引用,不复制)
+    if (
+      this.filter.levels.length === 0 &&
+      this.filter.components.length === 0 &&
+      !this.filter.keyword
+    ) {
+      return logs;
+    }
+    return logs.filter(log => this.matchesFilter(log));
   }
 
   /**
@@ -313,11 +396,12 @@ export class LogViewerWebView {
    */
   private getHtml(logs: LogEntry[]): string {
     const nonce = randomNonce();
+    const t = strings(resolvePanelLocale()).logs;
     const logsHtml = logs.map(log => this.formatLogEntry(log)).join('\n');
     const statusSummary = this.escapeHtml(this.collector.getStatusSummary());
 
     return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${htmlLang(resolvePanelLocale())}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -325,17 +409,8 @@ export class LogViewerWebView {
   <meta http-equiv="Content-Security-Policy" content="${webviewScriptCsp(nonce)}">
   <title>KBEngine Logs</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
+    ${WEBVIEW_THEME_CSS}
     body {
-      font-family: var(--vscode-font-family);
-      font-size: var(--vscode-font-size);
-      background-color: var(--vscode-editor-background);
-      color: var(--vscode-editor-foreground);
       padding: 10px;
     }
 
@@ -377,10 +452,12 @@ export class LogViewerWebView {
 
     .notice {
       margin-bottom: 10px;
-      padding: 10px 12px;
-      border-left: 3px solid var(--vscode-testing-iconFailed);
-      background-color: var(--vscode-inputValidation-errorBackground);
-      color: var(--vscode-editor-foreground);
+      padding: 8px 12px;
+      background-color: var(--kode-surface);
+      border: 1px solid var(--kode-border);
+      border-radius: var(--kode-r);
+      color: var(--kode-fg-2);
+      font-size: var(--kode-t-meta);
       line-height: 1.5;
     }
 
@@ -404,26 +481,26 @@ export class LogViewerWebView {
     }
 
     .log-entry.level-debug {
-      border-left-color: #888888;
+      border-left-color: var(--kode-neutral);
     }
 
     .log-entry.level-info {
-      border-left-color: #2196F3;
+      border-left-color: var(--kode-info);
     }
 
     .log-entry.level-warning {
-      border-left-color: #FF9800;
-      background-color: rgba(255, 152, 0, 0.1);
+      border-left-color: var(--kode-warn);
+      background-color: var(--kode-warn-dim);
     }
 
     .log-entry.level-error {
-      border-left-color: #F44336;
-      background-color: rgba(244, 67, 54, 0.1);
+      border-left-color: var(--kode-err);
+      background-color: var(--kode-err-dim);
     }
 
     .log-entry.level-critical {
-      border-left-color: #D32F2F;
-      background-color: rgba(211, 47, 47, 0.2);
+      border-left-color: var(--kode-err);
+      background-color: rgba(241, 76, 76, 0.22);
     }
 
     .log-timestamp {
@@ -453,9 +530,9 @@ export class LogViewerWebView {
 </head>
 <body>
   <div class="toolbar">
-    <input type="text" id="search" placeholder="搜索日志..." />
+    <input type="text" id="search" placeholder="${t.searchPlaceholder}" />
     <select id="levelFilter">
-      <option value="">所有级别</option>
+      <option value="">${t.allLevels}</option>
       <option value="0">DEBUG</option>
       <option value="1">INFO</option>
       <option value="2">WARNING</option>
@@ -463,27 +540,25 @@ export class LogViewerWebView {
       <option value="4">CRITICAL</option>
     </select>
     <select id="componentFilter">
-      <option value="">所有组件</option>
-      <option value="machine">Machine</option>
-      <option value="logger">Logger</option>
-      <option value="dbmgr">DBMgr</option>
-      <option value="baseappmgr">BaseAppMgr</option>
-      <option value="cellappmgr">CellAppMgr</option>
-      <option value="loginapp">LoginApp</option>
-      <option value="baseapp">BaseApp</option>
-      <option value="cellapp">CellApp</option>
+      <option value="">${t.componentAll}</option>
+      ${LOG_COMPONENT_GROUPS.map(group => {
+        const label = group.domain === 'core' ? t.groupCore : group.domain === 'manager' ? t.groupManager : t.groupGame;
+        return `      <optgroup label="${label}">${group.components
+          .map(component => `<option value="${component}">${component}</option>`)
+          .join('')}</optgroup>`;
+      }).join('\n')}
     </select>
-    <button id="clearBtn">清空</button>
-    <button id="exportBtn">导出</button>
-    <button id="connectBtn">连接</button>
-    <button id="disconnectBtn">断开</button>
+    <button id="clearBtn">${t.clear}</button>
+    <button id="exportBtn">${t.export}</button>
+    <button id="connectBtn">${t.connect}</button>
+    <button id="disconnectBtn">${t.disconnect}</button>
   </div>
-  <div class="notice">连接状态：${statusSummary}</div>
-  <div class="stats">
-    显示 ${logs.length} 条日志（总计 ${this.currentLogs.length} 条）
+  <div class="notice">${t.statusPrefix}：${statusSummary}</div>
+  <div class="stats" id="logStats" data-displayed="${logs.length}" data-total="${this.currentLogs.length}">
+    ${t.statsPrefix}${logs.length}${t.statsMid}${this.currentLogs.length}${t.statsSuffix}
   </div>
   <div class="log-container" id="logContainer">
-    ${logsHtml || '<div class="empty-state">暂无日志<br><small>启动 KBEngine 服务器后，日志将在此显示</small></div>'}
+    ${logsHtml || `<div class="empty-state">${t.empty}<br><small>${t.emptyHint}</small></div>`}
   </div>
 
   <script nonce="${nonce}">
@@ -571,7 +646,22 @@ export class LogViewerWebView {
     window.addEventListener('message', (event) => {
       const message = event.data;
       if (message.command === 'appendLogs') {
-        (message.events || []).forEach(event => appendEvent(event, message.displayLimit ?? 5000));
+        const events = message.events || [];
+        if (events.length > 0) {
+          container.querySelector('.empty-state')?.remove();
+          const stats = document.getElementById('logStats');
+          if (stats) {
+            // 追加是增量的,计数也增量走(整页重渲时由宿主重算基准)
+            const displayed = Number(stats.dataset.displayed || 0) + events.length;
+            const total = Number(message.total ?? stats.dataset.total ?? displayed);
+            stats.dataset.displayed = String(displayed);
+            stats.dataset.total = String(total);
+            // 统计文案模板由宿主按 locale 注入(UI-02):prefix + d + mid + total + suffix
+            const statsFmt = ${JSON.stringify([t.statsPrefix, t.statsMid, t.statsSuffix])};
+            stats.textContent = statsFmt[0] + displayed + statsFmt[1] + total + statsFmt[2];
+          }
+        }
+        events.forEach(event => appendEvent(event, message.displayLimit ?? 5000));
       }
     });
 
@@ -631,6 +721,7 @@ export class LogViewerWebView {
    */
   dispose(): void {
     this.logSubscription?.();
+    this.cancelCollectorFlush();
     this.pendingWebviewBatch = null;
     this.webviewPosting = false;
     if (this.panel) {
@@ -638,6 +729,20 @@ export class LogViewerWebView {
       this.panel = null;
     }
   }
+}
+
+/** collector 条目 → webview 增量批事件(KR-AUD-44:两条路径共用 appendLogs) */
+function toLogEvent(entry: LogEntry): LogEvent {
+  return {
+    id: String(entry.id),
+    timestamp: entry.timestamp.getTime(),
+    level: entry.level as unknown as RuntimeLogLevel,
+    source: 'collector',
+    component: entry.component,
+    text: entry.message,
+    origin: 'collector',
+    duplicateCount: 1
+  };
 }
 
 function toLegacyEntry(value: LogEvent | LogEntry): LogEntry {

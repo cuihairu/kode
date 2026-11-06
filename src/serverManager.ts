@@ -181,6 +181,13 @@ export interface RunningServer {
  */
 export const DEFAULT_TARGET_ID = 'default';
 
+/**
+ * kbengine.binPath 默认值(CFG-01):零配置时假设引擎二进制在工作区自身
+ * `<ws>/kbe/bin/server`;不在盘时回落 detectBinPath 扫描(标准布局 assets
+ * 与 kbe/ 兄弟目录等候选),扫描也落空返回空串由启动检查链报警。
+ */
+export const KBENGINE_BIN_PATH_DEFAULT = '${workspaceFolder}/kbe/bin/server';
+
 export function buildServerKey(componentName: string, targetId: string): string {
   if (!targetId || targetId === DEFAULT_TARGET_ID) {
     return componentName;
@@ -378,11 +385,16 @@ export class KBEngineServerManager {
 
     const config = vscode.workspace.getConfiguration('kbengine');
     let binPath = config.get<string>('binPath', '');
-
     if (!binPath) {
-      // 尝试自动检测
-      binPath = this.detectBinPath();
+      // 未配置(设置值为空):落默认值字面量(CFG-01),走「探测 → 回退扫描」
+      binPath = KBENGINE_BIN_PATH_DEFAULT;
     }
+
+    // CFG-01 三分支:未配置(或恰好等于默认值字面量)时默认值只是首选
+    // 候选——落盘探测通过直接生效;探测失败回落 detectBinPath 扫描;
+    // 扫描也落空返回空串,由启动检查链给出「找不到引擎」报警。
+    // 用户显式配置的非默认值保持权威:探测失败不覆盖为扫描结果。
+    const isExplicit = binPath.length > 0 && binPath !== KBENGINE_BIN_PATH_DEFAULT;
 
     // 解析变量
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
@@ -400,6 +412,13 @@ export class KBEngineServerManager {
     // `D:\...` 判假会把 Windows 风格 binPath 锚到 workspace 根下。
     if (binPath && !path.isAbsolute(binPath) && !path.win32.isAbsolute(binPath)) {
       binPath = workspaceFolder ? path.join(workspaceFolder, binPath) : '';
+    }
+
+    if (!isExplicit) {
+      if (binPath && fs.existsSync(binPath)) {
+        return binPath;
+      }
+      return this.detectBinPath();
     }
 
     return binPath;
@@ -612,14 +631,17 @@ export class KBEngineServerManager {
       return false;
     }
 
-    if (!fs.existsSync(configPath)) {
+    // KR-AUD-48:目录存在性用单次 statSync 判定(入 try)——原 existsSync+
+    // statSync 两段式在检查间隙目录被删/被换时 statSync 会裸抛给调用方
+    let configStat: fs.Stats;
+    try {
+      configStat = fs.statSync(configPath);
+    } catch {
       vscode.window.showErrorMessage(
         `找不到 KBEngine 配置目录：${configPath}（应指向资产根，其下应有 res/server/kbengine.xml 与 scripts/）`
       );
       return false;
     }
-
-    const configStat = fs.statSync(configPath);
     if (!configStat.isDirectory()) {
       vscode.window.showErrorMessage(`KBEngine 配置路径不是目录：${configPath}`);
       return false;

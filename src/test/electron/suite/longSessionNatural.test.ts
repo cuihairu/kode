@@ -57,7 +57,12 @@ interface SampleFrame {
   busy: Record<string, number>;
   workerQueued: number;
   workerQueuedBytes: number;
-  caches: { parsedDocuments: number; databaseSchemas: number; annotationIndex: number };
+  /** 容量量规真实形态(审核发现修复:此前声明为 number 与量规不符)。 */
+  caches: {
+    parsedDocuments: { entries: number; maxEntries: number; bytes: number; maxBytes: number };
+    databaseSchemas: { entries: number; capacity: number };
+    annotationIndex: { entries: number; ttlMs: number };
+  };
   load1: number;
 }
 

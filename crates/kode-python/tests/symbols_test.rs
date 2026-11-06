@@ -117,3 +117,19 @@ fn match_case_self_attribute_collected() {
         c.attributes
     );
 }
+
+/// KR-AUD-11:`import a.b` 绑定名取顶层首段 `a`(跨文件解析按顶层名)。
+/// 旧实现 binding 取全段 "a.b",下游 CallContext.module_bindings/跨文件
+/// 解析按错误名匹配。
+#[test]
+fn dotted_import_binding_is_top_level_segment_kraud11() {
+    let ext = parse_ast_symbols("import a.b\nimport numpy as np\n");
+    let imports: Vec<(&str, &str, bool)> = ext
+        .symbols
+        .imports
+        .iter()
+        .map(|i| (i.binding.as_str(), i.module.as_str(), i.is_from))
+        .collect();
+    assert!(imports.contains(&("a", "a.b", false)), "实际: {imports:?}");
+    assert!(imports.contains(&("np", "numpy", false)));
+}

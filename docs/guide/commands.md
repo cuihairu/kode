@@ -121,6 +121,83 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - Connect and the query run under `kbengine.databaseQueryTimeoutMs` in a cancellable progress notification (IDE-REV-017): timeout or cancel returns with that reason; the connection is closed afterwards in every branch
   - The report header states the read-only scope explicitly; zero differences are stated as such (无结构差异)
 
+## Player Data Clone
+
+### `kbengine.clone.configureSource`
+
+- Title: `Configure Clone Source Connection`
+- Purpose: store the read-only source database profile for player-data export (CLONE-P5)
+- Entries: Command palette
+- Behavior:
+  - Sequential inputs: host, port (digits only, empty = 3306), user, password (stored only in SecretStorage, never in the profile; empty = not saved), database name
+  - A cancelled input ends the command with nothing saved
+
+### `kbengine.clone.configureTarget`
+
+- Title: `Configure Clone Target Connection`
+- Purpose: store the writable target database profile for player-data import (CLONE-P5)
+- Entries: Command palette
+- Behavior:
+  - Same input flow as the source profile, plus an explicit environment picker that accepts only `local` / `test` — prod or staging values are rejected at this config gate before the Rust planner's fail-closed re-check
+  - The password goes only to SecretStorage; clearing the config clears the secret too
+
+### `kbengine.clone.testSource`
+
+- Title: `Test Clone Source Connection`
+- Purpose: verify the stored source profile with a real `SELECT VERSION()` (CLONE-P5)
+- Entries: Command palette
+- Behavior:
+  - Success reports the server version; failure reports the connection cause honestly; a missing profile says so and runs nothing
+
+### `kbengine.clone.testTarget`
+
+- Title: `Test Clone Target Connection`
+- Purpose: verify the stored target profile with a real `SELECT VERSION()` (CLONE-P5)
+- Entries: Command palette
+- Behavior:
+  - Success reports the server version; failure reports the connection cause honestly; a missing profile says so and runs nothing
+- Entries: Command palette
+- Behavior:
+  - Success reports the server version; failure reports the connection cause honestly; a missing profile says so and runs nothing
+
+### `kbengine.clone.export`
+
+- Title: `Export Player Data to Archive`
+- Purpose: export one player entity's persisted rows to a `.kdpclone` archive (CLONE-P5)
+- Entries: Command palette
+- Behavior:
+  - Pick a registered entity, enter the root DBID (digits only), then choose the save path (`.kdpclone`)
+  - The source session is opened read-only; physical tables are probed via `information_schema` (identifiers validated) and the read-only SELECT plan comes from the Rust core (`$/kode/dbClone/planExport`); without the Rust backend the command reports that honestly instead of pretending
+  - The plan preview (tables / row budget / missing tables) is printed to the 「KBEngine Player Clone」 channel and requires an explicit confirm before any query runs; execution is cancellable (cancel stops read-only work, nothing to roll back)
+  - Sensitive columns are redacted on write by default; a DBID with zero rows exports nothing and says so
+
+### `kbengine.clone.inspectArchive`
+
+- Title: `Inspect Player Clone Archive`
+- Purpose: show a `.kdpclone` archive's manifest (CLONE-P5)
+- Entries: Command palette; explorer context menu on `.kdpclone` files
+- Behavior:
+  - Prints entity, format/version, row counts per table, encryption flag, and the presence of `checksums.json` / `redaction-report.json` — never any row values
+  - Every view repeats the notice: this is a persisted database copy (Persisted copy), not the online current state (Live state)
+
+### `kbengine.clone.import`
+
+- Title: `Import Player Data from Archive`
+- Purpose: import a `.kdpclone` archive into the configured local/test target database (CLONE-P5)
+- Entries: Command palette; explorer context menu on `.kdpclone` files
+- Behavior:
+  - Two-pass planning: pass-1 derives the column order, the unique values that actually occur in the archive are probed with bounded `WHERE IN` reads, pass-2 rehearses conflicts (local rebuild with an `_imported` suffix)
+  - The preview channel shows statements per table, ID change categories, unique conflicts, account binding, unresolved-reference risks and warnings — then two explicit confirmations are required (continue, then confirm the real write to the local database)
+  - The whole plan applies in a single mysql2 transaction: new keys bind NULL for AUTO_INCREMENT, insert ids backfill into key references, any failure or cancel rolls back — never half a role; afterwards per-table COUNT verification runs, a reverse-topology cleanup plan is generated but never executed, and an audit JSON lands under `.kode/clone-runs/`
+  - Engine-side native load verification stays honestly unattempted (`load_verification.attempted=false`); the wired verification surface is the COUNT check
+
+### `kbengine.clone.showAudit`
+
+- Title: `Show Player Clone Import Audits`
+- Purpose: replay a past import run's audit JSON from `.kode/clone-runs/` (CLONE-P5)
+- Entries: Command palette
+- Behavior:
+  - Picks among existing audit files and prints the content to the 「KBEngine Player Clone」 channel; no audit files yet says so
 ## Server Control
 
 ### `kbengine.server.start`
@@ -295,6 +372,11 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - The document header notes the source paths of defaults and component config
   - When defaults cannot be located it errors plainly; by default (`kbengine.showFinalConfigOnOpen`, with refresh linked to `kbengine.autoRefreshFinalConfig`) it auto-opens in the background after activation
   - Service parameters such as telnet port/password are read from the same composed source
+
+### `kbengine.lintRules.showReport`
+
+- Title: `Show Lint Rules Capability Report`
+- Purpose: print the lint rule capability list into the `Kode Lint Rules` output channel — each rule's spec number / diagnostic code / severity / applicable roles / config toggles / trigger entry / quick-fix support / evidence source module / implementation status, grouped as implemented / hint-only / pending with a per-rule enabled/disabled mark under the current configuration (IDE-LINT-011; single source of truth `src/lintRuleRegistry.ts`, rule numbering follows the `kbengine-lint-rules.md` rule table)
 
 ### `kbengine.metrics.showSummary`
 
@@ -570,6 +652,28 @@ The flow graph panel supports:
   - The session panel's currently selected target goes first; with nothing selected or no session on it, the first connected target is taken
   - With no connected session it says so honestly, no spinning
 
+### `kbengine.playerData.refresh`
+
+- Title: `Refresh Player Data Profile`
+- Purpose: re-derive the MySQL connection profile from the engine config and refresh the read-only "Player Data" tree
+- Source of truth: Rust `derive_database` reads `dbmgr/databaseInterfaces/default` from the component `kbengine.xml` + engine `kbengine_defaults.xml` (leaf defaults per the engine: host `localhost`, port 0 → 3306, username `kbe`, database `kbe`, charset `utf8mb4`)
+- Read-only constraint: the view never offers editable fields — connection facts come from the engine config only
+
+### `kbengine.playerData.testConnection`
+
+- Title: `Test Database Connection (Read-Only SELECT 1)`
+- Purpose: probe the derived MySQL endpoint with a whitelisted `SELECT 1` through the read-only executor (`SET SESSION TRANSACTION READ ONLY` + statement whitelist)
+- Behavior:
+  - Success reports host:port/database plus latency; failure degrades honestly to a message (never blocks other features)
+  - When the engine password is RSA-encrypted (`<encrypt>` not `false`) it is never decrypted — the command reports "not tested" instead of guessing
+
+### `kbengine.playerData.queryByDbid`
+
+- Title: `Query Player by DBID (Read-Only)`
+- Purpose: run a single read-only ``SELECT * FROM `tbl_Account` WHERE `id` = <dbid>`` (table prefix from `kbengine.db.tablePrefix`, default `tbl_`) and print the rows to the "KBEngine 玩家数据(只读)" output channel
+- Input validation: the dbid must be a decimal positive integer; anything else is rejected before any connection is made
+- Read-only constraint: results are displayed only; no editing, no export side effects (export/import live in the dedicated Player Data Clone lane)
+
 ### `kbengine.httpRequests.run`
 
 - Title: `Run HTTP Quick Request`
@@ -714,6 +818,19 @@ The flow graph panel supports:
 - Purpose: report whether the Python language service (`ms-python.vscode-pylance`) is available, in one of three states: 已激活 (active), 未启用 (installed but not active in this window — disabled or not participating), 未安装 (neither registered nor found on disk)
 - Classification inputs: registration in `vscode.extensions.all`, its `isActive` flag, and the `<id>-<version>` install directory under the local user extensions dir (disabled extensions never appear in `extensions.all`, so the disk probe is the fallback evidence)
 - Honesty rule: whether `python.analysis.extraPaths` has been written never participates in the availability decision; when it has a value, the message appends the explicit caveat 「extraPaths 已写入不等于语言服务可用」 (written ≠ available)
+
+### `kbengine.python.selectInterpreter`
+
+- Title: `Select Python Interpreter`
+- Purpose: the interpreter status bar item's click target — the item itself shows the current interpreter (venv directory name, Python version when the probe succeeds, and a source badge: `auto` = workspace discovery, `configured` = the `kbengine.python.interpreterPath` setting, `PATH` = interpreter found on PATH; a missing interpreter says so plainly)
+- QuickPick contents: the active interpreter first (✓), then every environment the workspace scan verified (evidence `pyvenv.cfg` for venv / `conda-meta` for conda, plus a real interpreter binary on disk — `bin/python` / `Scripts/python.exe`; broken environments without both are never listed), then the PATH interpreter, and 「创建新 venv…」 (create a new venv) last
+- Effect: picking an entry writes `kbengine.python.interpreterPath` at workspace level and takes effect immediately (the resolution chain reads live configuration; no reload); Esc writes nothing
+
+### `kbengine.python.createVenv`
+
+- Title: `Create Virtual Environment (venv)`
+- Purpose: one-shot venv creation: pick a target directory (default `<workspaceRoot>/.venv`) → run `python -m venv <dir>` inside a progress notification → verify the created directory directly (`pyvenv.cfg` + interpreter binary, independent of the scan depth so a target outside the scan range still qualifies) → auto-select and write the new interpreter into `kbengine.python.interpreterPath`
+- Honesty rules: the base interpreter resolves through the PATH chain only (never through workspace discovery, which may be the environment being rebuilt) — when PATH has no python3/python the flow refuses with an explicit message and never spawns; an occupied (existing, non-empty) target directory aborts before any write; a non-zero venv exit reports the stderr tail; a created directory that verification cannot confirm (no `pyvenv.cfg` or no interpreter binary) is reported as such and never selected
 
 ### `kbengine.project.import`
 

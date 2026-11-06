@@ -14,7 +14,7 @@
 //! 产出 [`DataflowResult`] 每变量(或其每次重定义)一条 [`DefUseChain`],含
 //! 定值行与使用行,参数来源以 `is_param` 标记(「变量来源与传播」的可查询面)。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ruff_python_ast::{self as ast, Expr, ExprContext, Stmt};
 use ruff_text_size::Ranged;
@@ -83,38 +83,61 @@ pub fn dataflow_for_module(ast: &ParsedAst) -> Vec<MethodDataflow> {
 }
 
 struct State {
-    /// var → 当前活跃链下标(最近一次定值)。
-    live: BTreeMap<String, usize>,
+    /// 作用域栈:每层 var → 当前活跃链下标(最近一次定值);栈顶为最内层。
+    /// 基层为函数体自身,KR-AUD-18 起 lambda 体推入独立子层(形参遮蔽)。
+    scopes: Vec<BTreeMap<String, usize>>,
+    /// `global`/`nonlocal` 已声明的名字(KR-AUD-19):对这些名字的赋值写的是
+    /// 外层绑定,不建局部 def 链。
+    global_names: BTreeSet<String>,
     chains: Vec<DefUseChain>,
 }
 
 impl State {
     fn new(params: &[String]) -> State {
-        let mut chains = Vec::new();
-        let mut live = BTreeMap::new();
+        let mut state = State {
+            scopes: vec![BTreeMap::new()],
+            global_names: BTreeSet::new(),
+            chains: Vec::new(),
+        };
+        state.push_param_scope(params);
+        state
+    }
+
+    /// 推入一层作用域并把 `params` 记为该层的参数链(is_param,无 def_line;
+    /// 空链也保留,来源可查)。基层(new)与 lambda 子作用域(KR-AUD-18)共用。
+    fn push_param_scope(&mut self, params: &[String]) {
+        let mut scope = BTreeMap::new();
         for p in params {
-            let idx = chains.len();
-            chains.push(DefUseChain {
+            let idx = self.chains.len();
+            self.chains.push(DefUseChain {
                 var: p.clone(),
                 def_line: None,
                 use_lines: Vec::new(),
                 is_param: true,
             });
-            live.insert(p.clone(), idx);
+            scope.insert(p.clone(), idx);
         }
-        State { live, chains }
+        self.scopes.push(scope);
     }
 
     fn use_var(&mut self, var: &str, line: usize) {
-        if let Some(&idx) = self.live.get(var) {
-            let chain = &mut self.chains[idx];
-            if chain.use_lines.last() != Some(&line) {
-                chain.use_lines.push(line);
+        // 由内层作用域向外查找(KR-AUD-18:lambda 形参遮蔽外层同名变量)。
+        for scope in self.scopes.iter().rev() {
+            if let Some(&idx) = scope.get(var) {
+                let chain = &mut self.chains[idx];
+                if chain.use_lines.last() != Some(&line) {
+                    chain.use_lines.push(line);
+                }
+                return;
             }
         }
     }
 
     fn def_var(&mut self, var: &str, line: usize) {
+        // KR-AUD-19:global/nonlocal 声明名的赋值写外层绑定,不建局部链。
+        if self.global_names.contains(var) {
+            return;
+        }
         let idx = self.chains.len();
         self.chains.push(DefUseChain {
             var: var.to_string(),
@@ -122,7 +145,9 @@ impl State {
             use_lines: Vec::new(),
             is_param: false,
         });
-        self.live.insert(var.to_string(), idx);
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(var.to_string(), idx);
+        }
     }
 }
 
@@ -203,11 +228,14 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
             walk_body(ast, state, &t.body);
             for h in &t.handlers {
                 let ast::ExceptHandler::ExceptHandler(inner) = h;
+                // KR-AUD-17:type_ 读与捕获名 def 用 handler 自己的行(旧实现
+                // 全记 try 语句行,def 行定位失真)。
+                let handler_line = ast.line_col(inner.range.start().to_u32()).0;
                 if let Some(typ) = &inner.type_ {
-                    collect_reads(state, typ, line);
+                    collect_reads(state, typ, handler_line);
                 }
                 if let Some(name) = &inner.name {
-                    state.def_var(name.as_str(), line);
+                    state.def_var(name.as_str(), handler_line);
                 }
                 walk_body(ast, state, &inner.body);
             }
@@ -217,16 +245,33 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
         Stmt::Match(m) => {
             collect_reads(state, &m.subject, line);
             for case in &m.cases {
+                // KR-AUD-10:dataflow 侧——pattern 捕获名 def、guard 读。
+                // 捕获 def 先于 guard 读(guard 可引用捕获,如 `case [a,b] if a > 0`)。
+                let case_line = ast.line_col(case.pattern.range().start().to_u32()).0;
+                collect_pattern_captures(state, &case.pattern, case_line);
+                if let Some(g) = &case.guard {
+                    collect_reads(state, g, case_line);
+                }
                 walk_body(ast, state, &case.body);
             }
         }
         Stmt::Import(imp) => {
             for alias in &imp.names {
+                // KR-AUD-11:`import a.b` 绑定顶层名 `a`(与 symbols.rs 同口径),
+                // 无 asname 时不再按全段 "a.b" 造链(后续 `a.attr` 读才不断链)。
                 let binding = alias
                     .asname
                     .as_ref()
                     .map(|n| n.as_str().to_string())
-                    .unwrap_or_else(|| alias.name.as_str().to_string());
+                    .unwrap_or_else(|| {
+                        alias
+                            .name
+                            .as_str()
+                            .split('.')
+                            .next()
+                            .unwrap_or("")
+                            .to_string()
+                    });
                 state.def_var(&binding, line);
             }
         }
@@ -242,16 +287,106 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
         }
         Stmt::FunctionDef(f) => state.def_var(f.name.as_str(), line),
         Stmt::ClassDef(c) => state.def_var(c.name.as_str(), line),
-        // 其余无 def-use 语义
-        Stmt::Raise(_)
-        | Stmt::Assert(_)
-        | Stmt::Global(_)
-        | Stmt::Nonlocal(_)
-        | Stmt::Pass(_)
+        // KR-AUD-16:raise/assert 的表达式侧按读走查(exc/cause/test/msg),
+        // 不再整体落进无语义分支。
+        Stmt::Raise(r) => {
+            if let Some(e) = &r.exc {
+                collect_reads(state, e, line);
+            }
+            if let Some(c) = &r.cause {
+                collect_reads(state, c, line);
+            }
+        }
+        Stmt::Assert(a) => {
+            collect_reads(state, &a.test, line);
+            if let Some(m) = &a.msg {
+                collect_reads(state, m, line);
+            }
+        }
+        // KR-AUD-19:global/nonlocal 名登记;对它们的后续赋值不建局部 def 链
+        // (写的是外层绑定;读侧本就不跟踪全局/闭包自由变量)。
+        Stmt::Global(g) => {
+            for n in &g.names {
+                state.global_names.insert(n.as_str().to_string());
+            }
+        }
+        Stmt::Nonlocal(n) => {
+            for name in &n.names {
+                state.global_names.insert(name.as_str().to_string());
+            }
+        }
+        Stmt::Pass(_)
         | Stmt::Break(_)
         | Stmt::Continue(_)
         | Stmt::TypeAlias(_)
         | Stmt::IpyEscapeCommand(_) => {}
+    }
+}
+
+/// 收集 match pattern 的捕获名 def(KR-AUD-10):`case [a, b]:` 的 a/b、
+/// `*rest`、mapping `**rest`、`case X() as y` 的 y 各 def 一条链。
+/// 附带读面:`case Point(x, 0):` 的类名 Point 与 `case V(值):` 的 value 表达式
+/// 按 Load 读记录(与 guard/subject 同一 collect_reads 通道)。
+fn collect_pattern_captures(state: &mut State, pattern: &ast::Pattern, line: usize) {
+    use ast::Pattern;
+    match pattern {
+        Pattern::MatchValue(v) => collect_reads(state, &v.value, line),
+        Pattern::MatchSingleton(_) => {}
+        Pattern::MatchSequence(s) => {
+            for p in &s.patterns {
+                collect_pattern_captures(state, p, line);
+            }
+        }
+        Pattern::MatchMapping(m) => {
+            for k in &m.keys {
+                collect_reads(state, k, line);
+            }
+            for p in &m.patterns {
+                collect_pattern_captures(state, p, line);
+            }
+            if let Some(rest) = &m.rest {
+                state.def_var(rest.as_str(), line);
+            }
+        }
+        Pattern::MatchClass(c) => {
+            collect_reads(state, &c.cls, line);
+            for p in &c.arguments.patterns {
+                collect_pattern_captures(state, p, line);
+            }
+            for kw in &c.arguments.keywords {
+                collect_pattern_captures(state, &kw.pattern, line);
+            }
+        }
+        Pattern::MatchStar(s) => {
+            if let Some(name) = &s.name {
+                state.def_var(name.as_str(), line);
+            }
+        }
+        Pattern::MatchAs(a) => {
+            if let Some(inner) = &a.pattern {
+                collect_pattern_captures(state, inner, line);
+            }
+            if let Some(name) = &a.name {
+                state.def_var(name.as_str(), line);
+            }
+        }
+        Pattern::MatchOr(o) => {
+            for p in &o.patterns {
+                collect_pattern_captures(state, p, line);
+            }
+        }
+    }
+}
+
+/// 推导式 generators 按序走查:iter 读 → target 写 → ifs 读(KR-AUD-09:
+/// elt 的读必须排在这些之后,才能连上 target 的 def 链)。
+fn collect_comp_generators(state: &mut State, generators: &[ast::Comprehension], line: usize) {
+    for gen in generators {
+        collect_reads(state, &gen.iter, line);
+        collect_writes(state, &gen.target, line);
+        for if_ in &gen.ifs {
+            collect_reads(state, if_, line);
+        }
     }
 }
 
@@ -328,48 +463,27 @@ fn collect_reads(state: &mut State, expr: &Expr, line: usize) {
                 collect_reads(state, e, line);
             }
         }
+        // KR-AUD-09:先按序走完 generators(iter 读/target 写/ifs 读),最后读
+        // elt——旧实现 elt 先读,此时 generator target 尚未 def,elt 内对
+        // target 的 use 断链(`[str(x) for x in xs]` 的 str(x) 无链)。
         ListComp(c) => {
+            collect_comp_generators(state, &c.generators, line);
             collect_reads(state, &c.elt, line);
-            for gen in &c.generators {
-                collect_reads(state, &gen.iter, line);
-                collect_writes(state, &gen.target, line);
-                for if_ in &gen.ifs {
-                    collect_reads(state, if_, line);
-                }
-            }
         }
         SetComp(c) => {
+            collect_comp_generators(state, &c.generators, line);
             collect_reads(state, &c.elt, line);
-            for gen in &c.generators {
-                collect_reads(state, &gen.iter, line);
-                collect_writes(state, &gen.target, line);
-                for if_ in &gen.ifs {
-                    collect_reads(state, if_, line);
-                }
-            }
         }
         DictComp(c) => {
+            collect_comp_generators(state, &c.generators, line);
             if let Some(k) = &c.key {
                 collect_reads(state, k, line);
             }
             collect_reads(state, &c.value, line);
-            for gen in &c.generators {
-                collect_reads(state, &gen.iter, line);
-                collect_writes(state, &gen.target, line);
-                for if_ in &gen.ifs {
-                    collect_reads(state, if_, line);
-                }
-            }
         }
         Generator(c) => {
+            collect_comp_generators(state, &c.generators, line);
             collect_reads(state, &c.elt, line);
-            for gen in &c.generators {
-                collect_reads(state, &gen.iter, line);
-                collect_writes(state, &gen.target, line);
-                for if_ in &gen.ifs {
-                    collect_reads(state, if_, line);
-                }
-            }
         }
         Await(a) => collect_reads(state, &a.value, line),
         Yield(y) => {
@@ -395,7 +509,30 @@ fn collect_reads(state: &mut State, expr: &Expr, line: usize) {
                 collect_reads(state, st, line);
             }
         }
-        Lambda(l) => collect_reads(state, &l.body, line),
+        Lambda(l) => {
+            // KR-AUD-18:lambda 形参入独立子作用域(遮蔽外层同名变量);默认值
+            // 在外层作用域求值,先于推层读。体内读只查子作用域→外层,退出后
+            // 恢复外层作用域,外层链不受 lambda 体内定值影响。
+            for arg in l
+                .parameters
+                .as_ref()
+                .map(|p| p.posonlyargs.iter().chain(&p.args))
+                .into_iter()
+                .flatten()
+            {
+                if let Some(d) = &arg.default {
+                    collect_reads(state, d, line);
+                }
+            }
+            let names: Vec<String> = l
+                .parameters
+                .as_ref()
+                .map(|p| lambda_param_names(p))
+                .unwrap_or_default();
+            state.push_param_scope(&names);
+            collect_reads(state, &l.body, line);
+            state.scopes.pop();
+        }
         // 字面量/字符串/名字(Load 已在 Name 分支处理)
         StringLiteral(_) | BytesLiteral(_) | NumberLiteral(_) | BooleanLiteral(_)
         | NoneLiteral(_) | EllipsisLiteral(_) | TString(_) | FString(_) | IpyEscapeCommand(_) => {}
@@ -478,11 +615,21 @@ fn kill_var(state: &mut State, target: &Expr, line: usize) {
     use Expr::*;
     match target {
         Name(n) => {
-            state.live.remove(n.id.as_str());
+            // del 视作 kill:最内层作用域摘除映射即终结链(含 lambda 子作用域)。
+            for scope in state.scopes.iter_mut().rev() {
+                if scope.remove(n.id.as_str()).is_some() {
+                    break;
+                }
+            }
         }
         Attribute(a) => {
             if is_self(&a.value) {
-                state.live.remove(&format!("self.{}", a.attr.as_str()));
+                let key = format!("self.{}", a.attr.as_str());
+                for scope in state.scopes.iter_mut().rev() {
+                    if scope.remove(&key).is_some() {
+                        break;
+                    }
+                }
             }
         }
         Subscript(s) => {
@@ -504,6 +651,25 @@ fn kill_var(state: &mut State, target: &Expr, line: usize) {
         Starred(s) => kill_var(state, &s.value, line),
         _ => {}
     }
+}
+
+/// lambda 形参名(posonly → pos → vararg → kwonly → kwarg;不滤 `self`——
+/// lambda 形参全是普通名字)。KR-AUD-18。
+fn lambda_param_names(p: &ast::Parameters) -> Vec<String> {
+    let mut out: Vec<String> = p
+        .posonlyargs
+        .iter()
+        .chain(&p.args)
+        .chain(&p.kwonlyargs)
+        .map(|a| a.parameter.name.as_str().to_string())
+        .collect();
+    if let Some(v) = &p.vararg {
+        out.push(v.name.as_str().to_string());
+    }
+    if let Some(k) = &p.kwarg {
+        out.push(k.name.as_str().to_string());
+    }
+    out
 }
 
 /// `expr` 是否为 `self` 名。

@@ -126,7 +126,17 @@ const pidAlive = (pid: number | undefined): boolean => {
 
 let bin: FakeComponentBin;
 
+// 宿主环境隔离:detectKbeRoot 首读 process.env.KBE_ROOT(生产口径:环境变量优先),
+// 本机若导出过 KBE_ROOT/KBE_RES_PATH/KBE_BIN_PATH,子进程回传的 KBE_ROOT 会被
+// 宿主值顶掉,「环境随 profile 走」的断言失真——先摘后还,测试只验 profile 派生。
+const KBE_ENV_KEYS = ['KBE_ROOT', 'KBE_RES_PATH', 'KBE_BIN_PATH'] as const;
+const savedKbeEnv = new Map<string, string | undefined>();
+
 beforeAll(() => {
+  for (const key of KBE_ENV_KEYS) {
+    savedKbeEnv.set(key, process.env[key]);
+    delete process.env[key];
+  }
   windowish.createOutputChannel = (name: string) => ({
     name,
     append: () => undefined,
@@ -149,6 +159,13 @@ beforeAll(() => {
 });
 
 afterAll(() => {
+  for (const [key, value] of savedKbeEnv) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
   for (const key of patchedKeys) {
     delete windowish[key];
   }

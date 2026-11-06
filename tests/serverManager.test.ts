@@ -120,7 +120,17 @@ describe('KBEngineServerManager path resolution', () => {
   let root = '';
   let rootBase = '';
 
+  // 宿主环境隔离:detectKbeRoot 首读 process.env.KBE_ROOT(生产口径:环境变量
+  // 优先),本机若导出过 KBE_ROOT/KBE_RES_PATH/KBE_BIN_PATH,路径派生与
+  // 「无后缀则不设 KBE_ROOT」两条断言都会被环境值污染——先摘后还,测试只验路径派生。
+  const KBE_ENV_KEYS = ['KBE_ROOT', 'KBE_RES_PATH', 'KBE_BIN_PATH'] as const;
+  const savedKbeEnv = new Map<string, string | undefined>();
+
   beforeAll(() => {
+    for (const key of KBE_ENV_KEYS) {
+      savedKbeEnv.set(key, process.env[key]);
+      delete process.env[key];
+    }
     // 私有父目录:第二候选 <ws>/../../kbe/bin/server 落在 base 下(base/kbe
     // 恒不存在),不受共享 /tmp/kbe 瞬时目录影响(与 serverManagerGaps 并行不互踩)
     rootBase = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-srv-'));
@@ -136,6 +146,13 @@ describe('KBEngineServerManager path resolution', () => {
   });
 
   afterAll(() => {
+    for (const [key, value] of savedKbeEnv) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
     stubWorkspace.workspaceFolders = [];
     fs.rmSync(rootBase, { recursive: true, force: true });
   });
@@ -302,6 +319,64 @@ describe('KBEngineServerManager startup grace guard (批73)', () => {
     stubWorkspace.workspaceFolders = [];
     fs.rmSync(root, { recursive: true, force: true });
   }, 10000);
+});
+
+describe('kbengine.binPath 默认值与回退扫描(CFG-01:默认/回退/落空三分支)', () => {
+  let rootBase = '';
+  let ws = '';
+
+  beforeAll(() => {
+    rootBase = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-srv-binpath-'));
+    // ws 与引擎兄弟目录同级:回退扫描命中 <ws>/../kbengine/kbe/bin/server
+    ws = path.join(rootBase, 'proj', 'ws');
+    fs.mkdirSync(ws, { recursive: true });
+    fs.mkdirSync(path.join(rootBase, 'proj', 'kbengine', 'kbe', 'bin', 'server'), { recursive: true });
+    stubWorkspace.workspaceFolders = [{ uri: { fsPath: ws }, name: 'ws', index: 0 }];
+  });
+
+  afterAll(() => {
+    stubWorkspace.workspaceFolders = [];
+    fs.rmSync(rootBase, { recursive: true, force: true });
+  });
+
+  it('① 未配置时默认值 ${workspaceFolder}/kbe/bin/server 在盘即直接生效,不回落扫描', () => {
+    configurationOverrides.delete('kbengine');
+    fs.mkdirSync(path.join(ws, 'kbe', 'bin', 'server'), { recursive: true });
+    try {
+      expect(makeManager().getBinPath()).toBe(path.join(ws, 'kbe', 'bin', 'server'));
+    } finally {
+      fs.rmSync(path.join(ws, 'kbe'), { recursive: true, force: true });
+    }
+  });
+
+  it('② 默认值落盘探测失败时回退自动发现(复用 detectBinPath 扫描)', () => {
+    configurationOverrides.delete('kbengine');
+
+    expect(makeManager().getBinPath())
+      .toBe(path.join(rootBase, 'proj', 'kbengine', 'kbe', 'bin', 'server'));
+  });
+
+  it('③ 回退扫描也落空 → 空串,告警口径收窄为既有检查链的「找不到引擎」', () => {
+    const bare = path.join(rootBase, 'bare', 'ws');
+    fs.mkdirSync(bare, { recursive: true });
+    configurationOverrides.delete('kbengine');
+    stubWorkspace.workspaceFolders = [{ uri: { fsPath: bare }, name: 'bare', index: 0 }];
+    try {
+      expect(makeManager().getBinPath()).toBe('');
+    } finally {
+      stubWorkspace.workspaceFolders = [{ uri: { fsPath: ws }, name: 'ws', index: 0 }];
+    }
+  });
+
+  it('显式配置的 binPath 落盘探测失败不覆盖为扫描结果(用户显式值权威)', () => {
+    const explicit = path.join(ws, 'custom', 'bin');
+    configurationOverrides.set('kbengine', { binPath: explicit });
+    try {
+      expect(makeManager().getBinPath()).toBe(explicit);
+    } finally {
+      configurationOverrides.delete('kbengine');
+    }
+  });
 });
 
 describe('detectBinPath kbe 源码根锚点兜底(批125 自动发现)', () => {
