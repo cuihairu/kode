@@ -294,12 +294,13 @@ enum TypeKind {
     Array,
     Dict,
     EntityComponent,
+    /// EntityCallType(datatype.h:633-635)——getName()/type() 类身份构造期即定,
+    /// KR-AUD-82:与 aliasName 注册名解耦(引擎 addDataType 不动类身份)。
+    EntityCall,
 }
 
 #[derive(Clone, Debug)]
 struct TypeInfo {
-    /// 最后一次注册名(getName();别名注册会覆盖,datatypes.cpp:194)。
-    alias_name: String,
     kind: TypeKind,
     /// Array 的元素类型 id(FixedArrayType::getDataType)。
     element: Option<u16>,
@@ -330,7 +331,6 @@ impl DataTypesState {
         self.info.insert(
             id,
             TypeInfo {
-                alias_name: String::new(),
                 kind,
                 element: None,
             },
@@ -338,12 +338,11 @@ impl DataTypesState {
         id
     }
 
-    /// addDataType(name, dt):别名注册(aliasName 后置,不入流;datatypes.cpp:190-218)。
+    /// addDataType(name, dt):只写名字→id 表(aliasName 后置,不入流;
+    /// datatypes.cpp:190-218——`dataType->aliasName(name)` 只改 aliasName_,
+    /// 不改 getName()/type() 类身份)。KR-AUD-82:register 不得覆写类型元信息。
     fn register(&mut self, name: &str, id: u16) {
         self.by_name.insert(name.to_string(), id);
-        if let Some(info) = self.info.get_mut(&id) {
-            info.alias_name = name.to_string();
-        }
     }
 
     fn lookup(&self, name: &str) -> Option<u16> {
@@ -354,10 +353,10 @@ impl DataTypesState {
     fn is_entitycall(&self, id: u16) -> bool {
         match self.info.get(&id) {
             Some(info) => match info.kind {
-                TypeKind::Array => {
-                    info.element.map(|e| self.is_entitycall(e)).unwrap_or(false)
-                }
-                _ => info.alias_name == "ENTITYCALL" && info.kind == TypeKind::Builtin,
+                TypeKind::Array => info.element.map(|e| self.is_entitycall(e)).unwrap_or(false),
+                // 构造期即知的类身份(property.cpp:48-51 getName() /
+                // datatype.cpp:2104,2141 type()),别名注册不再影响判定。
+                _ => info.kind == TypeKind::EntityCall,
             },
             None => false,
         }
@@ -541,9 +540,13 @@ impl Replayer {
 
     fn replay_builtin_types(&mut self) {
         for name in BUILTIN_TYPE_ORDER {
-            let id = self
-                .types
-                .construct(&mut self.stream, TypeKind::Builtin, "builtin-uid");
+            // ENTITYCALL 构造期即带类身份(EntityCallType),KR-AUD-82。
+            let kind = if name == "ENTITYCALL" {
+                TypeKind::EntityCall
+            } else {
+                TypeKind::Builtin
+            };
+            let id = self.types.construct(&mut self.stream, kind, "builtin-uid");
             self.types.register(name, id);
         }
     }

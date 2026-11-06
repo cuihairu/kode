@@ -511,3 +511,38 @@ fn kr_aud_81_component_without_body_skipped() {
         "componentNode 缺失的条目按引擎 continue 跳过"
     );
 }
+
+/// KR-AUD-82(RSV-3):ENTITYCALL 别名注册不得改写类型身份——引擎属性面
+/// PropertyDescription ctor 用 `strcmp(dataType_->getName(),"ENTITYCALL")`
+/// (property.cpp:48-51),getName() 是**类硬编码**返回值(datatype.h:633),
+/// 与 aliasName 无关;types.xml `<MyCall>ENTITYCALL</MyCall>` 别名注册
+/// (DataTypes::addDataType 只写 dataTypes_ 表 + aliasName_,不动 getName)
+/// 后属性仍须置 persistent=false。修前 is_entitycall 依赖可变 alias_name,
+/// 别名一注册即失效(persistent 恒 true,md5 与引擎错位)。
+#[test]
+fn kr_aud_82_entitycall_alias_keeps_persistent_override() {
+    let p = DefMd5Params {
+        types_xml: "<root><MyCall>ENTITYCALL</MyCall></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs: [(
+            "Avatar".to_string(),
+            "<root><Properties><callTarget><Type> MyCall </Type><Flags> BASE </Flags><Persistent> true </Persistent></callTarget></Properties></root>".to_string(),
+        )]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let result = compute_def_md5(p).expect("别名装载可计算");
+    let s = &result.stream_hex;
+    // 属性 ctor(property.cpp:53-64):name(10) + type "MyCall"(6)
+    // + utype u16 + flags u32(default 空串 0 字节)→ persistent bool。
+    let name_hex = "63616c6c546172676574"; // "callTarget"
+    let idx = s.find(name_hex).expect("属性名入流");
+    let persistent = idx + (10 + 6 + 2 + 4) * 2;
+    assert_eq!(
+        &s[persistent..persistent + 2],
+        "00",
+        "ENTITYCALL 别名注册后属性 persistent 必须仍被引擎口径置 false"
+    );
+}
