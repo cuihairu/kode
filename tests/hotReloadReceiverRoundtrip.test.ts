@@ -795,6 +795,76 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
   });
 
+  // F3 八轮(复审缺陷 2):暂存副本不再按 basename 落暂存根顶层——同批
+  // <root>/sub/X.py 与 <root>/X.py 的顶层暂存路径相同,前者暂存动作直接把
+  // 后者的**源文件**覆盖掉(后续读到的是被污染内容,digest 自然不符)。修后
+  // 每文件按已清洗防碰撞的报文相对路径独立展开到 <root>/.staged/<相对路径>,
+  // 同批互不覆盖、也碰不到任何源文件。
+  it('F3 八轮回归:同批 sub/X.py 与 X.py → 暂存互不覆盖,源文件不被暂存动作污染', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    const subFile = path.join(receiver.root, 'sub', 'X.py');
+    const topFile = path.join(receiver.root, 'X.py');
+    const subContent = 'X_IN_SUB = 81\n';
+    const topContent = 'X_AT_TOP = 82\n';
+    mkdirSync(path.dirname(subFile), { recursive: true });
+    writeFileSync(subFile, subContent, 'utf8');
+    writeFileSync(topFile, topContent, 'utf8');
+
+    const response = await postReload(receiver.port, {
+      files: [subFile, topFile],
+      sender_digests: { [subFile]: sha256(subContent), [topFile]: sha256(topContent) }
+    });
+    const receipts = JSON.parse(response.body) as Array<{ status: string; file: string; reason?: string }>;
+    const subReceipt = receipts.find(receipt => receipt.file === subFile);
+    const topReceipt = receipts.find(receipt => receipt.file === topFile);
+    // 两个文件各自 applied:暂存动作没有污染任何源文件
+    expect(subReceipt?.status).toBe('applied');
+    expect(topReceipt?.status).toBe('applied');
+    // 源文件逐字原样(旧实现:sub/X.py 的暂存副本按 basename 覆盖 root/X.py 源文件)
+    expect(readFileSync(subFile, 'utf8')).toBe(subContent);
+    expect(readFileSync(topFile, 'utf8')).toBe(topContent);
+    // 产物各归各的相对路径
+    expect(readFileSync(path.join(engineDir, 'sub', 'X.py'), 'utf8')).toBe(subContent);
+    expect(readFileSync(path.join(engineDir, 'X.py'), 'utf8')).toBe(topContent);
+    // 暂存副本独立子目录,各自内容正确,不再落暂存根顶层
+    expect(readFileSync(path.join(receiver.root, '.staged', 'sub', 'X.py'), 'utf8')).toBe(subContent);
+    expect(readFileSync(path.join(receiver.root, '.staged', 'X.py'), 'utf8')).toBe(topContent);
+  });
+
+  // F3 八轮(复审缺陷 1):目录竞争包含性验证——产物父目录链中某级是**指向
+  // 引擎目录内**的 symlink 时,六轮包含性检查放行(解析结果仍在引擎目录内),
+  // 旧 rename 直接沿真实父目录落盘(路径实际经 symlink 组件到达别处)。修后
+  // rename 前 realpath 父目录并做双重验证:包含性(在引擎目录 real 内)+ 一致性
+  // (解析结果与原路径逐字一致,否则说明有 symlink 组件)→ 一致性不过即拒绝。
+  // 竞态(检查后目录被换成外部 symlink)在同一代码路径上被同一验证拦截;
+  // JS 无 O_NOFOLLOW,realpath→rename 一瞬的残余窗口如实记录(见设计 §4.3)。
+  it('F3 八轮回归:父目录链含 symlink 组件(指向引擎目录内)→ rename 前拒绝,不落盘', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    // 产物父目录 sub 是指向引擎目录内 other/ 的 symlink:包含性检查(六轮)放行
+    mkdirSync(path.join(engineDir, 'other'), { recursive: true });
+    symlinkSync(path.join(engineDir, 'other'), path.join(engineDir, 'sub'), 'dir');
+    const file = path.join(receiver.root, 'sub', 'X.py');
+    const content = 'X_THROUGH_LINK = 83\n';
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, content, 'utf8');
+
+    const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: sha256(content) } });
+    const receipt = JSON.parse(response.body) as { status: string; reason?: string };
+    expect(receipt.status).toBe('failed');
+    expect(receipt.reason).toContain('符号链接');
+    // 旧实现沿 symlink 组件把产物落进 engineDir/other/X.py;修后不落盘
+    expect(existsSync(path.join(engineDir, 'other', 'X.py'))).toBe(false);
+    // 链接原样,无台账,引擎目录根无临时残留
+    expect(lstatSync(path.join(engineDir, 'sub')).isSymbolicLink()).toBe(true);
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+    const engineEntries = readdirSync(engineDir).filter(name => name.startsWith('.kode-artifact-tmp-'));
+    expect(engineEntries).toHaveLength(0);
+  });
+
   it('F3 三轮:通道发送自动附带 sender_digests(发送方冻结 digest 随报文下发)', async () => {
     let capturedBody: string | undefined;
     const transport = new HttpReloadTransport(
@@ -829,10 +899,15 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(source).toContain('"status":"accepted"');
     expect(source).toContain('"status":"applied"');
     expect(source).toContain('sha256');
-    // F3 四轮:applied 路径=接收端自己写产物(writeFileSync)+ 哈希不符回滚
+    // F3 四轮:applied 路径=接收端自己写产物(独占自建+写入)+ 哈希不符回滚
     expect(source).toContain('sender_digests');
     expect(source).toContain('--artifact-dir');
-    expect(source).toContain('writeFileSync');
+    // F3 八轮:temp+rename 收尾只清**确认自建**的临时文件(创建成功点标志位),
+    // rename 前父目录包含性+一致性双重验证,暂存副本独立唯一子目录
+    expect(source).toContain('openSync');
+    expect(source).toContain('writeSync');
+    expect(source).toContain('verifiedRealParentForRename');
+    expect(source).toContain("'.staged'");
     expect(source).toContain('unlinkSync');
     // F3 七轮:temp+rename 原子写 + lstat 拒链接——源码钉住新写入机制
     expect(source).toContain('renameSync');
