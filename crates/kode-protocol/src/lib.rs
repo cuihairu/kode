@@ -511,3 +511,87 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .windows(needle.len())
         .position(|window| window == needle)
 }
+
+// ---------------------------------------------------------------------------
+// `$/kode/fileChanged` 通知(热更旁路面 §11.3):非 py 文件变化按需转发 rust
+// ---------------------------------------------------------------------------
+
+/// `$/kode/fileChanged` 通知方法名(客户端 → 服务器,单向通知,无回执)。
+///
+/// TS 侧监视到 assetsRoot 下的非 py 文件变化、且消费者注册表里注册了 rust
+/// 消费者时,经现有 LSP stdio 发这一帧;**不改任何请求/响应语义**。服务器对
+/// 未知通知按 LSP 规范静默丢弃(kode-server `handle_notification` 的未知分支),
+/// 故 rust 侧尚未实现该通知时零副作用、静默降级。
+///
+/// 与 TS `src/fileChangeBypass.ts` 的 `KODE_FILE_CHANGED_METHOD` 逐字互证
+/// (两侧各有一把跨语言对账锁)。
+pub const FILE_CHANGED_NOTIFICATION: &str = "$/kode/fileChanged";
+
+/// `$/kode/fileChanged` 通知参数:纯数据、不绑 vscode——将来 watch 下沉 rust
+/// 时 TS 只是消费者,协议逐字不变。字段与 TS `NonPythonChangeEvent` 同构
+/// (fsPath/identity/kind/version/fileName/ext/sha256/handledBy)。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileChangedParams {
+    /// 原样路径
+    pub fs_path: String,
+    /// 归一身份键(斜杠/点段归一)
+    pub identity: String,
+    /// "create" | "change" | "delete"
+    pub kind: String,
+    /// 盘上版本 token `${mtimeMs}:${size}`;拿不到为 None(不编造)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    pub file_name: String,
+    /// 小写含点扩展名(`.def`);无扩展名为空串
+    pub ext: String,
+    /// 内容 sha256 hex;删除或读不到为 None(不编造)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    /// "python" | "rust" | "unrouted"(路由命中的处理方)
+    pub handled_by: String,
+}
+
+#[cfg(test)]
+mod file_changed_notification {
+    use super::*;
+
+    #[test]
+    fn method_name_matches_ts_constant() {
+        // 跨语言对账锁:TS 侧 KODE_FILE_CHANGED_METHOD 与本常量逐字一致
+        let ts = include_str!("../../../src/fileChangeBypass.ts");
+        assert_eq!(FILE_CHANGED_NOTIFICATION, "$/kode/fileChanged");
+        assert!(
+            ts.contains(&format!("'{FILE_CHANGED_NOTIFICATION}'")),
+            "TS 侧 KODE_FILE_CHANGED_METHOD 应与 Rust FILE_CHANGED_NOTIFICATION 同值"
+        );
+    }
+
+    #[test]
+    fn params_serialise_to_camel_case_payload() {
+        let params = FileChangedParams {
+            fs_path: "/ws/assets/res/types.xml".to_string(),
+            identity: "/ws/assets/res/types.xml".to_string(),
+            kind: "change".to_string(),
+            version: Some("1730000000000:9".to_string()),
+            file_name: "types.xml".to_string(),
+            ext: ".xml".to_string(),
+            sha256: Some("a".repeat(64)),
+            handled_by: "rust".to_string(),
+        };
+        let json = serde_json::to_value(&params).expect("serialisable");
+        assert_eq!(json["fsPath"], "/ws/assets/res/types.xml");
+        assert_eq!(json["fileName"], "types.xml");
+        assert_eq!(json["handledBy"], "rust");
+        assert_eq!(json["version"], "1730000000000:9");
+        // 缺省字段(拿不到的版本/摘要)不占位,前端不必判 null
+        let minimal = FileChangedParams {
+            version: None,
+            sha256: None,
+            ..params
+        };
+        let json = serde_json::to_value(&minimal).expect("serialisable");
+        assert!(json.get("version").is_none());
+        assert!(json.get("sha256").is_none());
+    }
+}

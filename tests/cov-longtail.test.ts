@@ -974,7 +974,7 @@ describe('hotReload(装配边角)', () => {
   });
 
   it('无注入错误口:弹窗通道损坏也不炸 watcher 边界', async () => {
-    configurationOverrides.set('kbengine', { hotReload: { enabled: true, actionName: '热更' } });
+    configurationOverrides.set('kbengine', { hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更' } });
     const windowish = fakeWindow as unknown as Record<string, unknown>;
     const original = windowish.showErrorMessage;
     windowish.showErrorMessage = (): Promise<undefined> => Promise.reject(new Error('ui down'));
@@ -1000,7 +1000,7 @@ describe('hotReload(装配边角)', () => {
   });
 
   it('回包到达但 rootId 解不到:该文件不落账也不喂 digest', async () => {
-    configurationOverrides.set('kbengine', { hotReload: { enabled: true, actionName: '热更' } });
+    configurationOverrides.set('kbengine', { hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更' } });
     const store = new HotReloadTargetStateStore({ now: () => 1000 });
     const digests: unknown[][] = [];
     const context = makeContext();
@@ -1028,7 +1028,7 @@ describe('hotReload(装配边角)', () => {
   });
 
   it('applied 核验结算句柄:装配释放时一并清掉', async () => {
-    configurationOverrides.set('kbengine', { hotReload: { enabled: true, actionName: '热更' } });
+    configurationOverrides.set('kbengine', { hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更' } });
     const store = new HotReloadTargetStateStore({ now: () => 1000 });
     const context = makeContext();
     const clock = makeTimers();

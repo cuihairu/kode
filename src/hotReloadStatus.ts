@@ -18,21 +18,31 @@ export const HOT_RELOAD_STATUS_THROTTLE_MS = 200;
 export type HotReloadStatusKind =
   | 'watch-off'
   | 'ready'
+  | 'ready-with-error'
   | 'sending'
   | 'sent-unverified'
   | 'failed';
+
+/** watch-off 的如实原因(§11.1:缺根与空 globs 绝不混为一谈) */
+export type HotReloadWatchOffReason = 'disabled' | 'empty-globs';
+
+/** 当前监视模式的来源(§11.1:显式配置 or 从 assetsRoot 派生) */
+export type HotReloadGlobSource = 'explicit' | 'derived';
 
 /** 各状态的状态栏脸面;文案只描述已核实的事实,未确认不称成功 */
 const STATUS_FACES: Record<HotReloadStatusKind, { text: string; tooltip: string }> = {
   'watch-off': {
     text: '$(eye-closed) 热更: 关',
-    tooltip:
-      '热更新监视未开启(kbengine.hotReload.enabled=false 或 globs 为空)。点击可一键开启,或运行 kbengine.hotReload.toggle'
+    tooltip: '热更新监视未开启。点击可一键开启,或运行 kbengine.hotReload.toggle'
   },
   ready: {
     text: '$(eye) 热更: 就绪',
     tooltip:
       '热更新监视就绪,保存 .py 将按去抖触发热更(未配动作名时发默认 hotfix 请求)。点击可一键关闭(kbengine.hotReload.toggle)'
+  },
+  'ready-with-error': {
+    text: '$(warning) 热更: 就绪(未监视)',
+    tooltip: '热更监视范围不可用(配置错误)'
   },
   sending: {
     text: '$(sync~spin) 热更: 发送中',
@@ -96,6 +106,10 @@ export class HotReloadStatusController {
   private readonly channel: OutputChannelLike;
   private readonly commandRegistrations: Array<{ dispose(): void }>;
   private kind: HotReloadStatusKind = 'watch-off';
+  /** 上次落账的变更日志行:内容没变的同态重复压掉,内容变了照记(§11.4) */
+  private lastChangeLog: string | undefined;
+  /** 状态附注(来源/glob/缺根补救等):只叠 tooltip,不改状态脸面 */
+  private tooltipNote: string | undefined;
   private windowOpen = false;
   private pendingKind: HotReloadStatusKind | undefined;
   private windowHandle: unknown;
@@ -121,15 +135,39 @@ export class HotReloadStatusController {
     this.channel.appendLine(`[${formatHotReloadTime(this.now())}] ${text}`);
   }
 
-  setWatchOff(): void {
-    this.setState('watch-off', '监视未开启(kbengine.hotReload.enabled=false 或 globs 为空)');
+  /**
+   * watch-off 按原因如实提示(§11.1):`disabled` 与 `empty-globs` 两种原因
+   * 绝不混写;detail 带缺根/补救等上下文,tooltip 与日志同源。
+   */
+  setWatchOff(reason: HotReloadWatchOffReason = 'disabled', detail?: string): void {
+    const base =
+      reason === 'empty-globs'
+        ? '未开启: kbengine.hotReload.globs 为空(用户显式清空,不派生、不回落全扫)'
+        : '未开启: kbengine.hotReload.enabled=false';
+    const note = detail ? `${base};${detail}` : base;
+    this.setState('watch-off', note, note);
   }
 
-  setReady(globCount: number, debounceMs: number): void {
+  /**
+   * 就绪:当前监视模式 + 来源一并上屏(§11.1 如实口径——用户要能看出
+   * 看的是显式配置还是 assetsRoot 派生)。日志保留既有前缀(消费方 includes
+   * 口径不变),来源与模式追加在后。
+   */
+  setReady(globs: readonly string[], source: HotReloadGlobSource, debounceMs: number): void {
+    const modes = globs.join(', ');
     this.setState(
       'ready',
-      `监视就绪: ${globCount} 个模式, 去抖 ${debounceMs}ms`
+      `监视就绪: ${globs.length} 个模式, 去抖 ${debounceMs}ms | 来源=${source} | 模式=${modes}`,
+      `监视模式: ${modes}(来源=${source})`
     );
+  }
+
+  /**
+   * ready-with-error(§11.1):开着但监视范围解析不出来(缺 assetsRoot)——
+   * 显式报错 + 补救指路,绝不静默回落裸全工作区扫。
+   */
+  setReadyError(detail: string): void {
+    this.setState('ready-with-error', `监视范围不可用: ${detail}`, detail);
   }
 
   /** 触发到点、动作发起;triggers=去抖合并到的文件,debounceMs=实际去抖值 */
@@ -216,11 +254,21 @@ export class HotReloadStatusController {
     this.channel.dispose();
   }
 
-  /** 状态转移 + 可选的变更日志(同类不重复记,防配置抖动刷屏) */
-  private setState(kind: HotReloadStatusKind, changeLog?: string): void {
+  /**
+   * 状态转移 + 可选的变更日志(§11.4:来源/模式要「随状态栏与日志上屏」)。
+   * 记账口径:换态必记;同态但**内容变了**(derived→explicit、模式增减、缺根
+   * 补救出现)也记——否则 ready→ready 的来源切换只进 tooltip、日志留旧值;
+   * 内容一字不差的重复仍压掉(防配置抖动刷屏)。
+   */
+  private setState(kind: HotReloadStatusKind, changeLog?: string, tooltipNote?: string): void {
     const changed = kind !== this.kind;
+    const contentChanged = changeLog !== undefined && changeLog !== this.lastChangeLog;
     this.kind = kind;
-    if (changed && changeLog) {
+    this.tooltipNote = tooltipNote;
+    if (changeLog !== undefined) {
+      this.lastChangeLog = changeLog;
+    }
+    if ((changed || contentChanged) && changeLog) {
       this.log(changeLog);
     }
     this.render(kind);
@@ -251,6 +299,6 @@ export class HotReloadStatusController {
   private apply(kind: HotReloadStatusKind): void {
     const face = STATUS_FACES[kind];
     this.bar.text = face.text;
-    this.bar.tooltip = face.tooltip;
+    this.bar.tooltip = this.tooltipNote ? `${face.tooltip};${this.tooltipNote}` : face.tooltip;
   }
 }

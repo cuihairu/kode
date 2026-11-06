@@ -1,7 +1,19 @@
 import { createHash } from 'crypto';
 
 import * as vscode from 'vscode';
-import { HotReloadStatusController } from './hotReloadStatus';
+import {
+  HotReloadStatusController,
+  type HotReloadGlobSource,
+  type HotReloadWatchOffReason
+} from './hotReloadStatus';
+import { createSharedFileEventMerger, type SharedFileEvent } from './sharedFileEvents';
+import {
+  buildNonPythonChangeEvent,
+  createFileChangeRouter,
+  type FileChangeKind,
+  type FileChangeRouter
+} from './fileChangeBypass';
+import { resolveAssetsRootForWorkspace } from './scanRoots';
 import {
   HotReloadTargetStateStore,
   type HotReloadDeliveryOutcome
@@ -24,26 +36,41 @@ export { HOT_RELOAD_TOGGLE_COMMAND } from './hotReloadToggle';
 
 // 自动热重载(功能差距盘点 G5,docs/reference-feature-gap.md):文件保存/监视 →
 // 触发指定 quick action。用户令 2026-11-06:门控默认开启(配置缺失也开,
-// 显式写死 false 仍关);启用后按 kbengine.hotReload.globs 建 watcher,
-// 事件去抖合并连发保存,配置变更联动拆建 watcher。未配动作名时保存即按
-// 默认热更请求 POST http://127.0.0.1:8090/hotfix?module_name=<模块名>(body 同带
-// module_name=<模块名>,两处都带是兼容不同服务端读参口径,同值重复无害),
-// 一键关 = 状态栏点击 / kbengine.hotReload.toggle(写回配置)。
-// 状态栏反馈(HR-UI-001):装配内建状态机控制器,Watch Off/Ready/Sending/
-// Sent(未确认)/Failed 上屏;动作完成且无错只记未确认,不校验业务回执。
+// 显式写死 false 仍关);启用后监视范围**默认从 assetsRoot 派生**(设计 §11.1:
+// 未写 globs → `<assetsRoot>/**/*.py`,拿不到有效 assetsRoot 显式报错,绝不回落
+// 裸 `**/*.py` 全扫),显式 globs 原样生效;事件去抖合并连发保存,配置/派生值
+// 变更联动重建 watcher(§11.4)。未配动作名时保存即按默认热更请求 POST
+// http://127.0.0.1:8090/hotfix?module_name=<模块名>(body 同带 module_name=<模块名>,
+// 两处都带是兼容不同服务端读参口径,同值重复无害),一键关 = 状态栏点击 /
+// kbengine.hotReload.toggle(写回配置)。
+// 非 py 变化走旁路通道(§11.2):事件照捕、当前不处理(零投递零状态跃迁),
+// 按消费者注册表按需通知 rust 解析(§11.3,`$/kode/fileChanged`,rust 不可用
+// 静默降级)。
+// 状态栏反馈(HR-UI-001):装配内建状态机控制器,Watch Off/Ready/
+// Ready(配置错)/Sending/Sent(未确认)/Failed 上屏;动作完成且无错只记未确认,
+// 不校验业务回执。
 // IDE-REV-021:注入 targetState 即按「rootId × targetId」双维台账逐发送
 // 记账(同文件发不同实例各落各的,切目标不复用上一目标状态);动作完成
 // 无回执仍记 sent-unverified——传输成功≠应用成功,不宣称热更成功。
 
-export const HOT_RELOAD_DEFAULT_GLOBS = ['**/*.py'] as const;
 export const HOT_RELOAD_DEFAULT_DEBOUNCE_MS = 500;
+/** 派生 glob 的尾段:热更只处理 .py(非 py 走旁路,不进投递) */
+export const HOT_RELOAD_DERIVED_GLOB_SUFFIX = '**/*.py';
+/** 缺根补救指路(状态栏 tooltip 与诊断日志同源,不静默全扫) */
+export const HOT_RELOAD_ASSETS_ROOT_REMEDY =
+  '未配 kbengine.assetsRoot,无法派生监视范围;补救:配置 kbengine.assetsRoot,或把工作区设为资产根目录的父目录';
 /** IDE-REV-023 applied 核验窗口:到点仍未确认只注解超时,不冒充任何终态 */
 export { HOT_RELOAD_APPLIED_SETTLE_MS } from './hotReloadAppliedCheck';
+
+/** 显式配置的 globs 来源;`unset` = 没写(或类型写坏)→ 交给 assetsRoot 派生 */
+export type HotReloadGlobsSpec = 'explicit' | 'unset';
 
 export interface HotReloadSettings {
   readonly enabled: boolean;
   readonly actionName: string;
+  /** 显式 globs(未写 = 空表;语义由 globsSpec 区分,空表不等于没写) */
   readonly globs: string[];
+  readonly globsSpec: HotReloadGlobsSpec;
   readonly debounceMs: number;
 }
 
@@ -52,16 +79,20 @@ export interface ConfigReader {
   get: <T>(key: string, defaultValue: T) => T;
 }
 
-/** 只留非空字符串;剔空则回落默认,保证调用方永远拿到可用的匹配模式 */
-const readGlobs = (raw: unknown): string[] => {
+/**
+ * globs 读取(§11.1):只有**数组**算用户写过(spec=explicit,空数组也是显式
+ * 「不监视任何模式」→ watch-off);没写/类型写坏一律 spec=unset 交给 assetsRoot
+ * 派生——绝不回落裸全工作区扫(设计 §11.1 点名的错误回落)。
+ */
+const readGlobs = (raw: unknown): { globs: string[]; globsSpec: HotReloadGlobsSpec } => {
   if (!Array.isArray(raw)) {
-    return [...HOT_RELOAD_DEFAULT_GLOBS];
+    return { globs: [], globsSpec: 'unset' };
   }
   const kept = raw
     .filter((item): item is string => typeof item === 'string')
     .map(item => item.trim())
     .filter(item => item.length > 0);
-  return kept.length > 0 ? kept : [...HOT_RELOAD_DEFAULT_GLOBS];
+  return { globs: kept, globsSpec: 'explicit' };
 };
 
 /** 容忍式读取:类型不符或负去抖一律回落默认,配置写坏也不会拖垮装配。
@@ -71,13 +102,107 @@ export function readHotReloadSettings(reader: ConfigReader): HotReloadSettings {
   const enabled = reader.get<boolean>('enabled', true);
   const actionName = reader.get<string>('actionName', '');
   const debounceMs = reader.get<number>('debounceMs', HOT_RELOAD_DEFAULT_DEBOUNCE_MS);
+  const { globs, globsSpec } = readGlobs(reader.get<unknown>('globs', undefined));
   return {
     enabled: typeof enabled === 'boolean' ? enabled : true,
     actionName: typeof actionName === 'string' ? actionName : '',
-    globs: readGlobs(reader.get<unknown>('globs', undefined)),
+    globs,
+    globsSpec,
     debounceMs:
       typeof debounceMs === 'number' && debounceMs >= 0 ? debounceMs : HOT_RELOAD_DEFAULT_DEBOUNCE_MS
   };
+}
+
+/** 路径归一成 glob 用正斜杠并去尾斜杠(Windows 反斜杠一并归一) */
+const normalizePathForGlob = (value: string): string => value.replace(/\\/g, '/').replace(/\/+$/, '');
+
+/**
+ * 从 assetsRoot 派生热更监视模式(§11.1):
+ * - assetsRoot 在工作区内 → `${workspaceFolder}/<相对路径>` + 尾段的形态;
+ * - 在工作区外 → 绝对路径(正斜杠);
+ * - assetsRoot 为空 → 空串(调用方按缺根显式报错,不回落全扫)。
+ * 恒以 HOT_RELOAD_DERIVED_GLOB_SUFFIX(`**\/*.py`)结尾:热更只处理 .py。
+ */
+export function deriveHotReloadGlob(assetsRoot: string, workspaceRoot: string): string {
+  const root = normalizePathForGlob((assetsRoot ?? '').trim());
+  if (!root) {
+    return '';
+  }
+  const workspace = normalizePathForGlob((workspaceRoot ?? '').trim());
+  if (workspace && (root === workspace || root.startsWith(`${workspace}/`))) {
+    const relative = root === workspace ? '' : `${root.slice(workspace.length + 1)}/`;
+    return `\${workspaceFolder}/${relative}${HOT_RELOAD_DERIVED_GLOB_SUFFIX}`;
+  }
+  return `${root}/${HOT_RELOAD_DERIVED_GLOB_SUFFIX}`;
+}
+
+/**
+ * 监视注册形态(§11.1 + IDE-ACC-011):派生 glob 的 `${workspaceFolder}` 变量
+ * 在 API 层不展开(vscode GlobPattern 无变量替换),故注册时按 RelativePattern
+ * 落地——工作区内锚工作区根(相对子路径),工作区外锚资产根本身,监视范围与
+ * 派生 glob 逐字等价。suffix 如 `**\/*.py`(热更面)/`**\/*`(旁路面)。
+ */
+export function deriveWatcherPattern(
+  assetsRoot: string,
+  workspaceRoot: string,
+  suffix: string
+): { base: string; pattern: string } {
+  const root = normalizePathForGlob((assetsRoot ?? '').trim());
+  const workspace = normalizePathForGlob((workspaceRoot ?? '').trim());
+  if (workspace && (root === workspace || root.startsWith(`${workspace}/`))) {
+    const relative = root === workspace ? '' : root.slice(workspace.length + 1);
+    return { base: workspace, pattern: relative ? `${relative}/${suffix}` : suffix };
+  }
+  return { base: root, pattern: suffix };
+}
+
+/** §11.1 决策失败:拿不到有效 assetsRoot(显式报错,绝不静默全扫) */
+export interface HotReloadWatchPlanError {
+  readonly code: 'assets-root-missing';
+  readonly message: string;
+}
+
+/** §11.1 监视计划:三态(显式/派生/关)+ 错误与关因,装配按它建 watcher 与状态 */
+export interface HotReloadWatchPlan {
+  readonly globs: readonly string[];
+  readonly source: HotReloadGlobSource | 'none';
+  readonly watchOff: HotReloadWatchOffReason | null;
+  readonly error: HotReloadWatchPlanError | null;
+}
+
+export interface HotReloadWatchPlanInput {
+  readonly enabled: boolean;
+  /** 显式 globs(globsSpec=unset 时忽略) */
+  readonly globs: readonly string[];
+  readonly globsSpec: HotReloadGlobsSpec;
+  readonly assetsRoot: string;
+  readonly workspaceRoot: string;
+}
+
+/**
+ * §11.1 决策表(纯函数,便于直测):
+ * 关着 → watch-off(disabled);开着且写了 globs → 显式原样(空数组 = watch-off
+ * empty-globs);开着没写 globs → 从 assetsRoot 派生,派生不到 → 显式报错。
+ */
+export function planHotReloadWatch(input: HotReloadWatchPlanInput): HotReloadWatchPlan {
+  if (!input.enabled) {
+    return { globs: [], source: 'none', watchOff: 'disabled', error: null };
+  }
+  if (input.globsSpec === 'explicit') {
+    return input.globs.length > 0
+      ? { globs: [...input.globs], source: 'explicit', watchOff: null, error: null }
+      : { globs: [], source: 'none', watchOff: 'empty-globs', error: null };
+  }
+  const derived = deriveHotReloadGlob(input.assetsRoot, input.workspaceRoot);
+  if (!derived) {
+    return {
+      globs: [],
+      source: 'none',
+      watchOff: null,
+      error: { code: 'assets-root-missing', message: HOT_RELOAD_ASSETS_ROOT_REMEDY }
+    };
+  }
+  return { globs: [derived], source: 'derived', watchOff: null, error: null };
 }
 
 /** 定时器注入口:装配默认真 setTimeout,测试用确定性的内存计时器 */
@@ -200,6 +325,12 @@ export interface SetupHotReloadOptions {
    * 两路径判定逐字一致。不注入则本装配自建(基线册私有,重试侧拿不到)。
    */
   readonly defGate?: DefStructuralGate;
+  /**
+   * §11.2 旁路通道注入:装配方持有它即可注册消费者(按扩展名/路径前缀路由,
+   * 默认无消费者 = 只记录)与订阅 `onPublish` 事件。不注入则本装配自建一个
+   * 无消费者的私有路由。
+   */
+  readonly fileChangeRouter?: FileChangeRouter;
 }
 
 /**
@@ -667,6 +798,27 @@ export function setupHotReload(
   // 线册),否则本装配自建(基线册私有,重试侧拿不到)
   const defGate =
     options.defGate ?? createDefStructuralGate(options.targetState?.readFileContent, defBaselines);
+  // §11.2 旁路通道:事件源复用 sharedFileEvents 的 30ms 合并 + version token
+  // (KR-AUD-30 同一口径,不另起炉灶);路由表可注入(装配方持有以便注册消费者
+  // 与订阅),不注入自建无消费者私有路由 = 只记录不处理。
+  const router: FileChangeRouter = options.fileChangeRouter ?? createFileChangeRouter();
+  const bypassMerger = createSharedFileEventMerger();
+  /** 无消费者命中的累计数(状态日志「N 个待路由」的 N) */
+  let unroutedNonPython = 0;
+  const publishBypassEvent = async (event: SharedFileEvent): Promise<void> => {
+    // .py/目录/取证失败在 build 内如实挡下(返回 null),不进旁路
+    const meta = await buildNonPythonChangeEvent({ fsPath: event.fsPath, kind: event.kind });
+    if (!meta) {
+      return;
+    }
+    const hits = router.publish(meta);
+    if (hits.length === 0) {
+      unroutedNonPython += 1;
+      // 如实记账:只记录,不投递、不发帧、不动热更状态栏
+      status.log(`非 py 变化待路由(无消费者,未投递): 累计 ${unroutedNonPython} 个 | ${meta.fileName}`);
+    }
+  };
+  const unsubscribeBypass = bypassMerger.subscribe(event => void publishBypassEvent(event));
   const disposeWatchers = (): void => {
     for (const watcher of watchers) {
       watcher.dispose();
@@ -674,40 +826,180 @@ export function setupHotReload(
     watchers.length = 0;
   };
 
+  const firstWorkspaceRoot = (): string => {
+    try {
+      return vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath ?? '';
+    } catch {
+      return '';
+    }
+  };
+  const resolveAssetsRootSafe = (workspaceRoot: string): string => {
+    try {
+      return resolveAssetsRootForWorkspace(workspaceRoot);
+    } catch {
+      return ''; // 解析异常按缺根处理:显式报错,绝不回落全扫
+    }
+  };
+  /** §11.4 上次生效的重建判据(初始空串:首次 apply 必落一次) */
+  let lastWatchSignature = '';
+  /** 读本次装配/签名共用的输入(显式 globs 关着不依赖根,省掉发现扫描) */
+  const readWatchInputs = (): {
+    settings: HotReloadSettings;
+    workspaceRoot: string;
+    assetsRoot: string;
+  } => {
+    const settings = readHotReloadSettings(hotReloadSectionReader());
+    const workspaceRoot = firstWorkspaceRoot();
+    // 关着但没写 globs 也要现算根:watch-off 的缺根提示必须基于**真解析出来的**
+    // 根(否则 assetsRoot 配得好好的也会被说成「未配」)。显式 globs 关着时
+    // 没有任何缺根提示要用根,才省掉发现扫描。
+    const assetsRoot =
+      settings.enabled || settings.globsSpec === 'unset'
+        ? resolveAssetsRootSafe(workspaceRoot)
+        : '';
+    return { settings, workspaceRoot, assetsRoot };
+  };
+  /** §11.4 重建判据:显式输入 + 派生输入(不只看 enabled/globs) */
+  const watchSignatureOf = (inputs: ReturnType<typeof readWatchInputs>): string =>
+    JSON.stringify([
+      inputs.settings.enabled,
+      inputs.settings.globs,
+      inputs.settings.globsSpec,
+      inputs.workspaceRoot,
+      inputs.assetsRoot
+    ]);
+
+  /** 旁路面注册形态:assetsRoot 下全扩展名(ACC-011 RelativePattern 口径) */
+  const bypassPatternOf = (assetsRoot: string, workspaceRoot: string): vscode.RelativePattern => {
+    const { base, pattern } = deriveWatcherPattern(assetsRoot, workspaceRoot, '**/*');
+    return new vscode.RelativePattern(base, pattern);
+  };
+  /** 非 py 才进旁路(.py 归热更面;旁路事件恒 NonPython) */
+  const emitToBypass = (uri: vscode.Uri, kind: FileChangeKind): void => {
+    if (uri.fsPath.toLowerCase().endsWith('.py')) {
+      return;
+    }
+    bypassMerger.emit(uri.fsPath, kind);
+  };
+  const pyOnly =
+    (handler: (uri: vscode.Uri) => void) =>
+    (uri: vscode.Uri): void => {
+      if (uri.fsPath.toLowerCase().endsWith('.py')) {
+        handler(uri);
+      }
+    };
+
+  /**
+   * 热更域(§11.1/§11.2):显式 globs 也只把 `.py`(热更本职)与 `.def`
+   * (结构闸 IDE-HOT-005/REV-024,非结构 def 照常放行)送进投递——引擎按
+   * python 模块重载,其余扩展没有可发的模块(默认热更 POST 的 module_name
+   * 同样只对 python 模块有意义),只走旁路。否则显式的全匹配模式会让 .xml
+   * 既进投递(推状态栏、跑动作)又进旁路,同事件双处理。
+   */
+  const hotDomainOnly =
+    (handler: (uri: vscode.Uri) => void) =>
+    (uri: vscode.Uri): void => {
+      const lower = uri.fsPath.toLowerCase();
+      if (lower.endsWith('.py') || lower.endsWith('.def')) {
+        handler(uri);
+      }
+    };
+
+  const attachWatcher = (
+    pattern: vscode.GlobPattern,
+    handlers: {
+      readonly onHot?: (uri: vscode.Uri) => void;
+      readonly onBypass?: (uri: vscode.Uri, kind: FileChangeKind) => void;
+    }
+  ): void => {
+    const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+    const wire =
+      (kind: FileChangeKind) =>
+      (uri: vscode.Uri): void => {
+        handlers.onHot?.(uri);
+        handlers.onBypass?.(uri, kind);
+      };
+    watcher.onDidChange(wire('change'));
+    watcher.onDidCreate(wire('create'));
+    watcher.onDidDelete(wire('delete'));
+    watchers.push(watcher);
+  };
+
   const apply = (): void => {
     disposeWatchers();
     trigger.cancel();
     pendingTriggers.clear();
-    const settings = readHotReloadSettings(hotReloadSectionReader());
-    if (!settings.enabled || settings.globs.length === 0) {
-      status.setWatchOff();
+    const inputs = readWatchInputs();
+    const { settings, workspaceRoot, assetsRoot } = inputs;
+    lastWatchSignature = watchSignatureOf(inputs);
+    const plan = planHotReloadWatch({
+      enabled: settings.enabled,
+      globs: settings.globs,
+      globsSpec: settings.globsSpec,
+      assetsRoot,
+      workspaceRoot
+    });
+    if (plan.error) {
+      // §11.1 显式报错:状态栏 ready-with-error + 诊断指路(缺根补救),
+      // 绝不静默回落 `**/*.py` 全扫
+      status.setReadyError(plan.error.message);
       return;
     }
-    // @types/vscode 只接受单个 GlobPattern,每个模式各建一个 watcher
-    for (const glob of settings.globs) {
-      const watcher = vscode.workspace.createFileSystemWatcher(glob);
-      const schedule = (uri?: vscode.Uri): void => {
-        if (uri) {
-          pendingTriggers.add(uri.fsPath);
-        }
-        trigger.schedule(settings.debounceMs);
-      };
-      watcher.onDidChange(schedule);
-      watcher.onDidCreate(schedule);
-      watcher.onDidDelete(schedule);
-      watchers.push(watcher);
+    if (plan.watchOff) {
+      // §11.1 关因如实区分:disabled 且「没写 globs 且派生不到根」时补一句缺根
+      // 提示,与 empty-globs(显式空)两种关法绝不混写
+      const detail =
+        plan.watchOff === 'disabled' && settings.globsSpec === 'unset' && !assetsRoot
+          ? HOT_RELOAD_ASSETS_ROOT_REMEDY
+          : undefined;
+      status.setWatchOff(plan.watchOff, detail);
+      return;
     }
-    status.setReady(settings.globs.length, settings.debounceMs);
+    // 走到这里必是显式或派生(错误/关闭已 return)
+    const source: HotReloadGlobSource = plan.source === 'explicit' ? 'explicit' : 'derived';
+    const scheduleHot = (uri: vscode.Uri): void => {
+      pendingTriggers.add(uri.fsPath);
+      trigger.schedule(settings.debounceMs);
+    };
+    if (source === 'explicit') {
+      // 显式 globs 原样生效(§11.1/零回归):@types/vscode 只接受单个
+      // GlobPattern,每个模式各建一个 watcher。投递面收在热更域内
+      // (.py/.def,见 hotDomainOnly):域外扩展只走旁路,不推状态栏不跑动作
+      for (const glob of plan.globs) {
+        attachWatcher(glob, { onHot: hotDomainOnly(scheduleHot) });
+      }
+      // 旁路面与显式 globs 各挂各的(旁路恒按 assetsRoot 全扩展名);缺根则
+      // 本会话无旁路面(显式 globs 不依赖根)
+      if (assetsRoot) {
+        attachWatcher(bypassPatternOf(assetsRoot, workspaceRoot), { onBypass: emitToBypass });
+      }
+    } else {
+      // 派生场景一个 watcher 打两份工(§11.2 事件源唯一):assetsRoot 下全扩展
+      // 名,.py 走热更、非 py 走旁路,不重复开第二个 watcher
+      attachWatcher(bypassPatternOf(assetsRoot, workspaceRoot), {
+        onHot: pyOnly(scheduleHot),
+        onBypass: emitToBypass
+      });
+    }
+    status.setReady(plan.globs, source, settings.debounceMs);
   };
 
   const subscription = vscode.workspace.onDidChangeConfiguration(event => {
-    if (event.affectsConfiguration('kbengine')) {
+    // §11.4:kbengine 段(含 kbengine.assetsRoot)一律重建;派生输入(assetsRoot/
+    // 工作区根)变了但事件不认 kbengine 段时,按计划签名补一次重建——重建判据
+    // 不只看 enabled/globs。
+    if (
+      event.affectsConfiguration('kbengine') ||
+      watchSignatureOf(readWatchInputs()) !== lastWatchSignature
+    ) {
       apply();
     }
   });
   context.subscriptions.push({
     dispose: (): void => {
       subscription.dispose();
+      unsubscribeBypass();
+      bypassMerger.dispose();
       trigger.dispose();
       for (const handle of settleHandles) {
         timers.clear(handle);

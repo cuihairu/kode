@@ -52,7 +52,7 @@ describe('未确认注解 detail 拼接不产生字面 undefined(RT-8)', () => {
     const clock = makeTimers();
     const store = new HotReloadTargetStateStore({ now: () => 7 });
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
     });
     setupHotReload(
       makeContext(),

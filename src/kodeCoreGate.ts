@@ -1,4 +1,5 @@
 import { KodeCoreClient, KodeCoreTransportError } from './kodeCoreClient';
+import { KODE_FILE_CHANGED_METHOD } from './fileChangeBypass';
 
 // kode2 PR-012:双轨切流门(kill-switch / shadow / 差异日志)。
 // 书 §16.3/PH7-02 与 docs/kode2/ph0-gate.md 门 3:双轨 parity 与回退措施
@@ -206,6 +207,8 @@ export interface ShadowClientLike {
   closeDocument?(uri: string): void;
   /** 重启代数读口(E-2;可选):自动重启后 gate 重置镜像账并重放快照 */
   getRestartGeneration?(): number;
+  /** 通知面(§11.3 可选):单向通知,不回包;KodeCoreClient 同名方法 */
+  notify?(method: string, params?: unknown): void;
 }
 
 export interface KodeCoreGateOptions {
@@ -298,6 +301,25 @@ export class KodeCoreGate {
    */
   serveFromRust(): boolean {
     return false;
+  }
+
+  /**
+   * `$/kode/fileChanged` 通知(热更旁路面 §11.3):把非 py 文件变化按需转给
+   * rust 解析。**不为发通知拉起进程**——只有已存活的 client 才发;未启动/
+   * 不可用一律静默降级返回 false(不报错、不阻塞热更),与 LSP「未知通知
+   * 静默丢弃」的前向兼容口径一致。
+   */
+  notifyFileChanged(params: unknown): boolean {
+    const client = this.client;
+    if (!client?.notify) {
+      return false;
+    }
+    try {
+      client.notify(KODE_FILE_CHANGED_METHOD, params);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
