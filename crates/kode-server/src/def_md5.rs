@@ -374,13 +374,12 @@ impl DataTypesState {
     ///
     /// 别名注册不改类身份(KR-AUD-82)。
     fn is_entitycall(&self, id: u16) -> bool {
-        match self.info.get(&id) {
-            Some(info) => match info.kind {
-                TypeKind::Array => info.element.map(|e| self.is_entitycall(e)).unwrap_or(false),
-                _ => info.alias_name == "ENTITYCALL" && info.kind == TypeKind::Builtin,
-            },
-            None => false,
-        }
+        // KR-AUD-86:引擎三处判定都是类身份且**不**递归数组链(调用方已传
+        // 一层元素 id);KR-AUD-82:ENTITYCALL 构造期即带类身份,不依赖别名。
+        matches!(
+            self.info.get(&id).map(|info| info.kind),
+            Some(TypeKind::EntityCall)
+        )
     }
 }
 
