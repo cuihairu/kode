@@ -188,7 +188,13 @@ const zh = {
     colLocation: '声明位置'
   },
   defCallChain: {
-    title: 'KBEngine Def 调用链'
+    title: 'KBEngine Def 调用链',
+    tabGraph: '图',
+    tabText: '文本',
+    tabHint: '页面记住上次页签(存储于工作区状态)',
+    legendCell: 'CellMethods',
+    legendBase: 'BaseMethods',
+    legendClient: 'ClientMethods'
   },
   errorScan: {
     title: 'KBEngine ERROR 扫描'
@@ -370,7 +376,13 @@ const en: typeof zh = {
     colLocation: 'Declared at'
   },
   defCallChain: {
-    title: 'KBEngine Def Call Chain'
+    title: 'KBEngine Def Call Chain',
+    tabGraph: 'Graph',
+    tabText: 'Text',
+    tabHint: 'The last tab is remembered in workspace state',
+    legendCell: 'CellMethods',
+    legendBase: 'BaseMethods',
+    legendClient: 'ClientMethods'
   },
   errorScan: {
     title: 'KBEngine ERROR Scan'
