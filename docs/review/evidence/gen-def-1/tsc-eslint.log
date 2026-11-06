@@ -17,3 +17,11 @@ HEAD_TESTS_ESLINT_EXIT=0
   7 errors and 0 warnings potentially fixable with the `--fix` option.
 
 BASELINE_TESTS_ESLINT_EXIT=0
+
+== re-bind @ 7229b34 2026-11-06T22:16:23+08:00
+-- eslint tests --ext ts @ 7229b34
+✖ 101 problems (101 errors, 0 warnings)
+-- eslint src --ext ts @ 7229b34
+0 problems
+-- tsc --noEmit @ 7229b34
+TSC_EXIT=0
