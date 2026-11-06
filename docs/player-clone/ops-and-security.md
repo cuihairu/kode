@@ -65,12 +65,17 @@
   **帧名（如 `tables/tbl_Avatar.json`）在帧头明文是格式设计**——头部作 AEAD 关联数据
   （认证不加密），解密前须先按名定位帧；帧名属元数据（类似加密 zip 的文件名），
   **行值/清单内容才是加密载荷**（Rust 测试断言归档字节无明文行值）。
-- **接线（导出）**：extension 恒传 `keyRoot`（`context.globalStorageUri/clone-keys`，
+- **接线（导出）**：extension 传 `keyRoot`（`context.globalStorageUri/clone-keys`，
   机器域目录，不落工作区/VCS）→ server 侧 `ensure_key_outside_archive`（结构性拒绝
   密钥目录在归档路径内）+ 密钥 id = 归档绝对路径 SHA-256
   （`keystore::key_id_for_archive`）+ `FileKeyStore::get_or_create`（不存在则生成，
   Unix 强制 0600 落盘）→ `ArchiveWriter` 携钥写档，`encrypted: true`。
   **密钥材料全程留 Rust——TS 只传目录路径，永不接触密钥字节**。
+- **加密可关（PDC-0609）**：默认值经设置 `kbengine.clone.archiveEncryption`
+  （`encrypted` 默认 / `plain`），导出确认页每次可切换（确认项文案携带当前态，
+  完成消息如实标注「已加密/明文」）；`plain` 写**脱敏但未加密**归档——服务跨机
+  转移场景（密钥是机器域的，加密归档移机即缺钥）。读面不受设置影响：加密位
+  探测定，明文/加密归档都能读。
 - **接线（读取）**：`inspectArchive`/`readArchiveRows`/`planImport` 同传 `keyRoot`；
   server 侧先探头部加密位（`archive::is_encrypted`）——未加密档不取钥，加密档按
   同 id 取钥；**钥匙缺失如实报错**（话术点名密钥根与 id），**绝不静默生成新钥**
