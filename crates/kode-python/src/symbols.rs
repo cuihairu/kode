@@ -66,6 +66,7 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
                         symbol: None,
                         line: ast.line_col(imp.range.start().to_u32()).0,
                         is_from: false,
+                        aliased: alias.asname.is_some(),
                     });
                 }
             }
@@ -87,6 +88,7 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
                         symbol: Some(alias.name.as_str().to_string()),
                         line,
                         is_from: true,
+                        aliased: alias.asname.is_some(),
                     });
                 }
             }

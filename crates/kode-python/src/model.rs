@@ -126,6 +126,11 @@ pub struct AstImport {
     pub module: String,
     /// `from module import symbol` 的 symbol;普通 `import` 为 `None`。
     pub symbol: Option<String>,
+    /// 是否显式别名(`import a.b as c` / `from p import x as y`)。回退取
+    /// basename 时区分「绑包本体(无别名=顶层首段)」与「绑目标模块(有别名=
+    /// 末段)」,不得用绑定名==首段近似——`import a.b as a` 的别名恰为首段
+    /// 名,近似会误指无关 a.py(复审第十二轮残余)。
+    pub aliased: bool,
     pub line: usize,
     pub is_from: bool,
 }

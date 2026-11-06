@@ -604,6 +604,63 @@ fn function_layer_from_import_conflict_gives_up_edge() {
 }
 
 #[test]
+fn aliased_dotted_import_alias_equals_first_segment_uses_last_segment() {
+    // 复审第十二轮残余:`import a.b as a` 显式别名恰为顶层首段名——绑定 a
+    // 指向模块 a.b,回退须按显式别名标志取末段 b(b.py),不得因绑定名等于
+    // 首段把「有别名」误判成「绑包本体」而误指无关 a.py。
+    let zcaller = "import a.b as a\n\ndef battle():\n    a.f()\n";
+    let bmod = "def f():\n    pass\n";
+    let amod = "def f():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let bk = key("scripts/b.py");
+    let ak = key("scripts/a.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&bk, bmod), (&ak, amod)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        rev.get(&bk).map(|s| s.contains(&zk)).unwrap_or(false),
+        "import a.b as a 的接收者应解析到 b.py, got {rev:?}"
+    );
+    assert!(
+        !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "import a.b as a 不得误指无关 a.py, got {rev:?}"
+    );
+}
+
+#[test]
+fn aliased_and_unaliased_same_binding_conflict_gives_up_edge() {
+    // 复审第十二轮残余(一致性面):`import a.b` 与 `import a.b as a` 绑定名
+    // 同为 a,但目标身份不同(包本体 a vs 末段 b)——别名与否须进目标一致性
+    // 检查,冲突即放弃,不按首条误指。
+    let zcaller = "import a.b\nimport a.b as a\n\ndef battle():\n    a.f()\n";
+    let bmod = "def f():\n    pass\n";
+    let amod = "def f():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let bk = key("scripts/b.py");
+    let ak = key("scripts/a.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&bk, bmod), (&ak, amod)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        !rev.get(&bk).map(|s| s.contains(&zk)).unwrap_or(false)
+            && !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "别名与否冲突的同名绑定应放弃该边, got {rev:?}"
+    );
+}
+
+#[test]
 fn rust7_cross_process_edge_marked_uncertain_not_silent() {
     // RUST-7:`self.cell.*`/`self.base.*` 跨进程边被调方文件无法静态解析
     // (实体类在另一进程侧文件里)。旧行为:落进 self.* 分支按「同类」折叠

@@ -205,12 +205,15 @@ fn resolve_callee_file(
                             return None;
                         }
                         // 同名多次 import 目标不同 = 目标身份冲突,静态不
-                        // 裁决 → 放弃(复审第十轮残余②)。
+                        // 裁决 → 放弃(复审第十/十二轮残余:别名与否同为
+                        // 目标身份,`import a.b` 与 `import a.b as a` 绑定
+                        // 名相同但目标不同,不得判一致)。
                         let first = hits[0];
                         let consistent = hits.iter().all(|t| {
                             t.is_from == first.is_from
                                 && t.module == first.module
                                 && t.symbol == first.symbol
+                                && t.aliased == first.aliased
                         });
                         if !consistent {
                             return None;
@@ -218,13 +221,15 @@ fn resolve_callee_file(
                         let base = if first.is_from {
                             // from pkg import x → 目标模块 basename=x(pkg/x.py)。
                             first.symbol.clone().unwrap_or_else(|| module.to_string())
-                        } else if first.binding == first.module.split('.').next().unwrap_or("") {
+                        } else if !first.aliased {
                             // 无别名 import a.b 绑定的是顶层包 a → basename=a
                             // (与函数层收集器同口径;复审第十轮残余①)。
                             first.module.split('.').next().unwrap_or("").to_string()
                         } else {
                             // 有别名 import a.b as c 绑定 c=a.b → basename=b
-                            // (复审第十一轮残余①)。
+                            // (复审第十一轮残余①;按显式别名标志判定,别名恰
+                            // 为首段名 `import a.b as a` 亦取末段,不误指 a.py
+                            // ——复审第十二轮残余)。
                             first.module.rsplit('.').next().unwrap_or("").to_string()
                         };
                         find_module_file(file_symbols, &base, caller_file)
