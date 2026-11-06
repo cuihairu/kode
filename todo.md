@@ -1214,7 +1214,7 @@
 - [x] KR-AUD-46 [P3] RT-9 hotReload.ts:338 sendViaChannel accepted 即终态，与另一路径 applied digest 核验语义不一致（轻核）。验收：两路径状态语义对齐。(b1d19f4;取证推翻原判断——注解口两路径本就一致(只认 sent-unverified),真差异=通道 accepted 台账缺 HOT-003 注解 detail,已补 receipt.note 兜底)
 - [x] KR-AUD-47 [P3] RT-10 hotReloadRetryCommand.ts sentAt 时点与 fire 路径不一致（原稿未逐行复核项，动手前先取证）。验收：统一语义+注释固化。(b1d19f4;真差异=通道核验窗口锚点在冻结读取之前被耗时吃掉——修为逐组紧贴 transport.send 取锚,红测试 onRecorded 推时钟判别,三次 mutation 验证旧锚变体全红)
 - [x] KR-AUD-48 [P3] RT-11 serverManager.ts:583,590 existsSync/statSync TOCTOU。验收：statSync 入 try 或单次 stat 判存在。（对账勾账：71496ec 修复已落 main）
-- [ ] KR-AUD-49 [P3] RT-12 telnetWebView.ts:365-404 插值未全转义+querySelector 拼接(:400)。验收：escapeHtml+CSS.escape。
+- [x] KR-AUD-49 [P3] RT-12 telnetWebView.ts:365-404 插值未全转义+querySelector 拼接(:400)。验收：escapeHtml+CSS.escape。（2026-11-07 对账勾账：取证确认修复已落 main——159d6261 完成双面修复：插值面 key/label/host/输出行全量 escapeHtml（telnetWebView.ts:233-295 各插值点），脚本面 querySelector 拼接改 `CSS.escape(entry.key)`（telnetWebView.ts:424-425，带选择器元字符注释）；判别测试 tests/webviewSecurity.test.ts:188-259「KR-AUD-49」专属块 2 例——恶意 key/label/host 配置不产生标签+closed 指引转义+断言 CSS.escape 存在+nonce CSP，16/16 绿。）
 - [x] KR-AUD-50 [P3] RT-13 monitoring/log/telnet/entityDependency/entityFlow 五 webview 均无 CSP。验收：最小 CSP 或 nonce（与 08/38/43 一批统一做）。（对账勾账：2491152 修复已落 main）
 - [x] KR-AUD-51 [P3] RT-14 telnetClient.ts:141-243 connect 无超时。验收：socket 超时+destroy。（对账勾账：c4513fa 修复已落 main）
 - [x] KR-AUD-52 [P3] RT-15 quickActions.ts:177-190 存活终端复用语义需明确+Windows `%`→`%%`。验收：复用语义注释固化+Windows 分支转义。（对账勾账：2b1b0ef 修复已落 main）
