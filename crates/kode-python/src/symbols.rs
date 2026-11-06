@@ -34,7 +34,7 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
         classes: Vec::new(),
         functions: Vec::new(),
         imports: Vec::new(),
-        import_bindings: Vec::new(),
+        function_import_bindings: Default::default(),
     };
     let mut all_bindings = ImportBindingCollector::default();
     for stmt in &ast.module().body {
@@ -84,12 +84,7 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
             _ => {}
         }
     }
-    out.import_bindings = {
-        let mut b = all_bindings.bindings;
-        b.sort();
-        b.dedup();
-        b
-    };
+    out.function_import_bindings = all_bindings.bindings;
     out
 }
 
@@ -99,43 +94,58 @@ fn top_level_binding(name: &str) -> String {
     name.split('.').next().unwrap_or(name).to_string()
 }
 
-/// 全作用域 import 绑定收集器(ruff visitor 递归进函数/类/分支体)。
-/// 与顶层 `imports` 表互补:顶层表是语义面(既有消费面口径),本收集器
-/// 只服务调用图「调用方绑定过该名」核验,不区分作用域有效性(Python
-/// 函数内 import 绑定也是真绑定,宁可多收——多收只影响解析闸的放行面,
-/// 放行后仍有 basename 唯一性核验兜底)。
+/// 函数作用域 import 绑定收集器(ruff visitor 递归,带函数栈)。
+/// 与顶层 `imports` 表互补:顶层表是语义面(模块级绑定全文件可见),
+/// 本收集器把函数/类/分支体内的 import 绑定按「可见作用域」归属——
+/// 记到当前栈上每一层函数名(闭包捕获语义:内层 import 外层函数也能
+/// 看到)。键与 CallEdge.caller 同口径(嵌套 def 以自身名、类方法以
+/// 方法名),供调用图接收者解析按调用点作用域核验。
 #[derive(Default)]
 struct ImportBindingCollector {
-    bindings: Vec<String>,
+    /// 当前函数栈(外层在前;空栈=模块顶层,顶层绑定走 imports 表)。
+    function_stack: Vec<String>,
+    bindings: std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
 }
 
 impl ImportBindingCollector {
-    fn push_import(&mut self, module: &str, asname: Option<&ast::Identifier>) {
-        let binding = asname
-            .map(|n| n.as_str().to_string())
-            .unwrap_or_else(|| top_level_binding(module));
-        self.bindings.push(binding);
+    fn push_binding(&mut self, binding: String) {
+        for name in &self.function_stack {
+            self.bindings
+                .entry(name.clone())
+                .or_default()
+                .insert(binding.clone());
+        }
     }
 }
 
 impl ast::visitor::Visitor<'_> for ImportBindingCollector {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         match stmt {
+            Stmt::FunctionDef(f) => {
+                self.function_stack.push(f.name.as_str().to_string());
+                ast::visitor::walk_stmt(self, stmt);
+                self.function_stack.pop();
+                return;
+            }
             Stmt::Import(imp) => {
                 for alias in &imp.names {
-                    self.push_import(alias.name.as_str(), alias.asname.as_ref());
+                    let binding = alias
+                        .asname
+                        .as_ref()
+                        .map(|n| n.as_str().to_string())
+                        .unwrap_or_else(|| top_level_binding(alias.name.as_str()));
+                    self.push_binding(binding);
                 }
             }
             Stmt::ImportFrom(impf) => {
                 for alias in &impf.names {
-                    // `from pkg import x` 绑定名是 `x`(无 asname 时);它是
-                    // 模块属性绑定,调用图接收者核验按绑定名匹配即可。
+                    // `from pkg import x` 的绑定名就是 `x`(无 asname 时)。
                     let binding = alias
                         .asname
                         .as_ref()
                         .map(|n| n.as_str().to_string())
                         .unwrap_or_else(|| alias.name.as_str().to_string());
-                    self.bindings.push(binding);
+                    self.push_binding(binding);
                 }
             }
             _ => {}

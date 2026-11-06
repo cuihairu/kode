@@ -137,13 +137,21 @@ fn resolve_callee_file(
     // 模块绑定接收者:`module.func` → 按模块名找文件(排除调用方自身)。
     // KODE-AUD-008 复审残余:接收者首段也可能是实例变量(`avatar.heal()`,
     // avatar 是局部对象而非模块)——不经 import 绑定核验就按 basename 找
-    // 文件,会把唯一同名文件误指为被调方(伪跨文件边)。调用方未绑定该名
-    // → 静态不可解析,宁缺毋滥不产边。绑定核验用全作用域 import 绑定
-    // (函数内 `import avatar` 也是真绑定;复审第二轮残余)。
+    // 文件,会把唯一同名文件误指为被调方(伪跨文件边)。绑定核验按调用点
+    // 可见作用域:模块顶层绑定(imports 表,全文件可见)+调用方函数自身
+    // 子树的 import(函数内 `import avatar` 也是真绑定;文件级合并会让
+    // 无关函数的导入为实例接收者作保,复审第三轮残余)。未绑定 → 静态
+    // 不可解析,宁缺毋滥不产边。
     if let Some(module) = receiver.split('.').next() {
         let imported = file_symbols
             .get(caller_file)
-            .map(|s| s.import_bindings.iter().any(|b| b == module))
+            .map(|s| {
+                s.imports.iter().any(|i| i.binding == module)
+                    || s.function_import_bindings
+                        .get(&edge.caller)
+                        .map(|b| b.contains(module))
+                        .unwrap_or(false)
+            })
             .unwrap_or(false);
         if imported {
             return find_module_file(file_symbols, module, caller_file);

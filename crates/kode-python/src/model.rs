@@ -20,13 +20,15 @@ pub struct AstSymbols {
     /// 模块级函数(`def` 不在类内)。
     pub functions: Vec<AstFunction>,
     /// `import` / `from ... import ...` 绑定(仅模块顶层,语义表,与既有
-    /// 消费面口径一致)。
+    /// 消费面口径一致)。模块顶层绑定对全文件可见。
     pub imports: Vec<AstImport>,
-    /// 全作用域 import 绑定名(顶层+函数/类/分支体内,排序去重;含 asname)。
-    /// 供调用图跨文件解析做「调用方绑定过该名」核验——函数内 `import x`
-    /// 也是真绑定,顶层表收不到。不含 from-import 的 symbol 名(那是
-    /// 函数绑定,不是模块绑定)。
-    pub import_bindings: Vec<String>,
+    /// 函数作用域 import 绑定:键=外层函数名(CallEdge.caller 同口径——
+    /// 嵌套 def 以自身名、类方法以方法名),值=该函数子树内 import 的绑定
+    /// 名(含嵌套 def/分支体,排序去重;闭包可捕获外层,故同时记到栈上每
+    /// 一层函数名)。供调用图接收者解析做「调用点可见作用域绑定过该名」
+    /// 核验——只看顶层表漏函数内导入,文件级合并又会让无关函数的导入
+    /// 为实例接收者作保(复审第三轮残余)。
+    pub function_import_bindings: std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
 }
 
 /// 类声明(AST 级)。
