@@ -1,9 +1,10 @@
 /**
  * 项目 profile 的 Python 解释器来源(IDE-PRJ-004):profile 明确记录用哪个
  * 解释器、来自哪里。解析链:显式设置 kbengine.python.interpreterPath(存在
- * 才采用,支持 ${workspaceFolder})→ 工作区 venv 自动发现(kbengine.python.
- * interpreterPath 为空时,按同一目录名清单在 workspaceRoot 找 bin/python,
- * PY-ENV;比裸 PATH python 更贴近项目意图)→ PATH 里的 python3/python → 都
+ * 才采用,支持 ${workspaceFolder})→ 工作区环境深扫(kbengine.python.
+ * interpreterPath 为空时,venvDiscovery 按 pyvenv.cfg/conda-meta 证据 +
+ * 解释器二进制验真,深度封顶剪枝;目录名清单作同深度优先提示,PY-ENV;
+ * 比裸 PATH python 更贴近项目意图)→ PATH 里的 python3/python → 都
  * 找不到记缺失状态(不伪造路径)。来源四值:setting/venv/path/missing,随
  * 路径一并落进 profile 记录;显示面 describeInterpreterState 把缺失状态
  * 明说。
@@ -16,6 +17,7 @@ import {
   DEFAULT_VENV_DIRECTORY_NAMES,
   normalizeVenvDirectoryNames
 } from './quickActionConfig';
+import { scanVenvs } from './venvDiscovery';
 
 export type InterpreterSource = 'setting' | 'venv' | 'path' | 'missing';
 
@@ -114,17 +116,17 @@ export function resolveInterpreterWith(inputs: InterpreterResolutionInputs): Int
       return { interpreterPath: expanded, interpreterSource: 'setting' };
     }
   }
-  // PY-ENV:设置为空(或设置失效)时,在 workspaceRoot 内按同一目录名清单
-  // 自动发现 venv 解释器;置于 PATH 之前——工作区 venv 比裸 PATH python 更
-  // 贴近项目意图。来源如实记 venv,不伪造路径。
+  // PY-ENV 二期:设置为空(或设置失效)时,深扫 workspaceRoot 下的环境
+  // (pyvenv.cfg/conda-meta 证据 + 解释器二进制验真,深度封顶剪枝;venv
+  // 目录名清单作同深度优先级提示);置于 PATH 之前——工作区 venv 比裸 PATH
+  // python 更贴近项目意图。来源如实记 venv,不伪造路径。
   if (inputs.workspaceRoot) {
-    const venv = locateVenvInterpreter(
-      inputs.workspaceRoot,
-      inputs.venvDirectoryNames ?? [...DEFAULT_VENV_DIRECTORY_NAMES],
-      inputs.platform
-    );
-    if (venv) {
-      return { interpreterPath: venv, interpreterSource: 'venv' };
+    const scanned = scanVenvs(inputs.workspaceRoot, {
+      platform: inputs.platform,
+      preferredNames: inputs.venvDirectoryNames ?? [...DEFAULT_VENV_DIRECTORY_NAMES]
+    });
+    if (scanned.length > 0) {
+      return { interpreterPath: scanned[0].interpreterPath, interpreterSource: 'venv' };
     }
   }
   const onPath = locateInterpreterOnPath(inputs.pathEnv, inputs.platform);
