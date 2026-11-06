@@ -11,6 +11,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+// 路径模板渲染单一真源(与手工输入链 definitionWorkspace.resolveWorkspacePath 同源)
+import { renderPathTemplate } from './workspacePath';
 
 /** 约定路径(与 getDefinitionWorkspaceLayout 的候选同源,深扫描只作兜底) */
 export const DISCOVERY_CONVENTIONS = {
@@ -869,9 +871,15 @@ export function buildDiscoveryReport(
   };
 }
 
-/** 解析配置原值:支持 ${workspaceFolder} 占位与相对路径 */
-function resolveAgainstWorkspace(workspaceRoot: string, value: string): string {
-  const withWorkspace = value.replace(/\$\{workspaceFolder\}/g, workspaceRoot);
+/**
+ * 解析配置原值:先经 renderPathTemplate(单一真源)渲染 `${workspaceFolder}` 等
+ * 占位,再按既有口径锚定(相对 → 工作区根)。
+ *
+ * 导出仅为 tests/pathTemplateEquivalence.test.ts 的两链等价断言:本发现链与
+ * 手工输入链 definitionWorkspace.resolveWorkspacePath 对同一输入必须同输出。
+ */
+export function resolveAgainstWorkspace(workspaceRoot: string, value: string): string {
+  const withWorkspace = renderPathTemplate(value, workspaceRoot);
   return path.isAbsolute(withWorkspace) ? withWorkspace : path.join(workspaceRoot, withWorkspace);
 }
 

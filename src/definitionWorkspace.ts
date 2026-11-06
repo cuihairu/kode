@@ -33,6 +33,8 @@ import {
   ENTITIES_XML_SECTION_CLIENT_SERVER,
   ENTITIES_XML_SECTION_SERVER_ONLY
 } from './entitiesXmlAnalysis';
+// 路径模板渲染单一真源(与发现链 workspaceDiscovery.resolveAgainstWorkspace 同源)
+import { renderPathTemplate } from './workspacePath';
 
 export type DefinitionCategory = 'type' | 'entity' | 'interface' | 'component';
 
@@ -1274,11 +1276,17 @@ function buildWorkspaceCandidates(
 }
 
 function resolveWorkspacePath(workspaceRoot: string, candidatePath: string): string {
-  if (path.isAbsolute(candidatePath)) {
-    return candidatePath;
+  // 先经 renderPathTemplate 单一真源渲染 ${workspaceFolder} 等占位,再按既有
+  // 口径锚定。此前这里不渲染:配置值 `${workspaceFolder}/scripts/entity_defs`
+  // 不是绝对路径 → 被字面拼成 `<root>/${workspaceFolder}/scripts/entity_defs`
+  // (必然不存在),def 根回落到这个错位路径,与发现链同输入的结论不一致
+  // (两链等价性由 tests/pathTemplateEquivalence.test.ts 锁定)。
+  const rendered = renderPathTemplate(candidatePath, workspaceRoot);
+  if (path.isAbsolute(rendered)) {
+    return rendered;
   }
 
-  return joinWorkspacePath(workspaceRoot, candidatePath);
+  return joinWorkspacePath(workspaceRoot, rendered);
 }
 
 function joinWorkspacePath(basePath: string, ...segments: string[]): string {

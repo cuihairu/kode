@@ -42,6 +42,25 @@ export function pathApiFor(samplePath: string): path.PlatformPath {
 }
 
 /**
+ * 路径模板渲染单一真源(委派 src/variableSubstitution 的官方变量表):
+ * `${workspaceFolder}`、`${env:...}` 等占位 → 渲染后的纯文本,**不含任何
+ * join/锚定**——锚到工作区根仍由各链自己的路径口径负责。
+ *
+ * 两链同用本函数,同输入必须同输出(等价性由 tests/pathTemplateEquivalence
+ * .test.ts 锁定):
+ * - 手工输入链 definitionWorkspace.resolveWorkspacePath(kbengine.entityDefsPath
+ *   等配置项 → layout 候选)
+ * - 发现链 workspaceDiscovery.resolveAgainstWorkspace(诊断报告的显式配置盘点)
+ * 此前手工链漏渲染,配置里的 `${workspaceFolder}/...` 被当相对路径字面拼进
+ * def 根(`<root>/${workspaceFolder}/scripts/entity_defs`,必然不存在),与发现链
+ * 结论不一致 → def 根定位错位。
+ */
+export function renderPathTemplate(value: string, workspaceRoot: string): string {
+  const folders: VariableFolderRef[] = [{ fsPath: workspaceRoot, name: '' }];
+  return substituteVariables(value, { folders });
+}
+
+/**
  * 展开 VS Code 官方变量(批141 起委派 src/variableSubstitution,替换逻辑
  * 单一真源;与 serverManager.getBinPath 同款口径,批112 起 telnet 引擎
  * defaults 推导与最终配置合成共用此实现)。
@@ -54,10 +73,9 @@ export function expandWorkspacePlaceholders(
   value: string,
   workspaceRoot: string | undefined
 ): string {
-  const folders: VariableFolderRef[] = workspaceRoot
-    ? [{ fsPath: workspaceRoot, name: '' }]
-    : [];
-  const resolved = substituteVariables(value, { folders });
+  const resolved = workspaceRoot
+    ? renderPathTemplate(value, workspaceRoot)
+    : substituteVariables(value, { folders: [] });
   if (resolved.length === 0 || path.isAbsolute(resolved)) {
     return resolved;
   }
