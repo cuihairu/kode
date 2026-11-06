@@ -26,6 +26,7 @@ import {
   isKeyInsideLineComment,
   normalizeKeySignature,
   queryDataDictSitesForAccess,
+  REBUILD_SCAN_CONCURRENCY,
   replaceFileSitesSliced,
   resolveFunctionReturns
 } from '../src/globalDataIndex';
@@ -3036,6 +3037,57 @@ describe('GLOBDATA-003 函数调用键 provider 导航(定义/引用)', () => {
         expect(files).toEqual(['reader.py', 'writer.py']);
       });
     } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('KR-AUD-35 rebuild 并发上限(IDX-11)', () => {
+  it('invalidate→rebuild 读盘并发不超过常量上限且索引完整', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdi-kraud35-'));
+    const files: string[] = [];
+    for (let i = 0; i < 24; i++) {
+      const f = path.join(root, `mod${i}.py`);
+      fs.writeFileSync(f, `import KBEngine\nKBEngine.globalData["k${i}"] = {"gold": ${i}}\n`);
+      files.push(f);
+    }
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => files.map(f => vscode.Uri.file(f));
+    let inflight = 0;
+    let peak = 0;
+    const completed = new Set<string>();
+    vscode.workspace.fs.readFile = async uri => {
+      inflight++;
+      peak = Math.max(peak, inflight);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      const data = fs.readFileSync(uri.fsPath);
+      inflight--;
+      completed.add(uri.fsPath);
+      return data;
+    };
+    const index = new GlobalDataDictIndex();
+    try {
+      index.invalidate();
+      const deadline = Date.now() + 10_000;
+      while ((completed.size < files.length || inflight > 0) && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      expect(completed.size).toBe(files.length);
+      // rebuild 真完成:全部 24 键站点可查(防空转假绿)
+      for (let i = 0; i < files.length; i++) {
+        const text = `KBEngine.globalData["k${i}"]`;
+        const accesses = findKbeDataDictAccesses(text, KBE);
+        expect(accesses).toHaveLength(1);
+        const sites = queryDataDictSitesForAccess(index, accesses[0]);
+        expect(sites.map(s => s.file)).toContain(files[i]);
+      }
+      expect(peak).toBeGreaterThan(1);
+      expect(peak).toBeLessThanOrEqual(REBUILD_SCAN_CONCURRENCY);
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
       fs.rmSync(root, { recursive: true, force: true });
     }
   });

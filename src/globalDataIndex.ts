@@ -1465,7 +1465,8 @@ export async function replaceFileSitesSliced(
   return { sliceCount, maxSliceMs };
 }
 
-const INITIAL_SCAN_CONCURRENCY = 8;
+export const INITIAL_SCAN_CONCURRENCY = 8;
+export const REBUILD_SCAN_CONCURRENCY = 8;
 
 /** 单文件的索引缓存项:访问记录 + 该文件调用键引用的函数名集(依赖追踪) */
 interface FileIndexEntry {
@@ -2080,7 +2081,16 @@ export class GlobalDataDictIndex {
     if (this.disposed || this.generation !== generation) {
       return;
     }
-    await Promise.all(files.map(uri => this.indexFile(uri)));
+    // KR-AUD-35:有界并发 worker 池(与初扫 INITIAL_SCAN_CONCURRENCY 同口径)——
+    // 原 Promise.all(files.map(indexFile)) 无界,大库 invalidate 一次性打满
+    // 数千 readFile。循环头复核 generation(与初扫 KR-AUD-29 同口径)。
+    let nextFile = 0;
+    const rebuildWorker = async (): Promise<void> => {
+      while (!this.disposed && this.generation === generation && nextFile < files.length) {
+        await this.indexFile(files[nextFile++]);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(REBUILD_SCAN_CONCURRENCY, files.length) }, rebuildWorker));
     await this.drainPendingDependents();
   }
 
