@@ -96,10 +96,14 @@
 
 - **P2 ×1 · 一致性检查误用 aliased 标志为目标身份**：第 12 轮把 `t.aliased == first.aliased` 加进顶层 imports 一致性检查，但别名与否不是目标身份——`from p import x` 与 `from p import x as x`（绑定名同 x、目标同 p.x）、`import a` 与 `import a as a`（目标同 a）被判冲突放弃，新增漏边。修（22794ef7）：一致性检查改按解析后目标 basename 判（resolve_base 闭包：from=symbol、无别名=首段、有别名=末段，与回退取段同口径）——同目标不同写法不再误放弃，`import a.b` vs `import a.b as a`（解析后 a vs b）仍冲突放弃，回退取段复用同一闭包不再分叉。红证=graph_test.rs `same_target_import_with_and_without_alias_keeps_edge`（修前红：真边被弃；stash src 实测 28 过 1 败）；既有 `aliased_and_unaliased_same_binding_conflict_gives_up_edge` 保持绿（冲突面不回退）；门禁=graph_test 29/29、kode-python 全绿、workspace 全量 cargo test 0 failed、clippy --workspace --all-targets 0。todo AUD-008 勾账行已补注。
 
-## 本日复跑数字（起核 HEAD e7af5cba → 返工后 HEAD 22794ef7，0 failed）
+## 返工（codex luna 第十四轮 FAIL 项）
+
+- **P1 ×1 · basename 相同不等于目标身份相同**：第 13 轮一致性改按 resolve_base basename 判后，`import a.a`（身份=包 a）与 `import a.a as a`（身份=模块 a.a）查找 basename 同为 a 被判一致、按首条指向唯一 a.py 产伪边。修（3eb96406）：一致性改按**实际目标身份**判（resolve_target：from=(level,module,symbol)；无别名普通 import=顶层首段身份；有别名=全段身份），文件查找仍用 resolve_base basename（身份口径与查找口径分离）；AstImport 增 `level: u32`（from 相对层级，不同层级同名目标 `.x.y`/`..x.y` 不混同）。红证=graph_test.rs `conflicting_target_identity_same_basename_gives_up_edge`（修前红：伪边在产；stash src 实测 31 过 1 败）；另补 from 面 `same_target_import_with_and_without_alias_keeps_edge` 的对偶正向用例 `same_target_from_import_with_and_without_alias_keeps_edge` 与层级面 `different_relative_level_from_import_gives_up_edge`（覆盖性加固，修前亦绿，非红证）；既有 13 轮 `same_target_import_with_and_without_alias_keeps_edge`、12 轮冲突面测试全保持绿；门禁=graph_test 32/32、kode-python 全绿、workspace 全量 cargo test 0 failed、clippy --workspace --all-targets 0。todo AUD-008 勾账行已补注。
+
+## 本日复跑数字（起核 HEAD e7af5cba → 返工后 HEAD 3eb96406，0 failed）
 
 - vitest：9 文件 266 过（e7af5cba）→ 复跑 267 过（8c2b7411 前身，含 KR-AUD-35 新用例）0 败（cov-debug-process/serverManager/processTopologyFlush/defPythonParity/hotReloadTargetState/selfAttributeFlowTypes=132 批次；globalDataIndex/workspaceIndexColdYield/workspaceEventIndex=134 批次）。
-- cargo：kode-server（process_topology_units 31 / def_md5_units 12 / dependency_graph_dispatch 2 / lint_rules 19 / flag_domains_golden 5）+ kode-parser parser_units 19 + kode-python（callgraph 12 / dataflow 17 / graph 29 / symbols 7 / lib 3）+ kode-scheduler 14，全 0 failed。
+- cargo：kode-server（process_topology_units 31 / def_md5_units 12 / dependency_graph_dispatch 2 / lint_rules 19 / flag_domains_golden 5）+ kode-parser parser_units 19 + kode-python（callgraph 12 / dataflow 17 / graph 32 / symbols 7 / lib 3）+ kode-scheduler 14，全 0 failed。
 
 ## 记账说明
 
@@ -111,6 +115,8 @@ b9edefd1 → 行序裁决不完备定版保守歧义契约 f3276040 → 回退�
 函数层 from-import 目标 id 冲突两例 ad9a2c7c → 回退别名判定近似
 （import a.b as a 误指）AstImport 增显式别名标志 16ad72e8 → 一致性
 检查改按解析后目标 basename 判（aliased 标志非目标身份,同目标
-别名/无别名重复 import 不弃边）22794ef7）已修并在 AUD-008 勾账行补证据，AUD-006
+别名/无别名重复 import 不弃边）22794ef7 → 一致性改按实际目标
+身份判（basename 同≠身份同,a.a vs a.a as a 弃边）+AstImport 增
+level、身份口径与查找口径分离 3eb96406）已修并在 AUD-008 勾账行补证据，AUD-006
 勾账行补口径注明（静默截断，无环专项诊断）。报告 v1 的三处表述（14 计数口径、
 debugpy/py-spy commit 归因、workspaceIndex :304 漂移）已按复审意见改到本版。
