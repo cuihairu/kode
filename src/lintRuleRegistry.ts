@@ -222,6 +222,14 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     trigger: '实时(open/edit)', quickFix: false,
     status: 'implemented', source: 'src/configContractDiagnostics.ts'
   },
+  {
+    id: 'KBE-CFG-006', code: 'kbengine.configContract.extraPathsAbsolute',
+    title: 'extraPaths 绝对路径条目(应为 ${workspaceFolder}/... 变量形态,CFG-02)',
+    severity: 'Warning', roles: '工作区配置(.vscode/settings.json)',
+    toggles: ['kbengine.configContractDiagnostics'],
+    trigger: '实时(open/edit)', quickFix: false,
+    status: 'implemented', source: 'src/configContractDiagnostics.ts'
+  },
   // ── def 按需分析(implemented,非实时)────────────────────────────
   {
     id: 'KBE-DEF-004', code: 'phantom-type',

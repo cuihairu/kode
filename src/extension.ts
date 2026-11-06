@@ -1532,8 +1532,14 @@ export function activate(context: vscode.ExtensionContext) {
           ? { exists: true, text: readIfExists('.kbengine/debug.json') }
           : { exists: false },
         extraPaths,
-        // 相对条目按工作区根解析(与 Pylance 的根基准语义一致);存在性注入
-        extraPathExists: (entry) => fs.existsSync(path.resolve(root, entry)),
+        // 相对条目按工作区根解析(与 Pylance 的根基准语义一致);CFG-02 起
+        // 生成面写 ${workspaceFolder}/... 变量形态,先展开前缀再解析
+        extraPathExists: (entry) => {
+          const relative = entry.startsWith('${workspaceFolder}')
+            ? entry.slice('${workspaceFolder}'.length).replace(/^[\\/]+/, '')
+            : entry;
+          return fs.existsSync(path.resolve(root, relative));
+        },
         gitignore: fs.existsSync(path.join(root, '.gitignore'))
           ? { exists: true, text: readIfExists('.gitignore') }
           : { exists: false },

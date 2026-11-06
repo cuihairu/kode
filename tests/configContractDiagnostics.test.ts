@@ -11,7 +11,8 @@
 // 验收断言:
 //   - debug.json:components 空/缺、已知组件 telnet 端口缺失或偏离已知默认、
 //     telnet 段整段被注释(JSONC 文本层检出)、telnetPassword 与文档声明冲突;
-//   - extraPaths:含 ../.. 双层上跳、指向不存在目录;
+//   - extraPaths:含 ../.. 双层上跳、指向不存在目录、绝对路径条目
+//     (CFG-02:生成面已改 ${workspaceFolder} 变量形态,绝对路径=不可移植);
 //   - .gitignore 缺 .kbengine/ 条目;
 //   - CLAUDE.md/README 声明的密码/端口与 debug.json 实值冲突;
 //   - 干净工作区零产出;开关关闭零产出。
@@ -152,6 +153,38 @@ describe('配置契约检查:extraPaths', () => {
       extraPathExists: undefined
     }));
     expect(findings).toHaveLength(0);
+  });
+
+  it('绝对路径条目报 extraPathsAbsolute(CFG-02:变量形态才可移植)', () => {
+    const findings = computeConfigContractFindings(cleanInput({
+      extraPaths: ['/home/u/proj/scripts', 'C:\\kbengine\\libs']
+    }));
+    expect(findings).toHaveLength(2);
+    for (const entry of findings) {
+      expect(entry.code).toBe('kbengine.configContract.extraPathsAbsolute');
+      expect(entry.file).toBe('settings.json');
+      expect(entry.severity).toBe('Warning');
+      // 中英双语 + 指向 ${workspaceFolder} 修复形态
+      expect(entry.message).toContain('${workspaceFolder}');
+      expect(entry.message).toContain('English');
+    }
+    expect(findings[0].message).toContain('/home/u/proj/scripts');
+    expect(findings[1].message).toContain('C:\\kbengine\\libs');
+  });
+
+  it('${workspaceFolder} 变量形态与相对路径不报 absolute', () => {
+    const codes = codesOf(cleanInput({
+      extraPaths: ['${workspaceFolder}/scripts', '${workspaceFolder}/.kbengine/stubs', '../kbe/typings']
+    }));
+    expect(codes).toEqual([]);
+  });
+
+  it('绝对路径条目根因一条:不再叠加 missing-dir 检查', () => {
+    const findings = computeConfigContractFindings(cleanInput({
+      extraPaths: ['/no/such/dir'],
+      extraPathExists: () => false
+    }));
+    expect(findings.map(f => f.code)).toEqual(['kbengine.configContract.extraPathsAbsolute']);
   });
 });
 

@@ -11,6 +11,10 @@
  * 写入走带资源域的 `getConfiguration('python', folder).update(...)`(本仓
  * @types/vscode 尚无 updateWorkspaceConfiguration);只管理自己那一段——
  * 上次写入的集合记在 workspaceState,再同步先剔除它,用户手填的路径永不被动。
+ *
+ * CFG-02:生成的条目一律 `${workspaceFolder}/...` 变量形态(换机器/换盘符
+ * 不失效),存量绝对路径带工作区前缀的在下次同步时自动迁移,不可迁移的
+ * 绝对路径由配置契约诊断 extraPathsAbsolute 报。
  */
 
 import * as fs from 'fs';
@@ -33,6 +37,34 @@ export const PYTHON_EXTRA_PATHS_SETTING = 'python.analysis.extraPaths';
 export const PYTHON_EXTRA_PATHS_MANAGED_KEY = 'kbengine.python.extraPaths.managed';
 /** 同步开关(kbengine.python.extraPathsSync,默认开) */
 export const PYTHON_EXTRA_PATHS_SYNC_ENABLED_DEFAULT = true;
+/** VS Code 工作区变量前缀(CFG-02:生成面一律变量形态,工作区可移植) */
+export const WORKSPACE_FOLDER_VAR = '${workspaceFolder}';
+
+/**
+ * 存量绝对路径 → `${workspaceFolder}` 变量形态(CFG-02)。只有前缀=工作区根
+ * 才可替换(Windows 盘符根大小写不敏感、`\` 与 `/` 分隔符等价),否则原样
+ * 透传——不可迁移的绝对路径留给配置契约诊断 extraPathsAbsolute 报。
+ */
+export function toWorkspaceFolderVar(candidate: string, workspaceRoot: string): string {
+  if (candidate === '' || workspaceRoot === '') {
+    return candidate;
+  }
+  const normalized = candidate.replace(/\\/g, '/');
+  const root = workspaceRoot.replace(/\\/g, '/').replace(/\/+$/, '');
+  if (root === '') {
+    return candidate;
+  }
+  const caseInsensitive = /^[A-Za-z]:/.test(root);
+  const left = caseInsensitive ? normalized.toLowerCase() : normalized;
+  const right = caseInsensitive ? root.toLowerCase() : root;
+  if (left === right) {
+    return WORKSPACE_FOLDER_VAR;
+  }
+  if (left.startsWith(`${right}/`)) {
+    return `${WORKSPACE_FOLDER_VAR}/${normalized.slice(root.length + 1)}`;
+  }
+  return candidate;
+}
 
 export interface PythonScriptRootDeps {
   /** 路径存在性判定(测试注入,装配层为 fs.existsSync) */
@@ -112,12 +144,16 @@ export function pythonScriptRootCandidates(
 }
 
 export function planPythonExtraPaths(input: PythonExtraPathsPlanInput): PythonExtraPathsPlan {
-  const current = uniquePaths(input.currentPaths.map(normalizeExtraPath));
-  const managedBefore = uniquePaths((input.previouslyManaged ?? []).map(normalizeExtraPath));
+  const toVar = (candidate: string): string => toWorkspaceFolderVar(candidate, input.workspaceRoot);
+  // 现值原形态留作 changed 基准:存量绝对路径→变量形态的迁移本身就算变化
+  const rawCurrent = uniquePaths(input.currentPaths.map(normalizeExtraPath));
+  const current = uniquePaths(rawCurrent.map(toVar));
+  const managedBefore = uniquePaths((input.previouslyManaged ?? []).map(candidate => toVar(normalizeExtraPath(candidate))));
   const userPaths = current.filter(candidate => !managedBefore.includes(candidate));
   // IDE-PRJ-006 角色隔离闸:管理段经每个发现的 scripts 根逐个过闸,角色
   // 目录(base/cell)剥出合并列表——scripts/base 与 scripts/cell 的同名模块
   // 不会因 extraPaths 顺序跨角色误解析;用户手填段不经闸(只管自己那段)。
+  // 隔离闸在绝对路径形态上比对(角色根按磁盘路径解析),写回前统一转变量形态。
   let managedPaths = uniquePaths([
     ...pythonScriptRootCandidates(input.workspaceRoot, input.deps),
     ...(input.extraManaged ?? [])
@@ -128,10 +164,11 @@ export function planPythonExtraPaths(input: PythonExtraPathsPlanInput): PythonEx
     managedPaths = kept;
     isolatedRoleRoots.push(...removedRoleRoots);
   }
-  const nextPaths = uniquePaths([...userPaths, ...managedPaths]);
-  const sameLength = nextPaths.length === current.length;
-  const changed = !sameLength || nextPaths.some((candidate, index) => candidate !== current[index]);
-  return { nextPaths, managedPaths, changed, isolatedRoleRoots };
+  const managedVar = uniquePaths(managedPaths.map(toVar));
+  const nextPaths = uniquePaths([...userPaths, ...managedVar]);
+  const sameLength = nextPaths.length === rawCurrent.length;
+  const changed = !sameLength || nextPaths.some((candidate, index) => candidate !== rawCurrent[index]);
+  return { nextPaths, managedPaths: managedVar, changed, isolatedRoleRoots };
 }
 
 /** 装配层默认注入:真 fs 存在性判定与一级子目录列举 */
@@ -241,18 +278,17 @@ export async function syncPythonExtraPaths(
     if (plan.managedPaths.length === 0) {
       continue;
     }
-    if (!plan.changed) {
-      continue;
+    if (plan.changed) {
+      // 经带资源域的 update 写该文件夹自己的 .vscode/settings.json(JSONC 注释宿主保全)
+      await scoped.update(
+        'analysis.extraPaths',
+        plan.nextPaths,
+        vscode.ConfigurationTarget.WorkspaceFolder
+      );
+      // 极简装配上下文没有 workspaceState:写入照做,只是不记忆(下次按首次处理)
+      await context.workspaceState?.update(managedKey, plan.managedPaths);
+      written.push(folder.name);
     }
-    // 经带资源域的 update 写该文件夹自己的 .vscode/settings.json(JSONC 注释宿主保全)
-    await scoped.update(
-      'analysis.extraPaths',
-      plan.nextPaths,
-      vscode.ConfigurationTarget.WorkspaceFolder
-    );
-    // 极简装配上下文没有 workspaceState:写入照做,只是不记忆(下次按首次处理)
-    await context.workspaceState?.update(managedKey, plan.managedPaths);
-    written.push(folder.name);
   }
   if (written.length > 0 && !options.silent) {
     await vscode.window.showInformationMessage(

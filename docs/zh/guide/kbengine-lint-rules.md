@@ -46,6 +46,7 @@
 | KBE-CFG-003 | 工作区配置层:extraPaths 双层上跳(`../..`)或指向不存在目录 | 已有实时 Warning | `kbengine.configContract.extraPathsDoubleUp`；`configContractDiagnostics.ts` |
 | KBE-CFG-004 | 工作区配置层:.gitignore 缺 `.kbengine/` 托管目录条目 | 已有实时 Warning | `kbengine.configContract.gitignoreMissingKbengine`；`configContractDiagnostics.ts` |
 | KBE-CFG-005 | 工作区配置层:CLAUDE.md/README 声明的 telnet 密码/端口与 debug.json 实值冲突 | 已有实时 Warning | `kbengine.configContract.telnetPasswordDocConflict`；`configContractDiagnostics.ts` |
+| KBE-CFG-006 | 工作区配置层:extraPaths 绝对路径条目(应为 `${workspaceFolder}/...` 变量形态;生成面自动迁移工作区前缀可替换的存量,不可迁移的报此规则) | 已有实时 Warning | `kbengine.configContract.extraPathsAbsolute`；`configContractDiagnostics.ts` |
 
 ## EntityCall 判空：属性存在不代表另一端存在
 
