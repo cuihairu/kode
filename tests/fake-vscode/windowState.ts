@@ -19,7 +19,8 @@ const showTextDocumentCalls: Array<{ document: unknown; options?: unknown }> = [
 export const envState: { remoteName?: string; appName: string; language?: string } = {
   remoteName: undefined,
   appName: 'Visual Studio Code',
-  language: 'en'
+  // zh 默认:与 reset() 对齐,本仓库 webview 面板文案以 zh 为基线
+  language: 'zh-cn'
 };
 
 /** 经 vscodeStub 以 vscode.env 名义暴露(与 envState 同引用) */
@@ -183,6 +184,8 @@ export const windowState = {
     statusBars.length = 0;
     treeRegistrations.length = 0;
     envState.remoteName = undefined;
-    envState.language = 'en';
+    // zh 默认:本仓库面向 zh 用户,webview 面板文案以 zh 为基线;依赖 en 的
+    // 用例显式覆写 envState.language(与 vscode.env.language 真语义一致)。
+    envState.language = 'zh-cn';
   }
 };
