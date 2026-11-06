@@ -173,7 +173,10 @@ fn resolve_callee_file(
                         // import = 静态歧义,保守放弃。
                         (Some(_), Some(_)) => resolved = Some(None),
                         (Some(&(bl, ref base)), None) => {
-                            if edge.caller_line >= bl {
+                            // 空 basename = 目标身份冲突歧义标记。
+                            if base.is_empty() {
+                                resolved = Some(None);
+                            } else if edge.caller_line >= bl {
                                 resolved = Some(Some(base.clone()));
                             }
                         }
@@ -196,21 +199,31 @@ fn resolve_callee_file(
                         if s.module_shadows.contains_key(module) {
                             return None;
                         }
-                        let basename = s.imports.iter().find(|i| i.binding == module).map(
-                            |imp| {
-                                if imp.is_from {
-                                    imp.symbol
-                                        .clone()
-                                        .unwrap_or_else(|| module.to_string())
-                                } else {
-                                    imp.module.rsplit('.').next().unwrap_or("").to_string()
-                                }
-                            },
-                        );
-                        match basename {
-                            Some(base) => find_module_file(file_symbols, &base, caller_file),
-                            None => None,
+                        let hits: Vec<_> =
+                            s.imports.iter().filter(|i| i.binding == module).collect();
+                        if hits.is_empty() {
+                            return None;
                         }
+                        // 同名多次 import 目标不同 = 目标身份冲突,静态不
+                        // 裁决 → 放弃(复审第十轮残余②)。
+                        let first = hits[0];
+                        let consistent = hits.iter().all(|t| {
+                            t.is_from == first.is_from
+                                && t.module == first.module
+                                && t.symbol == first.symbol
+                        });
+                        if !consistent {
+                            return None;
+                        }
+                        let base = if first.is_from {
+                            // from pkg import x → 目标模块 basename=x(pkg/x.py)。
+                            first.symbol.clone().unwrap_or_else(|| module.to_string())
+                        } else {
+                            // 无别名 import a.b 绑定的是顶层包 a → basename=a
+                            // (与函数层收集器同口径;复审第十轮残余①)。
+                            first.module.split('.').next().unwrap_or("").to_string()
+                        };
+                        find_module_file(file_symbols, &base, caller_file)
                     }
                 }
             })

@@ -141,14 +141,17 @@ impl<'a> ImportBindingCollector<'a> {
         }
     }
 
-    fn push_binding(&mut self, binding: &str, line: usize, target_basename: &str) {
+    fn push_binding(&mut self, binding: &str, line: usize, basename: &str) {
         // 记到最内层作用域层,保留最近一次绑定(同作用域重绑定取后者;
         // 外层区间覆盖嵌套体,调用点行号包含判定实现闭包可见语义)。
+        // 同名多次 import 目标不同 = 目标身份冲突,静态不裁决 → 记空
+        // basename 歧义标记(解析层放弃该边;复审第十轮残余②)。
         if let Some(top) = self.scope_stack.last_mut() {
-            top.bindings
-                .insert(binding.to_string(), (line, target_basename.to_string()));
-        } else {
-            // 模块顶层 import 走 imports 语义表,此处不重复记。
+            let base = match top.bindings.get(binding) {
+                Some((_, existing)) if existing != basename => String::new(),
+                _ => basename.to_string(),
+            };
+            top.bindings.insert(binding.to_string(), (line, base));
         }
     }
 
