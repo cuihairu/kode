@@ -305,6 +305,37 @@ describe('runHotReloadRetryCommand(IDE-REV-026)', () => {
     expect(h.blocks[0]).toContain('没有可重试的目标');
     expect(h.shownCount()).toBe(1);
   });
+
+  it('响应批含发送基准冻结后追加的文件(异常回包):不崩溃,回落保持未确认且不中断批内后续核验', async () => {
+    const h = seedCommandHarness(store => {
+      store.record(KEY_BAD, FILE_A, 'failed', { detail: 'HTTP 500' });
+    });
+    // 制造「响应时批内多出发送基准冻结后追加的文件」:files() 返回活数组,
+    // 基准冻结后把 FILE_B 插入批首,响应迭代先遇它而 baselineReads 无该键
+    // ——旧实现对 undefined 取 .then 抛 TypeError 中断整批复核,修复后回落注解。
+    const live: string[] = [FILE_A];
+    (h.store as unknown as { files: (k: HotReloadTargetKey) => string[] }).files = () => live;
+
+    let captured: ((r: HotReloadHttpResponse) => void) | undefined;
+    h.runAction.mockImplementation(
+      async (_a: string, sendOptions?: { onHttpResponse?: (r: HotReloadHttpResponse) => void }) => {
+        captured = sendOptions?.onHttpResponse;
+        return true;
+      }
+    );
+
+    await h.command();
+    expect(captured).toBeDefined();
+
+    live.unshift(FILE_B);
+    captured!({ status: 200, body: 'applied-receipt' });
+
+    // 缺基准文件回落「保持未确认」而非崩溃,注解如实
+    expect(h.store.get(KEY_BAD, FILE_B)?.outcome).toBe('sent-unverified');
+    expect(h.store.get(KEY_BAD, FILE_B)?.detail).toContain('发送批无该文件基准');
+    // 批处理未中断:批内既有基准文件仍完成核验(不因缺基准文件抛错跳过)
+    expect(h.store.get(KEY_BAD, FILE_A)?.outcome).not.toBe('failed');
+  });
 });
 
 describe('resendHotReloadTarget(单目标重发器)', () => {

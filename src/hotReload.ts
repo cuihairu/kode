@@ -447,32 +447,46 @@ export function setupHotReload(
               if (!baselineReader) {
                 noteStillUnverified(wiring, key, file, 'applied 核验阻塞:无内容读取通道,digest 无基准', attempt);
               } else {
-                void baselineReads.get(file)!.then(sentDigest => {
-                  if (sentDigest === undefined) {
-                    noteStillUnverified(
-                      wiring,
-                      key,
-                      file,
-                      'applied 核验阻塞:发送时点内容基准不可读,digest 无基准',
-                      attempt
-                    );
-                    return;
-                  }
-                  // IDE-AUD-006:发送时点冻结的基准带进台账(可审计);代际守卫下
-                  // 只在当前代写(换代则拒,旧代基准不污染新代记录),且不改写
-                  // 已升格的 outcome(accepted/applied 原样保留)
-                  const currentAtWrite = wiring.store.get(key, file);
-                  if (currentAtWrite) {
-                    wiring.store.record(key, file, currentAtWrite.outcome, { sentDigest, attempt });
-                  }
-                  const verdict = verifyAppliedReceipt(wiring.store, key, file, response.body as string, {
-                    sentDigest,
+                // 回执 file 不在本次发送批(异常/伪造接收端回包)时 baselineReads
+                // 无该键——旧实现对 undefined 取 .then 抛 TypeError 中断回执回调
+                // 批处理;回落「无基准保持未确认」而非崩溃。
+                const sentDigestPromise = baselineReads.get(file);
+                if (sentDigestPromise === undefined) {
+                  noteStillUnverified(
+                    wiring,
+                    key,
+                    file,
+                    'applied 核验阻塞:发送批无该文件基准,保持未确认',
                     attempt
+                  );
+                } else {
+                  void sentDigestPromise.then(sentDigest => {
+                    if (sentDigest === undefined) {
+                      noteStillUnverified(
+                        wiring,
+                        key,
+                        file,
+                        'applied 核验阻塞:发送时点内容基准不可读,digest 无基准',
+                        attempt
+                      );
+                      return;
+                    }
+                    // IDE-AUD-006:发送时点冻结的基准带进台账(可审计);代际守卫下
+                    // 只在当前代写(换代则拒,旧代基准不污染新代记录),且不改写
+                    // 已升格的 outcome(accepted/applied 原样保留)
+                    const currentAtWrite = wiring.store.get(key, file);
+                    if (currentAtWrite) {
+                      wiring.store.record(key, file, currentAtWrite.outcome, { sentDigest, attempt });
+                    }
+                    const verdict = verifyAppliedReceipt(wiring.store, key, file, response.body as string, {
+                      sentDigest,
+                      attempt
+                    });
+                    if (verdict.kind === 'not-applied') {
+                      noteStillUnverified(wiring, key, file, `applied 核验阻塞:${verdict.reason}`, attempt);
+                    }
                   });
-                  if (verdict.kind === 'not-applied') {
-                    noteStillUnverified(wiring, key, file, `applied 核验阻塞:${verdict.reason}`, attempt);
-                  }
-                });
+                }
               }
               scheduleAppliedSettle(wiring, key, file, sentAt, attempt);
             }
