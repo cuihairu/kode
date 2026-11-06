@@ -1337,7 +1337,7 @@
 - [x] 审核发现：kode-mcp `component_types_deep` 递归无环守卫——组件槽 type 解析到含同型/互引组件的 def（循环组件引用）时无限递归，栈溢出崩溃（crates/kode-mcp/src/kb.rs:488-510）（2026-11-06 修复 af62973：递归改带路径守卫 `seen: &mut Vec<String>`——当前路径上再遇同名 def(自引用/互引)即标记该槽 `"cycle": true` 不再展开(深度有界,菱形共享不受影响,因按路径 push/pop 而非全局去重),入口 `get_entity_model` 以空路径调用;新增 2 单测(自引用 A→A cycle 标记不展开/互引 A↔B 有界 cycle 标记),prove-red=旧码栈溢出 SIGABRT,`cargo clippy -p kode-mcp --all-targets -- -D warnings` 0,`cargo test -p kode-mcp` 全绿(5 lib+3 e2e+8 integration)）
 - [x] 审核发现：kode-db-clone `redact_log` 对**带引号**的凭据值不跳过值体——`password="hunter2"` 在输出 `password=***` 后，值末搜索在偏移 0 处即命中原引号，`rest` 未前移，下一轮把 `"hunter2"` 原样回灌，明文凭据泄漏进审计日志；单测只用无引号值故绿（crates/kode-db-clone/src/redact.rs:94-98）（2026-11-06 修复 b91397a：引号值按配对闭引号整段跳过(含闭引号,未闭合吞余下,不吸收其后空白),裸值仍以空白/逗号为界;新增带引号/引号内空白两测试,值体与引号均不残留）
 - [x] 审核发现：hotReload 通道 applied 核验 `channelBaselineReads.get(file)!` 非空断言——回执 `file` 不在本次发送批（异常/伪造接收端回包）时对 `undefined` 取 `.then` 抛 TypeError，中断回执回调批处理；应回落「无基准保持未确认」而非崩溃（src/hotReload.ts:428）`8595896`
-- [ ] 审核发现：gitCommitLog `unquoteGitPath` 只反解 `\\`、`\"` 与八进制 `\NNN`，未处理 git `core.quotepath` 对控制字符的 C 风格转义（`\t`/`\n`/`\r`/`\a`/`\b`/`\v`/`\f`）——含制表/换行符的文件名反解后保留字面转义串，重命名历史路径错误（罕见边界；src/gitCommitLog.ts:246-285）
+- [x] 审核发现：gitCommitLog `unquoteGitPath` 只反解 `\\`、`\"` 与八进制 `\NNN`，未处理 git `core.quotepath` 对控制字符的 C 风格转义（`\t`/`\n`/`\r`/`\a`/`\b`/`\v`/`\f`）——含制表/换行符的文件名反解后保留字面转义串，重命名历史路径错误（罕见边界；src/gitCommitLog.ts:246-285）`e05fb62`
 
 ## 审核 942424540716c9c17cdf62d26a92ea06a0873c18..HEAD（2026-11-06，只审不改）
 
