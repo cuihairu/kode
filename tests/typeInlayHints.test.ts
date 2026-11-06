@@ -600,3 +600,58 @@ describe('数据字典键 inlay 早退面(GLOBDATA-002 覆盖)', () => {
     }
   });
 });
+
+/* ---------------- KR-AUD-60: CancellationToken 消费 ---------------- */
+
+describe('KR-AUD-60: provideInlayHints 消费 CancellationToken', () => {
+  it('入口已取消 → 立即空集,不做任何解析', async () => {
+    const resolveCalls: string[] = [];
+    const manager = {
+      resolvePropertyDefinitionInfo: async (...args: unknown[]) => {
+        resolveCalls.push(String(args[1]));
+        return { typeName: 'UINT32' };
+      }
+    } as unknown as EntityMappingManager;
+    const provider = new PythonTypeInlayHintsProvider(manager);
+    const text = 'class Hero:\n    def a(self):\n        self.hp = 1\n        x = self.hp\n';
+    const cancelled = { isCancellationRequested: true };
+    const hints = await provider.provideInlayHints(
+      doc(text) as never,
+      lineRange(0, 3),
+      cancelled as never
+    );
+    expect(hints).toEqual([]);
+    expect(resolveCalls).toHaveLength(0);
+  });
+
+  it('循环中取消 → 截断返回,不再解析后续访问', async () => {
+    let resolveCount = 0;
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>(resolve => { releaseFirst = resolve; });
+    const manager = {
+      resolvePropertyDefinitionInfo: async () => {
+        resolveCount += 1;
+        if (resolveCount === 1) {
+          await firstGate;
+        }
+        return { typeName: 'UINT32' };
+      }
+    } as unknown as EntityMappingManager;
+    const provider = new PythonTypeInlayHintsProvider(manager);
+    // 两个独立访问行;首个解析悬在 gate 上时取消,第二个访问不得再解析
+    const text = 'class Hero:\n    def a(self):\n        x = self.hp\n        y = self.mp\n';
+    const token = { isCancellationRequested: false };
+    const hintsPromise = provider.provideInlayHints(
+      doc(text) as never,
+      lineRange(0, 3),
+      token as never
+    );
+    // 首个解析进入 gate(在途挂起)后再置取消
+    await new Promise(resolve => setTimeout(resolve, 20));
+    token.isCancellationRequested = true;
+    releaseFirst();
+    const hints = await hintsPromise;
+    expect(resolveCount).toBe(1);
+    expect(hints).toHaveLength(1);
+  });
+});

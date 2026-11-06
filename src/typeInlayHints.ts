@@ -52,8 +52,14 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
 
   async provideInlayHints(
     document: vscode.TextDocument,
-    range: vscode.Range
+    range: vscode.Range,
+    token?: vscode.CancellationToken
   ): Promise<vscode.InlayHint[]> {
+    // KR-AUD-60:消费 CancellationToken——入口已取消即空集;逐访问解析循环
+    // 内随 token 取消截断返回(宿主换页/关文档不再白算)
+    if (token?.isCancellationRequested) {
+      return [];
+    }
     if (!vscode.workspace.getConfiguration('kbengine').get<boolean>('inlayHints.typeData', true)) {
       return [];
     }
@@ -75,6 +81,10 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
       }
       const key = propertyAccessKey(access);
       if (!hits.has(key)) {
+        if (token?.isCancellationRequested) {
+          // KR-AUD-60:解析中途取消 → 已产 hints 截断返回
+          return hints;
+        }
         const location = await this.entityMappingManager.resolvePropertyDefinitionInfo(
           document.fileName,
           access.fullPath,
