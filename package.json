@@ -1036,6 +1036,11 @@
           "default": true,
           "description": "Python 侧诊断：self.client/self.cell/self.base 无判空 guard 的引用报 Warning，含 .def 段错配检查（default: enabled）；关闭后 Python 文档零诊断产出"
         },
+        "kbengine.configContractDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "配置契约检查诊断：工作区配置层的只读契约检查——.kbengine/debug.json 的 components 空/缺、已知组件 telnet 端口缺失或偏离引擎默认（loginapp 31000/dbmgr 32000/interfaces 33000/logger 34000/baseapp 40000/cellapp 50000/bots 51000）、telnet 段被注释、python.analysis.extraPaths 含 ../../ 双层上跳或指向不存在目录、.gitignore 缺 .kbengine/、CLAUDE.md/README 声明的密码/端口与 debug.json 实值冲突，均报 Warning 附中英修复建议（default: enabled）。配置文件打开/保存即扫、变更即重算；关闭后零诊断产出"
+        },
         "kbengine.attributeNoneDiagnostics": {
           "type": "boolean",
           "default": true,

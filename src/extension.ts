@@ -1,4 +1,8 @@
 import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace, setActiveProfileScanRoot } from './scanRoots';
+import {
+  CONFIG_CONTRACT_DIAGNOSTICS_ENABLED_DEFAULT,
+  computeConfigContractFindings
+} from './configContractDiagnostics';
 import { bumpRootConfigGeneration } from './rootConfigGeneration';
 import { createRootRemovalNotifier } from './rootRemovalEvents';
 import { createSharedFileEventMerger } from './sharedFileEvents';
@@ -1451,6 +1455,142 @@ export function activate(context: vscode.ExtensionContext) {
   // 注册诊断检查器
   const diagnostics = vscode.languages.createDiagnosticCollection('kbengine');
   context.subscriptions.push(diagnostics);
+
+  // 配置契约检查诊断(docs/analysis/intranet-env-audit.md §4/§5,用户会话
+  // 建议序 #2):工作区「配置层」(.kbengine/debug.json / extraPaths /
+  // .gitignore / CLAUDE.md·README 声明)此前 0 覆盖——内网开发机(D:\kbengine)
+  // 暴露的 4 项配置层事故(extraPaths 双层上跳、.gitignore 缺 .kbengine/、
+  // debug.json components 空且 telnet 段全注释、文档密码声明与实值冲突)只能
+  // 人肉 review + 线上复现发现。本规则把此类 bug 变「打开/保存即报」:
+  // 纯逻辑面 computeConfigContractFindings(零 vscode 依赖,存在性注入,
+  // tests/configContractDiagnostics.test.ts 红先行),独立 collection(findings
+  // 按目标文件分桶锚定),开关 kbengine.configContractDiagnostics 默认开。
+  // 触发面 = 激活首扫 + 配置文件打开/保存即扫 + FileSystemWatcher 变更即重算
+  // (与 DebugConfigManager.configWatcher 同款变更即重算模式)。
+  // 门控:仅 .kbengine 托管目录在盘的工作区启用(debug.json 本就在 .kbengine/
+  // 下),纯 Python/非 KBEngine 工作区零噪声。
+  const configContractRootFolder = vscode.workspace.workspaceFolders?.[0];
+  if (configContractRootFolder) {
+    const configContractCollection = vscode.languages.createDiagnosticCollection(
+      'kbengine-config-contract'
+    );
+    context.subscriptions.push(configContractCollection);
+    const configContractFileBasenames = new Set([
+      'debug.json', 'settings.json', '.gitignore', 'CLAUDE.md', 'README.md', 'README.zh.md'
+    ]);
+    const isConfigContractFile = (document: vscode.TextDocument): boolean =>
+      configContractFileBasenames.has(path.basename(document.uri.fsPath));
+    let configContractPublishedUris = new Set<string>();
+    let configContractScanSeq = 0;
+    const clearConfigContractDiagnostics = (): void => {
+      for (const uri of configContractPublishedUris) {
+        configContractCollection.delete(vscode.Uri.parse(uri));
+      }
+      configContractPublishedUris = new Set();
+    };
+    const scanConfigContractDiagnostics = async (): Promise<void> => {
+      const root = configContractRootFolder.uri.fsPath;
+      const seq = ++configContractScanSeq;
+      const enabled = vscode.workspace.getConfiguration('kbengine')
+        .get<boolean>('configContractDiagnostics', CONFIG_CONTRACT_DIAGNOSTICS_ENABLED_DEFAULT);
+      if (!enabled || !fs.existsSync(path.join(root, '.kbengine'))) {
+        // 开关关闭 / 非 KBEngine 托管工作区:清空既有诊断,零产出
+        if (configContractPublishedUris.size > 0) {
+          clearConfigContractDiagnostics();
+        }
+        return;
+      }
+      const readIfExists = (rel: string): string | undefined => {
+        try {
+          const full = path.join(root, rel);
+          return fs.existsSync(full) ? fs.readFileSync(full, 'utf8') : undefined;
+        } catch {
+          return undefined;
+        }
+      };
+      const debugJsonExists = fs.existsSync(path.join(root, '.kbengine', 'debug.json'));
+      const extraPaths = vscode.workspace.getConfiguration('python', configContractRootFolder)
+        .get<string[]>('analysis.extraPaths') ?? [];
+      const findings = computeConfigContractFindings({
+        debugJson: debugJsonExists
+          ? { exists: true, text: readIfExists('.kbengine/debug.json') }
+          : { exists: false },
+        extraPaths,
+        // 相对条目按工作区根解析(与 Pylance 的根基准语义一致);存在性注入
+        extraPathExists: (entry) => fs.existsSync(path.resolve(root, entry)),
+        gitignore: fs.existsSync(path.join(root, '.gitignore'))
+          ? { exists: true, text: readIfExists('.gitignore') }
+          : { exists: false },
+        docs: (['CLAUDE.md', 'README.md', 'README.zh.md'])
+          .map(name => ({ name, text: readIfExists(name) }))
+          .filter((doc): doc is { name: string; text: string } => typeof doc.text === 'string'),
+        enabled
+      });
+      // 版本代守卫:扫描期间又来了新触发,旧回包丢弃(新触发会重算)
+      if (seq !== configContractScanSeq) {
+        return;
+      }
+      const nextUris = new Set<string>();
+      for (const fileName of new Set(findings.map(f => f.file))) {
+        const groupFindings = findings.filter(f => f.file === fileName);
+        // finding.file 是展示名;锚定 URI 回工作区真实路径
+        const relPath = fileName === 'debug.json'
+          ? '.kbengine/debug.json'
+          : fileName === 'settings.json'
+            ? '.vscode/settings.json'
+            : fileName;
+        const uri = vscode.Uri.joinPath(configContractRootFolder.uri, relPath);
+        nextUris.add(uri.toString());
+        configContractCollection.set(uri, groupFindings.map(f => {
+          const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(f.line, f.character, f.line, f.character + 1),
+            f.message,
+            vscode.DiagnosticSeverity.Warning
+          );
+          diagnostic.source = 'kbengine';
+          diagnostic.code = f.code;
+          return diagnostic;
+        }));
+      }
+      for (const uri of configContractPublishedUris) {
+        if (!nextUris.has(uri)) {
+          configContractCollection.delete(vscode.Uri.parse(uri));
+        }
+      }
+      configContractPublishedUris = nextUris;
+    };
+    // 激活首扫(fire-and-forget,不阻塞激活)
+    void scanConfigContractDiagnostics();
+    context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(document => {
+      if (isConfigContractFile(document)) {
+        void scanConfigContractDiagnostics();
+      }
+    }));
+    context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(document => {
+      if (isConfigContractFile(document)) {
+        void scanConfigContractDiagnostics();
+      }
+    }));
+    // 变更即重算:与 DebugConfigManager.configWatcher 同款模式;brace 模式
+    // 一发覆盖六个契约文件(.kbengine/debug.json 变更即重算为主路径)
+    const configContractWatcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(
+        configContractRootFolder,
+        '{.kbengine/debug.json,.gitignore,.vscode/settings.json,CLAUDE.md,README.md,README.zh.md}'
+      )
+    );
+    configContractWatcher.onDidChange(() => void scanConfigContractDiagnostics());
+    configContractWatcher.onDidCreate(() => void scanConfigContractDiagnostics());
+    configContractWatcher.onDidDelete(() => void scanConfigContractDiagnostics());
+    context.subscriptions.push(configContractWatcher);
+    // 开关切换即重算(关→清集合零产出;开→立即重扫),独立于
+    // diagnosticScheduler 的文档级重算路径(本规则是工作区级)
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+      if (event.affectsConfiguration('kbengine.configContractDiagnostics')) {
+        void scanConfigContractDiagnostics();
+      }
+    }));
+  }
 
   // C-19 交付①:def↔Python 方法一致性诊断。正向 def-method-missing-in-python
   // (def 有 Python 无,默认开;code=Rust lint 规则 id,与 CodeAction 同值
