@@ -257,7 +257,8 @@ describe('extension activate 装配', () => {
       'kbengine-post-destroy',
       'kbengine-process-topology',
       'KBEngine 临时编辑热更新',
-      'kbengine-def-analysis'
+      'kbengine-def-analysis',
+      'kode-ruff'
     ]);
 
     // 虚拟文档提供者:数据库 schema + kbe 符号桩文档(批108,内容由桩索引出)

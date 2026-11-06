@@ -703,14 +703,14 @@ describe('设置文档对账(中英)', () => {
   });
 
   it('设计文档落了 §11.1(派生+缺根报错)与 §11.4(变更重建)', () => {
-    const design = read('docs/design/hot-reload-design.md');
+    const design = read('docs/zh/design/hot-reload-design.md');
     expect(design).toContain('### 11.1');
     expect(design).toContain('### 11.4');
     expect(design).toMatch(/11\.1[\s\S]{0,600}assetsRoot/);
   });
 
   it('设计文档逐字引了状态面字面量与 §11.3 注册口(不许只写概念)', () => {
-    const design = read('docs/design/hot-reload-design.md');
+    const design = read('docs/zh/design/hot-reload-design.md');
     // 状态/日志字面量:生产 emit 什么,文档就写什么(与测试断言同一串)
     expect(design).toContain('来源=<explicit|derived>');
     expect(design).toContain('未开启: kbengine.hotReload.enabled=false');

@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 // 不改文档=红);③未完成迁移标注在位;④诊断面两函数入册。
 
 const root = join(__dirname, '..');
-const docPath = join(root, 'docs/architecture/provider-data-sources.md');
+const docPath = join(root, 'docs/zh/architecture/provider-data-sources.md');
 const doc = readFileSync(docPath, 'utf8');
 const extension = readFileSync(join(root, 'src/extension.ts'), 'utf8');
 
