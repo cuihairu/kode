@@ -202,6 +202,36 @@ function headSpanFromSegments(
 }
 
 /**
+ * 全体段边界中追溯最远(最早)的一个。解析器保证 boundary.atCommit 即该段
+ * 最老条目(`entries[last].hash`),以其提交时刻比较;更老者胜,同刻 origin
+ * (「引入于此」)优先于 stopped(合并/复制停点);无条目段(解析器空档
+ * atCommit='')不参与,全不参与回落末段边界(与旧行为一致)。
+ */
+function earliestBoundary(
+  timelines: readonly { entries: RangeChangeEntry[]; boundary: RangeTimelineBoundary }[]
+): RangeTimelineBoundary {
+  let best: RangeTimelineBoundary | null = null;
+  let bestTime = -Infinity;
+  let bestOrigin = false;
+  for (const timeline of timelines) {
+    const at = timeline.entries.find(e => e.hash === timeline.boundary.atCommit);
+    if (!at) continue; // 边界提交不在条目中(空档/异常)→ 该段不参与比较
+    const time = Date.parse(at.commitDate);
+    const origin = timeline.boundary.kind === 'origin';
+    if (
+      best === null ||
+      time < bestTime ||
+      (time === bestTime && origin && !bestOrigin)
+    ) {
+      best = timeline.boundary;
+      bestTime = time;
+      bestOrigin = origin;
+    }
+  }
+  return best ?? timelines[timelines.length - 1].boundary;
+}
+
+/**
  * 范围历史树(侧边栏 kbengine.gitRangeHistory)。
  * showSelectionHistory 只在用户入口触发;不挂编辑器切换/选区变化监听
  * (视图持有自身状态,切换编辑器不重查、不错套)。
@@ -408,6 +438,13 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
           }
         }
       }
+      // 审核发现:段序拼接≠时间序——逐段 git log -L 各自最新在前,跨段时间
+      // 交错的提交按段序拼接会乱序,且父路径链 entries[index+1](注释明示为
+      // 更老提交)在段边界取到别段更新提交。合并后按提交时间全局降序(稳定
+      // 排序,同刻保持首见段序),entries[index+1] 恒为不新于当前条 → 链向正确。
+      const entries = [...entriesByKey.values()].sort(
+        (a, b) => Date.parse(b.commitDate) - Date.parse(a.commitDate)
+      );
       const span = headSpanFromSegments(segments)!;
       this.state = {
         kind: 'loaded',
@@ -417,8 +454,8 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
         headEnd: span.end,
         selectionStart: range.startLine,
         selectionEnd: range.endLine,
-        entries: [...entriesByKey.values()],
-        boundary: timelines[timelines.length - 1].boundary,
+        entries,
+        boundary: earliestBoundary(timelines),
         unmappedLines,
       };
     }
