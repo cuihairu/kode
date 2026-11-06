@@ -289,9 +289,16 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
   // 只探首项不够:非首项的高优先候选后建出也该触发重算)+ 三面发现选择
   // 记忆。命中时逐一复核,任一翻转即重算。
   const probePaths = uniquePaths(
-    [...entityDefsCandidates, ...entitiesXmlCandidates, ...typesXmlCandidates].filter(
-      (p): p is string => Boolean(p)
-    )
+    [
+      ...entityDefsCandidates,
+      ...entitiesXmlCandidates,
+      ...typesXmlCandidates,
+      // 三轮收口:已解析路径也进探针——深扫描选中且不在候选列表内的路径
+      // (无发现记忆)被删时,候选探针不变,须靠它翻转触发重算
+      layout.entityDefsRoot,
+      layout.entitiesXmlPath,
+      layout.typesXmlPath
+    ].filter((p): p is string => Boolean(p))
   );
   layoutCache.set(layoutCacheKey, {
     generation: layoutGeneration,

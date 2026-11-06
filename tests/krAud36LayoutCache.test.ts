@@ -139,25 +139,47 @@ describe('KR-AUD-36 布局解析按 rootConfigGeneration 缓存', () => {
     }
   });
 
-  it('非首项候选后建出也触发重算:配置主路径缺失时选次选,后建主路径被采纳(审核轮 P1 二轮)', () => {
+  it('非首项高优先候选后建出触发重算:首项持续缺失,建中位候选被采纳(三轮判别版)', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kraud36c-'));
     const original = vscode.workspace.getConfiguration;
     try {
-      fs.mkdirSync(path.join(root, 'entity_defs'), { recursive: true });
-      fs.writeFileSync(path.join(root, 'entity_defs', 'Avatar.def'), '<root/>');
-      // 配置主路径 `cfgdefs` 不存在(首项 miss),布局选中次选 `entity_defs`
+      // 候选序=[cfgdefs(0,配置主), entity_defs(1), scripts/entity_defs(2), ...]
+      // 初态:首项 cfgdefs 持续缺失,仅 index2 存在 → 选中 index2
+      fs.mkdirSync(path.join(root, 'scripts', 'entity_defs'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'scripts', 'entity_defs', 'Avatar.def'), '<root/>');
       (vscode as unknown as { workspace: { getConfiguration: unknown } }).workspace.getConfiguration = () =>
         ({ get: (_key: string, fallback: string) => (_key === 'entityDefsPath' ? 'cfgdefs' : fallback) }) as never;
       const first = getDefinitionWorkspaceLayout(root);
-      expect(first.entityDefsRoot).toBe(path.join(root, 'entity_defs'));
-      // 后建首项候选(优先级更高但探针集合里非「已选路径」)
-      fs.mkdirSync(path.join(root, 'cfgdefs'), { recursive: true });
-      fs.writeFileSync(path.join(root, 'cfgdefs', 'Avatar.def'), '<root/>');
+      expect(first.entityDefsRoot).toBe(path.join(root, 'scripts', 'entity_defs'));
+      // 后建 index1(比当前选中优先级更高、但非首项):一轮实现探针只含
+      // 已选路径+首项,均不翻转 → 该实现此断言红;全列表探针翻转重算
+      fs.mkdirSync(path.join(root, 'entity_defs'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'entity_defs', 'Avatar.def'), '<root/>');
       const second = getDefinitionWorkspaceLayout(root);
       expect(second).not.toBe(first);
-      expect(second.entityDefsRoot).toBe(path.join(root, 'cfgdefs'));
+      expect(second.entityDefsRoot).toBe(path.join(root, 'entity_defs'));
     } finally {
       (vscode as unknown as { workspace: { getConfiguration: unknown } }).workspace.getConfiguration = original;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('深扫描选中(不在候选列表、无记忆)的路径删除:已解析路径探针翻转强制重算(三轮收口)', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kraud36f-'));
+    try {
+      fs.mkdirSync(path.join(root, 'scripts', 'entity_defs'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'scripts', 'entity_defs', 'Avatar.def'), '<root/>');
+      // entities.xml 只存在于非候选位置(root/weird/),仅深扫描能选中
+      fs.mkdirSync(path.join(root, 'weird'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'weird', 'entities.xml'), '<root/>');
+      const first = getDefinitionWorkspaceLayout(root);
+      expect(first.entitiesXmlPath).toBe(path.join(root, 'weird', 'entities.xml'));
+      fs.rmSync(path.join(root, 'weird', 'entities.xml'));
+      const second = getDefinitionWorkspaceLayout(root);
+      // 已解析路径探针翻转 → 必须重算(新对象);重算后值出自 discovery memo
+      // (既有独立面),本断言只锁「重算发生过」
+      expect(second).not.toBe(first);
+    } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
