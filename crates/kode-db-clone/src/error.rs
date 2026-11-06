@@ -24,6 +24,10 @@ pub enum CloneError {
     DriftMismatch(String),
     /// 归档写入/读取/校验失败(IO、格式、哈希、大小、加密)。
     ArchiveError(String),
+    /// 导入前置门槛拒绝(环境声明/写意图/重复导入策略,plan §6.1)。
+    ImportRejected(String),
+    /// 唯一键/主键冲突且策略为拒绝(PDC-0305 fail-closed,不带敏感原值)。
+    ImportConflict(String),
 }
 
 impl fmt::Display for CloneError {
@@ -54,6 +58,12 @@ impl fmt::Display for CloneError {
                 "derived and physical schema disagree ({s}); failing closed rather than guessing"
             ),
             CloneError::ArchiveError(s) => write!(f, "archive error: {s}"),
+            CloneError::ImportRejected(s) => {
+                write!(f, "import rejected: {s}")
+            }
+            CloneError::ImportConflict(s) => {
+                write!(f, "unique key conflict: {s}")
+            }
         }
     }
 }
