@@ -1224,7 +1224,7 @@
 - [x] KR-AUD-56 [P2] UI-6 inferPipeline.ts:305-444 watcher 无防抖无互斥，并发 unlink/write 竞态。验收：debounce+在途互斥（dirty 补一轮）。（对账勾账：2437113 修复已落 main）
 - [x] KR-AUD-57 [P3] UI-7 extension.ts:5521-5522 serverManager.dispose() 重复调用笔误。验收：删一行。（对账勾账：317bb58 修复已落 main）
 - [x] KR-AUD-58 [P3] UI-8 selfAttributeNoneDiagnostics.ts:34,72-74 原文行匹配 self.x.y 无掩码，字符串/注释假阳性。验收：接 pythonLexicalMask+假阳性回归测试。（对账勾账：c2b0323 修复已落 main）
-- [ ] KR-AUD-59 [P3] UI-9 selfAttributeFlowTypes.ts:149,177 增强赋值误捕获 RHS。验收：`+=` 排除+流类型保持测试。
+- [x] KR-AUD-59 [P3] UI-9 selfAttributeFlowTypes.ts:149,177 增强赋值误捕获 RHS。验收：`+=` 排除+流类型保持测试。（2026-11-07 取证推翻原前提+钉面收口：`+=` 等增强赋值在 selfAssignment 正则 `\s*=\s*(?!=)` 下**结构性不匹配**——`=` 必须紧随空白,而增强符(`+`/`-`/`*`/`**`/`/`/`//`/`%`/`&`/`|`/`^`/`@`/`<<`/`>>`)紧贴 `=`,正则两处 `\s*` 均无法跨越操作符,增强赋值根本进不了赋值分支,流状态自然保持(语义正确,非"误捕获");唯一能滑入匹配的是 `!=` 比较形态,但其误捕获 RHS 恒带 `!` 前缀,typeOfExpr 解不出类型得空集,查询结果与 __init__ 声明面做并集,空集不产生可观察错型——原验收场景在 HEAD 无缺陷。钉面测试 tests/selfAttributeFlowTypes.test.ts 新增 5 例(KR-AUD-59 三 describe)——augmented 行 None 保持/augmented 行 list 保持/`!=` 行 None 保持/`!=` 行 list 保持/裸赋值对照仍覆盖去 None 为 list。门禁:tests/selfAttributeFlowTypes.test.ts 24/24 绿;tsc --noEmit 0 错;eslint 0 错。42d80d8）
 - [x] KR-AUD-60 [P3] UI-10 typeInlayHints.ts:53 不消费 CancellationToken。验收：token 透传+取消生效。（对账勾账：0ef042c 修复已落 main）
 - [x] KR-AUD-61 [P3] UI-11 eventApi.ts:70 全仓逐文件 openTextDocument。验收：改索引/缓存路径，大仓 F12 不秒卡。（对账勾账：b75c260 修复已落 main）
 - [x] KR-AUD-62 [P3] UI-12 entityBuiltinProperties.ts:205-215+languageProviders.ts:726 内建属性 inlay 在注释/字符串产提示。验收：掩码后匹配。（对账勾账：791dadf 修复已落 main）
