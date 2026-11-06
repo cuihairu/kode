@@ -88,7 +88,19 @@ const zh = {
     emptyHint: '启动 KBEngine 服务器后，日志将在此显示'
   },
   telnet: {
-    title: 'KBEngine Telnet 探测'
+    title: 'KBEngine Telnet 探测',
+    notConfigured: 'telnet 未配置:请在设置中填写 kbengine.telnet.host / kbengine.telnet.port,或在元件 kbengine.xml 的 <telnet_service> 段开启。',
+    closedTitle: (label: string, addr: string) => `${label}(${addr})的 telnet 未开启。`,
+    closedGuide: '在元件配置 kbengine.xml 中加入以下段落并重启该组件即可开启:',
+    authTitle: (label: string) => `${label} 的 telnet 端口已开启,但未配置密码。`,
+    authGuide: '在设置 kbengine.telnet.password 或 kbengine.xml <telnet_service><password> 中填写密码后即可自动登录。',
+    connectSession: '连接会话(自动登录)',
+    disconnectSession: '断开会话',
+    noOutput: '暂无输出',
+    inputReady: '输入白名单内命令(回车发送)',
+    inputWaiting: '等待会话就绪…',
+    keyshint: 'Ctrl+] / Ctrl+D 断开会话',
+    rejected: (text: string) => `已拒绝(白名单外或会话未就绪): ${text}`
   },
   runtimeQuery: {
     title: '运行时查询',
@@ -211,7 +223,19 @@ const en: typeof zh = {
     emptyHint: 'Start the KBEngine server to see logs here'
   },
   telnet: {
-    title: 'KBEngine Telnet Probe'
+    title: 'KBEngine Telnet Probe',
+    notConfigured: 'Telnet is not configured: set kbengine.telnet.host / kbengine.telnet.port in settings, or enable the <telnet_service> section in the component kbengine.xml.',
+    closedTitle: (label: string, addr: string) => `Telnet of ${label}(${addr}) is not enabled.`,
+    closedGuide: 'Add the following section to the component kbengine.xml and restart the component to enable it:',
+    authTitle: (label: string) => `The telnet port of ${label} is open but no password is configured.`,
+    authGuide: 'Set kbengine.telnet.password in settings or <telnet_service><password> in kbengine.xml to enable auto login.',
+    connectSession: 'Connect session (auto login)',
+    disconnectSession: 'Disconnect session',
+    noOutput: 'No output yet',
+    inputReady: 'Enter an allow-listed command (Enter to send)',
+    inputWaiting: 'Waiting for session to be ready…',
+    keyshint: 'Ctrl+] / Ctrl+D disconnects the session',
+    rejected: (text: string) => `Rejected (not allow-listed or session not ready): ${text}`
   },
   runtimeQuery: {
     title: 'Runtime Queries',
