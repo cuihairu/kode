@@ -1330,6 +1330,17 @@
           "default": true,
           "markdownDescription": "%kbengine.config.hover.serverConfig.description%"
         },
+        "kbengine.hover.language": {
+          "type": "string",
+          "enum": ["auto", "en", "zh-cn"],
+          "default": "auto",
+          "markdownDescription": "%kbengine.config.hover.language.description%",
+          "markdownEnumDescriptions": [
+            "%kbengine.config.hover.language.enum.auto%",
+            "%kbengine.config.hover.language.enum.en%",
+            "%kbengine.config.hover.language.enum.zh-cn%"
+          ]
+        },
         "kbengine.hover.startupScript": {
           "type": "boolean",
           "default": true,

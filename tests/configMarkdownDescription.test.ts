@@ -182,6 +182,8 @@ describe('package.json configuration prompt contract', () => {
       // serverManager.ts startAutoComponents 缺省三件套
       'kbengine.autoStart': ['machine', 'logger', 'dbmgr'],
       'kbengine.webviewLocale': 'auto',
+      // hoverLocale.ts readHoverLanguageSetting:缺省/非法值一律回落 auto
+      'kbengine.hover.language': 'auto',
       'kbengine.debug.sessionEndBehavior': 'detach',
       'kbengine.infer.sourceWrite': 'managed',
       'kbengine.entity.methodStubBody': 'pass',
