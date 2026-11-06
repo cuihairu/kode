@@ -106,6 +106,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // python 来源镜装配块 +6 行,1309 前锚点 +2、其后锚点 +8(5389 处 entity
   // 来源镜装配块 +8 在全部锚点之后不再位移):真位重探 631/644/928/1010/
   // 1061/1124/1428/2152/2232,出处随 baseline 锁步。
+  // 2026-11-06(六):KR-AUD-54 拓扑根随触发文档(48bccec)——1894/1913/1998
+  // 三处闭包签名各 +1(2016/2028 行内改写无净增,2442 后 KR-AUD-55 块在锚点
+  // 后不累计),onDidChangeTextDocument/flushQueued 锚点 +3:真位重探
+  // 2155/2235,出处随 baseline 锁步;并发会话在途 extension.ts 未提交编辑
+  // 不入本批校准,其提交时须自行再探。
   ['src/extension.ts', 1010, "startLanguageServiceOperation('hover'"],
   ['src/extension.ts', 1061, "startLanguageServiceOperation('definition'"],
   ['src/extension.ts', 1124, "startLanguageServiceOperation('definition'"],
@@ -114,8 +119,8 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/extension.ts', 631, "startLanguageServiceOperation('diagnostics'"],
   ['src/extension.ts', 644, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
-  ['src/extension.ts', 2152, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2232, 'flushQueued()'],
+  ['src/extension.ts', 2155, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2235, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面
