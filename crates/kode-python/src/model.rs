@@ -23,10 +23,13 @@ pub struct AstSymbols {
     /// 消费面口径一致)。模块顶层绑定对全文件可见。
     pub imports: Vec<AstImport>,
     /// 函数作用域 import 绑定(按行区间定位调用点可见作用域)。每条 =
-    /// 一个函数的行区间与其子树内 import 的绑定名。调用图接收者解析用
-    /// 调用点行号落进哪个区间判可见性——不按函数名(同名方法会串;复审
-    /// 第四轮残余),区间天然嵌套(外层区间覆盖嵌套体,闭包可见语义)。
+    /// 一个作用域层的行区间与其子树内 import 的绑定名。调用图接收者解析
+    /// 用调用点行号落进哪个区间判可见性——区间天然嵌套(外层区间覆盖嵌套
+    /// 体,闭包可见语义),同名函数/推导式区间不相交(互不作保)。
     pub function_import_bindings: Vec<ScopeImportBindings>,
+    /// 模块顶层被本地绑定(Store 赋值)的名 → 最近行。模块 import 回退的
+    /// 遮蔽面:顶层重绑定后,函数内同名接收者不是模块(复审第九轮残余)。
+    pub module_shadows: std::collections::BTreeMap<String, usize>,
 }
 
 /// 函数作用域的类别(裸名解析链建模:函数链参与解析,类体/推导式是
@@ -49,12 +52,13 @@ pub struct ScopeImportBindings {
     pub start_line: usize,
     /// 函数结束行(体末行)。
     pub end_line: usize,
-    /// 该函数子树内(含嵌套 def/分支体)import 的绑定名 → 最近一次 import
-    /// 绑定行(0-based)。
-    pub bindings: std::collections::BTreeMap<String, usize>,
+    /// 该函数子树内(含嵌套 def/分支体)import 的绑定名 → (最近一次 import
+    /// 绑定行 0-based,目标模块 basename——`import a.b` 取末段 b、
+    /// `from pkg import x` 取 x、别名取目标模块名而非绑定名)。
+    pub bindings: std::collections::BTreeMap<String, (usize, String)>,
     /// 该函数直接作用域内被本地绑定的名(参数+Store 赋值目标) → 最近一次
-    /// 本地绑定行。解析时与 bindings 按行序比较(后者生效),调用点行号
-    /// 参与判定(复审第七轮残余:同作用域重绑定/遮蔽须按位置裁决)。
+    /// 本地绑定行。本地绑定存在即整作用域按本地名处理(静态局部性),与
+    /// bindings 并存 = 静态歧义,保守放弃(宁缺毋滥)。
     pub shadows: std::collections::BTreeMap<String, usize>,
 }
 

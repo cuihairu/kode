@@ -38,11 +38,13 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
         functions: Vec::new(),
         imports: Vec::new(),
         function_import_bindings: Default::default(),
+        module_shadows: Default::default(),
     };
     let mut all_bindings = ImportBindingCollector {
         ast,
         scope_stack: Vec::new(),
         collected: Vec::new(),
+        module_shadows: Default::default(),
     };
     for stmt in &ast.module().body {
         ast::visitor::Visitor::visit_stmt(&mut all_bindings, stmt);
@@ -92,6 +94,7 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
         }
     }
     out.function_import_bindings = all_bindings.collected;
+    out.module_shadows = all_bindings.module_shadows;
     out
 }
 
@@ -109,10 +112,12 @@ fn top_level_binding(name: &str) -> String {
 /// 唯一标识,复审第四轮残余)。
 struct ImportBindingCollector<'a> {
     ast: &'a ParsedAst,
-    /// 当前函数区间栈(外层在前)。
+    /// 当前作用域层栈(外层在前)。
     scope_stack: Vec<ScopeImportBindings>,
-    /// 已完成的函数作用域记录(函数退出时从栈转存)。
+    /// 已完成的作用域记录(层退出时从栈转存)。
     collected: Vec<ScopeImportBindings>,
+    /// 模块顶层 Store 赋值遮蔽面(空栈时 push_shadow 落这里)。
+    module_shadows: std::collections::BTreeMap<String, usize>,
 }
 
 impl<'a> ImportBindingCollector<'a> {
@@ -136,17 +141,27 @@ impl<'a> ImportBindingCollector<'a> {
         }
     }
 
-    fn push_binding(&mut self, binding: &str, line: usize) {
-        // 记到最内层作用域层,保留最近一次绑定行(同作用域重绑定取后者;
+    fn push_binding(&mut self, binding: &str, line: usize, target_basename: &str) {
+        // 记到最内层作用域层,保留最近一次绑定(同作用域重绑定取后者;
         // 外层区间覆盖嵌套体,调用点行号包含判定实现闭包可见语义)。
         if let Some(top) = self.scope_stack.last_mut() {
-            top.bindings.insert(binding.to_string(), line);
+            top.bindings
+                .insert(binding.to_string(), (line, target_basename.to_string()));
+        } else {
+            // 模块顶层 import 走 imports 语义表,此处不重复记。
         }
     }
 
     fn push_shadow(&mut self, name: &str, line: usize) {
-        if let Some(top) = self.scope_stack.last_mut() {
-            top.shadows.insert(name.to_string(), line);
+        match self.scope_stack.last_mut() {
+            Some(top) => {
+                top.shadows.insert(name.to_string(), line);
+            }
+            // 模块顶层 Store 赋值 = 模块级遮蔽面(函数链未决时,模块 import
+            // 回退须先查此表——复审第九轮残余①)。
+            None => {
+                self.module_shadows.insert(name.to_string(), line);
+            }
         }
     }
 
@@ -201,19 +216,30 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
                         .as_ref()
                         .map(|n| n.as_str().to_string())
                         .unwrap_or_else(|| top_level_binding(alias.name.as_str()));
-                    self.push_binding(&binding, line);
+                    // 目标模块 basename:无别名绑顶层首段(import a.b 绑 a,
+                    // 文件 a.py);有别名绑末段(import a.b as c 的 c=b.py)。
+                    let basename = if alias.asname.is_some() {
+                        alias.name.as_str().rsplit('.').next().unwrap_or("").to_string()
+                    } else {
+                        top_level_binding(alias.name.as_str())
+                    };
+                    self.push_binding(&binding, line, &basename);
                 }
             }
             Stmt::ImportFrom(impf) => {
                 let line = self.ast.line_col(impf.range.start().to_u32()).0;
                 for alias in &impf.names {
-                    // `from pkg import x` 的绑定名就是 `x`(无 asname 时)。
+                    // `from pkg import x` 的绑定名就是 `x`(无 asname 时),
+                    // 目标模块 basename 也是 x(pkg/x.py);`*` 导入不记。
+                    if alias.name.as_str() == "*" {
+                        continue;
+                    }
                     let binding = alias
                         .asname
                         .as_ref()
                         .map(|n| n.as_str().to_string())
                         .unwrap_or_else(|| alias.name.as_str().to_string());
-                    self.push_binding(&binding, line);
+                    self.push_binding(&binding, line, alias.name.as_str());
                 }
             }
             _ => {}

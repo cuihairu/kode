@@ -435,6 +435,58 @@ fn multi_line_comprehension_shadow_blocks_vouch() {
 }
 
 #[test]
+fn module_rebind_blocks_module_fallback() {
+    // 复审第九轮残余①:模块顶层 import 后被本地赋值重绑定——函数内裸名
+    // 接收者是该本地对象,模块 import 回退不作保(伪边向)。
+    let zcaller = "import avatar\navatar = obj\n\ndef battle():\n    avatar.heal()\n";
+    let afoo = "def heal():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/avatar.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, afoo)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "模块顶层重绑定应阻断模块 import 回退保放, got {rev:?}"
+    );
+}
+
+#[test]
+fn aliased_import_resolves_target_module_not_binding_name() {
+    // 复审第九轮残余②:`import other as avatar` 的绑定名是 avatar,目标
+    // 模块是 other——接收者应解析到 other.py 而非按绑定名误指 avatar.py。
+    let other = "def heal():\n    pass\n";
+    let avatar_file = "def heal():\n    pass\n";
+    let zcaller = "import other as avatar\n\ndef battle():\n    avatar.heal()\n";
+    let ok = key("scripts/other.py");
+    let ak = key("scripts/avatar.py");
+    let zk = key("scripts/zcaller.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&ok, other), (&ak, avatar_file), (&zk, zcaller)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        rev.get(&ok).map(|s| s.contains(&zk)).unwrap_or(false),
+        "别名导入应解析到目标模块 other.py, got {rev:?}"
+    );
+    assert!(
+        !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "别名导入不得按绑定名误指同名的无关文件 avatar.py, got {rev:?}"
+    );
+}
+
+#[test]
 fn rust7_cross_process_edge_marked_uncertain_not_silent() {
     // RUST-7:`self.cell.*`/`self.base.*` 跨进程边被调方文件无法静态解析
     // (实体类在另一进程侧文件里)。旧行为:落进 self.* 分支按「同类」折叠

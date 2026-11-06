@@ -134,24 +134,25 @@ fn resolve_callee_file(
         }
         return find_module_function(file_symbols, &edge.callee, caller_file);
     }
-    // 模块绑定接收者:`module.func` → 按模块名找文件(排除调用方自身)。
-    // KODE-AUD-008 复审残余:接收者首段也可能是实例变量(`avatar.heal()`,
-    // avatar 是局部对象而非模块)——不经 import 绑定核验就按 basename 找
-    // 文件,会把唯一同名文件误指为被调方(伪跨文件边)。
+    // 模块绑定接收者:`module.func` → 按目标模块 basename 找文件(排除调
+    // 用方自身)。KODE-AUD-008 复审残余:接收者首段也可能是实例变量
+    // (`avatar.heal()`,avatar 是局部对象而非模块)——不经 import 绑定核
+    // 验就按 basename 找文件,会把唯一同名文件误指为被调方(伪跨文件边)。
     //
-    // 绑定核验契约(保守歧义即放弃,复审第七/八轮定版):沿调用点所在的
-    // Function/Comprehension 作用域层自内向外走查——
-    // · 层内「只有」import 绑定且调用行不早于绑定行 → 模块绑定,放行
-    //   basename 唯一性核验;
-    // · 层内「只有」本地绑定(参数/Store 赋值)→ 本地对象,不产边;
-    // · 层内两类并存 → 静态歧义(先后需数据流),放弃该边(宁缺毋滥);
-    // · 层内未提及 → 继续向外;
-    // · 全链未决 → 模块顶层 imports(最外层回退)。
+    // 绑定核验契约(保守歧义即放弃,复审第七/八/九轮定版):沿调用点所在
+    // 的 Function/Comprehension 作用域层自内向外走查——
+    // · 层内「只有」import 绑定且调用行不早于绑定行 → 模块绑定,按目标
+    //   模块 basename(别名取目标模块名,非绑定名)放行唯一性核验;
+    // · 层内有本地绑定(参数/Store 赋值;叠加 import 亦然——静态歧义)
+    //   → 不产边;
+    // · 层内未提及该名 → 继续向外;
+    // · 全链未决 → 模块顶层回退:顶层 Store 重绑定过该名 → 不产边(第九
+    //   轮残余①);否则按顶层 import 的目标 basename 唯一性核验。
     // 已知粒度限制(保守漏边向,如实记录):同一行内 lambda 参数遮蔽与
     // 外层调用行粒度不可分;调用行早于函数内 import 行时向外回退(该调用
     // 在运行时本就 UnboundLocal,边无意义)。
     if let Some(module) = receiver.split('.').next() {
-        let imported = file_symbols
+        let resolved_file: Option<DocumentKey> = file_symbols
             .get(caller_file)
             .map(|s| {
                 let mut in_scope: Vec<&crate::model::ScopeImportBindings> = s
@@ -165,28 +166,57 @@ fn resolve_callee_file(
                     .collect();
                 // 内层(起始行更大)先看;层内裁决,未决继续向外。
                 in_scope.sort_by_key(|sc| std::cmp::Reverse(sc.start_line));
+                let mut resolved: Option<Option<String>> = None;
                 for sc in in_scope {
                     match (sc.bindings.get(module), sc.shadows.get(module)) {
-                        // 本地绑定存在即本地名(Python 静态局部性:作用域内
-                        // 任意位置赋值,全作用域皆局部);叠加 import = 歧义。
-                        (Some(_), Some(_)) => return false,
-                        (Some(&i), None) => {
-                            if edge.caller_line >= i {
-                                return true;
+                        // 本地绑定存在即本地名(Python 静态局部性);叠加
+                        // import = 静态歧义,保守放弃。
+                        (Some(_), Some(_)) => resolved = Some(None),
+                        (Some(&(bl, ref base)), None) => {
+                            if edge.caller_line >= bl {
+                                resolved = Some(Some(base.clone()));
                             }
                         }
-                        (None, Some(_)) => return false,
+                        (None, Some(_)) => resolved = Some(None),
                         (None, None) => {}
                     }
+                    if resolved.is_some() {
+                        break;
+                    }
                 }
-                // 作用域链未决 → 模块顶层 import(最外层回退)。
-                s.imports.iter().any(|i| i.binding == module)
+                match resolved {
+                    Some(basename) => {
+                        // Some(None)=本地/歧义不产边;Some(Some(base))=按目标
+                        // basename 唯一性核验。
+                        basename.and_then(|base| find_module_file(file_symbols, &base, caller_file))
+                    }
+                    // 作用域链未决 → 模块顶层回退:先查顶层重绑定遮蔽,再
+                    // 按顶层 import 的目标 basename 唯一性核验。
+                    None => {
+                        if s.module_shadows.contains_key(module) {
+                            return None;
+                        }
+                        let basename = s.imports.iter().find(|i| i.binding == module).map(
+                            |imp| {
+                                if imp.is_from {
+                                    imp.symbol
+                                        .clone()
+                                        .unwrap_or_else(|| module.to_string())
+                                } else {
+                                    imp.module.rsplit('.').next().unwrap_or("").to_string()
+                                }
+                            },
+                        );
+                        match basename {
+                            Some(base) => find_module_file(file_symbols, &base, caller_file),
+                            None => None,
+                        }
+                    }
+                }
             })
-            .unwrap_or(false);
-        if imported {
-            return find_module_file(file_symbols, module, caller_file);
-        }
-        return None;
+            .unwrap_or(None);
+        // resolved_file 已按目标 basename 的唯一性核验结果定性。
+        return resolved_file;
     }
     None
 }
