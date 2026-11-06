@@ -1,0 +1,16 @@
+HEAD=89cbddd8db7534f6fad447167e7426455f9d3ac1
+DATE=2026-11-06T22:07:50+08:00
+GATE=vitest run --maxWorkers=8 (controlled load; host shared with other seats)
+
+ RUN  v5.1.0 /home/cui/wt-kode-gen1
+
+
+ Test Files  562 passed | 4 skipped (566)
+      Tests  6945 passed | 21 skipped (6966)
+   Start at  22:07:51
+   Duration  75.99s (tests 56%, import 38%, transform 3%, worker 3%)
+
+    Isolate  566 workers spawned · ~382ms startup each (spawn + environment, per file)
+             at least ~26.67s faster with isolate: false — reuses workers across files instead of one per file
+
+EXIT=0
