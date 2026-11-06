@@ -174,3 +174,56 @@ describe('def reference graph', () => {
     expect(preview.text).toContain('Orphan.def -> Unresolved Missing (dangling-parent)');
   });
 });
+
+describe('KR-AUD-71 parent link directories', () => {
+  let krRoot = '';
+
+  beforeAll(() => {
+    krRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-def-graph-kr71-'));
+    const write = (relative: string, content: string): void => {
+      const target = path.join(krRoot, ...relative.split('/'));
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, content, 'utf8');
+    };
+    write('scripts/entities.xml', '<root>\n  <Mob/>\n</root>');
+    // 引擎 Parent 装载目录随条目类别:实体在 entity_defs 根(entitydef.cpp:372),
+    // 组件 def 带 components/ 前缀(:774);接口 def 只走 loadAllDefDescriptions
+    // (:611-638),从不调 loadParentClass——图侧必须同口径。
+    write('scripts/entity_defs/Mob.def',
+      '<root>\n  <Components>\n    <bag>\n      <Type>Inventory</Type>\n    </bag>\n  </Components>\n</root>');
+    write('scripts/entity_defs/components/Inventory.def',
+      '<root>\n  <Parent>BaseComp</Parent>\n  <Properties>\n    <slot> <Type>UINT8</Type> </slot>\n  </Properties>\n</root>');
+    write('scripts/entity_defs/components/BaseComp.def',
+      '<root>\n  <Properties>\n    <capacity> <Type>UINT16</Type> </capacity>\n  </Properties>\n</root>');
+    write('scripts/entity_defs/interfaces/Role.def',
+      '<root>\n  <Parent>Hero</Parent>\n  <Properties>\n    <title> <Type>STRING</Type> </title>\n  </Properties>\n</root>');
+  });
+
+  afterAll(() => {
+    fs.rmSync(krRoot, { recursive: true, force: true });
+  });
+
+  it('component parent resolves against components/, not the defs root', () => {
+    const graph = buildDefReferenceGraphFromFile(path.join(krRoot, 'scripts/entity_defs/components/Inventory.def'))!;
+    expect(graph).not.toBeNull();
+    expect(graph.issues.filter(issue => issue.code === 'dangling-parent')).toEqual([]);
+
+    const inherit = graph.edges.filter(edge => edge.relation === 'inherit');
+    expect(inherit).toHaveLength(1);
+    expect(path.basename(inherit[0].target)).toBe('BaseComp.def');
+  });
+
+  it('interface parent is ignored (engine never loads it)', () => {
+    const graph = buildDefReferenceGraphFromFile(path.join(krRoot, 'scripts/entity_defs/interfaces/Role.def'))!;
+    expect(graph.issues.filter(issue => issue.code === 'dangling-parent')).toEqual([]);
+    // 图含全部连通分量( Inventory→BaseComp 合法),按 seed 过滤后必须为空
+    const roleInherit = graph.edges.filter(
+      edge => edge.relation === 'inherit' && path.basename(edge.source) === 'Role.def'
+    );
+    expect(roleInherit).toEqual([]);
+    const roleReferences = graph.references.filter(
+      reference => reference.relation === 'inherit' && path.basename(reference.filePath) === 'Role.def'
+    );
+    expect(roleReferences).toEqual([]);
+  });
+});

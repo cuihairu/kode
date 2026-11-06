@@ -424,7 +424,9 @@ export class DefinitionSemanticsLoader {
         }
       }
 
-      if (local.parentName) {
+      // KR-AUD-72:引擎对接口 def 从不调 loadParentClass(entitydef.cpp:611-638
+      // 接口只走 loadAllDefDescriptions),接口语义不得合并 Parent。
+      if (local.parentName && category !== 'interface') {
         const parentCategory = category === 'component' ? 'component' : 'entity';
         const parentResolved = this.loadResolvedInternal(local.parentName, parentCategory, {
           allowComponents: context.allowComponents,

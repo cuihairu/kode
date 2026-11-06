@@ -38,6 +38,7 @@ import {
   getWorkspaceRootForDocument
 } from './definitionWorkspace';
 import { scanTypeReferencesInXml, type TypesXmlRefSite } from './typesXmlReferences';
+import { INTERFACE_WRAPPER_NAMES } from './defRenamer';
 
 /** 容器字面不是类型符号(scanTypeReferencesInXml 同口径) */
 const CONTAINER_LITERALS = new Set(['ARRAY', 'FIXED_DICT']);
@@ -87,6 +88,17 @@ export function resolveDefSymbolReferenceTarget(
 
   let node: DefElementNode | null = element;
   while (node) {
+    // KR-AUD-77:引擎在 <Interfaces> 下认四种 wrapper 拼写(interface/Interface/
+    // type/Type,entitydef.cpp:563-566)——直挂 <Interfaces> 的 wrapper 优先于
+    // 下方 Type 分支判定为接口引用;<Interfaces> 外的同名 <Type> 仍是属性类型。
+    if (
+      INTERFACE_WRAPPER_NAMES.has(node.name) &&
+      node.parent?.name === 'Interfaces' &&
+      offset >= node.contentStart &&
+      offset <= node.contentEnd
+    ) {
+      return { kind: 'interface', name: word };
+    }
     if (
       (node.name === 'Type' || node.name === 'Arg' || node.name === 'of') &&
       offset >= node.contentStart &&
@@ -156,7 +168,8 @@ function scanDefTagValueSites(
   content: string,
   file: string,
   tagName: string,
-  target: string
+  target: string,
+  onlyDirectInterfacesChild = false
 ): TypesXmlRefSite[] {
   const document = parseDefDocument(content);
   if (!document.root) {
@@ -164,9 +177,14 @@ function scanDefTagValueSites(
   }
   const sites: TypesXmlRefSite[] = [];
   walkElements(document.root, el => {
-    if (el.name === tagName) {
-      collectTokenSites(document, file, el.contentStart, el.contentEnd, target, sites);
+    if (el.name !== tagName) {
+      return;
     }
+    // KR-AUD-77:接口 wrapper 仅在 <Interfaces> 直挂时算接口引用
+    if (onlyDirectInterfacesChild && el.parent?.name !== 'Interfaces') {
+      return;
+    }
+    collectTokenSites(document, file, el.contentStart, el.contentEnd, target, sites);
   });
   return sites;
 }
@@ -242,7 +260,14 @@ async function collectInterfaceSites(
     } catch {
       continue;
     }
-    sites.push(...scanDefTagValueSites(content, file, 'Interface', name));
+    // KR-AUD-77:引擎认四种 wrapper 拼写(复用 defRenamer.INTERFACE_WRAPPER_NAMES,
+    // entitydef.cpp:563-566);仅 <Interfaces> 直挂的 wrapper 算接口引用,
+    // 属性 <Type> 等同名元素不误计。
+    sites.push(
+      ...[...INTERFACE_WRAPPER_NAMES].flatMap(tag =>
+        scanDefTagValueSites(content, file, tag, name, true)
+      )
+    );
   }
   return sites;
 }

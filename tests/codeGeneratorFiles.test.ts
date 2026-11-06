@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { KBEngineCodeGenerator, createGenerationRollbackLedger } from '../src/codeGenerator';
+import type { EntityWizardPart } from '../src/entityWizard';
 import type { EntityDefinition } from '../src/codeGenerator';
 import { analyzeDefDocument } from '../src/defAnalyzer';
 import type * as vscode from 'vscode';
@@ -132,7 +133,7 @@ const makeGenerator = (): KBEngineCodeGenerator =>
 const internals = (generator: KBEngineCodeGenerator): {
   config: { defOutputPath: string; pythonOutputPath: string; generatePython: boolean; registerInEntitiesXml: boolean };
   generateDefContent: (entity: EntityDefinition) => string;
-  generatePythonContent: (entity: EntityDefinition) => string;
+  generatePythonContent: (entity: EntityDefinition, part: EntityWizardPart) => string;
   getExistingEntities: () => Promise<Array<{ label: string; description: string }>>;
 } => generator as unknown as never;
 
@@ -168,14 +169,21 @@ describe('KBEngineCodeGenerator file outputs', () => {
     );
   });
 
-  it('writes the python file under the configured scripts root', async () => {
+  it('writes part scripts under scripts/<part>/<Name>.py with engine class naming', async () => {
     const generator = makeGenerator();
-    const pyPath = await generator.generatePythonFile(sampleEntity());
+    const written = await generator.generatePythonFile(sampleEntity());
 
-    expect(pyPath).toBe(path.join(root, 'scripts', 'Hero.py'));
+    // KR-AUD-74:hasBase→base、hasCell→cell 分段落盘(引擎 scripts/<part>/ 布局)
+    expect(written).toEqual([
+      path.join(root, 'scripts', 'base', 'Hero.py'),
+      path.join(root, 'scripts', 'cell', 'Hero.py')
+    ]);
     const normalize = (content: string): string => content.replace(/生成时间: .*/, '生成时间: <ts>');
-    expect(normalize(fs.readFileSync(pyPath, 'utf8'))).toBe(
-      normalize(internals(generator).generatePythonContent(sampleEntity()))
+    const basePy = fs.readFileSync(written[0], 'utf8');
+    expect(basePy).toContain('class Hero(KBEngine.Entity):');
+    expect(basePy).toContain('KBEngine.Entity.__init__(self)');
+    expect(normalize(basePy)).toBe(
+      normalize(internals(generator).generatePythonContent(sampleEntity(), 'base'))
     );
   });
 
@@ -302,10 +310,15 @@ describe('KBEngineCodeGenerator wizard', () => {
     // .def,防示例属性再滑回受限名(如批99 修掉的 'id')
     expect(analyzeDefDocument(defContent), '向导生成 .def 静态建议').toEqual([]);
 
-    const pyContent = fs.readFileSync(path.join(root, 'scripts', 'Hero.py'), 'utf8');
-    expect(pyContent).toContain('class HeroCell():');
+    // KR-AUD-74:base/cell 分段落盘,类名=实体名、继承 KBEngine.Entity
+    const baseContent = fs.readFileSync(path.join(root, 'scripts', 'base', 'Hero.py'), 'utf8');
+    expect(baseContent).toContain('class Hero(KBEngine.Entity):');
+    expect(baseContent).toContain('KBEngine.Entity.__init__(self)');
+    const pyContent = fs.readFileSync(path.join(root, 'scripts', 'cell', 'Hero.py'), 'utf8');
+    expect(pyContent).toContain('class Hero(KBEngine.Entity):');
     expect(pyContent).toContain('def onEnterWorld(self):');
-    expect(pyContent).toContain('def getName(self):');
+    // 采样方法按域落段:hasBase → base 段
+    expect(baseContent).toContain('def getName(self):');
 
     const xmlContent = fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8');
     expect(xmlContent).toContain('  <Hero hasCell="true" hasBase="true" hasClient="false" />');
@@ -373,10 +386,10 @@ describe('KBEngineCodeGenerator templates', () => {
     expect(defContent).toContain('<Arg>STRING</Arg>');
 
     const pyContent = fs.readFileSync(
-      path.join(root, 'scripts', 'MyAccount.py'),
+      path.join(root, 'scripts', 'base', 'MyAccount.py'),
       'utf8'
     );
-    expect(pyContent).toContain('class MyAccountBase():');
+    expect(pyContent).toContain('class MyAccount(KBEngine.Entity):');
     expect(pyContent).not.toContain('onEnterWorld');
 
     expect(
@@ -411,10 +424,10 @@ describe('KBEngineCodeGenerator templates', () => {
     expect(defContent).toContain('<Exposed/>');
 
     const pyContent = fs.readFileSync(
-      path.join(root, 'scripts', 'MyTeam.py'),
+      path.join(root, 'scripts', 'base', 'MyTeam.py'),
       'utf8'
     );
-    expect(pyContent).toContain('class MyTeamBase():');
+    expect(pyContent).toContain('class MyTeam(KBEngine.Entity):');
     expect(pyContent).toContain('def joinTeam(self, memberID):');
 
     expect(
@@ -450,7 +463,7 @@ describe('KBEngineCodeGenerator overwrite guard (IDE-GEN-001)', () => {
     expect(ui.error[0]).toContain('已存在');
     expect(ui.error[0]).toContain('Monster.def');
     // def 冲突在最前面抛出:python 未生成、entities.xml 未注册、无成功消息
-    expect(fs.existsSync(path.join(root, 'scripts', 'Monster.py'))).toBe(false);
+    expect(fs.existsSync(path.join(root, 'scripts', 'base', 'Monster.py'))).toBe(false);
     expect(fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8')).toBe(entitiesXmlBefore);
     expect(ui.info).toEqual([]);
     expect(fs.readFileSync(path.join(root, 'scripts', 'entity_defs', 'Monster.def'), 'utf8')).toBe(monsterSentinel);
@@ -465,29 +478,33 @@ describe('KBEngineCodeGenerator overwrite guard (IDE-GEN-001)', () => {
     expect(ui.error).toHaveLength(1);
     expect(ui.error[0]).toContain('已存在');
     expect(fs.readFileSync(path.join(root, 'scripts', 'entity_defs', 'Monster.def'), 'utf8')).toBe(monsterSentinel);
-    expect(fs.existsSync(path.join(root, 'scripts', 'Monster.py'))).toBe(false);
+    expect(fs.existsSync(path.join(root, 'scripts', 'base', 'Monster.py'))).toBe(false);
   });
 });
 
 describe('KBEngineCodeGenerator python overwrite guard (IDE-GEN-002)', () => {
-  const pySentinel = 'class MonsterBase():\n    def __init__(self):\n        self.custom = 1\n';
+  const pySentinel = 'class Monster(KBEngine.Entity):\n    def __init__(self):\n        self.custom = 1\n';
 
   it('rejects python generation onto an existing file and keeps the original code', async () => {
-    fs.writeFileSync(path.join(root, 'scripts', 'Monster.py'), pySentinel, 'utf8');
+    // KR-AUD-74:分段落盘后哨兵在 base 段路径,任一段冲突即整体中止
+    fs.mkdirSync(path.join(root, 'scripts', 'base'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'scripts', 'base', 'Monster.py'), pySentinel, 'utf8');
     const monster = sampleEntity();
     monster.config.name = 'Monster';
 
     await expect(makeGenerator().generatePythonFile(monster)).rejects.toThrow('已存在');
     await expect(makeGenerator().generatePythonFile(monster)).rejects.toThrow(
-      path.join(root, 'scripts', 'Monster.py')
+      path.join(root, 'scripts', 'base', 'Monster.py')
     );
-    expect(fs.readFileSync(path.join(root, 'scripts', 'Monster.py'), 'utf8')).toBe(pySentinel);
+    expect(fs.readFileSync(path.join(root, 'scripts', 'base', 'Monster.py'), 'utf8')).toBe(pySentinel);
+    expect(fs.existsSync(path.join(root, 'scripts', 'cell', 'Monster.py'))).toBe(false);
   });
 
   it('wizard keeps the existing implementation and skips registration when python conflicts', async () => {
-    // Hero.def 不在盘上(def 面可生成),Hero.py 已有使用者实现
-    const heroPySentinel = 'class HeroBase():\n    def custom(self):\n        pass\n';
-    fs.writeFileSync(path.join(root, 'scripts', 'Hero.py'), heroPySentinel, 'utf8');
+    // Hero.def 不在盘上(def 面可生成),base 段 Hero.py 已有使用者实现
+    const heroPySentinel = 'class Hero(KBEngine.Entity):\n    def custom(self):\n        pass\n';
+    fs.mkdirSync(path.join(root, 'scripts', 'base'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'scripts', 'base', 'Hero.py'), heroPySentinel, 'utf8');
     const entitiesXmlBefore = fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8');
     ui.inputs.push('Hero');
     ui.picks.push(pickIndex(0), pickNone, pickIndex(1));
@@ -500,14 +517,15 @@ describe('KBEngineCodeGenerator python overwrite guard (IDE-GEN-002)', () => {
     expect(ui.error[0]).toContain('已存在');
     expect(ui.error[0]).toContain('Hero.py');
     expect(fs.existsSync(path.join(root, 'scripts', 'entity_defs', 'Hero.def'))).toBe(false);
-    expect(fs.readFileSync(path.join(root, 'scripts', 'Hero.py'), 'utf8')).toBe(heroPySentinel);
+    expect(fs.readFileSync(path.join(root, 'scripts', 'base', 'Hero.py'), 'utf8')).toBe(heroPySentinel);
     // 注册不会因 def 已写出而顺带发生
     expect(fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8')).toBe(entitiesXmlBefore);
   });
 
   it('template flow keeps the existing implementation on python conflict', async () => {
-    const accountPySentinel = 'class MyAccountBase():\n    def custom(self):\n        pass\n';
-    fs.writeFileSync(path.join(root, 'scripts', 'MyAccount.py'), accountPySentinel, 'utf8');
+    const accountPySentinel = 'class MyAccount(KBEngine.Entity):\n    def custom(self):\n        pass\n';
+    fs.mkdirSync(path.join(root, 'scripts', 'base'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'scripts', 'base', 'MyAccount.py'), accountPySentinel, 'utf8');
     ui.picks.push(pickIndex(0));
     ui.inputs.push('MyAccount');
 
@@ -515,7 +533,7 @@ describe('KBEngineCodeGenerator python overwrite guard (IDE-GEN-002)', () => {
 
     expect(ui.error).toHaveLength(1);
     expect(ui.error[0]).toContain('已存在');
-    expect(fs.readFileSync(path.join(root, 'scripts', 'MyAccount.py'), 'utf8')).toBe(accountPySentinel);
+    expect(fs.readFileSync(path.join(root, 'scripts', 'base', 'MyAccount.py'), 'utf8')).toBe(accountPySentinel);
     // IDE-GEN-003 收紧后:python 冲突即整体中止,def 不再先写出
     expect(fs.existsSync(path.join(root, 'scripts', 'entity_defs', 'MyAccount.def'))).toBe(false);
   });
@@ -524,8 +542,9 @@ describe('KBEngineCodeGenerator python overwrite guard (IDE-GEN-002)', () => {
 describe('KBEngineCodeGenerator pre-flight conflicts (IDE-GEN-003)', () => {
   it('reports every conflicting target and writes nothing when both def and python exist', async () => {
     const defSentinel = '<root><BaseMethods><roar/></BaseMethods></root>';
-    const pySentinel = 'class MonsterBase():\n    def custom(self):\n        pass\n';
-    fs.writeFileSync(path.join(root, 'scripts', 'Monster.py'), pySentinel, 'utf8');
+    const pySentinel = 'class Monster(KBEngine.Entity):\n    def custom(self):\n        pass\n';
+    fs.mkdirSync(path.join(root, 'scripts', 'base'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'scripts', 'base', 'Monster.py'), pySentinel, 'utf8');
     const entitiesXmlBefore = fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8');
     ui.inputs.push('Monster');
     ui.picks.push(pickIndex(0), pickNone, pickIndex(1));
@@ -538,7 +557,7 @@ describe('KBEngineCodeGenerator pre-flight conflicts (IDE-GEN-003)', () => {
     expect(ui.error[1]).toContain('Monster.py');
     expect(ui.info).toEqual([]);
     expect(fs.readFileSync(path.join(root, 'scripts', 'entity_defs', 'Monster.def'), 'utf8')).toBe(defSentinel);
-    expect(fs.readFileSync(path.join(root, 'scripts', 'Monster.py'), 'utf8')).toBe(pySentinel);
+    expect(fs.readFileSync(path.join(root, 'scripts', 'base', 'Monster.py'), 'utf8')).toBe(pySentinel);
     expect(fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8')).toBe(entitiesXmlBefore);
   });
 
@@ -550,7 +569,7 @@ describe('KBEngineCodeGenerator pre-flight conflicts (IDE-GEN-003)', () => {
 
     expect(ui.error).toEqual([]);
     expect(fs.existsSync(path.join(root, 'scripts', 'entity_defs', 'Fresh.def'))).toBe(true);
-    expect(fs.existsSync(path.join(root, 'scripts', 'Fresh.py'))).toBe(true);
+    expect(fs.existsSync(path.join(root, 'scripts', 'base', 'Fresh.py'))).toBe(true);
     expect(fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8')).toContain('<Fresh ');
     expect(ui.info[ui.info.length - 1]).toBe('是否打开生成的文件？');
   });
@@ -585,15 +604,15 @@ describe('KBEngineCodeGenerator generation plan preview (IDE-GEN-004)', () => {
 
     // 确认行 + def/python/注册三条计划项,路径逐字准确
     expect(previewItems.map(item => item.label)).toEqual([
-      '确认生成', '新增 .def', '新增 Python', '注册 entities.xml'
+      '确认生成', '新增 .def', '新增 Python (base 段)', '注册 entities.xml'
     ]);
     expect(previewItems[1].description).toBe(path.join(root, 'scripts', 'entity_defs', 'Preview.def'));
-    expect(previewItems[2].description).toBe(path.join(root, 'scripts', 'Preview.py'));
+    expect(previewItems[2].description).toBe(path.join(root, 'scripts', 'base', 'Preview.py'));
     expect(previewItems[3].description).toContain(path.join(root, 'scripts', 'entities.xml'));
     expect(previewItems[3].description).toContain('<Preview hasCell="false" hasBase="true" hasClient="false" />');
 
     expect(fs.existsSync(path.join(root, 'scripts', 'entity_defs', 'Preview.def'))).toBe(true);
-    expect(fs.existsSync(path.join(root, 'scripts', 'Preview.py'))).toBe(true);
+    expect(fs.existsSync(path.join(root, 'scripts', 'base', 'Preview.py'))).toBe(true);
     expect(fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8')).toContain('<Preview ');
     expect(ui.error).toEqual([]);
   });

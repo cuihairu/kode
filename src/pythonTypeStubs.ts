@@ -629,6 +629,43 @@ export function buildPythonTypeStubContent(
   entries: readonly PythonTypeStubEntry[],
   externalImports: ReadonlyMap<string, string> = new Map()
 ): string | null {
+  return renderPythonTypeStub(entries, externalImports, null, null)?.content ?? null;
+}
+
+/** KR-AUD-78:生成文档行映射——entry 名 → 类/别名声明行(0 起),类名 →
+ * 属性名 → 属性行(0 起)。来源镜按行精确映射,不再硬编码 0/2。
+ * content 为 null(零条目)时返回 null。 */
+export interface PythonTypeStubLineMap {
+  readonly entryLines: ReadonlyMap<string, number>;
+  readonly propertyLines: ReadonlyMap<string, Readonly<Record<string, number>>>;
+}
+
+export function buildPythonTypeStubLineMap(
+  entries: readonly PythonTypeStubEntry[],
+  externalImports: ReadonlyMap<string, string> = new Map()
+): PythonTypeStubLineMap | null {
+  const entryLines = new Map<string, number>();
+  const propertyLines = new Map<string, Record<string, number>>();
+  const rendered = renderPythonTypeStub(entries, externalImports, (name, line) => {
+    entryLines.set(name, line);
+  }, (name, property, line) => {
+    const bucket = propertyLines.get(name) ?? {};
+    bucket[property] = line;
+    propertyLines.set(name, bucket);
+  });
+  return rendered === null ? null : { entryLines, propertyLines };
+}
+
+interface RenderedPythonTypeStub {
+  readonly content: string;
+}
+
+function renderPythonTypeStub(
+  entries: readonly PythonTypeStubEntry[],
+  externalImports: ReadonlyMap<string, string>,
+  recordEntryLine: ((name: string, line: number) => void) | null,
+  recordPropertyLine: ((name: string, property: string, line: number) => void) | null
+): RenderedPythonTypeStub | null {
   if (entries.length === 0) {
     return null;
   }
@@ -694,6 +731,7 @@ export function buildPythonTypeStubContent(
     if (entry.kind === 'class') {
       lines.push(`# source: ${entry.sourceFile ?? 'types.xml'}:${entry.sourceLine ?? 'unknown'}`);
       lines.push(`class ${entry.name}(TypedDict):`);
+      recordEntryLine?.(entry.name, lines.length - 1);
       if (entry.properties.length === 0) {
         lines.push('    pass');
       } else {
@@ -701,15 +739,17 @@ export function buildPythonTypeStubContent(
           const sourceLine = entry.propertySourceLines?.[property.name];
           lines.push(`    # source: ${entry.sourceFile ?? 'types.xml'}:${sourceLine ?? 'unknown'}`);
           lines.push(`    ${property.name}: ${property.annotation}`);
+          recordPropertyLine?.(entry.name, property.name, lines.length - 1);
         }
       }
     } else {
       lines.push(`# source: ${entry.sourceFile ?? 'types.xml'}:${entry.sourceLine ?? 'unknown'}`);
       lines.push(`${entry.name} = ${entry.annotation}`);
+      recordEntryLine?.(entry.name, lines.length - 1);
       }
   }
   lines.push('');
-  return lines.join('\n');
+  return { content: lines.join('\n') };
 }
 
 function escapeRegExp(value: string): string {
