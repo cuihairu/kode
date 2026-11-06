@@ -172,7 +172,7 @@ fn resolve_callee_file(
                         // 本地绑定存在即本地名(Python 静态局部性);叠加
                         // import = 静态歧义,保守放弃。
                         (Some(_), Some(_)) => resolved = Some(None),
-                        (Some(&(bl, ref base)), None) => {
+                        (Some(&(bl, ref base, _)), None) => {
                             // 空 basename = 目标身份冲突歧义标记。
                             if base.is_empty() {
                                 resolved = Some(None);
@@ -218,10 +218,14 @@ fn resolve_callee_file(
                         let base = if first.is_from {
                             // from pkg import x → 目标模块 basename=x(pkg/x.py)。
                             first.symbol.clone().unwrap_or_else(|| module.to_string())
-                        } else {
+                        } else if first.binding == first.module.split('.').next().unwrap_or("") {
                             // 无别名 import a.b 绑定的是顶层包 a → basename=a
                             // (与函数层收集器同口径;复审第十轮残余①)。
                             first.module.split('.').next().unwrap_or("").to_string()
+                        } else {
+                            // 有别名 import a.b as c 绑定 c=a.b → basename=b
+                            // (复审第十一轮残余①)。
+                            first.module.rsplit('.').next().unwrap_or("").to_string()
                         };
                         find_module_file(file_symbols, &base, caller_file)
                     }

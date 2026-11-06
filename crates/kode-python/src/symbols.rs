@@ -141,17 +141,22 @@ impl<'a> ImportBindingCollector<'a> {
         }
     }
 
-    fn push_binding(&mut self, binding: &str, line: usize, basename: &str) {
+    fn push_binding(&mut self, binding: &str, line: usize, basename: &str, target_id: &str) {
         // 记到最内层作用域层,保留最近一次绑定(同作用域重绑定取后者;
         // 外层区间覆盖嵌套体,调用点行号包含判定实现闭包可见语义)。
-        // 同名多次 import 目标不同 = 目标身份冲突,静态不裁决 → 记空
-        // basename 歧义标记(解析层放弃该边;复审第十轮残余②)。
+        // 同名多次 import 目标不同(basename 或目标身份 id)= 静态不裁决 →
+        // 记空 basename 歧义标记(解析层放弃该边;复审第十/十一轮残余)。
         if let Some(top) = self.scope_stack.last_mut() {
             let base = match top.bindings.get(binding) {
-                Some((_, existing)) if existing != basename => String::new(),
+                Some((_, existing_base, existing_tid))
+                    if existing_base != basename || existing_tid != target_id =>
+                {
+                    String::new()
+                }
                 _ => basename.to_string(),
             };
-            top.bindings.insert(binding.to_string(), (line, base));
+            top.bindings
+                .insert(binding.to_string(), (line, base, target_id.to_string()));
         }
     }
 
@@ -226,7 +231,8 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
                     } else {
                         top_level_binding(alias.name.as_str())
                     };
-                    self.push_binding(&binding, line, &basename);
+                    let target_id = alias.name.as_str().to_string();
+                    self.push_binding(&binding, line, &basename, &target_id);
                 }
             }
             Stmt::ImportFrom(impf) => {
@@ -242,7 +248,16 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
                         .as_ref()
                         .map(|n| n.as_str().to_string())
                         .unwrap_or_else(|| alias.name.as_str().to_string());
-                    self.push_binding(&binding, line, alias.name.as_str());
+                    let basename = alias.name.as_str().to_string();
+                    // 目标身份 id:module.x(相对导入带 level 前缀点,level
+                    // 不同的同名目标不得混同)。
+                    let target_id = format!(
+                        "{}{}.{}",
+                        ".".repeat(impf.level as usize),
+                        impf.module.as_ref().map(|m| m.as_str()).unwrap_or(""),
+                        alias.name.as_str()
+                    );
+                    self.push_binding(&binding, line, &basename, &target_id);
                 }
             }
             _ => {}

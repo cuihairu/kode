@@ -545,6 +545,65 @@ fn conflicting_import_targets_give_up_edge() {
 }
 
 #[test]
+fn module_fallback_aliased_dotted_import_uses_last_segment() {
+    // 复审第十一轮残余①:`import a.b as c` 的绑定 c 指向模块 a.b——回退
+    // 应取末段 b(b.py),不得因绑定名恰为顶层首段误取 a.py。
+    let zcaller = "import a.b as c\n\ndef battle():\n    c.f()\n";
+    let bmod = "def f():\n    pass\n";
+    let amod = "def f():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let bk = key("scripts/b.py");
+    let ak = key("scripts/a.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&bk, bmod), (&ak, amod)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        rev.get(&bk).map(|s| s.contains(&zk)).unwrap_or(false),
+        "import a.b as c 的接收者 c 应解析到 b.py, got {rev:?}"
+    );
+    assert!(
+        !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "import a.b as c 不得误指 a.py, got {rev:?}"
+    );
+}
+
+#[test]
+fn function_layer_from_import_conflict_gives_up_edge() {
+    // 复审第十一轮残余②:同 basename 不同目标(pkg.x vs other.x)的
+    // from-import 目标身份冲突——basename 相同不足以判定一致,应放弃。
+    let px = "def heal():\n    pass\n";
+    let ox = "def heal():\n    pass\n";
+    let zcaller = "def battle():\n    from pkg import x as avatar\n    from other import x as avatar\n    avatar.heal()\n";
+    let pk = key("scripts/x.py");
+    let ok = key("scripts/x2.py");
+    let zk = key("scripts/zcaller.py");
+    // 两个目标文件 basename 都须能命中(同 basename 不同目录在测试里用
+    // 同名不可行,改用两个不同文件各含 heal,断言两者都不产边——即完全
+    // 放弃)。x.py 与 x2.py basename 不同,保守契约下 from-conflict 放弃
+    // 后解析不到任何文件,两处都应无边。
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&pk, px), (&ok, ox), (&zk, zcaller)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        !rev.get(&pk).map(|s| s.contains(&zk)).unwrap_or(false)
+            && !rev.get(&ok).map(|s| s.contains(&zk)).unwrap_or(false),
+        "from-import 目标身份冲突应放弃该边, got {rev:?}"
+    );
+}
+
+#[test]
 fn rust7_cross_process_edge_marked_uncertain_not_silent() {
     // RUST-7:`self.cell.*`/`self.base.*` 跨进程边被调方文件无法静态解析
     // (实体类在另一进程侧文件里)。旧行为:落进 self.* 分支按「同类」折叠

@@ -53,9 +53,9 @@ pub struct ScopeImportBindings {
     /// 函数结束行(体末行)。
     pub end_line: usize,
     /// 该函数子树内(含嵌套 def/分支体)import 的绑定名 → (最近一次 import
-    /// 绑定行 0-based,目标模块 basename——`import a.b` 取末段 b、
-    /// `from pkg import x` 取 x、别名取目标模块名而非绑定名)。
-    pub bindings: std::collections::BTreeMap<String, (usize, String)>,
+    /// 绑定行 0-based,目标模块 basename,目标身份 id)。basename 空串 =
+    /// 目标身份冲突歧义标记(解析层放弃该边)。
+    pub bindings: std::collections::BTreeMap<String, (usize, String, String)>,
     /// 该函数直接作用域内被本地绑定的名(参数+Store 赋值目标) → 最近一次
     /// 本地绑定行。本地绑定存在即整作用域按本地名处理(静态局部性),与
     /// bindings 并存 = 静态歧义,保守放弃(宁缺毋滥)。
