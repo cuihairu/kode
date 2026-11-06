@@ -76,10 +76,10 @@ describe('rustSymbolsToIndexedMethodLocations', () => {
     const path = 'tests/fixtures/kbengine-demo-assets/scripts/cell/Monster.py';
     const text = readFixture('Monster.py');
     const symbols = fileSymbols(path, [
-      sym('__init__', 6, 1, 7),
-      sym('onAggro', 9, 1, 14),
-      sym('onMove', 16, 1, 21),
-      sym('think', 23, 1, 25, [['respawn', 25, 2]])
+      sym('__init__', 9, 1, 10),
+      sym('onAggro', 12, 1, 17),
+      sym('onMove', 19, 1, 24),
+      sym('think', 26, 1, 28, [['respawn', 28, 2]])
     ]);
     const rust = rustSymbolsToIndexedMethodLocations([{ path, text }], symbols);
     expect(normalized(rust)).toEqual(normalized(parsePythonMethodBlocks(text, path)));
@@ -91,7 +91,11 @@ describe('rustSymbolsToIndexedMethodLocations', () => {
     const symbols = fileSymbols(path, [
       sym('__init__', 6, 1, 7),
       sym('respawn', 9, 1, 14),
-      sym('notifyMove', 16, 1, 18, [['onMove', 18, 2]])
+      sym('onEnterSpace', 16, 1, 21),
+      // 2026-11-07:DEMO-GAME-001 锚点 evidenceLog 落文件链,onEnterSpace 块 +2 行
+      sym('onLeaveSpace', 26, 1, 31),
+      sym('onMove', 33, 1, 40),
+      sym('notifyMove', 42, 1, 44, [['onMove', 44, 2]])
     ]);
     const rust = rustSymbolsToIndexedMethodLocations([{ path, text }], symbols);
     expect(normalized(rust)).toEqual(normalized(parsePythonMethodBlocks(text, path)));

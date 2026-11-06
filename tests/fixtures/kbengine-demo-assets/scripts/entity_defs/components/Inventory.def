@@ -10,6 +10,7 @@
 				ARRAY
 				<of> ITEM_ID </of>
 			</Type>
+			<Flags> CELL_PUBLIC </Flags>
 			<Persistent> true </Persistent>
 		</items>
 	</Properties>

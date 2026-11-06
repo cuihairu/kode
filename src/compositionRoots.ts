@@ -288,5 +288,31 @@ export function deriveCompositionRoots(input: CompositionRootDerivationInput): C
     ]);
   }
 
+  // 父链继承闭包:引擎 loadParentClass(entitydef.cpp:915)把父类 def 连同其
+  // Interfaces/Components 整体重灌进子类模块——子实体的收录面含父链(含祖父链)
+  // 全部 mixin,而非仅直接声明。例:Monster 不再重复声明 ROLE(引擎侧重复声明
+  // 即双注册报错),ROLE 经 Parent→Avatar 链进入 Monster 的组合面。
+  // 直接声明先落账,再沿 Parent 边传播至不动点。
+  let propagated = true;
+  while (propagated) {
+    propagated = false;
+    for (const { entity, content } of input.entityDefs) {
+      const composition = parseDefComposition(content);
+      const parent = composition?.parent;
+      if (!parent) {
+        continue;
+      }
+      const parentMixins = defMixins.get(parent);
+      if (!parentMixins || parentMixins.length === 0) {
+        continue;
+      }
+      const before = (defMixins.get(entity) ?? []).length;
+      appendMixins(entity, [...parentMixins]);
+      if ((defMixins.get(entity) ?? []).length !== before) {
+        propagated = true;
+      }
+    }
+  }
+
   return { roots, defMixins };
 }

@@ -13,6 +13,9 @@ def onBaseAppReady(isBootstrap):
 	INFO_MSG('onBaseAppReady: isBootstrap=%s, appID=%s, bootstrapGroupIndex=%s, bootstrapGlobalIndex=%s' % \
 	 (isBootstrap, os.getenv("KBE_COMPONENTID"), os.getenv("KBE_BOOTIDX_GROUP"), os.getenv("KBE_BOOTIDX_GLOBAL")))
 
+	# 迷你 ARPG:baseapp 就绪即创建空间管理器(其内逐空间号建 Space)
+	KBEngine.createEntityLocally("Spaces", {})
+
 def onReadyForLogin(isBootstrap):
 	"""
 	KBEngine method.

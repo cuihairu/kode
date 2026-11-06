@@ -1,0 +1,4 @@
+<root>
+	<!-- 迷你 ARPG:空间管理器。baseapp 就绪后由 kbemain.onBaseAppReady 创建,
+	     逐个空间号创建 Space 基实体;无属性无方法,纯管理器。 -->
+</root>

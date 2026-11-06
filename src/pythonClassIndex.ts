@@ -1366,6 +1366,14 @@ export class PythonClassIndex {
       }
       const key = `${loc.filePath}::${loc.line}::${loc.character}`;
       if (seen.has(key)) {
+        // 同一落点先以无标注形态(①静态 MRO)入列、后以组合根标注形态(②)抵达:
+        // 位置相同,标注更丰富者胜——例如实体脚本类经 Python 继承拿到父类实现,
+        // ①直接命中且 ②按组合根命中同一行,不得让无标注版本吞掉组合根标注。
+        const idx = out.findIndex(item =>
+          `${item.filePath}::${item.line}::${item.character}` === key);
+        if (idx >= 0 && !out[idx].compositionRoot && loc.compositionRoot) {
+          out[idx] = loc;
+        }
         return;
       }
       seen.add(key);
@@ -1409,6 +1417,7 @@ export class PythonClassIndex {
     const scope = [...this.rootsByScope.keys()].filter(root => filePath.startsWith(root + path.sep))
       .sort((left, right) => right.length - left.length)[0];
     const composition = scope ? this.rootsByScope.get(scope) : undefined;
+    process.stdout.write('DBG2 scope='+String(scope)+' composition='+(composition?JSON.stringify({roots:composition.roots.slice(0,8),mixins:composition.defMixins.get('Monster')})+'':'null')+'\n');
     const rootNames = composition?.roots ?? [];
     for (const root of rootNames) {
       if (token?.isCancellationRequested) { return { candidates: [], partial: true }; }

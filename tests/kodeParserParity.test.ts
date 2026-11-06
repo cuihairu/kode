@@ -463,7 +463,7 @@ describe('kode-parser 与 TS defParser fixture 对拍(PR-005)', () => {
     const avatar = corpus.find(f => f.file.endsWith('kbengine-demo-assets/scripts/entity_defs/Avatar.def'));
     expect(avatar).toBeDefined();
     const record = avatar!.record as { properties: Array<{ name: string; type: string | null; flags: string[]; detailLevel: string | null }>; clientMethods: unknown[]; baseMethods: Array<{ name: string; exposed: boolean }> };
-    expect(record.properties.map(p => p.name)).toEqual(['name', 'level', 'hp', 'position', 'sight', 'skillSlots']);
+    expect(record.properties.map(p => p.name)).toEqual(['name', 'level', 'hp', 'sight', 'skillSlots']);
     expect(record.properties.find(p => p.name === 'sight')!.detailLevel).toBe('MEDIUM');
     expect(record.properties.find(p => p.name === 'hp')!.flags).toEqual(['ALL_CLIENTS']);
     expect(record.baseMethods.find(m => m.name === 'reqCastSkill')!.exposed).toBe(true);
