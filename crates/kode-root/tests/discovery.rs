@@ -63,10 +63,12 @@ fn rel_sorted(tree: &str) -> RelSorted {
     let rel_list = |ps: &[PathBuf]| -> Vec<String> {
         ps.iter()
             .map(|p| {
+                // win32 相对形态产出 \;夹具断言以 / 表达——断言侧归一
+                // (与 WIN-3 测试对齐口径,Linux CI 输出不变)。
                 p.strip_prefix(&root)
                     .unwrap_or(p)
                     .to_string_lossy()
-                    .into_owned()
+                    .replace('\\', "/")
             })
             .collect()
     };

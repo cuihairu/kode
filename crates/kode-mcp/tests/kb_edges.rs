@@ -304,6 +304,9 @@ fn type_graph_carries_alias_and_element_edges_with_diagnostics() {
     std::fs::remove_dir_all(&root).unwrap();
 }
 
+// POSIX 语义(0o000 不可读/非 UTF-8 文件名)在这套测试才成立;
+// Windows 上 chmod 无可读位语义、OsStr 无 from_bytes,Linux CI 覆盖。
+#[cfg(unix)]
 #[test]
 fn load_tolerates_unreadable_files_dirs_and_non_utf8_names() {
     use std::os::unix::fs::PermissionsExt;
