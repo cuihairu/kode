@@ -39,7 +39,13 @@ impl FileKeyStore {
         // id 只允许安全字符,防路径穿越。
         let safe: String = id
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         self.root.join(format!("{safe}.key"))
     }
@@ -47,7 +53,9 @@ impl FileKeyStore {
 
 impl std::fmt::Debug for FileKeyStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FileKeyStore").field("root", &self.root).finish()
+        f.debug_struct("FileKeyStore")
+            .field("root", &self.root)
+            .finish()
     }
 }
 
@@ -103,7 +111,9 @@ fn key_absolutize(p: &Path) -> PathBuf {
     if p.is_absolute() {
         p.to_path_buf()
     } else {
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join(p)
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(p)
     }
 }
 

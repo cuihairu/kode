@@ -203,7 +203,8 @@ impl ArchiveWriter {
                 .map_err(|e| CloneError::ArchiveError(format!("write frame payload: {e}")))?;
         }
         self.written += frame_len;
-        self.files_sha.insert(name.to_string(), hex_encode(sha.as_slice()));
+        self.files_sha
+            .insert(name.to_string(), hex_encode(sha.as_slice()));
         Ok(())
     }
 
@@ -361,8 +362,8 @@ impl Archive {
     /// 开档并做全部校验:魔数/格式版本/大小上限/加密旗标与密钥匹配/逐帧
     /// SHA-256/帧集与清单一致/逐表与逐文件校验和互核。任一不符即拒绝。
     pub fn open(path: &Path, key: Option<&ArchiveKey>) -> CloneResult<Self> {
-        let file = File::open(path)
-            .map_err(|e| CloneError::ArchiveError(format!("open archive: {e}")))?;
+        let file =
+            File::open(path).map_err(|e| CloneError::ArchiveError(format!("open archive: {e}")))?;
         let file_len = file
             .metadata()
             .map_err(|e| CloneError::ArchiveError(format!("stat archive: {e}")))?
@@ -455,7 +456,10 @@ impl Archive {
         for t in &meta.tables {
             let fname = format!("data/{}.rows.jsonl", t.name);
             let data = files.get(&fname).ok_or_else(|| {
-                CloneError::ArchiveError(format!("manifest lists table `{}` with no data frame", t.name))
+                CloneError::ArchiveError(format!(
+                    "manifest lists table `{}` with no data frame",
+                    t.name
+                ))
             })?;
             let got = hex_encode(Sha256::digest(data).as_slice());
             if got != t.sha256 {
@@ -607,19 +611,41 @@ fn read_u32_or_eof(r: &mut dyn Read) -> CloneResult<Option<u32>> {
     Ok(Some(u32::from_le_bytes(buf)))
 }
 
-fn aead_seal(key: &ArchiveKey, nonce: &[u8; 12], plaintext: &[u8], aad: &[u8]) -> CloneResult<Vec<u8>> {
+fn aead_seal(
+    key: &ArchiveKey,
+    nonce: &[u8; 12],
+    plaintext: &[u8],
+    aad: &[u8],
+) -> CloneResult<Vec<u8>> {
     let cipher = ChaCha20Poly1305::new_from_slice(key)
         .map_err(|_| CloneError::ArchiveError("archive key must be 32 bytes".into()))?;
     cipher
-        .encrypt(Nonce::from_slice(nonce), Payload { msg: plaintext, aad })
+        .encrypt(
+            Nonce::from_slice(nonce),
+            Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
         .map_err(|_| CloneError::ArchiveError("frame encryption failed".into()))
 }
 
-fn aead_open(key: &ArchiveKey, nonce: &[u8; 12], ciphertext: &[u8], aad: &[u8]) -> CloneResult<Vec<u8>> {
+fn aead_open(
+    key: &ArchiveKey,
+    nonce: &[u8; 12],
+    ciphertext: &[u8],
+    aad: &[u8],
+) -> CloneResult<Vec<u8>> {
     let cipher = ChaCha20Poly1305::new_from_slice(key)
         .map_err(|_| CloneError::ArchiveError("archive key must be 32 bytes".into()))?;
     cipher
-        .decrypt(Nonce::from_slice(nonce), Payload { msg: ciphertext, aad })
+        .decrypt(
+            Nonce::from_slice(nonce),
+            Payload {
+                msg: ciphertext,
+                aad,
+            },
+        )
         .map_err(|_| {
             CloneError::ArchiveError(
                 "frame authentication failed (wrong key or corrupted archive)".into(),
@@ -659,7 +685,8 @@ pub fn write_archive(
 ) -> CloneResult<ArchiveMeta> {
     let mut writer = ArchiveWriter::new(path, key, &plan.entity_name)?;
     let mut redacting = RedactingSink::new(&mut writer, policy, plan);
-    let outcome = SourceReader::new(executor).export(plan, root_id, &mut redacting, budget, control)?;
+    let outcome =
+        SourceReader::new(executor).export(plan, root_id, &mut redacting, budget, control)?;
     if outcome.cancelled {
         return Err(CloneError::ArchiveError(
             "export cancelled or timed out before completion; no archive was written".into(),
@@ -759,7 +786,8 @@ mod tests {
         let mut w = ArchiveWriter::new(&plain, None, "Avatar").unwrap();
         w.write_row("tbl_Avatar", &row).unwrap();
         w.end_table("tbl_Avatar", 1).unwrap();
-        w.finalize(&[], &RedactionReport { entries: vec![] }).unwrap();
+        w.finalize(&[], &RedactionReport { entries: vec![] })
+            .unwrap();
         assert!(Archive::open(&plain, Some(&key)).is_err());
         let _ = fs::remove_dir_all(&dir);
     }
@@ -771,7 +799,8 @@ mod tests {
         let mut w = ArchiveWriter::new(&path, None, "Avatar").unwrap();
         w.write_row("tbl_Avatar", &avatar_row(1, "A")).unwrap();
         w.end_table("tbl_Avatar", 1).unwrap();
-        w.finalize(&[], &RedactionReport { entries: vec![] }).unwrap();
+        w.finalize(&[], &RedactionReport { entries: vec![] })
+            .unwrap();
         let bytes = fs::read(&path).unwrap();
 
         // 翻转末字节(清单载荷)→ SHA 不符。
@@ -816,7 +845,9 @@ mod tests {
         let mut w = ArchiveWriter::new(&path, None, "Avatar").unwrap();
         w.write_row("tbl_Avatar", &avatar_row(1, "A")).unwrap();
         w.end_table("tbl_Avatar", 5).unwrap();
-        assert!(w.finalize(&[], &RedactionReport { entries: vec![] }).is_err());
+        assert!(w
+            .finalize(&[], &RedactionReport { entries: vec![] })
+            .is_err());
         // 目标路径不存在(finalize 未到 rename),临时文件被 Drop 清理。
         assert!(!path.exists());
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
@@ -883,8 +914,9 @@ mod tests {
                         "bigint unsigned".into(),
                         "int".into(),
                     ],
-                    select_sql: "SELECT `id`, `parentID`, `count` FROM `tbl_Bag` WHERE `parentID` = ?"
-                        .into(),
+                    select_sql:
+                        "SELECT `id`, `parentID`, `count` FROM `tbl_Bag` WHERE `parentID` = ?"
+                            .into(),
                     estimated_rows: None,
                 },
             ],
@@ -918,7 +950,11 @@ mod tests {
                 ])
             } else if sql.contains("tbl_Bag") {
                 if matches!(params.first(), Some(SqlValue::U64(1001))) {
-                    Ok(vec![vec![Some("2001".into()), Some("1001".into()), Some("3".into())]])
+                    Ok(vec![vec![
+                        Some("2001".into()),
+                        Some("1001".into()),
+                        Some("3".into()),
+                    ]])
                 } else {
                     Ok(vec![])
                 }
@@ -965,7 +1001,8 @@ mod tests {
         assert_eq!(bags[0].values[2], TypedValue::Int(3));
 
         // 关系记录进了档。
-        let rels: Vec<Relation> = serde_json::from_slice(arc.file("relations.json").unwrap()).unwrap();
+        let rels: Vec<Relation> =
+            serde_json::from_slice(arc.file("relations.json").unwrap()).unwrap();
         assert_eq!(rels.len(), 1);
         assert_eq!(rels[0].child_table, "tbl_Bag");
         assert_eq!(rels[0].parent_table, "tbl_Avatar");
@@ -976,7 +1013,9 @@ mod tests {
         assert!(calls.iter().any(|c| c.starts_with("START TRANSACTION")));
         assert_eq!(calls.last().unwrap(), "COMMIT");
         assert!(
-            calls.iter().all(|c| crate::reader::validate_readonly(c).is_ok()),
+            calls
+                .iter()
+                .all(|c| crate::reader::validate_readonly(c).is_ok()),
             "every executed statement must pass the read-only whitelist"
         );
         let _ = fs::remove_dir_all(&dir);

@@ -168,7 +168,11 @@ impl std::fmt::Debug for RedactingSink<'_> {
 }
 
 impl<'a> RedactingSink<'a> {
-    pub fn new(inner: &'a mut dyn RowSink, policy: &'a SensitivityPolicy, plan: &QueryPlan) -> Self {
+    pub fn new(
+        inner: &'a mut dyn RowSink,
+        policy: &'a SensitivityPolicy,
+        plan: &QueryPlan,
+    ) -> Self {
         let columns = plan
             .queries
             .iter()
@@ -312,7 +316,10 @@ mod tests {
             !out.contains("hunter2") && !out.contains("abc123"),
             "引号值明文不得泄漏: {out}"
         );
-        assert!(!out.contains('"') && !out.contains('\''), "引号自身也不残留: {out}");
+        assert!(
+            !out.contains('"') && !out.contains('\''),
+            "引号自身也不残留: {out}"
+        );
     }
 
     #[test]
