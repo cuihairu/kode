@@ -121,8 +121,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2144/2224 两锚点为此前批次的积压位移 +3(→ 2147/2227),一并真位重探。
   // 出处随 baseline 锁步。
 
-  ['src/extension.ts', 2152, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2232, 'flushQueued()'],
+  ['src/extension.ts', 2155, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2235, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面
