@@ -24,6 +24,24 @@ class Avatar(KBEngine.Entity):
 		print("[demo-evidence] %s" % msg, flush=True)
 		evidenceLog(msg)
 
+	def receiveDamage(self, damage, attackerId):
+		"""
+		KBEngine method.(Avatar.def CellMethods,Monster 近身攻击入口)
+		扣血;hp 到 0 即倒地(DEMO-GAME-003 接死亡重生)
+		"""
+		if self.hp <= 0:
+			return
+		self.hp = max(0, self.hp - damage)
+		msg = "Avatar[%i].receiveDamage dmg=%i attacker=%i hp=%i" % (
+			self.id, damage, attackerId, self.hp,
+		)
+		print("[demo-evidence] %s" % msg, flush=True)
+		evidenceLog(msg)
+		if self.hp == 0:
+			msg = "Avatar[%i] DIED (killer=%i)" % (self.id, attackerId)
+			print("[demo-evidence] %s" % msg, flush=True)
+			evidenceLog(msg)
+
 	def onLeaveSpace(self):
 		"""
 		KBEngine method.
@@ -31,15 +49,16 @@ class Avatar(KBEngine.Entity):
 		"""
 		DEBUG_MSG("Avatar[%i].onLeaveSpace" % self.id)
 
-	def onMove(self, position):
+	def onMove(self, position, userData=None):
 		"""
 		interface ROLE.
-		移动回调(接口方法声明在 interfaces/ROLE.def)。引擎 checkDefMethod
-		要求接口声明的方法在实体脚本类上真实存在,故在此给出实现;
-		默认实现样例仍见 scripts/interfaces/ROLE.py。
+		移动回调(接口方法声明在 interfaces/ROLE.def,双参口径):
+		引擎移动控制器逐 tick 回调同名 onMove(controllerId, userData)
+		(entity.cpp:2936),checkDefMethod 要求脚本参数个数与 def 一致,
+		故 def 与脚本统一双参——一份签名同时兼容接口形态与引擎回调形态。
 		"""
-		DEBUG_MSG("Avatar[%i].onMove: %s" % (self.id, position))
+		DEBUG_MSG("Avatar[%i].onMove: %s" % (self.id, (position, userData)))
 
 	def notifyMove(self):
 		"""测试模型补充(组合根验收):实体调用其接口 ROLE 的回调(默认实现在 interfaces/ROLE.py)。"""
-		self.onMove(None)
+		self.onMove(None, None)

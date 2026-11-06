@@ -19,6 +19,7 @@
 		<hp>
 			<Type> UINT32 </Type>
 			<Flags> ALL_CLIENTS </Flags>
+			<Default> 100 </Default>
 		</hp>
 		<!-- 引擎保留字:cell 实体自带 position/direction(引擎建列),def 里再声明
 		     position 即 EntityDef::loadDefPropertys "position is limited" 拒载——
@@ -77,6 +78,10 @@
 	<CellMethods>
 		<respawn>
 		</respawn>
+		<receiveDamage>
+			<Arg> UINT32 </Arg>
+			<Arg> UINT32 </Arg>
+		</receiveDamage>
 	</CellMethods>
 
 </root>

@@ -73,7 +73,7 @@ describe('DEMO-GAME-001 世界地基(夹具内容)', () => {
   it('cell/Avatar.py:onEnterSpace 进世界日志(真引擎验收锚)', () => {
     const src = read('scripts', 'cell', 'Avatar.py');
     expect(src).toMatch(/def\s+onEnterSpace\(self\)/);
-    expect(src).toMatch(/def\s+onMove\(self,\s*position\)/);
+    expect(src).toMatch(/def\s+onMove\(self,\s*position,\s*userData=None\)/);
   });
 
   it('cell/Monster.py 继承 Avatar 脚本类;Monster.def 不重复声明 ROLE(引擎双注册)', () => {
