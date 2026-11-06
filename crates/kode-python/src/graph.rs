@@ -138,11 +138,12 @@ fn resolve_callee_file(
     // KODE-AUD-008 复审残余:接收者首段也可能是实例变量(`avatar.heal()`,
     // avatar 是局部对象而非模块)——不经 import 绑定核验就按 basename 找
     // 文件,会把唯一同名文件误指为被调方(伪跨文件边)。调用方未绑定该名
-    // → 静态不可解析,宁缺毋滥不产边。
+    // → 静态不可解析,宁缺毋滥不产边。绑定核验用全作用域 import 绑定
+    // (函数内 `import avatar` 也是真绑定;复审第二轮残余)。
     if let Some(module) = receiver.split('.').next() {
         let imported = file_symbols
             .get(caller_file)
-            .map(|s| s.imports.iter().any(|i| i.binding == module))
+            .map(|s| s.import_bindings.iter().any(|b| b == module))
             .unwrap_or(false);
         if imported {
             return find_module_file(file_symbols, module, caller_file);

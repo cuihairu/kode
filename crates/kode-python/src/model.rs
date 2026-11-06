@@ -19,8 +19,14 @@ pub struct AstSymbols {
     pub classes: Vec<AstClass>,
     /// 模块级函数(`def` 不在类内)。
     pub functions: Vec<AstFunction>,
-    /// `import` / `from ... import ...` 绑定。
+    /// `import` / `from ... import ...` 绑定(仅模块顶层,语义表,与既有
+    /// 消费面口径一致)。
     pub imports: Vec<AstImport>,
+    /// 全作用域 import 绑定名(顶层+函数/类/分支体内,排序去重;含 asname)。
+    /// 供调用图跨文件解析做「调用方绑定过该名」核验——函数内 `import x`
+    /// 也是真绑定,顶层表收不到。不含 from-import 的 symbol 名(那是
+    /// 函数绑定,不是模块绑定)。
+    pub import_bindings: Vec<String>,
 }
 
 /// 类声明(AST 级)。

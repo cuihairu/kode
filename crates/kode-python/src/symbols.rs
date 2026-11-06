@@ -34,8 +34,11 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
         classes: Vec::new(),
         functions: Vec::new(),
         imports: Vec::new(),
+        import_bindings: Vec::new(),
     };
+    let mut all_bindings = ImportBindingCollector::default();
     for stmt in &ast.module().body {
+        ast::visitor::Visitor::visit_stmt(&mut all_bindings, stmt);
         match stmt {
             Stmt::ClassDef(cls) => out.classes.push(extract_class(ast, cls)),
             Stmt::FunctionDef(f) => out.functions.push(extract_function(ast, f)),
@@ -81,6 +84,12 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
             _ => {}
         }
     }
+    out.import_bindings = {
+        let mut b = all_bindings.bindings;
+        b.sort();
+        b.dedup();
+        b
+    };
     out
 }
 
@@ -88,6 +97,51 @@ pub fn extract(ast: &ParsedAst) -> AstSymbols {
 /// 分支由调用方处理,此处只收无 asname 的全段名)。
 fn top_level_binding(name: &str) -> String {
     name.split('.').next().unwrap_or(name).to_string()
+}
+
+/// 全作用域 import 绑定收集器(ruff visitor 递归进函数/类/分支体)。
+/// 与顶层 `imports` 表互补:顶层表是语义面(既有消费面口径),本收集器
+/// 只服务调用图「调用方绑定过该名」核验,不区分作用域有效性(Python
+/// 函数内 import 绑定也是真绑定,宁可多收——多收只影响解析闸的放行面,
+/// 放行后仍有 basename 唯一性核验兜底)。
+#[derive(Default)]
+struct ImportBindingCollector {
+    bindings: Vec<String>,
+}
+
+impl ImportBindingCollector {
+    fn push_import(&mut self, module: &str, asname: Option<&ast::Identifier>) {
+        let binding = asname
+            .map(|n| n.as_str().to_string())
+            .unwrap_or_else(|| top_level_binding(module));
+        self.bindings.push(binding);
+    }
+}
+
+impl ast::visitor::Visitor<'_> for ImportBindingCollector {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        match stmt {
+            Stmt::Import(imp) => {
+                for alias in &imp.names {
+                    self.push_import(alias.name.as_str(), alias.asname.as_ref());
+                }
+            }
+            Stmt::ImportFrom(impf) => {
+                for alias in &impf.names {
+                    // `from pkg import x` 绑定名是 `x`(无 asname 时);它是
+                    // 模块属性绑定,调用图接收者核验按绑定名匹配即可。
+                    let binding = alias
+                        .asname
+                        .as_ref()
+                        .map(|n| n.as_str().to_string())
+                        .unwrap_or_else(|| alias.name.as_str().to_string());
+                    self.bindings.push(binding);
+                }
+            }
+            _ => {}
+        }
+        ast::visitor::walk_stmt(self, stmt);
+    }
 }
 
 /// 类名 → 类索引(供 C-19/wt-parity 查类方法)。

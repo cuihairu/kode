@@ -159,6 +159,29 @@ fn imported_module_receiver_resolves_cross_file() {
 }
 
 #[test]
+fn function_scoped_import_receiver_resolves_cross_file() {
+    // 复审第二轮残余:函数内导入(`def f(): import avatar; avatar.heal()`)
+    // 同样是真模块绑定——绑定核验若只看模块顶层 import 表会漏判断边。
+    let zcaller = "def battle():\n    import avatar\n    avatar.heal()\n";
+    let afoo = "def heal():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/avatar.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, afoo)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "函数内 import 的模块接收者应解析到 avatar.py, got {rev:?}"
+    );
+}
+
+#[test]
 fn rust7_cross_process_edge_marked_uncertain_not_silent() {
     // RUST-7:`self.cell.*`/`self.base.*` 跨进程边被调方文件无法静态解析
     // (实体类在另一进程侧文件里)。旧行为:落进 self.* 分支按「同类」折叠
