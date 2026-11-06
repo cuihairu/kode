@@ -185,7 +185,13 @@ fn root_switch_keeps_documents_isolated() {
     assert_ne!(root_a, root_b);
 
     let mut store = DocumentStore::new();
-    let path = sub_a.join("shared.def").to_str().unwrap().to_string();
+    // win32 join 产 \;rsplit 以 / 表达——先归一再切(CanonicalUri::from_path
+    // 同口径,Linux CI 输出不变)。
+    let path = sub_a
+        .join("shared.def")
+        .to_str()
+        .unwrap()
+        .replace('\\', "/");
     let rel = path.rsplit_once("/projA/").map(|(_, r)| r).unwrap();
     let ka = key(root_a, &format!("{}/{rel}", sub_a.to_str().unwrap()));
     let kb = key(root_b, &format!("{}/{rel}", sub_b.to_str().unwrap()));
