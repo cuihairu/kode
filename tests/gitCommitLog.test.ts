@@ -12,6 +12,10 @@ import {
   type GitCommitLogDeps,
 } from '../src/gitCommitLog';
 import { runGitReadOnly, type GitRunOutcome } from '../src/gitRunner';
+// WIN-3:真实临时仓库逐个 spawn git,win32(杀软/路径解析)显著慢于 Linux,
+// 并行套件下 5s 默认会超时;仅放宽本文件真实仓库面的单测时限
+vi.setConfig({ testTimeout: 30000 });
+
 
 const realDeps: GitCommitLogDeps = {
   runGit: (args, cwd) => runGitReadOnly(args, { cwd, timeoutMs: 10000, maxOutputBytes: 2097152 }),
@@ -307,7 +311,12 @@ describe('unquoteGitPath 控制字符反解', () => {
 });
 
 describe('真实仓库:含制表符文件名的重命名历史(审核发现修复)', () => {
-  it('follow 追踪含 TAB 文件名重命名:pathAtCommit 反解出实际制表符', async () => {
+  // WIN-3:win32 无法创建含控制字符的文件名——Win32 路径规范化拒绝 0x01-0x1f
+  // (仅 \\?\ 前缀可寻址),writeFileSync 直接 ENOENT;反解逻辑面已由
+  // unquoteGitPath 单测覆盖,真实仓库面仅在 POSIX 上有可构造夹具。
+  it('follow 追踪含 TAB 文件名重命名:pathAtCommit 反解出实际制表符',
+    { skip: process.platform === 'win32' ? 'win32 无法创建含 TAB 的文件名(Win32 路径规范化拒绝控制字符)' : false },
+    async () => {
     const repo = makeRealRepo();
     const oldName = 'src/a\tb.py';
     const newName = 'src/c\td.py';

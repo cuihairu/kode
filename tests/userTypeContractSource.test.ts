@@ -75,7 +75,7 @@ describe('GEN-DEF-1e user_type 契约收集(userTypeContractSource)', () => {
       getDictFromObj: true,
       isSameType: true
     });
-    expect(talent?.implFile).toContain('scripts/user_type/talent.py');
+    expect(talent?.implFile.replace(/\\/g, '/')).toContain('scripts/user_type/talent.py');
     expect(talent?.implementedBy).toBe('talent.TalentTreeImpl');
     expect(typeof talent?.implLine).toBe('number');
   });

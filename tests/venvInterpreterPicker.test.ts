@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { join } from 'path';
 import type { DiscoveredVenv } from '../src/venvDiscovery';
 import type { InterpreterResolution } from '../src/profileInterpreter';
 import {
@@ -198,7 +199,8 @@ describe('createVenvFlow (mocked venv module run)', () => {
     const deps: any = baseDeps();
     const result = await createVenvFlow(deps);
     expect(result).toBe('created');
-    expect(deps.state.runs).toEqual([['/usr/bin/python3', '/ws/.venv']]);
+    // WIN-3:target 由平台 join 生成,期望同步用 join(断言参数而非分隔符风格)
+    expect(deps.state.runs).toEqual([['/usr/bin/python3', join('/ws', '.venv')]]);
     expect(deps.state.written).toEqual(['/ws/.venv/bin/python']);
     expect(deps.state.messages.join('\n')).toContain('/ws/.venv');
   });
@@ -231,7 +233,7 @@ describe('createVenvFlow (mocked venv module run)', () => {
     const result = await createVenvFlow(deps);
     expect(result).toBeNull();
     expect(deps.state.runs).toEqual([]);
-    expect(deps.state.messages.join('\n')).toContain('/ws/occupied/.venv');
+    expect(deps.state.messages.join('\n')).toContain(join('/ws/occupied', '.venv'));
   });
 
   it('a venv command failure surfaces stderr instead of faking success', async () => {

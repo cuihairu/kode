@@ -68,7 +68,10 @@ describe('discoverLocalComponents over real UDP', () => {
     }
     const username = body.toString('utf8', 4, offset);
     const replyPort = swapUint16(body.readUInt16LE(offset + 1));
-    expect(uid).toBe(process.getuid?.() ?? 1001);
+    // WIN-3:uid 由产品链解析(getuid → env uid/UID → -1);win32 无 getuid、
+    // 环境也无 uid,帧内如实落 -1,而非 POSIX 惯用的 1001
+    const expectedUid = typeof process.getuid === 'function' ? process.getuid() : -1;
+    expect(uid).toBe(expectedUid);
     expect(username.length).toBeGreaterThan(0);
     // 客户端以自身 bind 的临时端口发包,帧内回填端口须与源端口一致
     expect(replyPort).toBe(requests[0].sourcePort);

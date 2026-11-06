@@ -123,8 +123,10 @@ afterEach(() => {
 describe('startDebugging telnet briefing fallbacks (批68)', () => {
   it('renders an empty telnet host when the user config blanks it out', async () => {
     setWorkspaceAt('/proj');
+    // WIN-3:产品经 Uri.joinPath(恒 '/' 分隔)读键,内存 fs 键同步用该形态
+    // (真实 join 在 win32 会产生 \ 键,与读取键错配回落默认 127.0.0.1)
     memoryFileSystem.set(
-      path.join('/proj', '.kbengine', 'debug.json'),
+      '/proj/.kbengine/debug.json',
       JSON.stringify({
         version: '1.0.0',
         debug: {

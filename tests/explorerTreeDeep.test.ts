@@ -265,7 +265,7 @@ describe('EntityExplorerProvider.getChildren drill-down', () => {
 
     const python = findSection(sections, 'python');
     expect(python.section.items![0].label).toBe('widget.py');
-    expect(python.section.items![0].description).toBe('scripts/user_type/game/widget.py');
+    expect(python.section.items![0].description).toBe(path.join('scripts', 'user_type', 'game', 'widget.py'));
   });
 });
 

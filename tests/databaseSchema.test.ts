@@ -324,7 +324,8 @@ describe('renderDatabaseSchema', () => {
         tableIndex: new Map()
       };
 
-      const text = renderDatabaseSchema(snapshot);
+      // WIN-3:渲染内的文件路径是平台分隔符,归一为 / 后断言内容
+      const text = renderDatabaseSchema(snapshot).replace(/\\/g, '/');
       expect(text).toContain('定义来源: scripts/entity_defs/Hero.def:3');
       expect(text).toContain('定义来源: /ws:3');
       expect(text).toContain('← ws:3 <hp>');
