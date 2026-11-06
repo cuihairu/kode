@@ -15,12 +15,12 @@ import type { TelnetProbeState, TelnetService, TelnetTarget } from '../src/telne
 import { randomNonce, toJsonForScript, webviewScriptCsp } from '../src/webviewSecurity';
 import { messages, panelRegistry, windowState } from './helpers/vscodeStub';
 
-// webview 安全域判别测试(KR-AUD-38/43/49/50+08):
-// - XSS 判别:恶意字段(日志行/指标/目标配置)整页渲染后不得产生新标签或
-//   提前断开 <script> 上下文;
-// - CSP 判别:六个 webview 的整页 HTML 都必须带 Content-Security-Policy,
-//   nonce 面板(log/monitoring/telnet/runtimeQuery)脚本只认本次渲染 nonce,
-//   mermaid/Chart.js 面板脚本源钉死到固定 CDN 文件路径。
+// webview 安全域判别测试(KR-AUD-38/43/49/50/53+08):
+// - XSS 判别:恶意字段(日志行/指标/目标配置/统计卡)整页渲染后不得产生新标签
+//   或提前断开 <script> 上下文;
+// - CSP 判别:六个 webview 的整页 HTML 都必须带 Content-Security-Policy,内联
+//   脚本只认本次渲染 nonce;mermaid/Chart.js 走扩展自带 media/ 离线打包
+//   (与 cspSource 同源),整页不出现任何 CDN 域名,mermaid securityLevel=strict。
 
 const stubContext = {} as unknown as vscode.ExtensionContext;
 
@@ -174,13 +174,13 @@ describe('KR-AUD-43: MonitoringWebView 恶意指标不产生标签/不炸脚本�
 
     expect(html).not.toContain('</script><img');
     expect(html).toContain('\\u003c/script\\u003e\\u003cimg');
-    // CSP:nonce + Chart.js 钉死固定 CDN 路径
+    // CSP:nonce + Chart.js 离线打包(media/chart.min.js,与 cspSource 同源)
     const nonce = html.match(/script-src 'nonce-([0-9a-f]+)'/)?.[1];
     expect(nonce).toBeDefined();
     expect(html).toContain(`<script nonce="${nonce}">`);
-    expect(html).toContain(
-      `script-src 'nonce-${nonce}' https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js`
-    );
+    expect(html).toContain('<script src="media/chart.min.js">');
+    expect(html).toContain(`script-src 'nonce-${nonce}' vscode-webview:`);
+    expect(html).not.toContain('cdn.jsdelivr');
     expect(html.match(/Content-Security-Policy" content="[^"]*"/)?.[0]).not.toContain("script-src 'unsafe-inline'");
   });
 });
@@ -277,20 +277,43 @@ describe('KR-AUD-50: 六个 webview 的 CSP 接入', () => {
     expectNonceCsp(impl.render(), 'runtimeQueryWebView');
   });
 
-  it('entityDependencyWebView: 最小 CSP + mermaid CDN 钉死固定路径', () => {
+  it('entityDependencyWebView: nonce CSP + mermaid 离线打包 + strict', () => {
     const impl = new EntityDependencyWebView(
       stubContext,
       {} as unknown as vscode.OutputChannel
-    ) as unknown as { getWebviewContent: (m: string, g: null, c: null, r: boolean) => string };
+    ) as unknown as {
+      getWebviewContent: (m: string, g: null, c: null, r: boolean) => string;
+    };
     const html = impl.getWebviewContent('graph TD', null, null, false);
     expect(html).toContain("default-src 'none'");
-    expect(html).toContain(
-      'script-src https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js \'unsafe-inline\''
-    );
+    const nonce = html.match(/script-src 'nonce-([0-9a-f]+)'/)?.[1];
+    expect(nonce).toBeDefined();
+    expect(html).toContain(`<script nonce="${nonce}">`);
+    expect(html).toContain('<script src="media/mermaid.tiny.js">');
+    expect(html).toContain(`script-src 'nonce-${nonce}' vscode-webview:`);
+    expect(html).not.toContain('cdn.jsdelivr');
+    expect(html).not.toContain("script-src 'unsafe-inline'");
+    // 内联事件处理器在 nonce CSP 下不执行:工具栏一律脚本绑定
+    expect(html).not.toContain('onclick=');
+    expect(html).not.toContain('onchange=');
+    expect(html).toContain("securityLevel: 'strict'");
+    // 点击打开文件:strict 下 mermaid 丢弃自带 click 回调,面板按指令自绑
+    expect(html).toContain('resolveOpenPath');
+    expect(html).toContain('addEventListener(\'click\'');
   });
 
-  it('entityFlowWebView: 最小 CSP + mermaid CDN 钉死固定路径', () => {
-    const graph: EntityFlowGraph = {
+  it('entityDependencyWebView: 统计卡字符串面全量转义(标签注入)', () => {
+    const impl = new EntityDependencyWebView(
+      stubContext,
+      {} as unknown as vscode.OutputChannel
+    ) as unknown as { statCard: (label: string, value: string | number) => string };
+    const html = impl.statCard('进程角色', 'cellapp<img src=x onerror=alert(1)>');
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+  });
+
+  const flowGraph = (stats: Record<string, unknown> = {}): EntityFlowGraph =>
+    ({
       entityName: 'Hero',
       defFilePath: 'scripts/entity_defs/Hero.def',
       hasCell: false,
@@ -302,16 +325,37 @@ describe('KR-AUD-50: 六个 webview 的 CSP 接入', () => {
         methods: 0,
         exposedCalls: 0,
         clientCallbacks: 0,
-        persistentProperties: 0
+        persistentProperties: 0,
+        ...stats
       }
-    };
+    }) as unknown as EntityFlowGraph;
+
+  it('entityFlowWebView: nonce CSP + mermaid 离线打包 + strict', () => {
     const impl = new EntityFlowWebView(stubContext) as unknown as {
       getWebviewContent: (graph: EntityFlowGraph) => string;
     };
-    const html = impl.getWebviewContent(graph);
+    const html = impl.getWebviewContent(flowGraph());
     expect(html).toContain("default-src 'none'");
-    expect(html).toContain(
-      'script-src https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js \'unsafe-inline\''
-    );
+    const nonce = html.match(/script-src 'nonce-([0-9a-f]+)'/)?.[1];
+    expect(nonce).toBeDefined();
+    expect(html).toContain(`<script nonce="${nonce}">`);
+    expect(html).toContain('<script src="media/mermaid.tiny.js">');
+    expect(html).toContain(`script-src 'nonce-${nonce}' vscode-webview:`);
+    expect(html).not.toContain('cdn.jsdelivr');
+    expect(html).not.toContain("script-src 'unsafe-inline'");
+    expect(html).not.toContain('onclick=');
+    expect(html).toContain("securityLevel: 'strict'");
+    expect(html).toContain('refresh-flow-btn');
+  });
+
+  it('entityFlowWebView: 统计卡字符串面全量转义(标签注入)', () => {
+    const impl = new EntityFlowWebView(stubContext) as unknown as {
+      getWebviewContent: (graph: EntityFlowGraph) => string;
+    };
+    const html = impl.getWebviewContent(flowGraph({
+      properties: '<img src=x onerror=alert(1)>'
+    }));
+    expect(html).not.toContain('<img src=x');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
   });
 });

@@ -10,11 +10,8 @@ import {
   MonitoringDiagnostic,
   SystemOverview
 } from './monitoringCollector';
-import { randomNonce, toJsonForScript, webviewScriptCsp } from './webviewSecurity';
+import { randomNonce, toJsonForScript, webviewAssetUri, webviewScriptCsp } from './webviewSecurity';
 
-// Chart.js 仍走 CDN(本地化打包已单独登记 todo);CSP 把脚本源钉死到该
-// 固定文件路径,除它之外脚本只认本次渲染的 nonce,别的一律不执行。
-const CHARTJS_CDN_SOURCE = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js';
 
 /**
  * 监控面板 WebView
@@ -266,8 +263,8 @@ export class MonitoringWebView {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KBEngine Monitoring</title>
   <!-- 最小 CSP:内联脚本只认本次渲染的 nonce;Chart.js 钉死到固定 CDN 路径(本地化 todo) -->
-  <meta http-equiv="Content-Security-Policy" content="${webviewScriptCsp(nonce, [CHARTJS_CDN_SOURCE])}">
-  <script src="${CHARTJS_CDN_SOURCE}"></script>
+  <meta http-equiv="Content-Security-Policy" content="${webviewScriptCsp(nonce, [this.panel?.webview.cspSource ?? 'vscode-webview:'])}">
+  <script src="${webviewAssetUri(this.panel?.webview, this.context.extensionUri, 'media', 'chart.min.js')}"></script>
   <style>
     * {
       margin: 0;
