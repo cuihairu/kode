@@ -688,10 +688,23 @@ impl Rule for UnknownFlagValueRule {
                 return;
             }
             let raw = node_value(doc, node);
-            let normalized = normalize_flag_tokens(&raw);
-            if !normalized.is_empty()
-                && !normalized.iter().all(|t| KNOWN_FLAGS.contains(&t.as_str()))
-            {
+            // KR-AUD-84:引擎按单个映射值**整串查表**(datatypes.cpp 名称表),
+            // 不拆词、不做别名折叠——"BASE|CELL"/"all clients" 引擎都不认识。
+            let normalized = raw.to_uppercase();
+            if raw.contains('|') {
+                // '|' 组合形态单独出「引擎不支持」诊断(比笼统未知值更可行动)。
+                let data = doc.element(node);
+                out.push(make_finding(
+                    "unknown-flag-value",
+                    "error",
+                    value_span(ctx.text, data, &raw),
+                    None,
+                    format!(
+                        "未知的 KBEngine Flags 值: {raw}。引擎按单个映射值整串查表，不支持 '|' 组合形态；请改为单个词表值。"
+                    ),
+                    ctx,
+                ));
+            } else if !normalized.is_empty() && !KNOWN_FLAGS.contains(&normalized.as_str()) {
                 let data = doc.element(node);
                 out.push(make_finding(
                     "unknown-flag-value",
