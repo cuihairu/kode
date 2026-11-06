@@ -16,3 +16,6 @@ platform: win32 10.0.20348 node v24.22.1
    link intact     : true
 VERDICT: PASS (rename replaces existing target on this platform; contract holds)
 FINAL_VERDICT=PASS
+# 补注(2026-11-06,九轮):本轮证据采集时未随录被测 commit hash;已在
+# feat/kode-fix-f1f4 @ 9a5c7ee 重跑同场景 1-5 并新增九轮场景 6-8,完整记录
+# 含被测 commit hash 见 docs/perf/2026-11-06-win-roundtrip-r9.txt。

@@ -1,0 +1,33 @@
+# gate evidence — branch feat/kode-fix-f1f4
+# HEAD: 9a5c7eec845730ba5991d3467e51dd6748fc673c
+# started: 2026-11-06 15:14:17 +0800
+# cmd: vitest 隔离复跑 ×3(全量失败文件抖动判定): covExtensionCommands / typeStorageColdBuildPhased / hoverDeadlineContext
+
+=== round 1 tests/covExtensionCommands.test.ts (15:14:17)
+ Test Files  1 failed (1)
+      Tests  3 failed | 77 passed (80)
+=== round 1 tests/typeStorageColdBuildPhased.test.ts (15:14:24)
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+=== round 1 tests/hoverDeadlineContext.test.ts (15:14:28)
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+=== round 2 tests/covExtensionCommands.test.ts (15:14:30)
+ Test Files  1 failed (1)
+      Tests  3 failed | 77 passed (80)
+=== round 2 tests/typeStorageColdBuildPhased.test.ts (15:14:37)
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+=== round 2 tests/hoverDeadlineContext.test.ts (15:14:42)
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+=== round 3 tests/covExtensionCommands.test.ts (15:14:44)
+ Test Files  1 failed (1)
+      Tests  3 failed | 77 passed (80)
+=== round 3 tests/typeStorageColdBuildPhased.test.ts (15:14:50)
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+=== round 3 tests/hoverDeadlineContext.test.ts (15:14:54)
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+# finished: 2026-11-06 15:14:55 +0800

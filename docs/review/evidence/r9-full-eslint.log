@@ -1,0 +1,8 @@
+# gate evidence — branch feat/kode-fix-f1f4
+# HEAD: 735aa4afca89c14658cff48dfb098060a8763d80
+# started: 2026-11-06 15:50:08 +0800
+# cmd: pnpm lint
+
+$ eslint src --ext ts
+
+# finished: 2026-11-06 15:50:47 +0800 exit=0

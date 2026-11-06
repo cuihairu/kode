@@ -318,3 +318,37 @@
   - 原生 Windows 口径全量：**69 failed | 6291 passed | 34 skipped（6394），38 文件失败**——全部为平台性差异（路径分隔符 `scripts\` vs `scripts/`、Windows 大小写折叠、`getuid` 等），非本仓门禁口径，弃用（`/tmp/r8-imac-vitest.log`）。
   - **WSL2 Ubuntu（20C/62G，Linux 口径=门禁口径）**：node v24.21.0 + pnpm 12.10.1 + pytest 9.2.0，`pnpm install --frozen-lockfile`。全量复跑：pytest 补齐后 8 轮中前 7 轮每轮 **2–5 failed**、失败集逐轮变化且全为时机型——根因是 **WSL2 墙钟跳变**：0.1s 采样实测 `CLOCK_REALTIME` 每 ~5s 跳 ±33s（max_fwd **+33.084s** / max_bwd **−33.084s**；Windows 宿主同期 max_delta 0.48s 稳定），`until()` 的 `Date.now` 截止被假超时（失败用例报出时长远小于自身 5s deadline，如 1170ms/256ms）；root 下 mask `systemd-timesyncd` 后 60s 采样 **0 次跳变**，**mask 前循环第 8 轮 + mask 后连续 4 轮（x1–x4）共 5 轮全绿：退出 0，513 文件 passed | 5 skipped，6373 passed | 28 skipped（6401），0 failed**（`/tmp/r8-wsl-loop.log`、`/tmp/r8-wsl-xrounds.log`）。
   - 失败文件隔离复跑 ×3（取真）：mask 后 `serverGroupLaunch`、`serverReadiness`、`logHub`、`serverManagerRunner`、`pythonTestRunner`、`serverManagerProcesses`、`autoDebugpy` 全部 **3/3 通过**；`covExtensionCommands`（原失败为环境缺 pytest，补装后）**3/3 通过**。与本机全绿轮共同证明残余失败为环境时钟/依赖问题而非代码问题。
+
+## 第九轮返工记录（2026-11-06，九轮复审三项：暂存命名空间隔离 / 暂存路径写前验证 / 收尾清理 dev/ino 比对，分支 `feat/kode-fix-f1f4`）
+
+本轮处理九轮复审对参考接收端的三项缺陷：①源命名空间与暂存命名空间相交——八轮把暂存副本展开到 `<root>/.staged/<相对路径>`，但源路径清洗不排除 `.staged` 第一段，同批含既有 `<root>/.staged/X.py` 源文件时 `<root>/X.py` 的暂存副本 `copyFileSync` 直接覆盖该**源文件**，且词法排除挡不住指向暂存树的 symlink 别名与悬空别名（批内更早文件的暂存动作可把悬空别名目标「补齐」，读取阶段经别名复活）；②暂存路径写入无 symlink 检查——`.staged`（或更深目录）被换成指向暂存根外的 symlink 时 `copyFileSync` 沿链接逃逸；③失败清理只以八轮「确认自建」标志位为门——创建后、收尾前路径被竞态替换成别的文件时，按路径 unlink 仍会删掉**不是本次创建**的文件。修码 `9a5c7ee`（仅动4文件：design §4.3 + 接收端脚本 + 两个测试，逐项核对无夹带）。收尾核对三窄点实现完整、测试与契约齐全，**无需补码**；红先行实测与全量门禁见下。`todo.md` 未改。
+
+### R9-F1：暂存命名空间与源树隔离 + 暂存写前双重验证（commit `9a5c7ee`）
+
+- 修法①（源路径预检）：源路径第一段为 `.staged` → 属接收端暂存命名空间，**拒绝整批**（与路径清洗同一防线，源/暂存命名空间从映射规则上不相交）；**别名补口**：对每个源文件 realpath 解析，解析结果落在暂存树 realpath 内 → 拒绝整批；realpath 失败且（文件自身是悬空 symlink **或**祖先链含 symlink 组件，`hasSymlinkAncestor` 至暂存根为止、基准自身合法 symlink 不算）→ 无法证明不在暂存树内，同样拒绝整批；祖先全为真实目录 = 真缺失，保持逐文件「读不到所发文件」失败语义。
+- 修法②（暂存写前 `safeStagingTarget`）：对暂存父目录链取**最深已存在祖先**做双重验证——包含性（realpath 在暂存根 real 内）+ 一致性（**相对比较**：解析路径与原路径相对暂存根的相对路径逐字一致，树内 symlink 组件即不等被拒，暂存根自身合法 symlink 祖先如 macOS `/tmp` 不误判）+ realpath 失败但组件存在（悬空 symlink 链）直接拒绝 + `lstat` 最终组件拒 symlink；任一不过拒绝本文件暂存。检查→mkdir→copy 一瞬残余窗口与 realpath→rename 同级，design §4.3 如实记为已知限制，不自称「已消除」。
+- 回归（`tests/hotReloadReceiverRoundtrip.test.ts` 新增 6 条 + 源码锁补钉）：同批含 `.staged` 源文件→拒绝整批源文件逐字原样；`.staged` 为外部 symlink→拒绝暂存副本不逃逸；源路径 symlink 别名指向暂存树→拒绝整批；悬空别名被批内暂存补齐→预检拒绝整批不产生经别名的 applied；源文件自身悬空 symlink→拒绝整批；暂存根经合法 symlink 祖先到达→不误拒且真缺失文件保持逐文件失败语义（FAIL-4 兼容）。**red：5 failed**（roundtrip 侧；`r9-red-first-50aef64.log`）→ green。
+
+### R9-F2：收尾清理 dev/ino 比对（commit `9a5c7ee`）
+
+- 问题：八轮标志位只回答「这个路径上的文件是不是我创建的」，防不住「创建后、收尾前路径被竞态替换」——替换文件与创建判定无关联，按路径 unlink 仍会删掉非本次创建的文件。
+- 修法（`referenceReceiver.mjs`）：`openSync 'wx'` 创建成功点 `fstatSync(fd)` 捕获 dev/ino；收尾 `cleanupTempArtifact` unlink 前 `lstat` 比对路径当前 dev/ino，一致才删；不符或捕获缺失（fstatSync 失败，身份无法确认）→ 跳过，回执 `rollback_skipped` 如实上报不触碰；ENOENT（已不存在）= 清理目标已达成；fd 任何路径下都关闭不泄漏。`lstat` 比对→unlink 一瞬残余窗口如实记为已知限制，不自称「绝不删错」。
+- 回归（`tests/hotReloadReceiverHelpers.test.ts` 新增 3 条，既有用例同步传 createdStat）：dev/ino 不符（rename 保 inode 的替换文件）→ 跳过报 `rollback_skipped` 且替换文件原样；dev/ino 一致 → 照常清理；捕获缺失 → 跳过不盲删。**red：2 failed**（helpers 侧；`r9-red-first-50aef64.log`）→ green。
+
+### R9-F3：design §4.3 九轮契约 + 证据绑定（commit `9a5c7ee` + 收尾入库）
+
+- `docs/design/hot-reload-design.md` §4.3 落九轮三条契约（源/暂存命名空间不相交、暂存写前双重验证、收尾 dev/ino 比对）与两处残余窗口如实注记；接收端脚本头部契约注记同步（九轮条目①—⑤）。
+- **证据绑定（收尾补齐）**：Windows 真机回环证据 `docs/perf/2026-11-06-win-roundtrip-r9.txt` **随录被测 commit `9a5c7ee`**（openclaw，Windows Server 2022，node v24.22.1；八场景：1-5 复现八轮 rename 覆盖 + 6 `.staged` 源拒绝 + 7 悬空别名拒绝 + 8 `.staged` symlink 拒绝；**FINAL_VERDICT=PASS，PROBE_EXIT=0**）。原八轮证据未随录 commit hash 的缺口以补注如实指向九轮记录（`docs/perf/2026-11-08-win-rename-overwrite-roundtrip.txt` 补注）。同探针 Linux 本机对拍八场景同样全 PASS（`r9-winprobe-local-linux.log`）。收尾门禁日志全部带 HEAD hash 入 `docs/review/evidence/`。
+
+### 红先行（收尾补测，修码前源 `50aef64` receiver + 九轮新测试）
+
+- **red：8 failed | 38 passed**（`docs/review/evidence/r9-red-first-50aef64.log`，两测试文件整跑）——8 项=helpers 2（dev/ino 不符跳过、捕获缺失跳过）+ roundtrip 5（`.staged` 命名空间、`.staged` 外部 symlink、symlink 别名、悬空别名批内补齐、文件自身悬空）+ 证据源锁 1（`safeStagingTarget`/`rollback_skipped`/`fstatSync` 未入源）；修后两文件 **46 passed**、全量绿。九轮新测试在旧实现上必红，能区分旧行为。
+
+### 第九轮门禁数字（2026-11-06，HEAD `735aa4a`，本机负载 19–24）
+
+- `cargo test --workspace`：**退出 0**，94 结果块 **558 passed、0 failed、0 ignored**（`r9-full-cargo.log`）。
+- `cargo fmt --check`：**退出 0**；`cargo clippy --workspace --all-targets -- -D warnings`：**退出 0**（`r9-full-fmt-clippy.log`）。**红→绿**：初跑 fmt=1 / clippy=101——全为分支落后 main 的既有面（41 文件未格式化 + 20 处 lint，R9 未动 Rust），修复**逐字对齐 main 上已有修法**后独立入库 `735aa4a`（红日志 `r9-full-fmt-clippy-red-at-9a5c7ee.log`）；修复本身亦过全量 cargo 测试（上）。
+- `eslint src --ext ts`：**退出 0** 干净（`r9-full-eslint.log`）；`pnpm clean && pnpm compile && tsc -p tsconfig.mocha.json`：**退出 0** 干净（`r9-full-tsc.log`）。
+- vitest 全量第 1 轮：**退出 0，514 文件 passed | 4 skipped，6390 passed | 20 skipped（6410），0 failed**（`r9-full-vitest-1.log`）。**预算型失败隔离复跑协议未被触发**——首轮 0 failed 无可隔离复跑项，如实记录。
+- **环境根因处置（上席三轮全量 3–5 failed 的定性）**：`covExtensionCommands` 隔离 3/3 仍挂，根因是本机 PATH 首个 `python3` 为 agent venv（无 pytest 模块），测试 `locateInterpreterOnPath` 取 PATH 首个解释器 → 真跑 pytest 段 0 条目——**环境非回归**（九轮 diff 未触及该面）。处置：门禁 PATH 注入 shim（`python3 → /usr/bin/python3`，pytest 9.1.1），该文件隔离验证 **80/80 过**、随全量绿。上席原始日志（`r9-cargo-full.log`、`r9-vitest-full-1/2/3.log`、`r9-vitest-isolated-x3.log`）一并入库备查。
+- VS Code 集成冒烟 `node ./out/test/runTest.js`：**12 passing**，退出 0（`r9-full-electron.log`）。

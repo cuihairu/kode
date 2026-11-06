@@ -1,0 +1,3839 @@
+# gate evidence — branch feat/kode-fix-f1f4
+# HEAD: 9a5c7eec845730ba5991d3467e51dd6748fc673c
+# started: 2026-11-06 15:34:37 +0800
+# cmd: cargo fmt --check ; cargo clippy --workspace --all-targets -- -D warnings
+
+Diff in /home/cui/wt-kode-codex/crates/kode-index/tests/symbol_golden.rs:96:
+             let rest = cap.split(marker.as_str()).nth(1)?;
+             let rest = rest.trim_start();
+             if rest.starts_with('"') {
+-                Some(rest.strip_prefix('"')?.split('"').next().unwrap_or("").to_string())
++                Some(
++                    rest.strip_prefix('"')?
++                        .split('"')
++                        .next()
++                        .unwrap_or("")
++                        .to_string(),
++                )
+             } else {
+                 let num: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+                 if num.is_empty() {
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/examples/head2head.rs:43:
+     };
+     entries.sort();
+     for path in entries {
+-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
++        let name = path
++            .file_name()
++            .and_then(|n| n.to_str())
++            .unwrap_or_default();
+         let rel = format!("{rel_prefix}/{name}");
+         if path.is_dir() {
+             collect(&path, &rel, out);
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/examples/head2head.rs:97:
+     std::fs::read_to_string("/proc/self/status")
+         .ok()
+         .and_then(|s| {
+-            s.lines()
+-                .find(|l| l.starts_with("VmHWM:"))
+-                .and_then(|l| l.split_whitespace().nth(1).and_then(|v| v.parse::<u64>().ok()))
++            s.lines().find(|l| l.starts_with("VmHWM:")).and_then(|l| {
++                l.split_whitespace()
++                    .nth(1)
++                    .and_then(|v| v.parse::<u64>().ok())
++            })
+         })
+         .unwrap_or(0)
+ }
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/src/config.rs:61:
+     let mut i = pos;
+     while i < b.len() {
+         if b[i] == b'<' {
+-            if b.get(i + 1) == Some(&b'!') && b.get(i + 2) == Some(&b'-') && b.get(i + 3) == Some(&b'-') {
++            if b.get(i + 1) == Some(&b'!')
++                && b.get(i + 2) == Some(&b'-')
++                && b.get(i + 3) == Some(&b'-')
++            {
+                 if let Some(close) = find_from(xml, i + 4, "-->") {
+                     let body = &xml[i + 4..close];
+                     return Some(Token {
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/src/config.rs:254:
+ fn is_js_ws(c: char) -> bool {
+     matches!(
+         c,
+-        ' ' | '\t'
+-            | '\n'
+-            | '\u{0b}'
+-            | '\u{0c}'
+-            | '\r'
+-            | '\u{00a0}'
+-            | '\u{1680}'
+-            | '\u{2000}'..='\u{200a}'
+-            | '\u{2028}'
+-            | '\u{2029}'
+-            | '\u{202f}'
+-            | '\u{205f}'
+-            | '\u{3000}'
+-            | '\u{feff}'
++        ' ' | '\t' | '\n' | '\u{0b}' | '\u{0c}' | '\r' | '\u{00a0}' | '\u{1680}' | '\u{2000}'
++            ..='\u{200a}'
++                | '\u{2028}'
++                | '\u{2029}'
++                | '\u{202f}'
++                | '\u{205f}'
++                | '\u{3000}'
++                | '\u{feff}'
+     )
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/src/config.rs:345:
+ pub fn merge_config_xml(base: &ConfigNode, override_node: &ConfigNode) -> ConfigNode {
+     // 名字序:base.children 全序在前,override 新名追加在后(各自保序去重)
+     let mut names: Vec<&str> = Vec::new();
+-    for child in base
+-        .children
+-        .iter()
+-        .chain(override_node.children.iter())
+-    {
++    for child in base.children.iter().chain(override_node.children.iter()) {
+         if !names.contains(&child.name.as_str()) {
+             names.push(&child.name);
+         }
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/src/config_derive.rs:150:
+ }
+ 
+ fn derive_def_scan_roots(facts: &DeriveFacts) -> DefScanRoots {
+-    match facts.custom_config_path.and_then(scripts_root_from_config_path) {
++    match facts
++        .custom_config_path
++        .and_then(scripts_root_from_config_path)
++    {
+         Some(root) => DefScanRoots {
+             roots: vec![root],
+             fallback: None,
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/src/config_derive.rs:157:
+             degraded: false,
+         },
+         None => {
+-            let roots: Vec<String> = facts.workspace_root.map(str::to_string).into_iter().collect();
++            let roots: Vec<String> = facts
++                .workspace_root
++                .map(str::to_string)
++                .into_iter()
++                .collect();
+             DefScanRoots {
+                 roots,
+                 fallback: Some("workspaceRoot".to_string()),
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/src/config_derive.rs:312:
+     }
+     for es in entry_scripts {
+         if !es.exists {
+-            reasons.push(format!("entry script missing: {}/{}", es.process, es.module));
++            reasons.push(format!(
++                "entry script missing: {}/{}",
++                es.process, es.module
++            ));
+         }
+     }
+     // 致命:无任何可扫描根(无 res 锚点且无工作区根)——派生无法继续。
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/src/json.rs:443:
+ /// 输出 merge(base, override) 树记录)。
+ pub const CONFIG_MERGE_PAIRS: &[(&str, &str)] = &[
+     // 真实路径:引擎 defaults 为基、元件 kbengine.xml 覆盖(顶层单 `<root>` 递归下钻)
+-    ("tests/fixtures/config/kbengine_defaults.xml", "tests/fixtures/config/kbengine.xml"),
++    (
++        "tests/fixtures/config/kbengine_defaults.xml",
++        "tests/fixtures/config/kbengine.xml",
++    ),
+     // 分支覆盖:单名叶子替换 / 仅 base / 仅 override / 双容器递归 / 容器↔叶子双向 /
+     // 重复名整表替换双向 / 注释合并去重与 override 优先 / 名字序 / 深层递归
+-    ("tests/fixtures/config/merge/m01_leaf_base.xml", "tests/fixtures/config/merge/m01_leaf_override.xml"),
+-    ("tests/fixtures/config/merge/m02_base_only_base.xml", "tests/fixtures/config/merge/m02_base_only_override.xml"),
+-    ("tests/fixtures/config/merge/m03_override_only_base.xml", "tests/fixtures/config/merge/m03_override_only_override.xml"),
+-    ("tests/fixtures/config/merge/m04_both_containers_base.xml", "tests/fixtures/config/merge/m04_both_containers_override.xml"),
+-    ("tests/fixtures/config/merge/m05_container_vs_leaf_base.xml", "tests/fixtures/config/merge/m05_container_vs_leaf_override.xml"),
+-    ("tests/fixtures/config/merge/m06_leaf_vs_container_base.xml", "tests/fixtures/config/merge/m06_leaf_vs_container_override.xml"),
+-    ("tests/fixtures/config/merge/m07_repeat_base.xml", "tests/fixtures/config/merge/m07_repeat_override.xml"),
+-    ("tests/fixtures/config/merge/m08_repeat_override_base.xml", "tests/fixtures/config/merge/m08_repeat_override_override.xml"),
+-    ("tests/fixtures/config/merge/m09_comment_base.xml", "tests/fixtures/config/merge/m09_comment_override.xml"),
+-    ("tests/fixtures/config/merge/m10_order_base.xml", "tests/fixtures/config/merge/m10_order_override.xml"),
+-    ("tests/fixtures/config/merge/m11_nested_base.xml", "tests/fixtures/config/merge/m11_nested_override.xml"),
++    (
++        "tests/fixtures/config/merge/m01_leaf_base.xml",
++        "tests/fixtures/config/merge/m01_leaf_override.xml",
++    ),
++    (
++        "tests/fixtures/config/merge/m02_base_only_base.xml",
++        "tests/fixtures/config/merge/m02_base_only_override.xml",
++    ),
++    (
++        "tests/fixtures/config/merge/m03_override_only_base.xml",
++        "tests/fixtures/config/merge/m03_override_only_override.xml",
++    ),
++    (
++        "tests/fixtures/config/merge/m04_both_containers_base.xml",
++        "tests/fixtures/config/merge/m04_both_containers_override.xml",
++    ),
++    (
++        "tests/fixtures/config/merge/m05_container_vs_leaf_base.xml",
++        "tests/fixtures/config/merge/m05_container_vs_leaf_override.xml",
++    ),
++    (
++        "tests/fixtures/config/merge/m06_leaf_vs_container_base.xml",
++        "tests/fixtures/config/merge/m06_leaf_vs_container_override.xml",
++    ),
++    (
++        "tests/fixtures/config/merge/m07_repeat_base.xml",
++        "tests/fixtures/config/merge/m07_repeat_override.xml",
++    ),
++    (
++        "tests/fixtures/config/merge/m08_repeat_override_base.xml",
++        "tests/fixtures/config/merge/m08_repeat_override_override.xml",
++    ),
++    (
++        "tests/fixtures/config/merge/m09_comment_base.xml",
++        "tests/fixtures/config/merge/m09_comment_override.xml",
++    ),
++    (
++        "tests/fixtures/config/merge/m10_order_base.xml",
++        "tests/fixtures/config/merge/m10_order_override.xml",
++    ),
++    (
++        "tests/fixtures/config/merge/m11_nested_base.xml",
++        "tests/fixtures/config/merge/m11_nested_override.xml",
++    ),
+ ];
+ 
+ /// 整个合并语料的 golden JSON(与 tests/configMergeParity.test.ts 的 TS 提取器
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_derive_units.rs:84:
+     let cap = derive_capabilities(None, None, &facts);
+     assert_eq!(cap.def_scan_roots.roots, vec!["/ws"]);
+     assert_eq!(cap.def_scan_roots.degraded, true);
+-    assert_eq!(cap.def_scan_roots.fallback, Some("workspaceRoot".to_string()));
++    assert_eq!(
++        cap.def_scan_roots.fallback,
++        Some("workspaceRoot".to_string())
++    );
+ }
+ 
+ #[test]
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_derive_units.rs:97:
+     let cap = derive_capabilities(None, None, &facts);
+     assert_eq!(cap.def_scan_roots.roots, vec!["/ws"]);
+     assert_eq!(cap.def_scan_roots.degraded, true);
+-    assert_eq!(cap.def_scan_roots.fallback, Some("workspaceRoot".to_string()));
++    assert_eq!(
++        cap.def_scan_roots.fallback,
++        Some("workspaceRoot".to_string())
++    );
+ }
+ 
+ #[test]
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_derive_units.rs:105:
+     let cap = derive_capabilities(None, None, &facts());
+     assert!(cap.def_scan_roots.roots.is_empty());
+     assert_eq!(cap.def_scan_roots.degraded, true);
+-    assert_eq!(cap.def_scan_roots.fallback, Some("workspaceRoot".to_string()));
++    assert_eq!(
++        cap.def_scan_roots.fallback,
++        Some("workspaceRoot".to_string())
++    );
+ }
+ 
+ // --- telnet(改配置→派生变) ---
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_derive_units.rs:114:
+ fn telnet_disabled_without_section() {
+     // 元件无 telnet_service 段 → 关(defaults 段不当开关,批111)
+     let custom = parse("<root><baseapp>1</baseapp></root>");
+-    let defaults = parse("<root><baseapp><telnet_service><port>40000</port></telnet_service></baseapp></root>");
++    let defaults = parse(
++        "<root><baseapp><telnet_service><port>40000</port></telnet_service></baseapp></root>",
++    );
+     let cap = derive_capabilities(Some(&custom), Some(&defaults), &facts());
+     assert_eq!(cap.telnet.enabled, false);
+     assert!(cap.telnet.endpoints.is_empty());
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_derive_units.rs:145:
+ 
+ #[test]
+ fn telnet_password_sets_flag() {
+-    let with_pwd = parse("<root><telnet_service><port>40000</port><password>pwd</password></telnet_service></root>");
++    let with_pwd = parse(
++        "<root><telnet_service><port>40000</port><password>pwd</password></telnet_service></root>",
++    );
+     let no_pwd = parse("<root><telnet_service><port>40000</port></telnet_service></root>");
+     let a = derive_capabilities(Some(&with_pwd), None, &facts());
+     let b = derive_capabilities(Some(&no_pwd), None, &facts());
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_derive_units.rs:161:
+     let custom = parse("<root><telnet_service></telnet_service></root>");
+     let cap = derive_capabilities(Some(&custom), None, &facts());
+     assert_eq!(cap.telnet.enabled, true);
+-    assert_eq!(cap.telnet.endpoints.len(), ENGINE_DEFAULT_TELNET_PORTS.len());
++    assert_eq!(
++        cap.telnet.endpoints.len(),
++        ENGINE_DEFAULT_TELNET_PORTS.len()
++    );
+     for (i, (component, writein)) in ENGINE_DEFAULT_TELNET_PORTS.iter().enumerate() {
+         assert_eq!(cap.telnet.endpoints[i].component, *component);
+         assert_eq!(cap.telnet.endpoints[i].port, *writein);
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_derive_units.rs:178:
+          </root>",
+     );
+     let cap = derive_capabilities(Some(&custom), Some(&defaults), &facts());
+-    let baseapp = cap.telnet.endpoints.iter().find(|e| e.component == "baseapp").unwrap();
++    let baseapp = cap
++        .telnet
++        .endpoints
++        .iter()
++        .find(|e| e.component == "baseapp")
++        .unwrap();
+     assert_eq!(baseapp.port, 40009);
+     // 未在 defaults 出现的组件回落写死表
+-    let cellapp = cap.telnet.endpoints.iter().find(|e| e.component == "cellapp").unwrap();
+-    let cellapp_writein = ENGINE_DEFAULT_TELNET_PORTS.iter().find(|(c, _)| *c == "cellapp").unwrap().1;
++    let cellapp = cap
++        .telnet
++        .endpoints
++        .iter()
++        .find(|e| e.component == "cellapp")
++        .unwrap();
++    let cellapp_writein = ENGINE_DEFAULT_TELNET_PORTS
++        .iter()
++        .find(|(c, _)| *c == "cellapp")
++        .unwrap()
++        .1;
+     assert_eq!(cellapp.port, cellapp_writein);
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_derive_units.rs:189:
+ #[test]
+ fn telnet_section_nested_component_matches_regex_first() {
+     // 镜像正则「首个 <telnet_service> 任意处」:嵌套段亦被读到
+-    let custom = parse("<root><baseapp><telnet_service><port>40001</port></telnet_service></baseapp></root>");
++    let custom = parse(
++        "<root><baseapp><telnet_service><port>40001</port></telnet_service></baseapp></root>",
++    );
+     let cap = derive_capabilities(Some(&custom), None, &facts());
+     assert_eq!(cap.telnet.enabled, true);
+     assert_eq!(cap.telnet.endpoints[0].port, 40001);
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_derive_units.rs:219:
+     let cap = derive_capabilities(None, None, &facts);
+     assert_eq!(cap.entry_scripts.len(), 2);
+     assert_eq!(cap.entry_scripts[0].process, "baseapp");
+-    assert_eq!(cap.entry_scripts[0].path.as_deref(), Some("/p/scripts/kbengine.py"));
++    assert_eq!(
++        cap.entry_scripts[0].path.as_deref(),
++        Some("/p/scripts/kbengine.py")
++    );
+     assert_eq!(cap.entry_scripts[1].exists, false);
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_derive_units.rs:241:
+     // 无 res 锚点且无工作区根 → 致命缺失 → 不 ready
+     let cap = derive_capabilities(None, None, &facts());
+     assert_eq!(cap.debug.ready, false);
+-    assert!(cap.debug.reasons.iter().any(|r| r.contains("no def scan root")));
++    assert!(cap
++        .debug
++        .reasons
++        .iter()
++        .any(|r| r.contains("no def scan root")));
+ }
+ 
+ #[test]
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_derive_units.rs:271:
+     };
+     let cap = derive_capabilities(None, None, &facts);
+     assert_eq!(cap.debug.ready, true); // 入口缺失不致命(断点不预填)
+-    assert!(cap.debug.reasons.iter().any(|r| r.contains("entry script missing")));
++    assert!(cap
++        .debug
++        .reasons
++        .iter()
++        .any(|r| r.contains("entry script missing")));
+ }
+ 
+ // --- 不 panic 防御(铁律) ---
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_derive_units.rs:289:
+         "/x/res/",
+         "resources/server/kbengine.xml", // res 非段(resources 中) → 无锚点
+         "/res/res/server/kbengine.xml",  // 最深 res 段
+-        "/空间/资源/server/kbengine.xml",   // unicode 路径
++        "/空间/资源/server/kbengine.xml", // unicode 路径
+         "C:\\res\\server\\kbengine.xml", // 反斜杠分隔(非路径界)
+         "a b/res/server/kbengine.xml",
+     ] {
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_derive_units.rs:309:
+     let custom = parse("<root><telnet_service/></root>");
+     let cap = derive_capabilities(Some(&custom), None, &facts());
+     assert_eq!(cap.telnet.enabled, true);
+-    assert_eq!(cap.telnet.endpoints.len(), ENGINE_DEFAULT_TELNET_PORTS.len());
++    assert_eq!(
++        cap.telnet.endpoints.len(),
++        ENGINE_DEFAULT_TELNET_PORTS.len()
++    );
+     assert_eq!(cap.telnet.endpoints[0].password_set, false);
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_derive_units.rs:318:
+     // "abc" 端口 → 非数 → 视为未指定(硬化;TS 的 NaN 是退化态)
+     let custom = parse("<root><telnet_service><port>abc</port></telnet_service></root>");
+     let cap = derive_capabilities(Some(&custom), None, &facts());
+-    assert_eq!(cap.telnet.endpoints.len(), ENGINE_DEFAULT_TELNET_PORTS.len());
++    assert_eq!(
++        cap.telnet.endpoints.len(),
++        ENGINE_DEFAULT_TELNET_PORTS.len()
++    );
+     // 回落写死表首个组件端口
+-    assert_eq!(cap.telnet.endpoints[0].port, ENGINE_DEFAULT_TELNET_PORTS[0].1);
++    assert_eq!(
++        cap.telnet.endpoints[0].port,
++        ENGINE_DEFAULT_TELNET_PORTS[0].1
++    );
+ }
+ 
+ // --- 真实 fixture 集成(树遍历在真实数据上,注释/<root> 包裹/空白) ---
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_derive_units.rs:332:
+         .join("..")
+         .canonicalize()
+         .expect("repo root");
+-    let defaults_xml = std::fs::read_to_string(
+-        repo_root.join("tests/fixtures/config/kbengine_defaults.xml"),
+-    )
+-    .expect("真实 defaults 缺失");
++    let defaults_xml =
++        std::fs::read_to_string(repo_root.join("tests/fixtures/config/kbengine_defaults.xml"))
++            .expect("真实 defaults 缺失");
+     let defaults = parse_config(&defaults_xml).expect("真实 defaults 应可解析");
+ 
+     // 真实 defaults 无顶层 <telnet_service>(只有逐组件),不当开关
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_derive_units.rs:347:
+     let custom = parse("<root><telnet_service/></root>");
+     let cap = derive_capabilities(Some(&custom), Some(&defaults), &facts());
+     assert_eq!(cap.telnet.enabled, true);
+-    assert_eq!(cap.telnet.endpoints.len(), ENGINE_DEFAULT_TELNET_PORTS.len());
++    assert_eq!(
++        cap.telnet.endpoints.len(),
++        ENGINE_DEFAULT_TELNET_PORTS.len()
++    );
+     for (component, _) in ENGINE_DEFAULT_TELNET_PORTS {
+-        let endpoint = cap.telnet.endpoints.iter().find(|e| e.component == *component).unwrap();
++        let endpoint = cap
++            .telnet
++            .endpoints
++            .iter()
++            .find(|e| e.component == *component)
++            .unwrap();
+         assert!(endpoint.port > 0, "组件 {component} 应有正端口");
+         assert_eq!(endpoint.host, "127.0.0.1");
+     }
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_merge_units.rs:44:
+ 
+ #[test]
+ fn merge_leaf_override_wins() {
+-    let root = merged_root(
+-        "<root><a>1</a></root>",
+-        "<root><a>2</a></root>",
+-    );
++    let root = merged_root("<root><a>1</a></root>", "<root><a>2</a></root>");
+     assert_eq!(root.children.len(), 1);
+     assert_eq!(root.children[0].name, "a");
+     assert_eq!(root.children[0].text, "2");
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_merge_units.rs:55:
+ 
+ #[test]
+ fn merge_base_only_kept() {
+-    let root = merged_root(
+-        "<root><a>1</a><b>2</b></root>",
+-        "<root><a>3</a></root>",
+-    );
++    let root = merged_root("<root><a>1</a><b>2</b></root>", "<root><a>3</a></root>");
+     assert_eq!(root.children.len(), 2);
+     assert_eq!(root.children[0].name, "a");
+     assert_eq!(root.children[0].text, "3");
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_merge_units.rs:68:
+ 
+ #[test]
+ fn merge_override_only_added() {
+-    let root = merged_root(
+-        "<root><a>1</a></root>",
+-        "<root><a>2</a><b>3</b></root>",
+-    );
++    let root = merged_root("<root><a>1</a></root>", "<root><a>2</a><b>3</b></root>");
+     assert_eq!(root.children.len(), 2);
+     assert_eq!(root.children[0].name, "a");
+     assert_eq!(root.children[0].text, "2");
+Diff in /home/cui/wt-kode-codex/crates/kode-parser/tests/config_units.rs:207:
+         .expect("repo root");
+     let regenerated = kode_parser::json::dump_config_corpus(&repo_root);
+     let golden_path = repo_root.join("crates/kode-parser/tests/golden/config-parity.json");
+-    let committed =
+-        std::fs::read_to_string(&golden_path).expect("golden 缺失: crates/kode-parser/tests/golden/config-parity.json");
++    let committed = std::fs::read_to_string(&golden_path)
++        .expect("golden 缺失: crates/kode-parser/tests/golden/config-parity.json");
+     let committed = committed.trim_end_matches('\n');
+     if regenerated != committed {
+         let diff_at = regenerated
+Diff in /home/cui/wt-kode-codex/crates/kode-python/src/callgraph.rs:121:
+                 });
+             }
+             _ => {
+-                walk_stmt(ast, &ctx, stmt, None, MODULE_CALLER, &mut |edge, character| {
+-                    out.push((edge, character))
+-                });
++                walk_stmt(
++                    ast,
++                    &ctx,
++                    stmt,
++                    None,
++                    MODULE_CALLER,
++                    &mut |edge, character| out.push((edge, character)),
++                );
+             }
+         }
+     }
+Diff in /home/cui/wt-kode-codex/crates/kode-python/src/dataflow.rs:57:
+                 let class_name = cls.name.as_str().to_string();
+                 for s in &cls.body {
+                     if let Stmt::FunctionDef(f) = s {
+-                        let params =
+-                            crate::symbols::method_params(&f.parameters);
++                        let params = crate::symbols::method_params(&f.parameters);
+                         out.push(MethodDataflow {
+                             class: Some(class_name.clone()),
+                             method: f.name.as_str().to_string(),
+Diff in /home/cui/wt-kode-codex/crates/kode-python/tests/callgraph_test.rs:176:
+ /// 边全漏);外层函数调用仍由外层走查记录,不重叠。
+ #[test]
+ fn nested_def_calls_recorded() {
+-    let src = "def foo():\n    pass\n\ndef outer():\n    def inner():\n        foo()\n    return 1\n";
++    let src =
++        "def foo():\n    pass\n\ndef outer():\n    def inner():\n        foo()\n    return 1\n";
+     let es = edges_of(src);
+     let hit = es.iter().find(|e| e.caller == "inner" && e.callee == "foo");
+     let e = hit.expect("嵌套函数 inner 内 foo() 应有边");
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/bin/validate-process-topology.rs:86:
+ 
+ /// 按 scripts 子目录归类 def(闭包走查用 category 决定实体优先)。
+ fn classify(path: &Path) -> String {
+-    let parent = path.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str());
++    let parent = path
++        .parent()
++        .and_then(|p| p.file_name())
++        .and_then(|s| s.to_str());
+     match parent {
+         Some("entity_defs") => "entity".into(),
+         Some("interfaces") => "interface".into(),
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:319:
+             let element = doc.element(property);
+             let (type_name, element_type) =
+                 read_def_type_node(doc, doc.child_element(property, "Type"));
+-            let flags = doc.scalar_child_value(property, "Flags").unwrap_or_default();
++            let flags = doc
++                .scalar_child_value(property, "Flags")
++                .unwrap_or_default();
+             let domains = flag_domains(&normalize_flag_tokens(&flags));
+             if domains.contains(&"client") && seen.insert(element.name.clone()) {
+                 out.push(SdkProperty {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:379:
+     if let Some(properties_node) = doc.child_element(root, "Properties") {
+         for property in doc.child_elements(properties_node) {
+             let element = doc.element(property);
+-            let (type_name, element_type) = read_def_type_node(&doc, doc.child_element(property, "Type"));
+-            let flags = doc.scalar_child_value(property, "Flags").unwrap_or_default();
++            let (type_name, element_type) =
++                read_def_type_node(&doc, doc.child_element(property, "Type"));
++            let flags = doc
++                .scalar_child_value(property, "Flags")
++                .unwrap_or_default();
+             let domains = flag_domains(&normalize_flag_tokens(&flags));
+             properties.push(SdkProperty {
+                 name: element.name.clone(),
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:427:
+ }
+ 
+ fn client_visible_properties(entity: &SdkEntity) -> Vec<&SdkProperty> {
+-    entity.properties.iter().filter(|p| p.client_visible()).collect()
++    entity
++        .properties
++        .iter()
++        .filter(|p| p.client_visible())
++        .collect()
+ }
+ 
+ // ---------------------------------------------------------------------------
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:508:
+         return "ALIAS".to_string();
+     }
+     let mut end = 1;
+-    while end < bytes.len()
+-        && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_')
+-    {
++    while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
+         end += 1;
+     }
+     raw_value[..end].to_string()
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:558:
+             for type_node in doc.child_elements(root) {
+                 let element = doc.element(type_node);
+                 let raw_value = extract_custom_type_raw_value(&doc, type_node);
+-                aliases.insert(element.name.clone(), extract_custom_type_alias_type(&raw_value));
++                aliases.insert(
++                    element.name.clone(),
++                    extract_custom_type_alias_type(&raw_value),
++                );
+                 let properties = parse_custom_type_properties(&doc, type_node, &lines);
+                 if !properties.is_empty() {
+                     fixed_dicts.insert(
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:586:
+ // 类型名解析与发射(与 TS resolveClientSdkTypeName / generate* 同口径)
+ // ---------------------------------------------------------------------------
+ 
+-fn resolve_type_name(
+-    type_map: &TypeMap,
+-    type_name: &str,
+-    element_type: Option<&str>,
+-) -> String {
++fn resolve_type_name(type_map: &TypeMap, type_name: &str, element_type: Option<&str>) -> String {
+     if let Some(element) = element_type {
+         return format!("{}[]", resolve_type_name(type_map, element, None));
+     }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:614:
+ }
+ 
+ fn resolve_property_type(type_map: &TypeMap, property: &SdkProperty) -> String {
+-    resolve_type_name(type_map, &property.type_name, property.element_type.as_deref())
++    resolve_type_name(
++        type_map,
++        &property.type_name,
++        property.element_type.as_deref(),
++    )
+ }
+ 
+ fn resolve_arg_type(type_map: &TypeMap, type_name: &str) -> String {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:678:
+                     field.to_string()
+                 }
+             };
+-            (
+-                value(&trace.engine_version),
+-                value(&trace.engine_commit),
+-            )
++            (value(&trace.engine_version), value(&trace.engine_commit))
+         }
+         None => (TRACE_UNKNOWN.to_string(), TRACE_UNKNOWN.to_string()),
+     };
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:696:
+         GENERATED_HEADER_LINE.to_string(),
+         format!(
+             "// 目标语言: {}",
+-            if language == "typescript" { "TypeScript" } else { "C#" }
++            if language == "typescript" {
++                "TypeScript"
++            } else {
++                "C#"
++            }
+         ),
+         format!("// 生成时间: {generated_at}"),
+     ];
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:728:
+ 
+     let used = used_fixed_dict_types(entity, type_map);
+     if !used.is_empty() {
+-        let names = used.iter().map(|dict| dict.name.clone()).collect::<Vec<_>>().join(", ");
++        let names = used
++            .iter()
++            .map(|dict| dict.name.clone())
++            .collect::<Vec<_>>()
++            .join(", ");
+         lines.push(format!(
+             "import {{ {names} }} from './{FIXED_DICTS_BASENAME}';"
+         ));
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:763:
+     for component in &entity.components {
+         lines.push(String::new());
+         lines.push(format!("  /** 组件槽: {} */", component.type_name));
+-        lines.push(format!("  public {}: {};", component.slot, component.type_name));
++        lines.push(format!(
++            "  public {}: {};",
++            component.slot, component.type_name
++        ));
+     }
+ 
+     lines.push(String::new());
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:855:
+     } else {
+         format!(
+             "（固定字典: {}）",
+-            used.iter().map(|dict| dict.name.clone()).collect::<Vec<_>>().join(", ")
++            used.iter()
++                .map(|dict| dict.name.clone())
++                .collect::<Vec<_>>()
++                .join(", ")
+         )
+     };
+     lines.push(format!(
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:868:
+     lines.push("    public long EntityId { get; }".to_string());
+ 
+     for property in client_visible_properties(entity) {
+-        lines.push(format!("    /// <summary>Flags: {}</summary>", property.flags));
+         lines.push(format!(
++            "    /// <summary>Flags: {}</summary>",
++            property.flags
++        ));
++        lines.push(format!(
+             "    public {} {} {{ get; set; }}",
+             resolve_property_type(type_map, property),
+             to_pascal_case(&property.name)
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:876:
+         ));
+     }
+     for component in &entity.components {
+-        lines.push(format!("    /// <summary>组件槽: {}</summary>", component.type_name));
+         lines.push(format!(
++            "    /// <summary>组件槽: {}</summary>",
++            component.type_name
++        ));
++        lines.push(format!(
+             "    public {} {} {{ get; set; }}",
+             component.type_name,
+             to_pascal_case(&component.slot)
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:922:
+         for method in methods {
+             let args = format_arg_types(type_map, &method.arg_types, "csharp");
+             let call_args = format_arg_ids(&method.arg_types, false);
+-            lines.push(format!("    /// <summary>{label}: {}</summary>", method.name));
+             lines.push(format!(
++                "    /// <summary>{label}: {}</summary>",
++                method.name
++            ));
++            lines.push(format!(
+                 "    public void {}{}({args})",
+                 prefix,
+                 to_pascal_case(&method.name)
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:938:
+     }
+ 
+     lines.push("    /// <summary>发送接缝: 按客户端插件的 base 调用通道实现</summary>".to_string());
+-    lines.push("    protected virtual void OnBaseOutgoing(string method, object[] args)".to_string());
++    lines.push(
++        "    protected virtual void OnBaseOutgoing(string method, object[] args)".to_string(),
++    );
+     lines.push("    {".to_string());
+     lines.push("    }".to_string());
+     lines.push("    /// <summary>发送接缝: 按客户端插件的 cell 调用通道实现</summary>".to_string());
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:945:
+-    lines.push("    protected virtual void OnCellOutgoing(string method, object[] args)".to_string());
++    lines.push(
++        "    protected virtual void OnCellOutgoing(string method, object[] args)".to_string(),
++    );
+     lines.push("    {".to_string());
+     lines.push("    }".to_string());
+     lines.push("  }".to_string());
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:1024:
+                 "  // source: types.xml:{}",
+                 format_source_line(dict.source_line)
+             ));
+-            lines.push(format!("  /// <summary>{} FIXED_DICT 别名</summary>", dict.name));
++            lines.push(format!(
++                "  /// <summary>{} FIXED_DICT 别名</summary>",
++                dict.name
++            ));
+             lines.push(format!("  public class {}", dict.name));
+             lines.push("  {".to_string());
+             for property in &dict.properties {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:1091:
+     if language == "typescript" {
+         if !fixed_names.is_empty() {
+             let names = fixed_names.join(", ");
+-            lines.push(format!("import {{ {names} }} from './{FIXED_DICTS_BASENAME}';"));
++            lines.push(format!(
++                "import {{ {names} }} from './{FIXED_DICTS_BASENAME}';"
++            ));
+             lines.push(String::new());
+         }
+         for comp in &used {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:1112:
+         lines.push(format!("namespace {namespace}"));
+         lines.push("{".to_string());
+         for comp in &used {
+-            lines.push(format!("  /// <summary>实体组件: {}</summary>", comp.type_name));
++            lines.push(format!(
++                "  /// <summary>实体组件: {}</summary>",
++                comp.type_name
++            ));
+             lines.push(format!("  public class {}", comp.type_name));
+             lines.push("  {".to_string());
+             for property in &comp.properties {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:1119:
+-                lines.push(format!("    /// <summary>Flags: {}</summary>", property.flags));
+                 lines.push(format!(
++                    "    /// <summary>Flags: {}</summary>",
++                    property.flags
++                ));
++                lines.push(format!(
+                     "    public {} {} {{ get; set; }}",
+                     resolve_property_type(type_map, property),
+                     to_pascal_case(&property.name)
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:1160:
+     let mut members: HashMap<String, Vec<String>> = HashMap::new();
+ 
+     if language == "typescript" {
+-        add_member(&mut members, "entityId", "辅助字段 entityId（实体 id）".to_string());
+-        add_member(&mut members, "onBaseOutgoing", "辅助方法 onBaseOutgoing（发送接缝）".to_string());
+-        add_member(&mut members, "onCellOutgoing", "辅助方法 onCellOutgoing（发送接缝）".to_string());
++        add_member(
++            &mut members,
++            "entityId",
++            "辅助字段 entityId（实体 id）".to_string(),
++        );
++        add_member(
++            &mut members,
++            "onBaseOutgoing",
++            "辅助方法 onBaseOutgoing（发送接缝）".to_string(),
++        );
++        add_member(
++            &mut members,
++            "onCellOutgoing",
++            "辅助方法 onCellOutgoing（发送接缝）".to_string(),
++        );
+     } else {
+-        add_member(&mut members, "EntityId", "辅助字段 EntityId（实体 id）".to_string());
+-        add_member(&mut members, "OnBaseOutgoing", "辅助方法 OnBaseOutgoing（发送接缝）".to_string());
+-        add_member(&mut members, "OnCellOutgoing", "辅助方法 OnCellOutgoing（发送接缝）".to_string());
++        add_member(
++            &mut members,
++            "EntityId",
++            "辅助字段 EntityId（实体 id）".to_string(),
++        );
++        add_member(
++            &mut members,
++            "OnBaseOutgoing",
++            "辅助方法 OnBaseOutgoing（发送接缝）".to_string(),
++        );
++        add_member(
++            &mut members,
++            "OnCellOutgoing",
++            "辅助方法 OnCellOutgoing（发送接缝）".to_string(),
++        );
+     }
+ 
+     for property in client_visible_properties(entity) {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:1191:
+         } else {
+             to_pascal_case(&method.name)
+         };
+-        add_member(&mut members, &name, format!("ClientMethods 回调 {}", method.name));
++        add_member(
++            &mut members,
++            &name,
++            format!("ClientMethods 回调 {}", method.name),
++        );
+     }
+     for method in &entity.exposed_base_methods {
+         let name = if language == "typescript" {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:1199:
+         } else {
+             format!("BaseCall{}", to_pascal_case(&method.name))
+         };
+-        add_member(&mut members, &name, format!("Exposed BaseMethods 包装 {}", method.name));
++        add_member(
++            &mut members,
++            &name,
++            format!("Exposed BaseMethods 包装 {}", method.name),
++        );
+     }
+     for method in &entity.exposed_cell_methods {
+         let name = if language == "typescript" {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:1207:
+         } else {
+             format!("CellCall{}", to_pascal_case(&method.name))
+         };
+-        add_member(&mut members, &name, format!("Exposed CellMethods 包装 {}", method.name));
++        add_member(
++            &mut members,
++            &name,
++            format!("Exposed CellMethods 包装 {}", method.name),
++        );
+     }
+ 
+     members
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:1214:
+ }
+ 
+ fn find_member_conflicts(entities: &[SdkEntity], language: &str) -> Vec<String> {
+-    let lang = if language == "typescript" { "TypeScript" } else { "C#" };
++    let lang = if language == "typescript" {
++        "TypeScript"
++    } else {
++        "C#"
++    };
+     let mut conflicts = Vec::new();
+     for entity in entities {
+         for (name, sources) in collect_emitted_members(entity, language) {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:1327:
+                 .collect()
+         })
+         .unwrap_or_default();
+-    let types_xml = params.get("typesXml").and_then(|v| v.as_str()).map(|s| s.to_string());
++    let types_xml = params
++        .get("typesXml")
++        .and_then(|v| v.as_str())
++        .map(|s| s.to_string());
+     let component_defs = params
+         .get("defs")
+         .and_then(|v| v.as_object())
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/client_sdk.rs:1343:
+         .unwrap_or_default()
+         .to_string();
+     let engine_trace = params.get("engineTrace").and_then(|v| {
+-        let engine_version = v.get("engineVersion").and_then(|x| x.as_str()).unwrap_or("").to_string();
+-        let engine_commit = v.get("engineCommit").and_then(|x| x.as_str()).unwrap_or("").to_string();
+-        Some(EngineTrace { engine_version, engine_commit })
++        let engine_version = v
++            .get("engineVersion")
++            .and_then(|x| x.as_str())
++            .unwrap_or("")
++            .to_string();
++        let engine_commit = v
++            .get("engineCommit")
++            .and_then(|x| x.as_str())
++            .unwrap_or("")
++            .to_string();
++        Some(EngineTrace {
++            engine_version,
++            engine_commit,
++        })
+     });
+-    let namespace = params.get("namespace").and_then(|v| v.as_str()).map(|s| s.to_string());
++    let namespace = params
++        .get("namespace")
++        .and_then(|v| v.as_str())
++        .map(|s| s.to_string());
+     Ok(SdkGenerateParams {
+         language,
+         entities,
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/config_rpc.rs:47:
+     match v {
+         None | Some(Value::Null) => Ok(None),
+         Some(Value::Object(map)) => Ok(Some(node_from_map(map)?)),
+-        Some(other) => Err(format!("tree/defaultsTree 应为对象,得到 {}", kind_of(other))),
++        Some(other) => Err(format!(
++            "tree/defaultsTree 应为对象,得到 {}",
++            kind_of(other)
++        )),
+     }
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/config_rpc.rs:83:
+                     .ok_or_else(|| "sourceComments 项应为字符串".to_string())
+             })
+             .collect::<Result<Vec<_>, _>>()?,
+-        Some(other) => {
+-            return Err(format!("sourceComments 应为数组,得到 {}", kind_of(other)))
+-        }
++        Some(other) => return Err(format!("sourceComments 应为数组,得到 {}", kind_of(other))),
+     };
+     Ok(ConfigNode {
+         name,
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/database_schema.rs:140:
+         input.has_cell_content,
+         &input.table_prefix,
+     );
+-    let table_index: BTreeMap<String, TableSchema> = tables
+-        .iter()
+-        .map(|t| (t.name.clone(), t.clone()))
+-        .collect();
+-    TablesResult { tables, table_index }
++    let table_index: BTreeMap<String, TableSchema> =
++        tables.iter().map(|t| (t.name.clone(), t.clone())).collect();
++    TablesResult {
++        tables,
++        table_index,
++    }
+ }
+ 
+ fn build_mysql_table_schemas(
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/database_schema.rs:163:
+         parent_table_name: None,
+         property_path: Some(entity_name.into()),
+         fields: vec![
+-            synthetic_field("id", "bigint unsigned", "id", entity_source, Some("PRIMARY")),
+-            synthetic_field("sm_autoLoad", "tinyint", "autoLoad", entity_source, Some("INDEX")),
++            synthetic_field(
++                "id",
++                "bigint unsigned",
++                "id",
++                entity_source,
++                Some("PRIMARY"),
++            ),
++            synthetic_field(
++                "sm_autoLoad",
++                "tinyint",
++                "autoLoad",
++                entity_source,
++                Some("INDEX"),
++            ),
+         ],
+     };
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/database_schema.rs:227:
+             tables.push(child);
+             if let Some(element) = &property.array_element {
+                 let child_name = table_name.clone();
+-                append_property_to_table(tables, element, &child_name, &child_name, &[], entity_has_cell, "");
++                append_property_to_table(
++                    tables,
++                    element,
++                    &child_name,
++                    &child_name,
++                    &[],
++                    entity_has_cell,
++                    "",
++                );
+             }
+         }
+         "ENTITY_COMPONENT" => {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/database_schema.rs:294:
+     }
+ }
+ 
+-fn build_array_table_name(current_table_name: &str, name_chain: &[String], array_name: &str) -> String {
++fn build_array_table_name(
++    current_table_name: &str,
++    name_chain: &[String],
++    array_name: &str,
++) -> String {
+     let mut table_name = current_table_name.to_string();
+     for segment in name_chain {
+         if !segment.is_empty() {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/database_schema.rs:304:
+     }
+     // 数组自身名出自标签名或 'value',恒非空。
+     table_name.push('_');
+-    table_name.push_str(if array_name.is_empty() { "values" } else { array_name });
++    table_name.push_str(if array_name.is_empty() {
++        "values"
++    } else {
++        array_name
++    });
+     table_name
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/database_schema.rs:311:
+-fn create_array_table(table_name: &str, parent_table_name: &str, property: &PropertyNode) -> TableSchema {
++fn create_array_table(
++    table_name: &str,
++    parent_table_name: &str,
++    property: &PropertyNode,
++) -> TableSchema {
+     let source_path = source_path(property);
+     TableSchema {
+         name: table_name.into(),
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/database_schema.rs:318:
+         parent_table_name: Some(parent_table_name.into()),
+         property_path: Some(source_path),
+         fields: vec![
+-            synthetic_field("id", "bigint unsigned", "id", &property.source, Some("PRIMARY")),
+-            synthetic_field("parentID", "bigint unsigned", "parentID", &property.source, Some("INDEX")),
+-            synthetic_field("sm_autoLoad", "tinyint", "autoLoad", &property.source, Some("INDEX")),
++            synthetic_field(
++                "id",
++                "bigint unsigned",
++                "id",
++                &property.source,
++                Some("PRIMARY"),
++            ),
++            synthetic_field(
++                "parentID",
++                "bigint unsigned",
++                "parentID",
++                &property.source,
++                Some("INDEX"),
++            ),
++            synthetic_field(
++                "sm_autoLoad",
++                "tinyint",
++                "autoLoad",
++                &property.source,
++                Some("INDEX"),
++            ),
+         ],
+     }
+ }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/database_schema.rs:327:
+ 
+-fn create_component_table(table_name: &str, parent_table_name: &str, property: &PropertyNode) -> TableSchema {
++fn create_component_table(
++    table_name: &str,
++    parent_table_name: &str,
++    property: &PropertyNode,
++) -> TableSchema {
+     let source_path = source_path(property);
+     TableSchema {
+         name: table_name.into(),
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/database_schema.rs:335:
+         parent_table_name: Some(parent_table_name.into()),
+         property_path: Some(source_path),
+         fields: vec![
+-            synthetic_field("id", "bigint unsigned", "id", &property.source, Some("PRIMARY")),
++            synthetic_field(
++                "id",
++                "bigint unsigned",
++                "id",
++                &property.source,
++                Some("PRIMARY"),
++            ),
+             // 组件子表同属引擎 child 表(isChild(true),entity_table_mysql.cpp:1525):
+             // syncToDB 给全部 child 表追加 parentID 结构列(entity_table_mysql.cpp:
+             // 379-380),与 ARRAY 子表同形——TS 派生已含,此处补齐对齐(parity bug #1)。
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/database_schema.rs:342:
+-            synthetic_field("parentID", "bigint unsigned", "parentID", &property.source, Some("INDEX")),
+-            synthetic_field("sm_autoLoad", "tinyint", "autoLoad", &property.source, Some("INDEX")),
++            synthetic_field(
++                "parentID",
++                "bigint unsigned",
++                "parentID",
++                &property.source,
++                Some("INDEX"),
++            ),
++            synthetic_field(
++                "sm_autoLoad",
++                "tinyint",
++                "autoLoad",
++                &property.source,
++                Some("INDEX"),
++            ),
+         ],
+     }
+ }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/database_schema.rs:398:
+         "VECTOR2" => 2,
+         "VECTOR3" => 3,
+         "VECTOR4" => 4,
+-        _ => return vec![format!("{DB_COLUMN_PREFIX}{fixed_dict_prefix}{}", property.name)],
++        _ => {
++            return vec![format!(
++                "{DB_COLUMN_PREFIX}{fixed_dict_prefix}{}",
++                property.name
++            )]
++        }
+     };
+     (0..count)
+-        .map(|index| format!("{DB_COLUMN_PREFIX}{index}_{fixed_dict_prefix}{}", property.name))
++        .map(|index| {
++            format!(
++                "{DB_COLUMN_PREFIX}{index}_{fixed_dict_prefix}{}",
++                property.name
++            )
++        })
+         .collect()
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/def_md5.rs:145:
+             let tmp = d;
+             d = c;
+             c = b;
+-            let sum = a
+-                .wrapping_add(f)
+-                .wrapping_add(MD5_K[i])
+-                .wrapping_add(m[g]);
++            let sum = a.wrapping_add(f).wrapping_add(MD5_K[i]).wrapping_add(m[g]);
+             b = b.wrapping_add(sum.rotate_left(MD5_S[i]));
+             a = tmp;
+         }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/def_md5.rs:260:
+ 
+ /// 内建类型构造序(datatypes.cpp:56-79)。
+ pub const BUILTIN_TYPE_ORDER: [&str; 21] = [
+-    "UINT8", "UINT16", "UINT64", "UINT32", "INT8", "INT16", "INT32", "INT64", "STRING", "UNICODE",
+-    "FLOAT", "DOUBLE", "PYTHON", "PY_DICT", "PY_TUPLE", "PY_LIST", "ENTITYCALL", "BLOB", "VECTOR2",
+-    "VECTOR3", "VECTOR4",
++    "UINT8",
++    "UINT16",
++    "UINT64",
++    "UINT32",
++    "INT8",
++    "INT16",
++    "INT32",
++    "INT64",
++    "STRING",
++    "UNICODE",
++    "FLOAT",
++    "DOUBLE",
++    "PYTHON",
++    "PY_DICT",
++    "PY_TUPLE",
++    "PY_LIST",
++    "ENTITYCALL",
++    "BLOB",
++    "VECTOR2",
++    "VECTOR3",
++    "VECTOR4",
+ ];
+ 
+ /// Flags 字符串→原始位掩码(entitydef.cpp:161-174,输入先 toUpper)。
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/def_md5.rs:354:
+     fn is_entitycall(&self, id: u16) -> bool {
+         match self.info.get(&id) {
+             Some(info) => match info.kind {
+-                TypeKind::Array => {
+-                    info.element.map(|e| self.is_entitycall(e)).unwrap_or(false)
+-                }
++                TypeKind::Array => info.element.map(|e| self.is_entitycall(e)).unwrap_or(false),
+                 _ => info.alias_name == "ENTITYCALL" && info.kind == TypeKind::Builtin,
+             },
+             None => false,
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/def_md5.rs:448:
+ fn engine_enter_node(doc: &Document, node: usize, key: &str) -> Option<usize> {
+     let mut cur = Some(node);
+     while let Some(idx) = cur {
+-        if matches!(doc.nodes[idx].data, NodeData::Element(_))
+-            && engine_get_key(doc, idx) == key
+-        {
++        if matches!(doc.nodes[idx].data, NodeData::Element(_)) && engine_get_key(doc, idx) == key {
+             return doc
+                 .element(idx)
+                 .children
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/def_md5.rs:648:
+ 
+             if str_type == "ARRAY" {
+                 let array_id =
+-                    self
+-                        .types
++                    self.types
+                         .construct(&mut self.stream, TypeKind::Array, "dict-array-uid");
+                 let element = self.replay_array(doc, type_el)?;
+                 if let Some(info) = self.types.info.get_mut(&array_id) {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/def_md5.rs:666:
+                     .append_str("dict-key-type", "datatype.cpp:2098", "ARRAY");
+                 self.stream
+                     .append_str("dict-key-name", "datatype.cpp:2099", &type_name);
+-                self.stream.append_bool(
+-                    "dict-key-persistent",
+-                    "datatype.cpp:2111",
+-                    persistent,
+-                );
+                 self.stream
++                    .append_bool("dict-key-persistent", "datatype.cpp:2111", persistent);
++                self.stream
+                     .append_u32("dict-key-db-length", "datatype.cpp:2112", database_length);
+             } else {
+                 let target = self.types.lookup(&str_type).ok_or_else(|| {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/def_md5.rs:689:
+                     .append_str("dict-key-type", "datatype.cpp:2135", &str_type);
+                 self.stream
+                     .append_str("dict-key-name", "datatype.cpp:2136", &type_name);
+-                self.stream.append_bool(
+-                    "dict-key-persistent",
+-                    "datatype.cpp:2148",
+-                    persistent,
+-                );
+                 self.stream
++                    .append_bool("dict-key-persistent", "datatype.cpp:2148", persistent);
++                self.stream
+                     .append_u32("dict-key-db-length", "datatype.cpp:2149", database_length);
+             }
+         }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/def_md5.rs:742:
+         }
+         self.stream
+             .append_str("module-name", "scriptdef_module.cpp:60", name);
+-        self.modules.insert(name.to_string(), ModuleState::default());
++        self.modules
++            .insert(name.to_string(), ModuleState::default());
+     }
+ 
+     /// loadDefInfo(entitydef.cpp:339-400):装载序闭包。
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/def_md5.rs:816:
+                 Some(f) => {
+                     let str_flags = first_text(doc, f).to_uppercase();
+                     let v = flags_value(&str_flags).ok_or_else(|| {
+-                        format!("loadDefPropertys: unknown flags [{str_flags}] {module_name}.{name}")
++                        format!(
++                            "loadDefPropertys: unknown flags [{str_flags}] {module_name}.{name}"
++                        )
+                     })?;
+                     if v & ENTITY_BASE_DATA_FLAGS > 0 {
+                         self.module(module_name).has_base = true;
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/def_md5.rs:883:
+                 .append_str("property-type", "property.cpp:55", &str_type);
+             self.stream
+                 .append_u16("property-utype", "property.cpp:56", utype);
+-            self.stream.append_u32("property-flags", "property.cpp:57", flags);
++            self.stream
++                .append_u32("property-flags", "property.cpp:57", flags);
+             if is_persistent && self.types.is_entitycall(data_type) {
+                 is_persistent = false; // property.cpp:48-51 ENTITYCALL 覆盖
+             }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/def_md5.rs:915:
+         member_name: &str,
+     ) -> Result<u16, String> {
+         if str_type == "ARRAY" {
+-            let id =
+-                self
+-                    .types
+-                    .construct(&mut self.stream, TypeKind::Array, "inline-array-uid");
++            let id = self
++                .types
++                .construct(&mut self.stream, TypeKind::Array, "inline-array-uid");
+             let element = self.replay_array(doc, type_el)?;
+             if let Some(info) = self.types.info.get_mut(&id) {
+                 info.element = Some(element);
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/def_md5.rs:968:
+     ) -> Result<(), String> {
+         for method_el in doc.child_elements(methods_el) {
+             let name = doc.element(method_el).name.clone();
+-            self.stream.append_str("method-name", "method.cpp:28", &name);
+-            self.stream.append_u16("method-utype(=0)", "method.cpp:29", 0);
++            self.stream
++                .append_str("method-name", "method.cpp:28", &name);
++            self.stream
++                .append_u16("method-utype(=0)", "method.cpp:29", 0);
+             let mut exposed: i32 = 0; // NO_EXPOSED(method.h:30)
+-            self.stream.append_i32("method-exposed", "method.cpp:30", exposed);
++            self.stream
++                .append_i32("method-exposed", "method.cpp:30", exposed);
+             for child in doc.child_elements(method_el) {
+                 let key = doc.element(child).name.clone();
+                 match key.as_str() {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/def_md5.rs:1035:
+             // 引擎 entitydef.cpp:562-565:条目 getKey(=元素名)必属
+             // {interface,Interface,type,Type},否则 continue。
+             let entry_key = engine_get_key(doc, if_entry);
+-            if !matches!(entry_key.as_str(), "interface" | "Interface" | "type" | "Type") {
++            if !matches!(
++                entry_key.as_str(),
++                "interface" | "Interface" | "type" | "Type"
++            ) {
+                 continue;
+             }
+             // 引擎 entitydef.cpp:567-584:interfaceNode=enterNode(条目,键)依次
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/def_md5.rs:1462:
+         // ENTITY_ID);这里仅 md5 侧补充 ENTITY_ID 别名使可计算(回归锁用途,
+         // 非 parity 权威);types.xml 是共享夹具,不动文件避免级联其他 golden。
+         if !params.types_xml.contains("ENTITY_ID") {
+-            params.types_xml = params.types_xml.replace(
+-                "</root>",
+-                "  <ENTITY_ID> UINT32 </ENTITY_ID>\n</root>",
+-            );
++            params.types_xml = params
++                .types_xml
++                .replace("</root>", "  <ENTITY_ID> UINT32 </ENTITY_ID>\n</root>");
+         }
+         samples.push(GoldenSample {
+             name: "kbengine-demo-assets",
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/definition.rs:311:
+ /// 内建类型表(与 TS kbengineMetadata::KBENGINE_TYPES 同表,ARRAY/FIXED_DICT
+ /// 容器含)。
+ pub(crate) const BUILTIN_TYPES: &[&str] = &[
+-    "UINT8", "UINT16", "UINT32", "UINT64", "INT8", "INT16", "INT32", "INT64", "FLOAT", "DOUBLE",
+-    "STRING", "UNICODE", "VECTOR2", "VECTOR3", "VECTOR4", "ENTITYCALL", "PYTHON", "PY_DICT",
+-    "PY_TUPLE", "PY_LIST", "BLOB", "ARRAY", "FIXED_DICT",
++    "UINT8",
++    "UINT16",
++    "UINT32",
++    "UINT64",
++    "INT8",
++    "INT16",
++    "INT32",
++    "INT64",
++    "FLOAT",
++    "DOUBLE",
++    "STRING",
++    "UNICODE",
++    "VECTOR2",
++    "VECTOR3",
++    "VECTOR4",
++    "ENTITYCALL",
++    "PYTHON",
++    "PY_DICT",
++    "PY_TUPLE",
++    "PY_LIST",
++    "BLOB",
++    "ARRAY",
++    "FIXED_DICT",
+ ];
+ 
+ pub(crate) fn is_builtin_type(name: &str) -> bool {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/dependency_graph.rs:260:
+     }
+ 
+     fn push_edge(&mut self, from: &str, to: &str, kind: &'static str, label: Option<&str>) {
+-        let key = (from.to_string(), to.to_string(), kind, label.map(|s| s.to_string()));
++        let key = (
++            from.to_string(),
++            to.to_string(),
++            kind,
++            label.map(|s| s.to_string()),
++        );
+         if self.edge_seen.insert(key) {
+-            self.edges
+-                .push((from.to_string(), to.to_string(), kind, label.map(|s| s.to_string())));
++            self.edges.push((
++                from.to_string(),
++                to.to_string(),
++                kind,
++                label.map(|s| s.to_string()),
++            ));
+         }
+     }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/dependency_graph.rs:296:
+         let d = extract_def(&doc, &text);
+         // Parent/Interfaces 双形态覆盖(kode-parser extract_def 只认文本形态)。
+         let parent = doc.root().and_then(|r| node_value(&doc, r, "Parent"));
+-        let interfaces = doc.root().map(|r| parse_interfaces(&doc, r)).unwrap_or_default();
++        let interfaces = doc
++            .root()
++            .map(|r| parse_interfaces(&doc, r))
++            .unwrap_or_default();
+ 
+         // Parent → inheritance
+         if let Some(parent) = parent {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/dependency_graph.rs:311:
+         for iface in &interfaces {
+             let ik = self.resolve_kind(iface, NodeKind::Interface);
+             let to_id = format!("{}:{iface}", ik.as_str());
+-            self.ensure_node(&to_id, NodeKind::Interface, iface, &self.def_path_of(iface), None);
++            self.ensure_node(
++                &to_id,
++                NodeKind::Interface,
++                iface,
++                &self.def_path_of(iface),
++                None,
++            );
+             self.push_edge(&from_id, &to_id, "is-a", None);
+             self.walk_def(iface, NodeKind::Interface);
+         }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/dependency_graph.rs:318:
+ 
+         // Components → has-a(槽名 label)
+         for comp in &d.components {
+-            let t = comp.component_type.clone().unwrap_or_else(|| comp.name.clone());
++            let t = comp
++                .component_type
++                .clone()
++                .unwrap_or_else(|| comp.name.clone());
+             let ck = self.resolve_kind(&t, NodeKind::Component);
+             let to_id = format!("{}:{t}", ck.as_str());
+             self.ensure_node(&to_id, NodeKind::Component, &t, &self.def_path_of(&t), None);
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/lint/mod.rs:149:
+ 
+ impl std::fmt::Debug for RuleRegistry {
+     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+-        f.debug_list().entries(self.rules.iter().map(|r| r.id())).finish()
++        f.debug_list()
++            .entries(self.rules.iter().map(|r| r.id()))
++            .finish()
+     }
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/lint/rules/def_python_parity.rs:19:
+ 
+ use kode_parser::xml::Document;
+ 
+-use crate::lint::{RelatedFace, RuleContext};
+ use crate::lint::{make_finding, Finding, Rule};
+ use crate::lint::{PythonParityInput, PythonParitySection};
++use crate::lint::{RelatedFace, RuleContext};
+ 
+ /// 三方法段内 (方法元素下标, 段名) 列表(段序 Base → Cell → Client)。
+ /// 与 `rules::all_methods_with_section` 同口径;本规则独立持有,避免改动
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/lint/rules/def_python_parity.rs:47:
+ }
+ 
+ /// 段名 → 该段 Python 上下文(缺失 = 该段无法核验,不产 finding)。
+-fn section_input<'a>(
+-    py: &'a PythonParityInput,
+-    section: &str,
+-) -> Option<&'a PythonParitySection> {
++fn section_input<'a>(py: &'a PythonParityInput, section: &str) -> Option<&'a PythonParitySection> {
+     match section {
+         "base" => py.base.as_ref(),
+         "cell" => py.cell.as_ref(),
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/lint/rules.rs:25:
+ 
+ /// 大负载类型(对全体客户端广播时同步开销显著)。
+ const HEAVY_SYNC_TYPE_NAMES: &[&str] = &[
+-    "STRING", "UNICODE", "BLOB", "ARRAY", "FIXED_DICT", "PY_DICT", "PY_LIST", "PY_TUPLE", "VECTOR2",
+-    "VECTOR3", "VECTOR4",
++    "STRING",
++    "UNICODE",
++    "BLOB",
++    "ARRAY",
++    "FIXED_DICT",
++    "PY_DICT",
++    "PY_LIST",
++    "PY_TUPLE",
++    "VECTOR2",
++    "VECTOR3",
++    "VECTOR4",
+ ];
+ 
+ /// 客户端可见旗标(common.h ENTITY_CLIENT_DATA_FLAGS 位集展开,8 个无 ANY_CLIENT)。
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/lint/rules.rs:41:
+ /// Python 关键字(引擎 setattr 挂关键字名不报错,但脚本语法上不可访问)。
+ const PYTHON_KEYWORDS: &[&str] = &[
+     "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue",
+-    "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in",
+-    "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while", "with",
+-    "yield",
++    "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import",
++    "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while",
++    "with", "yield",
+ ];
+ 
+ /// 引擎受限属性名(validDefPropertyName 按名拒绝;FIXED_DICT 键不受此限)。
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/lint/rules.rs:175:
+ /// 大写+CELL→CELL_PUBLIC 别名+遗留拼写折叠),再按 flag_domains 单一来源表
+ /// 映射(OWN_CLIENT/OTHER_CLIENTS 仅 client,不入 cell)。
+ fn flag_scopes(flags: &[String]) -> Vec<String> {
+-    flag_domains(&normalize_flag_tokens(&flags.join("|"))).iter().map(|s| s.to_string()).collect()
++    flag_domains(&normalize_flag_tokens(&flags.join("|")))
++        .iter()
++        .map(|s| s.to_string())
++        .collect()
+ }
+ 
+ fn scope_label(scope: &str) -> &str {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/lint/rules.rs:374:
+                 continue;
+             };
+             let flags = property_flags(doc, prop);
+-            if !flags.iter().any(|f| CLIENT_SYNC_FLAGS.contains(&f.as_str())) {
++            if !flags
++                .iter()
++                .any(|f| CLIENT_SYNC_FLAGS.contains(&f.as_str()))
++            {
+                 out.push(make_finding(
+                     "redundant-detail-level",
+                     "info",
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/lint/rules.rs:674:
+             }
+             let raw = node_value(doc, node);
+             let normalized = normalize_flag_tokens(&raw);
+-            if !normalized.is_empty() && !normalized.iter().all(|t| KNOWN_FLAGS.contains(&t.as_str())) {
++            if !normalized.is_empty()
++                && !normalized.iter().all(|t| KNOWN_FLAGS.contains(&t.as_str()))
++            {
+                 let data = doc.element(node);
+                 out.push(make_finding(
+                     "unknown-flag-value",
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:445:
+     text.and_then(|t| t.trim().parse::<i64>().ok()).unwrap_or(0)
+ }
+ 
+-
+ /// 已解析 doc 上构造视图(Source::load 复用同一 doc,免二次解析)。
+ fn parse_def_view_with(doc: &Document, text: &str) -> DefView {
+     let lines = LineMap::new(text);
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:531:
+     }
+ }
+ 
+-fn parse_method(doc: &Document, lines: &LineMap, child: usize, section: &'static str) -> MethodView {
++fn parse_method(
++    doc: &Document,
++    lines: &LineMap,
++    child: usize,
++    section: &'static str,
++) -> MethodView {
+     let e = doc.element(child);
+     let mut args = Vec::new();
+     for arg_node in doc.child_elements_named(child, "Arg") {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:768:
+                 file_path: s.file_path.clone(),
+             })
+             .collect(),
+-        client_methods: methods.iter().filter(|m| m.visible_to_client).cloned().collect(),
++        client_methods: methods
++            .iter()
++            .filter(|m| m.visible_to_client)
++            .cloned()
++            .collect(),
+         methods,
+         client_properties: properties
+             .iter()
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:940:
+                     kind: "types-parse-error",
+                     fatal: true,
+                     line: Some(line),
+-                    message: format!("DataTypes::loadTypes: parse FIXED_DICT [{alias_name}] error!"),
++                    message: format!(
++                        "DataTypes::loadTypes: parse FIXED_DICT [{alias_name}] error!"
++                    ),
+                 });
+                 consume_user_type(asm, &alias_name, Some(line), "fixed-dict", origin);
+                 continue;
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:999:
+             });
+             continue;
+         }
+-        register_user_type(asm, &alias_name, Some(line), "alias", Some(&child_text), origin);
++        register_user_type(
++            asm,
++            &alias_name,
++            Some(line),
++            "alias",
++            Some(&child_text),
++            origin,
++        );
+     }
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:1183:
+         return;
+     }
+ 
+-    let declared = if property.utype > 0 { Some(property.utype) } else { None };
++    let declared = if property.utype > 0 {
++        Some(property.utype)
++    } else {
++        None
++    };
+     asm.properties.last_mut().unwrap().declared_utype = declared;
+     let utype = allocate_property_utype(
+         declared,
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:1210:
+             kind,
+             fatal: true,
+             line: Some(property.line),
+-            message: format!("EntityDef::addPropertyDescription({}): {root_name}.", asm.entity_name),
++            message: format!(
++                "EntityDef::addPropertyDescription({}): {root_name}.",
++                asm.entity_name
++            ),
+         });
+     };
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:1240:
+ 
+     let mut name_rejected = false;
+     for domain in &registered_domains {
+-        if asm.property_domains.get_mut(domain).unwrap().contains(&property.name) {
++        if asm
++            .property_domains
++            .get_mut(domain)
++            .unwrap()
++            .contains(&property.name)
++        {
+             asm.issues.push(AsmIssue {
+                 kind: "property-name-conflict",
+                 fatal: true,
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:1254:
+             name_rejected = true;
+             continue;
+         }
+-        asm.property_domains.get_mut(domain).unwrap().insert(property.name.clone());
++        asm.property_domains
++            .get_mut(domain)
++            .unwrap()
++            .insert(property.name.clone());
+     }
+     if name_rejected {
+         asm.issues.push(AsmIssue {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:1315:
+             return None;
+         }
+         asm.property_used_utypes.insert(declared);
+-        asm.property_holders
+-            .insert(declared, (name.to_string(), domains.iter().copied().collect()));
++        asm.property_holders.insert(
++            declared,
++            (name.to_string(), domains.iter().copied().collect()),
++        );
+         return Some(declared);
+     }
+-    while asm.property_used_utypes.contains(&asm.property_auto_counter) {
++    while asm
++        .property_used_utypes
++        .contains(&asm.property_auto_counter)
++    {
+         asm.property_auto_counter += 1;
+     }
+     let utype = asm.property_auto_counter;
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:1475:
+     domains
+ }
+ 
+-fn register_component_slot(module_name: &str, component: &CompView, source: &Source, asm: &mut Assembly) {
++fn register_component_slot(
++    module_name: &str,
++    component: &CompView,
++    source: &Source,
++    asm: &mut Assembly,
++) {
+     if LIMITED_PROPERTY_NAMES.contains(&component.slot_name.as_str()) {
+         asm.issues.push(AsmIssue {
+             kind: "property-name-limited",
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:1492:
+     // 组件 def 域面(缺失/结构错误 → 报 issue + 既有硬编码三域回落,宽容续行
+     // 与缺失 parent/interface 同口径;引擎该情形整表失败,此处按 message_table
+     // 既有宽容口径报 issue 续行)。
+-    let (flags, has_client, domains) = match analyze_component_module(
+-        &component.type_name,
+-        source,
+-        &mut HashSet::new(),
+-    ) {
+-        Some(face) => (
+-            derive_component_slot_flags(face.has_base, face.has_cell, face.has_client),
+-            face.has_client,
+-            slot_domains(face.has_base, face.has_cell, face.has_client),
+-        ),
+-        None => {
+-            asm.issues.push(AsmIssue {
+-                kind: "component-def-missing",
+-                fatal: true,
+-                line: Some(component.line),
+-                message: format!(
++    let (flags, has_client, domains) =
++        match analyze_component_module(&component.type_name, source, &mut HashSet::new()) {
++            Some(face) => (
++                derive_component_slot_flags(face.has_base, face.has_cell, face.has_client),
++                face.has_client,
++                slot_domains(face.has_base, face.has_cell, face.has_client),
++            ),
++            None => {
++                asm.issues.push(AsmIssue {
++                    kind: "component-def-missing",
++                    fatal: true,
++                    line: Some(component.line),
++                    message: format!(
+                     "EntityDef::loadComponents: failed to load component:{} (components/{}.def).",
+                     component.type_name, component.type_name
+                 ),
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:1514:
+-            });
+-            (
+-                "BASE|CELL_PUBLIC|ENTITY_CLIENT_DATA_FLAGS".to_string(),
+-                true,
+-                vec!["cell", "base", "client"],
+-            )
+-        }
+-    };
++                });
++                (
++                    "BASE|CELL_PUBLIC|ENTITY_CLIENT_DATA_FLAGS".to_string(),
++                    true,
++                    vec!["cell", "base", "client"],
++                )
++            }
++        };
+ 
+     let origin = origin_label(module_name, "own");
+     let entry = AsmProperty {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:1550:
+         });
+     }
+ 
+-    let declared = if component.utype > 0 { Some(component.utype) } else { None };
++    let declared = if component.utype > 0 {
++        Some(component.utype)
++    } else {
++        None
++    };
+     asm.properties.last_mut().unwrap().declared_utype = declared;
+     let Some(utype) = allocate_property_utype(
+         declared,
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:1587:
+     } else {
+         let mut registered = false;
+         for domain in &domains {
+-            if asm.property_domains.get_mut(domain).unwrap().contains(&component.slot_name) {
++            if asm
++                .property_domains
++                .get_mut(domain)
++                .unwrap()
++                .contains(&component.slot_name)
++            {
+                 asm.issues.push(AsmIssue {
+                     kind: "property-name-conflict",
+                     fatal: true,
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:1654:
+     for arg in &method.args {
+         let arg_entry = parse_method_arg(method, arg, &origin, asm);
+         asm.methods.last_mut().unwrap().args.push(arg_entry);
+-        if asm.methods.last().unwrap().args.last().unwrap().utype.is_none() {
++        if asm
++            .methods
++            .last()
++            .unwrap()
++            .args
++            .last()
++            .unwrap()
++            .utype
++            .is_none()
++        {
+             args_ok = false;
+         }
+     }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:1708:
+         return;
+     }
+ 
+-    let declared = if method.utype > 0 { Some(method.utype) } else { None };
++    let declared = if method.utype > 0 {
++        Some(method.utype)
++    } else {
++        None
++    };
+     asm.methods.last_mut().unwrap().declared_utype = declared;
+     let resolved_utype = match declared {
+         Some(declared) => {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/message_table.rs:1760:
+     asm.all_method_names.insert(method.name.clone());
+ }
+ 
+-fn parse_method_arg(method: &MethodView, arg: &ArgView, origin: &str, asm: &mut Assembly) -> AsmArg {
++fn parse_method_arg(
++    method: &MethodView,
++    arg: &ArgView,
++    origin: &str,
++    asm: &mut Assembly,
++) -> AsmArg {
+     let line = method.line;
+     let section_label = section_name(method.section);
+     if arg.name != "ARRAY" {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/process_topology.rs:177:
+             .map(|a| lines.line_of(a.value_span.start))
+             .unwrap_or_else(|| lines.line_of(e.name_span.start));
+         let (role, role_line) = match e.attribute("role") {
+-            Some(a) => (a.value.trim().to_string(), lines.line_of(a.value_span.start)),
++            Some(a) => (
++                a.value.trim().to_string(),
++                lines.line_of(a.value_span.start),
++            ),
+             None => (String::new(), lines.line_of(e.name_span.start)),
+         };
+-        let port = scalar_child(&doc, child, "port")
+-            .and_then(|v| v.trim().parse::<u32>().ok());
++        let port = scalar_child(&doc, child, "port").and_then(|v| v.trim().parse::<u32>().ok());
+         let port_line = doc
+             .child_element(child, "port")
+             .map(|idx| lines.line_of(doc.element(idx).name_span.start));
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/process_topology.rs:227:
+ 
+ /// 首个匹配子元素的直接文本 trim(空 → None)。
+ fn scalar_child(doc: &Document, idx: usize, name: &str) -> Option<String> {
+-    doc.child_element(idx, name).map(|child| {
+-        doc.element(child).text(doc).trim().to_string()
+-    })
++    doc.child_element(idx, name)
++        .map(|child| doc.element(child).text(doc).trim().to_string())
+ }
+ 
+ // ---------------------------------------------------------------------------
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/process_topology.rs:276:
+         let e = doc.element(idx);
+         let truthy = |attr: &str| {
+             e.attribute(attr)
+-                .map(|a| matches!(a.value.trim().to_ascii_lowercase().as_str(), "true" | "1" | "yes"))
++                .map(|a| {
++                    matches!(
++                        a.value.trim().to_ascii_lowercase().as_str(),
++                        "true" | "1" | "yes"
++                    )
++                })
+                 .unwrap_or(false)
+         };
+         out.push(RegistryEntity {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/process_topology.rs:408:
+ 
+ /// 走查一个 def(含闭包),累积内容。`origin` 区分实体/接口(接口不成环守卫,
+ /// 与 message_table 一致)。
+-fn walk_def(
+-    name: &str,
+-    corpus: &DefCorpus,
+-    origin: &str,
+-    acc: &mut ContentAcc,
+-) {
++fn walk_def(name: &str, corpus: &DefCorpus, origin: &str, acc: &mut ContentAcc) {
+     if origin != "interface" && !acc.visited.insert(name.to_string()) {
+         // 父类链成环:引擎递归装载无法终止,kode 截断(与 message_table 同路)。
+         return;
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/process_topology.rs:458:
+ // ---------------------------------------------------------------------------
+ 
+ fn build_handler(params: Value) -> Result<Value, String> {
+-    let input: BuildParams =
+-        serde_json::from_value(params).map_err(|e| format!("processTopology/validate params: {e}"))?;
++    let input: BuildParams = serde_json::from_value(params)
++        .map_err(|e| format!("processTopology/validate params: {e}"))?;
+     let findings = validate(input);
+-    serde_json::to_value(BTreeMap::from([("findings", findings)]))
+-        .map_err(|e| e.to_string())
++    serde_json::to_value(BTreeMap::from([("findings", findings)])).map_err(|e| e.to_string())
+ }
+ 
+ /// 公共入口(CI bin 用):给定清单原文 + entities.xml 原文 + defs 集合,返回全部发现。
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/process_topology.rs:587:
+                         WrongRole,
+                     }
+                     let issue = match process.role.as_str() {
+-                        "cellapp" if !content.has_cell => {
+-                            Some(HostIssue::ContentMismatch("cellapp 承载的实体无 cell 内容(CellMethods/cell 域属性)"))
+-                        }
+-                        "baseapp" if !content.has_base => {
+-                            Some(HostIssue::ContentMismatch("baseapp 承载的实体无 base 内容(BaseMethods/base 域属性)"))
+-                        }
++                        "cellapp" if !content.has_cell => Some(HostIssue::ContentMismatch(
++                            "cellapp 承载的实体无 cell 内容(CellMethods/cell 域属性)",
++                        )),
++                        "baseapp" if !content.has_base => Some(HostIssue::ContentMismatch(
++                            "baseapp 承载的实体无 base 内容(BaseMethods/base 域属性)",
++                        )),
+                         "cellapp" | "baseapp" => None,
+                         _ => Some(HostIssue::WrongRole),
+                     };
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/process_topology.rs:648:
+             .get(&entry.name)
+             .map(|d| d.file_path.clone())
+             .unwrap_or_else(|| "<entities.xml>".into());
+-        let line = corpus.get(&entry.name).map(|_| acc_or(acc.cell_line, entry.line)).unwrap_or(entry.line);
++        let line = corpus
++            .get(&entry.name)
++            .map(|_| acc_or(acc.cell_line, entry.line))
++            .unwrap_or(entry.line);
+         contents.insert(
+             entry.name.clone(),
+             EntityContent {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/process_topology.rs:728:
+                 file_path: manifest_path.into(),
+                 line,
+                 severity: SEVERITY_WARNING,
+-                message: format!(
+-                    "端口冲突:{} 与 {} 都监听 {}",
+-                    process.name, owner, port
+-                ),
++                message: format!("端口冲突:{} 与 {} 都监听 {}", process.name, owner, port),
+                 code: "kbengine.processTopologyDuplicatePort".into(),
+                 related: Vec::new(),
+             });
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/process_topology.rs:811:
+             file_path: manifest_path.into(),
+             line,
+             severity: SEVERITY_WARNING,
+-            message: format!(
+-                "依赖成环:{}",
+-                cycle.1.join(" → ")
+-            ),
++            message: format!("依赖成环:{}", cycle.1.join(" → ")),
+             code: "kbengine.processTopologyDependencyCycle".into(),
+             related: Vec::new(),
+         });
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/python_callgraph.rs:191:
+ }
+ 
+ fn symbol_id(path: &str, kind: &str, scope: &str, name: &str) -> String {
+-    fn hex(s: &str) -> String { s.as_bytes().iter().map(|b| format!("{b:02x}")).collect() }
++    fn hex(s: &str) -> String {
++        s.as_bytes().iter().map(|b| format!("{b:02x}")).collect()
++    }
+     format!("sym_{}_{}_{}_{}", hex(path), kind, hex(scope), hex(name))
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/python_callgraph.rs:256:
+                 symbol_id(&a.path, "function", "", &e.caller)
+             };
+             let callee_id = match e.kind {
+-                EdgeKind::SelfMethod => symbol_id(&a.path, "method", e.caller_class.as_deref().unwrap_or(""), &e.callee),
++                EdgeKind::SelfMethod => symbol_id(
++                    &a.path,
++                    "method",
++                    e.caller_class.as_deref().unwrap_or(""),
++                    &e.callee,
++                ),
+                 EdgeKind::Local => symbol_id(&a.path, "function", "", &e.callee),
+-                _ => symbol_id(&a.path, "external", e.receiver.as_deref().unwrap_or(""), &e.callee),
++                _ => symbol_id(
++                    &a.path,
++                    "external",
++                    e.receiver.as_deref().unwrap_or(""),
++                    &e.callee,
++                ),
+             };
+             edges.push(EdgeOut {
+                 caller_id,
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/server.rs:222:
+         .and_then(|m| m.as_str())
+         .unwrap_or("")
+         .to_string();
+-    let params = payload.get("params").cloned().unwrap_or(serde_json::Value::Null);
++    let params = payload
++        .get("params")
++        .cloned()
++        .unwrap_or(serde_json::Value::Null);
+     match state.rpc.dispatch(&method, params) {
+         Ok(value) => Response::success(request.id, value),
+         Err(msg) => {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:186:
+             WireError::AliasIdOverflow(id) => {
+                 write!(f, "alias id {id} exceeds uint8 bound (use utype mode)")
+             }
+-            WireError::ArgumentCountMismatch { expected, actual } => write!(f, "expected {expected} arguments, got {actual}"),
+-            WireError::MethodModeMismatch => write!(f, "method identifier does not match encoding mode"),
++            WireError::ArgumentCountMismatch { expected, actual } => {
++                write!(f, "expected {expected} arguments, got {actual}")
++            }
++            WireError::MethodModeMismatch => {
++                write!(f, "method identifier does not match encoding mode")
++            }
+             WireError::NonAsciiString => write!(f, "STRING value contains non-ASCII bytes"),
+             WireError::EmbeddedNulString => write!(f, "STRING value contains embedded NUL byte"),
+             WireError::InvalidHex(s) => write!(f, "invalid hex string: {s}"),
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:271:
+     }
+ 
+     pub fn read_f32(&mut self) -> Result<f32, WireError> {
+-        Ok(f32::from_le_bytes(self.take(4)?.try_into().expect("4 bytes")))
++        Ok(f32::from_le_bytes(
++            self.take(4)?.try_into().expect("4 bytes"),
++        ))
+     }
+ 
+     pub fn read_f64(&mut self) -> Result<f64, WireError> {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:278:
+-        Ok(f64::from_le_bytes(self.take(8)?.try_into().expect("8 bytes")))
++        Ok(f64::from_le_bytes(
++            self.take(8)?.try_into().expect("8 bytes"),
++        ))
+     }
+ 
+     /// STRING(NUL 结尾无前缀;遇 NUL 或**非 ASCII** 字节即停,终止字节被消费)。
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:379:
+         }
+         (WireLayout::Array(elem), WireValue::Array(items)) => {
+             if items.len() as u64 > u64::from(u32::MAX) {
+-                return Err(WireError::ArraySizeTooLarge {
+-                    size: u32::MAX,
+-                });
++                return Err(WireError::ArraySizeTooLarge { size: u32::MAX });
+             }
+             push_le_u32(out, items.len() as u32);
+             for item in items {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:594:
+         self.resolve_inner(name, &mut visiting)
+     }
+ 
+-    fn resolve_inner(&self, name: &str, visiting: &mut BTreeSet<String>) -> Result<WireLayout, WireError> {
++    fn resolve_inner(
++        &self,
++        name: &str,
++        visiting: &mut BTreeSet<String>,
++    ) -> Result<WireLayout, WireError> {
+         if let Some(layout) = builtin_layout(name) {
+             return Ok(layout);
+         }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:610:
+         Ok(layout)
+     }
+ 
+-    fn raw_to_layout(&self, raw: &RawType, visiting: &mut BTreeSet<String>) -> Result<WireLayout, WireError> {
++    fn raw_to_layout(
++        &self,
++        raw: &RawType,
++        visiting: &mut BTreeSet<String>,
++    ) -> Result<WireLayout, WireError> {
+         match raw {
+-            RawType::Builtin(b) => builtin_layout(b)
+-                .ok_or_else(|| WireError::UnknownType(b.clone())),
++            RawType::Builtin(b) => {
++                builtin_layout(b).ok_or_else(|| WireError::UnknownType(b.clone()))
++            }
+             RawType::Named(n) => self.resolve_inner(n, visiting),
+             RawType::Array(elem) => Ok(WireLayout::Array(Box::new(
+                 self.raw_to_layout(elem, visiting)?,
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:806:
+     /// SPACEID(u32)。
+     SpaceId(u32),
+     /// 普通属性(布局 + 值)。
+-    Regular { layout: WireLayout, value: WireValue },
++    Regular {
++        layout: WireLayout,
++        value: WireValue,
++    },
+ }
+ 
+ /// 属性更新条目(parent/child id + 载荷)。
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:895:
+             let value = decode_value(&layout, &mut cur)?;
+             PropKind::Regular { layout, value }
+         };
+-        entries.push(PropertyEntry { parent, child, kind });
++        entries.push(PropertyEntry {
++            parent,
++            child,
++            kind,
++        });
+     }
+     Ok((entity, entries))
+ }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:958:
+     out: &mut Vec<u8>,
+ ) -> Result<(), WireError> {
+     if call.arg_layouts.len() != call.args.len() {
+-        return Err(WireError::ArgumentCountMismatch { expected: call.arg_layouts.len(), actual: call.args.len() });
++        return Err(WireError::ArgumentCountMismatch {
++            expected: call.arg_layouts.len(),
++            actual: call.args.len(),
++        });
+     }
+-    if !matches!((mode, call.method), (PropertyMode::Alias, MethodRef::Alias(_)) | (PropertyMode::Utype, MethodRef::Utype(_))) {
++    if !matches!(
++        (mode, call.method),
++        (PropertyMode::Alias, MethodRef::Alias(_)) | (PropertyMode::Utype, MethodRef::Utype(_))
++    ) {
+         return Err(WireError::MethodModeMismatch);
+     }
+     match mode {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:1267:
+             "py_dict_pickle_frame",
+             "datatype.cpp:1288-1296 PyDict=同 pickle 框架",
+             WireLayout::PyDict,
+-            WireValue::PyDict(vec![0x80, 0x04, 0x95, 0x04, 0x00, 0x00, 0x00, 0x7d, 0x94, 0x2e]),
++            WireValue::PyDict(vec![
++                0x80, 0x04, 0x95, 0x04, 0x00, 0x00, 0x00, 0x7d, 0x94, 0x2e,
++            ]),
+         ),
+         (
+             "py_tuple_pickle_frame",
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:1274:
+             "datatype.cpp:1344-1352 PyTuple=同 pickle 框架",
+             WireLayout::PyTuple,
+-            WireValue::PyTuple(vec![0x80, 0x04, 0x95, 0x04, 0x00, 0x00, 0x00, 0x29, 0x94, 0x2e]),
++            WireValue::PyTuple(vec![
++                0x80, 0x04, 0x95, 0x04, 0x00, 0x00, 0x00, 0x29, 0x94, 0x2e,
++            ]),
+         ),
+         (
+             "py_list_pickle_frame",
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:1280:
+             "datatype.cpp:1400-1408 PyList=同 pickle 框架",
+             WireLayout::PyList,
+-            WireValue::PyList(vec![0x80, 0x04, 0x95, 0x04, 0x00, 0x00, 0x00, 0x5d, 0x94, 0x2e]),
++            WireValue::PyList(vec![
++                0x80, 0x04, 0x95, 0x04, 0x00, 0x00, 0x00, 0x5d, 0x94, 0x2e,
++            ]),
+         ),
+         (
+             "entitycall_full",
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:1358:
+     let item_ids_layout = schema.resolve("ITEM_IDS").expect("resolve ITEM_IDS");
+     let item_ids_value = WireValue::Array(vec![WireValue::U16(7), WireValue::U16(9)]);
+     let mut out = Vec::new();
+-    encode_value(&item_ids_layout, &item_ids_value, &mut out)
+-        .expect("golden ITEM_IDS encode");
++    encode_value(&item_ids_layout, &item_ids_value, &mut out).expect("golden ITEM_IDS encode");
+     let mut cur = WireCursor::new(&out);
+     let back = decode_value(&item_ids_layout, &mut cur).expect("golden ITEM_IDS decode");
+     assert_eq!(back, item_ids_value, "ITEM_IDS round-trip mismatch");
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:1400:
+             &mut out,
+         )
+         .expect("golden prop stream alias encode");
+-        (out, EntityRef::Full(100), PropertyMode::Alias, BasePropUtype::default())
++        (
++            out,
++            EntityRef::Full(100),
++            PropertyMode::Alias,
++            BasePropUtype::default(),
++        )
+     };
+     {
+         let layouts: BTreeMap<u16, WireLayout> = account_entries_alias
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:1410:
+                 _ => None,
+             })
+             .collect();
+-        let (back_entity, back_entries) = decode_property_stream(
+-            &out,
+-            EntityRefKind::Full,
+-            mode,
+-            &base,
+-            |_parent, child| {
++        let (back_entity, back_entries) =
++            decode_property_stream(&out, EntityRefKind::Full, mode, &base, |_parent, child| {
+                 layouts
+                     .get(&child)
+                     .cloned()
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:1422:
+                     .ok_or_else(|| WireError::UnknownType(format!("child {child}")))
+-            },
+-        )
+-        .expect("golden prop stream alias decode");
++            })
++            .expect("golden prop stream alias decode");
+         assert_eq!(back_entity, entity, "prop stream entity round-trip");
+-        assert_eq!(back_entries, account_entries_alias, "prop stream alias entries");
++        assert_eq!(
++            back_entries, account_entries_alias,
++            "prop stream alias entries"
++        );
+     }
+     samples.push(serde_json::json!({
+         "name": "prop_stream_account_alias",
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:1487:
+         )
+         .expect("golden prop stream utype decode");
+         assert_eq!(back_entity, EntityRef::Full(100));
+-        assert_eq!(back_entries, account_entries_utype, "prop stream utype entries");
++        assert_eq!(
++            back_entries, account_entries_utype,
++            "prop stream utype entries"
++        );
+     }
+     samples.push(serde_json::json!({
+         "name": "prop_stream_account_utype",
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:1508:
+         PropertyEntry {
+             parent: 0,
+             child: 1,
+-            kind: PropKind::Position { x: 1.5, y: 2.5, z: 3.5 },
++            kind: PropKind::Position {
++                x: 1.5,
++                y: 2.5,
++                z: 3.5,
++            },
+         },
+         PropertyEntry {
+             parent: 0,
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:1542:
+             |_parent, child| Err(WireError::UnknownType(format!("child {child}"))),
+         )
+         .expect("golden prop stream special decode");
+-        assert_eq!(back_entity, EntityRef::Alias(7), "alias entity id round-trip");
++        assert_eq!(
++            back_entity,
++            EntityRef::Alias(7),
++            "alias entity id round-trip"
++        );
+         assert_eq!(back_entries, special_entries, "special base prop entries");
+     }
+     samples.push(serde_json::json!({
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:1563:
+         PropertyEntry {
+             parent: 0,
+             child: 40000, // Property::position fixed msgid(messages_fixed_defaults.xml:388)
+-            kind: PropKind::Position { x: -1.0, y: 0.0, z: 8.25 },
++            kind: PropKind::Position {
++                x: -1.0,
++                y: 0.0,
++                z: 8.25,
++            },
+         },
+         PropertyEntry {
+             parent: 6, // 组件属性 utype(此处示意 6)
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:1570:
+-            child: 1, // 组件内子属性 utype
++            child: 1,  // 组件内子属性 utype
+             kind: PropKind::Regular {
+                 layout: WireLayout::U16,
+                 value: WireValue::U16(910),
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:1690:
+     ];
+     for (name, provenance, msg_id, body, variable) in frame_bodies {
+         let mut out = Vec::new();
+-        encode_message_frame(*msg_id, body, *variable, &mut out)
+-            .expect("golden frame encode");
++        encode_message_frame(*msg_id, body, *variable, &mut out).expect("golden frame encode");
+         let mut cur = WireCursor::new(&out);
+         let (back_id, back_body) = decode_message_frame(&mut cur, *variable, Some(body.len()))
+             .expect("golden frame decode");
+Diff in /home/cui/wt-kode-codex/crates/kode-server/src/wire_codec.rs:1728:
+     let layout: WireLayout =
+         serde_json::from_value(params.get("layout").cloned().unwrap_or_default())
+             .map_err(|e| e.to_string())?;
+-    let value: WireValue =
+-        serde_json::from_value(params.get("value").cloned().unwrap_or_default())
+-            .map_err(|e| e.to_string())?;
++    let value: WireValue = serde_json::from_value(params.get("value").cloned().unwrap_or_default())
++        .map_err(|e| e.to_string())?;
+     let mut out = Vec::new();
+     encode_value(&layout, &value, &mut out).map_err(|e| e.to_string())?;
+     Ok(serde_json::json!({ "hex": to_hex(&out) }))
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/client_sdk_dispatch.rs:127:
+ /// 走完整 `$/kode/rpc` 链路调 `$/kode/sdk/generate`,返回 handler 结果 JSON 数组。
+ fn generate(params: Value) -> Value {
+     let mut state = ServerState::new();
+-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
++    handle_message(
++        &mut state,
++        request(0, "initialize", json!({"capabilities": {}})),
++    );
+     let out = handle_message(
+         &mut state,
+         request(
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/client_sdk_dispatch.rs:142:
+ /// 走完整 `$/kode/rpc` 链路调 `$/kode/sdk/generate`,取错误消息(成功则 panic)。
+ fn generate_err(params: Value) -> String {
+     let mut state = ServerState::new();
+-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
++    handle_message(
++        &mut state,
++        request(0, "initialize", json!({"capabilities": {}})),
++    );
+     let out = handle_message(
+         &mut state,
+         request(
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/client_sdk_dispatch.rs:436:
+     let files = generate(params).as_array().unwrap().clone();
+     let ts = content_of(&files, "Avatar.ts");
+     assert!(!ts.contains("healthPack"));
+-    assert!(!files.iter().any(|f| f["fileName"] == "ClientSdkComponents.ts"));
++    assert!(!files
++        .iter()
++        .any(|f| f["fileName"] == "ClientSdkComponents.ts"));
+ }
+ 
+ /// 未知语言 → handler 报错(TS 侧回退路径)。
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/client_sdk_dispatch.rs:443:
+ #[test]
+ fn unknown_language_is_error() {
+     let mut state = ServerState::new();
+-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
++    handle_message(
++        &mut state,
++        request(0, "initialize", json!({"capabilities": {}})),
++    );
+     let out = handle_message(
+         &mut state,
+         request(
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/database_schema_dispatch.rs:32:
+ /// 走完整 `$/kode/rpc` 链路调 `$/kode/databaseSchema/build`,返回推导结果 JSON。
+ fn build(params: Value) -> Value {
+     let mut state = ServerState::new();
+-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
++    handle_message(
++        &mut state,
++        request(0, "initialize", json!({"capabilities": {}})),
++    );
+     let out = handle_message(
+         &mut state,
+         request(
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/database_schema_dispatch.rs:160:
+ 
+     assert_eq!(root.get("kind").and_then(|v| v.as_str()), Some("entity"));
+     assert_eq!(root.get("title").and_then(|v| v.as_str()), Some("Gold"));
+-    assert_eq!(root.get("propertyPath").and_then(|v| v.as_str()), Some("Gold"));
++    assert_eq!(
++        root.get("propertyPath").and_then(|v| v.as_str()),
++        Some("Gold")
++    );
+     assert_eq!(root.get("source").unwrap().get("line"), Some(&json!(1)));
+ 
+     // 根表列:固定 id/sm_autoLoad + hasCell 六列 + 属性列(标量/向量/FD 前缀列)。
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/database_schema_dispatch.rs:168:
+     assert_eq!(
+         names,
+         vec![
+-            "id", "sm_autoLoad",
+-            "sm_0_position", "sm_1_position", "sm_2_position",
+-            "sm_0_direction", "sm_1_direction", "sm_2_direction",
+-            "sm_gold", "sm_uid", "sm_title", "sm_desc",
+-            "sm_0_pos", "sm_1_pos", "sm_2_pos",
+-            "sm_dict_a", "sm_dict_b",
++            "id",
++            "sm_autoLoad",
++            "sm_0_position",
++            "sm_1_position",
++            "sm_2_position",
++            "sm_0_direction",
++            "sm_1_direction",
++            "sm_2_direction",
++            "sm_gold",
++            "sm_uid",
++            "sm_title",
++            "sm_desc",
++            "sm_0_pos",
++            "sm_1_pos",
++            "sm_2_pos",
++            "sm_dict_a",
++            "sm_dict_b",
+         ]
+     );
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/database_schema_dispatch.rs:180:
+     let gold = &root.get("fields").unwrap().as_array().unwrap()[8];
+-    assert_eq!(gold.get("typeLabel").and_then(|v| v.as_str()), Some("int unsigned"));
++    assert_eq!(
++        gold.get("typeLabel").and_then(|v| v.as_str()),
++        Some("int unsigned")
++    );
+ 
+     let uid = &root.get("fields").unwrap().as_array().unwrap()[9];
+     assert_eq!(uid.get("identifier"), Some(&json!(true)));
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/database_schema_dispatch.rs:185:
+-    assert_eq!(uid.get("indexType").and_then(|v| v.as_str()), Some("UNIQUE"));
++    assert_eq!(
++        uid.get("indexType").and_then(|v| v.as_str()),
++        Some("UNIQUE")
++    );
+     assert_eq!(uid.get("databaseLength"), Some(&json!(64)));
+     assert_eq!(uid.get("defaultValue").and_then(|v| v.as_str()), Some("0"));
+     assert_eq!(uid.get("sourcePath").and_then(|v| v.as_str()), Some("Gold"));
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/database_schema_dispatch.rs:189:
+ 
+     // STRING 声明 128 保真;未声明落引擎默认 255。
+     let title = &root.get("fields").unwrap().as_array().unwrap()[10];
+-    assert_eq!(title.get("typeLabel").and_then(|v| v.as_str()), Some("varchar"));
++    assert_eq!(
++        title.get("typeLabel").and_then(|v| v.as_str()),
++        Some("varchar")
++    );
+     assert_eq!(title.get("databaseLength"), Some(&json!(128)));
+     let desc = &root.get("fields").unwrap().as_array().unwrap()[11];
+     assert_eq!(desc.get("databaseLength"), Some(&json!(255)));
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/database_schema_dispatch.rs:196:
+ 
+     // VECTOR3 三列同 typeLabel vector3。
+     let pos0 = &root.get("fields").unwrap().as_array().unwrap()[12];
+-    assert_eq!(pos0.get("typeLabel").and_then(|v| v.as_str()), Some("vector3"));
++    assert_eq!(
++        pos0.get("typeLabel").and_then(|v| v.as_str()),
++        Some("vector3")
++    );
+ 
+     // FD 键列落在根表(sm_dict_a/sm_dict_b),sourcePath 为子键路径。
+     let dict_a = &root.get("fields").unwrap().as_array().unwrap()[15];
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/database_schema_dispatch.rs:203:
+-    assert_eq!(dict_a.get("sourcePath").and_then(|v| v.as_str()), Some("Gold.dict.a"));
++    assert_eq!(
++        dict_a.get("sourcePath").and_then(|v| v.as_str()),
++        Some("Gold.dict.a")
++    );
+ 
+     // 数组子表:parentID 存在、元素列落子表顶层。
+     let scores = table_named(&result, "tbl_Gold_scores");
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/database_schema_dispatch.rs:207:
+     assert_eq!(scores.get("kind").and_then(|v| v.as_str()), Some("array"));
+-    assert_eq!(scores.get("parentTableName").and_then(|v| v.as_str()), Some("tbl_Gold"));
+     assert_eq!(
++        scores.get("parentTableName").and_then(|v| v.as_str()),
++        Some("tbl_Gold")
++    );
++    assert_eq!(
+         field_names(scores),
+         vec!["id", "parentID", "sm_autoLoad", "sm_value"]
+     );
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/database_schema_dispatch.rs:213:
+     let elem = &scores.get("fields").unwrap().as_array().unwrap()[3];
+-    assert_eq!(elem.get("typeLabel").and_then(|v| v.as_str()), Some("float"));
+-    assert_eq!(elem.get("sourcePath").and_then(|v| v.as_str()), Some("Gold.scores[]"));
++    assert_eq!(
++        elem.get("typeLabel").and_then(|v| v.as_str()),
++        Some("float")
++    );
++    assert_eq!(
++        elem.get("sourcePath").and_then(|v| v.as_str()),
++        Some("Gold.scores[]")
++    );
+ 
+     // 组件子表:引擎同样 isChild(true)(entity_table_mysql.cpp:1525),syncToDB
+     // 给全部 child 表追加 parentID 结构列(:379-380)——与 ARRAY 子表同形,子键
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/database_schema_dispatch.rs:219:
+     // 列在组件表内。
+     let weapon = table_named(&result, "tbl_Gold_weapon");
+-    assert_eq!(weapon.get("kind").and_then(|v| v.as_str()), Some("component"));
+-    assert_eq!(field_names(weapon), vec!["id", "parentID", "sm_autoLoad", "sm_ammo"]);
++    assert_eq!(
++        weapon.get("kind").and_then(|v| v.as_str()),
++        Some("component")
++    );
++    assert_eq!(
++        field_names(weapon),
++        vec!["id", "parentID", "sm_autoLoad", "sm_ammo"]
++    );
+ 
+     // hasCell=true ⇒ hiddenComp(base 无 cell 域)不跳过。
+-    assert!(table_named(&result, "tbl_Gold_hiddenComp").get("name").is_some());
++    assert!(table_named(&result, "tbl_Gold_hiddenComp")
++        .get("name")
++        .is_some());
+ 
+     // ENTITYCALL 不落列(无 sm_call)。
+     assert!(!field_names(root).contains(&"sm_call"));
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/database_schema_dispatch.rs:247:
+     assert!(!names.contains(&"sm_0_position"));
+     assert!(!names.contains(&"sm_0_direction"));
+     // 无 cell 且组件槽无 base 域 ⇒ 组件连表跳过。
+-    assert!(!tables_of(&result).iter().any(|t| {
+-        t.get("name").and_then(|v| v.as_str()) == Some("tbl_Gold_hiddenComp")
+-    }));
++    assert!(!tables_of(&result)
++        .iter()
++        .any(|t| { t.get("name").and_then(|v| v.as_str()) == Some("tbl_Gold_hiddenComp") }));
+     // 有 base 域的组件照建。
+-    assert!(table_named(&result, "tbl_Gold_weapon").get("name").is_some());
++    assert!(table_named(&result, "tbl_Gold_weapon")
++        .get("name")
++        .is_some());
+ }
+ 
+ #[test]
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/database_schema_dispatch.rs:279:
+ #[test]
+ fn malformed_params_yield_error() {
+     let mut state = ServerState::new();
+-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
++    handle_message(
++        &mut state,
++        request(0, "initialize", json!({"capabilities": {}})),
++    );
+     let out = handle_message(
+         &mut state,
+         request(
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/def_md5_dispatch.rs:25:
+ 
+ fn call_md5(params: Value) -> Value {
+     let mut state = ServerState::new();
+-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
++    handle_message(
++        &mut state,
++        request(0, "initialize", json!({"capabilities": {}})),
++    );
+     let out = handle_message(
+         &mut state,
+         request(
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/def_md5_dispatch.rs:55:
+     }));
+     let md5 = r["md5"].as_str().expect("md5");
+     assert_eq!(md5.len(), 32);
+-    assert!(md5.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
++    assert!(md5
++        .chars()
++        .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
+     // 与 frozen golden 的最小锚点一致(规范推导锚点)。
+     let golden = std::fs::read_to_string(
+         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/def_md5_dispatch.rs:73:
+         .find(|s| s["name"] == "minimal-single-entity")
+         .expect("anchor");
+     assert_eq!(md5, anchor["md5"].as_str().unwrap());
+-    assert_eq!(r["streamHex"].as_str().unwrap(), anchor["streamHex"].as_str().unwrap());
++    assert_eq!(
++        r["streamHex"].as_str().unwrap(),
++        anchor["streamHex"].as_str().unwrap()
++    );
+     assert!(r["trace"].as_array().unwrap().len() > 0);
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/def_md5_dispatch.rs:81:
+ fn dispatch_error_channel() {
+     // 缺 def → error 经 RPC error 返回,不 panic。
+     let mut state = ServerState::new();
+-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
++    handle_message(
++        &mut state,
++        request(0, "initialize", json!({"capabilities": {}})),
++    );
+     let out = handle_message(
+         &mut state,
+         request(
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/def_md5_units.rs:34:
+ fn rfc1321_vectors() {
+     let mut m = Md5::new();
+     m.update(b"");
+-    assert_eq!(hex(&m.clone().finalize()), "d41d8cd98f00b204e9800998ecf8427e");
++    assert_eq!(
++        hex(&m.clone().finalize()),
++        "d41d8cd98f00b204e9800998ecf8427e"
++    );
+ 
+     let mut m = Md5::new();
+     m.update(b"abc");
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/def_md5_units.rs:41:
+-    assert_eq!(hex(&m.clone().finalize()), "900150983cd24fb0d6963f7d28e17f72");
++    assert_eq!(
++        hex(&m.clone().finalize()),
++        "900150983cd24fb0d6963f7d28e17f72"
++    );
+ 
+     let mut m = Md5::new();
+     m.update(b"message digest");
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/def_md5_units.rs:45:
+-    assert_eq!(hex(&m.clone().finalize()), "f96b697d7cb7938d525a2f31aaf161d0");
++    assert_eq!(
++        hex(&m.clone().finalize()),
++        "f96b697d7cb7938d525a2f31aaf161d0"
++    );
+ 
+     // 跨块长串(RFC 标准 "a"×1e6)。
+     let mut m = Md5::new();
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/def_md5_units.rs:49:
+     for _ in 0..1_000_000 {
+         m.update(b"a");
+     }
+-    assert_eq!(hex(&m.clone().finalize()), "7707d6ae4e027c70eea2a935c2296f21");
++    assert_eq!(
++        hex(&m.clone().finalize()),
++        "7707d6ae4e027c70eea2a935c2296f21"
++    );
+ 
+     // 分块边界(56/64/65 字节)。
+     for len in [55usize, 56, 57, 63, 64, 65, 128] {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/def_md5_units.rs:147:
+     let result = compute_def_md5(sample.params).unwrap();
+     let s = &result.stream_hex;
+     // Gate 在 entities.xml 声明 hasCell="true" → hasClient=-1 hasCell=1 hasBase=-1。
+-    let idx = s.find("ffffffff01000000ffffffff").expect("autoMatchCompOwn tail");
++    let idx = s
++        .find("ffffffff01000000ffffffff")
++        .expect("autoMatchCompOwn tail");
+     let _ = idx;
+     assert!(s.ends_with("ffffffff01000000ffffffff"));
+ }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/def_md5_units.rs:160:
+         assert_eq!(a.md5_hex, b.md5_hex, "{}: deterministic", sample.name);
+         assert_eq!(a.stream_hex, b.stream_hex, "{}: deterministic", sample.name);
+         assert_eq!(a.md5_hex.len(), 32, "{}: 32 hex", sample.name);
+-        assert!(a.md5_hex.chars().all(|c| c.is_ascii_hexdigit()), "{}", sample.name);
+-        assert!(a.md5_hex.chars().all(|c| !c.is_ascii_lowercase()), "{}: uppercase", sample.name);
++        assert!(
++            a.md5_hex.chars().all(|c| c.is_ascii_hexdigit()),
++            "{}",
++            sample.name
++        );
++        assert!(
++            a.md5_hex.chars().all(|c| !c.is_ascii_lowercase()),
++            "{}: uppercase",
++            sample.name
++        );
+         assert_eq!(
+             a.md5_hex.to_lowercase(),
+             a.md5_hex.to_lowercase(),
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/def_md5_units.rs:244:
+ #[test]
+ fn golden_samples_load_fixtures() {
+     // demo-assets 与 parity-project 夹具可装载(至少一个样本)。
+-    let names: Vec<&str> = golden_samples(repo_root())
+-        .iter()
+-        .map(|s| s.name)
+-        .collect();
++    let names: Vec<&str> = golden_samples(repo_root()).iter().map(|s| s.name).collect();
+     assert!(names.contains(&"kbengine-demo-assets"));
+     assert!(names.contains(&"parity-project"));
+     assert!(names.contains(&"minimal-single-entity"));
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/dependency_graph_dispatch.rs:31:
+ /// 走完整 `$/kode/rpc` 链路调 `$/kode/dependency/graph`,返回图 JSON。
+ fn graph(params: Value) -> Value {
+     let mut state = ServerState::new();
+-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
++    handle_message(
++        &mut state,
++        request(0, "initialize", json!({"capabilities": {}})),
++    );
+     let out = handle_message(
+         &mut state,
+         request(
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/dependency_graph_dispatch.rs:162:
+         .collect();
+     assert_eq!(types, vec!["Base", "Cell", "Client"]);
+     assert_eq!(node_named(&g, "def:Hero")["kind"], "def");
+-    assert_eq!(node_named(&g, "def:Hero")["filePath"], "/defs/entitys/Hero.def");
++    assert_eq!(
++        node_named(&g, "def:Hero")["filePath"],
++        "/defs/entitys/Hero.def"
++    );
+     assert_eq!(node_named(&g, "def:Monster")["kind"], "def");
+     assert_eq!(node_named(&g, "interface:IMove")["kind"], "interface");
+     assert_eq!(node_named(&g, "component:CWeapon")["kind"], "component");
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/dependency_graph_dispatch.rs:169:
+     assert_eq!(node_named(&g, "type:Vec3")["kind"], "type");
+-    assert_eq!(node_named(&g, "type:Vec3")["filePath"], "/defs/entitys/types.xml");
+-    assert_eq!(node_named(&g, "python:/scripts/types/Vec3.py")["kind"], "python");
+-    assert_eq!(node_named(&g, "python:/scripts/entities/Hero.py")["kind"], "python");
++    assert_eq!(
++        node_named(&g, "type:Vec3")["filePath"],
++        "/defs/entitys/types.xml"
++    );
++    assert_eq!(
++        node_named(&g, "python:/scripts/types/Vec3.py")["kind"],
++        "python"
++    );
++    assert_eq!(
++        node_named(&g, "python:/scripts/entities/Hero.py")["kind"],
++        "python"
++    );
+     // Monster 仅 cell 域
+     assert_eq!(
+-        node_named(&g, "entity:Monster")["types"].as_array().unwrap().len(),
++        node_named(&g, "entity:Monster")["types"]
++            .as_array()
++            .unwrap()
++            .len(),
+         1
+     );
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/dependency_graph_dispatch.rs:183:
+     assert!(has_edge(&g, "def:Hero", "component:CWeapon", "has-a"));
+     assert!(has_edge(&g, "def:Hero", "type:Vec3", "property-type"));
+     assert!(has_edge(&g, "def:Hero", "def:Hero", "property-type")); // arr 引用 Hero 自身
+-    assert!(has_edge(&g, "type:Vec3", "python:/scripts/types/Vec3.py", "implements"));
+-    assert!(has_edge(&g, "def:Hero", "python:/scripts/entities/Hero.py", "method-impl"));
++    assert!(has_edge(
++        &g,
++        "type:Vec3",
++        "python:/scripts/types/Vec3.py",
++        "implements"
++    ));
++    assert!(has_edge(
++        &g,
++        "def:Hero",
++        "python:/scripts/entities/Hero.py",
++        "method-impl"
++    ));
+     // 组件槽边 label=槽名,属性边 label=属性名
+     let weapon_edge = edges_of(&g)
+         .iter()
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/dependency_graph_dispatch.rs:200:
+     // 反向索引
+     assert!(reverse_of(&g, "def:Hero")
+         .iter()
+-        .any(|e| e.get("from").and_then(|v| v.as_str()) == Some("entity:Hero")
+-            && e.get("kind").and_then(|v| v.as_str()) == Some("registration")));
++        .any(
++            |e| e.get("from").and_then(|v| v.as_str()) == Some("entity:Hero")
++                && e.get("kind").and_then(|v| v.as_str()) == Some("registration")
++        ));
+     assert!(reverse_of(&g, "type:Vec3")
+         .iter()
+-        .any(|e| e.get("from").and_then(|v| v.as_str()) == Some("def:Hero")
+-            && e.get("kind").and_then(|v| v.as_str()) == Some("property-type")));
++        .any(
++            |e| e.get("from").and_then(|v| v.as_str()) == Some("def:Hero")
++                && e.get("kind").and_then(|v| v.as_str()) == Some("property-type")
++        ));
+     assert!(reverse_of(&g, "python:/scripts/types/Vec3.py")
+         .iter()
+-        .any(|e| e.get("from").and_then(|v| v.as_str()) == Some("type:Vec3")
+-            && e.get("kind").and_then(|v| v.as_str()) == Some("implements")));
++        .any(
++            |e| e.get("from").and_then(|v| v.as_str()) == Some("type:Vec3")
++                && e.get("kind").and_then(|v| v.as_str()) == Some("implements")
++        ));
+     assert!(reverse_of(&g, "python:/scripts/entities/Hero.py")
+         .iter()
+-        .any(|e| e.get("from").and_then(|v| v.as_str()) == Some("def:Hero")
+-            && e.get("kind").and_then(|v| v.as_str()) == Some("method-impl")));
++        .any(
++            |e| e.get("from").and_then(|v| v.as_str()) == Some("def:Hero")
++                && e.get("kind").and_then(|v| v.as_str()) == Some("method-impl")
++        ));
+ 
+     // 三路径
+     let paths = &g["paths"];
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/dependency_graph_dispatch.rs:288:
+     }));
+     // type:Vec3 节点必须存在
+     assert_eq!(node_named(&g, "type:Vec3")["kind"], "type");
+-    assert_eq!(node_named(&g, "type:Vec3")["filePath"], "/defs/entitys/types.xml");
++    assert_eq!(
++        node_named(&g, "type:Vec3")["filePath"],
++        "/defs/entitys/types.xml"
++    );
+     // implements 边 from 端有落点(type:Vec3),不悬空
+-    assert!(has_edge(&g, "type:Vec3", "python:/scripts/types/Vec3.py", "implements"));
++    assert!(has_edge(
++        &g,
++        "type:Vec3",
++        "python:/scripts/types/Vec3.py",
++        "implements"
++    ));
+     assert!(reverse_of(&g, "python:/scripts/types/Vec3.py")
+         .iter()
+-        .any(|e| e.get("from").and_then(|v| v.as_str()) == Some("type:Vec3")
+-            && e.get("kind").and_then(|v| v.as_str()) == Some("implements")));
++        .any(
++            |e| e.get("from").and_then(|v| v.as_str()) == Some("type:Vec3")
++                && e.get("kind").and_then(|v| v.as_str()) == Some("implements")
++        ));
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/lint_def_python_parity.rs:53:
+ fn def_has_python_missing_fires_exactly_once() {
+     // def 有 3 方法;base 上下文已实现 reqPos/onTick,缺 onDeath → 恰好 1 条。
+     let input = base_ctx(&["reqPos", "onTick"]);
+-    let findings = analyze_def_with_python(AVATAR_DEF, &Default::default(), &[], input)
+-        .expect("analyze ok");
++    let findings =
++        analyze_def_with_python(AVATAR_DEF, &Default::default(), &[], input).expect("analyze ok");
+     let parity: Vec<_> = findings
+         .iter()
+         .filter(|f| f.check == "def-method-missing-in-python")
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/lint_def_python_parity.rs:92:
+ fn missing_section_context_skips_that_section() {
+     // 只有 base 上下文(cell 缺)→ 只核验 BaseMethods;onTick(CellMethods)不产。
+     let input = base_ctx(&["reqPos", "onDeath"]);
+-    let findings = analyze_def_with_python(AVATAR_DEF, &Default::default(), &[], input)
+-        .expect("analyze ok");
++    let findings =
++        analyze_def_with_python(AVATAR_DEF, &Default::default(), &[], input).expect("analyze ok");
+     let parity: Vec<_> = findings
+         .iter()
+         .filter(|f| f.check == "def-method-missing-in-python")
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/lint_def_python_parity.rs:112:
+         }),
+         ..Default::default()
+     };
+-    let findings = analyze_def_with_python(AVATAR_DEF, &Default::default(), &[], input)
+-        .expect("analyze ok");
++    let findings =
++        analyze_def_with_python(AVATAR_DEF, &Default::default(), &[], input).expect("analyze ok");
+     let parity: Vec<_> = findings
+         .iter()
+         .filter(|f| f.check == "def-method-missing-in-python")
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/lint_dispatch.rs:32:
+ }
+ 
+ fn init(state: &mut ServerState) {
+-    handle_message(
+-        state,
+-        request(0, "initialize", json!({"capabilities": {}})),
+-    );
++    handle_message(state, request(0, "initialize", json!({"capabilities": {}})));
+ }
+ 
+ /// 经 `$/kode/rpc` 派发 `$/kode/lint/analyzeDef`,返回 findings 数组。
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/lint_dispatch.rs:267:
+         .filter(|f| f.get("check").and_then(|c| c.as_str()) == Some("def-method-missing-in-python"))
+         .collect();
+     assert_eq!(parity.len(), 1, "恰好 1 条 warning");
+-    assert_eq!(parity[0].get("severity").and_then(|s| s.as_str()), Some("warning"));
+-    assert_eq!(parity[0].get("name").and_then(|n| n.as_str()), Some("onTick"));
++    assert_eq!(
++        parity[0].get("severity").and_then(|s| s.as_str()),
++        Some("warning")
++    );
++    assert_eq!(
++        parity[0].get("name").and_then(|n| n.as_str()),
++        Some("onTick")
++    );
+     let related = parity[0].get("related").expect("related key");
+     assert_eq!(
+         related.get("file").and_then(|f| f.as_str()),
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/lint_rules.rs:78:
+         "seed",
+         "\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>CELL_PRIVATE</Flags>\n\t\t\t<DetailLevel>FAR</DetailLevel>\n",
+     );
+-    assert!(
+-        checks(&redundant).contains(&"redundant-detail-level".to_string())
+-    );
++    assert!(checks(&redundant).contains(&"redundant-detail-level".to_string()));
+     let synced = prop(
+         "pos",
+         "\t\t\t<Type>VECTOR3</Type>\n\t\t\t<Flags>OTHER_CLIENTS</Flags>\n\t\t\t<DetailLevel>NEAR</DetailLevel>\n",
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/lint_rules.rs:87:
+     );
+-    assert!(
+-        !checks(&synced).contains(&"redundant-detail-level".to_string())
+-    );
++    assert!(!checks(&synced).contains(&"redundant-detail-level".to_string()));
+ }
+ 
+ #[test]
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/lint_rules.rs:94:
+ fn invalid_identifier_fires_on_python_keyword_and_not_on_normal_name() {
+-    let keyword = prop("class", "\t\t\t<Type>UINT8</Type>\n\t\t\t<Flags>BASE</Flags>\n");
+-    assert!(
+-        checks(&keyword).contains(&"invalid-identifier".to_string())
++    let keyword = prop(
++        "class",
++        "\t\t\t<Type>UINT8</Type>\n\t\t\t<Flags>BASE</Flags>\n",
+     );
++    assert!(checks(&keyword).contains(&"invalid-identifier".to_string()));
+     assert!(!checks(CLEAN_PROP).contains(&"invalid-identifier".to_string()));
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/lint_rules.rs:105:
+ \t<Properties>\n\t\t<hp>\n\t\t\t<Type>UINT8</Type>\n\t\t\t<Flags>BASE</Flags>\n\t\t</hp>\n\t</Properties>\n\
+ \t<BaseMethods>\n\t\t<hp>\n\t\t\t<Arg>INT8</Arg>\n\t\t</hp>\n\t</BaseMethods>\n\
+ </root>\n";
+-    assert!(
+-        checks(colliding).contains(&"method-property-collision".to_string())
+-    );
++    assert!(checks(colliding).contains(&"method-property-collision".to_string()));
+     assert!(!checks(CLEAN_PROP).contains(&"method-property-collision".to_string()));
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/lint_rules.rs:117:
+         "position",
+         "\t\t\t<Type>VECTOR3</Type>\n\t\t\t<Flags>BASE</Flags>\n",
+     );
+-    assert!(
+-        checks(&limited).contains(&"engine-limited-name".to_string())
+-    );
++    assert!(checks(&limited).contains(&"engine-limited-name".to_string()));
+     assert!(!checks(CLEAN_PROP).contains(&"engine-limited-name".to_string()));
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/lint_rules.rs:157:
+         "hp",
+         "\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>NOT_A_FLAG</Flags>\n",
+     );
+-    assert!(
+-        checks(&bad).contains(&"unknown-flag-value".to_string())
+-    );
++    assert!(checks(&bad).contains(&"unknown-flag-value".to_string()));
+     // CELL 别名(12 词表内)不命中。
+     let alias = prop(
+         "hp",
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/lint_rules.rs:177:
+         "hp",
+         "\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>BASE</Flags>\n\t\t\t<DetailLevel>ULTRA</DetailLevel>\n",
+     );
+-    assert!(
+-        checks(&bad).contains(&"unknown-detail-level".to_string())
+-    );
++    assert!(checks(&bad).contains(&"unknown-detail-level".to_string()));
+     assert!(!checks(CLEAN_PROP).contains(&"unknown-detail-level".to_string()));
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/lint_rules.rs:191:
+ \t\t<hp>\n\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>BASE</Flags>\n\t\t</hp>\n\
+ \t</Properties>\n\
+ </root>\n";
+-    let findings = analyze_def(dup, &Default::default(), &[])
+-        .expect("analyze_def ok");
++    let findings = analyze_def(dup, &Default::default(), &[]).expect("analyze_def ok");
+     let dup_count = findings
+         .iter()
+         .filter(|f| f.check == "duplicate-definition")
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/lint_rules.rs:220:
+ #[test]
+ fn missing_flags_fires_without_flags_and_not_with_flags() {
+     let no_flags = prop("hp", "\t\t\t<Type>UINT32</Type>\n");
+-    assert!(
+-        checks(&no_flags).contains(&"missing-flags".to_string())
+-    );
++    assert!(checks(&no_flags).contains(&"missing-flags".to_string()));
+     assert!(!checks(CLEAN_PROP).contains(&"missing-flags".to_string()));
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/lint_rules.rs:239:
+     assert!(!checks(CLEAN_PROP).contains(&"unknown-type-reference".to_string()));
+     // 语料提供 GHOST_TYPE 后不再报。
+     assert!(
+-        !checks_with_known(&ghost, &["GHOST_TYPE"])
+-            .contains(&"unknown-type-reference".to_string()),
++        !checks_with_known(&ghost, &["GHOST_TYPE"]).contains(&"unknown-type-reference".to_string()),
+         "语料已知类型不命中"
+     );
+ }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/message_table_dispatch.rs:34:
+ /// 走完整 `$/kode/rpc` 链路调 `$/kode/messageTable/build`,返回表 JSON。
+ fn build(params: Value) -> Value {
+     let mut state = ServerState::new();
+-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
++    handle_message(
++        &mut state,
++        request(0, "initialize", json!({"capabilities": {}})),
++    );
+     let out = handle_message(
+         &mut state,
+         request(
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/message_table_dispatch.rs:98:
+     let table = build_single("Empty", "<root></root>");
+     assert_eq!(table.get("module").unwrap(), "Empty");
+     assert_eq!(methods_of(&table).len(), 0);
+-    assert_eq!(table.get("clientMethods").unwrap().as_array().unwrap().len(), 0);
+-    assert_eq!(table.get("clientProperties").unwrap().as_array().unwrap().len(), 0);
++    assert_eq!(
++        table
++            .get("clientMethods")
++            .unwrap()
++            .as_array()
++            .unwrap()
++            .len(),
++        0
++    );
++    assert_eq!(
++        table
++            .get("clientProperties")
++            .unwrap()
++            .as_array()
++            .unwrap()
++            .len(),
++        0
++    );
+     assert_eq!(table.get("issues").unwrap().as_array().unwrap().len(), 0);
+     assert_eq!(table.get("loadFailed").unwrap(), false);
+     assert_eq!(table.get("fatalCount").unwrap(), 0);
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/message_table_dispatch.rs:152:
+     let mut sorted = client_names.clone();
+     sorted.sort();
+     assert_eq!(sorted, vec!["onMove", "onUpdate", "reqQuest"]);
+-    assert_eq!(method_named(&table, "onTick")["direction"], "server-internal");
++    assert_eq!(
++        method_named(&table, "onTick")["direction"],
++        "server-internal"
++    );
+     assert_eq!(method_named(&table, "onTick")["visibleToClient"], false);
+-    assert_eq!(method_named(&table, "onMove")["direction"], "client-to-server");
+-    assert_eq!(method_named(&table, "onUpdate")["direction"], "server-to-client");
++    assert_eq!(
++        method_named(&table, "onMove")["direction"],
++        "client-to-server"
++    );
++    assert_eq!(
++        method_named(&table, "onUpdate")["direction"],
++        "server-to-client"
++    );
+     assert_eq!(method_named(&table, "onMove")["visibleToClient"], true);
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/message_table_dispatch.rs:295:
+     );
+     assert_eq!(slot["hasClient"], true);
+     // 客户端可见 → 入 clientProperties
+-    assert_eq!(table.get("clientProperties").unwrap().as_array().unwrap().len(), 1);
++    assert_eq!(
++        table
++            .get("clientProperties")
++            .unwrap()
++            .as_array()
++            .unwrap()
++            .len(),
++        1
++    );
+ }
+ 
+ /// 纯 cell 组件(CELL_PRIVATE 仅 cell 域):派生 CELL_PUBLIC,无客户端可见。
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/message_table_dispatch.rs:324:
+     assert_eq!(slot["flags"], "CELL_PUBLIC");
+     assert_eq!(slot["hasClient"], false);
+     // 无客户端可见 → 不入 clientProperties
+-    assert_eq!(table.get("clientProperties").unwrap().as_array().unwrap().len(), 0);
++    assert_eq!(
++        table
++            .get("clientProperties")
++            .unwrap()
++            .as_array()
++            .unwrap()
++            .len(),
++        0
++    );
+ }
+ 
+ /// 缺失组件 def:报 component-def-missing 且回落硬编码三域(既有行为)。
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/message_table_dispatch.rs:400:
+         conflicts[0]["message"],
+         "EntityDef::calcDefPropertyUType: E.healthPack, 'Utype' 5 Conflict(E.foo 'Utype' 5)!"
+     );
+-    assert!(property_named(&table, "healthPack").get("utype").unwrap().is_null());
++    assert!(property_named(&table, "healthPack")
++        .get("utype")
++        .unwrap()
++        .is_null());
+ }
+ 
+ /// 组件 def 自身 Parent/Interfaces 递归:父属性 base 域 + 接口 ClientMethods
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/message_table_dispatch.rs:489:
+       </Properties>\
+     </root>";
+     let table = build_single("E", def);
+-    assert!(property_named(&table, "p").get("aliasID").unwrap().is_null());
++    assert!(property_named(&table, "p")
++        .get("aliasID")
++        .unwrap()
++        .is_null());
+ }
+ 
+ #[test]
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/message_table_dispatch.rs:627:
+     // 契约:defText 缺失 → 参数校验错误(非 null result);TS 侧缺文件在调
+     // Rust 前已由 loadDef 返回 null 短路,此错误仅防御性。
+     let mut state = ServerState::new();
+-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
++    handle_message(
++        &mut state,
++        request(0, "initialize", json!({"capabilities": {}})),
++    );
+     let out = handle_message(
+         &mut state,
+         request(
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/process_topology_dispatch.rs:26:
+ 
+ fn rpc(params: Value) -> Value {
+     let mut state = ServerState::new();
+-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
++    handle_message(
++        &mut state,
++        request(0, "initialize", json!({"capabilities": {}})),
++    );
+     let out = handle_message(
+         &mut state,
+         request(
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/process_topology_dispatch.rs:69:
+     let findings = result.get("findings").unwrap().as_array().unwrap();
+     // 正确五进程拓扑 + Avatar(有 base/cell/persistent)+ dbmgr/baseapp/cellapp
+     // 全在 → 零发现。
+-    assert!(findings.is_empty(), "expected zero findings, got {findings:#?}");
++    assert!(
++        findings.is_empty(),
++        "expected zero findings, got {findings:#?}"
++    );
+ }
+ 
+ #[test]
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/process_topology_dispatch.rs:87:
+     let findings = result.get("findings").unwrap().as_array().unwrap();
+     let d1 = findings
+         .iter()
+-        .find(|f| f.get("code").and_then(|v| v.as_str()) == Some("kbengine.processTopologyMissingCellapp"))
++        .find(|f| {
++            f.get("code").and_then(|v| v.as_str()) == Some("kbengine.processTopologyMissingCellapp")
++        })
+         .expect("D1 finding");
+     assert_eq!(d1.get("target").unwrap(), "def");
+     assert_eq!(d1.get("line").unwrap(), 5); // CellMethods <respawn> 行(AVATAR_DEF 第 5 行)
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/process_topology_units.rs:75:
+ fn five_process_topology_zero_findings() {
+     let xml = std::fs::read_to_string(fixture("five-process.xml")).unwrap();
+     let findings = validate_manifest(&xml);
+-    assert!(findings.is_empty(), "expected zero findings, got {findings:#?}");
++    assert!(
++        findings.is_empty(),
++        "expected zero findings, got {findings:#?}"
++    );
+ }
+ 
+ // ---------------------------------------------------------------------------
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/process_topology_units.rs:196:
+     );
+     let f = findings
+         .iter()
+-        .find(|f| {
+-            f.code == "kbengine.processTopologyMissingDbmgr" && f.message.contains("Avatar")
+-        })
++        .find(|f| f.code == "kbengine.processTopologyMissingDbmgr" && f.message.contains("Avatar"))
+         .expect("Avatar D3 finding");
+     assert_eq!(f.target, "def");
+     assert_eq!(f.file_path, "/defs/entity_defs/Avatar.def");
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/process_topology_units.rs:360:
+         codes(&findings)
+     );
+     let monster = findings.iter().find(|f| {
+-        f.file_path == "/defs/entity_defs/Monster.def" && f.code == "kbengine.processTopologyMissingCellapp"
++        f.file_path == "/defs/entity_defs/Monster.def"
++            && f.code == "kbengine.processTopologyMissingCellapp"
+     });
+-    assert!(monster.is_some(), "Monster D1 应存在, got {:?}", codes(&findings));
++    assert!(
++        monster.is_some(),
++        "Monster D1 应存在, got {:?}",
++        codes(&findings)
++    );
+ }
+ 
+ /// 组件 Persistent 并入持久性(组件 def 在 components/ 子目录)。
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/process_topology_units.rs:411:
+             <name><Type>STRING</Type><Flags>BASE</Flags></name>
+           </Properties>
+         </root>"#
+-        .into(),
++            .into(),
+     }];
+     // 缺 cellapp → E 有 cell 内容 → D1;缺 baseapp → D2。
+     let xml = r#"<processTopology>
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/process_topology_units.rs:419:
+     </processTopology>"#;
+     let findings = validate_process_topology(xml, None, defs);
+     let codes = codes(&findings);
+-    assert!(codes.contains(&"kbengine.processTopologyMissingCellapp"), "got {codes:?}");
+-    assert!(codes.contains(&"kbengine.processTopologyMissingBaseapp"), "got {codes:?}");
++    assert!(
++        codes.contains(&"kbengine.processTopologyMissingCellapp"),
++        "got {codes:?}"
++    );
++    assert!(
++        codes.contains(&"kbengine.processTopologyMissingBaseapp"),
++        "got {codes:?}"
++    );
+ }
+ 
+ // ---------------------------------------------------------------------------
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/python_callgraph_dispatch.rs:27:
+ 
+ fn rpc(method: &str, params: Value) -> Value {
+     let mut state = ServerState::new();
+-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
++    handle_message(
++        &mut state,
++        request(0, "initialize", json!({"capabilities": {}})),
++    );
+     let out = handle_message(
+         &mut state,
+         request(1, "$/kode/rpc", json!({"method": method, "params": params})),
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/python_callgraph_dispatch.rs:90:
+     // 方法节点 Avatar.act / Avatar.notify,模块级函数 helper / standalone,
+     // 模块伪节点(有顶层调用边)。
+     for name in ["act", "notify", "helper", "standalone"] {
+-        assert!(nodes.iter().any(|n| n["name"] == name && n["id"].as_str().unwrap().starts_with("sym_")));
++        assert!(nodes
++            .iter()
++            .any(|n| n["name"] == name && n["id"].as_str().unwrap().starts_with("sym_")));
+     }
+-    assert!(nodes.iter().any(|n| n["kind"] == "module" && n["name"] == "Avatar"));
++    assert!(nodes
++        .iter()
++        .any(|n| n["kind"] == "module" && n["name"] == "Avatar"));
+ 
+     // 8 类边全部出现(去重统计)。
+     let edges = result.get("edges").unwrap().as_array().unwrap();
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/python_callgraph_dispatch.rs:104:
+         assert!(e["callerLine"].is_number());
+     }
+     for expected in [
+-        "local", "method", "self-method", "kbe-broadcast", "kbe-base-clients",
+-        "kbe-cross-process", "kbe-api", "unknown",
++        "local",
++        "method",
++        "self-method",
++        "kbe-broadcast",
++        "kbe-base-clients",
++        "kbe-cross-process",
++        "kbe-api",
++        "unknown",
+     ] {
+-        assert!(kinds.contains(expected), "missing kind {expected}, got {kinds:?}");
++        assert!(
++            kinds.contains(expected),
++            "missing kind {expected}, got {kinds:?}"
++        );
+     }
+ 
+     // stats.byKind 固定 8 键(0 计数也保留)。
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/python_callgraph_dispatch.rs:114:
+     let by_kind = result["stats"]["byKind"].as_object().unwrap();
+     assert_eq!(by_kind.len(), 8);
+-    assert_eq!(result["stats"]["nodeCount"].as_u64().unwrap(), nodes.len() as u64);
+-    assert_eq!(result["stats"]["edgeCount"].as_u64().unwrap(), edges.len() as u64);
++    assert_eq!(
++        result["stats"]["nodeCount"].as_u64().unwrap(),
++        nodes.len() as u64
++    );
++    assert_eq!(
++        result["stats"]["edgeCount"].as_u64().unwrap(),
++        edges.len() as u64
++    );
+     assert_eq!(result["stats"]["errorCount"].as_u64().unwrap(), 0);
+     assert_eq!(result["stats"]["fileCount"].as_u64().unwrap(), 1);
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/python_callgraph_dispatch.rs:154:
+         ],
+     }));
+     let reverse = result.get("reverseIndex").unwrap().as_object().unwrap();
+-    let callers = reverse.get("/scripts/cell/avatar.py").unwrap().as_array().unwrap();
++    let callers = reverse
++        .get("/scripts/cell/avatar.py")
++        .unwrap()
++        .as_array()
++        .unwrap();
+     let caller_paths: Vec<&str> = callers.iter().map(|v| v.as_str().unwrap()).collect();
+     assert!(
+         caller_paths.contains(&"/scripts/game.py"),
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/python_callgraph_dispatch.rs:182:
+     assert_eq!(result["stats"]["fileCount"].as_u64().unwrap(), 0);
+     assert_eq!(result["nodes"].as_array().unwrap().len(), 0);
+     assert_eq!(result["edges"].as_array().unwrap().len(), 0);
+-    assert!(result.get("processRoles").unwrap().as_array().unwrap().is_empty());
++    assert!(result
++        .get("processRoles")
++        .unwrap()
++        .as_array()
++        .unwrap()
++        .is_empty());
+ }
+ 
+ #[test]
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/python_callgraph_dispatch.rs:215:
+ 
+     // 模块级函数表 + 导入表。
+     let functions = f["functions"].as_array().unwrap();
+-    let helper = functions.iter().find(|fn_| fn_["name"] == "helper").unwrap();
++    let helper = functions
++        .iter()
++        .find(|fn_| fn_["name"] == "helper")
++        .unwrap();
+     assert_eq!(helper["params"].as_array().unwrap().len(), 1);
+     let imports = f["imports"].as_array().unwrap();
+     let kb = imports.iter().find(|i| i["binding"] == "KBEngine").unwrap();
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/python_callgraph_dispatch.rs:250:
+     ]}));
+     let nodes = result["nodes"].as_array().unwrap();
+     let edges = result["edges"].as_array().unwrap();
+-    let id = |path: &str, name: &str| nodes.iter().find(|n| n["filePath"] == path && n["name"] == name).unwrap()["id"].as_str().unwrap().to_string();
++    let id = |path: &str, name: &str| {
++        nodes
++            .iter()
++            .find(|n| n["filePath"] == path && n["name"] == name)
++            .unwrap()["id"]
++            .as_str()
++            .unwrap()
++            .to_string()
++    };
+     assert_ne!(id("/base/Avatar.py", "act"), id("/cell/Avatar.py", "act"));
+     for path in ["/base/Avatar.py", "/cell/Avatar.py"] {
+-        let edge = edges.iter().find(|e| e["filePath"] == path && e["callee"] == "target").unwrap();
++        let edge = edges
++            .iter()
++            .find(|e| e["filePath"] == path && e["callee"] == "target")
++            .unwrap();
+         assert_eq!(edge["callerId"], id(path, "act"));
+         assert_eq!(edge["calleeId"], id(path, "target"));
+     }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/python_callgraph_dispatch.rs:260:
+ }
+ 
+-
+ // --- KR-AUD-91 验收:跨文件身份(嵌套作用域/同 stem/多工作区) ---
+ 
+ #[test]
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/python_callgraph_dispatch.rs:266:
+ fn kr_aud_91_nested_scope_edges_carry_file_identity() {
+     // 嵌套 def 的调用边两端必须是带文件身份的 sym_ ID;
+     // 两文件中同名嵌套函数 callerId 不混淆。
+-    let src = |which: &str| format!(
++    let src = |which: &str| {
++        format!(
+         "class Foo:\n def run(self):\n  def inner():\n   helper()\n  inner()\n\ndef helper():\n pass\n# {which}\n"
+-    );
++    )
++    };
+     let result = callgraph(json!({"files": [
+         {"path": "/p/one/A.py", "text": src("one")},
+         {"path": "/p/two/A.py", "text": src("two")}
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/python_callgraph_dispatch.rs:280:
+         .filter_map(|e| e["callerId"].as_str())
+         .collect();
+     assert_eq!(nested_caller_ids.len(), 2, "两文件各一条嵌套调用边");
+-    assert_ne!(nested_caller_ids[0], nested_caller_ids[1], "同名嵌套函数必须按文件区分");
++    assert_ne!(
++        nested_caller_ids[0], nested_caller_ids[1],
++        "同名嵌套函数必须按文件区分"
++    );
+     for e in edges {
+         let caller_id = e["callerId"].as_str().expect("边缺 callerId");
+         let callee_id = e["calleeId"].as_str().expect("边缺 calleeId");
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/python_callgraph_dispatch.rs:287:
+-        assert!(caller_id.starts_with("sym_"), "callerId 非文件身份: {caller_id}");
+-        assert!(callee_id.starts_with("sym_"), "calleeId 非文件身份: {callee_id}");
+         assert!(
+-            caller_id.contains("2f702f6f6e652f412e7079") || caller_id.contains("2f702f74776f2f412e7079"),
++            caller_id.starts_with("sym_"),
++            "callerId 非文件身份: {caller_id}"
++        );
++        assert!(
++            callee_id.starts_with("sym_"),
++            "calleeId 非文件身份: {callee_id}"
++        );
++        assert!(
++            caller_id.contains("2f702f6f6e652f412e7079")
++                || caller_id.contains("2f702f74776f2f412e7079"),
+             "callerId 不含本文件路径 hex: {caller_id}"
+         );
+     }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/python_callgraph_dispatch.rs:326:
+             .iter()
+             .find(|e| e["filePath"] == path && e["callee"] == "helper")
+             .unwrap_or_else(|| panic!("{path} 缺 entry->helper 边"));
+-        assert_eq!(edge["callerId"], node_id(path, "entry"), "callerId 未指向本文件节点");
+-        assert_eq!(edge["calleeId"], node_id(path, "helper"), "calleeId 未指向本文件节点");
++        assert_eq!(
++            edge["callerId"],
++            node_id(path, "entry"),
++            "callerId 未指向本文件节点"
++        );
++        assert_eq!(
++            edge["calleeId"],
++            node_id(path, "helper"),
++            "calleeId 未指向本文件节点"
++        );
+     }
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/rpc_dispatch.rs:31:
+ }
+ 
+ fn init(state: &mut ServerState) {
+-    handle_message(
+-        state,
+-        request(0, "initialize", json!({"capabilities": {}})),
+-    );
++    handle_message(state, request(0, "initialize", json!({"capabilities": {}})));
+ }
+ 
+ /// echo 内建 handler:params 原样回显,验 dispatch 链路贯穿。
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/rpc_dispatch.rs:72:
+     init(&mut state);
+     let out = handle_message(
+         &mut state,
+-        request(3, "$/kode/rpc", json!({"method": "$/kode/nope", "params": {}})),
++        request(
++            3,
++            "$/kode/rpc",
++            json!({"method": "$/kode/nope", "params": {}}),
++        ),
+     );
+     assert_eq!(error_code_of(&out), error_codes::METHOD_NOT_FOUND);
+ }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/rpc_dispatch.rs:83:
+     let mut state = ServerState::new();
+     let out = handle_message(
+         &mut state,
+-        request(4, "$/kode/rpc", json!({"method": "$/kode/echo", "params": {}})),
++        request(
++            4,
++            "$/kode/rpc",
++            json!({"method": "$/kode/echo", "params": {}}),
++        ),
+     );
+     assert_eq!(error_code_of(&out), error_codes::SERVER_NOT_INITIALIZED);
+ }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/rpc_dispatch.rs:234:
+         Outgoing::Response(r) => r.error.as_ref().expect("应返回错误"),
+         Outgoing::Notification(_) => panic!("expected response"),
+     };
+-    assert!(err.message.contains("应为对象"), "错误文案: {}", err.message);
++    assert!(
++        err.message.contains("应为对象"),
++        "错误文案: {}",
++        err.message
++    );
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:53:
+ fn wire_golden_value_samples_bidirectional() {
+     let value = golden_json();
+     let samples = value["samples"].as_array().unwrap();
+-    let value_samples: Vec<&Value> = samples
+-        .iter()
+-        .filter(|s| s["kind"] == "value")
+-        .collect();
++    let value_samples: Vec<&Value> = samples.iter().filter(|s| s["kind"] == "value").collect();
+     assert!(!value_samples.is_empty(), "value 样本不应为空");
+ 
+     for s in &value_samples {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:76:
+         // decode(hex) → value
+         let raw = from_hex(hex).expect("hex");
+         let mut cur = WireCursor::new(&raw);
+-        let back = decode_value(&layout, &mut cur)
+-            .unwrap_or_else(|e| panic!("{name} decode: {e}"));
++        let back = decode_value(&layout, &mut cur).unwrap_or_else(|e| panic!("{name} decode: {e}"));
+         assert_eq!(back, sample_value, "{name} decode value");
+ 
+         // 消费干净(无尾随字节)
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:97:
+             "property_stream" => {
+                 let name = s["name"].as_str().unwrap();
+                 let input = &s["input"];
+-                let entity: EntityRef =
+-                    serde_json::from_value(input["entity"].clone()).unwrap();
+-                let mode: PropertyMode =
+-                    serde_json::from_value(input["mode"].clone()).unwrap();
+-                let base: BasePropUtype =
+-                    serde_json::from_value(input["base"].clone()).unwrap();
++                let entity: EntityRef = serde_json::from_value(input["entity"].clone()).unwrap();
++                let mode: PropertyMode = serde_json::from_value(input["mode"].clone()).unwrap();
++                let base: BasePropUtype = serde_json::from_value(input["base"].clone()).unwrap();
+                 let entries: Vec<PropertyEntry> =
+                     serde_json::from_value(input["entries"].clone()).unwrap();
+                 let entity_kind = EntityRefKind::of(&entity);
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:116:
+                         }
+                     }
+                     move |_parent: u16, child: u16| {
+-                        map.get(&child).cloned().ok_or_else(|| {
+-                            WireError::UnknownType(format!("child {child}"))
+-                        })
++                        map.get(&child)
++                            .cloned()
++                            .ok_or_else(|| WireError::UnknownType(format!("child {child}")))
+                     }
+                 };
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:141:
+             "method_call" => {
+                 let name = s["name"].as_str().unwrap();
+                 let input = &s["input"];
+-                let mode: PropertyMode =
+-                    serde_json::from_value(input["mode"].clone()).unwrap();
+-                let call: MethodCall =
+-                    serde_json::from_value(input["call"].clone()).unwrap();
++                let mode: PropertyMode = serde_json::from_value(input["mode"].clone()).unwrap();
++                let call: MethodCall = serde_json::from_value(input["call"].clone()).unwrap();
+                 let hex = s["hex"].as_str().unwrap();
+ 
+                 let arg_layouts_of = {
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:151:
+                     let layouts = call.arg_layouts.clone();
+                     move |_component: Option<u8>, _m: MethodRef| Ok(layouts.clone())
+                 };
+-                let back = decode_method_args(
+-                    &from_hex(hex).expect("hex"),
+-                    mode,
+-                    arg_layouts_of,
+-                )
+-                .unwrap_or_else(|e| panic!("{name} decode: {e}"));
++                let back = decode_method_args(&from_hex(hex).expect("hex"), mode, arg_layouts_of)
++                    .unwrap_or_else(|e| panic!("{name} decode: {e}"));
+                 assert_eq!(back, call, "{name} method call");
+ 
+                 let mut out = Vec::new();
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:201:
+             let prefix = &bytes[..cut];
+             match s["kind"].as_str().unwrap() {
+                 "value" => {
+-                    let layout: WireLayout =
+-                        serde_json::from_value(s["layout"].clone()).unwrap();
++                    let layout: WireLayout = serde_json::from_value(s["layout"].clone()).unwrap();
+                     let mut cur = WireCursor::new(prefix);
+                     let _ = decode_value(&layout, &mut cur);
+                 }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:209:
+                 "property_stream" => {
+                     let input = &s["input"];
+-                    let mode: PropertyMode =
+-                        serde_json::from_value(input["mode"].clone()).unwrap();
++                    let mode: PropertyMode = serde_json::from_value(input["mode"].clone()).unwrap();
+                     let base: BasePropUtype =
+                         serde_json::from_value(input["base"].clone()).unwrap();
+                     let entity: EntityRef =
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:311:
+     let mut out = Vec::new();
+     encode_value(&layout, &v, &mut out).expect("encode entity call");
+     assert_eq!(out.len(), 16);
+-    assert_eq!(
+-        to_hex(&out),
+-        "ffffffff050000000000000002000700"
+-    );
++    assert_eq!(to_hex(&out), "ffffffff050000000000000002000700");
+     let mut cur = WireCursor::new(&out);
+     let back = decode_value(&layout, &mut cur).expect("decode entity call");
+     assert_eq!(back, v);
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:332:
+         },
+     };
+     let mut out = Vec::new();
+-    let err = encode_property_stream(
+-        EntityRef::Full(1),
+-        PropertyMode::Alias,
+-        &[entry],
+-        &mut out,
+-    )
+-    .expect_err("child 300 超 uint8 应报错");
++    let err = encode_property_stream(EntityRef::Full(1), PropertyMode::Alias, &[entry], &mut out)
++        .expect_err("child 300 超 uint8 应报错");
+     assert_eq!(err, WireError::AliasIdOverflow(300));
+ }
+ 
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:391:
+     assert_eq!(
+         schema.resolve("POSITION").unwrap(),
+         WireLayout::FixedDict(vec![
+-            WireField { name: "x".into(), layout: WireLayout::F32 },
+-            WireField { name: "y".into(), layout: WireLayout::F32 },
+-            WireField { name: "z".into(), layout: WireLayout::F32 },
++            WireField {
++                name: "x".into(),
++                layout: WireLayout::F32
++            },
++            WireField {
++                name: "y".into(),
++                layout: WireLayout::F32
++            },
++            WireField {
++                name: "z".into(),
++                layout: WireLayout::F32
++            },
+         ])
+     );
+     // 未注册 → UnknownType
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:407:
+ #[test]
+ fn wire_schema_cycle_detected() {
+     let schema = WireSchema::from_sources("<root><A>B</A><B>A</B></root>", "");
+-    assert!(matches!(
+-        schema.resolve("A"),
+-        Err(WireError::Cycle(_))
+-    ));
++    assert!(matches!(schema.resolve("A"), Err(WireError::Cycle(_))));
+ }
+ 
+ // ---------------------------------------------------------------------------
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:436:
+ #[test]
+ fn wire_rpc_dispatch_smoke() {
+     let mut state = ServerState::new();
+-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
++    handle_message(
++        &mut state,
++        request(0, "initialize", json!({"capabilities": {}})),
++    );
+ 
+     let out = handle_message(
+         &mut state,
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:506:
+ #[test]
+ fn method_encoding_rejects_arity_and_identifier_mode_before_writing() {
+     for (mode, method, args, layouts) in [
+-        (PropertyMode::Alias, MethodRef::Alias(1), vec![WireValue::U8(1), WireValue::U8(2)], vec![WireLayout::U8]),
+-        (PropertyMode::Alias, MethodRef::Alias(1), vec![], vec![WireLayout::U8]),
++        (
++            PropertyMode::Alias,
++            MethodRef::Alias(1),
++            vec![WireValue::U8(1), WireValue::U8(2)],
++            vec![WireLayout::U8],
++        ),
++        (
++            PropertyMode::Alias,
++            MethodRef::Alias(1),
++            vec![],
++            vec![WireLayout::U8],
++        ),
+         (PropertyMode::Alias, MethodRef::Utype(257), vec![], vec![]),
+         (PropertyMode::Utype, MethodRef::Alias(1), vec![], vec![]),
+         // KR-AUD-94 边界:Utype 值 255/256 在 Alias 模式同样必须拒绝(模式不匹配,
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:518:
+         (PropertyMode::Utype, MethodRef::Alias(255), vec![], vec![]),
+     ] {
+         let mut output = vec![42];
+-        let call = MethodCall { component_alias: None, method, args, arg_layouts: layouts };
++        let call = MethodCall {
++            component_alias: None,
++            method,
++            args,
++            arg_layouts: layouts,
++        };
+         assert!(encode_method_args(&call, mode, &mut output).is_err());
+         assert_eq!(output, vec![42]);
+     }
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:528:
+ fn method_encoding_accepts_legal_mode_id_pairs() {
+     // KR-AUD-94 正例:合法模式组合编码成功且不改写输出缓冲前缀。
+     // Utype 模式下 Utype(255/256/257) 全部合法(u16 容纳),写入 u16 LE。
+-    for method in [MethodRef::Utype(255), MethodRef::Utype(256), MethodRef::Utype(257)] {
++    for method in [
++        MethodRef::Utype(255),
++        MethodRef::Utype(256),
++        MethodRef::Utype(257),
++    ] {
+         let mut output = vec![42];
+         let call = MethodCall {
+             component_alias: None,
+Diff in /home/cui/wt-kode-codex/crates/kode-server/tests/wire_codec_units.rs:570:
+ #[test]
+ fn component_identity_selects_property_and_method_layouts() {
+     let entries = vec![
+-        PropertyEntry { parent: 6, child: 1, kind: PropKind::Regular { layout: WireLayout::U8, value: WireValue::U8(7) } },
+-        PropertyEntry { parent: 7, child: 1, kind: PropKind::Regular { layout: WireLayout::U16, value: WireValue::U16(513) } },
++        PropertyEntry {
++            parent: 6,
++            child: 1,
++            kind: PropKind::Regular {
++                layout: WireLayout::U8,
++                value: WireValue::U8(7),
++            },
++        },
++        PropertyEntry {
++            parent: 7,
++            child: 1,
++            kind: PropKind::Regular {
++                layout: WireLayout::U16,
++                value: WireValue::U16(513),
++            },
++        },
+     ];
+     let mut bytes = Vec::new();
+-    encode_property_stream(EntityRef::Full(1), PropertyMode::Utype, &entries, &mut bytes).unwrap();
+-    let (_, actual) = decode_property_stream(&bytes, EntityRefKind::Full, PropertyMode::Utype, &BasePropUtype::default(), |parent, child| match (parent, child) {
+-        (6, 1) => Ok(WireLayout::U8), (7, 1) => Ok(WireLayout::U16), _ => Err(WireError::UnknownType("property".into())),
+-    }).unwrap();
++    encode_property_stream(
++        EntityRef::Full(1),
++        PropertyMode::Utype,
++        &entries,
++        &mut bytes,
++    )
++    .unwrap();
++    let (_, actual) = decode_property_stream(
++        &bytes,
++        EntityRefKind::Full,
++        PropertyMode::Utype,
++        &BasePropUtype::default(),
++        |parent, child| match (parent, child) {
++            (6, 1) => Ok(WireLayout::U8),
++            (7, 1) => Ok(WireLayout::U16),
++            _ => Err(WireError::UnknownType("property".into())),
++        },
++    )
++    .unwrap();
+     assert_eq!(actual, entries);
+-    for (component, layout, value) in [(1, WireLayout::U8, WireValue::U8(7)), (2, WireLayout::U16, WireValue::U16(513))] {
+-        let call = MethodCall { component_alias: Some(component), method: MethodRef::Alias(1), args: vec![value], arg_layouts: vec![layout] };
++    for (component, layout, value) in [
++        (1, WireLayout::U8, WireValue::U8(7)),
++        (2, WireLayout::U16, WireValue::U16(513)),
++    ] {
++        let call = MethodCall {
++            component_alias: Some(component),
++            method: MethodRef::Alias(1),
++            args: vec![value],
++            arg_layouts: vec![layout],
++        };
+         let mut bytes = Vec::new();
+         encode_method_args(&call, PropertyMode::Alias, &mut bytes).unwrap();
+-        let actual = decode_method_args(&bytes, PropertyMode::Alias, |component, method| match (component, method) {
+-            (Some(1), MethodRef::Alias(1)) => Ok(vec![WireLayout::U8]),
+-            (Some(2), MethodRef::Alias(1)) => Ok(vec![WireLayout::U16]),
+-            _ => Err(WireError::UnknownType("method".into())),
+-        }).unwrap();
++        let actual = decode_method_args(&bytes, PropertyMode::Alias, |component, method| {
++            match (component, method) {
++                (Some(1), MethodRef::Alias(1)) => Ok(vec![WireLayout::U8]),
++                (Some(2), MethodRef::Alias(1)) => Ok(vec![WireLayout::U16]),
++                _ => Err(WireError::UnknownType("method".into())),
++            }
++        })
++        .unwrap();
+         assert_eq!(actual, call);
+     }
+ }
+Diff in /home/cui/wt-kode-codex/crates/kode-vfs/tests/vfs.rs:232:
+     let root = registry.register("/");
+     assert_ne!(root, RootId::UNROOTED);
+     assert_eq!(registry.register("/"), root);
+-    assert_eq!(registry.root_for(&CanonicalUri::from_path("/project/a.py")), root);
++    assert_eq!(
++        registry.root_for(&CanonicalUri::from_path("/project/a.py")),
++        root
++    );
+     let nested = registry.register("/project");
+     assert_ne!(root, nested);
+-    assert_eq!(registry.root_for(&CanonicalUri::from_path("/project/a.py")), nested);
+-    assert_eq!(registry.root_for(&CanonicalUri::from_path("/project2/a.py")), root);
++    assert_eq!(
++        registry.root_for(&CanonicalUri::from_path("/project/a.py")),
++        nested
++    );
++    assert_eq!(
++        registry.root_for(&CanonicalUri::from_path("/project2/a.py")),
++        root
++    );
+ }
+ 
+ #[test]
+Diff in /home/cui/wt-kode-codex/crates/kode-vfs/tests/vfs.rs:245:
+     let drive = registry.register("C:/");
+     let nested = registry.register("C:/project");
+     assert_eq!(registry.root_for(&CanonicalUri::from_path("C:/")), drive);
+-    assert_eq!(registry.root_for(&CanonicalUri::from_path("C:/other/a.py")), drive);
+-    assert_eq!(registry.root_for(&CanonicalUri::from_path("C:/project/a.py")), nested);
+-    assert_eq!(registry.root_for(&CanonicalUri::from_path("C:/project2/a.py")), drive);
+-    assert_eq!(registry.root_for(&CanonicalUri::from_path("D:/a.py")), RootId::UNROOTED);
++    assert_eq!(
++        registry.root_for(&CanonicalUri::from_path("C:/other/a.py")),
++        drive
++    );
++    assert_eq!(
++        registry.root_for(&CanonicalUri::from_path("C:/project/a.py")),
++        nested
++    );
++    assert_eq!(
++        registry.root_for(&CanonicalUri::from_path("C:/project2/a.py")),
++        drive
++    );
++    assert_eq!(
++        registry.root_for(&CanonicalUri::from_path("D:/a.py")),
++        RootId::UNROOTED
++    );
+ }
+ 
+--- fmt exit=1 ---
+   Compiling unicode-ident v1.0.27
+    Checking kode-vfs v0.2.0 (/home/cui/wt-kode-codex/crates/kode-vfs)
+    Checking memchr v2.8.3
+    Checking itoa v1.0.18
+    Checking cfg-if v1.0.5
+    Checking equivalent v1.0.3
+    Checking hashbrown v0.17.1
+   Compiling siphasher v1.0.4
+    Checking static_assertions v1.1.0
+    Checking serde_core v1.0.229
+    Checking zmij v1.0.23
+    Checking thin-vec v0.2.21
+    Checking castaway v0.2.4
+    Checking smallvec v1.16.4
+    Checking bitflags v2.13.2
+    Checking either v1.19.0
+   Compiling proc-macro2 v1.0.107
+   Compiling chacha20 v0.10.2
+    Checking tinyvec v1.13.3
+   Compiling kode-corpus v0.2.0 (/home/cui/wt-kode-codex/crates/kode-corpus)
+   Compiling phf_shared v0.14.0
+    Checking ryu v1.0.23
+    Checking compact_str v0.10.0
+    Checking itertools v0.15.0
+   Compiling rand v0.10.3
+    Checking rustc-hash v2.1.3
+    Checking arrayvec v0.7.8
+    Checking kode-parser v0.2.0 (/home/cui/wt-kode-codex/crates/kode-parser)
+    Checking drop_bomb v0.1.5
+    Checking libc v0.2.191
+    Checking aho-corasick v1.1.5
+   Compiling phf_generator v0.14.0
+    Checking unicode-normalization v0.1.26
+    Checking bstr v1.13.1
+    Checking phf v0.14.0
+   Compiling quote v1.0.47
+   Compiling phf_codegen v0.14.0
+    Checking pin-project-lite v0.2.17
+    Checking futures-core v0.3.34
+    Checking futures-sink v0.3.34
+    Checking slab v0.4.12
+error: use of `extend` instead of `append` for adding the full range of a second vector
+   --> crates/kode-parser/src/config.rs:196:29
+    |
+196 | ...                   arena[top].source_comments.extend(pending.drain(..));
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `arena[top].source_comments.append(&mut pending)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#extend_with_drain
+    = note: `-D clippy::extend-with-drain` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::extend_with_drain)]`
+
+error: use of `extend` instead of `append` for adding the full range of a second vector
+   --> crates/kode-parser/src/config.rs:212:25
+    |
+212 |                         arena[idx].source_comments.extend(pending.drain(..));
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `arena[idx].source_comments.append(&mut pending)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#extend_with_drain
+
+error: use of `extend` instead of `append` for adding the full range of a second vector
+   --> crates/kode-parser/src/config.rs:231:13
+    |
+231 |             arena[t].source_comments.extend(pending.drain(..));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `arena[t].source_comments.append(&mut pending)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#extend_with_drain
+
+error: using `contains()` instead of `iter().any()` is more efficient
+   --> crates/kode-parser/src/config.rs:326:37
+    |
+326 |         if normalized.is_empty() || seen.iter().any(|s| *s == normalized) {
+    |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `seen.contains(&normalized)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#manual_contains
+    = note: `-D clippy::manual-contains` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::manual_contains)]`
+
+    Checking futures-task v0.3.34
+   Compiling ruff_unicode_names2_generator v0.0.20
+    Checking futures-channel v0.3.34
+error: could not compile `kode-parser` (lib) due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...
+--- clippy exit=101 ---
+
+# finished: 2026-11-06 15:34:40 +0800 exit=1 (fmt) / 101 (clippy)

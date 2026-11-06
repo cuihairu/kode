@@ -1,0 +1,13 @@
+# gate evidence — branch feat/kode-fix-f1f4
+# HEAD: 735aa4afca89c14658cff48dfb098060a8763d80
+# started: 2026-11-06 15:51:20 +0800
+# cmd: pnpm clean && pnpm compile && tsc -p tsconfig.mocha.json
+
+$ node -e "require('fs').rmSync('out', { recursive: true, force: true })"
+$ node scripts/write-build-commit.mjs && tsc -p ./
+build commit 735aa4afca89c14658cff48dfb098060a8763d80 -> /home/cui/wt-kode-codex/out/buildCommit.json
+npm warn Unknown project config "shamefully-hoist". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown project config "strict-peer-dependencies". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown project config "verify-deps-before-run". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+# finished: 2026-11-06 15:52:10 +0800 exit=0
