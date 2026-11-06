@@ -25,3 +25,10 @@ BASELINE_TESTS_ESLINT_EXIT=0
 0 problems
 -- tsc --noEmit @ 7229b34
 TSC_EXIT=0
+
+== evidence-completion @ 2026-11-06T22:24:57+08:00 (code-under-test=3c08eb9)
+-- eslint tests --ext ts @ HEAD 3c08eb9
+101 problems (101 errors, 0 warnings)
+-- eslint tests --ext ts @ baseline ae36cd7
+101 problems (101 errors, 0 warnings)
+-- note: vitest-full.log binds code-under-test 7c51b6d; commits 3c08eb9..HEAD are evidence-only (log/doc files), no src/tests changes

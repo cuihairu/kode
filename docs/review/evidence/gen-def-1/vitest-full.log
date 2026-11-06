@@ -14,3 +14,4 @@ GATE=vitest run --maxWorkers=4 (final rebind; reduced contention to keep wall-cl
              at least ~33.92s faster with isolate: false — reuses workers across files instead of one per file
 
 EXIT=0
+NOTE: log binds code-under-test 7c51b6d8328f16bdfd2bbd3fa95e66fc6c8146e0; later commits are evidence-only (log/doc files, no src/tests changes).
