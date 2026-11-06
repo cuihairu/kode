@@ -16,17 +16,25 @@ export function normalizeFileIdentity(filePath: string): string {
       const last = parts[parts.length - 1];
       // 盘符根段(`C:`)等同绝对根:`..` 不可弹出(`C:/a/..` = `C:/`)
       const lastIsDriveRoot = last !== undefined && /^[A-Za-z]:$/.test(last);
-      if (parts.length > 0 && last !== '..' && !lastIsDriveRoot) {
+      // 审核 P2:UNC 根(`//server/share`)的 server/share 两段是共享边界,
+      // 不可被 `..` 弹出(`//server/share/..` = `//server/share`)
+      const uncFloor = unc ? 2 : 0;
+      if (parts.length > uncFloor && last !== '..' && !lastIsDriveRoot) {
         parts.pop();
         continue;
       }
-      if ((prefix !== '' && parts.length === 0) || lastIsDriveRoot) {
+      if ((prefix !== '' && parts.length <= uncFloor) || lastIsDriveRoot) {
         continue;
       }
       parts.push('..');
       continue;
     }
     parts.push(part);
+  }
+  // 审核 P2:盘符根收尾形态固定为 `X:/` 并大小写归一——`C:/a/..` 与 `c:/`
+  // 必须同键(裸盘符段不再因缺 `:/` 逃过归一)
+  if (parts.length === 1 && /^[A-Za-z]:$/.test(parts[0])) {
+    return `${parts[0].toLowerCase()}/`;
   }
   const normalized = prefix + parts.join('/');
   return /^[A-Za-z]:\//.test(normalized) || unc ? normalized.toLowerCase() : normalized;

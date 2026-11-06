@@ -59,3 +59,31 @@ describe('KR-AUD-37② extraPaths 差量比较盘符语境大小写不敏感', (
     expect(plan.userPaths).toContain('${workspaceFolder}/Scripts');
   });
 });
+
+describe('KR-AUD-37 审核轮收口:根边界与混合语境', () => {
+  it('盘符根折叠后形态归一:C:/a/.. 与 c:/ 同键(审核 P2)', () => {
+    expect(normalizeFileIdentity('C:/a/..')).toBe('c:/');
+    expect(normalizeFileIdentity('C:/a/..')).toBe(normalizeFileIdentity('c:/'));
+    expect(normalizeFileIdentity('c:/')).toBe('c:/');
+  });
+
+  it('UNC 的 server/share 根不可被 .. 弹出(审核 P2)', () => {
+    expect(normalizeFileIdentity('//server/share/..')).toBe('//server/share');
+    // share 根上的 .. 按根上丢弃语义(=/.. 即 /),不跨共享边界
+    expect(normalizeFileIdentity('//server/share/../other')).toBe('//server/share/other');
+    expect(normalizeFileIdentity('//server/share/a/../../b')).toBe('//server/share/b');
+  });
+
+  it('extraPaths 逐对判定:盘符字面路径 CI,混合语境下 POSIX var 对不误吞(审核 P2)', () => {
+    const plan = planPythonExtraPaths({
+      workspaceRoot: '/home/user/proj',
+      currentPaths: ['C:/data/proj/Scripts', '${workspaceFolder}/Scripts'],
+      previouslyManaged: ['c:/data/proj/scripts', '${workspaceFolder}/scripts'],
+      deps: { exists: () => true, listSubdirs: () => [] }
+    });
+    // 盘符字面路径对:大小写变体被识别为托管(不进用户段)
+    expect(plan.userPaths).not.toContain('C:/data/proj/Scripts');
+    // POSIX 工作区 + var 形态对:保持大小写敏感,Scripts 不被误吞
+    expect(plan.userPaths).toContain('${workspaceFolder}/Scripts');
+  });
+});

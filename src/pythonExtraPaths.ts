@@ -156,14 +156,23 @@ export function planPythonExtraPaths(input: PythonExtraPathsPlanInput): PythonEx
   const rawCurrent = uniquePaths(input.currentPaths.map(normalizeExtraPath));
   const current = uniquePaths(rawCurrent.map(toVar));
   const managedBefore = uniquePaths((input.previouslyManaged ?? []).map(candidate => toVar(normalizeExtraPath(candidate))));
-  // KR-AUD-37②:盘符语境(workspaceRoot 或任一现值为盘符路径)下差量比较
-  // 大小写不敏感——用户改写托管条目大小写不得被判成用户段与规范托管条目
-  // 重复共存(Windows 同目录)。POSIX 语境保持大小写敏感(`Scripts` 与
-  // `scripts` 是不同目录,不误吞)。
-  const caseInsensitiveContext = /^[a-z]:/i.test(input.workspaceRoot.replace(/\\/g, '/'))
-    || input.currentPaths.some(p => /^[a-z]:\//i.test(p.replace(/\\/g, '/')));
-  const sameCandidate = (left: string, right: string): boolean =>
-    caseInsensitiveContext ? left.toLowerCase() === right.toLowerCase() : left === right;
+  // KR-AUD-37②(审核轮 P2 收口):大小写等价按「路径形态逐对」判定,不做
+  // 全局语境开关——盘符字面路径对盘符字面路径大小写不敏感(Windows 同盘同
+  // 目录);var 形态对 var 形态仅当工作区根为盘符路径(Windows 工作区,var
+  // 展开为盘符路径)才不敏感;其余组合(含 POSIX 绝对路径、盘符×POSIX 混合)
+  // 一律大小写敏感,防把 POSIX 的 `Scripts`/`scripts` 两个真不同目录误吞。
+  const workspaceIsDrive = /^[a-z]:/i.test(input.workspaceRoot.replace(/\\/g, '/'));
+  const isDriveLiteral = (p: string): boolean => /^[a-z]:\//i.test(p);
+  const isVarForm = (p: string): boolean => p.startsWith(WORKSPACE_FOLDER_VAR);
+  const sameCandidate = (left: string, right: string): boolean => {
+    if (left === right) {
+      return true;
+    }
+    const caseInsensitive =
+      (isDriveLiteral(left) && isDriveLiteral(right)) ||
+      (isVarForm(left) && isVarForm(right) && workspaceIsDrive);
+    return caseInsensitive ? left.toLowerCase() === right.toLowerCase() : false;
+  };
   const userPaths = current.filter(candidate => !managedBefore.some(managed => sameCandidate(candidate, managed)));
   // IDE-PRJ-006 角色隔离闸:管理段经每个发现的 scripts 根逐个过闸,角色
   // 目录(base/cell)剥出合并列表——scripts/base 与 scripts/cell 的同名模块
