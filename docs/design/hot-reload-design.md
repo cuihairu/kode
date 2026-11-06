@@ -344,8 +344,9 @@ interface ReloadTransport {
    **显式写死 `false` 仍关**（用户显式关要生效）。默认 `globs` 不动
    （`**/*.py`），默认去抖 `500ms` 不动。
 2. **零配置开箱即用**：`kbengine.hotReload.actionName` 留空（默认）时，
-   保存 .py → 去抖 → 默认热更请求 `POST http://127.0.0.1:8090/hotfix`，
-   body 带 `module_name=<模块名>`。端点与参数名只在
+   保存 .py → 去抖 → 默认热更请求 `POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`，
+   body 同带 `module_name=<模块名>`（query 与 body 各带一份，兼容不同服务端
+   读参口径，同值重复无害）。端点与参数名只在
    `BUILTIN_HTTP_REQUEST_EXAMPLE` 一处定义，`src/hotReloadDefaultHotfix.ts`
    同源取用，与 `package.json` 默认值测试锁同步；全仓旧拼写由
    `tests/hotfixSpellingGate.test.ts` 全量 grep 断言清零。

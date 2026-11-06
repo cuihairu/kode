@@ -320,10 +320,10 @@ telnet's presentation surface (standalone tree view, status lights, panel) appea
 | --- | --- | --- | --- |
 | `kbengine.httpRequests` | array | see below | HTTP quick request list (one disabled example by default) |
 
-Type: array; the default contains one disabled example (a hot-reload example, `enabled: false`), shaped after the default hot-reload endpoint (`POST http://127.0.0.1:8090/hotfix`, body `module_name=<module>`) — equivalent to:
+Type: array; the default contains one disabled example (a hot-reload example, `enabled: false`), shaped after the default hot-reload endpoint (`POST http://127.0.0.1:8090/hotfix?module_name=<module>`, body `module_name=<module>`) — `module_name` is deliberately carried in both the query string and the body, so a server that reads either one gets it; the duplicated identical value is harmless — equivalent to:
 
 ```bash
-curl -X POST 'http://127.0.0.1:8090/hotfix' -d 'module_name=entities.fight.FightAI'
+curl -X POST 'http://127.0.0.1:8090/hotfix?module_name=entities.fight.FightAI' -d 'module_name=entities.fight.FightAI'
 ```
 
 Add/remove/edit via the settings UI's list editor; enable/disable = the entry's `enabled` switch. Fields per entry:
@@ -368,7 +368,7 @@ The run log goes to the OUTPUT channel 「KBEngine HTTP 快捷请求」 (KBEngin
 
 ### Auto Hot Reload
 
-File save/watch → trigger the `quickActions` action by name. **On by default** (user order 2026-11-06): a fresh workspace with no configuration still creates one watcher per `globs` pattern, and with no `actionName` set a save sends the default hot-reload request `POST http://127.0.0.1:8090/hotfix` with body `module_name=<module>` — the engine being down is reported as **failed** honestly, never as success. One-key off: click the 「热更」 status bar item or run `kbengine.hotReload.toggle` (writes this setting back); the first activation shows one non-modal notice that can be dismissed for good. Switching `enabled` to `false` tears the watchers down immediately — config changes take effect without a window restart. Structural `.def` changes are still intercepted (restart required), never sent as an ordinary reload.
+File save/watch → trigger the `quickActions` action by name. **On by default** (user order 2026-11-06): a fresh workspace with no configuration still creates one watcher per `globs` pattern, and with no `actionName` set a save sends the default hot-reload request `POST http://127.0.0.1:8090/hotfix?module_name=<module>` with body `module_name=<module>` (both carry it, for server implementations that read either) — the engine being down is reported as **failed** honestly, never as success. One-key off: click the 「热更」 status bar item or run `kbengine.hotReload.toggle` (writes this setting back); the first activation shows one non-modal notice that can be dismissed for good. Switching `enabled` to `false` tears the watchers down immediately — config changes take effect without a window restart. Structural `.def` changes are still intercepted (restart required), never sent as an ordinary reload.
 
 **Quick-enable keybinding (on by default):** `ctrl+alt+r` (macOS `cmd+alt+r`) is bound to `kbengine.hotReload.configureChannel` out of the box with **no `when` narrowing** — it works in any editor/workspace context the moment the extension is installed. Pressing it opens the three-preset quick-enable screen (in-house receiver [recommended] / KBEngine official / unset, plus an "advanced" entry): a single profile goes straight to the preset list, multiple profiles pick one first — ≤2 steps total; a preset auto-fills the local port/path defaults, probes, and enables only on a passing probe; with zero configuration it reports honestly instead of doing nothing. Preset defaults are `http://127.0.0.1:8000/reload` + POST + body `{"files":${files}}` (JSON object body, which is what carries `targetId`/`sender_digests` so the receiver can answer `applied`); start the receiver with **`node scripts/hot-reload-receiver/referenceReceiver.mjs --port 8000 --root <staging root> --mode apply`** (the script defaults to `--port 0`, a random port, otherwise the port-8000 probe honestly reports unreachable).
 
@@ -395,7 +395,7 @@ Conflict rule: when another command shares the key, Keyboard Shortcuts lists bot
 | Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
 | `kbengine.hotReload.enabled` | boolean | `true` | Master switch, **on by default**; when on, one file watcher per `globs` pattern; off = watchers torn down |
-| `kbengine.hotReload.actionName` | string | empty | The action name to trigger; must exist in the `quickActions` array. Empty (the default) = send the default hot-reload request `POST http://127.0.0.1:8090/hotfix` (body `module_name=<module>`) |
+| `kbengine.hotReload.actionName` | string | empty | The action name to trigger; must exist in the `quickActions` array. Empty (the default) = send the default hot-reload request `POST http://127.0.0.1:8090/hotfix?module_name=<module>` (body `module_name=<module>`, both carry it) |
 | `kbengine.hotReload.globs` | string[] | `["**/*.py"]` | Watch patterns (VS Code globs); one file watcher per pattern |
 | `kbengine.hotReload.debounceMs` | number | `500` | Debounce milliseconds before triggering; `0` = no debounce |
 | `kbengine.hotReload.tempEdit.enabled` | boolean | `false` | Master switch for the temp-edit hot reload command (default off; independent of `hotReload.enabled`, which is on by default) |

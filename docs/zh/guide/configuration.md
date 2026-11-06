@@ -320,10 +320,10 @@ telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 t
 | --- | --- | --- | --- |
 | `kbengine.httpRequests` | array | 见下文 | HTTP 快捷请求列表(默认含一条停用示例) |
 
-类型:array;默认含一条停用的示例(热更新示例,`enabled: false`),按默认热更新端点形态给出(`POST http://127.0.0.1:8090/hotfix`,body `module_name=<模块名>`)——等价于命令行:
+类型:array;默认含一条停用的示例(热更新示例,`enabled: false`),按默认热更新端点形态给出(`POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`,body `module_name=<模块名>`)——`module_name` 刻意在 query 与 body 各带一份,兼容不同服务端实现(读 query 还是读 body 都取得到),同值重复无害——等价于命令行:
 
 ```bash
-curl -X POST 'http://127.0.0.1:8090/hotfix' -d 'module_name=entities.fight.FightAI'
+curl -X POST 'http://127.0.0.1:8090/hotfix?module_name=entities.fight.FightAI' -d 'module_name=entities.fight.FightAI'
 ```
 
 增删改走设置界面的列表编辑器,启停 = 条目 `enabled` 开关。每条字段:
@@ -368,7 +368,7 @@ curl -X POST 'http://127.0.0.1:8090/hotfix' -d 'module_name=entities.fight.Fight
 
 ### 自动热重载
 
-文件保存/监视 → 按名触发 `quickActions` 动作。**默认开启**(用户令 2026-11-06):新工作区不写任何配置也会按 `globs` 各建一个文件监视;`actionName` 留空(默认)时,保存 .py 即发默认热更请求 `POST http://127.0.0.1:8090/hotfix`,body 带 `module_name=<模块名>`——引擎未启动如实显示**失败**,绝不假成功。一键关:点击状态栏「热更」项或运行命令 `kbengine.hotReload.toggle`(写回本配置);首次激活弹一次非模态提示,可永久关闭。`enabled` 改成 `false` 即刻拆除监视,配置变更即时生效,不必重启窗口。结构性 `.def` 变更仍被拦下(需重启),不会当普通 reload 发出。
+文件保存/监视 → 按名触发 `quickActions` 动作。**默认开启**(用户令 2026-11-06):新工作区不写任何配置也会按 `globs` 各建一个文件监视;`actionName` 留空(默认)时,保存 .py 即发默认热更请求 `POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`,body 带 `module_name=<模块名>`(query 与 body 双带,兼容不同服务端)——引擎未启动如实显示**失败**,绝不假成功。一键关:点击状态栏「热更」项或运行命令 `kbengine.hotReload.toggle`(写回本配置);首次激活弹一次非模态提示,可永久关闭。`enabled` 改成 `false` 即刻拆除监视,配置变更即时生效,不必重启窗口。结构性 `.def` 变更仍被拦下(需重启),不会当普通 reload 发出。
 
 **快捷启用键位(默认开箱即用)**:`ctrl+alt+r`(macOS `cmd+alt+r`)默认绑定 `kbengine.hotReload.configureChannel`,无 `when` 收窄——编辑器/工作区任意位置都能按,扩展装上即生效。按下直接进「预设一键启用」首屏(自研接收器[推荐] / KBEngine 官方 / 未配置 + 「高级配置」):单 profile 直接进预设列表、多 profile 先选 profile,合计 ≤2 步;选中即按默认本机端口/路径探活、通过即启用;零配置也不静默(无 profile 会如实提示先建 profile)。预设默认参数 = `http://127.0.0.1:8000/reload` + POST + 体 `{"files":${files}}`(JSON 对象体,能带 `targetId`/`sender_digests`,接收端核对后才回 applied);接收器要按 **`node scripts/hot-reload-receiver/referenceReceiver.mjs --port 8000 --root <暂存根> --mode apply`** 启动(脚本默认 `--port 0` 随机端口,不改则 8000 探活如实报不通)。
 
@@ -395,7 +395,7 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `kbengine.hotReload.enabled` | boolean | `true` | 总开关,**默认开启**;开时按 `globs` 各建一个文件监视,关则拆除 |
-| `kbengine.hotReload.actionName` | string | 空 | 要触发的动作名,须在 `quickActions` 数组里存在;留空(默认)= 发默认热更请求 `POST http://127.0.0.1:8090/hotfix`(body `module_name=<模块名>`) |
+| `kbengine.hotReload.actionName` | string | 空 | 要触发的动作名,须在 `quickActions` 数组里存在;留空(默认)= 发默认热更请求 `POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`(body `module_name=<模块名>`,两处都带) |
 | `kbengine.hotReload.globs` | string[] | `["**/*.py"]` | 监视模式(VS Code glob),每个模式各建一个文件监视 |
 | `kbengine.hotReload.debounceMs` | number | `500` | 触发前去抖毫秒数,`0` 为不去抖 |
 | `kbengine.hotReload.tempEdit.enabled` | boolean | `false` | 临时编辑热更新命令总开关(默认关;与 `hotReload.enabled` 相互独立——后者默认开,本命令默认关) |

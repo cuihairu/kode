@@ -190,7 +190,7 @@ CI 与本地开发按改动面三路分流——改一行文档不该全量编�
 - [未开启时如实提示并附 kbengine.xml 开启配置片段]
 
 ### HTTP 快捷请求
-- [设置 `kbengine.httpRequests` 列表：名称/URL 模板/method/请求头/请求体/启停/键位展示串，内置示例一条（默认停用），按默认热更新端点形态给出——等价 `curl -X POST 'http://127.0.0.1:8090/hotfix' -d 'module_name=entities.fight.FightAI'`]
+- [设置 `kbengine.httpRequests` 列表：名称/URL 模板/method/请求头/请求体/启停/键位展示串，内置示例一条（默认停用），按默认热更新端点形态给出——等价 `curl -X POST 'http://127.0.0.1:8090/hotfix?module_name=entities.fight.FightAI' -d 'module_name=entities.fight.FightAI'`（`module_name` 在 query 与 body 各带一份，兼容不同服务端实现，同值重复无害）]
 - [自定义模板变量：`${module}`（按 `__init__.py` 包边界扫模块路径，`entities/fight/FightAI.py` → `entities.fight.FightAI`；`base`/`cell` 角色目录无 `__init__.py` 不算模块段，模块名即文件名）、`${moduleBasename}`（末段一层模块名 `FightAI`）、`${filename}`（文件名）、`${line}`、`${sel}`；按字面替换、不做 URL 编码]
 - [官方 VS Code 变量族同样可插（`${file}`=绝对路径、`${workspaceFolder}`/`${fileBasenameNoExtension}`/`${env:NAME}` 等）；两表都不认识的占位原样保留]
 - [触发两路：命令面板 quick pick，或经 keybindings.json 为 `kbengine.httpRequest.run` 配 `args.name` 键位直发——打开 .py 按快捷键即发热更新]

@@ -725,7 +725,7 @@ The flow graph panel supports:
 - Behavior:
   - Hot reload is **on by default** (user order 2026-11-06); the command flips the effective value, and the configuration-changed listener tears down / rebuilds the watchers immediately — no window restart
   - Bound to the 「热更」 status bar item, so clicking the status bar is the one-key off; a non-modal notice confirms the new state and offers 「打开日志」
-  - With no `kbengine.hotReload.actionName` set, a save sends the default hot-reload request `POST http://127.0.0.1:8090/hotfix` with body `module_name=<module>`; an unreachable engine is reported as **failed** in the status bar and log, never as success
+  - With no `kbengine.hotReload.actionName` set, a save sends the default hot-reload request `POST http://127.0.0.1:8090/hotfix?module_name=<module>` with body `module_name=<module>` (both carry it); an unreachable engine is reported as **failed** in the status bar and log, never as success
   - A failed configuration write is reported honestly (log + error notification) and leaves the status machine face untouched
 
 

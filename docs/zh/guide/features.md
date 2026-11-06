@@ -144,7 +144,7 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 
 ## 自动热重载（盘点 G5）
 
-- 文件保存/监视 → 按名触发上面的 `quickActions` 动作。门控 `kbengine.hotReload.enabled` **默认开启**（用户令 2026-11-06）：新工作区不写配置也按 `**/*.py` 建监视，`actionName` 留空时保存即向 `http://127.0.0.1:8090/hotfix` 发默认热更请求（`module_name=<模块名>`），引擎不可达如实报失败。一键关 = 点状态栏「热更」项或 `kbengine.hotReload.toggle`；首次激活弹一次可关闭的非模态提示。开关改动即时生效，不必重启窗口
+- 文件保存/监视 → 按名触发上面的 `quickActions` 动作。门控 `kbengine.hotReload.enabled` **默认开启**（用户令 2026-11-06）：新工作区不写配置也按 `**/*.py` 建监视，`actionName` 留空时保存即向 `http://127.0.0.1:8090/hotfix?module_name=<模块名>` 发默认热更请求（`module_name=<模块名>` 在 query 与 body 各带一份），引擎不可达如实报失败。一键关 = 点状态栏「热更」项或 `kbengine.hotReload.toggle`；首次激活弹一次可关闭的非模态提示。开关改动即时生效，不必重启窗口
 - 变更、创建、删除三通道都算保存事件，经去抖合并成一次执行；触发路径跳过执行确认框，动作失败或异步执行异常会被捕获并报告，不产生未处理 Promise rejection
 - `actionName` 留空或匹配不到任何动作时，事件照常触发但只往 OUTPUT 通道「KBEngine 快速执行动作」落一行流水，不弹窗、不执行
 - `http` 动作的真实响应会进逐目标台账：2xx 落「已送达未确认」（仅当回包体按已记录回执协议逐字回显所发文件时才升格 accepted），非 2xx 落 failed 点名状态码；未知回包体保持未确认。宣称 `applied` 需要双证——回执 digest 必须与所发文件内容 sha256 一致——证据不足（运行时无协议、内容不可读、digest 不符、核验超时）一律保持未确认并记录阻塞原因

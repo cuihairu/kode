@@ -92,7 +92,7 @@
 - **debug.json 缺失自动生成** —— `.kbengine/debug.json` 缺失即生成带注释的 JSONC 骨架（`${workspaceFolder}` 示例 + 扫描出的 `quickActions`）；已有配置绝不覆盖 ——（证据：todo.md:40；src/debugConfigBootstrap.ts）
 - **debug.json JSON Schema 校验** —— 为 `**/.kbengine/debug.json` 贡献内联 schema，必填字段直接在编辑器标红 ——（证据：package.json#contributes.jsonValidation；todo.md:53；src/debugJsonSchema.ts）
 - **debug.json JSONC 关联** —— 文件是 JSONC（带注释，解析走 stripJsonComments），kode 自动把 `files.associations` 接成 `jsonc`，注释不再按 json 划红线；WorkspaceFolder 级只动自己键、已有值不覆盖，`kbengine.jsoncAssociation.off` 命令只回收本扩展写入的条目 ——（证据：package.json#configuration `kbengine.jsoncAssociation`；package.json#contributes.commands `kbengine.jsoncAssociation.off`；src/jsoncAssociation.ts）
-- **自动热重载** —— 文件监视触发指定快速动作、带去抖，**默认开启**（2026-11-06 用户令；一键关 = 状态栏点击或 `kbengine.hotReload.toggle`；`actionName` 留空时保存即发 `http://127.0.0.1:8090/hotfix`，body 带 `module_name=<模块名>`） ——（证据：package.json#configuration `kbengine.hotReload.*`；src/hotReload.ts；src/hotReloadDefaultHotfix.ts）
+- **自动热重载** —— 文件监视触发指定快速动作、带去抖，**默认开启**（2026-11-06 用户令；一键关 = 状态栏点击或 `kbengine.hotReload.toggle`；`actionName` 留空时保存即发 `http://127.0.0.1:8090/hotfix?module_name=<模块名>`，body 同带 `module_name=<模块名>`（双带兼容不同服务端）） ——（证据：package.json#configuration `kbengine.hotReload.*`；src/hotReload.ts；src/hotReloadDefaultHotfix.ts）
 - **热更状态栏（HR-UI-001）** —— 状态栏项跟踪监视状态机关→就绪→发送中→已发送(未确认)→失败，渲染节流合并；动作完成且无错只记「已发送(未确认)」（不校验业务回执、绝不声称已生效）；点击状态栏项执行 `kbengine.hotReload.toggle`（一键关/开），审计日志「KBEngine 热更」（每次触发记 time/触发文件/去抖值/请求行/结果）从开关提示的「打开日志」按钮进入——（证据：package.json#contributes.commands `kbengine.hotReload.showLog` + `kbengine.hotReload.toggle`；src/hotReloadStatus.ts、src/hotReload.ts）
 - **热更状态按目标隔离（HOT-001）** —— 热更投递结果台账按「文件归属扫描根 rootId × 服务实例 targetId」双维隔离:同文件发给不同实例各自落各自的记录,后一个目标的成败既不覆盖也不复用前一个目标的绿色状态,查别的目标拿不到邻居的记录;同目标同文件重发覆盖为最新一次——这是回执面(HOT-002 起的 sent_unverified/accepted/applied)的地基,接线随回执面落地 ——（证据：src/hotReloadTargetState.ts）
 - **HTTP 热更送达只记未确认（HOT-002）** —— 投递分类只认传输事实:2xx=已送达记 sent-unverified(绿色但明示应用层未证实),非 2xx/传输失败=failed 点名状态码或原因;回包 body 一律不作为应用证据(自称 applied/ok 也不升格),回执解读另立(HOT-003+);分类结果直接落 HOT-001 双维台账 ——（证据：src/hotReloadDelivery.ts、src/hotReloadTargetState.ts）
@@ -292,7 +292,7 @@
 | `kbengine.python.apiMetadata` | `true` | 引擎感知的 KBEngine API 元数据——版本、源码 commit/describe 与原始声明位置——写进导出存根头部；取不到源码身份时显示 `unknown`，绝不编造（src/engineApiMetadata.ts、src/kbeModuleIndex.ts） |
 | `kbengine.python.callChainHints` | `true` | Python 实体方法调用链提示与命令；关则隐藏入口，Show Call Chain 不再生成预览（src/defCallChainProvider.ts） |
 | `kbengine.python.callChainView` | `"graph"` | Show Call Chain 面板初始视图：`graph`（打包内嵌 mermaid，离线）或 `text`；面板内 tab 选择持久化到工作区状态并优先于本设置（src/defCallChainViewLogic.ts） |
-| `kbengine.hotReload.enabled` | `true` | 文件变更自动触发热更（**默认开启**）；一键关 = 状态栏点击或 `kbengine.hotReload.toggle`（写回配置）；`actionName` 留空时保存即发 `POST http://127.0.0.1:8090/hotfix`，body 带 `module_name=<模块名>` |
+| `kbengine.hotReload.enabled` | `true` | 文件变更自动触发热更（**默认开启**）；一键关 = 状态栏点击或 `kbengine.hotReload.toggle`（写回配置）；`actionName` 留空时保存即发 `POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`，body 同带 `module_name=<模块名>` |
 | `kbengine.hotReload.actionName` | `""` | 要触发的快速动作名（须存在于 .kbengine/debug.json quickActions）；留空 = 走上面的默认热更请求 |
 | `kbengine.hotReload.globs` | `["**/*.py"]` | 监视的文件匹配模式（每模式一个 watcher） |
 | `kbengine.hotReload.debounceMs` | `500` | 触发前去抖毫秒数（0 = 不去抖） |
