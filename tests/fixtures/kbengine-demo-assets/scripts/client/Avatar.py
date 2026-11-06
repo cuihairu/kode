@@ -7,3 +7,6 @@ class Avatar(object):
 
 	def onHPChanged(self, hp):
 		print("Avatar.onHPChanged: %i" % hp)
+
+	def onLevelUp(self, newLevel):
+		print("Avatar.onLevelUp: %i" % newLevel)
