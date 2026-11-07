@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { l10nText } from './nlsRuntime';
 import { TelnetProbeState, TelnetTarget } from './telnetService';
 
 /**
@@ -12,19 +13,19 @@ export class TelnetTreeItem extends vscode.TreeItem {
     public readonly target: TelnetTarget,
     public readonly state: TelnetProbeState
   ) {
-    super(`Telnet: ${target.label}`, vscode.TreeItemCollapsibleState.None);
+    super(l10nText('Telnet: {label}', { label: target.label }), vscode.TreeItemCollapsibleState.None);
     this.iconPath = new vscode.ThemeIcon(getTelnetStatusIcon(state));
     this.contextValue = `telnet_${target.key}`;
     this.description = `${target.host}:${target.port} · ${getTelnetStateLabel(state)}`;
     this.tooltip = [
       `telnet ${target.label}`,
       `${target.host}:${target.port}`,
-      `状态: ${getTelnetStateLabel(state)}`,
-      '点击打开 Telnet 面板'
+      l10nText('Status: {state}', { state: getTelnetStateLabel(state) }),
+      l10nText('Click to open the Telnet panel')
     ].join('\n');
     this.command = {
       command: 'kbengine.telnet.showPanel',
-      title: 'Show Telnet Panel'
+      title: l10nText('Show Telnet Panel')
     };
   }
 }
@@ -73,17 +74,17 @@ function getTelnetStatusIcon(state: TelnetProbeState): string {
 function getTelnetStateLabel(state: TelnetProbeState): string {
   switch (state) {
     case 'connected':
-      return '已连接';
+      return l10nText('Connected');
     case 'open':
-      return '已开启';
+      return l10nText('Open');
     case 'auth-required':
-      return '端口开·未配密码';
+      return l10nText('Port open, auth not configured');
     case 'auth-rejected':
-      return '密码被拒';
+      return l10nText('Auth rejected');
     case 'unconfigured':
-      return '未配置';
+      return l10nText('Not configured');
     case 'closed':
     default:
-      return '未开启';
+      return l10nText('Not open');
   }
 }

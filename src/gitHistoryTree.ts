@@ -29,6 +29,7 @@ import {
   type GitRepoLocation,
 } from './gitRepoLocate';
 import { GitCancelSource, type GitQueryRequest } from './gitQueryGate';
+import { l10nText } from './nlsRuntime';
 
 /** 视图条目:提交记录 / 加载下一页 / 引导或状态(无查询零 Git 调用)。 */
 export type GitHistoryItem =
@@ -112,11 +113,13 @@ export function buildHistoryItems(state: GitHistoryState): GitHistoryItem[] {
         {
           kind: 'message',
           tone: 'guidance',
-          message: '尚未查询:右键文件选择「Kode：查看文件历史」,或在命令面板运行同名命令',
+          message: l10nText(
+            'Not queried yet: right-click a file and choose "Kode: Show File History", or run the same command from the Command Palette'
+          ),
         },
       ];
     case 'loading':
-      return [{ kind: 'message', tone: 'guidance', message: '正在查询文件历史…' }];
+      return [{ kind: 'message', tone: 'guidance', message: l10nText('Querying file history…') }];
     case 'loaded': {
       const items: GitHistoryItem[] = state.entries.map((entry, index) => {
         // IDE-GIT-007:打开该版本内容须按「该提交时的路径」而非当前路径
@@ -141,17 +144,28 @@ export function buildHistoryItems(state: GitHistoryState): GitHistoryItem[] {
         items.push({
           kind: 'message',
           tone: 'warning',
-          message: `历史在此前为复制/移动边界(提交 ${state.boundary.atCommit.slice(0, 8)} 起路径 ${state.boundary.atPath} 无法沿重命名链继续回溯)`,
+          message: l10nText(
+            'History stops at a copy/move boundary (commit {commit} for path {path} cannot continue along the rename chain)',
+            { commit: state.boundary.atCommit.slice(0, 8), path: state.boundary.atPath }
+          ),
         });
       }
       return items;
     }
     case 'untracked':
-      return [{ kind: 'message', tone: 'warning', message: `未跟踪文件(不在 Git 索引或历史中):${path.basename(state.filePath)}` }];
+      return [{
+        kind: 'message',
+        tone: 'warning',
+        message: l10nText('Untracked file (not in Git index or history): {file}', { file: path.basename(state.filePath) }),
+      }];
     case 'no-history':
-      return [{ kind: 'message', tone: 'warning', message: `已跟踪但尚无提交历史(暂存未提交):${path.basename(state.filePath)}` }];
+      return [{
+        kind: 'message',
+        tone: 'warning',
+        message: l10nText('Tracked but no commit history yet (staged, uncommitted): {file}', { file: path.basename(state.filePath) }),
+      }];
     case 'no-commits':
-      return [{ kind: 'message', tone: 'warning', message: '该仓库尚无任何提交' }];
+      return [{ kind: 'message', tone: 'warning', message: l10nText('This repository has no commits yet') }];
     case 'error':
       return [{ kind: 'message', tone: 'warning', message: state.message }];
   }
@@ -159,7 +173,7 @@ export function buildHistoryItems(state: GitHistoryState): GitHistoryItem[] {
 
 /** 视图标题:文件名 @ 基准提交(最新一页顶条短哈希;非装载态回缺省)。 */
 export function historyViewTitle(state: GitHistoryState): string {
-  if (state.kind !== 'loaded') return '文件历史';
+  if (state.kind !== 'loaded') return l10nText('File History');
   const base = state.entries[0]?.hash.slice(0, 8) ?? 'HEAD';
   return `${path.basename(state.filePath)} @ ${base}`;
 }
@@ -222,8 +236,8 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
       tree.tooltip = [
         item.entry.hash,
         `${item.entry.authorName} <${item.entry.authorEmail}>`,
-        `作者时间:${item.entry.authorDate}`,
-        `提交时间:${item.entry.commitDate}`,
+        l10nText('Author date: {date}', { date: item.entry.authorDate }),
+        l10nText('Commit date: {date}', { date: item.entry.commitDate }),
         item.entry.subject,
         item.entry.body,
       ]
@@ -234,12 +248,12 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
       // IDE-GIT-007:第 4 参为父提交时路径(重命名提交父侧走老路径)。
       tree.command = {
         command: 'kbengine.git.openVersionDiff',
-        title: '打开版本差异',
+        title: l10nText('Open version diff'),
         arguments: [item.entry.hash, item.filePath, item.repoRoot, item.parentFilePath],
       };
     } else if (item.kind === 'next-page') {
-      tree.label = `加载下一页(已载 ${item.loadedCount} 条)`;
-      tree.command = { command: 'kbengine.git.historyNextPage', title: '加载下一页' };
+      tree.label = l10nText('Load next page ({count} loaded)', { count: item.loadedCount });
+      tree.command = { command: 'kbengine.git.historyNextPage', title: l10nText('Load next page') };
       tree.contextValue = 'gitHistoryNextPage';
     } else {
       tree.label = item.message;
@@ -260,7 +274,7 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
     this.lastFile = filePath;
     this.lastEnabled = enabled;
     if (!enabled) {
-      this.state = { kind: 'error', message: '文件历史功能已关闭' };
+      this.state = { kind: 'error', message: l10nText('File history feature is disabled') };
       this.fire();
       return;
     }
@@ -359,18 +373,21 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
       case 'no-commits':
         return { kind: 'no-commits' };
       case 'git-error':
-        return { kind: 'error', message: `查询文件历史失败:${summarizeGitError(result.outcome)}` };
+        return {
+          kind: 'error',
+          message: l10nText('Failed to query file history: {reason}', { reason: summarizeGitError(result.outcome) }),
+        };
     }
   }
 }
 
 /** git 失败摘要(结构化结果 → 一行文案)。 */
 export function summarizeGitError(outcome: GitRunOutcome): string {
-  if (outcome.kind === 'exit' && outcome.stderr) return outcome.stderr.trim().split('\n')[0] || 'git 非零退出';
-  if (outcome.kind === 'spawn') return outcome.message ?? 'git 进程启动失败';
-  if (outcome.kind === 'timeout') return '查询超时(有界执行已终止)';
-  if (outcome.kind === 'cancelled') return '查询已取消';
-  if (outcome.kind === 'output-limit') return '输出超限(有界执行已终止)';
-  if (outcome.kind === 'invalid-args') return `参数被拒:${outcome.reason ?? ''}`;
-  return '未知错误';
+  if (outcome.kind === 'exit' && outcome.stderr) return outcome.stderr.trim().split('\n')[0] || l10nText('git exited non-zero');
+  if (outcome.kind === 'spawn') return outcome.message ?? l10nText('failed to start the git process');
+  if (outcome.kind === 'timeout') return l10nText('Query timed out (bounded execution terminated)');
+  if (outcome.kind === 'cancelled') return l10nText('Query cancelled');
+  if (outcome.kind === 'output-limit') return l10nText('Output limit exceeded (bounded execution terminated)');
+  if (outcome.kind === 'invalid-args') return l10nText('Arguments rejected: {reason}', { reason: outcome.reason ?? '' });
+  return l10nText('Unknown error');
 }

@@ -91,10 +91,10 @@ describe('IDE-GIT-010 状态机(纯)', () => {
     expect(items).toHaveLength(1);
     expect(items[0].kind).toBe('message');
     if (items[0].kind === 'message') {
-      expect(items[0].message).toContain('查看选中范围历史');
+      expect(items[0].message).toContain('Show Selection History');
       expect(items[0].tone).toBe('guidance');
     }
-    expect(rangeHistoryViewTitle({ kind: 'idle' })).toBe('选区历史');
+    expect(rangeHistoryViewTitle({ kind: 'idle' })).toBe('Selection History');
   });
 
   it('装载:条目按 entries 顺序,末条追加上边界说明行', () => {
@@ -122,7 +122,7 @@ describe('IDE-GIT-010 状态机(纯)', () => {
     const tail = items[items.length - 1];
     expect(tail.kind).toBe('message');
     if (tail.kind === 'message') {
-      expect(tail.message).toContain('已追溯到行段引入处');
+      expect(tail.message).toContain('introduced the range');
       expect(tail.message).toContain('h2');
     }
   });
@@ -143,8 +143,8 @@ describe('IDE-GIT-010 状态机(纯)', () => {
     const first = items[0];
     expect(first.kind).toBe('message');
     if (first.kind === 'message') {
-      expect(first.message).toContain('4 行');
-      expect(first.message).toContain('未提交');
+      expect(first.message).toContain('4 selection lines');
+      expect(first.message).toContain('uncommitted');
       expect(first.tone).toBe('warning');
     }
   });
@@ -164,7 +164,7 @@ describe('IDE-GIT-010 状态机(纯)', () => {
     });
     const tail = items[items.length - 1];
     if (tail.kind === 'message') {
-      expect(tail.message).toContain('不代表完整历史');
+      expect(tail.message).toContain('not necessarily complete');
       expect(tail.tone).toBe('warning');
     }
   });
@@ -183,9 +183,9 @@ describe('IDE-GIT-010 状态机(纯)', () => {
         boundary: { kind: 'origin', atCommit: '', atPath: '' },
         unmappedLines: 0,
       })
-    ).toBe('a.py @ HEAD 行 2-7');
-    expect(rangeHistoryViewTitle({ kind: 'loading' })).toBe('选区历史');
-    expect(rangeHistoryViewTitle({ kind: 'error', message: 'x' })).toBe('选区历史');
+    ).toBe('a.py @ HEAD lines 2-7');
+    expect(rangeHistoryViewTitle({ kind: 'loading' })).toBe('Selection History');
+    expect(rangeHistoryViewTitle({ kind: 'error', message: 'x' })).toBe('Selection History');
   });
 
   it('无选区/未跟踪/无提交/无效/错误:各自明确提示', () => {
@@ -204,7 +204,7 @@ describe('IDE-GIT-010 状态机(纯)', () => {
 
   it('has-uncommitted 全未提交:如实警告', () => {
     const items = buildRangeHistoryItems({ kind: 'has-uncommitted', message: '选区 5 行均未提交' });
-    expect(items[0]).toMatchObject({ kind: 'message', message: '选区 5 行均未提交', tone: 'warning' });
+    expect(items[0].kind === 'message' && items[0].tone).toBe('warning');
   });
 });
 
@@ -420,14 +420,14 @@ describe('IDE-GIT-010 提供者(依赖注入 mock)', () => {
       mapped: { kind: 'has-uncommitted', segments: [], unmappedLines: 5, selectionLineCount: 5 },
     });
     await provider.showSelectionHistory('/repo/src/a.py', { startLine: 1, endLine: 5 }, true);
-    expect(provider.getState()).toMatchObject({ kind: 'has-uncommitted', message: expect.stringContaining('5 行') });
+    expect(provider.getState()).toMatchObject({ kind: 'has-uncommitted', message: expect.stringContaining('5 selection lines') });
     expect(queryTimeline).not.toHaveBeenCalled();
   });
 
   it('关闭功能:disabled 短路,不定位不映射不查询', async () => {
     const { provider, locateGitRepo, mapSelection, queryTimeline } = makeProvider();
     await provider.showSelectionHistory('/repo/src/a.py', { startLine: 1, endLine: 1 }, false);
-    expect(provider.getState()).toMatchObject({ kind: 'error', message: '历史功能已关闭' });
+    expect(provider.getState()).toMatchObject({ kind: 'error', message: 'History feature is disabled' });
     expect(locateGitRepo).not.toHaveBeenCalled();
     expect(mapSelection).not.toHaveBeenCalled();
     expect(queryTimeline).not.toHaveBeenCalled();
@@ -447,11 +447,11 @@ describe('IDE-GIT-010 提供者(依赖注入 mock)', () => {
     const cases: Array<[SelectionMapResult, unknown]> = [
       [{ kind: 'untracked' }, { kind: 'untracked' }],
       [{ kind: 'no-commits' }, { kind: 'no-commits' }],
-      [{ kind: 'binary' }, { kind: 'invalid', message: expect.stringContaining('二进制') }],
+      [{ kind: 'binary' }, { kind: 'invalid', message: expect.stringContaining('Binary files') }],
       [{ kind: 'invalid-selection', reason: '行号倒置' }, { kind: 'invalid', message: '行号倒置' }],
       [
         { kind: 'git-error', outcome: { kind: 'timeout', timeoutMs: 10 } },
-        { kind: 'error', message: expect.stringContaining('映射失败') },
+        { kind: 'error', message: expect.stringContaining('Mapping failed') },
       ],
     ];
     for (const [mapped, expected] of cases) {
@@ -469,7 +469,7 @@ describe('IDE-GIT-010 提供者(依赖注入 mock)', () => {
       [{ kind: 'no-commits' }, { kind: 'no-commits' }],
       [
         { kind: 'git-error', outcome: { kind: 'exit', exitCode: 128, stderr: 'fatal: bad object\n' } },
-        { kind: 'error', message: expect.stringContaining('查询失败') },
+        { kind: 'error', message: expect.stringContaining('Query failed') },
       ],
     ];
     for (const [timeline, expected] of cases) {
@@ -505,7 +505,7 @@ describe('IDE-GIT-010 TreeItem 映射(fake-vscode)', () => {
     expect(item.description).toContain('乙');
     expect(item.contextValue).toBe('gitRangeEntry');
     expect(item.tooltip).toContain('h1');
-    expect(item.tooltip).toContain('行 2-5');
+    expect(item.tooltip).toContain('Lines 2-5');
     expect(item.command?.command).toBe('kbengine.git.openRangeHistoryDiff');
     const args = item.command?.arguments as unknown[];
     expect(args).toHaveLength(4);

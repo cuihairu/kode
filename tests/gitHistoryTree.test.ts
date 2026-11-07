@@ -56,10 +56,10 @@ describe('IDE-GIT-005 状态机(纯)', () => {
     const items = buildHistoryItems(provider.getState());
     expect(items).toHaveLength(1);
     expect(items[0].kind).toBe('message');
-    if (items[0].kind === 'message') expect(items[0].message).toContain('查看文件历史');
+    if (items[0].kind === 'message') expect(items[0].message).toContain('Show File History');
     expect(locate).not.toHaveBeenCalled();
     expect(queryLog).not.toHaveBeenCalled();
-    expect(historyViewTitle(provider.getState())).toBe('文件历史');
+    expect(historyViewTitle(provider.getState())).toBe('File History');
   });
 
   it('装载:提交行(说明/作者·时间)+ 有下一页时补「加载下一页」', () => {
@@ -99,11 +99,11 @@ describe('IDE-GIT-005 状态机(纯)', () => {
 
   it('git 失败摘要:结构化结果 → 一行文案', () => {
     expect(summarizeGitError({ kind: 'exit', exitCode: 128, stderr: 'fatal: bad object\n' })).toContain('fatal: bad object');
-    expect(summarizeGitError({ kind: 'timeout', timeoutMs: 10 })).toContain('超时');
-    expect(summarizeGitError({ kind: 'cancelled' })).toContain('取消');
-    expect(summarizeGitError({ kind: 'output-limit', limitBytes: 1, receivedBytes: 2 })).toContain('输出超限');
+    expect(summarizeGitError({ kind: 'timeout', timeoutMs: 10 })).toContain('timed out');
+    expect(summarizeGitError({ kind: 'cancelled' })).toContain('cancelled');
+    expect(summarizeGitError({ kind: 'output-limit', limitBytes: 1, receivedBytes: 2 })).toContain('Output limit exceeded');
     expect(summarizeGitError({ kind: 'spawn', message: 'Git 进程启动失败:ENOENT' })).toContain('ENOENT');
-    expect(summarizeGitError({ kind: 'invalid-args', reason: 'args 为空' })).toContain('参数被拒');
+    expect(summarizeGitError({ kind: 'invalid-args', reason: 'args 为空' })).toContain('Arguments rejected');
   });
 
   it('IDE-GIT-007:提交行按 pathAtCommit 定打开路径(重命名前老路径)', () => {
@@ -136,7 +136,7 @@ describe('IDE-GIT-005 状态机(纯)', () => {
     const warnings = items.filter((i) => i.kind === 'message');
     expect(warnings).toHaveLength(1);
     if (warnings[0].kind === 'message') {
-      expect(warnings[0].message).toContain('复制/移动边界');
+      expect(warnings[0].message).toContain('copy/move boundary');
       expect(warnings[0].message).toContain('abc12345');
     }
   });

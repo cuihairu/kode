@@ -1,4 +1,5 @@
 import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace, setActiveProfileScanRoot } from './scanRoots';
+import { l10nText } from './nlsRuntime';
 import { execFile } from 'child_process';
 import {
   CONFIG_CONTRACT_DIAGNOSTICS_ENABLED_DEFAULT,
@@ -3855,7 +3856,10 @@ export function activate(context: vscode.ExtensionContext) {
           .map(link => link.session.name)
           .join(' / ');
         void vscode.window.showInformationMessage(
-          `${serverKey} ${DEBUG_PHASE_LABELS.attached}:${names}(Run and Debug 视图已打开,调用堆栈可见该会话)`
+          l10nText(
+            '{serverKey} attached: {names} (Run and Debug view opened; the session is visible in the call stack)',
+            { serverKey, names }
+          )
         );
         return;
       }
@@ -3902,7 +3906,10 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       void vscode.window.showInformationMessage(
-        `${serverKey} ${DEBUG_PHASE_LABELS['not-injected']}:开启 kbengine.debug.autoDebugpy(启动联动注入)或 kbengine.debug.waitAtStartup(启动等待)并重启组件`
+        l10nText(
+          '{serverKey} not injected: enable kbengine.debug.autoDebugpy (launch-time injection) or kbengine.debug.waitAtStartup (startup wait) and restart the component',
+          { serverKey }
+        )
       );
     }
   );
