@@ -326,7 +326,9 @@ def helper():
       ''
     ].join('\n');
     const cellDoc = makeTextDocument(cellSource, {
-      fileName: '/proj/assets/scripts/cell/kbemain.py',
+      // 非 kbemain 基名:组件角色只由脚本根下首段组件目录定(CFG-015 评审
+      // 二轮 P2:fixture 不再用 cell/kbemain.py)
+      fileName: '/proj/assets/scripts/cell/entities.py',
       languageId: 'python'
     }) as unknown as vscode.TextDocument;
     const provider = new EngineSpiCodeLensProvider();
