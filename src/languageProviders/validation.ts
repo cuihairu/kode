@@ -8,7 +8,8 @@ import { analyzeDefDocumentInRust, type DefAnalysisFinding } from '../defAnalyze
 import { collectDefPythonParityInput } from '../defPythonParity';
 import { DETAIL_LEVELS, KBENGINE_FLAGS } from '../kbengineMetadata';
 import { ALLOWED_TOP_LEVEL_SECTIONS, KBEngineSectionName, createNodeRange, getLanguageFeatureConfig, getNodeValue, getSectionLabel, parseDefAst, pushDiagnosticForNodeValue, toSectionName, visitElementNodes } from './shared';
-import { ENTITY_BASE_DATA_FLAGS, ENTITY_CELL_DATA_FLAGS, ENTITY_CLIENT_DATA_FLAGS, KnownTypeContext, PROPERTY_SCOPE_LABELS, PropertyScope, getKnownTypeContext, resolveCustomTypeReference } from '../languageProviders';
+import { ENTITY_BASE_DATA_FLAGS, ENTITY_CELL_DATA_FLAGS, ENTITY_CLIENT_DATA_FLAGS, KnownTypeContext, PROPERTY_SCOPE_LABELS, PropertyScope, getKnownTypeContext } from './completion';
+import { resolveCustomTypeReference } from '../languageProviders';
 export function validateDocument(
   document: vscode.TextDocument,
   diagnostics: vscode.DiagnosticCollection
