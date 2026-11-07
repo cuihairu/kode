@@ -155,6 +155,29 @@ const ARTICLES: &[KnowledgeArticle] = &[
                   resolution chain from config to disk.",
         text: include_str!("../../../docs/knowledge/fixed-directories-and-path-resolution.md"),
     },
+    KnowledgeArticle {
+        file: "docs/kbengine-wire-protocol.md",
+        zh_file: "docs/zh/kbengine-wire-protocol.md",
+        title: "Wire protocol specification",
+        grounding: "kbengine@bf1a9cd6",
+        keywords: &[
+            "protocol",
+            "wire",
+            "frame",
+            "message",
+            "packet",
+            "serialization",
+            "协议",
+            "帧",
+            "报文",
+            "网络",
+        ],
+        summary: "The on-wire packet format forensics: framing, message types, \
+                  per-type serialization and the engine-source citations. The \
+                  protocol_frame tool draws a frame's structure; this article \
+                  grounds the format itself.",
+        text: include_str!("../../../docs/kbengine-wire-protocol.md"),
+    },
 ];
 
 /// explain 主入口:topic 必填;domain 供 API 面消歧(base/cell/client/...);
@@ -271,6 +294,15 @@ mod tests {
         // cellData 命中迁移文关键词 celldata(小写化归一)。
         let out = explain("cellData", None, "en");
         assert!(!out["knowledge"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn knowledge_face_matches_wire_protocol_article() {
+        // 协议帧/报文面:explain 命中线协议规范文(承载 protocol_frame 接地)。
+        let out = explain("protocol frame", None, "en");
+        let matches = out["knowledge"].as_array().unwrap();
+        assert!(matches.iter().any(|m| m["file"]
+            == "docs/kbengine-wire-protocol.md"));
     }
 
     #[test]
