@@ -1421,6 +1421,27 @@
           "default": true,
           "markdownDescription": "%kbengine.config.codeLens.engineSpi.description%"
         },
+        "kbengine.configData": {
+          "type": "object",
+          "default": {
+            "enabled": true,
+            "configDirGlobs": [
+              "scripts/config/**",
+              "scripts/data/config/**",
+              "scripts/data/**"
+            ],
+            "configClassPatterns": [
+              "*Config",
+              "*Data"
+            ],
+            "reloadFunctionPatterns": [
+              "reload*",
+              "hotUpdate*"
+            ],
+            "mutationExclude": []
+          },
+          "markdownDescription": "%kbengine.config.configData.description%"
+        },
         "kbengine.inlayHints.typeData": {
           "type": "boolean",
           "default": true,
