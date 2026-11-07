@@ -590,16 +590,21 @@ mod tests {
             "plan": plan_value,
             "rows": [
                 { "table": "tbl_Avatar", "values": [
-                    {"t":"big-u-int","v":7}, {"t":"u-int","v":1}, {"t":"text","v":"hero"}
+                    {"t":"big-u-int","v":"9007199254740993"}, {"t":"u-int","v":1}, {"t":"text","v":"hero"}
                 ]},
                 { "table": "tbl_Avatar_items", "values": [
-                    {"t":"big-u-int","v":100}, {"t":"big-u-int","v":7}, {"t":"text","v":"sword"}
+                    {"t":"big-u-int","v":"18446744073709551615"}, {"t":"big-u-int","v":"9007199254740993"}, {"t":"text","v":"sword"}
                 ]}
             ]
         }))
         .unwrap();
         assert_eq!(meta["entity"].as_str(), Some("Avatar"));
         assert_eq!(meta["total_rows"].as_u64(), Some(2));
+
+        let rows = read_archive_rows(json!({ "path": archive_path.to_string_lossy() })).unwrap();
+        let encoded = rows.to_string();
+        assert!(encoded.contains("9007199254740993"));
+        assert!(encoded.contains("18446744073709551615"));
 
         // inspectArchive:只回清单不回行值。
         let inspected = inspect_archive(json!({
