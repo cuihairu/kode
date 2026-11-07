@@ -268,7 +268,7 @@ describe('IDE-GIT-009 describeRangeTimeline 文案', () => {
     expect(describeRangeTimeline({ kind: 'invalid-range', reason: '行号必须为整数' })).toContain('整数');
     expect(
       describeRangeTimeline({ kind: 'git-error', outcome: { kind: 'timeout', timeoutMs: 10 } })
-    ).toContain('超时');
+    ).toContain('Query timed out');
   });
 });
 
