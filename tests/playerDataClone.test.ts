@@ -422,6 +422,19 @@ describe('executeExportPlan(只读计划执行)', () => {
     expect(aborted).toBe(true);
   });
 
+  it('cancels stalled snapshot setup without waiting for its deadline', async () => {
+    const connection = new FakeMysqlConnection() as FakeMysqlConnection & CloneMysqlConnection;
+    let aborted = false;
+    let cancelled = false;
+    connection.abort = () => { aborted = true; };
+    connection.query = async sql => sql.startsWith('START TRANSACTION')
+      ? new Promise<[unknown, unknown]>(() => undefined) : [[], []];
+    const request = executeExportPlan(connection, budgetPlan, 1, { timeoutMs: 5000, shouldCancel: () => cancelled });
+    setTimeout(() => { cancelled = true; }, 10);
+    await expect(request).rejects.toBeInstanceOf(CloneCancelledError);
+    expect(aborted).toBe(true);
+  });
+
   it('cancels a stalled query without waiting for another row', async () => {
     const connection = new FakeMysqlConnection() as FakeMysqlConnection & CloneMysqlConnection;
     let aborted = false;

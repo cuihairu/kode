@@ -281,7 +281,8 @@ export class CloneRollbackUnknownError extends Error {}
 async function readOnlyControlQuery(
   connection: CloneMysqlConnection,
   sql: string,
-  deadline: number
+  deadline: number,
+  shouldCancel?: () => boolean
 ): Promise<void> {
   const remaining = deadline - Date.now();
   if (remaining <= 0) {
@@ -289,10 +290,19 @@ async function readOnlyControlQuery(
     throw new Error('clone: export timed out');
   }
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancellationPoll: ReturnType<typeof setInterval> | undefined;
   try {
     await Promise.race([
       connection.query(sql),
       new Promise<never>((_resolve, reject) => {
+        if (shouldCancel) {
+          cancellationPoll = setInterval(() => {
+            if (shouldCancel()) {
+              connection.abort?.();
+              reject(new CloneCancelledError());
+            }
+          }, 100);
+        }
         timer = setTimeout(() => {
           connection.abort?.();
           reject(new Error('clone: export timed out'));
@@ -301,6 +311,7 @@ async function readOnlyControlQuery(
     ]);
   } finally {
     if (timer) { clearTimeout(timer); }
+    if (cancellationPoll) { clearInterval(cancellationPoll); }
   }
 }
 
@@ -320,8 +331,8 @@ export async function executeExportPlan(
   const maxBytes = options.maxBytes ?? 64 * 1024 * 1024;
   const deadline = Date.now() + (options.timeoutMs ?? 120_000);
   let totalBytes = 0;
-  await readOnlyControlQuery(connection, 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ', deadline);
-  await readOnlyControlQuery(connection, 'START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY', deadline);
+  await readOnlyControlQuery(connection, 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ', deadline, options.shouldCancel);
+  await readOnlyControlQuery(connection, 'START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY', deadline, options.shouldCancel);
   try {
   for (const query of plan.queries) {
     if (options.shouldCancel?.()) {
@@ -398,7 +409,7 @@ export async function executeExportPlan(
       throw new Error('clone: unsupported export filter');
     }
   }
-  await readOnlyControlQuery(connection, 'COMMIT', deadline);
+  await readOnlyControlQuery(connection, 'COMMIT', deadline, options.shouldCancel);
   return allRows;
   } catch (error) {
     try { await readOnlyControlQuery(connection, 'ROLLBACK', Math.min(deadline, Date.now() + 1000)); } catch { /* Closing a timed-out read-only session also releases its transaction. */ }
