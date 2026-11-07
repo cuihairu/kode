@@ -429,3 +429,44 @@ async fn tool_level_errors_come_back_as_is_error_results() {
     assert_eq!(response.is_error, Some(true));
     let _ = client.cancel().await;
 }
+
+#[tokio::test]
+async fn missing_argument_and_unknown_tool_error_results() {
+    let client = connect().await;
+    // 缺参错误(get_entity_model / get_message_entry / encode_decode_sample / why_setting)。
+    for (tool, args) in [
+        ("get_entity_model", serde_json::json!({})),
+        ("get_message_entry", serde_json::json!({})),
+        ("encode_decode_sample", serde_json::json!({})),
+        ("why_setting", serde_json::json!({})),
+    ] {
+        let response = client
+            .call_tool(call_params(tool, args))
+            .await
+            .expect("call tool");
+        assert_eq!(
+            response.is_error,
+            Some(true),
+            "{tool} should error without its required argument"
+        );
+    }
+    // 未知名工具 → 明确错误。
+    let response = client
+        .call_tool(call_params("no_such_tool", serde_json::json!({})))
+        .await
+        .expect("call unknown tool");
+    assert_eq!(response.is_error, Some(true));
+    // search_docs 空 query → spawn_blocking 面 Err → is_error。
+    let response = client
+        .call_tool(call_params("search_docs", serde_json::json!({"query": "  "})))
+        .await
+        .expect("call search_docs");
+    assert_eq!(response.is_error, Some(true));
+    // get_database_schema 无参 → 全量面正常返回(非错误)。
+    let response = client
+        .call_tool(call_params("get_database_schema", serde_json::json!({})))
+        .await
+        .expect("call get_database_schema");
+    assert_eq!(response.is_error, Some(false));
+    let _ = client.cancel().await;
+}

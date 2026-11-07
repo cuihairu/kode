@@ -328,4 +328,11 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn short_topic_matches_no_article() {
+        // 单字符/空白主题不做关键词匹配(防全量误命中)。
+        assert!(match_knowledge("x").is_empty());
+        assert!(match_knowledge("  ").is_empty());
+    }
 }

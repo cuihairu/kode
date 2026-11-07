@@ -393,4 +393,60 @@ mod tests {
         assert_eq!(class_in_file(&f, "missing"), None);
         std::fs::remove_dir_all(&root).ok();
     }
+
+    #[test]
+    fn oversized_files_are_skipped_and_counted() {
+        // 单文件 >1MB → 跳过并计入 scan_errors(不把大文件静默当符号空)。
+        let root =
+            std::env::temp_dir().join(format!("kode-mcp-bigpy-{}", std::process::id()));
+        let scripts = root.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        let mut big = String::from("class Big:\n    pass\n# ");
+        big.push_str(&"x".repeat(1_000_000));
+        std::fs::write(scripts.join("big.py"), &big).unwrap();
+        let out = search_symbols(&root, "big", 20).expect("answer");
+        assert_eq!(out["count"], 0);
+        assert_eq!(out["scan_errors"], 1);
+        // collect_symbols 同口径跳过。
+        assert!(collect_symbols(&root).is_empty());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn limit_reached_returns_results_limited() {
+        let root =
+            std::env::temp_dir().join(format!("kode-mcp-lim-{}", std::process::id()));
+        let scripts = root.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(scripts.join("a.py"), "class Alpha:\n    pass\nclass Beta:\n    pass\n")
+            .unwrap();
+        let out = search_symbols(&root, "a", 1).expect("answer");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["results_limited"], true);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn instance_class_in_source_skips_bare_inst_and_matches_real_assignment() {
+        // 裸 `inst` 行(标识符到行尾)不误判;同源后续真实赋值仍命中。
+        assert_eq!(
+            instance_class_in_source("inst\ninst = Weapon()\n", "inst"),
+            Some("Weapon".to_string())
+        );
+        // 完全无赋值形态 → None。
+        assert_eq!(instance_class_in_source("x = 1\n", "inst"), None);
+    }
+
+    #[test]
+    fn find_instance_class_skips_oversized_files() {
+        // 超 1MB 单文件被读封顶跳过,不把其中赋值当命中(不误报)。
+        let root = std::env::temp_dir().join(format!("kode-mcp-inst-over-{}", std::process::id()));
+        let scripts = root.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        let mut big = String::from("inst = Weapon()\n");
+        big.push_str(&"x".repeat(1_000_001));
+        std::fs::write(scripts.join("big.py"), &big).unwrap();
+        assert_eq!(find_instance_class(&root, "inst"), None);
+        std::fs::remove_dir_all(&root).ok();
+    }
 }

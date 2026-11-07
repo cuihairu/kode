@@ -128,27 +128,8 @@ impl KodeMcpServer {
                 arg_str("group").as_deref(),
                 arg_str("prefix").as_deref(),
             )),
-            "search_docs" => {
-                let query = arg_str("query").unwrap_or_default();
-                let limit = arguments
-                    .get("limit")
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(20) as usize;
-                crate::docs_index::search_docs(
-                    &self.assets_root,
-                    &self.extra_paths,
-                    &query,
-                    limit.max(1),
-                )
-            }
-            "search_symbols" => {
-                let query = arg_str("query").unwrap_or_default();
-                let limit = arguments
-                    .get("limit")
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(20) as usize;
-                crate::code_index::search_symbols(&self.assets_root, &query, limit.max(1))
-            }
+            // 注:search_docs/search_symbols 在 call_tool 里走 spawn_blocking
+            // 面,不经过 call_tool_impl(此面只处理同步工具)。
             "protocol_frame" => crate::protocol_frame::protocol_frame(
                 &self.knowledge,
                 arg_str("typeName").as_deref(),

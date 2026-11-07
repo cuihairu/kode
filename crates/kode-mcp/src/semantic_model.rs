@@ -893,6 +893,8 @@ mod tests {
         assert!(query_xml(&k, &root(), "entity.NoSuch").is_err());
         assert!(query_xml(&k, &root(), "entity.Avatar.Properties.NoSuch").is_err());
         assert!(query_xml(&k, &root(), "garbage").is_err());
+        // 空路径 → 明确错误(与空 query 同诚实面)。
+        assert!(query_xml(&k, &root(), "   ").is_err());
     }
 
     // ---- implementedBy 模块身份(prove-red:旧码按裸名全局任意找,`mod_b.factory`
@@ -992,5 +994,489 @@ mod tests {
         assert!(st["pythonFiles"]["truncated"].is_boolean());
         assert!(st["pythonFiles"]["scanErrors"].is_number());
         assert!(st["pythonFiles"]["symbols"].as_u64().unwrap() > 0);
+    }
+
+    // ---- 内建标量全谱(覆盖 builtin_py 全部 22 分支;via 恒空)。----
+    #[test]
+    fn builtin_scalars_map_with_honest_confidence() {
+        let k = AssetKnowledge::default();
+        let root = root();
+        let cases: &[(&str, &str, Confidence)] = &[
+            ("UINT8", "int", Confidence::Determined),
+            ("UINT16", "int", Confidence::Determined),
+            ("UINT32", "int", Confidence::Determined),
+            ("UINT64", "int", Confidence::Determined),
+            ("INT8", "int", Confidence::Determined),
+            ("INT16", "int", Confidence::Determined),
+            ("INT32", "int", Confidence::Determined),
+            ("INT64", "int", Confidence::Determined),
+            ("FLOAT", "float", Confidence::Determined),
+            ("DOUBLE", "float", Confidence::Determined),
+            ("BOOL", "bool", Confidence::Determined),
+            ("STRING", "str", Confidence::Determined),
+            ("UNICODE", "str", Confidence::Determined),
+            ("BLOB", "bytes", Confidence::Determined),
+            ("VECTOR2", "Vector2", Confidence::Determined),
+            ("VECTOR3", "Vector3", Confidence::Determined),
+            ("VECTOR4", "Vector4", Confidence::Determined),
+            ("ENTITYCALL", "EntityCall", Confidence::Unknown),
+            ("PYTHON", "Any", Confidence::Unknown),
+            ("PY_DICT", "Any", Confidence::Unknown),
+            ("PY_TUPLE", "Any", Confidence::Unknown),
+            ("PY_LIST", "Any", Confidence::Unknown),
+        ];
+        for (name, display, conf) in cases {
+            let r = res(&k, &[], &root, name);
+            assert_eq!(r.display, *display, "{name}");
+            assert_eq!(r.confidence, *conf, "{name}");
+            assert!(r.via.is_empty(), "{name} via should be empty");
+        }
+    }
+
+    #[test]
+    fn confidence_as_str_maps_each_variant() {
+        assert_eq!(Confidence::Determined.as_str(), "determined");
+        assert_eq!(Confidence::Inferred.as_str(), "inferred");
+        assert_eq!(Confidence::Unknown.as_str(), "unknown");
+    }
+
+    // ---- 合成 TypeDecl 构造(直接建 kb.types.types,不依赖夹具形态)。----
+    fn td(
+        name: &str,
+        kind: TypeKind,
+        directive: Option<&str>,
+        impl_sym: Option<&str>,
+        element: Option<&str>,
+    ) -> kode_parser::model::TypeDecl {
+        kode_parser::model::TypeDecl {
+            name: name.into(),
+            name_span: kode_parser::diag::Span { start: 0, end: 0 },
+            line: 1,
+            kind,
+            directive: directive.map(str::to_string),
+            implemented_by_symbol: impl_sym.map(str::to_string),
+            field_refs: vec![],
+            element_ref: element.map(str::to_string),
+        }
+    }
+
+    fn py_root(tag: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
+        let root =
+            std::env::temp_dir().join(format!("kode-mcp-{tag}-{}", std::process::id()));
+        let scripts = root.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        for (name, src) in files {
+            std::fs::write(scripts.join(name), src).unwrap();
+        }
+        root
+    }
+
+    #[test]
+    fn builtin_alias_without_target_is_unknown_own_name() {
+        let mut k = AssetKnowledge::default();
+        k.types
+            .types
+            .push(td("ODD", TypeKind::Builtin, None, None, None));
+        let r = res(&k, &[], &root(), "ODD");
+        assert_eq!(r.display, "ODD");
+        assert_eq!(r.confidence, Confidence::Unknown);
+        assert!(r.via.iter().any(|v| v == "types.xml:ODD"));
+    }
+
+    #[test]
+    fn alias_chain_deeper_than_guard_is_unknown_any() {
+        // A0→A1→…→A10(11 层):第 10 层深度 >8 → 守卫返回 Unknown Any,
+        // 绝不无限递归(深度护栏防环)。
+        let mut k = AssetKnowledge::default();
+        for i in 0..11 {
+            let directive = if i < 10 { Some(format!("A{}", i + 1)) } else { None };
+            k.types.types.push(kode_parser::model::TypeDecl {
+                name: format!("A{i}"),
+                name_span: kode_parser::diag::Span { start: 0, end: 0 },
+                line: 1,
+                kind: TypeKind::Builtin,
+                directive,
+                implemented_by_symbol: None,
+                field_refs: vec![],
+                element_ref: None,
+            });
+        }
+        let r = res(&k, &[], &root(), "A0");
+        assert_eq!(r.display, "Any");
+        assert_eq!(r.confidence, Confidence::Unknown);
+        assert!(r.via.len() >= 9, "path should record the chain, got {:?}", r.via);
+    }
+
+    #[test]
+    fn fixed_dict_without_implemented_by_is_plain_dict() {
+        let mut k = AssetKnowledge::default();
+        k.types
+            .types
+            .push(td("PLAIN_FD", TypeKind::FixedDict, None, None, None));
+        let r = res(&k, &[], &root(), "PLAIN_FD");
+        assert_eq!(r.display, "dict");
+        assert_eq!(r.confidence, Confidence::Inferred);
+    }
+
+    #[test]
+    fn fixed_dict_class_not_found_is_unknown_with_trace() {
+        // implementedBy 指向不存在模块/类 → 静态不可得 → Unknown,via 带
+        // (class-not-found) 追因(绝不把未解析类当推断返回)。
+        let mut k = AssetKnowledge::default();
+        k.types.types.push(td(
+            "GHOST_FD",
+            TypeKind::FixedDict,
+            None,
+            Some("GHOST_DATA.ghost"),
+            None,
+        ));
+        let r = res(&k, &[], &root(), "GHOST_FD");
+        assert_eq!(r.display, "GHOST_FD");
+        assert_eq!(r.confidence, Confidence::Unknown);
+        assert!(r.via.iter().any(|v| v.ends_with("(class-not-found)")));
+    }
+
+    #[test]
+    fn array_without_element_ref_defaults_to_str_element() {
+        let mut k = AssetKnowledge::default();
+        k.types
+            .types
+            .push(td("LOOSE_ARR", TypeKind::Array, None, None, None));
+        let r = res(&k, &[], &root(), "LOOSE_ARR");
+        assert_eq!(r.display, "list[str]");
+        assert_eq!(r.confidence, Confidence::Inferred);
+    }
+
+    #[test]
+    fn array_of_unknown_element_stays_unknown() {
+        let mut k = AssetKnowledge::default();
+        k.types.types.push(td(
+            "ARR_GHOST",
+            TypeKind::Array,
+            None,
+            None,
+            Some("GHOST_ELEM"),
+        ));
+        let r = res(&k, &[], &root(), "ARR_GHOST");
+        assert_eq!(r.display, "list[GHOST_ELEM]");
+        assert_eq!(r.confidence, Confidence::Unknown);
+    }
+
+    #[test]
+    fn implemented_by_full_is_empty_without_types_text_or_root() {
+        // 无 types_text → 空表;有 text 但无根元素 → 空表(如实,不猜)。
+        let k = AssetKnowledge::default();
+        assert!(implemented_by_full(&k).is_empty());
+        let mut k2 = AssetKnowledge::default();
+        k2.types_text = Some("".into());
+        assert!(implemented_by_full(&k2).is_empty());
+    }
+
+    #[test]
+    fn module_missing_falls_back_to_global_class_and_instance_scan() {
+        let root = py_root("mfall", &[("mod.py", "class factory:\n    pass\n\ninst = Weapon()\n")]);
+        let py = collect_symbols(&root);
+        // 模块文件缺失 → 回落全局同名类(不因模块缺失而失联)。
+        assert_eq!(
+            implemented_by_class(&py, &root, "ghost_module.factory").as_deref(),
+            Some("factory")
+        );
+        // 无点号实例名 → 全 scripts 扫模块级 `inst = Class()`。
+        assert_eq!(
+            implemented_by_class(&py, &root, "inst").as_deref(),
+            Some("Weapon")
+        );
+        // 完全不可解析 → None。
+        assert_eq!(implemented_by_class(&py, &root, "ghost_module.nothere"), None);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn find_symbol_empty_query_is_error() {
+        let k = kb();
+        assert!(find_symbol(&k, &root(), "  ", 20).is_err());
+    }
+
+    #[test]
+    fn find_symbol_entity_kind_matched_first() {
+        let k = kb();
+        let out = find_symbol(&k, &root(), "avatar", 20).expect("answer");
+        let m = &out["matches"][0];
+        assert_eq!(m["kind"], "entity");
+        assert_eq!(m["name"], "Avatar");
+    }
+
+    #[test]
+    fn find_symbol_limit_stops_early() {
+        let k = kb();
+        let out = find_symbol(&k, &root(), "a", 1).expect("answer");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["matches"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn find_symbol_python_method_carries_class() {
+        let k = kb();
+        let root = py_root(
+            "pymeth",
+            &[("mod.py", "class Account:\n    def login(self):\n        pass\n")],
+        );
+        let out = find_symbol(&k, &root, "login", 20).expect("answer");
+        let m = out["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["kind"] == "method")
+            .expect("method");
+        assert_eq!(m["name"], "login");
+        assert_eq!(m["class"], "Account");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn find_references_limit_breaks_early() {
+        let k = kb();
+        let out = find_references(&k, &root(), "SKILL_SLOT", 1).expect("answer");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["matches"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn find_references_instance_only_class_omits_location() {
+        // 实例赋值形态解出类名,但 scripts 无该类符号 → 如实省略 toFile/toLine
+        // (不虚构定位)。
+        let mut k = AssetKnowledge::default();
+        k.types
+            .types
+            .push(td("INST_FD", TypeKind::FixedDict, None, Some("m.inst"), None));
+        let root = py_root("instonly", &[("m.py", "inst = Weapon()\n")]);
+        let out = find_references(&k, &root, "INST_FD", 20).expect("answer");
+        let e = out["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["rule"] == "implementedBy")
+            .expect("implementedBy edge");
+        assert_eq!(e["to"], "py:Weapon");
+        assert!(e.get("toFile").is_none());
+        assert!(e.get("toLine").is_none());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn resolve_prop_inline_fixed_dict_is_dict() {
+        let k = kb();
+        let root = root();
+        let py = collect_symbols(&root);
+        let mut prop = k
+            .defs["Avatar"]
+            .model
+            .properties
+            .iter()
+            .find(|p| p.name == "level")
+            .unwrap()
+            .clone();
+        prop.type_name = Some("FIXED_DICT".into());
+        prop.type_refs = vec![];
+        let r = resolve_prop(&k, &py, &root, &prop, &implemented_by_full(&k));
+        assert_eq!(r.display, "dict");
+        assert_eq!(r.confidence, Confidence::Inferred);
+        assert!(r.via.iter().any(|v| v == "inline-FIXED_DICT"));
+    }
+
+    #[test]
+    fn resolve_prop_array_without_element_is_unknown_array() {
+        let k = kb();
+        let root = root();
+        let py = collect_symbols(&root);
+        let mut prop = k
+            .defs["Avatar"]
+            .model
+            .properties
+            .iter()
+            .find(|p| p.name == "skillSlots")
+            .unwrap()
+            .clone();
+        // 内联 ARRAY 但无 <of>(type_refs 空)→ 不虚构 list[Any],如实 Unknown。
+        prop.type_refs = vec![];
+        let r = resolve_prop(&k, &py, &root, &prop, &implemented_by_full(&k));
+        assert_eq!(r.display, "ARRAY");
+        assert_eq!(r.confidence, Confidence::Unknown);
+    }
+
+    #[test]
+    fn build_edges_property_implemented_by_edge() {
+        // def 属性类型名恰为 implementedBy 类型 → property 引用边带实现类定位。
+        let mut k = kb();
+        let text =
+            "<root><Properties><slot><Type> SKILL_SLOT </Type><Flags> BASE </Flags></slot></Properties></root>";
+        let model = kode_parser::model::parse_def(text);
+        k.defs.insert(
+            "Synthetic".into(),
+            crate::kb::ParsedDef {
+                name: "Synthetic".into(),
+                category: "entity".into(),
+                rel_path: "scripts/entity_defs/Synthetic.def".into(),
+                text: text.into(),
+                model,
+            },
+        );
+        let root = root();
+        let py = collect_symbols(&root);
+        let edges = build_edges(&k, &py, &root);
+        let e = edges
+            .iter()
+            .find(|e| e.rule == "implementedBy" && e.from == "def:Synthetic.slot")
+            .expect("property implementedBy edge");
+        assert_eq!(e.to, "py:weapon_skill_slot_list");
+        assert_eq!(e.confidence, Confidence::Inferred);
+        assert!(e.to_file.is_some(), "implementedBy edge should carry a location");
+        assert!(e.to_line.is_some());
+    }
+
+    // ---- 收口:alias.xml 分支、implementedBy 模块在场但无形态、find_symbol
+    //      三类循环各自的提前截断、build_edges 对不可解析实现类的如实跳过。----
+
+    #[test]
+    fn alias_branch_resolves_through_alias_xml() {
+        let mut k = AssetKnowledge::default();
+        k.alias.aliases.push(kode_parser::model::AliasDecl {
+            name: "MY_ALIAS".into(),
+            name_span: kode_parser::diag::Span { start: 0, end: 0 },
+            line: 1,
+            alias_type: "UINT32".into(),
+        });
+        let root = py_root("alias-branch", &[]);
+        let resolved = resolve_with(&k, &[], &root, "MY_ALIAS", &Default::default());
+        assert_eq!(resolved.display, "int");
+        assert_eq!(resolved.confidence, Confidence::Determined);
+        assert!(resolved.via.iter().any(|v| v == "alias.xml:MY_ALIAS"));
+    }
+
+    #[test]
+    fn implemented_by_module_present_without_class_or_instance_is_unknown() {
+        // 模块文件在,但类形态与实例赋值形态都不命中 → 如实 Unknown +
+        // (class-not-found),绝不跨模块猜。
+        let root = py_root("impl-mod-nocls", &[("bare.py", "x = 1\n")]);
+        let mut k = AssetKnowledge::default();
+        k.types.types.push(td(
+            "GHOST_M",
+            TypeKind::FixedDict,
+            None,
+            Some("bare.Missing"),
+            None,
+        ));
+        let resolved = resolve_with(&k, &[], &root, "GHOST_M", &Default::default());
+        assert_eq!(resolved.display, "GHOST_M");
+        assert_eq!(resolved.confidence, Confidence::Unknown);
+        assert!(resolved.via.iter().any(|v| v.contains("class-not-found")));
+    }
+
+    #[test]
+    fn implemented_by_unreadable_module_is_unknown_not_panic() {
+        // 模块文件在但不可按 UTF-8 读取:类形态读失败 → None,实例形态读
+        // 失败 → None → 如实 Unknown + (class-not-found),不 panic。
+        let root = std::env::temp_dir().join(format!(
+            "kode-mcp-impl-badutf-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(root.join("scripts")).unwrap();
+        std::fs::write(root.join("scripts").join("bad.py"), [0xFF, 0xFE, 0x00]).unwrap();
+        let mut k = AssetKnowledge::default();
+        k.types.types.push(td(
+            "GHOST_B",
+            TypeKind::FixedDict,
+            None,
+            Some("bad.Missing"),
+            None,
+        ));
+        let resolved = resolve_with(&k, &[], &root, "GHOST_B", &Default::default());
+        assert_eq!(resolved.display, "GHOST_B");
+        assert_eq!(resolved.confidence, Confidence::Unknown);
+        assert!(resolved.via.iter().any(|v| v.contains("class-not-found")));
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn find_symbol_early_returns_per_loop() {
+        let k = kb();
+        let root = root();
+        // 属性循环命中即截断(query 只匹配属性名,def 名循环不命中)。
+        let out = find_symbol(&k, &root, "skillSlots", 1).expect("answer");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["matches"][0]["kind"], "entity-property");
+        // types.xml 循环:query 只匹配类型名。
+        let out = find_symbol(&k, &root, "skill_slot", 1).expect("answer");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["matches"][0]["kind"], "type");
+        assert_eq!(out["matches"][0]["name"], "SKILL_SLOT");
+        // Python 符号循环:query 只匹配 py 符号。
+        let out = find_symbol(&k, &root, "weapon_skill", 1).expect("answer");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["matches"][0]["kind"], "class");
+        // limit 未到 → 类型循环正常续行(不提前截断),py 符号亦命中。
+        let out = find_symbol(&k, &root, "skill_slot", 20).expect("answer");
+        assert_eq!(out["count"], 2);
+        assert!(
+            out["matches"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m["kind"] == "type")
+        );
+        assert!(
+            out["matches"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m["kind"] == "class")
+        );
+    }
+
+    #[test]
+    fn build_edges_skips_unresolvable_implemented_by() {
+        // 类型声明在场但实现类不可解析:不产 implementedBy 边(绝不把未解析
+        // 类当实现);无 implementedBy 的 FixedDict 走 plain-dict 分支。两条
+        // 路径同样覆盖 types.xml 独立循环里的不可解析跳过。
+        let root = py_root("edges-ghost", &[("w.py", "class Weapon:\n    pass\n")]);
+        let mut k = AssetKnowledge::default();
+        k.types
+            .types
+            .push(td("PLAIN_FD", TypeKind::FixedDict, None, None, None));
+        k.types.types.push(td(
+            "GHOST_FD",
+            TypeKind::FixedDict,
+            None,
+            Some("ghost.Ghost"),
+            None,
+        ));
+        let text = "<root><Properties><p><Type> PLAIN_FD </Type><Flags> BASE </Flags></p>\
+                    <q><Type> GHOST_FD </Type><Flags> BASE </Flags></q></Properties></root>";
+        let model = kode_parser::model::parse_def(text);
+        k.defs.insert(
+            "Synthetic".into(),
+            crate::kb::ParsedDef {
+                name: "Synthetic".into(),
+                category: "entity".into(),
+                rel_path: "scripts/entity_defs/Synthetic.def".into(),
+                text: text.into(),
+                model,
+            },
+        );
+        let py = collect_symbols(&root);
+        let edges = build_edges(&k, &py, &root);
+        assert!(
+            !edges
+                .iter()
+                .any(|e| e.rule == "implementedBy" && e.to.contains("Ghost")),
+            "unresolvable implementedBy must not fabricate an edge"
+        );
+        // PLAIN_FD 属性仍产出类型引用边(类型声明在场)。
+        assert!(
+            edges
+                .iter()
+                .any(|e| e.rule == "types.xml type-reference" && e.from == "def:Synthetic.p"),
+            "type-reference edge for present declaration"
+        );
     }
 }

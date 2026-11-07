@@ -114,4 +114,43 @@ mod tests {
         assert!(!scan.truncated);
         std::fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn duplicate_roots_are_visited_once_without_truncation() {
+        // 同一根给两次(非截断场景):第二次 canonical 已访问 → 跳过,文件不重复。
+        let root = std::env::temp_dir().join(format!("kode-mcp-scan2-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("a.md"), "test").unwrap();
+        std::fs::write(root.join("b.md"), "test").unwrap();
+        let scan = collect(&[root.clone(), root.clone()], "md", &[], 10);
+        assert_eq!(scan.files.len(), 2);
+        assert!(!scan.truncated);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn root_that_is_a_file_counts_as_scan_error() {
+        // 根是文件而非目录:canonicalize 成功,read_dir 失败 → errors +1。
+        let root = std::env::temp_dir().join(format!("kode-mcp-scanfile-{}", std::process::id()));
+        std::fs::write(&root, "not a dir").unwrap();
+        let scan = collect(&[root.clone()], "md", &[], 10);
+        assert_eq!(scan.files.len(), 0);
+        assert_eq!(scan.errors, 1);
+        std::fs::remove_file(root).unwrap();
+    }
+
+    #[test]
+    fn entry_limit_truncates_even_without_matching_files() {
+        // entry_limit(limit×100)先于文件上限:全非匹配扩展名也会截断,
+        // 无匹配文件的目录不无限走查。
+        let root = std::env::temp_dir().join(format!("kode-mcp-scanlim-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        for i in 0..101 {
+            std::fs::write(root.join(format!("{i}.txt")), "noise").unwrap();
+        }
+        let scan = collect(&[root.clone()], "md", &[], 1);
+        assert!(scan.truncated);
+        assert_eq!(scan.files.len(), 0);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

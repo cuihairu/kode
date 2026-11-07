@@ -444,6 +444,79 @@ mod tests {
         p
     }
 
+    fn write_config(root: &Path, name: &str, text: &str) {
+        let conf = root.join("res").join("server");
+        std::fs::create_dir_all(&conf).unwrap();
+        std::fs::write(conf.join(name), text).unwrap();
+    }
+
+    #[test]
+    fn json_number_keeps_fraction_and_rejects_non_finite() {
+        // 整值落整数;分数保浮点;NaN/Inf → null(绝不虚构数)。
+        assert_eq!(json_number(3306.0), serde_json::json!(3306));
+        assert_eq!(json_number(1.5), serde_json::json!(1.5));
+        assert_eq!(json_number(f64::NAN), Value::Null);
+        assert_eq!(json_number(f64::INFINITY), Value::Null);
+    }
+
+    #[test]
+    fn final_config_merges_defaults_and_exposes_db_interface() {
+        // defaults + 元件合并 → dbInterface 出面(密码不给值,只给可用标记)。
+        let root = std::env::temp_dir().join(format!("kode-mcp-dbi-{}", std::process::id()));
+        write_config(
+            &root,
+            "kbengine_defaults.xml",
+            "<root>\n<dbmgr>\n<databaseInterfaces>\n<default>\n<host> 10.0.0.5 </host>\n\
+             <port> 3307 </port>\n<auth>\n<username> kbe_user </username>\n\
+             <encrypt> false </encrypt>\n<password> db-pass </password>\n</auth>\n\
+             <unicodeString>\n<characterSet> utf8mb4 </characterSet>\n</unicodeString>\n\
+             <databaseName> kbe_db </databaseName>\n</default>\n\
+             </databaseInterfaces>\n</dbmgr>\n</root>\n",
+        );
+        write_config(&root, "kbengine.xml", "<root>\n<baseapp>\n<backupPeriod> 500 </backupPeriod>\n</baseapp>\n</root>\n");
+        let payload = final_config(&root);
+        // defaultsPath 有 defaults → 字符串(非 null)。
+        assert!(payload["defaultsPath"].as_str().unwrap().ends_with("kbengine_defaults.xml"));
+        let db = payload["dbInterface"].as_object().expect("dbInterface");
+        assert_eq!(db["host"], "10.0.0.5");
+        assert_eq!(db["port"], 3307);
+        assert_eq!(db["username"], "kbe_user");
+        assert_eq!(db["databaseName"], "kbe_db");
+        assert_eq!(db["encrypt"], false);
+        assert_eq!(db["characterSet"], "utf8mb4");
+        // 密码永远不给值:标记可用即可。
+        assert_eq!(db["password"], Value::Null);
+        assert_eq!(db["passwordAvailable"], true);
+        assert!(!payload.to_string().contains("db-pass"));
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn why_setting_reports_defaults_path_and_skips_empty_segments() {
+        // 点分键含空段(baseapp..backupPeriod):空段跳过,值照常解析;
+        // defaults 在 → defaultsPath 字符串。
+        let root = std::env::temp_dir().join(format!("kode-mcp-why-{}", std::process::id()));
+        write_config(&root, "kbengine.xml", "<root>\n<baseapp>\n<backupPeriod> 500 </backupPeriod>\n</baseapp>\n</root>\n");
+        write_config(&root, "kbengine_defaults.xml", "<root>\n<cellapp>\n<distanceField> x </distanceField>\n</cellapp>\n</root>\n");
+        let out = why_setting(&root, "baseapp..backupPeriod").expect("answer");
+        assert_eq!(out["value"], "500");
+        assert!(out["defaultsPath"].as_str().unwrap().ends_with("kbengine_defaults.xml"));
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn database_schema_builds_table_index() {
+        let k = crate::kb::AssetKnowledge::load(&fixture_root());
+        let out = crate::config_qa::database_schema(&k, Some("Avatar")).expect("schema");
+        // 表名索引:Avatar 持久属性 → 至少一张表按名入索引。
+        let index = out["tableIndex"].as_object().expect("tableIndex");
+        assert!(!index.is_empty(), "expected indexed tables for Avatar");
+        let entity = out["entity"].as_str().unwrap();
+        assert_eq!(entity, "Avatar");
+        // 未知名 → Err(与 db_schema_preview 同错面)。
+        assert!(crate::config_qa::database_schema(&k, Some("NoSuch")).is_err());
+    }
+
     #[test]
     fn final_config_reads_component_xml_and_reports_missing_defaults() {
         let payload = final_config(&fixture_root());

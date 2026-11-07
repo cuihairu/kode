@@ -338,4 +338,96 @@ mod tests {
         assert!(protocol_frame(&k, None, Some("Account"), Some("reqCreateAvatar"), Some("Nope"))
             .is_err());
     }
+
+    // ---- 标量/容器线宽与类型名全谱(覆盖 fixed_size/kind_of 全部内建分支)。----
+    #[test]
+    fn scalar_types_render_expected_kind_and_size() {
+        let k = kb();
+        let cases: &[(&str, &str, Option<u64>)] = &[
+            ("UINT8", "UINT8", Some(1)),
+            ("UINT16", "UINT16", Some(2)),
+            ("UINT32", "UINT32", Some(4)),
+            ("UINT64", "UINT64", Some(8)),
+            ("INT8", "INT8", Some(1)),
+            ("INT16", "INT16", Some(2)),
+            ("INT32", "INT32", Some(4)),
+            ("INT64", "INT64", Some(8)),
+            ("FLOAT", "FLOAT", Some(4)),
+            ("DOUBLE", "DOUBLE", Some(8)),
+            ("BOOL", "BOOL", Some(1)),
+            ("STRING", "STRING", None),
+            ("UNICODE", "UNICODE", None),
+            ("BLOB", "BLOB", None),
+            ("VECTOR2", "VECTOR2", Some(8)),
+            ("VECTOR3", "VECTOR3", Some(12)),
+            ("VECTOR4", "VECTOR4", Some(16)),
+            ("ENTITYCALL", "ENTITYCALL", Some(16)),
+            ("PYTHON", "PYTHON", None),
+            ("PY_DICT", "PY_DICT", None),
+            ("PY_TUPLE", "PY_TUPLE", None),
+            ("PY_LIST", "PY_LIST", None),
+        ];
+        for (name, kind, size) in cases {
+            let out = protocol_frame(&k, Some(name), None, None, None)
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!(out["layout"]["kind"], *kind, "{name}");
+            assert_eq!(out["layout"]["offset"], 0, "{name}");
+            match size {
+                Some(s) => assert_eq!(out["layout"]["size"], *s, "{name}"),
+                None => assert_eq!(out["layout"]["size"], Value::Null, "{name}"),
+            }
+        }
+    }
+
+    #[test]
+    fn array_type_marks_length_prefix_and_element() {
+        let k = kb();
+        // ITEM_IDS = ARRAY of ITEM_ID(别名→UINT16)。
+        let out = protocol_frame(&k, Some("ITEM_IDS"), None, None, None).expect("array");
+        assert_eq!(out["layout"]["kind"], "ARRAY");
+        assert_eq!(out["layout"]["lengthPrefix"], true);
+        assert_eq!(out["layout"]["element"]["kind"], "UINT16");
+        assert_eq!(out["layout"]["element"]["offset"], Value::Null);
+    }
+
+    #[test]
+    fn arg_type_token_contract_and_empty_arg_is_no_phantom_field() {
+        // token 契约:取首个空白分隔词;全空白 → 回落 STRING(解析器不会产出
+        // 空参数,此为纯函数契约面)。
+        assert_eq!(arg_type_token("UINT32"), "UINT32");
+        assert_eq!(arg_type_token("  FIXED_DICT  "), "FIXED_DICT");
+        assert_eq!(arg_type_token(""), "STRING");
+        assert_eq!(arg_type_token("   "), "STRING");
+        // 解析器对全空白 <Arg> 不产出幻影字段(argCount 0)。
+        let mut k = kb();
+        let text = "<root><BaseMethods><m><Arg>   </Arg></m></BaseMethods></root>";
+        let model = kode_parser::model::parse_def(text);
+        k.defs.insert(
+            "Synthetic".into(),
+            crate::kb::ParsedDef {
+                name: "Synthetic".into(),
+                category: "entity".into(),
+                rel_path: "scripts/entity_defs/Synthetic.def".into(),
+                text: text.into(),
+                model,
+            },
+        );
+        let out = protocol_frame(&k, None, Some("Synthetic"), Some("m"), None).expect("frame");
+        assert_eq!(out["argCount"], 0);
+        assert!(out["fields"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn unknown_entity_and_method_are_errors() {
+        let k = kb();
+        assert!(protocol_frame(&k, None, Some("NoSuchEntity"), Some("m"), None).is_err());
+        assert!(protocol_frame(
+            &k,
+            None,
+            Some("Account"),
+            Some("NoSuchMethod"),
+            Some("BaseMethods"),
+        )
+        .is_err());
+    }
 }

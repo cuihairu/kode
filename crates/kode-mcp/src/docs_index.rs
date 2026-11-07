@@ -216,4 +216,51 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
         std::fs::remove_dir_all(&extra).ok();
     }
+
+    #[test]
+    fn setext_title_and_oversized_file_handling() {
+        let root = std::env::temp_dir().join(format!("kode-mcp-docs-setext-{}", std::process::id()));
+        let dir = root.join("docs");
+        std::fs::create_dir_all(&dir).unwrap();
+        // Setext 一级标题:`===` 下划线。
+        std::fs::write(dir.join("a.md"), "网络设计\n===\n\n登录流程细节。\n").unwrap();
+        let out = search_docs(&root, &[], "登录", 20).expect("answer");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["matches"][0]["title"], "网络设计");
+        // 超 1MB 文件:跳过并计入 scan_errors(不静默);a.md 无此词 → 空集如实。
+        let mut big = String::from("needle\n");
+        big.push_str(&"x".repeat(1_000_001));
+        std::fs::write(dir.join("big.md"), &big).unwrap();
+        let out = search_docs(&root, &[], "needle", 20).expect("answer");
+        assert_eq!(out["count"], 0);
+        assert_eq!(out["scan_errors"], 1);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn setext_dash_underline_and_title_edges() {
+        assert_eq!(title_of("标题\n---\ntext\n"), "标题");
+        // 无标题 → 空串;`#` 无空格不是 ATX 标题;有下一行但非下划线 → 非
+        // Setext,继续回落空串。
+        assert_eq!(title_of("just text\n"), "");
+        assert_eq!(title_of("#no-space\n"), "");
+        assert_eq!(title_of("hello\nworld\n"), "");
+        // is_heading:空标题行(`#`)算标题。
+        assert!(is_heading("#"));
+        assert!(is_heading("## x"));
+        assert!(!is_heading("#no"));
+    }
+
+    #[test]
+    fn limit_truncates_results_and_flags_it() {
+        let root = std::env::temp_dir().join(format!("kode-mcp-docs-lim-{}", std::process::id()));
+        let dir = root.join("docs");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.md"), "hit alpha\n").unwrap();
+        std::fs::write(dir.join("b.md"), "hit beta\n").unwrap();
+        let out = search_docs(&root, &[], "hit", 1).expect("answer");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["results_limited"], true);
+        std::fs::remove_dir_all(&root).ok();
+    }
 }

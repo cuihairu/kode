@@ -716,6 +716,12 @@ mod tests {
     use super::*;
     use kode_server::wire_codec::WireField;
 
+    fn fixture_like_demo_assets() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("tests/fixtures/kbengine-demo-assets")
+    }
+
     #[test]
     fn single_key_object_is_plain_fixed_dict_not_tagged() {
         // 单字段 FIXED_DICT `{"hp":100}`:键 hp 非已知 tag → 必须是普通结构,
@@ -747,6 +753,77 @@ mod tests {
         // 标量布局的带标签形式不受影响(往返无损入口)。
         let wire = wire_from_json(&WireLayout::U16, &serde_json::json!({"U16": 7})).unwrap();
         assert_eq!(wire, WireValue::U16(7));
+    }
+
+    #[test]
+    fn unicode_and_blob_take_text_verbatim() {
+        // Unicode/Blob:朴素字符串按原文逐字节入线值(不做 base64/hex 解码)。
+        let wire = wire_from_json(&WireLayout::Unicode, &serde_json::json!("你好")).unwrap();
+        assert_eq!(wire, WireValue::Unicode("你好".as_bytes().to_vec()));
+        let wire = wire_from_json(&WireLayout::Blob, &serde_json::json!("abc")).unwrap();
+        assert_eq!(wire, WireValue::Blob(b"abc".to_vec()));
+    }
+
+    #[test]
+    fn unsupported_scalar_layout_is_an_error_not_a_guess() {
+        // EntityCall 等非朴素 JSON 可表达的布局:带标签/朴素都明确报错。
+        assert!(wire_from_json(&WireLayout::EntityCall, &serde_json::json!(1)).is_err());
+        assert!(wire_from_json(&WireLayout::Py, &serde_json::json!({"x": 1})).is_err());
+    }
+
+    #[test]
+    fn validate_defs_reports_unreadable_manifest() {
+        let k = AssetKnowledge::load(&fixture_like_demo_assets());
+        let out = k.validate_defs(Some("/definitely/not/a/manifest.xml"));
+        let findings = out["findings"].as_array().unwrap();
+        let hit = findings
+            .iter()
+            .find(|f| f["code"] == "ManifestUnreadable")
+            .expect("manifest finding");
+        assert_eq!(hit["file"], "/definitely/not/a/manifest.xml");
+    }
+
+    #[test]
+    fn component_slot_without_type_is_skipped() {
+        // 组件槽无 <Type>(component_type None)→ 跳过,不猜组件 def。
+        let mut k = AssetKnowledge::default();
+        let text = "<root><Components><slotA><Persistent> true </Persistent></slotA></Components></root>";
+        let model = parse_def(text);
+        k.defs.insert(
+            "A".into(),
+            ParsedDef {
+                name: "A".into(),
+                category: "component".into(),
+                rel_path: "scripts/entity_defs/components/A.def".into(),
+                text: text.into(),
+                model,
+            },
+        );
+        let out = component_types_deep(&k, &k.defs["A"].model, &mut Vec::new());
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn db_schema_preview_unknown_property_type_stays_graceful() {
+        // 属性类型无法解析 → 不 panic 不误报错误,按既有推导面回落出表。
+        let mut k = AssetKnowledge::default();
+        let text = "<root><Properties><junk><Type> UNKNOWN_TYPE_XYZ </Type>\
+                    <Flags> BASE </Flags><Persistent> true </Persistent></junk></Properties></root>";
+        let model = parse_def(text);
+        k.defs.insert(
+            "Broken".into(),
+            ParsedDef {
+                name: "Broken".into(),
+                category: "entity".into(),
+                rel_path: "scripts/entity_defs/Broken.def".into(),
+                text: text.into(),
+                model,
+            },
+        );
+        let out = k.db_schema_preview(Some("Broken")).unwrap();
+        assert!(out["errors"].as_array().unwrap().is_empty());
+        // 未知名实体 → Err 同错面。
+        assert!(k.db_schema_preview(Some("NoSuch")).is_err());
     }
 }
 
@@ -799,4 +876,57 @@ fn component_types_deep_marks_mutual_reference_cycle() {
     assert_eq!(lvl2[0]["type"], "A");
     let lvl3 = lvl2[0]["componentTypes"].as_array().unwrap();
     assert_eq!(lvl3[0]["cycle"], true);
+}
+
+#[test]
+fn component_def_missing_is_skipped_without_fabricated_type() {
+    // 组件槽类型无对应 def(槽名也无 def)→ 槽如实无 file/componentTypes,
+    // 不虚构(覆盖 resolved None 分支)。
+    let mut k = AssetKnowledge::default();
+    let text = "<root><Components><slot><Type> GhostComponent </Type></slot></Components></root>";
+    let model = parse_def(text);
+    k.defs.insert(
+        "Host".into(),
+        ParsedDef {
+            name: "Host".into(),
+            category: "entity".into(),
+            rel_path: "scripts/entity_defs/Host.def".into(),
+            text: text.into(),
+            model,
+        },
+    );
+    let out = component_types_deep(&k, &k.defs["Host"].model, &mut Vec::new());
+    assert_eq!(out[0]["slot"], "slot");
+    assert_eq!(out[0]["type"], "GhostComponent");
+    assert!(out[0].get("file").is_none());
+    assert!(out[0].get("componentTypes").is_none());
+    assert!(out[0].get("cycle").is_none());
+}
+
+#[test]
+fn validate_defs_without_types_text_reports_only_manifest_findings() {
+    // types_text None(未装载 types.xml)→ 不产 types 诊断;manifest 不可读
+    // 仍如实上报,不因缺 types.xml 静默吞错。
+    let k = AssetKnowledge::default();
+    let out = k.validate_defs(Some("/definitely/not/a/manifest.xml"));
+    let findings = out["findings"].as_array().unwrap();
+    assert!(findings.iter().any(|f| f["code"] == "ManifestUnreadable"));
+    assert!(
+        findings
+            .iter()
+            .all(|f| f["file"] != "scripts/entity_defs/types.xml"),
+        "no types.xml diagnostics without types.xml"
+    );
+}
+
+#[test]
+fn wire_from_json_rejects_multi_key_object_on_scalar_layout() {
+    // 带标签形式只认单键对象;多键对象按普通值回落(单字段 FIXED_DICT
+    // `{"hp":100}` 不被误判为带标签值)→ 标量布局下如实报类型错误。
+    assert!(wire_from_json(&WireLayout::U16, &json!({"a": 1, "b": 2})).is_err());
+    // 单键带标签对象 → 直接取内值。
+    assert_eq!(
+        wire_from_json(&WireLayout::U16, &json!({"U16": 7})).unwrap(),
+        WireValue::U16(7)
+    );
 }
