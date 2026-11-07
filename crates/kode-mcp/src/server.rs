@@ -20,6 +20,8 @@ pub struct KodeMcpServer {
     pub knowledge: AssetKnowledge,
     /// 资产根(config_qa 配置问答面读 `{root}/res/server/kbengine.xml` 等)。
     pub assets_root: std::path::PathBuf,
+    /// 额外知识路径(CLI 附加参数;search_docs 在此+资产根下收 `.md`)。
+    pub extra_paths: Vec<std::path::PathBuf>,
 }
 
 fn object(schema: serde_json::Value) -> Arc<rmcp::model::JsonObject> {
@@ -126,6 +128,19 @@ impl KodeMcpServer {
                 arg_str("group").as_deref(),
                 arg_str("prefix").as_deref(),
             )),
+            "search_docs" => {
+                let query = arg_str("query").unwrap_or_default();
+                let limit = arguments
+                    .get("limit")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(20) as usize;
+                crate::docs_index::search_docs(
+                    &self.assets_root,
+                    &self.extra_paths,
+                    &query,
+                    limit.max(1),
+                )
+            }
             other => Err(format!("unknown tool: {other}")),
         };
         match result {
@@ -143,7 +158,8 @@ impl ServerHandler for KodeMcpServer {
                 "Pass the KBEngine assets root as the CLI argument. Tools: search_entities, \
                  get_entity_model, get_type_graph, validate_defs, get_message_entry, \
                  encode_decode_sample, db_schema_preview, explain, get_final_config, \
-                 get_entry_scripts, get_database_schema, why_setting, list_config_settings.",
+                 get_entry_scripts, get_database_schema, why_setting, list_config_settings, \
+                 search_docs.",
             )
     }
 
@@ -275,6 +291,17 @@ impl ServerHandler for KodeMcpServer {
                         &[],
                     ),
                 ),
+                Self::tool(
+                    "search_docs",
+                    "Search the project's own Markdown docs (recursively under the assets root plus any configured extra knowledge paths passed as extra CLI args) for a case-insensitive query. Returns matching files with title, headings and a snippet. Complements the built-in explain knowledge articles with the project's own requirement/design docs. Excel data is not indexed (needs a parse dependency).",
+                    schema_of(
+                        serde_json::json!({
+                            "query": {"type": "string", "description": "case-insensitive substring to search for in the project's .md docs"},
+                            "limit": {"type": "integer", "description": "max matches (default 20)"}
+                        }),
+                        &["query"],
+                    ),
+                ),
             ],
             ..Default::default()
         };
@@ -290,11 +317,15 @@ impl ServerHandler for KodeMcpServer {
     }
 }
 
-/// stdio 入口:加载资产根并服务到进程退出。
-pub async fn run_stdio(root: std::path::PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+/// stdio 入口:加载资产根(可选额外知识路径)并服务到进程退出。
+pub async fn run_stdio(
+    root: std::path::PathBuf,
+    extra_paths: Vec<std::path::PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let server = KodeMcpServer {
         knowledge: AssetKnowledge::load(&root),
         assets_root: root,
+        extra_paths,
     };
     let running = server.serve(stdio()).await?;
     running.waiting().await?;

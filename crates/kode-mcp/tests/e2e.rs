@@ -52,7 +52,7 @@ fn payload_of(result: CallToolResult) -> Value {
 }
 
 #[tokio::test]
-async fn list_tools_exposes_all_thirteen() {
+async fn list_tools_exposes_all_fourteen() {
     let client = connect().await;
     let tools = client.list_all_tools().await.expect("list_tools");
     let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
@@ -70,6 +70,7 @@ async fn list_tools_exposes_all_thirteen() {
             "get_message_entry",
             "get_type_graph",
             "list_config_settings",
+            "search_docs",
             "search_entities",
             "validate_defs",
             "why_setting",
@@ -282,6 +283,22 @@ async fn call_tools_return_real_data() {
         .unwrap()
         .starts_with("baseapp.")));
     assert!(settings.iter().any(|s| s["key"] == "baseapp.archivePeriod"));
+
+    // search_docs(KODE-MCP-KB-001 ⑥):项目自身 .md 检索真数据(夹具 README)。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "search_docs",
+                serde_json::json!({"query": "TrainingAvatar"}),
+            ))
+            .await
+            .expect("call search_docs"),
+    );
+    assert!(payload["count"].as_u64().unwrap() >= 1);
+    let m = &payload["matches"][0];
+    assert!(m["file"].as_str().unwrap().ends_with("README.md"));
+    assert!(m["title"].as_str().unwrap().contains("KBEngine"));
+    assert!(m["snippet"].as_str().unwrap().contains("TrainingAvatar"));
 
     let _ = client.cancel().await;
 }

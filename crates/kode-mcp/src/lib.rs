@@ -2,6 +2,7 @@
 
 pub mod config_catalog;
 pub mod config_qa;
+pub mod docs_index;
 pub mod explain;
 pub mod kb;
 pub mod server;
