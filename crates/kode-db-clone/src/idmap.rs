@@ -326,4 +326,79 @@ mod tests {
             .get("tbl_Avatar", "sm_templateId", &TypedValue::BigUInt(42))
             .is_none());
     }
+
+    #[test]
+    fn value_rank_and_key_cover_all_value_kinds_deterministically() {
+        // 序投影:Null < 整型族 < 浮点族 < 十进制 < 字节 < 文本 < 时间,
+        // 同族内按载荷序;value_key 是同一投影的扁平形态(可审计字符串)。
+        let mut keys: Vec<String> = [
+            TypedValue::Null,
+            TypedValue::Int(-5),
+            TypedValue::UInt(5),
+            TypedValue::BigUInt(5),
+            TypedValue::Float(1.5),
+            TypedValue::Double(2.5),
+            TypedValue::Decimal("1.23".into()),
+            TypedValue::Bytes("0a".into()),
+            TypedValue::Text("abc".into()),
+            TypedValue::DateTime {
+                value: "2026-01-01".into(),
+                offset_minutes: Some(480),
+            },
+        ]
+        .iter()
+        .map(value_key)
+        .collect();
+        let mut sorted = keys.clone();
+        sorted.sort();
+        assert_eq!(keys, sorted, "rank 序与枚举声明序一致");
+        assert_eq!(keys[0], "0:");
+        assert!(keys[1].starts_with("1:-5"));
+        assert!(keys[2].starts_with("2:5"));
+        assert!(keys[3].starts_with("3:5"));
+        assert!(keys[4].starts_with("4:"));
+        assert!(keys[5].starts_with("5:"));
+        assert!(keys[6].starts_with("6:1.23"));
+        assert!(keys[7].starts_with("7:0a"));
+        assert_eq!(keys[8], "8:abc");
+        assert!(keys[9].starts_with("9:2026-01-01|Some(480)"));
+        keys.dedup();
+        assert_eq!(keys.len(), 10, "十种值形态的键互不相同");
+    }
+
+    #[test]
+    fn id_map_key_orders_by_table_then_column_then_value() {
+        // 全序:表 → 列 → 值秩;partial_cmp 与 cmp 一致(Ord 前置)。
+        let a = IdMapKey {
+            table: "tbl_A".into(),
+            column: "id".into(),
+            old: TypedValue::BigUInt(1),
+        };
+        let b = IdMapKey {
+            table: "tbl_A".into(),
+            column: "id".into(),
+            old: TypedValue::Text("x".into()),
+        };
+        let c = IdMapKey {
+            table: "tbl_B".into(),
+            column: "id".into(),
+            old: TypedValue::BigUInt(1),
+        };
+        assert!(a < b, "同表同列:数值秩 < 文本秩");
+        assert!(b < c, "表名序决定跨表序");
+        assert_eq!(a.cmp(&a), std::cmp::Ordering::Equal);
+        assert_eq!(a.partial_cmp(&b), Some(a.cmp(&b)));
+        assert!(a == a.clone());
+    }
+
+    #[test]
+    fn id_map_len_and_is_empty_track_entries() {
+        let mut map = IdMap::new();
+        assert!(map.is_empty());
+        assert_eq!(map.len(), 0);
+        map.preserve(key("tbl_Avatar", "id", 7), IdCategory::RootKey);
+        assert!(!map.is_empty());
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.entries().count(), 1);
+    }
 }

@@ -330,4 +330,109 @@ mod tests {
         let err = reader.read_all().unwrap_err();
         assert!(matches!(err, CloneError::DriftMismatch(_)));
     }
+
+    fn rows_with(
+        tables: Vec<Vec<Option<String>>>,
+        columns: Vec<Vec<Option<String>>>,
+        stats: Vec<Vec<Option<String>>>,
+    ) -> VecRowSource {
+        VecRowSource(vec![
+            ("FROM information_schema.TABLES".into(), tables),
+            ("FROM information_schema.COLUMNS".into(), columns),
+            ("FROM information_schema.STATISTICS".into(), stats),
+        ])
+    }
+
+    #[test]
+    fn column_row_for_table_absent_from_tables_result_is_drift() {
+        // 列查询出现 TABLES 没有的表:fail-closed,不猜表结构。
+        let rows = rows_with(
+            vec![vec![Some("tbl_Avatar".into()), Some("InnoDB".into())]],
+            vec![vec![
+                Some("tbl_Ghost".into()),
+                Some("id".into()),
+                Some("bigint".into()),
+            ]],
+            vec![],
+        );
+        let err = InformationSchemaReader::new(&rows, "kbe")
+            .read_all()
+            .unwrap_err();
+        assert!(
+            matches!(err, CloneError::DriftMismatch(ref m) if m.contains("tbl_Ghost")),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn column_row_missing_column_name_is_drift() {
+        // 列行缺列名(NULL):fail-closed。
+        let rows = rows_with(
+            vec![vec![Some("tbl_Avatar".into()), Some("InnoDB".into())]],
+            vec![vec![Some("tbl_Avatar".into()), None, Some("bigint".into())]],
+            vec![],
+        );
+        let err = InformationSchemaReader::new(&rows, "kbe")
+            .read_all()
+            .unwrap_err();
+        assert!(
+            matches!(err, CloneError::DriftMismatch(ref m) if m.contains("missing column name")),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn statistics_row_missing_table_name_is_drift() {
+        // 索引行缺表名(NULL):fail-closed。
+        let rows = rows_with(
+            vec![vec![Some("tbl_Avatar".into()), Some("InnoDB".into())]],
+            vec![],
+            vec![vec![
+                None,
+                Some("PRIMARY".into()),
+                Some("id".into()),
+                Some("0".into()),
+            ]],
+        );
+        let err = InformationSchemaReader::new(&rows, "kbe")
+            .read_all()
+            .unwrap_err();
+        assert!(
+            matches!(err, CloneError::DriftMismatch(ref m) if m.contains("missing table name")),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn statistics_row_for_table_absent_from_tables_result_is_drift() {
+        // 索引查询出现 TABLES 没有的表:fail-closed。
+        let rows = rows_with(
+            vec![vec![Some("tbl_Avatar".into()), Some("InnoDB".into())]],
+            vec![],
+            vec![vec![
+                Some("tbl_Ghost".into()),
+                Some("PRIMARY".into()),
+                Some("id".into()),
+                Some("0".into()),
+            ]],
+        );
+        let err = InformationSchemaReader::new(&rows, "kbe")
+            .read_all()
+            .unwrap_err();
+        assert!(
+            matches!(err, CloneError::DriftMismatch(ref m) if m.contains("tbl_Ghost")),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn reader_debug_renders_schema_name_only() {
+        // Debug 是日志面:展示 schema 名,行源是 dyn 不展开。
+        let rows = canned_rows();
+        let reader = InformationSchemaReader::new(&rows, "kbe_game");
+        let rendered = format!("{reader:?}");
+        assert!(rendered.contains("InformationSchemaReader"), "{rendered}");
+        assert!(rendered.contains("kbe_game"), "{rendered}");
+        assert!(!rendered.contains("tbl_Avatar"), "行源不展开: {rendered}");
+    }
 }

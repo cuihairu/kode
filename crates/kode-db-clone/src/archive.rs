@@ -845,10 +845,10 @@ mod tests {
         ver[9] = 42;
         let ver_path = dir.join("ver.kdp");
         fs::write(&ver_path, &ver).unwrap();
-        match Archive::open(&ver_path, None) {
-            Err(CloneError::ArchiveError(m)) => assert!(m.contains("version"), "{m}"),
-            other => panic!("expected version error, got {other:?}"),
-        }
+        assert!(
+            matches!(Archive::open(&ver_path, None).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("version")),
+            "expected version error"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -984,10 +984,10 @@ mod tests {
         assert!(read_frames(&mut Cursor::new(&big), false, None).is_err());
         // 半个帧头 = 截断,不猜测。
         let partial = [1u8, 2];
-        match read_frames(&mut Cursor::new(&partial), false, None) {
-            Err(CloneError::ArchiveError(m)) => assert!(m.contains("truncated"), "{m}"),
-            other => panic!("expected truncation, got {other:?}"),
-        }
+        assert!(
+            matches!(read_frames(&mut Cursor::new(&partial), false, None).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("truncated")),
+            "expected truncation"
+        );
         // 帧长溢出(u64 顶格 + AEAD 标签)。
         let name = b"f.json";
         let mut overflow = Vec::new();
@@ -1024,10 +1024,10 @@ mod tests {
         // 坏魔数。
         let bad_magic = dir.join("magic.kdp");
         fs::write(&bad_magic, b"NOTAKODE!0000").unwrap();
-        match Archive::open(&bad_magic, None) {
-            Err(CloneError::ArchiveError(m)) => assert!(m.contains("magic"), "{m}"),
-            other => panic!("expected bad magic, got {other:?}"),
-        }
+        assert!(
+            matches!(Archive::open(&bad_magic, None).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("magic")),
+            "expected bad magic"
+        );
 
         let data = serde_json::to_vec(&TypedRow {
             table: "tbl_A".into(),
@@ -1068,24 +1068,24 @@ mod tests {
         };
 
         // 1) 缺 manifest。
-        match Archive::verify(build(&[]), false) {
-            Err(CloneError::ArchiveError(m)) => assert!(m.contains("manifest"), "{m}"),
-            other => panic!("expected missing manifest, got {other:?}"),
-        }
+        assert!(
+            matches!(Archive::verify(build(&[]), false).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("manifest")),
+            "expected missing manifest"
+        );
         // 2) manifest 不是 JSON。
-        match Archive::verify(build(&[("manifest.json", b"not json".to_vec())]), false) {
-            Err(CloneError::ArchiveError(m)) => assert!(m.contains("not valid"), "{m}"),
-            other => panic!("expected invalid manifest, got {other:?}"),
-        }
+        assert!(
+            matches!(Archive::verify(build(&[("manifest.json", b"not json".to_vec())]), false).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("not valid")),
+            "expected invalid manifest"
+        );
         // 3) format 名不符。
         let wrong_fmt_files = build(&[(
             "manifest.json",
             manifest(&good_list, tables.clone(), 1, data.len() as u64, "other"),
         )]);
-        match Archive::verify(wrong_fmt_files, false) {
-            Err(CloneError::ArchiveError(m)) => assert!(m.contains("format"), "{m}"),
-            other => panic!("expected format mismatch, got {other:?}"),
-        }
+        assert!(
+            matches!(Archive::verify(wrong_fmt_files, false).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("format")),
+            "expected format mismatch"
+        );
         // 4) manifest 加密旗标与帧流不符。
         let mut enc_files = build(&[(
             "manifest.json",
@@ -1103,10 +1103,10 @@ mod tests {
             .to_string()
             .into_bytes(),
         );
-        match Archive::verify(enc_files, false) {
-            Err(CloneError::ArchiveError(m)) => assert!(m.contains("encrypted"), "{m}"),
-            other => panic!("expected encrypted flag mismatch, got {other:?}"),
-        }
+        assert!(
+            matches!(Archive::verify(enc_files, false).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("encrypted")),
+            "expected encrypted flag mismatch"
+        );
         // 5) 帧集与清单不一致(多帧)。
         let extra = build(&[
             (
@@ -1115,10 +1115,10 @@ mod tests {
             ),
             ("sneaky.json", b"x".to_vec()),
         ]);
-        match Archive::verify(extra, false) {
-            Err(CloneError::ArchiveError(m)) => assert!(m.contains("do not match"), "{m}"),
-            other => panic!("expected frame list mismatch, got {other:?}"),
-        }
+        assert!(
+            matches!(Archive::verify(extra, false).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("do not match")),
+            "expected frame list mismatch"
+        );
         // 6) 缺 checksums.json(帧集与清单都不含它 → 文件清单比对通过,查 checksums 时失败)。
         let short_list = [frame.0, "manifest.json"];
         let no_sum: BTreeMap<String, Vec<u8>> = [
@@ -1136,10 +1136,10 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        match Archive::verify(no_sum, false) {
-            Err(CloneError::ArchiveError(m)) => assert!(m.contains("checksums.json"), "{m}"),
-            other => panic!("expected missing checksums, got {other:?}"),
-        }
+        assert!(
+            matches!(Archive::verify(no_sum, false).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("checksums.json")),
+            "expected missing checksums"
+        );
         // 7) checksums.json 引用不存在的文件。
         let ghost = format!(
             "{{\"{}\": \"{}\", \"data/tbl_Ghost.rows.jsonl\": \"{}\"}}",
@@ -1148,19 +1148,19 @@ mod tests {
             hex_encode(Sha256::digest(b"g").as_slice())
         )
         .into_bytes();
-        match Archive::verify(
-            build(&[
-                (
-                    "manifest.json",
-                    manifest(&good_list, tables.clone(), 1, data.len() as u64, "kdpclone"),
-                ),
-                ("checksums.json", ghost),
-            ]),
-            false,
-        ) {
-            Err(CloneError::ArchiveError(m)) => assert!(m.contains("tbl_Ghost"), "{m}"),
-            other => panic!("expected ghost checksum entry, got {other:?}"),
-        }
+        assert!(
+            matches!(Archive::verify(
+                build(&[
+                    (
+                        "manifest.json",
+                        manifest(&good_list, tables.clone(), 1, data.len() as u64, "kdpclone"),
+                    ),
+                    ("checksums.json", ghost),
+                ]),
+                false,
+            ).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("tbl_Ghost")),
+            "expected ghost checksum entry"
+        );
         // 8) 校验和不符。
         let bad_sum = format!(
             "{{\"{}\": \"{}\"}}",
@@ -1168,65 +1168,65 @@ mod tests {
             hex_encode(Sha256::digest(b"tampered").as_slice())
         )
         .into_bytes();
-        match Archive::verify(
-            build(&[
-                (
-                    "manifest.json",
-                    manifest(&good_list, tables.clone(), 1, data.len() as u64, "kdpclone"),
-                ),
-                ("checksums.json", bad_sum),
-            ]),
-            false,
-        ) {
-            Err(CloneError::ArchiveError(m)) => assert!(m.contains("checksum mismatch"), "{m}"),
-            other => panic!("expected checksum mismatch, got {other:?}"),
-        }
+        assert!(
+            matches!(Archive::verify(
+                build(&[
+                    (
+                        "manifest.json",
+                        manifest(&good_list, tables.clone(), 1, data.len() as u64, "kdpclone"),
+                    ),
+                    ("checksums.json", bad_sum),
+                ]),
+                false,
+            ).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("checksum mismatch")),
+            "expected checksum mismatch"
+        );
         // 9) 清单里的表缺数据帧。
         let ghost_table = serde_json::json!([
             {"name": "tbl_A", "rows": 1, "bytes": data.len(), "sha256": sha},
             {"name": "tbl_B", "rows": 0, "bytes": 0, "sha256": hex_encode(Sha256::digest(b"").as_slice())},
         ]);
-        match Archive::verify(
-            build(&[(
-                "manifest.json",
-                manifest(&good_list, ghost_table, 1, data.len() as u64, "kdpclone"),
-            )]),
-            false,
-        ) {
-            Err(CloneError::ArchiveError(m)) => assert!(m.contains("tbl_B"), "{m}"),
-            other => panic!("expected missing table frame, got {other:?}"),
-        }
+        assert!(
+            matches!(Archive::verify(
+                build(&[(
+                    "manifest.json",
+                    manifest(&good_list, ghost_table, 1, data.len() as u64, "kdpclone"),
+                )]),
+                false,
+            ).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("tbl_B")),
+            "expected missing table frame"
+        );
         // 10) 表 SHA 不符 + 行声称的表与文件名互核。
         let wrong_sha = serde_json::json!([
             {"name": "tbl_A", "rows": 1, "bytes": data.len(), "sha256": hex_encode(Sha256::digest(b"other").as_slice())},
         ]);
-        match Archive::verify(
-            build(&[(
-                "manifest.json",
-                manifest(&good_list, wrong_sha, 1, data.len() as u64, "kdpclone"),
-            )]),
-            false,
-        ) {
-            Err(CloneError::ArchiveError(m)) => assert!(m.contains("sha256 mismatch"), "{m}"),
-            other => panic!("expected table sha mismatch, got {other:?}"),
-        }
+        assert!(
+            matches!(Archive::verify(
+                build(&[(
+                    "manifest.json",
+                    manifest(&good_list, wrong_sha, 1, data.len() as u64, "kdpclone"),
+                )]),
+                false,
+            ).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("sha256 mismatch")),
+            "expected table sha mismatch"
+        );
         // 11) 清单合计与表条目不符。
-        match Archive::verify(
-            build(&[(
-                "manifest.json",
-                manifest(
-                    &good_list,
-                    tables.clone(),
-                    99,
-                    data.len() as u64,
-                    "kdpclone",
-                ),
-            )]),
-            false,
-        ) {
-            Err(CloneError::ArchiveError(m)) => assert!(m.contains("totals disagree"), "{m}"),
-            other => panic!("expected totals mismatch, got {other:?}"),
-        }
+        assert!(
+            matches!(Archive::verify(
+                build(&[(
+                    "manifest.json",
+                    manifest(
+                        &good_list,
+                        tables.clone(),
+                        99,
+                        data.len() as u64,
+                        "kdpclone",
+                    ),
+                )]),
+                false,
+            ).unwrap_err(), CloneError::ArchiveError(ref m) if m.contains("totals disagree")),
+            "expected totals mismatch"
+        );
         // 12) 合法构造通过 + 行表名与文件名互核(table_rows)。
         let ok_files = build(&[(
             "manifest.json",
@@ -1261,13 +1261,16 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        match Archive::verify(liar_files, false)
-            .unwrap()
-            .table_rows("tbl_A")
-        {
-            Err(CloneError::ArchiveError(m)) => assert!(m.contains("tbl_Liar"), "{m}"),
-            other => panic!("expected liar row, got {other:?}"),
-        }
+        assert!(
+            matches!(
+                Archive::verify(liar_files, false)
+                    .unwrap()
+                    .table_rows("tbl_A")
+                    .unwrap_err(),
+                CloneError::ArchiveError(ref m) if m.contains("tbl_Liar")
+            ),
+            "expected liar row"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -1422,6 +1425,55 @@ mod tests {
                 .all(|c| crate::reader::validate_readonly(c).is_ok()),
             "every executed statement must pass the read-only whitelist"
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn is_encrypted_peeks_header_without_a_key() {
+        // 读侧加密位探测:加密档 true、明文档 false,均无需钥匙。
+        let dir = test_dir("peek");
+        let plain = dir.join("plain.kdp");
+        let mut w = ArchiveWriter::new(&plain, None, "Avatar").unwrap();
+        w.write_row("tbl_Avatar", &avatar_row(1, "A")).unwrap();
+        w.end_table("tbl_Avatar", 1).unwrap();
+        w.finalize(&[], &RedactionReport { entries: vec![] })
+            .unwrap();
+        assert!(!is_encrypted(&plain).unwrap());
+
+        let secret = dir.join("secret.kdp");
+        let mut w = ArchiveWriter::new(&secret, Some([3u8; 32]), "Avatar").unwrap();
+        w.write_row("tbl_Avatar", &avatar_row(2, "B")).unwrap();
+        w.end_table("tbl_Avatar", 1).unwrap();
+        w.finalize(&[], &RedactionReport { entries: vec![] })
+            .unwrap();
+        assert!(is_encrypted(&secret).unwrap());
+
+        // 头部残缺:小于头长如实报错,不猜加密位。
+        let short = dir.join("short.kdp");
+        fs::write(&short, b"KDP").unwrap();
+        assert!(matches!(
+            is_encrypted(&short).unwrap_err(),
+            CloneError::ArchiveError(ref m) if m.contains("smaller than its header")
+        ));
+
+        // 坏魔数:不是本格式档案,拒绝。
+        let bad_magic = dir.join("badmagic.kdp");
+        fs::write(&bad_magic, [0u8; HEADER_LEN]).unwrap();
+        assert!(matches!(
+            is_encrypted(&bad_magic).unwrap_err(),
+            CloneError::ArchiveError(ref m) if m.contains("bad magic")
+        ));
+
+        // 版本不符:拒绝猜测。
+        let mut bad_version = MAGIC.to_vec();
+        bad_version.push(FORMAT_VERSION + 1);
+        bad_version.push(0);
+        let wrong_ver = dir.join("wrongver.kdp");
+        fs::write(&wrong_ver, &bad_version).unwrap();
+        assert!(matches!(
+            is_encrypted(&wrong_ver).unwrap_err(),
+            CloneError::ArchiveError(ref m) if m.contains("unsupported archive version")
+        ));
         let _ = fs::remove_dir_all(&dir);
     }
 }

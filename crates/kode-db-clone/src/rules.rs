@@ -266,7 +266,136 @@ mod tests {
     }
 
     #[test]
+    fn project_rule_allows_exclude_hit_and_include_none_means_all() {
+        // exclude 命中 → false;include=None 语义 = 全含(未被 exclude 的都 true)。
+        let rule = ProjectRule {
+            table: "tbl_Avatar".into(),
+            include_columns: None,
+            exclude_columns: vec!["hp".into()],
+        };
+        assert!(!rule.allows("hp"));
+        assert!(rule.allows("name"));
+        assert!(rule.allows("level"));
+    }
+
+    #[test]
+    fn project_exclude_trims_column_but_structural_columns_survive() {
+        // 结构列(id/parentID/sm_autoLoad)不受 exclude 影响,恒保留;
+        // 非结构列按规则剔除。
+        let t = table("tbl_Avatar");
+        let rules = RuleSet {
+            projections: vec![ProjectRule {
+                table: "tbl_Avatar".into(),
+                include_columns: None,
+                exclude_columns: vec!["hp".into()],
+            }],
+            ..Default::default()
+        };
+        let projected = rules.project(&t);
+        let names: Vec<&str> = projected.fields.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, vec!["id", "sm_autoLoad", "name", "level"]);
+    }
+
+    #[test]
+    fn validate_rejects_projection_unknown_table_and_excluded_column() {
+        let schema = CloneSchema::new("Avatar".into(), vec![table("tbl_Avatar")]).unwrap();
+        // 投影引用未知表:fail-closed。
+        let unknown_table = RuleSet {
+            projections: vec![ProjectRule {
+                table: "tbl_Ghost".into(),
+                include_columns: None,
+                exclude_columns: vec![],
+            }],
+            ..Default::default()
+        };
+        let err = unknown_table.validate(&schema).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("projection references unknown table `tbl_Ghost`"),
+            "{err}"
+        );
+        // exclude 引用未知列:fail-closed。
+        let unknown_column = RuleSet {
+            projections: vec![ProjectRule {
+                table: "tbl_Avatar".into(),
+                include_columns: None,
+                exclude_columns: vec!["ghost_col".into()],
+            }],
+            ..Default::default()
+        };
+        let err = unknown_column.validate(&schema).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("projection excludes unknown column `ghost_col` of table `tbl_Avatar`"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_identity_unknown_table_and_column() {
+        let schema = CloneSchema::new("Avatar".into(), vec![table("tbl_Avatar")]).unwrap();
+        // 身份规则引用未知表:fail-closed。
+        let unknown_table = RuleSet {
+            identities: vec![IdentityRule {
+                entity: "Avatar".into(),
+                table: "tbl_Ghost".into(),
+                column: "id".into(),
+            }],
+            ..Default::default()
+        };
+        let err = unknown_table.validate(&schema).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("identity references unknown table `tbl_Ghost`"),
+            "{err}"
+        );
+        // 身份列不在表内:fail-closed。
+        let unknown_column = RuleSet {
+            identities: vec![IdentityRule {
+                entity: "Avatar".into(),
+                table: "tbl_Avatar".into(),
+                column: "ghost".into(),
+            }],
+            ..Default::default()
+        };
+        let err = unknown_column.validate(&schema).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("identity column `ghost` not in table `tbl_Avatar`"),
+            "{err}"
+        );
+        // 合法身份列通过,且 identity_column 查得到。
+        let ok = RuleSet {
+            identities: vec![IdentityRule {
+                entity: "Avatar".into(),
+                table: "tbl_Avatar".into(),
+                column: "id".into(),
+            }],
+            ..Default::default()
+        };
+        assert!(ok.validate(&schema).is_ok());
+        assert_eq!(ok.identity_column("tbl_Avatar"), Some("id"));
+        assert_eq!(ok.identity_column("tbl_Other"), None);
+    }
+
+    #[test]
     fn virtual_schema_still_usable() {
         let _ = VirtualSchema::default();
+    }
+
+    #[test]
+    fn validate_passes_for_projection_with_valid_include_and_exclude() {
+        // include+exclude 都引用表内合法列:校验通过;exclude 命中合法列即
+        // 走已知列分支,不再误报。
+        let schema = CloneSchema::new("Avatar".into(), vec![table("tbl_Avatar")]).unwrap();
+        let rules = RuleSet {
+            projections: vec![ProjectRule {
+                table: "tbl_Avatar".into(),
+                include_columns: Some(vec!["name".into(), "level".into()]),
+                exclude_columns: vec!["hp".into()],
+            }],
+            ..Default::default()
+        };
+        assert!(rules.validate(&schema).is_ok());
     }
 }

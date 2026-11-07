@@ -468,4 +468,44 @@ mod tests {
         assert!(sink.report().entries.is_empty());
         assert_eq!(capture.rows.len(), 1);
     }
+
+    #[test]
+    fn redacting_sink_debug_renders_policy_and_masks() {
+        // Debug 是审计面:策略与掩码计数可见,行缓冲不整块倾倒。
+        let plan = plan_with_columns(&["sm_name", "email"]);
+        let policy = SensitivityPolicy::default();
+        let mut capture = CaptureSink {
+            rows: Vec::new(),
+            ended: Vec::new(),
+        };
+        let mut sink = RedactingSink::new(&mut capture, &policy, &plan);
+        sink.write_row("tbl_Avatar", &text_row("tbl_Avatar", &["Alice", "a@b.com"]))
+            .unwrap();
+        let rendered = format!("{sink:?}");
+        assert!(rendered.starts_with("RedactingSink"), "{rendered}");
+        assert!(rendered.contains("masked"), "{rendered}");
+    }
+
+    #[test]
+    fn non_text_value_in_sensitive_column_passes_through() {
+        // 敏感列的值不是文本(数值/blob 等):掩码策略只作用于文本形态,
+        // 非文本值原样直通、不计数、不报错。
+        let plan = plan_with_columns(&["email"]);
+        let policy = SensitivityPolicy::default();
+        let mut capture = CaptureSink {
+            rows: Vec::new(),
+            ended: Vec::new(),
+        };
+        let mut sink = RedactingSink::new(&mut capture, &policy, &plan);
+        sink.write_row(
+            "tbl_Avatar",
+            &TypedRow {
+                table: "tbl_Avatar".into(),
+                values: vec![TypedValue::BigUInt(42)],
+            },
+        )
+        .unwrap();
+        assert_eq!(sink.masked_counts().len(), 0);
+        assert_eq!(capture.rows[0].values[0], TypedValue::BigUInt(42));
+    }
 }

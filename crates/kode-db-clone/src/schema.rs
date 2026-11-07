@@ -408,4 +408,85 @@ mod tests {
         .unwrap_err();
         assert!(matches!(err, CloneError::InvalidRule(_)));
     }
+
+    #[test]
+    fn rejects_schema_without_exactly_one_root() {
+        // 零根表(全是子表)与双根表都拒绝:引擎克隆以单实体为边界。
+        let no_root = CloneSchema::new(
+            "Avatar".into(),
+            vec![child("tbl_Avatar_items", "tbl_Avatar")],
+        )
+        .unwrap_err();
+        assert!(
+            no_root
+                .to_string()
+                .contains("expected exactly one root table, found 0"),
+            "{no_root}"
+        );
+        let two_roots = CloneSchema::new(
+            "Avatar".into(),
+            vec![root("tbl_Avatar"), root("tbl_Account")],
+        )
+        .unwrap_err();
+        assert!(
+            two_roots
+                .to_string()
+                .contains("expected exactly one root table, found 2"),
+            "{two_roots}"
+        );
+    }
+
+    #[test]
+    fn rejects_child_referencing_unknown_parent() {
+        // 子表父引用悬空:fail-closed,不猜关系。
+        let err = CloneSchema::new(
+            "Avatar".into(),
+            vec![root("tbl_Avatar"), child("tbl_Items", "tbl_Ghost")],
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("references unknown parent `tbl_Ghost`"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn resolve_denies_kbe_prefixed_derived_table() {
+        // kbe_ 内部表:默认排除进 denied(带原因),不参与解析。
+        let mut kbe = root("kbe_mail");
+        kbe.kind = "array".into();
+        let derived = CloneSchema::new("Avatar".into(), vec![root("tbl_Avatar"), kbe]).unwrap();
+        let physical = VirtualSchema::new(vec![PhysicalTable {
+            name: "tbl_Avatar".into(),
+            engine: "InnoDB".into(),
+            columns: BTreeMap::from([
+                ("id".into(), "bigint(20) unsigned".into()),
+                ("sm_autoLoad".into(), "tinyint".into()),
+            ]),
+            primary_key: vec!["id".into()],
+            indexes: vec![],
+        }]);
+        let resolved = SchemaResolver::resolve(&derived, &physical).unwrap();
+        assert_eq!(resolved.tables.len(), 1);
+        assert_eq!(resolved.denied.len(), 1);
+        assert_eq!(resolved.denied[0].name, "kbe_mail");
+        assert!(resolved.denied[0].reason.contains("kbe_"));
+    }
+
+    #[test]
+    fn resolve_fails_closed_on_derived_column_missing_from_physical() {
+        // 派生列在物理侧缺失:UnknownColumn,不猜默认类型。
+        let derived = CloneSchema::new("Avatar".into(), vec![root("tbl_Avatar")]).unwrap();
+        let physical = VirtualSchema::new(vec![PhysicalTable {
+            name: "tbl_Avatar".into(),
+            engine: "InnoDB".into(),
+            // 缺 sm_autoLoad 列。
+            columns: BTreeMap::from([("id".into(), "bigint(20) unsigned".into())]),
+            primary_key: vec!["id".into()],
+            indexes: vec![],
+        }]);
+        let err = SchemaResolver::resolve(&derived, &physical).unwrap_err();
+        assert!(matches!(err, CloneError::UnknownColumn { .. }), "{err}");
+    }
 }

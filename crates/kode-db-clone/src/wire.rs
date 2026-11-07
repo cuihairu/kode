@@ -187,4 +187,25 @@ mod tests {
             CloneSchema::from_derivation(r#"{ "tables": [], "tableIndex": {} }"#).unwrap_err();
         assert!(matches!(err, CloneError::InvalidRule(_)));
     }
+
+    #[test]
+    fn derivation_without_entity_or_root_table_is_rejected_by_one_root_gate() {
+        // 没有任何 entity/root 表:entity_name 回落首表名(防御性计算),
+        // 但「恰一根表」闸随即拒绝 —— 不猜测实体边界。
+        let err = CloneSchema::from_derivation(
+            r#"{
+              "tables": [
+                { "name": "tbl_Guild", "kind": "component", "parentTableName": null,
+                  "propertyPath": "Guild",
+                  "fields": [ { "name": "id", "typeLabel": "bigint unsigned", "synthetic": true } ] }
+              ]
+            }"#,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("expected exactly one root table, found 0"),
+            "{err}"
+        );
+    }
 }

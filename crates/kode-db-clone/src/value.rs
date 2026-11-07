@@ -285,4 +285,25 @@ mod tests {
         assert!(hex_decode("0f0").is_err());
         assert!(hex_decode("zz").is_err());
     }
+
+    #[test]
+    fn parses_float_and_double_with_fallback_to_text() {
+        // float/double:可解析 → 数值;不可解析 → 文本兜底(绝不吞成 0.0)。
+        assert_eq!(
+            TypedValue::parse(Some("1.5"), "float"),
+            TypedValue::Float(1.5)
+        );
+        assert_eq!(
+            TypedValue::parse(Some("not-a-float"), "float"),
+            TypedValue::Text("not-a-float".into())
+        );
+        assert_eq!(
+            TypedValue::parse(Some("2.75"), "double"),
+            TypedValue::Double(2.75)
+        );
+        assert_eq!(
+            TypedValue::parse(Some("x"), "double"),
+            TypedValue::Text("x".into())
+        );
+    }
 }

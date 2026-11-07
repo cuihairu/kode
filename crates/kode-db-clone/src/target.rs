@@ -142,4 +142,11 @@ mod tests {
             CloneError::ImportRejected(_)
         ));
     }
+
+    #[test]
+    fn display_renders_local_and_test() {
+        // Display 是导入报告/校验文案面:环境枚举如实呈现,不泄漏内部细节。
+        assert_eq!(TargetEnvironment::Local.to_string(), "local");
+        assert_eq!(TargetEnvironment::Test.to_string(), "test");
+    }
 }

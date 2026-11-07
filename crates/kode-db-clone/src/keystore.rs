@@ -216,4 +216,17 @@ mod tests {
         }
         let _ = fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn key_id_for_archive_is_deterministic_and_path_bound() {
+        // 归档密钥 id = 绝对化路径的 SHA-256 十六进制:同路径恒定,不同路径不同;
+        // 64 hex 字符,字符集安全。绝不直接用路径串(会撞名)。
+        let a = key_id_for_archive(std::path::Path::new("/data/a.kdpclone"));
+        let b = key_id_for_archive(std::path::Path::new("/data/a.kdpclone"));
+        let c = key_id_for_archive(std::path::Path::new("/data/b.kdpclone"));
+        assert_eq!(a, b, "同路径恒定");
+        assert_ne!(a, c, "不同路径不同 id");
+        assert_eq!(a.len(), 64, "SHA-256 hex = 64 字符");
+        assert!(a.chars().all(|ch| ch.is_ascii_hexdigit()));
+    }
 }

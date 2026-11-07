@@ -766,4 +766,102 @@ mod tests {
         assert_eq!(t.values[0], TypedValue::BigUInt(u64::MAX));
         assert_eq!(t.values[1], TypedValue::Double(3.5));
     }
+
+    #[test]
+    fn source_reader_debug_renders_type_name_only() {
+        // Debug 是日志面:只暴露类型名,不倾倒执行器内部状态。
+        let exec = FakeExecutor::new(BTreeMap::new());
+        let reader = SourceReader::new(&exec);
+        let rendered = format!("{reader:?}");
+        assert!(rendered.starts_with("SourceReader"), "{rendered}");
+    }
+
+    #[test]
+    fn byte_budget_exceeded_reports_limit_and_rolls_back() {
+        // 字节预算:首行编码即超限 → BudgetExceeded(如实带 limit/requested),
+        // 回滚不留半套。
+        let (plan, _schema) = fixture();
+        let rows = BTreeMap::from([(
+            "tbl_Avatar".to_string(),
+            vec![vec![
+                Some("100".into()),
+                Some("0".into()),
+                Some("Alice-AAAAAAAAAAAAAAAAAAAA".into()),
+            ]],
+        )]);
+        let exec = FakeExecutor::new(rows);
+        let reader = SourceReader::new(&exec);
+        let mut sink = CollectSink {
+            rows: vec![],
+            counts: BTreeMap::new(),
+        };
+        let budget = ExportBudget {
+            max_rows: u64::MAX,
+            max_bytes: 1,
+            timeout: Duration::from_secs(10),
+        };
+        let err = reader
+            .export(&plan, 100, &mut sink, &budget, &ExportControl::new())
+            .unwrap_err();
+        match err {
+            CloneError::BudgetExceeded { limit, requested } => {
+                assert_eq!(limit, 1);
+                assert!(requested > 1, "requested 必须是真实累计字节数");
+            }
+            other => panic!("expected BudgetExceeded, got {other:?}"),
+        }
+        assert_eq!(*exec.rollbacks.borrow(), 1, "字节预算超限必须回滚");
+        assert_eq!(*exec.commits.borrow(), 0);
+    }
+
+    #[test]
+    fn child_id_of_reads_first_column_across_id_kinds() {
+        // id 列形态:UInt/Int/BigUInt 取原值;非数值(缺列/文本)记 0,
+        // 由导入侧按 parentID 关系对账。
+        let row = |v: TypedValue| TypedRow {
+            table: "t".into(),
+            values: vec![v, TypedValue::Text("x".into())],
+        };
+        assert_eq!(child_id_of(&row(TypedValue::UInt(9))), 9);
+        assert_eq!(child_id_of(&row(TypedValue::Int(-3))), (-3i64) as u64);
+        assert_eq!(child_id_of(&row(TypedValue::BigUInt(7))), 7);
+        assert_eq!(child_id_of(&row(TypedValue::Text("7".into()))), 0);
+        let empty = TypedRow {
+            table: "t".into(),
+            values: vec![],
+        };
+        assert_eq!(child_id_of(&empty), 0);
+    }
+
+    #[test]
+    fn fake_executor_filters_rows_by_i64_and_str_params() {
+        // Fake 的 `?` 语义:任一单元格等于参数字符串化值即保留(I64/Str 同规)。
+        let rows = BTreeMap::from([(
+            "tbl_Avatar".to_string(),
+            vec![
+                vec![Some("7".into()), Some("hero".into())],
+                vec![Some("8".into()), Some("side".into())],
+            ],
+        )]);
+        let exec = FakeExecutor::new(rows);
+        // I64:数值形态匹配命中一行;不存在的值零命中。
+        let got = exec
+            .query("SELECT * FROM `tbl_Avatar`", &[SqlValue::I64(8)])
+            .unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0][1].as_deref(), Some("side"));
+        assert!(exec
+            .query("SELECT * FROM `tbl_Avatar`", &[SqlValue::I64(-7)])
+            .unwrap()
+            .is_empty());
+        // Str:文本匹配命中一行。
+        let got = exec
+            .query(
+                "SELECT * FROM `tbl_Avatar`",
+                &[SqlValue::Str("hero".into())],
+            )
+            .unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0][0].as_deref(), Some("7"));
+    }
 }

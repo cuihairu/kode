@@ -48,6 +48,14 @@ fn every_variant_renders_a_focused_human_message() {
             CloneError::ArchiveError("io broke".into()),
             "archive error: io broke",
         ),
+        (
+            CloneError::ImportRejected("injected failure".into()),
+            "import rejected: injected failure",
+        ),
+        (
+            CloneError::ImportConflict("sm_name=hero".into()),
+            "unique key conflict: sm_name=hero",
+        ),
     ];
     for (err, needle) in cases {
         let msg = err.to_string();

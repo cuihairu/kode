@@ -1205,4 +1205,464 @@ mod tests {
         assert_eq!(plan.summary.id_categories.get("business-reference"), None);
         std::fs::remove_dir_all(&dir).unwrap();
     }
+
+    #[test]
+    fn archived_row_width_mismatch_is_drift() {
+        // 归档行宽 ≠ 目标投影列数:不猜列映射,fail-closed(§6.2)。
+        let dir = std::env::temp_dir().join(format!("kode-imp-w-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("wide.kdpclone");
+        let mut writer = ArchiveWriter::new(&path, None, "Avatar").unwrap();
+        // 只给 3 个值(目标投影 4 列)。
+        writer
+            .write_row(
+                "tbl_Avatar",
+                &crate::value::TypedRow {
+                    table: "tbl_Avatar".into(),
+                    values: vec![
+                        TypedValue::BigUInt(7),
+                        TypedValue::UInt(1),
+                        TypedValue::Text("hero".into()),
+                    ],
+                },
+            )
+            .unwrap();
+        writer.end_table("tbl_Avatar", 1).unwrap();
+        writer
+            .finalize(&[], &crate::redact::RedactionReport { entries: vec![] })
+            .unwrap();
+        let archive = Archive::open(&path, None).unwrap();
+        let schema = mini_schema();
+        let resolved = SchemaResolver::resolve(&schema, &mini_physical()).unwrap();
+        let err = ImportPlanner::plan(
+            &archive,
+            &mini_target(),
+            &schema,
+            &resolved,
+            &RuleSet::default(),
+            &TargetSnapshot::default(),
+            &ImportOptions::default(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CloneError::DriftMismatch(ref m) if m.contains("projects 4 columns"))
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn archived_value_type_mismatch_is_drift() {
+        // 归档值类型 ≠ 目标列类型:不猜测转换,fail-closed(PDC-0302)。
+        let dir = std::env::temp_dir().join(format!("kode-imp-t-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("type.kdpclone");
+        let mut writer = ArchiveWriter::new(&path, None, "Avatar").unwrap();
+        writer
+            .write_row(
+                "tbl_Avatar",
+                &crate::value::TypedRow {
+                    table: "tbl_Avatar".into(),
+                    values: vec![
+                        TypedValue::BigUInt(7),
+                        TypedValue::UInt(1),
+                        TypedValue::Text("hero".into()),
+                        // bigint 列塞文本:类型不合。
+                        TypedValue::Text("oops".into()),
+                    ],
+                },
+            )
+            .unwrap();
+        writer.end_table("tbl_Avatar", 1).unwrap();
+        writer
+            .finalize(&[], &crate::redact::RedactionReport { entries: vec![] })
+            .unwrap();
+        let archive = Archive::open(&path, None).unwrap();
+        let schema = mini_schema();
+        let resolved = SchemaResolver::resolve(&schema, &mini_physical()).unwrap();
+        let err = ImportPlanner::plan(
+            &archive,
+            &mini_target(),
+            &schema,
+            &resolved,
+            &RuleSet::default(),
+            &TargetSnapshot::default(),
+            &ImportOptions::default(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CloneError::DriftMismatch(ref m) if m.contains("does not fit target column type")),
+            "{err:?}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn follow_rule_outside_clone_set_notes_kept_as_is_and_skip_rule_is_unfollowed() {
+        // Follow 但被引用表不在克隆集 → 如实记 note(值保持原样);
+        // Skip 规则 → 不跟随且计数为风险。两路都进引用审计(PDC-0307)。
+        let dir = std::env::temp_dir().join(format!("kode-imp-fo-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let rules = RuleSet {
+            relations: vec![
+                crate::rules::RelationRule {
+                    entity: "Avatar".into(),
+                    property_path: "guildRef".into(),
+                    child_table: "tbl_Guild".into(), // 不在克隆集
+                    parent_table: "tbl_Avatar".into(),
+                    join_column: "sm_guildDBID".into(),
+                    action: RelationRuleAction::Follow,
+                    note: None,
+                },
+                crate::rules::RelationRule {
+                    entity: "Avatar".into(),
+                    property_path: "inventory".into(),
+                    child_table: "tbl_Inventory".into(),
+                    parent_table: "tbl_Avatar".into(),
+                    join_column: "parentID".into(),
+                    action: RelationRuleAction::Skip,
+                    note: None,
+                },
+            ],
+            ..Default::default()
+        };
+        let plan = plan_fixture(
+            &dir,
+            &ImportOptions::default(),
+            &TargetSnapshot::default(),
+            &rules,
+        );
+        assert_eq!(plan.references.len(), 2);
+        let follow = &plan.references[0];
+        assert!(follow.followed);
+        assert!(follow.note.contains("outside this clone"));
+        assert!(!plan.references[1].followed);
+        assert_eq!(plan.summary.unresolved_reference_risks, 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn unique_conflict_on_non_text_value_fails_closed() {
+        // 唯一键冲突但值非文本:重建策略无法应用,拒绝而非猜测(PDC-0305)。
+        let dir = std::env::temp_dir().join(format!("kode-imp-nt-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut snapshot = TargetSnapshot::default();
+        snapshot.unique_keys.push(UniqueKey {
+            table: "tbl_Avatar".into(),
+            column: "sm_petID".into(),
+        });
+        snapshot.add_existing("tbl_Avatar", "sm_petID", TypedValue::BigUInt(100));
+        let path = mini_archive(&dir);
+        let archive = Archive::open(&path, None).unwrap();
+        let schema = mini_schema();
+        let resolved = SchemaResolver::resolve(&schema, &mini_physical()).unwrap();
+        let err = ImportPlanner::plan(
+            &archive,
+            &mini_target(),
+            &schema,
+            &resolved,
+            &RuleSet::default(),
+            &snapshot,
+            &ImportOptions::default(), // RebuildSuffix 但值非文本
+        )
+        .unwrap_err();
+        assert!(matches!(err, CloneError::ImportConflict(ref m) if m.contains("not text")));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn second_colliding_rebuild_picks_next_free_suffix() {
+        // 同一唯一键两行冲突:第一行重建为 hero_imported1,第二行探测被占用
+        // 后继续递增到 hero_imported2(诚实递增,绝不静默去重)。
+        let dir = std::env::temp_dir().join(format!("kode-imp-2c-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut snapshot = TargetSnapshot::default();
+        snapshot.unique_keys.push(UniqueKey {
+            table: "tbl_Avatar".into(),
+            column: "sm_name".into(),
+        });
+        snapshot.add_existing("tbl_Avatar", "sm_name", TypedValue::Text("hero".into()));
+        let path = dir.join("two.kdpclone");
+        let mut writer = ArchiveWriter::new(&path, None, "Avatar").unwrap();
+        for id in [7u64, 8] {
+            writer
+                .write_row(
+                    "tbl_Avatar",
+                    &crate::value::TypedRow {
+                        table: "tbl_Avatar".into(),
+                        values: vec![
+                            TypedValue::BigUInt(id),
+                            TypedValue::UInt(1),
+                            TypedValue::Text("hero".into()),
+                            TypedValue::BigUInt(100),
+                        ],
+                    },
+                )
+                .unwrap();
+        }
+        writer.end_table("tbl_Avatar", 2).unwrap();
+        writer
+            .finalize(&[], &crate::redact::RedactionReport { entries: vec![] })
+            .unwrap();
+        let archive = Archive::open(&path, None).unwrap();
+        let schema = mini_schema();
+        let resolved = SchemaResolver::resolve(&schema, &mini_physical()).unwrap();
+        let plan = ImportPlanner::plan(
+            &archive,
+            &mini_target(),
+            &schema,
+            &resolved,
+            &RuleSet::default(),
+            &snapshot,
+            &ImportOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(plan.conflicts.len(), 2);
+        assert_eq!(
+            plan.conflicts[0].rebuilt,
+            TypedValue::Text("hero_imported1".into())
+        );
+        assert_eq!(
+            plan.conflicts[1].rebuilt,
+            TypedValue::Text("hero_imported2".into())
+        );
+        assert_eq!(plan.summary.unique_conflicts, 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn archived_table_absent_from_schema_order_is_skipped() {
+        // 派生 schema 含 items 表但归档没有:允许,不伪造行(§6.2 目标可含本克隆
+        // 未触及的表);语句只含归档表。
+        let dir = std::env::temp_dir().join(format!("kode-imp-abs-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("root-only.kdpclone");
+        let mut writer = ArchiveWriter::new(&path, None, "Avatar").unwrap();
+        writer
+            .write_row(
+                "tbl_Avatar",
+                &crate::value::TypedRow {
+                    table: "tbl_Avatar".into(),
+                    values: vec![
+                        TypedValue::BigUInt(7),
+                        TypedValue::UInt(1),
+                        TypedValue::Text("hero".into()),
+                        TypedValue::BigUInt(100),
+                    ],
+                },
+            )
+            .unwrap();
+        writer.end_table("tbl_Avatar", 1).unwrap();
+        writer
+            .finalize(&[], &crate::redact::RedactionReport { entries: vec![] })
+            .unwrap();
+        let archive = Archive::open(&path, None).unwrap();
+        let schema = mini_schema();
+        let resolved = SchemaResolver::resolve(&schema, &mini_physical()).unwrap();
+        let plan = ImportPlanner::plan(
+            &archive,
+            &mini_target(),
+            &schema,
+            &resolved,
+            &RuleSet::default(),
+            &TargetSnapshot::default(),
+            &ImportOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(plan.statements.len(), 1);
+        assert_eq!(plan.statements[0].table, "tbl_Avatar");
+        assert!(!plan
+            .summary
+            .statements_per_table
+            .contains_key("tbl_Avatar_items"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn parent_reference_to_row_outside_clone_fails_closed() {
+        // items 行 parentID=999 没有对应根行:idmap 查不到父行,fail-closed
+        // (种子遍已登记全部主键;查不到 = 引用了未克隆的父行)。
+        let dir = std::env::temp_dir().join(format!("kode-imp-po-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("orphan.kdpclone");
+        let mut writer = ArchiveWriter::new(&path, None, "Avatar").unwrap();
+        writer
+            .write_row(
+                "tbl_Avatar",
+                &crate::value::TypedRow {
+                    table: "tbl_Avatar".into(),
+                    values: vec![
+                        TypedValue::BigUInt(7),
+                        TypedValue::UInt(1),
+                        TypedValue::Text("hero".into()),
+                        TypedValue::BigUInt(100),
+                    ],
+                },
+            )
+            .unwrap();
+        writer.end_table("tbl_Avatar", 1).unwrap();
+        writer
+            .write_row(
+                "tbl_Avatar_items",
+                &crate::value::TypedRow {
+                    table: "tbl_Avatar_items".into(),
+                    values: vec![
+                        TypedValue::BigUInt(100),
+                        TypedValue::BigUInt(999), // 悬空父引用
+                        TypedValue::Text("sword".into()),
+                    ],
+                },
+            )
+            .unwrap();
+        writer.end_table("tbl_Avatar_items", 1).unwrap();
+        writer
+            .finalize(&[], &crate::redact::RedactionReport { entries: vec![] })
+            .unwrap();
+        let archive = Archive::open(&path, None).unwrap();
+        let schema = mini_schema();
+        let resolved = SchemaResolver::resolve(&schema, &mini_physical()).unwrap();
+        let err = ImportPlanner::plan(
+            &archive,
+            &mini_target(),
+            &schema,
+            &resolved,
+            &RuleSet::default(),
+            &TargetSnapshot::default(),
+            &ImportOptions::default(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CloneError::DriftMismatch(ref m) if m.contains("not part of this clone"))
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn parent_id_value_without_relation_edge_is_invalid_rule() {
+        // 表有 parentID 值但关系图无该表的边(无 parent_table_name):防御性拒绝,
+        // 绝不把孤儿行静默挂到根。
+        let dir = std::env::temp_dir().join(format!("kode-imp-oe-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let root = DerivedTable {
+            name: "tbl_Avatar".into(),
+            kind: "root".into(),
+            parent_table_name: None,
+            property_path: None,
+            fields: vec![field("id", "bigint unsigned"), field("sm_name", "varchar")],
+        };
+        let orphan = DerivedTable {
+            name: "tbl_Orphan".into(),
+            kind: "array".into(),
+            parent_table_name: None, // 无父边
+            property_path: None,
+            fields: vec![
+                field("id", "bigint unsigned"),
+                field("parentID", "bigint unsigned"),
+            ],
+        };
+        let schema = CloneSchema::new("Avatar".into(), vec![root, orphan]).unwrap();
+        let physical = VirtualSchema::new(vec![
+            crate::schema::PhysicalTable {
+                name: "tbl_Avatar".into(),
+                engine: "InnoDB".into(),
+                columns: BTreeMap::from([
+                    ("id".into(), "bigint(20) unsigned".into()),
+                    ("sm_name".into(), "varchar(255)".into()),
+                ]),
+                primary_key: vec!["id".into()],
+                indexes: vec![],
+            },
+            crate::schema::PhysicalTable {
+                name: "tbl_Orphan".into(),
+                engine: "InnoDB".into(),
+                columns: BTreeMap::from([
+                    ("id".into(), "bigint(20) unsigned".into()),
+                    ("parentID".into(), "bigint(20) unsigned".into()),
+                ]),
+                primary_key: vec!["id".into()],
+                indexes: vec![],
+            },
+        ]);
+        let resolved = SchemaResolver::resolve(&schema, &physical).unwrap();
+        let path = dir.join("orphan-edge.kdpclone");
+        let mut writer = ArchiveWriter::new(&path, None, "Avatar").unwrap();
+        writer
+            .write_row(
+                "tbl_Avatar",
+                &crate::value::TypedRow {
+                    table: "tbl_Avatar".into(),
+                    values: vec![TypedValue::BigUInt(7), TypedValue::Text("hero".into())],
+                },
+            )
+            .unwrap();
+        writer.end_table("tbl_Avatar", 1).unwrap();
+        writer
+            .write_row(
+                "tbl_Orphan",
+                &crate::value::TypedRow {
+                    table: "tbl_Orphan".into(),
+                    values: vec![TypedValue::BigUInt(1), TypedValue::BigUInt(7)],
+                },
+            )
+            .unwrap();
+        writer.end_table("tbl_Orphan", 1).unwrap();
+        writer
+            .finalize(&[], &crate::redact::RedactionReport { entries: vec![] })
+            .unwrap();
+        let archive = Archive::open(&path, None).unwrap();
+        let err = ImportPlanner::plan(
+            &archive,
+            &mini_target(),
+            &schema,
+            &resolved,
+            &RuleSet::default(),
+            &TargetSnapshot::default(),
+            &ImportOptions::default(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, CloneError::InvalidRule(ref m) if m.contains("no relation edge")));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn rebuild_unique_falls_back_after_probe_limit() {
+        // 诚实兜底:探测上限(10_000)内全被占 → `{base}_{seed}_exhausted`,
+        // 绝不无限循环也不静默返回被占值。
+        let result = rebuild_unique("hero", "i", |_| true);
+        assert_eq!(result, TypedValue::Text("hero_i_exhausted".into()));
+        // 首个未占候选直接命中。
+        let first = rebuild_unique("hero", "i", |_| false);
+        assert_eq!(first, TypedValue::Text("hero_i1".into()));
+    }
+
+    #[test]
+    fn type_fits_matches_value_kinds_to_column_bases() {
+        // 类型相容面:同 schema.rs 口径,剥显示宽度/unsigned 词,按值种类匹配基型。
+        assert!(type_fits(&TypedValue::Null, "varchar"));
+        assert!(type_fits(&TypedValue::BigUInt(7), "bigint unsigned"));
+        assert!(type_fits(&TypedValue::Int(-1), "int"));
+        assert!(type_fits(&TypedValue::UInt(3), "mediumint"));
+        assert!(!type_fits(&TypedValue::Int(1), "varchar"));
+        assert!(type_fits(&TypedValue::Float(1.5), "float"));
+        assert!(!type_fits(&TypedValue::Float(1.5), "double"));
+        assert!(type_fits(&TypedValue::Double(1.5), "double"));
+        assert!(type_fits(&TypedValue::Decimal("12.34".into()), "decimal"));
+        assert!(type_fits(&TypedValue::Decimal("12.34".into()), "numeric"));
+        assert!(!type_fits(&TypedValue::Decimal("12.34".into()), "float"));
+        assert!(type_fits(&TypedValue::Bytes("0102".into()), "blob"));
+        assert!(type_fits(
+            &TypedValue::Bytes("0102".into()),
+            "varbinary(64)"
+        ));
+        assert!(!type_fits(&TypedValue::Bytes("0102".into()), "text"));
+        assert!(type_fits(&TypedValue::Text("hi".into()), "varchar(255)"));
+        assert!(type_fits(&TypedValue::Text("hi".into()), "longtext"));
+        assert!(!type_fits(&TypedValue::Text("hi".into()), "bigint"));
+        let dt = TypedValue::DateTime {
+            value: "2026-01-01 00:00:00".into(),
+            offset_minutes: None,
+        };
+        assert!(type_fits(&dt, "datetime"));
+        assert!(type_fits(&dt, "timestamp"));
+        assert!(!type_fits(&dt, "varchar"));
+    }
 }
