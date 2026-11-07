@@ -83,6 +83,7 @@
   "kbengine.command.profile.start.title": "开始运行时剖析",
   "kbengine.command.python.showCallChain.title": "查看调用链",
   "kbengine.command.runtimeQuery.show.title": "打开运行时查询面板",
+  "kbengine.command.liveObservation.openExceptionSource.title": "打开异常源码定位",
   "kbengine.command.spaces.query.title": "查询空间",
   "kbengine.command.compatibility.check.title": "检查引擎兼容性",
   "kbengine.command.workbench.show.title": "打开 KBEngine 工作台",

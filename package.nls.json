@@ -83,6 +83,7 @@
   "kbengine.command.profile.start.title": "Start Runtime Profile",
   "kbengine.command.python.showCallChain.title": "Show Call Chain",
   "kbengine.command.runtimeQuery.show.title": "Show Runtime Query Panel",
+  "kbengine.command.liveObservation.openExceptionSource.title": "Open Exception Source Location",
   "kbengine.command.spaces.query.title": "Query Spaces",
   "kbengine.command.compatibility.check.title": "Check Engine Compatibility",
   "kbengine.command.workbench.show.title": "Show KBEngine Workbench",

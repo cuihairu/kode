@@ -215,6 +215,7 @@ import { MonitoringWebView } from './monitoringWebView';
 import { MonitoringCollector } from './monitoringCollector';
 import { discoverLocalComponents, querySpaces, startProfileQuery } from './kbengineProtocol';
 import { RuntimeQueryWebView } from './runtimeQueryWebView';
+import { formatUnresolvedException, parseExceptionSourceLocation, resolveExceptionSource } from './exceptionSourceLocator';
 import { CallChainController } from './defCallChainProvider';
 import {
   findEngineRoot,
@@ -5354,6 +5355,36 @@ export function activate(context: vscode.ExtensionContext) {
     () => runtimeQueryWebView.show()
   );
   context.subscriptions.push(showRuntimeQueryCommand);
+
+  // IDE-LIV-007:运行异常关联到源码定位——带可解析文件行的异常跳到
+  // 工作区真实文件行;解析不到源码时警告框原样保留原始信息。
+  const openExceptionSourceCommand = vscode.commands.registerCommand(
+    'kbengine.liveObservation.openExceptionSource',
+    async (argument?: { file?: unknown; line?: unknown; raw?: unknown }) => {
+      const raw = typeof argument?.raw === 'string' ? argument.raw : '';
+      const parsed =
+        argument && typeof argument.file === 'string' && typeof argument.line === 'number'
+          ? { file: argument.file, line: argument.line, qualifier: 'logpath' as const }
+          : parseExceptionSourceLocation(raw);
+      if (!parsed) {
+        void vscode.window.showWarningMessage(formatUnresolvedException(raw || '无原始信息', null));
+        return;
+      }
+      const roots = (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath);
+      const resolved = resolveExceptionSource(roots, parsed);
+      if (!resolved) {
+        void vscode.window.showWarningMessage(formatUnresolvedException(raw, parsed));
+        return;
+      }
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(resolved.absolutePath));
+      const editor = await vscode.window.showTextDocument(document, { preview: false });
+      const targetLine = Math.max(0, Math.min(parsed.line - 1, document.lineCount - 1));
+      const position = new vscode.Position(targetLine, 0);
+      editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+      editor.selection = new vscode.Selection(position, position);
+    }
+  );
+  context.subscriptions.push(openExceptionSourceCommand);
 
   const compatibilityChannel = vscode.window.createOutputChannel('KBEngine Compatibility');
   // R2-F22:engines 是「KBEngine 引擎支持矩阵」槽位,未声明时引擎兼容性标未知,

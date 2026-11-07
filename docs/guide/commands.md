@@ -615,6 +615,11 @@ The flow graph panel supports:
 - Title: `Show Runtime Query Panel`
 - Purpose: discover running components, query cellappmgr spaces, and query watcher values from one panel
 
+### `kbengine.liveObservation.openExceptionSource`
+
+- Title: `Open Exception Source Location`
+- Purpose: jump to the workspace file and line named by a runtime exception line (Python traceback or engine log `file.py:line`); when no workspace source matches, the raw exception line is preserved in the warning message instead of a guessed jump
+
 ### `kbengine.python.showCallChain`
 
 - Title: `Show Call Chain`
