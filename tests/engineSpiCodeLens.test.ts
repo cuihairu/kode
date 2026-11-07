@@ -104,6 +104,43 @@ describe('findModuleLevelMethodDeclarations(模块级识别)', () => {
     const decls = findModuleLevelMethodDeclarations('async def onInit(x):\n    pass\n');
     expect(decls.map(d => d.methodName)).toEqual(['onInit']);
   });
+
+  it('模块级控制流内 def 仍视为模块属性(if/try 内 def 可被引擎调用)', () => {
+    const text = [
+      'if enable:',
+      '    def onInit(isReload):',
+      '        pass',
+      '',
+      'try:',
+      '    def onBaseAppReady():',
+      '        pass',
+      'except Exception:',
+      '    def onCellAppDeath():',
+      '        pass',
+      ''
+    ].join('\n');
+    const decls = findModuleLevelMethodDeclarations(text);
+    expect(decls.map(d => d.methodName)).toEqual(['onInit', 'onBaseAppReady', 'onCellAppDeath']);
+  });
+
+  it('类内方法/函数内嵌套 def 不取(即使同名),类体后的模块级 def 取', () => {
+    const text = [
+      'class Handler:',
+      '    def onInit(self):',
+      '        pass',
+      '',
+      'def onBaseAppReady():',
+      '    pass',
+      '',
+      'def outer():',
+      '    def onFinish():',
+      '        pass',
+      ''
+    ].join('\n');
+    const decls = findModuleLevelMethodDeclarations(text);
+    // 类方法 onInit 与嵌套 onFinish 不取;模块级 onBaseAppReady/outer 取
+    expect(decls.map(d => d.methodName)).toEqual(['onBaseAppReady', 'outer']);
+  });
 });
 
 describe('buildEngineSpiCodeLenses(命中筛)', () => {

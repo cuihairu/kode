@@ -121,27 +121,51 @@ export function componentRoleForPath(filePath: string, scriptsRoot: string | nul
 }
 
 /**
- * 模块级(列 0)函数声明:引擎经 getEntryScript() 调用的 SPI 函数是入口模块
- * 的属性(模块级 def),类方法/嵌套函数即使同名也不是 SPI——故 SPI 识别只
- * 取列 0 def,与 RPC 识别(任意缩进)不同,此处不复用
+ * 模块级(模块作用域)函数声明:引擎经 getEntryScript() 调用的 SPI 函数是入口
+ * 模块的属性——模块级 def,含模块级控制流(if/for/try)内的 def(仍绑定为
+ * 模块属性);而类方法/函数内嵌套 def 不是模块属性,即使同名也不是 SPI。
+ * 故以缩进栈区分:只取不在任何 class/def 体内的 def(列 0 或仅受模块级
+ * 控制流包裹),与 RPC 识别(任意缩进)不同,此处不复用
  * rpcCodeLens.findPythonMethodDeclarations。
  */
 export function findModuleLevelMethodDeclarations(text: string): PythonMethodDeclaration[] {
   const declarations: PythonMethodDeclaration[] = [];
   const lines = text.split(/\r?\n/);
+  // 缩进栈:记录仍打开(class/def)体的缩进;控制流(if/for/try)不入栈,
+  // 故其内 def 仍视为模块级;class/def 内 def 因有更低缩进祖先而出栈外
+  const blockIndents: number[] = [];
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    const match = MODULE_LEVEL_DECLARATION_PATTERN.exec(line);
-    if (!match) {
+    const trimmed = line.trim();
+    if (!trimmed) {
       continue;
     }
-    const methodName = match[1];
-    declarations.push({ line: index, character: line.indexOf(methodName), methodName });
+    const indent = (line.match(/^ */) as RegExpMatchArray)[0].length;
+    // 收窄:当前行缩进 ≤ 栈顶体缩进 → 该体已结束
+    while (blockIndents.length > 0 && blockIndents[blockIndents.length - 1] >= indent) {
+      blockIndents.pop();
+    }
+    const match = MODULE_LEVEL_DECLARATION_PATTERN.exec(trimmed);
+    if (match) {
+      const methodName = match[1];
+      // 模块级 = 不在任何 class/def 体内:所有打开体的缩进都 ≥ 本行缩进
+      // (无更浅祖先);有 class/def 祖先(缩进 < 本行)即非模块级
+      if (blockIndents.every(bodyIndent => bodyIndent >= indent)) {
+        declarations.push({ line: index, character: line.indexOf(methodName), methodName });
+      }
+    }
+    // 该行是 class/def 声明 → 打开一个体(体内容缩进 > 本行缩进)
+    if (/^(?:class\b|(?:async\s+)?def\b)/.test(trimmed)) {
+      blockIndents.push(indent);
+    }
   }
   return declarations;
 }
 
-/** 模块级(列 0)def 声明:`def name(` / `async def name(`,行首无缩进 */
+/**
+ * 模块级 def 声明(不带头部空白,由 findModuleLevelMethodDeclarations 判
+ * 缩进):`def name(` / `async def name(`
+ */
 export const MODULE_LEVEL_DECLARATION_PATTERN = /^(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/;
 
 /** 镜标题:`引擎 SPI · <方法> · <触发时机>`,可选方法触发后加「 · 可选」 */
