@@ -301,7 +301,7 @@ export class EngineSpiCodeLensProvider implements vscode.CodeLensProvider {
    * 脚本根:优先取配置派生 entryScripts 的共享入口脚本路径(kbengine.py)
    * 父目录(= assets/scripts,CFG-006 事实);派生未就绪返回 null,交启发式。
    */
-  private resolveScriptsRoot(document: vscode.TextDocument): string | null {
+  private resolveScriptsRoot(_document: vscode.TextDocument): string | null {
     try {
       // 只读派生缓存(不触发 refresh):entryScripts 的共享入口脚本
       // kbengine.py 父目录即 assets/scripts(CFG-006 事实)

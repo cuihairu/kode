@@ -626,7 +626,7 @@ export function collectConfigSchema(
           if (bodyLine.trim() && indentWidth(bodyLine) === 0) {
             break;
           }
-          const fm = /^\s+([A-Za-z_]\w*)\s*:\s*([A-Za-z_][\w.\[\], |]*)\s*(?:=.*)?$/.exec(bodyLine);
+          const fm = /^\s+([A-Za-z_]\w*)\s*:\s*([A-Za-z_][\w.\], |]*)\s*(?:=.*)?$/.exec(bodyLine);
           if (fm) {
             fields.push(`${fm[1]}: ${fm[2].trim()}`);
           }
@@ -646,7 +646,7 @@ export function collectConfigSchema(
         const eqOffset = line.indexOf('=');
         const rhsStart = skipWsFrom(source.text, /* approximate global offset */ globalOffsetOf(source.text, idx, eqOffset + 1));
         const inferred = inferLiteralType(source.text, rhsStart, 0);
-        if (inferred.typeText !== 'Any' || /=\s*[{\[]/.test(trimmed)) {
+        if (inferred.typeText !== 'Any' || /=\s*[{[]/.test(trimmed)) {
           out.push({
             name: bind[1],
             kind: 'binding',
