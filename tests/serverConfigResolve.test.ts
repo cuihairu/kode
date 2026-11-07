@@ -15,6 +15,7 @@ import { Uri } from './fake-vscode/core';
 import {
   ensureConfigResolved,
   getConfigResolved,
+  invalidateConfigResolved,
   resetConfigResolveForTests
 } from '../src/serverConfigResolve';
 import {
@@ -222,5 +223,56 @@ describe('KODE-CFG-009 消费通道走 core 解析', () => {
     const slot = getConfigResolved();
     expect(slot?.dbInterface?.port).toBe(3306 + 2);
     expect(slot?.merged?.children[0]?.children[0]?.text).toBe('changed-entry');
+  });
+
+  it('定位结果从无到有(创建元件配置)时旧在途回包不覆盖新槽(审核席残余 P1)', async () => {
+    // 红:守卫只复核发起时路径的指纹——旧请求 customPath=null 时指纹恒空,
+    // 创建 kbengine.xml + invalidate 后,旧成功/失败回包仍会覆盖新槽。
+    let releaseFirst: (() => void) | null = null;
+    let rpcCount = 0;
+    setKodeCoreShadowGate({
+      runInRust: async (_method: string, params: unknown) => {
+        rpcCount += 1;
+        const seq = rpcCount;
+        if (seq === 1) {
+          await new Promise<void>(resolve => {
+            releaseFirst = resolve;
+          });
+        }
+        const typed = params as { defaultsXml: string | null; customXml: string | null };
+        return {
+          ok: true as const,
+          result: {
+            defaultsTree: typed.defaultsXml !== null ? CORE_MERGED : null,
+            customTree: typed.customXml !== null ? CORE_MERGED : null,
+            merged: typed.defaultsXml !== null ? CORE_MERGED : null,
+            telnetSummary: [],
+            telnetDefaultPorts: { baseapp: 40000 },
+            customTelnet: null,
+            dbInterface: { ...CORE_DB, port: 3306 + seq }
+          }
+        };
+      }
+    } as unknown as KodeCoreGate);
+
+    // 删掉元件配置:第一发在 customPath=null 的定位事实下进入在途
+    fs.unlinkSync(path.join(root, 'kbengine.xml'));
+    const first = ensureConfigResolved();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(first).toBeDefined();
+
+    // 创建元件配置 + 失效(镜像 watcher 落盘联动面)
+    fs.writeFileSync(path.join(root, 'kbengine.xml'), '<baseapp><entryScriptFile>x</entryScriptFile></baseapp>');
+    invalidateConfigResolved();
+    const second = await ensureConfigResolved();
+    expect(second.customPath).toBe(path.join(root, 'kbengine.xml'));
+    expect(second.dbInterface?.port).toBe(3306 + 2);
+
+    // 旧回包(customPath=null,指纹空串)释放:不得覆盖新槽
+    releaseFirst!();
+    await first;
+    const slot = getConfigResolved();
+    expect(slot?.customPath).toBe(path.join(root, 'kbengine.xml'));
+    expect(slot?.dbInterface?.port).toBe(3306 + 2);
   });
 });

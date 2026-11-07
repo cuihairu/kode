@@ -228,6 +228,10 @@ interface CacheSlot extends ConfigResolvedState {
 const RESOLVE_CACHE_SLOTS = 8;
 const cacheSlots = new Map<string, CacheSlot>();
 const inflights = new Map<string, Promise<ConfigResolvedState>>();
+/** 失效版本边界:每次 invalidate 自增,落槽守卫据此拒绝旧在途回包
+ * (覆盖「定位结果本身变化」——旧请求发起时 customPath=null、之后元件配置
+ * 被创建的并发:旧回包对 null 路径的指纹恒空,仅靠指纹/generation 拦不住) */
+let invalidationEpoch = 0;
 
 const overridesKeyOf = (overrides: ConfigResolveOverrides): string =>
   `${overrides.binPath ?? ''}\n${overrides.configRoot ?? ''}\n${overrides.customXmlPath ?? ''}`;
@@ -236,11 +240,13 @@ const overridesKeyOf = (overrides: ConfigResolveOverrides): string =>
 export function resetConfigResolveForTests(): void {
   cacheSlots.clear();
   inflights.clear();
+  invalidationEpoch += 1;
 }
 
 /** 失效消费态(配置落盘/设置变化点调用):下一次 ensure 强制重取 core */
 export function invalidateConfigResolved(): void {
   cacheSlots.clear();
+  invalidationEpoch += 1;
 }
 
 /** 同步读缓存(未就绪 → null;消费端如实按「core 不可知」降级) */
@@ -274,7 +280,7 @@ export async function ensureConfigResolved(
   if (existing) {
     return existing;
   }
-  const inflight = refresh(generation, overridesKey, mark, located).finally(() => {
+  const inflight = refresh(generation, overridesKey, mark, invalidationEpoch, located).finally(() => {
     inflights.delete(inflightKey);
   });
   inflights.set(inflightKey, inflight);
@@ -298,6 +304,7 @@ async function refresh(
   generation: number,
   overridesKey: string,
   mark: string,
+  epoch: number,
   located: ReturnType<typeof locateAndRead>
 ): Promise<ConfigResolvedState> {
   const base: ConfigResolvedState = {
@@ -313,11 +320,14 @@ async function refresh(
     customTelnet: null,
     dbInterface: null
   };
-  // 回包落槽前复核:RPC 在途期间 generation 前进或两份文件指纹已变 → 本次
-  // 产物按发起时的旧配置算出,只回给发起方,不落槽(新指纹的下一次 ensure
-  // 自会重取;旧回包覆盖新槽会把过期配置缓存成「最新」)。
+  // 回包落槽前复核:RPC 在途期间 generation 前进、失效边界(epoch)前进或
+  // 两份文件指纹已变 → 本次产物按发起时的旧配置算出,只回给发起方,不落槽
+  // (新指纹的下一次 ensure 自会重取;旧回包覆盖新槽会把过期配置缓存成
+  // 「最新」。epoch 覆盖「定位结果本身变化」:旧请求发起时 customPath=null、
+  // 之后元件配置被创建——旧回包对 null 路径的指纹恒空,仅指纹拦不住)。
   const stale = (): boolean =>
     getRootConfigGeneration() !== generation ||
+    invalidationEpoch !== epoch ||
     `${fingerprint(located.defaultsPath)}|${fingerprint(located.customPath)}` !== mark;
   const gate = getKodeCoreShadowGate();
   if (!gate) {
