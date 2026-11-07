@@ -287,32 +287,38 @@ function writeFormFor(
   base: string
 ): { form: ConfigDataFinding['form']; baseIndex: number } | null {
   const esc = base.replace(/\$/g, '\\$');
-  const start = new RegExp(`(?:^|[^\\w.])(${esc})\\b`).exec(trimmed);
-  if (!start) {
-    return null;
-  }
-  const baseIndex = start.index + (start[0].length - base.length);
-  const rest = trimmed.slice(baseIndex + base.length);
-  // `del BASE` / `del BASE.attr` / `del BASE[k]`
-  if (/^\s*(?:\.[\w]+|\[[^\]]*\])*\s*(?:,|$|#)/.test(rest) && /^\s*(?:\.[\w]+|\[[^\]]*\])*\s*(?:,|$)/.test(rest) && trimmed.slice(0, baseIndex).trimEnd().endsWith('del')) {
-    return { form: 'delete', baseIndex };
-  }
-  // 变异方法:`BASE.<chain>.<mut>(` 或 `BASE[k].<mut>(`
-  const mutNames = [...MUTATOR_METHODS].join('|');
-  const mutRe = new RegExp(`^(?:\\.[A-Za-z_]\\w*|\\[[^\\]]*\\])*\\s*\\.\\s*(${mutNames})\\s*\\(`);
-  if (mutRe.test(rest)) {
-    return { form: 'mutator', baseIndex };
-  }
-  // 增强赋值(先于普通赋值判定)
-  const augRe = new RegExp(`^(?:\\.[A-Za-z_]\\w*|\\[[^\\]]*\\])*\\s*(?:\\+=|-=|\\*=|/=|//=|%=|\\|=|&=|\\^=|>>>=|>>=|<<=)`);
-  if (augRe.test(rest)) {
-    return { form: 'augmented', baseIndex };
-  }
-  // 普通赋值(属性链 / 下标链;`=` 后瞻非 `=`)
-  const assignRe = new RegExp(`^(?:\\.[A-Za-z_]\\w*|\\[[^\\]]*\\])+\\s*=(?!=)`);
-  if (assignRe.test(rest)) {
-    const chain = rest.match(/^(?:\.[A-Za-z_]\w*|\[[^\]]*\])+/)![0];
-    return { form: chain.includes('[') ? 'subscript' : 'attribute', baseIndex };
+  // 逐个出现位判定(评审二轮 P1:首出现是读(print(CFG))不吞后续写点
+  // (CFG.x = 1)):任一出现位构成写点即报,取该出现位列
+  const startRe = new RegExp(`(?:^|[^\\w.])(${esc})\\b`, 'g');
+  startRe.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = startRe.exec(trimmed)) !== null) {
+    const baseIndex = m.index + m[0].length - base.length;
+    const rest = trimmed.slice(baseIndex + base.length);
+    // `del BASE` / `del BASE.attr` / `del BASE[k]`
+    if (trimmed.slice(0, baseIndex).trimEnd().endsWith('del')
+      && /^\s*(?:\.[\w]+|\[[^\]]*\])*\s*(?:,|$)/.test(rest)) {
+      return { form: 'delete', baseIndex };
+    }
+    // 变异方法:`BASE.<chain>.<mut>(` 或 `BASE[k].<mut>(`
+    const mutNames = [...MUTATOR_METHODS].join('|');
+    const mutRe = new RegExp(`^(?:\\.[A-Za-z_]\\w*|\\[[^\\]]*\\])*\\s*\\.\\s*(${mutNames})\\s*\\(`);
+    if (mutRe.test(rest)) {
+      return { form: 'mutator', baseIndex };
+    }
+    // 增强赋值(先于普通赋值判定)
+    const augRe = new RegExp(`^(?:\\.[A-Za-z_]\\w*|\\[[^\\]]*\\])*\\s*(?:\\+=|-=|\\*=|/=|//=|%=|\\|=|&=|\\^=|>>>=|>>=|<<=)`);
+    if (augRe.test(rest)) {
+      return { form: 'augmented', baseIndex };
+    }
+    // 普通赋值(属性链 / 下标链;`=` 后瞻非 `=`)
+    const assignRe = new RegExp(`^(?:\\.[A-Za-z_]\\w*|\\[[^\\]]*\\])+\\s*=(?!=)`);
+    if (assignRe.test(rest)) {
+      const chain = rest.match(/^(?:\.[A-Za-z_]\w*|\[[^\]]*\])+/)![0];
+      return { form: chain.includes('[') ? 'subscript' : 'attribute', baseIndex };
+    }
+    // 防零宽死循环:正则消费到出现位末尾
+    startRe.lastIndex = baseIndex + base.length;
   }
   return null;
 }
@@ -377,7 +383,12 @@ export function computeConfigDataMutationFindings(
         return;
       }
       const indent = indentWidth(line);
-      for (const base of fileNames[i].imported) {
+      // 扫描名集合:from-import 别名 ∪ 配置文件自身定义名(评审二轮 P1:
+      // 只扫 imported 会漏配置文件自身的再写点;定义语句行本身仍豁免)
+      const scanNames = isConfigFile[i]
+        ? [...fileNames[i].imported, ...fileNames[i].defined]
+        : [...fileNames[i].imported];
+      for (const base of scanNames) {
         const hit = writeFormFor(trimmed, base);
         if (!hit) {
           continue;
@@ -412,7 +423,8 @@ export function computeConfigDataMutationFindings(
           severity: 'Warning',
           file: source.file,
           line: idx,
-          character: hit.baseIndex,
+          // 列对齐原始行内 base 名首字符(评审二轮 P2:trimmed 会吃掉缩进)
+          character: indent + hit.baseIndex,
           baseName: base,
           form: hit.form,
           message:
