@@ -1,0 +1,17 @@
+# kode2 PA-003 (todo.md Phase 2): KBEngine 协议引擎 —— 完全脱离 Wireshark 的
+# 协议解析库(cursor/framing/动态消息表/codec/containers/session/handshake/
+# diagnostics/编译缓存)。依赖 kode-kbengine-schema(PA-002)的线类型 IR。
+# 铁律: 运行时零第三方依赖;dev 仅自写确定性 PRNG(fuzz 驱动),不引 fuzz 框架。
+[package]
+name = "kode-kbengine-protocol"
+description = "kode2 Wireshark-free KBEngine wire protocol engine: zero-copy cursor, 3-shape framing with TCP coalescing/splitting, static+dynamic message mapping, base type codec, ARRAY/FIXED_DICT containers, entity method decode, per-flow session, handshake tracking, offset diagnostics, compiled schema cache (todo PA-003)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+kode-kbengine-schema = { path = "../kode-kbengine-schema" }
+
+[lints]
+workspace = true

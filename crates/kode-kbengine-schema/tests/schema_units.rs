@@ -118,7 +118,16 @@ fn parse_engine_fixed_defaults_table() {
 
     let hello = table.find("Client::onHelloCB").expect("onHelloCB");
     assert_eq!(hello.id, 521);
-    assert!(!hello.length.is_variable());
+    // §6 步骤 3(str+str+str+i32,loginapp.cpp:1361-1377 接口层口径)→ 变长
+    assert!(hello.length.is_variable());
+    assert_eq!(hello.args.len(), 4);
+
+    // XML 缺 <arg> 的 hello:接口层勘误(str ver + str script + blob key)→ 变长
+    let hello_up = table.find("Loginapp::hello").unwrap();
+    assert!(hello_up.length.is_variable());
+    // XML 无 <arg> 且无接口口径的无参消息:定长 0(线上无长度字段,§4.2-1)
+    let import = table.find("Loginapp::importClientMessages").unwrap();
+    assert!(!import.length.is_variable());
 }
 
 #[test]
