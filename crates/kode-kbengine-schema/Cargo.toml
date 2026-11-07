@@ -1,0 +1,22 @@
+# kode2 PA-002 (todo.md Phase 1): KBEngine schema engine —— 从真实 KBEngine
+# 项目生成协议 Schema(JSON+Hash+版本兼容检查)。
+# 铁律: 零第三方依赖以外仅 sha2(哈希属密码学豁免,与 kode-db-clone 同规);
+# serde/serde_json 用于 Schema JSON 序列化(kode-db-clone 先例)。
+[package]
+name = "kode-kbengine-schema"
+description = "kode2 KBEngine wire-protocol schema engine: project assets + engine fixed-defaults -> wire type layout, message table IR, canonical JSON, SHA-256 digest, compatibility check (todo PA-002)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+kode-parser = { path = "../kode-parser" }
+kode-types = { path = "../kode-types" }
+kode-vfs = { path = "../kode-vfs" }
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints]
+workspace = true
