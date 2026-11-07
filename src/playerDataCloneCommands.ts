@@ -17,6 +17,7 @@
  */
 
 import type { CloneProfileRole, CloneProfileStore } from './playerDataCloneProfiles';
+import { fingerprintCloneArchive, reserveCloneImport } from './playerDataCloneImportGuard';
 import {
   applyImportPlan,
   CloneApplyCancelledError,
@@ -422,6 +423,7 @@ export async function runImportCloneCommand(
 
   let committed = false;
   try {
+    const plannedFingerprint = await fingerprintCloneArchive(path);
     const connection = await openCloneSession(targetConfig);
     let plan: ImportPlanWire | null = null;
     let rowsByTable = new Map<string, TypedRowWire[]>();
@@ -552,6 +554,29 @@ export async function runImportCloneCommand(
     );
     if (!secondConfirm || !secondConfirm.startsWith('确认写入')) {
       return;
+    }
+
+    // Persist before any database writes. An interrupted or ambiguous attempt must
+    // continue to block automatic retries across extension restarts.
+    const keyRoot = deps.getKeyRoot();
+    if (!keyRoot) {
+      throw new Error('缺少持久化目录，无法保护重复导入');
+    }
+    const fingerprint = await fingerprintCloneArchive(path);
+    if (fingerprint !== plannedFingerprint) {
+      throw new Error('归档在导入计划期间发生变化，请重新预演');
+    }
+    const reservation = await reserveCloneImport(keyRoot, fingerprint, targetConfig);
+    if (reservation.duplicate) {
+      deps.channel.appendLine(`[Player Clone] 检测到此前导入或未完成尝试: ${reservation.reservation}\n${reservation.prior ?? ''}`);
+      deps.channel.show(true);
+      const choice = await deps.showQuickPick(
+        ['取消(Cancel)', '明确另建副本(Create another copy)'],
+        { placeHolder: '此归档已在本机向该目标导入或尝试过，先核对目标数据库。' }
+      );
+      if (choice !== '明确另建副本(Create another copy)') {
+        return;
+      }
     }
 
     // ---- Apply:重开连接(写事务;readonly:false)+ 进度 + 取消(§6.4 取消即回滚) ----
