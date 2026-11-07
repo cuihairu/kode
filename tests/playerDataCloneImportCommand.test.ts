@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runImportCloneCommand, type PlayerCloneCommandDeps } from '../src/playerDataCloneCommands';
 import { applyImportPlan, CloneCommitUnknownError, ClonePostCommitError, openCloneSession } from '../src/playerDataCloneMysql';
+import { fingerprintCloneArchive, reserveCloneImport } from '../src/playerDataCloneImportGuard';
 import type { CloneProfileStore } from '../src/playerDataCloneProfiles';
 
 vi.mock('../src/playerDataCloneMysql', async importOriginal => ({
@@ -41,6 +42,8 @@ function makeDeps(errors: string[]): PlayerCloneCommandDeps {
 describe('clone import failure reporting', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.mocked(fingerprintCloneArchive).mockResolvedValue('f'.repeat(64));
+    vi.mocked(reserveCloneImport).mockResolvedValue({ duplicate: false, reservation: '/tmp/reservation' });
     vi.mocked(openCloneSession)
       .mockResolvedValueOnce({ end: async () => undefined } as never)
       .mockResolvedValueOnce({ end: async () => { throw new Error('close failed'); } } as never);
@@ -64,5 +67,21 @@ describe('clone import failure reporting', () => {
     await runImportCloneCommand(makeDeps(errors), '/archive');
     expect(errors[0]).toContain('已提交');
     expect(errors[0]).toContain('audit unavailable');
+  });
+  it('requires an explicit choice before repeating a reserved import', async () => {
+    const errors: string[] = [];
+    vi.mocked(reserveCloneImport).mockResolvedValue({ duplicate: true, reservation: '/tmp/reservation', prior: 'previous attempt' });
+    await runImportCloneCommand(makeDeps(errors), '/archive');
+    expect(applyImportPlan).not.toHaveBeenCalled();
+    expect(errors).toEqual([]);
+  });
+  it('allows a repeat only after the explicit create-another-copy choice', async () => {
+    const errors: string[] = [];
+    const deps = makeDeps(errors);
+    deps.showQuickPick = async items => items.find(item => item.startsWith('明确另建副本')) ?? items[0];
+    vi.mocked(reserveCloneImport).mockResolvedValue({ duplicate: true, reservation: '/tmp/reservation' });
+    vi.mocked(applyImportPlan).mockResolvedValue({ verify: [], insertedPerTable: {}, resolvedIds: {}, newRootId: 1, cleanup: [] });
+    await runImportCloneCommand(deps, '/archive');
+    expect(applyImportPlan).toHaveBeenCalledTimes(1);
   });
 });
