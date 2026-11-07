@@ -412,6 +412,16 @@ describe('executeExportPlan(只读计划执行)', () => {
     expect(aborted).toBe(true);
   });
 
+  it('aborts a stalled snapshot setup at the same deadline', async () => {
+    const connection = new FakeMysqlConnection() as FakeMysqlConnection & CloneMysqlConnection;
+    let aborted = false;
+    connection.abort = () => { aborted = true; };
+    connection.query = async sql => sql.startsWith('START TRANSACTION')
+      ? new Promise<[unknown, unknown]>(() => undefined) : [[], []];
+    await expect(executeExportPlan(connection, budgetPlan, 1, { timeoutMs: 20 })).rejects.toThrow(/timed out/);
+    expect(aborted).toBe(true);
+  });
+
   it('cancels a stalled query without waiting for another row', async () => {
     const connection = new FakeMysqlConnection() as FakeMysqlConnection & CloneMysqlConnection;
     let aborted = false;

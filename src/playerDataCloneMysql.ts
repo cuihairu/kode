@@ -278,6 +278,32 @@ export class ClonePostCommitError extends Error {}
 /** Rollback itself failed, so the outcome cannot be asserted. */
 export class CloneRollbackUnknownError extends Error {}
 
+async function readOnlyControlQuery(
+  connection: CloneMysqlConnection,
+  sql: string,
+  deadline: number
+): Promise<void> {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) {
+    connection.abort?.();
+    throw new Error('clone: export timed out');
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      connection.query(sql),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          connection.abort?.();
+          reject(new Error('clone: export timed out'));
+        }, remaining);
+      })
+    ]);
+  } finally {
+    if (timer) { clearTimeout(timer); }
+  }
+}
+
 /**
  * 执行导出计划(只读会话):根表按 DBID 一次,子表按父行 id 逐次
  * (引擎 parentID 关系);行值按 column_types 归型为有类型 wire。
@@ -294,8 +320,8 @@ export async function executeExportPlan(
   const maxBytes = options.maxBytes ?? 64 * 1024 * 1024;
   const deadline = Date.now() + (options.timeoutMs ?? 120_000);
   let totalBytes = 0;
-  await connection.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
-  await connection.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
+  await readOnlyControlQuery(connection, 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ', deadline);
+  await readOnlyControlQuery(connection, 'START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY', deadline);
   try {
   for (const query of plan.queries) {
     if (options.shouldCancel?.()) {
@@ -372,10 +398,10 @@ export async function executeExportPlan(
       throw new Error('clone: unsupported export filter');
     }
   }
-  await connection.query('COMMIT');
+  await readOnlyControlQuery(connection, 'COMMIT', deadline);
   return allRows;
   } catch (error) {
-    try { await connection.query('ROLLBACK'); } catch { /* Closing a timed-out read-only session also releases its transaction. */ }
+    try { await readOnlyControlQuery(connection, 'ROLLBACK', Math.min(deadline, Date.now() + 1000)); } catch { /* Closing a timed-out read-only session also releases its transaction. */ }
     throw error;
   }
 }
