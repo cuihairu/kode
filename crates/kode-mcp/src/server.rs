@@ -154,6 +154,7 @@ impl KodeMcpServer {
                 arg_str("typeName").as_deref(),
                 arg_str("entity").as_deref(),
                 arg_str("method").as_deref(),
+                arg_str("section").as_deref(),
             ),
             "find_symbol" => {
                 let query = arg_str("query").unwrap_or_default();
@@ -182,6 +183,7 @@ impl KodeMcpServer {
             }
             "query_xml" => crate::semantic_model::query_xml(
                 &self.knowledge,
+                &self.assets_root,
                 arg_str("path").as_deref().unwrap_or(""),
             ),
             other => Err(format!("unknown tool: {other}")),
@@ -358,12 +360,13 @@ impl ServerHandler for KodeMcpServer {
                 ),
                 Self::tool(
                     "protocol_frame",
-                    "Depict the wire structure of a protocol frame: either a custom type (typeName resolved through types.xml/alias.xml) or one remote method of an entity (all argument wire layouts, field kinds, byte sizes and offsets). Uses the same wire codec as the IDE message-table face. Byte samples are covered by encode_decode_sample; this tool only draws structure.",
+                    "Depict a wire layout: either a custom type (typeName resolved through types.xml/alias.xml, full nested layout) or one remote method's argument payload (declared argument layouts only — no message ID, framing/length or other envelope fields). Uses the same wire codec as the IDE message-table face. Offsets are relative to the immediate parent container and are null once a preceding field is variable-length. Byte samples are covered by encode_decode_sample; this tool only draws structure. When a method name exists in more than one section (BaseMethods/CellMethods/ClientMethods), pass section to disambiguate; otherwise the first matching section is used.",
                     schema_of(
                         serde_json::json!({
                             "typeName": {"type": "string", "description": "custom type name resolvable through types.xml/alias.xml (takes precedence)"},
-                            "entity": {"type": "string", "description": "entity def name, with method, to draw a remote-method frame"},
-                            "method": {"type": "string", "description": "remote method name on the entity"}
+                            "entity": {"type": "string", "description": "entity def name, with method, to draw a remote-method argument payload"},
+                            "method": {"type": "string", "description": "remote method name on the entity"},
+                            "section": {"type": "string", "description": "optional section filter: BaseMethods | CellMethods | ClientMethods"}
                         }),
                         &[],
                     ),
@@ -381,15 +384,15 @@ impl ServerHandler for KodeMcpServer {
                 ),
                 Self::tool(
                     "index_status",
-                    "Status of the structure-aware knowledge index: scanned Python symbols, schema counts (defs/types/aliases), type-resolution confidence distribution (determined/inferred/unknown) and any load errors. Answers 'is the index healthy and how complete'.",
+                    "Status of the structure-aware knowledge index: Python files scanned / symbols, schema counts (defs/types/aliases), type-resolution confidence distribution (determined/inferred/unknown), Python scan truncation and scan errors, and schema load errors. Answers 'is the index healthy and how complete'. A truncated or error-skipped scan is reported, never hidden as healthy.",
                     serde_json::json!({"type": "object", "properties": {}}),
                 ),
                 Self::tool(
                     "find_references",
-                    "Cross-format reference edges for a symbol or config: which def property / types.xml type / Python class or method references it, with the production rule and confidence. Answers 'if I change X, what else is affected'. Edges are produced by explicit rules (entity-class-name, types.xml type-reference, implementedBy, def-method-name), never by name coincidence alone.",
+                    "Cross-format reference edges for a symbol: which def property / types.xml type / Python class or method references it, with the production rule and confidence. Edges come from explicit rules over already-parsed data (entity-class-name, types.xml type-reference, implementedBy, def-method-name). Same-name heuristic edges are confidence unknown. Scope is honest: Python imports, calls, property-to-member associations and types.xml-to-types.xml references are NOT yet indexed, so an empty result does not prove a safe change boundary.",
                     schema_of(
                         serde_json::json!({
-                            "symbol": {"type": "string", "description": "symbol or config name to trace references for"},
+                            "symbol": {"type": "string", "description": "symbol name to trace references for"},
                             "limit": {"type": "integer", "description": "max edges (default 20)"}
                         }),
                         &["symbol"],
@@ -397,7 +400,7 @@ impl ServerHandler for KodeMcpServer {
                 ),
                 Self::tool(
                     "query_xml",
-                    "Navigate the parsed XML knowledge structure by element path: types.<Name> for a types.xml type, entity.<Name>.Properties.<prop> for a def property, config.<key> for the final config value. Returns the node's parsed representation. Answers 'what exactly does this XML element contain'.",
+                    "Navigate the parsed XML knowledge structure by element path. Supports exactly three path shapes: types.<Name> for a types.xml type declaration, entity.<Name> for a def entity summary, entity.<Name>.Properties.<prop> for a single property (with the resolved Python type and confidence). It is not a general XML query and does not navigate config XML (config Q&A is why_setting/list_config_settings/get_final_config).",
                     schema_of(
                         serde_json::json!({
                             "path": {"type": "string", "description": "element path, e.g. types.SKILL_SLOT or entity.Avatar.Properties.level"}

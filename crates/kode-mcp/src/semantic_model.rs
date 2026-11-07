@@ -18,6 +18,7 @@
 //! 模型(不复解析);调用图/数据流面在 kode-python,本面不重复。Tantivy/
 //! SQLite 持久化、增量更新、Excel、向量语义为后续阶段(见设计文档 §12)。
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use kode_parser::model::TypeKind;
@@ -74,43 +75,86 @@ fn builtin_py(name: &str) -> Option<(String, Confidence)> {
     })
 }
 
-/// implementedBy 符号 → 实现类。两种形态(用户令:引擎按「模块路径.实现对象」
-/// 装载,实现对象可能是类也可能是指向实例的模块级赋值):
-/// 1. `MODULE.Class` / `Class` 直接是类名。
-/// 2. `MODULE.inst` = 模块级 `inst = Class()` 实例赋值 → 解出 `Class`。
+/// types.xml 类型名 → **完整** implementedBy 符号(`MODULE.Class` /
+/// `MODULE.inst`)。parser 把 `implemented_by_symbol` 归一成末段(丢模块前缀,
+/// model.rs 口径),这里从原始 types.xml 文本恢复模块前缀——否则 `a.factory`
+/// 与 `b.factory` 被当成同一符号,同名类首者胜(见实现注释)。
+fn implemented_by_full(kb: &AssetKnowledge) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let Some(text) = &kb.types_text else {
+        return map;
+    };
+    let doc = kode_parser::xml::parse(text, false);
+    let Some(root) = doc.root() else {
+        return map;
+    };
+    for child in doc.child_elements(root) {
+        let e = doc.element(child);
+        if let Some(full) = doc.scalar_child_value(child, "implementedBy") {
+            let full = full.trim().to_string();
+            if !full.is_empty() {
+                map.insert(e.name.clone(), full);
+            }
+        }
+    }
+    map
+}
+
+/// 全局按裸类名找类(回落;仅在无模块前缀或模块文件缺失时用)。
 fn find_py_class<'a>(py: &'a [PySymbol], impl_symbol: &str) -> Option<&'a PySymbol> {
-    // XML 文本节点可能带空白(<implementedBy> MODULE.inst </implementedBy>)。
     let impl_symbol = impl_symbol.trim();
     let last = impl_symbol.rsplit('.').next().unwrap_or(impl_symbol);
     py.iter().find(|s| s.kind == "class" && s.name == last)
 }
 
-/// implementedBy 的类名(类形态或实例赋值形态;找不到 → None,如实)。
-fn implemented_by_class(py: &[PySymbol], root: &Path, impl_symbol: &str) -> Option<String> {
-    let impl_symbol = impl_symbol.trim();
-    if let Some(cls) = find_py_class(py, impl_symbol) {
+/// implementedBy → 实现类名。`full_symbol` = 恢复的完整符号
+/// (`MODULE.Class` / `MODULE.inst`)。两种形态(用户令:引擎按「模块路径.
+/// 实现对象」装载,实现对象可能是类也可能是指向实例的模块级赋值):
+/// 1. `MODULE.Class`:类必须在该模块文件内(不凭同名类名在全局任意找)。
+/// 2. `MODULE.inst` = 模块级 `inst = Class()`:在该模块文件内扫赋值。
+///
+/// 无模块前缀或模块缺失 → 回落全局同名类/全 scripts 扫对象名(有界);
+/// 找不到 → None(如实,不猜)。
+fn implemented_by_class(
+    py: &[PySymbol],
+    root: &Path,
+    full_symbol: &str,
+) -> Option<String> {
+    let full_symbol = full_symbol.trim();
+    if let Some((module, name)) = full_symbol.rsplit_once('.') {
+        let module = module.trim();
+        let name = name.trim();
+        if let Some(file) = crate::code_index::find_module(root, module) {
+            // 类形态:类必须在模块内。
+            if let Some(cls) = crate::code_index::class_in_file(&file, name) {
+                return Some(cls);
+            }
+            // 实例形态:模块内 `inst = Class()`。
+            if let Ok(source) = std::fs::read_to_string(&file) {
+                if let Some(cls) = crate::code_index::instance_class_in_source(&source, name) {
+                    return Some(cls);
+                }
+            }
+            // 模块在但两类形态都不命中 → 无法归因(如实 None,不跨模块猜)。
+            return None;
+        }
+        // 模块文件未找到:name 可能是裸类名,也可能是归一化丢模块的实例名。
+        if let Some(cls) = find_py_class(py, name) {
+            return Some(cls.name.clone());
+        }
+        return crate::code_index::find_instance_class(root, name);
+    }
+    // 无点号(类型声明里本就是裸名):全局同名类;否则可能是丢模块的实例名。
+    if let Some(cls) = find_py_class(py, full_symbol) {
         return Some(cls.name.clone());
     }
-    instance_assigned_class(root, impl_symbol)
-}
-
-/// `MODULE.inst` 实例赋值形态:`inst = Class()` → 类名。两种入口:
-/// - 带点号(`MODULE.inst`,parser 保留模块):按模块文件定位后扫描。
-/// - 无点号(parser 归一为对象名 `inst`):全 scripts 扫对象名(有界)。
-///
-/// 实例对象名 ≠ 类名(夹具:weapon_skill_slot_list_inst = weapon_skill_slot_list())。
-fn instance_assigned_class(root: &Path, impl_symbol: &str) -> Option<String> {
-    let impl_symbol = impl_symbol.trim();
-    if let Some((module, inst)) = impl_symbol.rsplit_once('.') {
-        let file = crate::code_index::find_module(root, module.trim())?;
-        let source = std::fs::read_to_string(file).ok()?;
-        return crate::code_index::instance_class_in_source(&source, inst);
-    }
-    crate::code_index::find_instance_class(root, impl_symbol)
+    crate::code_index::find_instance_class(root, full_symbol)
 }
 
 /// 类型名 → Python 类型表达式(递归展开;深度护栏防环)。
 /// `via` 收集解析路径(types.xml/alias.xml 名),供 AI 追因。
+/// `impl_full` = types.xml 类型名 → 完整 implementedBy 符号(见
+/// [`implemented_by_full`];调用方按查询构建一次复用)。
 fn resolve_py_type(
     kb: &AssetKnowledge,
     py: &[PySymbol],
@@ -118,6 +162,7 @@ fn resolve_py_type(
     name: &str,
     depth: usize,
     via: &mut Vec<String>,
+    impl_full: &HashMap<String, String>,
 ) -> ResolvedPyType {
     if depth > 8 {
         return ResolvedPyType {
@@ -138,7 +183,7 @@ fn resolve_py_type(
         return match decl.kind {
             TypeKind::Builtin => {
                 if let Some(target) = &decl.directive {
-                    return resolve_py_type(kb, py, root, target, depth + 1, via);
+                    return resolve_py_type(kb, py, root, target, depth + 1, via, impl_full);
                 }
                 ResolvedPyType {
                     display: name.into(),
@@ -148,7 +193,7 @@ fn resolve_py_type(
             }
             TypeKind::Array => {
                 let elem = decl.element_ref.as_deref().unwrap_or("STRING");
-                let inner = resolve_py_type(kb, py, root, elem, depth + 1, via);
+                let inner = resolve_py_type(kb, py, root, elem, depth + 1, via, impl_full);
                 // ARRAY 容器是 types.xml 结构(非内建)→ 至少推断;元素未知
                 // 则整体未知(不虚构 list[Any] 为确定)。
                 let confidence = inner.confidence.max(Confidence::Inferred);
@@ -160,20 +205,26 @@ fn resolve_py_type(
             }
             TypeKind::FixedDict => {
                 if let Some(impl_symbol) = &decl.implemented_by_symbol {
-                    if let Some(cls) = implemented_by_class(py, root, impl_symbol) {
+                    // 优先用恢复的完整符号(MODULE.Class/MODULE.inst),保模块身份。
+                    let full = impl_full
+                        .get(name)
+                        .map(|s| s.as_str())
+                        .unwrap_or(impl_symbol.as_str());
+                    if let Some(cls) = implemented_by_class(py, root, full) {
                         // implementedBy → 自定义 Python 类(类形态或实例赋值形态)。
-                        via.push(format!("implementedBy:{impl_symbol}"));
+                        via.push(format!("implementedBy:{full}"));
                         ResolvedPyType {
                             display: cls,
                             confidence: Confidence::Inferred,
                             via: via.clone(),
                         }
                     } else {
-                        // 类型声明已知,实现类未在 scripts/ 找到(如实推断)。
-                        via.push(format!("implementedBy:{impl_symbol}(class-not-found)"));
+                        // 类型声明已知,实现类在对应模块/scripts 未找到 → 静态
+                        // 不可得,如实 Unknown(绝不把未解析类当推断返回)。
+                        via.push(format!("implementedBy:{full}(class-not-found)"));
                         ResolvedPyType {
                             display: name.into(),
-                            confidence: Confidence::Inferred,
+                            confidence: Confidence::Unknown,
                             via: via.clone(),
                         }
                     }
@@ -188,7 +239,7 @@ fn resolve_py_type(
         }
     } else if let Some(alias) = kb.alias.aliases.iter().find(|a| a.name == name) {
         via.push(format!("alias.xml:{name}"));
-        return resolve_py_type(kb, py, root, &alias.alias_type, depth + 1, via);
+        return resolve_py_type(kb, py, root, &alias.alias_type, depth + 1, via, impl_full);
     }
     // 未解析:如实未知,不虚构。
     ResolvedPyType {
@@ -198,9 +249,54 @@ fn resolve_py_type(
     }
 }
 
-/// 公开类型解析(一次符号表构建;供 find_symbol/属性问答复用)。
-fn resolve(kb: &AssetKnowledge, py: &[PySymbol], root: &Path, name: &str) -> ResolvedPyType {
-    resolve_py_type(kb, py, root, name, 0, &mut Vec::new())
+/// 带完整 implementedBy 符号表的一次解析(查询级构建一次 `impl_full` 复用)。
+fn resolve_with(
+    kb: &AssetKnowledge,
+    py: &[PySymbol],
+    root: &Path,
+    name: &str,
+    impl_full: &HashMap<String, String>,
+) -> ResolvedPyType {
+    resolve_py_type(kb, py, root, name, 0, &mut Vec::new(), impl_full)
+}
+
+/// 属性类型解析:处理 def 属性**内联容器**(`<Type>ARRAY<of>UINT32</of></Type>`
+/// 的 `type_name` 是 `ARRAY` 而元素在 `type_refs[0]`;`FIXED_DICT` 内联 → dict)。
+/// 命名类型(自定义名/内建)走 [`resolve_with`]。
+fn resolve_prop(
+    kb: &AssetKnowledge,
+    py: &[PySymbol],
+    root: &Path,
+    prop: &kode_parser::model::PropertyDef,
+    impl_full: &HashMap<String, String>,
+) -> ResolvedPyType {
+    let type_name = prop.type_name.as_deref().unwrap_or("STRING");
+    if type_name == "ARRAY" {
+        if let Some(elem) = prop.type_refs.first() {
+            let inner = resolve_with(kb, py, root, elem, impl_full);
+            // 内联 ARRAY 容器 → 至少推断(元素未知则整体未知)。
+            return ResolvedPyType {
+                display: format!("list[{}]", inner.display),
+                confidence: inner.confidence.max(Confidence::Inferred),
+                via: inner.via,
+            };
+        }
+    }
+    if type_name == "FIXED_DICT" {
+        return ResolvedPyType {
+            display: "dict".into(),
+            confidence: Confidence::Inferred,
+            via: vec!["inline-FIXED_DICT".into()],
+        };
+    }
+    resolve_with(kb, py, root, type_name, impl_full)
+}
+
+/// 测试用单次解析(构建完整 implementedBy 符号表)。
+#[cfg(test)]
+fn res(kb: &AssetKnowledge, py: &[PySymbol], root: &Path, name: &str) -> ResolvedPyType {
+    let impl_full = implemented_by_full(kb);
+    resolve_with(kb, py, root, name, &impl_full)
 }
 
 fn py_match_json(sym: &PySymbol) -> Value {
@@ -230,6 +326,7 @@ pub fn find_symbol(
     }
     let q = query.to_lowercase();
     let py = collect_symbols(root);
+    let impl_full = implemented_by_full(kb);
     let mut matches: Vec<Value> = Vec::new();
     let push = |m: Value, matches: &mut Vec<Value>| -> bool {
         matches.push(m);
@@ -262,7 +359,7 @@ pub fn find_symbol(
                 continue;
             }
             let type_name = prop.type_name.as_deref().unwrap_or("STRING");
-            let resolved = resolve(kb, &py, root, type_name);
+            let resolved = resolve_prop(kb, &py, root, prop, &impl_full);
             if push(
                 json!({
                     "name": prop.name,
@@ -287,7 +384,7 @@ pub fn find_symbol(
         if !decl.name.to_lowercase().contains(&q) {
             continue;
         }
-        let resolved = resolve(kb, &py, root, &decl.name);
+        let resolved = resolve_with(kb, &py, root, &decl.name, &impl_full);
         if push(
             json!({
                 "name": decl.name,
@@ -332,17 +429,21 @@ struct RefEdge {
 }
 
 /// 全量语义引用边(有界:defs × 属性/方法 + types × implementedBy)。
+/// 同名启发边(实体↔类、方法↔方法)只按名,未做签名/域校验 → 按设计
+/// 标 `Unknown`(绝不 `Determined`;见设计文档 §10)。implementedBy 边按
+/// 模块身份解析(模块内类/实例赋值),非全局同名任意猜。
 fn build_edges(kb: &AssetKnowledge, py: &[PySymbol], root: &Path) -> Vec<RefEdge> {
+    let impl_full = implemented_by_full(kb);
     let mut edges = Vec::new();
     for def in kb.defs.values() {
-        // 实体 ↔ 同名 Python 类(实体名 = def 文件名去 .def)。
+        // 实体 ↔ 同名 Python 类(实体名 = def 文件名去 .def;同名启发边 → Unknown)。
         if let Some(cls) = py.iter().find(|s| s.kind == "class" && s.name == def.name) {
             edges.push(RefEdge {
                 from: format!("def:{}.def", def.name),
                 to: format!("py:{}", cls.name),
                 relation: "implements",
                 rule: "entity-class-name",
-                confidence: Confidence::Inferred,
+                confidence: Confidence::Unknown,
                 from_file: def.rel_path.clone(),
                 from_line: 1,
                 to_file: Some(cls.file.to_string_lossy().into_owned()),
@@ -352,8 +453,15 @@ fn build_edges(kb: &AssetKnowledge, py: &[PySymbol], root: &Path) -> Vec<RefEdge
         // 属性 → types.xml/alias 类型。
         for prop in &def.model.properties {
             let type_name = prop.type_name.as_deref().unwrap_or("STRING");
-            let resolved = resolve(kb, py, root, type_name);
+            let resolved = resolve_prop(kb, py, root, prop, &impl_full);
             if resolved.via.iter().any(|v| v.contains("types.xml:") || v.contains("alias.xml:")) {
+                // 目标行 = types.xml/alias.xml 声明行(精确定位,不省略)。
+                let to_line = kb
+                    .types
+                    .types
+                    .iter()
+                    .find(|t| t.name == type_name)
+                    .map(|t| t.line);
                 edges.push(RefEdge {
                     from: format!("def:{}.{}", def.name, prop.name),
                     to: format!("types:{}", type_name),
@@ -363,13 +471,17 @@ fn build_edges(kb: &AssetKnowledge, py: &[PySymbol], root: &Path) -> Vec<RefEdge
                     from_file: def.rel_path.clone(),
                     from_line: prop.line,
                     to_file: Some("scripts/entity_defs/types.xml".into()),
-                    to_line: None,
+                    to_line,
                 });
             }
-            // implementedBy → Python 类(类形态或实例赋值形态)。
+            // implementedBy → Python 类(类形态或实例赋值形态,按模块身份)。
             if let Some(decl) = kb.types.types.iter().find(|t| t.name == type_name) {
                 if let Some(impl_sym) = &decl.implemented_by_symbol {
-                    if let Some(cls) = implemented_by_class(py, root, impl_sym) {
+                    let full = impl_full
+                        .get(type_name)
+                        .map(|s| s.as_str())
+                        .unwrap_or(impl_sym.as_str());
+                    if let Some(cls) = implemented_by_class(py, root, full) {
                         let sym = py.iter().find(|s| s.kind == "class" && s.name == cls);
                         edges.push(RefEdge {
                             from: format!("def:{}.{}", def.name, prop.name),
@@ -386,7 +498,7 @@ fn build_edges(kb: &AssetKnowledge, py: &[PySymbol], root: &Path) -> Vec<RefEdge
                 }
             }
         }
-        // 远程方法 → Python 同名方法(实体类内)。
+        // 远程方法 → Python 同名方法(实体类内;同名启发边 → Unknown)。
         for m in def
             .model
             .base_methods
@@ -404,7 +516,7 @@ fn build_edges(kb: &AssetKnowledge, py: &[PySymbol], root: &Path) -> Vec<RefEdge
                     to: format!("py:{}.{}", def.name, m.name),
                     relation: "implements",
                     rule: "def-method-name",
-                    confidence: Confidence::Inferred,
+                    confidence: Confidence::Unknown,
                     from_file: def.rel_path.clone(),
                     from_line: m.line,
                     to_file: Some(method.file.to_string_lossy().into_owned()),
@@ -413,10 +525,14 @@ fn build_edges(kb: &AssetKnowledge, py: &[PySymbol], root: &Path) -> Vec<RefEdge
             }
         }
     }
-    // types.xml implementedBy → Python 类(独立于 def 属性引用)。
+    // types.xml implementedBy → Python 类(独立于 def 属性引用,按模块身份)。
     for decl in &kb.types.types {
         if let Some(impl_sym) = &decl.implemented_by_symbol {
-            if let Some(cls) = implemented_by_class(py, root, impl_sym) {
+            let full = impl_full
+                .get(&decl.name)
+                .map(|s| s.as_str())
+                .unwrap_or(impl_sym.as_str());
+            if let Some(cls) = implemented_by_class(py, root, full) {
                 let sym = py.iter().find(|s| s.kind == "class" && s.name == cls);
                 edges.push(RefEdge {
                     from: format!("types:{}", decl.name),
@@ -486,26 +602,36 @@ pub fn find_references(
 }
 
 /// `index_status`:索引面状态——扫描文件数、符号数、置信度分布、装载错误。
+/// Python 扫描面如实报告文件数/截断/扫描错误(截断或坏文件不掩盖成"健康")。
 pub fn index_status(kb: &AssetKnowledge, root: &Path) -> Value {
     let py = collect_symbols(root);
+    let impl_full = implemented_by_full(kb);
+    let scan = crate::bounded_scan::collect(
+        &[root.join("scripts")],
+        "py",
+        crate::code_index::SKIP_DIRS,
+        crate::code_index::MAX_FILES,
+    );
     let mut confidence = [0usize; 3];
     let mut with_resolution = 0usize;
     for def in kb.defs.values() {
         for prop in &def.model.properties {
-            let type_name = prop.type_name.as_deref().unwrap_or("STRING");
-            let resolved = resolve(kb, &py, root, type_name);
+            let resolved = resolve_prop(kb, &py, root, prop, &impl_full);
             confidence[resolved.confidence as usize] += 1;
             with_resolution += 1;
         }
     }
     for decl in &kb.types.types {
-        let resolved = resolve(kb, &py, root, &decl.name);
+        let resolved = resolve_with(kb, &py, root, &decl.name, &impl_full);
         confidence[resolved.confidence as usize] += 1;
         with_resolution += 1;
     }
     json!({
         "pythonFiles": {
+            "files": scan.files.len(),
             "symbols": py.len(),
+            "truncated": scan.truncated,
+            "scanErrors": scan.errors,
         },
         "schema": {
             "defs": kb.defs.len(),
@@ -528,9 +654,11 @@ pub fn index_status(kb: &AssetKnowledge, root: &Path) -> Value {
 /// - `entity.<Name>` — def 实体(属性/方法摘要)。
 /// - `entity.<Name>.Properties.<prop>` — 单个属性(含解析后 Python 类型)。
 ///
-/// 配置键的「含义」面由 why_setting/list_config_settings/get_final_config
-/// 承担(本面只管 XML 元素结构,不重复配置问答)。
-pub fn query_xml(kb: &AssetKnowledge, path: &str) -> Result<Value, String> {
+/// 属性解析与 [`find_symbol`] 同一套(传 `root`,implementedBy 按模块身份
+/// 解析,不被空符号表退化成类型名)。配置键的「含义」面由
+/// why_setting/list_config_settings/get_final_config 承担(本面只管 XML
+/// 元素结构,不重复配置问答)。
+pub fn query_xml(kb: &AssetKnowledge, root: &Path, path: &str) -> Result<Value, String> {
     let path = path.trim();
     if path.is_empty() {
         return Err("empty path".to_string());
@@ -592,7 +720,9 @@ pub fn query_xml(kb: &AssetKnowledge, path: &str) -> Result<Value, String> {
                 .find(|p| p.name == *prop)
                 .ok_or_else(|| format!("property not found: {name}.{prop}"))?;
             let type_name = p.type_name.as_deref().unwrap_or("STRING");
-            let resolved = resolve(kb, &[], Path::new("."), type_name);
+            let py = collect_symbols(root);
+            let impl_full = implemented_by_full(kb);
+            let resolved = resolve_prop(kb, &py, root, p, &impl_full);
             Ok(json!({
                 "node": "property",
                 "entity": def.name,
@@ -633,7 +763,7 @@ mod tests {
     #[test]
     fn builtin_resolves_determined() {
         let k = kb();
-        let r = resolve(&k, &[], &root(), "UINT32");
+        let r = res(&k,&[], &root(), "UINT32");
         assert_eq!(r.display, "int");
         assert_eq!(r.confidence, Confidence::Determined);
     }
@@ -642,7 +772,7 @@ mod tests {
     fn alias_chain_expands_to_builtin() {
         let k = kb();
         // ITEM_ID = UINT16(别名链)。
-        let r = resolve(&k, &[], &root(), "ITEM_ID");
+        let r = res(&k,&[], &root(), "ITEM_ID");
         assert_eq!(r.display, "int");
         assert_eq!(r.confidence, Confidence::Determined);
         assert!(r.via.iter().any(|v| v.contains("ITEM_ID")));
@@ -652,7 +782,7 @@ mod tests {
     fn array_type_becomes_list_of_element() {
         let k = kb();
         // ITEM_IDS = ARRAY of ITEM_ID → list[int]。
-        let r = resolve(&k, &[], &root(), "ITEM_IDS");
+        let r = res(&k,&[], &root(), "ITEM_IDS");
         assert_eq!(r.display, "list[int]");
         assert_eq!(r.confidence, Confidence::Inferred);
     }
@@ -665,7 +795,7 @@ mod tests {
         // SKILL_SLOT implementedBy → SKILL_SLOT_DATA 模块里找类(夹具 scripts)。
         // 实例赋值形态(weapon_skill_slot_list_inst = weapon_skill_slot_list())
         // 应解出类名,而非类型名。
-        let r = resolve(&k, &py, &root, "SKILL_SLOT");
+        let r = res(&k,&py, &root, "SKILL_SLOT");
         assert_eq!(r.confidence, Confidence::Inferred);
         assert!(r.via.iter().any(|v| v.starts_with("implementedBy:")));
         // 实例赋值解析成功 → 显示解出的类名(不再是类型名)。
@@ -675,7 +805,7 @@ mod tests {
     #[test]
     fn unknown_type_is_unknown_not_guessed() {
         let k = kb();
-        let r = resolve(&k, &[], &root(), "NO_SUCH_TYPE");
+        let r = res(&k,&[], &root(), "NO_SUCH_TYPE");
         assert_eq!(r.confidence, Confidence::Unknown);
         assert_eq!(r.display, "NO_SUCH_TYPE");
     }
@@ -738,18 +868,18 @@ mod tests {
     fn query_xml_navigates_type_entity_and_property() {
         let k = kb();
         // types.<Name>:SKILL_SLOT 类型声明(implementedBy 在)。
-        let t = query_xml(&k, "types.SKILL_SLOT").expect("type");
+        let t = query_xml(&k, &root(), "types.SKILL_SLOT").expect("type");
         assert_eq!(t["node"], "type");
         assert_eq!(t["kind"], "FixedDict");
         assert!(t["implementedBy"].as_str().is_some());
 
         // entity.<Name>:Avatar def 摘要。
-        let e = query_xml(&k, "entity.Avatar").expect("entity");
+        let e = query_xml(&k, &root(), "entity.Avatar").expect("entity");
         assert_eq!(e["name"], "Avatar");
         assert!(e["propertyCount"].as_u64().unwrap() >= 1);
 
         // entity.<Name>.Properties.<prop>:属性(带解析后 Python 类型)。
-        let p = query_xml(&k, "entity.Avatar.Properties.level").expect("property");
+        let p = query_xml(&k, &root(), "entity.Avatar.Properties.level").expect("property");
         assert_eq!(p["name"], "level");
         assert_eq!(p["declaredType"], "UINT32");
         assert_eq!(p["pyType"], "int");
@@ -759,9 +889,108 @@ mod tests {
     #[test]
     fn query_xml_unknown_path_is_error() {
         let k = kb();
-        assert!(query_xml(&k, "types.NoSuch").is_err());
-        assert!(query_xml(&k, "entity.NoSuch").is_err());
-        assert!(query_xml(&k, "entity.Avatar.Properties.NoSuch").is_err());
-        assert!(query_xml(&k, "garbage").is_err());
+        assert!(query_xml(&k, &root(), "types.NoSuch").is_err());
+        assert!(query_xml(&k, &root(), "entity.NoSuch").is_err());
+        assert!(query_xml(&k, &root(), "entity.Avatar.Properties.NoSuch").is_err());
+        assert!(query_xml(&k, &root(), "garbage").is_err());
+    }
+
+    // ---- implementedBy 模块身份(prove-red:旧码按裸名全局任意找,`mod_b.factory`
+    //      会错误命中 `mod_a` 的同名类)。----
+    #[test]
+    fn implemented_by_requires_class_in_declared_module() {
+        let root = std::env::temp_dir().join(format!("kode-mcp-mod-id-{}", std::process::id()));
+        let scripts = root.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(scripts.join("mod_a.py"), "class factory:\n    pass\n").unwrap();
+        std::fs::write(scripts.join("mod_b.py"), "class unrelated:\n    pass\n").unwrap();
+        let py = collect_symbols(&root);
+        // mod_a.factory:类在该模块内 → 解析成功。
+        assert_eq!(
+            implemented_by_class(&py, &root, "mod_a.factory").as_deref(),
+            Some("factory")
+        );
+        // mod_b.factory:模块在但无该类、无该实例赋值 → 如实 None,绝不回落
+        // 全局同名类(mod_a 的 factory)。
+        assert_eq!(implemented_by_class(&py, &root, "mod_b.factory"), None);
+        // 无点号裸类名:全局同名类。
+        assert_eq!(
+            implemented_by_class(&py, &root, "factory").as_deref(),
+            Some("factory")
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    // ---- 内联容器元素类型(prove-red:旧码 `resolve("ARRAY")` → Unknown "ARRAY")。----
+    #[test]
+    fn inline_array_property_resolves_element_type() {
+        let k = kb();
+        let root = root();
+        let py = collect_symbols(&root);
+        // Avatar.skillSlots = `<Type>ARRAY<of>SKILL_SLOT</of></Type>`:type_name
+        // 是 "ARRAY",元素在 type_refs[0] = SKILL_SLOT(其自身 implementedBy)。
+        let prop = k
+            .defs
+            .get("Avatar")
+            .unwrap()
+            .model
+            .properties
+            .iter()
+            .find(|p| p.name == "skillSlots")
+            .expect("skillSlots prop");
+        let r = resolve_prop(&k, &py, &root, prop, &implemented_by_full(&k));
+        // list[weapon_skill_slot_list] = 元素类型(SKILL_SLOT 的 implementedBy 类)。
+        assert_eq!(r.display, "list[weapon_skill_slot_list]");
+        assert_eq!(r.confidence, Confidence::Inferred);
+    }
+
+    // ---- 同名启发边标 Unknown(prove-red:旧码标 Inferred,违反设计 §10)。----
+    #[test]
+    fn heuristic_edges_are_unknown_confidence() {
+        let k = kb();
+        let root = root();
+        let py = collect_symbols(&root);
+        let edges = build_edges(&k, &py, &root);
+        let mut saw_entity = false;
+        let mut saw_method = false;
+        for e in &edges {
+            if e.rule == "entity-class-name" {
+                saw_entity = true;
+                assert_eq!(e.confidence, Confidence::Unknown);
+            }
+            if e.rule == "def-method-name" {
+                saw_method = true;
+                assert_eq!(e.confidence, Confidence::Unknown);
+            }
+            if e.rule == "implementedBy" {
+                // implementedBy 是模块身份解析出的关联 → Inferred。
+                assert_eq!(e.confidence, Confidence::Inferred);
+            }
+        }
+        assert!(saw_entity, "fixture should yield an entity-class-name edge");
+        assert!(saw_method, "fixture should yield a def-method-name edge");
+    }
+
+    // ---- query_xml 属性解析与 find_symbol 一致(prove-red:旧码传空符号表 +
+    //      Path("."),implementedBy 退化成类型名)。----
+    #[test]
+    fn query_xml_property_resolves_implemented_by_consistently() {
+        let k = kb();
+        let p = query_xml(&k, &root(), "entity.Avatar.Properties.skillSlots").expect("prop");
+        // 同一套解析:内联 ARRAY of SKILL_SLOT → list[实现类],而非裸 "ARRAY"。
+        assert_eq!(p["pyType"], "list[weapon_skill_slot_list]");
+        assert_eq!(p["confidence"], "inferred");
+    }
+
+    // ---- index_status 如实报告扫描面(prove-red:旧码只报 symbols,无 files/
+    //      truncated/scanErrors,截断被掩盖成健康)。----
+    #[test]
+    fn index_status_reports_scan_facts() {
+        let k = kb();
+        let st = index_status(&k, &root());
+        assert!(st["pythonFiles"]["files"].is_number());
+        assert!(st["pythonFiles"]["truncated"].is_boolean());
+        assert!(st["pythonFiles"]["scanErrors"].is_number());
+        assert!(st["pythonFiles"]["symbols"].as_u64().unwrap() > 0);
     }
 }

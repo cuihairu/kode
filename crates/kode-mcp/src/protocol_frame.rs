@@ -15,6 +15,8 @@ use serde_json::{json, Value};
 use crate::kb::AssetKnowledge;
 
 /// 标量定长线宽(字节);动态类型(None)。
+/// FIXED_DICT 全字段定长才定长(递归),否则动态——嵌套全定长字典不再被
+/// 误判为动态而虚增未知偏移。
 fn fixed_size(layout: &WireLayout) -> Option<usize> {
     Some(match layout {
         WireLayout::U8 | WireLayout::I8 | WireLayout::Bool => 1,
@@ -25,7 +27,14 @@ fn fixed_size(layout: &WireLayout) -> Option<usize> {
         WireLayout::Vec3 => 12,
         WireLayout::Vec4 => 16,
         WireLayout::EntityCall => 16,
-        _ => return None, // Str/Unicode/Blob/Py*/Array/FixedDict:动态
+        WireLayout::FixedDict(fields) => {
+            let mut total = 0usize;
+            for f in fields {
+                total += fixed_size(&f.layout)?;
+            }
+            return Some(total);
+        }
+        _ => return None, // Str/Unicode/Blob/Py*/Array:动态
     })
 }
 
@@ -77,30 +86,33 @@ fn render_layout(layout: &WireLayout, name: &str, offset: Option<usize>) -> (Val
             (node, None)
         }
         WireLayout::FixedDict(fields) => {
-            let mut off = offset;
+            // 子字段偏移相对本容器起点(0 基),与本容器自身位置无关;前驱
+            // 字段变长后,后续偏移不可算(不伪精确)。
+            let mut off = Some(0usize);
             let mut children = Vec::new();
             for field in fields {
                 let (child, end) = render_layout(&field.layout, &field.name, off);
                 children.push(child);
-                if let Some(e) = end {
-                    off = Some(e);
-                } else {
-                    off = None; // 后续字段偏移不可算
-                }
+                off = end; // None 传播:后续字段偏移不可算
             }
             node["fields"] = Value::Array(children);
-            // FIXED_DICT 定长(所有字段定长)才算结束偏移;否则动态。
-            let all_fixed = fields.iter().all(|f| fixed_size(&f.layout).is_some());
-            let end = if all_fixed {
+            // 容器结束(相对父容器) = 自身偏移 + 内部总长;仅当全部字段定长
+            // 且自身位置已知才可得。
+            let end = if fields.iter().all(|f| fixed_size(&f.layout).is_some()) {
                 let total: usize = fields.iter().filter_map(|f| fixed_size(&f.layout)).sum();
-                Some(offset.unwrap_or(0) + total)
+                offset.map(|o| o + total)
             } else {
                 None
             };
             (node, end)
         }
         _ => {
-            let end = size.map(|s| offset.unwrap_or(0) + s);
+            // 定长字段:结束 = 起点 + 尺寸;起点未知(前驱变长)→ 结束也不可知
+            // (绝不 `offset.unwrap_or(0)` 造伪精确绝对偏移)。
+            let end = match (size, offset) {
+                (Some(s), Some(o)) => Some(o + s),
+                _ => None,
+            };
             (node, end)
         }
     }
@@ -121,6 +133,7 @@ pub fn protocol_frame(
     type_name: Option<&str>,
     entity: Option<&str>,
     method: Option<&str>,
+    section: Option<&str>,
 ) -> Result<Value, String> {
     let resolver = WireSchema::from_sources(
         kb.types_text.as_deref().unwrap_or(""),
@@ -139,18 +152,41 @@ pub fn protocol_frame(
         .defs
         .get(entity)
         .ok_or_else(|| format!("entity not found: {entity}"))?;
-    let mut found: Option<(&str, &kode_parser::model::MethodDef)> = None;
-    for (section, list) in [
+    let sections: [(&str, &[kode_parser::model::MethodDef]); 3] = [
         ("BaseMethods", &def.model.base_methods),
         ("CellMethods", &def.model.cell_methods),
         ("ClientMethods", &def.model.client_methods),
-    ] {
-        if let Some(m) = list.iter().find(|m| m.name == method) {
-            found = Some((section, m));
-            break;
+    ];
+    let (section, m) = match section {
+        // 显式节过滤:同名方法跨节消歧。
+        Some(sec) => {
+            let matched = sections
+                .iter()
+                .find(|(name, _)| *name == sec)
+                .ok_or_else(|| {
+                    format!("unknown section: {sec} (expected BaseMethods | CellMethods | ClientMethods)")
+                })?;
+            let m = matched
+                .1
+                .iter()
+                .find(|m| m.name == method)
+                .ok_or_else(|| format!("method not found: {entity}.{method} in {sec}"))?;
+            (matched.0, m)
         }
-    }
-    let (section, m) = found.ok_or_else(|| format!("method not found: {entity}.{method}"))?;
+        // 未给节:按 Base/Cell/Client 顺序取首个(如实告知)。
+        None => {
+            let matched = sections
+                .iter()
+                .find(|(_, list)| list.iter().any(|m| m.name == method))
+                .ok_or_else(|| format!("method not found: {entity}.{method}"))?;
+            let m = matched
+                .1
+                .iter()
+                .find(|m| m.name == method)
+                .expect("method present");
+            (matched.0, m)
+        }
+    };
     let mut fields = Vec::new();
     let mut off = Some(0usize);
     for arg in &m.args {
@@ -187,7 +223,7 @@ mod tests {
         let k = kb();
         // SKILL_SLOT 是 types.xml 的 FIXED_DICT(注意 SKILL_SLOT_DATA 是
         // implementedBy 的 Python 模块路径,不是类型名)。
-        let out = protocol_frame(&k, Some("SKILL_SLOT"), None, None).expect("frame");
+        let out = protocol_frame(&k, Some("SKILL_SLOT"), None, None, None).expect("frame");
         assert_eq!(out["type"], "SKILL_SLOT");
         assert_eq!(out["layout"]["kind"], "FIXED_DICT");
         assert!(!out["layout"]["fields"].as_array().unwrap().is_empty());
@@ -204,7 +240,7 @@ mod tests {
     fn method_frame_resolves_args_with_offsets() {
         let k = kb();
         // Account.reqCreateAvatar 单参 STRING(长度前缀动态)。
-        let out = protocol_frame(&k, None, Some("Account"), Some("reqCreateAvatar")).expect("frame");
+        let out = protocol_frame(&k, None, Some("Account"), Some("reqCreateAvatar"), None).expect("frame");
         assert_eq!(out["frame"], "Account.reqCreateAvatar");
         assert_eq!(out["argCount"], 1);
         assert_eq!(out["fields"][0]["name"], "STRING");
@@ -215,6 +251,91 @@ mod tests {
     #[test]
     fn missing_method_is_error() {
         let k = kb();
-        assert!(protocol_frame(&k, None, Some("Account"), Some("NoSuch")).is_err());
+        assert!(protocol_frame(&k, None, Some("Account"), Some("NoSuch"), None).is_err());
+    }
+
+    // ---- 偏移诚实性(prove-red:旧码 `offset.unwrap_or(0)` 在变长字段后造伪精确
+    //      绝对偏移;字典子字段被赋予容器自身偏移)。----
+    #[test]
+    fn offset_after_variable_length_is_not_falsely_precise() {
+        use kode_server::wire_codec::{WireField, WireLayout};
+        let layout = WireLayout::FixedDict(vec![
+            WireField { name: "s".into(), layout: WireLayout::Str },
+            WireField { name: "a".into(), layout: WireLayout::U32 },
+            WireField { name: "b".into(), layout: WireLayout::U16 },
+        ]);
+        let (node, end) = render_layout(&layout, "T", Some(0));
+        let fields = node["fields"].as_array().unwrap();
+        // 首字段定长起点 0;其后 a、b 因前驱变长偏移不可算(绝不伪精确 4/6)。
+        assert_eq!(fields[0]["offset"], 0);
+        assert_eq!(fields[1]["offset"], Value::Null);
+        assert_eq!(fields[2]["offset"], Value::Null);
+        // 容器整体动态 → 结束偏移不可知。
+        assert_eq!(node["size"], Value::Null);
+        assert_eq!(end, None);
+    }
+
+    #[test]
+    fn nested_dict_children_are_relative_to_own_start() {
+        use kode_server::wire_codec::{WireField, WireLayout};
+        // 内层全定长字典(3×U32);外层把内层放 offset 4 处。
+        let inner = WireLayout::FixedDict(vec![
+            WireField { name: "x".into(), layout: WireLayout::U32 },
+            WireField { name: "y".into(), layout: WireLayout::U32 },
+        ]);
+        let outer = WireLayout::FixedDict(vec![
+            WireField { name: "pre".into(), layout: WireLayout::U32 },
+            WireField { name: "inner".into(), layout: inner },
+        ]);
+        let (node, _) = render_layout(&outer, "Outer", Some(0));
+        let fields = node["fields"].as_array().unwrap();
+        // 子字段偏移相对本容器起点(0 基),不携带容器自身偏移。
+        assert_eq!(fields[0]["offset"], 0);
+        assert_eq!(fields[1]["offset"], 4);
+        let inner_node = &fields[1];
+        let inner_fields = inner_node["fields"].as_array().unwrap();
+        // 内层子字段相对内层起点:0、4,而非继承外层的 4。
+        assert_eq!(inner_fields[0]["offset"], 0);
+        assert_eq!(inner_fields[1]["offset"], 4);
+        // 全定长内层 → 定长尺寸 8。
+        assert_eq!(inner_node["size"], 8);
+    }
+
+    #[test]
+    fn nested_all_fixed_dict_is_fixed_size() {
+        use kode_server::wire_codec::{WireField, WireLayout};
+        let inner = WireLayout::FixedDict(vec![
+            WireField { name: "a".into(), layout: WireLayout::U32 },
+            WireField { name: "b".into(), layout: WireLayout::U16 },
+        ]);
+        // 嵌套全定长字典定长(旧码 shallow fixed_size 对 FixedDict 恒 None)。
+        assert_eq!(fixed_size(&WireLayout::FixedDict(vec![
+            WireField { name: "i".into(), layout: inner.clone() },
+        ])), Some(6));
+        // 内层含动态字段 → 整体动态。
+        let dyn_inner = WireLayout::FixedDict(vec![
+            WireField { name: "s".into(), layout: WireLayout::Str },
+        ]);
+        assert_eq!(fixed_size(&WireLayout::FixedDict(vec![
+            WireField { name: "i".into(), layout: dyn_inner },
+        ])), None);
+    }
+
+    // ---- 跨节同名方法消歧(prove-red:旧码无 section 参,同名方法首节胜)。----
+    #[test]
+    fn section_filter_disambiguates_same_named_method() {
+        let k = kb();
+        // 未给节:Base 首节(或实际命中节)返回并带 section 名。
+        let any = protocol_frame(&k, None, Some("Account"), Some("reqCreateAvatar"), None)
+            .expect("frame");
+        assert!(any["section"].as_str().is_some());
+        // 显式节过滤:命中该节。
+        let sec = any["section"].as_str().unwrap();
+        let filtered = protocol_frame(&k, None, Some("Account"), Some("reqCreateAvatar"), Some(sec))
+            .expect("frame");
+        assert_eq!(filtered["section"], sec);
+        // 未知节 → Err。
+        assert!(protocol_frame(&k, None, Some("Account"), Some("reqCreateAvatar"), Some("Nope"))
+            .is_err());
     }
 }

@@ -18,9 +18,9 @@ use std::path::{Path, PathBuf};
 use kode_python::symbols::parse_ast_symbols;
 use serde_json::{json, Value};
 
-const MAX_FILES: usize = 5000;
+pub(crate) const MAX_FILES: usize = 5000;
 const MAX_FILE_BYTES: u64 = 1_000_000;
-const SKIP_DIRS: &[&str] = &[
+pub(crate) const SKIP_DIRS: &[&str] = &[
     "target",
     "node_modules",
     ".git",
@@ -117,29 +117,76 @@ pub fn find_module(root: &Path, module: &str) -> Option<PathBuf> {
         .find(|f| f.file_stem().and_then(|s| s.to_str()) == Some(module))
 }
 
-/// 单个源文件里扫 `inst = Class()` 实例赋值,返回类名。
+/// 类路径合法:标识符或点分标识符(`Class` / `module.Class`),非空、无
+/// 首尾点/连续点、各段不以数字开头。
+fn is_class_path(s: &str) -> bool {
+    if s.is_empty() || s.starts_with('.') || s.ends_with('.') || s.contains("..") {
+        return false;
+    }
+    s.split('.').all(|p| {
+        !p.is_empty()
+            && p.chars().all(|c| c.is_alphanumeric() || c == '_')
+            && !p.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(true)
+    })
+}
+
+/// 单个源文件里扫**模块级** `inst = Class(...)` 实例赋值,返回类名。
+///
+/// 判据(严格,防误认,避免把无关行当实例赋值):
+/// - **模块级**:赋值必须顶格(列 0);函数/类体内的缩进赋值不是模块级实例。
+/// - **赋值而非比较/复合**:右侧以单个 `=` 开头(非 `==`/`>=`/`+=` 等)。
+/// - **构造调用**:右侧必须是 `Class(...)` 或 `module.Class(...)`(含 `(`),
+///   裸名/属性读取/字典字面量不算。
+/// - **标识符边界**:`inst` 之后必须是空白或 `=`(`instance` 不命中 `inst` 前缀)。
+///
+/// 单个坏行跳过而非中止整文件扫描;返回首个合法赋值。
 pub fn instance_class_in_source(source: &str, inst: &str) -> Option<String> {
     for line in source.lines() {
-        let t = line.trim();
+        // 模块级:顶格(列 0),无前导空白。
+        if line.starts_with(|c: char| c.is_whitespace()) {
+            continue;
+        }
+        let t = line.trim_end();
         let Some(rest) = t.strip_prefix(inst) else {
             continue;
         };
+        // `inst` 必须是完整标识符(后随空白/`=`/行尾)。
+        if let Some(next) = rest.chars().next() {
+            if next.is_alphanumeric() || next == '_' {
+                continue;
+            }
+        }
         let rest = rest.trim_start();
-        if !rest.starts_with('=') {
+        // 赋值 `=`(非比较/复合赋值)。
+        if !rest.starts_with('=') || rest.starts_with("==") {
             continue;
         }
-        let after = rest.trim_start_matches('=').trim_start();
-        // `Class(...)` → 取标识符。
-        let class = after
-            .split('(')
-            .next()
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || c == '_'))?;
-        if !class.starts_with(|c: char| c.is_ascii_digit()) {
-            return Some(class.to_string());
+        let after = rest['='.len_utf8()..].trim_start();
+        // 构造调用:`Class(...)` 或 `module.Class(...)`。
+        let Some(open) = after.find('(') else {
+            continue;
+        };
+        let class = after[..open].trim();
+        if !is_class_path(class) {
+            continue;
         }
+        return Some(class.rsplit('.').next().unwrap_or(class).to_string());
     }
     None
+}
+
+/// 在单个 `.py` 文件里查类 `class`(有界读);返回类名。
+/// implementedBy 的 `MODULE.Class` 形态:类必须在对应模块文件内,不能
+/// 只凭同名类名在全局任意找。
+pub fn class_in_file(file: &Path, class: &str) -> Option<String> {
+    let source = read_capped(file)?;
+    let extraction = parse_ast_symbols(&source);
+    extraction
+        .symbols
+        .classes
+        .iter()
+        .find(|c| c.name == class)
+        .map(|c| c.name.clone())
 }
 
 /// 全 `{root}/scripts` 下扫 `inst = Class()` 实例赋值(有界:文件数封顶、
@@ -280,6 +327,70 @@ mod tests {
         std::fs::write(scripts.join("a.py"), "x = 1\n").unwrap();
         let out = search_symbols(&root, "zzz", 20).expect("answer");
         assert_eq!(out["count"], 0);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    // ---- instance_class_in_source 严格判据(prove-red:旧码接受裸名/缩进/比较)。----
+
+    #[test]
+    fn instance_assignment_requires_constructor_call() {
+        // 无 `()` 的裸名赋值不算实例构造。
+        assert_eq!(instance_class_in_source("inst = Other\n", "inst"), None);
+        // 比较 `==` 不是赋值。
+        assert_eq!(instance_class_in_source("inst == Other()\n", "inst"), None);
+        // 右侧属性读取不是构造。
+        assert_eq!(instance_class_in_source("inst = some.attr\n", "inst"), None);
+        // 合法构造调用 → 类名。
+        assert_eq!(
+            instance_class_in_source("inst = Weapon()\n", "inst"),
+            Some("Weapon".into())
+        );
+    }
+
+    #[test]
+    fn instance_assignment_requires_module_level() {
+        // 函数/类体内的缩进赋值不是模块级实例。
+        let src = "def build():\n    inst = Weapon()\n";
+        assert_eq!(instance_class_in_source(src, "inst"), None);
+    }
+
+    #[test]
+    fn instance_assignment_requires_identifier_boundary() {
+        // `instance` 不应命中前缀 `inst`。
+        assert_eq!(instance_class_in_source("instance = Weapon()\n", "inst"), None);
+    }
+
+    #[test]
+    fn instance_assignment_accepts_dotted_class_path() {
+        // `module.Class()` 点分路径 → 类名(旧码因 `.` 被标识符过滤拒绝)。
+        assert_eq!(
+            instance_class_in_source("inst = package.Weapon()\n", "inst"),
+            Some("Weapon".into())
+        );
+        // 首/尾点或连续点非法。
+        assert_eq!(instance_class_in_source("inst = .Weapon()\n", "inst"), None);
+        assert_eq!(instance_class_in_source("inst = package..Weapon()\n", "inst"), None);
+    }
+
+    #[test]
+    fn instance_assignment_skips_bad_line_and_finds_later_good_line() {
+        // 一个坏行不中止整文件扫描(旧码 `?` 早退,丢后续合法行)。
+        let src = "inst = Other\ninst = Real()\n";
+        assert_eq!(
+            instance_class_in_source(src, "inst"),
+            Some("Real".into())
+        );
+    }
+
+    #[test]
+    fn class_in_file_locates_only_that_module() {
+        let root = std::env::temp_dir().join(format!("kode-mcp-class-in-file-{}", std::process::id()));
+        let scripts = root.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        let f = scripts.join("mod_a.py");
+        std::fs::write(&f, "class factory:\n    pass\n").unwrap();
+        assert_eq!(class_in_file(&f, "factory"), Some("factory".into()));
+        assert_eq!(class_in_file(&f, "missing"), None);
         std::fs::remove_dir_all(&root).ok();
     }
 }
