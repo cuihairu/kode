@@ -292,14 +292,17 @@ impl ImportApplier {
                 .zip(stmt.columns.iter())
                 .zip(row.values.iter())
             {
-                params.push(resolve_param(
-                    cell,
-                    column,
-                    value,
-                    &stmt.table,
-                    plan,
-                    &resolved_ids,
-                )?);
+                // 绑定失败(顺序违规等)与语句失败同闸:先回滚再上报,
+                // 前面语句的暂存行不留半套(失败路径保证 rollback)。
+                let bound =
+                    match resolve_param(cell, column, value, &stmt.table, plan, &resolved_ids) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            let _ = executor.rollback();
+                            return Err(e);
+                        }
+                    };
+                params.push(bound);
             }
             let new_id = match executor.execute_insert(&stmt.insert_sql, &params) {
                 Ok(id) => id,

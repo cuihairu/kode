@@ -16,9 +16,9 @@ use std::collections::BTreeMap;
 use kode_db_clone::{
     archive_fingerprint, ApplyControl, ApplyOutcome, Archive, ArchiveWriter, CloneError,
     CloneSchema, DerivedField, DerivedTable, ImportApplier, ImportMode, ImportOptions,
-    ImportPlanner, MemoryRunStore, PhysicalTable, RowSink, RuleSet, SchemaResolver, SchemaSource,
-    TargetEnvironment, TargetProfile, TargetSnapshot, TypedRow, TypedValue, UniqueKey,
-    VirtualSchema, WriteExecutor,
+    ImportPlanner, ImportRunStore, MemoryRunStore, PhysicalTable, RowSink, RuleSet, SchemaResolver,
+    SchemaSource, TargetEnvironment, TargetProfile, TargetSnapshot, TypedRow, TypedValue,
+    UniqueKey, VirtualSchema, WriteExecutor,
 };
 
 // ---- 与 golden_import.rs 同源的 Avatar 三级代表结构(集成测试独立二进制) ----
@@ -240,6 +240,8 @@ struct VirtualDb {
     rollbacks: usize,
     /// 命中即模拟约束失败(唯一键冲突)的 SQL 子串。
     fail_needle: Option<String>,
+    /// 核对期少报的行数(验证失败注入面)。
+    undercount_by: u64,
 }
 
 impl VirtualDb {
@@ -315,7 +317,8 @@ impl WriteExecutor for VirtualDb {
                     .filter(|r| r.first().is_some_and(|id| ids.contains(&id)))
                     .count() as u64
             })
-            .unwrap_or(0))
+            .unwrap_or(0)
+            .saturating_sub(self.undercount_by))
     }
 
     fn rollback(&mut self) -> kode_db_clone::CloneResult<()> {
@@ -626,5 +629,177 @@ fn duplicate_fingerprint_rejected_until_explicitly_allowed() {
     assert_eq!(db.committed_rows("tbl_Avatar"), 2);
     assert_eq!(db.committed_total(), 8);
 
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn apply_of_plan_with_statementless_tables_skips_verify_and_cleanup_for_them() {
+    // 归档只有根行:items/gold 在 order 里但无语句 → Verify 按 0 跳过、
+    // 清理计划对无新键的表也不生成步骤(只对真正导入的表负责)。
+    let dir = temp_dir("root-only");
+    let path = write_archive_root_only(&dir, "root-only.kdpclone");
+    let archive = Archive::open(&path, None).unwrap();
+    let plan = plan_for(&archive);
+    assert_eq!(plan.statements.len(), 1);
+    assert_eq!(plan.order.len(), 3);
+
+    let mut db = VirtualDb::new();
+    let mut store = MemoryRunStore::new();
+    let outcome = ImportApplier
+        .apply(
+            &plan,
+            &archive,
+            &local_target(),
+            &mut db,
+            &mut store,
+            &ApplyControl::default(),
+        )
+        .unwrap();
+    let run = match outcome {
+        ApplyOutcome::Applied(run) => run,
+        _ => panic!("root-only import must apply"),
+    };
+    assert_eq!(run.inserted_per_table.get("tbl_Avatar"), Some(&1));
+    assert!(!run.inserted_per_table.contains_key("tbl_Avatar_items"));
+    // Verify:只核对有语句的表。
+    assert_eq!(run.verify.checks.len(), 1);
+    assert_eq!(run.verify.checks[0].table, "tbl_Avatar");
+    assert!(run.verify.passed);
+    // 清理计划:只对有新主键的表生成 DELETE 步骤。
+    assert_eq!(run.cleanup.steps.len(), 1);
+    assert!(run.cleanup.steps[0].sql.contains("tbl_Avatar"));
+    assert_eq!(db.committed_total(), 1);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+fn write_archive_root_only(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let path = dir.join(name);
+    let mut writer = ArchiveWriter::new(&path, None, "Avatar").unwrap();
+    writer
+        .write_row(
+            "tbl_Avatar",
+            &row(
+                "tbl_Avatar",
+                vec![
+                    TypedValue::BigUInt(7),
+                    TypedValue::UInt(1),
+                    TypedValue::Text("hero".into()),
+                ],
+            ),
+        )
+        .unwrap();
+    writer.end_table("tbl_Avatar", 1).unwrap();
+    writer
+        .finalize(
+            &[],
+            &kode_db_clone::redact::RedactionReport { entries: vec![] },
+        )
+        .unwrap();
+    path
+}
+
+#[test]
+fn apply_records_declared_account_binding_without_credential_writes() {
+    // 声明了账号绑定规则:Apply 只登记事实(declaration/applied=false),
+    // 绝不写凭据或账号表(PDC-0306)。
+    let dir = temp_dir("binding");
+    let (mut plan, archive) = fixture(&dir);
+    plan.account_binding = kode_db_clone::AccountBindingPlan {
+        declaration: Some("Account.characters".into()),
+        login_ready: true,
+        note: "binding rule declared via Account.characters".into(),
+    };
+
+    let mut db = VirtualDb::new();
+    let mut store = MemoryRunStore::new();
+    let outcome = ImportApplier
+        .apply(
+            &plan,
+            &archive,
+            &local_target(),
+            &mut db,
+            &mut store,
+            &ApplyControl::default(),
+        )
+        .unwrap();
+    let run = match outcome {
+        ApplyOutcome::Applied(run) => run,
+        _ => panic!("binding import must apply"),
+    };
+    assert_eq!(
+        run.binding.declaration.as_deref(),
+        Some("Account.characters")
+    );
+    assert!(!run.binding.applied);
+    assert!(run.binding.note.contains("recorded"));
+    // 绑定不产生任何额外写语句:写日志只含 4 条 INSERT。
+    assert_eq!(db.write_log.len(), 4);
+    assert!(db
+        .write_log
+        .iter()
+        .all(|sql| sql.starts_with("INSERT INTO")));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn verify_undercount_surfaces_post_commit_drift_and_records_no_run() {
+    // 提交后核对失败:如实报 DriftMismatch;数据已原子提交,run 不落账
+    // (调用方拿错误对象 + 清理计划处理,绝不谎报通过)。
+    let dir = temp_dir("undercount");
+    let (plan, archive) = fixture(&dir);
+
+    let mut db = VirtualDb::new();
+    db.undercount_by = 1; // 核对期少报一行 → found != expected
+    let mut store = MemoryRunStore::new();
+    let err = ImportApplier
+        .apply(
+            &plan,
+            &archive,
+            &local_target(),
+            &mut db,
+            &mut store,
+            &ApplyControl::default(),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(err, CloneError::DriftMismatch(ref m) if m.contains("post-commit verification failed")),
+        "{err:?}"
+    );
+    // 数据已提交(原子完整,不回滚已提交事务),但 run 不进账。
+    assert_eq!(db.committed_total(), 4);
+    assert_eq!(db.begins, 1);
+    assert_eq!(db.commits, 1);
+    let fingerprint = archive_fingerprint(&archive).unwrap();
+    assert!(store.find_by_fingerprint(&fingerprint).is_none());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn order_violation_gate_rolls_back_staged_rows() {
+    // 计划被外部打乱(子行先于父行):占位顺序违规 → fail-closed,
+    // 且前面语句的暂存行必须回滚,不留半套(失败路径保证 rollback)。
+    let dir = temp_dir("order-violation");
+    let (mut plan, archive) = fixture(&dir);
+    assert_eq!(plan.statements.len(), 4);
+    plan.statements.swap(0, 1); // items 语句提到根语句之前
+
+    let mut db = VirtualDb::new();
+    let mut store = MemoryRunStore::new();
+    let err = ImportApplier
+        .apply(
+            &plan,
+            &archive,
+            &local_target(),
+            &mut db,
+            &mut store,
+            &ApplyControl::default(),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(err, CloneError::InvalidRule(ref m) if m.contains("order violation")),
+        "{err:?}"
+    );
+    assert_eq!(db.rollbacks, 1);
+    assert_eq!(db.committed_total(), 0);
     std::fs::remove_dir_all(&dir).unwrap();
 }
