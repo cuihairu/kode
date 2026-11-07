@@ -284,6 +284,102 @@ pub fn database_schema(knowledge: &AssetKnowledge, entity: Option<&str>) -> Resu
     }))
 }
 
+/// 沿点分路径走到目标节点(跳过 `<root>`/`<defaults>` 文档元素包裹段,
+/// 目录键都是去掉包裹段后的相对路径)。段未命中 → None。
+fn node_at<'a>(tree: Option<&'a ConfigNode>, key: &str) -> Option<&'a ConfigNode> {
+    let mut current = tree?;
+    if current.name.is_empty() && current.children.len() == 1 {
+        current = &current.children[0];
+    }
+    for segment in key.split('.') {
+        if segment.is_empty() {
+            continue;
+        }
+        current = current.children.iter().find(|c| c.name == segment)?;
+    }
+    Some(current)
+}
+
+/// 节点 → 值形:叶子取 trim 后文本;容器如实列子键名;空节点 → null。
+fn node_value(node: &ConfigNode) -> Value {
+    let text = node.text.trim();
+    if !text.is_empty() {
+        return Value::String(text.to_string());
+    }
+    if node.children.is_empty() {
+        return Value::Null;
+    }
+    let names: Vec<&str> = node.children.iter().map(|c| c.name.as_str()).collect();
+    Value::String(format!(
+        "section with {} child key(s): {}",
+        node.children.len(),
+        names.join(", ")
+    ))
+}
+
+/// `why_setting`:对给定配置键答「值 + 中英含义 + file:line 出处」。
+///
+/// 值 = resolve_config 生效树(合并缺省则元件侧)沿点分路径的叶子值;
+/// 中英含义 + 出处 = 引擎 defaults 文案库(serverConfigCatalog,经
+/// config_catalog 快照)curated 条目;出处是权威 file:line(如
+/// `kbe/res/server/kbengine_defaults.xml:618`),另附解析树该节点的
+/// sourceComments(原始双语注释)作交叉佐证。键不在文案库 → found:false
+/// 如实(值仍解析,含义/出处留空,不虚构)。键在树但非叶子 → 值列子键名。
+pub fn why_setting(root: &Path, key: &str) -> Result<Value, String> {
+    let key = key.trim();
+    if key.is_empty() {
+        return Err("empty config key".to_string());
+    }
+    let custom_path = custom_config_path(root);
+    let defaults_path = defaults_config_path(root);
+    let custom_text = read_opt(&custom_path);
+    let defaults_text = read_opt(&defaults_path);
+    let resolved = resolve_config(defaults_text.as_deref(), custom_text.as_deref());
+    let tree = resolved.merged.as_ref().or(resolved.custom_tree.as_ref());
+    let node = node_at(tree, key);
+
+    let doc = crate::config_catalog::find_doc(key);
+    let mut out = Map::new();
+    out.insert("key".into(), Value::String(key.to_string()));
+    out.insert("value".into(), node.map(node_value).unwrap_or(Value::Null));
+    out.insert(
+        "sourceComments".into(),
+        Value::Array(
+            node.map(|n| n.source_comments.iter().map(|c| Value::String(c.clone())).collect())
+                .unwrap_or_default(),
+        ),
+    );
+    match doc {
+        Some(d) => {
+            out.insert("found".into(), json!(true));
+            out.insert("meaningZh".into(), Value::String(d.zh.to_string()));
+            out.insert("meaningEn".into(), Value::String(d.en.to_string()));
+            out.insert("origin".into(), Value::String(d.source.to_string()));
+            out.insert("group".into(), Value::String(d.group.to_string()));
+        }
+        None => {
+            out.insert("found".into(), json!(false));
+            out.insert("meaningZh".into(), Value::Null);
+            out.insert("meaningEn".into(), Value::Null);
+            out.insert("origin".into(), Value::Null);
+            out.insert("group".into(), Value::Null);
+        }
+    }
+    out.insert(
+        "configPath".into(),
+        Value::String(custom_path.to_string_lossy().into_owned()),
+    );
+    out.insert(
+        "defaultsPath".into(),
+        if defaults_text.is_some() {
+            Value::String(defaults_path.to_string_lossy().into_owned())
+        } else {
+            Value::Null
+        },
+    );
+    Ok(Value::Object(out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -394,5 +490,62 @@ mod tests {
             .as_str()
             .unwrap()
             .ends_with("scripts/kbengine.py"));
+    }
+
+    #[test]
+    fn why_setting_answers_value_meaning_and_origin() {
+        let payload = why_setting(&fixture_root(), "dbmgr.account_system.account_registration.enable")
+            .expect("answer");
+        // 值来自元件侧(无 defaults → 合并不猜,取 custom_tree)。
+        assert_eq!(payload["value"], "true");
+        // 中英含义来自文案库(curated)。
+        assert_eq!(payload["found"], true);
+        assert!(payload["meaningZh"]
+            .as_str()
+            .unwrap()
+            .contains("开放注册"));
+        assert!(payload["meaningEn"].as_str().unwrap().contains("registration"));
+        // 出处 = 权威 file:line(文案库 source)。
+        assert!(payload["origin"]
+            .as_str()
+            .unwrap()
+            .contains("kbengine_defaults.xml"));
+        assert_eq!(payload["group"], "account");
+        // 解析树该节点原始双语注释作交叉佐证。
+        let comments = payload["sourceComments"].as_array().unwrap();
+        assert!(!comments.is_empty(), "fixture node carries its inline comment");
+    }
+
+    #[test]
+    fn why_setting_unknown_key_is_found_false_not_error() {
+        let payload = why_setting(&fixture_root(), "no.such.key").expect("graceful");
+        assert_eq!(payload["found"], false);
+        assert!(payload["meaningZh"].is_null());
+        assert!(payload["origin"].is_null());
+        assert!(payload["value"].is_null());
+    }
+
+    #[test]
+    fn why_setting_empty_key_is_error() {
+        assert!(why_setting(&fixture_root(), "  ").is_err());
+    }
+
+    #[test]
+    fn why_setting_catalog_key_absent_in_tree_is_honest_null_value() {
+        // baseapp.archivePeriod 在文案库但元件侧未配置(无 defaults 不猜)。
+        let payload = why_setting(&fixture_root(), "baseapp.archivePeriod").expect("answer");
+        assert_eq!(payload["found"], true);
+        assert!(payload["meaningZh"].as_str().unwrap().contains("存档"));
+        assert!(payload["value"].is_null());
+    }
+
+    #[test]
+    fn why_setting_section_key_lists_children() {
+        // dbmgr.account_system 是容器段 → 值如实列子键名。
+        let payload = why_setting(&fixture_root(), "dbmgr.account_system").expect("answer");
+        assert_eq!(payload["found"], true);
+        let value = payload["value"].as_str().unwrap();
+        assert!(value.starts_with("section with"));
+        assert!(value.contains("account_registration"));
     }
 }

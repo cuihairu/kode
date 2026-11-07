@@ -117,6 +117,10 @@ impl KodeMcpServer {
                 Some(entity) => crate::config_qa::database_schema(&self.knowledge, Some(&entity)),
                 None => crate::config_qa::database_schema(&self.knowledge, None),
             },
+            "why_setting" => match arg_str("key") {
+                Some(key) => crate::config_qa::why_setting(&self.assets_root, &key),
+                None => Err("missing argument: key".to_string()),
+            },
             other => Err(format!("unknown tool: {other}")),
         };
         match result {
@@ -134,7 +138,7 @@ impl ServerHandler for KodeMcpServer {
                 "Pass the KBEngine assets root as the CLI argument. Tools: search_entities, \
                  get_entity_model, get_type_graph, validate_defs, get_message_entry, \
                  encode_decode_sample, db_schema_preview, explain, get_final_config, \
-                 get_entry_scripts, get_database_schema.",
+                 get_entry_scripts, get_database_schema, why_setting.",
             )
     }
 
@@ -243,6 +247,16 @@ impl ServerHandler for KodeMcpServer {
                             "entity": {"type": "string", "description": "optional entity def name"}
                         }),
                         &[],
+                    ),
+                ),
+                Self::tool(
+                    "why_setting",
+                    "Why a server config key: its effective value (resolved from {root}/res/server/kbengine.xml merged with a vendored kbengine_defaults.xml), the curated Chinese and English meaning, and the authoritative file:line origin (e.g. kbe/res/server/kbengine_defaults.xml:618) plus the raw source comments on the resolved node. Unknown key returns found:false (value still resolved when present in the tree).",
+                    schema_of(
+                        serde_json::json!({
+                            "key": {"type": "string", "description": "dotted config key path (root/process sections stripped), e.g. baseapp.archivePeriod"}
+                        }),
+                        &["key"],
                     ),
                 ),
             ],

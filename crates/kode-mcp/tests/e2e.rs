@@ -52,7 +52,7 @@ fn payload_of(result: CallToolResult) -> Value {
 }
 
 #[tokio::test]
-async fn list_tools_exposes_all_eleven() {
+async fn list_tools_exposes_all_twelve() {
     let client = connect().await;
     let tools = client.list_all_tools().await.expect("list_tools");
     let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
@@ -71,6 +71,7 @@ async fn list_tools_exposes_all_eleven() {
             "get_type_graph",
             "search_entities",
             "validate_defs",
+            "why_setting",
         ]
     );
     let _ = client.cancel().await;
@@ -245,6 +246,23 @@ async fn call_tools_return_real_data() {
         .iter()
         .any(|t| t["name"] == "Account"));
     assert!(payload["tableIndex"]["Account"].is_object());
+
+    // why_setting(KODE-CFG-018):配置键问答真数据(值 + 中英含义 + file:line)。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "why_setting",
+                serde_json::json!({"key": "dbmgr.account_system.account_registration.enable"}),
+            ))
+            .await
+            .expect("call why_setting"),
+    );
+    assert_eq!(payload["found"], true);
+    assert!(payload["meaningZh"].as_str().unwrap().contains("开放注册"));
+    assert!(payload["origin"]
+        .as_str()
+        .unwrap()
+        .contains("kbengine_defaults.xml"));
 
     let _ = client.cancel().await;
 }
