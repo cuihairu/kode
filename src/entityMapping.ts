@@ -1323,6 +1323,20 @@ export class EntityMappingManager {
     return this.findIndexedProperty(pythonFile, fullPath, rootSymbol);
   }
 
+  /**
+   * 该 python 文件所属实体的 .def 属性声明清单(C-22 只读视图 inlay 数据源):
+   * 与 resolvePropertyDefinitionInfo 同一索引与门控口径,只是整清单返回。
+   * 无所属实体 → 空数组(调用方零 inlay,不推导)。
+   */
+  async listPropertyDefinitionsForFile(pythonFile: string): Promise<PropertyDefinitionInfo[]> {
+    this.ensureStartup();
+    const index = await this.ensureIndexForPythonFile(pythonFile);
+    if (!index) {
+      return [];
+    }
+    return index.propertyDefinitions;
+  }
+
   private async findIndexedProperty(
     pythonFile: string,
     fullPath: string,

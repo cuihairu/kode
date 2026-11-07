@@ -363,6 +363,7 @@ import { GlobalDataDictIndex } from './globalDataIndex';
 import { WorkspaceIndex } from './workspaceIndex';
 import { PythonTypeInlayHintsProvider } from './typeInlayHints';
 import { DefParamInlayHintsProvider } from './defParamInlayHints';
+import { DefPropsInlayHintsProvider } from './defPropsInlayHints';
 import { PythonClassIndex } from './pythonClassIndex';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { shouldStartKbEngineIndexing } from './workspaceGate';
@@ -1423,6 +1424,16 @@ export function activate(context: vscode.ExtensionContext) {
     new DefParamInlayHintsProvider(entityMappingManager)
   );
   context.subscriptions.push(defParamInlayHintsProvider);
+
+  // C-22 def 属性只读视图 inlay(注释锚形态):整行注释锚
+  // `# kode:props-from-def` 行尾渲染该实体 def 根级属性清单(纯渲染,事实源
+  // = .def);独立开关 kbengine.inlayHints.defProps(默认开),provider 现读
+  // 配置下一次渲染即生效,不需要配置监听 fire
+  const defPropsInlayHintsProvider = vscode.languages.registerInlayHintsProvider(
+    pythonDocumentSelector,
+    new DefPropsInlayHintsProvider(entityMappingManager)
+  );
+  context.subscriptions.push(defPropsInlayHintsProvider);
 
   const callHierarchyProvider = vscode.languages.registerCallHierarchyProvider(
     [
