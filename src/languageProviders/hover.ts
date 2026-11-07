@@ -21,7 +21,8 @@ import { currentHoverLanguageEnv, readHoverLanguageSetting, resolveHoverLanguage
 import { resolveLocalVariableReturnTypeFromSnapshot } from '../pythonReturnTypeInference';
 import { resolveAnnotationTypeWithReason } from '../pythonTypeStubs';
 import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from '../selfPropertyTypeInference';
-import { getTrapEntryByDetection } from '../knowledge/trapsKnowledge';
+import { behaviorEntriesForSymbol, behaviorNotesMarkdown, fixedDictBehaviorNoteMarkdown } from '../behaviorKnowledge';
+import { isFixedDictTypeName } from '../behaviorLints';
 import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonCallAtPosition, type PythonCallAtPosition } from '../pythonLanguageUtils';
 import { engineApiVersionAnnotation, getKbeAliases, getKbeSymbol, resolveKbeAccessAtPosition, summaryForLanguage } from '../kbeModuleIndex';
 import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, inferDataDictValueType, isKeyInsideLineComment, queryDataDictSitesForAccess } from '../globalDataIndex';
@@ -67,6 +68,63 @@ export let hoverInFlightGateForTests: (() => Promise<void>) | null = null;
 
 export function setHoverInFlightGateForTests(gate: (() => Promise<void>) | null): void {
   hoverInFlightGateForTests = gate;
+}
+
+/**
+ * C-23(交付③)出口注记挂靠:悬停词命中 KB-001 结构化条目的 symbols 时,
+ * 把「现象+正确姿势+依据」双语段拼到既有 hover 尾部;无既有 hover 时构建
+ * 注记专属 hover(知识呈现通道)。既有 contents 是单个 MarkdownString 时
+ * **重建新实例**再拼(memo 缓存跨请求共享同一 Hover 实例,原地 append 会
+ * 随请求次数重复叠加);数组/未知形态原样返回不动。非 python 文档/开关
+ * 关闭/无命中时行为与挂靠前逐位一致。
+ */
+function attachBehaviorNotesToHoverResult(
+  result: vscode.ProviderResult<vscode.Hover>,
+  document: vscode.TextDocument,
+  position: vscode.Position
+): vscode.ProviderResult<vscode.Hover> {
+  // 同步结果保持同步返回(既有用例口径:provideHover 直接给 Hover;只有
+  // 异步面(自管属性预算腿)才走 Promise 链)
+  if (result && typeof (result as { then?: unknown }).then === 'function') {
+    return (result as Promise<vscode.Hover | null | undefined>)
+      .then(hover => applyBehaviorNotes(hover, document, position));
+  }
+  return applyBehaviorNotes(result as vscode.Hover | null, document, position);
+}
+
+function applyBehaviorNotes(
+  hover: Awaited<vscode.ProviderResult<vscode.Hover>>,
+  document: vscode.TextDocument,
+  position: vscode.Position
+): vscode.Hover | null {
+  if (document.languageId !== 'python') {
+    return hover ?? null;
+  }
+  if (!getLanguageFeatureConfig().hoverBehaviorNotes) {
+    return hover ?? null;
+  }
+  const wordRange = document.getWordRangeAtPosition(position, /\w+/);
+  if (!wordRange) {
+    return hover ?? null;
+  }
+  const entries = behaviorEntriesForSymbol(document.getText(wordRange));
+  if (entries.length === 0) {
+    return hover ?? null;
+  }
+  const notes = behaviorNotesMarkdown(entries);
+  const contents = hover?.contents as unknown;
+  if (contents && typeof contents === 'object' && 'value' in contents
+    && typeof (contents as vscode.MarkdownString).value === 'string') {
+    const markdown = new vscode.MarkdownString(
+      `${(contents as vscode.MarkdownString).value}${notes}`
+    );
+    return new vscode.Hover(markdown);
+  }
+  if (hover) {
+    return hover; // 未知 contents 形态:不猜,原样返回
+  }
+  // 无既有 hover:注记单独成 hover(去掉段首分隔线)
+  return new vscode.Hover(new vscode.MarkdownString(notes.replace(/^\n\n---\n\n/, '')));
 }
 
 export class KBEngineHoverProvider implements vscode.HoverProvider {
@@ -132,7 +190,13 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     position: vscode.Position,
     token?: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.Hover> {
-    return this.provideHoverTimed(document, position, token);
+    // C-23(交付③):出口统一挂行为注记——KB-001 结构化条目按悬停词挂靠,
+    // 覆盖所有 hover 分支出口(注记纯静态知识,零索引查询,不进预算闸)
+    return attachBehaviorNotesToHoverResult(
+      this.provideHoverTimed(document, position, token),
+      document,
+      position
+    );
   }
 
   /**
@@ -717,16 +781,15 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     try {
       const markdown = new vscode.MarkdownString();
       markdown.appendMarkdown(formatSelfPropertyTypeHover(resolved));
-      // C-23 交付③ hover 行为注记:FIXED_DICT 形态的 def 属性附 KB-001
-      // 双语行为警告段(数据源=trapsKnowledge 结构化条目;形态判定与
-      // 存根/悬停同一 getTypeStorageShape 类型图)
+      // C-23 交付③ hover 行为注记:FIXED_DICT 形态的 def 属性附 KB-001 双语
+      // 行为警告段。形态判定两线并存(C-23 曾有两路实现,合并口径):优先
+      // getTypeStorageShape 类型图(与存根/悬停同源),内建名直判兜底——测试
+      // 夹具/无 types.xml 环境下类型图解析不到字面 FIXED_DICT 时不漏挂;
+      // 文案=behaviorNoteMarkdown 单一事实源(现象/正确姿势/依据双语段)。
       if (resolved.kind === 'def-property' && resolved.typeName) {
         const shape = getTypeStorageShape(document.fileName, resolved.typeName);
-        if (shape.kind === 'fixedDict') {
-          const entry = getTrapEntryByDetection('fixed-dict-nested-mutation');
-          if (entry) {
-            markdown.appendMarkdown(`\n\n---\n\n> ⚠ ${entry.noteZh}\n> ${entry.noteEn}`);
-          }
+        if (shape.kind === 'fixedDict' || isFixedDictTypeName(resolved.typeName, [])) {
+          markdown.appendMarkdown(fixedDictBehaviorNoteMarkdown());
         }
       }
       return new vscode.Hover(markdown);

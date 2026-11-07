@@ -9,6 +9,8 @@ import { RECEIVER_NONE_DIAGNOSTIC_CODE, buildReceiverNoneGuardEdit, buildReceive
 import { KBEngineSectionName, METHOD_SECTIONS, getLanguageFeatureConfig, getNodeValue, parseDefAst } from './shared';
 import { UNKNOWN_TYPE_DIAGNOSTIC_CODE } from './validation';
 import { findDefSymbolInfo } from './navigation';
+import { FIXED_DICT_NESTED_MUTATION_CODE } from '../behaviorKnowledge';
+import { buildFixedDictWholeReassignEdit } from '../behaviorLints';
 import { findRegisteredTypeSuggestions, getKnownTypeContext } from './completion';
 export class KBEngineTypeCodeActionProvider implements vscode.CodeActionProvider {
   /**
@@ -458,6 +460,62 @@ export class KBEngineReceiverNoneGuardCodeActionProvider implements vscode.CodeA
         action.edit = edit;
         actions.push(action);
       }
+    }
+    return actions;
+  }
+}
+
+/**
+ * C-23(交付②):FIXED_DICT 子键赋值诊断(kbengine.fixedDictNestedMutation)
+ * 的快速修复——整行子键赋值改写为整体重赋习语(`_fd = self.<属性>` →
+ * `_fd[子键] = 值` → `self.<属性> = _fd`;编辑由 behaviorLints
+ * buildFixedDictWholeReassignEdit 纯函数产出,替换后顶层赋值走引擎同步
+ * 路径,重算该位不再报)。code 对账:非本码诊断不出;行文本形态不匹配
+ * (多语句行/跨行)不出(不猜);只动本文档该行。
+ */
+export class KBEngineFixedDictWholeReassignCodeActionProvider implements vscode.CodeActionProvider {
+  provideCodeActions(
+    document: vscode.TextDocument,
+    range: vscode.Range,
+    context: vscode.CodeActionContext,
+    token?: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.CodeAction[]> {
+    if (token?.isCancellationRequested) {
+      return [];
+    }
+    const actions: vscode.CodeAction[] = [];
+    const seen = new Set<number>();
+    for (const diagnostic of context.diagnostics) {
+      if (diagnostic.code !== FIXED_DICT_NESTED_MUTATION_CODE) {
+        continue;
+      }
+      if (!diagnosticRangeIntersects(diagnostic.range, range)) {
+        continue;
+      }
+      const line = diagnostic.range.start.line;
+      if (seen.has(line)) {
+        continue;
+      }
+      const edit = buildFixedDictWholeReassignEdit(document.getText(), line);
+      if (!edit) {
+        continue;
+      }
+      seen.add(line);
+      const workspaceEdit = new vscode.WorkspaceEdit();
+      const lines = document.getText().split(/\r?\n/);
+      const trailingNewline = edit.endLine < lines.length;
+      workspaceEdit.replace(
+        document.uri,
+        new vscode.Range(edit.startLine, 0, edit.endLine, 0),
+        trailingNewline ? `${edit.text}\n` : edit.text
+      );
+      const action = new vscode.CodeAction(
+        vscode.l10n.t('Whole reassign: rewrite FIXED_DICT sub-key assignment as top-level assignment'),
+        vscode.CodeActionKind.QuickFix
+      );
+      action.diagnostics = [diagnostic];
+      action.edit = workspaceEdit;
+      actions.push(action);
     }
     return actions;
   }

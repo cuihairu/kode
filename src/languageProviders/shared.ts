@@ -33,6 +33,9 @@ export function getLanguageFeatureConfig() {
     // C-21:KBEngine Python API 文档 hover(KBEngine.<api>/生命周期回调/内建
     // 属性文档段),默认开
     hoverApiDocs: config.get<boolean>('hover.apiDocs', true),
+    // C-23(交付③):KB-001 结构化行为注记段(FIXED_DICT 属性/易坑 API 的
+    // 「现象+正确姿势+依据」双语段),默认开
+    hoverBehaviorNotes: config.get<boolean>('hover.behaviorNotes', true),
     // CodeLens 同批按 provider 各一枚
     codeLensRpc: config.get<boolean>('codeLens.rpc', true),
     codeLensEventCallbacks: config.get<boolean>('codeLens.eventCallbacks', true),

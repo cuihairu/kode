@@ -27,7 +27,7 @@ import { KBE_SCHEME, buildKbeStubDocument } from '../src/kbeModuleIndex';
 import { parseDebugConfigText } from '../src/debugConfigBootstrap';
 import { setKodeCoreShadowGate, getKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
 import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
-import { makeContractGate } from './helpers/configCoreContract';
+import { ENGINE_DEFAULT_TELNET_PORTS, makeContractGate } from './helpers/configCoreContract';
 import packageJson from '../package.json';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { languagesRegistry } from './fake-vscode/languages';
@@ -203,12 +203,17 @@ describe('extension activate 装配', () => {
     expect(testsRegistry.controllers[0].profiles[0].kind).toBe(1);
     expect(testsRegistry.controllers[0].profiles[0].isDefault).toBe(true);
 
-    // 树视图:实体/进程/telnet/最终配置四个视图 id 与 views 贡献点一致
+    // 树视图(KODE-PERF 视图先行 + KB-GC-001 期二口径):activate 首行为全部
+    // 声明 id 注册空占位 provider,真 provider 在各自装配位随后接管=同 id
+    // 双注册是既定语义(宿主同 id 后到者接管)。锁两面:前 N 笔(占位批)与
+    // 后 N 笔(真接管批)都与 views 贡献点严格一致。
     const declaredViewIds = Object.values(declared.views)
       .flat()
       .map(view => view.id)
       .sort();
-    expect(treeRegistrations.map(item => item.viewId).sort()).toEqual(declaredViewIds);
+    const registeredViewIds = treeRegistrations.map(item => item.viewId);
+    expect(registeredViewIds.slice(0, declaredViewIds.length).sort()).toEqual(declaredViewIds);
+    expect(registeredViewIds.slice(declaredViewIds.length).sort()).toEqual(declaredViewIds);
 
     // 语言服务:补全 3(.def + Python + 启动脚本,KBEXP-1)、悬停 3(.def/hook +
     // 引擎配置字段,批112 + 启动脚本,KBEXP-1)、定义 2、调用层级 1、重命名 1
@@ -1228,6 +1233,38 @@ describe('extension activate 装配', () => {
       });
     });
     if (bindConflict) {
+      fs.rmSync(xmlDir, { recursive: true, force: true });
+      ctx.skip();
+    }
+    // 环境守卫(扩):断言写死「1/7 开启」——前提是七口里只有测试自起的
+    // 31000 可达。其余 6 个引擎默认 telnet 口若本机有真进程在听(如同机
+    // 跑着真引擎 cellapp:50000),探测会数出 N/7,前提不成立,按上面 bind
+    // 冲突同款口径跳过不误报。1s 封顶防防火墙静默丢包挂住。
+    const occupiedElsewhere = await new Promise<boolean>(resolve => {
+      const others = ENGINE_DEFAULT_TELNET_PORTS.filter(entry => entry.port !== 31000);
+      let pending = others.length;
+      let occupied = false;
+      const cap = setTimeout(() => resolve(occupied), 1000);
+      cap.unref();
+      for (const entry of others) {
+        const socket = net.connect({ host: '127.0.0.1', port: entry.port });
+        const done = (hit: boolean): void => {
+          if (pending <= 0) {
+            return;
+          }
+          socket.destroy();
+          occupied = occupied || hit;
+          pending -= 1;
+          if (pending === 0) {
+            clearTimeout(cap);
+            resolve(occupied);
+          }
+        };
+        socket.once('connect', () => done(true));
+        socket.once('error', () => done(false));
+      }
+    });
+    if (occupiedElsewhere) {
       fs.rmSync(xmlDir, { recursive: true, force: true });
       ctx.skip();
     }

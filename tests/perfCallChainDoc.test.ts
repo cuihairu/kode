@@ -169,6 +169,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // +1 行 import(trapsKnowledge)——上列全部锚点 +1、provideHover 锚点 129→130
   // (真位重探 625/638/922/1004/1055/1118/1451/2320/2400),出处随 baseline 锁步。
 
+  // 2026-11-07(main 修复批):ARCH-001 拆分丢失的 C-23 hover 布线回归
+  // (attachBehaviorNotesToHoverResult/applyBehaviorNotes 两函数 +51 行插在
+  // KBEngineHoverProvider 类前),provideHover 锚点 130→188(真位重探),出处随
+  // baseline 锁步。
   // 2026-11-07(KB-GC-001 guiconsole 期一):extension.ts 顶部 +3 行 import
   // (kbengineConsoleHub/consoleLogTail/componentStatusPanel),装配块 +66 落在
   // 4554(全部锚点之后不再位移)——全部 extension.ts 锚点 +3(真位重探
@@ -235,7 +239,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // 触发点(def 声明方法追加段)resolveDefMethodAnnotation +12:1360 后锚点
   // 再 +12(1852/1911/1935/2063/4812/5220/5326/7170),baseline 同步。
   ['src/languageProviders/inlay.ts', 42, 'getDocumentLines(document)'],
-  ['src/languageProviders/hover.ts', 130, 'provideHover('],
+  ['src/languageProviders/hover.ts', 188, 'provideHover('],
   ['src/languageProviders/navigation.ts', 24, 'shadowCompareDefinition'],
   ['src/languageProviders/validation.ts', 13, 'export function validateDocument('],
   ['src/languageProviders/validation.ts', 37, 'shadowObserveDefDocument'],

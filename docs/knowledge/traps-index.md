@@ -36,6 +36,13 @@
 | Expecting to cancel timers in `onDestroy` | Unnecessary — `destroy()` cancels all timers (`scriptTimers_.cancelAll()`) | Only `delTimer` matters for early cancel while alive | [lifecycle §Timers](entity-lifecycle-reference.md), [usage stats](api-usage-stats.md) |
 | `cancelController("SomeType")` | TypeError — only the exact string `"Movement"` is accepted | Cancel by handle for other controllers | [api-cellapp §deviations](api-cellapp.md) |
 | Calling `trackEntity` / `turnToYaw` | No such methods in the fork | `moveToEntity` / `addYawRotator` | [api-cellapp §deviations](api-cellapp.md) |
+| Module-level `KBEngine.addTimer` with a self-bound callback leaks | The app-level timer strongly refs the callback object (`self.onTick` strongly refs the entity); entity `destroy()` cancels only the entity's own `scriptTimers_`, never this one — the callback keeps firing / the entity leaks into `garbages` | Store the handle and call `KBEngine.delTimer(handle)` in `onDestroy` (entity-level `self.addTimer` is safe — destroy auto-cancels all) | [lifecycle §Timers](entity-lifecycle-reference.md), `python_app.cpp:721-748` |
+
+## Property sync
+
+| Trap | Symptom | Correct pattern | Details |
+| --- | --- | --- | --- |
+| FIXED_DICT sub-key assignment does not sync | `self.<FIXED_DICT property>[subKey] = value` only mutates the local `pyDict_`; the engine has no notification hook there, so the property never syncs | Whole-reassign idiom: `d = self.<prop>` → mutate sub-key → `self.<prop> = d` (only top-level assignment syncs) | [core-concepts §1.5](api-core-concepts.md), `fixeddict.cpp:272-308` |
 
 ## EntityCall semantics
 

@@ -3,8 +3,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import { buildFinalServerConfig, type ConfigXmlNode } from '../src/serverConfigMerge';
+import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
+import { getKodeCoreShadowGate, setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
 // KODE-CFG-009:parse 实现下线(core 唯一),测试夹具走契约镜像
-import { parseConfigXml } from './helpers/configCoreContract';
+import { makeContractGate, parseConfigXml } from './helpers/configCoreContract';
 import { resolveEngineRoot } from './helpers/engineRoot';
 import { configurationOverrides, workspace as stubWorkspace } from './fake-vscode/workspaceState';
 
@@ -72,12 +74,19 @@ const elementsWithoutComment = (xml: string): string[] => {
 };
 
 describe.skipIf(!hasRealDefaults)('真实 kbengine_defaults.xml 全量验收', () => {
-  it('良构、每元素内部带注释、取值与关闭开关时一致', () => {
+  it('良构、每元素内部带注释、取值与关闭开关时一致', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-realdefaults-'));
     fs.mkdirSync(path.join(root, 'kbe', 'res', 'server'), { recursive: true });
     fs.copyFileSync(realDefaultsPath!, path.join(root, 'kbe', 'res', 'server', 'kbengine_defaults.xml'));
     stubWorkspace.workspaceFolders = [{ uri: { fsPath: root } } as never];
     configurationOverrides.set('kbengine', { binPath: '${workspaceFolder}/kbe/bin/server' });
+    // KODE-CFG-009:parse 实现下线(core 唯一),buildFinalServerConfig 只读
+    // 解析缓存——契约门替身按 `$/kode/config/resolve` 镜像回数,先预取再合成
+    // (缓存键=无 overrides,与消费面同键)。
+    const previousGate = getKodeCoreShadowGate();
+    setKodeCoreShadowGate(makeContractGate([]));
+    resetConfigResolveForTests();
+    await ensureConfigResolved({});
     try {
       const zh = buildFinalServerConfig('zh-CN').text;
       const { XMLValidator } = require('../vendor/fast-xml-parser/fxp.cjs') as {
@@ -94,6 +103,8 @@ describe.skipIf(!hasRealDefaults)('真实 kbengine_defaults.xml 全量验收', (
       const plain = buildFinalServerConfig('zh-CN').text;
       expect(flatten(parseConfigXml(zh)!).sort()).toEqual(flatten(parseConfigXml(plain)!).sort());
     } finally {
+      setKodeCoreShadowGate(previousGate);
+      resetConfigResolveForTests();
       configurationOverrides.clear();
       stubWorkspace.workspaceFolders = [];
       fs.rmSync(root, { recursive: true, force: true });

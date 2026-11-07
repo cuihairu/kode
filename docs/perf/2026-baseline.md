@@ -83,7 +83,7 @@
 flowchart TD
   VC1["VS Code: registerHoverProvider.provideHover(document, position, token)"]
   M1["extension.ts:1020 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
-  HP["KBEngineHoverProvider.provideHover<br/>languageProviders/hover.ts:130"]
+  HP["KBEngineHoverProvider.provideHover<br/>languageProviders/hover.ts:188"]
   CFG["getLanguageFeatureConfig() 开关快照"]
   WORD["getWordRangeAtPosition + getText(range)<br/>读 VS Code 缓冲区,不读磁盘"]
   BR{"languageId==python 且<br/>注入 EntityMappingManager?"}
