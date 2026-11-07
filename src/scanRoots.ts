@@ -11,6 +11,8 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConfigDerivedScanRoot } from './configDerive';
 import { startLanguageServiceOperation } from './languageServiceMetrics';
+import { resolveManagedDirName } from './managedDir';
+import { filterManagedDirCopies, withManagedDirSkip } from './pythonScanRules';
 import { resetDiscoveryMemo, resolveDiscoveredConfigRoot } from './workspaceDiscovery';
 
 /** 比较用规范化:绝对化、正斜杠;Windows 盘符路径小写化以稳定去重 */
@@ -282,10 +284,23 @@ export async function findFilesAcrossRoots(
   for (const uri of base) {
     merged.set(normalizeForCompare(uri.fsPath), uri);
   }
+  // KODE-CFG-017:托管目录(.kbengine/inferred 镜像树)副本剔出合并结果,
+  // 防 kode 自身扫描镜像双计;目录名按 kbengine.managedDir 设置值
+  const managedDir = resolveManagedDirName(
+    vscode.workspace.getConfiguration('kbengine').get<string>('managedDir')
+  ).name;
+  if (managedDir) {
+    const kept = new Set(filterManagedDirCopies([...merged.keys()], managedDir));
+    for (const key of merged.keys()) {
+      if (!kept.has(key)) {
+        merged.delete(key);
+      }
+    }
+  }
   try {
     const match = matcherForGlob(glob);
     if (match) {
-      const skipDirs = excludeDirNames(exclude);
+      const skipDirs = withManagedDirSkip(excludeDirNames(exclude), managedDir);
       const stopExternalWalk = discovery.startSubPhase('external-walk');
       for (const root of getExternalScanRoots()) {
         if (token?.isCancellationRequested) { break; }

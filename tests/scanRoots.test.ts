@@ -211,6 +211,20 @@ describe('findFilesAcrossRoots:workspace 结果 + 外部根手工遍历(去重/e
     }
   });
 
+  it('托管目录(.kbengine/inferred)副本不进结果(防镜像双计,CFG-017)', async () => {
+    const ws = makeTmpDir('mirror-ws');
+    const original = Uri.file(path.join(ws, 'scripts', 'base', 'Account.py'));
+    const mirror = Uri.file(path.join(ws, '.kbengine', 'inferred', 'scripts', 'base', 'Account.py'));
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
+    stubWorkspace.findFiles = (async () => [original, mirror]) as typeof stubWorkspace.findFiles;
+    try {
+      const py = await findFilesAcrossRoots('**/*.py', null);
+      expect(py.map(u => u.fsPath)).toEqual([original.fsPath]);
+    } finally {
+      stubWorkspace.workspaceFolders = [];
+    }
+  });
+
   it('外部根目录读取挂起期间可取消，取消后不继续遍历子目录', async () => {
     const ws = makeTmpDir('cancel-ws');
     const assets = makeTmpDir('cancel-assets');
