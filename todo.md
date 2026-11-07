@@ -954,15 +954,20 @@
     - 对账:features/configuration/commands/docs(features en+zh)双树+provider-data-sources.md(DefPropsInlayHintsProvider 行)+package.json 配置面 4 锁步测试全绿(注册数 3→4、设置表、ANCHORS 9 锚+2026-baseline.md 出处同笔位移);历史文档 extension.ts 锚漂移为既有问题非本批引入,登记 KODE-DOC-001 待办不冒充已修;
     - 门禁:eslint 0/tsc 0/unit 586 文件 7181 过+2 skip/docs:build rc=0/xvfb demo 25 RC=0。
 
-- [ ] **C-23 · P2 · 实现 · 行为知识工具化(坑→lint/code action/hover 流水线)**
+- [x] **C-23 · P2 · 实现 · 行为知识工具化(坑→lint/code action/hover 流水线)**(c915f6a3;2026-11-07 勾)
   - 背景 2026-11-01 用户例:「属性修改只有顶层 key 才触发事件」这类行为知识无法在代码里体现,只能踩坑后知道。目标:把 KB-001 知识条目升级为开发者工具可执行的三通道呈现。
   - 交付①KB-001 条目结构化:每条知识增字段 applies_to(适用属性类型/API)/detection(可静态检测的代码模式)/fix(正确姿势与修复代码);detection 非空的条目自动成为 lint 规则候选。
+    — 落地 src/behaviorKnowledge.ts:24 条(镜像 traps-index 中英两树 1:1,测试钉步),detection 码恰三条;顺手把 'FIXED_DICT' 字面量统一为 kbengineMetadata.FIXED_DICT_TYPE_NAME(10 文件 30 处)。
   - 交付②首批 lint 规则(接入现有 lint/diagnostics 体系):
     fixed-dict-nested-mutation:FIXED_DICT 属性子键赋值不触发同步 → warning+code action(一键整体重赋习语);类型判定复用 kode-types 类型图;
     destroyed-entity-reference:检测 Python 侧对已 destroy 实体的常见引用模式(KB-001 内存专题配套);
     timer-leak-on-destroy:addTimer 句柄未在 onDestroy 注销的模式检测。
+    — 落地 src/behaviorLints.ts(KBE-PY-015/016/017 入 lintRuleRegistry);规则③按知识重定向:实体级 addTimer destroy 全量取消(KB-001 证)绝不报,真泄漏=模块级 KBEngine.addTimer 自绑定重复回调(python_app.cpp:721-748 强持)且 onDestroy 无 KBEngine.delTimer;FIXED_DICT 判定=def 根属性(types.xml 类型图 aliasType 或直文本)。
   - 交付③hover 行为注记:FIXED_DICT/易坑 API 的 hover 附加行为警告段(数据源=KB-001 结构化条目)。
+    — 落地 languageProviders:provideHover 出口包装(符号注记,python 面,hover.behaviorNotes 开关;同步结果保持同步,缓存实例重建不叠)+ FIXED_DICT 属性类型 hover 尾注(defTypeName 直文本/类型图判定)。
   - 验收:三个规则各配正反用例(误报=0);hover 注记双语;规则可用配置关闭。
+    — 门禁:eslint 0/tsc 0/unit 589 文件 7214 过+2 skip/docs:build rc=0/xvfb demo 25 RC=0;prove-red=stash src(含未跟踪)后 4 测试文件全红;测试 23(纯层)+10(provider wiring)。
+  - 边界自认:规则①不识别本地别名接续赋值(_fd=self.p 后的 _fd[k]=v 不报)/import 别名;规则②容器名限本文件模块层赋值,import 来的容器不报;规则③多行调用形态/模块层(类外)调用不报(保守)。
 
 - [ ] **C-24 · P2 · 实现 · 配置开关效果文档流水线(开关前后截图+动态图,用户令 2026-11-01)**
   - 交付①配置效果清单:枚举全部「开启后有效果」的配置项(VSCode contributes 配置点+引擎侧开关),标注效果可见面(编辑器/面板/行为)。
