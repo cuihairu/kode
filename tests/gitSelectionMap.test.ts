@@ -306,7 +306,7 @@ describe('IDE-GIT-008 describeSelectionMap 文案', () => {
     expect(describeSelectionMap({ kind: 'invalid-selection', reason: '选区起始行必须 ≥ 1' })).toContain('≥ 1');
     expect(
       describeSelectionMap({ kind: 'git-error', outcome: { kind: 'timeout', timeoutMs: 10 } })
-    ).toContain('超时');
+    ).toContain('Query timed out');
   });
 });
 
