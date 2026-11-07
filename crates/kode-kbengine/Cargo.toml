@@ -1,0 +1,29 @@
+# kode2 PA-004 (todo.md Phase 3): kode-kbengine bin —— KBEngine 协议 CLI。
+# 验收(todo 原文): schema validate/build/diff/inspect、decode --hex、
+# capture analyze(stdin pcap 流式;PCAP 输入层复用 TShark 成熟能力)。
+# 铁律: 仅依赖本仓库 crate(schema/protocol)+ serde/serde_json(PA-002 先例,
+# JSON 输出面);arg 解析手写,不引 clap。
+[package]
+name = "kode-kbengine"
+description = "kode2 KBEngine wire-protocol CLI: schema validate/build/diff/inspect, decode --hex, capture analyze with streaming TShark pcap input (todo PA-004)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "kode_kbengine"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kode-kbengine"
+path = "src/main.rs"
+
+[dependencies]
+kode-kbengine-schema = { path = "../kode-kbengine-schema" }
+kode-kbengine-protocol = { path = "../kode-kbengine-protocol" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints]
+workspace = true
