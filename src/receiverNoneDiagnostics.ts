@@ -1,4 +1,5 @@
 import type { EntityMapping } from './entityMapping';
+import { l10nText } from './nlsRuntime';
 import {
   PYTHON_RECEIVER_SECTIONS,
   findPythonReceiverCalls,
@@ -590,8 +591,10 @@ function sectionMismatch(call: PythonReceiverCall, mapping: EntityMapping): stri
   if (declarations.length === 0) { return undefined; }
   if (declarations.some(declaration => declaration.section === expected)) { return undefined; }
   const declared = [...new Set(declarations.map(declaration => declaration.section))].join('/');
-  return `self.${call.receiver}.${call.methodName} 段错配:${call.methodName} 在 .def 声明于 ${declared},`
-    + `经 ${call.receiver} 侧调用不会路由到该方法(应走 ${expected} 声明)`;
+  return l10nText(
+    'self.{receiver}.{method} section mismatch: {method} is declared in .def {declared}; calling via {receiver} will not route to that method (use the {expected} declaration)',
+    { receiver: call.receiver, method: call.methodName, declared, expected }
+  );
 }
 
 /**
@@ -631,8 +634,10 @@ function appendCallFindings(
         receiver: call.receiver,
         methodName: call.methodName,
         kind: 'receiver-none',
-        message: `self.${call.receiver} 可能为 None(玩家离线/掉线后引擎直接返回 None,`
-          + `onClientDeath/onLoseCell → S_RELEASE),引用前需判空;引擎源码:${RECEIVER_NONE_SOURCES[call.receiver]}`
+        message: l10nText(
+          'self.{receiver} may be None (the engine returns None directly once the player goes offline/disconnects, onClientDeath/onLoseCell → S_RELEASE); check for None before use; engine source: {source}',
+          { receiver: call.receiver, source: RECEIVER_NONE_SOURCES[call.receiver] }
+        )
       });
     }
     if (mapping) {

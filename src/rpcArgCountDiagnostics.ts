@@ -1,4 +1,5 @@
 import type { EntityMapping } from './entityMapping';
+import { l10nText } from './nlsRuntime';
 import {
   PYTHON_RECEIVER_SECTIONS,
   findPythonReceiverCalls,
@@ -228,8 +229,17 @@ export function computeRpcArgCountFindings(
       receiver: call.receiver,
       declaredCount: declared.declaredCount,
       actualCount,
-      message: `self.${call.receiver}.${call.methodName} 实参数量不符:.def ${expectedSection}`
-        + ` 声明 ${declared.declaredCount} 个 Arg,调用给出 ${actualCount} 个${where}`
+      message: l10nText(
+        '{receiver}.{method} argument count mismatch: .def {section} declares {declared} Arg(s), call passes {actual}{where}',
+        {
+          receiver: call.receiver,
+          method: call.methodName,
+          section: expectedSection,
+          declared: declared.declaredCount,
+          actual: actualCount,
+          where
+        }
+      )
     });
   }
   return findings;

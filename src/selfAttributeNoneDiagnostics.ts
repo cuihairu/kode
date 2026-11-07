@@ -1,4 +1,5 @@
 import { maskPythonNonCode } from './pythonLexicalMask';
+import { l10nText } from './nlsRuntime';
 import { inferSelfAttributeFlow, type SelfAttributeFlowOptions } from './selfAttributeFlowTypes';
 
 /**
@@ -35,8 +36,10 @@ export interface SelfAttributeNoneFinding {
 const SELF_MEMBER_ACCESS = /\bself\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)/g;
 
 function buildMessage(attr: string, member: string): string {
-  return `self.${attr} 可能为 None:${member} 访问/调用前应判空`
-    + `(自管属性,__init__/类级声明含 None 且当前位未窄化)`;
+  return l10nText(
+    'self.{attr} may be None: check for None before accessing/calling {member} (self-managed property, __init__/class-level declaration includes None and the current position is not narrowed)',
+    { attr, member }
+  );
 }
 
 /**

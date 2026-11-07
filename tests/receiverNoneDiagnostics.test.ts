@@ -159,7 +159,7 @@ describe('receiver 可能为 None 诊断(用户令 2026-10-27 任务1)', () => {
     expect(findings[0].line).toBe(2);
     expect(findings[0].receiver).toBe('cell');
     expect(findings[0].methodName).toBe('tick');
-    expect(findings[0].message).toContain('self.cell 可能为 None');
+    expect(findings[0].message).toContain('self.cell may be None');
     expect(findings[0].message).toContain('server/baseapp/entity.cpp:750');
 
     // 诊断项面:Warning + source=kbengine + range 锚在方法名 token
@@ -183,7 +183,7 @@ describe('receiver 可能为 None 诊断(用户令 2026-10-27 任务1)', () => {
     // 无 guard 的 receiver-none 与段错配各一条
     const mismatch = findings.filter(finding => finding.kind === 'section-mismatch');
     expect(mismatch).toHaveLength(1);
-    expect(mismatch[0].message).toContain('段错配');
+    expect(mismatch[0].message).toContain('section mismatch');
     expect(mismatch[0].message).toContain('BaseMethods');
     expect(mismatch[0].message).toContain('CellMethods');
     // 声明于 CellMethods(对应段)时不错配
