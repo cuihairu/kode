@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { bindSdkGenerationToProfile } from '../src/sdkGenerationProfile';
+import { bindSdkGenerationToProfile } from '../src/sdk-gen/sdkGenerationProfile';
 
 // IDE-SDK-003 把 SDK 生成绑定到目标 profile:实体注册顺序与类型数据都
 // 来自所选 profile 根——注册序=该根 entities.xml 登记序(listRegistrations

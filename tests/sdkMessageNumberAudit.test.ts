@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { parseLocalDefinition } from '../src/definitionSemantics';
 import type { DefTreeSource } from '../src/messageTable';
 import { buildMessageTable } from '../src/messageTable';
-import { listClientSdkBuiltinTypeNames } from '../src/clientSdkGenerator';
+import { listClientSdkBuiltinTypeNames } from '../src/sdk-gen/clientSdkGenerator';
 import {
   AUDITED_PRIMITIVE_LOAD_ORDER,
   listPrimitivesMissingFromSdk,
   SDK_MESSAGE_NUMBER_AUDIT_VERSION,
   verifyPrimitiveUtypeOrderAgainstAudit
-} from '../src/sdkMessageNumberAudit';
+} from '../src/sdk-gen/sdkMessageNumberAudit';
 
 // IDE-SDK-005 对拍一个真实引擎版本的消息编号:以 kbengine@f85ad81 的
 // DataTypes::initialize 真实装载序(addDataType 调用序,utype=DataType

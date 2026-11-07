@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   formatSdkEngineTraceLines,
   makeSdkEngineTrace
-} from '../src/sdkGenerationTrace';
+} from '../src/sdk-gen/sdkGenerationTrace';
 
 // IDE-SDK-004 为 SDK 输出记录引擎版本与提交:生成物头部可追溯输入引擎
 // (版本宏+git 提交,探测面=readEngineApiMetadata 现有面);探测不到时

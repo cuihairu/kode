@@ -21,11 +21,11 @@ import {
   parseClientSdkEntity,
   resolveClientSdkTypeName,
   runClientSdkGenerateCommand
-} from '../src/clientSdkGenerator';
+} from '../src/sdk-gen/clientSdkGenerator';
 import type {
   ClientSdkLanguage,
   ClientSdkTypeMap
-} from '../src/clientSdkGenerator';
+} from '../src/sdk-gen/clientSdkGenerator';
 import type { CustomTypeInfo } from '../src/definitionWorkspace';
 import type { KodeCoreGate } from '../src/kodeCoreGate';
 import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
