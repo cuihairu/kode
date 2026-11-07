@@ -6,6 +6,54 @@
 > code are recorded uniformly in the "state refresh" section at the top.
 > On conflict, the refresh section + git win.
 
+> **2026-11-07 state refresh (KODE-ARCH-001..004)**: see the newest refresh
+> section at the top. The earlier refreshes and the 2026-10-23 forensic
+> snapshot below are preserved as-is ("snapshots are not rewritten"); on
+> conflict, the newest refresh section + git win.
+
+## State refresh (2026-11-07 · feat/kode-arch-split)
+
+- **KODE-ARCH-001 complete — languageProviders.ts split (pure move, zero
+  behavior change)**: the 7,343-line monolith is now an 18-line re-export
+  barrel plus 13 modules under `src/languageProviders/`:
+  reveal 46 / shared 420 / validation 473 / completion 768 / inlay 57 /
+  hover 1,630 (incl. signature help) / navigation 1,139 /
+  pythonDefinition 1,073 / codeLens 408 / callHierarchy 140 / references 393 /
+  codeAction 464 / rename 244. The original import path and all 47 public
+  exports are preserved verbatim (surface diff: missing = 0; the extra
+  submodule exports are previously-private helpers exported only so sibling
+  modules can import them). 10 commits, each with the full gate green
+  (tsc + eslint + vitest 591 files / 7,225 tests).
+- **KODE-ARCH-002 in progress — extension.ts assembly extraction**: 7,517 →
+  7,267 lines. Two assembly modules landed following the existing
+  `kodeCoreGateWiring` pattern: `defAnalysisWiring.ts` (105 lines,
+  `wireDefAnalysis()` — def static-analysis command/channel/diagnostics) and
+  `loggingWiring.ts` (187 lines, `wireLogging(context, serverManager)` —
+  log collector/viewer/LogHub + language-service and lint-rule channels),
+  both returning disposables so the caller keeps the original
+  `context.subscriptions.push` order (dispose timing unchanged). The rest of
+  `activate()` is heavily cross-coupled (the config-change watcher alone
+  closes over 44 activate-scope locals — measured via TS-AST dependency
+  analysis), so further extractions proceed region-by-region with the same
+  gates-per-commit discipline; the remaining 命令/Provider/诊断/调试/数据库/
+  热更新 wiring modules follow the same pattern.
+- **KODE-ARCH-003 verified against the post-split tree**: the five-index
+  contract (docs/architecture/index-ownership.md, 2026-11-05) plus its 16
+  assertions (`tests/indexOwnershipContracts.test.ts`) all hold; the four
+  construction-site citations were recalibrated to the true post-refactor
+  lines (extension.ts:782 / :1125 / :1317 / :1037).
+- **KODE-ARCH-004 delivered by this section**: provider line citations in
+  docs/architecture/provider-data-sources.md were re-probed to true current
+  positions (class definitions now cite `src/languageProviders/<mod>.ts`,
+  registration sites re-measured in extension.ts — the old table had drifted
+  against a pre-split snapshot).
+- **Scale** (measured 2026-11-07): 290 top-level .ts modules under src/ (334
+  incl. subdirectories, excluding webview), ≈108k lines; tests: 591
+  `*.test.ts`; vitest suite 7,225 passed / 2 skipped per commit in this
+  batch. Largest remaining single pieces: hover.ts 1,630, navigation.ts
+  1,139, entityMapping.ts 3,282, globalDataIndex.ts 2,155, extension.ts
+  7,267 (KODE-ARCH-002 continuation).
+
 ## State refresh (2026-11-05 · feat/kode-arch)
 
 - **Scale** (static forensics, measured via `find`/`wc`/package.json): 245

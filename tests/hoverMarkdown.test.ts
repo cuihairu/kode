@@ -1,4 +1,4 @@
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -91,8 +91,12 @@ describe('hover 文本格式化(IDE-ARC-003)', () => {
   });
 
   it('languageProviders 的 hover render 位改用格式化模块(五处调用齐,拼装文案单一家)', () => {
-    const source = readFileSync(join(root, 'src/languageProviders.ts'), 'utf8');
-    expect(source.includes("from './hoverMarkdown'")).toBe(true);
+    // KODE-ARCH-001:languageProviders 已拆为 src/languageProviders/* 子模块,
+    // 源文本锁改为 barrel + 全部子模块聚合(纯移动,调用面计数不变)
+    const lpSources = ['src/languageProviders.ts',
+      ...readdirSync(join(root, 'src/languageProviders')).filter(f => f.endsWith('.ts')).map(f => `src/languageProviders/${f}`)];
+    const source = lpSources.map(p => readFileSync(join(root, p), 'utf8')).join('\n');
+    expect(/from '(\.\.\/)?hoverMarkdown'/.test(source), 'hover render 位应 import hoverMarkdown 格式化模块').toBe(true);
     // 五个 hover render 位全部走格式化模块(声明面+接收者面共用 def 方法格式化)
     const callCounts: Array<[string, number]> = [
       ['formatEntityDefMethodHover', 2],

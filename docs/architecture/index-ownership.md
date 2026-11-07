@@ -1,4 +1,4 @@
-# Five-Index Ownership and Invalidation Contract (KODE-ARCH-003 · 2026-11-05)
+# Five-Index Ownership and Invalidation Contract (KODE-ARCH-003 · 2026-11-05; 拆分后装配行真位复核 2026-11-07)
 
 > Original entry: establish an ownership and version-invalidation contract
 > document plus assertions for the five indexes (SemanticIndex/EntityMapping/
@@ -49,7 +49,7 @@
 
 ## 2. EntityMappingManager (`src/entityMapping.ts`)
 
-- **Ownership**: constructed in activate (extension.ts:712, shared
+- **Ownership**: constructed in activate (extension.ts:782, shared
   IndexScheduler); holds the def/python/types-registry watchers +
   SharedFileEventMerger + the dependency graph; dispose unsubscribes
   everything (entityMapping.ts:2591). In gated mode (`deferStartup: true`)
@@ -70,7 +70,7 @@
 
 ## 3. PythonClassIndex (`src/pythonClassIndex.ts`)
 
-- **Ownership**: constructed in activate (extension.ts:1035, shared
+- **Ownership**: constructed in activate (extension.ts:1125, shared
   IndexScheduler).
 - **Data surface**: py classes/MRO/composition roots; five-axis version
   generations `classes/bases/methods/mro/compositionRoots`
@@ -92,7 +92,7 @@
 
 ## 4. WorkspaceIndex (`src/workspaceIndex.ts`)
 
-- **Ownership**: constructed as an activate-time singleton (extension.ts:1208,
+- **Ownership**: constructed as an activate-time singleton (extension.ts:1317,
   `sharedWorkspaceIndex`), consumed through the event-call (`EventCallIndex`)
   surface; watchers attach before discovery (KR-AUD-27: changes during the
   initial scan enter the index via revisions without loss).
@@ -107,7 +107,7 @@
 
 ## 5. GlobalDataDictIndex (`src/globalDataIndex.ts`)
 
-- **Ownership**: constructed in activate (extension.ts:947, `dataDictIndex`).
+- **Ownership**: constructed in activate (extension.ts:1037, `dataDictIndex`).
 - **Data surface**: an index of `kbe.dataDict` key-value access points
   (key signature → read/write points) + function return inference; scoped by
   asset root (`resolveScopeRoot`).
