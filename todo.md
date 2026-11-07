@@ -1388,6 +1388,7 @@
 - [x] 审核发现：kode-db-clone `redact_log` 对**带引号**的凭据值不跳过值体——`password="hunter2"` 在输出 `password=***` 后，值末搜索在偏移 0 处即命中原引号，`rest` 未前移，下一轮把 `"hunter2"` 原样回灌，明文凭据泄漏进审计日志；单测只用无引号值故绿（crates/kode-db-clone/src/redact.rs:94-98）（2026-11-06 修复 b91397a：引号值按配对闭引号整段跳过(含闭引号,未闭合吞余下,不吸收其后空白),裸值仍以空白/逗号为界;新增带引号/引号内空白两测试,值体与引号均不残留）
 - [x] 审核发现：hotReload 通道 applied 核验 `channelBaselineReads.get(file)!` 非空断言——回执 `file` 不在本次发送批（异常/伪造接收端回包）时对 `undefined` 取 `.then` 抛 TypeError，中断回执回调批处理；应回落「无基准保持未确认」而非崩溃（src/hotReload.ts:428）`8595896`
 - [x] 审核发现：gitCommitLog `unquoteGitPath` 只反解 `\\`、`\"` 与八进制 `\NNN`，未处理 git `core.quotepath` 对控制字符的 C 风格转义（`\t`/`\n`/`\r`/`\a`/`\b`/`\v`/`\f`）——含制表/换行符的文件名反解后保留字面转义串，重命名历史路径错误（罕见边界；src/gitCommitLog.ts:246-285）`e05fb62`
+- [ ] 审核发现：kode-db-clone preserve 模式（ImportMode::PreserveIfEmpty）apply 违反自身文档契约——`ImportRun.new_root_id` 文档写「preserve 模式为归档原值」，但 `new_root_id`（apply.rs 380-393）与 post-commit verify（`new_ids_for_table`，apply.rs 464-484）只收集 `PlannedCell::NewKey` 占位 id；preserve 模式下 planner 产出的 id 单元是 `PlannedCell::Literal`（import.rs 测试 `preserve_mode_keeps_ids_and_sm_autoload` 已断言），导致 preserve 模式即使按原 id 正确插入，verify 也恒报 post-commit DriftMismatch（found 0 vs expected N）且 `new_root_id` 为 None。正确修法需设计决策（verify 改查原 id 字面值 / `new_root_id` 读 id 单元值；`new_ids_for_table` 需拿到行值），覆盖率批次如实上报未修、未以测试固化错误行为（2026-11-08 覆盖率批次发现，crates/kode-db-clone/src/apply.rs:380-393、:464-484）
 
 ## 审核 942424540716c9c17cdf62d26a92ea06a0873c18..HEAD（2026-11-06，只审不改）
 
