@@ -14,11 +14,18 @@ export interface TypedValueWire {
 }
 
 export const tvNull = (): TypedValueWire => ({ t: 'null' });
-export const tvInt = (v: number | bigint): TypedValueWire => ({ t: 'int', v: Number(v) });
-export const tvUInt = (v: number | bigint): TypedValueWire => ({ t: 'u-int', v: Number(v) });
+function safeInteger(v: number | bigint): number {
+  const n = Number(v);
+  if (!Number.isSafeInteger(n)) {
+    throw new Error(`clone: integer ${String(v)} cannot be represented without loss`);
+  }
+  return n;
+}
+export const tvInt = (v: number | bigint): TypedValueWire => ({ t: 'int', v: safeInteger(v) });
+export const tvUInt = (v: number | bigint): TypedValueWire => ({ t: 'u-int', v: safeInteger(v) });
 export const tvBigUInt = (v: number | bigint): TypedValueWire => ({
   t: 'big-u-int',
-  v: Number(v)
+  v: safeInteger(v)
 });
 export const tvDouble = (v: number): TypedValueWire => ({ t: 'double', v });
 export const tvText = (v: string): TypedValueWire => ({ t: 'text', v });
@@ -217,6 +224,7 @@ export function cellToTypedValue(cell: unknown, columnType: string): TypedValueW
       }
       return unsigned ? tvUInt(num) : tvInt(num);
     }
+    throw new Error(`clone: unsafe or invalid integer ${String(cell)} in ${columnType}`);
   }
   if (base === 'float' || base === 'double') {
     return tvDouble(Number(cell));
@@ -244,14 +252,23 @@ export function typedValueToBind(value: TypedValueWire): unknown {
     case 'null':
       return null;
     case 'decimal':
-    case 'bytes':
     case 'text':
       return String(value.v ?? '');
+    case 'bytes': {
+      const hex = String(value.v ?? '');
+      if (!/^(?:[0-9a-fA-F]{2})*$/.test(hex)) {
+        throw new Error('clone: invalid hexadecimal binary value');
+      }
+      return Buffer.from(hex, 'hex');
+    }
     case 'date-time':
       return typeof value.v === 'object' && value.v !== null
         ? (value.v as { value?: unknown }).value
         : value.v;
+    case 'float':
+    case 'double':
+      return Number(value.v);
     default:
-      return Number(value.v ?? 0);
+      return safeInteger(value.v as number);
   }
 }
