@@ -84,6 +84,21 @@ const makeGate = (calls: Array<{ method: string; params: unknown }>): KodeCoreGa
   return {
     runInRust: async (method: string, params: unknown) => {
       calls.push({ method, params });
+      // KODE-CFG-009:派生刷新先走 `$/kode/config/resolve`(core 解析两棵
+      // 树);门替身按契约回「双树 null,定位事实在 TS」——derive 收到的树
+      // 为 null,路径事实不受影响,接线照常验。
+      if (method === '$/kode/config/resolve') {
+        return {
+          ok: true as const,
+          result: {
+            defaultsTree: null,
+            customTree: null,
+            merged: null,
+            telnetSummary: [],
+            dbInterface: null
+          }
+        };
+      }
       const p = params as { facts?: DeriveFacts };
       const derive = contractDerive(p.facts ?? { workspaceRoot: null, customConfigPath: null, entryScripts: [] });
       return {
@@ -170,8 +185,10 @@ describe('KODE-CFG-005 def 扫描根按配置派生', () => {
     // 不再单独入列,不重复扫)。
     expect(scanRootsA).toContain(assetsA);
     expect(scanRootsA).not.toContain(path.join(assetsA, 'scripts'));
-    // RPC 收到的是真实解析出的 config 路径事实。
-    const sent = calls[0].params as { facts?: DeriveFacts };
+    // RPC 收到的是真实解析出的 config 路径事实(取 derive 调用;calls[0]
+    // 是 KODE-CFG-009 的 resolve 取数调用)。
+    const deriveCalls = calls.filter(call => call.method === '$/kode/config/derive');
+    const sent = deriveCalls[0].params as { facts?: DeriveFacts };
     expect(sent.facts?.customConfigPath).toBe(
       path.join(assetsA, 'res', 'server', 'kbengine.xml')
     );
@@ -196,9 +213,11 @@ describe('KODE-CFG-005 def 扫描根按配置派生', () => {
     expect(derivedB).not.toBe(derivedA);
     expect(scanRootsB).toContain(otherB);
     expect(scanRootsB).not.toContain(path.join(otherB, 'scripts'));
-    // 两次 RPC 的 config 路径事实不同 → 派生结果随之变。
-    expect(calls).toHaveLength(2);
-    const sentB = calls[1].params as { facts?: DeriveFacts };
+    // 两次 RPC 的 config 路径事实不同 → 派生结果随之变(derive 调用两次;
+    // resolve 取数随 generation bump 同步重取两次)。
+    expect(calls.filter(call => call.method === '$/kode/config/derive')).toHaveLength(2);
+    const deriveCallsB = calls.filter(call => call.method === '$/kode/config/derive');
+    const sentB = deriveCallsB[1].params as { facts?: DeriveFacts };
     expect(sentB.facts?.customConfigPath).toBe(
       path.join(otherB, 'res', 'server', 'kbengine.xml')
     );

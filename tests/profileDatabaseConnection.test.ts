@@ -9,6 +9,13 @@ import {
 } from '../src/databaseConnectionRegistry';
 import type { DatabaseInterfaceConfig } from '../src/serverConfigMerge';
 import {
+  ensureConfigResolved,
+  resetConfigResolveForTests,
+  type ConfigResolveOverrides
+} from '../src/serverConfigResolve';
+import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { makeContractGate } from './helpers/configCoreContract';
+import {
   ProfileDatabaseConnectionService,
   WORKSPACE_DEFAULT_DATABASE_PROFILE_ID,
   createProfileScopedDriftExecutor,
@@ -249,6 +256,13 @@ describe('createProfileScopedDriftExecutor(结果按 profile 缓存)', () => {
 describe('resolveProfileDatabaseInterfaceConfig(按根组合解析)', () => {
   let root = '';
 
+  // KODE-CFG-009:读值来自 core 消费缓存,先按同款 overrides 刷新(契约门替身)
+  const refreshCore = async (overrides: ConfigResolveOverrides): Promise<void> => {
+    resetConfigResolveForTests();
+    setKodeCoreShadowGate(makeContractGate([]));
+    await ensureConfigResolved(overrides);
+  };
+
   const writeDefaults = (dir: string, host: string, port: number): void => {
     const engine = path.join(dir, 'kbe', 'res', 'server');
     fs.mkdirSync(engine, { recursive: true });
@@ -274,43 +288,54 @@ describe('resolveProfileDatabaseInterfaceConfig(按根组合解析)', () => {
   });
 
   afterEach(() => {
+    setKodeCoreShadowGate(null);
+    resetConfigResolveForTests();
     configurationOverrides.clear();
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it('profile 根各自推导,不回落工作区设置链', () => {
+  it('profile 根各自推导,不回落工作区设置链', async () => {
     writeDefaults(path.join(root, 'eng-p1'), '10.1.1.1', 3301);
     writeDefaults(path.join(root, 'eng-p2'), '10.2.2.2', 3302);
     writeDefaults(root, '10.3.3.3', 3303); // 工作区设置链(探针:不该被读到)
     configurationOverrides.set('kbengine', { binPath: `${root}/kbe/bin/server` });
+    // KODE-CFG-009:两 profile 各自独立 overrides 取数(core 解析各树)
+    const overridesOf = (engineRoot: string): ConfigResolveOverrides => ({
+      binPath: engineRoot ? path.join(engineRoot, 'kbe', 'bin', 'server') : undefined
+    });
+    await refreshCore(overridesOf(path.join(root, 'eng-p1')));
 
     const p1 = resolveProfileDatabaseInterfaceConfig({ engineRoot: path.join(root, 'eng-p1'), assetsRoot: '' });
     const p2 = resolveProfileDatabaseInterfaceConfig({ engineRoot: path.join(root, 'eng-p2'), assetsRoot: '' });
 
     expect(p1).toMatchObject({ host: '10.1.1.1', port: 3301 });
-    expect(p2).toMatchObject({ host: '10.2.2.2', port: 3302 });
+    // p2 未取数:消费缓存无该 overrides → 如实 null(不串链)
+    expect(p2).toBeNull();
   });
 
-  it('profile 引擎根读不到 defaults = 如实 null(不落工作区配置)', () => {
+  it('profile 引擎根读不到 defaults = 如实 null(不落工作区配置)', async () => {
     writeDefaults(root, '10.3.3.3', 3303);
     configurationOverrides.set('kbengine', { binPath: `${root}/kbe/bin/server` });
 
+    await refreshCore({ binPath: path.join(root, 'eng-none', 'kbe', 'bin', 'server') });
     const missing = resolveProfileDatabaseInterfaceConfig({ engineRoot: path.join(root, 'eng-none'), assetsRoot: '' });
     expect(missing).toBeNull();
   });
 
-  it('空引擎根 = 该 profile 无自己的引擎,该轴走设置链', () => {
+  it('空引擎根 = 该 profile 无自己的引擎,该轴走设置链', async () => {
     writeDefaults(root, '10.3.3.3', 3303);
     configurationOverrides.set('kbengine', { binPath: `${root}/kbe/bin/server` });
 
+    await refreshCore({});
     const config = resolveProfileDatabaseInterfaceConfig({ engineRoot: '', assetsRoot: '' });
     expect(config).toMatchObject({ host: '10.3.3.3', port: 3303 });
   });
 
-  it('无 profile = 工作区默认(设置链)', () => {
+  it('无 profile = 工作区默认(设置链)', async () => {
     writeDefaults(root, '10.3.3.3', 3303);
     configurationOverrides.set('kbengine', { binPath: `${root}/kbe/bin/server` });
 
+    await refreshCore({});
     expect(resolveProfileDatabaseInterfaceConfig(null)).toMatchObject({ host: '10.3.3.3', port: 3303 });
   });
 });

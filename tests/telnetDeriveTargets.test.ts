@@ -27,7 +27,9 @@ import {
 } from '../src/telnetDeriveTargets';
 import type { KodeCoreGate } from '../src/kodeCoreGate';
 import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { contractResolveResult } from './helpers/configCoreContract';
 import { resetRootConfigGenerationForTests } from '../src/rootConfigGeneration';
+import { ensureConfigResolved } from '../src/serverConfigResolve';
 
 interface TreeNode {
   name: string;
@@ -147,6 +149,15 @@ const makeGate = (calls: Array<{ method: string; params: unknown }>): KodeCoreGa
   return {
     runInRust: async (method: string, params: unknown) => {
       calls.push({ method, params });
+      // KODE-CFG-009:派生刷新先走 `$/kode/config/resolve`(core 解析),
+      // 按契约回数(镜像语义在 configCoreContract)。
+      if (method === '$/kode/config/resolve') {
+        const rp = params as { defaultsXml: string | null; customXml: string | null };
+        return {
+          ok: true as const,
+          result: contractResolveResult(rp.defaultsXml, rp.customXml)
+        };
+      }
       const p = params as { tree?: TreeNode | null; facts?: DeriveFacts };
       const facts: DeriveFacts = p.facts ?? {
         workspaceRoot: null,
@@ -231,8 +242,9 @@ describe('KODE-CFG-007 telnet 按配置启用', () => {
     await ensureConfigDerivedScanRoot();
     const state = getConfigDerivedScanRootState();
 
-    // TS 读盘送两棵配置树(defaults 未配 → null),core 不碰盘。
-    const sent = calls[0].params as { tree: TreeNode | null; defaultsTree: TreeNode | null };
+    // TS 读盘送原文,core 解析两棵树(calls[0] 是 resolve 取数调用)。
+    const deriveCalls = calls.filter(call => call.method === '$/kode/config/derive');
+    const sent = deriveCalls[0].params as { tree: TreeNode | null; defaultsTree: TreeNode | null };
     expect(sent.tree).not.toBeNull();
     expect(sent.defaultsTree).toBeNull();
     // 派生缓存含 telnet 能力(开关 + 派生端口)。
@@ -278,13 +290,14 @@ describe('KODE-CFG-007 telnet 按配置启用', () => {
     expect(readDerivedTelnetTargets()).toEqual([]);
   });
 
-  it('派生不可用(无门):回落旧路径 readTelnetTargetsFromSettings(同端口)', () => {
+  it('派生不可用(无门):回落旧路径只保留 settings 半(core 不可知不猜配置)', () => {
     makeFixture('fallback',
       '<root>\n  <telnet_service>\n    <port>40009</port>\n  </telnet_service>\n</root>\n');
-    // 无门:派生状态不缓存,getter 读不到 → 旧路径直接读盘(同一份配置)。
+    // 无门:派生状态不缓存,getter 读不到 → 旧路径。KODE-CFG-009 起旧路径
+    // 的配置读值也来自 core(resolve 同走门),门不可用 → 如实空目标,
+    // 不再本地解析配置文件(核心唯一解析实现,无双实现残留)。
     const targets = readDerivedTelnetTargets();
-    expect(targets).toHaveLength(1);
-    expect(targets[0]).toMatchObject({ component: 'kbengine.xml', port: 40009 });
+    expect(targets).toEqual([]);
   });
 
   it('密码保护且 settings 未覆盖密码:回落旧路径保留元件 xml 明文密码', async () => {
@@ -298,7 +311,7 @@ describe('KODE-CFG-007 telnet 按配置启用', () => {
     expect(state?.telnet.endpoints[0]?.passwordSet).toBe(true);
 
     const targets = readDerivedTelnetTargets();
-    // 旧路径读同一份文件:端口一致,密码取元件 xml 段(面板既有行为)。
+    // 旧路径读 core 解析态(同一份文件):端口一致,密码取元件 xml 段。
     expect(targets).toHaveLength(1);
     expect(targets[0]).toMatchObject({ port: 40009, password: 'secret' });
   });
@@ -342,6 +355,9 @@ describe('KODE-CFG-007 telnet 按配置启用', () => {
 
     await ensureConfigDerivedScanRoot();
     expect(getConfigDerivedScanRootState()?.telnet.enabled).toBe(true);
+    // 旧路径读 core 解析态:显式 configXmlPath 以独立 overrides 取数
+    // (生产首取触发重取、下一轮探测即用;测试直接 await 后断言)。
+    await ensureConfigResolved({ customXmlPath: otherXml });
 
     const targets = readDerivedTelnetTargets();
     expect(targets).toHaveLength(1);

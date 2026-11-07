@@ -503,6 +503,7 @@ import {
   resolveDatabaseInterfaceConfig,
   type DatabaseInterfaceConfig
 } from './serverConfigMerge';
+import { ensureConfigResolved } from './serverConfigResolve';
 import type { DiscoveryKey, DiscoveryLayoutFacts, DiscoveryPromptDeps } from './workspaceDiscovery';
 import {
   buildDiscoveryReport,
@@ -523,7 +524,8 @@ import {
   createProfileScopedDriftExecutor,
   getProfileDatabaseConnections,
   installProfileDatabaseConnections,
-  resolveProfileDatabaseInterfaceConfig
+  resolveProfileDatabaseInterfaceConfig,
+  profileConfigResolveOverrides
 } from './profileDatabaseConnection';
 import { detectDualActivation, formatDualActivationWarning } from './dualActivationConflict';
 import { readBuildCommit } from './buildCommit';
@@ -610,6 +612,9 @@ export function activate(context: vscode.ExtensionContext) {
   // 持有门实例:热更旁路的 rust 投递口(§11.3)要经它的 notifyFileChanged
   // 走现有 LSP stdio。
   const kodeCoreGate = setupKodeCoreGate(context);
+  // KODE-CFG-009:门接线后即预取 core 配置解析(`$/kode/config/resolve`),
+  // 同步消费面(dbInterface/合成树/别名开关)读消费缓存不阻塞宿主。
+  void ensureConfigResolved().catch(() => {});
   const databaseSchemaProvider = new KBEngineDatabaseSchemaProvider();
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider('kbengine-db-schema', databaseSchemaProvider),
@@ -3035,12 +3040,22 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     onDidChangeActiveProfile(() => {
       const profile = resolveActiveProfile(context.workspaceState);
+      // KODE-CFG-009:切 profile 即按其根组合预取 core 解析(消费缓存)
+      void ensureConfigResolved(profileConfigResolveOverrides(profile)).catch(() => {});
       databaseConnections.selectActive(
         profile?.id ?? WORKSPACE_DEFAULT_DATABASE_PROFILE_ID,
         profile
       );
     })
   );
+  // KODE-CFG-009:连接读值消费 core 解析缓存——命令执行面先按当前活动
+  // profile 的根组合等 core 解析就绪再读缓存(旧同步解析「首取即得」语义
+  // 保留;IDE-REV-015 两项目两配置测试钉住首次执行即生效,fire-and-forget
+  // 版首取未就绪会让首次执行误降级为「读不到配置」)
+  const ensureCommandConfigResolved = async (): Promise<void> => {
+    const profile = resolveActiveProfile(context.workspaceState);
+    await ensureConfigResolved(profileConfigResolveOverrides(profile)).catch(() => {});
+  };
   /**
    * 命令取连接:每次执行按当前活动 profile 重选(引擎配置变更即时生效),
    * 只认台账。IDE-AUD-011:附资产根作用域——列来源/实体表反查按当前连接
@@ -3058,6 +3073,9 @@ export function activate(context: vscode.ExtensionContext) {
   } | null => {
     const profile = resolveActiveProfile(context.workspaceState);
     const profileId = profile?.id ?? WORKSPACE_DEFAULT_DATABASE_PROFILE_ID;
+    // KODE-CFG-009:连接读值消费 core 解析缓存,取前先刷新(async 命令内
+    // fire-and-forget 不阻塞;首取未就绪时本命令如实降级,下次执行即生效)
+    void ensureConfigResolved(profileConfigResolveOverrides(profile)).catch(() => {});
     databaseConnections.selectActive(profileId, profile);
     const config = databaseConnections.getActiveConfig(profileId);
     if (!config) {
@@ -3199,6 +3217,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showWarningMessage(`读取实体定义失败: ${resolvedEntityName}(未找到 .def 文件)`);
         return;
       }
+      await ensureCommandConfigResolved();
       const connection = resolveCommandDatabaseConnection();
       if (!connection) {
         vscode.window.showInformationMessage(
@@ -3233,6 +3252,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage('数据库漂移未校验:工作区没有可检查的实体定义');
         return;
       }
+      await ensureCommandConfigResolved();
       const connection = resolveCommandDatabaseConnection();
       if (!connection) {
         vscode.window.showInformationMessage(
@@ -3275,8 +3295,10 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(tablePreviewChannel);
   const previewTableCommand = vscode.commands.registerCommand(
     'kbengine.database.previewTable',
-    () =>
-      runDatabaseQueryCommand('KBEngine 数据库预览', guard =>
+    async () => {
+      // KODE-CFG-009:runner 内同步取连接,先等 core 解析就绪(首取即得)
+      await ensureCommandConfigResolved();
+      return runDatabaseQueryCommand('KBEngine 数据库预览', guard =>
         runTablePreviewCommand({
           resolveConnection: resolveCommandDatabaseConnection,
             createConnection: (profileId, config) => lifecycleGuardedFactory(guard, profileId)(config),
@@ -3297,7 +3319,8 @@ export function activate(context: vscode.ExtensionContext) {
               ),
             getSnapshot: (entityName, rootPath) => getDatabaseSchemaSnapshot(entityName, rootPath)
           })
-        }))
+        }));
+    }
   );
   context.subscriptions.push(previewTableCommand);
 
@@ -3309,8 +3332,10 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(schemaImpactChannel);
   const previewSchemaImpactCommand = vscode.commands.registerCommand(
     'kbengine.database.previewSchemaImpact',
-    (entityName?: string) =>
-      runDatabaseQueryCommand('KBEngine 结构影响预览', guard =>
+    async (entityName?: string) => {
+      // KODE-CFG-009:runner 内同步取连接,先等 core 解析就绪(首取即得)
+      await ensureCommandConfigResolved();
+      return runDatabaseQueryCommand('KBEngine 结构影响预览', guard =>
         runSchemaImpactCommand({
           resolveEntityName: () => entityName ?? resolveActiveDefEntityName(),
           // IDE-AUD-011/012:实体全部表反查按当前连接的作用域根(scopeRootPath
@@ -3335,7 +3360,8 @@ export function activate(context: vscode.ExtensionContext) {
           showWarningMessage: message => vscode.window.showWarningMessage(message),
           showErrorMessage: message => vscode.window.showErrorMessage(message),
           channel: schemaImpactChannel
-        }))
+        }));
+    }
   );
   context.subscriptions.push(previewSchemaImpactCommand);
 
@@ -4038,6 +4064,8 @@ export function activate(context: vscode.ExtensionContext) {
     }
   };
   const buildEntityMessageTable = async (entityName: string): Promise<MessageTable | null> => {
+    // 别名开关读 core 配置消费缓存(KODE-CFG-009),先保证新鲜
+    await ensureConfigResolved().catch(() => {});
     const loader = createDefinitionSemanticsLoader(scanRoots);
     if (!loader) {
       return null;
@@ -4794,7 +4822,17 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 打开合成视图。auto = 激活自动路径:定位失败静默跳过不弹错、后台标签;
   // 手动命令 = 明示报错、正常聚焦打开。
+  // KODE-CFG-009:合成读值经 core 解析(`$/kode/config/resolve`)。激活期门
+  // 可能尚未就绪(核心服务冷启动/单测替身在 activate 后才装),首取不可得
+  // 时 auto 路径做一次有界延迟重试——期间接线完成即出视图,仍不可得维持
+  // 静默跳过;手动命令不做重试(用户在场,失败即明示)。
+  const FINAL_CONFIG_AUTO_RETRY_MS = 300;
   const openFinalConfig = async (auto: boolean): Promise<void> => {
+    await ensureConfigResolved().catch(() => {});
+    if (auto && buildFinalServerConfig().text.length === 0) {
+      await new Promise(resolve => setTimeout(resolve, FINAL_CONFIG_AUTO_RETRY_MS));
+      await ensureConfigResolved().catch(() => {});
+    }
     if (buildFinalServerConfig().text.length === 0) {
       if (!auto) {
         vscode.window.showErrorMessage(
@@ -5048,18 +5086,19 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.getConfiguration('kbengine').get<boolean>('autoRefreshFinalConfig', true)
   ) {
     const finalConfigWatcher = vscode.workspace.createFileSystemWatcher('**/kbengine*.xml');
-    // kbengine*.xml 增删改同时影响数据库连接读值(批131):失效缓存再联动
+    // kbengine*.xml 增删改同时影响数据库连接读值(批131):失效消费态、
+    // 重取 core 解析(`$/kode/config/resolve`,KODE-CFG-009)再联动
     finalConfigWatcher.onDidChange(() => {
       resetDatabaseInterfaceConfigCache();
-      finalConfigProvider.refresh();
+      void ensureConfigResolved().then(() => finalConfigProvider.refresh()).catch(() => {});
     });
     finalConfigWatcher.onDidCreate(() => {
       resetDatabaseInterfaceConfigCache();
-      finalConfigProvider.refresh();
+      void ensureConfigResolved().then(() => finalConfigProvider.refresh()).catch(() => {});
     });
     finalConfigWatcher.onDidDelete(() => {
       resetDatabaseInterfaceConfigCache();
-      finalConfigProvider.refresh();
+      void ensureConfigResolved().then(() => finalConfigProvider.refresh()).catch(() => {});
     });
     context.subscriptions.push(finalConfigWatcher);
   }
