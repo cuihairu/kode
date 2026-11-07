@@ -123,6 +123,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.hover.entityRegistration` | boolean | `true` | 悬停 `entities.xml` 实体名时的注册信息(`Utype`/清单位置) |
 | `kbengine.hover.defChain` | boolean | `true` | 悬停 `Parent`/`Interfaces` 等声明元素时的归并 def 链 |
 | `kbengine.hover.eventStats` | boolean | `true` | python 侧悬停事件名时的注册/触发统计 |
+| `kbengine.hover.apiDocs` | boolean | `true` | 悬停显示 KBEngine Python API 文档(`KBEngine.<api>` 访问、生命周期回调 def 行、内建属性追加段) |
 | `kbengine.hover.serverConfig` | boolean | `true` | 悬停 `kbengine.xml` 服务配置字段时的取值与说明(批112 悬停面整体关断) |
 | `kbengine.hover.language` | string | `auto` | 悬停文案语言(IDE-I18N-002):`auto` 探测——VS Code 界面语言/系统 locale 为中文或 UTC+8 时区取中文,否则英文;亦可显式 `en`/`zh-cn`。服务配置悬停面已接入,其余悬停面逐步接入 |
 | `kbengine.hover.startupScript` | boolean | `true` | 悬停/补全 .sh/.bat 启动脚本里的 KBEngine 启动参数与说明——CLI 参数 `--cid`/`--gus`/`--hide`/`--KBE_ROOT`/`--KBE_RES_PATH`/`--KBE_BIN_PATH`、环境变量 `KBE_ROOT`/`KBE_RES_PATH`/`KBE_BIN_PATH`/`KBE_TIMING_METHOD`/`KBE_COMPONENTID`/`KBE_BOOTIDX_GLOBAL`/`KBE_BOOTIDX_GROUP`/`UID`/`UUID`(双语,附引擎源码行);`--` 前缀补全参数、`KBE_` 前缀补全环境变量;关闭即同时关断悬浮与补全两面 |

@@ -1343,6 +1343,11 @@
           "default": true,
           "markdownDescription": "%kbengine.config.hover.eventStats.description%"
         },
+        "kbengine.hover.apiDocs": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.hover.apiDocs.description%"
+        },
         "kbengine.hover.serverConfig": {
           "type": "boolean",
           "default": true,

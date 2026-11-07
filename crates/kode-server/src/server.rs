@@ -107,6 +107,7 @@ impl ServerState {
         crate::client_sdk::register(&mut rpc);
         crate::config_rpc::register(&mut rpc);
         crate::database_schema::register(&mut rpc);
+        crate::api_docs::register(&mut rpc);
         crate::db_clone::register(&mut rpc);
         crate::dependency_graph::register(&mut rpc);
         crate::lint::register(&mut rpc);

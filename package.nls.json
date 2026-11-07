@@ -171,6 +171,7 @@
   "kbengine.config.hover.entityRegistration.description": "悬停时显示 entities.xml 实体注册信息(Utype/清单位置)\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)",
   "kbengine.config.hover.defChain.description": "悬停时显示 def 属性/方法的声明链(文件与区块来源)\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)",
   "kbengine.config.hover.eventStats.description": "悬停时显示事件常量的注册与监听统计(事件回调反链)\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)",
+  "kbengine.config.hover.apiDocs.description": "悬停时显示 KBEngine Python API 文档段(KBEngine.<api> 成员访问、生命周期回调 def 声明行、内建属性追加段;文案取自知识页抽取库,中英按 hover.language 解析)\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)",
   "kbengine.config.hover.serverConfig.description": "悬停时显示 kbengine.xml 服务配置项的取值与说明\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)",
   "kbengine.config.hover.language.description": "悬停文案所用语言(auto 探测:VS Code 界面语言/系统 locale 为中文或 UTC+8 时区取中文,否则取英文;服务配置悬停已接入,其余悬停面逐步接入)。\n\n默认值：`auto`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#hover)",
   "kbengine.config.hover.language.enum.auto": "自动检测:界面语言/系统 locale 为中文或 UTC+8 时区时取中文,否则取英文",

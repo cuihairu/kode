@@ -1,0 +1,3059 @@
+{
+  "version": 1,
+  "generatedFrom": [
+    "docs/knowledge/api-baseapp.md",
+    "docs/knowledge/api-baseapp-entity.md",
+    "docs/knowledge/api-cellapp.md",
+    "docs/knowledge/api-client.md",
+    "docs/knowledge/api-bots.md",
+    "docs/knowledge/api-interfaces.md",
+    "docs/knowledge/api-loginapp-dbmgr-logger.md",
+    "docs/knowledge/api-core-concepts.md"
+  ],
+  "entryCount": 225,
+  "entries": [
+    {
+      "member": "addTimer",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "method",
+      "signature": "entity.addTimer(initialOffset, repeatOffset=0, userArg=0) -> int",
+      "qualifier": "",
+      "summaryEn": "Registers a timer: first fire after initialOffset seconds, then every repeatOffset seconds (repeat <= 0 means fire once). Each fire invokes entity.onTimer(timerID, userArg); userArg must be an int. Returns the timer id for delTimer. Shared impl: entity_macro.h:1387 (CLASS::pyAddTimer → ScriptTimersUtil::addTimer, :1391).",
+      "summaryZh": "注册定时器：initialOffset 秒后首次触发，之后每 repeatOffset 秒一次 （repeat <= 0 表示只触发一次）。每次触发调用 entity.onTimer(timerID, userArg)；userArg 必须为整数。返回供 delTimer 使用的定时器 id。共享实现：entity_macro.h:1387 （CLASS::pyAddTimer → ScriptTimersUtil::addTimer，:1391）。",
+      "sourceRefs": [
+        "entity_macro.h:1387"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "cell",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "attr",
+      "signature": "entity.cell",
+      "qualifier": "read-only attr",
+      "summaryEn": "EntityCall to the cell part, None until a cell exists. Getter entity.cpp:750 (pyGetCellEntityCall), table :36.",
+      "summaryZh": "cell 部分的 EntityCall；尚无 cell 时为 None。getter entity.cpp:750（pyGetCellEntityCall），方法表 :36。",
+      "sourceRefs": [
+        "entity.cpp:750"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "cellData",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "attr",
+      "signature": "entity.cellData",
+      "qualifier": "dict attr",
+      "summaryEn": "Holds the cell properties while no cell exists (.def defaults plus position, direction, spaceID); the dict is consumed (deleted) when the cell entity is created. Installed as a real instance attribute via PyObject_SetAttrString(this, \"cellData\", ...) — entity.cpp:238-241 (installCellDataAttr), dict lifecycle :221-236.",
+      "summaryZh": "cell 未创建期间暂存 cell 属性（.def 默认值加 position、direction、 spaceID）；cell 实体创建后该 dict 被消费（删除）。以真实实例属性形式 安装：PyObject_SetAttrString(this, \"cellData\", ...)—— entity.cpp:238-241（installCellDataAttr），dict 生命周期 :221-236。",
+      "sourceRefs": [
+        "entity.cpp:238-241"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "className",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "attr",
+      "signature": "entity.className",
+      "qualifier": "read-only, int32",
+      "summaryEn": "Shared entity id (same across base/cell/client views), class name, and destroyed flag. From the shared macro: entity_macro.h:33-35 (table), getters :689 (pyGetID), :1491 (pyGetIsDestroyed), :1496 (pyGetClassName).",
+      "summaryZh": "共享实体 id（base/cell/client 三侧一致）、类名、已销毁标志。来自共享宏： entity_macro.h:33-35（方法表），getter :689（pyGetID）、:1491 （pyGetIsDestroyed）、:1496（pyGetClassName）。",
+      "sourceRefs": [
+        "entity_macro.h:33-35"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "client",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "attr",
+      "signature": "entity.client",
+      "qualifier": "read-only attr",
+      "summaryEn": "EntityCall to the attached client, None when no client is bound. On the base Entity this getter exists (entity.cpp:800, table :37) but is only populated for Proxy-carried clients (see §7).",
+      "summaryZh": "挂接客户端的 EntityCall；无客户端绑定时为 None。base Entity 上该 getter 存在（entity.cpp:800，方法表 :37），但只有 Proxy 携带的客户端 才会填充它（见 §7）。",
+      "sourceRefs": [
+        "entity.cpp:800"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "createCellEntity",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "method",
+      "signature": "entity.createCellEntity(cellEntityCall)",
+      "qualifier": "",
+      "summaryEn": "Asks cellapp to create this entity's cell part in the space of cellEntityCall (must be a **direct** cell EntityCall — you cannot pass someBaseRef.cell across a base ref; route it through a base method that carries the direct call). Creation info comes from cellData (.def defaults + position/direction/spaceID). Impl entity.cpp:1416; type checks :1435-1439 (arg must be a direct ENTITYCALL_TYPE_CELL call) → Baseapp::createCellEntity (:1464). Failure raises onCreateCellFailure.",
+      "summaryZh": "请求 cellapp 在 cellEntityCall 所在 space 创建本实体的 cell 部分 （必须传**直接** cell EntityCall——不能跨 base 引用传 someBaseRef.cell；须经携带直接调用的 base 方法中转）。创建信息取自 cellData（.def 默认值 + position/direction/spaceID）。实现 entity.cpp:1416；类型检查 :1435-1439（参数必须是直接 ENTITYCALL_TYPE_CELL 调用）→ Baseapp::createCellEntity （:1464）。失败触发 onCreateCellFailure。",
+      "sourceRefs": [
+        "entity.cpp:1416"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "createCellEntityInNewSpace",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "method",
+      "signature": "entity.createCellEntityInNewSpace(cellappIndex=None)",
+      "qualifier": "",
+      "summaryEn": "Creates a brand-new space (via cellappmgr) and puts this entity's cell into it. cellappIndex=None/0 → engine load balancer picks the cellapp; >0 targets cellapp index N (overflowing indices wrap: with 3 running cellapps, index 4 → cellapp 1). Works well combined with KBEngine.APP_FLAGS_NOT_PARTCIPATING_LOAD_BALANCING to pin large maps. entity.cpp:28 (table), impl :1487-1508 → Baseapp::createCellEntityInNewSpace (:1507).",
+      "summaryZh": "（经 cellappmgr）新建 space 并把本实体的 cell 放入其中。 cellappIndex=None/0 → 引擎负载均衡器选 cellapp；>0 指定 cellapp 序号 （索引溢出回绕：3 个存活 cellapp 时，索引 4 → cellapp 1）。与 KBEngine.APP_FLAGS_NOT_PARTCIPATING_LOAD_BALANCING 组合可将大地图固定 在指定 cellapp。方法表 entity.cpp:28，实现 :1487-1508 → Baseapp::createCellEntityInNewSpace（:1507）。",
+      "sourceRefs": [
+        "entity.cpp:28"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "databaseID",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "attr",
+      "signature": "entity.databaseID",
+      "qualifier": "read-only, uint64",
+      "summaryEn": "Permanent id; 0 means never archived. Getter entity.cpp:769 (pyGetDBID).",
+      "summaryZh": "永久 id；0 表示从未归档。getter entity.cpp:769（pyGetDBID）。",
+      "sourceRefs": [
+        "entity.cpp:769"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "databaseInterfaceName",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "attr",
+      "signature": "entity.databaseInterfaceName",
+      "qualifier": "read-only, str",
+      "summaryEn": "Name of the dbmgr interface this entity persists through; empty string when databaseID == 0. Getter entity.cpp:783, table :38.",
+      "summaryZh": "本实体持久化所经的 dbmgr 接口名；databaseID == 0 时为空串。getter entity.cpp:783，方法表 :38。",
+      "sourceRefs": [
+        "entity.cpp:783"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "delTimer",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "method",
+      "signature": "entity.delTimer(id)",
+      "qualifier": "",
+      "summaryEn": "Removes a timer (\"All\" string removes all). Single-shot timers self-remove — delTimer on an already-removed id raises. entity_macro.h:18, impl :1407; invalid id path :1478 (ScriptTimersUtil::delTimer returns false → error).",
+      "summaryZh": "移除定时器（字符串 \"All\" 移除全部）。单次定时器自动移除——对已移除的 id 调用会报错。entity_macro.h:18，实现 :1407；无效 id 路径 :1478 （ScriptTimersUtil::delTimer 返回 false → 报错）。",
+      "sourceRefs": [
+        "entity_macro.h:18"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "deregisterEvent",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "method",
+      "signature": "entity.deregisterEvent(eventName, callback)",
+      "qualifier": "",
+      "summaryEn": "Per-entity event dispatch (engine events like onCreateCellFailure-style notifications and user events). entity_macro.h:21-23 (table), impls :1126 (pyRegisterEvent), :1162 (pyDeregisterEvent), :1198 (pyFireEvent).",
+      "summaryZh": "实体级事件分发（引擎事件与用户事件）。entity_macro.h:21-23（方法表）， 实现 :1126（pyRegisterEvent）、:1162（pyDeregisterEvent）、:1198 （pyFireEvent）。",
+      "sourceRefs": [
+        "entity_macro.h:21-23"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "destroy",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "method",
+      "signature": "entity.destroy(deleteFromDB=False, writeToDB=True)",
+      "qualifier": "",
+      "summaryEn": "Destroys the base part. If a cell part exists it must be destroyed first (destroyCellEntity); destroying while the cell is still being created is deferred until onGetCell (entity.cpp:641 warning). deleteFromDB=True removes the DB record; writeToDB=True (default) archives before teardown, ignored when deleteFromDB is True. Keyword or positional args accepted (METH_VARARGS | METH_KEYWORDS, entity_macro.h:20; parse entity.cpp:663-676; teardown Entity::onDestroyEntity entity.cpp:698-731). Object-reference semantics after destroy (garbages, strong refs) are covered once in [entity-lifecycle-referen",
+      "summaryZh": "销毁 base 部分。若 cell 部分尚存必须先 destroyCellEntity；cell 仍在 创建中时销毁被**推迟**到 onGetCell 之后（entity.cpp:641 告警）。 deleteFromDB=True 删除数据库记录；writeToDB=True（默认）在拆除前 归档，deleteFromDB=True 时被忽略。支持关键字或位置参数 （METH_VARARGS | METH_KEYWORDS，entity_macro.h:20；解析 entity.cpp:663-676；拆除 Entity::onDestroyEntity entity.cpp:698-731）。销毁后的对象引用语义（garbages、强引用）统一 记载于 [entity-lifecycle-reference](entity-lifecycle-reference.md)。",
+      "sourceRefs": [
+        "entity.cpp:641",
+        "entity_macro.h:20",
+        "entity.cpp:663-676"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "destroyCellEntity",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "method",
+      "signature": "entity.destroyCellEntity()",
+      "qualifier": "",
+      "summaryEn": "Requests destruction of the cell part; errors when there is no cell. Table entity.cpp:29, entry entity.cpp:593 (pyDestroyCellEntity), cellapp message :586 (CellappInterface::onDestroyCellEntityFromBaseapp).",
+      "summaryZh": "请求销毁 cell 部分；无 cell 时报错。方法表 entity.cpp:29，入口 entity.cpp:593（pyDestroyCellEntity），cellapp 消息 :586 （CellappInterface::onDestroyCellEntityFromBaseapp）。",
+      "sourceRefs": [
+        "entity.cpp:29",
+        "entity.cpp:593"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "fireEvent",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "method",
+      "signature": "entity.fireEvent(eventName, *args)",
+      "qualifier": "",
+      "summaryEn": "Per-entity event dispatch (engine events like onCreateCellFailure-style notifications and user events). entity_macro.h:21-23 (table), impls :1126 (pyRegisterEvent), :1162 (pyDeregisterEvent), :1198 (pyFireEvent).",
+      "summaryZh": "实体级事件分发（引擎事件与用户事件）。entity_macro.h:21-23（方法表）， 实现 :1126（pyRegisterEvent）、:1162（pyDeregisterEvent）、:1198 （pyFireEvent）。",
+      "sourceRefs": [
+        "entity_macro.h:21-23"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "getComponent",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "method",
+      "signature": "entity.getComponent(componentName, all=False)",
+      "qualifier": "",
+      "summaryEn": "Returns attached component instance(s) of the given type; all=True returns every instance, otherwise the first (or an empty result). entity_macro.h:24,1276-1355 (pyGetComponent; all parsed from a bool kwarg :1354).",
+      "summaryZh": "返回挂接在实体上的指定类型组件实例；all=True 返回全部实例，否则返回 第一个（或空）。entity_macro.h:24,1276-1355（pyGetComponent；all 由布尔 kwarg 解析 :1354）。",
+      "sourceRefs": [
+        "entity_macro.h:24"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "id",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "attr",
+      "signature": "entity.id",
+      "qualifier": "read-only, int32",
+      "summaryEn": "Shared entity id (same across base/cell/client views), class name, and destroyed flag. From the shared macro: entity_macro.h:33-35 (table), getters :689 (pyGetID), :1491 (pyGetIsDestroyed), :1496 (pyGetClassName).",
+      "summaryZh": "共享实体 id（base/cell/client 三侧一致）、类名、已销毁标志。来自共享宏： entity_macro.h:33-35（方法表），getter :689（pyGetID）、:1491 （pyGetIsDestroyed）、:1496（pyGetClassName）。",
+      "sourceRefs": [
+        "entity_macro.h:33-35"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "isDestroyed",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "attr",
+      "signature": "entity.isDestroyed",
+      "qualifier": "read-only, int32",
+      "summaryEn": "Shared entity id (same across base/cell/client views), class name, and destroyed flag. From the shared macro: entity_macro.h:33-35 (table), getters :689 (pyGetID), :1491 (pyGetIsDestroyed), :1496 (pyGetClassName).",
+      "summaryZh": "共享实体 id（base/cell/client 三侧一致）、类名、已销毁标志。来自共享宏： entity_macro.h:33-35（方法表），getter :689（pyGetID）、:1491 （pyGetIsDestroyed）、:1496（pyGetClassName）。",
+      "sourceRefs": [
+        "entity_macro.h:33-35"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "onCreateCellFailure",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "entity.onCreateCellFailure()",
+      "qualifier": "callback",
+      "summaryEn": "Cell creation request failed. entity.cpp:877-884.",
+      "summaryZh": "cell 创建请求失败。entity.cpp:877-884。",
+      "sourceRefs": [
+        "entity.cpp:877-884"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "onDestroy",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "entity.onDestroy()",
+      "qualifier": "callback",
+      "summaryEn": "Fired after the base part is actually destroyed. entity.cpp:164-169.",
+      "summaryZh": "base 部分真正销毁之后触发。entity.cpp:164-169。",
+      "sourceRefs": [
+        "entity.cpp:164-169"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "onGetCell",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "entity.onGetCell()",
+      "qualifier": "callbacks",
+      "summaryEn": "Cell part attached (onGetCell, entity.cpp:1014-1032; auto-destroy fallback :1037) / cell part detached (onLoseCell, entity.cpp:1052-1065; auto-destroy fallback :1069). The source material's advice stands: a self.destroy() in onLoseCell is the reliable place to tear down the base part.",
+      "summaryZh": "cell 部分挂接（onGetCell，entity.cpp:1014-1032；自动销毁兜底 :1037）/ cell 部分卸下（onLoseCell，entity.cpp:1052-1065；自动销毁 兜底 :1069）。源料的建议成立：在 onLoseCell 里 self.destroy() 是 拆除 base 部分的可靠时机。",
+      "sourceRefs": [
+        "entity.cpp:1014-1032",
+        "entity.cpp:1052-1065"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "onLoseCell",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "entity.onLoseCell()",
+      "qualifier": "callbacks",
+      "summaryEn": "Cell part attached (onGetCell, entity.cpp:1014-1032; auto-destroy fallback :1037) / cell part detached (onLoseCell, entity.cpp:1052-1065; auto-destroy fallback :1069). The source material's advice stands: a self.destroy() in onLoseCell is the reliable place to tear down the base part.",
+      "summaryZh": "cell 部分挂接（onGetCell，entity.cpp:1014-1032；自动销毁兜底 :1037）/ cell 部分卸下（onLoseCell，entity.cpp:1052-1065；自动销毁 兜底 :1069）。源料的建议成立：在 onLoseCell 里 self.destroy() 是 拆除 base 部分的可靠时机。",
+      "sourceRefs": [
+        "entity.cpp:1014-1032",
+        "entity.cpp:1052-1065"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "onPreArchive",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "entity.onPreArchive() -> bool",
+      "qualifier": "callback",
+      "summaryEn": "Called before an archive write; returning False aborts this write, True (or absence of the callback) proceeds. Invoked inside Entity::onCellWriteToDBCompleted before the write — entity.cpp:1294-1305.",
+      "summaryZh": "归档写入前调用；返回 False 中止本次写入，返回 True（或未实现该回调）则 继续。在 Entity::onCellWriteToDBCompleted 内、写入前触发—— entity.cpp:1294-1305。",
+      "sourceRefs": [
+        "entity.cpp:1294-1305"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "onRestore",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "entity.onRestore()",
+      "qualifier": "callback",
+      "summaryEn": "Called when this entity is recreated on another baseapp after the original baseapp crashed (backup/restore flow; handlers in kbe/src/server/baseapp/restore_entity_handler.cpp). entity.cpp:1077-1083.",
+      "summaryZh": "原 baseapp 崩溃后本实体在别的 baseapp 上重建（备份/恢复流程，处理器见 kbe/src/server/baseapp/restore_entity_handler.cpp）时触发。 entity.cpp:1077-1083。",
+      "sourceRefs": [
+        "entity.cpp:1077-1083"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "onTimer",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "entity.onTimer(timerHandle, userData)",
+      "qualifier": "callback",
+      "summaryEn": "Timer callback; must be defined on the base part. Raised from Entity::onTimer (kbe/src/server/baseapp/entity.cpp:1658-1662).",
+      "summaryZh": "定时器回调；必须定义在 base 部分。由 Entity::onTimer 触发 （kbe/src/server/baseapp/entity.cpp:1658-1662）。",
+      "sourceRefs": [
+        "kbe/src/server/baseapp/entity.cpp:1658-1662"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "onWriteToDB",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "entity.onWriteToDB(cellData)",
+      "qualifier": "callback",
+      "summaryEn": "Fires when entity data is about to be written to the database; cellData is the dict that will be stored. Calling writeToDB inside it loops forever. entity.cpp:1397-1405.",
+      "summaryZh": "实体数据即将写入数据库时触发；cellData 为将入库的 dict。在此回调内再 调 writeToDB 会无限循环。entity.cpp:1397-1405。",
+      "sourceRefs": [
+        "entity.cpp:1397-1405"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "registerEvent",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "method",
+      "signature": "entity.registerEvent(eventName, callback)",
+      "qualifier": "",
+      "summaryEn": "Per-entity event dispatch (engine events like onCreateCellFailure-style notifications and user events). entity_macro.h:21-23 (table), impls :1126 (pyRegisterEvent), :1162 (pyDeregisterEvent), :1198 (pyFireEvent).",
+      "summaryZh": "实体级事件分发（引擎事件与用户事件）。entity_macro.h:21-23（方法表）， 实现 :1126（pyRegisterEvent）、:1162（pyDeregisterEvent）、:1198 （pyFireEvent）。",
+      "sourceRefs": [
+        "entity_macro.h:21-23"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "shouldAutoArchive",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "attr",
+      "signature": "entity.shouldAutoArchive",
+      "qualifier": "get/set",
+      "summaryEn": "Auto-archive / auto-backup strategy: True, False, or KBEngine.NEXT_ONLY (one scheduled pass, then flips to False). The archiver periodically sweeps entities using these flags — kbe/src/server/baseapp/archiver.cpp (sweep timer; flag handling entity.cpp:842-899 getters/setters, table entity.cpp:40-41).",
+      "summaryZh": "自动归档 / 自动备份策略：True、False 或 KBEngine.NEXT_ONLY （下一调度周期执行一次后自动翻转为 False）。归档器周期性按这些标志扫描 实体——kbe/src/server/baseapp/archiver.cpp（扫描定时器；标志处理见 getter/setter entity.cpp:842-899，方法表 entity.cpp:40-41）。",
+      "sourceRefs": [
+        "entity.cpp:842-899",
+        "entity.cpp:40-41"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "shouldAutoBackup",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "attr",
+      "signature": "entity.shouldAutoBackup",
+      "qualifier": "get/set",
+      "summaryEn": "Auto-archive / auto-backup strategy: True, False, or KBEngine.NEXT_ONLY (one scheduled pass, then flips to False). The archiver periodically sweeps entities using these flags — kbe/src/server/baseapp/archiver.cpp (sweep timer; flag handling entity.cpp:842-899 getters/setters, table entity.cpp:40-41).",
+      "summaryZh": "自动归档 / 自动备份策略：True、False 或 KBEngine.NEXT_ONLY （下一调度周期执行一次后自动翻转为 False）。归档器周期性按这些标志扫描 实体——kbe/src/server/baseapp/archiver.cpp（扫描定时器；标志处理见 getter/setter entity.cpp:842-899，方法表 entity.cpp:40-41）。",
+      "sourceRefs": [
+        "entity.cpp:842-899",
+        "entity.cpp:40-41"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "writeToDB",
+      "owner": "entity",
+      "domain": "base",
+      "kind": "method",
+      "signature": "entity.writeToDB(callback=None, shouldAutoLoad=False, dbInterfaceName=\"default\")",
+      "qualifier": "",
+      "summaryEn": "Archives the entity to the database. callback(success, baseEntity) fires when the dbmgr write completes (onWriteToDBCallback, entity.cpp:1239-1290). shouldAutoLoad=True marks the record for auto-load at server start (then onAutoLoadEntityCreate / createEntityAnywhereFromDBID runs — see [api-baseapp](api-baseapp.md) §8). Core write path Entity::writeToDB entity.cpp:1141-1185; script entry entity_macro.h:19,832.",
+      "summaryZh": "把实体归档进数据库。dbmgr 写入完成后触发 callback(success, baseEntity)（onWriteToDBCallback， entity.cpp:1239-1290）。shouldAutoLoad=True 把记录标记为开服自动加载 （届时走 onAutoLoadEntityCreate / createEntityAnywhereFromDBID——见 [api-baseapp](api-baseapp.md) §8）。核心写路径 Entity::writeToDB entity.cpp:1141-1185；脚本入口 entity_macro.h:19,832。",
+      "sourceRefs": [
+        "entity.cpp:1239-1290",
+        "entity.cpp:1141-1185",
+        "entity_macro.h:19"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "address",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.address() -> (ip, port)",
+      "qualifier": "",
+      "summaryEn": "Address of the **internal** network interface as a (uint32 ip, uint32 port) tuple (numeric, network byte order). Impl baseapp.cpp:5179.",
+      "summaryZh": "**内部**网络接口地址，(uint32 ip, uint32 port) 元组（数值、网络字节 序）。实现 baseapp.cpp:5179。",
+      "sourceRefs": [
+        "baseapp.cpp:5179"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "addWatcher",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.addWatcher(path, dataType, getFunction)",
+      "qualifier": "",
+      "summaryEn": "Register/remove a watched variable under scripts/... for the monitoring system (GUIConsole/telnet). dataType is a basetype string (e.g. UINT32). getFunction is called with no args each time the watcher samples the value. kbe/src/lib/pyscript/pywatcher.cpp:184-185.",
+      "summaryZh": "向监控系统（GUIConsole/telnet）注册/删除 scripts/... 下的监视变量。 dataType 为基础类型字符串（如 UINT32）。每次采样时无参调用 getFunction 取值。kbe/src/lib/pyscript/pywatcher.cpp:184-185。",
+      "sourceRefs": [
+        "kbe/src/lib/pyscript/pywatcher.cpp:184-185"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "baseAppData",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "attr",
+      "signature": "KBEngine.baseAppData",
+      "qualifier": "",
+      "summaryEn": "Dict-like object **replicated across all baseapps**. Top-level assignments broadcast to every baseapp; mutations of a value's internals do **not** broadcast (the classic [1,2,3] vs [1,7,3] pitfall from the source material stands). Keys/values must be serializable by the engine. Writes trigger onBaseAppData / onBaseAppDataDel everywhere. Installed baseapp.cpp:461 (GlobalDataClient(DBMGR_TYPE, GlobalDataServer::BASEAPP_DATA), :457); change ingestion baseapp.cpp:3654+.",
+      "summaryZh": "**跨所有 baseapp 复制**的 dict 型对象。顶层赋值向全部 baseapp 广播；修改 值内部**不会**广播（源料的 [1,2,3] vs [1,7,3] 陷阱成立）。键值须经 引擎序列化。写入在所有进程触发 onBaseAppData / onBaseAppDataDel。 安装 baseapp.cpp:461 （GlobalDataClient(DBMGR_TYPE, GlobalDataServer::BASEAPP_DATA)，:457）； 变更接收 baseapp.cpp:3654+。",
+      "sourceRefs": [
+        "baseapp.cpp:461",
+        "baseapp.cpp:3654"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "charge",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.charge(ordersID, dbID, byteDatas, pycallback)",
+      "qualifier": "",
+      "summaryEn": "Billing request forwarded to the interfaces process. pycallback prototype: (orderID, dbID, success, datas), invoked when interfaces calls chargeResponse. Entry baseapp.cpp:3435; the loss/unknown-order path raises the entry-script callback onLoseChargeCB (baseapp.cpp:3603).",
+      "summaryZh": "计费请求转发到 interfaces 进程。pycallback 原型： (orderID, dbID, success, datas)，interfaces 调用 chargeResponse 时触发。 入口 baseapp.cpp:3435；订单丢失/未知路径触发入口脚本回调 onLoseChargeCB（baseapp.cpp:3603）。",
+      "sourceRefs": [
+        "baseapp.cpp:3435",
+        "baseapp.cpp:3603"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "component",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "attr",
+      "signature": "KBEngine.component",
+      "qualifier": "",
+      "summaryEn": "Read-only string naming the running component type — 'baseapp' on this process. kbe/src/lib/pyscript/script.cpp:248.",
+      "summaryZh": "只读字符串，标明当前运行的组件类型——本进程为 'baseapp'。 kbe/src/lib/pyscript/script.cpp:248。",
+      "sourceRefs": [
+        "kbe/src/lib/pyscript/script.cpp:248"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "createEntity",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.createEntity(entityType, params=None) -> Entity",
+      "qualifier": "",
+      "summaryEn": "Alias of createEntityLocally — same handler (baseapp.cpp:431).",
+      "summaryZh": "createEntityLocally 的别名——同一处理函数（baseapp.cpp:431）。",
+      "sourceRefs": [
+        "baseapp.cpp:431"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "createEntityAnywhere",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.createEntityAnywhere(entityType, params=None, callback=None)",
+      "qualifier": "",
+      "summaryEn": "Asks baseappmgr to pick a suitable baseapp and create the entity there; preferred over createEntityLocally for load balancing. callback(entityCall | None) fires on completion. Entry baseapp.cpp:986 (sends onCreateEntityAnywhere to baseappmgr); the chosen baseapp executes it via the interface handler (baseapp_interface.h:116), callback delivered through onCreateEntityAnywhereCallback (baseapp_interface.h:119).",
+      "summaryZh": "请求 baseappmgr 挑选合适的 baseapp 创建实体；出于负载均衡优先于 createEntityLocally。完成后 callback(entityCall | None) 触发。入口 baseapp.cpp:986（向 baseappmgr 发 onCreateEntityAnywhere）；被选中的 baseapp 经接口处理函数执行（baseapp_interface.h:116），回调经 onCreateEntityAnywhereCallback 送回（baseapp_interface.h:119）。",
+      "sourceRefs": [
+        "baseapp.cpp:986",
+        "baseapp_interface.h:116",
+        "baseapp_interface.h:119"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "createEntityAnywhereFromDBID",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.createEntityAnywhereFromDBID(entityType, dbID, callback=None, dbInterfaceName=\"default\")",
+      "qualifier": "",
+      "summaryEn": "Same as above but baseappmgr chooses the target baseapp. Entry baseapp.cpp:1440.",
+      "summaryZh": "同上，但由 baseappmgr 选择目标 baseapp。入口 baseapp.cpp:1440。",
+      "sourceRefs": [
+        "baseapp.cpp:1440"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "createEntityFromDBID",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.createEntityFromDBID(entityType, dbID, callback=None, dbInterfaceName=\"default\")",
+      "qualifier": "",
+      "summaryEn": "Loads the archived entity from the database **onto this baseapp**. If the entity is already checked out, the callback receives a reference to the existing entity. Callback: (baseRef, databaseID, wasActive); on failure (None, 0, False). Entry baseapp.cpp:1088.",
+      "summaryZh": "从数据库加载已归档实体，落在本 baseapp 上。若实体已被检出（checked out），回调返回既有实体的引用。回调：(baseRef, databaseID, wasActive)； 失败时 (None, 0, False)。入口 baseapp.cpp:1088。",
+      "sourceRefs": [
+        "baseapp.cpp:1088"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "createEntityLocally",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.createEntityLocally(entityType, params=None) -> Entity",
+      "qualifier": "",
+      "summaryEn": "Creates a new base entity **on this baseapp** and returns the direct entity object immediately — no callback, no round trip. Use when you must manage the life cycle (control when destroy happens) or touch attributes not exposed through EntityCall; some APIs require a direct reference (e.g. Proxy.giveClientTo). Registration maps both createEntity and createEntityLocally to the same handler (baseapp.cpp:431-432; entry baseapp.cpp:959).",
+      "summaryZh": "在**本 baseapp** 上新建 base 实体，立即返回直接实体对象——无回调、无网络 往返。需要掌管生命周期（控制 destroy 时机）或访问 EntityCall 未暴露的 属性时使用；部分 API 只接受直接引用（如 Proxy.giveClientTo）。 注册处将 createEntity 与 createEntityLocally 映射到同一处理函数 （baseapp.cpp:431-432；入口 baseapp.cpp:959）。",
+      "sourceRefs": [
+        "baseapp.cpp:431-432",
+        "baseapp.cpp:959"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "createEntityRemotely",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.createEntityRemotely(entityType, baseMB, params=None, callback=None)",
+      "qualifier": "",
+      "summaryEn": "Like createEntityAnywhere but pinned to the baseapp owning baseMB (a base EntityCall). Entry baseapp.cpp:1028; remote path baseapp_interface.h:122-125.",
+      "summaryZh": "同 createEntityAnywhere，但固定在 baseMB（base EntityCall）所属的 baseapp 上创建。入口 baseapp.cpp:1028；远端路径 baseapp_interface.h:122-125。",
+      "sourceRefs": [
+        "baseapp.cpp:1028",
+        "baseapp_interface.h:122-125"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "createEntityRemotelyFromDBID",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.createEntityRemotelyFromDBID(entityType, dbID, baseMB, callback=None, dbInterfaceName=\"default\")",
+      "qualifier": "",
+      "summaryEn": "Loads from the database onto the baseapp owning baseMB. Entry baseapp.cpp:1966.",
+      "summaryZh": "从数据库加载，落到 baseMB 所属 baseapp。入口 baseapp.cpp:1966。",
+      "sourceRefs": [
+        "baseapp.cpp:1966"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "debugTracing",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.debugTracing()",
+      "qualifier": "",
+      "summaryEn": "Prints the engine-tracked extended-object counters (FixedArray, FixedDict, Entity, EntityCall, ...). Non-zero counters at clean shutdown mean leaked engine-wrapped Python objects. entity_app.h:453 → kbe/src/lib/pyscript/py_gc.cpp:224 (PyGC::__py_debugTracing). For leaked entity instances see KBEngine.entities.garbages — [entity-lifecycle-reference](entity-lifecycle-reference.md).",
+      "summaryZh": "输出引擎跟踪的扩展对象计数器（FixedArray、FixedDict、Entity、 EntityCall 等）。正常关服时计数非零即存在引擎封装对象的泄漏。 entity_app.h:453 → kbe/src/lib/pyscript/py_gc.cpp:224 （PyGC::__py_debugTracing）。泄漏实体实例另见 KBEngine.entities.garbages——[entity-lifecycle-reference](entity-lifecycle-reference.md)。",
+      "sourceRefs": [
+        "kbe/src/lib/pyscript/py_gc.cpp:224"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "deleteEntityByDBID",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.deleteEntityByDBID(entityType, dbID, callback=None, dbInterfaceName=\"default\")",
+      "qualifier": "",
+      "summaryEn": "Deletes the archived entity (and child-table rows) from the database. If the entity is currently checked out, deletion fails and the callback receives its entityCall; otherwise True. Entry baseapp.cpp:5189.",
+      "summaryZh": "从数据库删除已归档实体（含属性生成的子表数据）。若实体正被检出，删除 失败且回调收到其 entityCall；成功则回调 True。入口 baseapp.cpp:5189。",
+      "sourceRefs": [
+        "baseapp.cpp:5189"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "delWatcher",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.delWatcher(path)",
+      "qualifier": "",
+      "summaryEn": "Register/remove a watched variable under scripts/... for the monitoring system (GUIConsole/telnet). dataType is a basetype string (e.g. UINT32). getFunction is called with no args each time the watcher samples the value. kbe/src/lib/pyscript/pywatcher.cpp:184-185.",
+      "summaryZh": "向监控系统（GUIConsole/telnet）注册/删除 scripts/... 下的监视变量。 dataType 为基础类型字符串（如 UINT32）。每次采样时无参调用 getFunction 取值。kbe/src/lib/pyscript/pywatcher.cpp:184-185。",
+      "sourceRefs": [
+        "kbe/src/lib/pyscript/pywatcher.cpp:184-185"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "deregisterReadFileDescriptor",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.deregisterReadFileDescriptor(fileDescriptor)",
+      "qualifier": "",
+      "summaryEn": "Hooks a raw fd/socket into the engine's network dispatcher: callback(fd) fires on readability / writability. Baseapp registration baseapp.cpp:441-444 → kbe/src/lib/server/py_file_descriptor.cpp:35 and :22-31 (register/deregister against Components' dispatcher).",
+      "summaryZh": "把裸 fd/socket 挂进引擎网络分发器：可读/可写时 callback(fd) 触发。 baseapp 注册 baseapp.cpp:441-444 → kbe/src/lib/server/py_file_descriptor.cpp:35 及 :22-31 （对 Components 的分发器 register/deregister）。",
+      "sourceRefs": [
+        "kbe/src/lib/server/py_file_descriptor.cpp:35"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "entities",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "attr",
+      "signature": "KBEngine.entities",
+      "qualifier": "",
+      "summaryEn": "Live-entity registry for this process (ENTITY_ID → strong-ref PyObjectPtr). Lifetime/garbage semantics are documented once in [entity-lifecycle-reference](entity-lifecycle-reference.md); installed at kbe/src/lib/server/entity_app.h:411.",
+      "summaryZh": "本进程存活实体注册表（ENTITY_ID → 强引用 PyObjectPtr）。生命周期/垃圾 语义统一记载于 [entity-lifecycle-reference](entity-lifecycle-reference.md)；安装位置 kbe/src/lib/server/entity_app.h:411。",
+      "sourceRefs": [
+        "kbe/src/lib/server/entity_app.h:411"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "executeRawDatabaseCommand",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.executeRawDatabaseCommand(command, callback=None, threadID=0, dbInterfaceName=\"default\")",
+      "qualifier": "",
+      "summaryEn": "Sends a raw DB command (SQL for MySQL) through dbmgr. Callback: (result, rows, insertid, error) — result is None when the command has no result set or errors; rows counts affected rows; insertid is mysql_insert_id()-like, MySQL-only; error is None unless failed. The source material's warning stands and is structural: if the entity is checked out, later archiving **overwrites** direct SQL edits — do not read/modify entity data this way. Entry baseapp.cpp:3214.",
+      "summaryZh": "经 dbmgr 执行裸数据库命令（MySQL 即 SQL）。回调： (result, rows, insertid, error)——无结果集或出错时 result 为 None； rows 为受影响行数；insertid 类似 mysql_insert_id()，仅 MySQL 有意义； error 仅失败时非 None。源料的警告成立且是结构性的：实体被检出时，后续 归档会**覆盖**直接 SQL 写入——不要用它读写实体数据。入口 baseapp.cpp:3214。",
+      "sourceRefs": [
+        "baseapp.cpp:3214"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "genUUID64",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.genUUID64() -> uint64",
+      "qualifier": "",
+      "summaryEn": "Generates a 64-bit unique id: seconds-since-epoch plus a per-second 16-bit counter (kbe/src/lib/common/platform.h:738-770). Cross-process uniqueness needs the component global order in 1..65535 — the first call warns otherwise (kbe/src/lib/pyscript/script.cpp:96-101, registration :258). The 3.7 text attributes this to a baseapp startup parameter gus; at HEAD the guard reads g_componentGlobalOrder (see deviation table).",
+      "summaryZh": "生成 64 位唯一 id：秒级时间戳 + 每秒循环的 16 位计数器 （kbe/src/lib/common/platform.h:738-770）。跨进程唯一性要求组件 global order 处于 1..65535，否则首次调用告警 （kbe/src/lib/pyscript/script.cpp:96-101，注册 :258）。3.7 文本把这一 前提归于 baseapp 启动参数 gus；HEAD 处守卫读的是 g_componentGlobalOrder（见差异表）。",
+      "sourceRefs": [
+        "kbe/src/lib/common/platform.h:738-770",
+        "kbe/src/lib/pyscript/script.cpp:96-101"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "getAppFlags",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.getAppFlags() -> int",
+      "qualifier": "",
+      "summaryEn": "Process flags bitmask. Only two values exist at HEAD: APP_FLAGS_NONE = 0, APP_FLAGS_NOT_PARTCIPATING_LOAD_BALANCING = 0x1 (kbe/src/lib/common/common.h:348-352); set/get handlers baseapp.cpp:5785,5779. Compose with |. A baseapp flagged not-participating reports load differently to baseappmgr (onUpdateLoad sends flags_, baseapp.cpp:497-511).",
+      "summaryZh": "进程标志位。HEAD 处仅两个取值：APP_FLAGS_NONE = 0、 APP_FLAGS_NOT_PARTCIPATING_LOAD_BALANCING = 0x1 （kbe/src/lib/common/common.h:348-352）；set/get 处理函数 baseapp.cpp:5785,5779。用 | 组合。不参与负载均衡的 baseapp 向 baseappmgr 上报的负载信息不同（onUpdateLoad 发送 flags_， baseapp.cpp:497-511）。",
+      "sourceRefs": [
+        "kbe/src/lib/common/common.h:348-352"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "getResFullPath",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.getResFullPath(res) -> str|None",
+      "qualifier": "",
+      "summaryEn": "Resource-path utilities over KBE_RES_PATH; matchPath/getResFullPath resolve a relative res path to absolute (getResFullPath returns None on miss), listPathRes filters by extension (str like \"txt|py\" or a tuple). All registered in entity_app.h:432-443. Path-resolution rules are covered in [fixed-directories-and-path-resolution](fixed-directories-and-path-resolution.md).",
+      "summaryZh": "基于 KBE_RES_PATH 的资源路径工具；matchPath/getResFullPath 将相对 资源路径解析为绝对路径（getResFullPath 未命中返回 None）， listPathRes 按扩展名过滤（\"txt|py\" 形式的字符串或元组）。注册均在 entity_app.h:432-443。路径解析规则详见 [fixed-directories-and-path-resolution](fixed-directories-and-path-resolution.md)。",
+      "sourceRefs": [
+        "entity_app.h:432-443"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "getWatcher",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.getWatcher(path) -> value",
+      "qualifier": "",
+      "summaryEn": "Read one watcher value / list a watcher directory's entries from the engine's watcher tree. entity_app.h:447,450; impls :757,896.",
+      "summaryZh": "读单个 watcher 值 / 列出 watcher 目录的条目。entity_app.h:447,450； 实现 :757,896。",
+      "sourceRefs": [
+        "entity_app.h:447"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "getWatcherDir",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.getWatcherDir(path) -> tuple",
+      "qualifier": "",
+      "summaryEn": "Read one watcher value / list a watcher directory's entries from the engine's watcher tree. entity_app.h:447,450; impls :757,896.",
+      "summaryZh": "读单个 watcher 值 / 列出 watcher 目录的条目。entity_app.h:447,450； 实现 :757,896。",
+      "sourceRefs": [
+        "entity_app.h:447"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "globalData",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "attr",
+      "signature": "KBEngine.globalData",
+      "qualifier": "",
+      "summaryEn": "Same contract as baseAppData but replicated across **baseapps and cellapps**; changes raise onGlobalData / onGlobalDataDel. kbe/src/lib/server/entity_app.h:419, callbacks :1308,1290.",
+      "summaryZh": "契约同 baseAppData，但复制范围是 **baseapp + cellapp**；变更触发 onGlobalData / onGlobalDataDel。kbe/src/lib/server/entity_app.h:419， 回调 :1308,1290。",
+      "sourceRefs": [
+        "kbe/src/lib/server/entity_app.h:419"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "hasRes",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.hasRes(res) -> bool",
+      "qualifier": "",
+      "summaryEn": "Resource-path utilities over KBE_RES_PATH; matchPath/getResFullPath resolve a relative res path to absolute (getResFullPath returns None on miss), listPathRes filters by extension (str like \"txt|py\" or a tuple). All registered in entity_app.h:432-443. Path-resolution rules are covered in [fixed-directories-and-path-resolution](fixed-directories-and-path-resolution.md).",
+      "summaryZh": "基于 KBE_RES_PATH 的资源路径工具；matchPath/getResFullPath 将相对 资源路径解析为绝对路径（getResFullPath 未命中返回 None）， listPathRes 按扩展名过滤（\"txt|py\" 形式的字符串或元组）。注册均在 entity_app.h:432-443。路径解析规则详见 [fixed-directories-and-path-resolution](fixed-directories-and-path-resolution.md)。",
+      "sourceRefs": [
+        "entity_app.h:432-443"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "isShuttingDown",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.isShuttingDown() -> bool",
+      "qualifier": "",
+      "summaryEn": "True once shutdown started. Impl baseapp.cpp:5173 (reads Baseapp::isShuttingdown); the shutdown state machine runs in onShutdownBegin/onShutdown/onShutdownEnd (baseapp.cpp:321,334,383).",
+      "summaryZh": "关服开始后返回 True。实现 baseapp.cpp:5173（读 Baseapp::isShuttingdown）；关服状态机在 onShutdownBegin/onShutdown/onShutdownEnd（baseapp.cpp:321,334,383）。",
+      "sourceRefs": [
+        "baseapp.cpp:5173",
+        "baseapp.cpp:321"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "listPathRes",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.listPathRes(path, extension=None) -> tuple",
+      "qualifier": "",
+      "summaryEn": "Resource-path utilities over KBE_RES_PATH; matchPath/getResFullPath resolve a relative res path to absolute (getResFullPath returns None on miss), listPathRes filters by extension (str like \"txt|py\" or a tuple). All registered in entity_app.h:432-443. Path-resolution rules are covered in [fixed-directories-and-path-resolution](fixed-directories-and-path-resolution.md).",
+      "summaryZh": "基于 KBE_RES_PATH 的资源路径工具；matchPath/getResFullPath 将相对 资源路径解析为绝对路径（getResFullPath 未命中返回 None）， listPathRes 按扩展名过滤（\"txt|py\" 形式的字符串或元组）。注册均在 entity_app.h:432-443。路径解析规则详见 [fixed-directories-and-path-resolution](fixed-directories-and-path-resolution.md)。",
+      "sourceRefs": [
+        "entity_app.h:432-443"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "lookUpEntityByDBID",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.lookUpEntityByDBID(entityType, dbID, callback=None, dbInterfaceName=\"default\")",
+      "qualifier": "",
+      "summaryEn": "Query-only: callback gets True if the entity is **not** checked out, its entityCall if it is. Entry baseapp.cpp:5361.",
+      "summaryZh": "纯查询：回调收到 True 表示**未**被检出；被检出则收到其 entityCall。 入口 baseapp.cpp:5361。",
+      "sourceRefs": [
+        "baseapp.cpp:5361"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "matchPath",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.matchPath(res) -> str",
+      "qualifier": "",
+      "summaryEn": "Resource-path utilities over KBE_RES_PATH; matchPath/getResFullPath resolve a relative res path to absolute (getResFullPath returns None on miss), listPathRes filters by extension (str like \"txt|py\" or a tuple). All registered in entity_app.h:432-443. Path-resolution rules are covered in [fixed-directories-and-path-resolution](fixed-directories-and-path-resolution.md).",
+      "summaryZh": "基于 KBE_RES_PATH 的资源路径工具；matchPath/getResFullPath 将相对 资源路径解析为绝对路径（getResFullPath 未命中返回 None）， listPathRes 按扩展名过滤（\"txt|py\" 形式的字符串或元组）。注册均在 entity_app.h:432-443。路径解析规则详见 [fixed-directories-and-path-resolution](fixed-directories-and-path-resolution.md)。",
+      "sourceRefs": [
+        "entity_app.h:432-443"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "MemoryStream",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.MemoryStream()",
+      "qualifier": "",
+      "summaryEn": "The 3.7 source material lists a KBEngine.MemoryStream constructor (binary serializer following engine packing rules). **待取证 / to be evidenced on the baseapp face**: the constructor is registered for PythonApp-based tools at kbe/src/lib/server/python_app.cpp:271 (PyMemoryStream::py_new), but EntityApp::installPyModules (the baseapp chain, entity_app.h:407-453) contains no MemoryStream registration, and no PyMemoryStream::installScript caller was found for baseapp. Evidence path: run a baseapp with KBEngine.MemoryStream() in its entry script and record the result; treat the docs claim as unverif",
+      "summaryZh": "3.7 源料在 baseapp 模块下列出该构造器（按引擎打包规则的二进制序列化 对象）。**baseapp 面待取证**：该构造器注册于 PythonApp 系工具 （kbe/src/lib/server/python_app.cpp:271，PyMemoryStream::py_new）， 但 baseapp 所在的 EntityApp::installPyModules 链（entity_app.h:407-453） 无 MemoryStream 注册，也未找到面向 baseapp 的 PyMemoryStream::installScript 调用。取证路径：在 baseapp 入口脚本执行 KBEngine.MemoryStream() 并记录结果；在此之前该源料断言视为未证实。",
+      "sourceRefs": [
+        "kbe/src/lib/server/python_app.cpp:271"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "onBaseAppDataDel",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "onBaseAppDataDel(key)",
+      "qualifier": "",
+      "summaryEn": "KBEngine.baseAppData was written / deleted on any baseapp",
+      "summaryZh": "",
+      "sourceRefs": [
+        "baseapp.cpp:3707"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "onBaseAppReady",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "onBaseAppReady(isBootstrap)",
+      "qualifier": "",
+      "summaryEn": "Baseapp finished loading scripts and entities; isBootstrap is True for the first baseapp (group order 1)",
+      "summaryZh": "",
+      "sourceRefs": [
+        "kbe/src/server/baseapp/initprogress_handler.cpp:179-190"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "onBaseAppShutDown",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "onBaseAppShutDown(state)",
+      "qualifier": "",
+      "summaryEn": "Shutdown phases: state=0 begin (before client disconnect, baseapp.cpp:321-328), 1 before entities are archived (:334-343), 2 after archiving completes (:383-390)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "onCellAppDeath",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "onCellAppDeath(addr)",
+      "qualifier": "",
+      "summaryEn": "A cellapp died (addr = (ip, port) tuple, numeric network order); suppressed while this baseapp is itself shutting down",
+      "summaryZh": "",
+      "sourceRefs": [
+        "baseapp.cpp:673-700"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "onFini",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "onFini()",
+      "qualifier": "",
+      "summaryEn": "3.7 source material: \"after the engine is officially shut down\". **Not found at fork HEAD** — no onFini symbol exists anywhere in kbe/src (only onFinish in client_lib/bots). **待取证**: confirm upstream intent (possibly never wired for baseapp) before relying on it",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "onGlobalDataDel",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "onGlobalDataDel(key)",
+      "qualifier": "",
+      "summaryEn": "KBEngine.globalData written / deleted cluster-wide",
+      "summaryZh": "",
+      "sourceRefs": [
+        "kbe/src/lib/server/entity_app.h:1308"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "onInit",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "onInit(isReload)",
+      "qualifier": "",
+      "summaryEn": "After onDbmgrInitCompleted at startup (isReload=0, baseapp.cpp:3636-3647), and again with True after reloadScript (entity_app.h:1461)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "onReadyForLogin",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "onReadyForLogin(isBootstrap)",
+      "qualifier": "",
+      "summaryEn": "Polled while init progresses; return True (or a float >= 0.9999) to let loginapp accept clients; the float is reported to baseappmgr as init-progress percent",
+      "summaryZh": "",
+      "sourceRefs": [
+        "initprogress_handler.cpp:200-233"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "onReadyForShutDown",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "onReadyForShutDown()",
+      "qualifier": "",
+      "summaryEn": "Before process exit; returning True permits exit, anything else re-asks later",
+      "summaryZh": "",
+      "sourceRefs": [
+        "baseapp.cpp:275-285"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "open",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.open(res, mode='r', encoding=None) -> file",
+      "qualifier": "",
+      "summaryEn": "Resource-path utilities over KBE_RES_PATH; matchPath/getResFullPath resolve a relative res path to absolute (getResFullPath returns None on miss), listPathRes filters by extension (str like \"txt|py\" or a tuple). All registered in entity_app.h:432-443. Path-resolution rules are covered in [fixed-directories-and-path-resolution](fixed-directories-and-path-resolution.md).",
+      "summaryZh": "基于 KBE_RES_PATH 的资源路径工具；matchPath/getResFullPath 将相对 资源路径解析为绝对路径（getResFullPath 未命中返回 None）， listPathRes 按扩展名过滤（\"txt|py\" 形式的字符串或元组）。注册均在 entity_app.h:432-443。路径解析规则详见 [fixed-directories-and-path-resolution](fixed-directories-and-path-resolution.md)。",
+      "sourceRefs": [
+        "entity_app.h:432-443"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "publish",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.publish() -> int8",
+      "qualifier": "",
+      "summaryEn": "Release mode: 0 debug, 1 release. entity_app.h:426 (__py_getAppPublish).",
+      "summaryZh": "发布模式：0 调试、1 发布。entity_app.h:426（__py_getAppPublish）。",
+      "sourceRefs": [
+        "entity_app.h:426"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "quantumPassedPercent",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.quantumPassedPercent() -> int",
+      "qualifier": "",
+      "summaryEn": "Percentage of the current tick already consumed (thread scheduling headroom probe). baseapp.cpp:439, impl :510.",
+      "summaryZh": "当前 tick 已消耗的百分比（线程调度余量探针）。baseapp.cpp:439， 实现 :510。",
+      "sourceRefs": [
+        "baseapp.cpp:439"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "registerReadFileDescriptor",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.registerReadFileDescriptor(fileDescriptor, callback)",
+      "qualifier": "",
+      "summaryEn": "Hooks a raw fd/socket into the engine's network dispatcher: callback(fd) fires on readability / writability. Baseapp registration baseapp.cpp:441-444 → kbe/src/lib/server/py_file_descriptor.cpp:35 and :22-31 (register/deregister against Components' dispatcher).",
+      "summaryZh": "把裸 fd/socket 挂进引擎网络分发器：可读/可写时 callback(fd) 触发。 baseapp 注册 baseapp.cpp:441-444 → kbe/src/lib/server/py_file_descriptor.cpp:35 及 :22-31 （对 Components 的分发器 register/deregister）。",
+      "sourceRefs": [
+        "kbe/src/lib/server/py_file_descriptor.cpp:35"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "reloadScript",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.reloadScript(fullReload=True) -> bool",
+      "qualifier": "",
+      "summaryEn": "Reloads entity script modules and (with fullReload=True) entity defs; live entities get their __class__ swapped to the reloaded class. Dev-time only. The caller is told completion via onInit(True) (kbe/src/lib/server/entity_app.h:1461). Entry baseapp.cpp:5129 → Baseapp::reloadScript (:5148 region) → per-entity reload() (:5165-5168).",
+      "summaryZh": "重载实体脚本模块；fullReload=True 时连实体定义一起重载，存活实体的 __class__ 被替换为新类。仅限开发期使用。完成时以 onInit(True) 通知 （kbe/src/lib/server/entity_app.h:1461）。入口 baseapp.cpp:5129 → Baseapp::reloadScript（:5148 一带）→ 逐实体 reload() （:5165-5168）。",
+      "sourceRefs": [
+        "kbe/src/lib/server/entity_app.h:1461"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "scriptLogType",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.scriptLogType(logType)",
+      "qualifier": "",
+      "summaryEn": "Sets the log level used for print output; logType is one of the LOG_TYPE_* constants. entity_app.h:429 (impl :925-940 region).",
+      "summaryZh": "设置 print 输出使用的日志级别；logType 取 LOG_TYPE_* 常量之一。 entity_app.h:429（实现约 :925-940）。",
+      "sourceRefs": [
+        "entity_app.h:429"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "setAppFlags",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.setAppFlags(flags)",
+      "qualifier": "",
+      "summaryEn": "Process flags bitmask. Only two values exist at HEAD: APP_FLAGS_NONE = 0, APP_FLAGS_NOT_PARTCIPATING_LOAD_BALANCING = 0x1 (kbe/src/lib/common/common.h:348-352); set/get handlers baseapp.cpp:5785,5779. Compose with |. A baseapp flagged not-participating reports load differently to baseappmgr (onUpdateLoad sends flags_, baseapp.cpp:497-511).",
+      "summaryZh": "进程标志位。HEAD 处仅两个取值：APP_FLAGS_NONE = 0、 APP_FLAGS_NOT_PARTCIPATING_LOAD_BALANCING = 0x1 （kbe/src/lib/common/common.h:348-352）；set/get 处理函数 baseapp.cpp:5785,5779。用 | 组合。不参与负载均衡的 baseapp 向 baseappmgr 上报的负载信息不同（onUpdateLoad 发送 flags_， baseapp.cpp:497-511）。",
+      "sourceRefs": [
+        "kbe/src/lib/common/common.h:348-352"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "time",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.time() -> uint32",
+      "qualifier": "",
+      "summaryEn": "Current game time in ticks; tick length is 1 / gameUpdateHertz (kbengine.xml / kbengine_defaults.xml). Registered under the name time but bound to handler __py_gametime (baseapp.cpp:430, impl :504).",
+      "summaryZh": "当前游戏时间（tick 数）；tick 长度为 1 / gameUpdateHertz （kbengine.xml / kbengine_defaults.xml）。注册名是 time，绑定处理 函数 __py_gametime（baseapp.cpp:430，实现 :504）。",
+      "sourceRefs": [
+        "baseapp.cpp:430"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "urlopen",
+      "owner": "KBEngine",
+      "domain": "base",
+      "kind": "method",
+      "signature": "KBEngine.urlopen(url, callback=None, postData=None, headers=None)",
+      "qualifier": "",
+      "summaryEn": "Async HTTP/HTTPS request off the main thread. Callback: (httpcode, data, headers, success, url); provide postData (bytes) to switch GET→POST; headers is a dict. Registered at kbe/src/lib/pyscript/pyurl.cpp:23, impl :69 (PyUrl::__py_urlopen).",
+      "summaryZh": "主线程外的异步 HTTP/HTTPS 请求。回调： (httpcode, data, headers, success, url)；提供 postData（bytes）即由 GET 转 POST；headers 为 dict。注册 kbe/src/lib/pyscript/pyurl.cpp:23， 实现 :69（PyUrl::__py_urlopen）。",
+      "sourceRefs": [
+        "kbe/src/lib/pyscript/pyurl.cpp:23"
+      ],
+      "page": "api-baseapp"
+    },
+    {
+      "member": "disconnect",
+      "owner": "proxy",
+      "domain": "base",
+      "kind": "method",
+      "signature": "proxy.disconnect()",
+      "qualifier": "",
+      "summaryEn": "Disconnects the bound client: condemns the client channel. proxy.cpp:70-78 (pyDisconnect), table :27.",
+      "summaryZh": "断开绑定的客户端：将客户端 channel 标记为 condemn。 proxy.cpp:70-78（pyDisconnect），方法表 :27。",
+      "sourceRefs": [
+        "proxy.cpp:70-78"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "getClientDatas",
+      "owner": "proxy",
+      "domain": "base",
+      "kind": "method",
+      "signature": "proxy.getClientDatas() -> (bytes, bytes)",
+      "qualifier": "",
+      "summaryEn": "The opaque bytes the client attached to **login** and to **register** (passed through the interfaces process for third-party account systems). proxy.cpp:258; populated at account creation (setLoginDatas/setCreateDatas, baseapp.cpp:4166-4167).",
+      "summaryZh": "客户端**登录**与**注册**时附带的透传 bytes（经 interfaces 进程转发给第 三方账号系统）。proxy.cpp:258；账号实体创建时写入 （setLoginDatas/setCreateDatas，baseapp.cpp:4166-4167）。",
+      "sourceRefs": [
+        "proxy.cpp:258",
+        "baseapp.cpp:4166-4167"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "getClientType",
+      "owner": "proxy",
+      "domain": "base",
+      "kind": "method",
+      "signature": "proxy.getClientType() -> int",
+      "qualifier": "",
+      "summaryEn": "Client type enum: 0 unknown, 1 mobile, 2 Windows, 3 Linux, 4 Mac, 5 browser, 6 bots, 7 mini, 8 end. proxy.cpp:252; set from login metadata (pEntity->setClientType(...), baseapp.cpp:4165).",
+      "summaryZh": "客户端类型枚举：0 未知、1 手机、2 Windows、3 Linux、4 Mac、5 浏览器、 6 bots、7 mini、8 end。proxy.cpp:252；由登录元数据写入 （pEntity->setClientType(...)，baseapp.cpp:4165）。",
+      "sourceRefs": [
+        "proxy.cpp:252",
+        "baseapp.cpp:4165"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "giveClientTo",
+      "owner": "proxy",
+      "domain": "base",
+      "kind": "method",
+      "signature": "proxy.giveClientTo(otherProxy)",
+      "qualifier": "",
+      "summaryEn": "Transfers client control to another Proxy on the same baseapp. Preconditions enforced at proxy.cpp:311-380: current proxy alive and has a client (:328-331), target alive (:342-347), not self (:354-359), target has no client (:366-373); any violation raises onGiveClientToFailure instead of an exception. Script entry :274-299 (pyGiveClientTo, type-check error :287); table :22. This is the canonical reason to need a direct entity reference rather than an EntityCall.",
+      "summaryZh": "把客户端控制权移交给同一 baseapp 上的另一个 Proxy。前置条件在 proxy.cpp:311-380 强制：当前 proxy 存活且持有客户端（:328-331）、目标 存活（:342-347）、不能是自身（:354-359）、目标无客户端（:366-373）； 任一违反即触发 onGiveClientToFailure 而非抛异常。脚本入口 :274-299 （pyGiveClientTo，类型检查错误 :287）；方法表 :22。这是\"必须持有 直接实体引用而非 EntityCall\"的典型场景。",
+      "sourceRefs": [
+        "proxy.cpp:311-380"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "onClientDeath",
+      "owner": "proxy",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "proxy.onClientDeath()",
+      "qualifier": "callback",
+      "summaryEn": "Client disconnected; typically destroy the proxy account entity here. proxy.cpp:217-237.",
+      "summaryZh": "客户端断开；通常在此销毁 proxy 账号实体。proxy.cpp:217-237。",
+      "sourceRefs": [
+        "proxy.cpp:217-237"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "onClientEnabled",
+      "owner": "proxy",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "proxy.onClientEnabled()",
+      "qualifier": "callback",
+      "summaryEn": "The entity is fully usable and can talk to the client; also fired after giveClientTo hands control over. proxy.cpp:174-178.",
+      "summaryZh": "实体完全可用、可与客户端通信；giveClientTo 移交控制权后也会触发。 proxy.cpp:174-178。",
+      "sourceRefs": [
+        "proxy.cpp:174-178"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "onClientGetCell",
+      "owner": "proxy",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "proxy.onClientGetCell()",
+      "qualifier": "callback",
+      "summaryEn": "Fires when the client gains access to the entity's cell attribute. proxy.cpp:241-248.",
+      "summaryZh": "客户端获得实体 cell 属性访问权时触发。proxy.cpp:241-248。",
+      "sourceRefs": [
+        "proxy.cpp:241-248"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "onGiveClientToFailure",
+      "owner": "proxy",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "proxy.onGiveClientToFailure()",
+      "qualifier": "callback",
+      "summaryEn": "proxy.cpp:304-307.",
+      "summaryZh": "proxy.cpp:304-307。",
+      "sourceRefs": [
+        "proxy.cpp:304-307"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "onLogOnAttempt",
+      "owner": "proxy",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "proxy.onLogOnAttempt(ip, port, password) -> int",
+      "qualifier": "callback",
+      "summaryEn": "A second client is trying to bind to this (already live) account entity — the classic double-login. Return KBEngine.LOG_ON_ACCEPT (kick the old client, bind the new), LOG_ON_REJECT (keep current binding), or LOG_ON_WAIT_FOR_DESTROY (queue the new login until this entity is destroyed — call destroy/destroyCellEntity from the callback first). Engine: proxy.cpp:182-205 (script call :189), decision interpreted in baseapp.cpp:3919-3962 (LOG_ON_ACCEPT kick :3926-3933, wait-for-destroy :3960). Note the header-level constants are 0/1/2 (proxy.h:24-26) and are re-exported to the module at baseapp.cpp:4",
+      "summaryZh": "第二个客户端试图绑定本（已在内存中的）账号实体——典型顶号场景。返回 KBEngine.LOG_ON_ACCEPT（踢掉旧客户端、绑新客户端）、LOG_ON_REJECT （维持当前绑定）或 LOG_ON_WAIT_FOR_DESTROY（新登录排队至本实体销毁—— 先在回调内调 destroy/destroyCellEntity）。引擎侧：proxy.cpp:182-205 （脚本调用 :189），返回值在 baseapp.cpp:3919-3962 解释 （LOG_ON_ACCEPT 踢人 :3926-3933，wait-for-destroy :3960）。注意头 文件级常量为 0/1/2（proxy.h:24-26），模块级再导出见 baseapp.cpp:463-476。",
+      "sourceRefs": [
+        "proxy.cpp:182-205",
+        "baseapp.cpp:3919-3962",
+        "proxy.h:24-26"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "onStreamComplete",
+      "owner": "proxy",
+      "domain": "base",
+      "kind": "callback",
+      "signature": "proxy.onStreamComplete(id, success)",
+      "qualifier": "callback",
+      "summaryEn": "proxy.cpp:829-832.",
+      "summaryZh": "proxy.cpp:829-832。",
+      "sourceRefs": [
+        "proxy.cpp:829-832"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "streamFileToClient",
+      "owner": "proxy",
+      "domain": "base",
+      "kind": "method",
+      "signature": "proxy.streamFileToClient(resourceName, desc=\"\", id=-1) -> id",
+      "qualifier": "",
+      "summaryEn": "Push a string / a resource file to the bound client on worker threads (main thread not blocked). id is caller-chosen 16-bit, -1 → engine allocates; completion raises onStreamComplete(id, success). Table :25-26; impls :649 (string), :560 (file); download queue in kbe/src/server/baseapp/data_downloads.h; completion proxy.cpp:829-832.",
+      "summaryZh": "向绑定的客户端推送字符串 / 资源文件，发送在工作线程进行（不阻塞主线程）。 id 为调用方自定的 16 位标识，-1 → 引擎分配；完成时触发 onStreamComplete(id, success)。方法表 :25-26；实现 :649（字符串）、 :560（文件）；下载队列在 kbe/src/server/baseapp/data_downloads.h； 完成回调 proxy.cpp:829-832。",
+      "sourceRefs": [
+        "proxy.cpp:829-832"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "streamStringToClient",
+      "owner": "proxy",
+      "domain": "base",
+      "kind": "method",
+      "signature": "proxy.streamStringToClient(data, desc=\"\", id=-1) -> id",
+      "qualifier": "",
+      "summaryEn": "Push a string / a resource file to the bound client on worker threads (main thread not blocked). id is caller-chosen 16-bit, -1 → engine allocates; completion raises onStreamComplete(id, success). Table :25-26; impls :649 (string), :560 (file); download queue in kbe/src/server/baseapp/data_downloads.h; completion proxy.cpp:829-832.",
+      "summaryZh": "向绑定的客户端推送字符串 / 资源文件，发送在工作线程进行（不阻塞主线程）。 id 为调用方自定的 16 位标识，-1 → 引擎分配；完成时触发 onStreamComplete(id, success)。方法表 :25-26；实现 :649（字符串）、 :560（文件）；下载队列在 kbe/src/server/baseapp/data_downloads.h； 完成回调 proxy.cpp:829-832。",
+      "sourceRefs": [
+        "proxy.cpp:829-832"
+      ],
+      "page": "api-baseapp-entity"
+    },
+    {
+      "member": "moveToPoint",
+      "owner": "entity",
+      "domain": "bots",
+      "kind": "method",
+      "signature": "moveToPoint",
+      "qualifier": "",
+      "summaryEn": "accepts either a numeric controller ID or the string",
+      "summaryZh": "配套的 cancelController 接受数字 controller ID 或字符串",
+      "sourceRefs": [],
+      "page": "api-bots"
+    },
+    {
+      "member": "addBots",
+      "owner": "KBEngine",
+      "domain": "bots",
+      "kind": "method",
+      "signature": "addBots(totalCount) or addBots(totalCount, tickCount, tickTime)",
+      "qualifier": "",
+      "summaryEn": "requests totalCount simulated clients on this bots process; tickCount/tickTime override the per-batch size and interval **only when > 0**; totals accumulate across calls; arity other than 1 or 3 raises TypeError",
+      "summaryZh": "",
+      "sourceRefs": [
+        "bots.cpp:182",
+        "bots.cpp:344-387",
+        "bots.cpp:321-342"
+      ],
+      "page": "api-bots"
+    },
+    {
+      "member": "cancelCallback",
+      "owner": "KBEngine",
+      "domain": "bots",
+      "kind": "method",
+      "signature": "cancelCallback(id)",
+      "qualifier": "",
+      "summaryEn": "shared",
+      "summaryZh": "",
+      "sourceRefs": [
+        "clientapp.cpp:196"
+      ],
+      "page": "api-bots"
+    },
+    {
+      "member": "getWatcher",
+      "owner": "KBEngine",
+      "domain": "bots",
+      "kind": "method",
+      "signature": "getWatcher(path)",
+      "qualifier": "",
+      "summaryEn": "shared watcher queries",
+      "summaryZh": "",
+      "sourceRefs": [
+        "clientapp.cpp:197-198"
+      ],
+      "page": "api-bots"
+    },
+    {
+      "member": "getWatcherDir",
+      "owner": "KBEngine",
+      "domain": "bots",
+      "kind": "method",
+      "signature": "getWatcherDir(path)",
+      "qualifier": "",
+      "summaryEn": "shared watcher queries",
+      "summaryZh": "",
+      "sourceRefs": [
+        "clientapp.cpp:197-198"
+      ],
+      "page": "api-bots"
+    },
+    {
+      "member": "scriptLogType",
+      "owner": "KBEngine",
+      "domain": "bots",
+      "kind": "method",
+      "signature": "scriptLogType(logType)",
+      "qualifier": "",
+      "summaryEn": "sets print output level; on bots this name is registered **twice** (bots-side and ClientApp-side, same arg contract)",
+      "summaryZh": "",
+      "sourceRefs": [
+        "bots.cpp:185",
+        "bots.cpp:389-411",
+        "clientapp.cpp:240"
+      ],
+      "page": "api-bots"
+    },
+    {
+      "member": "NEXT_ONLY",
+      "owner": "constant",
+      "domain": "cell",
+      "kind": "constant",
+      "signature": "NEXT_ONLY",
+      "qualifier": "",
+      "summaryEn": "",
+      "summaryZh": "",
+      "sourceRefs": [
+        "python_app.cpp:323"
+      ],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "allClients",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "allClients",
+      "qualifier": "",
+      "summaryEn": "entity.cpp:76-77 — see §8",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "base",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "base",
+      "qualifier": "",
+      "summaryEn": "entity.cpp:74-75",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "canNavigate",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "canNavigate()",
+      "qualifier": "",
+      "summaryEn": "True only when the space's navigation data is loaded and usable",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "className",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "className",
+      "qualifier": "",
+      "summaryEn": "entity_macro.h:39",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "client",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "client",
+      "qualifier": "",
+      "summaryEn": "entity.cpp:74-75",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "clientEntity",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "clientEntity(destID)",
+      "qualifier": "",
+      "summaryEn": "(entity_component.cpp:14 for components; main",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity_component.cpp:14"
+      ],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "controlledBy",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "controlledBy",
+      "qualifier": "",
+      "summaryEn": "entity.cpp:87 — see §9",
+      "summaryZh": "getset（entity.cpp:87）：setter 断言实体为 real",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "destroySpace",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "destroySpace()",
+      "qualifier": "",
+      "summaryEn": ": destroys the space this entity",
+      "summaryZh": "（entity.cpp:342）：销毁本实体所在空间。",
+      "sourceRefs": [
+        "entity.cpp:342"
+      ],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "direction",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "direction",
+      "qualifier": "",
+      "summaryEn": "entity.cpp:84 — (roll, pitch, yaw) radians",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "hasWitness",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "hasWitness",
+      "qualifier": "",
+      "summaryEn": "entity.cpp:78-79",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "id",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "id",
+      "qualifier": "",
+      "summaryEn": "entity_macro.h:37",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "isDestroyed",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "isDestroyed",
+      "qualifier": "",
+      "summaryEn": "entity_macro.h:38, impl :1489-1493",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "isOnGround",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "isOnGround",
+      "qualifier": "",
+      "summaryEn": "entity.cpp:80 — present in the material's attribute prose but **missing from its summary table** (§9)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "isReal",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "isReal()",
+      "qualifier": "",
+      "summaryEn": ": real vs ghost; ghosts proxy def-method",
+      "summaryZh": "（entity.cpp:1446）：real 还是 ghost；ghost 的 def 方法调用",
+      "sourceRefs": [
+        "entity.cpp:1446"
+      ],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "isWitnessed",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "isWitnessed",
+      "qualifier": "",
+      "summaryEn": "entity.cpp:78-79",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "layer",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "layer",
+      "qualifier": "",
+      "summaryEn": "entity.cpp:82 — navmesh layer selection (:2242)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "onRestore",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "onRestore()",
+      "qualifier": "",
+      "summaryEn": "(entity.cpp:3864-3868, driven from",
+      "summaryZh": "（entity.cpp:3864-3868，由 cellapp.cpp:1067/:1231 在",
+      "sourceRefs": [
+        "entity.cpp:3864-3868"
+      ],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "onSpaceGone",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "onSpaceGone()",
+      "qualifier": "",
+      "summaryEn": "(entity.cpp:381-384; broadcast per entity from",
+      "summaryZh": "（entity.cpp:381-384；由 spacememory.cpp:510 对每实体",
+      "sourceRefs": [
+        "entity.cpp:381-384"
+      ],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "otherClients",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "otherClients",
+      "qualifier": "",
+      "summaryEn": "entity.cpp:76-77 — see §8",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "position",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "position",
+      "qualifier": "",
+      "summaryEn": "entity.cpp:83; writes go through the position-update path (witness/volatile machinery)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "spaceID",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "spaceID",
+      "qualifier": "",
+      "summaryEn": "entity.cpp:81",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "topSpeed",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "topSpeed",
+      "qualifier": "",
+      "summaryEn": "entity.cpp:85-86 — server-side movement legality bound",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "topSpeedY",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "topSpeedY",
+      "qualifier": "",
+      "summaryEn": "entity.cpp:85-86 — server-side movement legality bound",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "volatileInfo",
+      "owner": "entity",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "volatileInfo",
+      "qualifier": "",
+      "summaryEn": "entity.cpp:88 (:2297) — per-axis volatile sync policy; also declarable in .def <Volatile>",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "address",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "address()",
+      "qualifier": "",
+      "summaryEn": "Internal network interface address",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "cellAppData",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "cellAppData",
+      "qualifier": "",
+      "summaryEn": "",
+      "summaryZh": "",
+      "sourceRefs": [
+        "cellapp.cpp:199"
+      ],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "component",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "component",
+      "qualifier": "",
+      "summaryEn": "",
+      "summaryZh": "",
+      "sourceRefs": [
+        "script.cpp:248"
+      ],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "createSpace",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "createSpace",
+      "qualifier": "",
+      "summaryEn": "**Absent**: the cellapp source material does not document it, and the fork registers no cellapp-side createSpace (grep over server/cellapp/ + lib/server/ = 0 hits). Space creation happens via the baseapp→cellappmgr path (Cellapp::onCreateCellEntityInNewSpaceFromBaseapp handles the resulting entity creation, cellapp.cpp:875)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "debugTracing",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "debugTracing()",
+      "qualifier": "",
+      "summaryEn": "PyGC extension-object leak counters",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "delSpaceData",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "delSpaceData",
+      "qualifier": "",
+      "summaryEn": "Space key/value strings; change broadcast → callback onSpaceData (§3)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "delWatcher",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "delWatcher(path)",
+      "qualifier": "",
+      "summaryEn": "Register/remove a watched variable",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "deregisterReadFileDescriptor",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "deregisterReadFileDescriptor",
+      "qualifier": "",
+      "summaryEn": "FD callbacks; shared impl lib/server/py_file_descriptor.cpp",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "deregisterWriteFileDescriptor",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "deregisterWriteFileDescriptor",
+      "qualifier": "",
+      "summaryEn": "FD callbacks; shared impl lib/server/py_file_descriptor.cpp",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "entities",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "entities",
+      "qualifier": "",
+      "summaryEn": "",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity_app.h:410-411"
+      ],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "genUUID64",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "genUUID64()",
+      "qualifier": "",
+      "summaryEn": "64-bit UUID; **emits a warning** when the process's global order is outside 0~65535 (script.cpp:99) because cross-process uniqueness then degrades to per-process",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "getAppFlags",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "getAppFlags",
+      "qualifier": "",
+      "summaryEn": "e.g. opt out of load balancing",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "getResFullPath",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "getResFullPath",
+      "qualifier": "",
+      "summaryEn": "Resource access bounded to KBE_RES_PATH — see [fixed directories](fixed-directories-and-path-resolution.md)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "getSpaceData",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "getSpaceData",
+      "qualifier": "",
+      "summaryEn": "Space key/value strings; change broadcast → callback onSpaceData (§3)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "getSpaceGeometryMapping",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "getSpaceGeometryMapping(spaceID)",
+      "qualifier": "",
+      "summaryEn": "Current mapping name of a space",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "getWatcher",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "getWatcher",
+      "qualifier": "",
+      "summaryEn": "Watcher tree read",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "getWatcherDir",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "getWatcherDir",
+      "qualifier": "",
+      "summaryEn": "Watcher tree read",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "globalData",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "attr",
+      "signature": "globalData",
+      "qualifier": "",
+      "summaryEn": "",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity_app.h:418-419"
+      ],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "hasRes",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "hasRes",
+      "qualifier": "",
+      "summaryEn": "Resource access bounded to KBE_RES_PATH — see [fixed directories](fixed-directories-and-path-resolution.md)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "isShuttingDown",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "isShuttingDown()",
+      "qualifier": "",
+      "summaryEn": "Shutdown state; also checked inside createEntity (cellapp.cpp:505-508)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "listPathRes",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "listPathRes",
+      "qualifier": "",
+      "summaryEn": "Resource access bounded to KBE_RES_PATH — see [fixed directories](fixed-directories-and-path-resolution.md)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "matchPath",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "matchPath",
+      "qualifier": "",
+      "summaryEn": "Resource access bounded to KBE_RES_PATH — see [fixed directories](fixed-directories-and-path-resolution.md)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "MemoryStream",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "MemoryStream()",
+      "qualifier": "",
+      "summaryEn": "KBEngine-serialization byte buffer",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "onCellAppDataDel",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "callback",
+      "signature": "onCellAppDataDel(key)",
+      "qualifier": "",
+      "summaryEn": "Same path after a successful remote delete (cellapp.cpp:844)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "onGlobalDataDel",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "callback",
+      "signature": "onGlobalDataDel(key)",
+      "qualifier": "",
+      "summaryEn": "same file entity_app.h:1290",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "onInit",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "callback",
+      "signature": "onInit(isReload)",
+      "qualifier": "",
+      "summaryEn": "Entry script, after all scripts loaded (initprogress_handler.cpp:132-143; the initial call passes 0; reloadScript triggers the reload call)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "onReadyForLogin",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "callback",
+      "signature": "onReadyForLogin(isBootstrap)",
+      "qualifier": "",
+      "summaryEn": "Cellapp init-progress poller (initprogress_handler.cpp:153-160). Return contract, fork-verified: return True → ready (:163, :177); otherwise a float, and progress counts as complete at >= 0.9999 (:194-196); no callback defined → immediately complete (:184-191). Material's \"≥ 1.0\" is close but the fork threshold is 0.9999 (§12)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "open",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "open",
+      "qualifier": "",
+      "summaryEn": "Resource access bounded to KBE_RES_PATH — see [fixed directories](fixed-directories-and-path-resolution.md)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "publish",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "publish()",
+      "qualifier": "",
+      "summaryEn": "0 debug / 1 release",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "registerReadFileDescriptor",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "registerReadFileDescriptor",
+      "qualifier": "",
+      "summaryEn": "FD callbacks; shared impl lib/server/py_file_descriptor.cpp",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "registerWriteFileDescriptor",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "registerWriteFileDescriptor",
+      "qualifier": "",
+      "summaryEn": "FD callbacks; shared impl lib/server/py_file_descriptor.cpp",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "reloadScript",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "reloadScript(fullReload)",
+      "qualifier": "",
+      "summaryEn": "Reload entity scripts; completion triggers KBEngine.onInit(True); development-mode only",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "scriptLogType",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "scriptLogType(logType)",
+      "qualifier": "",
+      "summaryEn": "Sets what print maps to (LOG_TYPE_*)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "setAppFlags",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "setAppFlags",
+      "qualifier": "",
+      "summaryEn": "e.g. opt out of load balancing",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "setSpaceData",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "setSpaceData",
+      "qualifier": "",
+      "summaryEn": "Space key/value strings; change broadcast → callback onSpaceData (§3)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "time",
+      "owner": "KBEngine",
+      "domain": "cell",
+      "kind": "method",
+      "signature": "time()",
+      "qualifier": "",
+      "summaryEn": "Game tick count; tick length from gameUpdateHertz config",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-cellapp"
+    },
+    {
+      "member": "base",
+      "owner": "entity",
+      "domain": "client",
+      "kind": "attr",
+      "signature": "base",
+      "qualifier": "",
+      "summaryEn": "endpoints for base/cell parts; None until the server grants them",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.cpp:41-42",
+        "entity.cpp:110-131"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "cell",
+      "owner": "entity",
+      "domain": "client",
+      "kind": "attr",
+      "signature": "cell",
+      "qualifier": "",
+      "summaryEn": "endpoints for base/cell parts; None until the server grants them",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.cpp:41-42",
+        "entity.cpp:110-131"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "className",
+      "owner": "entity",
+      "domain": "client",
+      "kind": "attr",
+      "signature": "className",
+      "qualifier": "",
+      "summaryEn": "entity type name from its def module",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity_macro.h:61"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "clientapp",
+      "owner": "entity",
+      "domain": "client",
+      "kind": "attr",
+      "signature": "clientapp",
+      "qualifier": "",
+      "summaryEn": "the owning client app object",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.cpp:43"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "direction",
+      "owner": "entity",
+      "domain": "client",
+      "kind": "attr",
+      "signature": "direction",
+      "qualifier": "",
+      "summaryEn": "(roll, pitch, yaw) in radians; same sync discipline as position",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.cpp:45"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "id",
+      "owner": "entity",
+      "domain": "client",
+      "kind": "attr",
+      "signature": "id",
+      "qualifier": "",
+      "summaryEn": "entity ID; the getter macro returns id_",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity_macro.h:58"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "isDestroyed",
+      "owner": "entity",
+      "domain": "client",
+      "kind": "attr",
+      "signature": "isDestroyed",
+      "qualifier": "",
+      "summaryEn": "destruction flag (not in the CHM material)",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity_macro.h:60"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "onDestroy",
+      "owner": "entity",
+      "domain": "client",
+      "kind": "callback",
+      "signature": "onDestroy",
+      "qualifier": "",
+      "summaryEn": "CHM: \"called when the entity is destroyed\"",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.h:144",
+        "entity_macro.h:1010-1032",
+        "clientobjectbase.cpp:204-215"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "onEnterSpace",
+      "owner": "entity",
+      "domain": "client",
+      "kind": "callback",
+      "signature": "onEnterSpace",
+      "qualifier": "",
+      "summaryEn": "controlled entity enters a space",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.cpp:580-586",
+        "clientobjectbase.cpp:1034"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "onEnterWorld",
+      "owner": "entity",
+      "domain": "client",
+      "kind": "callback",
+      "signature": "onEnterWorld",
+      "qualifier": "",
+      "summaryEn": "entity enters the world; for the player entity it also becomes player first",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.cpp:561-568",
+        "clientobjectbase.cpp:930-935"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "onLeaveSpace",
+      "owner": "entity",
+      "domain": "client",
+      "kind": "callback",
+      "signature": "onLeaveSpace",
+      "qualifier": "",
+      "summaryEn": "controlled entity leaves its space",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.cpp:588-594",
+        "clientobjectbase.cpp:1055"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "onLeaveWorld",
+      "owner": "entity",
+      "domain": "client",
+      "kind": "callback",
+      "signature": "onLeaveWorld",
+      "qualifier": "",
+      "summaryEn": "entity leaves the world / view scope",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.cpp:570-577",
+        "clientobjectbase.cpp:969-972"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "position",
+      "owner": "entity",
+      "domain": "client",
+      "kind": "attr",
+      "signature": "position",
+      "qualifier": "",
+      "summaryEn": "world position; synced from server, client-side writes feed updatePlayerToServer",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.cpp:44",
+        "clientobjectbase.cpp:1193-1275"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "spaceID",
+      "owner": "entity",
+      "domain": "client",
+      "kind": "attr",
+      "signature": "spaceID",
+      "qualifier": "",
+      "summaryEn": "ID of the space the entity is in",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity_macro.h:59"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "velocity",
+      "owner": "entity",
+      "domain": "client",
+      "kind": "attr",
+      "signature": "velocity",
+      "qualifier": "",
+      "summaryEn": "movement speed used by moveToPoint (not in the CHM material)",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.cpp:46"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "addTimer",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "addTimer",
+      "qualifier": "",
+      "summaryEn": "script timers → onTimer callback",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.cpp:32-33",
+        "entity.cpp:894-898"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "baseCall",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "baseCall(methodName: str, *args)",
+      "qualifier": "",
+      "summaryEn": "remote call to the entity's base part; no return (remote)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-client"
+    },
+    {
+      "member": "bindAccountEmail",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "bindAccountEmail(emailaddress)",
+      "qualifier": "",
+      "summaryEn": "no kbe/src implementation found",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-client"
+    },
+    {
+      "member": "callback",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "callback(time: float, callbackObj) -> int",
+      "qualifier": "",
+      "summaryEn": "",
+      "summaryZh": "",
+      "sourceRefs": [
+        "clientapp.cpp:195",
+        "clientobjectbase.cpp:254-284"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "cancelCallback",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "cancelCallback(callbackID: int)",
+      "qualifier": "",
+      "summaryEn": "",
+      "summaryZh": "",
+      "sourceRefs": [
+        "clientapp.cpp:196",
+        "clientobjectbase.cpp:287-309"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "cancelController",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "cancelController",
+      "qualifier": "",
+      "summaryEn": "cancel an active movement/controller",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.cpp:30"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "cellCall",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "cellCall(methodName: str, *args)",
+      "qualifier": "",
+      "summaryEn": "remote call to the entity's cell part; no return (remote)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-client"
+    },
+    {
+      "member": "delTimer",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "delTimer",
+      "qualifier": "",
+      "summaryEn": "script timers → onTimer callback",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.cpp:32-33",
+        "entity.cpp:894-898"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "deregisterEvent",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "deregisterEvent(eventName: str, callbackObj)",
+      "qualifier": "",
+      "summaryEn": "remove a previously stored callback",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity_macro.h:48"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "disconnect",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "disconnect()",
+      "qualifier": "",
+      "summaryEn": "",
+      "summaryZh": "",
+      "sourceRefs": [
+        "clientapp.cpp:199"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "findEntity",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "findEntity(entityID)",
+      "qualifier": "",
+      "summaryEn": "**no registration point in client_lib at all** — client-side lookup in-script is spelled KBEngine.entities[entityID] against the fork-registered entities object (§3)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-client"
+    },
+    {
+      "member": "fireEvent",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "fireEvent(eventName: str, *args)",
+      "qualifier": "",
+      "summaryEn": "entity-scoped event dispatch into events_",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity_macro.h:49"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "getComponent",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "getComponent(componentName: str, all: bool = False)",
+      "qualifier": "",
+      "summaryEn": "returns the attached entity component by type name; all=True returns a tuple of all instances, False the first or None",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.cpp:34",
+        "entity_macro.h:1276-1355"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "getResFullPath",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "getResFullPath",
+      "qualifier": "",
+      "summaryEn": "resource-path helpers",
+      "summaryZh": "",
+      "sourceRefs": [
+        "clientapp.cpp:204-215"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "getSpaceData",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "getSpaceData(key)",
+      "qualifier": "",
+      "summaryEn": "Returns the space-data string for key. Space data arrives from the server (setSpaceData on the server side); the client keeps it in the spacedatas_ map. __py_GetSpaceData raises TypeError when the argument count is wrong and when the key is not present — **missing keys are an exception, not None** (kbe/src/lib/client_lib/clientobjectbase.cpp:2420-2450).",
+      "summaryZh": "返回 key 对应的 space 数据字符串。space 数据由服务端下发（服务端 setSpaceData），客户端存于 spacedatas_ 映射。__py_GetSpaceData 在参数 个数不对、以及 key 不存在时抛 TypeError——**key 缺失是异常，不是 None**（kbe/src/lib/client_lib/clientobjectbase.cpp:2420-2450）。",
+      "sourceRefs": [
+        "kbe/src/lib/client_lib/clientobjectbase.cpp:2420-2450"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "getWatcher",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "getWatcher",
+      "qualifier": "",
+      "summaryEn": "watcher queries",
+      "summaryZh": "",
+      "sourceRefs": [
+        "clientapp.cpp:197-198"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "getWatcherDir",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "getWatcherDir",
+      "qualifier": "",
+      "summaryEn": "watcher queries",
+      "summaryZh": "",
+      "sourceRefs": [
+        "clientapp.cpp:197-198"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "hasRes",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "hasRes",
+      "qualifier": "",
+      "summaryEn": "resource-path helpers",
+      "summaryZh": "",
+      "sourceRefs": [
+        "clientapp.cpp:204-215"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "isPlayer",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "isPlayer() -> bool",
+      "qualifier": "",
+      "summaryEn": "true when the entity's ID equals the client's controlled entityID_",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.cpp:31",
+        "entity.cpp:840-853"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "kbassert",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "kbassert",
+      "qualifier": "",
+      "summaryEn": "debug assert hook",
+      "summaryZh": "",
+      "sourceRefs": [
+        "clientapp.cpp:200"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "listPathRes",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "listPathRes",
+      "qualifier": "",
+      "summaryEn": "resource-path helpers",
+      "summaryZh": "",
+      "sourceRefs": [
+        "clientapp.cpp:204-215"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "matchPath",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "matchPath",
+      "qualifier": "",
+      "summaryEn": "resource-path helpers",
+      "summaryZh": "",
+      "sourceRefs": [
+        "clientapp.cpp:204-215"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "moveToPoint",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "moveToPoint",
+      "qualifier": "",
+      "summaryEn": "movement request handled by moveto_point_handler",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity.cpp:29"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "open",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "open",
+      "qualifier": "",
+      "summaryEn": "resource-path helpers",
+      "summaryZh": "",
+      "sourceRefs": [
+        "clientapp.cpp:204-215"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "player",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "player()",
+      "qualifier": "",
+      "summaryEn": "Returns the entity the client controls, or None when there is none (e.g. before login). The C++ path is ClientObjectBase::pPlayer() — a direct lookup of the client's entityID_ in the live registry (kbe/src/lib/client_lib/clientobjectbase.cpp:1153-1156) — wrapped by __py_getPlayer which INCREFs and returns the entity or S_Return (→ None) (clientobjectbase.cpp:1159-1171). The registry behind it is the same Entities<T> map documented in [Entity lifecycle](entity-lifecycle-reference.md).",
+      "summaryZh": "返回当前客户端控制的实体；不存在时（如未登录）返回 None。C++ 路径是 ClientObjectBase::pPlayer()——用客户端的 entityID_ 在活跃注册表里直接 查找（kbe/src/lib/client_lib/clientobjectbase.cpp:1153-1156）——再由 __py_getPlayer 包装，INCREF 后返回实体或 S_Return（→ None） （clientobjectbase.cpp:1159-1171）。背后的注册表正是 [Entity 生命周期](entity-lifecycle-reference.md)所述的同一个 Entities<T> 映射。",
+      "sourceRefs": [
+        "kbe/src/lib/client_lib/clientobjectbase.cpp:1153-1156"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "publish",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "publish",
+      "qualifier": "",
+      "summaryEn": "app publish state",
+      "summaryZh": "",
+      "sourceRefs": [
+        "clientapp.cpp:191"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "registerEvent",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "registerEvent(eventName: str, callbackObj)",
+      "qualifier": "",
+      "summaryEn": "store a callback in the entity's events_ map",
+      "summaryZh": "",
+      "sourceRefs": [
+        "entity_macro.h:47"
+      ],
+      "page": "api-client"
+    },
+    {
+      "member": "reloginBaseapp",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "reloginBaseapp()",
+      "qualifier": "",
+      "summaryEn": "protocol path: ClientObjectBase::reloginBaseapp() sends BaseappInterface::reloginBaseapp with name/password/rndUUID/entityID (clientobjectbase.cpp:655-668)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-client"
+    },
+    {
+      "member": "resetPassword",
+      "owner": "KBEngine",
+      "domain": "client",
+      "kind": "method",
+      "signature": "resetPassword(username)",
+      "qualifier": "",
+      "summaryEn": "no kbe/src implementation found",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-client"
+    },
+    {
+      "member": "base",
+      "owner": "entity",
+      "domain": "core",
+      "kind": "method",
+      "signature": "base",
+      "qualifier": "",
+      "summaryEn": "are read-only EntityCall attributes, None when the part does not exist (base side: baseapp/Entity.md:346-384; cell side: cellapp/Entity.md:963-1163 for the client broadcast family).",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-core-concepts"
+    },
+    {
+      "member": "cell",
+      "owner": "entity",
+      "domain": "core",
+      "kind": "method",
+      "signature": "cell",
+      "qualifier": "",
+      "summaryEn": "are read-only EntityCall attributes, None when the part does not exist (base side: baseapp/Entity.md:346-384; cell side: cellapp/Entity.md:963-1163 for the client broadcast family).",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-core-concepts"
+    },
+    {
+      "member": "client",
+      "owner": "entity",
+      "domain": "core",
+      "kind": "method",
+      "signature": "client",
+      "qualifier": "",
+      "summaryEn": "are read-only EntityCall attributes, None when the part does not exist (base side: baseapp/Entity.md:346-384; cell side: cellapp/Entity.md:963-1163 for the client broadcast family).",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-core-concepts"
+    },
+    {
+      "member": "id",
+      "owner": "entity",
+      "domain": "core",
+      "kind": "method",
+      "signature": "id",
+      "qualifier": "",
+      "summaryEn": "is the same integer on the base, cell, and client sides of the same entity (baseapp/Entity.md:423-431, cellapp/Entity.md:1075-1083, client/Entity.md:35).",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-core-concepts"
+    },
+    {
+      "member": "accountLoginResponse",
+      "owner": "KBEngine",
+      "domain": "interfaces",
+      "kind": "method",
+      "signature": "KBEngine.accountLoginResponse(commitName, realAccountName, extraDatas, errorCode)",
+      "qualifier": "",
+      "summaryEn": "Submits the script's verdict for an onRequestAccountLogin callback. **Trigger timing**: call it after your third-party platform check finishes; the engine is parked on the pending-request map until then.",
+      "summaryZh": "提交脚本对 onRequestAccountLogin 回调的处理结论。**触发时机**：第三方 平台核验完成后调用；在此之前引擎把请求挂起在 pending-request 表上。",
+      "sourceRefs": [
+        "interfaces.cpp:187",
+        "interfaces.cpp:651-695",
+        "interfaces.cpp:704"
+      ],
+      "page": "api-interfaces"
+    },
+    {
+      "member": "addTimer",
+      "owner": "KBEngine",
+      "domain": "interfaces",
+      "kind": "method",
+      "signature": "KBEngine.addTimer(initialOffset, repeatOffset, callbackObj)",
+      "qualifier": "",
+      "summaryEn": "Registers a timer on the interfaces main loop. **Trigger timing**: the callback first fires after initialOffset seconds of game time, then every repeatOffset seconds while it is set.",
+      "summaryZh": "在 interfaces 主循环上注册定时器。**触发时机**：回调先在 initialOffset 秒游戏时间后执行一次，之后每 repeatOffset 秒执行一次（只要未移除）。",
+      "sourceRefs": [
+        "lib/server/script_timers.cpp:40-89"
+      ],
+      "page": "api-interfaces"
+    },
+    {
+      "member": "chargeResponse",
+      "owner": "KBEngine",
+      "domain": "interfaces",
+      "kind": "method",
+      "signature": "KBEngine.chargeResponse(orderID, extraDatas, errorCode)",
+      "qualifier": "",
+      "summaryEn": "Submits the billing verdict for an onRequestCharge callback.",
+      "summaryZh": "提交脚本对 onRequestCharge 回调的计费结论。",
+      "sourceRefs": [
+        "interfaces.cpp:186",
+        "interfaces.cpp:766-839",
+        "interfaces.cpp:848"
+      ],
+      "page": "api-interfaces"
+    },
+    {
+      "member": "createAccountResponse",
+      "owner": "KBEngine",
+      "domain": "interfaces",
+      "kind": "method",
+      "signature": "KBEngine.createAccountResponse(commitName, realAccountName, extraDatas, errorCode)",
+      "qualifier": "",
+      "summaryEn": "Submits the script's verdict for an onRequestCreateAccount callback.",
+      "summaryZh": "提交脚本对 onRequestCreateAccount 回调的处理结论。",
+      "sourceRefs": [
+        "interfaces.cpp:188",
+        "interfaces.cpp:539-581",
+        "interfaces.cpp:592"
+      ],
+      "page": "api-interfaces"
+    },
+    {
+      "member": "delTimer",
+      "owner": "KBEngine",
+      "domain": "interfaces",
+      "kind": "method",
+      "signature": "KBEngine.delTimer(id)",
+      "qualifier": "",
+      "summaryEn": "Removes a registered timer.",
+      "summaryZh": "移除已注册的定时器。",
+      "sourceRefs": [
+        "python_app.cpp:330",
+        "python_app.cpp:755-775",
+        "script_timers.cpp:96-105"
+      ],
+      "page": "api-interfaces"
+    },
+    {
+      "member": "executeRawDatabaseCommand",
+      "owner": "KBEngine",
+      "domain": "interfaces",
+      "kind": "method",
+      "signature": "KBEngine.executeRawDatabaseCommand(command, callback, threadID, dbInterfaceName)",
+      "qualifier": "",
+      "summaryEn": "Executes a raw DB command through dbmgr. The material's caveat stands and is structural: entity data written this way can be overwritten by a later entity archive — prefer the entity DB API for entity data.",
+      "summaryZh": "经 dbmgr 执行原始数据库命令。源料的告诫是结构性的：用本函数改实体数据， 可能被实体后续归档覆盖——实体数据请走实体 DB API。",
+      "sourceRefs": [
+        "interfaces.cpp:189",
+        "interfaces.cpp:240-283",
+        "dbmgr.cpp:803-810"
+      ],
+      "page": "api-interfaces"
+    },
+    {
+      "member": "onInterfaceAppReady",
+      "owner": "KBEngine",
+      "domain": "interfaces",
+      "kind": "callback",
+      "signature": "onInterfaceAppReady()",
+      "qualifier": "",
+      "summaryEn": "Interfaces::initializeEnd, after script load, main-tick timer and dbmgr-less init — before the telnet server starts (interfaces.cpp:151-158; timer :141-142)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-interfaces"
+    },
+    {
+      "member": "onInterfaceAppShutDown",
+      "owner": "KBEngine",
+      "domain": "interfaces",
+      "kind": "callback",
+      "signature": "onInterfaceAppShutDown()",
+      "qualifier": "",
+      "summaryEn": "Interfaces::onShutdownBegin (interfaces.cpp:73-80)",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-interfaces"
+    },
+    {
+      "member": "urlopen",
+      "owner": "KBEngine",
+      "domain": "interfaces",
+      "kind": "method",
+      "signature": "KBEngine.urlopen(url, callback, postData, headers)",
+      "qualifier": "",
+      "summaryEn": "Asynchronous HTTP(S) request, backed by libcurl (lib/network/http_utility.h:86, SSL options :127+). The request runs off the main thread; the callback is invoked on the main loop.",
+      "summaryZh": "异步 HTTP(S) 请求，底层 libcurl（lib/network/http_utility.h:86，SSL 选项 :127+）。请求在主线程之外执行，回调回到主循环。",
+      "sourceRefs": [
+        "lib/network/http_utility.h:86",
+        "lib/pyscript/pyurl.cpp:15-25"
+      ],
+      "page": "api-interfaces"
+    },
+    {
+      "member": "addTimer",
+      "owner": "KBEngine",
+      "domain": "server",
+      "kind": "method",
+      "signature": "addTimer",
+      "qualifier": "",
+      "summaryEn": "identical to loginapp (§2).",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-loginapp-dbmgr-logger"
+    },
+    {
+      "member": "delTimer",
+      "owner": "KBEngine",
+      "domain": "server",
+      "kind": "method",
+      "signature": "delTimer",
+      "qualifier": "",
+      "summaryEn": "identical to loginapp (§2).",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-loginapp-dbmgr-logger"
+    },
+    {
+      "member": "onDBMgrReady",
+      "owner": "KBEngine",
+      "domain": "server",
+      "kind": "callback",
+      "signature": "onDBMgrReady()",
+      "qualifier": "",
+      "summaryEn": "end of Dbmgr::initializeEnd",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-loginapp-dbmgr-logger"
+    },
+    {
+      "member": "onDBMgrShutDown",
+      "owner": "KBEngine",
+      "domain": "server",
+      "kind": "callback",
+      "signature": "onDBMgrShutDown()",
+      "qualifier": "",
+      "summaryEn": "Dbmgr::onShutdownBegin",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-loginapp-dbmgr-logger"
+    },
+    {
+      "member": "onLoggerAppReady",
+      "owner": "KBEngine",
+      "domain": "server",
+      "kind": "callback",
+      "signature": "onLoggerAppReady()",
+      "qualifier": "",
+      "summaryEn": "end of Logger::initializeEnd",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-loginapp-dbmgr-logger"
+    },
+    {
+      "member": "onLoggerAppShutDown",
+      "owner": "KBEngine",
+      "domain": "server",
+      "kind": "callback",
+      "signature": "onLoggerAppShutDown()",
+      "qualifier": "",
+      "summaryEn": "Logger::onShutdownBegin",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-loginapp-dbmgr-logger"
+    },
+    {
+      "member": "onLoginAppReady",
+      "owner": "KBEngine",
+      "domain": "server",
+      "kind": "callback",
+      "signature": "onLoginAppReady()",
+      "qualifier": "",
+      "summaryEn": "invoked at the end of Loginapp::initializeEnd",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-loginapp-dbmgr-logger"
+    },
+    {
+      "member": "onLoginAppShutDown",
+      "owner": "KBEngine",
+      "domain": "server",
+      "kind": "callback",
+      "signature": "onLoginAppShutDown()",
+      "qualifier": "",
+      "summaryEn": "invoked from Loginapp::onShutdownBegin",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-loginapp-dbmgr-logger"
+    },
+    {
+      "member": "onLogWrote",
+      "owner": "KBEngine",
+      "domain": "server",
+      "kind": "callback",
+      "signature": "onLogWrote(datas)",
+      "qualifier": "",
+      "summaryEn": "invoked for every log item when the entry script",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-loginapp-dbmgr-logger"
+    },
+    {
+      "member": "onReadyForShutDown",
+      "owner": "KBEngine",
+      "domain": "server",
+      "kind": "callback",
+      "signature": "onReadyForShutDown()",
+      "qualifier": "",
+      "summaryEn": "polled from Dbmgr::canShutdown when the",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-loginapp-dbmgr-logger"
+    },
+    {
+      "member": "onSelectAccountDBInterface",
+      "owner": "KBEngine",
+      "domain": "server",
+      "kind": "callback",
+      "signature": "onSelectAccountDBInterface(accountName)",
+      "qualifier": "",
+      "summaryEn": "invoked from",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-loginapp-dbmgr-logger"
+    },
+    {
+      "member": "urlopen",
+      "owner": "KBEngine",
+      "domain": "server",
+      "kind": "method",
+      "signature": "urlopen",
+      "qualifier": "",
+      "summaryEn": "identical to loginapp (§2).",
+      "summaryZh": "",
+      "sourceRefs": [],
+      "page": "api-loginapp-dbmgr-logger"
+    }
+  ]
+}
