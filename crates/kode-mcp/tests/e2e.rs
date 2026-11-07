@@ -52,7 +52,7 @@ fn payload_of(result: CallToolResult) -> Value {
 }
 
 #[tokio::test]
-async fn list_tools_exposes_all_seven() {
+async fn list_tools_exposes_all_eight() {
     let client = connect().await;
     let tools = client.list_all_tools().await.expect("list_tools");
     let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
@@ -62,6 +62,7 @@ async fn list_tools_exposes_all_seven() {
         vec![
             "db_schema_preview",
             "encode_decode_sample",
+            "explain",
             "get_entity_model",
             "get_message_entry",
             "get_type_graph",
@@ -166,6 +167,23 @@ async fn call_tools_return_real_data() {
         .unwrap()
         .iter()
         .any(|t| t["name"] == "Account"));
+
+    // explain(KB-001):API 面 + 机制面双命中真数据(cellData 既是库成员,
+    // 又命中迁移文关键词)。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "explain",
+                serde_json::json!({"topic": "cellData"}),
+            ))
+            .await
+            .expect("call explain"),
+    );
+    assert_eq!(payload["api"]["member"], "cellData");
+    assert_eq!(
+        payload["knowledge"][0]["file"],
+        "docs/knowledge/entity-migration-and-cross-process-references.md"
+    );
 
     let _ = client.cancel().await;
 }

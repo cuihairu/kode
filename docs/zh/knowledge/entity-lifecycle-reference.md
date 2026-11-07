@@ -3,7 +3,7 @@
 > KB-001 头号专题(用户点名优先):内存对象引用与释放。
 > 所有引用标注 `kbe/src` 的 `文件:行号`;每条结论都以引擎源码为据(锚定
 > `kbengine@c2a3b8f`)。baseapp 路径与本文 cellapp 路径类比;迁移/传送的引用
-> 流属后续批次主题(标注 TODO,不虚构为已实现)。
+> 流见[实体传送、跨 cellapp 迁移与跨进程引用](entity-migration-and-cross-process-references.md)。
 
 ## 活跃注册表持有强引用
 
@@ -105,3 +105,28 @@ return entity;                 // ③ 以 PyObjectPtr 返回(保活供 destroy()
 
 真正的引用隐患不在定时器本身,而在脚本闭包或列表捕获实体且存活超过销毁
 ——那才是上文 `garbages`/3600 秒泄漏场景,而非定时器持引用。
+
+## 引擎持有的未决回调(「Functor」之问)
+
+BigWorld 时代的「Functor 持引用」担忧在 KBEngine **没有 Functor 可指**:
+对 `kbe/src` 全树大小写不敏感检索,除 vendored 测试依赖外不存在
+`Functor` 类。引擎真正持有脚本回调的是
+`PY_CALLBACKMGR = CallbackMgr<PyObjectPtr>`
+(`kbe/src/lib/server/callbackmgr.h:215`),按实体挂成员
+(`entity_macro.h:279`),供异步应答类 API(如 `writeToDB(callback)`)使用。
+
+引用语义,逐条锚定 `callbackmgr.h`:
+
+- `save(callback, timeout=0)` 把回调以 **`PyObjectPtr`——强 CPython 引用**
+  存入 `cbMap_`,按分配的 id 索引,带过期时间戳;timeout 0 表示用服务器
+  配置默认值(`callback_timeout_` 秒)(`:62-74`)。
+- `take(id)` 在应答到达时取走并移除(`:78-89`);`tick()` 过期清理——过期
+  路径对存储对象 DECREF(`processTimeout`,`:202-212`);`finalise()` 全清
+  (裸指针变体逐条 DECREF,`:190-198`)。
+- 整个未决集**随迁移/传送存活**:pickle 进实体流
+  (`addToStream`/`createFromStream`,`:134-188`)——这正是 ghost 化时看到
+  的 `pyCallbackMgr_.addToStream(s)`/`finalise()` 对(见
+  [迁移篇](entity-migration-and-cross-process-references.md))。
+
+结论:未决的引擎回调把*回调对象*强引用到应答/过期/实体终结为止——它
+绝不保活已销毁的*实体*,也不会泄漏超过超时时间。
