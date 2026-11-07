@@ -216,3 +216,108 @@ fn kode_vfs_canonical_rejects_scheme(input: &str) -> bool {
     }
     false
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn case_folding_matches_platform_semantics() {
+        assert!(case_folds(PlatformTarget::Windows));
+        assert!(case_folds(PlatformTarget::Macos));
+        assert!(!case_folds(PlatformTarget::Linux));
+        assert!(!case_folds(PlatformTarget::Wsl));
+    }
+
+    #[test]
+    fn detect_returns_current_host_variant() {
+        // 本宿主不是 Windows/macOS:至少断言返回 Linux 或 Wsl 且可复现。
+        let d = PlatformTarget::detect();
+        assert!(matches!(d, PlatformTarget::Linux | PlatformTarget::Wsl));
+    }
+
+    #[test]
+    fn parse_accepts_file_uri_and_plain_absolute_path_same_identity() {
+        let from_uri = RootPath::parse("file:///w/demo", PlatformTarget::Linux).unwrap();
+        let from_path = RootPath::parse("/w/demo", PlatformTarget::Linux).unwrap();
+        assert!(from_uri.identity_eq(&from_path));
+        assert_eq!(from_uri.as_path(), "/w/demo");
+        assert_eq!(from_uri.platform(), PlatformTarget::Linux);
+    }
+
+    #[test]
+    fn parse_rejects_relative_and_unsupported_schemes() {
+        // 空/相对路径 → NotAbsolute(不猜 cwd)。
+        assert!(matches!(
+            RootPath::parse("", PlatformTarget::Linux),
+            Err(RootPathError::NotAbsolute)
+        ));
+        assert!(matches!(
+            RootPath::parse("plainpath", PlatformTarget::Linux),
+            Err(RootPathError::NotAbsolute)
+        ));
+        assert!(matches!(
+            RootPath::parse("rel/demo", PlatformTarget::Linux),
+            Err(RootPathError::NotAbsolute)
+        ));
+        // 非 file scheme 显式报错,不静默降级。
+        assert!(matches!(
+            RootPath::parse("http://x/y", PlatformTarget::Linux),
+            Err(RootPathError::InvalidUri(_))
+        ));
+        assert!(matches!(
+            RootPath::parse("file:/w/a", PlatformTarget::Linux),
+            Err(RootPathError::InvalidUri(_))
+        ));
+    }
+
+    #[test]
+    fn wsl_unc_is_split_and_round_trips_distro_prefix() {
+        // WSL UNC 双形态 → distro 段拆出,as_path 还原 wsl.localhost 前缀。
+        for input in [
+            "//wsl$/Ubuntu-22.04/home/u",
+            "//wsl.localhost/Ubuntu-22.04/home/u",
+        ] {
+            let root = RootPath::parse(input, PlatformTarget::Wsl).unwrap();
+            assert_eq!(root.wsl_unc_distro().as_deref(), Some("Ubuntu-22.04"));
+            assert_eq!(root.as_path(), "//wsl.localhost/Ubuntu-22.04/home/u");
+            // 反斜杠形态同样归一。
+            let back = RootPath::parse("\\\\wsl$\\Ubuntu\\home\\u", PlatformTarget::Wsl).unwrap();
+            assert_eq!(back.wsl_unc_distro().as_deref(), Some("Ubuntu"));
+        }
+        // distro 段为空 → NotAbsolute。
+        assert!(matches!(
+            RootPath::parse("//wsl$/", PlatformTarget::Wsl),
+            Err(RootPathError::NotAbsolute)
+        ));
+    }
+
+    #[test]
+    fn identity_eq_folds_only_on_case_insensitive_platforms() {
+        let linux_a = RootPath::parse("/W/Demo", PlatformTarget::Linux).unwrap();
+        let linux_b = RootPath::parse("/w/demo", PlatformTarget::Linux).unwrap();
+        assert!(!linux_a.identity_eq(&linux_b), "Linux 大小写敏感");
+        let win_a = RootPath::parse("/W/Demo", PlatformTarget::Windows).unwrap();
+        let win_b = RootPath::parse("/w/demo", PlatformTarget::Windows).unwrap();
+        assert!(win_a.identity_eq(&win_b), "Windows 折叠大小写");
+        // 跨平台身份不定义 → 显式不等。
+        assert!(!win_a.identity_eq(&linux_b));
+        // WSL distro 段不同 → 不等。
+        let d1 = RootPath::parse("//wsl$/Ubuntu/home/u", PlatformTarget::Wsl).unwrap();
+        let d2 = RootPath::parse("//wsl$/Debian/home/u", PlatformTarget::Wsl).unwrap();
+        assert!(!d1.identity_eq(&d2));
+    }
+
+    #[test]
+    fn scheme_detector_accepts_plain_and_drive_forms() {
+        // 全字母数字无冒号:非 scheme(217 行 false 分支)。
+        assert!(!kode_vfs_canonical_rejects_scheme("abcdef"));
+        // 单字符 = 盘符,非协议。
+        assert!(!kode_vfs_canonical_rejects_scheme("c:/x"));
+        // 多字符 scheme 带内容 → 拒绝。
+        assert!(kode_vfs_canonical_rejects_scheme("http://x"));
+        // 空/非字母开头 → 非 scheme。
+        assert!(!kode_vfs_canonical_rejects_scheme(""));
+        assert!(!kode_vfs_canonical_rejects_scheme("/w/x"));
+    }
+}

@@ -355,3 +355,290 @@ fn analyze_records(source: &str) -> CmdResult {
         serde_json::to_string_pretty(&report).expect("json"),
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repo_root() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .unwrap()
+    }
+
+    fn demo_assets() -> std::path::PathBuf {
+        repo_root().join("tests/fixtures/kbengine-demo-assets")
+    }
+
+    fn defaults_xml() -> String {
+        format!(
+            "{}/tests/fixtures/messages_fixed_defaults.xml",
+            env!("CARGO_MANIFEST_DIR")
+        )
+    }
+
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("kode-kbengine-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// 写一份 hermetic fake tshark:吞 stdin、打印预置行文件后退出 0。
+    #[cfg(unix)]
+    fn write_fake_tshark(
+        dir: &std::path::Path,
+        lines_file: &std::path::Path,
+    ) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let script = dir.join("fake-tshark.sh");
+        let lines = lines_file.to_str().unwrap();
+        std::fs::write(
+            &script,
+            format!("#!/bin/sh\ncat > /dev/null\ncat '{lines}'\n"),
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&script).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).unwrap();
+        script
+    }
+
+    fn tshark_line(ts: &str, sport: u16, dport: u16, payload: &[u8]) -> String {
+        let hex: Vec<String> = payload.iter().map(|b| format!("{b:02x}")).collect();
+        format!("{ts}\t{sport}\t{dport}\t{}\n", hex.join(":"))
+    }
+
+    #[test]
+    fn cmd_outcome_ok_and_fail_carry_code_and_text() {
+        let ok = CmdOutcome::ok("hello".into());
+        assert_eq!(ok.code, 0);
+        assert_eq!(ok.stdout, "hello");
+        let fail = CmdOutcome::fail(2, "usage".into());
+        assert_eq!(fail.code, 2);
+        assert_eq!(fail.stdout, "usage");
+    }
+
+    #[test]
+    fn parse_direction_accepts_both_spellings_and_rejects_rest() {
+        use kode_kbengine_protocol::Direction;
+        assert_eq!(parse_direction("c2s").unwrap(), Direction::ClientToServer);
+        assert_eq!(parse_direction("up").unwrap(), Direction::ClientToServer);
+        assert_eq!(parse_direction("s2c").unwrap(), Direction::ServerToClient);
+        assert_eq!(parse_direction("down").unwrap(), Direction::ServerToClient);
+        let err = parse_direction("sideways").unwrap_err();
+        assert!(err.contains("unknown direction 'sideways'"), "{err}");
+    }
+
+    #[test]
+    fn raw_flow_spec_supports_up_down_and_rejects_bad_direction() {
+        // 无方向后缀 = 上行;`.up`/`.down` 显式。
+        let (flow, down, bytes) = raw_flow_spec("loginapp=de:ad").unwrap();
+        assert_eq!((flow.as_str(), down), ("loginapp", false));
+        assert_eq!(bytes, vec![0xde, 0xad]);
+        let (flow, down, _) = raw_flow_spec("baseapp.up=00").unwrap();
+        assert_eq!((flow.as_str(), down), ("baseapp", false));
+        let (flow, down, _) = raw_flow_spec("loginapp.down=ff").unwrap();
+        assert_eq!((flow.as_str(), down), ("loginapp", true));
+        // 未知方向后缀。
+        let err = raw_flow_spec("loginapp.side=00").unwrap_err();
+        assert!(err.contains("bad --raw-flow direction 'side'"), "{err}");
+        // 缺 `=`。
+        let err = raw_flow_spec("loginapp").unwrap_err();
+        assert!(err.contains("bad --raw-flow: loginapp"), "{err}");
+        // 未知 flow。
+        let err = raw_flow_spec("cellapp=00").unwrap_err();
+        assert!(err.contains("unknown flow 'cellapp'"), "{err}");
+    }
+
+    #[test]
+    fn schema_inspect_misses_are_explicit_errors() {
+        let dir = temp_dir("inspect");
+        let out = dir.join("schema.json");
+        let proj = demo_assets();
+        // 用真实 demo 资产构建一份 schema,再对未命中 id/entity 断言报错文案。
+        let built = schema_build(
+            proj.to_str().unwrap(),
+            Some(&defaults_xml()),
+            Some(out.to_str().unwrap()),
+        );
+        assert!(built.is_ok(), "{:?}", built);
+        let schema = out.to_str().unwrap();
+
+        // 未命中 message-id → Err,不 panic。
+        let r = schema_inspect(schema, None, Some(65535), None);
+        assert!(r.is_err());
+        assert!(r.unwrap_err().contains("message id 65535"));
+        // 未命中 entity → Err。
+        let r = schema_inspect(schema, None, None, Some("NopeEntity"));
+        assert!(r.is_err());
+        assert!(r.unwrap_err().contains("entity NopeEntity"));
+        // 未命中 message 名 → Err(既有验收面覆盖 Some,这里补 None 侧)。
+        let r = schema_inspect(schema, Some("Nope::missing"), None, None);
+        assert!(r.is_err());
+        // 文件不存在:read 失败如实报错。
+        let r = schema_inspect("/nonexistent/schema.json", None, None, None);
+        assert!(r.unwrap_err().contains("read"));
+        // 文件存在但 JSON 非法:parse 失败。
+        let bad = dir.join("bad.json");
+        std::fs::write(&bad, "{not json").unwrap();
+        let r = schema_inspect(bad.to_str().unwrap(), None, None, None);
+        assert!(r.unwrap_err().contains("parse schema"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn schema_inspect_by_id_and_entity_hit_produce_ok() {
+        let dir = temp_dir("inspect-ok");
+        let out = dir.join("schema.json");
+        let built = schema_build(
+            demo_assets().to_str().unwrap(),
+            Some(&defaults_xml()),
+            Some(out.to_str().unwrap()),
+        );
+        assert!(built.is_ok());
+        let schema = out.to_str().unwrap();
+        // by_id 命中。
+        let r = schema_inspect(schema, None, Some(502), None).unwrap();
+        assert!(
+            r.stdout.contains("Client::onLoginSuccessfully"),
+            "{}",
+            r.stdout
+        );
+        assert_eq!(r.code, 0);
+        // entity 命中。
+        let r = schema_inspect(schema, None, None, Some("Avatar")).unwrap();
+        assert!(r.stdout.contains("\"properties\""), "{}", r.stdout);
+        // 全量概览命中。
+        let r = schema_inspect(schema, None, None, None).unwrap();
+        assert!(r.stdout.contains("\"aliases\""), "{}", r.stdout);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn capture_analyze_file_pcap_and_unmapped_stream() {
+        let dir = temp_dir("cap-file");
+        let lines = dir.join("lines.txt");
+        let pcap = dir.join("capture.pcap");
+        std::fs::write(&pcap, b"not-real-pcap-bytes").unwrap();
+        // 一个合法报文 + 一个未映射端口报文(端口 9/10 不在 flow-map)。
+        let up = var_frame(3, &login_payload());
+        std::fs::write(
+            &lines,
+            format!(
+                "{}{}",
+                tshark_line("1759000000.100000", 51023, 20013, &up),
+                tshark_line("1759000001.000000", 50000, 50001, &[0x01]),
+            ),
+        )
+        .unwrap();
+        let fake = write_fake_tshark(&dir, &lines);
+
+        // 文件 pcap 分支(spawn_tshark bin, path, None)+ unmapped_stream 异常。
+        let result = capture_analyze(
+            Some(pcap.to_str().unwrap()),
+            fake.to_str().unwrap(),
+            &[("loginapp".to_string(), 20013u16)],
+            &[],
+            Some(&defaults_xml()),
+            None,
+        );
+        let outcome = result.expect("file pcap path must succeed");
+        assert_eq!(outcome.code, 0);
+        assert!(
+            outcome.stdout.contains("Loginapp::login"),
+            "{}",
+            outcome.stdout
+        );
+        assert!(
+            outcome.stdout.contains("unmapped_stream"),
+            "unmapped packet must be an anomaly, not a crash: {}",
+            outcome.stdout
+        );
+        assert!(
+            outcome.stdout.contains("50000->50001"),
+            "{}",
+            outcome.stdout
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn capture_analyze_surfaces_malformed_tshark_line_as_error() {
+        let dir = temp_dir("cap-bad");
+        let lines = dir.join("lines.txt");
+        // 字段数不足(tshark 只给了 3 列)→ parse_tshark_line Err。
+        std::fs::write(&lines, "1759000000.1\t51023\t20013\n").unwrap();
+        let fake = write_fake_tshark(&dir, &lines);
+        let pcap = dir.join("capture.pcap");
+        std::fs::write(&pcap, b"x").unwrap();
+
+        let result = capture_analyze(
+            Some(pcap.to_str().unwrap()),
+            fake.to_str().unwrap(),
+            &[("loginapp".to_string(), 20013u16)],
+            &[],
+            None,
+            None,
+        );
+        let err = result.expect_err("malformed tshark line must fail the command");
+        assert!(err.contains("unexpected tshark field line"), "{err}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn capture_analyze_reports_tshark_nonzero_exit() {
+        // tshark 打印一行后非零退出 → for_each_packet 报「tshark exited with」。
+        let dir = temp_dir("cap-exit");
+        let lines = dir.join("lines.txt");
+        std::fs::write(&lines, "1759000000.1\t51023\t20013\t00\n").unwrap();
+        let fake = dir.join("exit-1.sh");
+        let lines_s = lines.to_str().unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::write(
+            &fake,
+            format!("#!/bin/sh\ncat > /dev/null\ncat '{lines_s}'\nexit 1\n"),
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&fake).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&fake, perms).unwrap();
+        let pcap = dir.join("capture.pcap");
+        std::fs::write(&pcap, b"x").unwrap();
+
+        let result = capture_analyze(
+            Some(pcap.to_str().unwrap()),
+            fake.to_str().unwrap(),
+            &[("loginapp".to_string(), 20013u16)],
+            &[],
+            None,
+            None,
+        );
+        let err = result.expect_err("non-zero tshark exit must fail");
+        assert!(err.contains("tshark exited with"), "{err}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 变长帧线上形态:`u16 id (LE) + u16 载荷长 (LE) + 载荷`。
+    fn var_frame(id: u16, payload: &[u8]) -> Vec<u8> {
+        let mut v = Vec::with_capacity(4 + payload.len());
+        v.extend_from_slice(&id.to_le_bytes());
+        v.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+        v.extend_from_slice(payload);
+        v
+    }
+
+    /// Loginapp::login(id 3)载荷:STRING UINT8_ARRAY STRING STRING。
+    fn login_payload() -> Vec<u8> {
+        let mut v = Vec::new();
+        v.extend_from_slice(b"1\0");
+        v.extend_from_slice(&4u32.to_le_bytes());
+        v.extend_from_slice(b"ABCD");
+        v.extend_from_slice(b"alice\0");
+        v.extend_from_slice(b"pw\0");
+        v
+    }
+}

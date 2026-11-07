@@ -177,4 +177,63 @@ mod tests {
         assert!(cache.load(&file).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
     }
+
+    #[test]
+    #[cfg(unix)]
+    fn pre_epoch_mtime_uses_negative_seconds_fingerprint() {
+        // 早于 epoch(负秒)不能 panic,也不能把指纹折到正数侧:
+        // 整秒 → (-secs, 0);带小数秒 → 向上取整到 (-secs-1, 1e9-nanos)。
+        let dir = temp_dir("preepoch");
+        let whole = dir.join("whole.def");
+        let frac = dir.join("frac.def");
+        std::fs::write(&whole, b"whole").unwrap();
+        std::fs::write(&frac, b"frac").unwrap();
+        // touch -d 由 coreutils 提供 mtime 设置能力(std 不暴露 utimensat)。
+        let set_mtime = |file: &Path, spec: &str| {
+            let ok = std::process::Command::new("touch")
+                .args(["-d", spec, file.to_str().unwrap()])
+                .status()
+                .expect("run touch")
+                .success();
+            assert!(ok, "touch -d must succeed for {spec}");
+        };
+        set_mtime(&whole, "1969-12-31 23:59:59 UTC");
+        set_mtime(&frac, "1969-12-31 23:59:59.5 UTC");
+
+        let fp_whole = DiskFingerprint::of_path(&whole).unwrap().unwrap();
+        assert_eq!(fp_whole.mtime_secs, -1);
+        assert_eq!(fp_whole.mtime_nanos, 0);
+        let fp_frac = DiskFingerprint::of_path(&frac).unwrap().unwrap();
+        assert_eq!(fp_frac.mtime_secs, -1);
+        assert_eq!(fp_frac.mtime_nanos, 500_000_000);
+        // 同一秒不同小数秒 → 指纹必须可区分(负侧 nanos 进指纹)。
+        assert_ne!(fp_whole, fp_frac);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn unreadable_parent_dir_is_err_not_none() {
+        use std::os::unix::fs::PermissionsExt;
+        // stat 失败但不是 NotFound(权限拒绝)→ 原样 Err 透传,调用方降级。
+        let dir = temp_dir("perm-stat");
+        let locked = dir.join("locked");
+        std::fs::create_dir_all(&locked).unwrap();
+        let file = locked.join("inside.def");
+        std::fs::write(&file, b"x").unwrap();
+        let mut perms = std::fs::metadata(&locked).unwrap().permissions();
+        perms.set_mode(0o000);
+        std::fs::set_permissions(&locked, perms).unwrap();
+
+        let fp = DiskFingerprint::of_path(&file);
+        assert!(fp.is_err(), "permission denied must be Err, not Ok(None)");
+        let mut cache = DiskCache::new();
+        assert!(cache.load(&file).is_err());
+        assert_eq!(cache.cached_len(), 0, "失败读取不得污染缓存");
+
+        let mut perms = std::fs::metadata(&locked).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&locked, perms).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

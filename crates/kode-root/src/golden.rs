@@ -103,3 +103,48 @@ pub fn dump_golden(fixtures_dir: &Path) -> String {
     out.push_str("  ]\n}\n");
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_json_covers_every_escape_arm() {
+        // 引号/反斜杠/控制字符逐条转义;普通字符原样保留。
+        assert_eq!(escape_json("plain"), "plain");
+        assert_eq!(escape_json("a\"b"), "a\\\"b");
+        assert_eq!(escape_json("a\\b"), "a\\\\b");
+        assert_eq!(escape_json("a\nb\rc\td"), "a\\nb\\rc\\td");
+        // 其他 < 0x20 控制字符走 \\u 形态。
+        assert_eq!(escape_json("a\u{1}b"), "a\\u0001b");
+        assert_eq!(escape_json("a\u{7}b"), "a\\u0007b");
+        // 非 ASCII 原样保留(golden 面不二次编码)。
+        assert_eq!(escape_json("怪物"), "怪物");
+    }
+
+    #[test]
+    fn dump_golden_emits_complete_parity_shape() {
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let text = dump_golden(&fixtures);
+        assert!(
+            text.starts_with("{\n  \"generator\": \"cargo run -p kode-root --bin dump-golden"),
+            "{text}"
+        );
+        assert!(text.contains("\"fixturesDir\": \"crates/kode-root/tests/fixtures\""));
+        // 六棵对拍树逐一名列,且每树带 visited/截断旗标。
+        for tree in PARITY_TREES {
+            assert!(
+                text.contains(&format!("\"name\": \"{tree}\"")),
+                "missing {tree}"
+            );
+        }
+        assert!(text.contains("\"scanVisited\""));
+        assert!(text.contains("\"scanTruncated\""));
+        assert!(text.trim_end().ends_with('}'));
+        // 花括号平衡(零依赖的 JSON 形状前件;TS 侧再 JSON.parse 全量复算)。
+        let open = text.matches('{').count();
+        let close = text.matches('}').count();
+        assert_eq!(open, close, "golden braces must balance");
+        assert!(text.contains("\"entityDefs\""), "{text}");
+    }
+}

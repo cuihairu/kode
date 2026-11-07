@@ -685,3 +685,238 @@ impl PlatformRootRegistry {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "kode-root-resolve-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn anchor_key_labels_are_non_empty_for_every_key() {
+        for key in [
+            AnchorKey::EntityDefs,
+            AnchorKey::EntitiesXml,
+            AnchorKey::TypesXml,
+            AnchorKey::ConfigRoot,
+            AnchorKey::KbeSourceRoot,
+            AnchorKey::MessagesXml,
+        ] {
+            assert!(!key.label().is_empty(), "{key:?} 缺标签");
+        }
+        assert_eq!(
+            AnchorKey::ConfigRoot.label(),
+            "服务器资产根 kbengine.assetsRoot"
+        );
+        assert_eq!(AnchorKey::KbeSourceRoot.label(), "引擎源码根 kbe/");
+    }
+
+    #[test]
+    fn default_engine_uses_host_platform_and_discovers() {
+        // Default = new(detect()):本宿主非 Windows/macOS。
+        let mut engine = DiscoveryEngine::default();
+        assert!(matches!(
+            engine.platform,
+            PlatformTarget::Linux | PlatformTarget::Wsl
+        ));
+        let dir = temp_dir("default");
+        std::fs::create_dir_all(dir.join("entity_defs")).unwrap();
+        let report = engine.discover(&dir, &ExplicitConfig::default());
+        let defs = report
+            .fields
+            .iter()
+            .find(|f| f.key == AnchorKey::EntityDefs)
+            .unwrap();
+        assert_eq!(defs.status, FieldStatus::Ok);
+        assert_eq!(defs.resolved, Some(dir.join("entity_defs")));
+        // ws/entity_defs 同时命中约定链首项与深扫描:约定级优先。
+        assert_eq!(defs.source, ResolutionSource::Convention);
+        assert_eq!(defs.scan_hits, vec![dir.join("entity_defs")]);
+        assert_eq!(defs.convention_hits, vec![dir.join("entity_defs")]);
+        assert!(!report.from_cache);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn with_options_budgets_surface_in_truncation_diagnostic() {
+        // 自定义预算触顶:RK002 诊断如实带深度/条目上界(ROOT-013)。
+        let dir = temp_dir("budget");
+        std::fs::write(dir.join("a.txt"), "").unwrap();
+        std::fs::write(dir.join("b.txt"), "").unwrap();
+        let mut engine = DiscoveryEngine::with_options(
+            PlatformTarget::Linux,
+            ScanOptions {
+                max_depth: 0,
+                max_visited: 1,
+                follow_dir_symlinks: false,
+            },
+        );
+        let report = engine.discover(&dir, &ExplicitConfig::default());
+        assert!(report.scan_truncated);
+        let rk002 = report
+            .diagnostics
+            .iter()
+            .find(|d| d.code.code() == "RK002")
+            .expect("触顶必须有 RK002");
+        assert!(rk002.message.contains("深度 0/条目 1"), "{}", rk002.message);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn stale_cached_scan_reports_missing_not_ambiguity() {
+        // 扫描后被移除的引擎树:缓存里的陈旧路径仍在解析集,但验收失败
+        // → Missing(不 panic、不编造存在性)。
+        let dir = temp_dir("stale");
+        std::fs::create_dir_all(dir.join("kbe/src/lib/entitydef")).unwrap();
+        std::fs::write(dir.join("kbe/src/lib/entitydef/entitydef.cpp"), "").unwrap();
+        let mut engine = DiscoveryEngine::new(PlatformTarget::Linux);
+        engine.scan_result(&dir); // 预热缓存
+        std::fs::remove_dir_all(dir.join("kbe")).unwrap();
+        let report = engine.discover(&dir, &ExplicitConfig::default());
+        assert!(report.from_cache);
+        let kbe = report
+            .fields
+            .iter()
+            .find(|f| f.key == AnchorKey::KbeSourceRoot)
+            .unwrap();
+        assert_eq!(kbe.status, FieldStatus::Missing);
+        assert!(kbe.resolved.is_some(), "陈旧路径仍在解析集(缓存语义)");
+    }
+
+    #[test]
+    fn engine_messages_xml_follows_four_level_precedence() {
+        // 四级:① 扫描用户副本 ② 源码根用户副本 ③ 扫描缺省表 ④ 源码根缺省表。
+        let dir = temp_dir("msgs");
+        let kbe = dir.join("kbe");
+        std::fs::create_dir_all(kbe.join("res/server")).unwrap();
+        let mut scan = ScanResult::default();
+        let scan_user = dir.join("messages_fixed.xml");
+        let scan_defaults = dir.join("messages_fixed_defaults.xml");
+        let src_user = kbe.join("res/server/messages_fixed.xml");
+        let src_defaults = kbe.join("res/server/messages_fixed_defaults.xml");
+
+        // 全部存在:① 最高。
+        for p in [&scan_user, &scan_defaults, &src_user, &src_defaults] {
+            std::fs::write(p, "").unwrap();
+        }
+        scan.messages_xml = vec![scan_defaults.clone(), scan_user.clone()];
+        assert_eq!(
+            resolve_engine_messages_xml(&scan, Some(&kbe)),
+            Some(scan_user.clone())
+        );
+        // 去 ①:② 源码根用户副本胜出。
+        std::fs::remove_file(&scan_user).unwrap();
+        scan.messages_xml = vec![scan_defaults.clone()];
+        assert_eq!(
+            resolve_engine_messages_xml(&scan, Some(&kbe)),
+            Some(src_user.clone())
+        );
+        // 去 ②:③ 扫描命中的缺省表胜出。
+        std::fs::remove_file(&src_user).unwrap();
+        assert_eq!(
+            resolve_engine_messages_xml(&scan, Some(&kbe)),
+            Some(scan_defaults.clone())
+        );
+        // 去 ③:④ 源码根缺省表兜底。
+        std::fs::remove_file(&scan_defaults).unwrap();
+        scan.messages_xml = Vec::new();
+        assert_eq!(
+            resolve_engine_messages_xml(&scan, Some(&kbe)),
+            Some(src_defaults.clone())
+        );
+        // 全无:None(不编造)。
+        std::fs::remove_file(&src_defaults).unwrap();
+        assert_eq!(resolve_engine_messages_xml(&scan, Some(&kbe)), None);
+        assert_eq!(resolve_engine_messages_xml(&scan, None), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn resolve_against_workspace_handles_placeholder_and_relative_values() {
+        // 根路径本身含 ${workspaceFolder} 占位(未展开的配置形态):
+        // 值里的占位不再替换(避免双重展开)。
+        let ws = Path::new("/w/${workspaceFolder}");
+        assert_eq!(
+            resolve_against_workspace(ws, "/abs/defs"),
+            PathBuf::from("/abs/defs")
+        );
+        // 相对值落在工作区根下。
+        let normal = Path::new("/w/demo");
+        assert_eq!(
+            resolve_against_workspace(normal, "scripts/entity_defs"),
+            PathBuf::from("/w/demo/scripts/entity_defs")
+        );
+        // 占位展开:值里的 ${workspaceFolder} 换成根。
+        assert_eq!(
+            resolve_against_workspace(normal, "${workspaceFolder}/assets"),
+            PathBuf::from("/w/demo/assets")
+        );
+    }
+
+    #[test]
+    fn source_of_falls_back_to_derived_or_fallback_for_untagged_paths() {
+        // 解析结果不属于显式/记忆/约定/扫描任何清单:存在 → Derived,
+        // 不存在 → Fallback(不冒充实来源)。
+        let dir = temp_dir("srcof");
+        let real = dir.join("derived");
+        std::fs::create_dir_all(&real).unwrap();
+        let gone = dir.join("gone");
+        assert_eq!(
+            source_of(Some(&real), None, None, &[], &[], &[]),
+            ResolutionSource::Derived
+        );
+        assert_eq!(
+            source_of(Some(&gone), None, None, &[], &[], &[]),
+            ResolutionSource::Fallback
+        );
+        assert_eq!(
+            source_of(None, None, None, &[], &[], &[]),
+            ResolutionSource::None
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn registry_prefix_match_folds_case_on_windows_only() {
+        let mut reg = PlatformRootRegistry::new(PlatformTarget::Windows);
+        let id = reg.register("/W/Demo").unwrap();
+        let sub = RootPath::parse("/w/demo/sub/x.def", PlatformTarget::Windows).unwrap();
+        assert_eq!(reg.root_for(&sub), Some(id));
+        assert_eq!(reg.overlapping(&sub), vec![id]);
+        // Linux 逐字节:大小写不同即不归属。
+        let mut linux = PlatformRootRegistry::new(PlatformTarget::Linux);
+        let lid = linux.register("/W/Demo").unwrap();
+        let lsub = RootPath::parse("/w/demo/x.def", PlatformTarget::Linux).unwrap();
+        assert_eq!(linux.root_for(&lsub), None);
+        assert!(linux.overlapping(&lsub).is_empty());
+        // 同前缀双根:最长前缀胜出;根本身完整相等也归属。
+        let inner = linux.register("/w/demo/engine").unwrap();
+        let deep = RootPath::parse("/w/demo/engine/x.def", PlatformTarget::Linux).unwrap();
+        assert_eq!(linux.root_for(&deep), Some(inner));
+        let exact = RootPath::parse("/W/Demo", PlatformTarget::Linux).unwrap();
+        assert_eq!(linux.overlapping(&exact), vec![lid]);
+    }
+
+    #[test]
+    fn boundary_kind_labels_are_stable() {
+        assert_eq!(
+            PlatformRootRegistry::boundary_kind_label(BoundaryKind::Submodule),
+            "submodule"
+        );
+        assert_eq!(
+            PlatformRootRegistry::boundary_kind_label(BoundaryKind::Vendored),
+            "vendored"
+        );
+    }
+}

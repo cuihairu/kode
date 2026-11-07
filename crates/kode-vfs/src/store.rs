@@ -482,6 +482,33 @@ mod tests {
     }
 
     #[test]
+    fn open_count_and_open_summaries_report_overlay_state() {
+        let mut store = DocumentStore::new();
+        assert_eq!(store.open_count(), 0);
+        assert!(store.open_summaries().is_empty());
+        let a = key(1, "/w/a.def");
+        let b = key(1, "/w/b.def");
+        store.open(b.clone(), 5, "b").unwrap();
+        store.open(a.clone(), 2, "a").unwrap();
+        assert_eq!(store.open_count(), 2);
+        // 按 uri 排序(health 报告确定性输出),插入顺序 b,a 不影响输出序。
+        assert_eq!(
+            store.open_summaries(),
+            vec![
+                ("file:///w/a.def".to_string(), 2),
+                ("file:///w/b.def".to_string(), 5),
+            ]
+        );
+        // close 后计数与摘要同步回落。
+        store.close(&a);
+        assert_eq!(store.open_count(), 1);
+        assert_eq!(
+            store.open_summaries(),
+            vec![("file:///w/b.def".to_string(), 5)]
+        );
+    }
+
+    #[test]
     fn disk_cache_is_reachable_and_clearable() {
         let dir = std::env::temp_dir().join(format!("kode-vfs-cache-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

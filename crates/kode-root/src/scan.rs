@@ -370,3 +370,216 @@ fn parse_gitmodules_paths(gitmodules: &Path) -> Vec<String> {
     }
     paths
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "kode-root-scan-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn entitydef_cpp_without_kbe_ancestor_is_ignored() {
+        // 无 kbe 祖先的引擎源文件名:不记引擎源码根(不编造)。
+        let dir = temp_dir("nokbe");
+        std::fs::write(dir.join("entitydef.cpp"), "").unwrap();
+        std::fs::write(dir.join("entity_table_mysql.cpp"), "").unwrap();
+        let result = scan_workspace_anchors(&dir, &ScanOptions::default());
+        assert!(result.kbe_source_roots.is_empty());
+        // 直接探测:向上找不到 kbe → None;根路径自身无 parent → None。
+        assert_eq!(find_kbe_root_anchor(&dir.join("entitydef.cpp")), None);
+        assert_eq!(find_kbe_root_anchor(Path::new("/")), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn entitydef_cpp_with_kbe_ancestor_records_deduped_root() {
+        // kbe 祖先形态:两个锚文件命中同一 kbe 根 → 去重只记一次。
+        let dir = temp_dir("kbe");
+        let src = dir.join("kbe/src/server");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("entitydef.cpp"), "").unwrap();
+        std::fs::write(src.join("entity_table_mysql.cpp"), "").unwrap();
+        let result = scan_workspace_anchors(&dir, &ScanOptions::default());
+        assert_eq!(result.kbe_source_roots, vec![dir.join("kbe")]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn unreadable_dir_is_skipped_without_panicking() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = temp_dir("perm");
+        let locked = dir.join("locked");
+        // 可读的一支:真实 entity_defs 锚点。
+        std::fs::create_dir_all(dir.join("entity_defs")).unwrap();
+        std::fs::write(dir.join("entity_defs/ok.def"), "").unwrap();
+        // 锁死的一支:锚点在里面,读失败必须整个跳过。
+        std::fs::create_dir_all(locked.join("entity_defs")).unwrap();
+        std::fs::write(locked.join("entity_defs/secret.def"), "").unwrap();
+        let mut perms = std::fs::metadata(&locked).unwrap().permissions();
+        perms.set_mode(0o000);
+        std::fs::set_permissions(&locked, perms).unwrap();
+
+        let result = scan_workspace_anchors(&dir, &ScanOptions::default());
+        // 读失败跳过不 panic;只有可读一支的锚点被记录。
+        assert_eq!(result.entity_defs, vec![dir.join("entity_defs")]);
+
+        let mut perms = std::fs::metadata(&locked).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&locked, perms).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_follow_mode_resolves_targets_and_guards_cycles() {
+        let dir = temp_dir("follow");
+        let sub = dir.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("entities.xml"), "").unwrap();
+        // 符号链接 → 文件:按文件分支处理(锚点名看链接名)。
+        std::os::unix::fs::symlink(sub.join("entities.xml"), dir.join("entities.xml")).unwrap();
+        // 符号链接 → 目录(非环):下降进目标。
+        std::os::unix::fs::symlink(sub, dir.join("link")).unwrap();
+        // 符号链接 → 环(指回工作区根):canonical 身份已见 → 跳过 + RK004。
+        std::os::unix::fs::symlink(&dir, dir.join("self")).unwrap();
+        // 悬空符号链接:解析失败按普通条目忽略,不 panic。
+        std::os::unix::fs::symlink(dir.join("gone.xml"), dir.join("dangling.xml")).unwrap();
+
+        let opts = ScanOptions {
+            follow_dir_symlinks: true,
+            ..Default::default()
+        };
+        let result = scan_workspace_anchors(&dir, &opts);
+        // 三路各一份:真实目录 sub/、目录链接 link/(跟随下降)、
+        // 文件链接 entities.xml(按链接名收录)。
+        assert_eq!(result.entities_xml.len(), 3, "{:?}", result.entities_xml);
+        let ends: Vec<String> = result
+            .entities_xml
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            ends.iter().any(|s| s.ends_with("/sub/entities.xml")),
+            "{ends:?}"
+        );
+        assert!(
+            ends.iter().any(|s| s.ends_with("/link/entities.xml")),
+            "{ends:?}"
+        );
+        assert!(
+            ends.iter().any(|s| s.ends_with("/entities.xml")),
+            "{ends:?}"
+        );
+        // 环被跳过且带 RK004 诊断。
+        assert_eq!(
+            result.cycles_skipped.len(),
+            1,
+            "{:?}",
+            result.cycles_skipped
+        );
+        assert!(result.cycles_skipped[0].to_string_lossy().ends_with("self"));
+        assert_eq!(result.diagnostics.len(), 1);
+        assert_eq!(result.diagnostics[0].code.code(), "RK004");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn boundaries_mark_submodules_vendored_and_git_markers() {
+        let dir = temp_dir("boundary");
+        // vendored 名单目录:边界内锚点仍进原始集,解析期降级。
+        let vendor = dir.join("vendor");
+        std::fs::create_dir_all(vendor.join("lib")).unwrap();
+        std::fs::write(vendor.join("lib/x.def"), "").unwrap();
+        // .gitmodules 命名的子模块路径。
+        std::fs::write(
+            dir.join(".gitmodules"),
+            "[submodule \"a\"]\npath = othermod\npath =\nsubpath = ignored\n",
+        )
+        .unwrap();
+        // 真实 submodule checkout 形态:.git 目录标记(名字必须精确)。
+        let nested = dir.join("nested");
+        std::fs::create_dir_all(nested.join(".git")).unwrap();
+        std::fs::write(nested.join("entities.xml"), "").unwrap();
+        // 兄弟目录带 .git 文件(非目录)→ 不算边界标记。
+        let filegit = dir.join("filegit");
+        std::fs::create_dir_all(&filegit).unwrap();
+        std::fs::write(filegit.join(".git"), "gitdir: elsewhere\n").unwrap();
+
+        let result = scan_workspace_anchors(&dir, &ScanOptions::default());
+        let submodule_paths: Vec<String> = result
+            .boundaries
+            .iter()
+            .filter(|b| b.kind == BoundaryKind::Submodule)
+            .map(|b| b.path.to_string_lossy().into_owned())
+            .collect();
+        // gitmodules 命名 + .git 目录标记各记一条(路径不同);.git 文件不算。
+        assert_eq!(submodule_paths.len(), 2, "{submodule_paths:?}");
+        assert!(
+            submodule_paths.iter().any(|p| p.ends_with("othermod")),
+            "{submodule_paths:?}"
+        );
+        assert!(
+            submodule_paths.iter().any(|p| p.ends_with("nested")),
+            "{submodule_paths:?}"
+        );
+        let vendored: Vec<_> = result
+            .boundaries
+            .iter()
+            .filter(|b| b.kind == BoundaryKind::Vendored)
+            .collect();
+        assert_eq!(vendored.len(), 1);
+        assert!(vendored[0].path.ends_with("vendor"));
+        // 边界内/外锚点判定。
+        assert!(result.anchor_is_foreign(&dir, &vendor.join("lib/x.def")));
+        assert!(result.anchor_is_foreign(&dir, &nested.join("entities.xml")));
+        assert!(!result.anchor_is_foreign(&dir, &dir.join("outside.def")));
+        // 边界本身不算"内部锚点"(必须严格在边界之内)。
+        assert!(!result.anchor_is_foreign(&dir, &nested));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn gitmodules_parser_tolerates_malformed_lines_and_missing_file() {
+        let dir = temp_dir("gm");
+        let gm = dir.join(".gitmodules");
+        // 只有 `path =` 前缀行取值;空值/其他键/前缀不精确的行都跳过。
+        std::fs::write(
+            &gm,
+            "path = a\npath  =  b\ncpath = c\npathX = d\npath =\n   path = e\n",
+        )
+        .unwrap();
+        assert_eq!(parse_gitmodules_paths(&gm), vec!["a", "b", "e"]);
+        // 读失败(路径不存在)→ 空表,不 panic。
+        assert!(parse_gitmodules_paths(&dir.join("missing.gitmodules")).is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn prescan_with_root_less_dir_name_is_noop() {
+        // 工作区根本身无 file_name(如 "/"):vendored 判定跳过,不 panic。
+        let mut scanner = AnchorScanner::new(&ScanOptions::default());
+        scanner.prescan_boundaries(Path::new("/"), &[]);
+        assert!(scanner.result.boundaries.is_empty());
+    }
+
+    #[test]
+    fn default_options_mirror_ts_scan_budgets() {
+        // 默认预算与 TS 同源(ROOT-013):深度 7 / 条目上限非零。
+        let opts = ScanOptions::default();
+        assert_eq!(opts.max_depth, 7);
+        assert!(opts.max_visited >= 20000);
+        assert!(!opts.follow_dir_symlinks);
+    }
+}

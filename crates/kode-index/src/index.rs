@@ -358,3 +358,50 @@ impl SymbolIndex {
             .unwrap_or_default()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use kode_vfs::store::{DocumentKey, RootId};
+    use kode_vfs::uri::CanonicalUri;
+
+    use super::SymbolIndex;
+
+    fn key(path: &str) -> DocumentKey {
+        DocumentKey::new(RootId(1), CanonicalUri::from_path(path))
+    }
+
+    /// replace_file(key, None) 契约:无解析产物时只摘旧符号、零新增,返回
+    /// (added=0, removed=旧符号数),倒排/继承边/by_file 连带清理。生产路径
+    /// update/update_batch 只在 registry rebuilt 时传 Some,该分支按函数自身
+    /// 契约直接验证(unit 级精度)。
+    #[test]
+    fn replace_file_with_none_unit_only_detaches_old_symbols() {
+        let mut index = SymbolIndex::new();
+        let k = key("/proj/entities/Avatar.def");
+        let text = "<root>\n  <Parent>Base</Parent>\n  <Properties>\n    <hp>\n      <Type>UINT32</Type>\n      <Flags>BASE</Flags>\n    </hp>\n  </Properties>\n  <BaseMethods>\n    <onRpc>\n      <Arg>UINT32</Arg>\n    </onRpc>\n  </BaseMethods>\n</root>\n";
+        let report = index.update(k.clone(), text);
+        assert!(report.rebuilt);
+        assert_eq!(index.symbol_count(), 3, "Avatar.def = 实体 + hp + onRpc");
+        assert_eq!(
+            index
+                .entity_declarations()
+                .get("Avatar")
+                .map(String::as_str),
+            Some("Base"),
+            "带 Parent 的 def 先登记继承边"
+        );
+
+        let (added, removed) = index.replace_file(&k, None);
+        assert_eq!(added, 0, "None 不装入新符号");
+        assert_eq!(removed, 3, "None 摘除旧文件全部符号");
+        assert_eq!(index.symbol_count(), 0);
+        assert!(index.symbols_in_file(&k).is_empty(), "文件摘除后符号表清空");
+        assert!(index.lookup("hp").is_empty(), "倒排连带清空");
+        assert!(index.lookup("onRpc").is_empty());
+        assert_eq!(index.tracked_files(), 0, "by_file 条目摘除");
+        assert!(
+            index.entity_declarations().get("Avatar").is_none(),
+            ".def 继承边跟随摘除(IDX-014)"
+        );
+    }
+}

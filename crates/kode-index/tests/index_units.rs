@@ -314,3 +314,78 @@ fn non_declaration_files_are_reported_not_indexed() {
     assert!(!repeat.rebuilt, "同输入负缓存,不重复解析");
     assert_eq!(index.stats.rebuilds, 0);
 }
+
+#[test]
+fn symbols_in_file_returns_document_order_and_unknown_file_empty() {
+    let files = workspace();
+    let mut index = SymbolIndex::new();
+    index.update_batch(&files);
+    let avatar_key = key("/proj/entities/Avatar.def");
+
+    // 已登记文件:按文档序返回全部符号(实体 → 属性 → 组件槽 → Base 方法)。
+    let symbols = index.symbols_in_file(&avatar_key);
+    println!("Avatar.def 符号: {symbols:?}");
+    let kinds: Vec<SymbolKind> = symbols.iter().map(|s| s.kind).collect();
+    let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            SymbolKind::Entity,
+            SymbolKind::Property,
+            SymbolKind::Component,
+            SymbolKind::Method,
+            SymbolKind::Method,
+        ],
+        "文件级符号必须按文档序(实体→属性→组件→方法)"
+    );
+    assert_eq!(
+        names,
+        vec!["Avatar", "hp", "inventory", "onRpc", "doAttack"],
+        "符号名与顺序必须与 def 字段序一致"
+    );
+    assert_eq!(symbols[0].line, 1, ".def 实体本体无行位置,约定 1");
+    assert_eq!(
+        symbols[2].detail.as_deref(),
+        Some("Inventory"),
+        "组件类型进 detail"
+    );
+
+    // 未登记文件:空表(不 panic,走 unwrap_or_default)。
+    let unknown = key("/proj/entities/Never.def");
+    assert!(
+        index.symbols_in_file(&unknown).is_empty(),
+        "未知文件必须返回空表"
+    );
+}
+
+#[test]
+fn remove_and_invalidate_on_untracked_are_noops() {
+    let mut index = SymbolIndex::new();
+    let unknown = key("/proj/entities/Ghost.def");
+
+    // 删除未登记文件:0 移除,不 bump generation,不累计 removals。
+    let before_gen = index.generation();
+    let removed = index.remove(&unknown);
+    assert_eq!(removed, 0, "未登记文件删除必须 0 移除");
+    assert_eq!(
+        index.generation(),
+        before_gen,
+        "无符号移除不 bump generation"
+    );
+    assert_eq!(index.stats.removals, 0);
+
+    // 根级失效空根:0 移除,不 bump。
+    let removed = index.invalidate_root(RootId(999));
+    assert_eq!(removed, 0, "空根失效必须 0 移除");
+    assert_eq!(index.generation(), before_gen, "空根失效不 bump generation");
+    assert_eq!(index.stats.removals, 0);
+
+    // 有内容的根失效后再失效同一根:第二次 0 移除(文件已清,幂等)。
+    index.update(
+        key("/proj/entities/A.def"),
+        &def_text(None, "x", "UINT32", &[]),
+    );
+    assert_eq!(index.invalidate_root(RootId(1)), 2, "A.def = 实体 + 属性");
+    assert_eq!(index.invalidate_root(RootId(1)), 0, "重复失效必须 0 移除");
+    assert_eq!(index.tracked_files(), 0);
+}

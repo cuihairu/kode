@@ -170,3 +170,196 @@ pub fn parse_tshark_line(line: &str) -> Result<TsharkPacket, String> {
         payload,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("kode-kbengine-tshark-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// 可执行脚本落盘(hermetic fake tshark 的载体)。
+    #[cfg(unix)]
+    fn write_script(dir: &std::path::Path, name: &str, body: &str) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let script = dir.join(name);
+        std::fs::write(&script, body).unwrap();
+        let mut perms = std::fs::metadata(&script).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).unwrap();
+        script
+    }
+
+    #[test]
+    fn parse_tshark_line_accepts_ts_ports_and_colon_hex() {
+        let p = parse_tshark_line("1759000000.100000\t51023\t20013\tde:ad:be:ef").unwrap();
+        assert_eq!(p.timestamp, Some(1759000000.1));
+        assert_eq!(p.srcport, 51023);
+        assert_eq!(p.dstport, 20013);
+        assert_eq!(p.payload, vec![0xde, 0xad, 0xbe, 0xef]);
+        // 无时间戳(不可解析)→ None,不编造。
+        let p = parse_tshark_line("not-a-ts\t1\t2\t00").unwrap();
+        assert_eq!(p.timestamp, None);
+        assert_eq!(p.payload, vec![0x00]);
+    }
+
+    #[test]
+    fn parse_tshark_line_rejects_bad_fields_explicitly() {
+        // 字段数不足(<4)。
+        let err = parse_tshark_line("1\t2\t3").unwrap_err();
+        assert!(
+            err.contains("unexpected tshark field line (3 fields)"),
+            "{err}"
+        );
+        // srcport / dstport 不是 u16。
+        let err = parse_tshark_line("1.0\t99999\t2\t00").unwrap_err();
+        assert!(err.contains("bad tcp.srcport: 99999"), "{err}");
+        let err = parse_tshark_line("1.0\t1\t70000\t00").unwrap_err();
+        assert!(err.contains("bad tcp.dstport: 70000"), "{err}");
+        // 载荷 hex 奇数长度。
+        let err = parse_tshark_line("1.0\t1\t2\td:ea").unwrap_err();
+        assert!(err.contains("odd tcp.payload hex length"), "{err}");
+        // 载荷 hex 含非 hex 字符。
+        let err = parse_tshark_line("1.0\t1\t2\tzz").unwrap_err();
+        assert!(err.contains("bad hex at 0"), "{err}");
+        // 空 payload 也合法(纯 ACK/握手包,tshark -Y tcp.payload 会滤掉,
+        // 但解析层仍容忍空列)。
+        let p = parse_tshark_line("1.0\t1\t2\t").unwrap();
+        assert!(p.payload.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn spawn_tshark_reads_file_pcap_with_null_stdin() {
+        let dir = temp_dir("file");
+        let lines = dir.join("lines.txt");
+        std::fs::write(&lines, "1759000000.100000\t51023\t20013\t00:11\n").unwrap();
+        // 文件 pcap:stdin 置空(真实 tshark 不读 stdin,防管道死锁)。
+        let script = write_script(
+            &dir,
+            "fake.sh",
+            &format!(
+                "#!/bin/sh\ncat > /dev/null\ncat '{}'\n",
+                lines.to_str().unwrap()
+            ),
+        );
+        let pcap = dir.join("capture.pcap");
+        std::fs::write(&pcap, b"pcap-bytes").unwrap();
+
+        let mut proc =
+            spawn_tshark(script.to_str().unwrap(), pcap.to_str().unwrap(), None).unwrap();
+        let mut packets = Vec::new();
+        proc.for_each_packet(|p| packets.push(p.unwrap())).unwrap();
+        assert_eq!(packets.len(), 1);
+        assert_eq!(packets[0].srcport, 51023);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn spawn_tshark_streams_stdin_bytes_through_background_thread() {
+        let dir = temp_dir("stream");
+        let lines = dir.join("lines.txt");
+        std::fs::write(&lines, "1759000000.100000\t51023\t20013\t00\n").unwrap();
+        // fake tshark 先吞 stdin 到 EOF(证明后台拷贝线程把字节送到了),
+        // 再输出预置行。
+        let script = write_script(
+            &dir,
+            "fake.sh",
+            &format!(
+                "#!/bin/sh\ncat > /dev/null\ncat '{}'\n",
+                lines.to_str().unwrap()
+            ),
+        );
+        let stdin_bytes: Box<dyn Read + Send> =
+            Box::new(std::io::Cursor::new(b"PCAP-BYTES".to_vec()));
+        let mut proc = spawn_tshark(script.to_str().unwrap(), "-", Some(stdin_bytes)).unwrap();
+        let mut packets = Vec::new();
+        proc.for_each_packet(|p| packets.push(p.unwrap())).unwrap();
+        assert_eq!(packets.len(), 1);
+        assert_eq!(packets[0].dstport, 20013);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn spawn_tshark_missing_binary_reports_install_hint() {
+        let err = spawn_tshark("/nonexistent/tshark", "x.pcap", None).unwrap_err();
+        assert!(
+            err.contains("failed to launch tshark binary '/nonexistent/tshark'"),
+            "{err}"
+        );
+        assert!(err.contains("--tshark <path>"), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn for_each_packet_skips_blank_lines_and_reports_nonzero_exit() {
+        let dir = temp_dir("exit");
+        let lines = dir.join("lines.txt");
+        // 空行必须跳过(不当作坏包),其余行为正常包。
+        std::fs::write(
+            &lines,
+            "\n1759000000.100000\t1\t2\t00\n\n1759000000.200000\t2\t1\tff\n",
+        )
+        .unwrap();
+        let script = write_script(
+            &dir,
+            "fake.sh",
+            &format!(
+                "#!/bin/sh\ncat > /dev/null\ncat '{}'\nexit 3\n",
+                lines.to_str().unwrap()
+            ),
+        );
+        let pcap = dir.join("capture.pcap");
+        std::fs::write(&pcap, b"x").unwrap();
+
+        let mut proc =
+            spawn_tshark(script.to_str().unwrap(), pcap.to_str().unwrap(), None).unwrap();
+        let mut packets = Vec::new();
+        let err = proc
+            .for_each_packet(|p| {
+                packets.push(p.expect("valid packets first"));
+            })
+            .expect_err("non-zero tshark exit must surface");
+        assert!(err.contains("tshark exited with exit status: 3"), "{err}");
+        assert_eq!(packets.len(), 2, "blank lines skipped, packets parsed");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn for_each_packet_propagates_read_errors_of_wellformed_output() {
+        // 正常行 + 退出 0:回调收到 Ok;整包成功收尾。
+        let dir = temp_dir("ok");
+        let lines = dir.join("lines.txt");
+        std::fs::write(&lines, "1759000000.100000\t7\t8\t0102\n").unwrap();
+        let script = write_script(
+            &dir,
+            "fake.sh",
+            &format!(
+                "#!/bin/sh\ncat > /dev/null\ncat '{}'\n",
+                lines.to_str().unwrap()
+            ),
+        );
+        let pcap = dir.join("capture.pcap");
+        std::fs::write(&pcap, b"x").unwrap();
+        let mut proc =
+            spawn_tshark(script.to_str().unwrap(), pcap.to_str().unwrap(), None).unwrap();
+        let mut got = Vec::new();
+        proc.for_each_packet(|p| got.push(p.unwrap())).unwrap();
+        assert_eq!(
+            got,
+            vec![TsharkPacket {
+                timestamp: Some(1759000000.1),
+                srcport: 7,
+                dstport: 8,
+                payload: vec![0x01, 0x02],
+            }]
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}

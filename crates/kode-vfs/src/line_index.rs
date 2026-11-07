@@ -361,4 +361,68 @@ mod tests {
             assert!(back <= utf16, "utf16 {utf16} → byte {byte} → {back}");
         }
     }
+
+    #[test]
+    fn lf_terminator_len_is_one_for_non_last_lines() {
+        // 非最后一行的 LF 行终止符长度是 1(最后一行是 0,CRLF 是 2)。
+        let text = "a\nbb\nccc";
+        let index = LineIndex::new(text);
+        assert_eq!(index.line_terminator_len(text, 0), 1);
+        assert_eq!(index.line_terminator_len(text, 1), 1);
+    }
+
+    #[test]
+    fn position_of_floors_mid_char_offset_to_char_boundary() {
+        // "a\n👍x\nz":emoji 从字节 2 到 6,字节 3/4/5 都在字符中间 → 向下取整。
+        let text = "a\n👍x\nz";
+        let index = LineIndex::new(text);
+        assert_eq!(index.position_of(text, 3), Position::new(1, 0));
+        assert_eq!(index.position_of(text, 4), Position::new(1, 0));
+        assert_eq!(index.position_of(text, 5), Position::new(1, 0));
+        assert_eq!(index.position_of(text, 6), Position::new(1, 2));
+        // 越界 offset clamp 到文末。
+        assert_eq!(index.position_of(text, 999), Position::new(2, 1));
+    }
+
+    #[test]
+    fn utf16_offset_beyond_document_clamps_to_text_end() {
+        let text = "ab\n";
+        let index = LineIndex::new(text);
+        // 全文 UTF-16 长度 = 2 内容 + 1 终止符 = 3;超出 → 文末字节偏移。
+        assert_eq!(index.utf16_offset_to_byte(text, 100), text.len());
+    }
+
+    #[test]
+    fn byte_offset_to_utf16_floors_mid_char_offset() {
+        // 字节 1/2/3 落在 emoji 中间 → 向下取整到字符边界再计数。
+        let text = "👍x\ny";
+        let index = LineIndex::new(text);
+        assert_eq!(index.byte_offset_to_utf16(text, 1), 0);
+        assert_eq!(index.byte_offset_to_utf16(text, 3), 0);
+        assert_eq!(index.byte_offset_to_utf16(text, 4), 2);
+        // 越界字节偏移 clamp 到文末:全文 UTF-16 = 2+1+1+1 = 5,不 panic。
+        assert_eq!(index.byte_offset_to_utf16(text, 999), 5);
+    }
+
+    #[test]
+    fn buffer_index_accessor_exposes_line_index() {
+        let buffer = DocumentBuffer::new("ab\ncd");
+        // index() 访问器:同一索引,O(1) 克隆面共享。
+        assert_eq!(buffer.index().line_count(), 2);
+        assert_eq!(
+            buffer
+                .index()
+                .byte_offset(buffer.text(), Position::new(1, 1)),
+            4
+        );
+    }
+
+    #[test]
+    fn buffer_ranged_edit_with_inverted_range_swaps_ends() {
+        // LSP 不保证 start <= end;倒置区间按 (min,max) 处理,不 panic。
+        let buffer = DocumentBuffer::new("hello");
+        let change = TextChange::ranged(Range::new(Position::new(0, 3), Position::new(0, 1)), "XY");
+        let next = buffer.apply_change(&change);
+        assert_eq!(next.text(), "hXYlo");
+    }
 }

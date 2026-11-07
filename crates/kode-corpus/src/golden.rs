@@ -116,12 +116,81 @@ mod tests {
 
     #[test]
     fn rendered_snapshot_is_deterministic() {
-        let case = &python_golden()[0];
-        let decoded = crate::decode_source(case.bytes).unwrap();
-        let first = render_case(case, &decoded);
-        let second = render_case(case, &decoded);
-        assert_eq!(first, second);
-        assert!(first.starts_with(&format!("[{}]", case.relative_path)));
-        assert!(first.contains("line_count="));
+        // 全部 fixture 用例两次渲染逐字节一致,且快照头部/行数信息齐备。
+        for case in python_golden() {
+            let decoded = crate::decode_source(case.bytes).unwrap();
+            let first = render_case(case, &decoded);
+            let second = render_case(case, &decoded);
+            assert_eq!(first, second, "{}", case.relative_path);
+            assert!(
+                first.starts_with(&format!("[{}]", case.relative_path)),
+                "{}",
+                case.relative_path
+            );
+            assert!(
+                first.contains(&format!("line_count={}", case.line_count)),
+                "{}",
+                case.relative_path
+            );
+        }
+    }
+
+    #[test]
+    fn rendered_detection_names_every_probe_source() {
+        // golden 表覆盖 bom/cookie/default 三种探测来源;启发式来源用合成结论
+        // 验证渲染字面量(表内没有 BOM-less UTF-16 fixture)。
+        let mut seen = Vec::new();
+        for case in python_golden() {
+            let decoded = crate::decode_source(case.bytes).unwrap();
+            let rendered = render_detection(&decoded.detection);
+            assert!(
+                rendered.starts_with("encoding="),
+                "{}: {rendered}",
+                case.relative_path
+            );
+            let source = rendered
+                .split(" source=")
+                .nth(1)
+                .and_then(|rest| rest.split(' ').next())
+                .expect("source field")
+                .to_string();
+            if !seen.contains(&source) {
+                seen.push(source);
+            }
+        }
+        seen.sort();
+        assert_eq!(seen, ["bom", "cookie", "default"]);
+
+        let heuristic = EncodingDetection {
+            encoding: crate::Encoding::Utf16Le,
+            source: EncodingSource::Heuristic,
+            bom_len: 0,
+            declared: None,
+            cookie_line: None,
+        };
+        assert_eq!(
+            render_detection(&heuristic),
+            "encoding=utf-16-le source=heuristic bom_len=0 declared=- cookie_line=-"
+        );
+    }
+
+    #[test]
+    fn render_module_lists_tables_in_fixed_order() {
+        // 渲染顺序固定为 line_count → classes → methods → attributes →
+        // imports → instances,每行字段与 golden 表逐列对应。
+        let module = crate::parse_python_module(
+            "from pkg import Thing as T\nimport os\nbase = Base()\nclass Avatar(Base):\n    def __init__(self):\n        self.hp = 1\n",
+        );
+        let rendered = render_module(&module);
+        assert_eq!(
+            rendered,
+            "line_count=7\n\
+             class=Avatar|Avatar|Base|3|7\n\
+             method=Avatar|__init__|4|4|0|\n\
+             attribute=Avatar|hp|5|8\n\
+             import=T|pkg|Thing|0|1\n\
+             import=os|os|-|1|0\n\
+             instance=base|Base|2"
+        );
     }
 }

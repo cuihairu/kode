@@ -122,3 +122,100 @@ pub fn first_single(candidates: &[PathBuf]) -> Option<PathBuf> {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn skipped_directory_names_cover_list_and_dot_prefix() {
+        for name in SKIP_DIRECTORY_NAMES {
+            assert!(is_skipped_directory_name(name));
+        }
+        assert!(is_skipped_directory_name(".cache"));
+        assert!(!is_skipped_directory_name("scripts"));
+        assert!(!is_skipped_directory_name("node_modulesx"));
+    }
+
+    #[test]
+    fn engine_config_probe_requires_res_server_kbengine_xml() {
+        let dir = std::env::temp_dir().join(format!(
+            "kode-root-conv-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("res/server")).unwrap();
+        assert!(
+            !has_engine_config_probe(&dir),
+            "缺 kbengine.xml 不算探针命中"
+        );
+        std::fs::write(dir.join("res/server/kbengine.xml"), "").unwrap();
+        assert!(has_engine_config_probe(&dir));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn config_roots_fall_back_to_statics_when_read_dir_fails() {
+        // 根不存在/不可读:readdir 失败回落静态名单,不 panic、不编造。
+        let missing = Path::new("/nonexistent-kode-root-probe");
+        let roots = conventional_config_roots(missing);
+        assert_eq!(
+            roots,
+            vec![
+                missing.to_path_buf(),
+                missing.join("assets"),
+                missing.join("server_assets"),
+            ]
+        );
+    }
+
+    #[test]
+    fn config_roots_append_star_assets_dirs_without_duplicating_statics() {
+        let dir = std::env::temp_dir().join(format!(
+            "kode-root-conv2-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("my_assets")).unwrap();
+        std::fs::create_dir_all(dir.join("server_assets")).unwrap();
+        std::fs::create_dir_all(dir.join("plain")).unwrap();
+        let roots = conventional_config_roots(&dir);
+        // 静态名单在前(优先顺序),动态 *_assets 追加;与静态重名的
+        // server_assets 不重复收录;非 *_assets 目录不进。
+        assert_eq!(
+            roots,
+            vec![
+                dir.clone(),
+                dir.join("assets"),
+                dir.join("server_assets"),
+                dir.join("my_assets"),
+            ]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn first_existing_and_first_single_follow_docs() {
+        let real = std::env::temp_dir();
+        let fake = PathBuf::from("/nonexistent-kode-root-probe/x.def");
+        // first_existing:跳过不存在项,取第一个真实存在的。
+        assert_eq!(
+            first_existing(&[fake.clone(), real.clone()]),
+            Some(real.clone())
+        );
+        assert_eq!(first_existing(std::slice::from_ref(&fake)), None);
+        // first_single:唯一候选才返回;0/多候选宁缺勿猜。
+        assert_eq!(
+            first_single(std::slice::from_ref(&real)),
+            Some(real.clone())
+        );
+        assert_eq!(first_single(&[]), None);
+        assert_eq!(first_single(&[real.clone(), fake]), None);
+    }
+}

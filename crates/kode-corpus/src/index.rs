@@ -298,4 +298,93 @@ mod tests {
             content_fingerprint(b"avatar")
         );
     }
+
+    #[test]
+    fn accessors_expose_root_stats_files_and_emptiness() {
+        // 访问器:root/stats/files/len/is_empty 暴露刷新前后的完整状态。
+        let root = temp_dir("accessors");
+        write(&root, "a.py", "class A:\n    pass\n");
+        write(&root, "b.py", "class B:\n    pass\n");
+        let mut index = PythonCorpusIndex::new(&root);
+        assert!(index.is_empty());
+        assert_eq!(index.len(), 0);
+
+        let stats = index.refresh(&EnumerateOptions::default()).unwrap();
+        assert_eq!(index.root(), root.as_path());
+        assert_eq!(index.stats(), stats);
+        assert_eq!(index.stats().enumerated_files, 2);
+        assert_eq!(index.len(), 2);
+        assert!(!index.is_empty());
+        let rels: Vec<&str> = index
+            .files()
+            .map(|file| file.relative_path.as_str())
+            .collect();
+        assert_eq!(rels, ["a.py", "b.py"]);
+        assert!(index.get("a.py").is_some());
+        assert_eq!(index.get("missing.py"), None);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn removed_files_are_counted_and_dropped_from_index() {
+        // 两轮刷新之间删除文件:removed_files 计数,且旧条目不再可查。
+        let root = temp_dir("removed");
+        write(&root, "a.py", "class A:\n    pass\n");
+        write(&root, "gone.py", "class Gone:\n    pass\n");
+        let mut index = PythonCorpusIndex::new(&root);
+        index.refresh(&EnumerateOptions::default()).unwrap();
+        fs::remove_file(root.join("gone.py")).unwrap();
+
+        let stats = index.refresh(&EnumerateOptions::default()).unwrap();
+        assert_eq!(stats.removed_files, 1);
+        assert_eq!(stats.reused_files, 1);
+        assert_eq!(stats.enumerated_files, 1);
+        assert_eq!(index.get("gone.py"), None);
+        assert_eq!(index.len(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn truncation_flag_propagates_from_enumeration() {
+        // max_files 截断:统计里的 truncated 与索引规模保持一致。
+        let root = temp_dir("truncated");
+        write(&root, "a.py", "class A:\n    pass\n");
+        write(&root, "b.py", "class B:\n    pass\n");
+        let options = EnumerateOptions {
+            max_files: Some(1),
+            ..EnumerateOptions::default()
+        };
+        let mut index = PythonCorpusIndex::new(&root);
+        let stats = index.refresh(&options).unwrap();
+
+        assert!(stats.truncated);
+        assert_eq!(stats.enumerated_files, 2);
+        assert_eq!(index.len(), 1);
+        assert_eq!(index.get("a.py").unwrap().relative_path, "a.py");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn read_failures_are_recorded_as_issues_without_aborting() {
+        // 悬空符号链接会被枚举按文件收录,但读取失败 → 记为 Read 问题,
+        // 不中断整轮刷新,也不静默产生空条目。
+        let root = temp_dir("read-error");
+        write(&root, "good.py", "class Good:\n    pass\n");
+        std::os::unix::fs::symlink(root.join("gone.py"), root.join("dangling.py")).unwrap();
+        let mut index = PythonCorpusIndex::new(&root);
+        let stats = index.refresh(&EnumerateOptions::default()).unwrap();
+
+        assert_eq!(stats.enumerated_files, 2);
+        assert_eq!(stats.indexed_files, 1);
+        assert_eq!(stats.read_errors, 1);
+        assert_eq!(stats.decode_errors, 0);
+        assert_eq!(index.issues().len(), 1);
+        assert_eq!(index.issues()[0].relative_path, "dangling.py");
+        assert_eq!(index.issues()[0].kind, IndexIssueKind::Read);
+        assert!(index.issues()[0].message.contains("No such file"));
+        assert_eq!(index.get("dangling.py"), None);
+        assert!(index.get("good.py").is_some());
+        fs::remove_dir_all(root).unwrap();
+    }
 }

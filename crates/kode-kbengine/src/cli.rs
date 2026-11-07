@@ -279,3 +279,258 @@ USAGE:
 
 EXIT CODES: 0 ok; 1 semantic failure (validate/diff/inspect miss); 2 usage error.
 ";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// 用法错误的命令面:usage_error 必须带文案,命令本身是 no-op。
+    fn assert_usage_error(parsed: &Parsed, needle: &str) {
+        assert!(
+            parsed.usage_error.as_deref().unwrap_or("").contains(needle),
+            "usage_error={:?}",
+            parsed.usage_error
+        );
+    }
+
+    #[test]
+    fn empty_args_return_usage_text() {
+        let parsed = parse_args(&[]);
+        assert!(parsed.usage_error.is_some());
+        assert!(parsed
+            .usage_error
+            .as_deref()
+            .unwrap_or("")
+            .contains("USAGE"));
+    }
+
+    #[test]
+    fn equals_form_and_valueless_flag_are_parsed() {
+        // `--opt=value` 进 options;孤立 `--defaults`(无值)进 flags。
+        let parsed = parse_args(&args(&[
+            "schema",
+            "validate",
+            "--project=/w/demo",
+            "--defaults",
+        ]));
+        // 无值的 --defaults 不冒充选项:变体与字段一并校验,失败打印完整命令。
+        assert!(
+            matches!(
+                &parsed.command,
+                Command::SchemaValidate { project, defaults }
+                    if project.as_str() == "/w/demo" && defaults.is_none()
+            ),
+            "expected SchemaValidate, got {:?}",
+            parsed.command
+        );
+        assert!(parsed.usage_error.is_none());
+    }
+
+    #[test]
+    fn args_helpers_expose_last_option_and_flags() {
+        let mut a = Args::default();
+        a.insert("flow".into(), "loginapp".into());
+        a.insert("flow".into(), "baseapp".into());
+        // opt 取最后值(可重复选项的 LSP 习惯:后者覆盖)。
+        assert_eq!(a.opt("flow"), Some("baseapp"));
+        assert_eq!(a.opt("missing"), None);
+        assert_eq!(a.opt_all("flow"), vec!["loginapp", "baseapp"]);
+        assert_eq!(a.opt_all("missing"), Vec::<&str>::new());
+        assert!(!a.has_flag("verbose"));
+        a.flags.push("verbose".into());
+        assert!(a.has_flag("verbose"));
+    }
+
+    #[test]
+    fn schema_subcommand_usage_errors() {
+        // validate 缺 --project。
+        let p = parse_args(&args(&["schema", "validate"]));
+        assert_usage_error(&p, "schema validate requires --project");
+        // build 缺 --project。
+        let p = parse_args(&args(&["schema", "build"]));
+        assert_usage_error(&p, "schema build requires --project");
+        // diff 缺 --new。
+        let p = parse_args(&args(&["schema", "diff", "--old", "a.json"]));
+        assert_usage_error(&p, "schema diff requires --old");
+        // inspect 缺 --schema。
+        let p = parse_args(&args(&["schema", "inspect"]));
+        assert_usage_error(&p, "schema inspect requires --schema");
+        // message-id 不是 u16。
+        let p = parse_args(&args(&[
+            "schema",
+            "inspect",
+            "--schema",
+            "s.json",
+            "--message-id",
+            "99999",
+        ]));
+        assert_usage_error(&p, "--message-id expects a u16");
+        // 未知 schema 子命令。
+        let p = parse_args(&args(&["schema", "frobnicate"]));
+        assert_usage_error(&p, "schema subcommands: validate | build | diff | inspect");
+        // 完全未知命令(取首个参数入文案)。
+        let p = parse_args(&args(&["frobnicate", "--x"]));
+        assert_usage_error(&p, "unknown command: frobnicate");
+    }
+
+    #[test]
+    fn decode_requires_hex() {
+        let p = parse_args(&args(&["decode"]));
+        assert_usage_error(&p, "decode requires --hex");
+    }
+
+    #[test]
+    fn capture_subcommand_usage_errors() {
+        // capture 后不是 analyze。
+        let p = parse_args(&args(&["capture", "replay"]));
+        assert_usage_error(&p, "capture subcommands: analyze");
+        // analyze 但既无 --pcap 也无 --raw-flow。
+        let p = parse_args(&args(&["capture", "analyze"]));
+        assert_usage_error(&p, "requires --pcap <file|-> or at least one --raw-flow");
+        // pcap 模式缺 --flow-map。
+        let p = parse_args(&args(&["capture", "analyze", "--pcap", "x.pcap"]));
+        assert_usage_error(&p, "pcap mode requires --flow-map");
+        // flow-map 条目没有 `=`。
+        let p = parse_args(&args(&[
+            "capture",
+            "analyze",
+            "--pcap",
+            "-",
+            "--flow-map",
+            "loginapp",
+        ]));
+        assert_usage_error(&p, "bad --flow-map entry: loginapp");
+        // flow-map 端口不是 u16。
+        let p = parse_args(&args(&[
+            "capture",
+            "analyze",
+            "--pcap",
+            "-",
+            "--flow-map",
+            "loginapp=70000",
+        ]));
+        assert_usage_error(&p, "bad port in --flow-map: 70000");
+    }
+
+    #[test]
+    fn analyze_requires_records() {
+        let p = parse_args(&args(&["analyze"]));
+        assert_usage_error(&p, "analyze requires --records");
+    }
+
+    #[test]
+    fn capture_parses_repeated_raw_flows_and_flow_map() {
+        let p = parse_args(&args(&[
+            "capture",
+            "analyze",
+            "--raw-flow",
+            "loginapp=00",
+            "--raw-flow",
+            "loginapp.down=ff",
+            "--defaults",
+            "m.xml",
+            "--records",
+            "r.json",
+        ]));
+        assert!(p.usage_error.is_none());
+        // raw-flow 反复出现按序收录;pcap 未传时保持 None。
+        assert!(
+            matches!(&p.command, Command::CaptureAnalyze { pcap, tshark, flow_map, raw_flows, defaults, records_out }
+                if pcap.is_none()
+                    && tshark.as_str() == "tshark"
+                    && flow_map.is_empty()
+                    && raw_flows.len() == 2
+                    && raw_flows[0].0 == "loginapp"
+                    && raw_flows[0].1 == "00"
+                    && raw_flows[1].0 == "loginapp.down"
+                    && raw_flows[1].1 == "ff"
+                    && defaults.as_deref() == Some("m.xml")
+                    && records_out.as_deref() == Some("r.json")),
+            "expected CaptureAnalyze, got {:?}",
+            p.command
+        );
+    }
+
+    #[test]
+    fn capture_parses_flow_map_with_two_flows() {
+        let p = parse_args(&args(&[
+            "capture",
+            "analyze",
+            "--pcap",
+            "c.pcap",
+            "--flow-map",
+            "loginapp=20013,baseapp=30013",
+            "--tshark",
+            "/usr/bin/tshark",
+        ]));
+        assert!(p.usage_error.is_none());
+        // flow-map 解析成 (flow, 端口) 对,端口按 u16。
+        assert!(
+            matches!(&p.command, Command::CaptureAnalyze { pcap, tshark, flow_map, .. }
+                if pcap.as_deref() == Some("c.pcap")
+                    && tshark.as_str() == "/usr/bin/tshark"
+                    && flow_map.len() == 2
+                    && flow_map[0].0 == "loginapp"
+                    && flow_map[0].1 == 20013
+                    && flow_map[1].0 == "baseapp"
+                    && flow_map[1].1 == 30013),
+            "expected CaptureAnalyze, got {:?}",
+            p.command
+        );
+    }
+
+    #[test]
+    fn decode_defaults_flow_and_direction() {
+        let p = parse_args(&args(&["decode", "--hex", "00"]));
+        // decode 缺省 flow/direction 为 loginapp/c2s。
+        assert!(
+            matches!(&p.command, Command::Decode { hex, flow, direction, .. }
+                if hex.as_str() == "00"
+                    && flow.as_str() == "loginapp"
+                    && direction.as_str() == "c2s"),
+            "expected Decode, got {:?}",
+            p.command
+        );
+    }
+
+    #[test]
+    fn inspect_parses_message_id() {
+        let p = parse_args(&args(&[
+            "schema",
+            "inspect",
+            "--schema",
+            "s.json",
+            "--message-id",
+            "502",
+        ]));
+        // message-id 502 解析为 Some(502)。
+        assert!(
+            matches!(
+                &p.command,
+                Command::SchemaInspect { message_id, .. } if *message_id == Some(502)
+            ),
+            "expected SchemaInspect, got {:?}",
+            p.command
+        );
+    }
+
+    #[test]
+    fn no_op_command_carries_empty_validate_shape() {
+        // no_op_command 只在用法错误时出现:形状固定(空 project),不执行 IO。
+        // no_op_command 只在用法错误时出现:形状固定(空 project),不执行 IO。
+        let cmd = no_op_command();
+        assert!(
+            matches!(
+                &cmd,
+                Command::SchemaValidate { project, defaults }
+                    if project.is_empty() && defaults.is_none()
+            ),
+            "expected empty SchemaValidate, got {:?}",
+            cmd
+        );
+    }
+}

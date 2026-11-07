@@ -972,4 +972,166 @@ mod tests {
         let line: Vec<char> = "😀self.hp = 1".chars().collect();
         assert_eq!(utf16_column(&line, 1), 2);
     }
+
+    #[test]
+    fn string_escapes_are_masked_without_breaking_lexing() {
+        // 字符串内转义(含三引号串里的行尾反斜杠)按占位屏蔽,
+        // 被转义的引号不得提前闭合字符串。
+        let source = "class A:\n    def m(self):\n        text = 'it\\'s'\n        triple = '''\n        tail\\\n        '''\n        self.hp = 1\n";
+        let module = parse_python_module(source);
+        assert_eq!(module.methods.len(), 1);
+        assert_eq!(module.line_count, 8);
+        let attributes: Vec<&str> = module
+            .attributes
+            .iter()
+            .map(|attribute| attribute.name.as_str())
+            .collect();
+        assert_eq!(attributes, ["hp"]);
+    }
+
+    #[test]
+    fn tab_indentation_counts_as_four_columns_per_tab() {
+        // 制表符缩进按每 tab 4 列计层级;列号仍按原文(LSP UTF-16)计。
+        let source = "class A:\n\tdef m(self):\n\t\tself.hp = 1\n";
+        let module = parse_python_module(source);
+        assert_eq!(module.classes.len(), 1);
+        assert_eq!(module.methods.len(), 1);
+        assert_eq!(module.methods[0].name, "m");
+        assert_eq!(module.methods[0].character, 1);
+        assert_eq!(module.attributes[0].name, "hp");
+        assert_eq!(module.attributes[0].line, 2);
+        assert_eq!(module.attributes[0].character, 2);
+        assert_eq!(module.classes[0].end_line, module.line_count);
+    }
+
+    #[test]
+    fn malformed_class_headers_are_not_indexed() {
+        // 残缺 class 头(裸关键字/无名/无冒号/名称后跟非括号内容)不产生类符号。
+        let source = "class\nclass A\nclass A + B:\nclass Real:\n    pass\n";
+        let module = parse_python_module(source);
+        assert_eq!(
+            module
+                .classes
+                .iter()
+                .map(|class| class.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Real"]
+        );
+        assert_eq!(module.classes[0].start_line, 3);
+        assert_eq!(module.classes[0].end_line, module.line_count);
+    }
+
+    #[test]
+    fn malformed_def_headers_are_not_indexed() {
+        // 残缺 def 头(裸 async/裸 def/名称后无参数括号)不产生方法符号。
+        let source = "async\ndef\ndef f:\nclass A:\n    def ok(self):\n        pass\n";
+        let module = parse_python_module(source);
+        assert_eq!(
+            module
+                .methods
+                .iter()
+                .map(|method| method.name.as_str())
+                .collect::<Vec<_>>(),
+            ["ok"]
+        );
+        assert_eq!(module.methods[0].line, 4);
+    }
+
+    #[test]
+    fn malformed_import_statements_contribute_no_bindings() {
+        // 裸 from / from 无 import / 绑定名后跟随裸词 / as 别名后多余内容都跳过。
+        let source = "from\nfrom os\nimport a b\nimport a as b c\nimport os.path\n";
+        let module = parse_python_module(source);
+        let imports: Vec<(&str, &str, Option<&str>)> = module
+            .imports
+            .iter()
+            .map(|item| {
+                (
+                    item.binding.as_str(),
+                    item.module.as_str(),
+                    item.symbol.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(imports, [("os", "os", None)]);
+    }
+
+    #[test]
+    fn instance_assignment_requires_instantiation_call() {
+        // 模块级 `name = Class` 不带调用括号不算实例赋值。
+        let source = "avatar = Avatar\nservice = Service()\nif True:\n    nested = Avatar()\n";
+        let module = parse_python_module(source);
+        assert_eq!(
+            module
+                .instances
+                .iter()
+                .map(|item| (item.variable.as_str(), item.class_name.as_str(), item.line))
+                .collect::<Vec<_>>(),
+            [("service", "Service", 1)]
+        );
+    }
+
+    #[test]
+    fn qualified_self_and_non_identifier_targets_are_skipped() {
+        // `x.self.hp` 中带限定前缀的 self 被跳过;`self.1` 后跟非标识符不记属性。
+        let source = "class A:\n    def m(self):\n        x.self.hp = 1\n        self.1 = 3\n        self.ok = 2\n";
+        let module = parse_python_module(source);
+        assert_eq!(
+            module
+                .attributes
+                .iter()
+                .map(|attribute| attribute.name.as_str())
+                .collect::<Vec<_>>(),
+            ["ok"]
+        );
+    }
+
+    #[test]
+    fn bracketed_lhs_still_yields_self_attribute() {
+        // '=' 前出现成对括号按深度屏蔽,下标赋值仍能定位 self 属性。
+        let source = "class A:\n    def m(self):\n        self.items[0] = 1\n";
+        let module = parse_python_module(source);
+        assert_eq!(
+            module
+                .attributes
+                .iter()
+                .map(|attribute| (attribute.name.as_str(), attribute.line, attribute.character))
+                .collect::<Vec<_>>(),
+            [("items", 2, 8)]
+        );
+    }
+
+    #[test]
+    fn augmented_and_comparative_assignments_are_not_simple() {
+        // `+=` 与 `==` 都不算简单赋值,不产生 self 属性。
+        let source = "class A:\n    def m(self):\n        self.hp += 1\n        if self.hp == 100:\n            self.full = True\n";
+        let module = parse_python_module(source);
+        assert_eq!(
+            module
+                .attributes
+                .iter()
+                .map(|attribute| attribute.name.as_str())
+                .collect::<Vec<_>>(),
+            ["full"]
+        );
+    }
+
+    #[test]
+    fn decorators_skip_comment_lines_and_stop_at_plain_code() {
+        // 装饰器回溯:同行缩进的注释行跳过继续向上,普通代码行终止回溯。
+        let source = "class A:\n    # 注释\n    @b\n    def m(self):\n        pass\n\nclass B:\n    y = 1\n    def n(self):\n        pass\n";
+        let module = parse_python_module(source);
+        let m = module
+            .methods
+            .iter()
+            .find(|item| item.name == "m")
+            .expect("method m");
+        assert_eq!(m.decorators, ["@b"]);
+        let n = module
+            .methods
+            .iter()
+            .find(|item| item.name == "n")
+            .expect("method n");
+        assert!(n.decorators.is_empty());
+    }
 }

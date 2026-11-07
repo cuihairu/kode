@@ -110,3 +110,57 @@ pub fn dump_symbols(repo_root: &Path) -> String {
 pub fn entity_of_file(path: &str) -> Option<String> {
     def_entity_name(path)
 }
+
+#[cfg(test)]
+mod tests {
+    use kode_parser::dep::ParsedUnit;
+
+    use super::{entity_of_file, parse_by_kind};
+
+    /// ParsedUnit → 稳定标签(测试断言用;变体归属一目了然)。
+    fn unit_tag(unit: Option<ParsedUnit>) -> &'static str {
+        match unit {
+            Some(ParsedUnit::Def(_)) => "def",
+            Some(ParsedUnit::Entities(_)) => "entities",
+            Some(ParsedUnit::Types(_)) => "types",
+            Some(ParsedUnit::Alias(_)) => "alias",
+            None => "none",
+        }
+    }
+
+    /// kind 分派面:四种语料 kind 各自落到对应 ParsedUnit,未知 kind 显式 None
+    /// (collect_corpus 只产这四种,兜底分支是防御性断言面)。
+    #[test]
+    fn parse_by_kind_dispatches_all_corpus_kinds() {
+        assert_eq!(unit_tag(parse_by_kind("def", "<root/>")), "def");
+        assert_eq!(unit_tag(parse_by_kind("entities", "<root/>")), "entities");
+        assert_eq!(unit_tag(parse_by_kind("types", "<root/>")), "types");
+        assert_eq!(
+            unit_tag(parse_by_kind("alias", "<root/>")),
+            "alias",
+            "alias kind 必须落 Alias 解析(语料含属性式 alias.xml)"
+        );
+        assert_eq!(
+            unit_tag(parse_by_kind("unknown-kind", "<root/>")),
+            "none",
+            "未知 kind 必须显式 None"
+        );
+        assert_eq!(
+            unit_tag(parse_by_kind("", "<root/>")),
+            "none",
+            "空 kind 必须显式 None"
+        );
+    }
+
+    /// entity_of_file 转发 def_entity_name:取文件茎,无茎路径返回 None。
+    #[test]
+    fn entity_of_file_delegates_to_def_entity_name() {
+        assert_eq!(
+            entity_of_file("/x/entities/Avatar.def"),
+            Some("Avatar".into())
+        );
+        assert_eq!(entity_of_file("Car.def"), Some("Car".into()));
+        assert_eq!(entity_of_file(".."), None, "父目录引用无文件茎");
+        assert_eq!(entity_of_file(""), None, "空路径无文件茎");
+    }
+}

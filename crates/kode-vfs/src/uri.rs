@@ -393,4 +393,32 @@ mod tests {
         assert_eq!(CanonicalUri::from_path("a/b/../..").as_path(), "/");
         assert_eq!(CanonicalUri::from_path("a/./b").as_path(), "a/b");
     }
+
+    #[test]
+    fn file_uri_with_host_but_no_path_is_not_absolute() {
+        // file://host(之后连 '/' 都没有)→ NotAbsolute,不猜工作目录。
+        assert!(matches!(
+            CanonicalUri::parse("file://localhost"),
+            Err(UriError::NotAbsolute)
+        ));
+        assert!(matches!(
+            CanonicalUri::parse("file://server"),
+            Err(UriError::NotAbsolute)
+        ));
+    }
+
+    #[test]
+    fn plain_paths_and_colon_inside_segment_parse_as_paths() {
+        // 纯路径直入 parse(无任何 scheme)→ 与 from_path 同一身份。
+        assert_eq!(
+            CanonicalUri::parse("/w/demo/x.def").unwrap(),
+            CanonicalUri::from_path("/w/demo/x.def")
+        );
+        // 路径段内冒号:`/w/odd` 含 '/' 不是合法 scheme 字符 → 按普通路径收,
+        // 冒号保留在路径里。
+        let odd = CanonicalUri::parse("/w/odd:name.def").unwrap();
+        assert_eq!(odd.as_path(), "/w/odd:name.def");
+        // 盘符后无 '/':同样规范成 /C:/... 形态(不丢路径)。
+        assert_eq!(CanonicalUri::from_path("c:x.def").as_path(), "/C:/x.def");
+    }
 }

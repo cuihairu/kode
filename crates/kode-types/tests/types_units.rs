@@ -2,7 +2,7 @@
 //! 环与缺失均为显式诊断 + 有限截断;样例同时作为文档样例(pr-008.md 引用)。
 
 use kode_parser::model::{parse_alias, parse_types};
-use kode_types::{ChainStatus, EdgeKind, TypeClass, TypeGraph, TypeNode};
+use kode_types::{ChainStatus, EdgeKind, TypeClass, TypeGraph, TypeId, TypeNode};
 
 fn graph_with_types(xml: &str) -> TypeGraph {
     let mut g = TypeGraph::new();
@@ -181,6 +181,92 @@ fn find_cycles_reports_each_graph_cycle() {
             vec!["SELF".to_string(), "SELF".to_string()],
         ]
     );
+}
+
+/// 边种/名称分类的字符串面:golden 与报告消费这些拼写,必须稳定。
+#[test]
+fn edge_kind_and_type_class_labels_are_stable() {
+    assert_eq!(EdgeKind::AliasTarget.as_str(), "alias_target");
+    assert_eq!(EdgeKind::ArrayElement.as_str(), "array_element");
+    assert_eq!(EdgeKind::Field.as_str(), "field");
+    assert_eq!(EdgeKind::TypeRef.as_str(), "type_ref");
+    assert_eq!(EdgeKind::ComponentOf.as_str(), "component_of");
+    assert_eq!(EdgeKind::Inherits.as_str(), "inherits");
+
+    assert_eq!(TypeClass::Builtin.as_str(), "builtin");
+    assert_eq!(TypeClass::Alias.as_str(), "alias");
+    assert_eq!(TypeClass::Array.as_str(), "array");
+    assert_eq!(TypeClass::FixedDict.as_str(), "fixed_dict");
+    assert_eq!(TypeClass::Entity.as_str(), "entity");
+    assert_eq!(TypeClass::Unknown.as_str(), "unknown");
+}
+
+/// 同名重复声明:先到先得,重复条目的节点与边一并跳过(不叠加双份)。
+#[test]
+fn duplicate_declarations_keep_the_first() {
+    let mut g = TypeGraph::new();
+    g.add_alias(&parse_alias("<root><X> UINT16 </X></root>"));
+    // 同名 alias.xml 再声明 → 跳过。
+    g.add_alias(&parse_alias("<root><X> INT32 </X></root>"));
+    // types.xml 同名条目同样跳过。
+    g.add_types(&parse_types("<root><X> STRING </X></root>"));
+
+    assert_eq!(g.nodes.len(), 1, "同名只建一个节点");
+    assert_eq!(g.edges.len(), 1, "重复条目的边不叠加");
+    let chain = g.resolve_alias_chain("X");
+    assert_eq!(chain.chain, ["X", "UINT16"], "保留首个声明的指向");
+    assert_eq!(chain.status, ChainStatus::Resolved);
+}
+
+/// 从非别名节点(容器/实体)发起别名链:无指向,链即自身且自身已知(已解析)。
+#[test]
+fn alias_chain_from_non_alias_node_is_a_single_known_element() {
+    let mut g = graph_with_types(
+        "<root>\n\
+         \x20 <IDS>\n ARRAY\n <of> UINT32 </of>\n </IDS>\n\
+         \x20 <POS>\n FIXED_DICT\n <Properties><x><Type> FLOAT </Type></x></Properties>\n </POS>\n\
+         </root>",
+    );
+    g.add_def("Hero", &kode_parser::model::parse_def("<root/>"));
+    for name in ["IDS", "POS", "Hero"] {
+        let chain = g.resolve_alias_chain(name);
+        assert_eq!(chain.chain, [name], "{name} 无别名指向");
+        assert_eq!(
+            chain.status,
+            ChainStatus::Resolved,
+            "{name} 是图内已注册节点"
+        );
+    }
+}
+
+/// 数组无 `<of>` 元素:节点保留,但无数组元素边(缺元素类型是真实语料形态)。
+#[test]
+fn array_without_of_element_keeps_node_without_element_edge() {
+    let g = graph_with_types("<root><NOELEM>\n ARRAY\n </NOELEM></root>");
+    assert_eq!(g.nodes.len(), 1);
+    assert_eq!(g.classify("NOELEM"), TypeClass::Array);
+    let id = g.by_name["NOELEM"];
+    assert!(
+        !g.edges
+            .iter()
+            .any(|e| e.from == id && e.kind == EdgeKind::ArrayElement),
+        "无 <of> 就不产数组元素边"
+    );
+}
+
+/// 空指向别名:链在空指向处终止(不空转),自身为图内节点 → 已解析。
+#[test]
+fn alias_with_empty_target_stops_walking_and_stays_resolved() {
+    // 空指向别名只能由直接灌图构造(解析器侧空条目/空 Type 均已跳过)。
+    let mut g = TypeGraph::new();
+    g.nodes.push(TypeNode::Alias {
+        name: String::from("BARE"),
+        target: String::new(),
+    });
+    g.by_name.insert(String::from("BARE"), TypeId(0));
+    let chain = g.resolve_alias_chain("BARE");
+    assert_eq!(chain.chain, ["BARE"], "空指向终止链,不产生后续元素");
+    assert_eq!(chain.status, ChainStatus::Resolved);
 }
 
 /// 组件边与属性类型引用边(实体 → 组件/类型引用,IDX-002 面)。

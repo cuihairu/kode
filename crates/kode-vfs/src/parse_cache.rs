@@ -201,4 +201,32 @@ mod tests {
         assert_ne!(content_fingerprint("abc"), content_fingerprint("abd"));
         assert_ne!(content_fingerprint("ab"), content_fingerprint("abc"));
     }
+
+    #[test]
+    fn debug_fmt_shows_entry_counts_not_values() {
+        // Debug 不打印 V(可能巨大),只打印 valid/negative 条目数。
+        let mut cache: ParseCache<String> = ParseCache::new();
+        assert_eq!(format!("{cache:?}"), "ParseCache { valid: 0, negative: 0 }");
+        let k = key(1, "/w/a.def");
+        cache.insert(k.clone(), content_fingerprint("v"), "big-ast".into());
+        cache.insert_negative(key(2, "/w/b.def"), content_fingerprint("bad"), "syntax");
+        let dbg = format!("{cache:?}");
+        assert!(dbg.contains("valid: 1"), "{dbg}");
+        assert!(dbg.contains("negative: 1"), "{dbg}");
+        assert!(!dbg.contains("big-ast"), "V 不得泄漏进 Debug");
+    }
+
+    #[test]
+    fn clear_empties_both_valid_and_negative() {
+        let mut cache: ParseCache<String> = ParseCache::new();
+        let k = key(1, "/w/a.def");
+        cache.insert(k.clone(), content_fingerprint("v"), "ast".into());
+        cache.insert_negative(key(2, "/w/b.def"), content_fingerprint("bad"), "syntax");
+        assert_eq!(cache.valid_len(), 1);
+        assert_eq!(cache.negative_len(), 1);
+        cache.clear();
+        assert_eq!(cache.valid_len(), 0);
+        assert_eq!(cache.negative_len(), 0);
+        assert!(cache.get(&k, content_fingerprint("v")).is_none());
+    }
 }

@@ -329,4 +329,74 @@ mod tests {
         }
         std::fs::remove_dir_all(&dir).unwrap();
     }
+
+    #[test]
+    fn max_depth_zero_stops_descending() {
+        // 深度封顶:第 0 层可见,sub/ 整层截断(防环/防失控)。
+        let dir = temp_dir("depth");
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("top.def"), "").unwrap();
+        std::fs::write(dir.join("sub/deep.def"), "").unwrap();
+        let opts = WalkOptions {
+            max_depth: 0,
+            ..Default::default()
+        };
+        let (entries, _) = scan(&dir, &opts);
+        assert_eq!(entries.len(), 1, "{entries:?}");
+        assert!(entries[0].path.ends_with("top.def"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn file_symlinks_are_included_but_dir_symlinks_not_expanded() {
+        let dir = temp_dir("flink");
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("sub/target.def"), "").unwrap();
+        // 文件 symlink:按文件收录(分类看链接路径的扩展名)。
+        std::os::unix::fs::symlink(dir.join("sub/target.def"), dir.join("link.def")).unwrap();
+        // 悬空 symlink:metadata 失败 → 不当目录,仍按文件收录。
+        std::os::unix::fs::symlink(dir.join("gone.def"), dir.join("dangling.def")).unwrap();
+        // 目录 symlink:不展开。
+        std::os::unix::fs::symlink(dir.join("sub"), dir.join("dirlink")).unwrap();
+
+        let (entries, stats) = scan(&dir, &WalkOptions::default());
+        let names: Vec<String> = entries
+            .iter()
+            .map(|e| e.path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert!(names.contains(&"link.def".to_string()), "{names:?}");
+        assert!(names.contains(&"dangling.def".to_string()), "{names:?}");
+        // target.def 只经 sub/(真实目录)收录一次;dirlink/ 不展开。
+        assert_eq!(
+            names.iter().filter(|n| *n == "target.def").count(),
+            1,
+            "{names:?}"
+        );
+        assert!(
+            !entries
+                .iter()
+                .any(|e| e.path.to_string_lossy().contains("dirlink")),
+            "{entries:?}"
+        );
+        assert_eq!(stats.files, 3, "{names:?}");
+        let link = entries
+            .iter()
+            .find(|e| e.path.ends_with("link.def"))
+            .unwrap();
+        assert_eq!(link.kind, FileKind::Def);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn glob_prefix_and_suffix_parts_match_whole_component() {
+        // 首段(前缀)必须顶到组件开头。
+        assert!(glob_match_component("tmp*", "tmp123"));
+        assert!(!glob_match_component("tmp*", "xtmp123"));
+        // 中段任意位置查找,尾段必须顶到结尾。
+        assert!(glob_match_component("a*b", "axb"));
+        assert!(!glob_match_component("a*b", "axbx"));
+        // 纯 '*' 通配任意组件。
+        assert!(glob_match_component("*", "whatever"));
+    }
 }
