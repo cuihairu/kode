@@ -130,12 +130,13 @@ describe('IDE-LIV 真机运行观测联验', function () {
       this.skip();
     }
     const msgId = WATCHER_QUERY_MSG_IDS[cellapp.componentType];
-    const record = await runLiveWatcherPathVerification(defaultRuntimeQueryProtocol, cellapp, '/cellapp', 1200);
+    // 真实引擎 watcher 树:值目录在 /root(实测 2026-11-07 imac 真机,叶子路径返回空)
+    const record = await runLiveWatcherPathVerification(defaultRuntimeQueryProtocol, cellapp, '/root', 1200);
     assert.ok(record.ok, `watcher 查询失败:${record.error}`);
     evidenceLines.push(formatLiveWatcherEvidence(record));
 
     // 参考侧:独立 raw socket 客户端查同路径(引擎控制台通道)
-    const reference = await referenceWatcherQuery(cellapp, msgId, '/cellapp');
+    const reference = await referenceWatcherQuery(cellapp, msgId, '/root');
     evidenceLines.push(
       `参考侧(raw socket): type=${reference.type} path='${reference.path}' keys=${JSON.stringify(reference.keys)} values=${JSON.stringify(reference.values)}`
     );
@@ -192,10 +193,11 @@ describe('IDE-LIV 真机运行观测联验', function () {
     const readings = [];
     const readValues: Array<{ target: ReturnType<typeof observationTargetFor>; value: number }> = [];
     for (const cellapp of cellapps.slice(0, 2)) {
-      const frames = await queryWatcherPath(cellapp, '/cellapp/uptime', 1200);
-      const value = Number(frames.find(frame => frame.type === 0)?.values['uptime'] ?? NaN);
+      const frames = await queryWatcherPath(cellapp, '/root', 1200);
+      // 真实引擎无 /cellapp/uptime 叶子,取 /root 目录值里的 gametime(每实例独立计时)
+      const value = Number(frames.find(frame => frame.type === 0)?.values['gametime'] ?? NaN);
       readValues.push({ target: observationTargetFor(cellapp), value });
-      readings.push({ component: cellapp, values: { '/cellapp/uptime': value } });
+      readings.push({ component: cellapp, values: { '/root/gametime': value } });
     }
     const points = observationsFromRound(readings, new Date().toISOString());
     const groups = groupObservationsByTarget(points);
@@ -207,7 +209,7 @@ describe('IDE-LIV 真机运行观测联验', function () {
       assert.strictEqual(bucket[0].target.targetKey, key);
     }
     evidenceLines.push(
-      `LIV-005 结论: 已测; ${describeObservationTarget(readValues[0].target)} uptime=${readValues[0].value} 与 ${describeObservationTarget(readValues[1].target)} uptime=${readValues[1].value} 分属 ${keys.join('/')} 两桶,零混值`
+      `LIV-005 结论: 已测; ${describeObservationTarget(readValues[0].target)} gametime=${readValues[0].value} 与 ${describeObservationTarget(readValues[1].target)} gametime=${readValues[1].value} 分属 ${keys.join('/')} 两桶,零混值`
     );
   });
 
@@ -220,7 +222,7 @@ describe('IDE-LIV 真机运行观测联验', function () {
     const tracker = createObservationFreshnessTracker(() => new Date().toISOString());
     const target = observationTargetFor(cellapp);
     // ① 真实成功一轮 → live
-    await queryWatcherPath(cellapp, '/cellapp', 1200);
+    await queryWatcherPath(cellapp, '/root', 1200);
     tracker.recordRound(target, true);
     const live = tracker.view(target.targetKey)!;
     assert.strictEqual(live.state, 'live');
@@ -228,7 +230,7 @@ describe('IDE-LIV 真机运行观测联验', function () {
     const unreachable: KBEngineComponentInfo = { ...cellapp, intaddr: '127.0.0.1', intport: 1 };
     let failed = false;
     try {
-      await queryWatcherPath(unreachable, '/cellapp', 500);
+      await queryWatcherPath(unreachable, '/root', 500);
     } catch {
       failed = true;
     }
@@ -238,7 +240,7 @@ describe('IDE-LIV 真机运行观测联验', function () {
     assert.ok(stale.lastSuccessAt, '过期态必须保留旧值取值时刻');
     assert.ok(failed, '不可达地址查询应真实失败');
     // ③ 再真实成功 → 恢复 live
-    await queryWatcherPath(cellapp, '/cellapp', 1200);
+    await queryWatcherPath(cellapp, '/root', 1200);
     tracker.recordRound(target, true);
     const restored = tracker.view(target.targetKey)!;
     assert.strictEqual(restored.state, 'live', '重连真实成功后必须恢复实时');
@@ -258,7 +260,7 @@ describe('IDE-LIV 真机运行观测联验', function () {
     // 从引擎日志里找带 File "…" line N 的真实异常行
     let rawLine: string | null = null;
     for (const name of fs.readdirSync(logDir)) {
-      if (!name.endsWith('.txt')) continue;
+      if (!name.endsWith('.txt') && !name.endsWith('.out') && !name.endsWith('.log')) continue;
       const text = fs.readFileSync(path.join(logDir, name), 'utf8');
       const match = text.split('\n').find(line => /File\s+"/.test(line));
       if (match) {
