@@ -154,6 +154,15 @@ mod tests {
     }
 
     #[test]
+    fn missing_root_is_reported_as_scan_error() {
+        let root = std::env::temp_dir().join(format!("kode-mcp-missing-docs-{}", std::process::id()));
+        let result = search_docs(&root, &[], "anything", 20).unwrap();
+        assert_eq!(result["count"], 0);
+        assert_eq!(result["scan_errors"], 1);
+        assert_eq!(result["truncated"], false);
+    }
+
+    #[test]
     fn no_match_is_honest_empty() {
         let root = std::env::temp_dir().join(format!("kode-mcp-docs-none-{}", std::process::id()));
         let dir = root.join("docs");

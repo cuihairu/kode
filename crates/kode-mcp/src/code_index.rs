@@ -220,6 +220,15 @@ mod tests {
     }
 
     #[test]
+    fn missing_scripts_directory_is_reported() {
+        let root = std::env::temp_dir().join(format!("kode-mcp-missing-py-{}", std::process::id()));
+        let result = search_symbols(&root, "anything", 20).unwrap();
+        assert_eq!(result["count"], 0);
+        assert_eq!(result["scan_errors"], 1);
+        assert_eq!(result["truncated"], false);
+    }
+
+    #[test]
     fn indexes_classes_functions_and_methods_with_lines() {
         let root = std::env::temp_dir().join(format!("kode-mcp-symbols-{}", std::process::id()));
         let scripts = root.join("scripts").join("base");
