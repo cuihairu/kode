@@ -24,7 +24,6 @@ import type { DefMethodGap, PythonMethodNotInDefGap } from './defMethodConsisten
 import { getHookByName } from './hooks';
 import { clearDefCallChainFileCache } from './defCallChain';
 import { PYTHON_BUILTIN_TYPE_ANNOTATIONS } from './pythonTypeStubs';
-import { buildPythonSymbolsInRust } from './pythonCallGraphRust';
 import { propertyFlagDomainList } from './defAnalyzer';
 import type { PropertyFlagDomain } from './defAnalyzer';
 import { findOwnerSelfPropertyAccesses, findOwnerSelfReceiverCalls } from './pythonSelfScope';
@@ -121,7 +120,7 @@ export interface IndexedMethodDefinition extends EntityMethodDefinitionLocation 
   owner: DefinitionOwnerRef;
 }
 
-interface PythonOwnerFile {
+export interface PythonOwnerFile {
   ownerKind: DefinitionSemanticCategory;
   ownerName: string;
   section?: EntityMethodSection;
@@ -555,10 +554,10 @@ export class EntityMappingManager {
     }
 
     const pythonOwnerFiles = this.collectPythonOwnerFiles(semantics);
-    const pythonMethods = await this.collectPythonMethods(pythonOwnerFiles);
+    const pythonMethods = await collectPythonMethods(pythonOwnerFiles);
     const propertyDefinitions = this.collectPropertyDefinitions(semantics);
     const methodDefinitions = this.collectMethodDefinitions(semantics);
-    this.bindPythonMethods(methodDefinitions, pythonMethods);
+    bindPythonMethods(methodDefinitions, pythonMethods);
 
     // PR4 A4-2:真实依赖边入库——本 .def 的解析读过的父链/接口/组件 .def
     // (owner filePath 集合)。父 .def 变更经依赖图反向闭包只失效这些子
@@ -936,85 +935,6 @@ export class EntityMappingManager {
       children: property.children.map(child => this.rebasePropertyPath(child, prefix)),
       arrayElement: property.arrayElement ? this.rebasePropertyPath(property.arrayElement, prefix) : undefined
     };
-  }
-
-  private async collectPythonMethods(ownerFiles: PythonOwnerFile[]): Promise<IndexedPythonMethodLocation[]> {
-    const readableFiles: Array<{ path: string; text: string }> = [];
-    for (const ownerFile of ownerFiles) {
-      if (!fs.existsSync(ownerFile.filePath)) {
-        continue;
-      }
-      readableFiles.push({ path: ownerFile.filePath, text: readFileSyncUtf8Recorded(ownerFile.filePath) });
-    }
-
-    // C-20:Rust 符号表主路径(AST 权威——方法枚举与自身调用点不含注释/字符串
-    // 误报);Rust 不可用(无门/失败/形状不合规)回退 TS 正则自建,行为不变。
-    if (readableFiles.length > 0) {
-      const rustSymbols = await buildPythonSymbolsInRust(readableFiles);
-      if (rustSymbols) {
-        return rustSymbolsToIndexedMethodLocations(readableFiles, rustSymbols);
-      }
-    }
-
-    const methods: IndexedPythonMethodLocation[] = [];
-    for (const file of readableFiles) {
-      for (const method of parsePythonMethodBlocks(file.text, file.path)) {
-        methods.push({
-          ...method
-        });
-      }
-    }
-
-    return methods;
-  }
-
-  private bindPythonMethods(
-    methodDefinitions: IndexedMethodDefinition[],
-    pythonMethods: IndexedPythonMethodLocation[]
-  ): void {
-    const byOwner = new Map<string, IndexedMethodDefinition[]>();
-    for (const definition of methodDefinitions) {
-      const key = buildMethodOwnerBindingKey(definition.identity);
-      const list = byOwner.get(key) || [];
-      list.push(definition);
-      byOwner.set(key, list);
-    }
-
-    for (const method of pythonMethods) {
-      const ownerBindingKeys = [
-        buildMethodOwnerBindingKey({
-          ownerKind: inferOwnerKindFromPythonFile(method.filePath) || 'entity',
-          ownerName: inferOwnerNameFromPythonFile(method.filePath),
-          section: inferMethodSectionFromPythonFile(method.filePath),
-          symbolName: method.methodName
-        }),
-        buildMethodOwnerBindingKey({
-          ownerKind: inferOwnerKindFromPythonFile(method.filePath) || 'interface',
-          ownerName: inferOwnerNameFromPythonFile(method.filePath),
-          section: inferMethodSectionFromPythonFile(method.filePath),
-          symbolName: method.methodName
-        }),
-        buildMethodOwnerBindingKey({
-          ownerKind: inferOwnerKindFromPythonFile(method.filePath) || 'component',
-          ownerName: inferOwnerNameFromPythonFile(method.filePath),
-          section: inferMethodSectionFromPythonFile(method.filePath),
-          symbolName: method.methodName
-        })
-      ];
-
-      const boundDefinition = ownerBindingKeys
-        .map(key => byOwner.get(key)?.[0])
-        .find((candidate): candidate is IndexedMethodDefinition => !!candidate);
-
-      if (!boundDefinition) {
-        continue;
-      }
-
-      method.binding = {
-        identity: boundDefinition.identity,
-        pythonFile: method.filePath
-      };
-    }
   }
 
   /** 挂单个 python watcher(工作区根与外部资产根共用;事件经合并器去重) */
@@ -2983,5 +2903,5 @@ export class EntityMappingManager {
   }
 }
 
-import { buildFallbackPythonPath, filterMethodDefinitionsBySection, buildMethodOwnerBindingKey, sameIdentity, inferOwnerNameFromPythonFile, inferOwnerKindFromPythonFile, inferMethodSectionFromPythonFile, uniqueFilePaths, escapeRegExp, hasMethodImplementationInSnapshot, getLineNumber, getColumnNumber, normalizePropertyLookupPath, rustSymbolsToIndexedMethodLocations, parsePythonMethodBlocks } from './entityMappingHelpers';
+import { bindPythonMethods, buildFallbackPythonPath, filterMethodDefinitionsBySection, sameIdentity, inferOwnerNameFromPythonFile, inferOwnerKindFromPythonFile, inferMethodSectionFromPythonFile, uniqueFilePaths, escapeRegExp, hasMethodImplementationInSnapshot, collectPythonMethods, getLineNumber, getColumnNumber, normalizePropertyLookupPath, parsePythonMethodBlocks } from './entityMappingHelpers';
 export { filterMethodDefinitionsBySection, buildMethodOwnerBindingKey, sameIdentity, inferOwnerKindFromPythonFile, inferMethodSectionFromPythonFile, uniqueFilePaths, escapeRegExp, getLineNumber, getColumnNumber, rustSymbolsToIndexedMethodLocations, parsePythonMethodBlocks } from './entityMappingHelpers';

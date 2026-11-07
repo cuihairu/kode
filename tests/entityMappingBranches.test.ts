@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EntityMappingManager, type EntityMapping, type DefinitionSymbolIdentity } from '../src/entityMapping';
+import { bindPythonMethods, collectPythonMethods } from '../src/entityMappingHelpers';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 
 // 批60 分支覆盖专项(entityMapping.ts):逐分支补齐——
@@ -29,8 +30,6 @@ interface ManagerInternals {
   storeIndex(index: unknown): void;
   getWorkspaceRoot(filePath: string): string | null;
   collectPythonOwnerFiles(semantics: unknown): unknown[];
-  collectPythonMethods(ownerFiles: Array<{ filePath: string }>): Promise<unknown[]>;
-  bindPythonMethods(definitions: unknown[], methods: Array<{ filePath: string }>): void;
   rebasePropertyPath(property: unknown, prefix: string): {
     fullPath: string;
     children: Array<{ fullPath: string }>;
@@ -203,7 +202,7 @@ describe('EntityMappingManager 私有工具的直接驱动', () => {
 
   it('collectPythonMethods 跳过不存在的 owner 文件', async () => {
     const missing = [{ filePath: p(root, 'scripts', 'base', 'Nowhere.py') }];
-    expect(await internals(manager as EntityMappingManager).collectPythonMethods(missing)).toEqual([]);
+    expect(await collectPythonMethods(missing)).toEqual([]);
   });
 
   it('bindPythonMethods 对无法推断归属的文件用三种兜底键且不绑定', () => {
@@ -226,7 +225,7 @@ describe('EntityMappingManager 私有工具的直接驱动', () => {
 
     // 非 .py 且不含 components/interfaces 段:三种归属推断全落空,
     // 依次按 entity/interface/component 兜底构键,无定义可绑
-    internals(manager as EntityMappingManager).bindPythonMethods([], [method]);
+    bindPythonMethods([], [method]);
     expect(method.binding).toBeUndefined();
   });
 

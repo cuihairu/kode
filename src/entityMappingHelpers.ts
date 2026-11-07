@@ -3,10 +3,18 @@
 // 经本模块导入回注,公开导出在 entityMapping.ts 经 re-export 保持既有导入
 // 路径不变(消费者零改动)。区域自包含(无 manager 引用),仅依赖 vscode
 // 运行时与若干类型导入。
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 import * as path from 'path';
-import type { DefinitionSymbolIdentity, IndexedPythonMethodLocation } from './entityMapping';
+import { readFileSyncUtf8Recorded } from './fileReadMetrics';
+import type {
+  DefinitionSymbolIdentity,
+  IndexedMethodDefinition,
+  IndexedPythonMethodLocation,
+  PythonOwnerFile
+} from './entityMapping';
 import type { DefMethodSection as EntityMethodSection } from './defParser';
+import { buildPythonSymbolsInRust } from './pythonCallGraphRust';
 import type { PythonSymbolCall, PythonSymbolsRustResult } from './pythonCallGraphRust';
 import type { DefinitionSemanticCategory } from './definitionSemantics';
 import { normalizeLookupPath } from './definitionSemantics';
@@ -323,3 +331,90 @@ function parsePythonSelfCalls(
   return calls;
 }
 export { buildFallbackPythonPath, inferOwnerNameFromPythonFile, hasMethodImplementationInSnapshot, normalizePropertyLookupPath };
+
+// ---------------------------------------------------------------------------
+// SRC-002(阶段 2):Python 方法索引构建协作者——manager 上
+// collectPythonMethods/bindPythonMethods 迁出(方法体原文零改动,仅去一级类缩进;
+// 二者无 this 引用:索引构建=纯输入输出,Rust 符号表主路径+TS 正则回退+属主绑
+// 定),manager 经导入回注调用。索引态(hits 缓存/失效流程)仍归 manager,
+// 按分析留待后续。
+// ---------------------------------------------------------------------------
+
+export async function collectPythonMethods(ownerFiles: PythonOwnerFile[]): Promise<IndexedPythonMethodLocation[]> {
+  const readableFiles: Array<{ path: string; text: string }> = [];
+  for (const ownerFile of ownerFiles) {
+    if (!fs.existsSync(ownerFile.filePath)) {
+      continue;
+    }
+    readableFiles.push({ path: ownerFile.filePath, text: readFileSyncUtf8Recorded(ownerFile.filePath) });
+  }
+
+  // C-20:Rust 符号表主路径(AST 权威——方法枚举与自身调用点不含注释/字符串
+  // 误报);Rust 不可用(无门/失败/形状不合规)回退 TS 正则自建,行为不变。
+  if (readableFiles.length > 0) {
+    const rustSymbols = await buildPythonSymbolsInRust(readableFiles);
+    if (rustSymbols) {
+      return rustSymbolsToIndexedMethodLocations(readableFiles, rustSymbols);
+    }
+  }
+
+  const methods: IndexedPythonMethodLocation[] = [];
+  for (const file of readableFiles) {
+    for (const method of parsePythonMethodBlocks(file.text, file.path)) {
+      methods.push({
+        ...method
+      });
+    }
+  }
+
+  return methods;
+}
+
+export function bindPythonMethods(
+  methodDefinitions: IndexedMethodDefinition[],
+  pythonMethods: IndexedPythonMethodLocation[]
+): void {
+  const byOwner = new Map<string, IndexedMethodDefinition[]>();
+  for (const definition of methodDefinitions) {
+    const key = buildMethodOwnerBindingKey(definition.identity);
+    const list = byOwner.get(key) || [];
+    list.push(definition);
+    byOwner.set(key, list);
+  }
+
+  for (const method of pythonMethods) {
+    const ownerBindingKeys = [
+      buildMethodOwnerBindingKey({
+        ownerKind: inferOwnerKindFromPythonFile(method.filePath) || 'entity',
+        ownerName: inferOwnerNameFromPythonFile(method.filePath),
+        section: inferMethodSectionFromPythonFile(method.filePath),
+        symbolName: method.methodName
+      }),
+      buildMethodOwnerBindingKey({
+        ownerKind: inferOwnerKindFromPythonFile(method.filePath) || 'interface',
+        ownerName: inferOwnerNameFromPythonFile(method.filePath),
+        section: inferMethodSectionFromPythonFile(method.filePath),
+        symbolName: method.methodName
+      }),
+      buildMethodOwnerBindingKey({
+        ownerKind: inferOwnerKindFromPythonFile(method.filePath) || 'component',
+        ownerName: inferOwnerNameFromPythonFile(method.filePath),
+        section: inferMethodSectionFromPythonFile(method.filePath),
+        symbolName: method.methodName
+      })
+    ];
+
+    const boundDefinition = ownerBindingKeys
+      .map(key => byOwner.get(key)?.[0])
+      .find((candidate): candidate is IndexedMethodDefinition => !!candidate);
+
+    if (!boundDefinition) {
+      continue;
+    }
+
+    method.binding = {
+      identity: boundDefinition.identity,
+      pythonFile: method.filePath
+    };
+  }
+}
