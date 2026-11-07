@@ -28,9 +28,9 @@ import {
   startCpuProfile
 } from '../src/cpuProfileCapture';
 import { formatTablePreview } from '../src/databaseTablePreviewCommand';
-import { DebugSessionRegistry } from '../src/debugSessionRegistry';
-import { DebugTargetTreeProvider } from '../src/debugStatusTree';
-import type { DebugStatusRow } from '../src/debugStatusBoard';
+import { DebugSessionRegistry } from '../src/debug/debugSessionRegistry';
+import { DebugTargetTreeProvider } from '../src/debug/debugStatusTree';
+import type { DebugStatusRow } from '../src/debug/debugStatusBoard';
 import { DefinitionSemanticsLoader } from '../src/definitionSemantics';
 import {
   compareTaskRunContexts,

@@ -4,8 +4,8 @@ import {
   parseDebugSessionName,
   buildDebugTargetBoard,
   applySessionEndBehavior
-} from '../src/debugSessionRegistry';
-import { buildDebugStatusRows } from '../src/debugStatusBoard';
+} from '../src/debug/debugSessionRegistry';
+import { buildDebugStatusRows } from '../src/debug/debugStatusBoard';
 import { DEFAULT_TARGET_ID } from '../src/serverManager';
 
 // IDE-DBG-005 调试会话关联到运行目标:按 launch.json 生成条目名

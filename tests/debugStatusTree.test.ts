@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { DebugTargetTreeProvider, debugPhaseLabel } from '../src/debugStatusTree';
+import { DebugTargetTreeProvider, debugPhaseLabel } from '../src/debug/debugStatusTree';
 import { ThemeIcon } from './helpers/vscodeStub';
-import type { DebugStatusRow } from '../src/debugStatusBoard';
+import type { DebugStatusRow } from '../src/debug/debugStatusBoard';
 
 // IDE-DBG-008 工作台面:Debug Targets 树逐目标一行,四态在描述/图标上
 // 各自可辨,点击带 serverKey 参数走 kbengine.debug.focusTarget 定位命令

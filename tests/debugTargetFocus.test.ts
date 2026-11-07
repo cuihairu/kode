@@ -6,7 +6,7 @@ import {
   runListeningRowFocus,
   type ListeningRowEffects,
   type ListeningRowResult
-} from '../src/debugTargetFocus';
+} from '../src/debug/debugTargetFocus';
 
 // Debug Targets「监听」行的下一步控件(端口模式补控件):提示文案、控件面、
 // 三个动作的收口与命名实例行的诚实降级——副作用全经 effects 注入,这里直接

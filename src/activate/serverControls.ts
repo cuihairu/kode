@@ -46,10 +46,10 @@ import {
   SESSION_END_BEHAVIOR_DEFAULT,
   type DebugSessionEndBehavior,
   type DebugSessionLike,
-} from '../debugSessionRegistry';
-import { buildDebugStatusRows, type DebugInjectionEntry } from '../debugStatusBoard';
-import { DebugTargetTreeProvider } from '../debugStatusTree';
-import { runListeningRowFocus } from '../debugTargetFocus';
+} from '../debug/debugSessionRegistry';
+import { buildDebugStatusRows, type DebugInjectionEntry } from '../debug/debugStatusBoard';
+import { DebugTargetTreeProvider } from '../debug/debugStatusTree';
+import { runListeningRowFocus } from '../debug/debugTargetFocus';
 import { RuntimeLogLevel } from '../logHub';
 import { DEBUG_ATTACH_MODE_STATE_KEY, DebugConfigManager } from '../debugConfig';
 import {

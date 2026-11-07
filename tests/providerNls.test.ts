@@ -9,11 +9,11 @@ import { setL10nBundle } from './fake-vscode/l10n';
 import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
 import { RemoteServerTreeItem, type RemoteServerNode } from '../src/remoteServerTree';
 import { TelnetTreeItem } from '../src/telnetTree';
-import { DebugTargetTreeItem, debugPhaseLabel } from '../src/debugStatusTree';
+import { DebugTargetTreeItem, debugPhaseLabel } from '../src/debug/debugStatusTree';
 import { QuickActionTreeItem } from '../src/quickActionTree';
 import { buildHistoryItems, historyViewTitle, summarizeGitError } from '../src/gitHistoryTree';
 import { buildRangeHistoryItems, rangeHistoryViewTitle } from '../src/gitRangeHistoryTree';
-import type { DebugStatusRow } from '../src/debugStatusBoard';
+import type { DebugStatusRow } from '../src/debug/debugStatusBoard';
 import type { TelnetTarget } from '../src/telnetService';
 
 const zh = zhCnBundle as Record<string, string>;

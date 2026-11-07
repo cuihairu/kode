@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildDebugStatusRows, resolveTargetDebugPhase } from '../src/debugStatusBoard';
-import { DebugSessionRegistry, type DebugSessionLink } from '../src/debugSessionRegistry';
+import { buildDebugStatusRows, resolveTargetDebugPhase } from '../src/debug/debugStatusBoard';
+import { DebugSessionRegistry, type DebugSessionLink } from '../src/debug/debugSessionRegistry';
 import { DEFAULT_TARGET_ID } from '../src/serverManager';
 
 // IDE-DBG-008 工作台目标调试状态:把三份事实(进程在册面/注入结果面/
