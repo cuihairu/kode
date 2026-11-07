@@ -21,6 +21,15 @@ export interface DatabaseConnectionConfigSnapshot {
   port: number;
   user?: string;
   database?: string;
+  /**
+   * 后端种类(KODE-REDIS-UI-001):缺省按既有 mysql 口径;redis 时 database
+   * 语义为 SELECT 索引(引擎 <databaseName>,缺省 "0"),auth 为 AUTH 口令。
+   */
+  backend?: 'mysql' | 'redis';
+  /** redis AUTH 口令(引擎 <auth.password>;只作连接要素,绝不回显)。 */
+  auth?: string;
+  /** redis 库索引(引擎 <databaseName> 解析为数字;缺省 0)。 */
+  dbIndex?: number;
 }
 
 interface RegistryPayload {

@@ -80,6 +80,7 @@ import { runBotsAddCommand, runBotsCountCommand, type BotsControlDeps } from '..
 import { TelnetTreeProvider } from '../telnetTree';
 import { ensureConfigDerivedScanRoot } from '../configDerive';
 import { PlayerDataTreeProvider, queryPlayerByDbid, testPlayerDatabaseConnection } from '../playerDataPanel';
+import { runRedisKeyspacePreviewCommand } from '../redisKeyspaceCommand';
 
 export interface ServerControlsDeps {
   context: vscode.ExtensionContext;
@@ -175,6 +176,15 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
         return;
       }
       const message = await queryPlayerByDbid(dbid);
+      void vscode.window.showInformationMessage(message);
+    }),
+    // KODE-REDIS-UI-001:redis 键空间只读预览(仅 dbType='redis' 时生效;
+    // mysql 后端如实降级说明)。键空间按 kbe 源码口径枚举,绝不模拟表结构。
+    vscode.commands.registerCommand('kbengine.playerData.previewRedisKeyspace', async () => {
+      await ensureConfigDerivedScanRoot().catch(() => {
+        /* 同上:派生失败走降级文案 */
+      });
+      const message = await runRedisKeyspacePreviewCommand();
       void vscode.window.showInformationMessage(message);
     })
   );

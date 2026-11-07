@@ -72,10 +72,11 @@ describe('CLONE-P5 玩家数据只读面板(骨架)', () => {
     expect(password).toContain('明文可读');
   });
 
-  it('redis 类型如实标注「仅展示——连接面仅支持 mysql」', () => {
+  it('redis 类型如实标注(KODE-REDIS-UI-001:连接面支持双后端,不再仅展示)', () => {
     const nodes = buildPlayerDataTreeNodes(profile({ dbType: 'redis' }));
     expect(nodes[0].label).toContain('redis');
-    expect(nodes[0].label).toContain('仅展示');
+    // redis 已接入连接/预览面,不再标注「仅展示——连接面仅支持 mysql」
+    expect(nodes[0].label).not.toContain('仅展示');
   });
 
   it('dbid 查询 SQL:仅十进制正整数;前缀缺省 tbl_,反引号剥除', () => {

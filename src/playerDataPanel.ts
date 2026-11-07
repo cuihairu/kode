@@ -50,10 +50,9 @@ export function buildPlayerDataTreeNodes(
       }
     ];
   }
-  const kind =
-    profile.dbType === 'mysql'
-      ? 'mysql'
-      : `${profile.dbType}(仅展示——连接面仅支持 mysql)`;
+  // KODE-REDIS-UI-001:连接面支持 mysql/redis 双后端;redis 的连接要素
+  // 与 mysql 同源(引擎 dbInterface),仅键空间/预览走 redis 面。
+  const kind = profile.dbType === 'mysql' ? 'mysql' : profile.dbType === 'redis' ? 'redis' : `${profile.dbType}(未知)`;
   const password = profile.encrypt
     ? '●●●●●●(RSA 密文,不解读)'
     : profile.passwordAvailable
