@@ -213,8 +213,10 @@ describe('setupHotReload targetState 接线(IDE-REV-021)', () => {
     expect(runCalls).toEqual(['热更']);
   });
 
-  it('源锁:extension.ts 真装配接了状态仓与双维解析器', () => {
-    const source = readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+  it('源锁:装配层真装配接了状态仓与双维解析器', () => {
+    // SRC-001 L6:装配位自 extension.ts 迁 src/activate/hotReload.ts(纯移动),源锁跟随装配层。
+    const source = readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8')
+      + readFileSync(path.join(__dirname, '..', 'src', 'activate', 'hotReload.ts'), 'utf8');
     expect(source).toContain('new HotReloadTargetStateStore');
     expect(source).toContain('resolveTargetId: async actionName =>');
     expect(source).toContain('resolveRootId: file =>');

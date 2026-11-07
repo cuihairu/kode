@@ -315,9 +315,10 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
     expect(record?.detail).toContain('digest 一致');
   });
 
-  it('源锁:extension.ts 接内容读取口,hotReload 接双证核验与窗口结算', () => {
+  it('源锁:装配层接内容读取口,hotReload 接双证核验与窗口结算', () => {
     const read = (name: string): string => readFileSync(path.join(__dirname, '..', 'src', name), 'utf8');
-    const extension = read('extension.ts');
+    // SRC-001 L6:接线位自 extension.ts 迁 src/activate/hotReload.ts(纯移动),源锁跟随装配层。
+    const extension = read('extension.ts') + read('activate/hotReload.ts');
     expect(extension).toContain('readFileContent: async file =>');
     expect(extension).toContain('vscode.workspace.fs.readFile(vscode.Uri.file(file))');
 

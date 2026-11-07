@@ -245,8 +245,9 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
     expect(record?.channel).toBe('actionName:热更');
   });
 
-  it('源锁:extension.ts 真装配经 resolveActiveProfile+resolveReloadTransport 解出通道,fire 与重试共用', () => {
-    const source = readFileSync('src/extension.ts', 'utf8');
+  it('源锁:装配层真装配经 resolveActiveProfile+resolveReloadTransport 解出通道,fire 与重试共用', () => {
+    // SRC-001 L6:装配位自 extension.ts 迁 src/activate/hotReload.ts(纯移动),源锁跟随装配层。
+    const source = readFileSync('src/extension.ts', 'utf8') + readFileSync('src/activate/hotReload.ts', 'utf8');
     expect(source).toContain('const transport = resolveReloadTransport(activeProfile.hotReload);');
     expect(source).toContain('return transport ? { transport, targetId: activeProfile.id } : null;');
     // fire 路径与失败目标重试共用同一解出口(setupHotReload 与 retry deps 各一处)

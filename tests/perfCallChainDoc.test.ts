@@ -217,6 +217,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // (顶部 import 剪 45 名):两条 extension.ts 锚点因头部 import 精简再 -43(真位
   // 重探 473/553→430/510,均在替换段之前);其后无 extension.ts 锚点。
   // baseline §7 出处锁步。extension.ts 现 3421 行。
+  // 2026-11-08(SRC-001 L6 热重载抽装):热更状态机/台账/版本簿/通道快速切换/
+  // 呈现面/临时编辑热更 567 行迁 src/activate/hotReload.ts 换 15 行调用块
+  // (顶部 import 剪 24 名):两条 extension.ts 锚点因头部 import 精简再 -23
+  // (真位重探 430/510→407/487,均在替换段之前);其后无 extension.ts 锚点。
+  // baseline §7 出处锁步。extension.ts 现 2845 行。
 
   ['src/activate/languageServices.ts', 193, "startLanguageServiceOperation('hover'"],
   ['src/activate/languageServices.ts', 244, "startLanguageServiceOperation('definition'"],
@@ -234,8 +239,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // runPyspySchedule 引入)→ 上列 9 处 extension.ts 锚点整体 +2(真位重探 683/696/980/
   // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450);
   // HOT-VER 再 +3(见上)→ 后段锚点 2373/2453;DEMO-GAME-006 再 +2(见上)→ 2375/2455。
-  ['src/extension.ts', 430, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 510, 'flushQueued()'],
+  ['src/extension.ts', 407, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 487, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。

@@ -285,8 +285,10 @@ describe('runHotReloadRevisionEvidenceCommand(展示入口)', () => {
 });
 
 describe('源锁(IDE-REV-027 接线)', () => {
-  it('extension.ts 注册命令并双路喂证据册;package.json 在册', () => {
-    const extension = readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+  it('装配层注册命令并双路喂证据册;package.json 在册', () => {
+    // SRC-001 L6:装配位自 extension.ts 迁 src/activate/hotReload.ts(纯移动),源锁跟随装配层。
+    const extension = readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8')
+      + readFileSync(path.join(__dirname, '..', 'src', 'activate', 'hotReload.ts'), 'utf8');
     expect(extension).toContain("'kbengine.hotReload.showRevisionEvidence'");
     expect(extension).toContain('runHotReloadRevisionEvidenceCommand');
     expect(extension).toContain('new HotReloadEngineDigestRegister');

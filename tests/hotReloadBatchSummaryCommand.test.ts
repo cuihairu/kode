@@ -107,11 +107,14 @@ describe('runHotReloadBatchSummaryCommand(IDE-REV-025)', () => {
     expect(shown).toHaveLength(2);
   });
 
-  it('源锁:extension.ts 注册命令并显式装配状态控制器,package.json 在册', () => {
+  it('源锁:装配层注册命令并显式装配状态控制器,package.json 在册', () => {
+    // SRC-001 L6:命令与控制器装配位自 extension.ts 迁 src/activate/hotReload.ts
+    // (纯移动),源锁跟随装配层(extension.ts + activate/*)。
     const extension = readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
-    expect(extension).toContain("'kbengine.hotReload.showBatchSummary'");
-    expect(extension).toContain('runHotReloadBatchSummaryCommand');
-    expect(extension).toContain('new HotReloadStatusController');
+    const hotReload = readFileSync(path.join(__dirname, '..', 'src', 'activate', 'hotReload.ts'), 'utf8');
+    expect(extension + hotReload).toContain("'kbengine.hotReload.showBatchSummary'");
+    expect(extension + hotReload).toContain('runHotReloadBatchSummaryCommand');
+    expect(extension + hotReload).toContain('new HotReloadStatusController');
 
     const pkg = JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as {
       contributes: { commands: Array<{ command: string }> };

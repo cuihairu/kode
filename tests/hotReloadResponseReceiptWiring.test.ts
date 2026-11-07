@@ -243,8 +243,9 @@ describe('setupHotReload accepted 回执接线(IDE-REV-022)', () => {
     expect(quickActions).toContain('onHttpResponse?: (response: HttpActionResponse) => void');
     expect(quickActions).toContain('options.onHttpResponse?.({ status: result.status, body: result.body })');
 
-    const extension = read('extension.ts');
-    expect(extension).toContain('onHttpResponse: response => sendOptions.onHttpResponse!(response)');
+    // SRC-001 L6:接线位自 extension.ts 迁 src/activate/hotReload.ts(纯移动),源锁跟随装配层。
+    const assembly = read('extension.ts') + read('activate/hotReload.ts');
+    expect(assembly).toContain('onHttpResponse: response => sendOptions.onHttpResponse!(response)');
 
     const hotReload = read('hotReload.ts');
     expect(hotReload).toContain('recordHttpDelivery');
