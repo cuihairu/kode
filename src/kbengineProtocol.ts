@@ -742,6 +742,9 @@ export async function discoverLocalComponents(
     });
 
     socket.bind(0, '0.0.0.0', () => {
+      // machine 发现本就是广播协议:目标可为 127.0.0.1(同机直查)或广播地址
+      // (异机真机联验),后者必须带 SO_BROADCAST 才能发出
+      socket.setBroadcast(true);
       const address = socket.address();
       if (typeof address === 'string') {
         if (!settled) {
