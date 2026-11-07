@@ -37,7 +37,7 @@
 | L8 监控/面板层 | 4660..4920 | 监控面板、运行查询、依赖 WebView、实体流 | `MonitoringWebView`、`EntityDependencyWebView`、`EntityFlowWebView` |
 | L9 console 层 | 4589..4655 | machined 发现 hub、日志 tail、组件状态面板（KB-GC-001） | `ConsoleHub`、`ConsoleLogTailController`、`ComponentStatusTreeProvider` |
 | L10 工具命令层 | 5887..6466 | 项目医生/符号引用/发现报告/身份/复现/服务状态/ruff | 10+ 个独立命令 |
-| L11 释放逻辑 | 6789 | `deactivate` | — |
+| L11 释放逻辑 | 6789 | `deactivate` | — |（2026-11-08 结论：不抽文件——释放收口闭合于各层返回的共享句柄，组合根为唯一所有权面，`deactivate` 与 activate 内 dispose 块随组合根保留，SRC-001 全 11 层勾账完成） |
 
 ## 3. 按抽象层拆分的方案
 
