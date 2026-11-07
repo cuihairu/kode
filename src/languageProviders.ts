@@ -1,266 +1,55 @@
+// KODE-ARCH-001 pure-move split from the original languageProviders.ts (zero behavior change).
+// KODE-ARCH-001 (in progress): providers are being moved to ./languageProviders/*
+// in pure-move steps; this file keeps remaining code + re-exports the moved surface.
+
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { documentEventCacheKey, eventDefinitionAt, findEventCallsCached } from './eventApi';
-export { EventCodeLensProvider } from './eventApi';
 import { getScanRootForFile, findFilesAcrossRoots } from './scanRoots';
-import {
-  parsePythonFile,
-  linearizeC3,
-  isPythonCodePosition,
-  getPythonBaseExpressionAtPosition,
-  PythonClassIndex,
-  PythonClassDef,
-  PythonMethodLocation
-} from './pythonClassIndex';
-import {
-  DefDocument,
-  DefElementNode,
-  DefNode,
-  findAncestorElement,
-  findDeepestElementAtOffset,
-  findTextNodeAtOffset,
-  getDirectChildElement,
-  getDirectChildElements,
-  getElementText,
-  getLineNumberAt,
-  getScalarChildValue,
-  getScalarChildValues,
-  hasTruthyChildTag,
-  parseDefDocument
-} from './defParser';
-import {
-  DEF_METHOD_MISSING_DIAGNOSTIC_CODE,
-  KBENGINE_DEF_METHOD_CONSISTENCY_REVALIDATE_COMMAND,
-  buildMethodStubCode,
-  type MethodStubBody
-} from './defMethodConsistency';
-import {
-  EntityMappingManager,
-  EntityMethodSection,
-  type DefinitionSymbolIdentity
-} from './entityMapping';
+import { parsePythonFile, linearizeC3, isPythonCodePosition, getPythonBaseExpressionAtPosition, PythonClassIndex, PythonClassDef, PythonMethodLocation } from './pythonClassIndex';
+import { DefDocument, DefElementNode, findAncestorElement, findDeepestElementAtOffset, findTextNodeAtOffset, getDirectChildElement, getDirectChildElements, getElementText, getLineNumberAt, getScalarChildValue, getScalarChildValues, hasTruthyChildTag, parseDefDocument } from './defParser';
+import { DEF_METHOD_MISSING_DIAGNOSTIC_CODE, KBENGINE_DEF_METHOD_CONSISTENCY_REVALIDATE_COMMAND, buildMethodStubCode, type MethodStubBody } from './defMethodConsistency';
+import { EntityMappingManager, EntityMethodSection, type DefinitionSymbolIdentity } from './entityMapping';
 import { analyzeEntitiesXml } from './entitiesXmlAnalysis';
 import { getDocumentLines, getOrParseDocumentSync } from './documentStore';
 import { getKodeCoreShadowGate, shadowCompareDefinition, shadowObserveDefDocument } from './kodeCoreShadowFaces';
 import { analyzeDefDocumentInRust, type DefAnalysisFinding } from './defAnalyzer';
-import {
-  buildPythonMethodSkeletonWithTypes,
-  collectDefPythonParityInput,
-  entityNameOfDefFile
-} from './defPythonParity';
+import { buildPythonMethodSkeletonWithTypes, collectDefPythonParityInput, entityNameOfDefFile } from './defPythonParity';
 import { buildDefChain } from './defChain';
-import {
-  METHOD_DECLARATION_PATTERN,
-  buildRpcCodeLenses,
-  defaultRpcCodeLensTitle,
-  findPythonMethodDeclarations,
-  RpcMethodHit
-} from './rpcCodeLens';
-import {
-  buildPropertyCodeLenses,
-  findPythonSelfPropertyAccesses,
-  propertyAccessKey,
-  PropertyCodeLensHit
-} from './propertyCodeLens';
+import { METHOD_DECLARATION_PATTERN, buildRpcCodeLenses, defaultRpcCodeLensTitle, findPythonMethodDeclarations, RpcMethodHit } from './rpcCodeLens';
+import { buildPropertyCodeLenses, findPythonSelfPropertyAccesses, propertyAccessKey, PropertyCodeLensHit } from './propertyCodeLens';
 import { buildPropertyInitOrderLensSpecs } from './propertyInitOrderLens';
-import {
-  describePropertyDatabaseStoragePublished,
-  findDatabaseSchemaFieldAtPosition,
-  findDatabaseSchemaSourceLocation,
-  findDatabaseSchemaTargetsForSource,
-  getDatabaseSchemaSnapshot,
-  getTypeStorageShape,
-  getTypeStorageUsageIndexReadOnly,
-  indexTypeStorageUsageEntries,
-  onTypeStorageUsageIndexPublished,
-  locateDatabaseSchemaLine
-} from './databaseSchema';
+import { describePropertyDatabaseStoragePublished, findDatabaseSchemaFieldAtPosition, findDatabaseSchemaSourceLocation, findDatabaseSchemaTargetsForSource, getDatabaseSchemaSnapshot, getTypeStorageShape, getTypeStorageUsageIndexReadOnly, indexTypeStorageUsageEntries, onTypeStorageUsageIndexPublished, locateDatabaseSchemaLine, TypeStorageShape, TypeStorageUsage } from './databaseSchema';
 import { createDatabaseSchemaUri, isDatabaseSchemaDocument } from './databaseSchemaPresentation';
-import type { TypeStorageShape, TypeStorageUsage } from './databaseSchema';
 import { buildPropertyDatabaseStorageHover, describeBuiltinTypeCapacity } from './databaseSimulator';
-import {
-  findCustomTypeDeclarationInfo,
-  findCustomTypeInfo,
-  findCustomTypePythonImplementationFile,
-  findImplementedBySymbolLine,
-  findTypesXmlImplementedByReference,
-  findDefinitionEntryByCategory,
-  findDefinitionFileByCategory,
-  findEntityDefsDirForDefFile,
-  findComponentScriptFile,
-  findEntityDefinitionFile,
-  findEntitiesXmlFile,
-  findEntityScriptFile,
-  findInterfaceScriptFile,
-  getDefinitionWorkspaceLayout,
-  getEntityRuntimeProfile,
-  getRegisteredCustomTypes,
-  getRegisteredAliasTypes,
-  getRegisteredEntities,
-  getScriptsRootForDefFile,
-  getWorkspaceRootForDocument,
-  resolveEntityAnnotationType,
-  resolveEntityAnnotationTypeWithReason,
-  scriptFoldersForRole,
-  notifyEntitiesXmlMissingOnce,
-  readWorkspaceTextFile,
-  readWorkspaceTextLines
-} from './definitionWorkspace';
+import { findCustomTypeDeclarationInfo, findCustomTypeInfo, findCustomTypePythonImplementationFile, findImplementedBySymbolLine, findTypesXmlImplementedByReference, findDefinitionEntryByCategory, findDefinitionFileByCategory, findEntityDefsDirForDefFile, findComponentScriptFile, findEntityDefinitionFile, findEntitiesXmlFile, findEntityScriptFile, findInterfaceScriptFile, getDefinitionWorkspaceLayout, getEntityRuntimeProfile, getRegisteredCustomTypes, getRegisteredAliasTypes, getRegisteredEntities, getScriptsRootForDefFile, getWorkspaceRootForDocument, resolveEntityAnnotationType, resolveEntityAnnotationTypeWithReason, scriptFoldersForRole, notifyEntitiesXmlMissingOnce, readWorkspaceTextFile, readWorkspaceTextLines } from './definitionWorkspace';
 import { describeMethodCallDirection, describePropertySyncDirection } from './entityFlowGraph';
-import {
-  renderUserTypeContractHoverSection,
-  userTypeContractStatusForName
-} from './userTypeContractSource';
-import {
-  computeDefRenameEdits,
-  findDefRenameConflict,
-  findDefRenameConflictInClosure,
-  getLineCharacterAtOffset,
-  parseDefFileSemantics,
-  renameInputsDrifted,
-  resolveRenameSymbolAtOffset
-} from './defRenamer';
-import type { DefRenameFileEdits, RenameInputVersionRef } from './defRenamer';
+import { renderUserTypeContractHoverSection, userTypeContractStatusForName } from './userTypeContractSource';
+import { computeDefRenameEdits, findDefRenameConflict, findDefRenameConflictInClosure, getLineCharacterAtOffset, parseDefFileSemantics, renameInputsDrifted, resolveRenameSymbolAtOffset, DefRenameFileEdits, RenameInputVersionRef } from './defRenamer';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import { HOOK_CATEGORY_NAMES, KBENGINE_HOOKS, getHookByName } from './hooks';
-import {
-  KBENGINE_ENTRY_HOOKS,
-  getEntryHookByName,
-  isComponentEntryScriptFile
-} from './entryHooks';
-import {
-  DETAIL_LEVELS,
-  KBENGINE_FLAGS,
-  KBENGINE_RELOAD_FUNCTIONS,
-  KBENGINE_TYPES
-} from './kbengineMetadata';
+import { KBENGINE_ENTRY_HOOKS, getEntryHookByName, isComponentEntryScriptFile } from './entryHooks';
+import { DETAIL_LEVELS, KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, KBENGINE_TYPES } from './kbengineMetadata';
 import { jumpLog, jumpTimeStart, logNavigation } from './navigationLog';
 import { provideTypesXmlReferences } from './typesXmlReferences';
 import { provideDefSymbolReferences } from './defSymbolReferences';
-import {
-  formatEntityBuiltinPropertyDetail,
-  getEntityBuiltinPropertiesForFace,
-  hasKnownEntityBuiltinPropertyType,
-  resolveEntityBuiltinPropertyHit,
-  resolveEntityComponentFaceFromPath,
-  collectEntityBuiltinPropertyInlayTargets,
-  type EntityComponentFace
-} from './entityBuiltinProperties';
-import {
-  formatBuiltinPropertyHover,
-  formatEntityDefMethodHover,
-  formatEventStatsHover,
-  formatInferredReturnHover,
-  formatSelfPropertyTypeHover
-} from './hoverMarkdown';
-// C-21:KBEngine Python API 文档 hover(知识页生成镜像;locale 与配置开关复用
-// hoverLocale/featureConfig 既有面)
-import {
-  apiDocDomainsForFace,
-  formatApiDocHover,
-  formatApiDocSupplement,
-  getKbengineApiAccessAtPosition,
-  getPythonCallbackDefinitionAtPosition,
-  lookupApiDoc
-} from './pythonApiHoverDocs';
-import {
-  currentHoverLanguageEnv,
-  readHoverLanguageSetting,
-  resolveHoverLanguage
-} from './hoverLocale';
+import { formatEntityBuiltinPropertyDetail, getEntityBuiltinPropertiesForFace, hasKnownEntityBuiltinPropertyType, resolveEntityBuiltinPropertyHit, resolveEntityComponentFaceFromPath, collectEntityBuiltinPropertyInlayTargets, type EntityComponentFace } from './entityBuiltinProperties';
+import { formatBuiltinPropertyHover, formatEntityDefMethodHover, formatEventStatsHover, formatInferredReturnHover, formatSelfPropertyTypeHover } from './hoverMarkdown';
+import { apiDocDomainsForFace, formatApiDocHover, formatApiDocSupplement, getKbengineApiAccessAtPosition, getPythonCallbackDefinitionAtPosition, lookupApiDoc } from './pythonApiHoverDocs';
+import { currentHoverLanguageEnv, readHoverLanguageSetting, resolveHoverLanguage } from './hoverLocale';
 import { resolveLocalVariableReturnTypeFromSnapshot } from './pythonReturnTypeInference';
-import {
-  startLanguageServiceOperation
-} from './languageServiceMetrics';
+import { startLanguageServiceOperation } from './languageServiceMetrics';
 import { PYTHON_TYPE_STUB_FALLBACK, resolveAnnotationTypeWithReason } from './pythonTypeStubs';
-import {
-  resolveSelfPropertyAnnotation,
-  type DefPropertyLocator
-} from './selfPropertyTypeInference';
-import {
-  findPythonReceiverCalls,
-  getPythonReceiverCallAtPosition,
-  PYTHON_RECEIVER_BY_SECTION,
-  type PythonReceiverCall,
-  getPythonSelfAccessAtPosition,
-  getPythonSelfCompletionContext,
-  getPythonMemberAccessAtPosition,
-  type PythonMemberAccess,
-  getPythonCallAtPosition,
-  type PythonCallAtPosition
-} from './pythonLanguageUtils';
-import {
-  buildKbeStubDocument,
-  buildKbeStubUriString,
-  engineApiVersionAnnotation,
-  filterKbeSymbols,
-  getKbeAliases,
-  getKbeCompletionContext,
-  getKbeFromImportedSymbols,
-  getKbeSymbol,
-  getPythonClassBaseAtPosition,
-  kbeCompletionDocumentation,
-  resolveKbeAccessAtPosition,
-  summaryForLanguage
-} from './kbeModuleIndex';
-import {
-  GlobalDataDictIndex,
-  getDataDictAccessInCodeContext,
-  getKbeDataDictAccessAtPosition,
-  inferDataDictValueType,
-  isKeyInsideLineComment,
-  queryDataDictSitesForAccess,
-  resolveScopeRoot,
-  type KbeDataDictSite
-} from './globalDataIndex';
-import type { EngineApiCatalog } from './engineApiMetadata';
+import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from './selfPropertyTypeInference';
+import { findPythonReceiverCalls, getPythonReceiverCallAtPosition, PYTHON_RECEIVER_BY_SECTION, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonSelfCompletionContext, getPythonMemberAccessAtPosition, type PythonMemberAccess, getPythonCallAtPosition, type PythonCallAtPosition } from './pythonLanguageUtils';
+import { buildKbeStubDocument, buildKbeStubUriString, engineApiVersionAnnotation, filterKbeSymbols, getKbeAliases, getKbeCompletionContext, getKbeFromImportedSymbols, getKbeSymbol, getPythonClassBaseAtPosition, kbeCompletionDocumentation, resolveKbeAccessAtPosition, summaryForLanguage } from './kbeModuleIndex';
+import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, inferDataDictValueType, isKeyInsideLineComment, queryDataDictSitesForAccess, resolveScopeRoot, type KbeDataDictSite } from './globalDataIndex';
+import { EngineApiCatalog } from './engineApiMetadata';
 import { getEngineVersion } from './engineVersion';
-import {
-  createHoverRequestDeadline,
-  createWaiterUnionToken,
-  HOVER_ASYNC_BUDGET_MS_DEFAULT,
-  raceWithBudget,
-  withInitialScanTimeout
-} from './hoverBudget';
+import { createHoverRequestDeadline, createWaiterUnionToken, raceWithBudget, withInitialScanTimeout } from './hoverBudget';
 import { KBENGINE_SOURCE_REVEAL_COMMAND } from './sourceRevealCommand';
-import {
-  RECEIVER_NONE_DIAGNOSTIC_CODE,
-  buildReceiverNoneGuardEdit,
-  buildReceiverNoneWrapEdit
-} from './receiverNoneDiagnostics';
-
-export { RECEIVER_NONE_DIAGNOSTIC_CODE };
-
-/**
- * 批159(用户令 2026-10-26「点击 codelens 跳 def 后 alt+← 后退,再点没反应」):
- * 镜链不再用内置 vscode.open —— 它对「已打开且已定位」的目标常跳过 reveal,
- * 退回原文件后再点就毫无反应。自建打开链:showTextDocument 带 selection 后,
- * 再对活动编辑器显式 revealRange(若命中),后退后再点也强制滚回。
- * 命令参数与旧 arguments 完全同形(uri, { selection }),测试/调用点零迁移成本。
- */
-
-export interface KbengineSourceRevealArgs {
-  uri: vscode.Uri;
-  options?: { selection?: vscode.Range };
-}
-
-export async function revealSourceCommand(
-  uriArg?: vscode.Uri,
-  options?: { selection?: vscode.Range }
-): Promise<void> {
-  if (!uriArg) {
-    return;
-  }
-  const document = await vscode.workspace.openTextDocument(uriArg);
-  const selection = options?.selection;
-  const editor = await vscode.window.showTextDocument(document, selection ? { selection } : undefined);
-  if (selection && editor && typeof (editor as vscode.TextEditor).revealRange === 'function') {
-    // TextEditorRevealType 缺失(fake 环境/枚举未就绪)时退 0(Default),不炸
-    const revealDefault =
-      (vscode as unknown as { TextEditorRevealType?: { Default?: number } }).TextEditorRevealType?.Default ?? 0;
-    (editor as vscode.TextEditor).revealRange(selection, revealDefault);
-  }
-}
+import { RECEIVER_NONE_DIAGNOSTIC_CODE, buildReceiverNoneGuardEdit, buildReceiverNoneWrapEdit } from './receiverNoneDiagnostics';
+import { ALLOWED_TOP_LEVEL_SECTIONS, CustomTypeResolution, DEF_SYMBOL_SECTIONS, KBEngineSectionName, METHOD_SECTIONS, PROPERTY_SECTIONS, TAG_HOVER_DOCS, createNodeRange, elementFullRange, elementTagRange, getDefNodeAtPosition, getDefNodeAtWord, getLanguageFeatureConfig, getNodeValue, getSectionLabel, getSymbolNodeInfo, isOffsetInsideNodeValue, parseDefAst, pushDiagnosticForNodeValue, toSectionName, visitElementNodes } from './languageProviders/shared';
 
 /**
  * 批159(用户令「hover 还是需要 loading 很久」):同点位并发 hover 各自重跑
@@ -282,77 +71,6 @@ interface HoverMemoEntry {
 
 function hoverMemoKey(document: vscode.TextDocument, position: vscode.Position): string {
   return `${document.fileName}#${document.version}#${position.line}#${position.character}`;
-}
-
-/** 开档预热(批159):开 Python 档即触发对应实体 .def 的定向首解析,首次
- * hover/CodeLens 不再吃冷启动等待。索引未就绪时后台补,失败静默(预热是
- * 优化不是功能,不准失败上浮)。 */
-export function prewarmKbengineIndex(
-  manager: EntityMappingManager,
-  document: vscode.TextDocument
-): void {
-  if (document.languageId !== 'python') {
-    return;
-  }
-  void manager.resolveMethodDefinition(document.fileName, '__prewarm__').catch(() => undefined);
-}
-
-function getLanguageFeatureConfig() {
-  const config = vscode.workspace.getConfiguration('kbengine');
-  return {
-    enableDiagnostics: config.get<boolean>('enableDiagnostics', true),
-    enableStructureDiagnostics: config.get<boolean>('enableStructureDiagnostics', true),
-    diagnosticsCheckUnknownTypes: config.get<boolean>('diagnostics.checkUnknownTypes', true),
-    diagnosticsCheckUnknownFlags: config.get<boolean>('diagnostics.checkUnknownFlags', true),
-    diagnosticsCheckUnknownDetailLevels: config.get<boolean>('diagnostics.checkUnknownDetailLevels', true),
-    diagnosticsCheckDuplicateDefinitions: config.get<boolean>('diagnostics.checkDuplicateDefinitions', true),
-    diagnosticsCheckMissingPropertyFields: config.get<boolean>('diagnostics.checkMissingPropertyFields', true),
-    // C-19:def↔Python 方法一致性规则。正向(def 有 Python 无)默认开;反向
-    // (Python 有 def 无)默认关(防误报,跳过引擎钩子/dunder 后仍启发式)。
-    checkDefMethodMissingInPython: config.get<boolean>('diagnostics.checkDefMethodMissingInPython', true),
-    checkPythonMethodNotInDef: config.get<boolean>('diagnostics.checkPythonMethodNotInDef', false),
-    // C-19 交付②:一键骨架体(IDE-NAV-014 空方法生成的体),pass=空体默认,
-    // raise=抛 NotImplementedError。
-    methodStubBody: config.get<'pass' | 'raise'>('entity.methodStubBody', 'pass'),
-    hoverShowTagDocs: config.get<boolean>('hover.showTagDocs', true),
-    hoverShowValueDocs: config.get<boolean>('hover.showValueDocs', true),
-    hoverShowSymbolDocs: config.get<boolean>('hover.showSymbolDocs', true),
-    // 批154(用户令「都需要配置开关,默认打开」「hover 也需要配置开关,需要把
-    // 功能拆分」):悬停面按功能各一枚独立开关,不设总闸一刀切
-    hoverTypeStorage: config.get<boolean>('hover.typeStorage', true),
-    hoverImplementedBy: config.get<boolean>('hover.implementedBy', true),
-    hoverEntityRegistration: config.get<boolean>('hover.entityRegistration', true),
-    hoverDefChain: config.get<boolean>('hover.defChain', true),
-    hoverEventStats: config.get<boolean>('hover.eventStats', true),
-    // C-21:KBEngine Python API 文档 hover(KBEngine.<api>/生命周期回调/内建
-    // 属性文档段),默认开
-    hoverApiDocs: config.get<boolean>('hover.apiDocs', true),
-    // CodeLens 同批按 provider 各一枚
-    codeLensRpc: config.get<boolean>('codeLens.rpc', true),
-    codeLensEventCallbacks: config.get<boolean>('codeLens.eventCallbacks', true),
-    codeLensProperty: config.get<boolean>('codeLens.property', true),
-    // IDE-PROP-001:属性先于 __init__ 装载提示镜,与属性访问镜同 provider 但
-    // 独立开关(关访问镜不关装载语义提示)
-    codeLensPropertyInitOrder: config.get<boolean>('codeLens.propertyInitOrder', true),
-    codeLensTypesXml: config.get<boolean>('codeLens.typesXml', true),
-    // 实体脚本新功能各一枚独立开关(用户令 2026-10-21:新功能都要配置开关,
-    // 默认开)。builtinProperties 管内建属性 hover+self. 补全(内建属性相关
-    // 面的总闸,行内 inlay 也先过它);receiverSections 管接收者段过滤
-    // (false 回归不感知段的旧解析,形参/类型闸门不受影响);
-    // python.builtinTypeInlayHints 管内建属性行内 `: <type>` inlay(总闸与
-    // 本键双控,false 即不给提示;provider 每次现读,下一次渲染即生效)。
-    entityBuiltinProperties: config.get<boolean>('entity.builtinProperties', true),
-    entityReceiverSections: config.get<boolean>('entity.receiverSections', true),
-    entityBuiltinTypeInlayHints: config.get<boolean>('python.builtinTypeInlayHints', true),
-    // TYP-ARRAY(def 属性访问的类型推导与数组元素类型,hover 面):自属性类型
-    // hover(容器注解 + for/下标元素类型推导)复用 entity.builtinProperties
-    // 总闸(实体脚本 self.<属性> 类型 hover 的注册面开关,package.json 注册
-    // 键;false 落回普通 hover 链)。行内元素 inlay 面另走 inlayHints.typeData。
-    // 悬停异步链总预算(用户令 2026-10-22「hover 永转 loading」):>0 时 def
-    // 方法/接收者/内建属性三条异步链各套总预算 race,超时返回空悬停并记
-    // LogHub(层名+耗时);<=0 关闭预算闸(既有行为)。
-    hoverAsyncBudgetMs: config.get<number>('hover.asyncBudgetMs', HOVER_ASYNC_BUDGET_MS_DEFAULT)
-  };
 }
 
 const TOP_LEVEL_DEF_TAGS = [
@@ -2090,152 +1808,6 @@ export function validateEntitiesXmlDocument(
   );
 }
 
-type KBEngineSectionName =
-  | 'Parent'
-  | 'Interfaces'
-  | 'Components'
-  | 'Properties'
-  | 'BaseMethods'
-  | 'CellMethods'
-  | 'ClientMethods'
-  | 'Volatile';
-
-const PROPERTY_SECTIONS = new Set<KBEngineSectionName>(['Properties']);
-
-const METHOD_SECTIONS = new Set<KBEngineSectionName>([
-  'BaseMethods',
-  'CellMethods',
-  'ClientMethods'
-]);
-
-const DEF_SYMBOL_SECTIONS = new Set<KBEngineSectionName>([
-  'Properties',
-  'BaseMethods',
-  'CellMethods',
-  'ClientMethods'
-]);
-
-const ALLOWED_TOP_LEVEL_SECTIONS = new Set<KBEngineSectionName>([
-  'Parent',
-  'Interfaces',
-  'Components',
-  'Properties',
-  'BaseMethods',
-  'CellMethods',
-  'ClientMethods',
-  'Volatile'
-]);
-
-const TAG_HOVER_DOCS: Record<string, { detail: string; documentation: string }> = {
-  root: {
-    detail: 'KBEngine 实体定义根节点',
-    documentation: '`.def` 文件的根标签。源码会在该节点下读取 `Properties`、方法区块和 `DetailLevels` 等实体定义信息。'
-  },
-  Properties: {
-    detail: '玩家属性',
-    documentation: '实体属性区块。字段可通过 `Persistent` 开启自动存储,`Flags` 决定同步范围;字段名可跳转到实体脚本的类实现(悬停时下方给出本工程的真实解析路径)。'
-  },
-  BaseMethods: {
-    detail: 'BaseApp 方法(可远程调用)',
-    documentation: 'BaseApp 上的方法。带 `<Exposed>true</Exposed>` 时客户端可以直接请求该方法。方法名可跳转到 scripts/base/<实体>.py 的 `def` 实现。'
-  },
-  CellMethods: {
-    detail: 'CellApp 方法(可远程调用)',
-    documentation: 'CellApp 上的方法。带 `<Exposed>true</Exposed>` 时客户端可以直接请求该方法。方法名可跳转到 scripts/cell/<实体>.py 的 `def` 实现。'
-  },
-  ClientMethods: {
-    detail: '客户端回调方法',
-    documentation: '服务端回调客户端的方法:引擎把这里的声明下发给客户端实体脚本实现。方法名可跳转到 scripts/client/<实体>.py 或官方模板 scripts/bots/<实体>.py(BotsApp)的 `def` 实现。'
-  },
-  DetailLevels: {
-    detail: '细节等级区块',
-    documentation: '源码通过 `<DetailLevels>` 读取 `NEAR`、`MEDIUM`、`FAR` 三档同步细节配置，每档都要求同时提供 `<radius>` 和 `<hyst>`。'
-  },
-  Type: {
-    detail: '类型声明标签',
-    documentation: '用于声明属性类型、方法参数类型或容器内部元素类型，例如 `UINT32`、`VECTOR3`、`ARRAY<of>UINT8</of>`。'
-  },
-  Arg: {
-    detail: '方法参数标签',
-    documentation: '用于声明方法参数类型。只应出现在 `BaseMethods`、`CellMethods`、`ClientMethods` 的方法节点内。'
-  },
-  Flags: {
-    detail: '属性同步/存储标志标签',
-    documentation: '用于描述属性的存储位置和同步范围，例如 `BASE`、`CELL_PUBLIC`、`OWN_CLIENT`。'
-  },
-  Default: {
-    detail: '默认值标签',
-    documentation: '用于声明属性的默认值。字符串、数字和布尔值都可以在这里配置。'
-  },
-  Persistent: {
-    detail: '持久化标签',
-    documentation: '用于声明属性是否持久化到数据库。源码按 `true` 识别为启用。'
-  },
-  Identifier: {
-    detail: '标识字段标签',
-    documentation: '用于标记属性是否作为索引键。源码按 `true` 识别为启用。'
-  },
-  Index: {
-    detail: '索引类型标签',
-    documentation: '用于声明属性的索引类型，源码会读取并转为大写。'
-  },
-  DatabaseLength: {
-    detail: '数据库长度标签',
-    documentation: '用于声明属性在数据库中的长度限制，对应源码中的 `DatabaseLength`。'
-  },
-  DetailLevel: {
-    detail: '细节级别标签',
-    documentation: '用于定义属性同步细节等级，可选值为 `NEAR`、`MEDIUM`、`FAR`。'
-  },
-  of: {
-    detail: '容器元素类型标签',
-    documentation: '用于 `ARRAY` 的内部类型声明，引擎源码读取 `<of>` 子节点作为元素类型。'
-  },
-  radius: {
-    detail: '细节等级半径标签',
-    documentation: '用于 `DetailLevels` 的 `NEAR`、`MEDIUM`、`FAR` 节点内，源码会读取其数值作为该档位半径。'
-  },
-  hyst: {
-    detail: '细节等级迟滞标签',
-    documentation: '用于 `DetailLevels` 的 `NEAR`、`MEDIUM`、`FAR` 节点内，源码会读取其数值作为该档位迟滞。'
-  },
-  Utype: {
-    detail: '显式 Utype 标签',
-    documentation: '用于显式指定属性或方法的 Utype；未提供时由引擎自动分配。'
-  },
-  Exposed: {
-    detail: '暴露方法标签',
-    documentation: '用于 Base/Cell 方法，表示该方法允许远端调用。'
-  },
-  FIXED_DICT: {
-    detail: '固定字典容器',
-    documentation: 'KBEngine 容器类型之一。在当前引擎版本中仅支持于 `scripts/entity_defs/types.xml` 内以别名声明(需 `<Properties>` 子节点)，`.def` 属性通过别名引用；引擎不解析 `.def` 属性内联的 `FIXED_DICT`。'
-  }
-};
-
-Object.assign(TAG_HOVER_DOCS, {
-  Parent: {
-    detail: '父类区块',
-    documentation: '对应 KBEngine 的 `loadParentClass`，用于声明当前实体或组件继承的父定义。'
-  },
-  Interfaces: {
-    detail: '接口区块',
-    documentation: '对应 KBEngine 的 `loadInterfaces`，用于组合 `entity_defs/interfaces/*.def` 中的接口定义。'
-  },
-  Components: {
-    detail: '组件区块',
-    documentation: '对应 KBEngine 的 `loadComponents`，用于声明当前实体挂载的组件属性及其组件定义类型。'
-  },
-  Interface: {
-    detail: '接口引用标签',
-    documentation: '在 `<Interfaces>` 下使用，写成 `<interface>SomeInterface</interface>`（或 Interface/type/Type 拼写，引擎按四拼写精确比对装载），KBEngine 会到 `entity_defs/interfaces/SomeInterface.def` 加载定义；直接以接口名作标签（如 `<SomeInterface/>`）引擎会静默跳过。'
-  },
-  Volatile: {
-    detail: '易变同步区块',
-    documentation: '对应 KBEngine 的 `loadVolatileInfo`，用于配置 position、yaw、pitch、roll 等实时同步参数。'
-  }
-});
-
 function validateScalarTagValues(
   document: vscode.TextDocument,
   diagnosticsList: vscode.Diagnostic[],
@@ -2514,87 +2086,6 @@ function normalizePropertyFlag(flags: string | undefined): string | undefined {
 
 function describePropertyScope(scope: PropertyScope): string {
   return PROPERTY_SCOPE_LABELS[scope];
-}
-
-function visitElementNodes(node: DefElementNode, visitor: (node: DefElementNode) => void): void {
-  visitor(node);
-
-  for (const child of getDirectChildElements(node)) {
-    visitElementNodes(child, visitor);
-  }
-}
-
-function getNodeValue(node: DefElementNode): string {
-  return documentTextSlice(node).trim();
-}
-
-function documentTextSlice(node: DefElementNode): string {
-  return node.children
-    .filter((child): child is Exclude<DefNode, DefElementNode> => child.kind === 'text')
-    .map(child => child.text)
-    .join('');
-}
-
-function pushDiagnosticForNodeValue(
-  document: vscode.TextDocument,
-  diagnosticsList: vscode.Diagnostic[],
-  node: DefElementNode,
-  value: string,
-  message: string,
-  severity: vscode.DiagnosticSeverity,
-  code?: string | number
-): void {
-  const offset = document.getText().indexOf(value, node.contentStart);
-  const range = offset >= 0 && offset <= node.contentEnd
-    ? new vscode.Range(
-        document.positionAt(offset),
-        document.positionAt(offset + value.length)
-      )
-    : createNodeValueRange(document, node);
-
-  const diagnostic = new vscode.Diagnostic(range, message, severity);
-  if (code !== undefined) {
-    diagnostic.code = code;
-  }
-  diagnosticsList.push(diagnostic);
-}
-
-function createNodeRange(document: vscode.TextDocument, node: DefElementNode): vscode.Range {
-  return new vscode.Range(
-    document.positionAt(node.tagStart),
-    document.positionAt(node.closeTagEnd)
-  );
-}
-
-function createNodeValueRange(document: vscode.TextDocument, node: DefElementNode): vscode.Range {
-  return new vscode.Range(
-    document.positionAt(node.contentStart),
-    document.positionAt(node.contentEnd)
-  );
-}
-
-function getSectionLabel(section: KBEngineSectionName): string {
-  if (section === 'Parent') {
-    return '父类区块';
-  }
-
-  if (section === 'Interfaces') {
-    return '接口区块';
-  }
-
-  if (section === 'Components') {
-    return '组件区块';
-  }
-
-  if (section === 'Properties') {
-    return '属性区块';
-  }
-
-  if (section === 'Volatile') {
-    return '易变同步区块';
-  }
-
-  return '方法区块';
 }
 
 function getSymbolHover(
@@ -3168,121 +2659,6 @@ function getEntityRuntimeHoverLines(
   }
 
   return extraLines;
-}
-
-type CustomTypeResolutionStatus =
-  | 'resolved'
-  | 'missingTypeRegistration'
-  | 'missingPythonFile'
-  | 'unverifiable';
-
-interface CustomTypeResolution {
-  status: CustomTypeResolutionStatus;
-}
-
-function parseDefAst(document: vscode.TextDocument): DefDocument | null {
-  const fileName = document.fileName.toLowerCase();
-  if (!(
-    document.languageId === 'kbengine-def'
-    || fileName.endsWith('.def')
-    || fileName.endsWith('types.xml')
-    || fileName.endsWith('entities.xml')
-  )) {
-    return null;
-  }
-
-  // PR2 快照接入:同版本只解析一次(documentStore 版本化缓存,命名空间
-  // 'def-ast');诊断/hover/definition 等调用面共用同一份结果。无版本替身
-  // (部分测试)不缓存,行为与此前逐次解析一致。
-  try {
-    return getOrParseDocumentSync(
-      document,
-      text => parseDefDocument(text),
-      'def-ast'
-    ).result;
-  } catch {
-    return null;
-  }
-}
-
-function toSectionName(name: string): KBEngineSectionName | null {
-  switch (name) {
-    case 'Parent':
-    case 'Interfaces':
-    case 'Components':
-    case 'Properties':
-    case 'BaseMethods':
-    case 'CellMethods':
-    case 'ClientMethods':
-    case 'Volatile':
-      return name;
-    default:
-      return null;
-  }
-}
-
-function getDefNodeAtPosition(document: vscode.TextDocument, position: vscode.Position): DefNode | null {
-  const ast = parseDefAst(document);
-  if (!ast?.root) {
-    return null;
-  }
-
-  const offset = document.offsetAt(position);
-  const textNode = findTextNodeAtOffset(ast.root, offset);
-  if (textNode) {
-    return textNode;
-  }
-
-  return findDeepestElementAtOffset(ast.root, offset);
-}
-
-function getDefNodeAtWord(document: vscode.TextDocument, position: vscode.Position, word: string): DefNode | null {
-  // 不可达(批62 定性):四个调用面(hover/definition/callHierarchy/方法实现)都先用
-  // 同一条 /\w+/ 规则在同一个 document+position 上取词再原样传入,range 必存在且
-  // text === word,两条回落臂在该调用面上无触发路径。
-  const range = document.getWordRangeAtPosition(position, /\w+/);
-  /* istanbul ignore start */
-  if (!range) {
-    return getDefNodeAtPosition(document, position);
-  }
-  /* istanbul ignore stop */
-
-  const text = document.getText(range);
-  /* istanbul ignore start */
-  if (text !== word) {
-    return getDefNodeAtPosition(document, position);
-  }
-  /* istanbul ignore stop */
-
-  return getDefNodeAtPosition(document, range.start);
-}
-
-function getSymbolNodeInfo(
-  node: DefNode | null | undefined
-): { section: KBEngineSectionName; symbolNode: DefElementNode } | null {
-  if (!node) {
-    return null;
-  }
-
-  let current: DefElementNode | null = node.kind === 'element' ? node : node.parent;
-
-  while (current) {
-    const sectionNode = current.parent;
-    const sectionName = toSectionName(sectionNode?.name || '');
-    if (sectionNode && sectionName && DEF_SYMBOL_SECTIONS.has(sectionName)) {
-      return {
-        section: sectionName,
-        symbolNode: current
-      };
-    }
-    current = current.parent;
-  }
-
-  return null;
-}
-
-function isOffsetInsideNodeValue(node: DefElementNode, offset: number): boolean {
-  return offset >= node.contentStart && offset <= node.contentEnd;
 }
 
 function resolveCustomTypeReference(
@@ -6368,22 +5744,6 @@ export class KBEngineDocumentSymbolProvider implements vscode.DocumentSymbolProv
   }
 }
 
-/** 元素全跨度:开标签头到闭标签尾;selfClosing(无闭标签)到开标签尾 */
-function elementFullRange(document: vscode.TextDocument, node: DefElementNode): vscode.Range {
-  return new vscode.Range(
-    document.positionAt(node.tagStart),
-    document.positionAt(node.selfClosing ? node.tagEnd : node.closeTagEnd)
-  );
-}
-
-/** 名字所在开标签跨度(selectionRange 恒 ⊆ range) */
-function elementTagRange(document: vscode.TextDocument, node: DefElementNode): vscode.Range {
-  return new vscode.Range(
-    document.positionAt(node.tagStart),
-    document.positionAt(node.tagEnd)
-  );
-}
-
 /**
  * IDE-NAV-006:根范围工作区符号查询(Ctrl+T)——已索引 def 符号按名称前缀
  * 查询,manager.searchDefSymbolsByPrefix 只读内存索引,查询面不触发全仓
@@ -7341,3 +6701,6 @@ function createSelectionRange(line: number, character: number, text: string): vs
   );
 }
 
+export { EventCodeLensProvider } from './eventApi';
+export { RECEIVER_NONE_DIAGNOSTIC_CODE } from './receiverNoneDiagnostics';
+export { KbengineSourceRevealArgs, revealSourceCommand, prewarmKbengineIndex } from './languageProviders/reveal';
