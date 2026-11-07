@@ -451,7 +451,9 @@ export const debug = {
 export class ThemeIcon {
   static readonly File = new ThemeIcon('file');
   static readonly Folder = new ThemeIcon('folder');
-  constructor(public readonly id: string) {}
+  // KB-GC-001:真实 vscode.ThemeIcon 支持第二参 ThemeColor(树项红色标记),
+  // 替身同形记 color,测试断言 color.id。
+  constructor(public readonly id: string, public readonly color?: ThemeColor) {}
 }
 
 export class TreeItem {
