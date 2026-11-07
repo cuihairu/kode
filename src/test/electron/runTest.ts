@@ -59,6 +59,7 @@ async function main(): Promise<void> {
   const dirtyMode = process.argv.includes('--dirty');
   let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
+  let dbgLaunchArgs: string[] = [];
   // IDE-LIV-003..007 真机运行观测联验:工作区=KODE_LIV_WORKSPACE(引擎资产根,
   // 供 LIV-007 源码解析),引擎日志目录=KODE_LIV_ENGINE_LOG_DIR,证据出=
   // KODE_LIV_OUT;引擎须已在本机运行(组件发现走真实广播)。
@@ -69,6 +70,27 @@ async function main(): Promise<void> {
       throw new Error('--live 需要 KODE_LIV_WORKSPACE(引擎资产根工作区)');
     }
     workspacePath = process.env.KODE_LIV_WORKSPACE;
+  }
+  // KODE-DBG-001 真机验收:工作区=KODE_DBG_WORKSPACE(引擎资产根,回落
+  // KODE_LIV_WORKSPACE),证据出=KODE_DBG_OUT;引擎须已在本机运行。
+  // debugpy 附加还需要 debugpy 调试器扩展:套件首跑前由 dbglive 段落把
+  // 本机已装的 ms-python.debugpy 复制进 .vscode-test/extensions(见下)。
+  const dbgLiveMode = process.argv.includes('--dbglive');
+  if (dbgLiveMode) {
+    process.env.KODE_ELECTRON_SUITE = 'dbglive';
+    workspacePath = process.env.KODE_DBG_WORKSPACE
+      || process.env.KODE_LIV_WORKSPACE
+      || workspacePath;
+    // debugpy 调试器扩展(ms-python.debugpy 贡献 'debugpy' 调试类型)不在
+    // 纯下载的测试 VS Code 里;测试实例直接挂本机用户扩展目录(该目录已
+    // 由 `Code --install-extension ms-python.debugpy` 装好,依赖的
+    // ms-python.python 也在),并配独立 user-data 免与日常实例互扰。
+    dbgLaunchArgs = [
+      '--extensions-dir',
+      process.env.KODE_DBG_EXTENSIONS_DIR ?? path.join(os.homedir(), '.vscode', 'extensions'),
+      '--user-data-dir',
+      path.join(extensionDevelopmentPath, '.vscode-test', 'dbglive-user-data')
+    ];
   }
   // KODE-I18N-003 缺 key 回退真机验证:临时扩展副本删 zh-cn 包一个键,以
   // --locale=zh-cn 拉起真 VS Code,断言该键解析结果=默认包文案(回落),
@@ -710,6 +732,7 @@ async function main(): Promise<void> {
     launchArgs: [
       workspacePath,
       ...localeArgs,
+      ...dbgLaunchArgs,
       // 无显示环境(headless/CI)必需:xvfb 下禁 GPU 与沙箱
       '--disable-gpu',
       '--no-sandbox',
