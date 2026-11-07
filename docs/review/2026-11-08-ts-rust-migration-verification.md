@@ -48,3 +48,15 @@
 | 生成器、调试装配、主题、语法资源 | `src/activate/generators.ts`、`src/activate/serverControls.ts` 仍装配 TS 向导/调试；语法主题为静态资源。**保留或重构边界尚需逐项判断；不是所有 TS 代码都应迁移。** |
 
 剩余工作：逐个命令、provider 和 Rust RPC 建可复现的端到端矩阵，识别生产中完全未调用的 RPC，补齐新旧路径与用户资产保护对拍；本批不声称完成全仓清单或允许切换总 serving 门禁。
+
+## 第四批：Rust RPC 注册与消费面
+
+静态枚举 `crates/kode-server/src/**` 的 `reg.register` 得到 21 个注册项；对照 `src/` 字面方法名与调用方。结论限定当前树，测试调用不等于生产接线。
+
+- `config/resolve`、`config/derive`、`processTopology/validate`、`lint/analyzeDef`、`python/callgraph`、`python/symbols`、`sdk/generate`、`dependency/graph`、`databaseSchema/build`、`messageTable/build`、`ruff/lint` 与五个 `dbClone/*` 均有 TS 包装或消费路径；其默认模式、回退及覆盖程度分别以上表和对应源码为准。
+- `def/md5` 有 TS 包装但当前未见生产调用，见 RUST-MIGRATION-AUDIT-003。
+- `apiDocs/lookup` 未发现 TS RPC 消费：`src/pythonApiHoverDocs.ts` 使用同源生成的 TS `API_DOC_ENTRIES`；MCP 的 `explain` 复用文档数据。**数据同源不等于 hover 已迁 Rust**；是否切换须验证本地查询时延和断连行为。
+- `wire/encode` 与 `wire/decode` 未发现 TS RPC 消费；`crates/kode-mcp/src/kb.rs` 直接复用 Rust 编解码库提供 MCP 样例。**MCP 已使用 Rust 库，VS Code 生产 RPC 消费未发现**；不能据此断言已有 VS Code 功能丢失，应先明确迁移目标。
+- `echo` 是 RPC 基础测试入口，不当作需要迁移的用户功能。
+
+以上覆盖注册项的字面调用核查，不包含标准 LSP 方法、动态方法名、不同构建配置或全体 VS Code 命令；无法从静态引用推出对拍通过或已正式切流。
