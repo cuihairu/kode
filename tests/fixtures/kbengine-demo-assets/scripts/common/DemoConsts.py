@@ -13,3 +13,6 @@ DEMO_RESPAWN_DELAY = 5.0     # 倒地后回出生点满血重生的延时(秒)
 # 击杀奖励(Monster 死亡 → 击杀者)
 DEMO_GOLD_PER_KILL = 10      # 金币(Inventory 组件 gold)
 DEMO_XP_PER_KILL = 30        # 经验(基座 experience)
+
+# bots 无头玩家移动(DEMO-GAME-004)
+DEMO_BOTS_MOVE_VELOCITY = 4.0  # bots 走向目标的速度(客户端权威位移,自动同步服务端)

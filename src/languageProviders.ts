@@ -153,6 +153,21 @@ import {
   formatInferredReturnHover,
   formatSelfPropertyTypeHover
 } from './hoverMarkdown';
+// C-21:KBEngine Python API 文档 hover(知识页生成镜像;locale 与配置开关复用
+// hoverLocale/featureConfig 既有面)
+import {
+  apiDocDomainsForFace,
+  formatApiDocHover,
+  formatApiDocSupplement,
+  getKbengineApiAccessAtPosition,
+  getPythonCallbackDefinitionAtPosition,
+  lookupApiDoc
+} from './pythonApiHoverDocs';
+import {
+  currentHoverLanguageEnv,
+  readHoverLanguageSetting,
+  resolveHoverLanguage
+} from './hoverLocale';
 import { resolveLocalVariableReturnTypeFromSnapshot } from './pythonReturnTypeInference';
 import {
   startLanguageServiceOperation
@@ -309,6 +324,9 @@ function getLanguageFeatureConfig() {
     hoverEntityRegistration: config.get<boolean>('hover.entityRegistration', true),
     hoverDefChain: config.get<boolean>('hover.defChain', true),
     hoverEventStats: config.get<boolean>('hover.eventStats', true),
+    // C-21:KBEngine Python API 文档 hover(KBEngine.<api>/生命周期回调/内建
+    // 属性文档段),默认开
+    hoverApiDocs: config.get<boolean>('hover.apiDocs', true),
     // CodeLens 同批按 provider 各一枚
     codeLensRpc: config.get<boolean>('codeLens.rpc', true),
     codeLensEventCallbacks: config.get<boolean>('codeLens.eventCallbacks', true),
@@ -1005,7 +1023,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         return respond(this.memoizedHover(memoKey, document.version, sharedToken =>
           raceWithBudget(
             'hover:def-method',
-            this.resolveDefMethodAnnotation(manager, document, position.line, methodName, sharedToken, timer)
+            this.resolveDefMethodAnnotation(manager, document, position.line, methodName, sharedToken, timer, featureConfig.hoverApiDocs)
               .then(annotation => {
                 if (annotation) { return annotation; }
                 const stop = timer?.start('annotation-query');
@@ -1068,7 +1086,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         return respond(this.memoizedHover(memoKey, document.version, sharedToken =>
           raceWithBudget(
             'hover:builtin-property',
-            this.resolveBuiltinPropertyAnnotation(manager, document, selfAccess.currentSymbol, sharedToken, timer)
+            this.resolveBuiltinPropertyAnnotation(manager, document, selfAccess.currentSymbol, sharedToken, timer, featureConfig.hoverApiDocs)
               .then(annotation => {
                 if (annotation) { return annotation; }
                 // TYP-ARRAY:内建属性未命中 → 同点位试 def 属性容器注解
@@ -1280,7 +1298,8 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     line: number,
     methodName: string,
     token?: vscode.CancellationToken,
-    timer?: HoverPhaseTimer
+    timer?: HoverPhaseTimer,
+    apiDocsEnabled = false
   ): Promise<vscode.Hover | null> {
     // IDE-MET-003 分段:def-mapping(def 索引映射)→ schema(形参闸+签名)→
     // render(markdown 构造);timer 缺省零开销。
@@ -1333,6 +1352,16 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         defLine: location.line,
         exposed: location.exposed
       }));
+      // C-21 交付②第四类触发点:def 声明的方法在 API 文档库(entity 方法/
+      // 回调语义)另有记载时追加文档段(命中才非空,不覆盖 def 注解)
+      if (apiDocsEnabled) {
+        const locale = resolveHoverLanguage(readHoverLanguageSetting(), currentHoverLanguageEnv());
+        markdown.appendMarkdown(formatApiDocSupplement(
+          methodName,
+          apiDocDomainsForFace(resolveEntityComponentFaceFromPath(document.fileName)),
+          locale
+        ));
+      }
       hover = new vscode.Hover(markdown);
     } finally { stopRender?.(); }
     return hover;
@@ -1428,7 +1457,8 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     document: vscode.TextDocument,
     attributeName: string,
     token?: vscode.CancellationToken,
-    timer?: HoverPhaseTimer
+    timer?: HoverPhaseTimer,
+    apiDocsEnabled = false
   ): Promise<vscode.Hover | null> {
     // IDE-MET-003 分段:def-mapping(面归属判定+属性命中)→ render;此面无
     // schema 段(不读 def 声明签名)。
@@ -1456,6 +1486,16 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       // 首行紧凑形态(用户令 2026-10-21 形态升级单 ①):类型紧跟属性名冒号后
       // (**self.databaseID: int** — baseapp面 · 只读),详情段走单一 formatter
       markdown.appendMarkdown(formatBuiltinPropertyHover(hit));
+      // C-21 B 触发点:内建属性在 API 文档库另有语义段时追加(命中才非空,
+      // 不重复签名,不覆盖既有标注)
+      if (apiDocsEnabled) {
+        const locale = resolveHoverLanguage(readHoverLanguageSetting(), currentHoverLanguageEnv());
+        markdown.appendMarkdown(formatApiDocSupplement(
+          hit.property.name,
+          apiDocDomainsForFace(hit.face),
+          locale
+        ));
+      }
       hover = new vscode.Hover(markdown);
     } finally { stopRender?.(); }
     return hover;
@@ -1601,6 +1641,24 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       const earlyHook = getHookByName(word);
       if (earlyHook) {
         return createHookHover(earlyHook);
+      }
+    }
+
+    // C-21:KBEngine Python API 文档 hover(知识页抽取库;A. KBEngine.<api>
+    // 成员访问、C. 生命周期回调 def 声明行)。排在 kbe 模块符号(SP-2)与
+    // 实体 hooks 面之后:已有更详实 hover 的符号不被覆盖,本面补其余成员。
+    if (document.languageId === 'python' && featureConfig.hoverApiDocs) {
+      const lineText = document.lineAt(position.line).text;
+      const apiAccess = getKbengineApiAccessAtPosition(lineText, position.character);
+      const callbackDef = apiAccess ? null : getPythonCallbackDefinitionAtPosition(lineText, position.character);
+      const name = apiAccess?.member ?? callbackDef?.name;
+      if (name) {
+        const face = resolveEntityComponentFaceFromPath(document.fileName);
+        const locale = resolveHoverLanguage(readHoverLanguageSetting(), currentHoverLanguageEnv());
+        const lookup = lookupApiDoc(name, callbackDef ? [] : apiDocDomainsForFace(face), locale);
+        if (lookup.kind !== 'miss') {
+          return new vscode.Hover(formatApiDocHover(lookup));
+        }
       }
     }
 

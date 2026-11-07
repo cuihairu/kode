@@ -27,7 +27,7 @@
       },
       "response": {
         "contents": {
-          "value": "**self.databaseID: int** — baseapp面 · 只读\n\n引擎注册面: `server/baseapp/entity.cpp:38`"
+          "value": "**self.databaseID: int** — baseapp面 · 只读\n\n引擎注册面: `server/baseapp/entity.cpp:38`\n---\n永久 id；0 表示从未归档。getter entity.cpp:769（pyGetDBID）。 _(API 文档 · api-baseapp-entity)_\n"
         }
       }
     },

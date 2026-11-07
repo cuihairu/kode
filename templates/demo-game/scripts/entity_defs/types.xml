@@ -1,0 +1,53 @@
+<root>
+	<!--
+		自定义类型定义文件(<你的资产库>/scripts/entity_defs/types.xml)
+		详细说明请参考：http://www.kbengine.org/cn/docs/programming/user_types.html
+	-->
+
+	<!-- 别名链:ITEM_ID/ITEM_DESC 只是别名,存储与网络层用别名名 -->
+	<ITEM_ID> UINT16 </ITEM_ID>
+	<ITEM_DESC> STRING </ITEM_DESC>
+
+	<!-- FIXED_DICT + implementedBy:引擎按「模块路径.实现对象」装载序列化实现;
+	     FD 键的数组元素写在 <Type> 内(datatype.cpp FixedArrayType::initialize
+	     从 Type 节点找 <of>),<of> 文本才是元素类型 -->
+	<SKILL_SLOT>
+		FIXED_DICT
+		<Properties>
+			<slot_list>
+				<Type>
+					ARRAY
+					<of> UINT32 </of>
+				</Type>
+			</slot_list>
+			<count>
+				<Type> UINT32 </Type>
+			</count>
+		</Properties>
+		<implementedBy> SKILL_SLOT_DATA.weapon_skill_slot_list_inst </implementedBy>
+	</SKILL_SLOT>
+
+	<POSITION>
+		FIXED_DICT
+		<Properties>
+			<x>
+				<Type> FLOAT </Type>
+			</x>
+			<y>
+				<Type> FLOAT </Type>
+			</y>
+			<z>
+				<Type> FLOAT </Type>
+			</z>
+		</Properties>
+		<implementedBy> POSITION_DATA.position_inst </implementedBy>
+	</POSITION>
+
+	<!-- 数组自定义类型:条目指引是文本节点(datatypes.cpp loadTypes 读 FirstChild
+	     的 getValStr),<of> 与文本同级,元素类型走 of 的文本(ITEM_ID ← UINT16) -->
+	<ITEM_IDS>
+		ARRAY
+		<of> ITEM_ID </of>
+	</ITEM_IDS>
+
+</root>

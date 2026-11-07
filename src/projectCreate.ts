@@ -6,12 +6,17 @@
  * 删,GEN-006 同口径)。成功后按导入命令同一识别链与档案存储建 profile
  * (IDE-PRJ-003 identifyProjectLayout + PRJ-001 ProjectProfileStore),
  * 引擎仓不在模板里,engineRoot 如实空。任一步取消(Esc/关对话框)零写入。
+ *
+ * DEMO-GAME-006:保护流下沉为共享 createProjectFromTemplate,demo 游戏
+ * 模板(templates/demo-game,磁盘装载)与最小清单同面创建。
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { buildProjectCreationPreviewItems, planProjectCreation } from './projectTemplate';
+import { buildProjectCreationPreviewItems, listMinimalProjectTemplate, planProjectCreation } from './projectTemplate';
+import type { ProjectTemplateEntry } from './projectTemplate';
+import { loadDemoGameTemplateEntries } from './demoGameTemplate';
 import { confirmGenerationPlanItems } from './generationConfirm';
 import { writeFileAtomic } from './atomicFileWrite';
 import { identifyProjectLayout } from './projectImport';
@@ -77,6 +82,50 @@ export async function createMinimalProject(
   },
   deps: ProjectCreateDeps = {}
 ): Promise<void> {
+  await createProjectFromTemplate(
+    context,
+    // 最小模板条目防御性拷贝(008 既有口径:清单不被调用方改动影响)
+    { entries: listMinimalProjectTemplate(), successNoun: '最小项目' },
+    deps
+  );
+}
+
+/**
+ * demo 游戏项目创建(DEMO-GAME-006):templates/demo-game(夹具游戏子集)
+ * 装载后走与最小项目完全相同的保护面。模板读取失败/为空如实报错返回,
+ * 不落半套;成功后同样按导入识别链建 profile。
+ */
+export async function createDemoGameProject(
+  context: {
+    workspaceState?: vscode.Memento;
+  },
+  options: { templateRoot: string },
+  deps: ProjectCreateDeps = {}
+): Promise<void> {
+  let entries: ProjectTemplateEntry[];
+  try {
+    entries = loadDemoGameTemplateEntries(options.templateRoot);
+  } catch (error) {
+    await vscode.window.showErrorMessage(
+      `demo 游戏模板读取失败(${options.templateRoot}): ${error instanceof Error ? error.message : String(error)}`
+    );
+    return;
+  }
+  if (entries.length === 0) {
+    await vscode.window.showErrorMessage(`demo 游戏模板为空，拒绝创建: ${options.templateRoot}`);
+    return;
+  }
+  await createProjectFromTemplate(context, { entries, successNoun: 'demo 游戏' }, deps);
+}
+
+/** 共享创建流:选根→预检→确认→落盘(原子写)→失败回收→建档(008 面) */
+async function createProjectFromTemplate(
+  context: {
+    workspaceState?: vscode.Memento;
+  },
+  options: { entries: readonly ProjectTemplateEntry[]; successNoun: string },
+  deps: ProjectCreateDeps = {}
+): Promise<void> {
   const pickedFolders = await vscode.window.showOpenDialog({
     canSelectFolders: true,
     canSelectMany: false,
@@ -88,7 +137,7 @@ export async function createMinimalProject(
     return;
   }
 
-  const plan = planProjectCreation(targetRoot, { exists: candidate => fs.existsSync(candidate) });
+  const plan = planProjectCreation(targetRoot, { exists: candidate => fs.existsSync(candidate) }, options.entries);
   if (plan.conflicts.length > 0) {
     for (const conflict of plan.conflicts) {
       await vscode.window.showErrorMessage(`目标已存在，拒绝创建: ${conflict.absolutePath}`);
@@ -124,6 +173,14 @@ export async function createMinimalProject(
         mkdir(absolutePath);
         createdDirs.push(absolutePath);
       } else {
+        // 文件条目隐含父目录:磁盘装载的模板(demo 游戏)文件与目录条目
+        // 按名交错,父先于子不由排序保证——落盘前确保父目录在(与目录
+        // 条目同一 mkdir 原语,记入回收面;已存在的不重复记账)
+        const parentDir = path.dirname(absolutePath);
+        if (!fs.existsSync(parentDir)) {
+          mkdir(parentDir);
+          createdDirs.push(parentDir);
+        }
         writeFile(absolutePath, entry.content);
         createdFiles.push({ filePath: absolutePath, content: entry.content });
       }
@@ -147,6 +204,6 @@ export async function createMinimalProject(
     interpreterSource: interpreter.interpreterSource
   });
   await vscode.window.showInformationMessage(
-    `已创建最小项目 profile: ${profile.displayName} (${profile.id});${describeInterpreterState(profile)}`
+    `已创建${options.successNoun} profile: ${profile.displayName} (${profile.id});${describeInterpreterState(profile)}`
   );
 }

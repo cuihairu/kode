@@ -951,6 +951,16 @@ The flow graph panel supports:
   - Atomic writes and rollback: files land via atomic write (temp file + rename); if any step fails, everything created this run is rolled back (files first, then directories in reverse order, plus the implicitly created target root when it did not exist before) and the failure is reported
 - Behavior: after a successful creation the profile is built through the same identification chain and identity store as the import command (display name = target folder name), and the message reports the profile ID plus the Python interpreter state (setting if it exists → PATH → explicitly missing)
 
+### `kbengine.project.createDemoGame`
+
+- Title: `Create Demo Game Project`
+- Purpose: scaffold a playable mini-ARPG KBEngine project (login/avatar creation, monster spawning, combat with kill rewards and level-ups, death/respawn, headless bots) from the demo game template shipped with the extension, and register it as a project profile in one command
+- Template payload: `templates/demo-game` inside the extension install directory — the game subset of the acceptance fixture byte-for-byte (base/cell/client/bots/common/interfaces/db/interface/logger/login scripts, entity_defs with the game entities, user types, res/server), with only `scripts/entities.xml` trimmed to the five game entities (Account/Spaces/Space/Avatar/Monster); a parity test pins the template to the fixture so neither side drifts alone
+- Generator protections: identical to `kbengine.project.create` (refuse on conflict before any preview, the shared confirm QuickPick with one row per entry, atomic writes — file entries create their parent directories on demand — roll-back-everything-this-run on failure, profile registration through the import identification chain); a missing or empty template reports honestly and writes nothing
+- Empty-workspace offer: when a window opens with exactly one workspace folder that has no non-dot entries (an empty directory), the extension proactively offers this command once via a notification (delayed ~2s after activation; dismissing runs nothing); the offer needs `onStartupFinished` activation because `workspaceContains` cannot express an empty folder
+
+
+
 ### `kbengine.project.selectActive`
 
 - Title: `Select Active Project Profile`

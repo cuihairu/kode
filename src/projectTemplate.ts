@@ -73,16 +73,23 @@ export interface ProjectCreationPlan {
  * 落盘预检:清单逐条映射到目标根下的绝对路径,已存在的目标(文件或目录
  * 皆算)如实进 conflicts;冲突不截短 entries——清单始终完整摊开,拒绝由
  * 调用方按 conflicts 非空执行。
+ *
+ * entries 缺省为最小模板;DEMO-GAME-006 起 demo 游戏模板(磁盘装载,
+ * demoGameTemplate.loadDemoGameTemplateEntries)也走同一预检/预览/落盘面。
  */
-export function planProjectCreation(targetRoot: string, deps: ProjectCreationDeps): ProjectCreationPlan {
-  const entries = MINIMAL_PROJECT_TEMPLATE.map(entry => ({
+export function planProjectCreation(
+  targetRoot: string,
+  deps: ProjectCreationDeps,
+  entries: readonly ProjectTemplateEntry[] = MINIMAL_PROJECT_TEMPLATE
+): ProjectCreationPlan {
+  const planned = entries.map(entry => ({
     entry,
     absolutePath: path.join(targetRoot, entry.relativePath)
   }));
-  const conflicts = entries
+  const conflicts = planned
     .filter(({ absolutePath }) => deps.exists(absolutePath))
     .map(({ absolutePath }) => ({ absolutePath, reason: `目标已存在: ${absolutePath}` }));
-  return { targetRoot, entries, conflicts };
+  return { targetRoot, entries: planned, conflicts };
 }
 
 /**

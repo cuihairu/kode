@@ -75,8 +75,10 @@ class Monster(Avatar):
 		self.onDamaged(attackerId)
 		Avatar.receiveDamage(self, damage, attackerId)
 		if self.hp <= 0:
+			# 击杀者须真是 Avatar 才有奖励面(怪物互杀/环境杀伤无 bag/基座经验面);
+			# 无条件自毁——奖励分支异常不得吞掉 destroy,否则 hp=0 尸体滞留战场。
 			killer = KBEngine.entities.get(attackerId)
-			if killer is not None and hasattr(killer, "base"):
+			if killer is not None and getattr(killer, "className", "") == "Avatar":
 				killer.bag.gold += DEMO_GOLD_PER_KILL
 				killer.base.cellAddExperience(DEMO_XP_PER_KILL)
 				msg = "Monster[%i] KILLED by Avatar[%i] reward gold+=%i exp+=%i" % (
@@ -93,8 +95,9 @@ class Monster(Avatar):
 	def _pickTarget(self):
 		"""态势采集:优先记忆的仇恨目标,否则 entitiesInRange 拾最近存活 Avatar。
 
-		引擎 entitiesInRange(radius, entityType) 按 utype 精确匹配
-		(entity_coordinate_node.cpp:237),Monster 继承 Avatar 不会自相仇恨。
+		引擎取证修正:entitiesInRange(radius, entityType) 按 utype 匹配,
+		def <Parent> 继承使 Monster 与 Avatar 同族命中(真机:无 Avatar 在场时
+		怪物拾到彼此/自身并自相残杀)——必须再按 className 过滤敌我。
 		"""
 		if self.aiTargetId:
 			e = KBEngine.entities.get(self.aiTargetId)
@@ -104,6 +107,8 @@ class Monster(Avatar):
 		best = None
 		bestDist = None
 		for e in self.entitiesInRange(monster_ai.AGGRO_RANGE, "Avatar"):
+			if getattr(e, "className", "") != "Avatar":
+				continue
 			if getattr(e, "hp", 0) <= 0:
 				continue
 			d = monster_ai.dist(

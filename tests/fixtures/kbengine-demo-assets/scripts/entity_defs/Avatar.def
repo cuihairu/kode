@@ -75,6 +75,11 @@
 		<onLevelUp>
 			<Arg> UINT32 </Arg>
 		</onLevelUp>
+		<onMonsterNear>
+			<Arg> FLOAT </Arg>
+			<Arg> FLOAT </Arg>
+			<Arg> UINT32 </Arg>
+		</onMonsterNear>
 	</ClientMethods>
 
 	<BaseMethods>
@@ -87,11 +92,21 @@
 		</cellAddExperience>
 		<onAvatarDead>
 		</onAvatarDead>
+		<onRadarPush>
+			<Arg> FLOAT </Arg>
+			<Arg> FLOAT </Arg>
+			<Arg> UINT32 </Arg>
+		</onRadarPush>
 	</BaseMethods>
 
 	<CellMethods>
 		<respawn>
 		</respawn>
+		<reqRadarPing>
+		</reqRadarPing>
+		<reqGoto>
+			<Exposed> true </Exposed>
+		</reqGoto>
 		<receiveDamage>
 			<Arg> UINT32 </Arg>
 			<Arg> UINT32 </Arg>

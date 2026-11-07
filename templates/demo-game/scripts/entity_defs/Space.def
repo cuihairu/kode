@@ -1,0 +1,10 @@
+<root>
+	<!-- 迷你 ARPG:空间实体。基实体持有 spaceIndex,cell 部分落在自建的新空间里
+	     (createCellEntityInNewSpace),Avatar 经 createCellEntity(space.cell) 加入。 -->
+	<Properties>
+		<spaceIndex>
+			<Type> UINT32 </Type>
+			<Flags> BASE </Flags>
+		</spaceIndex>
+	</Properties>
+</root>
