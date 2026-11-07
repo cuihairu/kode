@@ -108,6 +108,7 @@
     "onCommand:kbengine.symbolReferences.show",
     "onCommand:kbengine.profile.start",
     "onCommand:kbengine.runtimeQuery.show",
+    "onCommand:kbengine.liveObservation.openExceptionSource",
     "onCommand:kbengine.spaces.query",
     "onCommand:kbengine.compatibility.check",
     "onCommand:kbengine.workbench.show",
@@ -702,6 +703,10 @@
       {
         "command": "kbengine.runtimeQuery.show",
         "title": "%kbengine.command.runtimeQuery.show.title%"
+      },
+      {
+        "command": "kbengine.liveObservation.openExceptionSource",
+        "title": "%kbengine.command.liveObservation.openExceptionSource.title%"
       },
       {
         "command": "kbengine.spaces.query",
