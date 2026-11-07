@@ -143,6 +143,25 @@ engine calls 36 distinct names. The two sets overlap on 33 names:
 | Engine calls, no template implements it | 3 | `onAutoLoadEntityCreate`, `onSpaceGeometryLoaded`, `onTargetChanged` | guards/paths: `entity_autoloader.cpp:90`, `py_macros.h:736`, `clientapp.cpp:458` |
 | Template defines it, engine never calls it | 3 | `onFini`, `onStart`, `onTick` | see below |
 
+### 34 vs 36: both numbers are real, they measure different scopes
+
+An earlier ledger note recorded this table as **34 methods**. A programmatic
+re-scan of `kbe/src` (at `c2a3b8f`, re-verified unchanged at `3082ab5`)
+confirms **36 distinct names** invoked through `getEntryScript()` — nothing
+was over-counted here. The two numbers measure different scopes:
+
+- **36** = every method the engine invokes on the entry-script object, across
+  all components *including* the client/bots pair `onFinish`
+  (`clientapp.cpp:303`, `bots.cpp:124`) and `onTargetChanged`
+  (`clientapp.cpp:458`) that no server-side `kbemain.py` ever receives.
+- **34** = the server-component scope: 36 minus that client/bots-only pair.
+  This is the number that matters when authoring a *server* entry script, and
+  it is the scope downstream consumers (e.g. SPI CodeLens recognition) should
+  match against.
+
+Both counts exclude `onFini`, `onStart` and `onTick` — those three are not
+engine calls at all, as established below.
+
 ### The three template-only names, corrected
 
 - **`onFini` — template vs implementation mismatch, 待证伪.** No call site
