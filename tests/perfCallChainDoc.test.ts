@@ -161,12 +161,12 @@ const ANCHORS: Array<[string, number, string]> = [
   // 全部 extension.ts 锚点再 +1(真位重探 692/705/989/1071/1122/1185/1508
   // →693/706/990/1072/1123/1186/1509,后段 2378/2458),出处随 baseline 锁步。
   ['src/extension.ts', 1057, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1108, "startLanguageServiceOperation('definition'"],
   ['src/extension.ts', 1171, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1170, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 975, "startLanguageServiceOperation('completion'"],
   ['src/extension.ts', 1494, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1493, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 678, "startLanguageServiceOperation('diagnostics'"],
   ['src/extension.ts', 691, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 690, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
