@@ -28,34 +28,10 @@ const SKIP_DIRS: &[&str] = &[
 ];
 
 /// 递归收集资产根 + 额外路径下的 `.md` 文件(确定序、去重、封顶)。
-fn collect_md(root: &Path, extra: &[PathBuf]) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let mut stack: Vec<PathBuf> = Vec::new();
-    stack.push(root.to_path_buf());
-    stack.extend(extra.iter().cloned());
-    while let Some(dir) = stack.pop() {
-        if out.len() >= MAX_FILES {
-            break;
-        }
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if SKIP_DIRS.contains(&name) {
-                    continue;
-                }
-                stack.push(path);
-            } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
-                out.push(path);
-            }
-        }
-    }
-    out.sort();
-    out.dedup();
-    out
+fn collect_md(root: &Path, extra: &[PathBuf]) -> crate::bounded_scan::Scan {
+    let mut roots = vec![root.to_path_buf()];
+    roots.extend_from_slice(extra);
+    crate::bounded_scan::collect(&roots, "md", SKIP_DIRS, MAX_FILES)
 }
 
 fn read_capped(path: &Path) -> Option<String> {
@@ -119,7 +95,12 @@ fn headings_of(text: &str) -> Vec<String> {
 /// `search_docs`:在资产根 + 额外路径的 `.md` 里大小写不敏感检索 query,
 /// 返回命中文件的事实(file/title/headings/snippet)。空 query → Err;
 /// 无命中 → 空集如实。limit 缺省 20。
-pub fn search_docs(root: &Path, extra: &[PathBuf], query: &str, limit: usize) -> Result<Value, String> {
+pub fn search_docs(
+    root: &Path,
+    extra: &[PathBuf],
+    query: &str,
+    limit: usize,
+) -> Result<Value, String> {
     let query = query.trim();
     if query.is_empty() {
         return Err("empty search query".to_string());
@@ -127,11 +108,15 @@ pub fn search_docs(root: &Path, extra: &[PathBuf], query: &str, limit: usize) ->
     let q = query.to_lowercase();
     // 每次调用重走(有界:文件数封顶、读文件封顶 1MB);进程根+额外路径
     // 固定,走查代价是目录枚举,非内容读,可接受且无陈旧索引风险。
-    let files = collect_md(root, extra);
-    let scanned = files.len();
+    let scan = collect_md(root, extra);
+    let scanned = scan.files.len();
+    let mut errors = scan.errors;
+    let truncated = scan.truncated;
     let mut matches: Vec<Value> = Vec::new();
-    for file in files {
+    let mut results_limited = false;
+    for file in scan.files {
         let Some(text) = read_capped(&file) else {
+            errors += 1;
             continue;
         };
         if !text.to_lowercase().contains(&q) {
@@ -144,12 +129,16 @@ pub fn search_docs(root: &Path, extra: &[PathBuf], query: &str, limit: usize) ->
             "snippet": snippet_of(&text, &q),
         }));
         if matches.len() >= limit {
+            results_limited = true;
             break;
         }
     }
     Ok(json!({
         "query": query,
         "scanned": scanned,
+        "truncated": truncated,
+        "results_limited": results_limited,
+        "scan_errors": errors,
         "count": matches.len(),
         "matches": matches,
     }))
@@ -199,11 +188,16 @@ mod tests {
     #[test]
     fn extra_path_is_searched_in_addition_to_root() {
         let root = std::env::temp_dir().join(format!("kode-mcp-docs-extra-{}", std::process::id()));
-        let extra = std::env::temp_dir().join(format!("kode-mcp-docs-extra-dir-{}", std::process::id()));
+        let extra =
+            std::env::temp_dir().join(format!("kode-mcp-docs-extra-dir-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::create_dir_all(&extra).unwrap();
         std::fs::write(root.join("root.md"), "# Root\n\nroot content\n").unwrap();
-        std::fs::write(extra.join("game-req.md"), "# 游戏配置需求\n\n数值平衡说明。\n").unwrap();
+        std::fs::write(
+            extra.join("game-req.md"),
+            "# 游戏配置需求\n\n数值平衡说明。\n",
+        )
+        .unwrap();
         let out = search_docs(&root, &[extra.clone()], "数值平衡", 20).expect("answer");
         assert_eq!(out["count"], 1);
         assert!(out["matches"][0]["file"]

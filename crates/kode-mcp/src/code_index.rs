@@ -45,31 +45,7 @@ pub struct PySymbol {
 
 /// `{root}/scripts` 下递归收集 `.py`(有界)。
 fn collect_py(root: &Path) -> Vec<PathBuf> {
-    let scripts = root.join("scripts");
-    let mut out = Vec::new();
-    let mut stack: Vec<PathBuf> = vec![scripts];
-    while let Some(dir) = stack.pop() {
-        if out.len() >= MAX_FILES {
-            break;
-        }
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if SKIP_DIRS.contains(&name) {
-                    continue;
-                }
-                stack.push(path);
-            } else if path.extension().and_then(|e| e.to_str()) == Some("py") {
-                out.push(path);
-            }
-        }
-    }
-    out.sort();
-    out
+    crate::bounded_scan::collect(&[root.join("scripts")], "py", SKIP_DIRS, MAX_FILES).files
 }
 
 fn read_capped(path: &Path) -> Option<String> {
@@ -190,32 +166,46 @@ pub fn search_symbols(root: &Path, query: &str, limit: usize) -> Result<Value, S
         return Err("empty symbol query".to_string());
     }
     let q = query.to_lowercase();
+    let scan = crate::bounded_scan::collect(&[root.join("scripts")], "py", SKIP_DIRS, MAX_FILES);
+    let mut errors = scan.errors;
     let mut found: Vec<Value> = Vec::new();
-    for sym in collect_symbols(root) {
-        if !sym.name.to_lowercase().contains(&q) {
+    for file in scan.files {
+        let Some(source) = read_capped(&file) else {
+            errors += 1;
             continue;
-        }
-        let mut entry = json!({
-            "name": sym.name,
-            "kind": sym.kind,
-            "file": sym.file.to_string_lossy(),
-            "line": sym.line,
-        });
-        if let Some(class) = sym.class {
-            entry["class"] = Value::String(class);
-        }
-        found.push(entry);
-        if found.len() >= limit {
-            return Ok(json!({
-                "query": query,
-                "count": found.len(),
-                "matches": found,
-            }));
+        };
+        for sym in symbols_of(&file, &source) {
+            if !sym.name.to_lowercase().contains(&q) {
+                continue;
+            }
+            let mut entry = json!({
+                "name": sym.name,
+                "kind": sym.kind,
+                "file": sym.file.to_string_lossy(),
+                "line": sym.line,
+            });
+            if let Some(class) = sym.class {
+                entry["class"] = Value::String(class);
+            }
+            found.push(entry);
+            if found.len() >= limit {
+                return Ok(json!({
+                    "query": query,
+                    "count": found.len(),
+                    "truncated": scan.truncated,
+                    "results_limited": true,
+                    "scan_errors": errors,
+                    "matches": found,
+                }));
+            }
         }
     }
     Ok(json!({
         "query": query,
         "count": found.len(),
+        "truncated": scan.truncated,
+        "results_limited": false,
+        "scan_errors": errors,
         "matches": found,
     }))
 }
@@ -243,7 +233,10 @@ mod tests {
         // "account" 命中类名 Account 与方法 login? login 不含 account →
         // 只类命。大小写不敏感子串:Account→account 命中。
         let matches = out["matches"].as_array().unwrap();
-        let class = matches.iter().find(|m| m["kind"] == "class").expect("class");
+        let class = matches
+            .iter()
+            .find(|m| m["kind"] == "class")
+            .expect("class");
         assert_eq!(class["name"], "Account");
         assert_eq!(class["line"], 1);
 
@@ -271,7 +264,8 @@ mod tests {
 
     #[test]
     fn no_match_is_honest_empty() {
-        let root = std::env::temp_dir().join(format!("kode-mcp-symbols-none-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("kode-mcp-symbols-none-{}", std::process::id()));
         let scripts = root.join("scripts");
         std::fs::create_dir_all(&scripts).unwrap();
         std::fs::write(scripts.join("a.py"), "x = 1\n").unwrap();
