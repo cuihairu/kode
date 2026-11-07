@@ -106,7 +106,12 @@ describe('IDE-LIV 真机运行观测联验', function () {
   before(async function () {
     evidenceLines.push(`[LIV] 真机联验开始 ${new Date().toISOString()}`);
     try {
-      components = await discoverLocalComponents({ timeoutMs: 2000 });
+      // 真机可在异机时,发现地址经 KODE_LIV_DISCOVERY_HOST 覆盖(默认 127.0.0.1,
+      // 与 machine 广播口同机直查;异机跑套件的前提是对端 20086/udp 可达)
+      components = await discoverLocalComponents({
+        host: process.env.KODE_LIV_DISCOVERY_HOST || '127.0.0.1',
+        timeoutMs: 2000
+      });
     } catch (error) {
       components = [];
       evidenceLines.push(`发现失败:${error instanceof Error ? error.message : String(error)}`);
