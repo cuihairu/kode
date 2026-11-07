@@ -940,13 +940,19 @@
     - ✅ 每篇机制文档带源码引用(全部 file:line 逐条锚定,新增件锚 kbengine@3082ab5);✅ 双语(en+zh 双树同构,VitePress 双侧边栏已挂);✅ MCP explain 工具(API+机制双面,e2e 验证真数据);如实边界:「>=95% 官方清单」无结构化官方清单可对账(官方 CHM 未入库),覆盖口径=知识页已 grounding 的 API 面 225 条(C-21 同一边界,已记录);③ 统计口径=本仓库两树非官方资产普查。README 状态表/依据规则/文章索引同步对账。
   - 门禁:eslint 0/tsc 0/unit 584 文件 7171 过+2 skip/cargo workspace(--exclude kode-scheduler)104 套全绿(含 kode-mcp 11 单测+3 e2e)/docs:build rc=0(死链检查过)/xvfb demo 25 RC=0。
 
-- [ ] **C-22 · P2 · 实现 · def 属性的可视化呈现(设计已定,2026-11-01)**
+- [x] **C-22 · P2 · 实现 · def 属性的可视化呈现(设计已定,2026-11-01)**(fcdab71f;2026-11-07 勾)
   - 背景:KBEngine 属性在 __init__ 之前由引擎赋值,Python 侧不可见不可跳转;曾考虑「__属性方法集中声明」方案,因引擎不调用、双事实源漂移、与真实初始化时序矛盾而否决(设计结论记录于本条)。
   - 交付①:.pyi 桩生成器(P0-A)把 def 属性生成为类注解属性(类型+def 行号锚点),跳转可达、改 def 自动再生;
   - 交付②:LSP「跳转到定义」对 def 属性用法(self.hp)直接指向 .def 的 <Properties> 行(单一事实源);hover 同时显示 def 声明与推断类型;
   - 交付③(可选视觉增强):__init__ 注释锚 # kode:props-from-def 处以 inlay hint 折叠渲染 def 属性只读视图(纯渲染,非代码)。
   - 原则:属性唯一事实源=def;一切方便理解的呈现走生成物或渲染层,不在 Python 源码造第二事实源。
   - 验收:self.hp 跳转直达 def 行;pyi 再生与 def 同步(改 def ≤1 周期内更新);零误导(无引擎不调用的死代码)。
+    - ✅ 状态考古先行(不重做已完成部分):交付①桩生成本体(entityTypeStubs `# source: .def:N` 注解行)与交付② F12 层1 property probes(resolvePropertyDefinitionForClass)+hover def 声明与推断类型(resolveSelfPropertyAnnotationHover/formatSelfPropertyTypeHover)均为既有批次已交付面,本批核验在位+既有测试覆盖(cov-languageProviders/selfPropertyHover「def 属性声明」例),未重做;
+    - ✅ 交付①补缺口=def 变更自动再生:EntityStubRegenController(entityStubRegen.ts,400ms 尾沿去抖,.def 后缀过滤大小写不敏感)+接线 pythonIndexFileEvents 订阅→exportEntityTypeStubs 再生→GeneratedSourceCodeLensProvider 实例 updateEntityPlan 重建 entity 桩 CodeLens 计划(原构造期冻结);py/xml 不触发(entities.xml 变更未接线=如实边界,types.xml 已有自身路径);去抖测试 3 例+updateEntityPlan 测试 1 例;
+    - ✅ 交付③=defPropsInlayHints.ts 注释锚 inlay:`# kode:props-from-def` 整行注释锚所在行尾渲染「def 属性(N)」总览(名称: 类型,逐段悬停=def 文件:行/可见域/持久化),纯渲染零代码写入,事实源仍 .def;根级属性 only(FIXED_DICT 子键与组件槽成员不进总览);kbengine.inlayHints.defProps 默认开(注释放=nls 双语);测试 6 例(纯层 anchor/items+真 EntityMappingManager 端到端+关配置/无锚/非实体/窄视口全回退空);
+    - ✅ 零误导:inlay 纯渲染不写代码;stub 注解为生成物(既有面);prove-red=stash src 后 defPropsInlayHints 3 文件新例红,恢复全绿;
+    - 对账:features/configuration/commands/docs(features en+zh)双树+provider-data-sources.md(DefPropsInlayHintsProvider 行)+package.json 配置面 4 锁步测试全绿(注册数 3→4、设置表、ANCHORS 9 锚+2026-baseline.md 出处同笔位移);历史文档 extension.ts 锚漂移为既有问题非本批引入,登记 KODE-DOC-001 待办不冒充已修;
+    - 门禁:eslint 0/tsc 0/unit 586 文件 7181 过+2 skip/docs:build rc=0/xvfb demo 25 RC=0。
 
 - [ ] **C-23 · P2 · 实现 · 行为知识工具化(坑→lint/code action/hover 流水线)**
   - 背景 2026-11-01 用户例:「属性修改只有顶层 key 才触发事件」这类行为知识无法在代码里体现,只能踩坑后知道。目标:把 KB-001 知识条目升级为开发者工具可执行的三通道呈现。
@@ -1040,6 +1046,7 @@
 - [ ] KODE-ARCH-002 [P2] 精简 extension.ts（5577 行）：命令/Provider/诊断/调试/数据库/热更新拆独立装配模块；验收：拆后全量测试绿。
 - [ ] KODE-ARCH-003 [P2] 建立五索引（SemanticIndex/EntityMapping/PythonClassIndex/WorkspaceIndex/GlobalDataIndex）所有权与版本失效契约文档+断言。
 - [ ] KODE-ARCH-004 [P3] 更新 docs/architecture/current-state.md（现为 2026-10-23 旧快照）。
+- [ ] KODE-DOC-001 [P3] 历史文档 extension.ts 行号锚全量对账(2026-11-07 C-22 批抽查发现):docs/zh/hotreload/current-implementation.md、docs/redesign.md、docs/zh/reference-feature-gap.md、docs/zh/architecture/index-ownership.md、docs/zh/design/config-first.md 等所引 extension.ts:NNNN 已随代码演进大幅漂移(抽查:文档 1395 实际 5049、文档 1135/1163 实际 4327/4360);逐条真位重探改写,或改叙述形态不再引行号。注:perfCallChainDoc/2026-baseline.md 的 ANCHORS 面已有测试锁步(tests/perfCallChainDoc.test.ts),不在本项内。
 - [x] KODE-PERF-007 [P3] 建立 v0.2 最新性能基线：30k 文件/多资产根/大 Python 文件的 Hover/Completion/Definition/Diagnostics/内存/宿主延迟。（78f91cd;实现=单场景自洽 provider 级 bench tests/perf/v02Baseline.bench.ts(真实 Provider 入口 KBEngineHoverProvider/KBEngineCompletionProvider/PythonCompletionProvider/KBEngineDefinitionProvider/PythonDefinitionProvider/validateDocument/validateEntitiesXmlDocument+真实索引 EntityMappingManager/PythonClassIndex,fake-vscode 桩;三场景 large-30k(30,005)/multi-root(root_a|b|c 三独立资产根,3 workspaceFolders 实测 KODE-PERF-004 多根遍历)/big-py(8000 方法单文件);每场景冷(构造后首扫在途)+热(5轮×20 样本 P50/P95/P99/max)× Hover/Completion(py+def)/Definition(py+def)/Diagnostics(def+缺陷+entities.xml)+激活墙钟+全量 .py 扫描墙钟+RSS(激活/扫描段峰值+增量);只观测不改行为,不设紧断言阈值防负载抖动;报告 docs/perf/2026-11-04-v02-baseline.md+原始输出 v02-baseline-run.txt;关键读数=large-30k 热态 P50 0.01-0.73ms 全维亚毫秒~毫秒级(30k 不放大稳态交互),big-py Hover P50 3.38ms/Completion(py) 3.67ms 为 large 同维度 ~26x/~60x(8000 方法单文件局部变量上行推导与成员枚举=唯一显著交互放大),multi-root 热态 P50 0.01-0.87ms 且扫描仅 8.6ms,启动宿主成本=large 全量 .py 扫描 10.4s(交互面 def 扫描仅 370ms 即就绪,30k .py 扫描后台不阻塞交互),内存=large 扫描期 RSS +127.91MB(92.99→251.77MB)且跨场景不回落(JS 堆不返还 OS),宿主延迟综合对照 KODE-PERF-006(进程拓扑全量重算 ~260ms 宿主阻塞=本树最高单次阻塞,交互面全部 <27ms max);限制如实=big-py Definition(def) 0 hit(该格为解析成本口径非命中口径,Definition 主维度以 Definition(py) 全部 1 hit 为准)+冷态 py 交互 0 hit(首扫在途预期)+fake-vscode 桩相对量级;门禁=eslint 0/tsc 0/unit 清洁 HEAD 工作树 5850 过 20 skip(logWebView 过/hooks skip 引擎源外部;仅 3 例已知负载抖动 budget 测试复跑隔离 132/132 过,当时 load~133 被无关 C++ 构建打满)/xvfb demo 25 RC=0,主树 2 例失败( hooks/logWebView)非本批——并发会话未提交 src/logWebView.ts+src/kbengineProtocol.ts 变更所致,清洁 HEAD 验证通过,2026-11-04 勾）
 - [x] KODE-AUD-TODO-001 [P2] 对齐 3 条已修复未关闭的旧审核项（Client SDK FIXED_DICT 伴随文件、Rust flag 归一化 normalize_flag_tokens、dependency graph implementedBy 先 ensure_node），实证后勾账。（2026-11-04 三条实证对齐:①Client SDK FIXED_DICT=审核发现行已勾 5ad4946(修=60a6569,两侧测试绿);②Rust flag 归一化 normalize_flag_tokens=审核发现行已勾 e21f024(修=3cc6735,parser_units+flag_domains_golden 绿);③dependency graph implementedBy ensure_node=审核发现行 2026-11-03 已勾(修=ensure_node 补建,dependency_graph_dispatch 实跑 ok)）
 
