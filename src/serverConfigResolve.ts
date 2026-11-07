@@ -243,9 +243,13 @@ export function resetConfigResolveForTests(): void {
   invalidationEpoch += 1;
 }
 
-/** 失效消费态(配置落盘/设置变化点调用):下一次 ensure 强制重取 core */
+/** 失效消费态(配置落盘/设置变化点调用):下一次 ensure 强制重取 core。
+ * 同时清空在途:失效是版本边界,边界前的在途回包注定被落槽守卫拒绝——
+ * 若不清,同键同指纹的紧随 ensure 会复用旧 promise、拿到注定不落槽的回包,
+ * 缓存持续为空(审核席三审残余 P1) */
 export function invalidateConfigResolved(): void {
   cacheSlots.clear();
+  inflights.clear();
   invalidationEpoch += 1;
 }
 
@@ -275,7 +279,7 @@ export async function ensureConfigResolved(
   // 在途请求按「代 + 文件指纹 + 键」隔离:配置落盘/设置变化(invalidate 或
   // 指纹前进)后,同键新调用不得复用旧配置的在途请求——否则变更后立即重取
   // 仍等到旧 RPC、合成文档回旧内容(审核席 P1:2026-11-07 CFG-009 审)。
-  const inflightKey = `${generation}\n${mark}\n${overridesKey}`;
+  const inflightKey = `${generation}\n${mark}\n${invalidationEpoch}\n${overridesKey}`;
   const existing = inflights.get(inflightKey);
   if (existing) {
     return existing;

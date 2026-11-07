@@ -275,4 +275,49 @@ describe('KODE-CFG-009 消费通道走 core 解析', () => {
     expect(slot?.customPath).toBe(path.join(root, 'kbengine.xml'));
     expect(slot?.dbInterface?.port).toBe(3306 + 2);
   });
+
+  it('在途期间失效(指纹不变)后,紧随 ensure 不复用注定不落槽的旧在途(审核席三审残余 P1)', async () => {
+    // 红:在途键不含 epoch 且 invalidate 不清在途——无关 kbengine*.xml 事件
+    // 在请求期间失效后,同键同指纹的紧随 ensure 复用旧 promise,而旧回包又因
+    // epoch 被拒落槽 → 缓存持续为空。
+    let releaseFirst: (() => void) | null = null;
+    let rpcCount = 0;
+    setKodeCoreShadowGate({
+      runInRust: async (_method: string, params: unknown) => {
+        rpcCount += 1;
+        const seq = rpcCount;
+        if (seq === 1) {
+          await new Promise<void>(resolve => {
+            releaseFirst = resolve;
+          });
+        }
+        const typed = params as { defaultsXml: string | null; customXml: string | null };
+        return {
+          ok: true as const,
+          result: {
+            defaultsTree: typed.defaultsXml !== null ? CORE_MERGED : null,
+            customTree: typed.customXml !== null ? CORE_MERGED : null,
+            merged: typed.defaultsXml !== null ? CORE_MERGED : null,
+            telnetSummary: [],
+            telnetDefaultPorts: { baseapp: 40000 },
+            customTelnet: null,
+            dbInterface: { ...CORE_DB, port: 3306 + seq }
+          }
+        };
+      }
+    } as unknown as KodeCoreGate);
+
+    const first = ensureConfigResolved();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    // 无关失效(指纹不变,镜像 watcher 对别的 kbengine*.xml 事件失效)
+    invalidateConfigResolved();
+    const second = await ensureConfigResolved();
+    // 新在途新 RPC:不复用注定不落槽的旧 promise
+    expect(rpcCount).toBe(2);
+    expect(second.dbInterface?.port).toBe(3306 + 2);
+
+    releaseFirst!();
+    await first;
+    expect(getConfigResolved()?.dbInterface?.port).toBe(3306 + 2);
+  });
 });
