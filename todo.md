@@ -922,8 +922,9 @@
   - 协同:与 P0-A 类型桩同源互补(补全=签名,hover=文档)✅ 同库共享;usage 统计指导优先级未做(后续需要再说)。
   - 锚点:languageProviders.ts 编辑后真位重探 871/961/1852/1911/1935/2063/4812/5220/5326/7170,perfCallChainDoc+2026-baseline.md 锁步。
 
-- [ ] **KB-001 · P2 · 建设 · KBEngine 源码解析知识库（双语,人机共用）**
+- [x] **KB-001 · P2 · 建设 · KBEngine 源码解析知识库（双语,人机共用）**
   - 首批头号专题（用户点名的重灾区，2026-11-01）：内存对象引用与释放——实体对象生命周期引用规则、cell/base 迁移后引用失效语义、destroy 后 Python 侧持引用的行为、timer/Functor 持引用与回收、跨进程引用（cellData 快照 vs 活对象）等，逐坑整理：现象/根因（带 kbe/src 源码引用）/正确姿势。用户多次踩坑，经验最密集的区域。
+    - ✅ 交付（2026-11-07,feat 65f94116）:头号专题五项全覆盖——生命周期/引用/garbages/定时器=entity-lifecycle-reference.md(增补「Functor 之问」节:KBEngine 无 Functor,持有者=PY_CALLBACKMGR 强引用+超时回收+迁移 pickle,`callbackmgr.h:215`);迁移/传送+cellData 快照 vs 活对象+EntityCall 失效语义=entity-migration-and-cross-process-references.md(新文,锚定 kbengine@3082ab5,跨 cellapp 全消息流 ghost 化→base 暂存→cellEntityCall_ 原地重定向→重建/恢复,HEAD 实际触发回调表:base 面 onTeleportSuccess/onTeleportFailure 是死路径(唯一发送点恒传 fromCellTeleport=true),cell onTeleport() 无调用者)。
   - 知识源交叉引用（2026-11-01 盘点）：CPython 地基直接链接 hello-python/docs/internals/ 的 10 篇源码级分析（object-model/memory-management/gc-module/type-system/eval-loop 等，不重写）；KB-001 内存专题 = CPython 引用计数/GC × KBEngine 托管引用的交叉解释。
   - 扩展域（后续批次）：①KBEngine Python 绑定层源码分析（API 暴露机制/entity 基类机制/属性 __init__ 前赋值的引擎侧根因/脚本加载与热重载实现）；②KBEngine C++ 进程内部（baseapp/cellapp/dbmgr 源码机制）；③BigWorld-Engine-14.4.1 遗产源码（cell 机制血统）；④协议交互序列（握手/重连/迁移时序）；⑤历次会话分析结论收割（C-22/C-23 已部分入账）。
   - 依据 2026-11-01 用户令:「整理出源码解析出来的知识经验」。把历次分析 KBEngine 源码积累的知识结构化沉淀,不是会话记录,是可检索、可维护、喂给 hover/MCP 的资产。
@@ -932,8 +933,12 @@
     ② 引擎机制文档:实体生命周期(创建→cell 迁移→销毁)、cell/base 划分语义、空间与移动、定时器精度与语义、消息与 bundle 机制、dbmgr 持久化流程——每篇含源码位置引用(kbe/src 文件:行)
     ③ 使用模式与统计:官方资产/真实项目的 API 使用频率与组合模式(usage 统计扫描已起步)
     ④ 踩坑经验:分析过程中发现的语义陷阱(如软保底 off-by-2 类)、易误解行为
+    - ✅ 交付:②首轮全落地(lifecycle+迁移/传送+启动流程+入口 SPI+目录路径,baseapp 路径细节仍为记录在案的后续 TODO);③=scripts/kbe-api-scan.py(AST 解析,仅标准库,确定性排序)+api-usage-stats.md(77 文件 0 解析错误;引擎已知 vs 项目自定义回调划分≈1/3 项目自定义;如实边界=仅本仓库两树,官方示例/真实项目扩大属后续);④=traps-index.md(全知识页单行陷阱索引,内存/迁移/定时器/EntityCall/回调命名/client 面/源材料卫生,每行链到承载 grounding 的文章)。
   - 流水线:扫描脚本(kbe-api-scan.py 起步)产出原始数据 → 人工精校成知识条目 → 喂 C-21 hover 文档库 + MCP-001 explain/guide 工具 → 知识条目带源码引用可点击跳转
+    - ✅ 交付:kode-mcp 增 explain 工具(crates/kode-mcp/src/explain.rs,第 8 个工具)——API 面直调 kode-server C-21 共享库 api_docs_lookup(与 hover/RPC 同源零复制);机制面=编译期 include_str! 内嵌 5 篇机制文+关键词索引(精确=3 分/互为子串=2 分,前 5),返回标题/双语路径/锚定提交/摘要/章节标题;双面皆空如实返回空+提示绝不编造;单测 6 例+e2e 工具清单 8 个+cellData 双面命中断言。
   - 验收:API 知识覆盖官方 API 清单 >=95%;每篇机制文档带源码引用;双语;MCP 挂 explain 工具能回答「XX API 怎么用/XX 机制怎么运作」。
+    - ✅ 每篇机制文档带源码引用(全部 file:line 逐条锚定,新增件锚 kbengine@3082ab5);✅ 双语(en+zh 双树同构,VitePress 双侧边栏已挂);✅ MCP explain 工具(API+机制双面,e2e 验证真数据);如实边界:「>=95% 官方清单」无结构化官方清单可对账(官方 CHM 未入库),覆盖口径=知识页已 grounding 的 API 面 225 条(C-21 同一边界,已记录);③ 统计口径=本仓库两树非官方资产普查。README 状态表/依据规则/文章索引同步对账。
+  - 门禁:eslint 0/tsc 0/unit 584 文件 7171 过+2 skip/cargo workspace(--exclude kode-scheduler)104 套全绿(含 kode-mcp 11 单测+3 e2e)/docs:build rc=0(死链检查过)/xvfb demo 25 RC=0。
 
 - [ ] **C-22 · P2 · 实现 · def 属性的可视化呈现(设计已定,2026-11-01)**
   - 背景:KBEngine 属性在 __init__ 之前由引擎赋值,Python 侧不可见不可跳转;曾考虑「__属性方法集中声明」方案,因引擎不调用、双事实源漂移、与真实初始化时序矛盾而否决(设计结论记录于本条)。
