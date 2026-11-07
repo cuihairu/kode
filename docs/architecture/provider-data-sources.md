@@ -71,21 +71,23 @@ Command query surfaces (non-register\* providers, recorded under the same rules)
 
 ### 2c. Tree/task providers (UI assembly surface)
 
+Construction-site history: from SRC-001 L4 the server/telnet/player-data/remote-server/debug-target tree providers are constructed in `src/activate/serverControls.ts` (pure move from extension.ts; those rows carry the new site below, other rows keep their baseline extension.ts line numbers).
+
 | Provider | Class definition | Construction | Data sources | Allowed side effects |
 |---|---|---|---|---|
 | EntityExplorerProvider | explorerProviders.ts:1391 | :1386 | entities.xml manifest scan | Tree refresh events |
-| ServerControlProvider | explorerProviders.ts:1790 | :1738 | serverManager state | Tree refresh + user-triggered start/stop commands |
-| TelnetTreeProvider | telnetTree.ts:1798 | :1746 | telnetService state | Tree refresh events |
-| RemoteServerTreeProvider | remoteServerTree.ts:1813 | :1761 | ~/.ssh/config snapshot + workspaceState manual entries/selection (IDE-PDBG-004) | Tree refresh events |
-| PlayerDataTreeProvider | playerDataPanel.ts:108 | :3454 | read-only MySQL connection profiles derived by configDerive (Rust `derive_database`, CLONE-P5) + databaseDrift read-only query executor; the first frame idempotently triggers derivation and honestly shows "not found" until ready | Tree refresh events (triggered by query/refresh commands) |
+| ServerControlProvider | explorerProviders.ts:1790 | activate/serverControls.ts (SRC-001 L4) | serverManager state | Tree refresh + user-triggered start/stop commands |
+| TelnetTreeProvider | telnetTree.ts:1798 | activate/serverControls.ts (SRC-001 L4) | telnetService state | Tree refresh events |
+| RemoteServerTreeProvider | remoteServerTree.ts:1813 | activate/serverControls.ts (SRC-001 L4) | ~/.ssh/config snapshot + workspaceState manual entries/selection (IDE-PDBG-004) | Tree refresh events |
+| PlayerDataTreeProvider | playerDataPanel.ts:108 | activate/serverControls.ts (SRC-001 L4) | read-only MySQL connection profiles derived by configDerive (Rust `derive_database`, CLONE-P5) + databaseDrift read-only query executor; the first frame idempotently triggers derivation and honestly shows "not found" until ready | Tree refresh events (triggered by query/refresh commands) |
 | ComponentStatusTreeProvider | componentStatusPanel.ts:92 | :4607 | shared ConsoleHub machined UDP discovery ledger (KB-GC-001; pid/cpu/mem/usedmem/state ride the Args25 discovery reply) + resolved cpu/mem thresholds; vanished processes kept as red tombstone rows | Tree refresh events (auto poll + manual `kbengine.consoleComponentPanel.refresh`), red ThemeIcon on abnormal |
 | KbengineBuildTaskProvider | buildTaskProvider.ts:2146 | :2094 | Build task definitions (static) | None (provides tasks only) |
-| DebugTargetTreeProvider | debugStatusTree.ts:2063 | :2011 | getDebugStatusRows polling | Tree refresh events |
+| DebugTargetTreeProvider | debugStatusTree.ts:2063 | activate/serverControls.ts (SRC-001 L4) | getDebugStatusRows polling | Tree refresh events |
 | QuickActionTreeProvider | quickActionTree.ts:3092 | :3040 | Quick action inventory | Tree refresh + user-triggered commands |
 | FinalConfigTreeProvider | serverConfigMerge.ts:2808 | :2756 | kbengine.xml synthesized tree | Tree refresh events |
 | GitHistoryTreeProvider | gitHistoryTree.ts:165 | :4089 | GitCommitLog paging (IDE-GIT-004, queried on demand only via user entry; zero Git when idle), through the shared query gate (IDE-GIT-011: dedupe/concurrency cap 2 with range tracking 1/bounded queue/LRU cache/cancel on view hide-disable-unload) | Tree refresh events + user-triggered "load next page" |
 | GitRangeHistoryTreeProvider | gitRangeHistoryTree.ts:208 | :4140 | Selection→HEAD line-span mapping (IDE-GIT-008) + per-commit modification timeline (IDE-GIT-009, queried on demand only via user entry; zero Git when idle, no editor-switch/selection listeners), through the shared query gate (IDE-GIT-011, duplicate selections keep only the newest) | Tree refresh events (title follows state) |
-| PlayerDataTreeProvider | playerDataPanel.ts:108 | :3471 | MySQL connection profiles from the Rust derive_database single source of truth (`configDerive.getDerivedDatabaseProfile`, zero hand-filling/rewriting) + databaseDrift read-only executor (connection test `SELECT 1`, read-only SELECT by dbid; statement whitelist + READ ONLY session double protection, CLONE-P5 skeleton) | Tree refresh events; read-only query output goes to the "KBEngine Player Data (read-only)" channel with zero writes; the password never leaves as a value (masked marker) |
+| PlayerDataTreeProvider | playerDataPanel.ts:108 | activate/serverControls.ts (SRC-001 L4) | MySQL connection profiles from the Rust derive_database single source of truth (`configDerive.getDerivedDatabaseProfile`, zero hand-filling/rewriting) + databaseDrift read-only executor (connection test `SELECT 1`, read-only SELECT by dbid; statement whitelist + READ ONLY session double protection, CLONE-P5 skeleton) | Tree refresh events; read-only query output goes to the "KBEngine Player Data (read-only)" channel with zero writes; the password never leaves as a value (masked marker) |
 
 ### 2d. File tree decoration provider (vscode.window.registerFileDecorationProvider, IDE-HOT-100)
 

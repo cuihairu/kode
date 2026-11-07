@@ -206,6 +206,12 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-07(SRC-001 L3):诊断调度抽装——PR1 计时助手×2 迁 src/activate/
   // diagnostics.ts(116/129),didChange 冲刷面留组合根但位移(531/611);
   // 7 独立调度器+配置契约块+测试访问器随迁,extension.ts 现 4980 行。
+  // 2026-11-08(SRC-001 L4 服务器/调试抽装):serverManager/telnet/玩家数据/
+  // 远程服务器/调试会话与目标/server 控制命令/调试配置与 py-spy 命令/状态栏
+  // 1006 行迁 src/activate/serverControls.ts 换 10 行调用块(顶部 import 剪
+  // 67 名):两条 extension.ts 锚点因头部 import 精简整体 -58(真位重探
+  // 531/611→473/553,均在替换段之前);其后无 extension.ts 锚点。
+  // baseline §7 出处锁步。extension.ts 现 3919 行。
 
   ['src/activate/languageServices.ts', 193, "startLanguageServiceOperation('hover'"],
   ['src/activate/languageServices.ts', 244, "startLanguageServiceOperation('definition'"],
@@ -223,8 +229,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // runPyspySchedule 引入)→ 上列 9 处 extension.ts 锚点整体 +2(真位重探 683/696/980/
   // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450);
   // HOT-VER 再 +3(见上)→ 后段锚点 2373/2453;DEMO-GAME-006 再 +2(见上)→ 2375/2455。
-  ['src/extension.ts', 531, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 611, 'flushQueued()'],
+  ['src/extension.ts', 473, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 553, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。

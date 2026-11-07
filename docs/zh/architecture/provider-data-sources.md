@@ -71,13 +71,15 @@
 
 ### 2c. 树/任务 provider(UI 装配面)
 
+构造位迁移史:SRC-001 L4 起,server/telnet/玩家数据/远程服务器/调试目标五个树视图的构造位自 extension.ts 迁 `src/activate/serverControls.ts`(纯移动;下表迁移行已更新为新构造位,其余行保留基线时点 extension.ts 行号)。
+
 | Provider | 类定义 | 构造位 | 数据源 | 允许副作用 |
 |---|---|---|---|---|
 | EntityExplorerProvider | explorerProviders.ts:1391 | :1386 | entities.xml 清单扫描 | 树刷新事件 |
-| ServerControlProvider | explorerProviders.ts:1790 | :1738 | serverManager 状态 | 树刷新 + 用户触发启停命令 |
-| TelnetTreeProvider | telnetTree.ts:1798 | :1746 | telnetService 状态 | 树刷新事件 |
-| RemoteServerTreeProvider | remoteServerTree.ts:1813 | :1761 | ~/.ssh/config 快照 + workspaceState 手动项/选中态(IDE-PDBG-004) | 树刷新事件 |
-| PlayerDataTreeProvider | playerDataPanel.ts:108 | :3454 | configDerive 派生的只读 MySQL 连接档案(Rust `derive_database`,CLONE-P5)+ databaseDrift 只读查询执行器;首帧幂等触发派生,未就绪如实展示「未找到」 | 树刷新事件(查询/刷新命令触发) |
+| ServerControlProvider | explorerProviders.ts:1790 | activate/serverControls.ts(SRC-001 L4) | serverManager 状态 | 树刷新 + 用户触发启停命令 |
+| TelnetTreeProvider | telnetTree.ts:1798 | activate/serverControls.ts(SRC-001 L4) | telnetService 状态 | 树刷新事件 |
+| RemoteServerTreeProvider | remoteServerTree.ts:1813 | activate/serverControls.ts(SRC-001 L4) | ~/.ssh/config 快照 + workspaceState 手动项/选中态(IDE-PDBG-004) | 树刷新事件 |
+| PlayerDataTreeProvider | playerDataPanel.ts:108 | activate/serverControls.ts(SRC-001 L4) | configDerive 派生的只读 MySQL 连接档案(Rust `derive_database`,CLONE-P5)+ databaseDrift 只读查询执行器;首帧幂等触发派生,未就绪如实展示「未找到」 | 树刷新事件(查询/刷新命令触发) |
 | ComponentStatusTreeProvider | componentStatusPanel.ts:92 | :4607 | 共享 ConsoleHub 的 machined UDP 发现台账(KB-GC-001;pid/cpu/mem/usedmem/state 随 Args25 发现回包自带)+ 解析后的 cpu/mem 阈值;消失进程保留为红色墓碑行 | 树刷新事件(自动轮询 + 手动 `kbengine.consoleComponentPanel.refresh`),异常态红色 ThemeIcon |
 | KbengineBuildTaskProvider | buildTaskProvider.ts:2146 | :2094 | 构建任务定义(静态) | 无(仅提供任务) |
 | DebugTargetTreeProvider | debugStatusTree.ts:2063 | :2011 | getDebugStatusRows 轮询 | 树刷新事件 |
