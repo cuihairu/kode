@@ -199,8 +199,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // 触发点(def 声明方法追加段)resolveDefMethodAnnotation +12:1360 后锚点
   // 再 +12(1852/1911/1935/2063/4812/5220/5326/7170),baseline 同步。
   ['src/languageProviders/inlay.ts', 42, 'getDocumentLines(document)'],
-  ['src/languageProviders/hover.ts', 127, 'provideHover('],
-  ['src/languageProviders.ts', 48, 'shadowCompareDefinition'],
+  ['src/languageProviders/hover.ts', 128, 'provideHover('],
+  ['src/languageProviders/navigation.ts', 24, 'shadowCompareDefinition'],
   ['src/languageProviders/validation.ts', 13, 'export function validateDocument('],
   ['src/languageProviders/validation.ts', 37, 'shadowObserveDefDocument'],
   ['src/languageProviders/validation.ts', 165, 'validateEntitiesXmlDocument'],
@@ -208,12 +208,12 @@ const ANCHORS: Array<[string, number, string]> = [
   // describeTypeStorageShape 各形态分支附容量行,2776 后 +11;其后锚点
   // 随之 +11(真位重探 4741/5162/5268/7112;2005 前不受影响;出处随 baseline
   // 锁步)。
-  ['src/languageProviders.ts', 1451, 'provideDefinitionTracedImpl'],
+  ['src/languageProviders.ts', 322, 'provideDefinitionTracedImpl'],
   // 2026-11-06(六):二次并入 origin main(KR-AUD-84 引擎整串开关表在 4725 后
   // +13)——层0 接收者段闸/withInitialScanTimeout/provideCompletionItems 锚点
   // 再 +13(真位重探 5146/5252/7063,出处随 baseline 锁步)。
-  ['src/languageProviders.ts', 1859, '层0 接收者段闸'],
-  ['src/languageProviders.ts', 1965, 'withInitialScanTimeout'],
+  ['src/languageProviders.ts', 730, '层0 接收者段闸'],
+  ['src/languageProviders.ts', 836, 'withInitialScanTimeout'],
   // 2026-11-06:IDE-LINT-012 快速修复边界——languageProviders.ts 在 receiver
   // 守卫 provider 前新增 receiverFromDiagnosticLine helper(区间归属提取)+
   // 提取块重写,+31 行,7007 后锚点随之 +31(真位重探 7038;其余 languageProviders

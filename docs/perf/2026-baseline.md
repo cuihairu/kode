@@ -83,7 +83,7 @@
 flowchart TD
   VC1["VS Code: registerHoverProvider.provideHover(document, position, token)"]
   M1["extension.ts:1070 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
-  HP["KBEngineHoverProvider.provideHover<br/>languageProviders/hover.ts:127"]
+  HP["KBEngineHoverProvider.provideHover<br/>languageProviders/hover.ts:128"]
   CFG["getLanguageFeatureConfig() 开关快照"]
   WORD["getWordRangeAtPosition + getText(range)<br/>读 VS Code 缓冲区,不读磁盘"]
   BR{"languageId==python 且<br/>注入 EntityMappingManager?"}
@@ -131,7 +131,7 @@ flowchart TD
 flowchart TD
   VC2["VS Code: provideDefinition(document, position)"]
   M2["extension.ts:1121 打点 startLanguageServiceOperation('definition')<br/>(python 侧另有 :1184 一路)"]
-  AD2["PythonDefinitionProvider.provideDefinition<br/>languageProviders.ts:1399"]
+  AD2["PythonDefinitionProvider.provideDefinition<br/>languageProviders.ts:270"]
   TR["provideDefinitionTraced → Impl<br/>semantic-query 打点 :4736 / Impl :4754"]
   CTX{"isPythonCodePosition<br/>注释/字符串内直接 skip"}
   KBE{"kbe/KBEngine 模块符号?"}
@@ -141,13 +141,13 @@ flowchart TD
   CB2["pythonClassIndex.resolveClassBase :1228<br/>(显式 import 绑定优先)"]
   CB3["findEntityDefinitionFile → .def<br/>getEntityRuntimeProfile → 实体脚本"]
   REV["types.xml implementedBy 反向跳转"]
-  L0["层0 接收者段闸(languageProviders.ts:1859)<br/>self.段.方法:段不符即 miss"]
+  L0["层0 接收者段闸(languageProviders.ts:730)<br/>self.段.方法:段不符即 miss"]
   L1["层1 entity-def 属性子探<br/>resolvePropertyDefinitionForClass / resolvePropertyDefinition"]
   SCAN["indexScheduler 队列(首扫在途时)"]
   TY["findCustomTypeDeclarationInfo 自定义类型声明"]
   MRO["PR5 两段方法解析(pythonClassIndex.ts:1384)<br/>① 静态类 MRO 命中仅记录——不提前返回<br/>(同一 mixin 可被多实体组合,静态命中只是候选之一)<br/>② 组合根 MRO + .def 声明 mixin:每根先精确类身份<br/>再 def mixin;多根命中全保留,provider 出 Location 列表"]
   PASS2["pass2:①② 均落空才等全量收敛重查<br/>(ensureScanned,PR5 主路径首查不等这里)<br/>③ 反向形态:子类 MRO 反查 enclosing(精确身份)"]
-  SHD["kode2 shadow 对拍腿:shadowCompareDefinition<br/>languageProviders.ts:48(fire-and-forget,不改返回值)"]
+  SHD["kode2 shadow 对拍腿:shadowCompareDefinition<br/>languageProviders/navigation.ts:24(fire-and-forget,不改返回值)"]
   END2["operation.end(hit|miss) → Location 或 Location 列表或 null"]
 
   VC2 --> M2 --> AD2 --> TR --> CTX
@@ -167,7 +167,7 @@ flowchart TD
   MRO -- "①② 落空" --> PASS2 --> END2
   AD2 -.->|对拍| SHD
 
-  WAITB("等待点 B:withInitialScanTimeout 5s<br/>languageProviders.ts:1965,层1 属性命中后补类型信息时")
+  WAITB("等待点 B:withInitialScanTimeout 5s<br/>languageProviders.ts:836,层1 属性命中后补类型信息时")
   WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(pythonClassIndex.ts:657,打点 :543)")
   WAITD("等待点 D:pass2 await ensureScanned<br/>①② 均落空才等全量收敛——PR5 主路径首查不等这里")
   L1 -.->|等待| WAITB

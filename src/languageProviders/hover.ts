@@ -28,7 +28,8 @@ import { getEngineVersion } from '../engineVersion';
 import { createHoverRequestDeadline, createWaiterUnionToken, raceWithBudget } from '../hoverBudget';
 import { KBEngineSectionName, METHOD_SECTIONS, PROPERTY_SECTIONS, TAG_HOVER_DOCS, getLanguageFeatureConfig, getSectionLabel, parseDefAst } from './shared';
 import { formatDefMethodParameter, formatDefMethodSignature } from './completion';
-import { awaitDataDictIndexReady, describeExpectedScriptPaths, findCustomTypeAtPosition, findEnclosingSymbol, formatWorkspaceRelativePath, getPythonDataDictIndexGeneration, getPythonMethodDeclarationAtPosition, isPositionInsideTagValue, isPythonDataDictIndexEnabled } from '../languageProviders';
+import { describeExpectedScriptPaths, findCustomTypeAtPosition, findEnclosingSymbol, formatWorkspaceRelativePath, isPositionInsideTagValue } from './navigation';
+import { awaitDataDictIndexReady, getPythonDataDictIndexGeneration, getPythonMethodDeclarationAtPosition, isPythonDataDictIndexEnabled } from '../languageProviders';
 /**
  * 批159(用户令「hover 还是需要 loading 很久」):同点位并发 hover 各自重跑
  * 整条异步解析链。按(文件+版本+行+列)做在途去重:第二个并发 hover 直接
