@@ -44,7 +44,7 @@ describe('showHotReloadFirstRunNotice(首激活提示,一次性)', () => {
 
   it('提示文案点名端点与一键关入口,且非模态(走 showInformationMessage 面)', () => {
     expect(HOT_RELOAD_NOTICE_MESSAGE).toContain('127.0.0.1:8090/hotfix?module_name=');
-    expect(HOT_RELOAD_NOTICE_MESSAGE).toContain('module_name=<模块名>');
+    expect(HOT_RELOAD_NOTICE_MESSAGE).toContain('module_name=<module name>');
     expect(HOT_RELOAD_NOTICE_MESSAGE).toContain('kbengine.hotReload.toggle');
     expect(HOT_RELOAD_NOTICE_MESSAGE).not.toContain('modal');
   });
@@ -55,7 +55,7 @@ describe('showHotReloadFirstRunNotice(首激活提示,一次性)', () => {
     const deps = {
       isShown: (): boolean => memento.get<boolean>(HOT_RELOAD_NOTICE_KEY) === true,
       markShown: async (): Promise<void> => memento.update(HOT_RELOAD_NOTICE_KEY, true),
-      show: async (): Promise<string> => '立即关闭',
+      show: async (): Promise<string> => 'Turn off now',
       turnOff
     };
 

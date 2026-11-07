@@ -245,3 +245,84 @@ fn config_derive_dispatch_parses_tree_and_rejects_bad_shape() {
         err.message
     );
 }
+
+/// KODE-CFG-009 `$/kode/config/resolve`:defaults/custom 原文 → core 解析
+/// +合并 +telnet 速览 +数据库连接要素一次出全(TS 消费通道唯一取数口)。
+#[test]
+fn config_resolve_dispatch_parses_merges_and_reads_values() {
+    let mut state = ServerState::new();
+    init(&mut state);
+    let out = handle_message(
+        &mut state,
+        request(
+            9,
+            "$/kode/rpc",
+            json!({
+                "method": "$/kode/config/resolve",
+                "params": {
+                    "defaultsXml": "<root><loginapp><telnet_service><port> 31000 </port><password> defpwd </password></telnet_service></loginapp><baseapp><telnet_service><port> 40000 </port></telnet_service></baseapp></root>",
+                    "customXml": "<loginapp><telnet_service><port> 31001 </port><password> custompwd </password></telnet_service></loginapp>"
+                }
+            }),
+        ),
+    );
+    let body = response_of(&out);
+    // 双树与合成树都在(树形与 derive 入参同构)
+    assert!(body["defaultsTree"].is_object());
+    assert!(body["customTree"].is_object());
+    assert!(body["merged"].is_object());
+    // telnet 速览:引擎写死表序 7 组件,custom 覆盖值优先
+    let summary = body["telnetSummary"].as_array().unwrap();
+    assert_eq!(summary.len(), 7);
+    assert_eq!(summary[0]["component"], "loginapp");
+    assert_eq!(summary[0]["port"], json!(31001));
+    assert_eq!(summary[0]["password"], "custompwd");
+    // 数据库连接要素:无 dbmgr 段 → null
+    assert!(body["dbInterface"].is_null());
+    // 元件 telnet_service 段读值(文档序首段):端口 + 密码
+    let custom_telnet = &body["customTelnet"];
+    assert_eq!(custom_telnet["port"], json!(31001));
+    assert_eq!(custom_telnet["password"], "custompwd");
+    // 引擎写死端口表(core 唯一真源)
+    assert_eq!(body["telnetDefaultPorts"]["baseapp"], json!(40000));
+    assert_eq!(body["telnetDefaultPorts"]["bots"], json!(51000));
+}
+
+/// 双侧都缺(null)→ 全空产物,不 panic;defaultsXml 非字符串 → Err。
+#[test]
+fn config_resolve_dispatch_handles_missing_and_bad_params() {
+    let mut state = ServerState::new();
+    init(&mut state);
+    let out = handle_message(
+        &mut state,
+        request(
+            10,
+            "$/kode/rpc",
+            json!({
+                "method": "$/kode/config/resolve",
+                "params": {"defaultsXml": null, "customXml": null}
+            }),
+        ),
+    );
+    let body = response_of(&out);
+    assert!(body["defaultsTree"].is_null());
+    assert!(body["customTree"].is_null());
+    assert!(body["merged"].is_null());
+    assert_eq!(body["telnetSummary"], json!([]));
+    assert!(body["dbInterface"].is_null());
+    assert!(body["customTelnet"].is_null());
+    assert_eq!(body["telnetDefaultPorts"]["loginapp"], json!(31000));
+
+    let out = handle_message(
+        &mut state,
+        request(
+            11,
+            "$/kode/rpc",
+            json!({
+                "method": "$/kode/config/resolve",
+                "params": {"defaultsXml": 123, "customXml": null}
+            }),
+        ),
+    );
+    assert_eq!(error_code_of(&out), error_codes::INVALID_PARAMS);
+}

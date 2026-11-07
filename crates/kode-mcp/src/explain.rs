@@ -167,11 +167,9 @@ fn headings_of(text: &str) -> Vec<&str> {
     text.lines()
         .filter_map(|line| {
             let trimmed = line.trim_start();
-            if let Some(rest) = trimmed.strip_prefix("## ") {
-                Some(rest.trim())
-            } else {
-                None
-            }
+            trimmed
+                .strip_prefix("## ")
+                .map(|rest| rest.trim())
         })
         .collect()
 }

@@ -17,6 +17,9 @@ import { messages, windowState } from './fake-vscode/windowState';
 import { configurationOverrides, workspace, workspaceState } from './fake-vscode/workspaceState';
 import { Uri, type ExtensionContext } from './fake-vscode/core';
 import { window as stubWindow } from './helpers/vscodeStub';
+import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
+import { makeContractGate } from './helpers/configCoreContract';
 
 // IDE-REV-016 单表只读预览:命令编排面(纯注入)覆盖 取消选表不发预览查询
 // /白名单语句是实际下发的语句/连不上如实报错/渲染含 SQL 与行数;命令级
@@ -331,6 +334,11 @@ describe('kbengine.database.previewTable 命令(activate 真装配)', () => {
   const activateAndWait = async (): Promise<void> => {
     activate(makeContext());
     await new Promise(resolve => setTimeout(resolve, 100));
+    // KODE-CFG-009:连接读值消费 core 解析缓存(`$/kode/config/resolve`)——
+    // activate 装配覆写门,契约门替身只能在其后装;装好后清缓存再刷新消费态
+    setKodeCoreShadowGate(makeContractGate([]));
+    resetConfigResolveForTests();
+    await ensureConfigResolved();
   };
 
   it('命令已注册;无引擎配置:如实降级提示,不建连接', async () => {

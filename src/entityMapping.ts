@@ -1194,18 +1194,24 @@ export class EntityMappingManager {
    * IDE-IDX-015:工作区移除根时摘除该根全部索引记录——该根下所有实体索引
    * (名字槽由剩余同名接管,IDE-IDX-008 口径)、owner 反查、类型注册表快照
    * 全部清出;其他根的记录原样保留。
+   * 四轮评审修复:keepSubtrees 仍在根集内的子树(如根切换到自身子目录)——
+   * 这些子树的记录原样保留,否则父根整摘会把子根的活数据连带摘掉且无扫描
+   * 接替(refreshExternalRootWatchers 只重挂 watcher 不重扫)。
    */
-  removeRoot(rootPath: string): void {
+  removeRoot(rootPath: string, keepSubtrees?: ReadonlyArray<string>): void {
     const normalizedRoot = normalizeLookupPath(rootPath);
+    const normalizedKeeps = (keepSubtrees ?? [])
+      .map(path => normalizeLookupPath(path))
+      .filter(normalized => normalized.startsWith(`${normalizedRoot}/`));
     this.removedRootKeys.add(normalizedRoot);
     for (const defFile of [...this.mappingIndexesByRoot.keys()]) {
-      if (defFile.startsWith(`${normalizedRoot}/`)) {
-        this.removeIndexByDefFile(defFile);
-      }
+      if (!defFile.startsWith(`${normalizedRoot}/`)) { continue; }
+      if (normalizedKeeps.some(keep => defFile.startsWith(`${keep}/`))) { continue; }
+      this.removeIndexByDefFile(defFile);
     }
     this.missingOwnerPaths.clear();
     this.missingClassNames.clear();
-    getSemanticIndex().removeRoot(rootPath);
+    getSemanticIndex().removeRoot(rootPath, keepSubtrees);
   }
 
   private handlePythonFileChanged(pythonPath: string): void {
@@ -1324,14 +1330,17 @@ export class EntityMappingManager {
   }
 
   /**
-   * C-22 交付③:python 文件所属实体的 def 属性全清单(`# kode:props-from-def`
-   * 锚点 inlay 只读视图用)。与 resolvePropertyDefinitionInfo 同一索引同一
-   * 失效口径(改 def 定向摘除,下次访问重扫);无所属实体 → null,不猜。
+   * 该 python 文件所属实体的 .def 属性声明清单(C-22 只读视图 inlay 数据源):
+   * 与 resolvePropertyDefinitionInfo 同一索引与门控口径,只是整清单返回。
+   * 无所属实体 → 空数组(调用方零 inlay,不推导)。
    */
-  async listPropertyDefinitionsForFile(pythonFile: string): Promise<PropertyDefinitionInfo[] | null> {
+  async listPropertyDefinitionsForFile(pythonFile: string): Promise<PropertyDefinitionInfo[]> {
     this.ensureStartup();
     const index = await this.ensureIndexForPythonFile(pythonFile);
-    return index ? index.propertyDefinitions : null;
+    if (!index) {
+      return [];
+    }
+    return index.propertyDefinitions;
   }
 
   private async findIndexedProperty(

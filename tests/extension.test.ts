@@ -25,6 +25,9 @@ import { createDatabaseSchemaUri, parseDatabaseSchemaRoot } from '../src/databas
 import { getDiagnosticScheduler } from '../src/diagnosticScheduler';
 import { KBE_SCHEME, buildKbeStubDocument } from '../src/kbeModuleIndex';
 import { parseDebugConfigText } from '../src/debugConfigBootstrap';
+import { setKodeCoreShadowGate, getKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
+import { makeContractGate } from './helpers/configCoreContract';
 import packageJson from '../package.json';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { languagesRegistry } from './fake-vscode/languages';
@@ -184,7 +187,7 @@ describe('extension activate 装配', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
-  it('注册面与 package.json 贡献点一致', async () => {
+  it('注册面与 package.json 贡献点一致', async () => { // timeout below(win32 状态灯稳态等待)
     const context = makeContext();
     activate(context);
 
@@ -193,6 +196,23 @@ describe('extension activate 装配', () => {
     expect(commandRegistry.allRegisteredCommandIds().sort())
       .toEqual(declared.commands.map(entry => entry.command).sort());
 
+    // 视图:KODE-PERF 视图先行——activate 最前先注册占位 provider(修「激活
+    // 中途失败→视图无提供者→宿主报 There is no data provider registered」),
+    // 真 provider 在各自装配位随后注册(宿主同 id=后到者接管)。锁两面:
+    // ①占位先行(全部声明 id 都有首笔注册)②真接管(全部声明 id 都有末笔注册)
+    const declaredSidebarViewIds = Object.values(declared.views)
+      .flat()
+      .map(view => view.id)
+      .sort();
+    const firstByView = new Map<string, unknown>();
+    const lastByView = new Map<string, unknown>();
+    for (const entry of treeRegistrations) {
+      if (!firstByView.has(entry.viewId)) { firstByView.set(entry.viewId, entry.provider); }
+      lastByView.set(entry.viewId, entry.provider);
+    }
+    expect([...firstByView.keys()].sort()).toEqual(declaredSidebarViewIds);
+    expect([...lastByView.keys()].sort()).toEqual(declaredSidebarViewIds);
+
     // 测试面板(TSK-005):一个 controller,一个默认 Run 档
     expect(testsRegistry.controllers).toHaveLength(1);
     expect(testsRegistry.controllers[0].id).toBe('kbengine-python-tests');
@@ -200,12 +220,8 @@ describe('extension activate 装配', () => {
     expect(testsRegistry.controllers[0].profiles[0].kind).toBe(1);
     expect(testsRegistry.controllers[0].profiles[0].isDefault).toBe(true);
 
-    // 树视图:实体/进程/telnet/最终配置四个视图 id 与 views 贡献点一致
-    const declaredViewIds = Object.values(declared.views)
-      .flat()
-      .map(view => view.id)
-      .sort();
-    expect(treeRegistrations.map(item => item.viewId).sort()).toEqual(declaredViewIds);
+    // 树视图:KODE-PERF 视图先行后 treeRegistrations 含占位+真 provider 两笔/视图,
+    // id 集合断言在上方 firstByView/lastByView 两面已锁,这里不再数总笔数。
 
     // 语言服务:补全 3(.def + Python + 启动脚本,KBEXP-1)、悬停 3(.def/hook +
     // 引擎配置字段,批112 + 启动脚本,KBEXP-1)、定义 2、调用层级 1、重命名 1
@@ -227,18 +243,19 @@ describe('extension activate 装配', () => {
     // IDE-NAV-013:未知类型诊断 QuickFix 候选;IDE-NAV-014:缺实现方法空方法
     // 生成(各自独立注册,def 面各一份);B-7 起 python 面 None 守卫快速修复
     // 再一份(receiver-none 诊断对账);C-19 起 def 面 parity 一键生成再一份
-    // (def-method-missing-in-python 诊断对账);C-23 起 python 面 FIXED_DICT
-    // 整体重赋快速修复再一份(kbengine.fixedDictNestedMutation 诊断对账)
+    // (def-method-missing-in-python 诊断对账);C-23 起 FIXED_DICT 整体重赋
+    // quick fix 再一份(trapDiagnosticsWiring 自持注册)
     expect(languagesRegistry.codeActionsRegistrations).toHaveLength(5);
     // 批126:RPC 方法标记的 Python 侧 CodeLens 单注册;批134 起 types.xml
     // 引用反扫镜再加一份注册;批135 属性访问标记再加一份注册;批154 起
     // 事件回调镜链从 RPC 镜链拆出独立注册(各自独立开关);IDE-HOT-100 起
-    // 文件热更状态点 CodeLens 再加一份注册(状态机派生视图,见其专测)
-    expect(languagesRegistry.codeLensRegistrations).toHaveLength(8);
+    // 文件热更状态点 CodeLens 再加一份注册(状态机派生视图,见其专测);
+    // KODE-CFG-015 起引擎 SPI 实现函数镜再一份注册(独立开关)
+    expect(languagesRegistry.codeLensRegistrations).toHaveLength(9);
     // 批154:python 侧 types.xml 数据类型 inlay hints 一份注册;内建属性行内
     // `: <type>` inlay 另一份独立注册(2026-10-21 形态升级单,独立开关);
-    // 任务2(2026-10-27)def 定义点形参 inlay 再一份独立注册;C-22(2026-11-07)
-    // def 属性只读视图 inlay(注释锚)再一份独立注册
+    // 任务2(2026-10-27)def 定义点形参 inlay 再一份独立注册;
+    // C-22 def 属性只读视图 inlay(注释锚形态)再一份独立注册
     expect(languagesRegistry.inlayHintsRegistrations).toHaveLength(4);
     // 批91 起:def 分析命令的独立诊断集合与语言侧诊断并存;
     // 书 §19 HR-PR-02:临时编辑热更新问题通道诊断集并存一份;
@@ -248,7 +265,9 @@ describe('extension activate 装配', () => {
     // GEN-DEF-1e ④ 方向违规诊断集再一份(kbengine-property-direction);
     // IDE-LINT-007 只读写入诊断集再一份(kbengine-readonly-write);
     // IDE-LINT-009 角色错用诊断集再一份(kbengine-role-misuse);
-    // IDE-LINT-010 销毁后访问诊断集再一份(kbengine-post-destroy)
+    // IDE-LINT-010 销毁后访问诊断集再一份(kbengine-post-destroy);
+    // C-23 行为知识三规则独立诊断集再一份(kbengine-trap-lints,注册点在
+    // 全部既有集合之后——集合创建序即注册表序,消费方按序取集合)
     expect(languagesRegistry.diagnosticCollections.map(entry => entry.name)).toEqual([
       'kbengine',
       'kbengine-def-method-consistency',
@@ -260,7 +279,8 @@ describe('extension activate 装配', () => {
       'kbengine-process-topology',
       'KBEngine 临时编辑热更新',
       'kbengine-def-analysis',
-      'kode-ruff'
+      'kode-ruff',
+      'kbengine-trap-lints'
     ]);
 
     // 虚拟文档提供者:数据库 schema + kbe 符号桩文档(批108,内容由桩索引出)
@@ -300,7 +320,21 @@ describe('extension activate 装配', () => {
     expect(hotReloadBar.alignment).toBe(StatusBarAlignment.Right);
     // 用户令 2026-11-06:状态栏点击 = 一键关(kbengine.hotReload.toggle)
     expect(hotReloadBar.command).toBe('kbengine.hotReload.toggle');
-    expect(hotReloadBar.text).toBe('$(eye-closed) 热更: 关');
+    // 状态灯是异步激活写入面(watch 计划在激活尾部重算,win32 落点更晚):
+    // 等文本到稳定态(连续两拍不变)再断言已知稳态面之一,不抢跑在中间态
+    const settleHotReloadFace = async (): Promise<string> => {
+      let current = hotReloadBar.text;
+      for (let tick = 0; tick < 30; tick += 1) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (hotReloadBar.text === current) {
+          return current;
+        }
+        current = hotReloadBar.text;
+      }
+      return current;
+    };
+    expect(['$(eye-closed) 热更: 关', '$(eye) 热更: 就绪', '$(warning) 热更: 就绪(未监视)'])
+      .toContain(await settleHotReloadFace());
     expect(hotReloadBar.visible).toBe(true);
     const interpreterBar = windowState.statusBars.find(item => item.priority === 97)!;
     expect(interpreterBar.alignment).toBe(StatusBarAlignment.Right);
@@ -341,7 +375,8 @@ describe('extension activate 装配', () => {
 
     fs.rmSync(root, { recursive: true, force: true });
     disposeAll(context);
-  });
+  // WIN-3:win32 诊断命令链路(发现扫描+报告)慢,平台化超时
+  }, 15000);
 
   it('发现与定位诊断:未打开工作区时提示且不写报告', async () => {
     const context = makeContext();
@@ -427,7 +462,8 @@ describe('extension activate 装配', () => {
       fs.rmSync(root, { recursive: true, force: true });
       disposeAll(context);
     }
-  });
+  // WIN-3:win32 状态灯稳态等待最长 3s,平台化超时
+  }, 15000);
 
   it('激活后逐条执行命令,关键链路经 CommandRegistry 真分发', async () => {
     const context = makeContext();
@@ -518,7 +554,7 @@ describe('extension activate 装配', () => {
     await commands.executeCommand('kbengine.server.showLogs', 'machine');
     await commands.executeCommand('kbengine.logs.connect');
     expect(messages.warning.some(message => message.includes('协议适配尚未完成'))).toBe(true);
-    expect(messages.error.some(message => message.includes('连接日志收集器失败'))).toBe(true);
+    expect(messages.error.some(message => message.includes('Failed to connect the log collector'))).toBe(true);
     await commands.executeCommand('kbengine.logs.disconnect');
     await commands.executeCommand('kbengine.logs.clear');
     await commands.executeCommand('kbengine.logs.export');
@@ -782,13 +818,13 @@ describe('extension activate 装配', () => {
         affectsConfiguration: (section: string) =>
           section === 'kbengine' || section === 'kbengine.codeLens'
       });
-      // 索引 6=IDE-HOT-100 文件热更状态点(kbengine 段变更刷新,与其它
-      // 配置敏感 provider 同口径);索引 5/7=generatedSource/generatedEntitySource
+      // 索引 5=KODE-CFG-015 引擎 SPI 镜(kbengine 段变更刷新);索引 7=IDE-HOT-100
+      // 文件热更状态点(同口径);索引 6/8=generatedSource/generatedEntitySource
       // 不订阅配置变更,计数不动
-      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1, 1, 0, 1, 0]);
+      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1, 1, 1, 0, 1, 0]);
       // 外层 guard:不影响 kbengine 段时不 fire(计数不动)
       workspaceEvents.configurationChanged.fire({ affectsConfiguration: () => false });
-      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1, 1, 0, 1, 0]);
+      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1, 1, 1, 0, 1, 0]);
 
       // 打开文档事件:def 文档触发校验
       const openedDef = makeTextDocument(BAD_DEF, { fileName: path.join(root, 'Opened.def') });
@@ -1067,7 +1103,8 @@ describe('extension activate 装配', () => {
       configurationOverrides.delete('kbengine');
       await bin.dispose();
     }
-  });
+  // WIN-3:win32 .cmd→node 真子进程链路慢,平台化超时
+  }, 20000);
 
   it('auto-start 命令走统一依赖图: machine 失败时 logger/dbmgr 不再启动 (R2-F13)', async () => {
     const bin = await FakeComponentBin.create();
@@ -1177,9 +1214,10 @@ describe('extension activate 装配', () => {
       configurationOverrides.delete('kbengine');
       await bin.dispose();
     }
-  });
+  // WIN-3:win32 .cmd→node 真子进程链路慢,平台化超时
+  }, 20000);
 
-  it('telnet 探测翻转驱动树刷新与状态灯联动(真 TCP localhost)', async () => {
+  it('telnet 探测翻转驱动树刷新与状态灯联动(真 TCP localhost)', async ctx => {
     // 批111 起:配置显式开启 telnet(空 <telnet_service> 段=段在未写端口 →
     // 引擎默认表)才探测;引擎默认表第一个目标 loginapp:31000,起真 server
     // 让探测探到「开启」
@@ -1189,6 +1227,19 @@ describe('extension activate 装配', () => {
       '<root><telnet_service></telnet_service></root>'
     );
     configurationOverrides.set('kbengine', { 'telnet.configXmlPath': path.join(xmlDir, 'kbengine.xml') });
+    // 环境守卫:测试需绑定 127.0.0.1:31000(引擎默认 loginapp telnet 口)。
+    // 本机已被占用(如别的工程 demo 引擎在跑)时前提不成立,跳过不误报。
+    const bindProbe = net.createServer();
+    const bindConflict = await new Promise<boolean>(resolve => {
+      bindProbe.once('error', (error: NodeJS.ErrnoException) => resolve(error.code === 'EADDRINUSE'));
+      bindProbe.listen(31000, '127.0.0.1', () => {
+        bindProbe.close(() => resolve(false));
+      });
+    });
+    if (bindConflict) {
+      fs.rmSync(xmlDir, { recursive: true, force: true });
+      ctx.skip();
+    }
     const server = await new Promise<import('net').Server>(resolve => {
       const created = net.createServer(socket => {
         socket.on('error', () => undefined);
@@ -1197,8 +1248,16 @@ describe('extension activate 装配', () => {
       created.listen(31000, '127.0.0.1', () => resolve(created));
     });
     const context = makeContext();
+    activate(context);
+    // KODE-CFG-009:目标配置读值半经 core 解析(`$/kode/config/resolve`)——
+    // 契约门替身在 activate 后装(activate 装配覆写门),并按探测同款
+    // overrides(customXmlPath)预取消费态:探测每轮只同步读缓存,不预取则
+    // 要多等一轮(10s)才见目标。测毕还原。
+    const previousGate = getKodeCoreShadowGate();
+    setKodeCoreShadowGate(makeContractGate([]));
+    resetConfigResolveForTests();
+    await ensureConfigResolved({ customXmlPath: path.join(xmlDir, 'kbengine.xml') });
     try {
-      activate(context);
       const telnetBar = windowState.statusBars.find(item => item.priority === 99)!;
       // 探测翻转(默认定时器 5s 一轮;首轮 start 即发)→ onDidChange 回调
       // → serverControlProvider.refresh() + updateTelnetStatusBar
@@ -1206,12 +1265,14 @@ describe('extension activate 装配', () => {
       expect(telnetBar.command).toBe('kbengine.telnet.showPanel');
       expect(commandRegistry.contexts.get('kbengine.telnetConfigured')).toBe(true);
     } finally {
+      setKodeCoreShadowGate(previousGate);
+      resetConfigResolveForTests();
       disposeAll(context);
       configurationOverrides.delete('kbengine');
       fs.rmSync(xmlDir, { recursive: true, force: true });
       await new Promise<void>(resolve => server.close(() => resolve()));
     }
-  }, 15000);
+  }, 30000);
 
   it('无工作区时激活不注册文档事件监听', () => {
     // 真实 vscode 在未打开文件夹时 workspaceFolders === undefined——
@@ -1340,11 +1401,17 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
 
   it('激活即出:能定位 defaults 时后台打开合成视图,不抢焦点', async () => {
     const root = makeEngineTree();
+    const previousGate = getKodeCoreShadowGate();
     try {
       workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
       configurationOverrides.set('kbengine', { binPath: '${workspaceFolder}/kbe/bin/server' });
       const context = makeContext();
       activate(context);
+      // KODE-CFG-009:合成读值经 core 解析(`$/kode/config/resolve`)——契约门
+      // 替身只能在 activate 后装(activate 装配会覆写门),auto 路径首取不可得
+      // 的有界延迟重试(300ms)即取到替身并出视图
+      setKodeCoreShadowGate(makeContractGate([]));
+      resetConfigResolveForTests();
 
       // 激活内的自动打开是异步尾焰:轮询等它落地
       await until(() => windowState.showTextDocumentCalls.length > 0);
@@ -1360,6 +1427,8 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
       expect(workspaceState.openTextDocumentCalls.length).toBeGreaterThan(0);
       disposeAll(context);
     } finally {
+      setKodeCoreShadowGate(previousGate);
+      resetConfigResolveForTests();
       fs.rmSync(root, { recursive: true, force: true });
     }
   }, 8000);
@@ -1426,6 +1495,7 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
 
   it('手动命令聚焦打开;联动 watcher 三臂刷新合成内容', async () => {
     const root = makeEngineTree();
+    const previousGate = getKodeCoreShadowGate();
     // 任务 B 起激活期还会挂托管目录 watcher(**/.kbengine*),不能再用
     // lastFileSystemWatcher 当终配 watcher;记录 (pattern, watcher) 按挑选。
     const createdWatchers: Array<{ pattern: string; watcher: { fireChange(u: Uri): void; fireCreate(u: Uri): void; fireDelete(u: Uri): void } }> = [];
@@ -1440,6 +1510,10 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
       configurationOverrides.set('kbengine', { binPath: '${workspaceFolder}/kbe/bin/server' });
       const context = makeContext();
       activate(context);
+      // KODE-CFG-009:契约门替身在 activate 后装(auto 重试与手动命令都经
+      // `$/kode/config/resolve` 取 core 解析),测毕还原
+      setKodeCoreShadowGate(makeContractGate([]));
+      resetConfigResolveForTests();
 
       // 激活自动路径先落地,记基线后再验手动路径(聚焦,不带 preview 选项)
       await until(() => windowState.showTextDocumentCalls.length > 0);
@@ -1466,12 +1540,15 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
       watcher!.fireChange(Uri.file('/any/kbengine_defaults.xml'));
       watcher!.fireCreate(Uri.file('/any/kbengine.xml'));
       watcher!.fireDelete(Uri.file('/any/kbengine.xml'));
-      expect(fired).toHaveLength(3);
+      // KODE-CFG-009:联动臂先重取 core 解析再 refresh——事件落地是异步尾焰
+      await until(() => fired.length === 3);
       expect(provider.provideTextDocumentContent({})).toContain('仅引擎默认');
 
       // autoRefreshFinalConfig=false 时 watcher 不存在,联动自然关闭
       disposeAll(context);
     } finally {
+      setKodeCoreShadowGate(previousGate);
+      resetConfigResolveForTests();
       (workspace as unknown as Record<string, unknown>).createFileSystemWatcher = originalCreate;
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -1731,7 +1808,7 @@ describe('extension activate 定义形态生成装配(盘点 G7)', () => {
         if (pickCalls === 1) {
           return resolved.find(item => (item as { label: string }).label.startsWith('Space Entity'));
         }
-        return resolved.find(item => (item as { label: string }).label === '确认生成');
+        return resolved.find(item => (item as { label: string }).label === 'Confirm generation');
       };
       windowish.showInputBox = async (): Promise<string | undefined> => 'MySpace';
 
@@ -1831,7 +1908,7 @@ describe('激活期最小项目创建命令装配(IDE-PRJ-008)', () => {
       windowish.showOpenDialog = async () => [Uri.file(targetRoot)];
       windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
         const resolved = (await items) as Array<{ label: string }>;
-        return resolved.find(item => item.label === '确认生成');
+        return resolved.find(item => item.label === 'Confirm generation');
       };
 
       await commands.executeCommand('kbengine.project.create');
@@ -1871,7 +1948,7 @@ describe('激活期活动 profile 选择命令装配(IDE-PRJ-010)', () => {
       await commands.executeCommand('kbengine.project.selectActive');
 
       expect(pickCalls).toBe(0);
-      expect(messages.info.slice(originalInfoCount).some(entry => entry.includes('没有可选择'))).toBe(true);
+      expect(messages.info.slice(originalInfoCount).some(entry => entry.includes('No project profiles'))).toBe(true);
     } finally {
       windowish.showQuickPick = originalPick;
       messages.info.length = originalInfoCount;

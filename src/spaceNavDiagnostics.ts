@@ -23,6 +23,8 @@
  * 开关: kbengine.spaceNavDiagnostics(默认开)。
  */
 
+import { l10nText } from './nlsRuntime';
+
 export const SPACE_NAV_DIAGNOSTIC_CODE = 'kbengine.spaceNav';
 export const SPACE_NAV_DIAGNOSTICS_ENABLED_DEFAULT = true;
 
@@ -253,10 +255,9 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
       line: offsetToLine(starts, keyOffset),
       start: offsetToCol(starts, keyOffset),
       end: offsetToCol(starts, keyOffset) + keyLen,
-      message:
-        '键 "_mapping" 是引擎保留键(set/del 均拒绝,运行时 AssertionError ' +
-        '"key{_mapping} is protected!")。几何映射由 addSpaceGeometryMapping 管理,' +
-        '请改用其他键。(spacememory.cpp:740/862)',
+      message: l10nText(
+        'The key "_mapping" is an engine reserved key (rejected by both set and del, runtime AssertionError "key{_mapping} is protected!"). Space geometry is managed by addSpaceGeometryMapping; use another key. (spacememory.cpp:740/862)'
+      ),
       code: SPACE_NAV_DIAGNOSTIC_CODE
     });
   }
@@ -285,10 +286,9 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
         line,
         start: offsetToCol(starts, methodOffset),
         end: offsetToCol(starts, methodOffset) + match[1].length,
-        message:
-          '调用 navigate/navigatePathPoints 但全文未出现 canNavigate:导航数据未加载时' +
-          '寻路静默失败(paths 为空,不建移动控制器)。建议先 if self.canNavigate() 守卫。' +
-          '(entity.cpp:2583 not found navhandle;canNavigate entity.cpp:2563)',
+        message: l10nText(
+          'navigate/navigatePathPoints called but canNavigate never appears: pathfinding fails silently when nav data is not loaded (paths empty, no move controller). Guard with if self.canNavigate() first. (entity.cpp:2583 not found navhandle; canNavigate entity.cpp:2563)'
+        ),
         code: SPACE_NAV_DIAGNOSTIC_CODE
       });
     }
@@ -316,10 +316,10 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
         line,
         start: offsetToCol(starts, keyOffset),
         end: offsetToCol(starts, keyOffset) + keyLen,
-        message:
-          `params 层键 ${token} 是字符串字面量,` +
-          '引擎要求 int 键(PyLong_Check 失败即 AssertionError "args(params) error!")。' +
-          '请写成 {0: "xx.navmesh"}。(spacememory.cpp:194)',
+        message: l10nText(
+          'params-level key {key} is a string literal; the engine requires int keys (PyLong_Check failure raises AssertionError "args(params) error!"). Write {0: "xx.navmesh"}. (spacememory.cpp:194)',
+          { key: token }
+        ),
         code: SPACE_NAV_DIAGNOSTIC_CODE
       });
     }

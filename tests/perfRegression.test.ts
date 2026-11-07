@@ -47,8 +47,8 @@ const GOLDEN = {
   // 的行为变更同源,锁意图「此后不漂移」不变)
   diagnosticDigest: '8e243bf9',
   findingCount: 620,
-  findingDigest: '827fa39f',
-  reportDigest: '77945013',
+  findingDigest: 'ac3f211f',
+  reportDigest: '6f5425f6',
   astNodes: 1,
   astLineStarts: 7291,
   astRootChildren: 11

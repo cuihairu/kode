@@ -26,7 +26,8 @@ vi.setConfig({ testTimeout: 30000 });
  */
 
 const realDeps: GitRangeTimelineDeps = {
-  runGit: (args, cwd) => runGitReadOnly(args, { cwd, timeoutMs: 10000, maxOutputBytes: 2097152 }),
+  // WIN-3:win32 git.exe 冷启动慢(全量并发下可超 10s/次),平台化放宽单次超时
+  runGit: (args, cwd) => runGitReadOnly(args, { cwd, timeoutMs: 60000, maxOutputBytes: 2097152 }),
 };
 
 const ok = (stdout: string): GitRunOutcome => ({ kind: 'ok', stdout, stderr: '' });
@@ -267,7 +268,7 @@ describe('IDE-GIT-009 describeRangeTimeline 文案', () => {
     expect(describeRangeTimeline({ kind: 'invalid-range', reason: '行号必须为整数' })).toContain('整数');
     expect(
       describeRangeTimeline({ kind: 'git-error', outcome: { kind: 'timeout', timeoutMs: 10 } })
-    ).toContain('超时');
+    ).toContain('Query timed out');
   });
 });
 
@@ -275,6 +276,8 @@ describe('IDE-GIT-009 真实临时仓库:-L 追踪', () => {
   function makeRepo(): string {
     const root = mkdtempSync(join(tmpdir(), 'kode-rangetl-'));
     execFileSync('git', ['init', '-q'], { cwd: root });
+    // WIN-3:imac 全局 autocrlf=true 会给 add/commit 注入 CRLF 噪声,仓库级关掉
+    execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd: root });
     execFileSync('git', ['config', 'user.email', 't@example.com'], { cwd: root });
     execFileSync('git', ['config', 'user.name', 'T'], { cwd: root });
     return root;
@@ -369,7 +372,8 @@ describe('IDE-GIT-009 真实临时仓库:-L 追踪', () => {
     if (r.kind === 'timeline') {
       expect(r.entries.map((e) => e.subject)).toEqual(['v3 modify B', 'v2 modify A', 'v1 create']);
     }
-  });
+  // WIN-3:win32 逐次 git.exe spawn 慢(测试体十余次 git 调用),平台化超时
+  }, 60000);
 
   it('越界行号 → invalid-range(git 如实报 has only N lines)', async () => {
     const root = makeRepo();

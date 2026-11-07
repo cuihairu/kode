@@ -6,15 +6,15 @@ import {
   buildTelnetTargets,
   deriveEngineDefaultsXmlPath,
   makeProbeOne,
-  parseKbengineDefaultsTelnet,
-  parseKbengineXmlTelnet,
   TelnetService,
   TelnetTarget
 } from '../src/telnetService';
 
-// TelnetService 探测状态机与联动:目标解析(设置 → kbengine.xml → 引擎
-// 默认表)、注入型探测/定时器的状态迁移、真 TCP 会话的自动登录/白名单
-// 闸/输出回显/断线拆除、dispose 清理。密码只写 socket,不进输出面。
+// TelnetService 探测状态机与联动:目标解析(settings 半,显式端口 → 自定义
+// 目标;KODE-CFG-009 起配置读值半由 core 派生单供给,本地 XML 解析实现
+// 已下线,真值由 Rust derive/rpc 测试钉死)、注入型探测/定时器的状态迁移、
+// 真 TCP 会话的自动登录/白名单闸/输出回显/断线拆除、dispose 清理。
+// 密码只写 socket,不进输出面。
 
 const servers: net.Server[] = [];
 
@@ -76,38 +76,9 @@ const settings = (over: Partial<Parameters<typeof buildTelnetTargets>[0]> = {}) 
   ...over
 });
 
-describe('parseKbengineXmlTelnet', () => {
-  it('解析 <telnet_service> 的端口/密码/默认层(容忍空白)', () => {
-    const xml = [
-      '<root>',
-      '  <telnet_service>',
-      '    <port> 31000 </port>',
-      '    <password> pwd123456 </password>',
-      '    <default_layer> python </default_layer>',
-      '  </telnet_service>',
-      '</root>'
-    ].join('\n');
-    expect(parseKbengineXmlTelnet(xml)).toEqual({
-      port: 31000,
-      password: 'pwd123456',
-      defaultLayer: 'python'
-    });
-  });
-
-  it('无 <telnet_service> 段返回 null;空标签解析为 undefined', () => {
-    expect(parseKbengineXmlTelnet('<root><other/></root>')).toBeNull();
-    expect(
-      parseKbengineXmlTelnet('<telnet_service><port></port><password>  </password></telnet_service>')
-    ).toEqual({ port: undefined, password: undefined, defaultLayer: undefined });
-  });
-});
-
-describe('buildTelnetTargets', () => {
-  it('设置显式 port > 0:单目标,优先设置密码', () => {
-    const targets = buildTelnetTargets(settings({ port: 31000, password: 'set-pwd' }), {
-      port: 32000,
-      password: 'xml-pwd'
-    });
+describe('buildTelnetTargets(settings 半)', () => {
+  it('设置显式 port > 0:单目标「自定义目标」,密码取设置', () => {
+    const targets = buildTelnetTargets(settings({ port: 31000, password: 'set-pwd' }));
     expect(targets).toHaveLength(1);
     expect(targets[0]).toMatchObject({
       key: '127.0.0.1:31000',
@@ -117,76 +88,20 @@ describe('buildTelnetTargets', () => {
     });
   });
 
-  it('设置未指定端口:回落 kbengine.xml 段端口与密码', () => {
-    const targets = buildTelnetTargets(settings(), { port: 33000, password: 'xml-pwd' });
-    expect(targets).toHaveLength(1);
-    expect(targets[0]).toMatchObject({ key: '127.0.0.1:33000', label: 'kbengine.xml', port: 33000, password: 'xml-pwd' });
+  it('设置未显式端口:空目标(配置读值半由 core 派生单供给,KODE-CFG-009)', () => {
+    // 批111 用户令:配置未开启就不展示;派生不可用时的兜底不再本地猜配置
+    expect(buildTelnetTargets(settings())).toEqual([]);
   });
 
-  it('xml 有 <telnet_service> 段但无端口:引擎默认七组件端口表,密码沿用设置', () => {
-    // 批111 用户令:段在=配置开启 telnet,端口缺省时才回落引擎默认表
-    const targets = buildTelnetTargets(settings({ password: 'p', enableCommands: ['get'] }), {});
-    expect(targets.map(target => `${target.component}:${target.port}`)).toEqual([
-      'loginapp:31000', 'dbmgr:32000', 'interfaces:33000', 'logger:34000',
-      'baseapp:40000', 'cellapp:50000', 'bots:51000'
-    ]);
-    expect(targets[0].password).toBe('p');
-    expect(targets[0].enableCommands).toEqual(['get']);
-  });
-
-  it('设置与 xml 均未开启 telnet:空目标,不展示任何 telnet 内容', () => {
-    // 批111 用户令:配置里都没有开启 telnet 就不展示 telnet 相关的东西,
-    // 不再回落引擎默认七组件端口表
-    expect(buildTelnetTargets(settings(), null)).toEqual([]);
-  });
-
-  it('设置显式端口且无密码无 xml:password 尾臂落空串', () => {
-    const targets = buildTelnetTargets(settings({ port: 31000 }), null);
+  it('设置显式端口且无密码:password 落空串', () => {
+    const targets = buildTelnetTargets(settings({ port: 31000 }));
     expect(targets[0].password).toBe('');
   });
 
   it('host 空白回落 127.0.0.1', () => {
-    const targets = buildTelnetTargets(settings({ host: '   ' }), {});
+    const targets = buildTelnetTargets(settings({ host: '   ', port: 31000 }));
     expect(targets[0].host).toBe('127.0.0.1');
-  });
-});
-
-describe('parseKbengineDefaultsTelnet(批112:引擎 defaults 真实端口/密码)', () => {
-  const defaultsXml = [
-    '<root>',
-    '  <loginapp>',
-    '    <telnet_service><port> 31000 </port><password> pwd123456 </password></telnet_service>',
-    '  </loginapp>',
-    '  <baseapp>',
-    '    <telnet_service><port> 40000 </port><password> pwd123456 </password></telnet_service>',
-    '  </baseapp>',
-    '  <machine>',
-    '    <externalTcpPorts_min> 20099 </externalTcpPorts_min>',
-    '  </machine>',
-    '</root>'
-  ].join('\n');
-
-  it('逐组件解析 telnet 端口;无 telnet 段的组件(machine)跳过;密码取首个非空', () => {
-    const info = parseKbengineDefaultsTelnet(defaultsXml);
-    expect(info).not.toBeNull();
-    expect(info!.ports).toEqual({ loginapp: 31000, baseapp: 40000 });
-    expect(info!.password).toBe('pwd123456');
-  });
-
-  it('端口非法(非数字/0)不收录;全组件无 telnet 段且无密码 → null', () => {
-    expect(
-      parseKbengineDefaultsTelnet(
-        '<root><dbmgr><telnet_service><port> abc </port></telnet_service></dbmgr></root>'
-      )
-    ).toBeNull();
-    expect(parseKbengineDefaultsTelnet('<root><dbmgr><debug> 1 </debug></dbmgr></root>')).toBeNull();
-  });
-
-  it('无端口但有密码:password 收录,ports 为空对象', () => {
-    const info = parseKbengineDefaultsTelnet(
-      '<root><logger><telnet_service><password> only-pwd </password></telnet_service></logger></root>'
-    );
-    expect(info).toEqual({ ports: {}, password: 'only-pwd' });
+    expect(targets).toHaveLength(1);
   });
 });
 
@@ -203,40 +118,6 @@ describe('deriveEngineDefaultsXmlPath(批112:binPath 推导引擎 defaults)', ()
     expect(deriveEngineDefaultsXmlPath('/opt/kbengine/kbe/bin')).toBeNull();
     expect(deriveEngineDefaultsXmlPath('kbe/bin/server')).toBeNull();
     expect(deriveEngineDefaultsXmlPath('')).toBeNull();
-  });
-});
-
-describe('buildTelnetTargets 引擎 defaults 补值(批112)', () => {
-  it('xml 段在而无端口:逐组件端口优先取 defaults 解析值,缺省落常量表', () => {
-    const targets = buildTelnetTargets(
-      settings(),
-      {},
-      { ports: { baseapp: 40001 }, password: 'def-pwd' }
-    );
-    const byComponent = Object.fromEntries(targets.map(target => [target.component, target]));
-    expect(byComponent.baseapp.port).toBe(40001);
-    expect(byComponent.loginapp.port).toBe(31000); // defaults 未覆盖 → 常量表
-  });
-
-  it('密码链:设置 > xml > defaults > 空串(表臂与显式端口臂同口径)', () => {
-    const tableTargets = buildTelnetTargets(settings(), {}, { ports: {}, password: 'def-pwd' });
-    expect(tableTargets[0].password).toBe('def-pwd');
-    const explicitTargets = buildTelnetTargets(
-      settings(),
-      { port: 31000 },
-      { ports: {}, password: 'def-pwd' }
-    );
-    expect(explicitTargets[0].password).toBe('def-pwd');
-    const xmlWins = buildTelnetTargets(
-      settings(),
-      { port: 31000, password: 'xml-pwd' },
-      { ports: {}, password: 'def-pwd' }
-    );
-    expect(xmlWins[0].password).toBe('xml-pwd');
-  });
-
-  it('defaults 不当开启开关:xml 段不在时即使 defaults 有值也空目标(批111 门控)', () => {
-    expect(buildTelnetTargets(settings(), null, { ports: { baseapp: 40001 } })).toEqual([]);
   });
 });
 
@@ -324,10 +205,12 @@ describe('TelnetService 探测状态机(注入探测/定时器)', () => {
     service.dispose();
   });
 
-  it('无目标时 start 不挂定时器,状态 unconfigured 语义由 getTargets 空表达', () => {
+  it('无目标时 start 照挂定时器:core 读值未就绪,下一轮探测即用(KODE-CFG-009)', () => {
     const kit = makeService([], new Set());
     kit.service.start();
-    expect(kit.timers.jobs).toHaveLength(0);
+    // 旧口径「无目标不挂定时器」已随 core 消费通道翻转:首取空是未就绪,
+    // 不是未配置——定时器照挂,probeOnce 逐轮重读目标集
+    expect(kit.timers.jobs).toHaveLength(1);
     // 未知 key 的回落臂:状态 closed、输出空
     expect(kit.service.getState('nope')).toBe('closed');
     expect(kit.service.getOutput('nope')).toEqual([]);
@@ -378,18 +261,29 @@ describe('TelnetService 联动会话(真 TCP localhost 仿真)', () => {
       socket.on('end', () => socket.end());
       socket.write('password:');
       let authed = false;
+      // WIN-3:真 TCP 分包不可假设一 chunk=一行(Windows 下 password 与命令
+      // 常被合并/拆散)——按行缓冲切分,每行独立走密码/命令语义
+      let lineBuffer = '';
       socket.on('data', chunk => {
-        const command = chunk.toString().trim();
-        if (!authed) {
-          // 首条下行即密码:回欢迎横幅 + 提示符(引擎握手语义)
-          authed = true;
-          socket.write('Welcome dbmgr\r\n[dbmgr@python ~]# ');
-          return;
-        }
-        if (command === 'getStatus') {
-          socket.write('status: ok\r\n[dbmgr@python ~]# ');
-        } else {
-          socket.write(`echo: ${command}\r\n[dbmgr@python ~]# `);
+        lineBuffer += chunk.toString();
+        let newlineIndex: number;
+        while ((newlineIndex = lineBuffer.indexOf('\n')) >= 0) {
+          const command = lineBuffer.slice(0, newlineIndex).replace(/\r$/, '').trim();
+          lineBuffer = lineBuffer.slice(newlineIndex + 1);
+          if (!command) {
+            continue;
+          }
+          if (!authed) {
+            // 首条下行即密码:回欢迎横幅 + 提示符(引擎握手语义)
+            authed = true;
+            socket.write('Welcome dbmgr\r\n[dbmgr@python ~]# ');
+            continue;
+          }
+          if (command === 'getStatus') {
+            socket.write('status: ok\r\n[dbmgr@python ~]# ');
+          } else {
+            socket.write(`echo: ${command}\r\n[dbmgr@python ~]# `);
+          }
         }
       });
     });

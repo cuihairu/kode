@@ -13,6 +13,7 @@ import {
   type StubExportDeps
 } from './pythonStubExport';
 import {
+  PYTHON_TYPE_STUB_FILE_NAME,
   PYTHON_BUILTIN_TYPE_ANNOTATIONS,
   PYTHON_TYPE_STUB_FALLBACK,
   buildPythonTypeStubPlan,
@@ -21,7 +22,17 @@ import {
   resolveAnnotationTypeWithRegistry
 } from './pythonTypeStubs';
 import { PYTHON_FAMILY_BASE, inferPythonLiteralAnnotation } from './pythonLiteralTypes';
-import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
+import {
+  readStubSourceMode,
+  STUB_SOURCE_MODE_GENERATED
+} from './pythonStubExport';
+import {
+  childProcessPyrightRunner,
+  detectPyrightCommand,
+  runPyrightDiagnostics,
+  summarizePyrightReport,
+  type PyrightCommandRunner
+} from './pyrightStubGate';
 import * as vscode from 'vscode';
 
 export const ENTITY_TYPE_STUB_FILE_NAME = 'entity_types.pyi';
@@ -67,6 +78,52 @@ export interface EntityTypeStubExportOptions {
   listMappings?: (workspaceRoot: string) => EntityMapping[];
   listCustomTypes?: (workspaceRoot: string) => CustomTypeInfo[];
   silent?: boolean;
+  /**
+   * IDE-STUB-002:generated 档 pyright 校验面。缺省装配层 runner =
+   * child_process.execFile;测试注入 runner 全程不碰真进程。note 缺省落
+   * 「KBEngine Stub Pyright」输出通道。
+   */
+  pyright?: PyrightStubGateOptions;
+}
+
+export interface PyrightStubGateOptions {
+  runner?: PyrightCommandRunner;
+  /** CLI 探测候选序覆盖(缺省 pyright → npx --no-install pyright) */
+  candidates?: readonly string[][];
+  /** 逐行输出落点(输出面板);缺省落专用输出通道 */
+  note?: (line: string) => void;
+}
+
+/** 输出面板缺省落点:专用通道,建一次复用 */
+let stubPyrightChannel: vscode.OutputChannel | null = null;
+function defaultPyrightNote(line: string): void {
+  stubPyrightChannel ??= vscode.window.createOutputChannel('KBEngine Stub Pyright');
+  stubPyrightChannel.appendLine(line);
+}
+
+/**
+ * IDE-STUB-002:generated 档的 pyright 校验(写入发生后才跑;探测不可用
+ * 降级纯生成,只提示不报错)。档位闸在调用侧:real-source 档的复制产物
+ * 不经此校验。
+ */
+async function runPyrightStubGate(
+  targets: readonly string[],
+  gate: PyrightStubGateOptions
+): Promise<void> {
+  if (targets.length === 0) {
+    return;
+  }
+  const note = gate.note ?? defaultPyrightNote;
+  const runner = gate.runner ?? childProcessPyrightRunner;
+  const command = await detectPyrightCommand(runner, gate.candidates);
+  if (!command) {
+    note('[pyright] 未检测到可用 CLI(pyright / npx pyright),降级纯生成,跳过诊断校验');
+    return;
+  }
+  const report = await runPyrightDiagnostics(runner, command, targets);
+  for (const line of summarizePyrightReport(report)) {
+    note(line);
+  }
 }
 
 export async function exportEntityTypeStubs(
@@ -92,6 +149,10 @@ export async function exportEntityTypeStubs(
     .getConfiguration('kbengine')
     .get<boolean>('python.entityStubMethods', ENTITY_STUB_METHODS_ENABLED_DEFAULT);
   const written: string[] = [];
+  // IDE-STUB-002:pyright 校验(默认装配即触发;generated 档收据循环后统一
+  // 收集落盘 stub——不依赖本次是否发生写入:实体桩内容一致零写、或只有
+  // KBEngine.pyi/kbe_types 分件在盘时同样校验;real-source 档不校验)
+  const pyrightGateActive = readStubSourceMode() === STUB_SOURCE_MODE_GENERATED;
   for (const folder of folders) {
     const plan = buildEntityTypeStubPlan(
       listMappings(folder.uri.fsPath),
@@ -123,6 +184,45 @@ export async function exportEntityTypeStubs(
       if (!options.silent) {
         await vscode.window.showWarningMessage(`实体类型桩导出失败: ${folder.name}`);
       }
+    }
+  }
+  // IDE-STUB-002:generated 档落盘 stub 的 pyright 校验(默认装配即触发;
+  // 循环后统一收集——存在才收:entity_types.pyi + KBEngine.pyi + kbe_types
+  // 分件镜像按 groupCustomTypesByModule 同源键逐一枚举,不漏 cellapp 等
+  // 非 entity_defs 分件;探测不可用降级纯生成,输出面板提示)
+  if (pyrightGateActive) {
+    const pyrightTargets: string[] = [];
+    for (const folder of folders) {
+      const managedDirName = resolveManagedDirName(readManagedDirSetting()).name;
+      const stubDir = kbeStubDir(folder.uri.fsPath, managedDirName);
+      const candidates = [
+        `${stubDir}/${ENTITY_TYPE_STUB_FILE_NAME}`,
+        `${stubDir}/KBEngine.pyi`,
+        // 根级 kbe_types.pyi 无条件进候选:旧布局遗留/类型清单变动后,在盘的
+        // 根级分件不该因当前清单无空键而漏校验
+        `${stubDir}/${PYTHON_TYPE_STUB_FILE_NAME}`
+      ];
+      for (const moduleKey of groupCustomTypesByModule(
+        listCustomTypes(folder.uri.fsPath),
+        folder.uri.fsPath
+      ).keys()) {
+        if (moduleKey === '') {
+          continue;
+        }
+        candidates.push(`${stubDir}/${moduleKey}/${PYTHON_TYPE_STUB_FILE_NAME}`);
+      }
+      for (const candidate of candidates) {
+        try {
+          if (deps.exists(candidate)) {
+            pyrightTargets.push(candidate);
+          }
+        } catch {
+          // 存在性判定失败就不收该候选,不影响其余
+        }
+      }
+    }
+    if (pyrightTargets.length > 0) {
+      await runPyrightStubGate(pyrightTargets, options.pyright ?? {});
     }
   }
   return written;
@@ -310,7 +410,7 @@ function guardNoneEmptyOf(
   }
   const target = context.customTypes.get(resolved);
   if (
-    target?.aliasType === FIXED_DICT_TYPE_NAME &&
+    target?.aliasType === 'FIXED_DICT' &&
     context.customTypeModules.has(resolved)
   ) {
     return '{}';

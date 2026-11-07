@@ -22,6 +22,7 @@
 // 不参与——那是 EntityCall 成员面,由 receiver/段错配负责)。
 
 import { maskPythonNonCode } from './pythonLexicalMask';
+import { l10nText } from './nlsRuntime';
 import {
   getEntityBuiltinPropertiesForFace,
   resolveEntityComponentFaceFromPath,
@@ -134,9 +135,15 @@ export function findRoleMisuseFindings(
         currentFace: face,
         registeredFaces,
         source,
-        message: `self.${propertyName} 角色错用:当前 ${face} 面实体无 ${propertyName} 属性`
-          + `(注册于 ${registeredFaces.join('/')} 面;引擎注册:${source}),`
-          + `${face} 侧访问不会命中该引擎属性`
+        message: l10nText(
+          'self.{property} role misuse: current {face} entity has no {property} property (registered on {faces}; engine registration: {source}); {face}-side access will not hit that engine property',
+          {
+            property: propertyName,
+            face,
+            faces: registeredFaces.join('/'),
+            source
+          }
+        )
       });
     }
   }

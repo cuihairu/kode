@@ -113,7 +113,7 @@ describe('findPropertyDirectionFindings 属性方向违规', () => {
     expect(findings).toHaveLength(1);
     expect(findings[0].severity).toBe('Information');
     expect(findings[0].code).toBe(PROPERTY_DIRECTION_SCOPE_UNKNOWN_DIAGNOSTIC_CODE);
-    expect(findings[0].message).toContain('作用域');
+    expect(findings[0].message).toContain('process scope');
   });
 
   it('接收者限定不受文件作用域影响(self.cell.hp 在 base 文件仍按接收者判)', () => {

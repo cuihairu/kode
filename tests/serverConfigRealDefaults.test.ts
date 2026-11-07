@@ -2,7 +2,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
-import { buildFinalServerConfig, parseConfigXml, type ConfigXmlNode } from '../src/serverConfigMerge';
+import { buildFinalServerConfig, type ConfigXmlNode } from '../src/serverConfigMerge';
+// KODE-CFG-009:parse 实现下线(core 唯一),测试夹具走契约镜像
+import { parseConfigXml } from './helpers/configCoreContract';
 import { resolveEngineRoot } from './helpers/engineRoot';
 import { configurationOverrides, workspace as stubWorkspace } from './fake-vscode/workspaceState';
 

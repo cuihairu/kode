@@ -398,7 +398,8 @@ describe('runPyspySchedule(IDE-PYSPY-001)', () => {
     const calls: string[] = [];
     return {
       deps: {
-        fileExistsNonEmpty: (p: string) => existing.has(p),
+        // WIN-3:产品用 path.join 拼文件路径(win32 反斜杠),查找键同口径归一
+        fileExistsNonEmpty: (p: string) => existing.has(p.replace(/\\/g, '/')),
         sleep: async (ms: number) => {
           calls.push(`sleep:${ms}`);
         },
@@ -422,7 +423,11 @@ describe('runPyspySchedule(IDE-PYSPY-001)', () => {
       nonblocking: true
     }, null, sd);
     expect(runs).toHaveLength(3);
-    expect(runs.map(r => r.file)).toEqual(['/d/flame-1000-0.svg', '/d/flame-1000-1.svg', '/d/flame-1000-2.svg']);
+    expect(runs.map(r => r.file)).toEqual([
+      path.join('/d', 'flame-1000-0.svg'),
+      path.join('/d', 'flame-1000-1.svg'),
+      path.join('/d', 'flame-1000-2.svg')
+    ]);
     expect(runs.every(r => r.ok)).toBe(true);
     expect(sleepCalls).toEqual(['sleep:5000', 'sleep:5000']);
   });

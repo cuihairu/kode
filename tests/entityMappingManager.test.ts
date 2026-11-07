@@ -15,6 +15,7 @@ import {
 } from './helpers/vscodeStub';
 import { configurationOverrides } from './fake-vscode/workspaceState';
 import { resetScanRootCache } from '../src/scanRoots';
+import { normalizeFileIdentity } from '../src/pathIdentity';
 import { getSemanticIndex } from '../src/semanticIndex';
 
 // EntityMappingManager 类本体:构造即扫描 scripts/entity_defs 并挂 python
@@ -798,7 +799,7 @@ describe('IDE-IDX-008 删除同名胜者保留其他根实体', () => {
         expect(
           (manager as unknown as { semanticIndex: { getEntityDefFile: (name: string) => string | null } })
             .semanticIndex.getEntityDefFile('Hero')
-        ).toBe(aDef);
+        ).toBe(normalizeFileIdentity(aDef));
         // B 真删干净:B 根查 B 独有方法 → null
         expect(await manager.resolveMethodDefinitionForClass('Hero', 'on_b', undefined, bHeroPy)).toBeNull();
       } finally {
@@ -873,7 +874,9 @@ describe('IDE-IDX-012 全部工作区根 def watcher', () => {
         const rootIndexes = (): Map<string, unknown> =>
           (manager as unknown as { mappingIndexesByRoot: Map<string, unknown> }).mappingIndexesByRoot;
         await until(() => rootIndexes().size >= 3, 'two-folder scan');
-        const aKey = [...rootIndexes().keys()].find(key => key.endsWith('HeroA.def')) as string;
+        // WIN-3:根索引键走 normalizeFileIdentity(win32 盘符路径全小写),
+        // 大小写敏感的 endsWith 在 Windows 找不到键
+        const aKey = [...rootIndexes().keys()].find(key => key.toLowerCase().endsWith('heroa.def')) as string;
         const aIndexBefore = rootIndexes().get(aKey);
 
         // 第二根必须有自己的 def watcher(红点:当前只挂第一根)
@@ -1031,7 +1034,9 @@ describe('IDE-IDX-014 切换 assetsRoot 重建实体 watcher', () => {
         await manager.waitForInitialScan();
         const rootIndexes = (): Map<string, unknown> =>
           (manager as unknown as { mappingIndexesByRoot: Map<string, unknown> }).mappingIndexesByRoot;
-        const aKey = [...rootIndexes().keys()].find(key => key.endsWith('HeroA.def')) as string;
+        // WIN-3:根索引键走 normalizeFileIdentity(win32 盘符路径全小写),
+        // 大小写敏感的 endsWith 在 Windows 找不到键
+        const aKey = [...rootIndexes().keys()].find(key => key.toLowerCase().endsWith('heroa.def')) as string;
         const aIndexBefore = rootIndexes().get(aKey);
         expect(aIndexBefore).toBeDefined();
 
@@ -1315,7 +1320,7 @@ describe('KR-AUD-25 根重加入解除拉黑(removedRootKeys 过期)', () => {
         await rescan();
         // B 索引全面恢复:名字槽 / byRoot / owner 反查 / 类方法跳转
         expect(manager.getMapping('HeroB')).toBeDefined();
-        expect([...rootIndexes().keys()].some(key => key.endsWith('HeroB.def'))).toBe(true);
+        expect([...rootIndexes().keys()].some(key => key.toLowerCase().endsWith('herob.def'))).toBe(true);
         expect(manager.getMappingForPythonFile(bHeroPy)).toBeDefined();
         expect(await manager.resolveMethodDefinitionForClass('HeroB', 'onB', undefined, bHeroPy))
           .toMatchObject({ defFile: bDef });

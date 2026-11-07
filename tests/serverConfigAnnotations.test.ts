@@ -2,13 +2,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-  buildFinalServerConfig,
-  parseConfigXml,
-  renderConfigXmlSections,
-  summarizeFinalTelnet,
-  type ConfigXmlNode
-} from '../src/serverConfigMerge';
+import { buildFinalServerConfig, renderConfigXmlSections, type ConfigXmlNode } from '../src/serverConfigMerge';
+import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
+import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { makeContractGate, parseConfigXml, type ContractGateCall } from './helpers/configCoreContract';
 import { annotateConfigTree } from '../src/serverConfigAnnotations';
 import {
   SERVER_CONFIG_GROUPS,
@@ -53,8 +50,10 @@ const engineDefaults = [
   '</root>'
 ].join('\n');
 
-/** 建一棵最小引擎目录树(binPath 可推导 kbe/res/server/kbengine_defaults.xml) */
-function makeEngineTree(defaultsXml: string, customXml?: string): string {
+/** 建一棵最小引擎目录树(binPath 可推导 kbe/res/server/kbengine_defaults.xml);
+ * KODE-CFG-009:合成读值消费 core 解析,树建好即刷新消费态(契约门替身)。 */
+const contractCalls: ContractGateCall[] = [];
+async function makeEngineTree(defaultsXml: string, customXml?: string): Promise<string> {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-finalcfg-annot-'));
   fs.mkdirSync(path.join(root, 'kbe', 'res', 'server'), { recursive: true });
   fs.writeFileSync(path.join(root, 'kbe', 'res', 'server', 'kbengine_defaults.xml'), defaultsXml);
@@ -63,6 +62,10 @@ function makeEngineTree(defaultsXml: string, customXml?: string): string {
   }
   stubWorkspace.workspaceFolders = [{ uri: { fsPath: root } } as never];
   configurationOverrides.set('kbengine', { binPath: '${workspaceFolder}/kbe/bin/server' });
+  contractCalls.length = 0;
+  resetConfigResolveForTests();
+  setKodeCoreShadowGate(makeContractGate(contractCalls));
+  await ensureConfigResolved();
   return root;
 }
 
@@ -166,7 +169,7 @@ const parse = (xml: string): ConfigXmlNode => parseConfigXml(xml)!;
 describe('annotateConfigTree(子分类分组)', () => {
   const tree = () => parse(engineDefaults);
 
-  it('段内按功能子分类排序,同组保持引擎原序,自定义项沉底', () => {
+  it('段内按功能子分类排序,同组保持引擎原序,自定义项沉底', async () => {
     const custom = parse(
       engineDefaults.replace(
         '\t\t<telnet_service>',
@@ -185,7 +188,7 @@ describe('annotateConfigTree(子分类分组)', () => {
     ]);
   });
 
-  it('配置根段的全局键与进程段不重排(保持引擎原序)', () => {
+  it('配置根段的全局键与进程段不重排(保持引擎原序)', async () => {
     const annotated = annotateConfigTree(tree(), { language: 'zh-CN' });
     expect(annotated.children[0].children.map(child => child.name)).toEqual([
       'gameUpdateHertz',
@@ -195,7 +198,7 @@ describe('annotateConfigTree(子分类分组)', () => {
     ]);
   });
 
-  it('子分类来自文案库:网络在备份之前,自定义恒最后', () => {
+  it('子分类来自文案库:网络在备份之前,自定义恒最后', async () => {
     expect(SERVER_CONFIG_GROUP_ORDER[SERVER_CONFIG_GROUP_ORDER.length - 1]).toBe('custom');
     expect(SERVER_CONFIG_GROUP_ORDER.indexOf('net')).toBeLessThan(
       SERVER_CONFIG_GROUP_ORDER.indexOf('backup')
@@ -204,7 +207,7 @@ describe('annotateConfigTree(子分类分组)', () => {
     expect(SERVER_CONFIG_GROUPS.custom.zh).toContain('自定义配置');
   });
 
-  it('enabled=false:不加注释也不重排(头注同属生成物,一并不输出)', () => {
+  it('enabled=false:不加注释也不重排(头注同属生成物,一并不输出)', async () => {
     const annotated = annotateConfigTree(tree(), {
       language: 'zh-CN',
       enabled: false,
@@ -225,7 +228,7 @@ describe('annotateConfigTree(子分类分组)', () => {
 describe('annotateConfigTree(语言化作用注释)', () => {
   const tree = () => parse(engineDefaults);
 
-  it('zh 环境出中文注释(分类标签 + 作用 + 来源)', () => {
+  it('zh 环境出中文注释(分类标签 + 作用 + 来源)', async () => {
     const annotated = annotateConfigTree(tree(), { language: 'zh-CN' });
     const somaxconn = annotated.children[0].children
       .find(child => child.name === 'baseapp')!
@@ -235,7 +238,7 @@ describe('annotateConfigTree(语言化作用注释)', () => {
     expect(somaxconn.comment).toContain('来源: kbe/res/server/kbengine_defaults.xml');
   });
 
-  it('en 环境出英文注释(同一条目换语言,取证不变)', () => {
+  it('en 环境出英文注释(同一条目换语言,取证不变)', async () => {
     const annotated = annotateConfigTree(tree(), { language: 'en' });
     const somaxconn = annotated.children[0].children
       .find(child => child.name === 'baseapp')!
@@ -245,8 +248,8 @@ describe('annotateConfigTree(语言化作用注释)', () => {
     expect(somaxconn.comment).toContain('(source: kbe/res/server/kbengine_defaults.xml');
   });
 
-  it('vscode.env.language 决定默认语言(zh-CN → 中文,en → 英文)', () => {
-    const root = makeEngineTree(engineDefaults);
+  it('vscode.env.language 决定默认语言(zh-CN → 中文,en → 英文)', async () => {
+    const root = await makeEngineTree(engineDefaults);
     const original = stubEnv.language;
     try {
       stubEnv.language = 'zh-CN';
@@ -259,8 +262,8 @@ describe('annotateConfigTree(语言化作用注释)', () => {
     }
   });
 
-  it('传入 language 覆盖环境语言(buildFinalServerConfig 参数)', () => {
-    const root = makeEngineTree(engineDefaults);
+  it('传入 language 覆盖环境语言(buildFinalServerConfig 参数)', async () => {
+    const root = await makeEngineTree(engineDefaults);
     try {
       const zh = buildFinalServerConfig('zh-CN').text;
       const en = buildFinalServerConfig('en').text;
@@ -281,7 +284,7 @@ describe('annotateConfigTree(自定义项归类)', () => {
       )
     )!;
 
-  it('查不到含义的自定义项归入「自定义配置」子分类并标「未识别」', () => {
+  it('查不到含义的自定义项归入「自定义配置」子分类并标「未识别」', async () => {
     const annotated = annotateConfigTree(withCustom(), { language: 'zh-CN' });
     const baseapp = annotated.children[0].children.find(child => child.name === 'baseapp')!;
     const custom = baseapp.children.find(child => child.name === 'myCustomThing')!;
@@ -292,7 +295,7 @@ describe('annotateConfigTree(自定义项归类)', () => {
     expect(baseapp.children[baseapp.children.length - 1].name).toBe('myCustomThing');
   });
 
-  it('英文环境标 Custom (unrecognized)', () => {
+  it('英文环境标 Custom (unrecognized)', async () => {
     const annotated = annotateConfigTree(withCustom(), { language: 'en' });
     const baseapp = annotated.children[0].children.find(child => child.name === 'baseapp')!;
     const custom = baseapp.children.find(child => child.name === 'myCustomThing')!;
@@ -300,7 +303,7 @@ describe('annotateConfigTree(自定义项归类)', () => {
     expect(custom.comment).toContain(SERVER_CONFIG_UNKNOWN_DOC.en.slice(0, 40));
   });
 
-  it('文案库查表:整路径 → 去根段 → 无歧义裸键,歧义键不猜', () => {
+  it('文案库查表:整路径 → 去根段 → 无歧义裸键,歧义键不猜', async () => {
     expect(findServerConfigItemDoc(['baseapp', 'archivePeriod'])).toBeTruthy();
     expect(findServerConfigItemDoc(['root', 'baseapp', 'archivePeriod'])?.zh).toContain('存档');
     expect(findServerConfigItemDoc(['port', 'password'])).toBeNull();
@@ -314,8 +317,8 @@ describe('生成的 XML:注释位置与结构', () => {
     stubWorkspace.workspaceFolders = [];
   });
 
-  it('注释全部在元素内部:不落文件头、不出现在元素上方', () => {
-    const root = makeEngineTree(engineDefaults);
+  it('注释全部在元素内部:不落文件头、不出现在元素上方', async () => {
+    const root = await makeEngineTree(engineDefaults);
     try {
       const text = buildFinalServerConfig('zh-CN').text;
       expect(text.startsWith('<!--')).toBe(false);
@@ -328,8 +331,8 @@ describe('生成的 XML:注释位置与结构', () => {
     }
   });
 
-  it('每个配置元素内部都带对应语言的作用注释', () => {
-    const root = makeEngineTree(engineDefaults);
+  it('每个配置元素内部都带对应语言的作用注释', async () => {
+    const root = await makeEngineTree(engineDefaults);
     try {
       const text = buildFinalServerConfig('zh-CN').text;
       expect(elementsWithoutComment(text)).toEqual([]);
@@ -340,8 +343,8 @@ describe('生成的 XML:注释位置与结构', () => {
     }
   });
 
-  it('注释位置规则:容器/嵌套叶子在值之前,顶层键与 <item> 在值之后', () => {
-    const root = makeEngineTree(engineDefaults);
+  it('注释位置规则:容器/嵌套叶子在值之前,顶层键与 <item> 在值之后', async () => {
+    const root = await makeEngineTree(engineDefaults);
     try {
       const text = buildFinalServerConfig('zh-CN').text;
       // 容器:注释是第一个子节点
@@ -360,8 +363,8 @@ describe('生成的 XML:注释位置与结构', () => {
     }
   });
 
-  it('注释文本不与任何元素同名(TinyXML FirstChild(key) 按值匹配注释)', () => {
-    const root = makeEngineTree(engineDefaults);
+  it('注释文本不与任何元素同名(TinyXML FirstChild(key) 按值匹配注释)', async () => {
+    const root = await makeEngineTree(engineDefaults);
     try {
       const text = buildFinalServerConfig('zh-CN').text;
       const tagNames = new Set([...text.matchAll(/<\/?([A-Za-z_][\w.-]*)/g)].map(m => m[1]));
@@ -381,11 +384,11 @@ describe('生成的 XML:可解析且值不变', () => {
     stubWorkspace.workspaceFolders = [];
   });
 
-  it('带注释的合成文档是良构 XML(XMLValidator 通过)', () => {
+  it('带注释的合成文档是良构 XML(XMLValidator 通过)', async () => {
     const { XMLValidator } = require('../vendor/fast-xml-parser/fxp.cjs') as {
       XMLValidator: { validate: (xml: string) => true | { err: unknown } };
     };
-    const root = makeEngineTree(engineDefaults);
+    const root = await makeEngineTree(engineDefaults);
     try {
       const text = buildFinalServerConfig('zh-CN').text;
       expect(XMLValidator.validate(text)).toBe(true);
@@ -394,8 +397,8 @@ describe('生成的 XML:可解析且值不变', () => {
     }
   });
 
-  it('注释不改变结构与取值(与关掉开关的渲染逐节点等价)', () => {
-    const root = makeEngineTree(engineDefaults);
+  it('注释不改变结构与取值(与关掉开关的渲染逐节点等价)', async () => {
+    const root = await makeEngineTree(engineDefaults);
     try {
       const annotated = buildFinalServerConfig('zh-CN').text;
       configurationOverrides.set('kbengine', {
@@ -423,8 +426,8 @@ describe('生成的 XML:可解析且值不变', () => {
     }
   });
 
-  it('开关关闭(kbengine.finalConfigComments=false):无生成注释、原顺序(源注释仍回写)', () => {
-    const root = makeEngineTree(engineDefaults);
+  it('开关关闭(kbengine.finalConfigComments=false):无生成注释、原顺序(源注释仍回写)', async () => {
+    const root = await makeEngineTree(engineDefaults);
     try {
       configurationOverrides.set('kbengine', {
         binPath: '${workspaceFolder}/kbe/bin/server',
@@ -449,21 +452,8 @@ describe('生成的 XML:可解析且值不变', () => {
     }
   });
 
-  it('summarizeFinalTelnet 对带注释的合成文档仍能取到端口/密码', () => {
-    const root = makeEngineTree(engineDefaults);
-    try {
-      const text = buildFinalServerConfig('zh-CN').text;
-      const summary = summarizeFinalTelnet(text);
-      const baseapp = summary.find(entry => entry.component === 'baseapp')!;
-      expect(baseapp.port).toBe(40000);
-      expect(baseapp.password).toBeNull();
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it('元件 kbengine.xml 的自定义键同样带注释并归自定义子分类', () => {
-    const root = makeEngineTree(
+  it('元件 kbengine.xml 的自定义键同样带注释并归自定义子分类', async () => {
+    const root = await makeEngineTree(
       engineDefaults,
       '<root><baseapp><archivePeriod>600</archivePeriod><brandNewKey> abc </brandNewKey></baseapp></root>'
     );
@@ -482,7 +472,7 @@ describe('生成的 XML:可解析且值不变', () => {
 });
 
 describe('文案库数据(便于维护的注释库自身)', () => {
-  it('每条目双语 + 取证 + 合法子分类,且不含会破坏 XML 注释的 `--`', () => {
+  it('每条目双语 + 取证 + 合法子分类,且不含会破坏 XML 注释的 `--`', async () => {
     const keys = Object.keys(SERVER_CONFIG_ITEM_DOCS);
     expect(keys.length).toBeGreaterThan(200);
     for (const key of keys) {
@@ -496,7 +486,7 @@ describe('文案库数据(便于维护的注释库自身)', () => {
     }
   });
 
-  it('用户点名的 trace_packet.disables 有逐项取证说明', () => {
+  it('用户点名的 trace_packet.disables 有逐项取证说明', async () => {
     const doc = SERVER_CONFIG_ITEM_DOCS['trace_packet.disables']!;
     expect(doc.zh).toContain('包跟踪排除名单');
     expect(doc.source).toContain('serverconfig.cpp');
@@ -506,7 +496,7 @@ describe('文案库数据(便于维护的注释库自身)', () => {
 });
 
 describe('renderConfigXml(无注释时排版不变)', () => {
-  it('叶子/容器/空值排版与旧口径一致(关掉增强即回到该形态)', () => {
+  it('叶子/容器/空值排版与旧口径一致(关掉增强即回到该形态)', async () => {
     expect(renderConfigXmlSections(parse('<baseapp><port> 40000 </port><p/></baseapp>'))).toBe(
       ['<baseapp>', '\t<port> 40000 </port>', '\t<p></p>', '</baseapp>'].join('\n')
     );

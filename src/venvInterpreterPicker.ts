@@ -13,6 +13,7 @@
  * import vscode——单测用内存替身;extension.ts 只做薄装配。
  */
 
+import { l10nText } from './nlsRuntime';
 import * as path from 'path';
 import { execFile, spawn } from 'child_process';
 import {
@@ -43,7 +44,7 @@ export function interpreterStatusBarText(
   version?: string | null
 ): string {
   if (!resolution.interpreterPath) {
-    return '$(circle-slash) Python 解释器缺失';
+    return l10nText('$(circle-slash) Python interpreter missing');
   }
   const segments = resolution.interpreterPath.split(/[\\/]/);
   const last = segments[segments.length - 1] ?? resolution.interpreterPath;
@@ -81,7 +82,7 @@ export interface InterpreterPickItem {
   create?: boolean;
 }
 
-export const VENV_CREATE_ITEM_LABEL = '$(add) 创建新 venv…';
+export const VENV_CREATE_ITEM_LABEL = l10nText('$(add) Create a new venv…');
 
 /** 选择器条目组装(纯函数):当前 → 发现的环境 → PATH → 创建 */
 export function buildInterpreterPickItems(inputs: {
@@ -93,7 +94,7 @@ export function buildInterpreterPickItems(inputs: {
   if (inputs.current.interpreterPath) {
     items.push({
       label: `✓ ${inputs.current.interpreterPath}`,
-      description: `当前(${interpreterSourceBadge(inputs.current.interpreterSource)})`,
+      description: l10nText('current ({source})', { source: interpreterSourceBadge(inputs.current.interpreterSource) }),
       interpreterPath: inputs.current.interpreterPath,
       current: true
     });
@@ -154,7 +155,12 @@ export async function selectInterpreter(
     return null;
   }
   await deps.writeInterpreterSetting(picked.interpreterPath);
-  await deps.report(`Python 解释器已切换:${picked.interpreterPath}(写入 kbengine.python.interpreterPath,即刻生效)`);
+  await deps.report(
+    l10nText(
+      'Python interpreter switched: {path} (written to kbengine.python.interpreterPath, effective immediately)',
+      { path: picked.interpreterPath }
+    )
+  );
   return 'selected';
 }
 
@@ -188,7 +194,7 @@ export interface CreateVenvDeps {
  */
 export async function createVenvFlow(deps: CreateVenvDeps): Promise<'created' | null> {
   if (!deps.workspaceRoot) {
-    await deps.report('未打开工作区,无法创建 venv');
+    await deps.report(l10nText('No workspace open; cannot create a venv'));
     return null;
   }
   const parent = await deps.pickTargetParentDir(deps.workspaceRoot);
@@ -197,20 +203,26 @@ export async function createVenvFlow(deps: CreateVenvDeps): Promise<'created' | 
   }
   const target = path.join(parent, '.venv');
   if (deps.targetDirectoryExistsNonEmpty(target)) {
-    await deps.report(`目标目录已存在且非空,拒绝创建(避免覆盖):${target}`);
+    await deps.report(
+      l10nText('Target directory already exists and is not empty; refusing to create (avoid overwriting): {path}', { path: target })
+    );
     return null;
   }
   const base = deps.baseInterpreter();
   if (!base) {
     await deps.report(
-      `缺少基础 Python 解释器(设置 kbengine.python.interpreterPath 与 PATH 上都没有可用的 python3/python),无法创建 venv;请先指定一个可用的系统解释器`
+      l10nText(
+        'Missing a base Python interpreter (neither kbengine.python.interpreterPath nor PATH has a usable python3/python); cannot create a venv; specify a working system interpreter first'
+      )
     );
     return null;
   }
   const run = await deps.runVenvModule(base, target);
   if (run.exitCode !== 0) {
     const tail = run.stderr.trim().split('\n').slice(-3).join('; ');
-    await deps.report(`python -m venv 失败(退出码 ${run.exitCode}):${tail || '无 stderr 输出'}`);
+    await deps.report(
+      l10nText('python -m venv failed (exit code {code}): {tail}', { code: run.exitCode ?? -1, tail: tail || l10nText('no stderr output') })
+    );
     return null;
   }
   // 创建后直接对目标验真(环境证据 + 解释器二进制),不依赖扫描范围——
@@ -218,11 +230,16 @@ export async function createVenvFlow(deps: CreateVenvDeps): Promise<'created' | 
   // 报告,绝不把没验证的路径写进设置。
   const interpreterPath = deps.verifyTarget(target);
   if (!interpreterPath) {
-    await deps.report(`venv 命令已执行,但 ${target} 未通过验证(缺 pyvenv.cfg 或解释器二进制),未选用`);
+    await deps.report(
+      l10nText(
+        'venv command ran but {path} did not pass verification (missing pyvenv.cfg or interpreter binary); not selected',
+        { path: target }
+      )
+    );
     return null;
   }
   await deps.writeInterpreterSetting(interpreterPath);
-  await deps.report(`venv 已创建并选用:${interpreterPath}`);
+  await deps.report(l10nText('venv created and selected: {path}', { path: interpreterPath }));
   return 'created';
 }
 

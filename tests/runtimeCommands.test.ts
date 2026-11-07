@@ -17,7 +17,15 @@ afterEach(() => {
 });
 
 describe('runtime command surface', () => {
-  it('warns when no runtime components are discovered', async () => {
+  it('warns when no runtime components are discovered', async ctx => {
+    // 环境守卫:本机有真 KBEngine machine daemon(UDP 20086 应答,如 demo 引擎
+    // 在跑)时 discovery 必然找到组件,「无组件如实提示」前提不成立——跳过,
+    // 不在本机引擎在场时误报红
+    const { discoverLocalComponents } = await import('../src/kbengineProtocol');
+    const live = await discoverLocalComponents({ timeoutMs: 400 }).catch(() => []);
+    if (live.length > 0) {
+      ctx.skip();
+    }
     const context: ExtensionContext = { subscriptions: [], extensionUri: Uri.file('/tmp') };
     activate(context);
     await new Promise(resolve => setTimeout(resolve, 100));

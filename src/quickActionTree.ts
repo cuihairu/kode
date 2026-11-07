@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { l10nText } from './nlsRuntime';
 import { baseNameOf } from './quickActionConfig';
 
 export interface QuickActionTreeEntry {
@@ -35,10 +36,10 @@ export class QuickActionTreeItem extends vscode.TreeItem {
       return;
     }
     if (!entry) {
-      super('配置 .kbengine/debug.json 的 quickActions 或 httpRequests', vscode.TreeItemCollapsibleState.None);
-      this.description = 'HTTP 请求也可在设置 kbengine.httpRequests 中配置';
-      this.tooltip = '脚本配置 quickActions；HTTP 请求可配置在 debug.json 或 kbengine.httpRequests 设置';
-      this.command = { command: 'kbengine.quickActions.scanScripts', title: '重新扫描脚本' };
+      super(l10nText('Configure quickActions or httpRequests in .kbengine/debug.json'), vscode.TreeItemCollapsibleState.None);
+      this.description = l10nText('HTTP requests can also be configured in the kbengine.httpRequests setting');
+      this.tooltip = l10nText('Scripts configure quickActions; HTTP requests can be configured in debug.json or the kbengine.httpRequests setting');
+      this.command = { command: 'kbengine.quickActions.scanScripts', title: l10nText('Rescan scripts') };
       this.contextValue = 'quickActionEmpty';
       return;
     }
@@ -50,9 +51,9 @@ export class QuickActionTreeItem extends vscode.TreeItem {
       ? `${entry.target.slice(0, Math.max(12, 120 - baseNameOf(entry.target).length - 5))}...${baseNameOf(entry.target)}`
       : entry.target;
     this.description = scriptTarget;
-    this.tooltip = `${entry.name}${entry.type === 'http' ? `\n来源：${entry.requestSource === 'settings' ? 'kbengine.httpRequests 设置' : '.kbengine/debug.json'}` : ''}\n${entry.target}\n点击执行`;
+    this.tooltip = `${entry.name}${entry.type === 'http' ? `\n${l10nText('Source: {source}', { source: entry.requestSource === 'settings' ? 'kbengine.httpRequests' : '.kbengine/debug.json' })}` : ''}\n${entry.target}\n${l10nText('Click to run')}`;
     this.contextValue = 'quickAction';
-    this.command = { command: 'kbengine.quickActions.runByName', title: '执行快速动作', arguments: [entry.requestIndex !== undefined ? `@http:${entry.requestSource ?? 'debug'}:${entry.requestIndex}` : entry.runDirect ? `@script:${entry.target}` : entry.name] };
+    this.command = { command: 'kbengine.quickActions.runByName', title: l10nText('Run quick action'), arguments: [entry.requestIndex !== undefined ? `@http:${entry.requestSource ?? 'debug'}:${entry.requestIndex}` : entry.runDirect ? `@script:${entry.target}` : entry.name] };
   }
 }
 

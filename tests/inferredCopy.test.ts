@@ -33,7 +33,8 @@ describe('inferredCopy', () => {
         '/ws/.kbengine/inferred/scripts/base/Account.py': 'class Account:  pass',
         '/ws/scripts/base/Monster.py': 'class Monster: pass'
       };
-      const deps = { readText: (p: string) => files[p] ?? null };
+      // WIN-3:产品用 path.join 拼读取路径(win32 反斜杠),查找键同口径归一
+      const deps = { readText: (p: string) => files[p.replace(/\\/g, '/')] ?? null };
       const plan = planInferredMirror(
         srcRoot,
         inferredRoot,
@@ -64,7 +65,8 @@ describe('inferredCopy', () => {
       const files: Record<string, string> = {
         '/ws/.kbengine/inferred/scripts/base/X.py': 'old'
       };
-      const deps = { readText: (p: string) => files[p] ?? null };
+      // WIN-3:产品用 path.join 拼读取路径(win32 反斜杠),查找键同口径归一
+      const deps = { readText: (p: string) => files[p.replace(/\\/g, '/')] ?? null };
       const plan = planInferredMirror(srcRoot, inferredRoot, ['base/X.py'], ['base/X.py'], deps);
       expect(plan.copy).toEqual([]);
       expect(plan.overwrite).toEqual([]);

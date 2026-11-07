@@ -369,7 +369,8 @@ describe('装配(§11.1/§11.4 watcher 生命周期)', () => {
     expect(allFileSystemWatchers).toHaveLength(1);
     const watcher = allFileSystemWatchers[0];
     expect(isRelativePattern(watcher.pattern)).toBe(true);
-    expect(patternText(watcher.pattern)).toBe(`${root}/assets/**/*`);
+    // WIN-3:RelativePattern base 归一为正斜杠,期望同口径
+    expect(patternText(watcher.pattern)).toBe(`${root.replace(/\\/g, '/')}/assets/**/*`);
 
     // 状态栏如实显示派生 glob + 来源
     expect(status.bar.text).toBe(READY_FACE);
@@ -608,7 +609,8 @@ describe('装配(§11.1/§11.4 watcher 生命周期)', () => {
     expect(allFileSystemWatchers).toHaveLength(2);
     expect(allFileSystemWatchers[0].pattern).toBe('**/*.def');
     expect(isRelativePattern(allFileSystemWatchers[1].pattern)).toBe(true);
-    expect(patternText(allFileSystemWatchers[1].pattern)).toBe(`${root}/assets/**/*`);
+    // WIN-3:同上,base 正斜杠归一
+    expect(patternText(allFileSystemWatchers[1].pattern)).toBe(`${root.replace(/\\/g, '/')}/assets/**/*`);
     expect(status.lines.some(line => line.includes('来源=explicit') && line.includes('**/*.def'))).toBe(true);
     expect(status.bar.text).toBe(READY_FACE);
   });

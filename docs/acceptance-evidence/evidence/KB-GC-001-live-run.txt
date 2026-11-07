@@ -1,0 +1,41 @@
+KB-GC-001 live run @ 2026-11-07T09:55:13.067Z discovery=255.255.255.255
+[GC-1] discovery -> 10 components, machined=reachable
+[GC-1]   machine type=8 id=2129652375332859700 pid=12047 192.168.5.117:45899 cpu=0.37 mem=2.4 usedmem=15400960 state=0 uid=1000
+[GC-1]   baseappmgr type=3 id=4129652375332859700 pid=12051 192.168.5.117:46301 cpu=0.00 mem=0.0 usedmem=15237120 state=1 uid=1000
+[GC-1]   cellappmgr type=4 id=5129652375332859700 pid=12052 192.168.5.117:45699 cpu=0.00 mem=0.0 usedmem=15237120 state=1 uid=1000
+[GC-1]   dbmgr type=1 id=3129652375332859700 pid=12048 192.168.5.117:48407 cpu=0.00 mem=0.1 usedmem=34570240 state=1 uid=1000
+[GC-1]   cellapp1 type=5 id=7129652375332859700 pid=12054 192.168.5.117:46763 cpu=0.00 mem=0.0 usedmem=28016640 state=1 uid=1000
+[GC-1]   baseapp1 type=6 id=6129652375332859700 pid=12053 192.168.5.117:48089 cpu=0.00 mem=0.0 usedmem=28508160 state=1 uid=1000
+[GC-1]   loginapp type=2 id=8129652375332859700 pid=12055 192.168.5.117:46701 cpu=0.00 mem=0.0 usedmem=24576000 state=1 uid=1000
+[GC-1]   logger type=10 id=1129653375331859700 pid=12050 192.168.5.117:47667 cpu=2.46 mem=0.0 usedmem=22609920 state=1 uid=1000
+[GC-1]   interfaces type=13 id=1129652375332859700 pid=12049 192.168.5.117:30099 cpu=0.00 mem=0.0 usedmem=24084480 state=1 uid=1000
+[GC-1]   bots type=11 id=7705365423447212032 pid=12092 192.168.5.117:46291 cpu=0.00 mem=0.0 usedmem=26378240 state=0 uid=1000
+[GC-1] verdict: reachable, logger=logger 192.168.5.117:47667
+[GC-2] controller state=connected received=70 lines
+[GC-2] #1 STRUCTURED :: 2026-11-07 17:55:43 968 [UNKNOWN] cellapp01: Monster[2008].onMove: (57, None)
+[GC-2] #2 STRUCTURED :: 2026-11-07 17:55:44 068 [UNKNOWN] cellapp01: Monster[2006].onMove: (56, None)
+[GC-2] #3 STRUCTURED :: 2026-11-07 17:55:44 068 [UNKNOWN] cellapp01: Monster[2008].onMove: (57, None)
+[GC-2] #4 STRUCTURED :: 2026-11-07 17:55:44 168 [UNKNOWN] cellapp01: Monster[2006].onMove: (56, None)
+[GC-2] #5 STRUCTURED :: 2026-11-07 17:55:44 168 [UNKNOWN] cellapp01: Monster[2008].onMove: (57, None)
+[GC-2] #6 STRUCTURED :: 2026-11-07 17:55:44 268 [UNKNOWN] cellapp01: Monster[2006].onMove: (56, None)
+[GC-2] #7 STRUCTURED :: 2026-11-07 17:55:44 268 [UNKNOWN] cellapp01: Monster[2008].onMove: (57, None)
+[GC-2] #8 STRUCTURED :: 2026-11-07 17:55:44 368 [UNKNOWN] cellapp01: Monster[2006].onMove: (56, None)
+[GC-2] #9 STRUCTURED :: 2026-11-07 17:55:44 368 [UNKNOWN] cellapp01: Monster[2008].onMove: (57, None)
+[GC-2] #10 STRUCTURED :: 2026-11-07 17:55:44 468 [UNKNOWN] cellapp01: [demo-evidence] Avatar[13].reqAttack hit Monster[2006] dmg=15
+[GC-2] #11 STRUCTURED :: 2026-11-07 17:55:44 470 [UNKNOWN] cellapp01: [demo-evidence] Monster[2006].onDamaged attacker=Avatar[13] -> co
+[GC-2] #12 STRUCTURED :: 2026-11-07 17:55:44 471 [UNKNOWN] cellapp01: [demo-evidence] Avatar[2006].receiveDamage dmg=15 attacker=13 hp=
+[GC-2] structured-parse verdict: 12/12 lines carry the formatted logstream shape
+[GC-2] jump-face 未测:本轮推流无错误级行(解析/落点面由单测覆盖)
+[GC-4] tail output channel revealed (real extension surface); holding for screenshot capture
+[GC-3] machine :: pid=12047 cpu=0.4% mem=14.7MB 192.168.5.117:45899 :: normal
+[GC-3] baseappmgr :: pid=12051 cpu=0.0% mem=14.5MB 192.168.5.117:46301 :: normal
+[GC-3] cellappmgr :: pid=12052 cpu=0.0% mem=14.5MB 192.168.5.117:45699 :: normal
+[GC-3] dbmgr :: pid=12048 cpu=0.0% mem=33.0MB 192.168.5.117:48407 :: normal
+[GC-3] cellapp1 :: pid=12054 cpu=0.0% mem=26.7MB 192.168.5.117:46763 :: normal
+[GC-3] baseapp1 :: pid=12053 cpu=0.0% mem=27.2MB 192.168.5.117:48089 :: normal
+[GC-3] loginapp :: pid=12055 cpu=0.0% mem=23.4MB 192.168.5.117:46701 :: normal
+[GC-3] logger :: pid=12050 cpu=2.5% mem=21.6MB 192.168.5.117:47667 :: normal
+[GC-3] interfaces :: pid=12049 cpu=0.0% mem=23.0MB 192.168.5.117:30099 :: normal
+[GC-3] bots :: pid=12092 cpu=0.0% mem=25.2MB 192.168.5.117:46291 :: normal
+[GC-3] verdict: 10 rows rendered, 0 abnormal-marked
+[GC-4] componentStatus view focused (real extension surface); holding for screenshot capture

@@ -9,7 +9,8 @@ import {
   injectDebugpyAfterStart
 } from '../src/autoDebugpy';
 import { DebugConfigManager } from '../src/debugConfig';
-import { ENGINE_DEFAULT_TELNET_PORTS, type TelnetTarget } from '../src/telnetService';
+// KODE-CFG-009:TS 端口常量表删(core 唯一真源);测试对照值取 core 同表镜像
+import { ENGINE_DEFAULT_TELNET_PORTS, type TelnetTarget } from './helpers/configCoreContract';
 import { configurationOverrides, workspace as stubWorkspace, workspaceState, Uri } from './helpers/vscodeStub';
 
 // DBG-001 按 targetId 分配 debugpy 端口:同组件多实例各持窗口内独立口

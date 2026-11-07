@@ -234,3 +234,144 @@ fn kind_of(v: &Value) -> &'static str {
         Value::Object(_) => "object",
     }
 }
+
+// ============ KODE-CFG-009:`$/kode/config/resolve`(消费通道取数口) ============
+//
+// params = `{ defaultsXml: string|null, customXml: string|null }`(TS 只读盘
+// 送原文,不解析)→ `{ defaultsTree, customTree, merged, telnetSummary,
+// dbInterface }`。解析/合并/读值唯一实现在 kode-parser resolve_config
+// (TS parseConfigXml/mergeConfigXml/summarizeFinalTelnet/
+// extractDatabaseInterfaceConfig 已下线,设计 §6.2 step 3)。
+
+use kode_parser::config::{
+    resolve_config, DatabaseInterfaceConfig, TelnetSummaryEntry, ENGINE_DEFAULT_TELNET_PORTS,
+};
+
+/// 常量端口数值表(与 ENGINE_DEFAULT_TELNET_PORTS 同源,查表用;pub 供
+/// kode-mcp 配置问答面复用,core 仍唯一真源)。
+pub const ENGINE_TELNET_PORT_NUMBERS: &[(&str, i64)] = &[
+    ("loginapp", 31000),
+    ("dbmgr", 32000),
+    ("interfaces", 33000),
+    ("logger", 34000),
+    ("baseapp", 40000),
+    ("cellapp", 50000),
+    ("bots", 51000),
+];
+
+/// 注册 `$/kode/config/resolve`。
+pub fn register_resolve(reg: &mut RpcRegistry) {
+    reg.register("$/kode/config/resolve", resolve_handler);
+}
+
+fn resolve_handler(params: Value) -> Result<Value, String> {
+    let defaults_xml = opt_xml_text(params.get("defaultsXml"), "defaultsXml")?;
+    let custom_xml = opt_xml_text(params.get("customXml"), "customXml")?;
+    let resolved = resolve_config(defaults_xml.as_deref(), custom_xml.as_deref());
+    Ok(json!({
+        "defaultsTree": resolved.defaults_tree.as_ref().map(config_node_to_json),
+        "customTree": resolved.custom_tree.as_ref().map(config_node_to_json),
+        "merged": resolved.merged.as_ref().map(config_node_to_json),
+        "telnetSummary": resolved
+            .telnet_summary
+            .iter()
+            .map(telnet_entry_to_json)
+            .collect::<Vec<_>>(),
+        // 引擎写死端口表(core 唯一真源;TS 侧 TS 常量表已删)
+        "telnetDefaultPorts": telnet_default_ports_json(),
+        // 元件配置 telnet_service 段读值(旧 parseKbengineXmlTelnet 的 core 形)
+        "customTelnet": resolved.custom_telnet.as_ref().map(|t| {
+            json!({
+                "port": t.port.map(json_number),
+                "password": t.password,
+            })
+        }),
+        "dbInterface": resolved.db_interface.as_ref().map(db_interface_to_json),
+    }))
+}
+
+fn opt_xml_text(v: Option<&Value>, field: &str) -> Result<Option<String>, String> {
+    match v {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(text)) => Ok(Some(text.clone())),
+        Some(other) => Err(format!("{field} 应为字符串或 null,得到 {}", kind_of(other))),
+    }
+}
+
+/// ConfigNode → TS `ConfigXmlNode` 形 JSON(sourceComments 空则省,与 TS
+/// 可选字段同形)。
+fn config_node_to_json(node: &ConfigNode) -> Value {
+    let children: Vec<Value> = node.children.iter().map(config_node_to_json).collect();
+    let mut map = Map::new();
+    map.insert("name".into(), Value::String(node.name.clone()));
+    map.insert("text".into(), Value::String(node.text.clone()));
+    map.insert("children".into(), Value::Array(children));
+    if !node.source_comments.is_empty() {
+        map.insert(
+            "sourceComments".into(),
+            Value::Array(
+                node.source_comments
+                    .iter()
+                    .map(|c| Value::String(c.clone()))
+                    .collect(),
+            ),
+        );
+    }
+    Value::Object(map)
+}
+
+/// f64 → JSON 数(整值落整数,与 TS Number 输出形态一致)。
+fn json_number(value: f64) -> Value {
+    if value.fract() == 0.0 && value.abs() < 9e15 {
+        Value::Number(serde_json::Number::from(value as i64))
+    } else {
+        serde_json::Number::from_f64(value)
+            .map(Value::Number)
+            .unwrap_or(Value::Null)
+    }
+}
+
+fn telnet_entry_to_json(entry: &TelnetSummaryEntry) -> Value {
+    json!({
+        "component": entry.component,
+        "port": entry.port.map(json_number),
+        "password": entry.password,
+    })
+}
+
+fn db_interface_to_json(db: &DatabaseInterfaceConfig) -> Value {
+    let mut map = Map::new();
+    map.insert("host".into(), Value::String(db.host.clone()));
+    map.insert("port".into(), json_number(db.port));
+    map.insert("username".into(), Value::String(db.username.clone()));
+    map.insert(
+        "databaseName".into(),
+        Value::String(db.database_name.clone()),
+    );
+    map.insert("encrypt".into(), Value::Bool(db.encrypt));
+    map.insert(
+        "characterSet".into(),
+        Value::String(db.character_set.clone()),
+    );
+    if let Some(password) = &db.plain_password {
+        map.insert("plainPassword".into(), Value::String(password.clone()));
+    }
+    Value::Object(map)
+}
+
+/// 引擎写死端口表(core 常量唯一真源)→ JSON。
+fn telnet_default_ports_json() -> Value {
+    let mut map = Map::new();
+    for component in ENGINE_DEFAULT_TELNET_PORTS.iter() {
+        let port = ENGINE_TELNET_PORT_NUMBERS
+            .iter()
+            .find(|(name, _)| name == component)
+            .map(|(_, port)| *port)
+            .unwrap_or(0);
+        map.insert(
+            (*component).to_string(),
+            Value::Number(serde_json::Number::from(port)),
+        );
+    }
+    Value::Object(map)
+}

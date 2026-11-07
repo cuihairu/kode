@@ -533,7 +533,8 @@ describe('根因回归:方法未实现时显式提示(真修单:不许无声 nul
     expect(loc!.range.start.line).toBe(8);
     // 提示降级为辅助:仍报期望实现位置(真实路径,非花括号模板)
     expect(
-      messages.info.some(entry => entry.includes('onGhost') && entry.includes('cell/Account.py'))
+      // (win32 提示里的路径是反斜杠,断言前归一化分隔符)
+      messages.info.some(entry => entry.replace(/\\/g, '/').includes('onGhost') && entry.replace(/\\/g, '/').includes('cell/Account.py'))
     ).toBe(true);
   });
 });

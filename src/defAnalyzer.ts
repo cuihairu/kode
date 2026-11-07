@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { l10nText } from './nlsRuntime';
 import * as path from 'path';
 import {
   DEF_METHOD_SECTIONS,
@@ -211,7 +212,10 @@ const ENTITY_LIMITED_PROPERTYS = new Set([
 ]);
 
 const describeLimitedName = (kind: string, name: string): string =>
-  `${kind} ${name} 是引擎受限名(ENTITY_LIMITED_PROPERTYS):引擎按名拒绝,实体加载会失败;请改名`;
+  l10nText(
+    '{kind} {name} is an engine-limited name (ENTITY_LIMITED_PROPERTYS): the engine rejects it by name and the entity will fail to load; rename it',
+    { kind, name }
+  );
 
 const finding = (
   check: DefAnalysisCheck,
@@ -241,7 +245,10 @@ const nameSpan = (node: DefElementNode): { offset: number; length: number } => (
 });
 
 const describeKeywordProblem = (name: string): string =>
-  `名字 ${name} 是 Python 关键字:引擎装载不失败,但脚本无法用 self.${name} 访问该成员,建议改名`;
+  l10nText(
+    'The name {name} is a Python keyword: the engine still loads, but scripts cannot reach the member via self.{name}; rename it',
+    { name }
+  );
 
 const analyzePropertyNode = (
   document: DefDocument,
@@ -273,7 +280,7 @@ const analyzePropertyNode = (
         'error',
         nameSpan(propertyNode),
         lineAtNode(propertyNode),
-        describeLimitedName('属性', propertyNode.name),
+        describeLimitedName(l10nText('Property'), propertyNode.name),
         propertyNode.name
       )
     );
@@ -292,7 +299,10 @@ const analyzePropertyNode = (
         'error',
         nameSpan(propertyNode),
         lineAtNode(propertyNode),
-        `属性 ${propertyNode.name} 缺少有效的 <Type>,实体加载会失败`,
+        l10nText(
+          'Property {name} has no valid <Type>; the entity will fail to load',
+          { name: propertyNode.name }
+        ),
         propertyNode.name
       )
     );
@@ -306,7 +316,10 @@ const analyzePropertyNode = (
         'error',
         textNodeSpan(typeText),
         lineAtNode(typeNode),
-        `属性 ${propertyNode.name} 的类型 ${typeValue} 引擎未注册,实体加载会失败;请改用注册表中的类型`,
+        l10nText(
+          'Property {name} has unregistered type {type}; the entity will fail to load; use a type from the registry',
+          { name: propertyNode.name, type: typeValue }
+        ),
         propertyNode.name
       )
     );
@@ -320,7 +333,10 @@ const analyzePropertyNode = (
         'warning',
         nameSpan(propertyNode),
         lineAtNode(propertyNode),
-        `属性 ${propertyNode.name} 定义了 ${typeNodes.length} 个 <Type>,引擎只装载首个、其余被忽略,请仅保留一个`,
+        l10nText(
+          'Property {name} declares {count} <Type> nodes; the engine loads only the first and ignores the rest, keep exactly one',
+          { name: propertyNode.name, count: typeNodes.length }
+        ),
         propertyNode.name
       )
     );
@@ -346,7 +362,10 @@ const analyzePropertyNode = (
         'warning',
         textNodeSpan(flagsText),
         lineAtNode(propertyNode),
-        `属性 ${propertyNode.name}(${typeValue})以 ALL_CLIENTS 对全体客户端同步,大字段建议收窄旗标或改用 tag/DetailLevel 降低同步粒度`,
+        l10nText(
+          'Property {name} ({type}) syncs to every client via ALL_CLIENTS; for large fields narrow the flags or use tag/DetailLevel to reduce sync cost',
+          { name: propertyNode.name, type: typeValue }
+        ),
         propertyNode.name
       )
     );
@@ -361,7 +380,10 @@ const analyzePropertyNode = (
         'info',
         nameSpan(propertyNode),
         lineAtNode(propertyNode),
-        `属性 ${propertyNode.name} 的 Flags 无客户端可见性,配置 <DetailLevel> 不产生任何效果(冗余字段)`,
+        l10nText(
+          'Property {name} has no client visibility in Flags, so <DetailLevel> has no effect (redundant field)',
+          { name: propertyNode.name }
+        ),
         propertyNode.name
       )
     );
@@ -544,7 +566,7 @@ export function collectInheritedNames(
  */
 // 提示文案的来源注记:命中面由 mergeInheritedName 构造,任一列表非空才进
 // 对应分支,来源恒有至少一个 def,无需判空臂
-const cite = (sources: string[]): string => `(继承自 ${sources.join('、')})`;
+const cite = (sources: string[]): string => l10nText('(inherited from {sources})', { sources: sources.join(', ') });
 
 const describePropertyCollision = (
   document: DefDocument,
@@ -558,7 +580,10 @@ const describePropertyCollision = (
       'error',
       nameSpan(node),
       getLineNumberAt(document, node.tagStart),
-      `属性 ${node.name} 与继承链上的方法同名:父子/接口描述装入同一 ScriptDefModule,hasMethodName 全局拒绝,实体加载会失败${cite(info.methodSources)}`,
+      l10nText(
+        'Property {name} clashes with a method on the inheritance chain: parent/interface descriptions load into one ScriptDefModule and hasMethodName rejects globally; the entity will fail to load{cite}',
+        { name: node.name, cite: cite(info.methodSources) }
+      ),
       node.name
     );
   }
@@ -569,7 +594,10 @@ const describePropertyCollision = (
       'error',
       nameSpan(node),
       getLineNumberAt(document, node.tagStart),
-      `属性 ${node.name} 与继承链上的属性/组件槽同域位同名:同一模块 addPropertyDescription 判重拒绝,实体加载会失败${cite([...info.propertySources, ...info.componentSources])}`,
+      l10nText(
+        'Property {name} clashes with a property/component slot of the same domain on the inheritance chain: addPropertyDescription dedupe rejects in the same module; the entity will fail to load{cite}',
+        { name: node.name, cite: cite([...info.propertySources, ...info.componentSources]) }
+      ),
       node.name
     );
   }
@@ -588,7 +616,10 @@ const describeMethodCollision = (
       'error',
       nameSpan(node),
       getLineNumberAt(document, node.tagStart),
-      `方法 ${node.name} 与继承链上的方法同段同名:同一模块同段判重拒绝,实体加载会失败${cite(info.methodSources)}`,
+      l10nText(
+        'Method {name} clashes with a same-section method on the inheritance chain: same-module same-section dedupe rejects; the entity will fail to load{cite}',
+        { name: node.name, cite: cite(info.methodSources) }
+      ),
       node.name
     );
   }
@@ -598,7 +629,10 @@ const describeMethodCollision = (
       'error',
       nameSpan(node),
       getLineNumberAt(document, node.tagStart),
-      `方法 ${node.name} 与继承链上的属性/组件同名:addXxxMethodDescription 的 hasPropertyName/hasComponentName 全局拒绝,实体加载会失败${cite([...info.propertySources, ...info.componentSources])}`,
+      l10nText(
+        'Method {name} clashes with a property/component on the inheritance chain: addXxxMethodDescription hasPropertyName/hasComponentName rejects globally; the entity will fail to load{cite}',
+        { name: node.name, cite: cite([...info.propertySources, ...info.componentSources]) }
+      ),
       node.name
     );
   }
@@ -617,7 +651,10 @@ const describeComponentCollision = (
     'error',
     nameSpan(node),
     getLineNumberAt(document, node.tagStart),
-    `组件槽 ${node.name} 与继承链上的声明同名:组件槽经 addComponentProperty 走 addPropertyDescription,同名判重拒绝,实体加载会失败${cite(sources)}`,
+    l10nText(
+      'Component slot {name} clashes with a declaration on the inheritance chain: slots go through addComponentProperty → addPropertyDescription and dedupe rejects; the entity will fail to load{cite}',
+      { name: node.name, cite: cite(sources) }
+    ),
     node.name
   );
 };
@@ -690,7 +727,7 @@ export function analyzeDefDocument(
             'error',
             nameSpan(methodNode),
             getLineNumberAt(document, methodNode.tagStart),
-            describeLimitedName('方法', methodNode.name),
+            describeLimitedName(l10nText('Method'), methodNode.name),
             methodNode.name
           )
         );
@@ -702,7 +739,10 @@ export function analyzeDefDocument(
             'error',
             nameSpan(methodNode),
             getLineNumberAt(document, methodNode.tagStart),
-            `方法 ${methodNode.name} 与属性同名:引擎装载时按名冲突直接拒绝(scriptdef_module),实体加载会失败`,
+            l10nText(
+              'Method {name} has the same name as a property: the engine rejects the name clash at load time (scriptdef_module); the entity will fail to load',
+              { name: methodNode.name }
+            ),
             methodNode.name
           )
         );
@@ -732,7 +772,7 @@ export function analyzeDefDocument(
             'error',
             nameSpan(componentNode),
             getLineNumberAt(document, componentNode.tagStart),
-            describeLimitedName('组件', componentNode.name),
+            describeLimitedName(l10nText('Component slot'), componentNode.name),
             componentNode.name
           )
         );
@@ -853,9 +893,9 @@ export async function analyzeDefDocumentWithRust(
 }
 
 const SEVERITY_LABELS: Record<DefAnalysisSeverity, string> = {
-  error: '错误',
-  warning: '警告',
-  info: '提示'
+  error: 'errors',
+  warning: 'warnings',
+  info: 'infos'
 };
 
 /**
@@ -863,18 +903,24 @@ const SEVERITY_LABELS: Record<DefAnalysisSeverity, string> = {
  */
 export function formatDefAnalysisReport(label: string, findings: DefAnalysisFinding[]): string {
   if (findings.length === 0) {
-    return `${label}: 未发现可优化项`;
+    return l10nText('{label}: nothing to optimize', { label });
   }
 
   const lines = findings.map(item =>
-    `  [${SEVERITY_LABELS[item.severity]}] L${item.line} ${item.check}: ${item.message}`
+    `  [${l10nText(SEVERITY_LABELS[item.severity])}] L${item.line} ${item.check}: ${item.message}`
   );
   const counts = { error: 0, warning: 0, info: 0 } as Record<DefAnalysisSeverity, number>;
   for (const item of findings) {
     counts[item.severity] += 1;
   }
   lines.push(
-    `${label}: 共 ${findings.length} 条建议(错误 ${counts.error} / 警告 ${counts.warning} / 提示 ${counts.info})`
+    l10nText('{label}: {total} suggestion(s) (errors {errors} / warnings {warnings} / infos {infos})', {
+      label,
+      total: findings.length,
+      errors: counts.error,
+      warnings: counts.warning,
+      infos: counts.info
+    })
   );
   return lines.join('\n');
 }

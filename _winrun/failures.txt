@@ -1,0 +1,546 @@
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/autoDebugpy.test.ts
+--------------------------------------------------------------------------------
+[skipped] defaultRunPython(真实 spawn 的诚实通道) 解释器挂起:按截止组杀并如实报超时失败,不再永久等待
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/codeGeneratorDirtyBuffer.test.ts
+--------------------------------------------------------------------------------
+[failed] codeGenerator entities.xml 登记进打开缓冲区(AUD-030) R2-F07 复现:打开脏文档时登记进缓冲区,盘不动,用户未保存行保留
+AssertionError: expected '<root>\n  <Avatar hasBase="true" hasC…' to contain '  <Monster hasCell="false" hasBase="t…'
+    at C:/tools/kode-win3/tests/codeGeneratorDirtyBuffer.test.ts:67:24
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+--------------------------------------------------------------------------------
+[failed] codeGenerator entities.xml 登记进打开缓冲区(AUD-030) 缓冲区已有同名登记(用户手敲)时不重复写入
+AssertionError: expected '<root>\n  <Avatar hasBase="true" hasC…' to be '<root>\n  <Avatar hasBase="true" hasC…' // Object.is equality
+    at C:/tools/kode-win3/tests/codeGeneratorDirtyBuffer.test.ts:93:54
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+--------------------------------------------------------------------------------
+[failed] codeGenerator entities.xml 登记进打开缓冲区(AUD-030) showWizard 提交后打开失败:缓冲保留注册,盘不动 (AUD-064)
+AssertionError: expected '<root>\n  <Avatar hasBase="true" hasC…' to contain '<Monster '
+    at C:/tools/kode-win3/tests/codeGeneratorDirtyBuffer.test.ts:141:32
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/codeGeneratorFiles.test.ts
+--------------------------------------------------------------------------------
+[failed] KBEngineCodeGenerator dirty buffer registration (IDE-GEN-007) bases the registration write on the open document text
+AssertionError: expected '<root>\n  <BaseThing hasBase="true" h…' to contain '  <Monster hasCell="false" hasBase="t…'
+    at C:/tools/kode-win3/tests/codeGeneratorFiles.test.ts:712:24
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+--------------------------------------------------------------------------------
+[failed] KBEngineCodeGenerator dirty buffer registration (IDE-GEN-007) sees registrations that only exist in the dirty buffer
+AssertionError: expected [] to deeply equal [ '实体 Monster 已经在 entities.xml 中注册' ]
+    at C:/tools/kode-win3/tests/codeGeneratorFiles.test.ts:742:24
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/cov-debug-process.test.ts
+--------------------------------------------------------------------------------
+[skipped] killProcessTree(POSIX 单 pid 回落) 非组长真实进程:负 pid 组信号 ESRCH,回落单 pid 击杀
+--------------------------------------------------------------------------------
+[skipped] killProcessTree(POSIX 单 pid 回落) 已退出的 pid:组信号与单 pid 都杀不到,如实 false
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/cov-defcallchain.test.ts
+--------------------------------------------------------------------------------
+[failed] defReferenceGraph 补测(接口/组件边与坏文件跳过) Interfaces/Components 引用解析为 interface/component 边;畸形 .def 被跳过
+AssertionError: expected [ { …(2) }, { …(2) } ] to deep equally contain { target: 'ICombat.def', …(1) }
+    at C:/tools/kode-win3/tests/cov-defcallchain.test.ts:684:23
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+--------------------------------------------------------------------------------
+[failed] defReferenceGraph 补测(接口/组件边与坏文件跳过) 只读失败面(root 下 chmod 不生效,跳过) 不可读 .def:readFile 吞错为 null,整文件跳过
+AssertionError: expected [ 'A', 'B', 'Base' ] to not include 'B'
+    at Proxy.<anonymous> (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/index.CZzC1gGg.js:1791:15)
+    at Proxy.<anonymous> (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/index.CZzC1gGg.js:1656:14)
+    at Proxy.methodWrapper (file:///C:/tools/kode-win3/node_modules/.pnpm/chai@6.3.0/node_modules/chai/index.js:1737:25)
+    at C:/tools/kode-win3/tests/cov-defcallchain.test.ts:710:26
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+--------------------------------------------------------------------------------
+[failed] defReferenceGraph 补测(接口/组件边与坏文件跳过) 只读失败面(root 下 chmod 不生效,跳过) 不可读子目录:readdir 吞错返回,目录整体跳过不炸
+AssertionError: expected [ 'A', 'Base', 'C' ] to not include 'C'
+    at Proxy.<anonymous> (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/index.CZzC1gGg.js:1791:15)
+    at Proxy.<anonymous> (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/index.CZzC1gGg.js:1656:14)
+    at Proxy.methodWrapper (file:///C:/tools/kode-win3/node_modules/.pnpm/chai@6.3.0/node_modules/chai/index.js:1737:25)
+    at C:/tools/kode-win3/tests/cov-defcallchain.test.ts:724:26
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/cov-entity-schema.test.ts
+--------------------------------------------------------------------------------
+[failed] entityMapping 散点分支 不可读目录被静默跳过:其中的方法不参与全局回退
+AssertionError: expected { …(3) } to be null
+    at C:/tools/kode-win3/tests/cov-entity-schema.test.ts:894:74
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/cov-longtail.test.ts
+--------------------------------------------------------------------------------
+[failed] logHub(告警与文件监控边角) watchFile 路径是目录:读取失败入账错误行(Linux 上 read EISDIR)
+AssertionError: expected false to be true // Object.is equality
+    at C:/tools/kode-win3/tests/cov-longtail.test.ts:744:61
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+--------------------------------------------------------------------------------
+[failed] scanRoots(回退与遍历边角) 外部根不可读(readdir EACCES):遍历降级为空,不外抛
+AssertionError: expected [ Uri{ …(4) } ] to deeply equal []
+    at C:/tools/kode-win3/tests/cov-longtail.test.ts:910:54
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+--------------------------------------------------------------------------------
+[failed] pythonTestRunner(判读与进程边角) spawnTestProcess:子进程被信号终止 → code null + signal 显式记录 (R2-F19)
+AssertionError: expected 1 to be null
+    at C:/tools/kode-win3/tests/cov-longtail.test.ts:1187:25
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/covExtensionCommands.test.ts
+--------------------------------------------------------------------------------
+[skipped] extension 激活链命令面(补测) debug.pyspyDump:已装 → 进程选择 → dump 出栈入通道
+--------------------------------------------------------------------------------
+[failed] extension 激活链命令面(活动 profile 侧) 测试面板 Run 档:真实执行 pytest 并把结果记到面板条目
+AssertionError: expected 0 to be greater than 0
+    at C:/tools/kode-win3/tests/covExtensionCommands.test.ts:1025:37
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+--------------------------------------------------------------------------------
+[failed] extension 激活链命令面(活动 profile 侧) 测试面板 Run 档:pytest skip 用例标记跳过
+AssertionError: expected 0 to be greater than 0
+    at C:/tools/kode-win3/tests/covExtensionCommands.test.ts:1187:38
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+--------------------------------------------------------------------------------
+[failed] extension 激活链命令面(活动 profile 侧) 测试面板 Run 档:进程退出非零且无失败节点 → 会话错误显示+stderr,节点保留 passed (R2-F19)
+AssertionError: expected false to be true // Object.is equality
+    at C:/tools/kode-win3/tests/covExtensionCommands.test.ts:1218:96
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/defMethodConsistencyGaps.test.ts
+--------------------------------------------------------------------------------
+[failed] collectDefMethodImplementationGaps(正向:def 有 Python 无) getDefFileForPythonFile:属主脚本 → 根 def 文件;无关文件 → undefined
+AssertionError: expected 'avatar.def' to be 'Avatar.def' // Object.is equality
+    at C:/tools/kode-win3/tests/defMethodConsistencyGaps.test.ts:168:79
+    at withStubbedDefs (C:/tools/kode-win3/tests/defMethodConsistencyGaps.test.ts:84:12)
+    at C:/tools/kode-win3/tests/defMethodConsistencyGaps.test.ts:166:5
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/defRenamer.test.ts
+--------------------------------------------------------------------------------
+[failed] computeDefRenameEdits 引用编辑计算 扫描中途不可读的后代文件被跳过
+AssertionError: expected { 'Boss.def': 2, 'Hero.def': 4, …(3) } to deeply equal { 'Hero.def': 4, …(3) }
+    at C:/tools/kode-win3/tests/defRenamer.test.ts:774:36
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/engineTreeProbe.test.ts
+--------------------------------------------------------------------------------
+[skipped] engine tree sanity (real tree) — skipped: no engine tree: set KBENGINE_ROOT or place kbengine next to the repo (no ../kbengine sibling found) reads the version from whichever marker the real tree ships, no fabrication (C-14)
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/entityMappingManager.test.ts
+--------------------------------------------------------------------------------
+[failed] IDE-IDX-008 删除同名胜者保留其他根实体 移除 B 的 Hero 后 A 的 Hero 按名字/按 A 根均可查,不被连坐
+AssertionError: expected 'c:/users/admini~1/appdata/local/temp/…' to be 'C:\Users\ADMINI~1\AppData\Local\Temp\…' // Object.is equality
+    at C:/tools/kode-win3/tests/entityMappingManager.test.ts:801:11
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+--------------------------------------------------------------------------------
+[failed] IDE-IDX-014 切换 assetsRoot 重建实体 watcher 旧外部根 watcher 释放,新根更新能触发维护
+AssertionError: expected undefined to be defined
+    at C:/tools/kode-win3/tests/entityMappingManager.test.ts:1036:30
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+--------------------------------------------------------------------------------
+[failed] KR-AUD-25 根重加入解除拉黑(removedRootKeys 过期) 移除 B → 未重加入前拦截保持 → 重加入重登记后 B 索引恢复
+AssertionError: expected false to be true // Object.is equality
+    at C:/tools/kode-win3/tests/entityMappingManager.test.ts:1318:82
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/extension.test.ts
+--------------------------------------------------------------------------------
+[failed] extension activate 装配 注册面与 package.json 贡献点一致
+AssertionError: expected '$(warning) 热更: 就绪(未监视)' to be '$(eye-closed) 热更: 关' // Object.is equality
+    at C:/tools/kode-win3/tests/extension.test.ts:301:31
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/fantasydemoDefAnalysis.test.ts
+--------------------------------------------------------------------------------
+[skipped] fantasydemo 真实 def 脚本行为断言 entity_defs 库存与 entities.xml 注册面双向对账
+--------------------------------------------------------------------------------
+[skipped] fantasydemo 真实 def 脚本行为断言 五个真实 def 全部可解析,节结构与文件语义一致(Space 零属性三方法节齐全)
+--------------------------------------------------------------------------------
+[skipped] fantasydemo 真实 def 脚本行为断言 方法-节归属与引擎 def 格式一致(Avatar logOff→Base、fromCell/cellTick→Client)
+--------------------------------------------------------------------------------
+[skipped] fantasydemo 真实 def 脚本行为断言 属性面:类型/域位/Identifier 与真实脚本一致
+--------------------------------------------------------------------------------
+[skipped] fantasydemo 真实 def 脚本行为断言 校验行为:真实脚本零 correctness 类误报,建议类发现只落已知清单
+--------------------------------------------------------------------------------
+[skipped] fantasydemo 真实 def 脚本行为断言 继承行为:无 Implements 的真实树闭包为空、def 链单节点无祖先
+--------------------------------------------------------------------------------
+[skipped] fantasydemo 真实 def 脚本行为断言 entities.xml 校验:零发现且重复条目定位口径稳定
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/fantasydemoRealExport.test.ts
+--------------------------------------------------------------------------------
+[skipped] fantasydemo real export exports engine typings and real alias types to the injected workspace
+--------------------------------------------------------------------------------
+[skipped] fantasydemo real export builds entity method declarations from the real BigWorld def files
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/generatorFormsFiles.test.ts
+--------------------------------------------------------------------------------
+[failed] generateGeneratorForm 附带改写 组件属性同名时(大小写不敏感)不重复挂载
+AssertionError: expected [ Array(1) ] to deeply equal [ 'Avatar.def 已有同名属性 INVENTORY,组件未挂载' ]
+    at C:/tools/kode-win3/tests/generatorFormsFiles.test.ts:407:26
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/gitCommitLog.test.ts
+--------------------------------------------------------------------------------
+[skipped] 真实仓库:含制表符文件名的重命名历史(审核发现修复) follow 追踪含 TAB 文件名重命名:pathAtCommit 反解出实际制表符
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/hostVitalsCpuMemory.test.ts
+--------------------------------------------------------------------------------
+[failed] 宿主 CPU 与 RSS 采集(IDE-MET-006) 活体采样:busy 后 CPU 增量为正微秒,RSS 高水位≥峰值≥当前
+AssertionError: busy 后 cpu 增量应为正: expected 0 to be greater than 0
+    at C:/tools/kode-win3/tests/hostVitalsCpuMemory.test.ts:59:52
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/hotReloadAssetsRootWatch.test.ts
+--------------------------------------------------------------------------------
+[failed] 装配(§11.1/§11.4 watcher 生命周期) 未写 globs:一个 assetsRoot 全扩展名 watcher,py 走热更、非 py 走旁路
+AssertionError: expected 'C:/Users/ADMINI~1/AppData/Local/Temp/…' to be 'C:\Users\ADMINI~1\AppData\Local\Temp\…' // Object.is equality
+    at C:/tools/kode-win3/tests/hotReloadAssetsRootWatch.test.ts:372:42
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+--------------------------------------------------------------------------------
+[failed] 装配(§11.1/§11.4 watcher 生命周期) 显式 globs 零回归:按用户模式建 watcher,来源 explicit;assetsRoot 在时另挂旁路
+AssertionError: expected 'C:/Users/ADMINI~1/AppData/Local/Temp/…' to be 'C:\Users\ADMINI~1\AppData\Local\Temp\…' // Object.is equality
+    at C:/tools/kode-win3/tests/hotReloadAssetsRootWatch.test.ts:611:59
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/hotReloadReceiverRoundtrip.test.ts
+--------------------------------------------------------------------------------
+[failed] IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议证据) F3 四轮回归:外部应用命令退出 0 → 降级 accepted(不可证实的副作用),绝不 applied 不落台账
+Error: ENOENT: no such file or directory, open 'C:\Users\ADMINI~1\AppData\Local\Temp\kode-aud007-engine-jTnk0W\Avatar.py'
+    at readFileSync (node:fs:483:20)
+    at C:/tools/kode-win3/tests/hotReloadReceiverRoundtrip.test.ts:338:12
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+--------------------------------------------------------------------------------
+[failed] IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议证据) F3 七轮回归:引擎目录只读(0o555)落盘失败 → failed,既有产物原样无残留
+AssertionError: expected 'applied' to be 'failed' // Object.is equality
+    at C:/tools/kode-win3/tests/hotReloadReceiverRoundtrip.test.ts:455:30
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+--------------------------------------------------------------------------------
+[failed] IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议证据) F3 六轮回归:读旧产物 EACCES → 拒绝写入且不误删预存在产物
+AssertionError: expected '应用产物原子替换失败:EPERM: operation not permi…' to contain '读旧产物失败'
+    at C:/tools/kode-win3/tests/hotReloadReceiverRoundtrip.test.ts:486:28
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+--------------------------------------------------------------------------------
+[failed] IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议证据) F3 六轮回归:部分写入后抛错(RLIMIT_FSIZE)→ 残留被清理,如实「无残留」
+AssertionError: expected 'applied' to be 'failed' // Object.is equality
+    at C:/tools/kode-win3/tests/hotReloadReceiverRoundtrip.test.ts:725:28
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/inferredCopy.test.ts
+--------------------------------------------------------------------------------
+[failed] inferredCopy planInferredMirror classifies copy / unchanged / overwrite by content compare
+AssertionError: expected [] to deeply equal [ 'base/Avatar.py' ]
+    at C:/tools/kode-win3/tests/inferredCopy.test.ts:44:30
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+--------------------------------------------------------------------------------
+[failed] inferredCopy planInferredMirror skips a source file that disappears mid-plan
+AssertionError: expected [ 'base/X.py' ] to deeply equal []
+    at C:/tools/kode-win3/tests/inferredCopy.test.ts:69:25
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/kbeModuleIndex.test.ts
+--------------------------------------------------------------------------------
+[skipped] kbe 符号索引 vs 引擎 typings 源码 每条符号的 sourceFile:sourceLine 落在引擎 typings 的对应声明行
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/kbengineProtocolReaders.test.ts
+--------------------------------------------------------------------------------
+[failed] discoverLocalComponents identity fallbacks fills the request body from env and username fallbacks
+AssertionError: expected -1 to be 4321 // Object.is equality
+    at C:/tools/kode-win3/tests/kbengineProtocolReaders.test.ts:157:26
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/kodeCoreE2E.test.ts
+--------------------------------------------------------------------------------
+[skipped] kode core e2e(真实 kode-server 二进制) 握手:initialize 协商 serverInfo/capabilities
+--------------------------------------------------------------------------------
+[skipped] kode core e2e(真实 kode-server 二进制) 文档生命周期:didOpen → didChange → health 对账 → didClose
+--------------------------------------------------------------------------------
+[skipped] kode core e2e(真实 kode-server 二进制) cancel:5s 的 $/kode/wait 在 ~0.2s 内被取消,错误码 -32800
+--------------------------------------------------------------------------------
+[skipped] kode core e2e(真实 kode-server 二进制) 健康/重启(CORE-015/016):SIGKILL 后自动 respawn + 重握手,代数 +1
+--------------------------------------------------------------------------------
+[skipped] kode core e2e(真实 kode-server 二进制) E-1 语料接线:types.xml 未进 shadow 时误报未注册,补齐三类 XML 后诊断消失
+--------------------------------------------------------------------------------
+[skipped] kode core e2e(真实 kode-server 二进制) E-2 影子账本:SIGKILL 自动重启后账本重置并重放快照,继续编辑打到新进程
+--------------------------------------------------------------------------------
+[skipped] kode core e2e(真实 kode-server 二进制) E-4 关文档清理:Rust 侧不留残留 overlay,连续开合不积累,重开低版本正常
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/languageProvidersInternals.test.ts
+--------------------------------------------------------------------------------
+[failed] def method implementation jumps falls back to the registry declaration with a hint when no identity resolves
+AssertionError: expected false to be true // Object.is equality
+    at C:/tools/kode-win3/tests/languageProvidersInternals.test.ts:826:101
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+--------------------------------------------------------------------------------
+[failed] def method implementation jumps falls back to the registry declaration with a hint when the implementation is missing
+AssertionError: expected false to be true // Object.is equality
+    at C:/tools/kode-win3/tests/languageProvidersInternals.test.ts:842:101
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/logCollectorSocket.test.ts
+--------------------------------------------------------------------------------
+[skipped] KBEngineLogCollector.getDefaultUid prefers process.getuid
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/navigationRegression.test.ts
+--------------------------------------------------------------------------------
+[failed] 管理器路径:约定链落空弹提示、约定链命中真落点 索引双 miss + cell 脚本不存在 → 提示 + 注册声明行(不再静默落 def 行)
+AssertionError: expected false to be true // Object.is equality
+    at C:/tools/kode-win3/tests/navigationRegression.test.ts:318:7
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+--------------------------------------------------------------------------------
+[failed] 引擎官方模板形态(base/cell/bots + interface 单数)与生成器平铺形态 ClientMethods 全空 → 提示列出 bots 目录与平铺路径
+AssertionError: expected false to be true // Object.is equality
+    at C:/tools/kode-win3/tests/navigationRegression.test.ts:572:103
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at withFolders (C:/tools/kode-win3/tests/navigationRegression.test.ts:487:7)
+    at C:/tools/kode-win3/tests/navigationRegression.test.ts:568:5
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/pathTemplateEquivalence.test.ts
+--------------------------------------------------------------------------------
+[failed] 路径模板两链等价(renderPathTemplate 单一真源) ${workspaceFolder} 占位:手工输入链与发现链同输入同输出
+AssertionError: expected 'C:\Users\ADMINI~1\AppData\Local\Temp\…' to be 'C:\Users\ADMINI~1\AppData\Local\Temp\…' // Object.is equality
+    at C:/tools/kode-win3/tests/pathTemplateEquivalence.test.ts:85:47
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/processTopologyPerf.test.ts
+--------------------------------------------------------------------------------
+[skipped] KODE-PERF-006 Rust 真实 RPC 段(二进制在场才测) Rust 校验 RPC round-trip 随 def 数线性,异步不阻塞宿主
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/profileInterpreter.test.ts
+--------------------------------------------------------------------------------
+[failed] interpreter resolution chain (IDE-PRJ-004) prefers the explicit setting, expanding ${workspaceFolder}
+AssertionError: expected { …(2) } to deeply equal { …(2) }
+    at C:/tools/kode-win3/tests/profileInterpreter.test.ts:77:25
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3276:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3922:64
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/pythonClassIndex.test.ts
+--------------------------------------------------------------------------------
+[skipped] 真实 kbengine 跨类跳转(唯一实现) 3 个唯一实现全部跳到 Machines 定义
+--------------------------------------------------------------------------------
+[skipped] 真实 kbengine 跨类跳转(唯一实现) 复现证据:.def 派生索引对这些调用返回 null(修复前丢定位处)
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/pythonReturnAsyncDiscovery.test.ts
+--------------------------------------------------------------------------------
+[failed] 排除无关目录并对 Python 文件排序
+AssertionError: expected [ Array(2) ] to deeply equal [ Array(2) ]
+    at C:/tools/kode-win3/tests/pythonReturnAsyncDiscovery.test.ts:118:60
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/pythonTestRunner.test.ts
+--------------------------------------------------------------------------------
+[skipped] 真 python3+pytest 实跑(格式不是抄文档) 坏用例失败带 assert 消息,好用例通过
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/quickActionManager.test.ts
+--------------------------------------------------------------------------------
+[failed] QuickActionManager venv adds the selected virtual environment to the child process environment
+AssertionError: expected 'C:\Users\ADMINI~1\AppData\Local\Temp\…' to be 'C:\Users\ADMINI~1\AppData\Local\Temp\…' // Object.is equality
+    at C:/tools/kode-win3/tests/quickActionManager.test.ts:1376:61
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/realEngineIntegration.test.ts
+--------------------------------------------------------------------------------
+[skipped] real KBEngine integration parses every real entity declaration and registry sample
+--------------------------------------------------------------------------------
+[skipped] real KBEngine integration parses inherited declarations when the real tree provides a Parent chain
+--------------------------------------------------------------------------------
+[skipped] real KBEngine integration parses real declarations with methods and exposure
+--------------------------------------------------------------------------------
+[skipped] real KBEngine integration resolves real alias declarations and implementedBy scripts
+--------------------------------------------------------------------------------
+[skipped] real KBEngine integration maps flag spellings to engine visibility domains
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/realReproCellMethods.test.ts
+--------------------------------------------------------------------------------
+[failed] 根因回归:方法未实现时显式提示(真修单:不许无声 null) 角色脚本缺失时 F12 给出期望实现位置提示
+AssertionError: expected false to be true // Object.is equality
+    at C:/tools/kode-win3/tests/realReproCellMethods.test.ts:537:7
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/schemaCacheCaseSensitivity.test.ts
+--------------------------------------------------------------------------------
+[failed] 2026-10-28 审核整改:SCH-002 缓存根键保留 POSIX 大小写 仅大小写不同的两个根各自缓存,同名实体不跨根串缓存
+AssertionError: expected [ 'id', 'sm_autoLoad', 'sm_hp', …(1) ] to not include 'sm_mana'
+    at Proxy.<anonymous> (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/index.CZzC1gGg.js:1791:15)
+    at Proxy.<anonymous> (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/index.CZzC1gGg.js:1656:14)
+    at Proxy.methodWrapper (file:///C:/tools/kode-win3/node_modules/.pnpm/chai@6.3.0/node_modules/chai/index.js:1737:25)
+    at C:/tools/kode-win3/tests/schemaCacheCaseSensitivity.test.ts:59:39
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/semanticIndex.test.ts
+--------------------------------------------------------------------------------
+[failed] EntityMappingManager 兼容层(A4-4:getMappingForPythonFile 系改走语义索引) owner 归属命中与实体名回落两条路径经语义索引,旧 API 行为不变
+AssertionError: expected { name: 'Hero', …(5) } to be undefined
+    at C:/tools/kode-win3/tests/semanticIndex.test.ts:398:94
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+--------------------------------------------------------------------------------
+[failed] EntityMappingManager 兼容层(A4-4:getMappingForPythonFile 系改走语义索引) def 单文件变更定向失效:变更实体重建,他实体索引原地不动(A4-2)
+AssertionError: expected [ Array(1) ] to deeply equal [ Array(1) ]
+    at C:/tools/kode-win3/tests/semanticIndex.test.ts:458:10
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/serverConfigRealDefaults.test.ts
+--------------------------------------------------------------------------------
+[skipped] 真实 kbengine_defaults.xml 全量验收 良构、每元素内部带注释、取值与关闭开关时一致
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/serverConfigSourceComments.test.ts
+--------------------------------------------------------------------------------
+[skipped] ④ 真实 kbengine_defaults.xml 源注释全量回保 192 条源注释逐条回写、出现次数不少于原文,取值与原文一致
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/serverManagerProcesses.test.ts
+--------------------------------------------------------------------------------
+[skipped] KBEngineServerManager real process lifecycle surfaces spawn errors for an unexecutable binary and drops the entry
+--------------------------------------------------------------------------------
+[skipped] KBEngineServerManager real process lifecycle escalates to SIGKILL when the child ignores SIGTERM
+--------------------------------------------------------------------------------
+[failed] KBEngineServerManager batch orchestration replaces a live process with a fresh one on restart
+Error: EPERM, Permission denied: 'C:\Users\ADMINI~1\AppData\Local\Temp\kode-fakebin-T1Dwbf'
+    at Proxy.rmSync (node:fs:1282:18)
+    at C:/tools/kode-win3/tests/serverManagerProcesses.test.ts:153:6
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/serverTargets.test.ts
+--------------------------------------------------------------------------------
+[skipped] KBEngineServerManager process tree cleanup on stop kills spawned grandchildren when stopping the component
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/sharedFileSnapshot.test.ts
+--------------------------------------------------------------------------------
+[failed] IDE-SNP-001:共享文件快照读取接口 默认依赖(生产接线):打开文档走缓冲区,未打开走真实磁盘+mtime,rootId 走语义索引根
+AssertionError: expected { …(6) } to match object { source: 'disk', …(2) }
+(3 matching properties omitted from actual)
+    at Proxy.<anonymous> (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/index.CZzC1gGg.js:1764:10)
+    at Proxy.<anonymous> (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/index.CZzC1gGg.js:1656:14)
+    at Proxy.methodWrapper (file:///C:/tools/kode-win3/node_modules/.pnpm/chai@6.3.0/node_modules/chai/index.js:1737:25)
+    at C:/tools/kode-win3/tests/sharedFileSnapshot.test.ts:110:20
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:1632:35
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:26
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3338:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3333:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3318:20
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/telnetService.test.ts
+--------------------------------------------------------------------------------
+[failed] TelnetService 联动会话(真 TCP localhost 仿真) 白名单闸:enableCommands + 内置快捷命令放行,白名单外与 :quit 拒;拒绝时无会话返回 false
+Error: condition not met before deadline
+    at until (C:/tools/kode-win3/tests/telnetService.test.ts:40:13)
+    at C:/tools/kode-win3/tests/telnetService.test.ts:444:5
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20
+Error: Hook timed out in 10000ms.
+If this is a long-running hook, pass a timeout value as the last argument or configure it globally with "hookTimeout".
+    at afterEach (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2021:122)
+    at C:/tools/kode-win3/tests/telnetService.test.ts:21:1
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/module-evaluator.js:261:4)
+    at VitestModuleRunner.directRequest (file:///C:/tools/kode-win3/node_modules/.pnpm/vite@7.3.7_@types+node@20.19.43/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/tools/kode-win3/node_modules/.pnpm/vite@7.3.7_@types+node@20.19.43/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at VitestModuleRunner.import (file:///C:/tools/kode-win3/node_modules/.pnpm/vite@7.3.7_@types+node@20.19.43/node_modules/vite/dist/node/module-runner.js:1014:10)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3466:5
+    at collectTests (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:3441:3)
+    at startTests (file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:4211:17)
+====================================================================================================
+FILE: C:/tools/kode-win3/tests/venvInterpreterPicker.test.ts
+--------------------------------------------------------------------------------
+[failed] createVenvFlow (mocked venv module run) an occupied target directory aborts before any write
+AssertionError: expected 'created' to be null
+    at C:/tools/kode-win3/tests/venvInterpreterPicker.test.ts:234:20
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///C:/tools/kode-win3/node_modules/.pnpm/vitest@5.1.0_@types+node@20_a140cb5f1140d1fa98937a6cd5a52308/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20

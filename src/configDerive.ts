@@ -16,6 +16,7 @@ import { findEngineEntryScript } from './debugpyWaitAtStartup';
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 import { getRootConfigGeneration } from './rootConfigGeneration';
 import { buildConfigTreePair } from './serverConfigMerge';
+import { ensureConfigResolved } from './serverConfigResolve';
 import { expandWorkspacePlaceholders } from './workspacePath';
 
 /** `$/kode/config/derive` 的 `{ derive, diagnostics }` 结果(镜像 Rust 序列化) */
@@ -191,11 +192,12 @@ export async function ensureConfigDerivedScanRoot(): Promise<ConfigDerivedScanRo
 
 async function refresh(generation: number): Promise<ConfigDerivedScanRootState> {
   const workspaceRoot = firstWorkspaceRoot();
-  // 配置树对(CFG-007):custom/defaults 两棵树 TS 读盘解析后送达 Rust
-  // (core 不碰盘,设计 §5.2);customPath 同时作为 facts 的配置路径,
-  // 单次探测不各读各的。
+  // 配置树对(KODE-CFG-009):custom/defaults 两棵树由 core 解析
+  // (`$/kode/config/resolve`,TS 只读盘送达原文);customPath 同时作为
+  // facts 的配置路径,单次探测不各读各的。
   let pair: ReturnType<typeof buildConfigTreePair>;
   try {
+    await ensureConfigResolved();
     pair = buildConfigTreePair();
   } catch {
     pair = { customTree: null, defaultsTree: null, customPath: null, defaultsPath: null };

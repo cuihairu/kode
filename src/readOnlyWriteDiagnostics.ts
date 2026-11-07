@@ -21,6 +21,7 @@
 // 报(括号/逗号前缀形态,罕见)。
 
 import { maskPythonNonCode } from './pythonLexicalMask';
+import { l10nText } from './nlsRuntime';
 import {
   resolveEntityBuiltinPropertyHit,
   resolveEntityComponentFaceFromPath,
@@ -36,10 +37,10 @@ export const READONLY_WRITE_DIAGNOSTICS_ENABLED_DEFAULT = true;
 export type ReadOnlyWriteKind = 'assign' | 'augmented' | 'annotated' | 'del';
 
 const KIND_VERB: Record<ReadOnlyWriteKind, string> = {
-  assign: '普通赋值',
-  augmented: '增强赋值',
-  annotated: '注解赋值',
-  del: '删除'
+  assign: 'plain assignment',
+  augmented: 'augmented assignment',
+  annotated: 'annotated assignment',
+  del: 'deletion'
 };
 
 const AUGMENTED_OPS = new Set([
@@ -198,9 +199,15 @@ export function findReadOnlyWriteFindings(
         hit,
         severity: 'Warning',
         code: READONLY_WRITE_DIAGNOSTIC_CODE,
-        message: `self.${propertyName} 只读写入:${propertyName} 为引擎内建只读属性`
-          + `(${formatEntityBuiltinPropertyDetail(hit.face, hit.property)};${hit.property.source}),`
-          + `${KIND_VERB[kind]}会被引擎拒绝`
+        message: l10nText(
+          'self.{property} read-only write: {property} is an engine built-in read-only property ({detail}; {source}); {verb} would be rejected by the engine',
+          {
+            property: propertyName,
+            detail: formatEntityBuiltinPropertyDetail(hit.face, hit.property),
+            source: hit.property.source,
+            verb: l10nText(KIND_VERB[kind])
+          }
+        )
       });
     }
   }

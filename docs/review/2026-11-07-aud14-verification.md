@@ -100,10 +100,18 @@
 
 - **P1 ×1 · basename 相同不等于目标身份相同**：第 13 轮一致性改按 resolve_base basename 判后，`import a.a`（身份=包 a）与 `import a.a as a`（身份=模块 a.a）查找 basename 同为 a 被判一致、按首条指向唯一 a.py 产伪边。修（3eb96406）：一致性改按**实际目标身份**判（resolve_target：from=(level,module,symbol)；无别名普通 import=顶层首段身份；有别名=全段身份），文件查找仍用 resolve_base basename（身份口径与查找口径分离）；AstImport 增 `level: u32`（from 相对层级，不同层级同名目标 `.x.y`/`..x.y` 不混同）。红证=graph_test.rs `conflicting_target_identity_same_basename_gives_up_edge`（修前红：伪边在产；stash src 实测 31 过 1 败）；另补 from 面 `same_target_import_with_and_without_alias_keeps_edge` 的对偶正向用例 `same_target_from_import_with_and_without_alias_keeps_edge` 与层级面 `different_relative_level_from_import_gives_up_edge`（覆盖性加固，修前亦绿，非红证）；既有 13 轮 `same_target_import_with_and_without_alias_keeps_edge`、12 轮冲突面测试全保持绿；门禁=graph_test 32/32、kode-python 全绿、workspace 全量 cargo test 0 failed、clippy --workspace --all-targets 0。todo AUD-008 勾账行已补注。
 
-## 本日复跑数字（起核 HEAD e7af5cba → 返工后 HEAD 3eb96406，0 failed）
+## 返工（codex luna 第十五轮 FAIL 项）
+
+- **P2 ×1 · 测试有效性缺口（非实现缺陷）**：上轮 A/B/D 全 PASS——第 14 轮 P1 目标身份比较按指定口径闭环、静态未发现新伪边；唯一残余是 `different_relative_level_from_import_gives_up_edge` 断言对象写错：from-import 回退按 symbol 取 basename（y → y.py），该测试却只建/断言 x.py，即使层级比较失效测试也不会红。修（adeb35d8）：改供唯一 y.py 并断言其无边；**变异验证**（临时把身份格式化里 i.level 置 0 → 该测试红；还原 → 绿），判别性实测成立。门禁=graph_test 32/32、kode-python 全绿、workspace 全量 cargo test 0 failed、clippy --workspace --all-targets 0。todo AUD-008 勾账行已补注。
+
+## 本日复跑数字（起核 HEAD e7af5cba → 返工后 HEAD adeb35d8，0 failed）
 
 - vitest：9 文件 266 过（e7af5cba）→ 复跑 267 过（8c2b7411 前身，含 KR-AUD-35 新用例）0 败（cov-debug-process/serverManager/processTopologyFlush/defPythonParity/hotReloadTargetState/selfAttributeFlowTypes=132 批次；globalDataIndex/workspaceIndexColdYield/workspaceEventIndex=134 批次）。
 - cargo：kode-server（process_topology_units 31 / def_md5_units 12 / dependency_graph_dispatch 2 / lint_rules 19 / flag_domains_golden 5）+ kode-parser parser_units 19 + kode-python（callgraph 12 / dataflow 17 / graph 32 / symbols 7 / lib 3）+ kode-scheduler 14，全 0 failed。
+
+## 复审通过（codex luna 第十六轮 PASS，审核对象 HEAD 270ff14e）
+
+- 第 16 轮（270ff14e）逐项 A/B/C 全 PASS，总体判断「可合并」：测试有效性缺口已消除（断言对象=回退查找真实唯一候选 y.py）、变异验证路径静态确认一致、adeb35d8 纯测试无 src 改动、账目与代码事实一致。第 11→16 轮审核收敛闭环：11 轮残余两 P1（ad9a2c7c）→ 12 轮别名近似 P1（16ad72e8）→ 13 轮 aliased 误作身份 P2（22794ef7）→ 14 轮 basename≠身份 P1（3eb96406）→ 15 轮测试判别力 P2（adeb35d8）→ 16 轮 PASS。
 
 ## 记账说明
 
@@ -117,6 +125,7 @@ b9edefd1 → 行序裁决不完备定版保守歧义契约 f3276040 → 回退�
 检查改按解析后目标 basename 判（aliased 标志非目标身份,同目标
 别名/无别名重复 import 不弃边）22794ef7 → 一致性改按实际目标
 身份判（basename 同≠身份同,a.a vs a.a as a 弃边）+AstImport 增
-level、身份口径与查找口径分离 3eb96406）已修并在 AUD-008 勾账行补证据，AUD-006
+level、身份口径与查找口径分离 3eb96406 → 层级冲突测试断言对象改
+唯一 y.py（from 按 symbol 取 basename,变异验证判别成立）adeb35d8）已修并在 AUD-008 勾账行补证据，AUD-006
 勾账行补口径注明（静默截断，无环专项诊断）。报告 v1 的三处表述（14 计数口径、
 debugpy/py-spy commit 归因、workspaceIndex :304 漂移）已按复审意见改到本版。

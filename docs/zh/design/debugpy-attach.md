@@ -1,8 +1,13 @@
 # debugpy 早期附加设计（提案）
 
-> 状态：**提案，未实现**（2026-11-03 用户确认立项）。本文只描述「不改引擎」前提下的
-> 可行方案与自动化形态；所有引擎引用锚定 `kbengine@c2a3b8f`，标注 `kbe/src` 的
-> `文件:行号` 以源码为据。**未交付任何实现，不虚构为已实现。**
+> 状态：**已实现（三批落地）** —— 方案②落地为一键命令 `kbengine.debug.debugpyInject`
+>（KODE-DBG-001，受 `kbengine.debug.debugpyInject` 开关控制，默认开；
+> src/debugpyInjectCommand.ts、tests/debugpyInjectCommand.test.ts）；方案①落地为
+> `kbengine.debug.waitAtStartup` 引导块（on/off 命令，src/debugpyWaitAtStartup.ts）；
+> 周边自动化——逐进程端口分配、launch.json attach 配置生成、
+> 未注入/监听/已附加/失败状态板——已随 IDE-DBG-001..008 与 IDE-PDBG-001..006 先行交付。
+> 方案③（`debugpy --pid`）按提案结论保持不用。以下引擎引用仍锚定 `kbengine@c2a3b8f`，
+> 标注 `kbe/src` 的 `文件:行号` 以源码为据；提案原文保留作设计记录。
 
 ## 目标
 

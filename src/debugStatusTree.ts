@@ -7,15 +7,24 @@
  */
 
 import * as vscode from 'vscode';
+import { l10nText } from './nlsRuntime';
 import type { DebugStatusRow, TargetDebugPhase } from './debugStatusBoard';
 
-/** 四态标签(树描述与定位命令共用) */
-export const DEBUG_PHASE_LABELS: Readonly<Record<TargetDebugPhase, string>> = {
-  'not-injected': '未注入',
-  listening: '监听',
-  attached: '已附加',
-  failed: '失败'
+/** 四态标签英文源串(调用期经 l10nText 取词,树描述与定位命令共用) */
+const DEBUG_PHASE_KEYS: Readonly<Record<TargetDebugPhase, string>> = {
+  'not-injected': 'Not injected',
+  listening: 'Listening',
+  attached: 'Attached',
+  failed: 'Failed'
 };
+
+/**
+ * 四态标签(树描述/定位命令/通知面共用):调用期取词——默认英文 locale
+ * 出英文源串,zh-cn bundle 出中文,缺 key 回落英文源串。
+ */
+export function debugPhaseLabel(phase: TargetDebugPhase): string {
+  return l10nText(DEBUG_PHASE_KEYS[phase]);
+}
 
 /** 四态图标(ThemeIcon 内建 id) */
 const PHASE_ICONS: Readonly<Record<TargetDebugPhase, string>> = {
@@ -28,29 +37,29 @@ const PHASE_ICONS: Readonly<Record<TargetDebugPhase, string>> = {
 export class DebugTargetTreeItem extends vscode.TreeItem {
   constructor(public readonly row: DebugStatusRow) {
     super(row.serverKey, vscode.TreeItemCollapsibleState.None);
-    const parts = [DEBUG_PHASE_LABELS[row.phase]];
+    const parts = [debugPhaseLabel(row.phase)];
     if (row.port !== undefined) {
       parts.push(`debugpy ${row.port}`);
     }
     if (row.attachedSessions > 0) {
-      parts.push(`${row.attachedSessions} 个会话`);
+      parts.push(l10nText('{count} session(s)', { count: row.attachedSessions }));
     }
-    parts.push(`进程 ${row.processStatus}`);
+    parts.push(l10nText('Process {status}', { status: row.processStatus }));
     this.description = parts.join(' · ');
     this.iconPath = new vscode.ThemeIcon(PHASE_ICONS[row.phase]);
     this.contextValue = `debugTarget_${row.phase}`;
     this.tooltip = [
       row.serverKey,
-      `状态: ${DEBUG_PHASE_LABELS[row.phase]}${row.port !== undefined ? ` (debugpy ${row.port})` : ''}`,
-      `进程: ${row.processStatus}`,
-      row.detail ? `细节: ${row.detail}` : undefined,
-      '点击定位调试会话/查看提示'
+      `${l10nText('Status: {state}', { state: debugPhaseLabel(row.phase) })}${row.port !== undefined ? ` (debugpy ${row.port})` : ''}`,
+      `${l10nText('Process {status}', { status: row.processStatus })}`,
+      row.detail ? l10nText('Details: {detail}', { detail: row.detail }) : undefined,
+      l10nText('Click to focus the debug session')
     ]
       .filter((line): line is string => line !== undefined)
       .join('\n');
     this.command = {
       command: 'kbengine.debug.focusTarget',
-      title: '定位调试目标',
+      title: l10nText('Focus debug target'),
       arguments: [row.serverKey]
     };
   }

@@ -9,6 +9,7 @@ import {
 } from '../src/sharedFileSnapshot';
 import { workspace } from './fake-vscode/workspaceState';
 import { getSemanticIndex, resetSemanticTypeRegistryForTests } from '../src/semanticIndex';
+import { normalizeFileIdentity } from '../src/pathIdentity';
 
 const temporaryDirectories: string[] = [];
 afterEach(() => {
@@ -107,7 +108,8 @@ describe('IDE-SNP-001:共享文件快照读取接口', () => {
     try {
       // 未打开:磁盘补载,版本=真实 mtimeMs,rootId=登记根
       const disk = readSharedFileSnapshot(defPath);
-      expect(disk).toMatchObject({ source: 'disk', content: '<root><Disk/></root>', rootId: root.replace(/\\/g, '/') });
+      // WIN-3:rootId 走 normalizeFileIdentity(win32 盘符路径归一为小写正斜杠)
+      expect(disk).toMatchObject({ source: 'disk', content: '<root><Disk/></root>', rootId: normalizeFileIdentity(root) });
       expect(disk?.version).toBe(mtimeMs);
       // 已打开(脏缓冲):缓冲区优先,版本=编辑序号
       workspace.textDocuments = [makeOpenDocument(defPath, '<root><Dirty/></root>', 12)];

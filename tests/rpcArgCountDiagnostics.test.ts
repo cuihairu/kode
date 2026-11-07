@@ -116,9 +116,9 @@ describe('IDE-LINT-008 RPC 实参数量对账(computeRpcArgCountFindings)', () =
       declaredCount: 1,
       actualCount: 0
     });
-    expect(less[0].message).toContain('实参数量不符');
-    expect(less[0].message).toContain('1 个 Arg');
-    expect(less[0].message).toContain('0 个');
+    expect(less[0].message).toContain('argument count mismatch');
+    expect(less[0].message).toContain('1 Arg(s)');
+    expect(less[0].message).toContain('passes 0');
     expect(RPC_ARG_COUNT_DIAGNOSTIC_CODE).toBe('kbengine.rpcArgCount');
 
     const more = computeRpcArgCountFindings(sourceOf('self.cell.login(1, 2)'), mapping);

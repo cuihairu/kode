@@ -59,6 +59,17 @@ async function main(): Promise<void> {
   const dirtyMode = process.argv.includes('--dirty');
   let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
+  // IDE-LIV-003..007 真机运行观测联验:工作区=KODE_LIV_WORKSPACE(引擎资产根,
+  // 供 LIV-007 源码解析),引擎日志目录=KODE_LIV_ENGINE_LOG_DIR,证据出=
+  // KODE_LIV_OUT;引擎须已在本机运行(组件发现走真实广播)。
+  const liveMode = process.argv.includes('--live');
+  if (liveMode) {
+    process.env.KODE_ELECTRON_SUITE = 'live';
+    if (!process.env.KODE_LIV_WORKSPACE) {
+      throw new Error('--live 需要 KODE_LIV_WORKSPACE(引擎资产根工作区)');
+    }
+    workspacePath = process.env.KODE_LIV_WORKSPACE;
+  }
   // KODE-I18N-003 缺 key 回退真机验证:临时扩展副本删 zh-cn 包一个键,以
   // --locale=zh-cn 拉起真 VS Code,断言该键解析结果=默认包文案(回落),
   // 未删键的对照键=zh-cn 文案(locale 生效证明)。--manifestnls 的无残留

@@ -17,6 +17,7 @@ import { type GitRunOutcome } from './gitRunner';
 import { summarizeGitError } from './gitHistoryTree';
 import { relativeVersionPath } from './gitHistoryDiff';
 import { sharedGitQueryGate, type GitQueryRequest } from './gitQueryGate';
+import { l10nText } from './nlsRuntime';
 
 /** 一次修改记录(-L 追踪到的、改动过该行段的提交)。 */
 export interface RangeChangeEntry {
@@ -227,6 +228,6 @@ export function describeRangeTimeline(result: RangeTimelineResult): string {
     case 'no-commits':
       return '仓库尚无提交,没有历史可查';
     case 'git-error':
-      return `Git 查询失败:${summarizeGitError(result.outcome)}`;
+      return l10nText('Git query failed: {reason}', { reason: summarizeGitError(result.outcome) });
   }
 }

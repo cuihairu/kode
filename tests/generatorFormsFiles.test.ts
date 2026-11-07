@@ -399,6 +399,11 @@ describe('generateGeneratorForm 附带改写', () => {
     });
     expect(outcome.notes).toEqual([]);
 
+    // WIN-3:首调写下的 components/Inventory.def 在 win32 大小写不敏感 FS 上
+    // 会与 INVENTORY.def 撞主产品文件冲突门,把本测的挂载重复守卫短路掉——
+    // 先移除该组件文件,让两平台都走到 attach 的大小写不敏感重复属性判定。
+    fs.rmSync(path.join(root, 'scripts', 'entity_defs', 'components', 'Inventory.def'), { force: true });
+
     const second = await generateGeneratorForm(
       { kind: 'component', value: { name: 'INVENTORY', properties: [] } },
       root,
@@ -411,7 +416,7 @@ describe('generateGeneratorForm 附带改写', () => {
 
 describe('runGeneratorFormWizard', () => {
   it('代理流程:形态 → 实体名 → 方法名 → 方法段 → 落盘 → 播报', async () => {
-    ui.picks = [pickLabel('Proxy Entity (proxy)'), pickLabel('BaseMethods'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Proxy Entity (proxy)'), pickLabel('BaseMethods'), pickLabel('Confirm generation')];
     ui.inputs = ['Avatar', 'onTargetChanged, syncState'];
 
     await runGeneratorFormWizard();
@@ -425,7 +430,7 @@ describe('runGeneratorFormWizard', () => {
   });
 
   it('代理无方法名时不问方法段;取消方法段选择则中止', async () => {
-    ui.picks = [pickLabel('Proxy Entity (proxy)'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Proxy Entity (proxy)'), pickLabel('Confirm generation')];
     ui.inputs = ['Avatar', ''];
     await runGeneratorFormWizard();
     expect(fs.readFileSync(path.join(root, 'scripts', 'proxy_defs', 'AvatarProxy.def'), 'utf8')).not.toContain('Methods>');
@@ -437,7 +442,7 @@ describe('runGeneratorFormWizard', () => {
   });
 
   it('空间流程:名称 → 落盘 + 登记', async () => {
-    ui.picks = [pickLabel('Space Entity (space)'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Space Entity (space)'), pickLabel('Confirm generation')];
     ui.inputs = ['MySpace'];
 
     await runGeneratorFormWizard();
@@ -449,7 +454,7 @@ describe('runGeneratorFormWizard', () => {
   });
 
   it('组件流程:名称 → 示例属性 → 挂载目标(实体列表来自 entities.xml)', async () => {
-    ui.picks = [pickLabel('Component (component)'), pickLabel('Yes'), pickLabel('Avatar'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Component (component)'), pickLabel('Yes'), pickLabel('Avatar'), pickLabel('Confirm generation')];
     ui.inputs = ['Inventory'];
 
     await runGeneratorFormWizard();
@@ -461,7 +466,7 @@ describe('runGeneratorFormWizard', () => {
   });
 
   it('组件选「否」出空属性段,选「不挂载」不动实体', async () => {
-    ui.picks = [pickLabel('Component (component)'), pickLabel('No'), pickLabel('Do not attach'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Component (component)'), pickLabel('No'), pickLabel('Do not attach'), pickLabel('Confirm generation')];
     ui.inputs = ['Bare'];
 
     await runGeneratorFormWizard();
@@ -473,7 +478,7 @@ describe('runGeneratorFormWizard', () => {
   });
 
   it('固定字典流程:名称 → 实现符号 → 示例字段', async () => {
-    ui.picks = [pickLabel('Fixed Dict Type (fixedDict)'), pickLabel('Yes'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Fixed Dict Type (fixedDict)'), pickLabel('Yes'), pickLabel('Confirm generation')];
     ui.inputs = ['MY_DATA', 'MY_DATA_DATA.my_data_inst'];
 
     await runGeneratorFormWizard();
@@ -484,7 +489,7 @@ describe('runGeneratorFormWizard', () => {
   });
 
   it('实现符号留空时不写 implementedBy;选「否」不出示例字段', async () => {
-    ui.picks = [pickLabel('Fixed Dict Type (fixedDict)'), pickLabel('No'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Fixed Dict Type (fixedDict)'), pickLabel('No'), pickLabel('Confirm generation')];
     ui.inputs = ['MY_DATA', '   '];
 
     await runGeneratorFormWizard();
@@ -495,7 +500,7 @@ describe('runGeneratorFormWizard', () => {
   });
 
   it('输入校验:名称不合规与实现符号不合规各给一条提示', async () => {
-    ui.picks = [pickLabel('Proxy Entity (proxy)'), pickLabel('CellMethods'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Proxy Entity (proxy)'), pickLabel('CellMethods'), pickLabel('Confirm generation')];
     ui.inputs = ['Avatar', 'roar'];
     await runGeneratorFormWizard();
 
@@ -504,7 +509,7 @@ describe('runGeneratorFormWizard', () => {
     expect(nameValidator?.validateInput?.('Good')).toBeNull();
 
     ui.inputOptions = [];
-    ui.picks = [pickLabel('Fixed Dict Type (fixedDict)'), pickLabel('No'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Fixed Dict Type (fixedDict)'), pickLabel('No'), pickLabel('Confirm generation')];
     ui.inputs = ['MY_DATA', 'not-a-symbol'];
     await runGeneratorFormWizard();
 
@@ -558,7 +563,7 @@ describe('runGeneratorFormWizard', () => {
 
   it('打开生成的文件:应答「是」时开文档', async () => {
     workspaceState.openTextDocumentCalls.length = 0;
-    ui.picks = [pickLabel('Space Entity (space)'), pickLabel('确认生成'), () => '是'];
+    ui.picks = [pickLabel('Space Entity (space)'), pickLabel('Confirm generation'), () => '是'];
     ui.inputs = ['MySpace'];
 
     await runGeneratorFormWizard();
@@ -591,7 +596,7 @@ describe('runGeneratorFormWizard', () => {
   it('落盘抛错时走错误通道', async () => {
     // 目标目录被同名文件占住 → 建目录/写文件抛错,命令应如实报错不静默
     fs.writeFileSync(path.join(root, 'scripts', 'proxy_defs'), 'occupied', 'utf8');
-    ui.picks = [pickLabel('Proxy Entity (proxy)'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Proxy Entity (proxy)'), pickLabel('Confirm generation')];
     ui.inputs = ['Avatar', ''];
 
     await runGeneratorFormWizard();
@@ -614,7 +619,7 @@ describe('runGeneratorFormWizard 统一预览与冲突 (IDE-GEN-008)', () => {
 
     await runGeneratorFormWizard();
 
-    expect(previewItems.map(item => item.label)).toEqual(['确认生成', '新增 .def', '注册 entities.xml']);
+    expect(previewItems.map(item => item.label)).toEqual(['Confirm generation', '新增 .def', '注册 entities.xml']);
     expect(previewItems[1].description).toBe(path.join(root, 'scripts', 'entity_defs', 'MySpace.def'));
     expect(previewItems[2].description).toContain(path.join(root, 'scripts', 'entities.xml'));
     expect(previewItems[2].description).toContain('<MySpace hasBase="true" hasCell="true" />');

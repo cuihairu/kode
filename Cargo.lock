@@ -1432,6 +1432,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "kode-kbengine"
+version = "0.2.0"
+dependencies = [
+ "kode-kbengine-analyzer",
+ "kode-kbengine-protocol",
+ "kode-kbengine-schema",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "kode-kbengine-analyzer"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "kode-kbengine-protocol"
+version = "0.2.0"
+dependencies = [
+ "kode-kbengine-schema",
+]
+
+[[package]]
+name = "kode-kbengine-schema"
+version = "0.2.0"
+dependencies = [
+ "kode-parser",
+ "kode-types",
+ "kode-vfs",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "kode-mcp"
 version = "0.2.0"
 dependencies = [

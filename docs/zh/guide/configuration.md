@@ -83,9 +83,9 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.rpcArgCountDiagnostics` | boolean | `true` | RPC 实参数量诊断:`self.base/cell/client.<method>(...)` 调用点顶层实参数与 .def 该方法(调用所属 section)声明的 `<Arg>` 数明确不符时报 `kbengine.rpcArgCount` Warning(默认启用);星号实参/动态接收者/声明未就绪/段外声明/括号不闭合保留未知一律不报,inlay 提示不替代诊断 |
 | `kbengine.roleMisuseDiagnostics` | boolean | `true` | 角色错用诊断:实体脚本里 `self.<内建属性>` 属于其他角色面(baseapp/cellapp/client)而当前面未注册时报 `kbengine.roleMisuse` Warning 并引注册面引擎源码(默认启用);角色不明与普通 Python 类不猜,属性面表与内建属性 hover 元数据同源 |
 | `kbengine.postDestroyDiagnostics` | boolean | `true` | 销毁后访问诊断:同一函数内可确定的同块 `self.destroy()` 之后直接访问 `self.<成员>`(id/isDestroyed/className/destroy 除外),且两者间无同层无条件早退,报 `kbengine.postDestroy` Warning(默认启用);条件销毁/跨块/跨回调/异常/def 声明 destroy(动态分派)一律不猜 |
-| `kbengine.fixedDictNestedMutationDiagnostics` | boolean | `true` | 行为知识诊断(C-23):`self.<FIXED_DICT属性>[子键] = 值` 赋值(普通/增强,链式下标整体配平)报 `kbengine.fixedDictNestedMutation` Warning 并附整体重赋快速修复——引擎 FIXED_DICT 子键赋值路径只改本地字典、永不同步(`fixeddict.cpp:272-308`);FIXED_DICT 根属性集取该文件所属实体 def + types.xml 类型图判定,def 无该类型属性时规则静默 |
-| `kbengine.destroyedEntityReferenceDiagnostics` | boolean | `true` | 行为知识诊断(C-23):类内把 `self` 登记进模块级容器(append/add/insert/setdefault 或下标存)而 `onDestroy` 未按容器名移除,报 `kbengine.destroyedEntityReference` Warning(引用滞留 `garbages` 泄漏);形参/局部容器、非 self 值、onDestroy 已移除的容器不报 |
-| `kbengine.timerLeakOnDestroyDiagnostics` | boolean | `true` | 行为知识诊断(C-23):类内 `KBEngine.addTimer(…, repeat≠0, self.回调)` 且 `onDestroy` 无 `KBEngine.delTimer`,报 `kbengine.timerLeakOnDestroy` Warning——app 级 timer 强持回调(`python_app.cpp:721-748`),实体 destroy 不会取消它;实体级 `self.addTimer` 绝不报(destroy 全量取消),repeat=0 单发/非 self 回调/模块层(类外)调用跳过 |
+| `kbengine.fixedDictMutationDiagnostics` | boolean | `true` | FIXED_DICT 子键赋值诊断(KBE-PY-015):FIXED_DICT 属性的子键赋值(`self.<属性>.<键>` / `self.<属性>['<键>']`,含增强赋值)不触发属性同步事件,报 `kbengine.fixedDictNestedMutation` Warning 并给「整体重赋」quick fix(`{**old, key: rhs}`);属性顶层整体赋值/非 FIXED_DICT 属性不报 |
+| `kbengine.destroyedEntityReferenceDiagnostics` | boolean | `true` | 已销毁实体引用滞留诊断(KBE-PY-016):把 `self` 存入模块级 list/dict/set 报 `kbengine.destroyedEntityReference` Warning——实体销毁后引用滞留,引擎 3600 s 后打 garbages 泄漏告警,应在 `onDestroy` 里解除引用;局部容器/非 self 实参/读操作不报 |
+| `kbengine.timerCleanupDiagnostics` | boolean | `true` | 定时器注销提示(KBE-PY-017):`onDestroy` 方法体内的 `self.delTimer(...)` 实语句报 `kbengine.timerCleanupOnDestroy` Information——引擎 `destroy()` 已取消全部定时器(`scriptTimers_.cancelAll()`),销毁期注销冗余;陈旧 id 静默返回 -1 |
 | `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | 检查未知类型名 |
 | `kbengine.diagnostics.checkUnknownFlags` | boolean | `true` | 检查未知 Flags 值 |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | boolean | `true` | 检查非法 DetailLevel 值 |
@@ -122,7 +122,6 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.hover.showSymbolDocs` | boolean | `true` | 悬停自定义属性名/方法名显示当前定义的 `Type`、`Flags`、`Arg` 等上下文 |
 | `kbengine.hover.returnTypeInference` | boolean | `true` | 悬停时根据 Python 返回注解推导局部变量类型；关闭后悬停不会启动注解索引构建 |
 | `kbengine.hover.typeStorage` | boolean | `true` | `.def`/`types.xml` 里 types.xml 自定义类型的存储悬停(落库表/列/类型与形态) |
-| `kbengine.hover.behaviorNotes` | boolean | `true` | KBEngine 特定符号(addTimer/delTimer/teleport/cellData 等)与 FIXED_DICT 属性悬停时附行为注记——现象/正确姿势/依据,来自知识库语义陷阱条目(C-23) |
 | `kbengine.hover.implementedBy` | boolean | `true` | python 侧悬停被 types.xml `implementedBy` 引用的符号时的反链 |
 | `kbengine.hover.entityRegistration` | boolean | `true` | 悬停 `entities.xml` 实体名时的注册信息(`Utype`/清单位置) |
 | `kbengine.hover.defChain` | boolean | `true` | 悬停 `Parent`/`Interfaces` 等声明元素时的归并 def 链 |
@@ -144,9 +143,11 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.codeLens.property` | boolean | `true` | Python 脚本 `self.<属性>` 访问处的属性标记(批135) |
 | `kbengine.codeLens.propertyInitOrder` | boolean | `true` | 实体类 `__init__` 声明处标「属性先于 __init__ 装载 · 来自 <实体>.def」(IDE-PROP-001;引擎在 __init__ 前装载 Entity.def 属性,脚本未必有同名赋值;点击回 def) |
 | `kbengine.codeLens.typesXml` | boolean | `true` | types.xml 类型声明行的落库镜链(批134) |
+| `kbengine.codeLens.engineSpi` | boolean | `true` | 引擎 SPI 实现函数标注镜(CFG-015;方法名匹配 KODE-CFG-012 的 36 方法表,组件角色由配置派生定,如 `onInit` 处标「引擎 SPI · onInit · 首回调」) |
+| `kbengine.configData` | object | 见默认值 | 配置数据保护(CFG-016):`configDirGlobs`(配置目录,默认 `scripts/config/**`、`scripts/data/config/**`、`scripts/data/**`)、`configClassPatterns`(`*Config`/`*Data`)、`reloadFunctionPatterns`(`reload*`/`hotUpdate*`)、`mutationExclude`(有意可写处白名单 glob)、`enabled`(默认 `true`);关闭即零诊断 |
 | `kbengine.inlayHints.typeData` | boolean | `true` | python 侧 `self.<属性>` 访问处以内联提示显示解析到底的类型注解(types.xml 别名逐层解析到底层内建,如 SERVER_ID→int;PYTHON/未知落 Any 不显示);`self.base/cell/client` RPC 调用点每实参后内联显示 def 已声明的形参类型(`: 类型`,只显类型不带合成形参名,只做已声明的,过段闸);数组 `<of>` 元素类型在 `for item in self.<属性>:` 迭代目标与 `x = self.<属性>[i]` 下标赋值局部变量后内联显示(同一解析链),与属性 F12 同一解析索引(批154;解析到底口径 2026-10-29;元素类型 2026-11-04) |
 | `kbengine.inlayHints.defParams` | boolean | `true` | entity 脚本区块(ClientMethods/BaseMethods/CellMethods)内 def 定义点的内联提示:未手写标注的形参名后内联 def 声明的 `<Arg>` 类型(`: 类型`),声明 `<ReturnType>` 时闭括号后内联 `-> 类型`;跨行 def 不出(与调用点 inlay 同规则) |
-| `kbengine.inlayHints.defProps` | boolean | `true` | def 属性只读视图内联提示(C-22):Python 文件里含锚 `# kode:props-from-def` 的整行注释行尾,内联显示所属实体 .def 声明的根级属性总览(逐段 `名称: 类型`;逐段悬停给 def 声明行/可见域/持久化;类型解析不出只显名)。纯渲染不写代码——事实源仍是 `.def`;无所属实体/无属性不出;FIXED_DICT 子键与组件槽成员不进总览(各有访问点既有提示);inlay 无变更事件,开关下一次渲染生效 |
+| `kbengine.inlayHints.defProps` | boolean | `true` | entity 脚本内整行注释锚 `# kode:props-from-def` 行尾内联渲染该实体 def 根级属性只读清单(逐属性名+解析类型;段悬停给 def 声明出处)。纯渲染层,不写代码,属性唯一事实源仍为 .def |
 
 四类 CodeLens 开关变更即时生效,不用重载窗口;inlay 无变更事件,关掉后下一次渲染生效。
 
@@ -237,6 +238,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.debug.remoteTargets` | array | `[]` | 远程调试目标列表,`Attach to Remote Component` 的目标选择源;`Update launch.json` 把它们以 debugpy `connect` 形式追加进 `launch.json` |
 | `kbengine.jsoncAssociation` | boolean | `true` | 自动把 debug.json 的 glob 键写成 `jsonc` 写进工作区 `.vscode/settings.json` 的 `files.associations`(WorkspaceFolder 级)——debug.json 是 JSONC(带注释),按 json 处理注释会划红线。只动自己那一个键:已有值(用户手填 json/json5/任何值)永不覆盖;关闭时激活只说明不动手。`kbengine.jsoncAssociation.off` 命令把开关翻成 false 并只回收本扩展写入的键(你后来改过值的键原样保留) |
 | `kbengine.debug.autoDebugpy` | boolean | `false` | 组件启动成功后,kode 经该组件 telnet 的 `:python` 层注入 `debugpy.listen`(自建短命客户端;逐组件端口 baseapp 5678/cellapp 5679/loginapp 5680/dbmgr 5681/logger 5682,只绑 127.0.0.1,避开 31000-51000 telnet 段)。命名实例(同组件多开)从该组件 8 槽窗口各取独立口(baseapp 5700/cellapp 5708/loginapp 5716/dbmgr 5724/logger 5732,首闲分配;同组件命名实例超过 8 个,多出的记 warning 跳过)。单组件失败只记日志,绝不阻塞启动。注入前先对所选解释器(`kbengine.python.interpreterPath`→工作区 venv→PATH 链)做 debugpy 预检:缺解释器/缺包/版本过老提前给可操作状态(解释器路径+安装命令),不等注入阶段才报未知失败;资产树已同步过包则照常注入(引擎导入的是资产树包,不依赖本机解释器)。要求组件已开 telnet;端口表外组件(machine/interfaces/bots)跳过。开启后 `Update launch.json` 会为每组件生成一条 debugpy `connect` 附加配置(localRoot=工作区根),并为每个运行中的命名实例追加一条 `component#实例` 条目指向其独立口。首次使用先跑 `kbengine.python.debugpySync` 把系统 debugpy 复制进 `<assets>/scripts/common/debugpy`(引擎模块搜索路径第一位,python_app.cpp:167)。局限如实写明:注入走 telnet,entitydef 装载与早期 config 阶段已过——早期断点由下方独立的启动等待模式覆盖 |
+| `kbengine.debug.debugpyInject` | boolean | `true` | 一键注入命令 `kbengine.debug.debugpyInject` 的总闸（KODE-DBG-001）：选中运行中组件后，经其 telnet 的 `:python` 层发送 `debugpy.listen`（逐组件端口表，表外回落 5678，只绑 `127.0.0.1`），监听就绪即走端口模式附加（探端口→connect；监听起不来如实报错，不硬附加）。复用资产树 debugpy 包同步与短命 telnet 客户端，不起第二条注入通路。关闭后命令只提示不动作。启动最早期断点不在此覆盖——用 `kbengine.debug.waitAtStartup` |
 | `kbengine.debug.waitAtStartup` | boolean | `false` | 显式 opt-in 的启动等待模式(on/off 命令在入口脚本 `scripts/kbengine.py` 插入/移除带标记的引导块,移除逐字节还原)。引导块读 `KODE_DEBUGPY_WAIT_PORT`(启动器为表内组件的默认实例按分配表口下发)并在最早的 Python 处执行 `debugpy.listen` + `wait_for_client()`,组件停在早期断点之前,直到 VS Code 附加对应的 debugpy attach 配置。无环境变量、没有 debugpy 包或任何异常都静默放行,绝不阻塞启动。边界:命名实例仍走 telnet 注入路径(逐实例口来自启动联动窗口,等待模式暂不覆盖);开启期间默认实例的 telnet 注入跳过并记一条日志 |
 | `kbengine.debug.sessionEndBehavior` | string | `"detach"` | 调试会话结束时对目标进程的行为。`detach`(默认):断开调试器,进程照跑——其他实例与未关联进程一律不动。`stop-process`:只停止该会话附加的那个目标(按组件+实例精确定位,同组件的其他实例不受牵连);仅对扩展生成的 attach 配置(条目名带目标身份)生效,用户自建调试会话不受影响 |
 | `kbengine.debug.attachTimeoutMs` | number | `15000` | 附加调试命令(Attach to Component / Attach to Remote Component)的截止毫秒数。附加期间显示可取消的进度通知:无人监听的端口到点即停掉卡住的调试会话并如实提示——入口不会永久等待,本次不再重试;在通知上取消走同一停止路径。`0` 或负值不限时(等到底,手动取消仍可用) |
@@ -267,6 +269,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.python.extraPathsSync` | boolean | `true` | 自动把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`(WorkspaceFolder 级)。生成的 `python.analysis.extraPaths` 条目一律写成 `${workspaceFolder}/...` 变量形态;工作区前缀可替换的存量绝对路径在下次同步时自动迁移,不可替换的绝对路径由 `kbengine.configContract.extraPathsAbsolute` 报出。只管理本扩展写入的那一段(除该工作区前缀迁移外用户手填路径原样保留;无变化不写)。关掉后 `kbengine.python.syncExtraPaths` 命令只说明不写 |
 | `kbengine.python.stubExport` | boolean | `true` | 自动把内置 KBEngine Python API 索引(与补全/悬停/跳转同源)导出为 `KBEngine.pyi` 存根,并把 types.xml 自定义类型导出为 `kbe_types.py` 类型桩(`FIXED_DICT`→`TypedDict`、别名→类型名),配合 extraPaths 接线供 Pylance 解析 `import KBEngine`/`import kbe_types`(虚拟桩文档 Python 扩展看不见)。激活期静默自动一次,`kbengine.python.exportStubs`/`kbengine.python.exportTypeStubs` 手动入口 |
 | `kbengine.python.stubDir` | string | 空 | `.pyi` 存根目录,三级解析:设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `.kbengine/stubs`。支持 `${workspaceFolder}`/`${env:NAME}` 等 VS Code 变量;相对路径按工作区根拼接,绝对路径原样使用 |
+| `kbengine.python.stubSourceMode` | string | `generated` | 存根来源档位。`generated`(默认):存根由内置生成链产出(`entity_types.pyi` 来自 `*.def` + types.xml;`KBEngine.pyi` / `kbe_types.pyi` 来自内置 API 符号索引与 types.xml 解析链),不复制真实引擎代码——默认 fresh workspace 不触发复制代码行为。`real-source`:既有「复制真实代码导出」路径(本地引擎 typings checkout 拼接全量 API 进 `KBEngine.pyi`)仅在此档执行,档内 `kbengine.python.stubEngineTypings` 子开关照常生效。切档即时重导(内容比对刷新,切回 `generated` 即收回已拼接的引擎代码) |
 | `kbengine.python.stubEngineTypings` | boolean | `true` | `KBEngine.pyi` 导出优先拼接本地引擎 checkout 的 typings 全量 API(默认开);关掉回落 kode 自带精选目录。总闸仍是 `kbengine.python.stubExport` |
 | `kbengine.python.entityStubMethods` | boolean | `true` | `entity_types.pyi` 实体存根包含 def 方法面(Base/Cell/ClientMethods,默认开);关掉回落只含属性面 |
 
@@ -664,7 +667,11 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 | `kbengine.telnet.probeIntervalSeconds` | 数值 5 | 否 | **保留**(频率偏好) |
 | `kbengine.httpRequests` | 默认一条停用示例(`enabled: false`) | 否(用户业务接口) | **保留**,示例默认停用不产生副作用 |
 
-计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126 起在此表之外新增 10 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`、`kbengine.python.enableMroJump`),均已在总览分区表登记。
+计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126 起在此表之外新增 12 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`/`stubSourceMode`、`kbengine.python.enableMroJump`、`kbengine.engineVersion`),均已在总览分区表登记。
+
+## 配置数据保护(configData)
+
+Excel 生成的配置数据(配置目录下的 dict 表与 `*Config`/`*Data` 类)受引擎契约保护:只有热更新重载入口可以修改。`kbengine.configData` 规则把这些配置绑定在豁免面之外的写点(属性/下标/`del`/增强赋值/变异方法)报为 `kbengine.configDataMutation` 诊断;`reload*`/`hotUpdate*` 函数体与 `mutationExclude` 白名单内不报;悬停配置绑定/类名显示直读类型文本。见上方设置总览中 `kbengine.configData` 行。
 
 ## 常见问题
 

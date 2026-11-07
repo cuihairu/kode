@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vitest';
+import * as path from 'path';
 import { collectProjectPythonFilesAsync, resetPythonReturnAnnotationCache, resolveLocalVariableReturnType, resolveLocalVariableReturnTypeFromSnapshot } from '../src/pythonReturnTypeInference';
 
 const { readdir, readFile } = vi.hoisted(() => ({ readdir: vi.fn(), readFile: vi.fn() }));
@@ -115,6 +116,7 @@ it('排除无关目录并对 Python 文件排序', async () => {
   const dir = (name: string) => ({ name, isDirectory: () => true, isFile: () => false });
   readdir.mockResolvedValueOnce([file('z.py'), dir('venv'), dir('src'), file('ignored.txt')]);
   readdir.mockResolvedValueOnce([file('a.py')]);
-  expect(await collectProjectPythonFilesAsync('/project')).toEqual(['/project/src/a.py', '/project/z.py']);
+  // WIN-3:产品用 path.join 拼接,win32 上是反斜杠——期望同口径
+  expect(await collectProjectPythonFilesAsync('/project')).toEqual([path.join('/project', 'src', 'a.py'), path.join('/project', 'z.py')]);
   expect(readdir).toHaveBeenCalledTimes(2);
 });

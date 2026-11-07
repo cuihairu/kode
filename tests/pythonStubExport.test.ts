@@ -120,6 +120,8 @@ describe('buildKbeStubExportContentForWorkspace(engine detection)', () => {
   });
 
   it('concatenates an explicit engine checkout and rewrites private imports', () => {
+    // IDE-STUB-001:引擎 checkout 拼接(复制真实代码)只在 real-source 档执行
+    configurationOverrides.set('kbengine', { 'python.stubSourceMode': 'real-source' });
     const engineRoot = mkdtempSync(join(os.tmpdir(), 'kode-engine-'));
     mkdirSync(join(engineRoot, 'typings'), { recursive: true });
     writeFileSync(join(engineRoot, 'typings', '_KBEngine_common.pyi'), 'from _KBEngine_server_errors import *\n\nclass Entity:\n    id: int\n');
@@ -144,6 +146,7 @@ describe('buildKbeStubExportContentForWorkspace(engine detection)', () => {
       expect(content).toContain('def address() -> int: ...');
     } finally {
       rmSync(engineRoot, { recursive: true, force: true });
+      configurationOverrides.delete('kbengine');
     }
   });
 

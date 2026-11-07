@@ -266,15 +266,27 @@ describe('kbengine.python.stubEngineTypings(KBEngine.pyi 引擎全量导出)', (
     configurationOverrides.delete('kbengine');
   });
 
-  it('默认开:显式引擎 checkout 拼全量 API', () => {
+  // IDE-STUB-001 起:引擎 checkout 拼接(复制真实代码)只在 real-source 档执行
+  it('real-source 档:显式引擎 checkout 拼全量 API', () => {
     const engineRoot = makeEngineRoot();
     try {
+      configurationOverrides.set('kbengine', { 'python.stubSourceMode': 'real-source' });
       const content = buildKbeStubExportContentForWorkspace('/ws', {
         engineRoot,
         engineRootEnv: {}
       });
       expect(content).toContain('generated from the local KBEngine typings checkout');
       expect(content).toContain('class Entity:');
+    } finally {
+      fs.rmSync(engineRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('默认 generated 档:同一 checkout 也不拼接(不复制真实代码,回落精选目录)', () => {
+    const engineRoot = makeEngineRoot();
+    try {
+      expect(buildKbeStubExportContentForWorkspace('/ws', { engineRoot, engineRootEnv: {} }))
+        .toBe(buildKbeStubExportContent());
     } finally {
       fs.rmSync(engineRoot, { recursive: true, force: true });
     }
@@ -347,7 +359,8 @@ describe('kbengine.python.entityStubMethods(entity_types.pyi 方法面)', () => 
       await exportEntityTypeStubs(manager, memoryDeps, {
         silent: true,
         listMappings: () => [baseMapping],
-        listCustomTypes: () => []
+        listCustomTypes: () => [],
+        pyright: { candidates: [] } // 不真起 CLI 探测子进程(满载超时 flake 源)
       });
       const stub = [...written.entries()].find(([file]) => file.endsWith('entity_types.pyi'));
       expect(stub).toBeDefined();

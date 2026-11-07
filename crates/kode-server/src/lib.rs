@@ -1,8 +1,8 @@
 //! kode-server 库入口:分派状态机、hover 响应链、completion 请求链与
 //! Phase2 定义/诊断面供 bin 与集成测试共用(bin 只是 stdio 泵)。
 
-pub mod client_sdk;
 pub mod api_docs;
+pub mod client_sdk;
 pub mod completion;
 pub mod config_rpc;
 pub mod database_schema;

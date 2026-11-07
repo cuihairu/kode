@@ -36,7 +36,7 @@ describe('IDE-LINT-007 引擎只读属性写入 lint(纯逻辑)', () => {
     expect(findings[0].face).toBe('baseapp');
     expect(findings[0].severity).toBe('Warning');
     expect(findings[0].code).toBe(READONLY_WRITE_DIAGNOSTIC_CODE);
-    expect(findings[0].message).toContain('只读');
+    expect(findings[0].message).toContain('read-only');
   });
 
   it('增强赋值 self.id += 1 报告', () => {

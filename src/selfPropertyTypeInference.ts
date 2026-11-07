@@ -54,11 +54,10 @@ export interface SelfPropertyResolved {
   /** .def 文件与声明行(来源标注) */
   defFile: string;
   defLine: number;
-  /** def 原生 <Type> 直文本(别名未展开;C-23 行为注记按此判 FIXED_DICT);
-   * 元素位(element)沿用容器 defTypeName */
-  defTypeName?: string | null;
   /** 目标表达式文本(悬停目标,来源标注) */
   expr: string;
+  /** def <Type> 直文本(仅 def-property 面;C-23 hover 行为注记用) */
+  typeName?: string | null;
 }
 
 /** 变量间接最大深度(赋值/迭代目标 → 源表达式再追一层;防环/长链) */
@@ -132,7 +131,6 @@ async function resolveSelfAccess(
       propertyName: fullPath.split('.').pop()!,
       defFile: location.defFile,
       defLine: location.line,
-      defTypeName: location.typeName ?? null,
       expr: `self.${fullPath}`
     };
   }
@@ -144,8 +142,9 @@ async function resolveSelfAccess(
     propertyName: fullPath.split('.').pop()!,
     defFile: location.defFile,
     defLine: location.line,
-    defTypeName: location.typeName,
-    expr: `self.${fullPath}`
+    expr: `self.${fullPath}`,
+    // C-23 hover 行为注记:<Type> 直文本(调用方据此查 FIXED_DICT 形态)
+    typeName: location.typeName
   };
 }
 

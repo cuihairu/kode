@@ -52,7 +52,7 @@ fn payload_of(result: CallToolResult) -> Value {
 }
 
 #[tokio::test]
-async fn list_tools_exposes_all_eight() {
+async fn list_tools_exposes_all_eleven() {
     let client = connect().await;
     let tools = client.list_all_tools().await.expect("list_tools");
     let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
@@ -63,7 +63,10 @@ async fn list_tools_exposes_all_eight() {
             "db_schema_preview",
             "encode_decode_sample",
             "explain",
+            "get_database_schema",
             "get_entity_model",
+            "get_entry_scripts",
+            "get_final_config",
             "get_message_entry",
             "get_type_graph",
             "search_entities",
@@ -184,6 +187,64 @@ async fn call_tools_return_real_data() {
         payload["knowledge"][0]["file"],
         "docs/knowledge/entity-migration-and-cross-process-references.md"
     );
+
+    // get_final_config(CFG-008):telnet 端口问答真数据(引擎写死表)。
+    let payload = payload_of(
+        client
+            .call_tool(call_params("get_final_config", serde_json::json!({})))
+            .await
+            .expect("call get_final_config"),
+    );
+    assert!(
+        payload["customTree"].is_object(),
+        "fixture kbengine.xml parsed"
+    );
+    assert_eq!(payload["telnetDefaultPorts"]["loginapp"], 31000);
+    assert_eq!(payload["telnetDefaultPorts"]["dbmgr"], 32000);
+    assert!(payload["telnetSummary"].is_array());
+    assert!(
+        payload["dbInterface"].is_null() || payload["dbInterface"]["password"].is_null(),
+        "passwords never leave the process"
+    );
+
+    // get_entry_scripts(CFG-008):entryScriptFile 问答真数据。
+    let payload = payload_of(
+        client
+            .call_tool(call_params("get_entry_scripts", serde_json::json!({})))
+            .await
+            .expect("call get_entry_scripts"),
+    );
+    let facts = payload["entryScripts"].as_array().unwrap();
+    let baseapp = facts
+        .iter()
+        .find(|f| f["process"] == "baseapp" && f["module"] == "kbemain")
+        .expect("baseapp fact");
+    assert_eq!(baseapp["exists"], true);
+    assert!(baseapp["path"]
+        .as_str()
+        .unwrap()
+        .ends_with("scripts/base/kbemain.py"));
+    assert!(facts
+        .iter()
+        .any(|f| f["module"] == "kbengine" && f["exists"] == false));
+
+    // get_database_schema(CFG-008):schema 问答真数据(单实体 + 索引)。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "get_database_schema",
+                serde_json::json!({"entity": "Account"}),
+            ))
+            .await
+            .expect("call get_database_schema"),
+    );
+    assert_eq!(payload["entity"], "Account");
+    assert!(payload["tables"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t["name"] == "Account"));
+    assert!(payload["tableIndex"]["Account"].is_object());
 
     let _ = client.cancel().await;
 }

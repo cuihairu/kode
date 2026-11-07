@@ -7,6 +7,7 @@
  */
 
 import * as vscode from 'vscode';
+import { l10nText } from './nlsRuntime';
 import { ProjectProfileStore, type ProjectProfile } from './projectProfiles';
 
 export const ACTIVE_PROFILE_STATE_KEY = 'kbengine.activeProfileId.v1';
@@ -77,7 +78,9 @@ export async function selectActiveProfile(context: {
   const store = new ProjectProfileStore(context.workspaceState);
   const profiles = store.list();
   if (profiles.length === 0) {
-    await vscode.window.showInformationMessage('没有可选择的 project profile，先导入或创建一个项目');
+    await vscode.window.showInformationMessage(
+      l10nText('No project profiles to choose from; import or create a project first')
+    );
     return;
   }
   const picked = await vscode.window.showQuickPick(
@@ -86,13 +89,15 @@ export async function selectActiveProfile(context: {
       description: profile.id,
       profile
     })),
-    { placeHolder: '选择活动 project profile(按稳定 ID 记忆，改名不影响)' }
+    { placeHolder: l10nText('Pick the active project profile (remembered by stable ID; renames do not matter)') }
   );
   if (!picked) {
     return;
   }
   const activeId = await setActiveProfile(context.workspaceState, picked.profile.id);
   if (activeId) {
-    await vscode.window.showInformationMessage(`活动 profile: ${picked.label} (${activeId})`);
+    await vscode.window.showInformationMessage(
+      l10nText('Active profile: {label} ({id})', { label: picked.label, id: activeId })
+    );
   }
 }

@@ -57,6 +57,39 @@ export const CONSOLE_PROFILE_CB_MSG_ID = 65503;
 export const CELLAPPMGR_QUERY_SPACES_MSG_ID = 50003;
 export const MACHINE_BROADCAST_PORT = 20086;
 
+// ---------------------------------------------------------------------------
+// guiconsole console 链路期一(KB-GC-001)协议常量。引擎树
+// kode 仓 ../kbengine @3082ab5 逐条引证,进 watcherProtocolAudit 审计锁:
+// - 701/702/703 出自 kbe/res/server/messages_fixed_defaults.xml
+//   <Logger::onAppActiveTick>/<Logger::registerLogWatcher>/<Logger::deregisterLogWatcher>;
+// - 65501 = console_helper.h:10 CONSOLE_LOG_MSGID(代码强制号,不在 XML);
+// - KBELOG_TYPES 位并集 = 0x7ff(debug_helper.h:46-47)。
+export const LOGGER_APP_ACTIVE_TICK_MSG_ID = 701;
+export const LOGGER_REGISTER_LOG_WATCHER_MSG_ID = 702;
+export const LOGGER_DEREGISTER_LOG_WATCHER_MSG_ID = 703;
+export const CONSOLE_LOG_MSG_ID = 65501;
+export const KBELOG_TYPES_MASK = 0x7ff;
+
+/** logger logstream 级别名 ↔ KBELOG 位(debug_helper.h:35-44/55-68) */
+export const KBELOG_LEVEL_BITS: Record<string, number> = {
+  UNKNOWN: 0x00,
+  PRINT: 0x01,
+  ERROR: 0x02,
+  WARNING: 0x04,
+  DEBUG: 0x08,
+  INFO: 0x10,
+  CRITICAL: 0x20,
+  S_INFO: 0x40,
+  S_ERR: 0x80,
+  S_DBG: 0x100,
+  S_WARN: 0x200,
+  S_NORM: 0x400
+};
+
+export function kbelogLevelBit(level: string): number {
+  return KBELOG_LEVEL_BITS[level] ?? 0x00;
+}
+
 // 与引擎 COMPONENT_TYPE 枚举(kbe/src/lib/common/common.h)逐值对齐:
 // UNKNOWN=0 … INTERFACES=13,TOOL=14;COMPONENT_END_TYPE=15 为哨兵不收录。
 export const COMPONENT_NAMES = [
@@ -285,6 +318,21 @@ export function buildFrame(messageId: number, body: Buffer): Buffer {
   buffer.writeUInt16LE(messageId, 0);
   buffer.writeUInt16LE(body.length, 2);
   body.copy(buffer, 4);
+  return buffer;
+}
+
+/**
+ * 定长消息帧:仅 2 字节消息号 + 定长 body,无长度字段。
+ * 引擎 Bundle::startMessage 只在 msgLen==NETWORK_VARIABLE_MESSAGE 时插入长度字段
+ * (bundle.cpp:303-309);NETWORK_FIXED_MESSAGE 的 701 onAppActiveTick 不带长度
+ * (logger_interface.h:52 LOGGER_MESSAGE_DECLARE_ARGS2(onAppActiveTick,...,NETWORK_FIXED_MESSAGE))。
+ * 误用 buildFrame 会给引擎多塞 2 字节长度,使其把长度当 COMPONENT_TYPE 前 2 字节读,
+ * 参数错位(component_active_report_handler.cpp:67-71 按 INT32+UINT64 定长读)。
+ */
+export function buildFixedFrame(messageId: number, body: Buffer): Buffer {
+  const buffer = Buffer.alloc(2 + body.length);
+  buffer.writeUInt16LE(messageId, 0);
+  body.copy(buffer, 2);
   return buffer;
 }
 
@@ -742,6 +790,10 @@ export async function discoverLocalComponents(
     });
 
     socket.bind(0, '0.0.0.0', () => {
+      // machine 发现本就是广播协议:目标可为 127.0.0.1(同机直查)或广播地址
+      // (异机真机联验),后者必须带 SO_BROADCAST 才能发出;测试注入的假 socket
+      // 无该方法,可选调用放行
+      socket.setBroadcast?.(true);
       const address = socket.address();
       if (typeof address === 'string') {
         if (!settled) {
@@ -958,4 +1010,129 @@ export async function querySpaces(component: KBEngineComponentInfo, timeoutMs = 
     timeoutMs
   );
   return results[0] ?? empty;
+}
+
+// ---------------------------------------------------------------------------
+// guiconsole console 链路期一(KB-GC-001)帧构造/解析。
+export interface LogWatcherRequestOptions {
+  uid: number;
+  /** KBELOG 位掩码(debug_helper.h:35-44),全量=KBELOG_TYPES_MASK */
+  logtypes: number;
+  globalOrder: number;
+  groupOrder: number;
+  /** 空串=不过滤日期 */
+  date: string;
+  /** 空串=不过滤关键字 */
+  keyStr: string;
+  /** 过滤的组件类型;引擎位图语义为「点名的类型才放行」(logwatcher.cpp:86-90),
+   * 空数组=不点名=一条都不放行——调用方要全量时须显式传全部服务端类型 */
+  componentTypes: number[];
+  isfind: boolean;
+  first: boolean;
+}
+
+/**
+ * 702 registerLogWatcher body,线序照写侧 guiconsole
+ * LogWindow.cpp:376-433(读侧 logwatcher.cpp:37-70 互逆):
+ * uid i32 / logtypes u32 / globalOrder i32(COMPONENT_ORDER=platform.h:346) /
+ * groupOrder i32 / date cstr / keyStr cstr / count i8 /
+ * count×COMPONENT_TYPE(Bundle::operator<< 固定 int32,bundle.h:227-231) /
+ * isfind bool(i8) / first bool(i8,bundle.h:239-242)。
+ * XML 声明的 UINT8_ARRAY 与真实写侧不符——按写侧(设计文档 §1.4 解码陷阱)。
+ */
+export function buildLogWatcherRequestBody(options: LogWatcherRequestOptions): Buffer {
+  const parts: Buffer[] = [];
+  const i32 = (value: number): Buffer => {
+    const buffer = Buffer.alloc(4);
+    buffer.writeInt32LE(value, 0);
+    return buffer;
+  };
+  const u32 = (value: number): Buffer => {
+    const buffer = Buffer.alloc(4);
+    buffer.writeUInt32LE(value, 0);
+    return buffer;
+  };
+  parts.push(i32(options.uid));
+  parts.push(u32(options.logtypes >>> 0));
+  parts.push(i32(options.globalOrder));
+  parts.push(i32(options.groupOrder));
+  parts.push(buildCString(options.date));
+  parts.push(buildCString(options.keyStr));
+  const count = Math.min(options.componentTypes.length, 0x7f);
+  parts.push(Buffer.from([count]));
+  for (let index = 0; index < count; index += 1) {
+    parts.push(i32(options.componentTypes[index]));
+  }
+  parts.push(Buffer.from([options.isfind ? 1 : 0, options.first ? 1 : 0]));
+  return Buffer.concat(parts);
+}
+
+/** 服务端组件全量(位图全点名):logger/cellapp/baseapp/三 mgr/dbmgr/loginapp/bots/interfaces/machine */
+export const SERVER_COMPONENT_TYPES = [1, 2, 3, 4, 5, 6, 8, 10, 11, 13];
+
+/** 701 onAppActiveTick body:INT32 COMPONENT_TYPE + UINT64 COMPONENT_ID(xml Logger::onAppActiveTick:701) */
+export function buildAppActiveTickBody(componentType: number, componentID: bigint): Buffer {
+  const body = Buffer.alloc(12);
+  body.writeInt32LE(componentType, 0);
+  body.writeBigUInt64LE(componentID, 4);
+  return body;
+}
+
+/**
+ * 65501 body = appendBlob(u32 长度 + 字节,bundle.h:324-328),载荷为一条
+ * logstream 文本(logger 每条命中日志单独 push 一个 Bundle,logwatcher.cpp:105-112)。
+ * 截断/残帧返回 null(不猜文本);空 blob 返回 []。
+ */
+export function parseConsoleLogBody(body: Buffer): string[] | null {
+  if (body.length < 4) {
+    return null;
+  }
+  const length = body.readUInt32LE(0);
+  if (4 + length > body.length) {
+    return null;
+  }
+  let text = body.toString('utf8', 4, 4 + length);
+  if (text.endsWith('\0')) {
+    text = text.slice(0, -1);
+  }
+  return text.length === 0 ? [] : [text];
+}
+
+export interface ParsedLogStream {
+  /** 归一后的级别名(空白天名=PRINT,debug_helper.h:53) */
+  level: string;
+  component: string;
+  groupOrder: number;
+  uid: number;
+  componentID: string;
+  timestamp: string;
+  /** 消息体(可能含换行的 traceback,原样保留) */
+  message: string;
+}
+
+/**
+ * 解析 logger.cpp:265-280 拼出的 logstream 文本:
+ *   `<级别名> <组件名><两位 groupOrder> <uid> <componentID> [YYYY-MM-DD HH:MM:SS mmm] - <消息体>`
+ * 级别名表带前导空白("   ERROR"/" WARNING"/PRINT 全空白,debug_helper.h:55-68);
+ * 解析不出结构返回 null,调用方原样呈现原始文本,不冒充结构化行。
+ */
+export function parseLogStream(text: string): ParsedLogStream | null {
+  const pattern =
+    /^([A-Z_ ]*?)\s+([a-z]+)(\d{0,2})\s+(-?\d+)\s+(\d+)\s+\[([\d][\d\- :.]*)\]\s*-\s?([\s\S]*)$/;
+  const match = pattern.exec(text);
+  if (!match) {
+    return null;
+  }
+  const rawLevel = match[1].trim();
+  return {
+    level: rawLevel.length === 0 ? 'PRINT' : rawLevel,
+    component: match[2],
+    groupOrder: match[3].length === 0 ? 0 : Number.parseInt(match[3], 10),
+    uid: Number.parseInt(match[4], 10),
+    componentID: match[5],
+    timestamp: match[6].trim(),
+    // 真机样本(KB-GC-001 imac 实测):blob 末尾带引擎自加的换行,剥离尾部
+    // 换行(消息体内部换行/traceback 原样保留)
+    message: match[7].replace(/\n+$/, '')
+  };
 }

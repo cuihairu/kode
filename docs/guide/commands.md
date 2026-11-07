@@ -321,6 +321,19 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - Clears the workspace-state key and confirms with a notification; it never starts an attach itself
   - A component with a configured `debugpyPort` always attaches in port mode regardless of the remembered choice
 
+### `kbengine.debug.debugpyInject`
+
+- Title: `Inject debugpy Listener and Attach`
+- Purpose: one-shot debugpy automation (KODE-DBG-001, the console-injection option of docs/design/debugpy-attach.md) — send `debugpy.listen` over the component's telnet `:python` layer, then attach in port mode; no engine changes, no file edits
+- Entry: command palette
+- Behavior:
+  - Lists the running components (default instances by name, named instances as `component#instance`); cancelling the pick does nothing
+  - Port: the per-component table (baseapp 5678 / cellapp 5679 / loginapp 5680 / dbmgr 5681 / logger 5682, otherwise 5678), bound to `127.0.0.1` only
+  - Listener: reuses the existing one-shot path — syncs the assets-tree debugpy package if missing, waits for telnet readiness, injects through a short-lived telnet client; a failed injection reports the reason and never attaches
+  - Attach: once the listener is up, reuses the port mode of `Attach to Component` (probe → connect); if the attach does not complete, the error points to `Attach to Component` for a retry
+  - Gated by `kbengine.debug.debugpyInject` (default on); when off, the command only says so and does nothing
+  - Early-startup breakpoints are not this command's job — use `kbengine.debug.waitAtStartup` (the bootstrap option of the same proposal)
+
 ### `kbengine.debug.pyspyDump`
 
 - Title: `Profile Component with py-spy`
@@ -614,6 +627,11 @@ The flow graph panel supports:
 
 - Title: `Show Runtime Query Panel`
 - Purpose: discover running components, query cellappmgr spaces, and query watcher values from one panel
+
+### `kbengine.liveObservation.openExceptionSource`
+
+- Title: `Open Exception Source Location`
+- Purpose: jump to the workspace file and line named by a runtime exception line (Python traceback or engine log `file.py:line`); when no workspace source matches, the raw exception line is preserved in the warning message instead of a guessed jump
 
 ### `kbengine.python.showCallChain`
 
@@ -1049,6 +1067,12 @@ The flow graph panel supports:
 - Purpose: Rescan top-level `.bat` / `.ps1` files in the effective config root and `assetsRoot`; refresh generated actions from the selection while preserving manual actions and other debug settings
 - Script working directory: scanned actions use the script's containing directory as `cwd`
 - Entry point: Command Palette
+
+### `kbengine.python.showEngineSpi`
+
+- Title: `Show Engine SPI Implementation Info`
+- Purpose: information lens click target for engine SPI implementation functions (KODE-CFG-015). The lens on a module-level `def` named in the KODE-CFG-012 SPI table shows the method's SPI identity and trigger timing (e.g. `onInit` — first callback, `0` = startup `1` = reload; optional methods carry a「 · 可选」suffix)
+- Honesty rule: the engine-side call sites live in the C++ engine, not this repo, so the lens is informational and never navigates
 
 ### `kbengine.python.syncExtraPaths`
 

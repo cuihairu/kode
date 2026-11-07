@@ -678,7 +678,8 @@ describe('defReferenceGraph 补测(接口/组件边与坏文件跳过)', () => {
     expect(graph).not.toBeNull();
 
     const relations = graph!.edges.map(edge => ({
-      target: edge.target.split('/').pop(),
+      // (win32 target 是反斜杠路径,断言前归一化分隔符)
+      target: edge.target.replace(/\\/g, '/').split('/').pop(),
       relation: edge.relation
     }));
     expect(relations).toContainEqual({ target: 'ICombat.def', relation: 'interface' });
@@ -693,7 +694,7 @@ describe('defReferenceGraph 补测(接口/组件边与坏文件跳过)', () => {
     expect(graph!.issues.map(issue => issue.name)).not.toContain('Broken');
   });
 
-  describe.skipIf(runsAsRoot)('只读失败面(root 下 chmod 不生效,跳过)', () => {
+  describe.skipIf(runsAsRoot || process.platform === 'win32')('只读失败面(root 下 chmod 不生效,跳过)', () => {
     it('不可读 .def:readFile 吞错为 null,整文件跳过', () => {
       root = mkdtempSync(join(tmpdir(), 'cov-defgraph-perm-'));
       put('scripts/entities.xml', '<root/>\n');

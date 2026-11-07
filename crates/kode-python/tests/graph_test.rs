@@ -733,15 +733,16 @@ fn same_target_from_import_with_and_without_alias_keeps_edge() {
 
 #[test]
 fn different_relative_level_from_import_gives_up_edge() {
-    // 复审第十四轮残余(层级面):`from .x import y` 与 `from ..x import y`
-    // 模块名/symbol 全同但相对层级不同=不同目标——目标身份含 level,应弃边。
+    // 复审第十五轮残余(测试有效性):from-import 回退按 symbol 取 basename
+    // (y → y.py),层级冲突测试必须对唯一 y.py 断言无边——若层级比较失效,
+    // 两导入身份判一致会按 y 产边到 y.py,断言即红(可判别)。
     let zcaller = "from .x import y\nfrom ..x import y\n\ndef battle():\n    y.f()\n";
-    let xmod = "def f():\n    pass\n";
+    let ymod = "def f():\n    pass\n";
     let zk = key("scripts/zcaller.py");
-    let xk = key("scripts/x.py");
+    let yk = key("scripts/y.py");
     let mut file_edges = BTreeMap::new();
     let mut file_symbols = BTreeMap::new();
-    for (k, src) in [(&zk, zcaller), (&xk, xmod)] {
+    for (k, src) in [(&zk, zcaller), (&yk, ymod)] {
         let ast = ParsedAst::new(src);
         let symbols = parse_ast_symbols(src).symbols;
         file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
@@ -749,7 +750,7 @@ fn different_relative_level_from_import_gives_up_edge() {
     }
     let rev = build_call_reverse_index(&file_edges, &file_symbols);
     assert!(
-        !rev.get(&xk).map(|s| s.contains(&zk)).unwrap_or(false),
+        !rev.get(&yk).map(|s| s.contains(&zk)).unwrap_or(false),
         "相对层级不同的同名 from-import 应弃边, got {rev:?}"
     );
 }

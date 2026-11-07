@@ -38,7 +38,7 @@ describe('IDE-LINT-009 引擎内建属性角色错用 lint(纯逻辑)', () => {
     expect(findings[0].line).toBe(0);
     expect(findings[0].character).toBe(0);
     expect(findings[0].length).toBe('self.position'.length);
-    expect(findings[0].message).toContain('角色错用');
+    expect(findings[0].message).toContain('role misuse');
     expect(findings[0].message).toContain('cellapp/client');
   });
 

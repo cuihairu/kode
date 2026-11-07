@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TelnetTreeProvider } from '../src/telnetTree';
 import {
   readTelnetTargetsFromSettings,
@@ -11,6 +11,21 @@ import {
 } from '../src/telnetService';
 import { memoryFileSystem } from './helpers/vscodeStub';
 import { configurationOverrides, workspace as stubWorkspace } from './fake-vscode/workspaceState';
+import {
+  ensureConfigResolved,
+  resetConfigResolveForTests,
+  type ConfigResolveOverrides
+} from '../src/serverConfigResolve';
+import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { makeContractGate } from './helpers/configCoreContract';
+
+// KODE-CFG-009:配置读值半由 core(`$/kode/config/resolve`)供给,读值断言
+// 前先以同款 overrides 刷新消费态(契约门替身回数)。
+const refreshCore = async (overrides: ConfigResolveOverrides = {}): Promise<void> => {
+  resetConfigResolveForTests();
+  setKodeCoreShadowGate(makeContractGate([]));
+  await ensureConfigResolved(overrides);
+};
 
 // 装配层两个导出(extension.ts 薄调用)的全分支驱动:
 // - readTelnetTargetsFromSettings:设置读取、configXmlPath 的存在/缺失/
@@ -69,12 +84,18 @@ beforeEach(() => {
 });
 
 describe('readTelnetTargetsFromSettings', () => {
-  it('无任何配置且无工作区:配置未开 telnet → 空目标(不再回落默认表)', () => {
+  afterEach(() => {
+    setKodeCoreShadowGate(null);
+    resetConfigResolveForTests();
+    configurationOverrides.clear();
+  });
+
+  it('无任何配置且无工作区:配置未开 telnet → 空目标(不再回落默认表)', async () => {
     // 批111 用户令:配置里都没有开启 telnet 就不展示 telnet 相关的东西
     expect(readTelnetTargetsFromSettings()).toEqual([]);
   });
 
-  it('设置显式 host/port/password/enableCommands:单目标生效', () => {
+  it('设置显式 host/port/password/enableCommands:单目标生效', async () => {
     override({
       'telnet.host': '10.0.0.8',
       'telnet.port': 31000,
@@ -92,7 +113,7 @@ describe('readTelnetTargetsFromSettings', () => {
     });
   });
 
-  it('configXmlPath 指向存在的 kbengine.xml:解析 <telnet_service> 端口/密码', () => {
+  it('configXmlPath 指向存在的 kbengine.xml:解析 <telnet_service> 端口/密码', async () => {
     // src 侧读真 node fs:配置展开走 ${workspaceFolder},落真临时文件
     const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-'));
     const xmlPath = path.join(xmlDir, 'kbengine.xml');
@@ -104,6 +125,7 @@ describe('readTelnetTargetsFromSettings', () => {
     override({ 'telnet.configXmlPath': '${workspaceFolder}/kbengine.xml' });
 
     try {
+      await refreshCore({ customXmlPath: path.join(xmlDir, 'kbengine.xml') });
       const targets = readTelnetTargetsFromSettings();
       expect(targets).toHaveLength(1);
       expect(targets[0]).toMatchObject({
@@ -117,12 +139,13 @@ describe('readTelnetTargetsFromSettings', () => {
     }
   });
 
-  it('configXmlPath 指向不存在的文件:配置未开 telnet → 空目标(不猜)', () => {
+  it('configXmlPath 指向不存在的文件:配置未开 telnet → 空目标(不猜)', async () => {
     override({ 'telnet.configXmlPath': '/no/such/kbengine.xml' });
+    await refreshCore({ customXmlPath: '/no/such/kbengine.xml' });
     expect(readTelnetTargetsFromSettings()).toEqual([]);
   });
 
-  it('configXmlPath 指向存在的 xml 但无 <telnet_service> 段:段不在=未开 → 空目标', () => {
+  it('configXmlPath 指向存在的 xml 但无 <telnet_service> 段:段不在=未开 → 空目标', async () => {
     // 官方 demo 的 kbengine.xml 就没有该段:此时不展示 telnet 入口
     const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-nosection-'));
     fs.writeFileSync(path.join(xmlDir, 'kbengine.xml'), '<root><res_paths/></root>');
@@ -130,6 +153,7 @@ describe('readTelnetTargetsFromSettings', () => {
     override({ 'telnet.configXmlPath': '${workspaceFolder}/kbengine.xml' });
 
     try {
+      await refreshCore({ customXmlPath: path.join(xmlDir, 'kbengine.xml') });
       expect(readTelnetTargetsFromSettings()).toEqual([]);
     } finally {
       fs.rmSync(xmlDir, { recursive: true, force: true });
@@ -140,7 +164,7 @@ describe('readTelnetTargetsFromSettings', () => {
     ['工作区根', '', 'kbengine.xml'],
     ['约定布局 res/server', 'res/server', 'kbengine.xml'],
     ['嵌套 assets 布局', 'assets/res/server', 'kbengine.xml']
-  ])('未配置 configXmlPath:约定路径探测(%s)', (_name, subDir, fileName) => {
+  ])('未配置 configXmlPath:约定路径探测(%s)', async (_name, subDir, fileName) => {
     const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-discover-'));
     const target = subDir
       ? path.join(xmlDir, ...subDir.split('/'), fileName)
@@ -153,6 +177,7 @@ describe('readTelnetTargetsFromSettings', () => {
     stubWorkspace.workspaceFolders = [{ uri: { fsPath: xmlDir } } as never];
 
     try {
+      await refreshCore();
       const targets = readTelnetTargetsFromSettings();
       expect(targets).toHaveLength(1);
       expect(targets[0]).toMatchObject({ key: '127.0.0.1:32555', port: 32555, label: 'kbengine.xml' });
@@ -161,18 +186,19 @@ describe('readTelnetTargetsFromSettings', () => {
     }
   });
 
-  it('未配置 configXmlPath 且约定路径全缺:空目标(不猜)', () => {
+  it('未配置 configXmlPath 且约定路径全缺:空目标(不猜)', async () => {
     const bareDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-bare-'));
     stubWorkspace.workspaceFolders = [{ uri: { fsPath: bareDir } } as never];
 
     try {
+      await refreshCore();
       expect(readTelnetTargetsFromSettings()).toEqual([]);
     } finally {
       fs.rmSync(bareDir, { recursive: true, force: true });
     }
   });
 
-  it('未配置 assetsRoot:发现出的资产根参与探测(server_assets 布局,批128)', () => {
+  it('未配置 assetsRoot:发现出的资产根参与探测(server_assets 布局,批128)', async () => {
     // server_assets 是发现约定链的一员,其 res/server/kbengine.xml 即元件配置
     const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-cfgroot-'));
     const target = path.join(xmlDir, 'server_assets', 'res', 'server', 'kbengine.xml');
@@ -182,6 +208,7 @@ describe('readTelnetTargetsFromSettings', () => {
     override({ assetsRoot: '' });
 
     try {
+      await refreshCore();
       const targets = readTelnetTargetsFromSettings();
       expect(targets).toHaveLength(1);
       expect(targets[0]).toMatchObject({ key: '127.0.0.1:32666', port: 32666, label: 'kbengine.xml' });
@@ -190,7 +217,7 @@ describe('readTelnetTargetsFromSettings', () => {
     }
   });
 
-  it('assetsRoot 下的 kbengine.xml 优先于约定路径(引擎 KBE_RES_PATH 项目侧)', () => {
+  it('assetsRoot 下的 kbengine.xml 优先于约定路径(引擎 KBE_RES_PATH 项目侧)', async () => {
     const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-configpath-'));
     const configDir = path.join(xmlDir, 'server');
     fs.mkdirSync(configDir, { recursive: true });
@@ -202,6 +229,7 @@ describe('readTelnetTargetsFromSettings', () => {
     override({ assetsRoot: '${workspaceFolder}/server' });
 
     try {
+      await refreshCore();
       const targets = readTelnetTargetsFromSettings();
       expect(targets).toHaveLength(1);
       expect(targets[0]).toMatchObject({ key: '127.0.0.1:32666', port: 32666 });
@@ -210,7 +238,7 @@ describe('readTelnetTargetsFromSettings', () => {
     }
   });
 
-  it('xml 段在而无端口 + binPath 指向引擎树:逐组件端口/密码取 kbengine_defaults.xml', () => {
+  it('xml 段在而无端口 + binPath 指向引擎树:逐组件端口/密码取 kbengine_defaults.xml', async () => {
     // 批112 用户令:引擎 defaults 先载、元件 kbengine.xml 覆盖——defaults 补值
     const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-defaults-'));
     fs.writeFileSync(
@@ -233,6 +261,7 @@ describe('readTelnetTargetsFromSettings', () => {
     override({ binPath: '${workspaceFolder}/kbe/bin/server' });
 
     try {
+      await refreshCore();
       const targets = readTelnetTargetsFromSettings();
       expect(targets).toHaveLength(7);
       const byComponent = Object.fromEntries(targets.map(target => [target.component, target]));
@@ -245,7 +274,7 @@ describe('readTelnetTargetsFromSettings', () => {
     }
   });
 
-  it('binPath 推得出 defaults 但文件缺失:catch 臂回落常量端口表', () => {
+  it('binPath 推得出 defaults 但文件缺失:catch 臂回落常量端口表', async () => {
     const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-noread-'));
     fs.writeFileSync(
       path.join(xmlDir, 'kbengine.xml'),
@@ -256,6 +285,8 @@ describe('readTelnetTargetsFromSettings', () => {
     override({ binPath: '${workspaceFolder}/kbe/bin/server' });
 
     try {
+      // KODE-CFG-009:常量端口表来自 core telnetDefaultPorts(core 唯一真源)
+      await refreshCore();
       const targets = readTelnetTargetsFromSettings();
       expect(targets.map(target => target.port)).toEqual([
         31000, 32000, 33000, 34000, 40000, 50000, 51000
@@ -265,7 +296,7 @@ describe('readTelnetTargetsFromSettings', () => {
     }
   });
 
-  it('binPath 推导不出引擎 defaults(后缀不在):回落常量端口表', () => {
+  it('binPath 推导不出引擎 defaults(后缀不在):回落常量端口表', async () => {
     const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-nodefaults-'));
     fs.writeFileSync(
       path.join(xmlDir, 'kbengine.xml'),
@@ -275,6 +306,7 @@ describe('readTelnetTargetsFromSettings', () => {
     override({ binPath: '${workspaceFolder}/kbe/bin' });
 
     try {
+      await refreshCore();
       const targets = readTelnetTargetsFromSettings();
       expect(targets.map(target => target.port)).toEqual([
         31000, 32000, 33000, 34000, 40000, 50000, 51000
@@ -362,7 +394,7 @@ describe('TelnetTreeProvider(批112 用户令:telnet 独立树视图,与 server 
     const item = children[0];
     expect(item.label).toBe('Telnet: loginapp');
     expect(item.contextValue).toBe('telnet_127.0.0.1:31000');
-    expect(item.description).toBe('127.0.0.1:31000 · 已连接');
+    expect(item.description).toBe('127.0.0.1:31000 · Connected');
     expect((item.iconPath as { id: string }).id).toBe('circle-filled');
     expect(item.command?.command).toBe('kbengine.telnet.showPanel');
     expect(item.tooltip).toContain('telnet loginapp');
@@ -391,13 +423,13 @@ describe('TelnetTreeProvider(批112 用户令:telnet 独立树视图,与 server 
     const items = provider.getChildren();
     const byLabel = Object.fromEntries(items.map(item => [item.label, item]));
     expect((byLabel['Telnet: loginapp'].iconPath as { id: string }).id).toBe('circle-slash');
-    expect(byLabel['Telnet: loginapp'].description).toContain('未开启');
+    expect(byLabel['Telnet: loginapp'].description).toContain('Not open');
     expect((byLabel['Telnet: dbmgr'].iconPath as { id: string }).id).toBe('circle-large-outline');
-    expect(byLabel['Telnet: dbmgr'].description).toContain('已开启');
+    expect(byLabel['Telnet: dbmgr'].description).toContain('Open');
     expect((byLabel['Telnet: baseapp'].iconPath as { id: string }).id).toBe('warning');
-    expect(byLabel['Telnet: baseapp'].description).toContain('端口开·未配密码');
+    expect(byLabel['Telnet: baseapp'].description).toContain('Port open, auth not configured');
     expect((byLabel['Telnet: cellapp'].iconPath as { id: string }).id).toBe('circle-slash');
-    expect(byLabel['Telnet: cellapp'].description).toContain('密码被拒');
-    expect(byLabel['Telnet: bots'].description).toContain('未配置');
+    expect(byLabel['Telnet: cellapp'].description).toContain('Auth rejected');
+    expect(byLabel['Telnet: bots'].description).toContain('Not configured');
   });
 });

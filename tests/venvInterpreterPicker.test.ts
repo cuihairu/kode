@@ -70,7 +70,7 @@ describe('source badge and status bar text (pure)', () => {
 
   it('missing interpreter says so instead of pretending', () => {
     expect(interpreterStatusBarText({ interpreterPath: null, interpreterSource: 'missing' })).toBe(
-      '$(circle-slash) Python 解释器缺失'
+      '$(circle-slash) Python interpreter missing'
     );
   });
 });
@@ -175,7 +175,8 @@ describe('createVenvFlow (mocked venv module run)', () => {
       // 选放置 venv 的父目录(对话框只能选已存在目录);目标=父目录/.venv
       pickTargetParentDir: async () => state.parent,
       baseInterpreter: (): string | null => state.base,
-      targetDirectoryExistsNonEmpty: (dir: string) => dir === '/ws/occupied/.venv',
+      // WIN-3:产品用 path.join(parent, '.venv') 拼目标目录(win32 反斜杠),mock 同口径
+      targetDirectoryExistsNonEmpty: (dir) => dir === join('/ws/occupied', '.venv'),
       runVenvModule: async function (_base: string, target: string) {
         state.runs.push([_base, target]);
         return { exitCode: 0, stderr: '' };
@@ -222,7 +223,7 @@ describe('createVenvFlow (mocked venv module run)', () => {
     expect(result).toBeNull();
     expect(deps.state.runs).toEqual([]);
     expect(deps.state.written).toEqual([]);
-    expect(deps.state.messages.join('\n')).toContain('基础');
+    expect(deps.state.messages.join('\n')).toContain('Missing a base Python interpreter');
     // 补救提示与实际行为一致:设置 kbengine.python.interpreterPath 是有效入口
     expect(deps.state.messages.join('\n')).toContain('kbengine.python.interpreterPath');
   });
@@ -251,7 +252,7 @@ describe('createVenvFlow (mocked venv module run)', () => {
     const result = await createVenvFlow(deps);
     expect(result).toBeNull();
     expect(deps.state.written).toEqual([]);
-    expect(deps.state.messages.join('\n')).toContain('未通过验证');
+    expect(deps.state.messages.join('\n')).toContain('did not pass verification');
   });
 
   it('no workspace root refuses before any dialog', async () => {

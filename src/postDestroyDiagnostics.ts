@@ -28,6 +28,7 @@
 // 与 `self.cell.destroy` 非销毁自身,不参与)。
 
 import { pythonCodeLines, pythonStatements } from './pythonParser';
+import { l10nText } from './nlsRuntime';
 import { resolveEntityComponentFaceFromPath, type EntityComponentFace } from './entityBuiltinProperties';
 
 export const POST_DESTROY_DIAGNOSTIC_CODE = 'kbengine.postDestroy';
@@ -172,8 +173,10 @@ export function findPostDestroyFindings(
             member,
             destroyLine: destroy.line,
             destroyColumn,
-            message: `self.${member} 在 self.destroy() 之后访问(第 ${destroy.line + 1} 行销毁):`
-              + `销毁后实体已失效,${member} 访问会触发引擎 destroyed 检查`
+            message: l10nText(
+              'self.{member} accessed after self.destroy() (destroyed at line {line}): the entity is dead after destruction; {member} access triggers the engine destroyed check',
+              { member, line: destroy.line + 1 }
+            )
           });
         }
       }

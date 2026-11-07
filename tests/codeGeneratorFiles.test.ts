@@ -604,7 +604,7 @@ describe('KBEngineCodeGenerator generation plan preview (IDE-GEN-004)', () => {
 
     // 确认行 + def/python/注册三条计划项,路径逐字准确
     expect(previewItems.map(item => item.label)).toEqual([
-      '确认生成', '新增 .def', '新增 Python (base 段)', '注册 entities.xml'
+      'Confirm generation', '新增 .def', '新增 Python (base 段)', '注册 entities.xml'
     ]);
     expect(previewItems[1].description).toBe(path.join(root, 'scripts', 'entity_defs', 'Preview.def'));
     expect(previewItems[2].description).toBe(path.join(root, 'scripts', 'base', 'Preview.py'));
@@ -644,7 +644,7 @@ describe('KBEngineCodeGenerator generation plan preview (IDE-GEN-004)', () => {
 
     await makeGenerator().showTemplates();
 
-    expect(previewItems[0].label).toBe('确认生成');
+    expect(previewItems[0].label).toBe('Confirm generation');
     expect(previewItems[1].label).toBe('新增 .def');
     expect(previewItems[1].description).toBe(path.join(root, 'scripts', 'entity_defs', 'TplPrev.def'));
     expect(fs.existsSync(path.join(root, 'scripts', 'entity_defs', 'TplPrev.def'))).toBe(true);
@@ -669,7 +669,7 @@ describe('KBEngineCodeGenerator generation plan preview (IDE-GEN-004)', () => {
 
     await generator.showWizard();
 
-    expect(previewItems.map(item => item.label)).toEqual(['确认生成', '新增 .def']);
+    expect(previewItems.map(item => item.label)).toEqual(['Confirm generation', '新增 .def']);
   });
 });
 

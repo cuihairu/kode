@@ -318,7 +318,9 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
     engineDirs.push(engineDir);
     // 命令真实把产物写进引擎目录(副作用真实发生),但接收端证明不了是它写的
-    const applyCommand = `node -e "const fs=require('fs'),p=require('path');const d='${engineDir}';fs.mkdirSync(d,{recursive:true});fs.copyFileSync(process.env.KODE_RELOAD_FILE,p.join(d,p.basename(process.env.KODE_RELOAD_FILE)))"`;
+    // (Windows:路径字面量里的反斜杠在 JS 字符串转义后被吞,统一改正斜杠)
+    const engineDirArg = process.platform === 'win32' ? engineDir.replace(/\\/g, '/') : engineDir;
+    const applyCommand = `node -e "const fs=require('fs'),p=require('path');const d='${engineDirArg}';fs.mkdirSync(d,{recursive:true});fs.copyFileSync(process.env.KODE_RELOAD_FILE,p.join(d,p.basename(process.env.KODE_RELOAD_FILE)))"`;
     const receiver = await start('apply', 'applied', ['--apply-command', applyCommand, '--artifact-dir', engineDir]);
     const file = path.join(receiver.root, 'Avatar.py');
     const content = 'class Avatar:\n    HP = 300\n';
@@ -436,7 +438,8 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
   // 失败 → failed;既有产物从头到尾未被触碰、无临时文件残留。(旧构造
   // 「0444 只读旧产物」在 temp+rename 下 rename 原子替换不读目标权限,如实
   // applied——该场景由目录级只读替代构造真实的落盘失败。)
-  it('F3 七轮回归:引擎目录只读(0o555)落盘失败 → failed,既有产物原样无残留', async () => {
+  // Windows:目录只读位不阻止子文件创建,0o555 故障注入不成立,跳过
+  it.skipIf(process.platform === 'win32')('F3 七轮回归:引擎目录只读(0o555)落盘失败 → failed,既有产物原样无残留', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
     engineDirs.push(engineDir);
     const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
@@ -468,7 +471,8 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
   // F3 六轮(复审 FAIL-3a):写前读旧产物把一切异常当 ENOENT → EACCES 时误判
   // 「不存在」,失败回滚 unlink 把预存在产物误删。修后仅 ENOENT 视为不存在,
   // 其他读异常如实拒绝写入且绝不删除。
-  it('F3 六轮回归:读旧产物 EACCES → 拒绝写入且不误删预存在产物', async () => {
+  // Windows:chmod 000 不产生读 EACCES,前提不成立
+  it.skipIf(process.platform === 'win32')('F3 六轮回归:读旧产物 EACCES → 拒绝写入且不误删预存在产物', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
     engineDirs.push(engineDir);
     const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
@@ -709,7 +713,8 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
   // ulimit -f 2(单文件 1024 字节上限)下运行,900B 源文件可暂存,但产物内容
   // (非法 UTF-8 字节读入后再编码为 1100B)落盘越过上限 → 写入中途 EFBIG,
   // 留下 1024B 部分写入残留,回滚必须把它清干净。
-  it('F3 六轮回归:部分写入后抛错(RLIMIT_FSIZE)→ 残留被清理,如实「无残留」', async () => {
+  // Windows:无 sh/ulimit,RLIMIT_FSIZE 故障注入不成立,跳过
+  it.skipIf(process.platform === 'win32')('F3 六轮回归:部分写入后抛错(RLIMIT_FSIZE)→ 残留被清理,如实「无残留」', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
     engineDirs.push(engineDir);
     const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir], 'ulimit -f 2');

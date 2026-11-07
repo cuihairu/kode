@@ -5,6 +5,7 @@
  */
 
 import * as vscode from 'vscode';
+import { l10nText } from './nlsRuntime';
 
 export interface GenerationPlanItem {
   label: string;
@@ -13,9 +14,9 @@ export interface GenerationPlanItem {
 
 export async function confirmGenerationPlanItems(items: readonly GenerationPlanItem[]): Promise<boolean> {
   const picked = await vscode.window.showQuickPick(
-    [{ label: '确认生成', description: '按清单落盘' }, ...items],
-    { placeHolder: '核对将生成的文件（选择"确认生成"继续，Esc 取消）' }
+    [{ label: l10nText('Confirm generation'), description: l10nText('Write files per the manifest') }, ...items],
+    { placeHolder: l10nText('Review the files to generate (pick Confirm generation to continue, Esc to cancel)') }
   );
 
-  return picked?.label === '确认生成';
+  return picked?.label === l10nText('Confirm generation');
 }

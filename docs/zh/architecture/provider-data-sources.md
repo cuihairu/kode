@@ -41,10 +41,12 @@
 | TypesXmlCodeLensProvider | languageProviders.ts:4964 | :1169 | databaseSchema 类型存储使用索引(`onTypeStorageUsageIndexPublished` 订阅;构造零依赖) | fireConfigurationChanged 事件;watcher 归装配线(ARC-005) |
 | GeneratedSourceCodeLensProvider(python 桩) | generatedSourceLenses.ts:11 | :1187 | 构造期快照 buildPythonTypeStubPlan(getCustomTypeInfos) | 纯读 |
 | GeneratedSourceCodeLensProvider(entity 桩) | generatedSourceLenses.ts:11 | :4632 | 构造期快照 buildEntityTypeStubPlan(getAllMappings + getCustomTypeInfos) | 纯读 |
+| EngineSpiCodeLensProvider | engineSpiCodeLens.ts:255 | :1382 | 文档文本模块级行扫描(maskPythonNonCode 掩码 + 缩进栈,KODE-CFG-015)+ configDerive entryScripts 脚本根 | 纯读;fireConfigurationChanged 事件(开关刷新) |
+| ConfigSchemaHoverProvider | configSchemaHover.ts:11 | :1777 | 装配层持有的配置 schema 缓存(collectConfigSchema 字面量直读,随配置数据扫描管线刷新,KODE-CFG-016) | 纯读 |
 | PythonTypeInlayHintsProvider | typeInlayHints.ts:33 | :1197 | EntityMappingManager | 纯读 |
 | KBEngineBuiltinTypeInlayHintsProvider | languageProviders.ts:649 | :1207 | EntityMappingManager | 纯读 |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | 纯读 |
-| DefPropsInlayHintsProvider | defPropsInlayHints.ts:123 | :1442 | EntityMappingManager(C-22 注释锚 def 属性只读视图) | 纯读 |
+| DefPropsInlayHintsProvider | defPropsInlayHints.ts:126 | :1432 | EntityMappingManager(`listPropertyDefinitionsForFile` 锚点所属实体的根级属性清单) | 纯读 |
 | KBEngineCallHierarchyProvider | languageProviders.ts:5013 | :1223 | EntityMappingManager(def/python 双选区调用层级) | 纯读 |
 | KBEngineReferencesProvider | languageProviders.ts:5117 | :1235 | EntityMappingManager + defReferenceGraph 引用图 | 纯读 |
 | KBEngineDocumentSymbolProvider | languageProviders.ts:5231 | :1256 | 当前文档 def 结构(构造零依赖) | 纯读 |
@@ -55,7 +57,6 @@
 | KBEngineMethodImplementationCodeActionProvider | languageProviders.ts:5470 | :1768 | EntityMappingManager(接口方法补实现) | 编辑提案(WorkspaceEdit) |
 | KBEngineDefPythonParityCodeActionProvider | languageProviders.ts:6058 | :1776 | 诊断面(context.diagnostics,code=def-method-missing-in-python)+双向定位面(目标 Python 文件/类)+当前文档 def 结构(签名类型映射) | 编辑提案(WorkspaceEdit,类尾插方法骨架) |
 | KBEngineReceiverNoneGuardCodeActionProvider | languageProviders.ts:5594 | :1784 | 诊断面(context.diagnostics,code=kbengine.receiverNone)+当前文档文本 | 编辑提案(WorkspaceEdit,包裹式首选+早退式) |
-| KBEngineFixedDictWholeReassignCodeActionProvider | languageProviders.ts:7010 | :2392 | 诊断面(context.diagnostics,code=kbengine.fixedDictNestedMutation)+当前文档文本 | 编辑提案(WorkspaceEdit,经 behaviorLints buildFixedDictWholeReassignEdit 产出整体重赋习语) |
 | HotReloadFileStateCodeLensProvider | hotReloadFileStateLens.ts:43 | :4456 | HotReloadFileStateMachine 派生视图(台账事实源,IDE-HOT-100) | 纯读;状态点点击命令 kbengine.hotReload.showFileState |
 
 命令查询面(非 register\*Provider,同口径记录):符号引用面板 `kbengine.symbolReferences.show` 走 defReferenceGraph 自定义引用图(与 LSP references provider 并存);实体依赖图 `kbengine.dependency.show` 走 dependencyGraph.ts + webview。数据源同为 EntityMappingManager 快照,副作用限于 webview。
@@ -101,7 +102,6 @@
 - 副作用:DiagnosticCollection 发布(诊断面合法出口)。
 - 通道:`onDidChangeTextDocument`(extension.ts:1835)→ `flushQueued()`(:1909,单轮 25ms 时间片,IDE-DIA-006)→ diagnosticScheduler.ts 调度。
 - Python receiver-none 诊断:独立调度 `scheduleReceiverNoneDiagnostics`(extension.ts:660,异步分片 computeReceiverNoneFindingsAsync);诊断带稳定 code(`kbengine.receiverNone`/`kbengine.sectionMismatch`,extension.ts:730 发布处),`KBEngineReceiverNoneGuardCodeActionProvider` 按 code 对账出守卫 QuickFix。
-- 行为知识诊断(C-23):同一条 `scheduleReceiverNoneDiagnostics` 通道还发布 `computeBehaviorLintFindingsAsync`(behaviorLints.ts,纯模块)——三个 code(`kbengine.fixedDictNestedMutation`/`kbengine.destroyedEntityReference`/`kbengine.timerLeakOnDestroy`),规则边界与文案来自 behaviorKnowledge.ts 的结构化知识条目(与 docs/knowledge/traps-index.md 1:1 锁步);FIXED_DICT 根属性名取 EntityMappingManager(`listPropertyDefinitionsForFile`)+types.xml 类型图,解析共享类索引版本键提供器,`KBEngineFixedDictWholeReassignCodeActionProvider` 按 code 对账整体重赋 QuickFix。
 
 ## 4. 共享服务与生命周期所有者
 

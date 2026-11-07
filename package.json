@@ -75,6 +75,7 @@
     "onCommand:kbengine.debug.attach",
     "onCommand:kbengine.debug.attachRemote",
     "onCommand:kbengine.debug.resetAttachMode",
+    "onCommand:kbengine.debug.debugpyInject",
     "onCommand:kbengine.debug.pyspyDump",
     "onCommand:kbengine.debug.pyspyFlamegraph",
     "onCommand:kbengine.remoteServers.select",
@@ -108,6 +109,7 @@
     "onCommand:kbengine.symbolReferences.show",
     "onCommand:kbengine.profile.start",
     "onCommand:kbengine.runtimeQuery.show",
+    "onCommand:kbengine.liveObservation.openExceptionSource",
     "onCommand:kbengine.spaces.query",
     "onCommand:kbengine.compatibility.check",
     "onCommand:kbengine.workbench.show",
@@ -153,6 +155,7 @@
     "onCommand:kbengine.python.showCallChain",
     "onCommand:kbengine.python.selectInterpreter",
     "onCommand:kbengine.python.createVenv",
+    "onCommand:kbengine.python.showEngineSpi",
     "onCommand:kbengine.hotReload.tempEdit.run",
     "onCommand:kbengine.core.showShadowDiffLog",
     "onCommand:kbengine.source.reveal",
@@ -567,6 +570,11 @@
         "category": "KBEngine"
       },
       {
+        "command": "kbengine.debug.debugpyInject",
+        "title": "%kbengine.command.debug.debugpyInject.title%",
+        "category": "KBEngine"
+      },
+      {
         "command": "kbengine.metrics.showSummary",
         "title": "%kbengine.command.metrics.showSummary.title%",
         "category": "KBEngine"
@@ -704,6 +712,10 @@
         "title": "%kbengine.command.runtimeQuery.show.title%"
       },
       {
+        "command": "kbengine.liveObservation.openExceptionSource",
+        "title": "%kbengine.command.liveObservation.openExceptionSource.title%"
+      },
+      {
         "command": "kbengine.spaces.query",
         "title": "%kbengine.command.spaces.query.title%"
       },
@@ -828,6 +840,10 @@
       {
         "command": "kbengine.python.exportTypeStubs",
         "title": "%kbengine.command.python.exportTypeStubs.title%"
+      },
+      {
+        "command": "kbengine.python.showEngineSpi",
+        "title": "%kbengine.command.python.showEngineSpi.title%"
       },
       {
         "command": "kbengine.source.reveal",
@@ -1258,20 +1274,20 @@
           "default": true,
           "markdownDescription": "%kbengine.config.postDestroyDiagnostics.description%"
         },
-        "kbengine.fixedDictNestedMutationDiagnostics": {
+        "kbengine.fixedDictMutationDiagnostics": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "%kbengine.config.fixedDictNestedMutationDiagnostics.description%"
+          "markdownDescription": "%kbengine.config.fixedDictMutationDiagnostics.description%"
         },
         "kbengine.destroyedEntityReferenceDiagnostics": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "%kbengine.config.destroyedEntityReferenceDiagnostics.description%"
         },
-        "kbengine.timerLeakOnDestroyDiagnostics": {
+        "kbengine.timerCleanupDiagnostics": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "%kbengine.config.timerLeakOnDestroyDiagnostics.description%"
+          "markdownDescription": "%kbengine.config.timerCleanupDiagnostics.description%"
         },
         "kbengine.diagnostics.checkUnknownTypes": {
           "type": "boolean",
@@ -1337,11 +1353,6 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "%kbengine.config.hover.typeStorage.description%"
-        },
-        "kbengine.hover.behaviorNotes": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.hover.behaviorNotes.description%"
         },
         "kbengine.hover.implementedBy": {
           "type": "boolean",
@@ -1419,6 +1430,32 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "%kbengine.config.codeLens.typesXml.description%"
+        },
+        "kbengine.codeLens.engineSpi": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.codeLens.engineSpi.description%"
+        },
+        "kbengine.configData": {
+          "type": "object",
+          "default": {
+            "enabled": true,
+            "configDirGlobs": [
+              "scripts/config/**",
+              "scripts/data/config/**",
+              "scripts/data/**"
+            ],
+            "configClassPatterns": [
+              "*Config",
+              "*Data"
+            ],
+            "reloadFunctionPatterns": [
+              "reload*",
+              "hotUpdate*"
+            ],
+            "mutationExclude": []
+          },
+          "markdownDescription": "%kbengine.config.configData.description%"
         },
         "kbengine.inlayHints.typeData": {
           "type": "boolean",
@@ -1513,6 +1550,11 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "%kbengine.config.debug.autoDebugpy.description%"
+        },
+        "kbengine.debug.debugpyInject": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.debug.debugpyInject.description%"
         },
         "kbengine.debug.waitAtStartup": {
           "type": "boolean",
@@ -1789,6 +1831,16 @@
           "type": "string",
           "default": "",
           "markdownDescription": "%kbengine.config.python.stubDir.description%"
+        },
+        "kbengine.python.stubSourceMode": {
+          "type": "string",
+          "enum": ["generated", "real-source"],
+          "default": "generated",
+          "markdownEnumDescriptions": [
+            "%kbengine.config.python.stubSourceMode.enum.0%",
+            "%kbengine.config.python.stubSourceMode.enum.1%"
+          ],
+          "markdownDescription": "%kbengine.config.python.stubSourceMode.description%"
         },
         "kbengine.python.enableMroJump": {
           "type": "boolean",

@@ -427,9 +427,9 @@ describe('ServerControlProvider status rendering', () => {
     expect(byLabel.BaseApp.description).toBe('PID: 4321');
     expect(byLabel.BaseApp.contextValue).toBe('server_baseapp');
     expect(byLabel.BaseApp.tooltip).toContain('BaseApp');
-    expect(byLabel.CellApp.description).toBe('启动中...');
-    expect(byLabel.Logger.description).toBe('停止中...');
-    expect(byLabel.DBMgr.description).toBe('错误');
+    expect(byLabel.CellApp.description).toBe('Starting...');
+    expect(byLabel.Logger.description).toBe('Stopping...');
+    expect(byLabel.DBMgr.description).toBe('Error');
     expect(byLabel.LoginApp.description).toBeUndefined();
   });
 

@@ -48,7 +48,8 @@ const fieldNames = (root: string): string[] =>
   getDatabaseSchemaSnapshot('Hero', root)!.tables[0].fields.map(field => field.name);
 
 describe('2026-10-28 审核整改:SCH-002 缓存根键保留 POSIX 大小写', () => {
-  it('仅大小写不同的两个根各自缓存,同名实体不跨根串缓存', () => {
+  // Windows:仅大小写不同的两个目录无法并存(同一目录),场景不可构造,跳过
+  it.skipIf(process.platform === 'win32')('仅大小写不同的两个根各自缓存,同名实体不跨根串缓存', () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-sch002-'));
     temporaryDirectories.push(base);
     // 同一父目录下仅大小写不同的两个根(POSIX 上是两个真实目录)

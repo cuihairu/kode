@@ -3,22 +3,23 @@ import type { EntityMappingManager, PropertyDefinitionInfo } from './entityMappi
 import { resolveEntityAnnotationType, getWorkspaceRootForDocument } from './definitionWorkspace';
 import { PYTHON_TYPE_STUB_FALLBACK } from './pythonTypeStubs';
 
-// C-22 交付③:def 属性只读视图 inlay(注释锚形态)。Python 侧 __init__ 之前
-// 引擎灌入的 def 属性在源码里不可见;在用户放置的注释锚
-// `# kode:props-from-def` 行尾以一条 inlay 折叠渲染该文件所属实体的 def
-// 属性清单(name: 注解,每段悬停给 def 声明行/域/持久化)。纯渲染层,
-// 不写代码不造第二事实源——属性唯一事实源 = .def(C-22 原则),跳转走
-// 既有属性 F12 同一索引。
+// C-22 交付③(def 属性可视化呈现,重做版):def 属性只读视图 inlay(注释
+// 锚形态)。Python 侧 __init__ 之前引擎灌入的 def 属性在源码里不可见;在
+// 用户放置的整行注释锚 `# kode:props-from-def` 行尾以一条 inlay 渲染该文
+// 件所属实体的 def 根级属性清单(name: 注解,段悬停给 def 声明出处)。纯
+// 渲染层,不写代码不造第二事实源——属性唯一事实源 = .def(C-22 原则),
+// 跳转走既有属性 F12 同一索引,self.<prop> 悬停走既有
+// resolveSelfPropertyAnnotationHover 面(hover 呈现已在本仓库,不重复造)。
 //
 // 口径(诚实面):
 // - 锚 = 整行注释(trim 后以 # 起)且含精确 token `kode:props-from-def`;
-//   代码行/字符串里的同词不触发;
-// - 属性面 = 文件所属实体的 .def 根级声明(FIXED_DICT 子键与组件槽成员
-//   不进总览,各自在访问点有既有 inlay/F12 面);
-// - 无所属实体 / 无属性 / 开关关 → 零 inlay,不推导不猜;
+//   代码行尾注释/字符串里的同词不触发;
+// - 属性面 = 文件所属实体的 .def 根级声明(FIXED_DICT 子键(路径带 .)与
+//   组件槽成员不进总览,各自在访问点有既有 inlay/F12 面);
+// - 无所属实体 / 无根级属性 / 开关关 → 零 inlay,不推导不猜;
 // - 注解链与 hover/stub 同源(resolveEntityAnnotationType),解析落 Any
 //   的属性只显名不带类型,不伪造。
-// 独立开关 kbengine.inlayHints.defProps(默认开),provider 现读配置
+// 独立开关 kbengine.inlayHints.defProps(默认开),provider 现读配置,
 // 下一次渲染即生效,与 defParams 同模式。
 
 /** 锚注释里的精确标记 token */
@@ -37,7 +38,7 @@ export interface DefPropsHintPart {
   tooltip?: string;
 }
 
-/** 一条锚点 inlay 的纯数据形态(provider 层转 vscode.InlayHint) */
+/** 一条锚点 inlay 的纯数据形态(provider 层转 vscode.InlayHint,测试免 vscode 依赖) */
 export interface DefPropsHintItem {
   position: { line: number; character: number };
   parts: DefPropsHintPart[];
@@ -45,7 +46,8 @@ export interface DefPropsHintItem {
 }
 
 /**
- * 提取注释锚:只认整行注释形态。纯函数(文本输入),测试免 vscode 依赖。
+ * 提取注释锚:只认整行注释形态(trim 后以 # 起)。纯函数(文本输入),
+ * 测试免 vscode 依赖;代码行尾注释/字符串字面量里的同词不触发。
  */
 export function findDefPropsAnchorSites(text: string): DefPropsAnchorSite[] {
   const lines = text.split(/\r?\n/);
@@ -72,7 +74,7 @@ const isRootLevelProperty = (property: PropertyDefinitionInfo): boolean => {
   return !propertyPath.includes('.');
 };
 
-/** 段悬停:声明行 + 域 + 持久化(与属性 CodeLens 标题同信息面,不含推断) */
+/** 段悬停:声明出处(文件名:行)+ 域 + 持久化,无域无持久化只剩出处 */
 const partTooltipOf = (property: PropertyDefinitionInfo): string => {
   const fileName = property.defFile.split(/[\\/]/).pop() ?? property.defFile;
   const details = [`${fileName}:${property.line}`];
@@ -86,8 +88,9 @@ const partTooltipOf = (property: PropertyDefinitionInfo): string => {
 };
 
 /**
- * 组装单锚点 inlay:头部段 `def 属性(N)` + 逐属性段 `name: 注解`
- * (Any 落名裸显),段间 ` · ` 分隔。注解链与 hover/stub 同源。
+ * 组装单锚点 inlay:头部段 `def 属性(N)`(悬停=只读视图说明)+ 逐属性段
+ * `name: 注解`(Any 落名裸显),段间 ` · ` 分隔。注解链与 hover/stub 同源。
+ * 根级属性为零 → null(锚行零 inlay)。
  */
 export function buildDefPropsInlayItems(
   site: DefPropsAnchorSite,
@@ -130,7 +133,6 @@ export class DefPropsInlayHintsProvider implements vscode.InlayHintsProvider {
     if (!vscode.workspace.getConfiguration('kbengine').get<boolean>('inlayHints.defProps', true)) {
       return [];
     }
-    const workspaceRoot = getWorkspaceRootForDocument(document) ?? '';
     let properties: PropertyDefinitionInfo[] | null = null;
     try {
       properties = await this.entityMappingManager.listPropertyDefinitionsForFile(document.fileName);
@@ -140,10 +142,11 @@ export class DefPropsInlayHintsProvider implements vscode.InlayHintsProvider {
     if (!properties || properties.length === 0) {
       return [];
     }
+    const workspaceRoot = getWorkspaceRootForDocument(document) ?? '';
     const text = document.getText();
     const hints: vscode.InlayHint[] = [];
     for (const site of findDefPropsAnchorSites(text)) {
-      // inlay 按可视区要:视图口外的锚行不出 hint
+      // inlay 按可视区要:视图口外的锚行不出 hint(批154 同口径)
       if (site.line < range.start.line || site.line > range.end.line) {
         continue;
       }
@@ -151,6 +154,7 @@ export class DefPropsInlayHintsProvider implements vscode.InlayHintsProvider {
       if (!item) {
         continue;
       }
+      // label part 走真实 vscode.InlayHintLabelPart(段悬停给 def 声明出处)
       const hint = new vscode.InlayHint(
         new vscode.Position(item.position.line, item.position.character),
         item.parts.map(part => {

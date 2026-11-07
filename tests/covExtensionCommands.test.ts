@@ -680,6 +680,32 @@ describe('extension 激活链命令面(补测)', () => {
     };
     fire(['kbengine.managedDir']);
     fire(['kbengine.python.stubEngineTypings', 'kbengine.python.entityStubMethods']);
+    // IDE-STUB-001:档位切换同走即时重导(切回 generated 收回真实引擎代码)
+    fire(['kbengine.python.stubSourceMode']);
+  });
+
+  it('onDidChangeConfiguration:stubSourceMode 切档即时重导,generated 收回引擎拼接代码', async () => {
+    // 预置 real-source 时代遗留的拼接产物,切回 generated 后内容比对刷新应重写
+    const stubFile = path.join(root, '.kbengine', 'stubs', 'KBEngine.pyi');
+    fs.mkdirSync(path.dirname(stubFile), { recursive: true });
+    fs.writeFileSync(
+      stubFile,
+      '# KBEngine.pyi — kode generated from the local KBEngine typings checkout.\nclass Entity:\n    id: int\n',
+      'utf8'
+    );
+    configurationOverrides.set('kbengine', { 'python.stubSourceMode': 'generated' });
+    try {
+      workspaceEvents.configurationChanged.fire({
+        affectsConfiguration: (key: string) => key === 'kbengine' || key === 'kbengine.python.stubSourceMode'
+      });
+      await new Promise(resolve => setTimeout(resolve, 50));
+      const rewritten = fs.readFileSync(stubFile, 'utf8');
+      expect(rewritten).not.toContain('generated from the local KBEngine typings checkout');
+      // 精选目录内容(内置符号索引发射)
+      expect(rewritten).toContain('Content source: src/kbeModuleIndex.ts');
+    } finally {
+      configurationOverrides.delete('kbengine');
+    }
   });
 
   it('文档事件面:def/types.xml 编辑失效 schema 缓存,python 开合走诊断与注解释放', () => {
@@ -864,7 +890,10 @@ describe('extension 激活链命令面(补测)', () => {
   it('quickActions:按名执行 / 重扫脚本 / 树数据源', async () => {
     await commands.executeCommand('kbengine.quickActions.runByName', 'missing-action');
     await commands.executeCommand('kbengine.quickActions.scanScripts');
-    const provider = treeRegistrations.find(entry => entry.viewId === 'kbengine.quickActions')?.provider as {
+    // KODE-PERF 视图先行:占位在前、真 provider 在后,取末笔注册(真接管者)
+    const provider = [...treeRegistrations]
+      .reverse()
+      .find(entry => entry.viewId === 'kbengine.quickActions')?.provider as {
       getChildren?: () => unknown[];
     };
     if (provider.getChildren) {
@@ -920,7 +949,10 @@ describe('extension 激活链命令面(补测)', () => {
   });
 
   it('remoteServers 树:getChildren/getTreeItem 面', async () => {
-    const provider = treeRegistrations.find(entry => entry.viewId === 'kbengine.remoteServers')?.provider as {
+    // KODE-PERF 视图先行:取末笔注册(真接管者,非占位)
+    const provider = [...treeRegistrations]
+      .reverse()
+      .find(entry => entry.viewId === 'kbengine.remoteServers')?.provider as {
       getChildren?: () => unknown[];
       getTreeItem?: (element: unknown) => unknown;
     };
@@ -1230,7 +1262,14 @@ describe('extension 激活链命令面(活动 profile 侧)', () => {
     await commands.executeCommand('kbengine.debug.waitAtStartup.off');
   }, 30000);
 
-  it('运行时查询:无运行组件如实提示', async () => {
+  it('运行时查询:无运行组件如实提示', async ctx => {
+    // 环境守卫:本机有真 KBEngine machine daemon(UDP 20086 应答,如 demo 引擎
+    // 在跑)时 discovery 必然找到组件,「无组件如实提示」前提不成立——跳过
+    const { discoverLocalComponents } = await import('../src/kbengineProtocol');
+    const live = await discoverLocalComponents({ timeoutMs: 400 }).catch(() => []);
+    if (live.length > 0) {
+      ctx.skip();
+    }
     await commands.executeCommand('kbengine.profile.start');
     expect(messages.warning.some(message => message.includes('未发现可查询的 KBEngine 组件'))).toBe(true);
     messages.warning.length = 0;

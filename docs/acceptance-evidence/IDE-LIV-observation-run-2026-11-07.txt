@@ -1,0 +1,40 @@
+[LIV] 真机联验开始 2026-11-07T04:44:38.796Z
+发现组件(11): machine(type=8,id=2129652375332859700,pid=484,addr=192.168.5.117:45915); baseappmgr(type=3,id=4129652375332859700,pid=488,addr=192.168.5.117:44995); cellappmgr(type=4,id=5129652375332859700,pid=489,addr=192.168.5.117:47573); dbmgr(type=1,id=3129652375332859700,pid=486,addr=192.168.5.117:48437); cellapp1(type=5,id=7129652375332859700,pid=491,addr=192.168.5.117:48383); cellapp2(type=5,id=7129652375332859799,pid=526,addr=192.168.5.117:45127); baseapp1(type=6,id=6129652375332859700,pid=490,addr=192.168.5.117:45865); loginapp(type=2,id=8129652375332859700,pid=492,addr=192.168.5.117:46823); logger(type=10,id=1129653375331859700,pid=487,addr=192.168.5.117:45087); interfaces(type=13,id=1129652375332859700,pid=485,addr=192.168.5.117:30099); bots(type=11,id=7705282001173020672,pid=530,addr=192.168.5.117:48519)
+[LIV-003] watcher 路径联验 2026-11-07T04:44:40.805Z
+组件身份: cellapp1 (type=5/cellapp, id=7129652375332859700, pid=491, addr=192.168.5.117:48383)
+查询路径: /root → ok=true
+原始帧: type=0 path='root' values={"gametime":9642,"globalOrder":4,"componentID":9007199254740991,"componentType":5,"username":"cui","uid":1000,"entitiesSize":12,"spaceSize":"cui","groupOrder":1,"load":0.0016177324578166008} keys=[]
+原始帧: type=1 path='/root' values={} keys=["cprofiles","ThreadPool","objectPools","syspaths","network","stats"]
+面板行: root/gametime kind=value value=9642
+面板行: root/globalOrder kind=value value=4
+面板行: root/componentID kind=value value=9007199254740991
+面板行: root/componentType kind=value value=5
+面板行: root/username kind=value value=cui
+面板行: root/uid kind=value value=1000
+面板行: root/entitiesSize kind=value value=12
+面板行: root/spaceSize kind=value value=cui
+面板行: root/groupOrder kind=value value=1
+面板行: root/load kind=value value=0.0016177324578166008
+面板行: cprofiles kind=child
+面板行: ThreadPool kind=child
+面板行: objectPools kind=child
+面板行: syspaths kind=child
+面板行: network kind=child
+面板行: stats kind=child
+协议引据: kbe/res/server/messages_fixed_defaults.xml <Cellapp::queryWatcher><id>41002;回包 65502 kbe/src/lib/helper/console_helper.h:11;引擎 https://github.com/kbengine/kbengine@f85ad81
+参考侧(raw socket): type=0 path='root' keys=[] values={"gametime":9642,"globalOrder":4,"componentID":9007199254740991,"componentType":5,"username":"cui","uid":1000,"entitiesSize":12,"spaceSize":"cui","groupOrder":1,"load":0.0016177324578166008}
+LIV-003 对账: 目录键 0 条全部一致; 叶子 10 条(引擎实时计数,逐条 verdict 见证据行)
+LIV-003 结论: 已测,目录键面板↔引擎参考逐路径一致
+[LIV-004] 空间列表联验 2026-11-07T04:44:40.809Z
+查询目标身份: cellappmgr (type=4/cellappmgr, id=5129652375332859700, addr=192.168.5.117:47573)
+空间: spaceID=1 cellappID=7129652375332859700 geomapping=未知 scriptModule=Space cells=未知 → cellapp 对账一致(cellapp1@192.168.5.117:48383)
+协议引据: kbe/res/server/messages_fixed_defaults.xml <Cellappmgr::querySpaces><id>50003;回包 65503 kbe/src/lib/helper/console_helper.h;引擎 https://github.com/kbengine/kbengine@f85ad81
+快照数: 1
+LIV-004 结论: 已测,快照 cellappID 与发现身份逐条对账一致
+LIV-005 结论: 已测; cellapp1 (type=5, id=7129652375332859700) gametime=9642 与 cellapp2 (type=5, id=7129652375332859799) gametime=9643 分属 5:7129652375332859700/5:7129652375332859799 两桶,零混值
+LIV-006 结论: 已测; live(实时(最近成功读数 2026-11-07T04:44:40.816Z)) → 断连(过期(断连于 2026-11-07T04:44:40.817Z,连续失败 1 轮);当前显示 2026-11-07T04:44:40.816Z 的旧值,重连成功前不转实时) → 恢复(实时(最近成功读数 2026-11-07T04:44:40.818Z))
+LIV-007 引擎日志来源: cellapp.out File "/mnt/c/work/liv-run/scripts/cell/Avatar.py", line 21, in onTimer
+LIV-007 解析: file=/mnt/c/work/liv-run/scripts/cell/Avatar.py line=21 qualifier=traceback
+LIV-007 结论: 已测; /mnt/c/work/liv-run/scripts/cell/Avatar.py:21 → /home/cui/liv-ws/scripts/cell/Avatar.py 光标行=21(1 基)
+LIV-007 无源码面: 异常文件行 scripts/base/LIV7Ghost.py:9 在当前工作区未找到源码,原始信息:File "scripts/base/LIV7Ghost.py", line 9, in nowhere
+[LIV] 真机联验结束 2026-11-07T04:44:41.703Z

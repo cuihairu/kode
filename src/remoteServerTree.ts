@@ -5,6 +5,7 @@
  */
 
 import * as vscode from 'vscode';
+import { l10nText } from './nlsRuntime';
 import type { SshHostEntry } from './sshConfig';
 import type { SshHostsSnapshot } from './remoteConnection';
 
@@ -53,7 +54,7 @@ export function buildRemoteServerNodes(
 
 export class RemoteServerTreeItem extends vscode.TreeItem {
   constructor(node: RemoteServerNode) {
-    const label = node.kind === 'local' ? '本地(直接执行)' : node.id;
+    const label = node.kind === 'local' ? l10nText('Local (direct execution)') : node.id;
     super(label, vscode.TreeItemCollapsibleState.None);
     this.id = node.id;
     this.iconPath = new vscode.ThemeIcon(
@@ -61,27 +62,31 @@ export class RemoteServerTreeItem extends vscode.TreeItem {
     );
     this.contextValue = `remote-server-${node.kind}`;
     const detail = node.kind === 'local'
-      ? '默认:命令在本机跑'
+      ? l10nText('Default: commands run on this machine')
       : node.entry?.hostname && node.entry.hostname !== node.id
         ? `${node.entry.hostname}${node.entry.port ? `:${node.entry.port}` : ''}`
         : '';
-    this.description = [node.selected ? '✓ 已选' : '', detail, node.entry?.proxyJump ? `跳板 ${node.entry.proxyJump}` : '']
+    this.description = [node.selected ? l10nText('✓ selected') : '', detail, node.entry?.proxyJump ? l10nText('jump {host}', { host: node.entry.proxyJump }) : '']
       .filter(part => part.length > 0)
       .join(' · ');
     this.tooltip = [
-      node.kind === 'local' ? '本地:debug 与 py-spy 在本机直接执行' : `ssh 主机:${node.id}`,
+      node.kind === 'local'
+        ? l10nText('Local: debug and py-spy run directly on this machine')
+        : l10nText('ssh host: {host}', { host: node.id }),
       node.entry?.hostname ? `HostName ${node.entry.hostname}` : '',
       node.entry?.user ? `User ${node.entry.user}` : '',
       node.entry?.port ? `Port ${node.entry.port}` : '',
       node.entry?.proxyJump ? `ProxyJump ${node.entry.proxyJump}` : '',
-      node.kind === 'manual' ? '手动添加项(右键可移除)' : '',
-      node.selected ? '当前选中:debug/py-spy 分派目标' : '点击切换为分派目标'
+      node.kind === 'manual' ? l10nText('Manually added (right-click to remove)') : '',
+      node.selected
+        ? l10nText('Currently selected: debug/py-spy dispatch target')
+        : l10nText('Click to switch dispatch target')
     ]
       .filter(line => line.length > 0)
       .join('\n');
     this.command = {
       command: 'kbengine.remoteServers.select',
-      title: 'Select Remote Server',
+      title: l10nText('Select Remote Server'),
       arguments: [node.id]
     };
   }

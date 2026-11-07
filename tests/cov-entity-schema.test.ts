@@ -252,12 +252,15 @@ describe('entityTypeStubs 守卫分支', () => {
     folders();
     const writes = new Map<string, string>();
     const made: string[] = [];
+    // pyright: { candidates: [] }:守卫分支单元测试不依赖环境里有没有
+    // pyright/npx CLI(缺省装配会真起子进程探测,满载下被挤出 5s 超时,
+    // CI flake 源);缺省装配本身的校验面由 pyrightStubGate.test.ts 专测。
     const written = await exportEntityTypeStubs(stubManager, {
       exists: () => true,
       readFile: () => { throw new Error('EACCES'); },
       writeFile: (file, content) => { writes.set(file, content); },
       mkdir: dir => { made.push(dir); }
-    }, { listMappings: () => [stubMapping] });
+    }, { listMappings: () => [stubMapping], pyright: { candidates: [] } });
     expect(written).toEqual(['estub']);
     expect(made).toHaveLength(1);
     expect([...writes.keys()].some(file => file.endsWith('entity_types.pyi'))).toBe(true);
@@ -271,7 +274,7 @@ describe('entityTypeStubs 守卫分支', () => {
       readFile: file => writes.get(file) ?? '',
       writeFile: (file, content) => { writes.set(file, content); },
       mkdir: () => undefined
-    }, { listMappings: () => [stubMapping] });
+    }, { listMappings: () => [stubMapping], pyright: { candidates: [] } });
     expect(first).toEqual(['estub']);
     const target = [...writes.keys()].find(file => file.endsWith('entity_types.pyi'))!;
     const made = vi.fn();
@@ -280,7 +283,7 @@ describe('entityTypeStubs 守卫分支', () => {
       readFile: () => writes.get(target)!,
       writeFile: () => { throw new Error('must not rewrite'); },
       mkdir: made
-    }, { listMappings: () => [stubMapping] });
+    }, { listMappings: () => [stubMapping], pyright: { candidates: [] } });
     expect(second).toEqual([]); // 内容未变:静默跳过
     expect(made).not.toHaveBeenCalled();
   });
@@ -889,7 +892,8 @@ describe('entityMapping 散点分支', () => {
     expect(logs).toContain('全项目回退');
   });
 
-  it('不可读目录被静默跳过:其中的方法不参与全局回退', async () => {
+  // Windows:chmod 000 不产生读权限缺失(EACCES 前提不成立),跳过
+  it.skipIf(process.platform === 'win32')('不可读目录被静默跳过:其中的方法不参与全局回退', async () => {
     // scripts/noperm chmod 000:walk 层 readdir 失败即跳过该目录
     expect(await manager!.resolveMethodImplementationGlobally('hidden')).toBeNull();
   });

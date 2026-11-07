@@ -1,4 +1,4 @@
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
@@ -49,7 +49,10 @@ describe('全仓服务生命周期归装配层(IDE-ARC-005)', () => {
   });
 
   it('languageProviders 不再私建 watcher(全仓 watch 只住装配线模块)', () => {
-    const source = readFileSync(join(root, 'src/languageProviders.ts'), 'utf8');
+    // KODE-ARCH-001:拆分后源文本锁覆盖 barrel + 全部子模块
+    const lpSources = ['src/languageProviders.ts',
+      ...readdirSync(join(root, 'src/languageProviders')).filter(f => f.endsWith('.ts')).map(f => `src/languageProviders/${f}`)];
+    const source = lpSources.map(p => readFileSync(join(root, p), 'utf8')).join('\n');
     expect(source.includes('createFileSystemWatcher'), 'provider 面不得私建全仓 watcher').toBe(false);
   });
 
@@ -60,7 +63,10 @@ describe('全仓服务生命周期归装配层(IDE-ARC-005)', () => {
     // impl 实例(含事件订阅)也进 subscriptions,不是只推注册面
     expect(extension.includes('context.subscriptions.push(typesXmlCodeLensProvider, typesXmlCodeLensProviderImpl)')).toBe(true);
     // 共享索引全仓只此一处构造,ensureStarted 只由装配层启动
-    const sources = ['src/extension.ts', 'src/languageProviders.ts', 'src/eventApi.ts'];
+    // (KODE-ARCH-001:languageProviders 源面含拆分子模块)
+    const sources = ['src/extension.ts', 'src/languageProviders.ts',
+      ...readdirSync(join(root, 'src/languageProviders')).filter(f => f.endsWith('.ts')).map(f => `src/languageProviders/${f}`),
+      'src/eventApi.ts'];
     for (const relative of sources) {
       const text = readFileSync(join(root, relative), 'utf8');
       const constructions = (text.match(/new WorkspaceIndex\(/g) ?? []).length;

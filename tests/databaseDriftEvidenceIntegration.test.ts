@@ -20,6 +20,9 @@ import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { messages, windowState } from './fake-vscode/windowState';
 import { configurationOverrides, workspace } from './fake-vscode/workspaceState';
 import { Uri, type ExtensionContext } from './fake-vscode/core';
+import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
+import { makeContractGate } from './helpers/configCoreContract';
 
 // IDE-REV-020 漂移校验证据接线:真实执行(checked=true)才落证据——queried
 // 面写实查摘要,simulated 面明示 def 推导基准不冒充实测;未校验不落;版本
@@ -286,6 +289,11 @@ describe('kbengine.database.showDriftEvidence 命令(activate 真装配)', () =>
     writeEngineDefaults(await freePort());
     activateWith(memento);
     await new Promise(resolve => setTimeout(resolve, 100));
+    // KODE-CFG-009:连接读值消费 core 解析缓存(`$/kode/config/resolve`)——
+    // activate 装配覆写门,契约门替身只能在其后装;装好后清缓存再刷新消费态
+    setKodeCoreShadowGate(makeContractGate([]));
+    resetConfigResolveForTests();
+    await ensureConfigResolved();
 
     await commands.executeCommand('kbengine.database.checkDrift', 'Hero');
 
@@ -296,7 +304,7 @@ describe('kbengine.database.showDriftEvidence 命令(activate 真装配)', () =>
   });
 
   it('源锁:漂移两命令都接线 appendDriftEvidenceForReport,保存与重查命令在册', () => {
-    const extensionSource = readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const extensionSource = readFileSync(path.join(__dirname, '..', 'src', 'databaseWiring.ts'), 'utf8');
     expect(extensionSource.split('appendDriftEvidenceForReport(report);').length - 1).toBe(2);
     expect(extensionSource).toContain('driftEvidenceStore.save(evidence)');
     expect(extensionSource).toContain("'kbengine.database.showDriftEvidence'");

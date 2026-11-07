@@ -10,6 +10,12 @@ import {
   type SpaceQueryResult,
   type WatcherQueryResult
 } from './kbengineProtocol';
+import {
+  createObservationFreshnessTracker,
+  type ObservationFreshnessTracker,
+  type ObservationFreshnessState
+} from './observationConnectionState';
+import { observationTargetFor } from './observationIdentity';
 
 export interface RuntimeQueryProtocol {
   discoverComponents(timeoutMs?: number): Promise<KBEngineComponentInfo[]>;
@@ -144,6 +150,13 @@ type RuntimeQueryError =
   | { kind: 'watcher'; componentKey: string; message: string }
   | { kind: 'watchList'; message: string };
 
+/** 流式轮询的新鲜度状态(面板展示;过期=断连后旧值,恢复以真实成功为准) */
+export interface RuntimeFreshnessState {
+  state: ObservationFreshnessState;
+  targetKey: string;
+  text: string;
+}
+
 export class RuntimeQueryWebView {
   private panel: vscode.WebviewPanel | null = null;
   private components: KBEngineComponentInfo[] = [];
@@ -152,6 +165,7 @@ export class RuntimeQueryWebView {
   private streaming = false;
   private streamTimer: NodeJS.Timeout | null = null;
   private streamComponent: KBEngineComponentInfo | null = null;
+  private freshnessTracker: ObservationFreshnessTracker = createObservationFreshnessTracker();
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -297,6 +311,10 @@ export class RuntimeQueryWebView {
       clearInterval(this.streamTimer);
       this.streamTimer = null;
     }
+    // 主动停流不是断连:清掉新鲜度痕迹,下次开流从干净状态起步
+    if (this.streamComponent) {
+      this.freshnessTracker.reset(observationTargetFor(this.streamComponent).targetKey);
+    }
     this.streaming = false;
     this.streamComponent = null;
   }
@@ -306,15 +324,20 @@ export class RuntimeQueryWebView {
     if (!component || !this.streaming) return;
     const paths = [...this.watchPaths];
     if (paths.length === 0) return;
+    const target = observationTargetFor(component);
     try {
       const frames = await Promise.all(
         paths.map(path => this.protocol.queryWatcherPath(component, path, 1200))
       );
       if (!this.streaming) return; // 面板已关/已停则不回灌过期状态
+      // 真实成功一轮才恢复实时(LIV-006)
+      this.freshnessTracker.recordRound(target, true);
       this.error = null;
       this.postState({ watcherRows: watcherResultRows(frames.flat()) });
     } catch (error) {
       if (!this.streaming) return;
+      // 断连:旧值保留但标过期,重连成功前不转实时(LIV-006)
+      this.freshnessTracker.recordRound(target, false);
       this.error = { kind: 'watchList', message: errorMessage(error) };
       this.postState();
     }
@@ -359,11 +382,30 @@ export class RuntimeQueryWebView {
       error: this.error,
       watchPaths: [...this.watchPaths],
       streaming: this.streaming,
+      freshness: this.freshnessView(),
       result: {
         spaces: toSpaceView(result.spaces),
         watcherRows: result.watcherRows ?? []
       }
     });
+  }
+
+  /** 流式目标的新鲜度视图(过期=旧值仍显示但明确标记,恢复以真实成功为准) */
+  private freshnessView(): RuntimeFreshnessState | null {
+    if (!this.streamComponent) return null;
+    const target = observationTargetFor(this.streamComponent);
+    const freshness = this.freshnessTracker.view(target.targetKey);
+    if (!freshness) return null;
+    const t = strings(resolvePanelLocale()).runtimeQuery;
+    const text =
+      freshness.state === 'stale'
+        ? t.freshnessStale(
+            freshness.lastFailureAt ?? '?',
+            freshness.consecutiveFailures,
+            freshness.lastSuccessAt
+          )
+        : t.freshnessLive(freshness.lastSuccessAt ?? '?');
+    return { state: freshness.state, targetKey: target.targetKey, text };
   }
 
   private render(): string {
@@ -399,6 +441,8 @@ body { padding: 0; }
 #watcher-result td, #spaces-result td { padding: 6px 14px; border-bottom: 1px solid var(--kode-border-soft); font-family: var(--kode-mono); font-size: 12px; color: var(--kode-fg-2); }
 #watcher-result td.path, #spaces-result td.path { color: var(--kode-fg); }
 #message { padding: 6px 14px; color: var(--kode-err); font-size: var(--kode-t-meta); min-height: 1.2em; }
+#freshness { padding: 2px 14px; font-size: var(--kode-t-meta); min-height: 1.2em; color: var(--kode-fg-3); }
+#freshness.stale { color: var(--kode-err); }
 #spaces-result td.path { color: var(--kode-fg); }
 .rt-empty { padding: 40px 0; text-align: center; color: var(--kode-fg-4); font-size: var(--kode-t-meta); }
 </style>
@@ -437,6 +481,7 @@ body { padding: 0; }
         <button id="tab-spaces" class="rt-tab" type="button">${t.spacesTab}</button>
       </div>
       <output id="message" aria-live="polite"></output>
+      <output id="freshness" aria-live="polite"></output>
       <section class="rt-pane" id="pane-watcher">
         <table id="watcher-result" hidden class="kode-table">
           <caption hidden>${t.watcherTab}</caption>
@@ -478,6 +523,7 @@ body { padding: 0; }
     const component = document.getElementById('component');
     const path = document.getElementById('path');
     const message = document.getElementById('message');
+    const freshness = document.getElementById('freshness');
     const watcherTable = document.getElementById('watcher-result');
     const watcherBody = document.getElementById('watcher-result').querySelector('tbody');
     const spacesTable = document.getElementById('spaces-result');
@@ -552,6 +598,9 @@ body { padding: 0; }
       if (state.components.some(item => item.key === selected)) component.value = selected;
       const error = state.error ? state.error.kind + ': ' + state.error.message : '';
       message.textContent = error;
+      const freshnessView = state.freshness || null;
+      freshness.textContent = freshnessView ? freshnessView.text : '';
+      freshness.className = freshnessView && freshnessView.state === 'stale' ? 'stale' : '';
       renderWatchers(state.result ? state.result.watcherRows || [] : []);
       renderSpaces(state.result ? state.result.spaces || [] : []);
       const watchPaths = state.watchPaths || [];

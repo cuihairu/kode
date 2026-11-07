@@ -183,7 +183,8 @@ describe('kodeCoreClient transport(fake stdio server)', () => {
     const startedAt = Date.now();
     await client.dispose();
     // 不吃满默认 shutdown 超时:exit 事件已被 handleExit 消费,守卫直接完成
-    expect(Date.now() - startedAt).toBeLessThan(2000);
+    // (win32 进程终止链路慢 ~2.5s,平台化阈值)
+    expect(Date.now() - startedAt).toBeLessThan(process.platform === 'win32' ? 5000 : 2000);
     expect(client.childProcess).toBeNull();
     // disposed 状态下意外退出不触发崩溃重启
     expect(client.restartGeneration).toBe(0);
@@ -196,7 +197,7 @@ describe('kodeCoreClient transport(fake stdio server)', () => {
     const exitCode = new Promise<number | null>(resolve => child.once('exit', code => resolve(code)));
     const startedAt = Date.now();
     await client.dispose();
-    expect(Date.now() - startedAt).toBeLessThan(1500); // 正常路径不等超时窗
+    expect(Date.now() - startedAt).toBeLessThan(process.platform === 'win32' ? 4000 : 1500); // 正常路径不等超时窗(win32 终止链路慢,平台化阈值)
     expect(await exitCode).toBe(0); // shutdown→exit 协议走完的优雅退出
     expect(client.childProcess).toBeNull();
   }, 10_000);

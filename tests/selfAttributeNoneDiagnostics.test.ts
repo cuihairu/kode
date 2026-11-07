@@ -23,7 +23,7 @@ describe('自管属性可能为 None 诊断(用户令 2026-11-02)', () => {
     const findings = computeSelfAttributeNoneFindings(source);
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({ attr: 'TalentTree', member: 'get', line: 4 });
-    expect(findings[0].message).toContain('可能为 None');
+    expect(findings[0].message).toContain('may be None');
   });
 
   it('守卫窄化:if self.X is None: self.X = expr → 其后不报', () => {

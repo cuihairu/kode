@@ -34,8 +34,6 @@ export class CodeLens {
 
 // inlay hints 替身(批154 类型 inlay 用):只保留构造面,断言读字段即可
 export class InlayHint {
-  // C-22 def 属性只读视图:行尾锚 hint 带左内边距,与真实 API 同字段面
-  paddingLeft?: boolean;
   constructor(
     public readonly position: Position,
     public readonly label: unknown,
@@ -43,10 +41,13 @@ export class InlayHint {
   ) {}
 }
 
-// label part 替身(C-22):真实 API 的 value + tooltip 最小面
+// inlay label part 替身(C-22 def 属性只读视图用):真实 API 字段名是 value
 export class InlayHintLabelPart {
+  value: string;
   tooltip?: unknown;
-  constructor(public readonly value: string) {}
+  constructor(value: string) {
+    this.value = value;
+  }
 }
 
 export enum InlayHintKind {
@@ -97,6 +98,10 @@ export class Uri {
     // 带自定义 scheme 的虚拟 URI(如 kbengine-db-schema:/Hero.schema):
     // scheme 单独记账,剩余部分作为 fsPath/path 供文档定位使用;
     // query(若有)与 path 分开记账,避免把 ?root=… 吃进 path。
+    // file:// 前缀(toString 的 file 面输出)剥离后按 file 面处理。
+    if (value.startsWith('file://')) {
+      return Uri.splitQuery(value.slice('file://'.length), 'file');
+    }
     const match = URI_SCHEME_PATTERN.exec(value);
     if (match && match[1] !== 'file') {
       return Uri.splitQuery(value.slice(match[0].length), match[1]);
@@ -130,8 +135,11 @@ export class Uri {
 
   toString(): string {
     const query = this.query ? `?${this.query}` : '';
-    // 真机 vscode.Uri.toString() 含 scheme;file 面保持纯路径,不动既有断言。
-    return this.scheme === 'file' ? `${this.fsPath}${query}` : `${this.scheme}:${this.fsPath}${query}`;
+    // 真机 vscode.Uri.toString() 恒含 scheme;file 面补 file:// 前缀,
+    // 否则 Windows 纯路径 `C:\…` 会被 normalizeDocumentKey 当成 scheme 'C:'。
+    return this.scheme === 'file'
+      ? `file://${this.fsPath}${query}`
+      : `${this.scheme}:${this.fsPath}${query}`;
   }
 }
 
@@ -443,7 +451,9 @@ export const debug = {
 export class ThemeIcon {
   static readonly File = new ThemeIcon('file');
   static readonly Folder = new ThemeIcon('folder');
-  constructor(public readonly id: string) {}
+  // KB-GC-001:真实 vscode.ThemeIcon 支持第二参 ThemeColor(树项红色标记),
+  // 替身同形记 color,测试断言 color.id。
+  constructor(public readonly id: string, public readonly color?: ThemeColor) {}
 }
 
 export class TreeItem {

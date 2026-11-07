@@ -13,6 +13,7 @@
  */
 
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
+import { l10nText } from './nlsRuntime';
 
 export type RustCall<T> =
   | { status: 'ok'; result: T }
@@ -92,8 +93,8 @@ export interface RuffLintCommandDeps {
   channel: { appendLine(line: string): void; show(preserveFocus?: boolean): void };
 }
 
-const INSTALL_ACTION = '安装(Install via pip)';
-const MANUAL_ACTION = '手动安装命令(Show command)';
+const INSTALL_ACTION = l10nText('Install (via pip)');
+const MANUAL_ACTION = l10nText('Show manual install command');
 
 /**
  * `kbengine.python.ruffLint`:lint 工作区 .py 并发布诊断。缺 ruff → 同意式
@@ -103,11 +104,14 @@ const MANUAL_ACTION = '手动安装命令(Show command)';
 export async function runRuffLintCommand(deps: RuffLintCommandDeps): Promise<string> {
   const files = await deps.getWorkspacePythonFiles();
   if (files.length === 0) {
-    return '工作区没有 .py 文件(未执行 ruff lint)。';
+    return l10nText('No .py files in the workspace (ruff lint not executed).');
   }
   if (files.length > RUFF_MAX_FILES) {
     deps.setDiagnostics([]);
-    return `工作区 .py 文件 ${files.length} 个,超单次上限 ${RUFF_MAX_FILES}(Rust 侧有界拒绝);请缩小范围分批执行。`;
+    return l10nText(
+      'Workspace has {count} .py files, above the single-run limit {limit} (bounded rejection on the Rust side); narrow the scope and run in batches.',
+      { count: files.length, limit: RUFF_MAX_FILES }
+    );
   }
 
   const interpreter = deps.getInterpreterPath();
@@ -117,7 +121,10 @@ export async function runRuffLintCommand(deps: RuffLintCommandDeps): Promise<str
   if (call.status === 'ok' && !call.result.available) {
     // 缺 ruff:同意式安装,绝不静默装。
     const choice = await deps.showInformationMessage(
-      `未找到 ruff(.py lint 不可用)。用选定解释器 pip 安装?${interpreter ? '' : '(未选定解释器,先选)'}`,
+      l10nText(
+        'ruff not found (.py lint unavailable). Install via pip with the selected interpreter?{suffix}',
+        { suffix: interpreter ? '' : l10nText(' (no interpreter selected; pick one first)') }
+      ),
       INSTALL_ACTION,
       MANUAL_ACTION
     );
@@ -125,37 +132,40 @@ export async function runRuffLintCommand(deps: RuffLintCommandDeps): Promise<str
       const cmd = interpreter
         ? installCommandText(interpreter)
         : 'python3 -m pip install ruff';
-      deps.channel.appendLine(`[ruff] 手动安装命令:\n  ${cmd}`);
+      deps.channel.appendLine(l10nText('[ruff] manual install command: {cmd}', { cmd: `\n  ${cmd}` }));
       deps.channel.show(true);
-      return `手动安装命令已显示(输出通道):${cmd}`;
+      return l10nText('Manual install command shown (output channel): {cmd}', { cmd });
     }
     if (choice === INSTALL_ACTION && interpreter) {
-      deps.channel.appendLine(`[ruff] ${installCommandText(interpreter)} 安装中…`);
+      deps.channel.appendLine(l10nText('[ruff] {cmd} installing…', { cmd: installCommandText(interpreter) }));
       const install = await deps.runPipInstall(interpreter);
-      deps.channel.appendLine(install.output.trim() || '[ruff] pip 无输出。');
+      deps.channel.appendLine(install.output.trim() || l10nText('[ruff] pip produced no output.'));
       if (!install.ok) {
         const manual = installCommandText(interpreter);
         await deps.showErrorMessage(
-          `ruff 安装失败,请手动执行(输出通道有 pip 完整日志):${manual}`
+          l10nText(
+            'ruff install failed; run it manually (the output channel has the full pip log): {cmd}',
+            { cmd: manual }
+          )
         );
-        deps.channel.appendLine(`[ruff] 安装失败。请手动执行:\n  ${manual}`);
+        deps.channel.appendLine(l10nText('[ruff] install failed. Run it manually: {cmd}', { cmd: `\n  ${manual}` }));
         deps.channel.show(true);
-        return `ruff 安装失败;手动命令已亮出:${manual}`;
+        return l10nText('ruff install failed; manual command shown: {cmd}', { cmd: manual });
       }
-      deps.channel.appendLine('[ruff] 安装完成,复检可用性…');
+      deps.channel.appendLine(l10nText('[ruff] install finished; re-checking availability…'));
       call = await runRuffLint(files, ruffExePathForInterpreter(interpreter));
     }
   }
 
   if (call.status === 'no-gate') {
-    return 'ruff lint 需要 Rust 后端(kode-server)可用:请检查 kode-core server 配置。';
+    return l10nText('ruff lint requires the Rust backend (kode-server) to be available: check the kode-core server configuration.');
   }
   if (call.status === 'error') {
-    await deps.showErrorMessage(`ruff lint 失败:${call.reason}`);
-    return `ruff lint 失败:${call.reason}`;
+    await deps.showErrorMessage(l10nText('ruff lint failed: {reason}', { reason: call.reason }));
+    return l10nText('ruff lint failed: {reason}', { reason: call.reason });
   }
   if (!call.result.available) {
-    return 'ruff 不可用(未安装/未选定解释器);未执行 lint。';
+    return l10nText('ruff unavailable (not installed / no interpreter selected); lint not executed.');
   }
 
   const byFile = new Map<string, RuffDiag[]>();
@@ -169,8 +179,16 @@ export async function runRuffLintCommand(deps: RuffLintCommandDeps): Promise<str
   }
   deps.setDiagnostics([...byFile.entries()].map(([file, diags]) => ({ file, diags })));
   const errors = call.result.diags.filter(d => d.severity === 'error').length;
-  return `ruff ${call.result.version ?? ''} lint 完成:${files.length} 文件,` +
-    `${call.result.diags.length} 条(warning ${call.result.diags.length - errors}/error ${errors})。`;
+  return l10nText(
+    'ruff {version} lint finished: {count} files, {total} finding(s) (warning {warnings}/error {errors}).',
+    {
+      version: call.result.version ?? '',
+      count: files.length,
+      total: call.result.diags.length,
+      warnings: call.result.diags.length - errors,
+      errors
+    }
+  );
 }
 
 /**
@@ -180,22 +198,28 @@ export async function runRuffLintCommand(deps: RuffLintCommandDeps): Promise<str
 export async function runInstallRuffCommand(deps: RuffLintCommandDeps): Promise<string> {
   const interpreter = deps.getInterpreterPath();
   if (!interpreter) {
-    await deps.showErrorMessage('未选定 Python 解释器;先运行「Select Python Interpreter」再装 ruff。');
-    return '未选定解释器,未安装。';
+    await deps.showErrorMessage(
+      l10nText('No Python interpreter selected; run Select Python Interpreter before installing ruff.')
+    );
+    return l10nText('No interpreter selected; not installed.');
   }
   const manual = installCommandText(interpreter);
-  deps.channel.appendLine(`[ruff] ${manual} 安装中…`);
+  deps.channel.appendLine(l10nText('[ruff] {cmd} installing…', { cmd: manual }));
   deps.channel.show(true);
   const install = await deps.runPipInstall(interpreter);
-  deps.channel.appendLine(install.output.trim() || '[ruff] pip 无输出。');
+  deps.channel.appendLine(install.output.trim() || l10nText('[ruff] pip produced no output.'));
   if (!install.ok) {
-    await deps.showErrorMessage(`ruff 安装失败,请手动执行(输出通道有 pip 完整日志):${manual}`);
-    deps.channel.appendLine(`[ruff] 安装失败。请手动执行:\n  ${manual}`);
+    await deps.showErrorMessage(
+      l10nText('ruff install failed; run it manually (the output channel has the full pip log): {cmd}', { cmd: manual })
+    );
+    deps.channel.appendLine(l10nText('[ruff] install failed. Run it manually: {cmd}', { cmd: `\n  ${manual}` }));
     deps.channel.show(true);
-    return `ruff 安装失败;手动命令已亮出:${manual}`;
+    return l10nText('ruff install failed; manual command shown: {cmd}', { cmd: manual });
   }
   const probe = await runRuffLint([], ruffExePathForInterpreter(interpreter));
   const version =
-    probe.status === 'ok' && probe.result.available ? (probe.result.version ?? '已安装') : '未检出';
-  return `ruff 安装完成(${version});可运行「Ruff Lint Python Files」。`;
+    probe.status === 'ok' && probe.result.available
+      ? (probe.result.version ?? l10nText('installed'))
+      : l10nText('not detected');
+  return l10nText('ruff installed ({version}); you can now run Ruff Lint Python Files.', { version });
 }

@@ -169,7 +169,8 @@ describe('syncJsoncAssociation(装配层)', () => {
     expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(1);
     expect(workspaceState.workspaceConfigurationUpdates[0].scope).toBe(vscode.ConfigurationTarget.Workspace);
     expect(workspaceState.workspaceConfigurationUpdates[0].folder).toBeUndefined();
-    expect(memento.get(`${JSONC_ASSOCIATION_MANAGED_KEY}:/ws.code-workspace`)).toBe('jsonc');
+    // WIN-3:workspaceIdentity 走 Uri.toString()(现与真机一致含 file:// 前缀)
+    expect(memento.get(`${JSONC_ASSOCIATION_MANAGED_KEY}:${Uri.file('/ws.code-workspace').toString()}`)).toBe('jsonc');
     expect(memento.size).toBe(1);
     stubWorkspace.workspaceFolders = [];
     delete (stubWorkspace as Record<string, unknown>).workspaceFile;

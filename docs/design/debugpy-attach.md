@@ -1,11 +1,17 @@
 # debugpy Early-Attach Design (Proposal)
 
-> Status: **proposal, not implemented** (green-lit by the user on 2026-11-03).
-> This document describes only feasible approaches and their automation shape
-> under the "no engine changes" premise; all engine references anchor to
-> `kbengine@c2a3b8f`, with `kbe/src` `file:line` citations from source.
-> **Nothing has been delivered as an implementation; nothing is dressed up as
-> implemented.**
+> Status: **implemented in three landings** — option ② shipped as the one-shot
+> command `kbengine.debug.debugpyInject` (KODE-DBG-001, gated by
+> `kbengine.debug.debugpyInject`, default on; src/debugpyInjectCommand.ts,
+> tests/debugpyInjectCommand.test.ts); option ① shipped as the
+> `kbengine.debug.waitAtStartup` bootstrap (`waitAtStartup.on/off` commands,
+> src/debugpyWaitAtStartup.ts); the surrounding automation — per-process port
+> allocation, launch.json attach-config generation, the
+> not-injected/listening/attached/failed state board — shipped earlier as
+> IDE-DBG-001..008 and IDE-PDBG-001..006. Option ③ (`debugpy --pid`) remains
+> intentionally unused. All engine references below anchor to
+> `kbengine@c2a3b8f`, with `kbe/src` `file:line` citations from source; the
+> original proposal text is kept as the design record.
 
 ## Goal
 

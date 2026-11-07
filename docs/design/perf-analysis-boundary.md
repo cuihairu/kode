@@ -40,6 +40,24 @@
 - Boundary: **single process, single shot, plain-text stack**. No sampling
   period, no aggregation, no visualization.
 
+### 2b. Flamegraph / timed collection: py-spy record (IDE-PYSPY-001, landed
+2026-11-07 — moved here from "not done")
+
+- Entry: Servers tree `$(flame)` icon / command `kbengine.debug.pyspyFlamegraph`.
+- Data path: `src/pyspyDump.ts` — `runPyspyRecord` runs
+  `py-spy record --format flamegraph` with frictionless defaults
+  (`PYSPY_RECORD_DEFAULTS`: 10 s window, 100 samples/s, `--nonblocking` never
+  pausing the target; timeout = window + 15 s grace); `runPyspySchedule`
+  implements "collect X times every N seconds" (per-run
+  `flame-<timestamp>-<index>.svg`, any failure stops the run and keeps the
+  files already collected; sleep/now injected, tests never really sleep).
+- Display: a successful collect opens the SVG in the editor (VS Code native
+  image preview); per-run results and the summary go to the `KBEngine py-spy`
+  output channel — no separate webview was built.
+- Boundary: **local only** — a remote dispatch says so honestly and suggests
+  `dump` for call stacks (remote file retrieval is a follow-up); the record
+  output is a static SVG per run, not a time series.
+
 ### 3. Engine runtime query: telnet watcher surface (general queries, not dedicated profiling)
 
 - `src/runtimeQueryWebView.ts` queries arbitrary watcher paths and the space
@@ -57,25 +75,29 @@
 - Baseline suite: `tests/perf/*.bench.ts` + `docs/perf/` (v0.2 baseline etc.),
   all targeting the extension's own overhead.
 
-## Not done (explicitly outside the current state)
+## Not done (explicitly outside the current state; rechecked 2026-11-07)
 
 | Capability | Status | Tracking |
 |---|---|---|
-| py-spy record flamegraph (`--format flamegraph` SVG) | Not implemented (no `record`/`flamegraph` references in the repo) | IDE-PYSPY-001; shape investigated (pending-feature-shapes.md §3) |
-| Timed/periodic collection (sample X times every N seconds) | Not implemented | Same IDE-PYSPY-001 entry |
-| Webview display of flamegraph/sampling results | Not implemented | Same IDE-PYSPY-001 entry (proposed along the `runtimeQueryWebView` pattern) |
+| ~~py-spy record flamegraph (`--format flamegraph` SVG)~~ | **Done 2026-11-07** (IDE-PYSPY-001, `runPyspyRecord`/`pyspyFlamegraph`) — see §2b | Closed by IDE-PYSPY-001 |
+| ~~Timed/periodic collection (sample X times every N seconds)~~ | **Done 2026-11-07** (same landing, `runPyspySchedule`) | Closed by IDE-PYSPY-001 |
+| ~~Webview display of flamegraph/sampling results~~ | Resolved differently: results open in the editor's native image preview + output channel, no webview | Closed by IDE-PYSPY-001 |
 | Historical time series of runtime metrics (storage/trends/alerts) | Not implemented (monitoring panel is snapshot-only) | No entry; creating one requires deciding the storage surface first (in-memory ring buffer vs on-disk) |
 | Wrapping engine telnet console profile commands (cellapp/baseapp `profile`) | Not implemented | No entry |
 | Continuous-sampling background tasks (CPU/memory curves over time) | Not implemented | No entry; extendable via the same watcher protocol as the monitoring panel |
+| Remote flamegraph collection (record on an SSH host + file retrieval) | Not implemented (record dispatch honestly refuses remote and suggests `dump`) | No entry; follow-up of IDE-PYSPY-001 |
 
 ## Conclusion
 
-- The "snapshot" side (watcher metrics + py-spy dump) is closed-loop and works
-  remotely; the "continuous" side (sampling, time series, flamegraphs) is
-  entirely not done. Flamegraph/periodic collection has a ticket
-  (IDE-PYSPY-001); the rest (metric time series, telnet profile wrapping) has
-  no entry and needs one before any work starts.
+- The "snapshot" side (watcher metrics + py-spy dump) and the flamegraph /
+  timed-collection side (py-spy record, IDE-PYSPY-001, landed 2026-11-07)
+  both work on the local machine, and the dump side also works remotely.
+  Still entirely not done: metric time series, telnet profile-command
+  wrapping, continuous-sampling background tasks, and remote flamegraph
+  retrieval — the last four rows of the table above have no ticket and need
+  one before any work starts.
 - Reuse constraint (binding on PYSPY-001 and later entries): periodic
   collection/flamegraphs must reuse `pyspyDump.ts`'s interpreter resolution
   (`resolvePyspyCommand`), ptrace guidance, `killProcessTree`, and the ssh
-  dispatch surface — no second probe/install path may be spun up.
+  dispatch surface — no second probe/install path may be spun up. (Held:
+  PYSPY-001 landed inside `pyspyDump.ts` on the same chain.)

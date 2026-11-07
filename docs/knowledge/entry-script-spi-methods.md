@@ -130,6 +130,20 @@ Repeated methods (shared by several components) appear in each relevant table.
 | `onFinish` | yes | `""` | `clientapp.cpp:303`, `bots.cpp:124` | `Bots::finalise` (`bots.cpp:121`) — client/bots only, not a server callback |
 | `onTargetChanged` | yes | `i` | `clientapp.cpp:458` | client entity target change — client only |
 
+## Count verification (KODE-CFG-015)
+
+A direct re-scan of `getEntryScript()` over `kbe/src` at both pinned commits —
+`c2a3b8f` (this page's source pin) and `3082ab5` (current HEAD) — yields **65
+call sites covering 36 distinct method names**, confirming the tables above.
+The "34" figure that circulated in early planning is a **server-six-component
+scope**: 36 minus the client/bots-only `onFinish` (`bots.cpp:124`,
+`clientapp.cpp:303`) and `onTargetChanged` (`clientapp.cpp:458`). A
+per-component-file scan that misses the shared-header broadcast pair
+`onGlobalData`/`onGlobalDataDel` (`entity_app.h:1308`/`:1290`) also
+undercounts to 34. The authoritative count for the entry-script SPI table is
+36; consumers (KODE-CFG-015 CodeLens) land the full 36 because assets script
+trees include `client/` and `bots/` entry scripts.
+
 ## 36 engine calls vs 36 template functions
 
 The seven official templates define **44 function definitions / 36 distinct
@@ -142,6 +156,25 @@ engine calls 36 distinct names. The two sets overlap on 33 names:
 | Both engine and template | 33 | the intersection | — |
 | Engine calls, no template implements it | 3 | `onAutoLoadEntityCreate`, `onSpaceGeometryLoaded`, `onTargetChanged` | guards/paths: `entity_autoloader.cpp:90`, `py_macros.h:736`, `clientapp.cpp:458` |
 | Template defines it, engine never calls it | 3 | `onFini`, `onStart`, `onTick` | see below |
+
+### 34 vs 36: both numbers are real, they measure different scopes
+
+An earlier ledger note recorded this table as **34 methods**. A programmatic
+re-scan of `kbe/src` (at `c2a3b8f`, re-verified unchanged at `3082ab5`)
+confirms **36 distinct names** invoked through `getEntryScript()` — nothing
+was over-counted here. The two numbers measure different scopes:
+
+- **36** = every method the engine invokes on the entry-script object, across
+  all components *including* the client/bots pair `onFinish`
+  (`clientapp.cpp:303`, `bots.cpp:124`) and `onTargetChanged`
+  (`clientapp.cpp:458`) that no server-side `kbemain.py` ever receives.
+- **34** = the server-component scope: 36 minus that client/bots-only pair.
+  This is the number that matters when authoring a *server* entry script, and
+  it is the scope downstream consumers (e.g. SPI CodeLens recognition) should
+  match against.
+
+Both counts exclude `onFini`, `onStart` and `onTick` — those three are not
+engine calls at all, as established below.
 
 ### The three template-only names, corrected
 
