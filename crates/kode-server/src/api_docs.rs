@@ -53,18 +53,18 @@ pub struct ApiDocLibrary {
 
 fn library() -> &'static ApiDocLibrary {
     static LIBRARY: OnceLock<ApiDocLibrary> = OnceLock::new();
-    LIBRARY.get_or_init(|| match serde_json::from_str::<ApiDocManifest>(include_str!(
-        "../assets/api-docs.json"
-    )) {
-        Ok(manifest) => ApiDocLibrary {
-            version: manifest.version,
-            entries: manifest.entries,
-        },
-        Err(error) => {
-            eprintln!("api_docs: 嵌入 json 解析失败(不应发生,生成物受 --check 门禁): {error}");
-            ApiDocLibrary {
-                version: 0,
-                entries: Vec::new(),
+    LIBRARY.get_or_init(|| {
+        match serde_json::from_str::<ApiDocManifest>(include_str!("../assets/api-docs.json")) {
+            Ok(manifest) => ApiDocLibrary {
+                version: manifest.version,
+                entries: manifest.entries,
+            },
+            Err(error) => {
+                eprintln!("api_docs: 嵌入 json 解析失败(不应发生,生成物受 --check 门禁): {error}");
+                ApiDocLibrary {
+                    version: 0,
+                    entries: Vec::new(),
+                }
             }
         }
     })
@@ -159,7 +159,11 @@ mod tests {
     fn library_loads_with_expected_floor() {
         let lib = library();
         assert!(lib.version >= 1, "manifest version 异常: {}", lib.version);
-        assert!(lib.entries.len() >= 120, "条目数异常: {}", lib.entries.len());
+        assert!(
+            lib.entries.len() >= 120,
+            "条目数异常: {}",
+            lib.entries.len()
+        );
         for entry in &lib.entries {
             assert!(!entry.member.is_empty());
             assert!(!entry.signature.is_empty());
@@ -185,14 +189,20 @@ mod tests {
         // fireEvent 多 owner(entity 方法 / KBEngine 模块函数):无域查询必须
         // 如实返回候选,绝不静默挑一个
         let result = api_docs_lookup("fireEvent", None, "en");
-        assert!(result.get("ambiguous").is_some(), "fireEvent 应歧义: {result}");
+        assert!(
+            result.get("ambiguous").is_some(),
+            "fireEvent 应歧义: {result}"
+        );
     }
 
     #[test]
     fn locale_zh_falls_back_honestly() {
         let lib = library();
         let any_zh = lib.entries.iter().find(|e| !e.summary_zh.is_empty());
-        let any_en_only = lib.entries.iter().find(|e| e.summary_zh.is_empty() && !e.summary_en.is_empty());
+        let any_en_only = lib
+            .entries
+            .iter()
+            .find(|e| e.summary_zh.is_empty() && !e.summary_en.is_empty());
         if let (Some(zh), Some(en_only)) = (any_zh, any_en_only) {
             let hit = api_docs_lookup(&zh.member, Some(&zh.domain), "zh-cn");
             assert_eq!(hit.get("localized").and_then(Value::as_bool), Some(true));

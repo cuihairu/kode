@@ -39,14 +39,25 @@ fn telnet_summary_reads_ports_and_passwords_with_engine_table_order() {
             .iter()
             .map(|e| e.component.as_str())
             .collect::<Vec<_>>(),
-        ["loginapp", "dbmgr", "interfaces", "logger", "baseapp", "cellapp", "bots"]
+        [
+            "loginapp",
+            "dbmgr",
+            "interfaces",
+            "logger",
+            "baseapp",
+            "cellapp",
+            "bots"
+        ]
     );
     // 端口/密码如实:有则带出
     assert_eq!(entry(&summary, "baseapp").port, Some(40000.0));
     assert_eq!(entry(&summary, "baseapp").password.as_deref(), Some("pwd1"));
     // loginapp 也在(引擎 defaults 全组件段都在)
     assert_eq!(entry(&summary, "loginapp").port, Some(31000.0));
-    assert_eq!(entry(&summary, "loginapp").password.as_deref(), Some("defpwd"));
+    assert_eq!(
+        entry(&summary, "loginapp").password.as_deref(),
+        Some("defpwd")
+    );
 }
 
 #[test]
@@ -62,10 +73,9 @@ fn telnet_summary_edge_semantics_mirror_ts() {
     assert_eq!(entry(&summary, "dbmgr").port, None);
     assert_eq!(entry(&summary, "dbmgr").password, None);
     // 无 <root> 包裹的合成形态(伪根一层直挂组件段)同样可读
-    let flat = parse_config(
-        "<loginapp><telnet_service><port>31001</port></telnet_service></loginapp>",
-    )
-    .unwrap();
+    let flat =
+        parse_config("<loginapp><telnet_service><port>31001</port></telnet_service></loginapp>")
+            .unwrap();
     let flat_summary = telnet_summary(&flat);
     assert_eq!(entry(&flat_summary, "loginapp").port, Some(31001.0));
 }
@@ -75,7 +85,9 @@ fn telnet_summary_empty_tree_gives_all_nulls() {
     let tree = parse_config("<root><dbmgr><debug>1</debug></dbmgr></root>").unwrap();
     let summary = telnet_summary(&tree);
     assert_eq!(summary.len(), 7);
-    assert!(summary.iter().all(|e| e.port.is_none() && e.password.is_none()));
+    assert!(summary
+        .iter()
+        .all(|e| e.port.is_none() && e.password.is_none()));
 }
 
 #[test]
@@ -141,7 +153,10 @@ fn resolve_config_parses_merges_and_summarizes() {
     assert_eq!(loginapp.port, Some(31001.0));
     assert_eq!(loginapp.password.as_deref(), Some("custompwd"));
     // defaults 侧未被覆盖的 baseapp 保留
-    assert_eq!(entry(&resolved.telnet_summary, "baseapp").port, Some(40000.0));
+    assert_eq!(
+        entry(&resolved.telnet_summary, "baseapp").port,
+        Some(40000.0)
+    );
 }
 
 #[test]

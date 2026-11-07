@@ -19,6 +19,9 @@ import { messages, windowState } from './fake-vscode/windowState';
 import { configurationOverrides, workspace, workspaceState } from './fake-vscode/workspaceState';
 import { Uri, type ExtensionContext } from './fake-vscode/core';
 import { window as stubWindow } from './helpers/vscodeStub';
+import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
+import { makeContractGate } from './helpers/configCoreContract';
 
 // IDE-REV-017 查询生命周期接线:守卫包装(建连+每条查询)的超时/取消立返、
 // 释放恰一次(close/destroy 分路)、终态拒新查询、建连晚落地不漏;命令级
@@ -381,6 +384,11 @@ describe('命令(activate 真装配)· 静默 TCP 端点 = 真实慢数据库', 
   const activateAndWait = async (): Promise<void> => {
     activate({ subscriptions: [], extensionUri: Uri.file('/workspace/ext') } as ExtensionContext);
     await new Promise(resolve => setTimeout(resolve, 100));
+    // KODE-CFG-009:连接读值消费 core 解析缓存(`$/kode/config/resolve`)——
+    // activate 装配覆写门,契约门替身只能在其后装;装好后清缓存再刷新消费态
+    setKodeCoreShadowGate(makeContractGate([]));
+    resetConfigResolveForTests();
+    await ensureConfigResolved();
   };
 
   it('previewTable:静默端点上到点返回超时原因,不永久等待', async () => {

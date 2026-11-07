@@ -343,9 +343,15 @@ fn db_interface_to_json(db: &DatabaseInterfaceConfig) -> Value {
     map.insert("host".into(), Value::String(db.host.clone()));
     map.insert("port".into(), json_number(db.port));
     map.insert("username".into(), Value::String(db.username.clone()));
-    map.insert("databaseName".into(), Value::String(db.database_name.clone()));
+    map.insert(
+        "databaseName".into(),
+        Value::String(db.database_name.clone()),
+    );
     map.insert("encrypt".into(), Value::Bool(db.encrypt));
-    map.insert("characterSet".into(), Value::String(db.character_set.clone()));
+    map.insert(
+        "characterSet".into(),
+        Value::String(db.character_set.clone()),
+    );
     if let Some(password) = &db.plain_password {
         map.insert("plainPassword".into(), Value::String(password.clone()));
     }

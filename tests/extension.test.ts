@@ -25,6 +25,9 @@ import { createDatabaseSchemaUri, parseDatabaseSchemaRoot } from '../src/databas
 import { getDiagnosticScheduler } from '../src/diagnosticScheduler';
 import { KBE_SCHEME, buildKbeStubDocument } from '../src/kbeModuleIndex';
 import { parseDebugConfigText } from '../src/debugConfigBootstrap';
+import { setKodeCoreShadowGate, getKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
+import { makeContractGate } from './helpers/configCoreContract';
 import packageJson from '../package.json';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { languagesRegistry } from './fake-vscode/languages';
@@ -1226,8 +1229,16 @@ describe('extension activate 装配', () => {
       created.listen(31000, '127.0.0.1', () => resolve(created));
     });
     const context = makeContext();
+    activate(context);
+    // KODE-CFG-009:目标配置读值半经 core 解析(`$/kode/config/resolve`)——
+    // 契约门替身在 activate 后装(activate 装配覆写门),并按探测同款
+    // overrides(customXmlPath)预取消费态:探测每轮只同步读缓存,不预取则
+    // 要多等一轮(10s)才见目标。测毕还原。
+    const previousGate = getKodeCoreShadowGate();
+    setKodeCoreShadowGate(makeContractGate([]));
+    resetConfigResolveForTests();
+    await ensureConfigResolved({ customXmlPath: path.join(xmlDir, 'kbengine.xml') });
     try {
-      activate(context);
       const telnetBar = windowState.statusBars.find(item => item.priority === 99)!;
       // 探测翻转(默认定时器 5s 一轮;首轮 start 即发)→ onDidChange 回调
       // → serverControlProvider.refresh() + updateTelnetStatusBar
@@ -1235,6 +1246,8 @@ describe('extension activate 装配', () => {
       expect(telnetBar.command).toBe('kbengine.telnet.showPanel');
       expect(commandRegistry.contexts.get('kbengine.telnetConfigured')).toBe(true);
     } finally {
+      setKodeCoreShadowGate(previousGate);
+      resetConfigResolveForTests();
       disposeAll(context);
       configurationOverrides.delete('kbengine');
       fs.rmSync(xmlDir, { recursive: true, force: true });
@@ -1369,11 +1382,17 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
 
   it('激活即出:能定位 defaults 时后台打开合成视图,不抢焦点', async () => {
     const root = makeEngineTree();
+    const previousGate = getKodeCoreShadowGate();
     try {
       workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
       configurationOverrides.set('kbengine', { binPath: '${workspaceFolder}/kbe/bin/server' });
       const context = makeContext();
       activate(context);
+      // KODE-CFG-009:合成读值经 core 解析(`$/kode/config/resolve`)——契约门
+      // 替身只能在 activate 后装(activate 装配会覆写门),auto 路径首取不可得
+      // 的有界延迟重试(300ms)即取到替身并出视图
+      setKodeCoreShadowGate(makeContractGate([]));
+      resetConfigResolveForTests();
 
       // 激活内的自动打开是异步尾焰:轮询等它落地
       await until(() => windowState.showTextDocumentCalls.length > 0);
@@ -1389,6 +1408,8 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
       expect(workspaceState.openTextDocumentCalls.length).toBeGreaterThan(0);
       disposeAll(context);
     } finally {
+      setKodeCoreShadowGate(previousGate);
+      resetConfigResolveForTests();
       fs.rmSync(root, { recursive: true, force: true });
     }
   }, 8000);
@@ -1455,6 +1476,7 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
 
   it('手动命令聚焦打开;联动 watcher 三臂刷新合成内容', async () => {
     const root = makeEngineTree();
+    const previousGate = getKodeCoreShadowGate();
     // 任务 B 起激活期还会挂托管目录 watcher(**/.kbengine*),不能再用
     // lastFileSystemWatcher 当终配 watcher;记录 (pattern, watcher) 按挑选。
     const createdWatchers: Array<{ pattern: string; watcher: { fireChange(u: Uri): void; fireCreate(u: Uri): void; fireDelete(u: Uri): void } }> = [];
@@ -1469,6 +1491,10 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
       configurationOverrides.set('kbengine', { binPath: '${workspaceFolder}/kbe/bin/server' });
       const context = makeContext();
       activate(context);
+      // KODE-CFG-009:契约门替身在 activate 后装(auto 重试与手动命令都经
+      // `$/kode/config/resolve` 取 core 解析),测毕还原
+      setKodeCoreShadowGate(makeContractGate([]));
+      resetConfigResolveForTests();
 
       // 激活自动路径先落地,记基线后再验手动路径(聚焦,不带 preview 选项)
       await until(() => windowState.showTextDocumentCalls.length > 0);
@@ -1495,12 +1521,15 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
       watcher!.fireChange(Uri.file('/any/kbengine_defaults.xml'));
       watcher!.fireCreate(Uri.file('/any/kbengine.xml'));
       watcher!.fireDelete(Uri.file('/any/kbengine.xml'));
-      expect(fired).toHaveLength(3);
+      // KODE-CFG-009:联动臂先重取 core 解析再 refresh——事件落地是异步尾焰
+      await until(() => fired.length === 3);
       expect(provider.provideTextDocumentContent({})).toContain('仅引擎默认');
 
       // autoRefreshFinalConfig=false 时 watcher 不存在,联动自然关闭
       disposeAll(context);
     } finally {
+      setKodeCoreShadowGate(previousGate);
+      resetConfigResolveForTests();
       (workspace as unknown as Record<string, unknown>).createFileSystemWatcher = originalCreate;
       fs.rmSync(root, { recursive: true, force: true });
     }

@@ -12,6 +12,12 @@ import { messages, windowState } from './fake-vscode/windowState';
 import { configurationOverrides, workspace, workspaceState } from './fake-vscode/workspaceState';
 import { makeTextDocument, Uri, type ExtensionContext } from './fake-vscode/core';
 import { window as stubWindow } from './helpers/vscodeStub';
+import {
+  ensureConfigResolved,
+  resetConfigResolveForTests
+} from '../src/serverConfigResolve';
+import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { makeContractGate } from './helpers/configCoreContract';
 
 // 漂移校验(批C)命令装配层:kbengine.database.checkDrift 的四段分支——
 // 无活动 .def / 读不到实体定义 / 读不到引擎数据库配置 / 真跑一次 mysql2
@@ -110,8 +116,16 @@ const activateAndWait = async (workspaceState?: unknown): Promise<ExtensionConte
   if (workspaceState) {
     context.workspaceState = workspaceState;
   }
+  // KODE-CFG-009:连接读值消费 core 解析缓存——激活(其自身接线会装真门)
+  // 之后再装契约门替身并刷新消费态。注意激活预取会把真门的 RPC 失败态
+  // (单元环境 no serverPath)按「同代不重锤宕机 server」口径缓存——装好
+  // 替身后须再清一次缓存,否则 ensure 缓存命中直接回失败态,替身永不被调。
+  resetConfigResolveForTests();
   activate(context);
   await new Promise(resolve => setTimeout(resolve, 100));
+  setKodeCoreShadowGate(makeContractGate([]));
+  resetConfigResolveForTests();
+  await ensureConfigResolved();
   return context;
 };
 
@@ -166,6 +180,11 @@ describe('kbengine.database.checkDrift 命令', () => {
     writeDef('scripts/entity_defs/Hero.def', HERO_DEF.split('\n'));
     configurationOverrides.set('kbengine', { binPath: '/no/such/bin' });
     await activateAndWait();
+    if (process.env.KODE_DEBUG) {
+      const { resolveDatabaseInterfaceConfig } = await import('../src/serverConfigMerge');
+      const { getConfigResolved } = await import('../src/serverConfigResolve');
+      console.log('DBG', JSON.stringify({ state: getConfigResolved()?.ok, db: resolveDatabaseInterfaceConfig(), binPathSet: configurationOverrides.get('kbengine') }));
+    }
 
     await commands.executeCommand('kbengine.database.checkDrift', 'Hero');
 
@@ -177,6 +196,11 @@ describe('kbengine.database.checkDrift 命令', () => {
     writeDef('scripts/entity_defs/Hero.def', HERO_DEF.split('\n'));
     writeEngineDefaults('127.0.0.1', await freePort());
     await activateAndWait();
+    if (process.env.KODE_DEBUG) {
+      const { resolveDatabaseInterfaceConfig } = await import('../src/serverConfigMerge');
+      const { getConfigResolved } = await import('../src/serverConfigResolve');
+      console.log('DBG', JSON.stringify({ state: getConfigResolved()?.ok, db: resolveDatabaseInterfaceConfig(), binPathSet: configurationOverrides.get('kbengine') }));
+    }
 
     await commands.executeCommand('kbengine.database.checkDrift', 'Hero');
 

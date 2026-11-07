@@ -406,7 +406,13 @@ pub fn merge_config_xml(base: &ConfigNode, override_node: &ConfigNode) -> Config
 /// 引擎各组件 telnet 默认端口(kbengine_defaults.xml `<telnet_service><port/>`)。
 /// 写死表自 TS `telnetService.ENGINE_DEFAULT_TELNET_PORTS` 迁入,core 为唯一真源。
 pub const ENGINE_DEFAULT_TELNET_PORTS: [&str; 7] = [
-    "loginapp", "dbmgr", "interfaces", "logger", "baseapp", "cellapp", "bots",
+    "loginapp",
+    "dbmgr",
+    "interfaces",
+    "logger",
+    "baseapp",
+    "cellapp",
+    "bots",
 ];
 
 /// telnet 速览条目(镜像 TS summarizeFinalTelnet 产物:端口数字非法→None、
@@ -479,9 +485,13 @@ pub fn telnet_summary(root: &ConfigNode) -> Vec<TelnetSummaryEntry> {
         .iter()
         .map(|component| {
             let section = find_among_layers(root, component).and_then(|node| {
-                node.children.iter().find(|child| child.name == "telnet_service")
+                node.children
+                    .iter()
+                    .find(|child| child.name == "telnet_service")
             });
-            let port = section.and_then(|s| child_leaf(s, "port")).and_then(leaf_number);
+            let port = section
+                .and_then(|s| child_leaf(s, "port"))
+                .and_then(leaf_number);
             let password = section
                 .and_then(|s| child_leaf(s, "password"))
                 .map(str::trim)
@@ -513,9 +523,7 @@ pub fn db_interface_config(root: &ConfigNode) -> Option<DatabaseInterfaceConfig>
         .children
         .iter()
         .find(|child| child.name == "unicodeString");
-    let leaf_text = |name: &str| -> &str {
-        child_leaf(iface, name).unwrap_or("")
-    };
+    let leaf_text = |name: &str| -> &str { child_leaf(iface, name).unwrap_or("") };
     let (default_host, default_port, default_username, default_database, default_charset) =
         ENGINE_DB_INTERFACE_DEFAULTS;
     let host = leaf_text("host").trim();
@@ -550,7 +558,9 @@ pub fn db_interface_config(root: &ConfigNode) -> Option<DatabaseInterfaceConfig>
         } else {
             host.to_string()
         },
-        port: leaf_number(leaf_text("port")).filter(|v| *v > 0.0).unwrap_or(default_port),
+        port: leaf_number(leaf_text("port"))
+            .filter(|v| *v > 0.0)
+            .unwrap_or(default_port),
         username: username.to_string(),
         database_name: if database.is_empty() {
             default_database.to_string()
@@ -573,6 +583,7 @@ pub struct CustomTelnet {
 
 /// `$/kode/config/resolve` 产物:双树 + 合成树 + telnet 速览 + 数据库连接要素
 /// + 元件 telnet 段读值一次出全(TS 消费通道唯一取数口)。
+#[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedConfig {
     pub defaults_tree: Option<ConfigNode>,
     pub custom_tree: Option<ConfigNode>,
@@ -590,7 +601,11 @@ fn first_node<'a>(node: &'a ConfigNode, name: &str) -> Option<&'a ConfigNode> {
     node.children
         .iter()
         .find(|child| child.name == name)
-        .or_else(|| node.children.iter().find_map(|child| first_node(child, name)))
+        .or_else(|| {
+            node.children
+                .iter()
+                .find_map(|child| first_node(child, name))
+        })
 }
 
 /// 元件配置 telnet_service 段读值(TS parseKbengineXmlTelnet 的 core 迁入形:
