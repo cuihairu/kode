@@ -622,7 +622,11 @@ export async function runImportCloneCommand(
         `导入完成:新 DBID=${result.newRootId ?? '(保留原值)'};审计 ${auditPath};清理计划已生成未执行。${PERSISTED_NOT_LIVE}`
       );
     } finally {
-      await writeConnection.end();
+      try {
+        await writeConnection.end();
+      } catch (closeError) {
+        deps.channel.appendLine(`[Player Clone] 关闭连接失败: ${String(closeError)}`);
+      }
     }
   } catch (error) {
     const target = `${targetConfig.host}:${targetConfig.port}/${targetConfig.database}`;

@@ -1458,7 +1458,7 @@
 
 > 审查基准：c82c9a83 附近的工作区；以下是源码链路分析，尚未用真实 MySQL/KBEngine 端到端验证。克隆功能须分别验收 Rust 库、RPC、VS Code 实际入口及真实环境，不能以库单测代替接线验收。
 
-- [ ] KODE-REVIEW-001 [P0] 克隆导入提交状态与错误提示：`src/playerDataCloneMysql.ts` 在 COMMIT 后复核，`src/playerDataCloneCommands.ts` 在提交后写审计，异常却统一提示“已回滚”，可能诱发重复导入。验收：区分提交前失败、COMMIT 结果不确定、已提交但复核/审计失败；提示包含可核对的 run/目标信息，不声称未证实的回滚；覆盖 COMMIT 断连、提交后查询失败和审计写入失败。
+- [x] KODE-REVIEW-001 [P0] 克隆导入提交状态与错误提示：`src/playerDataCloneMysql.ts` 在 COMMIT 后复核，`src/playerDataCloneCommands.ts` 在提交后写审计，异常却统一提示“已回滚”，可能诱发重复导入。验收：区分提交前失败、COMMIT 结果不确定、已提交但复核/审计失败；提示包含可核对的 run/目标信息，不声称未证实的回滚；覆盖 COMMIT 断连、提交后查询失败和审计写入失败。（b6ce1621 区分提交结果不确定/提交后验证失败/回滚失败；tests/playerDataCloneImportCommand.test.ts 覆盖 COMMIT 断连、提交后失败与审计失败，连接关闭错误不掩盖原状态。）
 - [ ] KODE-REVIEW-002 [P0] 克隆 64 位整数无损往返：`src/playerDataCloneWire.ts` 使用 Number 转换整数，超安全整数的读取会落为文本；MySQL 连接与 insertId 也需端到端对齐。验收：有符号/无符号 64 位边界及超过 2^53 的 ID、普通列经真实 MySQL → RPC/归档 → MySQL 精确往返，禁止静默舍入或类型误判。
 - [ ] KODE-REVIEW-003 [P0] 克隆二进制无损往返：`src/playerDataCloneWire.ts` 将二进制编码为十六进制，但 `typedValueToBind` 把 bytes 当普通字符串绑定。验收：导入时还原为实际字节，覆盖空值、零字节、非 UTF-8 与多种 BLOB/BINARY，真实 MySQL 字节级对比。
 - [x] KODE-REVIEW-004 [P1] VS Code 导出接入一致性快照：Rust `crates/kode-db-clone/src/reader.rs` 有快照事务，实际 `src/playerDataCloneMysql.ts` 的 `executeExportPlan` 只设置只读会话并逐表查询。验收：同一事务快照读取根表和全部子表，异常/取消释放事务；真实 MySQL 并发修改测试证明不混合不同时间的数据，明确数据库能力不支持时的处理。（b6ce1621：只读一致性事务、取消/错误回滚及行数约束；tests/playerDataCloneMysqlReal.test.ts 在隔离 MySQL 8 容器中于读取主表后并发修改子表，验证仍读取旧快照；不支持事务命令时报错终止，不降级伪装成功。）
