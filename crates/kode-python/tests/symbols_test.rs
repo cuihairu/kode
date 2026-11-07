@@ -133,3 +133,170 @@ fn dotted_import_binding_is_top_level_segment_kraud11() {
     assert!(imports.contains(&("a", "a.b", false)), "实际: {imports:?}");
     assert!(imports.contains(&("np", "numpy", false)));
 }
+
+// ---------------------------------------------------------------------------
+// 覆盖率补充:collect_attributes 控制流分支 / method_params 全形参位 /
+// 隐式作用域(推导式/lambda)/ star 导入 / 空作用域丢弃 / 非 self 属性负路径。
+// ---------------------------------------------------------------------------
+
+/// 方法体内 if/elif/else/for/else/while/else/with/try 各控制流体中的
+/// `self.<attr>` 写与 AnnAssign 属性声明均入属性表。
+#[test]
+fn self_attributes_collected_in_control_flow_bodies() {
+    let src = r#"
+class C:
+    def m(self, cond, items, ctx):
+        self.plain = 1
+        self.typed: int = 2
+        if cond:
+            self.in_if = 3
+        elif cond:
+            self.in_elif = 4
+        else:
+            self.in_else = 5
+        for it in items:
+            self.in_for = 6
+        else:
+            self.in_for_else = 7
+        while cond:
+            self.in_while = 8
+        else:
+            self.in_while_else = 9
+        with ctx() as c:
+            self.in_with = 10
+        try:
+            self.in_try = 11
+        except ValueError:
+            self.in_except = 12
+        else:
+            self.in_try_else = 13
+        finally:
+            self.in_finally = 14
+"#;
+    let ext = parse_ast_symbols(src);
+    let c = ext.symbols.classes.iter().find(|c| c.name == "C").unwrap();
+    let names: Vec<&str> = c.attributes.iter().map(|a| a.name.as_str()).collect();
+    for expected in [
+        "plain",
+        "typed",
+        "in_if",
+        "in_elif",
+        "in_else",
+        "in_for",
+        "in_for_else",
+        "in_while",
+        "in_while_else",
+        "in_with",
+        "in_try",
+        "in_except",
+        "in_try_else",
+        "in_finally",
+    ] {
+        assert!(
+            names.contains(&expected),
+            "属性 {expected} 应入表, got {names:?}"
+        );
+    }
+}
+
+/// 非 self 属性写(obj.x = 1 / self.a.b = 1)与普通局部赋值不产属性项。
+#[test]
+fn non_self_writes_are_not_attributes() {
+    let src = "class C:\n    def m(self, obj):\n        obj.x = 1\n        self.a.b = 2\n        local = 3\n";
+    let ext = parse_ast_symbols(src);
+    let c = ext.symbols.classes.iter().find(|c| c.name == "C").unwrap();
+    assert!(
+        c.attributes.is_empty(),
+        "非 self 直属写不应入属性表: {:?}",
+        c.attributes
+    );
+}
+
+/// method_params 全形参位:posonly(/)、kwonly(*)、vararg、kwarg 顺序;
+/// `self` 过滤只按名(任意位置)。
+#[test]
+fn method_params_covers_all_parameter_slots() {
+    let src = "def f(self, a, /, b, *args, c, **kw):\n    pass\n";
+    let ext = parse_ast_symbols(src);
+    assert_eq!(
+        ext.symbols.functions[0].params,
+        vec!["a", "b", "args", "c", "kw"]
+    );
+    // kwonly 无 vararg/kwarg。
+    let ext2 = parse_ast_symbols("def g(a, *, b):\n    pass\n");
+    assert_eq!(ext2.symbols.functions[0].params, vec!["a", "b"]);
+}
+
+/// 类基类只保留 dotted identifier:调用形态基类 `class C(func())` 被过滤。
+#[test]
+fn class_bases_keep_only_dotted_identifiers() {
+    let src = "def factory():\n    return object\n\nclass C(factory()):\n    pass\n\nclass D(Base):\n    pass\n";
+    let ext = parse_ast_symbols(src);
+    let c = ext.symbols.classes.iter().find(|c| c.name == "C").unwrap();
+    assert!(c.bases.is_empty(), "调用形态基类应被过滤: {:?}", c.bases);
+    let d = ext.symbols.classes.iter().find(|c| c.name == "D").unwrap();
+    assert_eq!(d.bases, vec!["Base".to_string()]);
+}
+
+/// 函数作用域 import 绑定收集:`from x import *` 不记绑定;推导式
+/// (Set/Dict/Generator)与 lambda 是独立隐式作用域(lambda 形参入
+/// 参数遮蔽);空作用域层(无绑定无遮蔽)不入表。
+#[test]
+fn function_scope_binding_collector_edges() {
+    let src = r#"
+def with_star():
+    from mod import *
+    use()
+
+def with_comps(items):
+    a = {x for x in items}
+    b = {k: v for k, v in items}
+    c = (x for x in items)
+    return a, b, c
+
+def with_lambda():
+    f = lambda p: p
+
+def empty():
+    pass
+"#;
+    let ext = parse_ast_symbols(src);
+    // star 导入不产绑定;with_star 的作用域层只有空绑定 → 整层不入表。
+    assert!(
+        !ext.symbols
+            .function_import_bindings
+            .iter()
+            .any(|s| s.start_line == 1),
+        "star 导入不应记绑定, got {:#?}",
+        ext.symbols.function_import_bindings
+    );
+    // 推导式目标进各自隐式层(Set/Dict/Generator 各一层),不污染外层。
+    let comp_scopes: Vec<_> = ext
+        .symbols
+        .function_import_bindings
+        .iter()
+        .filter(|s| matches!(s.kind, kode_python::model::ScopeKind::Comprehension))
+        .collect();
+    assert_eq!(comp_scopes.len(), 3, "三个推导式各一层: {comp_scopes:#?}");
+    // lambda 形参 p 入参数遮蔽。
+    let lambda_scopes: Vec<_> = ext
+        .symbols
+        .function_import_bindings
+        .iter()
+        .filter(|s| s.shadows.contains_key("p"))
+        .collect();
+    assert_eq!(
+        lambda_scopes.len(),
+        1,
+        "lambda 形参 p 应入参数遮蔽: {lambda_scopes:#?}"
+    );
+    // 空作用域层(empty 无参数无绑定)不入表。
+    assert!(
+        !ext.symbols
+            .function_import_bindings
+            .iter()
+            .any(|s| s.start_line == 14),
+        "空作用域层应被丢弃, got {:#?}",
+        ext.symbols.function_import_bindings
+    );
+}

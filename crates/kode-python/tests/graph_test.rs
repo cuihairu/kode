@@ -12,6 +12,19 @@ fn key(path: &str) -> DocumentKey {
     DocumentKey::new(RootId(0), CanonicalUri::from_path(path))
 }
 
+/// 多文件 → 跨文件反向索引(测试夹具:每文件解析符号表+调用边后聚合)。
+fn build_rev(files: &[(&DocumentKey, &str)]) -> kode_python::graph::CallReverseIndex {
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in files {
+        let ast = ParsedAst::new(*src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert((*k).clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert((*k).clone(), symbols);
+    }
+    build_call_reverse_index(&file_edges, &file_symbols)
+}
+
 #[test]
 fn cross_file_call_builds_reverse_index() {
     let avatar_src = "def heal():\n    pass\n\ndef damage():\n    pass\n";
@@ -809,4 +822,79 @@ fn rust7_cross_process_edge_marked_uncertain_not_silent() {
         "无跨进程边的 utils.py 不应进 uncertain 面"
     );
     assert_eq!(uncertain.len(), 1);
+}
+
+#[test]
+fn inner_scope_unrelated_import_falls_through_to_outer_resolution() {
+    // 内层函数仅 import 无关模块(utils):对 avatar 既无绑定也无遮蔽 →
+    // (None,None) 未决继续向外——无关 import 不得截断解析,由模块顶层
+    // `import avatar` 保放跨文件边(漏边向:未提及名当作未决而非本地名)。
+    let utils_src = "def load():\n    pass\n";
+    let avatar_src = "def heal():\n    pass\n";
+    let zcaller =
+        "import avatar\n\ndef outer():\n    def inner():\n        import utils\n        avatar.heal()\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/avatar.py");
+    let uk = key("scripts/utils.py");
+    let rev = build_rev(&[(&zk, zcaller), (&ak, avatar_src), (&uk, utils_src)]);
+    assert!(
+        rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "内层无关 import 不应阻断模块 import 对 avatar 接收者的保放, got {rev:?}"
+    );
+}
+
+#[test]
+fn unresolved_module_import_no_edge_when_file_missing() {
+    // `import nothere` 的模块接收者按 basename 全项目找文件;项目里没有
+    // nothere.py → 零匹配不产边(宁缺毋滥),也不得误指其他 basename 文件。
+    let zcaller = "import nothere\n\ndef battle():\n    nothere.act()\n";
+    let other_src = "def act():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ok = key("scripts/other.py");
+    let rev = build_rev(&[(&zk, zcaller), (&ok, other_src)]);
+    assert!(
+        rev.is_empty(),
+        "零匹配的模块接收者不应产任何反索引条目, got {rev:?}"
+    );
+}
+
+#[test]
+fn ambiguous_same_basename_files_give_up_edge() {
+    // 两个不同目录的同名 avatar.py:basename 匹配不唯一 → 歧义放弃,不
+    // 指向任一候选(宁缺毋滥;反依赖指错文件会漏失效/误失效)。
+    let zcaller = "import avatar\n\ndef battle():\n    avatar.heal()\n";
+    let a1 = "def heal():\n    pass\n";
+    let a2 = "def heal():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let k1 = key("scripts/pkg1/avatar.py");
+    let k2 = key("scripts/pkg2/avatar.py");
+    let rev = build_rev(&[(&zk, zcaller), (&k1, a1), (&k2, a2)]);
+    assert!(
+        !rev.get(&k1).map(|s| s.contains(&zk)).unwrap_or(false)
+            && !rev.get(&k2).map(|s| s.contains(&zk)).unwrap_or(false),
+        "同名 basename 歧义应放弃该边, got {rev:?}"
+    );
+}
+
+#[test]
+fn edge_kind_as_str_stable_literals() {
+    // golden 对拍出口:八种边种类的稳定字面量(wt/parity 面板着色/导出
+    // 按此字符串消费,改动即破坏对拍契约)。
+    assert_eq!(kode_python::EdgeKind::Local.as_str(), "local");
+    assert_eq!(kode_python::EdgeKind::Method.as_str(), "method");
+    assert_eq!(kode_python::EdgeKind::SelfMethod.as_str(), "self-method");
+    assert_eq!(
+        kode_python::EdgeKind::KbeBroadcast.as_str(),
+        "kbe-broadcast"
+    );
+    assert_eq!(
+        kode_python::EdgeKind::KbeBaseClients.as_str(),
+        "kbe-base-clients"
+    );
+    assert_eq!(
+        kode_python::EdgeKind::KbeCrossProcess.as_str(),
+        "kbe-cross-process"
+    );
+    assert_eq!(kode_python::EdgeKind::KbeApi.as_str(), "kbe-api");
+    assert_eq!(kode_python::EdgeKind::Unknown.as_str(), "unknown");
 }

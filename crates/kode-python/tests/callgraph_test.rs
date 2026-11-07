@@ -1,6 +1,6 @@
 //! 调用图 + KBEngine 特化边测试(C-20 交付①)。
 
-use kode_python::callgraph::extract_call_graph;
+use kode_python::callgraph::{extract_call_graph, extract_call_graph_detailed};
 use kode_python::{parse_ast_symbols, EdgeKind, ParsedAst, PyCallGraph};
 
 /// KBEngine 实体脚本样例(覆盖四类特化边 + 本地/自身/API 调用)。
@@ -251,5 +251,287 @@ fn lambda_body_calls_recorded_as_own_caller_kraud21() {
     assert!(
         !es.iter().any(|e| e.caller == "outer" && e.callee == "foo"),
         "lambda 体调用不再归外层 caller: {es:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 覆盖率补充:逐条覆盖 walk_stmt / walk_expr / dotted_chain / classify 分支。
+// 每条断言真实语义(边存在、分类正确、调用点列号对齐),不做空断言。
+// ---------------------------------------------------------------------------
+
+/// 详细变体与基础变体产出逐条对齐(边集相等、顺序一致),且列号 ≥ 0
+/// (调用点列号 0-based UTF-16;符号表 per-method calls 消费面)。
+/// 源码三路齐备:类方法边、模块级函数边、模块顶层语句边——三类 caller
+/// 的闭包写入路径各有至少一条边可产。
+#[test]
+fn detailed_variant_aligns_with_base_and_has_columns() {
+    let src = "def target():\n    pass\n\ndef helper():\n    target()\n\nclass Avatar:\n    def on_damage(self):\n        helper()\n\nclass Empty:\n    x = 1\n\nhelper()\n";
+    let ast = ParsedAst::new(src);
+    let symbols = parse_ast_symbols(src).symbols;
+    let base = extract_call_graph(&ast, &symbols);
+    let detailed = extract_call_graph_detailed(&ast, &symbols);
+    assert_eq!(detailed.len(), base.len(), "边数应逐条对齐");
+    // 三路各一条:helper→target(模块级函数)、Avatar.on_damage→helper(类方法)、
+    // <module>→helper(顶层语句);Empty 无方法 → if let 假分支照常走完。
+    assert_eq!(detailed.len(), 3, "应有 3 条边: {detailed:#?}");
+    for (i, (edge, col)) in detailed.iter().enumerate() {
+        assert_eq!(edge, &base[i], "第 {i} 条边应与基础变体一致");
+        // 调用点列号 0-based;类方法内与函数体内调用非行首,列号 > 0;
+        // 模块顶层 helper() 在行首,列号可为 0。
+        match edge.caller.as_str() {
+            "on_damage" | "helper" => assert!(*col > 0, "体内调用列号应为正: {col}"),
+            "<module>" => assert_eq!(*col, 0, "模块顶层调用列号应为 0: {col}"),
+            other => panic!("意外 caller {other}: {edge:?}"),
+        }
+    }
+    // 三路 caller 归属:类方法带类名,顶层语句是 <module>,模块级函数无类名。
+    assert!(
+        detailed
+            .iter()
+            .any(|(e, _)| e.caller == "on_damage" && e.caller_class.as_deref() == Some("Avatar")),
+        "类方法边应在: {detailed:#?}"
+    );
+    assert!(
+        detailed
+            .iter()
+            .any(|(e, _)| e.caller == "helper" && e.caller_class.is_none()),
+        "模块级函数边应在: {detailed:#?}"
+    );
+    assert!(
+        detailed.iter().any(|(e, _)| e.caller == "<module>"),
+        "模块顶层语句边应在: {detailed:#?}"
+    );
+}
+
+/// walk_stmt 的 AnnAssign(带值/不带值)、Delete、Raise、Assert、elif、
+/// While、With 分支:各构造内调用应被走查,调用点分类正确。
+#[test]
+fn control_flow_and_misc_stmt_calls_walked() {
+    let src = r#"
+def outer_call():
+    pass
+
+def f(x, cond, msg, ctx):
+    y: int = outer_call()
+    z: int
+    del y
+    raise ValueError(outer_call())
+    assert x, msg
+    if x:
+        pass
+    elif cond:
+        outer_call()
+    while cond:
+        outer_call()
+    with ctx() as c:
+        outer_call()
+"#;
+    let es = edges_of(src);
+    let f_edges: Vec<&kode_python::CallEdge> = es.iter().filter(|e| e.caller == "f").collect();
+    // outer_call 出现在:AnnAssign 值(1)+ raise 实参(1)+ elif 体(1)+ while 体(1)
+    // + with 体(1)。del/assert 无调用。
+    let outer: Vec<_> = f_edges
+        .iter()
+        .filter(|e| e.callee == "outer_call")
+        .collect();
+    assert_eq!(outer.len(), 5, "outer_call 应有 5 条边: {f_edges:#?}");
+    // with ctx() as c:ctx 调用是接收者(caller=f, callee=ctx, kind Unknown)
+    assert!(
+        f_edges.iter().any(|e| e.callee == "ctx"),
+        "with 的上下文表达式 ctx() 应被走查: {f_edges:#?}"
+    );
+    // assert 的消息表达式 msg 是参数读,无调用;raise ValueError(...) 的
+    // ValueError 是 Name(被调方),outer_call 是实参。
+    assert!(
+        f_edges.iter().any(|e| e.callee == "ValueError"),
+        "raise ValueError(outer_call()) 的 ValueError 应为被调方: {f_edges:#?}"
+    );
+}
+
+/// walk_expr 全形态:Subscript/BoolOp/Named/UnaryOp/If 表达式/Dict/Set/List/
+/// Tuple/ListComp/SetComp/DictComp/Generator/Compare/Starred/Slice/BinOp/
+/// 关键字实参/推导式 if 过滤/FString。
+/// 每个容器内嵌 outer_call() 并断言其被走查(FString 除外——调用图忽略)。
+#[test]
+fn expression_forms_all_walked() {
+    let src = r#"
+def outer_call():
+    pass
+
+def cond(x):
+    return x
+
+def f(a, b, items):
+    x = items[0]
+    y = a and outer_call()
+    z = (b := outer_call())
+    w = -a
+    q = outer_call() if a else a
+    r = {outer_call(): outer_call()}
+    s = {outer_call()}
+    t = [outer_call()]
+    u = (outer_call(),)
+    v = [outer_call() for x in items if cond(x)]
+    v2 = {outer_call() for x in items if cond(x)}
+    v3 = {x: outer_call() for x in items if cond(x)}
+    v4 = (outer_call() for x in items if cond(x))
+    c = a < b
+    st = [*outer_call()]
+    sl = items[1:2:3]
+    p = a + outer_call()
+    kw = outer_call(x=a)
+    fs = f"{outer_call()}"
+    g = outer_call()
+"#;
+    let es = edges_of(src);
+    let f_edges: Vec<&kode_python::CallEdge> = es.iter().filter(|e| e.caller == "f").collect();
+    // 统计各被调方出现次数(每处调用一条边):
+    // outer_call:y(1)+ z(1)+ q(1)+ r 键值(2)+ s(1)+ t(1)+ u(1)+ v elt(1)
+    //   + v2 elt(1)+ v3 value(1)+ v4 elt(1)+ st(1)+ p(1)+ kw(1)+ g(1) = 16;
+    //   fs 内忽略。cond:四个推导式的 if 过滤各 1 = 4。
+    let outer: Vec<_> = f_edges
+        .iter()
+        .filter(|e| e.callee == "outer_call")
+        .collect();
+    assert_eq!(outer.len(), 16, "outer_call 应恰 16 条边: {f_edges:#?}");
+    let conds: Vec<_> = f_edges.iter().filter(|e| e.callee == "cond").collect();
+    assert_eq!(
+        conds.len(),
+        4,
+        "四个推导式 if 过滤各一条 cond 边: {f_edges:#?}"
+    );
+    // 关键字实参:`outer_call(x=a)` 的 x 是关键字名,不产边;值 a 是参数读。
+    assert!(
+        !f_edges.iter().any(|e| e.callee == "x"),
+        "关键字名不是被调方: {f_edges:#?}"
+    );
+    // 推导式各形态的 iter 是 Name(items) 读,不产边;elt 的 outer_call 在
+    // ListComp/SetComp/Generator 均被走查。
+    assert!(
+        !f_edges.iter().any(|e| e.callee == "items"),
+        "推导式 iter 的 Name 不是调用: {f_edges:#?}"
+    );
+    // FString 内的调用被忽略:总边数不含它(上面 15 已证)。
+}
+
+/// walk_expr 的 Await/Yield/YieldFrom(异步生成器)。
+#[test]
+fn async_generator_yield_await_walked() {
+    let src = r#"
+async def outer_async():
+    pass
+
+async def af(a):
+    await outer_async()
+    yield a
+    yield from outer_async()
+"#;
+    let es = edges_of(src);
+    let af_edges: Vec<&kode_python::CallEdge> = es.iter().filter(|e| e.caller == "af").collect();
+    assert_eq!(
+        af_edges.len(),
+        2,
+        "await 与 yield from 各一条: {af_edges:#?}"
+    );
+    assert!(af_edges.iter().any(|e| e.callee == "outer_async"));
+}
+
+/// dotted_chain 的 Subscript 分支:`(items[0]).g()` —— 接收者链经下标解包为
+/// ["items","g"],分类 Method(非 self、非 KBEngine、多段)。
+#[test]
+fn subscript_receiver_chain_walked() {
+    let src = "def f(items):\n    (items[0]).g()\n";
+    let es = edges_of(src);
+    let e = es
+        .iter()
+        .find(|e| e.callee == "g")
+        .expect("(items[0]).g() 应有边");
+    assert_eq!(e.receiver.as_deref(), Some("items"));
+    assert_eq!(e.kind, EdgeKind::Method, "下标解包后的接收者按 Method 记");
+}
+
+/// record_call 的 chain=None 分支:`(lambda: 1)()` 的 func 是 Lambda,非
+/// Name/Attribute/Subscript → dotted_chain None → callee 空串、kind Unknown。
+#[test]
+fn non_name_callee_records_empty_callee() {
+    let src = "def f():\n    (lambda: 1)()\n";
+    let es = edges_of(src);
+    let e = es
+        .iter()
+        .find(|e| e.caller == "f")
+        .expect("lambda 调用应有边");
+    assert_eq!(e.callee, "", "非名字被调方 callee 为空串");
+    assert_eq!(e.receiver, None);
+    assert_eq!(e.kind, EdgeKind::Unknown);
+}
+
+/// classify 的 `self(...)`(v.len()==1)分支:括号内自名调用按自身方法记。
+#[test]
+fn self_bare_call_is_self_method() {
+    let src = "class A:\n    def m(self):\n        self()\n";
+    let es = edges_of(src);
+    let e = es
+        .iter()
+        .find(|e| e.caller == "m" && e.callee == "self")
+        .expect("self() 应有边");
+    assert_eq!(e.kind, EdgeKind::SelfMethod);
+    assert_eq!(e.receiver, None);
+}
+
+/// classify 的 self.other.method(...)(v[1] 非 KBEngine 通道)按普通 Method 记。
+#[test]
+fn self_nested_attr_is_method() {
+    let src = "class A:\n    def m(self):\n        self.other.method()\n";
+    let es = edges_of(src);
+    let e = es
+        .iter()
+        .find(|e| e.caller == "m" && e.callee == "method")
+        .expect("self.other.method() 应有边");
+    assert_eq!(e.kind, EdgeKind::Method);
+    assert_eq!(e.receiver.as_deref(), Some("self.other"));
+}
+
+/// classify 的 KBEngine/kbengine 小写别名分支(小写 kbengine 亦为引擎 API)。
+#[test]
+fn kbengine_lowercase_alias_is_kbe_api() {
+    let src = "def f():\n    kbengine.info('x')\n";
+    let es = edges_of(src);
+    let e = es
+        .iter()
+        .find(|e| e.callee == "info")
+        .expect("kbengine.info 应有边");
+    assert_eq!(e.kind, EdgeKind::KbeApi);
+    assert_eq!(e.receiver.as_deref(), Some("kbengine"));
+}
+
+/// 模块顶层语句中的控制流(If/For/While/With)调用:caller=<module>。
+#[test]
+fn module_level_control_flow_walked() {
+    let src = "def f():\n    pass\n\nif True:\n    f()\n";
+    let es = edges_of(src);
+    let module_calls: Vec<_> = es
+        .iter()
+        .filter(|e| e.caller == "<module>" && e.callee == "f")
+        .collect();
+    assert_eq!(module_calls.len(), 1, "模块级 if 体内调用应归属 <module>");
+    assert_eq!(module_calls[0].kind, EdgeKind::Local);
+}
+
+/// 嵌套类(非方法体内)内嵌调用走查边界:类体内直接嵌套的类(非 def 内)
+/// 其方法不入调用图(extract_call_graph/walk_stmt 的 ClassDef 分支都只走
+/// 直属 FunctionDef)。此处断言既有的方法直属收集语义不回归。
+#[test]
+fn class_direct_methods_walked_nested_class_body_skipped() {
+    let src = "class Outer:\n    def run(self):\n        helper()\n\n    class Inner:\n        def deep(self):\n            helper()\n\ndef helper():\n    pass\n";
+    let es = edges_of(src);
+    assert!(
+        es.iter().any(|e| e.caller == "run" && e.callee == "helper"),
+        "类直属方法 Outer.run 应入调用图"
+    );
+    // 类体内直接嵌套类的方法不在本调用图边界内(见 KODE-AUD-008 注:仅
+    // 函数体内的嵌套类走独立 caller_class 路径)。
+    assert!(
+        !es.iter().any(|e| e.caller == "deep"),
+        "类内直接嵌套类的方法不属于本图边界: {es:?}"
     );
 }
