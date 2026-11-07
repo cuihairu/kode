@@ -150,5 +150,9 @@ Source extraction → manual curation → consumers. Planned consumers
   timer/pending-callback reference holding (the "Functor" question — no
   Functor exists in KBEngine; the holder is `PY_CALLBACKMGR`) are covered by
   their articles (grounded at `kbengine@3082ab5`).
-- KB-001 stays **unchecked** in `todo.md` until all buckets and consumers are
-  delivered.
+- KB-001 is **ticked** in `todo.md` (2026-11-07, `65f94116` + `20643807`),
+  with the delivery boundaries recorded there: the ">=95% official API
+  checklist" reconciliation has no structured official checklist in-repo to
+  run (same boundary as the C-21 tick — coverage is the 225 grounded API
+  entries); bucket ③ stats cover the two in-repo trees only; bucket ②'s
+  baseapp path detail remains a recorded TODO.
