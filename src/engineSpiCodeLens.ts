@@ -26,6 +26,7 @@ import * as vscode from 'vscode';
 import { type PythonMethodDeclaration } from './rpcCodeLens';
 import { getLanguageFeatureConfig } from './languageProviders/shared';
 import { getConfigDerivedScanRootState } from './configDerive';
+import { maskPythonNonCode } from './pythonSourceMask';
 
 /** SPI 方法条目(表真值:组件集合 + 必选/可选 + 触发时机简述) */
 export interface EngineSpiMethod {
@@ -141,7 +142,9 @@ export function componentRoleForPath(filePath: string, scriptsRoot: string | nul
  */
 export function findModuleLevelMethodDeclarations(text: string): PythonMethodDeclaration[] {
   const declarations: PythonMethodDeclaration[] = [];
-  const lines = text.split(/\r?\n/);
+  // 字符串/注释先掩码(空格保换行):多行字符串里的 `def onInit` 形态不再
+  // 误认,字符串内低缩进行也不再干扰缩进栈(码面评审 P1 修复)
+  const lines = maskPythonNonCode(text).split(/\r?\n/);
   // 缩进栈:记录仍打开(class/def)体的缩进;控制流(if/for/try)不入栈,
   // 故其内 def 仍视为模块级;class/def 内 def 因有更低缩进祖先而出栈外
   const blockIndents: number[] = [];

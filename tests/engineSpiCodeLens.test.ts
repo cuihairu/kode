@@ -65,6 +65,35 @@ describe('ENGINE_SPI_METHODS 权威表(KODE-CFG-012 真值)', () => {
     expect(Object.keys(ENGINE_SPI_METHODS).filter(n => !serverScope.includes(n)))
       .toEqual(['onFinish', 'onTargetChanged']);
   });
+
+  it('多行字符串内的 def 形态与低缩进行不误认(掩码,码面评审 P1 回归)', () => {
+    // 反例(评审原文):字符串里的 def onInit 不出镜;且字符串内低缩进行
+    // 不得提前关闭作用域——其后真正的模块级 def 仍出
+    const withDocstring = [
+      'example = """',
+      'def onInit(isReload):',
+      '    pass',
+      '"""',
+      '',
+      'def onBaseAppReady():',
+      '    pass',
+      ''
+    ].join('\n');
+    const names = findModuleLevelMethodDeclarations(withDocstring).map(d => d.methodName);
+    expect(names).toEqual(['onBaseAppReady']);
+
+    // 字符串内 0 缩进行曾会把打开的 class 体弹出,其后的类方法被误判模块级
+    const withStrInClass = [
+      'class Handler:',
+      '    doc = """',
+      'onInit at column 0 inside string',
+      '"""',
+      '    def onInit(self):',
+      '        pass',
+      ''
+    ].join('\n');
+    expect(findModuleLevelMethodDeclarations(withStrInClass).map(d => d.methodName)).toEqual([]);
+  });
 });
 
 describe('componentRoleForPath(组件角色判定)', () => {
@@ -284,6 +313,30 @@ def helper():
     const lenses = provider.provideCodeLenses(makeDoc('/proj/assets/scripts/base/kbemain.py'));
     const titles = lenses.map(lens => String(lens.command?.title ?? ''));
     expect(titles).toEqual(['引擎 SPI · onInit · 首回调,0=启动 1=热载', '引擎 SPI · onBaseAppReady · 组件就绪']);
+    provider.dispose();
+  });
+
+  it('非 kbemain 组件脚本(cell)出 SPI 镜;开关关闭后不出(码面评审 P2 回归)', () => {
+    const cellSource = [
+      'def onInit(isReload):',
+      '    pass',
+      '',
+      'def onSpaceData(spaceID, key, value):',
+      '    pass',
+      ''
+    ].join('\n');
+    const cellDoc = makeTextDocument(cellSource, {
+      fileName: '/proj/assets/scripts/cell/kbemain.py',
+      languageId: 'python'
+    }) as unknown as vscode.TextDocument;
+    const provider = new EngineSpiCodeLensProvider();
+    const titles = provider.provideCodeLenses(cellDoc).map(lens => String(lens.command?.title ?? ''));
+    expect(titles).toEqual([
+      '引擎 SPI · onInit · 首回调,0=启动 1=热载',
+      '引擎 SPI · onSpaceData · space 数据变更'
+    ]);
+    configurationOverrides.set('kbengine', { 'codeLens.engineSpi': false });
+    expect(provider.provideCodeLenses(cellDoc)).toEqual([]);
     provider.dispose();
   });
 
