@@ -164,14 +164,17 @@ export function findModuleLevelMethodDeclarations(text: string): PythonMethodDec
   return declarations;
 }
 
-/** 行首缩进宽度:空格 1 列,Tab 按 Python 默认 8 列折算(混缩进亦稳定比较) */
+/**
+ * 行首缩进宽度:空格 1 列,Tab 扩展到**下一个 8 列边界**(Python 语义:
+ * `" \t"` = 8 列,不是 9 列),混缩进亦可稳定比较。
+ */
 function countIndent(line: string): number {
   let width = 0;
   for (const ch of line) {
     if (ch === ' ') {
       width += 1;
     } else if (ch === '\t') {
-      width += 8;
+      width = (Math.floor(width / 8) + 1) * 8;
     } else {
       break;
     }

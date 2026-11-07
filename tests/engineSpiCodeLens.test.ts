@@ -173,6 +173,23 @@ describe('findModuleLevelMethodDeclarations(模块级识别)', () => {
     // 类方法/嵌套(全部 Tab 缩进)不取;模块级 outer 取
     expect(decls.map(d => d.methodName)).toEqual(['outer']);
   });
+
+  it('混合缩进(空格+Tab)按 Python 8 列边界折算:空格+Tab=8 列,9 空格=9 列', () => {
+    // Python: ' \t' = 8 列,9 空格 = 9 列 → 类体(8) < 方法(9),类作用域不弹
+    const text = [
+      'if True:',
+      ' \tclass Handler:',
+      '         def onInit(self):',
+      '          pass',
+      '',
+      'def onBaseAppReady():',
+      '    pass',
+      ''
+    ].join('\n');
+    const decls = findModuleLevelMethodDeclarations(text);
+    // 类方法 onInit 不取;模块级 onBaseAppReady 取
+    expect(decls.map(d => d.methodName)).toEqual(['onBaseAppReady']);
+  });
 });
 
 describe('buildEngineSpiCodeLenses(命中筛)', () => {
