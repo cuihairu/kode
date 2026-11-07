@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   CloneApplyCancelledError,
   CloneCancelledError,
+  CloneCommitUnknownError,
+  ClonePostCommitError,
+  CloneRollbackUnknownError,
   applyImportPlan,
   columnOrderFromPlan,
   executeExportPlan,
@@ -336,6 +339,22 @@ describe('applyImportPlan(单事务执行器,语义对齐 crate apply.rs)', () =
     expect(sqlLog).toContain('ROLLBACK');
     expect(sqlLog).not.toContain('COMMIT');
   });
+
+  it('区分提交结果不确定、提交后复核失败与回滚失败', async () => {
+    const commit = new FakeMysqlConnection();
+    commit.failOn('COMMIT');
+    await expect(applyImportPlan(commit, miniPlan(), miniRows(), miniColumnOrder())).rejects.toBeInstanceOf(CloneCommitUnknownError);
+    expect(commit.log.some(entry => entry.sql === 'ROLLBACK')).toBe(false);
+
+    const verify = new FakeMysqlConnection();
+    verify.failOn('SELECT COUNT(*)');
+    await expect(applyImportPlan(verify, miniPlan(), miniRows(), miniColumnOrder())).rejects.toBeInstanceOf(ClonePostCommitError);
+
+    const rollback = new FakeMysqlConnection();
+    rollback.failOn('INSERT INTO tbl_Avatar_items');
+    rollback.failOn('ROLLBACK');
+    await expect(applyImportPlan(rollback, miniPlan(), miniRows(), miniColumnOrder())).rejects.toBeInstanceOf(CloneRollbackUnknownError);
+  });
 });
 
 describe('columnOrderFromPlan / uniqueValuesFromRows(两遍计划的探测面)', () => {
@@ -396,7 +415,10 @@ describe('executeExportPlan(只读计划执行)', () => {
       { table: 'tbl_Avatar_items', values: [tvBigUInt(100), tvBigUInt(7), tvText('sword')] }
     ]);
     // 子查询绑定的是根行 id(7)。
-    expect(connection.log.at(-1)?.values).toEqual([7]);
+    expect(connection.log.find(entry => entry.sql.includes('FROM tbl_Avatar_items WHERE'))?.values).toEqual([7]);
+    expect(connection.log[0].sql).toBe('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+    expect(connection.log[1].sql).toBe('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
+    expect(connection.log.at(-1)?.sql).toBe('COMMIT');
   });
 
   it('取消中断只读执行', async () => {

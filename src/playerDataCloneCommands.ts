@@ -21,6 +21,9 @@ import {
   applyImportPlan,
   CloneApplyCancelledError,
   CloneCancelledError,
+  CloneCommitUnknownError,
+  ClonePostCommitError,
+  CloneRollbackUnknownError,
   columnOrderFromPlan,
   executeExportPlan,
   openCloneSession,
@@ -417,6 +420,7 @@ export async function runImportCloneCommand(
     return;
   }
 
+  let committed = false;
   try {
     const connection = await openCloneSession(targetConfig);
     let plan: ImportPlanWire | null = null;
@@ -560,6 +564,7 @@ export async function runImportCloneCommand(
             shouldCancel: () => token.isCancellationRequested
           })
       );
+      committed = true;
       const verifyOk = result.verify.every(check => check.ok);
       const audit = {
         kind: 'player-clone-import-run',
@@ -595,12 +600,22 @@ export async function runImportCloneCommand(
       await writeConnection.end();
     }
   } catch (error) {
+    const target = `${targetConfig.host}:${targetConfig.port}/${targetConfig.database}`;
+    const detail = error instanceof Error ? error.message : String(error);
+    if (committed || error instanceof ClonePostCommitError) {
+      await deps.showErrorMessage(`导入已提交，但复核或审计失败：${detail}。请先核对目标 ${target} 和归档 ${path}，不要直接重试。`);
+      return;
+    }
+    if (error instanceof CloneCommitUnknownError || error instanceof CloneRollbackUnknownError) {
+      await deps.showErrorMessage(`导入结果不确定：${detail}。请先核对目标 ${target} 和归档 ${path}，不要直接重试。`);
+      return;
+    }
     if (error instanceof CloneApplyCancelledError) {
       await deps.showWarningMessage('导入已取消:事务已回滚,未写入任何行。');
       return;
     }
     await deps.showErrorMessage(
-      `导入失败(已回滚): ${error instanceof Error ? error.message : String(error)}`
+      `导入失败：${detail}。目标 ${target}；请核对后再重试。`
     );
   }
 }

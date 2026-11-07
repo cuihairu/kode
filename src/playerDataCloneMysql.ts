@@ -41,6 +41,8 @@ export interface CloneMysqlModule {
     user: string;
     password?: string;
     database: string;
+    supportBigNumbers?: boolean;
+    bigNumberStrings?: boolean;
   }): Promise<CloneMysqlConnection>;
 }
 
@@ -68,7 +70,9 @@ export async function openCloneSession(
     port: config.port,
     user: config.user,
     password: config.password,
-    database: config.database
+    database: config.database,
+    supportBigNumbers: true,
+    bigNumberStrings: true
   });
   if (options.readonly !== false) {
     await connection.query('SET SESSION TRANSACTION READ ONLY');
@@ -255,6 +259,13 @@ export class CloneCancelledError extends Error {
   }
 }
 
+/** The database may have committed even if the COMMIT response was lost. */
+export class CloneCommitUnknownError extends Error {}
+/** The transaction committed, but a later verification failed. */
+export class ClonePostCommitError extends Error {}
+/** Rollback itself failed, so the outcome cannot be asserted. */
+export class CloneRollbackUnknownError extends Error {}
+
 /**
  * 执行导出计划(只读会话):根表按 DBID 一次,子表按父行 id 逐次
  * (引擎 parentID 关系);行值按 column_types 归型为有类型 wire。
@@ -268,13 +279,23 @@ export async function executeExportPlan(
 ): Promise<TypedRowWire[]> {
   const allRows: TypedRowWire[] = [];
   const idsByTable = new Map<string, TypedValueWire[]>();
+  await connection.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+  await connection.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
+  try {
   for (const query of plan.queries) {
     if (options.shouldCancel?.()) {
       throw new CloneCancelledError();
     }
     assertReadOnlyStatement(query.select_sql);
     const runQuery = async (binds: unknown[]): Promise<void> => {
-      const [rows] = await connection.query(query.select_sql, binds);
+      const remaining = plan.row_budget - allRows.length;
+      if (!Number.isSafeInteger(remaining) || remaining < 0) {
+        throw new Error('clone: invalid or exceeded export row budget');
+      }
+      const [rows] = await connection.query(`${query.select_sql} LIMIT ${remaining + 1}`, binds);
+      if (Array.isArray(rows) && rows.length > remaining) {
+        throw new Error(`clone: export exceeds row budget ${plan.row_budget}`);
+      }
       const idIndex = query.columns.indexOf('id');
       const collected: TypedValueWire[] = [];
       for (const raw of Array.isArray(rows) ? (rows as Array<Record<string, unknown>>) : []) {
@@ -301,7 +322,12 @@ export async function executeExportPlan(
       }
     }
   }
+  await connection.query('COMMIT');
   return allRows;
+  } catch (error) {
+    await connection.query('ROLLBACK');
+    throw error;
+  }
 }
 
 export interface CloneApplyProgress {
@@ -381,6 +407,9 @@ export async function applyImportPlan(
       const [result] = await connection.query(statement.insert_sql, params);
       const header = Array.isArray(result) ? undefined : (result as ResultSetHeaderLike);
       const newId = header?.insertId ?? 0;
+      if (!Number.isSafeInteger(newId)) {
+        throw new Error('clone: generated id cannot be represented without loss');
+      }
       for (const cell of statement.cells) {
         if (cell.kind === 'new-key' && newId > 0) {
           resolvedIds.set(cell.placeholder, newId);
@@ -389,14 +418,26 @@ export async function applyImportPlan(
       insertedPerTable[statement.table] = (insertedPerTable[statement.table] ?? 0) + 1;
       options.onProgress?.(index + 1, plan.statements.length);
     }
+    if (options.shouldCancel?.()) {
+      throw new CloneApplyCancelledError();
+    }
+  } catch (error) {
+    try {
+      await connection.query('ROLLBACK');
+    } catch (rollbackError) {
+      throw new CloneRollbackUnknownError(`rollback failed: ${String(rollbackError)}; original error: ${String(error)}`);
+    }
+    throw error;
+  }
+  try {
     await connection.query('COMMIT');
   } catch (error) {
-    await connection.query('ROLLBACK');
-    throw error;
+    throw new CloneCommitUnknownError(`COMMIT outcome unknown: ${String(error)}`);
   }
 
   // ---- 提交后逐表核对(PDC-0406;失败如实报,不回滚已提交事务) ----
   const verify: CloneApplyResult['verify'] = [];
+  try {
   for (const table of plan.order) {
     const ids = newIdsForTable(plan, resolvedIds, table);
     const expected = insertedPerTable[table] ?? 0;
@@ -413,6 +454,9 @@ export async function applyImportPlan(
       : undefined;
     const found = Number(first?.c ?? 0);
     verify.push({ table, expected, found, ok: found === expected });
+  }
+  } catch (error) {
+    throw new ClonePostCommitError(`committed; verification failed: ${String(error)}`);
   }
 
   // ---- 清理计划:逆拓扑序,只生成(PDC-0408) ----
