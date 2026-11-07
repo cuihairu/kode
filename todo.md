@@ -939,6 +939,7 @@
   - 验收:API 知识覆盖官方 API 清单 >=95%;每篇机制文档带源码引用;双语;MCP 挂 explain 工具能回答「XX API 怎么用/XX 机制怎么运作」。
     - ✅ 每篇机制文档带源码引用(全部 file:line 逐条锚定,新增件锚 kbengine@3082ab5);✅ 双语(en+zh 双树同构,VitePress 双侧边栏已挂);✅ MCP explain 工具(API+机制双面,e2e 验证真数据);如实边界:「>=95% 官方清单」无结构化官方清单可对账(官方 CHM 未入库),覆盖口径=知识页已 grounding 的 API 面 225 条(C-21 同一边界,已记录);③ 统计口径=本仓库两树非官方资产普查。README 状态表/依据规则/文章索引同步对账。
   - 门禁:eslint 0/tsc 0/unit 584 文件 7171 过+2 skip/cargo workspace(--exclude kode-scheduler)104 套全绿(含 kode-mcp 11 单测+3 e2e)/docs:build rc=0(死链检查过)/xvfb demo 25 RC=0。
+    - ✅ 收编入账（2026-11-07,PR #38,squash 43bf441c）:本条交付由陈旧伞形 PR #31(feat/demo-game)分拣收编——KB-001 三 commit(65f94116+两 docs tick)自 feat/demo-game cherry-pick 至最新 main(干净落地,冲突面零残留),经 PR #38 合入,CI 全绿(build ×2+rust-coverage ×2+codecov pass;首跑 rust-coverage 红=clippy 1.99 manual_map,explain.rs headings_of 改 strip_prefix().map() 后复跑绿)。同分支 C-22/C-23 实现(fcdab71f/c915f6a3)弃置未收:基于 KB-API 分解前旧 main,与现状 40+ 源文件冲突,两任务 ledger 保持开放待在最新 main 重做;demo 001-005 早已经 #23/#24/#26/#32 入 main 无残留。#31 已关。
 
 - [ ] **C-22 · P2 · 实现 · def 属性的可视化呈现(设计已定,2026-11-01)**
   - 背景:KBEngine 属性在 __init__ 之前由引擎赋值,Python 侧不可见不可跳转;曾考虑「__属性方法集中声明」方案,因引擎不调用、双事实源漂移、与真实初始化时序矛盾而否决(设计结论记录于本条)。
