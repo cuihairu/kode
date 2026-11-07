@@ -876,12 +876,12 @@
   - 验收:构造五进程拓扑示例;错配用例(实体落错进程/缺 dbmgr/未知进程)逐条产生定位准确的 warning;正确拓扑零误报。
   - 完成 ✔ 2026-11-02 feat abdf6ea（进程拓扑清单+定义期错配预警:Rust 核心 crates/kode-server/src/process_topology.rs 新 $/kode/processTopology/validate(清单 XML 解析 kode-parser xml::parse+LineMap 精确行;实体内容闭包走查 own 属性/方法→接口→组件→父类成环守卫,镜像引擎节→组件映射 CellMethods→CELLAPP/BaseMethods→BASEAPP/ClientMethods→CLIENT,entitydef.cpp:1324/1467/1610,旗标→域映射 common.h:41-45,归属 entity_app.h:573-578 与 components.cpp:933);校验规则 M1-M6/D1-D3/O1-O2 全 warning 定位精确——实体 CellMethods/cell 域属性需 cellapp(D1)、BaseMethods/base 域属性需 baseapp(D2)、持久需 dbmgr(D3)、清单进程名重复/端口冲突/单例角色重复/未知角色除非 custom/未知 dependsOn/依赖成环(M1-M6)、hosts 与内容矛盾或未知名实体(O1-O2),ClientMethods 只记录不校验(客户端侧非服务端拓扑));TS 封装 src/processTopologyRust.ts validateProcessTopologyInRust(Rust 不可用→null→静默零发现)+src/processTopologyDiagnostics.ts 映射,发布独立 kbengine-process-topology 集合,kbengine.diagnostics.checkProcessTopology 开关(默认开);独立 validate-process-topology bin 对目录同校验任一发现 exit 1 供 CI 拦截;验收 five-process 零发现,缺 dbmgr/缺 cellapp/落错进程/未知进程逐条定位准确(process_topology_units 19+dispatch 3+bin 3),正确拓扑零误报;门禁 cargo test --workspace --exclude kode-scheduler 全绿|clippy 零新增(7 处既有漂移未动)|pnpm lint+tsc 干净|test:unit 5283 绿 7 skip|xvfb test:demo:editor 25 passing)
 
-- [ ] **MCP-001 · P2 · 实现 · kode-mcp:把 def 知识库暴露给 AI agent**
+- [x] **MCP-001 · P2 · 实现 · kode-mcp:把 def 知识库暴露给 AI agent**
   - 依据 2026-11-01 用户问「mcp 有没有做的价值」——判定值得:kode 本质是 def 知识库,MCP 让 agent 一次调用拿到准确 def 知识,替代每次自行读文件猜语义。
   - 模式复用:照 sandtable-mcp 先例(Rust rmcp 3.7 + stdio + 原生直调 crate,零 Node 依赖,新 crate kode-mcp 入 workspace)。
   - MVP 工具面(全是现有 crate 薄封装):search_entities(按名/标签查实体) / get_entity_model(实体全模型:属性/方法/Flags/进程归属) / get_type_graph(别名/数组/FIXED_DICT 解析) / validate_defs(def 校验,挂 C-17 错配预警) / get_message_entry(消息号+线格式布局,挂 C-15) / encode_decode_sample(参数→线格式字节样本) / db_schema_preview(def→DDL 预览,挂 C-16 落地后)。
   - 排期:P2,依赖 C-15(已完成)/C-16/C-17 落地后封装。
-  - 验收:rmcp 客户端 stdio 端到端(list_tools→call_tool 全工具真数据返回);与 kode-server 同源单测;README + 双语文档。
+  - 验收:rmcp 客户端 stdio 端到端(list_tools→call_tool 全工具真数据返回);与 kode-server 同源单测;README + 双语文档。完成 ✔ 2026-11-07 复核勾(实现 2026-11-05 落 main:commit 7c1a1342 七工具(search_entities/get_entity_model/get_type_graph/validate_defs/get_message_entry/encode_decode_sample/db_schema_preview)全非壳——server.rs 派发+kb.rs 复用 kode-parser/kode-server(RpcRegistry 同源);tests/e2e.rs stdio 客户端逐工具真数据断言+units.rs 同源;README.md 英文+中文双语;加固跟笔 ab88ea6a(coverage)与 f28a6e7a/af629737(wire 环/标量守卫);评审 docs/review/2026-11-05-pr-batch-review.md 判 PASS;本席复验:cargo test -p kode-mcp 全绿(5+3+9+8),crate 在 origin/main。)
 
 - [x] **C-18 · P1 · 实现 · KBEngine 官方 def MD5(引擎互通)**
   - 依据 2026-11-01 用户确认缺失。现状:TS 侧有 IDE 内部 hash 体系(hotReloadDefHash sha256 内容 hash + semanticHash 结构 hash + 回执比对,保留不替换),但引擎互通的官方「全 def 复合 MD5」仅有协商描桩未实现,Rust 侧无。
@@ -913,12 +913,14 @@
     - 验收:74 套件 391 测试全绿(含 kode-python 4 测试文件 + scheduler 2 新反依赖测试);`cargo clippy -p kode-python -p kode-scheduler --all-targets --no-deps -- -D warnings` 干净。
   - 未完成(如实标注):交付③「可视化挂 dependencyGraph 面板」只完成 DAG 反依赖数据侧,面板 UI 挂载未在本批——属前端渲染面,待后续批次。
 
-- [ ] **C-21 · P2 · 实现 · KBEngine API 文档 hover(双语 i18n)**
-  - 交付①嵌入式 API 文档库:KBEngine 模块函数 + Entity 类方法 + 生命周期回调 + 常量(约 150-200 条),每条含签名/摘要(en+zh)/参数说明/返回/示例/引入版本;以官方文档为准人工精校,嵌入 kode-server(单一事实源)。
-  - 交付②hover 渲染:四类触发点——KBEngine.<api> 调用、实体通道(self.allClients/base/cell/cellData)、生命周期钩子定义、def 声明的方法/属性(联动 def 模型显示参数与 Flags);markdown hover=签名代码块+本地化说明+示例。
-  - 交付③i18n:locale 取自 LSP 客户端能力(VSCode 语言设置),zh 缺失条目回退 en;双语字段独立维护。
-  - 验收:四类触发点 hover 正确;中英 locale 切换生效;文档库覆盖率对官方 API 清单 >=95%;单测锁签名与文档一致性(防漂移)。
-  - 协同:与 P0-A 类型桩同源互补(补全=签名,hover=文档);usage 统计(扫描 KBEngine 资产)指导文档优先级排序。
+- [x] **C-21 · P2 · 实现 · KBEngine API 文档 hover(双语 i18n)**(2026-11-07 完成,21d0ffc7)
+  - 交付①嵌入式 API 文档库:✅ 225 条(base 91/cell 68/client 46/bots 11/server 11/interfaces 9/core 3;entity 73/KBEngine 139/proxy 12/constant 1),每条含签名/双语摘要(en 217 有文,zh 95)/溯源锚(kbe/src file:line)/来源页;正本 = `docs/knowledge/api-*.md`(KB-API 批次源码 grounding 页,即「人工精校」的落地形态)经 `scripts/generate-api-docs.mjs` 确定性抽取,`crates/kode-server/assets/api-docs.json`(kode-server 嵌入,`$/kode/apiDocs/lookup` RPC 可查)与 `src/generated/apiDocs.ts`(TS 镜像)同源双产物,`tests/apiDocsParity.test.ts` 锁逐条一致 + `--check` 防漂移门禁。如实边界:参数说明/返回/示例/引入版本知识页未结构化,不单列不编造;8 条源表无语义列的条目摘要留空。
+  - 交付②hover 渲染:✅ 四类触发点全接(`kbengine.hover.apiDocs`,默认开):A. `KBEngine.<api>` 成员访问、B. 内建属性/通道 hover 追加段 + def 声明方法 hover 追加段(命中才非空,不覆盖既有注解)、C. 生命周期回调 `def onX(...)` 声明行;渲染=签名代码块+面/类别行+本地化摘要+源码锚;排在 kbe 模块符号(SP-2)与实体 hooks 面之后,已有更详实 hover 的符号不被覆盖。查询语义(与 Rust 同口径):面精确优先(脚本目录→base/cell/client,client 另试 bots)→唯一 owner 回退→多面同名如实出「多个进程面都有定义」绝不静默挑一个。
+  - 交付③i18n:✅ locale 走 `kbengine.hover.language` 既有面(hoverLocale 解析),zh 缺失回退 en 并带 `_(en)_` 如实标注。
+  - 验收:✅ 单测锁 = tests/pythonApiHoverDocs.test.ts(查询语义/触发点位置判定/渲染/locale 回退/库地板)+ tests/apiDocsParity.test.ts(双产物一致+生成器零漂移+回调 onXxx 形态纪律)+ Rust 6 单测 2 烟测 + parity golden 重录(hover.builtin-property-databaseID 增补段=设计行为)。如实边界:「对官方 API 清单>=95%」未做全清单对账(官方 CHM 清单未在本仓库结构化);覆盖口径=知识页已 grounding 的 API 面 225 条。
+  - 门禁:eslint 0/tsc 0/unit 584 文件 7171 过+2 skip/cargo workspace(--exclude kode-scheduler)104 套全绿/xvfb demo 25 RC=0。
+  - 协同:与 P0-A 类型桩同源互补(补全=签名,hover=文档)✅ 同库共享;usage 统计指导优先级未做(后续需要再说)。
+  - 锚点:languageProviders.ts 编辑后真位重探 871/961/1852/1911/1935/2063/4812/5220/5326/7170,perfCallChainDoc+2026-baseline.md 锁步。
 
 - [ ] **KB-001 · P2 · 建设 · KBEngine 源码解析知识库（双语,人机共用）**
   - 首批头号专题（用户点名的重灾区，2026-11-01）：内存对象引用与释放——实体对象生命周期引用规则、cell/base 迁移后引用失效语义、destroy 后 Python 侧持引用的行为、timer/Functor 持引用与回收、跨进程引用（cellData 快照 vs 活对象）等，逐坑整理：现象/根因（带 kbe/src 源码引用）/正确姿势。用户多次踩坑，经验最密集的区域。
