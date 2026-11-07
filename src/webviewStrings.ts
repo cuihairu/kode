@@ -133,7 +133,12 @@ const zh = {
     errEnterPathToAdd: '请输入要加入监视的 Watcher 路径。',
     errDuplicatePath: (path: string) => `监视清单已存在该路径：${path}`,
     errStreamDisabled: '结果流默认关闭：请启用 kbengine.runtimeQuery.enabled。',
-    streamHint: '流式轮询按 kbengine.runtimeQuery.pollIntervalMs(默认 2s)循环查询清单内全部路径。'
+    streamHint: '流式轮询按 kbengine.runtimeQuery.pollIntervalMs(默认 2s)循环查询清单内全部路径。',
+    freshnessLive: (at: string) => `实时(最近成功读数 ${at})`,
+    freshnessStale: (failedAt: string, failures: number, lastSuccessAt?: string) =>
+      lastSuccessAt
+        ? `过期(断连于 ${failedAt},连续失败 ${failures} 轮);当前显示 ${lastSuccessAt} 的旧值,重连成功前不转实时`
+        : `过期(断连于 ${failedAt},连续失败 ${failures} 轮);尚无成功读数,无旧值可显示`
   },
   entityDependency: {
     title: '实体依赖关系',
@@ -341,7 +346,12 @@ const en: typeof zh = {
     errEnterPathToAdd: 'Enter a watcher path to add.',
     errDuplicatePath: (path: string) => `Watcher path already on the list: ${path}`,
     errStreamDisabled: 'Result stream is off by default; enable kbengine.runtimeQuery.enabled.',
-    streamHint: 'Stream polling queries every path on the watch list each kbengine.runtimeQuery.pollIntervalMs (default 2s).'
+    streamHint: 'Stream polling queries every path on the watch list each kbengine.runtimeQuery.pollIntervalMs (default 2s).',
+    freshnessLive: (at: string) => `Live (last successful reading ${at})`,
+    freshnessStale: (failedAt: string, failures: number, lastSuccessAt?: string) =>
+      lastSuccessAt
+        ? `Stale (disconnected at ${failedAt}, ${failures} failed rounds); showing the old values from ${lastSuccessAt} until a reconnect succeeds`
+        : `Stale (disconnected at ${failedAt}, ${failures} failed rounds); no successful reading yet, nothing to show`
   },
   entityDependency: {
     title: 'Entity Dependencies',

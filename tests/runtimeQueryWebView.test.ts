@@ -545,6 +545,7 @@ describe('webview 内联脚本渲染 watcher 结果表格', () => {
       'component',
       'path',
       'message',
+      'freshness',
       'empty',
       'spaces-empty',
       'refresh',
