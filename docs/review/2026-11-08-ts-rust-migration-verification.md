@@ -30,3 +30,21 @@
 | Ruff 诊断 | `src/activate/utilityCommands.ts` 注册命令并调用 `runRuffLintCommand`，`src/ruffLint.ts` 经 Rust RPC 调用 Ruff | **命令路径已接 RPC**；Ruff 本身仍是外部工具，不应称作 Rust Core 自实现解析。 |
 
 核查时发现克隆导出另有协议形状缺口：Rust `PlanFilter` 输出 `{kind: ...}`，此前 TS 按字符串判断；`a721f91c` 已修复。`tests/playerDataCloneMysqlReal.test.ts` 可通过 `KODE_CLONE_TEST_MYSQL_PORT` 与 `KODE_CLONE_TEST_SERVER` 接入真实 MySQL 和 kode-server 验证计划、归档及导入执行。
+
+## 第三批：原迁移清单的执行路径复核
+
+原 `docs/architecture/migration-inventory.csv` 记录的是 2026-10-23 的迁移建议，不能把其中 `moved` 当作今天的完成状态；其中 `src/languageProviders.ts` 也已拆分。本批以实际装配和调用为证据，未执行全量行为对拍。
+
+| 原清单范围 | 当前证据及状态 |
+| --- | --- |
+| 扩展装配 / 编辑器 provider | `src/activate/coreServices.ts` 创建 TS `IndexScheduler`、`EntityMappingManager`；`src/activate/languageServices.ts` 注册 TS 补全、悬停、定义、引用、重命名等 provider。**TS 用户入口仍在使用；Rust 部分仅 shadow，切流未完成。** VS Code 注册与 UI 本身应保留 TS。 |
+| .def 解析 / 文档快照 | `src/languageProviders/shared.ts` 的 `parseDefAst` 使用 `getOrParseDocumentSync` 和 TS `parseDefDocument`；`src/databaseSchema.ts` 的 def 解析使用 TS worker 及 TS 回退。**Rust parser 存在，所查生产链尚非 Rust。** |
+| 索引 / 依赖失效 / 调度 | `src/entityMapping.ts` 创建 TS `SemanticIndex` 与 `SemanticDependencyGraph`，`src/pythonClassIndex.ts` 创建自身 TS 依赖图，`src/activate/coreServices.ts` 创建 TS 调度器。**所查索引及失效路径仍在 TS；Rust 对应 crate 存在不代表接线完成。** |
+| Python 类/MRO 与组合根 | `src/activate/languageServices.ts` 创建 TS `PythonClassIndex`，其导入 `deriveCompositionRoots` 并使用 TS 解析/worker。**类索引、组合根仍为 TS；与 Rust 优先的 Python 方法符号提取分开评估。** |
+| 工作区发现 / 扫描根 | `src/activate/utilityCommands.ts` 调 TS `runWorkspaceDiscovery`；扫描根仍由 `src/scanRoots.ts` 管理。**该发现入口和扫描编排仍为 TS；Rust root crate 的正式消费面需逐一查证。** |
+| Python 及实体 stub | `src/activate/generators.ts` 注册/调用 `exportKbeStubs`、`exportPythonTypeStubs`、`exportEntityTypeStubs`。**所查生成命令仍在 TS；需保留现有写入保护与 source map 做对拍。** |
+| 配置 / 数据库表 / 消息表 / SDK | 配置解析经 Rust RPC；数据库表、消息表及 SDK 为 Rust 优先且保留 TS 回退，分别见上表。**这些是已接线但不能直接移除回退的混合路径。** |
+| 进程、Telnet、HTTP、热更新 | `src/activate/serverControls.ts`、`src/activate/views.ts`、`src/activate/hotReload.ts` 装配 TS 管理器/服务。**运行时入口仍在 TS；是否迁移到独立 Rust runtime 需要结合协议、平台与安全边界逐功能验收，不能将 UI 一起机械迁移。** |
+| 生成器、调试装配、主题、语法资源 | `src/activate/generators.ts`、`src/activate/serverControls.ts` 仍装配 TS 向导/调试；语法主题为静态资源。**保留或重构边界尚需逐项判断；不是所有 TS 代码都应迁移。** |
+
+剩余工作：逐个命令、provider 和 Rust RPC 建可复现的端到端矩阵，识别生产中完全未调用的 RPC，补齐新旧路径与用户资产保护对拍；本批不声称完成全仓清单或允许切换总 serving 门禁。
