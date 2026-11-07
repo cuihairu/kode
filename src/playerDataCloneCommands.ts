@@ -376,7 +376,13 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
           `${encryptionChoice.encrypt ? '归档已加密' : '归档为明文(未加密)'})。${PERSISTED_NOT_LIVE}`
       );
     } finally {
-      await connection.end();
+      try {
+        await connection.end();
+      } catch (closeError) {
+        // A cancelled or timed-out stream may already have closed the socket.
+        // Do not replace the original export outcome with a close error.
+        deps.channel.appendLine(`[Player Clone] 关闭只读连接失败: ${String(closeError)}`);
+      }
     }
   } catch (error) {
     if (error instanceof CloneCancelledError) {

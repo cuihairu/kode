@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   executeExportPlan,
+  CloneCancelledError,
   openCloneSession,
   probePhysicalTables
 } from '../src/playerDataCloneMysql';
@@ -173,5 +174,16 @@ describe('runExportCloneCommand(导出加密选择,设置默认+确认页切换)
     await runExportCloneCommand(makeDeps(['取消(Cancel)'], menus));
     expect(exportParams).toBeUndefined();
     expect(vi.mocked(executeExportPlan)).not.toHaveBeenCalled();
+  });
+
+  it('取消已关闭的流时，连接关闭错误不覆盖取消状态', async () => {
+    const deps = makeDeps(['导出(Export),加密(本机钥匙)'], []);
+    const warning = vi.fn(async () => undefined);
+    deps.showWarningMessage = warning;
+    vi.mocked(executeExportPlan).mockRejectedValueOnce(new CloneCancelledError());
+    vi.mocked(openCloneSession).mockResolvedValueOnce({ end: async () => { throw new Error('socket already closed'); } } as never);
+    await runExportCloneCommand(deps);
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('导出已取消'));
+    expect(exportParams).toBeUndefined();
   });
 });
