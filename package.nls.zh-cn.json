@@ -293,5 +293,8 @@
   "kbengine.command.bots.add.title": "KBEngine: 添加 Bot(telnet addBots)",
   "kbengine.command.bots.count.title": "KBEngine: 查询 Bot 数量(len(KBEngine.bots))",
   "kbengine.config.codeLens.propertyInitOrder.description": "实体类 __init__ 声明处显示「属性先于 __init__ 装载 · 来自 <实体>.def」CodeLens(点击回 def)\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#codelens-and-inlay-hints)",
-  "kbengine.command.debug.pyspyFlamegraph.title": "用 py-spy 采集火焰图"
+  "kbengine.command.debug.pyspyFlamegraph.title": "用 py-spy 采集火焰图",
+  "kbengine.config.python.stubSourceMode.description": "存根来源档位（stub source mode）。`generated`（默认）：存根由内置生成链产出（`entity_types.pyi` 来自 `*.def` + types.xml，`KBEngine.pyi` / `kbe_types.pyi` 来自内置 API 符号索引与 types.xml 解析链），不复制真实引擎代码；`real-source`：既有「复制真实代码导出」路径（本地引擎 typings checkout 拼接全量 API 进 `KBEngine.pyi`）仅在此档执行，档内 `kbengine.python.stubEngineTypings` 子开关照常生效。切档即时重导，默认 fresh workspace 不触发复制代码行为\n\n默认值：`generated`（不复制真实代码）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#python-integration)",
+  "kbengine.config.python.stubSourceMode.enum.0": "`generated`（默认）：存根由内置生成链产出（实体面来自 `*.def` + types.xml，KBEngine API 面来自内置符号索引），不复制真实引擎代码",
+  "kbengine.config.python.stubSourceMode.enum.1": "`real-source`：允许复制真实代码——本地引擎 typings checkout 拼接全量 API 只在此档执行（`kbengine.python.stubEngineTypings` 为档内子开关）"
 }
