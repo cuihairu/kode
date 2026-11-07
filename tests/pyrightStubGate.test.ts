@@ -313,6 +313,8 @@ describe('exportEntityTypeStubs × pyright 接线(generated 档)', () => {
   it('默认装配(未注入 pyright 面):写入后同样触发校验,行落专用输出通道', async () => {
     // 生产路径不传 options.pyright 也必须触发(装配层缺省 runner = 真 CLI,
     // 探测结果随环境:可用→诊断汇总,不可用→降级提示,两者都以 [pyright] 起头)
+    // 30s 上限:缺省装配真跑 pyright/npx CLI 探测+诊断,满载下冷启动慢,
+    // 5s 缺省超时是 CI flake 源(断言不变,只放宽时长)。
     const written = await exportEntityTypeStubs(new EntityMappingManager({ subscriptions: [] } as vscode.ExtensionContext), realDeps, {
       silent: true,
       listMappings: () => [baseMapping],
@@ -324,5 +326,5 @@ describe('exportEntityTypeStubs × pyright 接线(generated 档)', () => {
       .flatMap(channel => channel.lines)
       .join('');
     expect(lines).toContain('[pyright]');
-  });
+  }, 30_000);
 });

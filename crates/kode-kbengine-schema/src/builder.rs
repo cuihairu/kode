@@ -53,7 +53,9 @@ pub fn build_schema_from_project(
         match cache.load(path) {
             Ok(buf) => Some(buf.text().to_string()),
             Err(e) => {
-                acc.push(format!("{}: unreadable ({e})", path.display()));
+                // 诊断走相对项目根的路径(快照/日志跨机器可对拍)。
+                let shown = path.strip_prefix(project_root).unwrap_or(path);
+                acc.push(format!("{}: unreadable ({e})", shown.display()));
                 None
             }
         }
