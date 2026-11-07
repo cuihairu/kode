@@ -42,9 +42,28 @@ pub struct Flow {
     pub role: ComponentRole,
     pub map: MessageMap,
     parser: FrameParser,
+    /// 下行(s2c)独立组帧器:TCP 双向各自成帧,PA-004 capture 按 direction
+    /// 喂入(additive API,PA-003 单流 `feed()` 语义不变)。
+    parser_down: FrameParser,
     pub phase: Phase,
     /// 是否已见 onImportClientMessages(诊断)。
     pub protocol_imported: bool,
+}
+
+/// TCP 流方向(每方向独立字节流,独立组帧)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    ClientToServer,
+    ServerToClient,
+}
+
+impl Direction {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Direction::ClientToServer => "c2s",
+            Direction::ServerToClient => "s2c",
+        }
+    }
 }
 
 impl Flow {
@@ -59,16 +78,37 @@ impl Flow {
         Flow {
             role,
             map,
-            parser: FrameParser::new(cfg),
+            parser: FrameParser::new(cfg.clone()),
+            parser_down: FrameParser::new(cfg),
             phase: Phase::Connected,
             protocol_imported: false,
         }
     }
 
-    /// 动态导入后刷新 framing 规格(新增 id 立即可组帧)。
+    /// 动态导入后刷新 framing 规格(新增 id 立即可组帧;双向)。
     fn refresh_specs(&mut self) {
         let specs = self.map.clone_specs();
-        self.parser.config_mut().specs = specs;
+        self.parser.config_mut().specs = specs.clone();
+        self.parser_down.config_mut().specs = specs;
+    }
+
+    /// 按方向喂入(PA-004 capture/decode 面):每方向独立字节流/组帧器,
+    /// 共享同一消息表(动态导入副作用对两方向同时生效)。
+    pub fn feed_direction(
+        &mut self,
+        dir: Direction,
+        chunk: &[u8],
+        limits: &DecodeLimits,
+    ) -> Result<Vec<DecodedMessage>, DecodeError> {
+        let frames = match dir {
+            Direction::ClientToServer => self.parser.feed(chunk)?,
+            Direction::ServerToClient => self.parser_down.feed(chunk)?,
+        };
+        let mut out = Vec::with_capacity(frames.len());
+        for frame in frames {
+            out.push(self.decode_frame(frame, limits)?);
+        }
+        Ok(out)
     }
 
     fn feed(
@@ -196,6 +236,21 @@ impl Session {
             ComponentRole::Loginapp => self.loginapp.feed(chunk, &self.limits),
             ComponentRole::Baseapp => self.baseapp.feed(chunk, &self.limits),
         }
+    }
+
+    /// 喂入指定 Flow + 方向的 TCP 流字节(PA-004 capture/decode 面;
+    /// 两方向独立组帧,共享本 Flow 的消息表)。
+    pub fn feed_direction(
+        &mut self,
+        role: ComponentRole,
+        dir: Direction,
+        chunk: &[u8],
+    ) -> Result<Vec<DecodedMessage>, DecodeError> {
+        let flow = match role {
+            ComponentRole::Loginapp => &mut self.loginapp,
+            ComponentRole::Baseapp => &mut self.baseapp,
+        };
+        flow.feed_direction(dir, chunk, &self.limits)
     }
 
     pub fn flow(&self, role: ComponentRole) -> Option<&MessageMap> {
