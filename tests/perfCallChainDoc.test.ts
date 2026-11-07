@@ -155,22 +155,38 @@ const ANCHORS: Array<[string, number, string]> = [
   // KODE-CFG-009 配置消费通道接线(顶部 import +2 + activate 预取 +3 = +5)均
   // 作用于 extension.ts 顶部——全部 extension.ts 锚点按合并树真位重探
   // 683/696/980/1062/1113/1176/1499,出处随 baseline 锁步。
-  // 2026-11-07(KODE-CFG-015/016 合并 origin/main):分支侧 SPI CodeLens
-  // (import +1/装配 +22)与配置写诊断+schema hover(import +10/装配 +113)同
-  // main 侧 C-22/KODE-ARCH-002/C-23 位移在合并树叠加,按合并树重探真位
-  // 636/649/933/1015/1066/1129/1485/2467/2547,出处随 baseline 锁步。
-  // 2026-11-07(KODE-PERF 激活排查批,rebase 合并树后重探):activationProfile/
-  // startupViewPlaceholders/indexWatcherScope 三 import(+3)、activate 首行占位
-  // 注册块(+10)、三处 markActivateStage、首扫 withProgress 块、watcher 签名守卫
-  // +排除出口过滤块+staged 装载(评审返工净 +17)——合并树真位重探
-  // 652/665/950/1032/1083/1160/1561/2543/2623,出处随 baseline 锁步。
-  ['src/extension.ts', 1032, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1083, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1160, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 950, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1561, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 652, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 665, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-07(批B):C-22 def 属性只读视图 inlay——extension.ts 顶部 import +1
+  // (366 行)与装配块 +10(1435 行),366 后锚点 +1、1435 后锚点 +11:真位重探
+  // 684/697/981/1063/1114/1177/1510/2379/2459,出处随 baseline 锁步。
+  // 2026-11-07(KODE-ARCH-002 数据库域抽装):extension.ts 顶部 import 精简
+  // -60 行(数据库域 import 随块迁 databaseWiring.ts)+ 数据库域装配块
+  // 2902..3504(603 行)整体迁出换 4 行 wireDatabase 调用:全部 extension.ts
+  // 锚点 -60(真位重探 624/637/921/1003/1054/1117/1450/2319/2399);其后无
+  // extension.ts 锚点。baseline §7 六处 extension.ts 出处随 baseline 锁步。
+
+  // 2026-11-07(C-23 批):extension.ts 顶部 +1 行 import(trapDiagnosticsWiring,
+  // wireTrapLintDiagnostics 装配 +7 在 6990 尾段全部锚点之后)与 hover.ts 顶部
+  // +1 行 import(trapsKnowledge)——上列全部锚点 +1、provideHover 锚点 129→130
+  // (真位重探 625/638/922/1004/1055/1118/1451/2320/2400),出处随 baseline 锁步。
+
+  // 2026-11-07(KB-GC-001 guiconsole 期一):extension.ts 顶部 +3 行 import
+  // (kbengineConsoleHub/consoleLogTail/componentStatusPanel),装配块 +66 落在
+  // 4554(全部锚点之后不再位移)——全部 extension.ts 锚点 +3(真位重探
+  // 628/641/925/1007/1058/1121/1454/2323/2403),出处随 baseline 锁步。
+  // 2026-11-07(二):KB-GC-001 缺什么补什么——视图占位先行(activate 首行装配块
+  // +11)与 indexWatcherScope 签名守卫/排除目录出口过滤(watchPythonIndex 块
+  // +13)接线:前六锚(+13:628→641/641→654/925→938/1007→1020/1058→1071/
+  // 1121→1134,均在 watchPythonIndex 之前),后三锚再 +13(+26 总:1454→1480/
+  // 2323→2349/2403→2429,在 watchPythonIndex 之后)。真位重探确认,出处随
+  // baseline 锁步。
+
+  ['src/extension.ts', 1020, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1071, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1134, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 938, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1480, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 641, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 654, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -180,8 +196,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // runPyspySchedule 引入)→ 上列 9 处 extension.ts 锚点整体 +2(真位重探 683/696/980/
   // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450);
   // HOT-VER 再 +3(见上)→ 后段锚点 2373/2453;DEMO-GAME-006 再 +2(见上)→ 2375/2455。
-  ['src/extension.ts', 2543, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2623, 'flushQueued()'],
+  ['src/extension.ts', 2349, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2429, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。

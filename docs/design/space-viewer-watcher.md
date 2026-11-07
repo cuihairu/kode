@@ -231,11 +231,11 @@ surface to the real-protocol surface):
   send/receive functions: `src/kbengineProtocol.ts:54-58`
   (`CONSOLE_WATCHER_CB_MSG_ID` / `CONSOLE_PROFILE_CB_MSG_ID` /
   `CELLAPPMGR_QUERY_SPACES_MSG_ID` / `MACHINE_BROADCAST_PORT`) and
-  `src/kbengineProtocol.ts:80-89` `WATCHER_QUERY_MSG_IDS` (mapping 8 watcher
+  `src/kbengineProtocol.ts:113-122` `WATCHER_QUERY_MSG_IDS` (mapping 8 watcher
   request numbers per engine process type, item-by-item matching
   `Watcher.py:33-40`). If reconciliation fails (condition 2), the whole
   table can be disabled rather than patched site by site.
-- Framing is centralized in `src/kbengineProtocol.ts:283` `buildFrame`,
+- Framing is centralized in `src/kbengineProtocol.ts:316` `buildFrame`,
   separating the connection layer from business decoding: the connection can
   be mocked while business decoding asserts field by field in §4's order.
 - The panel switch defaulting off is C-3's task discipline; before

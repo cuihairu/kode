@@ -231,7 +231,13 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
                     // 目标模块 basename:无别名绑顶层首段(import a.b 绑 a,
                     // 文件 a.py);有别名绑末段(import a.b as c 的 c=b.py)。
                     let basename = if alias.asname.is_some() {
-                        alias.name.as_str().rsplit('.').next().unwrap_or("").to_string()
+                        alias
+                            .name
+                            .as_str()
+                            .rsplit('.')
+                            .next()
+                            .unwrap_or("")
+                            .to_string()
                     } else {
                         top_level_binding(alias.name.as_str())
                     };

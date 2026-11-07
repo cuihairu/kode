@@ -327,5 +327,16 @@
   "Component slot": "组件",
   "FIXED_DICT property sub-key assignment does not trigger the property sync event; reassign {property} as a whole": "FIXED_DICT 属性子键赋值不触发属性同步事件,须整体重赋 {property}",
   "Storing self in a module-level container keeps the entity alive after destroy (garbages leak); drop the reference in onDestroy": "把 self 存入模块级容器会在实体销毁后滞留引用(garbages 泄漏),请在 onDestroy 里解除引用",
-  "delTimer inside onDestroy is unnecessary: destroy() already cancels all timers (scriptTimers_.cancelAll(); stale ids silently return -1)": "onDestroy 内的 delTimer 是多余的:destroy() 已取消全部定时器(scriptTimers_.cancelAll();陈旧 id 静默返回 -1)"
+  "delTimer inside onDestroy is unnecessary: destroy() already cancels all timers (scriptTimers_.cancelAll(); stale ids silently return -1)": "onDestroy 内的 delTimer 是多余的:destroy() 已取消全部定时器(scriptTimers_.cancelAll();陈旧 id 静默返回 -1)",
+  "KBEngine console log tail: machined is not reachable (no answer on discovery UDP 20086); will attach when it comes back.": "KBEngine console 日志 tail：machined 不可达（发现广播 UDP 20086 无应答），等它恢复后自动接入，不硬试。",
+  "KBEngine console log tail: no logger component in machined discovery yet; waiting for it to start.": "KBEngine console 日志 tail：machined 发现结果里还没有 logger 组件，等它启动后自动注册。",
+  "KBEngine console log tail: registered on logger {host}:{port} (702 → 65501 push stream).": "KBEngine console 日志 tail：已在 logger {host}:{port} 注册（702 → 65501 长连推流）。",
+  "KBEngine: jump to exception source {file}:{line}": "KBEngine：跳转到异常源码 {file}:{line}",
+  "state={state} (not COMPONENT_STATE_RUN)": "state={state}（非 COMPONENT_STATE_RUN）",
+  "CPU {value}% over threshold {threshold}%": "CPU {value}% 超过阈值 {threshold}%",
+  "memory {value}MB over threshold {threshold}MB": "内存 {value}MB 超过阈值 {threshold}MB",
+  "pid={pid} cpu={cpu}% mem={mem}MB {address}": "pid={pid} cpu={cpu}% mem={mem}MB {address}",
+  "process vanished from machined discovery": "进程已从 machined 发现结果中消失",
+  "machined unreachable — showing the previous snapshot": "machined 不可达 — 显示上一轮快照",
+  "machined unreachable: discovery UDP 20086 has no answer; polling continues, data is a stale snapshot": "machined 不可达：发现广播 UDP 20086 无应答，轮询保持，数据为过期快照"
 }

@@ -50,22 +50,11 @@ describe('compiled extension activation smoke', () => {
     const declaredViews = (Object.values(manifest.contributes.views) as Array<Array<{ id: string }>>)
       .flat()
       .map(item => item.id);
-    const registered = stub.treeRegistrations.map(item => item.viewId);
-    // KODE-PERF 视图先行:占位 provider 先行注册 + 真 provider 按同 id 接管,
-    // 每视图恰两笔(占位 + 真)。断言每个声明视图都被注册(去重后集合等于
-    // manifest),且每 id 恰好注册两次(占位 + 真接管各一),缺占位或缺真都红。
-    const registeredIds = [...new Set(registered)].sort();
+
     assert.deepStrictEqual(
-      registeredIds,
+      stub.treeRegistrations.map(item => item.viewId).sort(),
       [...declaredViews].sort()
     );
-    for (const viewId of declaredViews) {
-      assert.strictEqual(
-        registered.filter(id => id === viewId).length,
-        2,
-        `${viewId} 应注册两次(占位 + 真接管),实际 ${registered.filter(id => id === viewId).length}`
-      );
-    }
   });
 
   it('creates the status bar items with the configured alignment', () => {

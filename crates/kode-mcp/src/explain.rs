@@ -30,9 +30,27 @@ const ARTICLES: &[KnowledgeArticle] = &[
         title: "Entity lifecycle & object reference release",
         grounding: "kbengine@c2a3b8f",
         keywords: &[
-            "lifecycle", "life cycle", "destroy", "garbages", "entities", "entity registry",
-            "reference", "release", "leak", "refcount", "onDestroy", "isDestroyed", "timer",
-            "addTimer", "delTimer", "onTimer", "生命周期", "销毁", "引用", "泄漏", "定时器",
+            "lifecycle",
+            "life cycle",
+            "destroy",
+            "garbages",
+            "entities",
+            "entity registry",
+            "reference",
+            "release",
+            "leak",
+            "refcount",
+            "onDestroy",
+            "isDestroyed",
+            "timer",
+            "addTimer",
+            "delTimer",
+            "onTimer",
+            "生命周期",
+            "销毁",
+            "引用",
+            "泄漏",
+            "定时器",
         ],
         summary: "Live registry strong reference; destroy flow into garbages; \
                   post-destroy reference semantics; 3600s leak detection; destroy guards; \
@@ -45,16 +63,37 @@ const ARTICLES: &[KnowledgeArticle] = &[
         title: "Entity teleport, cross-cellapp migration & cross-process references",
         grounding: "kbengine@3082ab5",
         keywords: &[
-            "teleport", "migration", "migrate", "celldata", "cellentitycall", "entitycall",
-            "ghost", "real", "witness", "ongetcell", "onlosecell", "onteleportsuccess",
-            "onteleportfailure", "cross-process", "cross cellapp", "cell/base", "base/cell",
-            "trap", "onmigrationcellappstart", "传送", "迁移", "跨进程", "快照",
+            "teleport",
+            "migration",
+            "migrate",
+            "celldata",
+            "cellentitycall",
+            "entitycall",
+            "ghost",
+            "real",
+            "witness",
+            "ongetcell",
+            "onlosecell",
+            "onteleportsuccess",
+            "onteleportfailure",
+            "cross-process",
+            "cross cellapp",
+            "cell/base",
+            "base/cell",
+            "trap",
+            "onmigrationcellappstart",
+            "传送",
+            "迁移",
+            "跨进程",
+            "快照",
         ],
         summary: "Three addressable faces and EntityCall as a (component,id) handle; \
                   cellData is a stale-by-design snapshot; teleport routing and guards; \
                   the cross-cellapp message flow (ghost transition, base buffering, \
                   cellEntityCall_ retarget, rebuild, restore); which callbacks fire at HEAD.",
-        text: include_str!("../../../docs/knowledge/entity-migration-and-cross-process-references.md"),
+        text: include_str!(
+            "../../../docs/knowledge/entity-migration-and-cross-process-references.md"
+        ),
     },
     KnowledgeArticle {
         file: "docs/knowledge/startup-flow-and-stack.md",
@@ -62,7 +101,14 @@ const ARTICLES: &[KnowledgeArticle] = &[
         title: "Startup flow and stack",
         grounding: "kbengine@c2a3b8f",
         keywords: &[
-            "startup", "boot", "phase", "frame", "mainloop", "initialize", "启动", "启动流程",
+            "startup",
+            "boot",
+            "phase",
+            "frame",
+            "mainloop",
+            "initialize",
+            "启动",
+            "启动流程",
         ],
         summary: "KBEngine server startup phase order and the per-frame mainloop stack, \
                   grounded line by line.",
@@ -74,8 +120,14 @@ const ARTICLES: &[KnowledgeArticle] = &[
         title: "Entry script SPI methods",
         grounding: "kbengine@c2a3b8f",
         keywords: &[
-            "entry script", "entry", "spi", "oninit", "onfinish", "entrymodule",
-            "入口脚本", "入口模块",
+            "entry script",
+            "entry",
+            "spi",
+            "oninit",
+            "onfinish",
+            "entrymodule",
+            "入口脚本",
+            "入口模块",
         ],
         summary: "The complete method table the engine calls on the entry module \
                   (getEntryScript interface).",
@@ -87,8 +139,17 @@ const ARTICLES: &[KnowledgeArticle] = &[
         title: "Fixed directories and the path resolution chain",
         grounding: "kbengine@c2a3b8f",
         keywords: &[
-            "directory", "directories", "path", "paths", "resolution", "respath",
-            "kbenginepath", "usr", "目录", "路径", "路径解析",
+            "directory",
+            "directories",
+            "path",
+            "paths",
+            "resolution",
+            "respath",
+            "kbenginepath",
+            "usr",
+            "目录",
+            "路径",
+            "路径解析",
         ],
         summary: "Which directories the engine treats as fixed and the full path \
                   resolution chain from config to disk.",
@@ -167,9 +228,7 @@ fn headings_of(text: &str) -> Vec<&str> {
     text.lines()
         .filter_map(|line| {
             let trimmed = line.trim_start();
-            trimmed
-                .strip_prefix("## ")
-                .map(|rest| rest.trim())
+            trimmed.strip_prefix("## ").map(|rest| rest.trim())
         })
         .collect()
 }
@@ -196,10 +255,15 @@ mod tests {
     fn knowledge_face_matches_migration_article() {
         let out = explain("teleport", None, "en");
         let matches = out["knowledge"].as_array().unwrap();
-        assert_eq!(matches[0]["file"], "docs/knowledge/entity-migration-and-cross-process-references.md");
+        assert_eq!(
+            matches[0]["file"],
+            "docs/knowledge/entity-migration-and-cross-process-references.md"
+        );
         assert_eq!(matches[0]["grounding"], "kbengine@3082ab5");
         let headings = matches[0]["headings"].as_array().unwrap();
-        assert!(headings.iter().any(|h| h.as_str().unwrap().contains("teleport")));
+        assert!(headings
+            .iter()
+            .any(|h| h.as_str().unwrap().contains("teleport")));
     }
 
     #[test]
@@ -220,8 +284,16 @@ mod tests {
     #[test]
     fn embedded_articles_exist_and_index_files_resolve() {
         for article in ARTICLES {
-            assert!(article.text.starts_with('#'), "{} missing title", article.file);
-            assert!(!headings_of(article.text).is_empty(), "{} no headings", article.file);
+            assert!(
+                article.text.starts_with('#'),
+                "{} missing title",
+                article.file
+            );
+            assert!(
+                !headings_of(article.text).is_empty(),
+                "{} no headings",
+                article.file
+            );
         }
     }
 }

@@ -63,7 +63,7 @@ Two boundaries:
 
 ## Overview of `kbengine.*` Settings (by Feature Area)
 
-The 111 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 76-row table. To find a setting, locate the feature area first, then the row within it.
+The 116 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 76-row table. To find a setting, locate the feature area first, then the row within it.
 
 Every key's tip in the VS Code settings UI is authored as `markdownDescription` — one sentence of purpose, a 「默认值」 (default value) section, and a deep link into this guide. The settings UI renders `markdownDescription` only (markdown inside a bare `description` never renders). `tests/configMarkdownDescription.test.ts` locks package.json against this page: every key must carry `markdownDescription` with a default section, every enum must document every option, and every guide-link anchor must exist as a heading on this page.
 
@@ -143,8 +143,6 @@ With the first three off, `.def` hover keeps only syntax highlighting. Since bat
 | `kbengine.codeLens.property` | boolean | `true` | Property markers at `self.<property>` access sites in Python scripts (batch 135) |
 | `kbengine.codeLens.propertyInitOrder` | boolean | `true` | `属性先于 __init__ 装载 · 来自 <实体>.def` marker on entity-class `__init__` declarations (IDE-PROP-001; the engine loads Entity.def properties before `__init__` runs, so scripts need no same-name assignment; click jumps to the def) |
 | `kbengine.codeLens.typesXml` | boolean | `true` | Storage lens chain on `types.xml` declaration lines (batch 134) |
-| `kbengine.codeLens.engineSpi` | boolean | `true` | Engine SPI implementation function annotation lens (CFG-015; method name matched against the 36-method SPI table from KODE-CFG-012, component role derived from config, e.g. `onInit` gets "Engine SPI · onInit · first callback") |
-| `kbengine.configData` | object | see default | Config data protection (CFG-016): `configDirGlobs` (config dirs, default `scripts/config/**`, `scripts/data/config/**`, `scripts/data/**`), `configClassPatterns` (`*Config`/`*Data`), `reloadFunctionPatterns` (`reload*`/`hotUpdate*`), `mutationExclude` (intentional-write whitelist globs), `enabled` (default `true`); off → zero diagnostics |
 | `kbengine.inlayHints.typeData` | boolean | `true` | Inline hint at `self.<property>` access sites in Python showing the final resolved type annotation (types.xml aliases resolve down to the underlying builtin, e.g. SERVER_ID → int; PYTHON/unknown → Any renders nothing), and the declared parameter types (`: type`, type-only) after each argument of `self.base/cell/client` RPC call sites (declared args only, section-gated); array `<of>` element types inline after `for item in self.<property>:` iteration targets and `x = self.<property>[i]` subscript-assignment locals (same resolution chain) — same resolution index as property F12 (batch 154; resolve-to-final 2026-10-29; element types 2026-11-04) |
 | `kbengine.inlayHints.defParams` | boolean | `true` | Inline hint at entity script section definition sites (`ClientMethods`/`BaseMethods`/`CellMethods`): each un-annotated `def` parameter gets the `.def`-declared `<Arg>` type after its name (`: type`), and a declared `<ReturnType>` renders `-> type` after the closing paren; multi-line defs are skipped (same rule as call-site inlays) |
 | `kbengine.inlayHints.defProps` | boolean | `true` | Read-only view of the entity's `.def` root-level properties rendered inline after a whole-line comment anchor `# kode:props-from-def` in an entity script (name + resolved type per property; segment hover shows the `.def` declaration source). Pure rendering — no code is written, the `.def` stays the single source of truth |
@@ -230,6 +228,19 @@ The four path settings are "optional overrides": a configured value is honored a
 | `kbengine.webviewConsoleLogs` | boolean | `true` | Collect the log panel page's `console` output and uncaught exceptions into the same log stream |
 | `kbengine.webviewLocale` | `"auto" \| "zh" \| "en"` | `"auto"` | Webview panel display language; `auto` follows the VS Code display language (zh-cn/zh-tw → Chinese, otherwise English); `zh`/`en` force-override. Panel copy only — editor diagnostics and hovers are unaffected |
 | `kbengine.maxLogEntries` | number | `10000` | Log WebView cache cap (entries). Oldest entries are dropped first and the buffer resets on window reload. Lower it to save memory on heavy log volume; raise it to keep longer history |
+
+### Console Line (Live Log Tail and Component Status Panel)
+
+The guiconsole protocol line (machined UDP discovery + direct TCP to each component): the log tail registers `Logger::registerLogWatcher` (702) on the discovered logger and renders the 65501 push stream into the "KBEngine Console 日志" Output channel; the status panel reads the machine discovery broadcast (the same Args25 that carries pid/cpu/mem/usedmem/state). Both faces share one discovery hub — there is no second polling chain.
+
+| Setting | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `kbengine.console.discoveryHost` | string | `127.0.0.1` | machined discovery broadcast target: `127.0.0.1` keeps the line localhost-only (same-machine direct query); cross-machine verification needs an explicit `255.255.255.255` (broadcast) or target IP — security boundary: discovery answers bypass the uid filter for CONSOLE_TYPE requests, cross-machine equals handing over full cluster control, set it knowingly |
+| `kbengine.consoleLogTail.enabled` | boolean | `true` | Master switch for the live log tail (702 → 65501 long-lived push stream). Missing config counts as ON; only an explicit `false` turns it off (same convention as hot-reload gates). A status-bar item shows connecting/connected/backoff state; disconnects reconnect with exponential backoff (1s doubling, 30s cap) |
+| `kbengine.consoleLogTail.components` | string[] | `[]` | Component filter for the tail: keep only lines whose component type name (engine `COMPONENT_NAME`: `cellapp`, `baseapp`, `logger`, …) is in the array; empty = no filter. Changing the array takes effect on the next tail reconnect (toggle off/on) |
+| `kbengine.componentStatusPanel.refreshSeconds` | number | `5` | Discovery poll interval (seconds) for the shared hub — feeds both the panel rows and the tail's logger address |
+| `kbengine.componentStatusPanel.cpuThresholdPercent` | number | `90` | A component whose broadcast `cpu` exceeds this percent is marked red in the panel; a vanished process and a non-running `state` (shutting-down values 2/3/4) are red too (0=INIT/1=RUN are normal — live engines report INIT for machine/bots) |
+| `kbengine.componentStatusPanel.memThresholdMb` | number | `1024` | Memory threshold in MB over which a component is marked red; the wire `usedmem` field is bytes and is converted (live-machine measured) |
 
 ### Remote Debugging
 
@@ -668,10 +679,6 @@ Sub-paths inferable from existing files never become settings: the def root deri
 | `kbengine.httpRequests` | Default: one disabled example (`enabled: false`) | No (the user's business endpoints) | **Keep**; the example is disabled by default and has no side effects |
 
 Counted: **all 32 kept, 0 deleted** (deleting entries would break existing user settings — not done); of them, 5 path settings were downgraded from "must configure" to "optional override", 3 telnet/value settings were already override-style, and 21 are preference/security/business switches (whose defaults carry zero-config semantics). Additionally, 3 kinds of purely discovered resources with **no settings** were added (types.xml, messages_fixed(_defaults).xml, and the engine defaults' source-root fallback). Since batch 126, 12 more settings were added beyond this table (`kbengine.db.tablePrefix`, 4 × `kbengine.hotReload.*`, `kbengine.clientSdk.outputDir`, `kbengine.python.extraPathsSync`/`stubExport`/`stubDir`/`stubSourceMode`, `kbengine.python.enableMroJump`, and `kbengine.engineVersion`), all registered in the grouped overview tables above.
-
-## Config data protection
-
-Excel-generated config data (dict tables and `*Config`/`*Data` classes under the config dirs) is write-protected by the engine contract: only reload/hot-update entry points may mutate it. The `kbengine.configData` rule reports write points (attribute / subscript / `del` / augmented assign / mutator methods) on config bindings outside those exemptions as `kbengine.configDataMutation` diagnostics; writes inside `reload*`/`hotUpdate*` functions and the `mutationExclude` whitelist are exempt, and hovering a config binding/class name shows its literal-read type text. See the `kbengine.configData` row in the settings overview above.
 
 ## FAQ
 

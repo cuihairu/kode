@@ -63,7 +63,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 ## kbengine.* 设置项总览(按功能分区)
 
-111 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 76 行的大表。找一个设置,先按功能定位分区,再在区内对行。
+116 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 76 行的大表。找一个设置,先按功能定位分区,再在区内对行。
 
 VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话作用 + 「默认值」段 + 跳回本指南的深链。设置 UI 只渲染 `markdownDescription`(裸 `description` 里的 markdown 不渲染)。`tests/configMarkdownDescription.test.ts` 把 package.json 与本页对账锁定:每键必须有含默认值段的 `markdownDescription`、每个 enum 必须逐选项给说明、提示里的指南链接锚点必须真存在于本页标题。
 
@@ -143,8 +143,6 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.codeLens.property` | boolean | `true` | Python 脚本 `self.<属性>` 访问处的属性标记(批135) |
 | `kbengine.codeLens.propertyInitOrder` | boolean | `true` | 实体类 `__init__` 声明处标「属性先于 __init__ 装载 · 来自 <实体>.def」(IDE-PROP-001;引擎在 __init__ 前装载 Entity.def 属性,脚本未必有同名赋值;点击回 def) |
 | `kbengine.codeLens.typesXml` | boolean | `true` | types.xml 类型声明行的落库镜链(批134) |
-| `kbengine.codeLens.engineSpi` | boolean | `true` | 引擎 SPI 实现函数标注镜(CFG-015;方法名匹配 KODE-CFG-012 的 36 方法表,组件角色由配置派生定,如 `onInit` 处标「引擎 SPI · onInit · 首回调」) |
-| `kbengine.configData` | object | 见默认值 | 配置数据保护(CFG-016):`configDirGlobs`(配置目录,默认 `scripts/config/**`、`scripts/data/config/**`、`scripts/data/**`)、`configClassPatterns`(`*Config`/`*Data`)、`reloadFunctionPatterns`(`reload*`/`hotUpdate*`)、`mutationExclude`(有意可写处白名单 glob)、`enabled`(默认 `true`);关闭即零诊断 |
 | `kbengine.inlayHints.typeData` | boolean | `true` | python 侧 `self.<属性>` 访问处以内联提示显示解析到底的类型注解(types.xml 别名逐层解析到底层内建,如 SERVER_ID→int;PYTHON/未知落 Any 不显示);`self.base/cell/client` RPC 调用点每实参后内联显示 def 已声明的形参类型(`: 类型`,只显类型不带合成形参名,只做已声明的,过段闸);数组 `<of>` 元素类型在 `for item in self.<属性>:` 迭代目标与 `x = self.<属性>[i]` 下标赋值局部变量后内联显示(同一解析链),与属性 F12 同一解析索引(批154;解析到底口径 2026-10-29;元素类型 2026-11-04) |
 | `kbengine.inlayHints.defParams` | boolean | `true` | entity 脚本区块(ClientMethods/BaseMethods/CellMethods)内 def 定义点的内联提示:未手写标注的形参名后内联 def 声明的 `<Arg>` 类型(`: 类型`),声明 `<ReturnType>` 时闭括号后内联 `-> 类型`;跨行 def 不出(与调用点 inlay 同规则) |
 | `kbengine.inlayHints.defProps` | boolean | `true` | entity 脚本内整行注释锚 `# kode:props-from-def` 行尾内联渲染该实体 def 根级属性只读清单(逐属性名+解析类型;段悬停给 def 声明出处)。纯渲染层,不写代码,属性唯一事实源仍为 .def |
@@ -230,6 +228,19 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.webviewConsoleLogs` | boolean | `true` | 采集日志面板页面 `console` 输出与未捕获异常,并入同一日志流 |
 | `kbengine.webviewLocale` | `"auto" \| "zh" \| "en"` | `"auto"` | Webview 面板显示语言;`auto` 跟随 VS Code 显示语言(zh-cn/zh-tw → 中文,其余 → 英文);`zh`/`en` 显式强制覆盖。只改面板文案,编辑器内诊断与悬停不受影响 |
 | `kbengine.maxLogEntries` | number | `10000` | 日志 WebView 缓存上限(条)。超出后从最旧开始丢弃,重启窗口缓冲清零。日志量大调低省内存,想留更长历史调高 |
+
+### Console 链（实时日志 tail 与组件状态面板）
+
+guiconsole 协议链（machined UDP 发现 + 直连各组件 TCP）：日志 tail 向发现到的 logger 注册 `Logger::registerLogWatcher`（702），把 65501 长连推流渲染进「KBEngine Console 日志」输出通道；组件状态面板读 machine 发现广播（pid/cpu/mem/usedmem/state 负载快照随回包自带）。两个面共用同一个发现 hub，不建第二条轮询链。
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.console.discoveryHost` | string | `127.0.0.1` | machined 发现广播目标：`127.0.0.1` 保持链路 localhost-only（同机直查）；跨机联验需显式填 `255.255.255.255`（广播）或目标机 IP——安全边界：发现应答对 CONSOLE_TYPE 请求绕过 uid 过滤，跨机=交出整个集群控制面，须知情配置 |
+| `kbengine.consoleLogTail.enabled` | boolean | `true` | 实时日志 tail（702 → 65501 长连推流）总开关。配置缺失视为开，只有显式 `false` 才关（与热更/门控同类口径）。状态栏项显示连接中/已连/退避重连态；断线按指数退避自动重连（1s 起翻倍，封顶 30s） |
+| `kbengine.consoleLogTail.components` | string[] | `[]` | tail 组件过滤：只保留数组内组件类型名的日志行（引擎 `COMPONENT_NAME`：`cellapp`、`baseapp`、`logger` 等），空数组 = 不过滤。改数组后下一次 tail 重连（开关一次）即生效 |
+| `kbengine.componentStatusPanel.refreshSeconds` | number | `5` | 共享 hub 的 machined 发现轮询间隔（秒）——同时供面板行与 tail 的 logger 地址 |
+| `kbengine.componentStatusPanel.cpuThresholdPercent` | number | `90` | 组件广播 `cpu` 超过该百分比时面板红色标记；进程消失与 state 非运行态（关停值 2/3/4）同样红色（0=INIT/1=RUN 是常态——真机 machine/bots 恒报 INIT） |
+| `kbengine.componentStatusPanel.memThresholdMb` | number | `1024` | 内存红色阈值（MB）；线上 `usedmem` 字段实为字节，按字节换算后比较（真机实测口径） |
 
 ### 远程调试
 
@@ -668,10 +679,6 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 | `kbengine.httpRequests` | 默认一条停用示例(`enabled: false`) | 否(用户业务接口) | **保留**,示例默认停用不产生副作用 |
 
 计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126 起在此表之外新增 12 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`/`stubSourceMode`、`kbengine.python.enableMroJump`、`kbengine.engineVersion`),均已在总览分区表登记。
-
-## 配置数据保护(configData)
-
-Excel 生成的配置数据(配置目录下的 dict 表与 `*Config`/`*Data` 类)受引擎契约保护:只有热更新重载入口可以修改。`kbengine.configData` 规则把这些配置绑定在豁免面之外的写点(属性/下标/`del`/增强赋值/变异方法)报为 `kbengine.configDataMutation` 诊断;`reload*`/`hotUpdate*` 函数体与 `mutationExclude` 白名单内不报;悬停配置绑定/类名显示直读类型文本。见上方设置总览中 `kbengine.configData` 行。
 
 ## 常见问题
 

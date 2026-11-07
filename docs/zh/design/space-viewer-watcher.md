@@ -187,10 +187,10 @@ C-2 / C-3 在仓库内的可验收面是 **mock 测试**，端到端真跑被一
 - 消息号走常量表而非写死在收发函数里：`src/kbengineProtocol.ts:54-58`
   （`CONSOLE_WATCHER_CB_MSG_ID` / `CONSOLE_PROFILE_CB_MSG_ID` /
   `CELLAPPMGR_QUERY_SPACES_MSG_ID` / `MACHINE_BROADCAST_PORT`）、
-  `src/kbengineProtocol.ts:80-89` `WATCHER_QUERY_MSG_IDS`
+  `src/kbengineProtocol.ts:113-122` `WATCHER_QUERY_MSG_IDS`
   （按引擎进程类型映射 8 个 watcher 请求号，与 `Watcher.py:33-40` 逐条对应）。
   对账失败（条件 2）时可整表停用，不必逐处改。
-- 组帧集中在 `src/kbengineProtocol.ts:283` `buildFrame`，
+- 组帧集中在 `src/kbengineProtocol.ts:316` `buildFrame`，
   连接层与业务解码分离：连接可 mock，业务解码按 §4 字段顺序逐字段断言。
 - 面板开关默认关是 C-3 的任务口径；条件 1/2/3 未同时满足前，
   不得让面板随扩展启动自动建连。

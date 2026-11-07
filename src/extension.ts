@@ -366,20 +366,14 @@ import { PythonTypeInlayHintsProvider } from './typeInlayHints';
 import { DefParamInlayHintsProvider } from './defParamInlayHints';
 import { DefPropsInlayHintsProvider } from './defPropsInlayHints';
 import { wireTrapLintDiagnostics } from './trapDiagnosticsWiring';
+import { ConsoleHub } from './kbengineConsoleHub';
+import { ConsoleLogTailController } from './consoleLogTail';
+import { ComponentStatusTreeProvider, resolveThresholds } from './componentStatusPanel';
+import { registerStartupViewPlaceholders } from './startupViewPlaceholders';
+import { watcherPatternSignature, isExcludedScanPath } from './indexWatcherScope';
 import { PythonClassIndex } from './pythonClassIndex';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { shouldStartKbEngineIndexing } from './workspaceGate';
-import { EngineSpiCodeLensProvider } from './engineSpiCodeLens';
-import {
-  collectConfigSchema,
-  computeConfigDataMutationFindings,
-  CONFIG_DATA_SETTINGS_DEFAULT,
-  type ConfigDataFinding,
-  type ConfigDataSettings,
-  type ConfigSchemaEntry,
-  type ConfigSourceInput
-} from './configDataMutation';
-import { ConfigSchemaHoverProvider } from './configSchemaHover';
 import { preheatDiscoveryScan } from './workspaceDiscovery';
 import { DiagnosticScheduler, getDiagnosticScheduler } from './diagnosticScheduler';
 import { isTypeRegistryFile } from './semanticIndex';
@@ -486,9 +480,6 @@ import {
   queryPlayerByDbid,
   testPlayerDatabaseConnection
 } from './playerDataPanel';
-import { flushActivateProfile, markActivateStage } from './activationProfile';
-import { registerStartupViewPlaceholders } from './startupViewPlaceholders';
-import { isExcludedScanPath, isPathWithin, watcherPatternSignature } from './indexWatcherScope';
 /**
  * Kode - KBEngine Development Environment
  * KBEngine VSCode 扩展主入口
@@ -512,19 +503,18 @@ export function getProcessTopologySchedulerForTests(): DiagnosticScheduler | nul
 }
 
 export function activate(context: vscode.ExtensionContext) {
+  // KODE-PERF 视图先行(KB-GC-001):activate 最前(任何重活之前)为全部侧栏
+  // 视图注册空占位 provider——宿主立即完成视图装配,不再报「There is no data
+  // provider registered」;真 provider 在各自装配位随后注册,宿主同 id 重复
+  // 注册=后到者接管,视图随之切到真数据源。装配晚段抛错/被拖死时视图仍已
+  // 注册(显示空列表而非错误面板),不再卡在无提供者状态。
+  context.subscriptions.push(
+    registerStartupViewPlaceholders({
+      registerTreeDataProvider: (viewId, provider) =>
+        vscode.window.registerTreeDataProvider(viewId, provider)
+    })
+  );
   console.log('KBEngine Language Extension is now active!');
-  markActivateStage('activate-enter');
-  // KODE-PERF 视图先行:十个侧栏视图的占位注册放在全部装配重活之前——
-  // 修前视图注册散在装配体尾段,激活中途任何一步抛错/被拖死,视图停在
-  // 「已声明、无提供者」状态,宿主报「There is no data provider registered
-  // that can provide view data」且视图全空。占位 provider getChildren 恒空,
-  // 真 provider 在下方各自装配位随后注册(宿主同 id 重复注册=后到者接管),
-  // 装配完成即自动切换到真数据源。
-  context.subscriptions.push(registerStartupViewPlaceholders({
-    registerTreeDataProvider: (viewId, provider) =>
-      vscode.window.registerTreeDataProvider(viewId, provider)
-  }));
-  markActivateStage('views-placeholder-registered');
   const engineApiEnabled = vscode.workspace.getConfiguration('kbengine')
     .get<boolean>('python.apiMetadata', true);
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
@@ -570,7 +560,6 @@ export function activate(context: vscode.ExtensionContext) {
   // KODE-CFG-009:门接线后即预取 core 配置解析(`$/kode/config/resolve`),
   // 同步消费面(dbInterface/合成树/别名开关)读消费缓存不阻塞宿主。
   void ensureConfigResolved().catch(() => {});
-  markActivateStage('config+core-gate');
   const databaseSchemaProvider = new KBEngineDatabaseSchemaProvider();
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider('kbengine-db-schema', databaseSchemaProvider),
@@ -758,7 +747,6 @@ export function activate(context: vscode.ExtensionContext) {
   const entityMappingManager = new EntityMappingManager(context, indexScheduler, {
     deferStartup: true
   });
-  markActivateStage('entity-mapping-manager');
 
   // Python 侧诊断(receiver 可能为 None + .def 段错配,用户令 2026-10-27 任务1):
   // compute 同步(guard 分析走 in-tree pythonParser;映射经 getMappingForPythonFile
@@ -1096,7 +1084,6 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(definitionProvider);
-  markActivateStage('language-providers');
 
   // Python 方法使用优先跳实现；属性、声明与实现缺失时保留 .def 导航。
   // PR5:共享调度器注入 + 首扫后台化(激活即排程,Definition 首查不等全量)。
@@ -1130,22 +1117,9 @@ export function activate(context: vscode.ExtensionContext) {
     }).catch(() => undefined);
   };
   void shouldStartKbEngineIndexing().then(gated => {
-    if (!gated) { return; }
-    // KODE-PERF 首扫进度提示:首扫放行后在实体浏览器视图内出进度条,
-    // 完成即收——用户不再把后台扫描误读为「一直卡在加载」。扫描本体
-    // 仍是后台异步(不阻塞宿主),进度只是可观测面。
-    // 真宿主 withProgress 返回 Thenable(无 .catch),Promise.resolve 统一收敛面
-    void Promise.resolve(vscode.window.withProgress(
-      {
-        location: { viewId: 'kbengine.entityExplorer' },
-        title: 'KBEngine: 扫描实体与脚本索引…',
-        cancellable: false
-      },
-      async () => {
-        startKbEngineIndexing();
-        await entityMappingManager.waitForInitialScan();
-      }
-    )).catch(() => undefined);
+    if (gated) {
+      startKbEngineIndexing();
+    }
   });
   const pythonDefinitionImpl = new PythonDefinitionProvider(
     entityMappingManager,
@@ -1213,64 +1187,33 @@ export function activate(context: vscode.ExtensionContext) {
       logIndexFileChangeMeta(fileChangeMetaResolver, event);
     }) }
   );
-  let pythonIndexWatcherSignature: string | null = null;
-  // KODE-PERF 抑制③前置(三轮评审修复):上次 watcher 装载时的外部根集——
-  // 配置事件到达时配置已变,现读 getExternalScanRoots 拿到的已是新值
-  // (A→B 比出 B==B,旧根 A 永不摘除);真正被各索引持有的根集 = 上次
-  // 重建时装载的这组。排除目录过滤的监视根集同源(见 watchedRootPathsForFilter)。
-  let lastWatchedExternalRoots: string[] = [];
-  const watchedRootPathsForFilter = (): string[] => [
-    ...(vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath),
-    ...lastWatchedExternalRoots
-  ];
-  const emitPythonIndexFileEvent = (
-    fsPath: string,
-    kind: 'create' | 'change' | 'delete'
-  ): void => {
-    if (isExcludedScanPath(fsPath, watchedRootPathsForFilter())) { return; }
-    pythonIndexFileEvents.emit(fsPath, kind);
-  };
-  const watchPythonIndex = (): boolean => {
-    const externalRoots = getExternalScanRoots();
+  // KODE-PERF 重复扫描抑制(KB-GC-001):watcher 集是 patterns 的纯函数,
+  // 同签名重建是空转(伴随 invalidate+全量重扫)。两条面:
+  // ① 签名守卫:patterns(工作区 glob + 外部根 RelativePattern 集)未变时
+  //    跳过整组拆除重建——foldersChanged 空事件/同配置重复通知不再触发重扫;
+  // ② 排除目录出口过滤:PY_SCAN_EXCLUDED_DIRS(node_modules/.git/out/dist 等)
+  //    命中的路径事件在 watcher 出口即丢弃,不进合并器/消费索引(消费面各自
+  //    内部早有同口径过滤,这里把空转挡在最上游)。
+  let lastWatcherSignature: string | null = null;
+  const watchPythonIndex = () => {
     const patterns: vscode.GlobPattern[] = [
       '**/*.{py,def,xml}',
-      ...externalRoots.map(root => new vscode.RelativePattern(root, '**/*.{py,def,xml}'))
+      ...getExternalScanRoots().map(root => new vscode.RelativePattern(root, '**/*.{py,def,xml}'))
     ];
-    // KODE-PERF 重复扫描抑制①:patterns 未变(同配置重复通知/无实质变化的
-    // folders 事件)时跳过整组重建——重建必然伴随 invalidate + 全量后台重扫。
     const signature = watcherPatternSignature(patterns);
-    if (signature === pythonIndexWatcherSignature && pythonIndexWatchers.length > 0) {
-      return false;
+    if (signature === lastWatcherSignature) {
+      return;
     }
-    // 四轮评审修复:签名/基线延迟到整组装载成功后提交——创建中途抛错时旧组
-    // 原样保留且签名不提交,下次事件按新签名重试(不再出现「签名已换、
-    // watcher 组缺根」且被同签名守卫挡死的不一致状态)。
-    const staged: vscode.Disposable[] = [];
-    try {
-      for (const pattern of patterns) {
-        const watcher = vscode.workspace.createFileSystemWatcher(pattern);
-        staged.push(
-          watcher,
-          // KODE-PERF 重复扫描抑制②:排除目录路径在 watcher 出口即丢弃,
-          // 不再进合并器/消费索引(消费面内部同口径过滤保留兜底)
-          watcher.onDidCreate(uri => { emitPythonIndexFileEvent(uri.fsPath, 'create'); }),
-          watcher.onDidChange(uri => { emitPythonIndexFileEvent(uri.fsPath, 'change'); }),
-          watcher.onDidDelete(uri => { emitPythonIndexFileEvent(uri.fsPath, 'delete'); })
-        );
-      }
-    } catch (err) {
-      for (const disposable of staged) { disposable.dispose(); }
-      // 四轮评审修复:创建中途失败时不重置签名基线——旧组原样保留,签名
-      // 也保持上次成功装载的值,恢复旧配置时同签名守卫挡下不必要的重建;
-      // 新签名仍会在下次事件触发时重试(签名未提交=下次必进重建分支)。
-      // 旧实现置 null 会在「失败后回到旧配置」时做一次无谓重建。
-      throw err;
-    }
-    pythonIndexWatcherSignature = signature;
-    lastWatchedExternalRoots = externalRoots;
+    lastWatcherSignature = signature;
     pythonIndexWatchers.forEach(watcher => watcher.dispose());
-    pythonIndexWatchers = staged;
-    return true;
+    pythonIndexWatchers = [];
+    for (const pattern of patterns) {
+      const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+      pythonIndexWatchers.push(watcher,
+        watcher.onDidCreate(uri => { if (!isExcludedScanPath(uri.fsPath)) pythonIndexFileEvents.emit(uri.fsPath, 'create'); }),
+        watcher.onDidChange(uri => { if (!isExcludedScanPath(uri.fsPath)) pythonIndexFileEvents.emit(uri.fsPath, 'change'); }),
+        watcher.onDidDelete(uri => { if (!isExcludedScanPath(uri.fsPath)) pythonIndexFileEvents.emit(uri.fsPath, 'delete'); }));
+    }
   };
   watchPythonIndex();
   // IDE-SNP-009:统一移除根通知——根移除事件一次广播,各消费索引订阅后
@@ -1306,7 +1249,6 @@ export function activate(context: vscode.ExtensionContext) {
       watchPythonIndex();
     })
   );
-  markActivateStage('index-watchers');
 
   // RPC 方法标记(批126 用户令:Python 侧函数看不出哪些是 def 声明的
   // RPC):在实现脚本里命中 def 方法声明的声明行上方出一行可点 CodeLens
@@ -1401,29 +1343,6 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerTypeStorageIndexWatchers(() => typesXmlCodeLensProviderImpl.fireConfigurationChanged())
   );
-
-  // KODE-CFG-015:引擎 SPI 实现函数标注(用户令 2026-11-03「引擎 spi 模式
-  // 需要实现的函数单独的 codelens」):方法名匹配 KODE-CFG-012 的 36 方法表,
-  // 组件角色由配置派生定(entryScripts 脚本根/组件目录段);独立开关
-  // kbengine.codeLens.engineSpi(默认开)。纯标注镜(无跳转目标,引擎侧调用
-  // 点不属本仓),provider 每次调用现读配置,开关变更由配置监听 fire。
-  const engineSpiCodeLensProviderImpl = new EngineSpiCodeLensProvider();
-  const engineSpiCodeLensProvider = vscode.languages.registerCodeLensProvider(
-    pythonDocumentSelector,
-    engineSpiCodeLensProviderImpl
-  );
-  context.subscriptions.push(engineSpiCodeLensProvider, engineSpiCodeLensProviderImpl);
-  // 镜点击仅弹信息(无源码可跳):显示 SPI 身份与触发时机
-  const showEngineSpiCommand = vscode.commands.registerCommand(
-    'kbengine.python.showEngineSpi',
-    (uri?: vscode.Uri, _line?: number, methodName?: string, title?: string) => {
-      void vscode.window.showInformationMessage(
-        title ?? `引擎 SPI · ${methodName ?? ''}`
-      );
-    }
-  );
-  context.subscriptions.push(showEngineSpiCommand);
-
 
   // 生成桩的来源镜(T-05):声明/字段行上方保留原始 types.xml 行,点击
   // 直接跳原始声明;禁止从生成行号反推来源。
@@ -1725,119 +1644,6 @@ export function activate(context: vscode.ExtensionContext) {
         void scanConfigContractDiagnostics();
       }
     }));
-  }
-
-  // KODE-CFG-016 ①意外写检测 + ②强类型 stub 直读(用户令 2026-11-03:Excel
-  // 生成的 py 配置「改错字段要能报」+「强类型 stub 提示」):配置数据只允许
-  // 热更新重载接口修改,业务代码「顺手改配置」是隐蔽事故源。纯逻辑面
-  // computeConfigDataMutationFindings / collectConfigSchema(零 vscode 依赖,
-  // tests/configDataMutation.test.ts 红先行),独立 collection,配置
-  // kbengine.configData(enabled 默认开;configDirGlobs / configClassPatterns /
-  // reloadFunctionPatterns / mutationExclude)。触发面 = 激活首扫 + py 文件
-  // 打开/保存(800ms 防抖合并)+ 配置变更即重算;配置目录文件自身与 reload*/
-  // hotUpdate* 函数体、mutationExclude 白名单内写点不报。
-  const configDataRoot = vscode.workspace.workspaceFolders?.[0];
-  // 门控:仅 .kbengine 托管目录在盘的工作区启用(configContract 同款口径,
-  // 纯 Python/非 KBEngine 工作区零噪声)
-  if (configDataRoot && fs.existsSync(path.join(configDataRoot.uri.fsPath, '.kbengine'))) {
-    const configDataCollection = vscode.languages.createDiagnosticCollection(
-      'kbengine-config-data'
-    );
-    context.subscriptions.push(configDataCollection);
-    let configDataScanSeq = 0;
-    let configDataSchemaCache: readonly ConfigSchemaEntry[] = [];
-    const readConfigDataSettings = (): ConfigDataSettings => {
-      const raw = vscode.workspace
-        .getConfiguration('kbengine')
-        .get<Partial<ConfigDataSettings>>('configData');
-      return { ...CONFIG_DATA_SETTINGS_DEFAULT, ...(raw ?? {}) };
-    };
-    const scanConfigData = async (): Promise<void> => {
-      const seq = ++configDataScanSeq;
-      const settings = readConfigDataSettings();
-      if (!settings.enabled) {
-        configDataCollection.clear();
-        configDataSchemaCache = [];
-        return;
-      }
-      const excluded = '{**/node_modules/**,**/out/**,**/.kbengine/**,**/venv/**,**/.venv/**,**/__pycache__/**}';
-      const uris = await vscode.workspace.findFiles('**/*.py', excluded, 20000);
-      const sources: ConfigSourceInput[] = [];
-      for (const uri of uris) {
-        try {
-          const text = (await vscode.workspace.openTextDocument(uri)).getText();
-          // 相对 posix 路径口径(与 configDirGlobs / mutationExclude 对齐)
-          const rel = path.relative(configDataRoot.uri.fsPath, uri.fsPath).replace(/\\/g, '/');
-          sources.push({ file: rel, text });
-        } catch {
-          // 读不到的文件跳过(不猜)
-        }
-      }
-      const schema = collectConfigSchema(sources, settings);
-      const findings = computeConfigDataMutationFindings(sources, settings);
-      if (seq !== configDataScanSeq) {
-        // 过期扫描(更新的扫描已发起)丢弃,不回写缓存/集合
-        return;
-      }
-      configDataSchemaCache = schema;
-      const byFile = new Map<string, ConfigDataFinding[]>();
-      for (const finding of findings) {
-        const bucket = byFile.get(finding.file);
-        if (bucket) {
-          bucket.push(finding);
-        } else {
-          byFile.set(finding.file, [finding]);
-        }
-      }
-      configDataCollection.clear();
-      for (const [rel, fileFindings] of byFile) {
-        configDataCollection.set(
-          vscode.Uri.joinPath(configDataRoot.uri, rel),
-          fileFindings.map(f => new vscode.Diagnostic(
-            new vscode.Range(f.line, f.character, f.line, f.character + f.baseName.length),
-            f.message,
-            vscode.DiagnosticSeverity.Warning
-          ))
-        );
-      }
-    };
-    // ②强类型 hover:绑定/类名 hover 出直读类型文本;schema 缓存随扫描刷新
-    const configSchemaHoverProviderImpl = new ConfigSchemaHoverProvider(
-      () => configDataSchemaCache
-    );
-    const configSchemaHoverProvider = vscode.languages.registerHoverProvider(
-      pythonDocumentSelector,
-      configSchemaHoverProviderImpl
-    );
-    context.subscriptions.push(configSchemaHoverProvider, configSchemaHoverProviderImpl);
-    // 800ms 防抖:py 打开/保存合并重算(整工作区扫描,避免逐键逐存重算)
-    let configDataTimer: ReturnType<typeof setTimeout> | undefined;
-    const scheduleConfigDataScan = (): void => {
-      if (configDataTimer !== undefined) {
-        clearTimeout(configDataTimer);
-      }
-      configDataTimer = setTimeout(() => {
-        configDataTimer = undefined;
-        void scanConfigData();
-      }, 800);
-    };
-    context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(document => {
-      if (document.languageId === 'python') {
-        scheduleConfigDataScan();
-      }
-    }));
-    context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(document => {
-      if (document.languageId === 'python') {
-        scheduleConfigDataScan();
-      }
-    }));
-    // 配置变更即重算(含 enabled 开关切换:关→清集合零产出)
-    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
-      if (event.affectsConfiguration('kbengine.configData')) {
-        void scanConfigData();
-      }
-    }));
-    void scanConfigData();
   }
 
   // C-19 交付①:def↔Python 方法一致性诊断。正向 def-method-missing-in-python
@@ -2786,7 +2592,6 @@ export function activate(context: vscode.ExtensionContext) {
       eventCodeLensProviderImpl.fireConfigurationChanged();
       propertyCodeLensProviderImpl.fireConfigurationChanged();
       typesXmlCodeLensProviderImpl.fireConfigurationChanged();
-      engineSpiCodeLensProviderImpl.fireConfigurationChanged();
     }
 
     // 实体面开关变更即时生效(用户令 2026-10-21):hover/补全/跳转各 provider
@@ -2803,53 +2608,22 @@ export function activate(context: vscode.ExtensionContext) {
         event.affectsConfiguration('kbengine.python.enableMroJump')) {
       // IDE-SNP-010:assetsRoot 切换 = 根集输入变化——旧外部根记录先定向摘除
       // (实体/语义面不残留旧根可查结果,SNP-009 路径),generation 前进使持旧
-      // 快照的消费端判过期;enableMroJump 只是开关,无根集变化,不 bump 不摘根。
-      // KODE-PERF 抑制③(三轮评审修复):重复/无实质变化的通知零摘除零 bump,
-      // 真实根集变化才逐根定向摘除——旧根对照基线取「上次 watcher 装载的根集」
-      // (配置事件到达时配置已变,现读只能拿到新值);bump 同样闸在真变之后,
-      // 否则代闸作废在途实体扫描批次,而签名未变不重建 = 无新扫描接替,实体面
-      // 数据丢失路径。
-      let scanRootsChanged = false;
+      // 快照的消费端判过期;enableMroJump 只是开关,无根集变化,不 bump 不摘根
       if (event.affectsConfiguration('kbengine.assetsRoot')) {
-        resetScanRootCache();
-        const currentRoots = getExternalScanRoots();
-        const previousRoots = lastWatchedExternalRoots;
-        const rootsChanged = previousRoots.length !== currentRoots.length ||
-          !previousRoots.every(root => currentRoots.includes(root));
-        // 五轮评审修复:watcher 装载先行——创建新 watcher 失败时抛错,此时
-        // 根本未摘除、generation 未 bump,旧根实体数据完整保留;回旧配置时
-        // 签名未变守卫挡下重建,不会出现「数据已摘但无扫描接替」的持续缺失。
-        // 旧实现先 bump + 摘根再装载,创建失败 = 数据摘了但守卫挡死重建。
-        scanRootsChanged = watchPythonIndex();
-        if (rootsChanged) {
-          bumpRootConfigGeneration('assetsRoot');
-          for (const oldRoot of previousRoots) {
-            if (!currentRoots.includes(oldRoot)) {
-              // 四轮评审修复:差集只比字符串,父根→子根切换(/a → /a/scripts)时
-              // removeRoot(父) 会把仍在根集内的子根数据连带摘掉且无扫描接替
-              // (refreshExternalRootWatchers 只重挂 watcher 不重扫)——摘除按
-              // keepSubtrees 口径收窄,留在新根集内的子树记录原样保留。
-              const keptSubtrees = currentRoots.filter(root => isPathWithin(root, oldRoot));
-              entityMappingManager.removeRoot(oldRoot, keptSubtrees);
-            }
-          }
+        for (const oldRoot of getExternalScanRoots()) {
+          entityMappingManager.removeRoot(oldRoot);
         }
-      } else {
-        resetScanRootCache();
-        scanRootsChanged = watchPythonIndex();
+        bumpRootConfigGeneration('assetsRoot');
       }
-      // KODE-PERF 重复扫描抑制③:签名未变(重复通知/无根集变化的开关翻动)
-      // 时整库失效与外部 watcher 重建一并跳过——重建必然伴随 invalidate +
-      // 全量后台重扫;真实根切换(签名变化)保持原失效/重建序列不变。
-      if (scanRootsChanged) {
-        pythonClassIndex.invalidate();
-        // AUD-071:assetsRoot/profile 切换 = 根集变化 → 字典键索引整库重建(旧外部根不再贡献)
-        dataDictIndex.invalidate();
-        // IDE-IDX-014:实体面外部根 watcher 三件套整组重建(旧根释放,新根挂上)
-        entityMappingManager.refreshExternalRootWatchers();
-        // IDE-AUD-035:事件索引外部根 watcher 同口径整组重建(旧根释放,新根挂上)
-        sharedWorkspaceIndex.refreshExternalWatchers();
-      }
+      resetScanRootCache();
+      pythonClassIndex.invalidate();
+      // AUD-071:assetsRoot/profile 切换 = 根集变化 → 字典键索引整库重建(旧外部根不再贡献)
+      dataDictIndex.invalidate();
+      watchPythonIndex();
+      // IDE-IDX-014:实体面外部根 watcher 三件套整组重建(旧根释放,新根挂上)
+      entityMappingManager.refreshExternalRootWatchers();
+      // IDE-AUD-035:事件索引外部根 watcher 同口径整组重建(旧根释放,新根挂上)
+      sharedWorkspaceIndex.refreshExternalWatchers();
       if (isPythonMroJumpEnabled()) { pythonClassIndex.scheduleBackgroundScan(); }
     }
 
@@ -3016,7 +2790,6 @@ export function activate(context: vscode.ExtensionContext) {
     entityExplorerProvider
   );
   context.subscriptions.push(entityExplorerRegistration);
-  markActivateStage('view:entityExplorer');
 
   // 刷新实体浏览器的命令
   const refreshCommand = vscode.commands.registerCommand(
@@ -3200,7 +2973,6 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider('kbengine.remoteServers', remoteServerTreeProvider)
   );
-  markActivateStage('view:serverControl+telnet+playerData+remoteServers');
   const loadSshHosts = async (): Promise<void> => {
     sshHostsSnapshot = await readSshHostsFromHome(
       configPath => fs.promises.readFile(configPath, 'utf8'),
@@ -3448,7 +3220,6 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider('kbengine.debugTargets', debugTargetTreeProvider)
   );
-  markActivateStage('view:debugTargets');
   context.subscriptions.push(
     vscode.debug.onDidStartDebugSession(() => debugTargetTreeProvider.refresh())
   );
@@ -4434,7 +4205,6 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.window.registerTreeDataProvider('kbengine.gitRangeHistory', gitRangeHistoryProvider)
     );
   }
-  markActivateStage('view:gitHistory+gitRangeHistory');
   const showRangeHistoryCommand = vscode.commands.registerCommand(
     GIT_HISTORY_SHOW_RANGE_COMMAND,
     () => runGitHistoryWhenEnabled(
@@ -4556,7 +4326,6 @@ export function activate(context: vscode.ExtensionContext) {
     new FinalConfigTreeProvider()
   );
   context.subscriptions.push(finalConfigTreeRegistration);
-  markActivateStage('view:config');
 
   // 变更联动:defaults / 元件 kbengine.xml 保存或增删后重算已打开的合成文档
   if (
@@ -4810,6 +4579,82 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(pyspyFlamegraphCommand);
+
+  // KB-GC-001 guiconsole 期一:machined 发现共享链(hub)+ 日志实时 tail(702
+  // 注册 → 65501 长连推流进 Output)+ 组件状态面板(负载/存活,异常红色)。
+  // 两个面共用一个 hub,不建两套链(design docs/design/
+  // kbengine-guiconsole-integration.md §4;协议解码陷阱见同文档 §1.4)。
+  const consoleConfig = vscode.workspace.getConfiguration('kbengine');
+  const consoleRefreshSeconds = Math.max(1, consoleConfig.get<number>('componentStatusPanel.refreshSeconds', 5));
+  const consoleHub = new ConsoleHub({
+    pollIntervalMs: consoleRefreshSeconds * 1000,
+    // 默认 127.0.0.1(链路 localhost-only,设计文档 §5);跨机须显式配置
+    // kbengine.console.discoveryHost(见配置说明安全边界)
+    discovery: { host: consoleConfig.get<string>('console.discoveryHost', '127.0.0.1') }
+  });
+  consoleHub.start();
+  context.subscriptions.push(consoleHub);
+
+  const tailOutput = vscode.window.createOutputChannel('KBEngine Console 日志');
+  // 优先级 95:低于 server 100/telnet 99/热更 98/解释器 97/热更通道灯 96
+  // (HOT_RELOAD_CHANNEL_STATUS_PRIORITY),不与任何既有灯同优先级。
+  const tailStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 95);
+  const tailController = new ConsoleLogTailController({
+    hub: consoleHub,
+    workspaceRoots: () => (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath),
+    // IDE-LIV-007 同源:错误行 traceback → 工作区真实文件落点
+    resolveSource: (roots, location) => resolveExceptionSource(roots, location),
+    output: tailOutput,
+    statusItem: tailStatusItem,
+    // 配置访问器:每次重读,组件过滤/开关「下次重连生效」而非激活期快照
+    getConfig: () => ({
+      // 默认开:配置缺失也开,显式 false 才关(用户令,热更/门控同类口径)
+      enabled: consoleConfig.get<boolean>('consoleLogTail.enabled', true),
+      components: consoleConfig.get<string[]>('consoleLogTail.components', [])
+    })
+  });
+  if (consoleConfig.get<boolean>('consoleLogTail.enabled', true)) {
+    tailController.start();
+  }
+  context.subscriptions.push(tailController, tailOutput, tailStatusItem);
+  context.subscriptions.push(vscode.commands.registerCommand('kbengine.consoleLogTail.show', () => tailOutput.show()));
+  context.subscriptions.push(vscode.commands.registerCommand('kbengine.consoleLogTail.toggle', () => tailController.toggle()));
+  // 开关即时生效:显式 true→start / false→stop(组件过滤即时生效靠注册帧重建,
+  // 简化口径:改过滤数组后用 toggle 重连)
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+    if (!event.affectsConfiguration('kbengine.consoleLogTail.enabled')) {
+      return;
+    }
+    const enabled = consoleConfig.get<boolean>('consoleLogTail.enabled', true);
+    if (enabled && tailController.getState() === 'disabled') {
+      // 显式用户意图开启:force=true 越过激活期快照(off→on 时 deps.config.enabled
+      // 仍是激活时的旧值,start() 会误把用户开启当缺省关闭而停在 disabled)
+      tailController.start(true);
+    } else if (!enabled && tailController.getState() !== 'disabled') {
+      tailController.stop();
+    }
+  }));
+
+  const componentStatusProvider = new ComponentStatusTreeProvider(consoleHub, () => resolveThresholds(key => {
+    if (key === 'cpu') {
+      return consoleConfig.get<number>('componentStatusPanel.cpuThresholdPercent', 90);
+    }
+    return consoleConfig.get<number>('componentStatusPanel.memThresholdMb', 1024);
+  }));
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider('kbengine.componentStatus', componentStatusProvider)
+  );
+  const stopPanelAutoRefresh = componentStatusProvider.startAutoRefresh(
+    (intervalMs, fire) => {
+      const timer = setInterval(fire, intervalMs);
+      return () => clearInterval(timer);
+    },
+    consoleRefreshSeconds * 1000
+  );
+  context.subscriptions.push({ dispose: stopPanelAutoRefresh });
+  context.subscriptions.push(vscode.commands.registerCommand('kbengine.consoleComponentPanel.refresh', () => {
+    void componentStatusProvider.refresh();
+  }));
 
   // 初始化监控面板
   const monitoringCollector = new MonitoringCollector(context);
@@ -5124,7 +4969,6 @@ export function activate(context: vscode.ExtensionContext) {
     getActions: () => quickActionManager.getTreeData()
   });
   context.subscriptions.push(vscode.window.registerTreeDataProvider('kbengine.quickActions', quickActionTreeProvider));
-  markActivateStage('view:quickActions');
   // HOT-VER:手动跑一次动作(右键/命令面板)后重采版本并重画徽标——监视开关
   // 关着也一样:版本簿独立于 watcher,手动触发路径与 watcher 同口径同台账。
   const runQuickActionByNameCommand = vscode.commands.registerCommand(
@@ -5969,38 +5813,15 @@ export function activate(context: vscode.ExtensionContext) {
   // 面整组重建
   const applyActiveProfileToIndexInput = (): void => {
     const profile = resolveActiveProfile(context.workspaceState);
-    // KODE-PERF 抑制③(三轮评审修复,同 assetsRoot 口径):重复选择/同根
-    // 切换零摘除零 bump——旧根对照基线取上次 watcher 装载的根集,bump 闸在
-    // 根集真变之后(重复 bump 会作废在途实体扫描批次且无新扫描接替)。
-    const previousRoots = lastWatchedExternalRoots;
+    for (const oldRoot of getExternalScanRoots()) {
+      entityMappingManager.removeRoot(oldRoot);
+    }
+    bumpRootConfigGeneration('profile-switch');
     setActiveProfileScanRoot(profile && profile.assetsRoot ? profile.assetsRoot : null);
     resetScanRootCache();
-    const currentRoots = getExternalScanRoots();
-    const rootsChanged = previousRoots.length !== currentRoots.length ||
-      !previousRoots.every(root => currentRoots.includes(root));
-    // 五轮评审修复:watcher 装载先行——创建新 watcher 失败时抛错,此时
-    // 根本未摘除、generation 未 bump,旧根实体数据完整保留;回旧配置时
-    // 签名未变守卫挡下重建,不会出现「数据已摘但无扫描接替」的持续缺失。
-    // 旧实现先 bump + 摘根再装载,创建失败 = 数据摘了但守卫挡死重建。
-    const scanRootsChanged = watchPythonIndex();
-    if (rootsChanged) {
-      bumpRootConfigGeneration('profile-switch');
-      for (const oldRoot of previousRoots) {
-        if (!currentRoots.includes(oldRoot)) {
-          // 四轮评审修复(profile 路径,同 assetsRoot 口径):差集只比字符串,
-          // 父根→子根切换(/a → /a/scripts)时 removeRoot(父) 会把仍在根集内
-          // 的子根数据连带摘掉且无扫描接替——摘除按 keepSubtrees 口径收窄,
-          // 留在新根集内的子树记录原样保留。
-          const keptSubtrees = currentRoots.filter(root => isPathWithin(root, oldRoot));
-          entityMappingManager.removeRoot(oldRoot, keptSubtrees);
-        }
-      }
-    }
-    // KODE-PERF 重复扫描抑制③(同 assetsRoot 路径口径):签名未变零失效零重建
-    if (scanRootsChanged) {
-      pythonClassIndex.invalidate();
-      entityMappingManager.refreshExternalRootWatchers();
-    }
+    pythonClassIndex.invalidate();
+    watchPythonIndex();
+    entityMappingManager.refreshExternalRootWatchers();
     if (isPythonMroJumpEnabled()) { pythonClassIndex.scheduleBackgroundScan(); }
   };
   context.subscriptions.push(onDidChangeActiveProfile(() => { applyActiveProfileToIndexInput(); }));
@@ -6008,11 +5829,6 @@ export function activate(context: vscode.ExtensionContext) {
   // 面,不需要切换路径的摘除/失效序列,也不 bump)
   const startupProfile = resolveActiveProfile(context.workspaceState);
   setActiveProfileScanRoot(startupProfile && startupProfile.assetsRoot ? startupProfile.assetsRoot : null);
-  // KODE-PERF 抑制③前置(三轮评审修复):首建 watcher 时持久化 profile 尚未
-  // 落到索引输入,基线根集缺 profile 外部根——此后任何「根集对照」都会把
-  // profile 根当新增(旧根对照失真)。这里对齐 watcher 基线(签名变化才重建,
-  // 无 profile 根时零重建);对齐不伴随任何失效/bump。
-  watchPythonIndex();
 
   // 客户端实体 SDK 生成(盘点 G4):按 entities.xml 登记实体生成客户端语言骨架,
   // 语言清单在命令内选(已代决首批 TS + C#)。IDE-SDK-003 生成绑定活动
@@ -6367,8 +6183,6 @@ export function activate(context: vscode.ExtensionContext) {
   if (dualActivationWarning !== null) {
     void vscode.window.showWarningMessage(dualActivationWarning);
   }
-  markActivateStage('activate-end');
-  flushActivateProfile();
 
   // IDE-REL-007 复现配置摘要:诊断排障时「环境长什么样」一页导出——活动
   // 版本(cuihairu. 名下 id@version+构建提交)/根(workspace/索引扫描根/

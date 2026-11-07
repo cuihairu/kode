@@ -331,22 +331,15 @@ export class SemanticIndex {
   /**
    * IDE-IDX-015:整根摘除——该根下的类型注册表快照全删,根描述符注销。
    * 键含 `#` 分隔符,前缀比对不会误伤同前缀的其他根(/ws/a vs /ws/ab)。
-   * 四轮评审修复:keepSubtrees 仍在根集内的子树——键根落在保留子树内的
-   * 快照原样保留(口径同 EntityMappingManager.removeRoot)。
    */
-  removeRoot(rootPath: string, keepSubtrees?: ReadonlyArray<string>): number {
+  removeRoot(rootPath: string): number {
     const normalizedRoot = normalizeLookupPath(rootPath);
-    const normalizedKeeps = (keepSubtrees ?? [])
-      .map(path => normalizeLookupPath(path))
-      .filter(normalized => normalized.startsWith(`${normalizedRoot}/`));
     let removed = 0;
     for (const key of [...this.typeRegistry.keys()]) {
-      if (!key.startsWith(`${normalizedRoot}#`)) { continue; }
-      const keyRoot = key.slice(0, key.lastIndexOf('#'));
-      if (normalizedKeeps.some(keep =>
-        keyRoot === keep || keyRoot.startsWith(`${keep}/`))) { continue; }
-      this.typeRegistry.delete(key);
-      removed += 1;
+      if (key.startsWith(`${normalizedRoot}#`)) {
+        this.typeRegistry.delete(key);
+        removed += 1;
+      }
     }
     this.roots.delete(normalizedRoot);
     return removed;

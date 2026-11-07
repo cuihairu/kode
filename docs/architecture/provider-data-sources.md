@@ -41,8 +41,6 @@ Registration sites are extension.ts line numbers (2026-11-07 真位复核:KODE-A
 | TypesXmlCodeLensProvider | languageProviders/codeLens.ts:360 | :1359 | databaseSchema type-storage usage index (`onTypeStorageUsageIndexPublished` subscription; zero construction deps) | fireConfigurationChanged event; watcher belongs to the assembly line (ARC-005) |
 | GeneratedSourceCodeLensProvider (python stubs) | generatedSourceLenses.ts:11 | :1187 | Construction-time snapshot buildPythonTypeStubPlan(getCustomTypeInfos) | Pure read |
 | GeneratedSourceCodeLensProvider (entity stubs) | generatedSourceLenses.ts:11 | :4632 | Construction-time snapshot buildEntityTypeStubPlan(getAllMappings + getCustomTypeInfos) | Pure read |
-| EngineSpiCodeLensProvider | engineSpiCodeLens.ts:255 | :1382 | Document-text module-level line scan (maskPythonNonCode mask + indent stack, KODE-CFG-015) + configDerive entryScripts script root | Pure read; fireConfigurationChanged event (switch refresh) |
-| ConfigSchemaHoverProvider | configSchemaHover.ts:11 | :1777 | Assembly-held config schema cache (collectConfigSchema literal read, refreshed by the config-data scan pipeline, KODE-CFG-016) | Pure read |
 | PythonTypeInlayHintsProvider | typeInlayHints.ts:33 | :1197 | EntityMappingManager | Pure read |
 | KBEngineBuiltinTypeInlayHintsProvider | languageProviders/inlay.ts:16 | :1406 | EntityMappingManager | Pure read |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | Pure read |
@@ -80,6 +78,7 @@ Command query surfaces (non-register\* providers, recorded under the same rules)
 | TelnetTreeProvider | telnetTree.ts:1798 | :1746 | telnetService state | Tree refresh events |
 | RemoteServerTreeProvider | remoteServerTree.ts:1813 | :1761 | ~/.ssh/config snapshot + workspaceState manual entries/selection (IDE-PDBG-004) | Tree refresh events |
 | PlayerDataTreeProvider | playerDataPanel.ts:108 | :3454 | read-only MySQL connection profiles derived by configDerive (Rust `derive_database`, CLONE-P5) + databaseDrift read-only query executor; the first frame idempotently triggers derivation and honestly shows "not found" until ready | Tree refresh events (triggered by query/refresh commands) |
+| ComponentStatusTreeProvider | componentStatusPanel.ts:92 | :4607 | shared ConsoleHub machined UDP discovery ledger (KB-GC-001; pid/cpu/mem/usedmem/state ride the Args25 discovery reply) + resolved cpu/mem thresholds; vanished processes kept as red tombstone rows | Tree refresh events (auto poll + manual `kbengine.consoleComponentPanel.refresh`), red ThemeIcon on abnormal |
 | KbengineBuildTaskProvider | buildTaskProvider.ts:2146 | :2094 | Build task definitions (static) | None (provides tasks only) |
 | DebugTargetTreeProvider | debugStatusTree.ts:2063 | :2011 | getDebugStatusRows polling | Tree refresh events |
 | QuickActionTreeProvider | quickActionTree.ts:3092 | :3040 | Quick action inventory | Tree refresh + user-triggered commands |

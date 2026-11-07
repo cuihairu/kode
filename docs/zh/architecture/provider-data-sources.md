@@ -41,8 +41,6 @@
 | TypesXmlCodeLensProvider | languageProviders.ts:4964 | :1169 | databaseSchema 类型存储使用索引(`onTypeStorageUsageIndexPublished` 订阅;构造零依赖) | fireConfigurationChanged 事件;watcher 归装配线(ARC-005) |
 | GeneratedSourceCodeLensProvider(python 桩) | generatedSourceLenses.ts:11 | :1187 | 构造期快照 buildPythonTypeStubPlan(getCustomTypeInfos) | 纯读 |
 | GeneratedSourceCodeLensProvider(entity 桩) | generatedSourceLenses.ts:11 | :4632 | 构造期快照 buildEntityTypeStubPlan(getAllMappings + getCustomTypeInfos) | 纯读 |
-| EngineSpiCodeLensProvider | engineSpiCodeLens.ts:255 | :1382 | 文档文本模块级行扫描(maskPythonNonCode 掩码 + 缩进栈,KODE-CFG-015)+ configDerive entryScripts 脚本根 | 纯读;fireConfigurationChanged 事件(开关刷新) |
-| ConfigSchemaHoverProvider | configSchemaHover.ts:11 | :1777 | 装配层持有的配置 schema 缓存(collectConfigSchema 字面量直读,随配置数据扫描管线刷新,KODE-CFG-016) | 纯读 |
 | PythonTypeInlayHintsProvider | typeInlayHints.ts:33 | :1197 | EntityMappingManager | 纯读 |
 | KBEngineBuiltinTypeInlayHintsProvider | languageProviders.ts:649 | :1207 | EntityMappingManager | 纯读 |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | 纯读 |
@@ -80,6 +78,7 @@
 | TelnetTreeProvider | telnetTree.ts:1798 | :1746 | telnetService 状态 | 树刷新事件 |
 | RemoteServerTreeProvider | remoteServerTree.ts:1813 | :1761 | ~/.ssh/config 快照 + workspaceState 手动项/选中态(IDE-PDBG-004) | 树刷新事件 |
 | PlayerDataTreeProvider | playerDataPanel.ts:108 | :3454 | configDerive 派生的只读 MySQL 连接档案(Rust `derive_database`,CLONE-P5)+ databaseDrift 只读查询执行器;首帧幂等触发派生,未就绪如实展示「未找到」 | 树刷新事件(查询/刷新命令触发) |
+| ComponentStatusTreeProvider | componentStatusPanel.ts:92 | :4607 | 共享 ConsoleHub 的 machined UDP 发现台账(KB-GC-001;pid/cpu/mem/usedmem/state 随 Args25 发现回包自带)+ 解析后的 cpu/mem 阈值;消失进程保留为红色墓碑行 | 树刷新事件(自动轮询 + 手动 `kbengine.consoleComponentPanel.refresh`),异常态红色 ThemeIcon |
 | KbengineBuildTaskProvider | buildTaskProvider.ts:2146 | :2094 | 构建任务定义(静态) | 无(仅提供任务) |
 | DebugTargetTreeProvider | debugStatusTree.ts:2063 | :2011 | getDebugStatusRows 轮询 | 树刷新事件 |
 | QuickActionTreeProvider | quickActionTree.ts:3092 | :3040 | 快捷动作清单 | 树刷新 + 用户触发命令 |

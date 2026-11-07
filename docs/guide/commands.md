@@ -506,6 +506,21 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 
 ## Visualization Panels
 
+### `kbengine.consoleLogTail.show`
+
+- Title: `KBEngine Console: Show Live Log Tail`
+- Purpose: open the 「KBEngine Console 日志」 Output channel carrying the live 65501 push stream from the engine logger (guiconsole line, KB-GC-001)
+
+### `kbengine.consoleLogTail.toggle`
+
+- Title: `KBEngine Console: Start/Stop Live Log Tail`
+- Purpose: start/stop the tail long connection (702 register / 703 deregister). Explicit user intent overrides the `kbengine.consoleLogTail.enabled` default-on gate (missing config counts as ON, only explicit `false` turns it off)
+
+### `kbengine.consoleComponentPanel.refresh`
+
+- Title: `Refresh Component Status`
+- Purpose: run one machined discovery round and repaint the component status view (same hub the tail uses; also the view title bar refresh button)
+
 ### `kbengine.monitoring.show`
 
 - Title: `Show Monitoring Panel`
@@ -1067,12 +1082,6 @@ The flow graph panel supports:
 - Purpose: Rescan top-level `.bat` / `.ps1` files in the effective config root and `assetsRoot`; refresh generated actions from the selection while preserving manual actions and other debug settings
 - Script working directory: scanned actions use the script's containing directory as `cwd`
 - Entry point: Command Palette
-
-### `kbengine.python.showEngineSpi`
-
-- Title: `Show Engine SPI Implementation Info`
-- Purpose: information lens click target for engine SPI implementation functions (KODE-CFG-015). The lens on a module-level `def` named in the KODE-CFG-012 SPI table shows the method's SPI identity and trigger timing (e.g. `onInit` — first callback, `0` = startup `1` = reload; optional methods carry a「 · 可选」suffix)
-- Honesty rule: the engine-side call sites live in the C++ engine, not this repo, so the lens is informational and never navigates
 
 ### `kbengine.python.syncExtraPaths`
 

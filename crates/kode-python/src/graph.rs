@@ -215,7 +215,12 @@ fn resolve_callee_file(
                         // 与 `import a as a`(身份同为 a)不弃边。
                         let resolve_target = |i: &AstImport| -> String {
                             if i.is_from {
-                                format!("{}|{}|{}", i.level, i.module, i.symbol.clone().unwrap_or_default())
+                                format!(
+                                    "{}|{}|{}",
+                                    i.level,
+                                    i.module,
+                                    i.symbol.clone().unwrap_or_default()
+                                )
                             } else if !i.aliased {
                                 i.module.split('.').next().unwrap_or("").to_string()
                             } else {

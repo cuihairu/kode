@@ -40,6 +40,10 @@
     "onLanguage:python",
     "workspaceContains:**/*.def",
     "onCommand:kbengine.refreshExplorer",
+    "onCommand:kbengine.consoleLogTail.show",
+    "onCommand:kbengine.consoleLogTail.toggle",
+    "onCommand:kbengine.consoleComponentPanel.refresh",
+    "onView:kbengine.componentStatus",
     "onCommand:kbengine.entity.open",
     "onCommand:kbengine.entity.new",
     "onCommand:kbengine.entity.method.open",
@@ -155,7 +159,6 @@
     "onCommand:kbengine.python.showCallChain",
     "onCommand:kbengine.python.selectInterpreter",
     "onCommand:kbengine.python.createVenv",
-    "onCommand:kbengine.python.showEngineSpi",
     "onCommand:kbengine.hotReload.tempEdit.run",
     "onCommand:kbengine.core.showShadowDiffLog",
     "onCommand:kbengine.source.reveal",
@@ -311,6 +314,10 @@
           "name": "%kbengine.view.serverControl%"
         },
         {
+          "id": "kbengine.componentStatus",
+          "name": "%kbengine.view.componentStatus%"
+        },
+        {
           "id": "kbengine.telnetStatus",
           "name": "%kbengine.view.telnetStatus%",
           "when": "kbengine.telnetConfigured"
@@ -351,6 +358,19 @@
       {
         "command": "kbengine.refreshExplorer",
         "title": "%kbengine.command.refreshExplorer.title%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "kbengine.consoleLogTail.show",
+        "title": "%kbengine.command.consoleLogTail.show.title%"
+      },
+      {
+        "command": "kbengine.consoleLogTail.toggle",
+        "title": "%kbengine.command.consoleLogTail.toggle.title%"
+      },
+      {
+        "command": "kbengine.consoleComponentPanel.refresh",
+        "title": "%kbengine.command.consoleComponentPanel.refresh.title%",
         "icon": "$(refresh)"
       },
       {
@@ -842,10 +862,6 @@
         "title": "%kbengine.command.python.exportTypeStubs.title%"
       },
       {
-        "command": "kbengine.python.showEngineSpi",
-        "title": "%kbengine.command.python.showEngineSpi.title%"
-      },
-      {
         "command": "kbengine.source.reveal",
         "title": "%kbengine.command.source.reveal.title%"
       },
@@ -983,6 +999,11 @@
         {
           "command": "kbengine.quickActions.scanScripts",
           "when": "view == kbengine.quickActions",
+          "group": "navigation"
+        },
+        {
+          "command": "kbengine.consoleComponentPanel.refresh",
+          "when": "view == kbengine.componentStatus",
           "group": "navigation"
         }
       ],
@@ -1431,32 +1452,6 @@
           "default": true,
           "markdownDescription": "%kbengine.config.codeLens.typesXml.description%"
         },
-        "kbengine.codeLens.engineSpi": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.codeLens.engineSpi.description%"
-        },
-        "kbengine.configData": {
-          "type": "object",
-          "default": {
-            "enabled": true,
-            "configDirGlobs": [
-              "scripts/config/**",
-              "scripts/data/config/**",
-              "scripts/data/**"
-            ],
-            "configClassPatterns": [
-              "*Config",
-              "*Data"
-            ],
-            "reloadFunctionPatterns": [
-              "reload*",
-              "hotUpdate*"
-            ],
-            "mutationExclude": []
-          },
-          "markdownDescription": "%kbengine.config.configData.description%"
-        },
         "kbengine.inlayHints.typeData": {
           "type": "boolean",
           "default": true,
@@ -1654,6 +1649,41 @@
           "type": "number",
           "default": 10000,
           "markdownDescription": "%kbengine.config.maxLogEntries.description%"
+        },
+        "kbengine.consoleLogTail.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.consoleLogTail.enabled.description%"
+        },
+        "kbengine.console.discoveryHost": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "markdownDescription": "%kbengine.config.console.discoveryHost.description%"
+        },
+        "kbengine.consoleLogTail.components": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "%kbengine.config.consoleLogTail.components.description%"
+        },
+        "kbengine.componentStatusPanel.refreshSeconds": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "markdownDescription": "%kbengine.config.componentStatusPanel.refreshSeconds.description%"
+        },
+        "kbengine.componentStatusPanel.cpuThresholdPercent": {
+          "type": "number",
+          "default": 90,
+          "minimum": 1,
+          "maximum": 100,
+          "markdownDescription": "%kbengine.config.componentStatusPanel.cpuThresholdPercent.description%"
+        },
+        "kbengine.componentStatusPanel.memThresholdMb": {
+          "type": "number",
+          "default": 1024,
+          "minimum": 1,
+          "markdownDescription": "%kbengine.config.componentStatusPanel.memThresholdMb.description%"
         },
         "kbengine.generator.defOutputPath": {
           "type": "string",

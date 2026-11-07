@@ -254,7 +254,8 @@ fn outer_import_visible_to_nested_call() {
 fn param_shadow_blocks_outer_import_vouch() {
     // 复审第五轮残余:外层 import 不能为内层同名参数作保——inner 的
     // avatar 是参数遮蔽,不是外层导入的模块。
-    let zcaller = "def outer():\n    import avatar\n\n    def inner(avatar):\n        avatar.heal()\n";
+    let zcaller =
+        "def outer():\n    import avatar\n\n    def inner(avatar):\n        avatar.heal()\n";
     let afoo = "def heal():\n    pass\n";
     let zk = key("scripts/zcaller.py");
     let ak = key("scripts/avatar.py");
@@ -522,14 +523,20 @@ fn conflicting_import_targets_give_up_edge() {
     let other = "def heal():\n    pass\n";
     let actual = "def heal():\n    pass\n";
     let avatar_file = "def heal():\n    pass\n";
-    let zcaller = "import other as avatar\nimport actual as avatar\n\ndef battle():\n    avatar.heal()\n";
+    let zcaller =
+        "import other as avatar\nimport actual as avatar\n\ndef battle():\n    avatar.heal()\n";
     let ok = key("scripts/other.py");
     let act = key("scripts/actual.py");
     let ak = key("scripts/avatar.py");
     let zk = key("scripts/zcaller.py");
     let mut file_edges = BTreeMap::new();
     let mut file_symbols = BTreeMap::new();
-    for (k, src) in [(&ok, other), (&act, actual), (&ak, avatar_file), (&zk, zcaller)] {
+    for (k, src) in [
+        (&ok, other),
+        (&act, actual),
+        (&ak, avatar_file),
+        (&zk, zcaller),
+    ] {
         let ast = ParsedAst::new(src);
         let symbols = parse_ast_symbols(src).symbols;
         file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));

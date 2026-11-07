@@ -327,5 +327,16 @@
   "Component slot": "Component slot",
   "FIXED_DICT property sub-key assignment does not trigger the property sync event; reassign {property} as a whole": "FIXED_DICT property sub-key assignment does not trigger the property sync event; reassign {property} as a whole",
   "Storing self in a module-level container keeps the entity alive after destroy (garbages leak); drop the reference in onDestroy": "Storing self in a module-level container keeps the entity alive after destroy (garbages leak); drop the reference in onDestroy",
-  "delTimer inside onDestroy is unnecessary: destroy() already cancels all timers (scriptTimers_.cancelAll(); stale ids silently return -1)": "delTimer inside onDestroy is unnecessary: destroy() already cancels all timers (scriptTimers_.cancelAll(); stale ids silently return -1)"
+  "delTimer inside onDestroy is unnecessary: destroy() already cancels all timers (scriptTimers_.cancelAll(); stale ids silently return -1)": "delTimer inside onDestroy is unnecessary: destroy() already cancels all timers (scriptTimers_.cancelAll(); stale ids silently return -1)",
+  "KBEngine console log tail: machined is not reachable (no answer on discovery UDP 20086); will attach when it comes back.": "KBEngine console log tail: machined is not reachable (no answer on discovery UDP 20086); will attach when it comes back.",
+  "KBEngine console log tail: no logger component in machined discovery yet; waiting for it to start.": "KBEngine console log tail: no logger component in machined discovery yet; waiting for it to start.",
+  "KBEngine console log tail: registered on logger {host}:{port} (702 → 65501 push stream).": "KBEngine console log tail: registered on logger {host}:{port} (702 → 65501 push stream).",
+  "KBEngine: jump to exception source {file}:{line}": "KBEngine: jump to exception source {file}:{line}",
+  "state={state} (not COMPONENT_STATE_RUN)": "state={state} (not COMPONENT_STATE_RUN)",
+  "CPU {value}% over threshold {threshold}%": "CPU {value}% over threshold {threshold}%",
+  "memory {value}MB over threshold {threshold}MB": "memory {value}MB over threshold {threshold}MB",
+  "pid={pid} cpu={cpu}% mem={mem}MB {address}": "pid={pid} cpu={cpu}% mem={mem}MB {address}",
+  "process vanished from machined discovery": "process vanished from machined discovery",
+  "machined unreachable — showing the previous snapshot": "machined unreachable — showing the previous snapshot",
+  "machined unreachable: discovery UDP 20086 has no answer; polling continues, data is a stale snapshot": "machined unreachable: discovery UDP 20086 has no answer; polling continues, data is a stale snapshot"
 }

@@ -327,6 +327,12 @@
 
 | 设置 | 默认值 | 作用 |
 | --- | --- | --- |
+| `kbengine.console.discoveryHost` | `"127.0.0.1"` | console 链的 machined 发现目标；默认 localhost-only，跨机需显式填广播/IP（集群控制面安全边界） |
+| `kbengine.consoleLogTail.enabled` | `true` | 实时日志 tail 开关（guiconsole 链，KB-GC-001）：向发现到的 logger 注册 `Logger::registerLogWatcher`（702），把 65501 长连推流渲染进「KBEngine Console 日志」输出通道；配置缺失视为开，显式 `false` 才关；断线按指数退避自动重连；machined/logger 不在时如实提示不硬试 |
+| `kbengine.consoleLogTail.components` | `[]` | tail 组件过滤（按引擎组件类型名）；空 = 不过滤；下一次 tail 重连生效 |
+| `kbengine.componentStatusPanel.refreshSeconds` | `5` | 共享 machined 发现轮询间隔（秒），同时供组件状态视图与 tail 的 logger 地址 |
+| `kbengine.componentStatusPanel.cpuThresholdPercent` | `90` | 面板 CPU 红色标记阈值（广播 cpu 百分比）；进程消失与非运行态同样红色 |
+| `kbengine.componentStatusPanel.memThresholdMb` | `1024` | 面板内存红色阈值（MB；线上 usedmem 为字节，已换算） |
 | `kbengine.db.tablePrefix` | `""` | 数据库表名前缀（空 = 引擎默认 tbl_）；schema 视图与 SQL 模板同源替换 |
 | `kbengine.databaseQueryTimeoutMs` | `10000` | 只读数据库命令（漂移校验/表预览）单条建连与查询的超时毫秒数：执行期间显示可取消的进度通知，超时或取消即按原因返回并释放连接（挂死的强制销毁）；`0`/负值不限时 |
 | `kbengine.gitHistory.enabled` | `true` | 文件 Git 历史功能开关（IDE-GIT-001）：开启时出现「查看文件历史 / 查看选中范围历史」入口（资源管理器/编辑器右键+命令面板），仅在用户点开入口时按需查询 Git；激活/打开文件/光标/选区变化绝不运行 Git，不预取不轮询——关闭后入口隐藏，直接调用命令也不运行任何 Git |
@@ -372,8 +378,6 @@
 | `kbengine.codeLens.property` | `true` | `self.<属性>` 访问处属性 CodeLens（回跳 def） |
 | `kbengine.codeLens.propertyInitOrder` | `true` | 实体类 `__init__` 声明处「属性先于 __init__ 装载 · 来自 <实体>.def」CodeLens（点击回 def） |
 | `kbengine.codeLens.typesXml` | `true` | types.xml 类型声明行落库镜链 CodeLens（引用反扫） |
-| `kbengine.codeLens.engineSpi` | `true` | 引擎 SPI 实现函数 CodeLens：KODE-CFG-012 的 36 方法表命中的方法在其 Python 声明处标`「引擎 SPI · <方法> · <触发>」`镜，组件角色由配置派生定（CFG-015） |
-| `kbengine.configData` | object | `enabled: true`、`configDirGlobs: scripts/config/**, scripts/data/config/**, scripts/data/**`、`configClassPatterns: *Config/*Data`、`reloadFunctionPatterns: reload*/hotUpdate*`、`mutationExclude: []` | 配置数据保护(CFG-016):配置目录下配置绑定/类的写点(属性/下标/del/增强赋值/变异方法)出 `kbengine.configDataMutation` 诊断;reload*/热更新函数体与 mutationExclude 白名单内不报;配置绑定/类名 hover 出直读类型文本(schema 直读非推断) |
 | `kbengine.inlayHints.typeData` | `true` | `self.<属性>` 访问处内联显示 def 声明的 types.xml 数据类型;`self.base/cell/client` RPC 调用点内联显示 def 已声明的形参类型;数组 `<of>` 元素类型在 `for ... in self.<属性>` 目标与下标赋值局部变量后内联显示 |
 | `kbengine.inlayHints.defParams` | `true` | entity 脚本区块内 def 未标注形参内联 def 声明的 `<Arg>` 类型;声明 `<ReturnType>` 时内联 `-> 类型` |
 | `kbengine.inlayHints.defProps` | `true` | 整行注释锚 `# kode:props-from-def` 行尾内联渲染该实体 def 根级属性只读清单(名+类型;悬停给声明出处) |

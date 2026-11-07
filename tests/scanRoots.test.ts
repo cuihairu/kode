@@ -211,69 +211,6 @@ describe('findFilesAcrossRoots:workspace 结果 + 外部根手工遍历(去重/e
     }
   });
 
-  it('托管目录(.kbengine/inferred)副本不进结果(防镜像双计,CFG-017)', async () => {
-    const ws = makeTmpDir('mirror-ws');
-    const original = Uri.file(path.join(ws, 'scripts', 'base', 'Account.py'));
-    const mirror = Uri.file(path.join(ws, '.kbengine', 'inferred', 'scripts', 'base', 'Account.py'));
-    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
-    stubWorkspace.findFiles = (async () => [original, mirror]) as typeof stubWorkspace.findFiles;
-    try {
-      const py = await findFilesAcrossRoots('**/*.py', null);
-      expect(py.map(u => u.fsPath)).toEqual([original.fsPath]);
-    } finally {
-      stubWorkspace.workspaceFolders = [];
-    }
-  });
-
-  it('外部根下的托管镜像树也被剔出(评审四轮 P1:遍历后全量过滤,CFG-017)', async () => {
-    const ws = makeTmpDir('ext-mirror-ws');
-    const assets = makeTmpDir('ext-mirror-assets');
-    const legit = path.join(assets, 'scripts', 'base', 'Legit.py');
-    const mirror = path.join(assets, '.kbengine', 'inferred', 'scripts', 'base', 'Legit.py');
-    fs.mkdirSync(path.join(assets, 'scripts', 'base'), { recursive: true });
-    fs.mkdirSync(path.join(assets, '.kbengine', 'inferred', 'scripts', 'base'), { recursive: true });
-    fs.writeFileSync(legit, 'class Legit:\\n    pass\\n');
-    fs.writeFileSync(mirror, 'class Legit:\\n    pass\\n');
-    const originalFind = stubWorkspace.findFiles;
-    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
-    stubWorkspace.findFiles = (async () => []) as typeof stubWorkspace.findFiles;
-    try {
-      setAssetsRoot(assets);
-      const py = await findFilesAcrossRoots('**/*.py', null);
-      // 外部 walk 只按 exclude 名单跳目录,镜像树靠遍历后的全量受管根过滤剔出
-      expect(py.map(u => u.fsPath)).toEqual([legit]);
-    } finally {
-      stubWorkspace.findFiles = originalFind;
-      stubWorkspace.workspaceFolders = [];
-      setAssetsRoot(undefined);
-    }
-  });
-
-  it('多工作区:folders[0] 之外的受管副本同样剔出(评审四轮 P1,CFG-017)', async () => {
-    const ws1 = makeTmpDir('multi-ws1');
-    const ws2 = makeTmpDir('multi-ws2');
-    const legit = Uri.file(path.join(ws1, 'scripts', 'base', 'Solo.py'));
-    const mirror = Uri.file(path.join(ws2, '.kbengine', 'inferred', 'scripts', 'base', 'Solo.py'));
-    fs.mkdirSync(path.join(ws1, 'scripts', 'base'), { recursive: true });
-    fs.mkdirSync(path.join(ws2, '.kbengine', 'inferred', 'scripts', 'base'), { recursive: true });
-    fs.writeFileSync(path.join(ws1, 'scripts', 'base', 'Solo.py'), 'class Solo:\\n    pass\\n');
-    fs.writeFileSync(path.join(ws2, '.kbengine', 'inferred', 'scripts', 'base', 'Solo.py'), 'class Solo:\\n    pass\\n');
-    const originalFind = stubWorkspace.findFiles;
-    stubWorkspace.workspaceFolders = [
-      { uri: Uri.file(ws1), name: 'ws1', index: 0 },
-      { uri: Uri.file(ws2), name: 'ws2', index: 1 }
-    ];
-    stubWorkspace.findFiles = (async () => [legit, mirror]) as typeof stubWorkspace.findFiles;
-    try {
-      const py = await findFilesAcrossRoots('**/*.py', null);
-      // 受管根按全部 workspace 文件夹构造,只取 folders[0] 会漏 ws2 的镜像
-      expect(py.map(u => u.fsPath)).toEqual([legit.fsPath]);
-    } finally {
-      stubWorkspace.findFiles = originalFind;
-      stubWorkspace.workspaceFolders = [];
-    }
-  });
-
   it('外部根目录读取挂起期间可取消，取消后不继续遍历子目录', async () => {
     const ws = makeTmpDir('cancel-ws');
     const assets = makeTmpDir('cancel-assets');

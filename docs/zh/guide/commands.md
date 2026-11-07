@@ -493,6 +493,21 @@
 
 ## 可视化面板
 
+### `kbengine.consoleLogTail.show`
+
+- 标题：`KBEngine Console: Show Live Log Tail`
+- 作用：打开「KBEngine Console 日志」输出通道,呈现引擎 logger 的 65501 实时推流(guiconsole 链,KB-GC-001)
+
+### `kbengine.consoleLogTail.toggle`
+
+- 标题：`KBEngine Console: Start/Stop Live Log Tail`
+- 作用：启动/停止 tail 长连(702 注册 / 703 注销)。显式用户意图可越过 `kbengine.consoleLogTail.enabled` 的默认开启闸(配置缺失视为开,只有显式 `false` 才关)
+
+### `kbengine.consoleComponentPanel.refresh`
+
+- 标题：`Refresh Component Status`
+- 作用：跑一轮 machined 发现并重绘组件状态视图(与 tail 同一 hub;视图标题栏刷新按钮同款)
+
 ### `kbengine.monitoring.show`
 
 - 标题：`Show Monitoring Panel`
@@ -1027,12 +1042,6 @@ callgraph 模式面板支持：
 
 - 标题：`执行快速动作`
 - 作用：按动作名执行 `.kbengine/debug.json` 的 `quickActions` 条目，由「快速执行」视图的动作行调用
-
-### `kbengine.python.showEngineSpi`
-
-- 标题: `引擎 SPI · 显示实现方法信息(引擎侧以 SPI 模式调用)`
-- 用途:引擎 SPI 实现函数标注镜(KODE-CFG-015)的点击面。KODE-CFG-012 SPI 方法表命中的模块级 `def` 处的镜显示该方法身份与触发时机(如 `onInit` 首回调 `0`=启动 `1`=热载;可选方法带「 · 可选」后缀)
-- 如实边界:引擎侧调用点在 C++ 引擎内、不在本仓,镜为纯信息展示,不做跳转
 
 ### `kbengine.python.syncExtraPaths`
 

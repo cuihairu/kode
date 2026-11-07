@@ -1194,24 +1194,18 @@ export class EntityMappingManager {
    * IDE-IDX-015:工作区移除根时摘除该根全部索引记录——该根下所有实体索引
    * (名字槽由剩余同名接管,IDE-IDX-008 口径)、owner 反查、类型注册表快照
    * 全部清出;其他根的记录原样保留。
-   * 四轮评审修复:keepSubtrees 仍在根集内的子树(如根切换到自身子目录)——
-   * 这些子树的记录原样保留,否则父根整摘会把子根的活数据连带摘掉且无扫描
-   * 接替(refreshExternalRootWatchers 只重挂 watcher 不重扫)。
    */
-  removeRoot(rootPath: string, keepSubtrees?: ReadonlyArray<string>): void {
+  removeRoot(rootPath: string): void {
     const normalizedRoot = normalizeLookupPath(rootPath);
-    const normalizedKeeps = (keepSubtrees ?? [])
-      .map(path => normalizeLookupPath(path))
-      .filter(normalized => normalized.startsWith(`${normalizedRoot}/`));
     this.removedRootKeys.add(normalizedRoot);
     for (const defFile of [...this.mappingIndexesByRoot.keys()]) {
-      if (!defFile.startsWith(`${normalizedRoot}/`)) { continue; }
-      if (normalizedKeeps.some(keep => defFile.startsWith(`${keep}/`))) { continue; }
-      this.removeIndexByDefFile(defFile);
+      if (defFile.startsWith(`${normalizedRoot}/`)) {
+        this.removeIndexByDefFile(defFile);
+      }
     }
     this.missingOwnerPaths.clear();
     this.missingClassNames.clear();
-    getSemanticIndex().removeRoot(rootPath, keepSubtrees);
+    getSemanticIndex().removeRoot(rootPath);
   }
 
   private handlePythonFileChanged(pythonPath: string): void {

@@ -196,23 +196,6 @@ describe('extension activate 装配', () => {
     expect(commandRegistry.allRegisteredCommandIds().sort())
       .toEqual(declared.commands.map(entry => entry.command).sort());
 
-    // 视图:KODE-PERF 视图先行——activate 最前先注册占位 provider(修「激活
-    // 中途失败→视图无提供者→宿主报 There is no data provider registered」),
-    // 真 provider 在各自装配位随后注册(宿主同 id=后到者接管)。锁两面:
-    // ①占位先行(全部声明 id 都有首笔注册)②真接管(全部声明 id 都有末笔注册)
-    const declaredSidebarViewIds = Object.values(declared.views)
-      .flat()
-      .map(view => view.id)
-      .sort();
-    const firstByView = new Map<string, unknown>();
-    const lastByView = new Map<string, unknown>();
-    for (const entry of treeRegistrations) {
-      if (!firstByView.has(entry.viewId)) { firstByView.set(entry.viewId, entry.provider); }
-      lastByView.set(entry.viewId, entry.provider);
-    }
-    expect([...firstByView.keys()].sort()).toEqual(declaredSidebarViewIds);
-    expect([...lastByView.keys()].sort()).toEqual(declaredSidebarViewIds);
-
     // 测试面板(TSK-005):一个 controller,一个默认 Run 档
     expect(testsRegistry.controllers).toHaveLength(1);
     expect(testsRegistry.controllers[0].id).toBe('kbengine-python-tests');
@@ -220,8 +203,12 @@ describe('extension activate 装配', () => {
     expect(testsRegistry.controllers[0].profiles[0].kind).toBe(1);
     expect(testsRegistry.controllers[0].profiles[0].isDefault).toBe(true);
 
-    // 树视图:KODE-PERF 视图先行后 treeRegistrations 含占位+真 provider 两笔/视图,
-    // id 集合断言在上方 firstByView/lastByView 两面已锁,这里不再数总笔数。
+    // 树视图:实体/进程/telnet/最终配置四个视图 id 与 views 贡献点一致
+    const declaredViewIds = Object.values(declared.views)
+      .flat()
+      .map(view => view.id)
+      .sort();
+    expect(treeRegistrations.map(item => item.viewId).sort()).toEqual(declaredViewIds);
 
     // 语言服务:补全 3(.def + Python + 启动脚本,KBEXP-1)、悬停 3(.def/hook +
     // 引擎配置字段,批112 + 启动脚本,KBEXP-1)、定义 2、调用层级 1、重命名 1
@@ -249,9 +236,8 @@ describe('extension activate 装配', () => {
     // 批126:RPC 方法标记的 Python 侧 CodeLens 单注册;批134 起 types.xml
     // 引用反扫镜再加一份注册;批135 属性访问标记再加一份注册;批154 起
     // 事件回调镜链从 RPC 镜链拆出独立注册(各自独立开关);IDE-HOT-100 起
-    // 文件热更状态点 CodeLens 再加一份注册(状态机派生视图,见其专测);
-    // KODE-CFG-015 起引擎 SPI 实现函数镜再一份注册(独立开关)
-    expect(languagesRegistry.codeLensRegistrations).toHaveLength(9);
+    // 文件热更状态点 CodeLens 再加一份注册(状态机派生视图,见其专测)
+    expect(languagesRegistry.codeLensRegistrations).toHaveLength(8);
     // 批154:python 侧 types.xml 数据类型 inlay hints 一份注册;内建属性行内
     // `: <type>` inlay 另一份独立注册(2026-10-21 形态升级单,独立开关);
     // 任务2(2026-10-27)def 定义点形参 inlay 再一份独立注册;
@@ -301,14 +287,19 @@ describe('extension activate 装配', () => {
     expect(stubWithMetadata).toContain('# Source describe:');
     expect(workspaceState.contentProviders.has('kbengine-config')).toBe(true);
 
-    // 状态栏五条:server 灯(右对齐/优先级 100/命令指向扩展视图)、
+    // 状态栏六条:server 灯(右对齐/优先级 100/命令指向扩展视图)、
     // telnet 灯(优先级 99/命令指向 telnet 面板)、热更状态灯(HR-UI-001,
     // 优先级 98/命令指向热更日志,默认 Watch Off 常显)、解释器灯(PY-ENV
-    // 二期,优先级 97/命令指向解释器选择,常显)与热更通道灯(快捷切换本批,
-    // 优先级 96/命令指向三选切换,无激活 profile 时显示未配置);无运行组件
-    // 时 server 灯隐藏。批111 用户令:配置未开 telnet 时 telnet 灯同样隐藏,
+    // 二期,优先级 97/命令指向解释器选择,常显)、热更通道灯(快捷切换本批,
+    // 优先级 96/命令指向三选切换,无激活 profile 时显示未配置)与
+    // KB-GC-001 日志 tail 灯(优先级 95/命令指向 tail 切换,连接态文本);
+    // 无运行组件时 server 灯隐藏。批111 用户令:配置未开 telnet 时 telnet 灯同样隐藏,
     // context key 落 false
-    expect(windowState.statusBars).toHaveLength(5);
+    expect(windowState.statusBars).toHaveLength(6);
+    const tailBar = windowState.statusBars.find(item => item.priority === 95)!;
+    expect(tailBar.alignment).toBe(StatusBarAlignment.Right);
+    // tail 状态灯只显示连接态文本(connecting/connected/backoff),切换走
+    // 独立命令 kbengine.consoleLogTail.toggle,灯本身不绑命令。
     const bar = windowState.statusBars.find(item => item.priority === 100)!;
     expect(bar.alignment).toBe(StatusBarAlignment.Right);
     expect(bar.command).toBe('workbench.view.extension.kbengine-explorer');
@@ -818,13 +809,13 @@ describe('extension activate 装配', () => {
         affectsConfiguration: (section: string) =>
           section === 'kbengine' || section === 'kbengine.codeLens'
       });
-      // 索引 5=KODE-CFG-015 引擎 SPI 镜(kbengine 段变更刷新);索引 7=IDE-HOT-100
-      // 文件热更状态点(同口径);索引 6/8=generatedSource/generatedEntitySource
+      // 索引 6=IDE-HOT-100 文件热更状态点(kbengine 段变更刷新,与其它
+      // 配置敏感 provider 同口径);索引 5/7=generatedSource/generatedEntitySource
       // 不订阅配置变更,计数不动
-      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1, 1, 1, 0, 1, 0]);
+      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1, 1, 0, 1, 0]);
       // 外层 guard:不影响 kbengine 段时不 fire(计数不动)
       workspaceEvents.configurationChanged.fire({ affectsConfiguration: () => false });
-      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1, 1, 1, 0, 1, 0]);
+      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1, 1, 0, 1, 0]);
 
       // 打开文档事件:def 文档触发校验
       const openedDef = makeTextDocument(BAD_DEF, { fileName: path.join(root, 'Opened.def') });
