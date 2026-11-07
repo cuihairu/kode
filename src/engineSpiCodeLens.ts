@@ -137,10 +137,12 @@ export function findModuleLevelMethodDeclarations(text: string): PythonMethodDec
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     const trimmed = line.trim();
-    if (!trimmed) {
+    // 空行与注释不参与作用域:Python 忽略注释缩进(列 0 注释不得弹出
+    // 打开中的 class/def 体),空行同理
+    if (!trimmed || trimmed.startsWith('#')) {
       continue;
     }
-    const indent = (line.match(/^ */) as RegExpMatchArray)[0].length;
+    const indent = countIndent(line);
     // 收窄:当前行缩进 ≤ 栈顶体缩进 → 该体已结束
     while (blockIndents.length > 0 && blockIndents[blockIndents.length - 1] >= indent) {
       blockIndents.pop();
@@ -160,6 +162,21 @@ export function findModuleLevelMethodDeclarations(text: string): PythonMethodDec
     }
   }
   return declarations;
+}
+
+/** 行首缩进宽度:空格 1 列,Tab 按 Python 默认 8 列折算(混缩进亦稳定比较) */
+function countIndent(line: string): number {
+  let width = 0;
+  for (const ch of line) {
+    if (ch === ' ') {
+      width += 1;
+    } else if (ch === '\t') {
+      width += 8;
+    } else {
+      break;
+    }
+  }
+  return width;
 }
 
 /**

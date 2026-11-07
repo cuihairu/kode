@@ -141,6 +141,38 @@ describe('findModuleLevelMethodDeclarations(模块级识别)', () => {
     // 类方法 onInit 与嵌套 onFinish 不取;模块级 onBaseAppReady/outer 取
     expect(decls.map(d => d.methodName)).toEqual(['onBaseAppReady', 'outer']);
   });
+
+  it('列 0 注释不弹出 class/def 体(注释缩进被 Python 忽略)', () => {
+    const text = [
+      'class Handler:',
+      '# a top-level comment must not close the class scope',
+      '    def onInit(self):',
+      '        pass',
+      '',
+      'def onBaseAppReady():',
+      '    pass',
+      ''
+    ].join('\n');
+    const decls = findModuleLevelMethodDeclarations(text);
+    // 类方法 onInit 仍不取(注释不得弹出类体);模块级 onBaseAppReady 取
+    expect(decls.map(d => d.methodName)).toEqual(['onBaseAppReady']);
+  });
+
+  it('Tab 缩进的类方法/嵌套函数不取(Tab 按 8 列折算)', () => {
+    const text = [
+      'class Handler:',
+      '\tdef onInit(self):',
+      '\t\tpass',
+      '',
+      'def outer():',
+      '\tdef onFinish():',
+      '\t\tpass',
+      ''
+    ].join('\n');
+    const decls = findModuleLevelMethodDeclarations(text);
+    // 类方法/嵌套(全部 Tab 缩进)不取;模块级 outer 取
+    expect(decls.map(d => d.methodName)).toEqual(['outer']);
+  });
 });
 
 describe('buildEngineSpiCodeLenses(命中筛)', () => {
