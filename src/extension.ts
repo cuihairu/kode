@@ -366,6 +366,7 @@ import { DefParamInlayHintsProvider } from './defParamInlayHints';
 import { PythonClassIndex } from './pythonClassIndex';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { shouldStartKbEngineIndexing } from './workspaceGate';
+import { EngineSpiCodeLensProvider } from './engineSpiCodeLens';
 import { preheatDiscoveryScan } from './workspaceDiscovery';
 import { DiagnosticScheduler, getDiagnosticScheduler } from './diagnosticScheduler';
 import { isTypeRegistryFile } from './semanticIndex';
@@ -1372,6 +1373,28 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerTypeStorageIndexWatchers(() => typesXmlCodeLensProviderImpl.fireConfigurationChanged())
   );
+
+  // KODE-CFG-015:引擎 SPI 实现函数标注(用户令 2026-11-03「引擎 spi 模式
+  // 需要实现的函数单独的 codelens」):方法名匹配 KODE-CFG-012 的 36 方法表,
+  // 组件角色由配置派生定(entryScripts 脚本根/组件目录段);独立开关
+  // kbengine.codeLens.engineSpi(默认开)。纯标注镜(无跳转目标,引擎侧调用
+  // 点不属本仓),provider 每次调用现读配置,开关变更由配置监听 fire。
+  const engineSpiCodeLensProviderImpl = new EngineSpiCodeLensProvider();
+  const engineSpiCodeLensProvider = vscode.languages.registerCodeLensProvider(
+    pythonDocumentSelector,
+    engineSpiCodeLensProviderImpl
+  );
+  context.subscriptions.push(engineSpiCodeLensProvider, engineSpiCodeLensProviderImpl);
+  // 镜点击仅弹信息(无源码可跳):显示 SPI 身份与触发时机
+  const showEngineSpiCommand = vscode.commands.registerCommand(
+    'kbengine.python.showEngineSpi',
+    (uri?: vscode.Uri, _line?: number, methodName?: string, title?: string) => {
+      void vscode.window.showInformationMessage(
+        title ?? `引擎 SPI · ${methodName ?? ''}`
+      );
+    }
+  );
+  context.subscriptions.push(showEngineSpiCommand);
 
   // 生成桩的来源镜(T-05):声明/字段行上方保留原始 types.xml 行,点击
   // 直接跳原始声明;禁止从生成行号反推来源。
@@ -2611,6 +2634,7 @@ export function activate(context: vscode.ExtensionContext) {
       eventCodeLensProviderImpl.fireConfigurationChanged();
       propertyCodeLensProviderImpl.fireConfigurationChanged();
       typesXmlCodeLensProviderImpl.fireConfigurationChanged();
+      engineSpiCodeLensProviderImpl.fireConfigurationChanged();
     }
 
     // 实体面开关变更即时生效(用户令 2026-10-21):hover/补全/跳转各 provider

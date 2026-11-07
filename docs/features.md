@@ -402,6 +402,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.codeLens.property` | `true` | Property CodeLens at `self.<property>` access sites (reverse jump to def) |
 | `kbengine.codeLens.propertyInitOrder` | `true` | `属性先于 __init__ 装载 · 来自 <实体>.def` CodeLens on entity-class `__init__` declarations (click jumps to def) |
 | `kbengine.codeLens.typesXml` | `true` | Database storage lens chain on types.xml type declaration lines (reference back-scan) |
+| `kbengine.codeLens.engineSpi` | `true` | Engine SPI implementation function CodeLens: methods named in the KODE-CFG-012 36-method SPI table get an "Engine SPI · <method> · <trigger>" lens at their Python declaration, component role derived from config (CFG-015) |
 | `kbengine.inlayHints.typeData` | `true` | Inline def-declared types.xml data types at `self.<property>` sites; declared parameter types at `self.base/cell/client` RPC call sites; array `<of>` element types after `for ... in self.<property>` targets and subscript-assignment locals |
 | `kbengine.inlayHints.defParams` | `true` | Un-annotated `def` parameters in entity script sections get the `.def`-declared `<Arg>` type inline; declared `<ReturnType>` renders `-> type` |
 | `kbengine.entityDefsPath` | `"scripts/entity_defs"` | Default path for entity definition files |

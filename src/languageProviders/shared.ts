@@ -41,6 +41,9 @@ export function getLanguageFeatureConfig() {
     // 独立开关(关访问镜不关装载语义提示)
     codeLensPropertyInitOrder: config.get<boolean>('codeLens.propertyInitOrder', true),
     codeLensTypesXml: config.get<boolean>('codeLens.typesXml', true),
+    // KODE-CFG-015:引擎 SPI 函数标注镜(方法名匹配 KODE-CFG-012 的 36 方法
+    // 表,组件角色由配置派生定),独立开关,默认开
+    codeLensEngineSpi: config.get<boolean>('codeLens.engineSpi', true),
     // 实体脚本新功能各一枚独立开关(用户令 2026-10-21:新功能都要配置开关,
     // 默认开)。builtinProperties 管内建属性 hover+self. 补全(内建属性相关
     // 面的总闸,行内 inlay 也先过它);receiverSections 管接收者段过滤
