@@ -7,6 +7,7 @@ pub mod docs_index;
 pub mod explain;
 pub mod kb;
 pub mod protocol_frame;
+pub mod semantic_model;
 pub mod server;
 
 pub use kb::{AssetKnowledge, ParsedDef};

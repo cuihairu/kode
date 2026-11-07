@@ -33,13 +33,14 @@ const SKIP_DIRS: &[&str] = &[
     "res",
 ];
 
-/// 符号条目(类/函数/方法统一形)。
-struct Symbol {
-    name: String,
-    kind: &'static str,
-    class: Option<String>,
-    file: PathBuf,
-    line: usize,
+/// 符号条目(类/函数/方法统一形;MCP 面输出用,语义模型复用)。
+#[derive(Debug, Clone)]
+pub struct PySymbol {
+    pub name: String,
+    pub kind: &'static str,
+    pub class: Option<String>,
+    pub file: PathBuf,
+    pub line: usize,
 }
 
 /// `{root}/scripts` 下递归收集 `.py`(有界)。
@@ -85,11 +86,11 @@ fn to_one_based(line: usize) -> usize {
 }
 
 /// 收集一个文件的所有符号(类 + 模块级函数 + 方法)。
-fn symbols_of(file: &Path, source: &str) -> Vec<Symbol> {
+fn symbols_of(file: &Path, source: &str) -> Vec<PySymbol> {
     let extraction = parse_ast_symbols(source);
     let mut out = Vec::new();
     for class in &extraction.symbols.classes {
-        out.push(Symbol {
+        out.push(PySymbol {
             name: class.name.clone(),
             kind: "class",
             class: None,
@@ -97,7 +98,7 @@ fn symbols_of(file: &Path, source: &str) -> Vec<Symbol> {
             line: to_one_based(class.start_line),
         });
         for method in &class.methods {
-            out.push(Symbol {
+            out.push(PySymbol {
                 name: method.name.clone(),
                 kind: "method",
                 class: Some(class.name.clone()),
@@ -107,13 +108,27 @@ fn symbols_of(file: &Path, source: &str) -> Vec<Symbol> {
         }
     }
     for function in &extraction.symbols.functions {
-        out.push(Symbol {
+        out.push(PySymbol {
             name: function.name.clone(),
             kind: "function",
             class: None,
             file: file.to_path_buf(),
             line: to_one_based(function.line),
         });
+    }
+    out
+}
+
+/// 全量 Python 符号表:`{root}/scripts` 下所有 `.py` 的类/函数/方法
+/// (有界:文件数封顶、单文件 1MB)。语义模型(find_symbol/implementedBy)
+/// 与 search_symbols 共用同一抽取,保证一致性。
+pub fn collect_symbols(root: &Path) -> Vec<PySymbol> {
+    let mut out = Vec::new();
+    for file in collect_py(root) {
+        let Some(source) = read_capped(&file) else {
+            continue;
+        };
+        out.extend(symbols_of(&file, &source));
     }
     out
 }
@@ -128,31 +143,26 @@ pub fn search_symbols(root: &Path, query: &str, limit: usize) -> Result<Value, S
     }
     let q = query.to_lowercase();
     let mut found: Vec<Value> = Vec::new();
-    for file in collect_py(root) {
-        let Some(source) = read_capped(&file) else {
+    for sym in collect_symbols(root) {
+        if !sym.name.to_lowercase().contains(&q) {
             continue;
-        };
-        for sym in symbols_of(&file, &source) {
-            if !sym.name.to_lowercase().contains(&q) {
-                continue;
-            }
-            let mut entry = json!({
-                "name": sym.name,
-                "kind": sym.kind,
-                "file": sym.file.to_string_lossy(),
-                "line": sym.line,
-            });
-            if let Some(class) = sym.class {
-                entry["class"] = Value::String(class);
-            }
-            found.push(entry);
-            if found.len() >= limit {
-                return Ok(json!({
-                    "query": query,
-                    "count": found.len(),
-                    "matches": found,
-                }));
-            }
+        }
+        let mut entry = json!({
+            "name": sym.name,
+            "kind": sym.kind,
+            "file": sym.file.to_string_lossy(),
+            "line": sym.line,
+        });
+        if let Some(class) = sym.class {
+            entry["class"] = Value::String(class);
+        }
+        found.push(entry);
+        if found.len() >= limit {
+            return Ok(json!({
+                "query": query,
+                "count": found.len(),
+                "matches": found,
+            }));
         }
     }
     Ok(json!({

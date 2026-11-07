@@ -155,6 +155,18 @@ impl KodeMcpServer {
                 arg_str("entity").as_deref(),
                 arg_str("method").as_deref(),
             ),
+            "find_symbol" => {
+                let query = arg_str("query").unwrap_or_default();
+                let limit = arguments
+                    .get("limit")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(20) as usize;
+                crate::semantic_model::find_symbol(&self.knowledge, &self.assets_root, &query, limit.max(1))
+            }
+            "index_status" => Ok(crate::semantic_model::index_status(
+                &self.knowledge,
+                &self.assets_root,
+            )),
             other => Err(format!("unknown tool: {other}")),
         };
         match result {
@@ -173,7 +185,7 @@ impl ServerHandler for KodeMcpServer {
                  get_entity_model, get_type_graph, validate_defs, get_message_entry, \
                  encode_decode_sample, db_schema_preview, explain, get_final_config, \
                  get_entry_scripts, get_database_schema, why_setting, list_config_settings, \
-                 search_docs, search_symbols, protocol_frame.",
+                 search_docs, search_symbols, protocol_frame, find_symbol, index_status.",
             )
     }
 
@@ -338,6 +350,22 @@ impl ServerHandler for KodeMcpServer {
                         }),
                         &[],
                     ),
+                ),
+                Self::tool(
+                    "find_symbol",
+                    "Unified symbol lookup across the Python semantic model: entity defs, entity properties (with the resolved Python type and confidence), types.xml types (with implementedBy) and Python symbols (classes/functions/methods). Treats .def + types.xml + .py as one Python type system. Answers 'where is symbol X defined' and 'what Python type does def property X have'.",
+                    schema_of(
+                        serde_json::json!({
+                            "query": {"type": "string", "description": "case-insensitive symbol name substring"},
+                            "limit": {"type": "integer", "description": "max matches (default 20)"}
+                        }),
+                        &["query"],
+                    ),
+                ),
+                Self::tool(
+                    "index_status",
+                    "Status of the structure-aware knowledge index: scanned Python symbols, schema counts (defs/types/aliases), type-resolution confidence distribution (determined/inferred/unknown) and any load errors. Answers 'is the index healthy and how complete'.",
+                    serde_json::json!({"type": "object", "properties": {}}),
                 ),
             ],
             ..Default::default()

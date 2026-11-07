@@ -52,7 +52,7 @@ fn payload_of(result: CallToolResult) -> Value {
 }
 
 #[tokio::test]
-async fn list_tools_exposes_all_sixteen() {
+async fn list_tools_exposes_all_eighteen() {
     let client = connect().await;
     let tools = client.list_all_tools().await.expect("list_tools");
     let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
@@ -63,12 +63,14 @@ async fn list_tools_exposes_all_sixteen() {
             "db_schema_preview",
             "encode_decode_sample",
             "explain",
+            "find_symbol",
             "get_database_schema",
             "get_entity_model",
             "get_entry_scripts",
             "get_final_config",
             "get_message_entry",
             "get_type_graph",
+            "index_status",
             "list_config_settings",
             "protocol_frame",
             "search_docs",
@@ -347,6 +349,36 @@ async fn call_tools_return_real_data() {
     );
     assert_eq!(payload["frame"], "Account.reqCreateAvatar");
     assert_eq!(payload["argCount"], 1);
+
+    // find_symbol(KODE-MCP-KB-002 P1):语义模型统一符号查找真数据(属性带 pyType)。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "find_symbol",
+                serde_json::json!({"query": "level"}),
+            ))
+            .await
+            .expect("call find_symbol"),
+    );
+    let prop = payload["matches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["kind"] == "entity-property")
+        .expect("entity property");
+    assert_eq!(prop["entity"], "Avatar");
+    assert_eq!(prop["pyType"], "int");
+    assert_eq!(prop["confidence"], "determined");
+
+    // index_status(KODE-MCP-KB-002 P1):索引状态真数据(置信度分布)。
+    let payload = payload_of(
+        client
+            .call_tool(call_params("index_status", serde_json::json!({})))
+            .await
+            .expect("call index_status"),
+    );
+    assert!(payload["schema"]["defs"].as_u64().unwrap() >= 1);
+    assert!(payload["resolution"]["resolvedTypes"].as_u64().unwrap() >= 1);
 
     let _ = client.cancel().await;
 }
