@@ -9,6 +9,7 @@ import {
   type EntityPropertyTemplate
 } from '../src/entityWizard';
 import { KBEngineCodeGenerator } from '../src/codeGenerator';
+import { generatePythonContent } from '../src/codeGeneratorRender';
 import type { CustomTypeInfo } from '../src/definitionWorkspace';
 import type { EntityMapping } from '../src/entityMapping';
 
@@ -275,7 +276,7 @@ describe('GEN-DEF-1: entity_types.pyi 实体类 __init__ is None 守卫', () => 
 
 describe('GEN-DEF-1: codeGenerator 实体脚本 __init__ 守卫', () => {
   it('base 段 ARRAY 属性生成 is None 守卫,简单类型不守卫', () => {
-    const py = internals.generatePythonContent({
+    const py = generatePythonContent({
       config: { name: 'Hero', hasBase: true, hasCell: true },
       baseProperties: [
         { name: 'skills', type: 'ARRAY<of>UINT32</of>', flags: 'BASE' },
@@ -290,7 +291,7 @@ describe('GEN-DEF-1: codeGenerator 实体脚本 __init__ 守卫', () => {
   });
 
   it('cell 段 FIXED_DICT 命名类型属性生成 is None 守卫', () => {
-    const py = internals.generatePythonContent({
+    const py = generatePythonContent({
       config: { name: 'Hero', hasBase: true, hasCell: true },
       cellProperties: [
         { name: 'state', type: 'HeroState', flags: 'CELL_PUBLIC' },
@@ -303,14 +304,14 @@ describe('GEN-DEF-1: codeGenerator 实体脚本 __init__ 守卫', () => {
   });
 
   it('守卫只落在该属性所在段(段间不越域)', () => {
-    const base = internals.generatePythonContent({
+    const base = generatePythonContent({
       config: { name: 'Hero', hasBase: true, hasCell: true },
       baseProperties: [{ name: 'skills', type: 'ARRAY<of>UINT32</of>', flags: 'BASE' }],
       cellProperties: [{ name: 'state', type: 'HeroState', flags: 'CELL_PUBLIC' }]
     }, 'base');
     expect(base).toContain('if self.skills is None:');
     expect(base).not.toContain('if self.state is None');
-    const cell = internals.generatePythonContent({
+    const cell = generatePythonContent({
       config: { name: 'Hero', hasBase: true, hasCell: true },
       baseProperties: [{ name: 'skills', type: 'ARRAY<of>UINT32</of>', flags: 'BASE' }],
       cellProperties: [{ name: 'state', type: 'HeroState', flags: 'CELL_PUBLIC' }]
@@ -320,7 +321,7 @@ describe('GEN-DEF-1: codeGenerator 实体脚本 __init__ 守卫', () => {
   });
 
   it('无容器属性时保持原骨架(不生成空守卫)', () => {
-    const py = internals.generatePythonContent({
+    const py = generatePythonContent({
       config: { name: 'Ghost', hasBase: true },
       baseProperties: [{ name: 'hp', type: 'UINT32', flags: 'BASE' }]
     }, 'base');
@@ -359,7 +360,7 @@ describe('GEN-DEF-1: 全生成物无 `if not self.` 形态守卫', () => {
     }
     // codeGenerator 实体脚本三段
     for (const part of ['base', 'cell', 'client'] as const) {
-      corpus.push(internals.generatePythonContent({
+      corpus.push(generatePythonContent({
         config: { name: 'Hero', hasBase: true, hasCell: true, hasClient: true },
         baseProperties: [
           { name: 'skills', type: 'ARRAY<of>UINT32</of>', flags: 'BASE' },

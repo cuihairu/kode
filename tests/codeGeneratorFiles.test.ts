@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { KBEngineCodeGenerator, createGenerationRollbackLedger } from '../src/codeGenerator';
+import { generateDefContent, generatePythonContent } from '../src/codeGeneratorRender';
 import type { EntityWizardPart } from '../src/entityWizard';
 import type { EntityDefinition } from '../src/codeGenerator';
 import { analyzeDefDocument } from '../src/defAnalyzer';
@@ -165,7 +166,7 @@ describe('KBEngineCodeGenerator file outputs', () => {
     // 内容内嵌生成时间戳,归一化后做全量比对
     const normalize = (content: string): string => content.replace(/生成时间: .*/, '生成时间: <ts>');
     expect(normalize(fs.readFileSync(defPath, 'utf8'))).toBe(
-      normalize(internals(generator).generateDefContent(sampleEntity()))
+      normalize(generateDefContent(sampleEntity()))
     );
   });
 
@@ -183,7 +184,7 @@ describe('KBEngineCodeGenerator file outputs', () => {
     expect(basePy).toContain('class Hero(KBEngine.Entity):');
     expect(basePy).toContain('KBEngine.Entity.__init__(self)');
     expect(normalize(basePy)).toBe(
-      normalize(internals(generator).generatePythonContent(sampleEntity(), 'base'))
+      normalize(generatePythonContent(sampleEntity(), 'base'))
     );
   });
 

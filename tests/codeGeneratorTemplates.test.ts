@@ -1,6 +1,7 @@
 import type * as vscode from 'vscode';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { KBEngineCodeGenerator } from '../src/codeGenerator';
+import { generateDefContent } from '../src/codeGeneratorRender';
 import type { EntityDefinition } from '../src/codeGenerator';
 import { parseDefDocument } from '../src/defParser';
 import { analyzeDefDocument } from '../src/defAnalyzer';
@@ -47,7 +48,7 @@ describe('新增预设模板(批93)', () => {
   });
 
   it('怪物模板:三域实体,生命/移动属性与攻防方法', () => {
-    const def = internals.generateDefContent(internals.getTemplateEntity('monster'));
+    const def = generateDefContent(internals.getTemplateEntity('monster'));
 
     expect(def).toContain('<monsterID>');
     expect(def).toContain('<hp>');
@@ -62,7 +63,7 @@ describe('新增预设模板(批93)', () => {
   });
 
   it('场景模板:ENTITYCALL 进出回调,无 ClientMethods 段', () => {
-    const def = internals.generateDefContent(internals.getTemplateEntity('space'));
+    const def = generateDefContent(internals.getTemplateEntity('space'));
 
     expect(def).toContain('<spaceKey>');
     expect(def).toContain('<CellMethods>');
@@ -73,7 +74,7 @@ describe('新增预设模板(批93)', () => {
   });
 
   it('公会模板:公告字段与成员管理方法', () => {
-    const def = internals.generateDefContent(internals.getTemplateEntity('guild'));
+    const def = generateDefContent(internals.getTemplateEntity('guild'));
 
     expect(def).toContain('<guildName>');
     expect(def).toContain('<announcement>');
@@ -84,7 +85,7 @@ describe('新增预设模板(批93)', () => {
   });
 
   it('队伍模板:成员数组走引擎 ARRAY<of> 内联语法', () => {
-    const def = internals.generateDefContent(internals.getTemplateEntity('team'));
+    const def = generateDefContent(internals.getTemplateEntity('team'));
 
     expect(def).toContain('<Type>ARRAY<of>UINT64</of></Type>');
     expect(def).toContain('<captainID>');
@@ -94,7 +95,7 @@ describe('新增预设模板(批93)', () => {
   });
 
   it('邮件模板:收发字段、已读状态与收件通知', () => {
-    const def = internals.generateDefContent(internals.getTemplateEntity('mail'));
+    const def = generateDefContent(internals.getTemplateEntity('mail'));
 
     expect(def).toContain('<senderName>');
     expect(def).toContain('<receiverID>');
@@ -107,7 +108,7 @@ describe('新增预设模板(批93)', () => {
 
 describe('全库模板产物双侧全绿(10 模板)', () => {
   it.each(ALL_TEMPLATES)('%s 模板生成 .def 过实时诊断与静态建议零命中', templateType => {
-    const def = internals.generateDefContent(internals.getTemplateEntity(templateType));
+    const def = generateDefContent(internals.getTemplateEntity(templateType));
 
     // 防空过:解析失败(parseDefAst 返 null)会让两侧检查静默早退成「零命中」
     expect(parseDefDocument(def).root, `${templateType} 应解析出 root`).not.toBeNull();

@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { KBEngineCodeGenerator } from '../src/codeGenerator';
+import { generateDefContent, generatePropertyCode, generateMethodCode, generatePythonContent, generatePythonMethodCode, generateEntityRegistration } from '../src/codeGeneratorRender';
 import type { EntityWizardPart } from '../src/entityWizard';
 import { configurationOverrides, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { resetDiscoveryState, setDiscoveryChoice } from '../src/workspaceDiscovery';
@@ -35,7 +36,7 @@ const internals = generator as unknown as {
 
 describe('generateEntityRegistration', () => {
   it('renders the entities.xml entry with the three domain flags', () => {
-    expect(internals.generateEntityRegistration({
+    expect(generateEntityRegistration({
       name: 'Monster', hasCell: true, hasBase: true, hasClient: false
     })).toBe('  <Monster hasCell="true" hasBase="true" hasClient="false" />');
   });
@@ -43,7 +44,7 @@ describe('generateEntityRegistration', () => {
 
 describe('generatePropertyCode', () => {
   it('renders the type and flags and every provided optional', () => {
-    const xml = internals.generatePropertyCode({
+    const xml = generatePropertyCode({
       name: 'hp', type: 'UINT32', flags: 'BASE', default: '100',
       dbLength: 32, detailLevel: 'ALL_CLIENTS', persistent: true, identifier: true
     }, '    ');
@@ -62,7 +63,7 @@ describe('generatePropertyCode', () => {
   });
 
   it('omits optionals that are not set', () => {
-    const xml = internals.generatePropertyCode({ name: 'speed', type: 'UINT8', flags: 'CELL_PUBLIC' }, '  ');
+    const xml = generatePropertyCode({ name: 'speed', type: 'UINT8', flags: 'CELL_PUBLIC' }, '  ');
 
     expect(xml).toBe([
       '  <speed>',
@@ -75,7 +76,7 @@ describe('generatePropertyCode', () => {
 
 describe('generateMethodCode', () => {
   it('renders exposed marker and one Arg per parameter', () => {
-    const xml = internals.generateMethodCode({
+    const xml = generateMethodCode({
       name: 'attack', exposed: true,
       args: [{ name: 'targetId', type: 'UINT32' }, { name: 'skillId', type: 'UINT16' }]
     }, '  ', true);
@@ -90,7 +91,7 @@ describe('generateMethodCode', () => {
   });
 
   it('honors supportsExposed=false and renders bare methods', () => {
-    const xml = internals.generateMethodCode({ name: 'onDie', exposed: true }, '  ', false);
+    const xml = generateMethodCode({ name: 'onDie', exposed: true }, '  ', false);
 
     expect(xml).toBe(['  <onDie>', '  </onDie>'].join('\n'));
   });
@@ -98,7 +99,7 @@ describe('generateMethodCode', () => {
 
 describe('generatePythonMethodCode', () => {
   it('renders self, positional args and the docstring', () => {
-    const py = internals.generatePythonMethodCode({
+    const py = generatePythonMethodCode({
       name: 'attack', args: [{ name: 'targetId', type: 'UINT32' }], returnType: 'UINT8'
     });
 
@@ -116,7 +117,7 @@ describe('generatePythonMethodCode', () => {
 
 describe('generateDefContent', () => {
   it('embeds the entity name and method blocks in a def document', () => {
-    const def = internals.generateDefContent({
+    const def = generateDefContent({
       config: { name: 'Hero', hasCell: true, hasBase: true, hasClient: true, description: '主角' },
       baseMethods: [{ name: 'attack', exposed: true, args: [{ name: 'id', type: 'UINT32' }] }]
     });
@@ -135,7 +136,7 @@ describe('generateDefContent', () => {
 
 describe('generatePythonContent (KR-AUD-74 engine-aligned part scripts)', () => {
   it('base part: class name = entity name, KBEngine.Entity base, base methods only', () => {
-    const py = internals.generatePythonContent({
+    const py = generatePythonContent({
       config: { name: 'Hero', hasCell: true, hasBase: true, hasClient: true },
       baseMethods: [{ name: 'saveData' }],
       cellMethods: [{ name: 'dash', exposed: true }]
@@ -156,7 +157,7 @@ describe('generatePythonContent (KR-AUD-74 engine-aligned part scripts)', () => 
   });
 
   it('cell part: cell hooks + cell methods', () => {
-    const py = internals.generatePythonContent({
+    const py = generatePythonContent({
       config: { name: 'Hero', hasCell: true, hasBase: true, hasClient: true },
       cellMethods: [{ name: 'dash', exposed: true }]
     }, 'cell');
@@ -172,7 +173,7 @@ describe('generatePythonContent (KR-AUD-74 engine-aligned part scripts)', () => 
   });
 
   it('client part: onClientEnabled hook, plain stub', () => {
-    const py = internals.generatePythonContent({
+    const py = generatePythonContent({
       config: { name: 'Ghost', hasCell: false, hasBase: false, hasClient: true }
     }, 'client');
 

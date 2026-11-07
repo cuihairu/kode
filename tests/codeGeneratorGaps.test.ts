@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { KBEngineCodeGenerator } from '../src/codeGenerator';
+import { generateDefContent } from '../src/codeGeneratorRender';
 import type { EntityDefinition } from '../src/codeGenerator';
 import type * as vscode from 'vscode';
 import { Uri, workspace as stubWorkspace, window as stubWindow } from './helpers/vscodeStub';
@@ -100,14 +101,13 @@ const makeGenerator = (): KBEngineCodeGenerator =>
 
 const internals = (generator: KBEngineCodeGenerator): {
   config: { defOutputPath: string; pythonOutputPath: string; generatePython: boolean; registerInEntitiesXml: boolean };
-  generateDefContent: (entity: EntityDefinition) => string;
   generateFromTemplate: (entity: EntityDefinition) => Promise<void>;
 } => generator as unknown as never;
 
 describe('generateDefContent method sections', () => {
   it('renders CellMethods with Exposed and ClientMethods without it', () => {
     const generator = makeGenerator();
-    const content = internals(generator).generateDefContent({
+    const content = generateDefContent({
       config: { name: 'Fighter', hasBase: false, hasCell: true, hasClient: true },
       cellMethods: [
         { name: 'dash', exposed: true, args: [{ name: 'steps', type: 'UINT8' }] }
