@@ -131,7 +131,7 @@ import {
   buildDebugStatusRows,
   type DebugInjectionEntry
 } from './debugStatusBoard';
-import { DebugTargetTreeProvider, DEBUG_PHASE_LABELS } from './debugStatusTree';
+import { DebugTargetTreeProvider } from './debugStatusTree';
 import { runListeningRowFocus } from './debugTargetFocus';
 import { BUILD_TASK_TYPE, buildScriptCheckTaskSpec, formatBuildTaskPreview } from './buildTaskSpec';
 import { KbengineBuildTaskProvider } from './buildTaskProvider';
