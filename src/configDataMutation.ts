@@ -283,20 +283,22 @@ function enclosingFunctionName(
 }
 
 function writeFormFor(
-  trimmed: string,
+  line: string,
   base: string
 ): { form: ConfigDataFinding['form']; baseIndex: number } | null {
   const esc = base.replace(/\$/g, '\\$');
   // 逐个出现位判定(评审二轮 P1:首出现是读(print(CFG))不吞后续写点
-  // (CFG.x = 1)):任一出现位构成写点即报,取该出现位列
+  // (CFG.x = 1)):任一出现位构成写点即报。在**原始行**上匹配:出现位下标
+  // 即 UTF-16 字符偏移(VS Code 列口径,Tab 计 1 列)——评审三轮 P2:
+  // 列偏移不得用缩进视觉宽度(indentWidth 把 Tab 扩 8 列,列会多报)。
   const startRe = new RegExp(`(?:^|[^\\w.])(${esc})\\b`, 'g');
   startRe.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = startRe.exec(trimmed)) !== null) {
+  while ((m = startRe.exec(line)) !== null) {
     const baseIndex = m.index + m[0].length - base.length;
-    const rest = trimmed.slice(baseIndex + base.length);
+    const rest = line.slice(baseIndex + base.length);
     // `del BASE` / `del BASE.attr` / `del BASE[k]`
-    if (trimmed.slice(0, baseIndex).trimEnd().endsWith('del')
+    if (line.slice(0, baseIndex).trimEnd().endsWith('del')
       && /^\s*(?:\.[\w]+|\[[^\]]*\])*\s*(?:,|$)/.test(rest)) {
       return { form: 'delete', baseIndex };
     }
@@ -389,7 +391,7 @@ export function computeConfigDataMutationFindings(
         ? [...fileNames[i].imported, ...fileNames[i].defined]
         : [...fileNames[i].imported];
       for (const base of scanNames) {
-        const hit = writeFormFor(trimmed, base);
+        const hit = writeFormFor(line, base);
         if (!hit) {
           continue;
         }
@@ -423,8 +425,8 @@ export function computeConfigDataMutationFindings(
           severity: 'Warning',
           file: source.file,
           line: idx,
-          // 列对齐原始行内 base 名首字符(评审二轮 P2:trimmed 会吃掉缩进)
-          character: indent + hit.baseIndex,
+          // 列 = base 名在原始行内的字符偏移(Tab 计 1 列,评审三轮 P2)
+          character: hit.baseIndex,
           baseName: base,
           form: hit.form,
           message:

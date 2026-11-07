@@ -218,7 +218,7 @@ def onTick(timerID):
     expect(findings.map(f => f.line)).toEqual([3]);
   });
 
-  it('缩进行写点:诊断列对齐原始行内 base 名首字符(评审二轮 P2 回归)', () => {
+  it('缩进行写点:诊断列对齐原始行内 base 名首字符(评审二轮/三轮 P2 回归)', () => {
     const text = `from data.config.items import ITEMS
 
 def onTick(timerID):
@@ -233,6 +233,25 @@ def onTick(timerID):
     const line = text.split('\n')[4];
     expect(findings[0].character).toBe(line.indexOf('ITEMS'));
     expect(line.charAt(findings[0].character)).toBe('I');
+  });
+
+  it('Tab/混缩进行写点:列按字符偏移(评审三轮 P2 回归;Tab 计 1 列非 8 列)', () => {
+    const text = `from data.config.items import ITEMS
+
+def onTick(timerID):
+\tITEMS[1]['hp'] = 5
+ \tITEMS[2]['hp'] = 6
+`;
+    const findings = computeConfigDataMutationFindings(
+      [src('scripts/data/config/items.py', itemsPy), src('scripts/avatar.py', text)],
+      settings()
+    );
+    const lines = text.split('\n');
+    expect(findings.map(f => f.line)).toEqual([3, 4]);
+    expect(findings[0].character).toBe(lines[3].indexOf('ITEMS'));
+    expect(lines[3].charAt(findings[0].character)).toBe('I');
+    expect(findings[1].character).toBe(lines[4].indexOf('ITEMS'));
+    expect(lines[4].charAt(findings[1].character)).toBe('I');
   });
 });
 

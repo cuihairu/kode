@@ -18,38 +18,53 @@ import {
 } from '../src/pythonScanRules';
 
 describe('filterManagedDirCopies(托管目录副本剔除,CFG-017)', () => {
-  it('路径含托管目录段(默认 .kbengine)的副本被剔,原文件保留', () => {
+  it('受管根前缀下的副本被剔,原文件保留(默认 .kbengine)', () => {
     const paths = [
       '/proj/scripts/base/Account.py',
       '/proj/.kbengine/inferred/scripts/base/Account.py',
       '/proj/scripts/cell/Entity.py'
     ];
-    expect(filterManagedDirCopies(paths, '.kbengine')).toEqual([
+    expect(filterManagedDirCopies(paths, ['/proj/.kbengine'])).toEqual([
       '/proj/scripts/base/Account.py',
       '/proj/scripts/cell/Entity.py'
     ]);
   });
 
-  it('按配置的目录名剔(非硬编码);同名前缀目录不误伤', () => {
+  it('按受管绝对根前缀剔;同名普通目录不误伤(评审三轮 P1 回归)', () => {
     const paths = [
       '/proj/mykb/data/config.py',
+      '/proj/mykb/inferred/deep/x.py',
       '/proj/mykbengine/inferred/x.py',
-      '/proj/mykb/inferred/deep/x.py'
+      '/other/assets/mykb/inferred/y.py'
     ];
-    // managedDir = 'mykb':'/proj/mykb/...' 段命中被剔;'mykbengine' 是不同段
-    expect(filterManagedDirCopies(paths, 'mykb')).toEqual([
-      '/proj/mykbengine/inferred/x.py'
+    // 受管根仅 /proj/mykb:mykbengine 与外部 assets 下的同名目录不误伤
+    expect(filterManagedDirCopies(paths, ['/proj/mykb'])).toEqual([
+      '/proj/mykbengine/inferred/x.py',
+      '/other/assets/mykb/inferred/y.py'
     ]);
   });
 
-  it('空名不剔任何路径(防御)', () => {
-    const paths = ['/proj/.kbengine/inferred/x.py'];
-    expect(filterManagedDirCopies(paths, '')).toEqual(paths);
+  it('多段相对配置(tools/.kbengine)拼出的受管根同样生效(评审三轮 P1 回归)', () => {
+    const paths = [
+      '/proj/tools/data/config.py',
+      '/proj/tools/.kbengine/inferred/config.py'
+    ];
+    expect(filterManagedDirCopies(paths, ['/proj/tools/.kbengine'])).toEqual([
+      '/proj/tools/data/config.py'
+    ]);
   });
 
-  it('withManagedDirSkip:外部根遍历黑名单并入托管目录名', () => {
+  it('空受管根集不剔任何路径(防御)', () => {
+    const paths = ['/proj/.kbengine/inferred/x.py'];
+    expect(filterManagedDirCopies(paths, [])).toEqual(paths);
+    expect(filterManagedDirCopies(paths, [''])).toEqual(paths);
+  });
+
+  it('withManagedDirSkip:单段名并入黑名单;多段相对值不进名单(走前缀过滤)', () => {
     const skip = withManagedDirSkip(new Set(['node_modules', '.git']), '.kbengine');
     expect(skip.has('.kbengine')).toBe(true);
     expect(skip.has('node_modules')).toBe(true);
+    const multi = withManagedDirSkip(new Set(), 'tools/.kbengine');
+    expect(multi.size).toBe(0);
   });
 });
