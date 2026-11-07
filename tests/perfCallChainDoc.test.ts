@@ -226,7 +226,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // activate/monitoring.ts(区域 1311..1607,锚点之后)且 import 头清理
   // 净删 5 行,锚点 -5 真位重探 408/488→403/483;SRC-001 L9 console 层迁
   // activate/console.ts(区域 1230..1304,锚点之后,新 activator import 头
-  // +1 净增 1 行)锚点 +1 真位重探 403/483→404/484;其后无 extension.ts 锚点。
+  // +1 净增 1 行)锚点 +1 真位重探 403/483→404/484;SRC-001 L10 工具命令层
+  // 迁 activate/utilityCommands.ts(区域 1304..1900,锚点之后)且 import 头
+  // 清理净删 38 行,锚点 -19 真位重探 404/484→385/465;其后无 extension.ts
+  // 锚点。
   // baseline §7 出处锁步。extension.ts 现 2845 行。
 
   ['src/activate/languageServices.ts', 193, "startLanguageServiceOperation('hover'"],
@@ -245,8 +248,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // runPyspySchedule 引入)→ 上列 9 处 extension.ts 锚点整体 +2(真位重探 683/696/980/
   // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450);
   // HOT-VER 再 +3(见上)→ 后段锚点 2373/2453;DEMO-GAME-006 再 +2(见上)→ 2375/2455。
-  ['src/extension.ts', 404, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 484, 'flushQueued()'],
+  ['src/extension.ts', 385, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 465, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。

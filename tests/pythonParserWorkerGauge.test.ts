@@ -193,7 +193,9 @@ describe('解析 worker 队列与字节占用(IDE-REV-030)', () => {
   });
 
   it('源锁:现场报告两处接入 worker 量规,渲染面带排队字节/预算/峰值;不用 indexTasksQueued 代替', async () => {
-    const extension = await fs.promises.readFile('src/extension.ts', 'utf8');
+    // SRC-001 L10:报告两处接入迁 src/activate/utilityCommands.ts(纯移动),源锁跟随装配层。
+    const extension = await fs.promises.readFile('src/extension.ts', 'utf8')
+      + await fs.promises.readFile('src/activate/utilityCommands.ts', 'utf8');
     expect(extension.split('worker: getPythonParserWorkerGauge()').length).toBe(3);
     expect(extension).toContain('getPythonParserWorkerGauge } from');
     const summary = await fs.promises.readFile('src/reproductionSummary.ts', 'utf8');

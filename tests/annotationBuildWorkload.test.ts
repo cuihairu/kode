@@ -159,7 +159,9 @@ describe('注解索引共享构建在途量(IDE-REV-029)', () => {
   });
 
   it('源锁:诊断报告两处接入 annotationBuilds 量规,渲染面带运行/等待/已全取消', async () => {
-    const extension = await import('fs').then(fs => fs.promises.readFile('src/extension.ts', 'utf8'));
+    // SRC-001 L10:报告两处接入迁 src/activate/utilityCommands.ts(纯移动),源锁跟随装配层。
+    const extension = await import('fs').then(async fs => await fs.promises.readFile('src/extension.ts', 'utf8')
+      + await fs.promises.readFile('src/activate/utilityCommands.ts', 'utf8'));
     expect(extension.split('annotationBuilds: getAnnotationBuildWorkload()').length).toBe(3);
     const summary = await import('fs').then(fs => fs.promises.readFile('src/reproductionSummary.ts', 'utf8'));
     expect(summary).toContain('注解索引构建=运行');

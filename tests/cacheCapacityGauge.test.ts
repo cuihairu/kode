@@ -85,7 +85,9 @@ describe('缓存容量面(IDE-REV-031)', () => {
   });
 
   it('源锁:现场报告两处接入缓存容量面,渲染三缓存口径,不渲染累计命中', async () => {
-    const extension = await fs.promises.readFile('src/extension.ts', 'utf8');
+    // SRC-001 L10:报告两处接入迁 src/activate/utilityCommands.ts(纯移动),源锁跟随装配层。
+    const extension = await fs.promises.readFile('src/extension.ts', 'utf8')
+      + await fs.promises.readFile('src/activate/utilityCommands.ts', 'utf8');
     expect(extension.split('caches: {').length).toBe(3);
     expect(extension).toContain('getParsedDocumentCacheGauge()');
     expect(extension).toContain('getDatabaseSchemaCacheGauge()');
