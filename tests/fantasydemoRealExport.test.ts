@@ -21,6 +21,10 @@ import { resolveFantasyRoot } from './helpers/fantasyRoot';
 // VULN-KODE-R04:夹具根不再硬编码 /home/cui/workspaces/...(本机真跑、CI 永远 skip 的
 // 假绿分叉),改由 helpers 统一解析 —— env 覆盖(KBENGINE_ROOT / KODE_FANTASY_ROOT)
 // + 同级检出回退(../kbengine、../BigWorld/programming/fantasydemo/res)。
+// IDE-STUB-001/004:本组是 real-source 专属 fixture——引擎 typings checkout
+// 拼接(复制真实代码)只在 kbengine.python.stubSourceMode='real-source' 档
+// 执行,beforeEach 显式切档;默认 generated 档的「不复制真实代码」契约由
+// tests/stubSourceMode.test.ts 守护。
 const FANTASY_ROOT = resolveFantasyRoot();
 const ENGINE_ROOT = resolveEngineRoot();
 
@@ -33,6 +37,8 @@ const realDeps = {
 
 // 夹具缺席时整组跳过(CI 无检出、或 KODE_FANTASY_ROOT/KBENGINE_ROOT=off 时);
 // 有树环境(env 指向或同级检出)真跑, 675e805 起「缺席不得变红」的口径不变。
+// IDE-STUB-004:skip 理由另一面——本组按 real-source 档真跑(copy-real-code
+// 路径专属);缺树即整组 skip,与 fantasydemoDefAnalysis 口径一致。
 describe.skipIf(!FANTASY_ROOT || !ENGINE_ROOT)('fantasydemo real export', () => {
   // skipIf 已守卫非空;与 tests/hooks.test.ts 同款窄化
   const fantasyRoot = FANTASY_ROOT!;
@@ -44,7 +50,11 @@ describe.skipIf(!FANTASY_ROOT || !ENGINE_ROOT)('fantasydemo real export', () => 
     rmSync(root, { recursive: true, force: true });
     mkdirSync(stubDir, { recursive: true });
     configurationOverrides.clear();
-    configurationOverrides.set('kbengine', { assetsRoot: fantasyRoot });
+    configurationOverrides.set('kbengine', {
+      assetsRoot: fantasyRoot,
+      // IDE-STUB-001/004:引擎 typings 拼接(复制真实代码)只在 real-source 档
+      'python.stubSourceMode': 'real-source'
+    });
     stubWorkspace.workspaceFolders = [{
       uri: Uri.file(root),
       name: 'fantasydemo',
