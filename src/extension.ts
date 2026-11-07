@@ -96,6 +96,7 @@ import {
 } from './documentStore';
 import * as vscode from 'vscode';
 import { wireDefAnalysis } from './defAnalysisWiring';
+import { registerDebugpyInjectCommand } from './debugpyInjectCommand';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -4555,6 +4556,25 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(updateLaunchJsonCommand);
+
+  // KODE-DBG-001 方案②一键注入命令(docs/design/debugpy-attach.md 首选项):
+  // telnet console 发 debugpy.listen + 端口模式 connect 附加,一条命令零文件
+  // 改动,不改引擎。起监听复用 startDebugpyListenerNow(资产树同步+短命
+  // telnet 客户端),附加复用 attachViaDebugpyPort,不起第二条注入通路;
+  // 开关 kbengine.debug.debugpyInject 缺省 true(见 src/debugpyInjectCommand.ts),
+  // 关闭时命令只提示不动作。启动最早期断点属方案①,由 waitAtStartup 覆盖。
+  registerDebugpyInjectCommand(context, {
+    listRunningComponents: () =>
+      [...serverManager.getRunningServers().keys()].map(serverKey => {
+        const { componentName, targetId } = parseServerKey(serverKey);
+        return {
+          component: componentName,
+          label: targetId === DEFAULT_TARGET_ID ? componentName : `${componentName}#${targetId}`
+        };
+      }),
+    ensureListener: (component, port) => startDebugpyListenerNow(component, port),
+    attachViaDebugpyPort: component => debugConfigManager.attachViaDebugpyPort(component)
+  });
 
   // (a)三件套之一:系统 debugpy 复制进 <assets>/scripts/common/debugpy
   // (2026-10-27 ③;版本闸/不覆盖用户手放目录的口径见 src/autoDebugpy.ts)

@@ -310,6 +310,19 @@
   - 只清工作区状态里的键并弹确认提示，本身不发起任何附加
   - 配置了 `debugpyPort` 的组件不受记忆影响，恒走端口模式
 
+### `kbengine.debug.debugpyInject`
+
+- 标题：`Inject debugpy Listener and Attach`（注入 debugpy 并附加）
+- 作用：debugpy 一键注入（KODE-DBG-001，docs/design/debugpy-attach.md 提案的方案②控制台注入）——经组件 telnet 的 `:python` 层发送 `debugpy.listen`，随后走端口模式附加；不改引擎、零文件改动
+- 入口：命令面板
+- 行为：
+  - 列出运行中组件（默认实例按组件名，命名实例为 `component#实例`）；取消选择则什么都不做
+  - 端口：逐组件分配表（baseapp 5678/cellapp 5679/loginapp 5680/dbmgr 5681/logger 5682，表外回落 5678），只绑 `127.0.0.1`
+  - 起监听：复用既有单发通路——资产树缺 debugpy 包先同步，等 telnet 就绪后经短命 telnet 客户端注入；起监听失败如实报原因，绝不硬附加
+  - 附加：监听就绪后复用 `Attach to Component` 的端口模式（探端口→connect）；附加未完成时报错指回 `Attach to Component` 重试
+  - 受 `kbengine.debug.debugpyInject` 开关控制（默认开）；关闭时命令只提示不动作
+  - 启动最早期断点不属本命令——用 `kbengine.debug.waitAtStartup`（同一提案的方案①引导块）
+
 ### `kbengine.debug.pyspyDump`
 
 - 标题：`Profile Component with py-spy`

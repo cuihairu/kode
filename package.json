@@ -75,6 +75,7 @@
     "onCommand:kbengine.debug.attach",
     "onCommand:kbengine.debug.attachRemote",
     "onCommand:kbengine.debug.resetAttachMode",
+    "onCommand:kbengine.debug.debugpyInject",
     "onCommand:kbengine.debug.pyspyDump",
     "onCommand:kbengine.debug.pyspyFlamegraph",
     "onCommand:kbengine.remoteServers.select",
@@ -565,6 +566,11 @@
       {
         "command": "kbengine.debug.resetAttachMode",
         "title": "%kbengine.command.debug.resetAttachMode.title%",
+        "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.debug.debugpyInject",
+        "title": "%kbengine.command.debug.debugpyInject.title%",
         "category": "KBEngine"
       },
       {
@@ -1493,6 +1499,11 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "%kbengine.config.debug.autoDebugpy.description%"
+        },
+        "kbengine.debug.debugpyInject": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.debug.debugpyInject.description%"
         },
         "kbengine.debug.waitAtStartup": {
           "type": "boolean",
