@@ -99,8 +99,8 @@ describe('继承链同名:属性 vs 祖先属性(域位判重)', () => {
     const hit = firstInherited(findings);
     expect(hit.severity).toBe('error');
     expect(hit.name).toBe('hp');
-    expect(hit.message).toContain('同域位同名');
-    expect(hit.message).toContain('继承自 Monster.def');
+    expect(hit.message).toContain('same domain');
+    expect(hit.message).toContain('inherited from Monster.def');
   });
 
   it('父属性异域位同名不报(引擎允许共存)', () => {
@@ -169,8 +169,8 @@ describe('继承链同名:方法↔属性/组件(全局拒绝)', () => {
       'entity_defs/Child.def'
     );
     const hit = firstInherited(findings);
-    expect(hit.message).toContain('与继承链上的方法同名');
-    expect(hit.message).toContain('继承自 Monster.def');
+    expect(hit.message).toContain('clashes with a method on the inheritance chain');
+    expect(hit.message).toContain('inherited from Monster.def');
   });
 
   it('父属性 vs 子方法同名报 error', () => {
@@ -183,7 +183,7 @@ describe('继承链同名:方法↔属性/组件(全局拒绝)', () => {
       'entity_defs/Child.def'
     );
     const hit = firstInherited(findings);
-    expect(hit.message).toContain('与继承链上的属性/组件同名');
+    expect(hit.message).toContain('clashes with a property/component on the inheritance chain');
   });
 
   it('父 base 方法 vs 子 cell 方法同名不报(异段可共存)', () => {
@@ -208,7 +208,7 @@ describe('继承链同名:方法↔属性/组件(全局拒绝)', () => {
       'entity_defs/Child.def'
     );
     const hit = firstInherited(findings);
-    expect(hit.message).toContain('同段同名');
+    expect(hit.message).toContain('same-section method');
   });
 
   it('ClientMethods 段:同段报,异段(祖先 client vs 子 base)不报', () => {
@@ -221,7 +221,7 @@ describe('继承链同名:方法↔属性/组件(全局拒绝)', () => {
       'entity_defs/Diff.def': entityDef(parentTag('ClientMaster') + method('BaseMethods', 'ping'))
     };
     const hit = firstInherited(analyzeEntry(files, 'entity_defs/Same.def'));
-    expect(hit.message).toContain('同段同名');
+    expect(hit.message).toContain('same-section method');
     expect(inheritedOf(analyzeEntry(files, 'entity_defs/Diff.def'))).toEqual([]);
   });
 });
@@ -262,7 +262,7 @@ describe('继承链同名:接口混入与组件槽', () => {
       'entity_defs/Child.def'
     );
     const hit = firstInherited(findings);
-    expect(hit.message).toContain('组件槽');
+    expect(hit.message).toContain('Component slot');
   });
 
   it('组件槽 vs 父组件槽同名报 error(父组件槽带 Flags,域位入面)', () => {
@@ -299,8 +299,8 @@ describe('继承链同名:闭包边界与健壮性', () => {
     };
     const findingsA = analyzeEntry(files, 'entity_defs/A.def');
     const findingsB = analyzeEntry(files, 'entity_defs/B.def');
-    expect(firstInherited(findingsA).message).toContain('继承自 B.def');
-    expect(firstInherited(findingsB).message).toContain('继承自 A.def');
+    expect(firstInherited(findingsA).message).toContain('inherited from B.def');
+    expect(firstInherited(findingsB).message).toContain('inherited from A.def');
   });
 
   it('悬空 Parent 不产生边、无 finding', () => {
@@ -394,7 +394,7 @@ describe('继承链同名:闭包边界与健壮性', () => {
       'entity_defs/Child.def'
     );
     const hit = firstInherited(findings);
-    expect(hit.message).toContain('interfaces/A.def、interfaces/B.def、interfaces/C.def');
+    expect(hit.message).toContain('interfaces/A.def, interfaces/B.def, interfaces/C.def');
     expect(hit.message).not.toContain('D.def');
   });
 

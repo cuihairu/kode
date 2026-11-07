@@ -89,12 +89,12 @@ describe('kbengine.def.analyze 命令', () => {
     const analysis = windowState.channels.find(entry => entry.name === 'KBEngine Def 分析');
     expect(analysis, '应创建 KBEngine Def 分析输出面板').toBeDefined();
     const joined = analysis?.lines.join('') ?? '';
-    expect(joined).toContain(`${path.join(root, 'Avatar.def')}: 未发现可优化项`);
+    expect(joined).toContain(`${path.join(root, 'Avatar.def')}: nothing to optimize`);
     expect(joined).toContain('heavy-sync-broadcast');
     expect(joined).toContain('missing-type');
     expect(joined).toContain('redundant-detail-level');
     expect(joined).toContain(
-      `${path.join(root, 'Monster.def')}: 共 4 条建议(错误 2 / 警告 1 / 提示 1)`
+      `${path.join(root, 'Monster.def')}: 4 suggestion(s) (errors 2 / warnings 1 / infos 1)`
     );
 
     const collection = languagesRegistry.diagnosticCollections.find(
@@ -116,7 +116,7 @@ describe('kbengine.def.analyze 命令', () => {
     const avatarDiagnostics = collection?.collection.get(avatarUri);
     expect(avatarDiagnostics).toEqual([]);
 
-    expect(messages.info.at(-1)).toBe(`Def 分析完成: 2 个文件, 4 条建议`);
+    expect(messages.info.at(-1)).toBe('Def analysis finished: 2 files, 4 suggestions');
 
     disposeAll(context);
     expect(deactivate()).toBeUndefined();
@@ -131,7 +131,7 @@ describe('kbengine.def.analyze 命令', () => {
 
     await commands.executeCommand('kbengine.def.analyze');
 
-    expect(messages.info.at(-1)).toBe('未找到 .def 文件,无法分析');
+    expect(messages.info.at(-1)).toBe('No .def files found; nothing to analyze');
     const analysis = windowState.channels.find(entry => entry.name === 'KBEngine Def 分析');
     expect(analysis?.lines ?? []).toEqual([]);
 
@@ -210,10 +210,10 @@ describe('kbengine.def.analyze 命令', () => {
     const analysis = windowState.channels.find(entry => entry.name === 'KBEngine Def 分析');
     const joined = analysis?.lines.join('') ?? '';
     expect(joined).toContain('inherited-name-collision');
-    expect(joined).toContain('继承自 Monster.def');
+    expect(joined).toContain('inherited from Monster.def');
     // 悬空边静默跳过:不虚构祖先面,也不产生误报
     expect(joined).not.toContain('Dangling.def');
-    expect(messages.info.at(-1)).toBe('Def 分析完成: 3 个文件, 1 条建议');
+    expect(messages.info.at(-1)).toBe('Def analysis finished: 3 files, 1 suggestions');
 
     disposeAll(context);
   });

@@ -535,7 +535,7 @@ describe('extension activate 装配', () => {
     await commands.executeCommand('kbengine.server.showLogs', 'machine');
     await commands.executeCommand('kbengine.logs.connect');
     expect(messages.warning.some(message => message.includes('协议适配尚未完成'))).toBe(true);
-    expect(messages.error.some(message => message.includes('连接日志收集器失败'))).toBe(true);
+    expect(messages.error.some(message => message.includes('Failed to connect the log collector'))).toBe(true);
     await commands.executeCommand('kbengine.logs.disconnect');
     await commands.executeCommand('kbengine.logs.clear');
     await commands.executeCommand('kbengine.logs.export');

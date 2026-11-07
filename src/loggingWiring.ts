@@ -1,6 +1,7 @@
 // KODE-ARCH-002:extension.ts 装配模块——日志收集器/查看器/LogHub 与语言服务面板装配。
 // 纯移动:逐行迁出 activate,订阅 push 顺序在装配函数内保持原样。
 import * as vscode from 'vscode';
+import { l10nText } from './nlsRuntime';
 import { KBEngineServerManager } from './serverManager';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
 import { LogViewerWebView } from './logWebView';
@@ -160,7 +161,9 @@ export function wireLogging(context: vscode.ExtensionContext, serverManager: KBE
       try {
         await logCollector.connect();
       } catch (error) {
-        vscode.window.showErrorMessage(`连接日志收集器失败: ${error}`);
+        vscode.window.showErrorMessage(
+          l10nText('Failed to connect the log collector: {error}', { error: String(error) })
+        );
       }
     }
   );

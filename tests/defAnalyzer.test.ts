@@ -65,7 +65,7 @@ describe('类型类检查(幻影/缺失/重复)', () => {
     expect(hit.severity).toBe('error');
     expect(hit.name).toBe('hp');
     // 引擎 loadDefPropertys 找不到 Type 直接报错返回——按装载失败表述
-    expect(hit.message).toContain('实体加载会失败');
+    expect(hit.message).toContain('fail to load');
   });
 
   it('空 <Type> 标签与纯空白 <Type> 同样报 missing-type', () => {
@@ -82,9 +82,9 @@ describe('类型类检查(幻影/缺失/重复)', () => {
     );
     const hit = firstOf(findings, 'duplicate-type-tag');
     expect(hit.severity).toBe('warning');
-    expect(hit.message).toContain('2 个 <Type>');
+    expect(hit.message).toContain('2 <Type> nodes');
     // 引擎 enterNode 只取首个匹配——按首取语义表述,不再宣称"取值歧义"
-    expect(hit.message).toContain('只装载首个');
+    expect(hit.message).toContain('loads only the first');
     expect(checksOf(findings)).not.toContain('phantom-type');
   });
 });
@@ -194,10 +194,10 @@ describe('命名检查(非法标识符 / 关键字 / 方法属性冲突)', () =>
     const hit = firstOf(findings, 'invalid-identifier');
     expect(hit.severity).toBe('error');
     expect(hit.name).toBe('class');
-    expect(hit.message).toContain('Python 关键字');
+    expect(hit.message).toContain('Python keyword');
     // 引擎 C 层 setattr 挂关键字名不报错——不得宣称"实体类无法生成该成员"
-    expect(hit.message).toContain('装载不失败');
-    expect(hit.message).not.toContain('无法生成');
+    expect(hit.message).toContain('the engine still loads');
+    expect(hit.message).not.toContain('cannot generate');
   });
 
   it('方法名为关键字同样报 error', () => {
@@ -237,8 +237,8 @@ describe('命名检查(非法标识符 / 关键字 / 方法属性冲突)', () =>
     expect(hit.severity).toBe('error');
     expect(hit.name).toBe('hp');
     // 引擎装载时按名冲突直接拒绝——不得宣称"Python 类中互相覆盖"
-    expect(hit.message).toContain('实体加载会失败');
-    expect(hit.message).not.toContain('互相覆盖');
+    expect(hit.message).toContain('fail to load');
+    expect(hit.message).not.toContain('overwrite each other');
   });
 
   it('方法名合法且无冲突时不报;缺的方法节走 continue 分支', () => {
@@ -271,7 +271,7 @@ describe('引擎受限名检查(engine-limited-name)', () => {
     expect(hit.severity).toBe('error');
     expect(hit.name).toBe('position');
     expect(hit.message).toContain('ENTITY_LIMITED_PROPERTYS');
-    expect(hit.message).toContain('实体加载会失败');
+    expect(hit.message).toContain('fail to load');
     expect(hit.line).toBe(3); // 属性标签行(1 基)
     expect(hit.length).toBe('position'.length);
   });
@@ -291,7 +291,7 @@ describe('引擎受限名检查(engine-limited-name)', () => {
     const hit = firstOf(findings, 'engine-limited-name');
     expect(hit.severity).toBe('error');
     expect(hit.name).toBe('id');
-    expect(hit.message).toContain('方法 id');
+    expect(hit.message).toContain('Method id');
   });
 
   it('Components 槽名命中受限名单同样报错(loadComponents 拒绝)', () => {
@@ -313,7 +313,7 @@ describe('引擎受限名检查(engine-limited-name)', () => {
     const limited = findings.filter(item => item.check === 'engine-limited-name');
     expect(limited.map(item => item.name)).toEqual(['position']);
     const hit = limited[0];
-    expect(hit.message).toContain('组件 position');
+    expect(hit.message).toContain('Component slot position');
   });
 
   it('引擎清单的 C 字面拼接怪癖按编译后真值收录:component/databaseID 不被拒,拼接名被拒', () => {
@@ -391,7 +391,7 @@ describe('引擎受限名检查(engine-limited-name)', () => {
 
 describe('formatDefAnalysisReport 报告格式', () => {
   it('无建议时输出单行未发现', () => {
-    expect(formatDefAnalysisReport('a.def', [])).toBe('a.def: 未发现可优化项');
+    expect(formatDefAnalysisReport('a.def', [])).toBe('a.def: nothing to optimize');
   });
 
   it('有建议时逐条列出并附三类计数汇总', () => {
@@ -414,8 +414,8 @@ describe('formatDefAnalysisReport 报告格式', () => {
 
     const report = formatDefAnalysisReport('/ws/Monster.def', findings);
     const lines = report.split('\n');
-    expect(lines[0]).toMatch(/^  \[错误\] L\d+ phantom-type:/);
-    expect(lines.at(-1)).toBe('/ws/Monster.def: 共 1 条建议(错误 1 / 警告 0 / 提示 0)');
+    expect(lines[0]).toMatch(/^  \[errors\] L\d+ phantom-type:/);
+    expect(lines.at(-1)).toBe('/ws/Monster.def: 1 suggestion(s) (errors 1 / warnings 0 / infos 0)');
   });
 
   it('三类严重度计数各归其位', () => {
@@ -440,7 +440,7 @@ describe('formatDefAnalysisReport 报告格式', () => {
       )
     );
     const report = formatDefAnalysisReport('x.def', findings);
-    expect(report.split('\n').at(-1)).toBe('x.def: 共 3 条建议(错误 1 / 警告 1 / 提示 1)');
+    expect(report.split('\n').at(-1)).toBe('x.def: 3 suggestion(s) (errors 1 / warnings 1 / infos 1)');
   });
 });
 
