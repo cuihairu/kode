@@ -1,0 +1,21 @@
+# kode2 PA-005 (todo.md Phase 3): kode-kbengine-analyzer —— 分析引擎。
+# 验收原文:「独立分析一组解码消息出 JSON 报告」;能力面:
+#   消息/流量统计、请求响应关联(仅协议确证标识,不拿相邻猜对)、
+#   延迟 P50/P95/P99、异常检测(未知消息/非法长度/Schema 不匹配)、
+#   Entity 事件与 RPC 时间线、连接分析(登录/切 Baseapp/重连)。
+# 铁律: 输入 = kode-kbengine CLI(PA-004)records JSON 形状;serde/serde_json
+# 仅用于报告序列化(PA-002 先例);零其它第三方依赖。
+[package]
+name = "kode-kbengine-analyzer"
+description = "kode2 KBEngine traffic analyzer: message/traffic stats, protocol-confirmed request-response correlation, latency P50/P95/P99, anomaly detection, entity/RPC timeline, connection analysis - JSON report over a decoded-message set (todo PA-005)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints]
+workspace = true

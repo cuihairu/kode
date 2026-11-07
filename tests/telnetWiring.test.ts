@@ -394,7 +394,7 @@ describe('TelnetTreeProvider(批112 用户令:telnet 独立树视图,与 server 
     const item = children[0];
     expect(item.label).toBe('Telnet: loginapp');
     expect(item.contextValue).toBe('telnet_127.0.0.1:31000');
-    expect(item.description).toBe('127.0.0.1:31000 · 已连接');
+    expect(item.description).toBe('127.0.0.1:31000 · Connected');
     expect((item.iconPath as { id: string }).id).toBe('circle-filled');
     expect(item.command?.command).toBe('kbengine.telnet.showPanel');
     expect(item.tooltip).toContain('telnet loginapp');
@@ -423,13 +423,13 @@ describe('TelnetTreeProvider(批112 用户令:telnet 独立树视图,与 server 
     const items = provider.getChildren();
     const byLabel = Object.fromEntries(items.map(item => [item.label, item]));
     expect((byLabel['Telnet: loginapp'].iconPath as { id: string }).id).toBe('circle-slash');
-    expect(byLabel['Telnet: loginapp'].description).toContain('未开启');
+    expect(byLabel['Telnet: loginapp'].description).toContain('Not open');
     expect((byLabel['Telnet: dbmgr'].iconPath as { id: string }).id).toBe('circle-large-outline');
-    expect(byLabel['Telnet: dbmgr'].description).toContain('已开启');
+    expect(byLabel['Telnet: dbmgr'].description).toContain('Open');
     expect((byLabel['Telnet: baseapp'].iconPath as { id: string }).id).toBe('warning');
-    expect(byLabel['Telnet: baseapp'].description).toContain('端口开·未配密码');
+    expect(byLabel['Telnet: baseapp'].description).toContain('Port open, auth not configured');
     expect((byLabel['Telnet: cellapp'].iconPath as { id: string }).id).toBe('circle-slash');
-    expect(byLabel['Telnet: cellapp'].description).toContain('密码被拒');
-    expect(byLabel['Telnet: bots'].description).toContain('未配置');
+    expect(byLabel['Telnet: cellapp'].description).toContain('Auth rejected');
+    expect(byLabel['Telnet: bots'].description).toContain('Not configured');
   });
 });

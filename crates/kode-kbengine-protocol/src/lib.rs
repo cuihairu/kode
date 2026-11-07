@@ -28,4 +28,4 @@ pub mod session;
 pub use error::{DecodeError, DecodeErrorKind};
 pub use framing::{Frame, FrameParser, FramingConfig, LengthSpec};
 pub use messages::{ImportSummary, MessageMap, MessageSpec};
-pub use session::{ComponentRole, DecodedMessage, Flow, Phase, Session};
+pub use session::{ComponentRole, DecodedMessage, Direction, Flow, Phase, Session};

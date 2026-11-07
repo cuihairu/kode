@@ -11,7 +11,7 @@
  * 副作用经 effects 注入,装配层与测试共用同一份行为面。
  */
 
-import { DEBUG_PHASE_LABELS } from './debugStatusTree';
+import { l10nText } from './nlsRuntime';
 
 /** 「监听」行的下一步控件文案(单一真源:扩展装配与测试同用) */
 export const DEBUG_LISTENING_ROW_ACTIONS = {
@@ -63,7 +63,7 @@ export async function runListeningRowFocus(
   const isInstance = serverKey.includes('#');
   const actions = isInstance ? [DEBUG_LISTENING_ROW_ACTIONS.openLaunch] : DEBUG_LISTENING_ROW_ACTION_LIST;
   const message =
-    `${serverKey} ${DEBUG_PHASE_LABELS.listening}中(debugpy ${port ?? '?'}):` +
+    l10nText('{serverKey} listening on debugpy {port}:', { serverKey, port: port ?? '?' }) +
     '用 launch.json 里对应的 attach 配置附加';
   const pick = await effects.show(message, actions);
   if (pick === DEBUG_LISTENING_ROW_ACTIONS.attachNow && !isInstance) {

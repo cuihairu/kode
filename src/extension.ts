@@ -1,4 +1,5 @@
 import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace, setActiveProfileScanRoot } from './scanRoots';
+import { l10nText } from './nlsRuntime';
 import { execFile } from 'child_process';
 import {
   CONFIG_CONTRACT_DIAGNOSTICS_ENABLED_DEFAULT,
@@ -82,14 +83,9 @@ import {
   postDestroyDiagnosticItemsAsync,
   type PostDestroyDiagnosticItem
 } from './postDestroyDiagnostics';
-import { renderLintRulesReport } from './lintRuleRegistry';
-import { createLinkedCancellationToken, HOVER_ASYNC_BUDGET_MS_DEFAULT, raceWithBudget, setHoverBudgetLogHub } from './hoverBudget';
+import { createLinkedCancellationToken, HOVER_ASYNC_BUDGET_MS_DEFAULT, raceWithBudget } from './hoverBudget';
 import {
   getActiveOperationCounts,
-  getLanguageServiceSummaryReport,
-  renderActiveTasksReport,
-  setDetailedRecordingEnabled,
-  setLanguageServiceMetricsLogHub,
   startLanguageServiceOperation
 } from './languageServiceMetrics';
 import type { OperationStatus } from './languageServiceMetrics';
@@ -100,6 +96,8 @@ import {
   updateDocumentSnapshot
 } from './documentStore';
 import * as vscode from 'vscode';
+import { wireDefAnalysis } from './defAnalysisWiring';
+import { registerDebugpyInjectCommand } from './debugpyInjectCommand';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -133,7 +131,7 @@ import {
   buildDebugStatusRows,
   type DebugInjectionEntry
 } from './debugStatusBoard';
-import { DebugTargetTreeProvider, DEBUG_PHASE_LABELS } from './debugStatusTree';
+import { DebugTargetTreeProvider } from './debugStatusTree';
 import { runListeningRowFocus } from './debugTargetFocus';
 import { BUILD_TASK_TYPE, buildScriptCheckTaskSpec, formatBuildTaskPreview } from './buildTaskSpec';
 import { KbengineBuildTaskProvider } from './buildTaskProvider';
@@ -160,8 +158,7 @@ import { getIndexScanRoots } from './scanRoots';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import { ProjectProfileStore } from './projectProfiles';
 import { RuntimeLogLevel } from './logHub';
-import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
-import { LogViewerWebView } from './logWebView';
+import { wireLogging } from './loggingWiring';
 import {
   buildDefReferenceGraphFromFile,
   buildProjectDoctorReport,
@@ -436,7 +433,6 @@ import { mapFindingsToDiagnostics, type ProcessTopologyDiagnosticSpec } from './
 import { scheduleBackgroundSchemaWarmup } from './schemaWarmup';
 import { BackgroundWarmupController, WARMUP_SCAN_CONCURRENCY } from './backgroundWarmup';
 import { createWarmupStages } from './warmupStages';
-import { analyzeDefDocumentWithRust, collectInheritedNames, formatDefAnalysisReport } from './defAnalyzer';
 import { joinWorkspacePath } from './workspacePath';
 import {
   CUSTOM_SNIPPETS_RELATIVE_PATH,
@@ -529,16 +525,7 @@ import {
 } from './profileDatabaseConnection';
 import { detectDualActivation, formatDualActivationWarning } from './dualActivationConflict';
 import { readBuildCommit } from './buildCommit';
-import { getFileReadTotals, setFileReadVerbose } from './fileReadMetrics';
-import { setCpuProfileDirectory, startCpuProfile, stopCpuProfile } from './cpuProfileCapture';
-import {
-  getEventLoopDelayReport,
-  getHostVitalsReport,
-  startEventLoopDelayMonitor,
-  startHostVitalsMonitor,
-  stopEventLoopDelayMonitor,
-  stopHostVitalsMonitor
-} from './hostVitals';
+import { getFileReadTotals } from './fileReadMetrics';
 import { TelnetTreeProvider } from './telnetTree';
 import { ensureConfigDerivedScanRoot } from './configDerive';
 import {
@@ -3895,7 +3882,10 @@ export function activate(context: vscode.ExtensionContext) {
           .map(link => link.session.name)
           .join(' / ');
         void vscode.window.showInformationMessage(
-          `${serverKey} ${DEBUG_PHASE_LABELS.attached}:${names}(Run and Debug 视图已打开,调用堆栈可见该会话)`
+          l10nText(
+            '{serverKey} attached: {names} (Run and Debug view opened; the session is visible in the call stack)',
+            { serverKey, names }
+          )
         );
         return;
       }
@@ -3942,7 +3932,10 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       void vscode.window.showInformationMessage(
-        `${serverKey} ${DEBUG_PHASE_LABELS['not-injected']}:开启 kbengine.debug.autoDebugpy(启动联动注入)或 kbengine.debug.waitAtStartup(启动等待)并重启组件`
+        l10nText(
+          '{serverKey} not injected: enable kbengine.debug.autoDebugpy (launch-time injection) or kbengine.debug.waitAtStartup (startup wait) and restart the component',
+          { serverKey }
+        )
       );
     }
   );
@@ -4519,156 +4512,8 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(retryServerCommand);
 
-  const showLogsCommand = vscode.commands.registerCommand(
-    'kbengine.server.showLogs',
-    (target) => {
-      const component = resolveServerComponent(target);
-      if (!component) {
-        return;
-      }
-
-      logViewer.show();
-    }
-  );
-  context.subscriptions.push(showLogsCommand);
-
-  // 初始化日志收集器
-  const kbengineConfig = vscode.workspace.getConfiguration('kbengine');
-  const logAutoConnect = kbengineConfig.get<boolean>('logAutoConnect', true);
-  const logConfig: LogCollectorConfig = {
-    host: '127.0.0.1',
-    port: kbengineConfig.get<number>('loggerPort', 20022),
-    autoReconnect: true,
-    reconnectInterval: 5000,
-    maxBufferSize: kbengineConfig.get<number>('maxLogEntries', 10000)
-  };
-
-  const logCollector = new KBEngineLogCollector(logConfig, context);
-
-  if (logAutoConnect) {
-    void logCollector.connect().catch(() => {
-      // logger 可能尚未启动，collector 内部会继续按配置重连
-    });
-  }
-
-  // 初始化日志查看器
-  const logViewer = new LogViewerWebView(context, logCollector);
-  const logHub = serverManager.logHub;
-  // 悬停/异步层预算闸的 LogHub 接线(2026-10-22):超时与耗时记账走同一
-  // LogHub,真机在日志查看器过滤 [kode-hover] 即可定位慢层/超时层
-  setHoverBudgetLogHub(logHub);
-
-  // PR1:语言服务指标接线——LogHub 时间线(详细记录开启时逐样本 [kode-lsm]),
-  // 详细开关默认关(kbengine.metrics.detailed);命令面板 kbengine.metrics.showSummary
-  // 输出聚合汇总(P50/P95/P99/命中率/计数)。
-  setLanguageServiceMetricsLogHub(logHub);
-  setDetailedRecordingEnabled(kbengineConfig.get<boolean>('metrics.detailed', false));
-  const metricsChannel = vscode.window.createOutputChannel('Kode Language Service Metrics');
-  context.subscriptions.push(metricsChannel);
-  context.subscriptions.push(vscode.commands.registerCommand('kbengine.metrics.showSummary', () => {
-    metricsChannel.clear();
-    metricsChannel.append(getLanguageServiceSummaryReport());
-    metricsChannel.append(getEventLoopDelayReport());
-    metricsChannel.append(getHostVitalsReport());
-    metricsChannel.show();
-  }));
-  // IDE-LINT-011:lint 规则能力清单——输出通道渲染规则表(单一事实源),
-  // 开关启用态按当前 vscode 配置实读(与 Problems 一致)。
-  const lintRulesChannel = vscode.window.createOutputChannel('Kode Lint Rules');
-  context.subscriptions.push(lintRulesChannel);
-  context.subscriptions.push(vscode.commands.registerCommand('kbengine.lintRules.showReport', () => {
-    lintRulesChannel.clear();
-    lintRulesChannel.append(renderLintRulesReport(key => {
-      return kbengineConfig.get<boolean>(key.slice('kbengine.'.length), false);
-    }));
-    lintRulesChannel.show();
-  }));
-  // IDE-MET-007:卡顿取证入口——start 开采/stop 落盘(.cpuprofile+.window.txt
-  // 关联请求窗口);globalStorage 不可用时回落系统临时目录。
-  if (context.globalStoragePath) {
-    setCpuProfileDirectory(context.globalStoragePath);
-  }
-  context.subscriptions.push(vscode.commands.registerCommand('kbengine.metrics.startCpuProfile', async () => {
-    if (await startCpuProfile()) {
-      vscode.window.showInformationMessage('Kode: CPU profile started');
-    } else {
-      vscode.window.showWarningMessage('Kode: CPU profile is already running');
-    }
-  }));
-  context.subscriptions.push(vscode.commands.registerCommand('kbengine.metrics.stopCpuProfile', async () => {
-    const result = await stopCpuProfile();
-    if (result) {
-      vscode.window.showInformationMessage(`Kode: CPU profile saved: ${result.profilePath}`);
-    } else {
-      vscode.window.showWarningMessage('Kode: no CPU profile is running');
-    }
-  }));
-  // IDE-MET-008:取消前后活动任务从账面对账,不拿空返回值推断工作已停止
-  context.subscriptions.push(vscode.commands.registerCommand('kbengine.metrics.showActiveTasks', () => {
-    metricsChannel.clear();
-    metricsChannel.append(renderActiveTasksReport({
-      operationCounts: getActiveOperationCounts(),
-      scheduler: getDiagnosticScheduler().pendingWorkload()
-    }));
-    metricsChannel.show();
-  }));
-  // IDE-MET-005/006:宿主事件循环延迟与 CPU/RSS 自激活即采样(showSummary 面)
-  startEventLoopDelayMonitor();
-  startHostVitalsMonitor();
-  context.subscriptions.push({
-    dispose: () => {
-      stopEventLoopDelayMonitor();
-      stopHostVitalsMonitor();
-    }
-  });
-  // IDE-MET-004:读盘明细开关(默认关=只累计计数,明细环形缓冲不启用)
-  setFileReadVerbose(kbengineConfig.get<boolean>('metrics.fileReadDetail', false));
-  logViewer.subscribeLogHub(logHub);
-
-  const enableWebviewConsoleLogs = kbengineConfig.get<boolean>('webviewConsoleLogs', true);
-  if (enableWebviewConsoleLogs) {
-    logViewer.attachLogHub(logHub);
-  }
-
-  // 注册日志相关命令
-  const showLogViewerCommand = vscode.commands.registerCommand(
-    'kbengine.logs.showViewer',
-    () => logViewer.show()
-  );
-  context.subscriptions.push(showLogViewerCommand);
-
-  const connectLoggerCommand = vscode.commands.registerCommand(
-    'kbengine.logs.connect',
-    async () => {
-      vscode.window.showWarningMessage(
-        KBEngineLogCollector.PROTOCOL_WARNING
-      );
-      try {
-        await logCollector.connect();
-      } catch (error) {
-        vscode.window.showErrorMessage(`连接日志收集器失败: ${error}`);
-      }
-    }
-  );
-  context.subscriptions.push(connectLoggerCommand);
-
-  const disconnectLoggerCommand = vscode.commands.registerCommand(
-    'kbengine.logs.disconnect',
-    () => logCollector.disconnect()
-  );
-  context.subscriptions.push(disconnectLoggerCommand);
-
-  const clearLogsCommand = vscode.commands.registerCommand(
-    'kbengine.logs.clear',
-    () => logViewer.clearLogs()
-  );
-  context.subscriptions.push(clearLogsCommand);
-
-  const exportLogsCommand = vscode.commands.registerCommand(
-    'kbengine.logs.export',
-    () => logViewer.exportLogs()
-  );
-  context.subscriptions.push(exportLogsCommand);
+  // 日志收集器/查看器/LogHub 与语言服务面板装配(本体在 ./loggingWiring,KODE-ARCH-002 纯移动)
+  const { logCollector, logViewer, logHub } = wireLogging(context, serverManager);
 
   // 原始日志 ERROR 扫描(盘点 G6):离线聚合日志文件里的 ERROR/CRITICAL 行;
   // 重扫按上一批文件重跑,不再弹对话框
@@ -4746,6 +4591,25 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(updateLaunchJsonCommand);
+
+  // KODE-DBG-001 方案②一键注入命令(docs/design/debugpy-attach.md 首选项):
+  // telnet console 发 debugpy.listen + 端口模式 connect 附加,一条命令零文件
+  // 改动,不改引擎。起监听复用 startDebugpyListenerNow(资产树同步+短命
+  // telnet 客户端),附加复用 attachViaDebugpyPort,不起第二条注入通路;
+  // 开关 kbengine.debug.debugpyInject 缺省 true(见 src/debugpyInjectCommand.ts),
+  // 关闭时命令只提示不动作。启动最早期断点属方案①,由 waitAtStartup 覆盖。
+  registerDebugpyInjectCommand(context, {
+    listRunningComponents: () =>
+      [...serverManager.getRunningServers().keys()].map(serverKey => {
+        const { componentName, targetId } = parseServerKey(serverKey);
+        return {
+          component: componentName,
+          label: targetId === DEFAULT_TARGET_ID ? componentName : `${componentName}#${targetId}`
+        };
+      }),
+    ensureListener: (component, port) => startDebugpyListenerNow(component, port),
+    attachViaDebugpyPort: component => debugConfigManager.attachViaDebugpyPort(component)
+  });
 
   // (a)三件套之一:系统 debugpy 复制进 <assets>/scripts/common/debugpy
   // (2026-10-27 ③;版本闸/不覆盖用户手放目录的口径见 src/autoDebugpy.ts)
@@ -6556,95 +6420,9 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(clientSdkGenerateCommand);
 
   // .def 静态分析建议(性能分析):扫描工作区全部 .def,报告写入输出面板
-  // 并以诊断形式落到问题列表
-  const defAnalysisOutputChannel = vscode.window.createOutputChannel('KBEngine Def 分析');
-  const defAnalysisDiagnostics = vscode.languages.createDiagnosticCollection(
-    'kbengine-def-analysis'
-  );
-  const analyzeDefCommand = vscode.commands.registerCommand(
-    'kbengine.def.analyze',
-    async () => {
-      const defUris = await findFilesAcrossRoots('**/*.def');
-      if (defUris.length === 0) {
-        vscode.window.showInformationMessage('未找到 .def 文件,无法分析');
-        return;
-      }
-
-      defAnalysisOutputChannel.clear();
-      defAnalysisDiagnostics.clear();
-      // 每个 .def 只打开一次:文本缓存供单文件检查与继承链闭包(collectInheritedNames)共用
-      const sortedUris = defUris.sort((a, b) => a.fsPath.localeCompare(b.fsPath));
-      const openedDocuments = new Map<string, vscode.TextDocument>();
-      const defTexts = new Map<string, string>();
-      for (const uri of sortedUris) {
-        const document = await vscode.workspace.openTextDocument(uri);
-        openedDocuments.set(uri.fsPath, document);
-        defTexts.set(path.resolve(uri.fsPath), document.getText());
-      }
-      const readDefText = (filePath: string): string | null =>
-        defTexts.get(path.resolve(filePath)) ?? null;
-
-      // Rust lint 注册表 unknown-type-reference 的类型语料:跨工作区根并集
-      // (types.xml 自定义类型 + 已注册实体名;内建类型由 Rust 侧自带)。
-      // 计算失败退化为空语料(只查内建),不阻塞分析命令。
-      const knownTypes = collectKnownTypesForAnalysis();
-      let totalFindings = 0;
-      for (const uri of sortedUris) {
-        const document = openedDocuments.get(uri.fsPath) as vscode.TextDocument;
-        const findings = await analyzeDefDocumentWithRust(
-          document.getText(),
-          collectInheritedNames(uri.fsPath, readDefText),
-          { knownTypes }
-        );
-        totalFindings += findings.length;
-        defAnalysisOutputChannel.appendLine(
-          formatDefAnalysisReport(uri.fsPath, findings)
-        );
-        defAnalysisDiagnostics.set(
-          uri,
-          findings.map(item => {
-            const start = document.positionAt(item.offset);
-            const end = document.positionAt(item.offset + item.length);
-            return new vscode.Diagnostic(
-              new vscode.Range(start, end),
-              item.message,
-              item.severity === 'error'
-                ? vscode.DiagnosticSeverity.Error
-                : item.severity === 'warning'
-                  ? vscode.DiagnosticSeverity.Warning
-                  : vscode.DiagnosticSeverity.Information
-            );
-          })
-        );
-      }
-
-      defAnalysisOutputChannel.show();
-      vscode.window.showInformationMessage(
-        `Def 分析完成: ${defUris.length} 个文件, ${totalFindings} 条建议`
-      );
-    }
-  );
-  context.subscriptions.push(analyzeDefCommand);
-
-  // 分析命令的类型语料:types.xml 自定义类型 + 已注册实体名(unknown-type-
-  // reference 规则用;Rust 侧以 builtin ∪ 语料判已知)。空根/读取失败退化为
-  // 空集(只查内建),不虚构语料也不抛错。
-  function collectKnownTypesForAnalysis(): string[] {
-    try {
-      const names = new Set<string>();
-      for (const folder of vscode.workspace.workspaceFolders ?? []) {
-        for (const info of getCustomTypeInfos(folder.uri.fsPath)) {
-          names.add(info.name);
-        }
-        for (const entry of getRegisteredEntities(folder.uri.fsPath)) {
-          names.add(entry.name);
-        }
-      }
-      return [...names];
-    } catch {
-      return [];
-    }
-  }
+  // 并以诊断形式落到问题列表(装配本体在 ./defAnalysisWiring,KODE-ARCH-002 纯移动)
+  const defAnalysis = wireDefAnalysis();
+  context.subscriptions.push(defAnalysis.command);
 
   // Cross-file semantic doctor: reuses the same rename parser and engine
   // alignment as F2 so diagnostics and refactor decisions cannot diverge.
@@ -6711,8 +6489,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(symbolReferencesCommand, symbolReferencesChannel);
-  context.subscriptions.push(defAnalysisOutputChannel);
-  context.subscriptions.push(defAnalysisDiagnostics);
+  context.subscriptions.push(defAnalysis.outputChannel, defAnalysis.diagnostics);
 
   // 自定义代码片段生成器:把选区文本做片段语法转义(\$ 与 \\)并去公共缩进
   // 为片段体,经名称/前缀/描述三步输入后合并写入工作区

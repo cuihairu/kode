@@ -62,7 +62,7 @@ describe('runListeningRowFocus(监听行点击收口)', () => {
     expect(result.outcome).toBe('dismissed'); // 没给选择=关掉
     expect(record.shows).toHaveLength(1);
     expect(record.shows[0].message).toContain('baseapp');
-    expect(record.shows[0].message).toContain('监听中');
+    expect(record.shows[0].message).toContain('listening on debugpy');
     expect(record.shows[0].message).toContain('debugpy 5678');
     expect(record.shows[0].message).toContain('launch.json');
     expect(record.shows[0].actions).toEqual([

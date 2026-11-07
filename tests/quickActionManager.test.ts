@@ -182,8 +182,8 @@ describe('QuickActionManager.show', () => {
     expect(group.label).toBe('Registered 0');
     expect((await provider.getChildren())[2].label).toBe('HTTP Requests 3');
     const httpRows = await provider.getChildren((await provider.getChildren())[2]);
-    expect(httpRows[0].tooltip).toContain('来源：.kbengine/debug.json');
-    expect(httpRows[1].tooltip).toContain('来源：kbengine.httpRequests 设置');
+    expect(httpRows[0].tooltip).toContain('Source: .kbengine/debug.json');
+    expect(httpRows[1].tooltip).toContain('Source: kbengine.httpRequests');
   });
 
   it('routes settings source plus original index to the shared HTTP service entry', async () => {

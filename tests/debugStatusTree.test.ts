@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DebugTargetTreeProvider, DEBUG_PHASE_LABELS } from '../src/debugStatusTree';
+import { DebugTargetTreeProvider, debugPhaseLabel } from '../src/debugStatusTree';
 import { ThemeIcon } from './helpers/vscodeStub';
 import type { DebugStatusRow } from '../src/debugStatusBoard';
 
@@ -19,12 +19,11 @@ const row = (overrides: Partial<DebugStatusRow>): DebugStatusRow => ({
 
 describe('DebugTargetTreeProvider(四态树,DBG-008)', () => {
   it('四态标签齐:未注入/监听/已附加/失败', () => {
-    expect(DEBUG_PHASE_LABELS).toEqual({
-      'not-injected': '未注入',
-      listening: '监听',
-      attached: '已附加',
-      failed: '失败'
-    });
+    // KODE-I18N-002:四态标签走取词,默认英文 locale 出英文源串
+    expect(debugPhaseLabel('not-injected')).toBe('Not injected');
+    expect(debugPhaseLabel('listening')).toBe('Listening');
+    expect(debugPhaseLabel('attached')).toBe('Attached');
+    expect(debugPhaseLabel('failed')).toBe('Failed');
   });
 
   it('行→树项:描述带态标签+端口+会话数+进程状态,图标分四态,点击带 serverKey', async () => {
@@ -39,12 +38,12 @@ describe('DebugTargetTreeProvider(四态树,DBG-008)', () => {
     const items = await provider.getChildren();
 
     expect(items.map(item => item.label)).toEqual(['cellapp', 'cellapp#a', 'baseapp', 'dbmgr']);
-    expect(items[0].description).toContain('未注入');
-    expect(items[1].description).toContain('监听');
+    expect(items[0].description).toContain('Not injected');
+    expect(items[1].description).toContain('Listening');
     expect(items[1].description).toContain('5708');
-    expect(items[2].description).toContain('已附加');
-    expect(items[2].description).toContain('1 个会话');
-    expect(items[3].description).toContain('失败');
+    expect(items[2].description).toContain('Attached');
+    expect(items[2].description).toContain('1 session(s)');
+    expect(items[3].description).toContain('Failed');
     expect(items[3].description).toContain('Starting');
     expect(items.map(item => (item.iconPath as ThemeIcon).id)).toEqual([
       'circle-outline',

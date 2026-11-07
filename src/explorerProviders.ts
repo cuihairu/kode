@@ -1,5 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+
+import { l10nText } from './nlsRuntime';
 import {
   createDefinitionSemanticsLoader,
   DefinitionMethod,
@@ -24,7 +26,7 @@ import { KBENGINE_TYPES } from './kbengineMetadata';
 import { KBEngineServerManager, SERVER_COMPONENTS, ServerStatus } from './serverManager';
 
 /** 面板分类/分组标题走 vscode.l10n:调用期求值(语言切换即时生效),默认英文源串 */
-const l10nText = (message: string): string => vscode.l10n.t(message);
+// l10nText 自 ./nlsRuntime 共享实现导入(KODE-I18N-002):六面共用公共取词入口
 
 type EntityTreeNode =
   | ExplorerGroupItem
@@ -1156,14 +1158,14 @@ class ServerTreeItem extends vscode.TreeItem {
     if (status === ServerStatus.Running) {
       this.description = `PID: ${pid}`;
     } else if (status === ServerStatus.Starting) {
-      this.description = '启动中...';
+      this.description = l10nText('Starting...');
     } else if (status === ServerStatus.Stopping) {
-      this.description = '停止中...';
+      this.description = l10nText('Stopping...');
     } else if (status === ServerStatus.Error) {
-      this.description = '错误';
+      this.description = l10nText('Error');
     }
 
-    this.tooltip = `${component.displayName}\n${component.description}\n状态: ${status}`;
+    this.tooltip = `${component.displayName}\n${component.description}\n${l10nText('Status: {state}', { state: status })}`;
   }
 }
 

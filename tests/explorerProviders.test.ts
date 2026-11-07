@@ -523,7 +523,7 @@ describe('ServerControlProvider', () => {
     // 启动前全部 Stopped:默认图标、无 description、tooltip 带状态后缀
     expect(children.every(item => item.iconPath?.id === 'circle-large-outline')).toBe(true);
     expect(children.every(item => item.description === undefined)).toBe(true);
-    expect(children.every(item => item.tooltip?.endsWith('状态: stopped'))).toBe(true);
+    expect(children.every(item => item.tooltip?.endsWith('Status: stopped'))).toBe(true);
     expect(children.map(item => item.label)).toEqual([
       'Machine', 'Logger', 'Interfaces', 'DBMgr', 'BaseAppMgr',
       'CellAppMgr', 'BaseApp', 'CellApp', 'LoginApp', 'Bots'

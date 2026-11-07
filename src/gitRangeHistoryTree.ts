@@ -42,6 +42,7 @@ import {
   type GitRepoLocation,
 } from './gitRepoLocate';
 import { GitCancelSource, type GitQueryRequest } from './gitQueryGate';
+import { l10nText } from './nlsRuntime';
 
 /** 视图条目:修改记录(点击打开 diff+定位)/ 引导或状态。 */
 export type RangeHistoryItem =
@@ -129,18 +130,23 @@ export function buildRangeHistoryItems(state: RangeHistoryState): RangeHistoryIt
         {
           kind: 'message',
           tone: 'guidance',
-          message: '尚未查询:选中代码右键「Kode：查看选中范围历史」,或在命令面板运行同名命令',
+          message: l10nText(
+            'Not queried yet: select code, right-click "Kode: Show Selection History", or run the same command from the Command Palette'
+          ),
         },
       ];
     case 'loading':
-      return [{ kind: 'message', tone: 'guidance', message: '正在查询选中范围历史…' }];
+      return [{ kind: 'message', tone: 'guidance', message: l10nText('Querying selection history…') }];
     case 'loaded': {
       const items: RangeHistoryItem[] = [];
       if (state.unmappedLines > 0) {
         items.push({
           kind: 'message',
           tone: 'warning',
-          message: `选区 ${state.unmappedLines} 行为未提交/未保存新增或修改,无法映射(以下时间线仅已提交部分)`,
+          message: l10nText(
+            '{count} selection lines are uncommitted/unsaved additions or edits and cannot be mapped (timeline below covers committed lines only)',
+            { count: state.unmappedLines }
+          ),
         });
       }
       state.entries.forEach((entry, index) => {
@@ -155,25 +161,31 @@ export function buildRangeHistoryItems(state: RangeHistoryState): RangeHistoryIt
         items.push({
           kind: 'message',
           tone: 'guidance',
-          message: `已追溯到行段引入处(提交 ${b.atCommit.slice(0, 8)} @ ${b.atPath})`,
+          message: l10nText('Traced to the commit that introduced the range (commit {commit} @ {path})', {
+            commit: b.atCommit.slice(0, 8),
+            path: b.atPath,
+          }),
         });
       } else {
         items.push({
           kind: 'message',
           tone: 'warning',
-          message: `追踪止于 ${b.atCommit.slice(0, 8)} @ ${b.atPath}(合并/复制/无法继续,不代表完整历史)`,
+          message: l10nText('Trace stopped at {commit} @ {path} (merge/copy/no further history; not necessarily complete)', {
+            commit: b.atCommit.slice(0, 8),
+            path: b.atPath,
+          }),
         });
       }
       return items;
     }
     case 'no-selection':
-      return [{ kind: 'message', tone: 'guidance', message: '请先选择要查看历史的代码范围' }];
+      return [{ kind: 'message', tone: 'guidance', message: l10nText('Select a code range to view its history first') }];
     case 'has-uncommitted':
       return [{ kind: 'message', tone: 'warning', message: state.message }];
     case 'untracked':
-      return [{ kind: 'message', tone: 'warning', message: '文件未纳入 Git 跟踪,没有历史可查' }];
+      return [{ kind: 'message', tone: 'warning', message: l10nText('File is not tracked by Git; no history to show') }];
     case 'no-commits':
-      return [{ kind: 'message', tone: 'warning', message: '仓库尚无提交,没有历史可查' }];
+      return [{ kind: 'message', tone: 'warning', message: l10nText('Repository has no commits; no history to show') }];
     case 'invalid':
       return [{ kind: 'message', tone: 'warning', message: state.message }];
     case 'error':
@@ -183,8 +195,12 @@ export function buildRangeHistoryItems(state: RangeHistoryState): RangeHistoryIt
 
 /** 视图标题:文件 @ HEAD 行段(基准提交与原选区);非装载态回缺省。 */
 export function rangeHistoryViewTitle(state: RangeHistoryState): string {
-  if (state.kind !== 'loaded') return '选区历史';
-  return `${path.basename(state.filePath)} @ HEAD 行 ${state.headStart}-${state.headEnd}`;
+  if (state.kind !== 'loaded') return l10nText('Selection History');
+  return l10nText('{file} @ HEAD lines {start}-{end}', {
+    file: path.basename(state.filePath),
+    start: state.headStart,
+    end: state.headEnd,
+  });
 }
 
 /** 由映射结果推装载状态的 HEAD 行段(各段并集;无段返回 null)。 */
@@ -283,10 +299,14 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
       tree.tooltip = [
         item.entry.hash,
         `${item.entry.authorName} <${item.entry.authorEmail}>`,
-        `作者时间:${item.entry.authorDate}`,
-        `提交时间:${item.entry.commitDate}`,
+        l10nText('Author date: {date}', { date: item.entry.authorDate }),
+        l10nText('Commit date: {date}', { date: item.entry.commitDate }),
         item.entry.subject,
-        `行 ${item.entry.rangeStart}-${item.entry.rangeEnd} @ ${item.entry.path}`,
+        l10nText('Lines {start}-{end} @ {path}', {
+          start: item.entry.rangeStart,
+          end: item.entry.rangeEnd,
+          path: item.entry.path,
+        }),
       ]
         .filter((line) => line.trim() !== '')
         .join('\n');
@@ -294,7 +314,7 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
       // 点击:打开该版本 vs 父版本 diff 并定位行段范围。
       tree.command = {
         command: 'kbengine.git.openRangeHistoryDiff',
-        title: '打开版本差异并定位',
+        title: l10nText('Open version diff and reveal'),
         arguments: [item.entry, item.filePath, item.repoRoot, item.parentFilePath],
       };
     } else {
@@ -316,7 +336,7 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
   ): Promise<void> {
     const gen = ++this.generation;
     if (!enabled) {
-      this.state = { kind: 'error', message: '历史功能已关闭' };
+      this.state = { kind: 'error', message: l10nText('History feature is disabled') };
       this.fire();
       return;
     }
@@ -352,7 +372,10 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
         } else {
           this.state = {
             kind: 'has-uncommitted',
-            message: `选区 ${mapped.selectionLineCount} 行均为未提交/未保存新增或修改,无法准确映射到已提交版本(保存后重试或选择已提交版本)`,
+            message: l10nText(
+              '{count} selection lines are all uncommitted/unsaved additions or edits and cannot be mapped accurately to a committed version (save and retry, or pick a committed version)',
+              { count: mapped.selectionLineCount }
+            ),
           };
           this.fire();
         }
@@ -367,7 +390,10 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
         this.fire();
         return;
       case 'binary':
-        this.state = { kind: 'invalid', message: '二进制文件不支持按行映射到已提交版本' };
+        this.state = {
+          kind: 'invalid',
+          message: l10nText('Binary files do not support line mapping to committed versions'),
+        };
         this.fire();
         return;
       case 'invalid-selection':
@@ -375,7 +401,10 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
         this.fire();
         return;
       case 'git-error':
-        this.state = { kind: 'error', message: `映射失败:${summarizeGitError(mapped.outcome)}` };
+        this.state = {
+          kind: 'error',
+          message: l10nText('Mapping failed: {reason}', { reason: summarizeGitError(mapped.outcome) }),
+        };
         this.fire();
         return;
     }
@@ -404,7 +433,7 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
     gen: number
   ): Promise<void> {
     if (segments.length === 0) {
-      this.state = { kind: 'invalid', message: '选区无已提交行段可查询' };
+      this.state = { kind: 'invalid', message: l10nText('Selection has no committed line range to query') };
       this.fire();
       return;
     }
@@ -477,7 +506,10 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
       case 'no-commits':
         return { kind: 'no-commits' };
       case 'git-error':
-        return { kind: 'error', message: `查询失败:${summarizeGitError(result.outcome)}` };
+        return {
+          kind: 'error',
+          message: l10nText('Query failed: {reason}', { reason: summarizeGitError(result.outcome) }),
+        };
     }
   }
 }

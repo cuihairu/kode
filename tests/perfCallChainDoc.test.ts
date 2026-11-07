@@ -22,7 +22,7 @@ const mermaidBlocks: string[] = [...report.matchAll(/```mermaid\n([\s\S]*?)```/g
 
 const NODE_LINE = /^([A-Za-z][A-Za-z0-9_]*)([[{(])(".+?)([\]})])\s*$/;
 const EDGE_OPERATORS = ['-->', '-.->'];
-const CITATION = /([A-Za-z][A-Za-z0-9_.-]*\.ts):(\d{1,5})\b/g;
+const CITATION = /([A-Za-z][A-Za-z0-9_./-]*\.ts):(\d{1,5})\b/g;
 
 const sourceLines = (relative: string): string[] =>
   readFileSync(join(root, relative), 'utf8').split('\n');
@@ -151,13 +151,17 @@ const ANCHORS: Array<[string, number, string]> = [
   // 各 +1),全部 extension.ts 锚点再 +2(真位重探 690/703/987/1069/1120/
   // 1183/1506/2375/2455);命令装配块(约 6388 起)在 flushQueued 之后不再
   // 位移;出处随 baseline 锁步。
-  ['src/extension.ts', 1075, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1126, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1189, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 993, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1512, "startLanguageServiceOperation('completion'"],
+  // 2026-11-07(合并 origin/main):KODE-DBG-001(+1)、KODE-I18N-002(+1)与
+  // KODE-CFG-009 配置消费通道接线(顶部 import +2 + activate 预取 +3 = +5)均
+  // 作用于 extension.ts 顶部——全部 extension.ts 锚点按合并树真位重探
+  // 683/696/980/1062/1113/1176/1499,出处随 baseline 锁步。
+  ['src/extension.ts', 1062, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1113, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1176, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 980, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1499, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 683, "startLanguageServiceOperation('diagnostics'"],
   ['src/extension.ts', 696, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 709, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -167,15 +171,16 @@ const ANCHORS: Array<[string, number, string]> = [
   // runPyspySchedule 引入)→ 上列 9 处 extension.ts 锚点整体 +2(真位重探 683/696/980/
   // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450);
   // HOT-VER 再 +3(见上)→ 后段锚点 2373/2453;DEMO-GAME-006 再 +2(见上)→ 2375/2455。
-  ['src/extension.ts', 2381, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2461, 'flushQueued()'],
+  ['src/extension.ts', 2368, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2448, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。
   // 2026-11-07(KODE-CFG-009):配置消费通道接线——顶部 import +2(serverConfigResolve
   // 块 1 行 + profileConfigResolveOverrides 并入既有 profileDatabaseConnection import
   // 1 行),activate 门接线后预取 +3 行(注释 2 + void ensureConfigResolved 1)
-  // → 全部 extension.ts 锚点再 +5(真位重探 696/709/993/1075/1126/1189/1512/2381/2461);
+  // → 全部 extension.ts 锚点再 +5;合并 origin/main 后真位已按合并树重探
+  // 683/696/980/1062/1113/1176/1499/2368/2448(见上「合并 origin/main」条),
   // 连接读值接线(约 3040 起与 3217/3252/3300/3337 四命令 await)在全部锚点之后
   // 不再位移;出处随 baseline 锁步。
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
@@ -204,27 +209,27 @@ const ANCHORS: Array<[string, number, string]> = [
   // 5209/5315/7159;baseline 原引 2018→2065、4691→4749 一并锁步。交付②第四类
   // 触发点(def 声明方法追加段)resolveDefMethodAnnotation +12:1360 后锚点
   // 再 +12(1852/1911/1935/2063/4812/5220/5326/7170),baseline 同步。
-  ['src/languageProviders.ts', 871, 'getDocumentLines(document)'],
-  ['src/languageProviders.ts', 961, 'provideHover('],
-  ['src/languageProviders.ts', 1852, 'shadowCompareDefinition'],
-  ['src/languageProviders.ts', 1911, 'export function validateDocument('],
-  ['src/languageProviders.ts', 1935, 'shadowObserveDefDocument'],
-  ['src/languageProviders.ts', 2063, 'validateEntitiesXmlDocument'],
+  ['src/languageProviders/inlay.ts', 42, 'getDocumentLines(document)'],
+  ['src/languageProviders/hover.ts', 129, 'provideHover('],
+  ['src/languageProviders/navigation.ts', 24, 'shadowCompareDefinition'],
+  ['src/languageProviders/validation.ts', 13, 'export function validateDocument('],
+  ['src/languageProviders/validation.ts', 37, 'shadowObserveDefDocument'],
+  ['src/languageProviders/validation.ts', 165, 'validateEntitiesXmlDocument'],
   // 2026-11-06(十六):IDE-DB-001 持久字段容量说明——languageProviders.ts
   // describeTypeStorageShape 各形态分支附容量行,2776 后 +11;其后锚点
   // 随之 +11(真位重探 4741/5162/5268/7112;2005 前不受影响;出处随 baseline
   // 锁步)。
-  ['src/languageProviders.ts', 4812, 'provideDefinitionTracedImpl'],
+  ['src/languageProviders/pythonDefinition.ts', 303, 'provideDefinitionTracedImpl'],
   // 2026-11-06(六):二次并入 origin main(KR-AUD-84 引擎整串开关表在 4725 后
   // +13)——层0 接收者段闸/withInitialScanTimeout/provideCompletionItems 锚点
   // 再 +13(真位重探 5146/5252/7063,出处随 baseline 锁步)。
-  ['src/languageProviders.ts', 5220, '层0 接收者段闸'],
-  ['src/languageProviders.ts', 5326, 'withInitialScanTimeout'],
+  ['src/languageProviders/pythonDefinition.ts', 711, '层0 接收者段闸'],
+  ['src/languageProviders/pythonDefinition.ts', 817, 'withInitialScanTimeout'],
   // 2026-11-06:IDE-LINT-012 快速修复边界——languageProviders.ts 在 receiver
   // 守卫 provider 前新增 receiverFromDiagnosticLine helper(区间归属提取)+
   // 提取块重写,+31 行,7007 后锚点随之 +31(真位重探 7038;其余 languageProviders
   // 锚点均在 helper 之前,不受影响;出处随 baseline 锁步)。
-  ['src/languageProviders.ts', 7170, 'provideCompletionItems('],
+  ['src/languageProviders/completion.ts', 633, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)
@@ -242,6 +247,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // onDidChangeTextDocument/flushQueued 锚点 +140(2155→2295/2235→2375);
   // languageProviders/diagnosticScheduler 等其余锚点经合并后真位复核不变
   // (本侧 6947a63 与 origin 9947c55 两路重探收敛同值)。出处随 baseline 锁步。
+  // KODE-ARCH-001(2026-11-07):languageProviders.ts 纯移动拆分为
+  // src/languageProviders/* 子模块——languageProviders.ts 锚点随拆分轮次逐轮
+  // 真位重探到新模块文件,出处随 baseline 锁步;行映射由拆分脚本机械推导,
+  // 零行为变更。
 ];
 
 describe('perf baseline §7 调用链图结构面', () => {

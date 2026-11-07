@@ -52,14 +52,14 @@ describe('RemoteServerTreeProvider', () => {
       events += 1;
     });
     const items = provider.getChildren();
-    expect(items.map(item => item.label)).toEqual(['本地(直接执行)', 'gamesrv', 'manual-host']);
-    expect(items[0].description).toContain('✓ 已选');
+    expect(items.map(item => item.label)).toEqual(['Local (direct execution)', 'gamesrv', 'manual-host']);
+    expect(items[0].description).toContain('✓ selected');
 
     selected = 'gamesrv';
     provider.refresh();
     expect(events).toBe(1);
     const refreshed = provider.getChildren();
-    expect(refreshed[1].description).toContain('✓ 已选');
+    expect(refreshed[1].description).toContain('✓ selected');
     // 节点点击接 select 命令,带节点 id
     expect(refreshed[1].command?.command).toBe('kbengine.remoteServers.select');
     expect(refreshed[1].command?.arguments).toEqual(['gamesrv']);
@@ -73,7 +73,7 @@ describe('RemoteServerTreeProvider', () => {
       selected: false
     });
     expect(configItem.contextValue).toBe('remote-server-ssh-config');
-    expect(configItem.description).toContain('跳板 bastion');
+    expect(configItem.description).toContain('jump bastion');
     expect(configItem.tooltip).toContain('ProxyJump bastion');
 
     const manualItem = new RemoteServerTreeItem({
@@ -83,6 +83,6 @@ describe('RemoteServerTreeProvider', () => {
       selected: false
     });
     expect(manualItem.contextValue).toBe('remote-server-manual');
-    expect(manualItem.tooltip).toContain('手动添加项');
+    expect(manualItem.tooltip).toContain('Manually added');
   });
 });

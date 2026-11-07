@@ -321,6 +321,19 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - Clears the workspace-state key and confirms with a notification; it never starts an attach itself
   - A component with a configured `debugpyPort` always attaches in port mode regardless of the remembered choice
 
+### `kbengine.debug.debugpyInject`
+
+- Title: `Inject debugpy Listener and Attach`
+- Purpose: one-shot debugpy automation (KODE-DBG-001, the console-injection option of docs/design/debugpy-attach.md) — send `debugpy.listen` over the component's telnet `:python` layer, then attach in port mode; no engine changes, no file edits
+- Entry: command palette
+- Behavior:
+  - Lists the running components (default instances by name, named instances as `component#instance`); cancelling the pick does nothing
+  - Port: the per-component table (baseapp 5678 / cellapp 5679 / loginapp 5680 / dbmgr 5681 / logger 5682, otherwise 5678), bound to `127.0.0.1` only
+  - Listener: reuses the existing one-shot path — syncs the assets-tree debugpy package if missing, waits for telnet readiness, injects through a short-lived telnet client; a failed injection reports the reason and never attaches
+  - Attach: once the listener is up, reuses the port mode of `Attach to Component` (probe → connect); if the attach does not complete, the error points to `Attach to Component` for a retry
+  - Gated by `kbengine.debug.debugpyInject` (default on); when off, the command only says so and does nothing
+  - Early-startup breakpoints are not this command's job — use `kbengine.debug.waitAtStartup` (the bootstrap option of the same proposal)
+
 ### `kbengine.debug.pyspyDump`
 
 - Title: `Profile Component with py-spy`
