@@ -155,13 +155,18 @@ const ANCHORS: Array<[string, number, string]> = [
   // KODE-CFG-009 配置消费通道接线(顶部 import +2 + activate 预取 +3 = +5)均
   // 作用于 extension.ts 顶部——全部 extension.ts 锚点按合并树真位重探
   // 683/696/980/1062/1113/1176/1499,出处随 baseline 锁步。
-  ['src/extension.ts', 1062, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1113, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1176, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 980, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1499, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 683, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 696, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-07(KODE-CFG-015):引擎 SPI CodeLens 装配——extension.ts 顶部 +1
+  // 行 import(engineSpiCodeLens 两符号)+ provider/命令/开关监听装配块 +22
+  // (python completion 装配后,§7 全部锚点之前只推后段):前段七锚点 +1、
+  // 后段两锚点(completion 第二路/onDidChangeTextDocument/flushQueued)+23:
+  // 真位重探 684/697/981/1063/1114/1177/1522/2391/2471,出处随 baseline 锁步。
+  ['src/extension.ts', 1063, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1114, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1177, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 981, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1522, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 684, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 697, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -171,8 +176,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // runPyspySchedule 引入)→ 上列 9 处 extension.ts 锚点整体 +2(真位重探 683/696/980/
   // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450);
   // HOT-VER 再 +3(见上)→ 后段锚点 2373/2453;DEMO-GAME-006 再 +2(见上)→ 2375/2455。
-  ['src/extension.ts', 2368, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2448, 'flushQueued()'],
+  ['src/extension.ts', 2391, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2471, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。
