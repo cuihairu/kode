@@ -396,6 +396,21 @@ fn wire_schema_cycle_detected() {
     assert!(matches!(schema.resolve("A"), Err(WireError::Cycle(_))));
 }
 
+/// 构建容错臂:types/alias XML 非空但无根 → 整段跳过(内建照常可解析);
+/// FIXED_DICT 缺 `<Properties>` 子元素 → 空字段 FixedDict。
+#[test]
+fn wire_schema_from_sources_tolerant_branches() {
+    // typesXml 非空但无根 → 解析内建不受影响(schema.rs:49 臂)。
+    let schema = WireSchema::from_sources("zzz", "");
+    assert_eq!(schema.resolve("UINT32").unwrap(), WireLayout::U32);
+    // aliasXml 非空但无根 → 同上(schema.rs:62 臂)。
+    let schema = WireSchema::from_sources("", "zzz");
+    assert_eq!(schema.resolve("UINT32").unwrap(), WireLayout::U32);
+    // FIXED_DICT 无 `<Properties>` → 空字段 FixedDict(schema.rs:165 臂)。
+    let schema = WireSchema::from_sources("<root><D> FIXED_DICT </D></root>", "");
+    assert_eq!(schema.resolve("D").unwrap(), WireLayout::FixedDict(vec![]));
+}
+
 // ---------------------------------------------------------------------------
 // RPC 边界(`$/kode/wire/encode|decode`)dispatch 烟测
 // ---------------------------------------------------------------------------
@@ -635,4 +650,699 @@ fn component_identity_selects_property_and_method_layouts() {
         .unwrap();
         assert_eq!(actual, call);
     }
+}
+
+// ---------------------------------------------------------------------------
+// WireError:全变体 Display/Debug/Clone/PartialEq/Eq(手动 impl 全覆盖)
+// ---------------------------------------------------------------------------
+
+/// 每个变体构造一次并断言 Display 文本与派生 trait 行为。
+#[test]
+fn wire_error_variants_display_and_traits() {
+    let cases: Vec<(WireError, &str)> = vec![
+        (
+            WireError::UnknownType("Foo".to_string()),
+            "unknown wire type: Foo",
+        ),
+        (WireError::Cycle("A".to_string()), "type cycle: A"),
+        (
+            WireError::TypeMismatch {
+                expected: "u8",
+                found: "u16",
+            },
+            "type mismatch: expected u8, found u16",
+        ),
+        (
+            WireError::Truncated { need: 4, have: 2 },
+            "truncated stream: need 4 bytes, have 2",
+        ),
+        (
+            WireError::LengthOverflow {
+                length: 100,
+                remaining: 8,
+            },
+            "length prefix 100 exceeds remaining 8 bytes",
+        ),
+        (
+            WireError::ArraySizeTooLarge { size: 70000 },
+            "array element count 70000 exceeds bound",
+        ),
+        (
+            WireError::AliasIdOverflow(300),
+            "alias id 300 exceeds uint8 bound (use utype mode)",
+        ),
+        (
+            WireError::ArgumentCountMismatch {
+                expected: 2,
+                actual: 3,
+            },
+            "expected 2 arguments, got 3",
+        ),
+        (
+            WireError::MethodModeMismatch,
+            "method identifier does not match encoding mode",
+        ),
+        (
+            WireError::NonAsciiString,
+            "STRING value contains non-ASCII bytes",
+        ),
+        (
+            WireError::EmbeddedNulString,
+            "STRING value contains embedded NUL byte",
+        ),
+        (
+            WireError::InvalidHex("zz".to_string()),
+            "invalid hex string: zz",
+        ),
+        (
+            WireError::MessageTooLarge { size: 99999 },
+            "message size 99999 exceeds u32 extended length",
+        ),
+    ];
+    for (err, expected) in cases {
+        assert_eq!(err.to_string(), expected, "Display 文本");
+        // Debug 非空(手动 derive Debug)
+        assert!(!format!("{err:?}").is_empty(), "Debug 非空");
+        // Clone + PartialEq + Eq 往返等价
+        let cloned = err.clone();
+        assert_eq!(cloned, err, "Clone/PartialEq 等价");
+        // std::error::Error 的默认 source 为 None(不实现自定义 source)
+        let boxed: Box<dyn std::error::Error + Send + Sync> = Box::new(err);
+        assert!(boxed.source().is_none(), "默认 source 为 None");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// hex 辅助:to_hex/from_hex 双向 + 畸形
+// ---------------------------------------------------------------------------
+
+#[test]
+fn hex_to_and_from_roundtrip() {
+    assert_eq!(to_hex(&[]), "");
+    assert_eq!(from_hex("").expect("空串合法"), Vec::<u8>::new());
+    assert_eq!(to_hex(&[0xde, 0xad, 0xbe, 0xef]), "deadbeef");
+    assert_eq!(
+        from_hex("deadbeef").expect("小写解析"),
+        vec![0xde, 0xad, 0xbe, 0xef]
+    );
+    // 大写输入等价
+    assert_eq!(
+        from_hex("DEADBEEF").expect("大写解析"),
+        vec![0xde, 0xad, 0xbe, 0xef]
+    );
+    // 混合大小写
+    assert_eq!(
+        from_hex("DeAdBeEf").expect("混合大小写解析"),
+        vec![0xde, 0xad, 0xbe, 0xef]
+    );
+    // 单字节上下界
+    assert_eq!(from_hex("00").expect("00"), vec![0x00]);
+    assert_eq!(from_hex("ff").expect("ff"), vec![0xff]);
+    assert_eq!(from_hex("FF").expect("FF"), vec![0xff]);
+}
+
+#[test]
+fn hex_from_rejects_malformed() {
+    // 奇数长度 → InvalidHex(不 panic)
+    assert!(matches!(from_hex("0"), Err(WireError::InvalidHex(_))));
+    assert!(matches!(from_hex("abc"), Err(WireError::InvalidHex(_))));
+    // 非法字符在高位 → InvalidHex
+    assert!(matches!(from_hex("zz00"), Err(WireError::InvalidHex(_))));
+    // 非法字符在低位 → InvalidHex
+    assert!(matches!(from_hex("0z"), Err(WireError::InvalidHex(_))));
+    // 非 hex 但长度合法(如 'g')
+    assert!(matches!(from_hex("g0"), Err(WireError::InvalidHex(_))));
+}
+
+// ---------------------------------------------------------------------------
+// WireSchema:alias.xml + 结构重解析边界(空 directive/type 属性/环)
+// ---------------------------------------------------------------------------
+
+/// alias.xml 目标解析三分支 + 空目标跳过;type 属性回落;ARRAY 缺 of;空 directive。
+#[test]
+fn wire_schema_alias_and_directive_fallbacks() {
+    let types_xml = "<root>\
+        <ITEM_ID> UINT16 </ITEM_ID>\
+        <ARR> ARRAY <of> UINT32 </of> </ARR>\
+        <NOOF> ARRAY </NOOF>\
+        <DICT> FIXED_DICT <Properties>\
+            <a><Type> UINT32 </Type></a>\
+            <b></b>\
+        </Properties> </DICT>\
+        <EMPTY></EMPTY>\
+        <ATTRIB type=\"UINT32\"></ATTRIB>\
+    </root>";
+    let alias_xml = "<root>\
+        <MoneyAlias><Type> UINT32 </Type></MoneyAlias>\
+        <ItemAlias><Type>   </Type></ItemAlias>\
+        <ElementAlias><Other/></ElementAlias>\
+        <SelfAlias>ITEM_ID junk</SelfAlias>\
+        <EmptyAlias></EmptyAlias>\
+    </root>";
+    let schema = WireSchema::from_sources(types_xml, alias_xml);
+
+    // alias.xml Type 子元素文本 → Named 目标
+    assert_eq!(schema.resolve("MoneyAlias").unwrap(), WireLayout::U32);
+    // alias.xml 首个非 Type 子元素标签名 → Named("Other")(未注册 → 未知)
+    assert!(matches!(
+        schema.resolve("ElementAlias"),
+        Err(WireError::UnknownType(_))
+    ));
+    // alias.xml 自身文本首个 token → ITEM_ID
+    assert_eq!(schema.resolve("SelfAlias").unwrap(), WireLayout::U16);
+    // 空目标(空白 Type / 空元素)被跳过 → 不可解析
+    assert!(matches!(
+        schema.resolve("ItemAlias"),
+        Err(WireError::UnknownType(_))
+    ));
+    assert!(matches!(
+        schema.resolve("EmptyAlias"),
+        Err(WireError::UnknownType(_))
+    ));
+
+    // ARRAY 缺 <of> → 元素默认 STRING
+    assert_eq!(
+        schema.resolve("NOOF").unwrap(),
+        WireLayout::Array(Box::new(WireLayout::Str))
+    );
+    // FIXED_DICT 无 Type 子键被跳过(只留 a)
+    assert_eq!(
+        schema.resolve("DICT").unwrap(),
+        WireLayout::FixedDict(vec![WireField {
+            name: "a".into(),
+            layout: WireLayout::U32,
+        }])
+    );
+    // 空 directive(无文本无 type 属性)→ Builtin("") → 未知类型
+    assert!(matches!(
+        schema.resolve("EMPTY"),
+        Err(WireError::UnknownType(_))
+    ));
+    // type 属性回落 → Named("UINT32") → 内建 U32
+    assert_eq!(schema.resolve("ATTRIB").unwrap(), WireLayout::U32);
+}
+
+/// 环经 ARRAY 穿透:A=ARRAY<of>B,B=A → Cycle(非栈溢出)。
+#[test]
+fn wire_schema_cycle_through_array() {
+    let schema = WireSchema::from_sources("<root><A>ARRAY<of>B</of></A><B>A</B></root>", "");
+    assert!(matches!(schema.resolve("A"), Err(WireError::Cycle(_))));
+    assert!(matches!(schema.resolve("B"), Err(WireError::Cycle(_))));
+}
+
+/// 全部 21 内建名 resolve 到对应布局;未知内建前缀 → UnknownType。
+#[test]
+fn wire_schema_resolves_all_builtins() {
+    let schema = WireSchema::from_sources("", "");
+    for (name, layout) in [
+        ("UINT8", WireLayout::U8),
+        ("UINT16", WireLayout::U16),
+        ("UINT32", WireLayout::U32),
+        ("UINT64", WireLayout::U64),
+        ("INT8", WireLayout::I8),
+        ("INT16", WireLayout::I16),
+        ("INT32", WireLayout::I32),
+        ("INT64", WireLayout::I64),
+        ("FLOAT", WireLayout::F32),
+        ("DOUBLE", WireLayout::F64),
+        ("BOOL", WireLayout::Bool),
+        ("STRING", WireLayout::Str),
+        ("UNICODE", WireLayout::Unicode),
+        ("PYTHON", WireLayout::Py),
+        ("PY_DICT", WireLayout::PyDict),
+        ("PY_TUPLE", WireLayout::PyTuple),
+        ("PY_LIST", WireLayout::PyList),
+        ("ENTITYCALL", WireLayout::EntityCall),
+        ("BLOB", WireLayout::Blob),
+        ("VECTOR2", WireLayout::Vec2),
+        ("VECTOR3", WireLayout::Vec3),
+        ("VECTOR4", WireLayout::Vec4),
+    ] {
+        assert_eq!(schema.resolve(name).unwrap(), layout, "{name}");
+    }
+    assert!(matches!(
+        schema.resolve("NOPE"),
+        Err(WireError::UnknownType(_))
+    ));
+}
+
+// ---------------------------------------------------------------------------
+// WireLayout/WireValue serde 往返(全变体,覆盖 derive 代码)
+// ---------------------------------------------------------------------------
+
+/// 全变体 serde 往返:每对 (layout,value) 序列化再反序列化等值。
+#[test]
+fn wire_types_serde_roundtrip_all_variants() {
+    let cases: Vec<(WireLayout, WireValue)> = vec![
+        (WireLayout::U8, WireValue::U8(0xff)),
+        (WireLayout::U16, WireValue::U16(0xffff)),
+        (WireLayout::U32, WireValue::U32(0xffff_ffff)),
+        (WireLayout::U64, WireValue::U64(0xffff_ffff_ffff_ffff)),
+        (WireLayout::I8, WireValue::I8(-128)),
+        (WireLayout::I16, WireValue::I16(-32768)),
+        (WireLayout::I32, WireValue::I32(-2147483648)),
+        (WireLayout::I64, WireValue::I64(-9223372036854775808)),
+        (WireLayout::F32, WireValue::F32(1.5)),
+        (WireLayout::F64, WireValue::F64(3.25)),
+        (WireLayout::Bool, WireValue::Bool(true)),
+        (WireLayout::Str, WireValue::Str("s".into())),
+        (WireLayout::Unicode, WireValue::Unicode(vec![1, 2])),
+        (WireLayout::Blob, WireValue::Blob(vec![3, 4])),
+        (WireLayout::Py, WireValue::Py(vec![5])),
+        (WireLayout::PyDict, WireValue::PyDict(vec![6])),
+        (WireLayout::PyTuple, WireValue::PyTuple(vec![7])),
+        (WireLayout::PyList, WireValue::PyList(vec![8])),
+        (
+            WireLayout::EntityCall,
+            WireValue::EntityCall(EntityCallValue {
+                id: -7,
+                component_id: 9,
+                call_type: 3,
+                script_uid: 4,
+            }),
+        ),
+        (WireLayout::Vec2, WireValue::Vec2([1.0, 2.0])),
+        (WireLayout::Vec3, WireValue::Vec3([1.0, 2.0, 3.0])),
+        (WireLayout::Vec4, WireValue::Vec4([1.0, 2.0, 3.0, 4.0])),
+        (
+            WireLayout::Array(Box::new(WireLayout::U8)),
+            WireValue::Array(vec![WireValue::U8(1), WireValue::U8(2)]),
+        ),
+        (
+            WireLayout::FixedDict(vec![WireField {
+                name: "x".into(),
+                layout: WireLayout::U32,
+            }]),
+            WireValue::FixedDict(vec![WireValue::U32(42)]),
+        ),
+    ];
+    for (layout, value) in cases {
+        let layout_json = serde_json::to_string(&layout).expect("layout serialize");
+        let layout_back: WireLayout =
+            serde_json::from_str(&layout_json).expect("layout deserialize");
+        assert_eq!(layout_back, layout, "layout 往返");
+        let value_json = serde_json::to_string(&value).expect("value serialize");
+        let value_back: WireValue = serde_json::from_str(&value_json).expect("value deserialize");
+        assert_eq!(value_back, value, "value 往返");
+    }
+    // EntityCallValue Default + serde 标签名抽查
+    let ec = EntityCallValue::default();
+    assert_eq!(ec.id, 0);
+    assert_eq!(
+        serde_json::from_str::<EntityCallValue>(
+            "{\"id\":1,\"component_id\":2,\"call_type\":3,\"script_uid\":4}"
+        )
+        .expect("entitycall deserialize"),
+        EntityCallValue {
+            id: 1,
+            component_id: 2,
+            call_type: 3,
+            script_uid: 4,
+        }
+    );
+    // WireField serde
+    let f = WireField {
+        name: "n".into(),
+        layout: WireLayout::Bool,
+    };
+    let fj = serde_json::to_string(&f).unwrap();
+    assert_eq!(serde_json::from_str::<WireField>(&fj).unwrap(), f);
+}
+
+// ---------------------------------------------------------------------------
+// encode_value/decode_value:类型失配与数组上界(全 layout_kind/value_kind 臂)
+// ---------------------------------------------------------------------------
+
+/// 每 layout 配一个失配 value → TypeMismatch,断言 expected/found 标签
+/// (覆盖 layout_kind/value_kind 全臂)。
+#[test]
+fn wire_value_type_mismatch_arms() {
+    let cases: Vec<(WireLayout, WireValue, &str, &str)> = vec![
+        (WireLayout::U8, WireValue::U16(1), "u8", "u16"),
+        (WireLayout::U16, WireValue::U32(1), "u16", "u32"),
+        (WireLayout::U32, WireValue::U64(1), "u32", "u64"),
+        (WireLayout::U64, WireValue::I8(1), "u64", "i8"),
+        (WireLayout::I8, WireValue::I16(1), "i8", "i16"),
+        (WireLayout::I16, WireValue::I32(1), "i16", "i32"),
+        (WireLayout::I32, WireValue::I64(1), "i32", "i64"),
+        (WireLayout::I64, WireValue::F32(1.0), "i64", "f32"),
+        (WireLayout::F32, WireValue::F64(1.0), "f32", "f64"),
+        (WireLayout::F64, WireValue::Bool(true), "f64", "bool"),
+        (
+            WireLayout::Bool,
+            WireValue::Str("x".into()),
+            "bool",
+            "string",
+        ),
+        (
+            WireLayout::Str,
+            WireValue::Unicode(vec![]),
+            "string",
+            "unicode",
+        ),
+        (
+            WireLayout::Unicode,
+            WireValue::Blob(vec![]),
+            "unicode",
+            "blob",
+        ),
+        (WireLayout::Blob, WireValue::Py(vec![]), "blob", "python"),
+        (
+            WireLayout::Py,
+            WireValue::PyDict(vec![]),
+            "python",
+            "py_dict",
+        ),
+        (
+            WireLayout::PyDict,
+            WireValue::PyTuple(vec![]),
+            "py_dict",
+            "py_tuple",
+        ),
+        (
+            WireLayout::PyTuple,
+            WireValue::PyList(vec![]),
+            "py_tuple",
+            "py_list",
+        ),
+        (
+            WireLayout::PyList,
+            WireValue::EntityCall(EntityCallValue::default()),
+            "py_list",
+            "entity_call",
+        ),
+        (
+            WireLayout::EntityCall,
+            WireValue::Vec2([0.0, 0.0]),
+            "entity_call",
+            "vector2",
+        ),
+        (
+            WireLayout::Vec2,
+            WireValue::Vec3([0.0; 3]),
+            "vector2",
+            "vector3",
+        ),
+        (
+            WireLayout::Vec3,
+            WireValue::Vec4([0.0; 4]),
+            "vector3",
+            "vector4",
+        ),
+        (
+            WireLayout::Vec4,
+            WireValue::Array(vec![]),
+            "vector4",
+            "array",
+        ),
+        (
+            WireLayout::Array(Box::new(WireLayout::U8)),
+            WireValue::FixedDict(vec![]),
+            "array",
+            "fixed_dict",
+        ),
+        (
+            WireLayout::FixedDict(vec![]),
+            WireValue::U8(1),
+            "fixed_dict",
+            "u8",
+        ),
+    ];
+    for (layout, value, expected, found) in cases {
+        let mut out = vec![9u8];
+        let err = encode_value(&layout, &value, &mut out).expect_err("失配必须报错");
+        assert_eq!(
+            err,
+            WireError::TypeMismatch { expected, found },
+            "{expected} vs {found}"
+        );
+        // 失配时不写任何字节(前缀原样)
+        assert_eq!(out, vec![9u8], "失配不写字节");
+        assert!(
+            err.to_string().contains(expected) && err.to_string().contains(found),
+            "Display 含 expected/found"
+        );
+    }
+}
+
+/// FIXED_DICT 编码 arity 失配 → TypeMismatch(fixed-dict arity / value arity)。
+#[test]
+fn wire_fixed_dict_arity_mismatch() {
+    let layout = WireLayout::FixedDict(vec![
+        WireField {
+            name: "a".into(),
+            layout: WireLayout::U8,
+        },
+        WireField {
+            name: "b".into(),
+            layout: WireLayout::U8,
+        },
+    ]);
+    let value = WireValue::FixedDict(vec![WireValue::U8(1)]);
+    let mut out = Vec::new();
+    let err = encode_value(&layout, &value, &mut out).expect_err("arity 失配");
+    assert_eq!(
+        err,
+        WireError::TypeMismatch {
+            expected: "fixed-dict arity",
+            found: "value arity",
+        }
+    );
+}
+
+/// 解码数组元素数超 1<<24 上界 → ArraySizeTooLarge(不分配不 panic)。
+#[test]
+fn wire_decode_array_size_too_large() {
+    // count = 0x02000000 (33554432) > 1<<24
+    let bytes = from_hex("00000002").expect("count LE");
+    let mut cur = WireCursor::new(&bytes);
+    let err = decode_value(&WireLayout::Array(Box::new(WireLayout::U8)), &mut cur)
+        .expect_err("超上界必须报错");
+    assert_eq!(err, WireError::ArraySizeTooLarge { size: 0x0200_0000 });
+}
+
+// ---------------------------------------------------------------------------
+// 方法实参:解码布局闭包错误传播 + utype 模式 component_alias 忽略
+// ---------------------------------------------------------------------------
+
+/// 解码期 arg_layouts_of 返回 Err → 整体 Err(布局解析失败传播)。
+#[test]
+fn wire_method_args_decode_layout_error_propagates() {
+    // alias 模式:comp(0) + alias(1)
+    let data = [0u8, 1u8];
+    let err = decode_method_args(&data, PropertyMode::Alias, |_component, _m| {
+        Err(WireError::UnknownType("missing".into()))
+    })
+    .expect_err("布局闭包错误必须传播");
+    assert_eq!(err, WireError::UnknownType("missing".into()));
+}
+
+/// utype 模式编码忽略 component_alias(引擎不写 component uid)。
+#[test]
+fn wire_method_args_utype_ignores_component_alias() {
+    let call = MethodCall {
+        component_alias: Some(7),
+        method: MethodRef::Utype(300),
+        args: vec![WireValue::U8(5)],
+        arg_layouts: vec![WireLayout::U8],
+    };
+    let mut out = Vec::new();
+    encode_method_args(&call, PropertyMode::Utype, &mut out).expect("utype 编码");
+    // u16 utype(300) + u8 arg(5),无 component 字节
+    assert_eq!(out, vec![0x2c, 0x01, 5]);
+    // 解码:component_alias 恒 None
+    let back = decode_method_args(&out, PropertyMode::Utype, |_c, m| {
+        assert_eq!(m, MethodRef::Utype(300));
+        Ok(vec![WireLayout::U8])
+    })
+    .expect("utype 解码");
+    assert_eq!(back.component_alias, None);
+    assert_eq!(back.args, vec![WireValue::U8(5)]);
+}
+
+// ---------------------------------------------------------------------------
+// 属性更新流:别名 id 上界(父/子双臂)+ 布局闭包错误传播
+// ---------------------------------------------------------------------------
+
+/// 别名模式 parent>255 → AliasIdOverflow(parent.max(child))。
+#[test]
+fn wire_property_stream_alias_parent_overflow() {
+    let entry = PropertyEntry {
+        parent: 300,
+        child: 1,
+        kind: PropKind::Regular {
+            layout: WireLayout::U8,
+            value: WireValue::U8(1),
+        },
+    };
+    let mut out = Vec::new();
+    let err = encode_property_stream(EntityRef::Full(1), PropertyMode::Alias, &[entry], &mut out)
+        .expect_err("parent 300 超 uint8");
+    assert_eq!(err, WireError::AliasIdOverflow(300));
+    // parent 300 且 child 400 → 取 max
+    let entry = PropertyEntry {
+        parent: 300,
+        child: 400,
+        kind: PropKind::Regular {
+            layout: WireLayout::U8,
+            value: WireValue::U8(1),
+        },
+    };
+    let err = encode_property_stream(EntityRef::Full(1), PropertyMode::Alias, &[entry], &mut out)
+        .expect_err("child 400 超 uint8");
+    assert_eq!(err, WireError::AliasIdOverflow(400));
+}
+
+/// 解码期 layout_of_child 返回 Err → 整体 Err(组件子属性布局解析失败传播)。
+#[test]
+fn wire_property_stream_decode_layout_error_propagates() {
+    // 先编码一条合法流,再用布局闭包 Err 解码:闭包错误必须传播而非吞掉。
+    // parent≠0(组件子属性)→ 解码必然走 layout_of_child 闭包。
+    let entry = PropertyEntry {
+        parent: 5,
+        child: 1,
+        kind: PropKind::Regular {
+            layout: WireLayout::U8,
+            value: WireValue::U8(5),
+        },
+    };
+    let mut out = Vec::new();
+    encode_property_stream(EntityRef::Full(1), PropertyMode::Alias, &[entry], &mut out)
+        .expect("编码合法流");
+    assert!(!out.is_empty());
+    let err = decode_property_stream(
+        &out,
+        EntityRefKind::Full,
+        PropertyMode::Alias,
+        &BasePropUtype::default(),
+        |_parent, _child| Err(WireError::UnknownType("no-layout".into())),
+    )
+    .expect_err("布局闭包错误必须传播");
+    assert_eq!(err, WireError::UnknownType("no-layout".into()));
+}
+
+// ---------------------------------------------------------------------------
+// RPC 边界:encode/decode 错误通道(畸形入参 → error,不 panic)
+// ---------------------------------------------------------------------------
+
+fn rpc_error_of(out: &[Outgoing]) -> String {
+    match &out[0] {
+        Outgoing::Response(response) => response
+            .error
+            .as_ref()
+            .unwrap_or_else(|| panic!("expected error response"))
+            .message
+            .clone(),
+        Outgoing::Notification(_) => panic!("expected response"),
+    }
+}
+
+/// `$/kode/wire/encode` 的布局/值解析失败与编解码失败经 RPC error 通道。
+#[test]
+fn wire_rpc_encode_error_channel() {
+    let mut state = ServerState::new();
+    handle_message(
+        &mut state,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
+
+    // 布局非法(serde 失败)→ error
+    let out = handle_message(
+        &mut state,
+        request(
+            1,
+            "$/kode/rpc",
+            json!({"method": "$/kode/wire/encode", "params": {"layout": 42, "value": {}}}),
+        ),
+    );
+    assert!(!rpc_error_of(&out).is_empty(), "非法布局必须 error");
+
+    // 值缺失(serde 默认 null 失败)→ error
+    let out = handle_message(
+        &mut state,
+        request(
+            2,
+            "$/kode/rpc",
+            json!({"method": "$/kode/wire/encode", "params": {"layout": "U32"}}),
+        ),
+    );
+    assert!(!rpc_error_of(&out).is_empty(), "缺值必须 error");
+
+    // 布局/值失配 → 编码错误经 error
+    let out = handle_message(
+        &mut state,
+        request(
+            3,
+            "$/kode/rpc",
+            json!({"method": "$/kode/wire/encode", "params": {"layout": "U32", "value": {"Str": "x"}}}),
+        ),
+    );
+    let msg = rpc_error_of(&out);
+    assert!(msg.contains("type mismatch"), "失配 error: {msg}");
+}
+
+/// `$/kode/wire/decode` 的缺 hex/非法 hex/截断流错误通道。
+#[test]
+fn wire_rpc_decode_error_channel() {
+    let mut state = ServerState::new();
+    handle_message(
+        &mut state,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
+
+    // 缺 hex → "missing hex"
+    let out = handle_message(
+        &mut state,
+        request(
+            1,
+            "$/kode/rpc",
+            json!({"method": "$/kode/wire/decode", "params": {"layout": "U32"}}),
+        ),
+    );
+    assert_eq!(rpc_error_of(&out), "missing hex");
+
+    // 非法 hex → InvalidHex error
+    let out = handle_message(
+        &mut state,
+        request(
+            2,
+            "$/kode/rpc",
+            json!({"method": "$/kode/wire/decode", "params": {"layout": "U32", "hex": "zz"}}),
+        ),
+    );
+    let msg = rpc_error_of(&out);
+    assert!(msg.contains("invalid hex"), "非法 hex: {msg}");
+
+    // 截断流 → Truncated error
+    let out = handle_message(
+        &mut state,
+        request(
+            3,
+            "$/kode/rpc",
+            json!({"method": "$/kode/wire/decode", "params": {"layout": "U32", "hex": "00"}}),
+        ),
+    );
+    let msg = rpc_error_of(&out);
+    assert!(msg.contains("truncated stream"), "截断: {msg}");
+
+    // 布局非法 → error
+    let out = handle_message(
+        &mut state,
+        request(
+            4,
+            "$/kode/rpc",
+            json!({"method": "$/kode/wire/decode", "params": {"layout": 9, "hex": "00000000"}}),
+        ),
+    );
+    assert!(!rpc_error_of(&out).is_empty(), "非法布局必须 error");
+}
+
+/// STRING 编码拒绝非 ASCII(KODE-AUD-010 同族;嵌入 NUL 已有样例覆盖)。
+#[test]
+fn wire_value_str_rejects_non_ascii() {
+    let mut out = Vec::new();
+    let err = encode_value(&WireLayout::Str, &WireValue::Str("é".into()), &mut out)
+        .expect_err("非 ASCII 必须报错");
+    assert_eq!(err, WireError::NonAsciiString);
+    assert_eq!(out, Vec::<u8>::new(), "失败不写字节");
 }

@@ -86,6 +86,48 @@ fn dispatch_minimal_anchor() {
 }
 
 #[test]
+fn dispatch_defs_nonstring_entry_skipped() {
+    // defs 值非字符串(数字)→ 该条目跳过(mod.rs:1178-1180);componentScripts
+    // 含非字符串元素 → 只留字符串条目(mod.rs:1191-1193)。
+    let r = call_md5(json!({
+        "typesXml": "<root></root>",
+        "entitiesXml": "<root><Gate hasCell=\"true\"></Gate></root>",
+        "defs": {"Gate": "<root></root>", "Skip": 123},
+        "aliasXml": "",
+        "componentScripts": ["cell:Gate", 7, null, true]
+    }));
+    let md5 = r["md5"].as_str().expect("md5");
+    assert_eq!(md5.len(), 32);
+    assert!(
+        md5.chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()),
+        "非字符串 defs 值被跳过,不 panic"
+    );
+}
+
+#[test]
+fn dispatch_defs_non_object_and_scripts_non_array() {
+    // defs 非对象 → 整体跳过;componentScripts 非数组 → 整体跳过;空 entities
+    // → Ok(仅 phase1 内建序列)。
+    let r = call_md5(json!({
+        "typesXml": "",
+        "entitiesXml": "",
+        "defs": 123,
+        "aliasXml": "",
+        "componentScripts": "cell:Gate"
+    }));
+    let md5 = r["md5"].as_str().expect("md5");
+    assert_eq!(md5.len(), 32);
+    let stream = r["streamHex"].as_str().expect("streamHex");
+    // phase1 恰为 21 内建 uid 序列(u16 LE)。
+    let mut expect = String::new();
+    for i in 1..=21u16 {
+        expect.push_str(&format!("{:02x}{:02x}", i & 0xff, i >> 8));
+    }
+    assert_eq!(stream, expect, "非对象参数回落 phase1");
+}
+
+#[test]
 fn dispatch_error_channel() {
     // 缺 def → error 经 RPC error 返回,不 panic。
     let mut state = ServerState::new();

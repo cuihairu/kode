@@ -12,11 +12,12 @@
 //! golden 再生成:仅样本表变更时 `cargo run -p kode-server --bin dump-def-md5-golden`
 //! (见 tests/def_md5_golden.rs 重生成比对)。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use kode_server::def_md5::{
-    compute_def_md5, golden_samples, DefMd5Params, Md5, BUILTIN_TYPE_ORDER,
+    compute_def_md5, flags_value, golden_samples, DefMd5Params, DefMd5Stream, Md5,
+    BUILTIN_TYPE_ORDER,
 };
 
 fn repo_root() -> &'static Path {
@@ -958,5 +959,664 @@ fn kr_aud_81_missing_type_element_errors_like_engine() {
     assert!(
         err.contains("component name is NULL"),
         "报错口径(entitydef.cpp:668-671): {err}"
+    );
+}
+
+// ===========================================================================
+// 补面:flags_value 表 / 可选字段变体 / 别名与字典错误臂 / 组件槽域位
+// ===========================================================================
+
+/// flags_value 全 12 表项位值精确断言 + 未知/小写(查表前须先 toupper)落 None。
+#[test]
+fn flags_value_table_exact_bits() {
+    let cases: Vec<(&str, u32)> = vec![
+        ("CELL", 0x01),
+        ("CELL_AND_CLIENT", 0x08),
+        ("CELL_AND_CLIENTS", 0x04),
+        ("CELL_AND_OTHER_CLIENTS", 0x80),
+        ("CELL_PUBLIC_AND_OWN", 0x08),
+        ("ALL_CLIENTS", 0x04),
+        ("OTHER_CLIENTS", 0x80),
+        ("OWN_CLIENT", 0x10),
+        ("BASE_AND_CLIENT", 0x20),
+        ("BASE", 0x40),
+        ("CELL_PUBLIC", 0x01),
+        ("CELL_PRIVATE", 0x02),
+    ];
+    for (name, bits) in cases {
+        assert_eq!(flags_value(name), Some(bits), "{name}");
+    }
+    assert_eq!(flags_value("NOPE"), None, "未知 flags");
+    assert_eq!(flags_value("base"), None, "小写不命中(调用方先 toupper)");
+    assert_eq!(flags_value(""), None, "空串");
+}
+
+/// Md5::default / DefMd5Stream::default 与流助手的字节布局。
+#[test]
+fn md5_default_and_stream_byte_layout() {
+    // default 与 new 等价(空串 RFC 向量)。
+    let mut d = Md5::default();
+    d.update(b"");
+    assert_eq!(hex(&d.finalize()), "d41d8cd98f00b204e9800998ecf8427e");
+
+    // 流:各 append 助手 LE 布局 + trace 留痕 + finish 摘要与直接 Md5 一致。
+    let mut s = DefMd5Stream::default();
+    assert_eq!(s.stream_hex(), "", "初始流为空");
+    s.append_str("name", "src", "AB");
+    s.append_u16("u16", "src", 0x0102);
+    s.append_u32("u32", "src", 0x0102_0304);
+    s.append_i32("i32", "src", -1);
+    s.append_bool("flag", "src", true);
+    s.append_bool("flag0", "src", false);
+    assert_eq!(s.stream_hex(), "4142020104030201ffffffff0100");
+    let result = s.finish();
+    assert_eq!(result.stream_hex, "4142020104030201ffffffff0100");
+    assert_eq!(result.trace.len(), 6);
+    assert_eq!(result.trace[0].field, "name");
+    assert_eq!(result.trace[0].source, "src");
+    assert_eq!(result.trace[0].bytes_hex, "4142");
+    assert_eq!(result.trace[3].bytes_hex, "ffffffff");
+    assert_eq!(result.trace[4].field, "flag");
+    assert_eq!(result.trace[5].bytes_hex, "00");
+    // finish 的 md5 与直接喂同一字节的 Md5 一致。
+    let mut m = Md5::new();
+    m.update(&[
+        0x41, 0x42, 0x02, 0x01, 0x04, 0x03, 0x02, 0x01, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00,
+    ]);
+    assert_eq!(result.md5_hex, hex(&m.finalize()).to_uppercase());
+}
+
+/// 属性可选字段变体:Identifier/DatabaseLength/Default/DetailLevel(MEDIUM/FAR)/
+/// Utype 非数字(→ -1 → 自动分配)。
+#[test]
+fn property_optional_field_variants() {
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Gate hasCell=\"true\"></Gate></root>".into(),
+        defs: [(
+            "Gate".to_string(),
+            "<root><Properties>\
+              <feat><Type>UINT32</Type><Flags>BASE</Flags>\
+                <Identifier>true</Identifier>\
+                <DatabaseLength>64</DatabaseLength>\
+                <Default>x</Default>\
+                <DetailLevel>MEDIUM</DetailLevel>\
+              </feat>\
+              <far><Type>UINT32</Type><Flags>BASE</Flags><DetailLevel>FAR</DetailLevel></far>\
+              <badu><Type>UINT32</Type><Flags>BASE</Flags><Utype> abc </Utype></badu>\
+            </Properties></root>"
+                .to_string(),
+        )]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let result = compute_def_md5(p).expect("可选字段变体可计算");
+    let s = &result.stream_hex;
+    // feat:default "x" 入流;ctor 尾部 identifier(01) + dbLen(40000000) +
+    // detailLevel(01) + typeUid(0400)。
+    // 精确段:name+default+type+utype+flags+persistent+identifier+dbLen+detail+uid
+    let expected = hex(b"feat")
+        + "78" // Default "x"
+        + &hex(b"UINT32")
+        + "0100" // utype auto=1
+        + "40000000" // BASE
+        + "00" // persistent(无 Persistent → false)
+        + "01" // identifier
+        + "40000000" // dbLen 64
+        + "01" // detailLevel MEDIUM
+        + "0400"; // UINT32 uid
+    assert!(s.contains(&expected), "feat ctor: {}", s);
+    // far:detailLevel 未知串落 2(FAR 同缺省);badu:Utype 非数字 → 自动 2。
+    let far_expected = hex(b"far")
+        + &hex(b"UINT32")
+        + "0200" // auto 跳过 1
+        + "40000000"
+        + "00"
+        + "00" // identifier false
+        + "00000000"
+        + "02" // detailLevel FAR→2
+        + "0400";
+    assert!(s.contains(&far_expected), "far ctor: {}", s);
+}
+
+/// 缺 Flags 属性按 0 宽容重放(引擎报错终止,kode 夹具宽容,trace 留痕)。
+#[test]
+fn property_missing_flags_tolerated_as_zero() {
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Gate hasCell=\"true\"></Gate></root>".into(),
+        defs: [(
+            "Gate".to_string(),
+            "<root><Properties><x><Type>UINT32</Type></x></Properties></root>".to_string(),
+        )]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let result = compute_def_md5(p).expect("缺 Flags 宽容重放");
+    let s = &result.stream_hex;
+    let expected = hex(b"x") + &hex(b"UINT32") + "0100" + "00000000" + "00";
+    assert!(s.contains(&expected), "flags=0 ctor: {}", s);
+}
+
+/// 未知 Flags → Err(引擎 loadDefPropertys 同臂)。
+#[test]
+fn property_unknown_flags_errors() {
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Gate hasCell=\"true\"></Gate></root>".into(),
+        defs: [(
+            "Gate".to_string(),
+            "<root><Properties><x><Type>UINT32</Type><Flags>NOPE</Flags></x></Properties></root>"
+                .to_string(),
+        )]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let err = compute_def_md5(p).expect_err("未知 flags 必须报错");
+    assert!(
+        err.contains("unknown flags [NOPE] Gate.x"),
+        "报错口径: {err}"
+    );
+}
+
+/// 方法子元素:Client 域 `<Exposed>` 无字节(827 守卫落 `_`);`<Utype>` 子元素
+/// 无字节;两种形态 md5 与无该子元素一致。
+#[test]
+fn method_child_utype_and_client_exposed_have_no_bytes() {
+    let mk = |client_block: &str| DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Gate hasCell=\"true\"></Gate></root>".into(),
+        defs: [(
+            "Gate".to_string(),
+            format!(
+                "<root><BaseMethods><m1><Utype> 5 </Utype><Arg>UINT32</Arg></m1></BaseMethods>\
+                 <ClientMethods>{client_block}</ClientMethods></root>"
+            ),
+        )]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let with_exposed = compute_def_md5(mk("<m2><Exposed/><Arg>UINT32</Arg></m2>"))
+        .expect("Client 域 Exposed 子元素宽容");
+    let without = compute_def_md5(mk("<m2><Arg>UINT32</Arg></m2>")).expect("无 Exposed 基线");
+    // Client 域 Exposed 不入流:两形态 md5 一致(method.cpp:50 仅非 Client)。
+    assert_eq!(
+        with_exposed.md5_hex, without.md5_hex,
+        "Client 域 <Exposed> 不产生字节"
+    );
+    // Base 域 `<Utype>` 子元素同样无字节:setUType 不追加(mod.rs:807/845)。
+    let mut no_utype = mk("<m2><Arg>UINT32</Arg></m2>");
+    no_utype.defs.insert(
+        "Gate".to_string(),
+        "<root><BaseMethods><m1><Arg>UINT32</Arg></m1></BaseMethods>\
+         <ClientMethods><m2><Arg>UINT32</Arg></m2></ClientMethods></root>"
+            .to_string(),
+    );
+    let plain = compute_def_md5(no_utype).expect("无 Utype 基线");
+    let with_utype = compute_def_md5(mk("<m2><Arg>UINT32</Arg></m2>")).expect("带 Utype");
+    assert_eq!(
+        plain.md5_hex, with_utype.md5_hex,
+        "Base 域 <Utype> 子元素不产生字节,两形态一致"
+    );
+}
+
+/// 属性显式 Utype 占号 → 后续自动分配跳过该号(calc_property_utype skip 循环)。
+#[test]
+fn property_utype_auto_skips_explicit() {
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Gate hasCell=\"true\"></Gate></root>".into(),
+        defs: [(
+            "Gate".to_string(),
+            "<root><Properties>\
+              <a><Type>UINT32</Type><Flags>BASE</Flags><Utype> 1 </Utype></a>\
+              <b><Type>UINT32</Type><Flags>BASE</Flags></b>\
+            </Properties></root>"
+                .to_string(),
+        )]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let result = compute_def_md5(p).expect("Utype 跳号可计算");
+    // b 的 ctor utype = 2(1 被显式占用,自动分配跳过)。
+    let expected = hex(b"b") + &hex(b"UINT32") + "0200";
+    assert!(
+        result.stream_hex.contains(&expected),
+        "b utype=2: {}",
+        result.stream_hex
+    );
+}
+
+/// types.xml 错误臂:别名目标未知 / ARRAY of 未知 / 别名元素形态跳过 / 空 typesXml。
+#[test]
+fn types_xml_alias_branches() {
+    // 别名目标未知 → Err。
+    let p = DefMd5Params {
+        types_xml: "<root><BadAlias>NOPE</BadAlias></root>".into(),
+        entities_xml: "<root><Gate hasCell=\"true\"></Gate></root>".into(),
+        defs: [("Gate".to_string(), "<root></root>".to_string())]
+            .into_iter()
+            .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let err = compute_def_md5(p).expect_err("别名目标未知必须报错");
+    assert!(
+        err.contains("alias [BadAlias] target [NOPE] not found"),
+        "报错口径: {err}"
+    );
+
+    // ARRAY of 未知 → Err。
+    let p = DefMd5Params {
+        types_xml: "<root><BadArr>ARRAY<of>NOPE</of></BadArr></root>".into(),
+        entities_xml: "<root><Gate hasCell=\"true\"></Gate></root>".into(),
+        defs: [("Gate".to_string(), "<root></root>".to_string())]
+            .into_iter()
+            .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let err = compute_def_md5(p).expect_err("ARRAY of 未知必须报错");
+    assert!(
+        err.contains("element type [NOPE] not found"),
+        "报错口径: {err}"
+    );
+
+    // 别名元素形态(无直接文本)→ type_text="" → 跳过不报错(first_text 空臂)。
+    let p = DefMd5Params {
+        types_xml: "<root><Wrap><Type>UINT32</Type></Wrap></root>".into(),
+        entities_xml: "<root><Gate hasCell=\"true\"></Gate></root>".into(),
+        defs: [(
+            "Gate".to_string(),
+            "<root><Properties><x><Type>UINT32</Type><Flags>BASE</Flags></x></Properties></root>"
+                .to_string(),
+        )]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    assert!(compute_def_md5(p).is_ok(), "元素形态别名条目按空文本跳过");
+
+    // 空 typesXml / 空 entitiesXml:仅 phase1 内建序列。
+    let p = DefMd5Params {
+        types_xml: String::new(),
+        entities_xml: String::new(),
+        defs: HashMap::new(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let result = compute_def_md5(p).expect("全空参数可计算");
+    let mut expect = String::new();
+    for i in 1..=21u16 {
+        expect.push_str(&format!("{:02x}{:02x}", i & 0xff, i >> 8));
+    }
+    assert_eq!(result.stream_hex, expect, "phase1 恰为 21 内建 uid 序列");
+}
+
+/// 字典键变体:无 Type 键跳过 / Persistent false / DatabaseLength /
+/// ARRAY-of-ENTITYCALL 与直连 ENTITYCALL 的 persistent 覆盖 / 键类型未知报错。
+#[test]
+fn fixed_dict_key_variants() {
+    let p = DefMd5Params {
+        types_xml: "<root><D> FIXED_DICT <Properties>\
+          <noType><Other>x</Other></noType>\
+          <offP><Type>UINT32</Type><Persistent> false </Persistent></offP>\
+          <dblen><Type>UINT32</Type><DatabaseLength> 64 </DatabaseLength></dblen>\
+          <arrEC><Type>ARRAY<of>ENTITYCALL</of></Type></arrEC>\
+          <ec><Type>ENTITYCALL</Type></ec>\
+        </Properties></D></root>"
+            .into(),
+        entities_xml: "<root><Gate hasCell=\"true\"></Gate></root>".into(),
+        defs: [(
+            "Gate".to_string(),
+            "<root><Properties><bag><Type>D</Type><Flags>BASE</Flags></bag></Properties></root>"
+                .to_string(),
+        )]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let result = compute_def_md5(p).expect("字典键变体可计算");
+    let s = &result.stream_hex;
+    // 无 Type 键被忽略(datatype.cpp:2161-2165)。
+    assert!(!s.contains(&hex(b"noType")), "无 Type 键不入流");
+    // Persistent false → 键 persistent 字节 00(紧跟键名)。
+    assert!(
+        s.contains(&(hex(b"offP") + "00")),
+        "offP persistent=false: {}",
+        s
+    );
+    // DatabaseLength 64 入流:键 ctor=uid(u16)+strType+键名+persistent(缺省
+    // true→01)+dbLen(u32,mod.rs:481/525-534)。
+    let dblen = format!("{}{}{}0140000000", "0400", hex(b"UINT32"), hex(b"dblen"));
+    assert!(s.contains(&dblen), "dblen ctor: {}", s);
+    // ARRAY-of-ENTITYCALL 键 persistent 覆盖 false(datatype.cpp:2104 一层判定)。
+    assert!(
+        s.contains(&(hex(b"arrEC") + "00")),
+        "arrEC persistent=false: {}",
+        s
+    );
+    // 直连 ENTITYCALL 键 persistent 覆盖 false(datatype.cpp:2141);
+    // 键 ctor 序 strType→键名(mod.rs:527-530)。
+    assert!(
+        s.contains(&(hex(b"ENTITYCALL") + &hex(b"ec") + "00")),
+        "ec persistent=false: {}",
+        s
+    );
+
+    // 键类型未知 → Err。
+    let bad = DefMd5Params {
+        types_xml: "<root><D> FIXED_DICT <Properties>\
+          <bad><Type>NOPE</Type></bad>\
+        </Properties></D></root>"
+            .into(),
+        entities_xml: "<root><Gate hasCell=\"true\"></Gate></root>".into(),
+        defs: [(
+            "Gate".to_string(),
+            "<root><Properties><bag><Type>D</Type><Flags>BASE</Flags></bag></Properties></root>"
+                .to_string(),
+        )]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let err = compute_def_md5(bad).expect_err("字典键类型未知必须报错");
+    assert!(
+        err.contains("key [bad] type [NOPE] not found"),
+        "报错口径: {err}"
+    );
+}
+
+/// entities.xml 属性变体:显式 false → 0(非缺省 -1);"TRUE" 大小写不敏感 → 1。
+#[test]
+fn entities_attr_false_and_case_insensitive_true() {
+    let mk = |attrs: &str| DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: format!("<root><Gate {attrs}></Gate></root>"),
+        defs: [(
+            "Gate".to_string(),
+            "<root><Properties><x><Type>UINT32</Type><Flags>BASE</Flags></x></Properties></root>"
+                .to_string(),
+        )]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    // hasCell="false" → 0;hasClient/hasBase 缺省 -1。
+    let r0 = compute_def_md5(mk("hasCell=\"false\"")).expect("false 属性可计算");
+    assert!(
+        r0.stream_hex.ends_with("ffffffff00000000ffffffff"),
+        "hasCell=0 尾部: {}",
+        r0.stream_hex
+    );
+    // hasClient="TRUE" → 1(大小写不敏感);hasCell="false" → 0。
+    let r1 = compute_def_md5(mk("hasClient=\"TRUE\" hasCell=\"false\"")).expect("TRUE 可计算");
+    assert!(
+        r1.stream_hex.ends_with("0100000000000000ffffffff"),
+        "hasClient=1/hasCell=0 尾部: {}",
+        r1.stream_hex
+    );
+    // 非 entities XML(无根)→ Replayer::new 阶段即报错(mod.rs:344)。
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "zzz".into(),
+        defs: HashMap::new(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let err = compute_def_md5(p).expect_err("无根 entities.xml 报错");
+    assert!(
+        err.contains("entities.xml: no root element"),
+        "报错口径: {err}"
+    );
+}
+
+/// 接口条目首子节点为注释 → 引擎跳过注释取下一节点(xml.cpp:72-95 Comment 滤除;
+/// 注释须位于 `<Interface>` 包装器内,容器层注释由 child_elements 天然滤除)。
+#[test]
+fn interface_comment_child_is_skipped() {
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs: [
+            (
+                "Avatar".to_string(),
+                "<root><Interfaces><Interface><!-- which? --><Combat/></Interface></Interfaces></root>"
+                    .to_string(),
+            ),
+            (
+                "Combat".to_string(),
+                "<root><Properties><hp><Type>UINT32</Type><Flags>BASE</Flags></hp></Properties></root>"
+                    .to_string(),
+            ),
+        ]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let result = compute_def_md5(p).expect("注释子节点被滤除后接口正常装载");
+    assert!(
+        result.stream_hex.contains(&hex(b"hp")),
+        "Combat.def 属性 hp 缺席: {}",
+        result.stream_hex
+    );
+}
+
+/// 接口条目仅注释子节点 → enterNode 滤注释后无节点 → 条目跳过(不报错)。
+#[test]
+fn interface_comment_only_wrapper_skipped() {
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs: [(
+            "Avatar".to_string(),
+            "<root><Interfaces><Interface><!-- only --></Interface></Interfaces></root>"
+                .to_string(),
+        )]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let result = compute_def_md5(p).expect("空接口包装器被跳过");
+    // Avatar 模块名入流(entities 重放);无接口装载错误。
+    assert!(
+        result.stream_hex.contains(&hex(b"Avatar")),
+        "Avatar 模块名缺席: {}",
+        result.stream_hex
+    );
+}
+
+/// 接口包装器首子节点为 PI → getKey 空名 → 引擎按缺失接口 def 报错(263 臂)。
+#[test]
+fn interface_pi_child_empty_key_errors() {
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs: [(
+            "Avatar".to_string(),
+            "<root><Interfaces><Interface><?pi data?></Interface></Interfaces></root>".to_string(),
+        )]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let err = compute_def_md5(p).expect_err("PI 首子节点 → 空接口名报错");
+    assert!(
+        err.contains("interface def not found: .def"),
+        "报错口径: {err}"
+    );
+}
+
+/// 实体加载(ignore_components=false)经接口递归时,接口 def 自带 `<Components>`
+/// → load_components 亦对接口 def 执行(922-924 真臂)。
+#[test]
+fn interface_def_with_components_registers_slot() {
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs: [
+            (
+                "Avatar".to_string(),
+                "<root><Interfaces><Interface><Combat/></Interface></Interfaces></root>"
+                    .to_string(),
+            ),
+            (
+                "Combat".to_string(),
+                "<root><Components><bag><Type>Inv</Type></bag></Components></root>".to_string(),
+            ),
+            (
+                "Inv".to_string(),
+                "<root><Properties><p><Type>UINT32</Type><Flags>BASE</Flags></p></Properties></root>"
+                    .to_string(),
+            ),
+        ]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let result = compute_def_md5(p).expect("接口 def 组件槽可计算");
+    assert!(
+        result.stream_hex.contains(&hex(b"bag")),
+        "接口 def 的组件槽 bag 缺席: {}",
+        result.stream_hex
+    );
+}
+
+/// 组件 def 的接口链按 ignore_components=true 装载:接口内容并入模块,但接口
+/// 自带 `<Components>` 不再展开(922 的 false 边;load_interfaces 递归传 true)。
+#[test]
+fn component_interface_ignores_own_components() {
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs: [
+            (
+                "Avatar".to_string(),
+                "<root><Components><bag><Type>Inv</Type></bag></Components></root>".to_string(),
+            ),
+            (
+                "Inv".to_string(),
+                "<root><Interfaces><Interface><Mage/></Interface></Interfaces></root>"
+                    .to_string(),
+            ),
+            (
+                "Mage".to_string(),
+                "<root><Properties><mp><Type>UINT32</Type><Flags>BASE</Flags></mp></Properties></root>"
+                    .to_string(),
+            ),
+        ]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let result = compute_def_md5(p).expect("组件接口链可计算");
+    assert!(
+        result.stream_hex.contains(&hex(b"mp")),
+        "组件接口 Mage 的属性 mp 缺席: {}",
+        result.stream_hex
+    );
+}
+
+/// typesXml 非空但无根 → 整段跳过(402 臂),仅 phase1 内建序列。
+#[test]
+fn types_xml_no_root_tolerated() {
+    let p = DefMd5Params {
+        types_xml: "zzz".into(),
+        entities_xml: String::new(),
+        defs: HashMap::new(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    let result = compute_def_md5(p).expect("无根 types.xml 宽容");
+    let mut expect = String::new();
+    for i in 1..=21u16 {
+        expect.push_str(&format!("{:02x}{:02x}", i & 0xff, i >> 8));
+    }
+    assert_eq!(result.stream_hex, expect, "无 types.xml 根 → 仅 phase1");
+}
+
+/// 组件槽:Persistent false / Utype 非数字 / 组件脚本域位(base:/cell:)/
+/// has_client 且无 has_base 的 0x009c 派生位。
+#[test]
+fn component_slot_persistent_utype_and_script_domains() {
+    // cell: 脚本 + OWN_CLIENT 属性 → has_cell+has_client 无 has_base → 0x01|0x9c。
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs: [
+            (
+                "Avatar".to_string(),
+                "<root><Components><bag><Type>Inv</Type>\
+                  <Persistent> false </Persistent><Utype> abc </Utype></bag></Components></root>"
+                    .to_string(),
+            ),
+            (
+                "Inv".to_string(),
+                "<root><Properties><p><Type>UINT32</Type><Flags>OWN_CLIENT</Flags></p></Properties></root>"
+                    .to_string(),
+            ),
+        ]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: ["cell:Inv".to_string()].into_iter().collect(),
+    };
+    let result = compute_def_md5(p).expect("组件槽变体可计算");
+    // 槽属性 ctor 的 flags = 0x9d(0x01 cell + 0x9c client 位组)。
+    assert!(
+        result.stream_hex.contains("9d000000"),
+        "0x9d 派生位组缺席: {}",
+        result.stream_hex
+    );
+    // cell:Inv 脚本 → 组件模块 has_cell(register_new_script_module 域位)。
+    assert!(result.stream_hex.contains(&hex(b"Inv")), "组件模块名缺席");
+
+    // base: 脚本域位(986-987)+ BASE_AND_CLIENT 属性 →
+    // has_base(0x20∈0x60 位组)+has_client(0x20∈0xbc 位组),非 has_cell
+    // (0x20∉0x9f 位组)→ f = 0x40|0x20 = 0x60(mod.rs:1003-1012,走
+    // has_client 且 has_base 的 0x0020 分支)。
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Avatar hasCell=\"true\"></Avatar></root>".into(),
+        defs: [
+            (
+                "Avatar".to_string(),
+                "<root><Components><bag><Type>Inv</Type></bag></Components></root>".to_string(),
+            ),
+            (
+                "Inv".to_string(),
+                "<root><Properties><p><Type>UINT32</Type><Flags>BASE_AND_CLIENT</Flags></p></Properties></root>"
+                    .to_string(),
+            ),
+        ]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: ["base:Inv".to_string()].into_iter().collect(),
+    };
+    let result = compute_def_md5(p).expect("base 脚本域位可计算");
+    assert!(
+        result.stream_hex.contains("60000000"),
+        "0x60(base|base_and_client)派生位组缺席: {}",
+        result.stream_hex
     );
 }
