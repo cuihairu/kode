@@ -155,6 +155,7 @@
     "onCommand:kbengine.python.showCallChain",
     "onCommand:kbengine.python.selectInterpreter",
     "onCommand:kbengine.python.createVenv",
+    "onCommand:kbengine.python.showEngineSpi",
     "onCommand:kbengine.hotReload.tempEdit.run",
     "onCommand:kbengine.core.showShadowDiffLog",
     "onCommand:kbengine.source.reveal",
@@ -841,6 +842,10 @@
         "title": "%kbengine.command.python.exportTypeStubs.title%"
       },
       {
+        "command": "kbengine.python.showEngineSpi",
+        "title": "%kbengine.command.python.showEngineSpi.title%"
+      },
+      {
         "command": "kbengine.source.reveal",
         "title": "%kbengine.command.source.reveal.title%"
       },
@@ -1425,6 +1430,32 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "%kbengine.config.codeLens.typesXml.description%"
+        },
+        "kbengine.codeLens.engineSpi": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.codeLens.engineSpi.description%"
+        },
+        "kbengine.configData": {
+          "type": "object",
+          "default": {
+            "enabled": true,
+            "configDirGlobs": [
+              "scripts/config/**",
+              "scripts/data/config/**",
+              "scripts/data/**"
+            ],
+            "configClassPatterns": [
+              "*Config",
+              "*Data"
+            ],
+            "reloadFunctionPatterns": [
+              "reload*",
+              "hotUpdate*"
+            ],
+            "mutationExclude": []
+          },
+          "markdownDescription": "%kbengine.config.configData.description%"
         },
         "kbengine.inlayHints.typeData": {
           "type": "boolean",

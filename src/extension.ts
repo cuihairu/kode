@@ -369,6 +369,17 @@ import { wireTrapLintDiagnostics } from './trapDiagnosticsWiring';
 import { PythonClassIndex } from './pythonClassIndex';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { shouldStartKbEngineIndexing } from './workspaceGate';
+import { EngineSpiCodeLensProvider } from './engineSpiCodeLens';
+import {
+  collectConfigSchema,
+  computeConfigDataMutationFindings,
+  CONFIG_DATA_SETTINGS_DEFAULT,
+  type ConfigDataFinding,
+  type ConfigDataSettings,
+  type ConfigSchemaEntry,
+  type ConfigSourceInput
+} from './configDataMutation';
+import { ConfigSchemaHoverProvider } from './configSchemaHover';
 import { preheatDiscoveryScan } from './workspaceDiscovery';
 import { DiagnosticScheduler, getDiagnosticScheduler } from './diagnosticScheduler';
 import { isTypeRegistryFile } from './semanticIndex';
@@ -1315,6 +1326,29 @@ export function activate(context: vscode.ExtensionContext) {
     registerTypeStorageIndexWatchers(() => typesXmlCodeLensProviderImpl.fireConfigurationChanged())
   );
 
+  // KODE-CFG-015:引擎 SPI 实现函数标注(用户令 2026-11-03「引擎 spi 模式
+  // 需要实现的函数单独的 codelens」):方法名匹配 KODE-CFG-012 的 36 方法表,
+  // 组件角色由配置派生定(entryScripts 脚本根/组件目录段);独立开关
+  // kbengine.codeLens.engineSpi(默认开)。纯标注镜(无跳转目标,引擎侧调用
+  // 点不属本仓),provider 每次调用现读配置,开关变更由配置监听 fire。
+  const engineSpiCodeLensProviderImpl = new EngineSpiCodeLensProvider();
+  const engineSpiCodeLensProvider = vscode.languages.registerCodeLensProvider(
+    pythonDocumentSelector,
+    engineSpiCodeLensProviderImpl
+  );
+  context.subscriptions.push(engineSpiCodeLensProvider, engineSpiCodeLensProviderImpl);
+  // 镜点击仅弹信息(无源码可跳):显示 SPI 身份与触发时机
+  const showEngineSpiCommand = vscode.commands.registerCommand(
+    'kbengine.python.showEngineSpi',
+    (uri?: vscode.Uri, _line?: number, methodName?: string, title?: string) => {
+      void vscode.window.showInformationMessage(
+        title ?? `引擎 SPI · ${methodName ?? ''}`
+      );
+    }
+  );
+  context.subscriptions.push(showEngineSpiCommand);
+
+
   // 生成桩的来源镜(T-05):声明/字段行上方保留原始 types.xml 行,点击
   // 直接跳原始声明;禁止从生成行号反推来源。
   const generatedSourceLensProviderImpl = new GeneratedSourceCodeLensProvider(
@@ -1615,6 +1649,119 @@ export function activate(context: vscode.ExtensionContext) {
         void scanConfigContractDiagnostics();
       }
     }));
+  }
+
+  // KODE-CFG-016 ①意外写检测 + ②强类型 stub 直读(用户令 2026-11-03:Excel
+  // 生成的 py 配置「改错字段要能报」+「强类型 stub 提示」):配置数据只允许
+  // 热更新重载接口修改,业务代码「顺手改配置」是隐蔽事故源。纯逻辑面
+  // computeConfigDataMutationFindings / collectConfigSchema(零 vscode 依赖,
+  // tests/configDataMutation.test.ts 红先行),独立 collection,配置
+  // kbengine.configData(enabled 默认开;configDirGlobs / configClassPatterns /
+  // reloadFunctionPatterns / mutationExclude)。触发面 = 激活首扫 + py 文件
+  // 打开/保存(800ms 防抖合并)+ 配置变更即重算;配置目录文件自身与 reload*/
+  // hotUpdate* 函数体、mutationExclude 白名单内写点不报。
+  const configDataRoot = vscode.workspace.workspaceFolders?.[0];
+  // 门控:仅 .kbengine 托管目录在盘的工作区启用(configContract 同款口径,
+  // 纯 Python/非 KBEngine 工作区零噪声)
+  if (configDataRoot && fs.existsSync(path.join(configDataRoot.uri.fsPath, '.kbengine'))) {
+    const configDataCollection = vscode.languages.createDiagnosticCollection(
+      'kbengine-config-data'
+    );
+    context.subscriptions.push(configDataCollection);
+    let configDataScanSeq = 0;
+    let configDataSchemaCache: readonly ConfigSchemaEntry[] = [];
+    const readConfigDataSettings = (): ConfigDataSettings => {
+      const raw = vscode.workspace
+        .getConfiguration('kbengine')
+        .get<Partial<ConfigDataSettings>>('configData');
+      return { ...CONFIG_DATA_SETTINGS_DEFAULT, ...(raw ?? {}) };
+    };
+    const scanConfigData = async (): Promise<void> => {
+      const seq = ++configDataScanSeq;
+      const settings = readConfigDataSettings();
+      if (!settings.enabled) {
+        configDataCollection.clear();
+        configDataSchemaCache = [];
+        return;
+      }
+      const excluded = '{**/node_modules/**,**/out/**,**/.kbengine/**,**/venv/**,**/.venv/**,**/__pycache__/**}';
+      const uris = await vscode.workspace.findFiles('**/*.py', excluded, 20000);
+      const sources: ConfigSourceInput[] = [];
+      for (const uri of uris) {
+        try {
+          const text = (await vscode.workspace.openTextDocument(uri)).getText();
+          // 相对 posix 路径口径(与 configDirGlobs / mutationExclude 对齐)
+          const rel = path.relative(configDataRoot.uri.fsPath, uri.fsPath).replace(/\\/g, '/');
+          sources.push({ file: rel, text });
+        } catch {
+          // 读不到的文件跳过(不猜)
+        }
+      }
+      const schema = collectConfigSchema(sources, settings);
+      const findings = computeConfigDataMutationFindings(sources, settings);
+      if (seq !== configDataScanSeq) {
+        // 过期扫描(更新的扫描已发起)丢弃,不回写缓存/集合
+        return;
+      }
+      configDataSchemaCache = schema;
+      const byFile = new Map<string, ConfigDataFinding[]>();
+      for (const finding of findings) {
+        const bucket = byFile.get(finding.file);
+        if (bucket) {
+          bucket.push(finding);
+        } else {
+          byFile.set(finding.file, [finding]);
+        }
+      }
+      configDataCollection.clear();
+      for (const [rel, fileFindings] of byFile) {
+        configDataCollection.set(
+          vscode.Uri.joinPath(configDataRoot.uri, rel),
+          fileFindings.map(f => new vscode.Diagnostic(
+            new vscode.Range(f.line, f.character, f.line, f.character + f.baseName.length),
+            f.message,
+            vscode.DiagnosticSeverity.Warning
+          ))
+        );
+      }
+    };
+    // ②强类型 hover:绑定/类名 hover 出直读类型文本;schema 缓存随扫描刷新
+    const configSchemaHoverProviderImpl = new ConfigSchemaHoverProvider(
+      () => configDataSchemaCache
+    );
+    const configSchemaHoverProvider = vscode.languages.registerHoverProvider(
+      pythonDocumentSelector,
+      configSchemaHoverProviderImpl
+    );
+    context.subscriptions.push(configSchemaHoverProvider, configSchemaHoverProviderImpl);
+    // 800ms 防抖:py 打开/保存合并重算(整工作区扫描,避免逐键逐存重算)
+    let configDataTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleConfigDataScan = (): void => {
+      if (configDataTimer !== undefined) {
+        clearTimeout(configDataTimer);
+      }
+      configDataTimer = setTimeout(() => {
+        configDataTimer = undefined;
+        void scanConfigData();
+      }, 800);
+    };
+    context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(document => {
+      if (document.languageId === 'python') {
+        scheduleConfigDataScan();
+      }
+    }));
+    context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(document => {
+      if (document.languageId === 'python') {
+        scheduleConfigDataScan();
+      }
+    }));
+    // 配置变更即重算(含 enabled 开关切换:关→清集合零产出)
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+      if (event.affectsConfiguration('kbengine.configData')) {
+        void scanConfigData();
+      }
+    }));
+    void scanConfigData();
   }
 
   // C-19 交付①:def↔Python 方法一致性诊断。正向 def-method-missing-in-python
@@ -2563,6 +2710,7 @@ export function activate(context: vscode.ExtensionContext) {
       eventCodeLensProviderImpl.fireConfigurationChanged();
       propertyCodeLensProviderImpl.fireConfigurationChanged();
       typesXmlCodeLensProviderImpl.fireConfigurationChanged();
+      engineSpiCodeLensProviderImpl.fireConfigurationChanged();
     }
 
     // 实体面开关变更即时生效(用户令 2026-10-21):hover/补全/跳转各 provider

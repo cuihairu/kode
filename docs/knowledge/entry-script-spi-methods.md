@@ -130,6 +130,20 @@ Repeated methods (shared by several components) appear in each relevant table.
 | `onFinish` | yes | `""` | `clientapp.cpp:303`, `bots.cpp:124` | `Bots::finalise` (`bots.cpp:121`) — client/bots only, not a server callback |
 | `onTargetChanged` | yes | `i` | `clientapp.cpp:458` | client entity target change — client only |
 
+## Count verification (KODE-CFG-015)
+
+A direct re-scan of `getEntryScript()` over `kbe/src` at both pinned commits —
+`c2a3b8f` (this page's source pin) and `3082ab5` (current HEAD) — yields **65
+call sites covering 36 distinct method names**, confirming the tables above.
+The "34" figure that circulated in early planning is a **server-six-component
+scope**: 36 minus the client/bots-only `onFinish` (`bots.cpp:124`,
+`clientapp.cpp:303`) and `onTargetChanged` (`clientapp.cpp:458`). A
+per-component-file scan that misses the shared-header broadcast pair
+`onGlobalData`/`onGlobalDataDel` (`entity_app.h:1308`/`:1290`) also
+undercounts to 34. The authoritative count for the entry-script SPI table is
+36; consumers (KODE-CFG-015 CodeLens) land the full 36 because assets script
+trees include `client/` and `bots/` entry scripts.
+
 ## 36 engine calls vs 36 template functions
 
 The seven official templates define **44 function definitions / 36 distinct

@@ -41,6 +41,8 @@
 | TypesXmlCodeLensProvider | languageProviders.ts:4964 | :1169 | databaseSchema 类型存储使用索引(`onTypeStorageUsageIndexPublished` 订阅;构造零依赖) | fireConfigurationChanged 事件;watcher 归装配线(ARC-005) |
 | GeneratedSourceCodeLensProvider(python 桩) | generatedSourceLenses.ts:11 | :1187 | 构造期快照 buildPythonTypeStubPlan(getCustomTypeInfos) | 纯读 |
 | GeneratedSourceCodeLensProvider(entity 桩) | generatedSourceLenses.ts:11 | :4632 | 构造期快照 buildEntityTypeStubPlan(getAllMappings + getCustomTypeInfos) | 纯读 |
+| EngineSpiCodeLensProvider | engineSpiCodeLens.ts:255 | :1382 | 文档文本模块级行扫描(maskPythonNonCode 掩码 + 缩进栈,KODE-CFG-015)+ configDerive entryScripts 脚本根 | 纯读;fireConfigurationChanged 事件(开关刷新) |
+| ConfigSchemaHoverProvider | configSchemaHover.ts:11 | :1777 | 装配层持有的配置 schema 缓存(collectConfigSchema 字面量直读,随配置数据扫描管线刷新,KODE-CFG-016) | 纯读 |
 | PythonTypeInlayHintsProvider | typeInlayHints.ts:33 | :1197 | EntityMappingManager | 纯读 |
 | KBEngineBuiltinTypeInlayHintsProvider | languageProviders.ts:649 | :1207 | EntityMappingManager | 纯读 |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | 纯读 |

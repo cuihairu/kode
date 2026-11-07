@@ -41,6 +41,8 @@ Registration sites are extension.ts line numbers (2026-11-07 真位复核:KODE-A
 | TypesXmlCodeLensProvider | languageProviders/codeLens.ts:360 | :1359 | databaseSchema type-storage usage index (`onTypeStorageUsageIndexPublished` subscription; zero construction deps) | fireConfigurationChanged event; watcher belongs to the assembly line (ARC-005) |
 | GeneratedSourceCodeLensProvider (python stubs) | generatedSourceLenses.ts:11 | :1187 | Construction-time snapshot buildPythonTypeStubPlan(getCustomTypeInfos) | Pure read |
 | GeneratedSourceCodeLensProvider (entity stubs) | generatedSourceLenses.ts:11 | :4632 | Construction-time snapshot buildEntityTypeStubPlan(getAllMappings + getCustomTypeInfos) | Pure read |
+| EngineSpiCodeLensProvider | engineSpiCodeLens.ts:255 | :1382 | Document-text module-level line scan (maskPythonNonCode mask + indent stack, KODE-CFG-015) + configDerive entryScripts script root | Pure read; fireConfigurationChanged event (switch refresh) |
+| ConfigSchemaHoverProvider | configSchemaHover.ts:11 | :1777 | Assembly-held config schema cache (collectConfigSchema literal read, refreshed by the config-data scan pipeline, KODE-CFG-016) | Pure read |
 | PythonTypeInlayHintsProvider | typeInlayHints.ts:33 | :1197 | EntityMappingManager | Pure read |
 | KBEngineBuiltinTypeInlayHintsProvider | languageProviders/inlay.ts:16 | :1406 | EntityMappingManager | Pure read |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | Pure read |

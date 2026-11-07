@@ -143,6 +143,8 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.codeLens.property` | boolean | `true` | Python 脚本 `self.<属性>` 访问处的属性标记(批135) |
 | `kbengine.codeLens.propertyInitOrder` | boolean | `true` | 实体类 `__init__` 声明处标「属性先于 __init__ 装载 · 来自 <实体>.def」(IDE-PROP-001;引擎在 __init__ 前装载 Entity.def 属性,脚本未必有同名赋值;点击回 def) |
 | `kbengine.codeLens.typesXml` | boolean | `true` | types.xml 类型声明行的落库镜链(批134) |
+| `kbengine.codeLens.engineSpi` | boolean | `true` | 引擎 SPI 实现函数标注镜(CFG-015;方法名匹配 KODE-CFG-012 的 36 方法表,组件角色由配置派生定,如 `onInit` 处标「引擎 SPI · onInit · 首回调」) |
+| `kbengine.configData` | object | 见默认值 | 配置数据保护(CFG-016):`configDirGlobs`(配置目录,默认 `scripts/config/**`、`scripts/data/config/**`、`scripts/data/**`)、`configClassPatterns`(`*Config`/`*Data`)、`reloadFunctionPatterns`(`reload*`/`hotUpdate*`)、`mutationExclude`(有意可写处白名单 glob)、`enabled`(默认 `true`);关闭即零诊断 |
 | `kbengine.inlayHints.typeData` | boolean | `true` | python 侧 `self.<属性>` 访问处以内联提示显示解析到底的类型注解(types.xml 别名逐层解析到底层内建,如 SERVER_ID→int;PYTHON/未知落 Any 不显示);`self.base/cell/client` RPC 调用点每实参后内联显示 def 已声明的形参类型(`: 类型`,只显类型不带合成形参名,只做已声明的,过段闸);数组 `<of>` 元素类型在 `for item in self.<属性>:` 迭代目标与 `x = self.<属性>[i]` 下标赋值局部变量后内联显示(同一解析链),与属性 F12 同一解析索引(批154;解析到底口径 2026-10-29;元素类型 2026-11-04) |
 | `kbengine.inlayHints.defParams` | boolean | `true` | entity 脚本区块(ClientMethods/BaseMethods/CellMethods)内 def 定义点的内联提示:未手写标注的形参名后内联 def 声明的 `<Arg>` 类型(`: 类型`),声明 `<ReturnType>` 时闭括号后内联 `-> 类型`;跨行 def 不出(与调用点 inlay 同规则) |
 | `kbengine.inlayHints.defProps` | boolean | `true` | entity 脚本内整行注释锚 `# kode:props-from-def` 行尾内联渲染该实体 def 根级属性只读清单(逐属性名+解析类型;段悬停给 def 声明出处)。纯渲染层,不写代码,属性唯一事实源仍为 .def |
@@ -666,6 +668,10 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 | `kbengine.httpRequests` | 默认一条停用示例(`enabled: false`) | 否(用户业务接口) | **保留**,示例默认停用不产生副作用 |
 
 计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126 起在此表之外新增 12 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`/`stubSourceMode`、`kbengine.python.enableMroJump`、`kbengine.engineVersion`),均已在总览分区表登记。
+
+## 配置数据保护(configData)
+
+Excel 生成的配置数据(配置目录下的 dict 表与 `*Config`/`*Data` 类)受引擎契约保护:只有热更新重载入口可以修改。`kbengine.configData` 规则把这些配置绑定在豁免面之外的写点(属性/下标/`del`/增强赋值/变异方法)报为 `kbengine.configDataMutation` 诊断;`reload*`/`hotUpdate*` 函数体与 `mutationExclude` 白名单内不报;悬停配置绑定/类名显示直读类型文本。见上方设置总览中 `kbengine.configData` 行。
 
 ## 常见问题
 
