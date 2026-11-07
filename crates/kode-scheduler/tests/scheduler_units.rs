@@ -585,3 +585,159 @@ fn keyed_cancelled_by_newer_version_writes_back_ledger() {
     assert_eq!(d2, EnsureDecision::Recovered, "后续 ensure 走恢复路径");
     assert_ne!(id2, id1, "必须是新任务,而不是死 id 复用");
 }
+
+#[test]
+fn cancel_token_default_matches_new() {
+    // `CancelToken::default()` 走 new 分支:初始未取消,取消后可读。
+    let token = CancelToken::default();
+    assert!(!token.is_cancelled());
+    token.cancel();
+    assert!(token.is_cancelled());
+}
+
+#[test]
+fn scheduler_debug_format_is_human_readable() {
+    let mut s = Scheduler::default();
+    let dbg = format!("{s:?}");
+    assert!(dbg.contains("Scheduler"), "{dbg}");
+    assert!(dbg.contains("clock_ms"), "{dbg}");
+    assert!(dbg.contains("queued"), "{dbg}");
+    // 有内容时如实入镜:入队后 queued=1。
+    s.enqueue(spec(TaskKind::SingleFileUpdate, 1, Some("/a.def"), Some(1)));
+    let dbg2 = format!("{s:?}");
+    assert!(dbg2.contains("queued: 1"), "{dbg2}");
+}
+
+#[test]
+fn task_spec_debug_format_is_human_readable() {
+    let spec = spec(TaskKind::SingleFileUpdate, 2, Some("/a.def"), Some(7));
+    let dbg = format!("{spec:?}");
+    assert!(dbg.contains("TaskSpec"), "{dbg}");
+    assert!(dbg.contains("SingleFileUpdate"), "{dbg}");
+    assert!(dbg.contains("priority: 2"), "{dbg}");
+    assert!(dbg.contains("\"/a.def\""), "{dbg}");
+    assert!(dbg.contains("version: Some(7)"), "{dbg}");
+}
+
+#[test]
+fn storm_buffer_merge_upgrades_priority_and_preserves_newer_version() {
+    let mut b = StormBuffer::new(2);
+    assert!(!b.record("/a.def", 1, 3), "首条入缓冲不合并");
+    assert!(b.record("/a.def", 2, 1), "同文件第二条合并");
+    let ev = b.flush();
+    assert_eq!(ev.len(), 1);
+    assert_eq!(ev[0].file, "/a.def");
+    assert_eq!(ev[0].version, 2, "合并取更高版本");
+    assert_eq!(ev[0].priority, 1, "合并取更低优先级(更紧急)");
+}
+
+#[test]
+fn storm_buffer_merge_never_downgrades_version() {
+    let mut b = StormBuffer::new(2);
+    assert!(!b.record("/a.def", 5, 3));
+    assert!(b.record("/a.def", 4, 1), "旧版本事件仍合并(缓冲只留最新)");
+    let ev = b.flush();
+    assert_eq!(ev[0].version, 5, "版本只升不降");
+    assert_eq!(ev[0].priority, 1);
+}
+
+#[test]
+fn clock_ms_getter_reflects_advance() {
+    let mut s = Scheduler::default();
+    assert_eq!(s.clock_ms(), 0);
+    s.advance_clock(15);
+    assert_eq!(s.clock_ms(), 15);
+    s.advance_clock(5);
+    assert_eq!(s.clock_ms(), 20);
+}
+
+#[test]
+fn run_panic_string_payload_becomes_failed() {
+    let mut s = Scheduler::default();
+    let out = s.enqueue(TaskSpec {
+        kind: TaskKind::SingleFileUpdate,
+        priority: 3,
+        file: None,
+        version: None,
+        target: None,
+        run: Box::new(|_| std::panic::panic_any(String::from("boom-string"))),
+    });
+    assert_eq!(s.pump_once(), Pump::Ran);
+    assert_eq!(
+        s.task_state(out.id),
+        Some(kode_scheduler::TaskState::Failed)
+    );
+    assert_eq!(s.status().failed, 1);
+    assert_eq!(s.status().completed, 0);
+}
+
+#[test]
+fn run_panic_non_string_payload_becomes_failed() {
+    let mut s = Scheduler::default();
+    let out = s.enqueue(TaskSpec {
+        kind: TaskKind::FullReindex,
+        priority: 3,
+        file: None,
+        version: None,
+        target: None,
+        run: Box::new(|_| std::panic::panic_any(42u32)),
+    });
+    assert_eq!(s.pump_once(), Pump::Ran);
+    assert_eq!(
+        s.task_state(out.id),
+        Some(kode_scheduler::TaskState::Failed)
+    );
+    assert_eq!(s.status().failed, 1);
+}
+
+#[test]
+fn drain_budget_exhausted_breaks_after_cooldown_postpone() {
+    let mut s = Scheduler::new(SchedulerOptions {
+        interactive_cooldown_ms: 1000,
+        ..SchedulerOptions::default()
+    });
+    // 交互任务先跑完(冷却计时起点 = 完成时刻 0)。
+    s.enqueue(spec(TaskKind::SingleFileUpdate, 0, None, None));
+    s.drain(0);
+    assert_eq!(s.status().completed, 1);
+    // 后台任务在冷却窗口内被 Postponed(重试窗口 = 剩余 1000ms)。
+    s.enqueue(spec(TaskKind::FullReindex, 3, None, None));
+    assert_eq!(s.pump_once(), Pump::Postponed { retry_in_ms: 1000 });
+    // drain 预算恰等于重试窗口:推进到 deadline 即 break,不再空转。
+    s.drain(1000);
+    assert_eq!(s.clock_ms(), 1000);
+    assert_eq!(s.status().queued, 1, "预算耗尽时后台仍未执行");
+    // 窗口已过,后续 drain 真正执行后台任务。
+    s.drain(200);
+    assert_eq!(s.status().completed, 2);
+    assert_eq!(s.status().queued, 0);
+}
+
+#[test]
+fn task_kind_and_state_as_str_cover_all_variants() {
+    // as_str 是台账/golden 的稳定协议面:全变体逐一核对(含未在既有测试用到的)。
+    assert_eq!(
+        kode_scheduler::TaskKind::DependencyUpdate.as_str(),
+        "dependency-update"
+    );
+    assert_eq!(
+        kode_scheduler::TaskKind::NonInteractive.as_str(),
+        "non-interactive"
+    );
+    assert_eq!(kode_scheduler::TaskState::Running.as_str(), "running");
+}
+
+#[test]
+fn pending_records_sort_by_priority_then_file() {
+    let mut s = Scheduler::default();
+    s.enqueue(spec(TaskKind::SingleFileUpdate, 1, Some("/b.def"), Some(1)));
+    s.enqueue(spec(TaskKind::SingleFileUpdate, 1, Some("/a.def"), Some(2)));
+    s.enqueue(spec(TaskKind::FullReindex, 3, None, None));
+    let recs = s.pending_records();
+    assert_eq!(recs.len(), 3);
+    // 优先级升序;同优先级按文件字典序(/a 在 /b 前)。
+    assert_eq!(recs[0].file.as_deref(), Some("/a.def"));
+    assert_eq!(recs[1].file.as_deref(), Some("/b.def"));
+    assert_eq!(recs[2].priority, 3);
+    assert!(recs[2].file.is_none());
+}

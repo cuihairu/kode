@@ -791,3 +791,44 @@ enum Pick {
     Task(u64),
     Postponed { retry_in_ms: u64 },
 }
+
+#[cfg(test)]
+mod task_debug_tests {
+    use super::*;
+
+    /// Task 是私有类型(不进状态快照),其 Debug 只用于内存面诊断;
+    /// 本单测直接对 Debug 实现做核对:字段名与值如实入镜,未列字段不外泄。
+    #[test]
+    fn task_debug_renders_fields_and_terminal_reason() {
+        let task = Task {
+            id: 5,
+            seq: 3,
+            kind: TaskKind::SingleFileUpdate,
+            priority: 1,
+            file: Some("/a.def".into()),
+            version: Some(7),
+            target: None,
+            state: TaskState::Cancelled,
+            cancel_reason: Some("stale-version".into()),
+            enqueued_ms: 42,
+            run: None,
+            cancel: CancelToken::new(),
+        };
+        let dbg = format!("{task:?}");
+        assert!(dbg.starts_with("Task {"), "{dbg}");
+        assert!(dbg.contains("id: 5"), "{dbg}");
+        assert!(dbg.contains("seq: 3"), "{dbg}");
+        assert!(dbg.contains("SingleFileUpdate"), "{dbg}");
+        assert!(dbg.contains("priority: 1"), "{dbg}");
+        assert!(dbg.contains("file: Some(\"/a.def\")"), "{dbg}");
+        assert!(dbg.contains("version: Some(7)"), "{dbg}");
+        assert!(dbg.contains("state: Cancelled"), "{dbg}");
+        assert!(
+            dbg.contains("cancel_reason: Some(\"stale-version\")"),
+            "{dbg}"
+        );
+        assert!(dbg.contains("enqueued_ms: 42"), "{dbg}");
+        // finish_non_exhaustive:run/cancel 不外泄进诊断输出。
+        assert!(dbg.contains(".."), "{dbg}");
+    }
+}

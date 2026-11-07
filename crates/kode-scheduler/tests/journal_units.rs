@@ -167,6 +167,91 @@ fn crash_recovery_replays_pending_and_drops_stale() {
 }
 
 #[test]
+fn journal_unescapes_newline_roundtrip() {
+    // 换行转义:file 含真实 `\n` → 编码仍单行,解码还原。
+    let dir = temp_dir("newline");
+    let path = dir.join("sched.journal");
+    let rec = record(TaskKind::SingleFileUpdate, 1, Some("/a\nb.def"), None);
+    write_journal(&path, std::slice::from_ref(&rec)).unwrap();
+    let (loaded, corrupt) = load_journal(&path).unwrap();
+    assert_eq!(corrupt, 0);
+    assert_eq!(loaded, vec![rec]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn journal_tolerates_unknown_escape_and_trailing_backslash() {
+    // 崩溃恢复容错:未知转义序列与字段末孤立 `\` 按字面保留,不算损坏。
+    let dir = temp_dir("unknown-esc");
+    let path = dir.join("sched.journal");
+    std::fs::write(
+        &path,
+        "SCHEDJ1\tsingle-file-update\t1\t/a\\xb.def\\\t-\t-\n",
+    )
+    .unwrap();
+    let (loaded, corrupt) = load_journal(&path).unwrap();
+    assert_eq!(corrupt, 0);
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].file.as_deref(), Some("/a\\xb.def\\"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn journal_write_creates_nested_parent_dirs() {
+    // 写台账到不存在的深层父目录:先建目录(幂等),再原子落盘。
+    let dir = temp_dir("nested");
+    let path = dir.join("deep").join("sub").join("sched.journal");
+    assert_eq!(
+        write_journal(&path, &[record(TaskKind::DeleteCleanup, 2, None, None)]).unwrap(),
+        1
+    );
+    let (loaded, corrupt) = load_journal(&path).unwrap();
+    assert_eq!(corrupt, 0);
+    assert_eq!(loaded.len(), 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn journal_load_missing_file_is_empty_and_non_file_path_errors() {
+    let dir = temp_dir("load-errors");
+    // 冷启动:文件不存在 = 空账,不算错误。
+    let missing = dir.join("no-such.journal");
+    let (records, corrupt) = load_journal(&missing).unwrap();
+    assert!(records.is_empty());
+    assert_eq!(corrupt, 0);
+    // 路径是目录:非 NotFound IO 错误如实上抛,不吞。
+    let err = load_journal(&dir).unwrap_err();
+    assert_ne!(err.kind(), std::io::ErrorKind::NotFound);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn journal_blank_lines_are_ignored() {
+    let dir = temp_dir("blank");
+    let path = dir.join("sched.journal");
+    let mut body = String::new();
+    body.push_str(&format!(
+        "{}\n",
+        crate_line(&record(
+            TaskKind::SingleFileUpdate,
+            1,
+            Some("/a.def"),
+            Some(2)
+        ))
+    ));
+    body.push('\n'); // 空行:跳过,不算损坏
+    body.push_str(&format!(
+        "{}\n",
+        crate_line(&record(TaskKind::FullReindex, 3, None, None))
+    ));
+    std::fs::write(&path, body).unwrap();
+    let (loaded, corrupt) = load_journal(&path).unwrap();
+    assert_eq!(corrupt, 0, "空行不算损坏");
+    assert_eq!(loaded.len(), 2);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn journal_tmp_name_has_no_double_dot_kraud24() {
     // 旧实现 with_extension 拼临时名,无扩展名路径实测产出 `journal..tmp`(双点)。
     // 修复后临时名 = 完整路径 + ".tmp"。
