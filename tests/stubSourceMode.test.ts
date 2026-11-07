@@ -199,7 +199,10 @@ describe('端到端导出文件面(IDE-STUB-004):复制路径按档触发', () =
       const written = await exportEntityTypeStubs(manager, realDeps, {
         silent: true,
         listMappings: () => [baseMapping],
-        listCustomTypes: () => []
+        listCustomTypes: () => [],
+        // 不真起 pyright/npx CLI 探测子进程(缺省装配满载下被挤出 5s 超时,
+        // CI flake 源);档位面由本文件读取口用例与 pyrightStubGate.test.ts 专测。
+        pyright: { candidates: [] }
       });
       expect(written, mode).toEqual(['ws']);
       const entities = readFileSync(join(stubDir, 'entity_types.pyi'), 'utf8');

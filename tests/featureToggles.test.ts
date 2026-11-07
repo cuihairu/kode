@@ -359,7 +359,8 @@ describe('kbengine.python.entityStubMethods(entity_types.pyi 方法面)', () => 
       await exportEntityTypeStubs(manager, memoryDeps, {
         silent: true,
         listMappings: () => [baseMapping],
-        listCustomTypes: () => []
+        listCustomTypes: () => [],
+        pyright: { candidates: [] } // 不真起 CLI 探测子进程(满载超时 flake 源)
       });
       const stub = [...written.entries()].find(([file]) => file.endsWith('entity_types.pyi'));
       expect(stub).toBeDefined();

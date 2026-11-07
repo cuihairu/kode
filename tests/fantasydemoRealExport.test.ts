@@ -107,7 +107,8 @@ describe.skipIf(!FANTASY_ROOT || !ENGINE_ROOT)('fantasydemo real export', () => 
     await exportEntityTypeStubs(manager, realDeps, {
       silent: true,
       listMappings: () => mappings,
-      listCustomTypes: () => getCustomTypeInfos(fantasyRoot)
+      listCustomTypes: () => getCustomTypeInfos(fantasyRoot),
+      pyright: { candidates: [] } // 不真起 CLI 探测子进程(满载超时 flake 源)
     });
     const entities = readFileSync(join(stubDir, 'entity_types.pyi'), 'utf8');
     expect(entities).toContain('def cellTick(arg1: int) -> None: ...');
