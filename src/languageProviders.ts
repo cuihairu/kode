@@ -7,14 +7,12 @@ import * as vscode from 'vscode';
 import { documentEventCacheKey, eventDefinitionAt, findEventCallsCached } from './eventApi';
 import { getScanRootForFile, findFilesAcrossRoots } from './scanRoots';
 import { parsePythonFile, linearizeC3, isPythonCodePosition, getPythonBaseExpressionAtPosition, PythonClassIndex, PythonClassDef, PythonMethodLocation } from './pythonClassIndex';
-import { DefDocument, DefElementNode, findAncestorElement, findDeepestElementAtOffset, findTextNodeAtOffset, getDirectChildElement, getDirectChildElements, getElementText, getLineNumberAt, getScalarChildValue, getScalarChildValues, hasTruthyChildTag, parseDefDocument } from './defParser';
+import { DefElementNode, findAncestorElement, findDeepestElementAtOffset, findTextNodeAtOffset, getDirectChildElement, getDirectChildElements, getElementText, getLineNumberAt, getScalarChildValue, getScalarChildValues, hasTruthyChildTag, parseDefDocument } from './defParser';
 import { DEF_METHOD_MISSING_DIAGNOSTIC_CODE, KBENGINE_DEF_METHOD_CONSISTENCY_REVALIDATE_COMMAND, buildMethodStubCode, type MethodStubBody } from './defMethodConsistency';
 import { EntityMappingManager, EntityMethodSection, type DefinitionSymbolIdentity } from './entityMapping';
-import { analyzeEntitiesXml } from './entitiesXmlAnalysis';
-import { getDocumentLines, getOrParseDocumentSync } from './documentStore';
-import { getKodeCoreShadowGate, shadowCompareDefinition, shadowObserveDefDocument } from './kodeCoreShadowFaces';
-import { analyzeDefDocumentInRust, type DefAnalysisFinding } from './defAnalyzer';
-import { buildPythonMethodSkeletonWithTypes, collectDefPythonParityInput, entityNameOfDefFile } from './defPythonParity';
+import { getDocumentLines } from './documentStore';
+import { shadowCompareDefinition } from './kodeCoreShadowFaces';
+import { buildPythonMethodSkeletonWithTypes, entityNameOfDefFile } from './defPythonParity';
 import { buildDefChain } from './defChain';
 import { METHOD_DECLARATION_PATTERN, buildRpcCodeLenses, defaultRpcCodeLensTitle, findPythonMethodDeclarations, RpcMethodHit } from './rpcCodeLens';
 import { buildPropertyCodeLenses, findPythonSelfPropertyAccesses, propertyAccessKey, PropertyCodeLensHit } from './propertyCodeLens';
@@ -49,7 +47,8 @@ import { getEngineVersion } from './engineVersion';
 import { createHoverRequestDeadline, createWaiterUnionToken, raceWithBudget, withInitialScanTimeout } from './hoverBudget';
 import { KBENGINE_SOURCE_REVEAL_COMMAND } from './sourceRevealCommand';
 import { RECEIVER_NONE_DIAGNOSTIC_CODE, buildReceiverNoneGuardEdit, buildReceiverNoneWrapEdit } from './receiverNoneDiagnostics';
-import { ALLOWED_TOP_LEVEL_SECTIONS, CustomTypeResolution, DEF_SYMBOL_SECTIONS, KBEngineSectionName, METHOD_SECTIONS, PROPERTY_SECTIONS, TAG_HOVER_DOCS, createNodeRange, elementFullRange, elementTagRange, getDefNodeAtPosition, getDefNodeAtWord, getLanguageFeatureConfig, getNodeValue, getSectionLabel, getSymbolNodeInfo, isOffsetInsideNodeValue, parseDefAst, pushDiagnosticForNodeValue, toSectionName, visitElementNodes } from './languageProviders/shared';
+import { CustomTypeResolution, DEF_SYMBOL_SECTIONS, KBEngineSectionName, METHOD_SECTIONS, PROPERTY_SECTIONS, TAG_HOVER_DOCS, elementFullRange, elementTagRange, getDefNodeAtPosition, getDefNodeAtWord, getLanguageFeatureConfig, getNodeValue, getSectionLabel, getSymbolNodeInfo, isOffsetInsideNodeValue, parseDefAst, toSectionName } from './languageProviders/shared';
+import { UNKNOWN_TYPE_DIAGNOSTIC_CODE } from './languageProviders/validation';
 
 /**
  * 批159(用户令「hover 还是需要 loading 很久」):同点位并发 hover 各自重跑
@@ -60,20 +59,20 @@ import { ALLOWED_TOP_LEVEL_SECTIONS, CustomTypeResolution, DEF_SYMBOL_SECTIONS, 
  * 错过索引更新,且让缓存命中计数失明。文档编辑(版本变)天然失效;存
  * provider 实例上:生产单实例语义不变,测试逐用例新建 provider 天然隔离。
  */
-const HOVER_MEMO_LIMIT = 256;
+export const HOVER_MEMO_LIMIT = 256;
 
-interface HoverMemoEntry {
+export interface HoverMemoEntry {
   documentVersion: number;
   promise: Promise<vscode.Hover | null>;
   /** IDE-BUD-008:合并请求登记在册等待者(人人取消才取消共享计算) */
   addWaiter(waiterToken: vscode.CancellationToken | undefined): () => void;
 }
 
-function hoverMemoKey(document: vscode.TextDocument, position: vscode.Position): string {
+export function hoverMemoKey(document: vscode.TextDocument, position: vscode.Position): string {
   return `${document.fileName}#${document.version}#${position.line}#${position.character}`;
 }
 
-const TOP_LEVEL_DEF_TAGS = [
+export const TOP_LEVEL_DEF_TAGS = [
   'Parent',
   'Interfaces',
   'Components',
@@ -85,7 +84,7 @@ const TOP_LEVEL_DEF_TAGS = [
   'Volatile'
 ];
 
-const PROPERTY_CHILD_TAGS = [
+export const PROPERTY_CHILD_TAGS = [
   'Type',
   'Flags',
   'Default',
@@ -97,12 +96,12 @@ const PROPERTY_CHILD_TAGS = [
   'Utype'
 ];
 
-const BASE_OR_CELL_METHOD_CHILD_TAGS = ['Arg', 'Utype', 'Exposed'];
-const CLIENT_METHOD_CHILD_TAGS = ['Arg', 'Utype'];
-const DETAIL_LEVEL_TAGS = ['NEAR', 'MEDIUM', 'FAR'];
-const DETAIL_LEVEL_VALUE_TAGS = ['radius', 'hyst'];
-const ENTITY_BASE_DATA_FLAGS = new Set(['BASE', 'BASE_AND_CLIENT']);
-const ENTITY_CELL_DATA_FLAGS = new Set([
+export const BASE_OR_CELL_METHOD_CHILD_TAGS = ['Arg', 'Utype', 'Exposed'];
+export const CLIENT_METHOD_CHILD_TAGS = ['Arg', 'Utype'];
+export const DETAIL_LEVEL_TAGS = ['NEAR', 'MEDIUM', 'FAR'];
+export const DETAIL_LEVEL_VALUE_TAGS = ['radius', 'hyst'];
+export const ENTITY_BASE_DATA_FLAGS = new Set(['BASE', 'BASE_AND_CLIENT']);
+export const ENTITY_CELL_DATA_FLAGS = new Set([
   'CELL_PUBLIC',
   'CELL_PRIVATE',
   'ALL_CLIENTS',
@@ -110,21 +109,21 @@ const ENTITY_CELL_DATA_FLAGS = new Set([
   'OWN_CLIENT',
   'OTHER_CLIENTS'
 ]);
-const ENTITY_CLIENT_DATA_FLAGS = new Set([
+export const ENTITY_CLIENT_DATA_FLAGS = new Set([
   'BASE_AND_CLIENT',
   'ALL_CLIENTS',
   'CELL_PUBLIC_AND_OWN',
   'OWN_CLIENT',
   'OTHER_CLIENTS'
 ]);
-const PROPERTY_SCOPE_LABELS = {
+export const PROPERTY_SCOPE_LABELS = {
   base: 'Base',
   cell: 'Cell',
   client: 'Client'
 } as const;
-type PropertyScope = keyof typeof PROPERTY_SCOPE_LABELS;
+export type PropertyScope = keyof typeof PROPERTY_SCOPE_LABELS;
 
-function createCompletionItems(
+export function createCompletionItems(
   labels: string[],
   kind: vscode.CompletionItemKind
 ): vscode.CompletionItem[] {
@@ -141,7 +140,7 @@ function createCompletionItems(
  * 同规则无提示降级:只出名不带注解(不显 `: Any`)。声明形参名以 def 为
  * 准不可考,统一 argN 与存根生成器同口径。
  */
-function formatDefMethodParameter(
+export function formatDefMethodParameter(
   workspaceRoot: string | undefined,
   arg: string,
   index: number
@@ -159,7 +158,7 @@ function formatDefMethodParameter(
   return `arg${index + 1}: ${annotation}`;
 }
 
-function formatDefMethodSignature(
+export function formatDefMethodSignature(
   workspaceRoot: string | undefined,
   methodName: string,
   declaredArgs?: readonly string[]
@@ -170,7 +169,7 @@ function formatDefMethodSignature(
   return `def ${methodName}(self${parameters.length > 0 ? `, ${parameters.join(', ')}` : ''})`;
 }
 
-function getTextBeforePosition(
+export function getTextBeforePosition(
   document: vscode.TextDocument,
   position: vscode.Position
 ): string {
@@ -178,7 +177,7 @@ function getTextBeforePosition(
   return document.getText(new vscode.Range(start, position));
 }
 
-function getOpenTagStack(text: string): string[] {
+export function getOpenTagStack(text: string): string[] {
   const stack: string[] = [];
   const tagRegex = /<\/?([A-Za-z][\w-]*)[^>]*\/?>/g;
   let match: RegExpExecArray | null;
@@ -205,7 +204,7 @@ function getOpenTagStack(text: string): string[] {
   return stack;
 }
 
-function getDefTagCompletionLabels(
+export function getDefTagCompletionLabels(
   document: vscode.TextDocument,
   position: vscode.Position
 ): string[] {
@@ -272,7 +271,7 @@ function getDefTagCompletionLabels(
  * lineText is the line prefix up to the cursor. Returns the typed prefix
  * inside the open string, or null when not in a target string context.
  */
-function getAddSpaceGeometryStringPrefix(lineText: string): { prefix: string } | null {
+export function getAddSpaceGeometryStringPrefix(lineText: string): { prefix: string } | null {
   const callIdx = lineText.indexOf('addSpaceGeometryMapping');
   if (callIdx < 0) {
     return null;
@@ -534,7 +533,7 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
 }
 
 /** 面属性 → 补全项(label 右列灰字类型(Pylance 同款),detail 面与读写短句,documentation 带引擎注册面取证) */
-function createBuiltinPropertyCompletionItems(
+export function createBuiltinPropertyCompletionItems(
   face: EntityComponentFace | null
 ): vscode.CompletionItem[] {
   return getEntityBuiltinPropertiesForFace(face).map(property => {
@@ -612,7 +611,7 @@ export interface HoverPhaseTimer {
  * 结果尚未产出(未完成)之间一段可确定命中的在途窗口。生产恒 null,零
  * 行为差异;测试方负责释放(惯用法=释放时顺手 setHoverInFlightGateForTests(null),
  * 递归重入即走原路径)。 */
-let hoverInFlightGateForTests: (() => Promise<void>) | null = null;
+export let hoverInFlightGateForTests: (() => Promise<void>) | null = null;
 
 export function setHoverInFlightGateForTests(gate: (() => Promise<void>) | null): void {
   hoverInFlightGateForTests = gate;
@@ -1544,7 +1543,7 @@ export class KBEngineSignatureHelpProvider implements vscode.SignatureHelpProvid
   }
 }
 
-interface SymbolHoverInfo {
+export interface SymbolHoverInfo {
   name: string;
   section: KBEngineSectionName;
   type?: string;
@@ -1626,469 +1625,7 @@ export class KBEngineDefinitionProvider implements vscode.DefinitionProvider {
   }
 }
 
-export function validateDocument(
-  document: vscode.TextDocument,
-  diagnostics: vscode.DiagnosticCollection
-): void {
-  const featureConfig = getLanguageFeatureConfig();
-  if (!featureConfig.enableDiagnostics) {
-    diagnostics.delete(document.uri);
-    return;
-  }
-
-  const diagnosticsList: vscode.Diagnostic[] = [];
-
-  // 批92 性能优化:标量校验与结构校验共用同一次 parseDefAst 结果。
-  // parseDefDocument 对同一段文本是确定性的,原先两阶段各自解析一遍,
-  // 大 .def 文档上纯解析开销翻倍。
-  const ast = parseDefAst(document);
-  validateScalarTagValues(document, diagnosticsList, featureConfig, ast);
-  if (featureConfig.enableStructureDiagnostics) {
-    validateDefStructure(document, diagnosticsList, featureConfig, ast);
-  }
-
-  diagnostics.set(document.uri, diagnosticsList);
-  // Phase2 首片:shadow 双轨对拍(诊断面)+ 语料镜像腿。fire-and-forget,
-  // 只读 diagnosticsList 的可比面,不改 collection 内容。
-  shadowObserveDefDocument(document, diagnosticsList);
-  // Rust lint 注册表消费腿:把 analyzeDef 的分析建议(Rust 面)并集进诊断。
-  // fire-and-forget + 版本护栏 + 默认 ts 模式零开销(见 observeRustDefFindings)。
-  observeRustDefFindings(document, diagnostics);
-}
-
-// Rust lint 注册表消费腿(validateDocument 侧):把 `$/kode/lint/analyzeDef`
-// 的分析建议并集进诊断 collection。只并集 validateDocument 未覆盖的分析
-// 建议码(phantom-type / duplicate-type-tag / heavy-sync-broadcast /
-// redundant-detail-level / invalid-identifier / method-property-collision /
-// engine-limited-name / inherited-name-collision)——结构码(unknown-type-
-// reference / unknown-flag-value / unknown-detail-level / duplicate-definition /
-// missing-flags / missing-type)由 validateDefStructure 现产,重复落会产生
-// 双报。默认 ts 模式(未配 serverPath / backend=ts)零开销直通。
-const RUST_LIVE_MERGE_CODES = new Set<string>([
-  'phantom-type',
-  'duplicate-type-tag',
-  'heavy-sync-broadcast',
-  'redundant-detail-level',
-  'invalid-identifier',
-  'method-property-collision',
-  'engine-limited-name',
-  'inherited-name-collision',
-  // C-19:def↔Python 方法一致性(warning,双向定位 related 面在
-  // mergeRustDefFindings 转 relatedInformation)。
-  'def-method-missing-in-python'
-]);
-
-const toDiagnosticSeverity = (severity: DefAnalysisFinding['severity']): vscode.DiagnosticSeverity =>
-  severity === 'error'
-    ? vscode.DiagnosticSeverity.Error
-    : severity === 'warning'
-      ? vscode.DiagnosticSeverity.Warning
-      : vscode.DiagnosticSeverity.Information;
-
-function observeRustDefFindings(
-  document: vscode.TextDocument,
-  diagnostics: vscode.DiagnosticCollection
-): void {
-  const gate = getKodeCoreShadowGate();
-  if (!gate || gate.mode === 'ts') {
-    return;
-  }
-  const version = document.version;
-  // C-19:def↔Python 一致性入参按标准布局现采(打开缓冲区优先读盘);
-  // 非 scripts/entity_defs 布局 → null,Rust parity 规则零产出。采集失败
-  // (盘上异常)不阻断诊断面,回落零产出(Rust 规则不核验)。
-  let pythonParity: unknown;
-  try {
-    pythonParity = collectDefPythonParityInput(document.fileName) ?? undefined;
-  } catch {
-    pythonParity = undefined;
-  }
-  // 空 inheritedNames:活校验侧只并集单文件分析建议,继承链同名由批分析命令
-  // (kbengine.def.analyze)承担,避免每次按键做祖先闭包磁盘 I/O。
-  void analyzeDefDocumentInRust(document.getText(), new Map(), { pythonParity })
-    .then(findings => {
-      if (!findings || findings.length === 0) {
-        return;
-      }
-      if (document.version !== version) {
-        return;
-      }
-      const existing = diagnostics.get(document.uri) ?? [];
-      const rustDiags = mergeRustDefFindings(document, findings, existing);
-      if (rustDiags.length > 0) {
-        diagnostics.set(document.uri, [...existing, ...rustDiags]);
-      }
-    })
-    .catch(() => undefined);
-}
-
-function mergeRustDefFindings(
-  document: vscode.TextDocument,
-  findings: DefAnalysisFinding[],
-  existing: readonly vscode.Diagnostic[]
-): vscode.Diagnostic[] {
-  // 已存在同位置同文案的诊断不重复落(跨响应幂等:重入/重复 probe 不叠加)。
-  const existingKeys = new Set(
-    existing.map(
-      diag =>
-        `${diag.range.start.line}:${diag.range.start.character}:${diag.message}`
-    )
-  );
-  const seen = new Set<string>();
-  const out: vscode.Diagnostic[] = [];
-  for (const item of findings) {
-    if (!RUST_LIVE_MERGE_CODES.has(item.check)) {
-      continue;
-    }
-    const key = `${item.check}:${item.offset}:${item.message}`;
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    const start = document.positionAt(item.offset);
-    const end = document.positionAt(item.offset + item.length);
-    const diag = new vscode.Diagnostic(
-      new vscode.Range(start, end),
-      item.message,
-      toDiagnosticSeverity(item.severity)
-    );
-    // C-19 双向定位:目标 Python 文件 + 类名 → relatedInformation
-    // (vscode 面;CodeAction 经同一面定位目标文件,无需重新解析)。
-    if (item.related) {
-      const relatedUri = vscode.Uri.file(item.related.file);
-      diag.relatedInformation = [
-        new vscode.DiagnosticRelatedInformation(
-          new vscode.Location(relatedUri, new vscode.Range(0, 0, 0, 0)),
-          item.related.className
-        )
-      ];
-    }
-    const positionKey = `${diag.range.start.line}:${diag.range.start.character}:${diag.message}`;
-    if (existingKeys.has(positionKey)) {
-      continue;
-    }
-    out.push(diag);
-  }
-  return out;
-}
-
-// entities.xml 清单诊断(source-analysis 设计 D3):同名重复条目引擎按首条
-// 静默合并(entitydef.cpp:255-262),这里是文档事件联动的落 collection 面,
-// 开关与 validateDocument 共用 kbengine.enableDiagnostics。
-// PR6 A6-3:分析结果经 documentStore 同步解析缓存命名空间化版本化 ——
-// 同版本重复校验直接命中缓存(不重跑 analyzeEntitiesXml),版本前进由
-// 快照机制整体作废旧槽位;无版本替身每次现算(与旧行为同价)。
-export function validateEntitiesXmlDocument(
-  document: vscode.TextDocument,
-  diagnostics: vscode.DiagnosticCollection
-): void {
-  const featureConfig = getLanguageFeatureConfig();
-  if (!featureConfig.enableDiagnostics) {
-    diagnostics.delete(document.uri);
-    return;
-  }
-
-  const { result: findings } = getOrParseDocumentSync(
-    document,
-    text => analyzeEntitiesXml(text),
-    'entities-analysis'
-  );
-
-  diagnostics.set(
-    document.uri,
-    findings.map(item => {
-      const start = document.positionAt(item.offset);
-      const end = document.positionAt(item.offset + item.length);
-      return new vscode.Diagnostic(
-        new vscode.Range(start, end),
-        item.message,
-        vscode.DiagnosticSeverity.Warning
-      );
-    })
-  );
-}
-
-function validateScalarTagValues(
-  document: vscode.TextDocument,
-  diagnosticsList: vscode.Diagnostic[],
-  featureConfig: ReturnType<typeof getLanguageFeatureConfig>,
-  ast: DefDocument | null
-): void {
-  if (!ast?.root) {
-    return;
-  }
-
-  const knownTypeContext = getKnownTypeContext(document);
-  const knownFlags = new Set(KBENGINE_FLAGS.map(flag => flag.name));
-  const knownLevels = new Set(DETAIL_LEVELS);
-
-  visitElementNodes(ast.root, node => {
-    if (node.name === 'Type') {
-      validateTypeNode(document, diagnosticsList, node, knownTypeContext, featureConfig);
-      return;
-    }
-
-    if (node.name === 'Flags') {
-      const rawValue = getNodeValue(node);
-      const normalizedValue = rawValue.toUpperCase();
-      if (featureConfig.diagnosticsCheckUnknownFlags && normalizedValue) {
-        // KR-AUD-84:引擎按单个映射值整串查表,不拆词。'|' 组合形态单独出
-        // 「引擎不支持」诊断(与 Rust UnknownFlagValueRule 同文案)。
-        if (rawValue.includes('|')) {
-          pushDiagnosticForNodeValue(
-            document,
-            diagnosticsList,
-            node,
-            rawValue,
-            `未知的 KBEngine Flags 值: ${rawValue}。引擎按单个映射值整串查表，不支持 '|' 组合形态；请改为单个词表值。`,
-            vscode.DiagnosticSeverity.Error
-          );
-        } else if (!knownFlags.has(normalizedValue)) {
-          pushDiagnosticForNodeValue(
-            document,
-            diagnosticsList,
-            node,
-            rawValue,
-            `未知的 KBEngine Flags 值: ${rawValue}。KBEngine 源码按单个映射值解析 <Flags>，不支持此写法。`,
-            vscode.DiagnosticSeverity.Error
-          );
-        }
-      }
-      return;
-    }
-
-    if (node.name === 'DetailLevel') {
-      const value = getNodeValue(node);
-      if (featureConfig.diagnosticsCheckUnknownDetailLevels && value && !knownLevels.has(value)) {
-        pushDiagnosticForNodeValue(
-          document,
-          diagnosticsList,
-          node,
-          value,
-          `未知的 DetailLevel: ${value}`,
-          vscode.DiagnosticSeverity.Error
-        );
-      }
-    }
-  });
-}
-
-function validateDefStructure(
-  document: vscode.TextDocument,
-  diagnosticsList: vscode.Diagnostic[],
-  featureConfig: ReturnType<typeof getLanguageFeatureConfig>,
-  ast: DefDocument | null
-): void {
-  const root = ast?.root;
-  if (!root) {
-    return;
-  }
-
-  for (const sectionNode of getDirectChildElements(root)) {
-    const sectionName = toSectionName(sectionNode.name);
-    if (!sectionName || !ALLOWED_TOP_LEVEL_SECTIONS.has(sectionName)) {
-      continue;
-    }
-
-    validateSectionStructure(document, diagnosticsList, sectionNode, sectionName, featureConfig);
-  }
-}
-
-// IDE-NAV-013:未注册类型诊断的稳定 code——Code Action 侧据此对账候选,
-// 不靠 message 字串匹配(文案演进不动契约)。
-export const UNKNOWN_TYPE_DIAGNOSTIC_CODE = 'kbengine.unknownType';
-
-function validateTypeNode(
-  document: vscode.TextDocument,
-  diagnosticsList: vscode.Diagnostic[],
-  typeNode: DefElementNode,
-  knownTypeContext: KnownTypeContext,
-  featureConfig: ReturnType<typeof getLanguageFeatureConfig>
-): void {
-  const value = getNodeValue(typeNode);
-  if (!value || getDirectChildElements(typeNode).length > 0 || !featureConfig.diagnosticsCheckUnknownTypes) {
-    return;
-  }
-
-  const typeCandidateRegex = /\b[A-Za-z_][A-Za-z0-9_]*\b/g;
-  let typeCandidateMatch: RegExpExecArray | null;
-
-  while ((typeCandidateMatch = typeCandidateRegex.exec(value)) !== null) {
-    const candidate = typeCandidateMatch[0];
-    if (knownTypeContext.builtins.has(candidate) || knownTypeContext.entityTypes.has(candidate)) {
-      continue;
-    }
-
-    const customTypeResolution = resolveCustomTypeReference(document, candidate, knownTypeContext.customTypes);
-    if (customTypeResolution.status === 'resolved' || customTypeResolution.status === 'unverifiable') {
-      continue;
-    }
-
-    if (customTypeResolution.status === 'missingPythonFile') {
-      pushDiagnosticForNodeValue(
-        document,
-        diagnosticsList,
-        typeNode,
-        candidate,
-        `自定义类型 ${candidate} 已在 types.xml 中注册，但未找到对应的 user_type Python 文件，请检查 user_type/${candidate}.py`,
-        vscode.DiagnosticSeverity.Warning
-      );
-      continue;
-    }
-
-    // 不可达(批64 定性):CustomTypeResolutionStatus 共四值,resolved/
-    // unverifiable/missingPythonFile 已在上方三分支 continue 穷尽,能走到此处
-    // 即 missingTypeRegistration。精确单行区间只摘除该 if 的分支条目,
-    // 诊断构造保持被覆盖计入分母。
-    /* istanbul ignore start */
-    if (customTypeResolution.status === 'missingTypeRegistration') {
-    /* istanbul ignore stop */
-      pushDiagnosticForNodeValue(
-        document,
-        diagnosticsList,
-        typeNode,
-        candidate,
-        `自定义类型 ${candidate} 未在 types.xml 中注册，请先在 types.xml 注册后再引用`,
-        vscode.DiagnosticSeverity.Error,
-        UNKNOWN_TYPE_DIAGNOSTIC_CODE
-      );
-    }
-  }
-}
-
-function validateSectionStructure(
-  document: vscode.TextDocument,
-  diagnosticsList: vscode.Diagnostic[],
-  sectionNode: DefElementNode,
-  sectionName: KBEngineSectionName,
-  featureConfig: ReturnType<typeof getLanguageFeatureConfig>
-): void {
-  const seenSymbols = new Map<string, vscode.Range>();
-  const seenPropertyScopes = new Map<string, Map<PropertyScope, vscode.Range>>();
-
-  for (const symbolNode of getDirectChildElements(sectionNode)) {
-    const symbolRange = createNodeRange(document, symbolNode);
-    if (featureConfig.diagnosticsCheckDuplicateDefinitions && sectionName === 'Properties') {
-      const propertyScopes = getPropertyFlagScopes(symbolNode);
-      const seenScopes = seenPropertyScopes.get(symbolNode.name) || new Map<PropertyScope, vscode.Range>();
-
-      for (const scope of propertyScopes) {
-        const existing = seenScopes.get(scope);
-        if (!existing) {
-          continue;
-        }
-
-        diagnosticsList.push(new vscode.Diagnostic(
-          symbolRange,
-          `${getSectionLabel(sectionName)}中存在重复定义: ${symbolNode.name} (${describePropertyScope(scope)})`,
-          vscode.DiagnosticSeverity.Warning
-        ));
-        diagnosticsList.push(new vscode.Diagnostic(
-          existing,
-          `${symbolNode.name} 在 ${getSectionLabel(sectionName)} 中已在 ${describePropertyScope(scope)} 作用域定义`,
-          vscode.DiagnosticSeverity.Information
-        ));
-      }
-
-      for (const scope of propertyScopes) {
-        if (!seenScopes.has(scope)) {
-          seenScopes.set(scope, symbolRange);
-        }
-      }
-
-      if (propertyScopes.length > 0) {
-        seenPropertyScopes.set(symbolNode.name, seenScopes);
-      }
-    } else {
-      const existing = seenSymbols.get(symbolNode.name);
-      if (featureConfig.diagnosticsCheckDuplicateDefinitions && existing) {
-        diagnosticsList.push(new vscode.Diagnostic(
-          symbolRange,
-          `${getSectionLabel(sectionName)}中存在重复定义: ${symbolNode.name}`,
-          vscode.DiagnosticSeverity.Warning
-        ));
-        diagnosticsList.push(new vscode.Diagnostic(
-          existing,
-          `${symbolNode.name} 在 ${getSectionLabel(sectionName)} 中已定义`,
-          vscode.DiagnosticSeverity.Information
-        ));
-      } else {
-        seenSymbols.set(symbolNode.name, symbolRange);
-      }
-    }
-
-    if (sectionName === 'Properties' && featureConfig.diagnosticsCheckMissingPropertyFields) {
-      validatePropertyStructure(document, diagnosticsList, symbolNode);
-    }
-  }
-}
-
-function validatePropertyStructure(
-  document: vscode.TextDocument,
-  diagnosticsList: vscode.Diagnostic[],
-  propertyNode: DefElementNode
-): void {
-  const propertyRange = createNodeRange(document, propertyNode);
-
-  if (!getDirectChildElement(propertyNode, 'Type')) {
-    diagnosticsList.push(new vscode.Diagnostic(
-      propertyRange,
-      `属性 ${propertyNode.name} 缺少 <Type> 定义`,
-      vscode.DiagnosticSeverity.Error
-    ));
-  }
-
-  if (!getDirectChildElement(propertyNode, 'Flags')) {
-    diagnosticsList.push(new vscode.Diagnostic(
-      propertyRange,
-      `属性 ${propertyNode.name} 缺少 <Flags> 定义`,
-      vscode.DiagnosticSeverity.Error
-    ));
-  }
-}
-
-function getPropertyFlagScopes(propertyNode: DefElementNode): PropertyScope[] {
-  const flags = normalizePropertyFlag(getScalarChildValue(propertyNode, 'Flags'));
-  if (!flags) {
-    return [];
-  }
-
-  const scopes: PropertyScope[] = [];
-  if (ENTITY_BASE_DATA_FLAGS.has(flags)) {
-    scopes.push('base');
-  }
-  if (ENTITY_CELL_DATA_FLAGS.has(flags)) {
-    scopes.push('cell');
-  }
-  if (ENTITY_CLIENT_DATA_FLAGS.has(flags)) {
-    scopes.push('client');
-  }
-  return scopes;
-}
-
-function normalizePropertyFlag(flags: string | undefined): string | undefined {
-  const normalizedFlag = flags?.trim().toUpperCase();
-  if (!normalizedFlag) {
-    return undefined;
-  }
-
-  switch (normalizedFlag) {
-    case 'CELL_AND_CLIENT':
-      return 'CELL_PUBLIC_AND_OWN';
-    case 'CELL_AND_CLIENTS':
-      return 'ALL_CLIENTS';
-    case 'CELL_AND_OTHER_CLIENTS':
-      return 'OTHER_CLIENTS';
-    default:
-      return normalizedFlag;
-  }
-}
-
-function describePropertyScope(scope: PropertyScope): string {
-  return PROPERTY_SCOPE_LABELS[scope];
-}
-
-function getSymbolHover(
+export function getSymbolHover(
   document: vscode.TextDocument,
   position: vscode.Position,
   word: string
@@ -2161,7 +1698,7 @@ function getSymbolHover(
  * 引擎 DDL 片段 + 具体大小限制;库表名转义,粘贴进外部 MySQL 客户端即用)。
  * 非持久属性无目标返回 null,悬停不显示该行。
  */
-function describePropertyDatabaseStorageHover(
+export function describePropertyDatabaseStorageHover(
   document: vscode.TextDocument,
   propertyName: string
 ): string | null {
@@ -2173,7 +1710,7 @@ function describePropertyDatabaseStorageHover(
   );
 }
 
-function createHookHover(hook: import('./hooks').KBEngineHook): vscode.Hover {
+export function createHookHover(hook: import('./hooks').KBEngineHook): vscode.Hover {
   const markdown = new vscode.MarkdownString();
   markdown.appendMarkdown(`**${hook.name}** - ${vscode.l10n.t(HOOK_CATEGORY_NAMES[hook.category])}\n\n`);
   markdown.appendMarkdown(`${hook.description}\n\n`);
@@ -2207,7 +1744,7 @@ function createHookHover(hook: import('./hooks').KBEngineHook): vscode.Hover {
  * Sources: baseapp/Entity.md:144; cellappmgr.cpp:348-351 ((index-1)%size);
  * baseapp.cpp:2473-2479 (0 => load balancer).
  */
-function createCellappIndexHover(word: string): vscode.Hover | null {
+export function createCellappIndexHover(word: string): vscode.Hover | null {
   if (word !== 'cellappIndex' && word !== 'createCellEntityInNewSpace') {
     return null;
   }
@@ -2228,7 +1765,7 @@ function createCellappIndexHover(word: string): vscode.Hover | null {
 }
 
 /** SP-1: entrance script (kbemain) module-level SPI hover - no self, scoped by component entry path */
-function createEntryHookHover(hook: import('./entryHooks').KBEngineEntryHook): vscode.Hover {
+export function createEntryHookHover(hook: import('./entryHooks').KBEngineEntryHook): vscode.Hover {
   const markdown = new vscode.MarkdownString();
   markdown.appendMarkdown(`**${hook.name}** - Entry Script (${hook.component})\n\n`);
   markdown.appendMarkdown(`${hook.description}\n\n`);
@@ -2246,7 +1783,7 @@ function createEntryHookHover(hook: import('./entryHooks').KBEngineEntryHook): v
 }
 
 /** SP-2: kbe/KBEngine module symbol hover - knowledge summary + typings anchor */
-function createKbeSymbolHover(entry: import('./kbeModuleIndex').KbeSymbolEntry): vscode.Hover {
+export function createKbeSymbolHover(entry: import('./kbeModuleIndex').KbeSymbolEntry): vscode.Hover {
   const markdown = new vscode.MarkdownString();
   const language = vscode.env.language;
   markdown.appendMarkdown(`**${entry.name}** - ${entry.signature}\n\n`);
@@ -2259,7 +1796,7 @@ function createKbeSymbolHover(entry: import('./kbeModuleIndex').KbeSymbolEntry):
   return new vscode.Hover(markdown);
 }
 
-function resolveUserTypeContractSection(
+export function resolveUserTypeContractSection(
   document: vscode.TextDocument,
   customTypeInfo: NonNullable<ReturnType<typeof findCustomTypeInfo>>
 ): string | null {
@@ -2277,7 +1814,7 @@ function resolveUserTypeContractSection(
   return renderUserTypeContractHoverSection(status);
 }
 
-function getCustomTypeHover(
+export function getCustomTypeHover(
   document: vscode.TextDocument,
   position: vscode.Position,
   word: string
@@ -2303,7 +1840,7 @@ function getCustomTypeHover(
 // 批134:types.xml 类型声明行悬停的落库形态段。形态判定走 schema 构建
 // 器的别名/列展开语义(getTypeStorageShape 与引擎装载同源),这里把形态
 // 翻成说明文字;悬停的就是 types.xml 本体,直接按文档路径解析
-function getTypeStorageShapeMarkdown(document: vscode.TextDocument, word: string): string | null {
+export function getTypeStorageShapeMarkdown(document: vscode.TextDocument, word: string): string | null {
   const shapeLines = describeTypeStorageShape(getTypeStorageShape(document.fileName, word));
   return `**落库形态**:\n${shapeLines.map(line => `- ${line}`).join('\n')}\n\n`;
 }
@@ -2338,7 +1875,7 @@ export function describeTypeStorageShape(shape: TypeStorageShape): string[] {
   return ['未知类型，引擎装载 types.xml 会失败'];
 }
 
-function describeTypeStorageElement(element: TypeStorageShape): string {
+export function describeTypeStorageElement(element: TypeStorageShape): string {
   if (element.kind === 'builtin') {
     return `\`sm_value\`${element.columnType ? `（\`${element.columnType}\`）` : ''}`;
   }
@@ -2356,7 +1893,7 @@ function describeTypeStorageElement(element: TypeStorageShape): string {
 // types.xml implementedBy 反向跳转提示(python 侧):光标在被引用符号上时
 // 给出引用方与落点,点击跳转(F12/Ctrl+点击)走 PythonDefinitionProvider
 // 的反向链,提示与跳转同一套解析,不另起一套
-function getImplementedByReverseHover(
+export function getImplementedByReverseHover(
   document: vscode.TextDocument,
   position: vscode.Position,
   word: string
@@ -2386,7 +1923,7 @@ function getImplementedByReverseHover(
   return new vscode.Hover(markdown);
 }
 
-function getTypeValueHover(
+export function getTypeValueHover(
   document: vscode.TextDocument,
   position: vscode.Position,
   word: string
@@ -2419,7 +1956,7 @@ function getTypeValueHover(
   return null;
 }
 
-function createCustomTypeHover(
+export function createCustomTypeHover(
   customTypeInfo: NonNullable<ReturnType<typeof findCustomTypeInfo>>,
   summary: string,
   shapeMarkdown: string | null = null,
@@ -2461,7 +1998,7 @@ function createCustomTypeHover(
   return new vscode.Hover(markdown);
 }
 
-function createDefinitionReferenceHover(
+export function createDefinitionReferenceHover(
   name: string,
   summary: string,
   filePath: string,
@@ -2479,7 +2016,7 @@ function createDefinitionReferenceHover(
   return new vscode.Hover(markdown);
 }
 
-function getEntityRegistrationHover(
+export function getEntityRegistrationHover(
   document: vscode.TextDocument,
   position: vscode.Position,
   word: string
@@ -2518,7 +2055,7 @@ function getEntityRegistrationHover(
 // 清单序号行(source-analysis 设计 D3):引擎按 entities.xml 子节点顺序
 // 分配 utype(entitydef.cpp:253-265、2382-2396),注册快照保持清单序,
 // 首次出现位置即序号(同名重复引擎按首条合并,重复条目另有诊断提示)。
-function getEntityUtypeLine(
+export function getEntityUtypeLine(
   document: vscode.TextDocument,
   entityName: string
 ): string | null {
@@ -2541,7 +2078,7 @@ function getEntityUtypeLine(
 // 递归 + interfaces/ 平铺 + components/ 挂接,与引擎归并口径一致
 // (entitydef.cpp:890-924、551-639、642-771)。引擎 loadParentClass 未见
 // 防环,buildDefChain 带 visited 截断并如实标注。
-function getDefChainHover(
+export function getDefChainHover(
   document: vscode.TextDocument,
   position: vscode.Position
 ): vscode.Hover | null {
@@ -2590,7 +2127,7 @@ function getDefChainHover(
   return new vscode.Hover(markdown);
 }
 
-function getRegisteredEntityInfo(
+export function getRegisteredEntityInfo(
   document: vscode.TextDocument,
   entityName: string
 ) {
@@ -2602,7 +2139,7 @@ function getRegisteredEntityInfo(
   return getRegisteredEntities(workspaceRoot).find(entity => entity.name === entityName) || null;
 }
 
-function getEntityRuntimeHoverLines(
+export function getEntityRuntimeHoverLines(
   document: vscode.TextDocument,
   entityName: string
 ): string[] {
@@ -2661,7 +2198,7 @@ function getEntityRuntimeHoverLines(
   return extraLines;
 }
 
-function resolveCustomTypeReference(
+export function resolveCustomTypeReference(
   document: vscode.TextDocument,
   candidate: string,
   registeredCustomTypes?: Set<string>
@@ -2705,7 +2242,7 @@ function resolveCustomTypeReference(
   return { status: 'resolved' };
 }
 
-function findEnclosingSymbol(
+export function findEnclosingSymbol(
   document: vscode.TextDocument,
   position: vscode.Position,
   word: string
@@ -2719,7 +2256,7 @@ function findEnclosingSymbol(
   return buildSymbolHoverInfo(info.section, info.symbolNode);
 }
 
-function findEntityDefinitionInDef(
+export function findEntityDefinitionInDef(
   document: vscode.TextDocument,
   position: vscode.Position,
   word: string,
@@ -2828,7 +2365,7 @@ function findEntityDefinitionInDef(
 // 文件相对(def 反推)与工作区布局(文档所属根 + 其余工作区根,2026-10-12
 // 多根自动寻找同口径)两级推断的全部候选脚本位置;路径在
 // 工作区根下时按工作区相对展示,否则绝对路径。
-function describeExpectedScriptPaths(
+export function describeExpectedScriptPaths(
   document: vscode.TextDocument,
   entityName: string,
   roles: Array<'base' | 'cell' | 'client'>
@@ -2870,7 +2407,7 @@ function describeExpectedScriptPaths(
   return shown;
 }
 
-function formatWorkspaceRelativePath(candidate: string, workspaceRoot: string | null): string {
+export function formatWorkspaceRelativePath(candidate: string, workspaceRoot: string | null): string {
   if (workspaceRoot && candidate.startsWith(`${workspaceRoot}${path.sep}`)) {
     return path.relative(workspaceRoot, candidate);
   }
@@ -2879,7 +2416,7 @@ function formatWorkspaceRelativePath(candidate: string, workspaceRoot: string | 
 
 // 根修令③:段标签悬停附带本工程的真实实现解析——命中给实际脚本路径,
 // 未命中列全部期望位置,不给花括号模板。
-function describeImplementationForHover(
+export function describeImplementationForHover(
   document: vscode.TextDocument,
   sectionWord: string
 ): string | null {
@@ -2907,7 +2444,7 @@ function describeImplementationForHover(
 // 根修令④:脚本确实不存在时的可跳落点——实体在 entities.xml 的声明行
 // 优先(注册事实所在,def 反推与工作区布局两级各取一次),否则同名 def
 // (即当前文档)首行。
-function findEntityDeclarationLine(xmlPath: string, entityName: string): number {
+export function findEntityDeclarationLine(xmlPath: string, entityName: string): number {
   if (!/^[A-Za-z_]\w*$/.test(entityName)) {
     return -1;
   }
@@ -2915,7 +2452,7 @@ function findEntityDeclarationLine(xmlPath: string, entityName: string): number 
   return readWorkspaceTextLines(xmlPath).findIndex(line => pattern.test(line));
 }
 
-function findRegistryFallbackLocation(
+export function findRegistryFallbackLocation(
   document: vscode.TextDocument,
   entityName: string
 ): vscode.Location {
@@ -2949,7 +2486,7 @@ function findRegistryFallbackLocation(
   return new vscode.Location(document.uri, new vscode.Position(0, 0));
 }
 
-function findDatabaseSchemaDefinition(
+export function findDatabaseSchemaDefinition(
   document: vscode.TextDocument,
   position: vscode.Position
 ): vscode.Location | null {
@@ -2975,7 +2512,7 @@ function findDatabaseSchemaDefinition(
   );
 }
 
-function findDatabaseSchemaLocationFromDef(
+export function findDatabaseSchemaLocationFromDef(
   document: vscode.TextDocument,
   position: vscode.Position,
   word: string
@@ -3008,7 +2545,7 @@ function findDatabaseSchemaLocationFromDef(
   );
 }
 
-function buildPropertyPath(symbolNode: DefElementNode): string {
+export function buildPropertyPath(symbolNode: DefElementNode): string {
   const segments: string[] = [];
   let current: DefElementNode | null = symbolNode;
 
@@ -3022,7 +2559,7 @@ function buildPropertyPath(symbolNode: DefElementNode): string {
   return segments.reverse().join('.');
 }
 
-function findTypeValueDefinitionInTypesXml(
+export function findTypeValueDefinitionInTypesXml(
   document: vscode.TextDocument,
   position: vscode.Position,
   word: string
@@ -3034,7 +2571,7 @@ function findTypeValueDefinitionInTypesXml(
   return createDefinitionLocation(document, findTypeValueDefinitionReference(document, word));
 }
 
-function findCustomTypeDefinition(
+export function findCustomTypeDefinition(
   document: vscode.TextDocument,
   position: vscode.Position,
   word: string
@@ -3071,7 +2608,7 @@ function findCustomTypeDefinition(
   );
 }
 
-function findCustomTypeAtPosition(
+export function findCustomTypeAtPosition(
   document: vscode.TextDocument,
   position: vscode.Position,
   word: string
@@ -3115,7 +2652,7 @@ function findCustomTypeAtPosition(
   };
 }
 
-function findCurrentDocumentCustomTypeReference(
+export function findCurrentDocumentCustomTypeReference(
   document: vscode.TextDocument,
   typeName: string
 ): { filePath: string; line: number } | null {
@@ -3146,7 +2683,7 @@ function findCurrentDocumentCustomTypeReference(
   };
 }
 
-function buildSymbolHoverInfo(
+export function buildSymbolHoverInfo(
   section: KBEngineSectionName,
   symbolNode: DefElementNode
 ): SymbolHoverInfo {
@@ -3167,7 +2704,7 @@ function buildSymbolHoverInfo(
   };
 }
 
-function isPositionInsideTagValue(
+export function isPositionInsideTagValue(
   document: vscode.TextDocument,
   position: vscode.Position,
   tagName: string
@@ -3185,14 +2722,14 @@ function isPositionInsideTagValue(
   return isOffsetInsideNodeValue(candidateNode, document.offsetAt(position));
 }
 
-function isPositionInsideImplementedByValue(
+export function isPositionInsideImplementedByValue(
   document: vscode.TextDocument,
   position: vscode.Position
 ): boolean {
   return isPositionInsideTagValue(document, position, 'implementedBy');
 }
 
-function isPositionInsideChildTag(
+export function isPositionInsideChildTag(
   document: vscode.TextDocument,
   position: vscode.Position,
   parentTagName: string
@@ -3210,12 +2747,12 @@ function isPositionInsideChildTag(
   return !!findAncestorElement(elementNode, parentTagName);
 }
 
-function looksLikeEntityName(word: string): boolean {
+export function looksLikeEntityName(word: string): boolean {
   const builtInTypes = new Set(KBENGINE_TYPES.map(type => type.name));
   return !builtInTypes.has(word) && /^[A-Z][A-Za-z0-9_]*$/.test(word);
 }
 
-function createDefinitionLocation(
+export function createDefinitionLocation(
   document: vscode.TextDocument,
   definitionReference: { filePath: string; line?: number } | null
 ): vscode.Location | null {
@@ -3233,7 +2770,7 @@ function createDefinitionLocation(
   );
 }
 
-function findTypeValueDefinitionReference(
+export function findTypeValueDefinitionReference(
   document: vscode.TextDocument,
   word: string
 ): { filePath: string; line?: number } | null {
@@ -3260,7 +2797,7 @@ function findTypeValueDefinitionReference(
   return null;
 }
 
-function findDefinitionReferenceInDef(
+export function findDefinitionReferenceInDef(
   document: vscode.TextDocument,
   position: vscode.Position,
   word: string
@@ -3297,7 +2834,7 @@ function findDefinitionReferenceInDef(
   return null;
 }
 
-function findDefSymbolInfo(
+export function findDefSymbolInfo(
   document: vscode.TextDocument,
   position: vscode.Position,
   word: string
@@ -3315,12 +2852,12 @@ function findDefSymbolInfo(
 // 保存编辑)时按缓冲内容定行,方法在脏缓冲里挪行后 F12 落缓冲新行;未
 // 打开时回落磁盘直读(批110 既有口径)。放弃修改后缓冲内容回到磁盘版
 // (无论文档是否仍驻留宿主工作集),落点随之恢复磁盘位。
-function readScriptLinesForNavigation(scriptPath: string): string[] {
+export function readScriptLinesForNavigation(scriptPath: string): string[] {
   const openDocument = vscode.workspace.textDocuments.find(doc => doc.fileName === scriptPath);
   return openDocument ? openDocument.getText().split('\n') : readWorkspaceTextLines(scriptPath);
 }
 
-const METHOD_SECTION_SCRIPT_ROLES: Partial<Record<KBEngineSectionName, 'base' | 'cell' | 'client'>> = {
+export const METHOD_SECTION_SCRIPT_ROLES: Partial<Record<KBEngineSectionName, 'base' | 'cell' | 'client'>> = {
   BaseMethods: 'base',
   CellMethods: 'cell',
   ClientMethods: 'client'
@@ -3334,7 +2871,7 @@ const METHOD_SECTION_SCRIPT_ROLES: Partial<Record<KBEngineSectionName, 'base' | 
 // 角色脚本 → 接口 def 的 scripts/interfaces/ 脚本 → <Parent> 链各层角色
 // 脚本(组件 def 的 Parent 在 components/ 内解析,接口 def 不跟随
 // Parent,口径同 collectMethodCandidateScripts)。
-function findPropertyScriptLocationInDef(document: vscode.TextDocument): vscode.Location | null {
+export function findPropertyScriptLocationInDef(document: vscode.TextDocument): vscode.Location | null {
   const entityName = path.basename(document.fileName, '.def');
 
   const candidateScripts = collectPropertyCandidateScripts(document);
@@ -3384,7 +2921,7 @@ export function resolvePropertyLandingLine(lines: string[], entityName: string):
 // 属性候选脚本闭包:结构同 collectMethodCandidateScripts(方法实现候选),
 // 差别只在接口 def 只取 scripts/interfaces/<接口名>.py、不跟随 Parent,
 // 且每层 def 按 base→cell→client 全角色入队(属性不区分方法段角色)。
-function collectPropertyCandidateScripts(document: vscode.TextDocument): string[] {
+export function collectPropertyCandidateScripts(document: vscode.TextDocument): string[] {
   const candidates: string[] = [];
   const seenScripts = new Set<string>();
   const seenDefs = new Set<string>();
@@ -3445,7 +2982,7 @@ function collectPropertyCandidateScripts(document: vscode.TextDocument): string[
 // 接口脚本 → 父 def 角色脚本 → 父 def 接口脚本 → 逐级上溯。接口 def 不跟随
 // Parent(引擎 loadInterfaces 不读 Parent);组件 def 的 Parent 在 components/
 // 目录内解析(与 defRenamer 装载口径一致);见环即止(有限 def 集必终止)。
-function collectMethodCandidateScripts(
+export function collectMethodCandidateScripts(
   document: vscode.TextDocument,
   role: 'base' | 'cell' | 'client'
 ): string[] {
@@ -3510,7 +3047,7 @@ function collectMethodCandidateScripts(
 // defs 目录找同名 def(2026-10-12 用户令:非候选布局如 server_assets 的
 // Parent 链不再因工作区布局探测落空而断),再回落工作区布局。不存在返回
 // null(悬空引用不产生候选)。
-function findParentDefPath(
+export function findParentDefPath(
   currentDefPath: string,
   parentName: string,
   document: vscode.TextDocument
@@ -3534,7 +3071,7 @@ function findParentDefPath(
 
 // 批110 用户令:方法无映射管理器时的文件回落——在候选脚本闭包里按顺序找
 // `def <方法名>`,命中即止;全无实现(或脚本缺失)返回 null,不虚跳。
-function findMethodScriptLocationInDef(
+export function findMethodScriptLocationInDef(
   document: vscode.TextDocument,
   methodName: string,
   section: KBEngineSectionName
@@ -3567,7 +3104,7 @@ function findMethodScriptLocationInDef(
 
 // 批111 用户令:DetailLevel 值(NEAR/MEDIUM/FAR)引用同文件 <DetailLevels>
 // 下的档位声明节点,点击值跳到档位声明行;无该段或档位缺失返回 null。
-function findDetailLevelDefinitionInDef(
+export function findDetailLevelDefinitionInDef(
   document: vscode.TextDocument,
   position: vscode.Position,
   word: string
@@ -3616,7 +3153,7 @@ function findDetailLevelDefinitionInDef(
  * 缓冲为准(编辑时跳到脏缓冲区位置);缓冲里已无该方法(编辑中删除)时
  * 保留索引行。约定链臂(findMethodScriptLocationInDef)读取本身已走缓冲,
  * 不经此调。 */
-function adjustMethodTargetToOpenBuffer(
+export function adjustMethodTargetToOpenBuffer(
   target: { filePath: string; line: number; character: number },
   methodName: string
 ): { filePath: string; line: number; character: number } {
@@ -3629,7 +3166,7 @@ function adjustMethodTargetToOpenBuffer(
   return bufferLine >= 0 ? { ...target, line: bufferLine + 1 } : target;
 }
 
-async function resolveDefMethodPythonTarget(
+export async function resolveDefMethodPythonTarget(
   document: vscode.TextDocument,
   methodName: string,
   section: EntityMethodSection,
@@ -3672,7 +3209,7 @@ async function resolveDefMethodPythonTarget(
   return null;
 }
 
-function findMethodImplementationLocationInDef(
+export function findMethodImplementationLocationInDef(
   document: vscode.TextDocument,
   position: vscode.Position,
   methodName: string,
@@ -3752,7 +3289,7 @@ function findMethodImplementationLocationInDef(
   });
 }
 
-function findDefinitionSiblingForParent(
+export function findDefinitionSiblingForParent(
   document: vscode.TextDocument,
   word: string
 ): string | null {
@@ -3767,19 +3304,19 @@ function findDefinitionSiblingForParent(
   return findEntityDefinitionFile(word, document);
 }
 
-interface KnownTypeContext {
+export interface KnownTypeContext {
   builtins: Set<string>;
   customTypes: Set<string>;
   entityTypes: Set<string>;
 }
 
-interface KnownTypeSuggestion {
+export interface KnownTypeSuggestion {
   name: string;
   detail: string;
   documentation: string;
 }
 
-function getKnownTypeContext(document: vscode.TextDocument, token?: vscode.CancellationToken): KnownTypeContext {
+export function getKnownTypeContext(document: vscode.TextDocument, token?: vscode.CancellationToken): KnownTypeContext {
   const builtins = new Set(KBENGINE_TYPES.map(type => type.name));
   const workspaceRoot = getWorkspaceRootForDocument(document);
 
@@ -3801,10 +3338,10 @@ function getKnownTypeContext(document: vscode.TextDocument, token?: vscode.Cance
 // IDE-NAV-013:未知类型的修正候选——只从已注册集合取近拼(大小写归一后
 // 编辑距离≤2),按距稳定排序截 5;候选与未知名同名(已注册时)不入选,
 // 无近似不猜。不自动创建 types.xml 声明是硬边界(候选只是替换)。
-const TYPE_SUGGESTION_MAX_DISTANCE = 2;
-const TYPE_SUGGESTION_LIMIT = 5;
+export const TYPE_SUGGESTION_MAX_DISTANCE = 2;
+export const TYPE_SUGGESTION_LIMIT = 5;
 
-function boundedEditDistance(left: string, right: string, max: number): number | null {
+export function boundedEditDistance(left: string, right: string, max: number): number | null {
   if (Math.abs(left.length - right.length) > max) {
     return null;
   }
@@ -3848,7 +3385,7 @@ export function findRegisteredTypeSuggestions(
   return hits.slice(0, TYPE_SUGGESTION_LIMIT).map(hit => hit.name);
 }
 
-function getKnownTypeSuggestions(document: vscode.TextDocument, token?: vscode.CancellationToken): KnownTypeSuggestion[] {
+export function getKnownTypeSuggestions(document: vscode.TextDocument, token?: vscode.CancellationToken): KnownTypeSuggestion[] {
   const suggestions = new Map<string, KnownTypeSuggestion>();
 
   for (const type of KBENGINE_TYPES) {
@@ -3905,7 +3442,7 @@ function getKnownTypeSuggestions(document: vscode.TextDocument, token?: vscode.C
  * extension 激活时读取、配置变更时刷新(与 kbengine.jumpLog 同款接线);
  * 关闭时层2 只记 skip,不触发全仓扫描。
  */
-let pythonMroJumpEnabled = true;
+export let pythonMroJumpEnabled = true;
 
 export function setPythonMroJumpEnabled(enabled: boolean): void {
   pythonMroJumpEnabled = enabled;
@@ -3921,10 +3458,10 @@ export function isPythonMroJumpEnabled(): boolean {
  * 跳转面)。extension 激活时读取、配置变更时刷新(与 enableMroJump 同款
  * 接线);关闭时 definition 前置层与 python 引用分支不查索引。
  */
-let pythonDataDictIndexEnabled = true;
+export let pythonDataDictIndexEnabled = true;
 // AUD-073(R4-F08):启用代际——开关每次实际翻转前进;在飞冷查询据此判断
 // 等待期间开关是否被改过,改了则不发布旧结果(关闭/关→开代际都拦截)。
-let pythonDataDictIndexGeneration = 0;
+export let pythonDataDictIndexGeneration = 0;
 
 export function setPythonDataDictIndexEnabled(enabled: boolean): void {
   if (pythonDataDictIndexEnabled !== enabled) {
@@ -3946,7 +3483,7 @@ export function getPythonDataDictIndexGeneration(): number {
 // 到即放行当前调用(返回 false,不再查索引),共享初扫原样继续服务其他请求
 // (单次取消不中止、不破坏索引);初扫先到仍复检取消。返回 false = 已取消,
 // 调用方应停止后续查找工作。
-async function awaitDataDictIndexReady(
+export async function awaitDataDictIndexReady(
   index: GlobalDataDictIndex,
   token?: vscode.CancellationToken
 ): Promise<boolean> {
@@ -3987,7 +3524,7 @@ async function awaitDataDictIndexReady(
  * 族全部写+读点。definition(跳首个异类点)与 references(全量)同源,
  * 索引未装配或未启用返回 null。
  */
-async function resolveDataDictSitesAtPosition(
+export async function resolveDataDictSitesAtPosition(
   dataDictIndex: GlobalDataDictIndex | undefined,
   document: vscode.TextDocument,
   position: vscode.Position,
@@ -4078,19 +3615,19 @@ export interface TracedDefinitionResult {
   layers: JumpLayerTrace[];
 }
 
-const cancelledDefinitionResult = (): TracedDefinitionResult => ({
+export const cancelledDefinitionResult = (): TracedDefinitionResult => ({
   location: null,
   layers: [{ layer: 'context', query: '', status: 'skip', detail: 'cancelled' }]
 });
 
-const layerErrorMessage = (error: unknown): string =>
+export const layerErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-const describeMethodLocation = (candidate: PythonMethodLocation): string =>
+export const describeMethodLocation = (candidate: PythonMethodLocation): string =>
   `${path.basename(candidate.filePath)}:${candidate.line + 1}` +
   (candidate.compositionRoot ? ` (root=${candidate.compositionRoot})` : '');
 
-const toDefinitionLocation = (candidate: PythonMethodLocation): vscode.Location =>
+export const toDefinitionLocation = (candidate: PythonMethodLocation): vscode.Location =>
   new vscode.Location(
     vscode.Uri.file(candidate.filePath),
     new vscode.Position(candidate.line, candidate.character)
@@ -4100,7 +3637,7 @@ const toDefinitionLocation = (candidate: PythonMethodLocation): vscode.Location 
  * 产出前的确定性在途窗口(语义与 REV-032 hover 闸同款:生产恒 null,零行为
  * 差异;释放方顺手清闸)。provider 为 async 方法,门内直接 await,放行后
  * 重查取消——晚到的取消不再触发任何查找工作(无晚到结果发布)。 */
-let definitionInFlightGateForTests: (() => Promise<void>) | null = null;
+export let definitionInFlightGateForTests: (() => Promise<void>) | null = null;
 
 export function setDefinitionInFlightGateForTests(gate: (() => Promise<void>) | null): void {
   definitionInFlightGateForTests = gate;
@@ -4113,7 +3650,7 @@ export function setDefinitionInFlightGateForTests(gate: (() => Promise<void>) | 
  * 结果)。与入口闸(definitionInFlightGateForTests)互补:入口闸证明「进
  * provider 后取消零工作」,本闸证明「真实链已派发后取消,链在下一观测点停」。
  * 生产恒 null,零行为差异。 */
-let definitionDispatchGateForTests: (() => Promise<void>) | null = null;
+export let definitionDispatchGateForTests: (() => Promise<void>) | null = null;
 
 export function setDefinitionDispatchGateForTests(gate: (() => Promise<void>) | null): void {
   definitionDispatchGateForTests = gate;
@@ -5236,7 +4773,7 @@ export interface TypesXmlStorageLensSpec {
   target: { entity: string; table: string; column: string } | null;
 }
 
-const TYPE_STORAGE_LENS_LIMIT = 10;
+export const TYPE_STORAGE_LENS_LIMIT = 10;
 
 export function buildTypesXmlStorageLensSpecs(
   content: string,
@@ -5684,7 +5221,7 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
 }
 
 /** 光标所在最内层 Python 类名(供对象级探针);解析失败 → undefined */
-function enclosingPythonClassAt(document: vscode.TextDocument, line: number): string | undefined {
+export function enclosingPythonClassAt(document: vscode.TextDocument, line: number): string | undefined {
   try {
     const parsed = parsePythonFile(document.getText(), document.fileName);
     return parsed.classes
@@ -5876,7 +5413,7 @@ export class KBEngineTypeCodeActionProvider implements vscode.CodeActionProvider
 }
 
 /** 诊断区间与请求区间相交(行/列直比,替身 Range 无 intersection 面) */
-function diagnosticRangeIntersects(left: vscode.Range, right: vscode.Range): boolean {
+export function diagnosticRangeIntersects(left: vscode.Range, right: vscode.Range): boolean {
   const positionValue = (position: vscode.Position): number => position.line * 1_000_000 + position.character;
   return positionValue(left.start) <= positionValue(right.end)
     && positionValue(right.start) <= positionValue(left.end);
@@ -5887,7 +5424,7 @@ function diagnosticRangeIntersects(left: vscode.Range, right: vscode.Range): boo
  * 缩进 <4 的非空行为类体;插入点=类体末非空行下一行(空体=类头下一行,
  * 不加空行前缀,非空体加一空行分隔)。类块找不到返回 null——不猜。
  */
-function findPythonClassInsertionPoint(
+export function findPythonClassInsertionPoint(
   content: string,
   className: string
 ): { line: number; blankPrefix: boolean } | null {
@@ -5922,7 +5459,7 @@ function findPythonClassInsertionPoint(
 /** 空方法骨架:def 名(self, 形参自 <Arg> 类型映射) + 体(pass/raise 可配)。
  * C-19 交付②:签名参数从 def 类型映射(内建注解 int/float/str/bool/bytes,
  * 其余裸 argN 不发射未导入名);体经 kbengine.entity.methodStubBody 可配。 */
-function buildPythonMethodSkeleton(
+export function buildPythonMethodSkeleton(
   methodName: string,
   argTypes: string[],
   body: MethodStubBody
@@ -6136,7 +5673,7 @@ export class KBEngineDefPythonParityCodeActionProvider implements vscode.CodeAct
  * 取 def 文档中同名方法节点的 `<Arg>` 类型序列(签名类型映射输入);
  * 解析不到(属性段同名/位置未落在方法名)→ 空数组(仅 (self) 签名)。
  */
-function collectMethodArgTypes(document: vscode.TextDocument, methodName: string): string[] {
+export function collectMethodArgTypes(document: vscode.TextDocument, methodName: string): string[] {
   const ast = parseDefAst(document);
   if (!ast?.root) {
     return [];
@@ -6151,7 +5688,7 @@ function collectMethodArgTypes(document: vscode.TextDocument, methodName: string
 }
 
 /** DFS 在方法段(BaseMethods/CellMethods/ClientMethods)内找同名方法元素。 */
-function findMethodElementByName(root: DefElementNode, name: string): DefElementNode | null {
+export function findMethodElementByName(root: DefElementNode, name: string): DefElementNode | null {
   const stack: DefElementNode[] = [root];
   while (stack.length > 0) {
     const node = stack.pop()!;
@@ -6664,7 +6201,7 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
   }
 }
 
-function getPythonMethodDeclarationAtPosition(lineText: string, character: number): string | null {
+export function getPythonMethodDeclarationAtPosition(lineText: string, character: number): string | null {
   const match = METHOD_DECLARATION_PATTERN.exec(lineText);
   if (!match) {
     return null;
@@ -6680,7 +6217,7 @@ function getPythonMethodDeclarationAtPosition(lineText: string, character: numbe
   return methodName;
 }
 
-function createPythonCallHierarchyItem(
+export function createPythonCallHierarchyItem(
   method: { filePath: string; methodName: string; line: number; character: number }
 ): vscode.CallHierarchyItem {
   const selectionRange = createSelectionRange(method.line, method.character, method.methodName);
@@ -6694,7 +6231,7 @@ function createPythonCallHierarchyItem(
   );
 }
 
-function createSelectionRange(line: number, character: number, text: string): vscode.Range {
+export function createSelectionRange(line: number, character: number, text: string): vscode.Range {
   return new vscode.Range(
     new vscode.Position(Math.max(line - 1, 0), Math.max(character, 0)),
     new vscode.Position(Math.max(line - 1, 0), Math.max(character, 0) + text.length)
@@ -6704,3 +6241,4 @@ function createSelectionRange(line: number, character: number, text: string): vs
 export { EventCodeLensProvider } from './eventApi';
 export { RECEIVER_NONE_DIAGNOSTIC_CODE } from './receiverNoneDiagnostics';
 export { KbengineSourceRevealArgs, revealSourceCommand, prewarmKbengineIndex } from './languageProviders/reveal';
+export { validateDocument, validateEntitiesXmlDocument, UNKNOWN_TYPE_DIAGNOSTIC_CODE } from './languageProviders/validation';
