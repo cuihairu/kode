@@ -357,9 +357,9 @@ export async function executeExportPlan(
       }
       idsByTable.set(query.table, [...(idsByTable.get(query.table) ?? []), ...collected]);
     };
-    if (query.filter === 'root-id') {
+    if (query.filter.kind === 'root-id') {
       await runQuery([rootDbid]);
-    } else {
+    } else if (query.filter.kind === 'parent-id') {
       // parent-id:对该表逻辑父(引擎 parentID)的每个已收集行 id 各跑一次。
       const parentIdList = idsByTable.get(query.parent_table ?? '') ?? [];
       for (const parentId of parentIdList) {
@@ -368,6 +368,8 @@ export async function executeExportPlan(
         }
         await runQuery([typedValueToBind(parentId)]);
       }
+    } else {
+      throw new Error('clone: unsupported export filter');
     }
   }
   await connection.query('COMMIT');

@@ -8,14 +8,14 @@ const port = Number(process.env.KODE_CLONE_TEST_MYSQL_PORT ?? 0);
 describe.skipIf(!port)('clone mysql real', () => {
   it('keeps a consistent snapshot and preserves 64-bit and binary values', async () => {
     const config = { host: '127.0.0.1', port, user: 'root', database: 'test' };
-    const admin = await createConnection(config);
+    const admin = await createConnection({ ...config, supportBigNumbers: true, bigNumberStrings: true });
     // Unique identifiers ensure this opt-in test never drops another test's tables.
     const suffix = `${process.pid}_${Date.now()}`;
     const parent = `clone_parent_${suffix}`;
     const child = `clone_child_${suffix}`;
-    await admin.query(`CREATE TABLE ${parent} (id BIGINT UNSIGNED PRIMARY KEY, payload BLOB) ENGINE=InnoDB`);
+    await admin.query(`CREATE TABLE ${parent} (id BIGINT UNSIGNED PRIMARY KEY, payload BLOB, fixed_bytes BINARY(3), signed_value BIGINT) ENGINE=InnoDB`);
     await admin.query(`CREATE TABLE ${child} (id BIGINT UNSIGNED PRIMARY KEY, parentID BIGINT UNSIGNED, val VARCHAR(30)) ENGINE=InnoDB`);
-    await admin.query(`INSERT INTO ${parent} VALUES (?, ?)`, ['9007199254740993', Buffer.from([0, 255, 128])]);
+    await admin.query(`INSERT INTO ${parent} VALUES (?, ?, ?, ?)`, ['9007199254740993', Buffer.from([0, 255, 128]), Buffer.from([255, 0, 128]), '-9223372036854775808']);
     await admin.query(`INSERT INTO ${child} VALUES (?, ?, ?)`, ['18446744073709551615', '9007199254740993', 'before']);
     const reader = await openCloneSession(config);
     let updated = false;
@@ -39,20 +39,23 @@ describe.skipIf(!port)('clone mysql real', () => {
       const rows = await executeExportPlan(connection, {
         entity_name: 'Avatar', row_budget: 10, denied: [], missing: [],
         queries: [
-          { sequence: 0, table: parent, columns: ['id', 'payload'], column_types: ['bigint unsigned', 'blob'], select_sql: `SELECT id, payload FROM ${parent} WHERE id = ?`, filter: 'root-id' },
-          { sequence: 1, table: 'clone_child', parent_table: parent, columns: ['id', 'parentID', 'val'], column_types: ['bigint unsigned', 'bigint unsigned', 'varchar'], select_sql: `SELECT id, parentID, val FROM ${child} WHERE parentID = ?`, filter: 'parent-id' }
+          { sequence: 0, table: parent, columns: ['id', 'payload', 'fixed_bytes', 'signed_value'], column_types: ['bigint unsigned', 'blob', 'binary(3)', 'bigint'], select_sql: `SELECT id, payload, fixed_bytes, signed_value FROM ${parent} WHERE id = ?`, filter: { kind: 'root-id' } },
+          { sequence: 1, table: 'clone_child', parent_table: parent, columns: ['id', 'parentID', 'val'], column_types: ['bigint unsigned', 'bigint unsigned', 'varchar'], select_sql: `SELECT id, parentID, val FROM ${child} WHERE parentID = ?`, filter: { kind: 'parent-id' } }
         ]
       }, BigInt('9007199254740993'));
       expect(rows[0].values[0]).toEqual({ t: 'big-u-int', v: '9007199254740993' });
+      expect(rows[0].values[3]).toEqual({ t: 'int', v: '-9223372036854775808' });
       expect(rows[1].values[0]).toEqual({ t: 'big-u-int', v: '18446744073709551615' });
       expect(rows[1].values[2].v).toBe('before');
-      await admin.query(`UPDATE ${parent} SET payload = ? WHERE id = ?`, [typedValueToBind(rows[0].values[1]), '9007199254740993']);
-      const [read] = await admin.query(`SELECT payload FROM ${parent} WHERE id = ?`, ['9007199254740993']);
+      await admin.query(`UPDATE ${parent} SET payload = ?, fixed_bytes = ?, signed_value = ? WHERE id = ?`, [typedValueToBind(rows[0].values[1]), typedValueToBind(rows[0].values[2]), typedValueToBind(rows[0].values[3]), '9007199254740993']);
+      const [read] = await admin.query(`SELECT payload, fixed_bytes, signed_value FROM ${parent} WHERE id = ?`, ['9007199254740993']);
       expect(cellToTypedValue((read as Array<{payload: Buffer}>)[0].payload, 'blob')).toEqual(rows[0].values[1]);
+      expect(cellToTypedValue((read as Array<{fixed_bytes: Buffer}>)[0].fixed_bytes, 'binary(3)')).toEqual(rows[0].values[2]);
+      expect(cellToTypedValue((read as Array<{signed_value: string}>)[0].signed_value, 'bigint')).toEqual(rows[0].values[3]);
       const budgetReader = await openCloneSession(config);
       await expect(executeExportPlan(budgetReader, {
         entity_name: 'Avatar', row_budget: 10, denied: [], missing: [],
-        queries: [{ sequence: 0, table: parent, columns: ['id', 'payload'], column_types: ['bigint unsigned', 'blob'], select_sql: `SELECT id, payload FROM ${parent} WHERE id = ?`, filter: 'root-id' }]
+        queries: [{ sequence: 0, table: parent, columns: ['id', 'payload'], column_types: ['bigint unsigned', 'blob'], select_sql: `SELECT id, payload FROM ${parent} WHERE id = ?`, filter: { kind: 'root-id' } }]
       }, BigInt('9007199254740993'), { maxBytes: 5 })).rejects.toThrow(/byte budget/);
     } finally {
       await reader.end();

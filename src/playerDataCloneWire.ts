@@ -146,7 +146,7 @@ export interface QueryPlanWire {
     column_types: string[];
     select_sql: string;
     /** 根表按 id/子表按 parentID 的绑定值来源标记。 */
-    filter: string;
+    filter: { kind: 'root-id' | 'parent-id' };
   }>;
   denied: Array<{ name: string; reason: string }>;
   missing: string[];
@@ -196,7 +196,8 @@ export function isQueryPlan(value: unknown): value is QueryPlanWire {
   return (
     Array.isArray(value.queries) &&
     value.queries.every(
-      q => isRecord(q) && typeof q.table === 'string' && typeof q.select_sql === 'string'
+      q => isRecord(q) && typeof q.table === 'string' && typeof q.select_sql === 'string' &&
+        isRecord(q.filter) && (q.filter.kind === 'root-id' || q.filter.kind === 'parent-id')
     )
   );
 }

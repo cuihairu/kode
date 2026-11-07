@@ -27,7 +27,7 @@ const plan: QueryPlanWire = {
       sequence: 0,
       table: 'tbl_Avatar',
       parent_table: null,
-      filter: 'root-id',
+      filter: { kind: 'root-id' },
       columns: ['id', 'sm_name'],
       column_types: ['bigint unsigned', 'varchar'],
       select_sql: 'SELECT `id`, `sm_name` FROM `tbl_Avatar` WHERE `id` = ?',

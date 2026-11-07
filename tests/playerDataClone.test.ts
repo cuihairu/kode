@@ -387,7 +387,7 @@ describe('columnOrderFromPlan / uniqueValuesFromRows(两遍计划的探测面)',
 describe('executeExportPlan(只读计划执行)', () => {
   const budgetPlan = {
     entity_name: 'Avatar', row_budget: 10, denied: [], missing: [],
-    queries: [{ sequence: 0, table: 'tbl_Avatar', columns: ['id', 'value'], column_types: ['bigint unsigned', 'varchar'], select_sql: 'SELECT id, value FROM tbl_Avatar WHERE id = ?', filter: 'root-id' }]
+    queries: [{ sequence: 0, table: 'tbl_Avatar', columns: ['id', 'value'], column_types: ['bigint unsigned', 'varchar'], select_sql: 'SELECT id, value FROM tbl_Avatar WHERE id = ?', filter: { kind: 'root-id' } }]
   };
 
   it('streaming export enforces row and byte budgets and aborts the active connection', async () => {
@@ -441,7 +441,7 @@ describe('executeExportPlan(只读计划执行)', () => {
             columns: ['id', 'sm_autoLoad', 'sm_name'],
             column_types: ['bigint unsigned', 'tinyint', 'varchar'],
             select_sql: 'SELECT id, sm_autoLoad, sm_name FROM tbl_Avatar WHERE id = ?',
-            filter: 'root-id'
+            filter: { kind: 'root-id' }
           },
           {
             sequence: 1,
@@ -451,7 +451,7 @@ describe('executeExportPlan(只读计划执行)', () => {
             column_types: ['bigint unsigned', 'bigint unsigned', 'varchar'],
             select_sql:
               'SELECT id, parentID, sm_value FROM tbl_Avatar_items WHERE parentID = ?',
-            filter: 'parent-id'
+            filter: { kind: 'parent-id' }
           }
         ],
         denied: [],
@@ -486,7 +486,7 @@ describe('executeExportPlan(只读计划执行)', () => {
               columns: ['id'],
               column_types: ['bigint unsigned'],
               select_sql: 'SELECT id FROM tbl_Avatar WHERE id = ?',
-              filter: 'root-id'
+              filter: { kind: 'root-id' }
             }
           ],
           denied: [],

@@ -580,6 +580,8 @@ mod tests {
             plan_value["queries"][0]["table"].as_str(),
             Some("tbl_Avatar")
         );
+        assert_eq!(plan_value["queries"][0]["filter"]["kind"], "root-id");
+        assert_eq!(plan_value["queries"][1]["filter"]["kind"], "parent-id");
 
         // export:行值 + 计划(脱敏默认开)→ .kdpclone。
         let archive_path = dir.join("avatar.kdpclone");
