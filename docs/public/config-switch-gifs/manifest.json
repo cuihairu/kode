@@ -1,68 +1,98 @@
 [
   {
     "key": "enable-diagnostics",
-    "off": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/enable-diagnostics-off.png",
-    "on": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/enable-diagnostics-on.png",
-    "gif": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/enable-diagnostics.gif"
+    "off": "docs/public/config-switch-gifs/enable-diagnostics-off.png",
+    "on": "docs/public/config-switch-gifs/enable-diagnostics-on.png",
+    "gif": "docs/public/config-switch-gifs/enable-diagnostics.gif"
   },
   {
     "key": "check-duplicate-definitions",
-    "off": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/check-duplicate-definitions-off.png",
-    "on": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/check-duplicate-definitions-on.png",
-    "gif": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/check-duplicate-definitions.gif"
+    "off": "docs/public/config-switch-gifs/check-duplicate-definitions-off.png",
+    "on": "docs/public/config-switch-gifs/check-duplicate-definitions-on.png",
+    "gif": "docs/public/config-switch-gifs/check-duplicate-definitions.gif"
   },
   {
     "key": "hover-show-tag-docs",
-    "off": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/hover-show-tag-docs-off.png",
-    "on": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/hover-show-tag-docs-on.png",
-    "gif": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/hover-show-tag-docs.gif"
+    "off": "docs/public/config-switch-gifs/hover-show-tag-docs-off.png",
+    "on": "docs/public/config-switch-gifs/hover-show-tag-docs-on.png",
+    "gif": "docs/public/config-switch-gifs/hover-show-tag-docs.gif"
   },
   {
     "key": "hover-show-value-docs",
-    "off": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/hover-show-value-docs-off.png",
-    "on": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/hover-show-value-docs-on.png",
-    "gif": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/hover-show-value-docs.gif"
+    "off": "docs/public/config-switch-gifs/hover-show-value-docs-off.png",
+    "on": "docs/public/config-switch-gifs/hover-show-value-docs-on.png",
+    "gif": "docs/public/config-switch-gifs/hover-show-value-docs.gif"
   },
   {
     "key": "hover-implemented-by",
-    "off": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/hover-implemented-by-off.png",
-    "on": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/hover-implemented-by-on.png",
-    "gif": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/hover-implemented-by.gif"
+    "off": "docs/public/config-switch-gifs/hover-implemented-by-off.png",
+    "on": "docs/public/config-switch-gifs/hover-implemented-by-on.png",
+    "gif": "docs/public/config-switch-gifs/hover-implemented-by.gif"
   },
   {
     "key": "codelens-rpc",
-    "off": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/codelens-rpc-off.png",
-    "on": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/codelens-rpc-on.png",
-    "gif": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/codelens-rpc.gif"
+    "off": "docs/public/config-switch-gifs/codelens-rpc-off.png",
+    "on": "docs/public/config-switch-gifs/codelens-rpc-on.png",
+    "gif": "docs/public/config-switch-gifs/codelens-rpc.gif"
   },
   {
     "key": "codelens-types-xml",
-    "off": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/codelens-types-xml-off.png",
-    "on": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/codelens-types-xml-on.png",
-    "gif": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/codelens-types-xml.gif"
+    "off": "docs/public/config-switch-gifs/codelens-types-xml-off.png",
+    "on": "docs/public/config-switch-gifs/codelens-types-xml-on.png",
+    "gif": "docs/public/config-switch-gifs/codelens-types-xml.gif"
   },
   {
     "key": "inlay-type-data",
-    "off": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/inlay-type-data-off.png",
-    "on": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/inlay-type-data-on.png",
-    "gif": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/inlay-type-data.gif"
+    "off": "docs/public/config-switch-gifs/inlay-type-data-off.png",
+    "on": "docs/public/config-switch-gifs/inlay-type-data-on.png",
+    "gif": "docs/public/config-switch-gifs/inlay-type-data.gif"
   },
   {
     "key": "inlay-def-params",
-    "off": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/inlay-def-params-off.png",
-    "on": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/inlay-def-params-on.png",
-    "gif": "/home/cui/workspaces/kode/docs/public/config-switch-gifs/inlay-def-params.gif"
+    "off": "docs/public/config-switch-gifs/inlay-def-params-off.png",
+    "on": "docs/public/config-switch-gifs/inlay-def-params-on.png",
+    "gif": "docs/public/config-switch-gifs/inlay-def-params.gif"
   },
   {
     "key": "call-chain-view",
-    "off": "call-chain-view-text.png",
-    "on": "call-chain-view-graph.png",
-    "gif": "call-chain-view.gif"
+    "off": "docs/public/config-switch-gifs/call-chain-view-text.png",
+    "on": "docs/public/config-switch-gifs/call-chain-view-graph.png",
+    "gif": "docs/public/config-switch-gifs/call-chain-view.gif"
   },
   {
-    "key": "hot-reload-enabled",
-    "off": "hot-reload-enabled-off.png",
-    "on": "hot-reload-enabled-on.png",
-    "gif": "hot-reload-enabled.gif"
+    "key": "show-final-config-on-open",
+    "off": "docs/public/config-switch-gifs/show-final-config-on-open-off.png",
+    "on": "docs/public/config-switch-gifs/show-final-config-on-open-on.png",
+    "gif": "docs/public/config-switch-gifs/show-final-config-on-open.gif"
+  },
+  {
+    "key": "codelens-event-callbacks",
+    "off": "docs/public/config-switch-gifs/codelens-event-callbacks-off.png",
+    "on": "docs/public/config-switch-gifs/codelens-event-callbacks-on.png",
+    "gif": "docs/public/config-switch-gifs/codelens-event-callbacks.gif"
+  },
+  {
+    "key": "codelens-property",
+    "off": "docs/public/config-switch-gifs/codelens-property-off.png",
+    "on": "docs/public/config-switch-gifs/codelens-property-on.png",
+    "gif": "docs/public/config-switch-gifs/codelens-property.gif"
+  },
+  {
+    "key": "builtin-type-inlay-hints",
+    "off": "docs/public/config-switch-gifs/builtin-type-inlay-hints-off.png",
+    "on": "docs/public/config-switch-gifs/builtin-type-inlay-hints-on.png",
+    "gif": "docs/public/config-switch-gifs/builtin-type-inlay-hints.gif"
+  },
+  {
+    "key": "enable-structure-diagnostics",
+    "off": "docs/public/config-switch-gifs/enable-structure-diagnostics-off.png",
+    "on": "docs/public/config-switch-gifs/enable-structure-diagnostics-on.png",
+    "gif": "docs/public/config-switch-gifs/enable-structure-diagnostics.gif"
+  },
+  {
+    "key": "python-call-chain-hints",
+    "off": "docs/public/config-switch-gifs/python-call-chain-hints-off.png",
+    "on": "docs/public/config-switch-gifs/python-call-chain-hints-on.png",
+    "gif": "docs/public/config-switch-gifs/python-call-chain-hints.gif"
   }
 ]

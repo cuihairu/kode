@@ -1116,6 +1116,7 @@ The flow graph panel supports:
   - An existing `kbe_types.py` in a configured user directory is treated as a user asset and never overwritten; the default directory `.kbengine/stubs` is kode-managed
   - When a workspace has no custom types, no file is generated and no message disturbs; after a successful export it chains one extraPaths sync
 - `types.xml` on disk regenerates automatically: after a save/create/delete the watcher silently re-exports (no debouncing, no extra setting — the zero-write discipline makes repeated triggers side-effect free; with `kbengine.python.stubExport` off it effectively stops)
+- A `.def` create/change/delete regenerates `entity_types.pyi` automatically (C-22): a 400 ms trailing debounce collapses bursts into one regeneration, sharing the `kbengine.python.stubExport` master gate and the content-compare zero-write discipline; the `entity_types.pyi` source-mirror CodeLens plan refreshes in place after a successful regeneration (a failed one does not refresh). Scope: `.def` files only — `entities.xml` is not wired yet
   - Setting `kbengine.python.stubExport: false` turns it all off (shared with the KBEngine.pyi stub export)
 
 ## Git History

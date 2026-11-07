@@ -64,6 +64,7 @@ export default withMermaid(defineConfig({
               items: [
                 { text: 'Quick start', link: '/guide/' },
                 { text: 'Configuration', link: '/guide/configuration' },
+                { text: 'Config switch effects', link: '/guide/config-effects' },
                 { text: 'Feature overview', link: '/guide/features' },
                 { text: 'Feature flags before/after', link: '/guide/feature-flags' },
                 { text: 'Commands and panels', link: '/guide/commands' },
@@ -158,6 +159,7 @@ export default withMermaid(defineConfig({
               items: [
                 { text: '快速开始', link: '/zh/guide/' },
                 { text: '配置说明', link: '/zh/guide/configuration' },
+                { text: '配置开关效果', link: '/zh/guide/config-effects' },
                 { text: '功能概览', link: '/zh/guide/features' },
                 { text: '配置开关前后对照', link: '/zh/guide/feature-flags' },
                 { text: '命令与面板', link: '/zh/guide/commands' },

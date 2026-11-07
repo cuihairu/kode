@@ -76,7 +76,7 @@
     "effect_en": "Hovering a def method shows where the script implements it (Implemented-By backlink, file:line)",
     "visibility": "hover popup",
     "scenario": "vscode-hover",
-    "demo": "Monster.def, hover onAggro",
+    "demo": "SKILL_SLOT_DATA.py (weapon_skill_slot_list_inst word)",
     "capture": true
   },
   {
@@ -92,7 +92,7 @@
     "effect_en": "An RPC marker CodeLens appears above the implementing method of a def-declared RPC in entity scripts",
     "visibility": "CodeLens line",
     "scenario": "vscode",
-    "demo": "Monster.py (onAggro)",
+    "demo": "RpcDemo.py (onAggro)",
     "capture": true
   },
   {
@@ -140,23 +140,7 @@
     "effect_en": "Unannotated parameters of methods declared in def script sections get inline type hints",
     "visibility": "inlay hint",
     "scenario": "vscode",
-    "demo": "Monster.py (onAggro entityId)",
-    "capture": true
-  },
-  {
-    "key": "hot-reload-enabled",
-    "setting": "kbengine.hotReload.enabled",
-    "off": false,
-    "on": true,
-    "name_zh": "热更新总开关",
-    "name_en": "Hot reload master switch",
-    "group_zh": "热更新",
-    "group_en": "Hot reload",
-    "effect_zh": "关闭时状态栏热更项为「未开启: kbengine.hotReload.enabled=false」（watch-off）；开启并给出 globs 后进入就绪态（保存 .py 即发默认热更请求）",
-    "effect_en": "Off, the hot-reload status-bar item reads 未开启: kbengine.hotReload.enabled=false (watch-off); on (with globs set) it goes ready — saving a .py fires the default hot-reload request",
-    "visibility": "status bar item",
-    "scenario": "vscode",
-    "demo": "状态栏热更项 off/on 两态",
+    "demo": "InlayDemo.py (takePotion count)",
     "capture": true
   },
   {
@@ -172,7 +156,7 @@
     "effect_en": "The Show Call Chain panel opens as a mermaid graph (graph) or as plain text (text)",
     "visibility": "webview panel",
     "scenario": "vscode-command",
-    "demo": "Show Call Chain on Monster.think",
+    "demo": "Show Call Chain on Monster.onAggro",
     "capture": true
   },
   {
@@ -184,11 +168,11 @@
     "name_en": "Runtime Queries panel",
     "group_zh": "面板",
     "group_en": "Panels",
-    "effect_zh": "关闭时面板内结果流/查询报「请启用 kbengine.runtimeQuery.enabled」；开启后查询可用（面板本身始终可打开）",
-    "effect_en": "Off, in-panel queries/streaming error with \"enable kbengine.runtimeQuery.enabled\"; on, queries work (the panel itself always opens)",
-    "visibility": "panel query results (需在面板内点 Query)",
-    "scenario": "manual",
-    "demo": "需面板内交互触发查询",
+    "effect_zh": "关闭时面板可打开,但面板内流开关(toggle)报「流被禁用」;开启后流开关可用",
+    "effect_en": "Off, the panel opens but stream toggles report \"stream disabled\"; on, stream toggles work",
+    "visibility": "webview panel (toggle inside)",
+    "scenario": "vscode-command + webview toggle",
+    "demo": "kbengine.runtimeQuery.show",
     "capture": false
   },
   {
@@ -196,21 +180,21 @@
     "setting": "kbengine.showFinalConfigOnOpen",
     "off": false,
     "on": true,
-    "name_zh": "自动打开最终配置视图",
-    "name_en": "Auto-open final config view",
+    "name_zh": "激活即开最终配置视图",
+    "name_en": "Auto-open final config on activation",
     "group_zh": "面板",
     "group_en": "Panels",
-    "effect_zh": "开启后打开引擎默认配置文件会尝试自动并排打开最终配置视图（需可运行的引擎 bin 以完成最终配置计算；纯工作区无引擎时自动打开不触发）",
-    "effect_en": "On, opening the engine defaults file tries to auto-open the final-config view beside it (needs a runnable engine bin for the final-config computation; without an engine the auto-open does not trigger)",
-    "visibility": "webview panel (需真实引擎 bin)",
-    "scenario": "manual",
-    "demo": "需起真引擎或可计算的引擎 bin",
-    "capture": false
+    "effect_zh": "开启时扩展激活即在后台预览标签打开最终配置合成视图（binPath 推导 defaults 路径，定位不到静默跳过）；关闭时不自动打开",
+    "effect_en": "On, the merged final-config view opens in a background preview tab at activation (path derived from binPath; silently skipped if not found); off, it does not open",
+    "visibility": "webview panel",
+    "scenario": "vscode",
+    "demo": "open workspace (kbengine_defaults.xml open for reference)",
+    "capture": true
   },
   {
     "key": "hover-show-symbol-docs",
     "setting": "kbengine.hover.showSymbolDocs",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "悬停符号摘要",
     "name_en": "Hover symbol docs",
@@ -226,7 +210,7 @@
   {
     "key": "hover-type-storage",
     "setting": "kbengine.hover.typeStorage",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "悬停类型存储信息",
     "name_en": "Hover type storage",
@@ -242,7 +226,7 @@
   {
     "key": "hover-event-stats",
     "setting": "kbengine.hover.eventStats",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "悬停事件统计",
     "name_en": "Hover event stats",
@@ -258,7 +242,7 @@
   {
     "key": "hover-server-config",
     "setting": "kbengine.hover.serverConfig",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "悬停服务配置项",
     "name_en": "Hover server config",
@@ -274,7 +258,7 @@
   {
     "key": "hover-startup-script",
     "setting": "kbengine.hover.startupScript",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "悬停启动参数",
     "name_en": "Hover startup args",
@@ -290,7 +274,7 @@
   {
     "key": "hover-return-type-inference",
     "setting": "kbengine.hover.returnTypeInference",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "悬停返回类型推导",
     "name_en": "Hover return-type inference",
@@ -306,7 +290,7 @@
   {
     "key": "hover-entity-registration",
     "setting": "kbengine.hover.entityRegistration",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "悬停实体注册信息",
     "name_en": "Hover entity registration",
@@ -322,7 +306,7 @@
   {
     "key": "hover-def-chain",
     "setting": "kbengine.hover.defChain",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "悬停声明链",
     "name_en": "Hover def chain",
@@ -338,7 +322,7 @@
   {
     "key": "codelens-event-callbacks",
     "setting": "kbengine.codeLens.eventCallbacks",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "事件回调 CodeLens",
     "name_en": "Event callback CodeLens",
@@ -349,12 +333,12 @@
     "visibility": "CodeLens line",
     "scenario": "vscode",
     "demo": "需注册事件的回调演示文件",
-    "capture": false
+    "capture": true
   },
   {
     "key": "codelens-property",
     "setting": "kbengine.codeLens.property",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "属性标记 CodeLens",
     "name_en": "Property marker CodeLens",
@@ -365,12 +349,12 @@
     "visibility": "CodeLens line",
     "scenario": "vscode",
     "demo": "同 codelens-rpc 机制",
-    "capture": false
+    "capture": true
   },
   {
     "key": "builtin-type-inlay-hints",
     "setting": "kbengine.python.builtinTypeInlayHints",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "内建属性类型内联提示",
     "name_en": "Builtin property inlay hints",
@@ -381,12 +365,12 @@
     "visibility": "inlay hint",
     "scenario": "vscode",
     "demo": "同 inlay-type-data 机制",
-    "capture": false
+    "capture": true
   },
   {
     "key": "enable-structure-diagnostics",
     "setting": "kbengine.enableStructureDiagnostics",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": ".def 结构化校验",
     "name_en": ".def structure validation",
@@ -397,12 +381,12 @@
     "visibility": "editor squiggle + Problems panel",
     "scenario": "vscode",
     "demo": "同 check-duplicate-definitions 机制",
-    "capture": false
+    "capture": true
   },
   {
     "key": "auto-refresh-final-config",
     "setting": "kbengine.autoRefreshFinalConfig",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "最终配置自动刷新",
     "name_en": "Final config auto-refresh",
@@ -418,7 +402,7 @@
   {
     "key": "generator-generate-python",
     "setting": "kbengine.generator.generatePython",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "生成器：Python 文件",
     "name_en": "Generator: Python files",
@@ -434,7 +418,7 @@
   {
     "key": "generator-register-in-entities-xml",
     "setting": "kbengine.generator.registerInEntitiesXml",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "生成器：entities.xml 注册",
     "name_en": "Generator: entities.xml registration",
@@ -466,7 +450,7 @@
   {
     "key": "python-call-chain-hints",
     "setting": "kbengine.python.callChainHints",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "调用链入口提示",
     "name_en": "Call chain entry hints",
@@ -477,12 +461,12 @@
     "visibility": "CodeLens-like hint",
     "scenario": "vscode",
     "demo": "同 call-chain-view 机制",
-    "capture": false
+    "capture": true
   },
   {
     "key": "jsonc-association",
     "setting": "kbengine.jsoncAssociation",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "debug.json 关联 jsonc",
     "name_en": "debug.json jsonc association",
@@ -498,7 +482,7 @@
   {
     "key": "python-extra-paths-sync",
     "setting": "kbengine.python.extraPathsSync",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "extraPaths 自动接线",
     "name_en": "extraPaths auto-sync",
@@ -514,7 +498,7 @@
   {
     "key": "webview-console-logs",
     "setting": "kbengine.webviewConsoleLogs",
-    "off": true,
+    "off": false,
     "on": true,
     "name_zh": "面板 console 采集",
     "name_en": "Webview console capture",
@@ -525,70 +509,6 @@
     "visibility": "log panel entries (仅出错时可见)",
     "scenario": "manual",
     "demo": "需构造 webview 异常",
-    "capture": false
-  },
-  {
-    "key": "hot-reload-temp-edit",
-    "setting": "kbengine.hotReload.tempEdit.enabled",
-    "off": false,
-    "on": true,
-    "name_zh": "热更临时编辑",
-    "name_en": "Hot reload temp edit",
-    "group_zh": "热更新",
-    "group_en": "Hot reload",
-    "effect_zh": "开启后一键热更流程会走「临时修改→reloadScript→自动还原」路径（默认关，防误触）",
-    "effect_en": "On, the one-shot hot-reload flow takes the temp-edit → reloadScript → auto-restore path (default off, accident guard)",
-    "visibility": "reload flow behavior (需驱动热更流程)",
-    "scenario": "manual",
-    "demo": "需真机热更回路",
-    "capture": false
-  },
-  {
-    "key": "debug-debugpy-inject",
-    "setting": "kbengine.debug.debugpyInject",
-    "off": false,
-    "on": true,
-    "name_zh": "debugpy 注入",
-    "name_en": "debugpy injection",
-    "group_zh": "调试",
-    "group_en": "Debug",
-    "effect_zh": "开启时启动调试会话会把 debugpy 注入目标进程并上调试状态板；关闭则不注入",
-    "effect_en": "On, a debug session injects debugpy into the target process and reports on the debug status board; off, no injection",
-    "visibility": "debug session / debug status board",
-    "scenario": "manual",
-    "demo": "需起真调试会话",
-    "capture": false
-  },
-  {
-    "key": "debug-auto-debugpy",
-    "setting": "kbengine.debug.autoDebugpy",
-    "off": false,
-    "on": true,
-    "name_zh": "自动 debugpy",
-    "name_en": "Auto debugpy",
-    "group_zh": "调试",
-    "group_en": "Debug",
-    "effect_zh": "开启后调试启动自动寻找/拉起 debugpy 监听并等待接入（默认关）",
-    "effect_en": "On, debug startup auto-discovers/launches a debugpy listener and waits for attachment (default off)",
-    "visibility": "debug session behavior",
-    "scenario": "manual",
-    "demo": "需起真调试会话",
-    "capture": false
-  },
-  {
-    "key": "python-stub-source-mode",
-    "setting": "kbengine.python.stubSourceMode",
-    "off": "generated",
-    "on": "real-source",
-    "name_zh": "存根源模式",
-    "name_en": "Stub source mode",
-    "group_zh": "代码存根",
-    "group_en": "Stubs",
-    "effect_zh": "导出的 .pyi 存根由生成器产出（generated）或直接引用真实源码（real-source），差异在存根文件内容",
-    "effect_en": "Exported .pyi stubs come from the generator (generated) or reference real source (real-source); the diff lands in stub file content",
-    "visibility": "stub file content diff",
-    "scenario": "manual",
-    "demo": "效果在 .pyi 文件内容，非界面",
     "capture": false
   }
 ]

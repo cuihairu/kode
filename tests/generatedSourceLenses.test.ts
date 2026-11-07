@@ -117,4 +117,40 @@ describe('GeneratedSourceCodeLensProvider', () => {
     expect(lens.range?.start.line).toBe(entityLineMap.propertyLines.get('Avatar')!['profile']);
     expect(lens.command?.title).toContain('原始定义: Avatar types.xml:30');
   });
+
+  // C-22 交付①补:def 再生后计划刷新:旧计划指向重写前桩文件的旧行,
+  // updateEntityPlan 换新条目/行映射并 fire 变更事件让已打开文档重询。
+  it('updateEntityPlan:def 再生后刷新条目与行映射,并 fire 变更事件', () => {
+    const v1: EntityTypeStubEntry[] = [{
+      entity: 'Avatar',
+      methods: [],
+      properties: [{ name: 'profile', sourceLine: 24, customTypeLine: 30 }]
+    }];
+    const v2: EntityTypeStubEntry[] = [{
+      entity: 'Avatar',
+      methods: [],
+      properties: [{ name: 'profile', sourceLine: 38, customTypeLine: 50 }]
+    }];
+    const lineMapV2 = buildEntityTypeStubLineMap(v2);
+    const provider = new GeneratedSourceCodeLensProvider('stub_types.py', [], v1, null, null);
+    const doc = makeDoc(
+      path.join(root, 'stub_types.py'),
+      buildEntityTypeStubContent(v2)
+    );
+
+    const before = provider.provideCodeLenses(doc) as Array<{ command?: { title: string } }>;
+    // 空行映射(KR-AUD-78:缺映射不出镜)→ 更新前零镜
+    expect(before).toEqual([]);
+
+    let fired = 0;
+    const subscription = provider.onDidChangeCodeLenses(() => { fired += 1; });
+    provider.updateEntityPlan(v2, lineMapV2);
+    expect(fired).toBe(1);
+
+    const after = provider.provideCodeLenses(doc) as Array<{ command?: { title: string } }>;
+    expect(after).toHaveLength(1);
+    expect(after[0].command?.title).toContain('原始定义: Avatar types.xml:50');
+    subscription.dispose();
+    provider.dispose();
+  });
 });

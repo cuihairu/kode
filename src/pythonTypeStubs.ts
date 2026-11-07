@@ -41,6 +41,7 @@ import {
   type StubExportDeps
 } from './pythonStubExport';
 import { PYTHON_FAMILY_BASE, inferPythonLiteralAnnotation } from './pythonLiteralTypes';
+import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
 
 export const PYTHON_TYPE_STUB_FILE_NAME = 'kbe_types.pyi';
 
@@ -269,7 +270,7 @@ function resolveTypeName(typeName: string, context: ResolutionContext): string {
   }
   const info = context.byName.get(trimmed);
   if (info !== undefined) {
-    if (info.aliasType === 'FIXED_DICT') {
+    if (info.aliasType === FIXED_DICT_TYPE_NAME) {
       // 类定义在本文件先于别名发射,引用类名不算悬挂
       return trimmed;
     }
@@ -502,7 +503,7 @@ export function resolveFixedDictMember(
 ): FixedDictMemberHit | null {
   const trimmed = rootTypeName.trim();
   const info = customTypes.find(item => item.name === trimmed);
-  if (!info || info.aliasType !== 'FIXED_DICT') {
+  if (!info || info.aliasType !== FIXED_DICT_TYPE_NAME) {
     return null;
   }
   const field = info.properties.find(property => property.name === member);
@@ -571,7 +572,7 @@ export function buildPythonTypeStubPlan(
   // 即可,输出与输入顺序无关。
   const aliases: PythonTypeStubAliasEntry[] = [];
   for (const info of sorted) {
-    if (info.aliasType === 'FIXED_DICT') {
+    if (info.aliasType === FIXED_DICT_TYPE_NAME) {
       continue;
     }
     try {
@@ -590,7 +591,7 @@ export function buildPythonTypeStubPlan(
 
   const classes: PythonTypeStubClassEntry[] = [];
   for (const info of sorted) {
-    if (info.aliasType !== 'FIXED_DICT') {
+    if (info.aliasType !== FIXED_DICT_TYPE_NAME) {
       continue;
     }
     classes.push({

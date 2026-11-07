@@ -121,6 +121,7 @@
   "Unresolved": "未解析",
   "Visibility": "可见性",
   "Which method section declares the proxy methods?": "代理方法声明在哪个方法段",
+  "Whole reassign: rewrite FIXED_DICT sub-key assignment as top-level assignment": "整体重赋:将 FIXED_DICT 子键赋值改写为顶层整体赋值",
   "With samples": "带上示例",
   "Witness": "视野",
   "Wrap with null guard (if self.{receiver}:)": "包裹判空守卫(if self.{receiver}:)",

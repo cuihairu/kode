@@ -42,7 +42,7 @@ API 文档中最承重的概念：同一个脚本层 `Entity` 同时存在于最
 
 API 文档按「数据在何处权威」切分实体数据：
 
-1. **property 同步（cell → client）。** 服务端 `.def` 中带 `*_CLIENT*` 标志的属性会广播到客户端实体；变更时客户端侧的 `set_<property>` 被调用（`client/Entity.md:51-55`）。文档刻意不在这里枚举标志取值——那属于它们外链的 entitydef 文档（`keywords.md:109`、`client/Entity.md:55`）。
+1. **property 同步（cell → client）。** 服务端 `.def` 中带 `*_CLIENT*` 标志的属性会广播到客户端实体；变更时客户端侧的 `set_<property>` 被调用（`client/Entity.md:51-55`）。文档刻意不在这里枚举标志取值——那属于它们外链的 entitydef 文档（`keywords.md:109`、`client/Entity.md:55`）。 fork 源码级验证的一个引擎后果：广播只在属性**顶层**赋值时触发。FIXED_DICT 属性暴露给 Python 的是 `FixedDict` 对象,其下标赋值（`self.prop['key'] = value`）只写本地 `pyDict_`——`mp_ass_subscript` 没有 owner 通知路径（`kbe/src/lib/entitydef/fixeddict.cpp:272-308`）——因此子键变更不会同步；必须走整体重赋习语（`d = self.prop` → 改子键 → `self.prop = d`）。
 2. **cell 数据（贴着位置的数据）。** `position`、`direction`、`volatileInfo` 同步策略、`topSpeed`/`topSpeedY` 合法性校验、View/Witness 状态——全是 cellapp `Entity` 属性（`cellapp/Entity.md:1046-1050,1157-1184,1195-1230,1231-1265`）。易变数据有独立优化策略，可在 `.def` 的 `<Volatile>` 里按实体配置（`cellapp/Entity.md:1231-1265`）。
 3. **base 数据（baseapp 常驻）。** `cellData` 在 cell 尚未创建时保存 cell 部分的属性（外加 position/direction/spaceID），cell 创建后即删除（`baseapp/Entity.md:359-369`）。归档/备份策略属性 `shouldAutoArchive`/`shouldAutoBackup`（含 `KBEngine.NEXT_ONLY`）在 base 侧（`baseapp/Entity.md:446-474`）。
 4. **data 数据（落库）。** `databaseID`（0 = 非永久）、`databaseInterfaceName`、`writeToDB`、`onPreArchive`、`onWriteToDB`、`shouldAutoLoad`——持久化循环归 base 侧所有（`baseapp/Entity.md:397-409,412-421,199-215,299-309,333-343`）；cellapp 侧也能触发写库（`cellapp/Entity.md:649-666,955-960`）。

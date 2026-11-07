@@ -16,6 +16,9 @@ export interface KBEngineMetadataItem {
 //    <Properties> 子节点, 字段支持 Type/Persistent/DatabaseLength),
 //   .def 属性通过别名名引用。引擎不解析 def 属性内联的 FIXED_DICT。
 // 引擎注册表中不存在的类型(如 BOOL、TUPLE)不列入,防止补全生成引擎无法加载的定义。
+/** 引擎 def 类型名常量:FIXED_DICT(types.xml 别名声明形态;全仓判定/比较位统一引用,不再各写字面量) */
+export const FIXED_DICT_TYPE_NAME = 'FIXED_DICT';
+
 export const KBENGINE_TYPES: KBEngineMetadataItem[] = [
   { name: 'UINT8', detail: '8 位无符号整数', documentation: '范围 0-255。' },
   { name: 'UINT16', detail: '16 位无符号整数', documentation: '范围 0-65535。' },
@@ -39,7 +42,7 @@ export const KBENGINE_TYPES: KBEngineMetadataItem[] = [
   { name: 'PY_LIST', detail: 'Python 列表对象', documentation: '由 KBEngine 序列化的 Python list。' },
   { name: 'BLOB', detail: '二进制流', documentation: '字节流类型，常用于原始二进制数据。' },
   { name: 'ARRAY', detail: '数组容器', documentation: '内联写法 <Type>ARRAY<of>元素类型</of></Type>,元素类型放在 <of> 子节点。' },
-  { name: 'FIXED_DICT', detail: '固定字典容器', documentation: '在 scripts/entity_defs/types.xml 中以别名声明,需 <Properties> 子节点;.def 属性通过别名名引用。' }
+  { name: FIXED_DICT_TYPE_NAME, detail: '固定字典容器', documentation: '在 scripts/entity_defs/types.xml 中以别名声明,需 <Properties> 子节点;.def 属性通过别名名引用。' }
 ];
 
 // 来源: kbe/src/lib/entitydef/entitydef.cpp 与 common.cpp
