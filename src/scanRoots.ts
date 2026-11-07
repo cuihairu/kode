@@ -286,36 +286,49 @@ export async function findFilesAcrossRoots(
   }
   // KODE-CFG-017:托管目录(.kbengine/inferred 镜像树)副本剔出合并结果,
   // 防 kode 自身扫描镜像双计;目录名按 kbengine.managedDir 设置值(可为
-  // 多段相对路径如 tools/.kbengine),受管根=workspaceRoot∪各外部扫描根
-  // + 相对值,按绝对路径前缀判定,不按任意同名段全局剔除
+  // 多段相对路径如 tools/.kbengine),受管根=各 workspace 文件夹∪各外部
+  // 扫描根 + 相对值,按绝对路径前缀判定,不按任意同名段全局剔除。
+  // 评审第四轮 P1:workspace 部分(含 canned findFiles 里的多工作区镜像)
+  // 与外部遍历结果**都**过同一全量受管根过滤——外部遍历会带出外部根下的
+  // `.kbengine/inferred/...`(walk 只按 exclude 目录名单跳目录),多工作区
+  // 场景只按 folders[0] 拼受管根会漏掉其余工作区的受管副本,均双计。
   const managedDir = resolveManagedDirName(
     vscode.workspace.getConfiguration('kbengine').get<string>('managedDir')
   ).name;
-  const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? null;
-  const managedRootAbs = wsRoot ? normalizeForCompare(path.join(wsRoot, managedDir)) : null;
   const managedRoots: string[] = [];
-  if (managedRootAbs !== null) {
-    managedRoots.push(managedRootAbs);
-  }
-  for (const root of getExternalScanRoots()) {
-    const abs = normalizeForCompare(path.join(root, managedDir));
-    if (abs !== managedRootAbs) {
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    if (!folder?.uri?.fsPath) {
+      continue;
+    }
+    const abs = normalizeForCompare(path.join(folder.uri.fsPath, managedDir));
+    if (!managedRoots.includes(abs)) {
       managedRoots.push(abs);
     }
   }
-  if (managedRoots.length > 0) {
+  const externalRoots = getExternalScanRoots();
+  for (const root of externalRoots) {
+    const abs = normalizeForCompare(path.join(root, managedDir));
+    if (!managedRoots.includes(abs)) {
+      managedRoots.push(abs);
+    }
+  }
+  const dropManagedDirCopies = (): void => {
+    if (managedRoots.length === 0) {
+      return;
+    }
     const kept = new Set(filterManagedDirCopies([...merged.keys()], managedRoots));
     for (const key of merged.keys()) {
       if (!kept.has(key)) {
         merged.delete(key);
       }
     }
-  }
+  };
+  dropManagedDirCopies();
   try {
     const match = matcherForGlob(glob);
     if (match) {
       const stopExternalWalk = discovery.startSubPhase('external-walk');
-      for (const root of getExternalScanRoots()) {
+      for (const root of externalRoots) {
         if (token?.isCancellationRequested) { break; }
         await walkExternalRoot(root, match, excludeDirNames(exclude), merged, token);
       }
@@ -324,16 +337,10 @@ export async function findFilesAcrossRoots(
   } catch {
     // workspace 外根遍历失败不拖垮 workspace 结果(扫描按可得范围降级)
   }
-  // 外部遍历结果同受托管根前缀过滤(assetsRoot 恰为工作区根时,遍历起点
-  // 覆盖受管目录;一般情形下受管根不在外部根内,过滤为无操作)
-  if (managedRootAbs !== null) {
-    const prefix = managedRootAbs + '/';
-    for (const key of merged.keys()) {
-      if (key.startsWith(prefix)) {
-        merged.delete(key);
-      }
-    }
-  }
+  // 外部遍历结果同过全量受管根前缀过滤(walk 只按 exclude 名单跳目录,
+  // 外部根内的托管镜像树由此处统一剔出;workspaceFolders[0] 之外的受管根
+  // 也在列,多工作区互为镜像时不漏)
+  dropManagedDirCopies();
   discovery.countFileDiscovery(merged.size);
   discovery.end('ok');
   return [...merged.values()];
