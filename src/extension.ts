@@ -219,9 +219,9 @@ import {
   runCompatibilityCheck,
   type ExtensionCompatibilityTarget
 } from './engineCompatibility';
+import { activateCoreServices } from './activate/coreServices';
 import {
   DefinitionSymbolIdentity,
-  EntityMappingManager,
   EntityMethodSection
 } from './entityMapping';
 import { EntityDependencyWebView } from './entityDependencyWebView';
@@ -357,7 +357,6 @@ import {
   validateDocument,
   validateEntitiesXmlDocument
 } from './languageProviders';
-import { GlobalDataDictIndex } from './globalDataIndex';
 import { WorkspaceIndex } from './workspaceIndex';
 import { PythonTypeInlayHintsProvider } from './typeInlayHints';
 import { DefParamInlayHintsProvider } from './defParamInlayHints';
@@ -368,7 +367,7 @@ import { ConsoleLogTailController } from './consoleLogTail';
 import { ComponentStatusTreeProvider, resolveThresholds } from './componentStatusPanel';
 import { watcherPatternSignature, isExcludedScanPath } from './indexWatcherScope';
 import { PythonClassIndex } from './pythonClassIndex';
-import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
+import { IndexTaskPriority } from './indexScheduler';
 import { shouldStartKbEngineIndexing } from './workspaceGate';
 import { preheatDiscoveryScan } from './workspaceDiscovery';
 import { DiagnosticScheduler, getDiagnosticScheduler } from './diagnosticScheduler';
@@ -377,8 +376,7 @@ import {
   invalidateDatabaseSchemaCacheForFiles,
   invalidateDatabaseSchemaCacheForTypeRegistry,
   getDatabaseSchemaCacheGauge,
-  getPendingTypeStorageColdBuildCount,
-  setTypeStorageUsageBackgroundDispatcher
+  getPendingTypeStorageColdBuildCount
 } from './databaseSchema';
 import { findEntityDefinitionFile, getDefinitionWorkspaceLayout, getRegisteredEntities, listDefinitionFiles, readWorkspaceTextFile } from './definitionWorkspace';
 import { validateProcessTopologyInRust } from './processTopologyRust';
@@ -611,31 +609,17 @@ export function activate(context: vscode.ExtensionContext) {
     }
   };
 
-  // 初始化实体映射管理器(用户令 2026-10-21 内建属性单:补全的 def 归属面
-  // 兜底也走 manager,故提到补全注册之前)
-  // PR3/PR5:统一索引调度器实例化一次共享——EntityMappingManager 首扫与
-  // PythonClassIndex 文件发现/分块解析都经它入队,后台任务受交互限流。
-  const indexScheduler = new IndexScheduler();
-  context.subscriptions.push({ dispose: () => indexScheduler.dispose() });
-  // SCH-009 冷路径退交互线程:types.xml 用法索引的冷构建(整仓读)派发到
-  // 统一调度器 non-interactive 队列——交互线程冷读只回空表并登记后台构建,
-  // CodeLens 由 onTypeStorageUsageIndexPublished 回调失效重算,不再首击
-  // 同步整仓扫描。
-  setTypeStorageUsageBackgroundDispatcher(run =>
-    indexScheduler.enqueue({
-      kind: 'non-interactive',
-      priority: IndexTaskPriority.NonInteractive,
-      run
-    }).wait
-  );
-  // 书 PR-002 工作区门控:deferStartup=true → 构造零副作用(不建 watcher、
-  // 不入队全量首扫)。是否启动由 shouldStartKbEngineIndexing() 的特征探测决定:
-  // 有 .def/entities.xml/types.xml/alias.xml/kbengine*.xml 之一即启动(与门控前
-  // 逐行为一致);无特征的纯 Python 工作区零后台扫描零 watcher,查询入口的
-  // ensureStartup() 幂等兜底保证结果口径不变(fail-open:探测异常按放行处理)。
-  const entityMappingManager = new EntityMappingManager(context, indexScheduler, {
-    deferStartup: true
-  });
+  // SRC-001 L1 共享核心服务层(KODE-ARCH 纯移动):indexScheduler/
+  // entityMappingManager/dataDictIndex 装配在 src/activate/coreServices.ts,
+  // 装配顺序由本调用点保持(先于诊断调度块与语言 provider 装配),销毁句柄
+  // 随返回值交组合根统一登记。
+  const {
+    disposables: coreServicesDisposables,
+    indexScheduler,
+    entityMappingManager,
+    dataDictIndex
+  } = activateCoreServices({ context });
+  context.subscriptions.push(...coreServicesDisposables);
 
   // Python 侧诊断(receiver 可能为 None + .def 段错配,用户令 2026-10-27 任务1):
   // compute 同步(guard 分析走 in-tree pythonParser;映射经 getMappingForPythonFile
@@ -884,12 +868,6 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(signatureHelpProvider);
 
-  // GLOBDATA-001/002:数据字典键索引单例(globalData/baseAppData/cellAppData
-  // 键写/读点互链)。懒建(首查 ensureStarted),extension 生命周期随订阅
-  // 释放;definition/references/inlay/hover 共用同一实例与内存倒排。置于
-  // hover 装配之前(hover 构造需注入)。
-  const dataDictIndex = new GlobalDataDictIndex();
-  context.subscriptions.push({ dispose: () => dataDictIndex.dispose() });
   // 注册悬停文档提供者（.def/xml 与 Python 实体脚本均可查看 hook 文档;
   // 注入实体映射管理器后,python def 声明行的「实体 def 声明的 X 方法」
   // 标注走与 RPC CodeLens 同一把形参闸门;PR1 起带 hover 打点;GLOBDATA-002
