@@ -29,6 +29,39 @@ export const PYTHON_STUB_EXPORT_SETTING = 'kbengine.python.stubExport';
 export const PYTHON_STUB_EXPORT_ENABLED_DEFAULT = true;
 export const KBE_STUB_FILE_NAME = 'KBEngine.pyi';
 
+/**
+ * 存根来源档位(IDE-STUB-001,用户令批次):`kbengine.python.stubSourceMode`,
+ * `generated`(默认)/ `real-source` 两档。语义:generated=stub 由内置生成链
+ * 产出(entityTypeStubs.ts / pythonTypeStubs.ts 生成链),**不复制真实代码**;
+ * real-source=既有「复制真实代码导出」路径(本地引擎 typings checkout 拼接
+ * 全量 API,fantasydemoRealExport 所测路径)仅在此档执行。
+ */
+export const STUB_SOURCE_MODE_SETTING = 'python.stubSourceMode';
+export const STUB_SOURCE_MODE_GENERATED = 'generated';
+export const STUB_SOURCE_MODE_REAL_SOURCE = 'real-source';
+export const STUB_SOURCE_MODES = [
+  STUB_SOURCE_MODE_GENERATED,
+  STUB_SOURCE_MODE_REAL_SOURCE
+] as const;
+export type StubSourceMode = (typeof STUB_SOURCE_MODES)[number];
+export const STUB_SOURCE_MODE_DEFAULT: StubSourceMode = STUB_SOURCE_MODE_GENERATED;
+
+export interface StubSourceModeReading {
+  /** kbengine.python.stubSourceMode 的原始设置值;缺省直读 vscode 配置 */
+  setting?: unknown;
+}
+
+/**
+ * 档位读取口(单独导出:测试不必搭假配置树)。未知值一律回落 generated——
+ * 只认两档,不认第三档;generated 是安全默认(不复制真实代码)。
+ */
+export function readStubSourceMode(reading: StubSourceModeReading = {}): StubSourceMode {
+  const raw = reading.setting === undefined
+    ? vscode.workspace.getConfiguration('kbengine').get(STUB_SOURCE_MODE_SETTING, STUB_SOURCE_MODE_DEFAULT)
+    : reading.setting;
+  return raw === STUB_SOURCE_MODE_REAL_SOURCE ? STUB_SOURCE_MODE_REAL_SOURCE : STUB_SOURCE_MODE_GENERATED;
+}
+
 /** 引擎 typings 全量面开关默认值(kbengine.python.stubEngineTypings,默认开) */
 export const PYTHON_STUB_ENGINE_TYPINGS_ENABLED_DEFAULT = true;
 
@@ -361,9 +394,15 @@ export function buildKbeStubExportContentForWorkspace(
   // 引擎 typings 全量面独立开关(用户令 2026-10-21):总闸 stubExport 旧键
   // 优先管整个导出;此键只管「本地引擎 checkout 拼全量 API」这层增强,
   // =false 时回落 kode 自带精选目录(既有内容,不硬造)。
-  const engineTypingsEnabled = vscode.workspace
-    .getConfiguration('kbengine')
-    .get<boolean>('python.stubEngineTypings', PYTHON_STUB_ENGINE_TYPINGS_ENABLED_DEFAULT);
+  // IDE-STUB-001(用户令批次):拼接引擎 checkout 是「复制真实代码」,只在
+  // real-source 档放行;默认 generated 档一律回落精选目录(不复制真实代码),
+  // stubEngineTypings 子开关只在 real-source 档内继续生效。
+  const sourceMode = readStubSourceMode();
+  const engineTypingsEnabled = sourceMode === STUB_SOURCE_MODE_REAL_SOURCE
+    ? vscode.workspace
+        .getConfiguration('kbengine')
+        .get<boolean>('python.stubEngineTypings', PYTHON_STUB_ENGINE_TYPINGS_ENABLED_DEFAULT)
+    : false;
   const engineTypingsRoot = engineTypingsEnabled
     ? resolveEngineTypingsRoot(workspaceRoot, options)
     : null;

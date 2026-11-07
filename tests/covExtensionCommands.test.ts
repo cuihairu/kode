@@ -680,6 +680,32 @@ describe('extension 激活链命令面(补测)', () => {
     };
     fire(['kbengine.managedDir']);
     fire(['kbengine.python.stubEngineTypings', 'kbengine.python.entityStubMethods']);
+    // IDE-STUB-001:档位切换同走即时重导(切回 generated 收回真实引擎代码)
+    fire(['kbengine.python.stubSourceMode']);
+  });
+
+  it('onDidChangeConfiguration:stubSourceMode 切档即时重导,generated 收回引擎拼接代码', async () => {
+    // 预置 real-source 时代遗留的拼接产物,切回 generated 后内容比对刷新应重写
+    const stubFile = path.join(root, '.kbengine', 'stubs', 'KBEngine.pyi');
+    fs.mkdirSync(path.dirname(stubFile), { recursive: true });
+    fs.writeFileSync(
+      stubFile,
+      '# KBEngine.pyi — kode generated from the local KBEngine typings checkout.\nclass Entity:\n    id: int\n',
+      'utf8'
+    );
+    configurationOverrides.set('kbengine', { 'python.stubSourceMode': 'generated' });
+    try {
+      workspaceEvents.configurationChanged.fire({
+        affectsConfiguration: (key: string) => key === 'kbengine' || key === 'kbengine.python.stubSourceMode'
+      });
+      await new Promise(resolve => setTimeout(resolve, 50));
+      const rewritten = fs.readFileSync(stubFile, 'utf8');
+      expect(rewritten).not.toContain('generated from the local KBEngine typings checkout');
+      // 精选目录内容(内置符号索引发射)
+      expect(rewritten).toContain('Content source: src/kbeModuleIndex.ts');
+    } finally {
+      configurationOverrides.delete('kbengine');
+    }
   });
 
   it('文档事件面:def/types.xml 编辑失效 schema 缓存,python 开合走诊断与注解释放', () => {

@@ -1754,6 +1754,16 @@
           "default": "",
           "markdownDescription": "%kbengine.config.python.stubDir.description%"
         },
+        "kbengine.python.stubSourceMode": {
+          "type": "string",
+          "enum": ["generated", "real-source"],
+          "default": "generated",
+          "markdownEnumDescriptions": [
+            "%kbengine.config.python.stubSourceMode.enum.0%",
+            "%kbengine.config.python.stubSourceMode.enum.1%"
+          ],
+          "markdownDescription": "%kbengine.config.python.stubSourceMode.description%"
+        },
         "kbengine.python.enableMroJump": {
           "type": "boolean",
           "default": true,

@@ -283,7 +283,7 @@ import {
 import { fileSystemScriptRootDeps, syncPythonExtraPaths } from './pythonExtraPaths';
 import { activateInferPipeline } from './inferPipeline';
 import { disableJsoncAssociation, syncJsoncAssociation } from './jsoncAssociation';
-import { exportKbeStubs, fileSystemStubExportDeps, readManagedDirSetting, resolveManagedDirName } from './pythonStubExport';
+import { STUB_SOURCE_MODE_SETTING, exportKbeStubs, fileSystemStubExportDeps, readManagedDirSetting, resolveManagedDirName } from './pythonStubExport';
 import {
   PYTHON_TYPE_STUB_FILE_NAME,
   buildPythonTypeStubLineMap,
@@ -6320,7 +6320,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.onDidChangeConfiguration(event => {
       if (
         event.affectsConfiguration('kbengine.python.stubEngineTypings') ||
-        event.affectsConfiguration('kbengine.python.entityStubMethods')
+        event.affectsConfiguration('kbengine.python.entityStubMethods') ||
+        // IDE-STUB-001:档位切换即时重导——real-source 切回 generated 后,
+        // 已拼接的真实引擎代码在内容比对刷新下被收回精选目录内容
+        event.affectsConfiguration(`kbengine.${STUB_SOURCE_MODE_SETTING}`)
       ) {
         regenerateManagedDirAssets();
       }
