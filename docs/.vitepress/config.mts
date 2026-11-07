@@ -65,6 +65,7 @@ export default withMermaid(defineConfig({
                 { text: 'Quick start', link: '/guide/' },
                 { text: 'Configuration', link: '/guide/configuration' },
                 { text: 'Feature overview', link: '/guide/features' },
+                { text: 'Feature flags before/after', link: '/guide/feature-flags' },
                 { text: 'Commands and panels', link: '/guide/commands' },
                 { text: 'Language features', link: '/guide/language' },
                 { text: 'Startup parameters', link: '/guide/startup-parameters' },
@@ -95,7 +96,6 @@ export default withMermaid(defineConfig({
                 { text: 'Player data clone (db-clone)', link: '/player-clone/' },
                 { text: 'db-clone capability & pipeline overview', link: '/player-clone/db-clone-overview' },
                 { text: 'Space Viewer / Watcher protocol forensics', link: '/design/space-viewer-watcher' },
-                { text: 'KBEngine guiconsole integration feasibility', link: '/design/kbengine-guiconsole-integration' },
                 { text: 'File change meta (identity + version)', link: '/design/file-change-meta' }
               ]
             }
@@ -159,6 +159,7 @@ export default withMermaid(defineConfig({
                 { text: '快速开始', link: '/zh/guide/' },
                 { text: '配置说明', link: '/zh/guide/configuration' },
                 { text: '功能概览', link: '/zh/guide/features' },
+                { text: '配置开关前后对照', link: '/zh/guide/feature-flags' },
                 { text: '命令与面板', link: '/zh/guide/commands' },
                 { text: '语言能力', link: '/zh/guide/language' },
                 { text: '启动参数', link: '/zh/guide/startup-parameters' },
@@ -189,7 +190,6 @@ export default withMermaid(defineConfig({
                 { text: '玩家数据克隆 (db-clone)', link: '/zh/player-clone/' },
                 { text: 'db-clone 能力边界与克隆全链路', link: '/zh/player-clone/db-clone-overview' },
                 { text: 'Space Viewer/Watcher 协议取证', link: '/zh/design/space-viewer-watcher' },
-                { text: 'KBEngine guiconsole 接入可行性分析', link: '/zh/design/kbengine-guiconsole-integration' },
                 { text: '文件变化元信息(identity+version)', link: '/zh/design/file-change-meta' }
               ]
             }

@@ -959,7 +959,7 @@
   - 交付③hover 行为注记:FIXED_DICT/易坑 API 的 hover 附加行为警告段(数据源=KB-001 结构化条目)。
   - 验收:三个规则各配正反用例(误报=0);hover 注记双语;规则可用配置关闭。
 
-- [ ] **C-24 · P2 · 实现 · 配置开关效果文档流水线(开关前后截图+动态图,用户令 2026-11-01)**
+- [x] **C-24 · P2 · 实现 · 配置开关效果文档流水线(开关前后截图+动态图,用户令 2026-11-01)**(本 commit 完成:流水线 `scripts/config-switch-gifs/generate.py`(Xvfb 真实 VS Code+kode vsix+demo 资产工作区,逐开关写工作区设置 off→重启扩展宿主→真实窗口截图→ffmpeg 缝合 off/on 动图;application-scoped 基线设置落 user profile 防报错 toast 污染截图)+`switches.json` 全量清单 37 开关(中英名/效果/可见面/可截图标记)+`README.md`;实抓 11 开关 11 gif+22 png+manifest=`docs/public/config-switch-gifs/`(enable-diagnostics/check-duplicate-definitions/hover 三类/codelens 两类/inlay 两类/call-chain-view graph:text 双态/hot-reload-enabled 状态栏 关:→就绪;全部真实扩展实例截图,逐张 vision 复核);文档页 `docs/guide/feature-flags.md`+`docs/zh/guide/feature-flags.md`(每 gif 开关=说明+动图+off/on 单帧+汇总表;26 开关无头跑不出有意义界面差异的如实列手动清单:调试会话类 debugpyInject/autoDebugpy、生成向导类、存根文件差异类 stubSourceMode、runtimeQuery.enabled(面板恒开,开关只控面板内查询/结果流)、showFinalConfigOnOpen(自动打开需可运行引擎 bin,无头不触发)等;不造假图);侧栏 config.mts 双语入口;docs:build 绿 88s(feature-flags.html 双语产出);vsix 从 HEAD 打包 /tmp/kode-gif-capture/kode.vsix,流水线可重跑(`--all`/`--switch`)兼作开关效果回归)
   - 交付①配置效果清单:枚举全部「开启后有效果」的配置项(VSCode contributes 配置点+引擎侧开关),标注效果可见面(编辑器/面板/行为)。
   - 交付②自动截图流水线:@vscode/test-electron 可编程驱动——起扩展主机→写配置 on→稳定后截图→写配置 off→截图;行为类开关(如热重载)录过程多帧;ffmpeg 缝合动态 GIF。
   - 交付③文档页:docs 增「配置效果」页,每开关=说明+off/on 静态图+动态 GIF(VitePress 直接嵌),双语。
