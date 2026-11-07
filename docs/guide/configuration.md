@@ -665,6 +665,10 @@ Sub-paths inferable from existing files never become settings: the def root deri
 
 Counted: **all 32 kept, 0 deleted** (deleting entries would break existing user settings — not done); of them, 5 path settings were downgraded from "must configure" to "optional override", 3 telnet/value settings were already override-style, and 21 are preference/security/business switches (whose defaults carry zero-config semantics). Additionally, 3 kinds of purely discovered resources with **no settings** were added (types.xml, messages_fixed(_defaults).xml, and the engine defaults' source-root fallback). Since batch 126, 12 more settings were added beyond this table (`kbengine.db.tablePrefix`, 4 × `kbengine.hotReload.*`, `kbengine.clientSdk.outputDir`, `kbengine.python.extraPathsSync`/`stubExport`/`stubDir`/`stubSourceMode`, `kbengine.python.enableMroJump`, and `kbengine.engineVersion`), all registered in the grouped overview tables above.
 
+## Config data protection
+
+Excel-generated config data (dict tables and `*Config`/`*Data` classes under the config dirs) is write-protected by the engine contract: only reload/hot-update entry points may mutate it. The `kbengine.configData` rule reports write points (attribute / subscript / `del` / augmented assign / mutator methods) on config bindings outside those exemptions as `kbengine.configDataMutation` diagnostics; writes inside `reload*`/`hotUpdate*` functions and the `mutationExclude` whitelist are exempt, and hovering a config binding/class name shows its literal-read type text. See the `kbengine.configData` row in the settings overview above.
+
 ## FAQ
 
 ### Why didn't my settings change take effect immediately?

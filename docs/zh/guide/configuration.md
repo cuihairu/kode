@@ -665,6 +665,10 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 
 计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126 起在此表之外新增 12 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`/`stubSourceMode`、`kbengine.python.enableMroJump`、`kbengine.engineVersion`),均已在总览分区表登记。
 
+## 配置数据保护(configData)
+
+Excel 生成的配置数据(配置目录下的 dict 表与 `*Config`/`*Data` 类)受引擎契约保护:只有热更新重载入口可以修改。`kbengine.configData` 规则把这些配置绑定在豁免面之外的写点(属性/下标/`del`/增强赋值/变异方法)报为 `kbengine.configDataMutation` 诊断;`reload*`/`hotUpdate*` 函数体与 `mutationExclude` 白名单内不报;悬停配置绑定/类名显示直读类型文本。见上方设置总览中 `kbengine.configData` 行。
+
 ## 常见问题
 
 ### 为什么设置改了没有立刻生效?

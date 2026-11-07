@@ -1028,6 +1028,12 @@ callgraph 模式面板支持：
 - 标题：`执行快速动作`
 - 作用：按动作名执行 `.kbengine/debug.json` 的 `quickActions` 条目，由「快速执行」视图的动作行调用
 
+### `kbengine.python.showEngineSpi`
+
+- 标题: `引擎 SPI · 显示实现方法信息(引擎侧以 SPI 模式调用)`
+- 用途:引擎 SPI 实现函数标注镜(KODE-CFG-015)的点击面。KODE-CFG-012 SPI 方法表命中的模块级 `def` 处的镜显示该方法身份与触发时机(如 `onInit` 首回调 `0`=启动 `1`=热载;可选方法带「 · 可选」后缀)
+- 如实边界:引擎侧调用点在 C++ 引擎内、不在本仓,镜为纯信息展示,不做跳转
+
 ### `kbengine.python.syncExtraPaths`
 
 - 标题：`Sync Python Extra Paths`

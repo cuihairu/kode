@@ -1068,6 +1068,12 @@ The flow graph panel supports:
 - Script working directory: scanned actions use the script's containing directory as `cwd`
 - Entry point: Command Palette
 
+### `kbengine.python.showEngineSpi`
+
+- Title: `Show Engine SPI Implementation Info`
+- Purpose: information lens click target for engine SPI implementation functions (KODE-CFG-015). The lens on a module-level `def` named in the KODE-CFG-012 SPI table shows the method's SPI identity and trigger timing (e.g. `onInit` — first callback, `0` = startup `1` = reload; optional methods carry a「 · 可选」suffix)
+- Honesty rule: the engine-side call sites live in the C++ engine, not this repo, so the lens is informational and never navigates
+
 ### `kbengine.python.syncExtraPaths`
 
 - Title: `Sync Python Extra Paths`
