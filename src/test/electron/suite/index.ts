@@ -49,7 +49,9 @@ export function run(): Promise<void> {
               ? file === 'manifestResolved.test.js'
               : suite === 'live'
                 ? file === 'liveObservation.test.js' || file === 'consoleLive.test.js'
-                : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');
+                : suite === 'dbglive'
+                  ? file === 'debugpyInjectLive.test.js'
+                  : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');
   for (const file of files) {
     mocha.addFile(path.resolve(testsRoot, file));
   }
