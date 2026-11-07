@@ -39,8 +39,8 @@
 | PropertyCodeLensProvider | languageProviders.ts:4819 | :1114 | EntityMappingManager(types.xml 属性回指) | fireConfigurationChanged 事件 |
 | EventCodeLensProvider | eventApi.ts:95 | :1128 | EventCallIndex 小接口(`allEventCalls`,ARC-002;注入 sharedWorkspaceIndex) | 预启动延迟 8s 后共享索引全仓 py 扫描入队(唯一扫描入口) |
 | TypesXmlCodeLensProvider | languageProviders.ts:4964 | :1169 | databaseSchema 类型存储使用索引(`onTypeStorageUsageIndexPublished` 订阅;构造零依赖) | fireConfigurationChanged 事件;watcher 归装配线(ARC-005) |
-| GeneratedSourceCodeLensProvider(python 桩) | generatedSourceLenses.ts:11 | :1187 | 构造期快照 buildPythonTypeStubPlan(getCustomTypeInfos) | 纯读 |
-| GeneratedSourceCodeLensProvider(entity 桩) | generatedSourceLenses.ts:11 | :4632 | 构造期快照 buildEntityTypeStubPlan(getAllMappings + getCustomTypeInfos) | 纯读 |
+| GeneratedSourceCodeLensProvider(python 桩) | generatedSourceLenses.ts:11 | activate/languageServices.ts:519(SRC-001 L2) | 构造期快照 buildPythonTypeStubPlan(getCustomTypeInfos) | 纯读 |
+| GeneratedSourceCodeLensProvider(entity 桩) | generatedSourceLenses.ts:11 | activate/generators.ts:90(SRC-001 L7) | 构造期快照 buildEntityTypeStubPlan(getAllMappings + getCustomTypeInfos) | 纯读 |
 | PythonTypeInlayHintsProvider | typeInlayHints.ts:33 | :1197 | EntityMappingManager | 纯读 |
 | KBEngineBuiltinTypeInlayHintsProvider | languageProviders.ts:649 | :1207 | EntityMappingManager | 纯读 |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | 纯读 |
@@ -119,7 +119,7 @@
 
 ## 5. watcher 分布
 
-watcher 分布(基线 499d34a,按**源码调用位**计,测试逐文件对账;GLOBDATA-001 起 globalDataIndex 增 1 处;AUD-035 起 workspaceIndex 增 1 处=workspace py glob+外部根 RelativePattern;KODE-CFG-017 起 inferPipeline 增 1 处=infer 管道 py watcher;配置契约检查诊断起 extension.ts 增 1 处=.kbengine/debug.json/.gitignore/.vscode/settings.json/CLAUDE.md/README 契约文件 watcher;SRC-001 L2 起 extension.ts 拨 1 处=python 类索引 watcher 迁 activate/languageServices.ts,SRC-001 L3 再拨 1 处=配置契约 watcher 迁 activate/diagnostics.ts,SRC-001 L5 再拨 1 处=最终配置 kbengine*.xml watcher 迁 activate/views.ts,测试按文件名记账故清单记 src/languageServices.ts 与 src/views.ts):src/extension.ts=1 src/languageServices.ts=1 src/diagnostics.ts=1 src/typeStorageIndexWatchers.ts=1 src/entityMapping.ts=3 src/hotReload.ts=1 src/pythonTypeStubs.ts=1 src/debugConfig.ts=1 src/workspaceIndex.ts=2 src/globalDataIndex.ts=1 src/inferPipeline.ts=1 src/views.ts=1(合计 15 处调用位)
+watcher 分布(基线 499d34a,按**源码调用位**计,测试逐文件对账;GLOBDATA-001 起 globalDataIndex 增 1 处;AUD-035 起 workspaceIndex 增 1 处=workspace py glob+外部根 RelativePattern;KODE-CFG-017 起 inferPipeline 增 1 处=infer 管道 py watcher;配置契约检查诊断起 extension.ts 增 1 处=.kbengine/debug.json/.gitignore/.vscode/settings.json/CLAUDE.md/README 契约文件 watcher;SRC-001 L2 起 extension.ts 拨 1 处=python 类索引 watcher 迁 activate/languageServices.ts,SRC-001 L3 再拨 1 处=配置契约 watcher 迁 activate/diagnostics.ts,SRC-001 L5 再拨 1 处=最终配置 kbengine*.xml watcher 迁 activate/views.ts,SRC-001 L7 拨走最后一处=托管目录 watcher 迁 activate/generators.ts,测试按文件名记账故清单记 src/languageServices.ts、src/views.ts 与 src/generators.ts): src/languageServices.ts=1 src/diagnostics.ts=1 src/typeStorageIndexWatchers.ts=1 src/entityMapping.ts=3 src/hotReload.ts=1 src/pythonTypeStubs.ts=1 src/debugConfig.ts=1 src/workspaceIndex.ts=2 src/globalDataIndex.ts=1 src/inferPipeline.ts=1 src/views.ts=1 src/generators.ts=1(合计 15 处调用位)
 
 - 装配层自持:extension.ts ×1、typeStorageIndexWatchers.ts ×1 调用位(循环建 def/types.xml/entities.xml 3 枚 watcher,ARC-005)——配置契约 watcher 已迁 diagnostics.ts(SRC-001 L3)、最终配置 kbengine*.xml watcher 已迁 views.ts(SRC-001 L5)。
 - 模块自持(见 §6 标注):entityMapping ×3、hotReload ×1(显式 dispose/重建)、pythonTypeStubs ×1、debugConfig ×1。
