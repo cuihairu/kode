@@ -48,7 +48,7 @@ export function run(): Promise<void> {
             : suite === 'manifestnls'
               ? file === 'manifestResolved.test.js'
               : suite === 'live'
-                ? file === 'liveObservation.test.js'
+                ? file === 'liveObservation.test.js' || file === 'consoleLive.test.js'
                 : suite === 'dbglive'
                   ? file === 'debugpyInjectLive.test.js'
                   : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');

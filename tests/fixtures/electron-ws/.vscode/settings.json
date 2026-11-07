@@ -5,6 +5,10 @@
         "**/*.code-search": true,
         ".kbengine/**": true
     },
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/scripts",
+        "${workspaceFolder}/.kbengine/stubs"
+    ],
     "files.watcherExclude": {
         ".git/objects/**": true,
         ".git/subtree-cache/**": true,
@@ -13,5 +17,8 @@
         "*/.git/subtree-cache/**": true,
         "*/.hg/store/**": true,
         ".kbengine/**": true
+    },
+    "files.associations": {
+        "**/.kbengine/debug.json": "jsonc"
     }
 }
