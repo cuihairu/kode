@@ -155,25 +155,17 @@ const ANCHORS: Array<[string, number, string]> = [
   // KODE-CFG-009 配置消费通道接线(顶部 import +2 + activate 预取 +3 = +5)均
   // 作用于 extension.ts 顶部——全部 extension.ts 锚点按合并树真位重探
   // 683/696/980/1062/1113/1176/1499,出处随 baseline 锁步。
-  // 2026-11-07(KODE-CFG-015):引擎 SPI CodeLens 装配——extension.ts 顶部 +1
-  // 行 import(engineSpiCodeLens 两符号)+ provider/命令/开关监听装配块 +22
-  // (python completion 装配后,§7 全部锚点之前只推后段):前段七锚点 +1、
-  // 后段两锚点(completion 第二路/onDidChangeTextDocument/flushQueued)+23:
-  // 真位重探 684/697/981/1063/1114/1177/1522/2391/2471,出处随 baseline 锁步。
-  // 2026-11-07(KODE-CFG-016 ①②):配置数据意外写诊断 + 配置 schema hover
-  // 装配——extension.ts 顶部 import 块 +10(configDataMutation 五符号 +
-  // configSchemaHoverProvider 一符号),provider/命令/触发面装配块 +113
-  // (在 configContract 装配块之后,completion 第二路锚点之前):
-  // 前段七锚点 +10,后段三锚点(completion 第二路 +121、
-  // onDidChangeTextDocument/flushQueued +124):真位重探
-  // 694/707/991/1073/1124/1187/1533/2515/2595,出处随 baseline 锁步。
-  ['src/extension.ts', 1073, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1124, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1187, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 991, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1533, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 694, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 707, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-07(KODE-CFG-015/016 合并 origin/main):分支侧 SPI CodeLens
+  // (import +1/装配 +22)与配置写诊断+schema hover(import +10/装配 +113)同
+  // main 侧 C-22/KODE-ARCH-002/C-23 位移在合并树叠加,按合并树重探真位
+  // 636/649/933/1015/1066/1129/1485/2467/2547,出处随 baseline 锁步。
+  ['src/extension.ts', 1015, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1066, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1129, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 933, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1485, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 636, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 649, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -183,8 +175,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // runPyspySchedule 引入)→ 上列 9 处 extension.ts 锚点整体 +2(真位重探 683/696/980/
   // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450);
   // HOT-VER 再 +3(见上)→ 后段锚点 2373/2453;DEMO-GAME-006 再 +2(见上)→ 2375/2455。
-  ['src/extension.ts', 2515, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2595, 'flushQueued()'],
+  ['src/extension.ts', 2467, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2547, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。
@@ -222,7 +214,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // 触发点(def 声明方法追加段)resolveDefMethodAnnotation +12:1360 后锚点
   // 再 +12(1852/1911/1935/2063/4812/5220/5326/7170),baseline 同步。
   ['src/languageProviders/inlay.ts', 42, 'getDocumentLines(document)'],
-  ['src/languageProviders/hover.ts', 129, 'provideHover('],
+  ['src/languageProviders/hover.ts', 130, 'provideHover('],
   ['src/languageProviders/navigation.ts', 24, 'shadowCompareDefinition'],
   ['src/languageProviders/validation.ts', 13, 'export function validateDocument('],
   ['src/languageProviders/validation.ts', 37, 'shadowObserveDefDocument'],

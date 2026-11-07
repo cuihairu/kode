@@ -1,5 +1,7 @@
 //! kode-mcp:把 def 知识库暴露给 AI agent(MCP-001)。
 
+pub mod config_qa;
+pub mod explain;
 pub mod kb;
 pub mod server;
 

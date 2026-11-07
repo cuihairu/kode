@@ -12,6 +12,7 @@
 // PropertyDirectionHit),本层不自己读 def 文件。
 
 import { findPythonSelfPropertyAccesses } from './propertyCodeLens';
+import { l10nText } from './nlsRuntime';
 import { inferMethodSectionFromPythonFile } from './entityMapping';
 import type { PropertyFlagDomain } from './defAnalyzer';
 
@@ -77,7 +78,7 @@ const RECEIVER_SCOPE: Record<string, PropertyDirectionScope> = {
 };
 
 const domainLabel = (domains: readonly PropertyFlagDomain[]): string =>
-  domains.length > 0 ? domains.join('|') : '(Flags 未配置)';
+  domains.length > 0 ? domains.join('|') : l10nText('(Flags not configured)');
 
 /**
  * 属性方向违规判定(纯函数):每处 self.<prop> / self.<role>.<prop> 访问,
@@ -126,8 +127,10 @@ export function findPropertyDirectionFindings(
         domains,
         severity: 'Information',
         code: PROPERTY_DIRECTION_SCOPE_UNKNOWN_DIAGNOSTIC_CODE,
-        message: `无法确定 ${propertyPath} 的进程作用域(文件不在 scripts/base|cell|client 段),`
-          + `方向判定降级为参考信息(不标 Error)`
+        message: l10nText(
+          'Cannot determine the process scope of {path} (file not under scripts/base|cell|client); direction check downgraded to reference info (not Error)',
+          { path: propertyPath }
+        )
       });
       continue;
     }
@@ -137,8 +140,8 @@ export function findPropertyDirectionFindings(
     }
     if (!domains.includes(accessedDomain)) {
       const detail = receiver
-        ? `经 ${receiver} 侧取不到(引擎按域存储,跨域引用失效)`
-        : `当前 ${fileScope} 段访问不在其域内`;
+        ? l10nText('not reachable via the {receiver} side (the engine stores per domain; cross-domain references break)', { receiver: receiver as string })
+        : l10nText('access in the {scope} section is outside its domain', { scope: fileScope as PropertyDirectionScope });
       findings.push({
         line: access.line,
         character: charStart,
@@ -149,8 +152,15 @@ export function findPropertyDirectionFindings(
         domains,
         severity: 'Warning',
         code: PROPERTY_DIRECTION_VIOLATION_DIAGNOSTIC_CODE,
-        message: `self.${receiver ? `${receiver}.` : ''}${propertyPath} 方向违规:`
-          + `${propertyPath} 声明于 ${domainLabel(domains)} 域,${detail}`
+        message: l10nText(
+          'self.{prefix}{path} direction violation: {path} declared in the {domains} domain; {detail}',
+          {
+            prefix: receiver ? `${receiver}.` : '',
+            path: propertyPath,
+            domains: domainLabel(domains),
+            detail
+          }
+        )
       });
     }
   }

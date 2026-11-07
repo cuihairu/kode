@@ -46,6 +46,7 @@
 | PythonTypeInlayHintsProvider | typeInlayHints.ts:33 | :1197 | EntityMappingManager | 纯读 |
 | KBEngineBuiltinTypeInlayHintsProvider | languageProviders.ts:649 | :1207 | EntityMappingManager | 纯读 |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | 纯读 |
+| DefPropsInlayHintsProvider | defPropsInlayHints.ts:126 | :1432 | EntityMappingManager(`listPropertyDefinitionsForFile` 锚点所属实体的根级属性清单) | 纯读 |
 | KBEngineCallHierarchyProvider | languageProviders.ts:5013 | :1223 | EntityMappingManager(def/python 双选区调用层级) | 纯读 |
 | KBEngineReferencesProvider | languageProviders.ts:5117 | :1235 | EntityMappingManager + defReferenceGraph 引用图 | 纯读 |
 | KBEngineDocumentSymbolProvider | languageProviders.ts:5231 | :1256 | 当前文档 def 结构(构造零依赖) | 纯读 |

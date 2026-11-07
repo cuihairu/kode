@@ -315,6 +315,31 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     quickFix: false, status: 'implemented',
     source: 'src/postDestroyDiagnostics.ts'
   },
+  // ── KB-001 行为知识流水线(C-23,数据源=src/knowledge/trapsKnowledge.ts)
+  {
+    id: 'KBE-PY-015', code: 'kbengine.fixedDictNestedMutation',
+    title: 'FIXED_DICT 属性子键赋值不触发属性同步事件',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.fixedDictMutationDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: '整体重赋习语', status: 'implemented',
+    source: 'src/fixedDictMutationDiagnostics.ts(发布 src/trapDiagnosticsWiring.ts)'
+  },
+  {
+    id: 'KBE-PY-016', code: 'kbengine.destroyedEntityReference',
+    title: 'self 存入模块级容器(销毁后引用滞留/garbages 泄漏)',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.destroyedEntityReferenceDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/destroyedEntityCaptureDiagnostics.ts(发布 src/trapDiagnosticsWiring.ts)'
+  },
+  {
+    id: 'KBE-PY-017', code: 'kbengine.timerCleanupOnDestroy',
+    title: 'onDestroy 内 delTimer 冗余(destroy 已 cancelAll)',
+    severity: 'Information', roles: 'base/cell/client',
+    toggles: ['kbengine.timerCleanupDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/timerCleanupDiagnostics.ts(发布 src/trapDiagnosticsWiring.ts)'
+  },
   // ── 待实现(pending)────────────────────────────────────────────
   {
     id: 'KBE-PY-009b', code: null,

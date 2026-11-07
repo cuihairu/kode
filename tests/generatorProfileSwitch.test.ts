@@ -25,7 +25,7 @@ const ui: UiScript = { inputs: [], picks: [], info: [] };
 const pickLabel = (label: string) => (items: unknown[]): unknown =>
   (items as Array<{ label: string }>).find(item => item.label === label);
 
-const pickConfirm = (items: unknown[]): unknown => pickLabel('确认生成')(items);
+const pickConfirm = (items: unknown[]): unknown => pickLabel('Confirm generation')(items);
 
 class MemoryMemento implements vscode.Memento {
   private readonly map = new Map<string, unknown>();

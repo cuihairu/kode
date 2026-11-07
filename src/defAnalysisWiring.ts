@@ -1,6 +1,7 @@
 // KODE-ARCH-002:extension.ts 装配模块——.def 静态分析(性能分析建议)。
 // 纯移动:命令体/输出通道/诊断集合逐行迁出 activate,装配顺序由调用方保持。
 import * as path from 'path';
+import { l10nText } from './nlsRuntime';
 import * as vscode from 'vscode';
 import { analyzeDefDocumentWithRust, collectInheritedNames, formatDefAnalysisReport } from './defAnalyzer';
 import { findFilesAcrossRoots } from './scanRoots';
@@ -24,7 +25,7 @@ export function wireDefAnalysis(): DefAnalysisWiring {
     async () => {
       const defUris = await findFilesAcrossRoots('**/*.def');
       if (defUris.length === 0) {
-        vscode.window.showInformationMessage('未找到 .def 文件,无法分析');
+        vscode.window.showInformationMessage(l10nText('No .def files found; nothing to analyze'));
         return;
       }
 
@@ -78,7 +79,10 @@ export function wireDefAnalysis(): DefAnalysisWiring {
 
       defAnalysisOutputChannel.show();
       vscode.window.showInformationMessage(
-        `Def 分析完成: ${defUris.length} 个文件, ${totalFindings} 条建议`
+        l10nText('Def analysis finished: {files} files, {findings} suggestions', {
+          files: defUris.length,
+          findings: totalFindings
+        })
       );
     }
   );

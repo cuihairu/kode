@@ -247,8 +247,9 @@ use kode_parser::config::{
     resolve_config, DatabaseInterfaceConfig, TelnetSummaryEntry, ENGINE_DEFAULT_TELNET_PORTS,
 };
 
-/// 常量端口数值表(与 ENGINE_DEFAULT_TELNET_PORTS 同源,查表用)
-const ENGINE_TELNET_PORT_NUMBERS: &[(&str, i64)] = &[
+/// 常量端口数值表(与 ENGINE_DEFAULT_TELNET_PORTS 同源,查表用;pub 供
+/// kode-mcp 配置问答面复用,core 仍唯一真源)。
+pub const ENGINE_TELNET_PORT_NUMBERS: &[(&str, i64)] = &[
     ("loginapp", 31000),
     ("dbmgr", 32000),
     ("interfaces", 33000),

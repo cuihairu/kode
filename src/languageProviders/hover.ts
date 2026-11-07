@@ -21,6 +21,7 @@ import { currentHoverLanguageEnv, readHoverLanguageSetting, resolveHoverLanguage
 import { resolveLocalVariableReturnTypeFromSnapshot } from '../pythonReturnTypeInference';
 import { resolveAnnotationTypeWithReason } from '../pythonTypeStubs';
 import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from '../selfPropertyTypeInference';
+import { getTrapEntryByDetection } from '../knowledge/trapsKnowledge';
 import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonCallAtPosition, type PythonCallAtPosition } from '../pythonLanguageUtils';
 import { engineApiVersionAnnotation, getKbeAliases, getKbeSymbol, resolveKbeAccessAtPosition, summaryForLanguage } from '../kbeModuleIndex';
 import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, inferDataDictValueType, isKeyInsideLineComment, queryDataDictSitesForAccess } from '../globalDataIndex';
@@ -716,6 +717,18 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     try {
       const markdown = new vscode.MarkdownString();
       markdown.appendMarkdown(formatSelfPropertyTypeHover(resolved));
+      // C-23 交付③ hover 行为注记:FIXED_DICT 形态的 def 属性附 KB-001
+      // 双语行为警告段(数据源=trapsKnowledge 结构化条目;形态判定与
+      // 存根/悬停同一 getTypeStorageShape 类型图)
+      if (resolved.kind === 'def-property' && resolved.typeName) {
+        const shape = getTypeStorageShape(document.fileName, resolved.typeName);
+        if (shape.kind === 'fixedDict') {
+          const entry = getTrapEntryByDetection('fixed-dict-nested-mutation');
+          if (entry) {
+            markdown.appendMarkdown(`\n\n---\n\n> ⚠ ${entry.noteZh}\n> ${entry.noteEn}`);
+          }
+        }
+      }
       return new vscode.Hover(markdown);
     } finally { stopRender?.(); }
   }

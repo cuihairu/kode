@@ -129,7 +129,7 @@ describe('runRuffLintCommand(命令编排)', () => {
     const h = makeDeps();
     const summary = await runRuffLintCommand(h.deps);
     expect(summary).toContain('ruff 0.99');
-    expect(summary).toContain('1 条');
+    expect(summary).toContain('1 finding(s)');
     // 首调即带解释器 bin 定位的 ruffPath。
     expect(calls[0].params.ruffPath).toBe('/venv/bin/ruff');
     expect(h.diagnosticBatches).toHaveLength(1);
@@ -143,7 +143,7 @@ describe('runRuffLintCommand(命令编排)', () => {
     setKodeCoreShadowGate(fakeGate([{ available: false, diags: [] }], calls));
     const h = makeDeps();
     h.deps.showInformationMessage = async (_m, ...items) =>
-      items.includes('安装(Install via pip)') ? '安装(Install via pip)' : undefined;
+      items.includes('Install (via pip)') ? 'Install (via pip)' : undefined;
     const fail = { ok: false, output: 'ERROR: no network' };
     h.deps.runPipInstall = async interpreterPath => {
       h.pipCalls.push(interpreterPath);
@@ -153,7 +153,7 @@ describe('runRuffLintCommand(命令编排)', () => {
     expect(h.pipCalls).toEqual(['/venv/bin/python3']);
     expect(h.errors.join('\n')).toContain('/venv/bin/python3 -m pip install ruff');
     expect(h.channelLines.join('\n')).toContain('ERROR: no network');
-    expect(summary).toContain('安装失败');
+    expect(summary).toContain('install failed');
     expect(summary).toContain('/venv/bin/python3 -m pip install ruff');
   });
 
@@ -170,7 +170,7 @@ describe('runRuffLintCommand(命令编排)', () => {
     );
     const h = makeDeps();
     h.deps.showInformationMessage = async (_m, ...items) =>
-      items.includes('安装(Install via pip)') ? '安装(Install via pip)' : undefined;
+      items.includes('Install (via pip)') ? 'Install (via pip)' : undefined;
     const summary = await runRuffLintCommand(h.deps);
     expect(summary).toContain('ruff 0.99');
     expect(calls).toHaveLength(2);
@@ -183,11 +183,11 @@ describe('runRuffLintCommand(命令编排)', () => {
     setKodeCoreShadowGate(fakeGate([{ available: false, diags: [] }], []));
     const h = makeDeps();
     h.deps.showInformationMessage = async (_m, ...items) =>
-      items.includes('手动安装命令(Show command)') ? '手动安装命令(Show command)' : undefined;
+      items.includes('Show manual install command') ? 'Show manual install command' : undefined;
     const summary = await runRuffLintCommand(h.deps);
     expect(h.pipCalls).toHaveLength(0);
     expect(h.channelLines.join('\n')).toContain('/venv/bin/python3 -m pip install ruff');
-    expect(summary).toContain('手动安装命令已显示');
+    expect(summary).toContain('Manual install command shown');
     expect(h.errors).toHaveLength(0);
   });
 
@@ -196,7 +196,7 @@ describe('runRuffLintCommand(命令编排)', () => {
     setKodeCoreShadowGate(fakeGate([], calls));
     const h = makeDeps({ getWorkspacePythonFiles: async () => [] });
     const summary = await runRuffLintCommand(h.deps);
-    expect(summary).toContain('没有 .py 文件');
+    expect(summary).toContain('No .py files');
     expect(calls).toHaveLength(0);
   });
 
@@ -208,13 +208,13 @@ describe('runRuffLintCommand(命令编排)', () => {
         Array.from({ length: RUFF_MAX_FILES + 1 }, (_, i) => `/w/f${i}.py`)
     });
     const summary = await runRuffLintCommand(h.deps);
-    expect(summary).toContain('超单次上限');
+    expect(summary).toContain('single-run limit');
     expect(calls).toHaveLength(0);
   });
 
   it('no-gate:如实要 Rust 后端', async () => {
     const h = makeDeps();
     const summary = await runRuffLintCommand(h.deps);
-    expect(summary).toContain('Rust 后端');
+    expect(summary).toContain('Rust backend');
   });
 });

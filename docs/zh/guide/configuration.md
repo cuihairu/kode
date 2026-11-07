@@ -83,6 +83,9 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.rpcArgCountDiagnostics` | boolean | `true` | RPC 实参数量诊断:`self.base/cell/client.<method>(...)` 调用点顶层实参数与 .def 该方法(调用所属 section)声明的 `<Arg>` 数明确不符时报 `kbengine.rpcArgCount` Warning(默认启用);星号实参/动态接收者/声明未就绪/段外声明/括号不闭合保留未知一律不报,inlay 提示不替代诊断 |
 | `kbengine.roleMisuseDiagnostics` | boolean | `true` | 角色错用诊断:实体脚本里 `self.<内建属性>` 属于其他角色面(baseapp/cellapp/client)而当前面未注册时报 `kbengine.roleMisuse` Warning 并引注册面引擎源码(默认启用);角色不明与普通 Python 类不猜,属性面表与内建属性 hover 元数据同源 |
 | `kbengine.postDestroyDiagnostics` | boolean | `true` | 销毁后访问诊断:同一函数内可确定的同块 `self.destroy()` 之后直接访问 `self.<成员>`(id/isDestroyed/className/destroy 除外),且两者间无同层无条件早退,报 `kbengine.postDestroy` Warning(默认启用);条件销毁/跨块/跨回调/异常/def 声明 destroy(动态分派)一律不猜 |
+| `kbengine.fixedDictMutationDiagnostics` | boolean | `true` | FIXED_DICT 子键赋值诊断(KBE-PY-015):FIXED_DICT 属性的子键赋值(`self.<属性>.<键>` / `self.<属性>['<键>']`,含增强赋值)不触发属性同步事件,报 `kbengine.fixedDictNestedMutation` Warning 并给「整体重赋」quick fix(`{**old, key: rhs}`);属性顶层整体赋值/非 FIXED_DICT 属性不报 |
+| `kbengine.destroyedEntityReferenceDiagnostics` | boolean | `true` | 已销毁实体引用滞留诊断(KBE-PY-016):把 `self` 存入模块级 list/dict/set 报 `kbengine.destroyedEntityReference` Warning——实体销毁后引用滞留,引擎 3600 s 后打 garbages 泄漏告警,应在 `onDestroy` 里解除引用;局部容器/非 self 实参/读操作不报 |
+| `kbengine.timerCleanupDiagnostics` | boolean | `true` | 定时器注销提示(KBE-PY-017):`onDestroy` 方法体内的 `self.delTimer(...)` 实语句报 `kbengine.timerCleanupOnDestroy` Information——引擎 `destroy()` 已取消全部定时器(`scriptTimers_.cancelAll()`),销毁期注销冗余;陈旧 id 静默返回 -1 |
 | `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | 检查未知类型名 |
 | `kbengine.diagnostics.checkUnknownFlags` | boolean | `true` | 检查未知 Flags 值 |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | boolean | `true` | 检查非法 DetailLevel 值 |
@@ -144,6 +147,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.configData` | object | 见默认值 | 配置数据保护(CFG-016):`configDirGlobs`(配置目录,默认 `scripts/config/**`、`scripts/data/config/**`、`scripts/data/**`)、`configClassPatterns`(`*Config`/`*Data`)、`reloadFunctionPatterns`(`reload*`/`hotUpdate*`)、`mutationExclude`(有意可写处白名单 glob)、`enabled`(默认 `true`);关闭即零诊断 |
 | `kbengine.inlayHints.typeData` | boolean | `true` | python 侧 `self.<属性>` 访问处以内联提示显示解析到底的类型注解(types.xml 别名逐层解析到底层内建,如 SERVER_ID→int;PYTHON/未知落 Any 不显示);`self.base/cell/client` RPC 调用点每实参后内联显示 def 已声明的形参类型(`: 类型`,只显类型不带合成形参名,只做已声明的,过段闸);数组 `<of>` 元素类型在 `for item in self.<属性>:` 迭代目标与 `x = self.<属性>[i]` 下标赋值局部变量后内联显示(同一解析链),与属性 F12 同一解析索引(批154;解析到底口径 2026-10-29;元素类型 2026-11-04) |
 | `kbengine.inlayHints.defParams` | boolean | `true` | entity 脚本区块(ClientMethods/BaseMethods/CellMethods)内 def 定义点的内联提示:未手写标注的形参名后内联 def 声明的 `<Arg>` 类型(`: 类型`),声明 `<ReturnType>` 时闭括号后内联 `-> 类型`;跨行 def 不出(与调用点 inlay 同规则) |
+| `kbengine.inlayHints.defProps` | boolean | `true` | entity 脚本内整行注释锚 `# kode:props-from-def` 行尾内联渲染该实体 def 根级属性只读清单(逐属性名+解析类型;段悬停给 def 声明出处)。纯渲染层,不写代码,属性唯一事实源仍为 .def |
 
 四类 CodeLens 开关变更即时生效,不用重载窗口;inlay 无变更事件,关掉后下一次渲染生效。
 

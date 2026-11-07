@@ -3,8 +3,8 @@
 > KB-001 head topic (user-named priority): memory object reference & release.
 > Sources cited by `kbe/src` `file:line`; every claim is grounded in the engine
 > source (`kbengine@c2a3b8f`). The baseapp path is analogous to the cellapp
-> path shown here; the migration/teleport reference flow is a later-batch topic
-> (marked TODO, not fabricated).
+> path shown here; the migration/teleport reference flow is covered by
+> [entity-migration-and-cross-process-references.md](entity-migration-and-cross-process-references.md).
 
 ## The live registry holds a strong reference
 
@@ -118,3 +118,31 @@ returns `-1` when the timer does not exist (`entity_macro.h:1478`,
 The real reference hazard is not the timer itself but a script closure or list
 that captures the entity and outlives the destroy — that is the `garbages`/
 3600 s leak scenario above, not a timer-holding reference.
+
+## Pending engine-held callbacks (the "Functor" question)
+
+The BigWorld-era "Functor holds a reference" worry has **no Functor to point
+at in KBEngine**: a case-insensitive search of `kbe/src` finds no `Functor`
+class outside vendored test dependencies. The engine's actual holder of
+script callbacks is `PY_CALLBACKMGR = CallbackMgr<PyObjectPtr>`
+(`kbe/src/lib/server/callbackmgr.h:215`), a per-entity member
+(`entity_macro.h:279`) used by async-answer APIs (e.g. `writeToDB(callback)`).
+
+Reference semantics, grounded in `callbackmgr.h`:
+
+- `save(callback, timeout=0)` stores a **`PyObjectPtr` — a strong CPython
+  reference** — in `cbMap_` keyed by an allocated id, with an expiry
+  timestamp; timeout 0 means the server-config default
+  (`callback_timeout_` seconds) (`callbackmgr.h:62-74`).
+- `take(id)` returns and removes the callback when the answer arrives
+  (`:78-89`); `tick()` expires stale entries — the expired path DECREFs the
+  stored object (`processTimeout`, `:202-212`); `finalise()` clears all
+  (DECREF on each entry for the raw-pointer variant, `:190-198`).
+- The whole pending set **survives migration/teleport**: it is pickled into
+  the entity stream (`addToStream`/`createFromStream`, `:134-188`) — this is
+  the `pyCallbackMgr_.addToStream(s)`/`finalise()` pair seen in the
+  ghost transition ([migration article](entity-migration-and-cross-process-references.md)).
+
+Net: a pending engine callback keeps the *callback object* strongly
+referenced until answered, expired or the entity is finalized — it never
+keeps a destroyed *entity* alive, and it does not leak past the timeout.

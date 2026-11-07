@@ -56,6 +56,8 @@ export interface SelfPropertyResolved {
   defLine: number;
   /** 目标表达式文本(悬停目标,来源标注) */
   expr: string;
+  /** def <Type> 直文本(仅 def-property 面;C-23 hover 行为注记用) */
+  typeName?: string | null;
 }
 
 /** 变量间接最大深度(赋值/迭代目标 → 源表达式再追一层;防环/长链) */
@@ -140,7 +142,9 @@ async function resolveSelfAccess(
     propertyName: fullPath.split('.').pop()!,
     defFile: location.defFile,
     defLine: location.line,
-    expr: `self.${fullPath}`
+    expr: `self.${fullPath}`,
+    // C-23 hover 行为注记:<Type> 直文本(调用方据此查 FIXED_DICT 形态)
+    typeName: location.typeName
   };
 }
 

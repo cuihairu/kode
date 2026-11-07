@@ -1,4 +1,4 @@
-//! kode-mcp MCP server(rmcp stdio)。装配 AssetKnowledge + 七个工具;
+//! kode-mcp MCP server(rmcp stdio)。装配 AssetKnowledge + explain;
 //! 资产根从 CLI 参数取(缺省=当前目录)。
 
 use rmcp::{
@@ -18,6 +18,8 @@ use crate::kb::AssetKnowledge;
 #[derive(Debug)]
 pub struct KodeMcpServer {
     pub knowledge: AssetKnowledge,
+    /// 资产根(config_qa 配置问答面读 `{root}/res/server/kbengine.xml` 等)。
+    pub assets_root: std::path::PathBuf,
 }
 
 fn object(schema: serde_json::Value) -> Arc<rmcp::model::JsonObject> {
@@ -104,6 +106,17 @@ impl KodeMcpServer {
             "db_schema_preview" => self
                 .knowledge
                 .db_schema_preview(arg_str("entity").as_deref()),
+            "explain" => Ok(crate::explain::explain(
+                &arg_str("topic").unwrap_or_default(),
+                arg_str("domain").as_deref(),
+                &arg_str("locale").unwrap_or_else(|| "en".to_string()),
+            )),
+            "get_final_config" => Ok(crate::config_qa::final_config(&self.assets_root)),
+            "get_entry_scripts" => Ok(crate::config_qa::entry_scripts(&self.assets_root)),
+            "get_database_schema" => match arg_str("entity") {
+                Some(entity) => crate::config_qa::database_schema(&self.knowledge, Some(&entity)),
+                None => crate::config_qa::database_schema(&self.knowledge, None),
+            },
             other => Err(format!("unknown tool: {other}")),
         };
         match result {
@@ -120,7 +133,8 @@ impl ServerHandler for KodeMcpServer {
             .with_instructions(
                 "Pass the KBEngine assets root as the CLI argument. Tools: search_entities, \
                  get_entity_model, get_type_graph, validate_defs, get_message_entry, \
-                 encode_decode_sample, db_schema_preview.",
+                 encode_decode_sample, db_schema_preview, explain, get_final_config, \
+                 get_entry_scripts, get_database_schema.",
             )
     }
 
@@ -199,6 +213,38 @@ impl ServerHandler for KodeMcpServer {
                         &[],
                     ),
                 ),
+                Self::tool(
+                    "explain",
+                    "Explain a KBEngine API member (C-21 same-source library: signature, summary, source refs) or a mechanism topic (knowledge-base article match with headings and grounding). Answers \"how to use API X\" and \"how mechanism X works\".",
+                    schema_of(
+                        serde_json::json!({
+                            "topic": {"type": "string", "description": "API member name (e.g. fireEvent, onGetCell) or mechanism keyword (e.g. teleport, celldata, lifecycle, ghost)"},
+                            "domain": {"type": "string", "description": "optional API disambiguation: base|cell|client|bots|server|interfaces|core"},
+                            "locale": {"type": "string", "description": "en (default) or zh-cn, API-face summary localization"}
+                        }),
+                        &["topic"],
+                    ),
+                ),
+                Self::tool(
+                    "get_final_config",
+                    "Final server config Q&A: parses {root}/res/server/kbengine.xml (+ kbengine_defaults.xml when vendored) via the same engine as the IDE config face. Returns the merged tree with source comments, the telnet summary per component, the built-in engine default telnet ports, and the dbmgr database interface (host/port/username/database/charset; passwords are never returned).",
+                    serde_json::json!({"type": "object", "properties": {}}),
+                ),
+                Self::tool(
+                    "get_entry_scripts",
+                    "Entry-script facts per server component (baseapp/cellapp/loginapp/dbmgr/interfaces/logger/bots): resolved entry module (config entryScriptFile override or engine default kbemain), expected scripts/<role>/<module>.py path and on-disk existence, plus the shared engine wrapper scripts/kbengine.py (debugpy injection point).",
+                    serde_json::json!({"type": "object", "properties": {}}),
+                ),
+                Self::tool(
+                    "get_database_schema",
+                    "Database schema Q&A derived from entity defs (same source as the IDE database face): per-entity MySQL tables and columns with type labels, lengths and def source refs, plus a table-name index. entity omitted = all entities.",
+                    schema_of(
+                        serde_json::json!({
+                            "entity": {"type": "string", "description": "optional entity def name"}
+                        }),
+                        &[],
+                    ),
+                ),
             ],
             ..Default::default()
         };
@@ -218,6 +264,7 @@ impl ServerHandler for KodeMcpServer {
 pub async fn run_stdio(root: std::path::PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let server = KodeMcpServer {
         knowledge: AssetKnowledge::load(&root),
+        assets_root: root,
     };
     let running = server.serve(stdio()).await?;
     running.waiting().await?;

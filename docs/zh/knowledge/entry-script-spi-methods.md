@@ -137,6 +137,22 @@ interface 6、logger 4、db 4、bots 3；跨组件重名在「不同名字」里
 | 引擎调用、模板未实现 | 3 | `onAutoLoadEntityCreate`、`onSpaceGeometryLoaded`、`onTargetChanged` | 守卫/路径：`entity_autoloader.cpp:90`、`py_macros.h:736`、`clientapp.cpp:458` |
 | 模板实现、引擎从不调用 | 3 | `onFini`、`onStart`、`onTick` | 见下 |
 
+### 34 vs 36：两个数都是真的，只是口径不同
+
+早先台账把本表记成 **34 个方法**。对 `kbe/src` 的程序化重扫（`c2a3b8f`，
+并在 `3082ab5` 复核结果不变）确认经 `getEntryScript()` 调用的不同名字是
+**36 个**——本表没有多算。两个数的差别在统计口径：
+
+- **36** = 引擎在入口脚本对象上调用的全部方法，含 client/bots 专属的一对
+  `onFinish`（`clientapp.cpp:303`、`bots.cpp:124`）与 `onTargetChanged`
+  （`clientapp.cpp:458`）——服务端 `kbemain.py` 永远收不到这两个。
+- **34** = 服务端组件口径：36 减去上述 client/bots 专属对。写**服务端**
+  入口脚本时看这个数；下游消费面（如 SPI CodeLens 识别表）也应按此口径
+  匹配。
+
+两个数都不含 `onFini`、`onStart`、`onTick`——这三个根本不是引擎调用，
+见下节更正。
+
 ### 三个模板侧名字的更正
 
 - **`onFini` —— 模板与实现不符，待证伪。** `kbe/src` 里没有任何调用点：grep

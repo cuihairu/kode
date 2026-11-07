@@ -255,8 +255,8 @@ describe('runTablePreviewCommand · 列来源段(编排面)', () => {
 });
 
 describe('装配层接线(源锁)', () => {
-  it('extension.ts 把反查器接进预览命令(解除接线即红)', () => {
-    const wiring = readFileSync(path.join(process.cwd(), 'src', 'extension.ts'), 'utf8');
+  it('databaseWiring.ts 把反查器接进预览命令(解除接线即红)', () => {
+    const wiring = readFileSync(path.join(process.cwd(), 'src', 'databaseWiring.ts'), 'utf8');
     expect(wiring).toContain('resolveColumnSourceTable: createPreviewColumnSourceTableResolver');
   });
 });

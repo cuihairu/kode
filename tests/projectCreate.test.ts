@@ -50,7 +50,7 @@ describe('minimal project create flow (IDE-PRJ-008)', () => {
     windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
       const resolved = (await items) as Array<{ label: string; description: string }>;
       // 预览面与生成器同一确认行,计划项逐条在场
-      expect(resolved[0].label).toBe('确认生成');
+      expect(resolved[0].label).toBe('Confirm generation');
       expect(resolved).toHaveLength(MINIMAL_PROJECT_TEMPLATE.length + 1);
       return resolved[0];
     };
@@ -313,7 +313,7 @@ describe('demo game create flow (DEMO-GAME-006)', () => {
     // 预览面 = 确认行 + 模板全部文件行(与最小项目同一确认面)
     windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
       const resolved = (await items) as Array<{ label: string; description: string }>;
-      expect(resolved[0].label).toBe('确认生成');
+      expect(resolved[0].label).toBe('Confirm generation');
       expect(resolved.length).toBeGreaterThan(60);
       return resolved[0];
     };

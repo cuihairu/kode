@@ -304,7 +304,7 @@ describe('kbengine.database.showDriftEvidence 命令(activate 真装配)', () =>
   });
 
   it('源锁:漂移两命令都接线 appendDriftEvidenceForReport,保存与重查命令在册', () => {
-    const extensionSource = readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const extensionSource = readFileSync(path.join(__dirname, '..', 'src', 'databaseWiring.ts'), 'utf8');
     expect(extensionSource.split('appendDriftEvidenceForReport(report);').length - 1).toBe(2);
     expect(extensionSource).toContain('driftEvidenceStore.save(evidence)');
     expect(extensionSource).toContain("'kbengine.database.showDriftEvidence'");

@@ -18,6 +18,7 @@
  */
 
 import { BUILTIN_QUICK_COMMANDS, isCommandAllowed } from './telnetClient';
+import { l10nText } from './nlsRuntime';
 
 export const BOTS_COUNT_COMMAND = 'len(KBEngine.bots)';
 /** 白名单建议项(错误信息里亮给用户,与引擎 python 层命令同串) */
@@ -34,7 +35,7 @@ export interface BotsTelnetTarget {
 /** addBots 命令串(镜像引擎文档示例形态:一次性=单参,分批=三参)。 */
 export function buildAddBotsCommand(total: number, tickCount?: number, tickTime?: number): string {
   if (!Number.isInteger(total) || total < 1) {
-    throw new Error(`total 必须是 ≥1 的整数,收到 ${total}`);
+    throw new Error(l10nText('total must be an integer ≥1, got {value}', { value: total }));
   }
   if (tickCount === undefined && tickTime === undefined) {
     return `KBEngine.addBots(${total})`;
@@ -42,10 +43,10 @@ export function buildAddBotsCommand(total: number, tickCount?: number, tickTime?
   const count = tickCount ?? 0;
   const interval = tickTime ?? 0;
   if (!Number.isInteger(count) || count < 1) {
-    throw new Error(`tickCount 必须是 ≥1 的整数,收到 ${tickCount}`);
+    throw new Error(l10nText('tickCount must be an integer ≥1, got {value}', { value: tickCount ?? 'undefined' }));
   }
   if (!Number.isFinite(interval) || interval < 0) {
-    throw new Error(`tickTime 必须是 ≥0 的数,收到 ${tickTime}`);
+    throw new Error(l10nText('tickTime must be a number ≥0, got {value}', { value: tickTime ?? 'undefined' }));
   }
   return `KBEngine.addBots(${total}, ${count}, ${interval})`;
 }
@@ -119,9 +120,9 @@ async function ensureSessionReady(deps: BotsControlDeps, key: string): Promise<b
 }
 
 function noTargetMessage(): string {
-  return '未找到 bots 的 telnet 目标:需 kbengine.xml 开启 <telnet_service> 段'
-    + '(未显式指定端口时按组件默认端口表派生,bots 默认 51000);'
-    + '显式指定了单一端口时只有自定义目标,不含 bots 组件。';
+  return l10nText(
+    'No telnet target found for bots: kbengine.xml must enable the <telnet_service> section (without an explicit port the component default port table derives it; bots defaults to 51000); with a single explicit port only the custom target exists and the bots component is not included.'
+  );
 }
 
 /**
@@ -133,32 +134,32 @@ export async function runBotsAddCommand(deps: BotsControlDeps): Promise<string> 
   const target = deps.getBotsTarget();
   if (!target) {
     await deps.showErrorMessage(noTargetMessage());
-    return '未找到 bots telnet 目标,未执行。';
+    return l10nText('No bots telnet target found; nothing executed.');
   }
 
   const totalText = await deps.withInput(
-    '机器人总数(≥1)',
-    '例如 100',
-    text => (/^[+-]?\d+$/.test(text.trim()) && Number(text.trim()) >= 1 ? null : '必须是 ≥1 的整数')
+    l10nText('Total bots (≥1)'),
+    l10nText('e.g. 100'),
+    text => (/^[+-]?\d+$/.test(text.trim()) && Number(text.trim()) >= 1 ? null : l10nText('must be an integer ≥1'))
   );
   if (totalText === undefined) {
-    return '已取消,未执行。';
+    return l10nText('Cancelled; nothing executed.');
   }
   const total = Number(totalText.trim());
 
   const tickText = await deps.withInput(
-    '每批添加数量(留空=一次性全部)',
-    '例如 5',
+    l10nText('Per-batch count (empty = all at once)'),
+    l10nText('e.g. 5'),
     text => {
       const parsed = parseOptionalInt(text);
       if (parsed === null) {
-        return '留空或 ≥1 的整数';
+        return l10nText('empty or an integer ≥1');
       }
-      return parsed === undefined || parsed >= 1 ? null : '必须是 ≥1 的整数';
+      return parsed === undefined || parsed >= 1 ? null : l10nText('must be an integer ≥1');
     }
   );
   if (tickText === undefined) {
-    return '已取消,未执行。';
+    return l10nText('Cancelled; nothing executed.');
   }
   // 校验闭包已拒非法文本(shift 出来的只会是空或整数),此处 ?? undefined 只做
   // null→undefined 的类型归一
@@ -167,55 +168,61 @@ export async function runBotsAddCommand(deps: BotsControlDeps): Promise<string> 
   let tickTime: number | undefined;
   if (tickCount !== undefined) {
     const intervalText = await deps.withInput(
-      '批次间隔秒(≥0)',
-      '例如 10',
+      l10nText('Seconds between batches (≥0)'),
+      l10nText('e.g. 10'),
       text => {
         const parsed = parseOptionalInt(text);
         if (parsed === null) {
-          return '留空按 0 或 ≥0 的整数';
+          return l10nText('empty means 0; or an integer ≥0');
         }
-        return parsed === undefined || parsed >= 0 ? null : '必须是 ≥0 的整数';
+        return parsed === undefined || parsed >= 0 ? null : l10nText('must be an integer ≥0');
       }
     );
     if (intervalText === undefined) {
-      return '已取消,未执行。';
+      return l10nText('Cancelled; nothing executed.');
     }
     tickTime = parseOptionalInt(intervalText) ?? 0;
   }
 
   const command = buildAddBotsCommand(total, tickCount, tickTime);
   if (!commandAllowed(command, target.enableCommands)) {
-    const hint = `命令未在 telnet 白名单内:请在设置 kbengine.telnet.enableCommands 加入 "${BOTS_ADD_WHITELIST_ENTRY}"(命令面板 → Preferences: Open Settings 搜索 enableCommands)。`;
+    const hint = l10nText(
+      'Command is not in the telnet whitelist: add "{entry}" to the kbengine.telnet.enableCommands setting (Command Palette → Preferences: Open Settings, search enableCommands).',
+      { entry: BOTS_ADD_WHITELIST_ENTRY }
+    );
     await deps.showErrorMessage(hint);
-    return `白名单缺 "${BOTS_ADD_WHITELIST_ENTRY}",未执行。`;
+    return l10nText('Whitelist is missing "{entry}"; nothing executed.', { entry: BOTS_ADD_WHITELIST_ENTRY });
   }
 
   if (!(await ensureSessionReady(deps, target.key))) {
     await deps.showErrorMessage(
-      `bots 进程 telnet 会话未就绪(${target.host}:${target.port}):确认 bots 进程已启动、telnet_service 已开启(默认端口 51000)。`
+      l10nText(
+        'bots telnet session is not ready ({host}:{port}): confirm the bots process is running and telnet_service is enabled (default port 51000).',
+        { host: target.host, port: target.port }
+      )
     );
-    return 'telnet 会话未就绪,未执行。';
+    return l10nText('Telnet session not ready; nothing executed.');
   }
 
   if (!deps.sendCommand(target.key, command)) {
-    await deps.showErrorMessage('addBots 命令发送失败(会话在发送时断开)。');
-    return '发送失败。';
+    await deps.showErrorMessage(l10nText('addBots command failed to send (the session dropped while sending).'));
+    return l10nText('Send failed.');
   }
-  deps.channel.appendLine(`[bots] 已发送 ${command}(目标 ${target.host}:${target.port})。`);
-  deps.channel.appendLine('[bots] 引擎无逐个减员 API:减少机器人 = 停止 bots 进程。');
+  deps.channel.appendLine(l10nText('[bots] Sent {command} (target {host}:{port}).', { command, host: target.host, port: target.port }));
+  deps.channel.appendLine(l10nText('[bots] The engine has no per-bot removal API: reducing bots means stopping the bots process.'));
 
   if (commandAllowed(BOTS_COUNT_COMMAND, target.enableCommands)) {
     await queryBotsCount(deps, target);
-    return `已发送 ${command};当前 bot 数已查询(见输出通道)。`;
+    return l10nText('Sent {command}; current bot count queried (see the output channel).', { command });
   }
   deps.channel.show(true);
-  return `已发送 ${command};bot 数查询需白名单含 "${BOTS_COUNT_COMMAND}"(可选)。`;
+  return l10nText('Sent {command}; querying the bot count requires "{countCmd}" in the whitelist (optional).', { command, countCmd: BOTS_COUNT_COMMAND });
 }
 
 async function queryBotsCount(deps: BotsControlDeps, target: BotsTelnetTarget): Promise<string | null> {
   const before = deps.getOutput(target.key).length;
   if (!deps.sendCommand(target.key, BOTS_COUNT_COMMAND)) {
-    deps.channel.appendLine(`[bots] ${BOTS_COUNT_COMMAND} 发送失败。`);
+    deps.channel.appendLine(l10nText('[bots] {countCmd} failed to send.', { countCmd: BOTS_COUNT_COMMAND }));
     return null;
   }
   let lines: string[] = [];
@@ -230,12 +237,12 @@ async function queryBotsCount(deps: BotsControlDeps, target: BotsTelnetTarget): 
     }
   }
   if (lines.length === 0) {
-    deps.channel.appendLine('[bots] 未读到 bot 数结果行(2 秒内无新输出);原始输出见上方。');
+    deps.channel.appendLine(l10nText('[bots] No bot-count result line read (no new output within 2s); raw output above.'));
     deps.channel.show(true);
     return null;
   }
   const last = lines[lines.length - 1];
-  deps.channel.appendLine(`[bots] 当前 bot 数(len(KBEngine.bots))=${last}`);
+  deps.channel.appendLine(l10nText('[bots] current bot count (len(KBEngine.bots))={count}', { count: last }));
   deps.channel.show(true);
   return last;
 }
@@ -258,7 +265,10 @@ export async function runBotsCountCommand(deps: BotsControlDeps): Promise<string
   }
   if (!(await ensureSessionReady(deps, target.key))) {
     await deps.showErrorMessage(
-      `bots 进程 telnet 会话未就绪(${target.host}:${target.port}):确认 bots 进程已启动、telnet_service 已开启(默认端口 51000)。`
+      l10nText(
+        'bots telnet session is not ready ({host}:{port}): confirm the bots process is running and telnet_service is enabled (default port 51000).',
+        { host: target.host, port: target.port }
+      )
     );
     return null;
   }

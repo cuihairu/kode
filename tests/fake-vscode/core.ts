@@ -41,6 +41,15 @@ export class InlayHint {
   ) {}
 }
 
+// inlay label part 替身(C-22 def 属性只读视图用):真实 API 字段名是 value
+export class InlayHintLabelPart {
+  value: string;
+  tooltip?: unknown;
+  constructor(value: string) {
+    this.value = value;
+  }
+}
+
 export enum InlayHintKind {
   Type = 1,
   Parameter = 2
