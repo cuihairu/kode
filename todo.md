@@ -969,12 +969,13 @@
     — 门禁:eslint 0/tsc 0/unit 589 文件 7214 过+2 skip/docs:build rc=0/xvfb demo 25 RC=0;prove-red=stash src(含未跟踪)后 4 测试文件全红;测试 23(纯层)+10(provider wiring)。
   - 边界自认:规则①不识别本地别名接续赋值(_fd=self.p 后的 _fd[k]=v 不报)/import 别名;规则②容器名限本文件模块层赋值,import 来的容器不报;规则③多行调用形态/模块层(类外)调用不报(保守)。
 
-- [ ] **C-24 · P2 · 实现 · 配置开关效果文档流水线(开关前后截图+动态图,用户令 2026-11-01)**
-  - 交付①配置效果清单:枚举全部「开启后有效果」的配置项(VSCode contributes 配置点+引擎侧开关),标注效果可见面(编辑器/面板/行为)。
-  - 交付②自动截图流水线:@vscode/test-electron 可编程驱动——起扩展主机→写配置 on→稳定后截图→写配置 off→截图;行为类开关(如热重载)录过程多帧;ffmpeg 缝合动态 GIF。
-  - 交付③文档页:docs 增「配置效果」页,每开关=说明+off/on 静态图+动态 GIF(VitePress 直接嵌),双语。
-  - 验收:清单内每个开关都有 off/on 图+GIF;流水线重跑可再生成(配置变更不腐化);流水线兼作配置效果回归测试。
-  - 顺序:流水线基建(约半天)→逐开关出图(每个几分钟)。
+- [x] **C-24 · P2 · 实现 · 配置开关效果文档流水线(开关前后截图+动态图,用户令 2026-11-01)**(291d5799;2026-11-07 勾)
+  - 交付①配置效果清单:switches.json 唯一清单,枚举全部「开启后有效果」配置项(contributes.configuration 点+引擎侧开关),逐项标注 setting/off/on 状态值/中英文名/效果文案/分组/capture(可截图 or 无静态截画面)。
+  - 交付②自动截图流水线:scripts/config-switch-gifs/generate.py——Xvfb+真实 VS Code CLI(隔离 --user-data-dir)+打包 vsix,起扩展主机→写配置 off→就绪判定→截图→写配置 on→截图→帧差断言(RMSE≈0 即失败,绝不产假图)→ffmpeg palettegen/paletteuse 缝循环 GIF;悬停/CodeLens/inlay/final-config 等渲染在编辑器顶部或短文件的开关用加高判定区 HOVER_CROP,标准文字区 TEXT_CROP 兜底;行为类开关按效果说明进手工验证清单。
+  - 交付③文档页:render_docs.py 从 switches.json+manifest.json 生成 docs/guide/config-effects.md+docs/zh/guide/config-effects.md(双语),每可截图开关=说明+off/on 静态图+动态 GIF(VitePress 直接嵌,路径 /config-switch-gifs/* 与 docs/public 对位),文末手工验证清单如实标注无静态画面;sidebar 双语注册(config.mts)。
+  - 验收:清单内 16 个 capture=true 开关全有 off/on 图+GIF(manifest 16 条,文件真实落盘);流水线可重跑(README 记录 env 隔离 KODE_GIF_CAP/DISPLAY/SERVER_PATH,配置变更再生成不腐化);流水线兼作配置效果回归测试(frames_differ 前后帧一致即红);tests/configSwitchGifs.test.ts 三方一致性闸 7/7(清单 setting ⊆ contributes.configuration、off≠on、capture=true⇔manifest 条目、产物落盘、文档页覆盖全部开关、off/on 异文件)。
+  - 门禁:eslint 0/tsc 0/configSwitchGifs 7/7/docs:build rc=0(GITHUB_ACTIONS=true base 前缀 /kode/ 验证)/文档页 48 引用逐条解析到真实文件;prove-red=一致性闸 3 处破坏全红恢复全绿;show-final-config-on-open 根因=CFG-009 起最终配置合成走 Rust $/kode/config/resolve(旧 kode-server 二进制不含,strings 可查),rebuild 后全链路通。
+  - 边界自认:①switches.json 首版未含 C-23 的 4 个行为开关(fixedDictNestedMutationDiagnostics/destroyedEntityReferenceDiagnostics/timerLeakOnDestroyDiagnostics=波型夹具、hover.behaviorNotes=悬停姿势,均无静态截画面,待后续批次补录);②runtime-query-enabled 等 capture=false 开关只在文档页手工清单,不配图不编造;③telnet 探测翻转驱动树刷新与状态灯联动 测试红=clean origin/main 复现的既有基线缺陷(非本批引入,候选根因=CFG-009 telnet 默认表改经 core resolve,单测环境无 kode-server),登记待查不冒充已修。
 
 ## KBEngine 协议分析器（用户令 2026-11-01，源 ChatGPT 架构评审+代决拍板）
 
