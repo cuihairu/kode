@@ -1472,3 +1472,7 @@
 - [ ] RUST-MIGRATION-AUDIT-001 [P1] 按用户可见功能建立完整迁移矩阵：逐项核对 TS 入口、Rust 实现、RPC 注册、默认执行路径、失败/回退、测试及真实环境验收；区分未迁移、仅 shadow、Rust 优先/TS 回退、Rust 唯一实现和未核实。先核语言服务与 Python 索引，再核其余命令、诊断和后台能力；不得因 crate 存在或单元测试通过就勾完成。第一批静态证据见 `docs/review/2026-11-08-ts-rust-migration-verification.md`。
 - [ ] RUST-MIGRATION-AUDIT-002 [P1] 按矩阵逐项补齐迁移与接线：以原功能、非保存缓冲区、取消、失败降级和版本正确性为验收，先对拍后切换，禁止静默丢能力；每完成一项立即单独提交并推送。玩家克隆数据执行与完整 64 位链路沿 KODE-REVIEW-001..006 专项跟踪。
 - [ ] RUST-MIGRATION-AUDIT-003 [P1] DEF 引擎复合 MD5 用户入口核查与接线：`src/defMd5Rust.ts` 的 `computeDefMd5InRust` 与 `src/hotReloadDefHash.ts` 的 `negotiateEngineDigest` 当前仅见函数定义及测试调用，未见生产消费链；明确功能入口、真实配置/实体闭包与未保存缓冲区输入、引擎回执来源，接通后用真实 RPC 和故障降级测试，无法获取引擎摘要时保留 unknown，不以 Rust 函数存在勾账。证据见 `docs/review/2026-11-08-ts-rust-migration-verification.md` 第二批。
+
+## 2026-11-08 克隆跨版本验证
+
+- [x] KODE-REVIEW-MYSQL57 [P1] 隔离 MySQL 5.7 容器运行 `tests/playerDataCloneMysqlReal.test.ts`，使用实际 kode-server RPC 执行 MySQL→计划/归档→导入计划→目标 MySQL 事务往返，验证一致性快照、i64/u64 边界、大于 2^53 的主键、BLOB/BINARY/VARBINARY、空值和字节预算；1/1 通过。与 MySQL 8 实测覆盖相同路径。
