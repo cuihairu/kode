@@ -83,6 +83,9 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.rpcArgCountDiagnostics` | boolean | `true` | RPC 实参数量诊断:`self.base/cell/client.<method>(...)` 调用点顶层实参数与 .def 该方法(调用所属 section)声明的 `<Arg>` 数明确不符时报 `kbengine.rpcArgCount` Warning(默认启用);星号实参/动态接收者/声明未就绪/段外声明/括号不闭合保留未知一律不报,inlay 提示不替代诊断 |
 | `kbengine.roleMisuseDiagnostics` | boolean | `true` | 角色错用诊断:实体脚本里 `self.<内建属性>` 属于其他角色面(baseapp/cellapp/client)而当前面未注册时报 `kbengine.roleMisuse` Warning 并引注册面引擎源码(默认启用);角色不明与普通 Python 类不猜,属性面表与内建属性 hover 元数据同源 |
 | `kbengine.postDestroyDiagnostics` | boolean | `true` | 销毁后访问诊断:同一函数内可确定的同块 `self.destroy()` 之后直接访问 `self.<成员>`(id/isDestroyed/className/destroy 除外),且两者间无同层无条件早退,报 `kbengine.postDestroy` Warning(默认启用);条件销毁/跨块/跨回调/异常/def 声明 destroy(动态分派)一律不猜 |
+| `kbengine.fixedDictMutationDiagnostics` | boolean | `true` | FIXED_DICT 子键赋值诊断(KBE-PY-015):FIXED_DICT 属性的子键赋值(`self.<属性>.<键>` / `self.<属性>['<键>']`,含增强赋值)不触发属性同步事件,报 `kbengine.fixedDictNestedMutation` Warning 并给「整体重赋」quick fix(`{**old, key: rhs}`);属性顶层整体赋值/非 FIXED_DICT 属性不报 |
+| `kbengine.destroyedEntityReferenceDiagnostics` | boolean | `true` | 已销毁实体引用滞留诊断(KBE-PY-016):把 `self` 存入模块级 list/dict/set 报 `kbengine.destroyedEntityReference` Warning——实体销毁后引用滞留,引擎 3600 s 后打 garbages 泄漏告警,应在 `onDestroy` 里解除引用;局部容器/非 self 实参/读操作不报 |
+| `kbengine.timerCleanupDiagnostics` | boolean | `true` | 定时器注销提示(KBE-PY-017):`onDestroy` 方法体内的 `self.delTimer(...)` 实语句报 `kbengine.timerCleanupOnDestroy` Information——引擎 `destroy()` 已取消全部定时器(`scriptTimers_.cancelAll()`),销毁期注销冗余;陈旧 id 静默返回 -1 |
 | `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | 检查未知类型名 |
 | `kbengine.diagnostics.checkUnknownFlags` | boolean | `true` | 检查未知 Flags 值 |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | boolean | `true` | 检查非法 DetailLevel 值 |

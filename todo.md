@@ -941,7 +941,7 @@
   - 门禁:eslint 0/tsc 0/unit 584 文件 7171 过+2 skip/cargo workspace(--exclude kode-scheduler)104 套全绿(含 kode-mcp 11 单测+3 e2e)/docs:build rc=0(死链检查过)/xvfb demo 25 RC=0。
     - ✅ 收编入账（2026-11-07,PR #38,squash 43bf441c）:本条交付由陈旧伞形 PR #31(feat/demo-game)分拣收编——KB-001 三 commit(65f94116+两 docs tick)自 feat/demo-game cherry-pick 至最新 main(干净落地,冲突面零残留),经 PR #38 合入,CI 全绿(build ×2+rust-coverage ×2+codecov pass;首跑 rust-coverage 红=clippy 1.99 manual_map,explain.rs headings_of 改 strip_prefix().map() 后复跑绿)。同分支 C-22/C-23 实现(fcdab71f/c915f6a3)弃置未收:基于 KB-API 分解前旧 main,与现状 40+ 源文件冲突,两任务 ledger 保持开放待在最新 main 重做;demo 001-005 早已经 #23/#24/#26/#32 入 main 无残留。#31 已关。
 
-- [ ] **C-22 · P2 · 实现 · def 属性的可视化呈现(设计已定,2026-11-01)**
+- [x] **C-22 · P2 · 实现 · def 属性的可视化呈现(设计已定,2026-11-01)**(106e5855 重做落地:旧实现在已弃 feat/demo-game 分支(fcdab71f,拆分前旧 main),按设计在当前 main 新写,未拉旧代码。交付③ inlay=src/defPropsInlayHints.ts:整行注释锚 `# kode:props-from-def` 行尾渲染所属实体 def 根级属性清单(name: 注解,段悬停给 def 声明出处/域/持久化;FIXED_DICT 子键与组件槽成员不进总览;Any 落名裸显不伪造;开关 kbengine.inlayHints.defProps 默认开);数据面=entityMapping.listPropertyDefinitionsForFile(与 resolvePropertyDefinitionInfo 同索引同门控口径)。交付② hover=self.<属性> 悬停既有 resolveSelfPropertyAnnotationHover 面已在 main(TYP-ARRAY 批,def 声明+推断类型),本批不重复造;交付① pyi 桩生成器已在 main(gen-def 系列),不在本批。门禁:tests/defPropsInlayHints.test.ts 8 例(锚提取/组装/根级过滤/真实索引装配端到端/开关关/非实体零 inlay)+extension.test 注册面 4 inlay+provider-data-sources 文档锁(en/zh)+perf 锚点锁步;lint 0/tsc 0;红先行=模块缺失红确认后实现)
   - 背景:KBEngine 属性在 __init__ 之前由引擎赋值,Python 侧不可见不可跳转;曾考虑「__属性方法集中声明」方案,因引擎不调用、双事实源漂移、与真实初始化时序矛盾而否决(设计结论记录于本条)。
   - 交付①:.pyi 桩生成器(P0-A)把 def 属性生成为类注解属性(类型+def 行号锚点),跳转可达、改 def 自动再生;
   - 交付②:LSP「跳转到定义」对 def 属性用法(self.hp)直接指向 .def 的 <Properties> 行(单一事实源);hover 同时显示 def 声明与推断类型;
@@ -949,7 +949,7 @@
   - 原则:属性唯一事实源=def;一切方便理解的呈现走生成物或渲染层,不在 Python 源码造第二事实源。
   - 验收:self.hp 跳转直达 def 行;pyi 再生与 def 同步(改 def ≤1 周期内更新);零误导(无引擎不调用的死代码)。
 
-- [ ] **C-23 · P2 · 实现 · 行为知识工具化(坑→lint/code action/hover 流水线)**
+- [x] **C-23 · P2 · 实现 · 行为知识工具化(坑→lint/code action/hover 流水线)**(本批落地:交付①结构化=src/knowledge/trapsKnowledge.ts,KB-001 条目带 applies_to/detection/fix/source 四字段+双语注记,6 条(detection 非空 3 条=lint 候选,null 3 条如实不可静态检测);交付②三规则=KBE-PY-015 kbengine.fixedDictNestedMutation(Warning+整体重赋 quick fix,类型判定走 types.xml 类型图 getTypeStorageShape 同悬停/存根链)/KBE-PY-016 kbengine.destroyedEntityReference(Warning,self 入模块级容器=KB-001 garbages 泄漏面;局部容器/非 self/读操作不报)/KBE-PY-017 kbengine.timerCleanupOnDestroy(Information, onDestroy 内 delTimer 冗余——注:任务书原拟「addTimer 句柄未在 onDestroy 注销」按 KB-001 真值修正,destroy() 即 scriptTimers_.cancelAll(),原形态与知识库自相矛盾);发布面=src/trapDiagnosticsWiring.ts 独立诊断集合 kbengine-trap-lints+自持事件监听,开关逐条独立(fixedDictMutation/destroyedEntityReference/timerCleanup Diagnostics 三键);交付③ hover=FIXED_DICT 形态 def 属性 self.<属性> 悬停附 KB-001 双语行为警告段(hover.ts+trapsKnowledge 同源);验收=三规则正反用例 tests/{fixedDictMutation,destroyedEntityCapture,timerCleanup}Diagnostics.test.ts(误报=0 反例齐)+trapsKnowledge.test.ts 结构契约(detection↔规则一一对账)+trapDiagnosticsWiring.test.ts(逐规则开关关)+lintRuleRegistry 契约+extension.test(集合序/quick fix 注册 5);规则表/配置表/features 双语文档落位;红先行=模块缺失红确认后实现)
   - 背景 2026-11-01 用户例:「属性修改只有顶层 key 才触发事件」这类行为知识无法在代码里体现,只能踩坑后知道。目标:把 KB-001 知识条目升级为开发者工具可执行的三通道呈现。
   - 交付①KB-001 条目结构化:每条知识增字段 applies_to(适用属性类型/API)/detection(可静态检测的代码模式)/fix(正确姿势与修复代码);detection 非空的条目自动成为 lint 规则候选。
   - 交付②首批 lint 规则(接入现有 lint/diagnostics 体系):

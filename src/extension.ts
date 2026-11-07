@@ -365,6 +365,7 @@ import { WorkspaceIndex } from './workspaceIndex';
 import { PythonTypeInlayHintsProvider } from './typeInlayHints';
 import { DefParamInlayHintsProvider } from './defParamInlayHints';
 import { DefPropsInlayHintsProvider } from './defPropsInlayHints';
+import { wireTrapLintDiagnostics } from './trapDiagnosticsWiring';
 import { PythonClassIndex } from './pythonClassIndex';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { shouldStartKbEngineIndexing } from './workspaceGate';
@@ -6304,6 +6305,13 @@ export function activate(context: vscode.ExtensionContext) {
   const ruffChannel = vscode.window.createOutputChannel('KBEngine Ruff');
   const ruffDiagnostics = vscode.languages.createDiagnosticCollection('kode-ruff');
   context.subscriptions.push(ruffChannel, ruffDiagnostics);
+
+  // C-23 行为知识流水线(坑→lint/code action/hover):三规则(KBE-PY-015/
+  // 016/017)独立诊断集合与 quick fix provider 自持装配(trapDiagnosticsWiring
+  // 自带事件监听,不进主调度链);hover 行为注记在 languageProviders/hover.ts
+  // self 属性悬停面接线。注册点放在全部既有诊断集合之后(集合创建序即
+  // 注册表序,消费方按序取集合,不抢既有下标)
+  wireTrapLintDiagnostics(context, entityMappingManager);
   const ruffLintDeps = {
     getWorkspacePythonFiles: async () =>
       (

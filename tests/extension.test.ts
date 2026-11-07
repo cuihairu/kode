@@ -230,8 +230,9 @@ describe('extension activate 装配', () => {
     // IDE-NAV-013:未知类型诊断 QuickFix 候选;IDE-NAV-014:缺实现方法空方法
     // 生成(各自独立注册,def 面各一份);B-7 起 python 面 None 守卫快速修复
     // 再一份(receiver-none 诊断对账);C-19 起 def 面 parity 一键生成再一份
-    // (def-method-missing-in-python 诊断对账)
-    expect(languagesRegistry.codeActionsRegistrations).toHaveLength(4);
+    // (def-method-missing-in-python 诊断对账);C-23 起 FIXED_DICT 整体重赋
+    // quick fix 再一份(trapDiagnosticsWiring 自持注册)
+    expect(languagesRegistry.codeActionsRegistrations).toHaveLength(5);
     // 批126:RPC 方法标记的 Python 侧 CodeLens 单注册;批134 起 types.xml
     // 引用反扫镜再加一份注册;批135 属性访问标记再加一份注册;批154 起
     // 事件回调镜链从 RPC 镜链拆出独立注册(各自独立开关);IDE-HOT-100 起
@@ -250,7 +251,9 @@ describe('extension activate 装配', () => {
     // GEN-DEF-1e ④ 方向违规诊断集再一份(kbengine-property-direction);
     // IDE-LINT-007 只读写入诊断集再一份(kbengine-readonly-write);
     // IDE-LINT-009 角色错用诊断集再一份(kbengine-role-misuse);
-    // IDE-LINT-010 销毁后访问诊断集再一份(kbengine-post-destroy)
+    // IDE-LINT-010 销毁后访问诊断集再一份(kbengine-post-destroy);
+    // C-23 行为知识三规则独立诊断集再一份(kbengine-trap-lints,注册点在
+    // 全部既有集合之后——集合创建序即注册表序,消费方按序取集合)
     expect(languagesRegistry.diagnosticCollections.map(entry => entry.name)).toEqual([
       'kbengine',
       'kbengine-def-method-consistency',
@@ -262,7 +265,8 @@ describe('extension activate 装配', () => {
       'kbengine-process-topology',
       'KBEngine 临时编辑热更新',
       'kbengine-def-analysis',
-      'kode-ruff'
+      'kode-ruff',
+      'kbengine-trap-lints'
     ]);
 
     // 虚拟文档提供者:数据库 schema + kbe 符号桩文档(批108,内容由桩索引出)

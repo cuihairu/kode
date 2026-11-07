@@ -164,13 +164,18 @@ const ANCHORS: Array<[string, number, string]> = [
   // 锚点 -60(真位重探 624/637/921/1003/1054/1117/1450/2319/2399);其后无
   // extension.ts 锚点。baseline §7 六处 extension.ts 出处随 baseline 锁步。
 
-  ['src/extension.ts', 1003, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1054, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1117, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 921, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1450, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 624, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 637, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-07(C-23 批):extension.ts 顶部 +1 行 import(trapDiagnosticsWiring,
+  // wireTrapLintDiagnostics 装配 +7 在 6990 尾段全部锚点之后)与 hover.ts 顶部
+  // +1 行 import(trapsKnowledge)——上列全部锚点 +1、provideHover 锚点 129→130
+  // (真位重探 625/638/922/1004/1055/1118/1451/2320/2400),出处随 baseline 锁步。
+
+  ['src/extension.ts', 1004, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1055, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1118, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 922, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1451, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 625, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 638, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -180,8 +185,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // runPyspySchedule 引入)→ 上列 9 处 extension.ts 锚点整体 +2(真位重探 683/696/980/
   // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450);
   // HOT-VER 再 +3(见上)→ 后段锚点 2373/2453;DEMO-GAME-006 再 +2(见上)→ 2375/2455。
-  ['src/extension.ts', 2319, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2399, 'flushQueued()'],
+  ['src/extension.ts', 2320, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2400, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。
@@ -219,7 +224,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // 触发点(def 声明方法追加段)resolveDefMethodAnnotation +12:1360 后锚点
   // 再 +12(1852/1911/1935/2063/4812/5220/5326/7170),baseline 同步。
   ['src/languageProviders/inlay.ts', 42, 'getDocumentLines(document)'],
-  ['src/languageProviders/hover.ts', 129, 'provideHover('],
+  ['src/languageProviders/hover.ts', 130, 'provideHover('],
   ['src/languageProviders/navigation.ts', 24, 'shadowCompareDefinition'],
   ['src/languageProviders/validation.ts', 13, 'export function validateDocument('],
   ['src/languageProviders/validation.ts', 37, 'shadowObserveDefDocument'],

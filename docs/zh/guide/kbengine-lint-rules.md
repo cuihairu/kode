@@ -28,6 +28,9 @@
 | KBE-PY-012b | 属性方向判定文件作用域不足（降级参考信息） | 已有实时 Information | `kbengine.propertyDirectionScopeUnknown`；同上 |
 | KBE-PY-013 | 空间/导航语义（保留键 `_mapping`、无 `canNavigate` 的 `navigate`、键类型） | 已有实时 Warning | `kbengine.spaceNav`；`spaceNavDiagnostics.ts` |
 | KBE-PY-014 | 启动脚本启动行未知 `--` 参数、非数字 `--cid/--gus`、未赋值引用 | 已有实时 Warning | `kbengine.startupScript`；`kbengineStartupScript.ts` |
+| KBE-PY-015 | FIXED_DICT 属性子键赋值不触发属性同步事件 | 已实现（C-23 行为知识流水线）：FIXED_DICT 属性的子键赋值（`self.<属性>.<键>` / `self.<属性>['<键>']`，含增强赋值）报 Warning，quick fix 给整体重赋习语 `{**old, key: rhs}`（仅直接赋值单段键）；属性顶层整体赋值/非 FIXED_DICT 属性/注释字符串同形不报 | `kbengine.fixedDictNestedMutation`；`fixedDictMutationDiagnostics.ts`（FIXED_DICT 判定走 types.xml 类型图，发布 `trapDiagnosticsWiring.ts`） |
+| KBE-PY-016 | `self` 存入模块级容器（销毁后引用滞留/garbages 泄漏） | 已实现（C-23 行为知识流水线）：把 `self` 存入模块级 list/dict/set（append/add/extend/update/下标赋值）报 Warning；局部容器/非 self 实参/读操作/lambda 逃逸不分析不冒充 | `kbengine.destroyedEntityReference`；`destroyedEntityCaptureDiagnostics.ts`（发布 `trapDiagnosticsWiring.ts`） |
+| KBE-PY-017 | `onDestroy` 内 `delTimer` 冗余（引擎 destroy 已 cancelAll） | 已实现（C-23 行为知识流水线）：onDestroy 方法体内 `self.delTimer(...)` 实语句报 Information——`destroy()` 即 `scriptTimers_.cancelAll()`，销毁期注销多余；陈旧 id 静默返回 -1；其他方法/注释同形不报 | `kbengine.timerCleanupOnDestroy`；`timerCleanupDiagnostics.ts`（发布 `trapDiagnosticsWiring.ts`） |
 | KBE-DEF-001 | 未知 Type、Flags、DetailLevel | 已有实时校验；未知 Type 有稳定 code | `kbengine.unknownType`；`languageProviders.ts` |
 | KBE-DEF-002 | 将多个 Flags 用 `\|` 拼接成组合值 | 已有未知 Flags 校验 | 引擎按单个映射值解析；分析器的容错拆分不代表引擎接受 |
 | KBE-DEF-003 | 同域重复定义、缺少/重复必需字段 | 已有结构诊断（发布时**不带诊断 code**，与其余规则不同；受结构开关与重复/必需字段子开关共同控制） | `validateSectionStructure`、`validatePropertyStructure`；`kbengine.enableStructureDiagnostics`/`checkDuplicateDefinitions`/`checkMissingPropertyFields` |
@@ -133,6 +136,16 @@ if self.cell is not None:
 已实现（IDE-LINT-010，KBE-PY-010）：引擎事实——`destroy` 是各面实体宏公共方法（`entity_macro.h:20` `SCRIPT_METHOD_DECLARE("destroy", pyDestroyEntity, ...)`），`self.destroy()` 销毁自身；销毁后各 getter（如 `Entity::pyGetCellEntityCall`）检查 destroyed，访问即异常。判定：同一函数内同一块（同缩进，中间无 dedent）的销毁语句（整句 `self.destroy()` 或 `x = self.destroy()`）先于访问语句，且两者间无同层 `return`/`break`/`continue`/`raise`（无条件早退，访问为死码）→ 报 `kbengine.postDestroy`（Warning）。成员集：排除 `id`/`isDestroyed`/`className`（销毁后仍可读的身份/状态项，读 `isDestroyed` 正是确认销毁）与 `destroy`（重复销毁非本 lint 面向的访问错用），其余任何成员（属性/方法/EntityCall）访问都报。
 
 已知边界（不冒充已实现）：销毁在访问之后、条件销毁（`if`/`while` 内）、销毁在祖先块而访问在嵌套块（或反之）、跨函数/跨回调（回调里销毁，另一回调访问）、异常路径（销毁抛错未完成）、动态分派（def 声明 `destroy` 方法/属性 → `self.destroy()` 可能非引擎销毁，整文件不分析）——均不报，不做全文件误报；`self.<prop>` 仅 `self.` 单段前缀（`other.destroy`/`self.cell.destroy` 非销毁自身，不参与）。开关 `kbengine.postDestroyDiagnostics=true`（默认开启），关闭只停止提示，不改变引擎行为。
+
+## 行为知识流水线（C-23，KBE-PY-015/016/017）
+
+已实现（C-23）：数据源 = KB-001 语义陷阱知识库的结构化条目（`src/knowledge/trapsKnowledge.ts`，每条带 applies_to / detection / fix 三字段，detection 非空即 lint 规则候选）。三规则独立诊断集合 `kbengine-trap-lints` 发布，开关逐条独立（默认开启）：
+
+- **KBE-PY-015 `kbengine.fixedDictNestedMutation`**（Warning）：FIXED_DICT 属性的子键赋值（点号/字符串下标，含增强赋值）不触发属性同步事件——属性同步以「顶层整体赋值」为单位。quick fix 给 `{**self.<属性>, <键>: <右值>}` 整体重赋习语（仅直接赋值单段键，增强赋值右值回算不可靠不生成）。FIXED_DICT 判定走 types.xml 类型图（与悬停/存根同一条 `getTypeStorageShape` 链）。
+- **KBE-PY-016 `kbengine.destroyedEntityReference`**（Warning）：`self` 存入模块级 list/dict/set——引擎 3600 s 后打 garbages 泄漏告警；正确姿势 = `onDestroy` 里解除引用、排查滞留者用 `KBEngine.entities.garbages.items()`。局部容器/非 `self` 实参/读操作（`in` 判断）不报；闭包逃逸（`lambda: self`）不分析不冒充。
+- **KBE-PY-017 `kbengine.timerCleanupOnDestroy`**（Information）：`onDestroy` 体内 `self.delTimer(...)` 实语句——引擎 `destroy()` 即 `scriptTimers_.cancelAll()`，销毁期注销冗余；陈旧 id 静默返回 -1（fork 口径）。注：任务书原拟「addTimer 句柄未在 onDestroy 注销」按 KB-001 真值修正——原形态会把知识库判定为不必要的动作当成缺失动作报。
+
+hover 面：FIXED_DICT 形态的 def 属性（`self.<属性>` 悬停）附 KB-001 双语行为警告段（同一结构化条目数据源）。
 
 ## .def 检查的触发方式
 

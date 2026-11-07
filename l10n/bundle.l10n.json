@@ -323,5 +323,8 @@
   "{label}: nothing to optimize": "{label}: nothing to optimize",
   "{label}: {total} suggestion(s) (errors {errors} / warnings {warnings} / infos {infos})": "{label}: {total} suggestion(s) (errors {errors} / warnings {warnings} / infos {infos})",
   "Method": "Method",
-  "Component slot": "Component slot"
+  "Component slot": "Component slot",
+  "FIXED_DICT property sub-key assignment does not trigger the property sync event; reassign {property} as a whole": "FIXED_DICT property sub-key assignment does not trigger the property sync event; reassign {property} as a whole",
+  "Storing self in a module-level container keeps the entity alive after destroy (garbages leak); drop the reference in onDestroy": "Storing self in a module-level container keeps the entity alive after destroy (garbages leak); drop the reference in onDestroy",
+  "delTimer inside onDestroy is unnecessary: destroy() already cancels all timers (scriptTimers_.cancelAll(); stale ids silently return -1)": "delTimer inside onDestroy is unnecessary: destroy() already cancels all timers (scriptTimers_.cancelAll(); stale ids silently return -1)"
 }
