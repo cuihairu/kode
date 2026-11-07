@@ -96,9 +96,17 @@ describe('BG-WARM 激活装配', () => {
     const context = makeContext();
     try {
       activate(context);
-      // 预热管线在门控放行后启动:withProgress(Window 位)被调用且任务体已启动
-      await until(() => progresses.length > 0, 'warmup progress started');
-      const options = progresses[0].options as { location?: unknown; title?: string; cancellable?: boolean };
+      // 预热管线在门控放行后启动:withProgress(Window 位)被调用且任务体已启动。
+      // KODE-PERF 起,首扫也在实体浏览器视图位出 withProgress(cancellable=false,
+      // title=扫描实体与脚本索引…)——按 title 选出预热这条,断言口径不变。
+      const warmupTitle = (record: RecordedProgress): string =>
+        String((record.options as { title?: string }).title ?? '');
+      await until(
+        () => progresses.some(record => warmupTitle(record).includes('预热')),
+        'warmup progress started'
+      );
+      const warmupRecord = progresses.find(record => warmupTitle(record).includes('预热'))!;
+      const options = warmupRecord.options as { location?: unknown; title?: string; cancellable?: boolean };
       expect(options.cancellable).toBe(true);
       expect(options.title).toContain('预热');
       // 完成后写 workspaceState 标记(空 fake 工作区管线轻,应快速完成)
