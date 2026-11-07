@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { Readable } from 'stream';
 import {
   CloneApplyCancelledError,
   CloneCancelledError,
@@ -384,6 +385,44 @@ describe('columnOrderFromPlan / uniqueValuesFromRows(两遍计划的探测面)',
 });
 
 describe('executeExportPlan(只读计划执行)', () => {
+  const budgetPlan = {
+    entity_name: 'Avatar', row_budget: 10, denied: [], missing: [],
+    queries: [{ sequence: 0, table: 'tbl_Avatar', columns: ['id', 'value'], column_types: ['bigint unsigned', 'varchar'], select_sql: 'SELECT id, value FROM tbl_Avatar WHERE id = ?', filter: 'root-id' }]
+  };
+
+  it('streaming export enforces row and byte budgets and aborts the active connection', async () => {
+    for (const options of [{ maxBytes: 10 }, { maxBytes: 10000 }]) {
+      const connection = new FakeMysqlConnection() as FakeMysqlConnection & CloneMysqlConnection;
+      let aborted = false;
+      connection.streamRows = () => Readable.from([{ id: 1, value: 'content' }, { id: 2, value: 'more' }]);
+      connection.abort = () => { aborted = true; };
+      const plan = { ...budgetPlan, row_budget: options.maxBytes === 10 ? 10 : 1 };
+      await expect(executeExportPlan(connection, plan, 1, options)).rejects.toThrow(/budget/);
+      expect(aborted).toBe(true);
+      expect(connection.log.map(entry => entry.sql)).not.toContain('COMMIT');
+    }
+  });
+
+  it('aborts a stalled stream at the wall-clock deadline', async () => {
+    const connection = new FakeMysqlConnection() as FakeMysqlConnection & CloneMysqlConnection;
+    let aborted = false;
+    connection.streamRows = () => new Readable({ objectMode: true, read() {} });
+    connection.abort = () => { aborted = true; };
+    await expect(executeExportPlan(connection, budgetPlan, 1, { timeoutMs: 20 })).rejects.toThrow(/timed out/);
+    expect(aborted).toBe(true);
+  });
+
+  it('cancels a stalled query without waiting for another row', async () => {
+    const connection = new FakeMysqlConnection() as FakeMysqlConnection & CloneMysqlConnection;
+    let aborted = false;
+    let cancelled = false;
+    connection.streamRows = () => new Readable({ objectMode: true, read() {} });
+    connection.abort = () => { aborted = true; };
+    const request = executeExportPlan(connection, budgetPlan, 1, { timeoutMs: 5000, shouldCancel: () => cancelled });
+    setTimeout(() => { cancelled = true; }, 10);
+    await expect(request).rejects.toBeInstanceOf(CloneCancelledError);
+    expect(aborted).toBe(true);
+  });
   it('根表按 DBID;子表按父行 id 逐次;行值按列型归型', async () => {
     const connection = new FakeMysqlConnection();
     connection.reply('FROM tbl_Avatar WHERE', [{ id: 7, sm_autoLoad: 1, sm_name: 'hero' }]);

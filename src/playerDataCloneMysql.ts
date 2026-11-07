@@ -17,6 +17,7 @@
  */
 
 import { assertReadOnlyStatement } from './databaseDrift';
+import type { Readable } from 'stream';
 import {
   cellToTypedValue,
   typedValueToBind,
@@ -31,6 +32,8 @@ import {
 /** mysql2/promise 连接子集(query 支持参数;end 释放)。 */
 export interface CloneMysqlConnection {
   query(sql: string, values?: unknown[]): Promise<[unknown, unknown]>;
+  streamRows?(sql: string, values: unknown[]): Readable;
+  abort?(): void;
   end(): Promise<void>;
 }
 
@@ -74,6 +77,15 @@ export async function openCloneSession(
     supportBigNumbers: true,
     bigNumberStrings: true
   });
+  // mysql2's promise wrapper does not expose query streams directly; its
+  // underlying connection shares the same transaction and supports backpressure.
+  const raw = (connection as CloneMysqlConnection & {
+    connection?: { query(sql: string, values: unknown[]): { stream(options: { highWaterMark: number }): Readable }; destroy(): void };
+  }).connection;
+  if (raw) {
+    connection.streamRows = (sql, values) => raw.query(sql, values).stream({ highWaterMark: 1 });
+    connection.abort = () => raw.destroy();
+  }
   if (options.readonly !== false) {
     await connection.query('SET SESSION TRANSACTION READ ONLY');
   }
@@ -275,10 +287,13 @@ export async function executeExportPlan(
   connection: CloneMysqlConnection,
   plan: QueryPlanWire,
   rootDbid: number | bigint,
-  options: { shouldCancel?(): boolean } = {}
+  options: { shouldCancel?(): boolean; maxBytes?: number; timeoutMs?: number } = {}
 ): Promise<TypedRowWire[]> {
   const allRows: TypedRowWire[] = [];
   const idsByTable = new Map<string, TypedValueWire[]>();
+  const maxBytes = options.maxBytes ?? 64 * 1024 * 1024;
+  const deadline = Date.now() + (options.timeoutMs ?? 120_000);
+  let totalBytes = 0;
   await connection.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
   await connection.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
   try {
@@ -292,20 +307,53 @@ export async function executeExportPlan(
       if (!Number.isSafeInteger(remaining) || remaining < 0) {
         throw new Error('clone: invalid or exceeded export row budget');
       }
-      const [rows] = await connection.query(`${query.select_sql} LIMIT ${remaining + 1}`, binds);
-      if (Array.isArray(rows) && rows.length > remaining) {
-        throw new Error(`clone: export exceeds row budget ${plan.row_budget}`);
+      const sql = `${query.select_sql} LIMIT ${remaining + 1}`;
+      const timeLeft = deadline - Date.now();
+      if (timeLeft <= 0) {
+        throw new Error('clone: export timed out');
       }
+      // Production connections use a backpressured stream; the query fallback
+      // supports injected test connections without a mysql2 underlying client.
+      const stream = connection.streamRows?.(sql, binds);
+      const timer = stream ? setTimeout(() => stream.destroy(new Error('clone: export timed out')), timeLeft) : undefined;
+      const cancellationPoll = stream && options.shouldCancel
+        ? setInterval(() => {
+          if (options.shouldCancel?.()) { stream.destroy(new CloneCancelledError()); }
+        }, 100)
+        : undefined;
+      const rows = stream ?? (await connection.query(sql, binds))[0];
       const idIndex = query.columns.indexOf('id');
       const collected: TypedValueWire[] = [];
-      for (const raw of Array.isArray(rows) ? (rows as Array<Record<string, unknown>>) : []) {
+      let completed = false;
+      try {
+      for await (const raw of (Array.isArray(rows) || stream ? rows : []) as AsyncIterable<Record<string, unknown>> | Array<Record<string, unknown>>) {
+        if (options.shouldCancel?.()) {
+          throw new CloneCancelledError();
+        }
+        if (Date.now() >= deadline) {
+          throw new Error('clone: export timed out');
+        }
+        if (allRows.length >= plan.row_budget) {
+          throw new Error(`clone: export exceeds row budget ${plan.row_budget}`);
+        }
         const values = query.columns.map((column, index) =>
           cellToTypedValue(raw[column], query.column_types[index] ?? '')
         );
+        totalBytes += Buffer.byteLength(JSON.stringify({ table: query.table, values }), 'utf8');
+        if (totalBytes > maxBytes) {
+          throw new Error(`clone: export exceeds byte budget ${maxBytes}`);
+        }
         allRows.push({ table: query.table, values });
         if (idIndex >= 0 && values[idIndex]) {
           collected.push(values[idIndex]);
         }
+      }
+      completed = true;
+      } finally {
+        if (timer) { clearTimeout(timer); }
+        if (cancellationPoll) { clearInterval(cancellationPoll); }
+        stream?.destroy();
+        if (stream && !completed) { connection.abort?.(); }
       }
       idsByTable.set(query.table, [...(idsByTable.get(query.table) ?? []), ...collected]);
     };
@@ -325,7 +373,7 @@ export async function executeExportPlan(
   await connection.query('COMMIT');
   return allRows;
   } catch (error) {
-    await connection.query('ROLLBACK');
+    try { await connection.query('ROLLBACK'); } catch { /* Closing a timed-out read-only session also releases its transaction. */ }
     throw error;
   }
 }

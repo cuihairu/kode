@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createConnection } from 'mysql2/promise';
+import { Readable } from 'stream';
 import { cellToTypedValue, typedValueToBind } from '../src/playerDataCloneWire';
 import { executeExportPlan, openCloneSession, type CloneMysqlConnection } from '../src/playerDataCloneMysql';
 
@@ -19,12 +20,17 @@ describe.skipIf(!port)('clone mysql real', () => {
     const reader = await openCloneSession(config);
     let updated = false;
     const connection: CloneMysqlConnection = {
-      query: async (sql, values) => {
-        const result = await reader.query(sql, values);
+      streamRows: (sql, values) => Readable.from((async function* () {
+        for await (const row of reader.streamRows!(sql, values)) {
+          yield row;
+        }
         if (!updated && sql.includes(`FROM ${parent}`)) {
           updated = true;
           await admin.query(`UPDATE ${child} SET val = 'after'`);
         }
+      })()),
+      query: async (sql, values) => {
+        const result = await reader.query(sql, values);
         return result;
       },
       end: () => reader.end()
@@ -43,6 +49,11 @@ describe.skipIf(!port)('clone mysql real', () => {
       await admin.query(`UPDATE ${parent} SET payload = ? WHERE id = ?`, [typedValueToBind(rows[0].values[1]), '9007199254740993']);
       const [read] = await admin.query(`SELECT payload FROM ${parent} WHERE id = ?`, ['9007199254740993']);
       expect(cellToTypedValue((read as Array<{payload: Buffer}>)[0].payload, 'blob')).toEqual(rows[0].values[1]);
+      const budgetReader = await openCloneSession(config);
+      await expect(executeExportPlan(budgetReader, {
+        entity_name: 'Avatar', row_budget: 10, denied: [], missing: [],
+        queries: [{ sequence: 0, table: parent, columns: ['id', 'payload'], column_types: ['bigint unsigned', 'blob'], select_sql: `SELECT id, payload FROM ${parent} WHERE id = ?`, filter: 'root-id' }]
+      }, BigInt('9007199254740993'), { maxBytes: 5 })).rejects.toThrow(/byte budget/);
     } finally {
       await reader.end();
       await admin.query(`DROP TABLE IF EXISTS ${child}, ${parent}`);
