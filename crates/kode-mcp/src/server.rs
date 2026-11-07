@@ -121,6 +121,11 @@ impl KodeMcpServer {
                 Some(key) => crate::config_qa::why_setting(&self.assets_root, &key),
                 None => Err("missing argument: key".to_string()),
             },
+            "list_config_settings" => Ok(crate::config_qa::list_config_settings(
+                &self.assets_root,
+                arg_str("group").as_deref(),
+                arg_str("prefix").as_deref(),
+            )),
             other => Err(format!("unknown tool: {other}")),
         };
         match result {
@@ -138,7 +143,7 @@ impl ServerHandler for KodeMcpServer {
                 "Pass the KBEngine assets root as the CLI argument. Tools: search_entities, \
                  get_entity_model, get_type_graph, validate_defs, get_message_entry, \
                  encode_decode_sample, db_schema_preview, explain, get_final_config, \
-                 get_entry_scripts, get_database_schema, why_setting.",
+                 get_entry_scripts, get_database_schema, why_setting, list_config_settings.",
             )
     }
 
@@ -257,6 +262,17 @@ impl ServerHandler for KodeMcpServer {
                             "key": {"type": "string", "description": "dotted config key path (root/process sections stripped), e.g. baseapp.archivePeriod"}
                         }),
                         &["key"],
+                    ),
+                ),
+                Self::tool(
+                    "list_config_settings",
+                    "Every server config option with its curated Chinese and English meaning and authoritative file:line origin (the engine defaults copy library). Optional group/prefix filter; each entry carries the effective value resolved from the config (null when absent). Answers 'what does each XML config option mean'.",
+                    schema_of(
+                        serde_json::json!({
+                            "group": {"type": "string", "description": "optional functional group filter (process/net/db/account/telnet/log/view/backup/perf/test/general/custom)"},
+                            "prefix": {"type": "string", "description": "optional dotted key-prefix filter, e.g. baseapp."}
+                        }),
+                        &[],
                     ),
                 ),
             ],

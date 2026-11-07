@@ -380,6 +380,57 @@ pub fn why_setting(root: &Path, key: &str) -> Result<Value, String> {
     Ok(Value::Object(out))
 }
 
+/// `list_config_settings`:引擎 defaults 文案库全量条目(每配置项的中英
+/// 含义 + 权威 file:line 出处 + 分组),可选按 group / 前缀过滤;每项附
+/// 生效值(resolve_config 生效树解析,缺省值 null)。答「XML 配置每个选项
+/// 的含义」。group 未知名 → 空集如实(附可用分组),不报错。
+pub fn list_config_settings(root: &Path, group: Option<&str>, prefix: Option<&str>) -> Value {
+    let custom_path = custom_config_path(root);
+    let defaults_path = defaults_config_path(root);
+    let custom_text = read_opt(&custom_path);
+    let defaults_text = read_opt(&defaults_path);
+    let resolved = resolve_config(defaults_text.as_deref(), custom_text.as_deref());
+    let tree = resolved.merged.as_ref().or(resolved.custom_tree.as_ref());
+
+    let mut group_counts: Map<String, Value> = Map::new();
+    let mut settings: Vec<Value> = Vec::new();
+    for (key, doc) in crate::config_catalog::SERVER_CONFIG_ITEM_DOCS {
+        *group_counts
+            .entry(doc.group.to_string())
+            .or_insert_with(|| json!(0)) = {
+            let n = group_counts.get(doc.group).and_then(Value::as_u64).unwrap_or(0) + 1;
+            json!(n)
+        };
+        if let Some(g) = group {
+            if doc.group != g {
+                continue;
+            }
+        }
+        if let Some(p) = prefix {
+            if !key.starts_with(p) {
+                continue;
+            }
+        }
+        settings.push(json!({
+            "key": key,
+            "value": node_at(tree, key).map(node_value).unwrap_or(Value::Null),
+            "meaningZh": doc.zh,
+            "meaningEn": doc.en,
+            "origin": doc.source,
+            "group": doc.group,
+        }));
+    }
+    json!({
+        "count": settings.len(),
+        "groupCounts": Value::Object(group_counts),
+        "filter": json!({
+            "group": group,
+            "prefix": prefix,
+        }),
+        "settings": settings,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -547,5 +598,51 @@ mod tests {
         let value = payload["value"].as_str().unwrap();
         assert!(value.starts_with("section with"));
         assert!(value.contains("account_registration"));
+    }
+
+    #[test]
+    fn list_config_settings_enumerates_catalog_with_values() {
+        let payload = list_config_settings(&fixture_root(), None, None);
+        let settings = payload["settings"].as_array().unwrap();
+        assert!(settings.len() > 200, "full catalog enumerated");
+        // 每项都有中英含义 + 出处 + 分组。
+        for s in settings.iter().take(50) {
+            assert!(s["meaningZh"].as_str().unwrap().len() > 0);
+            assert!(s["meaningEn"].as_str().unwrap().len() > 0);
+            assert!(s["origin"].as_str().unwrap().contains("kbe/"));
+            assert!(s["group"].as_str().unwrap().len() > 0);
+        }
+        // 元件侧配置的键附真实生效值(其余为 null,不虚构)。
+        let reg = settings
+            .iter()
+            .find(|s| s["key"] == "dbmgr.account_system.account_registration.enable")
+            .expect("registration key present");
+        assert_eq!(reg["value"], "true");
+        let absent = settings
+            .iter()
+            .find(|s| s["key"] == "baseapp.archivePeriod")
+            .expect("archive key present");
+        assert!(absent["value"].is_null());
+        // groupCounts 覆盖全部组。
+        assert!(payload["groupCounts"]["account"].as_u64().unwrap() > 0);
+        assert_eq!(payload["count"].as_u64().unwrap() as usize, settings.len());
+    }
+
+    #[test]
+    fn list_config_settings_filters_by_group_and_prefix() {
+        let group = list_config_settings(&fixture_root(), Some("backup"), None);
+        let gs = group["settings"].as_array().unwrap();
+        assert!(!gs.is_empty(), "backup group non-empty");
+        assert!(gs.iter().all(|s| s["group"] == "backup"));
+
+        let prefix = list_config_settings(&fixture_root(), None, Some("baseapp."));
+        let ps = prefix["settings"].as_array().unwrap();
+        assert!(!ps.is_empty());
+        assert!(ps.iter().all(|s| s["key"].as_str().unwrap().starts_with("baseapp.")));
+
+        // 未知名组 → 空集如实,不报错。
+        let none = list_config_settings(&fixture_root(), Some("no-such-group"), None);
+        assert_eq!(none["count"], 0);
+        assert!(none["settings"].as_array().unwrap().is_empty());
     }
 }

@@ -52,7 +52,7 @@ fn payload_of(result: CallToolResult) -> Value {
 }
 
 #[tokio::test]
-async fn list_tools_exposes_all_twelve() {
+async fn list_tools_exposes_all_thirteen() {
     let client = connect().await;
     let tools = client.list_all_tools().await.expect("list_tools");
     let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
@@ -69,6 +69,7 @@ async fn list_tools_exposes_all_twelve() {
             "get_final_config",
             "get_message_entry",
             "get_type_graph",
+            "list_config_settings",
             "search_entities",
             "validate_defs",
             "why_setting",
@@ -263,6 +264,24 @@ async fn call_tools_return_real_data() {
         .as_str()
         .unwrap()
         .contains("kbengine_defaults.xml"));
+
+    // list_config_settings(KODE-MCP-KB-001 ⑤):全量配置项含义真数据。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "list_config_settings",
+                serde_json::json!({"prefix": "baseapp."}),
+            ))
+            .await
+            .expect("call list_config_settings"),
+    );
+    assert!(payload["count"].as_u64().unwrap() > 20);
+    let settings = payload["settings"].as_array().unwrap();
+    assert!(settings.iter().all(|s| s["key"]
+        .as_str()
+        .unwrap()
+        .starts_with("baseapp.")));
+    assert!(settings.iter().any(|s| s["key"] == "baseapp.archivePeriod"));
 
     let _ = client.cancel().await;
 }
