@@ -190,7 +190,7 @@ mod tests {
         let out = protocol_frame(&k, Some("SKILL_SLOT"), None, None).expect("frame");
         assert_eq!(out["type"], "SKILL_SLOT");
         assert_eq!(out["layout"]["kind"], "FIXED_DICT");
-        assert!(out["layout"]["fields"].as_array().unwrap().len() >= 1);
+        assert!(!out["layout"]["fields"].as_array().unwrap().is_empty());
         // slot_list 是 ARRAY of UINT32(长度前缀动态),count 是 UINT32 定长。
         let fields = out["layout"]["fields"].as_array().unwrap();
         let slot = fields.iter().find(|f| f["name"] == "slot_list").expect("slot_list");

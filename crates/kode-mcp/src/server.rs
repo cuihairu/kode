@@ -167,6 +167,23 @@ impl KodeMcpServer {
                 &self.knowledge,
                 &self.assets_root,
             )),
+            "find_references" => {
+                let symbol = arg_str("symbol").unwrap_or_default();
+                let limit = arguments
+                    .get("limit")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(20) as usize;
+                crate::semantic_model::find_references(
+                    &self.knowledge,
+                    &self.assets_root,
+                    &symbol,
+                    limit.max(1),
+                )
+            }
+            "query_xml" => crate::semantic_model::query_xml(
+                &self.knowledge,
+                arg_str("path").as_deref().unwrap_or(""),
+            ),
             other => Err(format!("unknown tool: {other}")),
         };
         match result {
@@ -185,7 +202,7 @@ impl ServerHandler for KodeMcpServer {
                  get_entity_model, get_type_graph, validate_defs, get_message_entry, \
                  encode_decode_sample, db_schema_preview, explain, get_final_config, \
                  get_entry_scripts, get_database_schema, why_setting, list_config_settings, \
-                 search_docs, search_symbols, protocol_frame, find_symbol, index_status.",
+                 search_docs, search_symbols, protocol_frame, find_symbol, index_status, \\\n                 find_references, query_xml.",
             )
     }
 
@@ -366,6 +383,27 @@ impl ServerHandler for KodeMcpServer {
                     "index_status",
                     "Status of the structure-aware knowledge index: scanned Python symbols, schema counts (defs/types/aliases), type-resolution confidence distribution (determined/inferred/unknown) and any load errors. Answers 'is the index healthy and how complete'.",
                     serde_json::json!({"type": "object", "properties": {}}),
+                ),
+                Self::tool(
+                    "find_references",
+                    "Cross-format reference edges for a symbol or config: which def property / types.xml type / Python class or method references it, with the production rule and confidence. Answers 'if I change X, what else is affected'. Edges are produced by explicit rules (entity-class-name, types.xml type-reference, implementedBy, def-method-name), never by name coincidence alone.",
+                    schema_of(
+                        serde_json::json!({
+                            "symbol": {"type": "string", "description": "symbol or config name to trace references for"},
+                            "limit": {"type": "integer", "description": "max edges (default 20)"}
+                        }),
+                        &["symbol"],
+                    ),
+                ),
+                Self::tool(
+                    "query_xml",
+                    "Navigate the parsed XML knowledge structure by element path: types.<Name> for a types.xml type, entity.<Name>.Properties.<prop> for a def property, config.<key> for the final config value. Returns the node's parsed representation. Answers 'what exactly does this XML element contain'.",
+                    schema_of(
+                        serde_json::json!({
+                            "path": {"type": "string", "description": "element path, e.g. types.SKILL_SLOT or entity.Avatar.Properties.level"}
+                        }),
+                        &["path"],
+                    ),
                 ),
             ],
             ..Default::default()

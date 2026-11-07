@@ -52,7 +52,7 @@ fn payload_of(result: CallToolResult) -> Value {
 }
 
 #[tokio::test]
-async fn list_tools_exposes_all_eighteen() {
+async fn list_tools_exposes_all_twenty() {
     let client = connect().await;
     let tools = client.list_all_tools().await.expect("list_tools");
     let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
@@ -63,6 +63,7 @@ async fn list_tools_exposes_all_eighteen() {
             "db_schema_preview",
             "encode_decode_sample",
             "explain",
+            "find_references",
             "find_symbol",
             "get_database_schema",
             "get_entity_model",
@@ -73,6 +74,7 @@ async fn list_tools_exposes_all_eighteen() {
             "index_status",
             "list_config_settings",
             "protocol_frame",
+            "query_xml",
             "search_docs",
             "search_entities",
             "search_symbols",
@@ -336,7 +338,7 @@ async fn call_tools_return_real_data() {
     );
     assert_eq!(payload["type"], "SKILL_SLOT");
     assert_eq!(payload["layout"]["kind"], "FIXED_DICT");
-    assert!(payload["layout"]["fields"].as_array().unwrap().len() >= 1);
+    assert!(!payload["layout"]["fields"].as_array().unwrap().is_empty());
 
     let payload = payload_of(
         client
@@ -379,6 +381,37 @@ async fn call_tools_return_real_data() {
     );
     assert!(payload["schema"]["defs"].as_u64().unwrap() >= 1);
     assert!(payload["resolution"]["resolvedTypes"].as_u64().unwrap() >= 1);
+
+    // find_references(KODE-MCP-KB-002 P1):跨格式引用边真数据(implementedBy)。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "find_references",
+                serde_json::json!({"symbol": "SKILL_SLOT"}),
+            ))
+            .await
+            .expect("call find_references"),
+    );
+    assert!(payload["count"].as_u64().unwrap() >= 1);
+    assert!(payload["matches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m["rule"] == "implementedBy"));
+
+    // query_xml(KODE-MCP-KB-001 ⑤):XML 元素导航真数据(属性带 pyType)。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "query_xml",
+                serde_json::json!({"path": "entity.Avatar.Properties.level"}),
+            ))
+            .await
+            .expect("call query_xml"),
+    );
+    assert_eq!(payload["name"], "level");
+    assert_eq!(payload["pyType"], "int");
+    assert_eq!(payload["confidence"], "determined");
 
     let _ = client.cancel().await;
 }

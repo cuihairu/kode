@@ -133,6 +133,54 @@ pub fn collect_symbols(root: &Path) -> Vec<PySymbol> {
     out
 }
 
+/// `{root}/scripts` 下按模块名(文件 stem,大小写敏感)定位 `.py`。
+/// implementedBy 的 `MODULE.Class` 形态需要按模块名找实现文件。
+pub fn find_module(root: &Path, module: &str) -> Option<PathBuf> {
+    collect_py(root)
+        .into_iter()
+        .find(|f| f.file_stem().and_then(|s| s.to_str()) == Some(module))
+}
+
+/// 单个源文件里扫 `inst = Class()` 实例赋值,返回类名。
+pub fn instance_class_in_source(source: &str, inst: &str) -> Option<String> {
+    for line in source.lines() {
+        let t = line.trim();
+        let Some(rest) = t.strip_prefix(inst) else {
+            continue;
+        };
+        let rest = rest.trim_start();
+        if !rest.starts_with('=') {
+            continue;
+        }
+        let after = rest.trim_start_matches('=').trim_start();
+        // `Class(...)` → 取标识符。
+        let class = after
+            .split('(')
+            .next()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || c == '_'))?;
+        if !class.starts_with(|c: char| c.is_ascii_digit()) {
+            return Some(class.to_string());
+        }
+    }
+    None
+}
+
+/// 全 `{root}/scripts` 下扫 `inst = Class()` 实例赋值(有界:文件数封顶、
+/// 单文件 1MB)。implementedBy 被 parser 归一为对象名(丢模块前缀)时,
+/// 只能全量扫对象名;按对象名命中是唯一判据,不歧义地取首个。
+pub fn find_instance_class(root: &Path, inst: &str) -> Option<String> {
+    for file in collect_py(root) {
+        let Some(source) = read_capped(&file) else {
+            continue;
+        };
+        if let Some(class) = instance_class_in_source(&source, inst) {
+            return Some(class);
+        }
+    }
+    None
+}
+
 /// `search_symbols`:在 `{root}/scripts` 的 `.py` 里按名字(大小写不敏感
 /// 子串)查符号,返回 {name,kind,class,file,line}。空 query → Err;无命中
 /// → 空集如实;limit 缺省 20。
