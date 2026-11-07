@@ -151,13 +151,18 @@ const ANCHORS: Array<[string, number, string]> = [
   // 各 +1),全部 extension.ts 锚点再 +2(真位重探 690/703/987/1069/1120/
   // 1183/1506/2375/2455);命令装配块(约 6388 起)在 flushQueued 之后不再
   // 位移;出处随 baseline 锁步。
-  ['src/extension.ts', 1069, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1120, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1183, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 987, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1506, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 690, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 703, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-07(二)(C-22):def 属性可视化批次——顶部 import +2 行
+  // (DefPropsInlayHintsProvider / EntityStubRegenController),defProps inlay
+  // 注册块 +10 行落在 1185 后:前段锚点 +2(690/703/987/1069/1120/1183 →
+  // 692/705/989/1071/1122/1185),其后锚点 +12(1506/2375/2455 → 1518/2387/
+  // 2467);def 再生接线(约 6350 起)在全部锚点之后不再位移;出处随 baseline 锁步。
+  ['src/extension.ts', 1071, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1122, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1185, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 989, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1518, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 692, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 705, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -167,8 +172,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // runPyspySchedule 引入)→ 上列 9 处 extension.ts 锚点整体 +2(真位重探 683/696/980/
   // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450);
   // HOT-VER 再 +3(见上)→ 后段锚点 2373/2453;DEMO-GAME-006 再 +2(见上)→ 2375/2455。
-  ['src/extension.ts', 2375, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2455, 'flushQueued()'],
+  ['src/extension.ts', 2387, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2467, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面

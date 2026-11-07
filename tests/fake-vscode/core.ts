@@ -34,11 +34,19 @@ export class CodeLens {
 
 // inlay hints 替身(批154 类型 inlay 用):只保留构造面,断言读字段即可
 export class InlayHint {
+  // C-22 def 属性只读视图:行尾锚 hint 带左内边距,与真实 API 同字段面
+  paddingLeft?: boolean;
   constructor(
     public readonly position: Position,
     public readonly label: unknown,
     public readonly kind?: unknown
   ) {}
+}
+
+// label part 替身(C-22):真实 API 的 value + tooltip 最小面
+export class InlayHintLabelPart {
+  tooltip?: unknown;
+  constructor(public readonly value: string) {}
 }
 
 export enum InlayHintKind {

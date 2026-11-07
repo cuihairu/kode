@@ -9,15 +9,36 @@ import type { EntityTypeStubEntry, EntityTypeStubLineMap } from './entityTypeStu
 import type { PythonTypeStubEntry, PythonTypeStubLineMap } from './pythonTypeStubs';
 
 export class GeneratedSourceCodeLensProvider implements vscode.CodeLensProvider {
+  private readonly _onDidChangeCodeLenses = new vscode.EventEmitter<void>();
+  readonly onDidChangeCodeLenses = this._onDidChangeCodeLenses.event;
+
   constructor(
     private readonly fileName: string,
     private readonly pythonEntries: readonly PythonTypeStubEntry[],
-    private readonly entityEntries: readonly EntityTypeStubEntry[],
+    private entityEntries: readonly EntityTypeStubEntry[],
     // KR-AUD-78:渲染期记录的真实行映射;缺映射(未渲染)时不出镜,
     // 禁止硬编码生成行号
     private readonly pythonLines: PythonTypeStubLineMap | null = null,
-    private readonly entityLines: EntityTypeStubLineMap | null = null
+    private entityLines: EntityTypeStubLineMap | null = null
   ) {}
+
+  /**
+   * C-22 交付①补:def 再生后刷新实体面计划。激活期冻结的旧条目/行映射
+   * 会指向重写后桩文件的旧行;更新后 fire 让已打开的 entity_types.pyi
+   * 立即重询镜。python 面(types.xml 来源)暂无事件源,不动。
+   */
+  updateEntityPlan(
+    entityEntries: readonly EntityTypeStubEntry[],
+    entityLines: EntityTypeStubLineMap | null
+  ): void {
+    this.entityEntries = entityEntries;
+    this.entityLines = entityLines;
+    this._onDidChangeCodeLenses.fire();
+  }
+
+  dispose(): void {
+    this._onDidChangeCodeLenses.dispose();
+  }
 
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
     if (!document.fileName.endsWith(this.fileName)) {

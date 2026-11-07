@@ -1323,6 +1323,17 @@ export class EntityMappingManager {
     return this.findIndexedProperty(pythonFile, fullPath, rootSymbol);
   }
 
+  /**
+   * C-22 交付③:python 文件所属实体的 def 属性全清单(`# kode:props-from-def`
+   * 锚点 inlay 只读视图用)。与 resolvePropertyDefinitionInfo 同一索引同一
+   * 失效口径(改 def 定向摘除,下次访问重扫);无所属实体 → null,不猜。
+   */
+  async listPropertyDefinitionsForFile(pythonFile: string): Promise<PropertyDefinitionInfo[] | null> {
+    this.ensureStartup();
+    const index = await this.ensureIndexForPythonFile(pythonFile);
+    return index ? index.propertyDefinitions : null;
+  }
+
   private async findIndexedProperty(
     pythonFile: string,
     fullPath: string,

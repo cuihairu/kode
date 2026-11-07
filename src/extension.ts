@@ -365,6 +365,8 @@ import { GlobalDataDictIndex } from './globalDataIndex';
 import { WorkspaceIndex } from './workspaceIndex';
 import { PythonTypeInlayHintsProvider } from './typeInlayHints';
 import { DefParamInlayHintsProvider } from './defParamInlayHints';
+import { DefPropsInlayHintsProvider } from './defPropsInlayHints';
+import { EntityStubRegenController } from './entityStubRegen';
 import { PythonClassIndex } from './pythonClassIndex';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { shouldStartKbEngineIndexing } from './workspaceGate';
@@ -1430,6 +1432,16 @@ export function activate(context: vscode.ExtensionContext) {
     new DefParamInlayHintsProvider(entityMappingManager)
   );
   context.subscriptions.push(defParamInlayHintsProvider);
+
+  // C-22 交付③:def 属性只读视图 inlay——用户在 __init__ 放注释锚
+  // `# kode:props-from-def` 的行尾渲染该实体 def 属性总览(纯渲染,事实源
+  // .def);独立开关 kbengine.inlayHints.defProps(默认开),现读配置下一
+  // 次渲染即生效,与 defParams 同模式
+  const defPropsInlayHintsProvider = vscode.languages.registerInlayHintsProvider(
+    pythonDocumentSelector,
+    new DefPropsInlayHintsProvider(entityMappingManager)
+  );
+  context.subscriptions.push(defPropsInlayHintsProvider);
 
   const callHierarchyProvider = vscode.languages.registerCallHierarchyProvider(
     [
@@ -6238,7 +6250,8 @@ export function activate(context: vscode.ExtensionContext) {
     pythonDocumentSelector,
     generatedEntitySourceLensProviderImpl
   );
-  context.subscriptions.push(generatedEntitySourceLensProvider);
+  // C-22:def 再生会经 updateEntityPlan fire 变更事件,impl 持事件源入订阅
+  context.subscriptions.push(generatedEntitySourceLensProvider, generatedEntitySourceLensProviderImpl);
   // KODE-CFG-017:pyrefly 推断管道接线——.kbengine 隔离(搜索/watcher/gitignore)
   // + .kbengine/inferred 副本同步 + 脚本变更 watcher + kbengine.infer.run 命令
   activateInferPipeline(context);
@@ -6327,6 +6340,28 @@ export function activate(context: vscode.ExtensionContext) {
         regenerateManagedDirAssets();
       }
     })
+  );
+  // C-22 交付①补:def 增删改 → entity_types.pyi 自动再生 + 来源镜计划刷新
+  // (此前仅激活/托管目录事件/内容开关切换再生,改 def 桩一直旧到重载窗口)。
+  // 订阅既有 pythonIndexFileEvents(**/*.{py,def,xml}),controller 内过滤
+  // .def 尾缀 + 尾沿去抖;再生失败(磁盘错误等)不刷新镜计划,不拿旧行
+  // 映射冒充新桩。口径:只盯 .def(types.xml/entities.xml 变更再生属后续批次)。
+  const refreshEntityStubLensPlan = (): void => {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+    const entries = buildEntityTypeStubPlan(
+      entityMappingManager.getAllMappings(),
+      getCustomTypeInfos(root)
+    ).entries;
+    generatedEntitySourceLensProviderImpl.updateEntityPlan(entries, buildEntityTypeStubLineMap(entries));
+  };
+  const entityStubRegen = new EntityStubRegenController({
+    regenerate: () => {
+      void exportEntityTypeStubs(entityMappingManager).then(refreshEntityStubLensPlan, () => undefined);
+    }
+  });
+  context.subscriptions.push(
+    { dispose: (): void => entityStubRegen.dispose() },
+    { dispose: pythonIndexFileEvents.subscribe(event => entityStubRegen.onFileEvent(event.fsPath)) }
   );
   const firstWorkspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
   const assetsRoot = firstWorkspaceRoot ? resolveAssetsRootForWorkspace(firstWorkspaceRoot) : '';

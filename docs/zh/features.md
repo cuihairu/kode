@@ -56,6 +56,7 @@
 - **Inlay hint：def 声明数据类型** —— `self.<属性>` 访问处内联显示解析到底的类型注解(types.xml 别名逐层解析到底层内建,如 SERVER_ID→int、VECTOR3→KBEngine.Vector3;PYTHON/未知落 Any 不显示,2026-10-29;GEN-DEF-1c 起 VECTOR2/3/4→KBEngine.Vector2/3/4、PY_DICT/PY_TUPLE/PY_LIST→dict/tuple/list 且按 `<Default>` 字面量精化);`self.base/cell/client` RPC 调用点每实参后内联显示 def 已声明的形参类型(`: 类型`,只显类型不带合成形参名——.def `<Arg>` 无名可考);数组 `<of>` 元素类型在 `for item in self.<属性>:` 迭代目标与 `x = self.<属性>[i]` 下标赋值局部变量后内联显示(与 hover 面同一解析链)
   ——（证据：package.json#configuration `kbengine.inlayHints.typeData`；todo.md:25、todo.md:664；src/typeInlayHints.ts）
 - **Inlay hint：def 形参类型(定义点)** —— entity 脚本区块(ClientMethods/BaseMethods/CellMethods)内 def 的未标注形参后内联 def 声明的 `<Arg>` 类型,声明 `<ReturnType>` 时闭括号后内联 `-> 类型` ——（证据：package.json#configuration `kbengine.inlayHints.defParams`；src/defParamInlayHints.ts）
+- **Inlay hint：def 属性只读视图（C-22）** —— 含锚 `# kode:props-from-def` 的整行注释,在该行尾内联显示所属实体 .def 声明的根级属性总览（逐段 `名称: 类型`;逐段悬停给 def 声明行/可见域/持久化;类型解析不出只显名）。纯渲染——属性唯一事实源仍是 `.def`,属性 F12 照旧直达声明行;FIXED_DICT 子键与组件槽成员不进总览（各有访问点既有提示）;无所属实体/无属性零渲染。`.def` 新建/修改/删除后 `entity_types.pyi` 亦自动再生（400ms 尾沿去抖）并原地刷新来源镜 CodeLens 计划 ——（证据：package.json#configuration `kbengine.inlayHints.defProps`；src/defPropsInlayHints.ts；src/entityStubRegen.ts）
 - **entities.xml 校验** —— 同名重复实体落 warning（引擎按已有模块静默合并）+ Utype 清单序号悬停 ——（证据：todo.md:33；src/entitiesXmlAnalysis.ts）
 - **跨文件继承检查** —— 继承链跨文件同名检查；Interfaces 装载语义对齐引擎 ——（证据：todo.md:65、todo.md:66；src/defAnalyzer.ts `collectInheritedNames`）
 - **Python 导航（F12 / 重命名 / 调用层级）** —— owner-aware 导航，C3-MRO 与 mixin 组合根解析，`kbengine.python.enableMroJump` 开关 ——（证据：package.json#configuration `kbengine.python.enableMroJump`；src/languageProviders.ts、src/pythonClassIndex.ts、src/entityMapping.ts）
@@ -368,6 +369,7 @@
 | `kbengine.codeLens.typesXml` | `true` | types.xml 类型声明行落库镜链 CodeLens（引用反扫） |
 | `kbengine.inlayHints.typeData` | `true` | `self.<属性>` 访问处内联显示 def 声明的 types.xml 数据类型;`self.base/cell/client` RPC 调用点内联显示 def 已声明的形参类型;数组 `<of>` 元素类型在 `for ... in self.<属性>` 目标与下标赋值局部变量后内联显示 |
 | `kbengine.inlayHints.defParams` | `true` | entity 脚本区块内 def 未标注形参内联 def 声明的 `<Arg>` 类型;声明 `<ReturnType>` 时内联 `-> 类型` |
+| `kbengine.inlayHints.defProps` | `true` | def 属性只读视图内联提示(C-22):含锚 `# kode:props-from-def` 的整行注释行尾,内联显示所属实体 .def 声明的根级属性总览(逐段 `名称: 类型`,逐段悬停给 def 声明行/可见域/持久化;类型解析不出只显名);纯渲染不写代码 |
 | `kbengine.entityDefsPath` | `"scripts/entity_defs"` | 实体定义文件默认路径 |
 | `kbengine.entitiesXmlPath` | `"scripts/entities.xml"` | entities.xml 默认路径 |
 | `kbengine.binPath` | `"${workspaceFolder}/kbe/bin/server"` | KBEngine 服务端二进制路径；支持 ${workspaceFolder} 与 ${env:VAR}。未显式配置时（CFG-01）默认值在盘即生效，不在盘回落自动发现扫描，扫描也落空才由启动检查链报警 |

@@ -1057,6 +1057,7 @@ callgraph 模式面板支持：
   - 配置的用户目录里已有同名 `kbe_types.py` 按用户资产不覆盖；默认目录 `.kbengine/stubs` 归 kode 自管
   - 工作区没有自定义类型时不生成文件、不提示打扰；导出成功后链一次 extraPaths 同步
 - `types.xml` 落盘即自动重生成：保存/新建/删除后由 watcher 静默重导出（不设去抖、不加开关——零写纪律保证重复触发无副作用；`kbengine.python.stubExport` 关掉时实际停摆）
+- `.def` 新建/修改/删除自动再生 `entity_types.pyi`（C-22）：400ms 尾沿去抖把连发合并为一次再生,共用 `kbengine.python.stubExport` 总闸与内容比对零写纪律;再生成功后 `entity_types.pyi` 来源镜 CodeLens 计划原地刷新(失败不刷新)。口径:只盯 `.def`——`entities.xml` 未接线
 - 设置 `kbengine.python.stubExport: false` 可整体关闭（与 KBEngine.pyi 存根共用开关）
 
 ### `kbengine.source.reveal`

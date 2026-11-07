@@ -16,6 +16,7 @@
 - 语言功能按功能可独立开关（批154）：CodeLens 四类（RPC 标记/事件回调/属性标记/types.xml 落库镜链）与悬停六类（自定义类型存储、implementedBy 反链、实体注册、def 链、事件统计、服务配置字段）各一枚 `kbengine.*` 开关，默认全开、不设总闸一刀切；CodeLens 开关变更即时生效
 - Python 属性类型内联提示（批154）：`self.<属性>` 访问处以内联 hint 显示 def 声明的 `types.xml` 数据类型，与属性 F12 同一解析索引，受 `kbengine.inlayHints.typeData` 控制（inlay 无变更事件，下一次渲染生效）；数组 `<of>` 元素类型在 `for item in self.<属性>:` 迭代目标与 `x = self.<属性>[i]` 下标赋值局部变量后内联显示（同一解析链）
 - Python def 声明属性类型悬停：悬停 `self.<def 属性>` 显示 def 声明的类型（types.xml 别名断到内建，如 EQUIP_TRACK_LIST→FixedArray[EQUIP_INFO]）；悬停 for 目标或下标赋值局部变量推导 `<of>` 元素类型（局部变量间接一层；空 `<of>`/别名链环/类型缺失如实 `Any` 并亮出原因），受 `kbengine.entity.builtinProperties` 控制
+- def 属性只读视图内联提示（C-22）：Python 文件里含锚 `# kode:props-from-def` 的整行注释,在该行尾内联显示所属实体 .def 声明的根级属性总览（逐段 `名称: 类型`,每个锚一条;逐段悬停给 def 声明行/可见域/持久化;类型解析不出只显名——如实不伪造）。纯渲染不写代码:属性唯一事实源仍是 `.def`,属性 F12 照旧直达声明行;FIXED_DICT 子键与组件槽成员不进总览（各有访问点既有提示）;无所属实体或无属性零渲染;受 `kbengine.inlayHints.defProps` 控制（下一次渲染生效）
 - `.def` 属性/方法 F2 重命名（同文件声明 + 后代 def 复述，见语言能力页边界说明）
 
 ## 诊断能力
@@ -114,6 +115,7 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 - `.pyi` 存根导出（批136 G2）：把内置 KBEngine Python API 符号索引（与补全/悬停/跳转同源）导出为真文件 `KBEngine.pyi`——虚拟桩文档 Python 扩展看不见，真文件配合 extraPaths 接线才解析 `import KBEngine`；内容一致零写、索引更新后陈旧才重写，激活期静默自动一次，`Export KBEngine Python Stubs` 手动入口导出后链一次 extraPaths 同步
 - 存根目录可配（批142）：`kbengine.python.stubDir` 三级解析——设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `.kbengine/stubs`。默认目录归 kode 自管（按内容比对刷新）；**用户指定的目录只进不出**：目录里已有任何 `.pyi` 一律当用户资产不覆盖，没有才生成一份，目录读不到如实提示不盲写
 - types.xml 类型桩（def-pyi-stubs §6）：把 `entity_defs/types.xml` 自定义类型导出成真 `.py` 模块 `kbe_types.py`（`FIXED_DICT`→`TypedDict`、`ARRAY`→`List[元素]`、别名→类型名，别名按依赖拓扑排序，成环/空指引跳过并说明）——真模块既是 Pylance 类型来源也可被运行时 `import kbe_types`；与 `KBEngine.pyi` 同目录同开关（`kbengine.python.stubExport`），内容确定性保证零写纪律，`Export KBEngine Python Type Stubs` 手动入口导出后链一次 extraPaths 同步，`types.xml` 落盘（保存/新建/删除）后由 watcher 静默自动重生成
+- 实体桩随 def 变更自动再生（C-22）：任意 `.def` 新建/修改/删除在 400ms 尾沿去抖（连发合并为一次）后再生 `entity_types.pyi`，并原地刷新 `entity_types.pyi` 来源镜 CodeLens 计划——此前改 def 后生成桩要旧到窗口重载;再生共用 `kbengine.python.stubExport` 总闸与内容比对零写纪律,再生失败不刷新镜计划。口径:只盯 `.def`（types.xml 已有自身再生路径;entities.xml 未接线）
 
 ## 变量替换（批141）
 

@@ -1410,6 +1410,11 @@
           "default": true,
           "markdownDescription": "%kbengine.config.inlayHints.defParams.description%"
         },
+        "kbengine.inlayHints.defProps": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.inlayHints.defProps.description%"
+        },
         "kbengine.entityDefsPath": {
           "type": "string",
           "default": "scripts/entity_defs",

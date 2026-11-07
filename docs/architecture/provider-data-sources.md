@@ -44,6 +44,7 @@ Registration sites are extension.ts line numbers:
 | PythonTypeInlayHintsProvider | typeInlayHints.ts:33 | :1197 | EntityMappingManager | Pure read |
 | KBEngineBuiltinTypeInlayHintsProvider | languageProviders.ts:649 | :1207 | EntityMappingManager | Pure read |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | Pure read |
+| DefPropsInlayHintsProvider | defPropsInlayHints.ts:123 | :1442 | EntityMappingManager (C-22 anchor-comment def property read-only view) | Pure read |
 | KBEngineCallHierarchyProvider | languageProviders.ts:5013 | :1223 | EntityMappingManager (def/python dual-selection call hierarchy) | Pure read |
 | KBEngineReferencesProvider | languageProviders.ts:5117 | :1235 | EntityMappingManager + defReferenceGraph reference graph | Pure read |
 | KBEngineDocumentSymbolProvider | languageProviders.ts:5231 | :1256 | Current document def structure (zero construction deps) | Pure read |
