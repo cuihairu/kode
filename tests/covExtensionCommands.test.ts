@@ -890,7 +890,10 @@ describe('extension 激活链命令面(补测)', () => {
   it('quickActions:按名执行 / 重扫脚本 / 树数据源', async () => {
     await commands.executeCommand('kbengine.quickActions.runByName', 'missing-action');
     await commands.executeCommand('kbengine.quickActions.scanScripts');
-    const provider = treeRegistrations.find(entry => entry.viewId === 'kbengine.quickActions')?.provider as {
+    // KODE-PERF 视图先行:占位在前、真 provider 在后,取末笔注册(真接管者)
+    const provider = [...treeRegistrations]
+      .reverse()
+      .find(entry => entry.viewId === 'kbengine.quickActions')?.provider as {
       getChildren?: () => unknown[];
     };
     if (provider.getChildren) {
@@ -946,7 +949,10 @@ describe('extension 激活链命令面(补测)', () => {
   });
 
   it('remoteServers 树:getChildren/getTreeItem 面', async () => {
-    const provider = treeRegistrations.find(entry => entry.viewId === 'kbengine.remoteServers')?.provider as {
+    // KODE-PERF 视图先行:取末笔注册(真接管者,非占位)
+    const provider = [...treeRegistrations]
+      .reverse()
+      .find(entry => entry.viewId === 'kbengine.remoteServers')?.provider as {
       getChildren?: () => unknown[];
       getTreeItem?: (element: unknown) => unknown;
     };

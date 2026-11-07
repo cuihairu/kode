@@ -196,6 +196,23 @@ describe('extension activate 装配', () => {
     expect(commandRegistry.allRegisteredCommandIds().sort())
       .toEqual(declared.commands.map(entry => entry.command).sort());
 
+    // 视图:KODE-PERF 视图先行——activate 最前先注册占位 provider(修「激活
+    // 中途失败→视图无提供者→宿主报 There is no data provider registered」),
+    // 真 provider 在各自装配位随后注册(宿主同 id=后到者接管)。锁两面:
+    // ①占位先行(全部声明 id 都有首笔注册)②真接管(全部声明 id 都有末笔注册)
+    const declaredSidebarViewIds = Object.values(declared.views)
+      .flat()
+      .map(view => view.id)
+      .sort();
+    const firstByView = new Map<string, unknown>();
+    const lastByView = new Map<string, unknown>();
+    for (const entry of treeRegistrations) {
+      if (!firstByView.has(entry.viewId)) { firstByView.set(entry.viewId, entry.provider); }
+      lastByView.set(entry.viewId, entry.provider);
+    }
+    expect([...firstByView.keys()].sort()).toEqual(declaredSidebarViewIds);
+    expect([...lastByView.keys()].sort()).toEqual(declaredSidebarViewIds);
+
     // 测试面板(TSK-005):一个 controller,一个默认 Run 档
     expect(testsRegistry.controllers).toHaveLength(1);
     expect(testsRegistry.controllers[0].id).toBe('kbengine-python-tests');
@@ -203,12 +220,8 @@ describe('extension activate 装配', () => {
     expect(testsRegistry.controllers[0].profiles[0].kind).toBe(1);
     expect(testsRegistry.controllers[0].profiles[0].isDefault).toBe(true);
 
-    // 树视图:实体/进程/telnet/最终配置四个视图 id 与 views 贡献点一致
-    const declaredViewIds = Object.values(declared.views)
-      .flat()
-      .map(view => view.id)
-      .sort();
-    expect(treeRegistrations.map(item => item.viewId).sort()).toEqual(declaredViewIds);
+    // 树视图:KODE-PERF 视图先行后 treeRegistrations 含占位+真 provider 两笔/视图,
+    // id 集合断言在上方 firstByView/lastByView 两面已锁,这里不再数总笔数。
 
     // 语言服务:补全 3(.def + Python + 启动脚本,KBEXP-1)、悬停 3(.def/hook +
     // 引擎配置字段,批112 + 启动脚本,KBEXP-1)、定义 2、调用层级 1、重命名 1
