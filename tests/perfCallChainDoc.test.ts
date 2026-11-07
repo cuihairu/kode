@@ -156,12 +156,16 @@ const ANCHORS: Array<[string, number, string]> = [
   // +1(真位重探 692/705/989/1071/1122/1185/1508/2377/2457);命令装配块
   // (4565 起,updateLaunchJson 之后)在全部锚点之后不再位移;出处随
   // baseline 锁步。
-  ['src/extension.ts', 1056, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1107, "startLanguageServiceOperation('definition'"],
+  // 2026-11-07(并会补账):KODE-I18N-002 两笔(l10nText 运行时文案)落在
+  // KODE-DBG-001 校准之后、未随迁锚点——extension.ts 顶部再 +1 行 import,
+  // 全部 extension.ts 锚点再 +1(真位重探 692/705/989/1071/1122/1185/1508
+  // →693/706/990/1072/1123/1186/1509,后段 2378/2458),出处随 baseline 锁步。
+  ['src/extension.ts', 1057, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1171, "startLanguageServiceOperation('definition'"],
   ['src/extension.ts', 1170, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 974, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1494, "startLanguageServiceOperation('completion'"],
   ['src/extension.ts', 1493, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 677, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 691, "startLanguageServiceOperation('diagnostics'"],
   ['src/extension.ts', 690, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
@@ -172,8 +176,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // runPyspySchedule 引入)→ 上列 9 处 extension.ts 锚点整体 +2(真位重探 683/696/980/
   // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450);
   // HOT-VER 再 +3(见上)→ 后段锚点 2373/2453;DEMO-GAME-006 再 +2(见上)→ 2375/2455。
-  ['src/extension.ts', 2362, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2442, 'flushQueued()'],
+  ['src/extension.ts', 2363, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2443, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。

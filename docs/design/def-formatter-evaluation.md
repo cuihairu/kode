@@ -27,8 +27,9 @@
   formatter-grade syntax facts.
 - **TS `src/defParser.ts`**: vendored fast-xml-parser (fxp), **offsets are
   rebuilt by re-searching with `text.indexOf(node.text, searchOffset)`**
-  (around defParser.ts:541) — nodes with identical names/text get misaligned;
-  this is navigation-grade precision, not formatter-grade. The TS side has no
+  (around defParser.ts:596, rechecked 2026-11-07) — nodes with identical
+  names/text get misaligned; this is navigation-grade precision, not
+  formatter-grade. The TS side has no
   other XML-formatting dependency (package.json has no prettier/xml formatter
   dependency; `grep FormattingEdit src/` returns zero hits — the extension
   currently has no formatting provider at all).
@@ -37,7 +38,8 @@
 
 - **Pseudo-comments**: lines starting with `#` (engine legacy format, e.g. the
   truncation header `# <originally 80 columns>`). On the Rust side,
-  `mask_def_pseudo_comments` (xml.rs:798) replaces such lines with
+  `mask_def_pseudo_comments` (xml.rs:803, rechecked 2026-11-07) replaces such
+  lines with
   **byte-equal-length** spaces before parsing, so a pseudo-comment line's
   position in the original text still falls inside the content span — when
   the formatter slices the original text by spans, these lines can be kept
