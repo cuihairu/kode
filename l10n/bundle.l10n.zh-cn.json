@@ -226,5 +226,22 @@
   "plain assignment": "普通赋值",
   "augmented assignment": "增强赋值",
   "annotated assignment": "注解赋值",
-  "deletion": "删除"
+  "deletion": "删除",
+  "$(circle-slash) Python interpreter missing": "$(circle-slash) Python 解释器缺失",
+  "$(add) Create a new venv…": "$(add) 创建新 venv…",
+  "current ({source})": "当前({source})",
+  "Python interpreter switched: {path} (written to kbengine.python.interpreterPath, effective immediately)": "Python 解释器已切换:{path}(写入 kbengine.python.interpreterPath,即刻生效)",
+  "No workspace open; cannot create a venv": "未打开工作区,无法创建 venv",
+  "Target directory already exists and is not empty; refusing to create (avoid overwriting): {path}": "目标目录已存在且非空,拒绝创建(避免覆盖):{path}",
+  "Missing a base Python interpreter (neither kbengine.python.interpreterPath nor PATH has a usable python3/python); cannot create a venv; specify a working system interpreter first": "缺少基础 Python 解释器(设置 kbengine.python.interpreterPath 与 PATH 上都没有可用的 python3/python),无法创建 venv;请先指定一个可用的系统解释器",
+  "python -m venv failed (exit code {code}): {tail}": "python -m venv 失败(退出码 {code}):{tail}",
+  "no stderr output": "无 stderr 输出",
+  "venv command ran but {path} did not pass verification (missing pyvenv.cfg or interpreter binary); not selected": "venv 命令已执行,但 {path} 未通过验证(缺 pyvenv.cfg 或解释器二进制),未选用",
+  "venv created and selected: {path}": "venv 已创建并选用:{path}",
+  "No project profiles to choose from; import or create a project first": "没有可选择的 project profile,先导入或创建一个项目",
+  "Pick the active project profile (remembered by stable ID; renames do not matter)": "选择活动 project profile(按稳定 ID 记忆,改名不影响)",
+  "Active profile: {label} ({id})": "活动 profile: {label} ({id})",
+  "Confirm generation": "确认生成",
+  "Write files per the manifest": "按清单落盘",
+  "Review the files to generate (pick Confirm generation to continue, Esc to cancel)": "核对将生成的文件(选择「确认生成」继续,Esc 取消)"
 }

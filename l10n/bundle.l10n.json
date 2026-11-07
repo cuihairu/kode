@@ -226,5 +226,22 @@
   "plain assignment": "plain assignment",
   "augmented assignment": "augmented assignment",
   "annotated assignment": "annotated assignment",
-  "deletion": "deletion"
+  "deletion": "deletion",
+  "$(circle-slash) Python interpreter missing": "$(circle-slash) Python interpreter missing",
+  "$(add) Create a new venv…": "$(add) Create a new venv…",
+  "current ({source})": "current ({source})",
+  "Python interpreter switched: {path} (written to kbengine.python.interpreterPath, effective immediately)": "Python interpreter switched: {path} (written to kbengine.python.interpreterPath, effective immediately)",
+  "No workspace open; cannot create a venv": "No workspace open; cannot create a venv",
+  "Target directory already exists and is not empty; refusing to create (avoid overwriting): {path}": "Target directory already exists and is not empty; refusing to create (avoid overwriting): {path}",
+  "Missing a base Python interpreter (neither kbengine.python.interpreterPath nor PATH has a usable python3/python); cannot create a venv; specify a working system interpreter first": "Missing a base Python interpreter (neither kbengine.python.interpreterPath nor PATH has a usable python3/python); cannot create a venv; specify a working system interpreter first",
+  "python -m venv failed (exit code {code}): {tail}": "python -m venv failed (exit code {code}): {tail}",
+  "no stderr output": "no stderr output",
+  "venv command ran but {path} did not pass verification (missing pyvenv.cfg or interpreter binary); not selected": "venv command ran but {path} did not pass verification (missing pyvenv.cfg or interpreter binary); not selected",
+  "venv created and selected: {path}": "venv created and selected: {path}",
+  "No project profiles to choose from; import or create a project first": "No project profiles to choose from; import or create a project first",
+  "Pick the active project profile (remembered by stable ID; renames do not matter)": "Pick the active project profile (remembered by stable ID; renames do not matter)",
+  "Active profile: {label} ({id})": "Active profile: {label} ({id})",
+  "Confirm generation": "Confirm generation",
+  "Write files per the manifest": "Write files per the manifest",
+  "Review the files to generate (pick Confirm generation to continue, Esc to cancel)": "Review the files to generate (pick Confirm generation to continue, Esc to cancel)"
 }

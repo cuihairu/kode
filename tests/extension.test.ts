@@ -1789,7 +1789,7 @@ describe('extension activate 定义形态生成装配(盘点 G7)', () => {
         if (pickCalls === 1) {
           return resolved.find(item => (item as { label: string }).label.startsWith('Space Entity'));
         }
-        return resolved.find(item => (item as { label: string }).label === '确认生成');
+        return resolved.find(item => (item as { label: string }).label === 'Confirm generation');
       };
       windowish.showInputBox = async (): Promise<string | undefined> => 'MySpace';
 
@@ -1889,7 +1889,7 @@ describe('激活期最小项目创建命令装配(IDE-PRJ-008)', () => {
       windowish.showOpenDialog = async () => [Uri.file(targetRoot)];
       windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
         const resolved = (await items) as Array<{ label: string }>;
-        return resolved.find(item => item.label === '确认生成');
+        return resolved.find(item => item.label === 'Confirm generation');
       };
 
       await commands.executeCommand('kbengine.project.create');
@@ -1929,7 +1929,7 @@ describe('激活期活动 profile 选择命令装配(IDE-PRJ-010)', () => {
       await commands.executeCommand('kbengine.project.selectActive');
 
       expect(pickCalls).toBe(0);
-      expect(messages.info.slice(originalInfoCount).some(entry => entry.includes('没有可选择'))).toBe(true);
+      expect(messages.info.slice(originalInfoCount).some(entry => entry.includes('No project profiles'))).toBe(true);
     } finally {
       windowish.showQuickPick = originalPick;
       messages.info.length = originalInfoCount;

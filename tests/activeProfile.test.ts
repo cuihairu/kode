@@ -176,7 +176,7 @@ describe('active profile selection command (IDE-PRJ-010)', () => {
     }
 
     expect(pickCalls).toBe(0);
-    expect(info.at(-1)).toContain('没有可选择');
+    expect(info.at(-1)).toContain('No project profiles');
   });
 
   it('persists the picked profile and reports it', async () => {
@@ -201,7 +201,7 @@ describe('active profile selection command (IDE-PRJ-010)', () => {
     }
 
     expect(memento.get<string>(ACTIVE_PROFILE_STATE_KEY)).toBe(bId);
-    expect(info.at(-1)).toContain('活动 profile');
+    expect(info.at(-1)).toContain('Active profile:');
     expect(info.at(-1)).toContain(bId);
   });
 
