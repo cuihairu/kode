@@ -11,7 +11,9 @@ import { disposePythonParserWorker, getPythonParserWorkerGauge } from './pythonP
 import { disposeDefParserWorker } from './defParserWorkerHost';
 import { registerTypeStorageIndexWatchers } from './typeStorageIndexWatchers';
 import { importExistingProject } from './projectImport';
-import { createMinimalProject } from './projectCreate';
+import { createDemoGameProject, createMinimalProject } from './projectCreate';
+import { resolveDemoGameTemplateRoot } from './demoGameTemplate';
+import { offerDemoGameScaffoldFromVscode } from './demoGameScaffoldPrompt';
 import { onDidChangeActiveProfile, resolveActiveProfile, selectActiveProfile } from './activeProfile';
 import { showProfileHealthSummary } from './profileHealth';
 import {
@@ -6384,6 +6386,23 @@ export function activate(context: vscode.ExtensionContext) {
     () => createMinimalProject(context)
   );
   context.subscriptions.push(createProjectCommand);
+
+  // demo 游戏项目创建(DEMO-GAME-006):templates/demo-game(夹具游戏子集,
+  // Training/Elite 导航测试资产裁掉)磁盘装载,与最小项目同一保护面;
+  // 空工程提示面(demoGameScaffoldPrompt)与命令面板都落在这条命令上
+  const createDemoGameProjectCommand = vscode.commands.registerCommand(
+    'kbengine.project.createDemoGame',
+    () =>
+      createDemoGameProject(context, {
+        templateRoot: resolveDemoGameTemplateRoot(context.extensionPath)
+      })
+  );
+  context.subscriptions.push(createDemoGameProjectCommand);
+
+  // 空工程主动提示(DEMO-GAME-006):打开空目录时提议从 demo 游戏模板
+  // 创建第一个项目;条件从严(单文件夹+无非点入口),失败静默不扰动激活。
+  // 需 onStartupFinished 激活(workspaceContains 表达不了"空")
+  offerDemoGameScaffoldFromVscode();
 
   // 活动 profile 选择(IDE-PRJ-010):稳定 ID 持久化,真实切换恰发一次事件
   const selectActiveProfileCommand = vscode.commands.registerCommand(

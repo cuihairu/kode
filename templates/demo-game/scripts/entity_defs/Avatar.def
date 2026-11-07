@@ -1,0 +1,120 @@
+<root>
+	<!-- 测试模型补充(组合根验收):Avatar 也混入接口 ROLE(与 Monster 同口径) -->
+	<Interfaces>
+		<interface> ROLE </interface>
+	</Interfaces>
+
+	<Properties>
+		<name>
+			<Type> STRING </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Persistent> true </Persistent>
+			<DatabaseLength> 64 </DatabaseLength>
+		</name>
+		<level>
+			<Type> UINT32 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Persistent> true </Persistent>
+		</level>
+		<hp>
+			<Type> UINT32 </Type>
+			<Flags> ALL_CLIENTS </Flags>
+			<Default> 100 </Default>
+		</hp>
+		<experience>
+			<!-- 基座持有(BASE_AND_CLIENT):cell 死亡销毁后经验不丢,重生满血回归 -->
+			<Type> UINT32 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Default> 0 </Default>
+		</experience>
+		<!-- 引擎保留字:cell 实体自带 position/direction(引擎建列),def 里再声明
+		     position 即 EntityDef::loadDefPropertys "position is limited" 拒载——
+		     真引擎起服验证发现后移除(DEMO-GAME-001)。 -->
+		<sight>
+			<Type> UINT16 </Type>
+			<Flags> CELL_PUBLIC </Flags>
+			<DetailLevel> MEDIUM </DetailLevel>
+		</sight>
+		<skillSlots>
+			<Type>
+				ARRAY
+				<of> SKILL_SLOT </of>
+			</Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
+		</skillSlots>
+	</Properties>
+
+	<!-- 组件声明:引擎 loadComponents 逐条装载,组件 def 在 components/ 子目录 -->
+	<Components>
+		<bag>
+			<Type> Inventory </Type>
+			<Persistent> true </Persistent>
+		</bag>
+	</Components>
+
+	<DetailLevels>
+		<NEAR>
+			<radius> 10 </radius>
+			<hyst> 1 </hyst>
+		</NEAR>
+		<MEDIUM>
+			<radius> 20 </radius>
+			<hyst> 2 </hyst>
+		</MEDIUM>
+		<FAR>
+			<radius> 30 </radius>
+			<hyst> 3 </hyst>
+		</FAR>
+	</DetailLevels>
+
+	<ClientMethods>
+		<onHPChanged>
+			<Arg> UINT32 </Arg>
+		</onHPChanged>
+		<onLevelUp>
+			<Arg> UINT32 </Arg>
+		</onLevelUp>
+		<onMonsterNear>
+			<Arg> FLOAT </Arg>
+			<Arg> FLOAT </Arg>
+			<Arg> UINT32 </Arg>
+		</onMonsterNear>
+	</ClientMethods>
+
+	<BaseMethods>
+		<reqCastSkill>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+		</reqCastSkill>
+		<cellAddExperience>
+			<Arg> UINT32 </Arg>
+		</cellAddExperience>
+		<onAvatarDead>
+		</onAvatarDead>
+		<onRadarPush>
+			<Arg> FLOAT </Arg>
+			<Arg> FLOAT </Arg>
+			<Arg> UINT32 </Arg>
+		</onRadarPush>
+	</BaseMethods>
+
+	<CellMethods>
+		<respawn>
+		</respawn>
+		<reqRadarPing>
+		</reqRadarPing>
+		<reqGoto>
+			<Exposed> true </Exposed>
+		</reqGoto>
+		<receiveDamage>
+			<Arg> UINT32 </Arg>
+			<Arg> UINT32 </Arg>
+		</receiveDamage>
+		<reqAttack>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+		</reqAttack>
+	</CellMethods>
+
+</root>

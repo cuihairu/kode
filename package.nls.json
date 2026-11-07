@@ -67,6 +67,7 @@
   "kbengine.command.generator.formWizard.title": "Create Def Form from Wizard",
   "kbengine.command.project.import.title": "Import Existing KBEngine Project",
   "kbengine.command.project.create.title": "Create Minimal KBEngine Project",
+  "kbengine.command.project.createDemoGame.title": "Create Demo Game Project",
   "kbengine.command.project.selectActive.title": "Select Active Project Profile",
   "kbengine.command.profile.health.title": "Show Active Profile Health",
   "kbengine.command.python.serviceStatus.title": "Check Python Language Service Status",

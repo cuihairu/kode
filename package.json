@@ -35,6 +35,7 @@
   "activationEvents": [
     "onCommand:kbengine.hotReload.showFileState",
     "onCommand:kbengine.hotReload.filterByState",
+    "onStartupFinished",
     "onLanguage:kbengine-def",
     "onLanguage:python",
     "workspaceContains:**/*.def",
@@ -96,6 +97,7 @@
     "onCommand:kbengine.generator.formWizard",
     "onCommand:kbengine.project.import",
     "onCommand:kbengine.project.create",
+    "onCommand:kbengine.project.createDemoGame",
     "onCommand:kbengine.project.selectActive",
     "onCommand:kbengine.profile.health",
     "onCommand:kbengine.python.serviceStatus",
@@ -628,6 +630,10 @@
       {
         "command": "kbengine.project.create",
         "title": "%kbengine.command.project.create.title%"
+      },
+      {
+        "command": "kbengine.project.createDemoGame",
+        "title": "%kbengine.command.project.createDemoGame.title%"
       },
       {
         "command": "kbengine.project.selectActive",

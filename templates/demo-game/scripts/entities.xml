@@ -1,0 +1,15 @@
+<root>
+	<!--
+		实体注册文件(<你的资产库>/scripts/entities.xml)
+		详细说明请参考：http://kbengine.org/cn/docs/configuration/entities.html
+					http://www.kbengine.org/cn/docs/programming/entitydef.html
+	-->
+
+	<!-- kode demo game 模板:迷你 ARPG(Account 登录建角 / Spaces+Space 世界 /
+	     Avatar 玩家 / Monster 刷怪),由 kbengine.project.createDemoGame 落盘 -->
+	<Account hasClient="true"></Account>
+	<Spaces hasBase="true"></Spaces>
+	<Space hasBase="true" hasCell="true"></Space>
+	<Avatar hasBase="true" hasCell="true" hasClient="true"></Avatar>
+	<Monster hasCell="true"></Monster>
+</root>

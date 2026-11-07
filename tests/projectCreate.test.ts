@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
-import { createMinimalProject } from '../src/projectCreate';
+import { createDemoGameProject, createMinimalProject } from '../src/projectCreate';
 import { writeFileAtomic } from '../src/atomicFileWrite';
 import { MINIMAL_PROJECT_TEMPLATE } from '../src/projectTemplate';
 import { ProjectProfileStore } from '../src/projectProfiles';
@@ -277,5 +277,124 @@ describe('minimal project create flow (IDE-PRJ-008)', () => {
     expect(new ProjectProfileStore(memento).list()).toHaveLength(0);
 
     fs.rmSync(base, { recursive: true, force: true });
+  });
+});
+
+describe('demo game create flow (DEMO-GAME-006)', () => {
+  const TEMPLATE_ROOT = path.resolve(__dirname, '..', 'templates', 'demo-game');
+  // 独立窗口替身面(与最小项目组同一套键与恢复纪律,互不共享可变状态)
+  const windowish = stubWindow as unknown as Record<string, unknown>;
+  const originalWindow: Record<string, unknown> = {};
+  const windowKeys = ['showOpenDialog', 'showQuickPick', 'showInformationMessage', 'showErrorMessage'];
+  const info: string[] = [];
+  const errors: string[] = [];
+
+  beforeAll(() => {
+    for (const key of windowKeys) {
+      originalWindow[key] = windowish[key];
+    }
+  });
+
+  afterAll(() => {
+    for (const key of windowKeys) {
+      if (originalWindow[key] === undefined) {
+        delete windowish[key];
+      } else {
+        windowish[key] = originalWindow[key];
+      }
+    }
+  });
+
+  it('materializes the demo template byte-for-byte, creates the profile, and reports it', async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-demo-create-'));
+    const targetRoot = path.join(base, 'mydemo');
+    const memento = new MemoryMemento();
+    windowish.showOpenDialog = async () => [Uri.file(targetRoot)];
+    // 预览面 = 确认行 + 模板全部文件行(与最小项目同一确认面)
+    windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
+      const resolved = (await items) as Array<{ label: string; description: string }>;
+      expect(resolved[0].label).toBe('确认生成');
+      expect(resolved.length).toBeGreaterThan(60);
+      return resolved[0];
+    };
+    info.length = 0;
+    errors.length = 0;
+    windowish.showInformationMessage = async (message: string): Promise<unknown> => {
+      info.push(message);
+      return undefined;
+    };
+    windowish.showErrorMessage = async (message: string): Promise<unknown> => {
+      errors.push(message);
+      return undefined;
+    };
+
+    await createDemoGameProject(
+      { workspaceState: memento },
+      { templateRoot: TEMPLATE_ROOT },
+      { resolveInterpreter: () => ({ interpreterPath: '/opt/py/python3', interpreterSource: 'path' }) }
+    );
+
+    // 落盘逐字节 = 模板载荷(entities.xml 为裁剪版注册表)
+    const entitiesXml = fs.readFileSync(path.join(targetRoot, 'scripts', 'entities.xml'), 'utf8');
+    expect(entitiesXml).toMatch(/<Avatar hasBase="true" hasCell="true" hasClient="true">/);
+    expect(entitiesXml).not.toMatch(/Training|Elite/);
+    const fixtureAvatar = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'kbengine-demo-assets', 'scripts', 'cell', 'Avatar.py'),
+      'utf8'
+    );
+    expect(fs.readFileSync(path.join(targetRoot, 'scripts', 'cell', 'Avatar.py'), 'utf8')).toBe(fixtureAvatar);
+    expect(fs.existsSync(path.join(targetRoot, 'res', 'server', 'kbengine.xml'))).toBe(true);
+
+    const profiles = new ProjectProfileStore(memento).list();
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0]).toMatchObject({ displayName: 'mydemo', assetsRoot: targetRoot, engineRoot: '' });
+    expect(info.at(-1)).toContain('已创建demo 游戏 profile');
+    expect(errors).toHaveLength(0);
+
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  it('refuses when the target already has any template file, zero writes', async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-demo-conflict-'));
+    const targetRoot = path.join(base, 'occupied');
+    fs.mkdirSync(path.join(targetRoot, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(targetRoot, 'scripts', 'entities.xml'), '既有内容', 'utf8');
+    const memento = new MemoryMemento();
+    let quickPickCalls = 0;
+    windowish.showOpenDialog = async () => [Uri.file(targetRoot)];
+    windowish.showQuickPick = async (): Promise<unknown> => {
+      quickPickCalls += 1;
+      return undefined;
+    };
+    errors.length = 0;
+    windowish.showErrorMessage = async (message: string): Promise<unknown> => {
+      errors.push(message);
+      return undefined;
+    };
+
+    await createDemoGameProject({ workspaceState: memento }, { templateRoot: TEMPLATE_ROOT });
+
+    expect(quickPickCalls).toBe(0);
+    expect(errors.some(message => message.includes('拒绝创建'))).toBe(true);
+    expect(fs.readFileSync(path.join(targetRoot, 'scripts', 'entities.xml'), 'utf8')).toBe('既有内容');
+    expect(fs.existsSync(path.join(targetRoot, 'scripts', 'cell'))).toBe(false);
+    expect(new ProjectProfileStore(memento).list()).toHaveLength(0);
+
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  it('reports and aborts when the template root is missing', async () => {
+    const memento = new MemoryMemento();
+    windowish.showOpenDialog = async () => [Uri.file(path.join(os.tmpdir(), 'kode-demo-nowhere'))];
+    errors.length = 0;
+    windowish.showErrorMessage = async (message: string): Promise<unknown> => {
+      errors.push(message);
+      return undefined;
+    };
+
+    await createDemoGameProject({ workspaceState: memento }, { templateRoot: '/nonexistent/template' });
+
+    expect(errors.some(message => message.includes('demo 游戏模板读取失败'))).toBe(true);
+    expect(new ProjectProfileStore(memento).list()).toHaveLength(0);
   });
 });

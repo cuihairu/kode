@@ -1,0 +1,9 @@
+<root>
+	<CellMethods>
+		<onMove>
+			<Arg> VECTOR3 </Arg>
+			<Arg> UINT32 </Arg>
+		</onMove>
+	</CellMethods>
+
+</root>

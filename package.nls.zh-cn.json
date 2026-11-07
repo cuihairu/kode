@@ -67,6 +67,7 @@
   "kbengine.command.generator.formWizard.title": "通过向导创建 Def 形态",
   "kbengine.command.project.import.title": "导入现有 KBEngine 项目",
   "kbengine.command.project.create.title": "创建最小 KBEngine 项目",
+  "kbengine.command.project.createDemoGame.title": "创建 Demo 游戏项目",
   "kbengine.command.project.selectActive.title": "选择活跃项目 Profile",
   "kbengine.command.profile.health.title": "查看活跃 Profile 健康状态",
   "kbengine.command.python.serviceStatus.title": "检查 Python 语言服务状态",
