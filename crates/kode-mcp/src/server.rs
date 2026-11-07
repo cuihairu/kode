@@ -1,4 +1,4 @@
-//! kode-mcp MCP server(rmcp stdio)。装配 AssetKnowledge + 七个工具;
+//! kode-mcp MCP server(rmcp stdio)。装配 AssetKnowledge + explain;
 //! 资产根从 CLI 参数取(缺省=当前目录)。
 
 use rmcp::{
@@ -104,6 +104,11 @@ impl KodeMcpServer {
             "db_schema_preview" => self
                 .knowledge
                 .db_schema_preview(arg_str("entity").as_deref()),
+            "explain" => Ok(crate::explain::explain(
+                &arg_str("topic").unwrap_or_default(),
+                arg_str("domain").as_deref(),
+                &arg_str("locale").unwrap_or_else(|| "en".to_string()),
+            )),
             other => Err(format!("unknown tool: {other}")),
         };
         match result {
@@ -120,7 +125,7 @@ impl ServerHandler for KodeMcpServer {
             .with_instructions(
                 "Pass the KBEngine assets root as the CLI argument. Tools: search_entities, \
                  get_entity_model, get_type_graph, validate_defs, get_message_entry, \
-                 encode_decode_sample, db_schema_preview.",
+                 encode_decode_sample, db_schema_preview, explain.",
             )
     }
 
@@ -197,6 +202,18 @@ impl ServerHandler for KodeMcpServer {
                             "entity": {"type": "string", "description": "optional entity def name"}
                         }),
                         &[],
+                    ),
+                ),
+                Self::tool(
+                    "explain",
+                    "Explain a KBEngine API member (C-21 same-source library: signature, summary, source refs) or a mechanism topic (knowledge-base article match with headings and grounding). Answers \"how to use API X\" and \"how mechanism X works\".",
+                    schema_of(
+                        serde_json::json!({
+                            "topic": {"type": "string", "description": "API member name (e.g. fireEvent, onGetCell) or mechanism keyword (e.g. teleport, celldata, lifecycle, ghost)"},
+                            "domain": {"type": "string", "description": "optional API disambiguation: base|cell|client|bots|server|interfaces|core"},
+                            "locale": {"type": "string", "description": "en (default) or zh-cn, API-face summary localization"}
+                        }),
+                        &["topic"],
                     ),
                 ),
             ],
