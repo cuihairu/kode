@@ -1453,3 +1453,16 @@
 
 - [x] KODE-REDIS-UI-001 [P1] Redis 后端界面：现 `DatabaseBackend = 'mysql' | 'redis'` 仅类型（databaseSchemaCore.ts:65），唯一实例化硬编码 `backend: 'mysql'`（databaseSchema.ts:358），redis 只出现在 databaseSimulator.ts:731 注释「redis 后端不模拟：引擎另有 kbe/src/lib/db_redis，快照与模拟按 mysql 单口径」与 serverConfigCatalog.ts:255 配置项说明——无任何 Redis 连接/树/预览/命令 UI。要求：① 连接注册支持 redis 后端（databaseConnectionRegistry 增加 redis host/port/auth/db 字段，与 mysql 同校验）；② 数据库树/表预览接入 redis（kbe/src/lib/db_redis 实体键模型：entity 键 + hash 字段，按 kbe 源码口径列键空间，不模拟 mysql 结构）；③ 配置面 dbmgr.databaseInterfaces.default.type=redis 时联动；④ 门禁：vitest 全绿 + 手动走查（连接真实 redis / 无 redis 时 graceful 空态）；⑤ 单 commit 英文简短；禁 bump 版本。
   - [x] 连接注册 + 键空间模型 + 只读 RESP2 客户端 + 预览命令 + 面板标注：81c4adf7（10 文件；redisDrift/redisKeySpace/redisKeyspaceCommand + registry/panel/serverControls 接线；31 新测试绿 + playerDataPanel 7/7；tsc 除并发 hover.ts 7 错全净；门禁三件套绿；无 redis 时 graceful 空态）
+
+## 深度源码审查待办（2026-11-08，克隆实际执行链与 MCP 检索）
+
+> 审查基准：c82c9a83 附近的工作区；以下是源码链路分析，尚未用真实 MySQL/KBEngine 端到端验证。克隆功能须分别验收 Rust 库、RPC、VS Code 实际入口及真实环境，不能以库单测代替接线验收。
+
+- [ ] KODE-REVIEW-001 [P0] 克隆导入提交状态与错误提示：`src/playerDataCloneMysql.ts` 在 COMMIT 后复核，`src/playerDataCloneCommands.ts` 在提交后写审计，异常却统一提示“已回滚”，可能诱发重复导入。验收：区分提交前失败、COMMIT 结果不确定、已提交但复核/审计失败；提示包含可核对的 run/目标信息，不声称未证实的回滚；覆盖 COMMIT 断连、提交后查询失败和审计写入失败。
+- [ ] KODE-REVIEW-002 [P0] 克隆 64 位整数无损往返：`src/playerDataCloneWire.ts` 使用 Number 转换整数，超安全整数的读取会落为文本；MySQL 连接与 insertId 也需端到端对齐。验收：有符号/无符号 64 位边界及超过 2^53 的 ID、普通列经真实 MySQL → RPC/归档 → MySQL 精确往返，禁止静默舍入或类型误判。
+- [ ] KODE-REVIEW-003 [P0] 克隆二进制无损往返：`src/playerDataCloneWire.ts` 将二进制编码为十六进制，但 `typedValueToBind` 把 bytes 当普通字符串绑定。验收：导入时还原为实际字节，覆盖空值、零字节、非 UTF-8 与多种 BLOB/BINARY，真实 MySQL 字节级对比。
+- [ ] KODE-REVIEW-004 [P1] VS Code 导出接入一致性快照：Rust `crates/kode-db-clone/src/reader.rs` 有快照事务，实际 `src/playerDataCloneMysql.ts` 的 `executeExportPlan` 只设置只读会话并逐表查询。验收：同一事务快照读取根表和全部子表，异常/取消释放事务；真实 MySQL 并发修改测试证明不混合不同时间的数据，明确数据库能力不支持时的处理。
+- [ ] KODE-REVIEW-005 [P1] VS Code 导出强制资源预算：预览显示 `row_budget`，但 `executeExportPlan` 累积所有行且无运行时行数、字节和时间限制；计划期估计不能代替执行期约束。验收：真实读取链执行行/字节/时间预算，超限失败且不生成声称完整的归档；有界或流式读取，覆盖大结果、单查询和取消边界。
+- [ ] KODE-REVIEW-006 [P1] 将重复导入保护接入 VS Code 实际写入路径：Rust `ImportApplier` 的归档指纹与 `allow_duplicate` 未用于 TS `applyImportPlan`。验收：目标及归档身份持久化登记，同归档默认拒绝重复导入并展示已有记录，明确选择另建副本才允许；覆盖重启、提交结果不确定与审计失败恢复。
+- [ ] KODE-REVIEW-007 [P1] MCP 文档/Python 搜索扫描边界：`docs_index.rs`、`code_index.rs` 目录遍历跟随符号链接且无目录去重，文件上限在目录循环外检查，命中上限也未提示不完整；每次调用同步扫描/读取或解析。验收：符号链接环、重复路径、大目录均可终止且严格执行预算；结果明确标识截断和读取失败，覆盖低限额与无命中；评估并消除请求线程上的大规模同步阻塞。
+- [ ] KODE-REVIEW-008 [P2] 清理待办与完成证据口径：`todo.md` 声称只放未完成任务，却长期保留大量完成记录；克隆 Rust 库完成与用户入口能力混在一起。验收：保留可追溯历史，明确库、RPC、实际入口和真实环境四层验收状态；将已完成长篇证据迁至适当历史文档或索引，不丢失原始证据。
