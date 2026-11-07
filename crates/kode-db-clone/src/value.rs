@@ -12,11 +12,11 @@ use serde::{Deserialize, Serialize};
 pub enum TypedValue {
     Null,
     /// 有符号整型(TINYINT/SMALLINT/INT/signed BIGINT)。
-    Int(i64),
+    Int(#[serde(with = "json_i64")] i64),
     /// 无符号整型(unsigned 非扩位族)。
-    UInt(u64),
+    UInt(#[serde(with = "json_u64")] u64),
     /// 无符号 64-bit(bigint unsigned 全域,精确)。
-    BigUInt(u64),
+    BigUInt(#[serde(with = "json_u64")] u64),
     /// 浮点(float 列)。
     Float(f32),
     /// 双精度(double 列)。
@@ -33,6 +33,55 @@ pub enum TypedValue {
         value: String,
         offset_minutes: Option<i32>,
     },
+}
+
+// JSON numbers above 2^53-1 lose precision in the VS Code extension's JS
+// transport. Retain numeric encoding for old/small values, encode larger values
+// as decimal strings, and accept both formats when reading older archives.
+mod json_i64 {
+    use serde::{Deserialize, Deserializer, Serializer};
+    pub fn serialize<S: Serializer>(v: &i64, s: S) -> Result<S::Ok, S::Error> {
+        if v.unsigned_abs() <= 9_007_199_254_740_991 {
+            s.serialize_i64(*v)
+        } else {
+            s.serialize_str(&v.to_string())
+        }
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Wire {
+            Number(i64),
+            Text(String),
+        }
+        match Wire::deserialize(d)? {
+            Wire::Number(v) => Ok(v),
+            Wire::Text(v) => v.parse().map_err(serde::de::Error::custom),
+        }
+    }
+}
+
+mod json_u64 {
+    use serde::{Deserialize, Deserializer, Serializer};
+    pub fn serialize<S: Serializer>(v: &u64, s: S) -> Result<S::Ok, S::Error> {
+        if *v <= 9_007_199_254_740_991 {
+            s.serialize_u64(*v)
+        } else {
+            s.serialize_str(&v.to_string())
+        }
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Wire {
+            Number(u64),
+            Text(String),
+        }
+        match Wire::deserialize(d)? {
+            Wire::Number(v) => Ok(v),
+            Wire::Text(v) => v.parse().map_err(serde::de::Error::custom),
+        }
+    }
 }
 
 /// 一行:值序与计划查询的列序一一对应。
@@ -140,6 +189,28 @@ fn hex_val(b: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn large_integers_cross_json_without_precision_loss_and_read_legacy_numbers() {
+        for value in [
+            TypedValue::Int(i64::MIN),
+            TypedValue::Int(i64::MAX),
+            TypedValue::BigUInt(u64::MAX),
+        ] {
+            let encoded = serde_json::to_string(&value).unwrap();
+            assert!(encoded.contains("\"v\":\""));
+            assert_eq!(serde_json::from_str::<TypedValue>(&encoded).unwrap(), value);
+        }
+        let old = r#"{"t":"big-u-int","v":18446744073709551615}"#;
+        assert_eq!(
+            serde_json::from_str::<TypedValue>(old).unwrap(),
+            TypedValue::BigUInt(u64::MAX)
+        );
+        assert_eq!(
+            serde_json::to_string(&TypedValue::Int(5)).unwrap(),
+            r#"{"t":"int","v":5}"#
+        );
+    }
 
     #[test]
     fn parses_integer_families() {

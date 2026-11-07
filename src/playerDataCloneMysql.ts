@@ -337,15 +337,15 @@ export interface CloneApplyProgress {
 export interface CloneApplyResult {
   insertedPerTable: Record<string, number>;
   /** 占位 → 数据库真实新主键(PDC-0402 回填)。 */
-  resolvedIds: Record<number, number>;
-  newRootId: number | null;
+  resolvedIds: Record<number, number | string>;
+  newRootId: number | string | null;
   verify: Array<{ table: string; expected: number; found: number; ok: boolean }>;
   /** 逆拓扑清理计划(只生成不执行,PDC-0408)。 */
   cleanup: Array<{ sql: string; params: unknown[] }>;
 }
 
 interface ResultSetHeaderLike {
-  insertId?: number;
+  insertId?: number | string;
   affectedRows?: number;
 }
 
@@ -370,7 +370,7 @@ export async function applyImportPlan(
     }
   }
 
-  const resolvedIds = new Map<number, number>();
+  const resolvedIds = new Map<number, number | string>();
   const insertedPerTable: Record<string, number> = {};
 
   await connection.query('START TRANSACTION');
@@ -407,12 +407,10 @@ export async function applyImportPlan(
       const [result] = await connection.query(statement.insert_sql, params);
       const header = Array.isArray(result) ? undefined : (result as ResultSetHeaderLike);
       const newId = header?.insertId ?? 0;
-      if (!Number.isSafeInteger(newId)) {
-        throw new Error('clone: generated id cannot be represented without loss');
-      }
+      const safeId = tvBigUInt(newId).v as number | string;
       for (const cell of statement.cells) {
-        if (cell.kind === 'new-key' && newId > 0) {
-          resolvedIds.set(cell.placeholder, newId);
+        if (cell.kind === 'new-key' && BigInt(safeId) > BigInt(0)) {
+          resolvedIds.set(cell.placeholder, safeId);
         }
       }
       insertedPerTable[statement.table] = (insertedPerTable[statement.table] ?? 0) + 1;
@@ -493,7 +491,7 @@ function resolveCellBind(
   column: string,
   plan: ImportPlanWire,
   idmapRebuilt: Map<string, TypedValueWire>,
-  resolvedIds: Map<number, number>
+  resolvedIds: Map<number, number | string>
 ): unknown {
   switch (cell.kind) {
     case 'new-key':
@@ -520,7 +518,7 @@ function resolveCellBind(
 
 function newIdsForTable(
   plan: ImportPlanWire,
-  resolvedIds: Map<number, number>,
+  resolvedIds: Map<number, number | string>,
   table: string
 ): TypedValueWire[] {
   const ids: TypedValueWire[] = [];

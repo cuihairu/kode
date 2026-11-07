@@ -9,9 +9,9 @@ describe('clone value safety', () => {
     expect(() => typedValueToBind({ t: 'bytes', v: '0xz' })).toThrow(/hexadecimal/);
   });
 
-  it('rejects integers outside the safe wire range instead of rounding', () => {
-    expect(() => cellToTypedValue('9007199254740993', 'bigint unsigned')).toThrow(/unsafe/);
-    expect(() => tvBigUInt(9007199254740993n)).toThrow(/without loss/);
+  it('preserves 64-bit integer strings and rejects rounded numbers', () => {
+    expect(cellToTypedValue('18446744073709551615', 'bigint unsigned')).toEqual({ t: 'big-u-int', v: '18446744073709551615' });
+    expect(tvBigUInt(9007199254740993n)).toEqual({ t: 'big-u-int', v: '9007199254740993' });
     expect(() => typedValueToBind({ t: 'big-u-int', v: 9007199254740992 })).toThrow(/without loss/);
     expect(typedValueToBind({ t: 'double', v: 1.5 })).toBe(1.5);
   });

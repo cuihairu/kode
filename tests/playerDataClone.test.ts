@@ -355,6 +355,16 @@ describe('applyImportPlan(单事务执行器,语义对齐 crate apply.rs)', () =
     rollback.failOn('ROLLBACK');
     await expect(applyImportPlan(rollback, miniPlan(), miniRows(), miniColumnOrder())).rejects.toBeInstanceOf(CloneRollbackUnknownError);
   });
+
+  it('自增 ID 超过 JS 安全整数时以字符串传给子表', async () => {
+    const connection = new FakeMysqlConnection();
+    connection.reply('INSERT INTO tbl_Avatar (', { insertId: '9007199254740993' });
+    connection.reply('INSERT INTO tbl_Avatar_items', { insertId: '9007199254740994' });
+    connection.reply('SELECT COUNT(*)', [{ c: 1 }]);
+    const result = await applyImportPlan(connection, miniPlan(), miniRows(), miniColumnOrder());
+    expect(connection.log.find(entry => entry.sql.includes('INSERT INTO tbl_Avatar_items'))?.values?.[1]).toBe('9007199254740993');
+    expect(result.newRootId).toBe('9007199254740993');
+  });
 });
 
 describe('columnOrderFromPlan / uniqueValuesFromRows(两遍计划的探测面)', () => {

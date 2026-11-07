@@ -14,18 +14,26 @@ export interface TypedValueWire {
 }
 
 export const tvNull = (): TypedValueWire => ({ t: 'null' });
-function safeInteger(v: number | bigint): number {
-  const n = Number(v);
-  if (!Number.isSafeInteger(n)) {
+function integerWire(v: number | bigint | string, unsigned: boolean): number | string {
+  if (typeof v === 'number' && !Number.isSafeInteger(v)) {
     throw new Error(`clone: integer ${String(v)} cannot be represented without loss`);
   }
-  return n;
+  if (!/^-?\d+$/.test(String(v))) {
+    throw new Error(`clone: invalid integer ${String(v)}`);
+  }
+  const n = BigInt(v);
+  if (n < BigInt(unsigned ? '0' : '-9223372036854775808') ||
+      n > BigInt(unsigned ? '18446744073709551615' : '9223372036854775807')) {
+    throw new Error(`clone: integer ${String(v)} outside 64-bit range`);
+  }
+  return n >= BigInt(Number.MIN_SAFE_INTEGER) && n <= BigInt(Number.MAX_SAFE_INTEGER)
+    ? Number(n) : n.toString();
 }
-export const tvInt = (v: number | bigint): TypedValueWire => ({ t: 'int', v: safeInteger(v) });
-export const tvUInt = (v: number | bigint): TypedValueWire => ({ t: 'u-int', v: safeInteger(v) });
-export const tvBigUInt = (v: number | bigint): TypedValueWire => ({
+export const tvInt = (v: number | bigint | string): TypedValueWire => ({ t: 'int', v: integerWire(v, false) });
+export const tvUInt = (v: number | bigint | string): TypedValueWire => ({ t: 'u-int', v: integerWire(v, true) });
+export const tvBigUInt = (v: number | bigint | string): TypedValueWire => ({
   t: 'big-u-int',
-  v: safeInteger(v)
+  v: integerWire(v, true)
 });
 export const tvDouble = (v: number): TypedValueWire => ({ t: 'double', v });
 export const tvText = (v: string): TypedValueWire => ({ t: 'text', v });
@@ -217,14 +225,13 @@ export function cellToTypedValue(cell: unknown, columnType: string): TypedValueW
     base === 'int' ||
     base === 'bigint'
   ) {
-    const num = Number(cell);
-    if (Number.isSafeInteger(num)) {
-      if (base === 'bigint') {
-        return unsigned ? tvBigUInt(num) : tvInt(num);
-      }
-      return unsigned ? tvUInt(num) : tvInt(num);
+    if (typeof cell !== 'number' && typeof cell !== 'string' && typeof cell !== 'bigint') {
+      throw new Error(`clone: invalid integer in ${columnType}`);
     }
-    throw new Error(`clone: unsafe or invalid integer ${String(cell)} in ${columnType}`);
+    if (base === 'bigint') {
+      return unsigned ? tvBigUInt(cell) : tvInt(cell);
+    }
+    return unsigned ? tvUInt(cell) : tvInt(cell);
   }
   if (base === 'float' || base === 'double') {
     return tvDouble(Number(cell));
@@ -269,6 +276,6 @@ export function typedValueToBind(value: TypedValueWire): unknown {
     case 'double':
       return Number(value.v);
     default:
-      return safeInteger(value.v as number);
+      return integerWire(value.v as number | string, value.t !== 'int');
   }
 }
