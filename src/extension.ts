@@ -25,10 +25,8 @@ import {
 import { setJumpLogEnabled } from './navigationLog';
 import { createFileChangeMetaResolver } from './fileChangeMeta';
 import { logIndexFileChangeMeta } from './fileChangeMetaLog';
-import {
-  setAnnotationSourceLogEnabled,
-  setAnnotationSourceLogSink
-} from './annotationSourceLog';
+import { setAnnotationSourceLogEnabled } from './annotationSourceLog';
+import { activateInfrastructure } from './activate/infrastructure';
 import {
   RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT,
   receiverNoneDiagnosticItemsAsync,
@@ -271,7 +269,6 @@ import {
   runHotReloadFileStateFilterCommand,
   runShowHotReloadFileStateCommand
 } from './hotReloadFileStateFilter';
-import { setupKodeCoreGate } from './kodeCoreGateWiring';
 import {
   shadowMirrorCorpusDocument,
   shadowReleaseCorpusDocument
@@ -369,7 +366,6 @@ import { wireTrapLintDiagnostics } from './trapDiagnosticsWiring';
 import { ConsoleHub } from './kbengineConsoleHub';
 import { ConsoleLogTailController } from './consoleLogTail';
 import { ComponentStatusTreeProvider, resolveThresholds } from './componentStatusPanel';
-import { registerStartupViewPlaceholders } from './startupViewPlaceholders';
 import { watcherPatternSignature, isExcludedScanPath } from './indexWatcherScope';
 import { PythonClassIndex } from './pythonClassIndex';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
@@ -384,13 +380,6 @@ import {
   getPendingTypeStorageColdBuildCount,
   setTypeStorageUsageBackgroundDispatcher
 } from './databaseSchema';
-import {
-  KBEngineDatabaseSchemaProvider
-} from './databaseSchemaPresentation';
-import {
-  KBENGINE_DATABASE_SIMULATION_SCHEME,
-  KBEngineDatabaseSimulationProvider
-} from './databaseSimulator';
 import { findEntityDefinitionFile, getDefinitionWorkspaceLayout, getRegisteredEntities, listDefinitionFiles, readWorkspaceTextFile } from './definitionWorkspace';
 import { validateProcessTopologyInRust } from './processTopologyRust';
 import { mapFindingsToDiagnostics, type ProcessTopologyDiagnosticSpec } from './processTopologyDiagnostics';
@@ -404,7 +393,7 @@ import {
   selectionToSnippetBody
 } from './snippetGenerator';
 import type { MergeSnippetResult } from './snippetGenerator';
-import { buildEngineApiCatalog, readEngineApiMetadata } from './engineApiMetadata';
+import { readEngineApiMetadata } from './engineApiMetadata';
 import {
   GIT_HISTORY_CONTEXT_KEY,
   GIT_HISTORY_ENABLED_SETTING,
@@ -436,7 +425,6 @@ import {
 } from './gitRangeHistoryTree';
 import { editorSelectionToRange } from './gitSelectionMap';
 import { sharedGitQueryGate } from './gitQueryGate';
-import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument } from './kbeModuleIndex';
 import {
   SERVER_CONFIG_SELECTOR,
   ServerConfigHoverProvider
@@ -485,9 +473,6 @@ import {
  * KBEngine VSCode 扩展主入口
  */
 
-// IDE-REV-037:注解来源日志的输出通道(懒建,首条日志到达才创建)
-let annotationSourceChannel: vscode.OutputChannel | undefined;
-
 // KODE-AUD-001:进程拓扑诊断调度器是 activate 内局部实例(与其他四个同模式),
 // 测试经此访问器断言「编辑事件→requestQueued→同节拍 flushQueued」接线
 // (此前漏 flushQueued 致 queued 任务滞留不发布)。activate 每次装配覆写,
@@ -503,121 +488,25 @@ export function getProcessTopologySchedulerForTests(): DiagnosticScheduler | nul
 }
 
 export function activate(context: vscode.ExtensionContext) {
-  // KODE-PERF 视图先行(KB-GC-001):activate 最前(任何重活之前)为全部侧栏
-  // 视图注册空占位 provider——宿主立即完成视图装配,不再报「There is no data
-  // provider registered」;真 provider 在各自装配位随后注册,宿主同 id 重复
-  // 注册=后到者接管,视图随之切到真数据源。装配晚段抛错/被拖死时视图仍已
-  // 注册(显示空列表而非错误面板),不再卡在无提供者状态。
-  context.subscriptions.push(
-    registerStartupViewPlaceholders({
-      registerTreeDataProvider: (viewId, provider) =>
-        vscode.window.registerTreeDataProvider(viewId, provider)
-    })
-  );
-  console.log('KBEngine Language Extension is now active!');
-  const engineApiEnabled = vscode.workspace.getConfiguration('kbengine')
-    .get<boolean>('python.apiMetadata', true);
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-  let engineApiCatalog: Awaited<ReturnType<typeof buildEngineApiCatalog>> | null = null;
-  if (engineApiEnabled) {
-    const catalogPromise = buildEngineApiCatalog(workspaceRoot).then(catalog => {
-      engineApiCatalog = catalog;
-      return catalog;
-    }).catch(() => null);
-    void catalogPromise;
-  }
-  context.subscriptions.push(
-    vscode.workspace.registerTextDocumentContentProvider(KBE_SCHEME, {
-      provideTextDocumentContent(): string {
-        const stub = buildKbeStubDocument();
-        return engineApiCatalog
-          ? appendEngineApiMetadata(stub.content, engineApiCatalog.metadata)
-          : stub.content;
-      }
-    })
-  );
-  // 跳转决策路径日志开关(默认关闭;Settings 搜 kbengine.jumpLog 随时切换)
-  setJumpLogEnabled(vscode.workspace.getConfiguration('kbengine').get<boolean>('jumpLog', false));
-  // 注解来源日志开关(IDE-REV-037,默认关闭;Settings 搜 kbengine.annotationLog
-  // 随时切换)——hover 推导答话把所用来源(文档桶/磁盘快照)落 KBEngine
-  // Annotations 通道,sink 在此接线(日志模块本身不 import vscode)。
-  setAnnotationSourceLogEnabled(vscode.workspace.getConfiguration('kbengine').get<boolean>('annotationLog', false));
-  setAnnotationSourceLogSink(line => {
-    annotationSourceChannel ??= vscode.window.createOutputChannel('KBEngine Annotations');
-    annotationSourceChannel.appendLine(line);
-  });
-  // 层2 python-mro(mixin 函数导航)开关(默认开;Settings 搜 kbengine.python.enableMroJump 随时切换)
-  setPythonMroJumpEnabled(vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableMroJump', true));
-  // GLOBDATA-001:数据字典键索引开关(默认开;kbengine.python.enableDataDictIndex)
-  setPythonDataDictIndexEnabled(
-    vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableDataDictIndex', true)
-  );
-  // kode2 PR-012:双轨切流门(kill-switch/shadow;kbengine.core.backend 默认 ts,
-  // Rust 仅影子比对不服务,默认装配下用户可见行为与纯 TS 单轨一致)。
-  // 持有门实例:热更旁路的 rust 投递口(§11.3)要经它的 notifyFileChanged
-  // 走现有 LSP stdio。
-  const kodeCoreGate = setupKodeCoreGate(context);
-  // KODE-CFG-009:门接线后即预取 core 配置解析(`$/kode/config/resolve`),
-  // 同步消费面(dbInterface/合成树/别名开关)读消费缓存不阻塞宿主。
-  void ensureConfigResolved().catch(() => {});
-  const databaseSchemaProvider = new KBEngineDatabaseSchemaProvider();
-  context.subscriptions.push(
-    vscode.workspace.registerTextDocumentContentProvider('kbengine-db-schema', databaseSchemaProvider),
-    // AUD-056:provider 自身生命周期随 context 拆——关闭订阅与 onDidChange
-    // 发射器在 deactivate 时释放,不跨激活泄漏
-    databaseSchemaProvider
-  );
-  // 数据库模拟(批122):schema 快照之上的行模拟虚拟文档,scheme 与
-  // databaseSchema 的 kbengine-db-schema 并列
-  const databaseSimulationProvider = new KBEngineDatabaseSimulationProvider();
-  context.subscriptions.push(
-    vscode.workspace.registerTextDocumentContentProvider(
-      KBENGINE_DATABASE_SIMULATION_SCHEME,
-      databaseSimulationProvider
-    )
-  );
-  // kbe 模块符号桩文档(批108):go-to-definition 的只读跳转源
-  context.subscriptions.push(
-    vscode.workspace.registerTextDocumentContentProvider(KBE_SCHEME, {
-      provideTextDocumentContent(): string {
-        const stub = buildKbeStubDocument();
-        return engineApiCatalog
-          ? appendEngineApiMetadata(stub.content, engineApiCatalog.metadata)
-          : stub.content;
-      }
-    })
-  );
-  const defDocumentSelector: vscode.DocumentSelector = [
-    { language: 'kbengine-def', scheme: 'file' },
-    { scheme: 'file', pattern: '**/*.def' },
-    { language: 'kbengine-def', scheme: 'untitled' }
-  ];
-  const kbengineXmlSelector: vscode.DocumentSelector = [
-    { language: 'xml', scheme: 'file', pattern: '**/types.xml' },
-    { language: 'xml', scheme: 'file', pattern: '**/entities.xml' }
-  ];
-  const definitionNavigationSelector: vscode.DocumentSelector = [
-    ...defDocumentSelector,
-    ...kbengineXmlSelector
-  ];
-  const pythonDocumentSelector: vscode.DocumentSelector = [
-    { language: 'python', scheme: 'file' }
-  ];
-
-  const isDefDocument = (document: vscode.TextDocument): boolean =>
-    document.languageId === 'kbengine-def' || document.fileName.toLowerCase().endsWith('.def');
-  // entities.xml 清单诊断(source-analysis 设计 D3):与 .def 共用同一
-  // 诊断 collection 与文档事件生命周期
-  const isEntitiesXmlDocument = (document: vscode.TextDocument): boolean =>
-    document.fileName.endsWith('entities.xml');
-  // Python 侧诊断(receiver 可能为 None + 段错配,用户令 2026-10-27):与
-  // .def/entities.xml 共用诊断 collection 与文档事件生命周期
-  const isPythonDocument = (document: vscode.TextDocument): boolean =>
-    document.languageId === 'python';
-  // C-17:进程拓扑清单文件(workspace 根 process_topology.xml)。清单变更触发
-  // 全量重排(拓扑是全局输入,单文件变更影响全部实体归属)。
-  const isProcessTopologyManifestDocument = (document: vscode.TextDocument): boolean =>
-    document.fileName.endsWith('process_topology.xml');
+  // SRC-001 L0 基础设施层(KODE-ARCH 纯移动):启动占位视图、引擎 API 目录、
+  // 只读虚拟文档 provider、日志开关、kode core 门、文档选择器与文档形态谓词
+  // 装配在 src/activate/infrastructure.ts,装配顺序由本调用点保持(activate
+  // 最前),销毁句柄随返回值交组合根统一登记。
+  const {
+    disposables: infrastructureDisposables,
+    kodeCoreGate,
+    databaseSchemaProvider,
+    databaseSimulationProvider,
+    defDocumentSelector,
+    definitionNavigationSelector,
+    pythonDocumentSelector,
+    getEngineApiCatalog,
+    isDefDocument,
+    isEntitiesXmlDocument,
+    isPythonDocument,
+    isProcessTopologyManifestDocument
+  } = activateInfrastructure({ context });
+  context.subscriptions.push(...infrastructureDisposables);
 
   // PR1 性能观测:请求级打点只看「结果是否为空」定 ok/miss(vscode Hover /
   // Location / CompletionItem[] 约定),结果对象原样透传,不改任何语义。
@@ -1467,7 +1356,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 注册 Python 文件的智能提示提供者（提供来自 .def 的属性和方法）
   // PR1 打点:completion(python 面)。
-  const pythonCompletionImpl = new PythonCompletionProvider(entityMappingManager, engineApiCatalog);
+  const pythonCompletionImpl = new PythonCompletionProvider(entityMappingManager, getEngineApiCatalog());
   const pythonCompletionProvider = vscode.languages.registerCompletionItemProvider(
     { language: 'python', scheme: 'file' },
     {
