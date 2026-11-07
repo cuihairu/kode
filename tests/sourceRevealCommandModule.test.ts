@@ -1,4 +1,4 @@
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 import { KBENGINE_SOURCE_REVEAL_COMMAND } from '../src/sourceRevealCommand';
@@ -30,8 +30,13 @@ describe('reveal 命令常量归属(IDE-ARC-001)', () => {
   });
 
   it('languageProviders 不再定义该常量(单一事实源在新模块)', () => {
-    const source = readFileSync(join(root, 'src/languageProviders.ts'), 'utf8');
-    expect(source).toContain("KBENGINE_SOURCE_REVEAL_COMMAND } from './sourceRevealCommand'");
+    // KODE-ARCH-001:拆分后源面为 barrel + 全部子模块;常量本体只在
+    // sourceRevealCommand.ts,reveal 面经 import 消费
+    const lpSources = ['src/languageProviders.ts',
+      ...readdirSync(join(root, 'src/languageProviders')).filter(f => f.endsWith('.ts')).map(f => `src/languageProviders/${f}`)];
+    const source = lpSources.map(p => readFileSync(join(root, p), 'utf8')).join('\n');
     expect(source.match(/export const KBENGINE_SOURCE_REVEAL_COMMAND/)).toBe(null);
+    expect(source.includes('KBENGINE_SOURCE_REVEAL_COMMAND')).toBe(true);
+    expect(source.includes("from './sourceRevealCommand'")).toBe(true);
   });
 });
