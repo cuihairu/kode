@@ -7,7 +7,7 @@
 
 Read-path general rule (set by ARC-005, source-level lock tests/typeStorageWatcherOwnership.test.ts):
 
-- **Repo-wide services belong to the assembly layer**: watchers, workers, and caches are constructed only in extension.ts, released uniformly via `context.subscriptions`, with `deactivate()` winding down workers and snapshots; providers never build a second set of repo-wide services (`createFileSystemWatcher` count in languageProviders.ts is zero).
+- **Repo-wide services belong to the assembly layer**: watchers, workers, and caches are constructed only in extension.ts, released uniformly via `context.subscriptions`, with `deactivate()` winding down workers and snapshots; providers never build a second set of repo-wide services (`createFileSystemWatcher` count across languageProviders.ts + src/languageProviders/* is zero).
 - The side effects a provider may cause are a six-item whitelist only:
   1. **Cache backfill**: on a same-version/mtime fingerprint miss, fill the read-only cache;
   2. **Background completion enqueue**: the first query does not wait for the full scan; the gap is queued for background completion via `IndexScheduler` (requests are not blocked);
@@ -21,39 +21,39 @@ Read-path general rule (set by ARC-005, source-level lock tests/typeStorageWatch
 
 ### 2a. Language providers (vscode.languages.register\*, 30 registrations / 29 classes)
 
-Registration sites are extension.ts line numbers:
+Registration sites are extension.ts line numbers (2026-11-07 真位复核:KODE-ARCH-001 将 languageProviders.ts 拆为 src/languageProviders/* 子模块,类定义列与注册行已按当前代码逐行重探):
 
 | Provider | Class definition | Registration | Data sources | Allowed side effects |
 |---|---|---|---|---|
-| KBEngineCompletionProvider | languageProviders.ts:473 | :789 | EntityMappingManager snapshot (def tag/attribute context) + documentStore line snapshots | Cache backfill |
-| KBEngineSignatureHelpProvider | languageProviders.ts:1264 | :835 | EntityMappingManager (def method signatures) | Pure read |
-| KBEngineHoverProvider | languageProviders.ts:697 | :872 | EntityMappingManager + documentStore line snapshots + hoverMarkdown pure formatting | shadowCompareDefinition shadow report |
+| KBEngineCompletionProvider | languageProviders/completion.ts:260 | :960 | EntityMappingManager snapshot (def tag/attribute context) + documentStore line snapshots | Cache backfill |
+| KBEngineSignatureHelpProvider | languageProviders/hover.ts:918 | :1006 | EntityMappingManager (def method signatures) | Pure read |
+| KBEngineHoverProvider | languageProviders/hover.ts:71 | :1043 | EntityMappingManager + documentStore line snapshots + hoverMarkdown pure formatting | shadowCompareDefinition shadow report |
 | ServerConfigHoverProvider | serverConfigHover.ts:151 | :906 | kbengine.xml merged tree synthesized by serverConfigMerge | Pure read |
 | StartupScriptHoverProvider | kbengineStartupScript.ts:409 | :916 | Line-level plain-text token scan (CLI `--args` + `$VAR`/`VAR=` env vars, KBEXP-1) | Pure read |
-| KBEngineDefinitionProvider | languageProviders.ts:1357 | :930 | EntityMappingManager → SemanticIndex snapshot (no repo-wide wait) | Pure read |
-| PythonDefinitionProvider | languageProviders.ts:3861 | :992 | EntityMappingManager + PythonClassIndex (classes/bases/methods/mro/compositionRoots five axes) | ensureScanned background completion enqueue + shadowObserveDefDocument shadow observation |
-| PythonCompletionProvider | languageProviders.ts:5787 | :1286 | EntityMappingManager + engineApiCatalog (built async at :301) | Pure read |
+| KBEngineDefinitionProvider | languageProviders/navigation.ts:15 | :1101 | EntityMappingManager → SemanticIndex snapshot (no repo-wide wait) | Pure read |
+| PythonDefinitionProvider | languageProviders/pythonDefinition.ts:237 | :1159 | EntityMappingManager + PythonClassIndex (classes/bases/methods/mro/compositionRoots five axes) | ensureScanned background completion enqueue + shadowObserveDefDocument shadow observation |
+| PythonCompletionProvider | languageProviders/completion.ts:627 | :1482 | EntityMappingManager + engineApiCatalog (built async at :301) | Pure read |
 | StartupScriptCompletionProvider | kbengineStartupScript.ts:430 | :921 | Line-level plain-text token scan (`--` completes CLI args, `KBE_` completes env vars, KBEXP-1) | Pure read |
-| RpcCodeLensProvider | languageProviders.ts:4651 | :1089 | EntityMappingManager (RPC mirror chain) | Pure read |
+| RpcCodeLensProvider | languageProviders/codeLens.ts:14 | :1279 | EntityMappingManager (RPC mirror chain) | Pure read |
 | CallChainController | defCallChainProvider.ts:49 | :1096 | EntityMappingManager | webview panel creation/update (UI side effect) |
-| PropertyCodeLensProvider | languageProviders.ts:4819 | :1114 | EntityMappingManager (types.xml property back-references) | fireConfigurationChanged event |
+| PropertyCodeLensProvider | languageProviders/codeLens.ts:182 | :1304 | EntityMappingManager (types.xml property back-references) | fireConfigurationChanged event |
 | EventCodeLensProvider | eventApi.ts:95 | :1128 | EventCallIndex small interface (`allEventCalls`, ARC-002; injected sharedWorkspaceIndex) | After the 8s pre-start delay, enqueues the shared index's repo-wide py scan (the only scan entry) |
-| TypesXmlCodeLensProvider | languageProviders.ts:4964 | :1169 | databaseSchema type-storage usage index (`onTypeStorageUsageIndexPublished` subscription; zero construction deps) | fireConfigurationChanged event; watcher belongs to the assembly line (ARC-005) |
+| TypesXmlCodeLensProvider | languageProviders/codeLens.ts:360 | :1359 | databaseSchema type-storage usage index (`onTypeStorageUsageIndexPublished` subscription; zero construction deps) | fireConfigurationChanged event; watcher belongs to the assembly line (ARC-005) |
 | GeneratedSourceCodeLensProvider (python stubs) | generatedSourceLenses.ts:11 | :1187 | Construction-time snapshot buildPythonTypeStubPlan(getCustomTypeInfos) | Pure read |
 | GeneratedSourceCodeLensProvider (entity stubs) | generatedSourceLenses.ts:11 | :4632 | Construction-time snapshot buildEntityTypeStubPlan(getAllMappings + getCustomTypeInfos) | Pure read |
 | PythonTypeInlayHintsProvider | typeInlayHints.ts:33 | :1197 | EntityMappingManager | Pure read |
-| KBEngineBuiltinTypeInlayHintsProvider | languageProviders.ts:649 | :1207 | EntityMappingManager | Pure read |
+| KBEngineBuiltinTypeInlayHintsProvider | languageProviders/inlay.ts:16 | :1406 | EntityMappingManager | Pure read |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | Pure read |
-| KBEngineCallHierarchyProvider | languageProviders.ts:5013 | :1223 | EntityMappingManager (def/python dual-selection call hierarchy) | Pure read |
-| KBEngineReferencesProvider | languageProviders.ts:5117 | :1235 | EntityMappingManager + defReferenceGraph reference graph | Pure read |
-| KBEngineDocumentSymbolProvider | languageProviders.ts:5231 | :1256 | Current document def structure (zero construction deps) | Pure read |
-| KBEngineWorkspaceSymbolProvider | languageProviders.ts:5295 | :1263 | EntityMappingManager (repo-wide symbol search) | Pure read |
-| KBEngineImplementationProvider | languageProviders.ts:5327 | :1269 | EntityMappingManager (def interface method implementation location) | Pure read |
-| KBEngineRenameProvider | languageProviders.ts:5618 | :1277 | EntityMappingManager (def symbol rename) | Edit proposal (WorkspaceEdit) |
-| KBEngineTypeCodeActionProvider | languageProviders.ts:5375 | :1761 | Current document def structure (zero construction deps) | Edit proposal (WorkspaceEdit) |
-| KBEngineMethodImplementationCodeActionProvider | languageProviders.ts:5470 | :1768 | EntityMappingManager (interface method stub generation) | Edit proposal (WorkspaceEdit) |
-| KBEngineDefPythonParityCodeActionProvider | languageProviders.ts:6058 | :1776 | Diagnostics surface (context.diagnostics, code=def-method-missing-in-python) + bidirectional location surface (target Python file/class) + current document def structure (signature type mapping) | Edit proposal (WorkspaceEdit, method skeleton appended at class end) |
-| KBEngineReceiverNoneGuardCodeActionProvider | languageProviders.ts:5594 | :1784 | Diagnostics surface (context.diagnostics, code=kbengine.receiverNone) + current document text | Edit proposal (WorkspaceEdit, wrap-style preferred + early-return style) |
+| KBEngineCallHierarchyProvider | languageProviders/callHierarchy.ts:9 | :1425 | EntityMappingManager (def/python dual-selection call hierarchy) | Pure read |
+| KBEngineReferencesProvider | languageProviders/references.ts:22 | :1431 | EntityMappingManager + defReferenceGraph reference graph | Pure read |
+| KBEngineDocumentSymbolProvider | languageProviders/references.ts:267 | :1455 | Current document def structure (zero construction deps) | Pure read |
+| KBEngineWorkspaceSymbolProvider | languageProviders/references.ts:315 | :1461 | EntityMappingManager (repo-wide symbol search) | Pure read |
+| KBEngineImplementationProvider | languageProviders/references.ts:347 | :1468 | EntityMappingManager (def interface method implementation location) | Pure read |
+| KBEngineRenameProvider | languageProviders/rename.ts:8 | :1476 | EntityMappingManager (def symbol rename) | Edit proposal (WorkspaceEdit) |
+| KBEngineTypeCodeActionProvider | languageProviders/codeAction.ts:13 | :2274 | Current document def structure (zero construction deps) | Edit proposal (WorkspaceEdit) |
+| KBEngineMethodImplementationCodeActionProvider | languageProviders/codeAction.ts:113 | :2281 | EntityMappingManager (interface method stub generation) | Edit proposal (WorkspaceEdit) |
+| KBEngineDefPythonParityCodeActionProvider | languageProviders/codeAction.ts:240 | :2289 | Diagnostics surface (context.diagnostics, code=def-method-missing-in-python) + bidirectional location surface (target Python file/class) + current document def structure (signature type mapping) | Edit proposal (WorkspaceEdit, method skeleton appended at class end) |
+| KBEngineReceiverNoneGuardCodeActionProvider | languageProviders/codeAction.ts:378 | :2297 | Diagnostics surface (context.diagnostics, code=kbengine.receiverNone) + current document text | Edit proposal (WorkspaceEdit, wrap-style preferred + early-return style) |
 | HotReloadFileStateCodeLensProvider | hotReloadFileStateLens.ts:43 | :4456 | HotReloadFileStateMachine derived view (ledger source of truth, IDE-HOT-100) | Pure read; state-dot click command kbengine.hotReload.showFileState |
 
 Command query surfaces (non-register\* providers, recorded under the same rules): the symbol references panel `kbengine.symbolReferences.show` uses the defReferenceGraph custom reference graph (coexists with the LSP references provider); the entity dependency graph `kbengine.dependency.show` uses dependencyGraph.ts + webview. Their data sources are likewise EntityMappingManager snapshots, with side effects limited to the webview.
