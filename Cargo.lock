@@ -1474,6 +1474,7 @@ name = "kode-mcp"
 version = "0.2.0"
 dependencies = [
  "kode-parser",
+ "kode-python",
  "kode-server",
  "rmcp",
  "serde",

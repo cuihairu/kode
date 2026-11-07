@@ -141,6 +141,14 @@ impl KodeMcpServer {
                     limit.max(1),
                 )
             }
+            "search_symbols" => {
+                let query = arg_str("query").unwrap_or_default();
+                let limit = arguments
+                    .get("limit")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(20) as usize;
+                crate::code_index::search_symbols(&self.assets_root, &query, limit.max(1))
+            }
             other => Err(format!("unknown tool: {other}")),
         };
         match result {
@@ -159,7 +167,7 @@ impl ServerHandler for KodeMcpServer {
                  get_entity_model, get_type_graph, validate_defs, get_message_entry, \
                  encode_decode_sample, db_schema_preview, explain, get_final_config, \
                  get_entry_scripts, get_database_schema, why_setting, list_config_settings, \
-                 search_docs.",
+                 search_docs, search_symbols.",
             )
     }
 
@@ -297,6 +305,17 @@ impl ServerHandler for KodeMcpServer {
                     schema_of(
                         serde_json::json!({
                             "query": {"type": "string", "description": "case-insensitive substring to search for in the project's .md docs"},
+                            "limit": {"type": "integer", "description": "max matches (default 20)"}
+                        }),
+                        &["query"],
+                    ),
+                ),
+                Self::tool(
+                    "search_symbols",
+                    "Search Python symbols defined under the assets root's scripts/ tree (classes, module-level functions, methods). Uses the same ruff-based AST symbol extraction as the IDE analysis face. Returns name, kind (class/function/method), file, line, and the owning class for methods. Answers 'where is symbol X defined'. Call-graph and dataflow queries are not covered by this tool.",
+                    schema_of(
+                        serde_json::json!({
+                            "query": {"type": "string", "description": "case-insensitive substring to match against symbol names"},
                             "limit": {"type": "integer", "description": "max matches (default 20)"}
                         }),
                         &["query"],

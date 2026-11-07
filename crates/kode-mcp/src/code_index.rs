@@ -1,0 +1,224 @@
+//! 代码符号索引(KODE-MCP-KB-001 ⑦):`search_symbols` 工具。
+//!
+//! 复用 kode-python 的 AST 符号抽取(与 kode-server 的 Python 分析面同一
+//! 解析器,不另立启发式)在 `{root}/scripts` 下建符号索引:类 / 模块级
+//! 函数 / 方法,每条带 file:line。答「代码里某个符号在哪定义」。
+//!
+//! 边界(诚实):只索引 `scripts/`(KBEngine 脚本域),跳过 def/资源/噪音
+//! 目录;文件数封顶、单文件读上限 1MB;名字大小写不敏感子串检索,给
+//! file/line/kind/class(方法所属类),不整篇回传。调用图/数据流查询未
+//! 纳入本面(kode-python 有 extract_call_graph,另立查询再评估)。
+//!
+//! 行号约定:kode-python 的 `line_col` 是 0 基;本面在 MCP 边界显式 +1
+//! 转 1 基(与 def/XML 目录 file:line 一致,如 kbengine_defaults.xml:618),
+//! 让 agent 能直接跳转编辑器行号。
+
+use std::path::{Path, PathBuf};
+
+use kode_python::symbols::parse_ast_symbols;
+use serde_json::{json, Value};
+
+const MAX_FILES: usize = 5000;
+const MAX_FILE_BYTES: u64 = 1_000_000;
+const SKIP_DIRS: &[&str] = &[
+    "target",
+    "node_modules",
+    ".git",
+    ".kbengine",
+    ".vscode-test",
+    "dist",
+    "out",
+    "build",
+    "entity_defs",
+    "res",
+];
+
+/// 符号条目(类/函数/方法统一形)。
+struct Symbol {
+    name: String,
+    kind: &'static str,
+    class: Option<String>,
+    file: PathBuf,
+    line: usize,
+}
+
+/// `{root}/scripts` 下递归收集 `.py`(有界)。
+fn collect_py(root: &Path) -> Vec<PathBuf> {
+    let scripts = root.join("scripts");
+    let mut out = Vec::new();
+    let mut stack: Vec<PathBuf> = vec![scripts];
+    while let Some(dir) = stack.pop() {
+        if out.len() >= MAX_FILES {
+            break;
+        }
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if SKIP_DIRS.contains(&name) {
+                    continue;
+                }
+                stack.push(path);
+            } else if path.extension().and_then(|e| e.to_str()) == Some("py") {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+fn read_capped(path: &Path) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
+    if meta.len() > MAX_FILE_BYTES {
+        return None;
+    }
+    std::fs::read_to_string(path).ok()
+}
+
+/// kode-python 0 基行号 → MCP 1 基行号(与 def/XML file:line 惯例一致)。
+fn to_one_based(line: usize) -> usize {
+    line + 1
+}
+
+/// 收集一个文件的所有符号(类 + 模块级函数 + 方法)。
+fn symbols_of(file: &Path, source: &str) -> Vec<Symbol> {
+    let extraction = parse_ast_symbols(source);
+    let mut out = Vec::new();
+    for class in &extraction.symbols.classes {
+        out.push(Symbol {
+            name: class.name.clone(),
+            kind: "class",
+            class: None,
+            file: file.to_path_buf(),
+            line: to_one_based(class.start_line),
+        });
+        for method in &class.methods {
+            out.push(Symbol {
+                name: method.name.clone(),
+                kind: "method",
+                class: Some(class.name.clone()),
+                file: file.to_path_buf(),
+                line: to_one_based(method.line),
+            });
+        }
+    }
+    for function in &extraction.symbols.functions {
+        out.push(Symbol {
+            name: function.name.clone(),
+            kind: "function",
+            class: None,
+            file: file.to_path_buf(),
+            line: to_one_based(function.line),
+        });
+    }
+    out
+}
+
+/// `search_symbols`:在 `{root}/scripts` 的 `.py` 里按名字(大小写不敏感
+/// 子串)查符号,返回 {name,kind,class,file,line}。空 query → Err;无命中
+/// → 空集如实;limit 缺省 20。
+pub fn search_symbols(root: &Path, query: &str, limit: usize) -> Result<Value, String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Err("empty symbol query".to_string());
+    }
+    let q = query.to_lowercase();
+    let mut found: Vec<Value> = Vec::new();
+    for file in collect_py(root) {
+        let Some(source) = read_capped(&file) else {
+            continue;
+        };
+        for sym in symbols_of(&file, &source) {
+            if !sym.name.to_lowercase().contains(&q) {
+                continue;
+            }
+            let mut entry = json!({
+                "name": sym.name,
+                "kind": sym.kind,
+                "file": sym.file.to_string_lossy(),
+                "line": sym.line,
+            });
+            if let Some(class) = sym.class {
+                entry["class"] = Value::String(class);
+            }
+            found.push(entry);
+            if found.len() >= limit {
+                return Ok(json!({
+                    "query": query,
+                    "count": found.len(),
+                    "matches": found,
+                }));
+            }
+        }
+    }
+    Ok(json!({
+        "query": query,
+        "count": found.len(),
+        "matches": found,
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_query_is_error() {
+        assert!(search_symbols(Path::new("."), " ", 20).is_err());
+    }
+
+    #[test]
+    fn indexes_classes_functions_and_methods_with_lines() {
+        let root = std::env::temp_dir().join(format!("kode-mcp-symbols-{}", std::process::id()));
+        let scripts = root.join("scripts").join("base");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(
+            scripts.join("account.py"),
+            "class Account:\n    def login(self):\n        pass\n\ndef helper():\n    pass\n",
+        )
+        .unwrap();
+        let out = search_symbols(&root, "account", 20).expect("answer");
+        // "account" 命中类名 Account 与方法 login? login 不含 account →
+        // 只类命。大小写不敏感子串:Account→account 命中。
+        let matches = out["matches"].as_array().unwrap();
+        let class = matches.iter().find(|m| m["kind"] == "class").expect("class");
+        assert_eq!(class["name"], "Account");
+        assert_eq!(class["line"], 1);
+
+        let login = search_symbols(&root, "login", 20).expect("answer");
+        let m = login["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["kind"] == "method")
+            .expect("method");
+        assert_eq!(m["name"], "login");
+        assert_eq!(m["class"], "Account");
+        assert_eq!(m["line"], 2);
+
+        let helper = search_symbols(&root, "helper", 20).expect("answer");
+        let m = helper["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["kind"] == "function")
+            .expect("function");
+        assert_eq!(m["line"], 5);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn no_match_is_honest_empty() {
+        let root = std::env::temp_dir().join(format!("kode-mcp-symbols-none-{}", std::process::id()));
+        let scripts = root.join("scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(scripts.join("a.py"), "x = 1\n").unwrap();
+        let out = search_symbols(&root, "zzz", 20).expect("answer");
+        assert_eq!(out["count"], 0);
+        std::fs::remove_dir_all(&root).ok();
+    }
+}

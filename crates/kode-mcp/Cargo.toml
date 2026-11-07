@@ -8,6 +8,7 @@ description = "MCP server exposing kode's def knowledge base to AI agents (MCP-0
 
 [dependencies]
 kode-parser = { path = "../kode-parser" }
+kode-python = { path = "../kode-python" }
 kode-server = { path = "../kode-server" }
 rmcp = { version = "3.7", default-features = true, features = ["server", "transport-io"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }

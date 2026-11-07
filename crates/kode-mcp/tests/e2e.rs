@@ -52,7 +52,7 @@ fn payload_of(result: CallToolResult) -> Value {
 }
 
 #[tokio::test]
-async fn list_tools_exposes_all_fourteen() {
+async fn list_tools_exposes_all_fifteen() {
     let client = connect().await;
     let tools = client.list_all_tools().await.expect("list_tools");
     let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
@@ -72,6 +72,7 @@ async fn list_tools_exposes_all_fourteen() {
             "list_config_settings",
             "search_docs",
             "search_entities",
+            "search_symbols",
             "validate_defs",
             "why_setting",
         ]
@@ -299,6 +300,26 @@ async fn call_tools_return_real_data() {
     assert!(m["file"].as_str().unwrap().ends_with("README.md"));
     assert!(m["title"].as_str().unwrap().contains("KBEngine"));
     assert!(m["snippet"].as_str().unwrap().contains("TrainingAvatar"));
+
+    // search_symbols(KODE-MCP-KB-001 ⑦):scripts/ 下 Python 符号真数据。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "search_symbols",
+                serde_json::json!({"query": "Avatar"}),
+            ))
+            .await
+            .expect("call search_symbols"),
+    );
+    assert!(payload["count"].as_u64().unwrap() >= 1);
+    let sym = payload["matches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["kind"] == "class")
+        .expect("class symbol");
+    assert!(sym["name"].as_str().unwrap().contains("Avatar"));
+    assert!(sym["file"].as_str().unwrap().contains("scripts/"));
 
     let _ = client.cancel().await;
 }
