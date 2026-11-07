@@ -15,3 +15,18 @@
 ## 后续核查规则
 
 按用户可见功能逐条记录 TS 入口、Rust 实现、RPC 注册、默认模式、失败/回退、对应测试及真实环境验收。将“未迁移”“Rust 优先但保留回退”“仅 shadow”“无证据”分开；迁移前不得删除 TS 路径或以新增 crate / RPC 代替接线验收。本表未枚举所有命令、provider 和配置，不能据此声称迁移核查完成。
+
+## 第二批：更多已核实入口
+
+| 能力 | 已核实入口及 Rust 位置 | 状态 / 下一步 |
+| --- | --- | --- |
+| .def 补全、悬停、跳转 | `src/activate/languageServices.ts` 注册 TS provider；definition 的 Rust 查询仅通过 `shadowCompareDefinition` 对拍，`src/kodeCoreGate.ts` 的 `serveFromRust()` 恒为 false | **用户入口未切换到 Rust**；须逐能力验证完整契约，不能仅翻转总开关。 |
+| .def 补充诊断 | `src/languageProviders/validation.ts` 的 `observeRustDefFindings` 仅在 gate 模式非 `ts` 时异步追加部分结果；批量分析 `src/defAnalysisWiring.ts` 走 Rust 优先、TS 回退 | **按入口不同而不同**：批量分析接线，实时诊断为条件性追加，不是统一 Rust 接管。 |
+| Python 方法符号表 | `src/entityMappingHelpers.ts` 的 `collectPythonMethods` 调 `buildPythonSymbolsInRust`，不可用时 `parsePythonMethodBlocks` 回退；文件读取仍在 TS | **Rust 优先，TS 回退**；与上表仍由 TS 提供的 Python 类索引不是同一能力。 |
+| 消息表 | `src/extension.ts` 经 `buildEntityMessageTableShared`，`src/messageTableEntity.ts` 优先 Rust，不可用回退 `buildMessageTable` | **Rust 优先，TS 回退**。 |
+| 客户端 SDK | `src/sdk-gen/clientSdkGenerator.ts` 的 `generateClientSdkEntities` 优先 `generateClientSdkInRust`，不可用回退 `generateClientSdkEntitiesFallback` | **Rust 优先，TS 回退**；写入前预检与输出编排仍在 TS。 |
+| 进程拓扑诊断 | `src/activate/diagnostics.ts` 调 `validateProcessTopologyInRust`；Rust 失败时返回空诊断 | **Rust 接入该路径，失败降级为空结果**；需要可观测性，不能将空诊断解释为已通过检查。 |
+| DEF 引擎摘要 | `src/defMd5Rust.ts` 暴露 Rust RPC 包装，但 `rg` 仅发现函数定义及测试调用；`src/hotReloadDefHash.ts` 的 `negotiateEngineDigest` 同样无生产调用 | **有实现但未发现生产消费链**；不得依据 crate 或包装器宣称用户侧摘要协商已迁移。需核实目标入口和输入来源，再做端到端接线。 |
+| Ruff 诊断 | `src/activate/utilityCommands.ts` 注册命令并调用 `runRuffLintCommand`，`src/ruffLint.ts` 经 Rust RPC 调用 Ruff | **命令路径已接 RPC**；Ruff 本身仍是外部工具，不应称作 Rust Core 自实现解析。 |
+
+核查时发现克隆导出另有协议形状缺口：Rust `PlanFilter` 输出 `{kind: ...}`，此前 TS 按字符串判断；`a721f91c` 已修复。`tests/playerDataCloneMysqlReal.test.ts` 可通过 `KODE_CLONE_TEST_MYSQL_PORT` 与 `KODE_CLONE_TEST_SERVER` 接入真实 MySQL 和 kode-server 验证计划、归档及导入执行。
