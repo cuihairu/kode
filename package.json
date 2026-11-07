@@ -155,6 +155,7 @@
     "onCommand:kbengine.python.showCallChain",
     "onCommand:kbengine.python.selectInterpreter",
     "onCommand:kbengine.python.createVenv",
+    "onCommand:kbengine.python.showEngineSpi",
     "onCommand:kbengine.hotReload.tempEdit.run",
     "onCommand:kbengine.core.showShadowDiffLog",
     "onCommand:kbengine.source.reveal",
@@ -839,6 +840,10 @@
       {
         "command": "kbengine.python.exportTypeStubs",
         "title": "%kbengine.command.python.exportTypeStubs.title%"
+      },
+      {
+        "command": "kbengine.python.showEngineSpi",
+        "title": "%kbengine.command.python.showEngineSpi.title%"
       },
       {
         "command": "kbengine.source.reveal",
