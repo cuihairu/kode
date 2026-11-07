@@ -1,0 +1,384 @@
+# Raw evidence: DEMO-GAME-004 Windows real-machine run (imac, Windows, KBEngine built with MSVC)
+# Host: imac 192.168.5.117 (i9-10900K, 20 threads), engine C:\tools\kbengine @ kbengine 855a06d + win-msvc-fix (3 Windows fixes)
+# Collected: 2026-11-07; engine launched via schtask (survives ssh close); fixture copied from kode tests/fixtures/kbengine-demo-assets
+
+[demo-evidence] Spaces[1] created (baseapp)
+[demo-evidence] Space[2].onGetCell: space established (index=1)
+[demo-evidence] Avatar[2001].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(10.000000, 0.000000, 10.000000), ref=true
+[demo-evidence] Avatar[2002].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(-10.000000, 0.000000, 10.000000), ref=true
+[demo-evidence] Avatar[2003].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, -15.000000), ref=true
+[demo-evidence] Avatar[2004].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(14.000000, 0.000000, -6.000000), ref=true
+[demo-evidence] Avatar[2005].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(-14.000000, 0.000000, -4.000000), ref=true
+[demo-evidence] Avatar[2006].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(18.000000, 0.000000, 2.000000), ref=true
+[demo-evidence] Avatar[2007].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(-18.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Avatar[2008].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(4.000000, 0.000000, -20.000000), ref=true
+[demo-evidence] Space cell[2] spawn done: [2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008] (spaceID=1)
+[demo-evidence] Monster[2001] AI IDLE -> WANDER (pos=10.0,0.0,10.0)
+[demo-evidence] Monster[2003] AI IDLE -> WANDER (pos=0.0,0.0,-15.0)
+[demo-evidence] Monster[2007] AI IDLE -> WANDER (pos=-18.0,0.0,0.0)
+[demo-evidence] Monster[2008] AI IDLE -> WANDER (pos=4.0,0.0,-20.0)
+[demo-evidence] Monster[2006] AI IDLE -> WANDER (pos=18.0,0.0,2.0)
+[demo-evidence] Monster[2002] AI IDLE -> WANDER (pos=-10.0,0.0,10.0)
+[demo-evidence] Monster[2005] AI IDLE -> WANDER (pos=-14.0,0.0,-4.0)
+[demo-evidence] Monster[2004] AI IDLE -> WANDER (pos=14.0,0.0,-6.0)
+[demo-evidence] bots Account[5].onLoginOK: reqCreateAvatar
+[demo-evidence] bots Account[3].onLoginOK: reqCreateAvatar
+[demo-evidence] bots Account[4].onLoginOK: reqCreateAvatar
+[demo-evidence] bots Account[6].onLoginOK: reqCreateAvatar
+[demo-evidence] Account[3].reqCreateAvatar: bot3
+[demo-evidence] bots Account[7].onLoginOK: reqCreateAvatar
+[demo-evidence] Avatar[13] created, name=bot3 -> enterSpace(1)
+[demo-evidence] bots Account[8].onLoginOK: reqCreateAvatar
+[demo-evidence] Avatar[13].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] bots Account[9].onLoginOK: reqCreateAvatar
+[demo-evidence] Avatar[13].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Account[4].reqCreateAvatar: bot4
+[demo-evidence] bots Account[10].onLoginOK: reqCreateAvatar
+[demo-evidence] Avatar[13] radar ping nearest Monster[2001] dist=10.1
+[demo-evidence] Avatar[14] created, name=bot4 -> enterSpace(1)
+[demo-evidence] bots Account[11].onLoginOK: reqCreateAvatar
+[demo-evidence] Avatar[14].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Avatar[14].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Account[5].reqCreateAvatar: bot5
+[demo-evidence] Avatar[14] radar ping nearest Monster[2001] dist=10.1
+[demo-evidence] Avatar[15] created, name=bot5 -> enterSpace(1)
+[demo-evidence] Avatar[15].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Avatar[15].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Avatar[13].onRadarPush attacker=2001 client=set
+[demo-evidence] Avatar[15] radar ping nearest Monster[2001] dist=10.1
+[demo-evidence] Avatar[14].onRadarPush attacker=2001 client=set
+[demo-evidence] Avatar[15].onRadarPush attacker=2001 client=set
+[demo-evidence] Account[8].reqCreateAvatar: bot8
+[demo-evidence] Avatar[16] created, name=bot8 -> enterSpace(1)
+[demo-evidence] Avatar[16].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Avatar[16].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Account[9].reqCreateAvatar: bot9
+[demo-evidence] Avatar[17] created, name=bot9 -> enterSpace(1)
+[demo-evidence] Avatar[16] radar ping nearest Monster[2001] dist=10.1
+[demo-evidence] Avatar[17].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Avatar[17].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Account[10].reqCreateAvatar: bot10
+[demo-evidence] Avatar[17] radar ping nearest Monster[2001] dist=10.1
+[demo-evidence] Avatar[18] created, name=bot10 -> enterSpace(1)
+[demo-evidence] Avatar[18].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Avatar[18].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Account[11].reqCreateAvatar: bot11
+[demo-evidence] Avatar[18] radar ping nearest Monster[2001] dist=10.1
+[demo-evidence] Avatar[19] created, name=bot11 -> enterSpace(1)
+[demo-evidence] Avatar[19].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Avatar[19].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Account[6].reqCreateAvatar: bot6
+[demo-evidence] Avatar[19] radar ping nearest Monster[2001] dist=10.1
+[demo-evidence] Avatar[20] created, name=bot6 -> enterSpace(1)
+[demo-evidence] Avatar[20].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Avatar[20].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Account[7].reqCreateAvatar: bot7
+[demo-evidence] Avatar[20] radar ping nearest Monster[2001] dist=10.1
+[demo-evidence] Avatar[21] created, name=bot7 -> enterSpace(1)
+[demo-evidence] Avatar[21].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Avatar[21].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Avatar[21] radar ping nearest Monster[2001] dist=10.1
+[demo-evidence] Avatar[16].onRadarPush attacker=2001 client=set
+[demo-evidence] Avatar[17].onRadarPush attacker=2001 client=set
+[demo-evidence] Avatar[18].onRadarPush attacker=2001 client=set
+[demo-evidence] Avatar[19].onRadarPush attacker=2001 client=set
+[demo-evidence] Avatar[20].onRadarPush attacker=2001 client=set
+[demo-evidence] Avatar[21].onRadarPush attacker=2001 client=set
+[demo-evidence] bots Account[12].onLoginOK: reqCreateAvatar
+[demo-evidence] Account[12].reqCreateAvatar: bot12
+[demo-evidence] Avatar[22] created, name=bot12 -> enterSpace(1)
+[demo-evidence] Avatar[22].onClientEnabled: client handed over (giveClientTo done)
+[demo-evidence] Avatar[22].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Avatar[22] radar ping nearest Monster[2001] dist=10.3
+[demo-evidence] Avatar[22].onRadarPush attacker=2001 client=set
+[demo-evidence] bots Avatar[13] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[13] target Monster[2001] radar=(9.2,4.2)
+[demo-evidence] bots Avatar[13] move toward Monster[2001] from (0.0,0.0) dist=10.1
+[demo-evidence] bots Avatar[14] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[14] target Monster[2001] radar=(9.2,4.2)
+[demo-evidence] bots Avatar[14] move toward Monster[2001] from (0.0,0.0) dist=10.1
+[demo-evidence] bots Avatar[15] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[15] target Monster[2001] radar=(9.2,4.2)
+[demo-evidence] bots Avatar[15] move toward Monster[2001] from (0.0,0.0) dist=10.1
+[demo-evidence] bots Avatar[16] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[16] target Monster[2001] radar=(9.2,4.2)
+[demo-evidence] bots Avatar[16] move toward Monster[2001] from (0.0,0.0) dist=10.1
+[demo-evidence] bots Avatar[17] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[17] target Monster[2001] radar=(9.2,4.2)
+[demo-evidence] bots Avatar[17] move toward Monster[2001] from (0.0,0.0) dist=10.1
+[demo-evidence] bots Avatar[18] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[18] target Monster[2001] radar=(9.2,4.2)
+[demo-evidence] bots Avatar[18] move toward Monster[2001] from (0.0,0.0) dist=10.1
+[demo-evidence] bots Avatar[19] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[19] target Monster[2001] radar=(9.2,4.2)
+[demo-evidence] bots Avatar[19] move toward Monster[2001] from (0.0,0.0) dist=10.1
+[demo-evidence] bots Avatar[20] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[20] target Monster[2001] radar=(9.2,4.2)
+[demo-evidence] bots Avatar[20] move toward Monster[2001] from (0.0,0.0) dist=10.1
+[demo-evidence] bots Avatar[21] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[21] target Monster[2001] radar=(9.2,4.2)
+[demo-evidence] bots Avatar[21] move toward Monster[2001] from (0.0,0.0) dist=10.1
+[demo-evidence] bots Avatar[22] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[22] target Monster[2001] radar=(9.3,4.5)
+[demo-evidence] bots Avatar[22] move toward Monster[2001] from (0.0,0.0) dist=10.3
+[demo-evidence] Monster[2001] AI WANDER -> CHASE (pos=9.3,0.0,5.1)
+[demo-evidence] Monster[2005] AI WANDER -> CHASE (pos=-10.8,0.0,-2.3)
+[demo-evidence] Avatar[17].reqAttack hit Monster[2005] dmg=15
+[demo-evidence] Monster[2005].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2005].receiveDamage dmg=15 attacker=17 hp=85
+[demo-evidence] Avatar[20].reqAttack hit Monster[2005] dmg=15
+[demo-evidence] Monster[2005].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2005].receiveDamage dmg=15 attacker=20 hp=70
+[demo-evidence] Avatar[15].reqAttack hit Monster[2005] dmg=15
+[demo-evidence] Monster[2005].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2005].receiveDamage dmg=15 attacker=15 hp=55
+[demo-evidence] Avatar[21].reqAttack hit Monster[2005] dmg=15
+[demo-evidence] Monster[2005].onDamaged attacker=Avatar[21] -> counter-aggro
+[demo-evidence] Avatar[2005].receiveDamage dmg=15 attacker=21 hp=40
+[demo-evidence] Avatar[18].reqAttack hit Monster[2005] dmg=15
+[demo-evidence] Monster[2005].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2005].receiveDamage dmg=15 attacker=18 hp=25
+[demo-evidence] Avatar[19].reqAttack hit Monster[2005] dmg=15
+[demo-evidence] Monster[2005].onDamaged attacker=Avatar[19] -> counter-aggro
+[demo-evidence] Avatar[2005].receiveDamage dmg=15 attacker=19 hp=10
+[demo-evidence] Avatar[13].reqAttack hit Monster[2005] dmg=15
+[demo-evidence] Monster[2005].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2005].receiveDamage dmg=15 attacker=13 hp=0
+[demo-evidence] Monster[2005] DIED (killer=13)
+[demo-evidence] Monster[2005] KILLED by Avatar[13] reward gold+=10 exp+=30
+[demo-evidence] Avatar[13] LEVEL UP -> 1 (experience=30)
+[demo-evidence] bots Avatar[13] onLevelUp level=1
+[demo-evidence] Monster[2004] AI WANDER -> CHASE (pos=11.1,0.0,-3.5)
+[demo-evidence] Monster[2007] AI WANDER -> CHASE (pos=-11.5,0.0,2.9)
+[demo-evidence] Monster[2001] AI CHASE -> ATTACK (pos=1.0,0.0,1.5)
+[demo-evidence] Avatar[16].receiveDamage dmg=25 attacker=2001 hp=75
+[demo-evidence] Avatar[16] radar push attacker=Monster[2001] via base
+[demo-evidence] Avatar[16].onRadarPush attacker=2001 client=set
+[demo-evidence] Monster[2001] ATTACK hit Avatar[16] dmg=25 targetHp=75
+[demo-evidence] Avatar[17].reqAttack hit Monster[2001] dmg=15
+[demo-evidence] Monster[2001].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2001].receiveDamage dmg=15 attacker=17 hp=85
+[demo-evidence] Avatar[21].reqAttack hit Monster[2001] dmg=15
+[demo-evidence] Monster[2001].onDamaged attacker=Avatar[21] -> counter-aggro
+[demo-evidence] Avatar[2001].receiveDamage dmg=15 attacker=21 hp=70
+[demo-evidence] Avatar[18].reqAttack hit Monster[2001] dmg=15
+[demo-evidence] Monster[2001].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2001].receiveDamage dmg=15 attacker=18 hp=55
+[demo-evidence] Avatar[15].reqAttack hit Monster[2001] dmg=15
+[demo-evidence] Monster[2001].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2001].receiveDamage dmg=15 attacker=15 hp=40
+[demo-evidence] Avatar[19].reqAttack hit Monster[2001] dmg=15
+[demo-evidence] Monster[2001].onDamaged attacker=Avatar[19] -> counter-aggro
+[demo-evidence] Avatar[2001].receiveDamage dmg=15 attacker=19 hp=25
+[demo-evidence] Avatar[13].reqAttack hit Monster[2001] dmg=15
+[demo-evidence] Monster[2001].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2001].receiveDamage dmg=15 attacker=13 hp=10
+[demo-evidence] Avatar[16].reqAttack hit Monster[2001] dmg=15
+[demo-evidence] Monster[2001].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2001].receiveDamage dmg=15 attacker=16 hp=0
+[demo-evidence] Monster[2001] DIED (killer=16)
+[demo-evidence] Monster[2001] KILLED by Avatar[16] reward gold+=10 exp+=30
+[demo-evidence] Avatar[16] LEVEL UP -> 1 (experience=30)
+[demo-evidence] Avatar[20].reqAttack hit Monster[2004] dmg=15
+[demo-evidence] Monster[2004].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2004].receiveDamage dmg=15 attacker=20 hp=85
+[demo-evidence] Avatar[14].reqAttack hit Monster[2004] dmg=15
+[demo-evidence] Monster[2004].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2004].receiveDamage dmg=15 attacker=14 hp=70
+[demo-evidence] bots Avatar[16] onLevelUp level=1
+[demo-evidence] Avatar[22].reqAttack hit Monster[2004] dmg=15
+[demo-evidence] Monster[2004].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2004].receiveDamage dmg=15 attacker=22 hp=55
+[demo-evidence] Monster[2004] AI CHASE -> ATTACK (pos=1.7,0.0,-0.6)
+[demo-evidence] Avatar[22].receiveDamage dmg=25 attacker=2004 hp=75
+[demo-evidence] Avatar[22] radar push attacker=Monster[2004] via base
+[demo-evidence] Monster[2004] ATTACK hit Avatar[22] dmg=25 targetHp=75
+[demo-evidence] Avatar[22].onRadarPush attacker=2004 client=set
+[demo-evidence] bots Avatar[22] target Monster[2004] radar=(1.7,-0.6)
+[demo-evidence] Monster[2003] AI WANDER -> CHASE (pos=0.4,0.0,-11.9)
+[demo-evidence] Monster[2007] AI CHASE -> ATTACK (pos=-1.8,0.0,0.5)
+[demo-evidence] Avatar[16].receiveDamage dmg=25 attacker=2007 hp=50
+[demo-evidence] Avatar[16] radar push attacker=Monster[2007] via base
+[demo-evidence] Monster[2007] ATTACK hit Avatar[16] dmg=25 targetHp=50
+[demo-evidence] Avatar[16].onRadarPush attacker=2007 client=set
+[demo-evidence] bots Avatar[16] target Monster[2007] radar=(-1.8,0.5)
+[demo-evidence] Avatar[22].reqAttack hit Monster[2004] dmg=15
+[demo-evidence] Monster[2004].onDamaged attacker=Avatar[22] -> counter-aggro
+[demo-evidence] Avatar[2004].receiveDamage dmg=15 attacker=22 hp=40
+[demo-evidence] Avatar[22].receiveDamage dmg=25 attacker=2004 hp=50
+[demo-evidence] Avatar[22] radar push attacker=Monster[2004] via base
+[demo-evidence] Monster[2004] ATTACK hit Avatar[22] dmg=25 targetHp=50
+[demo-evidence] Avatar[22].onRadarPush attacker=2004 client=set
+[demo-evidence] Avatar[17].reqAttack hit Monster[2004] dmg=15
+[demo-evidence] Monster[2004].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2004].receiveDamage dmg=15 attacker=17 hp=25
+[demo-evidence] Avatar[19].reqAttack hit Monster[2004] dmg=15
+[demo-evidence] Monster[2004].onDamaged attacker=Avatar[19] -> counter-aggro
+[demo-evidence] Avatar[2004].receiveDamage dmg=15 attacker=19 hp=10
+[demo-evidence] Avatar[16].reqAttack hit Monster[2004] dmg=15
+[demo-evidence] Monster[2004].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2004].receiveDamage dmg=15 attacker=16 hp=0
+[demo-evidence] Monster[2004] DIED (killer=16)
+[demo-evidence] Monster[2004] KILLED by Avatar[16] reward gold+=10 exp+=30
+[demo-evidence] Avatar[16] LEVEL UP -> 2 (experience=60)
+[demo-evidence] Avatar[15].reqAttack hit Monster[2007] dmg=15
+[demo-evidence] Monster[2007].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2007].receiveDamage dmg=15 attacker=15 hp=85
+[demo-evidence] Avatar[20].reqAttack hit Monster[2007] dmg=15
+[demo-evidence] Monster[2007].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2007].receiveDamage dmg=15 attacker=20 hp=70
+[demo-evidence] Avatar[14].reqAttack hit Monster[2007] dmg=15
+[demo-evidence] Monster[2007].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2007].receiveDamage dmg=15 attacker=14 hp=55
+[demo-evidence] Avatar[21].reqAttack hit Monster[2007] dmg=15
+[demo-evidence] Monster[2007].onDamaged attacker=Avatar[21] -> counter-aggro
+[demo-evidence] Avatar[2007].receiveDamage dmg=15 attacker=21 hp=40
+[demo-evidence] Avatar[13].reqAttack hit Monster[2007] dmg=15
+[demo-evidence] Monster[2007].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2007].receiveDamage dmg=15 attacker=13 hp=25
+[demo-evidence] Avatar[18].reqAttack hit Monster[2007] dmg=15
+[demo-evidence] Monster[2007].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2007].receiveDamage dmg=15 attacker=18 hp=10
+[demo-evidence] bots Avatar[16] onLevelUp level=2
+[demo-evidence] Avatar[18].receiveDamage dmg=25 attacker=2007 hp=75
+[demo-evidence] Avatar[18] radar push attacker=Monster[2007] via base
+[demo-evidence] Monster[2007] ATTACK hit Avatar[18] dmg=25 targetHp=75
+[demo-evidence] Avatar[18].onRadarPush attacker=2007 client=set
+[demo-evidence] bots Avatar[18] target Monster[2007] radar=(-1.7,0.4)
+[demo-evidence] Monster[2003] AI CHASE -> ATTACK (pos=-0.8,0.0,-1.6)
+[demo-evidence] Avatar[16].receiveDamage dmg=25 attacker=2003 hp=25
+[demo-evidence] Avatar[16] radar push attacker=Monster[2003] via base
+[demo-evidence] Monster[2003] ATTACK hit Avatar[16] dmg=25 targetHp=25
+[demo-evidence] Avatar[16].onRadarPush attacker=2003 client=set
+[demo-evidence] bots Avatar[16] target Monster[2003] radar=(-0.8,-1.6)
+[demo-evidence] Avatar[17].reqAttack hit Monster[2003] dmg=15
+[demo-evidence] Monster[2003].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2003].receiveDamage dmg=15 attacker=17 hp=85
+[demo-evidence] Avatar[16].reqAttack hit Monster[2003] dmg=15
+[demo-evidence] Monster[2003].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2003].receiveDamage dmg=15 attacker=16 hp=70
+[demo-evidence] Avatar[19].reqAttack hit Monster[2003] dmg=15
+[demo-evidence] Monster[2003].onDamaged attacker=Avatar[19] -> counter-aggro
+[demo-evidence] Avatar[2003].receiveDamage dmg=15 attacker=19 hp=55
+[demo-evidence] Avatar[14].reqAttack hit Monster[2003] dmg=15
+[demo-evidence] Monster[2003].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2003].receiveDamage dmg=15 attacker=14 hp=40
+[demo-evidence] Avatar[21].reqAttack hit Monster[2003] dmg=15
+[demo-evidence] Monster[2003].onDamaged attacker=Avatar[21] -> counter-aggro
+[demo-evidence] Avatar[2003].receiveDamage dmg=15 attacker=21 hp=25
+[demo-evidence] Avatar[20].reqAttack hit Monster[2003] dmg=15
+[demo-evidence] Monster[2003].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2003].receiveDamage dmg=15 attacker=20 hp=10
+[demo-evidence] Avatar[18].reqAttack hit Monster[2003] dmg=15
+[demo-evidence] Monster[2003].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2003].receiveDamage dmg=15 attacker=18 hp=0
+[demo-evidence] Monster[2003] DIED (killer=18)
+[demo-evidence] Monster[2003] KILLED by Avatar[18] reward gold+=10 exp+=30
+[demo-evidence] Avatar[18] LEVEL UP -> 1 (experience=30)
+[demo-evidence] Avatar[15].reqAttack hit Monster[2007] dmg=15
+[demo-evidence] Monster[2007].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2007].receiveDamage dmg=15 attacker=15 hp=0
+[demo-evidence] Monster[2007] DIED (killer=15)
+[demo-evidence] Monster[2007] KILLED by Avatar[15] reward gold+=10 exp+=30
+[demo-evidence] Avatar[15] LEVEL UP -> 1 (experience=30)
+[demo-evidence] bots Avatar[15] onLevelUp level=1
+[demo-evidence] bots Avatar[18] onLevelUp level=1
+[demo-evidence] Monster[2002] AI WANDER -> CHASE (pos=-5.8,0.0,8.9)
+[demo-evidence] Avatar[14].reqAttack hit Monster[2002] dmg=15
+[demo-evidence] Monster[2002].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2002].receiveDamage dmg=15 attacker=14 hp=85
+[demo-evidence] Avatar[18].reqAttack hit Monster[2002] dmg=15
+[demo-evidence] Monster[2002].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2002].receiveDamage dmg=15 attacker=18 hp=70
+[demo-evidence] Avatar[13].reqAttack hit Monster[2002] dmg=15
+[demo-evidence] Monster[2002].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2002].receiveDamage dmg=15 attacker=13 hp=55
+[demo-evidence] Avatar[16].reqAttack hit Monster[2002] dmg=15
+[demo-evidence] Monster[2002].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2002].receiveDamage dmg=15 attacker=16 hp=40
+[demo-evidence] Avatar[15].reqAttack hit Monster[2002] dmg=15
+[demo-evidence] Monster[2002].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2002].receiveDamage dmg=15 attacker=15 hp=25
+[demo-evidence] Avatar[21].reqAttack hit Monster[2002] dmg=15
+[demo-evidence] Monster[2002].onDamaged attacker=Avatar[21] -> counter-aggro
+[demo-evidence] Avatar[2002].receiveDamage dmg=15 attacker=21 hp=10
+[demo-evidence] Avatar[20].reqAttack hit Monster[2002] dmg=15
+[demo-evidence] Monster[2002].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2002].receiveDamage dmg=15 attacker=20 hp=0
+[demo-evidence] Monster[2002] DIED (killer=20)
+[demo-evidence] Monster[2002] KILLED by Avatar[20] reward gold+=10 exp+=30
+[demo-evidence] Avatar[20] LEVEL UP -> 1 (experience=30)
+[demo-evidence] bots Avatar[20] onLevelUp level=1
+[demo-evidence] Monster[2006] AI WANDER -> CHASE (pos=11.4,0.0,0.2)
+[demo-evidence] Monster[2006] AI CHASE -> ATTACK (pos=1.8,0.0,0.0)
+[demo-evidence] Avatar[16].receiveDamage dmg=25 attacker=2006 hp=0
+[demo-evidence] Avatar[16] DIED (killer=2006) -> respawn pending
+[demo-evidence] Monster[2006] ATTACK hit Avatar[16] dmg=25 targetHp=0
+[demo-evidence] Avatar[16] base respawn scheduled in 5.0s
+[demo-evidence] Avatar[14].reqAttack hit Monster[2006] dmg=15
+[demo-evidence] Monster[2006].onDamaged attacker=Avatar[14] -> counter-aggro
+[demo-evidence] Avatar[2006].receiveDamage dmg=15 attacker=14 hp=85
+[demo-evidence] Avatar[18].reqAttack hit Monster[2006] dmg=15
+[demo-evidence] Monster[2006].onDamaged attacker=Avatar[18] -> counter-aggro
+[demo-evidence] Avatar[2006].receiveDamage dmg=15 attacker=18 hp=70
+[demo-evidence] Avatar[13].reqAttack hit Monster[2006] dmg=15
+[demo-evidence] Monster[2006].onDamaged attacker=Avatar[13] -> counter-aggro
+[demo-evidence] Avatar[2006].receiveDamage dmg=15 attacker=13 hp=55
+[demo-evidence] Avatar[15].reqAttack hit Monster[2006] dmg=15
+[demo-evidence] Monster[2006].onDamaged attacker=Avatar[15] -> counter-aggro
+[demo-evidence] Avatar[2006].receiveDamage dmg=15 attacker=15 hp=40
+[demo-evidence] Avatar[21].reqAttack hit Monster[2006] dmg=15
+[demo-evidence] Monster[2006].onDamaged attacker=Avatar[21] -> counter-aggro
+[demo-evidence] Avatar[2006].receiveDamage dmg=15 attacker=21 hp=25
+[demo-evidence] Avatar[20].reqAttack hit Monster[2006] dmg=15
+[demo-evidence] Monster[2006].onDamaged attacker=Avatar[20] -> counter-aggro
+[demo-evidence] Avatar[2006].receiveDamage dmg=15 attacker=20 hp=10
+[demo-evidence] Avatar[17].reqAttack hit Monster[2006] dmg=15
+[demo-evidence] Monster[2006].onDamaged attacker=Avatar[17] -> counter-aggro
+[demo-evidence] Avatar[2006].receiveDamage dmg=15 attacker=17 hp=0
+[demo-evidence] Monster[2006] DIED (killer=17)
+[demo-evidence] Monster[2006] KILLED by Avatar[17] reward gold+=10 exp+=30
+[demo-evidence] Avatar[17] LEVEL UP -> 1 (experience=30)
+[demo-evidence] bots Avatar[17] onLevelUp level=1
+[demo-evidence] Avatar[16] RESPAWN -> enterSpace(1) (fresh cell, full hp)
+[demo-evidence] Avatar[16].onEnterSpace: ENTERED WORLD spaceID=1 pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Avatar[16] radar ping nearest Monster[2008] dist=19.3
+[demo-evidence] Avatar[16].onRadarPush attacker=2008 client=set
+[demo-evidence] bots Avatar[16] onEnterWorld pos=(0.0,0.0)
+[demo-evidence] bots Avatar[16] target Monster[2008] radar=(2.2,-19.2)
+[demo-evidence] bots Avatar[16] move toward Monster[2008] from (0.0,0.0) dist=19.3
+[demo-evidence] bots Avatar[13] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] Avatar[16] goto Monster[2008] (2.4,-19.1)
+[demo-evidence] bots Avatar[13] onEnterWorld pos=(0.0,0.0)
+[demo-evidence] bots Avatar[14] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[14] onEnterWorld pos=(0.0,0.0)
+[demo-evidence] bots Avatar[15] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[15] onEnterWorld pos=(0.0,0.0)
+[demo-evidence] bots Avatar[17] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[17] onEnterWorld pos=(0.0,0.0)
+[demo-evidence] bots Avatar[18] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[18] onEnterWorld pos=(0.0,0.0)
+[demo-evidence] bots Avatar[19] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[19] onEnterWorld pos=(0.0,0.0)
+[demo-evidence] bots Avatar[20] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[20] onEnterWorld pos=(0.0,0.0)
+[demo-evidence] bots Avatar[21] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[21] onEnterWorld pos=(0.0,0.0)
+[demo-evidence] bots Avatar[22] client entity created (entity sync), pos=Vector3(0.000000, 0.000000, 0.000000), ref=true
+[demo-evidence] bots Avatar[22] onEnterWorld pos=(0.0,0.0)
+[demo-evidence] Avatar[16] arrived at (2.4,-19.1)
+[demo-evidence] Avatar[16].reqAttack hit Monster[2008] dmg=15
+[demo-evidence] Monster[2008].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2008].receiveDamage dmg=15 attacker=16 hp=85
+[demo-evidence] Avatar[16].reqAttack hit Monster[2008] dmg=15
+[demo-evidence] Monster[2008].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2008].receiveDamage dmg=15 attacker=16 hp=70
+[demo-evidence] Avatar[16].reqAttack hit Monster[2008] dmg=15
+[demo-evidence] Monster[2008].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2008].receiveDamage dmg=15 attacker=16 hp=55
+[demo-evidence] Avatar[16].reqAttack hit Monster[2008] dmg=15
+[demo-evidence] Monster[2008].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2008].receiveDamage dmg=15 attacker=16 hp=40
+[demo-evidence] Avatar[16].reqAttack hit Monster[2008] dmg=15
+[demo-evidence] Monster[2008].onDamaged attacker=Avatar[16] -> counter-aggro
+[demo-evidence] Avatar[2008].receiveDamage dmg=15 attacker=16 hp=25
