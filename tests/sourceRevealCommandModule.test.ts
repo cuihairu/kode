@@ -37,6 +37,6 @@ describe('reveal 命令常量归属(IDE-ARC-001)', () => {
     const source = lpSources.map(p => readFileSync(join(root, p), 'utf8')).join('\n');
     expect(source.match(/export const KBENGINE_SOURCE_REVEAL_COMMAND/)).toBe(null);
     expect(source.includes('KBENGINE_SOURCE_REVEAL_COMMAND')).toBe(true);
-    expect(source.includes("from './sourceRevealCommand'")).toBe(true);
+    expect(/from '(\.\.\/)?sourceRevealCommand'/.test(source), '常量消费面应 import sourceRevealCommand').toBe(true);
   });
 });

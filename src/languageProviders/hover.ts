@@ -30,7 +30,7 @@ import { KBEngineSectionName, METHOD_SECTIONS, PROPERTY_SECTIONS, TAG_HOVER_DOCS
 import { formatDefMethodParameter, formatDefMethodSignature } from './completion';
 import { describeExpectedScriptPaths, findCustomTypeAtPosition, findEnclosingSymbol, formatWorkspaceRelativePath, isPositionInsideTagValue } from './navigation';
 import { awaitDataDictIndexReady, getPythonDataDictIndexGeneration, isPythonDataDictIndexEnabled } from './pythonDefinition';
-import { getPythonMethodDeclarationAtPosition } from '../languageProviders';
+import { getPythonMethodDeclarationAtPosition } from './callHierarchy';
 /**
  * 批159(用户令「hover 还是需要 loading 很久」):同点位并发 hover 各自重跑
  * 整条异步解析链。按(文件+版本+行+列)做在途去重:第二个并发 hover 直接

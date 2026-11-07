@@ -13,7 +13,7 @@ import { buildKbeStubDocument, buildKbeStubUriString, getKbeAliases, getKbeFromI
 import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, isKeyInsideLineComment, queryDataDictSitesForAccess, resolveScopeRoot, type KbeDataDictSite } from '../globalDataIndex';
 import { withInitialScanTimeout } from '../hoverBudget';
 import { getLanguageFeatureConfig } from './shared';
-import { getPythonMethodDeclarationAtPosition } from '../languageProviders';
+import { getPythonMethodDeclarationAtPosition } from './callHierarchy';
 /**
  * 层2 python-mro 开关(kbengine.python.enableMroJump,默认开;用户 2026-10-17:
  * mixin 函数导航要可关——上一轮实测行为异常时,先关掉隔离该层再排查)。
