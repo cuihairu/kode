@@ -20,11 +20,10 @@ import {
 } from './databaseConnectionRegistry';
 import type { ConnectionAbortHooks, DriftConnectionFactory, QueryResult } from './databaseDrift';
 import {
-  buildMergedConfigTree,
-  extractDatabaseInterfaceConfig,
   resolveDatabaseInterfaceConfig,
   type DatabaseInterfaceConfig
 } from './serverConfigMerge';
+import { getConfigResolved, type ConfigResolveOverrides } from './serverConfigResolve';
 
 /** 无活动 profile 时的台账键:工作区设置链自己的连接(同样不与 profile 混) */
 export const WORKSPACE_DEFAULT_DATABASE_PROFILE_ID = 'workspace-default';
@@ -55,10 +54,26 @@ export function databaseConnectionIdentityKey(config: DatabaseInterfaceConfig): 
 }
 
 /**
- * 按根组合解析连接要素:profile 带自己的根 → 只认 profile 的根(根缺
- * 配置/读不到 = 如实 null,不回落工作区链——回落即读到别的项目);根为
- * 空串 = 该 profile 没有自己的根,该轴照常走设置链。无 profile(null)
- * = 工作区默认(设置/发现链,带既有缓存)。
+ * profile 装载轴覆盖(ensureConfigResolved 预取面):profile 带自己的根 →
+ * 只认 profile 的根;空串轴 = 该 profile 没有自己的根,照常走设置链。
+ */
+export function profileConfigResolveOverrides(
+  profile: ProfileDatabaseRoots | null
+): ConfigResolveOverrides {
+  return {
+    binPath: profile?.engineRoot ? path.join(profile.engineRoot, 'kbe', 'bin', 'server') : undefined,
+    configRoot: (profile?.assetsRoot || undefined) as string | undefined
+  };
+}
+
+/**
+ * 按根组合解析连接要素(core `dbInterface` 直传,KODE-CFG-009):profile 带
+ * 自己的根 → 只认 profile 的根(根缺配置/core 不可知 = 如实 null,不回落
+ * 工作区链——回落即读到别的项目);根为空串 = 该 profile 没有自己的根,
+ * 该轴照常走设置链。无 profile(null) = 工作区默认(设置/发现链,带既有
+ * 缓存)。同步读消费缓存——async 入口须先
+ * `await ensureConfigResolved(profileConfigResolveOverrides(profile))`
+ * 保证新鲜(接线见 extension 的 profile 切换/命令面)。
  */
 export function resolveProfileDatabaseInterfaceConfig(
   profile: ProfileDatabaseRoots | null
@@ -66,11 +81,7 @@ export function resolveProfileDatabaseInterfaceConfig(
   if (!profile) {
     return resolveDatabaseInterfaceConfig();
   }
-  const { merged } = buildMergedConfigTree({
-    binPath: profile.engineRoot ? path.join(profile.engineRoot, 'kbe', 'bin', 'server') : undefined,
-    configRoot: profile.assetsRoot || undefined
-  });
-  return merged ? extractDatabaseInterfaceConfig(merged) : null;
+  return getConfigResolved(profileConfigResolveOverrides(profile))?.dbInterface ?? null;
 }
 
 export interface ProfileDatabaseConnectionServiceDeps {

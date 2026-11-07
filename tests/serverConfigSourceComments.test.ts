@@ -2,14 +2,15 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { buildFinalServerConfig, sanitizeXmlComment, type ConfigXmlNode } from '../src/serverConfigMerge';
+import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
+import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
 import {
-  buildFinalServerConfig,
+  makeContractGate,
   mergeConfigXml,
   parseConfigXml,
-  sanitizeXmlComment,
-  summarizeFinalTelnet,
-  type ConfigXmlNode
-} from '../src/serverConfigMerge';
+  type ContractGateCall
+} from './helpers/configCoreContract';
 import { resolveEngineRoot } from './helpers/engineRoot';
 import { configurationOverrides, workspace as stubWorkspace } from './fake-vscode/workspaceState';
 
@@ -58,13 +59,24 @@ const flatten = (node: ConfigXmlNode, prefix: string[] = []): string[] => {
 
 const countOf = (text: string, needle: string): number => text.split(needle).length - 1;
 
+// KODE-CFG-009:合成链消费 core 解析(`$/kode/config/resolve`),门替身按
+// 契约回数(镜像语义在 configCoreContract;真值由 Rust 侧钉死)。
+const contractCalls: ContractGateCall[] = [];
+
+const refreshCore = async (): Promise<void> => {
+  contractCalls.length = 0;
+  resetConfigResolveForTests();
+  setKodeCoreShadowGate(makeContractGate(contractCalls));
+  await ensureConfigResolved();
+};
+
 beforeEach(() => {
   configurationOverrides.clear();
   stubWorkspace.workspaceFolders = [];
 });
 
 describe('源注释回写(解析 → 合并 → 渲染)', () => {
-  it('① 带注释 defaults+override 合成后源注释不丢(override 侧在前)', () => {
+  it('① 带注释 defaults+override 合成后源注释不丢(override 侧在前)', async () => {
     // 注释写在所描述元素的开标签之前(前导注释 → 紧随元素,归属规则见
     // parseConfigXml 文件头),故根段/段注释放各自开标签前
     const defaults = [
@@ -91,6 +103,7 @@ describe('源注释回写(解析 → 合并 → 渲染)', () => {
     ].join('\n');
     const root = makeEngineTree(defaults, custom);
     try {
+      await refreshCore();
       const text = buildFinalServerConfig('zh-CN').text;
       const comments = commentsOf(text);
       // defaults 侧、元件侧、未被覆盖的段,源注释都还在
@@ -112,47 +125,7 @@ describe('源注释回写(解析 → 合并 → 渲染)', () => {
     }
   });
 
-  it('合并源注释:override 优先、容器两侧不同都保留、同名单叶子两侧都带', () => {
-    const base = parseConfigXml(
-      [
-        '<!-- 默认根段说明 -->',
-        '<root>',
-        '\t<baseapp>',
-        '\t\t<!-- 默认端口说明 -->',
-        '\t\t<port> 40000 <!-- 默认端口尾注 --></port>',
-        '\t\t<!-- 默认段尾注 -->',
-        '\t</baseapp>',
-        '</root>'
-      ].join('\n')
-    )!;
-    const override = parseConfigXml(
-      [
-        '<!-- 元件根段说明 -->',
-        '<root>',
-        '\t<baseapp>',
-        '\t\t<!-- 元件端口说明 -->',
-        '\t\t<port> 41000 </port>',
-        '\t</baseapp>',
-        '</root>'
-      ].join('\n')
-    )!;
-    const merged = mergeConfigXml(base, override);
-    const root = merged.children[0];
-    expect(sourceCommentsOf(root)).toEqual(['元件根段说明', '默认根段说明']);
-    const baseapp = root.children.find(child => child.name === 'baseapp')!;
-    // 容器层两侧注释不同则都保留(不互相覆盖)
-    expect(sourceCommentsOf(baseapp)).toEqual(['默认段尾注']);
-    const port = baseapp.children.find(child => child.name === 'port')!;
-    // 同名单叶子:值取自定义,注释 override 侧在前、defaults 侧追加
-    expect(port.text).toBe('41000');
-    expect(sourceCommentsOf(port)).toEqual([
-      '元件端口说明',
-      '默认端口说明',
-      '默认端口尾注'
-    ]);
-  });
-
-  it('② 源注释与生成注释同内容只显示一次,不同内容两者都留', () => {
+  it('② 源注释与生成注释同内容只显示一次,不同内容两者都留', async () => {
     const defaults = [
       '<root>',
       '\t<!-- 游戏逻辑处理频率HZ -->',
@@ -164,6 +137,7 @@ describe('源注释回写(解析 → 合并 → 渲染)', () => {
     ].join('\n');
     const root = makeEngineTree(defaults);
     try {
+      await refreshCore();
       const text = buildFinalServerConfig('zh-CN').text;
       // 文案库 zh 正文即收割自该行:不去重会「源注释 + 生成注释」各显示一遍
       expect(countOf(text, '游戏逻辑处理频率HZ')).toBe(1);
@@ -181,7 +155,7 @@ describe('源注释回写(解析 → 合并 → 渲染)', () => {
     }
   });
 
-  it('③ 叶子注释仍在值之后:回读取值不被注释污染', () => {
+  it('③ 叶子注释仍在值之后:回读取值不被注释污染', async () => {
     const defaults = [
       '<root>',
       '\t<baseapp>',
@@ -195,6 +169,7 @@ describe('源注释回写(解析 → 合并 → 渲染)', () => {
     ].join('\n');
     const root = makeEngineTree(defaults);
     try {
+      await refreshCore();
       const text = buildFinalServerConfig('zh-CN').text;
       // 铁律:值是第一个子节点,源注释排在其后(tinyxml2 IntText() 取原值)
       expect(text).toMatch(/<archivePeriod>\s*300\s*<!--[^]*?-->\s*<\/archivePeriod>/);
@@ -206,15 +181,14 @@ describe('源注释回写(解析 → 合并 → 渲染)', () => {
       expect(leafText(text, 'root', 'baseapp', 'archivePeriod')).toBe('300');
       expect(leafText(text, 'root', 'baseapp', 'SOMAXCONN')).toBe('511');
       expect(leafText(text, 'root', 'baseapp', 'telnet_service', 'port')).toBe('40000');
-      // telnet 速览(剥注释后正则取值)同口径
-      const summary = summarizeFinalTelnet(text).find(entry => entry.component === 'baseapp');
-      expect(summary?.port).toBe(40000);
+      // telnet 速览同口径已随 core 读取(KODE-CFG-009:telnetSummary 由
+      // `$/kode/config/resolve` 直出,见 serverConfigResolve 测试)
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it('⑤ 游离注释就近归属:文件级/文件尾挂段首容器,段尾挂所在容器,不落文件头', () => {
+  it('⑤ 游离注释就近归属:文件级/文件尾挂段首容器,段尾挂所在容器,不落文件头', async () => {
     const xml = [
       '<?xml version="1.0" encoding="utf-8"?>',
       '<!-- 文件级前导注释 -->',
@@ -235,6 +209,7 @@ describe('源注释回写(解析 → 合并 → 渲染)', () => {
 
     const dir = makeEngineTree(xml);
     try {
+      await refreshCore();
       const text = buildFinalServerConfig('zh-CN').text;
       expect(text.startsWith('<!--')).toBe(false);
       for (const comment of ['文件级前导注释', '段尾游离注释', '文件尾游离注释']) {
@@ -249,7 +224,7 @@ describe('源注释回写(解析 → 合并 → 渲染)', () => {
     }
   });
 
-  it('⑥ kbengine.finalConfigComments 关闭:只输出源注释,不输出生成注释(含头注)', () => {
+  it('⑥ kbengine.finalConfigComments 关闭:只输出源注释,不输出生成注释(含头注)', async () => {
     const defaults = [
       '<root>',
       '\t<!-- 源注释是原文,不随开关走 -->',
@@ -262,6 +237,7 @@ describe('源注释回写(解析 → 合并 → 渲染)', () => {
         binPath: '${workspaceFolder}/kbe/bin/server',
         finalConfigComments: false
       });
+      await refreshCore();
       const off = buildFinalServerConfig('zh-CN').text;
       expect(commentsOf(off)).toEqual(['源注释是原文,不随开关走']);
       expect(off).not.toContain('合成最终配置');
@@ -269,6 +245,7 @@ describe('源注释回写(解析 → 合并 → 渲染)', () => {
       expect(off).not.toContain('〔来源');
 
       configurationOverrides.set('kbengine', { binPath: '${workspaceFolder}/kbe/bin/server' });
+      await refreshCore();
       const on = buildFinalServerConfig('zh-CN').text;
       expect(commentsOf(on)).toContain('源注释是原文,不随开关走');
       expect(on).toContain('合成最终配置');
@@ -287,7 +264,7 @@ const realDefaultsPath = engineRoot
 const hasRealDefaults = realDefaultsPath !== null && fs.existsSync(realDefaultsPath);
 
 describe.skipIf(!hasRealDefaults)('④ 真实 kbengine_defaults.xml 源注释全量回保', () => {
-  it('192 条源注释逐条回写、出现次数不少于原文,取值与原文一致', () => {
+  it('192 条源注释逐条回写、出现次数不少于原文,取值与原文一致', async () => {
     const raw = fs.readFileSync(realDefaultsPath!, 'utf8');
     const inputs = [...raw.matchAll(/<!--([\s\S]*?)-->/g)].map(match =>
       sanitizeXmlComment(match[1])
@@ -296,6 +273,7 @@ describe.skipIf(!hasRealDefaults)('④ 真实 kbengine_defaults.xml 源注释全
 
     const root = makeEngineTree(raw);
     try {
+      await refreshCore();
       const text = buildFinalServerConfig('zh-CN').text;
       const outputs = commentsOf(text);
       const distinct = [...new Set(inputs)];

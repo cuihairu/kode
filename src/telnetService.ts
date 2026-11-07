@@ -1,7 +1,5 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
 import * as net from 'net';
-import * as path from 'path';
 import {
   BUILTIN_QUICK_COMMANDS,
   isCommandAllowed,
@@ -9,7 +7,12 @@ import {
   TelnetClientState
 } from './telnetClient';
 import { expandWorkspacePlaceholders } from './workspacePath';
-import { resolveDiscoveredConfigRoot } from './workspaceDiscovery';
+import {
+  ensureConfigResolved,
+  getConfigResolved,
+  type ConfigResolveOverrides
+} from './serverConfigResolve';
+export { deriveEngineDefaultsXmlPath } from './serverConfigResolve';
 
 /**
  * telnet 探测与联动服务(工单:telnet 探测+联动):
@@ -28,21 +31,6 @@ import { resolveDiscoveredConfigRoot } from './workspaceDiscovery';
  *   白名单命令输入、内置只读快捷命令、输出流回显;
  * - 运行中断线自动回到探测态,重连由用户点面板再建立,面板不崩。
  */
-
-/**
- * 引擎各组件 telnet 默认端口(kbengine_defaults.xml <telnet_service><port/>)。
- * 批111 用户令后仅在配置显式开启 telnet(kbengine.xml 有 <telnet_service> 段)
- * 但未指定端口时使用,不再作为「什么都没配」时的兜底展示。
- */
-export const ENGINE_DEFAULT_TELNET_PORTS: ReadonlyArray<{ component: string; port: number }> = [
-  { component: 'loginapp', port: 31000 },
-  { component: 'dbmgr', port: 32000 },
-  { component: 'interfaces', port: 33000 },
-  { component: 'logger', port: 34000 },
-  { component: 'baseapp', port: 40000 },
-  { component: 'cellapp', port: 50000 },
-  { component: 'bots', port: 51000 }
-];
 
 export interface TelnetSettingsInput {
   host: string;
@@ -64,140 +52,30 @@ export interface TelnetTarget {
 }
 
 /**
- * 解析元件 kbengine.xml 的 <telnet_service> 段:
- * <port>/<password>/<default_layer> 文本值;无该段返回 null。
+ * 目标集 settings 半(KODE-CFG-009 拆分口径落定):显式 kbengine.telnet.port
+ * > 0 → 单个「自定义目标」;否则空目标。配置读值(元件 kbengine.xml 段与
+ * 引擎 defaults 端口/密码)由 core 派生半单一供给(telnetDeriveTargets 经
+ * `derive.telnet`);旧路径的本地 XML 解析已随 parseKbengineXmlTelnet/
+ * parseKbengineDefaultsTelnet 下线(core 是唯一解析实现),派生不可用时的
+ * 兜底只保留 settings 半,不再自行猜配置。
  */
-export function parseKbengineXmlTelnet(xml: string): { port?: number; password?: string; defaultLayer?: string } | null {
-  const section = xml.match(/<telnet_service>([\s\S]*?)<\/telnet_service>/);
-  if (!section) {
-    return null;
-  }
-  const pick = (tag: string): string | undefined => {
-    const value = section[1].match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`));
-    return value ? value[1].trim() : undefined;
-  };
-  const portText = pick('port');
-  const password = pick('password');
-  const defaultLayer = pick('default_layer');
-  return {
-    port: portText !== undefined && portText.length > 0 ? Number(portText) : undefined,
-    password: password !== undefined && password.length > 0 ? password : undefined,
-    defaultLayer: defaultLayer !== undefined && defaultLayer.length > 0 ? defaultLayer : undefined
-  };
-}
-
-/**
- * 引擎 kbengine_defaults.xml(kbe/res/server/)各组件 <telnet_service>
- * 段的解析产物:逐组件真实端口 + 密码(引擎侧全组件同一密码,取首个非空)。
- */
-export interface TelnetDefaultsInfo {
-  ports: Record<string, number>;
-  password?: string;
-}
-
-/**
- * 从引擎 kbengine_defaults.xml 读取各组件 telnet 真实端口/密码(批112 用户令:
- * "不然怎么知道 telnet_service 这个字段配置的端口和密码"):kbengine.xml 未写
- * 端口时,以引擎 defaults 的组件段为准(覆盖 ENGINE_DEFAULT_TELNET_PORTS
- * 常量表)。既无端口也无密码可读 → null(调用方当作引擎不可知处理)。
- */
-export function parseKbengineDefaultsTelnet(xml: string): TelnetDefaultsInfo | null {
-  const ports: Record<string, number> = {};
-  let password: string | undefined;
-  for (const { component } of ENGINE_DEFAULT_TELNET_PORTS) {
-    const section = xml.match(new RegExp(`<${component}>([\\s\\S]*?)</${component}>`));
-    if (!section) {
-      continue;
-    }
-    const telnet = section[1].match(/<telnet_service>([\s\S]*?)<\/telnet_service>/);
-    if (!telnet) {
-      continue;
-    }
-    const portText = telnet[1].match(/<port>([\s\S]*?)<\/port>/);
-    if (portText) {
-      const port = Number(portText[1].trim());
-      if (Number.isFinite(port) && port > 0) {
-        ports[component] = port;
-      }
-    }
-    if (password === undefined) {
-      const passwordText = telnet[1].match(/<password>([\s\S]*?)<\/password>/);
-      const value = passwordText ? passwordText[1].trim() : '';
-      if (value.length > 0) {
-        password = value;
-      }
-    }
-  }
-  return Object.keys(ports).length > 0 || password !== undefined ? { ports, password } : null;
-}
-
-/**
- * 由 kbengine.binPath 推导引擎 defaults 文件路径(与 serverManager 的
- * detectKbeRoot 同款口径:剥掉 kbe/bin/server 后缀得引擎根,再拼
- * kbe/res/server/kbengine_defaults.xml)。后缀不在或剥完为空 → null。
- */
-export function deriveEngineDefaultsXmlPath(binPath: string): string | null {
-  if (!binPath) {
-    return null;
-  }
-  const normalized = path.normalize(binPath);
-  const suffix = path.normalize(path.join('kbe', 'bin', 'server'));
-  if (!normalized.endsWith(suffix)) {
-    return null;
-  }
-  const root = normalized.slice(0, -(suffix.length + 1));
-  if (root.length === 0) {
-    return null;
-  }
-  return path.join(root, 'kbe', 'res', 'server', 'kbengine_defaults.xml');
-}
-
-/**
- * 目标集(批111 用户令:telnet 端口从配置读取,配置未开启就不展示):
- * 设置显式 port > 0 或 kbengine.xml <telnet_service> 段在 → 有目标
- * (段在而无端口 → 逐组件端口,批112 起优先取引擎 defaults 解析值,
- * defaults 读不到再落写死的引擎默认端口表;defaults 仅补值,不当开启
- * 开关——引擎装好后 defaults 恒有 telnet_service 段,若当开关则任何
- * 工作区都会重现批111 已废除的「什么都没配也亮灯」);两处都没开 → 空目标,
- * telnet 全族入口(状态灯/树项/面板)随之隐藏,defaults 不当开启开关。
- */
-export function buildTelnetTargets(
-  settings: TelnetSettingsInput,
-  xmlTelnet: { port?: number; password?: string; defaultLayer?: string } | null,
-  defaultsTelnet: TelnetDefaultsInfo | null = null
-): TelnetTarget[] {
+export function buildTelnetTargets(settings: TelnetSettingsInput): TelnetTarget[] {
   const host = settings.host.trim() || '127.0.0.1';
   const enableCommands = [...settings.enableCommands];
-  const explicitPort = settings.port > 0 ? settings.port : xmlTelnet?.port;
-  if (explicitPort !== undefined) {
-    const label = settings.port > 0 ? '自定义目标' : 'kbengine.xml';
+  if (settings.port > 0) {
     return [
       {
-        key: `${host}:${explicitPort}`,
-        label,
-        component: label,
+        key: `${host}:${settings.port}`,
+        label: '自定义目标',
+        component: '自定义目标',
         host,
-        port: explicitPort,
-        password: settings.password || xmlTelnet?.password || defaultsTelnet?.password || '',
+        port: settings.port,
+        password: settings.password,
         enableCommands
       }
     ];
   }
-  if (xmlTelnet) {
-    return ENGINE_DEFAULT_TELNET_PORTS.map(({ component, port }) => {
-      const resolvedPort = defaultsTelnet?.ports[component] ?? port;
-      return {
-        key: `${host}:${resolvedPort}`,
-        label: component,
-        component,
-        host,
-        port: resolvedPort,
-        password: settings.password || xmlTelnet?.password || defaultsTelnet?.password || '',
-        enableCommands
-      };
-    });
-  }
-  // 配置未开 telnet(无显式端口且 xml 无 <telnet_service> 段):不猜不兜底
+  // 配置未显式指定端口且 core 派生不可用:不猜不兜底(批111 口径)
   return [];
 }
 
@@ -209,27 +87,6 @@ export type TelnetProbeState =
   | 'auth-rejected'
   | 'connected';
 
-/**
- * 配置未显式指定 kbengine.xml 时的约定探测路径(工作区根相对):
- * 官方 server assets 布局 res/server/kbengine.xml、其 assets/ 嵌套变体、
- * 以及直接置于工作区根的布局。kbengine.assetsRoot 指向的服务器资产目录
- * 优先于这些约定(引擎 KBE_RES_PATH 的项目侧即在此找 kbengine.xml)。
- * 取第一个存在的文件为准,不深入猜测。
- */
-const KBENGINE_XML_CANDIDATE_PATHS = [
-  'kbengine.xml',
-  'res/server/kbengine.xml',
-  'assets/res/server/kbengine.xml'
-];
-
-/**
- * 从 kode 设置读取探测目标(kbengine.telnet.*):显式 configXmlPath 指向的
- * 元件 kbengine.xml(未设置时按 assetsRoot 与约定路径探测)解析
- * <telnet_service> 段作端口/密码回落;再经 kbengine.binPath 推导引擎
- * kbengine_defaults.xml(批112 用户令),解析各组件 telnet 真实端口/密码
- * 补值——即「defaults 先载、元件 kbengine.xml 覆盖」的合成口径
- * (展示见 serverConfigMerge.ts)。配置未开 telnet → 空目标(批111 用户令)。
- */
 /** kode 设置读取(kbengine.telnet.*):host/port/password/enableCommands(CFG-007 抽出共用) */
 export function readTelnetSettings(): TelnetSettingsInput {
   const config = vscode.workspace.getConfiguration('kbengine');
@@ -242,60 +99,67 @@ export function readTelnetSettings(): TelnetSettingsInput {
 }
 
 export function readTelnetTargetsFromSettings(): TelnetTarget[] {
-  const config = vscode.workspace.getConfiguration('kbengine');
   const settings = readTelnetSettings();
-  let xmlTelnet: ReturnType<typeof parseKbengineXmlTelnet> = null;
-  const configXmlPath = config.get<string>('telnet.configXmlPath', '');
+  const host = settings.host.trim() || '127.0.0.1';
+  const enableCommands = [...settings.enableCommands];
+  if (settings.port > 0) {
+    return buildTelnetTargets(settings);
+  }
+  // KODE-CFG-009:配置读值半由 core 供给——显式 telnet.configXmlPath 时
+  // core 解析的就是那份文件(派生半只认标准发现链,两半不分口的审核修复
+  // 保留);取数未就绪即触发重取(派生半同款先例:首取空,下一轮探测即用)。
+  const config = vscode.workspace.getConfiguration('kbengine');
+  const rawPath = config.get<string>('telnet.configXmlPath', '').trim();
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  let candidatePaths: string[] = [];
-  if (configXmlPath) {
-    candidatePaths = [expandWorkspacePlaceholders(configXmlPath, workspaceRoot)];
-  } else if (workspaceRoot) {
-    // assetsRoot(kbengine.assetsRoot,服务器资产根)下优先,引擎即在此找元件配置;
-    // 批128:设置自身候选之后,发现出的资产根参与(装载口径位置 res/server/ 一并探测)
-    const settingPath = expandWorkspacePlaceholders(config.get<string>('assetsRoot', ''), workspaceRoot);
-    const discovered = resolveDiscoveredConfigRoot(workspaceRoot);
-    const preferred: string[] = [];
-    if (settingPath.length > 0) {
-      preferred.push(
-        path.join(settingPath, 'kbengine.xml'),
-        path.join(settingPath, 'res', 'server', 'kbengine.xml')
-      );
-    }
-    if (discovered && discovered !== settingPath) {
-      preferred.push(
-        path.join(discovered, 'kbengine.xml'),
-        path.join(discovered, 'res', 'server', 'kbengine.xml')
-      );
-    }
-    candidatePaths = [
-      ...preferred,
-      ...KBENGINE_XML_CANDIDATE_PATHS.map(relative => path.join(workspaceRoot, relative))
+  const overrides: ConfigResolveOverrides =
+    rawPath.length > 0
+      ? { customXmlPath: expandWorkspacePlaceholders(rawPath, workspaceRoot) }
+      : {};
+  void ensureConfigResolved(overrides).catch(() => {});
+  const state = getConfigResolved(overrides);
+  if (!state || !state.ok) {
+    // 门未接线/core 不可知:如实空目标,不本地猜配置
+    return [];
+  }
+  const customTelnet = state.customTelnet;
+  if (!customTelnet) {
+    // 元件配置缺失或无 telnet_service 段:不开(批111:段不当开关的存在臂)
+    return [];
+  }
+  // 密码链(旧口径):设置 > 元件段 > 引擎 defaults 速览首非空
+  const defaultsPassword =
+    state.telnetSummary.find(entry => entry.password !== null)?.password ?? null;
+  const password = settings.password || customTelnet.password || defaultsPassword || '';
+  if (customTelnet.port !== null) {
+    return [
+      {
+        key: `${host}:${customTelnet.port}`,
+        label: 'kbengine.xml',
+        component: 'kbengine.xml',
+        host,
+        port: customTelnet.port,
+        password,
+        enableCommands
+      }
     ];
   }
-  for (const candidate of candidatePaths) {
-    try {
-      xmlTelnet = parseKbengineXmlTelnet(fs.readFileSync(candidate, 'utf8'));
-      break; // 第一个存在的文件即元件配置;其无段=未开,不换路径再猜
-    } catch {
-      xmlTelnet = null; // 缺失/不可读:试下一个约定路径,不猜内容
-    }
-  }
-  let defaultsTelnet: TelnetDefaultsInfo | null = null;
-  const binPath = config.get<string>('binPath', '');
-  if (binPath && workspaceRoot) {
-    const defaultsPath = deriveEngineDefaultsXmlPath(
-      expandWorkspacePlaceholders(binPath, workspaceRoot)
-    );
-    if (defaultsPath) {
-      try {
-        defaultsTelnet = parseKbengineDefaultsTelnet(fs.readFileSync(defaultsPath, 'utf8'));
-      } catch {
-        defaultsTelnet = null; // 缺失/不可读:引擎值不可知,回落常量端口表
-      }
-    }
-  }
-  return buildTelnetTargets(settings, xmlTelnet, defaultsTelnet);
+  // 段在而无端口:逐组件端口 = 合成速览值 ?? 引擎写死表(core 唯一真源;
+  // defaults 缺席时合成速览为空,写死表项即全量组件面)
+  const summaryByComponent = new Map(
+    state.telnetSummary.map(entry => [entry.component, entry])
+  );
+  return Object.entries(state.telnetDefaultPorts).map(([component, defaultPort]) => {
+    const port = summaryByComponent.get(component)?.port ?? defaultPort;
+    return {
+      key: `${host}:${port}`,
+      label: component,
+      component,
+      host,
+      port,
+      password,
+      enableCommands
+    };
+  });
 }
 
 /**
@@ -422,14 +286,15 @@ export class TelnetService {
       return;
     }
     this.targets = this.deps.getTargets();
-    if (this.targets.length === 0) {
-      return;
-    }
     for (const target of this.targets) {
       if (!this.states.has(target.key)) {
         this.states.set(target.key, 'closed');
       }
     }
+    // KODE-CFG-009:目标读值半经 core 解析(`$/kode/config/resolve`),首取
+    // 可能未就绪(核心服务冷启动/测试替身在 activate 后才装)——定时器照挂,
+    // 下一轮 probeOnce 重读目标集即用(readTelnetTargetsFromSettings 口径
+    // 「首取空,下一轮探测即用」);无目标轮询只有一次缓存读,零成本。
     void this.probeOnce();
     this.timer = this.timers.setInterval(() => void this.probeOnce(), this.intervalMs);
   }

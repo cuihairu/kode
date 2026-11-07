@@ -89,6 +89,22 @@ const makeGate = (calls: Array<{ method: string; params: unknown }>): KodeCoreGa
   return {
     runInRust: async (method: string, params: unknown) => {
       calls.push({ method, params });
+      // KODE-CFG-009:派生刷新先走 resolve 取 core 解析树;门替身按契约回
+      // 「树 null + 定位事实在 TS」——facts 路径不受影响,接线照常验。
+      if (method === '$/kode/config/resolve') {
+        return {
+          ok: true as const,
+          result: {
+            defaultsTree: null,
+            customTree: null,
+            merged: null,
+            telnetSummary: [],
+            telnetDefaultPorts: {},
+            customTelnet: null,
+            dbInterface: null
+          }
+        };
+      }
       const p = params as { facts?: DeriveFacts };
       const facts: DeriveFacts = p.facts ?? {
         workspaceRoot: null,
@@ -166,8 +182,10 @@ describe('KODE-CFG-006 entryScriptFile 自动断点', () => {
     await ensureConfigDerivedScanRoot();
     const state = getConfigDerivedScanRootState();
 
-    // TS 侧解析出真实入口事实并送达 Rust(派生真源)。
-    const sent = calls[0].params as { facts?: DeriveFacts };
+    // TS 侧解析出真实入口事实并送达 Rust(派生真源;calls[0] 是
+    // KODE-CFG-009 的 resolve 取数调用)。
+    const deriveCalls = calls.filter(call => call.method === '$/kode/config/derive');
+    const sent = deriveCalls[0].params as { facts?: DeriveFacts };
     expect(sent.facts?.entryScripts).toEqual([
       { process: 'baseapp', module: 'kbengine', path: entryPath, exists: true }
     ]);
@@ -242,7 +260,8 @@ describe('KODE-CFG-006 entryScriptFile 自动断点', () => {
       setKodeCoreShadowGate(makeGate(calls));
 
       await ensureConfigDerivedScanRoot();
-      const sent = calls[0].params as { facts?: DeriveFacts };
+      const deriveCalls = calls.filter(call => call.method === '$/kode/config/derive');
+      const sent = deriveCalls[0].params as { facts?: DeriveFacts };
       expect(sent.facts?.entryScripts).toEqual([
         { process: 'baseapp', module: 'kbengine', path: entryPath, exists: true }
       ]);

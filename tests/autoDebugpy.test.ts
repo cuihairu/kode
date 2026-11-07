@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as http from 'http';
 import * as net from 'net';
-import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
@@ -23,7 +22,8 @@ import {
   type DebugpySyncDeps
 } from '../src/autoDebugpy';
 import { DebugConfigManager } from '../src/debugConfig';
-import { ENGINE_DEFAULT_TELNET_PORTS, type TelnetTarget } from '../src/telnetService';
+// KODE-CFG-009:TS 端口常量表删(core 唯一真源);测试对照值取 core 同表镜像
+import { ENGINE_DEFAULT_TELNET_PORTS, type TelnetTarget } from './helpers/configCoreContract';
 import { configurationOverrides, workspace as stubWorkspace, workspaceState, Uri } from './helpers/vscodeStub';
 
 // 调试启动即 attach(2026-10-27 ③)三件套:端口分配表/系统 debugpy 复制
@@ -33,12 +33,6 @@ import { configurationOverrides, workspace as stubWorkspace, workspaceState, Uri
 
 const servers: net.Server[] = [];
 const tempDirs: string[] = [];
-
-const makeTempDir = (): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-autodebugpy-'));
-  tempDirs.push(dir);
-  return dir;
-};
 
 afterEach(async () => {
   await Promise.all(

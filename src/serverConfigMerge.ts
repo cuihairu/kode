@@ -1,12 +1,11 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import * as vscode from 'vscode';
 import {
-  ENGINE_DEFAULT_TELNET_PORTS,
-  deriveEngineDefaultsXmlPath
-} from './telnetService';
-import { expandWorkspacePlaceholders } from './workspacePath';
-import { resolveDiscoveredConfigRoot, resolveKbeSourceRoot } from './workspaceDiscovery';
+  getConfigResolved,
+  invalidateConfigResolved,
+  resolveCustomConfigXmlPath,
+  type ConfigResolvedState,
+  type ConfigResolveOverrides
+} from './serverConfigResolve';
 import { annotateConfigTree } from './serverConfigAnnotations';
 import {
   generatedCommentBody,
@@ -17,6 +16,10 @@ import {
 // 注释文本工具在此仍按原名对外(既有调用/测试的入口不变),实现见
 // serverConfigCommentText(与挂注释侧共用,避免循环依赖)
 export { generatedCommentBody, sanitizeXmlComment, sourceCommentSameContent };
+
+// KODE-CFG-009:元件 kbengine.xml 定位迁至 serverConfigResolve(core 不碰盘,
+// TS 只做定位+读盘+送达);此处按原名对外(既有调用/测试入口不变)。
+export { resolveCustomConfigXmlPath };
 
 /**
  * 最终服务端配置合成(批112 用户令):按引擎装载规则——先加载
@@ -33,13 +36,13 @@ export interface ConfigXmlNode {
   /**
    * 源注释(解析期捕获,输入 XML 里原有的注释,KODE-CFG-010):行内/尾随注释
    * 挂到所属元素、前导注释挂到紧随的元素、段尾与文件级游离注释就近挂到所在段
-   * 的容器元素(归属规则见 parseConfigXml 文件头)。渲染时原样回写,与生成用
+   * 的容器元素(归属规则见 core parse_config 文件头,kode-parser/src/config.rs)。渲染时原样回写,与生成用
    * comment/docHeader 分两套——二者是文案库生成物,本字段是用户原文。
    * 声明/XML PI 不入树(仍丢弃)。
    */
   sourceComments?: string[];
   /**
-   * 逐项作用注释(仅渲染期写入,parseConfigXml 不产出也不回读):
+   * 逐项作用注释(仅渲染期写入,core 解析不产出也不回读):
    * 由 annotateConfigTree 按文案库挂上,渲染时放进元素内部。
    * 渲染时源注释优先于本字段(去重见 renderConfigXml)。
    */
@@ -47,160 +50,6 @@ export interface ConfigXmlNode {
   /** 文档头注(合成来源与覆盖口径),同样只出现在元素内部;属生成物,
    * 源注释在前,且 kbengine.finalConfigComments 关闭时不输出 */
   docHeader?: string;
-}
-
-/**
- * 解析引擎风格的服务端配置 XML(仅需元素树,属性忽略;声明/XML PI 丢弃):
- * 注释不剥离——按位置关联进树(源注释归属规则):
- * - 紧跟 `</元素>` 同一行的行内/尾随注释 → 该元素(渲染时仍在值之后);
- * - 其余注释先挂起,归到下一个打开的元素(即「前导注释 → 紧随的元素」);
- * - 挂起的注释遇到所属容器闭合仍未归属(段尾)→ 挂回该容器;文件尾游离注释
- *   挂到段首容器元素;一个元素都没有(纯注释输入)则丢弃,照旧返回 null,不崩。
- * 根为伪节点(名字空),顶层各组件段作其 children。标签不闭合或多余
- * 闭合按已见内容容错,不抛——配置展示宁可显示半棵树也不崩命令。
- */
-export function parseConfigXml(xml: string): ConfigXmlNode | null {
-  const root: ConfigXmlNode = { name: '', text: '', children: [] };
-  const stack: ConfigXmlNode[] = [root];
-  // 注释优先于标签匹配:注释体里出现 `<item>` 之类字样也不会被当成标签
-  const tokenRe = /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<(\/?)(\w+)([^>]*)>/g;
-  let lastEnd = 0;
-  /** 上一个标签(或注释)结束处:用于判断注释与前一标签是否同行 */
-  let lastTagEnd = 0;
-  /** 最近闭合的元素:同行的尾随注释归它 */
-  let lastClosed: ConfigXmlNode | null = null;
-  /** 尚未归属的前导注释,挂到下一个打开的元素上 */
-  let pending: string[] = [];
-  let match: RegExpExecArray | null;
-
-  const takeText = (top: ConfigXmlNode, end: number): void => {
-    const text = xml.slice(lastEnd, end).trim();
-    if (text.length > 0 && top !== root) {
-      top.text += (top.text.length > 0 ? ' ' : '') + text;
-    }
-  };
-  const attach = (node: ConfigXmlNode, comments: readonly string[]): void => {
-    if (comments.length === 0) {
-      return;
-    }
-    node.sourceComments = [...(node.sourceComments ?? []), ...comments];
-  };
-
-  while ((match = tokenRe.exec(xml)) !== null) {
-    const top = stack[stack.length - 1];
-    const token = match[0];
-    takeText(top, match.index);
-    lastEnd = tokenRe.lastIndex;
-    if (token.startsWith('<!--')) {
-      const body = token.slice(4, -3);
-      const sinceTag = xml.slice(lastTagEnd, match.index);
-      if (lastClosed !== null && !sinceTag.includes('\n')) {
-        attach(lastClosed, [body]);
-      } else {
-        pending.push(body);
-      }
-      lastTagEnd = lastEnd;
-      continue;
-    }
-    lastTagEnd = lastEnd;
-    if (token.startsWith('<?')) {
-      continue; // 声明/XML PI:丢弃
-    }
-    lastClosed = null;
-    if (match[1] === '/') {
-      if (top !== root && top.name === match[2]) {
-        stack.pop();
-        attach(top, pending); // 段尾游离注释 → 就近挂回所在容器
-        pending = [];
-        lastClosed = top;
-      }
-    } else {
-      const node: ConfigXmlNode = { name: match[2], text: '', children: [] };
-      top.children.push(node);
-      attach(node, pending); // 前导注释 → 紧随的元素
-      pending = [];
-      if (!/\/\s*$/.test(match[3])) {
-        stack.push(node);
-      }
-    }
-  }
-  if (pending.length > 0) {
-    // 文件尾游离注释:就近挂到段首容器元素;一个元素都没有(纯注释输入)
-    // 则丢弃——返回 null 的既有路径,不崩
-    const target = stack.length > 1 ? stack[stack.length - 1] : root.children[0];
-    if (target !== undefined) {
-      attach(target, pending);
-    }
-    pending = [];
-  }
-  return root.children.length > 0 ? root : null;
-}
-
-/**
- * 两侧源注释合并(override 优先):override 侧在前、defaults 侧在后;
- * 两侧不同则都保留(容器层不互相覆盖),规范化后相同的只留一条。
- */
-function mergeSourceComments(base: ConfigXmlNode, override: ConfigXmlNode): string[] | undefined {
-  const merged: string[] = [];
-  const seen = new Set<string>();
-  for (const comment of [...(override.sourceComments ?? []), ...(base.sourceComments ?? [])]) {
-    const normalized = sanitizeXmlComment(comment);
-    if (normalized.length === 0 || seen.has(normalized)) {
-      continue;
-    }
-    seen.add(normalized);
-    merged.push(comment);
-  }
-  return merged.length > 0 ? merged : undefined;
-}
-
-/**
- * 合并(引擎同键覆盖口径):以 defaults 为基、自定义覆盖。子键按名字对齐——
- * 自定义没有的保留默认;自定义写了的整名替换(叶子取自定义值,重复名列表
- * 如 <item> 整表替换,不与默认表交错);两边都是单一容器段则递归下钻。
- * 源注释两侧都保留:override 侧在前(优先),同名单元素的 defaults 侧注释
- * 追加其后;重复名列表整表替换时只带自定义侧注释。
- */
-export function mergeConfigXml(base: ConfigXmlNode, override: ConfigXmlNode): ConfigXmlNode {
-  const names: string[] = [];
-  for (const child of [...base.children, ...override.children]) {
-    if (!names.includes(child.name)) {
-      names.push(child.name);
-    }
-  }
-  const children: ConfigXmlNode[] = [];
-  for (const name of names) {
-    const baseOnes = base.children.filter(child => child.name === name);
-    const overrideOnes = override.children.filter(child => child.name === name);
-    if (overrideOnes.length === 0) {
-      children.push(...baseOnes);
-    } else if (baseOnes.length === 0) {
-      children.push(...overrideOnes);
-    } else if (
-      baseOnes.length === 1 &&
-      overrideOnes.length === 1 &&
-      baseOnes[0].children.length > 0 &&
-      overrideOnes[0].children.length > 0
-    ) {
-      children.push(mergeConfigXml(baseOnes[0], overrideOnes[0]));
-    } else if (baseOnes.length === 1 && overrideOnes.length === 1) {
-      // 同名单元素(叶子/空容器):值取自定义,源注释两侧都留(override 优先)
-      const node: ConfigXmlNode = { ...overrideOnes[0] };
-      const comments = mergeSourceComments(baseOnes[0], overrideOnes[0]);
-      if (comments !== undefined) {
-        node.sourceComments = comments;
-      }
-      children.push(node);
-    } else {
-      children.push(...overrideOnes);
-    }
-  }
-  const comments = mergeSourceComments(base, override);
-  const merged: ConfigXmlNode = { name: override.name, text: override.text, children };
-  if (comments !== undefined) {
-    merged.sourceComments = comments;
-  }
-  return merged;
 }
 
 /**
@@ -282,74 +131,6 @@ export function renderConfigXmlSections(root: ConfigXmlNode): string {
   return root.children.map(child => renderConfigXml(child, 0)).join('\n');
 }
 
-/**
- * 元件 kbengine.xml 定位:kbengine.assetsRoot(服务器资产目录,引擎
- * KBE_RES_PATH 中的项目侧)下的 kbengine.xml 优先,再按约定路径探测
- * 工作区根(与 telnet 约定路径一致)。取第一个存在的文件。
- * 批128:assetsRoot 未设或未过探针时,发现出的资产根同样参与(其下
- * res/server/kbengine.xml 是引擎装载口径的元件配置位置)。
- */
-export function resolveCustomConfigXmlPath(
-  workspaceRoot: string | undefined,
-  /** profile 资产根(IDE-REV-015):给定时只在其下找,绝不混工作区/设置链(隔离) */
-  overrideRoot?: string
-): string | null {
-  if (overrideRoot !== undefined) {
-    // profile 面的元件配置只认 profile 自己的资产根:找不到 = 该 profile
-    // 无元件配置(纯 defaults),不回落别处——回落即读到别的项目的配置
-    const candidates = [
-      path.join(overrideRoot, 'kbengine.xml'),
-      path.join(overrideRoot, 'res', 'server', 'kbengine.xml')
-    ];
-    for (const candidate of candidates) {
-      try {
-        fs.readFileSync(candidate, 'utf8');
-        return candidate;
-      } catch {
-        // 缺失/不可读:试下一个候选
-      }
-    }
-    return null;
-  }
-  const config = vscode.workspace.getConfiguration('kbengine');
-  const settingPath = expandWorkspacePlaceholders(
-    config.get<string>('assetsRoot', ''),
-    workspaceRoot
-  );
-  // 批128:设置自身候选(直接文件与装载口径位置)之后,发现出的资产根
-  // 参与探测,最后才是工作区根约定。设置下的直接文件仍是第一优先(批112 契约)
-  const discovered = workspaceRoot ? resolveDiscoveredConfigRoot(workspaceRoot) : null;
-  const candidates: string[] = [];
-  if (settingPath.length > 0) {
-    candidates.push(
-      path.join(settingPath, 'kbengine.xml'),
-      path.join(settingPath, 'res', 'server', 'kbengine.xml')
-    );
-  }
-  if (discovered && discovered !== settingPath) {
-    candidates.push(
-      path.join(discovered, 'kbengine.xml'),
-      path.join(discovered, 'res', 'server', 'kbengine.xml')
-    );
-  }
-  if (workspaceRoot) {
-    candidates.push(
-      ...['kbengine.xml', 'res/server/kbengine.xml', 'assets/res/server/kbengine.xml'].map(
-        relative => path.join(workspaceRoot, relative)
-      )
-    );
-  }
-  for (const candidate of candidates) {
-    try {
-      fs.readFileSync(candidate, 'utf8');
-      return candidate;
-    } catch {
-      // 缺失/不可读:试下一个候选
-    }
-  }
-  return null;
-}
-
 export interface FinalServerConfig {
   text: string;
   /** 引擎 defaults 文件路径(定位失败为 null) */
@@ -398,68 +179,30 @@ export interface ConfigTreePair {
 
 /**
  * 装载 custom + defaults 两棵原始配置树(buildMergedConfigTree 的拆分面):
- * CFG-007 起配置派生(`$/kode/config/derive`)以两棵树为输入——core 不碰盘,
- * TS 读盘解析后送达;合成展示仍走 buildMergedConfigTree。两者共用同一套
- * 装载口径(binPath 推导 + 引擎源码根发现兜底 + 元件配置约定探测),
- * 不各读各的。
+ * KODE-CFG-009 起两棵树由 core 解析(`$/kode/config/resolve`),本函数只读
+ * 消费缓存——调用方需先 `await ensureConfigResolved(overrides)` 保证新鲜
+ * (configDerive 刷新面与各 async 命令入口已接线)。core 不可知(门未接线/
+ * RPC 失败)时树为 null,定位事实照常带出(configDerive facts 依赖)。
  */
 export function buildConfigTreePair(overrides: MergedConfigTreeOverrides = {}): ConfigTreePair {
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  const overridesBinPath = overrides.binPath !== undefined && overrides.binPath.length > 0
-    ? overrides.binPath
-    : undefined;
-  const binPath = overridesBinPath
-    ?? expandWorkspacePlaceholders(
-      vscode.workspace.getConfiguration('kbengine').get<string>('binPath', ''),
-      workspaceRoot
-    );
-  // 批125 自动发现:binPath 未配/推导不出时,用引擎源码根锚点兜底再推 defaults;
-  // profile 覆盖轴不走发现链(profile 的根读不到 defaults = 如实无 defaults)
-  let defaultsPath = deriveEngineDefaultsXmlPath(binPath);
-  if (!defaultsPath && !overridesBinPath && workspaceRoot) {
-    const kbeSourceRoot = resolveKbeSourceRoot(workspaceRoot);
-    if (kbeSourceRoot) {
-      defaultsPath = deriveEngineDefaultsXmlPath(path.join(kbeSourceRoot, 'bin', 'server'));
-    }
+  const state = getConfigResolved(overrides);
+  if (!state) {
+    return { customTree: null, defaultsTree: null, customPath: null, defaultsPath: null };
   }
-  let defaultsXml: string | null = null;
-  if (defaultsPath) {
-    try {
-      defaultsXml = fs.readFileSync(defaultsPath, 'utf8');
-    } catch {
-      defaultsXml = null;
-    }
-  }
-  const defaultsTree = defaultsXml !== null ? parseConfigXml(defaultsXml) : null;
-  const overridesConfigRoot = overrides.configRoot !== undefined && overrides.configRoot.length > 0
-    ? overrides.configRoot
-    : undefined;
-  const customPath = overridesConfigRoot !== undefined
-    ? resolveCustomConfigXmlPath(workspaceRoot, overridesConfigRoot)
-    : resolveCustomConfigXmlPath(workspaceRoot);
-  let customTree: ConfigXmlNode | null = null;
-  if (customPath) {
-    // 不可达(批112 定性):customPath 刚经 resolveCustomConfigXmlPath 以同
-    // 参数 readFileSync 试读通过,同一 tick 内二次读盘不可能由可读转为不可
-    // 读;catch 为防御臂,v8 记不到执行即忽略。
-    /* istanbul ignore start */
-    try {
-      customTree = parseConfigXml(fs.readFileSync(customPath, 'utf8'));
-    } catch {
-      customTree = null;
-    }
-    /* istanbul ignore stop */
-  }
-  return { customTree, defaultsTree, customPath, defaultsPath };
+  const resolved: ConfigResolvedState = state;
+  return {
+    customTree: resolved.customTree,
+    defaultsTree: resolved.defaultsTree,
+    customPath: resolved.customPath,
+    defaultsPath: resolved.defaultsPath
+  };
 }
 
-export function buildMergedConfigTree(overrides: MergedConfigTreeOverrides = {}): MergedConfigTree {
+export function buildMergedConfigTree(overrides: ConfigResolveOverrides = {}): MergedConfigTree {
+  const state = getConfigResolved(overrides);
   const pair = buildConfigTreePair(overrides);
-  const merged = pair.defaultsTree
-    ? (pair.customTree ? mergeConfigXml(pair.defaultsTree, pair.customTree) : pair.defaultsTree)
-    : null;
   return {
-    merged,
+    merged: state?.merged ?? null,
     defaultsPath: pair.defaultsPath,
     customPath: pair.customPath,
     customApplied: pair.customTree !== null
@@ -519,77 +262,20 @@ export interface DatabaseInterfaceConfig {
   plainPassword?: string;
 }
 
-// 叶子缺省时的引擎默认值(kbengine_defaults.xml <dbmgr><databaseInterfaces><default>)
-const ENGINE_DB_INTERFACE_DEFAULTS = {
-  host: 'localhost',
-  port: 3306,
-  username: 'kbe',
-  databaseName: 'kbe',
-  characterSet: 'utf8mb4'
-} as const;
+/**
+ * 配置或 kbengine*.xml 落盘变更后由扩展层调用,令消费态失效(下一次
+ * ensureConfigResolved 强制重取;新值由 core `$/kode/config/resolve` 产出)。
+ */
+export function resetDatabaseInterfaceConfigCache(): void {
+  invalidateConfigResolved();
+}
 
 /**
- * 从合成配置树提取 <dbmgr><databaseInterfaces><default> 的连接要素(纯函数)。
- * username/encrypt 藏在 <auth> 下,characterSet 藏在 <unicodeString> 下
- * (kbengine_defaults.xml dbmgr 段结构);密码只在 encrypt=false(明文配置)
- * 时提取——encrypt=true 是 RSA 密文,不解读;漂移校验需要真实连接要素,
- * 密文账号读不出明文时按「未校验」降级。
+ * 引擎最终生效配置里的数据库连接要素(core `dbInterface` 直传,消费缓存):
+ * defaults 不可得/core 不可知时返回 null,不虚构。
  */
-export function extractDatabaseInterfaceConfig(root: ConfigXmlNode): DatabaseInterfaceConfig | null {
-  // 引擎 defaults 以 <root> 包裹装载(kbengine_defaults.xml:1),dbmgr 在
-  // 伪根下一层;无包裹的合成树则直接是顶层段。两层候选都找。
-  const candidates = [...root.children, ...root.children.flatMap(child => child.children)];
-  const dbmgr = candidates.find(child => child.name === 'dbmgr');
-  const interfaces = dbmgr?.children.find(child => child.name === 'databaseInterfaces');
-  const iface = interfaces?.children.find(child => child.name === 'default');
-  if (!iface) {
-    return null;
-  }
-
-  const leafText = (parent: ConfigXmlNode | undefined, name: string): string => {
-    const child = parent?.children.find(item => item.name === name);
-    return child ? child.text.trim() : '';
-  };
-
-  const auth = iface.children.find(child => child.name === 'auth');
-  const unicode = iface.children.find(child => child.name === 'unicodeString');
-  const rawPort = Number(leafText(iface, 'port'));
-  const encrypt = leafText(auth, 'encrypt').toLowerCase() !== 'false';
-  return {
-    host: leafText(iface, 'host') || ENGINE_DB_INTERFACE_DEFAULTS.host,
-    port: rawPort > 0 ? rawPort : ENGINE_DB_INTERFACE_DEFAULTS.port,
-    username: leafText(auth, 'username') || ENGINE_DB_INTERFACE_DEFAULTS.username,
-    databaseName: leafText(iface, 'databaseName') || ENGINE_DB_INTERFACE_DEFAULTS.databaseName,
-    encrypt,
-    characterSet: leafText(unicode, 'characterSet') || ENGINE_DB_INTERFACE_DEFAULTS.characterSet,
-    plainPassword: encrypt ? undefined : leafText(auth, 'password') || undefined
-  };
-}
-
-// 连接要素按「工作区根 + binPath 设置」缓存:悬停/跳转每次重建快照,不缓存
-// 则每击一次 F12 都重跑一轮 defaults/元件定位探测(含发现扫描),代价不成比例。
-let databaseInterfaceCache: { key: string; value: DatabaseInterfaceConfig | null } | null = null;
-
-/** 配置或 kbengine*.xml 落盘变更后由扩展层调用,令下次读值重算 */
-export function resetDatabaseInterfaceConfigCache(): void {
-  databaseInterfaceCache = null;
-}
-
-/** 引擎最终生效配置里的数据库连接要素;defaults 不可得时返回 null,不虚构 */
 export function resolveDatabaseInterfaceConfig(): DatabaseInterfaceConfig | null {
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  const binPath = expandWorkspacePlaceholders(
-    vscode.workspace.getConfiguration('kbengine').get<string>('binPath', ''),
-    workspaceRoot
-  );
-  const key = `${workspaceRoot ?? ''}\n${binPath}`;
-  if (databaseInterfaceCache?.key === key) {
-    return databaseInterfaceCache.value;
-  }
-  const { merged } = buildMergedConfigTree();
-  const value = merged ? extractDatabaseInterfaceConfig(merged) : null;
-  databaseInterfaceCache = { key, value };
-  return value;
+  return getConfigResolved()?.dbInterface ?? null;
 }
 
 /** 合成配置虚拟文档 scheme(展示用,不落盘) */
@@ -636,34 +322,4 @@ export class FinalConfigTreeProvider implements vscode.TreeDataProvider<vscode.T
   getChildren(): vscode.TreeItem[] {
     return [this.item];
   }
-}
-
-/**
- * 合成配置的 telnet 速览(批112 用户令:"根据这个配置去获得 telnet 的端口和
- * 密码"):从最终生效配置逐组件读 <telnet_service> 端口/密码,与
- * telnetService 的合成读值同口径,供命令层在合成文档头部展示。
- */
-export function summarizeFinalTelnet(finalConfig: string): Array<{
-  component: string;
-  port: number | null;
-  password: string | null;
-}> {
-  // 合成文档里每个配置元素内部都带作用注释,先剥注释再取值(否则
-  // `<!-- ... --> 40000` 落 Number() = NaN);无注释时行为不变。
-  const xml = finalConfig.replace(/<!--[\s\S]*?-->/g, '');
-  return ENGINE_DEFAULT_TELNET_PORTS.map(({ component }) => {
-    const section = xml.match(new RegExp(`<${component}>([\\s\\S]*?)</${component}>`));
-    const telnet = section?.[1].match(/<telnet_service>([\s\S]*?)<\/telnet_service>/);
-    const port = telnet?.[1].match(/<port>([\s\S]*?)<\/port>/);
-    const password = telnet?.[1].match(/<password>([\s\S]*?)<\/password>/);
-    const portValue = port !== undefined && port !== null ? Number(port[1].trim()) : NaN;
-    return {
-      component,
-      port: Number.isFinite(portValue) ? portValue : null,
-      password:
-        password !== undefined && password !== null && password[1].trim().length > 0
-          ? password[1].trim()
-          : null
-    };
-  });
 }

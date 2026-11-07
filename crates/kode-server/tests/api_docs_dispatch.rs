@@ -23,7 +23,11 @@ fn call_lookup(params: Value) -> Result<Value, String> {
     );
     let out = handle_message(
         &mut state,
-        request(1, "$/kode/rpc", json!({"method": "$/kode/apiDocs/lookup", "params": params})),
+        request(
+            1,
+            "$/kode/rpc",
+            json!({"method": "$/kode/apiDocs/lookup", "params": params}),
+        ),
     );
     match &out[0] {
         Outgoing::Response(response) => response
@@ -59,7 +63,11 @@ fn dispatch_missing_name_is_error_channel() {
     );
     let out = handle_message(
         &mut state,
-        request(1, "$/kode/rpc", json!({"method": "$/kode/apiDocs/lookup", "params": {}})),
+        request(
+            1,
+            "$/kode/rpc",
+            json!({"method": "$/kode/apiDocs/lookup", "params": {}}),
+        ),
     );
     match &out[0] {
         Outgoing::Response(response) => assert!(

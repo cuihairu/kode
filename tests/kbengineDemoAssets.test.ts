@@ -18,7 +18,9 @@ import {
   resolveDiscoveredEntityDefsRoot,
   resolveDiscoveredTypesXmlPath
 } from '../src/workspaceDiscovery';
-import { mergeConfigXml, parseConfigXml } from '../src/serverConfigMerge';
+// KODE-CFG-009:parse/merge 实现已下线(core 唯一);本用例的语义真值由
+// Rust config_merge_units + golden 钉死,此处走门替身契约镜像。
+import { mergeConfigXml, parseConfigXml } from './helpers/configCoreContract';
 import { messages } from './fake-vscode/windowState';
 import { Position, Uri, makeTextDocument, workspace as stubWorkspace } from './helpers/vscodeStub';
 

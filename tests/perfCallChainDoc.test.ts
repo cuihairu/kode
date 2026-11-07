@@ -151,22 +151,17 @@ const ANCHORS: Array<[string, number, string]> = [
   // 各 +1),全部 extension.ts 锚点再 +2(真位重探 690/703/987/1069/1120/
   // 1183/1506/2375/2455);命令装配块(约 6388 起)在 flushQueued 之后不再
   // 位移;出处随 baseline 锁步。
-  // 2026-11-07(KODE-DBG-001):debugpy 一键注入命令——extension.ts 顶部
-  // +1 行 import(registerDebugpyInjectCommand),全部 extension.ts 锚点再
-  // +1(真位重探 692/705/989/1071/1122/1185/1508/2377/2457);命令装配块
-  // (4565 起,updateLaunchJson 之后)在全部锚点之后不再位移;出处随
-  // baseline 锁步。
-  // 2026-11-07(并会补账):KODE-I18N-002 两笔(l10nText 运行时文案)落在
-  // KODE-DBG-001 校准之后、未随迁锚点——extension.ts 顶部再 +1 行 import,
-  // 全部 extension.ts 锚点再 +1(真位重探 692/705/989/1071/1122/1185/1508
-  // →693/706/990/1072/1123/1186/1509,后段 2378/2458),出处随 baseline 锁步。
-  ['src/extension.ts', 1057, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1108, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1171, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 975, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1494, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 678, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 691, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-07(合并 origin/main):KODE-DBG-001(+1)、KODE-I18N-002(+1)与
+  // KODE-CFG-009 配置消费通道接线(顶部 import +2 + activate 预取 +3 = +5)均
+  // 作用于 extension.ts 顶部——全部 extension.ts 锚点按合并树真位重探
+  // 683/696/980/1062/1113/1176/1499,出处随 baseline 锁步。
+  ['src/extension.ts', 1062, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1113, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1176, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 980, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1499, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 683, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 696, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -176,11 +171,18 @@ const ANCHORS: Array<[string, number, string]> = [
   // runPyspySchedule 引入)→ 上列 9 处 extension.ts 锚点整体 +2(真位重探 683/696/980/
   // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450);
   // HOT-VER 再 +3(见上)→ 后段锚点 2373/2453;DEMO-GAME-006 再 +2(见上)→ 2375/2455。
-  ['src/extension.ts', 2363, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2443, 'flushQueued()'],
+  ['src/extension.ts', 2368, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2448, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。
+  // 2026-11-07(KODE-CFG-009):配置消费通道接线——顶部 import +2(serverConfigResolve
+  // 块 1 行 + profileConfigResolveOverrides 并入既有 profileDatabaseConnection import
+  // 1 行),activate 门接线后预取 +3 行(注释 2 + void ensureConfigResolved 1)
+  // → 全部 extension.ts 锚点再 +5;合并 origin/main 后真位已按合并树重探
+  // 683/696/980/1062/1113/1176/1499/2368/2448(见上「合并 origin/main」条),
+  // 连接读值接线(约 3040 起与 3217/3252/3300/3337 四命令 await)在全部锚点之后
+  // 不再位移;出处随 baseline 锁步。
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面
