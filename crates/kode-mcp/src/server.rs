@@ -149,6 +149,12 @@ impl KodeMcpServer {
                     .unwrap_or(20) as usize;
                 crate::code_index::search_symbols(&self.assets_root, &query, limit.max(1))
             }
+            "protocol_frame" => crate::protocol_frame::protocol_frame(
+                &self.knowledge,
+                arg_str("typeName").as_deref(),
+                arg_str("entity").as_deref(),
+                arg_str("method").as_deref(),
+            ),
             other => Err(format!("unknown tool: {other}")),
         };
         match result {
@@ -167,7 +173,7 @@ impl ServerHandler for KodeMcpServer {
                  get_entity_model, get_type_graph, validate_defs, get_message_entry, \
                  encode_decode_sample, db_schema_preview, explain, get_final_config, \
                  get_entry_scripts, get_database_schema, why_setting, list_config_settings, \
-                 search_docs, search_symbols.",
+                 search_docs, search_symbols, protocol_frame.",
             )
     }
 
@@ -319,6 +325,18 @@ impl ServerHandler for KodeMcpServer {
                             "limit": {"type": "integer", "description": "max matches (default 20)"}
                         }),
                         &["query"],
+                    ),
+                ),
+                Self::tool(
+                    "protocol_frame",
+                    "Depict the wire structure of a protocol frame: either a custom type (typeName resolved through types.xml/alias.xml) or one remote method of an entity (all argument wire layouts, field kinds, byte sizes and offsets). Uses the same wire codec as the IDE message-table face. Byte samples are covered by encode_decode_sample; this tool only draws structure.",
+                    schema_of(
+                        serde_json::json!({
+                            "typeName": {"type": "string", "description": "custom type name resolvable through types.xml/alias.xml (takes precedence)"},
+                            "entity": {"type": "string", "description": "entity def name, with method, to draw a remote-method frame"},
+                            "method": {"type": "string", "description": "remote method name on the entity"}
+                        }),
+                        &[],
                     ),
                 ),
             ],

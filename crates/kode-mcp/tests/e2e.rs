@@ -52,7 +52,7 @@ fn payload_of(result: CallToolResult) -> Value {
 }
 
 #[tokio::test]
-async fn list_tools_exposes_all_fifteen() {
+async fn list_tools_exposes_all_sixteen() {
     let client = connect().await;
     let tools = client.list_all_tools().await.expect("list_tools");
     let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
@@ -70,6 +70,7 @@ async fn list_tools_exposes_all_fifteen() {
             "get_message_entry",
             "get_type_graph",
             "list_config_settings",
+            "protocol_frame",
             "search_docs",
             "search_entities",
             "search_symbols",
@@ -320,6 +321,32 @@ async fn call_tools_return_real_data() {
         .expect("class symbol");
     assert!(sym["name"].as_str().unwrap().contains("Avatar"));
     assert!(sym["file"].as_str().unwrap().contains("scripts/"));
+
+    // protocol_frame(KODE-MCP-KB-001 ③):协议帧结构真数据(自定义类型 + 方法帧)。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "protocol_frame",
+                serde_json::json!({"typeName": "SKILL_SLOT"}),
+            ))
+            .await
+            .expect("call protocol_frame"),
+    );
+    assert_eq!(payload["type"], "SKILL_SLOT");
+    assert_eq!(payload["layout"]["kind"], "FIXED_DICT");
+    assert!(payload["layout"]["fields"].as_array().unwrap().len() >= 1);
+
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "protocol_frame",
+                serde_json::json!({"entity": "Account", "method": "reqCreateAvatar"}),
+            ))
+            .await
+            .expect("call protocol_frame"),
+    );
+    assert_eq!(payload["frame"], "Account.reqCreateAvatar");
+    assert_eq!(payload["argCount"], 1);
 
     let _ = client.cancel().await;
 }
