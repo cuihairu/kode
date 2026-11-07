@@ -78,6 +78,8 @@ pub enum Command {
         defaults: Option<String>,
         records_out: Option<String>,
     },
+    /// `analyze --records <file|->`:PA-005 分析引擎(记录 JSON → 报告 JSON)。
+    Analyze { records: String },
 }
 
 /// 退出码约定:0 成功;1 语义失败(validate 不过 / diff 不兼容 / 选择器未命中);
@@ -238,6 +240,15 @@ pub fn parse_args(args: &[String]) -> Parsed {
                 usage_error: None,
             }
         }
+        Some("analyze") => match parsed.opt("records") {
+            Some(r) => Parsed {
+                command: Command::Analyze {
+                    records: r.to_string(),
+                },
+                usage_error: None,
+            },
+            None => usage_error("analyze requires --records <records.json|->".into()),
+        },
         _ => usage_error(format!("unknown command: {}", args[0])),
     }
 }
@@ -263,6 +274,8 @@ USAGE:
   kode-kbengine capture analyze (--pcap <file|-> | --raw-flow <flow[.down]>=<hex>)...
                      [--tshark <bin>] [--flow-map loginapp=<sport>[,baseapp=<sport>]]
                      [--defaults <xml>] [--records <records.json>]
+
+  kode-kbengine analyze --records <records.json|->
 
 EXIT CODES: 0 ok; 1 semantic failure (validate/diff/inspect miss); 2 usage error.
 ";

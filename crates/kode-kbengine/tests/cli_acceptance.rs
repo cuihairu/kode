@@ -638,3 +638,92 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// analyze (PA-005): records JSON -> analyzer report via the CLI
+// ---------------------------------------------------------------------------
+
+#[test]
+fn analyze_runs_pa005_report_over_captured_records() {
+    let defaults = engine_defaults_xml();
+    let dp = defaults.to_str().unwrap();
+    let tmp = std::env::temp_dir().join("kode-pa45-analyze-e2e");
+    std::fs::create_dir_all(&tmp).unwrap();
+    let records_path = tmp.join("records.json");
+
+    // capture: login then login-success (timestamps from the fake tshark layer)
+    let up = var_frame(3, &login_payload());
+    let mut down_payload = Vec::new();
+    down_payload.extend_from_slice(b"alice\0");
+    down_payload.extend_from_slice(b"127.0.0.1\0");
+    down_payload.extend_from_slice(&30050u16.to_le_bytes());
+    down_payload.extend_from_slice(&1u32.to_le_bytes());
+    down_payload.push(0x00);
+    let down = var_frame(502, &down_payload);
+    let lines = tmp.join("lines.txt");
+    std::fs::write(
+        &lines,
+        format!(
+            "{}{}",
+            tshark_line("1759000000.100000", 51023, 20013, &up),
+            tshark_line("1759000000.400000", 20013, 51023, &down),
+        ),
+    )
+    .unwrap();
+    let fake = write_fake_tshark(&tmp, &lines);
+    let cli = run_cli(&[
+        "capture",
+        "analyze",
+        "--pcap",
+        "-",
+        "--tshark",
+        fake.to_str().unwrap(),
+        "--flow-map",
+        "loginapp=20013",
+        "--defaults",
+        dp,
+        "--records",
+        records_path.to_str().unwrap(),
+    ]);
+    assert_eq!(cli.code, 0, "stderr={}", cli.err);
+
+    // analyze: the captured records drive the PA-005 report.
+    let cli2 = run_cli(&["analyze", "--records", records_path.to_str().unwrap()]);
+    assert_eq!(cli2.code, 0, "stderr={}", cli2.err);
+    assert!(
+        cli2.out.contains("Loginapp::login"),
+        "message stats: {}",
+        cli2.out
+    );
+    assert!(
+        cli2.out.contains("Client::onLoginSuccessfully"),
+        "{}",
+        cli2.out
+    );
+    assert!(
+        cli2.out.contains("login_ok"),
+        "connection events: {}",
+        cli2.out
+    );
+    assert!(cli2.out.contains("p50_ms"), "latency section: {}", cli2.out);
+    // stdin variant too
+    let cli3 = run_cli_with(
+        &["analyze", "--records", "-"],
+        Some(cli2.out.trim().as_bytes()),
+        None,
+        &[],
+    );
+    assert_ne!(
+        cli3.code, 0,
+        "report JSON is not records JSON - stdin expects records"
+    );
+    let records_text = std::fs::read_to_string(&records_path).unwrap();
+    let cli4 = run_cli_with(
+        &["analyze", "--records", "-"],
+        Some(records_text.as_bytes()),
+        None,
+        &[],
+    );
+    assert_eq!(cli4.code, 0, "stderr={}", cli4.err);
+    assert_eq!(cli4.out, cli2.out, "stdin records produce the same report");
+}

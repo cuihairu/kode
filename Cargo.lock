@@ -1435,8 +1435,17 @@ dependencies = [
 name = "kode-kbengine"
 version = "0.2.0"
 dependencies = [
+ "kode-kbengine-analyzer",
  "kode-kbengine-protocol",
  "kode-kbengine-schema",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "kode-kbengine-analyzer"
+version = "0.2.0"
+dependencies = [
  "serde",
  "serde_json",
 ]

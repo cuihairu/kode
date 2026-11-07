@@ -67,6 +67,7 @@ pub fn dispatch(cmd: Command) -> CmdResult {
             defaults.as_deref(),
             records_out.as_deref(),
         ),
+        Command::Analyze { records } => analyze_records(&records),
     }
 }
 
@@ -316,4 +317,41 @@ fn capture_analyze(
         std::fs::write(path, json).map_err(|e| format!("write {path}: {e}"))?;
     }
     Ok(CmdOutcome::ok(driver_report(&driver)))
+}
+
+// ---------------------------------------------------------------------------
+// analyze(PA-005 分析引擎)
+// ---------------------------------------------------------------------------
+
+/// `analyze --records <file|->`:记录 JSON(裸数组或 {"records": [...]})→
+/// 报告 JSON。
+fn analyze_records(source: &str) -> CmdResult {
+    let text = if source == "-" {
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| format!("read stdin: {e}"))?;
+        buf
+    } else {
+        std::fs::read_to_string(source).map_err(|e| format!("read {source}: {e}"))?
+    };
+    let parsed: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("parse records: {e}"))?;
+    let records_json = if parsed.is_array() {
+        parsed
+    } else {
+        parsed
+            .get("records")
+            .cloned()
+            .ok_or_else(|| "records JSON must be an array or {\"records\":[...]}".to_string())?
+    };
+    let records: Vec<kode_kbengine_analyzer::Record> =
+        serde_json::from_value(records_json).map_err(|e| format!("parse records: {e}"))?;
+    let report = kode_kbengine_analyzer::analyze(
+        &records,
+        &kode_kbengine_analyzer::AnalysisOptions::default(),
+    );
+    Ok(CmdOutcome::ok(
+        serde_json::to_string_pretty(&report).expect("json"),
+    ))
 }

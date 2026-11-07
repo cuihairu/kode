@@ -7,7 +7,7 @@
 # 按书 PR-008..009 逐个落地后再加进 members。
 [workspace]
 resolver = "2"
-members = ["crates/kode-protocol", "crates/kode-server", "crates/kode-vfs", "crates/kode-parser", "crates/kode-root", "crates/kode-index", "crates/kode-scheduler", "crates/kode-types", "crates/kode-corpus", "crates/kode-python", "crates/kode-mcp", "crates/kode-db-clone", "crates/kode-kbengine-schema", "crates/kode-kbengine-protocol", "crates/kode-kbengine"]
+members = ["crates/kode-protocol", "crates/kode-server", "crates/kode-vfs", "crates/kode-parser", "crates/kode-root", "crates/kode-index", "crates/kode-scheduler", "crates/kode-types", "crates/kode-corpus", "crates/kode-python", "crates/kode-mcp", "crates/kode-db-clone", "crates/kode-kbengine-schema", "crates/kode-kbengine-protocol", "crates/kode-kbengine", "crates/kode-kbengine-analyzer"]
 
 [workspace.package]
 version = "0.2.0"

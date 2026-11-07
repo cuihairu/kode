@@ -22,6 +22,7 @@ path = "src/main.rs"
 [dependencies]
 kode-kbengine-schema = { path = "../kode-kbengine-schema" }
 kode-kbengine-protocol = { path = "../kode-kbengine-protocol" }
+kode-kbengine-analyzer = { path = "../kode-kbengine-analyzer" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
