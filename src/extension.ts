@@ -48,6 +48,11 @@ import {
   RPC_ARG_COUNT_DIAGNOSTIC_CODE,
   computeRpcArgCountFindings
 } from './rpcArgCountDiagnostics';
+import {
+  BEHAVIOR_LINT_DIAGNOSTICS_ENABLED_DEFAULT,
+  computeBehaviorLintFindingsAsync,
+  fixedDictRootPropertyNames
+} from './behaviorLints';
 import { flowVersionKeyForDocument } from './flowVersionKey';
 import {
   DEF_METHOD_MISSING_DIAGNOSTIC_CODE,
@@ -345,6 +350,7 @@ import {
   KBEngineMethodImplementationCodeActionProvider,
   KBEngineDefPythonParityCodeActionProvider,
   KBEngineReceiverNoneGuardCodeActionProvider,
+  KBEngineFixedDictWholeReassignCodeActionProvider,
   prewarmKbengineIndex,
   revealSourceCommand,
   PythonCompletionProvider,
@@ -901,7 +907,62 @@ export function activate(context: vscode.ExtensionContext) {
               code: RPC_ARG_COUNT_DIAGNOSTIC_CODE
             }))
           : [];
-        return [...receiverItems, ...attrItems, ...spaceNavItems, ...rpcArgCountItems];
+        // C-23(交付②):行为知识 lint 三规则(fixed-dict 子键改写/已销毁实体
+        // 注册表滞留/模块级 KBEngine.addTimer 泄漏)——规则候选与文案来自
+        // behaviorKnowledge 结构化条目(交付①),FIXED_DICT 根属性集经
+        // listPropertyDefinitionsForFile + types.xml 类型图判定;解析共享
+        // preparsed(与 receiver/类索引同一份版本键解析),规则 2/3 预检命中
+        // 且解析不可用 → null 整轮不发布(下次事件重试,与 receiver 中止同款)
+        const fixedDictEnabled = config.get<boolean>(
+          'fixedDictNestedMutationDiagnostics',
+          BEHAVIOR_LINT_DIAGNOSTICS_ENABLED_DEFAULT
+        );
+        const destroyedRefEnabled = config.get<boolean>(
+          'destroyedEntityReferenceDiagnostics',
+          BEHAVIOR_LINT_DIAGNOSTICS_ENABLED_DEFAULT
+        );
+        const timerLeakEnabled = config.get<boolean>(
+          'timerLeakOnDestroyDiagnostics',
+          BEHAVIOR_LINT_DIAGNOSTICS_ENABLED_DEFAULT
+        );
+        const behaviorFindings = fixedDictEnabled || destroyedRefEnabled || timerLeakEnabled
+          ? await computeBehaviorLintFindingsAsync(
+              document.getText(),
+              document.uri.fsPath,
+              {
+                fixedDictNestedMutationEnabled: fixedDictEnabled,
+                destroyedEntityReferenceEnabled: destroyedRefEnabled,
+                timerLeakOnDestroyEnabled: timerLeakEnabled,
+                fixedDictPropertyNames: fixedDictEnabled && isPythonDocument(document)
+                  ? fixedDictRootPropertyNames(
+                      await entityMappingManager.listPropertyDefinitionsForFile(document.uri.fsPath),
+                      getCustomTypeInfos(workspaceRoot)
+                    )
+                  : new Set<string>(),
+                parsed: preparsed
+              }
+            )
+          : [];
+        if (behaviorFindings === null) {
+          return null; // 解析不可用且规则 2/3 有预检命中,整轮不发布
+        }
+        const behaviorItems = behaviorFindings.map(finding => ({
+          range: {
+            start: { line: finding.line, character: finding.character },
+            end: { line: finding.line, character: finding.character + finding.length }
+          },
+          message: finding.message,
+          severity: 'Warning' as const,
+          source: 'kbengine' as const,
+          code: finding.code
+        }));
+        return [
+          ...receiverItems,
+          ...attrItems,
+          ...spaceNavItems,
+          ...rpcArgCountItems,
+          ...behaviorItems
+        ];
       },
       publish: (items: readonly ReceiverDiagnosticItem[]) => {
         diagnostics.set(document.uri, items.map(item => {
@@ -2323,6 +2384,14 @@ export function activate(context: vscode.ExtensionContext) {
     new KBEngineReceiverNoneGuardCodeActionProvider()
   );
   context.subscriptions.push(receiverNoneGuardCodeActionProvider);
+
+  // C-23(交付②):fixed-dict-nested-mutation 诊断的整体重赋快速修复(python
+  // 面;code 对账 kbengine.fixedDictNestedMutation,编辑由纯函数产出)
+  const fixedDictWholeReassignCodeActionProvider = vscode.languages.registerCodeActionsProvider(
+    pythonDocumentSelector,
+    new KBEngineFixedDictWholeReassignCodeActionProvider()
+  );
+  context.subscriptions.push(fixedDictWholeReassignCodeActionProvider);
 
   // 监听文档变化，实时检查
   if (vscode.workspace.workspaceFolders) {

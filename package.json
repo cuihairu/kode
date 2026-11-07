@@ -1258,6 +1258,21 @@
           "default": true,
           "markdownDescription": "%kbengine.config.postDestroyDiagnostics.description%"
         },
+        "kbengine.fixedDictNestedMutationDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.fixedDictNestedMutationDiagnostics.description%"
+        },
+        "kbengine.destroyedEntityReferenceDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.destroyedEntityReferenceDiagnostics.description%"
+        },
+        "kbengine.timerLeakOnDestroyDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.timerLeakOnDestroyDiagnostics.description%"
+        },
         "kbengine.diagnostics.checkUnknownTypes": {
           "type": "boolean",
           "default": true,
@@ -1322,6 +1337,11 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "%kbengine.config.hover.typeStorage.description%"
+        },
+        "kbengine.hover.behaviorNotes": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.hover.behaviorNotes.description%"
         },
         "kbengine.hover.implementedBy": {
           "type": "boolean",

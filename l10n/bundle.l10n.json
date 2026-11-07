@@ -120,6 +120,7 @@
   "Unresolved": "Unresolved",
   "Visibility": "Visibility",
   "Which method section declares the proxy methods?": "Which method section declares the proxy methods?",
+  "Whole reassign: rewrite FIXED_DICT sub-key assignment as top-level assignment": "Whole reassign: rewrite FIXED_DICT sub-key assignment as top-level assignment",
   "With samples": "With samples",
   "Witness": "Witness",
   "Wrap with null guard (if self.{receiver}:)": "Wrap with null guard (if self.{receiver}:)",

@@ -4,6 +4,7 @@
  */
 
 import { findFilesAcrossRoots } from './scanRoots';
+import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import {
@@ -437,7 +438,7 @@ export class EntityDependencyAnalyzer {
         continue;
       }
 
-      if (typeBody === 'FIXED_DICT') {
+      if (typeBody === FIXED_DICT_TYPE_NAME) {
         const dictReferences = this.extractFixedDictReferences(propertyName, propertyBody);
         references.push(...dictReferences);
         continue;
@@ -490,7 +491,7 @@ export class EntityDependencyAnalyzer {
     switch (typeName) {
       case 'ARRAY':
         return DependencyType.Array;
-      case 'FIXED_DICT':
+      case FIXED_DICT_TYPE_NAME:
         return DependencyType.FixedDict;
       default:
         return null;

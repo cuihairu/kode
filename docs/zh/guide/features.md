@@ -27,6 +27,7 @@
 - 重复定义检查
 - 缺失 `Type` / `Flags` 检查
 - entities.xml 同名重复登记检查（批147）：同名实体条目引擎按首条静默合并、后续条目不生效，kode 在重复条目上给出 warning；受 `kbengine.enableDiagnostics` 总开关控制
+- 行为知识诊断（C-23）：从语义陷阱总索引条目交付的三条知识取证型 Python 诊断——FIXED_DICT 子键赋值不同步（`kbengine.fixedDictNestedMutation`，附整体重赋快速修复）、`self` 登记进模块级容器而 `onDestroy` 未按容器名移除（`kbengine.destroyedEntityReference`）、类内 `KBEngine.addTimer(…, repeat≠0, self.回调)` 且 `onDestroy` 无 `KBEngine.delTimer`（`kbengine.timerLeakOnDestroy`；实体级 `self.addTimer` 绝不报）；各自独立 `kbengine.*Diagnostics` 开关（默认开），判定边界见 lint 规则指南
 
 ## 工具面板
 

@@ -83,6 +83,9 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.rpcArgCountDiagnostics` | boolean | `true` | RPC 实参数量诊断:`self.base/cell/client.<method>(...)` 调用点顶层实参数与 .def 该方法(调用所属 section)声明的 `<Arg>` 数明确不符时报 `kbengine.rpcArgCount` Warning(默认启用);星号实参/动态接收者/声明未就绪/段外声明/括号不闭合保留未知一律不报,inlay 提示不替代诊断 |
 | `kbengine.roleMisuseDiagnostics` | boolean | `true` | 角色错用诊断:实体脚本里 `self.<内建属性>` 属于其他角色面(baseapp/cellapp/client)而当前面未注册时报 `kbengine.roleMisuse` Warning 并引注册面引擎源码(默认启用);角色不明与普通 Python 类不猜,属性面表与内建属性 hover 元数据同源 |
 | `kbengine.postDestroyDiagnostics` | boolean | `true` | 销毁后访问诊断:同一函数内可确定的同块 `self.destroy()` 之后直接访问 `self.<成员>`(id/isDestroyed/className/destroy 除外),且两者间无同层无条件早退,报 `kbengine.postDestroy` Warning(默认启用);条件销毁/跨块/跨回调/异常/def 声明 destroy(动态分派)一律不猜 |
+| `kbengine.fixedDictNestedMutationDiagnostics` | boolean | `true` | 行为知识诊断(C-23):`self.<FIXED_DICT属性>[子键] = 值` 赋值(普通/增强,链式下标整体配平)报 `kbengine.fixedDictNestedMutation` Warning 并附整体重赋快速修复——引擎 FIXED_DICT 子键赋值路径只改本地字典、永不同步(`fixeddict.cpp:272-308`);FIXED_DICT 根属性集取该文件所属实体 def + types.xml 类型图判定,def 无该类型属性时规则静默 |
+| `kbengine.destroyedEntityReferenceDiagnostics` | boolean | `true` | 行为知识诊断(C-23):类内把 `self` 登记进模块级容器(append/add/insert/setdefault 或下标存)而 `onDestroy` 未按容器名移除,报 `kbengine.destroyedEntityReference` Warning(引用滞留 `garbages` 泄漏);形参/局部容器、非 self 值、onDestroy 已移除的容器不报 |
+| `kbengine.timerLeakOnDestroyDiagnostics` | boolean | `true` | 行为知识诊断(C-23):类内 `KBEngine.addTimer(…, repeat≠0, self.回调)` 且 `onDestroy` 无 `KBEngine.delTimer`,报 `kbengine.timerLeakOnDestroy` Warning——app 级 timer 强持回调(`python_app.cpp:721-748`),实体 destroy 不会取消它;实体级 `self.addTimer` 绝不报(destroy 全量取消),repeat=0 单发/非 self 回调/模块层(类外)调用跳过 |
 | `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | 检查未知类型名 |
 | `kbengine.diagnostics.checkUnknownFlags` | boolean | `true` | 检查未知 Flags 值 |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | boolean | `true` | 检查非法 DetailLevel 值 |
@@ -119,6 +122,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.hover.showSymbolDocs` | boolean | `true` | 悬停自定义属性名/方法名显示当前定义的 `Type`、`Flags`、`Arg` 等上下文 |
 | `kbengine.hover.returnTypeInference` | boolean | `true` | 悬停时根据 Python 返回注解推导局部变量类型；关闭后悬停不会启动注解索引构建 |
 | `kbengine.hover.typeStorage` | boolean | `true` | `.def`/`types.xml` 里 types.xml 自定义类型的存储悬停(落库表/列/类型与形态) |
+| `kbengine.hover.behaviorNotes` | boolean | `true` | KBEngine 特定符号(addTimer/delTimer/teleport/cellData 等)与 FIXED_DICT 属性悬停时附行为注记——现象/正确姿势/依据,来自知识库语义陷阱条目(C-23) |
 | `kbengine.hover.implementedBy` | boolean | `true` | python 侧悬停被 types.xml `implementedBy` 引用的符号时的反链 |
 | `kbengine.hover.entityRegistration` | boolean | `true` | 悬停 `entities.xml` 实体名时的注册信息(`Utype`/清单位置) |
 | `kbengine.hover.defChain` | boolean | `true` | 悬停 `Parent`/`Interfaces` 等声明元素时的归并 def 链 |

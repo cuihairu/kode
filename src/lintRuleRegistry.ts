@@ -315,6 +315,30 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     quickFix: false, status: 'implemented',
     source: 'src/postDestroyDiagnostics.ts'
   },
+  {
+    id: 'KBE-PY-015', code: 'kbengine.fixedDictNestedMutation',
+    title: 'FIXED_DICT 属性子键赋值不同步(引擎该路径无通知面)',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.fixedDictNestedMutationDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: '整体重赋习语', status: 'implemented',
+    source: 'src/behaviorLints.ts(条目来自 src/behaviorKnowledge.ts)'
+  },
+  {
+    id: 'KBE-PY-016', code: 'kbengine.destroyedEntityReference',
+    title: 'self 登记进模块级容器且 onDestroy 未按容器名移除(滞留泄漏)',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.destroyedEntityReferenceDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/behaviorLints.ts(条目来自 src/behaviorKnowledge.ts)'
+  },
+  {
+    id: 'KBE-PY-017', code: 'kbengine.timerLeakOnDestroy',
+    title: '模块级 KBEngine.addTimer 自绑定重复回调在 onDestroy 未注销',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.timerLeakOnDestroyDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/behaviorLints.ts(条目来自 src/behaviorKnowledge.ts)'
+  },
   // ── 待实现(pending)────────────────────────────────────────────
   {
     id: 'KBE-PY-009b', code: null,

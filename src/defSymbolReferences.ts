@@ -29,7 +29,7 @@ import {
   findDeepestElementAtOffset
 } from './defParser';
 import { findFilesAcrossRoots } from './scanRoots';
-import { KBENGINE_TYPES } from './kbengineMetadata';
+import { KBENGINE_TYPES, FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
 import {
   findCustomTypeInfo,
   findCustomTypeDeclarationInfo,
@@ -41,7 +41,7 @@ import { scanTypeReferencesInXml, type TypesXmlRefSite } from './typesXmlReferen
 import { INTERFACE_WRAPPER_NAMES } from './defRenamer';
 
 /** 容器字面不是类型符号(scanTypeReferencesInXml 同口径) */
-const CONTAINER_LITERALS = new Set(['ARRAY', 'FIXED_DICT']);
+const CONTAINER_LITERALS = new Set(['ARRAY', FIXED_DICT_TYPE_NAME]);
 
 export type DefSymbolReferenceKind = 'type' | 'parent' | 'interface';
 

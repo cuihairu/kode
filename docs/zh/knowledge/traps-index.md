@@ -34,12 +34,19 @@
 | 以为要在 `onDestroy` 里注销定时器 | 没必要——`destroy()` 全量取消(`scriptTimers_.cancelAll()`) | `delTimer` 只在存活期内提前取消时用 | [生命周期 §定时器](entity-lifecycle-reference.md)、[使用统计](api-usage-stats.md) |
 | `cancelController("SomeType")` | TypeError——只认精确字符串 `"Movement"` | 其他控制器按句柄取消 | [api-cellapp §偏差表](api-cellapp.md) |
 | 调 `trackEntity` / `turnToYaw` | fork 里没有这两个方法 | 用 `moveToEntity` / `addYawRotator` | [api-cellapp §偏差表](api-cellapp.md) |
+| 模块级 `KBEngine.addTimer` 自绑定回调泄漏 | app 级 timer 强持回调对象(`self.onTick` 即强持实体),实体 `destroy()` 只取消实体自身 `scriptTimers_`,**不会**取消它——回调持续触发/实体进 `garbages` 泄漏 | 句柄存成员,`onDestroy` 里 `KBEngine.delTimer(句柄)`(实体级 `self.addTimer` 无此问题,destroy 自动全量取消) | [生命周期 §定时器](entity-lifecycle-reference.md)、`python_app.cpp:721-748` |
 
 ## EntityCall 语义
 
 | 陷阱 | 现象 | 正确姿势 | 详情 |
 | --- | --- | --- | --- |
 | 经 EntityCall 调引擎方法 | 不可达——EntityCall 只能调 `.def` 文件声明的方法 | 方法进 def,或引擎 API 用本地实体引用调 | [api-core-concepts §1.1](api-core-concepts.md) |
+
+## 属性同步
+
+| 陷阱 | 现象 | 正确姿势 | 详情 |
+| --- | --- | --- | --- |
+| FIXED_DICT 属性子键赋值不同步 | `self.<FIXED_DICT属性>[子键] = 值` 只改本地 `pyDict_`,引擎在该路径无通知面,属性不会同步 | 整体重赋习语:`d = self.<属性>` → 改子键 → `self.<属性> = d`(只有顶层赋值走同步) | [core-concepts §1.5](api-core-concepts.md)、`fixeddict.cpp:272-308` |
 
 ## 回调命名与面放置
 

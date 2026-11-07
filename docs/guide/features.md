@@ -27,6 +27,7 @@
 - Duplicate definition check
 - Missing `Type` / `Flags` check
 - Duplicate entity registration check in `entities.xml` (batch 147): the engine silently merges same-name entries, keeping the first one, so later entries never take effect; kode flags them with a warning, gated by the `kbengine.enableDiagnostics` master switch
+- Behavior-knowledge lints (C-23): three knowledge-grounded Python diagnostics delivered from the traps-index entries — FIXED_DICT sub-key assignment never syncs (`kbengine.fixedDictNestedMutation`, with a whole-reassign quick fix), `self` registered into a module-level container without per-container removal in `onDestroy` (`kbengine.destroyedEntityReference`), and a class-body `KBEngine.addTimer(…, repeat≠0, self.callback)` with no `KBEngine.delTimer` in `onDestroy` (`kbengine.timerLeakOnDestroy`; entity-level `self.addTimer` is never flagged); each behind its own `kbengine.*Diagnostics` toggle (default on), see the lint-rule guide for boundaries
 
 ## Tool Panels
 

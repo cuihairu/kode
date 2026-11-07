@@ -87,6 +87,7 @@ export type InheritedNames = Map<string, InheritedNameInfo>;
 // 同名属性判重按域位相交——不同域位同名引擎允许共存(addPropertyDescription
 // 的 findXxxPropertyDescription 按域查找)。CELL 别名归一见生成镜像。
 import { FLAG_TOKEN_DOMAINS, normalizeFlagTokens, type FlagDomain } from './generated/flagDomains';
+import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
 
 export type PropertyFlagDomain = FlagDomain;
 
@@ -130,7 +131,7 @@ const HEAVY_SYNC_TYPE_NAMES = new Set([
   'UNICODE',
   'BLOB',
   'ARRAY',
-  'FIXED_DICT',
+  FIXED_DICT_TYPE_NAME,
   'PY_DICT',
   'PY_LIST',
   'PY_TUPLE',

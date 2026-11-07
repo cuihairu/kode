@@ -1,3 +1,4 @@
+import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
 /**
  * 组合根派生(用户 2026-10-16 纠正:「只假设 Avatar 文件是 mixin 的是不对的,
  * entities.xml 文件里的字段对应的对象都可能是 mixin 的,所有需要查找的」)。
@@ -52,7 +53,7 @@ function collectTypeReferences(typeNode: DefElementNode): string[] {
     .map(token => token.trim())
     .filter(token => token.length > 0);
   for (const token of direct) {
-    if (token !== 'ARRAY' && token !== 'FIXED_DICT') {
+    if (token !== 'ARRAY' && token !== FIXED_DICT_TYPE_NAME) {
       names.push(token);
     }
   }
@@ -144,7 +145,7 @@ export function parseTypesXml(content: string): Map<string, TypeDeclaration> {
     // 属性式条目(`<JSONDATA type="UINT32"/>`):无文本指引时回落 `type` 属性值
     // (与 Rust parse_types 同口径;PR-012 门 §1.3-① 属性式注册面关闭)。
     const directive = textDirective || (item.attributes['type'] ?? '').trim();
-    if (directive === 'FIXED_DICT') {
+    if (directive === FIXED_DICT_TYPE_NAME) {
       const implementedBy = getScalarChildValue(item, 'implementedBy');
       const symbol = implementedBy
         ? ((implementedBy.trim().split('.').pop() ?? '').trim() || null)

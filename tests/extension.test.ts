@@ -227,8 +227,9 @@ describe('extension activate 装配', () => {
     // IDE-NAV-013:未知类型诊断 QuickFix 候选;IDE-NAV-014:缺实现方法空方法
     // 生成(各自独立注册,def 面各一份);B-7 起 python 面 None 守卫快速修复
     // 再一份(receiver-none 诊断对账);C-19 起 def 面 parity 一键生成再一份
-    // (def-method-missing-in-python 诊断对账)
-    expect(languagesRegistry.codeActionsRegistrations).toHaveLength(4);
+    // (def-method-missing-in-python 诊断对账);C-23 起 python 面 FIXED_DICT
+    // 整体重赋快速修复再一份(kbengine.fixedDictNestedMutation 诊断对账)
+    expect(languagesRegistry.codeActionsRegistrations).toHaveLength(5);
     // 批126:RPC 方法标记的 Python 侧 CodeLens 单注册;批134 起 types.xml
     // 引用反扫镜再加一份注册;批135 属性访问标记再加一份注册;批154 起
     // 事件回调镜链从 RPC 镜链拆出独立注册(各自独立开关);IDE-HOT-100 起

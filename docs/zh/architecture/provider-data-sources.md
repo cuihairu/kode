@@ -55,6 +55,7 @@
 | KBEngineMethodImplementationCodeActionProvider | languageProviders.ts:5470 | :1768 | EntityMappingManager(接口方法补实现) | 编辑提案(WorkspaceEdit) |
 | KBEngineDefPythonParityCodeActionProvider | languageProviders.ts:6058 | :1776 | 诊断面(context.diagnostics,code=def-method-missing-in-python)+双向定位面(目标 Python 文件/类)+当前文档 def 结构(签名类型映射) | 编辑提案(WorkspaceEdit,类尾插方法骨架) |
 | KBEngineReceiverNoneGuardCodeActionProvider | languageProviders.ts:5594 | :1784 | 诊断面(context.diagnostics,code=kbengine.receiverNone)+当前文档文本 | 编辑提案(WorkspaceEdit,包裹式首选+早退式) |
+| KBEngineFixedDictWholeReassignCodeActionProvider | languageProviders.ts:7010 | :2392 | 诊断面(context.diagnostics,code=kbengine.fixedDictNestedMutation)+当前文档文本 | 编辑提案(WorkspaceEdit,经 behaviorLints buildFixedDictWholeReassignEdit 产出整体重赋习语) |
 | HotReloadFileStateCodeLensProvider | hotReloadFileStateLens.ts:43 | :4456 | HotReloadFileStateMachine 派生视图(台账事实源,IDE-HOT-100) | 纯读;状态点点击命令 kbengine.hotReload.showFileState |
 
 命令查询面(非 register\*Provider,同口径记录):符号引用面板 `kbengine.symbolReferences.show` 走 defReferenceGraph 自定义引用图(与 LSP references provider 并存);实体依赖图 `kbengine.dependency.show` 走 dependencyGraph.ts + webview。数据源同为 EntityMappingManager 快照,副作用限于 webview。
@@ -100,6 +101,7 @@
 - 副作用:DiagnosticCollection 发布(诊断面合法出口)。
 - 通道:`onDidChangeTextDocument`(extension.ts:1835)→ `flushQueued()`(:1909,单轮 25ms 时间片,IDE-DIA-006)→ diagnosticScheduler.ts 调度。
 - Python receiver-none 诊断:独立调度 `scheduleReceiverNoneDiagnostics`(extension.ts:660,异步分片 computeReceiverNoneFindingsAsync);诊断带稳定 code(`kbengine.receiverNone`/`kbengine.sectionMismatch`,extension.ts:730 发布处),`KBEngineReceiverNoneGuardCodeActionProvider` 按 code 对账出守卫 QuickFix。
+- 行为知识诊断(C-23):同一条 `scheduleReceiverNoneDiagnostics` 通道还发布 `computeBehaviorLintFindingsAsync`(behaviorLints.ts,纯模块)——三个 code(`kbengine.fixedDictNestedMutation`/`kbengine.destroyedEntityReference`/`kbengine.timerLeakOnDestroy`),规则边界与文案来自 behaviorKnowledge.ts 的结构化知识条目(与 docs/knowledge/traps-index.md 1:1 锁步);FIXED_DICT 根属性名取 EntityMappingManager(`listPropertyDefinitionsForFile`)+types.xml 类型图,解析共享类索引版本键提供器,`KBEngineFixedDictWholeReassignCodeActionProvider` 按 code 对账整体重赋 QuickFix。
 
 ## 4. 共享服务与生命周期所有者
 

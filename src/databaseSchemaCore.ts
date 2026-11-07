@@ -19,6 +19,7 @@ import {
   parseDefDocument
 } from './defParser';
 import { normalizeFileIdentity } from './pathIdentity';
+import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
 
 // R2-F24(IDE-AUD-051):本模块自足于普通 Node——源访问(def 文件发现/实体
 // 登记/共享快照读取)全部经 SchemaSourcePorts 注入,不 import 任何传递
@@ -298,7 +299,7 @@ export function parseTypeAliasesFromDocument(
     // (getValStr(FirstChild)),"FIXED_DICT"/"ARRAY" 走结构解析,其余文本按
     // 已注册类型(内置或更早的别名)复用同一实例。
     const directive = getElementText(item).trim();
-    if (directive === 'FIXED_DICT') {
+    if (directive === FIXED_DICT_TYPE_NAME) {
       aliases.set(item.name, { kind: 'fixedDict', node: item, document, filePath });
     } else if (directive === 'ARRAY') {
       aliases.set(item.name, { kind: 'array', node: item, document, filePath });
@@ -360,7 +361,7 @@ export function aliasDigestInMap(aliasName: string, aliases: Map<string, TypeAli
 }
 
 export function resolveAliasType(typeName: string, context: BuildContext, seen = new Set<string>()): ResolvedAliasType {
-  if (typeName === 'ARRAY' || typeName === 'FIXED_DICT') {
+  if (typeName === 'ARRAY' || typeName === FIXED_DICT_TYPE_NAME) {
     return { kind: 'builtin', typeName };
   }
 
@@ -403,7 +404,7 @@ function resolveEffectiveTypeName(typeName: string, context: BuildContext): stri
     return resolved.typeName;
   }
   if (resolved.kind === 'fixedDict') {
-    return 'FIXED_DICT';
+    return FIXED_DICT_TYPE_NAME;
   }
   if (resolved.kind === 'array') {
     return 'ARRAY';
@@ -720,8 +721,8 @@ function* parsePropertyNode(
       descriptor,
       progress
     );
-  } else if (rawTypeName === 'FIXED_DICT' || resolved.kind === 'fixedDict') {
-    descriptor.typeName = 'FIXED_DICT';
+  } else if (rawTypeName === FIXED_DICT_TYPE_NAME || resolved.kind === 'fixedDict') {
+    descriptor.typeName = FIXED_DICT_TYPE_NAME;
     const containerNode = resolved.kind === 'fixedDict' ? resolved.node : propertyNode;
     const containerDocument = resolved.kind === 'fixedDict' ? resolved.document : document;
     const containerFilePath = resolved.kind === 'fixedDict' ? resolved.filePath : filePath;
@@ -764,7 +765,7 @@ function* parseArrayElementDescriptor(
   const elementDescriptor: PersistentPropertyDescriptor = {
     // 引擎:元素项名非 FIXED_DICT 时为 "value",FIXED_DICT 元素项名为空串
     // (空名使列名不带 value_ 前缀,且子表命名链跳过该层)。
-    name: resolveEffectiveTypeName(rawElementTypeName, context) === 'FIXED_DICT' ? '' : 'value',
+    name: resolveEffectiveTypeName(rawElementTypeName, context) === FIXED_DICT_TYPE_NAME ? '' : 'value',
     typeName: rawElementTypeName,
     declaredType: rawElementTypeName,
     persistent: true,
@@ -801,8 +802,8 @@ function* parseArrayElementDescriptor(
       elementDescriptor,
       progress
     );
-  } else if (rawElementTypeName === 'FIXED_DICT' || resolved.kind === 'fixedDict') {
-    elementDescriptor.typeName = 'FIXED_DICT';
+  } else if (rawElementTypeName === FIXED_DICT_TYPE_NAME || resolved.kind === 'fixedDict') {
+    elementDescriptor.typeName = FIXED_DICT_TYPE_NAME;
     // 元素 FIXED_DICT 是别名时,Properties 挂在 types.xml 条目下(DataTypes::
     // loadTypes 先按条目建出 FixedDictType 实例,数组元素复用同一实例);
     // inline 数组则挂在 <of> 元素下。
@@ -902,8 +903,8 @@ function* parseFixedDictChildren(
         childDescriptor,
         progress
       );
-    } else if (effectiveTypeName === 'FIXED_DICT') {
-      childDescriptor.typeName = 'FIXED_DICT';
+    } else if (effectiveTypeName === FIXED_DICT_TYPE_NAME) {
+      childDescriptor.typeName = FIXED_DICT_TYPE_NAME;
       const nestedContainer = resolved.kind === 'fixedDict' ? resolved.node : childNode;
       const nestedDocument = resolved.kind === 'fixedDict' ? resolved.document : document;
       const nestedFilePath = resolved.kind === 'fixedDict' ? resolved.filePath : filePath;
@@ -1263,7 +1264,7 @@ function appendPropertyToTable(
     return;
   }
 
-  if (property.typeName === 'FIXED_DICT') {
+  if (property.typeName === FIXED_DICT_TYPE_NAME) {
     // FD 键链:只有 FD 键名累积进前缀;FD 作数组元素时项名为空串,前缀不加段
     const nextPrefix = property.name
       ? `${fixedDictPrefix}${property.name}_`

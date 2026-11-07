@@ -73,6 +73,7 @@ import {
   parseLocalDefinition
 } from './definitionSemantics';
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
+import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
 
 export interface MessageTableOptions {
   /** entitydefAliasID 开关(引擎默认关);关时 aliasID 全 null */
@@ -726,7 +727,7 @@ function loadTypesXml(origin: string, typesXml: string, assembly: ModuleAssembly
       continue;
     }
 
-    const fixedDictNode = getDirectChildElement(aliasNode, 'FIXED_DICT');
+    const fixedDictNode = getDirectChildElement(aliasNode, FIXED_DICT_TYPE_NAME);
     const arrayNode = getDirectChildElement(aliasNode, 'ARRAY');
     const childText = getElementText(aliasNode).trim();
     // addDataType 大小写不敏感查重(dataTypesLowerName_);重名报错但装载继续:

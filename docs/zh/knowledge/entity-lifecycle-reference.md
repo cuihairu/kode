@@ -103,6 +103,15 @@ return entity;                 // ③ 以 PyObjectPtr 返回(保活供 destroy()
 不存在时返回 `-1`(`entity_macro.h:1478`,`script_timers.cpp:96-108`);
 `delTimer("All")` → `cancelAll()`(`entity_macro.h:1449`)。
 
+模块级 `KBEngine.addTimer(interval, repeat, callback)`(所有 app 的解释器层
+注册面,`python_app.cpp:329-330`;实现在 `__py_addTimer`,`python_app.cpp:721-748`)
+是**另一回事**:它构造的是 `ScriptTimerHandler(pTimers, pyCallback)`,**强引用
+回调对象**——传 `self.onTick` 即强持实体。该 timer 挂在 app 的 `scriptTimers()`
+上,`Entity::destroy()` 的 `scriptTimers_.cancelAll()` 只取消实体自己的
+`scriptTimers_`,**不会**取消它。自绑定的重复 timer 不在 `onDestroy` 里
+`KBEngine.delTimer` 注销,回调就会持续触发/实体进 `garbages` 泄漏(与上文的
+闭包/列表持引用同族);单发(repeat=0)fire 后自释放,窗口有限。
+
 真正的引用隐患不在定时器本身,而在脚本闭包或列表捕获实体且存活超过销毁
 ——那才是上文 `garbages`/3600 秒泄漏场景,而非定时器持引用。
 

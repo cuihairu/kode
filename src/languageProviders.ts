@@ -97,6 +97,7 @@ import {
   getRegisteredCustomTypes,
   getRegisteredAliasTypes,
   getRegisteredEntities,
+  getCustomTypeInfos,
   getScriptsRootForDefFile,
   getWorkspaceRootForDocument,
   resolveEntityAnnotationType,
@@ -230,6 +231,16 @@ import {
 } from './receiverNoneDiagnostics';
 
 export { RECEIVER_NONE_DIAGNOSTIC_CODE };
+import {
+  behaviorEntriesForSymbol,
+  behaviorNotesMarkdown,
+  fixedDictBehaviorNoteMarkdown
+} from './behaviorKnowledge';
+import {
+  buildFixedDictWholeReassignEdit,
+  FIXED_DICT_NESTED_MUTATION_CODE,
+  isFixedDictTypeName
+} from './behaviorLints';
 
 /**
  * 批159(用户令 2026-10-26「点击 codelens 跳 def 后 alt+← 后退,再点没反应」):
@@ -327,6 +338,9 @@ function getLanguageFeatureConfig() {
     // C-21:KBEngine Python API 文档 hover(KBEngine.<api>/生命周期回调/内建
     // 属性文档段),默认开
     hoverApiDocs: config.get<boolean>('hover.apiDocs', true),
+    // C-23(交付③):KB-001 结构化行为注记段(FIXED_DICT 属性/易坑 API 的
+    // 「现象+正确姿势+依据」双语段),默认开
+    hoverBehaviorNotes: config.get<boolean>('hover.behaviorNotes', true),
     // CodeLens 同批按 provider 各一枚
     codeLensRpc: config.get<boolean>('codeLens.rpc', true),
     codeLensEventCallbacks: config.get<boolean>('codeLens.eventCallbacks', true),
@@ -885,6 +899,63 @@ export class KBEngineBuiltinTypeInlayHintsProvider implements vscode.InlayHintsP
   }
 }
 
+/**
+ * C-23(交付③)出口注记挂靠:悬停词命中 KB-001 结构化条目的 symbols 时,
+ * 把「现象+正确姿势+依据」双语段拼到既有 hover 尾部;无既有 hover 时构建
+ * 注记专属 hover(知识呈现通道)。既有 contents 是单个 MarkdownString 时
+ * **重建新实例**再拼(memo 缓存跨请求共享同一 Hover 实例,原地 append 会
+ * 随请求次数重复叠加);数组/未知形态原样返回不动。非 python 文档/开关
+ * 关闭/无命中时行为与挂靠前逐位一致。
+ */
+function attachBehaviorNotesToHoverResult(
+  result: vscode.ProviderResult<vscode.Hover>,
+  document: vscode.TextDocument,
+  position: vscode.Position
+): vscode.ProviderResult<vscode.Hover> {
+  // 同步结果保持同步返回(既有用例口径:provideHover 直接给 Hover;只有
+  // 异步面(自管属性预算腿)才走 Promise 链)
+  if (result && typeof (result as { then?: unknown }).then === 'function') {
+    return (result as Promise<vscode.Hover | null | undefined>)
+      .then(hover => applyBehaviorNotes(hover, document, position));
+  }
+  return applyBehaviorNotes(result as vscode.Hover | null, document, position);
+}
+
+function applyBehaviorNotes(
+  hover: Awaited<vscode.ProviderResult<vscode.Hover>>,
+  document: vscode.TextDocument,
+  position: vscode.Position
+): vscode.Hover | null {
+    if (document.languageId !== 'python') {
+      return hover ?? null;
+    }
+    if (!getLanguageFeatureConfig().hoverBehaviorNotes) {
+      return hover ?? null;
+    }
+    const wordRange = document.getWordRangeAtPosition(position, /\w+/);
+    if (!wordRange) {
+      return hover ?? null;
+    }
+    const entries = behaviorEntriesForSymbol(document.getText(wordRange));
+    if (entries.length === 0) {
+      return hover ?? null;
+    }
+    const notes = behaviorNotesMarkdown(entries);
+    const contents = hover?.contents as unknown;
+    if (contents && typeof contents === 'object' && 'value' in contents
+      && typeof (contents as vscode.MarkdownString).value === 'string') {
+      const markdown = new vscode.MarkdownString(
+        `${(contents as vscode.MarkdownString).value}${notes}`
+      );
+      return new vscode.Hover(markdown);
+    }
+    if (hover) {
+      return hover; // 未知 contents 形态:不猜,原样返回
+    }
+    // 无既有 hover:注记单独成 hover(去掉段首分隔线)
+    return new vscode.Hover(new vscode.MarkdownString(notes.replace(/^\n\n---\n\n/, '')));
+}
+
 /** IDE-MET-003:hover 分支级计时面——start(label) 返回段结束 stop */
 export interface HoverPhaseTimer {
   start(label: string): () => void;
@@ -963,7 +1034,13 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     position: vscode.Position,
     token?: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.Hover> {
-    return this.provideHoverTimed(document, position, token);
+    // C-23(交付③):出口统一挂行为注记——KB-001 结构化条目按悬停词挂靠,
+    // 覆盖所有 hover 分支出口(注记纯静态知识,零索引查询,不进预算闸)
+    return attachBehaviorNotesToHoverResult(
+      this.provideHoverTimed(document, position, token),
+      document,
+      position
+    );
   }
 
   /**
@@ -1518,8 +1595,9 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
   ): Promise<vscode.Hover | null> {
     const stopMapping = timer?.start('def-mapping');
     let resolved: Awaited<ReturnType<typeof resolveSelfPropertyAnnotation>>;
+    // C-23:类型图判定(FIXED_DICT 注记)与 annotate 共用同一 workspace root
+    const workspaceRoot = getWorkspaceRootForDocument(document);
     try {
-      const workspaceRoot = getWorkspaceRootForDocument(document);
       const locator: DefPropertyLocator = (fullPath, rootSymbol) =>
         // 无目录域路径(无 workspace root)/manager 面判定注入缺失(测试替身
         // 无该方法)→ 视为无 def 属性位置,落回普通 hover 链(能推才显,不炸)
@@ -1548,6 +1626,16 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     try {
       const markdown = new vscode.MarkdownString();
       markdown.appendMarkdown(formatSelfPropertyTypeHover(resolved));
+      // C-23(交付③):def 原生类型(别名未展开直文本)经类型图判定为
+      // FIXED_DICT 时挂行为注记(子键赋值不同步——fixeddict.cpp mp_ass_subscript
+      // 无 owner 通知面;判定/文案与诊断规则 1 同源 behaviorKnowledge)
+      if (
+        getLanguageFeatureConfig().hoverBehaviorNotes
+        && resolved.defTypeName
+        && isFixedDictTypeName(resolved.defTypeName, getCustomTypeInfos(workspaceRoot ?? ''))
+      ) {
+        markdown.appendMarkdown(fixedDictBehaviorNoteMarkdown());
+      }
       return new vscode.Hover(markdown);
     } finally { stopRender?.(); }
   }
@@ -6918,6 +7006,62 @@ export class KBEngineReceiverNoneGuardCodeActionProvider implements vscode.CodeA
         action.edit = edit;
         actions.push(action);
       }
+    }
+    return actions;
+  }
+}
+
+/**
+ * C-23(交付②):FIXED_DICT 子键赋值诊断(kbengine.fixedDictNestedMutation)
+ * 的快速修复——整行子键赋值改写为整体重赋习语(`_fd = self.<属性>` →
+ * `_fd[子键] = 值` → `self.<属性> = _fd`;编辑由 behaviorLints
+ * buildFixedDictWholeReassignEdit 纯函数产出,替换后顶层赋值走引擎同步
+ * 路径,重算该位不再报)。code 对账:非本码诊断不出;行文本形态不匹配
+ * (多语句行/跨行)不出(不猜);只动本文档该行。
+ */
+export class KBEngineFixedDictWholeReassignCodeActionProvider implements vscode.CodeActionProvider {
+  provideCodeActions(
+    document: vscode.TextDocument,
+    range: vscode.Range,
+    context: vscode.CodeActionContext,
+    token?: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.CodeAction[]> {
+    if (token?.isCancellationRequested) {
+      return [];
+    }
+    const actions: vscode.CodeAction[] = [];
+    const seen = new Set<number>();
+    for (const diagnostic of context.diagnostics) {
+      if (diagnostic.code !== FIXED_DICT_NESTED_MUTATION_CODE) {
+        continue;
+      }
+      if (!diagnosticRangeIntersects(diagnostic.range, range)) {
+        continue;
+      }
+      const line = diagnostic.range.start.line;
+      if (seen.has(line)) {
+        continue;
+      }
+      const edit = buildFixedDictWholeReassignEdit(document.getText(), line);
+      if (!edit) {
+        continue;
+      }
+      seen.add(line);
+      const workspaceEdit = new vscode.WorkspaceEdit();
+      const lines = document.getText().split(/\r?\n/);
+      const trailingNewline = edit.endLine < lines.length;
+      workspaceEdit.replace(
+        document.uri,
+        new vscode.Range(edit.startLine, 0, edit.endLine, 0),
+        trailingNewline ? `${edit.text}\n` : edit.text
+      );
+      const action = new vscode.CodeAction(
+        vscode.l10n.t('Whole reassign: rewrite FIXED_DICT sub-key assignment as top-level assignment'),
+        vscode.CodeActionKind.QuickFix
+      );
+      action.diagnostics = [diagnostic];
+      action.edit = workspaceEdit;
+      actions.push(action);
     }
     return actions;
   }

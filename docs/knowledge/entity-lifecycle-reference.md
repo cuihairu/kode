@@ -115,6 +115,17 @@ returns `-1` when the timer does not exist (`entity_macro.h:1478`,
 `script_timers.cpp:96-108`); `delTimer("All")` → `cancelAll()`
 (`entity_macro.h:1449`).
 
+Module-level `KBEngine.addTimer(interval, repeat, callback)` (interpreter-layer
+registration on every app, `python_app.cpp:329-330`; implementation
+`__py_addTimer`, `python_app.cpp:721-748`) is a **different story**: it builds a
+`ScriptTimerHandler(pTimers, pyCallback)` that holds a **strong reference to the
+callback object** — passing `self.onTick` strongly refs the entity. That timer
+lives on the app's `scriptTimers()`, and `Entity::destroy()`'s
+`scriptTimers_.cancelAll()` cancels only the entity's own `scriptTimers_`,
+**never** it. A self-bound repeating timer that is not `KBEngine.delTimer`'d in
+`onDestroy` keeps firing / leaks the entity into `garbages` (same family as the
+closure/list references above); single-shot (repeat=0) self-releases after firing.
+
 The real reference hazard is not the timer itself but a script closure or list
 that captures the entity and outlives the destroy — that is the `garbages`/
 3600 s leak scenario above, not a timer-holding reference.

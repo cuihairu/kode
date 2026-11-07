@@ -32,6 +32,7 @@ import {
 } from './defParser';
 import { findFilesAcrossRoots } from './scanRoots';
 import { findCustomTypeInfo, getWorkspaceRootForDocument } from './definitionWorkspace';
+import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
 
 export interface TypesXmlRefSite {
   /** 引用所在文件绝对路径 */
@@ -45,7 +46,7 @@ export interface TypesXmlRefSite {
 }
 
 /** 容器字面不是类型引用(collectTypeReferences 同口径) */
-const CONTAINER_LITERALS = new Set(['ARRAY', 'FIXED_DICT']);
+const CONTAINER_LITERALS = new Set(['ARRAY', FIXED_DICT_TYPE_NAME]);
 
 /** 绝对 offset → 行内字符偏移(lineStarts 二分为线号,再回推列) */
 function charOffsetFor(document: DefDocument, offset: number): number {

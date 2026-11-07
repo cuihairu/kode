@@ -21,6 +21,7 @@ import {
   resolveAnnotationTypeWithRegistry
 } from './pythonTypeStubs';
 import { PYTHON_FAMILY_BASE, inferPythonLiteralAnnotation } from './pythonLiteralTypes';
+import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
 import * as vscode from 'vscode';
 
 export const ENTITY_TYPE_STUB_FILE_NAME = 'entity_types.pyi';
@@ -309,7 +310,7 @@ function guardNoneEmptyOf(
   }
   const target = context.customTypes.get(resolved);
   if (
-    target?.aliasType === 'FIXED_DICT' &&
+    target?.aliasType === FIXED_DICT_TYPE_NAME &&
     context.customTypeModules.has(resolved)
   ) {
     return '{}';

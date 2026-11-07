@@ -54,6 +54,9 @@ export interface SelfPropertyResolved {
   /** .def 文件与声明行(来源标注) */
   defFile: string;
   defLine: number;
+  /** def 原生 <Type> 直文本(别名未展开;C-23 行为注记按此判 FIXED_DICT);
+   * 元素位(element)沿用容器 defTypeName */
+  defTypeName?: string | null;
   /** 目标表达式文本(悬停目标,来源标注) */
   expr: string;
 }
@@ -129,6 +132,7 @@ async function resolveSelfAccess(
       propertyName: fullPath.split('.').pop()!,
       defFile: location.defFile,
       defLine: location.line,
+      defTypeName: location.typeName ?? null,
       expr: `self.${fullPath}`
     };
   }
@@ -140,6 +144,7 @@ async function resolveSelfAccess(
     propertyName: fullPath.split('.').pop()!,
     defFile: location.defFile,
     defLine: location.line,
+    defTypeName: location.typeName,
     expr: `self.${fullPath}`
   };
 }
