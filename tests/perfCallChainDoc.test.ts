@@ -203,14 +203,17 @@ const ANCHORS: Array<[string, number, string]> = [
   // .ts(锚定文件换,真位重探 completion 117/650、hover 193、definition 244/
   // 307),extension.ts 侧 diagnostics 385/398、事件接线 1536/1616;extension.ts
   // 现 5985 行。baseline §7 出处锁步。
+  // 2026-11-07(SRC-001 L3):诊断调度抽装——PR1 计时助手×2 迁 src/activate/
+  // diagnostics.ts(116/129),didChange 冲刷面留组合根但位移(531/611);
+  // 7 独立调度器+配置契约块+测试访问器随迁,extension.ts 现 4980 行。
 
   ['src/activate/languageServices.ts', 193, "startLanguageServiceOperation('hover'"],
   ['src/activate/languageServices.ts', 244, "startLanguageServiceOperation('definition'"],
   ['src/activate/languageServices.ts', 307, "startLanguageServiceOperation('definition'"],
   ['src/activate/languageServices.ts', 117, "startLanguageServiceOperation('completion'"],
   ['src/activate/languageServices.ts', 650, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 385, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 398, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 117, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 130, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -220,8 +223,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // runPyspySchedule 引入)→ 上列 9 处 extension.ts 锚点整体 +2(真位重探 683/696/980/
   // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450);
   // HOT-VER 再 +3(见上)→ 后段锚点 2373/2453;DEMO-GAME-006 再 +2(见上)→ 2375/2455。
-  ['src/extension.ts', 1536, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 1616, 'flushQueued()'],
+  ['src/extension.ts', 531, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 611, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。
