@@ -411,12 +411,44 @@ impl ServerHandler for KodeMcpServer {
         std::future::ready(Ok(result))
     }
 
+    #[allow(clippy::manual_async_fn)] // Match the other ServerHandler future-returning methods.
     fn call_tool(
         &self,
         params: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<CallToolResponse, McpError>> + Send + '_ {
-        std::future::ready(self.call_tool_impl(params))
+        async move {
+            let name = params.name.as_ref();
+            if name != "search_docs" && name != "search_symbols" {
+                return self.call_tool_impl(params);
+            }
+            let args = params.arguments.as_ref();
+            let query = args
+                .and_then(|a| a.get("query"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            let limit = args
+                .and_then(|a| a.get("limit"))
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(20) as usize;
+            let root = self.assets_root.clone();
+            let extra = self.extra_paths.clone();
+            let docs = name == "search_docs";
+            let result = tokio::task::spawn_blocking(move || {
+                if docs {
+                    crate::docs_index::search_docs(&root, &extra, &query, limit.max(1))
+                } else {
+                    crate::code_index::search_symbols(&root, &query, limit.max(1))
+                }
+            })
+            .await
+            .map_err(|error| McpError::internal_error(format!("search task failed: {error}"), None))?;
+            match result {
+                Ok(value) => Self::text_result(value),
+                Err(message) => Self::error_result(message),
+            }
+        }
     }
 }
 
