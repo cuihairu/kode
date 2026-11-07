@@ -149,7 +149,7 @@ describe('runBotsAddCommand(添加机器人编排)', () => {
   it('无 bots telnet 目标:如实报错,不连接不发送', async () => {
     const state: DepsState = { target: null, sessionState: null, outputs: [], sent: [], connected: 0, infos: [], errors: [], channelLines: [], channelShown: 0, inputs: [] };
     const result = await runBotsAddCommand(makeDeps(state));
-    expect(result).toContain('未找到 bots');
+    expect(result).toContain('No bots telnet target found');
     expect(state.errors[0]).toContain('telnet_service');
     expect(state.connected).toBe(0);
     expect(state.sent).toEqual([]);
@@ -158,7 +158,7 @@ describe('runBotsAddCommand(添加机器人编排)', () => {
   it('首个输入取消:如实返回未执行,不发送', async () => {
     const state: DepsState = { target: makeTarget(), sessionState: 'ready', outputs: [], sent: [], connected: 0, infos: [], errors: [], channelLines: [], channelShown: 0, inputPrompts: [], inputs: [undefined as unknown as string] };
     const result = await runBotsAddCommand(makeDeps(state));
-    expect(result).toContain('已取消');
+    expect(result).toContain('Cancelled');
     expect(state.sent).toEqual([]);
   });
 
@@ -170,7 +170,7 @@ describe('runBotsAddCommand(添加机器人编排)', () => {
       inputs: ['100', '']
     };
     const result = await runBotsAddCommand(makeDeps(state));
-    expect(result).toContain('白名单缺');
+    expect(result).toContain('Whitelist is missing');
     expect(state.errors[0]).toContain('kbengine.telnet.enableCommands');
     expect(state.errors[0]).toContain(BOTS_ADD_WHITELIST_ENTRY);
     expect(state.connected).toBe(0);
@@ -185,7 +185,7 @@ describe('runBotsAddCommand(添加机器人编排)', () => {
       inputs: ['100', '']
     };
     const result = await runBotsAddCommand(makeDeps(state));
-    expect(result).toContain('未就绪');
+    expect(result).toContain('not ready');
     expect(state.connected).toBe(1);
     expect(state.sent).toEqual([]);
   });
@@ -203,10 +203,10 @@ describe('runBotsAddCommand(添加机器人编排)', () => {
     expect(state.sent).toEqual(['KBEngine.addBots(100)', 'len(KBEngine.bots)']);
     expect(state.connected).toBe(0); // 已就绪不再重连
     const joined = state.channelLines.join('\n');
-    expect(joined).toContain('已发送 KBEngine.addBots(100)');
-    expect(joined).toContain('无逐个减员');
-    expect(joined).toContain('停');
-    expect(joined).toContain('当前 bot 数(len(KBEngine.bots))=100');
+    expect(joined).toContain('Sent KBEngine.addBots(100)');
+    expect(joined).toContain('no per-bot removal API');
+    expect(joined).toContain('stopping the bots process');
+    expect(joined).toContain('current bot count (len(KBEngine.bots))=100');
     expect(state.channelShown).toBeGreaterThan(0);
     expect(state.errors).toEqual([]);
   });
@@ -237,7 +237,7 @@ describe('runBotsAddCommand(添加机器人编排)', () => {
     const result = await runBotsAddCommand(makeDeps(state));
     expect(state.connected).toBe(1);
     expect(state.sent[0]).toBe('KBEngine.addBots(10)');
-    expect(result).toContain('已发送');
+    expect(result).toContain('Sent ');
   });
 });
 
@@ -264,7 +264,7 @@ describe('runBotsCountCommand(查询 bot 数编排)', () => {
     };
     const result = await runBotsCountCommand(makeDeps(state));
     expect(result).toBeNull();
-    expect(state.channelLines.join('\n')).toContain('未读到');
+    expect(state.channelLines.join('\n')).toContain('No bot-count result line read');
   });
 
   it('白名单缺计数命令:报出条目,返回 null', async () => {
@@ -283,6 +283,6 @@ describe('runBotsCountCommand(查询 bot 数编排)', () => {
     const state: DepsState = { target: null, sessionState: null, outputs: [], sent: [], connected: 0, infos: [], errors: [], channelLines: [], channelShown: 0, inputs: [] };
     const result = await runBotsCountCommand(makeDeps(state));
     expect(result).toBeNull();
-    expect(state.errors[0]).toContain('未找到 bots');
+    expect(state.errors[0]).toContain('No telnet target found for bots');
   });
 });

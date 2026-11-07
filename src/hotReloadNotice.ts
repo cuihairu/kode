@@ -7,12 +7,14 @@
  * - 选「立即关闭」直接写回配置把热更关掉(不等用户自己找开关)。
  */
 
+import { l10nText } from './nlsRuntime';
+
 export const HOT_RELOAD_NOTICE_KEY = 'kbengine.hotReload.firstRunNotice';
 
-export const HOT_RELOAD_NOTICE_MESSAGE =
-  '自动热更已默认开启:保存 .py 即向 http://127.0.0.1:8090/hotfix?module_name=<模块名> 发送热更请求' +
-  '(query 与 body 各带一份 module_name,兼容不同服务端,同值重复无害);引擎未启动会如实显示失败。' +
-  '一键关:点击底部状态栏「热更」项,或运行命令 kbengine.hotReload.toggle。';
+// 取词在调用期(notice 弹出时):默认英文 locale 出英文源串,zh-cn bundle 出中文
+export const HOT_RELOAD_NOTICE_MESSAGE = l10nText(
+  'Auto hot reload is on by default: saving a .py sends a hot-reload request to http://127.0.0.1:8090/hotfix?module_name=<module name> (both query and body carry module_name, compatible with different server sides; duplicate values are harmless); failures are shown honestly when the engine is not running. To turn it off: click the hot-reload item in the status bar, or run the kbengine.hotReload.toggle command.'
+);
 
 export interface HotReloadNoticeDeps {
   /** 是否已提示过(flag 在工作区状态里) */
@@ -34,8 +36,8 @@ export async function showHotReloadFirstRunNotice(deps: HotReloadNoticeDeps): Pr
     return false;
   }
   await deps.markShown();
-  const choice = await deps.show(HOT_RELOAD_NOTICE_MESSAGE, '打开日志', '立即关闭');
-  if (choice === '立即关闭') {
+  const choice = await deps.show(HOT_RELOAD_NOTICE_MESSAGE, l10nText('Open logs'), l10nText('Turn off now'));
+  if (choice === l10nText('Turn off now')) {
     await deps.turnOff();
   }
   return true;
