@@ -50,6 +50,21 @@ describe('ENGINE_SPI_METHODS 权威表(KODE-CFG-012 真值)', () => {
   it('onInit 覆盖 baseapp/cellapp/bots/client 四组件', () => {
     expect(ENGINE_SPI_METHODS.onInit.components).toEqual(['baseapp', 'cellapp', 'bots', 'client']);
   });
+
+  it('口径差异:服务器六组件口径为 34,全量 36(34/36 差异如实落表)', () => {
+    // 服务器六组件(baseapp/cellapp/loginapp/dbmgr/interfaces/logger)口径:
+    // 36 减去 client/bots 专属的 onFinish 与 onTargetChanged = 34。
+    // 引擎真值为全量 36(kbe/src 扫描取证见 entry-script-spi-methods.md
+    // 「Count verification (KODE-CFG-015)」节)。
+    const serverRoles = ['baseapp', 'cellapp', 'loginapp', 'dbmgr', 'interfaces', 'logger'];
+    const serverScope = Object.entries(ENGINE_SPI_METHODS)
+      .filter(([, entry]) => entry.components.some(c => serverRoles.includes(c)))
+      .map(([name]) => name);
+    expect(serverScope).toHaveLength(34);
+    expect(Object.keys(ENGINE_SPI_METHODS)).toHaveLength(36);
+    expect(Object.keys(ENGINE_SPI_METHODS).filter(n => !serverScope.includes(n)))
+      .toEqual(['onFinish', 'onTargetChanged']);
+  });
 });
 
 describe('componentRoleForPath(组件角色判定)', () => {

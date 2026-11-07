@@ -1,11 +1,21 @@
 // KODE-CFG-015:引擎 SPI 实现函数单独 CodeLens 标注。
 //
-// 被引擎以 SPI 模式调用的函数(getEntryScript() 36 方法:32 必选 + 4 可选
-// HasAttr 守卫,权威表见 docs/knowledge/entry-script-spi-methods.md,KODE-CFG-012)
-// 在 Python 定义处出一枚独立 CodeLens「引擎 SPI · <方法> · <触发时机>」,与
-// 既有 RPC/事件回调/属性镜同面,独立开关 kbengine.codeLens.engineSpi(默认开)。
-// 识别依据=配置派生(组件角色,CFG-004 派生面 entryScripts/扫描根)+ 方法名
-// 匹配 SPI 表。普通函数(不在表内)不出,开关关闭后不出。
+// 被引擎以 SPI 模式调用的函数(getEntryScript() 方法表,权威表见
+// docs/knowledge/entry-script-spi-methods.md,KODE-CFG-012)在 Python 定义处
+// 出一枚独立 CodeLens「引擎 SPI · <方法> · <触发时机>」,与既有 RPC/事件回调/
+// 属性镜同面,独立开关 kbengine.codeLens.engineSpi(默认开)。识别依据=配置
+// 派生(组件角色,CFG-004 派生面 entryScripts/扫描根)+ 方法名匹配 SPI 表。
+// 普通函数(不在表内)不出,开关关闭后不出。
+//
+// 方法数口径(如实注明差异,CFG-015 取证复核):直接扫 kbe/src 两处 pin
+// commit(c2a3b8f=取证 pin、3082ab5=当前 HEAD)均为 65 个 getEntryScript()
+// 调用点、**36 个不同名方法**。todo 早期「34 个」是**服务器六组件口径**
+// (baseapp/cellapp/loginapp/dbmgr/interfaces/logger:36 减去 client/bots 专属
+// 的 onFinish(`bots.cpp:124`/`clientapp.cpp:303`)与 onTargetChanged
+// (`clientapp.cpp:458`));逐组件文件扫描若漏掉共享头 entity_app.h 的广播对
+// onGlobalData/onGlobalDataDel(`entity_app.h:1308`/`:1290`)也会误得 34。
+// 本表落全量 36 口径,因为 assets 脚本树含 client/、bots/ 目录,其入口脚本
+// 同样需要标注;引擎真值以 36 为准。
 //
 // 表真值自 entry-script-spi-methods.md 逐组件表(各组件方法数:baseapp 12 /
 // cellapp 9 / loginapp 7 / dbmgr 4 / interfaces 5 / logger 4 / client/bots 3,
@@ -43,7 +53,8 @@ const COMPONENT_DIR_TO_ROLE: Record<string, string> = {
 /**
  * 引擎 SPI 36 方法权威表(KODE-CFG-012 取证;方法→组件集合+必选+触发)。
  * 逐组件表:baseapp 12 / cellapp 9 / loginapp 7 / dbmgr 4 / interfaces 5 /
- * logger 4 / client-bots 3;不同名合计 36。
+ * logger 4 / client-bots 3;不同名合计 36。34=服务器六组件口径(见文件头
+ * 注释与 entry-script-spi-methods.md「Count verification」节)。
  */
 export const ENGINE_SPI_METHODS: Record<string, EngineSpiMethod> = {
   // baseapp(12)
