@@ -6,11 +6,14 @@
 //   typings checkout」路径)只属于 real-source 档;
 // - real-source:既有「复制真实代码导出」路径仅在此档执行。
 // 验收:默认 fresh workspace 不出现复制代码行为;切档生效有测试。
-import { readFileSync, rmSync, mkdirSync, writeFileSync, mkdtempSync } from 'fs';
+import { readFileSync, rmSync, mkdirSync, writeFileSync, mkdtempSync, existsSync } from 'fs';
 import * as path from 'path';
 import { join } from 'path';
 import * as os from 'os';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type * as vscode from 'vscode';
+import { EntityMappingManager } from '../src/entityMapping';
+import { exportEntityTypeStubs } from '../src/entityTypeStubs';
 import {
   STUB_SOURCE_MODE_DEFAULT,
   STUB_SOURCE_MODE_GENERATED,
@@ -19,10 +22,15 @@ import {
   STUB_SOURCE_MODES,
   buildKbeStubExportContent,
   buildKbeStubExportContentForWorkspace,
+  exportKbeStubs,
   readStubSourceMode,
   type StubSourceMode
 } from '../src/pythonStubExport';
-import { configurationOverrides } from './helpers/vscodeStub';
+import {
+  configurationOverrides,
+  Uri,
+  workspace as stubWorkspace
+} from './helpers/vscodeStub';
 
 const root = join(__dirname, '..');
 
@@ -100,6 +108,105 @@ describe('kbengine.python.stubSourceMode 贡献契约(IDE-STUB-001)', () => {
     expect(STUB_SOURCE_MODE_GENERATED).toBe('generated');
     expect(STUB_SOURCE_MODE_REAL_SOURCE).toBe('real-source');
     expect([...STUB_SOURCE_MODES]).toEqual(['generated', 'real-source']);
+  });
+});
+
+describe('端到端导出文件面(IDE-STUB-004):复制路径按档触发', () => {
+  // 红(src 层面)在 IDE-STUB-001 落地前成立:默认档下引擎 checkout 拼接照跑
+  // (fantasydemoRealExport 在默认档曾因此红);本组把「默认 fresh workspace
+  // 不触发复制代码 / real-source 档触发 / 生成链两档都跑」锁成文件级证据。
+  const realDeps = {
+    exists: (candidate: string): boolean => existsSync(candidate),
+    readFile: (candidate: string): string => readFileSync(candidate, 'utf8'),
+    writeFile: (candidate: string, content: string): void => writeFileSync(candidate, content),
+    mkdir: (candidate: string): void => mkdirSync(candidate, { recursive: true })
+  };
+  let wsRoot = '';
+  let stubDir = '';
+  // 清理保真:进组前快照 workspaceFolders 与全部配置覆写,出组原样恢复
+  let savedFolders: Array<{ uri: Uri; name: string; index: number }> = [];
+  let savedOverrides = new Map<string, Record<string, unknown>>();
+
+  beforeEach(() => {
+    savedFolders = [...stubWorkspace.workspaceFolders];
+    savedOverrides = new Map(configurationOverrides);
+    wsRoot = mkdtempSync(join(os.tmpdir(), 'kode-stub-mode-e2e-'));
+    stubDir = join(wsRoot, '.kbengine/stubs');
+    mkdirSync(stubDir, { recursive: true });
+    configurationOverrides.clear();
+    stubWorkspace.workspaceFolders = [{
+      uri: Uri.file(wsRoot),
+      name: 'ws',
+      index: 0
+    } as vscode.WorkspaceFolder];
+  });
+
+  afterEach(() => {
+    stubWorkspace.workspaceFolders = savedFolders;
+    configurationOverrides.clear();
+    for (const [section, overrides] of savedOverrides) {
+      configurationOverrides.set(section, overrides);
+    }
+    rmSync(wsRoot, { recursive: true, force: true });
+  });
+
+  const baseMapping = {
+    name: 'Avatar',
+    properties: { hp: { defFile: '/p/Avatar.def', line: 3 } },
+    methods: {}
+  } as never;
+
+  it('默认 generated 档:exportKbeStubs 落盘的是精选目录内容,无复制标记', async () => {
+    const engineRoot = makeEngineRoot();
+    try {
+      const written = await exportKbeStubs(realDeps, {
+        silent: true,
+        engineRoot,
+        engineRootEnv: {}
+      });
+      expect(written).toEqual(['ws']);
+      const kbe = readFileSync(join(stubDir, 'KBEngine.pyi'), 'utf8');
+      expect(kbe).not.toContain(ENGINE_TYPINGS_MARKER);
+      expect(kbe).toContain('Content source: src/kbeModuleIndex.ts');
+    } finally {
+      removeEngineRoot(engineRoot);
+    }
+  });
+
+  it('real-source 档:exportKbeStubs 触发复制路径,落盘拼接全量 API', async () => {
+    const engineRoot = makeEngineRoot();
+    try {
+      configurationOverrides.set('kbengine', { 'python.stubSourceMode': 'real-source' });
+      const written = await exportKbeStubs(realDeps, {
+        silent: true,
+        engineRoot,
+        engineRootEnv: {}
+      });
+      expect(written).toEqual(['ws']);
+      const kbe = readFileSync(join(stubDir, 'KBEngine.pyi'), 'utf8');
+      expect(kbe).toContain(ENGINE_TYPINGS_MARKER);
+      expect(kbe).toContain('class Entity:');
+    } finally {
+      removeEngineRoot(engineRoot);
+    }
+  });
+
+  it('生成链两档都跑:entity_types.pyi 由生成链落盘,不随档位缺席', async () => {
+    const manager = new EntityMappingManager({ subscriptions: [] } as vscode.ExtensionContext);
+    for (const mode of ['generated', 'real-source']) {
+      rmSync(join(stubDir, 'entity_types.pyi'), { force: true });
+      configurationOverrides.set('kbengine', { 'python.stubSourceMode': mode });
+      const written = await exportEntityTypeStubs(manager, realDeps, {
+        silent: true,
+        listMappings: () => [baseMapping],
+        listCustomTypes: () => []
+      });
+      expect(written, mode).toEqual(['ws']);
+      const entities = readFileSync(join(stubDir, 'entity_types.pyi'), 'utf8');
+      expect(entities).toContain('class Avatar(Entity):');
+      expect(entities).toContain('hp:');
+    }
+    configurationOverrides.delete('kbengine');
   });
 });
 
