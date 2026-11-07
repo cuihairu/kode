@@ -14,7 +14,14 @@ import { describe, expect, it } from 'vitest';
 const root = join(__dirname, '..');
 const docPath = join(root, 'docs/architecture/provider-data-sources.md');
 const zhDocPath = join(root, 'docs/zh/architecture/provider-data-sources.md');
-const extension = readFileSync(join(root, 'src/extension.ts'), 'utf8');
+// 装配层 = extension.ts + activate/*.ts(SRC-001 分层后 provider 构造位散至各
+// 激活器,本锁跟随整层扫描,不再只盯 extension.ts)。
+const assemblyText = [
+  readFileSync(join(root, 'src/extension.ts'), 'utf8'),
+  ...readdirSync(join(root, 'src/activate'))
+    .filter(n => n.endsWith('.ts'))
+    .map(n => readFileSync(join(root, 'src/activate', n), 'utf8')),
+].join('\n');
 
 const versions = [
   {
@@ -89,9 +96,9 @@ describe('实际查询依赖图文档(IDE-ARC-006)', () => {
     }
   });
 
-  it('extension.ts 实际构造的每个 Provider 都在文档中(en/zh 各自)', () => {
+  it('装配层实际构造的每个 Provider 都在文档中(en/zh 各自)', () => {
     const constructed = new Set<string>();
-    for (const match of extension.matchAll(/new ([A-Z][A-Za-z0-9]+)\(/g)) {
+    for (const match of assemblyText.matchAll(/new ([A-Z][A-Za-z0-9]+)\(/g)) {
       const name = match[1];
       if (name.endsWith('Provider') || name === 'CallChainController') {
         constructed.add(name);

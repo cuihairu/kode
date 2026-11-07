@@ -71,11 +71,11 @@
 
 ### 2c. 树/任务 provider(UI 装配面)
 
-构造位迁移史:SRC-001 L4 起,server/telnet/玩家数据/远程服务器/调试目标五个树视图的构造位自 extension.ts 迁 `src/activate/serverControls.ts`(纯移动;下表迁移行已更新为新构造位,其余行保留基线时点 extension.ts 行号)。
+构造位迁移史:SRC-001 L4 起,server/telnet/玩家数据/远程服务器/调试目标五个树视图的构造位自 extension.ts 迁 `src/activate/serverControls.ts`;SRC-001 L5 起,实体浏览器/快捷动作/最终配置/文件历史/范围历史五个树视图的构造位自 extension.ts 迁 `src/activate/views.ts`(纯移动;下表迁移行已更新为新构造位,其余行保留基线时点 extension.ts 行号)。
 
 | Provider | 类定义 | 构造位 | 数据源 | 允许副作用 |
 |---|---|---|---|---|
-| EntityExplorerProvider | explorerProviders.ts:1391 | :1386 | entities.xml 清单扫描 | 树刷新事件 |
+| EntityExplorerProvider | explorerProviders.ts:1391 | activate/views.ts(SRC-001 L5) | entities.xml 清单扫描 | 树刷新事件 |
 | ServerControlProvider | explorerProviders.ts:1790 | activate/serverControls.ts(SRC-001 L4) | serverManager 状态 | 树刷新 + 用户触发启停命令 |
 | TelnetTreeProvider | telnetTree.ts:1798 | activate/serverControls.ts(SRC-001 L4) | telnetService 状态 | 树刷新事件 |
 | RemoteServerTreeProvider | remoteServerTree.ts:1813 | activate/serverControls.ts(SRC-001 L4) | ~/.ssh/config 快照 + workspaceState 手动项/选中态(IDE-PDBG-004) | 树刷新事件 |
@@ -83,10 +83,10 @@
 | ComponentStatusTreeProvider | componentStatusPanel.ts:92 | :4607 | 共享 ConsoleHub 的 machined UDP 发现台账(KB-GC-001;pid/cpu/mem/usedmem/state 随 Args25 发现回包自带)+ 解析后的 cpu/mem 阈值;消失进程保留为红色墓碑行 | 树刷新事件(自动轮询 + 手动 `kbengine.consoleComponentPanel.refresh`),异常态红色 ThemeIcon |
 | KbengineBuildTaskProvider | buildTaskProvider.ts:2146 | :2094 | 构建任务定义(静态) | 无(仅提供任务) |
 | DebugTargetTreeProvider | debugStatusTree.ts:2063 | :2011 | getDebugStatusRows 轮询 | 树刷新事件 |
-| QuickActionTreeProvider | quickActionTree.ts:3092 | :3040 | 快捷动作清单 | 树刷新 + 用户触发命令 |
-| FinalConfigTreeProvider | serverConfigMerge.ts:2808 | :2756 | kbengine.xml 合成树 | 树刷新事件 |
-| GitHistoryTreeProvider | gitHistoryTree.ts:165 | :4089 | GitCommitLog 分页(IDE-GIT-004,仅用户入口按需查询;空闲零 Git),经共享查询门(IDE-GIT-011:去重/并发上限 2 且范围追踪 1/有界队列/LRU 缓存/视图隐藏-禁用-卸载取消) | 树刷新事件 + 用户触发「加载下一页」 |
-| GitRangeHistoryTreeProvider | gitRangeHistoryTree.ts:208 | :4140 | 选区→HEAD 行段映射(IDE-GIT-008)+ 逐提交修改时间线(IDE-GIT-009,仅用户入口按需查询;空闲零 Git,不挂编辑器切换/选区监听),经共享查询门(IDE-GIT-011,重复选区只留最新) | 树刷新事件(标题随状态) |
+| QuickActionTreeProvider | quickActionTree.ts:3092 | activate/views.ts(SRC-001 L5) | 快捷动作清单 | 树刷新 + 用户触发命令 |
+| FinalConfigTreeProvider | serverConfigMerge.ts:2808 | activate/views.ts(SRC-001 L5) | kbengine.xml 合成树 | 树刷新事件 |
+| GitHistoryTreeProvider | gitHistoryTree.ts:165 | activate/views.ts(SRC-001 L5) | GitCommitLog 分页(IDE-GIT-004,仅用户入口按需查询;空闲零 Git),经共享查询门(IDE-GIT-011:去重/并发上限 2 且范围追踪 1/有界队列/LRU 缓存/视图隐藏-禁用-卸载取消) | 树刷新事件 + 用户触发「加载下一页」 |
+| GitRangeHistoryTreeProvider | gitRangeHistoryTree.ts:208 | activate/views.ts(SRC-001 L5) | 选区→HEAD 行段映射(IDE-GIT-008)+ 逐提交修改时间线(IDE-GIT-009,仅用户入口按需查询;空闲零 Git,不挂编辑器切换/选区监听),经共享查询门(IDE-GIT-011,重复选区只留最新) | 树刷新事件(标题随状态) |
 | PlayerDataTreeProvider | playerDataPanel.ts:108 | :3471 | Rust derive_database 单一真源的 mysql 连接 profile(`configDerive.getDerivedDatabaseProfile`,零手填/改写)+ databaseDrift 只读执行器(连接测试 `SELECT 1`、按 dbid 只读 SELECT;语句白名单 + READ ONLY 会话双保险,CLONE-P5 骨架) | 树刷新事件;只读查询输出到「KBEngine 玩家数据(只读)」通道,零写入;密码永不出值(掩码标记) |
 
 ### 2d. 文件树角标 provider(vscode.window.registerFileDecorationProvider,IDE-HOT-100)
@@ -119,9 +119,9 @@
 
 ## 5. watcher 分布
 
-watcher 分布(基线 499d34a,按**源码调用位**计,测试逐文件对账;GLOBDATA-001 起 globalDataIndex 增 1 处;AUD-035 起 workspaceIndex 增 1 处=workspace py glob+外部根 RelativePattern;KODE-CFG-017 起 inferPipeline 增 1 处=infer 管道 py watcher;配置契约检查诊断起 extension.ts 增 1 处=.kbengine/debug.json/.gitignore/.vscode/settings.json/CLAUDE.md/README 契约文件 watcher;SRC-001 L2 起 extension.ts 拨 1 处=python 类索引 watcher 迁 activate/languageServices.ts,SRC-001 L3 再拨 1 处=配置契约 watcher 迁 activate/diagnostics.ts,测试按文件名记账故清单记 src/languageServices.ts):src/extension.ts=2 src/languageServices.ts=1 src/diagnostics.ts=1 src/typeStorageIndexWatchers.ts=1 src/entityMapping.ts=3 src/hotReload.ts=1 src/pythonTypeStubs.ts=1 src/debugConfig.ts=1 src/workspaceIndex.ts=2 src/globalDataIndex.ts=1 src/inferPipeline.ts=1(合计 15 处调用位)
+watcher 分布(基线 499d34a,按**源码调用位**计,测试逐文件对账;GLOBDATA-001 起 globalDataIndex 增 1 处;AUD-035 起 workspaceIndex 增 1 处=workspace py glob+外部根 RelativePattern;KODE-CFG-017 起 inferPipeline 增 1 处=infer 管道 py watcher;配置契约检查诊断起 extension.ts 增 1 处=.kbengine/debug.json/.gitignore/.vscode/settings.json/CLAUDE.md/README 契约文件 watcher;SRC-001 L2 起 extension.ts 拨 1 处=python 类索引 watcher 迁 activate/languageServices.ts,SRC-001 L3 再拨 1 处=配置契约 watcher 迁 activate/diagnostics.ts,SRC-001 L5 再拨 1 处=最终配置 kbengine*.xml watcher 迁 activate/views.ts,测试按文件名记账故清单记 src/languageServices.ts 与 src/views.ts):src/extension.ts=1 src/languageServices.ts=1 src/diagnostics.ts=1 src/typeStorageIndexWatchers.ts=1 src/entityMapping.ts=3 src/hotReload.ts=1 src/pythonTypeStubs.ts=1 src/debugConfig.ts=1 src/workspaceIndex.ts=2 src/globalDataIndex.ts=1 src/inferPipeline.ts=1 src/views.ts=1(合计 15 处调用位)
 
-- 装配层自持:extension.ts ×4、typeStorageIndexWatchers.ts ×1 调用位(循环建 def/types.xml/entities.xml 3 枚 watcher,ARC-005;另 1 枚为配置契约检查的契约文件 watcher)。
+- 装配层自持:extension.ts ×1、typeStorageIndexWatchers.ts ×1 调用位(循环建 def/types.xml/entities.xml 3 枚 watcher,ARC-005)——配置契约 watcher 已迁 diagnostics.ts(SRC-001 L3)、最终配置 kbengine*.xml watcher 已迁 views.ts(SRC-001 L5)。
 - 模块自持(见 §6 标注):entityMapping ×3、hotReload ×1(显式 dispose/重建)、pythonTypeStubs ×1、debugConfig ×1。
 - workspaceIndex ×1(py glob)住类内,但 WorkspaceIndex 全仓唯一构造位在装配层,Disposable 随 context.subscriptions 释放——生命周期口径已符合 ARC-005,不算未完成。
 
