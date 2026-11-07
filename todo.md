@@ -1080,10 +1080,10 @@
 
 ## 用户令 2026-11-03：stub 生成模式分层开关（默认生成+pyright，激进才复制代码）
 
-- [ ] `IDE-STUB-001 [P1]` 新增设置 `kbengine.python.stubSourceMode`：`generated`（默认）| `real-source`（激进）。语义：generated=由内置生成链产出 `entity_types.pyi`/`KBEngine.pyi`（现 `entityTypeStubs.ts`/`pythonTypeStubs.ts` 生成链），**不复制真实代码**；real-source=现有「复制真实代码导出」路径（`exportEntityTypeStubs` real 分支/fantasydemoRealExport 所测路径）仅在此档执行。验收：默认 fresh workspace 不出现复制代码行为；切档生效有测试。
-- [ ] `IDE-STUB-002 [P1]` generated 档接 pyright：生成 stub 后调用 pyright（CLI 优先 `pyright --createstub`/`npx pyright`，探测不可用则降级纯生成并在输出面板提示），用 pyright 诊断校验/补齐生成 stub 的类型面。验收：pyright 在 PATH 时 stub 经其校验（测试 mock/真实二选一），不可用时降级不报错。
-- [ ] `IDE-STUB-003 [P2]` 文档三处同步：`docs/guide/configuration.md`+`docs/zh/guide/configuration.md` 配置总览表、`docs/guide/features.md`+`docs/zh/guide/features.md` Settings 表（docsCommands 对账测试会查）。
-- [ ] `IDE-STUB-004 [P1]` 测试：默认档不触发复制代码路径；real-source 档触发；fantasydemoRealExport 标注为 real-source 专属 fixture；`tests/fantasydemoRealExport.test.ts` 在默认档下 skip 理由更新。
+- [x] `IDE-STUB-001 [P1]` 新增设置 `kbengine.python.stubSourceMode`：`generated`（默认）| `real-source`（激进）。语义：generated=由内置生成链产出 `entity_types.pyi`/`KBEngine.pyi`（现 `entityTypeStubs.ts`/`pythonTypeStubs.ts` 生成链），**不复制真实代码**；real-source=现有「复制真实代码导出」路径（`exportEntityTypeStubs` real 分支/fantasydemoRealExport 所测路径）仅在此档执行。验收：默认 fresh workspace 不出现复制代码行为；切档生效有测试。
+- [x] `IDE-STUB-002 [P1]` generated 档接 pyright：生成 stub 后调用 pyright（CLI 优先 `pyright --createstub`/`npx pyright`，探测不可用则降级纯生成并在输出面板提示），用 pyright 诊断校验/补齐生成 stub 的类型面。验收：pyright 在 PATH 时 stub 经其校验（测试 mock/真实二选一），不可用时降级不报错。
+- [x] `IDE-STUB-003 [P2]` 文档三处同步：`docs/guide/configuration.md`+`docs/zh/guide/configuration.md` 配置总览表、`docs/guide/features.md`+`docs/zh/guide/features.md` Settings 表（docsCommands 对账测试会查）。
+- [x] `IDE-STUB-004 [P1]` 测试：默认档不触发复制代码路径；real-source 档触发；fantasydemoRealExport 标注为 real-source 专属 fixture；`tests/fantasydemoRealExport.test.ts` 在默认档下 skip 理由更新。
 
 > **⚠ 0.2.0 范围冻结（用户令 2026-11-03）**：本账本仅清既有条目与新暴露缺陷；CFG/STUB/KB/协议分析器/IDE-GIT 等**新功能批次一律顺延 0.2.1**，冻结期内不派工。发布判定=QA 线缩水版全绿（见 docs/kode2/qa-execution-plan.md §8）。解冻须用户明示。
 
