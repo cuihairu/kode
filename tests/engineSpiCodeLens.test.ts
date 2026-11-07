@@ -16,9 +16,9 @@ import {
   componentRoleForPath,
   ENGINE_SPI_METHODS,
   engineSpiCodeLensTitle,
-  EngineSpiCodeLensProvider
+  EngineSpiCodeLensProvider,
+  findModuleLevelMethodDeclarations
 } from '../src/engineSpiCodeLens';
-import { findPythonMethodDeclarations } from '../src/rpcCodeLens';
 import { configurationOverrides } from './fake-vscode/workspaceState';
 import { makeTextDocument } from './fake-vscode/core';
 import { resetConfigDerivedScanRootForTests } from '../src/configDerive';
@@ -59,6 +59,16 @@ describe('componentRoleForPath(组件角色判定)', () => {
     expect(componentRoleForPath('/a/scripts/interface/if.py', '/a/scripts')).toBe('interfaces');
   });
 
+  it('有脚本根但首段非组件目录 → null(不回落启发式,防 common/base 误判)', () => {
+    expect(componentRoleForPath('/a/scripts/common/base/foo.py', '/a/scripts')).toBeNull();
+    expect(componentRoleForPath('/a/scripts/base/foo.py', '/a/scripts')).toBe('baseapp');
+  });
+
+  it('有脚本根但文件在根外 → null(不出镜)', () => {
+    expect(componentRoleForPath('/a/other/base/foo.py', '/a/scripts')).toBeNull();
+    expect(componentRoleForPath('/a/scripts.py', '/a/scripts')).toBeNull();
+  });
+
   it('无脚本根启发式:取最后一个已知组件目录段', () => {
     expect(componentRoleForPath('/proj/assets/scripts/login/kbemain.py')).toBe('loginapp');
     expect(componentRoleForPath('/proj/assets/scripts/bots/kbemain.py')).toBe('bots');
@@ -67,6 +77,32 @@ describe('componentRoleForPath(组件角色判定)', () => {
   it('不在组件目录/空路径 → null(不出镜)', () => {
     expect(componentRoleForPath('/proj/src/foo.py')).toBeNull();
     expect(componentRoleForPath('')).toBeNull();
+  });
+});
+
+describe('findModuleLevelMethodDeclarations(模块级识别)', () => {
+  it('只取列 0 def,类方法/嵌套函数不取', () => {
+    const text = [
+      'def onInit(isReload):',
+      '    pass',
+      '',
+      'class Handler:',
+      '    def onBaseAppReady(self):',
+      '        pass',
+      '',
+      'def outer():',
+      '    def onCellAppDeath():',
+      '        pass',
+      ''
+    ].join('\n');
+    const decls = findModuleLevelMethodDeclarations(text);
+    // 列 0 def(onInit/outer)命中;类方法 onBaseAppReady 与嵌套 onCellAppDeath 不取
+    expect(decls.map(d => d.methodName)).toEqual(['onInit', 'outer']);
+  });
+
+  it('async 模块级 def 也命中', () => {
+    const decls = findModuleLevelMethodDeclarations('async def onInit(x):\n    pass\n');
+    expect(decls.map(d => d.methodName)).toEqual(['onInit']);
   });
 });
 
@@ -84,7 +120,7 @@ def onRequestLogin(account, password):
 def ordinaryHelper():
     pass
 `;
-  const declarations = findPythonMethodDeclarations(kbemain);
+  const declarations = findModuleLevelMethodDeclarations(kbemain);
 
   it('入口脚本(baseapp)命中 onInit/onBaseAppReady,表外普通函数不出', () => {
     const specs = buildEngineSpiCodeLenses(declarations, 'baseapp');
@@ -102,10 +138,12 @@ def ordinaryHelper():
     expect(buildEngineSpiCodeLenses(declarations, null)).toEqual([]);
   });
 
-  it('镜标题:必选带触发,可选带「可选」', () => {
+  it('镜标题:必选「方法 · 触发」,可选触发后加「 · 可选」', () => {
     expect(engineSpiCodeLensTitle('onBaseAppReady')).toBe('引擎 SPI · onBaseAppReady · 组件就绪');
-    expect(engineSpiCodeLensTitle('onReadyForLogin')).toContain('可选');
-    expect(engineSpiCodeLensTitle('onReadyForLogin')).toContain('轮询');
+    expect(engineSpiCodeLensTitle('onReadyForLogin')).toBe(
+      '引擎 SPI · onReadyForLogin · 轮询 ≥0.9999 放行登录 · 可选'
+    );
+    expect(engineSpiCodeLensTitle('onLogWrote')).toContain('· 可选');
   });
 
   it('命中规格携带声明行与必选标记', () => {
@@ -148,6 +186,27 @@ def helper():
     provider.dispose();
   });
 
+  it('同名类方法/嵌套函数不标 SPI(引擎调入口模块属性,非任意缩进 def)', () => {
+    const withClass = [
+      'class Handler:',
+      '    def onInit(self):',
+      '        pass',
+      '',
+      'def onBaseAppReady():',
+      '    pass',
+      ''
+    ].join('\n');
+    const provider = new EngineSpiCodeLensProvider();
+    const doc = makeTextDocument(withClass, {
+      fileName: '/proj/assets/scripts/base/kbemain.py',
+      languageId: 'python'
+    }) as unknown as vscode.TextDocument;
+    const titles = provider.provideCodeLenses(doc).map(lens => String(lens.command?.title ?? ''));
+    // 类方法 onInit(缩进)不标;模块级 onBaseAppReady 标
+    expect(titles).toEqual(['引擎 SPI · onBaseAppReady · 组件就绪']);
+    provider.dispose();
+  });
+
   it('开关 codeLens.engineSpi=false → 不出镜(默认开)', () => {
     configurationOverrides.set('kbengine', { 'codeLens.engineSpi': false });
     const provider = new EngineSpiCodeLensProvider();
@@ -165,6 +224,8 @@ def helper():
     const provider = new EngineSpiCodeLensProvider();
     const doc = makeDoc('/proj/assets/scripts/base/kbemain.py');
     expect(provider.provideCodeLenses(doc, { isCancellationRequested: true } as vscode.CancellationToken)).toEqual([]);
+    Object.defineProperty(doc, 'isClosed', { get: () => true });
+    expect(provider.provideCodeLenses(doc)).toEqual([]);
     provider.dispose();
   });
 

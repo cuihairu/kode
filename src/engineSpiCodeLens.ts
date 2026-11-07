@@ -13,7 +13,7 @@
 // 4 个可选方法。
 
 import * as vscode from 'vscode';
-import { findPythonMethodDeclarations, type PythonMethodDeclaration } from './rpcCodeLens';
+import { type PythonMethodDeclaration } from './rpcCodeLens';
 import { getLanguageFeatureConfig } from './languageProviders/shared';
 import { getConfigDerivedScanRootState } from './configDerive';
 
@@ -100,15 +100,15 @@ export function componentRoleForPath(filePath: string, scriptsRoot: string | nul
   if (scriptsRoot) {
     const root = scriptsRoot.replace(/\\/g, '/').replace(/\/+$/, '');
     const relative = normalized.startsWith(root + '/') ? normalized.slice(root.length + 1) : null;
-    if (relative !== null) {
-      const firstSegment = relative.split('/')[0];
-      const role = COMPONENT_DIR_TO_ROLE[firstSegment.toLowerCase()];
-      if (role) {
-        return role;
-      }
+    if (relative === null) {
+      // 文件在脚本根外:非组件脚本,不出镜(不回落启发式——根已知时角色
+      // 只由根下首段组件目录决定,避免 /scripts/common/base/foo.py 误判)
+      return null;
     }
+    const firstSegment = relative.split('/')[0];
+    return COMPONENT_DIR_TO_ROLE[firstSegment.toLowerCase()] ?? null;
   }
-  // 启发式(无脚本根):取最后一个已知组件目录段——路径嵌套越深越靠里,
+  // 无脚本根启发式:取最后一个已知组件目录段——路径嵌套越深越靠里,
   // 命中已知组件目录名即认为该文件属该组件脚本树
   const segments = normalized.split('/');
   for (let i = segments.length - 1; i >= 0; i -= 1) {
@@ -120,14 +120,38 @@ export function componentRoleForPath(filePath: string, scriptsRoot: string | nul
   return null;
 }
 
-/** 镜标题:`引擎 SPI · <方法> · <触发时机>`(可选方法加「可选」标注) */
+/**
+ * 模块级(列 0)函数声明:引擎经 getEntryScript() 调用的 SPI 函数是入口模块
+ * 的属性(模块级 def),类方法/嵌套函数即使同名也不是 SPI——故 SPI 识别只
+ * 取列 0 def,与 RPC 识别(任意缩进)不同,此处不复用
+ * rpcCodeLens.findPythonMethodDeclarations。
+ */
+export function findModuleLevelMethodDeclarations(text: string): PythonMethodDeclaration[] {
+  const declarations: PythonMethodDeclaration[] = [];
+  const lines = text.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const match = MODULE_LEVEL_DECLARATION_PATTERN.exec(line);
+    if (!match) {
+      continue;
+    }
+    const methodName = match[1];
+    declarations.push({ line: index, character: line.indexOf(methodName), methodName });
+  }
+  return declarations;
+}
+
+/** 模块级(列 0)def 声明:`def name(` / `async def name(`,行首无缩进 */
+export const MODULE_LEVEL_DECLARATION_PATTERN = /^(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/;
+
+/** 镜标题:`引擎 SPI · <方法> · <触发时机>`,可选方法触发后加「 · 可选」 */
 export function engineSpiCodeLensTitle(methodName: string): string {
   const entry = ENGINE_SPI_METHODS[methodName];
   if (!entry) {
     return `引擎 SPI · ${methodName}`;
   }
   const optional = entry.required ? '' : ' · 可选';
-  return `引擎 SPI · ${methodName}${optional} · ${entry.trigger}`;
+  return `引擎 SPI · ${methodName} · ${entry.trigger}${optional}`;
 }
 
 /** 命中规格(声明行 + 方法名;组件角色已定) */
@@ -195,7 +219,8 @@ export class EngineSpiCodeLensProvider implements vscode.CodeLensProvider {
     if (!role) {
       return [];
     }
-    const declarations = findPythonMethodDeclarations(document.getText());
+    // SPI 函数=入口模块属性(模块级 def);类方法/嵌套函数同名不出
+    const declarations = findModuleLevelMethodDeclarations(document.getText());
     return buildEngineSpiCodeLenses(declarations, role).map(spec => {
       const range = new vscode.Range(
         new vscode.Position(spec.declaration.line, spec.declaration.character),
