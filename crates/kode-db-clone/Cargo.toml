@@ -22,7 +22,7 @@ getrandom = "0.2"
 # 可用)。就绪条件由本测试自实现 MysqlImage(见 mysql_real.rs),不依赖
 # testcontainers-modules(其 mysql 模块等待条件对 5.7 永不满足)。
 testcontainers = { version = "0.27", default-features = false, features = ["blocking"] }
-mysql = "26"
+mysql = "28"
 
 [lints]
 workspace = true
