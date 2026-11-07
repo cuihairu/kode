@@ -45,6 +45,7 @@ struct ApiDocManifest {
     entries: Vec<ApiDocEntry>,
 }
 
+#[derive(Debug)]
 pub struct ApiDocLibrary {
     pub version: i64,
     pub entries: Vec<ApiDocEntry>,
