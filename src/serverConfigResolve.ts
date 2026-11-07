@@ -266,14 +266,18 @@ export async function ensureConfigResolved(
   if (hit && hit.generation === generation && hit.fingerprint === mark) {
     return hit;
   }
-  const existing = inflights.get(overridesKey);
+  // 在途请求按「代 + 文件指纹 + 键」隔离:配置落盘/设置变化(invalidate 或
+  // 指纹前进)后,同键新调用不得复用旧配置的在途请求——否则变更后立即重取
+  // 仍等到旧 RPC、合成文档回旧内容(审核席 P1:2026-11-07 CFG-009 审)。
+  const inflightKey = `${generation}\n${mark}\n${overridesKey}`;
+  const existing = inflights.get(inflightKey);
   if (existing) {
     return existing;
   }
   const inflight = refresh(generation, overridesKey, mark, located).finally(() => {
-    inflights.delete(overridesKey);
+    inflights.delete(inflightKey);
   });
-  inflights.set(overridesKey, inflight);
+  inflights.set(inflightKey, inflight);
   return inflight;
 }
 
@@ -309,6 +313,12 @@ async function refresh(
     customTelnet: null,
     dbInterface: null
   };
+  // 回包落槽前复核:RPC 在途期间 generation 前进或两份文件指纹已变 → 本次
+  // 产物按发起时的旧配置算出,只回给发起方,不落槽(新指纹的下一次 ensure
+  // 自会重取;旧回包覆盖新槽会把过期配置缓存成「最新」)。
+  const stale = (): boolean =>
+    getRootConfigGeneration() !== generation ||
+    `${fingerprint(located.defaultsPath)}|${fingerprint(located.customPath)}` !== mark;
   const gate = getKodeCoreShadowGate();
   if (!gate) {
     // 门未接线(激活前/停用后):瞬态,不缓存——下一 ensure 重试
@@ -328,7 +338,9 @@ async function refresh(
     // RPC 失败:如实降级不缓存失败态为最终(缓存住,同代不重锤宕机
     // server;文件/代变化后重试),消费面按「core 不可知」降级。
     const failed: CacheSlot = { ...base, reason: outcome.reason, overridesKey, fingerprint: mark };
-    storeSlot(overridesKey, failed);
+    if (!stale()) {
+      storeSlot(overridesKey, failed);
+    }
     return failed;
   }
   const result = outcome.result;
@@ -346,6 +358,9 @@ async function refresh(
     customTelnet: (result['customTelnet'] as CoreCustomTelnet | null) ?? null,
     dbInterface: (result['dbInterface'] as CoreDatabaseInterfaceConfig | null) ?? null
   };
+  if (stale()) {
+    return state;
+  }
   const slot: CacheSlot = { ...state, overridesKey, fingerprint: mark };
   storeSlot(overridesKey, slot);
   return slot;

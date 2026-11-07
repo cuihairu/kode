@@ -158,4 +158,69 @@ describe('KODE-CFG-009 消费通道走 core 解析', () => {
     await ensureConfigResolved();
     expect(calls).toHaveLength(2);
   });
+
+  it('配置落盘后同键重取不复用旧在途请求;慢旧回包不覆盖新槽(审核席 P1)', async () => {
+    // 红:在途按 overridesKey 单键共享时,同键第二发(新指纹)会拿到旧 RPC
+    // 的 promise,变更后的立即重取返回旧配置;且慢旧回包晚落槽覆盖新产物。
+    let releaseFirst: (() => void) | null = null;
+    let rpcCount = 0;
+    setKodeCoreShadowGate({
+      runInRust: async (_method: string, params: unknown) => {
+        rpcCount += 1;
+        const seq = rpcCount;
+        if (seq === 1) {
+          await new Promise<void>(resolve => {
+            releaseFirst = resolve;
+          });
+        }
+        const typed = params as { defaultsXml: string | null; customXml: string | null };
+        const entry = typed.defaultsXml?.includes('changed-entry') ?? false;
+        const tree = {
+          name: 'root',
+          text: '',
+          children: [
+            {
+              name: 'baseapp',
+              text: '',
+              children: [
+                { name: 'entryScriptFile', text: entry ? 'changed-entry' : 'first-entry', children: [] }
+              ]
+            }
+          ]
+        };
+        return {
+          ok: true as const,
+          result: {
+            defaultsTree: tree,
+            customTree: typed.customXml !== null ? tree : null,
+            merged: typed.defaultsXml !== null ? tree : null,
+            telnetSummary: [{ component: 'baseapp', port: 40000 + seq, password: null }],
+            telnetDefaultPorts: { baseapp: 40000 },
+            customTelnet: null,
+            dbInterface: { ...CORE_DB, port: 3306 + seq }
+          }
+        };
+      }
+    } as unknown as KodeCoreGate);
+
+    const first = ensureConfigResolved();
+    // 等第一发真正进入在途(gate 已挂起)
+    await new Promise(resolve => setTimeout(resolve, 0));
+    // 配置落盘:指纹(size:mtimeMs)前进
+    fs.writeFileSync(
+      path.join(root, 'kbe', 'res', 'server', 'kbengine_defaults.xml'),
+      '<root><baseapp><entryScriptFile>changed-entry</entryScriptFile></baseapp></root>'
+    );
+    const second = await ensureConfigResolved();
+    // 新指纹 → 新在途新 RPC,不得复用旧 promise
+    expect(rpcCount).toBe(2);
+    expect(second.dbInterface?.port).toBe(3306 + 2);
+
+    // 旧回包晚到:落槽前复核指纹 → 不覆盖新槽
+    releaseFirst!();
+    await first;
+    const slot = getConfigResolved();
+    expect(slot?.dbInterface?.port).toBe(3306 + 2);
+    expect(slot?.merged?.children[0]?.children[0]?.text).toBe('changed-entry');
+  });
 });
