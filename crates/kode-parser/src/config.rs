@@ -395,3 +395,233 @@ pub fn merge_config_xml(base: &ConfigNode, override_node: &ConfigNode) -> Config
     }
     merged
 }
+
+// ============ KODE-CFG-009:core resolve(消费通道唯一取数口) ============
+//
+// TS 消费面(hover 合成展示/telnet 速览/数据库连接要素)统一经
+// `$/kode/config/resolve` 取本模块产物;TS 侧 parseConfigXml/mergeConfigXml/
+// summarizeFinalTelnet/extractDatabaseInterfaceConfig 同步下线(设计 §6.2
+// step 3),本模块是解析/合并/读值的唯一实现。
+
+/// 引擎各组件 telnet 默认端口(kbengine_defaults.xml `<telnet_service><port/>`)。
+/// 写死表自 TS `telnetService.ENGINE_DEFAULT_TELNET_PORTS` 迁入,core 为唯一真源。
+pub const ENGINE_DEFAULT_TELNET_PORTS: [&str; 7] = [
+    "loginapp", "dbmgr", "interfaces", "logger", "baseapp", "cellapp", "bots",
+];
+
+/// telnet 速览条目(镜像 TS summarizeFinalTelnet 产物:端口数字非法→None、
+/// 0 合法保留、密码空→None)。
+#[derive(Debug, Clone, PartialEq)]
+pub struct TelnetSummaryEntry {
+    pub component: String,
+    pub port: Option<f64>,
+    pub password: Option<String>,
+}
+
+/// dbmgr 数据库接口连接要素(镜像 TS extractDatabaseInterfaceConfig 产物:
+/// 缺叶回落引擎默认;encrypt 缺省 true;明文密码只在 encrypt=false 提取)。
+#[derive(Debug, Clone, PartialEq)]
+pub struct DatabaseInterfaceConfig {
+    pub host: String,
+    /// 端口(缺/非法回落 3306;引擎 `<port>0` 表示用 mysql 默认,同样落 3306)
+    pub port: f64,
+    pub username: String,
+    pub database_name: String,
+    /// true = 密码经引擎 RSA 加密,kode 不读不解读
+    pub encrypt: bool,
+    pub character_set: String,
+    /// 明文密码(仅 encrypt=false 时提取)
+    pub plain_password: Option<String>,
+}
+
+/// 引擎 defaults dbmgr 段缺叶时的默认值(kbengine_defaults.xml
+/// `<dbmgr><databaseInterfaces><default>`)。
+const ENGINE_DB_INTERFACE_DEFAULTS: (&str, f64, &str, &str, &str) =
+    ("localhost", 3306.0, "kbe", "kbe", "utf8mb4");
+
+/// 文本按 JS `Number` 口径转数(配置读值用):trim 后空/非数/非有限 → None。
+/// JS Number 还接受 "0x10"/"Infinity" 等形态,配置端口域不出现,不镜像。
+fn leaf_number(text: &str) -> Option<f64> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    trimmed.parse::<f64>().ok().filter(|v| v.is_finite())
+}
+
+/// 两候选层找段(镜像 TS extractDatabaseInterfaceConfig 的 candidates:
+/// 伪根一层直挂组件段与 `<root>` 包裹二层都找)。
+fn find_among_layers<'a>(root: &'a ConfigNode, name: &str) -> Option<&'a ConfigNode> {
+    root.children
+        .iter()
+        .find(|child| child.name == name)
+        .or_else(|| {
+            root.children
+                .iter()
+                .flat_map(|child| child.children.iter())
+                .find(|child| child.name == name)
+        })
+}
+
+fn child_leaf<'a>(parent: &'a ConfigNode, name: &str) -> Option<&'a str> {
+    parent
+        .children
+        .iter()
+        .find(|child| child.name == name)
+        .map(|child| child.text.as_str())
+}
+
+/// 从合成树读 telnet 速览:逐组件(引擎写死表序)读 `<telnet_service>` 端口/
+/// 密码。端口按 JS Number.isFinite 口径(0 合法保留,非数→None),密码非空
+/// 才带出;组件段缺 telnet_service → 全 None(不猜)。
+pub fn telnet_summary(root: &ConfigNode) -> Vec<TelnetSummaryEntry> {
+    ENGINE_DEFAULT_TELNET_PORTS
+        .iter()
+        .map(|component| {
+            let section = find_among_layers(root, component).and_then(|node| {
+                node.children.iter().find(|child| child.name == "telnet_service")
+            });
+            let port = section.and_then(|s| child_leaf(s, "port")).and_then(leaf_number);
+            let password = section
+                .and_then(|s| child_leaf(s, "password"))
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+                .map(str::to_string);
+            TelnetSummaryEntry {
+                component: (*component).to_string(),
+                port,
+                password,
+            }
+        })
+        .collect()
+}
+
+/// 从合成树提取 `<dbmgr><databaseInterfaces><default>` 的连接要素;段缺→None。
+/// username/encrypt 藏在 `<auth>` 下,characterSet 藏在 `<unicodeString>` 下;
+/// 端口缺/非法/0 回落 3306(引擎 `<port>0` 即「用 mysql 默认」,
+/// db_interface_mysql.cpp:166-167)。
+pub fn db_interface_config(root: &ConfigNode) -> Option<DatabaseInterfaceConfig> {
+    let iface = find_among_layers(root, "dbmgr")?
+        .children
+        .iter()
+        .find(|child| child.name == "databaseInterfaces")?
+        .children
+        .iter()
+        .find(|child| child.name == "default")?;
+    let auth = iface.children.iter().find(|child| child.name == "auth");
+    let unicode = iface
+        .children
+        .iter()
+        .find(|child| child.name == "unicodeString");
+    let leaf_text = |name: &str| -> &str {
+        child_leaf(iface, name).unwrap_or("")
+    };
+    let (default_host, default_port, default_username, default_database, default_charset) =
+        ENGINE_DB_INTERFACE_DEFAULTS;
+    let host = leaf_text("host").trim();
+    let username = auth
+        .and_then(|a| child_leaf(a, "username"))
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .unwrap_or(default_username);
+    let database = leaf_text("databaseName").trim();
+    let charset = unicode
+        .and_then(|u| child_leaf(u, "characterSet"))
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .unwrap_or(default_charset);
+    // encrypt 缺省 true:值(lowercase)非字面 false 即加密
+    let encrypt = auth
+        .and_then(|a| child_leaf(a, "encrypt"))
+        .map(str::trim)
+        .map(|v| !v.eq_ignore_ascii_case("false"))
+        .unwrap_or(true);
+    let plain_password = if encrypt {
+        None
+    } else {
+        auth.and_then(|a| child_leaf(a, "password"))
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)
+    };
+    Some(DatabaseInterfaceConfig {
+        host: if host.is_empty() {
+            default_host.to_string()
+        } else {
+            host.to_string()
+        },
+        port: leaf_number(leaf_text("port")).filter(|v| *v > 0.0).unwrap_or(default_port),
+        username: username.to_string(),
+        database_name: if database.is_empty() {
+            default_database.to_string()
+        } else {
+            database.to_string()
+        },
+        encrypt,
+        character_set: charset.to_string(),
+        plain_password,
+    })
+}
+
+/// 元件配置 telnet_service 段读值(镜像 TS parseKbengineXmlTelnet 语义:
+/// 文档序首个 `<telnet_service>`,端口数字非法→None,密码空→None)。
+#[derive(Debug, Clone, PartialEq)]
+pub struct CustomTelnet {
+    pub port: Option<f64>,
+    pub password: Option<String>,
+}
+
+/// `$/kode/config/resolve` 产物:双树 + 合成树 + telnet 速览 + 数据库连接要素
+/// + 元件 telnet 段读值一次出全(TS 消费通道唯一取数口)。
+pub struct ResolvedConfig {
+    pub defaults_tree: Option<ConfigNode>,
+    pub custom_tree: Option<ConfigNode>,
+    pub merged: Option<ConfigNode>,
+    pub telnet_summary: Vec<TelnetSummaryEntry>,
+    pub db_interface: Option<DatabaseInterfaceConfig>,
+    /// 元件配置(自定义侧)telnet_service 段读值(custom 树缺/无段 → None)
+    pub custom_telnet: Option<CustomTelnet>,
+}
+
+/// 解析 defaults + 元件配置原文、按引擎同键覆盖合并、并读出 telnet 速览与
+/// 数据库连接要素。两侧都缺 → 全空产物(merged None,不猜)。
+/// 文档序首个名匹配节点(镜像 Rust derive 侧 first_node 语义)。
+fn first_node<'a>(node: &'a ConfigNode, name: &str) -> Option<&'a ConfigNode> {
+    node.children
+        .iter()
+        .find(|child| child.name == name)
+        .or_else(|| node.children.iter().find_map(|child| first_node(child, name)))
+}
+
+/// 元件配置 telnet_service 段读值(TS parseKbengineXmlTelnet 的 core 迁入形:
+/// 无段 → None;端口文本按 JS Number.isFinite 口径;密码空 → None)。
+pub fn custom_telnet(custom_tree: Option<&ConfigNode>) -> Option<CustomTelnet> {
+    let section = first_node(custom_tree?, "telnet_service")?;
+    let port = child_leaf(section, "port").and_then(leaf_number);
+    let password = child_leaf(section, "password")
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(str::to_string);
+    Some(CustomTelnet { port, password })
+}
+
+pub fn resolve_config(defaults_xml: Option<&str>, custom_xml: Option<&str>) -> ResolvedConfig {
+    let defaults_tree = defaults_xml.and_then(parse_config);
+    let custom_tree = custom_xml.and_then(parse_config);
+    let merged = match (&defaults_tree, &custom_tree) {
+        (Some(defaults), Some(custom)) => Some(merge_config_xml(defaults, custom)),
+        (Some(defaults), None) => Some(defaults.clone()),
+        _ => None,
+    };
+    let telnet_summary = merged.as_ref().map(telnet_summary).unwrap_or_default();
+    let db_interface = merged.as_ref().and_then(db_interface_config);
+    let custom_telnet = custom_telnet(custom_tree.as_ref());
+    ResolvedConfig {
+        defaults_tree,
+        custom_tree,
+        merged,
+        telnet_summary,
+        db_interface,
+        custom_telnet,
+    }
+}

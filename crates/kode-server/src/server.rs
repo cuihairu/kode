@@ -106,6 +106,7 @@ impl ServerState {
         let mut rpc = crate::rpc::RpcRegistry::new();
         crate::client_sdk::register(&mut rpc);
         crate::config_rpc::register(&mut rpc);
+        crate::config_rpc::register_resolve(&mut rpc);
         crate::database_schema::register(&mut rpc);
         crate::api_docs::register(&mut rpc);
         crate::db_clone::register(&mut rpc);
