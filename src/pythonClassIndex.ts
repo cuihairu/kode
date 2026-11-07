@@ -1417,7 +1417,6 @@ export class PythonClassIndex {
     const scope = [...this.rootsByScope.keys()].filter(root => filePath.startsWith(root + path.sep))
       .sort((left, right) => right.length - left.length)[0];
     const composition = scope ? this.rootsByScope.get(scope) : undefined;
-    process.stdout.write('DBG2 scope='+String(scope)+' composition='+(composition?JSON.stringify({roots:composition.roots.slice(0,8),mixins:composition.defMixins.get('Monster')})+'':'null')+'\n');
     const rootNames = composition?.roots ?? [];
     for (const root of rootNames) {
       if (token?.isCancellationRequested) { return { candidates: [], partial: true }; }
