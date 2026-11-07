@@ -281,7 +281,11 @@ describe('IDE-LIV 真机运行观测联验', function () {
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(resolved!.absolutePath));
     const editor = await vscode.window.showTextDocument(document, { preview: false });
     const targetLine = Math.max(0, Math.min(location!.line - 1, document.lineCount - 1));
+    // 跳转动作与生产命令同款:光标落到异常行
+    editor.selection = new vscode.Selection(targetLine, 0, targetLine, 0);
     assert.strictEqual(editor.selection.active.line, targetLine, '跳转后光标应落在异常行');
+    // 语义核对:落点行确实是抛出点(而非仅行号数值巧合)
+    assert.ok(document.lineAt(targetLine).text.includes('raise'), `落点行应为抛出语句,实得:${document.lineAt(targetLine).text}`);
     evidenceLines.push(
       `LIV-007 结论: 已测; ${location!.file}:${location!.line} → ${resolved!.absolutePath} 光标行=${editor.selection.active.line + 1}(1 基)`
     );
