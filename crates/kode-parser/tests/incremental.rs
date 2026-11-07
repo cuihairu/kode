@@ -1,6 +1,6 @@
 //! 增量重构注册表:同文件未变零重建 + 依赖索引(PR-005 要求 / IDX-003 基础)。
 
-use kode_parser::dep::{file_kind_of_uri, ParseRegistry};
+use kode_parser::dep::{file_kind_of_uri, key_for, ParseRegistry};
 use kode_vfs::store::{DocumentKey, RootId};
 use kode_vfs::uri::CanonicalUri;
 
@@ -99,4 +99,70 @@ fn file_kind_by_uri() {
         kode_parser::dep::FileKind::Alias
     );
     assert_eq!(fk("/w/other.xml"), kode_parser::dep::FileKind::Other);
+}
+
+#[test]
+fn parsed_unit_kinds_cover_all_four_file_kinds() {
+    let mut reg = ParseRegistry::new();
+    // 四种声明文件都走通注册表,产物 kind 字符串与文件种类一一对应。
+    let cases: [(&str, &str, &str); 4] = [
+        ("/w/ed/Avatar.def", "<root></root>", "def"),
+        (
+            "/w/entities.xml",
+            "<root><Avatar hasCell=\"true\"/></root>",
+            "entities.xml",
+        ),
+        (
+            "/w/ed/types.xml",
+            "<root><SKILL> UINT16 </SKILL></root>",
+            "types.xml",
+        ),
+        (
+            "/w/ed/alias.xml",
+            "<root><A1> UINT16 </A1></root>",
+            "alias.xml",
+        ),
+    ];
+    for (uri, text, kind) in cases {
+        let k = key(uri);
+        let (report, unit) = reg.update(k, text);
+        assert!(report.rebuilt, "{uri} 应真实重建");
+        assert!(report.error.is_none());
+        assert_eq!(unit.as_ref().map(|u| u.kind()), Some(kind), "{uri}");
+    }
+    assert_eq!(reg.tracked_files(), 4);
+}
+
+#[test]
+fn reparse_cleans_stale_reverse_entries_and_helpers_work() {
+    let mut reg = ParseRegistry::new();
+    let avatar = key_for(RootId(2), "/w/scripts/entity_defs/Avatar.def");
+    reg.update(
+        avatar.clone(),
+        "<root><Properties><s><Type> SKILL </Type></s></Properties></root>",
+    );
+    assert_eq!(reg.dependents_of("SKILL"), vec![avatar.clone()]);
+    assert!(reg.refs_of(&avatar).is_some(), "登记过的文件可查引用集");
+
+    // 同 key 换内容(引用从 SKILL 改为 OTHER):旧反向条目被差量清理,
+    // 且 SKILL 只被本文件引用 → 反向键整体移除。
+    reg.update(
+        avatar.clone(),
+        "<root><Properties><s><Type> OTHER </Type></s></Properties></root>",
+    );
+    assert!(reg.dependents_of("SKILL").is_empty());
+    assert_eq!(reg.dependents_of("OTHER"), vec![avatar.clone()]);
+
+    // invalidate 清掉新条目;对未登记 key 调用不 panic(前向无记录直通)。
+    reg.invalidate(&avatar);
+    assert!(reg.dependents_of("OTHER").is_empty());
+    assert!(reg.refs_of(&avatar).is_none());
+    let never = key("/w/never_seen.def");
+    reg.invalidate(&never);
+    assert_eq!(reg.tracked_files(), 0);
+
+    // clear:全量重置(缓存/索引/实测计数)。
+    reg.clear();
+    assert_eq!(reg.stats.update_calls, 0);
+    assert_eq!(reg.stats.rebuilds, 0);
 }

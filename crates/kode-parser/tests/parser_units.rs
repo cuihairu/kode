@@ -1,9 +1,9 @@
 //! 解析器单测:span 精确性、伪注释、实体解码、属性、错误恢复、语义模型。
 
-use kode_parser::diag::{DiagCode, LineMap, Severity};
+use kode_parser::diag::{DiagCode, LineMap, Severity, Span};
 use kode_parser::model::{
-    canonical_tag, flag_domains, normalize_flag_tokens, parse_alias, parse_def, parse_entities,
-    parse_types, resolve_parent_chain, MethodSection,
+    canonical_tag, component_types, flag_domains, normalize_flag_tokens, parse_alias, parse_def,
+    parse_entities, parse_types, resolve_parent_chain, MethodSection,
 };
 use kode_parser::xml::{mask_def_pseudo_comments, parse, NodeData};
 
@@ -374,4 +374,245 @@ fn interfaces_element_form_and_wrapper_spellings() {
     let text = "<root><Interfaces><Interface><MoveIface/></Interface><interface> TextIface </interface><Foo> NoIface </Foo><type>TypeIface</type></Interfaces></root>";
     let def = parse_def(text);
     assert_eq!(def.interfaces, vec!["MoveIface", "TextIface", "TypeIface"]);
+}
+
+// --- 补覆盖面:PI/声明节点、未闭合 CDATA、标量空值、方法段助手、组件类型 ---
+
+/// `<?...?>` 处理指令与 `<!...>` 声明都保留为节点,span 精确;未闭合 PI/声明
+/// 给结构化诊断但不丢树(SYNTAX-002 容错口径)。
+#[test]
+fn pi_and_declaration_nodes_keep_exact_spans_and_report_unterminated() {
+    let text = "<?xml version=\"1.0\" encoding=\"utf-8\"?><root><a/></root><?proc foo?>";
+    let doc = parse(text, false);
+    let pis: Vec<&Span> = doc
+        .nodes
+        .iter()
+        .filter_map(|n| match &n.data {
+            NodeData::ProcessingInstruction { span } => Some(span),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(pis.len(), 2, "两条 PI 都应保留");
+    assert_eq!(
+        &text[pis[0].start..pis[0].end],
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+    );
+    assert_eq!(&text[pis[1].start..pis[1].end], "<?proc foo?>");
+    assert!(doc.diagnostics.is_empty());
+
+    // 未闭合 PI:诊断 + 节点保留,树不丢。
+    let cut = parse("<root><?xml version=\"1.0", false);
+    assert!(cut
+        .diagnostics
+        .iter()
+        .any(|d| d.code == DiagCode::UnterminatedProcessingInstruction));
+    assert!(cut.root().is_some());
+
+    // `<!DOCTYPE ...>` 声明节点保留。
+    let doctype = parse(
+        "<root><!DOCTYPE root [ <!ELEMENT root ANY> ]></root>",
+        false,
+    );
+    assert!(doctype
+        .nodes
+        .iter()
+        .any(|n| matches!(n.data, NodeData::Declaration { .. })));
+    assert!(doctype.diagnostics.is_empty());
+
+    // 未闭合 `<!...>`:诊断(复用 UnterminatedComment 码)。
+    let cut_doctype = parse("<!DOCTYPE", false);
+    assert!(cut_doctype
+        .diagnostics
+        .iter()
+        .any(|d| d.code == DiagCode::UnterminatedComment));
+}
+
+/// 未闭合 CDATA:诊断 + 树保留(与注释同容错口径)。
+#[test]
+fn unterminated_cdata_reports_but_keeps_tree() {
+    let doc = parse("<root><v><![CDATA[raw < text", false);
+    assert!(doc
+        .diagnostics
+        .iter()
+        .any(|d| d.code == DiagCode::UnterminatedCdata));
+    let root = doc.root().expect("树不丢");
+    assert!(doc.child_element(root, "v").is_some());
+}
+
+/// `scalar_child_value`:空文本视作无值(TS getScalarChildValue 口径)。
+#[test]
+fn scalar_child_value_empty_text_is_none() {
+    let doc = parse("<root><v>   </v><w> x </w></root>", false);
+    let root = doc.root().unwrap();
+    assert_eq!(doc.scalar_child_value(root, "v"), None);
+    assert_eq!(doc.scalar_child_value(root, "w"), Some("x".to_string()));
+    // 缺子元素也是 None
+    assert_eq!(doc.scalar_child_value(root, "missing"), None);
+}
+
+/// 接口条目首个非注释子节点若是 PI/声明形态(非元素/文本),按空名跳过
+/// (KR-AUD-88:只认元素形态与文本形态)。
+#[test]
+fn interface_entry_with_pi_only_child_is_skipped() {
+    let text = "<root><Interfaces><Interface><?pi x?></Interface><interface> TextIface </interface></Interfaces></root>";
+    let def = parse_def(text);
+    assert_eq!(def.interfaces, vec!["TextIface"]);
+}
+
+/// `Client Flags` + `Flags` 双标签合并(遗留拼写):flags_raw 用 `|` 拼接保序。
+#[test]
+fn legacy_client_flags_and_flags_tags_merge() {
+    let text = "<root><Properties><s><Type> UINT16 </Type><Client Flags> CELL </Client Flags><Flags> ALL_CLIENTS </Flags></s></Properties></root>";
+    let def = parse_def(text);
+    assert!(def.diagnostics.is_empty(), "{:?}", def.diagnostics);
+    let s = &def.properties[0];
+    // flags_raw 保留原始拼写、以 `|` 拼接;flags 走规范化(CELL → CELL_PUBLIC)去重保序。
+    assert_eq!(s.flags_raw.as_deref(), Some("CELL|ALL_CLIENTS"));
+    assert_eq!(s.flags, vec!["CELL_PUBLIC", "ALL_CLIENTS"]);
+}
+
+/// `<Identifier>` 提取(TS symbolInfo.identifier 同口径)。
+#[test]
+fn property_identifier_extracted() {
+    let text = "<root><Properties><id><Type> UINT32 </Type><Identifier> sm_id </Identifier></id></Properties></root>";
+    let def = parse_def(text);
+    assert_eq!(def.properties[0].identifier.as_deref(), Some("sm_id"));
+}
+
+/// 方法段助手:as_str / section_tag / extract_methods_of 三向一致。
+#[test]
+fn method_section_helpers_all_sections() {
+    assert_eq!(MethodSection::Base.as_str(), "base");
+    assert_eq!(MethodSection::Cell.as_str(), "cell");
+    assert_eq!(MethodSection::Client.as_str(), "client");
+    let text = "<root><BaseMethods><b1><Arg> UINT32 </Arg></b1></BaseMethods><CellMethods><c1/></CellMethods><ClientMethods><cl1><Exposed> true </Exposed></cl1></ClientMethods></root>";
+    let doc = parse(text, true);
+    let root = doc.root().unwrap();
+    let base = MethodSection::Base.extract_methods_of(&doc, root);
+    assert_eq!(base.len(), 1);
+    assert_eq!(doc.element(base[0]).name, "b1");
+    assert_eq!(MethodSection::Cell.extract_methods_of(&doc, root).len(), 1);
+    assert_eq!(
+        MethodSection::Client.extract_methods_of(&doc, root).len(),
+        1
+    );
+    // 缺段 → 空
+    let no_cell = parse_def("<root><BaseMethods/></root>");
+    assert!(no_cell.methods(MethodSection::Cell).is_empty());
+}
+
+/// 组件类型列表助手(浅层)。
+#[test]
+fn component_types_helper_lists_types() {
+    let def = parse_def(
+        "<root><Components><inv><Type> Inventory </Type></inv><bag><Type> Bag </Type></bag><x><Type>  </Type></x></Components></root>",
+    );
+    assert_eq!(component_types(&def), vec!["Inventory", "Bag"]);
+}
+
+/// `element()` 对非元素节点触发不可变借用守卫(调试面断言,非静默错读)。
+#[test]
+#[should_panic(expected = "element() called on non-element")]
+fn element_guard_panics_on_non_element_node() {
+    let doc = parse("<root>text</root>", false);
+    let root = doc.root().unwrap();
+    let text_idx = doc
+        .nodes
+        .iter()
+        .position(|n| matches!(n.data, NodeData::Text { .. }))
+        .expect("文本节点存在");
+    let _ = doc.element(text_idx);
+    let _ = root;
+}
+
+// --- diag:Span 助手 / Severity / DiagCode 字符串面 ---
+
+#[test]
+fn span_len_empty_and_normalization() {
+    let s = Span::new(3, 7);
+    assert_eq!(s.len(), 4);
+    assert!(!s.is_empty());
+    let empty = Span::new(5, 5);
+    assert_eq!(empty.len(), 0);
+    assert!(empty.is_empty());
+    // 反向入参归一化(不 panic,start<=end)
+    let inv = Span::new(9, 4);
+    assert_eq!(inv.start, 4);
+    assert_eq!(inv.end, 9);
+    assert_eq!(inv.len(), 5);
+    assert!(!inv.is_empty());
+}
+
+#[test]
+fn severity_as_str_all_levels() {
+    assert_eq!(Severity::Error.as_str(), "error");
+    assert_eq!(Severity::Warning.as_str(), "warning");
+    assert_eq!(Severity::Info.as_str(), "info");
+}
+
+#[test]
+fn diag_code_as_str_is_stable_for_all_variants() {
+    // 稳定协议面:每个码都有唯一非空字符串(blind.rs 仅随机抽验,此处全覆盖)。
+    let codes = [
+        DiagCode::UnclosedElement,
+        DiagCode::MismatchedCloseTag,
+        DiagCode::StrayCloseTag,
+        DiagCode::InvalidTagName,
+        DiagCode::InvalidAttribute,
+        DiagCode::UnterminatedAttributeValue,
+        DiagCode::UnterminatedComment,
+        DiagCode::UnterminatedCdata,
+        DiagCode::UnterminatedProcessingInstruction,
+        DiagCode::InvalidEntity,
+        DiagCode::DuplicateAttribute,
+        DiagCode::UnexpectedLt,
+        DiagCode::SkippedGarbage,
+        DiagCode::InheritanceCycle,
+    ];
+    let mut seen = std::collections::HashSet::new();
+    for c in codes {
+        let s = c.as_str();
+        assert!(s.starts_with("kp-"), "{s}");
+        assert!(seen.insert(s), "码重复: {s}");
+    }
+    assert_eq!(seen.len(), codes.len());
+}
+
+/// `child_elements_named`:按名过滤全部直接元素子节点(保序)。
+#[test]
+fn child_elements_named_filters_by_name_preserving_order() {
+    let doc = parse("<root><a/><b/><a/></root>", false);
+    let root = doc.root().unwrap();
+    let all = doc.child_elements(root);
+    assert_eq!(all.len(), 3);
+    let named = doc.child_elements_named(root, "a");
+    assert_eq!(named.len(), 2);
+    for n in &named {
+        assert_eq!(doc.element(*n).name, "a");
+    }
+    // 名字不在场 → 空
+    assert!(doc.child_elements_named(root, "z").is_empty());
+}
+
+/// `truthy_child`:缺子元素即 false(None 分支),不 panic。
+#[test]
+fn truthy_child_missing_child_is_false() {
+    let doc = parse("<root><flag> true </flag></root>", false);
+    let root = doc.root().unwrap();
+    assert!(doc.truthy_child(root, "flag"));
+    assert!(!doc.truthy_child(root, "absent"));
+}
+
+/// `normalize_flag_tokens`:空段(`|` 相邻/首尾)跳过,不产空 token。
+#[test]
+fn normalize_flag_tokens_skips_empty_segments() {
+    assert_eq!(
+        normalize_flag_tokens("CELL||ALL_CLIENTS"),
+        vec!["CELL_PUBLIC", "ALL_CLIENTS"]
+    );
+    assert_eq!(normalize_flag_tokens("|"), Vec::<String>::new());
+    assert_eq!(
+        normalize_flag_tokens("CELL_PUBLIC|CELL_PUBLIC"),
+        vec!["CELL_PUBLIC"]
+    );
 }

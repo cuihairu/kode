@@ -217,6 +217,32 @@ fn telnet_section_without_port_uses_defaults_ports() {
 }
 
 #[test]
+fn telnet_defaults_bad_or_missing_port_falls_back_to_writein() {
+    // defaults 端口非数(abc)与缺 `<port>` 子段:不 panic,回落写死表
+    // (镜像 parseKbengineDefaultsTelnet 只收 >0 的正整数)。
+    let custom = parse("<root><telnet_service></telnet_service></root>");
+    let defaults = parse(
+        "<root>\
+         <loginapp><telnet_service><port>31001</port></telnet_service></loginapp>\
+         <baseapp><telnet_service><port>abc</port></telnet_service></baseapp>\
+         <cellapp><telnet_service></telnet_service></cellapp>\
+         </root>",
+    );
+    let cap = derive_capabilities(Some(&custom), Some(&defaults), &facts());
+    let port_of = |c: &str| {
+        cap.telnet
+            .endpoints
+            .iter()
+            .find(|e| e.component == c)
+            .map(|e| e.port)
+            .unwrap()
+    };
+    assert_eq!(port_of("loginapp"), 31001);
+    assert_eq!(port_of("baseapp"), 40000); // abc 非数 → 写死表
+    assert_eq!(port_of("cellapp"), 50000); // 无端口子段 → 写死表
+}
+
+#[test]
 fn telnet_section_nested_component_matches_regex_first() {
     // 镜像正则「首个 <telnet_service> 任意处」:嵌套段亦被读到
     let custom = parse(
