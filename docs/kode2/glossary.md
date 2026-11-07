@@ -39,6 +39,17 @@
 | `serveFromRust()` | serving gate | 控制 Rust 是否可直接服务的唯一放行点;Phase 1/2 首片保持 `false`。 | [ADR-002](adr/ADR-002-benchmark-first-rust-migration.md) |
 | 差异日志 | `ShadowDiffLog` | 影子模式的环形差异记录,容量 500,含 `match`/`diff`/`rust-error`/`rust-timeout`/`rust-unavailable` 五类 verdict。 | [ADR-002](adr/ADR-002-benchmark-first-rust-migration.md) |
 
+<a id="terms-src-layers"></a>
+### 2.1b 源码抽象层（SRC-001 extension.ts 拆分）
+
+| 术语 | 英文/别名 | 定义 | 相关 ADR |
+|---|---|---|---|
+| 组合根 | composition root | `activate()` 中按序创建共享实例、编排各层激活器、统一登记销毁的入口层；激活顺序与依赖装配的唯一所有者（SRC-001 拆分后 `src/extension.ts` 保留此职责）。 | — |
+| 激活器 | layer activator | 每个抽象层一个 `activateXxx(deps): Disposable[]`；显式接收本层依赖、返回本层注册的销毁句柄。 | — |
+| 依赖注入面 | layer deps | 每层激活器的入参类型，显式声明该层消费的共享实例（如 `entityMappingManager`/`indexScheduler`）；替代闭包变量隐式捕获。 | — |
+| 共享实例 | shared instance | 跨层复用的核心对象（`indexScheduler`/`entityMappingManager`/`dataDictIndex`/`serverManager`）；由组合根创建并注入。 | — |
+| 销毁所有权 | dispose ownership | 每个 Disposable 的销毁责任归属；拆分层后统一由组合根 `context.subscriptions` 持有，避免多头释放。 | — |
+
 <a id="terms-parser"></a>
 ### 2.2 解析与语义
 
