@@ -1339,9 +1339,10 @@
   落点：tests/fixtures/** 检出 CRLF、golden 按 LF 生成。
   验收：.gitattributes 强制关键目录 eol=lf（或比对前归一化）；golden 类测试双平台绿且不破坏既有检出。
 
-- [ ] WIN-5 [P2] POSIX 语义依赖（约 15 失败：logCollectorSocket getuid/cov-longtail 信号 exit code/unexecutable chmod 000/schemaCacheCaseSensitivity 大小写盘等）
+- [x] WIN-5 [P2] POSIX 语义依赖（约 15 失败：logCollectorSocket getuid/cov-longtail 信号 exit code/unexecutable chmod 000/schemaCacheCaseSensitivity 大小写盘等）
   （2026-11-05 进度：server 族信号/chmod 用例已 skip 随 391864f；killProcessTree taskkill 失败回落 child.kill 修掉 processManager stop 悬挂；余 logCollectorSocket getuid/cov-longtail/schemaCache 等未动。）
   （2026-11-05 进度：covExtensionCommands「已装 dump」用例 win32 skip 带注释（Node spawn 无 PATHEXT、.cmd 直 spawn EINVAL，Linux CI 保留覆盖）；logCollectorSocket/cov-longtail/schemaCache 等未动。）
+  （2026-11-07 关闭：平台化批已随 win3/tests-portable 入主干（f6e24579 batch2 + 8d0e99e5/232211d2 收口，PR #25 线）——修复前基线 win-full 48 红/imac-full 49 红（2026-11-06 23:31/00:12，_winrun 快照），点名项全部测试侧平台化、不动产品逻辑：logCollectorSocket 「prefers process.getuid」skip win32 带注释（tests/logCollectorSocket.test.ts:252-254）；cov-longtail spawnTestProcess 信号终止 skip win32（Windows 无真 signal、code=1 非 null/SIGTERM，tests/cov-longtail.test.ts:1191-1199）及 watchFile EISDIR(:748)/readdir EACCES(:912) skip；schemaCacheCaseSensitivity 大小写盘 skipIf win32（tests/schemaCacheCaseSensitivity.test.ts:52，POSIX 侧语义保留）；chmod/EACCES 族（defReferenceGraph/entityMapping/defRenamer/computeDefRenameEdits/IDE-AUD-007 0o555·EACCES·RLIMIT_FSIZE）skipIf win32；kbengineProtocolReaders uid 平台分支（win32 无 getuid）。语义测试两平台各自固化：POSIX 全量保留覆盖，win32 跳过带原因注释。收敛证据：imac 真机全量 0 挂（7033 过/49 skip，2026-11-07 05:24 imac-check3b）；Linux 全量 0 挂（7061 过/21 skip，05:27 linux-final；主仓 HEAD=acf2775b 复跑 7141 过/2 skip/0 挂，09:11）。）
   落点：process.getuid 不存在于 win32；Windows 无真 signal，kill 后 code=null 断言失配；chmod 000 不阻止执行/读。
   验收：平台分支或 describe.skipIf(process.platform==='win32') 带注释；语义测试在两平台各自固化。
 
