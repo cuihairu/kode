@@ -1433,3 +1433,7 @@
 - [ ] SRC-012 [P2] 处理其余大文件候选：messageTable.ts（:365 建议拆）、entityDependencyWebView.ts（:145 建议拆）、hover.ts（:72 部分拆）、databaseSchema.ts（:97 部分拆）、databaseSchemaCore.ts（:237 可选拆）、debugConfig.ts（:107 建议拆）、clientSdkGenerator.ts（:269 建议拆）、pythonClassIndex.ts（:168 部分拆）、explorerProviders.ts（:166 可选拆）、monitoringWebView.ts（:21 部分拆）、client_sdk.rs（:35 建议拆）、archive.rs（:90 可选拆）、debugConfigAttach.test.ts（建议拆）、hotReloadReceiverRoundtrip.test.ts（可选拆）。（报告 证据表）
 - [ ] SRC-013 [P2] `src/generated/apiDocs.ts`（3066 行）保持生成物定位：由 scripts/generate-api-docs.mjs:7 从 docs/knowledge/api-*.md 抽取，与 crates/kode-server/assets/api-docs.json 同源，parity 测试校验（tests/apiDocsParity.test.ts:35）。不因 3066 行手工拆分，通过生成脚本维护；需核对当前产物与来源同步。（报告 逐项判定 9）
 - [ ] SRC-014 [P2] Rust 16 crate 边界合理，无证据支持合并（Cargo.toml:11、kode-index/Cargo.toml:12、kode-kbengine/Cargo.toml:23）——分类结论保留，不需动作。（报告 逐项判定 1）
+
+## kode Redis 界面（2026-11-08 用户问「redis 的界面实现了吗」）
+
+- [ ] KODE-REDIS-UI-001 [P1] Redis 后端界面：现 `DatabaseBackend = 'mysql' | 'redis'` 仅类型（databaseSchemaCore.ts:65），唯一实例化硬编码 `backend: 'mysql'`（databaseSchema.ts:358），redis 只出现在 databaseSimulator.ts:731 注释「redis 后端不模拟：引擎另有 kbe/src/lib/db_redis，快照与模拟按 mysql 单口径」与 serverConfigCatalog.ts:255 配置项说明——无任何 Redis 连接/树/预览/命令 UI。要求：① 连接注册支持 redis 后端（databaseConnectionRegistry 增加 redis host/port/auth/db 字段，与 mysql 同校验）；② 数据库树/表预览接入 redis（kbe/src/lib/db_redis 实体键模型：entity 键 + hash 字段，按 kbe 源码口径列键空间，不模拟 mysql 结构）；③ 配置面 dbmgr.databaseInterfaces.default.type=redis 时联动；④ 门禁：vitest 全绿 + 手动走查（连接真实 redis / 无 redis 时 graceful 空态）；⑤ 单 commit 英文简短；禁 bump 版本。
