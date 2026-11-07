@@ -118,6 +118,7 @@ impl ServerState {
         crate::ruff_lint::register(&mut rpc);
         crate::wire_codec::register(&mut rpc);
         crate::def_md5::register(&mut rpc);
+        crate::workspace_discovery::register(&mut rpc);
         ServerState {
             initialized: false,
             shutdown_requested: false,

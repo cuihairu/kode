@@ -13,6 +13,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 // 路径模板渲染单一真源(与手工输入链 definitionWorkspace.resolveWorkspacePath 同源)
 import { renderPathTemplate } from './workspacePath';
+import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
 /** 约定路径(与 getDefinitionWorkspaceLayout 的候选同源,深扫描只作兜底) */
 export const DISCOVERY_CONVENTIONS = {
@@ -245,6 +246,7 @@ const isFresh = (entry: CacheEntry<unknown>): boolean =>
   Date.now() - entry.at < discoveryCacheTtlMs;
 
 const scanCache = new Map<string, CacheEntry<DiscoveredCandidateSet>>();
+let discoveryGeneration = 0;
 // 书 PR-002 ③(交互路径 Top3 memo):约定根枚举与引擎探针的按目录缓存,
 // 与 scanCache 同级失效——交互路径每查询重复 readdir/stat 属纯重复。
 const conventionalRootsMemo = new Map<string, CacheEntry<string[]>>();
@@ -259,12 +261,14 @@ export function applyDiscoveryChoices(
   choices: Partial<Record<DiscoveryKey, string>> | undefined
 ): void {
   if (choices) {
+    discoveryGeneration += 1;
     rememberedChoices.set(workspaceRoot, choices);
     scanCache.delete(workspaceRoot);
   }
 }
 
 export function setDiscoveryChoice(workspaceRoot: string, key: DiscoveryKey, value: string): void {
+  discoveryGeneration += 1;
   const current = rememberedChoices.get(workspaceRoot) ?? {};
   rememberedChoices.set(workspaceRoot, { ...current, [key]: value });
   scanCache.delete(workspaceRoot);
@@ -277,6 +281,7 @@ export function getDiscoveryChoice(workspaceRoot: string, key: DiscoveryKey): st
 }
 
 export function resetDiscoveryState(): void {
+  discoveryGeneration += 1;
   scanCache.clear();
   resetDiscoveryMemo();
   rememberedChoices.clear();
@@ -306,6 +311,35 @@ function cachedScan(workspaceRoot: string, options?: ScanOptions): DiscoveredCan
   const result = scanWorkspaceAnchors(workspaceRoot, options);
   scanCache.set(workspaceRoot, { value: result, at: Date.now() });
   return result;
+}
+
+/** Prefer the bounded Rust scanner for the async discovery command. A newer
+ * cache/reset wins over a late RPC result; errors retain the existing TS path. */
+export async function preheatDiscoveryScanInRust(workspaceRoot: string): Promise<void> {
+  const cached = scanCache.get(workspaceRoot);
+  if (cached && isFresh(cached)) { return; }
+  const gate = getKodeCoreShadowGate();
+  if (!gate) { return; }
+  const generation = discoveryGeneration;
+  try {
+    const result = await gate.runInRust<unknown>('$/kode/workspace/scanAnchors', { root: workspaceRoot }, { timeoutMs: 5000 });
+    if (!result.ok || generation !== discoveryGeneration || !isCandidateSet(result.result)) { return; }
+    const current = scanCache.get(workspaceRoot);
+    if (!current || !isFresh(current)) {
+      scanCache.set(workspaceRoot, { value: result.result, at: Date.now() });
+    }
+  } catch {
+    // Rust unavailable: collectDiscoveryCandidates uses the established TS scanner.
+  }
+}
+
+function isCandidateSet(value: unknown): value is DiscoveredCandidateSet {
+  if (typeof value !== 'object' || value === null) { return false; }
+  const record = value as Record<string, unknown>;
+  return ['entityDefs', 'entitiesXml', 'typesXml', 'kbeSourceRoots', 'messagesXml', 'configRoots']
+    .every(key => Array.isArray(record[key]) && (record[key] as unknown[]).every(item => typeof item === 'string')) &&
+    Number.isSafeInteger(record.scanVisited) && (record.scanVisited as number) >= 0 &&
+    (record.scanVisited as number) <= DEFAULT_SCAN_MAX_VISITED && typeof record.scanTruncated === 'boolean';
 }
 
 function firstExisting(candidates: string[]): string | null {
@@ -511,6 +545,7 @@ const KEY_LABELS: Record<DiscoveryKey, string> = {
  */
 export async function runWorkspaceDiscovery(deps: DiscoveryPromptDeps, workspaceRoot: string): Promise<void> {
   applyDiscoveryChoices(workspaceRoot, deps.recall(workspaceRoot));
+  await preheatDiscoveryScanInRust(workspaceRoot);
   const report = collectDiscoveryCandidates(workspaceRoot);
 
   for (const key of report.ambiguous) {

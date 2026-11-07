@@ -1541,6 +1541,7 @@ dependencies = [
  "kode-parser",
  "kode-protocol",
  "kode-python",
+ "kode-root",
  "kode-types",
  "kode-vfs",
  "serde",

@@ -1476,3 +1476,4 @@
 ## 2026-11-08 克隆跨版本验证
 
 - [x] KODE-REVIEW-MYSQL57 [P1] 隔离 MySQL 5.7 容器运行 `tests/playerDataCloneMysqlReal.test.ts`，使用实际 kode-server RPC 执行 MySQL→计划/归档→导入计划→目标 MySQL 事务往返，验证一致性快照、i64/u64 边界、大于 2^53 的主键、BLOB/BINARY/VARBINARY、空值和字节预算；1/1 通过。与 MySQL 8 实测覆盖相同路径。
+- [x] RUST-MIGRATION-DISCOVERY-001 [P1] 工作区发现命令的锚点扫描接入 Rust：`$/kode/workspace/scanAnchors` 复用 kode-root 默认有界扫描，`runWorkspaceDiscovery` 优先异步预热 Rust 结果并保留 TS 错误/形状回退；重置后的旧 RPC 结果不得覆盖缓存。`tests/workspaceDiscoveryRust.test.ts` 覆盖真实 kode-server RPC、故障回退和失效竞态，`tests/kodeRootParity.test.ts` 保持对拍；同步激活预热和其他布局调用仍为 TS，后续迁移不虚报。

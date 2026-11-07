@@ -60,3 +60,7 @@
 - `echo` 是 RPC 基础测试入口，不当作需要迁移的用户功能。
 
 以上覆盖注册项的字面调用核查，不包含标准 LSP 方法、动态方法名、不同构建配置或全体 VS Code 命令；无法从静态引用推出对拍通过或已正式切流。
+
+### 工作区发现命令第一项迁移
+
+`$/kode/workspace/scanAnchors` 已将异步 `runWorkspaceDiscovery` 命令的深扫描优先接入 `kode-root`，失败或结果形状不合规回退原 TS；测试覆盖真实 kode-server RPC、六棵 golden 对拍、旧响应失效及回退。**范围仅限该命令预热**：同步激活预热、`cachedScan` 的其他调用及 VS Code 交互仍在 TS，不能因此标记整个发现系统迁移完成。
