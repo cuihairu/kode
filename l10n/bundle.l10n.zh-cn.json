@@ -58,6 +58,7 @@
   "Generate empty implementation {name} → {file}:{line}": "生成空实现 {name} → {file}:{line}",
   "Generate method {name} → {file}:{line}": "生成方法 {name} → {file}:{line}",
   "Generates only the component def; attach it yourself": "只生成组件 def,挂载由使用者手写",
+  "Git query failed: {reason}": "Git 查询失败:{reason}",
   "Guild entity": "公会实体",
   "HTTP Requests": "HTTP 请求",
   "Includes Base and Cell": "同时包含 Base 和 Cell",

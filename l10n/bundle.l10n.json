@@ -58,6 +58,7 @@
   "Generate empty implementation {name} → {file}:{line}": "Generate empty implementation {name} → {file}:{line}",
   "Generate method {name} → {file}:{line}": "Generate method {name} → {file}:{line}",
   "Generates only the component def; attach it yourself": "Generates only the component def; attach it yourself",
+  "Git query failed: {reason}": "Git query failed: {reason}",
   "Guild entity": "Guild entity",
   "HTTP Requests": "HTTP Requests",
   "Includes Base and Cell": "Includes Base and Cell",

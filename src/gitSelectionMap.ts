@@ -18,6 +18,7 @@ import { type GitRunOutcome } from './gitRunner';
 import { summarizeGitError } from './gitHistoryTree';
 import { relativeVersionPath } from './gitHistoryDiff';
 import { sharedGitQueryGate, type GitQueryRequest } from './gitQueryGate';
+import { l10nText } from './nlsRuntime';
 
 /** 选区(1 基、含端点;编辑器 0 基位置由调用面换算)。 */
 export interface SelectionRange {
@@ -263,7 +264,7 @@ export function describeSelectionMap(result: SelectionMapResult): string {
     case 'invalid-selection':
       return result.reason;
     case 'git-error':
-      return `Git 查询失败:${summarizeGitError(result.outcome)}`;
+      return l10nText('Git query failed: {reason}', { reason: summarizeGitError(result.outcome) });
   }
 }
 
