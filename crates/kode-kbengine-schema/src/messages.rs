@@ -78,6 +78,27 @@ fn sum_fixed_sizes(args: &[WireType]) -> Option<u32> {
     u32::try_from(total).ok()
 }
 
+/// 引擎接口层参数勘误(PA-001 §6 的 C++ 解析代码口径;仅当固定表 XML 未给
+/// `<arg>` 时套用——这些消息的参数在引擎 C++ 接口宏里注册,XML 只给 id):
+/// - hello: str verInfo + str scriptVerInfo + blob encryptedKey
+///   (serverapp.cpp:504-539 / clientapp.cpp:399-415)→ 线上变长;
+/// - onHelloCB: str serverVersion + str scriptVersion + str messagesDigest +
+///   i32 componentType(loginapp.cpp:1361-1377)→ 变长;
+/// - reloginBaseapp: str name + str password + u32 rndUUID + i32 entityID
+///   (clientobjectbase.cpp:655-670)→ 变长。
+const ENGINE_INTERFACE_OVERLAY: &[(&str, &[&str])] = &[
+    ("Loginapp::hello", &["STRING", "STRING", "UINT8_ARRAY"]),
+    ("Baseapp::hello", &["STRING", "STRING", "UINT8_ARRAY"]),
+    (
+        "Client::onHelloCB",
+        &["STRING", "STRING", "STRING", "INT32"],
+    ),
+    (
+        "Baseapp::reloginBaseapp",
+        &["STRING", "STRING", "UINT32", "INT32"],
+    ),
+];
+
 /// 构建固定消息表。
 ///
 /// `defaults_xml` = 引擎 `kbe/res/server/messages_fixed_defaults.xml`;
@@ -88,6 +109,30 @@ pub fn build_message_table(defaults_xml: &str, project_xml: Option<&str>) -> Mes
     parse_fixed_xml(defaults_xml, false, &mut table);
     if let Some(project) = project_xml {
         parse_fixed_xml(project, true, &mut table);
+    }
+    // 接口层勘误:XML 无 <arg> 的已知接口消息按引擎代码注册的参数建模
+    // (有 <arg> 的条目以 XML 为准,不覆盖)。
+    for (name, arg_names) in ENGINE_INTERFACE_OVERLAY {
+        if let Some(slot) = table.entries.iter_mut().find(|e| e.name == *name) {
+            if !slot.args.is_empty() {
+                continue;
+            }
+            let mut args = Vec::with_capacity(arg_names.len());
+            for raw in *arg_names {
+                match crate::wire::builtin_wire_type(raw) {
+                    Some(t) => args.push(t),
+                    None => args.push(WireType::Unresolved((*raw).to_string())),
+                }
+            }
+            slot.length = match sum_fixed_sizes(&args) {
+                Some(total) => MessageLength::Fixed(total),
+                None => MessageLength::Variable,
+            };
+            slot.args = args;
+            table.diagnostics.push(format!(
+                "{name}: args from engine interface overlay (PA-001 §6)"
+            ));
+        }
     }
     table.entries.sort_by_key(|e| e.id);
     table
