@@ -318,6 +318,27 @@ describe('extension activate 装配', () => {
     disposeAll(context);
   });
 
+  it('发现与定位诊断使用调用时的工作区，关闭后不沿用旧目录', async () => {
+    const rootA = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-discovery-old-'));
+    const rootB = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-discovery-new-'));
+    const context = makeContext();
+    try {
+      workspace.workspaceFolders = [{ uri: Uri.file(rootA), name: 'old', index: 0 }];
+      activate(context);
+      workspace.workspaceFolders = [{ uri: Uri.file(rootB), name: 'new', index: 0 }];
+      await commands.executeCommand('kbengine.discovery.report');
+      const channel = windowState.channels.find(entry => entry.name === 'KBEngine 发现与定位');
+      expect(channel!.lines.join('')).toContain(`工作区: ${rootB}`);
+      workspace.workspaceFolders = [];
+      await commands.executeCommand('kbengine.discovery.report');
+      expect(messages.warning).toContain('未打开工作区,无法生成发现与定位诊断');
+    } finally {
+      disposeAll(context);
+      fs.rmSync(rootA, { recursive: true, force: true });
+      fs.rmSync(rootB, { recursive: true, force: true });
+    }
+  }, 15000);
+
   it('发现与定位诊断:激活期发现完成后自动落报告,有问题时弹提示', async () => {
     // context 带 workspaceState memento(激活期发现链路的前置);空工作区
     // 零候选不打扰,但报告如实记录 missing 并提示

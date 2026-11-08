@@ -283,11 +283,12 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
   const discoveryReportCommand = vscode.commands.registerCommand(
     'kbengine.discovery.report',
     () => {
-      if (!primaryWorkspaceRoot) {
+      const currentWorkspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (!currentWorkspaceRoot) {
         vscode.window.showWarningMessage('未打开工作区,无法生成发现与定位诊断');
         return;
       }
-      const issueCount = writeDiscoveryReport(primaryWorkspaceRoot);
+      const issueCount = writeDiscoveryReport(currentWorkspaceRoot);
       discoveryReportChannel.show(true);
       if (issueCount > 0) {
         vscode.window.showWarningMessage(
@@ -643,6 +644,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
         void workspaceState.update(discoveryStateKey, choices)
     };
     void runWorkspaceDiscovery(discoveryDeps, discoveryRoot).then(() => {
+      if (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath !== discoveryRoot) { return; }
       const issueCount = writeDiscoveryReport(discoveryRoot);
       if (issueCount > 0) {
         vscode.window.showWarningMessage(
