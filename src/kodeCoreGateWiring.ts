@@ -1,6 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import * as vscode from 'vscode';
+import { discoverNativeBinary } from './nativeBinary';
 
 import { KodeCoreGate, type KodeCoreGateConfig, ShadowDiffEntry } from './kodeCoreGate';
 import { mirrorCorpusToRust } from './kodeCoreCorpusMirror';
@@ -27,24 +26,11 @@ function formatDiffEntry(entry: ShadowDiffEntry): string {
 
 /**
  * 自动发现 kode-server 二进制(2026-11-08 用户令:插件不应让用户手填服务器
- * 路径,serverPath 未显式配置时按扩展根常规构建路径探测)。命中即返回绝对
+ * 路径,serverPath 未显式配置时先查随包 bin,再查源码构建路径)。命中即返回绝对
  * 路径;全落空返回 ''(调用方回落 ts,不误伤)。
  */
 export function discoverKodeServerBinary(extensionRoot: string): string {
-  const candidates = [
-    path.join(extensionRoot, 'target', 'debug', 'kode-server'),
-    path.join(extensionRoot, 'target', 'release', 'kode-server'),
-  ];
-  for (const candidate of candidates) {
-    try {
-      if (fs.existsSync(candidate)) {
-        return candidate;
-      }
-    } catch {
-      // 探测失败按不存在继续,不向上抛。
-    }
-  }
-  return '';
+  return discoverNativeBinary(extensionRoot, 'kode-server');
 }
 
 /** 读 kbengine.core.* 当前配置(每次现读,不做缓存失效);serverPath 未配

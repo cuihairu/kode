@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { discoverNativeBinary } from './nativeBinary';
+import { discoverNativeBinary } from './nativeBinary';
 
 import {
   findKbengineDissector,
