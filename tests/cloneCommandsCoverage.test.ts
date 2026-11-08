@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import zhBundle from '../l10n/bundle.l10n.zh-cn.json';
 import {
   EXPORT_CANCEL_ITEM,
   EXPORT_CONFIRM_ITEM,
@@ -147,6 +148,7 @@ const makeDeps = (script: DepsScript = {}) => {
   const inputs = [...(script.inputs ?? [])];
   const picks = [...(script.picks ?? [])];
   const deps: PlayerCloneCommandDeps = {
+    localize: message => (zhBundle as Record<string, string>)[message] ?? message,
     profiles: {
       save: async (role, config, password) => {
         recorded.saved.push({ role, config, password });
@@ -436,7 +438,7 @@ describe('runConfigureCloneProfileCommand(0501)', () => {
     expect(recorded.saved).toEqual([
       { role: 'source', config: { host: 'db.host', port: 3307, user: 'kbe', database: 'kbe_db' }, password: 'pw' }
     ]);
-    expect(recorded.info).toEqual(['Source 连接配置已保存。']);
+    expect(recorded.info).toEqual(['源库连接已保存。']);
   });
 
   it('target:环境仅 local/test;端口留空落 3306;密码留空不存密钥', async () => {
@@ -449,8 +451,8 @@ describe('runConfigureCloneProfileCommand(0501)', () => {
         password: null
       }
     ]);
-    expect(recorded.info).toEqual(['Target 连接配置已保存。']);
-    expect(recorded.pickOptions[0].placeHolder).toContain('prod/staging 不允许导入');
+    expect(recorded.info).toEqual(['目标库连接已保存。']);
+    expect(recorded.pickOptions[0].placeHolder).toContain('不允许生产和预发布环境');
   });
 
   it('端口输入校验:非数字拒,空串与纯数字过', async () => {
@@ -609,7 +611,7 @@ describe('runExportCloneCommand(0502)', () => {
   it('未配置 Source 连接 → 警告指引', async () => {
     const { deps, recorded } = makeDeps({ entities: ['Avatar'], picks: ['Avatar'], inputs: ['42'] });
     await runExportCloneCommand(deps);
-    expect(recorded.warn).toEqual(['尚未配置 Source 连接(先运行「配置 Source 连接」)。']);
+    expect(recorded.warn).toEqual(['尚未配置源库连接。']);
     expect(recorded.inputPrompts).toEqual([]);
     expect(recorded.pickOptions).toEqual([]);
   });

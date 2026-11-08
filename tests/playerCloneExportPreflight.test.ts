@@ -12,7 +12,7 @@ it('offers source setup before asking for an entity or DBID and resumes afterwar
       resolveConnection: async () => configured ? { host: 'localhost', port: 3306, user: 'user', database: 'game' } : null,
       save: async () => { configured = true; },
     },
-    showWarningMessage: vi.fn(async () => '配置源连接'),
+    showWarningMessage: vi.fn(async () => 'Configure source connection'),
     showInformationMessage: vi.fn(async () => undefined),
     showInputBox: input,
     showQuickPick: pick,

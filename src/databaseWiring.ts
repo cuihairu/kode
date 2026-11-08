@@ -4,6 +4,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { l10nText } from './nlsRuntime';
 import { onDidChangeActiveProfile, resolveActiveProfile } from './activeProfile';
 import { findEngineRoot } from './engineCompatibility';
 import { getRegisteredEntities, getWorkspaceRootForDocument } from './definitionWorkspace';
@@ -557,6 +558,7 @@ export function wireDatabase(context: vscode.ExtensionContext, deps: DatabaseWir
       return folder ? vscode.Uri.joinPath(folder.uri, '.kode', 'clone-runs') : null;
     };
     playerCloneDeps = {
+    localize: message => l10nText(message),
     profiles: new CloneProfileStore({
       load: () => context.workspaceState.get('kode.playerClone.profiles'),
       save: data => {

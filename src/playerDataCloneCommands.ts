@@ -48,6 +48,8 @@ export interface EntityTableDescriptorLike {
 }
 
 export interface PlayerCloneCommandDeps {
+  /** Inject VS Code localization at the UI boundary; tests and non-VS Code callers may omit it. */
+  localize?(message: string): string;
   profiles: CloneProfileStore;
   listEntityNames(): string[];
   /** 实体 → 推导表(databaseSchema 快照;读不到 = null,不猜)。 */
@@ -148,41 +150,42 @@ export async function runConfigureCloneProfileCommand(
   deps: PlayerCloneCommandDeps,
   role: CloneProfileRole
 ): Promise<void> {
+  const t = (message: string): string => deps.localize?.(message) ?? message;
   const host = await deps.showInputBox({
-    prompt: role === 'source' ? '源库主机(Source host)' : '目标库主机(Target host,仅本地/测试库)',
-    validateInput: value => value.trim() ? null : '请输入主机地址'
+    prompt: role === 'source' ? t('Source database host') : t('Target database host (local or test only)'),
+    validateInput: value => value.trim() ? null : t('Enter a host address')
   });
   if (host === undefined) {
     return;
   }
   const portText = await deps.showInputBox({
-    prompt: '端口(Port,默认 3306)',
+    prompt: t('Port (default 3306)'),
     validateInput: value => {
       if (value === '') { return null; }
-      if (!/^\d+$/.test(value)) { return '端口必须是数字'; }
+      if (!/^\d+$/.test(value)) { return t('Port must be a number'); }
       const port = Number(value);
-      return port >= 1 && port <= 65535 ? null : '端口必须在 1 到 65535 之间';
+      return port >= 1 && port <= 65535 ? null : t('Port must be between 1 and 65535');
     }
   });
   if (portText === undefined) {
     return;
   }
-  const user = await deps.showInputBox({ prompt: '用户名(User)', validateInput: value => value.trim() ? null : '请输入用户名' });
+  const user = await deps.showInputBox({ prompt: t('Username'), validateInput: value => value.trim() ? null : t('Enter a username') });
   if (user === undefined) {
     return;
   }
-  const password = await deps.showInputBox({ prompt: '密码(Password,留空 = 不保存;只存 SecretStorage,不进配置文件)', password: true });
+  const password = await deps.showInputBox({ prompt: t('Password (leave empty to remove the saved password)'), password: true });
   if (password === undefined) {
     return;
   }
-  const database = await deps.showInputBox({ prompt: '数据库(Database)', validateInput: value => value.trim() ? null : '请输入数据库名称' });
+  const database = await deps.showInputBox({ prompt: t('Database'), validateInput: value => value.trim() ? null : t('Enter a database name') });
   if (database === undefined) {
     return;
   }
   if (role === 'target') {
     // §6.1:目标环境显式声明,只认 local/test。
     const environment = await deps.showQuickPick(['local', 'test'], {
-      placeHolder: '目标环境(Environment;prod/staging 不允许导入)'
+      placeHolder: t('Target environment (production and staging are not allowed)')
     });
     if (environment !== 'local' && environment !== 'test') {
       return;
@@ -200,7 +203,7 @@ export async function runConfigureCloneProfileCommand(
     );
   }
   await deps.showInformationMessage(
-    role === 'source' ? 'Source 连接配置已保存。' : 'Target 连接配置已保存。'
+    role === 'source' ? t('Source connection saved.') : t('Target connection saved.')
   );
 }
 
@@ -292,8 +295,10 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
   }
   let config = await deps.profiles.resolveConnection('source');
   if (!config) {
-    const choice = await deps.showWarningMessage('尚未配置 Source 连接(先运行「配置 Source 连接」)。', '配置源连接');
-    if (choice !== '配置源连接') { return; }
+    const message = deps.localize?.('Source connection is not configured.') ?? 'Source connection is not configured.';
+    const action = deps.localize?.('Configure source connection') ?? 'Configure source connection';
+    const choice = await deps.showWarningMessage(message, action);
+    if (choice !== action) { return; }
     await runConfigureCloneProfileCommand(deps, 'source');
     config = await deps.profiles.resolveConnection('source');
     if (!config) { return; }
