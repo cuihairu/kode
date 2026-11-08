@@ -26,7 +26,7 @@ Mapping from the plan's §3 component names to the actual modules:
 | RelationGraph | `relations.rs` | `RelationGraph::build` `relations.rs:63` |
 | ExportPlanner | `planner.rs` | `ExportPlanner::plan` `planner.rs:96` |
 | ExportExecutor | `reader.rs` | `SourceReader::export` `reader.rs:144` |
-| ArchiveCodec | `archive.rs` + `keystore.rs` + `redact.rs` + `value.rs` | `write_archive` `archive.rs:697` |
+| ArchiveCodec | `archive.rs` + `archive/format.rs` + `keystore.rs` + `redact.rs` + `value.rs` | `write_archive` `archive.rs:518` |
 | ImportPlanner | `import.rs` + `idmap.rs` + `target.rs` | `ImportPlanner::plan` `import.rs:198` |
 | ImportExecutor | `apply.rs` | `ImportApplier::apply` `apply.rs:234` |
 | ImportValidator | `apply.rs` (Verify phase) | post-commit `SELECT COUNT` re-check `apply.rs:488` |
@@ -106,17 +106,17 @@ source MySQL (read-only)                        target MySQL (local/test only)
   (`keystore.rs:42`, `keystore.rs:100`); a key directory is refused if it sits
   inside the archive (`ensure_key_outside_archive` `keystore.rs:111`).
 - The archive is a framed container with magic `KDPCLONE1` + version + flags
-  (`archive.rs:36`); each frame carries its name, nonce, plaintext length,
+  (`archive/format.rs:19`); each frame carries its name, nonce, plaintext length,
   SHA-256 of the plaintext, and an (optional) chacha20poly1305 ciphertext with
   the frame header as AEAD associated data (`archive.rs:3-7`). Logical files are
-  `manifest.json` (written last so truncation is detectable, `archive.rs:292`),
+  `manifest.json` (written last so truncation is detectable, `archive.rs:265`),
   `data/<table>.rows.jsonl`, `relations.json`, `redaction-report.json`,
   `checksums.json`. Writes go through a temp file + `sync_all` + atomic rename;
-  `Drop` cleans up half-written archives (`archive.rs:345`). `write_archive`
-  (`archive.rs:697`) is the one-shot read→redact→archive entry; `Archive::open`
-  (`archive.rs:364`) re-verifies magic/version/size caps/decryption/per-frame
+  `Drop` cleans up half-written archives (`archive.rs:318`). `write_archive`
+  (`archive.rs:518`) is the one-shot read→redact→archive entry; `Archive::open`
+  (`archive.rs:337`) re-verifies magic/version/size caps/decryption/per-frame
   SHA/frame-set-vs-manifest/per-table checksums, and `Archive::inspect`
-  (`archive.rs:406`) reads metadata without exposing row values.
+  (`archive.rs:379`) reads metadata without exposing row values.
 
 ### Stage 5 — import planning (Prepare phase, touches no database)
 

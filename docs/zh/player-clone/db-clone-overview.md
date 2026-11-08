@@ -22,7 +22,7 @@ kode-server**（def 推导的表结构以数据形态接入，接线只是机械
 | RelationGraph | `relations.rs` | `RelationGraph::build` `relations.rs:63` |
 | ExportPlanner | `planner.rs` | `ExportPlanner::plan` `planner.rs:96` |
 | ExportExecutor | `reader.rs` | `SourceReader::export` `reader.rs:144` |
-| ArchiveCodec | `archive.rs` + `keystore.rs` + `redact.rs` + `value.rs` | `write_archive` `archive.rs:697` |
+| ArchiveCodec | `archive.rs` + `archive/format.rs` + `keystore.rs` + `redact.rs` + `value.rs` | `write_archive` `archive.rs:518` |
 | ImportPlanner | `import.rs` + `idmap.rs` + `target.rs` | `ImportPlanner::plan` `import.rs:198` |
 | ImportExecutor | `apply.rs` | `ImportApplier::apply` `apply.rs:234` |
 | ImportValidator | `apply.rs`（Verify 期） | 提交后 `SELECT COUNT` 复核 `apply.rs:488` |
@@ -88,15 +88,15 @@ kode-server**（def 推导的表结构以数据形态接入，接线只是机械
   之间，产出 `RedactionReport`（`redact.rs:249`）。
 - 密钥独立存 `FileKeyStore`，0600 权限写盘（`keystore.rs:42`、`keystore.rs:100`）；
   密钥目录落在归档内即拒绝（`ensure_key_outside_archive` `keystore.rs:111`）。
-- 归档为帧式容器：魔数 `KDPCLONE1` + 版本 + 标志位（`archive.rs:36`）；每帧含帧名、
+- 归档为帧式容器：魔数 `KDPCLONE1` + 版本 + 标志位（`archive/format.rs:19`）；每帧含帧名、
   nonce、明文字节长、明文 SHA-256 与（可选）chacha20poly1305 密文，帧头整体作 AEAD
   关联数据（`archive.rs:3-7`）。逻辑文件为 `manifest.json`（最后写入——截断即缺清单，
-  `archive.rs:292`）、`data/<表>.rows.jsonl`、`relations.json`、
+  `archive.rs:265`）、`data/<表>.rows.jsonl`、`relations.json`、
   `redaction-report.json`、`checksums.json`。写入走临时文件 + `sync_all` + 原子
-  rename；`Drop` 清场半成品（`archive.rs:345`）。`write_archive`（`archive.rs:697`）
-  是「只读→脱敏→归档」一站式入口；`Archive::open`（`archive.rs:364`）复验
+  rename；`Drop` 清场半成品（`archive.rs:318`）。`write_archive`（`archive.rs:518`）
+  是「只读→脱敏→归档」一站式入口；`Archive::open`（`archive.rs:337`）复验
   魔数/版本/大小上限/解密/逐帧 SHA/帧集与清单互核/逐表校验和；`Archive::inspect`
-  （`archive.rs:406`）只读元数据、不展示行值。
+  （`archive.rs:379`）只读元数据、不展示行值。
 
 ### 环节 5 — 导入规划（Prepare 期，不触库）
 
