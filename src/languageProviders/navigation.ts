@@ -49,14 +49,21 @@ export class KBEngineDefinitionProvider implements vscode.DefinitionProvider {
   }
 
   /**
-   * 定义面 Rust 优先:先结算 TS 结果(失败兜底),再取 Rust 落点;Rust 有
-   * 落点(语料声明)则用 Rust,否则回 TS(单/数组取首项)。Rust 失败/缺二
-   * 进制由 gate.serveInRust 兜底 null,不误伤。
+   * Rust 命中直接返回;失败或不支持时才计算 TS,避免正常路径重复解析和查询。
    */
   private async provideDefinitionRustFirst(
     document: vscode.TextDocument,
     position: vscode.Position
   ): Promise<vscode.Location | null> {
+    const version = document.version;
+    try {
+      const rustLocation = await serveDefinitionFromRust(document, position);
+      if (document.version !== version) { return null; }
+      if (rustLocation) { return lspFaceToVscodeLocation(rustLocation); }
+    } catch {
+      // A malformed response or unavailable server must retain TS navigation.
+    }
+    if (document.version !== version) { return null; }
     let tsValue: unknown = null;
     try {
       const settled = await settleProviderResult(this.provideDefinitionImpl(document, position));
@@ -65,10 +72,6 @@ export class KBEngineDefinitionProvider implements vscode.DefinitionProvider {
       }
     } catch {
       tsValue = null;
-    }
-    const rustLocation = await serveDefinitionFromRust(document, position);
-    if (rustLocation) {
-      return lspFaceToVscodeLocation(rustLocation);
     }
     const first = Array.isArray(tsValue) ? tsValue[0] : tsValue;
     if (first && typeof first === 'object' && 'uri' in first) {
