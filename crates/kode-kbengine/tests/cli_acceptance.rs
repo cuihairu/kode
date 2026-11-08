@@ -501,6 +501,7 @@ fn capture_analyze_raw_flow_both_directions() {
 /// prints pre-baked `tshark -T fields` lines from a file, so the CLI's TShark
 /// input layer (args + field parsing + stdin streaming) is exercised without
 /// a real Wireshark install.
+#[cfg(unix)]
 fn write_fake_tshark(dir: &std::path::Path, lines_file: &std::path::Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let script = dir.join("fake-tshark.sh");
@@ -514,6 +515,38 @@ fn write_fake_tshark(dir: &std::path::Path, lines_file: &std::path::Path) -> Pat
     perms.set_mode(0o755);
     std::fs::set_permissions(&script, perms).unwrap();
     script
+}
+
+#[cfg(windows)]
+fn write_fake_tshark(dir: &std::path::Path, lines_file: &std::path::Path) -> PathBuf {
+    // Use a real executable: Windows cannot execute a Unix shebang script.
+    let source = dir.join("fake_tshark.rs");
+    let executable = dir.join("fake-tshark.exe");
+    std::fs::write(
+        &source,
+        format!(
+            "use std::io::{{Read, Write}}; fn main() {{ \
+             let mut input = Vec::new(); std::io::stdin().read_to_end(&mut input).unwrap(); \
+             let bytes = std::fs::read({:?}).unwrap(); \
+             std::io::stdout().write_all(&bytes).unwrap(); }}",
+            lines_file.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    let result = Command::new("rustc")
+        .arg("--crate-name")
+        .arg("kode_fake_tshark")
+        .arg(&source)
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    executable
 }
 
 /// One tshark line: frame.time_epoch \t tcp.srcport \t tcp.dstport \t

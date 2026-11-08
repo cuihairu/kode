@@ -162,6 +162,27 @@ fn probe_version(program: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
+    fn compile_stub(dir: &std::path::Path, body: &str) -> std::path::PathBuf {
+        let source = dir.join("stub.rs");
+        let executable = dir.join("stub.exe");
+        std::fs::write(&source, body).expect("write native fixture");
+        let output = std::process::Command::new("rustc")
+            .arg("--crate-name")
+            .arg("kode_ruff_fixture")
+            .arg(&source)
+            .arg("-o")
+            .arg(&executable)
+            .output()
+            .expect("compile native fixture");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        executable
+    }
+
     /// 唯一临时目录(进程 id 隔离),测试后清理。
     fn temp_dir(tag: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("kode-ruff-{}-{tag}", std::process::id()));
@@ -175,10 +196,15 @@ mod tests {
         assert_eq!(probe_version("/bin/false"), None);
         // exit 0 但 --version 无输出 → 同样不算可用版本。
         let dir = temp_dir("silent");
+        #[cfg(unix)]
         let script = dir.join("silent.sh");
+        #[cfg(unix)]
         std::fs::write(&script, "#!/bin/sh\nexit 0\n").expect("write silent script");
+        #[cfg(unix)]
         std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
             .expect("chmod");
+        #[cfg(windows)]
+        let script = compile_stub(&dir, "fn main() {}");
         assert_eq!(probe_version(script.to_str().expect("utf8 path")), None);
         std::fs::remove_dir_all(&dir).expect("cleanup");
     }
@@ -188,7 +214,9 @@ mod tests {
     #[test]
     fn nonzero_check_exit_is_surfaced_as_err() {
         let dir = temp_dir("check-fail");
+        #[cfg(unix)]
         let script = dir.join("fake-ruff.sh");
+        #[cfg(unix)]
         std::fs::write(
             &script,
             "#!/bin/sh\n\
@@ -197,8 +225,16 @@ mod tests {
              exit 3\n",
         )
         .expect("write fake ruff");
+        #[cfg(unix)]
         std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
             .expect("chmod");
+        #[cfg(windows)]
+        let script = compile_stub(
+            &dir,
+            "fn main() { if std::env::args().any(|a| a == \"--version\") { \
+             println!(\"ruff 0.0.0-fake\"); return; } \
+             eprintln!(\"boom\"); std::process::exit(3); }",
+        );
         let error = lint(
             &["/w/x.py".to_string()],
             Some(script.to_str().expect("utf8 path")),
