@@ -978,6 +978,7 @@
 - [x] PA-004 [P2] Phase 3 CLI（kode-kbengine bin）；验收：schema validate/build/diff/inspect、decode --hex、capture analyze（支持 stdin pcap 流式）；PCAP 输入层先复用 TShark 成熟能力。前置：PA-003。
 - [x] PA-005 [P2] Phase 3 分析引擎（新 crate kode-kbengine-analyzer）；验收：独立分析一组解码消息出 JSON 报告。能力：消息/流量统计、请求响应关联（仅协议确证标识，不拿相邻猜对）、延迟 P50/P95/P99、异常检测（未知消息/非法长度/Schema 不匹配）、Entity 事件与 RPC 时间线、连接分析（登录/切 Baseapp/重连）。前置：PA-003。
 - [ ] PA-006 [P3] Phase 4 Wireshark/TShark 集成；验收：能加载并解析 KBEngine 报文的原生插件（或 C 适配层）。先验证 libwireshark Rust 绑定（现 alpha 0.0.0，按 Wireshark 版本分别构建）六项能力；不满足启用 C Thin Adapter（C 只做注册/重组/协议树映射，解析全在 Rust）。GPL 边界：插件独立 crate+独立许可评估，不混入 Apache VSIX。前置：PA-003（核心稳定后接）。
+  - 绑定六项能力实勘完成（2026-11-08，docs/design/pa006-wireshark-plugin.md）：libwireshark 0.0.0-alpha.0 六项 API 面全齐（Dissector/Binding 注册、PacketView 字节、Header derive 树、TcpFraming 重组含 65535 扩展长度形态、Preferences、会话状态），本机 tshark 4.6.4 编译干净 + KBEngine 线格式 spike（2 字节 LE+65535 标记+4 字节实长）编译出 cdylib + 真实 tshark -G plugins 加载成功（装→验→删）；**判定=走 Rust 插件，C Thin Adapter 裁撤**。跨系统实勘=Ubuntu AppArmor 拦个人插件目录（须全局目录/档案覆盖）+插件目录禁 group 可写 + OS×Wireshark 版本矩阵交付（PA-007 版本检测为此设，CLI capture analyze 零 ABI 兜底）。不勾账：插件本体（字段树/会话状态/真实 pcap 验收）待后续批次。
 - [ ] PA-007 [P3] Phase 5 Kode 集成；验收：用户零手动配置。Protocol Analyzer 命令+协议管理面板；Wireshark/TShark/插件版本检测；Schema 自动生成与协议文件变化监听（仅协议定义文件触发重建，Python 业务变更不触发）；一键开 PCAP/跑 TShark；Schema 版本提示+错误诊断。前置：PA-004、PA-006。
 
 ## KBENGINE 属性默认值守卫规则(用户令 2026-11-02,源码已核实)

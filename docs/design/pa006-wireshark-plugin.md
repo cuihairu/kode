@@ -1,0 +1,92 @@
+# PA-006 技术选型：libwireshark Rust 绑定实勘与跨系统加载（2026-11-08）
+
+PA-006（todo.md：Wireshark/TShark 集成）第一增量：对 todo 记录的
+「libwireshark Rust 绑定（现 alpha 0.0.0，按 Wireshark 版本分别构建）六项能力」
+做编译级实测，产出路线判定与跨系统交付矩阵。**本批只收选型与加载证据；
+插件本体（字段树/解析/PCAP 验收）是后续批次，PA-006 不因此勾账。**
+
+## 实勘结论：六项能力全部有一等 API 面，路线判定 = Rust 插件（不需要 C Thin Adapter）
+
+| # | 能力 | 绑定 API | 实测证据 |
+|---|---|---|---|
+| ① | 协议/dissector 注册（端口/启发式表） | `Dissector` trait + `Binding::tcp_port/udp_port/heuristic`（偏好变化时重挂载） | spike 编译通过 |
+| ② | 报文字节访问 | `PacketView`：捕获字节 `&[u8]`、端序感知整型读、Info 列 | spike 编译通过 |
+| ③ | 协议树字段节点 + 显示过滤字段 | `#[derive(Header)]`（结构体即字段集，含类型化字段与过滤名，自动挂树） | README/API 面（真实插件批次落字段） |
+| ④ | TCP 重组（粘包/拆包） | `TcpFraming::new(header_len, message_len: fn(&[u8]) -> Option<usize>)`——自定义长度函数，**KBEngine 65535 扩展长度形态（2 字节 LE=65535 标记 + 4 字节 LE 实长）可在此函数内处理**（spike 已按此形态实现） | spike 编译通过；`tcp_dissect_pdus` 语义 |
+| ⑤ | 首选项（端口配置） | `#[derive(Preferences)]`（结构体即偏好集，变化即重挂载） | README/API 面 |
+| ⑥ | 会话级状态（登录动态协议导入映射） | per-conversation state（`Dissector` 关联状态） | README/API 面 |
+
+上游还带：`Expert`（专家信息=诊断面）、`Tap`（`tshark -z` 统计=分析面）、
+`FilterFunction`（4.4+）、`FileType`（4.6+，capture 格式）、`Codec`（4.6+）。
+
+## 编译与加载证据链（本机 tshark 4.6.4 / Ubuntu resolute / rustc 1.99.0）
+
+1. crate 实存（crates.io 2026-11-08 查询）：`libwireshark 0.0.0-alpha.0`
+   （GPL-2.0-or-later，MSRV 1.89，edition 2024）+ `libwireshark-sys
+   0.0.0-alpha.0`（bundled 头 wireshark-3-0.h..4-6.h，bindgen 生成）+
+   `libwireshark-derive` + `cargo-wireshark` 子命令。
+2. 依赖链编译干净：26.5s（bindgen + libclang-21 + 链接本机
+   `libwireshark.so.19`）。`build.rs` 自动发现本机安装 → 按 4.6 选
+   bundled 头 → 生成绑定 —— **todo 记录的「按 Wireshark 版本分别构建」
+   即此机制，已核实**。
+3. KBEngine 线格式 spike（2 字节 LE 长度 + 65535 扩展标记 + 4 字节 LE 实长，
+   `TcpFraming::new(6, kbengine_message_len)`，TCP/23500 绑定）编译出
+   cdylib；导出符号 `plugin_describe/plugin_register/plugin_want_major=4/
+   plugin_want_minor=6`（ABI 正确）。
+4. **真实 tshark 4.6.4 加载成功**：`tshark -G plugins` 列出
+   `kbengine_spike.so 0.1.0 dissector`（装→验→删，可逆验证）。
+5. spike 位于 /tmp/kode-ws-spike（GPL 产物，不入本仓库 Apache 代码基）。
+
+## 跨系统加载矩阵（回答「不同系统的 Rust 二进制怎么加载」）
+
+**两类 Rust 二进制必须分开：**
+
+| | kode-server（LSP 面） | Wireshark 插件（PA-006） |
+|---|---|---|
+| 进程形态 | 独立进程，stdio 管道 | cdylib 被 Wireshark `dlopen` 进宿主进程 |
+| ABI 耦合 | 无（管道协议隔离） | 有：链接宿主 `libwireshark.so.19`/`.dll`/`.dylib` |
+| 版本耦合 | 无 | 有：`plugin_want_major/minor` 必须匹配宿主（4.6 插件不进 4.4 宿主） |
+| 交付产物 | 每 OS 一个独立二进制 | **每 OS × 每 Wireshark 版本**矩阵产物（`.so`/`.dll`/`.dylib`） |
+| 加载方 | kode 扩展拉起 | 用户已装的 Wireshark/tshark 启动时扫描插件目录 |
+
+**插件落盘目录（版本化子目录，由宿主扫描 dlopen）：**
+
+- Linux 个人：`~/.local/lib/wireshark/plugins/<maj.min>/epan/`；
+  系统级：`/usr/lib/<multiarch>/wireshark/plugins/<maj.min>/epan/`
+- Windows：`%APPDATA%\Wireshark\plugins\<maj.min>\epan\`
+- macOS：`~/.local/lib/wireshark/plugins/<maj.min>/epan/`
+
+**本机实证的发行版加固差异（部署矩阵必收）**：Ubuntu 26.04 给 tshark 配了
+AppArmor 强制档案（/etc/apparmor.d/tshark），**只放行系统插件目录，个人
+插件目录（~/.local/...）openat EACCES 被拦**——此类发行版上个人目录装了
+也不加载，必须 root 装全局目录或 `local/tshark` 档案覆盖。另：插件目录
+group/world-writable 时 Wireshark 拒扫（安全加固，实测 775 被拒，需 ≤755）。
+
+**交付策略（PA-007 的「Wireshark/TShark/插件版本检测」即为此设）**：
+检测宿主版本 → 按 OS × 宿主版本取预编译产物（发版资产按矩阵出，
+属正式版本面，受用户发版红线管辖）→ 落对应目录 → 重启 tshark 生效；
+检测不到/版本不匹配 → **纯 CLI 兜底零 ABI 耦合**（PA-004 已交付：
+`kode-kbengine capture analyze` 直接吃 pcap，任何系统只需 kode 二进制
+本身能跑，不依赖插件）。
+
+## 挂账风险（后续批次处置）
+
+- alpha 0.0.0 非稳定 API：上游升级可能破坏编译/行为；锁定版本，
+  升级走显式对拍。
+- 构建矩阵 = OS × Wireshark 版本，产物量随宿主版本线增长；nightly
+  每日构建面（允许的交付面）覆盖主版本线即可，冷门版本线按需补。
+- GPL-2.0-or-later 传染面：插件独立 crate（license 不得混入本仓库
+  Apache VSIX/其余 crates）；解析核心复用本仓库 `kode-kbengine-protocol`
+  属 Apache 侧——**边界协议**：插件 crate 以依赖方式引入解析核心需
+  Apache crate 保持无 GPL 依赖反向干净（Rust 依赖单向：GPL 插件 →
+  Apache crate 合法，Apache crate 不依赖 GPL 插件），C Thin Adapter
+  路线已裁撤无需此考虑的备份，保留该边界为发版前核对项。
+
+## 后续批次（PA-006 余量，勾账条件）
+
+1. 正式插件 crate（独立仓库或本仓库独立 workspace 成员，GPL 标注）：
+   全字段树（Header derive 落 KBEngine 消息字段）、会话状态接登录动态
+   协议导入、Expert 诊断面。
+2. 真实 KBEngine 报文 pcap 样本端到端：`tshark -r sample.pcap -Y kbengine`
+   命中断言（本批只用合成 spike 验加载）。
+3. Windows/macOS 各一台实机加载验证（CI 或用户机）。
