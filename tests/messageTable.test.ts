@@ -1482,3 +1482,60 @@ describe('渲染与行号', () => {
     expect(table.methods.map(method => method.name).sort()).toEqual(['a1', 'i1']);
   });
 });
+
+describe('组件模块域面(loadComponents 派生面补测)', () => {
+  it('组件 def 全域面:属性位/方法段/接口与父合并/首见截断/槽 flags 派生', () => {
+    // 引擎 isComponentModule 的 hasX 近似:属性 flags 位、Base/Cell/Client
+    // 方法段、接口与父链组件递归合并、visited 截断(菱形引用)、
+    // autoMatchCompOwn(exposed base 方法推 hasClient)、槽 flags 串派生。
+    const table = buildMessageTable('Hero', createSource({
+      'entity:Hero': [
+        '<root>',
+        '  <Components>',
+        '    <ca><Type>CompA</Type></ca>',
+        '    <cd><Type>CompD</Type></cd>',
+        '  </Components>',
+        '</root>'
+      ].join('\n'),
+      'component:CompA': [
+        '<root>',
+        '  <Properties>',
+        '    <pb><Type>UINT32</Type><Flags>BASE</Flags></pb>',
+        '    <pbc><Type>UINT32</Type><Flags>BASE_AND_CLIENT</Flags></pbc>',
+        '    <pnoflag><Type>UINT32</Type></pnoflag>',
+        '    <pweird><Type>UINT32</Type><Flags>BOGUS_FLAG</Flags></pweird>',
+        '  </Properties>',
+        '  <BaseMethods><bm1></bm1><bm2><Exposed/></bm2></BaseMethods>',
+        '  <CellMethods><cm1></cm1><cm2><Exposed/></cm2></CellMethods>',
+        '  <ClientMethods><cl1></cl1></ClientMethods>',
+        '  <Interfaces><interface>CompIface</interface></Interfaces>',
+        '  <Parent>CompParent</Parent>',
+        '</root>'
+      ].join('\n'),
+      'component:CompIface':
+        '<root><Properties><pi><Type>UINT32</Type><Flags>CELL</Flags></pi></Properties></root>',
+      'component:CompParent': '<root><ClientMethods><pm></pm></ClientMethods></root>',
+      'component:CompD':
+        '<root><Interfaces><interface>CompX</interface><interface>CompY</interface></Interfaces></root>',
+      'component:CompX':
+        '<root><Properties><px><Type>UINT32</Type><Flags>CELL</Flags></px></Properties><Parent>CompP</Parent></root>',
+      'component:CompY': '<root><ClientMethods><py></py></ClientMethods><Parent>CompP</Parent></root>',
+      'component:CompP': '<root></root>'
+    }))!;
+    expect(issuesOfKind(table, 'component-def-missing')).toHaveLength(0);
+    // CompA 域面:BASE 属性位 + Cell/Client 方法段 + exposed base 推 client
+    const ca = table.properties.find(property => property.name === 'ca')!;
+    expect(ca.flags).toBe('BASE|CELL_PUBLIC|BASE_AND_CLIENT|ENTITY_CLIENT_DATA_FLAGS');
+    expect(ca.hasClient).toBe(true);
+    // CompD 域面:接口 CompX(cell 属性)与 CompY(client 方法)合并;
+    // CompY 的父 CompP 在 CompX 侧已首见 → visited 截断,不重入
+    const cd = table.properties.find(property => property.name === 'cd')!;
+    expect(cd.flags).toBe('CELL_PUBLIC|ENTITY_CLIENT_DATA_FLAGS');
+    // 组件类型首见占 DataType utype(entity-component)
+    for (const name of ['CompA', 'CompD']) {
+      expect(table.types.find(type => type.name === name)?.kind).toBe('entity-component');
+    }
+    // 被引用组件 def 本体不产生槽
+    expect(table.properties.filter(property => property.typeName === 'CompP')).toHaveLength(0);
+  });
+});

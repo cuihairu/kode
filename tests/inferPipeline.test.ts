@@ -5,6 +5,8 @@ import * as fs from 'fs';
 import * as vscode from 'vscode';
 import {
   applyManagedDirExclusions,
+  createCopySyncScheduler,
+  fileSystemInferDeps,
   runInfer,
   syncInferredCopy,
   activateInferPipeline,
@@ -12,6 +14,7 @@ import {
 } from '../src/inferPipeline';
 import {
   commandRegistry,
+  commands,
   configurationOverrides,
   lastFileSystemWatcher,
   messages,
@@ -471,5 +474,163 @@ describe('KR-AUD-56: 副本同步调度器(防抖 + 在途互斥,dirty 补一轮
     } finally {
       scheduler.dispose();
     }
+  });
+
+  it('run 抛错被吞不产生未处理拒绝;dispose 清挂起防抖不再执行', async () => {
+    let runs = 0;
+    const boom = createCopySyncScheduler(async () => {
+      runs += 1;
+      throw new Error('boom');
+    }, 20);
+    boom.schedule();
+    await new Promise(resolve => setTimeout(resolve, 60));
+    expect(runs).toBe(1);
+    boom.dispose();
+    // dispose 清掉 10s 挂起防抖:此后不再执行
+    const pending = createCopySyncScheduler(async () => { runs += 10; }, 10_000);
+    pending.schedule();
+    pending.dispose();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(runs).toBe(1);
+  });
+});
+
+describe('fileSystemInferDeps 真依赖装配层(覆盖补测)', () => {
+  it('fs 面:exists/mkdir/deleteFile(缺文件不抛)/listDir(缺目录空表)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-infer-deps-'));
+    try {
+      const file = path.join(dir, 'a.txt');
+      expect(fileSystemInferDeps.exists(file)).toBe(false);
+      fileSystemInferDeps.mkdir(path.join(dir, 'nested', 'deep'));
+      expect(fs.existsSync(path.join(dir, 'nested', 'deep'))).toBe(true);
+      fileSystemInferDeps.writeText(file, 'hello');
+      expect(fileSystemInferDeps.exists(file)).toBe(true);
+      // 缺文件删除不抛;存在文件删除生效
+      fileSystemInferDeps.deleteFile(path.join(dir, 'missing.txt'));
+      fileSystemInferDeps.deleteFile(file);
+      expect(fs.existsSync(file)).toBe(false);
+      fs.writeFileSync(path.join(dir, 'sub.py'), 'x = 1');
+      const entries = fileSystemInferDeps.listDir(dir);
+      expect(entries.some(entry => entry.name === 'sub.py' && !entry.isDir)).toBe(true);
+      expect(fileSystemInferDeps.listDir(path.join(dir, 'no-such'))).toEqual([]);
+      // 根上溯:命中与未命中(走到底返回 null)
+      fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
+      fs.mkdirSync(path.join(dir, 'inner'), { recursive: true });
+      expect(fileSystemInferDeps.findGitRoot(path.join(dir, 'inner'))).toBe(dir);
+      expect(fileSystemInferDeps.findSvnRoot(dir)).toBeNull();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('spawn 面:真进程 stdout/stderr 收集 + 命令不存在 error 臂', async () => {
+    const ok = await fileSystemInferDeps.spawn('echo', ['hi'], { cwd: os.tmpdir() });
+    expect(ok.code).toBe(0);
+    expect(ok.stdout.trim()).toBe('hi');
+    const loud = await fileSystemInferDeps.spawn('sh', ['-c', 'echo err >&2'], { cwd: os.tmpdir() });
+    expect(loud.code).toBe(0);
+    expect(loud.stderr.trim()).toBe('err');
+    const bad = await fileSystemInferDeps.spawn('kode-no-such-binary-xyz', [], { cwd: os.tmpdir() });
+    expect(bad.code).toBe(-1);
+  });
+});
+
+describe('runInfer 非静默播报面(覆盖补测)', () => {
+  it('开关关闭非静默:提示已关闭即止', async () => {
+    configurationOverrides.set('kbengine', { 'infer.enabled': false });
+    const { root, files } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const result = await runInfer(makeContext(), makeDeps({ files }));
+    expect(result.status).toBe('disabled');
+    expect(messages.info.some(text => text.includes('pyrefly 推断已关闭'))).toBe(true);
+  });
+
+  it('未找到 pyrefly 非静默:提示安装途径', async () => {
+    const { root, files } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const result = await runInfer(makeContext(), makeDeps({ files, exists: () => false }));
+    expect(result.status).toBe('not-found');
+    expect(messages.info.some(text => text.includes('未找到 pyrefly'))).toBe(true);
+  });
+
+  it('ran 非静默:全零退出码报完成;非零报明细', async () => {
+    const { root, files } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    configurationOverrides.set('kbengine', { 'infer.pyreflyPath': '/opt/pyrefly' });
+    await runInfer(makeContext(), makeDeps({ files }));
+    expect(messages.info.some(text => text.includes('pyrefly infer 完成'))).toBe(true);
+    messages.info.length = 0;
+    await runInfer(makeContext(), makeDeps({
+      files,
+      spawn: async () => ({ code: 2, stdout: '', stderr: '' })
+    }));
+    expect(messages.info.some(text => text.includes('退出码非 0') && text.includes('2'))).toBe(true);
+  });
+
+  it('同步非静默:复制与清除残留如实播报', async () => {
+    const { root, files } = makeTmpWorkspace();
+    files.set(path.join(root, '.kbengine', 'inferred', 'scripts', 'stale.py'), 'old');
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const result = await syncInferredCopy(makeContext(), makeDeps({ files }));
+    expect(result.deleted).toBe(1);
+    expect(result.copied + result.overwritten).toBe(2);
+    const joined = messages.info.join('\n');
+    expect(joined).toContain('副本已同步');
+    expect(joined).toContain('清除 1 残留');
+  });
+
+  it('计划后源消失:该文件不计覆盖不抛(写读 null 如实跳过)', async () => {
+    const { root, files } = makeTmpWorkspace();
+    // 镜像预置异内容副本 → 计划期读源比对一次(overwrite),写期再读第二次
+    // 拿到 null(源在计划后被删)→ 该文件不计覆盖、不抛、其余照常复制
+    files.set(path.join(root, '.kbengine', 'inferred', 'scripts', 'main.py'), 'modified');
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const deps = makeDeps({ files });
+    const reads = new Map<string, number>();
+    const inner = deps.readText;
+    deps.readText = (p: string): string | null => {
+      const count = (reads.get(p) ?? 0) + 1;
+      reads.set(p, count);
+      return count >= 2 ? null : inner(p);
+    };
+    const result = await syncInferredCopy(makeContext(), deps, { silent: true });
+    expect(result.overwritten).toBe(0);
+    expect(result.copied).toBe(1);
+    expect(result.denied).toHaveLength(0);
+  });
+});
+
+describe('infer 激活命令处理器(覆盖补测)', () => {
+  it('kbengine.infer.run:关闭时提示即止,零动作', async () => {
+    stubWorkspace.workspaceFolders = [];
+    const context = makeContext();
+    activateInferPipeline(context);
+    configurationOverrides.set('kbengine', { 'infer.enabled': false });
+    await commands.executeCommand('kbengine.infer.run');
+    expect(messages.info.some(text => text.includes('pyrefly 推断已关闭'))).toBe(true);
+  });
+
+  it('kbengine.infer.run:ran 后同步副本;真 spawn 对不可执行二进制如实降级', async () => {
+    const { root, files } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const bin = path.join(root, 'fake-pyrefly');
+    fs.writeFileSync(bin, '#!/bin/sh\nexit 0\n');
+    configurationOverrides.set('kbengine', { 'infer.pyreflyPath': bin });
+    const context = makeContext();
+    activateInferPipeline(context);
+    await commands.executeCommand('kbengine.infer.run');
+    // 默认 fileSystemInferDeps 真 spawn:普通文件不可执行 → error 臂 code=-1,
+    // 退出码明细如实播报;随后 ran 分支补一轮静默副本同步(镜像落真盘)
+    expect(messages.info.some(text => text.includes('退出码非 0'))).toBe(true);
+    expect(fs.existsSync(path.join(root, '.kbengine', 'inferred', 'scripts', 'main.py'))).toBe(true);
+    expect(files.size).toBeGreaterThanOrEqual(0);
+  });
+
+  it('kbengine.managedDir.syncExclusions:空工作区空转不抛', async () => {
+    stubWorkspace.workspaceFolders = [];
+    const context = makeContext();
+    activateInferPipeline(context);
+    await commands.executeCommand('kbengine.managedDir.syncExclusions');
+    expect(messages.error).toHaveLength(0);
   });
 });
