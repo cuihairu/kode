@@ -342,3 +342,126 @@ fn implemented_by_only_type_gets_type_node_and_non_dangling_edge() {
                 && e.get("kind").and_then(|v| v.as_str()) == Some("implements")
         ));
 }
+
+#[test]
+fn string_python_files_parent_text_and_element_interface_forms() {
+    // 三种文档化形态:pythonFiles 单字符串(非数组)、Parent 文本取值、
+    // interface 取元素标签名(空文本回落);外加非法值形态被整条忽略。
+    let g = graph(json!({
+        "entitiesXml": "<root><Hero hasBase=\"true\"/></root>",
+        "defs": {
+            "Hero": "<root>\
+                <Parent>Monster</Parent>\
+                <Interfaces><Type><IMove/></Type></Interfaces>\
+                <BaseMethods><onTick><Exposed/></onTick></BaseMethods>\
+            </root>",
+            "Monster": "<root></root>",
+            "IMove": "<root></root>",
+        },
+        "paths": {
+            "Hero": "/defs/entitys/Hero.def",
+            "Monster": "/defs/entitys/Monster.def",
+            "IMove": "/defs/interfaces/IMove.def",
+        },
+        "categories": {
+            "Hero": "entity",
+            "Monster": "entity",
+            "IMove": "interface",
+        },
+        "pythonFiles": {
+            "Hero": "/scripts/entities/Hero.py",
+            "Ghost": 42,
+        },
+    }));
+    // Parent 文本形态 → inheritance 边
+    assert!(has_edge(&g, "def:Hero", "def:Monster", "inheritance"));
+    // interface 元素形态(空文本回落标签名) → is-a 边
+    assert!(has_edge(&g, "def:Hero", "interface:IMove", "is-a"));
+    // pythonFiles 单字符串形态 → python 节点 + method-impl 边
+    assert_eq!(
+        node_named(&g, "python:/scripts/entities/Hero.py")["kind"],
+        "python"
+    );
+    assert!(has_edge(
+        &g,
+        "def:Hero",
+        "python:/scripts/entities/Hero.py",
+        "method-impl"
+    ));
+    // 非字符串/数组值(Ghost: 42)→ 空列表被过滤,不产生任何节点/边
+    assert!(edges_of(&g)
+        .iter()
+        .all(|e| e.get("to").and_then(|v| v.as_str()) != Some("42")));
+}
+
+#[test]
+fn uncategorized_parent_hint_duplicate_registration_and_impl_skip() {
+    let g = graph(json!({
+        // X 在登记表出现两次:registration 边去重,只推一条。
+        "entitiesXml": "<root><X hasBase=\"true\"/><X hasBase=\"true\"/></root>",
+        "defs": {
+            // Y 未出现在 categories:resolve_kind 回落 hint(Def)。
+            "X": "<root><Parent><Y/></Parent></root>",
+            "Y": "<root></root>",
+        },
+        "paths": {
+            "X": "/defs/entitys/X.def",
+            "Y": "/defs/entitys/Y.def",
+        },
+        "categories": {"X": "entity"},
+        "typeImpls": {"PLAIN_TYPE": "/scripts/types/Plain.py"},
+    }));
+
+    // Y 无 category → 仍按 hint 建 def 节点,inheritance 边照推。
+    assert_eq!(node_named(&g, "def:Y")["kind"], "def");
+    assert!(has_edge(&g, "def:X", "def:Y", "inheritance"));
+
+    // 重复登记只留一条 registration 边。
+    let registrations = edges_of(&g)
+        .iter()
+        .filter(|e| {
+            e.get("kind").and_then(|v| v.as_str()) == Some("registration")
+                && e.get("from").and_then(|v| v.as_str()) == Some("entity:X")
+        })
+        .count();
+    assert_eq!(registrations, 1, "registration 边去重");
+
+    // typeImpls 条目不属于 types.xml 对象类(无 typesXml → 空对象类集)
+    // → 跳过,不建 type 节点也不推 implements 边。
+    assert!(nodes_of(&g)
+        .iter()
+        .all(|n| n.get("id").and_then(|v| v.as_str()) != Some("type:PLAIN_TYPE")));
+    assert!(!has_edge(
+        &g,
+        "type:PLAIN_TYPE",
+        "python:/scripts/types/Plain.py",
+        "implements"
+    ));
+}
+
+#[test]
+fn bare_array_type_is_object_class_and_edges_by_type() {
+    // types.xml 裸 ARRAY 声明也算对象类(135 右半臂):属性引用 ARRAY 类型
+    // → type 节点 + property-type 边(非 interface/component 分支)。
+    let types_xml = "<root><ItemIds><ARRAY><of>UINT32</of></ARRAY></ItemIds></root>";
+    let hero_def = "<root>\
+        <Properties>\
+            <ids><Type>ItemIds</Type><Flags>CELL_PUBLIC</Flags></ids>\
+        </Properties>\
+    </root>";
+    let result = graph(json!({
+        "entitiesXml": "<root><Hero hasCell=\"true\"/></root>",
+        "typesXml": types_xml,
+        "defsRoot": "/defs/entitys",
+        "entitiesXmlPath": "/scripts/entities.xml",
+        "typesXmlPath": "/defs/entitys/types.xml",
+        "defs": { "Hero": hero_def },
+        "categories": {},
+    }));
+    let ty = node_named(&result, "type:ItemIds");
+    assert_eq!(ty["kind"], "type", "ARRAY 类型成 type 节点");
+    assert!(
+        has_edge(&result, "def:Hero", "type:ItemIds", "property-type"),
+        "Hero.ids → type:ItemIds property-type 边"
+    );
+}

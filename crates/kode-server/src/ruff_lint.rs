@@ -139,3 +139,57 @@ fn probe_version(program: &str) -> Option<String> {
     }
     Some(text)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 唯一临时目录(进程 id 隔离),测试后清理。
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("kode-ruff-{}-{tag}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("mkdir temp");
+        dir
+    }
+
+    /// 探测失败如实回 None:非零退出与空输出两种。
+    #[test]
+    fn probe_version_rejects_failing_and_silent_programs() {
+        assert_eq!(probe_version("/bin/false"), None);
+        // exit 0 但 --version 无输出 → 同样不算可用版本。
+        let dir = temp_dir("silent");
+        let script = dir.join("silent.sh");
+        std::fs::write(&script, "#!/bin/sh\nexit 0\n").expect("write silent script");
+        std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .expect("chmod");
+        assert_eq!(probe_version(script.to_str().expect("utf8 path")), None);
+        std::fs::remove_dir_all(&dir).expect("cleanup");
+    }
+
+    /// ruff 存在但 check 非零退出(--exit-zero 也压不住的失败,如坏旗标/IO)
+    /// → 如实 Err,带退出码与 stderr,不静默吞。
+    #[test]
+    fn nonzero_check_exit_is_surfaced_as_err() {
+        let dir = temp_dir("check-fail");
+        let script = dir.join("fake-ruff.sh");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\n\
+             if [ \"$1\" = \"--version\" ]; then echo \"ruff 0.0.0-fake\"; exit 0; fi\n\
+             echo boom >&2\n\
+             exit 3\n",
+        )
+        .expect("write fake ruff");
+        std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .expect("chmod");
+        let error = lint(
+            &["/w/x.py".to_string()],
+            Some(script.to_str().expect("utf8 path")),
+        )
+        .expect_err("非零退出应报错");
+        assert!(error.contains("ruff check failed"), "{error}");
+        assert!(error.contains("Some(3)"), "{error}");
+        assert!(error.contains("ruff 0.0.0-fake"), "{error}");
+        assert!(error.contains("boom"), "{error}");
+        std::fs::remove_dir_all(&dir).expect("cleanup");
+    }
+}

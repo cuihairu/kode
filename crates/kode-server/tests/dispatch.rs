@@ -6,7 +6,9 @@ use std::sync::atomic::Ordering;
 use serde_json::json;
 
 use kode_protocol::{error_codes, IncomingMessage, Notification, Request, RequestId};
-use kode_server::{cancel_target, handle_message, CancelRegistry, Outgoing, ServerState};
+use kode_server::{
+    cancel_target, handle_message, handle_message_with_poll, CancelRegistry, Outgoing, ServerState,
+};
 
 fn request(id: i64, method: &str, params: serde_json::Value) -> IncomingMessage {
     IncomingMessage::Request(Request {
@@ -212,6 +214,53 @@ fn cancellation_before_request_yields_request_cancelled_error() {
         notification("$/cancelRequest", json!({"id": 77})),
     );
     let out = handle_message(&mut state, request(77, "$/kode/wait", json!({"ms": 5000})));
+    assert_eq!(error_code_of(&out), error_codes::REQUEST_CANCELLED);
+}
+
+/// 睡眠间隙取消(真实泵语义):poll 钩子在间隙被调,经 CancelRegistry 登记取消。
+/// 第一次轮询即取消 → 睡后复查命中;第二次轮询才取消 → 下轮睡前复查命中。
+#[test]
+fn cancellation_during_wait_is_seen_by_poll_gap_checks() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    let cancels = state.cancels.clone();
+
+    // 第 1 次轮询取消:睡眠后的复查(泵把取消登记进 pending 表)立即命中。
+    let target = RequestId::Number(80);
+    let cancels_first = cancels.clone();
+    let mut first_poll = true;
+    {
+        let mut poll = move || {
+            if first_poll {
+                first_poll = false;
+                cancels_first.request_cancel(&target);
+            }
+            true
+        };
+        let out = handle_message_with_poll(
+            &mut state,
+            request(80, "$/kode/wait", json!({"ms": 30})),
+            &mut poll,
+        );
+        assert_eq!(error_code_of(&out), error_codes::REQUEST_CANCELLED);
+    }
+
+    // 第 2 次轮询才取消:第 1 圈完整跑过,第 2 圈睡前复查命中。
+    let target2 = RequestId::Number(81);
+    let cancels_second = cancels.clone();
+    let mut poll_count = 0u32;
+    let mut poll = move || {
+        poll_count += 1;
+        if poll_count == 2 {
+            cancels_second.request_cancel(&target2);
+        }
+        true
+    };
+    let out = handle_message_with_poll(
+        &mut state,
+        request(81, "$/kode/wait", json!({"ms": 30})),
+        &mut poll,
+    );
     assert_eq!(error_code_of(&out), error_codes::REQUEST_CANCELLED);
 }
 

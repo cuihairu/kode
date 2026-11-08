@@ -441,3 +441,56 @@ fn kr_aud_89_backslash_path_trips_upstream_normalization_contract() {
         "manifestXmlText": ""
     }));
 }
+
+#[test]
+fn symbols_report_class_attributes_with_positions() {
+    // 类属性(self.<name> = 赋值)进符号表:名称 + 位置(line/character)逐条出形。
+    let source = "class Avatar(KBEngine.Entity):\n\
+                  \tdef __init__(self):\n\
+                  \t\tself.hp = 100\n\
+                  \t\tself.speed = 5.0\n";
+    let result = symbols(json!({
+        "files": [{"path": "/scripts/cell/Avatar.py", "text": source}],
+    }));
+    let files = result.as_array().unwrap();
+    let class = &files[0]["classes"].as_array().unwrap()[0];
+    let attributes = class["attributes"].as_array().unwrap();
+    let names: Vec<&str> = attributes
+        .iter()
+        .filter_map(|a| a["name"].as_str())
+        .collect();
+    assert_eq!(names, vec!["hp", "speed"], "{attributes:?}");
+    let hp = attributes.iter().find(|a| a["name"] == "hp").unwrap();
+    assert!(hp["line"].is_number());
+    assert!(hp["character"].is_number());
+    // 位置沿源码有序:后赋的 speed 行号不早于 hp。
+    let speed = attributes.iter().find(|a| a["name"] == "speed").unwrap();
+    assert!(speed["line"].as_i64().unwrap() >= hp["line"].as_i64().unwrap());
+}
+
+#[test]
+fn process_roles_skip_roleless_and_non_process_elements() {
+    // 角色清单扫描:缺省 role / 纯空白 role 的 process 与非 process 元素
+    // 都不进角色集(379/381 的否定臂)。
+    let manifest = "<processTopology>\n\
+                    \t<database/>\n\
+                    \t<process name=\"nologin_1\"><port>20010</port></process>\n\
+                    \t<process name=\"blank_1\" role=\"   \">\n\
+                    \t\t<port>20011</port>\n\
+                    \t</process>\n\
+                    \t<process name=\"login_1\" role=\"loginapp\">\n\
+                    \t\t<port>20012</port>\n\
+                    \t</process>\n\
+                    </processTopology>";
+    let result = callgraph(json!({
+        "files": [{"path": "/scripts/cell/a.py", "text": "def f():\n    pass\n"}],
+        "manifestXmlText": manifest,
+    }));
+    let roles = result.get("processRoles").unwrap().as_array().unwrap();
+    let names: Vec<&str> = roles.iter().map(|v| v.as_str().unwrap()).collect();
+    assert_eq!(
+        names,
+        vec!["loginapp"],
+        "仅非空 role 的 process 进角色集:{names:?}"
+    );
+}

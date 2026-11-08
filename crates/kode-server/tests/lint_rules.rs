@@ -645,3 +645,18 @@ fn rules_on_rootless_document_produce_nothing() {
     };
     assert!(all_rules().run(&ctx).is_empty());
 }
+
+#[test]
+fn component_slot_not_on_inherited_chain_is_silent() {
+    // 槽名不在继承链(inherited 无该名)→ 组件段早退零 finding(609-610 空臂),
+    // 不误报同名判重。
+    let text = "<root>\n\t<Components>\n\t\t<bag>\n\t\t\t<Type>Bag</Type>\n\t\t</bag>\n\t</Components>\n</root>\n";
+    let inherited = InheritedNames::default();
+    let findings = analyze_def(text, &inherited, &[]).expect("analyze_def ok");
+    assert!(
+        !findings
+            .iter()
+            .any(|f| f.check == "inherited-name-collision"),
+        "链上无该槽名 → 零判重:{findings:?}"
+    );
+}

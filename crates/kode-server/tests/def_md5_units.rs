@@ -1620,3 +1620,65 @@ fn component_slot_persistent_utype_and_script_domains() {
         result.stream_hex
     );
 }
+
+#[test]
+fn golden_samples_pick_up_component_scripts_and_nested_def_dirs() {
+    // 合成 repo_root:scripts/{base,cell}/components/*.py 与
+    // entity_defs/{interfaces,components}/*.def 全部被扫进样本参数,
+    // 证明 fixture 扫描面完整(真实 demo-assets 缺 components 脚本目录)。
+    let tmp = std::env::temp_dir().join(format!("kode-def-md5-scan-{}", std::process::id()));
+    let scripts = tmp.join("tests/fixtures/kbengine-demo-assets/scripts");
+    let entity_defs = scripts.join("entity_defs");
+    for dir in [
+        entity_defs.join("interfaces"),
+        entity_defs.join("components"),
+        scripts.join("base/components"),
+        scripts.join("cell/components"),
+    ] {
+        std::fs::create_dir_all(&dir).expect("mkdir fixture dirs");
+    }
+    std::fs::write(entity_defs.join("Avatar.def"), "<root></root>").expect("write def");
+    std::fs::write(entity_defs.join("types.xml"), "<root></root>").expect("write types");
+    std::fs::write(scripts.join("entities.xml"), "<root></root>").expect("write entities");
+    std::fs::write(entity_defs.join("interfaces/ROLE.def"), "<root></root>").expect("write iface");
+    std::fs::write(
+        entity_defs.join("components/Inventory.def"),
+        "<root></root>",
+    )
+    .expect("write comp def");
+    std::fs::write(scripts.join("base/components/Foo.py"), "").expect("write base comp py");
+    std::fs::write(scripts.join("cell/components/Bar.py"), "").expect("write cell comp py");
+    // 杂散文件(非 .def/非 .py)必须被扫描面忽略,不入 defs/component_scripts。
+    std::fs::write(entity_defs.join("interfaces/README.txt"), "note")
+        .expect("write stray iface file");
+    std::fs::write(scripts.join("base/components/notes.txt"), "note")
+        .expect("write stray comp file");
+
+    let samples = kode_server::def_md5::golden_samples(&tmp);
+    let sample = samples
+        .iter()
+        .find(|s| s.name == "kbengine-demo-assets")
+        .expect("kbengine-demo-assets sample");
+    assert!(sample.params.defs.contains_key("Avatar"));
+    assert!(
+        sample.params.defs.contains_key("ROLE"),
+        "interfaces 目录 def 入库"
+    );
+    assert!(
+        sample.params.defs.contains_key("Inventory"),
+        "components 目录 def 入库"
+    );
+    assert!(
+        !sample.params.defs.contains_key("README"),
+        "杂散非 .def 文件不入 defs"
+    );
+    assert_eq!(
+        sample.params.component_scripts,
+        ["base:Foo", "cell:Bar"]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        "两侧组件脚本按 side:name 入账;杂散非 .py 忽略"
+    );
+    std::fs::remove_dir_all(&tmp).expect("cleanup");
+}

@@ -398,3 +398,77 @@ fn lsp_projection_maps_kinds_and_details() {
     assert_eq!(lsp["items"][2]["kind"], serde_json::json!(7));
     assert_eq!(lsp["items"][2]["detail"], serde_json::json!("ITEM_LIST"));
 }
+
+// ---------------------------------------------------------------------------
+// 取值位/开标签位的否定判定:余文非空白、头部不匹配、种类无臂 → None
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parent_head_with_trailing_content_is_not_a_value_site() {
+    let engine = loaded_engine();
+    // 光标在 "Xyz " 之后(col 13):fragment 空,head 余文 "Xyz" 非纯空白
+    // → 非取值位,返回 None。
+    let text = "<root>\n\t<Parent>Xyz </Parent>\n</root>\n";
+    assert!(
+        complete_at(&engine, "ws/scripts/entity_defs/Avatar.def", text, 2, 13).is_none(),
+        "Parent 余文非空白 → None"
+    );
+}
+
+#[test]
+fn type_head_with_trailing_content_is_not_a_value_site() {
+    let engine = loaded_engine();
+    let text = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type>UINT32 </Type>\n\t\t</hp>\n\t</Properties>\n</root>\n";
+    // col 16 = "UINT32 " 之后:fragment 空,head 余文 "UINT32" 非空白 → None。
+    assert!(
+        complete_at(&engine, "ws/scripts/entity_defs/Avatar.def", text, 4, 16).is_none(),
+        "Type 余文非空白 → None"
+    );
+}
+
+#[test]
+fn unrecognized_head_element_is_not_a_value_site() {
+    let engine = loaded_engine();
+    // 行尾在 `<hp>` 上:head 不以 Parent/Type/Arg/of 开头 → None。
+    assert!(
+        complete_at(
+            &engine,
+            "ws/scripts/entity_defs/Avatar.def",
+            AVATAR_DEF,
+            4,
+            7
+        )
+        .is_none(),
+        "`<hp>` 头部不匹配取值标签 → None"
+    );
+}
+
+#[test]
+fn open_tag_context_on_alias_documents_yields_none() {
+    let engine = loaded_engine();
+    // alias.xml 开标签位:open-tag 判面只认 Def/Entities,alias → None。
+    let alias = "<root>\n\t<HP_ALIAS>\n\t\t<Type> HP </Type>\n\t</HP_ALIAS>\n</root>\n";
+    assert!(
+        complete_at(&engine, "ws/scripts/entity_defs/alias.xml", alias, 2, 2).is_none(),
+        "alias 开标签位无臂 → None"
+    );
+}
+
+#[test]
+fn value_context_on_alias_documents_lists_types_without_entity() {
+    // alias.xml 的 <Type> 取值位:文件种类非 Def → def_entity_name 缺省 None
+    // (209),仍出 type/alias 候选(kind="value")。
+    let response = complete_at(
+        &loaded_engine(),
+        "ws/scripts/entity_defs/alias.xml",
+        ALIAS_XML,
+        3,
+        10,
+    );
+    let response = response.expect("alias value context yields completion");
+    assert_eq!(response.context.kind, "value");
+    assert!(
+        !response.items.is_empty(),
+        "alias 取值位至少给出类型/别名候选"
+    );
+}

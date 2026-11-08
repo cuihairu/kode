@@ -241,3 +241,81 @@ fn non_def_documents_get_empty_face() {
         .diagnostics("/w/scripts/entities.xml", "<root>\n\t<A/>\n</root>\n")
         .is_empty());
 }
+
+#[test]
+fn pipe_combined_flags_value_rejects_combination_form() {
+    // KR-AUD-84:整串查表,'|' 组合形态单独出「不支持组合」诊断。
+    let text = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> UINT32 </Type>\n\t\t\t<Flags> BASE|CELL_PUBLIC </Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n";
+    let engine = engine_with(&[]);
+    let diagnostics = engine.def_diagnostics(text);
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert_eq!(diagnostics[0].severity, SEVERITY_ERROR);
+    assert_eq!(
+        diagnostics[0].message,
+        "未知的 KBEngine Flags 值: BASE|CELL_PUBLIC。引擎按单个映射值整串查表，不支持 '|' 组合形态；请改为单个词表值。"
+    );
+    // 区间 = 值原文(列 11..27,BASE|CELL_PUBLIC 共 16 字符)。
+    assert_eq!(diagnostics[0].range.start.character, 11);
+    assert_eq!(diagnostics[0].range.end.character, 27);
+}
+
+#[test]
+fn missing_type_definition_is_error_on_node_range() {
+    let text = "<root>\n\
+\t<Properties>\n\
+\t\t<hp>\n\
+\t\t\t<Flags> BASE </Flags>\n\
+\t\t</hp>\n\
+\t</Properties>\n\
+</root>\n";
+    let engine = engine_with(&[]);
+    let diagnostics = engine.def_diagnostics(text);
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].message, "属性 hp 缺少 <Type> 定义");
+    assert_eq!(diagnostics[0].severity, SEVERITY_ERROR);
+    assert_eq!(diagnostics[0].range.start.line, 2);
+    assert_eq!(diagnostics[0].range.start.character, 2);
+    assert_eq!(diagnostics[0].range.end.line, 4);
+}
+
+#[test]
+fn whitespace_only_flags_value_degrades_scopeless_and_no_flag_error() {
+    // 空白 Flags:标量面不报未知值(normalize 折空);结构面元素在,不报缺失;
+    // 作用域折算为空 → 属性重复判定整体跳过(scopes 空,不进 scope 查重),
+    // 同名属性不产误报。
+    let text = "<root>\n\
+\t<Properties>\n\
+\t\t<hp>\n\
+\t\t\t<Type> UINT32 </Type>\n\
+\t\t\t<Flags>    </Flags>\n\
+\t\t</hp>\n\
+\t\t<hp>\n\
+\t\t\t<Type> UINT32 </Type>\n\
+\t\t\t<Flags>    </Flags>\n\
+\t\t</hp>\n\
+\t</Properties>\n\
+</root>\n";
+    let engine = engine_with(&[]);
+    assert!(
+        engine.def_diagnostics(text).is_empty(),
+        "空白 Flags 既不报未知值也不误报重复: {:?}",
+        engine.def_diagnostics(text)
+    );
+}
+
+#[test]
+fn comment_interrupted_flag_value_falls_back_to_content_range() {
+    // 值文本被注释打断 → 值原文在 content 区间内找不到 → 区间回落整个
+    // content(越界/缺失回落口径)。
+    let text = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> UINT32 </Type>\n\t\t\t<Flags> BAD_<!--x-->FLAG </Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n";
+    let engine = engine_with(&[]);
+    let diagnostics = engine.def_diagnostics(text);
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert_eq!(
+        diagnostics[0].message,
+        "未知的 KBEngine Flags 值: BAD_FLAG。KBEngine 源码按单个映射值解析 <Flags>，不支持此写法。"
+    );
+    // 回落区间 = content 整段:`\t\t\t<Flags>` 后即列 10(0 基行 4)。
+    assert_eq!(diagnostics[0].range.start.line, 4);
+    assert_eq!(diagnostics[0].range.start.character, 10);
+}

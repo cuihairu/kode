@@ -147,3 +147,42 @@ fn default_three_arg_analyze_still_works() {
     let findings = analyze_def(AVATAR_DEF, &Default::default(), &[]).expect("analyze ok");
     assert!(findings.is_empty());
 }
+
+#[test]
+fn empty_document_yields_no_parity_findings() {
+    // 空 def(无根节点)→ 方法段收集早退,parity 规则零产出(不 panic)。
+    let findings =
+        analyze_def_with_python("", &Default::default(), &[], base_ctx(&[])).expect("analyze ok");
+    assert!(findings.is_empty(), "空文档零产出:{findings:?}");
+}
+
+#[test]
+fn client_section_methods_checked_against_client_context() {
+    // ClientMethods 段配 client 上下文:段名→client 键映射生效,
+    // 缺实现的 client 方法产出 finding(54 行 client 臂)。
+    let def = "<root>\n\
+               \t<ClientMethods>\n\
+               \t\t<onLogin/>\n\
+               \t</ClientMethods>\n\
+               </root>\n";
+    let input = PythonParityInput {
+        python_class: "Avatar".to_string(),
+        client: Some(PythonParitySection {
+            python_file: "/a/scripts/client/Avatar.py".to_string(),
+            implemented_methods: vec![],
+        }),
+        ..Default::default()
+    };
+    let findings =
+        analyze_def_with_python(def, &Default::default(), &[], input).expect("analyze ok");
+    let parity: Vec<_> = findings
+        .iter()
+        .filter(|f| f.check == "def-method-missing-in-python")
+        .collect();
+    assert_eq!(parity.len(), 1, "client 段缺实现恰好 1 条:{parity:?}");
+    assert_eq!(parity[0].name.as_deref(), Some("onLogin"));
+    assert_eq!(
+        parity[0].related.as_ref().expect("related").file,
+        "/a/scripts/client/Avatar.py"
+    );
+}

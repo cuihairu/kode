@@ -381,3 +381,101 @@ fn malformed_params_yield_error() {
     };
     assert!(result.is_none(), "missing defFilePath should be an error");
 }
+
+#[test]
+fn schema_edge_forms_non_persistent_dup_componentless_fd_and_nested_arrays() {
+    let result = build(json!({
+        "entityName": "Gold",
+        "defFilePath": "/defs/entitys/Gold.def",
+        "tablePrefix": "tbl_",
+        "hasCellContent": true,
+        "properties": [
+            // 非 persistent:不落列。
+            json!({
+                "name": "ghost", "typeName": "UINT32", "persistent": false,
+                "identifier": false, "scopes": ["base"], "source": src("Gold")
+            }),
+            // 同名列第二次出现 → 跳过,不重复落列。
+            prop("gold", "UINT32"),
+            prop("gold", "UINT32"),
+            // 无 children 键的组件槽:照建组件表,不再递归。
+            json!({
+                "name": "bareComp", "typeName": "ENTITY_COMPONENT", "persistent": true,
+                "identifier": false, "scopes": ["base"], "source": src("Gold")
+            }),
+            // 无 children 键的 FIXED_DICT:不产列不建表。
+            json!({
+                "name": "bareDict", "typeName": "FIXED_DICT", "persistent": true,
+                "identifier": false, "scopes": ["base"], "source": src("Gold")
+            }),
+            // FD 内嵌 ARRAY:祖先链段进子表名(tbl_Gold_dict_inner)。
+            json!({
+                "name": "dict", "typeName": "FIXED_DICT", "persistent": true,
+                "identifier": false, "scopes": ["base"], "source": src("Gold"),
+                "children": [ json!({
+                    "name": "inner", "typeName": "ARRAY", "persistent": true,
+                    "identifier": false, "scopes": ["base"], "source": src("Gold.dict.inner"),
+                    "arrayElement": json!({
+                        "name": "value", "typeName": "UINT32", "persistent": true,
+                        "identifier": false, "scopes": ["base"], "source": src("Gold.dict.inner[]")
+                    })
+                }) ]
+            }),
+            // ARRAY 元素 = 匿名 FIXED_DICT:键名链不加空段,键列按裸名落子表。
+            json!({
+                "name": "matrix", "typeName": "ARRAY", "persistent": true,
+                "identifier": false, "scopes": ["base"], "source": src("Gold"),
+                "arrayElement": json!({
+                    "name": "", "typeName": "FIXED_DICT", "persistent": true,
+                    "identifier": false, "scopes": ["base"], "source": src("Gold.matrix[]"),
+                    "children": [ json!({
+                        "name": "v", "typeName": "FLOAT", "persistent": true,
+                        "identifier": false, "scopes": ["base"], "source": src("Gold.matrix[].v")
+                    }) ]
+                })
+            }),
+            // 匿名 ARRAY:表名回落 'values' 段。
+            json!({
+                "name": "", "typeName": "ARRAY", "persistent": true,
+                "identifier": false, "scopes": ["base"], "source": src("Gold"),
+                "arrayElement": json!({
+                    "name": "value", "typeName": "UINT32", "persistent": true,
+                    "identifier": false, "scopes": ["base"], "source": src("Gold.values[]")
+                })
+            }),
+        ]
+    }));
+
+    let root = table_named(&result, "tbl_Gold");
+    let names = field_names(root);
+    assert!(
+        !names.contains(&"sm_ghost"),
+        "非 persistent 不落列: {names:?}"
+    );
+    assert_eq!(
+        names.iter().filter(|n| **n == "sm_gold").count(),
+        1,
+        "同名列去重"
+    );
+    assert!(!names.contains(&"sm_bareDict"), "无 children 的 FD 不产列");
+
+    // 组件表照建(children 缺省 = 不递归,表只有固定列)。
+    let bare_comp = table_named(&result, "tbl_Gold_bareComp");
+    assert!(field_names(bare_comp).contains(&"id"));
+
+    // FD 内嵌 ARRAY:祖先链段进子表名。
+    let inner = table_named(&result, "tbl_Gold_dict_inner");
+    assert!(field_names(inner).contains(&"sm_value"));
+
+    // 匿名 FD 作数组元素:键列按裸名落子表(前缀不加空段)。
+    let matrix = table_named(&result, "tbl_Gold_matrix");
+    assert!(
+        field_names(matrix).contains(&"sm_v"),
+        "匿名 FD 键列按裸名+sm_ 前缀: {:?}",
+        field_names(matrix)
+    );
+
+    // 匿名 ARRAY:表名回落 'values'。
+    let values = table_named(&result, "tbl_Gold_values");
+    assert!(field_names(values).contains(&"sm_value"));
+}
