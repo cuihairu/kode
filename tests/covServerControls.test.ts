@@ -339,4 +339,21 @@ describe('serverControls 装配面(覆盖补测)', () => {
     await commands.executeCommand('kbengine.server.retry');
     expect(lastInfo()).toContain('没有可重试的失败目标');
   });
+
+  it('server.start/stop/restart:缺可执行如实降级,零进程启动', async () => {
+    // 带目标:resolveServerComponent 命中 baseapp → 可执行缺失即报,不 spawn
+    await commands.executeCommand('kbengine.server.start', { name: 'baseapp' });
+    expect(messages.error[messages.error.length - 1]).toContain('找不到 baseapp 可执行文件');
+    await commands.executeCommand('kbengine.server.stop', { name: 'baseapp' });
+    // restart 先 stop(未运行=零动作)再 start(同样如实报缺)
+    await commands.executeCommand('kbengine.server.restart', { name: 'baseapp' });
+    expect(messages.error[messages.error.length - 1]).toContain('找不到 baseapp 可执行文件');
+    // 无载荷:stopAll 零运行实例快速返回
+    messages.error.length = 0;
+    await commands.executeCommand('kbengine.server.stop');
+    expect(messages.error).toHaveLength(0);
+    // 无载荷 start:autoStart 组逐个缺可执行即报(组报告,不抛)
+    await commands.executeCommand('kbengine.server.start');
+    expect(messages.error.length).toBeGreaterThan(0);
+  });
 });

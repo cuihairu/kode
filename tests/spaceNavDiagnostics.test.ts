@@ -243,4 +243,61 @@ describe('space/nav semantic diagnostics (SP-4)', () => {
       expect(findings[0].message).toContain('canNavigate');
     });
   });
+
+  describe('词法边界臂(覆盖补测)', () => {
+    it('引号键内转义:反斜杠跳过不误判,键仍报', () => {
+      const text = "addSpaceGeometryMapping(1, 2, 3, 4, {'a\\b': 1})";
+      const findings = computeSpaceNavFindings(text);
+      expect(findings).toHaveLength(1);
+    });
+
+    it('引号键内空格后冒号:键仍报(空白跳过)', () => {
+      const text = "addSpaceGeometryMapping(1, 2, 3, 4, {'a'  : 1})";
+      const findings = computeSpaceNavFindings(text);
+      expect(findings).toHaveLength(1);
+    });
+
+    it('dict 键引号未闭合:保守收手零报', () => {
+      const text = "addSpaceGeometryMapping(1, 2, 3, 4, {'abc\n)";
+      const findings = computeSpaceNavFindings(text);
+      expect(findings).toHaveLength(0);
+    });
+
+    it('dict 未闭合但调用已闭合:无效返回零报', () => {
+      const text = "addSpaceGeometryMapping(1, 2, 3, 4, {'a': 1)";
+      const findings = computeSpaceNavFindings(text);
+      expect(findings).toHaveLength(0);
+    });
+
+    it('调用括号永不闭合:循环终零报', () => {
+      const text = "addSpaceGeometryMapping(1, 2, 3, 4, {'a': 1";
+      const findings = computeSpaceNavFindings(text);
+      expect(findings).toHaveLength(0);
+    });
+
+    it('三引号字符串里的 navigate 与 canNavigate 不参与判定', () => {
+      const text = [
+        's = """',
+        'self.navigate(1)',
+        'self.canNavigate()',
+        '"""',
+        'self.navigate(dest, 1.0)',
+        ''
+      ].join('\n');
+      const findings = computeSpaceNavFindings(text);
+      // 三引号内的 navigate 被掩码;canNavigate 在字符串里不算守卫;
+      // 字符串外的 self.navigate 仍报(全文无真守卫)
+      expect(findings).toHaveLength(1);
+    });
+
+    it('普通字符串内转义与 navigate 掩码', () => {
+      const text = [
+        's = \'a\\b\'',
+        'self.navigate(1)',
+        ''
+      ].join('\n');
+      const findings = computeSpaceNavFindings(text);
+      expect(findings).toHaveLength(1);
+    });
+  });
 });

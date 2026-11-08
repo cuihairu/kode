@@ -65,5 +65,54 @@ describe('pythonLiteralTypes(GEN-DEF-1c:def <Default> 字面量 → 精确注解
     expect(inferPythonLiteralAnnotation('{"a": 1}', 'PY_LIST')).toBe('list');
     // 非 PYTHON 族不经字面量(直接返回类型名)
     expect(inferPythonLiteralAnnotation('123', 'UINT32')).toBe('UINT32');
+    // tuple 基类遇非 tuple 字面量(分组括号/list)→ 基类
+    expect(inferPythonLiteralAnnotation('(1)', 'PY_TUPLE')).toBe('tuple');
+    expect(inferPythonLiteralAnnotation('[1]', 'PY_TUPLE')).toBe('tuple');
+  });
+
+  it('尾部多余内容 → null(严格全文消费)', () => {
+    expect(parsePythonLiteral('1 2')).toBeNull();
+    expect(parsePythonLiteral('(1) x')).toBeNull();
+    expect(parsePythonLiteral('[1] junk')).toBeNull();
+    // 十六进制形态:数字体只认到 0 前缀即回落 int,余下字符未消费 → null
+    expect(parsePythonLiteral('0xFF')).toBeNull();
+    expect(parsePythonLiteral('0o17')).toBeNull();
+    expect(parsePythonLiteral('0b1010')).toBeNull();
+  });
+
+  it('注释与空白:行内注释跳过后继续解析', () => {
+    expect(pythonLiteralAnnotation(parsePythonLiteral('[1, # one\n 2]')!)).toBe('list[int]');
+    expect(pythonLiteralAnnotation(parsePythonLiteral('{"a": 1, # c\n "b": 2}')!))
+      .toBe('dict[str, int]');
+    expect(pythonLiteralAnnotation(parsePythonLiteral('  1  # 尾注\n')!)).toBe('int');
+  });
+
+  it('尾逗号:list/tuple/dict/set 均接受', () => {
+    expect(pythonLiteralAnnotation(parsePythonLiteral('[1, 2,]')!)).toBe('list[int]');
+    expect(pythonLiteralAnnotation(parsePythonLiteral('(1, 2,)')!)).toBe('tuple[int, int]');
+    expect(pythonLiteralAnnotation(parsePythonLiteral('{1, 2,}')!)).toBe('set[int]');
+    expect(pythonLiteralAnnotation(parsePythonLiteral('{"a": 1,}')!)).toBe('dict[str, int]');
+  });
+
+  it('分隔符缺失/多余:容器内无逗号直落 null', () => {
+    expect(parsePythonLiteral('[1 2]')).toBeNull();
+    expect(parsePythonLiteral('(1 2)')).toBeNull();
+    expect(parsePythonLiteral('{1 2}')).toBeNull();
+    expect(parsePythonLiteral('{"a" 1}')).toBeNull();
+  });
+
+  it('字符串转义与未闭合:反斜杠跳过,未闭合回落 null', () => {
+    expect(pythonLiteralAnnotation(parsePythonLiteral("'a\\tb'")!)).toBe('str');
+    expect(pythonLiteralAnnotation(parsePythonLiteral('b"x\\y"')!)).toBe('bytes');
+    expect(pythonLiteralAnnotation(parsePythonLiteral("\"it\\'s\"")!)).toBe('str');
+    expect(parsePythonLiteral("'abc")).toBeNull();
+    expect(parsePythonLiteral('"unclosed')).toBeNull();
+    expect(parsePythonLiteral("b'open")).toBeNull();
+  });
+
+  it('科学计数法带符号指数:仍为 float', () => {
+    expect(pythonLiteralAnnotation(parsePythonLiteral('1.5e-3')!)).toBe('float');
+    expect(pythonLiteralAnnotation(parsePythonLiteral('2E+4')!)).toBe('float');
+    expect(pythonLiteralAnnotation(parsePythonLiteral('-3e2')!)).toBe('float');
   });
 });
