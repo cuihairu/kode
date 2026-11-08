@@ -9,6 +9,7 @@
 import { execFile } from 'child_process';
 import * as vscode from 'vscode';
 import { discoverNativeBinary } from './nativeBinary';
+import { readSchemaState, type SchemaState } from './protocolSchemaSync';
 
 import {
   findKbengineDissector,
@@ -152,8 +153,13 @@ export async function resolveCliPath(
   return { path: discovered, outcome: await deps.run(discovered, ['--version']) };
 }
 
-/** 纯文本报告(中文,与仓库命令文案同风格;逐行可单测断言)。 */
-export function renderProtocolToolingStatus(status: ProtocolToolingStatus): string {
+/** 纯文本报告(中文,与仓库命令文案同风格;逐行可单测断言)。schema 段可选
+ * (PA-007 第四增量:globalStorage 的 kbengine-schema.json 状态——版本提示+
+ * 错误诊断;未传则不渲染该段,老调用面不受影响)。 */
+export function renderProtocolToolingStatus(
+  status: ProtocolToolingStatus,
+  schema?: SchemaState
+): string {
   const lines: string[] = [];
   lines.push('KBEngine 协议工具链检测(PA-007)');
   lines.push(
@@ -188,6 +194,30 @@ export function renderProtocolToolingStatus(status: ProtocolToolingStatus): stri
   lines.push(
     '兜底:插件未装/版本不匹配时,`kode-kbengine capture analyze` 可直接分析 pcap(零 ABI 耦合,PA-004)。'
   );
+  if (schema !== undefined) {
+    lines.push('');
+    lines.push('KBEngine 协议 Schema(PA-007):');
+    if (schema.kind === 'absent') {
+      lines.push('状态: 未生成 — 命令 `kbengine.protocol.buildSchema` 可生成,协议文件变更可自动重建(默认开)');
+    } else if (schema.kind === 'unreadable') {
+      lines.push(`状态: 读取失败 — ${schema.reason}`);
+    } else {
+      lines.push(`状态: 已生成(globalStorage/kbengine-schema.json)`);
+      lines.push(
+        `版本: IR v${schema.schemaVersion} · 基线 ${schema.engineBaseline === '' ? '未知' : schema.engineBaseline}`
+      );
+      lines.push(`规模: 消息 ${schema.messages} · 实体 ${schema.entities}`);
+      if (schema.missingEntities.length > 0) {
+        lines.push(`缺失实体(entities.xml 注册但 .def 缺失): ${schema.missingEntities.join(', ')}`);
+      }
+      if (schema.diagnostics.length > 0) {
+        lines.push(`构建诊断(${schema.diagnostics.length} 条,SYNTAX-005 同规:坏输入保留为诊断不失败):`);
+        for (const diagnostic of schema.diagnostics) {
+          lines.push(`  - ${diagnostic}`);
+        }
+      }
+    }
+  }
   return lines.join('\n');
 }
 
@@ -239,10 +269,13 @@ export function setupProtocolTooling(context: vscode.ExtensionContext): void {
       // 返回 promise:调用方(vscode/fake)可 await 到渲染完成。
       return collectProtocolToolingStatus(
         readProtocolToolingConfig(context.extensionUri.fsPath)
-      ).then((status) => {
+      ).then(async (status) => {
+        // PA-007 第四增量:Schema 状态段(版本提示+错误诊断);读文件面失败
+        // 收敛为 absent/unreadable,不影响二进制探测段的渲染。
+        const schema = await readSchemaState(context.globalStorageUri?.fsPath ?? '');
         const output = ensureChannel();
         output.clear();
-        output.appendLine(renderProtocolToolingStatus(status));
+        output.appendLine(renderProtocolToolingStatus(status, schema));
         output.show(true);
       });
     }

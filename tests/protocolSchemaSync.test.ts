@@ -17,6 +17,7 @@ import {
   BUILD_SCHEMA_COMMAND,
   SCHEMA_OUT_FILENAME,
   createSchemaBuildScheduler,
+  readSchemaState,
   resolveSchemaBuildPlan,
   runProtocolSchemaBuild,
   setupProtocolSchemaSync,
@@ -403,5 +404,76 @@ describe('PA-007-2:setupProtocolSchemaSync 装配', () => {
     for (const disposable of context.subscriptions) {
       disposable.dispose();
     }
+  });
+});
+
+// ------------------------------------------------------- schema state (PA-007-4)
+
+describe('PA-007-4:readSchemaState(版本提示+错误诊断读面)', () => {
+  const REAL_SHAPE = JSON.stringify({
+    schema_version: 1,
+    engine_baseline: 'kbengine bf1a9cd6f4a82dd715fcf4a69697382ed531b4c0 (v2.5.10)',
+    packet_always_contain_length: false,
+    aliases: { POSITION: 'FixedDict' },
+    entities: { Account: {}, Avatar: {}, Monster: {} },
+    missing_entities: ['Ghost'],
+    messages: { entries: [{ id: 4 }, { id: 6 }], diagnostics: [] },
+    diagnostics: [
+      'scripts/entity_defs/alias.xml: unreadable (file vanished)',
+      'res/server/messages_fixed.xml: unreadable (file vanished)'
+    ]
+  });
+
+  it('extracts version/baseline/counts/missing/diagnostics from the real shape', async () => {
+    const state = await readSchemaState('/gs', async () => REAL_SHAPE);
+    expect(state.kind).toBe('present');
+    if (state.kind !== 'present') { return; }
+    expect(state.schemaVersion).toBe(1);
+    expect(state.engineBaseline).toContain('v2.5.10');
+    expect(state.messages).toBe(2);
+    expect(state.entities).toBe(3);
+    expect(state.missingEntities).toEqual(['Ghost']);
+    expect(state.diagnostics).toHaveLength(2);
+    expect(state.diagnostics[0]).toContain('alias.xml');
+  });
+
+  it('reports absent when the schema file does not exist', async () => {
+    const error: NodeJS.ErrnoException = Object.assign(new Error('nope'), { code: 'ENOENT' });
+    const state = await readSchemaState('/gs', async () => {
+      throw error;
+    });
+    expect(state).toEqual({ kind: 'absent' });
+  });
+
+  it('reports absent for an empty globalStorage path (no storage face)', async () => {
+    const state = await readSchemaState('');
+    expect(state).toEqual({ kind: 'absent' });
+  });
+
+  it('reports unreadable with attribution for bad JSON', async () => {
+    const state = await readSchemaState('/gs', async () => '{not json');
+    expect(state.kind).toBe('unreadable');
+    expect(state.kind === 'unreadable' && state.reason).toContain('JSON parse');
+  });
+
+  it('reports unreadable with attribution for non-ENOENT read failures', async () => {
+    const error: NodeJS.ErrnoException = Object.assign(new Error('denied'), { code: 'EACCES' });
+    const state = await readSchemaState('/gs', async () => {
+      throw error;
+    });
+    expect(state.kind).toBe('unreadable');
+    expect(state.kind === 'unreadable' && state.reason).toContain('EACCES');
+  });
+
+  it('defends field-by-field against a partial schema object', async () => {
+    const state = await readSchemaState('/gs', async () => JSON.stringify({ schema_version: 'x' }));
+    expect(state.kind).toBe('present');
+    if (state.kind !== 'present') { return; }
+    expect(state.schemaVersion).toBe(0);
+    expect(state.engineBaseline).toBe('');
+    expect(state.messages).toBe(0);
+    expect(state.entities).toBe(0);
+    expect(state.missingEntities).toEqual([]);
+    expect(state.diagnostics).toEqual([]);
   });
 });

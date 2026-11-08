@@ -14,6 +14,7 @@
 //!   事件不触发(防仓库内 fixture 误触发);
 //! - 建图在途不重入,完成后补一次尾随变更(合并器窗口外的连改不丢)。
 
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import {
@@ -272,6 +273,81 @@ export function setupProtocolSchemaSync(context: vscode.ExtensionContext): void 
 
   context.subscriptions.push(command, configListener, { dispose: () => auto?.dispose() });
   rewire();
+}
+
+// ---------------------------------------------------------------- schema state
+
+/** Schema 文件状态(PA-007 第四增量:版本提示+错误诊断的读面)。present 只
+ * 在 JSON 可解析时给出;字段逐个防御提取(CLI canonical 序,无时间戳字段)。 */
+export type SchemaState =
+  | {
+      kind: 'present';
+      schemaVersion: number;
+      engineBaseline: string;
+      messages: number;
+      entities: number;
+      missingEntities: string[];
+      diagnostics: string[];
+    }
+  | { kind: 'absent' }
+  | { kind: 'unreadable'; reason: string };
+
+async function defaultReadSchemaFile(filePath: string): Promise<string> {
+  return fs.readFile(filePath, 'utf8');
+}
+
+/**
+ * 读 globalStorage/kbengine-schema.json:缺文件 = absent(如实「未生成」),
+ * 读失败/坏 JSON = unreadable(带归因,不猜);present 面提取 IR 版本、引擎
+ * 基线、消息/实体规模、缺失实体清单与构建诊断(SYNTAX-005 同规:CLI 把坏
+ * 输入保留为诊断不失败——错误诊断面就是把它们原样呈给用户)。
+ */
+export async function readSchemaState(
+  globalStoragePath: string,
+  readFile: (path: string) => Promise<string> = defaultReadSchemaFile
+): Promise<SchemaState> {
+  if (globalStoragePath === '') {
+    return { kind: 'absent' }; // 无 globalStorage 面:如实按未生成处理
+  }
+  let raw: string;
+  try {
+    raw = await readFile(path.join(globalStoragePath, SCHEMA_OUT_FILENAME));
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === 'ENOENT') {
+      return { kind: 'absent' };
+    }
+    return { kind: 'unreadable', reason: `${err.code ?? 'Error'}: ${err.message}` };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return { kind: 'unreadable', reason: `JSON parse: ${(error as Error).message}` };
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    return { kind: 'unreadable', reason: 'schema JSON 根不是对象' };
+  }
+  const root = parsed as Record<string, unknown>;
+  const messagesTable =
+    typeof root['messages'] === 'object' && root['messages'] !== null
+      ? (root['messages'] as Record<string, unknown>)
+      : {};
+  const stringList = (value: unknown): string[] =>
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  const entities = root['entities'];
+  return {
+    kind: 'present',
+    schemaVersion: typeof root['schema_version'] === 'number' ? root['schema_version'] : 0,
+    engineBaseline: typeof root['engine_baseline'] === 'string' ? root['engine_baseline'] : '',
+    messages: Array.isArray(messagesTable['entries']) ? messagesTable['entries'].length : 0,
+    entities:
+      entities !== null && typeof entities === 'object' && !Array.isArray(entities)
+        ? Object.keys(entities).length
+        : 0,
+    missingEntities: stringList(root['missing_entities']),
+    diagnostics: stringList(root['diagnostics'])
+  };
 }
 
 // ---------------------------------------------------------------- text utils

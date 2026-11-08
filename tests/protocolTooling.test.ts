@@ -21,6 +21,7 @@ import {
   type ProtocolToolingStatus,
   type RunBinary,
 } from '../src/protocolTooling';
+import { readSchemaState } from '../src/protocolSchemaSync';
 
 // ---------------------------------------------------------------- fixtures
 
@@ -291,5 +292,102 @@ describe('PA-007:defaultRunBinary 收敛口径', () => {
     const outcome = await defaultRunBinary('/bin/echo', ['hello-pa007']);
     expect(outcome.code).toBe(0);
     expect(outcome.stdout.trim()).toBe('hello-pa007');
+  });
+});
+
+// ---------------------------------------------- schema section (PA-007-4)
+
+describe('PA-007-4:状态报告 Schema 段(版本提示+错误诊断)', () => {
+  beforeEach(() => {
+    // channel 查找按名字 find——不 reset 会摸到上一用例遗留的 disposed 通道
+    commandRegistry.reset();
+    windowState.reset();
+    configurationOverrides.clear();
+    workspaceEvents.configurationChanged.dispose();
+  });
+
+  const REAL_SHAPE = JSON.stringify({
+    schema_version: 1,
+    engine_baseline: 'kbengine bf1a9cd6f4a82dd715fcf4a69697382ed531b4c0 (v2.5.10)',
+    packet_always_contain_length: false,
+    aliases: {},
+    entities: { Account: {}, Avatar: {} },
+    missing_entities: ['Ghost'],
+    messages: { entries: [{ id: 4 }], diagnostics: [] },
+    diagnostics: ['res/server/messages_fixed.xml: unreadable (file vanished)']
+  });
+  const baseStatus = (): ProtocolToolingStatus => ({
+    tsharkPath: 'tshark',
+    tsharkVersion: 'tshark 4.6.4',
+    wiresharkPath: 'wireshark',
+    wiresharkVersion: null,
+    personalPlugins: null,
+    globalPlugins: null,
+    plugin: null,
+    pluginHostMatch: null,
+    cliPath: '/opt/kode/kode-kbengine',
+    cliVersion: 'kode-kbengine 0.2.0'
+  });
+
+  it('omits the section when no schema state is passed (old call sites)', () => {
+    const output = renderProtocolToolingStatus(baseStatus());
+    expect(output).not.toContain('KBEngine 协议 Schema');
+  });
+
+  it('renders the absent face with the build hint', async () => {
+    const output = renderProtocolToolingStatus(baseStatus(), { kind: 'absent' });
+    expect(output).toContain('KBEngine 协议 Schema');
+    expect(output).toContain('未生成');
+    expect(output).toContain('kbengine.protocol.buildSchema');
+  });
+
+  it('renders the unreadable face with the reason', async () => {
+    const output = renderProtocolToolingStatus(baseStatus(), {
+      kind: 'unreadable',
+      reason: 'JSON parse: unexpected token'
+    });
+    expect(output).toContain('读取失败');
+    expect(output).toContain('JSON parse: unexpected token');
+  });
+
+  it('renders version/baseline/counts and lists diagnostics verbatim', async () => {
+    const output = renderProtocolToolingStatus(baseStatus(), await readSchemaState('/gs', async () => REAL_SHAPE));
+    expect(output).toContain('已生成');
+    expect(output).toContain('IR v1');
+    expect(output).toContain('v2.5.10');
+    expect(output).toContain('消息 1 · 实体 2');
+    expect(output).toContain('缺失实体(entities.xml 注册但 .def 缺失): Ghost');
+    expect(output).toContain('构建诊断(1 条');
+    expect(output).toContain('  - res/server/messages_fixed.xml: unreadable (file vanished)');
+  });
+
+  it('setup face: the fired command renders the schema section from globalStorage', async () => {
+    const globalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-pa007s4-'));
+    try {
+      fs.writeFileSync(path.join(globalRoot, 'kbengine-schema.json'), REAL_SHAPE);
+      const current = (configurationOverrides.get('kbengine') as Record<string, unknown>) ?? {};
+      configurationOverrides.set('kbengine', {
+        ...current,
+        'protocol.tsharkPath': '/nowhere/tshark',
+        'protocol.wiresharkPath': '/nowhere/wireshark'
+      });
+      const context: ExtensionContext = {
+        subscriptions: [],
+        extensionUri: Uri.file('/workspace/ext'),
+        globalStorageUri: Uri.file(globalRoot)
+      };
+      setupProtocolTooling(context);
+      await commands.executeCommand(SHOW_PROTOCOL_STATUS_COMMAND);
+      const channel = windowState.channels.find((c) => c.name === PROTOCOL_CHANNEL_NAME);
+      const text = channel?.lines.join('\n') ?? '';
+      expect(text).toContain('KBEngine 协议 Schema');
+      expect(text).toContain('已生成');
+      expect(text).toContain('res/server/messages_fixed.xml: unreadable (file vanished)');
+      for (const disposable of context.subscriptions) {
+        disposable.dispose();
+      }
+    } finally {
+      fs.rmSync(globalRoot, { recursive: true, force: true });
+    }
   });
 });
