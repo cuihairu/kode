@@ -8,6 +8,7 @@
 // deactivate 收口 dispose。
 
 import * as vscode from 'vscode';
+import { l10nText } from '../nlsRuntime';
 import { BackgroundWarmupController, WARMUP_SCAN_CONCURRENCY } from '../backgroundWarmup';
 import { EntityDependencyWebView } from '../entityDependencyWebView';
 import { EntityFlowWebView } from '../entityFlowWebView';
@@ -162,22 +163,23 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
 
   const workbenchCommand = vscode.commands.registerCommand('kbengine.workbench.show', async () => {
     const selection = await vscode.window.showQuickPick([
-      { label: '$(search) Discovery & Positioning', command: 'kbengine.discovery.report' },
-      // IDE-MET-001:活动扩展身份报告入口(区分安装目录存在/当前窗口已激活,
-      // 标注远程或本地宿主位置)
-      { label: '$(info) Extension Identity', command: 'kbengine.extension.identity' },
-      { label: '$(checklist) Project Doctor', command: 'kbengine.project.doctor' },
-      { label: '$(graph) Symbol References', command: 'kbengine.symbolReferences.show' },
-      { label: '$(graph) Monitoring', command: 'kbengine.monitoring.show' },
-      { label: '$(pulse) Runtime Profile', command: 'kbengine.profile.start' },
-      { label: '$(search) Runtime Queries', command: 'kbengine.runtimeQuery.show' },
-      { label: '$(map) Spaces', command: 'kbengine.spaces.query' },
-      { label: '$(database) Database Schema', command: 'kbengine.database.open' },
-      { label: '$(database) Database Drift', command: 'kbengine.database.checkAllDrift' },
-      { label: '$(file-binary) Client SDK', command: 'kbengine.clientSdk.generate' },
-      { label: '$(shield) Compatibility', command: 'kbengine.compatibility.check' }
-    ], { placeHolder: 'KBEngine Workbench', ignoreFocusOut: true });
-    if (selection) await vscode.commands.executeCommand(selection.command);
+      { label: l10nText('Project and environment'), kind: vscode.QuickPickItemKind.Separator },
+      { label: `$(search) ${l10nText('Find project files')}`, description: l10nText('Check which project paths were found'), detail: 'Discovery & Positioning', command: 'kbengine.discovery.report' },
+      { label: `$(info) ${l10nText('Extension information')}`, description: l10nText('See the installed and active extension'), detail: 'Extension Identity', command: 'kbengine.extension.identity' },
+      { label: `$(checklist) ${l10nText('Check project definitions')}`, description: l10nText('Find errors in entity definitions'), detail: 'Project Doctor', command: 'kbengine.project.doctor' },
+      { label: `$(shield) ${l10nText('Check compatibility')}`, description: l10nText('Check the editor and engine environment'), detail: 'Compatibility', command: 'kbengine.compatibility.check' },
+      { label: l10nText('Server and runtime'), kind: vscode.QuickPickItemKind.Separator },
+      { label: `$(graph) ${l10nText('Monitor servers')}`, description: l10nText('View component status and metrics'), detail: 'Monitoring', command: 'kbengine.monitoring.show' },
+      { label: `$(pulse) ${l10nText('Profile a running component')}`, description: l10nText('Collect runtime performance information'), detail: 'Runtime Profile', command: 'kbengine.profile.start' },
+      { label: `$(search) ${l10nText('Query a running component')}`, description: l10nText('Inspect watcher values'), detail: 'Runtime Queries', command: 'kbengine.runtimeQuery.show' },
+      { label: `$(map) ${l10nText('View spaces')}`, description: l10nText('Query running spaces'), detail: 'Spaces', command: 'kbengine.spaces.query' },
+      { label: l10nText('Data and development'), kind: vscode.QuickPickItemKind.Separator },
+      { label: `$(database) ${l10nText('View database schema')}`, description: l10nText('Inspect the derived database structure'), detail: 'Database Schema', command: 'kbengine.database.open' },
+      { label: `$(database) ${l10nText('Check database differences')}`, description: l10nText('Compare definitions with the database'), detail: 'Database Drift', command: 'kbengine.database.checkAllDrift' },
+      { label: `$(graph) ${l10nText('Find symbol references')}`, description: l10nText('Explore where definitions are used'), detail: 'Symbol References', command: 'kbengine.symbolReferences.show' },
+      { label: `$(file-binary) ${l10nText('Generate client SDK')}`, description: l10nText('Generate client files from entity definitions'), detail: 'Client SDK', command: 'kbengine.clientSdk.generate' }
+    ], { placeHolder: l10nText('Choose a KBEngine task'), ignoreFocusOut: true, matchOnDescription: true, matchOnDetail: true });
+    if (selection && 'command' in selection && selection.command) await vscode.commands.executeCommand(selection.command);
   });
   context.subscriptions.push(workbenchCommand);
 

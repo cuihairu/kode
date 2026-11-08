@@ -27,22 +27,25 @@ describe('kbengine.workbench.show', () => {
       return undefined;
     }) as typeof vscode.commands.executeCommand;
     vscode.window.showQuickPick = (async (items: unknown) => {
-      const list = items as Array<{ label: string; command: string }>;
-      expect(list.map(item => item.command)).toEqual([
+      const list = items as Array<{ label: string; command?: string; description?: string; kind?: number }>;
+      expect(list.filter(item => item.kind === vscode.QuickPickItemKind.Separator)).toHaveLength(3);
+      const actions = list.filter(item => item.command);
+      expect(actions.every(item => Boolean(item.description))).toBe(true);
+      expect(actions.map(item => item.command)).toEqual([
         'kbengine.discovery.report',
         'kbengine.extension.identity',
         'kbengine.project.doctor',
-        'kbengine.symbolReferences.show',
+        'kbengine.compatibility.check',
         'kbengine.monitoring.show',
         'kbengine.profile.start',
         'kbengine.runtimeQuery.show',
         'kbengine.spaces.query',
         'kbengine.database.open',
         'kbengine.database.checkAllDrift',
-        'kbengine.clientSdk.generate',
-        'kbengine.compatibility.check'
+        'kbengine.symbolReferences.show',
+        'kbengine.clientSdk.generate'
       ]);
-      return list[2];
+      return actions.find(item => item.command === 'kbengine.project.doctor');
     }) as typeof vscode.window.showQuickPick;
 
     await commandRegistry.registrations.get('kbengine.workbench.show')!.handler();
