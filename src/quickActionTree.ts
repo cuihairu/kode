@@ -23,7 +23,14 @@ export interface QuickActionTreeDeps {
 }
 
 export class QuickActionTreeItem extends vscode.TreeItem {
-  constructor(entry?: QuickActionTreeEntry | { group: 'registered' | 'scripts' | 'httpRequests'; count: number }) {
+  constructor(entry?: QuickActionTreeEntry | { group: 'registered' | 'scripts' | 'httpRequests'; count: number } | { empty: 'http' }) {
+    if (entry && 'empty' in entry) {
+      super(l10nText('Configure HTTP requests'), vscode.TreeItemCollapsibleState.None);
+      this.description = l10nText('Open HTTP request settings');
+      this.command = { command: 'workbench.action.openSettings', title: l10nText('Configure HTTP requests'), arguments: ['kbengine.httpRequests'] };
+      this.contextValue = 'quickActionEmptyHttp';
+      return;
+    }
     if (entry && 'group' in entry) {
       // 分类分组标题走 vscode.l10n:调用期求值,默认英文源串,zh-cn bundle 出中文
       const groupName = entry.group === 'registered'
@@ -36,9 +43,9 @@ export class QuickActionTreeItem extends vscode.TreeItem {
       return;
     }
     if (!entry) {
-      super(l10nText('Configure quickActions or httpRequests in .kbengine/debug.json'), vscode.TreeItemCollapsibleState.None);
-      this.description = l10nText('HTTP requests can also be configured in the kbengine.httpRequests setting');
-      this.tooltip = l10nText('Scripts configure quickActions; HTTP requests can be configured in debug.json or the kbengine.httpRequests setting');
+      super(l10nText('Scan workspace scripts'), vscode.TreeItemCollapsibleState.None);
+      this.description = l10nText('Choose scripts to add as quick actions');
+      this.tooltip = l10nText('Open a workspace to scan for scripts');
       this.command = { command: 'kbengine.quickActions.scanScripts', title: l10nText('Rescan scripts') };
       this.contextValue = 'quickActionEmpty';
       return;
@@ -84,7 +91,7 @@ export class QuickActionTreeProvider implements vscode.TreeDataProvider<QuickAct
     if (element?.contextValue === 'quickActionGroupRegistered') return data.registered.map(action => new QuickActionTreeItem(action));
     if (element?.contextValue === 'quickActionGroupScripts') return data.scripts.map(action => new QuickActionTreeItem(action));
     if (element?.contextValue === 'quickActionGroupHttp') return data.httpRequests.map(action => new QuickActionTreeItem(action));
-    if (data.registered.length === 0 && data.scripts.length === 0 && data.httpRequests.length === 0) return [new QuickActionTreeItem()];
+    if (data.registered.length === 0 && data.scripts.length === 0 && data.httpRequests.length === 0) return [new QuickActionTreeItem(), new QuickActionTreeItem({ empty: 'http' })];
     return [new QuickActionTreeItem({ group: 'registered', count: data.registered.length }), new QuickActionTreeItem({ group: 'scripts', count: data.scripts.length }), new QuickActionTreeItem({ group: 'httpRequests', count: data.httpRequests.length })];
   }
 }

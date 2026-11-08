@@ -45,12 +45,11 @@ describe('QuickActionTreeProvider', () => {
     expect(httpRequests[0].tooltip).toContain('not-a-valid-url');
   });
 
-  it('shows a configuration hint and makes the empty row trigger script scanning', async () => {
+  it('offers separate actions for scanning scripts and configuring HTTP requests', async () => {
     const provider = new QuickActionTreeProvider({ getActions: async () => ({ registered: [], scripts: [], httpRequests: [] }) });
-    const [row] = await provider.getChildren();
-    expect(row.label).toContain('.kbengine/debug.json');
-    expect(row.label).toContain('quickActions');
-    expect(row.description).toContain('HTTP');
+    const [row, http] = await provider.getChildren();
+    expect(row.label).toBe('Scan workspace scripts');
     expect(row.command).toMatchObject({ command: 'kbengine.quickActions.scanScripts' });
+    expect(http.command).toMatchObject({ command: 'workbench.action.openSettings', arguments: ['kbengine.httpRequests'] });
   });
 });

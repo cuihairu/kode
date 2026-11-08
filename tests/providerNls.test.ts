@@ -90,11 +90,11 @@ describe('Provider 面运行时文案(两态)', () => {
 
   it('quickActionTree:空态引导与命令标题双语', () => {
     const item = new QuickActionTreeItem(undefined);
-    expect(item.label).toBe('Configure quickActions or httpRequests in .kbengine/debug.json');
+    expect(item.label).toBe('Scan workspace scripts');
     setL10nBundle(zh);
     const zhItem = new QuickActionTreeItem(undefined);
-    expect(zhItem.label).toBe('配置 .kbengine/debug.json 的 quickActions 或 httpRequests');
-    expect(zhItem.description).toBe('HTTP 请求也可在设置 kbengine.httpRequests 中配置');
+    expect(zhItem.label).toBe('扫描工作区脚本');
+    expect(zhItem.description).toBe('选择要添加为快速动作的脚本');
     expect(zhItem.command?.title).toBe('重新扫描脚本');
   });
 
