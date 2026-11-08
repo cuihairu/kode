@@ -65,6 +65,9 @@ describe('Rust 骨架与 serving 状态拆分记录(IDE-RST-002)', () => {
     expect(R3_SECTION).toContain('直接切');
     expect(R3_SECTION).toContain('已放行');
     expect(R3_SECTION).toContain('pr-012');
+    // serving 面账:语料内容四面全 Rust-first(hover 切流 2026-11-08 接续批)
+    expect(R3_SECTION).toMatch(/hover 切流/);
+    expect(R3_SECTION).toContain('四面');
     // 切流前置清单在档且未全勾
     expect(pr012).toContain('切流前置条件清单');
     const unchecked = (pr012.match(/^- \[ \]/gm) ?? []).length;

@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { KodeCoreClient } from '../src/kodeCoreClient';
 import { KodeCoreGate } from '../src/kodeCoreGate';
-import { serveCompletionFromRust, serveDefinitionFromRust, serveDiagnosticsFromRust, setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { serveCompletionFromRust, serveDefinitionFromRust, serveDiagnosticsFromRust, serveHoverFromRust, setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
 
 // 2026-11-08 用户令「直接切到 rust」:定义面 rust 服务 e2e(真实 kode-server
 // 二进制)。证明 switch 不是纸面:gate 服务轨道 + serveDefinitionFromRust
@@ -255,5 +255,52 @@ suite('kode 定义面 rust 服务 e2e(真实二进制)', () => {
     const flagsItem = report!.items.find(item => item.message.includes('NOT_A_FLAG'))!;
     expect(flagsItem.range.start).toEqual({ line: 4, character: 11 });
     expect(flagsItem.range.end.character).toBe(21);
+  }, 20_000);
+
+  it('rust 轨道:Avatar.def 属性词 hover 出 markdown 内容(真实二进制)', async () => {
+    // 复用 gate(真实进程已拉起,Avatar.def 已随定义面用例镜像);hover 腿
+    // 自带镜像(同版本幂等)。`<name>` 声明在 1 基第 8 行(0 基 7),词 name
+    // 起点列 3,取中 4。
+    const text = readFileSync(DEF, 'utf8');
+    const document = {
+      uri: { fsPath: DEF },
+      languageId: 'kbengine-def',
+      version: 1,
+      getText: () => text
+    };
+    const value = await serveHoverFromRust(
+      document as never,
+      { line: 7, character: 4 } as never
+    );
+    expect(value).not.toBeNull();
+    expect(value!).toContain('**name**');
+    expect(value!).toContain('`STRING`');
+    expect(value!).toContain('`BASE_AND_CLIENT`');
+    expect(value!).toContain('`64`');
+  }, 20_000);
+
+  it('rust 轨道:非语料/未知词 hover 返 null(回落 TS 既有链)', async () => {
+    // python 文档不在语料面:serveHoverFromRust 直通 null(provider 层
+    // python 文档本就零请求,此处锁 face 函数语义)。
+    const pyDocument = {
+      uri: { fsPath: '/workspace/demo/scripts/base/Avatar.py' },
+      languageId: 'python',
+      version: 1,
+      getText: () => 'class Avatar:\n    pass\n'
+    };
+    expect(
+      await serveHoverFromRust(pyDocument as never, { line: 0, character: 6 } as never)
+    ).toBeNull();
+    // 语料文档词未知:Rust 返 null,调用方回 TS 全链(py 契约/schema 面)。
+    const text = readFileSync(DEF, 'utf8');
+    const document = {
+      uri: { fsPath: DEF },
+      languageId: 'kbengine-def',
+      version: 1,
+      getText: () => text
+    };
+    expect(
+      await serveHoverFromRust(document as never, { line: 0, character: 1 } as never)
+    ).toBeNull();
   }, 20_000);
 });

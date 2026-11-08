@@ -291,9 +291,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // (serveDefinitionFromRust await + 语料镜像前置,24→47)、completion.ts
   // Rust-first 包装层(provideCompletionRustFirst + lspCompletionToVscode,
   // 633→699)为本批已提交代码,真位重探,出处随 baseline 锁步;
-  // hover.ts 顶部并发会话 serveHoverFromRust 接线在途 +1(未提交),锚点
-  // 保持 188(HEAD 口径),该会话提交时须自行再探 189 并随 baseline 锁步。
-  ['src/languageProviders/hover.ts', 188, 'provideHover('],
+  // 2026-11-08(hover 服务轨道接线提交):provideHoverTimed 顶部插 Rust
+  // 派发块(serveHoverFromRust 命中直出/null 经 rustHoverAttempted 重入,
+  // +1 行),provideHover 真位重探 188→189,出处随 baseline 锁步。
+  ['src/languageProviders/hover.ts', 189, 'provideHover('],
   ['src/languageProviders/navigation.ts', 47, 'shadowCompareDefinition'],
   ['src/languageProviders/validation.ts', 13, 'export function validateDocument('],
   ['src/languageProviders/validation.ts', 37, 'shadowObserveDefDocument'],

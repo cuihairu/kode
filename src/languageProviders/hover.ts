@@ -29,6 +29,7 @@ import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAcce
 import { getEngineVersion } from '../engineVersion';
 import { createHoverRequestDeadline, createWaiterUnionToken, raceWithBudget } from '../hoverBudget';
 import { KBEngineSectionName, METHOD_SECTIONS, PROPERTY_SECTIONS, TAG_HOVER_DOCS, getLanguageFeatureConfig, getSectionLabel, parseDefAst } from './shared';
+import { getKodeCoreShadowGate, serveHoverFromRust } from '../kodeCoreShadowFaces';
 import { formatDefMethodParameter, formatDefMethodSignature } from './completion';
 import { describeExpectedScriptPaths, findCustomTypeAtPosition, findEnclosingSymbol, formatWorkspaceRelativePath, isPositionInsideTagValue } from './navigation';
 import { awaitDataDictIndexReady, getPythonDataDictIndexGeneration, isPythonDataDictIndexEnabled } from './pythonDefinition';
@@ -210,13 +211,31 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     document: vscode.TextDocument,
     position: vscode.Position,
     token?: vscode.CancellationToken,
-    timer?: HoverPhaseTimer
+    timer?: HoverPhaseTimer,
+    // 直接切重入标记:true = Rust 腿已试过(miss),本轮直接走 TS 既有链
+    rustHoverAttempted?: boolean
   ): vscode.ProviderResult<vscode.Hover> {
     if (token?.isCancellationRequested) { return null; }
     if (hoverInFlightGateForTests) {
       // IDE-REV-032:门住一段确定性在途窗口;释放方负责清闸,重入走原路径
       const gate = hoverInFlightGateForTests;
-      return gate().then(() => this.provideHoverTimed(document, position, token, timer));
+      return gate().then(() => this.provideHoverTimed(document, position, token, timer, rustHoverAttempted));
+    }
+    // 2026-11-08 用户令「直接切到 rust」:服务轨道下语料文档(.def + 三类
+    // XML)hover 先走 Rust(kode-server textDocument/hover);Rust 命中即用,
+    // 未命中(null:词未知/非语料/任何失败)重入下方 TS 既有链(rustHover-
+    // Attempted 防重入)。Python 文档零请求直通 TS。本分支在 deadline 建立
+    // 之前:Rust 腿由 client 自带超时,miss 后重入再走预算闸,不占 TS 预算。
+    if (
+      !rustHoverAttempted &&
+      document.languageId !== 'python' &&
+      getKodeCoreShadowGate()?.serveFromRust()
+    ) {
+      return serveHoverFromRust(document, position).then(value =>
+        value !== null
+          ? new vscode.Hover(new vscode.MarkdownString(value))
+          : this.provideHoverTimed(document, position, token, timer, true)
+      );
     }
     const featureConfig = getLanguageFeatureConfig();
     // IDE-BUD-001:一次请求一个截止时间上下文——绝对 deadline + 链接 token
