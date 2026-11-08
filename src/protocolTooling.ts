@@ -7,8 +7,6 @@
 //! 检测面宁报未检出,不猜不抛(spawn 失败=未检出)。
 
 import { execFile } from 'child_process';
-import * as fs from 'fs';
-import * as path from 'path';
 import * as vscode from 'vscode';
 import { discoverNativeBinary } from './nativeBinary';
 

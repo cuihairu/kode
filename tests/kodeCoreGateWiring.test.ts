@@ -117,19 +117,20 @@ describe('kbengine.core 双轨切流门装配', () => {
 
   it('discoverKodeServerBinary:target/debug 优先,target/release 兜底,全落空空串', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-wiring-'));
+    const executable = process.platform === 'win32' ? 'kode-server.exe' : 'kode-server';
     try {
       // 全落空
       expect(discoverKodeServerBinary(root)).toBe('');
       // 只有 release
       const releaseDir = path.join(root, 'target', 'release');
       fs.mkdirSync(releaseDir, { recursive: true });
-      fs.writeFileSync(path.join(releaseDir, 'kode-server'), 'x');
-      expect(discoverKodeServerBinary(root)).toBe(path.join(releaseDir, 'kode-server'));
+      fs.writeFileSync(path.join(releaseDir, executable), 'x');
+      expect(discoverKodeServerBinary(root)).toBe(path.join(releaseDir, executable));
       // debug 优先于 release
       const debugDir = path.join(root, 'target', 'debug');
       fs.mkdirSync(debugDir, { recursive: true });
-      fs.writeFileSync(path.join(debugDir, 'kode-server'), 'x');
-      expect(discoverKodeServerBinary(root)).toBe(path.join(debugDir, 'kode-server'));
+      fs.writeFileSync(path.join(debugDir, executable), 'x');
+      expect(discoverKodeServerBinary(root)).toBe(path.join(debugDir, executable));
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

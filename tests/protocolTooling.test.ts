@@ -94,15 +94,16 @@ describe('PA-007:discoverKodeCliBinary', () => {
 
   it('prefers debug over release, like the core gate discovery', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-pa007-'));
+    const executable = process.platform === 'win32' ? 'kode-kbengine.exe' : 'kode-kbengine';
     try {
       fs.mkdirSync(path.join(root, 'target', 'debug'), { recursive: true });
       fs.mkdirSync(path.join(root, 'target', 'release'), { recursive: true });
-      fs.writeFileSync(path.join(root, 'target', 'debug', 'kode-kbengine'), '');
-      fs.writeFileSync(path.join(root, 'target', 'release', 'kode-kbengine'), '');
+      fs.writeFileSync(path.join(root, 'target', 'debug', executable), '');
+      fs.writeFileSync(path.join(root, 'target', 'release', executable), '');
       expect(discoverKodeCliBinary(root, 'kode-kbengine')).toContain(
         path.join('target', 'debug')
       );
-      fs.rmSync(path.join(root, 'target', 'debug', 'kode-kbengine'));
+      fs.rmSync(path.join(root, 'target', 'debug', executable));
       expect(discoverKodeCliBinary(root, 'kode-kbengine')).toContain(
         path.join('target', 'release')
       );
