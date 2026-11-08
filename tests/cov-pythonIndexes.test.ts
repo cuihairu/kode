@@ -772,7 +772,7 @@ describe('quickActions 覆盖补齐', () => {
     stubWorkspace.workspaceFolders = [];
     const manager = new QuickActionManager(makeContext(), makeDeps());
     await manager.scanScriptsAndRefresh();
-    expect(messages.info.some(message => message.includes('无法扫描快速动作'))).toBe(true);
+    expect(messages.info.some(message => message.includes('Cannot scan quick actions'))).toBe(true);
   });
 
   it('scanScriptsAndRefresh:脚本已消失 → 清除过期扫描动作,保留手工动作', async () => {
@@ -786,7 +786,7 @@ describe('quickActions 覆盖补齐', () => {
     memoryFileSystem.setDirectory('/ws', [['notes.txt', 1]]);
     const manager = new QuickActionManager(makeContext(), makeDeps());
     await manager.scanScriptsAndRefresh();
-    expect(messages.info.some(message => message.includes('已清除 1 个过期扫描动作') && message.includes('保留 1 个手工动作'))).toBe(true);
+    expect(messages.info.some(message => message.includes('removed 1 outdated scanned actions') && message.includes('kept 1 manual actions'))).toBe(true);
     const written = readConfig();
     expect(written?.quickActions?.map(action => action.name)).toEqual(['keep']);
     expect(written?.quickActions?.[0]?.source).toBe('manual');

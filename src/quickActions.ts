@@ -15,6 +15,7 @@ import * as https from 'https';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
+import { l10nText } from './nlsRuntime';
 import {
   baseNameOf,
   buildScannedActions,
@@ -393,7 +394,7 @@ export class QuickActionManager {
   async scanScriptsAndRefresh(): Promise<void> {
     const root = this.getConfigurationRoot();
     if (!root) {
-      await vscode.window.showInformationMessage('无法扫描快速动作:请先打开工作区');
+      await vscode.window.showInformationMessage(l10nText('Cannot scan quick actions: open a workspace first'));
       return;
     }
     const candidates = await this.scanCandidates();
@@ -405,8 +406,8 @@ export class QuickActionManager {
       if (staleCount > 0) await this.writeQuickActions(root, manual);
       await vscode.window.showInformationMessage(
         staleCount > 0
-          ? `未找到脚本，已清除 ${staleCount} 个过期扫描动作并保留 ${manual.length} 个手工动作`
-          : '未找到可登记的 .bat / .ps1 脚本'
+          ? l10nText('No scripts found; removed {staleCount} outdated scanned actions and kept {manualCount} manual actions', { staleCount, manualCount: manual.length })
+          : l10nText('No .bat or .ps1 scripts found to register')
       );
       return;
     }
@@ -417,13 +418,13 @@ export class QuickActionManager {
         detail: candidate.path,
         value: candidate
       })),
-      { canPickMany: true, placeHolder: '选择要登记的 .bat / .ps1 脚本；已有手工动作会保留' }
+      { canPickMany: true, placeHolder: l10nText('Select .bat or .ps1 scripts to register; existing manual actions will be kept') }
     );
     if (!picked) return;
     const scanned = buildScannedActions(picked.map(item => item.value), root);
     await this.writeQuickActions(root, [...manual, ...scanned]);
     await vscode.window.showInformationMessage(
-      `已重新扫描脚本:登记 ${scanned.length} 个动作，保留 ${manual.length} 个手工动作`
+      l10nText('Script scan complete: registered {scannedCount} actions and kept {manualCount} manual actions', { scannedCount: scanned.length, manualCount: manual.length })
     );
   }
 
@@ -657,7 +658,7 @@ export class QuickActionManager {
         detail: candidate.path,
         value: candidate
       })),
-      { canPickMany: true, placeHolder: '勾选要登记为快速执行动作的脚本' }
+      { canPickMany: true, placeHolder: l10nText('Select scripts to register as quick actions') }
     );
     const chosen = (picked ?? []).map(item => item.value);
     if (chosen.length === 0) {
@@ -666,7 +667,7 @@ export class QuickActionManager {
     }
     const scanned = buildScannedActions(chosen, root);
     await this.writeQuickActions(root, scanned);
-    await vscode.window.showInformationMessage(`已写入 ${scanned.length} 个快速执行动作到 .kbengine/debug.json`);
+    await vscode.window.showInformationMessage(l10nText('Saved {count} quick actions to .kbengine/debug.json', { count: scanned.length }));
   }
 
   /** 单个动作执行链:变量替换 → 确认 → 分发 → 流水(失败一次性弹窗) */

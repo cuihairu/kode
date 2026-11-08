@@ -4,6 +4,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
+import { setL10nBundle } from './fake-vscode/l10n';
+import zhBundle from '../l10n/bundle.l10n.zh-cn.json';
 import { QuickActionManager, terminalScript } from '../src/quickActions';
 import { HttpRequestService } from '../src/httpRequestService';
 import { QuickActionTreeProvider } from '../src/quickActionTree';
@@ -152,8 +154,21 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setL10nBundle(null);
   stubWorkspace.workspaceFolders = [];
   vi.restoreAllMocks();
+});
+
+describe('quick action scan localization', () => {
+  it('shows the no-workspace guidance in the active language', async () => {
+    stubWorkspace.workspaceFolders = [];
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+    await manager.scanScriptsAndRefresh();
+    expect(messages.info.pop()).toBe('Cannot scan quick actions: open a workspace first');
+    setL10nBundle(zhBundle);
+    await manager.scanScriptsAndRefresh();
+    expect(messages.info.pop()).toBe('无法扫描快速动作：请先打开工作区');
+  });
 });
 
 describe('QuickActionManager.show', () => {
@@ -1173,7 +1188,7 @@ describe('QuickActionManager.offerScanOnActivate', () => {
       }
     ]);
     expect(written.quickActions[0]).not.toHaveProperty('category');
-    expect(messages.info[0]).toBe('已写入 1 个快速执行动作到 .kbengine/debug.json');
+    expect(messages.info[0]).toBe('Saved 1 quick actions to .kbengine/debug.json');
 
   });
 
@@ -1215,7 +1230,7 @@ describe('QuickActionManager.offerScanOnActivate', () => {
         category: 'export'
       }
     ]);
-    expect(messages.info[0]).toBe('已写入 2 个快速执行动作到 .kbengine/debug.json');
+    expect(messages.info[0]).toBe('Saved 2 quick actions to .kbengine/debug.json');
 
   });
 
@@ -1329,7 +1344,7 @@ describe('QuickActionManager.scanScriptsAndRefresh', () => {
     const manager = new QuickActionManager(makeContext(), makeDeps());
     await manager.scanScriptsAndRefresh();
     expect(memoryFileSystem.files.has('/ws/.kbengine/debug.json')).toBe(false);
-    expect(messages.info.some(message => String(message).includes('已重新扫描脚本'))).toBe(false);
+    expect(messages.info.some(message => String(message).includes('Script scan complete'))).toBe(false);
   });
 
   it('scans the effective config root and assetsRoot, preserves manual actions, and writes to that config root', async () => {
