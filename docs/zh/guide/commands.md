@@ -199,6 +199,7 @@
 - 作用：把 `.kdpclone` 归档导入已配置的本地/测试目标库（CLONE-P5）
 - 入口：命令面板；资源管理器 `.kdpclone` 文件右键
 - 行为：
+  - 预检（在任何信息收集前）：Target 连接必须已配置——未配置时提供「配置 Target 连接」向导入口（拒绝或取消向导则不再收集后续信息）；Target 环境必须为 `local`/`test`（其余一律拒绝——导入绝不写生产/预发布）；探测会话建立后先跑真实 `SELECT VERSION()` 连接检查——失败如实报因并注明「导入未开始」，不登记防重、不生成计划、不写入
   - 两遍计划：pass-1 定列序 → 归档内实际出现的唯一值有界 `WHERE IN` 只读探测 → pass-2 冲突预演（本地重建 `_imported` 后缀）
   - 预览通道给出逐表语句、ID 变更类别、唯一冲突、账号绑定、未解决引用风险与告警——随后需要两次显式确认（继续、确认对本地库真实写入）
   - 整份计划以 mysql2 单事务执行：新键绑 NULL 交 AUTO_INCREMENT、insertId 回填进键引用，任何失败或取消即回滚——绝不留半个角色；随后逐表 COUNT 复核、生成但不执行的逆拓扑清理计划、`.kode/clone-runs/` 审计 JSON
@@ -750,6 +751,7 @@ callgraph 模式面板支持：
 - 标题：`Query Player by DBID (Read-Only)`
 - 作用：执行单条只读 ``SELECT * FROM `tbl_Account` WHERE `id` = <dbid>``（表前缀取 `kbengine.db.tablePrefix`，默认 `tbl_`），把行打印进「KBEngine 玩家数据(只读)」输出通道
 - 输入校验：dbid 必须是十进制正整数；其余在任何连接前拒绝
+- 缺配置闸：未派生出引擎数据库配置时如实降级（绝不把克隆 Source/Target 台账当成查询配置来源），并提供两个真实恢复入口——打开发现与定位报告、重新派生并检查连接
 - 只读约束：结果仅展示；无编辑、无导出副作用（导出/导入走玩家数据克隆专道）
 
 ### `kbengine.httpRequests.run`

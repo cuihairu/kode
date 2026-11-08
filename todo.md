@@ -1537,11 +1537,11 @@
 
 ### UX-REVIEW-004 [P1] 玩家数据按任务进入
 
-- [ ] UX-REVIEW-004a 提供「只读查询 / 导出玩家 / 导入到本地或测试库」清晰入口和简短说明；明确数据来自已持久化数据库，不代表在线状态。
+- [x] UX-REVIEW-004a 提供「只读查询 / 导出玩家 / 导入到本地或测试库」清晰入口和简短说明；明确数据来自已持久化数据库，不代表在线状态。已完成（511a017b）：面板树顶层新增三条任务入口，全部指向既有真实命令（kbengine.playerData.queryByDbid / kbengine.clone.export / kbengine.clone.import），说明文案含「不代表在线状态」字样（tests/playerDataPanelCoverage.test.ts 根层 4 节点断言，prove-red 旧码 2 例红）。
 - [ ] UX-REVIEW-004b 导出前先检查源连接、可用后端和实体上下文；缺配置时提供配置与测试连接入口，完成后能继续任务或清楚说明如何重试，不先丢失已输入的实体/DBID。
 - [x] UX-REVIEW-004b-1 导出在选择实体与输入 DBID 前检查源连接；缺失时可直接进入配置，保存后继续选择，取消不收集后续信息。已覆盖现有导出及新入口（80 项测试通过）；Rust 后端预检和连接测试仍属父项。
-- [ ] UX-REVIEW-004c 导入前先检查目标连接及后端；保持目标环境限制、预演、两次写入确认与重复导入保护；取消和失败不误称成功。
-- [ ] UX-REVIEW-004d 只读查询缺配置时提供项目配置定位和连接检查入口；不会将克隆源/目标设置当成只读查询的引擎配置。
+- [x] UX-REVIEW-004c 导入前先检查目标连接及后端；保持目标环境限制、预演、两次写入确认与重复导入保护；取消和失败不误称成功。已完成（511a017b）：导入命令前置三道预检——Target 未配置时提供「配置 Target 连接」向导入口（拒绝/取消即不再收集）；环境闸只认 local/test（其余一律报错，绝不写生产/预发布）；探测会话建立后先跑真实 SELECT VERSION()，失败如实报「目标连接失败:…(导入未开始)」且不登记防重、不生成计划、不写入。预演/两次确认/防重保护原样保留（tests/playerDataCloneImportCommand.test.ts preflight 3 例，prove-red 旧码 3/3 红）。
+- [x] UX-REVIEW-004d 只读查询缺配置时提供项目配置定位和连接检查入口；不会将克隆源/目标设置当成只读查询的引擎配置。已完成（511a017b）：queryByDbid 命令加缺配置闸——降级文案点明连接要素只来自 dbmgr/databaseInterfaces/default 派生「与克隆 Source/Target 台账无关」，并提供两个真实恢复入口（kbengine.discovery.report / 重新派生并检查连接）；配置存在时闸放行（tests/playerDataPanelCoverage.test.ts readOnlyQueryConfigGate 专测）。
 - [ ] UX-REVIEW-004e 验证纯 TS 无 Rust 后端、缺连接、连接失败、无实体、取消、预演与执行结果；对线上只读和本地/测试写入边界做回归。
 
 ### UX-REVIEW-005 [P1] 克隆连接配置体验

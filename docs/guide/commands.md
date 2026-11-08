@@ -210,6 +210,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Purpose: import a `.kdpclone` archive into the configured local/test target database (CLONE-P5)
 - Entries: Command palette; explorer context menu on `.kdpclone` files
 - Behavior:
+  - Preflight (before anything is collected): the Target connection must already exist — with none configured the command offers the 「配置 Target 连接」 wizard entry (declining or cancelling the wizard collects nothing further); the Target environment must be `local`/`test` (anything else is rejected outright — import never writes prod/staging); and once the probe session is open a real `SELECT VERSION()` connection check runs — a failed check reports the honest reason with 「导入未开始」 and leaves no duplicate-import reservation, no plan, no write
   - Two-pass planning: pass-1 derives the column order, the unique values that actually occur in the archive are probed with bounded `WHERE IN` reads, pass-2 rehearses conflicts (local rebuild with an `_imported` suffix)
   - The preview channel shows statements per table, ID change categories, unique conflicts, account binding, unresolved-reference risks and warnings — then two explicit confirmations are required (continue, then confirm the real write to the local database)
   - The whole plan applies in a single mysql2 transaction: new keys bind NULL for AUTO_INCREMENT, insert ids backfill into key references, any failure or cancel rolls back — never half a role; afterwards per-table COUNT verification runs, a reverse-topology cleanup plan is generated but never executed, and an audit JSON lands under `.kode/clone-runs/`
@@ -773,6 +774,7 @@ The flow graph panel supports:
 - Title: `Query Player by DBID (Read-Only)`
 - Purpose: run a single read-only ``SELECT * FROM `tbl_Account` WHERE `id` = <dbid>`` (table prefix from `kbengine.db.tablePrefix`, default `tbl_`) and print the rows to the "KBEngine 玩家数据(只读)" output channel
 - Input validation: the dbid must be a decimal positive integer; anything else is rejected before any connection is made
+- Missing-config gate: when no engine database config is derived, the command degrades honestly (it never borrows the clone Source/Target profiles as a query config source) and offers two real recovery entries — open the discovery/locator report, or re-derive and run the connection test
 - Read-only constraint: results are displayed only; no editing, no export side effects (export/import live in the dedicated Player Data Clone lane)
 
 ### `kbengine.playerData.previewRedisKeyspace`
