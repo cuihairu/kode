@@ -339,4 +339,401 @@ describe('DatabaseManagementWebView 代际守卫与超时', () => {
       vi.useRealTimers();
     }
   });
+
+describe('DatabaseManagementWebView 缺口臂(默认依赖/后端错配/配置缺失/晚落地/弃置面)', () => {
+
+  /** 第 i 个面板的推送序列(多面板用例:view2/3/4 各自建面板)。 */
+  const postedAt = (index: number) =>
+    panelRegistry.panels[index]!.webview.postedMessages.map(m => m.message);
+  it('零注入构造:默认依赖装配不抛错(resolveConfig 等走真实现装载)', () => {
+    const view = new DatabaseManagementWebView({ subscriptions: [] } as unknown as vscode.ExtensionContext);
+    expect(view).toBeInstanceOf(DatabaseManagementWebView);
+    view.dispose();
+  });
+
+  it('mysql 门口径:redis 档案 → 「当前数据库后端不是 MySQL」;配置缺失 → 「未读取到连接配置」', async () => {
+    const createMysqlExecutor = vi.fn();
+    const view = makeView({ resolveProfile: redisProfile, resolveConfig: mysqlConfig, createMysqlExecutor });
+    view.show();
+    panelRegistry.fireMessage(panel(), { command: 'loadTables' });
+    await flush();
+    expect(createMysqlExecutor).not.toHaveBeenCalled();
+    expect(posted().at(-1)).toEqual({
+      command: 'tablesLoaded',
+      result: { ok: false, error: '当前数据库后端不是 MySQL' }
+    });
+
+    const createMysqlExecutor2 = vi.fn();
+    const view2 = makeView({
+      resolveProfile: mysqlProfile,
+      resolveConfig: () => null,
+      createMysqlExecutor: createMysqlExecutor2
+    });
+    view2.show();
+    panelRegistry.fireMessage(panelRegistry.panels[1]!, { command: 'loadTables' });
+    await flush();
+    expect(createMysqlExecutor2).not.toHaveBeenCalled();
+    expect(postedAt(1).at(-1)).toEqual({
+      command: 'tablesLoaded',
+      result: { ok: false, error: '未读取到连接配置' }
+    });
+  });
+
+  it('redis 门口径:mysql 档案 → 「当前数据库后端不是 Redis」;配置缺失 → 「未读取到连接配置」', async () => {
+    const openRedisSession = vi.fn();
+    const view = makeView({ resolveProfile: mysqlProfile, resolveConfig: mysqlConfig, openRedisSession });
+    view.show();
+    panelRegistry.fireMessage(panel(), { command: 'scanKeys' });
+    await flush();
+    expect(openRedisSession).not.toHaveBeenCalled();
+    expect(posted().at(-1)).toEqual({
+      command: 'keysLoaded',
+      result: { ok: false, error: '当前数据库后端不是 Redis' }
+    });
+
+    const openRedisSession2 = vi.fn();
+    const view2 = makeView({
+      resolveProfile: redisProfile,
+      resolveConfig: () => null,
+      openRedisSession: openRedisSession2
+    });
+    view2.show();
+    panelRegistry.fireMessage(panelRegistry.panels[1]!, { command: 'scanKeys' });
+    await flush();
+    expect(openRedisSession2).not.toHaveBeenCalled();
+    expect(postedAt(1).at(-1)).toEqual({
+      command: 'keysLoaded',
+      result: { ok: false, error: '未读取到连接配置' }
+    });
+  });
+
+  it('connectTimeoutMs=0:不限时直通建连,数据面照常', async () => {
+    const executor = fakeExecutor();
+    const createMysqlExecutor = vi.fn(async () => executor);
+    const view = makeView({
+      resolveProfile: mysqlProfile,
+      resolveConfig: mysqlConfig,
+      createMysqlExecutor,
+      connectTimeoutMs: 0
+    });
+    view.show();
+    panelRegistry.fireMessage(panel(), { command: 'loadTables' });
+    await flush();
+    expect(posted().at(-1)).toMatchObject({
+      command: 'tablesLoaded',
+      result: { ok: true }
+    });
+  });
+
+  it('mysql 建连晚落地(超时后才 resolve):超时错误先发,晚到句柄防泄漏关闭', async () => {
+    const executor = fakeExecutor();
+    let resolveExec: (value: DriftQueryExecutor) => void = () => undefined;
+    const view = makeView({
+      resolveProfile: mysqlProfile,
+      resolveConfig: mysqlConfig,
+      createMysqlExecutor: () =>
+        new Promise<DriftQueryExecutor>(resolve => {
+          resolveExec = resolve;
+        }),
+      connectTimeoutMs: 20
+    });
+    view.show();
+    panelRegistry.fireMessage(panel(), { command: 'loadTables' });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(posted().some(m => (m as { command?: string }).command === 'tablesLoaded')).toBe(false);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    // 超时错误已发
+    expect(posted().at(-1)).toMatchObject({
+      command: 'tablesLoaded',
+      result: { ok: false, error: expect.stringContaining('连接 MySQL 超时') }
+    });
+    // 晚落地执行器:超时胜出后才 resolve → 防泄漏关闭
+    resolveExec(executor);
+    await flush();
+    expect(executor.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('mysql previewTable 建连晚落地:超时错误 + 晚到句柄关闭', async () => {
+    const executor = fakeExecutor();
+    let resolveExec: (value: DriftQueryExecutor) => void = () => undefined;
+    const view = makeView({
+      resolveProfile: mysqlProfile,
+      resolveConfig: mysqlConfig,
+      createMysqlExecutor: () =>
+        new Promise<DriftQueryExecutor>(resolve => {
+          resolveExec = resolve;
+        }),
+      connectTimeoutMs: 20
+    });
+    view.show();
+    panelRegistry.fireMessage(panel(), { command: 'previewTable', table: 'tbl_Account' });
+    await new Promise(resolve => setTimeout(resolve, 40));
+    expect(posted().at(-1)).toMatchObject({
+      command: 'tablePreview',
+      result: { kind: 'error', message: expect.stringContaining('连接 MySQL 超时') }
+    });
+    resolveExec(executor);
+    await flush();
+    expect(executor.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('建连在途被 setTab 弃置后工厂才 reject:旧代错误静默,零 tablesLoaded', async () => {
+    let rejectExec: (reason: Error) => void = () => undefined;
+    const view = makeView({
+      resolveProfile: mysqlProfile,
+      resolveConfig: mysqlConfig,
+      createMysqlExecutor: () =>
+        new Promise<DriftQueryExecutor>((_resolve, reject) => {
+          rejectExec = reject;
+        })
+    });
+    view.show();
+    panelRegistry.fireMessage(panel(), { command: 'loadTables' });
+    await flush();
+    panelRegistry.fireMessage(panel(), { command: 'setTab', tab: 'redis' });
+    rejectExec(new Error('late boom'));
+    await flush();
+    expect(posted().some(m => (m as { command?: string }).command === 'tablesLoaded')).toBe(false);
+  });
+
+  it('previewTable 结果在途被 setTab 弃置:查询晚回不渲染;查询抛错新代照常亮错', async () => {
+    // 成功路径晚回 + 代际已换代 → 弃置
+    const executor = fakeExecutor();
+    let resolveRows: (value: unknown) => void = () => undefined;
+    executor.runQuery.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveRows = resolve;
+        })
+    );
+    const view = makeView({ resolveProfile: mysqlProfile, resolveConfig: mysqlConfig, createMysqlExecutor: async () => executor });
+    view.show();
+    panelRegistry.fireMessage(panel(), { command: 'previewTable', table: 'tbl_Account' });
+    await flush();
+    panelRegistry.fireMessage(panel(), { command: 'setTab', tab: 'redis' });
+    resolveRows({ columns: [{ name: 'id', type: 'INT' }], rows: [{ id: 1 }] });
+    await flush();
+    expect(posted().some(m => (m as { command?: string }).command === 'tablePreview')).toBe(false);
+    expect(executor.close).toHaveBeenCalledTimes(1);
+
+    // 抛错路径(新代现行)→ 错误条
+    const executor2 = fakeExecutor();
+    executor2.runQuery.mockRejectedValueOnce(new Error('query exploded'));
+    const view2 = makeView({ resolveProfile: mysqlProfile, resolveConfig: mysqlConfig, createMysqlExecutor: async () => executor2 });
+    view2.show();
+    panelRegistry.fireMessage(panelRegistry.panels[1]!, { command: 'previewTable', table: 'tbl_Account' });
+    await flush();
+    expect(postedAt(1).at(-1)).toMatchObject({
+      command: 'tablePreview',
+      result: { kind: 'error', message: 'query exploded' }
+    });
+    expect(executor2.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('previewTable 建连抛错且代已换代 → 旧代错误静默,零 tablePreview', async () => {
+    // previewTableData 对查询失败自身兜底为 error-result 不抛;catch 面只能由
+    // 建连期抛错(工厂 reject/超时)进入,此处锁「抛错时代已换代」的弃置面。
+    let rejectExec: (reason: Error) => void = () => undefined;
+    const view = makeView({
+      resolveProfile: mysqlProfile,
+      resolveConfig: mysqlConfig,
+      createMysqlExecutor: () =>
+        new Promise<DriftQueryExecutor>((_resolve, reject) => {
+          rejectExec = reject;
+        })
+    });
+    view.show();
+    panelRegistry.fireMessage(panel(), { command: 'previewTable', table: 'tbl_Account' });
+    await flush();
+    panelRegistry.fireMessage(panel(), { command: 'setTab', tab: 'redis' });
+    rejectExec(new Error('stale connect'));
+    await flush();
+    expect(posted().some(m => (m as { command?: string }).command === 'tablePreview')).toBe(false);
+  });
+
+  it('默认依赖装配:零注入 show/loadTables 走真实现取数(无工作区档案如实 null 门)', async () => {
+    const view = new DatabaseManagementWebView({ subscriptions: [] } as unknown as vscode.ExtensionContext);
+    view.show();
+    panelRegistry.fireMessage(panel(), { command: 'loadTables' });
+    await flush();
+    // 真实现取数在测试环境拿不到档案/配置:如实落错误门,不炸面板
+    const last = posted().at(-1) as { command: string; result: { ok: boolean; error: string } };
+    expect(last.command).toBe('tablesLoaded');
+    expect(last.result.ok).toBe(false);
+    view.dispose();
+
+    // 档案注入但 resolveConfig 缺省:默认解析器跑真实现,读不到如实拒连
+    const view2 = makeView({ resolveProfile: mysqlProfile });
+    view2.show();
+    panelRegistry.fireMessage(panelRegistry.panels[1]!, { command: 'loadTables' });
+    await flush();
+    const last2 = panelRegistry.panels[1]!.webview.postedMessages.map(m => m.message).at(-1) as {
+      command: string;
+      result: { ok: boolean; error: string };
+    };
+    expect(last2.command).toBe('tablesLoaded');
+    expect(last2.result.ok).toBe(false);
+    expect(last2.result.error).toContain('配置');
+  });
+
+  it('无档案门(previewTable/previewKey/scanKeys):如实落各自错误条', async () => {
+    const factory = vi.fn();
+    const view = makeView({ resolveProfile: () => null, createMysqlExecutor: factory, openRedisSession: factory });
+    view.show();
+    panelRegistry.fireMessage(panel(), { command: 'previewTable', table: 'tbl_Account' });
+    await flush();
+    expect(posted().at(-1)).toEqual({
+      command: 'tablePreview',
+      result: { kind: 'error', message: '未读取到引擎数据库档案' }
+    });
+    panelRegistry.fireMessage(panel(), { command: 'previewKey', key: 'kbe_a' });
+    await flush();
+    expect(posted().at(-1)).toEqual({
+      command: 'keyPreview',
+      result: { ok: false, error: '未读取到引擎数据库档案' }
+    });
+    panelRegistry.fireMessage(panel(), { command: 'scanKeys' });
+    await flush();
+    expect(posted().at(-1)).toEqual({
+      command: 'keysLoaded',
+      result: { ok: false, error: '未读取到引擎数据库档案' }
+    });
+    expect(factory).not.toHaveBeenCalled();
+  });
+
+  it('redis 建连晚落地(scanKeys/previewKey):超时错误先发,晚到会话防泄漏关闭', async () => {
+    for (const message of [
+      { command: 'scanKeys' },
+      { command: 'previewKey', key: 'kbe_entitylog:1:2' }
+    ]) {
+      panelRegistry.reset();
+      const session = fakeSession();
+      let resolveSession: (value: RedisSession) => void = () => undefined;
+      const view = makeView({
+        resolveProfile: redisProfile,
+        resolveConfig: mysqlConfig,
+        openRedisSession: () =>
+          new Promise<RedisSession>(resolve => {
+            resolveSession = resolve;
+          }),
+        connectTimeoutMs: 20
+      });
+      view.show();
+      panelRegistry.fireMessage(panel(), message);
+      await new Promise(resolve => setTimeout(resolve, 40));
+      const last = posted().at(-1) as { command: string; result: { ok?: boolean; error: string } };
+      expect(last.result.ok).toBe(false);
+      expect(last.result.error).toContain('连接 Redis 超时');
+      // 晚落地会话:超时胜出后才 resolve → 防泄漏关闭
+      resolveSession(session);
+      await flush();
+      expect(session.close).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('redis 结果在途被 setTab 弃置:scanKeys/hashGetAll 晚回零渲染', async () => {
+    const session = fakeSession();
+    let resolveScan: (value: { cursor: string; keys: string[] }) => void = () => undefined;
+    session.scanKeys.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveScan = resolve;
+        })
+    );
+    const view = makeView({ resolveProfile: redisProfile, resolveConfig: mysqlConfig, openRedisSession: async () => session });
+    view.show();
+    panelRegistry.fireMessage(panel(), { command: 'scanKeys' });
+    await flush();
+    panelRegistry.fireMessage(panel(), { command: 'setTab', tab: 'mysql' });
+    resolveScan({ cursor: '0', keys: ['kbe_a'] });
+    await flush();
+    expect(posted().some(m => (m as { command?: string }).command === 'keysLoaded')).toBe(false);
+    expect(session.close).toHaveBeenCalledTimes(1);
+
+    const session2 = fakeSession();
+    let resolveHash: (value: Record<string, string>) => void = () => undefined;
+    session2.hashGetAll.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveHash = resolve;
+        })
+    );
+    const view2 = makeView({ resolveProfile: redisProfile, resolveConfig: mysqlConfig, openRedisSession: async () => session2 });
+    view2.show();
+    panelRegistry.fireMessage(panelRegistry.panels[1]!, { command: 'previewKey', key: 'kbe_entitylog:1:2' });
+    await flush();
+    panelRegistry.fireMessage(panelRegistry.panels[1]!, { command: 'setTab', tab: 'mysql' });
+    resolveHash({ id: '1' });
+    await flush();
+    expect(posted().some(m => (m as { command?: string }).command === 'keyPreview')).toBe(false);
+    expect(session2.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('redis 命令抛错:新代现行亮错误条;代已换代旧代静默', async () => {
+    // 新代现行:scanKeys 抛错 → keysLoaded 错误
+    const session = fakeSession();
+    session.scanKeys.mockRejectedValueOnce(new Error('scan exploded'));
+    const view = makeView({ resolveProfile: redisProfile, resolveConfig: mysqlConfig, openRedisSession: async () => session });
+    view.show();
+    panelRegistry.fireMessage(panel(), { command: 'scanKeys' });
+    await flush();
+    expect(posted().at(-1)).toMatchObject({
+      command: 'keysLoaded',
+      result: { ok: false, error: 'scan exploded' }
+    });
+    expect(session.close).toHaveBeenCalledTimes(1);
+
+    // 新代现行:hashGetAll 抛错 → keyPreview 错误
+    const session2 = fakeSession();
+    session2.hashGetAll.mockRejectedValueOnce(new Error('hash exploded'));
+    const view2 = makeView({ resolveProfile: redisProfile, resolveConfig: mysqlConfig, openRedisSession: async () => session2 });
+    view2.show();
+    panelRegistry.fireMessage(panelRegistry.panels[1]!, { command: 'previewKey', key: 'kbe_a' });
+    await flush();
+    expect(postedAt(1).at(-1)).toMatchObject({
+      command: 'keyPreview',
+      result: { ok: false, error: 'hash exploded' }
+    });
+    expect(session2.close).toHaveBeenCalledTimes(1);
+
+    // 代已换代:scanKeys 抛错 → 旧代静默
+    const session3 = fakeSession();
+    let rejectScan: (reason: Error) => void = () => undefined;
+    session3.scanKeys.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectScan = reject;
+        })
+    );
+    const view3 = makeView({ resolveProfile: redisProfile, resolveConfig: mysqlConfig, openRedisSession: async () => session3 });
+    view3.show();
+    panelRegistry.fireMessage(panelRegistry.panels[2]!, { command: 'scanKeys' });
+    await flush();
+    panelRegistry.fireMessage(panelRegistry.panels[2]!, { command: 'setTab', tab: 'mysql' });
+    rejectScan(new Error('stale scan'));
+    await flush();
+    expect(postedAt(2).some(m => (m as { command?: string }).command === 'keysLoaded')).toBe(false);
+    expect(session3.close).toHaveBeenCalledTimes(1);
+
+    // 代已换代:hashGetAll 抛错 → 旧代静默
+    const session4 = fakeSession();
+    let rejectHash: (reason: Error) => void = () => undefined;
+    session4.hashGetAll.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectHash = reject;
+        })
+    );
+    const view4 = makeView({ resolveProfile: redisProfile, resolveConfig: mysqlConfig, openRedisSession: async () => session4 });
+    view4.show();
+    panelRegistry.fireMessage(panelRegistry.panels[3]!, { command: 'previewKey', key: 'kbe_a' });
+    await flush();
+    panelRegistry.fireMessage(panelRegistry.panels[3]!, { command: 'setTab', tab: 'mysql' });
+    rejectHash(new Error('stale hash'));
+    await flush();
+    expect(postedAt(3).some(m => (m as { command?: string }).command === 'keyPreview')).toBe(false);
+    expect(session4.close).toHaveBeenCalledTimes(1);
+  });
+});
+
 });

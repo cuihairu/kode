@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { EntityDependencyWebView } from '../src/entityDependencyWebView';
 import {
   DependencyGraph,
@@ -8,6 +8,7 @@ import {
 } from '../src/entityDependency';
 import type * as vscode from 'vscode';
 import {
+  CancellationTokenSource,
   messages,
   memoryFileSystem,
   panelRegistry,
@@ -18,6 +19,9 @@ import {
   workspace as stubWorkspace
 } from './helpers/vscodeStub';
 import type { FakeWebviewPanel } from './helpers/vscodeStub';
+import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import type { DependencyGraphRust } from '../src/dependencyGraphRust';
+import type { PythonCallGraphRustResult } from '../src/pythonCallGraphRust';
 
 // EntityDependencyWebView 的面板生命周期:show/refresh 的分析→mermaid→
 // html 链路、openEntityFile 的文档打开三态、exportGraph→pendingExport→
@@ -530,4 +534,454 @@ describe('webview 内联脚本 buildExportData 分支', () => {
     // 不产生同步 exportData —— 与 svg 臂的行为差异即为分支锁。
     expect(posted).toEqual([]);
   });
+
+describe('面板臂补测(openNode 三态/manifest 读取/truncated 调用图/warmup 源/收集取消)', () => {
+  afterEach(() => {
+    setKodeCoreShadowGate(null);
+  });
+
+  const internalsOf = (webview: EntityDependencyWebView) =>
+    webview as unknown as {
+      analyzer: { analyze(): Promise<DependencyGraph>; getEntityNode(name: string): EntityNode | undefined };
+      refreshGraph(): Promise<void>;
+      refreshCallGraph(generation: number, token: import('vscode').CancellationToken): Promise<void>;
+      collectPythonFiles(token?: import('vscode').CancellationToken): Promise<CollectedPythonFilesLike>;
+      buildWarmupGraphSource(): Promise<{ kind: string; graph: unknown }>;
+      readProcessTopologyText(root: string): Promise<string | null>;
+      panel: vscode.WebviewPanel | null;
+      currentCallGraph: { stats: { truncated?: boolean; totalDiscovered?: number } } | null;
+      mode: 'dependency' | 'callgraph';
+    };
+
+  interface CollectedPythonFilesLike {
+    files: Array<{ path: string; text: string }>;
+    truncated: boolean;
+    totalDiscovered: number;
+  }
+
+  const rustCallGraph = (): PythonCallGraphRustResult => ({
+    nodes: [
+      { id: 'Avatar.act', kind: 'method', className: 'Avatar', name: 'act', filePath: '/ws/scripts/cell/Avatar.py', line: 1, isAsync: false, params: ['self'] },
+      { id: 'Avatar.notify', kind: 'method', className: 'Avatar', name: 'notify', filePath: '/ws/scripts/cell/Avatar.py', line: 3, isAsync: false, params: ['self'] }
+    ],
+    edges: [
+      { caller: 'act', callerClass: 'Avatar', callerLine: 2, callee: 'notify', receiver: 'self', kind: 'self-method', filePath: '/ws/scripts/cell/Avatar.py' }
+    ],
+    reverseIndex: { '/ws/scripts/cell/Avatar.py': [] },
+    dataflow: [],
+    processRoles: ['cellapp'],
+    stats: {
+      fileCount: 1,
+      nodeCount: 2,
+      edgeCount: 1,
+      dataflowCount: 0,
+      errorCount: 0,
+      byKind: { 'self-method': 1 }
+    }
+  });
+
+  const rustDependencyGraph = (): DependencyGraphRust => ({
+    nodes: [
+      { id: 'entity_Hero', kind: 'entity', name: 'Hero', filePath: '/ws/entity_defs/Hero.def', types: ['BASE', 'CELL'] }
+    ],
+    edges: [],
+    reverseEdges: {},
+    paths: { entitiesXml: '/ws/scripts/entities.xml', defsRoot: '/ws/entity_defs', typesXml: '/ws/entity_defs/types.xml' },
+    stats: {
+      nodeCount: 1,
+      edgeCount: 0,
+      entityCount: 1,
+      defCount: 0,
+      interfaceCount: 0,
+      componentCount: 0,
+      typeCount: 0,
+      pythonCount: 0
+    }
+  });
+
+  it('openNode:空路径静默;成功打开展示;失败亮「打开文件失败」', async () => {
+    stubWorkspace.workspaceFolders = [];
+    const webview = makeWebView();
+    (webview as unknown as Record<string, unknown>).analyzer = fakeAnalyzer();
+    await showOf(webview);
+    // 空路径:静默零副作用
+    send({ command: 'openNode', filePath: '' });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(openedDocuments).toHaveLength(0);
+    expect(messages.error).toHaveLength(0);
+    // 成功:打开并展示
+    send({ command: 'openNode', filePath: '/ws/scripts/base/Hero.py' });
+    await until(() => openedDocuments.includes('/ws/scripts/base/Hero.py'));
+    expect(windowState.showTextDocumentCalls.length).toBeGreaterThan(0);
+    // 失败:如实亮错
+    const realOpen = stubWorkspace.openTextDocument;
+    stubWorkspace.openTextDocument = (async (): Promise<never> => {
+      throw new Error('gone');
+    }) as typeof stubWorkspace.openTextDocument;
+    try {
+      send({ command: 'openNode', filePath: '/ws/whatever.py' });
+      await until(() => messages.error.length > 0);
+      expect(messages.error.join('\n')).toContain('打开文件失败');
+    } finally {
+      stubWorkspace.openTextDocument = realOpen;
+    }
+  });
+
+  it('refreshCallGraph:面板不在场入口即返,不炸不写', async () => {
+    const webview = makeWebView();
+    const impl = internalsOf(webview);
+    impl.panel = null;
+    await expect(impl.refreshCallGraph(1, new CancellationTokenSource().token)).resolves.toBeUndefined();
+    expect(impl.currentCallGraph).toBeNull();
+  });
+
+  it('callgraph 收集截断:渲染图并入 truncated/totalDiscovered 警示数据', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    setKodeCoreShadowGate({
+      runInRust: async () => ({ ok: true, result: rustCallGraph() })
+    });
+    const webview = makeWebView();
+    const impl = internalsOf(webview);
+    (webview as unknown as Record<string, unknown>).analyzer = fakeAnalyzer();
+    impl.collectPythonFiles = async (): Promise<CollectedPythonFilesLike> => ({
+      files: [
+        { path: '/ws/scripts/cell/Avatar.py', text: 'class Avatar:\n    def act(self):\n        self.notify()\n' }
+      ],
+      truncated: true,
+      totalDiscovered: 9
+    });
+    await webview.show('callgraph');
+    await until(() => impl.currentCallGraph !== null);
+    expect(impl.currentCallGraph!.stats.truncated).toBe(true);
+    expect(impl.currentCallGraph!.stats.totalDiscovered).toBe(9);
+  });
+
+  it('manifest 读取:命中回原文;缺失如实 null', async () => {
+    memoryFileSystem.set('/ws/process_topology.xml', '<topology/>');
+    const webview = makeWebView();
+    const impl = internalsOf(webview);
+    expect(await impl.readProcessTopologyText('/ws')).toBe('<topology/>');
+    expect(await impl.readProcessTopologyText('/no-such-root')).toBeNull();
+  });
+
+  it('warmup 依赖图源:无根走 TS;gate 命中走 Rust;gate 抛错回落 TS', async () => {
+    const webview = makeWebView();
+    const impl = internalsOf(webview);
+    (webview as unknown as Record<string, unknown>).analyzer = fakeAnalyzer();
+    // 无工作区根:跳过 Rust → TS 兜底
+    stubWorkspace.workspaceFolders = [];
+    expect((await impl.buildWarmupGraphSource()).kind).toBe('ts');
+    // gate 命中:Rust 源
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    setKodeCoreShadowGate({
+      runInRust: async () => ({ ok: true, result: rustDependencyGraph() })
+    });
+    expect((await impl.buildWarmupGraphSource()).kind).toBe('rust');
+    // gate 抛错:按不可用回落 TS
+    setKodeCoreShadowGate({
+      runInRust: async () => {
+        throw new Error('rust down');
+      }
+    });
+    expect((await impl.buildWarmupGraphSource()).kind).toBe('ts');
+    expect(channelLines.join('\n')).toContain('Rust 依赖图推导失败');
+    setKodeCoreShadowGate(null);
+  });
+
+  it('collectPythonFiles:token 已取消时首个根即收束,零收集', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const webview = makeWebView();
+    const impl = internalsOf(webview);
+    const cts = new CancellationTokenSource();
+    cts.cancel();
+    const collected = await impl.collectPythonFiles(cts.token);
+    expect(collected.files).toHaveLength(0);
+    expect(collected.truncated).toBe(false);
+  });
+});
+
+
+describe('面板臂补测二(refreshGraph 分流/代际弃置/收集读面取消)', () => {
+  afterEach(() => {
+    setKodeCoreShadowGate(null);
+  });
+
+  interface PanelInternals {
+    analyzer: { analyze(): Promise<DependencyGraph>; getEntityNode(name: string): EntityNode | undefined };
+    refreshGraph(): Promise<void>;
+    collectPythonFiles(token?: import('vscode').CancellationToken): Promise<{
+      files: Array<{ path: string; text: string }>;
+      truncated: boolean;
+      totalDiscovered: number;
+    }>;
+    currentRender: unknown;
+    currentCallGraph: { stats: { truncated?: boolean; totalDiscovered?: number } } | null;
+    refreshCancellation: { cancel(): void; dispose(): void } | null;
+  }
+
+  const internalsOf = (webview: EntityDependencyWebView): PanelInternals =>
+    webview as unknown as PanelInternals;
+
+  const rustDependencyGraph = (): DependencyGraphRust => ({
+    nodes: [
+      { id: 'entity_Hero', kind: 'entity', name: 'Hero', filePath: '/ws/entity_defs/Hero.def', types: ['BASE', 'CELL'] }
+    ],
+    edges: [],
+    reverseEdges: {},
+    paths: { entitiesXml: '/ws/scripts/entities.xml', defsRoot: '/ws/entity_defs', typesXml: '/ws/entity_defs/types.xml' },
+    stats: { nodeCount: 1, edgeCount: 0, entityCount: 1, defCount: 0, interfaceCount: 0, componentCount: 0, typeCount: 0, pythonCount: 0 }
+  });
+
+  const rustCallGraph = (): PythonCallGraphRustResult => ({
+    nodes: [
+      { id: 'Avatar.act', kind: 'method', className: 'Avatar', name: 'act', filePath: '/ws/scripts/cell/Avatar.py', line: 1, isAsync: false, params: ['self'] },
+      { id: 'Avatar.notify', kind: 'method', className: 'Avatar', name: 'notify', filePath: '/ws/scripts/cell/Avatar.py', line: 3, isAsync: false, params: ['self'] }
+    ],
+    edges: [
+      { caller: 'act', callerClass: 'Avatar', callerLine: 2, callee: 'notify', receiver: 'self', kind: 'self-method', filePath: '/ws/scripts/cell/Avatar.py' }
+    ],
+    reverseIndex: { '/ws/scripts/cell/Avatar.py': [] },
+    dataflow: [],
+    processRoles: ['cellapp'],
+    stats: { fileCount: 1, nodeCount: 2, edgeCount: 1, dataflowCount: 0, errorCount: 0, byKind: { 'self-method': 1 } }
+  });
+
+  const truncatedCollectStub = (webview: EntityDependencyWebView): void => {
+    const impl = internalsOf(webview);
+    impl.collectPythonFiles = async () => ({
+      files: [
+        { path: '/ws/scripts/cell/Avatar.py', text: 'class Avatar:\n    def act(self):\n        self.notify()\n' }
+      ],
+      truncated: true,
+      totalDiscovered: 9
+    });
+  };
+
+  it('dependency 刷新:gate 命中走 Rust 渲染;gate 抛错亮日志回落 TS;面板消息 setMode 切 callgraph', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const webview = makeWebView();
+    (webview as unknown as Record<string, unknown>).analyzer = fakeAnalyzer();
+    const impl = internalsOf(webview);
+    // gate 命中:Rust 全图渲染
+    setKodeCoreShadowGate({
+      runInRust: async () => ({ ok: true, result: rustDependencyGraph() })
+    });
+    await webview.show('dependency');
+    await until(() => impl.currentRender !== null);
+    expect(currentPanel().webview.html).toContain('graph TD');
+    // gate 抛错:按不可用回落 TS,亮日志
+    setKodeCoreShadowGate({
+      runInRust: async () => {
+        throw new Error('rust exploded');
+      }
+    });
+    await impl.refreshGraph();
+    expect(channelLines.join('\n')).toContain('Rust 依赖图推导失败,回落 TS');
+    await until(() => impl.currentRender !== null);
+    // 面板消息 setMode:切 callgraph 并按新模式刷新(gate 换 callgraph 形状)
+    setKodeCoreShadowGate({
+      runInRust: async () => ({ ok: true, result: rustCallGraph() })
+    });
+    truncatedCollectStub(webview);
+    send({ command: 'setMode', mode: 'callgraph' });
+    await until(() => impl.currentCallGraph !== null);
+    expect(currentPanel().title).not.toBe(currentPanel().title && '');
+    expect(impl.currentCallGraph!.stats.truncated).toBe(true);
+    setKodeCoreShadowGate(null);
+  });
+
+  it('callgraph 刷新:Rust 调用失败且代仍现行 → 徽标降级并亮日志', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    setKodeCoreShadowGate({
+      runInRust: async () => {
+        throw new Error('callgraph down');
+      }
+    });
+    const webview = makeWebView();
+    (webview as unknown as Record<string, unknown>).analyzer = fakeAnalyzer();
+    truncatedCollectStub(webview);
+    await webview.show('callgraph');
+    expect(channelLines.join('\n')).toContain('Rust 调用图失败');
+    expect(internalsOf(webview).currentCallGraph).toBeNull();
+    // 面板照常渲染(空图注记页),不因 Rust 失效崩面板
+    expect(currentPanel().webview.html).toContain('Content-Security-Policy');
+    setKodeCoreShadowGate(null);
+  });
+
+  it('callgraph 刷新:异常时代已被取消 → 旧代整体弃置,不亮「失败」', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const webview = makeWebView();
+    const impl = internalsOf(webview);
+    (webview as unknown as Record<string, unknown>).analyzer = fakeAnalyzer();
+    truncatedCollectStub(webview);
+    setKodeCoreShadowGate({
+      runInRust: async () => {
+        // RPC 在途时本代被取消(关面板/被新代取代):异常按旧代弃置,零日志零渲染
+        impl.refreshCancellation?.cancel();
+        throw new Error('stale call');
+      }
+    });
+    await webview.show('callgraph');
+    expect(channelLines).toHaveLength(0);
+    expect(impl.currentCallGraph).toBeNull();
+    setKodeCoreShadowGate(null);
+  });
+
+  it('dependency 刷新:推导得空且本代已取消 → 按空态收束,不写 null 渲染', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const webview = makeWebView();
+    const impl = internalsOf(webview);
+    (webview as unknown as Record<string, unknown>).analyzer = fakeAnalyzer();
+    setKodeCoreShadowGate({
+      runInRust: async () => {
+        // RPC 途中取消:rust=null 且取消闸拦住 TS 兜底 → render 仍 null
+        impl.refreshCancellation?.cancel();
+        return { ok: false, reason: 'cancelled' };
+      }
+    });
+    await webview.show('dependency');
+    expect(impl.currentRender).toBeNull();
+    expect(channelLines).toHaveLength(0);
+    setKodeCoreShadowGate(null);
+  });
+
+  it('dependency 刷新:分析在途被新代取代 → 旧代错误静默弃置,新代照常出图', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    setKodeCoreShadowGate({
+      runInRust: async () => ({ ok: false, reason: 'unavailable' })
+    });
+    const webview = makeWebView();
+    const impl = internalsOf(webview);
+    let firstAnalyze = true;
+    (webview as unknown as Record<string, unknown>).analyzer = {
+      analyze: async () => {
+        if (firstAnalyze) {
+          firstAnalyze = false;
+          // 分析在途触发并发刷新(换代),随后旧代抛错:不得冒泡亮错
+          void impl.refreshGraph();
+          await new Promise(resolve => setTimeout(resolve, 10));
+          throw new Error('stale analyze');
+        }
+        return makeGraph();
+      },
+      getEntityNode: (name: string) => entityNodes[name]
+    };
+    await webview.show('dependency');
+    expect(channelLines.join('\n')).not.toContain('刷新依赖图失败');
+    // 新代(gen 2)照常渲染
+    await until(() => impl.currentRender !== null);
+    expect(currentPanel().webview.html).toContain('graph TD');
+    setKodeCoreShadowGate(null);
+  });
+
+  it('collectPythonFiles:读面取消(文件已在手但 token 已撤)→ 读循环首查收束,零文件', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const webview = makeWebView();
+    const impl = internalsOf(webview);
+    (webview as unknown as Record<string, unknown>).analyzer = fakeAnalyzer();
+    const realFindFiles = stubWorkspace.findFiles;
+    const cts = new CancellationTokenSource();
+    stubWorkspace.findFiles = (async (): Promise<unknown[]> => {
+      // 文件已到手但 token 在读循环前被撤:读循环首查即收束
+      cts.cancel();
+      return [{ fsPath: '/ws/scripts/cell/Avatar.py' }];
+    }) as typeof stubWorkspace.findFiles;
+    try {
+      const collected = await impl.collectPythonFiles(cts.token);
+      // 文件已选中但读循环首查即取消:零读取(取消代不再空耗 IO)
+      expect(collected.files).toHaveLength(0);
+      expect(collected.truncated).toBe(false);
+    } finally {
+      stubWorkspace.findFiles = realFindFiles;
+    }
+  });
+});
+
+
+describe('面板臂补测三(BG-WARM 缓存面:done 直渲/running 进度页复用)', () => {
+  afterEach(() => {
+    setKodeCoreShadowGate(null);
+  });
+
+  const makeWarmWebView = (
+    peek: { state: string; value?: unknown }
+  ): EntityDependencyWebView => {
+    const webview = new EntityDependencyWebView(
+      { extensionUri: Uri.file('/ext/root') } as unknown as vscode.ExtensionContext,
+      {
+        appendLine: (line: string) => {
+          channelLines.push(line);
+        }
+      } as unknown as vscode.OutputChannel,
+      {
+        peekArtifact: () => peek,
+        artifact: async () => peek.value,
+        snapshot: () => ({
+          state: 'running',
+          firstRun: true,
+          upgraded: false,
+          completedStages: 1,
+          totalStages: 3,
+          stages: [],
+          currentLabel: '实体解析'
+        })
+      }
+    );
+    (webview as unknown as Record<string, unknown>).analyzer = fakeAnalyzer();
+    return webview;
+  };
+
+  it('预热产物 done:面板首开直渲缓存图,零现算', async () => {
+    const webview = makeWarmWebView({
+      state: 'done',
+      value: { kind: 'ts', graph: makeGraph() }
+    });
+    await webview.show('dependency');
+    const impl = webview as unknown as { currentRender: unknown };
+    await until(() => impl.currentRender !== null);
+    expect(currentPanel().webview.html).toContain('graph TD');
+    // 再以另一模式 show(面板在场):走 reveal + 模式切换刷新臂,标题随模式换
+    await webview.show('callgraph');
+    expect(currentPanel().title).toBe('KBEngine Python 调用图');
+  });
+
+  it('预热在跑:先出进度页,复用在跑产物完成后渲真图', async () => {
+    let release: (value: unknown) => void = () => undefined;
+    const webview = new EntityDependencyWebView(
+      { extensionUri: Uri.file('/ext/root') } as unknown as vscode.ExtensionContext,
+      {
+        appendLine: (line: string) => {
+          channelLines.push(line);
+        }
+      } as unknown as vscode.OutputChannel,
+      {
+        peekArtifact: () => ({ state: 'running' }),
+        artifact: () =>
+          new Promise(resolve => {
+            release = resolve;
+          }),
+        snapshot: () => ({
+          state: 'running',
+          firstRun: true,
+          upgraded: false,
+          completedStages: 1,
+          totalStages: 3,
+          stages: [],
+          currentLabel: '实体解析'
+        })
+      }
+    );
+    (webview as unknown as Record<string, unknown>).analyzer = fakeAnalyzer();
+    const shown = webview.show('dependency');
+    // 在跑:先渲进度页(预热标记类名),等待复用产物
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(currentPanel().webview.html).toContain('kbengine-warmup');
+    release({ kind: 'ts', graph: makeGraph() });
+    await shown;
+    const impl = webview as unknown as { currentRender: unknown };
+    await until(() => impl.currentRender !== null);
+    expect(currentPanel().webview.html).toContain('graph TD');
+  });
+});
+
 });
