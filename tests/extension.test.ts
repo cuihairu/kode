@@ -434,12 +434,13 @@ describe('extension activate 装配', () => {
     expect(messages.info.some(message => message.includes('没有已连接的 telnet 会话'))).toBe(true);
 
     // 快速执行动作(视图标题栏/编辑器标题栏按钮共用):无配置动作时指路配置文件
+    // (UX-REVIEW-010 本地化后消息走 l10n 源串,测试桩下恒英文)
     await commands.executeCommand('kbengine.quickActions.show');
-    expect(messages.info.some(message => message.includes('未配置快速执行动作'))).toBe(true);
+    expect(messages.info.some(message => message.includes('No quick actions configured'))).toBe(true);
 
     // 批136 Explorer 顶栏 ▶ 主按钮:无配置动作时同样指路,不假装执行了什么
     await commands.executeCommand('kbengine.quickActions.runDefault');
-    expect(messages.info.some(message => message.includes('未发现可执行脚本'))).toBe(true);
+    expect(messages.info.some(message => message.includes('No runnable actions found'))).toBe(true);
 
     // IDE-SDK-001 messageTable 预览:无工作区索引时如实提示未发现实体(不弹选择不猜)
     await commands.executeCommand('kbengine.messagetable.preview');
