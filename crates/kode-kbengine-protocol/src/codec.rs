@@ -228,3 +228,244 @@ fn min_element_size(ty: &WireType) -> usize {
         _ => 1,
     }
 }
+
+// ---------------------------------------------------------------------------
+// 有类型跨度树(PA-006 插件字段树数据面;additive——不参与上方解码路径,
+// 供 Wireshark 插件按注册字段渲染字节区间)。
+// ---------------------------------------------------------------------------
+
+/// 跨度种类(插件按此选注册字段;F32/F64 走字节面——libwireshark alpha
+/// 未暴露 FT_FLOAT/FT_DOUBLE,如实不解值不编造)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpanKind {
+    Bool,
+    U8,
+    U16,
+    U32,
+    U64,
+    I8,
+    I16,
+    I32,
+    I64,
+    F32,
+    F64,
+    Str,
+    Bytes,
+    Raw,
+    /// 容器/复合(数组、FIXED_DICT、带长度前缀的 Unicode/Blob/Python、
+    /// 定长 Vector)——字节范围 + 子项。
+    Group,
+}
+
+/// 一次解码的字节跨度:相对载荷起点的偏移/长度,嵌套容器带 children。
+/// 只覆盖解码消费的前缀;尾残字节(帧内 arg 之外)不编造跨度。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ValueSpan {
+    /// 相对载荷(payload)起点的字节偏移。
+    pub start: usize,
+    pub len: usize,
+    pub kind: SpanKind,
+    pub children: Vec<ValueSpan>,
+}
+
+/// 按 schema 线类型解出跨度树:与 [`decode_value`] 同读序、同错误语义、
+/// 同限额(预算/深度/数组预检),Ok 时逐参数一个顶层跨度。
+///
+/// 这是字段树的数据面(插件零解析逻辑,协议 crate 单一来源);与
+/// [`decode_value`] 的对拍由 `tests/span_units.rs` 锁定(同语料同 Ok/Err、
+/// 同消费字节数)。
+pub fn decode_spans(
+    args: &[WireType],
+    payload: &[u8],
+    limits: &DecodeLimits,
+) -> Result<Vec<ValueSpan>, DecodeError> {
+    let mut cur = Cursor::new(payload);
+    let mut budget = Budget { values: 0 };
+    let mut out = Vec::with_capacity(args.len());
+    for ty in args {
+        out.push(span_inner(ty, &mut cur, limits, 0, &mut budget)?);
+    }
+    Ok(out)
+}
+
+/// `decode_inner` 的跨度镜像:同一 Cursor 读序、同一限额检查与错误文本;
+/// 唯一差异 = 记录消费区间而非值(EntityCall/Unresolved 同 decode_inner
+/// 不推进游标,跨度覆盖剩余字节)。
+fn span_inner(
+    ty: &WireType,
+    cur: &mut Cursor,
+    limits: &DecodeLimits,
+    depth: usize,
+    budget: &mut Budget,
+) -> Result<ValueSpan, DecodeError> {
+    if depth > MAX_DECODE_DEPTH {
+        return Err(DecodeError::new(
+            DecodeErrorKind::DepthLimit,
+            cur.offset(),
+            "depth",
+            format!("recursion over {MAX_DECODE_DEPTH}"),
+        ));
+    }
+    budget.take(limits, "value")?;
+    let start = cur.offset();
+    // end 参数化:闭包不捕获 cur,避免与 read_* 可变借用冲突。
+    let leaf = |kind: SpanKind, end: usize| ValueSpan {
+        start,
+        len: end - start,
+        kind,
+        children: Vec::new(),
+    };
+    Ok(match ty {
+        WireType::Bool => {
+            cur.read_u8()?;
+            leaf(SpanKind::Bool, cur.offset())
+        }
+        WireType::UInt8 => {
+            cur.read_u8()?;
+            leaf(SpanKind::U8, cur.offset())
+        }
+        WireType::Int8 => {
+            cur.read_i8()?;
+            leaf(SpanKind::I8, cur.offset())
+        }
+        WireType::UInt16 => {
+            cur.read_u16()?;
+            leaf(SpanKind::U16, cur.offset())
+        }
+        WireType::Int16 => {
+            cur.read_i16()?;
+            leaf(SpanKind::I16, cur.offset())
+        }
+        WireType::UInt32 => {
+            cur.read_u32()?;
+            leaf(SpanKind::U32, cur.offset())
+        }
+        WireType::Int32 => {
+            cur.read_i32()?;
+            leaf(SpanKind::I32, cur.offset())
+        }
+        WireType::UInt64 => {
+            cur.read_u64()?;
+            leaf(SpanKind::U64, cur.offset())
+        }
+        WireType::Int64 => {
+            cur.read_i64()?;
+            leaf(SpanKind::I64, cur.offset())
+        }
+        WireType::Float => {
+            cur.read_f32()?;
+            leaf(SpanKind::F32, cur.offset())
+        }
+        WireType::Double => {
+            cur.read_f64()?;
+            leaf(SpanKind::F64, cur.offset())
+        }
+        WireType::String => {
+            cur.read_cstring()?;
+            leaf(SpanKind::Str, cur.offset())
+        }
+        // 带 u32 长度前缀的族:前缀 4B + 体,两层(体 Str/Bytes/Raw)。
+        WireType::Unicode | WireType::Blob | WireType::Python => {
+            let body_start = start + 4;
+            cur.read_blob(limits)?;
+            let body_kind = match ty {
+                WireType::Python => SpanKind::Raw,
+                WireType::Unicode => SpanKind::Str,
+                _ => SpanKind::Bytes,
+            };
+            ValueSpan {
+                start,
+                len: cur.offset() - start,
+                kind: SpanKind::Group,
+                children: vec![
+                    ValueSpan {
+                        start,
+                        len: 4,
+                        kind: SpanKind::U32,
+                        children: Vec::new(),
+                    },
+                    ValueSpan {
+                        start: body_start,
+                        len: cur.offset() - body_start,
+                        kind: body_kind,
+                        children: Vec::new(),
+                    },
+                ],
+            }
+        }
+        WireType::Vector2 | WireType::Vector3 | WireType::Vector4 => {
+            let n = match ty {
+                WireType::Vector2 => 2,
+                WireType::Vector3 => 3,
+                _ => 4,
+            };
+            for _ in 0..n {
+                cur.read_f32()?;
+            }
+            let children = (0..n)
+                .map(|i| ValueSpan {
+                    start: start + i * 4,
+                    len: 4,
+                    kind: SpanKind::F32,
+                    children: Vec::new(),
+                })
+                .collect();
+            ValueSpan {
+                start,
+                len: cur.offset() - start,
+                kind: SpanKind::Group,
+                children,
+            }
+        }
+        WireType::Array { of } => {
+            let count = cur.read_u32()? as usize;
+            if count > limits.max_array_len {
+                return Err(DecodeError::new(
+                    DecodeErrorKind::MemoryLimit,
+                    cur.offset(),
+                    "array",
+                    format!("declared {count} > cap {}", limits.max_array_len),
+                ));
+            }
+            let min_elem = min_element_size(of);
+            if min_elem > 0 && count.saturating_mul(min_elem) > cur.remaining() {
+                return Err(DecodeError::new(
+                    DecodeErrorKind::UnexpectedEof,
+                    cur.offset(),
+                    "array",
+                    format!("declared {count} elements, {} bytes left", cur.remaining()),
+                ));
+            }
+            let mut children = Vec::with_capacity(count.min(4096));
+            for i in 0..count {
+                children.push(span_inner(of, cur, limits, depth + 1, budget)?);
+                let _ = i;
+            }
+            ValueSpan {
+                start,
+                len: cur.offset() - start,
+                kind: SpanKind::Group,
+                children,
+            }
+        }
+        WireType::FixedDict { fields, .. } => {
+            let mut children = Vec::with_capacity(fields.len());
+            for f in fields {
+                children.push(span_inner(&f.ty, cur, limits, depth + 1, budget)?);
+            }
+            ValueSpan {
+                start,
+                len: cur.offset() - start,
+                kind: SpanKind::Group,
+                children,
+            }
+        }
+        // EntityCall/Unresolved:同 decode_inner 不推进游标,Raw 覆盖剩余。
+        WireType::EntityCall | WireType::Unresolved(_) => ValueSpan {
+            start,
+            len: cur.rest().len(),
+            kind: SpanKind::Raw,
+            children: Vec::new(),
+        },
+    })
+}

@@ -25,6 +25,7 @@ pub mod framing;
 pub mod messages;
 pub mod session;
 
+pub use codec::{decode_spans, DecodeLimits, SpanKind, ValueSpan};
 pub use error::{DecodeError, DecodeErrorKind};
 pub use framing::{Frame, FrameParser, FramingConfig, LengthSpec};
 pub use messages::{ImportSummary, MessageMap, MessageSpec};
