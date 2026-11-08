@@ -434,14 +434,45 @@ export const tests = {
 
 // debugConfig 的 attachToComponent 经 vscode.debug.startDebugging 启动
 // 调试会话;对象成员可变,测试按用例 monkey-patch startDebugging。
-// 会话生命周期事件(DBG-005 注册表接线):默认零订阅者,测试可回放会话。
+// 会话生命周期事件(DBG-005 注册表接线):订阅入账,fireDebugSessionEvent
+// 按注册顺序回放(真实 vscode 为 Event,替身以数组同形)。file 内隔离
+// (vitest 每文件独立模块实例),无需跨文件 reset。
 // stopDebugging(DBG-007 截止闸,@types 1.50 面无 stopSession):默认零
 // 动作,测试按用例 monkey-patch 记录。
+const debugSessionStartListeners: Array<(session: unknown) => void> = [];
+const debugSessionTerminateListeners: Array<(session: unknown) => void> = [];
+
+const subscribeSessionEvent = (
+  listeners: Array<(session: unknown) => void>,
+  listener: (session: unknown) => void
+): { dispose(): void } => {
+  listeners.push(listener);
+  return {
+    dispose: () => {
+      const index = listeners.indexOf(listener);
+      if (index >= 0) {
+        listeners.splice(index, 1);
+      }
+    }
+  };
+};
+
+/** 测试回放面:按 kind 通知起/止订阅者(session 为最小面 {name, configuration}) */
+export function fireDebugSessionEvent(kind: 'start' | 'terminate', session: unknown): void {
+  const listeners =
+    kind === 'start' ? debugSessionStartListeners : debugSessionTerminateListeners;
+  for (const listener of [...listeners]) {
+    listener(session);
+  }
+}
+
 export const debug = {
   startDebugging: async (_folder: unknown, _config: unknown): Promise<boolean> => false,
   stopDebugging: async (_session?: unknown): Promise<void> => undefined,
-  onDidStartDebugSession: (_listener: (session: unknown) => void): { dispose(): void } => ({ dispose: () => undefined }),
-  onDidTerminateDebugSession: (_listener: (session: unknown) => void): { dispose(): void } => ({ dispose: () => undefined }),
+  onDidStartDebugSession: (listener: (session: unknown) => void): { dispose(): void } =>
+    subscribeSessionEvent(debugSessionStartListeners, listener),
+  onDidTerminateDebugSession: (listener: (session: unknown) => void): { dispose(): void } =>
+    subscribeSessionEvent(debugSessionTerminateListeners, listener),
   // KODE-CFG-006:断点预填经 addBreakpoints;默认零动作,测试按用例 monkey-patch
   // 记录。SourceBreakpoint 最小面(仅 location,测试断言 uri+行)。
   addBreakpoints: (_breakpoints: readonly unknown[]): void => undefined,
