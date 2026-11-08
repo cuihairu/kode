@@ -78,8 +78,15 @@ import { makeProbeOne, TelnetService, updateTelnetStatusBar } from '../telnetSer
 import { TelnetWebView } from '../telnetWebView';
 import { runBotsAddCommand, runBotsCountCommand, type BotsControlDeps } from '../botsControl';
 import { TelnetTreeProvider } from '../telnetTree';
-import { ensureConfigDerivedScanRoot } from '../configDerive';
-import { PlayerDataTreeProvider, queryPlayerByDbid, testPlayerDatabaseConnection } from '../playerDataPanel';
+import { ensureConfigDerivedScanRoot, getDerivedDatabaseProfile } from '../configDerive';
+import {
+  PlayerDataTreeProvider,
+  queryPlayerByDbid,
+  readOnlyQueryConfigGate,
+  READ_ONLY_QUERY_CHECK_CONNECTION,
+  READ_ONLY_QUERY_OPEN_REPORT,
+  testPlayerDatabaseConnection
+} from '../playerDataPanel';
 import { runRedisKeyspacePreviewCommand } from '../redisKeyspaceCommand';
 import { DatabaseManagementWebView } from '../databaseManagementWebView';
 
@@ -167,6 +174,27 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
       await ensureConfigDerivedScanRoot().catch(() => {
         /* 同上 */
       });
+      // UX-REVIEW-004d:缺引擎数据库配置时如实降级,提供配置定位与连接
+      // 检查两个真实入口;只读查询的连接要素只来自引擎配置派生,绝不把
+      // 克隆 Source/Target 台账当成只读查询的配置来源。
+      const gateMessage = readOnlyQueryConfigGate(getDerivedDatabaseProfile());
+      if (gateMessage) {
+        const picked = await vscode.window.showWarningMessage(
+          gateMessage,
+          READ_ONLY_QUERY_OPEN_REPORT,
+          READ_ONLY_QUERY_CHECK_CONNECTION
+        );
+        if (picked === READ_ONLY_QUERY_OPEN_REPORT) {
+          await vscode.commands.executeCommand('kbengine.discovery.report');
+        } else if (picked === READ_ONLY_QUERY_CHECK_CONNECTION) {
+          await ensureConfigDerivedScanRoot().catch(() => {
+            /* 派生失败走连接测试的降级文案 */
+          });
+          playerDataProvider.refresh();
+          void vscode.window.showInformationMessage(await testPlayerDatabaseConnection());
+        }
+        return;
+      }
       const dbid = await vscode.window.showInputBox({
         prompt: '玩家 DBID(十进制正整数;只读查询 tbl_Account)',
         placeHolder: '如 1',

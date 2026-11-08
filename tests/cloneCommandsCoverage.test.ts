@@ -936,11 +936,13 @@ const happyImportScript = (archivePath: string, keyRoot: string, picks: DepsScri
 });
 
 describe('runImportCloneCommand(0504/0505)', () => {
-  it('未选归档 → 直接返回', async () => {
-    const { deps, recorded } = makeDeps({});
+  it('未选归档 → 直接返回(目标已配置,预检通过)', async () => {
+    // 004c 后目标配置预检前移:取消选档路径需带已配置 target 才可达
+    const { deps, recorded } = makeDeps({ target: targetConfig() });
     await runImportCloneCommand(deps);
     expect(recorded.info).toHaveLength(0);
     expect(recorded.error).toHaveLength(0);
+    expect(recorded.warn).toHaveLength(0);
   });
 
   it('未配置 Target → 警告指引', async () => {

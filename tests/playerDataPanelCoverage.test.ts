@@ -30,8 +30,12 @@ import { resolveDatabaseInterfaceConfig } from '../src/serverConfigMerge';
 import {
   PLAYER_DATA_CHANNEL_NAME,
   PlayerDataTreeProvider,
+  READ_ONLY_QUERY_CHECK_CONNECTION,
+  READ_ONLY_QUERY_MISSING_CONFIG,
+  READ_ONLY_QUERY_OPEN_REPORT,
   buildPlayerQuerySql,
   queryPlayerByDbid,
+  readOnlyQueryConfigGate,
   testPlayerDatabaseConnection
 } from '../src/playerDataPanel';
 import { configurationOverrides } from './fake-vscode/workspaceState';
@@ -111,12 +115,23 @@ describe('PlayerDataTreeProvider(覆盖收口)', () => {
     expect(provider.getTreeItem(node)).toBe(node);
   });
 
-  it('getChildren 顶层:派生档案 → toItem 映射;顺手触发派生刷新', () => {
+  it('getChildren 顶层:任务入口(004a)+ 派生档案;顺手触发派生刷新', () => {
     const provider = new PlayerDataTreeProvider();
     const nodes = provider.getChildren();
     expect(mockedEnsure).toHaveBeenCalledTimes(1);
-    expect(nodes).toHaveLength(1);
-    const root = nodes[0];
+    // 3 条任务入口 + 连接档案
+    expect(nodes).toHaveLength(4);
+    expect(nodes[0].label).toBe('只读查询(DBID)');
+    expect(nodes[0].command).toMatchObject({ command: 'kbengine.playerData.queryByDbid' });
+    expect(nodes[1].label).toBe('导出玩家(Export)');
+    expect(nodes[1].command).toMatchObject({ command: 'kbengine.clone.export' });
+    expect(nodes[2].label).toBe('导入到本地或测试库(Import)');
+    expect(nodes[2].command).toMatchObject({ command: 'kbengine.clone.import' });
+    // 任务条目说明点明「不代表在线状态」(004a 验收线)
+    for (const task of nodes.slice(0, 3) as Array<{ description?: string }>) {
+      expect(task.description).toContain('不代表在线状态');
+    }
+    const root = nodes[3];
     expect(root.label).toBe('mysql default');
     expect(root.collapsibleState).toBe(vscode.TreeItemCollapsibleState.Collapsed);
     expect(root.description).toBe('127.0.0.1:13306/kbe');
@@ -148,12 +163,14 @@ describe('PlayerDataTreeProvider(覆盖收口)', () => {
     expect(mockedProfile).toHaveBeenCalled();
   });
 
-  it('无派生档案 → 单节点「未找到数据库配置段」', () => {
+  it('无派生档案 → 任务入口仍可用 + 单节点「未找到数据库配置段」', () => {
     mockedProfile.mockReturnValue(null);
     const provider = new PlayerDataTreeProvider();
     const nodes = provider.getChildren();
-    expect(nodes).toHaveLength(1);
-    expect(nodes[0].label).toContain('未找到数据库配置段');
+    // 任务入口(真实命令)不因无档案消失;档案区如实降级单节点
+    expect(nodes).toHaveLength(4);
+    expect(nodes[3].label).toContain('未找到数据库配置段');
+    expect(nodes[0].command).toMatchObject({ command: 'kbengine.playerData.queryByDbid' });
   });
 });
 
@@ -291,5 +308,18 @@ describe('buildPlayerQuerySql 纯函数(覆盖收口)', () => {
     expect(buildPlayerQuerySql('7', '')).toBe('SELECT * FROM `tbl_Account` WHERE `id` = 7');
     expect(buildPlayerQuerySql('7', ' x_ ')).toBe('SELECT * FROM `x_Account` WHERE `id` = 7');
     expect(buildPlayerQuerySql('7', 'x`_')).toBe('SELECT * FROM `x_Account` WHERE `id` = 7');
+  });
+});
+
+describe('readOnlyQueryConfigGate(004d)', () => {
+  it('有派生档案 → 闸放行(null);无档案 → 降级文案点明来源边界与两个恢复入口', () => {
+    expect(readOnlyQueryConfigGate(mysqlProfile() as never)).toBeNull();
+    const message = readOnlyQueryConfigGate(null);
+    expect(message).toBe(READ_ONLY_QUERY_MISSING_CONFIG);
+    expect(message).toContain('dbmgr/databaseInterfaces/default');
+    expect(message).toContain('与克隆 Source/Target 台账无关');
+    // 两个恢复入口都是真实命令面(发现报告 / 重新派生并检查连接)
+    expect(typeof READ_ONLY_QUERY_OPEN_REPORT).toBe('string');
+    expect(typeof READ_ONLY_QUERY_CHECK_CONNECTION).toBe('string');
   });
 });

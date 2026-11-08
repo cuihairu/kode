@@ -30,6 +30,57 @@ interface PlayerDataNodeItem {
   tooltip?: string | vscode.MarkdownString;
   collapsibleState?: vscode.TreeItemCollapsibleState;
   children?: PlayerDataNodeItem[];
+  /** 点击执行的既有命令 id(004a 任务入口;缺省 = 纯说明条目) */
+  commandId?: string;
+  contextValue?: string;
+}
+
+/**
+ * UX-REVIEW-004a 玩家数据任务入口(纯函数,便于单测):只读查询 / 导出玩家 /
+ * 导入到本地或测试库三条真实可执行路径,说明文案点明「数据来自已持久化
+ * 数据库,不代表在线状态」。条目全部指向既有真实命令,不新增不可执行按钮。
+ */
+export function buildPlayerDataTaskEntries(): PlayerDataNodeItem[] {
+  return [
+    {
+      label: '只读查询(DBID)',
+      description: '从已持久化数据库读账号行(不代表在线状态)',
+      tooltip:
+        '只读 SELECT tbl_Account;连接要素只来自引擎配置派生,与克隆 Source/Target 台账无关。',
+      commandId: 'kbengine.playerData.queryByDbid',
+      contextValue: 'playerDataTaskQuery'
+    },
+    {
+      label: '导出玩家(Export)',
+      description: '只读导出持久化数据到 .kdpclone;不代表在线状态',
+      tooltip:
+        '只读会话执行导出计划;归档是数据库已持久化数据副本(Persisted copy),不代表在线当前状态(Live state)。',
+      commandId: 'kbengine.clone.export',
+      contextValue: 'playerDataTaskExport'
+    },
+    {
+      label: '导入到本地或测试库(Import)',
+      description: '仅 local/test;写入持久化副本,不代表在线状态',
+      tooltip:
+        '写入前两遍计划预演与本地环境二次确认,取消即回滚;重复导入 fail-closed。',
+      commandId: 'kbengine.clone.import',
+      contextValue: 'playerDataTaskImport'
+    }
+  ];
+}
+
+// UX-REVIEW-004d:只读查询缺配置闸(纯函数)。降级文案点明连接要素只来自
+// 引擎配置派生(dbmgr/databaseInterfaces/default),绝不把克隆 Source/Target
+// 台账当成只读查询的配置来源;恢复动作指向真实的发现报告与连接检查命令。
+export const READ_ONLY_QUERY_MISSING_CONFIG =
+  '只读查询需要引擎数据库配置(dbmgr/databaseInterfaces/default 派生;与克隆 Source/Target 台账无关)——未找到。';
+export const READ_ONLY_QUERY_OPEN_REPORT = '打开发现与定位报告';
+export const READ_ONLY_QUERY_CHECK_CONNECTION = '重新派生并检查连接';
+
+export function readOnlyQueryConfigGate(
+  profile: ReturnType<typeof getDerivedDatabaseProfile>
+): string | null {
+  return profile ? null : READ_ONLY_QUERY_MISSING_CONFIG;
 }
 
 /**
@@ -101,6 +152,12 @@ function toItem(item: PlayerDataNodeItem): PlayerDataNode {
   );
   node.description = item.description;
   node.tooltip = item.tooltip;
+  if (item.contextValue) {
+    node.contextValue = item.contextValue;
+  }
+  if (item.commandId) {
+    node.command = { command: item.commandId, title: item.label, arguments: [] };
+  }
   return { ...node, children: item.children };
 }
 
@@ -128,7 +185,8 @@ export class PlayerDataTreeProvider implements vscode.TreeDataProvider<PlayerDat
     void ensureConfigDerivedScanRoot().catch(() => {
       /* 派生失败:面板如实降级为未找到 */
     });
-    return buildPlayerDataTreeNodes(getDerivedDatabaseProfile()).map(toItem);
+    // 顶层 = 任务入口(004a)+ 连接档案;任务条目指向既有真实命令。
+    return [...buildPlayerDataTaskEntries().map(toItem), ...buildPlayerDataTreeNodes(getDerivedDatabaseProfile()).map(toItem)];
   }
 }
 

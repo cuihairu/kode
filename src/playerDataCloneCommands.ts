@@ -685,13 +685,34 @@ export async function runImportCloneCommand(
   deps: PlayerCloneCommandDeps,
   archivePath?: string
 ): Promise<void> {
-  const path = archivePath ?? (await deps.pickArchiveOpenPath());
-  if (!path) {
+  // UX-REVIEW-004c:导入前先检查目标配置(缺配置直接进入向导,取消不收集
+  // 后续信息)与目标环境(仅 local/test,§6.1 双保险);连接可达性在探测
+  // 会话建立后第一时间校验(见下 testCloneConnection),失败如实报因、
+  // 导入未开始(不登记防重、不写入)。
+  let targetConfig = await deps.profiles.resolveConnection('target');
+  if (!targetConfig) {
+    const action = '配置 Target 连接';
+    const choice = await deps.showWarningMessage(
+      '尚未配置 Target 连接(仅 local/test;先运行「配置 Target 连接」)。',
+      action
+    );
+    if (choice !== action) {
+      return;
+    }
+    await runConfigureCloneProfileCommand(deps, 'target');
+    targetConfig = await deps.profiles.resolveConnection('target');
+    if (!targetConfig) {
+      return; // 配置向导被取消:不收集后续信息
+    }
+  }
+  // §6.1 双保险:台账配置闸已拒 prod/staging;导入执行前再落一道环境闸。
+  if (targetConfig.environment !== 'local' && targetConfig.environment !== 'test') {
+    await deps.showErrorMessage('Target 环境仅接受 local/test(导入绝不写生产/预发布)。');
     return;
   }
-  const targetConfig = await deps.profiles.resolveConnection('target');
-  if (!targetConfig) {
-    await deps.showWarningMessage('尚未配置 Target 连接(仅 local/test;先运行「配置 Target 连接」)。');
+
+  const path = archivePath ?? (await deps.pickArchiveOpenPath());
+  if (!path) {
     return;
   }
 
@@ -717,6 +738,13 @@ export async function runImportCloneCommand(
     let rowsByTable = new Map<string, TypedRowWire[]>();
     let columnOrder = new Map<string, string[]>();
     try {
+      // 004c:探测会话建立后先验连接可达(真实 SELECT),失败如实报因——
+      // 导入未开始:不登记防重、不生成计划、不写入。
+      const probe = await testCloneConnection(connection);
+      if (!probe.ok) {
+        await deps.showErrorMessage(`目标连接失败: ${probe.reason}(导入未开始)`);
+        return;
+      }
       const tableNames = derivationTables.map(table => table.name);
       const physicalTables = await probePhysicalTables(connection, tableNames);
       // 唯一键 = 目标单列唯一索引(探测自 information_schema;复合键 v1 不预演,
