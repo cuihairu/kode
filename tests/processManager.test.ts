@@ -58,7 +58,10 @@ describe('ProcessManager', () => {
     const states: string[] = [];
     manager.onState(event => states.push(event.state));
     manager.start({ id: 'svc', command: 'server', readyAfterMs: 1 });
-    await new Promise(resolve => setTimeout(resolve, 5));
+    // 条件等待 ready 事件(coverage 插桩下固定 5ms sleep 会落后于 readyAfterMs)
+    for (let i = 0; i < 200 && !states.includes('running'); i += 1) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
     await expect(manager.stop('svc')).resolves.toBe(true);
     expect(manager.get('svc')).toBeUndefined();
     expect(states).toEqual(['starting', 'running', 'stopping', 'exited']);
@@ -265,6 +268,8 @@ describe('processManager 平台臂(WIN-3)与 taskkill 回落', () => {
       expect(line).toContain('"--key=a b"');
       expect(line).toContain(' plain');
       expect(line).toContain('"--we""ird=1"');
+      // Linux 上 cmd.exe 不存在:吞 error 事件,不让 ENOENT 变未处理错误
+      child.on('error', () => undefined);
       void child.kill();
     } finally {
       Object.defineProperty(process, 'platform', { value: original, configurable: true });
@@ -278,6 +283,7 @@ describe('processManager 平台臂(WIN-3)与 taskkill 回落', () => {
       const child = spawnProcess('run.bat', ['a', 'b']);
       expect(child.stdout).toBeDefined();
       expect(child.stderr).toBeDefined();
+      child.on('error', () => undefined);
       void child.kill();
     } finally {
       Object.defineProperty(process, 'platform', { value: original, configurable: true });
