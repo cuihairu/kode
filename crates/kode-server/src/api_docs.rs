@@ -33,6 +33,7 @@ pub struct ApiDocEntry {
     #[serde(rename = "summaryZh")]
     pub summary_zh: String,
     #[serde(default)]
+    #[serde(rename = "sourceRefs")]
     pub source_refs: Vec<String>,
     #[serde(default)]
     pub page: String,
