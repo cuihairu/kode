@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   installCommandText,
+  runInstallRuffCommand,
   ruffExePathForInterpreter,
   runRuffLint,
   runRuffLintCommand,
@@ -217,4 +218,68 @@ describe('runRuffLintCommand(命令编排)', () => {
     const summary = await runRuffLintCommand(h.deps);
     expect(summary).toContain('Rust backend');
   });
+
+describe('ruffLint 缺口臂(桥失败/命令编排/手动安装)', () => {
+  it('桥 ok:false:runRuffLint 如实 error,命令面亮错并如实摘要', async () => {
+    const gate: KodeCoreGate = {
+      runInRust: async () => ({ ok: false, reason: 'backend gone' })
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(gate);
+    const call = await runRuffLint(['/w/a.py'], 'ruff');
+    expect(call.status).toBe('error');
+    if (call.status === 'error') {
+      expect(call.reason).toBe('backend gone');
+    }
+    const h = makeDeps();
+    const summary = await runRuffLintCommand(h.deps);
+    expect(h.errors.join('\n')).toContain('backend gone');
+    expect(summary).toContain('ruff lint failed');
+  });
+
+  it('桥 available:false:ruff 未装如实提示,不发布诊断', async () => {
+    const calls: Array<{ method: string }> = [];
+    setKodeCoreShadowGate(fakeGate([], calls) /* 覆写返回形状 */);
+    const gate: KodeCoreGate = {
+      runInRust: async () => ({ ok: true, result: { available: false } })
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(gate);
+    const h = makeDeps();
+    const summary = await runRuffLintCommand(h.deps);
+    expect(summary).toContain('ruff unavailable');
+    expect(h.diagnosticBatches).toHaveLength(0);
+  });
+
+  it('手动安装:未选解释器如实拒绝,不跑 pip', async () => {
+    const h = makeDeps({ getInterpreterPath: () => undefined });
+    const summary = await runInstallRuffCommand(h.deps);
+    expect(h.errors.join('\n')).toContain('No Python interpreter selected');
+    expect(summary).toContain('No interpreter selected');
+    expect(h.pipCalls).toHaveLength(0);
+  });
+
+  it('手动安装:pip 失败亮手动命令,通道留安装日志', async () => {
+    const h = makeDeps({
+      runPipInstall: async interpreterPath => {
+        h.pipCalls.push(interpreterPath);
+        return { ok: false, output: 'pip exploded' };
+      }
+    });
+    const summary = await runInstallRuffCommand(h.deps);
+    expect(h.pipCalls).toEqual(['/venv/bin/python3']);
+    expect(h.errors.join('\n')).toContain('ruff install failed');
+    expect(h.channelLines.join('\n')).toContain('installing');
+    expect(h.channelLines.join('\n')).toContain('Run it manually');
+    expect(summary).toContain('manual command shown');
+  });
+
+  it('手动安装:pip 成功 → 复检(无门控如实 not detected)', async () => {
+    const h = makeDeps();
+    setKodeCoreShadowGate(null);
+    const summary = await runInstallRuffCommand(h.deps);
+    expect(h.pipCalls).toEqual(['/venv/bin/python3']);
+    expect(summary).toContain('ruff installed');
+    expect(summary).toContain('not detected');
+  });
+});
+
 });

@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
 import { join } from 'path';
 import {
   describeGitUnavailable,
   describeGitRepoLocation,
   locateGitRepository,
+  realGitRepoLocationDeps,
   type GitRepoLocationDeps,
   type GitRepoLocation,
 } from '../src/gitRepoLocate';
@@ -132,6 +135,61 @@ describe('IDE-GIT-002 定位所属 Git 仓库', () => {
     const probed = (calls.probe as any).mock.calls.map((c: any) => c[0]);
     expect(probed).toContain('/ws');
     expect(probed).not.toContain('/');
+  });
+
+  it('嵌套工作区根:文件同时命中多根 → 最长前缀根胜出(排序比较器生效)', () => {
+    const { deps } = makeDeps({
+      markers: { [join('/ws/sub', '.git')]: 'dir' },
+      gitFiles: {},
+      gitDirs: new Set(),
+    });
+    // 文件同时落在 /ws 与 /ws/sub 两根下:sort 比较器必须跑且取更长前缀
+    const r = locateGitRepository('/ws/sub/x.py', ['/ws', '/ws/sub'], true, deps);
+    expect(r).toEqual({ kind: 'repo', repoRoot: '/ws/sub', gitDir: '/ws/sub/.git', isWorktree: false });
+  });
+});
+
+describe('IDE-GIT-002 真实 fs 依赖面', () => {
+  it('realGitRepoLocationDeps:目录/文件/缺失 .git、读指针命中与缺失、判目录', () => {
+    const dir = fs.mkdtempSync(join(os.tmpdir(), 'kode-git-locate-real-'));
+    try {
+      // .git 目录形态
+      const withDir = join(dir, 'repo-dir');
+      fs.mkdirSync(join(withDir, '.git'), { recursive: true });
+      // .git 文件形态(worktree 指针)
+      const withFile = join(dir, 'repo-wt');
+      fs.mkdirSync(withFile, { recursive: true });
+      fs.writeFileSync(join(withFile, '.git'), 'gitdir: /else/main/.git/worktrees/wt', 'utf8');
+      const deps = realGitRepoLocationDeps();
+      expect(deps.probeGitMarker(withDir)).toBe('dir');
+      expect(deps.probeGitMarker(withFile)).toBe('file');
+      expect(deps.probeGitMarker(join(dir, 'no-such'))).toBeNull();
+      // 读指针:命中与缺失
+      expect(deps.readGitFile(join(withFile, '.git'))).toContain('gitdir:');
+      expect(deps.readGitFile(join(dir, 'no-such', '.git'))).toBeNull();
+      // 判目录:目录 true;文件与缺失 false
+      expect(deps.isDirectory(withDir)).toBe(true);
+      expect(deps.isDirectory(join(withFile, '.git'))).toBe(false);
+      expect(deps.isDirectory(join(dir, 'no-such'))).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('realGitRepoLocationDeps 装配后走通端到端定位(tmp 目录真 .git)', () => {
+    const root = fs.mkdtempSync(join(os.tmpdir(), 'kode-git-locate-e2e-'));
+    try {
+      fs.mkdirSync(join(root, 'scripts'), { recursive: true });
+      fs.mkdirSync(join(root, '.git'), { recursive: true });
+      const r = locateGitRepository(join(root, 'scripts', 'a.py'), [root], true, realGitRepoLocationDeps());
+      expect(r.kind).toBe('repo');
+      if (r.kind === 'repo') {
+        expect(r.repoRoot).toBe(root);
+        expect(r.isWorktree).toBe(false);
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

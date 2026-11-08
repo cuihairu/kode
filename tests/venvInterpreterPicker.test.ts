@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
+import { locateInterpreterOnPath } from '../src/profileInterpreter';
 import type { DiscoveredVenv } from '../src/venvDiscovery';
 import type { InterpreterResolution } from '../src/profileInterpreter';
 import {
@@ -8,7 +11,9 @@ import {
   interpreterSourceBadge,
   interpreterStatusBarText,
   selectInterpreter,
-  VENV_CREATE_ITEM_LABEL
+  VENV_CREATE_ITEM_LABEL,
+  probePythonVersion,
+  runVenvModuleProcess
 } from '../src/venvInterpreterPicker';
 
 // 解释器状态栏展示与选择(PY-ENV 二期):状态栏项显示当前解释器(venv 名/
@@ -261,4 +266,55 @@ describe('createVenvFlow (mocked venv module run)', () => {
     expect(result).toBeNull();
     expect(deps.state.runs).toEqual([]);
   });
+
+describe('selectInterpreter 缺口臂与真实进程依赖面', () => {
+  it('选中项缺 interpreterPath(非 create):零写入如实 null', async () => {
+    const written: Array<string | null> = [];
+    const deps = {
+      current: (): InterpreterResolution => ({ interpreterPath: '/usr/bin/python3', interpreterSource: 'path' }),
+      discovered: (): DiscoveredVenv[] => [],
+      pathInterpreter: (): string | null => null,
+      showQuickPick: async (): Promise<unknown> => ({ create: false, label: 'broken' }),
+      writeInterpreterSetting: async (value: string | null): Promise<void> => {
+        written.push(value);
+      },
+      report: async (): Promise<void> => undefined,
+      createVenv: async (): Promise<'created' | null> => null
+    };
+    const result = await selectInterpreter(deps as Parameters<typeof selectInterpreter>[0]);
+    expect(result).toBeNull();
+    expect(written).toEqual([]);
+  });
+
+  it('runVenvModuleProcess:解释器不存在 → spawn error 如实 -1(真依赖面)', async () => {
+    const result = await runVenvModuleProcess('kode-no-such-python-xyz', '/tmp/kode-venv-target-x');
+    expect(result.exitCode).toBe(-1);
+    expect(result.stderr).toContain('ENOENT');
+  });
+
+  it('runVenvModuleProcess:目标已是普通文件 → venv 快速失败,stderr 有尾', async () => {
+    const interpreter = locateInterpreterOnPath(process.env.PATH ?? '', process.platform) ?? '/usr/bin/python3';
+    const dir = mkdtempSync(join(tmpdir(), 'kode-venv-arming-'));
+    const target = join(dir, 'not-a-dir');
+    writeFileSync(target, 'x', 'utf8');
+    try {
+      const result = await runVenvModuleProcess(interpreter, target);
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('probePythonVersion:真实解释器解析出版本;缺失解释器如实 null', async () => {
+    const interpreter = locateInterpreterOnPath(process.env.PATH ?? '', process.platform) ?? '/usr/bin/python3';
+    if (existsSync(interpreter)) {
+      const version = await probePythonVersion(interpreter);
+      expect(version).not.toBeNull();
+      expect(version!.length).toBeGreaterThan(0);
+    }
+    expect(await probePythonVersion('kode-no-such-python-xyz')).toBeNull();
+  });
+});
+
 });

@@ -2,7 +2,7 @@ import { ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import { describe, expect, it } from 'vitest';
 import { LogHub } from '../src/logHub';
-import { ProcessManager } from '../src/processManager';
+import { ProcessManager, killProcessTree, spawnProcess } from '../src/processManager';
 
 class FakeChild extends EventEmitter implements ChildProcess {
   stdin = null;
@@ -39,7 +39,6 @@ class DeafChild extends FakeChild {
 describe('ProcessManager', () => {
   it('reuses an existing process and emits unified state transitions', async () => {
     const hub = new LogHub({ flushIntervalMs: 5 });
-    const child = new FakeChild();
     const children: ChildProcess[] = [];
     const manager = new ProcessManager(() => {
       children.push(new FakeChild());
@@ -250,4 +249,90 @@ describe('ProcessManager', () => {
     expect(manager.get('healthy')).toBeDefined();
     void manager.dispose();
   });
+
+describe('processManager 平台臂(WIN-3)与 taskkill 回落', () => {
+  it('win32 .cmd/.bat:ComSpec /d /c 整行引号,含空白/引号 token 自包引号', () => {
+    const original = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    try {
+      const child = spawnProcess('C:\\tools\\engine run.cmd', ['--key=a b', 'plain', '--we"ird=1']);
+      // 整行走 ComSpec + /d /c,@ 前缀在引号外(escape 修饰符)
+      expect(child.spawnargs?.[0]).toBe('cmd.exe');
+      expect(child.spawnargs?.[1]).toBe('/d');
+      expect(child.spawnargs?.[2]).toBe('/c');
+      const line = String(child.spawnargs?.[3]);
+      expect(line.startsWith('@')).toBe(true);
+      expect(line).toContain('"--key=a b"');
+      expect(line).toContain(' plain');
+      expect(line).toContain('"--we""ird=1"');
+      void child.kill();
+    } finally {
+      Object.defineProperty(process, 'platform', { value: original, configurable: true });
+    }
+  });
+
+  it('win32 spawnProcess 无 stdio 双签名:返回非空流 ChildProcess', () => {
+    const original = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    try {
+      const child = spawnProcess('run.bat', ['a', 'b']);
+      expect(child.stdout).toBeDefined();
+      expect(child.stderr).toBeDefined();
+      void child.kill();
+    } finally {
+      Object.defineProperty(process, 'platform', { value: original, configurable: true });
+    }
+  });
+
+  it('killProcessTree win32:exit 0 真;exit 非 0 回落 child.kill;error 无 child 得 false', async () => {
+    // exit 0:树杀成功
+    const ok = await killProcessTree(4321, 'SIGTERM', undefined, {
+      platform: 'win32',
+      runTaskkill: args => {
+        expect(args).toEqual(['/PID', '4321', '/T', '/F']);
+        const emitter = new EventEmitter();
+        setImmediate(() => emitter.emit('exit', 0));
+        return emitter;
+      }
+    });
+    expect(ok).toBe(true);
+    // exit 非 0(进程已退出/假 pid):回落 child.kill,与 POSIX 分支同语义
+    const child = new FakeChild();
+    const fallback = await killProcessTree(4321, 'SIGTERM', child, {
+      platform: 'win32',
+      runTaskkill: () => {
+        const emitter = new EventEmitter();
+        setImmediate(() => emitter.emit('exit', 1));
+        return emitter;
+      }
+    });
+    expect(fallback).toBe(true);
+    expect(child.killed).toBe(true);
+    // error 事件(taskkill 起不来)且无 child:如实 false
+    const none = await killProcessTree(4321, 'SIGTERM', undefined, {
+      platform: 'win32',
+      runTaskkill: () => {
+        const emitter = new EventEmitter();
+        setImmediate(() => emitter.emit('error', new Error('no taskkill')));
+        return emitter;
+      }
+    });
+    expect(none).toBe(false);
+  });
+
+  it('killProcessTree 非正整数 pid:如实 false 不发起 taskkill', async () => {
+    let called = false;
+    const ok = await killProcessTree(0, 'SIGTERM', undefined, {
+      platform: 'win32',
+      runTaskkill: () => {
+        called = true;
+        const emitter = new EventEmitter();
+        return emitter;
+      }
+    });
+    expect(ok).toBe(false);
+    expect(called).toBe(false);
+  });
+});
+
 });
