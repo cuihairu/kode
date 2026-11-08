@@ -45,6 +45,26 @@ fn ruff_lint_handler(params: Value) -> Result<Value, String> {
 
 /// 探测可用性并执行 lint。缺二进制 → `available:false`(不报错);文件空 →
 /// 只探测版本;其余失败(present 但坏输出/坏旗标/非零退出)如实 Err。
+/// spawn 出完整输出;满载下 fork 偶发 EAGAIN(WouldBlock)/ENOMEM(OutOfMemory)
+/// 是暂态而非「未安装」,短退避重试一次,二次仍败才按原错误回落
+/// (2026-11-08 CI 观察:llvm-cov 全 workspace 并行下 probe spawn 瞬败被
+/// `.ok()?` 吞成 available:false,误报 ruff 未安装)。
+fn spawn_output(command: &mut std::process::Command) -> std::io::Result<std::process::Output> {
+    match command.output() {
+        Ok(output) => Ok(output),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::OutOfMemory
+            ) =>
+        {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            command.output()
+        }
+        Err(error) => Err(error),
+    }
+}
+
 fn lint(files: &[String], ruff_path: Option<&str>) -> Result<Value, String> {
     if files.len() > MAX_FILES_PER_CALL {
         return Err(format!(
@@ -76,9 +96,7 @@ fn lint(files: &[String], ruff_path: Option<&str>) -> Result<Value, String> {
         "--",
     ]);
     cmd.args(files);
-    let output = cmd
-        .output()
-        .map_err(|e| format!("ruff check: spawn failed: {e}"))?;
+    let output = spawn_output(&mut cmd).map_err(|e| format!("ruff check: spawn failed: {e}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
@@ -124,12 +142,12 @@ fn lint(files: &[String], ruff_path: Option<&str>) -> Result<Value, String> {
     Ok(json!({ "available": true, "version": version, "diags": diags }))
 }
 
-/// `ruff --version` 探测;spawn 失败(未安装/不可执行)= None。
+/// `ruff --version` 探测;spawn 失败(未安装/不可执行)= None(暂态 fork 失败
+/// 由 spawn_output 重试,不在此误判)。
 fn probe_version(program: &str) -> Option<String> {
-    let output = std::process::Command::new(program)
-        .arg("--version")
-        .output()
-        .ok()?;
+    let mut command = std::process::Command::new(program);
+    command.arg("--version");
+    let output = spawn_output(&mut command).ok()?;
     if !output.status.success() {
         return None;
     }
