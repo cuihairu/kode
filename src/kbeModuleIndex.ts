@@ -774,8 +774,6 @@ function emitKbeContainerStubClasses(
   lines.push('# KBEngine 运行时容器类型(script::Sequence / script::Map 语义)');
   lines.push('# 方法签名逐条对齐 kbe/src/lib/entitydef/fixedarray.h、fixeddict.h 的 py 接口。');
   lines.push('# FixedArray 元素类型受检:创建/装载线由引擎灌入,恒非 None。');
-  lines.push('from typing import Any, Generic, Iterable, ItemsView, Iterator, KeysView,');
-  lines.push('    List, Mapping, TypeVar, ValuesView, overload');
   lines.push('');
   lines.push('T = TypeVar(\'T\')');
   lines.push('');
@@ -838,7 +836,6 @@ function emitKbeVectorStubClasses(
   lines.push('');
   lines.push('# KBEngine 运行时向量类型(pyscript/vector2.h、vector3.h、vector4.h)');
   lines.push('# 方法签名逐条对齐引擎 py 接口;def VECTOR2/3/4 属性注解用本组类。');
-  lines.push('from typing import List, Tuple');
   lines.push('');
   symbolLines['Vector2'] = lines.length;
   lines.push('class Vector2:');
@@ -967,6 +964,16 @@ export function appendEngineApiMetadata(
   return [firstLine, ...header.split('\n'), ...rest].join('\n');
 }
 
+/** 生成物头部统一 typing 导入:容器类(Generic/Iterable/ItemsView/Iterator/
+ *  KeysView/Mapping/ValuesView/overload)+ 向量类(List/Tuple)+ 体部通用名
+ *  (Any) 一单覆盖。跨行加括号隐式续行(不用行尾反斜杠——PEP8 偏好括号续行,
+ *  且反斜杠易被编辑器吞行尾空白),导入置生成物首语句,避免「先使用后导入」。 */
+const TYPING_IMPORT_LINES: string[] = [
+  'from typing import (Any, Generic, Iterable, ItemsView, Iterator, KeysView,',
+  '    List, Mapping, Tuple, TypeVar, ValuesView, overload)',
+  ''
+];
+
 /** 生成只读桩文档:逐符号 class/def + docstring + 引擎 typings 锚点 */
 export function buildKbeStubDocument(): KbeStubDocument {
   const lines: string[] = [
@@ -976,7 +983,8 @@ export function buildKbeStubDocument(): KbeStubDocument {
     '# (sourceFile:sourceLine,逐条可回验)。',
     '# KBEntity 为 kode 内置别名(= Entity),对齐项目侧 kbe.KBEntity 基类习惯。',
     `# Coverage: ${KBE_SYMBOL_CATALOG_NOTE}`,
-    ''
+    '',
+    ...TYPING_IMPORT_LINES
   ];
   const symbolLines = emitKbeStubBody(lines);
   emitKbeContainerStubClasses(lines, symbolLines);
@@ -994,7 +1002,8 @@ export function buildKbeStubExportContent(): string {
     `# ${KBE_SYMBOL_CATALOG_NOTE}`,
     '# Completion/hover/navigation share this index. Regeneration overwrites edits.',
     '# 建议在 .gitignore 里忽略 .kbengine/stubs/(生成物,随索引更新)。',
-    ''
+    '',
+    ...TYPING_IMPORT_LINES
   ];
   const symbolLines = emitKbeStubBody(lines);
   emitKbeContainerStubClasses(lines, symbolLines);
