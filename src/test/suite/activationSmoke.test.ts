@@ -51,20 +51,28 @@ describe('compiled extension activation smoke', () => {
       .flat()
       .map(item => item.id);
 
-    assert.deepStrictEqual(
-      stub.treeRegistrations.map(item => item.viewId).sort(),
-      [...declaredViews].sort()
-    );
+    // 视图先行占位(startupViewPlaceholders,75f766b1):activate 最前为全部侧栏
+    // 视图注册空占位 provider,真 provider 在装配尾段后到接管(宿主同 id 注册
+    // 是覆写语义)。故逐 id 出现 1 次(仅占位,无真 provider 的视图)或 2 次
+    // (占位+真);注册面不得出现未声明 id,声明面不得缺注册。
+    const registered = stub.treeRegistrations.map(item => item.viewId);
+    assert.deepStrictEqual([...new Set(registered)].sort(), [...declaredViews].sort());
+    for (const viewId of new Set(registered)) {
+      const count = registered.filter(id => id === viewId).length;
+      assert.ok(count >= 1 && count <= 2, `${viewId} 注册 ${count} 次,越界(1..2)`);
+    }
   });
 
   it('creates the status bar items with the configured alignment', () => {
-    // 五盏灯各归其位(2026-11-06 盘点):100=服务器运行计数,99=telnet 探测,
-    // 98=热更发送态,97=Python 解释器(PY-ENV),96=热更通道快捷切换。
-    // 每盏只建一次(装配期构造,刷新只改文本/显隐),故总数必须恒为 5——
-    // 多建=装配抖动,少建=某条装配路被砍,两种都算回归。
-    assert.strictEqual(stub.windowState.statusBars.length, 5);
+    // 六盏灯各归其位(2026-11-06 盘点五盏 + KB-GC-001 console 日志 tail 灯):
+    // 100=服务器运行计数,99=telnet 探测,98=热更发送态,97=Python 解释器
+    // (PY-ENV),96=热更通道快捷切换,95=console 日志 tail(console.ts,文本随
+    // machined 发现状态变化,可视性时序相关故不断言)。每盏只建一次(装配期
+    // 构造,刷新只改文本/显隐),故总数必须恒为 6——多建=装配抖动,少建=
+    // 某条装配路被砍,两种都算回归。
+    assert.strictEqual(stub.windowState.statusBars.length, 6);
     const priorities = stub.windowState.statusBars.map(bar => bar.priority).sort((a, b) => b - a);
-    assert.deepStrictEqual(priorities, [100, 99, 98, 97, 96]);
+    assert.deepStrictEqual(priorities, [100, 99, 98, 97, 96, 95]);
     // 全部右对齐,不与 VS Code 内建左槽抢位
     for (const bar of stub.windowState.statusBars) {
       assert.strictEqual(bar.alignment, stub.StatusBarAlignment.Right, `priority ${bar.priority} 应右对齐`);
