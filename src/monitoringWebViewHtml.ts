@@ -319,11 +319,19 @@ export function renderMonitoringWebview(options: MonitoringRenderOptions): strin
 
     .toolbar {
       display: flex;
+      flex-wrap: wrap;
+      align-items: end;
       gap: 10px;
       padding: 10px;
       background-color: var(--vscode-editorGroupHeader-tabsBackground);
       border-bottom: 1px solid var(--vscode-panel-border);
       margin-bottom: 20px;
+    }
+
+    .toolbar label {
+      display: grid;
+      gap: 4px;
+      max-width: 100%;
     }
 
     .toolbar button {
@@ -346,7 +354,8 @@ export function renderMonitoringWebview(options: MonitoringRenderOptions): strin
       color: var(--vscode-input-foreground);
       border: 1px solid var(--vscode-input-border);
       border-radius: 2px;
-      min-width: 140px;
+      min-width: 0;
+      max-width: 100%;
     }
 
     .notice {
@@ -498,7 +507,7 @@ export function renderMonitoringWebview(options: MonitoringRenderOptions): strin
   </div>
 
   <div class="toolbar">
-    <select id="componentFilter">
+    <label for="componentFilter">${t.componentFilterLabel}<select id="componentFilter">
       <option value="">${c.allComponents}</option>
       ${componentTypes
         .map(
@@ -506,25 +515,25 @@ export function renderMonitoringWebview(options: MonitoringRenderOptions): strin
             `<option value="${escapeHtml(type)}"${componentFilter === type ? ' selected' : ''}>${escapeHtml(type)}</option>`
         )
         .join('')}
-    </select>
-    <select id="diagnosticFilter">
+    </select></label>
+    <label for="diagnosticFilter">${t.diagnosticFilterLabel}<select id="diagnosticFilter">
       <option value=""${diagnosticFilter === '' ? ' selected' : ''}>${t.filterAllDiagnostics}</option>
       <option value="info"${diagnosticFilter === 'info' ? ' selected' : ''}>${t.diagInfo}</option>
       <option value="warning"${diagnosticFilter === 'warning' ? ' selected' : ''}>${t.diagWarning}</option>
       <option value="error"${diagnosticFilter === 'error' ? ' selected' : ''}>${t.diagError}</option>
-    </select>
-    <input id="keywordFilter" type="text" placeholder="${t.searchPlaceholder}" value="${escapeHtml(keywordFilter)}" />
-    <select id="refreshInterval">
+    </select></label>
+    <label for="keywordFilter">${t.keywordFilterLabel}<input id="keywordFilter" type="text" placeholder="${t.searchPlaceholder}" value="${escapeHtml(keywordFilter)}" /></label>
+    <label for="refreshInterval">${t.refreshIntervalLabel}<select id="refreshInterval">
       <option value="1000"${refreshInterval === 1000 ? ' selected' : ''}>1 ${t.second}</option>
       <option value="2000"${refreshInterval === 2000 ? ' selected' : ''}>2 ${t.second}</option>
       <option value="5000"${refreshInterval === 5000 ? ' selected' : ''}>5 ${t.second}</option>
       <option value="10000"${refreshInterval === 10000 ? ' selected' : ''}>10 ${t.second}</option>
-    </select>
-    <select id="historyWindow">
+    </select></label>
+    <label for="historyWindow">${t.historyWindowLabel}<select id="historyWindow">
       <option value="30"${historyWindow === 30 ? ' selected' : ''}>${t.historyWindow(30)}</option>
       <option value="60"${historyWindow === 60 ? ' selected' : ''}>${t.historyWindow(60)}</option>
       <option value="120"${historyWindow === 120 ? ' selected' : ''}>${t.historyWindow(120)}</option>
-    </select>
+    </select></label>
     <button id="refreshBtn">${c.refresh}</button>
     <button id="pauseBtn">${isPaused ? c.resume : c.pause}</button>
     <button id="exportBtn">${c.export}</button>

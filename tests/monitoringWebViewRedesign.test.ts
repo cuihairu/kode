@@ -67,6 +67,16 @@ beforeEach(() => {
 });
 
 describe('MonitoringWebView 分类管理重设计(业务域分组)', () => {
+  it('labels each filter and refresh control for keyboard and assistive technology', () => {
+    const html = renderZh();
+    for (const id of ['componentFilter', 'diagnosticFilter', 'keywordFilter', 'refreshInterval', 'historyWindow']) {
+      expect(html).toContain(`<label for="${id}">`);
+      expect(html).toContain(`id="${id}"`);
+    }
+    expect(html).toContain('刷新间隔');
+    expect(html).toContain('历史范围');
+    expect(html).toContain('flex-wrap: wrap');
+  });
   it('指标行按真实域分组:服务进程/性能/连接/存储', () => {
     const html = renderZh();
     expect(html).toContain('data-domain="process"');

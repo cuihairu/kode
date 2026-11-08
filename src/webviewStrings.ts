@@ -23,6 +23,11 @@ const zh = {
   },
   monitoring: {
     title: 'KBEngine 服务器监控',
+    componentFilterLabel: '组件类型',
+    diagnosticFilterLabel: '诊断级别',
+    keywordFilterLabel: '搜索',
+    refreshIntervalLabel: '刷新间隔',
+    historyWindowLabel: '历史范围',
     filterAllDiagnostics: '全部诊断',
     diagInfo: '信息',
     diagWarning: '警告',
@@ -259,6 +264,11 @@ const en: typeof zh = {
   },
   monitoring: {
     title: 'KBEngine Server Monitoring',
+    componentFilterLabel: 'Component type',
+    diagnosticFilterLabel: 'Diagnostic level',
+    keywordFilterLabel: 'Search',
+    refreshIntervalLabel: 'Refresh interval',
+    historyWindowLabel: 'History window',
     filterAllDiagnostics: 'All diagnostics',
     diagInfo: 'Info',
     diagWarning: 'Warning',
