@@ -1546,10 +1546,10 @@
 
 ### UX-REVIEW-005 [P1] 克隆连接配置体验
 
-- [ ] UX-REVIEW-005a 基于现有配置与 SecretStorage 设计可前进、返回及取消的分步输入；展示步骤和角色，保留已输入的非密码信息但不在摘要回显密码。
+- [x] UX-REVIEW-005a 基于现有配置与 SecretStorage 设计可前进、返回及取消的分步输入；展示步骤和角色，保留已输入的非密码信息但不在摘要回显密码。（39f48ddf;runConfigureCloneProfileCommand 向导化:顺序步骤标题带角色与序号(title "Source 2/5"/"Target 1/6",prompt 文案不变),非密码字段按已存 profile 预填(deps.showInputBox 新增 value?/title? 透传,密码绝不回填);「返回修改」=摘要页按字段选择→单步重填(预填当前草稿值,密码步仍 password 模式不回显),修改中 Esc 草稿不动;任一步 Esc 整体放弃不落盘;tests/playerCloneWizard.test.ts 17 例+既有 4 文件适配,prove-red=旧码 13/15 红;lint 0/tsc 0）
 - [x] UX-REVIEW-005b 主机、用户名、数据库及端口按实际连接要求校验；端口仅接受 1–65535，空值使用 3306；目标环境仅 local/test。输入错误在当前步骤可修正。
-- [ ] UX-REVIEW-005c 提供不含密码的配置摘要与可选连接测试，明确测试失败原因与保存状态；取消不得写入半成品，成功保存后可再次修改。
-- [ ] UX-REVIEW-005d 验证源/目标、密码遮挡、保留/清除密码的明确语义、返回修改、取消、测试失败及密钥存储失败；不得输出明文密码。依赖 UX-REVIEW-001。
+- [x] UX-REVIEW-005c 提供不含密码的配置摘要与可选连接测试，明确测试失败原因与保存状态；取消不得写入半成品，成功保存后可再次修改。（39f48ddf;摘要页 placeHolder=连接参数+密码状态(已输入不回显/已存留空清除/未设置,3 条 l10n 双语键),绝不回显密码本体(测试断言 JSON.stringify 不含密码);动作=保存/测试连接/返回修改/取消,只有保存落盘;「测试连接」用草稿值建连(留空按保存语义取已存密钥),成功带版本、失败带原始原因,测试不落盘;摘要取消/未知选择一律不写;保存成功后重跑命令按已存台账预填(测试覆盖二次修改);tests/playerCloneWizard.test.ts;l10n bundle 双语 419 键对齐 categoryI18n 绿）
+- [x] UX-REVIEW-005d 验证源/目标、密码遮挡、保留/清除密码的明确语义、返回修改、取消、测试失败及密钥存储失败；不得输出明文密码。依赖 UX-REVIEW-001。（39f48ddf;自动化验收面=playerCloneWizard.test.ts(源/目标双角色、保留已存密码 CLONE_SUMMARY_KEEP_SECRET 仅在已存密钥且留空时出现,save(password=undefined) 旧密钥原样保留;清除=留空保存 password=null;密钥面保存失败→「保存失败:<原因>」不虚报已保存,台账不动)+playerClonePasswordInput.test.ts(密码只过 profiles.save、信息面 JSON 不含密码、留空=null)+cloneCommandsCoverage(取消/校验)+playerCloneI18n(双语);每步序号与角色、返回修改、取消、测试失败均带独立断言;明文密码不出现在任何提示/摘要/错误文本）
 
 ### UX-REVIEW-006 [P1] 工作台按任务组织
 
