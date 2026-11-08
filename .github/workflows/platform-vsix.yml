@@ -69,14 +69,11 @@ jobs:
         run: |
           rustup show active-toolchain
           rustup target add '${{ matrix.rust }}'
-      - name: Install native musl linker (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - name: Configure musl linker
+      - name: Use Rust's bundled musl CRT and linker (Linux)
         if: runner.os == 'Linux'
         run: |
-          echo 'CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc' >> "$GITHUB_ENV"
-          echo 'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc' >> "$GITHUB_ENV"
+          echo 'CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=rust-lld' >> "$GITHUB_ENV"
+          echo 'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=rust-lld' >> "$GITHUB_ENV"
       - name: Native Rust correctness tests
         run: >-
           cargo test --locked --target '${{ matrix.rust }}' --lib

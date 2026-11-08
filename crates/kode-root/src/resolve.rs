@@ -724,12 +724,9 @@ mod tests {
 
     #[test]
     fn default_engine_uses_host_platform_and_discovers() {
-        // Default = new(detect()):本宿主非 Windows/macOS。
+        // Default must use the actual host, including Windows and macOS.
         let mut engine = DiscoveryEngine::default();
-        assert!(matches!(
-            engine.platform,
-            PlatformTarget::Linux | PlatformTarget::Wsl
-        ));
+        assert_eq!(engine.platform, PlatformTarget::detect());
         let dir = temp_dir("default");
         std::fs::create_dir_all(dir.join("entity_defs")).unwrap();
         let report = engine.discover(&dir, &ExplicitConfig::default());

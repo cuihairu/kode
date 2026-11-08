@@ -231,9 +231,14 @@ mod tests {
 
     #[test]
     fn detect_returns_current_host_variant() {
-        // 本宿主不是 Windows/macOS:至少断言返回 Linux 或 Wsl 且可复现。
         let d = PlatformTarget::detect();
-        assert!(matches!(d, PlatformTarget::Linux | PlatformTarget::Wsl));
+        if cfg!(target_os = "windows") {
+            assert_eq!(d, PlatformTarget::Windows);
+        } else if cfg!(target_os = "macos") {
+            assert_eq!(d, PlatformTarget::Macos);
+        } else {
+            assert!(matches!(d, PlatformTarget::Linux | PlatformTarget::Wsl));
+        }
     }
 
     #[test]
