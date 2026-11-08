@@ -54,6 +54,7 @@ CHANGELOG.zh.md
 out/**
 !out/extension.js
 !out/pythonParserWorker.js
+!out/defParserWorker.js
 !out/buildCommit.json
 # e2e 用的 Rust 构建产物绝不进包（kodeCoreE2E 现场构建 target/debug/kode-server，
 # 若构建发生在打包前会被 vsce 整目录吞进 vsix——nightly 85MB 事故根因）
@@ -67,3 +68,11 @@ cargo-home/
 wt/
 kode-wt-*/
 scratch/
+# Only staged release executables in bin/ belong in a platform VSIX.
+crates/
+scripts/
+Cargo.toml
+Cargo.lock
+rust-toolchain.toml
+# Wireshark's GPL plugin is an independent deliverable, outside the VSIX.
+plugins/

@@ -57,5 +57,6 @@ coverage/
 .perf-assets/
 .vdefaults.xml
 /target
+/bin/
 # kode managed dir (auto-generated)
 .kbengine/

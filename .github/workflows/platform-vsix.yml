@@ -1,0 +1,99 @@
+name: Build and verify native platform VSIX
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pure-ts:
+    name: Verify universal pure TS edition
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Package and verify pure TS edition
+        run: node scripts/package-pure-ts.mjs
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: platform-vsix-pure-ts
+          path: dist/*-pure-ts.vsix
+          if-no-files-found: error
+          retention-days: 14
+  platform:
+    name: Verify ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runner: ubuntu-22.04
+            rust: x86_64-unknown-linux-musl
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+            rust: aarch64-unknown-linux-musl
+          - target: win32-x64
+            runner: windows-2025
+            rust: x86_64-pc-windows-msvc
+          - target: win32-arm64
+            runner: windows-11-arm
+            rust: aarch64-pc-windows-msvc
+          - target: darwin-x64
+            runner: macos-15-intel
+            rust: x86_64-apple-darwin
+          - target: darwin-arm64
+            runner: macos-15
+            rust: aarch64-apple-darwin
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install pinned Rust toolchain and target
+        run: |
+          rustup show active-toolchain
+          rustup target add '${{ matrix.rust }}'
+      - name: Install native musl linker (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Configure musl linker
+        if: runner.os == 'Linux'
+        run: |
+          echo 'CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc' >> "$GITHUB_ENV"
+          echo 'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc' >> "$GITHUB_ENV"
+      - name: Native Rust correctness tests
+        run: >-
+          cargo test --locked --target '${{ matrix.rust }}' --lib
+          -p kode-server -p kode-protocol -p kode-parser -p kode-vfs
+          -p kode-root -p kode-types -p kode-index -p kode-python
+          -p kode-kbengine -p kode-kbengine-schema
+          -p kode-kbengine-protocol -p kode-kbengine-analyzer
+      - name: Native CLI integration tests
+        run: cargo test --locked --target '${{ matrix.rust }}' -p kode-kbengine --test cli_acceptance
+      - name: Extension binary discovery tests
+        run: pnpm exec vitest run tests/nativeBinary.test.ts tests/kodeCoreGateWiring.test.ts tests/protocolTooling.test.ts
+      - name: Build release binaries, package and verify extracted VSIX
+        run: node scripts/platform-vsix.mjs '${{ matrix.target }}'
+      - name: Upload verified platform package
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: platform-vsix-${{ matrix.target }}
+          path: dist/*.vsix
+          if-no-files-found: error
+          retention-days: 14
