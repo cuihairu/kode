@@ -96,6 +96,24 @@ fn json_has_key(json: &str, key: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 #[test]
+fn version_flag_prints_one_line_and_exits_zero() {
+    // PA-007 版本检测对端契约:任何位置出现 --version 即优先,
+    // 一行 `kode-kbengine <semver>`,exit 0,不解析其余参数。
+    let cli = run_cli(&["--version"]);
+    assert_eq!(cli.code, 0, "stderr={}", cli.err);
+    assert!(
+        cli.out.trim().starts_with("kode-kbengine "),
+        "stdout={:?}",
+        cli.out
+    );
+    assert_eq!(cli.out.lines().count(), 1, "stdout={:?}", cli.out);
+    // 与子命令混排仍生效(版本优先)。
+    let cli2 = run_cli(&["schema", "validate", "--version"]);
+    assert_eq!(cli2.code, 0, "stderr={}", cli2.err);
+    assert!(cli2.out.trim().starts_with("kode-kbengine "));
+}
+
+#[test]
 fn schema_validate_ok_over_demo_assets() {
     let defaults = engine_defaults_xml();
     let dp = defaults.to_str().unwrap();

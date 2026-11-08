@@ -314,5 +314,9 @@
   "kbengine.command.bots.add.title": "KBEngine: Add Bots (telnet addBots)",
   "kbengine.command.bots.count.title": "KBEngine: Query Bot Count (len(KBEngine.bots))",
   "kbengine.config.codeLens.propertyInitOrder.description": "实体类 __init__ 声明处显示「属性先于 __init__ 装载 · 来自 <实体>.def」CodeLens(点击回 def)\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#codelens-and-inlay-hints)",
-  "kbengine.command.debug.pyspyFlamegraph.title": "Collect Flame Graph with py-spy"
+  "kbengine.command.debug.pyspyFlamegraph.title": "Collect Flame Graph with py-spy",
+  "kbengine.command.protocol.showStatus.title": "Show Protocol Tooling Status",
+  "kbengine.config.protocol.tsharkPath.description": "tshark executable name or path used for protocol tooling detection (PA-007 status command)。\n\n默认值：`tshark`（按 PATH 解析）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#protocol-tooling-detection-pa-007)",
+  "kbengine.config.protocol.wiresharkPath.description": "Wireshark GUI executable name or path used for protocol tooling detection. An absent GUI is reported honestly; analysis still works via tshark/CLI。\n\n默认值：`wireshark`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#protocol-tooling-detection-pa-007)",
+  "kbengine.config.protocol.cliPath.description": "kode-kbengine CLI binary path (version via the `--version` one-line contract)。留空则按扩展根下 target/{debug,release} 自动发现（与 kode-server 同款）。\n\n默认值：空（自动发现）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#protocol-tooling-detection-pa-007)"
 }

@@ -314,5 +314,9 @@
   "kbengine.command.debug.pyspyFlamegraph.title": "用 py-spy 采集火焰图",
   "kbengine.config.python.stubSourceMode.description": "存根来源档位（stub source mode）。`generated`（默认）：存根由内置生成链产出（`entity_types.pyi` 来自 `*.def` + types.xml，`KBEngine.pyi` / `kbe_types.pyi` 来自内置 API 符号索引与 types.xml 解析链），不复制真实引擎代码；`real-source`：既有「复制真实代码导出」路径（本地引擎 typings checkout 拼接全量 API 进 `KBEngine.pyi`）仅在此档执行，档内 `kbengine.python.stubEngineTypings` 子开关照常生效。切档即时重导，默认 fresh workspace 不触发复制代码行为\n\n默认值：`generated`（不复制真实代码）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#python-integration)",
   "kbengine.config.python.stubSourceMode.enum.0": "`generated`（默认）：存根由内置生成链产出（实体面来自 `*.def` + types.xml，KBEngine API 面来自内置符号索引），不复制真实引擎代码",
-  "kbengine.config.python.stubSourceMode.enum.1": "`real-source`：允许复制真实代码——本地引擎 typings checkout 拼接全量 API 只在此档执行（`kbengine.python.stubEngineTypings` 为档内子开关）"
+  "kbengine.config.python.stubSourceMode.enum.1": "`real-source`：允许复制真实代码——本地引擎 typings checkout 拼接全量 API 只在此档执行（`kbengine.python.stubEngineTypings` 为档内子开关）",
+  "kbengine.command.protocol.showStatus.title": "显示协议工具链状态",
+  "kbengine.config.protocol.tsharkPath.description": "协议工具链检测使用的 tshark 可执行名或路径（PA-007 状态命令）。\n\n默认值：`tshark`（按 PATH 解析）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#protocol-tooling-detection-pa-007)",
+  "kbengine.config.protocol.wiresharkPath.description": "协议工具链检测使用的 Wireshark GUI 可执行名或路径。GUI 未安装时报告如实显示未检出，分析面仍可经 tshark/CLI 使用。\n\n默认值：`wireshark`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#protocol-tooling-detection-pa-007)",
+  "kbengine.config.protocol.cliPath.description": "kode-kbengine CLI 二进制路径（版本经 `--version` 单行契约获取）。留空则按扩展根下 target/{debug,release} 自动发现（与 kode-server 同款）。\n\n默认值：空（自动发现）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#protocol-tooling-detection-pa-007)"
 }

@@ -962,6 +962,12 @@
       {
         "command": "kbengine.git.openRangeHistoryDiff",
         "title": "%kbengine.command.git.openRangeHistoryDiff.title%"
+      },
+      {
+        "command": "kbengine.protocol.showStatus",
+        "title": "%kbengine.command.protocol.showStatus.title%",
+        "category": "KBEngine",
+        "icon": "$(search)"
       }
     ],
     "menus": {
@@ -1412,7 +1418,11 @@
         },
         "kbengine.hover.language": {
           "type": "string",
-          "enum": ["auto", "en", "zh-cn"],
+          "enum": [
+            "auto",
+            "en",
+            "zh-cn"
+          ],
           "default": "auto",
           "markdownDescription": "%kbengine.config.hover.language.description%",
           "markdownEnumDescriptions": [
@@ -1667,7 +1677,9 @@
         },
         "kbengine.consoleLogTail.components": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "markdownDescription": "%kbengine.config.consoleLogTail.components.description%"
         },
@@ -1869,7 +1881,10 @@
         },
         "kbengine.python.stubSourceMode": {
           "type": "string",
-          "enum": ["generated", "real-source"],
+          "enum": [
+            "generated",
+            "real-source"
+          ],
           "default": "generated",
           "markdownEnumDescriptions": [
             "%kbengine.config.python.stubSourceMode.enum.0%",
@@ -2031,6 +2046,21 @@
           "minimum": 500,
           "default": 2000,
           "markdownDescription": "%kbengine.config.runtimeQuery.pollIntervalMs.description%"
+        },
+        "kbengine.protocol.tsharkPath": {
+          "type": "string",
+          "default": "tshark",
+          "markdownDescription": "%kbengine.config.protocol.tsharkPath.description%"
+        },
+        "kbengine.protocol.wiresharkPath": {
+          "type": "string",
+          "default": "wireshark",
+          "markdownDescription": "%kbengine.config.protocol.wiresharkPath.description%"
+        },
+        "kbengine.protocol.cliPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%kbengine.config.protocol.cliPath.description%"
         }
       }
     },

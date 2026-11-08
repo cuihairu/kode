@@ -4,6 +4,12 @@ use kode_kbengine::cli::{parse_args, USAGE};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // --version 优先于子命令(PA-007 版本检测对端契约:扩展检测 CLI 可用性
+    // 与版本,一行输出 `kode-kbengine <semver>`,exit 0)。
+    if args.iter().any(|a| a == "--version") {
+        println!("kode-kbengine {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     let parsed = parse_args(&args);
     if let Some(msg) = parsed.usage_error {
         eprintln!("error: {msg}\n\n{USAGE}");
