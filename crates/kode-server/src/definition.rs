@@ -227,10 +227,9 @@ impl HoverEngine {
             let el = doc.element(child);
             // 档位内文本只在词命中时才落点(与 TS 的 word 相等判定同口径)。
             if el.name == word {
-                return Some(line_start_location(
-                    path,
-                    lines.line_of(el.name_span.start) + 1,
-                ));
+                // line_of 为 1 基行号;line_start_location 已按 0 基 LSP 行折算,
+                // 不能再 +1(否则落点偏下一行)。
+                return Some(line_start_location(path, lines.line_of(el.name_span.start)));
             }
         }
         None
