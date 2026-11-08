@@ -10,6 +10,7 @@ import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { discoverNativeBinary } from './nativeBinary';
 
 import {
   findKbengineDissector,
@@ -29,6 +30,8 @@ export const SHOW_PROTOCOL_STATUS_COMMAND = 'kbengine.protocol.showStatus';
 export interface RunOutcome {
   code: number;
   stdout: string;
+  /** stderr 原文(错误面归因用;老消费方不读,可缺省)。 */
+  stderr?: string;
 }
 
 export type RunBinary = (file: string, args: string[]) => Promise<RunOutcome>;
@@ -40,41 +43,35 @@ export type RunBinary = (file: string, args: string[]) => Promise<RunOutcome>;
  */
 export const defaultRunBinary: RunBinary = (file, args) =>
   new Promise((resolve) => {
-    execFile(file, args, { timeout: 5000 }, (error, stdout) => {
+    execFile(file, args, { timeout: 5000 }, (error, stdout, stderr) => {
       if (error) {
         const err = error as NodeJS.ErrnoException;
         const code =
           typeof err.code === 'number' ? err.code : err.code === 'ENOENT' ? -1 : 1;
-        resolve({ code, stdout: typeof stdout === 'string' ? stdout : '' });
+        resolve({
+          code,
+          stdout: typeof stdout === 'string' ? stdout : '',
+          stderr: typeof stderr === 'string' ? stderr : ''
+        });
         return;
       }
-      resolve({ code: 0, stdout: typeof stdout === 'string' ? stdout : '' });
+      resolve({
+        code: 0,
+        stdout: typeof stdout === 'string' ? stdout : '',
+        stderr: typeof stderr === 'string' ? stderr : ''
+      });
     });
   });
 
 /**
  * 自动发现 kode-kbengine CLI(与 kodeCoreGateWiring.discoverKodeServerBinary
- * 同形状:扩展根 target/debug 优先、target/release 兜底,全落空 '')。
- * 独立参数化函数而非泛化原函数:原函数语义被 core 门配置面锁定,不动。
+ * 同形状:随包 bin 优先,源码 target/debug、target/release 兜底)。
  */
 export function discoverKodeCliBinary(
   extensionRoot: string,
   binaryName: string
 ): string {
-  const candidates = [
-    path.join(extensionRoot, 'target', 'debug', binaryName),
-    path.join(extensionRoot, 'target', 'release', binaryName),
-  ];
-  for (const candidate of candidates) {
-    try {
-      if (fs.existsSync(candidate)) {
-        return candidate;
-      }
-    } catch {
-      // 探测失败按不存在继续,不向上抛。
-    }
-  }
-  return '';
+  return discoverNativeBinary(extensionRoot, binaryName);
 }
 
 /** PA-007 第一增量的采集输入(run 注入 → 测试全驱动)。 */
@@ -141,7 +138,9 @@ export async function collectProtocolToolingStatus(
   };
 }
 
-async function resolveCliPath(
+/** CLI 路径解析(配置优先,空走 target/{debug,release} 自动发现)+ `--version`
+ * 探测;PA-007 schema 建图面复用。 */
+export async function resolveCliPath(
   deps: ProtocolToolingDeps
 ): Promise<{ path: string; outcome: RunOutcome }> {
   const configured = deps.cliPath;
@@ -216,19 +215,26 @@ export function readProtocolToolingConfig(extensionRoot: string): ProtocolToolin
   };
 }
 
+const protocolChannels = new WeakMap<vscode.ExtensionContext, vscode.OutputChannel>();
+
+/** 协议面共享输出通道(showStatus 与 PA-007 schema 建图面同通道;按 context
+ * 键控,同一扩展实例只建一次;通道惰性建,激活零开销)。 */
+export function ensureProtocolChannel(context: vscode.ExtensionContext): vscode.OutputChannel {
+  let channel = protocolChannels.get(context);
+  if (!channel) {
+    channel = vscode.window.createOutputChannel(PROTOCOL_CHANNEL_NAME);
+    context.subscriptions.push(channel);
+    protocolChannels.set(context, channel);
+  }
+  return channel;
+}
+
 /**
  * 命令接线:kbengine.protocol.showStatus → 采集 → 输出通道展示。
  * 通道惰性建(命令触发面,激活零开销);全部句柄进 context.subscriptions。
  */
 export function setupProtocolTooling(context: vscode.ExtensionContext): void {
-  let channel: vscode.OutputChannel | null = null;
-  const ensureChannel = (): vscode.OutputChannel => {
-    if (!channel) {
-      channel = vscode.window.createOutputChannel(PROTOCOL_CHANNEL_NAME);
-      context.subscriptions.push(channel);
-    }
-    return channel;
-  };
+  const ensureChannel = (): vscode.OutputChannel => ensureProtocolChannel(context);
   const command = vscode.commands.registerCommand(
     SHOW_PROTOCOL_STATUS_COMMAND,
     () => {

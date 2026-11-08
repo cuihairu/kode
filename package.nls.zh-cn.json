@@ -316,7 +316,9 @@
   "kbengine.config.python.stubSourceMode.enum.0": "`generated`（默认）：存根由内置生成链产出（实体面来自 `*.def` + types.xml，KBEngine API 面来自内置符号索引），不复制真实引擎代码",
   "kbengine.config.python.stubSourceMode.enum.1": "`real-source`：允许复制真实代码——本地引擎 typings checkout 拼接全量 API 只在此档执行（`kbengine.python.stubEngineTypings` 为档内子开关）",
   "kbengine.command.protocol.showStatus.title": "显示协议工具链状态",
+  "kbengine.command.protocol.buildSchema.title": "生成 KBEngine 协议 Schema",
   "kbengine.config.protocol.tsharkPath.description": "协议工具链检测使用的 tshark 可执行名或路径（PA-007 状态命令）。\n\n默认值：`tshark`（按 PATH 解析）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#protocol-tooling-detection-pa-007)",
   "kbengine.config.protocol.wiresharkPath.description": "协议工具链检测使用的 Wireshark GUI 可执行名或路径。GUI 未安装时报告如实显示未检出，分析面仍可经 tshark/CLI 使用。\n\n默认值：`wireshark`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#protocol-tooling-detection-pa-007)",
-  "kbengine.config.protocol.cliPath.description": "kode-kbengine CLI 二进制路径（版本经 `--version` 单行契约获取）。留空则按扩展根下 target/{debug,release} 自动发现（与 kode-server 同款）。\n\n默认值：空（自动发现）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#protocol-tooling-detection-pa-007)"
+  "kbengine.config.protocol.cliPath.description": "kode-kbengine CLI 二进制路径（版本经 `--version` 单行契约获取）。留空则按扩展根下 target/{debug,release} 自动发现（与 kode-server 同款）。\n\n默认值：空（自动发现）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#protocol-tooling-detection-pa-007)",
+  "kbengine.config.protocol.schemaAutoBuild.description": "协议定义文件（.def / types.xml / entities.xml / alias.xml）在资产根内变更时自动重建 KBEngine 协议 Schema（经 `kode-kbengine schema build` 落 globalStorage/kbengine-schema.json）。Python 业务文件不在监听范围——只有协议文件触发重建。\n\n默认值：`true`（监听常开；激活不主动起子进程——首次生成发生在首个协议文件事件或手动命令）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#protocol-tooling-detection-pa-007)"
 }

@@ -17,6 +17,7 @@ import { setJumpLogEnabled } from '../navigationLog';
 import { ensureConfigResolved } from '../serverConfigResolve';
 import { registerStartupViewPlaceholders } from '../startupViewPlaceholders';
 import { setupProtocolTooling } from '../protocolTooling';
+import { setupProtocolSchemaSync } from '../protocolSchemaSync';
 
 // IDE-REV-037:注解来源日志的输出通道(懒建,首条日志到达才创建)
 let annotationSourceChannel: vscode.OutputChannel | undefined;
@@ -104,6 +105,9 @@ export function activateInfrastructure(
   // PA-007 第一增量:协议工具链检测命令(Wireshark/TShark/插件/CLI 版本
   // 面报告);通道与命令句柄自进 context.subscriptions,激活零开销。
   setupProtocolTooling(context);
+  // PA-007 第二增量:协议 Schema 建图命令 + 协议文件监听自动重建
+  // (schemaAutoBuild 默认开;激活不主动起子进程,通道与句柄自入 subscriptions)。
+  setupProtocolSchemaSync(context);
   // KODE-CFG-009:门接线后即预取 core 配置解析(`$/kode/config/resolve`),
   // 同步消费面(dbInterface/合成树/别名开关)读消费缓存不阻塞宿主。
   void ensureConfigResolved().catch(() => {});

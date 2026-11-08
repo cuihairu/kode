@@ -968,6 +968,11 @@
         "title": "%kbengine.command.protocol.showStatus.title%",
         "category": "KBEngine",
         "icon": "$(search)"
+      },
+      {
+        "command": "kbengine.protocol.buildSchema",
+        "title": "%kbengine.command.protocol.buildSchema.title%",
+        "category": "KBEngine"
       }
     ],
     "menus": {
@@ -2061,6 +2066,11 @@
           "type": "string",
           "default": "",
           "markdownDescription": "%kbengine.config.protocol.cliPath.description%"
+        },
+        "kbengine.protocol.schemaAutoBuild": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.protocol.schemaAutoBuild.description%"
         }
       }
     },

@@ -146,7 +146,7 @@ describe('KODE-PERF 重复扫描抑制:watcher 同签名重建跳过 + 排除目
   it('排除目录(node_modules)下的文件事件不再流入 Python 索引消费面(修前红)', () => {
     const context = makeContext();
     const originalCreate = workspace.createFileSystemWatcher;
-    const watchers: Array<{ fireCreate: (uri: ReturnType<typeof Uri.file>) => void }> = [];
+    const watchers: Array<{ pattern?: unknown; fireCreate: (uri: ReturnType<typeof Uri.file>) => void }> = [];
     vi.spyOn(workspace, 'createFileSystemWatcher').mockImplementation(((pattern: unknown) => {
       const watcher = originalCreate.call(workspace, pattern as never);
       watchers.push(watcher as never);
@@ -155,7 +155,10 @@ describe('KODE-PERF 重复扫描抑制:watcher 同签名重建跳过 + 排除目
     try {
       workspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
       activate(context);
-      const workspaceWatcher = watchers[0];
+      // 激活面 watcher 组随增量增长(PA-007 第二增量起协议同步组在激活同步段
+      // 先挂),按目标 glob(python 索引出口过滤所在的那枚 watcher)取,不按
+      // 序号位移取。
+      const workspaceWatcher = watchers.find((item) => item.pattern === '**/*.{py,def,xml}');
       expect(workspaceWatcher).toBeTruthy();
       const onFileChanged = vi.spyOn(PythonClassIndex.prototype, 'onFileChanged')
         .mockResolvedValue(undefined);
