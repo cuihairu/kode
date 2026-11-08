@@ -122,6 +122,20 @@
   - 建连与查询都在 `kbengine.databaseQueryTimeoutMs` 时限和可取消的进度通知下运行（IDE-REV-017）：超时或取消即按该原因返回；所有分支收尾都关连接
   - 报告头部明示只读范围；无差异如实写「无结构差异」
 
+### `kbengine.database.showManagement`
+
+- 标题：`Show Database Management`
+- 作用：打开常驻只读数据库管理 WebView，MySQL/Redis 双标签——派生数据库档案解析到哪种后端（`mysql` / `redis` / `none`）就展示哪一面；MySQL 标签列 `SHOW TABLES` 并网格预览单表，Redis 标签枚举 `kbe_*` 键并经 `HGETALL` 预览哈希
+- 行为：
+  - 活动标签跟随档案后端；`none` 档案（未读取到派生档案）如实出「未读取到引擎数据库档案」注记并禁能两个后端按钮，不虚构连接
+  - 全程只读：MySQL 走与漂移校验同源的只读执行器（`SET SESSION TRANSACTION READ ONLY` + 语句白名单），Redis 走内建 RESP2 客户端只读命令（`SCAN`/`HGETALL`）——无写、无 DDL、无删除
+  - 连接 open-per-operation（建连→工作→`finally` 关闭），不持长驻连接；切标签 / 关面板弃置在途结果，不把旧结果渲染进新视图
+  - 密码不可读（`<encrypt>` 非 `false`，引擎 RSA 密文）在单点门禁出「密码不可读」——面板绝不尝试空密码连接
+  - 建连失败与超时（10 秒）降级为面板内错误条，另一标签仍可用
+  - 表名先经 `[A-Za-z0-9_$]` 校验再建连；预览语句保持白名单形状 `SELECT * FROM \`table\` LIMIT N`
+  - Redis 键枚举有页上限（`REDIS_SCAN_PAGE_LIMIT`）并如实报告截断，不静默装完整
+- 入口：命令面板
+
 ## 玩家数据克隆
 
 ### `kbengine.clone.configureSource`

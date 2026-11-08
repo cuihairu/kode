@@ -56,6 +56,7 @@
     "onCommand:kbengine.database.previewTable",
     "onCommand:kbengine.database.previewSchemaImpact",
     "onCommand:kbengine.database.showDriftEvidence",
+    "onCommand:kbengine.database.showManagement",
     "onCommand:kbengine.clone.configureSource",
     "onCommand:kbengine.clone.configureTarget",
     "onCommand:kbengine.clone.testSource",
@@ -432,6 +433,11 @@
         "command": "kbengine.database.showDriftEvidence",
         "title": "%kbengine.command.database.showDriftEvidence.title%",
         "icon": "$(history)"
+      },
+      {
+        "command": "kbengine.database.showManagement",
+        "title": "%kbengine.command.database.showManagement.title%",
+        "icon": "$(database)"
       },
       {
         "command": "kbengine.clone.configureSource",

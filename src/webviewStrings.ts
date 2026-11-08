@@ -223,6 +223,29 @@ const zh = {
     sumLines: '扫描总行数',
     sumSignatures: '归一签名',
     sumFiles: '扫描文件'
+  },
+  databaseManagement: {
+    title: '数据库管理',
+    tabMysql: 'MySQL',
+    tabRedis: 'Redis',
+    loadTables: '加载表',
+    scanKeys: '扫描键',
+    noDatabaseProfile: '未读取到引擎数据库档案（检查活动 profile 的引擎根/资产根）',
+    passwordUnavailable: '密码不可读（引擎配置 encrypt=true 或未配置），无法连接',
+    emptyTables: '（库中无表）',
+    emptyKeys: '（键空间为空：无 kbe_* 键）',
+    keysTruncated: '（枚举已达页上限，已截断，完整键空间可能更大）',
+    colField: '字段',
+    colValue: '值',
+    colHost: '主机',
+    colPort: '端口',
+    colDatabase: '数据库',
+    colUser: '用户',
+    colCharset: '字符集',
+    colPassword: '密码',
+    loading: '加载中…',
+    keyPreviewEmpty: '（空哈希或无字段）',
+    previewTruncated: '（已截断，仅显示前 {limit} 行）'
   }
 };
 
@@ -436,6 +459,29 @@ const en: typeof zh = {
     sumLines: 'Total lines scanned',
     sumSignatures: 'Folded signatures',
     sumFiles: 'Files scanned'
+  },
+  databaseManagement: {
+    title: 'Database Management',
+    tabMysql: 'MySQL',
+    tabRedis: 'Redis',
+    loadTables: 'Load Tables',
+    scanKeys: 'Scan Keys',
+    noDatabaseProfile: 'No engine database profile found (check the active profile engine/assets roots)',
+    passwordUnavailable: 'Password unreadable (engine config encrypt=true or unset) - cannot connect',
+    emptyTables: '(no tables in database)',
+    emptyKeys: '(empty keyspace: no kbe_* keys)',
+    keysTruncated: '(scan reached the page limit and was truncated; the full keyspace may be larger)',
+    colField: 'Field',
+    colValue: 'Value',
+    colHost: 'Host',
+    colPort: 'Port',
+    colDatabase: 'Database',
+    colUser: 'User',
+    colCharset: 'Charset',
+    colPassword: 'Password',
+    loading: 'Loading...',
+    keyPreviewEmpty: '(empty hash or no fields)',
+    previewTruncated: '(truncated, showing only the first {limit} rows)'
   }
 };
 

@@ -26,6 +26,7 @@
   "kbengine.command.database.previewTable.title": "Preview Table Data",
   "kbengine.command.database.previewSchemaImpact.title": "Preview Schema Impact",
   "kbengine.command.database.showDriftEvidence.title": "Show Drift Evidence",
+  "kbengine.command.database.showManagement.title": "Show Database Management",
   "kbengine.command.clone.configureSource.title": "Configure Clone Source Connection",
   "kbengine.command.clone.configureTarget.title": "Configure Clone Target Connection",
   "kbengine.command.clone.testSource.title": "Test Clone Source Connection",

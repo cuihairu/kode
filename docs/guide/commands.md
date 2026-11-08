@@ -121,6 +121,20 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - Connect and the query run under `kbengine.databaseQueryTimeoutMs` in a cancellable progress notification (IDE-REV-017): timeout or cancel returns with that reason; the connection is closed afterwards in every branch
   - The report header states the read-only scope explicitly; zero differences are stated as such (无结构差异)
 
+### `kbengine.database.showManagement`
+
+- Title: `Show Database Management`
+- Purpose: open a persistent read-only management WebView with MySQL/Redis tabs — a single visible surface for the backend the derived database profile resolves to (`mysql` / `redis` / `none`); the MySQL tab lists `SHOW TABLES` and previews a table as a grid, the Redis tab enumerates `kbe_*` keys and previews a hash via `HGETALL`
+- Behavior:
+  - The active tab follows the profile's backend; a `none` profile (no derived database profile) shows an honest 「未读取到引擎数据库档案」 note and disables both backend buttons instead of fabricating a connection
+  - Read-only throughout: MySQL runs through the same read-only executor (`SET SESSION TRANSACTION READ ONLY` + statement whitelist) as the drift commands, Redis uses the built-in RESP2 client's `SCAN`/`HGETALL` only — no writes, no DDL, no deletes
+  - Connection is open-per-operation (created, worked, then closed in `finally`); no long-lived connection is held, and switching tabs / closing the panel discards any in-flight result instead of rendering it into the new view
+  - A password that is not readable (`<encrypt>` not `false`, engine RSA cipher) shows 「密码不可读」 at the single gate — the panel never attempts an empty-password connect
+  - Connect failures and timeouts (10 s) degrade to an in-panel error bar while the other tab stays usable
+  - Table names are validated to `[A-Za-z0-9_$]` before any connection; preview statements keep the fixed whitelist shape `SELECT * FROM \`table\` LIMIT N`
+  - Redis keyspace enumeration is capped (`REDIS_SCAN_PAGE_LIMIT`) and reports truncation honestly instead of silently claiming completeness
+- Entries: Command palette
+
 ### `kbengine.source.reveal`
 
 - Title: `Reveal Source Location`

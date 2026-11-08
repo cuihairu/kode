@@ -81,6 +81,7 @@ import { TelnetTreeProvider } from '../telnetTree';
 import { ensureConfigDerivedScanRoot } from '../configDerive';
 import { PlayerDataTreeProvider, queryPlayerByDbid, testPlayerDatabaseConnection } from '../playerDataPanel';
 import { runRedisKeyspacePreviewCommand } from '../redisKeyspaceCommand';
+import { DatabaseManagementWebView } from '../databaseManagementWebView';
 
 export interface ServerControlsDeps {
   context: vscode.ExtensionContext;
@@ -144,6 +145,8 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
   // MySQL 客户端、零编辑字段、只能查询)。连接档案真源在 Rust
   // derive_database(configDerive 缓存);查询经 databaseDrift 只读执行器。
   const playerDataProvider = new PlayerDataTreeProvider();
+  // 数据库管理 WebView 面板(MySQL/Redis 双后端,只读浏览+预览;常驻可见界面)
+  const databaseManagementWebView = new DatabaseManagementWebView(context);
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider('kbengine.playerData', playerDataProvider),
     vscode.commands.registerCommand('kbengine.playerData.refresh', async () => {
@@ -186,6 +189,14 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
       });
       const message = await runRedisKeyspacePreviewCommand();
       void vscode.window.showInformationMessage(message);
+    }),
+    // 数据库管理 WebView 面板(命令入口先等派生就绪,失败降级 no-profile,
+    // 面板如实提示;常驻可见,不散落在命令/输出通道/虚拟文档)。
+    vscode.commands.registerCommand('kbengine.database.showManagement', async () => {
+      await ensureConfigDerivedScanRoot().catch(() => {
+        /* 派生失败:面板如实展示未找到 */
+      });
+      databaseManagementWebView.show();
     })
   );
 

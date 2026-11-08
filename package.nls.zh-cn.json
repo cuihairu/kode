@@ -26,6 +26,7 @@
   "kbengine.command.database.previewTable.title": "预览表数据",
   "kbengine.command.database.previewSchemaImpact.title": "预览 Schema 影响",
   "kbengine.command.database.showDriftEvidence.title": "显示漂移证据",
+  "kbengine.command.database.showManagement.title": "打开数据库管理",
   "kbengine.command.clone.configureSource.title": "配置克隆源连接",
   "kbengine.command.clone.configureTarget.title": "配置克隆目标连接",
   "kbengine.command.clone.testSource.title": "测试克隆源连接",
