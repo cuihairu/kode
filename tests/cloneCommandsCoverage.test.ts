@@ -461,6 +461,13 @@ describe('runConfigureCloneProfileCommand(0501)', () => {
     expect(validate!('abc')).toBe('端口必须是数字');
     expect(validate!('')).toBeNull();
     expect(validate!('3306')).toBeNull();
+    expect(validate!('1')).toBeNull();
+    expect(validate!('65535')).toBeNull();
+    expect(validate!('0')).toBe('端口必须在 1 到 65535 之间');
+    expect(validate!('65536')).toBe('端口必须在 1 到 65535 之间');
+    expect(recorded.inputOptions[0].validateInput!('  ')).toBe('请输入主机地址');
+    expect(recorded.inputOptions[2].validateInput!('')).toBe('请输入用户名');
+    expect(recorded.inputOptions[4].validateInput!('')).toBe('请输入数据库名称');
   });
 
   it('环境声明不是 local/test(quickpick 脚本给 prod)→ 不保存', async () => {

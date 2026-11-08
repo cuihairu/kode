@@ -148,18 +148,26 @@ export async function runConfigureCloneProfileCommand(
   deps: PlayerCloneCommandDeps,
   role: CloneProfileRole
 ): Promise<void> {
-  const host = await deps.showInputBox({ prompt: role === 'source' ? '源库主机(Source host)' : '目标库主机(Target host,仅本地/测试库)' });
+  const host = await deps.showInputBox({
+    prompt: role === 'source' ? '源库主机(Source host)' : '目标库主机(Target host,仅本地/测试库)',
+    validateInput: value => value.trim() ? null : '请输入主机地址'
+  });
   if (host === undefined) {
     return;
   }
   const portText = await deps.showInputBox({
     prompt: '端口(Port,默认 3306)',
-    validateInput: value => (value === '' || /^\d+$/.test(value) ? null : '端口必须是数字')
+    validateInput: value => {
+      if (value === '') { return null; }
+      if (!/^\d+$/.test(value)) { return '端口必须是数字'; }
+      const port = Number(value);
+      return port >= 1 && port <= 65535 ? null : '端口必须在 1 到 65535 之间';
+    }
   });
   if (portText === undefined) {
     return;
   }
-  const user = await deps.showInputBox({ prompt: '用户名(User)' });
+  const user = await deps.showInputBox({ prompt: '用户名(User)', validateInput: value => value.trim() ? null : '请输入用户名' });
   if (user === undefined) {
     return;
   }
@@ -167,7 +175,7 @@ export async function runConfigureCloneProfileCommand(
   if (password === undefined) {
     return;
   }
-  const database = await deps.showInputBox({ prompt: '数据库(Database)' });
+  const database = await deps.showInputBox({ prompt: '数据库(Database)', validateInput: value => value.trim() ? null : '请输入数据库名称' });
   if (database === undefined) {
     return;
   }
