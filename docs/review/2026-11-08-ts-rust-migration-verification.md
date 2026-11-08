@@ -151,7 +151,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | .def 补全 | languageServices.ts:105 | — | — | 不涉 Rust | — | — | 未迁移 |
 | .def 签名帮助 | languageServices.ts:151 | — | — | 不涉 Rust | — | — | 未迁移 |
-| .def 悬停 | languageServices.ts:182 → languageProviders/hover.ts:130 KBEngineHoverProvider、provideHoverTimed:209 | — | — | 不涉 Rust | — | hover 单测 | 未迁移（注意：hover.ts 正处另一会话未提交编辑中，git diff 355 行删除；当前树 rg `runInRust/shadow/kodeCoreGate` 零命中，编辑落定后本行需复核） |
+| .def 悬停 | languageServices.ts:182 → languageProviders/hover.ts:130 KBEngineHoverProvider、provideHoverTimed:209 | — | — | 不涉 Rust | — | hover 单测 | 已切换（2026-11-08 复核：另一会话编辑落定为 04a3fada「feat: serve hover from rust with ts fallback」——服务轨道下语料文档（.def+三类 XML）hover 先走 Rust `textDocument/hover`（serveHoverFromRust，kodeCoreShadowFaces.ts:259；镜像未保存缓冲区后请求），miss/失败/非语料重入 TS 既有链；Python 文档零请求直通 TS。本表其余「未迁移」判词以此为准更新） |
 | server 配置悬停（kbengine*.xml） | languageServices.ts:216 | — | — | 不涉 Rust | — | — | 未迁移 |
 | 启动脚本悬停 | languageServices.ts:226 | — | — | 不涉 Rust | — | — | 未迁移 |
 | 启动脚本补全 | languageServices.ts:231 | — | — | 不涉 Rust | — | — | 未迁移 |
@@ -223,7 +223,7 @@
 
 | 能力 | TS 入口(file:fn) | Rust RPC | Rust 位置 | 门禁/默认 | 失败/回退 | 测试 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| API 文档查询 | 无生产消费者：pythonApiHoverDocs.ts 用同源生成的 TS `API_DOC_ENTRIES`；MCP explain 复用文档数据但非 VS Code RPC | `$/kode/apiDocs/lookup` | api_docs.rs:141 | 无消费者 | — | Rust 侧单测 | 未迁移（Rust RPC registered but no TS consumer found；死 RPC，见 RUST-MIGRATION-AUDIT 跟踪） |
+| API 文档查询 | pythonApiHoverDocs.ts 用同源生成的 TS `API_DOC_ENTRIES`（语料生成级锁一致 C-21）；MCP explain 直调 `api_docs_lookup` 库函数（非 VS Code RPC） | `$/kode/apiDocs/lookup` | api_docs.rs | 无 VS Code RPC 消费者 | RPC 面 null/失败时调用方回退 TS | Rust 侧单测 + tests/apiDocsRustParity.test.ts | **对拍锁定，判定不切**（2026-11-08 证据批：全语料成员 × 域面 × en/zh-cn 逐条一致——hit 字段级、ambiguous 三元组序列、miss 三态；热进程时延实测 p50=1.28ms/max=1.79ms（n=40）；断连面=现产 hover 链纯内存零 RPC 依赖，无门无二进制不降级。不切理由：语料双实现已由生成器 --check 门禁锁零漂移，切换不消灭第二实现（回退面必须保留），hover 热路径换 RPC 无净收益；RPC 与 MCP explain 保持同源同语义。附带修复：api_docs.rs `source_refs` 缺 serde rename「sourceRefs」致 RPC/库输出 sourceRefs 恒空——已补 rename，对拍测试捕获） |
 | wire 编码 | 无 VS Code 消费者：kode-mcp/src/kb.rs 直接复用 Rust 编解码库（非经 RPC） | `$/kode/wire/encode` | wire_codec/rpc.rs:13 | 无消费者 | — | kode-server wire 测试 | 未迁移（Rust RPC registered but no TS consumer found；死 RPC） |
 | wire 解码 | 同上 | `$/kode/wire/decode` | wire_codec/rpc.rs:14 | 无消费者 | — | 同上 | 未迁移（Rust RPC registered but no TS consumer found；死 RPC） |
 | DEF 引擎摘要 md5 | TS 包装存在但生产调用为零：defMd5Rust.ts:51 computeDefMd5InRust 仅 wt/qs、wt/i18n-manifest 测试引用；hotReloadDefHash.ts negotiateEngineDigest 零调用（todo RUST-MIGRATION-AUDIT-003 已登记） | `$/kode/def/md5` | def_md5/mod.rs:1161 | 无生产消费者 | — | kode-server def_md5 测试 | 未迁移（Rust RPC registered but no TS consumer found；包装器≠接线） |
@@ -231,7 +231,7 @@
 
 ### 未核实清单
 
-1. **hover 面最终形态**：`src/languageProviders/hover.ts` 正处另一会话未提交编辑（git diff 355 行删除）。本表按当前树记录（KBEngineHoverProvider :130、provideHoverTimed :209，无任何 Rust/shadow/gate 触点）。需要证据：该会话编辑落定后重跑 `rg 'runInRust|shadow|kodeCoreGate' src/languageProviders/hover.ts` 复核本行。
+1. **hover 面最终形态**：✅ 已复核（2026-11-08）。该会话编辑落定为 04a3fada：服务轨道（serveFromRust，kodeCoreGate.ts:314 `mode==='rust' && serverPath!==''`）下语料 hover Rust 优先、TS 兜底重入；「serveFromRust 恒 false」的旧判词作废。语料面切换证据见 tests/kodeHoverServing.test.ts；Python API 文档面（lookupApiDoc）的切换判定见 E 表 apiDocs/lookup 行。
 2. **诊断收集族的自动触发面**：13 个 collection 的触发时机（保存/编辑/命令）本批只逐一核实了 collection 创建点与 Rust 触点，未逐一核实每个 collection 的调度入口；若某 TS collection 内部间接调用了上表 Rust 腿（如 def-analysis 产物），归类不变（其消费面已单列）。
 3. **kbengine.workbench.show 下游数据源**：面板本身 TS 已核实，但其内部数据请求是否间接经过 Rust 依赖图/调用图缓存未再向下追；需要证据：对 workbench webview 的消息处理函数逐个追调用链。
 4. **行为对拍/契约一致性**：本矩阵全部为静态接线证据。凡标 `Rust 优先+TS 回退` 的行，两条路径的输出是否一致、回退是否无感，本批未验证；需要证据：双路径对拍测试或真实环境验收（第四批 scanAnchors 已有六棵 golden 对拍属个例）。
