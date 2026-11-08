@@ -1375,6 +1375,7 @@ If `Attach to Component` fails, check these first:
   - Every probe failure collapses to 「未检出」 (not found) — never an error, never a guess
   - The report always states the zero-ABI fallback: `kode-kbengine capture analyze` analyzes pcaps without the plugin
   - Probes read `kbengine.protocol.tsharkPath` / `kbengine.protocol.wiresharkPath` / `kbengine.protocol.cliPath` (CLI empty = `target/{debug,release}` auto-discovery, same shape as kode-server)
+  - The report ends with a schema state section (PA-007 increment 4) read from `globalStorage/kbengine-schema.json`: generated → IR version, engine baseline, message/entity counts, missing entities (registered in entities.xml but no `.def`) and build diagnostics listed verbatim (SYNTAX-005 convention: bad inputs are kept as diagnostics, never a fake pass); not generated → the `kbengine.protocol.buildSchema` hint; unreadable → the reason
 
 ### `kbengine.protocol.buildSchema`
 

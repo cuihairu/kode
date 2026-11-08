@@ -258,6 +258,8 @@
   ——（证据：src/protocolSchemaSync.ts、src/protocolTooling.ts `resolveCliPath` 导出、src/activate/infrastructure.ts `setupProtocolSchemaSync`、package.json#contributes.commands `kbengine.protocol.buildSchema`、package.json#configuration `kbengine.protocol.schemaAutoBuild`、tests/protocolSchemaSync.test.ts 15 例）
 - **一键开 PCAP + 跑 TShark（PA-007 第三增量）** —— 两条命令作用于选中的抓包文件（对话框取消 = 零动作）：`kbengine.protocol.openPcap` 以 Wireshark GUI（`kbengine.protocol.wiresharkPath`）打开文件——不带超时，检测面 5s 探测预算会杀掉刚拉起的 GUI；未检出/非零退出如实警告，GUI 正常打开本身就是成功反馈——`kbengine.protocol.analyzePcap` 跑零 ABI 路径 `kode-kbengine capture analyze --pcap <file> --tshark <tsharkPath>`（不需要 KBEngine 插件）并把 CLI 报告原文落「KBEngine Protocol Tooling」通道——不摘要、不再排版；CLI 未检出/探测失败与 `buildSchema` 同口径如实警告；分析面自带长超时（120s）——大 pcap + tshark 两跳不适用探测预算
   ——（证据：src/protocolPcapActions.ts、src/activate/infrastructure.ts `setupProtocolPcapActions`、package.json#contributes.commands `kbengine.protocol.openPcap|kbengine.protocol.analyzePcap`、tests/protocolPcapActions.test.ts 9 例）
+- **状态报告的 Schema 状态段（PA-007 第四增量）** —— `kbengine.protocol.showStatus` 末尾带一段读 `globalStorage/kbengine-schema.json` 的 Schema 状态：已生成 → IR 版本（`schema_version`）、引擎基线、消息/实体规模、缺失实体（entities.xml 注册但 .def 缺盘）与 CLI 构建诊断原文逐条（SYNTAX-005 同规——坏输入保留为可定位诊断,绝不冒充通过;本段即错误诊断面）；未生成 → 给 `kbengine.protocol.buildSchema` 提示；读取失败/坏 JSON → 带归因；字段逐个防御提取,无 globalStorage 面如实按未生成处理
+  ——（证据：src/protocolSchemaSync.ts `readSchemaState`、src/protocolTooling.ts `renderProtocolToolingStatus` Schema 段、tests/protocolSchemaSync.test.ts readSchemaState 6 例、tests/protocolTooling.test.ts Schema 段 5 例）
 
 ## 编辑器基础
 

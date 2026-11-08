@@ -1341,6 +1341,7 @@ KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Pytho
   - 每步探测失败都收敛为「未检出」——不报错、不猜测
   - 报告恒带零 ABI 兜底提示：未装插件时 `kode-kbengine capture analyze` 可直接分析 pcap
   - 探测读 `kbengine.protocol.tsharkPath` / `kbengine.protocol.wiresharkPath` / `kbengine.protocol.cliPath`（CLI 空 = `target/{debug,release}` 自动发现，与 kode-server 同款）
+  - 报告末尾带 Schema 状态段（PA-007 第四增量），读 `globalStorage/kbengine-schema.json`：已生成 → IR 版本、引擎基线、消息/实体规模、缺失实体（entities.xml 注册但 .def 缺失）与构建诊断原文逐条列出（SYNTAX-005 同规：坏输入保留为诊断，不冒充通过）；未生成 → 给 `kbengine.protocol.buildSchema` 提示；读取失败 → 带归因
 
 ### `kbengine.protocol.buildSchema`
 
