@@ -1384,3 +1384,21 @@ If `Attach to Component` fails, check these first:
   - Asset root resolution reuses `kbengine.assetsRoot` and the existing discovery chain (`resolveAssetsRootForWorkspace`); CLI resolution reuses `kbengine.protocol.cliPath` + auto-discovery; any missing link surfaces an honest warning with the reason (CLI 未检出 / CLI 探测失败 / 资产根未检出) — never a guess
   - Success notifies with the output file path and logs to the 「KBEngine Protocol Tooling」 channel; failure notifies with the CLI's own error text (stderr first, then stdout, then exit code)
   - The auto-rebuild face (default on, `kbengine.protocol.schemaAutoBuild`) rebuilds on protocol definition file events (`.def` / `types.xml` / `entities.xml` / `alias.xml`) inside the project root, debounced through the shared merger and coalesced by an in-flight scheduler (one trailing rebuild, no queue amplification); Python files are structurally never watched; activation spawns no process — initial build happens on the first protocol file event or via this command
+
+### `kbengine.protocol.openPcap`
+
+- Title: `KBEngine: 在 Wireshark 中打开 PCAP`
+- Purpose: one-click open a packet capture in the Wireshark GUI — pick a file (`pcap` / `pcapng` / `cap`) and the configured `kbengine.protocol.wiresharkPath` launches with it (PA-007 third increment)
+- Behavior:
+  - Dialog cancel does nothing — no process, no notification
+  - Wireshark undiscovered / launch failure warns honestly with the config key hint; a normally opened GUI is its own success feedback (no notification)
+  - The launch record lands in the 「KBEngine Protocol Tooling」 channel; the GUI is launched without a timeout (a detection-face 5s timeout would kill the just-launched GUI — this face carries its own runner)
+
+### `kbengine.protocol.analyzePcap`
+
+- Title: `KBEngine: 用 kode-kbengine 分析 PCAP`
+- Purpose: run the zero-ABI analysis path — `kode-kbengine capture analyze --pcap <file> --tshark <tsharkPath>` (the CLI drives tshark; the KBEngine plugin is NOT required) and render the report verbatim into the 「KBEngine Protocol Tooling」 channel
+- Behavior:
+  - Dialog cancel does nothing; CLI undiscovered / probe failure warns honestly with the reason (same attribution as `buildSchema`)
+  - Analysis failure notifies with the CLI's own error text (stderr → stdout → exit code); the report is rendered as-is — no summarizing, no re-formatting
+  - This face carries a long timeout (120s) — large pcaps + the tshark hop do not fit the detection face's 5s probe budget

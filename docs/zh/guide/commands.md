@@ -1350,3 +1350,21 @@ KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Pytho
   - 资产根解析复用 `kbengine.assetsRoot` 与既有发现链；CLI 解析复用 `kbengine.protocol.cliPath` + 自动发现；任一环落空给如实警告并带归因（CLI 未检出 / CLI 探测失败 / 资产根未检出）——不猜测
   - 成功以通知给出输出文件路径并落通道「KBEngine Protocol Tooling」；失败以通知带 CLI 自身错误文本（stderr 优先，回落 stdout，再回落退出码）
   - 自动重建面（默认开，`kbengine.protocol.schemaAutoBuild`）在项目根内的协议定义文件事件（`.def` / `types.xml` / `entities.xml` / `alias.xml`）触发，经共享合并器防抖 + 在途串行器合并（只补一轮尾随重建，不排队放大）；Python 文件结构性不在监听范围；激活不主动起子进程——首次生成发生在首个协议文件事件或本命令
+
+### `kbengine.protocol.openPcap`
+
+- 标题：`KBEngine: 在 Wireshark 中打开 PCAP`
+- 作用：一键用 Wireshark GUI 打开抓包文件——选文件（`pcap` / `pcapng` / `cap`）后以配置的 `kbengine.protocol.wiresharkPath` 拉起 GUI（PA-007 第三增量）
+- 行为：
+  - 对话框取消 = 什么都不做（不起进程不出通知）
+  - Wireshark 未检出/启动失败如实警告并带配置键提示；GUI 正常打开本身就是成功反馈（不刷通知）
+  - 启动记录落「KBEngine Protocol Tooling」通道；GUI 拉起不带超时（检测面 5s 超时会杀掉刚拉起的 GUI——本面自带 runner）
+
+### `kbengine.protocol.analyzePcap`
+
+- 标题：`KBEngine: 用 kode-kbengine 分析 PCAP`
+- 作用：跑零 ABI 分析路径——`kode-kbengine capture analyze --pcap <file> --tshark <tsharkPath>`（CLI 驱动 tshark；不需要 KBEngine 插件）并把报告原文落「KBEngine Protocol Tooling」通道
+- 行为：
+  - 对话框取消不做任何事；CLI 未检出/探测失败如实警告并带归因（与 `buildSchema` 同口径）
+  - 分析失败以通知带 CLI 自身错误文本（stderr → stdout → 退出码）；报告原样渲染——不摘要、不再排版
+  - 本面带长超时（120s）——大 pcap + tshark 两跳不适用检测面 5s 预算
