@@ -12,9 +12,11 @@
 // kbengine.destroyedEntityReferenceDiagnostics / kbengine.timerCleanupDiagnostics。
 // 非实体脚本(路径面与 def 归属双 miss)不接管,不猜。
 
+import * as path from 'path';
 import * as vscode from 'vscode';
 import type { EntityMappingManager } from './entityMapping';
 import { getTypeStorageShape } from './databaseSchema';
+import { getDefinitionWorkspaceLayout } from './definitionWorkspace';
 import { resolveEntityComponentFaceFromPath } from './entityBuiltinProperties';
 import {
   analyzeFixedDictMutations,
@@ -103,6 +105,16 @@ export function buildTrapDiagnosticItems(
   return items;
 }
 
+/** 工作区 types.xml 定位(python 文件 → 所属根 → 布局;多根不串,缺根回落首根) */
+function resolveTypesXmlPathForFile(fileName: string): string | null {
+  const folder = vscode.workspace.workspaceFolders?.find(candidate =>
+    fileName.startsWith(`${candidate.uri.fsPath}${path.sep}`) ||
+    fileName.startsWith(`${candidate.uri.fsPath}/`)
+  );
+  const root = folder?.uri.fsPath ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  return root ? getDefinitionWorkspaceLayout(root).typesXmlPath : null;
+}
+
 /** FIXED_DICT 属性表构建(listPropertyDefinitionsForFile + 类型图) */
 async function collectFixedDictProperties(
   manager: EntityMappingManager,
@@ -118,7 +130,7 @@ async function collectFixedDictProperties(
     if (!property.typeName || result.has(name)) {
       continue;
     }
-    const shape = getTypeStorageShape(fileName, property.typeName);
+    const shape = getTypeStorageShape(resolveTypesXmlPathForFile(fileName), property.typeName);
     if (shape.kind === 'fixedDict') {
       result.set(name, shape.topLevelKeys);
     }

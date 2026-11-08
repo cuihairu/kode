@@ -101,6 +101,28 @@ describe('FixedDictWholeReassignCodeActionProvider(整体重赋 quick fix)', () 
     expect(actionsOf('        self.profile.level += 1')).toHaveLength(0);
   });
 
+  it('下标字符串键赋值:同给整体重赋习语编辑(引号双形态)', () => {
+    expect(actionsOf(`        self.bag['slot'] = 1`)).toHaveLength(1);
+    expect(actionsOf(`        self.bag["slot"] = 1`)).toHaveLength(1);
+  });
+
+  it('诊断 code 不属于本规则:循环跳过,零动作', () => {
+    const document = makeTextDocument(`        self.profile.name = "abc"\n`, {
+      fileName: '/p/scripts/cell/a.py',
+      languageId: 'python'
+    });
+    const diagnostic = {
+      code: 'kbengine.someOtherRule',
+      range: new Range(new Position(0, 8), new Position(0, 24))
+    } as never;
+    const actions = provider.provideCodeActions(
+      document as never,
+      new Range(new Position(0, 0), new Position(0, 10)) as never,
+      { diagnostics: [diagnostic] } as never
+    );
+    expect(actions).toHaveLength(0);
+  });
+
   it('集合名常量与 extension.test 对账', () => {
     expect(TRAP_LINT_DIAGNOSTIC_COLLECTION).toBe('kbengine-trap-lints');
   });

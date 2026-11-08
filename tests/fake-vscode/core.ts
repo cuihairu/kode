@@ -683,18 +683,21 @@ export class CodeAction {
 
 // 仅支持 validateDocument 使用的 set/delete 面。
 export class DiagnosticCollection {
-  private entries = new Map<Uri, Diagnostic[]>();
+  // 真机 vscode 诊断集合按 URI 成分等价(set/delete/get 跨重建 Uri 实例
+  // 同键);替身以 toString 键控对齐(构建方 Uri.file/joinPath/parse 重建
+  // 实例后仍可取回)。
+  private entries = new Map<string, Diagnostic[]>();
 
   set(uri: Uri, diagnostics: Diagnostic[]): void {
-    this.entries.set(uri, diagnostics);
+    this.entries.set(uri.toString(), diagnostics);
   }
 
   delete(uri: Uri): void {
-    this.entries.delete(uri);
+    this.entries.delete(uri.toString());
   }
 
   get(uri: Uri): Diagnostic[] {
-    return this.entries.get(uri) ?? [];
+    return this.entries.get(uri.toString()) ?? [];
   }
 
   // 真实 vscode.DiagnosticCollection API 面:清空所有文件的诊断

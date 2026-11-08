@@ -91,6 +91,9 @@ afterAll(() => {
 
 beforeAll(async () => {
   commandRegistry.reset();
+  // 视图聚焦是 workbench 内建命令面(不经 registerCommand;views.ts 空态
+  // focus 调用为浮动 promise)——镜像登记免测试外未处理拒绝。
+  commands.registerCommand('kbengine.gitRangeHistory.focus', async () => undefined);
   languagesRegistry.reset();
   windowState.reset();
   panelRegistry.reset();
