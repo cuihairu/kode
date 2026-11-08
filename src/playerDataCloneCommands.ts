@@ -59,7 +59,7 @@ export interface PlayerCloneCommandDeps {
     validateInput?(value: string): string | null;
   }): Promise<string | undefined>;
   showInformationMessage(message: string): Promise<unknown>;
-  showWarningMessage(message: string): Promise<unknown>;
+  showWarningMessage(message: string, ...items: string[]): Promise<unknown>;
   showErrorMessage(message: string): Promise<unknown>;
   withProgress<R>(
     options: { title: string; cancellable: boolean },
@@ -282,6 +282,14 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
     await deps.showWarningMessage('工作区未发现已注册实体(请先打开 KBEngine 工程)。');
     return;
   }
+  let config = await deps.profiles.resolveConnection('source');
+  if (!config) {
+    const choice = await deps.showWarningMessage('尚未配置 Source 连接(先运行「配置 Source 连接」)。', '配置源连接');
+    if (choice !== '配置源连接') { return; }
+    await runConfigureCloneProfileCommand(deps, 'source');
+    config = await deps.profiles.resolveConnection('source');
+    if (!config) { return; }
+  }
   const entityName = await deps.showQuickPick(entityNames, {
     placeHolder: '选择要导出的实体(Entity)'
   });
@@ -295,12 +303,6 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
   if (dbidText === undefined) {
     return;
   }
-  const config = await deps.profiles.resolveConnection('source');
-  if (!config) {
-    await deps.showWarningMessage('尚未配置 Source 连接(先运行「配置 Source 连接」)。');
-    return;
-  }
-
   const derivationTables = deps.resolveEntityTables(entityName);
   if (!derivationTables || derivationTables.length === 0) {
     await deps.showErrorMessage(`无法从工作区 def 推导实体 ${entityName} 的表结构。`);

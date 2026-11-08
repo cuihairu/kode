@@ -584,7 +584,7 @@ export function wireDatabase(context: vscode.ExtensionContext, deps: DatabaseWir
     showQuickPick: async (items, options) => vscode.window.showQuickPick(items, options),
     showInputBox: async options => vscode.window.showInputBox(options),
     showInformationMessage: async message => vscode.window.showInformationMessage(message),
-    showWarningMessage: async message => vscode.window.showWarningMessage(message),
+    showWarningMessage: async (message, ...items) => vscode.window.showWarningMessage(message, ...items),
     showErrorMessage: async message => vscode.window.showErrorMessage(message),
     withProgress: async (options, task) =>
       vscode.window.withProgress(

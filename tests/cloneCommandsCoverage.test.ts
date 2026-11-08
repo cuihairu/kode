@@ -593,7 +593,7 @@ describe('runExportCloneCommand(0502)', () => {
     ['实体选择取消', { picks: [undefined] }],
     ['DBID 输入取消', { picks: ['Avatar'], inputs: [undefined] }]
   ])('早期取消(%s)→ 不建连不导出', async (_label, script) => {
-    const { deps, recorded } = makeDeps({ entities: ['Avatar'], entityTables: { Avatar: avatarTables() }, ...script });
+    const { deps, recorded } = makeDeps({ entities: ['Avatar'], entityTables: { Avatar: avatarTables() }, source: sourceConfig(), ...script });
     await runExportCloneCommand(deps);
     expect(recorded.info).toHaveLength(0);
     expect(recorded.lines).toHaveLength(0);
@@ -603,10 +603,12 @@ describe('runExportCloneCommand(0502)', () => {
     const { deps, recorded } = makeDeps({ entities: ['Avatar'], picks: ['Avatar'], inputs: ['42'] });
     await runExportCloneCommand(deps);
     expect(recorded.warn).toEqual(['尚未配置 Source 连接(先运行「配置 Source 连接」)。']);
+    expect(recorded.inputPrompts).toEqual([]);
+    expect(recorded.pickOptions).toEqual([]);
   });
 
   it('导出 DBID 输入校验:非数字拒,纯数字过', async () => {
-    const { deps, recorded } = makeDeps({ entities: ['Avatar'], picks: ['Avatar'], inputs: ['42'] });
+    const { deps, recorded } = makeDeps({ entities: ['Avatar'], picks: ['Avatar'], inputs: ['42'], source: sourceConfig() });
     await runExportCloneCommand(deps);
     const validate = recorded.inputOptions[0].validateInput;
     expect(validate).toBeDefined();
