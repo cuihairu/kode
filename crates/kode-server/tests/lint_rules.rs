@@ -308,3 +308,340 @@ fn cell_alias_normalizes_to_cell_domain_and_collides() {
         "CELL 别名应归一为 CELL_PUBLIC 与后者判重: {findings:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// 边界:无文本 Type / 文本被注释拆断 / 数字起词 / 空值 / 非白名单段
+// ---------------------------------------------------------------------------
+
+#[test]
+fn type_tag_with_element_child_is_missing_type_and_skips_reference_scan() {
+    // Type 只有元素子节点、无文本值 → missing-type;引用扫描跳过该形态。
+    let text = prop(
+        "hp",
+        "\t\t\t<Type><Sub/></Type>\n\t\t\t<Flags>BASE</Flags>\n",
+    );
+    let found = checks(&text);
+    assert!(found.contains(&"missing-type".to_string()), "{found:?}");
+    assert!(
+        !found.contains(&"unknown-type-reference".to_string()),
+        "元素子节点的 Type 不进引用扫描: {found:?}"
+    );
+}
+
+#[test]
+fn empty_type_value_is_missing_type() {
+    // Type 仅空白 → 无有效类型;引用扫描对空值跳过。
+    let text = prop("hp", "\t\t\t<Type>   </Type>\n\t\t\t<Flags>BASE</Flags>\n");
+    let found = checks(&text);
+    assert!(found.contains(&"missing-type".to_string()), "{found:?}");
+    assert!(!found.contains(&"unknown-type-reference".to_string()));
+}
+
+#[test]
+fn flag_value_span_falls_back_when_text_split_by_comment() {
+    // 注释把 Flags 文本拆成两段:trim 拼接值 "BASECELL" 在原文不连续,
+    // 取值区间回落 content 整段(仍产出 unknown-flag-value)。
+    let text = prop(
+        "hp",
+        "\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>BASE<!--gap-->CELL</Flags>\n",
+    );
+    let findings = analyze_def(&text, &Default::default(), &[]).expect("analyze_def ok");
+    let flag_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| f.check == "unknown-flag-value")
+        .collect();
+    assert_eq!(flag_findings.len(), 1, "{findings:?}");
+    assert!(
+        flag_findings[0].message.contains("BASECELL"),
+        "整串查表值应为拼接后的 BASECELL: {findings:?}"
+    );
+}
+
+#[test]
+fn type_reference_tokens_do_not_start_with_digits() {
+    // 词法以字母/下划线起:数字开头不构词,"9ABC" 不整体成词,"ABC" 独立成词。
+    let text = prop(
+        "hp",
+        "\t\t\t<Type> 9ABC GHOST_TYPE </Type>\n\t\t\t<Flags>BASE</Flags>\n",
+    );
+    let findings = analyze_def(&text, &Default::default(), &[]).expect("analyze_def ok");
+    let msgs: Vec<String> = findings
+        .iter()
+        .filter(|f| f.check == "unknown-type-reference")
+        .map(|f| f.message.clone())
+        .collect();
+    assert!(
+        msgs.iter().any(|m| m.contains("自定义类型 ABC")),
+        "{msgs:?}"
+    );
+    assert!(
+        msgs.iter().any(|m| m.contains("自定义类型 GHOST_TYPE")),
+        "{msgs:?}"
+    );
+    assert!(!msgs.iter().any(|m| m.contains("9ABC")), "{msgs:?}");
+}
+
+#[test]
+fn non_whitelisted_top_level_section_is_skipped_by_duplicate_scan() {
+    // DetailLevels 不是白名单段:段内同名声明不判重。
+    let text = "<root>\n\
+\t<DetailLevels>\n\t\t<FAR/>\n\t\t<FAR/>\n\t</DetailLevels>\n\
+\t<Properties>\n\t\t<hp>\n\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>BASE</Flags>\n\t\t</hp>\n\t</Properties>\n\
+</root>\n";
+    assert!(
+        !checks(text).contains(&"duplicate-definition".to_string()),
+        "非白名单段不进判重扫描"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 重复定义:client 作用域 / Volatile 段 / 方法段(Warning+Info 成对)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn duplicate_definition_client_scope_reports_client_label() {
+    let dup = "<root>\n\
+\t<Properties>\n\
+\t\t<hp>\n\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>ALL_CLIENTS</Flags>\n\t\t</hp>\n\
+\t\t<hp>\n\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>ALL_CLIENTS</Flags>\n\t\t</hp>\n\
+\t</Properties>\n\
+</root>\n";
+    let findings = analyze_def(dup, &Default::default(), &[]).expect("analyze_def ok");
+    let msgs: Vec<String> = findings
+        .iter()
+        .filter(|f| f.check == "duplicate-definition")
+        .map(|f| f.message.clone())
+        .collect();
+    // ALL_CLIENTS 同时落 cell 与 client 两个作用域账:两个域各一对
+    // Warning+Info(重复声明 + 首个声明位置提示)。
+    assert_eq!(msgs.len(), 4, "Cell/Client 各一对: {findings:?}");
+    assert!(msgs.iter().any(|m| m.contains("(Cell)")), "{msgs:?}");
+    assert!(msgs.iter().any(|m| m.contains("(Client)")), "{msgs:?}");
+    assert!(
+        msgs.iter().any(|m| m.contains("已在 Client 作用域定义")),
+        "{msgs:?}"
+    );
+}
+
+#[test]
+fn duplicate_methods_in_volatile_and_method_sections() {
+    // Volatile 段同名判重(易变同步区块标签)。
+    let vol = "<root>\n\t<Volatile>\n\t\t<pos/>\n\t\t<pos/>\n\t</Volatile>\n</root>\n";
+    let findings = analyze_def(vol, &Default::default(), &[]).expect("analyze_def ok");
+    let msgs: Vec<String> = findings
+        .iter()
+        .filter(|f| f.check == "duplicate-definition")
+        .map(|f| f.message.clone())
+        .collect();
+    assert_eq!(msgs.len(), 2, "Warning+Info 成对: {findings:?}");
+    assert!(msgs.iter().all(|m| m.contains("易变同步区块")), "{msgs:?}");
+    // 方法段同名判重(方法区块标签)。
+    let methods = "<root>\n\t<BaseMethods>\n\t\t<onKill>\n\t\t\t<Arg>INT8</Arg>\n\t\t</onKill>\n\t\t<onKill>\n\t\t\t<Arg>INT8</Arg>\n\t\t</onKill>\n\t</BaseMethods>\n</root>\n";
+    let findings = analyze_def(methods, &Default::default(), &[]).expect("analyze_def ok");
+    let msgs: Vec<String> = findings
+        .iter()
+        .filter(|f| f.check == "duplicate-definition")
+        .map(|f| f.message.clone())
+        .collect();
+    assert_eq!(msgs.len(), 2, "Warning+Info 成对: {findings:?}");
+    assert!(msgs.iter().all(|m| m.contains("方法区块")), "{msgs:?}");
+}
+
+// ---------------------------------------------------------------------------
+// Python 关键字方法名(invalid-identifier 方法支路)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn invalid_identifier_fires_on_python_keyword_method_name() {
+    let text = "<root>\n\t<ClientMethods>\n\t\t<lambda>\n\t\t\t<Exposed>true</Exposed>\n\t\t</lambda>\n\t</ClientMethods>\n</root>\n";
+    let findings = analyze_def(text, &Default::default(), &[]).expect("analyze_def ok");
+    let kw: Vec<_> = findings
+        .iter()
+        .filter(|f| f.check == "invalid-identifier")
+        .collect();
+    assert_eq!(kw.len(), 1, "{findings:?}");
+    assert_eq!(kw[0].name.as_deref(), Some("lambda"));
+    assert!(kw[0].message.contains("Python 关键字"));
+}
+
+// ---------------------------------------------------------------------------
+// 继承链同名:属性同域 / 方法同段 / 方法×属性 / 组件槽 + 不相交不判重
+// ---------------------------------------------------------------------------
+
+use kode_server::lint::{all_rules, InheritedNameInfo, InheritedNames, RuleContext};
+
+fn inherited_info(domains: &[&str], sources: &[&str]) -> InheritedNameInfo {
+    InheritedNameInfo {
+        property_domains: domains.iter().map(|s| s.to_string()).collect(),
+        component_domains: Vec::new(),
+        method_sections: Vec::new(),
+        property_sources: sources.iter().map(|s| s.to_string()).collect(),
+        component_sources: Vec::new(),
+        method_sources: Vec::new(),
+    }
+}
+
+#[test]
+fn inherited_property_domain_overlap_collides_and_disjoint_does_not() {
+    let text = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>BASE</Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n";
+    let mut inherited = InheritedNames::default();
+    inherited.insert("hp".to_string(), inherited_info(&["base"], &["Parent.def"]));
+    let findings = analyze_def(text, &inherited, &[]).expect("analyze_def ok");
+    let hits: Vec<_> = findings
+        .iter()
+        .filter(|f| f.check == "inherited-name-collision")
+        .collect();
+    assert_eq!(hits.len(), 1, "{findings:?}");
+    assert!(hits[0].message.contains("同域位同名"), "{hits:?}");
+    assert!(
+        hits[0].message.contains("(继承自 Parent.def)"),
+        "引用来源应进文案: {hits:?}"
+    );
+
+    // 作用域不相交(base vs client)→ 不判重。
+    let mut disjoint = InheritedNames::default();
+    disjoint.insert(
+        "hp".to_string(),
+        inherited_info(&["client"], &["Parent.def"]),
+    );
+    assert!(
+        !analyze_def(text, &disjoint, &[])
+            .expect("analyze_def ok")
+            .iter()
+            .any(|f| f.check == "inherited-name-collision"),
+        "域位不相交不判重"
+    );
+}
+
+#[test]
+fn inherited_method_same_section_and_property_collisions() {
+    let text = "<root>\n\t<BaseMethods>\n\t\t<onKill>\n\t\t\t<Arg>INT8</Arg>\n\t\t</onKill>\n\t</BaseMethods>\n\t<ClientMethods>\n\t\t<onHint/>\n\t</ClientMethods>\n</root>\n";
+    let mut inherited = InheritedNames::default();
+    // onKill 与祖先 base 段方法同名 → 同段判重。
+    inherited.insert(
+        "onKill".to_string(),
+        InheritedNameInfo {
+            method_sections: vec!["base".to_string()],
+            method_sources: vec!["Parent.def".to_string()],
+            ..Default::default()
+        },
+    );
+    // onHint 与祖先属性同名 → hasPropertyName 全局拒绝。
+    inherited.insert("onHint".to_string(), inherited_info(&[], &["Parent.def"]));
+    let findings = analyze_def(text, &inherited, &[]).expect("analyze_def ok");
+    let msgs: Vec<String> = findings
+        .iter()
+        .filter(|f| f.check == "inherited-name-collision")
+        .map(|f| f.message.clone())
+        .collect();
+    assert_eq!(msgs.len(), 2, "{findings:?}");
+    assert!(
+        msgs.iter()
+            .any(|m| m.contains("onKill 与继承链上的方法同段同名")),
+        "{msgs:?}"
+    );
+    assert!(
+        msgs.iter()
+            .any(|m| m.contains("onHint 与继承链上的属性/组件同名")),
+        "{msgs:?}"
+    );
+
+    // 祖先方法只在其它段(cell)时:base 段同名不判重(段隔离)。
+    let mut other_section = InheritedNames::default();
+    other_section.insert(
+        "onKill".to_string(),
+        InheritedNameInfo {
+            method_sections: vec!["cell".to_string()],
+            method_sources: vec!["Parent.def".to_string()],
+            ..Default::default()
+        },
+    );
+    assert!(
+        !analyze_def(text, &other_section, &[])
+            .expect("analyze_def ok")
+            .iter()
+            .any(|f| f.check == "inherited-name-collision"),
+        "段隔离:祖先 cell 段方法不与本文件 base 段判重"
+    );
+}
+
+#[test]
+fn inherited_component_slot_name_collides() {
+    let text = "<root>\n\t<Components>\n\t\t<inv>\n\t\t\t<Type>Inventory</Type>\n\t\t</inv>\n\t</Components>\n</root>\n";
+    let mut inherited = InheritedNames::default();
+    inherited.insert(
+        "inv".to_string(),
+        InheritedNameInfo {
+            component_sources: vec!["Parent.def".to_string()],
+            ..Default::default()
+        },
+    );
+    let findings = analyze_def(text, &inherited, &[]).expect("analyze_def ok");
+    let hits: Vec<_> = findings
+        .iter()
+        .filter(|f| f.check == "inherited-name-collision")
+        .collect();
+    assert_eq!(hits.len(), 1, "{findings:?}");
+    assert!(
+        hits[0].message.contains("组件槽 inv 与继承链上的声明同名"),
+        "{hits:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 注册表面:规则数/顺序/Debug 面/重复注册 panic/无根文档直跑
+// ---------------------------------------------------------------------------
+
+#[test]
+fn rule_registry_reports_len_order_and_debug() {
+    let reg = all_rules();
+    assert!(!reg.is_empty());
+    assert_eq!(reg.len(), 15);
+    let debug = format!("{reg:?}");
+    assert!(debug.starts_with('['), "{debug}");
+    let ids: Vec<String> = debug
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .split(", ")
+        .map(|s| s.trim_matches('"').to_string())
+        .collect();
+    // 注册序 = 稳定输出序:phantom-type 领头,def↔Python 一致性规则收尾。
+    assert_eq!(ids.first().map(String::as_str), Some("phantom-type"));
+    assert_eq!(
+        ids.last().map(String::as_str),
+        Some("def-method-missing-in-python")
+    );
+}
+
+#[test]
+fn empty_rule_registry_is_empty() {
+    let reg = kode_server::lint::RuleRegistry::default();
+    assert!(reg.is_empty());
+    assert_eq!(reg.len(), 0);
+}
+
+#[test]
+#[should_panic(expected = "registered twice")]
+fn rule_registry_rejects_duplicate_rule_id() {
+    use kode_server::lint::{rules, RuleRegistry};
+    let mut reg = RuleRegistry::new();
+    reg.push(Box::new(rules::PhantomTypeRule));
+    reg.push(Box::new(rules::PhantomTypeRule));
+}
+
+#[test]
+fn rules_on_rootless_document_produce_nothing() {
+    let text = "not xml at all";
+    let doc = kode_parser::xml::parse(text, true);
+    assert!(doc.root().is_none(), "无标签文本不应产出根元素");
+    let line_map = kode_parser::diag::LineMap::new(text);
+    let ctx = RuleContext {
+        text,
+        doc: &doc,
+        line_map: &line_map,
+        inherited: &InheritedNames::default(),
+        known_types: &Default::default(),
+        python: Default::default(),
+    };
+    assert!(all_rules().run(&ctx).is_empty());
+}

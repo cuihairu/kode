@@ -896,4 +896,208 @@ mod tests {
         assert!(decode_key(Some("zz")).is_err());
         assert!(decode_key(Some(&"0".repeat(64))).is_ok());
     }
+
+    /// PhysicalTableWire.engine 缺省 → InnoDB(serde default = default_engine)。
+    #[test]
+    fn physical_table_wire_defaults_engine_to_innodb() {
+        let plan = plan_export(json!({
+            "derivation": mini_derivation(),
+            "physicalTables": [{
+                "name": "tbl_Avatar",
+                "columns": {"id": "bigint(20) unsigned", "sm_autoLoad": "tinyint", "sm_name": "varchar(255)"},
+                "primaryKey": ["id"],
+                "indexes": []
+            }, {
+                "name": "tbl_Avatar_items",
+                "columns": {"id": "bigint(20) unsigned", "parentID": "bigint(20) unsigned", "sm_value": "varchar(255)"},
+                "primaryKey": ["id"],
+                "indexes": []
+            }]
+        }))
+        .unwrap();
+        assert_eq!(plan["queries"].as_array().map(Vec::len), Some(2));
+    }
+
+    /// 明文档 + keyRoot:keyRoot 分支走 is_encrypted=false → Ok(None),照常读。
+    /// 明文档 + 显式 keyHex:keyHex 优先通道,钥不匹配明文 → 如实报错。
+    #[test]
+    fn read_side_tolerates_key_root_on_plain_archive() {
+        let dir = temp_dir("plain-root");
+        let archive_path = dir.join("avatar.kdpclone");
+        export_archive(json!({
+            "path": archive_path.to_string_lossy(),
+            "entity": "Avatar",
+            "redactSensitive": false,
+            "rows": [
+                { "table": "tbl_Avatar", "values": [
+                    {"t":"big-u-int","v":7}, {"t":"u-int","v":1}, {"t":"text","v":"hero"}
+                ] }
+            ]
+        }))
+        .unwrap();
+
+        let rows = read_archive_rows(json!({
+            "path": archive_path.to_string_lossy(),
+            "keyRoot": dir.join("clone-keys").to_string_lossy()
+        }))
+        .unwrap();
+        assert!(
+            rows.to_string().contains("hero"),
+            "明文档带 keyRoot 应照常读"
+        );
+
+        let inspected = inspect_archive(json!({
+            "path": archive_path.to_string_lossy(),
+            "keyHex": "00".repeat(32)
+        }));
+        assert!(
+            inspected.is_err(),
+            "明文档配显式钥必须如实拒绝(钥不匹配明文)"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// redactSensitive 缺省 = true:不传该字段且无计划 → 拒绝(证明默认真值,
+    /// 若默认 false 导出会静默成功)。
+    #[test]
+    fn export_redact_sensitive_defaults_to_true() {
+        let dir = temp_dir("redact-default");
+        let err = export_archive(json!({
+            "path": dir.join("a.kdpclone").to_string_lossy(),
+            "entity": "Avatar",
+            "rows": []
+        }))
+        .unwrap_err();
+        assert!(err.contains("requires the export plan"), "话术: {err}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// 加密档钥丢失时 planImport 在开档前如实报错(resolve_read_key 的 `?`)。
+    #[test]
+    fn plan_import_reports_missing_key_store_honestly() {
+        let dir = temp_dir("plan-miss");
+        let keys = dir.join("clone-keys");
+        let archive_path = dir.join("avatar.kdpclone");
+        let plan_value = plan_export(json!({
+            "derivation": mini_derivation(),
+            "physicalTables": mini_physical()
+        }))
+        .unwrap();
+        export_archive(json!({
+            "path": archive_path.to_string_lossy(),
+            "entity": "Avatar",
+            "redactSensitive": true,
+            "plan": plan_value,
+            "keyRoot": keys.to_string_lossy(),
+            "rows": [
+                { "table": "tbl_Avatar", "values": [
+                    {"t":"big-u-int","v":7}, {"t":"u-int","v":1}, {"t":"text","v":"hero"}
+                ] }
+            ]
+        }))
+        .unwrap();
+        std::fs::remove_dir_all(&keys).unwrap();
+
+        let err = plan_import(json!({
+            "path": archive_path.to_string_lossy(),
+            "keyRoot": keys.to_string_lossy(),
+            "target": {
+                "environment": "local",
+                "dbInterface": "mysql",
+                "writable": true,
+                "host": "127.0.0.1",
+                "port": 3306,
+                "database": "kbe_local"
+            },
+            "derivation": mini_derivation(),
+            "physicalTables": mini_physical(),
+            "snapshot": { "uniqueKeys": [], "existingValues": [] }
+        }))
+        .unwrap_err();
+        assert!(
+            err.contains("key is missing from the key store"),
+            "planImport 缺钥话术: {err}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// 模式/autoload 解析:文档化取值接受,未知值如实报错。
+    #[test]
+    fn parse_mode_and_autoload_accept_documented_values_only() {
+        assert_eq!(parse_mode(None).unwrap(), ImportMode::AllocateNewIds);
+        assert_eq!(
+            parse_mode(Some("allocate-new-ids")).unwrap(),
+            ImportMode::AllocateNewIds
+        );
+        assert_eq!(
+            parse_mode(Some("preserve-id-if-empty")).unwrap(),
+            ImportMode::PreserveIfEmpty
+        );
+        assert!(parse_mode(Some("bogus"))
+            .unwrap_err()
+            .contains("unknown import mode `bogus`"));
+
+        assert_eq!(parse_autoload(None).unwrap(), AutoLoadPolicy::ForceDisabled);
+        assert_eq!(
+            parse_autoload(Some("force-disabled")).unwrap(),
+            AutoLoadPolicy::ForceDisabled
+        );
+        assert_eq!(
+            parse_autoload(Some("preserve-archive")).unwrap(),
+            AutoLoadPolicy::PreserveArchive
+        );
+        assert!(parse_autoload(Some("bogus"))
+            .unwrap_err()
+            .contains("unknown autoload policy `bogus`"));
+    }
+
+    /// planImport options:unique-seed reject/自定义、mode/autoload 文档化值
+    /// 经 wire 全链贯通(计划成形)。
+    #[test]
+    fn plan_import_options_variants_shape_plans() {
+        let dir = temp_dir("options");
+        let archive_path = dir.join("avatar.kdpclone");
+        export_archive(json!({
+            "path": archive_path.to_string_lossy(),
+            "entity": "Avatar",
+            "redactSensitive": false,
+            "rows": [
+                { "table": "tbl_Avatar", "values": [
+                    {"t":"big-u-int","v":7}, {"t":"u-int","v":1}, {"t":"text","v":"hero"}
+                ] }
+            ]
+        }))
+        .unwrap();
+
+        let base = |options: serde_json::Value| {
+            json!({
+                "path": archive_path.to_string_lossy(),
+                "target": {
+                    "environment": "local",
+                    "dbInterface": "mysql",
+                    "writable": true,
+                    "host": "127.0.0.1",
+                    "port": 3306,
+                    "database": "kbe_local"
+                },
+                "derivation": mini_derivation(),
+                "physicalTables": mini_physical(),
+                "snapshot": { "uniqueKeys": [], "existingValues": [] },
+                "options": options
+            })
+        };
+
+        let plan = plan_import(base(json!({ "unique-seed": "reject" }))).unwrap();
+        assert!(plan["statements"].as_array().is_some());
+        let plan = plan_import(base(json!({ "unique-seed": "copy-1" }))).unwrap();
+        assert!(plan["statements"].as_array().is_some());
+        let plan = plan_import(base(json!({
+            "mode": "preserve-id-if-empty",
+            "autoload": "preserve-archive"
+        })))
+        .unwrap();
+        assert!(plan["statements"].as_array().is_some());
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

@@ -553,11 +553,9 @@ fn parse_custom_type_properties(
     properties
 }
 
-
 mod gen;
 
 use gen::generate;
-
 
 fn parse_params(params: Value) -> Result<SdkGenerateParams, String> {
     let language = params
@@ -658,5 +656,203 @@ mod tests {
             );
         }
     }
-}
 
+    /// 结构错误判定只收束 fxp 抛错同类(未闭合/错配/游离闭合/非法标签名);
+    /// 良构文档不得误判(误判会整份 def 被跳过)。
+    #[test]
+    fn is_structural_error_matches_wire_skip_class() {
+        assert!(!is_structural_error(&xml::parse(
+            "<root><A/></root>",
+            false
+        )));
+        // 闭合标签缺名(`</>`)→ InvalidTagName,与 fxp 抛错同类。
+        assert!(is_structural_error(&xml::parse("<root></></root>", false)));
+    }
+
+    /// 引用目标名:文本形态(trim 后非空)优先,元素形态取首个元素子名,
+    /// 纯注释子节点 → 空串。
+    #[test]
+    fn reference_target_name_prefers_text_then_element_name() {
+        let doc = xml::parse("<root><Parent> Mob </Parent></root>", false);
+        let root = doc.root().unwrap();
+        let parent = doc.child_element(root, "Parent").unwrap();
+        assert_eq!(reference_target_name(&doc, parent), "Mob");
+
+        let doc = xml::parse("<root><Parent><Entity/></Parent></root>", false);
+        let root = doc.root().unwrap();
+        let parent = doc.child_element(root, "Parent").unwrap();
+        assert_eq!(reference_target_name(&doc, parent), "Entity");
+
+        let doc = xml::parse("<root><Parent><!-- c --></Parent></root>", false);
+        let root = doc.root().unwrap();
+        let parent = doc.child_element(root, "Parent").unwrap();
+        assert_eq!(reference_target_name(&doc, parent), "");
+    }
+
+    /// 缺 `<Type>` 子元素 → (空, None);不动 Flags 等兄弟节点。
+    #[test]
+    fn read_def_type_node_without_type_is_empty() {
+        let doc = xml::parse("<root><hp><Flags>ALL_CLIENTS</Flags></hp></root>", false);
+        let root = doc.root().unwrap();
+        let hp = doc.child_element(root, "hp").unwrap();
+        let (type_name, element_type) = read_def_type_node(&doc, doc.child_element(hp, "Type"));
+        assert_eq!(type_name, "");
+        assert_eq!(element_type, None);
+    }
+
+    /// 组件槽类型名:无 `<Type>` → 空;直文本空时回落首个元素子名;全空 → 空。
+    #[test]
+    fn slot_type_name_falls_back_to_first_element_child() {
+        let doc = xml::parse("<root><bag></bag></root>", false);
+        let root = doc.root().unwrap();
+        let bag = doc.child_element(root, "bag").unwrap();
+        assert_eq!(slot_type_name(&doc, bag), "");
+
+        let doc = xml::parse("<root><bag><Type><Inventory/></Type></bag></root>", false);
+        let root = doc.root().unwrap();
+        let bag = doc.child_element(root, "bag").unwrap();
+        assert_eq!(slot_type_name(&doc, bag), "Inventory");
+
+        let doc = xml::parse("<root><bag><Type></Type></bag></root>", false);
+        let root = doc.root().unwrap();
+        let bag = doc.child_element(root, "bag").unwrap();
+        assert_eq!(slot_type_name(&doc, bag), "");
+    }
+
+    const CLIENT_PROP_DEF: &str = "<root><Properties><vis>\
+<Type>UINT32</Type><Flags>ALL_CLIENTS</Flags></vis></Properties></root>";
+
+    #[test]
+    fn parse_component_properties_missing_def_is_none() {
+        let defs = ComponentDefs::new();
+        assert!(parse_component_properties("Ghost", &defs, &mut HashSet::new()).is_none());
+    }
+
+    /// 组件 def 结构错误 → None(调用方跳过该槽),不 panic。
+    #[test]
+    fn parse_component_properties_structural_error_is_none() {
+        let mut defs = ComponentDefs::new();
+        defs.insert("Bad".into(), "<root></></root>".into());
+        assert!(parse_component_properties("Bad", &defs, &mut HashSet::new()).is_none());
+    }
+
+    /// 无 `Properties` 段的组件 → 空清单(仍是 Some,槽不丢)。
+    #[test]
+    fn parse_component_properties_without_properties_is_empty() {
+        let mut defs = ComponentDefs::new();
+        defs.insert("NP".into(), "<root><Parent>Ghost</Parent></root>".into());
+        let out = parse_component_properties("NP", &defs, &mut HashSet::new()).unwrap();
+        assert!(out.is_empty());
+    }
+
+    /// 接口与父类递归并入客户端可见属性,同名去重(自身优先)。
+    #[test]
+    fn parse_component_properties_merges_interface_and_parent_with_dedup() {
+        let mut defs = ComponentDefs::new();
+        defs.insert(
+            "Comp".into(),
+            r#"<root>
+              <Properties><inv><Type>UINT32</Type><Flags>ALL_CLIENTS</Flags></inv></Properties>
+              <Interfaces><iface><Shared/></iface></Interfaces>
+              <Parent>Base</Parent>
+            </root>"#
+                .into(),
+        );
+        defs.insert(
+            "Shared".into(),
+            r#"<root>
+              <Properties>
+                <inv><Type>UINT32</Type><Flags>ALL_CLIENTS</Flags></inv>
+                <sharedOnly><Type>STRING</Type><Flags>OTHER_CLIENTS</Flags></sharedOnly>
+              </Properties>
+            </root>"#
+                .into(),
+        );
+        defs.insert(
+            "Base".into(),
+            "<root><Properties><mail><Type>STRING</Type>\
+<Flags>BASE_AND_CLIENT</Flags></mail></Properties></root>"
+                .into(),
+        );
+        let out = parse_component_properties("Comp", &defs, &mut HashSet::new()).unwrap();
+        let names: Vec<&str> = out.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["inv", "sharedOnly", "mail"],
+            "接口先于父类,同名去重"
+        );
+    }
+
+    /// 无 `Properties` 段的实体照常成模;组件空槽(缺 `<Type>`)跳过不炸。
+    #[test]
+    fn parse_entity_skips_empty_component_slot_and_supports_no_properties() {
+        let entity = parse_entity(
+            "<root><Components><bag></bag></Components></root>",
+            "Empty",
+            &ComponentDefs::new(),
+        )
+        .unwrap();
+        assert_eq!(entity.name, "Empty");
+        assert!(entity.properties.is_empty());
+        assert!(entity.components.is_empty());
+    }
+
+    /// 槽 `<Type>` 直文本空但含元素子 → 元素名即组件类型;组件客户端属性入槽。
+    #[test]
+    fn parse_entity_resolves_slot_type_from_element_child() {
+        let mut defs = ComponentDefs::new();
+        defs.insert("Inventory".into(), CLIENT_PROP_DEF.into());
+        let entity = parse_entity(
+            "<root><Components><bag><Type><Inventory/></Type></bag></Components></root>",
+            "E",
+            &defs,
+        )
+        .unwrap();
+        assert_eq!(entity.components.len(), 1);
+        assert_eq!(entity.components[0].slot, "bag");
+        assert_eq!(entity.components[0].type_name, "Inventory");
+        assert_eq!(entity.components[0].properties[0].name, "vis");
+    }
+
+    /// 连续空白折叠成单空格;纯空白 → None。
+    #[test]
+    fn normalize_xml_text_collapses_whitespace() {
+        assert_eq!(normalize_xml_text("  a \n b\tc  "), Some("a b c".into()));
+        assert_eq!(normalize_xml_text("   \n  "), None);
+    }
+
+    /// 结构串渲染:自闭合短形;嵌套元素递归,文本原样保留。
+    #[test]
+    fn render_structure_node_renders_self_closing_and_nested() {
+        let doc = xml::parse("<root><Props/><FIX><Props/> tail </FIX></root>", false);
+        let root = doc.root().unwrap();
+        let props = doc.child_element(root, "Props").unwrap();
+        assert_eq!(render_structure_node(&doc, props), "<Props/>");
+        let fix = doc.child_element(root, "FIX").unwrap();
+        assert_eq!(
+            render_structure_node(&doc, fix),
+            "<FIX><Props/> tail </FIX>"
+        );
+    }
+
+    /// 自定义类型 rawValue:文本 chunk 规范化 + 元素结构串,跳过
+    /// implementedBy/Properties 与注释;全空 → ALIAS。
+    #[test]
+    fn extract_custom_type_raw_value_and_alias_type() {
+        let doc = xml::parse(
+            "<root>\n  <MY_TYPE> UINT32 <implementedBy>sys</implementedBy><!-- n --> \
+</MY_TYPE>\n  <ALIAS_TYPE>   </ALIAS_TYPE>\n</root>",
+            false,
+        );
+        let root = doc.root().unwrap();
+        let my = doc.child_element(root, "MY_TYPE").unwrap();
+        assert_eq!(extract_custom_type_raw_value(&doc, my), "UINT32");
+        let alias = doc.child_element(root, "ALIAS_TYPE").unwrap();
+        assert_eq!(extract_custom_type_raw_value(&doc, alias), "ALIAS");
+
+        assert_eq!(extract_custom_type_alias_type("UINT32"), "UINT32");
+        assert_eq!(extract_custom_type_alias_type("_priv"), "_priv");
+        assert_eq!(extract_custom_type_alias_type("9abc"), "ALIAS");
+        assert_eq!(extract_custom_type_alias_type(""), "ALIAS");
+    }
+}

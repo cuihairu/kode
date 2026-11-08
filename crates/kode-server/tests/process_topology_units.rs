@@ -488,3 +488,167 @@ fn parent_cycle_a_to_b_to_a_terminates() {
     let findings = validate_process_topology(xml, None, defs);
     assert!(findings.len() <= 4);
 }
+
+// ---------------------------------------------------------------------------
+// 清单/注册表解析边角:非 process 子元素、rootless entities、分段注册形态
+// ---------------------------------------------------------------------------
+
+/// 清单根下的非 `process` 子元素被跳过,不影响校验(不 panic、不误报)。
+#[test]
+fn manifest_ignores_non_process_children() {
+    let xml = r#"<processTopology>
+      <metadata><author>kbe</author></metadata>
+      <process name="machine_1" role="machine"><port>20099</port></process>
+      <process name="cellapp_1" role="cellapp"><port>20015</port></process>
+      <process name="baseapp_1" role="baseapp"><port>20005</port></process>
+      <process name="dbmgr_1" role="dbmgr"><port>20010</port></process>
+    </processTopology>"#;
+    let findings = validate_manifest(xml);
+    assert!(
+        findings.is_empty(),
+        "非 process 子元素不应产出发现, got {:?}",
+        codes(&findings)
+    );
+}
+
+/// entities.xml 原文无法解析出根 → 空注册表;category=entity 的 def 仍进
+/// 检测集(缺 baseapp → D2 照常)。
+#[test]
+fn rootless_entities_xml_degrades_to_empty_registry() {
+    let defs = vec![DefInput {
+        name: "E".into(),
+        category: "entity".into(),
+        file_path: "/defs/entity_defs/E.def".into(),
+        text: "<root><Properties><name><Type>STRING</Type><Flags>BASE</Flags></name></Properties></root>".into(),
+    }];
+    let xml = r#"<processTopology>
+      <process name="machine_1" role="machine"><port>20099</port></process>
+    </processTopology>"#;
+    let findings = validate_process_topology(xml, Some("not xml at all"), defs);
+    assert!(
+        codes(&findings).contains(&"kbengine.processTopologyMissingBaseapp"),
+        "got {:?}",
+        codes(&findings)
+    );
+}
+
+/// 分段注册形态(ClientServerEntities/ServerOnlyEntities)与 flat 形态同效:
+/// hosts 声明与注册实体一致 → 零发现(若分组不被解析会报 O2 未知名实体)。
+#[test]
+fn segmented_entities_registry_groups_are_visited() {
+    let defs = vec![
+        DefInput {
+            name: "Avatar".into(),
+            category: "entity".into(),
+            file_path: "/defs/entity_defs/Avatar.def".into(),
+            text: "<root><Properties><hp><Type>UINT32</Type><Flags>CELL_PUBLIC</Flags></hp></Properties></root>".into(),
+        },
+        DefInput {
+            name: "Account".into(),
+            category: "entity".into(),
+            file_path: "/defs/entity_defs/Account.def".into(),
+            text: "<root><Properties><name><Type>STRING</Type><Flags>BASE</Flags></name></Properties></root>".into(),
+        },
+    ];
+    let entities = r#"<root>
+      <ClientServerEntities>
+        <Avatar hasCell="true"/>
+      </ClientServerEntities>
+      <ServerOnlyEntities>
+        <Account hasBase="true"/>
+      </ServerOnlyEntities>
+    </root>"#;
+    let xml = r#"<processTopology>
+      <process name="machine_1" role="machine"><port>20099</port></process>
+      <process name="cellapp_1" role="cellapp"><port>20015</port><hosts>Avatar</hosts></process>
+      <process name="baseapp_1" role="baseapp"><port>20005</port><hosts>Account</hosts></process>
+    </processTopology>"#;
+    let findings = validate_process_topology(xml, Some(entities), defs);
+    assert!(
+        findings.is_empty(),
+        "分段注册形态应被解析, got {findings:#?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// O 类边角:baseapp 无 base 内容 / 角色不能承载实体 / M1 进程名重复
+// ---------------------------------------------------------------------------
+
+/// baseapp 承载无 base 内容的实体 → 归属矛盾(O1,baseapp 分支)。
+#[test]
+fn baseapp_host_without_base_content_reports_o1() {
+    let defs = vec![DefInput {
+        name: "CellOnly".into(),
+        category: "entity".into(),
+        file_path: "/defs/entity_defs/CellOnly.def".into(),
+        text: "<root><Properties><hp><Type>UINT32</Type><Flags>CELL_PUBLIC</Flags></hp></Properties></root>".into(),
+    }];
+    let xml = r#"<processTopology>
+      <process name="machine_1" role="machine"><port>20099</port></process>
+      <process name="cellapp_1" role="cellapp"><port>20015</port></process>
+      <process name="baseapp_1" role="baseapp"><port>20005</port><hosts>CellOnly</hosts></process>
+    </processTopology>"#;
+    let findings = validate_process_topology(xml, None, defs);
+    let f = findings
+        .iter()
+        .find(|f| f.code == "kbengine.processTopologyHostConflict")
+        .expect("baseapp 承载纯 cell 实体应报 O1");
+    assert!(
+        f.message.contains("baseapp 承载的实体无 base 内容"),
+        "message: {}",
+        f.message
+    );
+    assert!(f.message.contains("CellOnly"), "message: {}", f.message);
+    // related 指向实体 def。
+    assert_eq!(f.related.len(), 1);
+    assert_eq!(f.related[0].file_path, "/defs/entity_defs/CellOnly.def");
+}
+
+/// 非 cellapp/baseapp 角色承载实体 → 角色不能承载实体(machine 等不承载)。
+#[test]
+fn wrong_role_hosting_entity_reports_o1() {
+    let defs = vec![DefInput {
+        name: "E".into(),
+        category: "entity".into(),
+        file_path: "/defs/entity_defs/E.def".into(),
+        text: "<root></root>".into(),
+    }];
+    let xml = r#"<processTopology>
+      <process name="machine_1" role="machine"><port>20099</port><hosts>E</hosts></process>
+    </processTopology>"#;
+    let findings = validate_process_topology(xml, None, defs);
+    let f = findings
+        .iter()
+        .find(|f| f.code == "kbengine.processTopologyHostConflict")
+        .expect("非承载角色承载实体应报 O1");
+    assert!(f.message.contains("不能承载实体"), "message: {}", f.message);
+    assert!(f.message.contains("machine"), "message: {}", f.message);
+    assert_eq!(f.related[0].file_path, "/defs/entity_defs/E.def");
+}
+
+/// M1:进程名重复(定位第二个重复名的 name 行;角色非单例+端口不同错开
+/// M2/M3,只出 M1)。
+#[test]
+fn duplicate_process_name_reports_m1() {
+    let xml = r#"<processTopology>
+      <process name="dup" role="cellapp"><port>20003</port></process>
+      <process name="dup" role="cellapp"><port>20004</port></process>
+    </processTopology>"#;
+    let findings = validate_manifest(xml);
+    let m1: Vec<_> = findings
+        .iter()
+        .filter(|f| f.code == "kbengine.processTopologyDuplicateName")
+        .collect();
+    assert_eq!(m1.len(), 1, "got {:?}", codes(&findings));
+    assert_eq!(m1[0].target, "manifest");
+    assert_eq!(m1[0].line, 3, "M1 定位在第二个重复名的 name 行");
+    assert!(m1[0].message.contains("dup"), "message: {}", m1[0].message);
+    assert!(
+        !codes(&findings).contains(&"kbengine.processTopologyDuplicatePort"),
+        "端口不同不应触发 M2"
+    );
+    assert!(
+        !codes(&findings).contains(&"kbengine.processTopologyDuplicateSingletonRole"),
+        "cellapp 非单例不应触发 M3"
+    );
+}

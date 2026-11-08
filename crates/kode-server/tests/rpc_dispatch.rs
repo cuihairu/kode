@@ -326,3 +326,264 @@ fn config_resolve_dispatch_handles_missing_and_bad_params() {
     );
     assert_eq!(error_code_of(&out), error_codes::INVALID_PARAMS);
 }
+
+/// derive 请求并取错误文案(断言树/facts 形态非法)。
+fn derive_err_message(state: &mut ServerState, id: i64, params: serde_json::Value) -> String {
+    let out = handle_message(
+        state,
+        request(
+            id,
+            "$/kode/rpc",
+            json!({"method": "$/kode/config/derive", "params": params}),
+        ),
+    );
+    match &out[0] {
+        Outgoing::Response(r) => r
+            .error
+            .as_ref()
+            .map(|e| e.message.clone())
+            .expect("derive 应返回错误"),
+        Outgoing::Notification(_) => panic!("expected response"),
+    }
+}
+
+/// facts 缺省 → 空派生(无扫描根 → debug 未就绪诊断),不 panic。
+#[test]
+fn config_derive_missing_facts_debug_not_ready_diagnostic() {
+    let mut state = ServerState::new();
+    init(&mut state);
+    let out = handle_message(
+        &mut state,
+        request(
+            12,
+            "$/kode/rpc",
+            json!({"method": "$/kode/config/derive", "params": {"tree": null, "defaultsTree": null}}),
+        ),
+    );
+    let body = response_of(&out);
+    // 无工作区根/配置路径 → 无扫描根,debug 未就绪。
+    assert_eq!(body["derive"]["debug"]["ready"], false);
+    assert!(
+        body["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["scope"] == "debug"
+                && d["severity"] == "warning"
+                && d["message"].as_str().unwrap().contains("debug not ready")),
+        "debug 未就绪应产出 debug 诊断条"
+    );
+}
+
+/// entryScripts 事实进出:facts 解析 + derive 应答逐项回显。
+#[test]
+fn config_derive_echoes_entry_scripts() {
+    let mut state = ServerState::new();
+    init(&mut state);
+    let out = handle_message(
+        &mut state,
+        request(
+            13,
+            "$/kode/rpc",
+            json!({
+                "method": "$/kode/config/derive",
+                "params": {
+                    "tree": null,
+                    "defaultsTree": null,
+                    "facts": {
+                        "workspaceRoot": "/ws",
+                        "customConfigPath": "/proj/assets/res/server/kbengine.xml",
+                        "entryScripts": [{
+                            "process": "baseapp",
+                            "module": "kbengine",
+                            "path": "/proj/assets/scripts/baseapp/kbengine.py",
+                            "exists": false
+                        }]
+                    }
+                }
+            }),
+        ),
+    );
+    let body = response_of(&out);
+    assert_eq!(
+        body["derive"]["entryScripts"][0],
+        json!({
+            "process": "baseapp",
+            "module": "kbengine",
+            "path": "/proj/assets/scripts/baseapp/kbengine.py",
+            "exists": false
+        })
+    );
+    // 入口缺失记 reason,不阻塞 ready。
+    assert_eq!(body["derive"]["debug"]["ready"], true);
+    assert!(body["derive"]["debug"]["reasons"][0]
+        .as_str()
+        .unwrap()
+        .contains("entry script missing"));
+}
+
+/// 树/facts 形态非法的每一条错误文案(Err 不 panic,TS 回退)。
+#[test]
+fn config_derive_rejects_bad_tree_and_facts_shapes() {
+    let mut state = ServerState::new();
+    init(&mut state);
+    let base_facts =
+        || json!({"workspaceRoot": "/ws", "customConfigPath": null, "entryScripts": []});
+    let mut id = 20i64;
+    // tree 非对象 → kind_of 各臂。
+    assert!(derive_err_message(
+        &mut state,
+        id,
+        json!({"tree": true, "defaultsTree": null, "facts": base_facts()})
+    )
+    .contains("应为对象,得到 boolean"));
+    id += 1;
+    assert!(derive_err_message(
+        &mut state,
+        id,
+        json!({"tree": [], "defaultsTree": null, "facts": base_facts()})
+    )
+    .contains("应为对象,得到 array"));
+    id += 1;
+    // children 形态:非数组 / 项非对象。
+    assert!(
+        derive_err_message(
+            &mut state,
+            id,
+            json!({"tree": {"name": "r", "text": "", "children": {}}, "defaultsTree": null, "facts": base_facts()})
+        )
+        .contains("children 应为数组,得到 object")
+    );
+    id += 1;
+    assert!(
+        derive_err_message(
+            &mut state,
+            id,
+            json!({"tree": {"name": "r", "text": "", "children": [123]}, "defaultsTree": null, "facts": base_facts()})
+        )
+        .contains("children 项应为对象,得到 number")
+    );
+    id += 1;
+    // sourceComments 形态:非数组 / 项非字符串。
+    assert!(
+        derive_err_message(
+            &mut state,
+            id,
+            json!({"tree": {"name": "r", "text": "", "children": [], "sourceComments": "nope"}, "defaultsTree": null, "facts": base_facts()})
+        )
+        .contains("sourceComments 应为数组,得到 string")
+    );
+    id += 1;
+    assert!(
+        derive_err_message(
+            &mut state,
+            id,
+            json!({"tree": {"name": "r", "text": "", "children": [], "sourceComments": ["ok", 5]}, "defaultsTree": null, "facts": base_facts()})
+        )
+        .contains("sourceComments 项应为字符串")
+    );
+    id += 1;
+    // facts 形态:非对象 / entryScripts 项非对象。
+    assert!(derive_err_message(
+        &mut state,
+        id,
+        json!({"tree": null, "defaultsTree": null, "facts": "nope"})
+    )
+    .contains("facts 应为对象,得到 string"));
+    id += 1;
+    // children 项显式 null → 拒收,文案报 null(Option 字段的 null 由 serde
+    // 归 None,故顶层 facts:null 不出错;Null 种类文案只在嵌套值上出现)。
+    assert!(derive_err_message(
+        &mut state,
+        id,
+        json!({"tree": {"name": "r", "text": "", "children": [null]}, "defaultsTree": null, "facts": base_facts()})
+    )
+    .contains("children 项应为对象,得到 null"));
+    id += 1;
+    assert!(derive_err_message(
+        &mut state,
+        id,
+        json!({"tree": null, "defaultsTree": null, "facts": {"entryScripts": [42]}})
+    )
+    .contains("entryScripts 项应为对象"));
+}
+
+/// children 键缺省(或显式 null)的树节点 → 按无子元素解析,不报错。
+#[test]
+fn config_derive_node_without_children_parses_as_leaf() {
+    let mut state = ServerState::new();
+    init(&mut state);
+    let out = handle_message(
+        &mut state,
+        request(
+            21,
+            "$/kode/rpc",
+            json!({
+                "method": "$/kode/config/derive",
+                "params": {
+                    "tree": {"name": "", "text": "", "children": [
+                        {"name": "loginapp", "text": "", "children": null},
+                        {"name": "keepalive", "text": "true"}
+                    ], "sourceComments": []},
+                    "defaultsTree": null,
+                    "facts": {"workspaceRoot": "/ws", "customConfigPath": null, "entryScripts": []}
+                }
+            }),
+        ),
+    );
+    // 无 telnet_service 段 → telnet 关闭,但树解析成功、无错误。
+    let body = response_of(&out);
+    assert!(body["derive"].is_object());
+    assert_eq!(body["derive"]["telnet"]["enabled"], false);
+}
+
+/// resolve:dbmgr/databaseInterfaces/default 全要素(含明文密码与分数端口)
+/// + XML 注释进 sourceComments。
+#[test]
+fn config_resolve_db_interface_with_password_and_comments() {
+    let mut state = ServerState::new();
+    init(&mut state);
+    let defaults_xml = "<root>\n\
+<!-- db defaults -->\n\
+<dbmgr>\n\
+<databaseInterfaces>\n\
+<default>\n\
+<host> 127.0.0.1 </host>\n\
+<port> 3307.5 </port>\n\
+<databaseName> kbe </databaseName>\n\
+<auth>\n\
+<username> kbe </username>\n\
+<encrypt> false </encrypt>\n\
+<password> secret </password>\n\
+</auth>\n\
+<unicodeString>\n\
+<characterSet> utf8mb4 </characterSet>\n\
+</unicodeString>\n\
+</default>\n\
+</databaseInterfaces>\n\
+</dbmgr>\n\
+</root>\n";
+    let out = handle_message(
+        &mut state,
+        request(
+            30,
+            "$/kode/rpc",
+            json!({"method": "$/kode/config/resolve", "params": {"defaultsXml": defaults_xml, "customXml": null}}),
+        ),
+    );
+    let body = response_of(&out);
+    // 连接要素全出;encrypt=false → 明文密码回传。
+    let db = &body["dbInterface"];
+    assert_eq!(db["host"], json!("127.0.0.1"));
+    assert_eq!(db["port"], json!(3307.5));
+    assert_eq!(db["username"], json!("kbe"));
+    assert_eq!(db["databaseName"], json!("kbe"));
+    assert_eq!(db["encrypt"], json!(false));
+    assert_eq!(db["characterSet"], json!("utf8mb4"));
+    assert_eq!(db["plainPassword"], json!("secret"));
+    // XML 注释挂所属元素 → sourceComments 出形(注释原文不 trim)。
+    // 树形:顶层空名包装 → root 元素 → dbmgr(注释挂靠它的下一层)。
+    let dbmgr = &body["defaultsTree"]["children"][0]["children"][0];
+    assert_eq!(dbmgr["name"], json!("dbmgr"));
+    assert_eq!(dbmgr["sourceComments"], json!([" db defaults "]));
+}

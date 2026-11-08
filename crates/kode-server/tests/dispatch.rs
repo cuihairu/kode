@@ -1,10 +1,12 @@
 //! kode-server 分派状态机单测:initialize 协商、request_id 贯穿、
 //! 文档同步、取消、健康报告、shutdown/exit 生命周期。
 
+use std::sync::atomic::Ordering;
+
 use serde_json::json;
 
 use kode_protocol::{error_codes, IncomingMessage, Notification, Request, RequestId};
-use kode_server::{handle_message, Outgoing, ServerState};
+use kode_server::{cancel_target, handle_message, CancelRegistry, Outgoing, ServerState};
 
 fn request(id: i64, method: &str, params: serde_json::Value) -> IncomingMessage {
     IncomingMessage::Request(Request {
@@ -382,4 +384,274 @@ fn stale_did_open_is_ignored() {
     let (version, buffer) = state.store.open_buffer(&key).unwrap();
     assert_eq!(version, 5);
     assert_eq!(buffer.text(), "newest");
+}
+
+// ---------------------------------------------------------------------------
+// 取消登记表与 cancel_target 单元(CORE-007 泵侧面)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cancel_registry_pending_hit_sets_flag() {
+    let reg = CancelRegistry::default();
+    let id = RequestId::Number(1);
+    let (flag, early) = reg.begin_cancellable(&id);
+    assert!(!early);
+    assert!(!flag.load(Ordering::SeqCst));
+    // 已 pending 的请求收到取消 → 标志置位(泵睡眠间隙也可见)。
+    reg.request_cancel(&id);
+    assert!(flag.load(Ordering::SeqCst));
+    reg.end_cancellable(&id);
+    // 结束后再取消 → 落 before_start 账,不 panic。
+    reg.request_cancel(&id);
+}
+
+#[test]
+fn cancel_registry_begin_after_early_cancel_reports_early() {
+    let reg = CancelRegistry::default();
+    let id = RequestId::Number(2);
+    reg.request_cancel(&id);
+    let (_flag, early) = reg.begin_cancellable(&id);
+    assert!(early);
+}
+
+#[test]
+fn cancel_target_extracts_or_rejects_id() {
+    let msg = json!({"method": "$/cancelRequest", "params": {"id": 42}});
+    assert_eq!(cancel_target(&msg), Some(RequestId::Number(42)));
+    // 字符串 id 同样可解析(客户端两种形态都合法)。
+    let msg = json!({"method": "$/cancelRequest", "params": {"id": "ext-1"}});
+    assert_eq!(cancel_target(&msg), Some(RequestId::String("ext-1".into())));
+    // 非 cancel 方法 → None。
+    assert_eq!(cancel_target(&json!({"method": "$/kode/health"})), None);
+    // 缺 params/id 或 id 形态不可解析 → None。
+    assert_eq!(cancel_target(&json!({"method": "$/cancelRequest"})), None);
+    assert_eq!(
+        cancel_target(&json!({"method": "$/cancelRequest", "params": {"id": true}})),
+        None
+    );
+}
+
+#[test]
+fn server_state_default_is_fresh() {
+    let state = ServerState::default();
+    assert!(!state.initialized);
+    assert!(!state.shutdown_requested);
+    assert!(!state.exit_requested);
+    assert_eq!(state.restart_generation, 0);
+}
+
+// ---------------------------------------------------------------------------
+// 文本请求边界:非法 URI / 无落点 → null 结果(LSP 允许,不报错)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn text_requests_with_bad_uri_degrade_to_null_or_empty() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    // hover:非法 URI → null 结果。
+    let out = handle_message(
+        &mut state,
+        request(
+            10,
+            "textDocument/hover",
+            json!({"textDocument": {"uri": "not-a-uri"}, "position": {"line": 0, "character": 0}}),
+        ),
+    );
+    assert!(response_of(&out).is_null());
+    // completion 同。
+    let out = handle_message(
+        &mut state,
+        request(
+            11,
+            "textDocument/completion",
+            json!({"textDocument": {"uri": "not-a-uri"}, "position": {"line": 0, "character": 0}}),
+        ),
+    );
+    assert!(response_of(&out).is_null());
+    // definition 同。
+    let out = handle_message(
+        &mut state,
+        request(
+            12,
+            "textDocument/definition",
+            json!({"textDocument": {"uri": "not-a-uri"}, "position": {"line": 0, "character": 0}}),
+        ),
+    );
+    assert!(response_of(&out).is_null());
+    // diagnostic 非法 URI → 空 full 报告。
+    let out = handle_message(
+        &mut state,
+        request(
+            13,
+            "textDocument/diagnostic",
+            json!({"textDocument": {"uri": "not-a-uri"}}),
+        ),
+    );
+    assert_eq!(response_of(&out)["kind"], json!("full"));
+    assert_eq!(response_of(&out)["items"], json!([]));
+}
+
+/// 真正解析失败的 URI(`https://` 非 file 方案被 CanonicalUri 拒收):
+/// 请求面 → null/空产物;通知面(didOpen/didChange/didClose)→ 整体忽略。
+#[test]
+fn unparsable_uri_requests_degrade_and_notifications_are_dropped() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    let uri = "https://example.com/x.def";
+
+    let out = handle_message(
+        &mut state,
+        request(
+            10,
+            "textDocument/hover",
+            json!({"textDocument": {"uri": uri}, "position": {"line": 0, "character": 0}}),
+        ),
+    );
+    assert!(response_of(&out).is_null());
+
+    let out = handle_message(
+        &mut state,
+        request(
+            11,
+            "textDocument/completion",
+            json!({"textDocument": {"uri": uri}, "position": {"line": 0, "character": 0}}),
+        ),
+    );
+    assert!(response_of(&out).is_null());
+
+    let out = handle_message(
+        &mut state,
+        request(
+            12,
+            "textDocument/definition",
+            json!({"textDocument": {"uri": uri}, "position": {"line": 0, "character": 0}}),
+        ),
+    );
+    assert!(response_of(&out).is_null());
+
+    let out = handle_message(
+        &mut state,
+        request(
+            13,
+            "textDocument/diagnostic",
+            json!({"textDocument": {"uri": uri}}),
+        ),
+    );
+    assert_eq!(response_of(&out)["kind"], json!("full"));
+    assert_eq!(response_of(&out)["items"], json!([]));
+
+    // 通知面:URI 解析失败 → 静默丢弃,不入 VFS。
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didOpen",
+            json!({"textDocument": {"uri": uri, "languageId": "x", "version": 1, "text": "a"}}),
+        ),
+    );
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didChange",
+            json!({"textDocument": {"uri": uri, "version": 2}, "contentChanges": [{"text": "b"}]}),
+        ),
+    );
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didClose",
+            json!({"textDocument": {"uri": uri}}),
+        ),
+    );
+    let out = handle_message(&mut state, request(14, "$/kode/health", json!({})));
+    assert!(response_of(&out)["documents"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_eq!(state.store.open_count(), 0);
+}
+
+#[test]
+fn definition_without_landing_returns_null() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    let uri = "file:///workspace/demo/entities/Monster.def";
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didOpen",
+            json!({"textDocument": {"uri": uri, "languageId": "kbengine-def", "version": 1,
+                   "text": "<root>\n\t<Parent>Nobody</Parent>\n</root>\n"}}),
+        ),
+    );
+    // Parent 取值词但语料无父 def(也无注册表)→ null。
+    let out = handle_message(
+        &mut state,
+        request(
+            14,
+            "textDocument/definition",
+            json!({"textDocument": {"uri": uri}, "position": {"line": 1, "character": 11}}),
+        ),
+    );
+    assert!(response_of(&out).is_null());
+    // 未知词 → null。
+    let out = handle_message(
+        &mut state,
+        request(
+            15,
+            "textDocument/definition",
+            json!({"textDocument": {"uri": uri}, "position": {"line": 0, "character": 2}}),
+        ),
+    );
+    assert!(response_of(&out).is_null());
+}
+
+#[test]
+fn malformed_document_sync_notifications_are_ignored() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    // didOpen:缺 textDocument → 反序列化失败,忽略。
+    handle_message(&mut state, notification("textDocument/didOpen", json!({})));
+    assert_eq!(state.store.open_count(), 0);
+    // 非 file URI 的 canonical 解析仍成功 → 照常入 VFS(VFS 与协议层不挑
+    // scheme;语言层才按 Other 类处理)。不 panic。
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didOpen",
+            json!({"textDocument": {"uri": "not-a-uri", "languageId": "x", "version": 1, "text": "a"}}),
+        ),
+    );
+    assert_eq!(state.store.open_count(), 1);
+    // didChange:缺 textDocument → 忽略,不 panic。
+    handle_message(
+        &mut state,
+        notification("textDocument/didChange", json!({})),
+    );
+    // 同文档 version 递增的 didChange 照常生效。
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didChange",
+            json!({"textDocument": {"uri": "not-a-uri", "version": 2}, "contentChanges": [{"text": "b"}]}),
+        ),
+    );
+    let out = handle_message(&mut state, request(20, "$/kode/health", json!({})));
+    let docs = response_of(&out)["documents"].as_array().unwrap();
+    assert_eq!(docs.len(), 1);
+    assert_eq!(docs[0]["version"], json!(2));
+    // didClose:缺 textDocument → 忽略,不 panic。
+    handle_message(&mut state, notification("textDocument/didClose", json!({})));
+    // 已开文档的 didClose 照常关闭。
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didClose",
+            json!({"textDocument": {"uri": "not-a-uri"}}),
+        ),
+    );
+    let out = handle_message(&mut state, request(21, "$/kode/health", json!({})));
+    assert!(response_of(&out)["documents"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 }

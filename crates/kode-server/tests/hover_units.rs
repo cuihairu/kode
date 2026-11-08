@@ -3,7 +3,10 @@
 //! 覆盖面:word_at 坐标(UTF-16/emoji/CRLF)、六类符号签名面、`<Parent>`
 //! 继承链面(链/接口/组件平铺/环截断/缺父)、成员展开、engine.remove 清理。
 
-use kode_server::hover::{word_at, HoverEngine, HoverFace, HoverResponse};
+use kode_server::hover::{
+    render_markdown, word_at, ChainNodeInfo, HoverEngine, HoverFace, HoverResponse, HoverSignature,
+    HoverSymbol, InheritedChain, MemberMethod, MemberProperty, MemberSummary,
+};
 use kode_vfs::store::{DocumentKey, RootId};
 use kode_vfs::uri::CanonicalUri;
 
@@ -366,4 +369,326 @@ fn non_declaration_files_have_no_hover() {
     feed(&mut engine, "/proj/notes.txt", text);
     let doc_key = key("/proj/notes.txt");
     assert!(hover_on(&engine, &doc_key, text, "hover_target").is_none());
+}
+
+// ---------------------------------------------------------------------------
+// 词提取:行尾无换行 / 空行(定位层边界)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn word_at_last_line_without_newline() {
+    // 末行无终止换行:line_bounds 走 text.len() 收尾分支。
+    let text = "abc\nxyz";
+    assert_eq!(word_at(text, 1, 1).as_deref(), Some("xyz"));
+    // 末行词尾紧贴。
+    assert_eq!(word_at(text, 1, 3).as_deref(), Some("xyz"));
+}
+
+#[test]
+fn word_at_empty_line_returns_none() {
+    // 行内容为空 → chars 为空 → None。
+    let text = "abc\n\ndef";
+    assert_eq!(word_at(text, 1, 0), None);
+}
+
+// ---------------------------------------------------------------------------
+// 引擎默认态与 Other 文件声明行入口
+// ---------------------------------------------------------------------------
+
+#[test]
+fn hover_engine_default_still_resolves_entities_from_passed_text() {
+    // 默认引擎(未喂语料)下 entities.xml 悬停仍由送入文本解析:注册项
+    // hover 来自 parse,语料缺失只体现在 def_exists=false 与回退文件名。
+    let engine = HoverEngine::default();
+    let text = "<root>\n\t<Avatar/>\n</root>\n";
+    let doc_key = key("/proj/scripts/entities.xml");
+    let hover = hover_on(&engine, &doc_key, text, "Avatar").expect("注册项悬停不依赖语料");
+    assert_eq!(hover.signature.def_exists, Some(false));
+    assert_eq!(hover.signature.def_file.as_deref(), Some("Avatar.def"));
+}
+
+#[test]
+fn hover_at_line_other_file_returns_none() {
+    let mut engine = HoverEngine::new();
+    let text = "plain text\n";
+    feed(&mut engine, "/proj/notes.txt", text);
+    let doc_key = key("/proj/notes.txt");
+    assert!(engine.hover_at_line(&doc_key, text, 1, "plain").is_none());
+}
+
+// ---------------------------------------------------------------------------
+// 继承链边界:无 Type 组件跳过 / 组件父走 components/ 目录
+// ---------------------------------------------------------------------------
+
+#[test]
+fn chain_skips_component_without_type() {
+    let mut engine = HoverEngine::new();
+    feed(
+        &mut engine,
+        "/proj/scripts/entities.xml",
+        "<root>\n\t<Orphan/>\n</root>\n",
+    );
+    let def_text = "<root>\n\
+\t<Components>\n\
+\t\t<orphan>\n\
+\t\t\t<Persistent> true </Persistent>\n\
+\t\t</orphan>\n\
+\t</Components>\n\
+</root>\n";
+    feed(
+        &mut engine,
+        "/proj/scripts/entity_defs/Orphan.def",
+        def_text,
+    );
+    let doc_key = key("/proj/scripts/entity_defs/Orphan.def");
+    let hover = engine
+        .hover_at_line(&doc_key, def_text, 1, "Orphan")
+        .expect("entity hover");
+    let chain = hover.inherited.expect("chain");
+    // 无 Type 的组件声明不进链面。
+    assert!(chain.components.is_empty());
+}
+
+#[test]
+fn chain_follows_component_parent_in_components_dir() {
+    let mut engine = HoverEngine::new();
+    feed(
+        &mut engine,
+        "/proj/scripts/entities.xml",
+        "<root>\n\t<Wrench/>\n</root>\n",
+    );
+    feed(
+        &mut engine,
+        "/proj/scripts/entity_defs/components/Wrench.def",
+        "<root>\n\t<Parent>BaseTool</Parent>\n\t<Properties>\n\t\t<size>\n\t\t\t<Type> UINT8 </Type>\n\t\t</size>\n\t</Properties>\n</root>\n",
+    );
+    feed(
+        &mut engine,
+        "/proj/scripts/entity_defs/components/BaseTool.def",
+        "<root>\n\t<Properties>\n\t\t<weight>\n\t\t\t<Type> FLOAT </Type>\n\t\t</weight>\n\t</Properties>\n</root>\n",
+    );
+    let text = "<root>\n\t<Parent>BaseTool</Parent>\n</root>\n";
+    let doc_key = key("/proj/scripts/entity_defs/components/Wrench.def");
+    let hover = engine
+        .hover_at_line(&doc_key, text, 1, "Wrench")
+        .expect("component hover");
+    let chain = hover.inherited.expect("chain");
+    // 组件父按 components/ 目录解析(非默认 defsRoot)。
+    let names: Vec<&str> = chain.parent_chain.iter().map(|n| n.name.as_str()).collect();
+    assert_eq!(names, vec!["BaseTool"]);
+    assert!(chain.parent_chain[0].exists);
+    assert_eq!(chain.members.len(), 1);
+    assert_eq!(chain.members[0].entity, "BaseTool");
+    assert_eq!(chain.members[0].properties[0].name, "weight");
+    assert_eq!(
+        chain.members[0].properties[0].r#type.as_deref(),
+        Some("FLOAT")
+    );
+}
+
+// ---------------------------------------------------------------------------
+// render_markdown:属性/方法/通用三段 + 链面逐字段(与 TS getSymbolHover 同文案)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn render_markdown_property_emits_all_annotation_fields() {
+    let mut engine = HoverEngine::new();
+    let def_text = "<root>\n\
+\t<Properties>\n\
+\t\t<shield>\n\
+\t\t\t<Type> UINT32 </Type>\n\
+\t\t\t<Flags> ALL_CLIENTS </Flags>\n\
+\t\t\t<Default> 42 </Default>\n\
+\t\t\t<DetailLevel> HIGH </DetailLevel>\n\
+\t\t\t<DatabaseLength> 8 </DatabaseLength>\n\
+\t\t\t<Identifier> true </Identifier>\n\
+\t\t</shield>\n\
+\t</Properties>\n\
+</root>\n";
+    feed(&mut engine, "/proj/scripts/entity_defs/Guard.def", def_text);
+    let doc_key = key("/proj/scripts/entity_defs/Guard.def");
+    let hover = hover_on(&engine, &doc_key, def_text, "shield").expect("property hover");
+    assert_eq!(hover.face, HoverFace::DefProperty);
+    assert_eq!(hover.signature.default_value.as_deref(), Some("42"));
+    assert_eq!(hover.signature.database_length.as_deref(), Some("8"));
+    assert_eq!(hover.signature.identifier.as_deref(), Some("true"));
+    let md = render_markdown(&hover);
+    // 字段序与 TS getSymbolHover 属性区块逐字节同:Type→Flags→Default→DetailLevel→DatabaseLength→Identifier。
+    assert!(md.contains("**Default**: `42`"));
+    assert!(md.contains("**DetailLevel**: `HIGH`"));
+    assert!(md.contains("**DatabaseLength**: `8`"));
+    assert!(md.contains("**Identifier**: `true`"));
+}
+
+#[test]
+fn render_markdown_method_emits_args_and_exposed() {
+    let engine = workspace();
+    let doc_key = key("/proj/scripts/entity_defs/Avatar.def");
+    let hover = hover_on(&engine, &doc_key, AVATAR_DEF, "onRpc").expect("method hover");
+    let md = render_markdown(&hover);
+    assert!(md.contains("**参数个数**: 2"));
+    assert!(md.contains("**Args**: `UINT32, STRING`"));
+    assert!(md.contains("**Exposed**: `true`"));
+    assert!(md.contains("该方法可被客户端远程调用。"));
+    // 无 Args / 未 Exposed 的方法面:无 Args 块、无 Exposed 段。
+    let hover = hover_on(&engine, &doc_key, AVATAR_DEF, "onHint").expect("client method hover");
+    let md = render_markdown(&hover);
+    assert!(md.contains("**参数个数**: 0"));
+    assert!(!md.contains("**Args**"));
+    assert!(!md.contains("**Exposed**"));
+}
+
+#[test]
+fn render_markdown_component_emits_persistent_and_type() {
+    let engine = workspace();
+    let doc_key = key("/proj/scripts/entity_defs/Avatar.def");
+    let hover = hover_on(&engine, &doc_key, AVATAR_DEF, "inventory").expect("component hover");
+    let md = render_markdown(&hover);
+    assert!(md.contains("**Component Type**: `Inventory`"));
+    assert!(md.contains("**Persistent**: `true`"));
+}
+
+#[test]
+fn render_markdown_types_and_alias_generic_fields() {
+    let mut engine = HoverEngine::new();
+    let types_text = "<root>\n\
+\t<ITEMS>\n\t\tARRAY\n\t\t<of> UINT32 </of>\n\t</ITEMS>\n\
+\t<HP>\n\t\tUINT16\n\t</HP>\n\
+</root>\n";
+    feed(&mut engine, "/proj/scripts/types.xml", types_text);
+    let doc_key = key("/proj/scripts/types.xml");
+    let array = hover_on(&engine, &doc_key, types_text, "ITEMS").expect("array hover");
+    let md = render_markdown(&array);
+    assert!(md.contains("**TypeKind**: `array`"));
+    let redirect = hover_on(&engine, &doc_key, types_text, "HP").expect("redirect hover");
+    let md = render_markdown(&redirect);
+    assert!(md.contains("**AliasType**: `UINT16`"));
+
+    let alias_key = key("/proj/scripts/alias.xml");
+    let alias_text = "<root>\n\t<HP_ALIAS>\n\t\t<Type> HP </Type>\n\t</HP_ALIAS>\n</root>\n";
+    feed(&mut engine, "/proj/scripts/alias.xml", alias_text);
+    let alias = hover_on(&engine, &alias_key, alias_text, "HP_ALIAS").expect("alias hover");
+    let md = render_markdown(&alias);
+    assert!(md.contains("**AliasType**: `HP`"));
+}
+
+#[test]
+fn render_markdown_entity_with_full_chain() {
+    let chain = InheritedChain {
+        parent_chain: vec![
+            ChainNodeInfo {
+                name: "Monster".into(),
+                exists: true,
+            },
+            ChainNodeInfo {
+                name: "Ghost".into(),
+                exists: false,
+            },
+        ],
+        interfaces: vec![
+            ChainNodeInfo {
+                name: "ROLE".into(),
+                exists: true,
+            },
+            ChainNodeInfo {
+                name: "LOST".into(),
+                exists: false,
+            },
+        ],
+        components: vec![ChainNodeInfo {
+            name: "Inventory".into(),
+            exists: true,
+        }],
+        cycle_truncated: true,
+        members: vec![
+            MemberSummary {
+                entity: "Monster".into(),
+                exists: true,
+                properties: vec![
+                    MemberProperty {
+                        name: "ferocity".into(),
+                        r#type: Some("UINT16".into()),
+                    },
+                    MemberProperty {
+                        name: "misc".into(),
+                        r#type: None,
+                    },
+                ],
+                methods: vec![
+                    MemberMethod {
+                        name: "onRpc".into(),
+                        facet: "base",
+                    },
+                    MemberMethod {
+                        name: "onHint".into(),
+                        facet: "client",
+                    },
+                ],
+            },
+            MemberSummary {
+                entity: "Ghost".into(),
+                exists: false,
+                properties: vec![],
+                methods: vec![],
+            },
+        ],
+    };
+    let response = HoverResponse {
+        face: HoverFace::DefEntity,
+        symbol: HoverSymbol {
+            name: "Avatar".into(),
+            kind: "entity".into(),
+            facet: None,
+            section: "Entity",
+        },
+        signature: HoverSignature {
+            parent: Some("Monster".into()),
+            ..HoverSignature::default()
+        },
+        inherited: Some(chain),
+    };
+    let md = render_markdown(&response);
+    assert!(md.contains("**Avatar**"));
+    assert!(md.contains("Entity中的自定义定义。"));
+    assert!(md.contains("**Parent**: `Monster`"));
+    assert!(md.contains("**def 链**"));
+    assert!(md.contains("- **Parent 链**: `Monster` → `Ghost`(def 缺失)(共 2 层;检测到环,已截断)"));
+    assert!(md.contains("- **Interfaces 平铺**: `ROLE`、`LOST`(def 缺失)(接口 def 不跟随 Parent)"));
+    assert!(md.contains("- **Components 挂接**: `Inventory`"));
+    assert!(md.contains(
+        "- **Monster 成员**: 属性 [ferocity:`UINT16`, misc];方法 [onRpc(base), onHint(client)]"
+    ));
+    // 缺失成员被跳过,不渲染成员行。
+    assert!(!md.contains("Ghost 成员"));
+}
+
+#[test]
+fn render_markdown_generic_fields_are_emitted() {
+    // 通用分支(非 property/method)对字段的防御性渲染:字段恒在,按值输出。
+    let response = HoverResponse {
+        face: HoverFace::TypesXml,
+        symbol: HoverSymbol {
+            name: "HP".into(),
+            kind: "type".into(),
+            facet: None,
+            section: "Types",
+        },
+        signature: HoverSignature {
+            r#type: Some("UINT16".into()),
+            flags: Some("BASE".into()),
+            detail_level: Some("MEDIUM".into()),
+            arg_count: Some(3),
+            args: Some(vec!["UINT32".into(), "STRING".into(), "VECTOR3".into()]),
+            exposed: Some(true),
+            ..HoverSignature::default()
+        },
+        inherited: None,
+    };
+    let md = render_markdown(&response);
+    assert!(md.contains("**Type**: `UINT16`"));
+    assert!(md.contains("**Flags**: `BASE`"));
+    assert!(md.contains("**DetailLevel**: `MEDIUM`"));
+    assert!(md.contains("**参数个数**: 3"));
+    assert!(md.contains("**Args**: `UINT32, STRING, VECTOR3`"));
+    assert!(md.contains("**Exposed**: `true`"));
 }
