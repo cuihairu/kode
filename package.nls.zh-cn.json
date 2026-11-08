@@ -83,6 +83,7 @@
   "kbengine.command.generator.templates.title": "从模板创建实体",
   "kbengine.command.clientSdk.generate.title": "生成客户端实体 SDK",
   "kbengine.command.def.analyze.title": "分析 Def 性能",
+  "kbengine.command.def.checkEngineMd5.title": "检查引擎 Def MD5 一致性",
   "kbengine.command.project.doctor.title": "运行项目体检",
   "kbengine.command.symbolReferences.show.title": "查看符号引用图",
   "kbengine.command.profile.start.title": "开始运行时剖析",

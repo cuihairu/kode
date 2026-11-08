@@ -113,6 +113,7 @@
     "onCommand:kbengine.generator.templates",
     "onCommand:kbengine.clientSdk.generate",
     "onCommand:kbengine.def.analyze",
+    "onCommand:kbengine.def.checkEngineMd5",
     "onCommand:kbengine.project.doctor",
     "onCommand:kbengine.symbolReferences.show",
     "onCommand:kbengine.profile.start",
@@ -713,6 +714,11 @@
       {
         "command": "kbengine.def.analyze",
         "title": "%kbengine.command.def.analyze.title%"
+      },
+      {
+        "command": "kbengine.def.checkEngineMd5",
+        "title": "%kbengine.command.def.checkEngineMd5.title%",
+        "category": "KBEngine"
       },
       {
         "command": "kbengine.project.doctor",

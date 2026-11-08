@@ -83,6 +83,7 @@
   "kbengine.command.generator.templates.title": "Create Entity from Template",
   "kbengine.command.clientSdk.generate.title": "Generate Client Entity SDK",
   "kbengine.command.def.analyze.title": "Analyze Def Performance",
+  "kbengine.command.def.checkEngineMd5.title": "Check Engine Def MD5 Consistency",
   "kbengine.command.project.doctor.title": "Run Project Doctor",
   "kbengine.command.symbolReferences.show.title": "Show Symbol References Graph",
   "kbengine.command.profile.start.title": "Start Runtime Profile",

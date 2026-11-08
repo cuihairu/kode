@@ -19,6 +19,7 @@ import { registerStartupViewPlaceholders } from '../startupViewPlaceholders';
 import { setupProtocolTooling } from '../protocolTooling';
 import { setupProtocolSchemaSync } from '../protocolSchemaSync';
 import { setupProtocolPcapActions } from '../protocolPcapActions';
+import { setupDefMd5Check } from '../defMd5Check';
 
 // IDE-REV-037:注解来源日志的输出通道(懒建,首条日志到达才创建)
 let annotationSourceChannel: vscode.OutputChannel | undefined;
@@ -112,6 +113,9 @@ export function activateInfrastructure(
   // PA-007 第三增量:一键开 PCAP(Wireshark GUI)+ 跑 TShark(CLI capture
   // analyze);对话框取消零动作,通道与命令句柄自入 subscriptions。
   setupProtocolPcapActions(context);
+  // AUDIT-003:引擎 def MD5 核查入口(工作区闭包 ↔ SDK 盖章对拍);激活零
+  // 开销,通道惰性建,命令句柄自入 subscriptions。
+  setupDefMd5Check(context);
   // KODE-CFG-009:门接线后即预取 core 配置解析(`$/kode/config/resolve`),
   // 同步消费面(dbInterface/合成树/别名开关)读消费缓存不阻塞宿主。
   void ensureConfigResolved().catch(() => {});
