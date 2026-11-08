@@ -643,6 +643,21 @@ export class DiagnosticRelatedInformation {
   ) {}
 }
 
+// IDE-LIV-007 openExceptionSource 的编辑器跳转面(替身此前缺失该枚举与
+// Selection,解析命中分支在测试面不可达)。
+export enum TextEditorRevealType {
+  Default = 0,
+  InCenter = 1,
+  InCenterIfOutsideViewport = 2,
+  AtTop = 3
+}
+
+export class Selection extends Range {
+  constructor(public anchor: Position, public active: Position) {
+    super(anchor, active);
+  }
+}
+
 // IDE-NAV-013:Code Action 面值类型(kind 分级与动作壳;context/provider
 // 为纯类型面由 @types/vscode 提供,替身只补运行时值)
 export class CodeActionKind {
