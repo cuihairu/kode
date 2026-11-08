@@ -143,7 +143,12 @@ impl KodeMcpServer {
                     .get("limit")
                     .and_then(serde_json::Value::as_u64)
                     .unwrap_or(20) as usize;
-                crate::semantic_model::find_symbol(&self.knowledge, &self.assets_root, &query, limit.max(1))
+                crate::semantic_model::find_symbol(
+                    &self.knowledge,
+                    &self.assets_root,
+                    &query,
+                    limit.max(1),
+                )
             }
             "index_status" => Ok(crate::semantic_model::index_status(
                 &self.knowledge,
@@ -167,6 +172,15 @@ impl KodeMcpServer {
                 &self.assets_root,
                 arg_str("path").as_deref().unwrap_or(""),
             ),
+            "read_node" => {
+                let node = arg_str("node").unwrap_or_default();
+                let limit = arguments
+                    .get("limit")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(crate::read_node::DEFAULT_LIMIT_LINES as u64)
+                    as usize;
+                crate::read_node::read_node(&self.knowledge, &self.assets_root, &node, limit)
+            }
             other => Err(format!("unknown tool: {other}")),
         };
         match result {
@@ -185,7 +199,7 @@ impl ServerHandler for KodeMcpServer {
                  get_entity_model, get_type_graph, validate_defs, get_message_entry, \
                  encode_decode_sample, db_schema_preview, explain, get_final_config, \
                  get_entry_scripts, get_database_schema, why_setting, list_config_settings, \
-                 search_docs, search_symbols, protocol_frame, find_symbol, index_status, \\\n                 find_references, query_xml.",
+                 search_docs, search_symbols, protocol_frame, find_symbol, index_status, \\\n                 find_references, query_xml, read_node.",
             )
     }
 
@@ -389,6 +403,17 @@ impl ServerHandler for KodeMcpServer {
                         &["path"],
                     ),
                 ),
+                Self::tool(
+                    "read_node",
+                    "Read the definition of a known node precisely: Python class/function/method blocks return the exact start..end line range, entity/def-property/types.xml type/alias.xml alias return the 1-based line plus byte name span with a bounded excerpt window. Node name is matched case-insensitively but exactly (no substring; use find_symbol/search_symbols for fuzzy location). Excerpts are capped by line and byte limits and truncation is reported, never hidden.",
+                    schema_of(
+                        serde_json::json!({
+                            "node": {"type": "string", "description": "node name, e.g. Avatar, hp, ITEM_ID, make"},
+                            "limit": {"type": "integer", "description": "max excerpt lines (default 120, hard cap 400)"}
+                        }),
+                        &["node"],
+                    ),
+                ),
             ],
             ..Default::default()
         };
@@ -427,7 +452,9 @@ impl ServerHandler for KodeMcpServer {
                 }
             })
             .await
-            .map_err(|error| McpError::internal_error(format!("search task failed: {error}"), None))?;
+            .map_err(|error| {
+                McpError::internal_error(format!("search task failed: {error}"), None)
+            })?;
             match result {
                 Ok(value) => Self::text_result(value),
                 Err(message) => Self::error_result(message),

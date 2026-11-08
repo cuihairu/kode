@@ -52,7 +52,7 @@ fn payload_of(result: CallToolResult) -> Value {
 }
 
 #[tokio::test]
-async fn list_tools_exposes_all_twenty() {
+async fn list_tools_exposes_all_twenty_one() {
     let client = connect().await;
     let tools = client.list_all_tools().await.expect("list_tools");
     let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
@@ -75,6 +75,7 @@ async fn list_tools_exposes_all_twenty() {
             "list_config_settings",
             "protocol_frame",
             "query_xml",
+            "read_node",
             "search_docs",
             "search_entities",
             "search_symbols",
@@ -284,10 +285,9 @@ async fn call_tools_return_real_data() {
     );
     assert!(payload["count"].as_u64().unwrap() > 20);
     let settings = payload["settings"].as_array().unwrap();
-    assert!(settings.iter().all(|s| s["key"]
-        .as_str()
-        .unwrap()
-        .starts_with("baseapp.")));
+    assert!(settings
+        .iter()
+        .all(|s| s["key"].as_str().unwrap().starts_with("baseapp.")));
     assert!(settings.iter().any(|s| s["key"] == "baseapp.archivePeriod"));
 
     // search_docs(KODE-MCP-KB-001 ⑥):项目自身 .md 检索真数据(夹具 README)。
@@ -458,7 +458,10 @@ async fn missing_argument_and_unknown_tool_error_results() {
     assert_eq!(response.is_error, Some(true));
     // search_docs 空 query → spawn_blocking 面 Err → is_error。
     let response = client
-        .call_tool(call_params("search_docs", serde_json::json!({"query": "  "})))
+        .call_tool(call_params(
+            "search_docs",
+            serde_json::json!({"query": "  "}),
+        ))
         .await
         .expect("call search_docs");
     assert_eq!(response.is_error, Some(true));

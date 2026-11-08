@@ -41,6 +41,8 @@ pub struct PySymbol {
     pub class: Option<String>,
     pub file: PathBuf,
     pub line: usize,
+    /// 1 基块尾行(start..end 精确块;read_node 精读面消费)。
+    pub end_line: usize,
 }
 
 /// `{root}/scripts` 下递归收集 `.py`(有界)。
@@ -72,6 +74,7 @@ fn symbols_of(file: &Path, source: &str) -> Vec<PySymbol> {
             class: None,
             file: file.to_path_buf(),
             line: to_one_based(class.start_line),
+            end_line: to_one_based(class.end_line),
         });
         for method in &class.methods {
             out.push(PySymbol {
@@ -80,6 +83,7 @@ fn symbols_of(file: &Path, source: &str) -> Vec<PySymbol> {
                 class: Some(class.name.clone()),
                 file: file.to_path_buf(),
                 line: to_one_based(method.line),
+                end_line: to_one_based(method.end_line),
             });
         }
     }
@@ -90,6 +94,7 @@ fn symbols_of(file: &Path, source: &str) -> Vec<PySymbol> {
             class: None,
             file: file.to_path_buf(),
             line: to_one_based(function.line),
+            end_line: to_one_based(function.end_line),
         });
     }
     out
@@ -357,7 +362,10 @@ mod tests {
     #[test]
     fn instance_assignment_requires_identifier_boundary() {
         // `instance` 不应命中前缀 `inst`。
-        assert_eq!(instance_class_in_source("instance = Weapon()\n", "inst"), None);
+        assert_eq!(
+            instance_class_in_source("instance = Weapon()\n", "inst"),
+            None
+        );
     }
 
     #[test]
@@ -369,22 +377,23 @@ mod tests {
         );
         // 首/尾点或连续点非法。
         assert_eq!(instance_class_in_source("inst = .Weapon()\n", "inst"), None);
-        assert_eq!(instance_class_in_source("inst = package..Weapon()\n", "inst"), None);
+        assert_eq!(
+            instance_class_in_source("inst = package..Weapon()\n", "inst"),
+            None
+        );
     }
 
     #[test]
     fn instance_assignment_skips_bad_line_and_finds_later_good_line() {
         // 一个坏行不中止整文件扫描(旧码 `?` 早退,丢后续合法行)。
         let src = "inst = Other\ninst = Real()\n";
-        assert_eq!(
-            instance_class_in_source(src, "inst"),
-            Some("Real".into())
-        );
+        assert_eq!(instance_class_in_source(src, "inst"), Some("Real".into()));
     }
 
     #[test]
     fn class_in_file_locates_only_that_module() {
-        let root = std::env::temp_dir().join(format!("kode-mcp-class-in-file-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("kode-mcp-class-in-file-{}", std::process::id()));
         let scripts = root.join("scripts");
         std::fs::create_dir_all(&scripts).unwrap();
         let f = scripts.join("mod_a.py");
@@ -397,8 +406,7 @@ mod tests {
     #[test]
     fn oversized_files_are_skipped_and_counted() {
         // 单文件 >1MB → 跳过并计入 scan_errors(不把大文件静默当符号空)。
-        let root =
-            std::env::temp_dir().join(format!("kode-mcp-bigpy-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("kode-mcp-bigpy-{}", std::process::id()));
         let scripts = root.join("scripts");
         std::fs::create_dir_all(&scripts).unwrap();
         let mut big = String::from("class Big:\n    pass\n# ");
@@ -414,12 +422,14 @@ mod tests {
 
     #[test]
     fn limit_reached_returns_results_limited() {
-        let root =
-            std::env::temp_dir().join(format!("kode-mcp-lim-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("kode-mcp-lim-{}", std::process::id()));
         let scripts = root.join("scripts");
         std::fs::create_dir_all(&scripts).unwrap();
-        std::fs::write(scripts.join("a.py"), "class Alpha:\n    pass\nclass Beta:\n    pass\n")
-            .unwrap();
+        std::fs::write(
+            scripts.join("a.py"),
+            "class Alpha:\n    pass\nclass Beta:\n    pass\n",
+        )
+        .unwrap();
         let out = search_symbols(&root, "a", 1).expect("answer");
         assert_eq!(out["count"], 1);
         assert_eq!(out["results_limited"], true);
