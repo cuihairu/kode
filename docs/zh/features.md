@@ -454,3 +454,6 @@
 | `kbengine.metrics.fileReadDetail` | `false` | 文件读取明细审计（路径+字节数，环形缓冲 256 条，`kbengine.metrics.showSummary` 可查；默认关=只累计计数，开销有界）— `src/fileReadMetrics.ts` |
 | `kbengine.runtimeQuery.pollIntervalMs` | `2000` | 运行时查询面板结果订阅流轮询间隔毫秒数（下限 500；仅在 `kbengine.runtimeQuery.enabled` 开启时生效）— `src/runtimeQueryWebView.ts` |
 | `kbengine.clone.archiveEncryption` | `"encrypted"` | 玩家数据克隆归档加密默认值（`encrypted` = chacha20poly1305 加密归档,密钥机器域存 globalStorage `clone-keys/`;`plain` = 脱敏明文归档,适合跨机转移;导出确认页每次可切换）— `src/playerDataCloneCommands.ts` |
+| `kbengine.protocol.tsharkPath` | `"tshark"` | 协议工具链检测使用的 tshark 可执行名或路径（PA-007 状态命令）— `src/protocolTooling.ts` |
+| `kbengine.protocol.wiresharkPath` | `"wireshark"` | 协议工具链检测使用的 Wireshark GUI 可执行名或路径（GUI 未装如实显示未检出）— `src/protocolTooling.ts` |
+| `kbengine.protocol.cliPath` | `""` | kode-kbengine CLI 路径覆盖（空 = `target/{debug,release}` 自动发现,版本经 `--version` 获取）— `src/protocolTooling.ts` |

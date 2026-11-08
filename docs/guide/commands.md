@@ -1364,3 +1364,14 @@ If `Attach to Component` fails, check these first:
 3. Whether `telnetEnableCommands` in `.kbengine/debug.json` matches the project's real command (affects only `Start Debugging`'s instructions, not the telnet connection itself)
 4. Whether `pathMappings` in `.kbengine/debug.json` maps to the current workspace's source directory
 5. Whether `ms-python.debugpy` is installed and enabled on this machine
+
+## Protocol Tooling
+
+### `kbengine.protocol.showStatus`
+
+- Title: `KBEngine: 显示协议工具链状态`
+- Purpose: probe the machine's protocol tooling (PA-007) and render an honest status report into the OUTPUT channel 「KBEngine Protocol Tooling」 — tshark version, Wireshark GUI version (absent GUI reported as absent), personal/global plugin folders, the KBEngine Wireshark dissector plugin (PA-006) with its plugin-folder vs host version-line check (match / mismatch "host will not load" / unknown), and the kode-kbengine CLI path + version
+- Behavior:
+  - Every probe failure collapses to 「未检出」 (not found) — never an error, never a guess
+  - The report always states the zero-ABI fallback: `kode-kbengine capture analyze` analyzes pcaps without the plugin
+  - Probes read `kbengine.protocol.tsharkPath` / `kbengine.protocol.wiresharkPath` / `kbengine.protocol.cliPath` (CLI empty = `target/{debug,release}` auto-discovery, same shape as kode-server)

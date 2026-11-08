@@ -472,6 +472,14 @@ Boundary: these are engine *runtime* console-observation protocol messages, only
 
 Iron rule: the switch is a live kill-switch — with the default `rust`, definition/completion serve from kode-server Rust-first (TS fallback on empty/failure; diagnostics still serve from TS); with `ts`, the Rust process stops immediately and user-visible behavior matches the pure-TS single track; in `shadow` mode Rust results go only into the diff log of the 「KBEngine Core Shadow」 output channel (inspect via `kbengine.core.showShadowDiffLog`) and never affect any user-visible result.
 
+### Protocol Tooling Detection (PA-007)
+
+| Setting | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `kbengine.protocol.tsharkPath` | string | `"tshark"` | tshark executable for protocol tooling detection, resolved from PATH; command `kbengine.protocol.showStatus` renders the status report |
+| `kbengine.protocol.wiresharkPath` | string | `"wireshark"` | Wireshark GUI executable; an absent GUI is reported honestly and analysis still works via tshark/CLI |
+| `kbengine.protocol.cliPath` | string | empty | kode-kbengine CLI path override; empty walks the extension-root `target/{debug,release}` discovery (same shape as kode-server), version via the `--version` one-line contract |
+
 ### Database
 
 | Setting | Type | Default | Purpose |
@@ -622,6 +630,14 @@ The scaffold location and the `.pyi` stub directory share one effective working 
 | 3 | Default | The first workspace folder |
 
 Values go through variable substitution first; a value that expands to an empty string counts as unset and falls through to the next tier. The effective value, its source, and every overridden alternative are written into the skeleton comments and the `KBEngine 配置` output channel — no tier is picked silently.
+
+## Protocol Tooling Detection (PA-007)
+
+`kbengine.protocol.showStatus`（命令面板「显示协议工具链状态」）探测本机协议工具链并在「KBEngine Protocol Tooling」输出通道给一份如实状态报告：tshark 版本、Wireshark GUI 版本（未装如实标未检出）、个人/全局插件目录、KBEngine Wireshark 插件（PA-006 交付面）与其落盘版本线和宿主版本线的核对结果（匹配 / 不匹配（宿主不会加载）/ 未知三态），以及 kode-kbengine CLI 的路径与版本。任何一步探测失败都收敛为「未检出」，不报错、不猜测；报告始终提示零 ABI 兜底（未装插件时 `kode-kbengine capture analyze` 可直接分析 pcap）。
+
+- `kbengine.protocol.tsharkPath`（默认 `tshark`）：tshark 可执行名或路径，按 PATH 解析；
+- `kbengine.protocol.wiresharkPath`（默认 `wireshark`）：Wireshark GUI 可执行名或路径；
+- `kbengine.protocol.cliPath`（默认空）：kode-kbengine CLI 覆盖路径；留空走扩展根 `target/{debug,release}` 自动发现（与 kode-server 同款，发现落空报告如实标未发现）。
 
 ## Auto-Discovery of Path Settings (batch 125)
 

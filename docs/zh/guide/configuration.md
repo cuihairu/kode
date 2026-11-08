@@ -472,6 +472,14 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 
 铁律：默认 `ts` 下 Rust 路径完全不参与，用户可见行为与纯 TS 单轨一致；`shadow` 模式 Rust 结果只进输出通道「KBEngine Core Shadow」的差异日志（命令 `kbengine.core.showShadowDiffLog` 查看），永不影响任何用户可见结果。
 
+### 协议工具链检测（PA-007）
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.protocol.tsharkPath` | string | `"tshark"` | 协议工具链检测使用的 tshark 可执行名或路径，按 PATH 解析；命令 `kbengine.protocol.showStatus` 出状态报告 |
+| `kbengine.protocol.wiresharkPath` | string | `"wireshark"` | Wireshark GUI 可执行名或路径；GUI 未装时报告如实显示未检出，分析面仍可经 tshark/CLI 使用 |
+| `kbengine.protocol.cliPath` | string | 空 | kode-kbengine CLI 路径覆盖；留空走扩展根 `target/{debug,release}` 自动发现（与 kode-server 同款），版本经 `--version` 单行契约获取 |
+
 ### 数据库
 
 | 配置项 | 类型 | 默认值 | 说明 |
