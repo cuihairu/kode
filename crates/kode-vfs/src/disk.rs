@@ -179,7 +179,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
     fn pre_epoch_mtime_uses_negative_seconds_fingerprint() {
         // 早于 epoch(负秒)不能 panic,也不能把指纹折到正数侧:
         // 整秒 → (-secs, 0);带小数秒 → 向上取整到 (-secs-1, 1e9-nanos)。
@@ -188,17 +187,17 @@ mod tests {
         let frac = dir.join("frac.def");
         std::fs::write(&whole, b"whole").unwrap();
         std::fs::write(&frac, b"frac").unwrap();
-        // touch -d 由 coreutils 提供 mtime 设置能力(std 不暴露 utimensat)。
-        let set_mtime = |file: &Path, spec: &str| {
-            let ok = std::process::Command::new("touch")
-                .args(["-d", spec, file.to_str().unwrap()])
-                .status()
-                .expect("run touch")
-                .success();
-            assert!(ok, "touch -d must succeed for {spec}");
+        // FileTimes avoids GNU touch flags (unsupported on macOS) and works on Windows.
+        let set_mtime = |file: &Path, before_epoch: std::time::Duration| {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(file)
+                .unwrap()
+                .set_times(std::fs::FileTimes::new().set_modified(std::time::UNIX_EPOCH - before_epoch))
+                .unwrap();
         };
-        set_mtime(&whole, "1969-12-31 23:59:59 UTC");
-        set_mtime(&frac, "1969-12-31 23:59:59.5 UTC");
+        set_mtime(&whole, std::time::Duration::from_secs(1));
+        set_mtime(&frac, std::time::Duration::from_millis(500));
 
         let fp_whole = DiskFingerprint::of_path(&whole).unwrap().unwrap();
         assert_eq!(fp_whole.mtime_secs, -1);
