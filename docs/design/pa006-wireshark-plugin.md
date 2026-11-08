@@ -85,8 +85,48 @@ group/world-writable 时 Wireshark 拒扫（安全加固，实测 775 被拒，�
 ## 后续批次（PA-006 余量，勾账条件）
 
 1. 正式插件 crate（独立仓库或本仓库独立 workspace 成员，GPL 标注）：
-   全字段树（Header derive 落 KBEngine 消息字段）、会话状态接登录动态
-   协议导入、Expert 诊断面。
-2. 真实 KBEngine 报文 pcap 样本端到端：`tshark -r sample.pcap -Y kbengine`
-   命中断言（本批只用合成 spike 验加载）。
+   ~~会话状态接登录动态协议导入、Expert 诊断面~~（2026-11-08 第二增量已交付，
+   见下节）、全字段树（Header derive 落 KBEngine 消息字段）。
+2. ~~真实 KBEngine 报文 pcap 样本端到端：`tshark -r sample.pcap -Y kbengine`
+   命中断言~~（2026-11-08 第二增量已交付，见下节）。
 3. Windows/macOS 各一台实机加载验证（CI 或用户机）。
+
+## 第二增量：正式插件 crate + 真实 pcap 端到端验收（2026-11-08）
+
+**crate**：`plugins/wireshark-kbengine/`——独立 GPL-3.0-or-later workspace
+（清单内空 `[workspace]` 表切断根推断；不进根 members，不随 Apache VSIX），
+cdylib，依赖本仓库 `kode-kbengine-protocol`/`-schema`（path 依赖，依赖方向
+GPL→Apache 单向）。`cargo build`（14s）+ `cargo clippy --all-targets` 0 警告；
+release 产物 1.0MB，导出 `plugin_describe/plugin_register/plugin_want_major=4/
+plugin_want_minor=6/plugin_version`。
+
+**架构（解析单源，插件零解析逻辑）**：`tcp_framing() -> None`（不走
+`tcp_dissect_pdus`）——组帧/解码全在 `kode-kbengine-protocol` 的
+`Flow::feed_direction`（三种长度形态、65535 扩展、内存上限、错误复位、
+动态导入副作用两方向共享）。插件每包整段 TCP 载荷直接喂协议 crate，
+出 `Vec<DecodedMessage>` 转 Info 列摘要。首遍语义：会话状态只在
+`is_first_pass` 推进，重放遍复述 `summaries` 缓存不重复喂流。
+首选项：`loginapp_port`（默认 20013）/`baseapp_port`（默认 20015，0=不绑）/
+`defaults_xml`（空=空表全 unknown，与 CLI `--defaults` 缺省同口径）。
+Expert 面：`framing_error`（Malformed/Warning）+ `unknown_message`
+（Undecoded/Note），按摘要文本置位。
+
+**真实 pcap 端到端（docs/samples/kbengine-wire-samples/kbengine-login-flow.pcap，
+6 帧，端口 1001↔2001 需 `-o kbengine.loginapp_port:2001` 覆盖）**：
+装全局 epan（AppArmor 拦个人目录，见上节）→ `tshark -G plugins` 列出
+dissector → `-Y kbengine` **两模式均 6/6 命中** → `sudo rm` 干净移除
+（grep kbengine = 0，装→验→删可逆闭环）。
+
+**与 CLI 面同源对照（插件忠实转发协议 crate 行为，零行为差异）**：
+
+| 模式 | 插件（tshark） | CLI（`capture analyze --flow-map loginapp=2001`） |
+|---|---|---|
+| named（带 defaults） | 4 帧解码出消息名（`Loginapp::hello(3)`/`Client::onHelloCB(4)`/`Loginapp::importClientMessages(0)`/`Client::onLoginSuccessfully(4)`）+ 2 帧 `framing reset` | 4 records + 2 anomalies（`unexpected_eof`/`memory_limit`） |
+| unknown（无 defaults） | 6 帧 `framing reset: UnknownMessageId` | 0 records + 6 anomalies（`unknown_message_id`） |
+
+**帧 4/5 reset 归因（挂账，非插件回归）**：合成 pcap 的 s2c 帧 4
+（onImportClientMessages id 518）与 c2s 帧 5（login id 3）在 CLI 面同样
+anomalies——样本 body 与静态表签名既有不一致（PA-003/PA-004 遗留面），
+插件与 CLI 逐帧一致；真实引擎流量不受影响（动态导入后再解码）。
+
+**PA-006 余量**：有类型字段树（Header derive）；Windows/macOS 实机加载。
