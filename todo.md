@@ -1466,6 +1466,10 @@
 - [x] KODE-REDIS-UI-001 [P1] Redis 后端界面：现 `DatabaseBackend = 'mysql' | 'redis'` 仅类型（databaseSchemaCore.ts:65），唯一实例化硬编码 `backend: 'mysql'`（databaseSchema.ts:358），… [完整记录](docs/review/2026-11-08-todo-completed-history.md#done-0455)
   - [x] 连接注册 + 键空间模型 + 只读 RESP2 客户端 + 预览命令 + 面板标注：81c4adf7（10 文件；redisDrift/redisKeySpace/redisKeyspaceCommand + registry/panel/serverControls 接线；31 新测试绿 + playerDataPanel 7/7；tsc 除并发 hover.ts 7 错全净；门禁三件套绿；无 redis 时 graceful 空态）
 
+## 数据库管理展示面板（2026-11-08 用户「我认为还是明确的展示面板」）
+
+- [x] DB-MGMT-001 [P1] 明确展示面板：独立 WebView 把 MySQL/Redis 管理做成常驻可见界面（此前分散在命令/输出通道/虚拟文档，用户「关键管理 MySQL 和 redis 的都看不到」）。完成 2026-11-08 commit 9f26845c：`kbengine.database.showManagement` 打开只读面板，活动标签跟随派生档案（mysql/redis/none）；MySQL 列 SHOW TABLES + 网格预览单表，Redis 枚举 kbe_* 键 + HGETALL 哈希预览；全程只读（drift 执行器语句白名单 + RESP2 SCAN/HGETALL 只），open-per-operation 连接 10s 超时，切 tab/dispose 代际守卫弃置在途结果，单点密码不可读门禁，整页 nonce CSP + textContent 纯动态渲染（KR-AUD-50/53）；SRC-012 拆半（控制器 databaseManagementWebView.ts + 纯字符串 HTML 半边 databaseManagementWebViewHtml.ts）；测试 27 例（HTML 转义/CSP 12 + 控制器生命周期/分发/错误面/代际守卫/超时 15）绿；门禁 lint 0 / tsc 0 / unit 7819 过 4 skip / xvfb demo 25 RC=0；文档对账=commands.md en+zh 命令节 + features.md en+zh DB-007 条目 + nls 双语。SRC-012 拆分候选（messageTable/databaseSchema/debugConfig 等）仍在 1455 行挂账待续。
+
 ## 深度源码审查待办（2026-11-08，克隆实际执行链与 MCP 检索）
 
 > 审查基准：c82c9a83 附近的工作区；以下是源码链路分析，尚未用真实 MySQL/KBEngine 端到端验证。克隆功能须分别验收 Rust 库、RPC、VS Code 实际入口及真实环境，不能以库单测代替接线验收。
