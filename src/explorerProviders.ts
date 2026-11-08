@@ -2,12 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import { l10nText } from './nlsRuntime';
-import {
-  createDefinitionSemanticsLoader,
-  DefinitionMethod,
-  DefinitionProperty,
-  parseLocalDefinition
-} from './definitionSemantics';
+import { createDefinitionSemanticsLoader } from './definitionSemantics';
 import {
   getDatabaseSchemaSnapshot
 } from './databaseSchema';
@@ -21,147 +16,35 @@ import {
   getDefinitionEntries,
   getWorkspaceRootForDocument
 } from './definitionWorkspace';
-import { DefinitionSymbolIdentity, EntityMethodSection } from './entityMapping';
+import { EntityMethodSection } from './entityMapping';
 import { KBENGINE_TYPES } from './kbengineMetadata';
 import { KBEngineServerManager, SERVER_COMPONENTS, ServerStatus } from './serverManager';
+import {
+  ExplorerGroupItem,
+  DefinitionTreeItem,
+  DefinitionSectionItem,
+  DefinitionGroupItem,
+  DefinitionLeafItem,
+  toMethodStats,
+  toStatsFromProperties,
+  createOpenDefinitionCommand
+} from './explorerProvidersModel';
+import type {
+  EntityTreeNode,
+  DefinitionStats,
+  DefinitionMethodStats,
+  DefinitionLeafDescriptor,
+  DefinitionGroupDescriptor,
+  DefinitionSectionDescriptor,
+  DefinitionSummaryDescriptor,
+  DefinitionViewModel,
+  DatabaseSectionModel,
+  InheritedDefinitionGroup,
+  DefinitionHierarchyStats
+} from './explorerProvidersModel';
 
 /** 面板分类/分组标题走 vscode.l10n:调用期求值(语言切换即时生效),默认英文源串 */
 // l10nText 自 ./nlsRuntime 共享实现导入(KODE-I18N-002):六面共用公共取词入口
-
-type EntityTreeNode =
-  | ExplorerGroupItem
-  | DefinitionTreeItem
-  | DefinitionSectionItem
-  | DefinitionGroupItem
-  | DefinitionLeafItem;
-
-interface DefinitionStats {
-  properties: string[];
-  baseMethods: DefinitionMethodStats[];
-  cellMethods: DefinitionMethodStats[];
-  clientMethods: DefinitionMethodStats[];
-  parent?: string;
-  interfaces: string[];
-  components: Array<{ propertyName: string; typeName: string }>;
-}
-
-interface DefinitionMethodStats {
-  name: string;
-  exposed: boolean;
-  identity?: DefinitionSymbolIdentity;
-}
-
-interface DefinitionLeafDescriptor {
-  label: string;
-  description: string;
-  icon: string;
-  command?: vscode.Command;
-}
-
-interface DefinitionGroupDescriptor {
-  label: string;
-  description?: string;
-  icon: string;
-  items: DefinitionLeafDescriptor[];
-}
-
-interface DefinitionSectionDescriptor {
-  key: string;
-  label: string;
-  icon: string;
-  items?: DefinitionLeafDescriptor[];
-  groups?: DefinitionGroupDescriptor[];
-}
-
-interface DefinitionSummaryDescriptor {
-  label: string;
-  value: string;
-  icon: string;
-  command?: vscode.Command;
-}
-
-interface DefinitionViewModel {
-  summary: DefinitionSummaryDescriptor[];
-  sections: DefinitionSectionDescriptor[];
-}
-
-interface DatabaseSectionModel {
-  tableCount: number;
-  fieldCount: number;
-  section?: DefinitionSectionDescriptor;
-}
-
-interface InheritedDefinitionGroup {
-  label: string;
-  properties: string[];
-  baseMethods: DefinitionMethodStats[];
-  cellMethods: DefinitionMethodStats[];
-  clientMethods: DefinitionMethodStats[];
-}
-
-interface DefinitionHierarchyStats {
-  local: DefinitionStats;
-  inherited: InheritedDefinitionGroup[];
-}
-
-function toMethodStats(method: DefinitionMethod): DefinitionMethodStats {
-  return {
-    name: method.name,
-    exposed: method.exposed,
-    identity: {
-      ownerKind: method.owner.kind,
-      ownerName: method.owner.name,
-      sourceKind: method.source.kind,
-      sourceChain: [...method.source.chain],
-      section: method.section,
-      symbolName: method.name
-    }
-  };
-}
-
-function flattenProperties(properties: DefinitionProperty[]): DefinitionProperty[] {
-  const flattened: DefinitionProperty[] = [];
-  const visit = (property: DefinitionProperty) => {
-    flattened.push(property);
-    for (const child of property.children) {
-      visit(child);
-    }
-    if (property.arrayElement) {
-      visit(property.arrayElement);
-    }
-  };
-
-  for (const property of properties) {
-    visit(property);
-  }
-
-  return flattened;
-}
-
-function toStatsFromProperties(properties: DefinitionProperty[]): string[] {
-  return flattenProperties(properties)
-    .filter(property => !property.fullPath.includes('.') && !property.fullPath.includes('[]'))
-    .map(property => property.name);
-}
-
-export function parseDefinitionStructure(content: string): DefinitionStats {
-  const local = parseLocalDefinition(content, 'entity', 'Anonymous', '/tmp/Anonymous.def');
-
-  return {
-    properties: local.properties
-      .filter(property => !property.fullPath.includes('.'))
-      .map(property => property.name),
-    baseMethods: local.methodsBySection.BaseMethods.map(toMethodStats),
-    cellMethods: local.methodsBySection.CellMethods.map(toMethodStats),
-    clientMethods: local.methodsBySection.ClientMethods.map(toMethodStats),
-    parent: local.parentName,
-    interfaces: local.interfaces.map(item => item.name),
-    components: local.components.map(component => ({
-      propertyName: component.slotName,
-      typeName: component.typeName
-    }))
-  };
-}
 
 export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTreeNode> {
   private _onDidChangeTreeData = new vscode.EventEmitter<EntityTreeNode | undefined>();
@@ -1079,71 +962,6 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
   }
 }
 
-class ExplorerGroupItem extends vscode.TreeItem {
-  constructor(
-    public readonly label: string,
-    public readonly category: DefinitionCategory,
-    count: number
-  ) {
-    super(label, vscode.TreeItemCollapsibleState.Expanded);
-    this.description = String(count);
-    this.iconPath = new vscode.ThemeIcon(getGroupIcon(category));
-    this.contextValue = `definition_group_${category}`;
-  }
-}
-
-class DefinitionTreeItem extends vscode.TreeItem {
-  constructor(
-    public readonly definition: DefinitionEntry,
-    public readonly description: string,
-    public readonly viewModel: DefinitionViewModel
-  ) {
-    super(definition.name, vscode.TreeItemCollapsibleState.Collapsed);
-    this.description = description;
-    this.iconPath = new vscode.ThemeIcon(getDefinitionIcon(definition));
-    this.contextValue = `definition_${definition.category}`;
-    this.command = definition.exists ? createOpenDefinitionCommand(definition.filePath, definition.line) : undefined;
-    this.tooltip = `${definition.name}\n${definition.filePath}`;
-  }
-}
-
-class DefinitionSectionItem extends vscode.TreeItem {
-  constructor(
-    public readonly definition: DefinitionEntry,
-    public readonly section: DefinitionSectionDescriptor
-  ) {
-    super(section.label, vscode.TreeItemCollapsibleState.Collapsed);
-    // 不可达(批72 定性):所有 DefinitionSectionDescriptor 构造点均显式提供
-// items 数组(或 groups),从不两者皆空。故 section.items?.length 恒为数字,
-// 末级 `?? 0` 兜底右臂无触发路径。真臂行为由既有
-// explorerProvidersBranches.test.ts 描述行渲染用例锁定。
-/* istanbul ignore start */
-    this.description = String(section.groups?.length ?? section.items?.length ?? 0);
-/* istanbul ignore stop */
-    this.iconPath = new vscode.ThemeIcon(section.icon);
-    this.contextValue = `definition_section_${definition.category}_${section.key}`;
-  }
-}
-
-class DefinitionGroupItem extends vscode.TreeItem {
-  constructor(public readonly group: DefinitionGroupDescriptor) {
-    super(group.label, vscode.TreeItemCollapsibleState.Collapsed);
-    this.description = group.description;
-    this.iconPath = new vscode.ThemeIcon(group.icon);
-    this.contextValue = 'definition_group_item';
-  }
-}
-
-class DefinitionLeafItem extends vscode.TreeItem {
-  constructor(public readonly item: DefinitionLeafDescriptor) {
-    super(item.label, vscode.TreeItemCollapsibleState.None);
-    this.description = item.description;
-    this.iconPath = new vscode.ThemeIcon(item.icon);
-    this.contextValue = 'definition_leaf';
-    this.command = item.command;
-  }
-}
-
 class ServerTreeItem extends vscode.TreeItem {
   constructor(
     public readonly component: any,
@@ -1203,31 +1021,6 @@ export class ServerControlProvider implements vscode.TreeDataProvider<ServerTree
   }
 }
 
-function getGroupIcon(category: DefinitionCategory): string {
-  switch (category) {
-    case 'type':
-      return 'symbol-type-parameter';
-    case 'entity':
-      return 'symbol-class';
-    case 'interface':
-      return 'symbol-interface';
-    case 'component':
-      return 'extensions';
-  }
-}
-
-function getDefinitionIcon(entry: DefinitionEntry): string {
-  if (!entry.exists) {
-    return 'warning';
-  }
-
-  if (entry.category === 'entity' && !entry.registered) {
-    return 'circle-outline';
-  }
-
-  return getGroupIcon(entry.category);
-}
-
 function getStatusIcon(status: ServerStatus): string {
   switch (status) {
     case ServerStatus.Running:
@@ -1244,32 +1037,6 @@ function getStatusIcon(status: ServerStatus): string {
   }
 }
 
-function createOpenDefinitionCommand(filePath: string, line?: number): vscode.Command {
-  const uri = vscode.Uri.file(filePath);
-
-  if (!line || line <= 0) {
-    return {
-      command: 'vscode.open',
-      title: 'Open Definition',
-      arguments: [uri]
-    };
-  }
-
-  return {
-    command: 'vscode.open',
-    title: 'Open Definition',
-    arguments: [
-      uri,
-      {
-        selection: new vscode.Range(
-          new vscode.Position(line - 1, 0),
-          new vscode.Position(line - 1, 0)
-        )
-      }
-    ]
-  };
-}
-
 export function pickServerComponent(placeHolder: string) {
   return vscode.window.showQuickPick(
     SERVER_COMPONENTS.map(component => ({
@@ -1280,3 +1047,19 @@ export function pickServerComponent(placeHolder: string) {
     { placeHolder }
   );
 }
+
+export { parseDefinitionStructure } from './explorerProvidersModel';
+export type {
+  EntityTreeNode,
+  DefinitionStats,
+  DefinitionMethodStats,
+  DefinitionLeafDescriptor,
+  DefinitionGroupDescriptor,
+  DefinitionSectionDescriptor,
+  DefinitionSummaryDescriptor,
+  DefinitionViewModel,
+  DatabaseSectionModel,
+  InheritedDefinitionGroup,
+  DefinitionHierarchyStats
+} from './explorerProvidersModel';
+
