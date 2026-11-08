@@ -34,6 +34,7 @@ import { normalizeVenvDirectoryNames } from '../quickActionConfig';
 import { readBuildCommit } from '../buildCommit';
 import { renderReproductionSummary } from '../reproductionSummary';
 import { resolveActiveProfile } from '../activeProfile';
+import { StartEntryController } from '../startEntry';
 import { resolveDatabaseInterfaceConfig } from '../serverConfigMerge';
 import { scanVenvs, verifyVenvDirectory } from '../venvDiscovery';
 import { showProfileHealthSummary } from '../profileHealth';
@@ -245,7 +246,6 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
   // kbe 源码根),多候选弹一次 quick pick 并记忆(workspaceState 回放,后续
   // 会话不再询问);单候选/零命中零打扰。显式配置永远优先于发现结果。
   // workspaceState 缺失(测试替身/嵌入场景)时静默跳过,不做磁盘级记忆。
-  const primaryWorkspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
   // 批127 发现与定位诊断:定位失败不再静默——报告摊开每个键的显式配置/
   // 约定链/深扫描/记忆选择与最终取用,写入输出通道供复制回传。
@@ -630,12 +630,17 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
   );
   context.subscriptions.push(ruffLintCommand, installRuffCommand);
 
-  // 激活期发现完成后自动落一份报告;有问题时提示用户到输出面板看/复制回传
-  const discoveryRoot = primaryWorkspaceRoot;
-  if (discoveryRoot && context.workspaceState) {
+  // 激活期发现完成后自动落一份报告;有问题时提示用户到输出面板看/复制回传。
+  // UX-REVIEW-002b/002c:同一流程喂给侧栏「开始」入口的可观察状态(识别中/
+  // 未找到/失败/就绪,陈旧根结果一律弃置),识别失败不再是无声的
+  // unhandled rejection——原代码 void promise 无 catch,失败路径全黑。
+  const makeDiscoveryDeps = (root: string): DiscoveryPromptDeps | null => {
     const workspaceState = context.workspaceState;
-    const discoveryStateKey = `kbengine.discovery.${discoveryRoot}`;
-    const discoveryDeps: DiscoveryPromptDeps = {
+    if (!workspaceState) {
+      return null; // 测试替身/嵌入场景:静默跳过,不做磁盘级记忆(既有口径)
+    }
+    const discoveryStateKey = `kbengine.discovery.${root}`;
+    return {
       showQuickPick: (items, title) =>
         vscode.window.showQuickPick(items, { placeHolder: title, ignoreFocusOut: true }),
       recall: () =>
@@ -643,14 +648,48 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
       remember: (_root, choices) =>
         void workspaceState.update(discoveryStateKey, choices)
     };
-    void runWorkspaceDiscovery(discoveryDeps, discoveryRoot).then(() => {
-      if (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath !== discoveryRoot) { return; }
-      const issueCount = writeDiscoveryReport(discoveryRoot);
+  };
+  const startEntryController = new StartEntryController({
+    getWorkspaceRoot: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? null,
+    runDiscovery: async root => {
+      const discoveryDeps = makeDiscoveryDeps(root);
+      if (!discoveryDeps) {
+        return; // 无 workspaceState:跳过询问流程,状态按扫描缓存直接推导
+      }
+      await runWorkspaceDiscovery(discoveryDeps, root);
+    },
+    onDiscoverySettled: (root, kind) => {
+      // 既有口径恢复:旧代码在 context.workspaceState 缺失时整段发现面
+      // (询问+报告+警告)都不跑——这里同样跳过,否则无 workspaceState 的
+      // 宿主会多出发现警告(extension 测试替身即此形态)。
+      if (!makeDiscoveryDeps(root)) {
+        return;
+      }
+      // failed 不落报告——扫描本身刚抛错,再扫一遍只会二抛,详情在「开始」
+      // 视图,修复后走「重新识别」。
+      if (kind === 'failed') {
+        return;
+      }
+      // 识别落地后自动落报告,有问题提示(根守卫保留,002a-1)
+      if (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath !== root) { return; }
+      const issueCount = writeDiscoveryReport(root);
       if (issueCount > 0) {
         vscode.window.showWarningMessage(
           `发现与定位存在 ${issueCount} 项问题,详见「KBEngine 发现与定位」输出面板`
         );
       }
-    });
-  }
+    },
+    onDidChangeWorkspaceFolders: vscode.workspace.onDidChangeWorkspaceFolders,
+    registerTreeDataProvider: provider =>
+      vscode.window.registerTreeDataProvider('kbengine.start', provider),
+    subscriptions: context.subscriptions
+  });
+  const retryDiscoveryCommand = vscode.commands.registerCommand(
+    'kbengine.start.retryDiscovery',
+    async () => {
+      await startEntryController.retry();
+    }
+  );
+  context.subscriptions.push(retryDiscoveryCommand);
+  startEntryController.begin();
 }

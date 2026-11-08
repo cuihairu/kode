@@ -1,5 +1,6 @@
 {
   "kbengine.viewContainer.explorer": "KBEngine 资源管理器",
+  "kbengine.view.start": "开始",
   "kbengine.view.quickActions": "快速执行",
   "kbengine.view.entityExplorer": "实体",
   "kbengine.view.serverControl": "服务器",
@@ -106,6 +107,7 @@
   "kbengine.command.hotReload.tempEdit.run.title": "临时改码热更(当前文件)",
   "kbengine.command.core.showShadowDiffLog.title": "Kode Core Shadow: 查看差异日志",
   "kbengine.command.discovery.report.title": "查看发现报告",
+  "kbengine.command.start.retryDiscovery.title": "重新识别项目",
   "kbengine.command.extension.identity.title": "查看扩展身份报告",
   "kbengine.command.diagnostics.exportReproSummary.title": "导出复现配置摘要",
   "kbengine.command.quickActions.show.title": "运行快速动作",

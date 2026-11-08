@@ -13,6 +13,8 @@ import * as vscode from 'vscode';
 
 /** package.json contributes.views(kbengine-explorer 容器)声明的全部视图 id */
 export const KBENGINE_SIDEBAR_VIEW_IDS: readonly string[] = [
+  // UX-REVIEW-002c 侧栏「开始」入口(项目识别状态 + 按状态可执行操作)
+  'kbengine.start',
   'kbengine.quickActions',
   'kbengine.serverControl',
   // KB-GC-001 guiconsole 期一:组件状态面板(与 tail 共用 ConsoleHub 发现链;

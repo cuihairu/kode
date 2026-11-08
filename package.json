@@ -135,6 +135,7 @@
     "onCommand:kbengine.httpRequests.run",
     "onCommand:kbengine.httpRequest.run",
     "onCommand:kbengine.discovery.report",
+    "onCommand:kbengine.start.retryDiscovery",
     "onCommand:kbengine.extension.identity",
     "onCommand:kbengine.diagnostics.exportReproSummary",
     "onCommand:kbengine.quickActions.show",
@@ -312,6 +313,10 @@
     },
     "views": {
       "kbengine-explorer": [
+        {
+          "id": "kbengine.start",
+          "name": "%kbengine.view.start%"
+        },
         {
           "id": "kbengine.quickActions",
           "name": "%kbengine.view.quickActions%"
@@ -826,6 +831,10 @@
       {
         "command": "kbengine.discovery.report",
         "title": "%kbengine.command.discovery.report.title%"
+      },
+      {
+        "command": "kbengine.start.retryDiscovery",
+        "title": "%kbengine.command.start.retryDiscovery.title%"
       },
       {
         "command": "kbengine.extension.identity",

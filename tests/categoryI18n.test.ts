@@ -134,8 +134,8 @@ describe('package.nls 视图分类(侧栏分类标签)', () => {
   it('默认英文 locale 出英文,中文 locale 出中文(正反两态)', () => {
     const en = resolve(nlsDefault);
     const zh = resolve(nlsZhCn);
-    expect(en).toEqual(['Quick Actions', 'Servers', 'Component Status (machined discovery)', 'Telnet', 'Player Data (Read-Only)', 'Remote Servers', 'Entities', 'Debug Targets', 'Config', 'File History', 'Selection History']);
-    expect(zh).toEqual(['快速执行', '服务器', '组件状态（machined 发现）', 'Telnet', '玩家数据(只读)', '远程服务器', '实体', '调试目标', '配置', '文件历史', '选区历史']);
+    expect(en).toEqual(['Get Started', 'Quick Actions', 'Servers', 'Component Status (machined discovery)', 'Telnet', 'Player Data (Read-Only)', 'Remote Servers', 'Entities', 'Debug Targets', 'Config', 'File History', 'Selection History']);
+    expect(zh).toEqual(['开始', '快速执行', '服务器', '组件状态（machined 发现）', 'Telnet', '玩家数据(只读)', '远程服务器', '实体', '调试目标', '配置', '文件历史', '选区历史']);
     expect(zh).not.toEqual(en);
   });
 });

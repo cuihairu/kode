@@ -1,5 +1,6 @@
 {
   "kbengine.viewContainer.explorer": "KBEngine Explorer",
+  "kbengine.view.start": "Get Started",
   "kbengine.view.quickActions": "Quick Actions",
   "kbengine.view.entityExplorer": "Entities",
   "kbengine.view.serverControl": "Servers",
@@ -106,6 +107,7 @@
   "kbengine.command.hotReload.tempEdit.run.title": "Temp-Edit Hot Reload (Active File)",
   "kbengine.command.core.showShadowDiffLog.title": "Kode Core Shadow: Show Diff Log",
   "kbengine.command.discovery.report.title": "Show Discovery Report",
+  "kbengine.command.start.retryDiscovery.title": "Rescan Project",
   "kbengine.command.extension.identity.title": "Show Extension Identity Report",
   "kbengine.command.diagnostics.exportReproSummary.title": "Export reproduction config summary",
   "kbengine.command.quickActions.show.title": "Run Quick Actions",

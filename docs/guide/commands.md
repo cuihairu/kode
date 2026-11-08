@@ -963,6 +963,15 @@ The flow graph panel supports:
   - With problems present it pops a warning pointing at the OUTPUT panel; when all is well, an info notice
   - After activation-time auto discovery completes, a report is also silently dropped into the same channel (a notice pops only when there are problems)
 
+### `kbengine.start.retryDiscovery`
+
+- Title: `Rescan Project`
+- Purpose: the 「开始」 (Get Started) sidebar view's retry entry — runs project identification again for the current workspace (the same activation-time flow: remembered choices replayed, ambiguous anchors asked once, bounded deep scan) and updates the view's state honestly: ready, not-found (with the missing anchor list) or failed (with the original error message)
+- Behavior:
+  - Re-entry while a scan for the same workspace is in flight is ignored (no stacked scans)
+  - Results computed for a workspace root that has since been switched away are discarded, never rendered for the new root
+  - After a successful (ready / not-found) run the discovery report is dropped into the 「KBEngine 发现与定位」 channel as after activation (a notice pops only when problems remain); a failed run writes no report — the scan just threw, details live in the Get Started view
+
 ### `kbengine.python.serviceStatus`
 
 - Title: `Check Python Language Service Status`

@@ -292,6 +292,9 @@
 
 ## 项目模型
 
+- **侧栏「开始」入口（UX-REVIEW-002b/002c）** —— KBEngine 侧栏顶部 `开始` 视图把项目识别做成可观察状态,不再是看不见的后台扫描:五态为 未打开工作区 / 识别中 / 未找到（带缺失锚点清单）/ 识别失败（保留原始错误信息）/ 已就绪——就绪的判据是 entity_defs 根为发现唯一命中且真实在盘,空实体列表绝不冒充就绪;
+   条目全部指向真实存在的命令——无工作区:打开文件夹（`workbench.action.files.openFolder`）;识别中:一条进度说明,不装不可执行的假按钮;未找到/失败:`kbengine.discovery.report` + `kbengine.start.retryDiscovery`;已就绪:查看实体（`kbengine.entity.open`）、检查发现报告、启动调试（`kbengine.debug.start`）;
+   状态机弃置陈旧结果——已切换走的工作区根的扫描结论永不覆盖新根状态（过渡期视图显示识别中）,同根识别在途时重入忽略不叠扫,工作区目录变更触发重识别;激活期识别失败不再是无声的 unhandled rejection——如实落 failed 态并带原始错误;无 `workspaceState` 的宿主保持旧口径整段跳过（不询问、不落报告、不多弹警告）——（证据：package.json#contributes.views `kbengine.start`；src/startEntry.ts `StartEntryController`/`deriveStartEntryOutcome`/`buildStartEntryTasks`；src/activate/utilityCommands.ts 开始入口接线；tests/startEntry.test.ts）
 - **项目 profile 身份存储** —— 同一工作区里每套 assets/engine 组合保存为独立 profile，持有持久稳定 ID（创建时一次分配，按工作区存于 `workspaceState`，重启后照旧读回）；显示名只是可变字段——改名或两条同名互不吞并、不丢身份；根路径按 profile 保存（`saveRoots` 只动目标记录的路径字段，重存一条 profile 的 assets/engine 根不会串写另一条，重启后两条各自独立读回）——（证据：src/projectProfiles.ts `ProjectProfileStore`）
 - **活动 profile 选择** —— 活动 profile 按稳定 ID 记忆（workspaceState），显示名改名不丢选择；每次真实切换（新 ID ≠ 旧 ID）恰发一次切换事件供其他功能订阅，重选同条不发；未知 ID 拒绝，选择对应的记录被删除后如实解析为 null——（证据：package.json#contributes.commands `kbengine.project.selectActive`；src/activeProfile.ts `setActiveProfile`/`onDidChangeActiveProfile`）
 - **profile 健康汇总** —— 活动 profile 的健康按四类问题汇总（根歧义=资产根不在盘、缺引擎=引擎根未记录或不在盘、缺解释器=未记录或不在盘、缺语言服务=PRJ-005 判定非已激活），每类各带自己的定位入口（重导入命令 / 解释器设置 / 语言服务状态命令）；全部健康一条消息收场，有问题开选择器、选中一行跳对应入口——（证据：package.json#contributes.commands `kbengine.profile.health`；src/profileHealth.ts `collectProfileHealth`/`showProfileHealthSummary`）
