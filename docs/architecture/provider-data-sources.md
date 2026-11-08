@@ -38,7 +38,7 @@ Registration sites are extension.ts line numbers (2026-11-07 真位复核:KODE-A
 | CallChainController | defCallChainProvider.ts:49 | :1096 | EntityMappingManager | webview panel creation/update (UI side effect) |
 | PropertyCodeLensProvider | languageProviders/codeLens.ts:182 | :1304 | EntityMappingManager (types.xml property back-references) | fireConfigurationChanged event |
 | EventCodeLensProvider | eventApi.ts:95 | :1128 | EventCallIndex small interface (`allEventCalls`, ARC-002; injected sharedWorkspaceIndex) | After the 8s pre-start delay, enqueues the shared index's repo-wide py scan (the only scan entry) |
-| TypesXmlCodeLensProvider | languageProviders/codeLens.ts:360 | :1359 | databaseSchema type-storage usage index (`onTypeStorageUsageIndexPublished` subscription; zero construction deps) | fireConfigurationChanged event; watcher belongs to the assembly line (ARC-005) |
+| TypesXmlCodeLensProvider | languageProviders/codeLens.ts:360 | activate/languageServices.ts:508 (SRC-001 L2) | databaseSchema type-storage usage index (`onTypeStorageUsageIndexPublished` subscription; zero construction deps) | fireConfigurationChanged event; watcher belongs to the assembly line (ARC-005) |
 | GeneratedSourceCodeLensProvider (python stubs) | generatedSourceLenses.ts:11 | activate/languageServices.ts:519 (SRC-001 L2) | Construction-time snapshot buildPythonTypeStubPlan(getCustomTypeInfos) | Pure read |
 | GeneratedSourceCodeLensProvider (entity stubs) | generatedSourceLenses.ts:11 | activate/generators.ts:90 (SRC-001 L7) | Construction-time snapshot buildEntityTypeStubPlan(getAllMappings + getCustomTypeInfos) | Pure read |
 | PythonTypeInlayHintsProvider | typeInlayHints.ts:33 | :1197 | EntityMappingManager | Pure read |
