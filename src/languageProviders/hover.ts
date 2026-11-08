@@ -25,7 +25,7 @@ import { behaviorEntriesForSymbol, behaviorNotesMarkdown, fixedDictBehaviorNoteM
 import { isFixedDictTypeName } from '../behaviorLints';
 import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonCallAtPosition, type PythonCallAtPosition } from '../pythonLanguageUtils';
 import { engineApiVersionAnnotation, getKbeAliases, getKbeSymbol, resolveKbeAccessAtPosition, summaryForLanguage } from '../kbeModuleIndex';
-import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, inferDataDictValueType, isKeyInsideLineComment, queryDataDictSitesForAccess } from '../globalDataIndex';
+import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, inferDataDictValueType, isKeyInsideLineComment, queryDataDictSitesForAccess, resolveScopeRoot } from '../globalDataIndex';
 import { getEngineVersion } from '../engineVersion';
 import { createHoverRequestDeadline, createWaiterUnionToken, raceWithBudget } from '../hoverBudget';
 import { KBEngineSectionName, METHOD_SECTIONS, PROPERTY_SECTIONS, TAG_HOVER_DOCS, getLanguageFeatureConfig, getSectionLabel, parseDefAst } from './shared';
@@ -479,7 +479,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
             ) {
               return null;
             }
-            const hover = this.buildDataDictHover(dictAccess, dataDictIndex);
+            const hover = this.buildDataDictHover(dictAccess, dataDictIndex, resolveScopeRoot(document.uri.fsPath));
             if (hover) {
               return hover;
             }
@@ -507,10 +507,12 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
    */
   private buildDataDictHover(
     access: NonNullable<ReturnType<typeof getKbeDataDictAccessAtPosition>>,
-    index: GlobalDataDictIndex
+    index: GlobalDataDictIndex,
+    scopeRoot: string
   ): vscode.Hover | null {
-    // 函数调用键 → 现解签名取并集;普通键走单键查询
-    const writeSites = queryDataDictSitesForAccess(index, access)
+    // AUD-068 同款(与 definition/references 同口径):查询带根身份——
+    // 索引按 workspace 根身份键提交,查询不带根会落在 '' 空根键上永远查空
+    const writeSites = queryDataDictSitesForAccess(index, access, scopeRoot)
       .filter(site => site.kind === 'write');
     const types: string[] = [];
     for (const write of writeSites) {

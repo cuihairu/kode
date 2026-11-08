@@ -1,4 +1,7 @@
 import { createHash } from 'crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
 import {
@@ -357,5 +360,85 @@ describe('补充约束:版本台账独立于 watcher(手动路径与 watcher 同
     h.tokens.set(FILE, 'T1');
     await h.tracker.refresh();
     expect(suffix(h.tracker.badge())).toBe('v1→v2');
+  });
+});
+
+describe('hotReloadFileVersion 缺口臂(glob 尾段/缺省采样读盘/台账说明/未知事件)', () => {
+  it('glob:`**` 不带尾斜杠跨目录;`?` 单字符不跨目录', () => {
+    expect(matchesHotReloadGlob('scripts/a/b.py', ['scripts/**'])).toBe(true);
+    expect(matchesHotReloadGlob('other/b.py', ['scripts/**'])).toBe(false);
+    expect(matchesHotReloadGlob('f1.py', ['f?.py'])).toBe(true);
+    expect(matchesHotReloadGlob('f12.py', ['f?.py'])).toBe(false);
+  });
+
+  it('缺省采样/读盘:无注入走真 fs(mtime:size token + readFile),digest 一致即追平', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'kode-hotver-'));
+    try {
+      const file = path.join(root, 'Account.py');
+      writeFileSync(file, 'content-v1', 'utf8');
+      const store = new HotReloadTargetStateStore({ now: () => 1_000 });
+      // 不注入 statToken/readContent:stat/read 走缺省真 fs 面
+      const tracker = new HotReloadVersionTracker({
+        store,
+        activeFile: () => undefined,
+        isWatched: f => f.endsWith('.py'),
+        now: () => 1_000
+      });
+      expect(await tracker.noteFile(file)).toBe(true); // 首采 v1(缺省 stat 面)
+      // 盘上真实变化(mtime+size 同变)→ v2,基线停在 1 → 双号
+      writeFileSync(file, 'content-v2-longer', 'utf8');
+      expect(await tracker.noteFile(file)).toBe(true);
+      store.record(KEY, file, 'sent-unverified', { sentDigest: sha('content-v2-longer'), now: 5 });
+      store.record(KEY, file, 'applied', { attempt: 1, now: 6 });
+      expect(await tracker.refresh()).toBe(true); // 读盘 digest 一致 → 基线追平(缺省 readFile 面)
+      expect(tracker.describeVersion(file)).toContain('已同步');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('读盘缺失如实不追平:digest 记了但文件没了 → 双号保留,不虚构追平', async () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1_000 });
+    const tokens = new Map<string, string>([[FILE, '100:10']]);
+    // readContent 缺省(真 fs),FILE 不在盘上 → readFile 落 catch → undefined
+    const tracker = new HotReloadVersionTracker({
+      store,
+      activeFile: () => undefined,
+      isWatched: f => f.endsWith('.py'),
+      now: () => 1_000,
+      statToken: async f => tokens.get(f)
+    });
+    await tracker.noteFile(FILE);
+    tokens.set(FILE, '200:20');
+    await tracker.noteFile(FILE); // v2,双号
+    store.record(KEY, FILE, 'sent-unverified', { sentDigest: sha('gone-content'), now: 5 });
+    store.record(KEY, FILE, 'applied', { attempt: 1, now: 6 });
+    expect(await tracker.refresh()).toBe(false); // 盘上读不到 → 不追平
+    expect(tracker.describeVersion(FILE)).toContain('待同步');
+  });
+
+  it('describeVersion:未跟踪=undefined;不在监视范围=undefined;跟踪后报双态', async () => {
+    const h = makeHarness();
+    expect(h.tracker.describeVersion('/ws/none.py')).toBeUndefined();
+    h.tokens.set(FILE, 'T0');
+    await h.tracker.noteFile(FILE);
+    h.setScope(FILE, false);
+    expect(h.tracker.describeVersion(FILE)).toBeUndefined();
+    h.setScope(FILE, true);
+    expect(h.tracker.describeVersion(FILE)).toContain('已同步');
+    h.tokens.set(FILE, 'T1');
+    await h.tracker.noteFile(FILE); // v2 → 双号待同步
+    expect(h.tracker.describeVersion(FILE)).toContain('待同步');
+  });
+
+  it('report:未知事件 kind 如实渲染时间+版本(不崩不吞)', async () => {
+    const h = makeHarness();
+    h.tokens.set(FILE, 'T0');
+    await h.tracker.noteFile(FILE);
+    // 台账历史遗留形态:旧版本落盘的未知事件 kind → default 分支渲染
+    const state = h.store.fileVersion(FILE) as unknown as { events: Array<{ kind: string; version: number; at: number }> };
+    state.events.push({ kind: 'legacy-mystery', version: 9, at: 2_000 });
+    const lines = h.tracker.report();
+    expect(lines.some(line => / v9$/.test(line))).toBe(true);
   });
 });

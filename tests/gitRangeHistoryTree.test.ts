@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildRangeHistoryItems,
   GitRangeHistoryTreeProvider,
@@ -9,6 +9,13 @@ import {
 import type { RangeChangeEntry, RangeTimelineResult } from '../src/gitRangeTimeline';
 import type { SelectionMapResult, SelectionRange } from '../src/gitSelectionMap';
 import type { GitRepoLocation } from '../src/gitRepoLocate';
+import { defaultRangeHistoryDeps } from '../src/gitRangeHistoryTree';
+import { workspace as stubWorkspace } from './helpers/vscodeStub';
+import { Uri } from './fake-vscode/core';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { execFileSync } from 'child_process';
+import { tmpdir } from 'os';
+import * as path from 'path';
 
 /**
  * IDE-GIT-010:展示选区历史并定位该次修改(侧边栏范围历史视图)。
@@ -630,5 +637,129 @@ describe('IDE-GIT-011 提供者验收(重复选区只留最新 / 视图取消)',
     await pending;
     // 在途查询被 showNoSelection 丢弃:状态保持「无选区」,不转 loaded。
     expect(provider.getState().kind).toBe('no-selection');
+  });
+});
+
+describe('IDE-GIT-010 缺口臂(loading/默认依赖/取消代际/空段/段间换代)', () => {
+  afterEach(() => {
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('loading 状态:查询中引导消息', () => {
+    const items = buildRangeHistoryItems({ kind: 'loading' });
+    expect(items).toHaveLength(1);
+    if (items[0].kind === 'message') {
+      expect(items[0].message).toContain('Querying selection history');
+      expect(items[0].tone).toBe('guidance');
+    }
+  });
+
+  it('defaultRangeHistoryDeps:定位/映射/查询三默认面在真仓走通', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'kode-range-deps-'));
+    const saved = stubWorkspace.workspaceFolders;
+    try {
+      mkdirSync(path.join(root, '.git'), { recursive: true });
+      const file = path.join(root, 'a.py');
+      writeFileSync(file, 'line one\nline two\nline three\n', 'utf8');
+      execFileSync('git', ['-C', root, 'init', '-q']);
+      execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@example.com', 'add', 'a.py']);
+      execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'init']);
+      stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'r', index: 0 }];
+      const deps = defaultRangeHistoryDeps();
+      // 定位默认面:工作区根真实 fs 探测命中
+      const loc = deps.locateGitRepo(file, true);
+      expect(loc.kind).toBe('repo');
+      if (loc.kind === 'repo') expect(loc.repoRoot).toBe(root);
+      // 映射默认面:已提交文件选中第 1 行 → HEAD 段 1-1
+      // 映射默认面:已提交文件选中第 1 行 → HEAD 段 1-1
+      const m = await deps.mapSelection(file, root, { startLine: 1, endLine: 1 });
+      expect(m.kind).toBe('mapped');
+      if (m.kind === 'mapped') {
+        expect(m.segments).toHaveLength(1);
+        expect(m.segments[0].headFirstLine).toBe(1);
+      }
+      // 查询默认面:HEAD 第 1 行 → 逐提交时间线
+      const t = await deps.queryTimeline(file, root, { startLine: 1, endLine: 1 });
+      expect(t.kind).toBe('timeline');
+      if (t.kind === 'timeline') {
+        expect(t.entries.length).toBeGreaterThanOrEqual(1);
+        expect(t.entries[0].subject).toBe('init');
+      }
+    } finally {
+      stubWorkspace.workspaceFolders = saved;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('cancelInFlight:在途查询代际弃置(不写状态),并换新令牌', async () => {
+    let resolveMap!: (r: SelectionMapResult) => void;
+    let mapCalls = 0;
+    const mapped: SelectionMapResult = {
+      kind: 'mapped',
+      segments: [{ firstLine: 1, lastLine: 3, headFirstLine: 1, headLastLine: 3 }],
+      selectionLineCount: 3,
+    };
+    const provider = new GitRangeHistoryTreeProvider({
+      locateGitRepo: () => repoLocation(),
+      // 首调挂起(在途被弃置);换代后的二调即时回包(新令牌可用)。
+      mapSelection: () => {
+        mapCalls += 1;
+        return mapCalls === 1
+          ? new Promise<SelectionMapResult>(resolve => (resolveMap = resolve))
+          : Promise.resolve(mapped);
+      },
+      queryTimeline: async () => ({
+        kind: 'timeline',
+        status: 'ok',
+        entries: [entry('h1', 'x')],
+        boundary: { kind: 'origin', atCommit: 'h1', atPath: 'src/a.py' },
+      }),
+    });
+    const pending = provider.showSelectionHistory('/repo/src/a.py', { startLine: 1, endLine: 3 }, true);
+    provider.cancelInFlight();
+    resolveMap(mapped);
+    await pending;
+    // 旧代结果弃置:状态停在 loading,不转 loaded(换新令牌后新查询仍可用)。
+    expect(provider.getState().kind).toBe('loading');
+    // 新令牌:换代后的查询照常装载。
+    await provider.showSelectionHistory('/repo/src/a.py', { startLine: 1, endLine: 3 }, true);
+    expect(provider.getState().kind).toBe('loaded');
+  });
+
+  it('mapped 空段:invalid 明确提示(无已提交行段可查)', async () => {
+    const { provider } = makeProvider({
+      mapped: { kind: 'mapped', segments: [], selectionLineCount: 0 },
+    });
+    await provider.showSelectionHistory('/repo/src/a.py', { startLine: 1, endLine: 1 }, true);
+    const state = provider.getState();
+    expect(state.kind).toBe('invalid');
+    if (state.kind === 'invalid') expect(state.message).toContain('no committed line range');
+  });
+
+  it('段间代际更替:剩余段不再查询,不写部分结果', async () => {
+    const { provider, queryTimeline } = makeProvider({
+      mapped: {
+        kind: 'mapped',
+        segments: [
+          { firstLine: 1, lastLine: 1, headFirstLine: 1, headLastLine: 1 },
+          { firstLine: 3, lastLine: 3, headFirstLine: 3, headLastLine: 3 },
+        ],
+        selectionLineCount: 2,
+      },
+    });
+    // 段一回包期间新选区进来(cancelInFlight 换代)→ 段二入口闸拦下。
+    (queryTimeline as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => {
+      provider.cancelInFlight();
+      return {
+        kind: 'timeline',
+        status: 'ok',
+        entries: [entry('h1', 'x')],
+        boundary: { kind: 'origin', atCommit: 'h1', atPath: 'src/a.py' },
+      };
+    });
+    await provider.showSelectionHistory('/repo/src/a.py', { startLine: 1, endLine: 3 }, true);
+    expect(queryTimeline).toHaveBeenCalledTimes(1);
+    // 部分结果不写:状态仍停在 loading。
+    expect(provider.getState().kind).toBe('loading');
   });
 });

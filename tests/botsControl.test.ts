@@ -286,3 +286,117 @@ describe('runBotsCountCommand(查询 bot 数编排)', () => {
     expect(state.errors[0]).toContain('No telnet target found for bots');
   });
 });
+
+/** withInput 会真跑 validator 的替身:probes 先灌非法/边界形态覆盖闸臂,再按 raw 判定。 */
+function makeValidatingDeps(
+  state: DepsState & { probes?: string[][] },
+  sendOverrides?: Array<boolean>
+): BotsControlDeps {
+  const deps = makeDeps(state);
+  let sendIndex = 0;
+  return {
+    ...deps,
+    withInput: (_prompt, _placeholder, validate) => {
+      for (const probe of state.probes?.shift() ?? []) {
+        validate(probe);
+      }
+      const raw = state.inputs.shift();
+      if (raw === undefined) {
+        return Promise.resolve(undefined);
+      }
+      return validate(raw) === null ? Promise.resolve(raw) : Promise.resolve(undefined);
+    },
+    sendCommand: (key, command) => {
+      if (sendOverrides !== undefined) {
+        const verdict = sendOverrides[sendIndex++];
+        if (verdict !== undefined) {
+          return verdict;
+        }
+      }
+      return deps.sendCommand(key, command);
+    }
+  };
+}
+
+describe('runBotsAddCommand 缺口臂(输入校验闸/中途取消/发送失败)', () => {
+  it('校验闸真跑:非法形态被拒文案、负数/越界被拒、合法放行,三参命令照发', async () => {
+    const state: DepsState & { probes?: string[][] } = {
+      target: makeTarget(),
+      sessionState: 'ready',
+      outputs: [], sent: [], connected: 0, infos: [], errors: [], channelLines: [], channelShown: 0,
+      inputs: ['100', '5', '0'],
+      probes: [
+        ['abc'],            // total 闸:非整数 → 拒文案
+        ['abc', '-1'],      // tick 闸:空/非整数拒文案;负数拒;raw '5' 合法放行
+        ['abc']             // 间隔闸:非整数拒文案;raw '0' 合法放行
+      ],
+      countOutput: ['7']
+    };
+    const result = await runBotsAddCommand(makeValidatingDeps(state));
+    expect(state.sent[0]).toBe('KBEngine.addBots(100, 5, 0)');
+    expect(result).toContain('current bot count');
+  });
+
+  it('tick 输入取消:如实返回未执行,不发送', async () => {
+    const state: DepsState = {
+      target: makeTarget(),
+      sessionState: 'ready',
+      outputs: [], sent: [], connected: 0, infos: [], errors: [], channelLines: [], channelShown: 0,
+      inputs: ['100']
+    };
+    const result = await runBotsAddCommand(makeValidatingDeps(state));
+    expect(result).toContain('Cancelled');
+    expect(state.sent).toEqual([]);
+  });
+
+  it('间隔输入取消:如实返回未执行,不发送', async () => {
+    const state: DepsState = {
+      target: makeTarget(),
+      sessionState: 'ready',
+      outputs: [], sent: [], connected: 0, infos: [], errors: [], channelLines: [], channelShown: 0,
+      inputs: ['100', '5']
+    };
+    const result = await runBotsAddCommand(makeValidatingDeps(state));
+    expect(result).toContain('Cancelled');
+    expect(state.sent).toEqual([]);
+  });
+
+  it('addBots 发送失败(会话掉线):如实报错并返回 Send failed', async () => {
+    const state: DepsState = {
+      target: makeTarget(),
+      sessionState: 'ready',
+      outputs: [], sent: [], connected: 0, infos: [], errors: [], channelLines: [], channelShown: 0,
+      inputs: ['100', '', '']
+    };
+    const result = await runBotsAddCommand(makeValidatingDeps(state, [false]));
+    expect(state.errors.join('\n')).toContain('failed to send');
+    expect(result).toContain('Send failed');
+  });
+
+  it('计数命令发送失败:通道如实说明,摘要仍返回', async () => {
+    const state: DepsState = {
+      target: makeTarget(),
+      sessionState: 'ready',
+      outputs: [], sent: [], connected: 0, infos: [], errors: [], channelLines: [], channelShown: 0,
+      inputs: ['100', '', '']
+    };
+    const result = await runBotsAddCommand(makeValidatingDeps(state, [true, false]));
+    expect(state.channelLines.join('\n')).toContain('failed to send');
+    expect(result).toContain('current bot count');
+  });
+});
+
+describe('runBotsCountCommand 缺口臂(会话未就绪)', () => {
+  it('白名单命中但会话不就绪:如实报错,返回 null 不发送', async () => {
+    const state: DepsState = {
+      target: makeTarget(),
+      sessionState: null,
+      outputs: [], sent: [], connected: 0, infos: [], errors: [], channelLines: [], channelShown: 0,
+      inputs: []
+    };
+    const result = await runBotsCountCommand(makeDeps(state));
+    expect(state.errors.join('\n')).toContain('not ready');
+    expect(result).toBeNull();
+    expect(state.sent).toEqual([]);
+  });
+});

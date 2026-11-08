@@ -234,7 +234,7 @@ describe('组件挂载 def 进打开缓冲区(AUD-031)', () => {
     stubWorkspace.textDocuments = [];
     workspaceState.applyEditCalls.length = 0;
 
-    const outcome = await generateGeneratorForm(componentInput, root, {
+    await generateGeneratorForm(componentInput, root, {
       generatedAt: 'TS',
       layout: layout(),
       attachTo: 'Avatar'
@@ -286,5 +286,126 @@ describe('缓冲写入异常语义(AUD-031)', () => {
     expect(dirtyDoc.getText()).toContain('<MySpace hasBase="true" hasCell="true" />');
     expect(dirtyDoc.getText()).toContain('<!-- 未保存:手工加的 Boss 实体 -->');
     expect(fs.readFileSync(entitiesXmlPath, 'utf8')).toBe(DISK_XML);
+  });
+});
+
+describe('generatorForms 缺口臂(写入未生效/结构异常/回收改写面)', () => {
+  const realApplyEdit = stubWorkspace.applyEdit;
+
+  afterEach(() => {
+    stubWorkspace.applyEdit = realApplyEdit;
+    stubWorkspace.textDocuments = [];
+  });
+
+  it('applyEdit 未落地(false):entities.xml 登记如实说明未生效', async () => {
+    stubWorkspace.applyEdit = (async (): Promise<boolean> => false) as unknown as typeof stubWorkspace.applyEdit;
+    const doc = makeTextDocument(DISK_XML, { uri: Uri.file(entitiesXmlPath), version: 2 });
+    stubWorkspace.textDocuments = [doc];
+
+    const outcome = await generateGeneratorForm(spaceInput, root, { generatedAt: 'TS', layout: layout() });
+
+    expect(outcome.notes).toContain('entities.xml 缓冲区写入未生效,空间 MySpace 未登记(请手动补一行)');
+    expect(outcome.touchedFiles).toEqual([]);
+    expect(doc.getText()).toBe(DISK_XML);
+  });
+
+  it('打开 types.xml 缓冲区无 </root>:入库如实说明,缓冲盘都不动', async () => {
+    const typesPath = path.join(root, 'scripts', 'entity_defs', 'types.xml');
+    fs.writeFileSync(typesPath, '<root>\n', 'utf8');
+    const doc = makeTextDocument('<root>\n', { uri: Uri.file(typesPath), version: 2 });
+    stubWorkspace.textDocuments = [doc];
+
+    const outcome = await generateGeneratorForm(fixedDictInput, root, { generatedAt: 'TS', layout: layout() });
+
+    expect(outcome.notes).toContain('types.xml 缓冲区找不到 </root> 标签,类型 AVATAR_DATA 未写入');
+    expect(outcome.written).toBe(false);
+    expect(doc.getText()).toBe('<root>\n');
+    expect(fs.readFileSync(typesPath, 'utf8')).toBe('<root>\n');
+  });
+
+  it('applyEdit 未落地(false):types.xml 入库如实说明未生效,不算已生成', async () => {
+    stubWorkspace.applyEdit = (async (): Promise<boolean> => false) as unknown as typeof stubWorkspace.applyEdit;
+    const typesPath = path.join(root, 'scripts', 'entity_defs', 'types.xml');
+    fs.writeFileSync(typesPath, DISK_TYPES, 'utf8');
+    const doc = makeTextDocument(DISK_TYPES, { uri: Uri.file(typesPath), version: 2 });
+    stubWorkspace.textDocuments = [doc];
+
+    const outcome = await generateGeneratorForm(fixedDictInput, root, { generatedAt: 'TS', layout: layout() });
+
+    expect(outcome.notes).toContain('types.xml 缓冲区写入未生效,类型 AVATAR_DATA 未写入(请手动补一段)');
+    expect(outcome.written).toBe(false);
+    expect(doc.getText()).toBe(DISK_TYPES);
+  });
+
+  it('applyEdit 未落地(false):组件挂载如实说明未生效', async () => {
+    stubWorkspace.applyEdit = (async (): Promise<boolean> => false) as unknown as typeof stubWorkspace.applyEdit;
+    const entityDefPath = path.join(root, 'scripts', 'entity_defs', 'Avatar.def');
+    fs.writeFileSync(entityDefPath, DISK_DEF, 'utf8');
+    const doc = makeTextDocument(DISK_DEF, { uri: Uri.file(entityDefPath), version: 2 });
+    stubWorkspace.textDocuments = [doc];
+
+    const outcome = await generateGeneratorForm(componentInput, root, {
+      generatedAt: 'TS',
+      layout: layout(),
+      attachTo: 'Avatar'
+    });
+
+    expect(outcome.notes).toContain('Avatar.def 缓冲区写入未生效,组件 Inventory 未挂载(请手动补一段)');
+    expect(outcome.touchedFiles).not.toContain(entityDefPath);
+    expect(doc.getText()).toBe(DISK_DEF);
+  });
+
+  it('打开 def 无 <Properties> 段:组件挂载如实说明,盘与缓冲都不动', async () => {
+    const entityDefPath = path.join(root, 'scripts', 'entity_defs', 'Avatar.def');
+    const bare = '<root>\n</root>\n';
+    fs.writeFileSync(entityDefPath, bare, 'utf8');
+    const doc = makeTextDocument(bare, { uri: Uri.file(entityDefPath), version: 2 });
+    stubWorkspace.textDocuments = [doc];
+
+    const outcome = await generateGeneratorForm(componentInput, root, {
+      generatedAt: 'TS',
+      layout: layout(),
+      attachTo: 'Avatar'
+    });
+
+    expect(outcome.notes).toContain('Avatar.def 里没有 <Properties> 段,组件未挂载(请手写 COMPONENT 属性)');
+    // 挂载未落地 → touchedFiles 不含目标 def;主产物照常落盘
+    expect(outcome.touchedFiles).toEqual([]);
+    expect(fs.readFileSync(path.join(root, 'scripts', 'entity_defs', 'components', 'Inventory.def'), 'utf8')).toContain('Inventory');
+    expect(doc.getText()).toBe(bare);
+  });
+
+  it('打开 def 已有同名属性:组件挂载如实说明,不重复写入', async () => {
+    const entityDefPath = path.join(root, 'scripts', 'entity_defs', 'Avatar.def');
+    const withInventory = DISK_DEF.replace('    <hp>', '    <Inventory>\n      <Type>COMPONENT</Type>\n    </Inventory>\n    <hp>');
+    fs.writeFileSync(entityDefPath, withInventory, 'utf8');
+    const doc = makeTextDocument(withInventory, { uri: Uri.file(entityDefPath), version: 2 });
+    stubWorkspace.textDocuments = [doc];
+
+    const outcome = await generateGeneratorForm(componentInput, root, {
+      generatedAt: 'TS',
+      layout: layout(),
+      attachTo: 'Avatar'
+    });
+
+    expect(outcome.notes).toContain('Avatar.def 已有同名属性 Inventory,组件未挂载');
+    expect(outcome.touchedFiles).toEqual([]);
+    expect(fs.readFileSync(path.join(root, 'scripts', 'entity_defs', 'components', 'Inventory.def'), 'utf8')).toContain('Inventory');
+    expect((doc.getText().match(/<Inventory>/g) ?? [])).toHaveLength(1);
+  });
+
+  it('回收改写面:entities.xml 读盘失败时上抛,overwrite 改写的主产物按原内容还原', async () => {
+    const defPath = path.join(root, 'scripts', 'entity_defs', 'MySpace.def');
+    fs.writeFileSync(defPath, 'PREV', 'utf8');
+    // entities.xml 存在但读不得(目录):登记步 readFileSync 抛 → 整体回收
+    fs.rmSync(entitiesXmlPath);
+    fs.mkdirSync(entitiesXmlPath);
+
+    await expect(
+      generateGeneratorForm(spaceInput, root, { generatedAt: 'TS', layout: layout(), overwrite: true })
+    ).rejects.toThrow();
+
+    // 改写的主产物按账本原内容还原,不留半套
+    expect(fs.readFileSync(defPath, 'utf8')).toBe('PREV');
   });
 });

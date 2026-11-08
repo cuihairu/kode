@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { makeTextDocument, Position, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { CancellationTokenSource, makeTextDocument, Position, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 import {
   provideDefSymbolReferences,
   resolveDefSymbolReferenceTarget
@@ -380,5 +380,203 @@ describe('KR-AUD-77 interface reference sites cover all four wrapper spellings',
     // 引用位落在 <Type>IMove</Type>(Interfaces 内)那一行,而非属性 shape 行
     expect(line).toContain('<Type>IMove</Type>');
     expect(line).not.toContain('shape');
+  });
+});
+
+describe('defSymbolReferences 缺口臂(无元素/接口识别/扫描边界/取消面/无根/去重)', () => {
+  let wsRoot: string;
+  let childDefPath: string;
+  let monsterDefPath: string;
+  let ifaceDefPath: string;
+  const originalFindFiles = stubWorkspace.findFiles;
+  const originalFolders = stubWorkspace.workspaceFolders;
+  const originalDocuments = stubWorkspace.textDocuments;
+
+  const CHILD_DEF = [
+    '<root>',
+    '  <Parent>',
+    '',
+    '    Monster',
+    '  </Parent>',
+    '</root>',
+    ''
+  ].join('\n');
+  const IFACE_DEF = [
+    '<root>',
+    '  <Interfaces>',
+    '    IMove',
+    '  </Interfaces>',
+    '</root>',
+    ''
+  ].join('\n');
+
+  beforeEach(() => {
+    wsRoot = makeTmpDir('ws-gap');
+    const defsDir = path.join(wsRoot, 'scripts', 'entity_defs');
+    fs.mkdirSync(defsDir, { recursive: true });
+    childDefPath = path.join(defsDir, 'Child.def');
+    monsterDefPath = path.join(defsDir, 'Monster.def');
+    ifaceDefPath = path.join(defsDir, 'IMove.def');
+    fs.writeFileSync(childDefPath, CHILD_DEF);
+    fs.writeFileSync(monsterDefPath, '<root>\n</root>\n');
+    fs.writeFileSync(ifaceDefPath, '<root>\n</root>\n');
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
+    stubWorkspace.textDocuments = [];
+  });
+
+  afterEach(() => {
+    stubWorkspace.findFiles = originalFindFiles;
+    stubWorkspace.workspaceFolders = originalFolders;
+    stubWorkspace.textDocuments = originalDocuments;
+    for (const dir of tmpRoots.splice(0)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  const openDoc = (content: string) =>
+    makeTextDocument(content, { fileName: path.join(wsRoot, 'scripts', 'entity_defs', 'Open.def'), languageId: 'kbengine-def' }) as never;
+  const posOf = (content: string, word: string): Position => {
+    const re = new RegExp(`\\b${word}\\b`, 'g');
+    const match = re.exec(content);
+    if (!match) {
+      throw new Error(`word ${word} not found`);
+    }
+    const before = content.slice(0, match.index + 1).split('\n');
+    return new Position(before.length - 1, before[before.length - 1].length - 1);
+  };
+  const stubScan = (defUris: ReturnType<typeof Uri.file>[]) => {
+    stubWorkspace.findFiles = (async (glob?: string) => {
+      if (glob === '**/*.def') {
+        return defUris;
+      }
+      return [];
+    }) as typeof stubWorkspace.findFiles;
+  };
+
+  it('resolveDefSymbolReferenceTarget:根外偏移无元素无词 → null', () => {
+    const content = '<root>\n  <Parent>Monster</Parent>\n</root>\n';
+    expect(resolveDefSymbolReferenceTarget(content, content.length)).toBeNull();
+  });
+
+  it('resolveDefSymbolReferenceTarget:Interfaces 直挂文本词识别为 interface', () => {
+    const content = IFACE_DEF;
+    const offset = content.indexOf('IMove') + 1;
+    const target = resolveDefSymbolReferenceTarget(content, offset);
+    expect(target).toEqual({ kind: 'interface', name: 'IMove' });
+  });
+
+  it('扫描边界:值区起始空行 token 跳过;无根 def 如实空;读不得的文件不拖垮查询', async () => {
+    const malformedPath = path.join(wsRoot, 'scripts', 'entity_defs', 'Broken.def');
+    fs.writeFileSync(malformedPath, '', 'utf8'); // 空内容:可解析但无根 → 扫描如实空
+    const ghostPath = path.join(wsRoot, 'scripts', 'entity_defs', 'Ghost.def'); // 不落盘 → 读取抛错
+    stubScan([Uri.file(childDefPath), Uri.file(malformedPath), Uri.file(ghostPath)]);
+    const doc = openDoc(CHILD_DEF);
+    const locations = await provideDefSymbolReferences(doc, posOf(CHILD_DEF, 'Monster'), true);
+    // Monster 声明(Monster.def)+ Child.def 中的 Parent 引用位;坏文件不拖垮查询
+    expect(locations).not.toBeNull();
+    const files = locations!.map(location => location.uri.fsPath);
+    expect(files).toContain(monsterDefPath);
+    expect(files).toContain(childDefPath);
+  });
+
+  it('重复引用位去重:同文件经 def/types.xml 双 glob 重复进扫描 → 引用位只出一次', async () => {
+    // collectCustomTypeSites 把 '**/*.def' 与 '**/types.xml' 两路枚举拼接;
+    // 同一文件两路都可得时同位引用会重复入库,最终locations 面必须去重。
+    const typesXmlPath = path.join(wsRoot, 'scripts', 'entity_defs', 'types.xml');
+    fs.writeFileSync(typesXmlPath, '<root><Vec3><Properties><x><Type>Vec3</Type></x></Properties></Vec3></root>\n');
+    stubWorkspace.findFiles = (async (glob?: string) => {
+      if (glob === '**/*.def' || glob === '**/types.xml') {
+        return [Uri.file(typesXmlPath)];
+      }
+      return [];
+    }) as typeof stubWorkspace.findFiles;
+    const typeDocContent = '<root>\n  <Properties>\n    <pos>\n      <Type>Vec3</Type>\n    </pos>\n  </Properties>\n</root>\n';
+    const doc = openDoc(typeDocContent);
+    const locations = await provideDefSymbolReferences(doc, posOf(typeDocContent, 'Vec3'), true);
+    expect(locations).not.toBeNull();
+    const siteKeys = locations!.map(location => `${location.uri.fsPath}:${location.range.start.line}:${location.range.start.character}`);
+    expect(new Set(siteKeys).size).toBe(siteKeys.length);
+  });
+
+  it('取消面:采集循环顶取消 → 如实 null(parent/type/interface 三路)', async () => {
+    // type 路前提:Vec3 是 types.xml 自定义类型,否则派发根本进不了 collectCustomTypeSites
+    const typesXmlPath = path.join(wsRoot, 'scripts', 'entity_defs', 'types.xml');
+    fs.writeFileSync(typesXmlPath, [
+      '<root>',
+      '  <Vec3>',
+      '    <Properties>',
+      '      <x>',
+      '        <Type>FLOAT</Type>',
+      '      </x>',
+      '    </Properties>',
+      '  </Vec3>',
+      '</root>',
+      ''
+    ].join('\n'));
+    const typeDefContent = '<root>\n  <Properties>\n    <pos>\n      <Type>Vec3</Type>\n    </pos>\n  </Properties>\n</root>\n';
+    for (const [content, word] of [
+      [CHILD_DEF, 'Monster'],
+      [typeDefContent, 'Vec3'],
+      [IFACE_DEF, 'IMove']
+    ] as Array<[string, string]>) {
+      const cts = new CancellationTokenSource();
+      stubWorkspace.findFiles = (async (glob?: string) => {
+        cts.cancel(); // 文件枚举在途即取消 → 循环顶如实返回
+        if (glob === '**/*.def') {
+          return [Uri.file(childDefPath)];
+        }
+        if (glob === '**/types.xml') {
+          return [Uri.file(typesXmlPath)];
+        }
+        return [];
+      }) as typeof stubWorkspace.findFiles;
+      const doc = openDoc(content);
+      const result = await provideDefSymbolReferences(doc, posOf(content, word), true, cts.token);
+      expect(result).toBeNull();
+    }
+  });
+
+  it('取消面:进入即已取消 → 如实 null', async () => {
+    const cts = new CancellationTokenSource();
+    cts.cancel();
+    const doc = openDoc(CHILD_DEF);
+    const result = await provideDefSymbolReferences(doc, posOf(CHILD_DEF, 'Monster'), true, cts.token);
+    expect(result).toBeNull();
+  });
+
+  it('无工作区根:如实 null', async () => {
+    stubWorkspace.workspaceFolders = [];
+    const doc = openDoc(CHILD_DEF);
+    const result = await provideDefSymbolReferences(doc, posOf(CHILD_DEF, 'Monster'), true);
+    expect(result).toBeNull();
+  });
+
+  it('parent 目标但实体 def 缺失:如实 null,不出声明', async () => {
+    const ghostChild = [
+      '<root>',
+      '  <Parent>Ghost</Parent>',
+      '</root>',
+      ''
+    ].join('\n');
+    const doc = openDoc(ghostChild);
+    const result = await provideDefSymbolReferences(doc, posOf(ghostChild, 'Ghost'), true);
+    expect(result).toBeNull();
+  });
+
+  it('interface 目标零引用零声明:空结果如实 null', async () => {
+    const lonely = [
+      '<root>',
+      '  <Interfaces>',
+      '    INope',
+      '  </Interfaces>',
+      '</root>',
+      ''
+    ].join('\n');
+    // 扫描列表里混入读不得的文件:单文件读取失败只 continue,不拖垮查询
+    const ghostPath = path.join(wsRoot, 'scripts', 'entity_defs', 'Ghost.def');
+    stubScan([Uri.file(ghostPath)]);
+    const doc = openDoc(lonely);
+    const result = await provideDefSymbolReferences(doc, posOf(lonely, 'INope'), true);
+    expect(result).toBeNull();
   });
 });

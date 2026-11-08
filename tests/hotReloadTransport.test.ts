@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import * as net from 'net';
 import {
+  defaultReloadTelnetConnector,
+  defaultReloadWaitForReady,
   HttpReloadTransport,
   KbengineOfficialTransport,
   normalizeReloadChannelConfig,
@@ -521,5 +524,104 @@ describe('normalizeReloadChannelConfig (IDE-HOT-102 profile 读回校验)', () =
     expect(normalizeReloadChannelConfig({ channel: 'kbengine-official', official: { host: 'h', port: 65536 } })).toBeUndefined();
     expect(normalizeReloadChannelConfig({ channel: 'kbengine-official', official: { host: 'h', port: 1.5 } })).toBeUndefined();
     expect(normalizeReloadChannelConfig({ channel: 'kbengine-official' })).toBeUndefined();
+  });
+});
+
+const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+
+describe('hotReloadTransport 缺口臂(畸形回执/非 JSON 装饰/真实连接器/就绪轮询/回显二次收尾)', () => {
+  it('parseReloadHttpReceipts:数组内非对象条目如实跳过', () => {
+    const receipts = parseReloadHttpReceipts(
+      JSON.stringify(['str', 42, null, { status: 'accepted', file: files[0], digest: 'a'.repeat(64) }]),
+      files
+    );
+    expect(receipts).toEqual([
+      { status: 'accepted', file: files[0], digest: 'a'.repeat(64) },
+      { status: 'sent', file: files[1], detail: expect.stringContaining('无匹配') }
+    ]);
+  });
+
+  it('send 带 senderDigests 且请求体非 JSON:digest 装饰器按原样保留,不虚构结构', async () => {
+    const captured: Array<{ body: string }> = [];
+    const transport = new HttpReloadTransport(entry({ body: 'plain text body' }), {
+      run: request => {
+        captured.push(request);
+        return Promise.resolve({ status: 200, body: '' });
+      }
+    });
+    const digests = new Map<string, string>([[files[0], 'd'.repeat(64)]]);
+    const summary = await transport.send(target, files, () => undefined, digests);
+    // 非 JSON 请求体无处附加 sender_digests:原样发出,如实不装饰
+    expect(captured[0].body).toBe('plain text body');
+    expect(summary.receipts.every(r => r.status === 'sent')).toBe(true);
+  });
+
+  it('defaultReloadTelnetConnector:事件接线与 data/close 直通真实客户端', async () => {
+    // 起一个连接即写数据的真 TCP 服务,验证 onData/onClose 直通
+    const server = net.createServer(socket => {
+      socket.write('welcome\n');
+    });
+    const port = await new Promise<number>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => resolve((server.address() as net.AddressInfo).port));
+    });
+    const events: string[] = [];
+    const conn = defaultReloadTelnetConnector({ host: '127.0.0.1', port });
+    try {
+      conn.onData(text => events.push(`data:${text.trim()}`));
+      conn.onClose(hadError => events.push(`close:${String(hadError)}`));
+      expect(conn.isReady()).toBe(false);
+      expect(conn.sendCommand('x')).toBe(false); // 非 ready 态拒绝,不崩
+      conn.connect();
+      await sleep(120);
+      expect(events.some(e => e.startsWith('data:welcome'))).toBe(true);
+    } finally {
+      conn.disconnect();
+      await sleep(30);
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+    expect(events.some(e => e.startsWith('close:'))).toBe(true);
+  });
+
+  it('defaultReloadWaitForReady:就绪即真;超时如实假', async () => {
+    const ready = await defaultReloadWaitForReady(
+      { connect: () => undefined, disconnect: () => undefined, isReady: () => true, sendCommand: () => true, onData: () => undefined, onClose: () => undefined },
+      1_000
+    );
+    expect(ready).toBe(true);
+    const never = await defaultReloadWaitForReady(
+      { connect: () => undefined, disconnect: () => undefined, isReady: () => false, sendCommand: () => false, onData: () => undefined, onClose: () => undefined },
+      40
+    );
+    expect(never).toBe(false);
+  });
+
+  it('回显先到、关闭后到:finish 二次进入按 done 短路,不重复收尾', async () => {
+    let dataListener: ((text: string) => void) | undefined;
+    let closeListener: ((hadError: boolean) => void) | undefined;
+    const conn: ReloadTelnetConnection = {
+      connect: () => undefined,
+      disconnect: () => undefined,
+      isReady: () => true,
+      sendCommand: () => true,
+      onData: listener => {
+        dataListener = listener;
+      },
+      onClose: listener => {
+        closeListener = listener;
+      }
+    };
+    const transport = new KbengineOfficialTransport(
+      { host: 'h', port: 1 },
+      { connect: () => conn, waitForReady: async () => true, awaitEchoMs: 30 }
+    );
+    const sendPromise = transport.send(target, files, () => undefined);
+    queueMicrotask(() => {
+      dataListener?.('echo-first');
+      setTimeout(() => closeListener?.(false), 5);
+    });
+    const summary = await sendPromise;
+    expect(summary.receipts.every(r => r.status === 'sent')).toBe(true);
+    await sleep(20); // 关闭事件落在回显之后 → captureEcho 的 finish 二次进入走 done 短路
   });
 });

@@ -19,7 +19,8 @@ import {
   findKbeDataDictAccesses,
   inferDataDictValueType,
   isKeyInsideLineComment,
-  queryDataDictSitesForAccess
+  queryDataDictSitesForAccess,
+  resolveScopeRoot
 } from './globalDataIndex';
 import { inferSelfAttributeFlow } from './selfAttributeFlowTypes';
 import { flowVersionKeyForDocument } from './flowVersionKey';
@@ -272,8 +273,8 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
           ensured = true;
         }
         const types: string[] = [];
-        // 函数调用键 → 现解签名取并集;普通键走单键查询
-        for (const site of queryDataDictSitesForAccess(this.dataDictIndex, access)) {
+        // AUD-068 同款:查询带根身份(索引按 workspace 根身份键提交)
+        for (const site of queryDataDictSitesForAccess(this.dataDictIndex, access, resolveScopeRoot(document.uri.fsPath))) {
           if (site.kind !== 'write') {
             continue;
           }
