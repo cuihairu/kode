@@ -229,7 +229,10 @@ mod tests {
         assert!(!out["layout"]["fields"].as_array().unwrap().is_empty());
         // slot_list 是 ARRAY of UINT32(长度前缀动态),count 是 UINT32 定长。
         let fields = out["layout"]["fields"].as_array().unwrap();
-        let slot = fields.iter().find(|f| f["name"] == "slot_list").expect("slot_list");
+        let slot = fields
+            .iter()
+            .find(|f| f["name"] == "slot_list")
+            .expect("slot_list");
         assert_eq!(slot["kind"], "ARRAY");
         assert_eq!(slot["size"], Value::Null); // 动态
         let count = fields.iter().find(|f| f["name"] == "count").expect("count");
@@ -240,7 +243,8 @@ mod tests {
     fn method_frame_resolves_args_with_offsets() {
         let k = kb();
         // Account.reqCreateAvatar 单参 STRING(长度前缀动态)。
-        let out = protocol_frame(&k, None, Some("Account"), Some("reqCreateAvatar"), None).expect("frame");
+        let out = protocol_frame(&k, None, Some("Account"), Some("reqCreateAvatar"), None)
+            .expect("frame");
         assert_eq!(out["frame"], "Account.reqCreateAvatar");
         assert_eq!(out["argCount"], 1);
         assert_eq!(out["fields"][0]["name"], "STRING");
@@ -260,9 +264,18 @@ mod tests {
     fn offset_after_variable_length_is_not_falsely_precise() {
         use kode_server::wire_codec::{WireField, WireLayout};
         let layout = WireLayout::FixedDict(vec![
-            WireField { name: "s".into(), layout: WireLayout::Str },
-            WireField { name: "a".into(), layout: WireLayout::U32 },
-            WireField { name: "b".into(), layout: WireLayout::U16 },
+            WireField {
+                name: "s".into(),
+                layout: WireLayout::Str,
+            },
+            WireField {
+                name: "a".into(),
+                layout: WireLayout::U32,
+            },
+            WireField {
+                name: "b".into(),
+                layout: WireLayout::U16,
+            },
         ]);
         let (node, end) = render_layout(&layout, "T", Some(0));
         let fields = node["fields"].as_array().unwrap();
@@ -280,12 +293,24 @@ mod tests {
         use kode_server::wire_codec::{WireField, WireLayout};
         // 内层全定长字典(3×U32);外层把内层放 offset 4 处。
         let inner = WireLayout::FixedDict(vec![
-            WireField { name: "x".into(), layout: WireLayout::U32 },
-            WireField { name: "y".into(), layout: WireLayout::U32 },
+            WireField {
+                name: "x".into(),
+                layout: WireLayout::U32,
+            },
+            WireField {
+                name: "y".into(),
+                layout: WireLayout::U32,
+            },
         ]);
         let outer = WireLayout::FixedDict(vec![
-            WireField { name: "pre".into(), layout: WireLayout::U32 },
-            WireField { name: "inner".into(), layout: inner },
+            WireField {
+                name: "pre".into(),
+                layout: WireLayout::U32,
+            },
+            WireField {
+                name: "inner".into(),
+                layout: inner,
+            },
         ]);
         let (node, _) = render_layout(&outer, "Outer", Some(0));
         let fields = node["fields"].as_array().unwrap();
@@ -305,20 +330,35 @@ mod tests {
     fn nested_all_fixed_dict_is_fixed_size() {
         use kode_server::wire_codec::{WireField, WireLayout};
         let inner = WireLayout::FixedDict(vec![
-            WireField { name: "a".into(), layout: WireLayout::U32 },
-            WireField { name: "b".into(), layout: WireLayout::U16 },
+            WireField {
+                name: "a".into(),
+                layout: WireLayout::U32,
+            },
+            WireField {
+                name: "b".into(),
+                layout: WireLayout::U16,
+            },
         ]);
         // 嵌套全定长字典定长(旧码 shallow fixed_size 对 FixedDict 恒 None)。
-        assert_eq!(fixed_size(&WireLayout::FixedDict(vec![
-            WireField { name: "i".into(), layout: inner.clone() },
-        ])), Some(6));
+        assert_eq!(
+            fixed_size(&WireLayout::FixedDict(vec![WireField {
+                name: "i".into(),
+                layout: inner.clone()
+            },])),
+            Some(6)
+        );
         // 内层含动态字段 → 整体动态。
-        let dyn_inner = WireLayout::FixedDict(vec![
-            WireField { name: "s".into(), layout: WireLayout::Str },
-        ]);
-        assert_eq!(fixed_size(&WireLayout::FixedDict(vec![
-            WireField { name: "i".into(), layout: dyn_inner },
-        ])), None);
+        let dyn_inner = WireLayout::FixedDict(vec![WireField {
+            name: "s".into(),
+            layout: WireLayout::Str,
+        }]);
+        assert_eq!(
+            fixed_size(&WireLayout::FixedDict(vec![WireField {
+                name: "i".into(),
+                layout: dyn_inner
+            },])),
+            None
+        );
     }
 
     // ---- 跨节同名方法消歧(prove-red:旧码无 section 参,同名方法首节胜)。----
@@ -331,12 +371,24 @@ mod tests {
         assert!(any["section"].as_str().is_some());
         // 显式节过滤:命中该节。
         let sec = any["section"].as_str().unwrap();
-        let filtered = protocol_frame(&k, None, Some("Account"), Some("reqCreateAvatar"), Some(sec))
-            .expect("frame");
+        let filtered = protocol_frame(
+            &k,
+            None,
+            Some("Account"),
+            Some("reqCreateAvatar"),
+            Some(sec),
+        )
+        .expect("frame");
         assert_eq!(filtered["section"], sec);
         // 未知节 → Err。
-        assert!(protocol_frame(&k, None, Some("Account"), Some("reqCreateAvatar"), Some("Nope"))
-            .is_err());
+        assert!(protocol_frame(
+            &k,
+            None,
+            Some("Account"),
+            Some("reqCreateAvatar"),
+            Some("Nope")
+        )
+        .is_err());
     }
 
     // ---- 标量/容器线宽与类型名全谱(覆盖 fixed_size/kind_of 全部内建分支)。----

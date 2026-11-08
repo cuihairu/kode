@@ -345,8 +345,13 @@ pub fn why_setting(root: &Path, key: &str) -> Result<Value, String> {
     out.insert(
         "sourceComments".into(),
         Value::Array(
-            node.map(|n| n.source_comments.iter().map(|c| Value::String(c.clone())).collect())
-                .unwrap_or_default(),
+            node.map(|n| {
+                n.source_comments
+                    .iter()
+                    .map(|c| Value::String(c.clone()))
+                    .collect()
+            })
+            .unwrap_or_default(),
         ),
     );
     match doc {
@@ -398,7 +403,11 @@ pub fn list_config_settings(root: &Path, group: Option<&str>, prefix: Option<&st
         *group_counts
             .entry(doc.group.to_string())
             .or_insert_with(|| json!(0)) = {
-            let n = group_counts.get(doc.group).and_then(Value::as_u64).unwrap_or(0) + 1;
+            let n = group_counts
+                .get(doc.group)
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+                + 1;
             json!(n)
         };
         if let Some(g) = group {
@@ -473,10 +482,17 @@ mod tests {
              <databaseName> kbe_db </databaseName>\n</default>\n\
              </databaseInterfaces>\n</dbmgr>\n</root>\n",
         );
-        write_config(&root, "kbengine.xml", "<root>\n<baseapp>\n<backupPeriod> 500 </backupPeriod>\n</baseapp>\n</root>\n");
+        write_config(
+            &root,
+            "kbengine.xml",
+            "<root>\n<baseapp>\n<backupPeriod> 500 </backupPeriod>\n</baseapp>\n</root>\n",
+        );
         let payload = final_config(&root);
         // defaultsPath 有 defaults → 字符串(非 null)。
-        assert!(payload["defaultsPath"].as_str().unwrap().ends_with("kbengine_defaults.xml"));
+        assert!(payload["defaultsPath"]
+            .as_str()
+            .unwrap()
+            .ends_with("kbengine_defaults.xml"));
         let db = payload["dbInterface"].as_object().expect("dbInterface");
         assert_eq!(db["host"], "10.0.0.5");
         assert_eq!(db["port"], 3307);
@@ -496,11 +512,22 @@ mod tests {
         // 点分键含空段(baseapp..backupPeriod):空段跳过,值照常解析;
         // defaults 在 → defaultsPath 字符串。
         let root = std::env::temp_dir().join(format!("kode-mcp-why-{}", std::process::id()));
-        write_config(&root, "kbengine.xml", "<root>\n<baseapp>\n<backupPeriod> 500 </backupPeriod>\n</baseapp>\n</root>\n");
-        write_config(&root, "kbengine_defaults.xml", "<root>\n<cellapp>\n<distanceField> x </distanceField>\n</cellapp>\n</root>\n");
+        write_config(
+            &root,
+            "kbengine.xml",
+            "<root>\n<baseapp>\n<backupPeriod> 500 </backupPeriod>\n</baseapp>\n</root>\n",
+        );
+        write_config(
+            &root,
+            "kbengine_defaults.xml",
+            "<root>\n<cellapp>\n<distanceField> x </distanceField>\n</cellapp>\n</root>\n",
+        );
         let out = why_setting(&root, "baseapp..backupPeriod").expect("answer");
         assert_eq!(out["value"], "500");
-        assert!(out["defaultsPath"].as_str().unwrap().ends_with("kbengine_defaults.xml"));
+        assert!(out["defaultsPath"]
+            .as_str()
+            .unwrap()
+            .ends_with("kbengine_defaults.xml"));
         std::fs::remove_dir_all(&root).ok();
     }
 
@@ -618,17 +645,20 @@ mod tests {
 
     #[test]
     fn why_setting_answers_value_meaning_and_origin() {
-        let payload = why_setting(&fixture_root(), "dbmgr.account_system.account_registration.enable")
-            .expect("answer");
+        let payload = why_setting(
+            &fixture_root(),
+            "dbmgr.account_system.account_registration.enable",
+        )
+        .expect("answer");
         // 值来自元件侧(无 defaults → 合并不猜,取 custom_tree)。
         assert_eq!(payload["value"], "true");
         // 中英含义来自文案库(curated)。
         assert_eq!(payload["found"], true);
-        assert!(payload["meaningZh"]
+        assert!(payload["meaningZh"].as_str().unwrap().contains("开放注册"));
+        assert!(payload["meaningEn"]
             .as_str()
             .unwrap()
-            .contains("开放注册"));
-        assert!(payload["meaningEn"].as_str().unwrap().contains("registration"));
+            .contains("registration"));
         // 出处 = 权威 file:line(文案库 source)。
         assert!(payload["origin"]
             .as_str()
@@ -637,7 +667,10 @@ mod tests {
         assert_eq!(payload["group"], "account");
         // 解析树该节点原始双语注释作交叉佐证。
         let comments = payload["sourceComments"].as_array().unwrap();
-        assert!(!comments.is_empty(), "fixture node carries its inline comment");
+        assert!(
+            !comments.is_empty(),
+            "fixture node carries its inline comment"
+        );
     }
 
     #[test]
@@ -711,7 +744,9 @@ mod tests {
         let prefix = list_config_settings(&fixture_root(), None, Some("baseapp."));
         let ps = prefix["settings"].as_array().unwrap();
         assert!(!ps.is_empty());
-        assert!(ps.iter().all(|s| s["key"].as_str().unwrap().starts_with("baseapp.")));
+        assert!(ps
+            .iter()
+            .all(|s| s["key"].as_str().unwrap().starts_with("baseapp.")));
 
         // 未知名组 → 空集如实,不报错。
         let none = list_config_settings(&fixture_root(), Some("no-such-group"), None);

@@ -155,7 +155,8 @@ mod tests {
 
     #[test]
     fn missing_root_is_reported_as_scan_error() {
-        let root = std::env::temp_dir().join(format!("kode-mcp-missing-docs-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("kode-mcp-missing-docs-{}", std::process::id()));
         let result = search_docs(&root, &[], "anything", 20).unwrap();
         assert_eq!(result["count"], 0);
         assert_eq!(result["scan_errors"], 1);
@@ -219,7 +220,8 @@ mod tests {
 
     #[test]
     fn setext_title_and_oversized_file_handling() {
-        let root = std::env::temp_dir().join(format!("kode-mcp-docs-setext-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("kode-mcp-docs-setext-{}", std::process::id()));
         let dir = root.join("docs");
         std::fs::create_dir_all(&dir).unwrap();
         // Setext 一级标题:`===` 下划线。

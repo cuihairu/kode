@@ -787,7 +787,8 @@ mod tests {
     fn component_slot_without_type_is_skipped() {
         // 组件槽无 <Type>(component_type None)→ 跳过,不猜组件 def。
         let mut k = AssetKnowledge::default();
-        let text = "<root><Components><slotA><Persistent> true </Persistent></slotA></Components></root>";
+        let text =
+            "<root><Components><slotA><Persistent> true </Persistent></slotA></Components></root>";
         let model = parse_def(text);
         k.defs.insert(
             "A".into(),

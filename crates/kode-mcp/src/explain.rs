@@ -301,8 +301,9 @@ mod tests {
         // 协议帧/报文面:explain 命中线协议规范文(承载 protocol_frame 接地)。
         let out = explain("protocol frame", None, "en");
         let matches = out["knowledge"].as_array().unwrap();
-        assert!(matches.iter().any(|m| m["file"]
-            == "docs/kbengine-wire-protocol.md"));
+        assert!(matches
+            .iter()
+            .any(|m| m["file"] == "docs/kbengine-wire-protocol.md"));
     }
 
     #[test]

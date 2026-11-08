@@ -115,11 +115,7 @@ fn find_py_class<'a>(py: &'a [PySymbol], impl_symbol: &str) -> Option<&'a PySymb
 ///
 /// 无模块前缀或模块缺失 → 回落全局同名类/全 scripts 扫对象名(有界);
 /// 找不到 → None(如实,不猜)。
-fn implemented_by_class(
-    py: &[PySymbol],
-    root: &Path,
-    full_symbol: &str,
-) -> Option<String> {
+fn implemented_by_class(py: &[PySymbol], root: &Path, full_symbol: &str) -> Option<String> {
     let full_symbol = full_symbol.trim();
     if let Some((module, name)) = full_symbol.rsplit_once('.') {
         let module = module.trim();
@@ -236,7 +232,7 @@ fn resolve_py_type(
                     }
                 }
             }
-        }
+        };
     } else if let Some(alias) = kb.alias.aliases.iter().find(|a| a.name == name) {
         via.push(format!("alias.xml:{name}"));
         return resolve_py_type(kb, py, root, &alias.alias_type, depth + 1, via, impl_full);
@@ -454,7 +450,11 @@ fn build_edges(kb: &AssetKnowledge, py: &[PySymbol], root: &Path) -> Vec<RefEdge
         for prop in &def.model.properties {
             let type_name = prop.type_name.as_deref().unwrap_or("STRING");
             let resolved = resolve_prop(kb, py, root, prop, &impl_full);
-            if resolved.via.iter().any(|v| v.contains("types.xml:") || v.contains("alias.xml:")) {
+            if resolved
+                .via
+                .iter()
+                .any(|v| v.contains("types.xml:") || v.contains("alias.xml:"))
+            {
                 // 目标行 = types.xml/alias.xml 声明行(精确定位,不省略)。
                 let to_line = kb
                     .types
@@ -569,8 +569,20 @@ pub fn find_references(
     for edge in build_edges(kb, &py, root) {
         let hit = edge.from.to_lowercase().contains(&q)
             || edge.to.to_lowercase().contains(&q)
-            || edge.from.split(':').next_back().unwrap_or("").to_lowercase().contains(&q)
-            || edge.to.split(':').next_back().unwrap_or("").to_lowercase().contains(&q);
+            || edge
+                .from
+                .split(':')
+                .next_back()
+                .unwrap_or("")
+                .to_lowercase()
+                .contains(&q)
+            || edge
+                .to
+                .split(':')
+                .next_back()
+                .unwrap_or("")
+                .to_lowercase()
+                .contains(&q);
         if !hit {
             continue;
         }
@@ -763,7 +775,7 @@ mod tests {
     #[test]
     fn builtin_resolves_determined() {
         let k = kb();
-        let r = res(&k,&[], &root(), "UINT32");
+        let r = res(&k, &[], &root(), "UINT32");
         assert_eq!(r.display, "int");
         assert_eq!(r.confidence, Confidence::Determined);
     }
@@ -772,7 +784,7 @@ mod tests {
     fn alias_chain_expands_to_builtin() {
         let k = kb();
         // ITEM_ID = UINT16(别名链)。
-        let r = res(&k,&[], &root(), "ITEM_ID");
+        let r = res(&k, &[], &root(), "ITEM_ID");
         assert_eq!(r.display, "int");
         assert_eq!(r.confidence, Confidence::Determined);
         assert!(r.via.iter().any(|v| v.contains("ITEM_ID")));
@@ -782,7 +794,7 @@ mod tests {
     fn array_type_becomes_list_of_element() {
         let k = kb();
         // ITEM_IDS = ARRAY of ITEM_ID → list[int]。
-        let r = res(&k,&[], &root(), "ITEM_IDS");
+        let r = res(&k, &[], &root(), "ITEM_IDS");
         assert_eq!(r.display, "list[int]");
         assert_eq!(r.confidence, Confidence::Inferred);
     }
@@ -795,7 +807,7 @@ mod tests {
         // SKILL_SLOT implementedBy → SKILL_SLOT_DATA 模块里找类(夹具 scripts)。
         // 实例赋值形态(weapon_skill_slot_list_inst = weapon_skill_slot_list())
         // 应解出类名,而非类型名。
-        let r = res(&k,&py, &root, "SKILL_SLOT");
+        let r = res(&k, &py, &root, "SKILL_SLOT");
         assert_eq!(r.confidence, Confidence::Inferred);
         assert!(r.via.iter().any(|v| v.starts_with("implementedBy:")));
         // 实例赋值解析成功 → 显示解出的类名(不再是类型名)。
@@ -805,7 +817,7 @@ mod tests {
     #[test]
     fn unknown_type_is_unknown_not_guessed() {
         let k = kb();
-        let r = res(&k,&[], &root(), "NO_SUCH_TYPE");
+        let r = res(&k, &[], &root(), "NO_SUCH_TYPE");
         assert_eq!(r.confidence, Confidence::Unknown);
         assert_eq!(r.display, "NO_SUCH_TYPE");
     }
@@ -1061,8 +1073,7 @@ mod tests {
     }
 
     fn py_root(tag: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
-        let root =
-            std::env::temp_dir().join(format!("kode-mcp-{tag}-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("kode-mcp-{tag}-{}", std::process::id()));
         let scripts = root.join("scripts");
         std::fs::create_dir_all(&scripts).unwrap();
         for (name, src) in files {
@@ -1089,7 +1100,11 @@ mod tests {
         // 绝不无限递归(深度护栏防环)。
         let mut k = AssetKnowledge::default();
         for i in 0..11 {
-            let directive = if i < 10 { Some(format!("A{}", i + 1)) } else { None };
+            let directive = if i < 10 {
+                Some(format!("A{}", i + 1))
+            } else {
+                None
+            };
             k.types.types.push(kode_parser::model::TypeDecl {
                 name: format!("A{i}"),
                 name_span: kode_parser::diag::Span { start: 0, end: 0 },
@@ -1104,7 +1119,11 @@ mod tests {
         let r = res(&k, &[], &root(), "A0");
         assert_eq!(r.display, "Any");
         assert_eq!(r.confidence, Confidence::Unknown);
-        assert!(r.via.len() >= 9, "path should record the chain, got {:?}", r.via);
+        assert!(
+            r.via.len() >= 9,
+            "path should record the chain, got {:?}",
+            r.via
+        );
     }
 
     #[test]
@@ -1174,7 +1193,10 @@ mod tests {
 
     #[test]
     fn module_missing_falls_back_to_global_class_and_instance_scan() {
-        let root = py_root("mfall", &[("mod.py", "class factory:\n    pass\n\ninst = Weapon()\n")]);
+        let root = py_root(
+            "mfall",
+            &[("mod.py", "class factory:\n    pass\n\ninst = Weapon()\n")],
+        );
         let py = collect_symbols(&root);
         // 模块文件缺失 → 回落全局同名类(不因模块缺失而失联)。
         assert_eq!(
@@ -1187,7 +1209,10 @@ mod tests {
             Some("Weapon")
         );
         // 完全不可解析 → None。
-        assert_eq!(implemented_by_class(&py, &root, "ghost_module.nothere"), None);
+        assert_eq!(
+            implemented_by_class(&py, &root, "ghost_module.nothere"),
+            None
+        );
         std::fs::remove_dir_all(&root).ok();
     }
 
@@ -1219,7 +1244,10 @@ mod tests {
         let k = kb();
         let root = py_root(
             "pymeth",
-            &[("mod.py", "class Account:\n    def login(self):\n        pass\n")],
+            &[(
+                "mod.py",
+                "class Account:\n    def login(self):\n        pass\n",
+            )],
         );
         let out = find_symbol(&k, &root, "login", 20).expect("answer");
         let m = out["matches"]
@@ -1246,9 +1274,13 @@ mod tests {
         // 实例赋值形态解出类名,但 scripts 无该类符号 → 如实省略 toFile/toLine
         // (不虚构定位)。
         let mut k = AssetKnowledge::default();
-        k.types
-            .types
-            .push(td("INST_FD", TypeKind::FixedDict, None, Some("m.inst"), None));
+        k.types.types.push(td(
+            "INST_FD",
+            TypeKind::FixedDict,
+            None,
+            Some("m.inst"),
+            None,
+        ));
         let root = py_root("instonly", &[("m.py", "inst = Weapon()\n")]);
         let out = find_references(&k, &root, "INST_FD", 20).expect("answer");
         let e = out["matches"]
@@ -1268,8 +1300,7 @@ mod tests {
         let k = kb();
         let root = root();
         let py = collect_symbols(&root);
-        let mut prop = k
-            .defs["Avatar"]
+        let mut prop = k.defs["Avatar"]
             .model
             .properties
             .iter()
@@ -1289,8 +1320,7 @@ mod tests {
         let k = kb();
         let root = root();
         let py = collect_symbols(&root);
-        let mut prop = k
-            .defs["Avatar"]
+        let mut prop = k.defs["Avatar"]
             .model
             .properties
             .iter()
@@ -1330,7 +1360,10 @@ mod tests {
             .expect("property implementedBy edge");
         assert_eq!(e.to, "py:weapon_skill_slot_list");
         assert_eq!(e.confidence, Confidence::Inferred);
-        assert!(e.to_file.is_some(), "implementedBy edge should carry a location");
+        assert!(
+            e.to_file.is_some(),
+            "implementedBy edge should carry a location"
+        );
         assert!(e.to_line.is_some());
     }
 
@@ -1376,10 +1409,8 @@ mod tests {
     fn implemented_by_unreadable_module_is_unknown_not_panic() {
         // 模块文件在但不可按 UTF-8 读取:类形态读失败 → None,实例形态读
         // 失败 → None → 如实 Unknown + (class-not-found),不 panic。
-        let root = std::env::temp_dir().join(format!(
-            "kode-mcp-impl-badutf-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("kode-mcp-impl-badutf-{}", std::process::id()));
         std::fs::create_dir_all(root.join("scripts")).unwrap();
         std::fs::write(root.join("scripts").join("bad.py"), [0xFF, 0xFE, 0x00]).unwrap();
         let mut k = AssetKnowledge::default();
@@ -1417,20 +1448,16 @@ mod tests {
         // limit 未到 → 类型循环正常续行(不提前截断),py 符号亦命中。
         let out = find_symbol(&k, &root, "skill_slot", 20).expect("answer");
         assert_eq!(out["count"], 2);
-        assert!(
-            out["matches"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|m| m["kind"] == "type")
-        );
-        assert!(
-            out["matches"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|m| m["kind"] == "class")
-        );
+        assert!(out["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["kind"] == "type"));
+        assert!(out["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["kind"] == "class"));
     }
 
     #[test]
