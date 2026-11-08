@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { findPythonReceiverCalls } from './pythonLanguageUtils';
-import type { PythonReceiverSection } from './pythonLanguageUtils';
+import { findPythonReceiverCalls, PYTHON_RECEIVER_BY_SECTION } from './pythonLanguageUtils';
+import type { PythonReceiverCall, PythonReceiverSection } from './pythonLanguageUtils';
 import {
   parsePythonMethodBlocks,
   sameIdentity,
@@ -51,10 +51,17 @@ const RECEIVER_SECTION_TO_METHOD_SECTION: Record<
   client: 'ClientMethods'
 };
 
+/** Exposed 方法入边的合成 client 源节点 id(唯一,纯来源,不进 BFS 前沿) */
+const CLIENT_SOURCE_NODE_ID = 'client';
+
 export function renderDefCallChainMermaid(chain: DefCallChain): string {
   const lines = ['flowchart TD'];
   for (const node of chain.nodes) {
-    const shape = node.resolved ? `["${node.signature}"]` : `(["${node.signature}"])`;
+    // client 源用 stadium 形状,与普通解析框(方角)/未解析框(也 stadium 但带
+    // "(?)" 签名)视觉可辨。
+    const shape = node.id === CLIENT_SOURCE_NODE_ID
+      ? `(["${node.signature}"])`
+      : node.resolved ? `["${node.signature}"]` : `(["${node.signature}"])`;
     lines.push(`    ${node.id}${shape}`);
   }
   for (const edge of chain.edges) {
@@ -103,6 +110,18 @@ function unresolvedNode(
   };
 }
 
+/** Exposed 方法入边的合成 client 源节点:纯来源,不携带 def 方法语义 */
+function clientSourceNode(): DefCallChainNode {
+  return {
+    id: CLIENT_SOURCE_NODE_ID,
+    entity: 'client',
+    methodName: '',
+    section: 'ClientMethods',
+    signature: 'client',
+    resolved: true
+  };
+}
+
 function findBoundMethod(
   index: EntityMappingIndex,
   definition: IndexedMethodDefinition
@@ -115,10 +134,47 @@ function findBoundMethod(
   );
 }
 
+/** 普通 self.<name>( 调用:只认直接调用形,接收者关键字(cell/base/client)排除 */
+const PLAIN_SELF_CALL_PATTERN = /\bself\.([A-Za-z_][A-Za-z0-9_]*)\(/g;
+const RECEIVER_KEYWORDS = new Set<DefCallChainEdge['receiver']>(['cell', 'base', 'client']);
+
+/**
+ * 扫描普通 self.<name>( 调用(cell/base/client 排除)。这些调用归属封闭方法自身
+ * 的 def 段:cell 脚本里 self.moveToPoint() → CellMethods,base 脚本 → BaseMethods,
+ * client 脚本 → ClientMethods。接收者按 ownSection 反查表定。
+ */
+function findPlainSelfCalls(
+  text: string,
+  ownSection: PythonReceiverSection
+): PythonReceiverCall[] {
+  const calls: PythonReceiverCall[] = [];
+  const lines = text.split(/\r?\n/);
+  const receiver = PYTHON_RECEIVER_BY_SECTION[ownSection];
+  for (let index = 0; index < lines.length; index += 1) {
+    const regex = new RegExp(PLAIN_SELF_CALL_PATTERN.source, 'g');
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(lines[index])) !== null) {
+      const methodName = match[1];
+      if (RECEIVER_KEYWORDS.has(methodName as DefCallChainEdge['receiver'])) {
+        continue;
+      }
+      calls.push({
+        line: index,
+        character: match.index + match[0].length - methodName.length,
+        receiver,
+        section: ownSection,
+        methodName
+      });
+    }
+  }
+  return calls;
+}
+
 function receiverCallsInMethod(
   boundMethod: IndexedPythonMethodLocation,
+  ownSection: PythonReceiverSection,
   readPythonFile: (filePath: string) => string | null
-) {
+): PythonReceiverCall[] {
   const content = readPythonFile(boundMethod.filePath);
   if (content === null) {
     return [];
@@ -132,8 +188,11 @@ function receiverCallsInMethod(
   const bodyStart = methodBlock.line;
   // KR-AUD-70:endLine 截尾——methodBlock.endLine 是缩进边界,缺它则把同文件
   // 后续兄弟方法体整个并进当前方法调用面(sibling 调用误归属)。
-  return findPythonReceiverCalls(lines.slice(bodyStart, methodBlock.endLine).join('\n'))
-    .map(call => ({ ...call, line: call.line + bodyStart }));
+  const bodyText = lines.slice(bodyStart, methodBlock.endLine).join('\n');
+  return [
+    ...findPythonReceiverCalls(bodyText),
+    ...findPlainSelfCalls(bodyText, ownSection)
+  ].map(call => ({ ...call, line: call.line + bodyStart }));
 }
 
 export function findDefMethodByStart(
@@ -172,6 +231,10 @@ export function buildDefCallChain(
   const nodes = new Map<string, DefCallChainNode>([[rootNode.id, rootNode]]);
   const edges = new Map<string, DefCallChainEdge>();
   const visited = new Set<string>();
+  // 记录每个已入链的解析方法节点 → def,供 Exposed 入边收尾(只对真 def 方法)。
+  const nodeDefinitions = new Map<string, IndexedMethodDefinition>([
+    [rootNode.id, rootDefinition]
+  ]);
   let frontier: Array<{ node: DefCallChainNode; definition: IndexedMethodDefinition }> = [{
     node: rootNode,
     definition: rootDefinition
@@ -197,6 +260,7 @@ export function buildDefCallChain(
 
       const receiverCalls = receiverCallsInMethod(
         boundMethod,
+        definition.section,
         options.readPythonFile ?? readPythonFileWithMtimeCache
       );
       for (const call of receiverCalls) {
@@ -212,7 +276,10 @@ export function buildDefCallChain(
           : unresolvedNode(index.rootName, call.methodName, call.receiver);
         if (!nodes.has(targetNode.id)) {
           nodes.set(targetNode.id, targetNode);
-          if (target) nextFrontier.push({ node: targetNode, definition: target });
+          if (target) {
+            nodeDefinitions.set(targetNode.id, target);
+            nextFrontier.push({ node: targetNode, definition: target });
+          }
         }
         const edgeKey = `${node.id}->${targetNode.id}`;
         if (!edges.has(edgeKey)) {
@@ -223,9 +290,29 @@ export function buildDefCallChain(
     frontier = nextFrontier;
   }
 
+  // Part A:Exposed 方法收 client 入边。client 源唯一(仅一个节点),每个 exposed
+  // 方法一条入边;client 源纯来源,不进 BFS(不 push 到任何 frontier)。
+  const exposedNodeIds = [...nodeDefinitions.entries()]
+    .filter(([, method]) => method.exposed)
+    .map(([nodeId]) => nodeId);
+  let finalNodes = nodes;
+  if (exposedNodeIds.length > 0) {
+    finalNodes = new Map<string, DefCallChainNode>();
+    finalNodes.set(CLIENT_SOURCE_NODE_ID, clientSourceNode());
+    for (const [nodeId, node] of nodes) {
+      finalNodes.set(nodeId, node);
+    }
+    for (const nodeId of exposedNodeIds) {
+      const edgeKey = `${CLIENT_SOURCE_NODE_ID}->${nodeId}`;
+      if (!edges.has(edgeKey)) {
+        edges.set(edgeKey, { from: CLIENT_SOURCE_NODE_ID, to: nodeId, receiver: 'client' });
+      }
+    }
+  }
+
   return {
     root: rootNode,
-    nodes: [...nodes.values()],
+    nodes: [...finalNodes.values()],
     edges: [...edges.values()]
   };
 }
