@@ -185,7 +185,10 @@ describe('IDE-REV-009:超阈值入口解析走 worker,宿主零整文件同步�
     expect(items!.length).toBe(syncFindings.length); // 与同步面产出逐项一致
     expect(workerState.hostParseCalls).toBe(0); // 宿主零整文件同步解析(修复前红:同步自解析≥1)
     const maxBlock = Math.max(...latencies);
-    expect(maxBlock, `max host block ${maxBlock}ms (mid-flight max ${midFlightMax}ms)`).toBeLessThan(100);
+    // 预算 250ms(原 100):CI 满载下 10ms 采样器一次计时器合并/GC 可到 109ms
+    // (fd329cdd 观察),真同步整文件解析会远超 250ms,鉴别力不变;F13 族同
+    // 口径(负载抖动不误报,断言意义保留)。
+    expect(maxBlock, `max host block ${maxBlock}ms (mid-flight max ${midFlightMax}ms)`).toBeLessThan(250);
   }, 20_000); // 真解析面+worker 全链路,满载下超 5s 缺省超时是 CI flake 源(断言不变)
 
   it('无共享提供器默认自解析同样走 worker(层2 关闭口径),小文件阈值下仍宿主同步', async () => {
