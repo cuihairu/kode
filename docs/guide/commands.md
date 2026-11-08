@@ -749,6 +749,15 @@ The flow graph panel supports:
 - Input validation: the dbid must be a decimal positive integer; anything else is rejected before any connection is made
 - Read-only constraint: results are displayed only; no editing, no export side effects (export/import live in the dedicated Player Data Clone lane)
 
+### `kbengine.playerData.previewRedisKeyspace`
+
+- Title: `Preview Redis Keyspace (Read-Only)`
+- Purpose: list the redis keyspace of the derived backend (active when the database profile type is `redis`), classified per the engine's own key model (`kbe_entitylog:<dbid>:<type>` per `kbe/src/lib/db_redis`) — it never invents MySQL-style table structures
+- Behavior:
+  - Uses a minimal built-in RESP2 client (no new dependency); connection fields come from the connection registry's redis host/port/auth/db-index entries
+  - Unreachable redis / connection failure degrades to an honest failure message (read-only degradation, other features unaffected); an empty keyspace reports "no kbe_* keys" instead of pretending success; a non-redis backend reports it is not previewed (redis-only surface)
+  - Read-only constraint: `SCAN`/`TYPE` enumeration only — no writes, no deletes, no TTL changes
+
 ### `kbengine.httpRequests.run`
 
 - Title: `Run HTTP Quick Request`
