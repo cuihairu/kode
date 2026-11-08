@@ -1,122 +1,115 @@
 name: Publish to Marketplace
 
-# 手动发版专用:仅 workflow_dispatch 触发,无 push/tag 自动发布。
-# 版本红线:版本号只能由用户手动给出 —— 触发前须先在 package.json 提交目标版本号,
-# 再以相同版本号手动触发本 workflow;输入与 package.json 不一致直接失败。
+# A version is explicitly supplied and must already be committed in package.json.
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: '发布版本号(须与 package.json version 一致,如 0.1.1)'
+        description: 'Version matching package.json (for example 0.2.0)'
         required: true
         type: string
+      publish:
+        description: 'Publish to Marketplace after validation (false only validates)'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kode-marketplace-publish
+  cancel-in-progress: false
 
 jobs:
-  publish:
-    name: 门禁通过后发布
+  validate:
+    name: Validate version and full regression
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 40
-
+    timeout-minutes: 45
     steps:
-    - name: Checkout 代码
-      timeout-minutes: 3
-      uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Check publisher and requested version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          node -e 'const p=require("./package.json"); const v=process.env.REQUESTED_VERSION.replace(/^[vV]/, ""); if(p.publisher!=="cuihairu" || v!==p.version) { console.error("Publisher or requested version does not match package.json"); process.exit(1); }'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run compile
+      - run: pnpm run lint
+      - name: Install pytest for test panel checks
+        run: |
+          /usr/bin/python3 -m pip install --user --break-system-packages --quiet pytest \
+            || /usr/bin/python3 -m pip install --user --quiet pytest \
+            || true
+          /usr/bin/python3 -m pytest --version
+      - name: Run full tests
+        run: |
+          pnpm exec vitest run --maxWorkers=1
+          pnpm clean
+          pnpm compile
+          pnpm exec tsc -p tsconfig.mocha.json
+          node ./out/test/runTest.js
 
-    - name: 安装 pnpm
-      timeout-minutes: 10
-      uses: pnpm/action-setup@v6.1.0
-      # 以 package.json 的 packageManager 为单一来源,与 ci.yml 口径一致
+  packages:
+    name: Build and verify seven packages
+    uses: ./.github/workflows/platform-vsix.yml
+    permissions:
+      contents: read
 
-    - name: 设置 Node.js 24
-      timeout-minutes: 5
-      uses: actions/setup-node@v7.1.0
-      with:
-        node-version: 24
-        cache: 'pnpm'
+  prepare:
+    name: Verify complete package set
+    needs: [validate, packages]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: platform-vsix-*
+          path: dist
+          merge-multiple: true
+      - run: node scripts/verify-platform-set.mjs dist
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: marketplace-verified-${{ github.sha }}
+          path: |
+            dist/*.vsix
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
 
-    - name: 校验 publisher 与版本号
-      timeout-minutes: 3
-      run: |
-        publisher=$(node -p "require('./package.json').publisher")
-        if [ "$publisher" != "cuihairu" ]; then
-          echo "::error::publisher 必须是 cuihairu,当前为 ${publisher},拒绝发布"
-          exit 1
-        fi
-        pkg_version=$(node -p "require('./package.json').version")
-        # 容忍 git tag 风格的 v 前缀（v0.1.0 ≡ 0.1.0），但其余必须逐字一致
-        input_version=$(printf '%s' '${{ inputs.version }}' | sed 's/^[vV]//')
-        if [ "$input_version" != "$pkg_version" ]; then
-          echo "::error::输入版本号 ${{ inputs.version }} 与 package.json version ${pkg_version} 不一致,先提交目标版本号再触发"
-          exit 1
-        fi
-        echo "版本校验通过: ${input_version}"
-
-    - name: 安装依赖
-      timeout-minutes: 5
-      run: pnpm install --frozen-lockfile
-
-    - name: 编译 TypeScript
-      timeout-minutes: 15
-      run: pnpm run compile
-
-    - name: 运行测试
-      timeout-minutes: 15
-      run: pnpm test
-
-    - name: 运行代码检查
-      timeout-minutes: 5
-      run: pnpm run lint
-
-    - name: 打包 VSIX
-      timeout-minutes: 15
-      run: pnpm run package
-
-    - name: 诊断 PAT 归属
-      timeout-minutes: 5
-      env:
-        VSCE_PAT: ${{ secrets.VSCE_PAT }}
-      # 判定 VSCE_PAT 属于哪个发布者：'already exists' 报错常因
-      # PAT 发布者 ≠ package.json publisher，公开 API 查不到该记录
-      run: |
-        set -uo pipefail
-        echo "== VSCE_PAT 是否已配置: $([ -n "${VSCE_PAT:-}" ] && echo yes || echo no)"
-        echo "== package.json publisher=$(node -p "require('./package.json').publisher") name=$(node -p "require('./package.json').name")"
-        echo "== 该 PAT 可见的发布者:"
-        pnpm exec vsce ls-publishers 2>&1 | tail -20
-        echo "== 公开查询 cuihairu.kode-kbengine:"
-        pnpm exec vsce show cuihairu.kode-kbengine 2>&1 | tail -5
-        echo "== 鉴权侧说明: 见上方 vsce show 结果;若商店说已存在而 show 说不存在,需人工核对发布者账号"
-
-
-    - name: 上传 VSIX 文件
-      timeout-minutes: 3
-      uses: actions/upload-artifact@v7.0.2
-      with:
-        name: kode-publish-${{ inputs.version }}-${{ github.sha }}
-        path: "kode-*.vsix"
-        retention-days: 30
-
-    - name: 发布到 Marketplace
-      timeout-minutes: 10
-      env:
-        VSCE_PAT: ${{ secrets.VSCE_PAT }}
-      run: |
-        # 产物名用 package.json 版本（vsce 产出 kode-0.1.0.vsix），
-        # 输入容错 v 前缀；再用通配兜底，两种命名都能发
-        ver=$(node -p "require('./package.json').version")
-        vsix="kode-${ver}.vsix"
-        if [ ! -f "$vsix" ]; then
-          alt="kode-${{ inputs.version }}.vsix"
-          if [ -f "$alt" ]; then vsix="$alt"
-          else
-            glob=$(ls -1 kode-*.vsix 2>/dev/null | head -1)
-            if [ -n "$glob" ]; then vsix="$glob"
-            else
-              echo "::error::未找到 kode-*.vsix,打包产物异常"
-              ls kode-*.vsix || true
-              exit 1
-            fi
-          fi
-        fi
-        echo "发布产物: $vsix"
-        pnpm exec vsce publish --no-dependencies --packagePath "$vsix"
+  publish:
+    name: Publish verified packages to Marketplace
+    needs: prepare
+    if: inputs.publish
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: marketplace-verified-${{ github.sha }}
+          path: dist
+      - name: Verify downloaded package set
+        run: |
+          (cd dist && sha256sum -c SHA256SUMS)
+          node scripts/verify-platform-set.mjs dist
+      - name: Publish six platform packages and universal fallback
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          test -n "$VSCE_PAT"
+          pnpm exec vsce publish --no-dependencies --packagePath dist/*.vsix
