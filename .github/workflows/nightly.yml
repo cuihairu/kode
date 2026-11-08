@@ -47,6 +47,7 @@ jobs:
 
   validate:
     name: Existing full correctness gate
+    timeout-minutes: 45
     needs: plan
     if: needs.plan.outputs.skip != 'true'
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
@@ -87,7 +88,14 @@ jobs:
           /usr/bin/python3 -m pytest --version
 
       - name: Run tests (full gate)
-        run: pnpm test
+        # The suite contains wall-clock slice budgets. Run every test without
+        # competing test workers; keep the same limits, with no retries/skips.
+        run: |
+          pnpm exec vitest run --maxWorkers=1
+          pnpm clean
+          pnpm compile
+          pnpm exec tsc -p tsconfig.mocha.json
+          node ./out/test/runTest.js
 
   packages:
     name: Native platform packages

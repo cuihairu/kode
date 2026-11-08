@@ -84,8 +84,13 @@ export function packagePlatform(target) {
   if (!spec || spec.os !== process.platform || spec.arch !== process.arch) {
     throw new Error(`Unsupported or non-native target: ${target}`);
   }
+  const env = { ...process.env };
+  if (spec.os === 'linux') {
+    const key = `CARGO_TARGET_${spec.rust.toUpperCase().replaceAll('-', '_')}_LINKER`;
+    env[key] ??= 'rust-lld';
+  }
   run('cargo', ['build', '--locked', '--release', '--target', spec.rust,
-    '-p', 'kode-server', '--bin', 'kode-server', '-p', 'kode-kbengine', '--bin', 'kode-kbengine']);
+    '-p', 'kode-server', '--bin', 'kode-server', '-p', 'kode-kbengine', '--bin', 'kode-kbengine'], { env });
   fs.rmSync('bin', { recursive: true, force: true });
   fs.mkdirSync('bin');
   const files = {};
