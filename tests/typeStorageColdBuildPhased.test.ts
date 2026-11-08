@@ -92,7 +92,10 @@ describe('IDE-REV-013:type storage 冷索引逐实体分阶段', () => {
     expect(findTypeStorageUsages(root, 'ITEM_ID')).toHaveLength(3); // 聚合已发布
   });
 
-  it('单实体内部按预算让路:大属性集不整块阻塞(F13)', async () => {
+  // timeout 放宽到 20s:与下方 IDE-REV-039 用例同一理由——CI 共享 runner +
+  // 覆盖率插桩下 6000 属性夹具的整墙钟压在 5s 默认值边缘(2026-11-08 CI 实红);
+  // 用例自身的预算断言(yields>1)不受影响,放宽的只是宿主墙钟容忍。
+  it('单实体内部按预算让路:大属性集不整块阻塞(F13)', { timeout: 20000 }, async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-f13-'));
     temporaryDirectories.push(root);
     fs.mkdirSync(path.join(root, 'scripts/entity_defs'), { recursive: true });
