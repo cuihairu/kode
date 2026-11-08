@@ -54,6 +54,16 @@ impl CanonicalUri {
         if input.is_empty() {
             return Err(UriError::Empty);
         }
+        // An absolute drive path is not a one-letter URI scheme. Extension clients
+        // send fsPath on Windows, and its literal '%' characters are not URI escapes.
+        let bytes = input.as_bytes();
+        if bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && matches!(bytes[2], b'/' | b'\\')
+        {
+            return Ok(CanonicalUri::from_path(input));
+        }
         let raw = if let Some(rest) = strip_scheme(input, "file:") {
             // file://[host]/path —— 只接受空 host(或 localhost)的本地形态。
             if let Some(path) = rest.strip_prefix("//") {
@@ -270,6 +280,15 @@ mod tests {
         let b = CanonicalUri::from_path("c:\\Demo\\x.def");
         assert_eq!(a, b);
         assert_eq!(a.as_path(), "/C:/Demo/x.def");
+        assert_eq!(CanonicalUri::parse("c:\\Demo\\x.def").unwrap(), a);
+        assert_eq!(CanonicalUri::parse("C:/Demo/x.def").unwrap(), a);
+        assert_eq!(
+            CanonicalUri::parse("C:\\Demo\\100% done.def")
+                .unwrap()
+                .as_path(),
+            "/C:/Demo/100% done.def"
+        );
+        assert!(CanonicalUri::parse("x:relative.def").is_err());
     }
 
     #[test]

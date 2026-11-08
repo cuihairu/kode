@@ -83,6 +83,8 @@ jobs:
           -p kode-kbengine-protocol -p kode-kbengine-analyzer
       - name: Native CLI integration tests
         run: cargo test --locked --target '${{ matrix.rust }}' -p kode-kbengine --test cli_acceptance
+      - name: Windows document RPC regression on every platform
+        run: cargo test --locked --target '${{ matrix.rust }}' -p kode-server --test windows_document_uri
       - name: Extension binary discovery tests
         run: pnpm exec vitest run tests/nativeBinary.test.ts tests/kodeCoreGateWiring.test.ts tests/protocolTooling.test.ts
       - name: Build release binaries, package and verify extracted VSIX
