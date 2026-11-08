@@ -232,7 +232,7 @@ describe('QuickActionManager.show', () => {
 
     await manager.show();
 
-    expect(messages.info[0]).toContain('未配置快速执行动作');
+    expect(messages.info[0]).toContain('No quick actions configured');
     expect(messages.info[0]).toContain('.kbengine/debug.json');
     expect(pickCalls).toHaveLength(0);
 
@@ -244,7 +244,7 @@ describe('QuickActionManager.show', () => {
 
     await manager.show();
 
-    expect(messages.info[0]).toContain('未配置快速执行动作');
+    expect(messages.info[0]).toContain('No quick actions configured');
     expect(pickCalls).toHaveLength(0);
 
   });
@@ -382,7 +382,7 @@ describe('QuickActionManager.show', () => {
 
     await manager.show();
 
-    expect(messages.info[0]).toBe('快速执行动作配置中有 1 条无效，已跳过');
+    expect(messages.info[0]).toBe('Skipped 1 invalid quick action configurations');
     // 唯一有效动作 + 它前面那条组名分隔线
     expect(pickCalls[0].items).toHaveLength(2);
 
@@ -394,7 +394,7 @@ describe('QuickActionManager.show', () => {
 
     await manager.show();
 
-    expect(messages.info[0]).toContain('未配置快速执行动作');
+    expect(messages.info[0]).toContain('No quick actions configured');
     expect(pickCalls).toHaveLength(0);
 
   });
@@ -406,7 +406,7 @@ describe('QuickActionManager.show', () => {
 
     await manager.show();
 
-    expect(messages.info[0]).toContain('未配置快速执行动作');
+    expect(messages.info[0]).toContain('No quick actions configured');
     expect(pickCalls).toHaveLength(0);
 
   });
@@ -455,7 +455,7 @@ describe('QuickActionManager.runDefault(Explorer ▶ 主按钮)', () => {
 
     await manager.runDefault();
 
-    expect(messages.info[0]).toContain('未发现可执行脚本');
+    expect(messages.info[0]).toContain('No runnable actions found');
     expect(messages.info[0]).toContain('.kbengine/debug.json');
     expect(commandRuns).toHaveLength(0);
     expect(scriptRuns).toHaveLength(0);

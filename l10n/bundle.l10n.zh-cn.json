@@ -1,4 +1,9 @@
 {
+  "Skipped {count} invalid quick action configurations": "快速执行动作配置中有 {count} 条无效，已跳过",
+  "No quick actions configured. Add them to the quickActions array in .kbengine/debug.json": "未配置快速执行动作：在 .kbengine/debug.json 的 quickActions 数组里添加",
+  "Select a quick action to run": "选择要执行的快速动作",
+  "No runnable actions found. Add them to the quickActions array in .kbengine/debug.json": "未发现可执行动作：在 .kbengine/debug.json 的 quickActions 数组里添加",
+  "Last command: {target}": "上次命令：{target}",
   "Cannot scan quick actions: open a workspace first": "无法扫描快速动作：请先打开工作区",
   "No scripts found; removed {staleCount} outdated scanned actions and kept {manualCount} manual actions": "未找到脚本，已清除 {staleCount} 个过期扫描动作并保留 {manualCount} 个手工动作",
   "No .bat or .ps1 scripts found to register": "未找到可登记的 .bat / .ps1 脚本",

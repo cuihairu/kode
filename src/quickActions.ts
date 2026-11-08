@@ -432,7 +432,7 @@ export class QuickActionManager {
   async show(): Promise<void> {
     const { actions, invalidCount, warnings } = await this.loadActions();
     if (invalidCount > 0) {
-      await vscode.window.showInformationMessage(`快速执行动作配置中有 ${invalidCount} 条无效，已跳过`);
+      await vscode.window.showInformationMessage(l10nText('Skipped {count} invalid quick action configurations', { count: invalidCount }));
     }
     // background 非布尔等写法问题(2026-10-27 ①):条目保留按前台执行,但
     // 告警逐条播报——静默回落会让「写了 true 还是弹终端」查无实据
@@ -441,12 +441,12 @@ export class QuickActionManager {
     }
     if (actions.length === 0) {
       await vscode.window.showInformationMessage(
-        '未配置快速执行动作：在 .kbengine/debug.json 的 quickActions 数组里添加'
+        l10nText('No quick actions configured. Add them to the quickActions array in .kbengine/debug.json')
       );
       return;
     }
     const picked = await vscode.window.showQuickPick(buildQuickPickItems(actions, this.actionWorkspaceFolders()), {
-      placeHolder: '选择要执行的快速动作'
+      placeHolder: l10nText('Select a quick action to run')
     });
     if (!picked) {
       return;
@@ -471,7 +471,7 @@ export class QuickActionManager {
     const { actions } = await this.loadActions();
     if (actions.length === 0) {
       await vscode.window.showInformationMessage(
-        '未发现可执行脚本：在 .kbengine/debug.json 的 quickActions 数组里添加'
+        l10nText('No runnable actions found. Add them to the quickActions array in .kbengine/debug.json')
       );
       return;
     }
@@ -480,7 +480,7 @@ export class QuickActionManager {
     const folders = this.actionWorkspaceFolders();
     const picked = await vscode.window.showQuickPick(
       buildQuickPickItems([action], folders),
-      { placeHolder: `上次命令：${previewActionTarget(action, resolvedActionTarget(action, folders))}` }
+      { placeHolder: l10nText('Last command: {target}', { target: previewActionTarget(action, resolvedActionTarget(action, folders)) }) }
     );
     if (picked?.label === action.name) await this.run(action);
   }

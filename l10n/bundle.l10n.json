@@ -1,4 +1,9 @@
 {
+  "Skipped {count} invalid quick action configurations": "Skipped {count} invalid quick action configurations",
+  "No quick actions configured. Add them to the quickActions array in .kbengine/debug.json": "No quick actions configured. Add them to the quickActions array in .kbengine/debug.json",
+  "Select a quick action to run": "Select a quick action to run",
+  "No runnable actions found. Add them to the quickActions array in .kbengine/debug.json": "No runnable actions found. Add them to the quickActions array in .kbengine/debug.json",
+  "Last command: {target}": "Last command: {target}",
   "Cannot scan quick actions: open a workspace first": "Cannot scan quick actions: open a workspace first",
   "No scripts found; removed {staleCount} outdated scanned actions and kept {manualCount} manual actions": "No scripts found; removed {staleCount} outdated scanned actions and kept {manualCount} manual actions",
   "No .bat or .ps1 scripts found to register": "No .bat or .ps1 scripts found to register",
