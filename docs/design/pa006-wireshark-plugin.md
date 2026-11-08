@@ -86,7 +86,8 @@ group/world-writable 时 Wireshark 拒扫（安全加固，实测 775 被拒，�
 
 1. 正式插件 crate（独立仓库或本仓库独立 workspace 成员，GPL 标注）：
    ~~会话状态接登录动态协议导入、Expert 诊断面~~（2026-11-08 第二增量已交付，
-   见下节）、全字段树（Header derive 落 KBEngine 消息字段）。
+   见下节）、~~全字段树（Header derive 落 KBEngine 消息字段）~~（同日第三
+   增量已交付，见下节；手工 Header impl，derive 不适用动态区间）。
 2. ~~真实 KBEngine 报文 pcap 样本端到端：`tshark -r sample.pcap -Y kbengine`
    命中断言~~（2026-11-08 第二增量已交付，见下节）。
 3. Windows/macOS 各一台实机加载验证（CI 或用户机）。
@@ -130,3 +131,46 @@ anomalies——样本 body 与静态表签名既有不一致（PA-003/PA-004 遗
 插件与 CLI 逐帧一致；真实引擎流量不受影响（动态导入后再解码）。
 
 **PA-006 余量**：有类型字段树（Header derive）；Windows/macOS 实机加载。
+
+## 第三增量：有类型字段树（2026-11-08）
+
+**数据面（协议 crate 单一来源，插件零解析逻辑）**：`kode-kbengine-protocol`
+新增 `decode_spans`/`SpanKind`/`ValueSpan`（additive，不参与值解码路径）——
+`decode_inner` 的跨度镜像：同 Cursor 读序、同 Budget/深度/数组最小元素
+预检、同错误文本；唯一差异=记录消费区间而非值。EntityCall/Unresolved 同
+值解码不推进游标，Raw 跨度覆盖剩余字节。对拍锁定：`tests/span_units.rs`
+8 例（标量偏移/CString 含 NUL 高字节截断/带前缀块两层/Vector+Array 嵌套/
+FIXED_DICT 嵌套偏移/Raw 不推进游标/全语料 Ok-Err+消费字节数对拍/深度上限
+同错），全绿。
+
+**渲染面（插件）**：手工 `Header` impl（derive 面不适用——字段是运行时
+解码结果的动态区间，非静态结构体；框架允许手写 `fields()`+`add_to()`）。
+18 个注册字段：帧头 `msg_id`(U16 Hex)/`msg_len`(U16)/`msg_len_ext`(U32)，
+参数 `arg_bool`/`arg_u8..u64`/`arg_i8..i64`(LE 整数)/`arg_f32b`/`arg_f64b`
+(FT_BYTES 字节面——libwireshark alpha 未暴露 FT_FLOAT/FT_DOUBLE，不解值
+不编造)/`arg_str`(FT_STRING UTF-8)/`arg_bytes`/`arg_raw`/`arg_group`
+(FT_NONE 容器递归)。帧树缓存 `MsgTreeEntry{base,id,length_spec,payload_len,
+spans}` 按帧号缓存，重放遍复述（纯渲染无副作用）。
+
+**偏移真校验（错误复位脱节面）**：协议 crate 错误复位清缓冲不动
+`abs_base`，流内偏移与喂入字节数脱节；插件按方向记 `fed` 计数，帧 tvb
+偏移=`stream_offset-fed`，渲染前校验 tvb 帧头 2 字节==id 小端——失真帧
+如实不出树（摘要照旧），不猜偏移。
+
+**真实 pcap 验收（同第二增量样本与流程，装→验→删闭环）**：named 模式
+`-V` 树 4 帧（msg_id×4/msg_len×3（Variable 形态）/arg_str×7/arg_group×2/
+arg_u32×2/arg_bytes×2）；`-T fields -e kbengine.msg_id -e kbengine.arg_str`
+提取帧 1=`0x0004|18|2.5.10,2.5.10`、帧 6=`0x01f6|26|player1,127.0.0.1`
+（字段值与样本语义一致）；复位帧 4/5 如实无树；unknown 模式（无
+defaults_xml）全帧无树=0。回归：两模式 `-Y kbengine` 仍 6/6。
+
+**诚实边界**：dict 键名/array 下标不出树（libwireshark alpha 无
+proto_item_set_text 绑定，标签是注册期静态的）；浮点按字节面展示不解值；
+EntityCall/Python pickle 保持 Raw 不编造；0 长度体（空 BLOB）显示
+`<MISSING>`（Wireshark 对 0 字节项的固有展示）。
+
+**验收门**：`cargo build`+`cargo clippy --all-targets` 0 警告（debug/release
+双形态）；`kode-kbengine-protocol` 32+11+13+8 全绿；`kode-kbengine`/
+`-schema` 回归 35+12+29+1 绿；tshark 真机装→验→删可逆闭环。
+
+**PA-006 余量**：Windows/macOS 实机加载（CI 或用户机，无机器挂账）。
