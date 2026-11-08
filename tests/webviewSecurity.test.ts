@@ -1,6 +1,7 @@
 import type * as vscode from 'vscode';
 import { describe, expect, it } from 'vitest';
 import { EntityDependencyWebView } from '../src/entityDependencyWebView';
+import { statCard as renderStatCard } from '../src/entityDependencyWebViewHtml';
 import { EntityFlowWebView } from '../src/entityFlowWebView';
 import type { EntityFlowGraph } from '../src/entityFlowGraph';
 import { KBEngineLogCollector } from '../src/logCollector';
@@ -303,11 +304,8 @@ describe('KR-AUD-50: 六个 webview 的 CSP 接入', () => {
   });
 
   it('entityDependencyWebView: 统计卡字符串面全量转义(标签注入)', () => {
-    const impl = new EntityDependencyWebView(
-      stubContext,
-      {} as unknown as vscode.OutputChannel
-    ) as unknown as { statCard: (label: string, value: string | number) => string };
-    const html = impl.statCard('进程角色', 'cellapp<img src=x onerror=alert(1)>');
+    // SRC-012:statCard 自 hub 迁 HTML 半边为导出自由函数;直调断言转义。
+    const html = renderStatCard('进程角色', 'cellapp<img src=x onerror=alert(1)>');
     expect(html).not.toContain('<img');
     expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
   });
