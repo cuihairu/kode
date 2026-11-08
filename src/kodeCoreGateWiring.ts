@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 
 import { KodeCoreGate, type KodeCoreGateConfig, ShadowDiffEntry } from './kodeCoreGate';
@@ -22,19 +24,48 @@ function formatDiffEntry(entry: ShadowDiffEntry): string {
   return parts.join(' | ');
 }
 
-/** 读 kbengine.core.* 当前配置(每次现读,不做缓存失效) */
-export function readCoreGateConfig(): KodeCoreGateConfig {
+/**
+ * 自动发现 kode-server 二进制(2026-11-08 用户令:插件不应让用户手填服务器
+ * 路径,serverPath 未显式配置时按扩展根常规构建路径探测)。命中即返回绝对
+ * 路径;全落空返回 ''(调用方回落 ts,不误伤)。
+ */
+export function discoverKodeServerBinary(extensionRoot: string): string {
+  const candidates = [
+    path.join(extensionRoot, 'target', 'debug', 'kode-server'),
+    path.join(extensionRoot, 'target', 'release', 'kode-server'),
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    } catch {
+      // 探测失败按不存在继续,不向上抛。
+    }
+  }
+  return '';
+}
+
+/** 读 kbengine.core.* 当前配置(每次现读,不做缓存失效);serverPath 未配
+ * 时按 extensionRoot 自动发现(留空 = 自动发现也落空)。 */
+export function readCoreGateConfig(extensionRoot?: string): KodeCoreGateConfig {
   const config = vscode.workspace.getConfiguration('kbengine');
+  const configured = config.get<string>('core.serverPath', '');
+  let serverPath = configured;
+  if (!serverPath && extensionRoot) {
+    serverPath = discoverKodeServerBinary(extensionRoot);
+  }
   return {
-    backend: config.get<string>('core.backend', 'ts'),
-    serverPath: config.get<string>('core.serverPath', ''),
+    backend: config.get<string>('core.backend', 'rust'),
+    serverPath,
     shadowTimeoutMs: config.get<number>('core.shadow.timeoutMs', 2000),
   };
 }
 
 export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGate {
   const gate = new KodeCoreGate();
-  gate.setConfig(readCoreGateConfig());
+  const extensionRoot = context.extensionUri.fsPath;
+  gate.setConfig(readCoreGateConfig(extensionRoot));
 
   // 输出通道只在 shadow 模式存在(默认 ts 下用户不可见任何新面板)
   let channel: vscode.OutputChannel | null = null;
@@ -74,7 +105,7 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
       event.affectsConfiguration('kbengine.core.serverPath') ||
       event.affectsConfiguration('kbengine.core.shadow')
     ) {
-      gate.setConfig(readCoreGateConfig());
+      gate.setConfig(readCoreGateConfig(extensionRoot));
       syncChannel();
     }
   });

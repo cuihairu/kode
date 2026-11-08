@@ -3,7 +3,13 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { DefElementNode, findAncestorElement, getDirectChildElement, getDirectChildElements, getLineNumberAt } from '../defParser';
 import { EntityMappingManager, EntityMethodSection, type DefinitionSymbolIdentity } from '../entityMapping';
-import { shadowCompareDefinition } from '../kodeCoreShadowFaces';
+import {
+  getKodeCoreShadowGate,
+  serveDefinitionFromRust,
+  settleProviderResult,
+  shadowCompareDefinition,
+  type LspLocationFace
+} from '../kodeCoreShadowFaces';
 import { findDatabaseSchemaFieldAtPosition, findDatabaseSchemaSourceLocation, findDatabaseSchemaTargetsForSource, getDatabaseSchemaSnapshot, locateDatabaseSchemaLine } from '../databaseSchema';
 import { createDatabaseSchemaUri, isDatabaseSchemaDocument } from '../databaseSchemaPresentation';
 import { findCustomTypeDeclarationInfo, findCustomTypeInfo, findCustomTypePythonImplementationFile, findImplementedBySymbolLine, findDefinitionEntryByCategory, findDefinitionFileByCategory, findEntityDefsDirForDefFile, findComponentScriptFile, findEntityDefinitionFile, findEntitiesXmlFile, findEntityScriptFile, findInterfaceScriptFile, getDefinitionWorkspaceLayout, getRegisteredCustomTypes, getScriptsRootForDefFile, getWorkspaceRootForDocument, scriptFoldersForRole, notifyEntitiesXmlMissingOnce, readWorkspaceTextFile, readWorkspaceTextLines } from '../definitionWorkspace';
@@ -12,6 +18,17 @@ import { KBENGINE_TYPES } from '../kbengineMetadata';
 import { logNavigation } from '../navigationLog';
 import { SymbolHoverInfo, buildSymbolHoverInfo } from './hover';
 import { CustomTypeResolution, KBEngineSectionName, METHOD_SECTIONS, getDefNodeAtPosition, getDefNodeAtWord, getSymbolNodeInfo, isOffsetInsideNodeValue, parseDefAst } from './shared';
+/** LSP 落点面(规范路径 uri)→ vscode.Location(Rust 面与 shadow 同形)。 */
+function lspFaceToVscodeLocation(face: LspLocationFace): vscode.Location {
+  return new vscode.Location(
+    vscode.Uri.file(face.uri),
+    new vscode.Range(
+      new vscode.Position(face.range.start.line, face.range.start.character),
+      new vscode.Position(face.range.end.line, face.range.end.character)
+    )
+  );
+}
+
 export class KBEngineDefinitionProvider implements vscode.DefinitionProvider {
   constructor(private entityMappingManager?: EntityMappingManager) {}
 
@@ -19,10 +36,45 @@ export class KBEngineDefinitionProvider implements vscode.DefinitionProvider {
     document: vscode.TextDocument,
     position: vscode.Position
   ): vscode.ProviderResult<vscode.Location> {
+    // 2026-11-08 用户令「直接切到 rust」:服务轨道下定义面走 Rust,TS 只作
+    // 失败/无落点兜底(Rust 面=语料声明落点,Python/schema 恒 null→TS)。
+    const gate = getKodeCoreShadowGate();
+    if (gate?.serveFromRust()) {
+      return this.provideDefinitionRustFirst(document, position);
+    }
     const location = this.provideDefinitionImpl(document, position);
     // Phase2 首片:shadow 双轨对拍(定义面)。fire-and-forget,不改返回值。
     shadowCompareDefinition(document, position, location);
     return location;
+  }
+
+  /**
+   * 定义面 Rust 优先:先结算 TS 结果(失败兜底),再取 Rust 落点;Rust 有
+   * 落点(语料声明)则用 Rust,否则回 TS(单/数组取首项)。Rust 失败/缺二
+   * 进制由 gate.serveInRust 兜底 null,不误伤。
+   */
+  private async provideDefinitionRustFirst(
+    document: vscode.TextDocument,
+    position: vscode.Position
+  ): Promise<vscode.Location | null> {
+    let tsValue: unknown = null;
+    try {
+      const settled = await settleProviderResult(this.provideDefinitionImpl(document, position));
+      if (settled.settled) {
+        tsValue = settled.value;
+      }
+    } catch {
+      tsValue = null;
+    }
+    const rustLocation = await serveDefinitionFromRust(document, position);
+    if (rustLocation) {
+      return lspFaceToVscodeLocation(rustLocation);
+    }
+    const first = Array.isArray(tsValue) ? tsValue[0] : tsValue;
+    if (first && typeof first === 'object' && 'uri' in first) {
+      return first as vscode.Location;
+    }
+    return null;
   }
 
   private provideDefinitionImpl(

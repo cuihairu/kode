@@ -173,8 +173,8 @@ describe('resolveBackendMode kill-switch 解析', () => {
     expect(resolveBackendMode('shadow')).toEqual({ mode: 'shadow', rustServingGated: false });
   });
 
-  it('rust:字面量保留,但 serving 门禁置位', () => {
-    expect(resolveBackendMode('rust')).toEqual({ mode: 'rust', rustServingGated: true });
+  it('rust:服务轨道放行(2026-11-08 用户令「直接切」,serving 门禁解除)', () => {
+    expect(resolveBackendMode('rust')).toEqual({ mode: 'rust', rustServingGated: false });
   });
 });
 
@@ -212,7 +212,7 @@ describe('KodeCoreGate 非 shadow 模式', () => {
     expect(gate.serveFromRust()).toBe(false);
   });
 
-  it('rust 模式:serving 门禁拒绝,生效轨道 ts,留一次 notice 存照', async () => {
+  it('rust 模式:服务轨道放行(配 serverPath 即 serveFromRust),未配回落 ts 留 notice', async () => {
     let factoryCalls = 0;
     const gate = new KodeCoreGate({
       clientFactory: () => {
@@ -221,17 +221,22 @@ describe('KodeCoreGate 非 shadow 模式', () => {
       },
     });
     gate.setConfig({ backend: 'rust', serverPath: 'node:fake', shadowTimeoutMs: 100 });
-    expect(gate.servingMode).toBe('ts');
-    expect(gate.rustServingGated).toBe(true);
-    expect(gate.serveFromRust()).toBe(false);
+    expect(gate.servingMode).toBe('rust');
+    expect(gate.rustServingGated).toBe(false);
+    expect(gate.serveFromRust()).toBe(true);
+    // 服务轨道下 compare 直通(影子对拍只在 shadow),不拉进程
     const tsResult = { ok: true };
     await expect(gate.compare('$/kode/health', undefined, tsResult)).resolves.toBe(tsResult);
     expect(factoryCalls).toBe(0);
-    expect(gate.state.notices).toHaveLength(1);
-    expect(gate.state.notices[0]).toContain('serving 门禁拒绝');
+
+    // 未配 serverPath → 回落 ts(不误伤),留一次 notice 存照
+    gate.setConfig({ backend: 'rust', serverPath: '', shadowTimeoutMs: 100 });
+    expect(gate.serveFromRust()).toBe(false);
+    expect(gate.servingMode).toBe('ts');
+    expect(gate.state.notices.some(note => note.includes('serverPath 未配置'))).toBe(true);
     // 重复 setConfig 不刷屏(noticeOnce)
-    gate.setConfig({ backend: 'rust', serverPath: 'node:fake', shadowTimeoutMs: 100 });
-    expect(gate.state.notices).toHaveLength(1);
+    gate.setConfig({ backend: 'rust', serverPath: '', shadowTimeoutMs: 100 });
+    expect(gate.state.notices.filter(note => note.includes('serverPath 未配置'))).toHaveLength(1);
   });
 });
 
@@ -337,14 +342,16 @@ describe('kill-switch 生效:离开 shadow 停 Rust 进程', () => {
     await client.dispose();
   }, 15_000);
 
-  it('shadow→rust:serving 门禁拒绝,client 同步停,轨道回 ts', async () => {
+  it('shadow→rust:镜像轨道延续,client 保持存活,服务轨道切 rust', async () => {
     const gate = new KodeCoreGate({ clientFactory: makeFakeClientFactory() });
     gate.setConfig({ backend: 'shadow', serverPath: 'node:fake', shadowTimeoutMs: 2000 });
     void gate.compare('$/kode/health', undefined, {});
     await vi.waitFor(() => expect(gate.state.clientAlive).toBe(true));
     gate.setConfig({ backend: 'rust', serverPath: 'node:fake', shadowTimeoutMs: 2000 });
-    await vi.waitFor(() => expect(gate.state.clientAlive).toBe(false));
-    expect(gate.servingMode).toBe('ts');
+    // rust 服务轨道仍镜像语料:client 不被停(与 ts kill-switch 不同)
+    expect(gate.servingMode).toBe('rust');
+    expect(gate.state.clientAlive).toBe(true);
+    await gate.dispose();
   }, 15_000);
 });
 
@@ -419,6 +426,77 @@ describe('runInRust 命令级 RPC 面(Phase0 接线)', () => {
     gate.setConfig({ backend: 'ts', serverPath: 'node:stub', shadowTimeoutMs: 500 });
     const result = await gate.runInRust('$/kode/echo', {});
     expect(result).toEqual({ ok: false, reason: 'boom' });
+  });
+});
+
+describe('serveInRust 服务面(2026-11-08 用户令「直接切」)', () => {
+  it('rust 轨道:LSP 方法直发 kode-server,返回 Rust 结果', async () => {
+    const calls: Array<{ method: string; params?: unknown }> = [];
+    const client = {
+      start: vi.fn(async () => ({})),
+      request: vi.fn(async (method: string, params?: unknown) => {
+        calls.push({ method, params });
+        return {
+          uri: '/ws/avatar.def',
+          range: { start: { line: 2, character: 0 }, end: { line: 2, character: 4 } },
+        };
+      }),
+      dispose: vi.fn(async () => undefined),
+    } as unknown as ShadowClientLike;
+    const gate = new KodeCoreGate({ clientFactory: () => client });
+    gate.setConfig({ backend: 'rust', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    const result = await gate.serveInRust(
+      'textDocument/definition',
+      { textDocument: { uri: '/ws/a.def' } },
+      null
+    );
+    expect(result).toEqual({
+      uri: '/ws/avatar.def',
+      range: { start: { line: 2, character: 0 }, end: { line: 2, character: 4 } },
+    });
+    expect(calls).toEqual([
+      { method: 'textDocument/definition', params: { textDocument: { uri: '/ws/a.def' } } },
+    ]);
+  });
+
+  it('非 rust 轨道(ts):零开销返回 fallback,不拉进程', async () => {
+    const start = vi.fn();
+    const client = {
+      start,
+      request: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+    } as unknown as ShadowClientLike;
+    const gate = new KodeCoreGate({ clientFactory: () => client });
+    gate.setConfig({ backend: 'ts', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    await expect(gate.serveInRust('textDocument/definition', {}, 'ts-fallback')).resolves.toBe(
+      'ts-fallback'
+    );
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it('Rust 请求失败:返回 fallback,留 notice,不抛', async () => {
+    const client = {
+      start: vi.fn(async () => ({})),
+      request: vi.fn(async () => {
+        throw new Error('boom');
+      }),
+      dispose: vi.fn(async () => undefined),
+    } as unknown as ShadowClientLike;
+    const gate = new KodeCoreGate({ clientFactory: () => client });
+    gate.setConfig({ backend: 'rust', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    await expect(gate.serveInRust('textDocument/definition', {}, 'ts-fallback')).resolves.toBe(
+      'ts-fallback'
+    );
+    expect(gate.state.notices.some(note => note.includes('boom'))).toBe(true);
+  });
+
+  it('rust 轨道未配 serverPath:回落 ts,返回 fallback', async () => {
+    const gate = new KodeCoreGate();
+    gate.setConfig({ backend: 'rust', serverPath: '', shadowTimeoutMs: 500 });
+    await expect(gate.serveInRust('textDocument/definition', {}, 'ts-fallback')).resolves.toBe(
+      'ts-fallback'
+    );
+    expect(gate.state.clientAlive).toBe(false);
   });
 });
 

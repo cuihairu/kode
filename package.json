@@ -1959,7 +1959,7 @@
             "rust",
             "shadow"
           ],
-          "default": "ts",
+          "default": "rust",
           "markdownDescription": "%kbengine.config.core.backend.description%",
           "markdownEnumDescriptions": [
             "%kbengine.config.core.backend.enum.0%",

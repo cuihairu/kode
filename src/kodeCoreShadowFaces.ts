@@ -147,7 +147,7 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
  * 拒绝路径返回 unsettled —— 无 TS 真相可对拍,不产出对拍也不产生未处理拒绝
  * (provider 的返回语义由调用方原样透传,这里只读不接管)。
  */
-async function settleProviderResult(
+export async function settleProviderResult(
   result: unknown
 ): Promise<{ settled: true; value: unknown } | { settled: false }> {
   if (!isThenable(result)) {
@@ -158,6 +158,46 @@ async function settleProviderResult(
   } catch {
     return { settled: false };
   }
+}
+
+/**
+ * 定义面 rust 服务(2026-11-08 用户令「直接切到 rust」):服务轨道下先镜像
+ * 语料文档(Rust 侧要有本文件 buffer 才可能应答),再请求 kode-server
+ * textDocument/definition。Rust 有落点返回 LSP face(uri 为规范路径,与
+ * shadow locationToLspFace 同形);无落点(词未知/语料环境缺/Python/schema
+ * 不在本面=Rust 恒 null)或任何失败返回 null —— 调用方回 TS。非服务轨道/
+ * 未装配门零开销返回 null。Rust 落点优先于 TS 落点(直接切语义)。
+ */
+export async function serveDefinitionFromRust(
+  document: DocumentLike,
+  position: PositionLike
+): Promise<LspLocationFace | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust()) {
+    return null;
+  }
+  // Rust 面 = 语料声明落点(definition.rs:113 file_kind_of_uri Other → None);
+  // schema/python 不在本面,零请求直通 TS。
+  if (!isCorpusDocument(document)) {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  await gate
+    .mirrorDocument(uri, document.languageId, document.version, document.getText())
+    .catch(() => undefined);
+  const params = {
+    textDocument: { uri },
+    position: { line: position.line, character: position.character }
+  };
+  const result = await gate.serveInRust<unknown>('textDocument/definition', params, null);
+  if (!result || typeof result !== 'object') {
+    return null;
+  }
+  const face = result as Partial<LspLocationFace>;
+  if (typeof face.uri !== 'string' || !face.range) {
+    return null;
+  }
+  return face as LspLocationFace;
 }
 
 /**

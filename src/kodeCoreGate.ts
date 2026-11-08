@@ -2,15 +2,17 @@ import { KodeCoreClient, KodeCoreTransportError } from './kodeCoreClient';
 import { KODE_FILE_CHANGED_METHOD } from './fileChangeBypass';
 
 // kode2 PR-012:双轨切流门(kill-switch / shadow / 差异日志)。
-// 书 §16.3/PH7-02 与 docs/kode2/ph0-gate.md 门 3:双轨 parity 与回退措施
-// 成熟前不删旧 TS 实现,Rust 结果不得直接服务用户。本模块只做三件事:
-//   1. 解析 kbengine.core.backend 开关(ts|rust|shadow,默认 ts;非法值
+// 2026-11-08 用户令「直接切到 rust」:serving 门禁解除,rust 字面量生效为
+// 服务轨道(serveFromRust=true),TS 实现保留为失败/缺二进制兜底。本模块
+// 只做三件事:
+//   1. 解析 kbengine.core.backend 开关(ts|rust|shadow,默认 rust;非法值
 //      一律回落 ts —— kill-switch 永远收得回来);
-//   2. rust 字面量在本 PR 只保留占位:serving 门禁拒绝(切流前置条件未
-//      全绿),生效轨道仍是 ts,并留下一次 notice 存照;
+//   2. rust 字面量 = 服务轨道:serveFromRust() 在配了 serverPath 时返回
+//      true,provider 接 gate.serveInRust() 走 Rust 结果、失败回落 TS;
+//      serverPath 未配(含自动发现落空)时回落 ts,留一次 notice 存照;
 //   3. shadow 模式下 compare() 把同参请求镜像给 Rust server 做短超时
 //      对比,任何 Rust 侧失败只记差异日志,compare 恒返回 TS 结果
-//      原样 —— 用户可见行为与 ts 模式逐字节一致(铁律:不切流)。
+//      原样(影子对拍只在 shadow 模式;rust 服务轨道不走 compare)。
 
 export type KodeBackendMode = 'ts' | 'rust' | 'shadow';
 
@@ -38,7 +40,9 @@ export interface KodeCoreGateConfig {
 }
 
 export const DEFAULT_CORE_GATE_CONFIG: KodeCoreGateConfig = {
-  backend: 'ts',
+  // 2026-11-08 用户令:默认服务轨道直接切 rust(未配 serverPath 时由
+  // serveFromRust 回落 ts,不会因缺二进制误伤)。kill-switch = backend:ts。
+  backend: 'rust',
   serverPath: '',
   shadowTimeoutMs: 2000,
 };
@@ -49,8 +53,8 @@ const SPAWN_COOLDOWN_MS = 30_000;
 /**
  * kill-switch 解析:仅 'shadow' 与 'rust' 两个字面量改变模式,其余(含
  * undefined/空串/拼错)一律回落 'ts' —— 开关异常时安全侧是 TS 真相。
- * 'rust' 额外置 rustServingGated=true:切流前置条件未全绿前,serving
- * 门禁拒绝该字面量(ph0-gate 门 3 设计稿键值,生效语义见本文件头注)。
+ * 'rust' = 服务轨道(2026-11-08 用户令「直接切」,serving 门禁解除);
+ * rustServingGated 保留为观测字段,现恒 false(门已解)。
  */
 export function resolveBackendMode(rawBackend: string | undefined): {
   mode: KodeBackendMode;
@@ -60,7 +64,7 @@ export function resolveBackendMode(rawBackend: string | undefined): {
     return { mode: 'shadow', rustServingGated: false };
   }
   if (rawBackend === 'rust') {
-    return { mode: 'rust', rustServingGated: true };
+    return { mode: 'rust', rustServingGated: false };
   }
   return { mode: 'ts', rustServingGated: false };
 }
@@ -221,8 +225,8 @@ export interface KodeCoreGateOptions {
 /** 门状态快照(可观测/回退演练判据读取) */
 export interface KodeCoreGateState {
   mode: KodeBackendMode;
-  /** 生效轨道:rust 被 serving 门禁拒绝时为 'ts' */
-  servingMode: 'ts' | 'shadow';
+  /** 生效服务轨道:rust 服务轨道(serveFromRust)时为 'rust';shadow 时 'shadow';否则 'ts' */
+  servingMode: 'ts' | 'shadow' | 'rust';
   rustServingGated: boolean;
   serverPath: string;
   clientAlive: boolean;
@@ -254,17 +258,17 @@ export class KodeCoreGate {
     this.now = options.now ?? Date.now;
   }
 
-  /** 应用新配置;离开 shadow 或换二进制即停 Rust 进程(kill-switch 生效点) */
+  /** 应用新配置;离开镜像轨道(ts kill-switch)或换二进制即停 Rust 进程 */
   setConfig(config: KodeCoreGateConfig): void {
     const previous = this.config;
     this.config = { ...config };
-    const resolved = resolveBackendMode(config.backend);
-    if (resolved.mode !== 'shadow' || previous.serverPath !== config.serverPath) {
+    const stillMirroring = this.shouldMirrorCorpus();
+    if (!stillMirroring || previous.serverPath !== config.serverPath) {
       this.stopClient();
     }
-    if (resolved.mode === 'rust') {
+    if (this.mode === 'rust' && !this.config.serverPath) {
       this.noticeOnce(
-        'kbengine.core.backend=rust 被 serving 门禁拒绝:切流前置条件未全绿(docs/kode2/pr-012.md),生效轨道仍为 ts'
+        'kbengine.core.backend=rust 但 kbengine.core.serverPath 未配置(自动发现未命中 kode-server 二进制),服务轨道回落 ts'
       );
     }
   }
@@ -274,9 +278,17 @@ export class KodeCoreGate {
     return resolveBackendMode(this.config.backend).mode;
   }
 
-  /** 生效服务轨道:rust 门禁拒绝后恒 ts;shadow 时 TS 仍为唯一服务方 */
-  get servingMode(): 'ts' | 'shadow' {
-    return this.mode === 'shadow' ? 'shadow' : 'ts';
+  /** 生效服务轨道:rust 服务轨道(serveFromRust)时 'rust';shadow 时 'shadow';否则 'ts' */
+  get servingMode(): 'ts' | 'shadow' | 'rust' {
+    if (this.mode === 'shadow') {
+      return 'shadow';
+    }
+    return this.serveFromRust() ? 'rust' : 'ts';
+  }
+
+  /** 语料镜像是否需要:shadow 对拍或 rust 服务轨道都需要 Rust 侧持有语料 */
+  private shouldMirrorCorpus(): boolean {
+    return this.mode === 'shadow' || this.serveFromRust();
   }
 
   get rustServingGated(): boolean {
@@ -295,12 +307,12 @@ export class KodeCoreGate {
   }
 
   /**
-   * serving 门禁:Rust 路径在本 PR 一律不服务(切流前置条件未全绿)。
-   * 未来切流 PR 的唯一放行点 —— 这里翻 true 之前必须先过 pr-012.md 前置
-   * 条件清单并完成回退演练。
+   * serving 放行(2026-11-08 用户令「直接切到 rust」):rust 字面量且已配
+   * serverPath(自动发现落空/留空 = 回落 ts,不因缺二进制误伤)。kill-switch
+   * = backend:ts,切回即停 Rust 进程(用户不可见回滚)。
    */
   serveFromRust(): boolean {
-    return false;
+    return this.mode === 'rust' && this.config.serverPath !== '';
   }
 
   /**
@@ -348,6 +360,38 @@ export class KodeCoreGate {
       return { ok: true, result };
     } catch (error) {
       return { ok: false, reason: (error as Error).message };
+    }
+  }
+
+  /**
+   * serving 面(2026-11-08 用户令「直接切」):Rust 服务轨道时把 LSP 方法
+   * (textDocument/definition 等)直发给 kode-server,返回 Rust 结果;任何
+   * Rust 侧失败(缺 serverPath/启动失败/请求失败/超时)一律返回 fallback
+   * —— provider 用 fallback 走 TS 实现,用户可见行为与 ts 模式一致(铁律:
+   * Rust 失败不误伤服务)。非服务轨道零开销直通 fallback。命令级
+   * $/kode/rpc 用 runInRust;本面专供 LSP 服务方法。
+   */
+  async serveInRust<T>(
+    method: string,
+    params: unknown,
+    fallback: T,
+    opts?: { timeoutMs?: number }
+  ): Promise<T> {
+    if (!this.serveFromRust()) {
+      return fallback;
+    }
+    const client = this.ensureClient();
+    if (!client) {
+      this.noticeOnce(`rust 服务不可用(${method}): client 创建失败,回落 ts`);
+      return fallback;
+    }
+    try {
+      await client.start();
+      this.syncRestartGeneration(client);
+      return (await client.request(method, params, opts)) as T;
+    } catch (error) {
+      this.noticeOnce(`rust 服务失败(${method}): ${(error as Error).message},回落 ts`);
+      return fallback;
     }
   }
 
@@ -431,7 +475,7 @@ export class KodeCoreGate {
     version: number,
     text: string
   ): Promise<void> {
-    if (this.servingMode !== 'shadow' || !this.config.serverPath) {
+    if (!this.shouldMirrorCorpus() || !this.config.serverPath) {
       return;
     }
     const client = this.ensureClient();
@@ -468,7 +512,7 @@ export class KodeCoreGate {
     if (!hadSnapshot) {
       return;
     }
-    if (this.servingMode !== 'shadow') {
+    if (!this.shouldMirrorCorpus()) {
       return;
     }
     this.client?.closeDocument?.(uri);
@@ -480,7 +524,8 @@ export class KodeCoreGate {
    * 非 shadow 模式零开销直通(不建进程、不记日志)。
    */
   async compare<T>(method: string, params: unknown, tsResult: T, uri?: string): Promise<T> {
-    if (this.servingMode !== 'shadow') {
+    // 影子对拍只在 shadow 模式;rust 服务轨道/ts 轨道都不走 compare。
+    if (this.mode !== 'shadow') {
       return tsResult;
     }
     const fail = (verdict: ShadowVerdict, detail?: string): void => {
