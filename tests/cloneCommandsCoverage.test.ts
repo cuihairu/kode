@@ -14,6 +14,8 @@ import * as path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import zhBundle from '../l10n/bundle.l10n.zh-cn.json';
 import {
+  CLONE_SUMMARY_CANCEL,
+  CLONE_SUMMARY_SAVE,
   EXPORT_CANCEL_ITEM,
   EXPORT_CONFIRM_ITEM,
   pickExportEncryption,
@@ -25,7 +27,7 @@ import {
   runTestCloneConnectionCommand,
   type PlayerCloneCommandDeps
 } from '../src/playerDataCloneCommands';
-import type { CloneProfileRole } from '../src/playerDataCloneProfiles';
+import type { CloneProfile, CloneProfileRole } from '../src/playerDataCloneProfiles';
 import {
   type CloneConnectionConfig,
   type CloneMysqlConnection
@@ -112,6 +114,9 @@ interface DepsScript {
   entityTables?: Record<string, Array<{ name: string }> | null>;
   source?: CloneConnectionConfig | null;
   target?: CloneConnectionConfig | null;
+  /** 既有 profile(005a 预填面);缺省 = 无既有配置 */
+  sourceProfile?: CloneProfile | null;
+  targetProfile?: CloneProfile | null;
   inputs?: Array<string | undefined>;
   picks?: Array<string | undefined | ((options: { placeHolder: string }) => string | undefined)>;
   savePath?: string;
@@ -150,6 +155,8 @@ const makeDeps = (script: DepsScript = {}) => {
   const deps: PlayerCloneCommandDeps = {
     localize: message => (zhBundle as Record<string, string>)[message] ?? message,
     profiles: {
+      get: (role: CloneProfileRole) =>
+        (role === 'source' ? script.sourceProfile : script.targetProfile) ?? null,
       save: async (role, config, password) => {
         recorded.saved.push({ role, config, password });
       },
@@ -432,8 +439,11 @@ describe('pickExportEncryption(导出确认页加密循环)', () => {
 // ---------------------------------------------------------------------------
 
 describe('runConfigureCloneProfileCommand(0501)', () => {
-  it('source:输入齐全 → save(source)+ 提示;端口数字落 Number', async () => {
-    const { deps, recorded } = makeDeps({ inputs: ['db.host', '3307', 'kbe', 'pw', 'kbe_db'] });
+  it('source:输入齐全 → 摘要选保存 → save(source)+ 提示;端口数字落 Number', async () => {
+    const { deps, recorded } = makeDeps({
+      inputs: ['db.host', '3307', 'kbe', 'pw', 'kbe_db'],
+      picks: [CLONE_SUMMARY_SAVE]
+    });
     await runConfigureCloneProfileCommand(deps, 'source');
     expect(recorded.saved).toEqual([
       { role: 'source', config: { host: 'db.host', port: 3307, user: 'kbe', database: 'kbe_db' }, password: 'pw' }
@@ -441,8 +451,11 @@ describe('runConfigureCloneProfileCommand(0501)', () => {
     expect(recorded.info).toEqual(['源库连接已保存。']);
   });
 
-  it('target:环境仅 local/test;端口留空落 3306;密码留空不存密钥', async () => {
-    const { deps, recorded } = makeDeps({ inputs: ['t.host', '', 't.user', '', 'kbe_local'], picks: ['local'] });
+  it('target:环境仅 local/test;端口留空落 3306;密码留空不存密钥;摘要选保存', async () => {
+    const { deps, recorded } = makeDeps({
+      inputs: ['t.host', '', 't.user', '', 'kbe_local'],
+      picks: ['local', CLONE_SUMMARY_SAVE]
+    });
     await runConfigureCloneProfileCommand(deps, 'target');
     expect(recorded.saved).toEqual([
       {
@@ -456,7 +469,7 @@ describe('runConfigureCloneProfileCommand(0501)', () => {
   });
 
   it('端口输入校验:非数字拒,空串与纯数字过', async () => {
-    const { deps, recorded } = makeDeps({ inputs: ['h', '3306', 'u', 'p', 'd'], picks: ['test'] });
+    const { deps, recorded } = makeDeps({ inputs: ['h', '3306', 'u', 'p', 'd'], picks: ['test', CLONE_SUMMARY_CANCEL] });
     await runConfigureCloneProfileCommand(deps, 'target');
     const validate = recorded.inputOptions[1].validateInput;
     expect(validate).toBeDefined();

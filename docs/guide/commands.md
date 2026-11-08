@@ -152,8 +152,9 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Purpose: store the read-only source database profile for player-data export (CLONE-P5)
 - Entries: Command palette
 - Behavior:
-  - Sequential inputs: host, port (digits only, empty = 3306), user, password (stored only in SecretStorage, never in the profile; empty = not saved), database name
+  - Step-by-step wizard: host, port (digits only, empty = 3306), username, password (stored only in SecretStorage, never echoed in any summary; empty = clears a saved secret), database name. Each step's title shows the role and step number (e.g. `Source 2/5`), and non-password fields are pre-filled from the saved profile so a saved connection can be edited again
   - A cancelled input ends the command with nothing saved
+  - A password-free summary (host/port/user/database + password state only) then offers Save / Test connection / Edit a field / Cancel — plus Keep stored password when a secret is stored and the password field was left empty (Save with an empty password clears the stored secret; Keep saves the connection while leaving the stored secret untouched). Only Save/Keep writes the profile; Test connection dials with the draft values (an empty password falls back to the stored secret, matching save semantics) and reports the server version or the original failure cause without writing anything; Edit a field re-runs that single step with the current draft value pre-filled; a failed secret-storage write is reported as an error and the profile is not touched
 
 ### `kbengine.clone.configureTarget`
 
@@ -161,7 +162,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Purpose: store the writable target database profile for player-data import (CLONE-P5)
 - Entries: Command palette
 - Behavior:
-  - Same input flow as the source profile, plus an explicit environment picker that accepts only `local` / `test` — prod or staging values are rejected at this config gate before the Rust planner's fail-closed re-check
+  - Same wizard as the source profile (six steps counting the environment picker), plus an explicit environment picker that accepts only `local` / `test` — prod or staging values are rejected at this config gate before the Rust planner's fail-closed re-check; the summary also lists the chosen environment
   - The password goes only to SecretStorage; clearing the config clears the secret too
 
 ### `kbengine.clone.testSource`

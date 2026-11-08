@@ -57,6 +57,10 @@ export interface PlayerCloneCommandDeps {
   showQuickPick(items: readonly string[], options: { placeHolder: string }): Promise<string | undefined>;
   showInputBox(options: {
     prompt: string;
+    /** 既有配置预填(005a:已输入的非密码信息跨前进/返回保留);密码绝不预填 */
+    value?: string;
+    /** 输入框上方标题(005a:展示角色与步骤序号,如 "Source 2/5") */
+    title?: string;
     password?: boolean;
     validateInput?(value: string): string | null;
   }): Promise<string | undefined>;
@@ -143,81 +147,329 @@ export async function pickExportEncryption(
 }
 
 // ---------------------------------------------------------------------------
-// 0501 连接 Profile 配置 / 测试
+// 0501 连接 Profile 配置 / 测试(UX-REVIEW-005a/005c 分步向导)
 // ---------------------------------------------------------------------------
+
+/** 摘要页动作(005c):保存 / 测试连接 / 返回修改 / 取消;选择按同一值判断。 */
+export const CLONE_SUMMARY_SAVE = '保存(Save)';
+export const CLONE_SUMMARY_TEST = '测试连接(Test connection)';
+export const CLONE_SUMMARY_EDIT = '返回修改(Edit)';
+export const CLONE_SUMMARY_CANCEL = '取消(Cancel)';
+/**
+ * 保留已存密码(005d 明确保留语义):仅在已存密钥且本次密码输入留空时
+ * 出现;选中后以 save(password=undefined) 落盘,SecretStorage 旧密钥原样
+ * 保留——与「保存(留空=清除)」形成一对明确语义。
+ */
+export const CLONE_SUMMARY_KEEP_SECRET = '保留已存密码(Keep stored password)';
+
+/** 输入步骤草稿:全程内存态,只有摘要页选「保存」才落盘(取消不写半成品)。 */
+interface CloneProfileDraft {
+  host: string;
+  portText: string;
+  user: string;
+  /** '' = 清除已存密码(既有口径);非空 = 覆盖。摘要绝不回显本值。 */
+  password: string;
+  database: string;
+  environment?: 'local' | 'test';
+}
+
+const roleLabel = (role: CloneProfileRole): string => (role === 'source' ? 'Source' : 'Target');
 
 export async function runConfigureCloneProfileCommand(
   deps: PlayerCloneCommandDeps,
   role: CloneProfileRole
 ): Promise<void> {
   const t = (message: string): string => deps.localize?.(message) ?? message;
-  const host = await deps.showInputBox({
-    prompt: role === 'source' ? t('Source database host') : t('Target database host (local or test only)'),
-    validateInput: value => value.trim() ? null : t('Enter a host address')
-  });
-  if (host === undefined) {
-    return;
-  }
-  const portText = await deps.showInputBox({
-    prompt: t('Port (default 3306)'),
-    validateInput: value => {
-      if (value === '') { return null; }
-      if (!/^\d+$/.test(value)) { return t('Port must be a number'); }
-      const port = Number(value);
-      return port >= 1 && port <= 65535 ? null : t('Port must be between 1 and 65535');
+  const existing = deps.profiles.get(role);
+  // 005a:既有配置预填非密码字段(成功保存后可再次修改);密码绝不回填。
+  const draft: CloneProfileDraft = {
+    host: existing?.host ?? '',
+    portText: existing ? String(existing.port) : '',
+    user: existing?.user ?? '',
+    password: '',
+    database: existing?.database ?? '',
+    environment: existing?.environment
+  };
+  const hostPrompt = role === 'source'
+    ? t('Source database host')
+    : t('Target database host (local or test only)');
+  const envPrompt = t('Target environment (production and staging are not allowed)');
+  const steps = [
+    {
+      key: 'host' as const,
+      prompt: hostPrompt,
+      validate: (value: string): string | null => (value.trim() ? null : t('Enter a host address'))
+    },
+    {
+      key: 'portText' as const,
+      prompt: t('Port (default 3306)'),
+      validate: (value: string): string | null => {
+        if (value === '') { return null; }
+        if (!/^\d+$/.test(value)) { return t('Port must be a number'); }
+        const port = Number(value);
+        return port >= 1 && port <= 65535 ? null : t('Port must be between 1 and 65535');
+      }
+    },
+    {
+      key: 'user' as const,
+      prompt: t('Username'),
+      validate: (value: string): string | null => (value.trim() ? null : t('Enter a username'))
+    },
+    { key: 'password' as const, prompt: t('Password (leave empty to remove the saved password)'), password: true },
+    {
+      key: 'database' as const,
+      prompt: t('Database'),
+      validate: (value: string): string | null => (value.trim() ? null : t('Enter a database name'))
     }
-  });
-  if (portText === undefined) {
-    return;
-  }
-  const user = await deps.showInputBox({ prompt: t('Username'), validateInput: value => value.trim() ? null : t('Enter a username') });
-  if (user === undefined) {
-    return;
-  }
-  const password = await deps.showInputBox({ prompt: t('Password (leave empty to remove the saved password)'), password: true });
-  if (password === undefined) {
-    return;
-  }
-  const database = await deps.showInputBox({ prompt: t('Database'), validateInput: value => value.trim() ? null : t('Enter a database name') });
-  if (database === undefined) {
-    return;
+  ];
+  const totalSteps = steps.length + (role === 'target' ? 1 : 0);
+
+  // 分步输入(005a):标题带角色与步骤序号;Esc 取消整体放弃,不写半成品。
+  for (const [index, step] of steps.entries()) {
+    const answer = await deps.showInputBox({
+      prompt: step.prompt,
+      title: `${roleLabel(role)} ${index + 1}/${totalSteps}`,
+      value: step.key === 'password' ? undefined : draft[step.key],
+      password: step.password,
+      validateInput: step.validate
+    });
+    if (answer === undefined) {
+      return; // 取消:已输入内容不落盘
+    }
+    draft[step.key] = answer;
   }
   if (role === 'target') {
     // §6.1:目标环境显式声明,只认 local/test。
-    const environment = await deps.showQuickPick(['local', 'test'], {
-      placeHolder: t('Target environment (production and staging are not allowed)')
-    });
+    const environment = await deps.showQuickPick(['local', 'test'], { placeHolder: envPrompt });
     if (environment !== 'local' && environment !== 'test') {
       return;
     }
-    await deps.profiles.save(
-      'target',
-      { host, port: portText === '' ? 3306 : Number(portText), user, database, environment },
-      password === '' ? null : password
+    draft.environment = environment;
+  }
+
+  // 摘要页(005c):不含密码的摘要 + 保存/测试/返回修改/取消;只有保存落盘。
+  // 已存密钥且本次密码留空时额外提供「保留已存密码」(005d 明确保留语义)。
+  let keepSecret = false;
+  for (;;) {
+    const actions = [CLONE_SUMMARY_SAVE];
+    if (existing?.hasStoredSecret === true && draft.password === '') {
+      actions.push(CLONE_SUMMARY_KEEP_SECRET);
+    }
+    actions.push(CLONE_SUMMARY_TEST, CLONE_SUMMARY_EDIT, CLONE_SUMMARY_CANCEL);
+    const picked = await deps.showQuickPick(actions, {
+      placeHolder: cloneSummaryText(t, role, draft, existing?.hasStoredSecret === true)
+    });
+    if (!picked || picked === CLONE_SUMMARY_CANCEL) {
+      return; // 取消:不写入半成品
+    }
+    if (picked === CLONE_SUMMARY_TEST) {
+      await testCloneDraftConnection(deps, role, draft);
+      continue;
+    }
+    if (picked === CLONE_SUMMARY_EDIT) {
+      await reviseDraftStep(deps, t, role, draft, { hostPrompt, envPrompt });
+      continue;
+    }
+    if (picked === CLONE_SUMMARY_KEEP_SECRET) {
+      keepSecret = true;
+      break;
+    }
+    if (picked === CLONE_SUMMARY_SAVE) {
+      break;
+    }
+    return; // 未知选择(宿主差异/旧脚本)按取消处理,绝不落盘
+  }
+
+  // 保存:keepSecret → password=undefined(SecretStorage 旧密钥原样保留);
+  // 留空 → null(清除);输入 → 覆盖。密钥面失败如实报错,不虚报已保存。
+  const password = keepSecret
+    ? undefined
+    : draft.password === ''
+      ? null
+      : draft.password;
+  try {
+    if (role === 'target') {
+      await deps.profiles.save(
+        'target',
+        {
+          host: draft.host,
+          port: draft.portText === '' ? 3306 : Number(draft.portText),
+          user: draft.user,
+          database: draft.database,
+          environment: draft.environment
+        },
+        password
+      );
+    } else {
+      await deps.profiles.save(
+        'source',
+        {
+          host: draft.host,
+          port: draft.portText === '' ? 3306 : Number(draft.portText),
+          user: draft.user,
+          database: draft.database
+        },
+        password
+      );
+    }
+  } catch (error) {
+    await deps.showErrorMessage(
+      `保存失败: ${error instanceof Error ? error.message : String(error)}`
     );
-  } else {
-    await deps.profiles.save(
-      'source',
-      { host, port: portText === '' ? 3306 : Number(portText), user, database },
-      password === '' ? null : password
-    );
+    return;
   }
   await deps.showInformationMessage(
     role === 'source' ? t('Source connection saved.') : t('Target connection saved.')
   );
 }
 
-export async function runTestCloneConnectionCommand(
-  deps: PlayerCloneCommandDeps,
-  role: CloneProfileRole
-): Promise<void> {
-  const config = await deps.profiles.resolveConnection(role);
-  if (!config) {
-    await deps.showWarningMessage(
-      role === 'source' ? '尚未配置 Source 连接。' : '尚未配置 Target 连接。'
-    );
-    return;
+/** 摘要文本(005c):连接参数 + 密码状态,绝不回显密码本体。 */
+function cloneSummaryText(
+  t: (message: string) => string,
+  role: CloneProfileRole,
+  draft: CloneProfileDraft,
+  hasStoredSecret: boolean
+): string {
+  const passwordState = draft.password !== ''
+    ? t('Password: entered, applied on save (never echoed)')
+    : hasStoredSecret
+      ? t('Password: saved; leaving empty clears it')
+      : t('Password: none yet');
+  const parts = [
+    `Host ${draft.host}`,
+    `Port ${draft.portText === '' ? 3306 : Number(draft.portText)}`,
+    `User ${draft.user}`,
+    `Database ${draft.database}`
+  ];
+  if (role === 'target') {
+    parts.push(`Environment ${draft.environment}`);
   }
+  parts.push(passwordState);
+  return `${roleLabel(role)}: ${parts.join(' · ')}`;
+}
+
+/** 返回修改(005a):选中字段重填,输入预填当前草稿值(密码仍不回显)。 */
+async function reviseDraftStep(
+  deps: PlayerCloneCommandDeps,
+  t: (message: string) => string,
+  role: CloneProfileRole,
+  draft: CloneProfileDraft,
+  prompts: { hostPrompt: string; envPrompt: string }
+): Promise<void> {
+  const portPrompt = t('Port (default 3306)');
+  const userPrompt = t('Username');
+  const passwordPrompt = t('Password (leave empty to remove the saved password)');
+  const databasePrompt = t('Database');
+  const items = [prompts.hostPrompt, portPrompt, userPrompt, passwordPrompt, databasePrompt];
+  if (role === 'target') {
+    items.push(prompts.envPrompt);
+  }
+  const picked = await deps.showQuickPick(items, { placeHolder: CLONE_SUMMARY_EDIT });
+  if (picked === undefined) {
+    return; // 取消修改:草稿不动,回到摘要
+  }
+  switch (picked) {
+    case prompts.hostPrompt: {
+      const answer = await deps.showInputBox({
+        prompt: prompts.hostPrompt,
+        title: `${roleLabel(role)} ${CLONE_SUMMARY_EDIT}`,
+        value: draft.host,
+        validateInput: value => (value.trim() ? null : t('Enter a host address'))
+      });
+      if (answer !== undefined) { draft.host = answer; }
+      return;
+    }
+    case portPrompt: {
+      const answer = await deps.showInputBox({
+        prompt: portPrompt,
+        title: `${roleLabel(role)} ${CLONE_SUMMARY_EDIT}`,
+        value: draft.portText,
+        validateInput: value => {
+          if (value === '') { return null; }
+          if (!/^\d+$/.test(value)) { return t('Port must be a number'); }
+          const port = Number(value);
+          return port >= 1 && port <= 65535 ? null : t('Port must be between 1 and 65535');
+        }
+      });
+      if (answer !== undefined) { draft.portText = answer; }
+      return;
+    }
+    case userPrompt: {
+      const answer = await deps.showInputBox({
+        prompt: userPrompt,
+        title: `${roleLabel(role)} ${CLONE_SUMMARY_EDIT}`,
+        value: draft.user,
+        validateInput: value => (value.trim() ? null : t('Enter a username'))
+      });
+      if (answer !== undefined) { draft.user = answer; }
+      return;
+    }
+    case passwordPrompt: {
+      const answer = await deps.showInputBox({
+        prompt: passwordPrompt,
+        title: `${roleLabel(role)} ${CLONE_SUMMARY_EDIT}`,
+        password: true
+      });
+      if (answer !== undefined) { draft.password = answer; }
+      return;
+    }
+    case databasePrompt: {
+      const answer = await deps.showInputBox({
+        prompt: databasePrompt,
+        title: `${roleLabel(role)} ${CLONE_SUMMARY_EDIT}`,
+        value: draft.database,
+        validateInput: value => (value.trim() ? null : t('Enter a database name'))
+      });
+      if (answer !== undefined) { draft.database = answer; }
+      return;
+    }
+    case prompts.envPrompt: {
+      if (role !== 'target') { return; }
+      const environment = await deps.showQuickPick(['local', 'test'], { placeHolder: prompts.envPrompt });
+      if (environment === 'local' || environment === 'test') { draft.environment = environment; }
+      return;
+    }
+    default:
+      return; // 未知选择:草稿不动
+  }
+}
+
+/**
+ * 摘要页「测试连接」(005c):用草稿值建连测试,失败带原始原因;测试不落盘。
+ * 密码留空且已存密钥时按保存语义取既有密码测试(与最终保存行为一致)。
+ */
+async function testCloneDraftConnection(
+  deps: PlayerCloneCommandDeps,
+  role: CloneProfileRole,
+  draft: CloneProfileDraft
+): Promise<void> {
+  const password =
+    draft.password !== ''
+      ? draft.password
+      : (await deps.profiles.resolveConnection(role))?.password;
+  await showCloneConnectionTestResult(deps, role, {
+    host: draft.host,
+    port: draft.portText === '' ? 3306 : Number(draft.portText),
+    user: draft.user,
+    password,
+    database: draft.database,
+    environment: draft.environment
+  });
+}
+
+/** 连接测试的呈现面(已存配置与摘要页草稿共用):成功带版本,失败带原因。 */
+async function showCloneConnectionTestResult(
+  deps: PlayerCloneCommandDeps,
+  role: CloneProfileRole,
+  config: {
+    host: string;
+    port: number;
+    user: string;
+    password: string | undefined;
+    database: string;
+    environment?: 'local' | 'test';
+  }
+): Promise<void> {
   try {
     const connection = await openCloneSession(config);
     try {
@@ -237,6 +489,20 @@ export async function runTestCloneConnectionCommand(
       `连接失败: ${error instanceof Error ? error.message : String(error)}`
     );
   }
+}
+
+export async function runTestCloneConnectionCommand(
+  deps: PlayerCloneCommandDeps,
+  role: CloneProfileRole
+): Promise<void> {
+  const config = await deps.profiles.resolveConnection(role);
+  if (!config) {
+    await deps.showWarningMessage(
+      role === 'source' ? '尚未配置 Source 连接。' : '尚未配置 Target 连接。'
+    );
+    return;
+  }
+  await showCloneConnectionTestResult(deps, role, config);
 }
 
 // ---------------------------------------------------------------------------

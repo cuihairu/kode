@@ -1,14 +1,18 @@
 import { expect, it, vi } from 'vitest';
-import { runExportCloneCommand, type PlayerCloneCommandDeps } from '../src/playerDataCloneCommands';
+import { CLONE_SUMMARY_SAVE, runExportCloneCommand, type PlayerCloneCommandDeps } from '../src/playerDataCloneCommands';
 
 it('offers source setup before asking for an entity or DBID and resumes afterwards', async () => {
   let configured = false;
   const inputs = ['localhost', '3306', 'user', 'secret', 'game'];
-  const pick = vi.fn(async () => undefined);
+  // 首次快选=配置向导摘要页(005c)选「保存」;其后才是实体选择(返回 undefined 取消导出)
+  const pick = vi.fn(async (items: readonly string[]) =>
+    items.includes(CLONE_SUMMARY_SAVE) ? CLONE_SUMMARY_SAVE : undefined
+  );
   const input = vi.fn(async () => inputs.shift());
   const deps = {
     listEntityNames: () => ['Avatar'],
     profiles: {
+      get: () => null,
       resolveConnection: async () => configured ? { host: 'localhost', port: 3306, user: 'user', database: 'game' } : null,
       save: async () => { configured = true; },
     },
@@ -20,8 +24,8 @@ it('offers source setup before asking for an entity or DBID and resumes afterwar
   await runExportCloneCommand(deps);
   expect(configured).toBe(true);
   expect(input).toHaveBeenCalledTimes(5);
-  expect(pick).toHaveBeenCalledOnce();
-  expect(pick.mock.calls[0][0]).toEqual(['Avatar']);
+  expect(pick).toHaveBeenCalledTimes(2);
+  expect(pick.mock.calls[1][0]).toEqual(['Avatar']);
 });
 
 it('stops without asking for entity or DBID when setup is declined', async () => {

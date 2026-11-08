@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import zhBundle from '../l10n/bundle.l10n.zh-cn.json';
 import { l10nText } from '../src/nlsRuntime';
-import { runExportCloneCommand, type PlayerCloneCommandDeps } from '../src/playerDataCloneCommands';
+import { CLONE_SUMMARY_SAVE, runExportCloneCommand, type PlayerCloneCommandDeps } from '../src/playerDataCloneCommands';
 import { setL10nBundle } from './fake-vscode/l10n';
 
 afterEach(() => setL10nBundle({}));
@@ -19,11 +19,13 @@ it.each([
     localize: l10nText,
     listEntityNames: () => ['Avatar'],
     profiles: { resolveConnection: async () => configured ? { host: 'host', port: 3306, user: 'user', database: 'game' } : null,
+      get: () => null,
       save: async () => { configured = true; } },
     showWarningMessage: warning,
     showInputBox,
     showInformationMessage: async () => undefined,
-    showQuickPick: async () => undefined,
+    // 摘要页(005c)选「保存」完成配置;返回 undefined 会被当作取消
+    showQuickPick: async () => CLONE_SUMMARY_SAVE,
   } as unknown as PlayerCloneCommandDeps;
   await runExportCloneCommand(deps);
   expect(warning.mock.calls[0][1]).toBe(action);
