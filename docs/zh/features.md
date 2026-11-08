@@ -7,7 +7,7 @@
 ## Def 与实体智能
 
 - **kbengine-def 语言与语法** —— `.def` 文件注册专属语言 id、括号规则与 TextMate 语法 ——（证据：package.json#contributes.languages、package.json#contributes.grammars）
-- **.def 实时诊断** —— 未知类型 / Flags / DetailLevel 取值、属性与方法重复定义、缺 Type/Flags 字段，带总开关 ——（证据：package.json#configuration `kbengine.diagnostics.*`、`kbengine.enableDiagnostics`；src/defAnalyzer.ts）
+- **.def 实时诊断** —— 未知类型 / Flags / DetailLevel 取值、属性与方法重复定义、缺 Type/Flags 字段，带总开关 ——（证据：package.json#configuration `kbengine.diagnostics.*`、`kbengine.enableDiagnostics`；src/defAnalyzer.ts；`kbengine.core.backend=rust` 下语料可复刻面由 kode-server 在同步首绘之后异步服务——TS 面按 message 键让位给 Rust 面、保留外来码（lint 并集、registered-type 缺 Python 文件盘上探测），任一诊断细分开关关闭整面回落 TS——src/languageProviders/validation.ts `serveRustDiagnosticsFace`/`mergeRustDiagnosticsFace`，crates/kode-server/src/diagnostics.rs）
 - **.def 结构化校验** —— 重复定义、标签位置与缺失字段检查，挂 `kbengine.enableStructureDiagnostics` 开关 ——（证据：package.json#configuration `kbengine.enableStructureDiagnostics`；src/defAnalyzer.ts）
 - **Quick Fix：未知类型修正候选** —— 未注册类型诊断（稳定 code `kbengine.unknownType`）出 QuickFix 替换候选，只取已注册类型（内建 + types.xml + 实体），大小写归一编辑距离 ≤2，按距排序截 5；编辑只触碰当前文档，不代建声明 ——（证据：src/languageProviders.ts `KBEngineTypeCodeActionProvider`、`UNKNOWN_TYPE_DIAGNOSTIC_CODE`）
 - **Code Action：缺实现 def 方法生成空方法** —— def 方法声明处（属主脚本在盘但缺该方法）出单个 Refactor 动作，标题展示目标文件与插入行；骨架为 `def 名(self, arg0..argN)` 加 `pass` 空体，`<Arg>` 声明数决定形参个数；插入点按目标文件当前文本（打开缓冲区优先）计算；已有同名实现（与 Go to Implementations 同一查询面）不再生成 ——（证据：src/languageProviders.ts `KBEngineMethodImplementationCodeActionProvider`；src/entityMapping.ts `listOwnerScriptFilesForIdentity`）

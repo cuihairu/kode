@@ -189,7 +189,7 @@ suite('kode core e2e(真实 kode-server 二进制)', () => {
   }
 
   it(
-    'E-1 语料接线:types.xml 未进 shadow 时误报未注册,补齐三类 XML 后诊断消失',
+    'E-1 语料接线:无注册视图 unverifiable 静默,补齐三类 XML 后注册裁决生效',
     async () => {
       const { dir, files } = makeCorpusWorkspace();
       const defUri = `file://${files.monsterDef}`;
@@ -197,14 +197,18 @@ suite('kode core e2e(真实 kode-server 二进制)', () => {
         const client = makeClient(`file://${dir}`);
         await client.start();
 
-        // 只镜像 .def(缺陷面):自定义类型被误报未注册
+        // 只镜像 .def(无 types.xml 注册视图):TS resolveCustomTypeReference
+        // `!customTypes.size` 同口径 → unverifiable 静默,不误报未注册
+        // (2026-11-08 诊断面切流对账:旧口径此处报 Error,系与 TS 的分歧,
+        // 已随空注册表守卫收齐)。
         client.openDocument(defUri, 'kbengine-def', 1, MONSTER_DEF);
         const missingMessages = (await requestDiagnostic(client, defUri)).items.map(item => item.message);
-        expect(missingMessages).toContain(
+        expect(missingMessages).not.toContain(
           '自定义类型 PARITY_POINT 未在 types.xml 中注册，请先在 types.xml 注册后再引用'
         );
 
-        // 三类 XML 经 didOpen 进 Rust 语料后,同一 .def 的误报消失
+        // 三类 XML 经 didOpen 进 Rust 语料:注册视图非空,裁决生效 ——
+        // PARITY_POINT(已注册)静默;未注册引用开始报 Error(不再静默)。
         client.openDocument(`file://${files.typesXml}`, 'xml', 1, TYPES_XML);
         client.openDocument(`file://${files.entitiesXml}`, 'xml', 1, ENTITIES_XML);
         client.openDocument(`file://${files.aliasXml}`, 'xml', 1, ALIAS_XML);
@@ -214,6 +218,14 @@ suite('kode core e2e(真实 kode-server 二进制)', () => {
           '自定义类型 PARITY_POINT 未在 types.xml 中注册，请先在 types.xml 注册后再引用'
         );
         expect((await client.health()).documents).toHaveLength(4);
+
+        const ghostDef = MONSTER_DEF.replace(/PARITY_POINT/g, 'GHOST_TYPE');
+        const ghostUri = `file://${join(dir, 'scripts', 'entity_defs', 'Ghost.def')}`;
+        client.openDocument(ghostUri, 'kbengine-def', 1, ghostDef);
+        const ghostMessages = (await requestDiagnostic(client, ghostUri)).items.map(item => item.message);
+        expect(ghostMessages).toContain(
+          '自定义类型 GHOST_TYPE 未在 types.xml 中注册，请先在 types.xml 注册后再引用'
+        );
         await client.dispose();
       } finally {
         rmSync(dir, { recursive: true, force: true });

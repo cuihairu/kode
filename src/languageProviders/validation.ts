@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { DefDocument, DefElementNode, getDirectChildElement, getDirectChildElements, getScalarChildValue } from '../defParser';
 import { analyzeEntitiesXml } from '../entitiesXmlAnalysis';
 import { getOrParseDocumentSync } from '../documentStore';
-import { getKodeCoreShadowGate, shadowObserveDefDocument } from '../kodeCoreShadowFaces';
+import { getKodeCoreShadowGate, serveDiagnosticsFromRust, shadowObserveDefDocument, type LspDiagnosticReportFace } from '../kodeCoreShadowFaces';
 import { analyzeDefDocumentInRust, type DefAnalysisFinding } from '../defAnalyzer';
 import { collectDefPythonParityInput } from '../defPythonParity';
 import { DETAIL_LEVELS, KBENGINE_FLAGS } from '../kbengineMetadata';
@@ -38,6 +38,96 @@ export function validateDocument(
   // Rust lint 注册表消费腿:把 analyzeDef 的分析建议(Rust 面)并集进诊断。
   // fire-and-forget + 版本护栏 + 默认 ts 模式零开销(见 observeRustDefFindings)。
   observeRustDefFindings(document, diagnostics);
+  // 诊断面 rust 服务腿(2026-11-08 用户令「直接切到 rust」,最后一片服务面):
+  // TS 同步面先落(首绘零延迟不变),Rust 面异步到达后按 message 键替换
+  // 自身码、保留外来码(lint 并集 / missingPythonFile)。服务轨道外零开销。
+  serveRustDiagnosticsFace(document, diagnostics, featureConfig);
+}
+
+// ---- 诊断面 rust 服务腿 -----------------------------------------------------
+// Rust 面 = 语料可复刻的 validateDocument 全集(标量三码:未知 Type 引用/
+// 未知 Flags/未知 DetailLevel + 结构码:重复定义/缺 <Type>/<Flags>)。
+// message 文案与 TS 逐字节同源(golden 对拍锁死),故 message 键即「码」键:
+// 归并 = TS 面里凡与 Rust 同文案的让位(Rust 版本落),外来码(lint 并集、
+// missingPythonFile 盘上探测)原样保留。
+
+/** LSP 严重级 → vscode.DiagnosticSeverity(-1;1=Error…3=Information) */
+export const lspSeverityToVscode = (severity: number): vscode.DiagnosticSeverity => {
+  if (severity < 1 || severity > 3) {
+    return vscode.DiagnosticSeverity.Error;
+  }
+  return severity - 1;
+};
+
+/**
+ * 归并公式(幂等):TS 面剔除与 Rust 同文案的项(让位),Rust 面整面落,
+ * 但与保留项同文案的不重复落(防御性:两轨文案意外重合时以 TS 版本为准,
+ * 视觉零变化)。重入稳定:Rust 面是自身码的全量替换面,重复到达不叠加。
+ */
+export function mergeRustDiagnosticsFace(
+  existing: readonly vscode.Diagnostic[],
+  report: LspDiagnosticReportFace
+): vscode.Diagnostic[] {
+  const rustMessages = new Set(report.items.map(item => item.message));
+  const kept = existing.filter(diagnostic => !rustMessages.has(diagnostic.message));
+  const keptMessages = new Set(kept.map(diagnostic => diagnostic.message));
+  const additions = report.items
+    .filter(item => !keptMessages.has(item.message))
+    .map(item =>
+      new vscode.Diagnostic(
+        new vscode.Range(
+          item.range.start.line,
+          item.range.start.character,
+          item.range.end.line,
+          item.range.end.character
+        ),
+        item.message,
+        lspSeverityToVscode(item.severity)
+      )
+    );
+  return [...kept, ...additions];
+}
+
+/** Rust 面按默认全开语料对齐;任一细分开关关闭 → TS 面与 Rust 面不再同构,整面回落 TS。 */
+export function rustDiagnosticsFaceGateOpen(
+  featureConfig: ReturnType<typeof getLanguageFeatureConfig>
+): boolean {
+  return (
+    featureConfig.enableStructureDiagnostics &&
+    featureConfig.diagnosticsCheckUnknownFlags &&
+    featureConfig.diagnosticsCheckUnknownDetailLevels &&
+    featureConfig.diagnosticsCheckUnknownTypes &&
+    featureConfig.diagnosticsCheckDuplicateDefinitions &&
+    featureConfig.diagnosticsCheckMissingPropertyFields
+  );
+}
+
+/**
+ * 诊断面 rust 服务腿:validateDocument 同步面落定后发出异步请求。版本护栏
+ * 内(到达时 document.version 未动)按归并公式落 collection;Rust 失败/null
+ * (非 .def/服务轨道外)不落 —— TS 集保持。lint 腿与本腿的到达序不敏感:
+ * 各自 get→归并→set 在同一微任务内原子完成,先到者的产出是后到者的
+ * existing,互不吞并。
+ */
+export function serveRustDiagnosticsFace(
+  document: vscode.TextDocument,
+  diagnostics: vscode.DiagnosticCollection,
+  featureConfig: ReturnType<typeof getLanguageFeatureConfig>
+): void {
+  const gate = getKodeCoreShadowGate();
+  if (!gate || !gate.serveFromRust() || !rustDiagnosticsFaceGateOpen(featureConfig)) {
+    return;
+  }
+  const version = document.version;
+  void serveDiagnosticsFromRust(document)
+    .then(report => {
+      if (!report || document.version !== version) {
+        return;
+      }
+      const existing = diagnostics.get(document.uri) ?? [];
+      diagnostics.set(document.uri, mergeRustDiagnosticsFace(existing, report));
+    })
+    .catch(() => undefined);
 }
 
 // Rust lint 注册表消费腿(validateDocument 侧):把 `$/kode/lint/analyzeDef`

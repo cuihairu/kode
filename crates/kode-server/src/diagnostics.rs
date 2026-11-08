@@ -304,7 +304,10 @@ fn scalar_pass(
 
 /// 未知 Type 引用:候选词逐个判内建/实体/自定义,未注册 → Error(候选词
 /// 子区间;TS pushDiagnosticForNodeValue 同规则)。missingPythonFile 分支
-/// 不在本面(见文件头划归)。
+/// 不在本面(见文件头划归,服务轨道下由 TS 侧保留该盘上探测分支)。
+/// TS unverifiable 档同口径:types.xml/alias.xml 注册表为空(语料无注册
+/// 视图)时无法裁决,一律静默(resolveCustomTypeReference `!customTypes.size`
+/// 同语义),绝不把无注册视图误报成「未注册」。
 fn validate_type_node(
     text: &str,
     doc: &Document,
@@ -315,6 +318,9 @@ fn validate_type_node(
     let data = doc.element(node);
     let value = node_value(doc, node);
     if value.is_empty() || !doc.child_elements(node).is_empty() {
+        return;
+    }
+    if ctx.custom_types.is_empty() {
         return;
     }
     for candidate in word_tokens(&value) {

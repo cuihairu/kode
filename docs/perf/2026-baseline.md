@@ -224,7 +224,7 @@ flowchart TD
   SKIP["skippedCurrentVersion 跳过"]
   CALC["computeAndPublish<br/>def 侧打点 activate/diagnostics.ts:117 / entities 侧 :130"]
   VD["validateDocument(languageProviders/validation.ts:13)<br/>parseDefAst 一次结果共用标量+结构校验(languageProviders/validation.ts:13,批92)"]
-  VEX["validateEntitiesXmlDocument(languageProviders/validation.ts:165)<br/>documentStore 'entities-analysis' 命名空间缓存(languageProviders/validation.ts:178,A6-3)"]
+  VEX["validateEntitiesXmlDocument(languageProviders/validation.ts:255)<br/>documentStore 'entities-analysis' 命名空间缓存(languageProviders/validation.ts:265,A6-3)"]
   SHDD["kode2 shadow 对拍+语料镜像腿<br/>shadowObserveDefDocument(:1873,fire-and-forget)"]
   DS["文档解析(document-parse 打点)<br/>documentStore 同版本只解析一次(PR2)"]
   PUB["diagnostics.set(uri, items) 发布"]

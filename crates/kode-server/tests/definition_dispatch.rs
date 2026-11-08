@@ -76,6 +76,27 @@ fn open_avatar(state: &mut ServerState) {
     assert!(out.is_empty());
 }
 
+/// 非空类型注册表(types.xml 声明一条无关类型)。TS resolveCustomTypeReference
+/// `!customTypes.size` 同口径:注册表为空 = unverifiable 静默,只有非空注册
+/// 视图才可裁决「未注册」Error。
+fn open_types_registry(state: &mut ServerState) {
+    let out = handle_message(
+        state,
+        notification(
+            "textDocument/didOpen",
+            json!({
+                "textDocument": {
+                    "uri": "file:///workspace/demo/scripts/entity_defs/types.xml",
+                    "languageId": "xml",
+                    "version": 1,
+                    "text": "<root>\n\t<SOME_OTHER_TYPE> UINT32 </SOME_OTHER_TYPE>\n</root>\n"
+                }
+            }),
+        ),
+    );
+    assert!(out.is_empty());
+}
+
 #[test]
 fn initialize_advertises_definition_provider() {
     let mut state = ServerState::new();
@@ -201,6 +222,7 @@ fn diagnostic_returns_full_report_with_items() {
     let mut state = ServerState::new();
     handle_message(&mut state, initialize_message(1));
     open_avatar(&mut state);
+    open_types_registry(&mut state);
     // 干净文档 → items 空;注入未知类型 → 一条 Error。
     let out = handle_message(
         &mut state,

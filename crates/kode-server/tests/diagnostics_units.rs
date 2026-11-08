@@ -36,7 +36,9 @@ const UNKNOWN_TYPE_DEF: &str = "<root>\n\
 
 #[test]
 fn unknown_type_reference_is_error_with_candidate_range() {
-    let engine = engine_with(&[]);
+    // 注册表非空(有 types.xml 视图)才可裁决未注册;注入一个无关声明。
+    let types = "<root>\n\t<SOME_OTHER_TYPE> UINT32 </SOME_OTHER_TYPE>\n</root>\n";
+    let engine = engine_with(&[("/w/scripts/entity_defs/types.xml", types)]);
     let diagnostics = engine.def_diagnostics(UNKNOWN_TYPE_DEF);
     assert_eq!(diagnostics.len(), 1, "只应有未知类型一条: {diagnostics:?}");
     let diagnostic = &diagnostics[0];
@@ -49,6 +51,18 @@ fn unknown_type_reference_is_error_with_candidate_range() {
     assert_eq!(diagnostic.range.start.line, 3);
     assert_eq!(diagnostic.range.start.character, 10);
     assert_eq!(diagnostic.range.end.character, 20);
+}
+
+#[test]
+fn empty_type_registry_is_unverifiable_and_silent() {
+    // TS resolveCustomTypeReference `!customTypes.size` 同口径:语料无
+    // types.xml/alias.xml 注册视图时无法裁决,一律静默,绝不误报「未注册」
+    // (2026-11-08 诊断面切流对账:旧口径空注册表报 Error,与 TS 分歧)。
+    let engine = engine_with(&[]);
+    assert!(
+        engine.def_diagnostics(UNKNOWN_TYPE_DEF).is_empty(),
+        "空注册表 = unverifiable,静默"
+    );
 }
 
 #[test]
@@ -71,11 +85,16 @@ fn builtin_and_alias_names_are_known_types() {
         engine.def_diagnostics(text).is_empty(),
         "内建 + 别名都算已知"
     );
-    // 属性式别名不产出条目(TS buildAliasXmlCustomTypeInfo 同口径)。
+    // 属性式别名不产出条目(TS buildAliasXmlCustomTypeInfo 同口径);仅此
+    // 一条别名时注册表为空 → unverifiable 静默(2026-11-08 对账:旧口径
+    // 报 Error,与 TS `!customTypes.size` 分歧,已随空注册表守卫收齐)。
     let attribute_alias = "<root>\n\t<ALIAS_OK type=\"ARRAY\" of=\"UINT32\"/>\n</root>\n";
     let engine = engine_with(&[("/w/scripts/entity_defs/alias.xml", attribute_alias)]);
     let messages = messages_of(&engine, text);
-    assert_eq!(messages.len(), 1, "属性式别名不算已知: {messages:?}");
+    assert!(
+        messages.is_empty(),
+        "属性式别名不算已知,注册表空 = unverifiable 静默: {messages:?}"
+    );
 }
 
 #[test]

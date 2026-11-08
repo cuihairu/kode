@@ -3,7 +3,7 @@
 // 校验的未知 Flags(单值+`|` 组合)/未知 DetailLevel/重复定义(属性作用域与
 // 非属性段)/缺 Type 与缺 Flags/未注册类型(error+missingPythonFile warning)/
 // entities.xml 重复登记诊断。测试不修改 src,只在 /tmp 临时工作区建 defs。
-// 唯一未盖分支:validation.ts:100 `diagnostics.get(...) ?? []` 右臂 —— 替身
+// 唯一未盖分支:validation.ts:127 `diagnostics.get(...) ?? []` 右臂 —— 替身
 // DiagnosticCollection.get 缺文件返回 [](真实 vscode 返回 undefined),右臂
 // 在测试面结构性不可达;盖它需改替身契约(700+ 用例依赖 [] 回落),不划算。
 import * as fs from 'fs';

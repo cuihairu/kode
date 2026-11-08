@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { KodeCoreClient } from '../src/kodeCoreClient';
 import { KodeCoreGate } from '../src/kodeCoreGate';
-import { serveCompletionFromRust, serveDefinitionFromRust, setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { serveCompletionFromRust, serveDefinitionFromRust, serveDiagnosticsFromRust, setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
 
 // 2026-11-08 用户令「直接切到 rust」:定义面 rust 服务 e2e(真实 kode-server
 // 二进制)。证明 switch 不是纸面:gate 服务轨道 + serveDefinitionFromRust
@@ -158,5 +158,102 @@ suite('kode 定义面 rust 服务 e2e(真实二进制)', () => {
     expect(labels).toContain('SKILL_SLOT');
     // 类型面 kind=LSP Class(7)(别名/实体不混入此面)。
     expect(report!.items.every(item => item.kind === 7)).toBe(true);
+  }, 20_000);
+
+  it('rust 轨道:诊断面逐码形态(真实二进制;已注册静默/missingPythonFile 不在面)', async () => {
+    // 语料前置:非空类型注册视图(否则未知类型 unverifiable 静默)。
+    const typesPath = join(repoRoot, 'tests', 'fixtures', 'kbengine-demo-assets', 'scripts', 'entity_defs', 'types.xml');
+    await gate!.mirrorDocument(typesPath, 'xml', 1, readFileSync(typesPath, 'utf8'));
+    // 逐码合成文档:标量三码(未知 Flags/`|` 组合/未知 DetailLevel)+ 未知
+    // 类型 + 结构码(缺 Type/缺 Flags/属性作用域重复/方法段重复)+ 已注册
+    // 类型(应静默)。
+    const defText = [
+      '<root>',
+      '\t<Properties>',
+      '\t\t<hp>',
+      '\t\t\t<Type> UINT32 </Type>',
+      '\t\t\t<Flags> NOT_A_FLAG </Flags>',
+      '\t\t</hp>',
+      '\t\t<combo>',
+      '\t\t\t<Type> UINT32 </Type>',
+      '\t\t\t<Flags> BASE|CELL_PUBLIC </Flags>',
+      '\t\t</combo>',
+      '\t\t<lvl>',
+      '\t\t\t<Type> UINT32 </Type>',
+      '\t\t\t<Flags> BASE </Flags>',
+      '\t\t\t<DetailLevel> ULTRA </DetailLevel>',
+      '\t\t</lvl>',
+      '\t\t<noType>',
+      '\t\t\t<Flags> BASE </Flags>',
+      '\t\t</noType>',
+      '\t\t<noFlags>',
+      '\t\t\t<Type> UINT32 </Type>',
+      '\t\t</noFlags>',
+      '\t\t<dupProp>',
+      '\t\t\t<Type> UINT32 </Type>',
+      '\t\t\t<Flags> BASE </Flags>',
+      '\t\t</dupProp>',
+      '\t\t<dupProp>',
+      '\t\t\t<Type> UINT32 </Type>',
+      '\t\t\t<Flags> BASE </Flags>',
+      '\t\t</dupProp>',
+      '\t\t<regType>',
+      '\t\t\t<Type> SKILL_SLOT </Type>',
+      '\t\t\t<Flags> BASE </Flags>',
+      '\t\t</regType>',
+      '\t\t<ghosty>',
+      '\t\t\t<Type> GHOST_TYPE </Type>',
+      '\t\t\t<Flags> BASE </Flags>',
+      '\t\t</ghosty>',
+      '\t</Properties>',
+      '\t<BaseMethods>',
+      '\t\t<moveTo>',
+      '\t\t\t<Exposed> true </Exposed>',
+      '\t\t</moveTo>',
+      '\t\t<moveTo>',
+      '\t\t\t<Exposed> true </Exposed>',
+      '\t\t</moveTo>',
+      '\t</BaseMethods>',
+      '</root>'
+    ].join('\n');
+    const syntheticUri = '/tmp/kode-e2e-synthetic-diag.def';
+    const document = {
+      uri: { fsPath: syntheticUri },
+      languageId: 'kbengine-def',
+      version: 1,
+      getText: () => defText
+    };
+    const report = await serveDiagnosticsFromRust(document as never);
+    expect(report).not.toBeNull();
+    expect(report!.kind).toBe('full');
+    const messages = report!.items.map(item => item.message);
+    // 标量三码 + 未知类型(文案与 TS 逐字节同源)
+    expect(messages).toContain('未知的 KBEngine Flags 值: NOT_A_FLAG。KBEngine 源码按单个映射值解析 <Flags>，不支持此写法。');
+    expect(messages.some(message => message.includes('BASE|CELL_PUBLIC') && message.includes("不支持 '|' 组合形态"))).toBe(true);
+    expect(messages).toContain('未知的 DetailLevel: ULTRA');
+    expect(messages).toContain('自定义类型 GHOST_TYPE 未在 types.xml 中注册，请先在 types.xml 注册后再引用');
+    // 结构码:缺字段(节点区间)+ 重复成对(Warning+Info,属性按作用域)
+    expect(messages).toContain('属性 noType 缺少 <Type> 定义');
+    expect(messages).toContain('属性 noFlags 缺少 <Flags> 定义');
+    expect(messages).toContain('属性区块中存在重复定义: dupProp (Base)');
+    expect(messages).toContain('dupProp 在 属性区块 中已在 Base 作用域定义');
+    expect(messages).toContain('方法区块中存在重复定义: moveTo');
+    expect(messages).toContain('moveTo 在 方法区块 中已定义');
+    // 已注册类型静默(不误报);missingPythonFile 盘上探测分支不在 Rust 面
+    // (划归 TS 保留,归并时外来码不丢)。
+    expect(messages.some(message => message.includes('SKILL_SLOT'))).toBe(false);
+    expect(messages.some(message => message.includes('user_type'))).toBe(false);
+    // 严重级(LSP 基):Error=1 / Warning=2 / Information=3
+    const severityOf = (needle: string): number =>
+      report!.items.find(item => item.message.includes(needle))!.severity;
+    expect(severityOf('NOT_A_FLAG')).toBe(1);
+    expect(severityOf('缺少 <Type> 定义')).toBe(1);
+    expect(severityOf('重复定义: dupProp')).toBe(2);
+    expect(severityOf('已在 Base 作用域定义')).toBe(3);
+    // 候选词子区间抽查:第 5 行(0 基 4)`\t\t\t<Flags> NOT_A_FLAG </Flags>`
+    // 的 NOT_A_FLAG = 列 11..21。
+    const flagsItem = report!.items.find(item => item.message.includes('NOT_A_FLAG'))!;
+    expect(flagsItem.range.start).toEqual({ line: 4, character: 11 });
+    expect(flagsItem.range.end.character).toBe(21);
   }, 20_000);
 });

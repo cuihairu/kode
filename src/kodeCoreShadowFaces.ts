@@ -288,6 +288,59 @@ export async function serveHoverFromRust(
 }
 
 /**
+ * 诊断面 rust 服务(2026-11-08 用户令「直接切到 rust」,诊断面最后一片):
+ * 服务轨道下先镜像 .def 文档(未保存修订以编辑器内容为准),再请求
+ * kode-server textDocument/diagnostic(LSP pull 全量面 {kind:'full',items})。
+ * Rust 面只覆盖语料可复刻的 validateDocument 子集(标量三码 + 结构重复/
+ * 缺字段;missingPythonFile 盘上探测分支不在面);entities/types/alias 专项
+ * 诊断也不在本片 —— 非 .def 直通 null,TS 现产面保留。畸形应答整面作废
+ * (任一条目缺区间/级别/文案)返回 null,不做部分采用 —— 调用方保留 TS 集。
+ * 非服务轨道/未装配门零开销。
+ */
+export async function serveDiagnosticsFromRust(
+  document: DocumentLike
+): Promise<LspDiagnosticReportFace | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust()) {
+    return null;
+  }
+  if (!isDefDocument(document)) {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  await gate
+    .mirrorDocument(uri, document.languageId, document.version, document.getText())
+    .catch(() => undefined);
+  const result = await gate.serveInRust<unknown>(
+    'textDocument/diagnostic',
+    { textDocument: { uri } },
+    null
+  );
+  if (!result || typeof result !== 'object') {
+    return null;
+  }
+  const face = result as Partial<LspDiagnosticReportFace>;
+  if (face.kind !== 'full' || !Array.isArray(face.items)) {
+    return null;
+  }
+  for (const item of face.items) {
+    if (
+      !item ||
+      typeof item.message !== 'string' ||
+      typeof item.severity !== 'number' ||
+      !item.range ||
+      typeof item.range.start?.line !== 'number' ||
+      typeof item.range.start?.character !== 'number' ||
+      typeof item.range.end?.line !== 'number' ||
+      typeof item.range.end?.character !== 'number'
+    ) {
+      return null;
+    }
+  }
+  return face as LspDiagnosticReportFace;
+}
+
+/**
  * .def 定义跳转影子对拍:结算 ProviderResult(可能是 thenable)后适配成
  * TS Location 面再镜像给 gate。fire-and-forget,不改 provider 返回值
  * (铁律:Rust 结果只进差异日志)。
