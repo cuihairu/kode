@@ -329,3 +329,175 @@ describe('StartEntry 视图(UX-REVIEW-002c)', () => {
     expect((registered[0] as StartEntryProvider).getChildren()[0].label).toBe('Project ready');
   });
 });
+
+// UX-REVIEW-002d 自动化验收半边(真实安装包走查归 UX-REVIEW-009):冷启动、
+// 打开/切换/关闭工作区、识别失败恢复、重试与多根工作区;后台旧扫描结果
+// 不得覆盖新工作区状态。全部经控制器 + 手工事件源驱动,与激活期同一接线形状。
+describe('StartEntry 验收(UX-REVIEW-002d)', () => {
+  it('冷启动→打开工作区:无工作区态起步,打开后经识别中落就绪', async () => {
+    makeReadyFixture(rootA);
+    const folderChange = makeFolderChangeEvent();
+    let currentRoot: string | null = null;
+    const controller = new StartEntryController({
+      getWorkspaceRoot: () => currentRoot,
+      runDiscovery: async () => undefined,
+      onDidChangeWorkspaceFolders: folderChange.event
+    });
+    controller.begin();
+    await drain();
+    expect(getStartEntryState().kind).toBe('no-workspace');
+
+    currentRoot = rootA;
+    folderChange.fire();
+    await drain();
+    await drain();
+    const state = getStartEntryState();
+    expect(state.kind).toBe('ready');
+    expect(state.workspaceRoot).toBe(rootA);
+  });
+
+  it('关闭工作区:就绪态随目录关闭如实回落 no-workspace,不残留旧根结论', async () => {
+    makeReadyFixture(rootA);
+    const folderChange = makeFolderChangeEvent();
+    let currentRoot: string | null = rootA;
+    const controller = new StartEntryController({
+      getWorkspaceRoot: () => currentRoot,
+      runDiscovery: async () => undefined,
+      onDidChangeWorkspaceFolders: folderChange.event
+    });
+    controller.begin();
+    await drain();
+    await drain();
+    expect(getStartEntryState().kind).toBe('ready');
+
+    currentRoot = null;
+    folderChange.fire();
+    await drain();
+    const state = getStartEntryState();
+    expect(state.kind).toBe('no-workspace');
+    expect(state.workspaceRoot).toBeNull();
+  });
+
+  it('切换工作区全链:A 就绪→切 B→B 自己的识别落位,视图过渡期渲染识别中', async () => {
+    makeReadyFixture(rootA);
+    makeReadyFixture(rootB);
+    fs.writeFileSync(path.join(rootB, 'entity_defs', 'Boss.def'), '[Boss]\n');
+    const gate = deferred<void>();
+    const folderChange = makeFolderChangeEvent();
+    let currentRoot = rootA;
+    const controller = new StartEntryController({
+      getWorkspaceRoot: () => currentRoot,
+      runDiscovery: root => (root === rootB ? gate.promise : Promise.resolve()),
+      onDidChangeWorkspaceFolders: folderChange.event
+    });
+    controller.begin();
+    await drain();
+    await drain();
+    expect(getStartEntryState()).toMatchObject({ kind: 'ready', workspaceRoot: rootA });
+
+    currentRoot = rootB;
+    folderChange.fire();
+    await drain();
+    // 过渡期(B 识别在途):视图不得拿 A 的就绪结论顶替
+    const provider = new StartEntryProvider({ getWorkspaceRoot: () => currentRoot });
+    expect(provider.getChildren()[0].label).toBe('Identifying KBEngine project…');
+    gate.resolve();
+    await drain();
+    await drain();
+    expect(getStartEntryState()).toMatchObject({ kind: 'ready', workspaceRoot: rootB });
+    expect(provider.getChildren()[0].label).toBe('Project ready');
+  });
+
+  it('识别失败恢复:失败→补齐布局→重试→就绪,同一控制器即可恢复', async () => {
+    const folderChange = makeFolderChangeEvent();
+    const controller = new StartEntryController({
+      getWorkspaceRoot: () => rootA,
+      runDiscovery: async () => undefined,
+      onDidChangeWorkspaceFolders: folderChange.event
+    });
+    controller.begin();
+    await drain();
+    await drain();
+    expect(getStartEntryState().kind).toBe('not-found');
+
+    // 修复布局(补 entity_defs)后重试:清缓存重扫,not-found → ready
+    makeReadyFixture(rootA);
+    resetDiscoveryState();
+    await controller.retry();
+    const state = getStartEntryState();
+    expect(state.kind).toBe('ready');
+    expect(state.workspaceRoot).toBe(rootA);
+  });
+
+  it('失败恢复经视图条目真实可达:failed 态的重试条目指向 retryDiscovery 命令', async () => {
+    const controller = new StartEntryController({
+      getWorkspaceRoot: () => rootA,
+      runDiscovery: async () => {
+        throw new Error('first scan fails');
+      }
+    });
+    await controller.retry();
+    const provider = new StartEntryProvider({ getWorkspaceRoot: () => rootA });
+    const items = provider.getChildren();
+    const retryEntry = items.find(item => item.command?.command === 'kbengine.start.retryDiscovery');
+    expect(retryEntry).toBeDefined();
+  });
+
+  it('多根工作区:主根=folders[0],状态键随主根;次根不参与状态', async () => {
+    makeReadyFixture(rootA);
+    makeReadyFixture(rootB);
+    const folders = [rootA, rootB];
+    const controller = new StartEntryController({
+      getWorkspaceRoot: () => folders[0] ?? null,
+      runDiscovery: async root => {
+        // 次根绝不被识别(接线只认主根)
+        expect(root).toBe(folders[0]);
+      }
+    });
+    controller.begin();
+    await drain();
+    await drain();
+    expect(getStartEntryState()).toMatchObject({ kind: 'ready', workspaceRoot: rootA });
+  });
+
+  it('后台旧扫描不覆盖新状态:根切换后旧扫描无论成败都弃置', async () => {
+    makeReadyFixture(rootA);
+    makeReadyFixture(rootB);
+    const gate = deferred<void>();
+    const failGate = deferred<void>();
+    const folderChange = makeFolderChangeEvent();
+    let currentRoot = rootA;
+    const controller = new StartEntryController({
+      getWorkspaceRoot: () => currentRoot,
+      runDiscovery: root => {
+        if (root === rootA) {
+          // A 的扫描既慢又会失败:即便它最后落地,也不得污染 B 的状态
+          return failGate.promise.then(() => {
+            throw new Error('late failure for old root');
+          });
+        }
+        return gate.promise;
+      },
+      onDidChangeWorkspaceFolders: folderChange.event
+    });
+    controller.begin();
+    await drain();
+    expect(getStartEntryState()).toMatchObject({ kind: 'scanning', workspaceRoot: rootA });
+
+    currentRoot = rootB;
+    folderChange.fire();
+    await drain();
+    await drain();
+    gate.resolve();
+    await drain();
+    await drain();
+    // B 已就绪后,旧根 A 的失败才落地
+    expect(getStartEntryState()).toMatchObject({ kind: 'ready', workspaceRoot: rootB });
+    failGate.resolve();
+    await drain();
+    await drain();
+    const state = getStartEntryState();
+    expect(state.kind).toBe('ready');
+    expect(state.workspaceRoot).toBe(rootB);
+  });
+});
