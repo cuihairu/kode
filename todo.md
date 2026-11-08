@@ -1517,8 +1517,8 @@
 
 ### UX-REVIEW-001 [P0] 克隆密码遮挡
 
-- [ ] UX-REVIEW-001a 扩展克隆命令输入选项并将源库、目标库的密码输入设为遮挡；验收：实际 VS Code `showInputBox` 收到 `password: true`，其他字段不被误设为密码。
-- [ ] UX-REVIEW-001b 验证两种角色在输入、留空与取消时的保存语义；密码仅进入 SecretStorage，不进入配置、摘要、通知与日志。完成后记录测试及提交。
+- [x] UX-REVIEW-001a 扩展克隆命令输入选项并将源库、目标库的密码输入设为遮挡；验收：实际 VS Code `showInputBox` 收到 `password: true`，其他字段不被误设为密码。
+- [x] UX-REVIEW-001b 验证两种角色在输入、留空与取消时的保存语义；密码仅进入 SecretStorage，不进入配置、摘要、通知与日志。覆盖 tests/playerClonePasswordInput.test.ts 与 tests/playerDataClone.test.ts（27 项通过）；tsc 与 eslint 通过。
 
 ### UX-REVIEW-002 [P1] 首次使用入口与项目状态
 

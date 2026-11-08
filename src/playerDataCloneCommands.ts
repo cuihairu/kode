@@ -55,6 +55,7 @@ export interface PlayerCloneCommandDeps {
   showQuickPick(items: readonly string[], options: { placeHolder: string }): Promise<string | undefined>;
   showInputBox(options: {
     prompt: string;
+    password?: boolean;
     validateInput?(value: string): string | null;
   }): Promise<string | undefined>;
   showInformationMessage(message: string): Promise<unknown>;
@@ -162,7 +163,7 @@ export async function runConfigureCloneProfileCommand(
   if (user === undefined) {
     return;
   }
-  const password = await deps.showInputBox({ prompt: '密码(Password,留空 = 不保存;只存 SecretStorage,不进配置文件)' });
+  const password = await deps.showInputBox({ prompt: '密码(Password,留空 = 不保存;只存 SecretStorage,不进配置文件)', password: true });
   if (password === undefined) {
     return;
   }
