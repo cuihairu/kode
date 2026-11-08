@@ -1525,8 +1525,8 @@
 
 - [x] UX-REVIEW-002a 梳理现有项目导入/创建、工作区发现、诊断与实体入口：明确可复用命令及无工作区、多工作区、外部资源根的真实行为；不得臆造识别成功。
 - [x] UX-REVIEW-002a-1 发现诊断命令读取调用时的首个工作区；工作区切换后，激活期旧扫描不能覆盖报告。已覆盖切换与关闭工作区；多根选择仍待后续实现。
-- [ ] UX-REVIEW-002b 定义并接入可观察状态：未打开工作区、识别中、未找到/失败、已识别；区分扫描进行中、无匹配和读取失败，不以空列表冒充就绪。
-- [ ] UX-REVIEW-002c 建立侧栏「开始」任务入口，按状态提供打开项目、检查设置/诊断、查看实体等真实可执行操作；失败路径允许重试，保留原有侧栏和命令。
+- [x] UX-REVIEW-002b 定义并接入可观察状态：未打开工作区、识别中、未找到/失败、已识别；区分扫描进行中、无匹配和读取失败，不以空列表冒充就绪。（2026-11-08,53e7c94c:src/startEntry.ts 状态机——no-workspace/scanning/not-found/failed/ready 五态 + 陈旧根守卫（已切换根的扫描结论弃置,视图过渡期渲染识别中,不拿旧根结论顶替）+ 同根在途重入去重；ready 判据=entity_defs 根唯一发现命中且真实在盘,空列表不冒充就绪,not-found 如实列缺失锚点、failed 保留原始错误,根级读取失败(权限/被删)落 failed 不与无匹配混谈(深扫描对不可读目录静默跳过,结论面把「读不到」与「真没有」分开);激活期识别失败不再无声(unhandled rejection→failed 态);无 workspaceState 宿主保持旧口径整段跳过(不询问/不落报告/不多弹警告,extension 测试替身形态核实);tests/startEntry.test.ts 16 项绿）
+- [x] UX-REVIEW-002c 建立侧栏「开始」任务入口，按状态提供打开项目、检查设置/诊断、查看实体等真实可执行操作；失败路径允许重试，保留原有侧栏和命令。（2026-11-08,53e7c94c:package.json 新视图 `kbengine.start` 置顶 kbengine-explorer + `kbengine.start.retryDiscovery` 命令；条目全指既有真实命令——无工作区→打开文件夹(openFolder)、扫描中→纯说明无假按钮、未找到/失败→发现报告+重试、就绪→查看实体(entity.open)/检查报告/启动调试(debug.start)；原 11 个侧栏视图与命令一概保留；placeholders 首位注册+provider 状态订阅刷新+dispose 合并拆除；nls 双语 + l10n bundle en/zh 各 +19 键键集全等；门禁 lint 0/tsc 0/startEntry+placeholders+discovery+quickActionTree+i18n 契约 44 项绿/extension.test 全激活 21/22（余 1 例=并发会话 quickActions 本地化 stale 断言,HEAD 既存,证据='未配置快速执行动作'字符串已不在 src））
 - [ ] UX-REVIEW-002d 验收冷启动、打开/切换/关闭工作区、识别失败恢复、重试与多根工作区；后台旧扫描结果不能覆盖新工作区状态。真实安装包走查由 UX-REVIEW-009 记录。
 
 ### UX-REVIEW-003 [P1] 快速执行空状态
