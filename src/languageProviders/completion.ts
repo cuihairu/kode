@@ -14,6 +14,11 @@ import { filterKbeSymbols, getKbeAliases, getKbeCompletionContext, kbeCompletion
 import { EngineApiCatalog } from '../engineApiMetadata';
 import { getEngineVersion } from '../engineVersion';
 import { getLanguageFeatureConfig } from './shared';
+import {
+  getKodeCoreShadowGate,
+  serveCompletionFromRust,
+  type LspCompletionReportFace
+} from '../kodeCoreShadowFaces';
 export const TOP_LEVEL_DEF_TAGS = [
   'Parent',
   'Interfaces',
@@ -257,12 +262,73 @@ export function getAddSpaceGeometryStringPrefix(lineText: string): { prefix: str
   return { prefix: lineText.slice(stringStart) };
 }
 
+/**
+ * LSP CompletionItemKind 数值 → vscode.CompletionItemKind(kode-server 投影:
+ * method=2/type/entity/alias=7(Class)/property=10(Property);其余归 Text)。
+ */
+function completionKindFromLsp(lspKind: number): vscode.CompletionItemKind {
+  switch (lspKind) {
+    case 2:
+      return vscode.CompletionItemKind.Method;
+    case 10:
+      return vscode.CompletionItemKind.Property;
+    case 7:
+      return vscode.CompletionItemKind.Class;
+    default:
+      // Rust 只投影 2/7/10;未知数值归 Class(类型桶)保守兜底。
+      return vscode.CompletionItemKind.Class;
+  }
+}
+
+/** kode-server 补全面 → vscode.CompletionItem[](label/kind/detail 投影) */
+export function lspCompletionToVscode(face: LspCompletionReportFace): vscode.CompletionItem[] {
+  return face.items.map(item => {
+    const completion = new vscode.CompletionItem(item.label, completionKindFromLsp(item.kind));
+    if (item.detail) {
+      completion.detail = item.detail;
+    }
+    return completion;
+  });
+}
+
 export class KBEngineCompletionProvider implements vscode.CompletionItemProvider {
   // 内建属性补全(用户令 2026-10-21 内建属性单 ③):self. 上下文需要 def
   // 归属面兜底,可选注入;缺省时仅目录域判面(既有无参用例口径不变)。
   constructor(private readonly entityMappingManager?: EntityMappingManager) {}
 
   provideCompletionItems(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    token?: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.CompletionItem[]> {
+    if (token?.isCancellationRequested) return null;
+    // 2026-11-08 用户令「直接切」:服务轨道下补全先走 Rust(语料文档)。Rust
+    // 判定出上下文且有条目即 Rust 优先;空集(null 或 items=[])回 TS 既有链
+    // (方法面 def 链与 TS 的 KBENGINE_HOOKS 语义不同,Rust 空集时让位,
+    // 不空集时 Rust 面是 def 链声明的成员——直接切语义)。
+    if (getKodeCoreShadowGate()?.serveFromRust()) {
+      return this.provideCompletionRustFirst(document, position, token);
+    }
+    return this.provideCompletionItemsSync(document, position, token);
+  }
+
+  /** Rust 优先补全:非空 Rust 条目集即用,否则回 TS 既有链路。 */
+  private async provideCompletionRustFirst(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    token?: vscode.CancellationToken
+  ): Promise<vscode.CompletionItem[]> {
+    const report = await serveCompletionFromRust(document, position);
+    if (token?.isCancellationRequested) return [];
+    if (report && report.items.length > 0) {
+      return lspCompletionToVscode(report);
+    }
+    const tsResult = await this.provideCompletionItemsSync(document, position, token);
+    return tsResult ?? [];
+  }
+
+  /** TS 既有补全链路(原 provideCompletionItems 主体,Rust 回落复用)。 */
+  private provideCompletionItemsSync(
     document: vscode.TextDocument,
     position: vscode.Position,
     token?: vscode.CancellationToken

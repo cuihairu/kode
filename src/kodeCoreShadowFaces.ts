@@ -70,6 +70,17 @@ export interface LspDiagnosticReportFace {
   items: { range: RangeLike; severity: number; message: string }[];
 }
 
+/** kode-server textDocument/completion 应答面(to_lsp_items 投影:label/kind/detail) */
+export interface LspCompletionReportFace {
+  isIncomplete: boolean;
+  items: {
+    label: string;
+    /** LSP CompletionItemKind 数值(method=2/type/entity/alias=7/property=10) */
+    kind: number;
+    detail?: string;
+  }[];
+}
+
 /** vscode.Location(单/数组)→ LSP Location 面;null/落空 → null */
 export function locationToLspFace(location: unknown): LspLocationFace | null {
   const first = Array.isArray(location) ? location[0] : location;
@@ -198,6 +209,82 @@ export async function serveDefinitionFromRust(
     return null;
   }
   return face as LspLocationFace;
+}
+
+/**
+ * 补全面 rust 服务(2026-11-08 用户令「直接切到 rust」):服务轨道下先镜像
+ * 语料文档(Rust 侧要有本文件 buffer 才可能应答),再请求 kode-server
+ * textDocument/completion。Rust 判定出上下文即返回条目集(即使空);未判定
+ * 上下文(接口段/属性子标签/def 顶层/非语料)或任何失败返回 null —— 调用方
+ * 回 TS。Rust 条目集优先于 TS(直接切语义)。
+ */
+export async function serveCompletionFromRust(
+  document: DocumentLike,
+  position: PositionLike
+): Promise<LspCompletionReportFace | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust()) {
+    return null;
+  }
+  // Rust 面 = 语料文档(def + 三类 XML);非语料零请求直通 TS。
+  if (!isCorpusDocument(document)) {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  await gate
+    .mirrorDocument(uri, document.languageId, document.version, document.getText())
+    .catch(() => undefined);
+  const params = {
+    textDocument: { uri },
+    position: { line: position.line, character: position.character }
+  };
+  const result = await gate.serveInRust<unknown>('textDocument/completion', params, null);
+  if (!result || typeof result !== 'object') {
+    return null;
+  }
+  const face = result as Partial<LspCompletionReportFace>;
+  if (typeof face.isIncomplete !== 'boolean' || !Array.isArray(face.items)) {
+    return null;
+  }
+  return face as LspCompletionReportFace;
+}
+
+/**
+ * 悬停面 rust 服务(2026-11-08 用户令「直接切到 rust」):服务轨道下先镜像
+ * 语料文档(未保存修订以编辑器内容为准),再请求 kode-server
+ * textDocument/hover。Rust 命中返回 markdown 文本;未命中(词未知/文档不在
+ * 语料面=Python/schema 恒 null)或任何失败返回 null —— 调用方回 TS 既有链。
+ * 非服务轨道/未装配门零开销。Rust 内容优先于 TS(直接切语义)。
+ */
+export async function serveHoverFromRust(
+  document: DocumentLike,
+  position: PositionLike
+): Promise<string | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust()) {
+    return null;
+  }
+  // Rust 面 = 语料文档(def + 三类 XML);非语料零请求直通 TS。
+  if (!isCorpusDocument(document)) {
+    return null;
+  }
+  const uri = document.uri.fsPath;
+  await gate
+    .mirrorDocument(uri, document.languageId, document.version, document.getText())
+    .catch(() => undefined);
+  const params = {
+    textDocument: { uri },
+    position: { line: position.line, character: position.character }
+  };
+  const result = await gate.serveInRust<unknown>('textDocument/hover', params, null);
+  if (!result || typeof result !== 'object') {
+    return null;
+  }
+  const contents = (result as { contents?: { value?: unknown } }).contents;
+  if (!contents || typeof contents.value !== 'string') {
+    return null;
+  }
+  return contents.value;
 }
 
 /**

@@ -9,6 +9,7 @@ import {
   diagnosticsToLspFace,
   getKodeCoreShadowGate,
   locationToLspFace,
+  serveCompletionFromRust,
   serveDefinitionFromRust,
   setKodeCoreShadowGate,
   shadowCompareDefinition,
@@ -523,5 +524,91 @@ describe('serveDefinitionFromRust 服务面(2026-11-08 用户令「直接切」)
       character: 0,
     });
     expect(location).toBeNull();
+  });
+});
+
+describe('serveCompletionFromRust 服务面(2026-11-08 用户令「直接切」)', () => {
+  it('rust 轨道:镜像语料 + 请求补全,返回 Rust 条目集(Rust 优先)', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/completion', {
+      isIncomplete: false,
+      items: [
+        { label: 'hp', kind: 10, detail: 'int' },
+        { label: 'onEnterWorld', kind: 2 },
+      ],
+    });
+    const { gate } = makeGate(client, 'rust');
+    setKodeCoreShadowGate(gate);
+    const report = await serveCompletionFromRust(makeDocument() as never, {
+      line: 3,
+      character: 2,
+    });
+    expect(report).toEqual({
+      isIncomplete: false,
+      items: [
+        { label: 'hp', kind: 10, detail: 'int' },
+        { label: 'onEnterWorld', kind: 2 },
+      ],
+    });
+    // 语料已镜像(didOpen),请求带 LSP 参数面
+    expect(client.calls.some(call => call.method === 'openDocument')).toBe(true);
+    expect(client.calls.some(call => call.method === 'request:textDocument/completion')).toBe(true);
+  });
+
+  it('Rust 未判定上下文(null):返回 null,调用方回 TS', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/completion', null);
+    const { gate } = makeGate(client, 'rust');
+    setKodeCoreShadowGate(gate);
+    const report = await serveCompletionFromRust(makeDocument() as never, {
+      line: 3,
+      character: 0,
+    });
+    expect(report).toBeNull();
+    expect(client.calls.some(call => call.method === 'request:textDocument/completion')).toBe(true);
+  });
+
+  it('Rust 应答缺 items 字段(坏形状):返回 null,不抛', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/completion', { isIncomplete: false });
+    const { gate } = makeGate(client, 'rust');
+    setKodeCoreShadowGate(gate);
+    const report = await serveCompletionFromRust(makeDocument() as never, {
+      line: 3,
+      character: 0,
+    });
+    expect(report).toBeNull();
+  });
+
+  it('非语料文档(schema/python):零请求直通 null', async () => {
+    const { client } = makeStubClient();
+    const { gate } = makeGate(client, 'rust');
+    setKodeCoreShadowGate(gate);
+    const report = await serveCompletionFromRust(
+      makeDocument({ uri: { fsPath: '/w/Avatar.py' }, languageId: 'python' }) as never,
+      { line: 1, character: 0 }
+    );
+    expect(report).toBeNull();
+    expect(client.calls).toEqual([]);
+  });
+
+  it('非服务轨道(ts):零开销返回 null,不拉进程', async () => {
+    const { client } = makeStubClient();
+    const { gate } = makeGate(client, 'ts');
+    setKodeCoreShadowGate(gate);
+    const report = await serveCompletionFromRust(makeDocument() as never, {
+      line: 1,
+      character: 0,
+    });
+    expect(report).toBeNull();
+    expect(client.calls).toEqual([]);
+  });
+
+  it('门未装配:零开销返回 null', async () => {
+    const report = await serveCompletionFromRust(makeDocument() as never, {
+      line: 1,
+      character: 0,
+    });
+    expect(report).toBeNull();
   });
 });

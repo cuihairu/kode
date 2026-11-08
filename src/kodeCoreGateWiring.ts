@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import { KodeCoreGate, type KodeCoreGateConfig, ShadowDiffEntry } from './kodeCoreGate';
+import { mirrorCorpusToRust } from './kodeCoreCorpusMirror';
 import { setKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
 // kode2 PR-012:双轨切流门的扩展装配(设置项默认关,装配零行为差异)。
@@ -66,6 +67,10 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
   const gate = new KodeCoreGate();
   const extensionRoot = context.extensionUri.fsPath;
   gate.setConfig(readCoreGateConfig(extensionRoot));
+  // 2026-11-08 用户令「直接切」:服务轨道生效时把工作区语料全量镜像给 Rust
+  // (类型/实体/别名/继承链只由已镜像文档入库)。fire-and-forget,不阻塞
+  // 激活;非服务轨道零开销。
+  void mirrorCorpusToRust(gate);
 
   // 输出通道只在 shadow 模式存在(默认 ts 下用户不可见任何新面板)
   let channel: vscode.OutputChannel | null = null;
@@ -107,6 +112,8 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
     ) {
       gate.setConfig(readCoreGateConfig(extensionRoot));
       syncChannel();
+      // 配置变更可能切进服务轨道(或换 serverPath 重启空库):补镜像语料。
+      void mirrorCorpusToRust(gate);
     }
   });
 
