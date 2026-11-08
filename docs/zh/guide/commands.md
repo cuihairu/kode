@@ -650,6 +650,17 @@ callgraph 模式面板支持：
   - 报告写入「KBEngine Def 分析」输出面板
   - 诊断落入问题列表（`kbengine-def-analysis`）
 
+### `kbengine.def.checkEngineMd5`
+
+- 标题：`Check Engine Def MD5 Consistency`
+- 作用：以 Rust `$/kode/def/md5` 权威实现计算工作区 def 闭包的引擎格式 MD5，与 kbcmd 写入客户端 SDK 的摘要盖章逐一对拍
+- 输入（引擎喂入序，与 Rust 收集器同布局）：`scripts/entities.xml`、`entity_defs/{types.xml,alias.xml}`、`entity_defs/*.def`（实体）、`entity_defs/interfaces/*.def`、`entity_defs/components/*.def`，以及组件脚本存在性（`scripts/{base,cell}/components/*.py` → `base:X`/`cell:X`）；def 原文打开缓冲区优先（未保存编辑参与摘要）
+- 行为：
+  - 缺失喂入文件按空串入流（与引擎自身装载同口径）并如实记入备注
+  - Rust 实现不可用时，工作区摘要保持未知，SDK 盖章逐个标「无法比对」——不猜、不用客户端侧哈希顶替
+  - 盖章失配 = SDK 生成后 def 集改过（重新生成 SDK 即重新盖章）；引擎在登录握手（`onHelloCB`）下发同一摘要，失配客户端会中止
+- 输出：报告写入「KBEngine Def 分析」输出面板；通知汇总一致/失配/未知数量
+
 ## 代码片段生成
 
 ### `kbengine.snippets.generateFromSelection`

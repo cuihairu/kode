@@ -673,6 +673,17 @@ The flow graph panel supports:
   - The report goes to the 「KBEngine Def 分析」 (KBEngine def analysis) output channel
   - Diagnostics land in the Problems list (`kbengine-def-analysis`)
 
+### `kbengine.def.checkEngineMd5`
+
+- Title: `Check Engine Def MD5 Consistency`
+- Purpose: cross-check the workspace def closure's engine-format MD5 (computed by the Rust `$/kode/def/md5` authoritative implementation) against the digest constants stamped into client SDKs by kbcmd
+- Inputs (engine feed order, mirroring the Rust collector): `scripts/entities.xml`, `entity_defs/{types.xml,alias.xml}`, `entity_defs/*.def` (entities), `entity_defs/interfaces/*.def`, `entity_defs/components/*.def`, plus component-script presence (`scripts/{base,cell}/components/*.py` → `base:X`/`cell:X`); open editor buffers take priority over disk for def text (unsaved edits participate in the digest)
+- Behavior:
+  - Missing feed files enter the stream as empty strings (same semantics as the engine's own loader) and are reported honestly in the notes
+  - When the Rust implementation is unavailable, the workspace digest stays 未知 (unknown) and every SDK stamp is marked 无法比对 (unverifiable) — never guessed, never substituted with a client-side hash
+  - A stamp mismatch means the def set changed after the SDK was generated (regenerate the SDK to re-stamp); the engine sends the same digest in the login handshake (`onHelloCB`), so a mismatched client aborts
+- Output: the report goes to the 「KBEngine Def 分析」 output channel; the notification summarizes match/mismatch/unknown counts
+
 ## Snippet Generation
 
 ### `kbengine.snippets.generateFromSelection`
