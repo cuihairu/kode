@@ -1487,3 +1487,7 @@
 
 - [x] KODE-REVIEW-MYSQL57 [P1] 隔离 MySQL 5.7 容器运行 `tests/playerDataCloneMysqlReal.test.ts`，使用实际 kode-server RPC 执行 MySQL→计划/归档→导入计划→目标 MySQL 事务往返，验证一致性快照、i64/u64 边界、大于 2^53 的主键、BLOB/BINARY/VARBINARY、空值和字节预算；1/1 通过。与 MySQL 8 实测覆盖相同路径。
 - [x] RUST-MIGRATION-DISCOVERY-001 [P1] 工作区发现命令的锚点扫描接入 Rust：`$/kode/workspace/scanAnchors` 复用 kode-root 默认有界扫描，`runWorkspaceDiscovery` 优先异步预热 Rust 结果并保留 TS 错误/形状回退；重置后的旧 RPC 结果不得覆盖缓存。`tests/workspaceDiscoveryRust.test.ts` 覆盖真实 kode-server RPC、故障回退和失效竞态，`tests/kodeRootParity.test.ts` 保持对拍；同步激活预热和其他布局调用仍为 TS，后续迁移不虚报。
+
+## NIGHTLY-PLATFORM · 多平台与纯 TS 每日交付（2026-11-08）
+
+- [x] NIGHTLY-PLATFORM-001 六个原生平台（Windows/macOS/Linux × x64/ARM64）与纯 TS 通用包独立构建和验证，完整回归与七包全通过后统一发布 nightly；最终 ZIP 核对平台/构建身份/资产/权限/哈希，并执行解包后二进制真实 LSP 跳转与 CLI schema 验证。运行 [42463793704](https://github.com/cuihairu/kode/actions/runs/42463793704) 全成功，源码 `024a8149`，七包和 SHA256SUMS 已发布。过程修复 Windows 盘符 URI 解析、平台测试假设、musl 链接、worker/语言配置漏包及协议命令激活声明；定义跳转重复执行 TS 已由 `ecefd308` 修复。完整证据见 [多平台交付记录](docs/review/2026-11-08-nightly-platform-packaging.md)。
