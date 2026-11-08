@@ -330,7 +330,7 @@ impl ImportApplier {
             if expected == 0 {
                 continue;
             }
-            let ids = new_ids_for_table(plan, &resolved_ids, name);
+            let ids = new_ids_for_table(plan, &resolved_ids, &rows_by_table, name);
             let sql = count_by_ids(name, &ids);
             let found = executor.query_count(&sql, &ids)?;
             checks.push(VerifyCheck {
@@ -361,7 +361,7 @@ impl ImportApplier {
         // ---- 清理计划(PDC-0408):逆拓扑序,只生成不执行 ----
         let mut steps: Vec<CleanupStatement> = Vec::new();
         for name in plan.order.iter().rev() {
-            let ids = new_ids_for_table(plan, &resolved_ids, name);
+            let ids = new_ids_for_table(plan, &resolved_ids, &rows_by_table, name);
             if ids.is_empty() {
                 continue;
             }
@@ -379,20 +379,13 @@ impl ImportApplier {
             ],
         };
 
-        // ---- 根表新主键(allocate 模式的对外句柄,§7 UI 展示面) ----
+        // ---- 根表新主键(对外句柄,§7 UI 展示面):allocate 模式为数据库
+        // 分配值,preserve 模式为归档原值(契约「preserve 模式下为归档原值」)。
         let root_table = plan.order.first().cloned();
         let new_root_id = root_table.as_ref().and_then(|root| {
-            plan.statements
-                .iter()
-                .find(|s| s.table == *root)
-                .and_then(|s| {
-                    s.cells.iter().find_map(|c| match c {
-                        PlannedCell::NewKey { placeholder } => {
-                            resolved_ids.get(placeholder).copied()
-                        }
-                        _ => None,
-                    })
-                })
+            new_ids_for_table(plan, &resolved_ids, &rows_by_table, root)
+                .first()
+                .and_then(typed_id_to_u64)
         });
 
         let run = ImportRun {
@@ -464,10 +457,13 @@ fn resolve_param(
     })
 }
 
-/// 表的全部新主键(按计划该表 NewKey 占位的回填值)。
+/// 表的全部新主键(按计划该表主键列的实际绑定值):NewKey 占位取数据库
+/// 回填值(allocate);主键列 Literal 取归档原值(preserve——计划期不产
+/// 占位,只认占位会空集,致核对误报 DriftMismatch / 根句柄恒 None)。
 fn new_ids_for_table(
     plan: &ImportPlan,
     resolved: &BTreeMap<u64, u64>,
+    rows: &BTreeMap<String, Vec<TypedRow>>,
     table: &str,
 ) -> Vec<TypedValue> {
     let mut ids = Vec::new();
@@ -475,15 +471,38 @@ fn new_ids_for_table(
         if stmt.table != table {
             continue;
         }
-        for cell in &stmt.cells {
-            if let PlannedCell::NewKey { placeholder } = cell {
-                if let Some(id) = resolved.get(placeholder) {
-                    ids.push(TypedValue::BigUInt(*id));
+        let id_col = stmt.columns.iter().position(|c| c == "id");
+        for (idx, cell) in stmt.cells.iter().enumerate() {
+            match cell {
+                PlannedCell::NewKey { placeholder } => {
+                    if let Some(id) = resolved.get(placeholder) {
+                        ids.push(TypedValue::BigUInt(*id));
+                    }
                 }
+                PlannedCell::Literal if id_col == Some(idx) => {
+                    if let Some(value) = rows
+                        .get(table)
+                        .and_then(|table_rows| table_rows.get(stmt.row_index))
+                        .and_then(|row| row.values.get(idx))
+                    {
+                        ids.push(value.clone());
+                    }
+                }
+                _ => {}
             }
         }
     }
     ids
+}
+
+/// 主键绑定值 → 标量 u64(核对/清理参数走 TypedValue,根句柄取数值)。
+fn typed_id_to_u64(value: &TypedValue) -> Option<u64> {
+    match value {
+        TypedValue::BigUInt(x) => Some(*x),
+        TypedValue::UInt(x) => Some(*x),
+        TypedValue::Int(x) => Some(*x as u64),
+        _ => None,
+    }
 }
 
 fn count_by_ids(table: &str, ids: &[TypedValue]) -> String {

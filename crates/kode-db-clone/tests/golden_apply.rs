@@ -14,11 +14,11 @@
 use std::collections::BTreeMap;
 
 use kode_db_clone::{
-    archive_fingerprint, ApplyControl, ApplyOutcome, Archive, ArchiveWriter, CloneError,
-    CloneSchema, DerivedField, DerivedTable, ImportApplier, ImportMode, ImportOptions,
+    archive_fingerprint, ApplyControl, ApplyOutcome, Archive, ArchiveWriter, AutoLoadPolicy,
+    CloneError, CloneSchema, DerivedField, DerivedTable, ImportApplier, ImportMode, ImportOptions,
     ImportPlanner, ImportRunStore, MemoryRunStore, PhysicalTable, RowSink, RuleSet, SchemaResolver,
     SchemaSource, TargetEnvironment, TargetProfile, TargetSnapshot, TypedRow, TypedValue,
-    UniqueKey, VirtualSchema, WriteExecutor,
+    UniqueKey, UniquePolicy, VirtualSchema, WriteExecutor,
 };
 
 // ---- 与 golden_import.rs 同源的 Avatar 三级代表结构(集成测试独立二进制) ----
@@ -771,6 +771,78 @@ fn verify_undercount_surfaces_post_commit_drift_and_records_no_run() {
     assert_eq!(db.commits, 1);
     let fingerprint = archive_fingerprint(&archive).unwrap();
     assert!(store.find_by_fingerprint(&fingerprint).is_none());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn preserve_mode_verify_finds_archived_ids_and_root_handle() {
+    // PreserveIfEmpty 端到端契约(plan §6.1):主键/引用按归档原值直通落库,
+    // 提交后核对与根句柄必须取「归档原值」——核对 found == expected(不误报
+    // DriftMismatch),new_root_id = 归档原 id(而非 None)。
+    let dir = temp_dir("preserve");
+    let path = write_archive(&dir, "preserve.kdpclone", "hero");
+    let archive = Archive::open(&path, None).unwrap();
+    let derived = avatar_derived();
+    let resolved = SchemaResolver::resolve(&derived, &avatar_physical()).unwrap();
+    let plan = ImportPlanner::plan(
+        &archive,
+        &local_target(),
+        &derived,
+        &resolved,
+        &RuleSet::default(),
+        &TargetSnapshot::default(),
+        &ImportOptions {
+            mode: ImportMode::PreserveIfEmpty,
+            autoload: AutoLoadPolicy::PreserveArchive,
+            unique: UniquePolicy::Reject,
+        },
+    )
+    .unwrap();
+
+    let mut db = VirtualDb::new();
+    let mut store = MemoryRunStore::new();
+    let outcome = ImportApplier
+        .apply(
+            &plan,
+            &archive,
+            &local_target(),
+            &mut db,
+            &mut store,
+            &ApplyControl::default(),
+        )
+        .unwrap();
+    let run = match outcome {
+        ApplyOutcome::Applied(run) => run,
+        ApplyOutcome::DuplicateRejected(_) => panic!("preserve import must apply"),
+    };
+
+    // 归档原值落库(id 7 / 100 / 101 / 200,autoLoad 保持原值 1)。
+    assert_eq!(run.mode, ImportMode::PreserveIfEmpty);
+    assert_eq!(
+        db.committed.get("tbl_Avatar"),
+        Some(&vec![vec![
+            TypedValue::BigUInt(7),
+            TypedValue::UInt(1),
+            TypedValue::Text("hero".into()),
+        ]])
+    );
+
+    // Verify:逐表 found == expected(归档原 id 逐行可查),全过不误报。
+    assert!(run.verify.passed);
+    assert_eq!(run.verify.checks.len(), 3);
+    for check in &run.verify.checks {
+        assert!(check.ok, "{:?} not ok", check);
+        assert_eq!(check.found, check.expected);
+    }
+
+    // 根句柄 = 归档原 id(契约「preserve 模式下为归档原值」,不得为 None)。
+    assert_eq!(run.new_root_id, Some(7));
+
+    // 清理计划同样引用归档原 id(只生成,不执行)。
+    assert_eq!(run.cleanup.steps.len(), 3);
+    assert_eq!(run.cleanup.steps[2].params, vec![TypedValue::BigUInt(7)]);
+    assert!(!db.write_log.iter().any(|s| s.contains("DELETE")));
+
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
