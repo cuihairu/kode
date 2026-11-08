@@ -328,10 +328,32 @@ export function renderMonitoringWebview(options: MonitoringRenderOptions): strin
       margin-bottom: 20px;
     }
 
+    /* UX-REVIEW-007b:工具栏按「筛选组 / 操作组」分组换行。窄面板下筛选组
+       先在组内流式折行,刷新/暂停/导出按钮作为整体折到下一行,不再与筛选
+       控件交错;筛选控件随面板宽度伸缩。所有取值/事件仍按 id 绑定,筛选值、
+       刷新、暂停/恢复和导出行为不变;配色与焦点全部走 VS Code 主题变量。 */
+    .toolbar-group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .toolbar-filters {
+      flex: 1 1 320px;
+    }
+
+    .toolbar-actions {
+      flex: 0 2 auto;
+    }
+
     .toolbar label {
       display: grid;
       gap: 4px;
       max-width: 100%;
+      flex: 1 1 170px;
+      min-width: 150px;
     }
 
     .toolbar button {
@@ -356,6 +378,14 @@ export function renderMonitoringWebview(options: MonitoringRenderOptions): strin
       border-radius: 2px;
       min-width: 0;
       max-width: 100%;
+      width: 100%;
+    }
+
+    .toolbar button:focus-visible,
+    .toolbar select:focus-visible,
+    .toolbar input:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: 1px;
     }
 
     .notice {
@@ -507,36 +537,40 @@ export function renderMonitoringWebview(options: MonitoringRenderOptions): strin
   </div>
 
   <div class="toolbar">
-    <label for="componentFilter">${t.componentFilterLabel}<select id="componentFilter">
-      <option value="">${c.allComponents}</option>
-      ${componentTypes
-        .map(
-          type =>
-            `<option value="${escapeHtml(type)}"${componentFilter === type ? ' selected' : ''}>${escapeHtml(type)}</option>`
-        )
-        .join('')}
-    </select></label>
-    <label for="diagnosticFilter">${t.diagnosticFilterLabel}<select id="diagnosticFilter">
-      <option value=""${diagnosticFilter === '' ? ' selected' : ''}>${t.filterAllDiagnostics}</option>
-      <option value="info"${diagnosticFilter === 'info' ? ' selected' : ''}>${t.diagInfo}</option>
-      <option value="warning"${diagnosticFilter === 'warning' ? ' selected' : ''}>${t.diagWarning}</option>
-      <option value="error"${diagnosticFilter === 'error' ? ' selected' : ''}>${t.diagError}</option>
-    </select></label>
-    <label for="keywordFilter">${t.keywordFilterLabel}<input id="keywordFilter" type="text" placeholder="${t.searchPlaceholder}" value="${escapeHtml(keywordFilter)}" /></label>
-    <label for="refreshInterval">${t.refreshIntervalLabel}<select id="refreshInterval">
-      <option value="1000"${refreshInterval === 1000 ? ' selected' : ''}>1 ${t.second}</option>
-      <option value="2000"${refreshInterval === 2000 ? ' selected' : ''}>2 ${t.second}</option>
-      <option value="5000"${refreshInterval === 5000 ? ' selected' : ''}>5 ${t.second}</option>
-      <option value="10000"${refreshInterval === 10000 ? ' selected' : ''}>10 ${t.second}</option>
-    </select></label>
-    <label for="historyWindow">${t.historyWindowLabel}<select id="historyWindow">
-      <option value="30"${historyWindow === 30 ? ' selected' : ''}>${t.historyWindow(30)}</option>
-      <option value="60"${historyWindow === 60 ? ' selected' : ''}>${t.historyWindow(60)}</option>
-      <option value="120"${historyWindow === 120 ? ' selected' : ''}>${t.historyWindow(120)}</option>
-    </select></label>
-    <button id="refreshBtn">${c.refresh}</button>
-    <button id="pauseBtn">${isPaused ? c.resume : c.pause}</button>
-    <button id="exportBtn">${c.export}</button>
+    <div class="toolbar-group toolbar-filters">
+      <label for="componentFilter">${t.componentFilterLabel}<select id="componentFilter">
+        <option value="">${c.allComponents}</option>
+        ${componentTypes
+          .map(
+            type =>
+              `<option value="${escapeHtml(type)}"${componentFilter === type ? ' selected' : ''}>${escapeHtml(type)}</option>`
+          )
+          .join('')}
+      </select></label>
+      <label for="diagnosticFilter">${t.diagnosticFilterLabel}<select id="diagnosticFilter">
+        <option value=""${diagnosticFilter === '' ? ' selected' : ''}>${t.filterAllDiagnostics}</option>
+        <option value="info"${diagnosticFilter === 'info' ? ' selected' : ''}>${t.diagInfo}</option>
+        <option value="warning"${diagnosticFilter === 'warning' ? ' selected' : ''}>${t.diagWarning}</option>
+        <option value="error"${diagnosticFilter === 'error' ? ' selected' : ''}>${t.diagError}</option>
+      </select></label>
+      <label for="keywordFilter">${t.keywordFilterLabel}<input id="keywordFilter" type="text" placeholder="${t.searchPlaceholder}" value="${escapeHtml(keywordFilter)}" /></label>
+      <label for="refreshInterval">${t.refreshIntervalLabel}<select id="refreshInterval">
+        <option value="1000"${refreshInterval === 1000 ? ' selected' : ''}>1 ${t.second}</option>
+        <option value="2000"${refreshInterval === 2000 ? ' selected' : ''}>2 ${t.second}</option>
+        <option value="5000"${refreshInterval === 5000 ? ' selected' : ''}>5 ${t.second}</option>
+        <option value="10000"${refreshInterval === 10000 ? ' selected' : ''}>10 ${t.second}</option>
+      </select></label>
+      <label for="historyWindow">${t.historyWindowLabel}<select id="historyWindow">
+        <option value="30"${historyWindow === 30 ? ' selected' : ''}>${t.historyWindow(30)}</option>
+        <option value="60"${historyWindow === 60 ? ' selected' : ''}>${t.historyWindow(60)}</option>
+        <option value="120"${historyWindow === 120 ? ' selected' : ''}>${t.historyWindow(120)}</option>
+      </select></label>
+    </div>
+    <div class="toolbar-group toolbar-actions">
+      <button id="refreshBtn">${c.refresh}</button>
+      <button id="pauseBtn">${isPaused ? c.resume : c.pause}</button>
+      <button id="exportBtn">${c.export}</button>
+    </div>
   </div>
 
   <div class="notice">${t.statusPrefix}：${escapeHtml(statusSummary)} | ${t.autoRefreshPrefix}：${isPaused ? t.pausedLabel : `${refreshInterval / 1000} ${t.second}`} | ${t.historyWindow(historyWindow)}</div>
