@@ -1,0 +1,24 @@
+# PA-006:KBEngine 线协议 Wireshark 插件(todo PA-006 Phase 4)。
+# 独立 GPL crate:不进根 workspace(members 显式清单,plugins/ 不在其内),
+# 不随 Apache VSIX 分发(许可证边界见 README「License」)。
+# 解析核心是仓库 crates/kode-kbengine-protocol(Apache-2.0);依赖方向只允许
+# GPL 插件 → Apache crate(Apache crate 零 GPL 依赖,单向干净)。
+[package]
+name = "wireshark-kbengine"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.97"
+license = "GPL-3.0-or-later"
+description = "Wireshark dissector plugin for the KBEngine wire protocol"
+publish = false
+
+# 独立 workspace(目录在仓库树下,显式切断根 workspace 推断)。
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+libwireshark = "0.0.0-alpha.0"
+kode-kbengine-protocol = { path = "../../crates/kode-kbengine-protocol" }
+kode-kbengine-schema = { path = "../../crates/kode-kbengine-schema" }
