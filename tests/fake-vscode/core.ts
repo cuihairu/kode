@@ -626,10 +626,20 @@ export enum DiagnosticSeverity {
 export class Diagnostic {
   source?: string;
   code?: string | number;
+  relatedInformation?: DiagnosticRelatedInformation[];
   constructor(
     public range: Range,
     public message: string,
     public severity: DiagnosticSeverity
+  ) {}
+}
+
+// C-19 双向定位 relatedInformation 面值类型(mergeRustDefFindings 构造,
+// 此前替身缺失导致该分支在测试面不可构造)。
+export class DiagnosticRelatedInformation {
+  constructor(
+    public location: Location,
+    public message: string
   ) {}
 }
 
