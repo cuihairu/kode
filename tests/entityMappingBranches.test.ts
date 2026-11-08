@@ -1,9 +1,18 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { EntityMappingManager, type EntityMapping, type DefinitionSymbolIdentity } from '../src/entityMapping';
-import { bindPythonMethods, collectPythonMethods } from '../src/entityMappingHelpers';
+import {
+  bindPythonMethods,
+  collectPythonMethods,
+  hasMethodImplementationInSnapshot,
+  rustSymbolsToIndexedMethodLocations
+} from '../src/entityMappingHelpers';
+import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import * as path from 'path';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 
 // 批60 分支覆盖专项(entityMapping.ts):逐分支补齐——
@@ -400,4 +409,93 @@ describe('EntityMappingManager 实体种类路径与解析成功分支 (批72)',
     const result = await (manager as EntityMappingManager).openMethodTarget(identity);
     expect(result).toBe(true);
   });
+
+describe('entityMappingHelpers 缺口臂(快照判存/符号表函数与幽灵方法/Rust 主路径)', () => {
+  afterEach(() => {
+    setKodeCoreShadowGate(null);
+  });
+
+  it('hasMethodImplementationInSnapshot:无快照(未开且盘上无)如实 false', () => {
+    expect(hasMethodImplementationInSnapshot('/no-such-root/x.py', 'foo')).toBe(false);
+  });
+
+  it('rustSymbolsToIndexedMethodLocations:模块级函数入列;幽灵方法(行号落空)如实跳过', () => {
+    const text = 'def util_fn():\n    pass\n\nclass C:\n    def real(self):\n        pass\n';
+    const symbols = [
+      {
+        filePath: '/ws/x.py',
+        lineCount: 6,
+        classes: [
+          {
+            name: 'C',
+            qualifiedName: 'C',
+            bases: [],
+            startLine: 3,
+            endLine: 5,
+            decorators: [],
+            methods: [
+              { name: 'real', line: 4, character: 4, isAsync: false, decorators: [], params: ['self'], endLine: 5, calls: [] },
+              // 幽灵:hint 行越界且文件无该 def → 定位落空,如实跳过不虚构
+              { name: 'ghost', line: 40, character: 0, isAsync: false, decorators: [], params: [], endLine: 41, calls: [] }
+            ],
+            attributes: []
+          }
+        ],
+        functions: [
+          { name: 'util_fn', line: 0, character: 0, isAsync: false, decorators: [], params: [], endLine: 1 }
+        ],
+        imports: [],
+        errors: []
+      }
+    ];
+    const methods = rustSymbolsToIndexedMethodLocations([{ path: '/ws/x.py', text }], symbols as never);
+    const names = methods.map(method => method.methodName).sort();
+    expect(names).toEqual(['real', 'util_fn']);
+    const utilFn = methods.find(method => method.methodName === 'util_fn');
+    expect(utilFn).toMatchObject({ filePath: '/ws/x.py', line: 1 });
+  });
+
+  it('collectPythonMethods:Rust 符号表主路径(门命中即走 Rust,不落 TS 正则)', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'kode-emp-helper-'));
+    try {
+      const filePath = path.join(root, 'sub.py');
+      mkdirSync(root, { recursive: true });
+      writeFileSync(filePath, 'class C:\n    def act(self):\n        pass\n', 'utf8');
+      setKodeCoreShadowGate({
+        runInRust: async () => ({
+          ok: true,
+          result: [
+            {
+              filePath,
+              lineCount: 3,
+              classes: [
+                {
+                  name: 'C',
+                  qualifiedName: 'C',
+                  bases: [],
+                  startLine: 0,
+                  endLine: 2,
+                  decorators: [],
+                  methods: [
+                    { name: 'act', line: 1, character: 4, isAsync: false, decorators: [], params: ['self'], endLine: 2, calls: [] }
+                  ],
+                  attributes: []
+                }
+              ],
+              functions: [],
+              imports: [],
+              errors: []
+            }
+          ]
+        })
+      });
+      const methods = await collectPythonMethods([{ filePath, section: 'cell', ownerName: 'C' } as never]);
+      expect(methods).toHaveLength(1);
+      expect(methods[0]).toMatchObject({ filePath, methodName: 'act' });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 });

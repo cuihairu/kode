@@ -10,6 +10,7 @@ import { messages, windowState } from './fake-vscode/windowState';
 import {
   ANALYZE_PCAP_COMMAND,
   OPEN_PCAP_COMMAND,
+  createPcapRunBinary,
   runAnalyzePcap,
   runOpenPcap,
   setupProtocolPcapActions,
@@ -177,4 +178,75 @@ describe('PA-007-3:runAnalyzePcap(跑 TShark)', () => {
       }
     }
   });
+
+// --------------------------------------------------- createPcapRunBinary 臂
+
+describe('PA-007-3:createPcapRunBinary(真实 execFile 收敛语义)', () => {
+  it('退出 0:code 0 + stdout 原文', async () => {
+    const run = createPcapRunBinary();
+    const outcome = await run('/bin/sh', ['-c', 'echo pcap-ok']);
+    expect(outcome.code).toBe(0);
+    expect(outcome.stdout).toBe('pcap-ok\n');
+    expect(outcome.stderr).toBe('');
+  });
+
+  it('非零退出:err.code 数值直取,stderr 归因', async () => {
+    const run = createPcapRunBinary();
+    const outcome = await run('/bin/sh', ['-c', 'echo bad >&2; exit 7']);
+    expect(outcome.code).toBe(7);
+    expect(outcome.stderr).toContain('bad');
+  });
+
+  it('ENOENT(二进制不存在):如实 -1', async () => {
+    const run = createPcapRunBinary();
+    const outcome = await run('/no/such/wireshark-binary', []);
+    expect(outcome.code).toBe(-1);
+  });
+
+  it('超时击杀(signal 终结,无数字 code):回落 1', async () => {
+    const run = createPcapRunBinary(30);
+    const outcome = await run('/bin/sleep', ['1']);
+    expect(outcome.code).toBe(1);
+  });
+});
+
+// -------------------------------------------------------- 缺口臂(analyze/open)
+
+describe('PA-007-3:缺口臂(默认对话框/CLI 探测失败/分析 ENOENT)', () => {
+  it('装配面默认对话框取消:零动作零通知(open)', async () => {
+    const context = makeContext();
+    // 不注入 pickFiles → defaultPickPcap(showOpenDialog,fake 恒 undefined=取消)
+    setupProtocolPcapActions(context);
+    try {
+      await commands.executeCommand(OPEN_PCAP_COMMAND);
+      expect(messages.warning).toEqual([]);
+      const channel = windowState.channels.find((item) => item.name === PROTOCOL_CHANNEL_NAME);
+      expect(channel?.lines.join('\n') ?? '').not.toContain('[pcap] launching');
+    } finally {
+      for (const disposable of context.subscriptions) {
+        disposable.dispose();
+      }
+    }
+  });
+
+  it('CLI 探测失败(--version 非零):如实归因并放弃', async () => {
+    // 探测走 deps.run(--version);注入 run 只管 analyze 本体
+    const deps = makeDeps({ run: async () => ({ code: 5, stdout: '', stderr: 'probe boom\n' }) });
+    const { run } = recordRun([]);
+    const { log, lines } = logCapture();
+    await runAnalyzePcap(deps, pick('/tmp/flow.pcap'), run, log);
+    expect(messages.warning.some((text) => text.includes('CLI 探测失败'))).toBe(true);
+    expect(messages.warning.some((text) => text.includes('probe boom'))).toBe(true);
+    expect(lines.some((line) => line.includes('analyze unavailable'))).toBe(true);
+  });
+
+  it('分析面 ENOENT(CLI 探测通过但执行不可达):如实「未检出」', async () => {
+    const { run } = recordRun([{ code: -1 }]);
+    const { log, lines } = logCapture();
+    await runAnalyzePcap(makeDeps(), pick('/tmp/flow.pcap'), run, log);
+    expect(messages.error.some((text) => text.includes('未检出'))).toBe(true);
+    expect(lines.some((line) => line.includes('analyze failed'))).toBe(true);
+  });
+});
+
 });

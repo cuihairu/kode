@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   inspectCloneArchive,
+  planCloneExport,
   planCloneImport,
   readCloneArchiveRows,
   writeCloneArchive
@@ -172,4 +173,65 @@ describe('playerDataCloneRust(归档加密 keyRoot 载荷契约)', () => {
       setKodeCoreShadowGate(null);
     }
   });
+
+describe('playerDataCloneRust 缺口臂(no-gate/ok:false/形状不合规)', () => {
+  afterEach(() => {
+    setKodeCoreShadowGate(null);
+  });
+
+  it('无 gate:五面如实 no-gate(不假装算了)', async () => {
+    setKodeCoreShadowGate(null);
+    await expect(inspectCloneArchive('/a.kdpclone')).resolves.toEqual({ status: 'no-gate' });
+    await expect(readCloneArchiveRows('/a.kdpclone')).resolves.toEqual({ status: 'no-gate' });
+    await expect(planCloneExport({}, [])).resolves.toEqual({ status: 'no-gate' });
+    await expect(writeCloneArchive('/a.kdpclone', 'Avatar', [], plan)).resolves.toEqual({ status: 'no-gate' });
+    await expect(planCloneImport('/a.kdpclone', target, {}, [], snapshot)).resolves.toEqual({ status: 'no-gate' });
+  });
+
+  it('桥 ok:false:各面如实 error 携原因(不猜字段)', async () => {
+    setKodeCoreShadowGate({
+      runInRust: async () => ({ ok: false, reason: 'backend gone' })
+    });
+    const inspect = await inspectCloneArchive('/a.kdpclone');
+    expect(inspect).toEqual({ status: 'error', reason: 'backend gone' });
+    const rows = await readCloneArchiveRows('/a.kdpclone');
+    expect(rows).toEqual({ status: 'error', reason: 'backend gone' });
+    const exported = await writeCloneArchive('/a.kdpclone', 'Avatar', [], plan);
+    expect(exported).toEqual({ status: 'error', reason: 'backend gone' });
+    const plannedExport = await planCloneExport({}, []);
+    expect(plannedExport).toEqual({ status: 'error', reason: 'backend gone' });
+  });
+
+  it('形状不合规:toCall guard(inspect/planExport/planImport)与手写 guard(readRows/export)', async () => {
+    setKodeCoreShadowGate({
+      runInRust: async () => ({ ok: true, result: { junk: true } })
+    });
+    const inspect = await inspectCloneArchive('/a.kdpclone');
+    expect(inspect.status).toBe('error');
+    if (inspect.status === 'error') {
+      expect(inspect.reason).toContain('inspectArchive: unexpected result shape');
+    }
+    const plannedExport = await planCloneExport({}, []);
+    expect(plannedExport.status).toBe('error');
+    if (plannedExport.status === 'error') {
+      expect(plannedExport.reason).toContain('planExport: unexpected result shape');
+    }
+    const plannedImport = await planCloneImport('/a.kdpclone', target, {}, [], snapshot);
+    expect(plannedImport.status).toBe('error');
+    if (plannedImport.status === 'error') {
+      expect(plannedImport.reason).toContain('planImport: unexpected result shape');
+    }
+    const rows = await readCloneArchiveRows('/a.kdpclone');
+    expect(rows.status).toBe('error');
+    if (rows.status === 'error') {
+      expect(rows.reason).toContain('readArchiveRows: unexpected result shape');
+    }
+    const exported = await writeCloneArchive('/a.kdpclone', 'Avatar', [], plan);
+    expect(exported.status).toBe('error');
+    if (exported.status === 'error') {
+      expect(exported.reason).toContain('export: unexpected result shape');
+    }
+  });
+});
+
 });

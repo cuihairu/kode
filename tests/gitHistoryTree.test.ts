@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildHistoryItems,
+  defaultGitHistoryDeps,
   GitHistoryTreeProvider,
   historyViewTitle,
   summarizeGitError,
   type GitHistoryDeps,
   type GitHistoryItem,
 } from '../src/gitHistoryTree';
+import { workspace as stubWorkspace } from './helpers/vscodeStub';
+import { Uri } from './fake-vscode/core';
 import type { GitCommitEntry } from '../src/gitCommitLog';
 import type { GitRepoLocation } from '../src/gitRepoLocate';
 
@@ -351,4 +354,133 @@ describe('IDE-GIT-011 文件历史视图取消面', () => {
       expect(state.entries[0].subject).toBe('新选择');
     }
   });
+
+describe('IDE-GIT-005 缺口臂(默认依赖/状态分支/翻页尽头/刷新)', () => {
+  it('defaultGitHistoryDeps:默认 locate 无工作区如实 no-workspace;有根时按根定位', () => {
+    const deps = defaultGitHistoryDeps();
+    const location = deps.locateGitRepo('/no-such-root/x.py', true);
+    expect(location.kind).toBe('none');
+    expect(deps.pageSize).toBeGreaterThan(0);
+    // 有工作区根:根列表进定位器(此处根无 .git,如实 outside-repo)
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/no-such-root'), name: 'w', index: 0 }];
+    try {
+      const withRoot = deps.locateGitRepo('/no-such-root/x.py', true);
+      expect(withRoot.kind).toBe('none');
+    } finally {
+      stubWorkspace.workspaceFolders = [];
+    }
+  });
+
+  it('defaultGitHistoryDeps.queryLog:真 tmp git 仓库端到端出页', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('fs');
+    const { tmpdir } = await import('os');
+    const { join } = await import('path');
+    const { execFileSync } = await import('child_process');
+    const root = mkdtempSync(join(tmpdir(), 'kode-git-history-default-'));
+    try {
+      mkdirSync(join(root, 'src'), { recursive: true });
+      writeFileSync(join(root, 'src', 'a.py'), 'x = 1\n', 'utf8');
+      const git = (args: string[]): void =>
+        execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args]);
+      git(['init']);
+      git(['add', '.']);
+      git(['commit', '-m', 'init']);
+      const deps = defaultGitHistoryDeps();
+      const result = await deps.queryLog(join(root, 'src', 'a.py'), root, 0, 50, undefined, {
+        bypassCache: true
+      });
+      expect(result.kind).toBe('page');
+      if (result.kind === 'page') {
+        expect(result.entries).toHaveLength(1);
+        expect(result.entries[0].subject).toBe('init');
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('状态分支:loading 与 error 各出明确文案行', () => {
+    const loading = buildHistoryItems({ kind: 'loading' });
+    expect(loading).toHaveLength(1);
+    if (loading[0].kind === 'message') expect(loading[0].message).toContain('Querying');
+    const errored = buildHistoryItems({ kind: 'error', message: 'git exploded' });
+    expect(errored).toHaveLength(1);
+    if (errored[0].kind === 'message') {
+      expect(errored[0].tone).toBe('warning');
+      expect(errored[0].message).toContain('git exploded');
+    }
+  });
+
+  it('getTreeItem:警告文案行带 gitHistoryWarning 上下文', () => {
+    const { provider } = makeProvider();
+    const tree = provider.getTreeItem({ kind: 'message', tone: 'warning', message: 'warn text' });
+    expect(tree.contextValue).toBe('gitHistoryWarning');
+  });
+
+  it('queryLog 非页结果:no-history / no-commits / git-error 各如实入状态', async () => {
+    const locate = vi.fn((): GitRepoLocation => ({ kind: 'repo', repoRoot: '/repo', gitDir: '/repo/.git', isWorktree: false }));
+    const run = async (
+      result: unknown
+    ): Promise<ReturnType<GitHistoryTreeProvider['getState']>> => {
+      const q = vi.fn(async () => result);
+      const provider = new GitHistoryTreeProvider({
+        locateGitRepo: locate,
+        queryLog: q as unknown as GitHistoryDeps['queryLog'],
+        pageSize: 50
+      });
+      await provider.showHistory('/repo/src/a.py', true);
+      return provider.getState();
+    };
+    expect((await run({ kind: 'no-history' })).kind).toBe('no-history');
+    expect((await run({ kind: 'no-commits' })).kind).toBe('no-commits');
+    const errState = await run({
+      kind: 'git-error',
+      outcome: { kind: 'exit', exitCode: 128, stderr: 'fatal: bad\n' }
+    });
+    expect(errState.kind).toBe('error');
+    if (errState.kind === 'error') expect(errState.message).toContain('fatal: bad');
+  });
+
+  it('refresh:已查过文件 → 重新查询最新 HEAD;未查过 → 零动作', async () => {
+    const first = makeProvider();
+    await first.provider.showHistory('/repo/src/a.py', true);
+    expect(first.queryLog).toHaveBeenCalledTimes(1);
+    await first.provider.refresh();
+    expect(first.queryLog).toHaveBeenCalledTimes(2);
+    const blank = makeProvider();
+    await blank.provider.refresh();
+    expect(blank.queryLog).not.toHaveBeenCalled();
+  });
+
+  it('loadNextPage 到尽头(空页):保留已载内容并如实收起「下一页」', async () => {
+    const { provider } = makeProvider({
+      pageResults: [
+        { entries: [entry('h1', '主题一')], hasMore: true },
+        { entries: [], hasMore: false }
+      ]
+    });
+    await provider.showHistory('/repo/src/a.py', true);
+    await provider.loadNextPage();
+    const state = provider.getState();
+    expect(state.kind).toBe('loaded');
+    if (state.kind === 'loaded') {
+      expect(state.entries).toHaveLength(1);
+      expect(state.hasMore).toBe(false);
+    }
+  });
+
+  it('summarizeGitError:exit 无 stderr 落未知文案兜底', () => {
+    expect(summarizeGitError({ kind: 'exit', exitCode: 1, stderr: '' })).toContain('Unknown');
+  });
+
+  it('dispose 与 getChildren:代际取消与条目直出', async () => {
+    const { provider } = makeProvider();
+    await provider.showHistory('/repo/src/a.py', true);
+    expect(provider.getChildren().some((item) => item.kind === 'commit')).toBe(true);
+    provider.dispose();
+    const blank = makeProvider();
+    blank.provider.dispose();
+  });
+});
+
 });

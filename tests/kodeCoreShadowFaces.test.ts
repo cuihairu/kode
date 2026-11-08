@@ -11,6 +11,8 @@ import {
   locationToLspFace,
   serveCompletionFromRust,
   serveDefinitionFromRust,
+  serveDiagnosticsFromRust,
+  serveHoverFromRust,
   setKodeCoreShadowGate,
   shadowCompareDefinition,
   shadowMirrorCorpusDocument,
@@ -611,4 +613,157 @@ describe('serveCompletionFromRust 服务面(2026-11-08 用户令「直接切」)
     });
     expect(report).toBeNull();
   });
+
+// ---- 缺口臂:镜像腿拒绝吞没、形状不合规、非服务轨道直通(覆盖率补测) ----
+
+describe('serve 面缺口臂(镜像拒绝/形状不合规/直通 null)', () => {
+  /** 素面门:mirrorDocument 可编程拒绝,serveInRust 返回固定结果。 */
+  const makePlainGate = (options: {
+    serveResult?: unknown;
+    mirrorRejects?: boolean;
+    compareRejects?: boolean;
+  } = {}): KodeCoreGate =>
+    ({
+      serveFromRust: () => true,
+      mirrorDocument: async () => {
+        if (options.mirrorRejects) {
+          throw new Error('mirror down');
+        }
+      },
+      serveInRust: async () => options.serveResult ?? null,
+      compare: async () => {
+        if (options.compareRejects) {
+          throw new Error('compare down');
+        }
+        return { verdict: 'match' };
+      },
+      closeMirroredDocument: () => undefined
+    }) as unknown as KodeCoreGate;
+
+  const flush = () => new Promise<void>(resolve => setImmediate(resolve));
+
+  const face = {
+    uri: DEF_URI,
+    range: { start: { line: 1, character: 0 }, end: { line: 1, character: 2 } }
+  };
+
+  it('serveDefinitionFromRust:镜像拒绝被吞且 Rust 结果照常面世;坏形状如实 null', async () => {
+    setKodeCoreShadowGate(makePlainGate({ serveResult: face, mirrorRejects: true }));
+    await expect(serveDefinitionFromRust(makeDocument(), { line: 1, character: 0 })).resolves.toEqual(face);
+    setKodeCoreShadowGate(makePlainGate({ serveResult: { nope: 1 } }));
+    await expect(serveDefinitionFromRust(makeDocument(), { line: 1, character: 0 })).resolves.toBeNull();
+  });
+
+  it('serveCompletionFromRust:镜像拒绝被吞,补全面照常面世', async () => {
+    const completion = { isIncomplete: false, items: [{ label: 'HP', kind: 10 }] };
+    setKodeCoreShadowGate(makePlainGate({ serveResult: completion, mirrorRejects: true }));
+    await expect(serveCompletionFromRust(makeDocument(), { line: 1, character: 0 })).resolves.toEqual(completion);
+  });
+
+  it('serveHoverFromRust:无门直通 null;镜像拒绝被吞,悬停文本照常面世', async () => {
+    setKodeCoreShadowGate(null);
+    await expect(serveHoverFromRust(makeDocument(), { line: 1, character: 0 })).resolves.toBeNull();
+    setKodeCoreShadowGate(
+      makePlainGate({ serveResult: { contents: { value: 'KBEngine 悬停' } }, mirrorRejects: true })
+    );
+    await expect(serveHoverFromRust(makeDocument(), { line: 1, character: 0 })).resolves.toBe('KBEngine 悬停');
+  });
+
+  it('serveDiagnosticsFromRust:无门/非 def 直通 null;镜像拒绝被吞;报告与条目坏形状如实 null', async () => {
+    setKodeCoreShadowGate(null);
+    await expect(serveDiagnosticsFromRust(makeDocument())).resolves.toBeNull();
+    // 语料但非 def(entities.xml)→ 直通 null
+    setKodeCoreShadowGate(makePlainGate({ serveResult: { kind: 'full', items: [] } }));
+    const xmlDoc = makeDocument({
+      uri: { fsPath: '/workspace/demo/scripts/entities.xml' },
+      languageId: 'xml'
+    });
+    await expect(serveDiagnosticsFromRust(xmlDoc)).resolves.toBeNull();
+    // 镜像拒绝被吞,报告照常面世
+    const report = {
+      kind: 'full',
+      items: [
+        {
+          range: { start: { line: 2, character: 0 }, end: { line: 2, character: 3 } },
+          severity: 1,
+          message: 'bad cell property'
+        }
+      ]
+    };
+    setKodeCoreShadowGate(makePlainGate({ serveResult: report, mirrorRejects: true }));
+    await expect(serveDiagnosticsFromRust(makeDocument())).resolves.toEqual(report);
+    // kind 非 full → null
+    setKodeCoreShadowGate(makePlainGate({ serveResult: { kind: 'nope', items: [] } }));
+    await expect(serveDiagnosticsFromRust(makeDocument())).resolves.toBeNull();
+    // 条目缺 severity → null
+    setKodeCoreShadowGate(
+      makePlainGate({
+        serveResult: {
+          kind: 'full',
+          items: [{ range: { start: { line: 1, character: 0 }, end: { line: 1, character: 1 } }, message: 'x' }]
+        }
+      })
+    );
+    await expect(serveDiagnosticsFromRust(makeDocument())).resolves.toBeNull();
+  });
+
+  it('影子腿 fire-and-forget 拒绝不上浮(compare/compare+mirror)', async () => {
+    setKodeCoreShadowGate(makePlainGate({ compareRejects: true }));
+    expect(() =>
+      shadowCompareDefinition(
+        makeDocument(),
+        { line: 1, character: 0 },
+        Promise.resolve({ uri: { fsPath: DEF_URI }, range: face.range })
+      )
+    ).not.toThrow();
+    await flush();
+    setKodeCoreShadowGate(makePlainGate({ mirrorRejects: true }));
+    expect(() => shadowMirrorCorpusDocument(makeDocument())).not.toThrow();
+    await flush();
+    setKodeCoreShadowGate(makePlainGate({ compareRejects: true }));
+    expect(() => shadowObserveDefDocument(makeDocument(), [])).not.toThrow();
+    await flush();
+  });
+});
+
+
+describe('serve 面缺口臂二(直通与坏形状收尾)', () => {
+  const makePlainGate = (serveResult: unknown): KodeCoreGate =>
+    ({
+      serveFromRust: () => true,
+      mirrorDocument: async () => undefined,
+      serveInRust: async () => serveResult,
+      compare: async () => ({ verdict: 'match' }),
+      closeMirroredDocument: () => undefined
+    }) as unknown as KodeCoreGate;
+
+  it('hover:非语料直通 null;非对象应答与缺 contents 如实 null', async () => {
+    const pyDoc = makeDocument({
+      uri: { fsPath: '/workspace/demo/scripts/cell/Avatar.py' },
+      languageId: 'python'
+    });
+    setKodeCoreShadowGate(makePlainGate({ contents: { value: 'x' } }));
+    await expect(serveHoverFromRust(pyDoc, { line: 0, character: 0 })).resolves.toBeNull();
+    setKodeCoreShadowGate(makePlainGate('plain string'));
+    await expect(serveHoverFromRust(makeDocument(), { line: 0, character: 0 })).resolves.toBeNull();
+    setKodeCoreShadowGate(makePlainGate({ nope: 1 }));
+    await expect(serveHoverFromRust(makeDocument(), { line: 0, character: 0 })).resolves.toBeNull();
+    setKodeCoreShadowGate(null);
+  });
+
+  it('diagnostics:非对象应答如实 null;observe 无门/非 def 文档零请求', async () => {
+    setKodeCoreShadowGate(null);
+    // 无门:直通零请求
+    expect(() => shadowObserveDefDocument(makeDocument(), [])).not.toThrow();
+    setKodeCoreShadowGate(makePlainGate(null));
+    await expect(serveDiagnosticsFromRust(makeDocument())).resolves.toBeNull();
+    const xmlDoc = makeDocument({
+      uri: { fsPath: '/workspace/demo/scripts/entities.xml' },
+      languageId: 'xml'
+    });
+    expect(() => shadowObserveDefDocument(xmlDoc, [])).not.toThrow();
+    setKodeCoreShadowGate(null);
+  });
+});
+
 });
