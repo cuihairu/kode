@@ -973,6 +973,16 @@
         "command": "kbengine.protocol.buildSchema",
         "title": "%kbengine.command.protocol.buildSchema.title%",
         "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.protocol.openPcap",
+        "title": "%kbengine.command.protocol.openPcap.title%",
+        "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.protocol.analyzePcap",
+        "title": "%kbengine.command.protocol.analyzePcap.title%",
+        "category": "KBEngine"
       }
     ],
     "menus": {
