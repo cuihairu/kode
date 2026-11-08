@@ -39,7 +39,7 @@ fn engine_with(defs: &[(&str, &str)]) -> HoverEngine {
 }
 
 #[test]
-fn def_declaration_word_lands_on_entities_registration_line() {
+fn def_property_word_lands_on_entities_registration_line() {
     let engine = engine_with(&[
         ("/w/scripts/entities.xml", ENTITIES_XML),
         ("/w/scripts/entity_defs/Avatar.def", AVATAR_DEF),
@@ -53,13 +53,20 @@ fn def_declaration_word_lands_on_entities_registration_line() {
     assert_eq!(location.uri, "/w/scripts/entities.xml");
     assert_eq!(location.range.start.line, 1);
     assert_eq!(location.range.start.character, 0);
-    // 方法声明同口径:`\t\t<onKill>` 也落同一注册行。
-    let location = engine
-        .definition(&key, AVATAR_DEF, 9, 3)
-        .expect("onKill 落点");
-    assert_eq!(location.uri, "/w/scripts/entities.xml");
-    assert_eq!(location.range.start.line, 1);
-    assert_eq!(location.range.start.character, 0);
+}
+
+#[test]
+fn def_method_word_is_null_and_falls_to_ts_script_layer() {
+    // 2026-11-08 demo 验收面(def-to-cell/base/client):三方法段声明词
+    // Rust 不落注册行(会挡住 TS 下一层的 py 实现落点),返 null 由服务
+    // 轨道回落 TS def 调用链取 py 实现。
+    let engine = engine_with(&[
+        ("/w/scripts/entities.xml", ENTITIES_XML),
+        ("/w/scripts/entity_defs/Avatar.def", AVATAR_DEF),
+    ]);
+    let key = key_of("/w/scripts/entity_defs/Avatar.def");
+    // `\t\t<onKill>` 在第 10 行(1 起),列 3(0 起 UTF-16)。
+    assert!(engine.definition(&key, AVATAR_DEF, 9, 3).is_none());
 }
 
 #[test]

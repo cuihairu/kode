@@ -260,7 +260,7 @@ const parentNameOf = (root: DefElementNode): string => {
   return parent ? getElementText(parent).trim() : '';
 };
 
-// Rust `registry_landing`:Properties/三方法段声明词 → entities.xml 声明行
+// Rust `registry_landing`:Properties 声明词 → entities.xml 声明行
 // (先 `<scripts>/entities.xml`,再 `<defs>/entities.xml`),缺注册 → def 首行。
 // 与 TS F12 的注册回落层同口径;TS 上的 Python 脚本层/DB schema 层是 Rust
 // 无此能力的面,按边界跳过直接落下一层。
@@ -312,9 +312,11 @@ const recomputeFile = (engine: Engine, file: CorpusFile): ExpectedDefinition[] =
         for (const symbol of sectionSymbols(section)) {
           const line = line1Of(file.text, symbol.tagStart + 1);
           if (line === line1 && symbol.name === word) {
-            // Properties/三方法段:TS F12 落注册(entities.xml 行)而非声明 span;
-            // 组件段落 TS provider 链末尾返 null(languageProviders.ts:2344)。
-            if (['Properties', 'BaseMethods', 'CellMethods', 'ClientMethods'].includes(section.name)) {
+            // Properties 声明词:TS F12 落注册(entities.xml 行)而非声明 span;
+            // 三方法段声明词 → null(2026-11-08 demo 验收:TS 下一层取 py 实现
+            // 落点,Rust 不虚构注册落点挡路);组件段落 TS provider 链末尾返
+            // null(languageProviders.ts:2344)。
+            if (section.name === 'Properties') {
               return registryLanding(engine, file.file);
             }
             return null;

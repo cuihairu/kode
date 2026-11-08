@@ -6,11 +6,12 @@
 //! - `.def`:按 TS F12 provider 链的**落点语义**逐层同构 —
 //!   ①`<DetailLevel>` 取值词 → 本文件 `<DetailLevels>` 档位声明行;
 //!   ②`Properties` 段声明词 → 注册回落(entities.xml 声明行,缺则本文件首行);
-//!   ③三方法段声明词 → 注册回落(同上);④`<Parent>` 取值词 → 语料内父/
-//!   接口/组件 def 文件首行(缺失即 null,绝不虚构);⑤`<Type>`/`<of>` 取值词
-//!   → 语料内 types.xml 声明行(内建类型无定义文件,null);⑥`Components`
-//!   段声明词 → null(TS provider 链末尾同 null,不做单侧增强)。
-//!   ②③ 的 Python 脚本层与数据库 schema 层是 Rust 无此能力的面(.py 面 /
+//!   ③三方法段声明词 → null(2026-11-08 demo 验收面:TS 下一层 = py 实现/
+//!   def 调用链,Rust 不虚构落点,服务轨道回落 TS);④`<Parent>` 取值词 →
+//!   语料内父/接口/组件 def 文件首行(缺失即 null,绝不虚构);⑤`<Type>`/
+//!   `<of>` 取值词 → 语料内 types.xml 声明行(内建类型无定义文件,null);
+//!   ⑥`Components` 段声明词 → null(TS provider 链末尾同 null,不做单侧增强)。
+//!   ② 的 Python 脚本层与数据库 schema 层是 Rust 无此能力的面(.py 面 /
 //!   DB 快照),按能力边界跳过并直接落 TS 的下一层,不虚构落点。
 //! - `entities.xml`:注册项词 → 语料内同名 def 文件首行(TS
 //!   findEntityDefinitionFile 同口径);
@@ -161,13 +162,16 @@ impl HoverEngine {
                 if let Some(pos) = self.type_value_landing(text, line0, character, word) {
                     return Some(pos);
                 }
-                // ④段内声明词:Properties/三方法段按 TS F12 落**注册**而非
-                // 声明 span(声明 span 见 hover 面);组件段落 TS provider 链
-                // 末尾返 null,不产出落点(不单侧增强)。
+                // ④段内声明词:Properties 声明词按 TS F12 落**注册**而非声明
+                // span(声明 span 见 hover 面);三方法段声明词 → null(能力
+                // 边界:py 脚本层/def 调用链是 TS 面,Rust 不虚构落点,服务
+                // 轨道回落 TS 取 py 实现落点——demo def-to-cell/base/client
+                // 验收面);组件段落 TS provider 链末尾返 null,不产出落点
+                // (不单侧增强)。
                 let (records, _) = extract_records(key, &ParsedUnit::Def(parse_def(text)));
                 let record = records.iter().find(|r| r.name == word && r.line == line1)?;
                 match record.kind {
-                    SymbolKind::Property | SymbolKind::Method => Some(self.registry_landing(path)),
+                    SymbolKind::Property => Some(self.registry_landing(path)),
                     // 实体本体/组件/类型/别名在 .def 无 F12 落点(TS 同)。
                     _ => None,
                 }

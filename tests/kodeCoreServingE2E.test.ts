@@ -71,6 +71,27 @@ suite('kode 定义面 rust 服务 e2e(真实二进制)', () => {
     expect(location).toBeNull();
   }, 20_000);
 
+  it('rust 轨道:def 三方法段声明词返 null(能力边界:回落 TS 脚本层)', async () => {
+    // demo def-to-cell/base/client 验收面:方法词 Rust 不落注册行(会挡住
+    // TS 下一层的 py 实现落点),返 null 由 provideDefinitionRustFirst 回落
+    // TS def 调用链取 py 实现。
+    const cellDef = join(repoRoot, 'tests', 'fixtures', 'kbengine-demo-assets', 'scripts', 'entity_defs', 'TrainingAvatar.def');
+    const text = readFileSync(cellDef, 'utf8');
+    const document = {
+      uri: { fsPath: cellDef },
+      languageId: 'kbengine-def',
+      version: 1,
+      getText: () => text
+    };
+    // 第 4 行(0 基 3)`    <CellMethods><reqAttack>…`:词 reqAttack 区间
+    // 18-26,取中 20。
+    const location = await serveDefinitionFromRust(
+      document as never,
+      { line: 3, character: 20 } as never
+    );
+    expect(location).toBeNull();
+  }, 20_000);
+
   it('rust 轨道:def Properties 开标签补全出已声明属性', async () => {
     // 复用 gate(真实进程已拉起);独立 uri 防同版本镜像 no-op 吃掉合成文本。
     const syntheticUri = '/tmp/kode-e2e-synthetic-properties.def';
