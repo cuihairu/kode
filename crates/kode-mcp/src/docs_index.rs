@@ -208,7 +208,7 @@ mod tests {
             "# 游戏配置需求\n\n数值平衡说明。\n",
         )
         .unwrap();
-        let out = search_docs(&root, &[extra.clone()], "数值平衡", 20).expect("answer");
+        let out = search_docs(&root, std::slice::from_ref(&extra), "数值平衡", 20).expect("answer");
         assert_eq!(out["count"], 1);
         assert!(out["matches"][0]["file"]
             .as_str()

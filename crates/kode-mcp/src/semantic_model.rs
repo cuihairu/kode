@@ -1186,8 +1186,7 @@ mod tests {
         // 无 types_text → 空表;有 text 但无根元素 → 空表(如实,不猜)。
         let k = AssetKnowledge::default();
         assert!(implemented_by_full(&k).is_empty());
-        let mut k2 = AssetKnowledge::default();
-        k2.types_text = Some("".into());
+        let k2 = AssetKnowledge { types_text: Some("".into()), ..AssetKnowledge::default() };
         assert!(implemented_by_full(&k2).is_empty());
     }
 

@@ -713,10 +713,10 @@ mod tests {
         assert!(settings.len() > 200, "full catalog enumerated");
         // 每项都有中英含义 + 出处 + 分组。
         for s in settings.iter().take(50) {
-            assert!(s["meaningZh"].as_str().unwrap().len() > 0);
-            assert!(s["meaningEn"].as_str().unwrap().len() > 0);
+            assert!(!s["meaningZh"].as_str().unwrap().is_empty());
+            assert!(!s["meaningEn"].as_str().unwrap().is_empty());
             assert!(s["origin"].as_str().unwrap().contains("kbe/"));
-            assert!(s["group"].as_str().unwrap().len() > 0);
+            assert!(!s["group"].as_str().unwrap().is_empty());
         }
         // 元件侧配置的键附真实生效值(其余为 null,不虚构)。
         let reg = settings

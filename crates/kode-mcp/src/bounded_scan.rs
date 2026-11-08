@@ -133,7 +133,7 @@ mod tests {
         // 根是文件而非目录:canonicalize 成功,read_dir 失败 → errors +1。
         let root = std::env::temp_dir().join(format!("kode-mcp-scanfile-{}", std::process::id()));
         std::fs::write(&root, "not a dir").unwrap();
-        let scan = collect(&[root.clone()], "md", &[], 10);
+        let scan = collect(std::slice::from_ref(&root), "md", &[], 10);
         assert_eq!(scan.files.len(), 0);
         assert_eq!(scan.errors, 1);
         std::fs::remove_file(root).unwrap();
@@ -148,7 +148,7 @@ mod tests {
         for i in 0..101 {
             std::fs::write(root.join(format!("{i}.txt")), "noise").unwrap();
         }
-        let scan = collect(&[root.clone()], "md", &[], 1);
+        let scan = collect(std::slice::from_ref(&root), "md", &[], 1);
         assert!(scan.truncated);
         assert_eq!(scan.files.len(), 0);
         std::fs::remove_dir_all(root).unwrap();
