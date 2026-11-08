@@ -36,7 +36,7 @@
 
 ### 1.3 Terminology: this repo's "utype" has two layers (don't mix them)
 
-- **Message-layer utype = type/method number**, not a custom type: `src/messageTable.ts:127` "this-level type utype (ARRAY level = the inline array type's own utype)"; engine side `kbe/res/sdk_templates/client/ue4/Source/KBEnginePlugins/Engine/Bundle.h:133` (`uint16 utype`), `EntityCall.cpp:67` (`methodUtype`).
+- **Message-layer utype = type/method number**, not a custom type: `src/messageTable.ts:130` "this-level type utype (ARRAY level = the inline array type's own utype)"; engine side `kbe/res/sdk_templates/client/ue4/Source/KBEnginePlugins/Engine/Bundle.h:133` (`uint16 utype`), `EntityCall.cpp:67` (`methodUtype`).
 - **This request's "utype" = custom type alias / composite type**, i.e. types.xml alias entries + `.def` references. The `.def` `<Aliases>` section has **0 hits** in this repo's corpus (`grep '<Aliases>' --include='*.def'` is empty repo-wide); alias definitions actually all live in `types.xml`.
 
 ### 1.4 Real samples (corpus stated as is)
@@ -81,7 +81,7 @@
 | FIXED_DICT | `AVATAR_INFO` (types.xml:2-11) | `class AVATAR_INFO(TypedDict): name: str; level: int` | **Needs a generated class (small–medium)** |
 | Nested FIXED_DICT / vector keys | no real sample in this repo | nested `TypedDict` recursion; key types reference the vector class (see §7 to verify) | Medium (needs a real project) |
 | Fixed-length array (FIXEDARRAY) | engine DB layer `kbe/src/lib/db_interface/entity_table.h:24`, `FixedArrayType` (`entity_table_mysql.cpp:1261`) | **In Python it is just a list** → folds into the ARRAY direct translation; it is a DB storage structure, not a new Python shape | Direct (small) |
-| Message/method utype number | `messageTable.ts:127`, `Bundle.h:133` | **Unrelated to type hints, not generated** | Excluded |
+| Message/method utype number | `messageTable.ts:130`, `Bundle.h:133` | **Unrelated to type hints, not generated** | Excluded |
 
 **Verdict**: the mapping surface is **realistic** — all three tiers are present, and the hardest part ("alias recursion + FIXED_DICT structure") already has an implementation path proven by `clientSdkGenerator.ts:301-321` to copy the convention from; the uncertainty is concentrated in real projects' composite depth (no samples in this repo).
 
