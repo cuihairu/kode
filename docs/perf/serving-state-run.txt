@@ -1,0 +1,20 @@
+V02-SERVING-METRIC spawn.start n=5 p50=5.45ms p95=13.8ms p99=13.8ms max=13.8ms
+V02-SERVING-METRIC mirror300.total n=1 14.91ms
+V02-SERVING-METRIC mirror300.perDoc n=303 p50=0.03ms p95=0.09ms p99=0.32ms max=0.56ms
+V02-SERVING-METRIC firstRequest.definition n=1 1.86ms
+V02-SERVING-METRIC firstRequest.completion n=1 2.27ms
+V02-SERVING-METRIC firstRequest.diagnostic n=1 4.13ms
+V02-SERVING-METRIC rss.afterStart n=1 8.74 MB
+V02-SERVING-METRIC mirror3000.total n=1 64.02ms
+V02-SERVING-METRIC rss.afterMirror3000 n=1 118.7 MB
+V02-SERVING-METRIC steady.healthFloor n=100 p50=47.24ms p95=68.91ms p99=74.21ms max=91.98ms
+V02-SERVING-METRIC steady.definition n=100 p50=1.71ms p95=2.62ms p99=2.78ms max=20.74ms
+V02-SERVING-METRIC steady.completion n=100 p50=0.72ms p95=0.97ms p99=1.07ms max=1.17ms
+V02-SERVING-METRIC steady.diagnostic n=100 p50=2.93ms p95=4.09ms p99=4.48ms max=4.52ms
+V02-SERVING-METRIC editRoundTrip.mirrorDidChange n=50 p50=0.09ms p95=1.72ms p99=2.22ms max=2.22ms
+V02-SERVING-METRIC editRoundTrip.diagnostic n=50 p50=5.23ms p95=6.57ms p99=6.84ms max=6.84ms
+V02-SERVING-METRIC pipeline.diagnostic20.total n=1 78.32ms
+V02-SERVING-METRIC pipeline.diagnostic20.amortized n=1 3.93ms
+V02-SERVING-METRIC rss.afterSteady n=1 116.32 MB
+V02-SERVING-METRIC rss.mirrorDeltaMb n=1 109.96 MB
+V02-SERVING-NOTE ts 对照基线见 docs/perf/2026-baseline.md(hover P50 0.01-0.73ms large 热态;big-py hover P50 3.38ms)
