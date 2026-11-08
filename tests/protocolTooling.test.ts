@@ -289,7 +289,7 @@ describe('PA-007:defaultRunBinary 收敛口径', () => {
   });
 
   it('passes through a real binary exit code and stdout', async () => {
-    const outcome = await defaultRunBinary('/bin/echo', ['hello-pa007']);
+    const outcome = await defaultRunBinary(process.execPath, ['-e', "console.log('hello-pa007')"]);
     expect(outcome.code).toBe(0);
     expect(outcome.stdout.trim()).toBe('hello-pa007');
   });
