@@ -166,7 +166,9 @@ const CRITICAL_ASSETS = [
   'snippets/kbengine-types-xml.json',
   'resources/logo.png',
   'resources/logo.svg',
-  'out/extension.js'
+  'out/extension.js',
+  'out/pythonParserWorker.js',
+  'out/defParserWorker.js'
 ];
 
 function exclusionCovers(line: string, asset: string): boolean {
@@ -293,6 +295,7 @@ describe('.vscodeignore 打包防漏锁(批103,工单④类)', () => {
         // 2026-10-27 Python 索引重构: parser worker 是随包分发的第二个
         // bundle(esbuild src/pythonParserWorker.ts),运行期按 __dirname 加载
         '!out/pythonParserWorker.js',
+        '!out/defParserWorker.js',
         // 2026-10-29 IDE-REL-004: 构建身份随包分发,运行期 readBuildCommit
         // 只读 <extensionPath>/out/buildCommit.json(安装产物提交=构建输入)
         '!out/buildCommit.json',
@@ -301,7 +304,14 @@ describe('.vscodeignore 打包防漏锁(批103,工单④类)', () => {
         // yazl 打包崩溃;CI 无此目录)
         'wt/',
         'kode-wt-*/',
-        'scratch/'
+        'scratch/',
+        // Native packages stage release executables, never Rust sources or the GPL plugin.
+        'crates/',
+        'scripts/',
+        'Cargo.toml',
+        'Cargo.lock',
+        'rust-toolchain.toml',
+        'plugins/'
       ])
     );
   });

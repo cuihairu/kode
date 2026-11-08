@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { binaries, targets, sha256, smokeBinaries } from './platform-vsix.mjs';
+import { assertRuntimeAssets } from './vsix-assets.mjs';
 
 const [file, target] = process.argv.slice(2);
 if (!targets[target]) { throw new Error(`Unknown platform ${target}`); }
@@ -13,6 +14,7 @@ const vsceRequire = createRequire(require.resolve('@vscode/vsce'));
 const yauzl = vsceRequire('yauzl');
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-vsix-'));
 const entries = new Map();
+const allEntries = new Set();
 const modes = new Map();
 try {
   await new Promise((resolve, reject) => {
@@ -23,6 +25,7 @@ try {
       zip.on('end', resolve);
       zip.on('entry', entry => {
         const name = entry.fileName;
+        allEntries.add(name);
         if (/^extension\/(target|crates|plugins)\//.test(name)) {
           fail(new Error(`Build/source directory leaked into VSIX: ${name}`)); return;
         }
@@ -49,6 +52,7 @@ try {
   });
   const manifest = JSON.parse(entries.get('extension/bin/manifest.json')?.toString() ?? 'null');
   const pkg = JSON.parse(entries.get('extension/package.json')?.toString() ?? 'null');
+  assertRuntimeAssets(pkg, allEntries);
   const build = JSON.parse(entries.get('extension/out/buildCommit.json')?.toString() ?? 'null');
   const xml = entries.get('extension.vsixmanifest')?.toString() ?? '';
   if (manifest?.target !== target || manifest?.rustTarget !== targets[target].rust

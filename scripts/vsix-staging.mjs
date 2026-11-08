@@ -25,6 +25,7 @@ export function packageVsix({ target, pureTS = false }) {
     for (const name of [
       '.vscodeignore', 'README.md', 'CHANGELOG.md', 'LICENSE',
       'package.nls.json', 'package.nls.zh-cn.json',
+      'language-configuration.json',
       'out', 'media', 'l10n', 'resources', 'schemas', 'snippets', 'syntaxes', 'templates',
       ...(!pureTS ? ['bin'] : []),
     ]) {

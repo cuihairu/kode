@@ -1,6 +1,6 @@
 # Nightly 多平台交付
 
-每日构建先运行原有完整 TS 测试与 lint，再调用 `platform-vsix.yml`。六个平台在各自原生 runner 上执行 Rust 库测试、协议 CLI 集成测试、扩展二进制发现测试，构建 release 可执行文件后打包。Linux 使用 musl 目标，避免链接构建机的 glibc。
+每日构建并行运行原有完整 TS 测试与 lint，以及 `platform-vsix.yml` 的各平台验证；发布任务同时依赖两侧成功。六个平台在各自原生 runner 上执行 Rust 库测试、协议 CLI 集成测试、扩展二进制发现测试，构建 release 可执行文件后打包。Linux 使用 musl 目标，避免链接构建机的 glibc。
 
 | 包后缀 | 平台 | 内容 |
 |---|---|---|

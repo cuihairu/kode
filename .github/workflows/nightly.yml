@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  validate:
-    name: Existing full correctness gate
+  plan:
+    name: Decide whether nightly is needed
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     if: github.event_name == 'workflow_dispatch' || github.repository == 'cuihairu/kode'
     outputs:
@@ -45,30 +45,32 @@ jobs:
             echo "✅ 最近 $DIFF_HOURS h 有提交，继续构建"
           fi
 
-      - if: steps.stagnation.outputs.skip != 'true'
-        name: 安装 pnpm
+  validate:
+    name: Existing full correctness gate
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: 安装 pnpm
         timeout-minutes: 10
         uses: pnpm/action-setup@v6.1.0
         # 2026-10-10:不写 version,统一由 package.json packageManager 决定
         # (v6 见两处版本并存会直接报 Multiple versions of pnpm specified)
 
-      - if: steps.stagnation.outputs.skip != 'true'
-        name: Setup Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v7.1.0
         with:
           node-version-file: '.nvmrc'
           cache: 'pnpm'
 
-      - if: steps.stagnation.outputs.skip != 'true'
-        name: Install dependencies
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - if: steps.stagnation.outputs.skip != 'true'
-        name: Compile extension
+      - name: Compile extension
         run: pnpm run compile
 
-      - if: steps.stagnation.outputs.skip != 'true'
-        name: Run lint
+      - name: Run lint
         run: pnpm run lint
 
       # 测试面板「运行」档用 /usr/bin/python3 -m pytest 真实执行;runner 系统
@@ -76,8 +78,7 @@ jobs:
       # 同源)。装进该解释器(Ubuntu 24.04 系统 python 标记
       # externally-managed,需 --break-system-packages);装不上则版本探测
       # 直接红,不让测试用 0 结果断言的模糊失败掩盖环境问题。
-      - if: steps.stagnation.outputs.skip != 'true'
-        name: Install pytest (test panel real execution dependency)
+      - name: Install pytest (test panel real execution dependency)
         timeout-minutes: 5
         run: |
           /usr/bin/python3 -m pip install --user --break-system-packages --quiet pytest \
@@ -85,21 +86,20 @@ jobs:
             || true
           /usr/bin/python3 -m pytest --version
 
-      - if: steps.stagnation.outputs.skip != 'true'
-        name: Run tests (full gate)
+      - name: Run tests (full gate)
         run: pnpm test
 
   packages:
     name: Native platform packages
-    needs: validate
-    if: needs.validate.outputs.skip != 'true'
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
     uses: ./.github/workflows/platform-vsix.yml
     permissions:
       contents: read
 
   build-and-release:
     name: Publish nightly after all seven packages pass
-    needs: packages
+    needs: [validate, packages]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
