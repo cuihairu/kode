@@ -1375,3 +1375,12 @@ If `Attach to Component` fails, check these first:
   - Every probe failure collapses to 「未检出」 (not found) — never an error, never a guess
   - The report always states the zero-ABI fallback: `kode-kbengine capture analyze` analyzes pcaps without the plugin
   - Probes read `kbengine.protocol.tsharkPath` / `kbengine.protocol.wiresharkPath` / `kbengine.protocol.cliPath` (CLI empty = `target/{debug,release}` auto-discovery, same shape as kode-server)
+
+### `kbengine.protocol.buildSchema`
+
+- Title: `KBEngine: 生成 KBEngine 协议 Schema`
+- Purpose: build the KBEngine protocol schema from the workspace asset root via the kode-kbengine CLI (`schema build --project <assetsRoot> --out <globalStorage>/kbengine-schema.json`) — the same plan the auto-rebuild face uses (PA-007 second increment)
+- Behavior:
+  - Asset root resolution reuses `kbengine.assetsRoot` and the existing discovery chain (`resolveAssetsRootForWorkspace`); CLI resolution reuses `kbengine.protocol.cliPath` + auto-discovery; any missing link surfaces an honest warning with the reason (CLI 未检出 / CLI 探测失败 / 资产根未检出) — never a guess
+  - Success notifies with the output file path and logs to the 「KBEngine Protocol Tooling」 channel; failure notifies with the CLI's own error text (stderr first, then stdout, then exit code)
+  - The auto-rebuild face (default on, `kbengine.protocol.schemaAutoBuild`) rebuilds on protocol definition file events (`.def` / `types.xml` / `entities.xml` / `alias.xml`) inside the project root, debounced through the shared merger and coalesced by an in-flight scheduler (one trailing rebuild, no queue amplification); Python files are structurally never watched; activation spawns no process — initial build happens on the first protocol file event or via this command

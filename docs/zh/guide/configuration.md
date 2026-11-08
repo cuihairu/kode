@@ -479,6 +479,9 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 | `kbengine.protocol.tsharkPath` | string | `"tshark"` | 协议工具链检测使用的 tshark 可执行名或路径，按 PATH 解析；命令 `kbengine.protocol.showStatus` 出状态报告 |
 | `kbengine.protocol.wiresharkPath` | string | `"wireshark"` | Wireshark GUI 可执行名或路径；GUI 未装时报告如实显示未检出，分析面仍可经 tshark/CLI 使用 |
 | `kbengine.protocol.cliPath` | string | 空 | kode-kbengine CLI 路径覆盖；留空走扩展根 `target/{debug,release}` 自动发现（与 kode-server 同款），版本经 `--version` 单行契约获取 |
+| `kbengine.protocol.schemaAutoBuild` | boolean | `true` | 协议定义文件变更时自动重建协议 Schema（资产根内 `.def` / `types.xml` / `entities.xml` / `alias.xml`）；Python 文件不在监听范围——命令 `kbengine.protocol.buildSchema` 可手动建图 |
+
+`kbengine.protocol.buildSchema` 把资产根（复用 `kbengine.assetsRoot` 配置与既有发现链）经 kode-kbengine CLI `schema build` 生成 Schema JSON，落扩展 globalStorage 的 `kbengine-schema.json`（CLI `schema inspect/diff` 的输入）。诚实边界：激活不主动起子进程——首次生成发生在首个协议文件事件或手动命令；自动面失败只落输出通道「KBEngine Protocol Tooling」不刷通知；项目根外的协议文件事件不触发（防仓库内 fixture 误触发）；建图在途不重入，完成后补一次尾随变更（连改合并为一轮）；CLI 未检出/资产根未检出时如实不建并给出归因。
 
 ### 数据库
 

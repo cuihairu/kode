@@ -1330,3 +1330,23 @@ KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Pytho
   - 队列数据：诊断排队/在途、待更新注解、索引任务、schema 冷构建，加语言服务在册操作计数（IDE-MET-008 口径）
   - 连接（已遮蔽）：引擎 dbmgr 数据库接口配置渲染为 `host=… port=… database=… username=*** password=*** encrypt=…`——username/password 永不落值，全文再过一遍把 `password=`/`token=`/`secret=`/`authorization=` 赋值与 URL userinfo 改写为 `***` 的兜底
 - 边界：渲染纯函数在 `src/reproductionSummary.ts`；采集只读现有面（引擎数据库配置、活动 profile、扫描根、诊断调度器、语言服务台账）与自身 package.json
+
+## 协议工具链
+
+### `kbengine.protocol.showStatus`
+
+- 标题：`KBEngine: 显示协议工具链状态`
+- 作用：探测本机协议工具链（PA-007）并在输出通道「KBEngine Protocol Tooling」给一份如实状态报告——tshark 版本、Wireshark GUI 版本（未装如实标未检出）、个人/全局插件目录、KBEngine Wireshark dissector 插件（PA-006）及其落盘版本线与宿主版本线的核对结果（匹配 / 不匹配（宿主不会加载）/ 未知三态）、kode-kbengine CLI 的路径与版本
+- 行为：
+  - 每步探测失败都收敛为「未检出」——不报错、不猜测
+  - 报告恒带零 ABI 兜底提示：未装插件时 `kode-kbengine capture analyze` 可直接分析 pcap
+  - 探测读 `kbengine.protocol.tsharkPath` / `kbengine.protocol.wiresharkPath` / `kbengine.protocol.cliPath`（CLI 空 = `target/{debug,release}` 自动发现，与 kode-server 同款）
+
+### `kbengine.protocol.buildSchema`
+
+- 标题：`KBEngine: 生成 KBEngine 协议 Schema`
+- 作用：经 kode-kbengine CLI 从资产根构建协议 Schema（`schema build --project <assetsRoot> --out <globalStorage>/kbengine-schema.json`）——与自动重建面同一建图计划（PA-007 第二增量）
+- 行为：
+  - 资产根解析复用 `kbengine.assetsRoot` 与既有发现链；CLI 解析复用 `kbengine.protocol.cliPath` + 自动发现；任一环落空给如实警告并带归因（CLI 未检出 / CLI 探测失败 / 资产根未检出）——不猜测
+  - 成功以通知给出输出文件路径并落通道「KBEngine Protocol Tooling」；失败以通知带 CLI 自身错误文本（stderr 优先，回落 stdout，再回落退出码）
+  - 自动重建面（默认开，`kbengine.protocol.schemaAutoBuild`）在项目根内的协议定义文件事件（`.def` / `types.xml` / `entities.xml` / `alias.xml`）触发，经共享合并器防抖 + 在途串行器合并（只补一轮尾随重建，不排队放大）；Python 文件结构性不在监听范围；激活不主动起子进程——首次生成发生在首个协议文件事件或本命令

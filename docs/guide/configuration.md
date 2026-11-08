@@ -479,6 +479,7 @@ Iron rule: the switch is a live kill-switch — with the default `rust`, definit
 | `kbengine.protocol.tsharkPath` | string | `"tshark"` | tshark executable for protocol tooling detection, resolved from PATH; command `kbengine.protocol.showStatus` renders the status report |
 | `kbengine.protocol.wiresharkPath` | string | `"wireshark"` | Wireshark GUI executable; an absent GUI is reported honestly and analysis still works via tshark/CLI |
 | `kbengine.protocol.cliPath` | string | empty | kode-kbengine CLI path override; empty walks the extension-root `target/{debug,release}` discovery (same shape as kode-server), version via the `--version` one-line contract |
+| `kbengine.protocol.schemaAutoBuild` | boolean | `true` | auto-rebuild the protocol schema on protocol definition file changes (`.def` / `types.xml` / `entities.xml` / `alias.xml` inside the resolved asset root); Python files are never watched — command `kbengine.protocol.buildSchema` builds manually |
 
 ### Database
 
@@ -637,7 +638,8 @@ Values go through variable substitution first; a value that expands to an empty 
 
 - `kbengine.protocol.tsharkPath`（默认 `tshark`）：tshark 可执行名或路径，按 PATH 解析；
 - `kbengine.protocol.wiresharkPath`（默认 `wireshark`）：Wireshark GUI 可执行名或路径；
-- `kbengine.protocol.cliPath`（默认空）：kode-kbengine CLI 覆盖路径；留空走扩展根 `target/{debug,release}` 自动发现（与 kode-server 同款，发现落空报告如实标未发现）。
+- `kbengine.protocol.cliPath`（默认空）：kode-kbengine CLI 覆盖路径；留空走扩展根 `target/{debug,release}` 自动发现（与 kode-server 同款，发现落空报告如实标未发现）；
+- `kbengine.protocol.schemaAutoBuild`（默认 `true`）：协议定义文件变更时自动重建协议 Schema（`kbengine.protocol.buildSchema` 命令可手动触发同一建图）。资产根解析复用 `kbengine.assetsRoot` 配置与既有发现链；输出落扩展 globalStorage 的 `kbengine-schema.json`（CLI `schema inspect/diff` 的输入）。诚实边界：激活不主动起子进程——首次生成发生在首个协议文件事件或手动命令；自动面失败只落输出通道不刷通知；项目根外的协议文件事件不触发（防仓库内 fixture 误触发）；CLI 未检出/资产根未检出时如实不建。
 
 ## Auto-Discovery of Path Settings (batch 125)
 
