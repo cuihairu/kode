@@ -64,7 +64,7 @@ fn golden_matches_regenerated_dump() {
     let golden_path = repo_root().join("crates/kode-parser/tests/golden/def-parity.json");
     let committed = std::fs::read_to_string(&golden_path)
         .expect("golden 文件缺失: crates/kode-parser/tests/golden/def-parity.json");
-    // 尾部换行由重定向/dump-golden println! 引入,不参与比对
+    // 尾部换行由重定向/dump-def-golden println! 引入,不参与比对
     let committed = committed.trim_end_matches('\n');
     if regenerated != committed {
         // 给出首个差异位置,便于定位是哪条语义变化
@@ -75,12 +75,12 @@ fn golden_matches_regenerated_dump() {
             .map(|((i, _), _)| i)
             .unwrap_or(0);
         panic!(
-            "golden 与重生成不一致(偏移 {diff_at})。\nRust 侧:…{}\nTS 侧若需更新,重新运行:\n  cargo run -p kode-parser --bin dump-golden -- . > crates/kode-parser/tests/golden/def-parity.json\nRust 重生成:…{}",
+            "golden 与重生成不一致(偏移 {diff_at})。\nRust 侧:…{}\nTS 侧若需更新,重新运行:\n  cargo run -p kode-parser --bin dump-def-golden -- . > crates/kode-parser/tests/golden/def-parity.json\nRust 重生成:…{}",
             &regenerated[diff_at.saturating_sub(120)..(diff_at + 160).min(regenerated.len())],
             &regenerated[diff_at.saturating_sub(0)..(diff_at + 160).min(regenerated.len())],
         );
     }
     // golden 结构完整性
     assert!(committed.contains("\"fileCount\":"));
-    assert!(committed.contains("dump-golden"));
+    assert!(committed.contains("dump-def-golden"));
 }

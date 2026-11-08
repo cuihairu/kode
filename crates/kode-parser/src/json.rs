@@ -69,7 +69,7 @@ pub fn collect_corpus(
 pub fn dump_corpus(repo_root: &Path) -> String {
     let files = collect_corpus(repo_root, PARITY_CORPORA);
     let mut w = JsonWriter::new();
-    w.raw("{\"generator\":\"kode-parser dump-golden\",\"fileCount\":");
+    w.raw("{\"generator\":\"kode-parser dump-def-golden\",\"fileCount\":");
     w.num(files.len());
     w.raw(",\"files\":[");
     for (i, (file, (kind, text))) in files.iter().enumerate() {
