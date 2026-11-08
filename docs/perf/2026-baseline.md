@@ -147,7 +147,7 @@ flowchart TD
   TY["findCustomTypeDeclarationInfo 自定义类型声明"]
   MRO["PR5 两段方法解析(pythonClassIndex.ts:1384)<br/>① 静态类 MRO 命中仅记录——不提前返回<br/>(同一 mixin 可被多实体组合,静态命中只是候选之一)<br/>② 组合根 MRO + .def 声明 mixin:每根先精确类身份<br/>再 def mixin;多根命中全保留,provider 出 Location 列表"]
   PASS2["pass2:①② 均落空才等全量收敛重查<br/>(ensureScanned,PR5 主路径首查不等这里)<br/>③ 反向形态:子类 MRO 反查 enclosing(精确身份)"]
-  SHD["kode2 shadow 对拍腿:shadowCompareDefinition<br/>languageProviders/navigation.ts:24(fire-and-forget,不改返回值)"]
+  SHD["kode2 shadow 对拍腿:shadowCompareDefinition<br/>languageProviders/navigation.ts:47(fire-and-forget,不改返回值)"]
   END2["operation.end(hit|miss) → Location 或 Location 列表或 null"]
 
   VC2 --> M2 --> AD2 --> TR --> CTX
@@ -185,7 +185,7 @@ flowchart TD
 flowchart TD
   VC3["VS Code: provideCompletionItems(document, position)"]
   M3["activate/languageServices.ts:117 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :650 一路)"]
-  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders/completion.ts:633"]
+  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders/completion.ts:699"]
   KBEC{"kbe./KBEngine. 模块语境?<br/>(已引入/已用别名)"}
   FILTER["filterKbeSymbols 前缀过滤 :4921<br/>(engineApiMetadata 目录)"]
   SELFC{"self. 语境?<br/>getPythonSelfCompletionContext :4935"}

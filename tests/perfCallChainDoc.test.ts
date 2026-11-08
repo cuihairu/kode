@@ -287,8 +287,14 @@ const ANCHORS: Array<[string, number, string]> = [
   // 触发点(def 声明方法追加段)resolveDefMethodAnnotation +12:1360 后锚点
   // 再 +12(1852/1911/1935/2063/4812/5220/5326/7170),baseline 同步。
   ['src/languageProviders/inlay.ts', 42, 'getDocumentLines(document)'],
+  // 2026-11-08:「直接切」批次位移——navigation.ts Rust-first 派发块
+  // (serveDefinitionFromRust await + 语料镜像前置,24→47)、completion.ts
+  // Rust-first 包装层(provideCompletionRustFirst + lspCompletionToVscode,
+  // 633→699)为本批已提交代码,真位重探,出处随 baseline 锁步;
+  // hover.ts 顶部并发会话 serveHoverFromRust 接线在途 +1(未提交),锚点
+  // 保持 188(HEAD 口径),该会话提交时须自行再探 189 并随 baseline 锁步。
   ['src/languageProviders/hover.ts', 188, 'provideHover('],
-  ['src/languageProviders/navigation.ts', 24, 'shadowCompareDefinition'],
+  ['src/languageProviders/navigation.ts', 47, 'shadowCompareDefinition'],
   ['src/languageProviders/validation.ts', 13, 'export function validateDocument('],
   ['src/languageProviders/validation.ts', 37, 'shadowObserveDefDocument'],
   ['src/languageProviders/validation.ts', 165, 'validateEntitiesXmlDocument'],
@@ -306,7 +312,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // 守卫 provider 前新增 receiverFromDiagnosticLine helper(区间归属提取)+
   // 提取块重写,+31 行,7007 后锚点随之 +31(真位重探 7038;其余 languageProviders
   // 锚点均在 helper 之前,不受影响;出处随 baseline 锁步)。
-  ['src/languageProviders/completion.ts', 633, 'provideCompletionItems('],
+  ['src/languageProviders/completion.ts', 699, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)

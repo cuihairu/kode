@@ -187,7 +187,9 @@ describe('package.json configuration prompt contract', () => {
       'kbengine.debug.sessionEndBehavior': 'detach',
       'kbengine.infer.sourceWrite': 'managed',
       'kbengine.entity.methodStubBody': 'pass',
-      'kbengine.core.backend': 'ts'
+      // 2026-11-08 用户令「直接切」:core.backend 默认 ts → rust(实现与
+      // package.json 双轨同步,本表是两轨对账面)。
+      'kbengine.core.backend': 'rust'
     };
     const drifted: string[] = [];
     for (const [key, want] of Object.entries(expected)) {

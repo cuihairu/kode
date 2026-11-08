@@ -466,11 +466,11 @@ Boundary: these are engine *runtime* console-observation protocol messages, only
 
 | Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.core.backend` | string | `"ts"` | Dual-track backend switch (kill-switch): `ts` = single track (current truth); `rust` is a reserved value — refused by the serving gate until cutover preconditions are all green, the effective track stays `ts`; `shadow` = shadow comparison — TS keeps serving while same-parameter requests are mirrored to kode-server and only diff-logged. Any invalid value falls back to `ts`; switching back to `ts` stops the Rust process immediately for a user-invisible rollback |
-| `kbengine.core.serverPath` | string | empty | kode-server binary path; only used when `backend=shadow`. When empty, shadow comparison logs `rust-unavailable` and spawns nothing |
+| `kbengine.core.backend` | string | `"rust"` | Dual-track backend switch (kill-switch): `rust` = serving track (default since the 2026-11-08 "switch now" directive) — definition/completion serve from kode-server Rust-first with TS fallback on empty/failure; `ts` = single-track kill-switch fallback — switching back to `ts` stops the Rust process immediately for a user-invisible rollback; `shadow` = shadow comparison — TS keeps serving while same-parameter requests are mirrored to kode-server and only diff-logged. Any invalid value falls back to `ts` |
+| `kbengine.core.serverPath` | string | empty | kode-server binary path; used by the `rust` serving track and the `shadow` comparison. When empty, the extension auto-probes `target/{debug,release}/kode-server` under the extension root; if discovery fails too, `backend=rust` falls back to `ts` (no process spawned) |
 | `kbengine.core.shadow.timeoutMs` | number | `2000` | Mirror-request timeout (ms) for shadow comparison; timeouts only log `rust-timeout` and never affect the TS serving path |
 
-Iron rule: with the default `ts`, the Rust path is not involved at all and user-visible behavior matches the pure-TS single track; in `shadow` mode Rust results go only into the diff log of the 「KBEngine Core Shadow」 output channel (inspect via `kbengine.core.showShadowDiffLog`) and never affect any user-visible result.
+Iron rule: the switch is a live kill-switch — with the default `rust`, definition/completion serve from kode-server Rust-first (TS fallback on empty/failure; diagnostics still serve from TS); with `ts`, the Rust process stops immediately and user-visible behavior matches the pure-TS single track; in `shadow` mode Rust results go only into the diff log of the 「KBEngine Core Shadow」 output channel (inspect via `kbengine.core.showShadowDiffLog`) and never affect any user-visible result.
 
 ### Database
 

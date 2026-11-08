@@ -433,8 +433,8 @@
 | `kbengine.hotReload.tempEdit.actionName` | `""` | 第 3 步 reloadScript 按名触发的 quick action 名（HTTP 或终端动作均可）；留空视为配置错误中止，不编辑不发请求 |
 | `kbengine.hotReload.tempEdit.autoRestore` | `true` | 发送 reloadScript 前是否自动还原原始内容；还原失败会中止请求并在问题通道报错，文件停留在临时编辑态需手工处理 |
 | `kbengine.hotReload.tempEdit.scriptRoot` | `""` | 脚本资源根（双名称解析起点：fullModule = 根相对全部目录段 + 短名，requestModule = 直接父目录 + 短名）；留空则回显模块名未解析，不猜测 |
-| `kbengine.core.backend` | `"ts"` | 双轨后端开关（kill-switch）：默认 `ts`；任何非 `shadow`/`rust` 值（含拼错）一律回落 `ts`；改回 `ts` 立即停用 Rust 进程，用户无感（src/kodeCoreGate.ts） |
-| `kbengine.core.serverPath` | `""` | kode-server 二进制路径（cargo build -p kode-server 产物）；仅在 backend=shadow 时使用；留空则影子比对记 rust-unavailable，不启动进程 |
+| `kbengine.core.backend` | `"rust"` | 双轨后端开关（kill-switch）：默认 `rust`（2026-11-08 用户令「直接切」——definition/completion 由 kode-server Rust-first 服务，空结果/失败回落 TS）；任何非 `shadow`/`rust` 值（含拼错）一律回落 `ts`；改回 `ts` 立即停用 Rust 进程，用户无感（src/kodeCoreGate.ts） |
+| `kbengine.core.serverPath` | `""` | kode-server 二进制路径（cargo build -p kode-server 产物）；`rust` 服务轨道与影子比对共用；留空自动按扩展根下 target/{debug,release}/kode-server 探测，探测也落空时 backend=rust 回落 ts（不启动进程） |
 | `kbengine.core.shadow.timeoutMs` | `2000` | 影子比对镜像请求超时（毫秒）；超时只记差异日志 rust-timeout，不影响 TS 服务路径 |
 | `kbengine.managedDir` | `` `.kbengine` `` | kode 托管目录名（运行时读取键，不在 contributes 中；改名后自动重建） |
 | `kbengine.entity.builtinProperties` | `true` | 内建属性 hover + `self.` 补全（分面），以及 def 声明属性类型 / 数组元素类型 hover — `src/languageProviders.ts:400,561` |

@@ -8,8 +8,9 @@ import { describe, expect, it } from 'vitest';
 // ①提案 R3 记录含三面拆分(骨架已存在/能力未开放/切流门);
 // ②shadow 覆盖面与 kodeCoreShadowFaces.ts 实际接入的 compare 面逐项相等
 //   (新增 shadow 面必须同笔改提案记录);
-// ③serving 门禁现状与 kodeCoreGate.ts 的 serveFromRust() 实现一致(恒
-//   false=Rust 不服务);④切流前置清单指回 pr-012.md 且清单在档。
+// ③serving 现状与 kodeCoreGate.ts 的 serveFromRust() 实现一致(2026-11-08
+//   用户令「直接切」:服务轨道放行,rust 模式且 serverPath 已配即服务);
+// ④切流前置清单指回 pr-012.md 且清单在档(性质已转为发版前核对单)。
 
 const root = join(__dirname, '..');
 const read = (relative: string): string => readFileSync(join(root, relative), 'utf8');
@@ -58,9 +59,11 @@ describe('Rust 骨架与 serving 状态拆分记录(IDE-RST-002)', () => {
   });
 
   it('serving 门禁与切流门在档且与现实一致', () => {
-    // 代码事实:serveFromRust() 恒 false
-    expect(gate).toMatch(/serveFromRust\(\): boolean\s*\{\s*return false;\s*\}/);
-    expect(R3_SECTION).toContain('恒 false');
+    // 代码事实:serveFromRust() = 服务轨道判定(2026-11-08 用户令「直接切」
+    // 放行:rust 模式且 serverPath 已配即服务;原「恒 false」记录作废)
+    expect(gate).toMatch(/serveFromRust\(\): boolean\s*\{\s*return this\.mode === 'rust' && this\.config\.serverPath !== '';\s*\}/);
+    expect(R3_SECTION).toContain('直接切');
+    expect(R3_SECTION).toContain('已放行');
     expect(R3_SECTION).toContain('pr-012');
     // 切流前置清单在档且未全勾
     expect(pr012).toContain('切流前置条件清单');
