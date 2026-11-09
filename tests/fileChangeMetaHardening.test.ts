@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { describe, expect, it } from 'vitest';
-import { createFileChangeMetaResolver, type FileChangeMetaDeps } from '../src/fileChangeMeta';
+import { createFileChangeMetaResolver, type FileChangeMetaDeps } from '../src/backend/fileChangeMeta';
 import { normalizeFileIdentity } from '../src/backend/pathIdentity';
 
 // 审核整改(commit-review-gate FAIL 四条)的回归面:

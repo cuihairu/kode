@@ -39,7 +39,7 @@ import { HotReloadFileDecorationProvider } from '../hotReloadFileDecorations';
 import { HotReloadFileStateCodeLensProvider } from '../hotReloadFileStateLens';
 import { runHotReloadFileStateFilterCommand, runShowHotReloadFileStateCommand } from '../backend/hotReloadFileStateFilter';
 import { readTempEditReloadSettings, runTempEditReload, tempEditSectionReader } from '../backend/hotReloadTempEdit';
-import type { FileChangeMetaResolver } from '../fileChangeMeta';
+import type { FileChangeMetaResolver } from '../backend/fileChangeMeta';
 import type { FileChangeRouter } from '../backend/fileChangeBypass';
 import type { QuickActionManager } from '../quickActions';
 
