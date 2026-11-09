@@ -26,12 +26,12 @@ import {
   runShowCloneAuditCommand,
   runTestCloneConnectionCommand,
   type PlayerCloneCommandDeps
-} from '../src/playerDataCloneCommands';
-import type { CloneProfile, CloneProfileRole } from '../src/playerDataCloneProfiles';
+} from '../src/backend/playerDataCloneCommands';
+import type { CloneProfile, CloneProfileRole } from '../src/backend/playerDataCloneProfiles';
 import {
   type CloneConnectionConfig,
   type CloneMysqlConnection
-} from '../src/playerDataCloneMysql';
+} from '../src/backend/playerDataCloneMysql';
 import {
   tvBigUInt,
   tvText,
@@ -40,10 +40,10 @@ import {
   type ImportPlanWire,
   type QueryPlanWire,
   type TypedRowWire
-} from '../src/playerDataCloneWire';
+} from '../src/backend/playerDataCloneWire';
 
-vi.mock('../src/playerDataCloneMysql', async importOriginal => {
-  const actual = await importOriginal<typeof import('../src/playerDataCloneMysql')>();
+vi.mock('../src/backend/playerDataCloneMysql', async importOriginal => {
+  const actual = await importOriginal<typeof import('../src/backend/playerDataCloneMysql')>();
   return { ...actual, openCloneSession: vi.fn() };
 });
 vi.mock('../src/backend/playerDataCloneRust', () => ({
@@ -55,7 +55,7 @@ vi.mock('../src/backend/playerDataCloneRust', () => ({
 }));
 
 // 依赖 mock 后的模块(import 顺序须在 vi.mock 之后)
-import { openCloneSession } from '../src/playerDataCloneMysql';
+import { openCloneSession } from '../src/backend/playerDataCloneMysql';
 import {
   inspectCloneArchive,
   planCloneExport,

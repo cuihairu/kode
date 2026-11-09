@@ -16,7 +16,7 @@
  * 无 vscode 依赖(命令层注入 UI 面)。
  */
 
-import { assertReadOnlyStatement } from './backend/databaseDrift';
+import { assertReadOnlyStatement } from './databaseDrift';
 import type { Readable } from 'stream';
 import {
   cellToTypedValue,

@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { CLONE_SUMMARY_SAVE, runExportCloneCommand, type PlayerCloneCommandDeps } from '../src/playerDataCloneCommands';
+import { CLONE_SUMMARY_SAVE, runExportCloneCommand, type PlayerCloneCommandDeps } from '../src/backend/playerDataCloneCommands';
 
 it('offers source setup before asking for an entity or DBID and resumes afterwards', async () => {
   let configured = false;

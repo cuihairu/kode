@@ -12,7 +12,7 @@ import {
   tvText,
   type QueryPlanWire,
   type TargetSnapshotWire
-} from '../src/playerDataCloneWire';
+} from '../src/backend/playerDataCloneWire';
 
 // PDC-0607 §2.2 缺口的接线(归档加密):TS 桥只传 keyRoot(密钥存储根目录
 // 路径),密钥材料全程留 Rust。本文件锁「载荷契约」——export 恒带

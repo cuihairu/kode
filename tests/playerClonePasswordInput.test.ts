@@ -3,7 +3,7 @@ import {
   CLONE_SUMMARY_SAVE,
   runConfigureCloneProfileCommand,
   type PlayerCloneCommandDeps
-} from '../src/playerDataCloneCommands';
+} from '../src/backend/playerDataCloneCommands';
 
 // UX-REVIEW-005a/005c 向导化后的密码面回归:密码只在输入框与保存边界出现,
 // 摘要/提示信息一律不含密码本体;留空输入 = 清除已存密码;取消不落盘。

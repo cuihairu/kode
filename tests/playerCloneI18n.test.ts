@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import zhBundle from '../l10n/bundle.l10n.zh-cn.json';
 import { l10nText } from '../src/nlsRuntime';
-import { CLONE_SUMMARY_SAVE, runExportCloneCommand, type PlayerCloneCommandDeps } from '../src/playerDataCloneCommands';
+import { CLONE_SUMMARY_SAVE, runExportCloneCommand, type PlayerCloneCommandDeps } from '../src/backend/playerDataCloneCommands';
 import { setL10nBundle } from './fake-vscode/l10n';
 
 afterEach(() => setL10nBundle({}));

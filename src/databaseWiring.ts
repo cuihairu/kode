@@ -42,8 +42,8 @@ import {
   runShowCloneAuditCommand,
   runTestCloneConnectionCommand,
   type PlayerCloneCommandDeps
-} from './playerDataCloneCommands';
-import { CloneProfileStore } from './playerDataCloneProfiles';
+} from './backend/playerDataCloneCommands';
+import { CloneProfileStore } from './backend/playerDataCloneProfiles';
 import { guardConnectionFactoryWithQueryLifecycle, type QueryGuard } from './databaseQueryLifecycleIntegration';
 import {
   createDatabaseSimulationUri,

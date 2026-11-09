@@ -12,11 +12,11 @@ import {
   probePhysicalTables,
   uniqueValuesFromRows,
   type CloneMysqlConnection
-} from '../src/playerDataCloneMysql';
+} from '../src/backend/playerDataCloneMysql';
 import {
   CloneProfileStore,
   type CloneProfileDeps
-} from '../src/playerDataCloneProfiles';
+} from '../src/backend/playerDataCloneProfiles';
 import {
   cellToTypedValue,
   isArchiveMeta,
@@ -28,7 +28,7 @@ import {
   tvUInt,
   type ImportPlanWire,
   type TypedRowWire
-} from '../src/playerDataCloneWire';
+} from '../src/backend/playerDataCloneWire';
 
 // CLONE-P5:Player Data Clone 的 TS 面(计划书 §6.2/§6.4/§7)。三块:
 // 1) wire 归型/形状闸;2) Profile 台账(密码只进 secrets,不进配置);

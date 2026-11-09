@@ -14,12 +14,12 @@ import {
   CLONE_SUMMARY_TEST,
   runConfigureCloneProfileCommand,
   type PlayerCloneCommandDeps
-} from '../src/playerDataCloneCommands';
-import type { CloneProfile, CloneProfileRole } from '../src/playerDataCloneProfiles';
-import type { CloneMysqlConnection } from '../src/playerDataCloneMysql';
+} from '../src/backend/playerDataCloneCommands';
+import type { CloneProfile, CloneProfileRole } from '../src/backend/playerDataCloneProfiles';
+import type { CloneMysqlConnection } from '../src/backend/playerDataCloneMysql';
 
-vi.mock('../src/playerDataCloneMysql', async importOriginal => {
-  const actual = await importOriginal<typeof import('../src/playerDataCloneMysql')>();
+vi.mock('../src/backend/playerDataCloneMysql', async importOriginal => {
+  const actual = await importOriginal<typeof import('../src/backend/playerDataCloneMysql')>();
   return {
     ...actual,
     openCloneSession: vi.fn(),
@@ -27,7 +27,7 @@ vi.mock('../src/playerDataCloneMysql', async importOriginal => {
   };
 });
 
-import { openCloneSession, testCloneConnection } from '../src/playerDataCloneMysql';
+import { openCloneSession, testCloneConnection } from '../src/backend/playerDataCloneMysql';
 
 const t = (message: string): string => (zhBundle as Record<string, string>)[message] ?? message;
 const HOST_PROMPT = t('Source database host');

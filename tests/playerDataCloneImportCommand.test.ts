@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { runImportCloneCommand, type PlayerCloneCommandDeps } from '../src/playerDataCloneCommands';
-import { applyImportPlan, CloneCommitUnknownError, ClonePostCommitError, openCloneSession } from '../src/playerDataCloneMysql';
-import { fingerprintCloneArchive, reserveCloneImport } from '../src/playerDataCloneImportGuard';
-import type { CloneProfileStore } from '../src/playerDataCloneProfiles';
+import { runImportCloneCommand, type PlayerCloneCommandDeps } from '../src/backend/playerDataCloneCommands';
+import { applyImportPlan, CloneCommitUnknownError, ClonePostCommitError, openCloneSession } from '../src/backend/playerDataCloneMysql';
+import { fingerprintCloneArchive, reserveCloneImport } from '../src/backend/playerDataCloneImportGuard';
+import type { CloneProfileStore } from '../src/backend/playerDataCloneProfiles';
 
-vi.mock('../src/playerDataCloneMysql', async importOriginal => ({
-  ...(await importOriginal<typeof import('../src/playerDataCloneMysql')>()),
+vi.mock('../src/backend/playerDataCloneMysql', async importOriginal => ({
+  ...(await importOriginal<typeof import('../src/backend/playerDataCloneMysql')>()),
   openCloneSession: vi.fn(), probePhysicalTables: vi.fn(async () => []),
   applyImportPlan: vi.fn(), columnOrderFromPlan: vi.fn(() => new Map()),
   uniqueValuesFromRows: vi.fn(() => [])
@@ -19,7 +19,7 @@ vi.mock('../src/backend/playerDataCloneRust', () => ({
     account_binding: { note: 'none' }, warnings: []
   } }))
 }));
-vi.mock('../src/playerDataCloneImportGuard', () => ({
+vi.mock('../src/backend/playerDataCloneImportGuard', () => ({
   fingerprintCloneArchive: vi.fn(async () => 'f'.repeat(64)),
   reserveCloneImport: vi.fn(async () => ({ duplicate: false, reservation: '/tmp/reservation' }))
 }));

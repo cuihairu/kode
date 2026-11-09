@@ -25,7 +25,7 @@ import {
   uniqueValuesFromRows,
   type CloneMysqlConnection,
   type CloneMysqlModule
-} from '../src/playerDataCloneMysql';
+} from '../src/backend/playerDataCloneMysql';
 import {
   tvBigUInt,
   tvNull,
@@ -34,7 +34,7 @@ import {
   type ImportPlanWire,
   type QueryPlanWire,
   type TypedRowWire
-} from '../src/playerDataCloneWire';
+} from '../src/backend/playerDataCloneWire';
 
 /** 记录型假连接:预置语句结果(needle → rows/Error),记录全部执行。 */
 class FakeMysqlConnection implements CloneMysqlConnection {

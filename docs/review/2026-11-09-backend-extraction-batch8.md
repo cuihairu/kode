@@ -27,4 +27,9 @@ gitRangeHistoryTree / gitHistoryTree 树 UI、gitStatus 相关装配件。
 
 ## 验收
 
-- `pnpm compile`(tsc)0 / `pnpm lint` 0;全量门禁见提交前记录。
+- `pnpm compile`(tsc)0 / `pnpm lint` 0。
+- 全量 vitest 8389 过 / 1 失败=processTopologyPerf Rust RPC 5s 超时——**满载
+  环境因素非本批回归**(并发会话 rustc 构建把 load 打到 93/14 核,spawn+握手
+  墙钟破 5s,与 KODE-PERF-005 记录的 load~186 满载同型);load 回落后隔离
+  复跑 5/5 绿。demo 25 RC=0(满载下 35s);docs:build RC=0。
+- **提交 a00cbdd4**(2026-11-09 推 main):31 文件 103+/70-,并发会话面零牵连。

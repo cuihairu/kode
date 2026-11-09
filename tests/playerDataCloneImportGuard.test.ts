@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
-import { fingerprintCloneArchive, reserveCloneImport } from '../src/playerDataCloneImportGuard';
+import { fingerprintCloneArchive, reserveCloneImport } from '../src/backend/playerDataCloneImportGuard';
 
 describe('clone import reservations', () => {
   it('persists and atomically rejects concurrent or later attempts for the same target', async () => {

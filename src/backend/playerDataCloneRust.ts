@@ -21,7 +21,7 @@ import {
   type TargetProfileWire,
   type TargetSnapshotWire,
   type TypedRowWire
-} from '../playerDataCloneWire';
+} from './playerDataCloneWire';
 
 export type RustCall<T> =
   | { status: 'ok'; result: T }

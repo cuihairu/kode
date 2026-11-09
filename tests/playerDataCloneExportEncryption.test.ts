@@ -4,26 +4,26 @@ import {
   CloneCancelledError,
   openCloneSession,
   probePhysicalTables
-} from '../src/playerDataCloneMysql';
+} from '../src/backend/playerDataCloneMysql';
 import { setKodeCoreShadowGate, type KodeCoreGate } from '../src/kodeCoreShadowFaces';
 import {
   runExportCloneCommand,
   type PlayerCloneCommandDeps
-} from '../src/playerDataCloneCommands';
-import type { CloneProfileStore } from '../src/playerDataCloneProfiles';
+} from '../src/backend/playerDataCloneCommands';
+import type { CloneProfileStore } from '../src/backend/playerDataCloneProfiles';
 import {
   tvBigUInt,
   tvText,
   type QueryPlanWire,
   type TypedRowWire
-} from '../src/playerDataCloneWire';
+} from '../src/backend/playerDataCloneWire';
 
 // PDC-0609:导出加密选择(设置默认 + 导出确认页逐次切换)。命令层全流程:
 // vi.mock mysql 会话层,gate 走 setKodeCoreShadowGate 真路径——断言最终
 // `$/kode/dbClone/export` 载荷的 keyRoot 跟随选择(加密=/keys,明文=undefined
 // 字段不传),切换循环反复翻转直至导出/取消。取消时不发 export RPC。
 
-vi.mock('../src/playerDataCloneMysql', () => {
+vi.mock('../src/backend/playerDataCloneMysql', () => {
   class CloneCancelledError extends Error {}
   class CloneApplyCancelledError extends Error {}
   return {

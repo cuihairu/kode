@@ -6,8 +6,8 @@ import {
   runConfigureCloneProfileCommand,
   runExportCloneCommand,
   type PlayerCloneCommandDeps
-} from '../src/playerDataCloneCommands';
-import type { CloneProfileStore } from '../src/playerDataCloneProfiles';
+} from '../src/backend/playerDataCloneCommands';
+import type { CloneProfileStore } from '../src/backend/playerDataCloneProfiles';
 
 // playerDataCloneCommands 缺口臂(2026-11-09 覆盖率扫尾)。
 //

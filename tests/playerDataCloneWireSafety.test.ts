@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cellToTypedValue, typedValueToBind, tvBigUInt } from '../src/playerDataCloneWire';
+import { cellToTypedValue, typedValueToBind, tvBigUInt } from '../src/backend/playerDataCloneWire';
 
 describe('clone value safety', () => {
   it('round trips binary bytes and rejects malformed hex', () => {

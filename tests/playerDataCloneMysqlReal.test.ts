@@ -5,9 +5,9 @@ import { mkdtemp, rm } from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { KodeCoreClient } from '../src/kodeCoreClient';
-import { cellToTypedValue, typedValueToBind } from '../src/playerDataCloneWire';
-import { applyImportPlan, columnOrderFromPlan, executeExportPlan, openCloneSession, probePhysicalTables, type CloneMysqlConnection } from '../src/playerDataCloneMysql';
-import type { ImportPlanWire, QueryPlanWire, TypedRowWire } from '../src/playerDataCloneWire';
+import { cellToTypedValue, typedValueToBind } from '../src/backend/playerDataCloneWire';
+import { applyImportPlan, columnOrderFromPlan, executeExportPlan, openCloneSession, probePhysicalTables, type CloneMysqlConnection } from '../src/backend/playerDataCloneMysql';
+import type { ImportPlanWire, QueryPlanWire, TypedRowWire } from '../src/backend/playerDataCloneWire';
 
 const port = Number(process.env.KODE_CLONE_TEST_MYSQL_PORT ?? 0);
 describe.skipIf(!port)('clone mysql real', () => {
