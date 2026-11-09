@@ -18,7 +18,7 @@ import {
   extractReturnAnnotation,
   extractVariableAnnotation,
   mirrorPathForSource
-} from './inferredEnrichment';
+} from './backend/inferredEnrichment';
 
 /** 读源 .py 对应的镜像全文；任何缺失/失败 → null（静默回退）。 */
 export function readInferredMirrorText(sourceFsPath: string): string | null {

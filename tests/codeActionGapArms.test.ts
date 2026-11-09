@@ -10,7 +10,7 @@ import {
   KBEngineFixedDictWholeReassignCodeActionProvider,
   parseDefAst
 } from '../src/languageProviders';
-import { FIXED_DICT_NESTED_MUTATION_CODE } from '../src/behaviorKnowledge';
+import { FIXED_DICT_NESTED_MUTATION_CODE } from '../src/backend/behaviorKnowledge';
 import { makeTextDocument, Position, Range, Uri } from './helpers/vscodeStub';
 
 // codeAction.ts 缺口臂(2026-11-09 覆盖率扫尾):

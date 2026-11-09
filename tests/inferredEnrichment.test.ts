@@ -7,7 +7,7 @@ import {
   extractParamAnnotations,
   extractVariableAnnotation,
   diffInferredAnnotations
-} from '../src/inferredEnrichment';
+} from '../src/backend/inferredEnrichment';
 
 // KODE-CFG-017-R 消费面富化：纯逻辑层注解提取。死臂/边界取证见各用例注释。
 

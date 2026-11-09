@@ -13,7 +13,7 @@ import {
   type RedisConnectionConfig,
   type RedisSocketFactory,
   type RedisSocketLike
-} from '../src/redisDrift';
+} from '../src/backend/redisDrift';
 
 /** 假 socket:记录写入字节,测试喂响应/触发 error/close。 */
 class MockSocket implements RedisSocketLike {

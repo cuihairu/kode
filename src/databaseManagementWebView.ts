@@ -22,7 +22,7 @@ import {
   openRedisSession,
   type RedisConnectionConfig,
   type RedisSession
-} from './redisDrift';
+} from './backend/redisDrift';
 import { enumerateRedisKeys } from './redisKeyspaceCommand';
 import { formatRedisHashPreview } from './redisKeySpace';
 import { getDerivedDatabaseProfile } from './configDerive';

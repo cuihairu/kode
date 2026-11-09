@@ -16,7 +16,7 @@ import { currentHoverLanguageEnv, readHoverLanguageSetting, resolveHoverLanguage
 import { resolveLocalVariableReturnTypeFromSnapshot } from '../backend/pythonReturnTypeInference';
 import { resolveAnnotationTypeWithReason } from '../pythonTypeStubs';
 import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from '../backend/selfPropertyTypeInference';
-import { behaviorEntriesForSymbol, behaviorNotesMarkdown, fixedDictBehaviorNoteMarkdown } from '../behaviorKnowledge';
+import { behaviorEntriesForSymbol, behaviorNotesMarkdown, fixedDictBehaviorNoteMarkdown } from '../backend/behaviorKnowledge';
 import { isFixedDictTypeName } from '../backend/behaviorLints';
 import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonCallAtPosition, type PythonCallAtPosition } from '../backend/pythonLanguageUtils';
 import { getKbeAliases, getKbeSymbol, resolveKbeAccessAtPosition } from '../kbeModuleIndex';

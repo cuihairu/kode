@@ -1,14 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { findPythonReceiverCalls, PYTHON_RECEIVER_BY_SECTION } from './backend/pythonLanguageUtils';
-import type { PythonReceiverCall, PythonReceiverSection } from './backend/pythonLanguageUtils';
+import { findPythonReceiverCalls, PYTHON_RECEIVER_BY_SECTION } from './pythonLanguageUtils';
+import type { PythonReceiverCall, PythonReceiverSection } from './pythonLanguageUtils';
 import {
   parsePythonMethodBlocks,
   sameIdentity,
   type EntityMappingIndex,
   type IndexedMethodDefinition,
   type IndexedPythonMethodLocation
-} from './entityMapping';
+} from '../entityMapping';
 
 export interface DefCallChainNode {
   id: string;

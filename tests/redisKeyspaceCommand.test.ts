@@ -5,7 +5,7 @@ import {
   renderRedisKeyTreeText,
   runRedisKeyspacePreviewCommand
 } from '../src/redisKeyspaceCommand';
-import type { RedisSession } from '../src/redisDrift';
+import type { RedisSession } from '../src/backend/redisDrift';
 
 vi.mock('../src/configDerive', async importOriginal => {
   const actual = await importOriginal<typeof import('../src/configDerive')>();

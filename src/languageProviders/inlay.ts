@@ -4,7 +4,7 @@ import { EntityMappingManager } from '../entityMapping';
 import { getDocumentLines } from '../backend/documentStore';
 import { hasKnownEntityBuiltinPropertyType, resolveEntityComponentFaceFromPath, collectEntityBuiltinPropertyInlayTargets, type EntityComponentFace } from '../backend/entityBuiltinProperties';
 import { getLanguageFeatureConfig } from './shared';
-import { diffInferredAnnotations } from '../inferredEnrichment';
+import { diffInferredAnnotations } from '../backend/inferredEnrichment';
 import { readInferredMirrorText } from '../inferredMirrorLookup';
 /**
  * 内建属性行内类型提示(用户令 2026-10-21 形态升级单 ③):实体脚本内单段

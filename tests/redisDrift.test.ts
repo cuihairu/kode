@@ -6,7 +6,7 @@ import {
   encodeCommand,
   openRedisSession,
   type RedisSocketLike
-} from '../src/redisDrift';
+} from '../src/backend/redisDrift';
 
 /** 假 socket:记录写入的字节,测试可喂响应字节。 */
 class MockSocket implements RedisSocketLike {

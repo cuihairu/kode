@@ -13,7 +13,7 @@ import {
   buildDefCallChain,
   clearDefCallChainFileCache,
   findDefMethodByStart
-} from '../src/defCallChain';
+} from '../src/backend/defCallChain';
 import { CallChainController } from '../src/defCallChainProvider';
 import { DefParamInlayHintsProvider, findDefParamSites } from '../src/defParamInlayHints';
 import { buildDefReferenceGraphFromFile } from '../src/backend/defReferenceGraph';

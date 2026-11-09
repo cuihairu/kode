@@ -22,7 +22,7 @@ import {
 import { DefMethodSection } from './backend/defParser';
 import type { DefMethodGap, PythonMethodNotInDefGap } from './backend/defMethodConsistency';
 import { getHookByName } from './hooks';
-import { clearDefCallChainFileCache } from './defCallChain';
+import { clearDefCallChainFileCache } from './backend/defCallChain';
 import { PYTHON_BUILTIN_TYPE_ANNOTATIONS } from './pythonTypeStubs';
 import { propertyFlagDomainList } from './backend/defAnalyzer';
 import type { PropertyFlagDomain } from './backend/defAnalyzer';

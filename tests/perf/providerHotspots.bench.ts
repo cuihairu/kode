@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, afterAll, describe, it } from 'vitest';
-import { buildDefCallChain } from '../../src/defCallChain';
+import { buildDefCallChain } from '../../src/backend/defCallChain';
 import { parseDefDocument } from '../../src/backend/defParser';
 import { EntityMappingManager } from '../../src/entityMapping';
 import type { EntityMappingIndex } from '../../src/entityMapping';

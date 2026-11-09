@@ -19,7 +19,7 @@ import {
   FIXED_DICT_NESTED_MUTATION_CODE as FD_CODE_KB,
   DESTROYED_ENTITY_REFERENCE_CODE as DER_CODE_KB,
   TIMER_LEAK_ON_DESTROY_CODE as TL_CODE_KB
-} from '../src/behaviorKnowledge';
+} from '../src/backend/behaviorKnowledge';
 
 const FILE = '/proj/assets/scripts/cell/avatar.py';
 

@@ -3,7 +3,7 @@ import {
   KBEngineFixedDictWholeReassignCodeActionProvider,
   KBEngineHoverProvider
 } from '../src/languageProviders';
-import { FIXED_DICT_NESTED_MUTATION_CODE } from '../src/behaviorKnowledge';
+import { FIXED_DICT_NESTED_MUTATION_CODE } from '../src/backend/behaviorKnowledge';
 import { FIXED_DICT_TYPE_NAME } from '../src/backend/kbengineMetadata';
 import type { EntityMappingManager } from '../src/entityMapping';
 import {

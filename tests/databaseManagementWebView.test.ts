@@ -5,7 +5,7 @@ import { windowState } from './fake-vscode/windowState';
 import { DatabaseManagementWebView } from '../src/databaseManagementWebView';
 import type { DatabaseInterfaceConfig } from '../src/serverConfigMerge';
 import type { DriftQueryExecutor } from '../src/backend/databaseDrift';
-import type { RedisSession } from '../src/redisDrift';
+import type { RedisSession } from '../src/backend/redisDrift';
 import { formatRedisHashPreview } from '../src/redisKeySpace';
 
 // DatabaseManagementWebView 控制器半边(面板生命周期/消息分发/后端分支/代际守卫)。

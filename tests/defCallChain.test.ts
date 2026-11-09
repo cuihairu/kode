@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildDefCallChain, renderDefCallChainMermaid } from '../src/defCallChain';
+import { buildDefCallChain, renderDefCallChainMermaid } from '../src/backend/defCallChain';
 import type { EntityMappingIndex } from '../src/entityMapping';
 
 const rootDef = join('/tmp/project', 'scripts', 'entity_defs', 'Hero.def');

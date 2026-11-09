@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildDefCallChain, renderDefCallChainMermaid } from '../src/defCallChain';
+import { buildDefCallChain, renderDefCallChainMermaid } from '../src/backend/defCallChain';
 import type { EntityMappingIndex } from '../src/entityMapping';
 
 // 回归面:Exposed 方法的 client 入边(Part A)+ 普通 self.X() 调用按本段跟随

@@ -5,8 +5,8 @@ import {
   buildDefCallChain,
   findDefMethodByStart,
   renderDefCallChainMermaid
-} from './defCallChain';
-import type { DefCallChain } from './defCallChain';
+} from './backend/defCallChain';
+import type { DefCallChain } from './backend/defCallChain';
 import { findPythonMethodDeclarations } from './rpcCodeLens';
 import { withInitialScanTimeout } from './hoverBudget';
 import {

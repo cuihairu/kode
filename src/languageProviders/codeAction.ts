@@ -9,7 +9,7 @@ import { RECEIVER_NONE_DIAGNOSTIC_CODE, buildReceiverNoneGuardEdit, buildReceive
 import { KBEngineSectionName, METHOD_SECTIONS, getLanguageFeatureConfig, getNodeValue, parseDefAst } from './shared';
 import { UNKNOWN_TYPE_DIAGNOSTIC_CODE } from './validation';
 import { findDefSymbolInfo } from './navigation';
-import { FIXED_DICT_NESTED_MUTATION_CODE } from '../behaviorKnowledge';
+import { FIXED_DICT_NESTED_MUTATION_CODE } from '../backend/behaviorKnowledge';
 import { buildFixedDictWholeReassignEdit } from '../backend/behaviorLints';
 import { findRegisteredTypeSuggestions, getKnownTypeContext } from './completion';
 export class KBEngineTypeCodeActionProvider implements vscode.CodeActionProvider {

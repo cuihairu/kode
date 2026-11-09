@@ -12,7 +12,7 @@ import {
   FIXED_DICT_NESTED_MUTATION_CODE,
   DESTROYED_ENTITY_REFERENCE_CODE,
   TIMER_LEAK_ON_DESTROY_CODE
-} from '../src/behaviorKnowledge';
+} from '../src/backend/behaviorKnowledge';
 
 /** 索引页数据行(跳过表头/分隔行) */
 function trapRows(markdownPath: string): string[] {

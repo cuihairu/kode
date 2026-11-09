@@ -3,7 +3,7 @@
 // Cell/Base/Client 三色图例;页签文案走字符串表(zh/en)。
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CallChainController } from '../src/defCallChainProvider';
-import { buildDefCallChain } from '../src/defCallChain';
+import { buildDefCallChain } from '../src/backend/defCallChain';
 import { configurationOverrides, envState } from './helpers/vscodeStub';
 
 // buildDefCallChain 需要真实索引;这里用最小 DefCallChain 形状直测 html 壳。
