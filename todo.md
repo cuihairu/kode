@@ -1092,7 +1092,7 @@
 - [x] KODE-CFG-016 [P1] Excel 配置类强类型 stub 与意外写检测（用户令 2026-11-03：「游戏行业都会使用excel生成一些python类做数据配置，这些类包含大量的数据，并且是不经常变化的，只有热更新重载的接口可以改变...如果指定路径，比如哪些是配置路径，哪些是配置再转换的类，是否就可以生成一些强类型的stub提示，… [完整记录](docs/review/2026-11-08-todo-completed-history.md#done-0398)
 
 - [x] KODE-CFG-017 [P1] pyrefly stubgen 无标注函数 stub 推断接入（用户令 2026-11-03：def stub 生成后，用 pyrefly 给无标注函数/参数补类型，运行时可选 monkeytype；用户确认 pytype 已停更，pyrefly 是唯一选项）。… [完整记录](docs/review/2026-11-08-todo-completed-history.md#done-0399)
-- [ ] KODE-CFG-017-R [P2] KODE-CFG-017 消费面后续批次：kode 原生 hover/inlay/补全 provider 读 `.kbengine/inferred` 副本富化（副本不进 extraPaths/导入解析，T-04 禁遮蔽铁律）、可选非同名 stub 抽取落 `.kbengine/stubs`、Rust 核 `write_scope` 硬不变式（scope 外写一律拒绝不静默）、monkeytype 运行时观测车道（可选）。源：KODE-CFG-017 扫描面勾账拆出（2026-11-07，合入 0012c98e）；前置扫描面已全部落地。
+- [x] KODE-CFG-017-R [P2] KODE-CFG-017 消费面后续批次：kode 原生 hover/inlay/补全 provider 读 `.kbengine/inferred` 副本富化（副本不进 extraPaths/导入解析，T-04 禁遮蔽铁律）、可选非同名 stub 抽取落 `.kbengine/stubs`、Rust 核 `write_scope` 硬不变式（scope 外写一律拒绝不静默）、monkeytype 运行时观测车道（可选）。源：KODE-CFG-017 扫描面勾账拆出（2026-11-07，合入 0012c98e）；前置扫描面已全部落地。… [完整记录](docs/review/2026-11-08-todo-completed-history.md#done-0456)
   - [x] Rust 核 `write_scope` 硬不变式审计（2026-11-08）：crates/ 全树 write 路径枚举——扩展面 Rust 核（kode-server/kode-parser/kode-mcp/kode-protocol/kode-kbengine-protocol）**零文件写路径**（只读分析核心，… [完整记录](docs/review/2026-11-08-todo-completed-history.md#done-0400)
 
 ## 漏洞扫描遗留（2026-11-03 全舰队扫描，源 scratch/vuln-scan-*.md）
