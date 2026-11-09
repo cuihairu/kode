@@ -7,12 +7,12 @@ import {
   resolveModuleDualName,
   runTempEditReload,
   tempEditSectionReader
-} from '../src/hotReloadTempEdit';
+} from '../src/backend/hotReloadTempEdit';
 import type {
   TempEditReloadDeps,
   TempEditReloadDoc,
   TempEditReloadSettings
-} from '../src/hotReloadTempEdit';
+} from '../src/backend/hotReloadTempEdit';
 
 // 书 docs/kode2/KODE_2_COMPLETE_TODO.md §19 HR-PR-02:临时编辑热重载
 // quick action。纯解析(双名称/设置/临时编辑内容)+ 编排(假腿驱动):

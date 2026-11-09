@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { resendHotReloadTarget } from '../src/hotReloadRetryCommand';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
+import { resendHotReloadTarget } from '../src/backend/hotReloadRetryCommand';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
 import type { HotReloadTimerDeps } from '../src/hotReload';
-import type { ReloadTarget, ReloadTransport } from '../src/hotReloadTransport';
+import type { ReloadTarget, ReloadTransport } from '../src/backend/hotReloadTransport';
 
 // 交叉修复(2026-11-05 二轮复审):部署通道的目标是 profile ID,quick action
 // 反查(resolveActionNameForTarget)找不到对应动作——旧实现失败重试只反查

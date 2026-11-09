@@ -14,7 +14,7 @@ import {
   type ReloadSendSummary,
   type ReloadTarget,
   type ReloadTelnetConnection
-} from '../src/hotReloadTransport';
+} from '../src/backend/hotReloadTransport';
 import type { HttpRequestEntry } from '../src/httpRequests';
 
 const target: ReloadTarget = { rootId: '/ws/scripts', targetId: 'baseapp' };

@@ -3,8 +3,8 @@ import { createHash } from 'crypto';
 import {
   settleAppliedStatus,
   verifyAppliedReceipt
-} from '../src/hotReloadAppliedCheck';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
+} from '../src/backend/hotReloadAppliedCheck';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
 
 // IDE-HOT-004 核验单目标 applied 状态:已记录协议的 applied 回执=JSON
 // {"status":"applied","file":"<逐字回显>","digest":"<所发内容的 sha256

@@ -3,7 +3,7 @@ import {
   HOT_RELOAD_NOTICE_KEY,
   HOT_RELOAD_NOTICE_MESSAGE,
   showHotReloadFirstRunNotice
-} from '../src/hotReloadNotice';
+} from '../src/backend/hotReloadNotice';
 
 // 首次激活非模态提示(用户令 2026-11-06):热更默认开启后第一次激活弹一次,
 // 可永久关闭(记 flag,不再打扰),不挡编辑器(非模态);选「立即关闭」直接写回

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { makeTextDocument, type MinimalTextDocument } from './helpers/vscodeStub';
-import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/hotReloadTargetState';
+import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/backend/hotReloadTargetState';
 import {
   HotReloadFileStateMachine,
   sha256Hex,
   type HotReloadFileStateView
-} from '../src/hotReloadFileState';
+} from '../src/backend/hotReloadFileState';
 import {
   formatHotReloadStateLens,
   HotReloadFileStateCodeLensProvider

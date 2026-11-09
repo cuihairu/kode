@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { defaultReloadHttpRunner, HttpReloadTransport } from '../../src/hotReloadTransport';
+import { defaultReloadHttpRunner, HttpReloadTransport } from '../../src/backend/hotReloadTransport';
 
 // IDE-AUD-007 / IDE-REV-022 / IDE-REV-023 真实联调面:回执协议证据不能只靠
 // 模拟 JSON 字符串喂解析器——本套件拉起真实的参考接收端(scripts/hot-reload-

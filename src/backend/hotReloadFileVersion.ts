@@ -18,7 +18,7 @@
 import { createHash } from 'crypto';
 import * as fs from 'fs';
 
-import { readFileVersionToken } from './sharedFileEvents';
+import { readFileVersionToken } from '../sharedFileEvents';
 import type {
   HotReloadFileVersionEvent,
   HotReloadFileVersionState,
@@ -29,7 +29,7 @@ import {
   formatHotReloadVersionSuffix,
   type HotReloadVersionBadgeView,
   type HotReloadVersionSource
-} from './hotReloadStatus';
+} from '../hotReloadStatus';
 
 export type { HotReloadVersionBadgeView, HotReloadVersionSource };
 

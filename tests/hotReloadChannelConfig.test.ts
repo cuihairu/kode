@@ -3,13 +3,13 @@ import {
   DEFAULT_HTTP_RECEIVER_BODY,
   DEFAULT_HTTP_RECEIVER_URL,
   runHotReloadChannelConfigCommand
-} from '../src/hotReloadChannelConfig';
+} from '../src/backend/hotReloadChannelConfig';
 import type {
   HotReloadChannelConfigCommandOptions,
   HotReloadChannelConfigDeps,
   HotReloadChannelConfigUi
-} from '../src/hotReloadChannelConfig';
-import type { ReloadChannelConfig } from '../src/hotReloadTransport';
+} from '../src/backend/hotReloadChannelConfig';
+import type { ReloadChannelConfig } from '../src/backend/hotReloadTransport';
 import type { ProjectProfile } from '../src/projectProfiles';
 
 // IDE-HOT-102 + 快捷启用(本批):部署级热更通道配置面板——单 profile 直接进

@@ -5,7 +5,7 @@ import {
   formatRevisionEvidenceReport,
   makeRevisionEvidence,
   revisionEvidenceLabel
-} from '../src/hotReloadRevisionEvidence';
+} from '../src/backend/hotReloadRevisionEvidence';
 
 // IDE-HOT-008 显示运行时 revision 的证据来源:三类证据各自带来源标签
 // ——fileHash(本地文件内容 sha256 重算)/semanticHash(结构指纹)/

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
-import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/hotReloadTargetState';
-import { HotReloadFileStateMachine, sha256Hex } from '../src/hotReloadFileState';
+import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/backend/hotReloadTargetState';
+import { HotReloadFileStateMachine, sha256Hex } from '../src/backend/hotReloadFileState';
 import { HotReloadFileDecorationProvider } from '../src/hotReloadFileDecorations';
 
 // IDE-HOT-100 §3.4 文件树角标:DIRTY 橙/SENT 蓝/APPLIED 绿/FAILED 红/

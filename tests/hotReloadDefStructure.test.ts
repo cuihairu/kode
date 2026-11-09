@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyDefChange, defChangeVerdictDetail } from '../src/hotReloadDefStructure';
+import { classifyDefChange, defChangeVerdictDetail } from '../src/backend/hotReloadDefStructure';
 
 // IDE-HOT-005 将结构性 def 变更标记需重启:影响序列化(Properties 的
 // Type/Flags/增删)或 RPC 参数(三方法段方法的增删/Arg 类型签名)的变

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/hotReloadTargetState';
+import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/backend/hotReloadTargetState';
 import {
   HotReloadFileStateMachine,
   sha256Hex,
   worstHotReloadState,
   HOT_RELOAD_ATTENTION_STATES,
   type HotReloadFileStateView
-} from '../src/hotReloadFileState';
+} from '../src/backend/hotReloadFileState';
 
 // IDE-HOT-100 脚本文件热更状态机:每个 (rootId,targetId,file) 一份
 // CLEAN/DIRTY/SENT/APPLIED/FAILED/RESTART_REQUIRED 生命周期态。依据=文件

@@ -9,8 +9,8 @@ import {
   type HotReloadChannelConfigUi,
   type HotReloadChannelSwitchDeps,
   type HotReloadChannelSwitchUi
-} from '../src/hotReloadChannelConfig';
-import type { ReloadChannelConfig } from '../src/hotReloadTransport';
+} from '../src/backend/hotReloadChannelConfig';
+import type { ReloadChannelConfig } from '../src/backend/hotReloadTransport';
 import type { ProjectProfile } from '../src/projectProfiles';
 
 // hotReloadChannelConfig 缺口臂(2026-11-09 覆盖率扫尾)。

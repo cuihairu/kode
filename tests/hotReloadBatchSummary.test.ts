@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { batchHotReloadDetail, summarizeHotReloadBatch } from '../src/hotReloadBatchSummary';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
+import { batchHotReloadDetail, summarizeHotReloadBatch } from '../src/backend/hotReloadBatchSummary';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
 
 // IDE-HOT-006 按目标聚合部分成功结果:跨目标归并批次状态——两个目标
 // 一成一败显示 partial,各目标 reason 可查(逐文件 outcome+detail);目

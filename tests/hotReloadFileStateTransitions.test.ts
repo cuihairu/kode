@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/hotReloadTargetState';
-import { HotReloadFileStateMachine, sha256Hex, worstHotReloadState, HOT_RELOAD_STATE_SEVERITY } from '../src/hotReloadFileState';
+import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/backend/hotReloadTargetState';
+import { HotReloadFileStateMachine, sha256Hex, worstHotReloadState, HOT_RELOAD_STATE_SEVERITY } from '../src/backend/hotReloadFileState';
 
 // KODE-HOT-002 全转换验收:SENT/ACCEPTED/APPLIED/FAILED/DIRTY/RESTART_REQUIRED
 // 每个转换带测试。本 describe 把设计 §3.2/§3.3 的转换图逐边走一遍——已由

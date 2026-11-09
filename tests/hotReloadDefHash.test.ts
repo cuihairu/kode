@@ -7,9 +7,9 @@ import {
   hashDefContent,
   negotiateEngineDigest,
   verdictFromTempEditOutcome
-} from '../src/hotReloadDefHash';
-import type { DefContentHash, ThreePathInput } from '../src/hotReloadDefHash';
-import type { TempEditReloadOutcome } from '../src/hotReloadTempEdit';
+} from '../src/backend/hotReloadDefHash';
+import type { DefContentHash, ThreePathInput } from '../src/backend/hotReloadDefHash';
+import type { TempEditReloadOutcome } from '../src/backend/hotReloadTempEdit';
 
 // 书 docs/kode2/KODE_2_COMPLETE_TODO.md §19 委托书 HR-PR-03:.def Hash/Digest
 // 三路径(transport_ok / accepted / applied)+ 客户端 sha256 + Digest 协商描桩。

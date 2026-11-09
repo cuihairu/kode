@@ -3,12 +3,12 @@ import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
 import {
   HotReloadVersionTracker,
   matchesHotReloadGlob,
   type HotReloadVersionBadgeView
-} from '../src/hotReloadFileVersion';
+} from '../src/backend/hotReloadFileVersion';
 import { formatHotReloadTime } from '../src/hotReloadStatus';
 
 // 热更状态栏文件版本号(用户令 2026-11-09):版本=每文件单调递增整数

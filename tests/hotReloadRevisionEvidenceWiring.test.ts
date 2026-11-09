@@ -3,18 +3,18 @@ import * as path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
-import { runHotReloadRetryCommand } from '../src/hotReloadRetryCommand';
+import { runHotReloadRetryCommand } from '../src/backend/hotReloadRetryCommand';
 import {
   HotReloadEngineDigestRegister,
   parseEngineDigestReceipt
-} from '../src/hotReloadRevisionEvidence';
+} from '../src/backend/hotReloadRevisionEvidence';
 import {
   collectRevisionEvidences,
   localFileHash,
   runHotReloadRevisionEvidenceCommand,
   semanticHashOf
-} from '../src/hotReloadRevisionEvidenceCommand';
-import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/hotReloadTargetState';
+} from '../src/backend/hotReloadRevisionEvidenceCommand';
+import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/backend/hotReloadTargetState';
 import { channels, configurationOverrides, lastFileSystemWatcher } from './helpers/vscodeStub';
 
 // IDE-REV-027 revision 证据接线(原 IDE-HOT-008):从真实发送结果出发,逐

@@ -36,4 +36,8 @@ hoverMarkdown、propertyCodeLens(装配与呈现);languageProviders 桶保持。
 
 ## 验收
 
-- `pnpm compile`(tsc)0 / `pnpm lint` 0;全量门禁见提交前记录。
+- `pnpm compile`(tsc)0 / `pnpm lint` 0。
+- 全量 vitest 一次过零抖动:693 文件 / 8390 过 4 skip,RC=0;demo 25 RC=0;
+  docs:build RC=0。
+- **提交 90df70f5**(2026-11-09 推 main):66 文件 194+/147-,并发会话面零牵连
+  (8 排除件 diff 核验零批次 6 内容,HEAD 提交前核对无并发新提交)。

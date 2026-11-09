@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { createDefStructuralGate } from '../src/hotReloadDefGate';
+import { createDefStructuralGate } from '../src/backend/hotReloadDefGate';
 
 // F1 四轮(2026-11-06 复审):三轮的「按文件集匹配最早未消费批」仍是错拿通路
 // ——被拦批次也进快照队列,批 A 被拦、同文件集批 B 放行时,B 的 commit 会按

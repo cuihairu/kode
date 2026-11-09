@@ -5,12 +5,12 @@ import {
   HOT_RELOAD_CHANNEL_STATUS_PRIORITY,
   HOT_RELOAD_SWITCH_CHANNEL_COMMAND,
   HotReloadChannelQuickSwitch
-} from '../src/hotReloadChannelConfig';
+} from '../src/backend/hotReloadChannelConfig';
 import type {
   HotReloadChannelSwitchDeps,
   HotReloadChannelSwitchUi
-} from '../src/hotReloadChannelConfig';
-import type { ReloadChannelConfig } from '../src/hotReloadTransport';
+} from '../src/backend/hotReloadChannelConfig';
+import type { ReloadChannelConfig } from '../src/backend/hotReloadTransport';
 import type { ProjectProfile } from '../src/projectProfiles';
 
 // 热更通道状态栏快捷开关(本批):状态栏项显示当前通道(如 `热更:自研HTTP`),

@@ -13,7 +13,7 @@
  * 纯逻辑(双名称解析/设置读取/临时编辑内容)与执行编排分家,测试用假腿驱动。
  */
 
-import type { ConfigReader } from './hotReload';
+import type { ConfigReader } from '../hotReload';
 
 /** 临时编辑标记前缀:追加行为 `# kode-temp-reload <ISO 时间戳>` */
 export const TEMP_EDIT_MARKER_TAG = 'kode-temp-reload';

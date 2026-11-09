@@ -3,7 +3,7 @@ import {
   buildDefaultHotfixRequest,
   resolveDefaultHotfixModule,
   sendDefaultHotfix
-} from '../src/hotReloadDefaultHotfix';
+} from '../src/backend/hotReloadDefaultHotfix';
 import type { HttpTransport } from '../src/httpRequestService';
 
 // 默认热更请求(用户令 2026-11-06):新工作区零配置时保存 .py 即 POST

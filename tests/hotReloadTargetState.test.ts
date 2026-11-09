@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   HotReloadTargetStateStore,
   buildHotReloadTargetKeyId
-} from '../src/hotReloadTargetState';
+} from '../src/backend/hotReloadTargetState';
 
 // IDE-HOT-001 按 rootId 与 targetId 隔离热更新状态:投递结果台账按
 // (文件归属扫描根 rootId × 服务实例 targetId)双维隔离——同文件发给

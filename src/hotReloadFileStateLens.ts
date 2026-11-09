@@ -7,12 +7,12 @@
 
 import * as vscode from 'vscode';
 
-import type { HotReloadTargetStateStore } from './hotReloadTargetState';
+import type { HotReloadTargetStateStore } from './backend/hotReloadTargetState';
 import {
   worstHotReloadState,
   type HotReloadFileStateMachine,
   type HotReloadFileStateView
-} from './hotReloadFileState';
+} from './backend/hotReloadFileState';
 
 export const HOT_RELOAD_SHOW_FILE_STATE_COMMAND = 'kbengine.hotReload.showFileState';
 

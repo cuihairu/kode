@@ -17,18 +17,18 @@ import { resolveAssetsRootForWorkspace } from './scanRoots';
 import {
   HotReloadTargetStateStore,
   type HotReloadDeliveryOutcome
-} from './hotReloadTargetState';
-import { recordHttpDelivery } from './hotReloadDelivery';
-import { applyAcceptedReceipt } from './hotReloadReceipt';
-import { HOT_RELOAD_APPLIED_SETTLE_MS, settleAppliedStatus, verifyAppliedReceipt } from './hotReloadAppliedCheck';
-import { createDefStructuralGate, type DefStructuralGate } from './hotReloadDefGate';
-import { sendFilesViaReloadChannel } from './hotReloadChannelSend';
-import { sendDefaultHotfix } from './hotReloadDefaultHotfix';
-import { showHotReloadFirstRunNotice, HOT_RELOAD_NOTICE_KEY } from './hotReloadNotice';
+} from './backend/hotReloadTargetState';
+import { recordHttpDelivery } from './backend/hotReloadDelivery';
+import { applyAcceptedReceipt } from './backend/hotReloadReceipt';
+import { HOT_RELOAD_APPLIED_SETTLE_MS, settleAppliedStatus, verifyAppliedReceipt } from './backend/hotReloadAppliedCheck';
+import { createDefStructuralGate, type DefStructuralGate } from './backend/hotReloadDefGate';
+import { sendFilesViaReloadChannel } from './backend/hotReloadChannelSend';
+import { sendDefaultHotfix } from './backend/hotReloadDefaultHotfix';
+import { showHotReloadFirstRunNotice, HOT_RELOAD_NOTICE_KEY } from './backend/hotReloadNotice';
 import { writeHotReloadEnabled } from './hotReloadToggle';
 import { formatFileChangeMeta, type FileChangeMetaResolver } from './fileChangeMeta';
 import { normalizeFileIdentity } from './pathIdentity';
-import type { ReloadTransport } from './hotReloadTransport';
+import type { ReloadTransport } from './backend/hotReloadTransport';
 import type { HttpTransport } from './httpRequestService';
 import type { PackageDirProbe } from './httpRequests';
 
@@ -60,7 +60,7 @@ export const HOT_RELOAD_DERIVED_GLOB_SUFFIX = '**/*.py';
 export const HOT_RELOAD_ASSETS_ROOT_REMEDY =
   '未配 kbengine.assetsRoot,无法派生监视范围;补救:配置 kbengine.assetsRoot,或把工作区设为资产根目录的父目录';
 /** IDE-REV-023 applied 核验窗口:到点仍未确认只注解超时,不冒充任何终态 */
-export { HOT_RELOAD_APPLIED_SETTLE_MS } from './hotReloadAppliedCheck';
+export { HOT_RELOAD_APPLIED_SETTLE_MS } from './backend/hotReloadAppliedCheck';
 
 /** 显式配置的 globs 来源;`unset` = 没写(或类型写坏)→ 交给 assetsRoot 派生 */
 export type HotReloadGlobsSpec = 'explicit' | 'unset';

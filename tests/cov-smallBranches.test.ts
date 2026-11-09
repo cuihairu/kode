@@ -60,11 +60,11 @@ import { attachWithDeadline } from '../src/debugAttachGuard';
 import {
   settleAppliedStatus,
   verifyAppliedReceipt
-} from '../src/hotReloadAppliedCheck';
+} from '../src/backend/hotReloadAppliedCheck';
 import {
   classifyDefChange,
   structuralFingerprintHash
-} from '../src/hotReloadDefStructure';
+} from '../src/backend/hotReloadDefStructure';
 import {
   createProfileScopedDriftExecutor,
   ProfileDatabaseConnectionService

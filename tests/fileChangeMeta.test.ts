@@ -8,7 +8,7 @@ import {
   formatFileChangeMeta,
   type FileChangeMetaDeps
 } from '../src/fileChangeMeta';
-import { resolveModuleDualName } from '../src/hotReloadTempEdit';
+import { resolveModuleDualName } from '../src/backend/hotReloadTempEdit';
 import { normalizeFileIdentity } from '../src/pathIdentity';
 import { createSharedFileEventMerger, type SharedFileEvent } from '../src/sharedFileEvents';
 

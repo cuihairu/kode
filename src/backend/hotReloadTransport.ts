@@ -20,10 +20,10 @@
  * 送进 fire 路径)+ 配置面板是 IDE-HOT-102 的范围,本级交付抽象+实现+选择。
  */
 
-import { defaultTransport as httpDefaultTransport, DEFAULT_HTTP_TIMEOUT_MS } from './httpRequestService';
-import type { HttpRequestEntry } from './httpRequests';
-import { resolveVariableExpression, type VariableContext } from './variableSubstitution';
-import { KBEngineTelnetClient } from './telnetClient';
+import { defaultTransport as httpDefaultTransport, DEFAULT_HTTP_TIMEOUT_MS } from '../httpRequestService';
+import type { HttpRequestEntry } from '../httpRequests';
+import { resolveVariableExpression, type VariableContext } from '../variableSubstitution';
+import { KBEngineTelnetClient } from '../telnetClient';
 
 export type ReloadTransportKind = 'kbengine-official' | 'http';
 

@@ -18,11 +18,11 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { applyAcceptedReceipt } from '../src/hotReloadReceipt';
-import { verifyAppliedReceipt } from '../src/hotReloadAppliedCheck';
-import { buildHttpPresetConfig } from '../src/hotReloadChannelConfig';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
-import { defaultReloadHttpRunner, HttpReloadTransport } from '../src/hotReloadTransport';
+import { applyAcceptedReceipt } from '../src/backend/hotReloadReceipt';
+import { verifyAppliedReceipt } from '../src/backend/hotReloadAppliedCheck';
+import { buildHttpPresetConfig } from '../src/backend/hotReloadChannelConfig';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
+import { defaultReloadHttpRunner, HttpReloadTransport } from '../src/backend/hotReloadTransport';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';

@@ -22,8 +22,8 @@ import {
   buildTemplateVars,
   resolvePythonModulePath,
   type PackageDirProbe
-} from './httpRequests';
-import { DEFAULT_HTTP_TIMEOUT_MS, defaultTransport, type HttpTransport } from './httpRequestService';
+} from '../httpRequests';
+import { DEFAULT_HTTP_TIMEOUT_MS, defaultTransport, type HttpTransport } from '../httpRequestService';
 import { resolveModuleDualName } from './hotReloadTempEdit';
 
 export interface DefaultHotfixRequest {

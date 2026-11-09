@@ -7,7 +7,7 @@
  * - 选「立即关闭」直接写回配置把热更关掉(不等用户自己找开关)。
  */
 
-import { l10nText } from './nlsRuntime';
+import { l10nText } from '../nlsRuntime';
 
 export const HOT_RELOAD_NOTICE_KEY = 'kbengine.hotReload.firstRunNotice';
 

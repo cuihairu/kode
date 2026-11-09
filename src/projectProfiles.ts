@@ -9,7 +9,7 @@
 
 import { randomUUID } from 'crypto';
 import type * as vscode from 'vscode';
-import { normalizeReloadChannelConfig, type ReloadChannelConfig } from './hotReloadTransport';
+import { normalizeReloadChannelConfig, type ReloadChannelConfig } from './backend/hotReloadTransport';
 
 /** 一条 profile 记录:身份是 id,其余字段都可变 */
 export interface ProjectProfile {

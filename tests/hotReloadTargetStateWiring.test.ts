@@ -3,7 +3,7 @@ import * as path from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
 import { configurationOverrides, lastFileSystemWatcher } from './helpers/vscodeStub';
 
 // IDE-REV-021 热更目标状态仓接线:注入 targetState 即逐发送按

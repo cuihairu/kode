@@ -3,8 +3,8 @@ import * as path from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
-import { createDefStructuralGate } from '../src/hotReloadDefGate';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
+import { createDefStructuralGate } from '../src/backend/hotReloadDefGate';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
 import {
   channels,
   configurationOverrides,
@@ -307,7 +307,7 @@ describe('setupHotReload def 结构闸接线(IDE-REV-024)', () => {
     expect(hotReload).toContain('createDefStructuralGate');
     expect(hotReload).toContain('defGate');
     expect(hotReload).toContain('defBaselines');
-    const gate = read('hotReloadDefGate.ts');
+    const gate = readFileSync(path.join(__dirname, '..', 'src', 'backend', 'hotReloadDefGate.ts'), 'utf8');
     expect(gate).toContain('classifyDefChange');
     expect(gate).toContain("endsWith('.def')");
     const status = read('hotReloadStatus.ts');

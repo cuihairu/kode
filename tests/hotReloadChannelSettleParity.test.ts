@@ -6,8 +6,8 @@ import {
   setupHotReload,
   type HotReloadTimerDeps
 } from '../src/hotReload';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
-import type { ReloadReceipt, ReloadTarget, ReloadTransport } from '../src/hotReloadTransport';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
+import type { ReloadReceipt, ReloadTarget, ReloadTransport } from '../src/backend/hotReloadTransport';
 import { channels, configurationOverrides, lastFileSystemWatcher } from './helpers/vscodeStub';
 
 // KR-AUD-46/47(通道发送语义与 fire 回落路径对齐):

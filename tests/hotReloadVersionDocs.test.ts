@@ -1,9 +1,9 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
-import { matchesHotReloadGlob } from '../src/hotReloadFileVersion';
+import { matchesHotReloadGlob } from '../src/backend/hotReloadFileVersion';
 import { formatHotReloadVersionSuffix } from '../src/hotReloadStatus';
-import { HOT_RELOAD_VERSION_EVENT_CAP } from '../src/hotReloadTargetState';
+import { HOT_RELOAD_VERSION_EVENT_CAP } from '../src/backend/hotReloadTargetState';
 
 // HOT-VER 文档对账锁:设计稿状态栏版本号节(中英)、配置指南(中英)、命令
 // 指南(中英)与 src 导出互相印证——文案示例由源码格式化函数现算,防止文档与

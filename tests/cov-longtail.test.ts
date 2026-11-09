@@ -40,8 +40,8 @@ import { resolveLaunchOrder } from '../src/launchDependencies';
 import { SemanticIndex } from '../src/semanticIndex';
 import { findFilesAcrossRoots, getIndexScanRoots, resetScanRootCache } from '../src/scanRoots';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
-import { resendHotReloadTarget } from '../src/hotReloadRetryCommand';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
+import { resendHotReloadTarget } from '../src/backend/hotReloadRetryCommand';
 import {
   getOperationSummary,
   resetLanguageServiceMetrics,

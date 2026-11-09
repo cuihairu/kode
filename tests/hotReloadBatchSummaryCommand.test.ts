@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 import {
   renderHotReloadBatchSummary,
   runHotReloadBatchSummaryCommand
-} from '../src/hotReloadBatchSummaryCommand';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
+} from '../src/backend/hotReloadBatchSummaryCommand';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
 
 // IDE-REV-025 多目标批次聚合展示入口:台账全量按目标归并——一成一败=
 // partial 点名失败目标与原因,每个目标(不论成败)的逐文件明细都渲染,

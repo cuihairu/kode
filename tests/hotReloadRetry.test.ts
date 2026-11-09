@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { retryFailedHotReloadTargets } from '../src/hotReloadRetry';
-import { summarizeHotReloadBatch } from '../src/hotReloadBatchSummary';
-import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/hotReloadTargetState';
+import { retryFailedHotReloadTargets } from '../src/backend/hotReloadRetry';
+import { summarizeHotReloadBatch } from '../src/backend/hotReloadBatchSummary';
+import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/backend/hotReloadTargetState';
 
 // IDE-HOT-007 只重试失败目标:重试遍历批次目标,只对 outcome=failed 的
 // 目标重新发送;已确认成功侧(applied/accepted/sent-unverified=已发出

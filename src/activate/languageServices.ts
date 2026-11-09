@@ -59,7 +59,7 @@ import { shouldStartKbEngineIndexing } from '../workspaceGate';
 import { WorkspaceIndex } from '../workspaceIndex';
 import { preheatDiscoveryScan } from '../workspaceDiscovery';
 import { releaseDocumentsUnderRoot } from '../documentStore';
-import { readTempEditReloadSettings, tempEditSectionReader } from '../hotReloadTempEdit';
+import { readTempEditReloadSettings, tempEditSectionReader } from '../backend/hotReloadTempEdit';
 import { GeneratedSourceCodeLensProvider } from '../generatedSourceLenses';
 import type { CoreServicesShared } from './coreServices';
 import type { InfrastructureShared } from './infrastructure';

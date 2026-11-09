@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { QuickActionManager } from '../src/quickActions';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
 import { startReferenceReceiver } from './helpers/referenceReceiver';
 import {
   configurationOverrides,

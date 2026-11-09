@@ -20,7 +20,7 @@ import type {
   HotReloadTargetKey,
   HotReloadTargetStateStore
 } from './hotReloadTargetState';
-import type { HotReloadTimerDeps } from './hotReload';
+import type { HotReloadTimerDeps } from '../hotReload';
 
 export interface ReloadChannelSendDeps {
   readonly transport: ReloadTransport;

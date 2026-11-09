@@ -7,7 +7,7 @@ import { createFileChangeMetaResolver, type FileChangeMetaDeps } from '../src/fi
 import { logIndexFileChangeMeta } from '../src/fileChangeMetaLog';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
 import type { HotReloadStatusController } from '../src/hotReloadStatus';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
 import { clearRecentJumpLogs, getRecentJumpLogs, setJumpLogEnabled } from '../src/navigationLog';
 import { normalizeFileIdentity } from '../src/pathIdentity';
 import { configurationOverrides, lastFileSystemWatcher } from './helpers/vscodeStub';

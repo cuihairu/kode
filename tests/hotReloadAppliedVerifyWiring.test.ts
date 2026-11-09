@@ -6,7 +6,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
 import { startReferenceReceiver } from './helpers/referenceReceiver';
 import { configurationOverrides, lastFileSystemWatcher, workspace as stubWorkspace } from './helpers/vscodeStub';
 

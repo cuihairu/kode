@@ -5,8 +5,8 @@ import type * as vscode from 'vscode';
 
 import { resolveActiveProfile, setActiveProfile } from '../src/activeProfile';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
-import { resolveReloadTransport, type ReloadTransport } from '../src/hotReloadTransport';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
+import { resolveReloadTransport, type ReloadTransport } from '../src/backend/hotReloadTransport';
 import { ProjectProfileStore } from '../src/projectProfiles';
 import { channels, configurationOverrides, lastFileSystemWatcher } from './helpers/vscodeStub';
 

@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { describe, expect, it } from 'vitest';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
-import { HotReloadVersionTracker } from '../src/hotReloadFileVersion';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
+import { HotReloadVersionTracker } from '../src/backend/hotReloadFileVersion';
 import { HOT_RELOAD_TOGGLE_COMMAND } from '../src/hotReloadToggle';
 import {
   HOT_RELOAD_SHOW_LOG_COMMAND,

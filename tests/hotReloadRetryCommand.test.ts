@@ -6,9 +6,9 @@ import {
   renderHotReloadRetryReport,
   resendHotReloadTarget,
   runHotReloadRetryCommand
-} from '../src/hotReloadRetryCommand';
+} from '../src/backend/hotReloadRetryCommand';
 import type { HotReloadHttpResponse, HotReloadTimerDeps } from '../src/hotReload';
-import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/hotReloadTargetState';
+import { HotReloadTargetStateStore, type HotReloadTargetKey } from '../src/backend/hotReloadTargetState';
 
 // IDE-REV-026 失败目标重试接线(原 IDE-HOT-007):台账里只挑 outcome=failed
 // 的目标经真实动作入口重发——已确认成功侧(applied/accepted/sent-unverified,

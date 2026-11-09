@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { applyAcceptedReceipt, parseHotReloadAcceptedReceipt } from '../src/hotReloadReceipt';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
+import { applyAcceptedReceipt, parseHotReloadAcceptedReceipt } from '../src/backend/hotReloadReceipt';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
 
 // IDE-HOT-003 解析单目标 accepted 回执:已记录协议=JSON
 // {"status":"accepted","file":"<与所发文件逐字一致的回显>"}(可选

@@ -19,7 +19,7 @@ import {
   type HotReloadSendOptions,
   type HotReloadTargetStateWiring,
   type HotReloadTimerDeps
-} from './hotReload';
+} from '../hotReload';
 import type { DefGateCheckVerdict } from './hotReloadDefGate';
 import type { HotReloadTargetKey, HotReloadTargetStateStore } from './hotReloadTargetState';
 import type { ReloadTransport } from './hotReloadTransport';

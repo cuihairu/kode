@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { resendHotReloadTarget } from '../src/hotReloadRetryCommand';
-import { createDefStructuralGate } from '../src/hotReloadDefGate';
+import { resendHotReloadTarget } from '../src/backend/hotReloadRetryCommand';
+import { createDefStructuralGate } from '../src/backend/hotReloadDefGate';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
-import type { ReloadTransport } from '../src/hotReloadTransport';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
+import type { ReloadTransport } from '../src/backend/hotReloadTransport';
 import { configurationOverrides, lastFileSystemWatcher } from './helpers/vscodeStub';
 
 // RT-3(外部深审 2026-11-04)/IDE-HOT-005:失败目标重试不得绕过 def 结构闸——

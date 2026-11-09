@@ -37,7 +37,7 @@
 import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { resolveModuleDualName } from './hotReloadTempEdit';
+import { resolveModuleDualName } from './backend/hotReloadTempEdit';
 import { normalizeFileIdentity } from './pathIdentity';
 import type { SharedFileEvent, SharedFileEventKind } from './sharedFileEvents';
 

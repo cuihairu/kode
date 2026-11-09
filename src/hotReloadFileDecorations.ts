@@ -8,13 +8,13 @@
 
 import * as vscode from 'vscode';
 
-import type { HotReloadTargetStateStore } from './hotReloadTargetState';
+import type { HotReloadTargetStateStore } from './backend/hotReloadTargetState';
 import {
   HOT_RELOAD_STATE_FACES,
   worstHotReloadState,
   type HotReloadFileStateMachine,
   type HotReloadFileStateView
-} from './hotReloadFileState';
+} from './backend/hotReloadFileState';
 
 export interface HotReloadFileDecorationDeps {
   readonly stateMachine: HotReloadFileStateMachine;

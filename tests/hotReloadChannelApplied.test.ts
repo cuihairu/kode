@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
-import type { ReloadReceipt, ReloadTarget, ReloadTransport } from '../src/hotReloadTransport';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
+import type { ReloadReceipt, ReloadTarget, ReloadTransport } from '../src/backend/hotReloadTransport';
 import { channels, configurationOverrides, lastFileSystemWatcher } from './helpers/vscodeStub';
 
 // RT-9(外部深审 2026-11-04)/IDE-HOT-004:部署通道路径的 applied 回执必须过

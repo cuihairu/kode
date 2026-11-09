@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { classifyHttpDelivery, recordHttpDelivery } from '../src/hotReloadDelivery';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
+import { classifyHttpDelivery, recordHttpDelivery } from '../src/backend/hotReloadDelivery';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
 
 // IDE-HOT-002 将 HTTP 发送成功记为未确认:投递分类器只认传输事实——
 // 2xx=已送达(sent-unverified,绿色但明示未证实),非 2xx/传输失败=

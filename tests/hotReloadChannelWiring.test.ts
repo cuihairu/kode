@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
-import type { ReloadReceipt, ReloadTarget, ReloadTransport } from '../src/hotReloadTransport';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
+import type { ReloadReceipt, ReloadTarget, ReloadTransport } from '../src/backend/hotReloadTransport';
 import {
   channels,
   configurationOverrides,

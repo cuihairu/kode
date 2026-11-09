@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
-import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
+import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
 import { configurationOverrides, lastFileSystemWatcher } from './helpers/vscodeStub';
 
 // RT-8(外部深审 2026-11-04):未确认记录的阻塞/超时注解拼接 detail 用

@@ -11,7 +11,7 @@
  * 标注「依赖引擎 reloadScript」。
  */
 
-import type { ProjectProfile } from './projectProfiles';
+import type { ProjectProfile } from '../projectProfiles';
 import {
   resolveReloadTransport,
   type ReloadChannelConfig,

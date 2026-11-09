@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setL10nBundle } from './fake-vscode/l10n';
 import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
-import { HOT_RELOAD_NOTICE_MESSAGE, showHotReloadFirstRunNotice } from '../src/hotReloadNotice';
+import { HOT_RELOAD_NOTICE_MESSAGE, showHotReloadFirstRunNotice } from '../src/backend/hotReloadNotice';
 
 const zh = zhCnBundle as Record<string, string>;
 
