@@ -3,6 +3,8 @@
 //   刷新/暂停/导出按钮作为整体折行,不再与筛选控件交错;
 // - 筛选值保留:控件仍按 id 取值并服务端回填 selected/value,重渲染不丢值;
 // - 主题颜色与对比度遵循 VS Code:工具栏区域零硬编码色值,焦点走 focusBorder。
+// UX-REVIEW-007c 可访问性验证:键盘顺序(零 tabindex=自然 DOM 序)、
+// 程序化名称(label for 配对/按钮可见文本)、状态经可访问名称呈现。
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { ComponentMetrics, SystemOverview } from '../src/monitoringCollector';
 import { MonitoringWebView } from '../src/monitoringWebView';
@@ -148,5 +150,42 @@ describe('监控工具栏分组(UX-REVIEW-007b)', () => {
     expect(css).toContain('var(--vscode-input-foreground)');
     expect(css).toContain('var(--vscode-input-border)');
     expect(css).toContain('outline: 1px solid var(--vscode-focusBorder)'); // 焦点可见(007c 验证面)
+  });
+});
+
+describe('监控工具栏可访问性验证(UX-REVIEW-007c)', () => {
+  it('键盘顺序=自然 DOM 序:工具栏零 tabindex,控件按组件→诊断→关键词→刷新间隔→历史→操作排列', () => {
+    const html = renderZh();
+    const toolbar = toolbarMarkup(html);
+    // 零 tabindex:键盘 Tab 序即 DOM 序,无正 tabindex 打乱阅读顺序
+    expect(toolbar.includes('tabindex')).toBe(false);
+    // 8 个控件在 DOM 中按逻辑阅读顺序出现(筛选组在前、操作组在后)
+    let cursor = toolbar.indexOf('<div class="toolbar">');
+    for (const id of [...FILTER_IDS, ...ACTION_IDS]) {
+      const at = toolbar.indexOf(`id="${id}"`, cursor);
+      expect(at, `${id} 未按声明顺序出现`).toBeGreaterThan(-1);
+      cursor = at;
+    }
+  });
+
+  it('程序化名称齐全:每个筛选控件有 label for 配对,按钮可见文本即可访问名称', () => {
+    const toolbar = toolbarMarkup(renderZh());
+    for (const id of FILTER_IDS) {
+      expect(toolbar.includes(`<label for="${id}">`), `${id} 缺 label for`).toBe(true);
+    }
+    for (const id of ACTION_IDS) {
+      const at = toolbar.indexOf(`id="${id}"`);
+      expect(at).toBeGreaterThan(-1);
+      const openTagEnd = toolbar.indexOf('>', at);
+      const closeTag = toolbar.indexOf('</button>', openTagEnd);
+      const text = toolbar.slice(openTagEnd + 1, closeTag).trim();
+      expect(text.length, `${id} 可见文本为空`).toBeGreaterThan(0);
+    }
+  });
+
+  it('暂停/恢复状态经可访问名称呈现:暂停态名称为「恢复」,运行态为「暂停」', () => {
+    // 状态入名称:屏幕阅读器朗读按钮文本即获知当前状态(007c 名称与状态面)
+    expect(toolbarMarkup(renderZh(true))).toContain('>恢复</button>');
+    expect(toolbarMarkup(renderZh(false))).toContain('>暂停</button>');
   });
 });
