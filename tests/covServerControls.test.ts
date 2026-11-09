@@ -366,3 +366,97 @@ describe('serverControls 装配面(覆盖补测)', () => {
     expect(messages.error.length).toBeGreaterThan(0);
   });
 });
+
+describe('失败动作呈现(008b:重试/查看详情/配置定位)', () => {
+  /** 会失败的只读执行器(本文件既有 FakeExecutor 恒成功,失败臂专用) */
+  const makeFailingExecutor = (error: Error): DriftQueryExecutor & { closed: number } => {
+    const state = { closed: 0 };
+    return {
+      get closed(): number {
+        return state.closed;
+      },
+      async runQuery(): Promise<never> {
+        throw error;
+      },
+      async close(): Promise<void> {
+        state.closed += 1;
+      }
+    } as DriftQueryExecutor & { closed: number };
+  };
+
+  it('连接失败 → 警告(非信息)带「重试/查看详情」;点重试真实重跑一次', async () => {
+    const executor = makeFailingExecutor(new Error('ECONNREFUSED'));
+    mockedProfile.mockReturnValue(mysqlProfile() as never);
+    mockedResolve.mockReturnValue({ plainPassword: 'pw' } as never);
+    mockedCreate.mockImplementation(async () => executor);
+    const original = fakeWindow.showWarningMessage;
+    const offered: unknown[][] = [];
+    let picks = 0;
+    fakeWindow.showWarningMessage = (async (message: string, ...items: unknown[]) => {
+      messages.warning.push(message);
+      offered.push(items);
+      picks += 1;
+      return picks === 1 ? items[0] : undefined; // 只点一次「重试」,防无限重跑
+    }) as typeof fakeWindow.showWarningMessage;
+    try {
+      await commands.executeCommand('kbengine.playerData.testConnection');
+    } finally {
+      fakeWindow.showWarningMessage = original;
+    }
+    expect(messages.info).toHaveLength(0); // 失败走警告面,不走信息面
+    expect(messages.warning.join('')).toContain('连接失败');
+    expect(offered[0]).toContain('重试');
+    expect(offered[0]).toContain('查看详情');
+    // 重试真实重跑:两次建连、两次 SELECT 1,状态账本终态=failed
+    expect(mockedCreate.mock.calls.length).toBe(2);
+    expect(executor.closed).toBe(2);
+    expect(playerTaskStatusStore.get('connection')?.outcome).toBe('failed');
+  });
+
+  it('缺配置拒绝 → 动作含「打开发现与定位报告」(配置定位);点详情经已注册命令', async () => {
+    mockedProfile.mockReturnValue(undefined);
+    mockedResolve.mockReturnValue(null);
+    const original = fakeWindow.showWarningMessage;
+    let offered: unknown[] = [];
+    fakeWindow.showWarningMessage = (async (message: string, ...items: unknown[]) => {
+      messages.warning.push(message);
+      offered = items;
+      return '查看详情';
+    }) as typeof fakeWindow.showWarningMessage;
+    try {
+      await commands.executeCommand('kbengine.playerData.testConnection');
+    } finally {
+      fakeWindow.showWarningMessage = original;
+    }
+    expect(messages.warning.join('')).toContain('未找到数据库配置段');
+    expect(offered).toContain('打开发现与定位报告');
+    expect(commandRegistry.registrations.has('kbengine.playerData.showResult')).toBe(true);
+    expect(playerTaskStatusStore.get('connection')?.outcome).toBe('failed');
+  });
+
+  it('查询失败 → 警告带动作;不点动作即收束(无进一步副作用)', async () => {
+    const executor = makeFailingExecutor(new Error('ER_NO_SUCH_TABLE'));
+    mockedProfile.mockReturnValue(mysqlProfile() as never);
+    mockedResolve.mockReturnValue({ plainPassword: 'pw' } as never);
+    mockedCreate.mockImplementation(async () => executor);
+    const inputOriginal = fakeWindow.showInputBox;
+    const warnOriginal = fakeWindow.showWarningMessage;
+    fakeWindow.showInputBox = async () => '42';
+    fakeWindow.showWarningMessage = (async (message: string, ...items: unknown[]) => {
+      messages.warning.push(message);
+      expect(items).toContain('重试');
+      return undefined; // 不点任何动作
+    }) as typeof fakeWindow.showWarningMessage;
+    try {
+      await commands.executeCommand('kbengine.playerData.queryByDbid');
+    } finally {
+      fakeWindow.showInputBox = inputOriginal;
+      fakeWindow.showWarningMessage = warnOriginal;
+    }
+    expect(messages.warning.join('')).toContain('查询失败');
+    expect(messages.warning.join('')).toContain('ER_NO_SUCH_TABLE');
+    expect(messages.warning.join('')).not.toContain('pw'); // 密码不出现
+    expect(playerTaskStatusStore.get('query')?.outcome).toBe('failed');
+    expect(mockedCreate.mock.calls.length).toBe(1);
+  });
+});

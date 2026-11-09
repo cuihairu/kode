@@ -132,10 +132,10 @@ describe('激活链低覆盖命令面(wiring 补测)', () => {
     expect(messages.error).toHaveLength(0);
   });
 
-  it('playerData.testConnection:无引擎档案 → 如实未测试', async () => {
+  it('playerData.testConnection:无引擎档案 → 如实未测试(008b:拒绝走警告面+配置定位动作)', async () => {
     await commands.executeCommand('kbengine.playerData.testConnection');
-    expect(lastInfo()).toContain('未找到数据库配置段');
-    expect(lastInfo()).toContain('未测试');
+    expect(messages.warning[messages.warning.length - 1]).toContain('未找到数据库配置段');
+    expect(messages.warning[messages.warning.length - 1]).toContain('未测试');
   });
 
   it('playerData.queryByDbid:缺配置闸降级;拒绝恢复动作即止', async () => {
@@ -145,13 +145,20 @@ describe('激活链低覆盖命令面(wiring 补测)', () => {
 
   it('playerData.queryByDbid:选「重新派生并检查连接」→ 走连接测试降级文案', async () => {
     const original = fakeWindow.showWarningMessage;
-    fakeWindow.showWarningMessage = async () => READ_ONLY_QUERY_CHECK_CONNECTION;
+    let gateCalls = 0;
+    fakeWindow.showWarningMessage = (async (message: string) => {
+      messages.warning.push(message);
+      gateCalls += 1;
+      // 首答选「重新派生并检查连接」;降级后的拒绝警告不再选任何动作
+      return gateCalls === 1 ? READ_ONLY_QUERY_CHECK_CONNECTION : undefined;
+    }) as typeof fakeWindow.showWarningMessage;
     try {
       await commands.executeCommand('kbengine.playerData.queryByDbid');
     } finally {
       fakeWindow.showWarningMessage = original;
     }
-    expect(lastInfo()).toContain('未测试');
+    // 008b:连接测试降级走警告面(拒绝=failed,带查看详情等动作)
+    expect(messages.warning[messages.warning.length - 1]).toContain('未测试');
   });
 
   it('playerData.queryByDbid:选「打开发现与定位报告」→ 执行报告命令', async () => {

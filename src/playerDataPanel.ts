@@ -29,6 +29,7 @@ import {
   resolveDatabaseInterfaceConfig,
   type DatabaseInterfaceConfig
 } from './serverConfigMerge';
+import { maskConnectionSecrets } from './backend/reproductionSummary';
 
 /** 只读查询结果输出通道(展示面,不可编辑) */
 export const PLAYER_DATA_CHANNEL_NAME = 'KBEngine 玩家数据(只读)';
@@ -53,6 +54,19 @@ export function showPlayerDataResult(): void {
 export interface PlayerTaskRunResult {
   message: string;
   outcome: Extract<PlayerTaskOutcome, 'empty' | 'success' | 'failed'>;
+}
+
+/**
+ * UX-REVIEW-008b 与真实原因对应的动作标签:失败给「重试」(可重入),
+ * 一切失败/拒绝给「查看详情」(通道落原始诊断);缺配置再加配置定位
+ * (发现报告)。动作只指向真实可执行命令,不造按钮。
+ */
+export const PLAYER_TASK_RETRY_LABEL = '重试';
+export const PLAYER_TASK_SHOW_DETAIL_LABEL = '查看详情';
+
+/** 原始错误用于诊断但不暴露密码:赋值形态/URL userinfo 一律遮蔽(008b) */
+export function maskPlayerTaskErrorText(text: string): string {
+  return maskConnectionSecrets(text);
 }
 
 interface PlayerDataNodeItem {
@@ -352,7 +366,7 @@ export async function runPlayerConnectionTest(): Promise<PlayerTaskRunResult> {
     return { message, outcome: 'success' };
   } catch (error) {
     const note = built.defaultsOnly ? `(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})` : '';
-    const message = `连接失败:${error instanceof Error ? error.message : String(error)}(只读降级,不影响其他功能)${note}`;
+    const message = `连接失败:${maskPlayerTaskErrorText(error instanceof Error ? error.message : String(error))}(只读降级,不影响其他功能)${note}`;
     playerDataChannel().appendLine(`[连接检查 ${formatPlayerTaskTime(Date.now())}] ${message}`);
     return { message, outcome: 'failed' };
   } finally {
@@ -416,7 +430,7 @@ export async function runPlayerQueryByDbid(dbid: string): Promise<PlayerTaskRunR
     return { message, outcome: result.rows.length === 0 ? 'empty' : 'success' };
   } catch (error) {
     const note = built.defaultsOnly ? `(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})` : '';
-    const message = `查询失败:${error instanceof Error ? error.message : String(error)}${note}`;
+    const message = `查询失败:${maskPlayerTaskErrorText(error instanceof Error ? error.message : String(error))}${note}`;
     return { message, outcome: 'failed' };
   } finally {
     await executor?.close().catch(() => {

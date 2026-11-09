@@ -764,6 +764,8 @@ The flow graph panel supports:
 ### `kbengine.playerData.testConnection`
 
 - Title: `Test Database Connection (Read-Only SELECT 1)`
+
+> UX-REVIEW-008B: a refused/failed check opens a warning with reason-matched actions — missing engine config adds 「打开发现与定位报告」(config location), any failure offers 「重试」 (re-runs this check) and 「查看详情」 (opens the result channel; raw diagnostics are password-masked). The latest state per task (not run / running / empty / success / failed / cancelled) stays visible in the Player Data tree with the finish time (UX-REVIEW-008A).
 - Purpose: probe the derived MySQL endpoint with a whitelisted `SELECT 1` through the read-only executor (`SET SESSION TRANSACTION READ ONLY` + statement whitelist)
 - Behavior:
   - Success reports host:port/database plus latency; failure degrades honestly to a message (never blocks other features)

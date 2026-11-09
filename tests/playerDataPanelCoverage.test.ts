@@ -38,6 +38,7 @@ import {
   playerTaskStatusStore,
   queryPlayerByDbid,
   readOnlyQueryConfigGate,
+  maskPlayerTaskErrorText,
   runPlayerConnectionTest,
   runPlayerQueryByDbid,
   showPlayerDataResult,
@@ -505,5 +506,34 @@ describe('最近一次状态账本(008a:结构化结果+树呈现+可回看)', (
     expect(typeof queryPlayerByDbid).toBe('function');
     expect(typeof testPlayerDatabaseConnection).toBe('function');
     expect(typeof showPlayerDataResult).toBe('function');
+  });
+});
+
+describe('失败原因遮蔽与动作面(008b)', () => {
+  it('原始错误用于诊断但不暴露密码:password= 赋值形态与 URL userinfo 全遮蔽', async () => {
+    const executor = installExecutor();
+    executor.queryError = new Error(
+      "connect ECONNREFUSED, config: user=kbe password=secret123 host=127.0.0.1 mysql://kbe:pw123@127.0.0.1:13306/kbe"
+    );
+    const run = await runPlayerQueryByDbid('7');
+    expect(run.outcome).toBe('failed');
+    expect(run.message).toContain('password=***');
+    expect(run.message).not.toContain('secret123');
+    expect(run.message).not.toContain('pw123'); // URL 亦被赋值形态贪婪段吞入(过遮蔽=安全)
+    // 独立 URL userinfo 形态(无赋值形态竞争)同样遮蔽
+    executor.queryError = new Error('denied for mysql://kbe:plainpw@10.0.0.5/kbe');
+    const urlMasked = await runPlayerQueryByDbid('7');
+    expect(urlMasked.message).toContain('mysql://***@');
+    expect(urlMasked.message).not.toContain('plainpw');
+    // 诊断面(输出通道)同样遮蔽
+    executor.queryError = new Error('password=topsecret at line 1');
+    const connection = await runPlayerConnectionTest();
+    expect(connection.message).toContain('password=***');
+    expect(connection.message).not.toContain('topsecret');
+    const lines = windowState.channels
+      .filter(c => c.name === PLAYER_DATA_CHANNEL_NAME)
+      .flatMap(c => c.lines);
+    expect(lines.join('')).not.toContain('topsecret');
+    expect(typeof maskPlayerTaskErrorText).toBe('function');
   });
 });

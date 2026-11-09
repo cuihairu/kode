@@ -740,6 +740,8 @@ callgraph 模式面板支持：
 
 ### `kbengine.playerData.testConnection`
 
+> UX-REVIEW-008B:拒绝/失败走警告面并给与真实原因对应的动作——缺引擎配置加「打开发现与定位报告」(配置定位),任何失败给「重试」(重跑本检查)与「查看详情」(打开结果通道;原始诊断已做密码遮蔽)。每任务最近一次状态(未运行/进行中/空结果/成功/失败/已取消)带完成时间常驻玩家数据树可回看(UX-REVIEW-008A)。
+
 - 标题：`Test Database Connection (Read-Only SELECT 1)`
 - 作用：对推导出的 MySQL 端点经只读执行器（`SET SESSION TRANSACTION READ ONLY` + 语句白名单）探一条白名单 `SELECT 1`
 - 行为：
