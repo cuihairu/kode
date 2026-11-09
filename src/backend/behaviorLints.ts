@@ -41,7 +41,7 @@ import type { CustomTypeInfo } from '../definitionWorkspace';
 import type { ParsedPythonFile } from './pythonParser';
 import { maskPythonNonCode } from './pythonLexicalMask';
 import { parsePythonFile } from './pythonParser';
-import { FIXED_DICT_TYPE_NAME } from '../kbengineMetadata';
+import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
 
 /** 行为 lint 诊断项(纯数据;extension 侧转 vscode.Diagnostic) */
 export interface BehaviorLintFinding {

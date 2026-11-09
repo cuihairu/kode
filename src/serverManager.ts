@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import { ChildProcess } from 'child_process';
 import { LogHub, RuntimeLogLevel } from './logHub';
 import { ProcessManager, spawnProcess } from './processManager';
-import { joinWorkspacePath, usesPosixPath } from './workspacePath';
+import { joinWorkspacePath, usesPosixPath } from './backend/workspacePath';
 import { hasEngineConfigProbe, resolveDiscoveredConfigRoot, resolveKbeSourceRoot } from './workspaceDiscovery';
 import { makeProbeOne, readTelnetTargetsFromSettings, type TelnetTarget } from './telnetService';
 import {

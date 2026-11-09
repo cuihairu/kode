@@ -4,7 +4,7 @@ import * as path from 'path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KBEngineCodeGenerator, createGenerationRollbackLedger } from '../src/codeGenerator';
 import { generateGeneratorForm } from '../src/generatorForms';
-import { writeFileAtomic } from '../src/atomicFileWrite';
+import { writeFileAtomic } from '../src/backend/atomicFileWrite';
 import type * as vscode from 'vscode';
 import { Uri, window as stubWindow, workspace as stubWorkspace } from './helpers/vscodeStub';
 

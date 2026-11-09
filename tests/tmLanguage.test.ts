@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { INITIAL, Registry } from 'vscode-textmate';
 import type { IGrammar, IRawGrammar, IToken } from 'vscode-textmate';
 import { createOnigScanner, createOnigString, loadWASM } from 'vscode-oniguruma';
-import { KBENGINE_FLAGS } from '../src/kbengineMetadata';
+import { KBENGINE_FLAGS } from '../src/backend/kbengineMetadata';
 
 // 语法高亮资产(syntaxes/kbengine.tmLanguage.json)批110 重铸后形态:
 // .def 是 XML 方言,基准分词整体委托内建 text.xml,仅前置少量语义规则

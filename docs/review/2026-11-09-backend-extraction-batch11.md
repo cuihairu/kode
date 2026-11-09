@@ -22,4 +22,5 @@ engineVersionDetect / engineApiMetadata / engineCompatibility
 
 - `pnpm compile`(tsc)0 / `pnpm lint` 0。
 - 全量 vitest 8389 过 / 1 失败=debugConfigAttach 既有真 ps 抖动,隔离复跑
-  23/23 绿;demo 25 RC=0;docs:build RC=0;提交 hash 见下。
+  23/23 绿;demo 25 RC=0;docs:build RC=0。
+- **提交 0cfb5142**(2026-11-09 推 main):19 文件 46+/20-,并发会话面零牵连。

@@ -14,7 +14,7 @@ import { findDatabaseSchemaFieldAtPosition, findDatabaseSchemaSourceLocation, fi
 import { createDatabaseSchemaUri, isDatabaseSchemaDocument } from '../databaseSchemaPresentation';
 import { findCustomTypeDeclarationInfo, findCustomTypeInfo, findCustomTypePythonImplementationFile, findImplementedBySymbolLine, findDefinitionEntryByCategory, findDefinitionFileByCategory, findEntityDefsDirForDefFile, findComponentScriptFile, findEntityDefinitionFile, findEntitiesXmlFile, findEntityScriptFile, findInterfaceScriptFile, getDefinitionWorkspaceLayout, getRegisteredCustomTypes, getScriptsRootForDefFile, getWorkspaceRootForDocument, scriptFoldersForRole, notifyEntitiesXmlMissingOnce, readWorkspaceTextFile, readWorkspaceTextLines } from '../definitionWorkspace';
 import { parseDefFileSemantics } from '../backend/defRenamer';
-import { KBENGINE_TYPES } from '../kbengineMetadata';
+import { KBENGINE_TYPES } from '../backend/kbengineMetadata';
 import { logNavigation } from '../navigationLog';
 import { SymbolHoverInfo, buildSymbolHoverInfo } from './hover';
 import { CustomTypeResolution, KBEngineSectionName, METHOD_SECTIONS, getDefNodeAtPosition, getDefNodeAtWord, getSymbolNodeInfo, isOffsetInsideNodeValue, parseDefAst } from './shared';

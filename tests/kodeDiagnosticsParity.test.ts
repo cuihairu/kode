@@ -12,7 +12,7 @@ import {
   getElementText,
   parseDefDocument
 } from '../src/backend/defParser';
-import { KBENGINE_FLAGS, KBENGINE_TYPES } from '../src/kbengineMetadata';
+import { KBENGINE_FLAGS, KBENGINE_TYPES } from '../src/backend/kbengineMetadata';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const GOLDEN_PATH = path.join(REPO_ROOT, 'crates/kode-server/tests/golden/diagnostics-parity.json');

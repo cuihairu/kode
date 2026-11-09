@@ -7,7 +7,7 @@ import {
   gitignoreLineFor,
   planExclusion,
   planGitignoreAdd
-} from '../src/managedDirExclusions';
+} from '../src/backend/managedDirExclusions';
 
 describe('managedDirExclusions', () => {
   describe('exclusionKeyFor', () => {

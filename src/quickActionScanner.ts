@@ -8,7 +8,7 @@
  */
 
 import * as path from 'path';
-import { pathApiFor } from './workspacePath';
+import { pathApiFor } from './backend/workspacePath';
 import { classifyBatchScript } from './quickActionConfig';
 import type { QuickActionCategory } from './quickActionConfig';
 

@@ -17,7 +17,7 @@ import {
   getWorkspaceRootForDocument
 } from './definitionWorkspace';
 import { EntityMethodSection } from './entityMapping';
-import { KBENGINE_TYPES } from './kbengineMetadata';
+import { KBENGINE_TYPES } from './backend/kbengineMetadata';
 import { KBEngineServerManager, SERVER_COMPONENTS, ServerStatus } from './serverManager';
 import {
   ExplorerGroupItem,

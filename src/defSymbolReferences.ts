@@ -29,7 +29,7 @@ import {
   findDeepestElementAtOffset
 } from './backend/defParser';
 import { findFilesAcrossRoots } from './scanRoots';
-import { KBENGINE_TYPES, FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
+import { KBENGINE_TYPES, FIXED_DICT_TYPE_NAME } from './backend/kbengineMetadata';
 import {
   findCustomTypeInfo,
   findCustomTypeDeclarationInfo,

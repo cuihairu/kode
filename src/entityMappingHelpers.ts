@@ -18,7 +18,7 @@ import { buildPythonSymbolsInRust } from './backend/pythonCallGraphRust';
 import type { PythonSymbolCall, PythonSymbolsRustResult } from './backend/pythonCallGraphRust';
 import type { DefinitionSemanticCategory } from './definitionSemantics';
 import { normalizeLookupPath } from './definitionSemantics';
-import { joinWorkspacePath } from './workspacePath';
+import { joinWorkspacePath } from './backend/workspacePath';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 
 function buildFallbackPythonPath(entityName: string): string {

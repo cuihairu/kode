@@ -18,7 +18,7 @@ import { buildProjectCreationPreviewItems, listMinimalProjectTemplate, planProje
 import type { ProjectTemplateEntry } from './projectTemplate';
 import { loadDemoGameTemplateEntries } from './demoGameTemplate';
 import { confirmGenerationPlanItems } from './generationConfirm';
-import { writeFileAtomic } from './atomicFileWrite';
+import { writeFileAtomic } from './backend/atomicFileWrite';
 import { identifyProjectLayout } from './projectImport';
 import { ProjectProfileStore } from './projectProfiles';
 import {

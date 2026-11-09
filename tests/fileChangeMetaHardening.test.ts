@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { describe, expect, it } from 'vitest';
 import { createFileChangeMetaResolver, type FileChangeMetaDeps } from '../src/fileChangeMeta';
-import { normalizeFileIdentity } from '../src/pathIdentity';
+import { normalizeFileIdentity } from '../src/backend/pathIdentity';
 
 // 审核整改(commit-review-gate FAIL 四条)的回归面:
 // ① 进程归属的根必须与文件走同一把身份键(Windows 盘符/UNC 大小写不一致会假 unresolved);

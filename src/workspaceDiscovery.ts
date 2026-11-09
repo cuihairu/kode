@@ -12,7 +12,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 // 路径模板渲染单一真源(与手工输入链 definitionWorkspace.resolveWorkspacePath 同源)
-import { renderPathTemplate } from './workspacePath';
+import { renderPathTemplate } from './backend/workspacePath';
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
 /** 约定路径(与 getDefinitionWorkspaceLayout 的候选同源,深扫描只作兜底) */

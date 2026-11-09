@@ -6,7 +6,7 @@ import { getOrParseDocumentSync } from '../documentStore';
 import { getKodeCoreShadowGate, serveDiagnosticsFromRust, shadowObserveDefDocument, type LspDiagnosticReportFace } from '../kodeCoreShadowFaces';
 import { analyzeDefDocumentInRust, type DefAnalysisFinding } from '../backend/defAnalyzer';
 import { collectDefPythonParityInput } from '../backend/defPythonParity';
-import { DETAIL_LEVELS, KBENGINE_FLAGS } from '../kbengineMetadata';
+import { DETAIL_LEVELS, KBENGINE_FLAGS } from '../backend/kbengineMetadata';
 import { FLAG_DOMAIN_ALIAS } from '../generated/flagDomains';
 import { ALLOWED_TOP_LEVEL_SECTIONS, KBEngineSectionName, createNodeRange, getLanguageFeatureConfig, getNodeValue, getSectionLabel, parseDefAst, pushDiagnosticForNodeValue, toSectionName, visitElementNodes } from './shared';
 import { ENTITY_BASE_DATA_FLAGS, ENTITY_CELL_DATA_FLAGS, ENTITY_CLIENT_DATA_FLAGS, KnownTypeContext, PROPERTY_SCOPE_LABELS, PropertyScope, getKnownTypeContext } from './completion';

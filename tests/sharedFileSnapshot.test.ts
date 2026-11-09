@@ -9,7 +9,7 @@ import {
 } from '../src/sharedFileSnapshot';
 import { workspace } from './fake-vscode/workspaceState';
 import { getSemanticIndex, resetSemanticTypeRegistryForTests } from '../src/semanticIndex';
-import { normalizeFileIdentity } from '../src/pathIdentity';
+import { normalizeFileIdentity } from '../src/backend/pathIdentity';
 
 const temporaryDirectories: string[] = [];
 afterEach(() => {

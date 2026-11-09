@@ -11,7 +11,7 @@ import {
 import { SemanticDependencyGraph } from '../src/dependencyGraph';
 import { EntityMappingManager } from '../src/entityMapping';
 import { resolveEntityAnnotationType } from '../src/definitionWorkspace';
-import { normalizeFileIdentity } from '../src/pathIdentity';
+import { normalizeFileIdentity } from '../src/backend/pathIdentity';
 import { configurationOverrides, Uri, workspace } from './helpers/vscodeStub';
 
 // PR4 统一语义查询(用户令 2026-10-23):

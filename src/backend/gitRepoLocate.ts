@@ -17,7 +17,7 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
-import { pathApiFor } from '../workspacePath';
+import { pathApiFor } from './workspacePath';
 
 /** 定位依赖注入面(纯函数可测,不落 vscode/fs 实面)。 */
 export interface GitRepoLocationDeps {

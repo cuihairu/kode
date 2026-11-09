@@ -10,7 +10,7 @@
 
 import type { BatchScriptCandidate } from './quickActionScanner';
 import * as path from 'path';
-import { substituteVariables, type VariableFolderRef } from './variableSubstitution';
+import { substituteVariables, type VariableFolderRef } from './backend/variableSubstitution';
 
 export type QuickActionCategory = 'server' | 'export';
 export type QuickActionSource = 'manual' | 'scan';

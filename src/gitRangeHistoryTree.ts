@@ -17,7 +17,7 @@
  */
 
 import * as path from 'path';
-import { pathApiFor } from './workspacePath';
+import { pathApiFor } from './backend/workspacePath';
 import * as vscode from 'vscode';
 import {
   queryRangeTimeline,

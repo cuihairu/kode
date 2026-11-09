@@ -1,4 +1,4 @@
-import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
+import { FIXED_DICT_TYPE_NAME } from './backend/kbengineMetadata';
 /**
  * 组合根派生(用户 2026-10-16 纠正:「只假设 Avatar 文件是 mixin 的是不对的,
  * entities.xml 文件里的字段对应的对象都可能是 mixin 的,所有需要查找的」)。

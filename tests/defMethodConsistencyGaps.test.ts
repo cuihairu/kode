@@ -4,7 +4,7 @@ import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
-import { normalizeFileIdentity } from '../src/pathIdentity';
+import { normalizeFileIdentity } from '../src/backend/pathIdentity';
 
 // C-19 交付①:entityMapping 查询面的 def↔Python 方法集合差。正向
 // (collectDefMethodImplementationGaps)只看 rootCategory='entity' 的根、只标

@@ -17,7 +17,7 @@
 
 import { recordLanguageServiceOperation } from './languageServiceMetrics';
 import { releaseParsedDocuments } from './backend/defParser';
-import { normalizeFileIdentity } from './pathIdentity';
+import { normalizeFileIdentity } from './backend/pathIdentity';
 
 /** 快照输入面:vscode.TextDocument 与测试替身的公共子集(不 import vscode) */
 export interface DocumentStoreDocument {

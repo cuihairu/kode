@@ -7,14 +7,14 @@ import {
   annotationSourceLog,
   setAnnotationSourceLogEnabled
 } from '../src/annotationSourceLog';
-import { readBuildCommit } from '../src/buildCommit';
+import { readBuildCommit } from '../src/backend/buildCommit';
 import { CompileallErrorParser } from '../src/buildProblemMatcher';
 import { buildScriptCheckTaskSpec } from '../src/buildTaskSpec';
 import { DatabaseConnectionRegistry } from '../src/backend/databaseConnectionRegistry';
 import { assertReadOnlyStatement, ReadOnlyViolationError } from '../src/backend/databaseDrift';
 import { normalizeCallChainTab } from '../src/backend/defCallChainViewLogic';
 import { propertyFlagDomainList } from '../src/backend/defAnalyzer';
-import { writeFileAtomic } from '../src/atomicFileWrite';
+import { writeFileAtomic } from '../src/backend/atomicFileWrite';
 import { parseEntityNames } from '../src/compositionRoots';
 import { classifyDriftEvidence } from '../src/backend/databaseDriftEvidence';
 import { recordDriftEvidenceFromReport } from '../src/databaseDriftEvidenceIntegration';

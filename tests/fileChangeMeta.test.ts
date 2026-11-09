@@ -9,7 +9,7 @@ import {
   type FileChangeMetaDeps
 } from '../src/fileChangeMeta';
 import { resolveModuleDualName } from '../src/backend/hotReloadTempEdit';
-import { normalizeFileIdentity } from '../src/pathIdentity';
+import { normalizeFileIdentity } from '../src/backend/pathIdentity';
 import { createSharedFileEventMerger, type SharedFileEvent } from '../src/sharedFileEvents';
 
 // 文件变化元信息(方案 B):merger 交付 version token,下游懒解析器按

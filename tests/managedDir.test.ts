@@ -6,7 +6,7 @@ import {
   MANAGED_DIR_DEFAULT,
   MANAGED_DIR_SETTING_FULL,
   resolveManagedDirName
-} from '../src/managedDir';
+} from '../src/backend/managedDir';
 import {
   exportKbeStubs,
   fileSystemStubExportDeps,

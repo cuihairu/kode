@@ -4,8 +4,8 @@ import {
   renderExtensionIdentityReport,
   type ExtensionIdentityEntry,
   type ExtensionHostContext
-} from '../src/extensionIdentity';
-import { readBuildCommit } from '../src/buildCommit';
+} from '../src/backend/extensionIdentity';
+import { readBuildCommit } from '../src/backend/buildCommit';
 
 // IDE-MET-001:扩展身份报告的纯函数面——报告必须区分「安装目录存在」与
 // 「当前窗口已激活」两个正交事实(装了没激活/激活中目录已消失都要如实分列),

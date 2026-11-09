@@ -21,7 +21,7 @@ import {
   type GitRunOutcome,
 } from './backend/gitRunner';
 import { sharedGitQueryGate, type GitQueryRequest } from './backend/gitQueryGate';
-import { pathApiFor } from './workspacePath';
+import { pathApiFor } from './backend/workspacePath';
 
 /** 虚拟文档 scheme:内容一律只读(仅提供者,无编辑能力)。 */
 export const GIT_HISTORY_VERSION_SCHEME = 'kode-git-version';

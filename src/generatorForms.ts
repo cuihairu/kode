@@ -40,8 +40,8 @@ import {
   getDirectChildElements,
   parseDefDocument
 } from './backend/defParser';
-import { joinWorkspacePath } from './workspacePath';
-import { writeFileAtomic } from './atomicFileWrite';
+import { joinWorkspacePath } from './backend/workspacePath';
+import { writeFileAtomic } from './backend/atomicFileWrite';
 import { confirmGenerationPlanItems, type GenerationPlanItem } from './generationConfirm';
 import { activeProfileSwitchCount, resolveActiveProfile } from './activeProfile';
 

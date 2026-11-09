@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { readBuildCommit } from '../src/buildCommit';
+import { readBuildCommit } from '../src/backend/buildCommit';
 
 // IDE-MET-002/REL-004:扩展产物写入构建提交——安装产物报告的提交与构建
 // 输入一致。三面:①构建脚本 scripts/write-build-commit.mjs 把 git

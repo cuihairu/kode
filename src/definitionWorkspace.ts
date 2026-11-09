@@ -39,14 +39,14 @@ import {
 import { startLanguageServiceOperation } from './languageServiceMetrics';
 import { readFileSyncUtf8Recorded } from './fileReadMetrics';
 import { getSemanticIndex } from './semanticIndex';
-import { normalizeFileIdentity } from './pathIdentity';
+import { normalizeFileIdentity } from './backend/pathIdentity';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import {
   ENTITIES_XML_SECTION_CLIENT_SERVER,
   ENTITIES_XML_SECTION_SERVER_ONLY
 } from './backend/entitiesXmlAnalysis';
 // 路径模板渲染单一真源(与发现链 workspaceDiscovery.resolveAgainstWorkspace 同源)
-import { renderPathTemplate } from './workspacePath';
+import { renderPathTemplate } from './backend/workspacePath';
 
 export type DefinitionCategory = 'type' | 'entity' | 'interface' | 'component';
 

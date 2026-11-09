@@ -11,7 +11,7 @@ import {
   resolveWorkspaceFolderRef,
   type VariableContext,
   type VariableFolderRef
-} from '../src/variableSubstitution';
+} from '../src/backend/variableSubstitution';
 
 const FOLDERS: VariableFolderRef[] = [
   { fsPath: '/ws/main', name: 'main' },

@@ -6,7 +6,7 @@ import {
   KBEngineTelnetClient,
   TelnetClientState
 } from './telnetClient';
-import { expandWorkspacePlaceholders } from './workspacePath';
+import { expandWorkspacePlaceholders } from './backend/workspacePath';
 import {
   ensureConfigResolved,
   getConfigResolved,

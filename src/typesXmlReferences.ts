@@ -32,7 +32,7 @@ import {
 } from './backend/defParser';
 import { findFilesAcrossRoots } from './scanRoots';
 import { findCustomTypeInfo, getWorkspaceRootForDocument } from './definitionWorkspace';
-import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
+import { FIXED_DICT_TYPE_NAME } from './backend/kbengineMetadata';
 
 export interface TypesXmlRefSite {
   /** 引用所在文件绝对路径 */

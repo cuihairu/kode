@@ -9,7 +9,7 @@ import {
   resolveAgainstWorkspace
 } from '../src/workspaceDiscovery';
 import type { DiscoveryFieldLabel, DiscoveryLayoutFacts } from '../src/workspaceDiscovery';
-import { renderPathTemplate } from '../src/workspacePath';
+import { renderPathTemplate } from '../src/backend/workspacePath';
 import { configurationOverrides, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { Uri } from './helpers/vscodeStub';
 

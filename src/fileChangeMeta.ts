@@ -38,7 +38,7 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveModuleDualName } from './backend/hotReloadTempEdit';
-import { normalizeFileIdentity } from './pathIdentity';
+import { normalizeFileIdentity } from './backend/pathIdentity';
 import type { SharedFileEvent, SharedFileEventKind } from './sharedFileEvents';
 
 /** 进程归属结论:KBEngine 组件进程 / 共享 / 多段冲突(候选并列,不挑一个猜) */

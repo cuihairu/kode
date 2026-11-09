@@ -1,4 +1,4 @@
-import { normalizeFileIdentity } from './pathIdentity';
+import { normalizeFileIdentity } from './backend/pathIdentity';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import {
   DefDocument,

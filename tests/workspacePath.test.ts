@@ -5,7 +5,7 @@ import {
   joinWorkspacePath,
   selectPathApiForPlatform,
   usesPosixPath
-} from '../src/workspacePath';
+} from '../src/backend/workspacePath';
 
 describe('joinWorkspacePath', () => {
   it('joins posix-style workspace paths with normalized segments', () => {

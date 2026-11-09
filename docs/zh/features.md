@@ -107,7 +107,7 @@
 - **VSIX 包含 parser worker（REL-003）** —— 打包产物已核验（2026-10-29，本地产物）：vsix 内有 `extension/out/pythonParserWorker.js`，worker 能从解包后的包内路径启动并对一条解析请求回出 `id`/`revision`/`parsed` 回包；tests/vsixPackaging.test.ts 的结构守卫锁住三处——`.vscodeignore` 先排除 `out/**` 再保留 worker、`bundle` 脚本保留 worker 的 esbuild 入口、worker/parser 源码不 import `vscode`（包内路径启动不依赖扩展宿主）
   ——（证据：tests/vsixPackaging.test.ts、.vscodeignore、package.json#scripts.bundle、docs/zh/guide/development.md 发布前检查）
 - **VSIX 暴露构建身份（REL-004）** —— 打包产物带 `out/buildCommit.json`，其 `commit` 等于打包时的 `git rev-parse HEAD`（2026-10-29 本地产物核验：包内 commit `5360850…` == 构建时 HEAD）；运行时 `readBuildCommit` 只读 `<extensionPath>/out/buildCommit.json`——文件缺失或损坏一律报 `unknown`，绝不回落源码目录的 git 状态，源码目录版本不冒充已安装版本；`.vscodeignore` 保留条目与读取路径都有测试锁
-  ——（证据：src/buildCommit.ts、tests/buildCommit.test.ts、tests/vsixPackaging.test.ts、.vscodeignore `!out/buildCommit.json`）
+  ——（证据：src/backend/buildCommit.ts、tests/buildCommit.test.ts、tests/vsixPackaging.test.ts、.vscodeignore `!out/buildCommit.json`）
 - **推导式 VS Code 运行时矩阵（REL-005）** —— 最低支持 VS Code 1.82（`engines.vscode: ^1.82.0`，从沿用的 ^1.61 上调），两面推导而非沿用：API 下限（registerInlayHintsProvider 1.66、TestController 1.59+appendOutput 1.61、rename/delete 文件事件 1.33、workspace.fs 1.34）由 `@types/vscode` 钉 1.82.0 后 tsc 机器验证；运行时下限来自 esbuild `--target=node18` 产物需要宿主内嵌 Node ≥18，按 vscode-versions 数据即 VS Code ≥1.82——Node 下限生效；
   tests/runtimeMatrix.test.ts 锁 engines ≥1.82、types 主次版本与 engines 一致、bundle 每个 `--target=nodeN` 映射最低 VS Code，日后抬 bundle 靶守卫先红直到 engines 跟上——（证据：tests/runtimeMatrix.test.ts、package.json#engines.vscode、package.json#devDependencies.@types/vscode、docs/zh/guide/development.md VS Code 运行时矩阵）
 - **安装后打包产物烟测（REL-006）** —— `pnpm run test:smoke:vsix` 对真实打包产物跑一次性烟测：vsce 打包 VSIX → 解包成安装布局 → 以解包 `extension/` 目录作为扩展加载进真 VS Code 扩展宿主；套件对包内文件发有命中断言的请求——身份（`extensionPath` 是解包产物，`out/extension.js`/`out/pythonParserWorker.js`/`out/buildCommit.json` 齐全）、hover（`.def` 标签词回标签文档）、源定位（`.def` 方法精确落到实体脚本 `def` 行，零宽过滤与 demo 真机套同构）、worker 路径（小调用方文件跨文件跳到 >256 KiB 大文件里实现的方法——该文件在宿主内只能由打包 worker 线程解析入索引）；
@@ -127,7 +127,7 @@
 - **存根目录可配置** —— `kbengine.python.stubDir` 设置 > `KBENGINE_STUB_DIR` 环境变量 > 默认 `.kbengine/stubs`；用户已写的 `.pyi` 视为用户资产不覆盖 ——（证据：package.json#configuration `kbengine.python.stubDir`；todo.md:42；src/pythonStubExport.ts）
 - **python.analysis.extraPaths 接线** —— 发现的 KBEngine scripts 根按 WorkspaceFolder 级写入 `${workspaceFolder}/...` 变量形态（带工作区根前缀的存量绝对路径在下次同步时自动迁移，不可迁移的绝对路径由 `kbengine.configContract.extraPathsAbsolute` 报出）；只管理自己那段，除该迁移外用户手填路径原样保留；管理段经 base/cell 角色隔离闸（角色目录永不进合并列表，base/Avatar.py 与 cell/Avatar.py 这类同名模块不会因 extraPaths 顺序跨角色误解析），手动同步时如实播报跨角色同名模块集合；
   同一次同步显式写 `python.analysis.stubPath` = `${workspaceFolder}/.kbengine/stubs`，Pylance 解析顺序由此明确：同名 .pyi → stubPath → extraPaths ——（证据：package.json#configuration `kbengine.python.extraPathsSync`；package.json#contributes.commands `kbengine.python.syncExtraPaths`；src/pythonExtraPaths.ts `planPythonExtraPaths` + `toWorkspaceFolderVar`；src/backend/pythonRoleRoots.ts `enforceRoleIsolation`）
-- **托管目录可配置** —— kode 自管目录（默认 `.kbengine`，容纳 debug.json 与存根）可经 `kbengine.managedDir` 改名，改名后自动重建 ——（证据：src/managedDir.ts；commit c69517e；src/extension.ts watcher）
+- **托管目录可配置** —— kode 自管目录（默认 `.kbengine`，容纳 debug.json 与存根）可经 `kbengine.managedDir` 改名，改名后自动重建 ——（证据：src/backend/managedDir.ts；commit c69517e；src/extension.ts watcher）
 
 ## 调试与运行
 
@@ -221,7 +221,7 @@
 - **机器人控制（本地单机闭环）** —— 经 bots 进程自带 telnet python 层（默认端口 51000）运行时驱动引擎 `bots` 进程：`addBots`（一次性或分批，命令串镜像引擎 API 形态）与 `len(KBEngine.bots)` 计数查询，都在 `kbengine.telnet.enableCommands` 白名单闸内（写操作 addBots 绝不静默放行）；诚实边界处处写明——引擎无逐个销毁 API，减员=停止 bots 进程，不编造逐机器人指标 ——（证据：package.json#contributes.commands `kbengine.bots.add|kbengine.bots.count`；src/botsControl.ts）
 - **HTTP 快捷请求** —— 可配置请求列表，`${module}` 模板变量按 `__init__.py` 包边界解析 ——（证据：package.json#contributes.commands `kbengine.httpRequest.run|httpRequests.run`；package.json#configuration `kbengine.httpRequests`；src/httpRequests.ts、src/httpRequestService.ts）
 - **配置发现与最终配置视图** —— 引擎配置自动发现（约定路径/记忆/深扫描），合成只读 `kbengine-final.xml` 视图并自动刷新 ——（证据：package.json#contributes.commands `kbengine.config.showFinal|kbengine.discovery.report`；package.json#configuration `kbengine.showFinalConfigOnOpen|autoRefreshFinalConfig`；todo.md:73、todo.md:76、todo.md:77；src/workspaceDiscovery.ts、src/serverConfigMerge.ts）
-- **VS Code 官方变量替换** —— `${workspaceFolder}`、`${env:NAME}` 等由同一实现统一解析，覆盖配置路径与快速动作 ——（证据：todo.md:39；src/variableSubstitution.ts）
+- **VS Code 官方变量替换** —— `${workspaceFolder}`、`${env:NAME}` 等由同一实现统一解析，覆盖配置路径与快速动作 ——（证据：todo.md:39；src/backend/variableSubstitution.ts）
 
 ## 监控与 SDK
 
@@ -338,7 +338,7 @@
 
 ## 设置项
 
-全部扩展设置（证据：package.json#contributes.configuration 为已贡献键；src/managedDir.ts 为运行时读取键）。
+全部扩展设置（证据：package.json#contributes.configuration 为已贡献键；src/backend/managedDir.ts 为运行时读取键）。
 
 | 设置 | 默认值 | 作用 |
 | --- | --- | --- |
@@ -463,7 +463,7 @@
 | `kbengine.infer.pythonVersion` | `"3.7"` | pyrefly infer `--python-version` 目标 — `src/pyreflyInfer.ts` |
 | `kbengine.engineVersion` | `"3.7.3"` | 集成的 KBEngine 引擎版本(魔改 fork 填自定义版本号如 `fork-3.12`);知识库分层标注与诊断按此门控 — `src/engineVersion.ts` |
 | `kbengine.infer.sourceWrite` | `"managed"` | 写权限闸 scope（managed/user）— `src/pyreflyInfer.ts` |
-| `kbengine.infer.exclusionsSync` | `true` | .kbengine 隔离（search/watcher/gitignore 幂等，gitignore 绝不创建）— `src/managedDirExclusions.ts` |
+| `kbengine.infer.exclusionsSync` | `true` | .kbengine 隔离（search/watcher/gitignore 幂等，gitignore 绝不创建）— `src/backend/managedDirExclusions.ts` |
 | `kbengine.types.aliasDiscovery` | `true` | alias.xml 自定义类型发现 — `src/definitionWorkspace.ts:285` |
 | `kbengine.runtimeQuery.enabled` | `false` | 运行时查询面板操作面（watcher 观察清单增删与结果订阅流；默认关时面板只剩单次手动查询）— `src/runtimeQueryWebView.ts` |
 | `kbengine.metrics.fileReadDetail` | `false` | 文件读取明细审计（路径+字节数，环形缓冲 256 条，`kbengine.metrics.showSummary` 可查；默认关=只累计计数，开销有界）— `src/fileReadMetrics.ts` |

@@ -20,7 +20,7 @@ import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { readFileSyncUtf8Recorded } from './fileReadMetrics';
 import { normalizeDocumentKey } from './documentStore';
-import { normalizeFileIdentity } from './pathIdentity';
+import { normalizeFileIdentity } from './backend/pathIdentity';
 import { getSemanticIndex } from './semanticIndex';
 
 /** 打开文档输入面:vscode.TextDocument 与测试替身的公共子集(同 documentStore) */

@@ -9,7 +9,7 @@ import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
 import type { HotReloadStatusController } from '../src/hotReloadStatus';
 import { HotReloadTargetStateStore } from '../src/backend/hotReloadTargetState';
 import { clearRecentJumpLogs, getRecentJumpLogs, setJumpLogEnabled } from '../src/navigationLog';
-import { normalizeFileIdentity } from '../src/pathIdentity';
+import { normalizeFileIdentity } from '../src/backend/pathIdentity';
 import { configurationOverrides, lastFileSystemWatcher } from './helpers/vscodeStub';
 
 // 文件变化元信息(方案 B)的两个真实消费端接线:

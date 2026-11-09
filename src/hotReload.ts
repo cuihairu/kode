@@ -27,7 +27,7 @@ import { sendDefaultHotfix } from './backend/hotReloadDefaultHotfix';
 import { showHotReloadFirstRunNotice, HOT_RELOAD_NOTICE_KEY } from './backend/hotReloadNotice';
 import { writeHotReloadEnabled } from './hotReloadToggle';
 import { formatFileChangeMeta, type FileChangeMetaResolver } from './fileChangeMeta';
-import { normalizeFileIdentity } from './pathIdentity';
+import { normalizeFileIdentity } from './backend/pathIdentity';
 import type { ReloadTransport } from './backend/hotReloadTransport';
 import type { HttpTransport } from './httpRequestService';
 import type { PackageDirProbe } from './httpRequests';

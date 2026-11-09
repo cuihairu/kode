@@ -4,7 +4,7 @@
  */
 
 import { findFilesAcrossRoots } from './scanRoots';
-import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
+import { FIXED_DICT_TYPE_NAME } from './backend/kbengineMetadata';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import {

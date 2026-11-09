@@ -41,7 +41,7 @@ import {
   type StubExportDeps
 } from './pythonStubExport';
 import { PYTHON_FAMILY_BASE, inferPythonLiteralAnnotation } from './backend/pythonLiteralTypes';
-import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
+import { FIXED_DICT_TYPE_NAME } from './backend/kbengineMetadata';
 
 export const PYTHON_TYPE_STUB_FILE_NAME = 'kbe_types.pyi';
 

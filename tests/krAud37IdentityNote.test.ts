@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeFileIdentity } from '../src/pathIdentity';
+import { normalizeFileIdentity } from '../src/backend/pathIdentity';
 import { planPythonExtraPaths } from '../src/pythonExtraPaths';
 
 // KR-AUD-37(IDX-注,三子项取证落地):

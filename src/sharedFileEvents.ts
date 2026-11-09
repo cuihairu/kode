@@ -20,7 +20,7 @@
 // 时已 await 核对 stat,直接带补投时点已前进的版本。口径见
 // docs/design/file-change-meta.md。
 import * as fs from 'fs';
-import { normalizeFileIdentity } from './pathIdentity';
+import { normalizeFileIdentity } from './backend/pathIdentity';
 
 export type SharedFileEventKind = 'create' | 'change' | 'delete';
 

@@ -42,7 +42,7 @@ import {
   getDefinitionWorkspaceLayout,
   scriptFoldersForRole
 } from './definitionWorkspace';
-import { joinWorkspacePath } from './workspacePath';
+import { joinWorkspacePath } from './backend/workspacePath';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { PY_SCAN_EXCLUDED_DIRS } from './backend/pythonScanRules';
 import { SemanticIndex, getSemanticIndex, isTypeRegistryFile } from './semanticIndex';

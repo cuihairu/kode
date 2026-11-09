@@ -13,7 +13,7 @@
  */
 
 import * as fs from 'fs';
-import { substituteVariables } from './variableSubstitution';
+import { substituteVariables } from './backend/variableSubstitution';
 import {
   WORKSPACE_FOLDER_VAR,
   buildScannedActions,
@@ -29,7 +29,7 @@ import {
   MANAGED_DIR_DEFAULT,
   MANAGED_DIR_DEBUG_CONFIG_FILE,
   resolveManagedDirName
-} from './managedDir';
+} from './backend/managedDir';
 import { SOURCE_DEFAULT_COMPONENTS } from './debugConfig';
 
 /** 生效工作目录与取舍说明落这个 OUTPUT 通道 */

@@ -18,8 +18,8 @@ import {
   getScalarChildValue,
   parseDefDocument
 } from './defParser';
-import { normalizeFileIdentity } from '../pathIdentity';
-import { FIXED_DICT_TYPE_NAME } from '../kbengineMetadata';
+import { normalizeFileIdentity } from './pathIdentity';
+import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
 
 // R2-F24(IDE-AUD-051):本模块自足于普通 Node——源访问(def 文件发现/实体
 // 登记/共享快照读取)全部经 SchemaSourcePorts 注入,不 import 任何传递

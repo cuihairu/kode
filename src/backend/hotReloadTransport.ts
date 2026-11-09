@@ -22,7 +22,7 @@
 
 import { defaultTransport as httpDefaultTransport, DEFAULT_HTTP_TIMEOUT_MS } from '../httpRequestService';
 import type { HttpRequestEntry } from '../httpRequests';
-import { resolveVariableExpression, type VariableContext } from '../variableSubstitution';
+import { resolveVariableExpression, type VariableContext } from './variableSubstitution';
 import { KBEngineTelnetClient } from '../telnetClient';
 
 export type ReloadTransportKind = 'kbengine-official' | 'http';

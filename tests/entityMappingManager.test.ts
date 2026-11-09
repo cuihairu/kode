@@ -15,7 +15,7 @@ import {
 } from './helpers/vscodeStub';
 import { configurationOverrides } from './fake-vscode/workspaceState';
 import { resetScanRootCache } from '../src/scanRoots';
-import { normalizeFileIdentity } from '../src/pathIdentity';
+import { normalizeFileIdentity } from '../src/backend/pathIdentity';
 import { getSemanticIndex } from '../src/semanticIndex';
 
 // EntityMappingManager 类本体:构造即扫描 scripts/entity_defs 并挂 python

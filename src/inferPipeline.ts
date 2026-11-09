@@ -15,8 +15,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { InferredDirEntry, listSourceFiles, mirrorPrefixFor, planInferredMirror } from './inferredCopy';
-import { pathApiFor } from './workspacePath';
-import { detectVcs, planExclusion, planGitignoreAdd, type ManagedExclusionEntry } from './managedDirExclusions';
+import { pathApiFor } from './backend/workspacePath';
+import { detectVcs, planExclusion, planGitignoreAdd, type ManagedExclusionEntry } from './backend/managedDirExclusions';
 import { fileSystemScriptRootDeps, pythonScriptRootCandidates } from './pythonExtraPaths';
 import {
   SOURCE_WRITE_SCOPE_MANAGED,

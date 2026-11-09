@@ -4,7 +4,7 @@ import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
 import { createDemoGameProject, createMinimalProject } from '../src/projectCreate';
-import { writeFileAtomic } from '../src/atomicFileWrite';
+import { writeFileAtomic } from '../src/backend/atomicFileWrite';
 import { MINIMAL_PROJECT_TEMPLATE } from '../src/projectTemplate';
 import { ProjectProfileStore } from '../src/projectProfiles';
 import { Uri, window as stubWindow } from './helpers/vscodeStub';

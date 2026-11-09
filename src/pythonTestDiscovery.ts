@@ -10,7 +10,7 @@
  */
 
 import * as fs from 'fs';
-import { pathApiFor } from './workspacePath';
+import { pathApiFor } from './backend/workspacePath';
 import type { ProjectProfile } from './projectProfiles';
 
 /** 一条测试用例(文件内静态可见) */

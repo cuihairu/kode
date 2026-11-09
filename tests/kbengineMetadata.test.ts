@@ -7,7 +7,7 @@ import {
   KBENGINE_RELOAD_FUNCTIONS,
   KBENGINE_TYPES,
   KBEngineMetadataItem
-} from '../src/kbengineMetadata';
+} from '../src/backend/kbengineMetadata';
 import { resolveEngineRoot } from './helpers/engineRoot';
 
 const engineRoot = resolveEngineRoot();

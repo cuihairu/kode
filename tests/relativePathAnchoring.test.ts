@@ -4,7 +4,7 @@ import * as path from 'path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { Uri } from './fake-vscode/core';
 import { configurationOverrides, workspace as stubWorkspace } from './fake-vscode/workspaceState';
-import { expandWorkspacePlaceholders } from '../src/workspacePath';
+import { expandWorkspacePlaceholders } from '../src/backend/workspacePath';
 import { KBEngineServerManager } from '../src/serverManager';
 import { getIndexScanRoots, getScanRootForFile, resetScanRootCache } from '../src/scanRoots';
 import { EntityMappingManager } from '../src/entityMapping';

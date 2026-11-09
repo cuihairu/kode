@@ -9,7 +9,7 @@ import {
   validateDocument,
   validateEntitiesXmlDocument
 } from '../src/languageProviders';
-import { KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, DETAIL_LEVELS } from '../src/kbengineMetadata';
+import { KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, DETAIL_LEVELS } from '../src/backend/kbengineMetadata';
 import { KBENGINE_HOOKS } from '../src/hooks';
 import {
   CompletionItem,
