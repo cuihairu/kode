@@ -288,7 +288,7 @@ guiconsole 协议链（machined UDP 发现 + 直连各组件 TCP）：日志 tai
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `kbengine.infer.enabled` | boolean | `true` | 启用 pyrefly 无标注函数 stub 推断管道(KODE-CFG-017):`.kbengine/inferred` 副本镜像 scripts 树,pyrefly infer 以 `.kbengine/stubs`(def 真值)为类型环境在副本上写注解;用户真码默认不改 |
+| `kbengine.infer.enabled` | boolean | `true` | 启用 pyrefly 无标注函数 stub 推断管道(KODE-CFG-017):`.kbengine/inferred` 副本镜像 scripts 树,pyrefly infer 以 `.kbengine/stubs`(def 真值)为类型环境在副本上写注解;用户真码默认不改;消费面只读副本(KODE-CFG-017-R)——hover 在整条 KBEngine 解析链 miss 时以镜像推断注解兜底(返回/形参/变量的 `**推断类型**` 最小悬停),inlay 在源行缺注解而镜像同行有注解处原位渲染 `: <type>` / `-> <type>`(定义点行差分,行数漂移整批不出宁缺毋错);镜像绝不进 extraPaths/导入解析(T-04 禁遮蔽,计划面+静态审计双断言) |
 | `kbengine.infer.pyreflyPath` | string | 空 | pyrefly 可执行文件绝对路径(留空则按 PATH 再 `~/.local/bin` pipx 默认位发现;找不到时 `kbengine.infer.run` 如实提示,功能降级不报错) |
 | `kbengine.infer.pythonVersion` | string | `3.7` | pyrefly infer `--python-version` 目标(KBEngine 内嵌解释器版本;官方最小支持 3.5) |
 | `kbengine.infer.sourceWrite` | string | `managed` | 写权限闸 scope:`managed`=仅 `.kbengine/**` 可写(默认);`user`=另允许写用户 `scripts/**`(须用户显式开启;scope 外写一律拒绝不静默) |

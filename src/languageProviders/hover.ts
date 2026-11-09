@@ -34,6 +34,7 @@ import { formatDefMethodParameter, formatDefMethodSignature } from './completion
 import { describeExpectedScriptPaths, findCustomTypeAtPosition, findEnclosingSymbol, formatWorkspaceRelativePath, isPositionInsideTagValue } from './navigation';
 import { awaitDataDictIndexReady, getPythonDataDictIndexGeneration, isPythonDataDictIndexEnabled } from './pythonDefinition';
 import { getPythonMethodDeclarationAtPosition } from './callHierarchy';
+import { createInferredMirrorHover } from '../inferredMirrorLookup';
 /**
  * 批159(用户令「hover 还是需要 loading 很久」):同点位并发 hover 各自重跑
  * 整条异步解析链。按(文件+版本+行+列)做在途去重:第二个并发 hover 直接
@@ -998,6 +999,17 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         markdown.appendMarkdown(`${reloadFunc.detail}\n\n`);
         markdown.appendMarkdown(reloadFunc.documentation);
         return new vscode.Hover(markdown);
+      }
+    }
+
+    // KODE-CFG-017-R:镜像兜底富化——整条 KBEngine 域解析链未命中时,普通
+    // Python 符号读 .kbengine/inferred 副本出推断类型(返回/形参/变量注解)。
+    // 副本缺失/无注解静默回退 null(不抛错不刷通知);更强面已提前 return,
+    // 本面只补缺不覆盖,且副本绝不进 extraPaths/导入解析(T-04 禁遮蔽)。
+    if (document.languageId === 'python' && featureConfig.hoverShowSymbolDocs) {
+      const mirrorHover = createInferredMirrorHover(document, word);
+      if (mirrorHover) {
+        return mirrorHover;
       }
     }
 

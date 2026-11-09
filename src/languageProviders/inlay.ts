@@ -4,6 +4,8 @@ import { EntityMappingManager } from '../entityMapping';
 import { getDocumentLines } from '../documentStore';
 import { hasKnownEntityBuiltinPropertyType, resolveEntityComponentFaceFromPath, collectEntityBuiltinPropertyInlayTargets, type EntityComponentFace } from '../entityBuiltinProperties';
 import { getLanguageFeatureConfig } from './shared';
+import { diffInferredAnnotations } from '../inferredEnrichment';
+import { readInferredMirrorText } from '../inferredMirrorLookup';
 /**
  * 内建属性行内类型提示(用户令 2026-10-21 形态升级单 ③):实体脚本内单段
  * `self.<内建属性>` 访问处在其 range 之后渲染 `: <type>` 右对齐提示
@@ -50,6 +52,44 @@ export class KBEngineBuiltinTypeInlayHintsProvider implements vscode.InlayHintsP
           new vscode.InlayHint(
             new vscode.Position(target.line, target.endCharacter),
             `: ${target.property.type}`,
+            vscode.InlayHintKind.Type
+          )
+      );
+  }
+}
+
+/**
+ * KODE-CFG-017-R 推断镜像行内提示：源行缺注解而 `.kbengine/inferred` 副本
+ * 同行有 pyrefly 注解处（形参/返回/赋值）原位渲染 `: <type>` / `-> <type>`
+ * (kind=Type)。开关复用 kbengine.infer.enabled（镜像生产总闸——停管线即无
+ * 新鲜镜像,提示随之关）；副本缺失/读失败/行数漂移整批静默空(diffInferred-
+ * Annotations 宁缺毋错)。副本只读,绝不进 extraPaths/导入解析(T-04)。
+ */
+export class InferredMirrorTypeInlayHintsProvider implements vscode.InlayHintsProvider {
+  provideInlayHints(
+    document: vscode.TextDocument,
+    range: vscode.Range
+  ): vscode.InlayHint[] {
+    if (document.languageId !== 'python') {
+      return [];
+    }
+    const inferEnabled = vscode.workspace
+      .getConfiguration('kbengine')
+      .get<boolean>('infer.enabled', true);
+    if (!inferEnabled) {
+      return [];
+    }
+    const mirrorText = readInferredMirrorText(document.fileName);
+    if (!mirrorText) {
+      return [];
+    }
+    return diffInferredAnnotations(document.getText(), mirrorText)
+      .filter(hint => hint.line >= range.start.line && hint.line <= range.end.line)
+      .map(
+        hint =>
+          new vscode.InlayHint(
+            new vscode.Position(hint.line, hint.character),
+            hint.label,
             vscode.InlayHintKind.Type
           )
       );

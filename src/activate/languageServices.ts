@@ -24,6 +24,7 @@ import type { OperationStatus } from '../languageServiceMetrics';
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import {
   EventCodeLensProvider,
+  InferredMirrorTypeInlayHintsProvider,
   KBEngineBuiltinTypeInlayHintsProvider,
   KBEngineCallHierarchyProvider,
   KBEngineCompletionProvider,
@@ -574,6 +575,15 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     new DefPropsInlayHintsProvider(entityMappingManager)
   );
   context.subscriptions.push(defPropsInlayHintsProvider);
+
+  // KODE-CFG-017-R 推断镜像行内提示:源行未标注而 .kbengine/inferred 副本
+  // 同行有 pyrefly 注解处 `: <type>` / `-> <type>`;开关复用 infer.enabled
+  // (镜像生产总闸),provider 现读配置下一次渲染即生效;副本只读不进导入解析
+  const inferredTypeInlayHintsProvider = vscode.languages.registerInlayHintsProvider(
+    pythonDocumentSelector,
+    new InferredMirrorTypeInlayHintsProvider()
+  );
+  context.subscriptions.push(inferredTypeInlayHintsProvider);
 
   const callHierarchyProvider = vscode.languages.registerCallHierarchyProvider(
     [
