@@ -2,7 +2,7 @@ import { ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import { describe, expect, it } from 'vitest';
 import { LogHub } from '../src/logHub';
-import { ProcessManager, killProcessTree, spawnProcess } from '../src/processManager';
+import { ProcessManager, SpawnLike, killProcessTree, spawnProcess } from '../src/processManager';
 
 class FakeChild extends EventEmitter implements ChildProcess {
   stdin = null;
@@ -258,7 +258,18 @@ describe('processManager 平台臂(WIN-3)与 taskkill 回落', () => {
     const original = process.platform;
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
     try {
-      const child = spawnProcess('C:\\tools\\engine run.cmd', ['--key=a b', 'plain', '--we"ird=1']);
+      // 注入假 spawn:只验证 win32 命令行组装。真 spawn cmd.exe 在 Linux 上
+      // ENOENT,其 error 事件时序在 CI 覆盖率/并发下不定,曾以未捕获异常拖红全绿套件。
+      const spawns: Array<{ shell: string; argv: readonly string[] }> = [];
+      const fakeSpawn: SpawnLike = (shell, argv) => {
+        spawns.push({ shell, argv });
+        const child = new FakeChild();
+        child.spawnargs = [shell, ...argv];
+        return child;
+      };
+      const child = spawnProcess('C:\\tools\\engine run.cmd', ['--key=a b', 'plain', '--we"ird=1'], undefined, fakeSpawn);
+      expect(child).toBeInstanceOf(FakeChild);
+      expect(spawns).toHaveLength(1);
       // 整行走 ComSpec + /d /c,@ 前缀在引号外(escape 修饰符)
       expect(child.spawnargs?.[0]).toBe('cmd.exe');
       expect(child.spawnargs?.[1]).toBe('/d');
@@ -268,23 +279,27 @@ describe('processManager 平台臂(WIN-3)与 taskkill 回落', () => {
       expect(line).toContain('"--key=a b"');
       expect(line).toContain(' plain');
       expect(line).toContain('"--we""ird=1"');
-      // Linux 上 cmd.exe 不存在:吞 error 事件,不让 ENOENT 变未处理错误
-      child.on('error', () => undefined);
-      void child.kill();
     } finally {
       Object.defineProperty(process, 'platform', { value: original, configurable: true });
     }
   });
 
-  it('win32 spawnProcess 无 stdio 双签名:返回非空流 ChildProcess', () => {
+  it('win32 .bat 无 options 调用:不注入 stdio,缺省 stdio 语义交还 spawn(无 stdio 双签名)', () => {
     const original = process.platform;
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
     try {
-      const child = spawnProcess('run.bat', ['a', 'b']);
-      expect(child.stdout).toBeDefined();
-      expect(child.stderr).toBeDefined();
-      child.on('error', () => undefined);
-      void child.kill();
+      const spawns: Array<{ shell: string; argv: readonly string[]; options: Parameters<SpawnLike>[2] }> = [];
+      const fakeSpawn: SpawnLike = (shell, argv, options) => {
+        spawns.push({ shell, argv, options });
+        return new FakeChild();
+      };
+      const child = spawnProcess('run.bat', ['a', 'b'], undefined, fakeSpawn);
+      expect(child).toBeInstanceOf(FakeChild);
+      expect(spawns).toHaveLength(1);
+      // 调用面未给 options:spawnProcess 只补 windowsVerbatimArguments,不注入
+      // stdio 键——真 spawn 的缺省 stdio(非空流)语义原样保留
+      expect(spawns[0].options).toEqual({ windowsVerbatimArguments: true });
+      expect(spawns[0].argv).toEqual(['/d', '/c', '@run.bat a b']);
     } finally {
       Object.defineProperty(process, 'platform', { value: original, configurable: true });
     }

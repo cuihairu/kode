@@ -63,20 +63,29 @@ export type ProcessSpawnRunner = (request: ProcessSpawnRequest) => ChildProcess;
  * 双签名镜像 child_process.spawn:未给 stdio 的调用面拿
  * ChildProcessWithoutNullStreams(stdout/stderr 非空可直接挂)。
  */
+/** 可注入 spawn(与 child_process.spawn 三参形态同构):测试替身验证命令行组装,不真起子进程 */
+export type SpawnLike = (
+  command: string,
+  args: readonly string[],
+  options?: Parameters<typeof spawn>[2]
+) => ChildProcess;
 export function spawnProcess(
   command: string,
   args: readonly string[],
-  options?: SpawnOptionsWithoutStdio
+  options?: SpawnOptionsWithoutStdio,
+  spawnFn?: SpawnLike
 ): ChildProcessWithoutNullStreams;
 export function spawnProcess(
   command: string,
   args: readonly string[],
-  options?: Parameters<typeof spawn>[2]
+  options?: Parameters<typeof spawn>[2],
+  spawnFn?: SpawnLike
 ): ChildProcess;
 export function spawnProcess(
   command: string,
   args: readonly string[],
-  options?: Parameters<typeof spawn>[2]
+  options?: Parameters<typeof spawn>[2],
+  spawnFn: SpawnLike = (cmd, spawnArgs, spawnOptions) => spawn(cmd, spawnArgs, spawnOptions ?? {})
 ): ChildProcess {
   if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)) {
     // ComSpec 绝对路径:调用面可能收窄 PATH(测试/沙箱),PATH 里找不到 cmd.exe。
@@ -86,12 +95,12 @@ export function spawnProcess(
     // 空格处截断(Program Files 等)。windowsVerbatimArguments 自负整行:
     // `@` 留在引号外(cmd 的前缀修饰符),含空白/特殊字符的 token 自包引号。
     const line = [`@${quoteForCmd(command)}`, ...args.map(token => quoteForCmd(token))].join(' ');
-    return spawn(shell, ['/d', '/c', line], {
+    return spawnFn(shell, ['/d', '/c', line], {
       ...(options ?? {}),
       windowsVerbatimArguments: true
     });
   }
-  return spawn(command, [...args], options ?? {});
+  return spawnFn(command, [...args], options ?? {});
 }
 
 /** cmd 命令行 token 引用:含空白/引号/cmd 元字符时整体包双引号,内嵌引号双写。 */
