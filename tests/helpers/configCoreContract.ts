@@ -6,7 +6,7 @@
 // 伪造门响应,与 configDeriveScanRoot.test.ts 的 contractDerive 同一先例:
 // 替身只按契约回数,TS 侧接线(送达原文→消费 core 树→缓存/降级)是真被验面。
 
-import { sanitizeXmlComment } from '../../src/serverConfigCommentText';
+import { sanitizeXmlComment } from '../../src/backend/serverConfigCommentText';
 
 export interface ConfigXmlNode {
   name: string;

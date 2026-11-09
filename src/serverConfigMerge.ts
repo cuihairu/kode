@@ -6,12 +6,12 @@ import {
   type ConfigResolvedState,
   type ConfigResolveOverrides
 } from './serverConfigResolve';
-import { annotateConfigTree } from './serverConfigAnnotations';
+import { annotateConfigTree } from './backend/serverConfigAnnotations';
 import {
   generatedCommentBody,
   sanitizeXmlComment,
   sourceCommentSameContent
-} from './serverConfigCommentText';
+} from './backend/serverConfigCommentText';
 
 // 注释文本工具在此仍按原名对外(既有调用/测试的入口不变),实现见
 // serverConfigCommentText(与挂注释侧共用,避免循环依赖)

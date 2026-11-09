@@ -1,4 +1,4 @@
-import type { ConfigXmlNode } from './serverConfigMerge';
+import type { ConfigXmlNode } from '../serverConfigMerge';
 import { sourceCommentSameContent } from './serverConfigCommentText';
 import {
   SERVER_CONFIG_GROUPS,

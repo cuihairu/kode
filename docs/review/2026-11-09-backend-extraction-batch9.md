@@ -24,4 +24,7 @@ backend(批次 3,本批后与族内件天然兄弟)。
 
 ## 验收
 
-- `pnpm compile`(tsc)0 / `pnpm lint` 0;全量门禁见提交前记录。
+- `pnpm compile`(tsc)0 / `pnpm lint` 0。
+- 全量 vitest 8389 过 / 1 失败=hoverDeadlineContext 既有时间预算抖动
+  (并发构建余载 load~32),隔离复跑 10/10 绿;demo 25 RC=0;docs:build RC=0。
+- **提交 bce6a87d**(2026-11-09 推 main):25 文件 83+/51-,并发会话面零牵连。

@@ -6,14 +6,14 @@ import { buildFinalServerConfig, renderConfigXmlSections, type ConfigXmlNode } f
 import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
 import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
 import { makeContractGate, parseConfigXml, type ContractGateCall } from './helpers/configCoreContract';
-import { annotateConfigTree } from '../src/serverConfigAnnotations';
+import { annotateConfigTree } from '../src/backend/serverConfigAnnotations';
 import {
   SERVER_CONFIG_GROUPS,
   SERVER_CONFIG_GROUP_ORDER,
   SERVER_CONFIG_ITEM_DOCS,
   SERVER_CONFIG_UNKNOWN_DOC,
   findServerConfigItemDoc
-} from '../src/serverConfigCatalog';
+} from '../src/backend/serverConfigCatalog';
 import { configurationOverrides, workspace as stubWorkspace } from './fake-vscode/workspaceState';
 import { env as stubEnv } from './helpers/vscodeStub';
 
