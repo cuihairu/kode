@@ -21,6 +21,23 @@ The `en/` file is canonical for line-number drift checks.
 
 ## Articles
 
+- **`.def` property Flags — the complete engine truth** (2026-11-09, from the
+  "Flags parsed wrong / CELL_PUBLIC_AND_OWN" user report):
+  - [English](def-flags.md)
+  - [中文](../zh/knowledge/def-flags.md)
+  - Covers: the 9 bit values incl. `ED_FLAG_UNKOWN` (`common.h:19-27`); the 8
+    relation masks with runtime consumption sites (`common.h:40-56`,
+    `cellapp/entity.cpp:689/:724/:800/:854/:883`, `entity_macro.h:629`); the
+    12 accepted spellings — 8 canonical + 4 legacy aliases onto the same bits
+    (`g_entityFlagMapping`, `entitydef.cpp:161-174`); the two parse paths and
+    their divergent strictness (XML `entitydef.cpp:1136-1173` upper-cases,
+    alias-aware, fails hard vs decorator `py_entitydef.cpp:2507` →
+    `common.cpp:42-68` strict 8-name chain where aliases silently become
+    `ED_FLAG_UNKOWN`); the mapping exposed as Python module constants
+    (`py_entitydef.cpp:2912-2926`); per-flag runtime semantics table; traps
+    index; and the kode single-source mirror pipeline
+    (`model.rs` → golden → `src/generated/flagDomains.ts`).
+
 - **Entity lifecycle & object reference release** — the user-named head topic
   (memory object reference & release):
   - [English](entity-lifecycle-reference.md)

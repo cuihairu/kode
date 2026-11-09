@@ -19,6 +19,20 @@
 
 ## 文章
 
+- **`.def` 属性 Flags——引擎完整真值**(2026-11-09,源自「Flags 解析错误 /
+  CELL_PUBLIC_AND_OWN」用户报障):
+  - [English](../../knowledge/def-flags.md)
+  - [中文](def-flags.md)
+  - 覆盖:9 个位值(含 `ED_FLAG_UNKOWN`,`common.h:19-27`);8 个关系掩码及
+    运行时消费位点(`common.h:40-56`,`cellapp/entity.cpp:689/:724/:800/:854/:
+    883`,`entity_macro.h:629`);引擎接受的 12 个拼写——8 规范名 + 4 旧式别名
+    落同位(`g_entityFlagMapping`,`entitydef.cpp:161-174`);两条解析路径的
+    严格度分歧(XML `entitydef.cpp:1136-1173` 转大写、认别名、硬失败 vs 装饰器
+    `py_entitydef.cpp:2507` → `common.cpp:42-68` 严格 8 名链,别名静默变
+    `ED_FLAG_UNKOWN`);映射表暴露为 Python 模块常量(`py_entitydef.cpp:
+    2912-2926`);逐旗标运行时语义表;踩坑索引;kode 单一来源镜像管线
+    (`model.rs` → golden → `src/generated/flagDomains.ts`)。
+
 - **实体对象生命周期与引用释放** — 用户点名的头号专题(内存对象引用与释放):
   - [English](../../knowledge/entity-lifecycle-reference.md)
   - [中文](entity-lifecycle-reference.md)
