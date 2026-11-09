@@ -1578,7 +1578,7 @@
 
 ### UX-REVIEW-009 [P1] 真实安装包走查与验收
 
-- [ ] UX-REVIEW-009a 准备空工作区、有效 KBEngine 项目、缺配置及后端不可用四种可重复场景；记录版本、系统、包类型、项目规模与准备步骤。
+- [x] UX-REVIEW-009a 准备空工作区、有效 KBEngine 项目、缺配置及后端不可用四种可重复场景；记录版本、系统、包类型、项目规模与准备步骤。（2026-11-10 5286173f：scripts/ux-walkthrough-scenarios.sh <outdir>=四种场景确定性生成器——1-empty 零文件/2-valid-project demo 资产全量(107 files,12 defs)/3-missing-config res/server 缺席(105 files,12 defs)/4-backend-unavailable 引擎配置覆盖 dbInterface=127.0.0.1:13306 无监听(107 files,12 defs,配置内含密码字段供遮蔽验证);重复运行先清空重建,两次生成 diff -r 字节一致=可重复实证。docs/ux/2026-11-10-walkthrough-009a.md 记录:版本 0.2.0、Linux 宿主、包类型(VSIX 纯 TS platform-vsix/pure-ts 双链)、每场景规模表、准备步骤(生成器→打包→逐场景开夹)、预期观察面(含 004d 缺配置闸与 ECONNREFUSED 遮蔽);**未验证如实标记**:009b 安装包走查本环境(xvfb 无显示无交互桌面)未执行、009c Windows/macOS 实际桌面与屏幕阅读器不可达,待真实环境补录,验收保持开放(009d 口径)。门禁 tsc 0/lint 0/全量 vitest 8419 过 4 skip(首轮 hoverDeadlineContext 1 例满载抖动 load 76,隔离 10/10 绿,复跑全量一次过 RC=0)/xvfb demo 25 RC=0/docs:build RC=0。）
 - [ ] UX-REVIEW-009b 从安装包执行首次识别、实体浏览、服务器入口、快速执行、只读查询、克隆前置检查与失败恢复，记录操作步骤、实际结果和困惑点；不得以源码/模拟测试替代。
 - [ ] UX-REVIEW-009c 覆盖纯 TS 通用包与 TS+Rust 平台包；在 Windows/macOS/Linux 有条件的实际桌面分别走查并记录，未执行的系统和无障碍场景明确标记未验证。
 - [ ] UX-REVIEW-009d 汇总走查问题与修复前后证据，确认未降低只读/写入边界和已有入口可达性；尚未满足的验收保留开放，不能批量勾完成。
