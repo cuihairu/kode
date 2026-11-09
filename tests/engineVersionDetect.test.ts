@@ -3,7 +3,7 @@ import {
   detectEngineVersionMarker,
   engineVersionSuggestion,
   type EngineVersionDetectorDeps
-} from '../src/engineVersionDetect';
+} from '../src/backend/engineVersionDetect';
 
 // KB-VER-004(todo.md「版本感知」):版本自动探测——从引擎安装目录读版本标记
 // 并对 kbengine.engineVersion 只建议、绝不自动改用户设置。纯函数,fs 注入

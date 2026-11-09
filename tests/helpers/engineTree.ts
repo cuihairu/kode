@@ -6,7 +6,7 @@ import {
   ENGINE_MARKER_KBEVERSION,
   ENGINE_MARKER_LEGACY,
   hasEngineTreeMarker
-} from '../../src/engineApiMetadata';
+} from '../../src/backend/engineApiMetadata';
 
 // V-07·a(C-8):真引擎源码树探测 + 无树 skipIf。
 // 探测口径与产品侧 src/engineApiMetadata.ts 的 findEngineRoot 保持一致

@@ -22,3 +22,4 @@ serverConfigAnnotations / serverConfigCatalog / serverConfigCommentText
 
 - `pnpm compile`(tsc)0 / `pnpm lint` 0;全量 vitest 一次过零抖动
   693 文件 / 8390 过 4 skip RC=0;demo 25 RC=0;docs:build RC=0。
+- **提交 5973770f**(2026-11-09 推 main):8 文件 34+/7-,并发会话面零牵连。

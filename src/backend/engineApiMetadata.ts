@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
 
-import { KBE_SYMBOLS, type KbeSymbolEntry } from './kbeModuleIndex';
+import { KBE_SYMBOLS, type KbeSymbolEntry } from '../kbeModuleIndex';
 
 const execFileAsync = promisify(execFile);
 

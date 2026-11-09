@@ -11,7 +11,7 @@ import { formatEntityBuiltinPropertyDetail, getEntityBuiltinPropertiesForFace, h
 import { PYTHON_TYPE_STUB_FALLBACK } from '../pythonTypeStubs';
 import { getPythonSelfCompletionContext } from '../backend/pythonLanguageUtils';
 import { filterKbeSymbols, getKbeAliases, getKbeCompletionContext, kbeCompletionDocumentation } from '../kbeModuleIndex';
-import { EngineApiCatalog } from '../engineApiMetadata';
+import { EngineApiCatalog } from '../backend/engineApiMetadata';
 import { getEngineVersion } from '../engineVersion';
 import { getLanguageFeatureConfig } from './shared';
 import {

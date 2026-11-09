@@ -6,7 +6,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { l10nText } from './nlsRuntime';
 import { onDidChangeActiveProfile, resolveActiveProfile } from './activeProfile';
-import { findEngineRoot } from './engineCompatibility';
+import { findEngineRoot } from './backend/engineCompatibility';
 import { getRegisteredEntities, getWorkspaceRootForDocument } from './definitionWorkspace';
 import {
   getDatabaseSchemaSnapshot,
@@ -50,9 +50,9 @@ import {
   getSimulationEntityName,
   isDatabaseSimulationDocument
 } from './databaseSimulator';
-import { readEngineVersionMarker } from './engineApiMetadata';
+import { readEngineVersionMarker } from './backend/engineApiMetadata';
 import { getEngineVersion } from './engineVersion';
-import { detectEngineVersionMarker, engineVersionSuggestion } from './engineVersionDetect';
+import { detectEngineVersionMarker, engineVersionSuggestion } from './backend/engineVersionDetect';
 import { type DatabaseInterfaceConfig } from './serverConfigMerge';
 import { ensureConfigResolved } from './serverConfigResolve';
 import { DatabaseConnectionRegistry, DatabaseQueryResultCache } from './backend/databaseConnectionRegistry';

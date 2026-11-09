@@ -9,7 +9,7 @@ import {
   detectEngineTree,
   describeWithEngineTree
 } from './helpers/engineTree';
-import { readEngineVersionMarker } from '../src/engineApiMetadata';
+import { readEngineVersionMarker } from '../src/backend/engineApiMetadata';
 
 // V-07·a(C-8):探测与 skipIf 机制本身不依赖真树,全部走 fixture + 注入,
 // 所以这两组用例会常驻门禁;真树断言挂在 describeWithEngineTree 下,

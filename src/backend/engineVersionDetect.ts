@@ -8,7 +8,7 @@
  * 无 res/version 文件,故版本宏是权威标记面。任何标记缺失/畸形→null,
  * 绝不编造版本值。
  */
-import { normalizeEngineVersion } from './engineVersion';
+import { normalizeEngineVersion } from '../engineVersion';
 
 /** 探测依赖注入面(纯函数,fs 由装配方注入便于单测)。 */
 export interface EngineVersionDetectorDeps {

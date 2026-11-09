@@ -43,7 +43,7 @@ import {
 } from '../src/quickActionTree';
 import { getScanRootForFile } from '../src/scanRoots';
 import { SemanticDependencyGraph } from '../src/dependencyGraph';
-import { checkExtensionCompatibility } from '../src/engineCompatibility';
+import { checkExtensionCompatibility } from '../src/backend/engineCompatibility';
 import { fileSystemTestDiscoveryDeps } from '../src/pythonTestDiscovery';
 import { locateInterpreterOnPath } from '../src/profileInterpreter';
 import { resolveFixedDictMember } from '../src/pythonTypeStubs';

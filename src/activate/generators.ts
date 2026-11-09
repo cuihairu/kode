@@ -29,7 +29,7 @@ import { isPythonMroJumpEnabled } from '../languageProviders';
 import { makeSdkEngineTrace } from '../sdk-gen/sdkGenerationTrace';
 import { offerDemoGameScaffoldFromVscode } from '../demoGameScaffoldPrompt';
 import { onDidChangeActiveProfile, resolveActiveProfile, selectActiveProfile } from '../activeProfile';
-import { readEngineApiMetadata } from '../engineApiMetadata';
+import { readEngineApiMetadata } from '../backend/engineApiMetadata';
 import { resolveDemoGameTemplateRoot } from '../demoGameTemplate';
 import { runClientSdkGenerateCommand } from '../sdk-gen/clientSdkGenerator';
 import { runGeneratorFormWizard } from '../generatorForms';

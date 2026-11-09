@@ -7,7 +7,7 @@ import {
   buildEngineApiCatalog,
   readEngineApiMetadata,
   readEngineVersionMarker
-} from '../src/engineApiMetadata';
+} from '../src/backend/engineApiMetadata';
 
 const originalEngineRoot = process.env.KBENGINE_ROOT;
 

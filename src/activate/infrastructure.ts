@@ -10,7 +10,7 @@ import { setAnnotationSourceLogEnabled, setAnnotationSourceLogSink } from '../an
 import { KBENGINE_DATABASE_SIMULATION_SCHEME, KBEngineDatabaseSimulationProvider } from '../databaseSimulator';
 import { setPythonDataDictIndexEnabled, setPythonMroJumpEnabled } from '../languageProviders';
 import { KBEngineDatabaseSchemaProvider } from '../databaseSchemaPresentation';
-import { buildEngineApiCatalog } from '../engineApiMetadata';
+import { buildEngineApiCatalog } from '../backend/engineApiMetadata';
 import { setupKodeCoreGate } from '../kodeCoreGateWiring';
 import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument } from '../kbeModuleIndex';
 import { setJumpLogEnabled } from '../navigationLog';

@@ -9,7 +9,7 @@ import {
   PythonDefinitionProvider
 } from '../src/languageProviders';
 import { EntityMappingManager } from '../src/entityMapping';
-import { buildEngineApiCatalog } from '../src/engineApiMetadata';
+import { buildEngineApiCatalog } from '../src/backend/engineApiMetadata';
 import { KBE_SYMBOLS } from '../src/kbeModuleIndex';
 import {
   CompletionItemKind,

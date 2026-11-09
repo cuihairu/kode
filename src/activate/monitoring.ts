@@ -18,7 +18,7 @@ import { MonitoringWebView } from '../monitoringWebView';
 import { RuntimeQueryWebView } from '../runtimeQueryWebView';
 import { createWarmupStages } from '../warmupStages';
 import { discoverLocalComponents, querySpaces, startProfileQuery } from '../kbengineProtocol';
-import { findEngineRoot, formatEngineCompatibilityReport, runCompatibilityCheck, ExtensionCompatibilityTarget } from '../engineCompatibility';
+import { findEngineRoot, formatEngineCompatibilityReport, runCompatibilityCheck, ExtensionCompatibilityTarget } from '../backend/engineCompatibility';
 import { formatUnresolvedException, parseExceptionSourceLocation, resolveExceptionSource } from '../exceptionSourceLocator';
 import { getDefinitionWorkspaceLayout } from '../definitionWorkspace';
 import { shouldStartKbEngineIndexing } from '../workspaceGate';

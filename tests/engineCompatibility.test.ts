@@ -7,7 +7,7 @@ import {
   findEngineRoot,
   formatEngineCompatibilityReport,
   runCompatibilityCheck
-} from '../src/engineCompatibility';
+} from '../src/backend/engineCompatibility';
 
 let root = '';
 let engineRoot = '';
