@@ -22,7 +22,7 @@ import {
   scanVenvs
 } from './venvDiscovery';
 import type { InterpreterResolution, InterpreterSource } from '../profileInterpreter';
-import { DEFAULT_VENV_DIRECTORY_NAMES } from '../quickActionConfig';
+import { DEFAULT_VENV_DIRECTORY_NAMES } from './quickActionConfig';
 
 /** 状态栏/选择器的来源徽标:配置>自动>PATH,缺失明说 */
 export function interpreterSourceBadge(source: InterpreterSource): string {

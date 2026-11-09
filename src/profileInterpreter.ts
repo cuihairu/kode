@@ -16,7 +16,7 @@ import * as vscode from 'vscode';
 import {
   DEFAULT_VENV_DIRECTORY_NAMES,
   normalizeVenvDirectoryNames
-} from './quickActionConfig';
+} from './backend/quickActionConfig';
 import { scanVenvs } from './backend/venvDiscovery';
 
 export type InterpreterSource = 'setting' | 'venv' | 'path' | 'missing';

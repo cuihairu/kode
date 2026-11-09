@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, statSync } from 'fs';
 import { describe, expect, it } from 'vitest';
-import { scanBatchScripts, scanBatchScriptsInRoots } from '../src/quickActionScanner';
-import type { DirectoryEntry } from '../src/quickActionScanner';
+import { scanBatchScripts, scanBatchScriptsInRoots } from '../src/backend/quickActionScanner';
+import type { DirectoryEntry } from '../src/backend/quickActionScanner';
 
 // 首装扫描纯层(设计 1.4;2026-10-16 用户令更新):一层 .bat/.ps1 全收,
 // 启停/导表词表只定分类不过滤;目录读取整体注入,不直接碰 vscode.workspace.fs。

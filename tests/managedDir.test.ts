@@ -20,7 +20,7 @@ import {
   debugConfigRelativeSegments,
   ensureDebugConfig,
   fileSystemBootstrapDeps
-} from '../src/debugConfigBootstrap';
+} from '../src/backend/debugConfigBootstrap';
 import {
   configurationOverrides,
   Uri,

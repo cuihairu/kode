@@ -30,7 +30,7 @@ import { getPythonParserWorkerGauge } from '../backend/pythonParserWorkerHost';
 import { hostLabel, renderExtensionIdentityReport, sideLabel } from '../backend/extensionIdentity';
 import { joinWorkspacePath } from '../backend/workspacePath';
 import { locateInterpreterOnPath, resolveInterpreterWith, resolveProfileInterpreter } from '../profileInterpreter';
-import { normalizeVenvDirectoryNames } from '../quickActionConfig';
+import { normalizeVenvDirectoryNames } from '../backend/quickActionConfig';
 import { readBuildCommit } from '../backend/buildCommit';
 import { renderReproductionSummary } from '../reproductionSummary';
 import { resolveActiveProfile } from '../activeProfile';

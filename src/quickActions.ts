@@ -24,19 +24,19 @@ import {
   resolveActionVariables,
   DEFAULT_VENV_DIRECTORY_NAMES,
   normalizeVenvDirectoryNames
-} from './quickActionConfig';
+} from './backend/quickActionConfig';
 import type {
   QuickAction,
   HttpRequestConfig,
   QuickActionCategory,
   WorkspaceFolderRef
-} from './quickActionConfig';
+} from './backend/quickActionConfig';
 import type { HttpRequestEntry } from './backend/httpRequests';
-import { scanBatchScriptsInRoots } from './quickActionScanner';
+import { scanBatchScriptsInRoots } from './backend/quickActionScanner';
 import { LogHubLike } from './backend/logHub';
 import { ProcessManager, type ManagedProcess } from './backend/processManager';
-import { parseDebugConfigText } from './debugConfigBootstrap';
-import type { BatchScriptCandidate, DirectoryEntry } from './quickActionScanner';
+import { parseDebugConfigText } from './backend/debugConfigBootstrap';
+import type { BatchScriptCandidate, DirectoryEntry } from './backend/quickActionScanner';
 
 export const QUICK_ACTION_SCAN_DISMISS_KEY = 'kbengine.quickActions.scanDismissed';
 /** Explorer ▶ 主按钮的默认目标:上次实际执行的动作名(选中即记忆) */

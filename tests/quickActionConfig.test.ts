@@ -7,8 +7,8 @@ import {
   parseQuickActionConfigs,
   parseHttpRequestConfigs,
   resolveActionVariables
-} from '../src/quickActionConfig';
-import type { BatchScriptCandidate } from '../src/quickActionScanner';
+} from '../src/backend/quickActionConfig';
+import type { BatchScriptCandidate } from '../src/backend/quickActionScanner';
 
 // 快速执行动作的纯函数层:配置解析校验、变量替换、脚本词表分类、扫描条目构造。
 // 设计口径见 docs/design/quick-actions-and-db-hint.md 1.8/1.5/1.4;未知变量

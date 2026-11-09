@@ -10,7 +10,7 @@ import {
   HTTP_METHODS,
   QUICK_ACTION_TYPES,
   parseQuickActionConfigs
-} from '../src/quickActionConfig';
+} from '../src/backend/quickActionConfig';
 
 // 功能差距盘点 G3(docs/reference-feature-gap.md):`.kbengine/debug.json`
 // 交给 VS Code 的 JSON 扩展校验(contributes.jsonValidation),配置错误在

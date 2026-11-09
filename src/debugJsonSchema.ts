@@ -9,7 +9,7 @@
  * QUICK_ACTION_TYPES),避免 schema 与解析器各说各话。
  */
 
-import { HTTP_METHODS, QUICK_ACTION_TYPES } from './quickActionConfig';
+import { HTTP_METHODS, QUICK_ACTION_TYPES } from './backend/quickActionConfig';
 
 /** VS Code jsonValidation 的文件匹配(覆盖工作区根与各级子文件夹) */
 export const KBENGINE_DEBUG_JSON_FILE_MATCH = '**/.kbengine/debug.json';

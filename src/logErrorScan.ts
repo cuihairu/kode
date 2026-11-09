@@ -12,7 +12,7 @@
 import * as vscode from 'vscode';
 import { WEBVIEW_THEME_CSS } from './webviewTheme';
 import { htmlLang, resolvePanelLocale, strings } from './webviewStrings';
-import { baseNameOf } from './quickActionConfig';
+import { baseNameOf } from './backend/quickActionConfig';
 import { LogLevel, LogParser } from './backend/logParser';
 
 /** 单文件读取上限:超出记 readError,不把大文件整份读进内存 */

@@ -14,9 +14,9 @@ import {
   resolveDebugWorkspaceRoot,
   stripJsonComments,
   type DebugConfigBootstrapDeps
-} from '../src/debugConfigBootstrap';
-import type { QuickAction } from '../src/quickActionConfig';
-import { type DirectoryEntry } from '../src/quickActionScanner';
+} from '../src/backend/debugConfigBootstrap';
+import type { QuickAction } from '../src/backend/quickActionConfig';
+import { type DirectoryEntry } from '../src/backend/quickActionScanner';
 
 const FOLDERS = [
   { name: 'proj', fsPath: '/ws/proj' },

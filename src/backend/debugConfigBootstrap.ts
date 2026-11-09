@@ -13,7 +13,7 @@
  */
 
 import * as fs from 'fs';
-import { substituteVariables } from './backend/variableSubstitution';
+import { substituteVariables } from './variableSubstitution';
 import {
   WORKSPACE_FOLDER_VAR,
   buildScannedActions,
@@ -29,8 +29,8 @@ import {
   MANAGED_DIR_DEFAULT,
   MANAGED_DIR_DEBUG_CONFIG_FILE,
   resolveManagedDirName
-} from './backend/managedDir';
-import { SOURCE_DEFAULT_COMPONENTS } from './debugConfig';
+} from './managedDir';
+import { SOURCE_DEFAULT_COMPONENTS } from '../debugConfig';
 
 /** 生效工作目录与取舍说明落这个 OUTPUT 通道 */
 export const DEBUG_CONFIG_CHANNEL_NAME = 'KBEngine 配置';

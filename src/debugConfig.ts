@@ -6,7 +6,7 @@ import {
   attachWithDeadline,
   type AttachGuardOutcome
 } from './debugAttachGuard';
-import { parseDebugConfigText } from './debugConfigBootstrap';
+import { parseDebugConfigText } from './backend/debugConfigBootstrap';
 import {
   DEBUGPY_PORT_PROBE_TIMEOUT_MS,
   PORT_NEXT_STEP_ACTION_LIST,

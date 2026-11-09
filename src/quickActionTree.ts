@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { l10nText } from './nlsRuntime';
-import { baseNameOf } from './quickActionConfig';
+import { baseNameOf } from './backend/quickActionConfig';
 
 export interface QuickActionTreeEntry {
   name: string;

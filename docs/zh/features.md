@@ -132,9 +132,9 @@
 ## 调试与运行
 
 - **快速执行动作（配置驱动）** —— `.kbengine/debug.json` 顶层 `quickActions` 定义 `command`/`script`/`http` 三类后端，从 Servers 视图标题栏与 def/Python/XML 编辑器标题栏触发；前台 script 走隐藏可复用集成终端（`hideFromUser`，从不主动展示、不抢焦点；background 脚本走 ProcessManager 守护面），`confirm: true`（缺省即 true）的动作执行前弹 modal 确认框，须 `confirm: false` 才静默执行 
-  ——（证据：todo.md:86；package.json#contributes.commands `kbengine.quickActions.*`；src/quickActions.ts、src/quickActionConfig.ts）
-- **首装脚本扫描** —— 一层 `.bat` 扫描把启停与导表脚本登记为快速动作，不动手工条目 ——（证据：package.json#contributes.commands `kbengine.quickActions.scanScripts`；todo.md:11、todo.md:86；src/quickActionScanner.ts）
-- **debug.json 缺失自动生成** —— `.kbengine/debug.json` 缺失即生成带注释的 JSONC 骨架（`${workspaceFolder}` 示例 + 扫描出的 `quickActions`）；已有配置绝不覆盖 ——（证据：todo.md:40；src/debugConfigBootstrap.ts）
+  ——（证据：todo.md:86；package.json#contributes.commands `kbengine.quickActions.*`；src/quickActions.ts、src/backend/quickActionConfig.ts）
+- **首装脚本扫描** —— 一层 `.bat` 扫描把启停与导表脚本登记为快速动作，不动手工条目 ——（证据：package.json#contributes.commands `kbengine.quickActions.scanScripts`；todo.md:11、todo.md:86；src/backend/quickActionScanner.ts）
+- **debug.json 缺失自动生成** —— `.kbengine/debug.json` 缺失即生成带注释的 JSONC 骨架（`${workspaceFolder}` 示例 + 扫描出的 `quickActions`）；已有配置绝不覆盖 ——（证据：todo.md:40；src/backend/debugConfigBootstrap.ts）
 - **debug.json JSON Schema 校验** —— 为 `**/.kbengine/debug.json` 贡献内联 schema，必填字段直接在编辑器标红 ——（证据：package.json#contributes.jsonValidation；todo.md:53；src/debugJsonSchema.ts）
 - **debug.json JSONC 关联** —— 文件是 JSONC（带注释，解析走 stripJsonComments），kode 自动把 `files.associations` 接成 `jsonc`，注释不再按 json 划红线；WorkspaceFolder 级只动自己键、已有值不覆盖，`kbengine.jsoncAssociation.off` 命令只回收本扩展写入的条目 ——（证据：package.json#configuration `kbengine.jsoncAssociation`；package.json#contributes.commands `kbengine.jsoncAssociation.off`；src/jsoncAssociation.ts）
 - **自动热重载** —— 文件监视触发指定快速动作、带去抖，**默认开启**（2026-11-06 用户令；一键关 = 状态栏点击或 `kbengine.hotReload.toggle`；`actionName` 留空时保存即发 `http://127.0.0.1:8090/hotfix?module_name=<模块名>`，body 同带 `module_name=<模块名>`（双带兼容不同服务端）） ——（证据：package.json#configuration `kbengine.hotReload.*`；src/hotReload.ts；src/backend/hotReloadDefaultHotfix.ts）

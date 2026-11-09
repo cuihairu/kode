@@ -8,7 +8,7 @@
 // (deactivate 收口 dispose)外无后向消费者,仅返回 codeGenerator。
 
 import * as vscode from 'vscode';
-import { DEBUG_CONFIG_CHANNEL_NAME, ensureDebugConfig, fileSystemBootstrapDeps } from '../debugConfigBootstrap';
+import { DEBUG_CONFIG_CHANNEL_NAME, ensureDebugConfig, fileSystemBootstrapDeps } from '../backend/debugConfigBootstrap';
 import { GeneratedSourceCodeLensProvider } from '../generatedSourceLenses';
 import { KBEngineCodeGenerator } from '../codeGenerator';
 import { STUB_SOURCE_MODE_SETTING, exportKbeStubs, fileSystemStubExportDeps, readManagedDirSetting, resolveManagedDirName } from '../pythonStubExport';
