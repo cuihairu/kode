@@ -966,13 +966,30 @@ export function appendEngineApiMetadata(
 
 /** 生成物头部统一 typing 导入:容器类(Generic/Iterable/ItemsView/Iterator/
  *  KeysView/Mapping/ValuesView/overload)+ 向量类(List/Tuple)+ 体部通用名
- *  (Any) 一单覆盖。跨行加括号隐式续行(不用行尾反斜杠——PEP8 偏好括号续行,
+ *  (Any) + 签名引用面(Callable/Dict/Union,createEntity 系列/addWatcher 等
+ *  签名用到)一单覆盖。跨行加括号隐式续行(不用行尾反斜杠——PEP8 偏好括号续行,
  *  且反斜杠易被编辑器吞行尾空白),导入置生成物首语句,避免「先使用后导入」。 */
 const TYPING_IMPORT_LINES: string[] = [
-  'from typing import (Any, Generic, Iterable, ItemsView, Iterator, KeysView,',
-  '    List, Mapping, Tuple, TypeVar, ValuesView, overload)',
+  'from typing import (Any, Callable, Dict, Generic, Iterable, ItemsView, Iterator, KeysView,',
+  '    List, Mapping, Tuple, TypeVar, TypedDict, Union, ValuesView, overload)',
   ''
 ];
+
+/** 引擎域公共类型别名(用户令 2026-11-09):符号签名引用 Address/Callback/
+ *  WatcherValue/Vector3Like,此前只引用不定义,生成的 .pyi 满篇未绑定名
+ *  (Pylance/mypy 逐条报 undefined,类型面残缺)。别名统一置向量类之后
+ *  (Vector3Like 的 RHS 直接引用 Vector3,靠发射序保定义先于使用,不依赖
+ *  桩内前向引用求值);语义对齐引擎:Address 是地址整数值,Callback 是
+ *  无返回回调,WatcherValue 是监视器读到的任意值,Vector3Like 接受
+ *  Vector3 或同形三元序列。 */
+function emitKbeDomainAliases(lines: string[]): void {
+  lines.push('');
+  lines.push('# KBEngine 引擎域公共类型别名(签名引用面,自洽定义)');
+  lines.push('Address = int');
+  lines.push('Callback = Callable[..., None]');
+  lines.push('WatcherValue = Any');
+  lines.push('Vector3Like = Union[Vector3, Tuple[float, float, float], List[float]]');
+}
 
 /** 生成只读桩文档:逐符号 class/def + docstring + 引擎 typings 锚点 */
 export function buildKbeStubDocument(): KbeStubDocument {
@@ -989,6 +1006,7 @@ export function buildKbeStubDocument(): KbeStubDocument {
   const symbolLines = emitKbeStubBody(lines);
   emitKbeContainerStubClasses(lines, symbolLines);
   emitKbeVectorStubClasses(lines, symbolLines);
+  emitKbeDomainAliases(lines);
   appendCatalogFootnote(lines);
   return { content: lines.join('\n'), symbolLines };
 }
@@ -1008,6 +1026,7 @@ export function buildKbeStubExportContent(): string {
   const symbolLines = emitKbeStubBody(lines);
   emitKbeContainerStubClasses(lines, symbolLines);
   emitKbeVectorStubClasses(lines, symbolLines);
+  emitKbeDomainAliases(lines);
   appendCatalogFootnote(lines);
   return lines.join('\n');
 }

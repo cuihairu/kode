@@ -491,3 +491,73 @@ describe('KR-AUD-33: 逗号混排 import 的 kbe 别名', () => {
     expect(getKbeAliases('import kbe as kb, os\nimport KBEngine\n')).toEqual(new Set(['kb', 'KBEngine']));
   });
 });
+
+// G2 用户令 2026-11-09:生成的 .pyi 曾满篇未绑定名(签名引用 Dict/Callable/
+// Union/Address/WatcherValue/Callback/Vector3Like 却既不导入也不定义,
+// Pylance/mypy 逐条报 undefined,类型面残缺)。自洽回归闸:签名/别名行上
+// 每个大写初始标识符必须被导入或在本文件定义——机器全量扫,新增签名引用
+// 新名字时漏定义直接红,不靠人眼盘点。
+describe('生成 .pyi 自洽(签名引用名全部已定义或导入)', () => {
+  const faces: Array<{ content: string; label: string }> = [
+    { content: buildKbeStubExportContent(), label: 'export .pyi' },
+    { content: buildKbeStubDocument().content, label: 'virtual stub doc' }
+  ];
+
+  for (const face of faces) {
+    it(`${face.label}: 大写初始引用名 ⊆ 导入∪本文件定义(自洽闸)`, () => {
+      const lines = face.content.split('\n');
+      const defined = new Set<string>();
+      for (const ln of lines) {
+        const def = /^(?:class|def)\s+(\w+)/.exec(ln) ?? /^(\w+)\s*=/.exec(ln);
+        if (def) {
+          defined.add(def[1]);
+        }
+      }
+      const importBlock = /from typing import \(([^)]*)\)/.exec(face.content);
+      const imported = new Set<string>(
+        (importBlock?.[1] ?? '').split(',').map(name => name.trim()).filter(Boolean)
+      );
+      // 大写初始内建字面量不在扫描面(None/True/False);小写首字母是参数名
+      // 与内建类型(str/int/float/bool/bytes),不在本闸扫描面。
+      const builtinLiterals = new Set(['None', 'True', 'False']);
+      const violations: string[] = [];
+      for (const ln of lines) {
+        const stripped = ln.trim();
+        if (!stripped || stripped.startsWith('#')) {
+          continue;
+        }
+        const isSignatureOrAlias = /^(?:def |class |@)/.test(stripped) || /^\w+\s*=/.test(stripped);
+        if (!isSignatureOrAlias) {
+          continue;
+        }
+        for (const match of stripped.matchAll(/\b([A-Z]\w*)\b/g)) {
+          const name = match[1];
+          if (!defined.has(name) && !imported.has(name) && !builtinLiterals.has(name)) {
+            violations.push(`${name}: ${stripped}`);
+          }
+        }
+      }
+      expect(violations).toEqual([]);
+    });
+  }
+
+  it('export .pyi 定义引擎域别名且 typing 导入补齐 Callable/Dict/Union', () => {
+    const content = buildKbeStubExportContent();
+    expect(content).toContain('Address = int');
+    expect(content).toContain('Callback = Callable[..., None]');
+    expect(content).toContain('WatcherValue = Any');
+    expect(content).toContain('Vector3Like = Union[Vector3, Tuple[float, float, float], List[float]]');
+    const importBlock = /from typing import \(([^)]*)\)/.exec(content)?.[1] ?? '';
+    expect(importBlock).toContain('Callable');
+    expect(importBlock).toContain('Dict');
+    expect(importBlock).toContain('Union');
+  });
+
+  it('别名置于 Vector3 类定义之后(发射序保定义先于使用)', () => {
+    const content = buildKbeStubExportContent();
+    const vectorClass = content.indexOf('class Vector3:');
+    const alias = content.indexOf('Vector3Like = Union[');
+    expect(vectorClass).toBeGreaterThan(-1);
+    expect(alias).toBeGreaterThan(vectorClass);
+  });
+});
