@@ -23,15 +23,15 @@ import {
   getElementText,
   getLineNumberAt,
   parseDefDocument
-} from './backend/defParser';
+} from './defParser';
 import {
   DefinitionArgType,
   DefinitionComponentRef,
   DefinitionMethod,
   DefinitionProperty,
   LocalDefinitionSemantics
-} from './definitionSemantics';
-import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
+} from '../definitionSemantics';
+import { FIXED_DICT_TYPE_NAME } from '../kbengineMetadata';
 import type {
   DefTreeSource,
   MessageArgEntry,

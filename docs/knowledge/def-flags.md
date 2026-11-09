@@ -171,7 +171,7 @@ verified:
   normalizePropertyFlag`), analysis faces (`src/backend/defAnalyzer.ts
   propertyFlagDomainList`), completion sets, hover metadata
   (`src/kbengineMetadata.ts KBENGINE_FLAGS`), message table bits
-  (`src/messageTableEngine.ts PROPERTY_FLAG_BITS`), dependency-graph & process
+  (`src/backend/messageTableEngine.ts PROPERTY_FLAG_BITS`), dependency-graph & process
   topology projections.
 
 History note (2026-11-09): before this batch, kode's alias handling was incomplete on

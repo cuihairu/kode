@@ -11,7 +11,7 @@ import {
   MessageTableIssueKind,
   renderMessageTableJson,
   renderMessageTableMarkdown
-} from '../src/messageTable';
+} from '../src/backend/messageTable';
 
 /** 内存 def 树:键 "entity:名"/"interface:名" → def 全文 */
 function createSource(files: Record<string, string>): DefTreeSource {

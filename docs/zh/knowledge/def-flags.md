@@ -159,7 +159,7 @@ kode 精确镜像上面这张表，单一来源在 Rust 解析器、锁步对拍
 - **消费方**：重复定义作用域（`src/languageProviders/validation.ts
   normalizePropertyFlag`）、分析面（`src/backend/defAnalyzer.ts
   propertyFlagDomainList`）、补全集、hover 元数据（`src/kbengineMetadata.ts
-  KBENGINE_FLAGS`）、消息表位（`src/messageTableEngine.ts PROPERTY_FLAG_BITS`）、
+  KBENGINE_FLAGS`）、消息表位（`src/backend/messageTableEngine.ts PROPERTY_FLAG_BITS`）、
   依赖图与进程拓扑投影。
 
 史注（2026-11-09）：本批之前，kode 两侧的别名处理都不完整——Rust 归一完全缺

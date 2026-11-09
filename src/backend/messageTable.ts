@@ -61,9 +61,9 @@
  * Rust 主路径)的枢纽,公开导入路径不变。
  */
 
-import { DefMethodSection } from './backend/defParser';
-import { LocalDefinitionSemantics, parseLocalDefinition } from './definitionSemantics';
-import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
+import { DefMethodSection } from './defParser';
+import { LocalDefinitionSemantics, parseLocalDefinition } from '../definitionSemantics';
+import { getKodeCoreShadowGate } from '../kodeCoreShadowFaces';
 import {
   assignAliasIds,
   loadDefIntoModule,

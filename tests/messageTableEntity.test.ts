@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { KodeCoreGate } from '../src/kodeCoreGate';
 import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
-import { buildEntityMessageTableShared } from '../src/messageTableEntity';
+import { buildEntityMessageTableShared } from '../src/backend/messageTableEntity';
 import { parseLocalDefinition } from '../src/definitionSemantics';
-import type { MessageTable } from '../src/messageTable';
+import type { MessageTable } from '../src/backend/messageTable';
 
 // IDE-AUD-060 共享构建面:preview/export 同一 buildEntityMessageTableShared,
 // 类型注册表(types.xml)与 alias 配置经 context 注入两条构建路(Rust 核心 /

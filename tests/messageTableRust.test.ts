@@ -5,7 +5,7 @@ import {
   buildMessageTableInRust,
   type DefRawSource,
   type MessageTable
-} from '../src/messageTable';
+} from '../src/backend/messageTable';
 
 // IDE-RUST-002 消息表 build 核心挪 Rust:buildMessageTableInRust 主路径经
 // 命令级 RPC($/kode/messageTable/build,原文直传)调 Rust 核心;Rust 不可用

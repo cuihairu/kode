@@ -37,7 +37,7 @@
 
 ### 1.3 术语澄清:本仓 "utype" 两层含义(别混)
 
-- **消息层 utype = 类型/方法编号**,不是自定义类型:`src/messageTable.ts:127`「本级类型 utype(ARRAY 级 = 内联数组类型自身 utype)」;引擎侧 `kbe/res/sdk_templates/client/ue4/Source/KBEnginePlugins/Engine/Bundle.h:133`(`uint16 utype`)、`EntityCall.cpp:67`(`methodUtype`)。
+- **消息层 utype = 类型/方法编号**,不是自定义类型:`src/backend/messageTable.ts:127`「本级类型 utype(ARRAY 级 = 内联数组类型自身 utype)」;引擎侧 `kbe/res/sdk_templates/client/ue4/Source/KBEnginePlugins/Engine/Bundle.h:133`(`uint16 utype`)、`EntityCall.cpp:67`(`methodUtype`)。
 - **本需求的「utype」= 自定义类型别名/复合类型**,即 types.xml 别名条目 + `.def` 引用。`.def` 的 `<Aliases>` 节在本仓语料 **0 命中**(`grep '<Aliases>' --include='*.def'` 全仓空),别名定义实际都在 `types.xml`。
 
 ### 1.4 真实样例(语料如实)
@@ -82,7 +82,7 @@
 | FIXED_DICT | `AVATAR_INFO`(types.xml:2-11) | `class AVATAR_INFO(TypedDict): name: str; level: int` | **需生成类(小-中)** |
 | FIXED_DICT 嵌套 / 键为向量型 | 本仓无真实样本 | 嵌套 `TypedDict` 递归;键型引用向量类(见 §7 待证) | 中(需真实工程验证) |
 | 固定长数组(FIXEDARRAY) | 引擎 DB 层 `kbe/src/lib/db_interface/entity_table.h:24`、`FixedArrayType`(`entity_table_mysql.cpp:1261`) | **Python 侧就是 list** → 归 ARRAY 直译;是落库结构不是新 Python 形态 | 直译(小) |
-| 消息/方法 utype 编号 | `messageTable.ts:127`、`Bundle.h:133` | **与类型提示无关,不生成** | 排除 |
+| 消息/方法 utype 编号 | `src/backend/messageTable.ts:127`、`Bundle.h:133` | **与类型提示无关,不生成** | 排除 |
 
 **判词**:映射面**现实**——三档齐全,且最难的「别名递归 + FIXED_DICT 结构」已有 `clientSdkGenerator.ts:301-321` 验证过的实现路径可抄口径;不确定性集中在真实工程的复合深度(本仓无样本)。
 

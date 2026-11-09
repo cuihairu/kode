@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { exportEntityMessageTable } from '../src/messageTableExport';
+import { exportEntityMessageTable } from '../src/backend/messageTableExport';
 
 // IDE-SDK-002 提供消息表 JSON 导出:输出保留方法段、utype、alias 配置
 // 与问题清单(renderMessageTableJson 现有面,由构建端保证);保存对话

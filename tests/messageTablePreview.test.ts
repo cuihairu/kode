@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { showEntityMessageTablePreview } from '../src/messageTablePreview';
+import { showEntityMessageTablePreview } from '../src/backend/messageTablePreview';
 
 // IDE-SDK-001 增加单实体 messageTable 预览命令:选实体(QuickPick)→
 // 现有计算结果(buildMessageTable→markdown)可查看;缺声明(构建返回
