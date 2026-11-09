@@ -65,6 +65,19 @@ describe('KBEngine metadata tables', () => {
     }
   });
 
+  it('states the cell face of client-visible flags per engine truth', () => {
+    // 用户报障(2026-11-09):ALL_CLIENTS 只写「同步到所有客户端」,漏 cell 广播
+    // 半边——引擎 common.h:22 注释明写「cell广播与所有客户端」,且该位同在
+    // ENTITY_CELL_DATA_FLAGS(L43)与 ENTITY_BROADCAST_CELL_FLAGS(L47)。
+    const byName = new Map(KBENGINE_FLAGS.map(item => [item.name, item]));
+    expect(byName.get('ALL_CLIENTS')?.detail).toContain('Cell 广播并同步给所有客户端');
+    expect(byName.get('ALL_CLIENTS')?.documentation).toContain('cellapp 注册');
+    expect(byName.get('OWN_CLIENT')?.detail).toContain('Cell 数据');
+    expect(byName.get('OWN_CLIENT')?.documentation).toContain('不跨 cell 广播');
+    expect(byName.get('OTHER_CLIENTS')?.detail).toContain('Cell 广播并同步给 AOI 其它客户端');
+    expect(byName.get('OTHER_CLIENTS')?.documentation).toContain('不含拥有者客户端');
+  });
+
   it('lists detail levels and reload functions', () => {
     expect(DETAIL_LEVELS).toEqual(['NEAR', 'MEDIUM', 'FAR']);
     expect(uniqueNames(KBENGINE_RELOAD_FUNCTIONS)).toEqual([
@@ -137,6 +150,31 @@ describe.skipIf(!engineRoot)('KBEngine metadata vs engine source', () => {
       expect(citesEngine, `${item.name} documentation must cite its engine mapping`).toBe(true);
       expect(entityDefSource.includes(`"${item.name}"`), `${item.name} literal must exist`).toBe(true);
     }
+  });
+
+  it('keeps client-flag cell-face claims aligned with common.h bit sets', () => {
+    // 文档断言的 cell 面(「cellapp 注册」「跨 cell 广播」)必须与引擎位集
+    // 同步:客户端可见三旗标全在 ENTITY_CELL_DATA_FLAGS;跨 cell 广播面
+    // ALL_CLIENTS/OTHER_CLIENTS 在 ENTITY_BROADCAST_CELL_FLAGS,
+    // OWN_CLIENT 不在。引擎位集一变,这里先红。
+    const commonLines = readEngineSource('common.h').split('\n');
+    const cellDataLine = commonLines.find(line => line.includes('ENTITY_CELL_DATA_FLAGS'));
+    const broadcastCellLine = commonLines.find(line => line.includes('ENTITY_BROADCAST_CELL_FLAGS'));
+    expect(cellDataLine).toBeDefined();
+    expect(broadcastCellLine).toBeDefined();
+
+    const inCellData = (flag: string): boolean => cellDataLine!.includes(`ED_FLAG_${flag}`);
+    const inBroadcastCell = (flag: string): boolean => broadcastCellLine!.includes(`ED_FLAG_${flag}`);
+
+    const byName = new Map(KBENGINE_FLAGS.map(item => [item.name, item]));
+    for (const flag of ['ALL_CLIENTS', 'OWN_CLIENT', 'OTHER_CLIENTS']) {
+      expect(inCellData(flag), flag).toBe(true);
+      expect(byName.get(flag)?.documentation).toContain('cellapp 注册');
+    }
+    expect(inBroadcastCell('ALL_CLIENTS')).toBe(true);
+    expect(inBroadcastCell('OTHER_CLIENTS')).toBe(true);
+    expect(inBroadcastCell('OWN_CLIENT')).toBe(false);
+    expect(byName.get('OWN_CLIENT')?.documentation).toContain('不跨 cell 广播');
   });
 
   it('matches engine detail level names in entitydef.cpp', () => {

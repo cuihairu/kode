@@ -59,8 +59,8 @@ export const KBENGINE_FLAGS: KBEngineMetadataItem[] = [
   },
   {
     name: 'ALL_CLIENTS',
-    detail: '同步到所有客户端',
-    documentation: '对应 ED_FLAG_ALL_CLIENTS。'
+    detail: 'Cell 广播并同步给所有客户端',
+    documentation: '对应 ED_FLAG_ALL_CLIENTS;属性在 cellapp 注册并跨 cell 广播(common.h ENTITY_CELL_DATA_FLAGS/ENTITY_BROADCAST_CELL_FLAGS 均含此位),同步给拥有者与 AOI 内其它客户端。'
   },
   {
     name: 'CELL_PUBLIC_AND_OWN',
@@ -69,8 +69,8 @@ export const KBENGINE_FLAGS: KBEngineMetadataItem[] = [
   },
   {
     name: 'OWN_CLIENT',
-    detail: '仅同步给拥有者客户端',
-    documentation: '对应 ED_FLAG_OWN_CLIENT。'
+    detail: 'Cell 数据,仅同步给拥有者客户端',
+    documentation: '对应 ED_FLAG_OWN_CLIENT;属性在 cellapp 注册(ENTITY_CELL_DATA_FLAGS 含此位),仅推送给拥有者客户端,不跨 cell 广播。'
   },
   {
     name: 'BASE_AND_CLIENT',
@@ -84,8 +84,8 @@ export const KBENGINE_FLAGS: KBEngineMetadataItem[] = [
   },
   {
     name: 'OTHER_CLIENTS',
-    detail: '同步给其他客户端',
-    documentation: '对应 ED_FLAG_OTHER_CLIENTS。'
+    detail: 'Cell 广播并同步给 AOI 其它客户端',
+    documentation: '对应 ED_FLAG_OTHER_CLIENTS;属性在 cellapp 注册并跨 cell 广播(ENTITY_BROADCAST_CELL_FLAGS 含此位),推送给 AOI 内其它客户端,不含拥有者客户端。'
   },
   {
     name: 'CELL',
