@@ -60,7 +60,7 @@
   "Choose a KBEngine task": "选择要完成的 KBEngine 任务",
   "Scan workspace scripts": "扫描工作区脚本",
   "Choose scripts to add as quick actions": "选择要添加为快速动作的脚本",
-  "Open a workspace to scan for scripts": "打开工作区后扫描脚本",
+  "Runs the script scan; you will be guided to open a workspace when none is open": "点击执行脚本扫描；未打开工作区时会先给出打开指引",
   "Configure HTTP requests": "配置 HTTP 请求",
   "Open HTTP request settings": "打开 HTTP 请求设置",
   "ARRAY<UINT32> sample, generated py gets an is None guard": "ARRAY<UINT32> 示例，生成的 py 带 is None 守卫",

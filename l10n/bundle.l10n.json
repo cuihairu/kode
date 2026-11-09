@@ -60,7 +60,7 @@
   "Choose a KBEngine task": "Choose a KBEngine task",
   "Scan workspace scripts": "Scan workspace scripts",
   "Choose scripts to add as quick actions": "Choose scripts to add as quick actions",
-  "Open a workspace to scan for scripts": "Open a workspace to scan for scripts",
+  "Runs the script scan; you will be guided to open a workspace when none is open": "Runs the script scan; you will be guided to open a workspace when none is open",
   "Configure HTTP requests": "Configure HTTP requests",
   "Open HTTP request settings": "Open HTTP request settings",
   "ARRAY<UINT32> sample, generated py gets an is None guard": "ARRAY<UINT32> sample, generated py gets an is None guard",

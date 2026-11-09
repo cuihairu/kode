@@ -1411,6 +1411,34 @@ describe('QuickActionManager.scanScriptsAndRefresh', () => {
     expect(messages.warning.every(message => !String(message).includes('read: /ws,'))).toBe(true);
     expect(pickCalls).toHaveLength(0);
   });
+
+  it('UX-REVIEW-003c:@script: 直达重复执行 → 每次都跑,无一次性守卫', async () => {
+    memoryFileSystem.setDirectory('/ws', [['cleanup.bat', 1]]);
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+    await expect(manager.runByName('@script:/ws/cleanup.bat')).resolves.toBe(true);
+    await expect(manager.runByName('@script:/ws/cleanup.bat')).resolves.toBe(true);
+    expect(scriptRuns).toHaveLength(2);
+    expect(scriptRuns.every(run => run.script === '/ws/cleanup.bat')).toBe(true);
+  });
+
+  it('UX-REVIEW-003c:多工作区 → 扫描锚定配置根(默认 folder[0]),他根脚本不进列表', async () => {
+    // 既定设计:配置/扫描/变量解析统一锚定启动引导选出的工作目录;其它根
+    // 只有经 setConfigurationRoots 登记为附加扫描根才参与扫描。
+    memoryFileSystem.setDirectory('/ws', [['cleanup.bat', 1]]);
+    memoryFileSystem.setDirectory('/other', [['other_task.bat', 1]]);
+    stubWorkspace.workspaceFolders = [
+      { uri: Uri.file('/ws'), name: 'ws', index: 0 },
+      { uri: Uri.file('/other'), name: 'other', index: 1 }
+    ];
+    try {
+      const manager = new QuickActionManager(makeContext(), makeDeps());
+      const data = await manager.getTreeData();
+      expect(data.scripts).toEqual([{ name: 'cleanup.bat', type: 'script', target: '/ws/cleanup.bat', runDirect: true }]);
+      expect(data.scripts.some(script => script.target.includes('/other'))).toBe(false);
+    } finally {
+      stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    }
+  });
 });
 
 describe('QuickActionManager venv', () => {

@@ -45,7 +45,10 @@ export class QuickActionTreeItem extends vscode.TreeItem {
     if (!entry) {
       super(l10nText('Scan workspace scripts'), vscode.TreeItemCollapsibleState.None);
       this.description = l10nText('Choose scripts to add as quick actions');
-      this.tooltip = l10nText('Open a workspace to scan for scripts');
+      // UX-REVIEW-003c:tooltip 必须与实际行为一致——此条目在工作区已开但
+      // 无脚本时同样出现,不能谎称「要先打开工作区」;点击即跑扫描,无工作区
+      // 时由 scanScriptsAndRefresh 给出打开指引。
+      this.tooltip = l10nText('Runs the script scan; you will be guided to open a workspace when none is open');
       this.command = { command: 'kbengine.quickActions.scanScripts', title: l10nText('Rescan scripts') };
       this.contextValue = 'quickActionEmpty';
       return;
@@ -58,7 +61,16 @@ export class QuickActionTreeItem extends vscode.TreeItem {
       ? `${entry.target.slice(0, Math.max(12, 120 - baseNameOf(entry.target).length - 5))}...${baseNameOf(entry.target)}`
       : entry.target;
     this.description = scriptTarget;
-    this.tooltip = `${entry.name}${entry.type === 'http' ? `\n${l10nText('Source: {source}', { source: entry.requestSource === 'settings' ? 'kbengine.httpRequests' : '.kbengine/debug.json' })}` : ''}\n${entry.target}\n${l10nText('Click to run')}`;
+    // UX-REVIEW-003c:配置来源行——registered 动作(非 runDirect 直达面)
+    // 来自 .kbengine/debug.json,与 HTTP 行同键同口径点名;扫描直达脚本的
+    // 来源就是自身路径(description/tooltip 已示),不再重复标注。
+    const source = entry.type === 'http'
+      ? (entry.requestSource === 'settings' ? 'kbengine.httpRequests' : '.kbengine/debug.json')
+      : entry.runDirect
+        ? undefined
+        : '.kbengine/debug.json';
+    const sourceLine = source ? `\n${l10nText('Source: {source}', { source })}` : '';
+    this.tooltip = `${entry.name}${sourceLine}\n${entry.target}\n${l10nText('Click to run')}`;
     this.contextValue = 'quickAction';
     this.command = { command: 'kbengine.quickActions.runByName', title: l10nText('Run quick action'), arguments: [entry.requestIndex !== undefined ? `@http:${entry.requestSource ?? 'debug'}:${entry.requestIndex}` : entry.runDirect ? `@script:${entry.target}` : entry.name] };
   }
