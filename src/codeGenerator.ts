@@ -26,7 +26,7 @@ import {
   resolveEntityWizardTemplateOverrides,
   type EntityWizardPart,
   type NewEntityWizardInput
-} from './entityWizard';
+} from './backend/entityWizard';
 
 import {
   generateDefContent,
@@ -42,7 +42,7 @@ import {
   getGuildTemplate,
   getTeamTemplate,
   getMailTemplate
-} from './codeGeneratorRender';
+} from './backend/codeGeneratorRender';
 
 /**
  * 实体类型配置

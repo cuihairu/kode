@@ -18,8 +18,8 @@ import {
   buildEntityFlowGraph,
   renderEntityFlowMarkdown,
   renderEntityFlowMermaid,
-} from './entityFlowGraph';
-import type { EntityFlowGraph, FlowEdge, FlowActor } from './entityFlowGraph';
+} from './backend/entityFlowGraph';
+import type { EntityFlowGraph, FlowEdge, FlowActor } from './backend/entityFlowGraph';
 import { WEBVIEW_THEME_CSS } from './webviewTheme';
 import { htmlLang, resolvePanelLocale, strings } from './webviewStrings';
 

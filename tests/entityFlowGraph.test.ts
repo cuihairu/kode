@@ -14,8 +14,8 @@ import {
   describePropertySyncDirection,
   renderEntityFlowMarkdown,
   renderEntityFlowMermaid
-} from '../src/entityFlowGraph';
-import type { EntityFlowGraph } from '../src/entityFlowGraph';
+} from '../src/backend/entityFlowGraph';
+import type { EntityFlowGraph } from '../src/backend/entityFlowGraph';
 
 // 纯流程图模型(批124):旗标位语义、图构建、mermaid/markdown 渲染。
 // 位值与映射表逐项锁死引擎 entitydef/common.h L19-28 与 entitydef.cpp L161-174,

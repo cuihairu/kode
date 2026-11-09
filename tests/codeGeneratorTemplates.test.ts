@@ -1,7 +1,7 @@
 import type * as vscode from 'vscode';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { KBEngineCodeGenerator } from '../src/codeGenerator';
-import { generateDefContent } from '../src/codeGeneratorRender';
+import { generateDefContent } from '../src/backend/codeGeneratorRender';
 import type { EntityDefinition } from '../src/codeGenerator';
 import { parseDefDocument } from '../src/backend/defParser';
 import { analyzeDefDocument } from '../src/backend/defAnalyzer';

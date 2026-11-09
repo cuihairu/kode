@@ -9,7 +9,7 @@ import type {
   PropertyDefinition,
   MethodDefinition,
   EntityTypeConfig
-} from './codeGenerator';
+} from '../codeGenerator';
 import { fixedDictTypeName, type EntityWizardPart } from './entityWizard';
 
 

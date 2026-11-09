@@ -14,7 +14,7 @@ import {
   createGenerationRollbackLedger
 } from '../src/codeGenerator';
 import { setActiveProfile } from '../src/activeProfile';
-import { fixedDictTypeName } from '../src/entityWizard';
+import { fixedDictTypeName } from '../src/backend/entityWizard';
 import { ProjectProfileStore } from '../src/projectProfiles';
 import {
   makeTextDocument,

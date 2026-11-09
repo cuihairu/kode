@@ -10,7 +10,7 @@ import type { DependencyGraph } from '../src/entityDependency';
 import type { DependencyGraphRust } from '../src/backend/dependencyGraphRust';
 import { EntityDependencyWebView } from '../src/entityDependencyWebView';
 import { EntityFlowWebView } from '../src/entityFlowWebView';
-import type { EntityFlowGraph } from '../src/entityFlowGraph';
+import type { EntityFlowGraph } from '../src/backend/entityFlowGraph';
 import { BackgroundWarmupController } from '../src/backend/backgroundWarmup';
 import type { WarmupStageDef, WarmupWorkspaceStateLike } from '../src/backend/backgroundWarmup';
 import { createWarmupStages } from '../src/backend/warmupStages';

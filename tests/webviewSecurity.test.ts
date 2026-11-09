@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { EntityDependencyWebView } from '../src/entityDependencyWebView';
 import { statCard as renderStatCard } from '../src/entityDependencyWebViewHtml';
 import { EntityFlowWebView } from '../src/entityFlowWebView';
-import type { EntityFlowGraph } from '../src/entityFlowGraph';
+import type { EntityFlowGraph } from '../src/backend/entityFlowGraph';
 import { KBEngineLogCollector } from '../src/logCollector';
 import { LogEntry, LogLevel, LogType } from '../src/backend/logParser';
 import { LogViewerWebView } from '../src/logWebView';

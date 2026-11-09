@@ -7,9 +7,9 @@ import { buildPythonTypeStubPlan } from '../src/pythonTypeStubs';
 import {
   buildEntityPartPythonContent,
   type EntityPropertyTemplate
-} from '../src/entityWizard';
+} from '../src/backend/entityWizard';
 import { KBEngineCodeGenerator } from '../src/codeGenerator';
-import { generatePythonContent } from '../src/codeGeneratorRender';
+import { generatePythonContent } from '../src/backend/codeGeneratorRender';
 import type { CustomTypeInfo } from '../src/definitionWorkspace';
 import type { EntityMapping } from '../src/entityMapping';
 

@@ -10,7 +10,7 @@ import { buildDefChain } from '../backend/defChain';
 import { describePropertyDatabaseStoragePublished, getTypeStorageShape, TypeStorageShape } from '../databaseSchema';
 import { buildPropertyDatabaseStorageHover, describeBuiltinTypeCapacity } from '../databaseSimulator';
 import { findCustomTypeInfo, findTypesXmlImplementedByReference, findDefinitionFileByCategory, findEntityDefinitionFile, findEntityScriptFile, getEntityRuntimeProfile, getRegisteredEntities, getWorkspaceRootForDocument } from '../definitionWorkspace';
-import { describeMethodCallDirection, describePropertySyncDirection } from '../entityFlowGraph';
+import { describeMethodCallDirection, describePropertySyncDirection } from '../backend/entityFlowGraph';
 import { renderUserTypeContractHoverSection, userTypeContractStatusForName } from '../userTypeContractSource';
 import { HOOK_CATEGORY_NAMES } from '../hooks';
 import { engineApiVersionAnnotation, summaryForLanguage } from '../kbeModuleIndex';

@@ -4,8 +4,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { KBEngineCodeGenerator } from '../src/codeGenerator';
-import { generateDefContent, generatePropertyCode, generateMethodCode, generatePythonContent, generatePythonMethodCode, generateEntityRegistration } from '../src/codeGeneratorRender';
-import type { EntityWizardPart } from '../src/entityWizard';
+import { generateDefContent, generatePropertyCode, generateMethodCode, generatePythonContent, generatePythonMethodCode, generateEntityRegistration } from '../src/backend/codeGeneratorRender';
+import type { EntityWizardPart } from '../src/backend/entityWizard';
 import { configurationOverrides, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { resetDiscoveryState, setDiscoveryChoice } from '../src/workspaceDiscovery';
 import type {

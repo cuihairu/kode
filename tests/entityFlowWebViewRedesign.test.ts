@@ -3,7 +3,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { EntityFlowWebView } from '../src/entityFlowWebView';
 import { configurationOverrides, envState } from './helpers/vscodeStub';
-import type { EntityFlowGraph } from '../src/entityFlowGraph';
+import type { EntityFlowGraph } from '../src/backend/entityFlowGraph';
 
 const graph: EntityFlowGraph = {
   entityName: 'Hero',

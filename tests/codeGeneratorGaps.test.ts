@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { KBEngineCodeGenerator } from '../src/codeGenerator';
-import { generateDefContent } from '../src/codeGeneratorRender';
+import { generateDefContent } from '../src/backend/codeGeneratorRender';
 import type { EntityDefinition } from '../src/codeGenerator';
 import type * as vscode from 'vscode';
 import { Uri, workspace as stubWorkspace, window as stubWindow } from './helpers/vscodeStub';

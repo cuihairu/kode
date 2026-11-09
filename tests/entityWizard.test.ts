@@ -11,7 +11,7 @@ import {
   entityWizardPartsToGenerate,
   fixedDictTypeName,
   resolveEntityWizardTemplateOverrides
-} from '../src/entityWizard';
+} from '../src/backend/entityWizard';
 
 const baseInput = {
   name: 'Avatar',
