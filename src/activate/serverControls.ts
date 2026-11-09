@@ -86,10 +86,10 @@ import {
   runPlayerQueryByDbid,
   readOnlyQueryConfigGate,
   showPlayerDataResult,
-  PLAYER_TASK_RETRY_LABEL,
-  PLAYER_TASK_SHOW_DETAIL_LABEL,
-  READ_ONLY_QUERY_CHECK_CONNECTION,
-  READ_ONLY_QUERY_OPEN_REPORT,
+  playerTaskRetryLabel,
+  playerTaskShowDetailLabel,
+  readOnlyQueryCheckConnectionLabel,
+  readOnlyQueryOpenReportLabel,
   type PlayerTaskRunResult
 } from '../playerDataPanel';
 import { PLAYER_TASK_RESULT_COMMAND } from '../backend/playerTaskStatus';
@@ -173,16 +173,20 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
       void vscode.window.showInformationMessage(run.message);
       return;
     }
-    const actions = [PLAYER_TASK_RETRY_LABEL, PLAYER_TASK_SHOW_DETAIL_LABEL];
-    if (run.message.includes('未找到数据库配置段')) {
-      actions.push(READ_ONLY_QUERY_OPEN_REPORT);
+    // UX-REVIEW-010d:动作判定按与语言无关的 reason 码(缺配置给报告入口),
+    // 标签调用期取词一次、选中值=比对值同翻译,不依赖固定语言文字
+    const retryLabel = playerTaskRetryLabel();
+    const detailLabel = playerTaskShowDetailLabel();
+    const actions = [retryLabel, detailLabel];
+    if (run.reason === 'missing-config') {
+      actions.push(readOnlyQueryOpenReportLabel());
     }
     const picked = await vscode.window.showWarningMessage(run.message, ...actions);
-    if (picked === PLAYER_TASK_RETRY_LABEL) {
+    if (picked === retryLabel) {
       await retry();
-    } else if (picked === PLAYER_TASK_SHOW_DETAIL_LABEL) {
+    } else if (picked === detailLabel) {
       showPlayerDataResult();
-    } else if (picked === READ_ONLY_QUERY_OPEN_REPORT) {
+    } else if (picked === readOnlyQueryOpenReportLabel()) {
       await vscode.commands.executeCommand('kbengine.discovery.report');
     }
   };
@@ -191,7 +195,7 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
       /* 派生失败走降级文案 */
     });
     // UX-REVIEW-008a:状态账本记账(进行中→终态),面板最近一次状态可回看
-    const begun = playerTaskStatusStore.begin('connection', '正在检查连接(只读 SELECT 1)');
+    const begun = playerTaskStatusStore.begin('connection', l10nText('Checking connection (read-only SELECT 1)'));
     playerDataProvider.refresh();
     const run = await runPlayerConnectionTest();
     // 008c:迟到结果不覆盖新任务(期间若又有 begin,本次终态被守卫丢弃)
@@ -208,31 +212,29 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
     // 克隆 Source/Target 台账当成只读查询的配置来源。
     const gateMessage = readOnlyQueryConfigGate(getDerivedDatabaseProfile());
     if (gateMessage) {
-      const picked = await vscode.window.showWarningMessage(
-        gateMessage,
-        READ_ONLY_QUERY_OPEN_REPORT,
-        READ_ONLY_QUERY_CHECK_CONNECTION
-      );
-      if (picked === READ_ONLY_QUERY_OPEN_REPORT) {
+      const reportLabel = readOnlyQueryOpenReportLabel();
+      const checkLabel = readOnlyQueryCheckConnectionLabel();
+      const picked = await vscode.window.showWarningMessage(gateMessage, reportLabel, checkLabel);
+      if (picked === reportLabel) {
         await vscode.commands.executeCommand('kbengine.discovery.report');
-      } else if (picked === READ_ONLY_QUERY_CHECK_CONNECTION) {
+      } else if (picked === checkLabel) {
         await runConnectionTask();
       }
       return;
     }
     // UX-REVIEW-008a:过闸即记账进行中(含等待输入);输入取消=已取消
-    const begunQuery = playerTaskStatusStore.begin('query', '等待输入 DBID(只读查询 tbl_Account)');
+    const begunQuery = playerTaskStatusStore.begin('query', l10nText('Waiting for DBID input (read-only query tbl_Account)'));
     playerDataProvider.refresh();
     const dbid = await vscode.window.showInputBox({
-      prompt: '玩家 DBID(十进制正整数;只读查询 tbl_Account)',
-      placeHolder: '如 1',
+      prompt: l10nText('Player DBID (decimal positive integer; read-only query tbl_Account)'),
+      placeHolder: l10nText('e.g. 1'),
       validateInput: value =>
         /^\d+$/.test(value.trim()) || value.trim() === ''
           ? null
-          : '仅接受十进制正整数'
+          : l10nText('Decimal positive integers only')
     });
     if (dbid === undefined || dbid.trim() === '') {
-      playerTaskStatusStore.finish('query', 'cancelled', '已取消(未输入 DBID,未执行查询)', Date.now(), begunQuery.attempt);
+      playerTaskStatusStore.finish('query', 'cancelled', l10nText('Cancelled (no DBID entered, query not run)'), Date.now(), begunQuery.attempt);
       playerDataProvider.refresh();
       return;
     }
@@ -241,7 +243,7 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
     playerDataProvider.refresh();
     // 重试 = 同一 dbid 直接重跑(不再弹输入框);重试自身失败仍可再重试
     const retryQuery = async (): Promise<void> => {
-      const begunRetry = playerTaskStatusStore.begin('query', `正在重查 dbid ${dbid.trim()}(只读)`);
+      const begunRetry = playerTaskStatusStore.begin('query', l10nText('Re-querying dbid {dbid} (read-only)', { dbid: dbid.trim() }));
       playerDataProvider.refresh();
       const retryRun = await runPlayerQueryByDbid(dbid);
       playerTaskStatusStore.finish('query', retryRun.outcome, retryRun.message, Date.now(), begunRetry.attempt);

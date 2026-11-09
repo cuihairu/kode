@@ -49,7 +49,7 @@ import {
 import { ensureConfigDerivedScanRoot, getDerivedDatabaseProfile } from '../src/configDerive';
 import { createMysqlDriftExecutor, type DriftQueryExecutor } from '../src/backend/databaseDrift';
 import { resolveDatabaseInterfaceConfig } from '../src/serverConfigMerge';
-import { playerTaskStatusStore } from '../src/playerDataPanel';
+import { playerTaskShowDetailLabel, playerTaskStatusStore, readOnlyQueryOpenReportLabel } from '../src/playerDataPanel';
 
 const mockedProfile = vi.mocked(getDerivedDatabaseProfile);
 const mockedEnsure = vi.mocked(ensureConfigDerivedScanRoot);
@@ -220,12 +220,12 @@ describe('serverControls 装配面(覆盖补测)', () => {
     } finally {
       fakeWindow.showInputBox = original;
     }
-    expect(lastInfo()).toContain('查询完成:1 行');
+    expect(lastInfo()).toContain('Query finished: 1 rows');
     expect(executor.queries).toHaveLength(1);
     expect(executor.queries[0]).toContain('`tbl_Account`');
     expect(executor.queries[0]).toContain('WHERE `id` = 42');
     expect(executor.closed).toBe(1);
-    const playerChannel = channels.find(channel => channel.name.includes('玩家'));
+    const playerChannel = channels.find(channel => channel.name.includes('Player Data'));
     expect(playerChannel?.lines.join('')).toContain('[dbid 42]');
     // UX-REVIEW-008a:最近一次状态入账(成功),可回看入口命令已注册
     expect(playerTaskStatusStore.get('query')?.outcome).toBe('success');
@@ -404,9 +404,9 @@ describe('失败动作呈现(008b:重试/查看详情/配置定位)', () => {
       fakeWindow.showWarningMessage = original;
     }
     expect(messages.info).toHaveLength(0); // 失败走警告面,不走信息面
-    expect(messages.warning.join('')).toContain('连接失败');
-    expect(offered[0]).toContain('重试');
-    expect(offered[0]).toContain('查看详情');
+    expect(messages.warning.join('')).toContain('Connection failed');
+    expect(offered[0]).toContain('Retry');
+    expect(offered[0]).toContain('View details');
     // 重试真实重跑:两次建连、两次 SELECT 1,状态账本终态=failed
     expect(mockedCreate.mock.calls.length).toBe(2);
     expect(executor.closed).toBe(2);
@@ -421,15 +421,15 @@ describe('失败动作呈现(008b:重试/查看详情/配置定位)', () => {
     fakeWindow.showWarningMessage = (async (message: string, ...items: unknown[]) => {
       messages.warning.push(message);
       offered = items;
-      return '查看详情';
+      return playerTaskShowDetailLabel();
     }) as typeof fakeWindow.showWarningMessage;
     try {
       await commands.executeCommand('kbengine.playerData.testConnection');
     } finally {
       fakeWindow.showWarningMessage = original;
     }
-    expect(messages.warning.join('')).toContain('未找到数据库配置段');
-    expect(offered).toContain('打开发现与定位报告');
+    expect(messages.warning.join('')).toContain('Database config section not found');
+    expect(offered).toContain(readOnlyQueryOpenReportLabel());
     expect(commandRegistry.registrations.has('kbengine.playerData.showResult')).toBe(true);
     expect(playerTaskStatusStore.get('connection')?.outcome).toBe('failed');
   });
@@ -444,7 +444,7 @@ describe('失败动作呈现(008b:重试/查看详情/配置定位)', () => {
     fakeWindow.showInputBox = async () => '42';
     fakeWindow.showWarningMessage = (async (message: string, ...items: unknown[]) => {
       messages.warning.push(message);
-      expect(items).toContain('重试');
+      expect(items).toContain('Retry');
       return undefined; // 不点任何动作
     }) as typeof fakeWindow.showWarningMessage;
     try {
@@ -453,7 +453,7 @@ describe('失败动作呈现(008b:重试/查看详情/配置定位)', () => {
       fakeWindow.showInputBox = inputOriginal;
       fakeWindow.showWarningMessage = warnOriginal;
     }
-    expect(messages.warning.join('')).toContain('查询失败');
+    expect(messages.warning.join('')).toContain('Query failed');
     expect(messages.warning.join('')).toContain('ER_NO_SUCH_TABLE');
     expect(messages.warning.join('')).not.toContain('pw'); // 密码不出现
     expect(playerTaskStatusStore.get('query')?.outcome).toBe('failed');

@@ -34,13 +34,17 @@ export interface PlayerTaskStatus {
 /** 结果入口命令:打开玩家数据只读输出通道(结果详情的唯一落点) */
 export const PLAYER_TASK_RESULT_COMMAND = 'kbengine.playerData.showResult';
 
+/**
+ * 六态标签源串(UX-REVIEW-010d):值 = 英文源串,呈现面经 l10nText 调用期
+ * 取词(zh-cn bundle 出中文);键集与六态一一对应,供动态键对账。
+ */
 export const PLAYER_TASK_OUTCOME_LABELS: Record<PlayerTaskOutcome, string> = {
-  'not-run': '未运行',
-  running: '进行中',
-  empty: '空结果',
-  success: '成功',
-  failed: '失败',
-  cancelled: '已取消'
+  'not-run': 'Not run',
+  running: 'Running',
+  empty: 'Empty result',
+  success: 'Success',
+  failed: 'Failed',
+  cancelled: 'Cancelled'
 };
 
 /** 结果时间展示(本地时区 YYYY-MM-DD HH:mm:ss;纯函数便于钉格式) */

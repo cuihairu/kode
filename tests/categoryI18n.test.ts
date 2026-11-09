@@ -6,6 +6,7 @@ import { setL10nBundle } from './fake-vscode/l10n';
 import enBundle from '../l10n/bundle.l10n.json';
 import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
 import { HOOK_CATEGORY_NAMES } from '../src/hooks';
+import { PLAYER_TASK_OUTCOME_LABELS } from '../src/backend/playerTaskStatus';
 import { quickActionCategoryLabel } from '../src/quickActions';
 import { QuickActionTreeProvider } from '../src/quickActionTree';
 import { FinalConfigTreeProvider } from '../src/serverConfigMerge';
@@ -87,7 +88,10 @@ describe('l10n bundle 完整性(分类标签源串全量入包)', () => {
     ...PROXY_METHOD_SECTION_CHOICES.flatMap(choice => [choice.label, choice.description ?? '']),
     ...YES_NO_CHOICES.flatMap(choice => [choice.label, choice.description ?? '']),
     NO_ATTACH_CHOICE.label,
-    NO_ATTACH_CHOICE.description
+    NO_ATTACH_CHOICE.description,
+    // UX-REVIEW-010d:玩家任务六态标签(PLAYER_TASK_OUTCOME_LABELS 值经
+    // l10nText 动态取词,字面量扫描抓不到)
+    ...Object.values(PLAYER_TASK_OUTCOME_LABELS)
   ];
 
   it('英文包与中文包键集一致', () => {

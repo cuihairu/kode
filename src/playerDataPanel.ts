@@ -15,6 +15,7 @@
  */
 import * as vscode from 'vscode';
 
+import { l10nText } from './nlsRuntime';
 import { ensureConfigDerivedScanRoot, getDerivedDatabaseProfile } from './configDerive';
 import { createMysqlDriftExecutor, type DriftQueryExecutor } from './backend/databaseDrift';
 import {
@@ -31,8 +32,8 @@ import {
 } from './serverConfigMerge';
 import { maskConnectionSecrets } from './backend/reproductionSummary';
 
-/** 只读查询结果输出通道(展示面,不可编辑) */
-export const PLAYER_DATA_CHANNEL_NAME = 'KBEngine 玩家数据(只读)';
+/** 只读查询结果输出通道(展示面,不可编辑;值 = l10n 英文源串) */
+export const PLAYER_DATA_CHANNEL_NAME = 'KBEngine Player Data (read-only)';
 
 /**
  * UX-REVIEW-008a 最近一次状态账本(查询/连接检查各一条;可回看:
@@ -42,7 +43,7 @@ export const playerTaskStatusStore = new PlayerTaskStatusStore();
 
 /** 结果输出通道(VS Code 按名复用同一实例;详情落通道=可回看结果入口) */
 function playerDataChannel(): vscode.OutputChannel {
-  return vscode.window.createOutputChannel(PLAYER_DATA_CHANNEL_NAME);
+  return vscode.window.createOutputChannel(l10nText(PLAYER_DATA_CHANNEL_NAME));
 }
 
 /** UX-REVIEW-008a 结果入口:打开结果详情通道(树节点命令与命令面板共用) */
@@ -50,19 +51,24 @@ export function showPlayerDataResult(): void {
   playerDataChannel().show(true);
 }
 
-/** 结构化运行结果:消息给信息提示,结果态给状态账本(008a 六态) */
+/** 结构化运行结果:消息给信息提示,结果态给状态账本(008a 六态);
+ *  reason = 与语言无关的失败原因码,动作面按原因给按钮(010d:比较不依赖
+ *  固定语言文字),不按译文匹配。 */
 export interface PlayerTaskRunResult {
   message: string;
   outcome: Extract<PlayerTaskOutcome, 'empty' | 'success' | 'failed'>;
+  reason?: 'missing-config' | 'password-unreadable';
 }
 
 /**
  * UX-REVIEW-008b 与真实原因对应的动作标签:失败给「重试」(可重入),
  * 一切失败/拒绝给「查看详情」(通道落原始诊断);缺配置再加配置定位
  * (发现报告)。动作只指向真实可执行命令,不造按钮。
+ * UX-REVIEW-010d:标签调用期取词(英文 'Run' 同约定——选中值与比对值取
+ * 同一翻译,比较不依赖固定语言文字)。
  */
-export const PLAYER_TASK_RETRY_LABEL = '重试';
-export const PLAYER_TASK_SHOW_DETAIL_LABEL = '查看详情';
+export const playerTaskRetryLabel = (): string => l10nText('Retry');
+export const playerTaskShowDetailLabel = (): string => l10nText('View details');
 
 /** 原始错误用于诊断但不暴露密码:赋值形态/URL userinfo 一律遮蔽(008b) */
 export function maskPlayerTaskErrorText(text: string): string {
@@ -88,26 +94,29 @@ interface PlayerDataNodeItem {
 export function buildPlayerDataTaskEntries(): PlayerDataNodeItem[] {
   return [
     {
-      label: '只读查询(DBID)',
-      description: '从已持久化数据库读账号行(不代表在线状态)',
-      tooltip:
-        '只读 SELECT tbl_Account;连接要素只来自引擎配置派生,与克隆 Source/Target 台账无关。',
+      label: l10nText('Read-only query (DBID)'),
+      description: l10nText('Reads persisted account rows (not the live state)'),
+      tooltip: l10nText(
+        'Read-only SELECT tbl_Account; connection facts come from the engine config derivation, unrelated to clone Source/Target profiles.'
+      ),
       commandId: 'kbengine.playerData.queryByDbid',
       contextValue: 'playerDataTaskQuery'
     },
     {
-      label: '导出玩家(Export)',
-      description: '只读导出持久化数据到 .kdpclone;不代表在线状态',
-      tooltip:
-        '只读会话执行导出计划;归档是数据库已持久化数据副本(Persisted copy),不代表在线当前状态(Live state)。',
+      label: l10nText('Export players (Export)'),
+      description: l10nText('Read-only export of persisted data to .kdpclone; not the live state'),
+      tooltip: l10nText(
+        'The read-only session runs the export plan; the archive is a persisted copy of the database (Persisted copy), not the live state (Live state).'
+      ),
       commandId: 'kbengine.clone.export',
       contextValue: 'playerDataTaskExport'
     },
     {
-      label: '导入到本地或测试库(Import)',
-      description: '仅 local/test;写入持久化副本,不代表在线状态',
-      tooltip:
-        '写入前两遍计划预演与本地环境二次确认,取消即回滚;重复导入 fail-closed。',
+      label: l10nText('Import to local or test database (Import)'),
+      description: l10nText('local/test only; writes a persisted copy, not the live state'),
+      tooltip: l10nText(
+        'Two-pass plan preview and a local environment double-check before writing; cancel rolls back; re-import is fail-closed.'
+      ),
       commandId: 'kbengine.clone.import',
       contextValue: 'playerDataTaskImport'
     }
@@ -117,15 +126,21 @@ export function buildPlayerDataTaskEntries(): PlayerDataNodeItem[] {
 // UX-REVIEW-004d:只读查询缺配置闸(纯函数)。降级文案点明连接要素只来自
 // 引擎配置派生(dbmgr/databaseInterfaces/default),绝不把克隆 Source/Target
 // 台账当成只读查询的配置来源;恢复动作指向真实的发现报告与连接检查命令。
-export const READ_ONLY_QUERY_MISSING_CONFIG =
-  '只读查询需要引擎数据库配置(dbmgr/databaseInterfaces/default 派生;与克隆 Source/Target 台账无关)——未找到。';
-export const READ_ONLY_QUERY_OPEN_REPORT = '打开发现与定位报告';
-export const READ_ONLY_QUERY_CHECK_CONNECTION = '重新派生并检查连接';
+// UX-REVIEW-010d:文案/标签调用期取词;动作判定改用与语言无关的原因码
+// (PlayerTaskRunResult.reason),不按译文匹配。
+export const readOnlyQueryMissingConfigMessage = (): string =>
+  l10nText(
+    'Read-only query needs the engine database config (derived from dbmgr/databaseInterfaces/default; unrelated to clone Source/Target profiles) — not found.'
+  );
+export const readOnlyQueryOpenReportLabel = (): string =>
+  l10nText('Open discovery and location report');
+export const readOnlyQueryCheckConnectionLabel = (): string =>
+  l10nText('Re-derive and check connection');
 
 export function readOnlyQueryConfigGate(
   profile: ReturnType<typeof getDerivedDatabaseProfile>
 ): string | null {
-  return profile ? null : READ_ONLY_QUERY_MISSING_CONFIG;
+  return profile ? null : readOnlyQueryMissingConfigMessage();
 }
 
 /**
@@ -192,11 +207,11 @@ export function buildPlayerDatabaseView(): PlayerDatabaseView | null {
 }
 
 /** defaults-only 告警文案(面板描述/tooltip 与命令结果共用,用户令:不许把
- * 引擎默认值装成最终配置) */
-export const PLAYER_DATABASE_DEFAULTS_ONLY_WARNING =
-  '未发现元件 kbengine.xml,以上为引擎默认配置(kbengine_defaults.xml)而非最终合成配置;' +
-  '若实际部署使用自定义数据库地址,请把元件 kbengine.xml 放到 assetsRoot 的 res/server/ 下' +
-  '(或检查 kbengine.assetsRoot 设置)后重试。';
+ * 引擎默认值装成最终配置;UX-REVIEW-010d 调用期取词) */
+export const playerDatabaseDefaultsOnlyWarning = (): string =>
+  l10nText(
+    'Component kbengine.xml was not found; the values above are engine defaults (kbengine_defaults.xml), not the final merged config. If your deployment uses a custom database address, place kbengine.xml under assetsRoot res/server/ (or check the kbengine.assetsRoot setting) and retry.'
+  );
 
 /**
  * 连接档案节点(纯函数,便于单测):密码只出掩码标记,永不出值。
@@ -207,31 +222,31 @@ export function buildPlayerDataTreeNodes(
   if (!view || !view.available) {
     return [
       {
-        label: '未找到数据库配置段',
+        label: l10nText('Database config section not found'),
         description: 'dbmgr/databaseInterfaces/default',
-        tooltip:
-          '引擎 kbengine.xml / kbengine_defaults.xml 中未找到 ' +
-          'dbmgr/databaseInterfaces/default 段。请确认 assetsRoot/binPath 指向引擎资产。',
+        tooltip: l10nText(
+          'No dbmgr/databaseInterfaces/default section found in the engine kbengine.xml / kbengine_defaults.xml. Check that assetsRoot/binPath points at engine assets.'
+        ),
         collapsibleState: vscode.TreeItemCollapsibleState.None
       }
     ];
   }
   // KODE-REDIS-UI-001:连接面支持 mysql/redis 双后端;redis 的连接要素
   // 与 mysql 同源(引擎 dbInterface),仅键空间/预览走 redis 面。
-  const kind = view.dbType === 'mysql' ? 'mysql' : view.dbType === 'redis' ? 'redis' : `${view.dbType}(未知)`;
+  const kind = view.dbType === 'mysql' ? 'mysql' : view.dbType === 'redis' ? 'redis' : `${view.dbType}${l10nText(' (unknown)')}`;
   const password = view.encrypt
-    ? '●●●●●●(RSA 密文,不解读)'
+    ? l10nText('●●●●●● (RSA ciphertext, not decrypted)')
     : view.plainPassword
-      ? '●●●●●●(明文可读,仅连接用)'
-      : '(未配置)';
+      ? l10nText('●●●●●● (plaintext, connection only)')
+      : l10nText('(not configured)');
   const sourceNote = view.defaultsOnly
-    ? `来源:引擎默认配置(未发现元件 kbengine.xml)——${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING}`
-    : '来源:最终合成配置(引擎 defaults + 元件 kbengine.xml 同键覆盖,只读)';
+    ? l10nText('Source: engine defaults (component kbengine.xml not found) — {warning}', { warning: playerDatabaseDefaultsOnlyWarning() })
+    : l10nText('Source: final merged config (engine defaults + component kbengine.xml same-key override, read-only)');
   return [
     {
       label: `${kind} default`,
       description: view.defaultsOnly
-        ? `${view.host}:${view.port}/${view.databaseName}(引擎默认)`
+        ? `${view.host}:${view.port}/${view.databaseName}${l10nText(' (engine default)')}`
         : `${view.host}:${view.port}/${view.databaseName}`,
       tooltip: new vscode.MarkdownString(
         [
@@ -249,13 +264,13 @@ export function buildPlayerDataTreeNodes(
       ),
       collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
       children: [
-        { label: '类型', description: view.dbType },
-        { label: '主机', description: view.host },
-        { label: '端口', description: String(view.port) },
-        { label: '账号', description: view.username },
-        { label: '密码', description: password },
-        { label: '数据库', description: view.databaseName },
-        { label: '字符集', description: view.characterSet }
+        { label: l10nText('Type'), description: view.dbType },
+        { label: l10nText('Host'), description: view.host },
+        { label: l10nText('Port'), description: String(view.port) },
+        { label: l10nText('Account'), description: view.username },
+        { label: l10nText('Password'), description: password },
+        { label: l10nText('Database'), description: view.databaseName },
+        { label: l10nText('Charset'), description: view.characterSet }
       ]
     }
   ];
@@ -347,27 +362,42 @@ function buildConnectionConfig(): {
 export async function runPlayerConnectionTest(): Promise<PlayerTaskRunResult> {
   const built = buildConnectionConfig();
   if (!built) {
-    const message = '未找到数据库配置段(dbmgr/databaseInterfaces/default)——未测试';
-    return { message, outcome: 'failed' };
+    const message = l10nText(
+      'Database config section not found (dbmgr/databaseInterfaces/default) — not tested'
+    );
+    return { message, outcome: 'failed', reason: 'missing-config' };
   }
   if (built.config.encrypt && !built.config.plainPassword) {
-    const message =
-      '密码为引擎 RSA 密文,不解读——未测试(如需测试请在引擎配置中显式 encrypt=false)';
-    return { message, outcome: 'failed' };
+    const message = l10nText(
+      'Password is engine RSA ciphertext, not decrypted — not tested (set encrypt=false explicitly in the engine config to enable testing)'
+    );
+    return { message, outcome: 'failed', reason: 'password-unreadable' };
   }
   const startedAt = Date.now();
   let executor: DriftQueryExecutor | null = null;
   try {
     executor = await createMysqlDriftExecutor(built.config);
     await executor.runQuery('SELECT 1 AS ok');
-    const note = built.defaultsOnly ? `(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})` : '';
-    const message = `连接成功(${built.config.host}:${built.config.port}/${built.config.databaseName},${Date.now() - startedAt}ms,只读会话)${note}`;
-    playerDataChannel().appendLine(`[连接检查 ${formatPlayerTaskTime(Date.now())}] ${message}`);
+    const note = built.defaultsOnly ? l10nText('(note: {warning})', { warning: playerDatabaseDefaultsOnlyWarning() }) : '';
+    const message = l10nText(
+      'Connection OK ({host}:{port}/{database}, {elapsed}ms, read-only session){note}',
+      {
+        host: built.config.host,
+        port: built.config.port,
+        database: built.config.databaseName,
+        elapsed: Date.now() - startedAt,
+        note
+      }
+    );
+    playerDataChannel().appendLine(l10nText('[Connection check {time}] {message}', { time: formatPlayerTaskTime(Date.now()), message }));
     return { message, outcome: 'success' };
   } catch (error) {
-    const note = built.defaultsOnly ? `(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})` : '';
-    const message = `连接失败:${maskPlayerTaskErrorText(error instanceof Error ? error.message : String(error))}(只读降级,不影响其他功能)${note}`;
-    playerDataChannel().appendLine(`[连接检查 ${formatPlayerTaskTime(Date.now())}] ${message}`);
+    const note = built.defaultsOnly ? l10nText('(note: {warning})', { warning: playerDatabaseDefaultsOnlyWarning() }) : '';
+    const message = l10nText(
+      'Connection failed: {error} (read-only fallback; other features unaffected){note}',
+      { error: maskPlayerTaskErrorText(error instanceof Error ? error.message : String(error)), note }
+    );
+    playerDataChannel().appendLine(l10nText('[Connection check {time}] {message}', { time: formatPlayerTaskTime(Date.now()), message }));
     return { message, outcome: 'failed' };
   } finally {
     await executor?.close().catch(() => {
@@ -400,14 +430,22 @@ export async function runPlayerQueryByDbid(dbid: string): Promise<PlayerTaskRunR
     vscode.workspace.getConfiguration('kbengine').get<string>('db.tablePrefix', '')
   );
   if (!sql) {
-    return { message: 'dbid 仅接受十进制正整数', outcome: 'failed' };
+    return { message: l10nText('dbid accepts decimal positive integers only'), outcome: 'failed' };
   }
   const built = buildConnectionConfig();
   if (!built) {
-    return { message: '未找到数据库配置段——未查询', outcome: 'failed' };
+    return {
+      message: l10nText('Database config section not found — not queried'),
+      outcome: 'failed',
+      reason: 'missing-config'
+    };
   }
   if (!built.config.plainPassword) {
-    return { message: '密码不可读(引擎 RSA 密文或未配置)——未查询', outcome: 'failed' };
+    return {
+      message: l10nText('Password unreadable (engine RSA ciphertext or not configured) — not queried'),
+      outcome: 'failed',
+      reason: 'password-unreadable'
+    };
   }
   let executor: DriftQueryExecutor | null = null;
   try {
@@ -416,21 +454,24 @@ export async function runPlayerQueryByDbid(dbid: string): Promise<PlayerTaskRunR
     const channel = playerDataChannel();
     channel.appendLine(`[dbid ${dbid.trim()}] ${sql}`);
     if (built.defaultsOnly) {
-      channel.appendLine(`(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})`);
+      channel.appendLine(l10nText('(note: {warning})', { warning: playerDatabaseDefaultsOnlyWarning() }));
     }
     if (result.rows.length === 0) {
-      channel.appendLine('(0 行——该 dbid 不存在或账号表为空)');
+      channel.appendLine(l10nText('(0 rows — this dbid does not exist or the account table is empty)'));
     }
     for (const row of result.rows) {
       channel.appendLine(JSON.stringify(row));
     }
     channel.show();
-    const note = built.defaultsOnly ? `(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})` : '';
-    const message = `查询完成:${result.rows.length} 行(结果见输出通道,只读)${note}`;
+    const note = built.defaultsOnly ? l10nText('(note: {warning})', { warning: playerDatabaseDefaultsOnlyWarning() }) : '';
+    const message = l10nText('Query finished: {count} rows (results in the output channel, read-only){note}', { count: result.rows.length, note });
     return { message, outcome: result.rows.length === 0 ? 'empty' : 'success' };
   } catch (error) {
-    const note = built.defaultsOnly ? `(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})` : '';
-    const message = `查询失败:${maskPlayerTaskErrorText(error instanceof Error ? error.message : String(error))}${note}`;
+    const note = built.defaultsOnly ? l10nText('(note: {warning})', { warning: playerDatabaseDefaultsOnlyWarning() }) : '';
+    const message = l10nText('Query failed: {error}{note}', {
+      error: maskPlayerTaskErrorText(error instanceof Error ? error.message : String(error)),
+      note
+    });
     return { message, outcome: 'failed' };
   } finally {
     await executor?.close().catch(() => {
@@ -451,19 +492,19 @@ export async function queryPlayerByDbid(dbid: string): Promise<string> {
  */
 export function buildPlayerTaskStatusNodes(): PlayerDataNodeItem[] {
   const tasks: Array<{ task: PlayerTaskKind; label: string }> = [
-    { task: 'query', label: '玩家查询' },
-    { task: 'connection', label: '连接检查' }
+    { task: 'query', label: l10nText('Player query') },
+    { task: 'connection', label: l10nText('Connection check') }
   ];
   return tasks.map(({ task, label }) => {
     const status = playerTaskStatusStore.get(task);
-    const kindLabel = PLAYER_TASK_OUTCOME_LABELS[status?.outcome ?? 'not-run'];
+    const kindLabel = l10nText(PLAYER_TASK_OUTCOME_LABELS[status?.outcome ?? 'not-run']);
     const hasDetail = Boolean(status?.detailCommandId);
     return {
       label: `${label}:${kindLabel}`,
       description: status?.finishedAt ? formatPlayerTaskTime(status.finishedAt) : undefined,
       tooltip: status
-        ? `${status.summary}${status.finishedAt ? `(完成于 ${formatPlayerTaskTime(status.finishedAt)})` : ''}`
-        : '本次会话尚未运行过;结果入口在运行后出现。',
+        ? `${status.summary}${status.finishedAt ? l10nText(' (finished at {time})', { time: formatPlayerTaskTime(status.finishedAt) }) : ''}`
+        : l10nText('Not run in this session yet; the result entry appears after a run.'),
       commandId: hasDetail ? status?.detailCommandId : undefined,
       contextValue: hasDetail ? `playerTaskStatus${task}` : undefined
     };

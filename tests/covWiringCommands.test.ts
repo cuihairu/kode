@@ -17,8 +17,8 @@ import { panelRegistry } from './fake-vscode/panelRegistry';
 import { configurationOverrides, workspace, workspaceEvents, workspaceState } from './fake-vscode/workspaceState';
 import { makeTextDocument, Uri, type ExtensionContext } from './fake-vscode/core';
 import {
-  READ_ONLY_QUERY_CHECK_CONNECTION,
-  READ_ONLY_QUERY_OPEN_REPORT
+  readOnlyQueryCheckConnectionLabel,
+  readOnlyQueryOpenReportLabel
 } from '../src/playerDataPanel';
 
 let root = '';
@@ -134,13 +134,13 @@ describe('激活链低覆盖命令面(wiring 补测)', () => {
 
   it('playerData.testConnection:无引擎档案 → 如实未测试(008b:拒绝走警告面+配置定位动作)', async () => {
     await commands.executeCommand('kbengine.playerData.testConnection');
-    expect(messages.warning[messages.warning.length - 1]).toContain('未找到数据库配置段');
-    expect(messages.warning[messages.warning.length - 1]).toContain('未测试');
+    expect(messages.warning[messages.warning.length - 1]).toContain('Database config section not found');
+    expect(messages.warning[messages.warning.length - 1]).toContain('not tested');
   });
 
   it('playerData.queryByDbid:缺配置闸降级;拒绝恢复动作即止', async () => {
     await commands.executeCommand('kbengine.playerData.queryByDbid');
-    expect(messages.warning[messages.warning.length - 1]).toContain('与克隆 Source/Target 台账无关');
+    expect(messages.warning[messages.warning.length - 1]).toContain('unrelated to clone Source/Target profiles');
   });
 
   it('playerData.queryByDbid:选「重新派生并检查连接」→ 走连接测试降级文案', async () => {
@@ -150,7 +150,7 @@ describe('激活链低覆盖命令面(wiring 补测)', () => {
       messages.warning.push(message);
       gateCalls += 1;
       // 首答选「重新派生并检查连接」;降级后的拒绝警告不再选任何动作
-      return gateCalls === 1 ? READ_ONLY_QUERY_CHECK_CONNECTION : undefined;
+      return gateCalls === 1 ? readOnlyQueryCheckConnectionLabel() : undefined;
     }) as typeof fakeWindow.showWarningMessage;
     try {
       await commands.executeCommand('kbengine.playerData.queryByDbid');
@@ -158,12 +158,12 @@ describe('激活链低覆盖命令面(wiring 补测)', () => {
       fakeWindow.showWarningMessage = original;
     }
     // 008b:连接测试降级走警告面(拒绝=failed,带查看详情等动作)
-    expect(messages.warning[messages.warning.length - 1]).toContain('未测试');
+    expect(messages.warning[messages.warning.length - 1]).toContain('not tested');
   });
 
   it('playerData.queryByDbid:选「打开发现与定位报告」→ 执行报告命令', async () => {
     const original = fakeWindow.showWarningMessage;
-    fakeWindow.showWarningMessage = async () => READ_ONLY_QUERY_OPEN_REPORT;
+    fakeWindow.showWarningMessage = async () => readOnlyQueryOpenReportLabel();
     const executed: string[] = [];
     const originalExecute = commands.executeCommand;
     commands.executeCommand = async (command: string, ...args: unknown[]) => {

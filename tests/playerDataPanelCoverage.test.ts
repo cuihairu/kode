@@ -30,9 +30,9 @@ import { buildConfigTreePair, resolveDatabaseInterfaceConfig } from '../src/serv
 import {
   PLAYER_DATA_CHANNEL_NAME,
   PlayerDataTreeProvider,
-  READ_ONLY_QUERY_CHECK_CONNECTION,
-  READ_ONLY_QUERY_MISSING_CONFIG,
-  READ_ONLY_QUERY_OPEN_REPORT,
+  readOnlyQueryCheckConnectionLabel,
+  readOnlyQueryMissingConfigMessage,
+  readOnlyQueryOpenReportLabel,
   buildPlayerQuerySql,
   buildPlayerTaskStatusNodes,
   playerTaskStatusStore,
@@ -149,15 +149,15 @@ describe('PlayerDataTreeProvider(覆盖收口)', () => {
     expect(mockedEnsure).toHaveBeenCalledTimes(1);
     // 3 条任务入口 + 连接档案 + 查询状态 + 连接检查状态(008a)
     expect(nodes).toHaveLength(6);
-    expect(nodes[0].label).toBe('只读查询(DBID)');
+    expect(nodes[0].label).toBe('Read-only query (DBID)');
     expect(nodes[0].command).toMatchObject({ command: 'kbengine.playerData.queryByDbid' });
-    expect(nodes[1].label).toBe('导出玩家(Export)');
+    expect(nodes[1].label).toBe('Export players (Export)');
     expect(nodes[1].command).toMatchObject({ command: 'kbengine.clone.export' });
-    expect(nodes[2].label).toBe('导入到本地或测试库(Import)');
+    expect(nodes[2].label).toBe('Import to local or test database (Import)');
     expect(nodes[2].command).toMatchObject({ command: 'kbengine.clone.import' });
     // 任务条目说明点明「不代表在线状态」(004a 验收线)
     for (const task of nodes.slice(0, 3) as Array<{ description?: string }>) {
-      expect(task.description).toContain('不代表在线状态');
+      expect(task.description).toContain('not the live state');
     }
     const root = nodes[3];
     expect(root.label).toBe('mysql default');
@@ -167,26 +167,26 @@ describe('PlayerDataTreeProvider(覆盖收口)', () => {
     expect(root.children).toHaveLength(7);
     expect(root.children?.every(child => child.collapsibleState === undefined)).toBe(true);
     expect(root.children?.map(child => child.label)).toEqual([
-      '类型', '主机', '端口', '账号', '密码', '数据库', '字符集'
+      'Type', 'Host', 'Port', 'Account', 'Password', 'Database', 'Charset'
     ]);
     // 008a 最近一次状态:无记录 = 未运行,无时间无入口(不造不可执行按钮)
     const queryStatus = nodes[4] as { label: string; command?: unknown; description?: string };
     const connectionStatus = nodes[5] as { label: string; command?: unknown; description?: string };
-    expect(queryStatus.label).toBe('玩家查询:未运行');
+    expect(queryStatus.label).toBe('Player query:Not run');
     expect(queryStatus.command).toBeUndefined();
     expect(queryStatus.description).toBeUndefined();
-    expect(connectionStatus.label).toBe('连接检查:未运行');
+    expect(connectionStatus.label).toBe('Connection check:Not run');
     expect(connectionStatus.command).toBeUndefined();
   });
 
   it('getChildren 子层:元素自带 children → toItem 映射', () => {
     const provider = new PlayerDataTreeProvider();
     const element = {
-      children: [{ label: '主机', description: '127.0.0.1' }]
+      children: [{ label: 'Host', description: '127.0.0.1' }]
     } as unknown as ReturnType<typeof provider.getTreeItem> & { children: Array<{ label: string; description: string }> };
     const children = provider.getChildren(element);
     expect(children).toHaveLength(1);
-    expect(children[0].label).toBe('主机');
+    expect(children[0].label).toBe('Host');
     expect(children[0].description).toBe('127.0.0.1');
   });
 
@@ -207,9 +207,9 @@ describe('PlayerDataTreeProvider(覆盖收口)', () => {
     const nodes = provider.getChildren();
     // 任务入口(真实命令)不因无档案消失;档案区如实降级单节点;状态区照常
     expect(nodes).toHaveLength(6);
-    expect(nodes[3].label).toContain('未找到数据库配置段');
+    expect(nodes[3].label).toContain('Database config section not found');
     expect(nodes[0].command).toMatchObject({ command: 'kbengine.playerData.queryByDbid' });
-    expect((nodes[4] as { label: string }).label).toBe('玩家查询:未运行');
+    expect((nodes[4] as { label: string }).label).toBe('Player query:Not run');
   });
 
   it('用户令 2026-11-09:最终配置优先于派生档案——面板与连接都以 resolve dbInterface 为准', () => {
@@ -231,13 +231,13 @@ describe('PlayerDataTreeProvider(覆盖收口)', () => {
     const children = root.children ?? [];
     const byLabel = (label: string): string =>
       String(children.find(child => child.label === label)?.description ?? '');
-    expect(byLabel('主机')).toBe('192.168.5.5');
-    expect(byLabel('账号')).toBe('root');
-    expect(byLabel('数据库')).toBe('kode_demo');
+    expect(byLabel('Host')).toBe('192.168.5.5');
+    expect(byLabel('Account')).toBe('root');
+    expect(byLabel('Database')).toBe('kode_demo');
     // 建连要素同源(不再派生 host + resolve 密码异源)
     const executor = installExecutor();
     return testPlayerDatabaseConnection().then(result => {
-      expect(result).toContain('连接成功');
+      expect(result).toContain('Connection OK');
       expect(result).toContain('192.168.5.5:3306/kode_demo');
       expect(mockedCreate.mock.calls[0][0]).toMatchObject({
         host: '192.168.5.5',
@@ -261,18 +261,18 @@ describe('PlayerDataTreeProvider(覆盖收口)', () => {
     const provider = new PlayerDataTreeProvider();
     const nodes = provider.getChildren();
     const root = nodes[3] as { description?: string; tooltip?: { value?: string } };
-    expect(root.description).toBe('127.0.0.1:13306/kbe(引擎默认)');
-    expect(root.tooltip?.value ?? '').toContain('未发现元件 kbengine.xml');
+    expect(root.description).toBe('127.0.0.1:13306/kbe (engine default)');
+    expect(root.tooltip?.value ?? '').toContain('kbengine.xml was not found');
     // 命令结果:连接成功/失败都追加 defaults-only 注意,不静默
     const executor = installExecutor();
     const okResult = await testPlayerDatabaseConnection();
-    expect(okResult).toContain('连接成功');
-    expect(okResult).toContain('注意:');
+    expect(okResult).toContain('Connection OK');
+    expect(okResult).toContain('(note:');
     expect(okResult).toContain('kbengine_defaults.xml');
     executor.queryError = new Error('ECONNREFUSED');
     const failResult = await testPlayerDatabaseConnection();
-    expect(failResult).toContain('连接失败');
-    expect(failResult).toContain('注意:');
+    expect(failResult).toContain('Connection failed');
+    expect(failResult).toContain('(note:');
   });
 });
 
@@ -282,8 +282,8 @@ describe('testPlayerDatabaseConnection 全分支(覆盖收口)', () => {
     // 最终配置也无(resolve null):两面皆空 = 真没有,如实降级
     mockedResolve.mockReturnValue(null as never);
     const result = await testPlayerDatabaseConnection();
-    expect(result).toContain('未找到数据库配置段');
-    expect(result).toContain('未测试');
+    expect(result).toContain('Database config section not found');
+    expect(result).toContain('not tested');
     expect(mockedCreate).not.toHaveBeenCalled();
   });
 
@@ -291,8 +291,8 @@ describe('testPlayerDatabaseConnection 全分支(覆盖收口)', () => {
     mockedProfile.mockReturnValue({ ...mysqlProfile(), encrypt: true } as never);
     mockedResolve.mockReturnValue({ ...finalConfig(), encrypt: true, plainPassword: undefined } as never);
     const result = await testPlayerDatabaseConnection();
-    expect(result).toContain('RSA 密文');
-    expect(result).toContain('未测试');
+    expect(result).toContain('RSA ciphertext');
+    expect(result).toContain('not tested');
     expect(mockedCreate).not.toHaveBeenCalled();
   });
 
@@ -300,9 +300,9 @@ describe('testPlayerDatabaseConnection 全分支(覆盖收口)', () => {
     const executor = installExecutor();
     const result = await testPlayerDatabaseConnection();
     expect(executor.queries).toEqual(['SELECT 1 AS ok']);
-    expect(result).toContain('连接成功');
+    expect(result).toContain('Connection OK');
     expect(result).toContain('127.0.0.1:13306/kbe');
-    expect(result).toContain('只读会话');
+    expect(result).toContain('read-only session');
     expect(executor.closed).toBe(1);
     // 聚合的连接要素与派生档案同源(明文就地读取)
     expect(mockedCreate.mock.calls[0][0]).toMatchObject({
@@ -320,9 +320,9 @@ describe('testPlayerDatabaseConnection 全分支(覆盖收口)', () => {
     const executor = installExecutor();
     executor.queryError = new Error('ECONNREFUSED');
     const result = await testPlayerDatabaseConnection();
-    expect(result).toContain('连接失败');
+    expect(result).toContain('Connection failed');
     expect(result).toContain('ECONNREFUSED');
-    expect(result).toContain('只读降级');
+    expect(result).toContain('read-only fallback');
     expect(executor.closed).toBe(1);
   });
 
@@ -337,14 +337,14 @@ describe('testPlayerDatabaseConnection 全分支(覆盖收口)', () => {
     const executor = installExecutor();
     executor.closeError = new Error('close hang');
     const result = await testPlayerDatabaseConnection();
-    expect(result).toContain('连接成功');
+    expect(result).toContain('Connection OK');
     expect(executor.closed).toBe(1);
   });
 });
 
 describe('queryPlayerByDbid 全分支(覆盖收口)', () => {
   it('非法 dbid → 查询前即拒绝', async () => {
-    expect(await queryPlayerByDbid('4.2')).toContain('十进制正整数');
+    expect(await queryPlayerByDbid('4.2')).toContain('decimal positive integers');
     expect(mockedCreate).not.toHaveBeenCalled();
   });
 
@@ -352,14 +352,14 @@ describe('queryPlayerByDbid 全分支(覆盖收口)', () => {
     mockedProfile.mockReturnValue(null);
     // 最终配置也无:两面皆空 = 真没有,如实降级
     mockedResolve.mockReturnValue(null as never);
-    expect(await queryPlayerByDbid('42')).toContain('未找到数据库配置段——未查询');
+    expect(await queryPlayerByDbid('42')).toContain('Database config section not found — not queried');
     expect(mockedCreate).not.toHaveBeenCalled();
   });
 
   it('明文不可读 → 未查询如实降级(不虚构连接)', async () => {
     mockedResolve.mockReturnValue({ ...finalConfig(), plainPassword: undefined } as never);
-    expect(await queryPlayerByDbid('42')).toContain('密码不可读');
-    expect(await queryPlayerByDbid('42')).toContain('未查询');
+    expect(await queryPlayerByDbid('42')).toContain('Password unreadable');
+    expect(await queryPlayerByDbid('42')).toContain('not queried');
     expect(mockedCreate).not.toHaveBeenCalled();
   });
 
@@ -369,8 +369,8 @@ describe('queryPlayerByDbid 全分支(覆盖收口)', () => {
     executor.result = { columns: [], rows: [{ id: 42, sm_name: 'alice' }] };
     const result = await queryPlayerByDbid(' 42 ');
     expect(executor.queries).toEqual(['SELECT * FROM `x_Account` WHERE `id` = 42']);
-    expect(result).toContain('查询完成:1 行');
-    expect(result).toContain('只读');
+    expect(result).toContain('Query finished: 1 rows');
+    expect(result).toContain('read-only');
     const channel = windowState.channels[windowState.channels.length - 1];
     expect(channel.name).toBe(PLAYER_DATA_CHANNEL_NAME);
     const text = channel.lines.join('\n');
@@ -383,9 +383,9 @@ describe('queryPlayerByDbid 全分支(覆盖收口)', () => {
     const executor = installExecutor();
     executor.result = { columns: [], rows: [] };
     const result = await queryPlayerByDbid('999');
-    expect(result).toContain('查询完成:0 行');
+    expect(result).toContain('Query finished: 0 rows');
     const text = windowState.channels[windowState.channels.length - 1].lines.join('\n');
-    expect(text).toContain('(0 行——该 dbid 不存在或账号表为空)');
+    expect(text).toContain('(0 rows — this dbid does not exist or the account table is empty)');
     // 缺省前缀 tbl_
     expect(executor.queries[0]).toContain('`tbl_Account`');
   });
@@ -394,7 +394,7 @@ describe('queryPlayerByDbid 全分支(覆盖收口)', () => {
     const executor = installExecutor();
     executor.queryError = new Error('READ ONLY session');
     const result = await queryPlayerByDbid('42');
-    expect(result).toContain('查询失败');
+    expect(result).toContain('Query failed');
     expect(result).toContain('READ ONLY session');
     expect(executor.closed).toBe(1);
   });
@@ -403,7 +403,7 @@ describe('queryPlayerByDbid 全分支(覆盖收口)', () => {
     const executor = installExecutor();
     executor.closeError = new Error('close boom');
     const result = await queryPlayerByDbid('42');
-    expect(result).toContain('查询完成');
+    expect(result).toContain('Query finished');
   });
 });
 
@@ -421,12 +421,12 @@ describe('readOnlyQueryConfigGate(004d)', () => {
   it('有派生档案 → 闸放行(null);无档案 → 降级文案点明来源边界与两个恢复入口', () => {
     expect(readOnlyQueryConfigGate(mysqlProfile() as never)).toBeNull();
     const message = readOnlyQueryConfigGate(null);
-    expect(message).toBe(READ_ONLY_QUERY_MISSING_CONFIG);
+    expect(message).toBe(readOnlyQueryMissingConfigMessage());
     expect(message).toContain('dbmgr/databaseInterfaces/default');
-    expect(message).toContain('与克隆 Source/Target 台账无关');
+    expect(message).toContain('unrelated to clone Source/Target profiles');
     // 两个恢复入口都是真实命令面(发现报告 / 重新派生并检查连接)
-    expect(typeof READ_ONLY_QUERY_OPEN_REPORT).toBe('string');
-    expect(typeof READ_ONLY_QUERY_CHECK_CONNECTION).toBe('string');
+    expect(typeof readOnlyQueryOpenReportLabel()).toBe('string');
+    expect(typeof readOnlyQueryCheckConnectionLabel()).toBe('string');
   });
 });
 
@@ -437,7 +437,7 @@ describe('最近一次状态账本(008a:结构化结果+树呈现+可回看)', (
     mockedResolve.mockReturnValue(null as never);
     const refused = await runPlayerConnectionTest();
     expect(refused.outcome).toBe('failed');
-    expect(refused.message).toContain('未找到数据库配置段');
+    expect(refused.message).toContain('Database config section not found');
 
     // 建连成功 → success;探测失败 → failed(重新撒档案:本用例前段已置空)
     mockedProfile.mockReturnValue(mysqlProfile() as never);
@@ -455,12 +455,12 @@ describe('最近一次状态账本(008a:结构化结果+树呈现+可回看)', (
     const executor = installExecutor();
     const hit = await runPlayerQueryByDbid('7');
     expect(hit.outcome).toBe('success');
-    expect(hit.message).toContain('1 行');
+    expect(hit.message).toContain('1 rows');
 
     executor.result = { columns: [], rows: [] };
     const miss = await runPlayerQueryByDbid('8');
     expect(miss.outcome).toBe('empty');
-    expect(miss.message).toContain('0 行');
+    expect(miss.message).toContain('0 rows');
 
     executor.queryError = new Error('ER_NO_SUCH_TABLE');
     const bad = await runPlayerQueryByDbid('9');
@@ -476,32 +476,32 @@ describe('最近一次状态账本(008a:结构化结果+树呈现+可回看)', (
       .filter(c => c.name === PLAYER_DATA_CHANNEL_NAME)
       .flatMap(c => c.lines);
     expect(lines.length).toBeGreaterThan(lineCountBefore);
-    expect(lines.some(line => line.includes('连接检查') && line.includes('只读会话'))).toBe(true);
+    expect(lines.some(line => line.includes('Connection check') && line.includes('read-only session'))).toBe(true);
   });
 
   it('状态节点渲染:终态带结果时间与结果入口命令,进行中/未运行无入口', () => {
     playerTaskStatusStore.clear();
     // 未运行:无命令(不造不可执行按钮)
     const none = buildPlayerTaskStatusNodes();
-    expect(none.map(node => node.label)).toEqual(['玩家查询:未运行', '连接检查:未运行']);
+    expect(none.map(node => node.label)).toEqual(['Player query:Not run', 'Connection check:Not run']);
     expect(none.every(node => node.commandId === undefined)).toBe(true);
 
     // 进行中:无结果时间无入口
     playerTaskStatusStore.begin('query', '等待输入 DBID');
     const running = buildPlayerTaskStatusNodes();
-    expect(running[0].label).toBe('玩家查询:进行中');
+    expect(running[0].label).toBe('Player query:Running');
     expect(running[0].description).toBeUndefined();
     expect(running[0].commandId).toBeUndefined();
 
     // 终态:结果时间 + 结果入口(kbengine.playerData.showResult)
-    playerTaskStatusStore.finish('query', 'success', '查询完成:1 行', new Date(2026, 10, 10, 8, 0, 0).getTime());
+    playerTaskStatusStore.finish('query', 'success', 'Query finished: 1 rows', new Date(2026, 10, 10, 8, 0, 0).getTime());
     const done = buildPlayerTaskStatusNodes();
-    expect(done[0].label).toBe('玩家查询:成功');
+    expect(done[0].label).toBe('Player query:Success');
     expect(done[0].description).toBe('2026-11-10 08:00:00');
     expect(done[0].commandId).toBe('kbengine.playerData.showResult');
     const tooltip = String((done[0].tooltip as { value?: string })?.value ?? done[0].tooltip ?? '');
-    expect(tooltip).toContain('查询完成:1 行');
-    expect(tooltip).toContain('完成于 2026-11-10 08:00:00');
+    expect(tooltip).toContain('Query finished: 1 rows');
+    expect(tooltip).toContain(' (finished at 2026-11-10 08:00:00)');
     // 字符串包装函数与字符串入口共存(cloneBoundaryRegression 源锁口径)
     expect(typeof queryPlayerByDbid).toBe('function');
     expect(typeof testPlayerDatabaseConnection).toBe('function');
@@ -541,13 +541,13 @@ describe('失败原因遮蔽与动作面(008b)', () => {
 describe('状态归属与刷新语义(008c 验证面)', () => {
   it('刷新不触碰状态账本:刷新后最近一次状态原样保留', () => {
     playerTaskStatusStore.clear();
-    playerTaskStatusStore.finish('query', 'success', '查询完成:1 行', new Date(2026, 10, 10, 8, 0, 0).getTime());
-    playerTaskStatusStore.finish('connection', 'failed', '连接失败:ECONNREFUSED', new Date(2026, 10, 10, 8, 0, 1).getTime());
+    playerTaskStatusStore.finish('query', 'success', 'Query finished: 1 rows', new Date(2026, 10, 10, 8, 0, 0).getTime());
+    playerTaskStatusStore.finish('connection', 'failed', 'Connection failed: ECONNREFUSED', new Date(2026, 10, 10, 8, 0, 1).getTime());
     const provider = new PlayerDataTreeProvider();
     provider.getChildren(); // 刷新语义 = 重建树;账本只读
     const nodes = buildPlayerTaskStatusNodes();
-    expect(nodes[0].label).toBe('玩家查询:成功');
-    expect(nodes[1].label).toBe('连接检查:失败');
+    expect(nodes[0].label).toBe('Player query:Success');
+    expect(nodes[1].label).toBe('Connection check:Failed');
     // 归属随内容走:摘要携带目标身份(dbid/host:port),跨目标不混淆
     const raw = nodes[1].tooltip;
     const tooltip = String((raw as { value?: string })?.value ?? raw ?? '');

@@ -15,7 +15,7 @@ import {
   buildPlayerDataTreeNodes,
   buildPlayerDatabaseView,
   buildPlayerQuerySql,
-  PLAYER_DATABASE_DEFAULTS_ONLY_WARNING,
+  playerDatabaseDefaultsOnlyWarning,
   testPlayerDatabaseConnection,
   queryPlayerByDbid,
   type PlayerDatabaseView
@@ -49,7 +49,7 @@ describe('CLONE-P5 玩家数据只读面板(骨架)', () => {
   it('无派生档案 → 如实展示「未找到数据库配置段」', () => {
     const nodes = buildPlayerDataTreeNodes(null);
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].label).toContain('未找到数据库配置段');
+    expect(nodes[0].label).toContain('Database config section not found');
     expect(nodes[0].description).toBe('dbmgr/databaseInterfaces/default');
   });
 
@@ -61,12 +61,12 @@ describe('CLONE-P5 玩家数据只读面板(骨架)', () => {
     const children = iface.children ?? [];
     const byLabel = (label: string): string =>
       String(children.find(child => child.label === label)?.description ?? '');
-    expect(byLabel('主机')).toBe('127.0.0.1');
-    expect(byLabel('端口')).toBe('13306');
-    expect(byLabel('账号')).toBe('kbe');
-    expect(byLabel('数据库')).toBe('kbe');
+    expect(byLabel('Host')).toBe('127.0.0.1');
+    expect(byLabel('Port')).toBe('13306');
+    expect(byLabel('Account')).toBe('kbe');
+    expect(byLabel('Database')).toBe('kbe');
     // RSA 密文:掩码 + 不解读
-    expect(byLabel('密码')).toContain('RSA 密文');
+    expect(byLabel('Password')).toContain('RSA ciphertext');
     // 硬口径:整树序列化后不出现任何明文密码字段/值
     expect(JSON.stringify(nodes)).not.toMatch(/plainPassword|password":/);
   });
@@ -74,9 +74,9 @@ describe('CLONE-P5 玩家数据只读面板(骨架)', () => {
   it('明文可读密码(encrypt=false):掩码「明文可读,仅连接用」——仍不出值', () => {
     const nodes = buildPlayerDataTreeNodes(view({ encrypt: false, plainPassword: 'pw-from-final-config' }));
     const children = nodes[0].children ?? [];
-    const password = String(children.find(child => child.label === '密码')?.description ?? '');
+    const password = String(children.find(child => child.label === 'Password')?.description ?? '');
     expect(password).toContain('●●●●●●');
-    expect(password).toContain('明文可读');
+    expect(password).toContain('plaintext');
     expect(password).not.toContain('pw-from-final-config');
   });
 
@@ -84,24 +84,24 @@ describe('CLONE-P5 玩家数据只读面板(骨架)', () => {
     const nodes = buildPlayerDataTreeNodes(view({ dbType: 'redis' }));
     expect(nodes[0].label).toContain('redis');
     // redis 已接入连接/预览面,不再标注「仅展示——连接面仅支持 mysql」
-    expect(nodes[0].label).not.toContain('仅展示');
+    expect(nodes[0].label).not.toContain('display only');
   });
 
   it('用户令 2026-11-09:defaults-only 如实标注——描述带「引擎默认」,来源注明缺元件配置', () => {
     const nodes = buildPlayerDataTreeNodes(view({ defaultsOnly: true }));
     const iface = nodes[0];
-    expect(iface.description).toBe('127.0.0.1:13306/kbe(引擎默认)');
+    expect(iface.description).toBe('127.0.0.1:13306/kbe (engine default)');
     const tooltip = String((iface.tooltip as { value?: string })?.value ?? iface.tooltip ?? '');
-    expect(tooltip).toContain('未发现元件 kbengine.xml');
-    expect(tooltip).toContain(PLAYER_DATABASE_DEFAULTS_ONLY_WARNING.slice(0, 20));
+    expect(tooltip).toContain('kbengine.xml was not found');
+    expect(tooltip).toContain(playerDatabaseDefaultsOnlyWarning().slice(0, 20));
     // 最终配置形态(非 defaults-only)不带告警
     const finalNodes = buildPlayerDataTreeNodes(view({ defaultsOnly: false }));
     expect(finalNodes[0].description).toBe('127.0.0.1:13306/kbe');
     const finalTooltip = String(
       (finalNodes[0].tooltip as { value?: string })?.value ?? finalNodes[0].tooltip ?? ''
     );
-    expect(finalTooltip).toContain('最终合成配置');
-    expect(finalTooltip).not.toContain('未发现元件 kbengine.xml');
+    expect(finalTooltip).toContain('final merged config');
+    expect(finalTooltip).not.toContain('kbengine.xml was not found');
   });
 
   it('dbid 查询 SQL:仅十进制正整数;前缀缺省 tbl_,反引号剥除', () => {
@@ -117,12 +117,12 @@ describe('CLONE-P5 玩家数据只读面板(骨架)', () => {
   });
 
   it('派生不可用:连接测试/查询如实降级,不虚构连接', async () => {
-    await expect(testPlayerDatabaseConnection()).resolves.toContain('未找到数据库配置段');
-    await expect(queryPlayerByDbid('42')).resolves.toContain('未找到数据库配置段');
+    await expect(testPlayerDatabaseConnection()).resolves.toContain('Database config section not found');
+    await expect(queryPlayerByDbid('42')).resolves.toContain('Database config section not found');
   });
 
   it('非法 dbid:查询前即拒绝(仅十进制正整数)', async () => {
-    await expect(queryPlayerByDbid('4.2')).resolves.toContain('十进制正整数');
+    await expect(queryPlayerByDbid('4.2')).resolves.toContain('decimal positive integers');
   });
 
   it('buildPlayerDatabaseView:双缓存全冷 → null(如实降级,不虚构)', () => {

@@ -35,12 +35,12 @@ describe('PlayerTaskStatusStore(UX-REVIEW-008a)', () => {
     expect(Object.keys(PLAYER_TASK_OUTCOME_LABELS).sort()).toEqual(
       ['cancelled', 'empty', 'failed', 'not-run', 'running', 'success'].sort()
     );
-    expect(PLAYER_TASK_OUTCOME_LABELS['not-run']).toBe('未运行');
-    expect(PLAYER_TASK_OUTCOME_LABELS.running).toBe('进行中');
-    expect(PLAYER_TASK_OUTCOME_LABELS.empty).toBe('空结果');
-    expect(PLAYER_TASK_OUTCOME_LABELS.success).toBe('成功');
-    expect(PLAYER_TASK_OUTCOME_LABELS.failed).toBe('失败');
-    expect(PLAYER_TASK_OUTCOME_LABELS.cancelled).toBe('已取消');
+    expect(PLAYER_TASK_OUTCOME_LABELS['not-run']).toBe('Not run');
+    expect(PLAYER_TASK_OUTCOME_LABELS.running).toBe('Running');
+    expect(PLAYER_TASK_OUTCOME_LABELS.empty).toBe('Empty result');
+    expect(PLAYER_TASK_OUTCOME_LABELS.success).toBe('Success');
+    expect(PLAYER_TASK_OUTCOME_LABELS.failed).toBe('Failed');
+    expect(PLAYER_TASK_OUTCOME_LABELS.cancelled).toBe('Cancelled');
   });
 
   it('查询与连接检查各自保留最近一次,互不覆盖;finish 覆盖同任务旧记录', () => {
