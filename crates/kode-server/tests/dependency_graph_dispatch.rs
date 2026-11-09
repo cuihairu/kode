@@ -465,3 +465,55 @@ fn bare_array_type_is_object_class_and_edges_by_type() {
         "Hero.ids → type:ItemIds property-type 边"
     );
 }
+
+#[test]
+fn text_directive_types_are_object_classes_too() {
+    // 文本形态 types.xml(`<X> FIXED_DICT …` / `<X> ARRAY <of>…</of>`,引擎模板
+    // 主形态;AUDIT-002 对拍实测:此前只认元素形态,真实资产对象类集为空 →
+    // property-type/type 节点全丢)。双形态并集后文本指引条目同样成对象类。
+    let types_xml = "<root>\
+        <SKILL_SLOT>\
+            FIXED_DICT\
+            <Properties>\
+                <count><Type>UINT32</Type></count>\
+            </Properties>\
+            <implementedBy> game.SkillSlot </implementedBy>\
+        </SKILL_SLOT>\
+        <ItemIds>\
+            ARRAY\
+            <of> UINT32 </of>\
+        </ItemIds>\
+        <ITEM_ID> UINT16 </ITEM_ID>\
+    </root>";
+    let hero_def = "<root>\
+        <Properties>\
+            <slots><Type>SKILL_SLOT</Type><Flags>CELL_PUBLIC</Flags></slots>\
+            <ids><Type>ItemIds</Type><Flags>CELL_PUBLIC</Flags></ids>\
+        </Properties>\
+    </root>";
+    let result = graph(json!({
+        "entitiesXml": "<root><Hero hasCell=\"true\"/></root>",
+        "typesXml": types_xml,
+        "defsRoot": "/defs/entitys",
+        "entitiesXmlPath": "/scripts/entities.xml",
+        "typesXmlPath": "/defs/entitys/types.xml",
+        "defs": { "Hero": hero_def },
+        "categories": {},
+    }));
+    let slots = node_named(&result, "type:SKILL_SLOT");
+    assert_eq!(slots["kind"], "type", "文本形态 FIXED_DICT 成 type 节点");
+    let ids = node_named(&result, "type:ItemIds");
+    assert_eq!(ids["kind"], "type", "文本形态 ARRAY 成 type 节点");
+    assert!(
+        has_edge(&result, "def:Hero", "type:SKILL_SLOT", "property-type"),
+        "Hero.slots → type:SKILL_SLOT property-type 边"
+    );
+    assert!(
+        has_edge(&result, "def:Hero", "type:ItemIds", "property-type"),
+        "Hero.ids → type:ItemIds property-type 边"
+    );
+    // 别名重定向(UINT16 内建指引)不是对象类:不产 type 节点。
+    assert!(nodes_of(&result)
+        .iter()
+        .all(|n| n.get("id").and_then(|v| v.as_str()) != Some("type:ITEM_ID")));
+}

@@ -12,14 +12,15 @@
 //! - def Parent/Interfaces 用 Document 双形态(文本/元素,镜像 message_table 的
 //!   node_value + wrapper 四拼写过滤)——kode-parser extract_def 只认文本形态,
 //!   元素形态(`<Parent><X/></Parent>`)在此覆盖,与 TS entityDependency 同。
-//! - types.xml 对象类用元素形态检测(`<X><FIXED_DICT>…` / `<X><ARRAY>…`,镜像
-//!   message_table load_types_xml)——kode-parser extract_types 只认文本指引。
+//! - types.xml 对象类双形态检测(元素形态 `<X><FIXED_DICT>…` 镜像 message_table
+//!   load_types_xml;文本形态 `<X> FIXED_DICT …` 同 kode-parser extract_types
+//!   文本指引——真实资产 types.xml 主形态,只认元素形态会全丢)。
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde_json::{json, Value};
 
-use kode_parser::model::extract_def;
+use kode_parser::model::{extract_def, parse_types, TypeKind};
 use kode_parser::xml::{parse as parse_xml, Document};
 
 use crate::rpc::RpcRegistry;
@@ -122,19 +123,28 @@ fn parse_interfaces(doc: &Document, root: usize) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// types.xml 对象类名(FIXED_DICT/ARRAY 元素子节点,与 message_table 同检测)。
+/// types.xml 对象类名(FIXED_DICT/ARRAY 声明),双形态并集:
+/// - 元素形态(`<X><FIXED_DICT>…`,与 message_table load_types_xml 同检测);
+/// - 文本形态(`<X> FIXED_DICT …`,引擎模板主形态,与 kode-parser
+///   extract_types 文本指引同口径)。此前只认元素形态——真实资产 types.xml
+///   全文本形态(FIXED_DICT 是文本指引而非子元素)→ 对象类集为空,
+///   property-type/type 节点全丢(AUDIT-002 对拍实测发现)。
 fn object_class_names(types_xml: &str) -> HashSet<String> {
-    let doc = parse_xml(types_xml, false);
     let mut names = HashSet::new();
-    let Some(root) = doc.root() else {
-        return names;
-    };
-    for child in doc.child_elements(root) {
-        let name = doc.element(child).name.clone();
-        let is_obj = doc.child_element(child, "FIXED_DICT").is_some()
-            || doc.child_element(child, "ARRAY").is_some();
-        if is_obj {
-            names.insert(name);
+    let doc = parse_xml(types_xml, false);
+    if let Some(root) = doc.root() {
+        for child in doc.child_elements(root) {
+            let name = doc.element(child).name.clone();
+            let is_obj = doc.child_element(child, "FIXED_DICT").is_some()
+                || doc.child_element(child, "ARRAY").is_some();
+            if is_obj {
+                names.insert(name);
+            }
+        }
+    }
+    for t in parse_types(types_xml).types {
+        if matches!(t.kind, TypeKind::FixedDict | TypeKind::Array) {
+            names.insert(t.name);
         }
     }
     names
