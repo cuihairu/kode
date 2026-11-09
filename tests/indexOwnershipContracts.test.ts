@@ -6,7 +6,7 @@ import {
   SemanticIndex,
   getSemanticIndex,
   resetSemanticTypeRegistryForTests
-} from '../src/semanticIndex';
+} from '../src/backend/semanticIndex';
 import { PythonClassIndex } from '../src/backend/pythonClassIndex';
 import { WorkspaceIndex } from '../src/workspaceIndex';
 import { GlobalDataDictIndex } from '../src/globalDataIndex';

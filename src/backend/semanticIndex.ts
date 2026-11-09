@@ -1,4 +1,4 @@
-import { normalizeLookupPath } from './definitionSemantics';
+import { normalizeLookupPath } from '../definitionSemantics';
 
 // 统一语义查询层(PR4,用户令 2026-10-23):多资产根模型 + 实体/Python类/类型
 // 注册关系的统一承载。查询 API 只返回条目与快照拷贝,不暴露内部 Map/遍历——

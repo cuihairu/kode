@@ -6,7 +6,7 @@ import { createDefinitionSemanticsLoader } from '../src/definitionSemantics';
 import { resolveEntityAnnotationType } from '../src/definitionWorkspace';
 import { getDatabaseSchemaSnapshot, invalidateDatabaseSchemaCacheForFiles } from '../src/databaseSchema';
 import type { DatabaseSchemaSnapshot } from '../src/databaseSchema';
-import { resetSemanticTypeRegistryForTests } from '../src/semanticIndex';
+import { resetSemanticTypeRegistryForTests } from '../src/backend/semanticIndex';
 import { getStoredSnapshotCount, releaseDocument, updateDocumentSnapshot } from '../src/backend/documentStore';
 import { workspace } from './fake-vscode/workspaceState';
 

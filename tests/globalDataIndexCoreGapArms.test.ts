@@ -7,7 +7,7 @@ import {
   getDataDictAccessInCodeContext,
   normalizeKeySignature,
   resolveFunctionReturns
-} from '../src/globalDataIndexCore';
+} from '../src/backend/globalDataIndexCore';
 
 // globalDataIndexCore 缺口臂(2026-11-09 覆盖率扫尾)。
 //

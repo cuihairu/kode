@@ -120,7 +120,7 @@ import {
 
 
 
-import { isTypeRegistryFile } from './semanticIndex';
+import { isTypeRegistryFile } from './backend/semanticIndex';
 import {
   invalidateDatabaseSchemaCacheForFiles,
   invalidateDatabaseSchemaCacheForTypeRegistry,

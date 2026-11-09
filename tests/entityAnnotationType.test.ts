@@ -6,7 +6,7 @@ import {
   getRegisteredAliasTypes,
   resolveEntityAnnotationType
 } from '../src/definitionWorkspace';
-import { getSemanticIndex } from '../src/semanticIndex';
+import { getSemanticIndex } from '../src/backend/semanticIndex';
 import {
   EntityMappingManager
 } from '../src/entityMapping';

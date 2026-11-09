@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { resolveEntityAnnotationType } from '../src/definitionWorkspace';
-import { getSemanticIndex, resetSemanticTypeRegistryForTests } from '../src/semanticIndex';
+import { getSemanticIndex, resetSemanticTypeRegistryForTests } from '../src/backend/semanticIndex';
 import { workspace } from './fake-vscode/workspaceState';
 
 // IDE-SNP-004:类型注册表接收脏 types.xml 更新——未保存别名修改进注册表,

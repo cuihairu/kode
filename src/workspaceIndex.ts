@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { findEventCalls } from './eventApi';
-import type { EventCall, EventCallIndex, IndexedEventCall } from './eventIndexTypes';
+import type { EventCall, EventCallIndex, IndexedEventCall } from './backend/eventIndexTypes';
 import { findFilesAcrossRoots, getExternalScanRoots } from './scanRoots';
 import { PY_SCAN_EXCLUDE } from './backend/pythonScanRules';
 

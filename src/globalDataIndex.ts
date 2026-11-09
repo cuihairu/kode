@@ -35,7 +35,7 @@ import {
   type KbeDataDictAccess,
   type KbeDataDictSite,
   type SlicedScanStats
-} from './globalDataIndexCore';
+} from './backend/globalDataIndexCore';
 
 export {
   KBENGINE_DATA_DICTS,
@@ -54,7 +54,7 @@ export {
   type KbeDataDictName,
   type KbeDataDictSite,
   type SlicedScanStats
-} from './globalDataIndexCore';
+} from './backend/globalDataIndexCore';
 
 /**
  * AUD-068:文件所属作用域根(跨进程字典不跨工程/集群共享命名空间)。

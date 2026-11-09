@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fsp from 'node:fs/promises';
 import type { EntityMappingManager } from './entityMapping';
-import type { EventCall, EventCallIndex } from './eventIndexTypes';
+import type { EventCall, EventCallIndex } from './backend/eventIndexTypes';
 import { KBENGINE_SOURCE_REVEAL_COMMAND } from './sourceRevealCommand';
 
 // 只认三种实参形态：标识符/点名（self.EV_X、on_ready）与字符串字面量；表达式保持沉默。

@@ -3,7 +3,7 @@ import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { EventCodeLensProvider } from '../src/eventApi';
-import { type EventCallIndex, type IndexedEventCall } from '../src/eventIndexTypes';
+import { type EventCallIndex, type IndexedEventCall } from '../src/backend/eventIndexTypes';
 import { makeTextDocument } from './fake-vscode/core';
 
 // IDE-ARC-002 事件索引小接口化:纯数据类型(EventCall/IndexedEventCall)与消费接口
@@ -35,11 +35,11 @@ describe('事件索引小接口(IDE-ARC-002)', () => {
   it('eventApi 不再依赖 workspaceIndex(反向边切断),索引类型改从小接口模块取', () => {
     const eventApi = readFileSync(join(root, 'src/eventApi.ts'), 'utf8');
     expect(eventApi.includes("from './workspaceIndex'"), 'eventApi 仍 import workspaceIndex').toBe(false);
-    expect(eventApi.includes("from './eventIndexTypes'"), 'eventApi 应改用 eventIndexTypes').toBe(true);
+    expect(eventApi.includes("from './backend/eventIndexTypes'"), 'eventApi 应改用 eventIndexTypes').toBe(true);
   });
 
   it('eventIndexTypes 是纯数据模块:不 import vscode;旧定义面删净,WorkspaceIndex implements 小接口', () => {
-    const types = readFileSync(join(root, 'src/eventIndexTypes.ts'), 'utf8');
+    const types = readFileSync(join(root, 'src/backend/eventIndexTypes.ts'), 'utf8');
     expect(types.includes("from 'vscode'")).toBe(false);
     expect(types.match(/export type EventCall\b/)).toBeTruthy();
     expect(types.match(/export interface IndexedEventCall\b/)).toBeTruthy();

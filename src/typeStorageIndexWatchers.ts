@@ -17,7 +17,7 @@ import {
   invalidateTypeStorageUsageIndex,
   replaceTypeStorageUsageForEntity
 } from './databaseSchema';
-import { isTypeRegistryFile } from './semanticIndex';
+import { isTypeRegistryFile } from './backend/semanticIndex';
 
 /** 建三枚全仓 watcher 并接失效策略;onUsageIndexChanged 在失效后回调(装配层
  * 用它驱动受影响 provider 的镜刷新)。返回的 Disposable 拆掉全部 watcher。 */

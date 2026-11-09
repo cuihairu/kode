@@ -21,7 +21,7 @@ import {
   resolveEntityAnnotationType,
   resolveEntityFixedDictMember
 } from '../src/definitionWorkspace';
-import { getSemanticIndex } from '../src/semanticIndex';
+import { getSemanticIndex } from '../src/backend/semanticIndex';
 import { makeTextDocument, workspace } from './helpers/vscodeStub';
 
 // definitionWorkspace 的纯路径/解析逻辑:临时 workspace 真实文件树,

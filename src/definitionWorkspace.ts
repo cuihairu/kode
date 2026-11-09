@@ -38,7 +38,7 @@ import {
 } from './pythonTypeStubs';
 import { startLanguageServiceOperation } from './languageServiceMetrics';
 import { readFileSyncUtf8Recorded } from './backend/fileReadMetrics';
-import { getSemanticIndex } from './semanticIndex';
+import { getSemanticIndex } from './backend/semanticIndex';
 import { normalizeFileIdentity } from './backend/pathIdentity';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import {

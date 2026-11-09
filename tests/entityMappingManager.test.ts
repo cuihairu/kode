@@ -16,7 +16,7 @@ import {
 import { configurationOverrides } from './fake-vscode/workspaceState';
 import { resetScanRootCache } from '../src/scanRoots';
 import { normalizeFileIdentity } from '../src/backend/pathIdentity';
-import { getSemanticIndex } from '../src/semanticIndex';
+import { getSemanticIndex } from '../src/backend/semanticIndex';
 
 // EntityMappingManager 类本体:构造即扫描 scripts/entity_defs 并挂 python
 // watcher。测试用真实临时文件树 + stub findFiles 枚举,走 buildIndex →

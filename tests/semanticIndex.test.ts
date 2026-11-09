@@ -7,7 +7,7 @@ import {
   getSemanticIndex,
   isTypeRegistryFile,
   resetSemanticTypeRegistryForTests
-} from '../src/semanticIndex';
+} from '../src/backend/semanticIndex';
 import { SemanticDependencyGraph } from '../src/dependencyGraph';
 import { EntityMappingManager } from '../src/entityMapping';
 import { resolveEntityAnnotationType } from '../src/definitionWorkspace';
