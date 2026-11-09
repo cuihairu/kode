@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { locateInterpreterOnPath } from '../src/profileInterpreter';
-import type { DiscoveredVenv } from '../src/venvDiscovery';
+import type { DiscoveredVenv } from '../src/backend/venvDiscovery';
 import type { InterpreterResolution } from '../src/profileInterpreter';
 import {
   buildInterpreterPickItems,
@@ -14,7 +14,7 @@ import {
   VENV_CREATE_ITEM_LABEL,
   probePythonVersion,
   runVenvModuleProcess
-} from '../src/venvInterpreterPicker';
+} from '../src/backend/venvInterpreterPicker';
 
 // 解释器状态栏展示与选择(PY-ENV 二期):状态栏项显示当前解释器(venv 名/
 // 版本/来源徽标 auto|configured|PATH),点击进 QuickPick——选中写入

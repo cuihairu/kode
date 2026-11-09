@@ -15,7 +15,7 @@ import { RUFF_MAX_FILES, runInstallRuffCommand, runRuffLintCommand, RuffDiag } f
 import { buildDefReferenceGraphFromFile, buildProjectDoctorReport, formatDefReferenceGraphPreview, formatProjectDoctorReport } from '../backend/defReferenceGraph';
 import { buildDiscoveryReport, renderDiscoveryReport, runWorkspaceDiscovery } from '../workspaceDiscovery';
 import { classifyPythonService, collectPythonServiceFacts, renderPythonServiceMessage } from '../pythonLanguageServiceStatus';
-import { createVenvFlow, interpreterStatusBarText, probePythonVersion, runVenvModuleProcess, selectInterpreter } from '../venvInterpreterPicker';
+import { createVenvFlow, interpreterStatusBarText, probePythonVersion, runVenvModuleProcess, selectInterpreter } from '../backend/venvInterpreterPicker';
 import { detectDualActivation, formatDualActivationWarning } from '../dualActivationConflict';
 import { execFile } from 'child_process';
 import { findFilesAcrossRoots } from '../scanRoots';
@@ -36,7 +36,7 @@ import { renderReproductionSummary } from '../reproductionSummary';
 import { resolveActiveProfile } from '../activeProfile';
 import { StartEntryController } from '../startEntry';
 import { resolveDatabaseInterfaceConfig } from '../serverConfigMerge';
-import { scanVenvs, verifyVenvDirectory } from '../venvDiscovery';
+import { scanVenvs, verifyVenvDirectory } from '../backend/venvDiscovery';
 import { showProfileHealthSummary } from '../profileHealth';
 import { wireDefAnalysis } from '../defAnalysisWiring';
 import { wireTrapLintDiagnostics } from '../trapDiagnosticsWiring';

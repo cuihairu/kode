@@ -13,7 +13,7 @@
  * import vscode——单测用内存替身;extension.ts 只做薄装配。
  */
 
-import { l10nText } from './nlsRuntime';
+import { l10nText } from '../nlsRuntime';
 import * as path from 'path';
 import { execFile, spawn } from 'child_process';
 import {
@@ -21,8 +21,8 @@ import {
   parsePythonVersionOutput,
   scanVenvs
 } from './venvDiscovery';
-import type { InterpreterResolution, InterpreterSource } from './profileInterpreter';
-import { DEFAULT_VENV_DIRECTORY_NAMES } from './quickActionConfig';
+import type { InterpreterResolution, InterpreterSource } from '../profileInterpreter';
+import { DEFAULT_VENV_DIRECTORY_NAMES } from '../quickActionConfig';
 
 /** 状态栏/选择器的来源徽标:配置>自动>PATH,缺失明说 */
 export function interpreterSourceBadge(source: InterpreterSource): string {

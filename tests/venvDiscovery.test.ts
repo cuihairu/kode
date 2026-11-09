@@ -11,7 +11,7 @@ import {
   shouldPruneVenvScanDirectory,
   venvBinaryCandidates,
   verifyVenvDirectory
-} from '../src/venvDiscovery';
+} from '../src/backend/venvDiscovery';
 
 // venv 自动发现(PY-ENV 二期):扫描 workspaceRoot 下的虚拟环境——venv 以
 // pyvenv.cfg 为证、conda 环境以 conda-meta/ 为证,并要求解释器二进制真实

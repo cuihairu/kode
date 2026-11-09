@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { setL10nBundle } from './fake-vscode/l10n';
 import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
 import { confirmGenerationPlanItems } from '../src/generationConfirm';
-import { interpreterStatusBarText } from '../src/venvInterpreterPicker';
+import { interpreterStatusBarText } from '../src/backend/venvInterpreterPicker';
 import { window as stubWindow } from './helpers/vscodeStub';
 
 const zh = zhCnBundle as Record<string, string>;

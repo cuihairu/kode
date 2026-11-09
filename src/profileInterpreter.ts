@@ -17,7 +17,7 @@ import {
   DEFAULT_VENV_DIRECTORY_NAMES,
   normalizeVenvDirectoryNames
 } from './quickActionConfig';
-import { scanVenvs } from './venvDiscovery';
+import { scanVenvs } from './backend/venvDiscovery';
 
 export type InterpreterSource = 'setting' | 'venv' | 'path' | 'missing';
 
