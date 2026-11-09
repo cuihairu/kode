@@ -12,7 +12,7 @@
  */
 
 import * as net from 'net';
-import { l10nText } from './nlsRuntime';
+import { l10nText } from '../nlsRuntime';
 import {
   CONSOLE_LOG_MSG_ID,
   KBELOG_TYPES_MASK,
@@ -27,9 +27,9 @@ import {
   parseConsoleLogBody,
   parseLogStream,
   type ParsedLogStream
-} from './kbengineProtocol';
+} from '../kbengineProtocol';
 import { parseExceptionSourceLocation, type ExceptionSourceLocation } from './exceptionSourceLocator';
-import type { ConsoleHubDepsLike } from './kbengineConsoleHub';
+import type { ConsoleHubDepsLike } from '../kbengineConsoleHub';
 
 export type TailState = 'disabled' | 'waiting-machined' | 'connecting' | 'connected' | 'backoff';
 

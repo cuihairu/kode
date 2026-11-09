@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
-import { getFileReadTotals } from '../../../fileReadMetrics';
+import { getFileReadTotals } from '../../../backend/fileReadMetrics';
 import { getOperationSummary } from '../../../languageServiceMetrics';
 
 // IDE-ACC-007:hover/导航取消后的收敛验收(真实编辑器,大仓)。

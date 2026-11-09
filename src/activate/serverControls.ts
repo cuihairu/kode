@@ -50,7 +50,7 @@ import {
 import { buildDebugStatusRows, type DebugInjectionEntry } from '../debug/debugStatusBoard';
 import { DebugTargetTreeProvider } from '../debug/debugStatusTree';
 import { runListeningRowFocus } from '../debug/debugTargetFocus';
-import { RuntimeLogLevel } from '../logHub';
+import { RuntimeLogLevel } from '../backend/logHub';
 import { DEBUG_ATTACH_MODE_STATE_KEY, DebugConfigManager } from '../debugConfig';
 import {
   PYSPY_RECORD_DEFAULTS,

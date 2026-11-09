@@ -1,7 +1,7 @@
 import { ChildProcess, ChildProcessWithoutNullStreams, spawn, SpawnOptionsWithoutStdio } from 'child_process';
 import { EventEmitter } from 'events';
 
-import { LogHubLike, normalizeText } from './logHub';
+import { LogHubLike, normalizeText } from './backend/logHub';
 
 export interface ProcessSpawnRequest {
   id: string;

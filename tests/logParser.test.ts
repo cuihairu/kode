@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LogParser, LogLevel, LogType } from '../src/logParser';
+import { LogParser, LogLevel, LogType } from '../src/backend/logParser';
 
 describe('LogParser.parseLoggerMessage', () => {
   it('parses the KBEngine logger wire format', () => {

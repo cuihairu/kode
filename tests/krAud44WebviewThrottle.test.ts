@@ -2,7 +2,7 @@ import type * as vscode from 'vscode';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { KBEngineLogCollector } from '../src/logCollector';
 import { LogViewerWebView } from '../src/logWebView';
-import { LogEntry, LogLevel, LogType } from '../src/logParser';
+import { LogEntry, LogLevel, LogType } from '../src/backend/logParser';
 import type { ComponentMetrics, MonitoringCollector } from '../src/monitoringCollector';
 import { MonitoringWebView } from '../src/monitoringWebView';
 import { panelRegistry, Uri, windowState } from './helpers/vscodeStub';

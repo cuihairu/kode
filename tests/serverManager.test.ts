@@ -11,7 +11,7 @@ import {
   ServerStatus,
   resolveDependencyWaitDeadline
 } from '../src/serverManager';
-import { LogHub } from '../src/logHub';
+import { LogHub } from '../src/backend/logHub';
 import {
   channels,
   configurationOverrides,

@@ -8,7 +8,7 @@ import {
   getDatabaseSchemaSnapshot,
   invalidateDatabaseSchemaCacheForFiles
 } from '../src/databaseSchema';
-import { getRecentFileReads, resetFileReadMetrics, setFileReadVerbose } from '../src/fileReadMetrics';
+import { getRecentFileReads, resetFileReadMetrics, setFileReadVerbose } from '../src/backend/fileReadMetrics';
 import { workspace } from './fake-vscode/workspaceState';
 
 // IDE-REV-011(原项 IDE-SCH-007):schema 热命中校验不读取输入文件内容——

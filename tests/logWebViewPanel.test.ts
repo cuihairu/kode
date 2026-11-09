@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { KBEngineLogCollector } from '../src/logCollector';
-import { LogHub } from '../src/logHub';
+import { LogHub } from '../src/backend/logHub';
 import { LogViewerWebView } from '../src/logWebView';
-import { LogEntry, LogLevel, LogParser, LogType } from '../src/logParser';
+import { LogEntry, LogLevel, LogParser, LogType } from '../src/backend/logParser';
 import type * as vscode from 'vscode';
 import {
   messages,

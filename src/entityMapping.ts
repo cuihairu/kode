@@ -11,7 +11,7 @@ import { INTERACTIVE_INDEX_WAIT_MS, logLayerTiming, raceWithBudget } from './hov
 import { startLanguageServiceOperation } from './languageServiceMetrics';
 import { ensureConfigDerivedScanRoot } from './configDerive';
 import { getRootConfigGeneration } from './rootConfigGeneration';
-import { readFileUtf8Recorded, readFileSyncUtf8Recorded } from './fileReadMetrics';
+import { readFileUtf8Recorded, readFileSyncUtf8Recorded } from './backend/fileReadMetrics';
 import { collectOpenDocumentTexts, readSharedFileSnapshot } from './sharedFileSnapshot';
 import {
   findFilesAcrossRoots,

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as net from 'net';
-import { LogEntry, LogLevel } from './logParser';
+import { LogEntry, LogLevel } from './backend/logParser';
 
 export interface LogCollectorConfig {
   host: string;

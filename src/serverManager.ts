@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { ChildProcess } from 'child_process';
-import { LogHub, RuntimeLogLevel } from './logHub';
+import { LogHub, RuntimeLogLevel } from './backend/logHub';
 import { ProcessManager, spawnProcess } from './processManager';
 import { joinWorkspacePath, usesPosixPath } from './backend/workspacePath';
 import { hasEngineConfigProbe, resolveDiscoveredConfigRoot, resolveKbeSourceRoot } from './workspaceDiscovery';

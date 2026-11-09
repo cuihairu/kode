@@ -16,7 +16,7 @@ import {
 import { renderLintRulesReport } from './lintRuleRegistry';
 import { resolveServerComponent } from './serverCommandTarget';
 import { getDiagnosticScheduler } from './diagnosticScheduler';
-import { setFileReadVerbose } from './fileReadMetrics';
+import { setFileReadVerbose } from './backend/fileReadMetrics';
 import { setCpuProfileDirectory, startCpuProfile, stopCpuProfile } from './cpuProfileCapture';
 import {
   getEventLoopDelayReport,

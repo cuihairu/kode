@@ -4,9 +4,9 @@
  */
 
 import * as vscode from 'vscode';
-import { LogEntry, LogParser, LogLevel } from './logParser';
+import { LogEntry, LogParser, LogLevel } from './backend/logParser';
 import { KBEngineLogCollector } from './logCollector';
-import { LogEvent, LogHub, RuntimeLogLevel } from './logHub';
+import { LogEvent, LogHub, RuntimeLogLevel } from './backend/logHub';
 import { getWebviewConsoleScript, WEBVIEW_LOG_COMMAND, WebviewLogMessage } from './webviewConsoleBridge';
 import { randomNonce, webviewScriptCsp } from './webviewSecurity';
 import { WEBVIEW_THEME_CSS } from './webviewTheme';

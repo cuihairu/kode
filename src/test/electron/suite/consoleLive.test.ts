@@ -17,9 +17,9 @@ import * as assert from 'assert';
 import {
   type KBEngineComponentInfo
 } from '../../../kbengineProtocol';
-import { parseExceptionSourceLocation, resolveExceptionSource } from '../../../exceptionSourceLocator';
+import { parseExceptionSourceLocation, resolveExceptionSource } from '../../../backend/exceptionSourceLocator';
 import { ConsoleHub } from '../../../kbengineConsoleHub';
-import { ConsoleLogTailController } from '../../../consoleLogTail';
+import { ConsoleLogTailController } from '../../../backend/consoleLogTail';
 import { ComponentStatusTreeProvider, describeComponentRow, resolveThresholds } from '../../../componentStatusPanel';
 
 const evidenceLines: string[] = [];

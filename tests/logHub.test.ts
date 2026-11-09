@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { describe, expect, it, vi } from 'vitest';
-import { LogHub } from '../src/logHub';
+import { LogHub } from '../src/backend/logHub';
 
 describe('LogHub', () => {
   it('deduplicates stdout and file events from the same source', async () => {

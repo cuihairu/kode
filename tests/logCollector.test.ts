@@ -1,7 +1,7 @@
 import type * as vscode from 'vscode';
 import { describe, expect, it } from 'vitest';
 import { CollectorStatus, KBEngineLogCollector } from '../src/logCollector';
-import { LogEntry, LogLevel, LogType } from '../src/logParser';
+import { LogEntry, LogLevel, LogType } from '../src/backend/logParser';
 
 // KBEngineLogCollector 的状态机、环形缓冲与日志查询纯逻辑。
 // connect() 按实现现状直接拒绝(logger watcher 协议未适配),不发起 socket;

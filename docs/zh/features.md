@@ -226,7 +226,7 @@
 ## 监控与 SDK
 
 - **服务器监控面板** —— webview 可视化服务器性能与状态指标 ——（证据：package.json#contributes.commands `kbengine.monitoring.show`；src/monitoringCollector.ts、src/monitoringWebView.ts）
-- **日志查看器与收集器** —— 日志 webview、启动自动连接、清除/导出、增量合批推送带上限 ——（证据：package.json#contributes.commands `kbengine.logs.showViewer|connect|disconnect|clear|export`；package.json#configuration `kbengine.logAutoConnect|maxLogEntries|loggerPort`；src/logHub.ts、src/logWebView.ts、src/logCollector.ts）
+- **日志查看器与收集器** —— 日志 webview、启动自动连接、清除/导出、增量合批推送带上限 ——（证据：package.json#contributes.commands `kbengine.logs.showViewer|connect|disconnect|clear|export`；package.json#configuration `kbengine.logAutoConnect|maxLogEntries|loggerPort`；src/backend/logHub.ts、src/logWebView.ts、src/logCollector.ts）
 - **原始日志 ERROR 扫描** —— 选文件/文件夹按「组件+归一签名」聚合 ERROR/CRITICAL，点击行开源文件定位 ——（证据：package.json#contributes.commands `kbengine.logs.scanErrors`；todo.md:51；src/logErrorScan.ts）
 - **客户端实体 SDK 生成** —— 按 entities.xml 登记序生成 TypeScript 与 C# 客户端 SDK，只收客户端可见属性、FIXED_DICT 伴随文件、默认不覆盖；固定辅助成员（entityId / onBaseOutgoing / onCellOutgoing，C# EntityId / OnBaseOutgoing / OnCellOutgoing，加 baseCall*/cellCall* 包装）先与业务成员预检，撞名即提前拒绝并点名实体、语言、成员与全部来源（AUD-062），绝不静默生成含重复成员的文件；TS 64 位整数（UINT64/INT64）映射为 `bigint`（精确覆盖 64 位全域，ES2020+ 编译目标与 BigInt 感知编解码在每个生成文件头部注明，AUD-063）
   ——（证据：package.json#contributes.commands `kbengine.clientSdk.generate`；package.json#configuration `kbengine.clientSdk.outputDir`；todo.md:50；src/clientSdkGenerator.ts、src/clientSdkCodegen.ts、crates/kode-server/src/client_sdk.rs）
@@ -466,7 +466,7 @@
 | `kbengine.infer.exclusionsSync` | `true` | .kbengine 隔离（search/watcher/gitignore 幂等，gitignore 绝不创建）— `src/backend/managedDirExclusions.ts` |
 | `kbengine.types.aliasDiscovery` | `true` | alias.xml 自定义类型发现 — `src/definitionWorkspace.ts:285` |
 | `kbengine.runtimeQuery.enabled` | `false` | 运行时查询面板操作面（watcher 观察清单增删与结果订阅流；默认关时面板只剩单次手动查询）— `src/runtimeQueryWebView.ts` |
-| `kbengine.metrics.fileReadDetail` | `false` | 文件读取明细审计（路径+字节数，环形缓冲 256 条，`kbengine.metrics.showSummary` 可查；默认关=只累计计数，开销有界）— `src/fileReadMetrics.ts` |
+| `kbengine.metrics.fileReadDetail` | `false` | 文件读取明细审计（路径+字节数，环形缓冲 256 条，`kbengine.metrics.showSummary` 可查；默认关=只累计计数，开销有界）— `src/backend/fileReadMetrics.ts` |
 | `kbengine.runtimeQuery.pollIntervalMs` | `2000` | 运行时查询面板结果订阅流轮询间隔毫秒数（下限 500；仅在 `kbengine.runtimeQuery.enabled` 开启时生效）— `src/runtimeQueryWebView.ts` |
 | `kbengine.clone.archiveEncryption` | `"encrypted"` | 玩家数据克隆归档加密默认值（`encrypted` = chacha20poly1305 加密归档,密钥机器域存 globalStorage `clone-keys/`;`plain` = 脱敏明文归档,适合跨机转移;导出确认页每次可切换）— `src/backend/playerDataCloneCommands.ts` |
 | `kbengine.protocol.tsharkPath` | `"tshark"` | 协议工具链检测使用的 tshark 可执行名或路径（PA-007 状态命令）— `src/protocolTooling.ts` |

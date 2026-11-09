@@ -33,7 +33,7 @@ import type {
   SpaceQueryResult,
   WatcherQueryResult
 } from '../src/kbengineProtocol';
-import { LogHub, RuntimeLogLevel, type LogBatch } from '../src/logHub';
+import { LogHub, RuntimeLogLevel, type LogBatch } from '../src/backend/logHub';
 import { HttpRequestService } from '../src/httpRequestService';
 import type { HttpRequestEntry } from '../src/httpRequests';
 import { resolveLaunchOrder } from '../src/launchDependencies';

@@ -1,4 +1,4 @@
-import type { LogHubLike } from './logHub';
+import type { LogHubLike } from './backend/logHub';
 import type * as vscode from 'vscode';
 
 // 悬停/异步层预算闸(2026-10-22 用户令「hover 永转 loading 不出结果」):

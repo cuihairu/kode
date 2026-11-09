@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
 import { CollectorStatus, KBEngineLogCollector } from '../src/logCollector';
-import type { LogEntry } from '../src/logParser';
+import type { LogEntry } from '../src/backend/logParser';
 
 // KBEngineLogCollector 的 socket 辅助路径:connect() 按设计直接拒绝,
 // 但 deregister/heartbeat 帧组装、心跳定时器、重连调度、UID 探测与

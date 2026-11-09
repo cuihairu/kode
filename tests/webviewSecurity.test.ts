@@ -5,7 +5,7 @@ import { statCard as renderStatCard } from '../src/entityDependencyWebViewHtml';
 import { EntityFlowWebView } from '../src/entityFlowWebView';
 import type { EntityFlowGraph } from '../src/entityFlowGraph';
 import { KBEngineLogCollector } from '../src/logCollector';
-import { LogEntry, LogLevel, LogType } from '../src/logParser';
+import { LogEntry, LogLevel, LogType } from '../src/backend/logParser';
 import { LogViewerWebView } from '../src/logWebView';
 import { MonitoringCollector } from '../src/monitoringCollector';
 import type { ComponentMetrics } from '../src/monitoringCollector';

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONSOLE_LOG_MSG_ID, buildFrame } from '../src/kbengineProtocol';
-import { ConsoleLogTailController, buildTailCodeActions, type TailJumpTarget } from '../src/consoleLogTail';
+import { ConsoleLogTailController, buildTailCodeActions, type TailJumpTarget } from '../src/backend/consoleLogTail';
 
 // consoleLogTail.ts 缺口臂(2026-11-09 覆盖率扫尾):
 //   buildTailCodeActions 的「错误级但无 file:line 落点 → 如实空」(L113)、

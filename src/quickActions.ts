@@ -33,7 +33,7 @@ import type {
 } from './quickActionConfig';
 import type { HttpRequestEntry } from './httpRequests';
 import { scanBatchScriptsInRoots } from './quickActionScanner';
-import { LogHubLike } from './logHub';
+import { LogHubLike } from './backend/logHub';
 import { ProcessManager, type ManagedProcess } from './processManager';
 import { parseDebugConfigText } from './debugConfigBootstrap';
 import type { BatchScriptCandidate, DirectoryEntry } from './quickActionScanner';

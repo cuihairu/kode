@@ -51,7 +51,7 @@ import {
   formatUnresolvedException,
   parseExceptionSourceLocation,
   resolveExceptionSource
-} from '../../../exceptionSourceLocator';
+} from '../../../backend/exceptionSourceLocator';
 
 const evidenceLines: string[] = [];
 const evidenceOut = process.env.KODE_LIV_OUT ?? path.resolve(__dirname, '../../../docs/perf/liv-observation-run.txt');

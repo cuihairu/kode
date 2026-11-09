@@ -37,7 +37,7 @@ import {
   type QuickActionManagerDeps
 } from '../src/quickActions';
 import { ProcessManager, type ProcessSpawnRunner } from '../src/processManager';
-import type { LogHubLike } from '../src/logHub';
+import type { LogHubLike } from '../src/backend/logHub';
 import {
   makeTextDocument,
   memoryFileSystem,

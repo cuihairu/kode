@@ -10,7 +10,7 @@ import {
   getFileReadTotals,
   getRecentFileReads,
   isFileReadVerbose
-} from './fileReadMetrics';
+} from './backend/fileReadMetrics';
 
 export type LanguageServiceEventName =
   | 'hover'

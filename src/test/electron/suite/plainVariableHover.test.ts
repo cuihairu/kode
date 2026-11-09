@@ -4,7 +4,7 @@ import * as path from 'path';
 import { monitorEventLoopDelay } from 'perf_hooks';
 import * as vscode from 'vscode';
 
-import { getFileReadTotals, resetFileReadMetrics } from '../../../fileReadMetrics';
+import { getFileReadTotals, resetFileReadMetrics } from '../../../backend/fileReadMetrics';
 import {
   clearRecentAnnotationSourceLogs,
   getRecentAnnotationSourceLogs,

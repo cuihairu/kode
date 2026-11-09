@@ -3,7 +3,7 @@
 // - 面板接入 webviewTheme 统一 token(级别边条旧蓝图/橙/红退场);
 // - 全部文案走 webviewStrings(zh 默认/en 全量)。
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { LogEntry } from '../src/logParser';
+import type { LogEntry } from '../src/backend/logParser';
 import { LogViewerWebView } from '../src/logWebView';
 import { configurationOverrides, envState } from './helpers/vscodeStub';
 

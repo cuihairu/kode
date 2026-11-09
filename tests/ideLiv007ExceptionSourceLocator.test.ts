@@ -3,7 +3,7 @@ import {
   formatUnresolvedException,
   parseExceptionSourceLocation,
   resolveExceptionSource
-} from '../src/exceptionSourceLocator';
+} from '../src/backend/exceptionSourceLocator';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';

@@ -16,7 +16,7 @@ import {
   recordFileRead,
   resetFileReadMetrics,
   setFileReadVerbose
-} from '../src/fileReadMetrics';
+} from '../src/backend/fileReadMetrics';
 import { KBEngineHoverProvider } from '../src/languageProviders';
 import { makeTextDocument, Position, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 

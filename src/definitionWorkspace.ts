@@ -37,7 +37,7 @@ import {
   type ResolvedAnnotationWithReason
 } from './pythonTypeStubs';
 import { startLanguageServiceOperation } from './languageServiceMetrics';
-import { readFileSyncUtf8Recorded } from './fileReadMetrics';
+import { readFileSyncUtf8Recorded } from './backend/fileReadMetrics';
 import { getSemanticIndex } from './semanticIndex';
 import { normalizeFileIdentity } from './backend/pathIdentity';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';

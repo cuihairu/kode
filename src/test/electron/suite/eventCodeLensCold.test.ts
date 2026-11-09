@@ -4,7 +4,7 @@ import * as path from 'path';
 import { performance } from 'perf_hooks';
 import * as vscode from 'vscode';
 
-import { getFileReadTotals } from '../../../fileReadMetrics';
+import { getFileReadTotals } from '../../../backend/fileReadMetrics';
 
 // IDE-ACC-003:首次事件 CodeLens 的大仓行为验收(真实编辑器)。
 // 两面:①冷启动对普通文件(无事件调用)请求 CodeLens,不得打开全仓文档

@@ -13,7 +13,7 @@ import * as vscode from 'vscode';
 import { WEBVIEW_THEME_CSS } from './webviewTheme';
 import { htmlLang, resolvePanelLocale, strings } from './webviewStrings';
 import { baseNameOf } from './quickActionConfig';
-import { LogLevel, LogParser } from './logParser';
+import { LogLevel, LogParser } from './backend/logParser';
 
 /** 单文件读取上限:超出记 readError,不把大文件整份读进内存 */
 export const ERROR_SCAN_MAX_FILE_BYTES = 64 * 1024 * 1024;

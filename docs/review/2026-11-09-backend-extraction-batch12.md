@@ -26,4 +26,5 @@ extensionIdentity
 
 - `pnpm compile`(tsc)0 / `pnpm lint` 0。
 - 全量 vitest 8389 过 / 1 失败=hoverDeadlineContext 既有时间预算抖动,隔离
-  复跑 10/10 绿;demo 25 RC=0;docs:build RC=0;提交 hash 见下。
+  复跑 10/10 绿;demo 25 RC=0;docs:build RC=0。
+- **提交 899f8672**(2026-11-09 推 main):84 文件 122+/92-,并发会话面零牵连。

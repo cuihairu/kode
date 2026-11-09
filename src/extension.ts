@@ -144,7 +144,7 @@ import { ensureConfigResolved } from './serverConfigResolve';
 
 
 
-import { getFileReadTotals } from './fileReadMetrics';
+import { getFileReadTotals } from './backend/fileReadMetrics';
 /**
  * Kode - KBEngine Development Environment
  * KBEngine VSCode 扩展主入口

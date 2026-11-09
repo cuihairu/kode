@@ -2,7 +2,7 @@ import type * as vscode from 'vscode';
 import { describe, expect, it } from 'vitest';
 import { KBEngineLogCollector } from '../src/logCollector';
 import { LogViewerWebView } from '../src/logWebView';
-import { LogEntry, LogLevel, LogType } from '../src/logParser';
+import { LogEntry, LogLevel, LogType } from '../src/backend/logParser';
 import type { LogFilter } from '../src/logWebView';
 
 // LogViewerWebView 的纯渲染/过滤逻辑:webview 面板(show)与消息处理

@@ -6,9 +6,9 @@
 // 无共享句柄消费也无后向消费者。
 
 import * as vscode from 'vscode';
-import { resolveExceptionSource } from '../exceptionSourceLocator';
+import { resolveExceptionSource } from '../backend/exceptionSourceLocator';
 import { ConsoleHub } from '../kbengineConsoleHub';
-import { ConsoleLogTailController } from '../consoleLogTail';
+import { ConsoleLogTailController } from '../backend/consoleLogTail';
 import { ComponentStatusTreeProvider, resolveThresholds } from '../componentStatusPanel';
 
 export interface ConsoleDeps {

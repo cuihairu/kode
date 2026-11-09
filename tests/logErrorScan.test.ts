@@ -17,7 +17,7 @@ import {
   scanRawLogErrors
 } from '../src/logErrorScan';
 import type { LogErrorScanDeps, RawErrorHit, RawLogScanReport } from '../src/logErrorScan';
-import { LogLevel } from '../src/logParser';
+import { LogLevel } from '../src/backend/logParser';
 import {
   memoryFileSystem,
   messages,
