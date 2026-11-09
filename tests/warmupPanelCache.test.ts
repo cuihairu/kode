@@ -7,7 +7,7 @@ import {
 import { messages, windowState } from './fake-vscode/windowState';
 import { DependencyType, EntityType } from '../src/entityDependency';
 import type { DependencyGraph } from '../src/entityDependency';
-import type { DependencyGraphRust } from '../src/dependencyGraphRust';
+import type { DependencyGraphRust } from '../src/backend/dependencyGraphRust';
 import { EntityDependencyWebView } from '../src/entityDependencyWebView';
 import { EntityFlowWebView } from '../src/entityFlowWebView';
 import type { EntityFlowGraph } from '../src/entityFlowGraph';

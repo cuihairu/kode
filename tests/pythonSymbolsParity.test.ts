@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { describe, expect, it } from 'vitest';
-import type { PythonSymbolCall, PythonSymbolMethod, PythonSymbolsRustResult } from '../src/pythonCallGraphRust';
+import type { PythonSymbolCall, PythonSymbolMethod, PythonSymbolsRustResult } from '../src/backend/pythonCallGraphRust';
 import { parsePythonMethodBlocks, rustSymbolsToIndexedMethodLocations } from '../src/entityMapping';
 
 // C-20 交付⑤:Rust 符号表 → C-19 方法定位的列号口径漂移回归。

@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildDependencyGraphInRust } from '../src/dependencyGraphRust';
+import { buildDependencyGraphInRust } from '../src/backend/dependencyGraphRust';
 import type { KodeCoreGate } from '../src/kodeCoreGate';
 import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';

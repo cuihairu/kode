@@ -18,9 +18,9 @@ import {
   getDefinitionWorkspaceLayout,
   readWorkspaceTextFile,
   scriptFoldersForRole,
-} from './definitionWorkspace';
-import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
-import { findFilesAcrossRoots } from './scanRoots';
+} from '../definitionWorkspace';
+import { getKodeCoreShadowGate } from '../kodeCoreShadowFaces';
+import { findFilesAcrossRoots } from '../scanRoots';
 
 /** Rust 依赖图节点(kind 六员;entity 带 types,type 带 implFile 视有无)。 */
 export interface DependencyGraphRustNode {

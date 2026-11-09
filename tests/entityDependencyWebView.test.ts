@@ -16,7 +16,7 @@ import {
   EntityType
 } from '../src/entityDependency';
 import type { DependencyGraph } from '../src/entityDependency';
-import type { DependencyGraphRust } from '../src/dependencyGraphRust';
+import type { DependencyGraphRust } from '../src/backend/dependencyGraphRust';
 import {
   EntityDependencyWebView,
   normalizeDependencyGraph,
@@ -32,7 +32,7 @@ import type {
   CallGraphGraph,
   CollectedPythonFiles
 } from '../src/entityDependencyWebView';
-import type { PythonCallGraphRustResult } from '../src/pythonCallGraphRust';
+import type { PythonCallGraphRustResult } from '../src/backend/pythonCallGraphRust';
 
 // EntityDependencyWebView 的纯图渲染:mermaid 生成与 webview HTML 骨架。
 // 面板生命周期/导出(截图、文件写入)依赖真实 vscode.WebviewPanel,

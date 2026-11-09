@@ -19,8 +19,8 @@
 
 import * as vscode from 'vscode';
 import { EntityDependencyAnalyzer } from './entityDependency';
-import { buildDependencyGraphInRust } from './dependencyGraphRust';
-import { buildPythonCallGraphInRust } from './pythonCallGraphRust';
+import { buildDependencyGraphInRust } from './backend/dependencyGraphRust';
+import { buildPythonCallGraphInRust } from './backend/pythonCallGraphRust';
 import { randomNonce, webviewAssetUri } from './webviewSecurity';
 import {
   renderEntityDependencyWebview,

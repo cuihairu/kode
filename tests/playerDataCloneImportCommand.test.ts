@@ -10,7 +10,7 @@ vi.mock('../src/playerDataCloneMysql', async importOriginal => ({
   applyImportPlan: vi.fn(), columnOrderFromPlan: vi.fn(() => new Map()),
   uniqueValuesFromRows: vi.fn(() => [])
 }));
-vi.mock('../src/playerDataCloneRust', () => ({
+vi.mock('../src/backend/playerDataCloneRust', () => ({
   inspectCloneArchive: vi.fn(async () => ({ status: 'ok', result: { entity: 'Avatar' } })),
   readCloneArchiveRows: vi.fn(async () => ({ status: 'ok', result: { tables: [] } })),
   planCloneImport: vi.fn(async () => ({ status: 'ok', result: {

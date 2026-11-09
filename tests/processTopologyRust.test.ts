@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateProcessTopologyInRust } from '../src/processTopologyRust';
+import { validateProcessTopologyInRust } from '../src/backend/processTopologyRust';
 import type { KodeCoreGate } from '../src/kodeCoreGate';
 import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
 

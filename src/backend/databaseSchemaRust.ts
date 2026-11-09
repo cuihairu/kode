@@ -6,12 +6,12 @@
 // 仍由 databaseSchemaCore 承担。Rust 不可用(无 gate/调用失败/形状不合规/异常)
 // 返回 null,调用方回落到 TS deriveDatabaseTables。
 
-import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
+import { getKodeCoreShadowGate } from '../kodeCoreShadowFaces';
 import type {
   DatabaseSchemaDerivationInput,
   DatabaseSchemaDerivationResult,
   TableSchemaDescriptor
-} from './databaseSchemaCore';
+} from '../databaseSchemaCore';
 
 interface DatabaseSchemaRustResult {
   tables: TableSchemaDescriptor[];

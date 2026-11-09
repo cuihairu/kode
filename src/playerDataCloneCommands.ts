@@ -39,7 +39,7 @@ import {
   planCloneImport,
   readCloneArchiveRows,
   writeCloneArchive
-} from './playerDataCloneRust';
+} from './backend/playerDataCloneRust';
 import type { ArchiveMetaWire, ImportPlanWire, TypedRowWire } from './playerDataCloneWire';
 
 /** 实体推导表描述符(结构子集;形状由 databaseSchema 快照保证)。 */

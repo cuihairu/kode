@@ -5,7 +5,7 @@
 // def 用其 filePath),产出诊断规范;extension 侧按规范 + 文档文本换算
 // vscode.Range 并发布到独立集合 `kbengine-process-topology`。
 
-import type { ProcessTopologyFinding } from './processTopologyRust';
+import type { ProcessTopologyFinding } from './backend/processTopologyRust';
 
 /** 清单文件在 findings 中的哨兵路径(Rust 侧约定) */
 export const MANIFEST_FINDING_SENTINEL = '<manifest>';

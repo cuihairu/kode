@@ -47,7 +47,7 @@ import { parseDefAst } from '../src/languageProviders/shared';
 // 入参无抛出路径(已核 defPythonParity.ts:93-117 全链)。模块替身让该防御臂
 // 可观测(按 parityShouldThrow 开关);仅本文件作用域,其余文件不受影响。
 const { parityShouldThrow } = vi.hoisted(() => ({ parityShouldThrow: { value: false } }));
-vi.mock('../src/defPythonParity', async importOriginal => {
+vi.mock('../src/backend/defPythonParity', async importOriginal => {
   const actual = await importOriginal<typeof import('../src/backend/defPythonParity')>();
   return {
     ...actual,

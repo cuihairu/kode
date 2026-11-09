@@ -3,7 +3,7 @@ import {
   buildPythonCallGraphInRust,
   buildPythonSymbolsInRust,
   normalizeCallGraphPath
-} from '../src/pythonCallGraphRust';
+} from '../src/backend/pythonCallGraphRust';
 import type { KodeCoreGate } from '../src/kodeCoreGate';
 import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
 

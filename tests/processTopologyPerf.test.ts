@@ -4,7 +4,7 @@ import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import { readSharedFileSnapshot } from '../src/sharedFileSnapshot';
 import { mapFindingsToDiagnostics } from '../src/processTopologyDiagnostics';
-import { validateProcessTopologyInRust } from '../src/processTopologyRust';
+import { validateProcessTopologyInRust } from '../src/backend/processTopologyRust';
 import { DiagnosticScheduler } from '../src/diagnosticScheduler';
 import { KodeCoreGate } from '../src/kodeCoreGate';
 import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';

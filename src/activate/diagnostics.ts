@@ -43,7 +43,7 @@ import { getDefinitionWorkspaceLayout, listDefinitionFiles } from '../definition
 import { readSharedFileSnapshot } from '../sharedFileSnapshot';
 import { isPythonMroJumpEnabled, validateDocument, validateEntitiesXmlDocument } from '../languageProviders';
 import { DiagnosticScheduler, getDiagnosticScheduler } from '../diagnosticScheduler';
-import { validateProcessTopologyInRust } from '../processTopologyRust';
+import { validateProcessTopologyInRust } from '../backend/processTopologyRust';
 import { mapFindingsToDiagnostics, type ProcessTopologyDiagnosticSpec } from '../processTopologyDiagnostics';
 import {
   STARTUP_SCRIPT_DIAGNOSTIC_CODE,

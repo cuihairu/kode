@@ -4,7 +4,7 @@
 // legacy/rust 两 mermaid 渲染。区域原文零改动(仅 renderLegacy/renderRustMermaid
 // 补 export 供面板类调用);类型-only 导入,运行时无环。
 import type { DependencyGraph } from './entityDependency';
-import type { DependencyGraphRust } from './dependencyGraphRust';
+import type { DependencyGraphRust } from './backend/dependencyGraphRust';
 import type { DependencyGraphSource } from './warmupStages';
 export type RenderNodeKind = 'entity' | 'def' | 'interface' | 'component' | 'type' | 'python';
 

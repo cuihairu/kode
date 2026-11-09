@@ -14,8 +14,8 @@ import type {
   PythonOwnerFile
 } from './entityMapping';
 import type { DefMethodSection as EntityMethodSection } from './backend/defParser';
-import { buildPythonSymbolsInRust } from './pythonCallGraphRust';
-import type { PythonSymbolCall, PythonSymbolsRustResult } from './pythonCallGraphRust';
+import { buildPythonSymbolsInRust } from './backend/pythonCallGraphRust';
+import type { PythonSymbolCall, PythonSymbolsRustResult } from './backend/pythonCallGraphRust';
 import type { DefinitionSemanticCategory } from './definitionSemantics';
 import { normalizeLookupPath } from './definitionSemantics';
 import { joinWorkspacePath } from './workspacePath';

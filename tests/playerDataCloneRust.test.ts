@@ -5,7 +5,7 @@ import {
   planCloneImport,
   readCloneArchiveRows,
   writeCloneArchive
-} from '../src/playerDataCloneRust';
+} from '../src/backend/playerDataCloneRust';
 import { setKodeCoreShadowGate, type KodeCoreGate } from '../src/kodeCoreShadowFaces';
 import {
   tvBigUInt,

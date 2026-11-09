@@ -9,7 +9,7 @@
  * 返回 `{ status: 'error' }` 携原因。形状不合规按 error 处理(不猜字段)。
  */
 
-import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
+import { getKodeCoreShadowGate } from '../kodeCoreShadowFaces';
 import {
   isArchiveMeta,
   isImportPlan,
@@ -21,7 +21,7 @@ import {
   type TargetProfileWire,
   type TargetSnapshotWire,
   type TypedRowWire
-} from './playerDataCloneWire';
+} from '../playerDataCloneWire';
 
 export type RustCall<T> =
   | { status: 'ok'; result: T }

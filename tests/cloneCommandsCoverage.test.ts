@@ -46,7 +46,7 @@ vi.mock('../src/playerDataCloneMysql', async importOriginal => {
   const actual = await importOriginal<typeof import('../src/playerDataCloneMysql')>();
   return { ...actual, openCloneSession: vi.fn() };
 });
-vi.mock('../src/playerDataCloneRust', () => ({
+vi.mock('../src/backend/playerDataCloneRust', () => ({
   inspectCloneArchive: vi.fn(),
   readCloneArchiveRows: vi.fn(),
   planCloneExport: vi.fn(),
@@ -62,7 +62,7 @@ import {
   planCloneImport,
   readCloneArchiveRows,
   writeCloneArchive
-} from '../src/playerDataCloneRust';
+} from '../src/backend/playerDataCloneRust';
 
 const NO_GATE = 'Player Data Clone 需要 Rust 后端(kode-server)可用:请检查 kode-core server 配置。';
 const PERSISTED_NOT_LIVE = '这是数据库已持久化数据副本(Persisted copy),不代表在线当前状态(Live state)。';

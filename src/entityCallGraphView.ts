@@ -3,7 +3,7 @@
 // KIND 表、文件词干、Rust 符号归一(normalizeCallGraph)与 mermaid 渲染+图例。
 // 区域原文零改动(仅 callGraphLegendHtml 补 export 供面板类调用);类型-only 导入。
 import { clickLine, sanitizeRustId } from './entityDependencyGraphView';
-import type { PythonCallGraphNode, PythonCallGraphRustResult } from './pythonCallGraphRust';
+import type { PythonCallGraphNode, PythonCallGraphRustResult } from './backend/pythonCallGraphRust';
 // ---------------------------------------------------------------------------
 // C-20 callgraph 模式:类型/常量/归一/渲染
 // ---------------------------------------------------------------------------

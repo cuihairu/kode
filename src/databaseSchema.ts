@@ -11,7 +11,7 @@ import { resolveDatabaseInterfaceConfig, type DatabaseInterfaceConfig } from './
 import { getRootConfigGeneration } from './rootConfigGeneration';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import type { SharedFileVersionRef } from './sharedFileSnapshot';
-import { buildDatabaseTablesInRust } from './databaseSchemaRust';
+import { buildDatabaseTablesInRust } from './backend/databaseSchemaRust';
 import { buildSchemaSourcePorts } from './databaseSchemaSource';
 import {
   DB_TABLE_PREFIX,

@@ -10,12 +10,12 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../src/processTopologyRust', async importOriginal => {
-  const actual = await importOriginal<typeof import('../src/processTopologyRust')>();
+vi.mock('../src/backend/processTopologyRust', async importOriginal => {
+  const actual = await importOriginal<typeof import('../src/backend/processTopologyRust')>();
   return {
     ...actual,
     validateProcessTopologyInRust: vi.fn(
-      async (params: import('../src/processTopologyRust').ProcessTopologyRustParams) => ({
+      async (params: import('../src/backend/processTopologyRust').ProcessTopologyRustParams) => ({
         findings: [
           {
             target: 'manifest',

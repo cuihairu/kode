@@ -20,8 +20,8 @@ import {
 } from './helpers/vscodeStub';
 import type { FakeWebviewPanel } from './helpers/vscodeStub';
 import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
-import type { DependencyGraphRust } from '../src/dependencyGraphRust';
-import type { PythonCallGraphRustResult } from '../src/pythonCallGraphRust';
+import type { DependencyGraphRust } from '../src/backend/dependencyGraphRust';
+import type { PythonCallGraphRustResult } from '../src/backend/pythonCallGraphRust';
 
 // EntityDependencyWebView 的面板生命周期:show/refresh 的分析→mermaid→
 // html 链路、openEntityFile 的文档打开三态、exportGraph→pendingExport→
