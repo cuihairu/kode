@@ -397,10 +397,18 @@ export class QuickActionManager {
       await vscode.window.showInformationMessage(l10nText('Cannot scan quick actions: open a workspace first'));
       return;
     }
-    const candidates = await this.scanCandidates();
+    const { candidates, failedRoots } = await this.scanCandidates();
     const current = await this.readConfigFile();
     const existing = parseQuickActionConfigs(current?.quickActions).actions;
     const manual = existing.filter(action => action.source !== 'scan');
+    if (failedRoots.length > 0) {
+      // UX-REVIEW-003b:扫描未完整成功时既有动作一律不动——不得把读失败
+      // 当「无脚本」清掉过期扫描动作;警示命名失败根,后续操作=修复访问后重扫。
+      await vscode.window.showWarningMessage(
+        l10nText('Script scan could not read: {roots}. Existing actions were left unchanged; fix access to these directories and rescan', { roots: failedRoots.join(', ') })
+      );
+      return;
+    }
     if (candidates.length === 0) {
       const staleCount = existing.length - manual.length;
       if (staleCount > 0) await this.writeQuickActions(root, manual);
@@ -550,7 +558,7 @@ export class QuickActionManager {
   async getTreeData(): Promise<{ registered: Array<{ name: string; type: QuickAction['type']; target: string }>; scripts: Array<{ name: string; type: 'script'; target: string; runDirect: true }>; httpRequests: Array<{ name: string; type: 'http'; target: string; method: string; runDirect: true; requestSource: 'debug' | 'settings'; requestIndex: number }> }> {
     const registered = await this.getTreeActions();
     const registeredPaths = new Set(registered.filter(action => action.type === 'script').map(action => path.resolve(action.target).toLowerCase()));
-    const scripts = (await this.scanCandidates()).filter(candidate => !registeredPaths.has(path.resolve(candidate.path).toLowerCase())).map(candidate => ({
+    const scripts = (await this.scanCandidates()).candidates.filter(candidate => !registeredPaths.has(path.resolve(candidate.path).toLowerCase())).map(candidate => ({
       name: baseNameOf(candidate.path), type: 'script' as const, target: candidate.path, runDirect: true as const
     }));
     const config = await this.readConfigFile();
@@ -641,18 +649,18 @@ export class QuickActionManager {
     if (actions.length > 0) {
       return;
     }
-    let candidates: BatchScriptCandidate[];
+    let scan: { candidates: BatchScriptCandidate[]; failedRoots: string[] };
     try {
-      candidates = await this.scanCandidates();
+      scan = await this.scanCandidates();
     } catch {
       // 根目录读不到(权限/虚拟文件系统):静默返回,不打扰用户
       return;
     }
-    if (candidates.length === 0) {
+    if (scan.candidates.length === 0) {
       return;
     }
     const picked = await vscode.window.showQuickPick<ScanPickItem>(
-      candidates.map(candidate => ({
+      scan.candidates.map(candidate => ({
         label: baseNameOf(candidate.path),
         description: candidate.category === null ? '' : quickActionCategoryLabel(candidate.category),
         detail: candidate.path,
@@ -805,20 +813,24 @@ export class QuickActionManager {
     return [rootRef, ...folders.filter(folder => !samePath(folder.fsPath, root))];
   }
 
-  private async scanCandidates(): Promise<BatchScriptCandidate[]> {
+  private async scanCandidates(): Promise<{ candidates: BatchScriptCandidate[]; failedRoots: string[] }> {
     const root = this.getConfigurationRoot();
-    if (!root) return [];
+    if (!root) return { candidates: [], failedRoots: [] };
     const roots = [...new Set([root, ...this.additionalScanRoots].filter(Boolean))];
     const entriesByRoot = new Map<string, DirectoryEntry[]>();
+    const failedRoots: string[] = [];
     for (const scanRoot of roots) {
       try {
         const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(scanRoot));
         entriesByRoot.set(scanRoot, entries.map(([name, type]) => ({ name, type })));
       } catch {
+        // UX-REVIEW-003b:读失败不再冒充「无脚本」——失败根记名随结果上抛,
+        // scanScriptsAndRefresh 据此不动既有动作,展示面如实少列。
+        failedRoots.push(scanRoot);
         entriesByRoot.set(scanRoot, []);
       }
     }
-    return scanBatchScriptsInRoots(roots, scanRoot => entriesByRoot.get(scanRoot) ?? []);
+    return { candidates: scanBatchScriptsInRoots(roots, scanRoot => entriesByRoot.get(scanRoot) ?? []), failedRoots };
   }
 
   /** venv 自动查找目录名:设置 kbengine.python.venvDirectories(默认

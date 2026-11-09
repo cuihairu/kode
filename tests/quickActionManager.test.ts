@@ -1372,6 +1372,45 @@ describe('QuickActionManager.scanScriptsAndRefresh', () => {
     });
 
   });
+
+  it('UX-REVIEW-003b:扫描根读失败 → 警示命名失败根,既有动作(含过期扫描动作)一律不动', async () => {
+    // 旧码把读失败吞成「无脚本」,走 candidates.length===0 分支删掉过期
+    // 扫描动作——读失败与真没有必须分开呈现。
+    setConfig({
+      version: 1,
+      quickActions: [
+        { name: 'manual', type: 'command', command: 'kbengine.refreshExplorer' },
+        { name: 'stale', type: 'script', script: '${workspaceFolder}/gone.bat', cwd: '${workspaceFolder}', source: 'scan' }
+      ]
+    });
+    // /ws 目录故意不 setDirectory → stub readDirectory 抛 ENOENT
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+
+    await manager.scanScriptsAndRefresh();
+
+    const written = JSON.parse(Buffer.from(
+      memoryFileSystem.files.get('/ws/.kbengine/debug.json') ?? ''
+    ).toString('utf8'));
+    expect(written.quickActions.map((action: { name: string }) => action.name)).toEqual(['manual', 'stale']);
+    expect(messages.warning.some(message => String(message).includes('/ws'))).toBe(true);
+    expect(messages.warning.some(message => String(message).includes('left unchanged'))).toBe(true);
+    expect(pickCalls).toHaveLength(0);
+  });
+
+  it('UX-REVIEW-003b:部分根读失败(附加根缺失) → 不进选择器不写配置,警示只点名失败根', async () => {
+    memoryFileSystem.setDirectory('/ws', [['local.bat', 1]]);
+    // /outside/assets 未 setDirectory → 读失败;/ws 正常出候选
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+    manager.setConfigurationRoots('/ws', ['/outside/assets']);
+
+    await manager.scanScriptsAndRefresh();
+
+    expect(memoryFileSystem.files.has('/ws/.kbengine/debug.json')).toBe(false);
+    expect(messages.warning.some(message => String(message).includes('/outside/assets'))).toBe(true);
+    // 可读根(/ws)不得被点名为失败根
+    expect(messages.warning.every(message => !String(message).includes('read: /ws,'))).toBe(true);
+    expect(pickCalls).toHaveLength(0);
+  });
 });
 
 describe('QuickActionManager venv', () => {

@@ -8,6 +8,7 @@
   "No scripts found; removed {staleCount} outdated scanned actions and kept {manualCount} manual actions": "No scripts found; removed {staleCount} outdated scanned actions and kept {manualCount} manual actions",
   "No .bat or .ps1 scripts found to register": "No .bat or .ps1 scripts found to register",
   "Select .bat or .ps1 scripts to register; existing manual actions will be kept": "Select .bat or .ps1 scripts to register; existing manual actions will be kept",
+  "Script scan could not read: {roots}. Existing actions were left unchanged; fix access to these directories and rescan": "Script scan could not read: {roots}. Existing actions were left unchanged; fix access to these directories and rescan",
   "Script scan complete: registered {scannedCount} actions and kept {manualCount} manual actions": "Script scan complete: registered {scannedCount} actions and kept {manualCount} manual actions",
   "Select scripts to register as quick actions": "Select scripts to register as quick actions",
   "Saved {count} quick actions to .kbengine/debug.json": "Saved {count} quick actions to .kbengine/debug.json",

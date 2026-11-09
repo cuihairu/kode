@@ -8,6 +8,7 @@
   "No scripts found; removed {staleCount} outdated scanned actions and kept {manualCount} manual actions": "未找到脚本，已清除 {staleCount} 个过期扫描动作并保留 {manualCount} 个手工动作",
   "No .bat or .ps1 scripts found to register": "未找到可登记的 .bat / .ps1 脚本",
   "Select .bat or .ps1 scripts to register; existing manual actions will be kept": "选择要登记的 .bat / .ps1 脚本；已有手工动作会保留",
+  "Script scan could not read: {roots}. Existing actions were left unchanged; fix access to these directories and rescan": "脚本扫描读取失败目录：{roots}。既有动作未改动；请修复这些目录的访问后重新扫描",
   "Script scan complete: registered {scannedCount} actions and kept {manualCount} manual actions": "脚本扫描完成：登记 {scannedCount} 个动作，保留 {manualCount} 个手工动作",
   "Select scripts to register as quick actions": "勾选要登记为快速执行动作的脚本",
   "Saved {count} quick actions to .kbengine/debug.json": "已写入 {count} 个快速执行动作到 .kbengine/debug.json",
