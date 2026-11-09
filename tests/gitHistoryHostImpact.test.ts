@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GitHistoryTreeProvider, type GitHistoryDeps } from '../src/gitHistoryTree';
 import { GitRangeHistoryTreeProvider, type RangeHistoryDeps } from '../src/gitRangeHistoryTree';
-import { runGitHistoryWhenEnabled } from '../src/gitHistory';
-import { GitQueryGate } from '../src/gitQueryGate';
+import { runGitHistoryWhenEnabled } from '../src/backend/gitHistory';
+import { GitQueryGate } from '../src/backend/gitQueryGate';
 
 // IDE-GIT-012:历史功能对宿主与语言服务影响的确定性证据(单元层)。
 // 验收「默认开启未查询的 Git 调用/历史任务必须为零」与「查询不同步阻塞宿主」的

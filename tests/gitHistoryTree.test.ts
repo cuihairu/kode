@@ -10,8 +10,8 @@ import {
 } from '../src/gitHistoryTree';
 import { workspace as stubWorkspace } from './helpers/vscodeStub';
 import { Uri } from './fake-vscode/core';
-import type { GitCommitEntry } from '../src/gitCommitLog';
-import type { GitRepoLocation } from '../src/gitRepoLocate';
+import type { GitCommitEntry } from '../src/backend/gitCommitLog';
+import type { GitRepoLocation } from '../src/backend/gitRepoLocate';
 
 /**
  * IDE-GIT-005:文件历史列表入口(侧边栏历史视图)。

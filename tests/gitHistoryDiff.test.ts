@@ -13,7 +13,7 @@ import {
   summarizeVersionError,
   type VersionQueryDeps,
 } from '../src/gitHistoryDiff';
-import type { GitRunOutcome } from '../src/gitRunner';
+import type { GitRunOutcome } from '../src/backend/gitRunner';
 import { commandRegistry } from './fake-vscode/commandRegistry';
 import { workspaceState } from './fake-vscode/workspaceState';
 import { windowState } from './fake-vscode/windowState';

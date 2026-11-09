@@ -8,7 +8,7 @@ import {
   readGitHistoryEnabled,
   runGitHistoryWhenEnabled,
   rangeHistoryDirtyGuard,
-} from '../src/gitHistory';
+} from '../src/backend/gitHistory';
 
 /** 构造一个可记录调用的配置读取替身。 */
 function makeReader(settings: Record<string, unknown>) {

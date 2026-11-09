@@ -40,4 +40,7 @@ hotReloadToggle / hotReloadFileStateLens / hotReloadFileDecorations(UI 五件)�
   `src/backend` 段;同型扫查全 tests 无其余搬移件动态读(余下唯一
   hotReloadStatus.ts 为留守件,如实保留)。hoverDeadlineContext 时间预算
   满载抖动,隔离复跑 2 文件 21/21 绿。修后全量重跑见提交前记录。
-- 全量门禁见提交前记录。
+- 全量 vitest 修后重跑 693 文件 / 8390 过 4 skip RC=0;demo 25 RC=0;
+  docs:build RC=0。
+- **提交 6c63aae8**(2026-11-09 推 main):80 文件 227+/180-,并发会话面零牵连
+  (8 排除件 diff 核验零批次 7 内容)。

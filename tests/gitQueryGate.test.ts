@@ -5,8 +5,8 @@ import {
   gitQueryIdentity,
   defaultGitQueryGateLimits,
   queryTouchesHead
-} from '../src/gitQueryGate';
-import type { GitCancellationToken, GitRunOptions, GitRunOutcome } from '../src/gitRunner';
+} from '../src/backend/gitQueryGate';
+import type { GitCancellationToken, GitRunOptions, GitRunOutcome } from '../src/backend/gitRunner';
 
 // IDE-GIT-011:历史查询协调门(去重/并发上限/有界队列/隔离缓存/取消清理)。
 // 全部用例经注入假 spawn(手工结算)验证调度,不触碰真实 Git 子进程。

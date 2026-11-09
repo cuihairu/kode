@@ -6,9 +6,9 @@ import {
   type RangeHistoryDeps,
   type RangeHistoryItem,
 } from '../src/gitRangeHistoryTree';
-import type { RangeChangeEntry, RangeTimelineResult } from '../src/gitRangeTimeline';
-import type { SelectionMapResult, SelectionRange } from '../src/gitSelectionMap';
-import type { GitRepoLocation } from '../src/gitRepoLocate';
+import type { RangeChangeEntry, RangeTimelineResult } from '../src/backend/gitRangeTimeline';
+import type { SelectionMapResult, SelectionRange } from '../src/backend/gitSelectionMap';
+import type { GitRepoLocation } from '../src/backend/gitRepoLocate';
 import { defaultRangeHistoryDeps } from '../src/gitRangeHistoryTree';
 import { workspace as stubWorkspace } from './helpers/vscodeStub';
 import { Uri } from './fake-vscode/core';

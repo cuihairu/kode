@@ -14,10 +14,10 @@
  */
 
 import { type GitRunOutcome } from './gitRunner';
-import { summarizeGitError } from './gitHistoryTree';
-import { relativeVersionPath } from './gitHistoryDiff';
+import { summarizeGitError } from '../gitHistoryTree';
+import { relativeVersionPath } from '../gitHistoryDiff';
 import { sharedGitQueryGate, type GitQueryRequest } from './gitQueryGate';
-import { l10nText } from './nlsRuntime';
+import { l10nText } from '../nlsRuntime';
 
 /** 一次修改记录(-L 追踪到的、改动过该行段的提交)。 */
 export interface RangeChangeEntry {

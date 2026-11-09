@@ -15,7 +15,7 @@
  */
 
 import { spawn as nodeSpawn } from 'child_process';
-import { pathApiFor } from './workspacePath';
+import { pathApiFor } from '../workspacePath';
 
 /** 取消令牌(结构兼容 vscode.CancellationToken;缺省回调时仅结算点轮询)。 */
 export interface GitCancellationToken {

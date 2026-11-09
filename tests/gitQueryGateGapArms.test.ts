@@ -4,8 +4,8 @@ import {
   GitCancelSource,
   GitQueryGate,
   gitQueryIdentity
-} from '../src/gitQueryGate';
-import type { GitRunOptions, GitRunOutcome } from '../src/gitRunner';
+} from '../src/backend/gitQueryGate';
+import type { GitRunOptions, GitRunOutcome } from '../src/backend/gitRunner';
 
 /**
  * IDE-GIT-011 补臂(协调门调度剩余分支):

@@ -31,7 +31,7 @@ import {
   readGitHistoryEnabled,
   runGitHistoryWhenEnabled,
   rangeHistoryDirtyGuard,
-} from '../gitHistory';
+} from '../backend/gitHistory';
 import {
   GitHistoryTreeProvider,
   defaultGitHistoryDeps,
@@ -52,8 +52,8 @@ import {
   rangeHistoryViewTitle,
   type RangeHistoryItem,
 } from '../gitRangeHistoryTree';
-import { editorSelectionToRange } from '../gitSelectionMap';
-import { sharedGitQueryGate } from '../gitQueryGate';
+import { editorSelectionToRange } from '../backend/gitSelectionMap';
+import { sharedGitQueryGate } from '../backend/gitQueryGate';
 import {
   KBE_CONFIG_SCHEME,
   KBE_CONFIG_VIRTUAL_PATH,

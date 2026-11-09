@@ -15,10 +15,10 @@
  */
 
 import { type GitRunOutcome } from './gitRunner';
-import { summarizeGitError } from './gitHistoryTree';
-import { relativeVersionPath } from './gitHistoryDiff';
+import { summarizeGitError } from '../gitHistoryTree';
+import { relativeVersionPath } from '../gitHistoryDiff';
 import { sharedGitQueryGate, type GitQueryRequest } from './gitQueryGate';
-import { l10nText } from './nlsRuntime';
+import { l10nText } from '../nlsRuntime';
 
 /** 选区(1 基、含端点;编辑器 0 基位置由调用面换算)。 */
 export interface SelectionRange {

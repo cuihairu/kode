@@ -5,7 +5,7 @@ import {
   relativeVersionPath,
   summarizeVersionError
 } from '../src/gitHistoryDiff';
-import type { GitRunOutcome } from '../src/gitRunner';
+import type { GitRunOutcome } from '../src/backend/gitRunner';
 
 /**
  * IDE-GIT-006 补臂(版本 diff 查询面剩余分支):

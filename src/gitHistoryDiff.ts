@@ -19,8 +19,8 @@ import * as vscode from 'vscode';
 import {
   type GitRunOptions,
   type GitRunOutcome,
-} from './gitRunner';
-import { sharedGitQueryGate, type GitQueryRequest } from './gitQueryGate';
+} from './backend/gitRunner';
+import { sharedGitQueryGate, type GitQueryRequest } from './backend/gitQueryGate';
 import { pathApiFor } from './workspacePath';
 
 /** 虚拟文档 scheme:内容一律只读(仅提供者,无编辑能力)。 */

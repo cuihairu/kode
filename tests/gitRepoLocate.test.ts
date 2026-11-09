@@ -9,7 +9,7 @@ import {
   realGitRepoLocationDeps,
   type GitRepoLocationDeps,
   type GitRepoLocation,
-} from '../src/gitRepoLocate';
+} from '../src/backend/gitRepoLocate';
 
 /**
  * IDE-GIT-002:按文件定位所属 Git 仓库。

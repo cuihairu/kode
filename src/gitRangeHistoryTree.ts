@@ -26,22 +26,22 @@ import {
   type RangeTimelineBoundary,
   type RangeTimelineResult,
   defaultGitRangeTimelineDeps,
-} from './gitRangeTimeline';
+} from './backend/gitRangeTimeline';
 import {
   mapSelectionToHeadRange,
   type GitSelectionMapDeps,
   type SelectionMapResult,
   type SelectionRange,
   defaultGitSelectionMapDeps,
-} from './gitSelectionMap';
+} from './backend/gitSelectionMap';
 import { summarizeGitError } from './gitHistoryTree';
 import {
   describeGitRepoLocation,
   locateGitRepository,
   realGitRepoLocationDeps,
   type GitRepoLocation,
-} from './gitRepoLocate';
-import { GitCancelSource, type GitQueryRequest } from './gitQueryGate';
+} from './backend/gitRepoLocate';
+import { GitCancelSource, type GitQueryRequest } from './backend/gitQueryGate';
 import { l10nText } from './nlsRuntime';
 
 /** 视图条目:修改记录(点击打开 diff+定位)/ 引导或状态。 */

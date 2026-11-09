@@ -134,7 +134,7 @@ import { getDefinitionWorkspaceLayout } from './definitionWorkspace';
 
 
 
-import { sharedGitQueryGate } from './gitQueryGate';
+import { sharedGitQueryGate } from './backend/gitQueryGate';
 import { isStartupScriptDocument } from './kbengineStartupScript';
 import { buildMergedConfigTree, resetDatabaseInterfaceConfigCache } from './serverConfigMerge';
 import { ensureConfigResolved } from './serverConfigResolve';

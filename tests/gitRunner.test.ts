@@ -11,7 +11,7 @@ import {
   type GitCancellationToken,
   type GitChildProcess,
   type GitExecutorDeps,
-} from '../src/gitRunner';
+} from '../src/backend/gitRunner';
 
 /**
  * IDE-GIT-003:可取消且有界的只读 Git 执行器。
@@ -288,7 +288,7 @@ describe('IDE-GIT-003 校验与源锁', () => {
   });
 
   it('源锁:无阻塞式同步进程调用,无 shell 拼接', () => {
-    const src = readFileSync(join(__dirname, '..', 'src', 'gitRunner.ts'), 'utf8');
+    const src = readFileSync(join(__dirname, '..', 'src', 'backend', 'gitRunner.ts'), 'utf8');
     expect(src).not.toMatch(/spawnSync\s*\(|execSync\s*\(|execFileSync\s*\(/);
     expect(src).not.toMatch(/shell\s*:\s*true/);
   });

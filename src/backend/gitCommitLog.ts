@@ -14,7 +14,7 @@
  * 纯函数(执行器经 deps.runGit 注入,默认实现走 IDE-GIT-003 的只读执行器)。
  */
 
-import { pathApiFor } from './workspacePath';
+import { pathApiFor } from '../workspacePath';
 import { type GitRunOutcome } from './gitRunner';
 import { sharedGitQueryGate, type GitQueryRequest } from './gitQueryGate';
 

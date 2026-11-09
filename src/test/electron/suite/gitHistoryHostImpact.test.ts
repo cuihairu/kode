@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { sharedGitQueryGate } from '../../../gitQueryGate';
+import { sharedGitQueryGate } from '../../../backend/gitQueryGate';
 
 // IDE-GIT-012:历史功能对宿主与语言服务影响验收(真实编辑器三态,同机同项目交替采样)。
 // 装配同 ACC-010(--final:demo 资产+5000 文件外部根,绝对预算口径一致)。工作区根已由

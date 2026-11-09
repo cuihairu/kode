@@ -11,8 +11,8 @@ import {
   parseDiffHunks,
   type DiffHunk,
   type GitSelectionMapDeps,
-} from '../src/gitSelectionMap';
-import { runGitReadOnly, type GitRunOutcome } from '../src/gitRunner';
+} from '../src/backend/gitSelectionMap';
+import { runGitReadOnly, type GitRunOutcome } from '../src/backend/gitRunner';
 
 /**
  * IDE-GIT-008:把编辑器选区映射到已提交(HEAD)行范围。

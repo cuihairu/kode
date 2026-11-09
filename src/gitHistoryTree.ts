@@ -19,16 +19,16 @@ import {
   queryGitCommitLog,
   type GitCommitEntry,
   type GitCommitLogResult,
-} from './gitCommitLog';
-import type { GitRunOutcome } from './gitRunner';
+} from './backend/gitCommitLog';
+import type { GitRunOutcome } from './backend/gitRunner';
 import {
   describeGitRepoLocation,
   describeGitUnavailable,
   locateGitRepository,
   realGitRepoLocationDeps,
   type GitRepoLocation,
-} from './gitRepoLocate';
-import { GitCancelSource, type GitQueryRequest } from './gitQueryGate';
+} from './backend/gitRepoLocate';
+import { GitCancelSource, type GitQueryRequest } from './backend/gitQueryGate';
 import { l10nText } from './nlsRuntime';
 
 /** 视图条目:提交记录 / 加载下一页 / 引导或状态(无查询零 Git 调用)。 */
