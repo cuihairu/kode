@@ -29,8 +29,8 @@ import { writeHotReloadEnabled } from './hotReloadToggle';
 import { formatFileChangeMeta, type FileChangeMetaResolver } from './backend/fileChangeMeta';
 import { normalizeFileIdentity } from './backend/pathIdentity';
 import type { ReloadTransport } from './backend/hotReloadTransport';
-import type { HttpTransport } from './httpRequestService';
-import type { PackageDirProbe } from './httpRequests';
+import type { HttpTransport } from './backend/httpRequestService';
+import type { PackageDirProbe } from './backend/httpRequests';
 
 export { HOT_RELOAD_TOGGLE_COMMAND } from './hotReloadToggle';
 

@@ -34,8 +34,8 @@ import type {
   WatcherQueryResult
 } from '../src/backend/kbengineProtocol';
 import { LogHub, RuntimeLogLevel, type LogBatch } from '../src/backend/logHub';
-import { HttpRequestService } from '../src/httpRequestService';
-import type { HttpRequestEntry } from '../src/httpRequests';
+import { HttpRequestService } from '../src/backend/httpRequestService';
+import type { HttpRequestEntry } from '../src/backend/httpRequests';
 import { resolveLaunchOrder } from '../src/launchDependencies';
 import { SemanticIndex } from '../src/semanticIndex';
 import { findFilesAcrossRoots, getIndexScanRoots, resetScanRootCache } from '../src/scanRoots';

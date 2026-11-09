@@ -31,7 +31,7 @@ import type {
   QuickActionCategory,
   WorkspaceFolderRef
 } from './quickActionConfig';
-import type { HttpRequestEntry } from './httpRequests';
+import type { HttpRequestEntry } from './backend/httpRequests';
 import { scanBatchScriptsInRoots } from './quickActionScanner';
 import { LogHubLike } from './backend/logHub';
 import { ProcessManager, type ManagedProcess } from './backend/processManager';

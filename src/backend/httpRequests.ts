@@ -18,7 +18,7 @@
  * - 内置示例一条(默认停用,真实服务形态),与 package.json 默认值由测试锁定同步。
  */
 
-import { resolveVariableExpression, type VariableContext } from './backend/variableSubstitution';
+import { resolveVariableExpression, type VariableContext } from './variableSubstitution';
 
 export interface HttpRequestEntry {
   /** 展示名(quick pick 与日志前缀) */

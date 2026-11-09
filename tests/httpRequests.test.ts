@@ -9,7 +9,7 @@ import {
   PackageDirProbe,
   parseHttpRequestEntries,
   resolvePythonModulePath
-} from '../src/httpRequests';
+} from '../src/backend/httpRequests';
 import packageJson from '../package.json';
 
 // HTTP 快捷请求纯逻辑(批105):条目解析与坏条目跳过、内置示例与

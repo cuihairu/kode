@@ -15,7 +15,7 @@ import {
   type ReloadTarget,
   type ReloadTelnetConnection
 } from '../src/backend/hotReloadTransport';
-import type { HttpRequestEntry } from '../src/httpRequests';
+import type { HttpRequestEntry } from '../src/backend/httpRequests';
 
 const target: ReloadTarget = { rootId: '/ws/scripts', targetId: 'baseapp' };
 const files = ['/ws/scripts/base/Monster.py', '/ws/scripts/cell/Avatar.py'];

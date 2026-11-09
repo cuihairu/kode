@@ -7,7 +7,7 @@ import * as vscode from 'vscode';
 import { setL10nBundle } from './fake-vscode/l10n';
 import zhBundle from '../l10n/bundle.l10n.zh-cn.json';
 import { QuickActionManager, terminalScript } from '../src/quickActions';
-import { HttpRequestService } from '../src/httpRequestService';
+import { HttpRequestService } from '../src/backend/httpRequestService';
 import { QuickActionTreeProvider } from '../src/quickActionTree';
 import type {
   HttpRunResult,

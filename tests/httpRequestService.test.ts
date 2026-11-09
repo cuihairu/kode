@@ -5,8 +5,8 @@ import {
   HttpRequestService,
   RESPONSE_PREVIEW_LIMIT,
   type OutgoingHttpRequest
-} from '../src/httpRequestService';
-import { BUILTIN_HTTP_REQUEST_EXAMPLE } from '../src/httpRequests';
+} from '../src/backend/httpRequestService';
+import { BUILTIN_HTTP_REQUEST_EXAMPLE } from '../src/backend/httpRequests';
 
 // HttpRequestService 执行层:注入 transport 的流水/回执语义 + 默认 transport
 // 的真 TCP localhost 行为(成功/连接拒绝/坏 URL/非 http 协议/POST 体/大回包
