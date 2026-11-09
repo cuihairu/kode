@@ -33,11 +33,18 @@ pub fn dump_flag_domains_golden() -> String {
         .map(|t| (*t, flag_domains(&[t.to_string()])))
         .collect();
     // normalize 矩阵:输入原文 → normalize_flag_tokens 输出。覆盖规范形、
-    // CELL 别名、遗留拼写(空白/连字符/大小写变体)、未知、空串、多 token。
+    // 4 个旧式别名(CELL/CELL_AND_CLIENT/CELL_AND_CLIENTS/CELL_AND_OTHER_
+    // CLIENTS)、遗留拼写(空白/连字符/大小写变体)、未知、空串、多 token。
     // TS 侧生成的 normalizeFlagTokens 须逐例一致(遗留折叠面同源)。
     let normalize_cases: Vec<(&str, Vec<String>)> = vec![
         ("BASE", normalize_flag_tokens("BASE")),
         ("CELL", normalize_flag_tokens("CELL")),
+        ("CELL_AND_CLIENT", normalize_flag_tokens("CELL_AND_CLIENT")),
+        ("CELL_AND_CLIENTS", normalize_flag_tokens("CELL_AND_CLIENTS")),
+        (
+            "CELL_AND_OTHER_CLIENTS",
+            normalize_flag_tokens("CELL_AND_OTHER_CLIENTS"),
+        ),
         ("CELL_PUBLIC", normalize_flag_tokens("CELL_PUBLIC")),
         ("ALL CLIENTS", normalize_flag_tokens("ALL CLIENTS")),
         ("ALL_CLIENTS", normalize_flag_tokens("ALL_CLIENTS")),
@@ -58,7 +65,12 @@ pub fn dump_flag_domains_golden() -> String {
         "source": "crates/kode-parser/src/model.rs normalize_flag_tokens+flag_domains",
         "canonical": CANONICAL,
         "flagDomains": flag_domains_map,
-        "alias": { "CELL": "CELL_PUBLIC" },
+        "alias": {
+            "CELL": "CELL_PUBLIC",
+            "CELL_AND_CLIENT": "CELL_PUBLIC_AND_OWN",
+            "CELL_AND_CLIENTS": "ALL_CLIENTS",
+            "CELL_AND_OTHER_CLIENTS": "OTHER_CLIENTS"
+        },
         "normalizeCases": normalize_cases,
     });
     serde_json::to_string(&value).expect("serialize flag-domains golden")

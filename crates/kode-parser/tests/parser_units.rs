@@ -258,6 +258,29 @@ fn flag_normalization_and_domains() {
         vec!["A", "ALL_CLIENTS"]
     );
     assert_eq!(normalize_flag_tokens("CELL")[0], "CELL_PUBLIC");
+    // 旧式别名全集(entitydef.cpp:161-164):4 个拼写各落规范位。
+    assert_eq!(
+        normalize_flag_tokens("CELL_AND_CLIENT"),
+        vec!["CELL_PUBLIC_AND_OWN"]
+    );
+    assert_eq!(
+        normalize_flag_tokens("CELL_AND_CLIENTS"),
+        vec!["ALL_CLIENTS"]
+    );
+    assert_eq!(
+        normalize_flag_tokens("CELL_AND_OTHER_CLIENTS"),
+        vec!["OTHER_CLIENTS"]
+    );
+    // 别名同样过 trim+大写(引擎 toupper 后查表)。
+    assert_eq!(
+        normalize_flag_tokens(" cell_and_client "),
+        vec!["CELL_PUBLIC_AND_OWN"]
+    );
+    // 别名域归属随规范名(CELL_AND_CLIENT 落 CELL_PUBLIC_AND_OWN 位,cell+client 面)。
+    assert_eq!(
+        flag_domains(&normalize_flag_tokens("CELL_AND_CLIENT")),
+        vec!["cell", "client"]
+    );
     assert_eq!(
         flag_domains(&["BASE_AND_CLIENT".into()]),
         vec!["base", "client"]

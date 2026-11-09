@@ -31,14 +31,18 @@ export const FLAG_TOKEN_DOMAINS: Readonly<Record<string, readonly FlagDomain[]>>
   OTHER_CLIENTS: ['cell', 'client']
 };
 
-/** 旗标别名归一(g_entityFlagMapping,entitydef.cpp L161:CELL → CELL_PUBLIC)。 */
+/** 旗标别名归一(g_entityFlagMapping 12 项,entitydef.cpp:161-164:4 个旧式
+ * 拼写落到规范名同位)。 */
 export const FLAG_DOMAIN_ALIAS: Readonly<Record<string, string>> = {
-  CELL: 'CELL_PUBLIC'
+  CELL: 'CELL_PUBLIC',
+  CELL_AND_CLIENT: 'CELL_PUBLIC_AND_OWN',
+  CELL_AND_CLIENTS: 'ALL_CLIENTS',
+  CELL_AND_OTHER_CLIENTS: 'OTHER_CLIENTS'
 };
 
 /**
  * 旗标原文 → 规范化 token 列表(镜像 Rust normalize_flag_tokens:trim+大写、
- * CELL 别名、遗留拼写折叠——去空白/下划线/连字符后对照规范形;未知保留
+ * 4 个旧式别名、遗留拼写折叠——去空白/下划线/连字符后对照规范形;未知保留
  * 大写;去重保序)。
  */
 export function normalizeFlagTokens(raw: string): string[] {
@@ -49,8 +53,9 @@ export function normalizeFlagTokens(raw: string): string[] {
       continue;
     }
     let canonical: string;
-    if (upper === 'CELL') {
-      canonical = 'CELL_PUBLIC';
+    const alias = FLAG_DOMAIN_ALIAS[upper];
+    if (alias) {
+      canonical = alias;
     } else if (CANONICAL_FLAG_TOKENS.includes(upper)) {
       canonical = upper;
     } else {

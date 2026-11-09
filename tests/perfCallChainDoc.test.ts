@@ -304,12 +304,15 @@ const ANCHORS: Array<[string, number, string]> = [
   // provideHover 净位移 189→183,真位重探,出处随 baseline 锁步。
   ['src/languageProviders/hover.ts', 183, 'provideHover('],
   ['src/languageProviders/navigation.ts', 47, 'shadowCompareDefinition'],
-  ['src/languageProviders/validation.ts', 13, 'export function validateDocument('],
-  ['src/languageProviders/validation.ts', 37, 'shadowObserveDefDocument'],
+  // 2026-11-09(flags 别名归一批):validation.ts 顶部加 FLAG_DOMAIN_ALIAS
+  // import(+1 行),其后 validation.ts 三锚点真位重探 13→14/37→38/255→256,
+  // 出处随 baseline 锁步。
+  ['src/languageProviders/validation.ts', 14, 'export function validateDocument('],
+  ['src/languageProviders/validation.ts', 38, 'shadowObserveDefDocument'],
   // 2026-11-08(诊断面切流):validateDocument 后插入 rust 服务腿块
   // (serveRustDiagnosticsFace/mergeRustDiagnosticsFace/lspSeverityToVscode,
   // 约 +105 行),其后锚点真位重探 165→255,出处随 baseline 锁步。
-  ['src/languageProviders/validation.ts', 255, 'validateEntitiesXmlDocument'],
+  ['src/languageProviders/validation.ts', 256, 'validateEntitiesXmlDocument'],
   // 2026-11-06(十六):IDE-DB-001 持久字段容量说明——languageProviders.ts
   // describeTypeStorageShape 各形态分支附容量行,2776 后 +11;其后锚点
   // 随之 +11(真位重探 4741/5162/5268/7112;2005 前不受影响;出处随 baseline

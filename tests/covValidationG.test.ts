@@ -510,6 +510,7 @@ describe('validateSectionStructure / validatePropertyStructure / 纯函数(覆�
   it('normalizePropertyFlag:空/各映射/原样回落', () => {
     expect(normalizePropertyFlag(undefined)).toBeUndefined();
     expect(normalizePropertyFlag('  ')).toBeUndefined();
+    expect(normalizePropertyFlag('CELL')).toBe('CELL_PUBLIC');
     expect(normalizePropertyFlag('CELL_AND_CLIENT')).toBe('CELL_PUBLIC_AND_OWN');
     expect(normalizePropertyFlag('CELL_AND_CLIENTS')).toBe('ALL_CLIENTS');
     expect(normalizePropertyFlag('CELL_AND_OTHER_CLIENTS')).toBe('OTHER_CLIENTS');

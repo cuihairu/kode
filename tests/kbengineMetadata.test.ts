@@ -76,6 +76,22 @@ describe('KBEngine metadata tables', () => {
     expect(byName.get('OWN_CLIENT')?.documentation).toContain('不跨 cell 广播');
     expect(byName.get('OTHER_CLIENTS')?.detail).toContain('Cell 广播并同步给 AOI 其它客户端');
     expect(byName.get('OTHER_CLIENTS')?.documentation).toContain('不含拥有者客户端');
+    // 同批补齐的 5 条薄词条:逐旗标语义 = common.h 掩码成员关系,文案要点锁死。
+    expect(byName.get('CELL_PUBLIC')?.documentation).toContain('跨 cell 广播');
+    expect(byName.get('CELL_PUBLIC')?.documentation).toContain('任何客户端都收不到');
+    expect(byName.get('CELL_PRIVATE')?.documentation).toContain('不跨 cell 广播');
+    expect(byName.get('CELL_PRIVATE')?.documentation).toContain('进不了任何客户端');
+    expect(byName.get('CELL_PUBLIC_AND_OWN')?.documentation).toContain('只同步给拥有者客户端');
+    expect(byName.get('CELL_PUBLIC_AND_OWN')?.documentation).toContain('AOI 其它客户端收不到');
+    expect(byName.get('BASE_AND_CLIENT')?.detail).toContain('Base 注册并同步给拥有者客户端');
+    expect(byName.get('BASE_AND_CLIENT')?.documentation).toContain('不经 cellapp');
+    expect(byName.get('BASE')?.documentation).toContain('仅在 baseapp 注册');
+    expect(byName.get('BASE')?.documentation).toContain('无任何客户端面');
+    // 4 个旧式别名:与 g_entityFlagMapping 同位映射,文案须含位值与目标名。
+    expect(byName.get('CELL')?.documentation).toContain('映射到 CELL_PUBLIC');
+    expect(byName.get('CELL_AND_CLIENT')?.documentation).toContain('映射到 CELL_PUBLIC_AND_OWN');
+    expect(byName.get('CELL_AND_CLIENTS')?.documentation).toContain('映射到 ALL_CLIENTS');
+    expect(byName.get('CELL_AND_OTHER_CLIENTS')?.documentation).toContain('映射到 OTHER_CLIENTS');
   });
 
   it('lists detail levels and reload functions', () => {
@@ -175,6 +191,52 @@ describe.skipIf(!engineRoot)('KBEngine metadata vs engine source', () => {
     expect(inBroadcastCell('OTHER_CLIENTS')).toBe(true);
     expect(inBroadcastCell('OWN_CLIENT')).toBe(false);
     expect(byName.get('OWN_CLIENT')?.documentation).toContain('不跨 cell 广播');
+  });
+
+  it('keeps every enriched flag claim aligned with common.h relation masks', () => {
+    // 全掩码对账(2026-11-09 flags 文档批次):kbengineMetadata 逐旗标声明的
+    // 「在 X 注册/跨 cell 广播/进客户端面」要点,全部与 common.h 位集机器
+    // 对账——引擎位集一变,这里先红,文档不允许漂在源码之外。
+    const commonLines = readEngineSource('common.h').split('\n');
+    const maskLine = (mask: string): string => {
+      const line = commonLines.find(l => l.includes(`${mask}\t`) || l.includes(`${mask} `) || l.trimStart().startsWith(mask));
+      expect(line, mask).toBeDefined();
+      return line!;
+    };
+    const baseData = maskLine('ENTITY_BASE_DATA_FLAGS');
+    const cellData = maskLine('ENTITY_CELL_DATA_FLAGS');
+    const clientData = maskLine('ENTITY_CLIENT_DATA_FLAGS');
+    const broadcastCell = maskLine('ENTITY_BROADCAST_CELL_FLAGS');
+    const broadcastOther = maskLine('ENTITY_BROADCAST_OTHER_CLIENT_FLAGS');
+    const broadcastOwn = maskLine('ENTITY_BROADCAST_OWN_CLIENT_FLAGS');
+    // 词边界匹配:ED_FLAG_CELL_PUBLIC 是 ED_FLAG_CELL_PUBLIC_AND_OWN 的
+    // 前缀,裸 includes 会误命中——后续字符不得是标识符字符。
+    const has = (line: string, flag: string): boolean =>
+      new RegExp(`ED_FLAG_${flag}(?![A-Z_])`).test(line);
+
+    // CELL_PUBLIC: cell 注册 + 跨 cell 广播 + 无任何客户端面。
+    expect(has(cellData, 'CELL_PUBLIC')).toBe(true);
+    expect(has(broadcastCell, 'CELL_PUBLIC')).toBe(true);
+    expect(has(clientData, 'CELL_PUBLIC')).toBe(false);
+    expect(has(broadcastOther, 'CELL_PUBLIC')).toBe(false);
+    // CELL_PRIVATE: 仅 cell 注册,不广播、不进客户端。
+    expect(has(cellData, 'CELL_PRIVATE')).toBe(true);
+    expect(has(broadcastCell, 'CELL_PRIVATE')).toBe(false);
+    expect(has(clientData, 'CELL_PRIVATE')).toBe(false);
+    // CELL_PUBLIC_AND_OWN: 跨 cell 广播 + 只进拥有者客户端(BROADCAST_OWN 含
+    // /BROADCAST_OTHER 不含)。
+    expect(has(broadcastCell, 'CELL_PUBLIC_AND_OWN')).toBe(true);
+    expect(has(broadcastOwn, 'CELL_PUBLIC_AND_OWN')).toBe(true);
+    expect(has(broadcastOther, 'CELL_PUBLIC_AND_OWN')).toBe(false);
+    // BASE_AND_CLIENT: base 注册 + 拥有者客户端 + 不经 cell。
+    expect(has(baseData, 'BASE_AND_CLIENT')).toBe(true);
+    expect(has(broadcastOwn, 'BASE_AND_CLIENT')).toBe(true);
+    expect(has(cellData, 'BASE_AND_CLIENT')).toBe(false);
+    expect(has(broadcastCell, 'BASE_AND_CLIENT')).toBe(false);
+    // BASE: 仅 base 注册,无客户端面。
+    expect(has(baseData, 'BASE')).toBe(true);
+    expect(has(clientData, 'BASE')).toBe(false);
+    expect(has(cellData, 'BASE')).toBe(false);
   });
 
   it('matches engine detail level names in entitydef.cpp', () => {

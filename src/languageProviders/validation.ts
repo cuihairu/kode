@@ -7,6 +7,7 @@ import { getKodeCoreShadowGate, serveDiagnosticsFromRust, shadowObserveDefDocume
 import { analyzeDefDocumentInRust, type DefAnalysisFinding } from '../defAnalyzer';
 import { collectDefPythonParityInput } from '../defPythonParity';
 import { DETAIL_LEVELS, KBENGINE_FLAGS } from '../kbengineMetadata';
+import { FLAG_DOMAIN_ALIAS } from '../generated/flagDomains';
 import { ALLOWED_TOP_LEVEL_SECTIONS, KBEngineSectionName, createNodeRange, getLanguageFeatureConfig, getNodeValue, getSectionLabel, parseDefAst, pushDiagnosticForNodeValue, toSectionName, visitElementNodes } from './shared';
 import { ENTITY_BASE_DATA_FLAGS, ENTITY_CELL_DATA_FLAGS, ENTITY_CLIENT_DATA_FLAGS, KnownTypeContext, PROPERTY_SCOPE_LABELS, PropertyScope, getKnownTypeContext } from './completion';
 import { resolveCustomTypeReference } from './navigation';
@@ -546,16 +547,10 @@ export function normalizePropertyFlag(flags: string | undefined): string | undef
     return undefined;
   }
 
-  switch (normalizedFlag) {
-    case 'CELL_AND_CLIENT':
-      return 'CELL_PUBLIC_AND_OWN';
-    case 'CELL_AND_CLIENTS':
-      return 'ALL_CLIENTS';
-    case 'CELL_AND_OTHER_CLIENTS':
-      return 'OTHER_CLIENTS';
-    default:
-      return normalizedFlag;
-  }
+  // g_entityFlagMapping 12 项(entitydef.cpp:161-174)别名归一,与
+  // src/generated/flagDomains.ts 单一来源同表——此前缺 CELL 归一,
+  // `<Flags>CELL</Flags>` 的域判读会丢 cell 面。
+  return FLAG_DOMAIN_ALIAS[normalizedFlag] ?? normalizedFlag;
 }
 
 export function describePropertyScope(scope: PropertyScope): string {

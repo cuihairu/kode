@@ -186,6 +186,8 @@ const normalizePropertyFlag = (raw: string | undefined): string | undefined => {
     return undefined;
   }
   switch (normalized) {
+    case 'CELL':
+      return 'CELL_PUBLIC';
     case 'CELL_AND_CLIENT':
       return 'CELL_PUBLIC_AND_OWN';
     case 'CELL_AND_CLIENTS':

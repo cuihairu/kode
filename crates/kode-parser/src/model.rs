@@ -358,7 +358,10 @@ pub fn canonical_tag(name: &str) -> String {
 
 /// 旗标文本 → 规范化 token(`|` 分隔)。
 ///
-/// 与 TS defAnalyzer 同基座:trim + 大写,`CELL` → `CELL_PUBLIC` 别名;
+/// 与 TS defAnalyzer 同基座:trim + 大写,再查引擎 `g_entityFlagMapping`
+/// 12 项映射表(entitydef.cpp:161-172)——规范 8 名之外,4 个旧式别名
+/// `CELL`/`CELL_AND_CLIENT`/`CELL_AND_CLIENTS`/`CELL_AND_OTHER_CLIENTS`
+/// 分别落到 CELL_PUBLIC/CELL_PUBLIC_AND_OWN/ALL_CLIENTS/OTHER_CLIENTS 位;
 /// 在此之上的**遗留拼写容忍**:`All Clients`/`ALL CLIENTS`/`ALL_CLIENTS`
 /// 等空白/连字符变体折叠到规范形(去分隔符后重试);未知 token 按原文
 /// 大写保留,不悄悄丢弃。
@@ -373,14 +376,21 @@ pub fn normalize_flag_tokens(raw: &str) -> Vec<String> {
         "OWN_CLIENT",
         "OTHER_CLIENTS",
     ];
+    // 旧式别名拼写(entitydef.cpp:161-164;映射目标 = 规范名)。
+    const ALIASES: &[(&str, &str)] = &[
+        ("CELL", "CELL_PUBLIC"),
+        ("CELL_AND_CLIENT", "CELL_PUBLIC_AND_OWN"),
+        ("CELL_AND_CLIENTS", "ALL_CLIENTS"),
+        ("CELL_AND_OTHER_CLIENTS", "OTHER_CLIENTS"),
+    ];
     let mut out = Vec::new();
     for token in raw.split('|') {
         let upper = token.trim().to_uppercase();
         if upper.is_empty() {
             continue;
         }
-        let canonical = if upper == "CELL" {
-            "CELL_PUBLIC".to_string()
+        let canonical = if let Some((_, target)) = ALIASES.iter().find(|(a, _)| *a == upper) {
+            (*target).to_string()
         } else if KNOWN.contains(&upper.as_str()) {
             upper
         } else {
