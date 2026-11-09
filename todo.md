@@ -1568,7 +1568,7 @@
 
 - [x] UX-REVIEW-007a 为组件、诊断、关键词、刷新间隔和历史窗口提供可见标签与程序化名称；按钮状态能被辅助技术理解，中英文文案完整。
 - [x] UX-REVIEW-007b 调整工具栏在窄面板下的换行和分组，保留筛选值、刷新、暂停/恢复和导出行为；主题颜色与对比度遵循 VS Code。（2c92dc38;工具栏拆「筛选组 toolbar-filters / 操作组 toolbar-actions」两个 flex-wrap 组:窄面板下筛选项组内流式折行(flex 1 1 170px+min-width 150px,控件 width:100%),刷新/暂停/导出作为整体折行不与筛选控件交错;取值/事件仍按 id 绑定、服务端回填 selected/value,行为零改动;工具栏样式区零硬编码色值(全 var(--vscode-button/input/*)),补 focus-visible outline=var(--vscode-focusBorder);tests/monitoringWebViewToolbar.test.ts 5 例(分组不交错/折行 CSS/筛选值跨重渲染保留含转义/暂停态渲染恢复按钮/主题断言含无 hex 正则);prove-red=stash 后 3/5 红(分组/折行/主题);lint 0/tsc 0）
-- [ ] UX-REVIEW-007c 验证键盘顺序、焦点可见、名称和状态；在真实 VS Code 用屏幕阅读器与窄面板走查，未能执行的环境如实记录。
+- [x] UX-REVIEW-007c 验证键盘顺序、焦点可见、名称和状态；在真实 VS Code 用屏幕阅读器与窄面板走查，未能执行的环境如实记录。（2026-11-10 98e8cf6f：tests/monitoringWebViewToolbar.test.ts 增 3 例验证面——①键盘顺序=工具栏零 tabindex（Tab 序即 DOM 序）+8 控件按组件→诊断→关键词→刷新间隔→历史窗口→刷新→暂停→导出逐位断言；②程序化名称=5 筛选控件逐一断言 `<label for>` 配对、3 按钮可见文本非空（即可访问名称）；③状态经可访问名称呈现=暂停态名称「恢复」/运行态「暂停」。焦点可见已由 007b 例断言 focus-visible outline=var(--vscode-focusBorder)（标注 007c 验证面）。prove-red=注入 tabindex="1"+破坏 historyWindow label 配对→2 例红，还原后 8/8 绿且 monitoringWebViewHtml.ts 零 diff。**环境受限如实记录**：真实 VS Code 屏幕阅读器走查（NVDA/VoiceOver）与窄面板目视走查在本环境（xvfb 无屏、无辅助技术）不可执行，已按项面要求如实记录不假称完成；窄面板行为面由 007b 折行 CSS 断言+xvfb demo 门禁覆盖到可自动化上限。门禁 tsc 0/lint 0/全量 vitest 8402 过 4 skip RC=0 零抖动/xvfb demo 25 RC=0/docs:build RC=0。实现面 007a/007b 已此前落库。）
 
 ### UX-REVIEW-008 [P2] 状态与恢复集中展示
 
