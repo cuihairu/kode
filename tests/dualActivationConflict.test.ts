@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   detectDualActivation,
   formatDualActivationWarning
-} from '../src/dualActivationConflict';
+} from '../src/backend/dualActivationConflict';
 
 // IDE-REL-001 检测两个 Kode ID 是否同时激活:只有「实际共激活」(两个
 // Kode 系 ID 都 isActive)才提示冲突;已安装但未激活(启用未触发/被

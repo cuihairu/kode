@@ -11,7 +11,7 @@ import { resolveActiveProfile } from './activeProfile';
 
 
 import { setJumpLogEnabled } from './navigationLog';
-import { setAnnotationSourceLogEnabled } from './annotationSourceLog';
+import { setAnnotationSourceLogEnabled } from './backend/annotationSourceLog';
 import { activateInfrastructure } from './activate/infrastructure';
 
 import { OperationStatus } from './languageServiceMetrics';

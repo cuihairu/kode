@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MANIFEST_FINDING_SENTINEL,
   mapFindingsToDiagnostics
-} from '../src/processTopologyDiagnostics';
+} from '../src/backend/processTopologyDiagnostics';
 import type { ProcessTopologyFinding } from '../src/backend/processTopologyRust';
 
 // C-17 findings → 诊断规范映射(纯逻辑):哨兵 <manifest> 解析成实际清单路径、

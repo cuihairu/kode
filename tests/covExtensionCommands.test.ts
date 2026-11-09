@@ -7,7 +7,7 @@ import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { languagesRegistry } from './fake-vscode/languages';
 import { messages, window as fakeWindow, windowState, treeRegistrations } from './fake-vscode/windowState';
 import { configurationOverrides, workspace, workspaceEvents, workspaceState, memoryFileSystem } from './fake-vscode/workspaceState';
-import { annotationSourceLog } from '../src/annotationSourceLog';
+import { annotationSourceLog } from '../src/backend/annotationSourceLog';
 import { setHoverInFlightGateForTests } from '../src/languageProviders';
 import {
   makeTextDocument,

@@ -6,7 +6,7 @@ import {
   formatEntityDefMethodHover,
   formatEventStatsHover,
   formatInferredReturnHover
-} from '../src/hoverMarkdown';
+} from '../src/backend/hoverMarkdown';
 
 // IDE-ARC-003 hover Markdown 格式化抽离:五处 render 位(返回类型推导/def 声明
 // 方法/接收者调用/内建属性/事件统计)的字符串拼装只住 hoverMarkdown.ts——
@@ -83,7 +83,7 @@ describe('hover 文本格式化(IDE-ARC-003)', () => {
   });
 
   it('纯格式化模块:不 import vscode,不读文件,不读配置', () => {
-    const source = readFileSync(join(root, 'src/hoverMarkdown.ts'), 'utf8');
+    const source = readFileSync(join(root, 'src/backend/hoverMarkdown.ts'), 'utf8');
     expect(source.includes("from 'vscode'"), '不得依赖 vscode').toBe(false);
     expect(source.includes('getConfiguration'), '不得读配置').toBe(false);
     expect(source.includes("from 'fs'"), '不得读文件').toBe(false);
@@ -96,7 +96,7 @@ describe('hover 文本格式化(IDE-ARC-003)', () => {
     const lpSources = ['src/languageProviders.ts',
       ...readdirSync(join(root, 'src/languageProviders')).filter(f => f.endsWith('.ts')).map(f => `src/languageProviders/${f}`)];
     const source = lpSources.map(p => readFileSync(join(root, p), 'utf8')).join('\n');
-    expect(/from '(\.\.\/)?hoverMarkdown'/.test(source), 'hover render 位应 import hoverMarkdown 格式化模块').toBe(true);
+    expect(/from '(\.\.\/)+(backend\/)?hoverMarkdown'/.test(source), 'hover render 位应 import hoverMarkdown 格式化模块').toBe(true);
     // 五个 hover render 位全部走格式化模块(声明面+接收者面共用 def 方法格式化)
     const callCounts: Array<[string, number]> = [
       ['formatEntityDefMethodHover', 2],
@@ -111,7 +111,7 @@ describe('hover 文本格式化(IDE-ARC-003)', () => {
     for (const literal of ['推导自 ', '当前文件统计']) {
       expect(source.includes(literal), `hover render 位仍内联拼装「${literal}」`).toBe(false);
     }
-    const home = readFileSync(join(root, 'src/hoverMarkdown.ts'), 'utf8');
+    const home = readFileSync(join(root, 'src/backend/hoverMarkdown.ts'), 'utf8');
     for (const literal of ['此函数是实体 def 声明的', '此调用是实体 def 声明的', '推导自', '当前文件统计', '引擎注册面']) {
       expect(home.includes(literal), `格式化模块应拥有「${literal}」`).toBe(true);
     }

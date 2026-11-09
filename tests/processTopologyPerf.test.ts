@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import { readSharedFileSnapshot } from '../src/sharedFileSnapshot';
-import { mapFindingsToDiagnostics } from '../src/processTopologyDiagnostics';
+import { mapFindingsToDiagnostics } from '../src/backend/processTopologyDiagnostics';
 import { validateProcessTopologyInRust } from '../src/backend/processTopologyRust';
 import { DiagnosticScheduler } from '../src/backend/diagnosticScheduler';
 import { KodeCoreGate } from '../src/backend/kodeCoreGate';

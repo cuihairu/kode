@@ -28,7 +28,7 @@ import {
   getRecentAnnotationSourceLogs,
   setAnnotationSourceLogEnabled,
   setAnnotationSourceLogSink
-} from '../src/annotationSourceLog';
+} from '../src/backend/annotationSourceLog';
 import {
   formatEntityBuiltinPropertyHeadline,
   getEntityBuiltinPropertiesForFace

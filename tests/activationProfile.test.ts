@@ -20,7 +20,7 @@ describe('activationProfile(激活分阶段计时落盘)', () => {
 
   it('设环境变量:mark 两段 flush 落盘 step/total;清空后二次 flush 零追加', async () => {
     vi.stubEnv('KODE_ACTIVATE_PROFILE_OUT', outPath);
-    const mod = await import('../src/activationProfile');
+    const mod = await import('../src/backend/activationProfile');
     mod.markActivateStage('views');
     mod.markActivateStage('commands');
     mod.flushActivateProfile();
@@ -37,14 +37,14 @@ describe('activationProfile(激活分阶段计时落盘)', () => {
 
   it('无标记 flush 直通:不创建输出文件', async () => {
     vi.stubEnv('KODE_ACTIVATE_PROFILE_OUT', outPath);
-    const mod = await import('../src/activationProfile');
+    const mod = await import('../src/backend/activationProfile');
     mod.flushActivateProfile();
     expect(fs.existsSync(outPath)).toBe(false);
   });
 
   it('落盘失败(输出指向目录)被吞:不抛错且标记复位', async () => {
     vi.stubEnv('KODE_ACTIVATE_PROFILE_OUT', dir);
-    const mod = await import('../src/activationProfile');
+    const mod = await import('../src/backend/activationProfile');
     expect(() => {
       mod.markActivateStage('views');
       mod.flushActivateProfile();
@@ -58,7 +58,7 @@ describe('activationProfile(激活分阶段计时落盘)', () => {
 
   it('未设环境变量:mark/flush 全直通零副作用', async () => {
     vi.stubEnv('KODE_ACTIVATE_PROFILE_OUT', '');
-    const mod = await import('../src/activationProfile');
+    const mod = await import('../src/backend/activationProfile');
     expect(() => {
       mod.markActivateStage('views');
       mod.flushActivateProfile();

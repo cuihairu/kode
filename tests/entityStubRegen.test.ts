@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { EntityStubRegenController } from '../src/entityStubRegen';
+import { EntityStubRegenController } from '../src/backend/entityStubRegen';
 
 // C-22 交付①补:def 增删改 → entity 桩再生控制器。纯逻辑层:只盯 .def
 // 尾缀;连续事件合并为一次尾沿再生;dispose 丢弃挂起计时不再生。

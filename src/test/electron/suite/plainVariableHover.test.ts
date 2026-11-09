@@ -9,7 +9,7 @@ import {
   clearRecentAnnotationSourceLogs,
   getRecentAnnotationSourceLogs,
   setAnnotationSourceLogEnabled
-} from '../../../annotationSourceLog';
+} from '../../../backend/annotationSourceLog';
 
 // IDE-ACC-001:普通变量冷 hover 验收——真实编辑器(扩展宿主)覆盖
 // 「大文件无注解」场景,分别记录命中与空结果的请求耗时及读盘量。

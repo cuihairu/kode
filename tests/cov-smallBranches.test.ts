@@ -6,7 +6,7 @@ import { readActiveProfileId } from '../src/activeProfile';
 import {
   annotationSourceLog,
   setAnnotationSourceLogEnabled
-} from '../src/annotationSourceLog';
+} from '../src/backend/annotationSourceLog';
 import { readBuildCommit } from '../src/backend/buildCommit';
 import { CompileallErrorParser } from '../src/backend/buildProblemMatcher';
 import { buildScriptCheckTaskSpec } from '../src/backend/buildTaskSpec';

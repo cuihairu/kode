@@ -6,7 +6,7 @@ import {
   isAnnotationSourceLogEnabled,
   setAnnotationSourceLogEnabled,
   setAnnotationSourceLogSink
-} from '../src/annotationSourceLog';
+} from '../src/backend/annotationSourceLog';
 
 // IDE-REV-037 注解来源日志模块面:默认关闭零开销(消息不求值、sink 不触
 // 发)、开启后环形缓冲与 sink 同步收行、clear 清空、环形上限不无界增长。

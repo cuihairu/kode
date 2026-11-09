@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { benchmarkStartupPerformance } from '../src/performanceBenchmark';
+import { benchmarkStartupPerformance } from '../src/backend/performanceBenchmark';
 
 describe('startup performance benchmark', () => {
   it('records named samples and evaluates the activation budget', async () => {

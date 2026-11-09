@@ -25,7 +25,7 @@ import {
   clearRecentAnnotationSourceLogs,
   getRecentAnnotationSourceLogs,
   setAnnotationSourceLogEnabled
-} from '../src/annotationSourceLog';
+} from '../src/backend/annotationSourceLog';
 import { displayPath, linearizeC3, PythonClassIndex, type PythonClassDef } from '../src/backend/pythonClassIndex';
 import { IndexScheduler, type IndexTaskHandle, type IndexTaskSpec } from '../src/backend/indexScheduler';
 import { clearRecentJumpLogs, getRecentJumpLogs, setJumpLogEnabled } from '../src/navigationLog';

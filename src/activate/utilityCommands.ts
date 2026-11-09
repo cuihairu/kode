@@ -16,7 +16,7 @@ import { buildDefReferenceGraphFromFile, buildProjectDoctorReport, formatDefRefe
 import { buildDiscoveryReport, renderDiscoveryReport, runWorkspaceDiscovery } from '../workspaceDiscovery';
 import { classifyPythonService, collectPythonServiceFacts, renderPythonServiceMessage } from '../pythonLanguageServiceStatus';
 import { createVenvFlow, interpreterStatusBarText, probePythonVersion, runVenvModuleProcess, selectInterpreter } from '../backend/venvInterpreterPicker';
-import { detectDualActivation, formatDualActivationWarning } from '../dualActivationConflict';
+import { detectDualActivation, formatDualActivationWarning } from '../backend/dualActivationConflict';
 import { execFile } from 'child_process';
 import { findFilesAcrossRoots } from '../scanRoots';
 import { getActiveOperationCounts } from '../languageServiceMetrics';

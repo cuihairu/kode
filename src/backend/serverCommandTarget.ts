@@ -1,4 +1,4 @@
-import { SERVER_COMPONENTS, ServerComponent } from './serverManager';
+import { SERVER_COMPONENTS, ServerComponent } from '../serverManager';
 
 type ServerCommandTarget = Partial<ServerComponent> & {
   component?: Partial<ServerComponent>;

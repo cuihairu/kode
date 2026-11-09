@@ -71,7 +71,7 @@ import {
   buildRemoteServerNodes,
 } from '../remoteServerTree';
 import { pickServerComponent, ServerControlProvider } from '../explorerProviders';
-import { resolveServerComponent } from '../serverCommandTarget';
+import { resolveServerComponent } from '../backend/serverCommandTarget';
 import { setDefaultScriptRuntime } from '../quickActions';
 import { readDerivedTelnetTargets } from '../telnetDeriveTargets';
 import { makeProbeOne, TelnetService, updateTelnetStatusBar } from '../telnetService';

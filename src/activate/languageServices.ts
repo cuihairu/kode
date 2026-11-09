@@ -47,7 +47,7 @@ import { StartupScriptCompletionProvider, StartupScriptHoverProvider } from '../
 import { PythonClassIndex } from '../backend/pythonClassIndex';
 import { PYTHON_TYPE_STUB_FILE_NAME, buildPythonTypeStubLineMap, buildPythonTypeStubPlan } from '../pythonTypeStubs';
 import { bumpRootConfigGeneration } from '../rootConfigGeneration';
-import { createRootRemovalNotifier } from '../rootRemovalEvents';
+import { createRootRemovalNotifier } from '../backend/rootRemovalEvents';
 import { getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace } from '../scanRoots';
 import { scheduleBackgroundSchemaWarmup } from '../backend/schemaWarmup';
 import { createSharedFileEventMerger } from '../backend/sharedFileEvents';

@@ -6,7 +6,7 @@
 // 形态:deps 显式注入,共享实例与销毁句柄一并返回,销毁所有权仍由组合根
 // 统一登记(activation 顺序由组合根调用点保持——本层必须是 activate 最前)。
 import * as vscode from 'vscode';
-import { setAnnotationSourceLogEnabled, setAnnotationSourceLogSink } from '../annotationSourceLog';
+import { setAnnotationSourceLogEnabled, setAnnotationSourceLogSink } from '../backend/annotationSourceLog';
 import { KBENGINE_DATABASE_SIMULATION_SCHEME, KBEngineDatabaseSimulationProvider } from '../databaseSimulator';
 import { setPythonDataDictIndexEnabled, setPythonMroJumpEnabled } from '../languageProviders';
 import { KBEngineDatabaseSchemaProvider } from '../databaseSchemaPresentation';

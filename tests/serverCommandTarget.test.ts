@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveServerComponent } from '../src/serverCommandTarget';
+import { resolveServerComponent } from '../src/backend/serverCommandTarget';
 import { SERVER_COMPONENTS } from '../src/serverManager';
 
 // resolveServerComponent:从树节点等任意 target 里解析服务器组件,

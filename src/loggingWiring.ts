@@ -14,7 +14,7 @@ import {
   setLanguageServiceMetricsLogHub
 } from './languageServiceMetrics';
 import { renderLintRulesReport } from './lintRuleRegistry';
-import { resolveServerComponent } from './serverCommandTarget';
+import { resolveServerComponent } from './backend/serverCommandTarget';
 import { getDiagnosticScheduler } from './backend/diagnosticScheduler';
 import { setFileReadVerbose } from './backend/fileReadMetrics';
 import { setCpuProfileDirectory, startCpuProfile, stopCpuProfile } from './backend/cpuProfileCapture';

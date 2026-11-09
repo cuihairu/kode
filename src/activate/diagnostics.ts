@@ -44,7 +44,7 @@ import { readSharedFileSnapshot } from '../sharedFileSnapshot';
 import { isPythonMroJumpEnabled, validateDocument, validateEntitiesXmlDocument } from '../languageProviders';
 import { DiagnosticScheduler, getDiagnosticScheduler } from '../backend/diagnosticScheduler';
 import { validateProcessTopologyInRust } from '../backend/processTopologyRust';
-import { mapFindingsToDiagnostics, type ProcessTopologyDiagnosticSpec } from '../processTopologyDiagnostics';
+import { mapFindingsToDiagnostics, type ProcessTopologyDiagnosticSpec } from '../backend/processTopologyDiagnostics';
 import {
   STARTUP_SCRIPT_DIAGNOSTIC_CODE,
   STARTUP_SCRIPT_DIAGNOSTICS_ENABLED_DEFAULT,
