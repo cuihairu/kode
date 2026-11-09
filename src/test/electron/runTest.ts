@@ -9,6 +9,42 @@ import * as os from 'os';
 import { execFileSync } from 'child_process';
 import { runTests } from '@vscode/test-electron';
 
+/**
+ * UX-REVIEW-010f 真机 zh-cn locale 公共装配(manifest 回退 / 运行时 bundle 回退
+ * 两模式共用):zh-cn 显示语言需要语言包(离线 VS Code 无内置中文)——从
+ * open-vsx 拉 ms-ceintl 语言包 vsix(缓存进 .vscode-test/,已 gitignore),
+ * 解包到调用方给的暂存目录再装成 extensions-dir 里的安装布局,并写好
+ * user-data 的 argv.json(locale=zh-cn)。locale 生效需要「注册语言包 →
+ * 重启应用」两段:语言包目录与 user-data 持久化在 .vscode-test/ 下,两种
+ * 模式都由 runTests 连跑两次(第一段注册,第二段 NLS 真正以 zh-cn 起宿主)。
+ */
+function prepareZhLocaleHost(
+  extensionDevelopmentPath: string,
+  unpackRoot: string
+): { extensionsDir: string; userDataDir: string } {
+  const cacheRoot = path.join(extensionDevelopmentPath, '.vscode-test', 'manifest-nls');
+  const extensionsDir = path.join(cacheRoot, 'extensions');
+  fs.mkdirSync(extensionsDir, { recursive: true });
+  const lpVersion = '1.131.0';
+  const lpVsix = path.join(extensionDevelopmentPath, '.vscode-test',
+    `MS-CEINTL.vscode-language-pack-zh-hans-${lpVersion}.vsix`);
+  if (!fs.existsSync(lpVsix)) {
+    fs.mkdirSync(path.dirname(lpVsix), { recursive: true });
+    // 先下 .part 再原子改名:断流残留的 .part 不会被下次的存在性检查误当缓存
+    const lpPart = `${lpVsix}.part`;
+    execFileSync('curl', ['-fsSL', '--retry', '3', '-o', lpPart,
+      `https://open-vsx.org/api/MS-CEINTL/vscode-language-pack-zh-hans/${lpVersion}/file/MS-CEINTL.vscode-language-pack-zh-hans-${lpVersion}.vsix`]);
+    fs.renameSync(lpPart, lpVsix);
+  }
+  execFileSync('unzip', ['-o', '-q', lpVsix, '-d', unpackRoot]);
+  const lpRoot = path.join(extensionsDir, `ms-ceintl.vscode-language-pack-zh-hans-${lpVersion}`);
+  fs.cpSync(path.join(unpackRoot, 'extension'), lpRoot, { recursive: true });
+  const userDataDir = path.join(cacheRoot, 'user-data');
+  fs.mkdirSync(userDataDir, { recursive: true });
+  fs.writeFileSync(path.join(userDataDir, 'argv.json'), JSON.stringify({ locale: 'zh-cn' }));
+  return { extensionsDir, userDataDir };
+}
+
 async function main(): Promise<void> {
   // 仓库根 = out/test/electron 上溯三级(与 main 字段同根)
   const extensionDevelopmentPath = path.resolve(__dirname, '../../..');
@@ -97,6 +133,17 @@ async function main(): Promise<void> {
   // 未删键的对照键=zh-cn 文案(locale 生效证明)。--manifestnls 的无残留
   // 断言在此副本上继续有效。
   const manifestFallbackMode = process.argv.includes('--manifestfallback');
+  // UX-REVIEW-010f 运行时 bundle(vscode.l10n)缺 key 回退真机验证:临时扩展
+  // 副本连 l10n/ 目录一起复制,删掉 zh-cn 运行时 bundle 一个键,以
+  // --locale=zh-cn 拉起真 VS Code。套件改从副本里的 out 装载(extensionTestsPath
+  // 同步指向副本),套件内 import 的 nlsRuntime 与产品同文件同宿主,l10n
+  // 上下文 = 被测扩展本体:被删键 l10nText=英文源串(回落),未删键对照=
+  // zh-cn 文案(locale 生效证明)。--manifestnls 的无残留断言在此副本上继续
+  // 有效(manifest 未动)。
+  const bundleFallbackMode = process.argv.includes('--bundlefallback');
+  if (manifestFallbackMode && bundleFallbackMode) {
+    throw new Error('--manifestfallback and --bundlefallback are mutually exclusive');
+  }
   let localeArgs: string[] = [];
   if (manifestFallbackMode) {
     const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-manifest-fallback-'));
@@ -111,36 +158,46 @@ async function main(): Promise<void> {
     const zhBundle = JSON.parse(fs.readFileSync(zhPath, 'utf8')) as Record<string, string>;
     delete zhBundle['kbengine.command.refreshExplorer.title'];
     fs.writeFileSync(zhPath, JSON.stringify(zhBundle, null, 2) + '\n');
-    // zh-cn 显示语言需要语言包(离线 VS Code 1.145 无内置中文):从 open-vsx
-    // 拉 ms-ceintl 语言包 vsix(缓存进 .vscode-test/,已 gitignore),解包成
-    // extensions-dir 里的安装布局,--locale=zh-cn 才会真正生效
-    const cacheRoot = path.join(extensionDevelopmentPath, '.vscode-test', 'manifest-nls');
-    const extensionsDir = path.join(cacheRoot, 'extensions');
-    fs.mkdirSync(extensionsDir, { recursive: true });
-    const lpVersion = '1.131.0';
-    const lpVsix = path.join(extensionDevelopmentPath, '.vscode-test',
-      `MS-CEINTL.vscode-language-pack-zh-hans-${lpVersion}.vsix`);
-    if (!fs.existsSync(lpVsix)) {
-      fs.mkdirSync(path.dirname(lpVsix), { recursive: true });
-      // 先下 .part 再原子改名:断流残留的 .part 不会被下次的存在性检查误当缓存
-      const lpPart = `${lpVsix}.part`;
-      execFileSync('curl', ['-fsSL', '--retry', '3', '-o', lpPart,
-        `https://open-vsx.org/api/MS-CEINTL/vscode-language-pack-zh-hans/${lpVersion}/file/MS-CEINTL.vscode-language-pack-zh-hans-${lpVersion}.vsix`]);
-      fs.renameSync(lpPart, lpVsix);
-    }
-    const lpUnpack = path.join(temporaryRoot, 'lp-unpack');
-    execFileSync('unzip', ['-o', '-q', lpVsix, '-d', lpUnpack]);
-    const lpRoot = path.join(extensionsDir, `ms-ceintl.vscode-language-pack-zh-hans-${lpVersion}`);
-    fs.cpSync(path.join(lpUnpack, 'extension'), lpRoot, { recursive: true });
-    // locale 生效需要「注册语言包 → 重启应用」两段:语言包目录与 user-data
-    // (含 argv.json locale)持久化在 .vscode-test/ 下,本模式连跑两次 runTests,
-    // 第一段注册,第二段 NLS 真正以 zh-cn 起宿主
-    const userDataDir = path.join(cacheRoot, 'user-data');
-    fs.mkdirSync(userDataDir, { recursive: true });
-    fs.writeFileSync(path.join(userDataDir, 'argv.json'), JSON.stringify({ locale: 'zh-cn' }));
+    const { extensionsDir, userDataDir } =
+      prepareZhLocaleHost(extensionDevelopmentPath, path.join(temporaryRoot, 'lp-unpack'));
     devPath = temporaryRoot;
     process.env.KODE_ELECTRON_SUITE = 'manifestnls';
     process.env.KODE_MANIFEST_FALLBACK_TEMP = temporaryRoot;
+    localeArgs = ['--extensions-dir', extensionsDir, '--user-data-dir', userDataDir, '--locale=zh-cn'];
+  } else if (bundleFallbackMode) {
+    // 套件仍从仓库 out 装载(extensionTestsPath 不动):扩展宿主的定制模块解析器
+    // 只对「被测扩展根内」的模块做 realpath 收纳检查,仓库外装载点走普通 Node
+    // 解析;副本内的模块要 require mocha/glob 必须依赖副本外的 node_modules,
+    // 首跑/二跑实测被宿主拒收(套件搬进副本这条路结构性封死)。断言面改为
+    // 执行被测扩展自己注册的 kbengine.l10nProbe 命令(命令回调在被测扩展
+    // 上下文里跑,l10nText=真机产品同一条取词路径),不需要套件共享 l10n 上下文。
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-bundle-fallback-'));
+    process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+    for (const name of ['package.json', 'package.nls.json', 'package.nls.zh-cn.json', 'language-configuration.json']) {
+      fs.copyFileSync(path.join(extensionDevelopmentPath, name), path.join(temporaryRoot, name));
+    }
+    fs.cpSync(path.join(extensionDevelopmentPath, 'out'), path.join(temporaryRoot, 'out'), { recursive: true });
+    fs.cpSync(path.join(extensionDevelopmentPath, 'snippets'), path.join(temporaryRoot, 'snippets'), { recursive: true });
+    // 运行时 bundle 目录也进副本:vscode.l10n 按 package.json 的 "l10n" 声明
+    // 从扩展根的 l10n/ 取 bundle.l10n.<locale>.json
+    fs.cpSync(path.join(extensionDevelopmentPath, 'l10n'), path.join(temporaryRoot, 'l10n'), { recursive: true });
+    // 激活面也要跑(defParser 的 vendored fast-xml-parser):manifest 模式只读
+    // packageJSON 不激活,本模式 verify 段经 l10nProbe 真激活,缺 vendor 必红;
+    // resources/syntaxes 补齐走查宿主的主题与图标面(缺了只出无害警告日志)
+    fs.cpSync(path.join(extensionDevelopmentPath, 'vendor'), path.join(temporaryRoot, 'vendor'), { recursive: true });
+    fs.cpSync(path.join(extensionDevelopmentPath, 'resources'), path.join(temporaryRoot, 'resources'), { recursive: true });
+    fs.cpSync(path.join(extensionDevelopmentPath, 'syntaxes'), path.join(temporaryRoot, 'syntaxes'), { recursive: true });
+    const zhPath = path.join(temporaryRoot, 'l10n', 'bundle.l10n.zh-cn.json');
+    const zhBundle = JSON.parse(fs.readFileSync(zhPath, 'utf8')) as Record<string, string>;
+    // 受害键 = 工作台选择器占位(走查入口对齐 UX-REVIEW-010e/010f),对照键 =
+    // 同一选择器的动作项文案
+    delete zhBundle['Choose a KBEngine task'];
+    fs.writeFileSync(zhPath, JSON.stringify(zhBundle, null, 2) + '\n');
+    const { extensionsDir, userDataDir } =
+      prepareZhLocaleHost(extensionDevelopmentPath, path.join(temporaryRoot, 'lp-unpack'));
+    devPath = temporaryRoot;
+    process.env.KODE_ELECTRON_SUITE = 'manifestnls';
+    process.env.KODE_BUNDLE_FALLBACK_TEMP = temporaryRoot;
     localeArgs = ['--extensions-dir', extensionsDir, '--user-data-dir', userDataDir, '--locale=zh-cn'];
   }
   if (demoMode) {
@@ -743,14 +800,15 @@ async function main(): Promise<void> {
       '--skip-release-notes'
     ]
   });
-  if (manifestFallbackMode) {
+  if (manifestFallbackMode || bundleFallbackMode) {
     // 双段:第一段注册语言包(回退用例自 skip),第二段 zh-cn 必须生效并跑
     // 真断言(verify 段 locale 未生效会红,不会双 skip 全绿)
-    process.env.KODE_MANIFEST_LAUNCH = 'register';
+    const launchGate = manifestFallbackMode ? 'KODE_MANIFEST_LAUNCH' : 'KODE_BUNDLE_LAUNCH';
+    process.env[launchGate] = 'register';
     await electronLaunch();
-    process.env.KODE_MANIFEST_LAUNCH = 'verify';
+    process.env[launchGate] = 'verify';
     await electronLaunch();
-    delete process.env.KODE_MANIFEST_LAUNCH;
+    delete process.env[launchGate];
   } else {
     await electronLaunch();
   }

@@ -127,9 +127,18 @@ describe('extension activate 装配', () => {
     activate(context);
 
     // 命令:activate 注册的 id 集合与 package.json 声明严格一致
-    // (防"漏注册/漏声明"两类回归,重设计问题 P14 的核心验收)
-    expect(commandRegistry.allRegisteredCommandIds().sort())
-      .toEqual(declared.commands.map(entry => entry.command).sort());
+    // (防"漏注册/漏声明"两类回归,重设计问题 P14 的核心验收)。
+    // 显式豁免一例:真机 NLS 探针 kbengine.l10nProbe(UX-REVIEW-010f)有意
+    // 不进 contributes=不出命令面板,专供真机层 suite 经 executeCommand 取词
+    // 验证;豁免清单外的注册面与声明面仍严格互等。
+    const intentionalUndeclared = ['kbengine.l10nProbe'];
+    const allRegistered = commandRegistry.allRegisteredCommandIds();
+    for (const id of intentionalUndeclared) {
+      expect(allRegistered, `${id} 应已注册(豁免项仍须真实注册)`).toContain(id);
+    }
+    expect(
+      allRegistered.filter(id => !intentionalUndeclared.includes(id)).sort()
+    ).toEqual(declared.commands.map(entry => entry.command).sort());
 
     // 测试面板(TSK-005):一个 controller,一个默认 Run 档
     expect(testsRegistry.controllers).toHaveLength(1);

@@ -693,5 +693,15 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
     }
   );
   context.subscriptions.push(retryDiscoveryCommand);
+
+  // 真机 NLS 探针(UX-REVIEW-010f / KODE-I18N 真机验收门):返回当前扩展
+  // 上下文下一条运行时文案的取词结果。不在 contributes 声明=不出命令面板,
+  // 仅供真机层 suite 经 executeCommand 验证「命令回调在被测扩展上下文里跑,
+  // l10nText=产品同一条取词路径」(--bundlefallback 缺 key 回退走查面)。
+  const l10nProbeCommand = vscode.commands.registerCommand(
+    'kbengine.l10nProbe',
+    (message: string, args?: Record<string, string | number | boolean>) => l10nText(message, args)
+  );
+  context.subscriptions.push(l10nProbeCommand);
   startEntryController.begin();
 }

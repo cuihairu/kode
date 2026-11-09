@@ -5,6 +5,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setL10nBundle } from './fake-vscode/l10n';
 import { l10nText } from '../src/nlsRuntime';
+import { activate } from '../src/extension';
+import { commandRegistry } from './fake-vscode/commandRegistry';
+import { Uri, type ExtensionContext } from './fake-vscode/core';
+import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
 
 afterEach(() => {
   setL10nBundle(null);
@@ -20,6 +24,23 @@ describe('nlsRuntime 共用实现取词契约', () => {
     expect(l10nText('Connected')).toBe('已连接');
     expect(l10nText('Source-only key {n}', { n: 3 })).toBe('Source-only key 3');
     expect(l10nText('Source-only key')).not.toBe('');
+  });
+
+  // UX-REVIEW-010f 真机探针:kbengine.l10nProbe(activate 注册,不在
+  // contributes=不出命令面板)返回当前扩展上下文的产品取词结果,真机层
+  // --bundlefallback 经 executeCommand 用它验证缺 key 回退。两态单元锁:
+  // 命令返回值随 l10n bundle 切换,与 l10nText 同源。
+  it('真机探针命令 kbengine.l10nProbe 两态返回产品取词结果', async () => {
+    commandRegistry.reset();
+    const context: ExtensionContext = { subscriptions: [], extensionUri: Uri.file('/tmp') };
+    activate(context);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const probe = commandRegistry.registrations.get('kbengine.l10nProbe');
+    expect(probe, 'kbengine.l10nProbe 未注册').toBeDefined();
+    expect(await probe!.handler('Not identified')).toBe('Not identified');
+    setL10nBundle(zhCnBundle as Record<string, string>);
+    expect(await probe!.handler('Not identified')).toBe('未识别');
+    for (const disposable of context.subscriptions) disposable.dispose();
   });
 
   it('占位符在译文内替换(先查译文再替换,与真实 vscode.l10n 同序)', () => {
