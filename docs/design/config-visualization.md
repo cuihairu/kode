@@ -358,7 +358,7 @@ export interface ConfigVizKeyDetail {
 | stateOverridden | 覆盖 | overridden |
 | stateCustomOnly | 新增 | custom |
 | restatedNote | 覆盖值与默认值相同(显式重申,以覆盖文件为准) | Override equals the default (explicit restatement; the override file wins) |
-| tableReplaceNote | 重名 item 整表替换(引擎按名整体替换) | Duplicate <item> replaces the whole table (engine replaces by name) |
+| tableReplaceNote | 重名 item 整表替换(引擎按名整体替换) | Duplicate `<item>` replaces the whole table (engine replaces by name) |
 | sectionTreeLabel | 配置段 | Config sections |
 | keyListLabel | 键列表 | Key list |
 | detailRegionLabel | 键详情 | Key details |
