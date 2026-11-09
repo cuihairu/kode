@@ -1540,7 +1540,7 @@
 
 - [x] UX-REVIEW-003a 将「扫描脚本」与「配置 HTTP 请求」拆成清楚标明行为的独立入口，实际点击分别触发扫描和可编辑的配置位置；无工作区时说明如何打开项目。
 - [x] UX-REVIEW-003b 无脚本、取消选择、扫描失败和已有手工动作时给出准确结果及后续操作；扫描不得覆盖既有手工动作或 HTTP 配置。（17ca47fc;scanCandidates 返回 {candidates,failedRoots} 不再吞 readDirectory 失败冒充「无脚本」;scanScriptsAndRefresh 失败根>0 → 警示命名失败根+既有动作(含过期扫描动作)一律不动+不进选择器(部分根失败同口径),纯无脚本分支原语义保留;getTreeData/offerScanOnActivate 消费 .candidates 展示面不变;l10n 两 bundle 补「Script scan could not read…」键;测试+2(纯失败=配置原样+警示含根路径+无选择器;部分失败=只点名失败根可读根不误点+不写配置+无选择器);prove-red=stash 后 2 例全红;门禁 lint 0/tsc 0/vitest 8386|4 RC=0(首轮 typeStorageColdBuildPhased F13 预算 208ms>150ms 负载抖动,单跑 6/6 绿,复跑全绿)/demo 25 RC=0）
-- [ ] UX-REVIEW-003c 覆盖树视图空态到真实命令的接线、配置来源、重复执行与多工作区；中英文文案和实际行为一致。
+- [x] UX-REVIEW-003c 覆盖树视图空态到真实命令的接线、配置来源、重复执行与多工作区；中英文文案和实际行为一致。（7ed4d532;空态 tooltip 由「Open a workspace to scan for scripts」改为如实描述点击行为「Runs the script scan; you will be guided to open a workspace when none is open」(此条目在工作区已开但无脚本时同样出现,旧文案谎称需先开工作区;无工作区时 scanScriptsAndRefresh 给打开指引),死键两 bundle 移除;registered 动作(非 runDirect)tooltip 补「Source: .kbengine/debug.json」来源行(与 HTTP 行同键同口径,requestSource=settings 点名 kbengine.httpRequests),扫描直达脚本来源即自身路径不重复标注;测试+4(tree:空态 tooltip 如实+来源行 present/absent 对拍,manager:@script: 直达重复执行 2 次全跑无一次性守卫+多工作区扫描锚定配置根(默认 folder[0])他根脚本不进列表=既定设计钉死);prove-red=stash src/quickActionTree.ts 后 2 例红(旧 tooltip 串+无来源行),恢复 5/5 绿;门禁 lint 0/tsc 0/vitest 8390|4 RC=0/demo 25 RC=0）
 
 ### UX-REVIEW-004 [P1] 玩家数据按任务进入
 
