@@ -93,7 +93,7 @@ describe('terminalScript', () => {
       createCalls.push([options]);
       return { sendText: () => undefined } as never;
     }) as never;
-    const { ProcessManager } = await import('../src/processManager');
+    const { ProcessManager } = await import('../src/backend/processManager');
     const { setDefaultScriptRuntime } = await import('../src/quickActions');
     setDefaultScriptRuntime(new ProcessManager(undefined, undefined));
     try {

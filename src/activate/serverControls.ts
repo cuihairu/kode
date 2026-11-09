@@ -32,7 +32,7 @@ import {
   debugpyPortFor,
   type DebugpyInjectTarget,
 } from '../autoDebugpy';
-import { checkInterpreterDebugpy, debugpyPreflightAllowsInjection, debugpyPreflightDeps } from '../debugpyPreflight';
+import { checkInterpreterDebugpy, debugpyPreflightAllowsInjection, debugpyPreflightDeps } from '../backend/debugpyPreflight';
 import {
   findEngineEntryScript,
   injectWaitBootstrap,
@@ -59,10 +59,10 @@ import {
   resolvePyspyCommand,
   runPyspyDump,
   runPyspySchedule,
-} from '../pyspyDump';
+} from '../backend/pyspyDump';
 import { resolveProfileInterpreter } from '../profileInterpreter';
-import { buildSshExecArgs, readSshHostsFromHome, type SshHostsSnapshot } from '../remoteConnection';
-import { listRemoteProcesses, pickRemoteProcessId } from '../remoteProcessList';
+import { buildSshExecArgs, readSshHostsFromHome, type SshHostsSnapshot } from '../backend/remoteConnection';
+import { listRemoteProcesses, pickRemoteProcessId } from '../backend/remoteProcessList';
 import {
   LOCAL_SERVER_ID,
   REMOTE_SERVERS_MANUAL_KEY,

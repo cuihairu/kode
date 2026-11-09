@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EntityMappingManager, type EntityMapping } from '../src/entityMapping';
-import { DiagnosticScheduler } from '../src/diagnosticScheduler';
+import { DiagnosticScheduler } from '../src/backend/diagnosticScheduler';
 import { resetLanguageServiceMetrics } from '../src/languageServiceMetrics';
 import { clearRecentJumpLogs, getRecentJumpLogs, setJumpLogEnabled } from '../src/navigationLog';
 import {

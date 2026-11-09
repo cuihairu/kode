@@ -15,7 +15,7 @@ import {
 } from './languageServiceMetrics';
 import { renderLintRulesReport } from './lintRuleRegistry';
 import { resolveServerComponent } from './serverCommandTarget';
-import { getDiagnosticScheduler } from './diagnosticScheduler';
+import { getDiagnosticScheduler } from './backend/diagnosticScheduler';
 import { setFileReadVerbose } from './backend/fileReadMetrics';
 import { setCpuProfileDirectory, startCpuProfile, stopCpuProfile } from './cpuProfileCapture';
 import {

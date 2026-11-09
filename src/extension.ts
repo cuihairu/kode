@@ -15,7 +15,7 @@ import { setAnnotationSourceLogEnabled } from './annotationSourceLog';
 import { activateInfrastructure } from './activate/infrastructure';
 
 import { OperationStatus } from './languageServiceMetrics';
-import { releaseAllDocumentSnapshots, releaseDocument, updateDocumentSnapshot } from './documentStore';
+import { releaseAllDocumentSnapshots, releaseDocument, updateDocumentSnapshot } from './backend/documentStore';
 import * as vscode from 'vscode';
 
 import * as fs from 'fs';

@@ -16,8 +16,8 @@ import { killProcessTree, spawnProcess } from './processManager';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { pathApiFor } from './backend/workspacePath';
-import type { InterpreterResolution } from './profileInterpreter';
+import { pathApiFor } from './workspacePath';
+import type { InterpreterResolution } from '../profileInterpreter';
 
 export interface CommandRunResult {
   stdout: string;

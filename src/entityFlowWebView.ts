@@ -52,7 +52,7 @@ export class EntityFlowWebView {
   constructor(
     private readonly context: vscode.ExtensionContext,
     // BG-WARM:后台预热产物源(面板只读缓存)。未注入时行为与迁移前一致。
-    private readonly warmup?: import('./backgroundWarmup').PanelWarmupSource
+    private readonly warmup?: import('./backend/backgroundWarmup').PanelWarmupSource
   ) {}
 
   /** 显示流程图:显式实体名优先,否则取活动 .def 编辑器的文件名。 */

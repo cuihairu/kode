@@ -18,7 +18,7 @@ import { getCustomTypeInfos, getRegisteredEntities } from '../definitionWorkspac
 import { createFileChangeMetaResolver } from '../fileChangeMeta';
 import { logIndexFileChangeMeta } from '../fileChangeMetaLog';
 import { createLinkedCancellationToken, HOVER_ASYNC_BUDGET_MS_DEFAULT, raceWithBudget } from '../hoverBudget';
-import { IndexTaskPriority } from '../indexScheduler';
+import { IndexTaskPriority } from '../backend/indexScheduler';
 import { isExcludedScanPath, watcherPatternSignature } from '../indexWatcherScope';
 import type { OperationStatus } from '../languageServiceMetrics';
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
@@ -58,7 +58,7 @@ import { PythonTypeInlayHintsProvider } from '../typeInlayHints';
 import { shouldStartKbEngineIndexing } from '../workspaceGate';
 import { WorkspaceIndex } from '../workspaceIndex';
 import { preheatDiscoveryScan } from '../workspaceDiscovery';
-import { releaseDocumentsUnderRoot } from '../documentStore';
+import { releaseDocumentsUnderRoot } from '../backend/documentStore';
 import { readTempEditReloadSettings, tempEditSectionReader } from '../backend/hotReloadTempEdit';
 import { GeneratedSourceCodeLensProvider } from '../generatedSourceLenses';
 import type { CoreServicesShared } from './coreServices';

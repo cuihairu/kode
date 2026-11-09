@@ -17,7 +17,7 @@ import {
   type CommandRunResult,
   type PyspyUi,
   type SpawnRunner
-} from '../src/pyspyDump';
+} from '../src/backend/pyspyDump';
 import type { InterpreterResolution } from '../src/profileInterpreter';
 
 // IDE-PDBG-003 py-spy 性能分析面:探测/一键安装/dump(--nonblocking,权限

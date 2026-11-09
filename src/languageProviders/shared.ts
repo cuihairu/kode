@@ -1,7 +1,7 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
 import * as vscode from 'vscode';
 import { DefDocument, DefElementNode, DefNode, findDeepestElementAtOffset, findTextNodeAtOffset, getDirectChildElements, parseDefDocument } from '../backend/defParser';
-import { getOrParseDocumentSync } from '../documentStore';
+import { getOrParseDocumentSync } from '../backend/documentStore';
 import { HOVER_ASYNC_BUDGET_MS_DEFAULT } from '../hoverBudget';
 export function getLanguageFeatureConfig() {
   const config = vscode.workspace.getConfiguration('kbengine');

@@ -26,8 +26,8 @@ import {
   renderEntityDependencyWebview,
   type DependencyPanelMode
 } from './entityDependencyWebViewHtml';
-import type { DependencyGraphSource } from './warmupStages';
-import type { PanelWarmupSource } from './backgroundWarmup';
+import type { DependencyGraphSource } from './backend/warmupStages';
+import type { PanelWarmupSource } from './backend/backgroundWarmup';
 
 /**
  * 渲染层节点 kind(六员;TS 兜底源归一后全部是 entity)。

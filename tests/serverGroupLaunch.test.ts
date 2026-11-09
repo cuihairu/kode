@@ -5,7 +5,7 @@ import { KBEngineServerManager, SERVER_COMPONENTS, type GroupTargetRequest } fro
 import type * as vscode from 'vscode';
 import { window as stubWindow, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { FakeComponentBin } from './sim/fakeComponentBin';
-import { killProcessTree } from '../src/processManager';
+import { killProcessTree } from '../src/backend/processManager';
 
 // IDE-RUN-006 按依赖就绪顺序启动一组目标:startTargetGroup 先拓扑定序
 // (环→零启动),逐目标等依赖「在册且 Running」才启动;前置失败(退出/放弃

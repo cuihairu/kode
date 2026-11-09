@@ -331,10 +331,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)
-  ['src/diagnosticScheduler.ts', 228, 'requestQueued'],
-  ['src/diagnosticScheduler.ts', 258, 'flushQueued'],
+  ['src/backend/diagnosticScheduler.ts', 228, 'requestQueued'],
+  ['src/backend/diagnosticScheduler.ts', 258, 'flushQueued'],
   ['src/hoverBudget.ts', 59, 'raceWithBudget'],
-  ['src/documentStore.ts', 155, 'getDocumentLines'],
+  ['src/backend/documentStore.ts', 155, 'getDocumentLines'],
   ['src/backend/pythonClassIndex.ts', 657, 'ensureCompositionRoots'],
   ['src/backend/pythonClassIndex.ts', 1264, 'resolveClassBase'],
   // 2026-11-07:DEMO-GAME-001 夹具扩容——pythonClassIndex.ts 组合根缓存注释块

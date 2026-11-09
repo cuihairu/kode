@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PythonClassIndex, parsePythonFile } from '../src/backend/pythonClassIndex';
-import { IndexScheduler, IndexTaskPriority } from '../src/indexScheduler';
+import { IndexScheduler, IndexTaskPriority } from '../src/backend/indexScheduler';
 import { clearRecentJumpLogs, getRecentJumpLogs, setJumpLogEnabled } from '../src/navigationLog';
 import { makeTextDocument, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 

@@ -34,7 +34,7 @@ import type {
 import type { HttpRequestEntry } from './httpRequests';
 import { scanBatchScriptsInRoots } from './quickActionScanner';
 import { LogHubLike } from './backend/logHub';
-import { ProcessManager, type ManagedProcess } from './processManager';
+import { ProcessManager, type ManagedProcess } from './backend/processManager';
 import { parseDebugConfigText } from './debugConfigBootstrap';
 import type { BatchScriptCandidate, DirectoryEntry } from './quickActionScanner';
 

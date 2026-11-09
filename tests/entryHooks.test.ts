@@ -5,7 +5,7 @@ import {
   KBENGINE_ENTRY_HOOKS,
   getEntryHookByName,
   isEntryScriptFile
-} from '../src/entryHooks';
+} from '../src/backend/entryHooks';
 import { KBEngineCompletionProvider, KBEngineHoverProvider } from '../src/languageProviders';
 import {
   CompletionItemKind,

@@ -73,7 +73,7 @@ import { resolveAssetsRootForWorkspace } from '../src/scanRoots';
 import {
   getOrParseDocumentSync,
   type DocumentStoreDocument
-} from '../src/documentStore';
+} from '../src/backend/documentStore';
 import { resolveCustomTypePropertyAnnotation } from '../src/pythonTypeStubs';
 
 // 98% 主线:小文件孤立分支批量补面——每例直击一个未覆盖守卫/回退臂,

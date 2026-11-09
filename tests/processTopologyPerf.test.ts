@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { readSharedFileSnapshot } from '../src/sharedFileSnapshot';
 import { mapFindingsToDiagnostics } from '../src/processTopologyDiagnostics';
 import { validateProcessTopologyInRust } from '../src/backend/processTopologyRust';
-import { DiagnosticScheduler } from '../src/diagnosticScheduler';
+import { DiagnosticScheduler } from '../src/backend/diagnosticScheduler';
 import { KodeCoreGate } from '../src/backend/kodeCoreGate';
 import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 

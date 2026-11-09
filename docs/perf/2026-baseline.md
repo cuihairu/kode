@@ -98,7 +98,7 @@ flowchart TD
   RS1["resolveDefMethodAnnotation → def 索引<br/>(形参个数/注解类型闸)"]
   RS2["resolveReceiverCallAnnotation<br/>段过滤 → 形参/类型对账"]
   RS3["resolveBuiltinPropertyAnnotation → 分面内建属性表"]
-  LINES["documentStore.getDocumentLines<br/>同版本行快照复用(PR2)<br/>languageProviders/inlay.ts:44 / documentStore.ts:154"]
+  LINES["documentStore.getDocumentLines<br/>同版本行快照复用(PR2)<br/>languageProviders/inlay.ts:44 / backend/documentStore.ts:154"]
   MISS["标注落空 → 回退 provideKnownHover"]
   END1["operation.end(ok|miss) → return Hover|null"]
 
@@ -215,9 +215,9 @@ flowchart TD
 flowchart TD
   CHG["VS Code: onDidChangeTextDocument"]
   WATCH["extension.ts:385 文档事件适配<br/>(onSave/onOpen 同通道)"]
-  RQ["DiagnosticScheduler.requestQueued<br/>diagnosticScheduler.ts:228"]
+  RQ["DiagnosticScheduler.requestQueued<br/>backend/diagnosticScheduler.ts:228"]
   CO["同 URI 只留最新版本任务<br/>旧版本记 coalescedStale 永不执行"]
-  FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:465 → diagnosticScheduler.ts:258"]
+  FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:465 → backend/diagnosticScheduler.ts:258"]
   VG{"版本令牌守卫:<br/>任务版本 == 文档当前版本?"}
   DROP["staleDropped 丢弃,不发布"]
   GEN{"同版本+同诊断输入代<br/>已发布?(A6-2 零重算)"}
@@ -228,7 +228,7 @@ flowchart TD
   SHDD["kode2 shadow 对拍+语料镜像腿<br/>shadowObserveDefDocument(:1873,fire-and-forget)"]
   DS["文档解析(document-parse 打点)<br/>documentStore 同版本只解析一次(PR2)"]
   PUB["diagnostics.set(uri, items) 发布"]
-  CFG2["配置切换 setEnabled/invalidateAll<br/>(diagnosticScheduler.ts:176 / :195)generation+1 → 已发布文档全部重算(A6-4)"]
+  CFG2["配置切换 setEnabled/invalidateAll<br/>(backend/diagnosticScheduler.ts:176 / :195)generation+1 → 已发布文档全部重算(A6-4)"]
 
   CHG --> WATCH --> RQ --> CO --> FL --> VG
   VG -- "版本已前进" --> DROP

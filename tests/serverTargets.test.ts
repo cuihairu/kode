@@ -9,7 +9,7 @@ import {
   parseServerKey,
   type ServerComponent
 } from '../src/serverManager';
-import { killProcessTree } from '../src/processManager';
+import { killProcessTree } from '../src/backend/processManager';
 import type * as vscode from 'vscode';
 import { window as stubWindow, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { FakeComponentBin } from './sim/fakeComponentBin';

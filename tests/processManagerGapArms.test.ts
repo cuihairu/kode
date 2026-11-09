@@ -1,7 +1,7 @@
 import { ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import { describe, expect, it } from 'vitest';
-import { ProcessManager } from '../src/processManager';
+import { ProcessManager } from '../src/backend/processManager';
 
 /**
  * Gap-arm coverage for src/processManager.ts (baseline uncovered statement

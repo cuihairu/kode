@@ -7,7 +7,7 @@ import * as vscode from 'vscode';
 import {
   drainablePendingWork,
   type PendingWorkSnapshot
-} from '../../../pendingWorkDrain';
+} from '../../../backend/pendingWorkDrain';
 import {
   evaluateFinalMarks,
   pooledP95,

@@ -9,7 +9,7 @@ import {
   IndexTaskKind,
   IndexTaskSpec,
   IndexTaskState
-} from '../src/indexScheduler';
+} from '../src/backend/indexScheduler';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 
 // 实体首扫失败重试回归(审核发现 :182):修复前 keyed 任务只启动真实扫描便

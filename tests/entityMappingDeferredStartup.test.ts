@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { IndexScheduler, IndexTaskPriority } from '../src/indexScheduler';
+import { IndexScheduler, IndexTaskPriority } from '../src/backend/indexScheduler';
 import { EntityMappingManager } from '../src/entityMapping';
 import { workspace as stubWorkspace } from './helpers/vscodeStub';
 

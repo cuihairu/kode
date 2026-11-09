@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   checkInterpreterDebugpy,
   debugpyPreflightAllowsInjection
-} from '../src/debugpyPreflight';
+} from '../src/backend/debugpyPreflight';
 import { debugpySyncSourceCandidates } from '../src/autoDebugpy';
 import type { InterpreterResolution } from '../src/profileInterpreter';
 

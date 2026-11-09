@@ -19,7 +19,7 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { readFileSyncUtf8Recorded } from './backend/fileReadMetrics';
-import { normalizeDocumentKey } from './documentStore';
+import { normalizeDocumentKey } from './backend/documentStore';
 import { normalizeFileIdentity } from './backend/pathIdentity';
 import { getSemanticIndex } from './semanticIndex';
 

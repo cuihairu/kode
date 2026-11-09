@@ -30,10 +30,10 @@ import {
   defaultDebugpyInstallRunner,
   defaultTcpConnect,
   setDebugpyInstallTimeoutMsForTests
-} from '../src/debugpyPortProbe';
-import { checkInterpreterDebugpy, debugpyPreflightDeps } from '../src/debugpyPreflight';
-import { defaultSpawnRunner } from '../src/pyspyDump';
-import { ProcessManager, killProcessTree } from '../src/processManager';
+} from '../src/backend/debugpyPortProbe';
+import { checkInterpreterDebugpy, debugpyPreflightDeps } from '../src/backend/debugpyPreflight';
+import { defaultSpawnRunner } from '../src/backend/pyspyDump';
+import { ProcessManager, killProcessTree } from '../src/backend/processManager';
 import { PYLANCE_EXTENSION_ID, collectPythonServiceFacts } from '../src/pythonLanguageServiceStatus';
 import {
   findPythonReceiverCallArguments,

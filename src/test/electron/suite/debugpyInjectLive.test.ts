@@ -30,7 +30,7 @@ import {
   injectDebugpyListen
 } from '../../../autoDebugpy';
 import { makeProbeOne } from '../../../telnetService';
-import { defaultTcpConnect } from '../../../debugpyPortProbe';
+import { defaultTcpConnect } from '../../../backend/debugpyPortProbe';
 import { DebugConfigManager, SOURCE_DEFAULT_COMPONENTS } from '../../../debugConfig';
 import { DEBUGPY_INJECT_COMMAND } from '../../../debugpyInjectCommand';
 

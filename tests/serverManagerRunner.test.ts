@@ -4,10 +4,10 @@ import * as path from 'path';
 import { EventEmitter } from 'events';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { KBEngineServerManager, type ProcessRunner, type ServerComponent } from '../src/serverManager';
-import { spawnProcess } from '../src/processManager';
+import { spawnProcess } from '../src/backend/processManager';
 import type * as vscode from 'vscode';
 import { window as stubWindow, workspace as stubWorkspace } from './helpers/vscodeStub';
-import { killProcessTree } from '../src/processManager';
+import { killProcessTree } from '../src/backend/processManager';
 import { FakeComponentBin } from './sim/fakeComponentBin';
 
 // ProcessRunner 注入点(重设计阶段 2):记录型 runner 验证 spawn 参数透传

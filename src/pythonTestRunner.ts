@@ -8,7 +8,7 @@
  * 器没有 pytest 时如实 errored 一条指明缺口,不冒充测试失败。
  */
 
-import { spawnProcess } from './processManager';
+import { spawnProcess } from './backend/processManager';
 
 /** 一个待跑条目(来自 TSK-004 的发现面) */
 export interface PythonTestRunItem {

@@ -9,7 +9,7 @@ import {
   parsePsProcesses,
   pidFromPick,
   type ProcessEntry
-} from './debugConfig';
+} from '../debugConfig';
 import { defaultSpawnRunner, type SpawnRunner } from './pyspyDump';
 import { buildSshExecArgs } from './remoteConnection';
 import type { SshHostEntry } from './sshConfig';

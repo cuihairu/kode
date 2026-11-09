@@ -6,7 +6,7 @@ import {
   pickFreeLocalPort,
   readSshHosts,
   resolveComponentConnection
-} from '../src/remoteConnection';
+} from '../src/backend/remoteConnection';
 
 // IDE-PDBG-004 远程连接分派:声明优先级(组件>全局>视图选中>本地)、ssh
 // 命令拼装(远程执行/-L 隧道)、隧道就绪门(起不来如实报错不假成功)、

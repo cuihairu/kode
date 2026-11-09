@@ -21,7 +21,7 @@ import {
   getOrParseDocumentSync,
   releaseAllDocumentSnapshots,
   updateDocumentSnapshot
-} from '../../src/documentStore';
+} from '../../src/backend/documentStore';
 import { getOperationSummary } from '../../src/languageServiceMetrics';
 import { parseDefDocument } from '../../src/backend/defParser';
 

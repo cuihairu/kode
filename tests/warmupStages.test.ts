@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { createWarmupStages } from '../src/warmupStages';
-import { BackgroundWarmupController, warmupMarkerKey } from '../src/backgroundWarmup';
-import type { WarmupStageDeps } from '../src/warmupStages';
-import type { WarmupWorkspaceStateLike } from '../src/backgroundWarmup';
+import { createWarmupStages } from '../src/backend/warmupStages';
+import { BackgroundWarmupController, warmupMarkerKey } from '../src/backend/backgroundWarmup';
+import type { WarmupStageDeps } from '../src/backend/warmupStages';
+import type { WarmupWorkspaceStateLike } from '../src/backend/backgroundWarmup';
 
 // 预热阶段管线(BG-WARM 批):activate 后台全量索引/实例分析管线的阶段构成。
 // 复用既有链:发现链(entityMapping waitForInitialScan,复用在跑首扫不重起)、

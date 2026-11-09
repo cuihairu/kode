@@ -22,14 +22,14 @@ import {
   type DebugpyInstallRunner,
   type TcpConnectFn,
   type TcpProbeResult
-} from './debugpyPortProbe';
+} from './backend/debugpyPortProbe';
 import {
   checkInterpreterDebugpy,
   debugpyPreflightDeps,
   type DebugpyPreflightStatus
-} from './debugpyPreflight';
-import { openSshTunnel, resolveComponentConnection, type ServerConnection } from './remoteConnection';
-import type { SshHostEntry } from './sshConfig';
+} from './backend/debugpyPreflight';
+import { openSshTunnel, resolveComponentConnection, type ServerConnection } from './backend/remoteConnection';
+import type { SshHostEntry } from './backend/sshConfig';
 import {
   DEFAULT_DEBUGPY_PORT,
   buildPortLaunchEntry,

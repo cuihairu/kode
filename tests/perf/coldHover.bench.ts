@@ -20,7 +20,7 @@ import { Position, Uri, makeTextDocument } from '../fake-vscode/core';
 import { workspace as stubWorkspace } from '../fake-vscode/workspaceState';
 import { KBEngineHoverProvider } from '../../src/languageProviders';
 import { EntityMappingManager } from '../../src/entityMapping';
-import { IndexScheduler } from '../../src/indexScheduler';
+import { IndexScheduler } from '../../src/backend/indexScheduler';
 import { resetScanRootCache } from '../../src/scanRoots';
 import { preheatDiscoveryScan, resetDiscoveryState } from '../../src/workspaceDiscovery';
 

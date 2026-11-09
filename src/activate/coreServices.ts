@@ -13,7 +13,7 @@
 import * as vscode from 'vscode';
 import { EntityMappingManager } from '../entityMapping';
 import { GlobalDataDictIndex } from '../globalDataIndex';
-import { IndexScheduler, IndexTaskPriority } from '../indexScheduler';
+import { IndexScheduler, IndexTaskPriority } from '../backend/indexScheduler';
 import { setTypeStorageUsageBackgroundDispatcher } from '../databaseSchema';
 
 export interface CoreServicesDeps {

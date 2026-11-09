@@ -5,7 +5,7 @@ import {
   PYTHON_WORKER_PARSE_THRESHOLD
 } from '../src/backend/pythonParserWorkerHost';
 import type { ParsedPythonFile } from '../src/backend/pythonParser';
-import { DiagnosticScheduler } from '../src/diagnosticScheduler';
+import { DiagnosticScheduler } from '../src/backend/diagnosticScheduler';
 import { PythonClassIndex } from '../src/backend/pythonClassIndex';
 import {
   computeReceiverNoneFindings,

@@ -8,8 +8,8 @@
  */
 
 import { spawnProcess } from './processManager';
-import { compareVersions, EMBEDDED_PYTHON_VERSION, MIN_DEBUGPY_VERSION } from './autoDebugpy';
-import { resolveProfileInterpreter, type InterpreterResolution } from './profileInterpreter';
+import { compareVersions, EMBEDDED_PYTHON_VERSION, MIN_DEBUGPY_VERSION } from '../autoDebugpy';
+import { resolveProfileInterpreter, type InterpreterResolution } from '../profileInterpreter';
 
 export type DebugpyPreflightKind = 'ok' | 'interpreter-missing' | 'debugpy-missing' | 'debugpy-outdated';
 

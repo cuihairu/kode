@@ -8,7 +8,7 @@
 // 终态;限流让路/合并/丢弃计数由 getStatus().metrics 承载(测试与报告取证)。
 
 import { performance } from 'perf_hooks';
-import { startLanguageServiceOperation } from './languageServiceMetrics';
+import { startLanguageServiceOperation } from '../languageServiceMetrics';
 
 /** 任务类别 = 生命周期阶段(§3.3 至少支持清单) */
 export type IndexTaskKind =

@@ -11,10 +11,10 @@ import type { DependencyGraphRust } from '../src/backend/dependencyGraphRust';
 import { EntityDependencyWebView } from '../src/entityDependencyWebView';
 import { EntityFlowWebView } from '../src/entityFlowWebView';
 import type { EntityFlowGraph } from '../src/entityFlowGraph';
-import { BackgroundWarmupController } from '../src/backgroundWarmup';
-import type { WarmupStageDef, WarmupWorkspaceStateLike } from '../src/backgroundWarmup';
-import { createWarmupStages } from '../src/warmupStages';
-import type { WarmupStageDeps } from '../src/warmupStages';
+import { BackgroundWarmupController } from '../src/backend/backgroundWarmup';
+import type { WarmupStageDef, WarmupWorkspaceStateLike } from '../src/backend/backgroundWarmup';
+import { createWarmupStages } from '../src/backend/warmupStages';
+import type { WarmupStageDeps } from '../src/backend/warmupStages';
 
 // BG-WARM 面板只读缓存(BG-WARM 批):
 //   - 索引依赖面板打开 → 只读预热缓存,秒出,不触发自身扫描(零 findFiles/零 analyze);

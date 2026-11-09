@@ -11,7 +11,7 @@ import {
 import type * as vscode from 'vscode';
 import { window as stubWindow, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { FakeComponentBin } from './sim/fakeComponentBin';
-import { killProcessTree } from '../src/processManager';
+import { killProcessTree } from '../src/backend/processManager';
 
 // IDE-RUN-003 真实就绪探针:固定 1 秒宽限期不再单方面把组件标成 Running,
 // 探针(组件 telnet 端口 TCP 连通)通过才 ready。服务不可用 → 一直

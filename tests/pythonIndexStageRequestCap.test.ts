@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PythonClassIndex } from '../src/backend/pythonClassIndex';
-import { IndexScheduler, IndexTaskSpec } from '../src/indexScheduler';
+import { IndexScheduler, IndexTaskSpec } from '../src/backend/indexScheduler';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 
 // 按需加载截断回归(审核发现 :183):stageRequestFiles 曾把「import 候选 + 同目录

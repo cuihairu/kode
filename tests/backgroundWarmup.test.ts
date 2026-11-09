@@ -4,12 +4,12 @@ import {
   WARMUP_SCAN_CONCURRENCY,
   mapWithConcurrency,
   warmupMarkerKey
-} from '../src/backgroundWarmup';
+} from '../src/backend/backgroundWarmup';
 import type {
   WarmupStageContext,
   WarmupStageDef,
   WarmupWorkspaceStateLike
-} from '../src/backgroundWarmup';
+} from '../src/backend/backgroundWarmup';
 
 // 后台预热控制器(BG-WARM 批):activate 即后台起全量索引/实例分析管线,
 // 面板打开只读缓存。本文件锁控制器行为面:

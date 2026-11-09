@@ -20,7 +20,7 @@ import {
   IndexTaskKind,
   IndexTaskSpec,
   IndexTaskState
-} from '../src/indexScheduler';
+} from '../src/backend/indexScheduler';
 import {
   getOperationSummary,
   resetLanguageServiceMetrics

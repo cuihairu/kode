@@ -3,7 +3,7 @@ import {
   IndexScheduler,
   IndexTaskPriority,
   isInteractivePriority
-} from '../src/indexScheduler';
+} from '../src/backend/indexScheduler';
 
 // 统一索引调度器(评审 docs/review/2026-10-22 §3.3 / PR3)测试锁定:
 // ①任务生命周期与状态查询;②同文件同版本合并+过期任务取消丢弃;

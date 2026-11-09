@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { DiagnosticScheduler } from '../src/diagnosticScheduler';
+import { DiagnosticScheduler } from '../src/backend/diagnosticScheduler';
 import {
   computeReceiverNoneFindings,
   computeReceiverNoneFindingsAsync

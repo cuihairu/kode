@@ -8,7 +8,7 @@ import { PY_SCAN_EXCLUDE, PY_SCAN_EXCLUDED_DIRS } from './pythonScanRules';
 import { parsePythonFile } from './pythonParser';
 import type { PythonClassDef, ParsedPythonFile } from './pythonParser';
 import { parsePythonFileResponsive } from './pythonParserWorkerHost';
-import { IndexScheduler, IndexTaskPriority } from '../indexScheduler';
+import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { SemanticDependencyGraph } from '../dependencyGraph';
 import { INTERACTIVE_INDEX_WAIT_MS, raceWithBudget } from '../hoverBudget';
 import { jumpLog, jumpTimeStart } from '../navigationLog';

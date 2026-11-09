@@ -172,7 +172,7 @@ export function createCellappIndexHover(word: string): vscode.Hover | null {
 }
 
 /** SP-1: entrance script (kbemain) module-level SPI hover - no self, scoped by component entry path */
-export function createEntryHookHover(hook: import('../entryHooks').KBEngineEntryHook): vscode.Hover {
+export function createEntryHookHover(hook: import('../backend/entryHooks').KBEngineEntryHook): vscode.Hover {
   const markdown = new vscode.MarkdownString();
   markdown.appendMarkdown(`**${hook.name}** - Entry Script (${hook.component})\n\n`);
   markdown.appendMarkdown(`${hook.description}\n\n`);

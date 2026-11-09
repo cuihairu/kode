@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { ChildProcess } from 'child_process';
 import { LogHub, RuntimeLogLevel } from './backend/logHub';
-import { ProcessManager, spawnProcess } from './processManager';
+import { ProcessManager, spawnProcess } from './backend/processManager';
 import { joinWorkspacePath, usesPosixPath } from './backend/workspacePath';
 import { hasEngineConfigProbe, resolveDiscoveredConfigRoot, resolveKbeSourceRoot } from './workspaceDiscovery';
 import { makeProbeOne, readTelnetTargetsFromSettings, type TelnetTarget } from './telnetService';

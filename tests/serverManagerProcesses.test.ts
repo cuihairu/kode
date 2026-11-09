@@ -9,7 +9,7 @@ import {
 import type * as vscode from 'vscode';
 import { window as stubWindow, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { FakeComponentBin } from './sim/fakeComponentBin';
-import { killProcessTree } from '../src/processManager';
+import { killProcessTree } from '../src/backend/processManager';
 
 // KBEngineServerManager 的进程编排层:startComponent 检查链(已运行/可执行
 // 文件缺失/配置目录三态)、真实 spawn 的 stdout/stderr/error/exit 事件流、

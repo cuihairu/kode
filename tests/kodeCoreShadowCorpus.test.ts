@@ -10,7 +10,7 @@ import {
   setKodeCoreShadowGate,
   shadowMirrorCorpusDocument
 } from '../src/backend/kodeCoreShadowFaces';
-import { releaseAllDocumentSnapshots } from '../src/documentStore';
+import { releaseAllDocumentSnapshots } from '../src/backend/documentStore';
 import { validateDocument } from '../src/languageProviders';
 import {
   configurationOverrides,

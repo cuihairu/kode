@@ -13,7 +13,7 @@ import {
   releaseDocument,
   releaseDocumentsUnderRoot,
   updateDocumentSnapshot
-} from '../src/documentStore';
+} from '../src/backend/documentStore';
 import { resetLanguageServiceMetrics, getOperationSummary } from '../src/languageServiceMetrics';
 import {
   clearParsedDocumentCacheForTests,

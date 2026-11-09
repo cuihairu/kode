@@ -13,8 +13,8 @@ import {
   defaultTcpConnect,
   portClosedReasonText,
   type TcpProbeResult
-} from '../src/debugpyPortProbe';
-import type { DebugpyPreflightStatus } from '../src/debugpyPreflight';
+} from '../src/backend/debugpyPortProbe';
+import type { DebugpyPreflightStatus } from '../src/backend/debugpyPreflight';
 
 // IDE-PDBG-002 端口前置探测的纯函数面:未开原因归类、主因判定(端口未开 /
 // 未装 debugpy 分开说)、装完仍未开与手装指引的口径、真实 TCP 探测与真实

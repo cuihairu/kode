@@ -6,8 +6,8 @@
 
 import * as vscode from 'vscode';
 import { l10nText } from './nlsRuntime';
-import type { SshHostEntry } from './sshConfig';
-import type { SshHostsSnapshot } from './remoteConnection';
+import type { SshHostEntry } from './backend/sshConfig';
+import type { SshHostsSnapshot } from './backend/remoteConnection';
 
 export const REMOTE_SERVERS_MANUAL_KEY = 'kbengine.remoteServers.manual.v1';
 export const REMOTE_SERVERS_SELECTED_KEY = 'kbengine.remoteServers.selected.v1';

@@ -4,9 +4,9 @@ import {
   isDiagnosticsConfigSection,
   resetDiagnosticSchedulerForTests,
   type DiagnosticLayer
-} from '../src/diagnosticScheduler';
+} from '../src/backend/diagnosticScheduler';
 import { validateDocument, validateEntitiesXmlDocument } from '../src/languageProviders';
-import { releaseAllDocumentSnapshots } from '../src/documentStore';
+import { releaseAllDocumentSnapshots } from '../src/backend/documentStore';
 import {
   getOperationSummary,
   getRecentDetailedSamples,

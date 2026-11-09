@@ -2,7 +2,7 @@ import { ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import { describe, expect, it } from 'vitest';
 import { LogHub } from '../src/backend/logHub';
-import { ProcessManager, SpawnLike, killProcessTree, spawnProcess } from '../src/processManager';
+import { ProcessManager, SpawnLike, killProcessTree, spawnProcess } from '../src/backend/processManager';
 
 class FakeChild extends EventEmitter implements ChildProcess {
   stdin = null;

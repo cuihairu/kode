@@ -43,7 +43,7 @@ import {
   scriptFoldersForRole
 } from './definitionWorkspace';
 import { joinWorkspacePath } from './backend/workspacePath';
-import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
+import { IndexScheduler, IndexTaskPriority } from './backend/indexScheduler';
 import { PY_SCAN_EXCLUDED_DIRS } from './backend/pythonScanRules';
 import { SemanticIndex, getSemanticIndex, isTypeRegistryFile } from './semanticIndex';
 import { createSharedFileEventMerger, type SharedFileEvent } from './backend/sharedFileEvents';

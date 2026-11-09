@@ -17,7 +17,7 @@ import { afterAll, beforeAll, describe, it } from 'vitest';
 import { Uri } from '../fake-vscode/core';
 import { workspace as stubWorkspace } from '../fake-vscode/workspaceState';
 import { PythonClassIndex } from '../../src/backend/pythonClassIndex';
-import { IndexScheduler } from '../../src/indexScheduler';
+import { IndexScheduler } from '../../src/backend/indexScheduler';
 import { resetScanRootCache } from '../../src/scanRoots';
 
 const ASSETS_OUT = path.join(os.tmpdir(), 'kode-perf-unblocked-assets');

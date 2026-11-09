@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dedupeSshHosts, isWildcardHostPattern, parseSshConfig } from '../src/sshConfig';
+import { dedupeSshHosts, isWildcardHostPattern, parseSshConfig } from '../src/backend/sshConfig';
 
 // IDE-PDBG-004 ~/.ssh/config 解析:Host 块收 HostName/User/Port/ProxyJump,
 // 两种键值形(空格/等号)、多别名、通配模板剔除、块外散键忽略、去重。

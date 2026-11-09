@@ -9,7 +9,7 @@ import {
   listRemoteProcesses,
   pickRemoteProcessId,
   type RemoteProcessPickerDeps
-} from '../src/remoteProcessList';
+} from '../src/backend/remoteProcessList';
 
 // IDE-PDBG-005 远程进程枚举与选择:清单命令与本地同形(ps -axo pid=,comm=
 // 经 ssh 前缀),解析复用 parsePsProcesses;选择器条目本地/远程共用

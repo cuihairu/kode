@@ -9,7 +9,7 @@ import {
   IndexTaskKind,
   IndexTaskSpec,
   IndexTaskState
-} from '../src/indexScheduler';
+} from '../src/backend/indexScheduler';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 
 // 对象级(类粒度)负缓存回归(审核发现):修复前负缓存只凭「映射表非空」就

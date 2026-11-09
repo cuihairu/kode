@@ -27,7 +27,7 @@ import {
   setAnnotationSourceLogEnabled
 } from '../src/annotationSourceLog';
 import { displayPath, linearizeC3, PythonClassIndex, type PythonClassDef } from '../src/backend/pythonClassIndex';
-import { IndexScheduler, type IndexTaskHandle, type IndexTaskSpec } from '../src/indexScheduler';
+import { IndexScheduler, type IndexTaskHandle, type IndexTaskSpec } from '../src/backend/indexScheduler';
 import { clearRecentJumpLogs, getRecentJumpLogs, setJumpLogEnabled } from '../src/navigationLog';
 import {
   QuickActionManager,
@@ -36,7 +36,7 @@ import {
   terminalScript,
   type QuickActionManagerDeps
 } from '../src/quickActions';
-import { ProcessManager, type ProcessSpawnRunner } from '../src/processManager';
+import { ProcessManager, type ProcessSpawnRunner } from '../src/backend/processManager';
 import type { LogHubLike } from '../src/backend/logHub';
 import {
   makeTextDocument,

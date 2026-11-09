@@ -17,7 +17,7 @@
 // 打点:每次实际计算经 PR1 埋点记 diagnostics 事件(带 layer/fileKind/版本),
 // 与 extension.ts 既有 startLanguageServiceOperation('diagnostics') 同名合并。
 
-import { recordLanguageServiceOperation } from './languageServiceMetrics';
+import { recordLanguageServiceOperation } from '../languageServiceMetrics';
 
 /** 诊断分层:local=纯文本/AST 本地校验;semantic=依赖语义索引的校验 */
 export type DiagnosticLayer = 'local' | 'semantic';

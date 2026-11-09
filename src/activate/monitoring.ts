@@ -9,21 +9,21 @@
 
 import * as vscode from 'vscode';
 import { l10nText } from '../nlsRuntime';
-import { BackgroundWarmupController, WARMUP_SCAN_CONCURRENCY } from '../backgroundWarmup';
+import { BackgroundWarmupController, WARMUP_SCAN_CONCURRENCY } from '../backend/backgroundWarmup';
 import { EntityDependencyWebView } from '../entityDependencyWebView';
 import { EntityFlowWebView } from '../entityFlowWebView';
-import { IndexTaskPriority } from '../indexScheduler';
+import { IndexTaskPriority } from '../backend/indexScheduler';
 import { MonitoringCollector } from '../monitoringCollector';
 import { MonitoringWebView } from '../monitoringWebView';
 import { RuntimeQueryWebView } from '../runtimeQueryWebView';
-import { createWarmupStages } from '../warmupStages';
+import { createWarmupStages } from '../backend/warmupStages';
 import { discoverLocalComponents, querySpaces, startProfileQuery } from '../backend/kbengineProtocol';
 import { findEngineRoot, formatEngineCompatibilityReport, runCompatibilityCheck, ExtensionCompatibilityTarget } from '../backend/engineCompatibility';
 import { formatUnresolvedException, parseExceptionSourceLocation, resolveExceptionSource } from '../backend/exceptionSourceLocator';
 import { getDefinitionWorkspaceLayout } from '../definitionWorkspace';
 import { shouldStartKbEngineIndexing } from '../workspaceGate';
 import type { EntityMappingManager } from '../entityMapping';
-import type { IndexScheduler } from '../indexScheduler';
+import type { IndexScheduler } from '../backend/indexScheduler';
 import type { WorkspaceIndex } from '../workspaceIndex';
 
 export interface MonitoringDeps {

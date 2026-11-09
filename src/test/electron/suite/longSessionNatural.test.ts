@@ -7,7 +7,7 @@ import * as vscode from 'vscode';
 import {
   drainablePendingWork,
   type PendingWorkSnapshot
-} from '../../../pendingWorkDrain';
+} from '../../../backend/pendingWorkDrain';
 
 // IDE-AUD-017:把短资源压力与长会话验收分开。REV-034 的 16 秒正式序列
 // (docs/perf/2026-10-30-rev034-long-session-run.txt)保留为短压力证据;

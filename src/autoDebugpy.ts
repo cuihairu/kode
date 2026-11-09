@@ -24,7 +24,7 @@ import * as vscode from 'vscode';
 import { KBEngineTelnetClient, type TelnetClientEvents } from './telnetClient';
 import { resolveProfileInterpreter } from './profileInterpreter';
 import type { TelnetTarget } from './telnetService';
-import { killProcessTree, spawnProcess } from './processManager';
+import { killProcessTree, spawnProcess } from './backend/processManager';
 
 /** 同步开关(kbengine.debug.autoDebugpy,默认关:注入是显式 opt-in) */
 export const AUTO_DEBUGPY_ENABLED_DEFAULT = false;

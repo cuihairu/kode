@@ -23,7 +23,7 @@ import { getActiveOperationCounts } from '../languageServiceMetrics';
 import { getAnnotationBuildWorkload, getPendingDocumentUpdateCount, getReturnAnnotationCacheGauge } from '../backend/pythonReturnTypeInference';
 import { getDatabaseSchemaCacheGauge, getPendingTypeStorageColdBuildCount } from '../databaseSchema';
 import { getDefinitionWorkspaceLayout } from '../definitionWorkspace';
-import { getDiagnosticScheduler } from '../diagnosticScheduler';
+import { getDiagnosticScheduler } from '../backend/diagnosticScheduler';
 import { getIndexScanRoots } from '../scanRoots';
 import { getParsedDocumentCacheGauge } from '../backend/defParser';
 import { getPythonParserWorkerGauge } from '../backend/pythonParserWorkerHost';
@@ -44,7 +44,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { EntityMappingManager } from '../entityMapping';
 import type { KBEngineServerManager } from '../serverManager';
-import type { IndexScheduler } from '../indexScheduler';
+import type { IndexScheduler } from '../backend/indexScheduler';
 
 export interface UtilityCommandsDeps {
   context: vscode.ExtensionContext;

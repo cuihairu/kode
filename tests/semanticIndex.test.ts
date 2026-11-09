@@ -569,7 +569,7 @@ describe('同名符号跨根稳定性(A6-5,接 PR5 版本轴)', () => {
 
   it('同名 def 文件跨根:documentStore 版本轴互不串位(快照按路径隔离)', async () => {
     const { updateDocumentSnapshot, peekDocumentSnapshot, releaseAllDocumentSnapshots }
-      = await import('../src/documentStore');
+      = await import('../src/backend/documentStore');
     try {
       const docA = {
         uri: { toString: () => 'file:///ver/rootA/scripts/entity_defs/Hero.def', fsPath: '/ver/rootA/scripts/entity_defs/Hero.def' },

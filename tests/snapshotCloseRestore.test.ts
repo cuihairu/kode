@@ -7,7 +7,7 @@ import { resolveEntityAnnotationType } from '../src/definitionWorkspace';
 import { getDatabaseSchemaSnapshot, invalidateDatabaseSchemaCacheForFiles } from '../src/databaseSchema';
 import type { DatabaseSchemaSnapshot } from '../src/databaseSchema';
 import { resetSemanticTypeRegistryForTests } from '../src/semanticIndex';
-import { getStoredSnapshotCount, releaseDocument, updateDocumentSnapshot } from '../src/documentStore';
+import { getStoredSnapshotCount, releaseDocument, updateDocumentSnapshot } from '../src/backend/documentStore';
 import { workspace } from './fake-vscode/workspaceState';
 
 // IDE-SNP-005:关闭脏文档后恢复磁盘版本——丢弃未保存修改并关闭后,下一次

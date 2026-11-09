@@ -10,7 +10,7 @@ import {
   IndexScheduler,
   IndexTaskKind,
   IndexTaskPriorityValue
-} from '../src/indexScheduler';
+} from '../src/backend/indexScheduler';
 
 // IndexScheduler 的交互冷却时钟来自 `perf_hooks` 的 performance(非 global),
 // vi fake timers 覆盖不到:这里把 perf_hooks.performance.now 换成可注入的

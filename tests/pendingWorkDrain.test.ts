@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   drainablePendingWork,
   type PendingWorkSnapshot
-} from '../src/pendingWorkDrain';
+} from '../src/backend/pendingWorkDrain';
 
 // IDE-AUD-019:排干断言必须用真实 pendingWork 返回类型逐项核对 queued/running
 // ——2026-10-30 深审 F17 反例:旧套件对 Object.values(pending) 逐个 `=== 0`,

@@ -5,7 +5,7 @@ import { findFilesAcrossRoots } from '../scanRoots';
 import { EntityMappingManager } from '../entityMapping';
 import { getRegisteredCustomTypes, getRegisteredAliasTypes, getRegisteredEntities, getWorkspaceRootForDocument, resolveEntityAnnotationType } from '../definitionWorkspace';
 import { HOOK_CATEGORY_NAMES, KBENGINE_HOOKS } from '../hooks';
-import { KBENGINE_ENTRY_HOOKS, isComponentEntryScriptFile } from '../entryHooks';
+import { KBENGINE_ENTRY_HOOKS, isComponentEntryScriptFile } from '../backend/entryHooks';
 import { DETAIL_LEVELS, KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, KBENGINE_TYPES } from '../backend/kbengineMetadata';
 import { formatEntityBuiltinPropertyDetail, getEntityBuiltinPropertiesForFace, hasKnownEntityBuiltinPropertyType, resolveEntityComponentFaceFromPath, type EntityComponentFace } from '../backend/entityBuiltinProperties';
 import { PYTHON_TYPE_STUB_FALLBACK } from '../pythonTypeStubs';

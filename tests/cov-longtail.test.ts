@@ -20,7 +20,7 @@ import {
 } from '../src/backend/databaseDrift';
 import type { DatabaseInterfaceConfig } from '../src/serverConfigMerge';
 import type { DatabaseSchemaSnapshot, TableFieldDescriptor } from '../src/databaseSchema';
-import { openSshTunnel, pickFreeLocalPort } from '../src/remoteConnection';
+import { openSshTunnel, pickFreeLocalPort } from '../src/backend/remoteConnection';
 import { defaultRuntimeQueryProtocol, RuntimeQueryWebView } from '../src/runtimeQueryWebView';
 // 环境守卫探测:本机有真 KBEngine machine daemon(UDP 20086 应答,如 demo 引擎
 // 在跑)时回环广播必有人应答——相关「无人应答」前提用例跳过,不误报
