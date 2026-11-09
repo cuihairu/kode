@@ -43,6 +43,7 @@ Registration sites are extension.ts line numbers (2026-11-07 真位复核:KODE-A
 | GeneratedSourceCodeLensProvider (entity stubs) | generatedSourceLenses.ts:11 | activate/generators.ts:90 (SRC-001 L7) | Construction-time snapshot buildEntityTypeStubPlan(getAllMappings + getCustomTypeInfos) | Pure read |
 | PythonTypeInlayHintsProvider | typeInlayHints.ts:33 | :1197 | EntityMappingManager | Pure read |
 | KBEngineBuiltinTypeInlayHintsProvider | languageProviders/inlay.ts:16 | :1406 | EntityMappingManager | Pure read |
+| InferredMirrorTypeInlayHintsProvider | languageProviders/inlay.ts:68 | :584 | Inferred mirror annotation files under managed dir (kbengine.infer.enabled gate; definition-point line diff) | Pure read |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | Pure read |
 | DefPropsInlayHintsProvider | defPropsInlayHints.ts:126 | :1432 | EntityMappingManager (`listPropertyDefinitionsForFile` root-level properties for the anchor's entity) | Pure read |
 | KBEngineCallHierarchyProvider | languageProviders/callHierarchy.ts:9 | :1425 | EntityMappingManager (def/python dual-selection call hierarchy) | Pure read |

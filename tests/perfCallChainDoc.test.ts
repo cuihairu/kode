@@ -231,12 +231,16 @@ const ANCHORS: Array<[string, number, string]> = [
   // 清理净删 38 行,锚点 -19 真位重探 404/484→385/465;其后无 extension.ts
   // 锚点。
   // baseline §7 出处锁步。extension.ts 现 2845 行。
+  // 2026-11-09:139f7035(inferred mirror)落树未锁步,本批补校——
+  // languageServices.ts 五条打点真位重探 117/193/244/307/650→118/194/245/308/660,
+  // inlay.ts 新 provider 顶置 42→44,hover.ts 经 139f7035 链尾段与 6bf9ebed
+  // 尾拆净位移 189→183;出处随 baseline 锁步。
 
-  ['src/activate/languageServices.ts', 193, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 244, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 307, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 117, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 650, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 194, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 245, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 308, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 118, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 660, "startLanguageServiceOperation('completion'"],
   ['src/activate/diagnostics.ts', 117, "startLanguageServiceOperation('diagnostics'"],
   ['src/activate/diagnostics.ts', 130, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
@@ -286,7 +290,9 @@ const ANCHORS: Array<[string, number, string]> = [
   // 5209/5315/7159;baseline 原引 2018→2065、4691→4749 一并锁步。交付②第四类
   // 触发点(def 声明方法追加段)resolveDefMethodAnnotation +12:1360 后锚点
   // 再 +12(1852/1911/1935/2063/4812/5220/5326/7170),baseline 同步。
-  ['src/languageProviders/inlay.ts', 42, 'getDocumentLines(document)'],
+  // 2026-11-09:139f7035 新增 InferredMirrorTypeInlayHintsProvider 顶置两行,
+  // getDocumentLines 行 42→44,真位重探,出处随 baseline 锁步。
+  ['src/languageProviders/inlay.ts', 44, 'getDocumentLines(document)'],
   // 2026-11-08:「直接切」批次位移——navigation.ts Rust-first 派发块
   // (serveDefinitionFromRust await + 语料镜像前置,24→47)、completion.ts
   // Rust-first 包装层(provideCompletionRustFirst + lspCompletionToVscode,
@@ -294,7 +300,9 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-08(hover 服务轨道接线提交):provideHoverTimed 顶部插 Rust
   // 派发块(serveHoverFromRust 命中直出/null 经 rustHoverAttempted 重入,
   // +1 行),provideHover 真位重探 188→189,出处随 baseline 锁步。
-  ['src/languageProviders/hover.ts', 189, 'provideHover('],
+  // 2026-11-09:139f7035 链尾段与 6bf9ebed 尾拆(hoverBuilders)叠加后
+  // provideHover 净位移 189→183,真位重探,出处随 baseline 锁步。
+  ['src/languageProviders/hover.ts', 183, 'provideHover('],
   ['src/languageProviders/navigation.ts', 47, 'shadowCompareDefinition'],
   ['src/languageProviders/validation.ts', 13, 'export function validateDocument('],
   ['src/languageProviders/validation.ts', 37, 'shadowObserveDefDocument'],

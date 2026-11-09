@@ -43,6 +43,7 @@
 | GeneratedSourceCodeLensProvider(entity 桩) | generatedSourceLenses.ts:11 | activate/generators.ts:90(SRC-001 L7) | 构造期快照 buildEntityTypeStubPlan(getAllMappings + getCustomTypeInfos) | 纯读 |
 | PythonTypeInlayHintsProvider | typeInlayHints.ts:33 | :1197 | EntityMappingManager | 纯读 |
 | KBEngineBuiltinTypeInlayHintsProvider | languageProviders.ts:649 | :1207 | EntityMappingManager | 纯读 |
+| InferredMirrorTypeInlayHintsProvider | languageProviders/inlay.ts:68 | :584 | 托管目录推断镜像注解文件(kbengine.infer.enabled 闸;定义点行差分) | 纯读 |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | 纯读 |
 | DefPropsInlayHintsProvider | defPropsInlayHints.ts:126 | :1432 | EntityMappingManager(`listPropertyDefinitionsForFile` 锚点所属实体的根级属性清单) | 纯读 |
 | KBEngineCallHierarchyProvider | languageProviders.ts:5013 | :1223 | EntityMappingManager(def/python 双选区调用层级) | 纯读 |
