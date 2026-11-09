@@ -21,4 +21,7 @@ httpRequests / httpRequestService
 
 ## 验收
 
-- `pnpm compile`(tsc)0 / `pnpm lint` 0;全量门禁见提交前记录。
+- `pnpm compile`(tsc)0 / `pnpm lint` 0;全量 vitest 一次过零抖动 693 文件 /
+  8390 过 4 skip RC=0;demo 25 RC=0;docs:build RC=0。
+- **提交 0774cf4b**(2026-11-09 推 main):16 文件 44+/20-,违禁项检查 0
+  (批次 17 事故后严格化)。
