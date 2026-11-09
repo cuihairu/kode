@@ -276,10 +276,10 @@ same-named classes in `scripts/{base,cell, client}/<Name>.py`.
   covers D1/D4, the py chain and the cross-file Interfaces segment of D5, D6, and D8;
 - D3 has landed (batch 147): the manifest-ordered index is carried by the existing
   getRegisteredEntities, which preserves child-node order, and the hover presents the
-  manifest ordinal; same-name duplicate entry diagnostics (src/entitiesXmlAnalysis.ts)
+  manifest ordinal; same-name duplicate entry diagnostics (src/backend/entitiesXmlAnalysis.ts)
   land in the kbengine collection through the same document-event lifecycle as .def
   files, sharing the kbengine.enableDiagnostics master switch;
-- The def-chain merged presentation of D5 has landed (batch 148): src/defChain.ts
+- The def-chain merged presentation of D5 has landed (batch 148): src/backend/defChain.ts
   organizes the inheritance closure into three facets — `<Parent>` recursion, the
   flattened `interfaces/` list, and the `components/` hookup (engine merge semantics;
   edge resolution reuses the established defRenamer semantics), presented when hovering

@@ -14,7 +14,7 @@ import {
   getLineNumberAt,
   isElementNode,
   parseDefDocument
-} from '../src/defParser';
+} from '../src/backend/defParser';
 
 // 与 Rust model::canonical_tag 同口径:小写 + 去空格/下划线/连字符
 const canonicalTagOf = (name: string): string =>

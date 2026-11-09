@@ -7,7 +7,7 @@ import {
   buildProjectDoctorReport,
   formatDefReferenceGraphPreview,
   formatProjectDoctorReport
-} from '../src/defReferenceGraph';
+} from '../src/backend/defReferenceGraph';
 
 let root = '';
 

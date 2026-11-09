@@ -29,7 +29,7 @@ import {
   getLineNumberAt,
   findDeepestElementAtOffset,
   findTextNodeAtOffset
-} from './defParser';
+} from './backend/defParser';
 import { findFilesAcrossRoots } from './scanRoots';
 import { findCustomTypeInfo, getWorkspaceRootForDocument } from './definitionWorkspace';
 import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';

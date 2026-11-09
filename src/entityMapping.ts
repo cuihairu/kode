@@ -19,13 +19,13 @@ import {
   getIndexScanRoots,
   getScanRootForFile
 } from './scanRoots';
-import { DefMethodSection } from './defParser';
-import type { DefMethodGap, PythonMethodNotInDefGap } from './defMethodConsistency';
+import { DefMethodSection } from './backend/defParser';
+import type { DefMethodGap, PythonMethodNotInDefGap } from './backend/defMethodConsistency';
 import { getHookByName } from './hooks';
 import { clearDefCallChainFileCache } from './defCallChain';
 import { PYTHON_BUILTIN_TYPE_ANNOTATIONS } from './pythonTypeStubs';
-import { propertyFlagDomainList } from './defAnalyzer';
-import type { PropertyFlagDomain } from './defAnalyzer';
+import { propertyFlagDomainList } from './backend/defAnalyzer';
+import type { PropertyFlagDomain } from './backend/defAnalyzer';
 import { findOwnerSelfPropertyAccesses, findOwnerSelfReceiverCalls } from './pythonSelfScope';
 import {
   createDefinitionSemanticsLoader,
@@ -48,7 +48,7 @@ import { PY_SCAN_EXCLUDED_DIRS } from './pythonScanRules';
 import { SemanticIndex, getSemanticIndex, isTypeRegistryFile } from './semanticIndex';
 import { createSharedFileEventMerger, type SharedFileEvent } from './sharedFileEvents';
 import { SemanticDependencyGraph, type SemanticChangeKind } from './dependencyGraph';
-import type { EntityComponentFace } from './entityBuiltinProperties';
+import type { EntityComponentFace } from './backend/entityBuiltinProperties';
 import { invalidateDatabaseSchemaCacheForFiles, invalidateDatabaseSchemaCacheForTypeRegistry } from './databaseSchema';
 
 export type EntityMethodSection = DefMethodSection;

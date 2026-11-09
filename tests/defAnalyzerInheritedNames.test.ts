@@ -6,7 +6,7 @@ import {
   analyzeDefDocument,
   collectInheritedNames,
   type DefAnalysisFinding
-} from '../src/defAnalyzer';
+} from '../src/backend/defAnalyzer';
 
 // 批116 继承链同名检查(inherited-name-collision)测试。引擎判重语义:
 // 父子/接口描述装入同一 ScriptDefModule(entitydef.cpp loadDefInfo),同名

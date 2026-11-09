@@ -7,7 +7,7 @@ import {
   handleCallChainGraphRenderFailure,
   normalizeCallChainTab,
   resolveInitialCallChainTab
-} from '../src/defCallChainViewLogic';
+} from '../src/backend/defCallChainViewLogic';
 import { EntityMappingManager } from '../src/entityMapping';
 import {
   configurationOverrides,

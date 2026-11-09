@@ -3,7 +3,7 @@ import type * as vscode from 'vscode';
 import {
   findDefRenameConflict,
   resolveRenameSymbolAtOffset
-} from '../src/defRenamer';
+} from '../src/backend/defRenamer';
 import { KBEngineRenameProvider } from '../src/languageProviders';
 import { makeTextDocument, Position } from './helpers/vscodeStub';
 

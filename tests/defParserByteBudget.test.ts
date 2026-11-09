@@ -4,7 +4,7 @@ import {
   getParsedDocumentCacheStats,
   parseDefDocument,
   setParsedDocumentCacheByteBudgetForTests
-} from '../src/defParser';
+} from '../src/backend/defParser';
 
 // IDE-SNP-007:XML 解析缓存字节预算——超预算按 LRU 淘汰旧条目;单份巨型文档
 // 最多独占一条(允许字节超限但条目=1,不给 8 条目无限保留留门)。

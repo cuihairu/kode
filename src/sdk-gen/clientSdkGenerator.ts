@@ -17,14 +17,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import type { PropertyFlagDomain } from '../defAnalyzer';
+import type { PropertyFlagDomain } from '../backend/defAnalyzer';
 import {
   getCustomTypeInfos,
   getDefinitionWorkspaceLayout,
   getRegisteredEntities,
   readWorkspaceTextFile
 } from '../definitionWorkspace';
-import { parseDefFileSemantics } from '../defRenamer';
+import { parseDefFileSemantics } from '../backend/defRenamer';
 import { getKodeCoreShadowGate } from '../kodeCoreShadowFaces';
 import type { SdkEngineTrace } from './sdkGenerationTrace';
 import {

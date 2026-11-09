@@ -6,7 +6,7 @@ import { KBEngineRenameProvider } from '../src/languageProviders';
 import {
   findDefRenameConflictInClosure,
   resolveRenameSymbolAtOffset
-} from '../src/defRenamer';
+} from '../src/backend/defRenamer';
 import { makeTextDocument, Position } from './helpers/vscodeStub';
 
 // IDE-AUD-061(R3-F05):改名冲突预检纳入受影响继承闭包——不仅声明文件,

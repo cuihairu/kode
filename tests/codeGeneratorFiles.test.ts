@@ -6,7 +6,7 @@ import { KBEngineCodeGenerator, createGenerationRollbackLedger } from '../src/co
 import { generateDefContent, generatePythonContent } from '../src/codeGeneratorRender';
 import type { EntityWizardPart } from '../src/entityWizard';
 import type { EntityDefinition } from '../src/codeGenerator';
-import { analyzeDefDocument } from '../src/defAnalyzer';
+import { analyzeDefDocument } from '../src/backend/defAnalyzer';
 import type * as vscode from 'vscode';
 import { makeTextDocument, Uri, workspace as stubWorkspace, window as stubWindow, workspaceState } from './helpers/vscodeStub';
 

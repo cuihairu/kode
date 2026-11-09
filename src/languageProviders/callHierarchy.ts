@@ -1,7 +1,7 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { getLineNumberAt } from '../defParser';
+import { getLineNumberAt } from '../backend/defParser';
 import { EntityMappingManager, EntityMethodSection } from '../entityMapping';
 import { METHOD_DECLARATION_PATTERN } from '../rpcCodeLens';
 import { METHOD_SECTIONS, parseDefAst } from './shared';

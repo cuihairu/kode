@@ -16,7 +16,7 @@ import {
   readOnlyWriteDiagnosticItemsAsync,
   READONLY_WRITE_DIAGNOSTIC_CODE
 } from '../src/readOnlyWriteDiagnostics';
-import type { EntityComponentFace } from '../src/entityBuiltinProperties';
+import type { EntityComponentFace } from '../src/backend/entityBuiltinProperties';
 
 const find = (
   text: string,

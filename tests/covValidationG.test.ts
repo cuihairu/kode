@@ -48,7 +48,7 @@ import { parseDefAst } from '../src/languageProviders/shared';
 // 可观测(按 parityShouldThrow 开关);仅本文件作用域,其余文件不受影响。
 const { parityShouldThrow } = vi.hoisted(() => ({ parityShouldThrow: { value: false } }));
 vi.mock('../src/defPythonParity', async importOriginal => {
-  const actual = await importOriginal<typeof import('../src/defPythonParity')>();
+  const actual = await importOriginal<typeof import('../src/backend/defPythonParity')>();
   return {
     ...actual,
     collectDefPythonParityInput: (file: string) => {
@@ -476,11 +476,11 @@ describe('validateSectionStructure / validatePropertyStructure / 纯函数(覆�
     const doc = defDoc('<root>\n  <Properties>\n    <x>\n      <Type>UINT32</Type>\n    </x>\n    <y>\n      <Flags>BASE</Flags>\n    </y>\n  </Properties>\n</root>');
     const ast = parseDefAst(doc)!;
     const props = ast.root.children.filter(
-      (child): child is import('../src/defParser').DefElementNode =>
+      (child): child is import('../src/backend/defParser').DefElementNode =>
         child.kind === 'element' && child.name === 'Properties'
     )[0];
     const propChildren = props.children.filter(
-      (child): child is import('../src/defParser').DefElementNode => child.kind === 'element'
+      (child): child is import('../src/backend/defParser').DefElementNode => child.kind === 'element'
     );
     const x = propChildren.find(node => node.name === 'x')!;
     const y = propChildren.find(node => node.name === 'y')!;

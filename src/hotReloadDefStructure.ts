@@ -14,7 +14,7 @@
 
 import { createHash } from 'crypto';
 
-import { DEF_METHOD_SECTIONS, parseDefDocument, type DefElementNode } from './defParser';
+import { DEF_METHOD_SECTIONS, parseDefDocument, type DefElementNode } from './backend/defParser';
 
 export interface DefChangeVerdict {
   /** true=影响序列化或 RPC 参数,需重启 */

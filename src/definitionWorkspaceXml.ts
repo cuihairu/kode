@@ -7,7 +7,7 @@
 // (getTypesXmlCustomTypeInfos/buildAliasXmlCustomTypeInfo)与 buildCustomTypeInfo
 // (依赖 findCustomTypePythonFileByImplementation)留在 definitionWorkspace.ts。
 import type { CustomTypePropertyInfo, CustomTypeStructureNode } from './definitionWorkspace';
-import { DefElementNode, getDirectChildElement, getDirectChildElements, getLineNumberAt, getScalarChildValue, parseDefDocument, type DefDocument } from './defParser';
+import { DefElementNode, getDirectChildElement, getDirectChildElements, getLineNumberAt, getScalarChildValue, parseDefDocument, type DefDocument } from './backend/defParser';
 
 export function parseCustomTypeProperties(
   document: DefDocument,

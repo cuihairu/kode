@@ -13,14 +13,14 @@ import {
   getScalarChildValue,
   hasTruthyChildTag,
   parseDefDocument
-} from './defParser';
+} from './backend/defParser';
 import {
   DefinitionCategory,
   findDefinitionFileByCategory,
   findEntityDefinitionFile,
   getWorkspaceRootForDocument
 } from './definitionWorkspace';
-import { getReferenceTargetName, INTERFACE_WRAPPER_NAMES } from './defRenamer';
+import { getReferenceTargetName, INTERFACE_WRAPPER_NAMES } from './backend/defRenamer';
 
 export type DefinitionSemanticCategory = Exclude<DefinitionCategory, 'type'>;
 export type DefinitionMemberSourceKind = 'local' | 'interface' | 'parent' | 'component';

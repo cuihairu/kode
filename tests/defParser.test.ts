@@ -13,7 +13,7 @@ import {
   hasTruthyChildTag,
   isElementNode,
   parseDefDocument
-} from '../src/defParser';
+} from '../src/backend/defParser';
 
 // 行号带注释,断言全部基于这些行号(1 基)
 const DEF_TEXT = [

@@ -20,7 +20,7 @@
 
 ### 1.1 entityMapping / PythonClassIndex 那套**读不出** utype 定义
 
-- `src/defParser.ts:58` `parseDefDocument` 是通用 XML 解析(fxp,`parseTagValue:false` 见 `:55`),不带类型语义。
+- `src/backend/defParser.ts:58` `parseDefDocument` 是通用 XML 解析(fxp,`parseTagValue:false` 见 `:55`),不带类型语义。
 - `src/entityMapping.ts:152` 索引只从 `findFiles('**/*.def')` 建;索引结构 `:107-123`(`EntityMappingIndex`)只有 `methodDefinitions`、`properties: { [name]: { defFile, line } }` 等——**存的是「引用落点」,Type 串原样透传,不存类型定义**。
 - `src/pythonClassIndex.ts:40` `parsePythonFile` 只解析 `.py` 的类/方法,扫描面 `:247` `findFiles('**/*.py', ...)`——**完全不看 .def**。
 

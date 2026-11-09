@@ -1,7 +1,7 @@
 "模块","路径","职责(输入→输出)","owner","耗时证据","迁移方式","测试","风险"
 "extension.ts","src/extension.ts","装配入口:activate()→IndexScheduler+EntityMappingManager+全部Provider注册","code-agent","激活面待测(真实VS Code)","reworked(装配迁TS保留,Core侧迁Rust)","activationEvents.test.ts等","onLanguage:python无工作区门控;2180行单件"
 "languageProviders.ts","src/languageProviders.ts","Hover/Definition/Completion/CodeLens/Inlay实现+诊断validateDocument","code-agent","hover冷12-14ms/热8-10ms(B-1 9c8daf7);definition重复P95 22.10ms(e6e8bc7)","reworked(逐Provider双轨对拍PR-010/011)","语言Provider测试数十文件","4681行最大单件;getText().split残余:4063"
-"defParser.ts","src/defParser.ts",".def+通用XML解析(vendored fast-xml-parser,preserveOrder+源偏移+8条目LRU)","code-agent","big.def重解析1.19ms;同版本命中率96.1%(7d8736b)","reworked(→kode-syntax,PR-005要求错误恢复+fuzz)","def解析测试集","无错误恢复解析;fuzz未做"
+"src/backend/defParser.ts","src/backend/defParser.ts",".def+通用XML解析(vendored fast-xml-parser,preserveOrder+源偏移+8条目LRU)","code-agent","big.def重解析1.19ms;同版本命中率96.1%(7d8736b)","reworked(→kode-syntax,PR-005要求错误恢复+fuzz)","def解析测试集","无错误恢复解析;fuzz未做"
 "entityMapping.ts","src/entityMapping.ts","EntityMappingManager:实体注册表/首扫/types-alias watcher/类型注册表旧API兼容层","code-agent","冷扫652-737ms/热复扫17-18.7ms(89e8783,e6e8bc7)","reworked(查询面已迁semanticIndex,IO面迁VFS)","entityMapping测试+PR4兼容行为等价","10处readFileSync直读;与documentStore双读"
 "pythonClassIndex.ts","src/pythonClassIndex.ts","PythonClassIndex:类/基类/方法/MRO/组合根五轴版本缓存","code-agent","冷索引107737→100493ms(全量);U1首查475.34ms(d4fd634)","reworked(→kode-index查询+kode-python桥)","pythonClassIndex测试+bench","冷扫描3.6ms/文件为最大成本;MRO重建P99 79-90ms"
 "semanticIndex.ts","src/semanticIndex.ts","SemanticIndex:实体注册/冲突清单/类型注册表快照/失效入口","code-agent","同名冲突查询多根60路0.09ms wall(e6e8bc7)","moved(模型已稳,迁移时对拍语义)","PR4查找顺序取证测试+锁定","同名排序语义必须先对拍再迁移"

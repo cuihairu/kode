@@ -7,7 +7,7 @@ import {
   getParsedDocumentCacheGauge,
   parseDefDocument,
   setParsedDocumentCacheByteBudgetForTests
-} from '../src/defParser';
+} from '../src/backend/defParser';
 import { clearDatabaseSchemaCacheForTests, getDatabaseSchemaCacheGauge } from '../src/databaseSchema';
 import {
   getReturnAnnotationCacheGauge,

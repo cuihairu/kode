@@ -24,7 +24,7 @@ const megaProps = Number(argValue('mega', '20000'));
 
 // 模式二:--unique-copy <src> 复制既有语料,给每份 .def/alias.xml 追加一行唯一头注释。
 // 用途:真实资产集里存在成百份逐字节相同的 .def,会让 TS 侧 parseDefDocument 的全文文本缓存
-// (src/defParser.ts:69)整份命中,FULL/单文件口径测到的就不是解析成本。唯一化只改注释,
+// (src/backend/defParser.ts:69)整份命中,FULL/单文件口径测到的就不是解析成本。唯一化只改注释,
 // 不改变解析面(props/methods 计数不变,由 SURFACE 行两侧对拍)。
 if (copyFrom) {
   const src = path.resolve(copyFrom);
@@ -49,7 +49,7 @@ if (copyFrom) {
 }
 
 // 与 crates/kode-parser/examples/bench_parse.rs::gen_def 逐字节同形状,但每文件加一行唯一
-// 头注释:TS 侧 parseDefDocument 有「按全文文本」键的 8 条文档缓存(src/defParser.ts:69),
+// 头注释:TS 侧 parseDefDocument 有「按全文文本」键的 8 条文档缓存(src/backend/defParser.ts:69),
 // 内容完全相同的 N 个文件会让 TS 侧退化成缓存命中,测不到解析成本。真实 DEF 每份都不同,
 // 头注释(真实 DEF 也常有)只是让语料具备这一点。
 function genDef(props, id) {

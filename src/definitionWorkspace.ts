@@ -16,7 +16,7 @@ import {
   getLineNumberAt,
   getDirectTextNodes,
   getScalarChildValue
-} from './defParser';
+} from './backend/defParser';
 
 import {
   attachStructureSourceLines,
@@ -44,7 +44,7 @@ import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import {
   ENTITIES_XML_SECTION_CLIENT_SERVER,
   ENTITIES_XML_SECTION_SERVER_ONLY
-} from './entitiesXmlAnalysis';
+} from './backend/entitiesXmlAnalysis';
 // 路径模板渲染单一真源(与发现链 workspaceDiscovery.resolveAgainstWorkspace 同源)
 import { renderPathTemplate } from './workspacePath';
 

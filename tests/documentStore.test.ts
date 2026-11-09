@@ -19,7 +19,7 @@ import {
   clearParsedDocumentCacheForTests,
   getParsedDocumentCacheStats,
   parseDefDocument
-} from '../src/defParser';
+} from '../src/backend/defParser';
 import { makeTextDocument, Uri } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './fake-vscode/core';
 

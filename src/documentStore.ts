@@ -16,7 +16,7 @@
 // 打点:document-parse 事件走 PR1 埋点(命中/未命中/耗时/版本),不记用户文本。
 
 import { recordLanguageServiceOperation } from './languageServiceMetrics';
-import { releaseParsedDocuments } from './defParser';
+import { releaseParsedDocuments } from './backend/defParser';
 import { normalizeFileIdentity } from './pathIdentity';
 
 /** 快照输入面:vscode.TextDocument 与测试替身的公共子集(不 import vscode) */

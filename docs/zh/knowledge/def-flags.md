@@ -157,7 +157,7 @@ kode 精确镜像上面这张表，单一来源在 Rust 解析器、锁步对拍
   `CANONICAL_FLAG_TOKENS` / `FLAG_TOKEN_DOMAINS` / `FLAG_DOMAIN_ALIAS` /
   `normalizeFlagTokens`，由 `tests/flagDomainsParity.test.ts` 对拍门禁锁死。
 - **消费方**：重复定义作用域（`src/languageProviders/validation.ts
-  normalizePropertyFlag`）、分析面（`src/defAnalyzer.ts
+  normalizePropertyFlag`）、分析面（`src/backend/defAnalyzer.ts
   propertyFlagDomainList`）、补全集、hover 元数据（`src/kbengineMetadata.ts
   KBENGINE_FLAGS`）、消息表位（`src/messageTableEngine.ts PROPERTY_FLAG_BITS`）、
   依赖图与进程拓扑投影。

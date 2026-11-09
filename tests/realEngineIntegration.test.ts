@@ -1,10 +1,10 @@
 import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
-import { parseDefFileSemantics } from '../src/defRenamer';
+import { parseDefFileSemantics } from '../src/backend/defRenamer';
 import { parseLocalDefinition } from '../src/definitionSemantics';
 import { getCustomTypeInfos } from '../src/definitionWorkspace';
-import { propertyFlagDomainList } from '../src/defAnalyzer';
+import { propertyFlagDomainList } from '../src/backend/defAnalyzer';
 import { resolveEngineRoot } from './helpers/engineRoot';
 import { resolveFantasyRoot } from './helpers/fantasyRoot';
 

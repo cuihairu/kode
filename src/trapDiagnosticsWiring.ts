@@ -17,7 +17,7 @@ import * as vscode from 'vscode';
 import type { EntityMappingManager } from './entityMapping';
 import { getTypeStorageShape } from './databaseSchema';
 import { getDefinitionWorkspaceLayout } from './definitionWorkspace';
-import { resolveEntityComponentFaceFromPath } from './entityBuiltinProperties';
+import { resolveEntityComponentFaceFromPath } from './backend/entityBuiltinProperties';
 import {
   analyzeFixedDictMutations,
   buildFixedDictWholeReassignText,

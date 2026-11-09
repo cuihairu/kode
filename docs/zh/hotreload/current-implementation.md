@@ -117,7 +117,7 @@ debug.json quick action 变量：仅官方表，未解析即硬错误（与设�
 
 ### HR-AUDIT-008 — `.def` Hash / Digest 现状
 
-- 全仓 `digest|md5|sha256|sha1|createHash|fingerprint` 扫描：唯一的密码学哈希是 `src/logHub.ts:101`（日志文本 sha256 去重指纹）。`src/defAnalyzer.ts`、`src/defParser.ts`、`src/semanticIndex.ts` **不含任何形式的哈希**。
+- 全仓 `digest|md5|sha256|sha1|createHash|fingerprint` 扫描：唯一的密码学哈希是 `src/logHub.ts:101`（日志文本 sha256 去重指纹）。`src/backend/defAnalyzer.ts`、`src/backend/defParser.ts`、`src/semanticIndex.ts` **不含任何形式的哈希**。
 - 三层模型（fileHash / semanticHash / engineDigest）：**均不存在**。无文件哈希、无语义指纹、无引擎 digest 代码。
 - 仓内引擎侧证据：`KBENGINE_SOURCE_AUDIT_PLAN.md` §14（源码核验）确认 `KBEngine.reloadScript(fullReload)` 在 baseapp/cellapp 存在，且 `KBEngine.reloadEntityDef()`/`isReload()` 已被**撤回**为不存在的公开 API。本仓任何位置均无引擎 Digest 算法文档。
 

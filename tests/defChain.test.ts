@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildDefChain } from '../src/defChain';
+import { buildDefChain } from '../src/backend/defChain';
 
 // def 链合并呈现(source-analysis 设计 D5 剩余段):`<Parent>` 递归 +
 // interfaces/ 平铺 + components/ 挂接,与引擎归并口径一致(entitydef.cpp:

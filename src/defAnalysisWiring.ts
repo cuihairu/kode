@@ -3,7 +3,7 @@
 import * as path from 'path';
 import { l10nText } from './nlsRuntime';
 import * as vscode from 'vscode';
-import { analyzeDefDocumentWithRust, collectInheritedNames, formatDefAnalysisReport } from './defAnalyzer';
+import { analyzeDefDocumentWithRust, collectInheritedNames, formatDefAnalysisReport } from './backend/defAnalyzer';
 import { findFilesAcrossRoots } from './scanRoots';
 import { getCustomTypeInfos, getRegisteredEntities } from './definitionWorkspace';
 

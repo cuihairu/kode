@@ -15,7 +15,7 @@
  * 目录与 def 归属都判不出 → 非实体脚本不接管;判为实体但面歧义 → 只给宏公共 3 项。
  */
 
-import { maskPythonNonCode } from './pythonLexicalMask';
+import { maskPythonNonCode } from '../pythonLexicalMask';
 
 /** 组件面(报告 §2:baseapp/cellapp/client 各一套 getset 表) */
 export type EntityComponentFace = 'baseapp' | 'cellapp' | 'client';

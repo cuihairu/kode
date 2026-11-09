@@ -9,7 +9,7 @@
 // 语料收集规则与 kode-parser json::collect_corpus 一致(*.def + entities/types/alias.xml)。
 //
 // 口径说明:
-//  - .def 文件测两遍:parse(仅 src/defParser.parseDefDocument)与
+//  - .def 文件测两遍:parse(仅 src/backend/defParser.parseDefDocument)与
 //    parse+extract(parseDefDocument + 主要提取面:properties/methods/parent/行号,
 //    对称 Rust 侧 parse_def 自带的同级语义提取;对拍语义以
 //    tests/kodeParserParity.test.ts extractDef 为准)。
@@ -18,7 +18,7 @@
 //  - 增量口径为 harness 等价模拟:与 kode-vfs content_fingerprint 完全同式的 FNV-1a
 //    指纹 + Map 复用(TS 产品侧暂无解析器级增量注册表)。
 
-import { parseDefDocument } from '../src/defParser';
+import { parseDefDocument } from '../src/backend/defParser';
 import { parseEntityNames, parseTypesXml } from '../src/compositionRoots';
 import fs from 'node:fs';
 import path from 'node:path';

@@ -15,11 +15,11 @@ import {
   getDirectTextNodes,
   hasTruthyChildTag,
   parseDefDocument
-} from '../defParser';
-import type { DefElementNode } from '../defParser';
-import { propertyFlagDomainList } from '../defAnalyzer';
+} from '../backend/defParser';
+import type { DefElementNode } from '../backend/defParser';
+import { propertyFlagDomainList } from '../backend/defAnalyzer';
 import type { CustomTypeInfo } from '../definitionWorkspace';
-import { getReferenceTargetName, parseDefFileSemantics } from '../defRenamer';
+import { getReferenceTargetName, parseDefFileSemantics } from '../backend/defRenamer';
 import { formatSdkEngineTraceLines, makeSdkEngineTrace } from './sdkGenerationTrace';
 import type { SdkEngineTrace } from './sdkGenerationTrace';
 import type {

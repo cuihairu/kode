@@ -253,9 +253,9 @@ client}/<Name>.py` 同名类。
   py 链与 Interfaces 跨文件段、D6、D8;
 - D3 已落地(批147):清单顺序索引由现役 getRegisteredEntities 按子节点
   序保真承担,悬停呈现清单序号;同名重复条目诊断(src/
-  entitiesXmlAnalysis.ts)随 .def 同一文档事件生命周期落 kbengine
+  src/backend/entitiesXmlAnalysis.ts)随 .def 同一文档事件生命周期落 kbengine
   collection,共用 kbengine.enableDiagnostics 总开关;
-- D5 的 def 链合并呈现已落地(批148):src/defChain.ts 按「`<Parent>` 递归
+- D5 的 def 链合并呈现已落地(批148):src/backend/defChain.ts 按「`<Parent>` 递归
   + interfaces/ 平铺 + components/ 挂接」三面整理继承闭包(引擎归并口径
   与边解析沿用批 defRenamer 语义),悬停根级 `<Parent>` 元素呈现;visited
   截断防环并如实标注(引擎 loadParentClass 未见防环,不照抄);仍属后续

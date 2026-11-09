@@ -17,7 +17,7 @@ import {
   postDestroyDiagnosticItemsAsync,
   POST_DESTROY_DIAGNOSTIC_CODE
 } from '../src/postDestroyDiagnostics';
-import type { EntityComponentFace } from '../src/entityBuiltinProperties';
+import type { EntityComponentFace } from '../src/backend/entityBuiltinProperties';
 
 const find = (
   text: string,

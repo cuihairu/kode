@@ -63,7 +63,7 @@ function failAllPending(error: Error): void {
 
 function ensureWorker(): Worker {
   if (worker) { return worker; }
-  const created = new Worker(path.join(__dirname, 'defParserWorker.js'));
+  const created = new Worker(path.join(__dirname, '..', 'defParserWorker.js'));
   created.unref();
   created.on('message', (reply: DefParseReply) => {
     const pending = posted.get(reply.id);
@@ -97,7 +97,7 @@ export async function parseDefDocumentResponsive(
   text: string,
   label = 'def'
 ): Promise<DefDocument> {
-  const workerFile = path.join(__dirname, 'defParserWorker.js');
+  const workerFile = path.join(__dirname, '..', 'defParserWorker.js');
   if (text.length < DEF_PARSE_WORKER_MIN_BYTES || !fs.existsSync(workerFile)) {
     return parseDefDocument(text);
   }

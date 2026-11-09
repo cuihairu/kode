@@ -18,7 +18,7 @@
 // 同值,否则 CodeAction 严格比较不命中 → 恒空;KODE-AUD-002 统一);反向规则
 // 无 Rust/CodeAction 对接口,沿用惯例 `kbengine.<camelCase>`(同 kbengine.receiverNone)。
 
-import { PYTHON_BUILTIN_TYPE_ANNOTATIONS } from './pythonTypeStubs';
+import { PYTHON_BUILTIN_TYPE_ANNOTATIONS } from '../pythonTypeStubs';
 
 /** 诊断 code:def 方法在对应实体类 Python 脚本无实现(默认开) */
 export const DEF_METHOD_MISSING_DIAGNOSTIC_CODE = 'def-method-missing-in-python';

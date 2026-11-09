@@ -5,8 +5,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { IGrammar, IRawGrammar } from 'vscode-textmate';
 import { INITIAL, Registry } from 'vscode-textmate';
 import { createOnigScanner, createOnigString, loadWASM } from 'vscode-oniguruma';
-import { parseDefDocument } from '../../src/defParser';
-import { analyzeDefDocument, formatDefAnalysisReport } from '../../src/defAnalyzer';
+import { parseDefDocument } from '../../src/backend/defParser';
+import { analyzeDefDocument, formatDefAnalysisReport } from '../../src/backend/defAnalyzer';
 import { buildLargeDefFixture } from '../helpers/largeDefFixture';
 
 // 批92 性能基准(大 .def 解析/诊断/高亮三条路径)。运行方式:

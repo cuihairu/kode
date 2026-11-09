@@ -15,12 +15,12 @@ import {
   collectDefPythonParityInput,
   entityNameOfDefFile,
   mapDefTypeToPythonAnnotation
-} from '../src/defPythonParity';
+} from '../src/backend/defPythonParity';
 import {
   DEF_PYTHON_PARITY_DIAGNOSTIC_CODE,
   KBEngineDefPythonParityCodeActionProvider
 } from '../src/languageProviders';
-import { DEF_METHOD_MISSING_DIAGNOSTIC_CODE } from '../src/defMethodConsistency';
+import { DEF_METHOD_MISSING_DIAGNOSTIC_CODE } from '../src/backend/defMethodConsistency';
 import {
   CodeActionKind,
   makeTextDocument,

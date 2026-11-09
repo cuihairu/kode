@@ -7,8 +7,8 @@ import {
   getElementText,
   getScalarChildValue,
   parseDefDocument
-} from '../src/defParser';
-import type { DefNode, DefTextNode } from '../src/defParser';
+} from '../src/backend/defParser';
+import type { DefNode, DefTextNode } from '../src/backend/defParser';
 
 // defParser 的遍历工具与文本定位缺口:getDirectTextNodes/getElementText
 // 的空参守卫、findAncestorElement 的 null 守卫与文本节点 parent 回溯、

@@ -13,7 +13,7 @@ import type {
   IndexedPythonMethodLocation,
   PythonOwnerFile
 } from './entityMapping';
-import type { DefMethodSection as EntityMethodSection } from './defParser';
+import type { DefMethodSection as EntityMethodSection } from './backend/defParser';
 import { buildPythonSymbolsInRust } from './pythonCallGraphRust';
 import type { PythonSymbolCall, PythonSymbolsRustResult } from './pythonCallGraphRust';
 import type { DefinitionSemanticCategory } from './definitionSemantics';

@@ -23,7 +23,7 @@ import {
   updateDocumentSnapshot
 } from '../../src/documentStore';
 import { getOperationSummary } from '../../src/languageServiceMetrics';
-import { parseDefDocument } from '../../src/defParser';
+import { parseDefDocument } from '../../src/backend/defParser';
 
 const ASSETS_OUT = path.join(os.tmpdir(), 'kode-perf-pr2-assets');
 const OUT = process.env.KODE_PR2_OUT

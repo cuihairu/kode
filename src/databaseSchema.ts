@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { parseDefDocument } from './defParser';
-import { parseDefDocumentResponsive } from './defParserWorkerHost';
+import { parseDefDocument } from './backend/defParser';
+import { parseDefDocumentResponsive } from './backend/defParserWorkerHost';
 import {
   findEntityDefinitionFile,
   getDefinitionWorkspaceLayout,

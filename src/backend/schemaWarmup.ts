@@ -4,8 +4,8 @@
 // 取消/工作区演化即刻止步。交互查询路径本身不变(同步命中缓存),只是从
 // 「首次交互付冷启动」变成「后台先付」。
 
-import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
-import { buildDatabaseSchemaSnapshotAsync } from './databaseSchema';
+import { IndexScheduler, IndexTaskPriority } from '../indexScheduler';
+import { buildDatabaseSchemaSnapshotAsync } from '../databaseSchema';
 
 export interface SchemaWarmupDeps {
   /** 每个实体构建前等待(测试闸:挂起以观察取消与分块;生产缺省直通) */

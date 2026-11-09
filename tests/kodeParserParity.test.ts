@@ -13,7 +13,7 @@ import {
   getLineNumberAt,
   isElementNode,
   parseDefDocument
-} from '../src/defParser';
+} from '../src/backend/defParser';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const GOLDEN_PATH = path.join(REPO_ROOT, 'crates/kode-parser/tests/golden/def-parity.json');

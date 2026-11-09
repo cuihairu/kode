@@ -6,7 +6,7 @@ import {
   collectDefMethodMissingItems,
   collectPythonMethodNotInDefItems,
   defArgTypeToPythonAnnotation
-} from '../src/defMethodConsistency';
+} from '../src/backend/defMethodConsistency';
 
 // C-19 纯逻辑半边:def↔Python 方法一致性(诊断定位 + 一键骨架)。类型映射
 // 与 PYTHON_BUILTIN_TYPE_ANNOTATIONS 同源(单一事实源);骨架只发射内建注解

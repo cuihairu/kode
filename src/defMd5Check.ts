@@ -31,7 +31,7 @@
 
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { computeDefMd5InRust, type DefMd5RustParams } from './defMd5Rust';
+import { computeDefMd5InRust, type DefMd5RustParams } from './backend/defMd5Rust';
 import { findFilesAcrossRoots, resolveAssetsRootForWorkspace } from './scanRoots';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 

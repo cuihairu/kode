@@ -235,12 +235,12 @@
 ## AUDIT-004 Parsers and callers for the four XML kinds
 
 - 【Fact】The only runtime XML parser: vendored fast-xml-parser
-  (`vendor/fast-xml-parser/fxp.cjs`), used only through src/defParser.ts
+  (`vendor/fast-xml-parser/fxp.cjs`), used only through src/backend/defParser.ts
   (516 lines) in preserveOrder mode; DefDocument keeps tagStart/closeTag
   offsets + lineStarts, supporting file:line source location; a module-level
-  8-entry LRU parse cache (defParser.ts:16-18).
+  8-entry LRU parse cache (src/backend/defParser.ts:16-18).
 - 【Fact】Callers: parseDefAst/parseDefDocument have 10 call sites in
-  languageProviders.ts; entitiesXmlAnalysis.ts (entities.xml manifest
+  languageProviders.ts; src/backend/entitiesXmlAnalysis.ts (entities.xml manifest
   duplicate-entity diagnostics) and definitionSemantics reuse the same parse
   surface.
 - 【Fact】types.xml/alias.xml: entityMapping.ts parses them via direct
@@ -278,7 +278,7 @@
   workspaceDiscovery.ts 17, generatorForms.ts 14, entityMapping.ts 10,
   codeGenerator.ts 9, pythonStubExport.ts 8, definitionWorkspace.ts 6,
   extension.ts 5, engineCompatibility.ts 5, debugConfigBootstrap.ts 5,
-  serverManager.ts 4, logHub.ts 4, defChain.ts 4, clientSdkGenerator.ts 4.
+  serverManager.ts 4, logHub.ts 4, src/backend/defChain.ts 4, clientSdkGenerator.ts 4.
 - 【Fact】`getText().split` whole-text line splitting has 2 residual sites
   outside hot zones: languageProviders.ts:4063, eventApi.ts:81 (3 sites in
   documentStore.ts are comments/discipline notes). The high-frequency
@@ -322,7 +322,7 @@
   PR6 report).
 - **references**: no LSP references provider; the command
   kbengine.symbolReferences.show uses the custom reference graph
-  (defReferenceGraph.ts).【Untested】not included in performance budgeting.
+  (src/backend/defReferenceGraph.ts).【Untested】not included in performance budgeting.
 - 【Inference】Residual wait-point risk: hover's 5s initial-scan wait will
   still max out on cold starts with tens of thousands of files (cold indexing
   baseline on the order of 100s); PR5 only fixed definition; hover cold-start

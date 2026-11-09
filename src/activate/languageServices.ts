@@ -49,7 +49,7 @@ import { PYTHON_TYPE_STUB_FILE_NAME, buildPythonTypeStubLineMap, buildPythonType
 import { bumpRootConfigGeneration } from '../rootConfigGeneration';
 import { createRootRemovalNotifier } from '../rootRemovalEvents';
 import { getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace } from '../scanRoots';
-import { scheduleBackgroundSchemaWarmup } from '../schemaWarmup';
+import { scheduleBackgroundSchemaWarmup } from '../backend/schemaWarmup';
 import { createSharedFileEventMerger } from '../sharedFileEvents';
 import { KBENGINE_SOURCE_REVEAL_COMMAND } from '../sourceRevealCommand';
 import { SERVER_CONFIG_SELECTOR, ServerConfigHoverProvider } from '../serverConfigHover';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MessageChannel } from 'worker_threads';
-import { parseDefDocument, type DefDocument, type DefElementNode } from '../src/defParser';
+import { parseDefDocument, type DefDocument, type DefElementNode } from '../src/backend/defParser';
 
 // IDE-REV-039:DefDocument 经 worker postMessage 回传(structured clone)。
 // DefDocument/DefElementNode 全是 plain object,但 parent/document 回引成环

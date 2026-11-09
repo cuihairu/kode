@@ -168,7 +168,7 @@ verified:
   `CANONICAL_FLAG_TOKENS` / `FLAG_TOKEN_DOMAINS` / `FLAG_DOMAIN_ALIAS` /
   `normalizeFlagTokens`, parity-gated by `tests/flagDomainsParity.test.ts`.
 - **Consumers**: duplicate-definition scopes (`src/languageProviders/validation.ts
-  normalizePropertyFlag`), analysis faces (`src/defAnalyzer.ts
+  normalizePropertyFlag`), analysis faces (`src/backend/defAnalyzer.ts
   propertyFlagDomainList`), completion sets, hover metadata
   (`src/kbengineMetadata.ts KBENGINE_FLAGS`), message table bits
   (`src/messageTableEngine.ts PROPERTY_FLAG_BITS`), dependency-graph & process

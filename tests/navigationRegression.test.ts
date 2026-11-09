@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { KBEngineDefinitionProvider } from '../src/languageProviders';
-import { parseDefFileSemantics } from '../src/defRenamer';
+import { parseDefFileSemantics } from '../src/backend/defRenamer';
 import {
   findComponentScriptFile,
   findEntityScriptFile,

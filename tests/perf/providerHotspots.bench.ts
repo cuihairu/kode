@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, afterAll, describe, it } from 'vitest';
 import { buildDefCallChain } from '../../src/defCallChain';
-import { parseDefDocument } from '../../src/defParser';
+import { parseDefDocument } from '../../src/backend/defParser';
 import { EntityMappingManager } from '../../src/entityMapping';
 import type { EntityMappingIndex } from '../../src/entityMapping';
 import { resolveLocalVariableReturnType } from '../../src/pythonReturnTypeInference';

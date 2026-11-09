@@ -18,8 +18,8 @@ import {
   roleMisuseDiagnosticItemsAsync,
   ROLE_MISUSE_DIAGNOSTIC_CODE
 } from '../src/roleMisuseDiagnostics';
-import { getEntityBuiltinPropertiesForFace } from '../src/entityBuiltinProperties';
-import type { EntityComponentFace } from '../src/entityBuiltinProperties';
+import { getEntityBuiltinPropertiesForFace } from '../src/backend/entityBuiltinProperties';
+import type { EntityComponentFace } from '../src/backend/entityBuiltinProperties';
 
 const find = (
   text: string,

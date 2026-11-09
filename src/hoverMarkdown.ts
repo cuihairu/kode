@@ -8,7 +8,7 @@ import { basename } from 'path';
 import {
   formatEntityBuiltinPropertyHeadline,
   type EntityBuiltinPropertyHit
-} from './entityBuiltinProperties';
+} from './backend/entityBuiltinProperties';
 import type { SelfPropertyResolved } from './selfPropertyTypeInference';
 
 /** def 声明方法/接收者调用共用输入:receiver 有值 = 接收者调用面(标题带

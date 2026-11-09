@@ -11,7 +11,7 @@ import {
   getDirectChildElements,
   getElementText,
   parseDefDocument
-} from '../src/defParser';
+} from '../src/backend/defParser';
 import { KBENGINE_FLAGS, KBENGINE_TYPES } from '../src/kbengineMetadata';
 
 const REPO_ROOT = path.resolve(__dirname, '..');

@@ -1,5 +1,5 @@
 import { parentPort } from 'worker_threads';
-import { parseDefDocument, type DefDocument } from './defParser';
+import { parseDefDocument, type DefDocument } from './backend/defParser';
 
 // IDE-REV-039:def XML 解析 worker 入口——宿主线程之外解析单文件大 def
 // (vendor fast-xml-parser 整块 opaque 不可内部 yield,≥12k 行实测 95-185ms)。

@@ -14,7 +14,7 @@ import {
   FLAG_TOKEN_DOMAINS,
   normalizeFlagTokens
 } from '../src/generated/flagDomains';
-import { propertyFlagDomainList } from '../src/defAnalyzer';
+import { propertyFlagDomainList } from '../src/backend/defAnalyzer';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const GOLDEN_PATH = path.join(

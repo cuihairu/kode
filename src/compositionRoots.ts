@@ -22,7 +22,7 @@ import {
   getScalarChildValue,
   parseDefDocument,
   type DefElementNode
-} from './defParser';
+} from './backend/defParser';
 
 /** entities.xml 的实体名(根的直接元素子节点;注释是文本节点天然被排除) */
 export function parseEntityNames(content: string): string[] {

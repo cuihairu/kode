@@ -16,7 +16,7 @@ import {
   getEntityBuiltinPropertiesForFace,
   resolveEntityBuiltinPropertyHit,
   resolveEntityComponentFaceFromPath
-} from '../src/entityBuiltinProperties';
+} from '../src/backend/entityBuiltinProperties';
 import {
   CompletionItemKind,
   InlayHint,

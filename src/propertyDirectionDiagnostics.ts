@@ -14,7 +14,7 @@
 import { findPythonSelfPropertyAccesses } from './propertyCodeLens';
 import { l10nText } from './nlsRuntime';
 import { inferMethodSectionFromPythonFile } from './entityMapping';
-import type { PropertyFlagDomain } from './defAnalyzer';
+import type { PropertyFlagDomain } from './backend/defAnalyzer';
 
 export const PROPERTY_DIRECTION_VIOLATION_DIAGNOSTIC_CODE = 'kbengine.propertyDirectionViolation';
 export const PROPERTY_DIRECTION_SCOPE_UNKNOWN_DIAGNOSTIC_CODE = 'kbengine.propertyDirectionScopeUnknown';

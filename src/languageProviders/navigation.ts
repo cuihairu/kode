@@ -1,7 +1,7 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { DefElementNode, findAncestorElement, getDirectChildElement, getDirectChildElements, getLineNumberAt } from '../defParser';
+import { DefElementNode, findAncestorElement, getDirectChildElement, getDirectChildElements, getLineNumberAt } from '../backend/defParser';
 import { EntityMappingManager, EntityMethodSection, type DefinitionSymbolIdentity } from '../entityMapping';
 import {
   getKodeCoreShadowGate,
@@ -13,7 +13,7 @@ import {
 import { findDatabaseSchemaFieldAtPosition, findDatabaseSchemaSourceLocation, findDatabaseSchemaTargetsForSource, getDatabaseSchemaSnapshot, locateDatabaseSchemaLine } from '../databaseSchema';
 import { createDatabaseSchemaUri, isDatabaseSchemaDocument } from '../databaseSchemaPresentation';
 import { findCustomTypeDeclarationInfo, findCustomTypeInfo, findCustomTypePythonImplementationFile, findImplementedBySymbolLine, findDefinitionEntryByCategory, findDefinitionFileByCategory, findEntityDefsDirForDefFile, findComponentScriptFile, findEntityDefinitionFile, findEntitiesXmlFile, findEntityScriptFile, findInterfaceScriptFile, getDefinitionWorkspaceLayout, getRegisteredCustomTypes, getScriptsRootForDefFile, getWorkspaceRootForDocument, scriptFoldersForRole, notifyEntitiesXmlMissingOnce, readWorkspaceTextFile, readWorkspaceTextLines } from '../definitionWorkspace';
-import { parseDefFileSemantics } from '../defRenamer';
+import { parseDefFileSemantics } from '../backend/defRenamer';
 import { KBENGINE_TYPES } from '../kbengineMetadata';
 import { logNavigation } from '../navigationLog';
 import { SymbolHoverInfo, buildSymbolHoverInfo } from './hover';

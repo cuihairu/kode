@@ -117,7 +117,7 @@ A `buildCurlCommand` helper supporting headers exists (`src/quickActions.ts:178`
 
 ### HR-AUDIT-008 — `.def` Hash / Digest status
 
-- Repo-wide `digest|md5|sha256|sha1|createHash|fingerprint` sweep: the only cryptographic hash is `src/logHub.ts:101` (sha256 of log text for dedupe fingerprinting). `src/defAnalyzer.ts`, `src/defParser.ts`, `src/semanticIndex.ts` contain **no hashing of any kind**.
+- Repo-wide `digest|md5|sha256|sha1|createHash|fingerprint` sweep: the only cryptographic hash is `src/logHub.ts:101` (sha256 of log text for dedupe fingerprinting). `src/backend/defAnalyzer.ts`, `src/backend/defParser.ts`, `src/semanticIndex.ts` contain **no hashing of any kind**.
 - Three-layer model (fileHash / semanticHash / engineDigest): **none exists**. No file hash, no semantic fingerprint, no engine digest code.
 - Engine-side evidence in repo: `KBENGINE_SOURCE_AUDIT_PLAN.md` §14 (source-verified) confirms `KBEngine.reloadScript(fullReload)` exists on baseapp/cellapp and that `KBEngine.reloadEntityDef()`/`isReload()` were **retracted** as non-existent public APIs. No engine Digest algorithm is documented anywhere in this repo.
 

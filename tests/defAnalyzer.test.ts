@@ -4,7 +4,7 @@ import {
   formatDefAnalysisReport,
   propertyFlagDomainList,
   type DefAnalysisFinding
-} from '../src/defAnalyzer';
+} from '../src/backend/defAnalyzer';
 
 // defAnalyzer 纯逻辑测试(批91:性能分析建议)。检查项定案见
 // COMPLETED_FEATURES「性能分析建议」条目:幻影类型 / 缺类型 / 重复 Type /

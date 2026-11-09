@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeDefMd5InRust } from '../src/defMd5Rust';
+import { computeDefMd5InRust } from '../src/backend/defMd5Rust';
 import type { KodeCoreGate } from '../src/kodeCoreGate';
 import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
 

@@ -13,8 +13,8 @@ import {
   getElementText,
   isElementNode,
   parseDefDocument
-} from '../src/defParser';
-import { buildDefChain } from '../src/defChain';
+} from '../src/backend/defParser';
+import { buildDefChain } from '../src/backend/defChain';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const GOLDEN_PATH = path.join(REPO_ROOT, 'crates/kode-server/tests/golden/completion-parity.json');

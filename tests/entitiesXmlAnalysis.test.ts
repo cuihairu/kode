@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ENTITIES_XML_DUPLICATE_CHECK,
   analyzeEntitiesXml
-} from '../src/entitiesXmlAnalysis';
+} from '../src/backend/entitiesXmlAnalysis';
 
 // entities.xml 清单分析(source-analysis 设计 D3)纯逻辑用例:同名重复条目
 // 的发现面。引擎按首条静默合并(registerNewScriptDefModule,entitydef.cpp:

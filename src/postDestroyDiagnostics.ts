@@ -29,7 +29,7 @@
 
 import { pythonCodeLines, pythonStatements } from './pythonParser';
 import { l10nText } from './nlsRuntime';
-import { resolveEntityComponentFaceFromPath, type EntityComponentFace } from './entityBuiltinProperties';
+import { resolveEntityComponentFaceFromPath, type EntityComponentFace } from './backend/entityBuiltinProperties';
 
 export const POST_DESTROY_DIAGNOSTIC_CODE = 'kbengine.postDestroy';
 export const POST_DESTROY_DIAGNOSTICS_ENABLED_DEFAULT = true;

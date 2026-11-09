@@ -29,10 +29,21 @@ const srcDir = join(root, 'src');
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const configProps = pkg.contributes.configuration.properties as Record<string, unknown>;
 
-/** 全部 src/*.ts 源码文本(排除注册表自身) */
-const srcText = readdirSync(srcDir)
-  .filter(file => file.endsWith('.ts') && file !== 'lintRuleRegistry.ts')
-  .map(file => readFileSync(join(srcDir, file), 'utf8'))
+/** 全部 src 下递归 .ts 源码文本(含子目录,排除注册表自身) */
+const collectSrcTsFiles = (dir: string): string[] => {
+  const files: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      files.push(...collectSrcTsFiles(join(dir, entry.name)));
+    } else if (entry.name.endsWith('.ts') && entry.name !== 'lintRuleRegistry.ts') {
+      files.push(join(dir, entry.name));
+    }
+  }
+  return files;
+};
+
+const srcText = collectSrcTsFiles(srcDir)
+  .map(file => readFileSync(file, 'utf8'))
   .join('\n');
 
 /** package.json 诊断类配置键(诊断开关/主开关) */

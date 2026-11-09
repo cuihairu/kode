@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   computeDefRenameEdits,
   DefRenameSymbol
-} from '../src/defRenamer';
+} from '../src/backend/defRenamer';
 
 // defRenamer 批68 分支补测:listDefFilesRecursive 的非 .def 文件假臂、
 // parseDefFileSemantics 的无名 <Interface/> 跳过臂、闭包行走 seen 去重守卫

@@ -25,9 +25,9 @@
   comments/CDATA/PI/declarations each have spans; error-tolerant recovery (bad
   input records diagnostics, recovers locally, never panics). These are
   formatter-grade syntax facts.
-- **TS `src/defParser.ts`**: vendored fast-xml-parser (fxp), **offsets are
+- **TS `src/backend/defParser.ts`**: vendored fast-xml-parser (fxp), **offsets are
   rebuilt by re-searching with `text.indexOf(node.text, searchOffset)`**
-  (around defParser.ts:596, rechecked 2026-11-07) — nodes with identical
+  (around src/backend/defParser.ts:596, rechecked 2026-11-07) — nodes with identical
   names/text get misaligned; this is navigation-grade precision, not
   formatter-grade. The TS side has no
   other XML-formatting dependency (package.json has no prettier/xml formatter

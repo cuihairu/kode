@@ -1,9 +1,9 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
 import * as vscode from 'vscode';
-import { DefElementNode, getDirectChildElements, getElementText, getLineNumberAt } from '../defParser';
-import { DEF_METHOD_MISSING_DIAGNOSTIC_CODE, KBENGINE_DEF_METHOD_CONSISTENCY_REVALIDATE_COMMAND, buildMethodStubCode, type MethodStubBody } from '../defMethodConsistency';
+import { DefElementNode, getDirectChildElements, getElementText, getLineNumberAt } from '../backend/defParser';
+import { DEF_METHOD_MISSING_DIAGNOSTIC_CODE, KBENGINE_DEF_METHOD_CONSISTENCY_REVALIDATE_COMMAND, buildMethodStubCode, type MethodStubBody } from '../backend/defMethodConsistency';
 import { EntityMappingManager, EntityMethodSection } from '../entityMapping';
-import { buildPythonMethodSkeletonWithTypes, entityNameOfDefFile } from '../defPythonParity';
+import { buildPythonMethodSkeletonWithTypes, entityNameOfDefFile } from '../backend/defPythonParity';
 import { readSharedFileSnapshot } from '../sharedFileSnapshot';
 import { RECEIVER_NONE_DIAGNOSTIC_CODE, buildReceiverNoneGuardEdit, buildReceiverNoneWrapEdit } from '../receiverNoneDiagnostics';
 import { KBEngineSectionName, METHOD_SECTIONS, getLanguageFeatureConfig, getNodeValue, parseDefAst } from './shared';

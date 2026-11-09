@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { getDirectChildElement, getDirectChildElements, getScalarChildValue } from './defParser';
+import { getDirectChildElement, getDirectChildElements, getScalarChildValue } from './backend/defParser';
 import { getDefinitionEntries } from './definitionWorkspace';
 import { buildSchemaSourcePorts } from './databaseSchemaSource';
 import {

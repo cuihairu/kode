@@ -4,9 +4,9 @@ import { describe, expect, it } from 'vitest';
 import {
   analyzeDefDocument,
   collectInheritedNames
-} from '../src/defAnalyzer';
-import type { DefAnalysisCheck } from '../src/defAnalyzer';
-import { buildDefChain } from '../src/defChain';
+} from '../src/backend/defAnalyzer';
+import type { DefAnalysisCheck } from '../src/backend/defAnalyzer';
+import { buildDefChain } from '../src/backend/defChain';
 import {
   DEF_METHOD_SECTIONS,
   getDirectChildElement,
@@ -14,9 +14,9 @@ import {
   getScalarChildValue,
   hasTruthyChildTag,
   parseDefDocument
-} from '../src/defParser';
-import type { DefElementNode } from '../src/defParser';
-import { analyzeEntitiesXml } from '../src/entitiesXmlAnalysis';
+} from '../src/backend/defParser';
+import type { DefElementNode } from '../src/backend/defParser';
+import { analyzeEntitiesXml } from '../src/backend/entitiesXmlAnalysis';
 import { resolveFantasyRoot } from './helpers/fantasyRoot';
 
 // C-9(V-07·b):fantasydemo 真实脚本样例批 —— def 解析 / 继承 / 校验行为断言。

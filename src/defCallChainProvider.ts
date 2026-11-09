@@ -13,7 +13,7 @@ import {
   CALL_CHAIN_TAB_STATE_KEY,
   normalizeCallChainTab,
   resolveInitialCallChainTab
-} from './defCallChainViewLogic';
+} from './backend/defCallChainViewLogic';
 import { WEBVIEW_THEME_CSS } from './webviewTheme';
 import { htmlLang, resolvePanelLocale, strings } from './webviewStrings';
 

@@ -15,9 +15,9 @@
 
 import * as path from 'path';
 
-import { parsePythonFile } from './pythonParser';
-import { PYTHON_BUILTIN_TYPE_ANNOTATIONS, PYTHON_TYPE_STUB_FALLBACK } from './pythonTypeStubs';
-import { readSharedFileSnapshot } from './sharedFileSnapshot';
+import { parsePythonFile } from '../pythonParser';
+import { PYTHON_BUILTIN_TYPE_ANNOTATIONS, PYTHON_TYPE_STUB_FALLBACK } from '../pythonTypeStubs';
+import { readSharedFileSnapshot } from '../sharedFileSnapshot';
 
 /** def 方法段 → 段目录名(KBEngine 标准布局 scripts/{base,cell,client})。 */
 export type ParitySectionName = 'base' | 'cell' | 'client';

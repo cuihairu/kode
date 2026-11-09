@@ -16,7 +16,7 @@ import {
 } from '../src/defCallChain';
 import { CallChainController } from '../src/defCallChainProvider';
 import { DefParamInlayHintsProvider, findDefParamSites } from '../src/defParamInlayHints';
-import { buildDefReferenceGraphFromFile } from '../src/defReferenceGraph';
+import { buildDefReferenceGraphFromFile } from '../src/backend/defReferenceGraph';
 import { EntityMappingManager } from '../src/entityMapping';
 import type { EntityMappingIndex } from '../src/entityMapping';
 import {

@@ -15,7 +15,7 @@
  * 同签名的辅助函数仍会出 lens(未声明 <Arg> 的方法维持按名命中现状)。
  */
 
-import { DefMethodSection } from './defParser';
+import { DefMethodSection } from './backend/defParser';
 
 /** def 声明行解析结果(不依赖 vscode 的位置口径) */
 export interface PythonMethodDeclaration {

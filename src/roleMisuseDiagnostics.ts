@@ -27,7 +27,7 @@ import {
   getEntityBuiltinPropertiesForFace,
   resolveEntityComponentFaceFromPath,
   type EntityComponentFace
-} from './entityBuiltinProperties';
+} from './backend/entityBuiltinProperties';
 
 export const ROLE_MISUSE_DIAGNOSTIC_CODE = 'kbengine.roleMisuse';
 export const ROLE_MISUSE_DIAGNOSTICS_ENABLED_DEFAULT = true;

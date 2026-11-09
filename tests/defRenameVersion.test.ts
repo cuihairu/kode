@@ -6,8 +6,8 @@ import {
   computeDefRenameEdits,
   renameInputsDrifted,
   resolveRenameSymbolAtOffset
-} from '../src/defRenamer';
-import type { RenameInputVersionRef } from '../src/defRenamer';
+} from '../src/backend/defRenamer';
+import type { RenameInputVersionRef } from '../src/backend/defRenamer';
 import { KBEngineRenameProvider } from '../src/languageProviders';
 import { makeTextDocument, Position, workspace as stubWorkspace } from './helpers/vscodeStub';
 

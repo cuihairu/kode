@@ -28,7 +28,7 @@ import {
   formatEntityBuiltinPropertyDetail,
   type EntityBuiltinPropertyHit,
   type EntityComponentFace
-} from './entityBuiltinProperties';
+} from './backend/entityBuiltinProperties';
 
 export const READONLY_WRITE_DIAGNOSTIC_CODE = 'kbengine.readOnlyWrite';
 export const READONLY_WRITE_DIAGNOSTICS_ENABLED_DEFAULT = true;

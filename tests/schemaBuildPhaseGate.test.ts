@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { IndexScheduler } from '../src/indexScheduler';
-import { scheduleBackgroundSchemaWarmup } from '../src/schemaWarmup';
+import { scheduleBackgroundSchemaWarmup } from '../src/backend/schemaWarmup';
 import {
   buildDatabaseSchemaSnapshotAsync,
   clearDatabaseSchemaCacheForTests,

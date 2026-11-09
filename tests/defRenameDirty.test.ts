@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   computeDefRenameEdits,
   resolveRenameSymbolAtOffset
-} from '../src/defRenamer';
+} from '../src/backend/defRenamer';
 import { KBEngineRenameProvider } from '../src/languageProviders';
 import { makeTextDocument, Position, workspace as stubWorkspace } from './helpers/vscodeStub';
 

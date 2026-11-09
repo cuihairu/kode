@@ -11,7 +11,7 @@ import {
   findEntityDefsRootFromFile,
   getLineCharacterAtOffset,
   resolveRenameSymbolAtOffset
-} from '../src/defRenamer';
+} from '../src/backend/defRenamer';
 import { KBEngineRenameProvider } from '../src/languageProviders';
 import {
   Position,

@@ -2,7 +2,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { EntityMappingManager } from '../entityMapping';
-import { computeDefRenameEdits, findDefRenameConflict, findDefRenameConflictInClosure, getLineCharacterAtOffset, renameInputsDrifted, resolveRenameSymbolAtOffset, DefRenameFileEdits, RenameInputVersionRef } from '../defRenamer';
+import { computeDefRenameEdits, findDefRenameConflict, findDefRenameConflictInClosure, getLineCharacterAtOffset, renameInputsDrifted, resolveRenameSymbolAtOffset, DefRenameFileEdits, RenameInputVersionRef } from '../backend/defRenamer';
 import { readSharedFileSnapshot } from '../sharedFileSnapshot';
 import { PYTHON_RECEIVER_BY_SECTION } from '../pythonLanguageUtils';
 export class KBEngineRenameProvider implements vscode.RenameProvider {

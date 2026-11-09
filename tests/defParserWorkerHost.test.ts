@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEF_PARSE_WORKER_MIN_BYTES } from '../src/defParserWorkerHost';
-import { parseDefDocument } from '../src/defParser';
+import { DEF_PARSE_WORKER_MIN_BYTES } from '../src/backend/defParserWorkerHost';
+import { parseDefDocument } from '../src/backend/defParser';
 
 // IDE-REV-039:def 解析 worker host 直接测试(镜像 pythonParserWorkerHost.test.ts
 // 的 FakeWorker 手法)——大文本走 worker、阈值下同步、崩溃/dispose/错误回包、
@@ -61,12 +61,12 @@ vi.mock('fs', async importOriginal => {
   };
 });
 
-type HostModule = typeof import('../src/defParserWorkerHost');
+type HostModule = typeof import('../src/backend/defParserWorkerHost');
 
 const loadHost = async (): Promise<HostModule> => {
   vi.resetModules();
   workerState.instances.length = 0;
-  return import('../src/defParserWorkerHost');
+  return import('../src/backend/defParserWorkerHost');
 };
 
 const bigContent = 'x'.repeat(DEF_PARSE_WORKER_MIN_BYTES + 1);

@@ -12,7 +12,7 @@ import {
   getElementText,
   isElementNode,
   parseDefDocument
-} from '../src/defParser';
+} from '../src/backend/defParser';
 import { parseDefComposition, parseTypesXml } from '../src/compositionRoots';
 
 const REPO_ROOT = path.resolve(__dirname, '..');

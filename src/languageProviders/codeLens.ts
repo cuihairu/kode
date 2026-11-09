@@ -1,13 +1,13 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
 import * as vscode from 'vscode';
-import { getDirectChildElements, getLineNumberAt, parseDefDocument } from '../defParser';
+import { getDirectChildElements, getLineNumberAt, parseDefDocument } from '../backend/defParser';
 import { EntityMappingManager } from '../entityMapping';
 import { buildRpcCodeLenses, defaultRpcCodeLensTitle, findPythonMethodDeclarations, RpcMethodHit } from '../rpcCodeLens';
 import { buildPropertyCodeLenses, findPythonSelfPropertyAccesses, propertyAccessKey, PropertyCodeLensHit } from '../propertyCodeLens';
 import { buildPropertyInitOrderLensSpecs } from '../propertyInitOrderLens';
 import { getTypeStorageUsageIndexReadOnly, indexTypeStorageUsageEntries, onTypeStorageUsageIndexPublished, TypeStorageUsage } from '../databaseSchema';
 import { findEntityDefinitionFile, getDefinitionWorkspaceLayout, getWorkspaceRootForDocument, resolveEntityAnnotationType } from '../definitionWorkspace';
-import { getLineCharacterAtOffset } from '../defRenamer';
+import { getLineCharacterAtOffset } from '../backend/defRenamer';
 import { findPythonReceiverCalls } from '../pythonLanguageUtils';
 import { KBENGINE_SOURCE_REVEAL_COMMAND } from '../sourceRevealCommand';
 import { getLanguageFeatureConfig } from './shared';

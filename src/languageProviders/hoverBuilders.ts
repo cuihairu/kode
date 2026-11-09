@@ -5,8 +5,8 @@
 
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { DefElementNode, findDeepestElementAtOffset, findTextNodeAtOffset, getScalarChildValue, getScalarChildValues, hasTruthyChildTag } from '../defParser';
-import { buildDefChain } from '../defChain';
+import { DefElementNode, findDeepestElementAtOffset, findTextNodeAtOffset, getScalarChildValue, getScalarChildValues, hasTruthyChildTag } from '../backend/defParser';
+import { buildDefChain } from '../backend/defChain';
 import { describePropertyDatabaseStoragePublished, getTypeStorageShape, TypeStorageShape } from '../databaseSchema';
 import { buildPropertyDatabaseStorageHover, describeBuiltinTypeCapacity } from '../databaseSimulator';
 import { findCustomTypeInfo, findTypesXmlImplementedByReference, findDefinitionFileByCategory, findEntityDefinitionFile, findEntityScriptFile, getEntityRuntimeProfile, getRegisteredEntities, getWorkspaceRootForDocument } from '../definitionWorkspace';

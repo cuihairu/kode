@@ -17,7 +17,7 @@ import {
   getLineNumberAt,
   getScalarChildValue,
   parseDefDocument
-} from './defParser';
+} from './backend/defParser';
 import { normalizeFileIdentity } from './pathIdentity';
 import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
 

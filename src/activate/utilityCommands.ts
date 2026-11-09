@@ -12,7 +12,7 @@ import { CUSTOM_SNIPPETS_RELATIVE_PATH, mergeSnippetEntry, selectionToSnippetBod
 import { DiscoveryKey, DiscoveryLayoutFacts, DiscoveryPromptDeps } from '../workspaceDiscovery';
 import { MergeSnippetResult } from '../snippetGenerator';
 import { RUFF_MAX_FILES, runInstallRuffCommand, runRuffLintCommand, RuffDiag } from '../ruffLint';
-import { buildDefReferenceGraphFromFile, buildProjectDoctorReport, formatDefReferenceGraphPreview, formatProjectDoctorReport } from '../defReferenceGraph';
+import { buildDefReferenceGraphFromFile, buildProjectDoctorReport, formatDefReferenceGraphPreview, formatProjectDoctorReport } from '../backend/defReferenceGraph';
 import { buildDiscoveryReport, renderDiscoveryReport, runWorkspaceDiscovery } from '../workspaceDiscovery';
 import { classifyPythonService, collectPythonServiceFacts, renderPythonServiceMessage } from '../pythonLanguageServiceStatus';
 import { createVenvFlow, interpreterStatusBarText, probePythonVersion, runVenvModuleProcess, selectInterpreter } from '../venvInterpreterPicker';
@@ -25,7 +25,7 @@ import { getDatabaseSchemaCacheGauge, getPendingTypeStorageColdBuildCount } from
 import { getDefinitionWorkspaceLayout } from '../definitionWorkspace';
 import { getDiagnosticScheduler } from '../diagnosticScheduler';
 import { getIndexScanRoots } from '../scanRoots';
-import { getParsedDocumentCacheGauge } from '../defParser';
+import { getParsedDocumentCacheGauge } from '../backend/defParser';
 import { getPythonParserWorkerGauge } from '../pythonParserWorkerHost';
 import { hostLabel, renderExtensionIdentityReport, sideLabel } from '../extensionIdentity';
 import { joinWorkspacePath } from '../workspacePath';

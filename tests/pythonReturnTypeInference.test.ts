@@ -32,7 +32,7 @@ import {
 import {
   formatEntityBuiltinPropertyHeadline,
   getEntityBuiltinPropertiesForFace
-} from '../src/entityBuiltinProperties';
+} from '../src/backend/entityBuiltinProperties';
 import {
   CompletionItemKind,
   configurationOverrides,

@@ -18,7 +18,7 @@ import {
   normalizeCallChainTab,
   resolveInitialCallChainTab,
   type CallChainTab
-} from '../defCallChainViewLogic';
+} from '../backend/defCallChainViewLogic';
 
 const mermaid = (globalThis as { mermaid?: typeof mermaidType }).mermaid;
 

@@ -6,7 +6,7 @@ import {
   analyzeDefDocumentInRust,
   analyzeDefDocumentWithRust,
   type InheritedNames
-} from '../src/defAnalyzer';
+} from '../src/backend/defAnalyzer';
 
 // 命令面 Rust-first 接线单测(批:lint 注册表收口):经 gate.runInRust 走
 // `$/kode/rpc {method: $/kode/lint/analyzeDef, params}`。覆盖:ok:true 直用

@@ -2,7 +2,7 @@
 import * as vscode from 'vscode';
 import { EntityMappingManager } from '../entityMapping';
 import { getDocumentLines } from '../documentStore';
-import { hasKnownEntityBuiltinPropertyType, resolveEntityComponentFaceFromPath, collectEntityBuiltinPropertyInlayTargets, type EntityComponentFace } from '../entityBuiltinProperties';
+import { hasKnownEntityBuiltinPropertyType, resolveEntityComponentFaceFromPath, collectEntityBuiltinPropertyInlayTargets, type EntityComponentFace } from '../backend/entityBuiltinProperties';
 import { getLanguageFeatureConfig } from './shared';
 import { diffInferredAnnotations } from '../inferredEnrichment';
 import { readInferredMirrorText } from '../inferredMirrorLookup';

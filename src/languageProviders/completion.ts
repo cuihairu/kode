@@ -7,7 +7,7 @@ import { getRegisteredCustomTypes, getRegisteredAliasTypes, getRegisteredEntitie
 import { HOOK_CATEGORY_NAMES, KBENGINE_HOOKS } from '../hooks';
 import { KBENGINE_ENTRY_HOOKS, isComponentEntryScriptFile } from '../entryHooks';
 import { DETAIL_LEVELS, KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, KBENGINE_TYPES } from '../kbengineMetadata';
-import { formatEntityBuiltinPropertyDetail, getEntityBuiltinPropertiesForFace, hasKnownEntityBuiltinPropertyType, resolveEntityComponentFaceFromPath, type EntityComponentFace } from '../entityBuiltinProperties';
+import { formatEntityBuiltinPropertyDetail, getEntityBuiltinPropertiesForFace, hasKnownEntityBuiltinPropertyType, resolveEntityComponentFaceFromPath, type EntityComponentFace } from '../backend/entityBuiltinProperties';
 import { PYTHON_TYPE_STUB_FALLBACK } from '../pythonTypeStubs';
 import { getPythonSelfCompletionContext } from '../pythonLanguageUtils';
 import { filterKbeSymbols, getKbeAliases, getKbeCompletionContext, kbeCompletionDocumentation } from '../kbeModuleIndex';

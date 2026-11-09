@@ -27,7 +27,7 @@ import {
   getLineNumberAt,
   findTextNodeAtOffset,
   findDeepestElementAtOffset
-} from './defParser';
+} from './backend/defParser';
 import { findFilesAcrossRoots } from './scanRoots';
 import { KBENGINE_TYPES, FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
 import {
@@ -38,7 +38,7 @@ import {
   getWorkspaceRootForDocument
 } from './definitionWorkspace';
 import { scanTypeReferencesInXml, type TypesXmlRefSite } from './typesXmlReferences';
-import { INTERFACE_WRAPPER_NAMES } from './defRenamer';
+import { INTERFACE_WRAPPER_NAMES } from './backend/defRenamer';
 
 /** 容器字面不是类型符号(scanTypeReferencesInXml 同口径) */
 const CONTAINER_LITERALS = new Set(['ARRAY', FIXED_DICT_TYPE_NAME]);

@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { parseDefDocument } from '../src/defParser';
+import { parseDefDocument } from '../src/backend/defParser';
 import { getCustomTypeInfos } from '../src/definitionWorkspace';
 
 // definitionWorkspace 批64 分支补测:extractCustomTypeRawValue 的 `|| 'ALIAS'`

@@ -2,7 +2,7 @@ import { getExternalScanRoots, resetScanRootCache } from './scanRoots';
 
 import { bumpRootConfigGeneration } from './rootConfigGeneration';
 import { disposePythonParserWorker, getPythonParserWorkerGauge } from './pythonParserWorkerHost';
-import { disposeDefParserWorker } from './defParserWorkerHost';
+import { disposeDefParserWorker } from './backend/defParserWorkerHost';
 
 
 
@@ -88,7 +88,7 @@ import { shadowMirrorCorpusDocument, shadowReleaseCorpusDocument } from './kodeC
 
 
 import { getWorkspaceRootForDocument } from './definitionWorkspace';
-import { getParsedDocumentCacheGauge } from './defParser';
+import { getParsedDocumentCacheGauge } from './backend/defParser';
 import {
   applySavedFileAnnotations,
   getAnnotationBuildWorkload,

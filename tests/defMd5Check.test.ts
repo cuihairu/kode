@@ -21,7 +21,7 @@ import {
   setupDefMd5Check,
   type DefMd5CheckDeps
 } from '../src/defMd5Check';
-import { computeDefMd5InRust } from '../src/defMd5Rust';
+import { computeDefMd5InRust } from '../src/backend/defMd5Rust';
 import { KodeCoreGate } from '../src/kodeCoreGate';
 import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
 

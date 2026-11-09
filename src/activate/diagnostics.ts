@@ -23,7 +23,7 @@ import {
   PYTHON_METHOD_NOT_IN_DEF_DIAGNOSTIC_CODE,
   collectDefMethodMissingItems,
   collectPythonMethodNotInDefItems,
-} from '../defMethodConsistency';
+} from '../backend/defMethodConsistency';
 import { USER_TYPE_CONTRACT_MISSING_DIAGNOSTIC_CODE, collectUserTypeContractMissingByImplFile } from '../userTypeContract';
 import { collectUserTypeContractStatuses } from '../userTypeContractSource';
 import {

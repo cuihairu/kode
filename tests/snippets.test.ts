@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import { DETAIL_LEVELS, KBENGINE_FLAGS, KBENGINE_TYPES } from '../src/kbengineMetadata';
-import { DefElementNode, getDirectChildElement, getElementText, parseDefDocument } from '../src/defParser';
+import { DefElementNode, getDirectChildElement, getElementText, parseDefDocument } from '../src/backend/defParser';
 import { expandSnippetBody } from './helpers/snippetExpansion';
 
 interface SnippetEntry {

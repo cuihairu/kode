@@ -39,7 +39,7 @@ import {
   getDirectChildElement,
   getDirectChildElements,
   parseDefDocument
-} from './defParser';
+} from './backend/defParser';
 import { joinWorkspacePath } from './workspacePath';
 import { writeFileAtomic } from './atomicFileWrite';
 import { confirmGenerationPlanItems, type GenerationPlanItem } from './generationConfirm';

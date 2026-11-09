@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { l10nText } from './nlsRuntime';
+import { l10nText } from '../nlsRuntime';
 import * as path from 'path';
 import {
   DEF_METHOD_SECTIONS,
@@ -13,7 +13,7 @@ import {
   parseDefDocument
 } from './defParser';
 import { findEntityDefsRootFromFile, parseDefFileSemantics } from './defRenamer';
-import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
+import { getKodeCoreShadowGate } from '../kodeCoreShadowFaces';
 
 // .def 静态分析建议(性能分析建议,COMPLETED_FEATURES「未来增强功能」条目)。
 // 定位与语言侧实时诊断(语法检查,languageProviders)错位:本模块只产出
@@ -87,8 +87,8 @@ export type InheritedNames = Map<string, InheritedNameInfo>;
 // 源 crates/kode-parser/src/model.rs flag_domains;common.h L19-45 真值)。
 // 同名属性判重按域位相交——不同域位同名引擎允许共存(addPropertyDescription
 // 的 findXxxPropertyDescription 按域查找)。CELL 别名归一见生成镜像。
-import { FLAG_TOKEN_DOMAINS, normalizeFlagTokens, type FlagDomain } from './generated/flagDomains';
-import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
+import { FLAG_TOKEN_DOMAINS, normalizeFlagTokens, type FlagDomain } from '../generated/flagDomains';
+import { FIXED_DICT_TYPE_NAME } from '../kbengineMetadata';
 
 export type PropertyFlagDomain = FlagDomain;
 

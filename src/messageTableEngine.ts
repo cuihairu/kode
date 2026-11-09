@@ -23,7 +23,7 @@ import {
   getElementText,
   getLineNumberAt,
   parseDefDocument
-} from './defParser';
+} from './backend/defParser';
 import {
   DefinitionArgType,
   DefinitionComponentRef,

@@ -1,11 +1,11 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
 import * as vscode from 'vscode';
-import { DefDocument, DefElementNode, getDirectChildElement, getDirectChildElements, getScalarChildValue } from '../defParser';
-import { analyzeEntitiesXml } from '../entitiesXmlAnalysis';
+import { DefDocument, DefElementNode, getDirectChildElement, getDirectChildElements, getScalarChildValue } from '../backend/defParser';
+import { analyzeEntitiesXml } from '../backend/entitiesXmlAnalysis';
 import { getOrParseDocumentSync } from '../documentStore';
 import { getKodeCoreShadowGate, serveDiagnosticsFromRust, shadowObserveDefDocument, type LspDiagnosticReportFace } from '../kodeCoreShadowFaces';
-import { analyzeDefDocumentInRust, type DefAnalysisFinding } from '../defAnalyzer';
-import { collectDefPythonParityInput } from '../defPythonParity';
+import { analyzeDefDocumentInRust, type DefAnalysisFinding } from '../backend/defAnalyzer';
+import { collectDefPythonParityInput } from '../backend/defPythonParity';
 import { DETAIL_LEVELS, KBENGINE_FLAGS } from '../kbengineMetadata';
 import { FLAG_DOMAIN_ALIAS } from '../generated/flagDomains';
 import { ALLOWED_TOP_LEVEL_SECTIONS, KBEngineSectionName, createNodeRange, getLanguageFeatureConfig, getNodeValue, getSectionLabel, parseDefAst, pushDiagnosticForNodeValue, toSectionName, visitElementNodes } from './shared';

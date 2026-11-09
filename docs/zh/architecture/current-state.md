@@ -107,8 +107,8 @@
 
 ## AUDIT-004 四类 XML 的解析器与调用方
 
-- 【事实】唯一 XML 运行时解析器:vendored fast-xml-parser(`vendor/fast-xml-parser/fxp.cjs`),仅经 src/defParser.ts(516 行)以 preserveOrder 模式使用;DefDocument 保留 tagStart/closeTag 偏移 + lineStarts,支持 file:line 源定位;模块级 8 条目 LRU 解析缓存(defParser.ts:16-18)。
-- 【事实】调用方:parseDefAst/parseDefDocument 在 languageProviders.ts 有 10 处调用;entitiesXmlAnalysis.ts(entities.xml 清单重复实体诊断)与 definitionSemantics 复用同一解析面。
+- 【事实】唯一 XML 运行时解析器:vendored fast-xml-parser(`vendor/fast-xml-parser/fxp.cjs`),仅经 src/backend/defParser.ts(516 行)以 preserveOrder 模式使用;DefDocument 保留 tagStart/closeTag 偏移 + lineStarts,支持 file:line 源定位;模块级 8 条目 LRU 解析缓存(src/backend/defParser.ts:16-18)。
+- 【事实】调用方:parseDefAst/parseDefDocument 在 languageProviders.ts 有 10 处调用;src/backend/entitiesXmlAnalysis.ts(entities.xml 清单重复实体诊断)与 definitionSemantics 复用同一解析面。
 - 【事实】types.xml/alias.xml:entityMapping.ts 直接 readFileSync(:752、:1309、:1810)解析,类型注册表走 SemanticIndex 快照(PR4 起);kbengine.xml + kbengine_defaults.xml 合成:serverConfigMerge.ts(:153、:202、:216)。
 - 【已测】重复 parse/read 的止血证据:同版本 .def 解析命中率 96.1%(n=51,PR2 7d8736b,docs/perf/final-pr2-run.txt);组合根 mtime+size 指纹缓存重派生零重读、`findFilesAcrossRoots` 生命周期缓存(PR5 d4fd634)。
 - 【推断】残余同步读集中在 entityMapping.ts 直读路径(有 watcher 失效联动),已非热路径;但「同一文件被 manager 直读与 documentStore 快照两条路各读一次」的结构性重复仍存在,迁移 VFS 时应合并(列入 CSV 风险列)。
@@ -129,7 +129,7 @@
 
 ## AUDIT-006 同步 IO 盘点(非测试代码)
 
-- 【事实】`fs.*Sync` 共 121 处,分布 25 个文件;Top:workspaceDiscovery.ts 17、generatorForms.ts 14、entityMapping.ts 10、codeGenerator.ts 9、pythonStubExport.ts 8、definitionWorkspace.ts 6、extension.ts 5、engineCompatibility.ts 5、debugConfigBootstrap.ts 5、serverManager.ts 4、logHub.ts 4、defChain.ts 4、clientSdkGenerator.ts 4。
+- 【事实】`fs.*Sync` 共 121 处,分布 25 个文件;Top:workspaceDiscovery.ts 17、generatorForms.ts 14、entityMapping.ts 10、codeGenerator.ts 9、pythonStubExport.ts 8、definitionWorkspace.ts 6、extension.ts 5、engineCompatibility.ts 5、debugConfigBootstrap.ts 5、serverManager.ts 4、logHub.ts 4、src/backend/defChain.ts 4、clientSdkGenerator.ts 4。
 - 【事实】`getText().split` 全文拆行残余 2 处热区外:languageProviders.ts:4063、eventApi.ts:81(documentStore.ts 内 3 处为注释/口径说明)。hover/inlay 高频路径已改快照行数据(PR2,7d8736b)。
 - 【事实】`statSync` 8 个文件:semanticIndex.ts:249、definitionWorkspace.ts:303、entityMapping.ts:306、scanRoots.ts:23、defCallChain.ts:240、quickActions.ts:774、serverManager.ts:405、logHub.ts:186。PR4 已废除逐次 statSync 类型指纹(类型注册表改纯内存快照)。
 - 【事实】`workspace.findFiles`/glob:scanRoots.ts 12、entityMapping.ts 9、hotReload.ts 7、languageProviders.ts 5、其余零散。`ensureScanned` 14 处引用全部在 pythonClassIndex.ts(PR5 后首查路径不再等全量,后台补全)。
@@ -142,7 +142,7 @@
 - **definition(.def/xml)**:`KBEngineDefinitionProvider(entityMappingManager).provideDefinition`,读 semanticIndex 快照,无全仓等待。**definition(python)**:`PythonDefinitionProvider(entityMappingManager, pythonClassIndex)`;PR5 起先查快照+已建索引,后台补全量;【已测】U1 冷首查 475.34ms/1 命中(全量口径对照 107,737→100,492ms),重复查询 P50/95/99 = 16.00/22.10/23.60ms(n=40,d4fd634,final-report §3)。
 - **completion**:`KBEngineCompletionProvider`(.def+python 合选区,触发字符 `< > / : .`)+ `pythonCompletionProvider`;【待测】大型集端到端 P95 无 bench(final-report §9.2 #2 未测量)。
 - **diagnostics**:文档事件 → DiagnosticScheduler.requestQueued(版本令牌,最新胜出)→ validateDocument/validateEntitiesXmlDocument(同步计算)→ 直接写 collection。【已测】同脚本诊断重算 19→7 次、无关变更 0(ae4256d,PR6 报告)。
-- **references**:无 LSP references provider;命令 kbengine.symbolReferences.show 走自定义引用图(defReferenceGraph.ts)。【待测】未入性能预算考核。
+- **references**:无 LSP references provider;命令 kbengine.symbolReferences.show 走自定义引用图(src/backend/defReferenceGraph.ts)。【待测】未入性能预算考核。
 - 【推断】等待点残余风险:hover 的 5s 首扫等待在万级文件冷启动仍会触顶(基线冷索引 100s 量级),PR5 只解了 definition;hover 冷启动体验待补 bench。
 
 ## AUDIT-008 能力矩阵(迁移对照,明细见 migration-inventory.csv)

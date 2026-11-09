@@ -22,8 +22,8 @@
   `name_span`，属性带 `name_span`/`value_span`，注释/CDATA/PI/声明各自有
   span；容错恢复（坏输入记诊断、局部恢复、不 panic）。这是 formatter 级
   的语法事实。
-- **TS `src/defParser.ts`**：vendor 的 fast-xml-parser（fxp），**offset 靠
-  `text.indexOf(node.text, searchOffset)` 二次搜索重建**（defParser.ts:541
+- **TS `src/backend/defParser.ts`**：vendor 的 fast-xml-parser（fxp），**offset 靠
+  `text.indexOf(node.text, searchOffset)` 二次搜索重建**（src/backend/defParser.ts:541
   附近）——同名/同文本节点会错位，属导航级精度，不是 formatter 级。
   TS 侧无其他 XML 格式化依赖（package.json 无 prettier/xml formatter 依赖；
   `grep FormattingEdit src/` 零命中——扩展当前没有任何 formatter provider）。

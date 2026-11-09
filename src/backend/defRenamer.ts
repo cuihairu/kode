@@ -37,7 +37,7 @@ import {
   getDirectChildElements,
   parseDefDocument
 } from './defParser';
-import { FLAG_TOKEN_DOMAINS, normalizeFlagTokens } from './generated/flagDomains';
+import { FLAG_TOKEN_DOMAINS, normalizeFlagTokens } from '../generated/flagDomains';
 
 export type DefRenameSymbolKind = 'property' | 'method';
 

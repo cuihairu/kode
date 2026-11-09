@@ -9,7 +9,7 @@ import { getWorkspaceRootForDocument, resolveEntityAnnotationType, resolveEntity
 import { getHookByName } from '../hooks';
 import { getEntryHookByName, isComponentEntryScriptFile } from '../entryHooks';
 import { DETAIL_LEVELS, KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, KBENGINE_TYPES } from '../kbengineMetadata';
-import { resolveEntityBuiltinPropertyHit, resolveEntityComponentFaceFromPath, type EntityComponentFace } from '../entityBuiltinProperties';
+import { resolveEntityBuiltinPropertyHit, resolveEntityComponentFaceFromPath, type EntityComponentFace } from '../backend/entityBuiltinProperties';
 import { formatBuiltinPropertyHover, formatEntityDefMethodHover, formatEventStatsHover, formatInferredReturnHover, formatSelfPropertyTypeHover } from '../hoverMarkdown';
 import { apiDocDomainsForFace, formatApiDocHover, formatApiDocSupplement, getKbengineApiAccessAtPosition, getPythonCallbackDefinitionAtPosition, lookupApiDoc } from '../pythonApiHoverDocs';
 import { currentHoverLanguageEnv, readHoverLanguageSetting, resolveHoverLanguage } from '../hoverLocale';
