@@ -418,5 +418,19 @@
   "View entities": "查看实体",
   "Pick an entity definition and open it": "选择一个实体定义并打开",
   "Start debugging": "启动调试",
-  "Attach to a component process or a debugpy port": "附加到组件进程或 debugpy 端口"
+  "Attach to a component process or a debugpy port": "附加到组件进程或 debugpy 端口",
+  "Run": "执行",
+  "Run {name}: {target}?": "执行 {name}：{target}?",
+  "Quick action": "快速动作",
+  "About to run: {script}": "即将执行：{script}",
+  "Cannot parse URL: {url}": "URL 无法解析: {url}",
+  "Unsupported protocol: {protocol}": "不支持的协议: {protocol}",
+  "Request timed out ({timeoutMs}ms)": "请求超时({timeoutMs}ms)",
+  "Register": "登记",
+  "Register \"{script}\" as a quick action?": "是否登记「{script}」为快速执行动作？",
+  "Registered \"{script}\"": "已登记「{script}」",
+  "unknown": "未知",
+  "Quick action failed: {name} (exit {code})": "执行快速动作失败: {name} (exit {code})",
+  "Quick action failed: {name} (HTTP {status})": "执行快速动作失败: {name} (HTTP {status})",
+  "Action \"{name}\" enables venv, but no virtual environment directory was found; set venv.path or create one under kbengine.python.venvDirectories (default .venv/venv/.kbenv)": "动作「{name}」启用了 venv，但找不到虚拟环境目录;请设置 venv.path 或按 kbengine.python.venvDirectories(默认 .venv/venv/.kbenv)创建"
 }

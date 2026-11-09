@@ -418,5 +418,19 @@
   "View entities": "View entities",
   "Pick an entity definition and open it": "Pick an entity definition and open it",
   "Start debugging": "Start debugging",
-  "Attach to a component process or a debugpy port": "Attach to a component process or a debugpy port"
+  "Attach to a component process or a debugpy port": "Attach to a component process or a debugpy port",
+  "Run": "Run",
+  "Run {name}: {target}?": "Run {name}: {target}?",
+  "Quick action": "Quick action",
+  "About to run: {script}": "About to run: {script}",
+  "Cannot parse URL: {url}": "Cannot parse URL: {url}",
+  "Unsupported protocol: {protocol}": "Unsupported protocol: {protocol}",
+  "Request timed out ({timeoutMs}ms)": "Request timed out ({timeoutMs}ms)",
+  "Register": "Register",
+  "Register \"{script}\" as a quick action?": "Register \"{script}\" as a quick action?",
+  "Registered \"{script}\"": "Registered \"{script}\"",
+  "unknown": "unknown",
+  "Quick action failed: {name} (exit {code})": "Quick action failed: {name} (exit {code})",
+  "Quick action failed: {name} (HTTP {status})": "Quick action failed: {name} (HTTP {status})",
+  "Action \"{name}\" enables venv, but no virtual environment directory was found; set venv.path or create one under kbengine.python.venvDirectories (default .venv/venv/.kbenv)": "Action \"{name}\" enables venv, but no virtual environment directory was found; set venv.path or create one under kbengine.python.venvDirectories (default .venv/venv/.kbenv)"
 }

@@ -7,6 +7,7 @@ import { setL10nBundle } from './fake-vscode/l10n';
 import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
 import { confirmGenerationPlanItems } from '../src/generationConfirm';
 import { interpreterStatusBarText } from '../src/backend/venvInterpreterPicker';
+import { fetchHttp, quickActionConfirmLabel } from '../src/quickActions';
 import { window as stubWindow } from './helpers/vscodeStub';
 
 const zh = zhCnBundle as Record<string, string>;
@@ -48,5 +49,19 @@ describe('QuickPick 面运行时文案(两态)', () => {
     );
     setL10nBundle(zh);
     expect(interpreterStatusBarText({ interpreterPath: null })).toBe('$(circle-slash) Python 解释器缺失');
+  });
+
+  // UX-REVIEW-010c:快速执行确认按钮与 HTTP 执行器错误两态(按钮既作展示又作
+  // 比对键,取词在调用期,两态自洽;错误保留 URL/协议/超时的诊断价值)
+  it('quickActions:确认按钮与执行器错误双语,判定随态', async () => {
+    expect(quickActionConfirmLabel()).toBe('Run');
+    await expect(fetchHttp({ url: 'not a url', method: 'GET' })).rejects.toThrow(
+      'Cannot parse URL: not a url'
+    );
+    setL10nBundle(zh);
+    expect(quickActionConfirmLabel()).toBe('执行');
+    await expect(fetchHttp({ url: 'not a url', method: 'GET' })).rejects.toThrow(
+      'URL 无法解析: not a url'
+    );
   });
 });

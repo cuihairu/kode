@@ -70,9 +70,9 @@ describe('terminalScript', () => {
       await terminalScript({ name: 'Start server', script: 'start.bat', background: false, cwd: '/workspace' });
       expect(calls).toEqual([
         [{ name: 'Kode: Start server · start.bat', cwd: '/workspace', hideFromUser: true }],
-        [expect.stringContaining('即将执行：start.bat'), true],
+        [expect.stringContaining('About to run: start.bat'), true],
         ['start.bat', true],
-        [expect.stringContaining('即将执行：start.bat'), true],
+        [expect.stringContaining('About to run: start.bat'), true],
         ['start.bat', true]
       ]);
       expect(calls).toHaveLength(5);
@@ -198,11 +198,11 @@ describe('fetchHttp', () => {
   });
 
   it('rejects an unparsable url', async () => {
-    await expect(fetchHttp({ url: 'not a url', method: 'GET' })).rejects.toThrow(/URL 无法解析/);
+    await expect(fetchHttp({ url: 'not a url', method: 'GET' })).rejects.toThrow(/Cannot parse URL/);
   });
 
   it('rejects a non-http protocol', async () => {
-    await expect(fetchHttp({ url: 'ftp://127.0.0.1/reload', method: 'GET' })).rejects.toThrow(/不支持的协议/);
+    await expect(fetchHttp({ url: 'ftp://127.0.0.1/reload', method: 'GET' })).rejects.toThrow(/Unsupported protocol/);
   });
 
   it('rejects when nothing listens on the port', async () => {
@@ -223,7 +223,7 @@ describe('fetchHttp', () => {
     const port = await listen(() => undefined);
 
     await expect(fetchHttp({ url: `http://127.0.0.1:${port}/reload`, method: 'GET' }, 80)).rejects.toThrow(
-      /请求超时/
+      /Request timed out/
     );
   });
 });

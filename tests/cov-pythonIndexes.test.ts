@@ -752,7 +752,7 @@ describe('quickActions 覆盖补齐', () => {
     expect(lines.some(line => line.text.includes('→ 200') && line.component === 'http:reload')).toBe(true);
     await terminalHttp({ name: 'broken', method: 'GET', url: `${base}/fail` });
     expect(lines.some(line => line.text.includes('→ 500') && line.component === 'http:broken')).toBe(true);
-    await expect(terminalHttp({ name: 'bad', method: 'GET', url: 'not a url' })).rejects.toThrow('URL 无法解析');
+    await expect(terminalHttp({ name: 'bad', method: 'GET', url: 'not a url' })).rejects.toThrow('Cannot parse URL');
   });
 
   it('getTreeActions:非法变量动作回退原始目标(执行路径再报错)', async () => {
@@ -800,7 +800,7 @@ describe('quickActions 覆盖补齐', () => {
       if (rest.length === 0) {
         return (originalShowInfo as (m: string) => Promise<undefined>)(message);
       }
-      return rest.includes('登记') ? '登记' : undefined;
+      return rest.includes('Register') ? 'Register' : undefined;
     };
     const manager = new QuickActionManager(makeContext(), makeDeps());
     expect(await manager.runScannedScript('/ws/cleanup.bat')).toBe(true);
@@ -818,7 +818,7 @@ describe('quickActions 覆盖补齐', () => {
         source: 'scan'
       }
     ]);
-    expect(messages.info.some(message => message.includes('已登记「cleanup.bat」'))).toBe(true);
+    expect(messages.info.some(message => message.includes('Registered "cleanup.bat"'))).toBe(true);
   });
 
   it('旧数字选择器 @http:0 走 debug 清单;缺口索引 false', async () => {
@@ -882,6 +882,6 @@ describe('quickActions 覆盖补齐', () => {
     });
     expect(ok).toBe(false);
     expect(scriptRuns).toHaveLength(0);
-    expect(messages.error.some(message => message.includes('找不到虚拟环境目录'))).toBe(true);
+    expect(messages.error.some(message => message.includes('no virtual environment directory was found'))).toBe(true);
   });
 });

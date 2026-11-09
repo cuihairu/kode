@@ -41,7 +41,9 @@ import type { BatchScriptCandidate, DirectoryEntry } from './backend/quickAction
 export const QUICK_ACTION_SCAN_DISMISS_KEY = 'kbengine.quickActions.scanDismissed';
 /** Explorer ▶ 主按钮的默认目标:上次实际执行的动作名(选中即记忆) */
 export const QUICK_ACTION_LAST_RUN_KEY = 'kbengine.quickActions.lastRun';
-export const QUICK_ACTION_CONFIRM_LABEL = '执行';
+/** 确认按钮文案(UX-REVIEW-010c:调用期取词,英文界面 'Run'/中文界面 '执行';
+ *  选中值与比对值取同一翻译,两态自洽——010a 同约定) */
+export const quickActionConfirmLabel = (): string => l10nText('Run');
 /** 本地热更新不该更久(设计 1.6);与 HTTP 快捷请求同量级 */
 export const QUICK_ACTION_TIMEOUT_MS = 10000;
 /** HTTP 回包的截顶长度(字符),超出丢弃——热更回包本就很小,
@@ -174,7 +176,7 @@ export const terminalScript: ScriptRunner = options => {
 
   const scriptToken = options.script.trim().match(/^(?:"([^"]+)"|'([^']+)'|(\S+))/);
   const scriptName = baseNameOf(scriptToken?.[1] ?? scriptToken?.[2] ?? scriptToken?.[3] ?? options.script);
-  const name = `Kode: ${options.name ?? '快速动作'} · ${scriptName}`;
+  const name = `Kode: ${options.name ?? l10nText('Quick action')} · ${scriptName}`;
   // 复用语义(KR-AUD-52 固化):同名动作终端只复用「仍存活」的实例——
   // terminal.exitStatus !== undefined 即已退出,绝不复用死终端壳(向死终端
   // sendText 静默丢弃),按名重建新实例。名字含动作名+脚本名,不同动作互不串。
@@ -188,7 +190,7 @@ export const terminalScript: ScriptRunner = options => {
     });
     actionTerminals.set(name, terminal);
   }
-  const announcement = `即将执行：${options.script}`;
+  const announcement = l10nText('About to run: {script}', { script: options.script });
   // KR-AUD-52:cmd.exe 对 % 成对解析(变量展开),公告里的裸 % 会被吃掉;
   // Windows 分支 % → %% 转义,&|<>^ 沿用 caret 前缀
   const printCommand = process.platform === 'win32'
@@ -238,11 +240,11 @@ export const fetchHttp = (
     try {
       parsed = new URL(options.url);
     } catch {
-      reject(new Error(`URL 无法解析: ${options.url}`));
+      reject(new Error(l10nText('Cannot parse URL: {url}', { url: options.url })));
       return;
     }
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-      reject(new Error(`不支持的协议: ${parsed.protocol}`));
+      reject(new Error(l10nText('Unsupported protocol: {protocol}', { protocol: parsed.protocol })));
       return;
     }
     const client = parsed.protocol === 'https:' ? https : http;
@@ -262,7 +264,7 @@ export const fetchHttp = (
       );
     });
     req.setTimeout(timeoutMs, () => {
-      req.destroy(new Error(`请求超时(${timeoutMs}ms)`));
+      req.destroy(new Error(l10nText('Request timed out ({timeoutMs}ms)', { timeoutMs })));
     });
     req.on('error', (error: Error) => reject(error));
     if (options.body !== undefined && options.body.length > 0) {
@@ -543,14 +545,19 @@ export class QuickActionManager {
     if (!action || action.type !== 'script') return false;
     /* istanbul ignore stop */
     const direct: QuickAction = { ...action, confirm: false };
-    void vscode.window.showInformationMessage(`是否登记「${baseNameOf(scriptPath)}」为快速执行动作？`, '登记').then(async choice => {
-      if (choice !== '登记') return;
+    // 登记按钮与选中值取同一翻译(010a 同约定:判定随语言态自洽)
+    const registerLabel = l10nText('Register');
+    void vscode.window.showInformationMessage(
+      l10nText('Register "{script}" as a quick action?', { script: baseNameOf(scriptPath) }),
+      registerLabel
+    ).then(async choice => {
+      if (choice !== registerLabel) return;
       const current = await this.readConfigFile();
       const existing = parseQuickActionConfigs(current?.quickActions).actions;
       const name = direct.name;
       if (existing.some(item => item.name === name)) return;
       await this.writeQuickActions(root, [...existing, action]);
-      await vscode.window.showInformationMessage(`已登记「${baseNameOf(scriptPath)}」`);
+      await vscode.window.showInformationMessage(l10nText('Registered "{script}"', { script: baseNameOf(scriptPath) }));
     }, () => undefined);
     return this.run(direct);
   }
@@ -695,12 +702,13 @@ export class QuickActionManager {
       return false;
     }
     if (!options.suppressConfirm && resolved.confirm) {
+      const confirmLabel = quickActionConfirmLabel();
       const confirmed = await vscode.window.showInformationMessage(
-        `执行 ${resolved.name}：${describeActionTarget(resolved)}?`,
+        l10nText('Run {name}: {target}?', { name: resolved.name, target: describeActionTarget(resolved) }),
         { modal: true },
-        QUICK_ACTION_CONFIRM_LABEL
+        confirmLabel
       );
-      if (confirmed !== QUICK_ACTION_CONFIRM_LABEL) {
+      if (confirmed !== confirmLabel) {
         return false;
       }
     }
@@ -738,8 +746,10 @@ export class QuickActionManager {
       return true;
     }
     // 被信号终止时拿不到退出码,照实写「未知」而不是编一个码
-    const exit = result.code === null ? '未知' : String(result.code);
-    await vscode.window.showErrorMessage(`执行快速动作失败: ${action.name} (exit ${exit})`);
+    const exit = result.code === null ? l10nText('unknown') : String(result.code);
+    await vscode.window.showErrorMessage(
+      l10nText('Quick action failed: {name} (exit {code})', { name: action.name, code: exit })
+    );
     return false;
   }
 
@@ -752,7 +762,9 @@ export class QuickActionManager {
     // IDE-REV-022:响应到达即上报观察者(回执解析面);脚本/命令动作无此回调
     options.onHttpResponse?.({ status: result.status, body: result.body });
     if (!ok) {
-      await vscode.window.showErrorMessage(`执行快速动作失败: ${action.name} (HTTP ${result.status})`);
+      await vscode.window.showErrorMessage(
+        l10nText('Quick action failed: {name} (HTTP {status})', { name: action.name, status: result.status })
+      );
       return false;
     }
     return true;
@@ -857,7 +869,10 @@ export class QuickActionManager {
       try { return fs.statSync(candidate).isDirectory(); } catch { return false; }
     });
     if (!venvPath) {
-      throw new Error(`动作「${action.name}」启用了 venv，但找不到虚拟环境目录;请设置 venv.path 或按 kbengine.python.venvDirectories(默认 .venv/venv/.kbenv)创建`);
+      throw new Error(l10nText(
+        'Action "{name}" enables venv, but no virtual environment directory was found; set venv.path or create one under kbengine.python.venvDirectories (default .venv/venv/.kbenv)',
+        { name: action.name }
+      ));
     }
     const scriptsDirectory = process.platform === 'win32' ? 'Scripts' : 'bin';
     const binPath = path.join(venvPath, scriptsDirectory);

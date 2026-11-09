@@ -269,7 +269,7 @@ describe('QuickActionManager.show', () => {
       quickActions: [{ name: 'start_server', type: 'script', script: '${workspaceFolder}/start_server.bat' }]
     });
     pickAnswers.push({ label: 'start_server' });
-    confirmAnswers.push('执行');
+    confirmAnswers.push('Run');
     const manager = new QuickActionManager(makeContext(), makeDeps());
 
     await manager.show();
@@ -357,7 +357,7 @@ describe('QuickActionManager.show', () => {
       ]
     });
     pickAnswers.push({ label: 'open-conf' });
-    confirmAnswers.push('执行');
+    confirmAnswers.push('Run');
     const manager = new QuickActionManager(makeContext(), makeDeps());
 
     await manager.show();
@@ -533,7 +533,7 @@ describe('QuickActionManager.runDefault(Explorer ▶ 主按钮)', () => {
       quickActions: [{ name: 'start_server', type: 'script', script: '${workspaceFolder}/start_server.bat' }]
     });
     pickAnswers.push({ label: 'start_server' });
-    confirmAnswers.push('执行');
+    confirmAnswers.push('Run');
     const manager = new QuickActionManager(makeContext(), makeDeps());
 
     await manager.show();
@@ -597,7 +597,7 @@ describe('QuickActionManager.run backends', () => {
     });
 
     expect(ok).toBe(false);
-    expect(messages.error[0]).toBe('执行快速动作失败: boot (exit 3)');
+    expect(messages.error[0]).toBe('Quick action failed: boot (exit 3)');
 
   });
 
@@ -656,7 +656,7 @@ describe('QuickActionManager.run backends', () => {
     });
 
     expect(ok).toBe(false);
-    expect(messages.error[0]).toBe('执行快速动作失败: stop_all (exit 未知)');
+    expect(messages.error[0]).toBe('Quick action failed: stop_all (exit unknown)');
 
   });
 
@@ -715,7 +715,7 @@ describe('QuickActionManager.run backends', () => {
     });
 
     expect(ok).toBe(false);
-    expect(messages.error[0]).toBe('执行快速动作失败: hotfix (HTTP 500)');
+    expect(messages.error[0]).toBe('Quick action failed: hotfix (HTTP 500)');
 
   });
 
@@ -1277,10 +1277,10 @@ describe('QuickActionManager.scanScriptsAndRefresh', () => {
       await manager.runScannedScript('/ws/cleanup.bat');
       expect(terminalCalls).toEqual([
         [{ name: 'Kode: cleanup · cleanup.bat', cwd: '/ws', hideFromUser: true }],
-        [expect.stringContaining('即将执行：/ws/cleanup.bat'), true],
+        [expect.stringContaining('About to run: /ws/cleanup.bat'), true],
         ['/ws/cleanup.bat', true]
       ]);
-      expect(messages.info.some(message => String(message).includes('是否登记'))).toBe(true);
+      expect(messages.info.some(message => String(message).includes('Register "cleanup.bat" as a quick action?'))).toBe(true);
       expect(memoryFileSystem.files.has('/ws/.kbengine/debug.json')).toBe(false);
     } finally {
       stubWindow.createTerminal = originalCreateTerminal;
@@ -1303,7 +1303,7 @@ describe('QuickActionManager.scanScriptsAndRefresh', () => {
     }
     expect(scriptRuns).toHaveLength(1);
     expect(scriptRuns[0].script).toBe('/ws/cleanup.bat');
-    expect(messages.info.some(message => String(message).includes('已登记'))).toBe(false);
+    expect(messages.info.some(message => String(message).includes('Registered "'))).toBe(false);
   });
 
   it('runScannedScript:无配置根时直接返回 false(505)', async () => {
@@ -1324,7 +1324,7 @@ describe('QuickActionManager.scanScriptsAndRefresh', () => {
     // options 误判为「无按钮」→ 走原实现返回 undefined,永不到达 520 分支;
     // 这里按 518 测试同法局部覆盖,把登记确认钉成 '登记'。
     const originalMsg = windowish.showInformationMessage;
-    windowish.showInformationMessage = async () => '登记' as never;
+    windowish.showInformationMessage = async () => 'Register' as never;
     const manager = new QuickActionManager(makeContext(), makeDeps());
     try {
       await manager.runScannedScript('/ws/cleanup.bat');
@@ -1335,7 +1335,7 @@ describe('QuickActionManager.scanScriptsAndRefresh', () => {
     // 已存在同名动作:登记分支在写配置前早退,config 保持原样(无 scan 源动作)
     const written = JSON.parse(Buffer.from(memoryFileSystem.files.get('/ws/.kbengine/debug.json') ?? '').toString('utf8'));
     expect(written.quickActions.some((item: { source?: string }) => item.source === 'scan')).toBe(false);
-    expect(messages.info.some(message => String(message).includes('已登记'))).toBe(false);
+    expect(messages.info.some(message => String(message).includes('Registered "'))).toBe(false);
   });
 
   it('扫描选择被取消 → 不写配置不提示(404)', async () => {
