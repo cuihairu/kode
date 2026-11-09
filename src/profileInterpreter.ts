@@ -13,6 +13,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { l10nText } from './nlsRuntime';
 import {
   DEFAULT_VENV_DIRECTORY_NAMES,
   normalizeVenvDirectoryNames
@@ -27,13 +28,18 @@ export interface InterpreterResolution {
   interpreterSource: InterpreterSource;
 }
 
-/** 显示文案里的来源标签 */
-export const INTERPRETER_SOURCE_LABELS: Record<InterpreterSource, string> = {
-  setting: '设置',
-  venv: '工作区 venv',
-  path: 'PATH',
-  missing: '缺失'
-};
+/**
+ * 显示文案里的来源标签(函数形态:调用期取词,010a 同约定——模块加载期
+ * 固化会在 bundle 就绪前取到英文源串,两态 NLS 锁失效)
+ */
+export function interpreterSourceLabels(): Record<InterpreterSource, string> {
+  return {
+    setting: l10nText('settings'),
+    venv: l10nText('workspace venv'),
+    path: 'PATH',
+    missing: l10nText('missing')
+  };
+}
 
 /** PATH 查找的候选名(windows 按 .exe 后缀另查一遍) */
 const PATH_CANDIDATES = ['python3', 'python'];
@@ -168,12 +174,16 @@ export function describeInterpreterState(profile: {
   interpreterSource: string;
 }): string {
   if (profile.interpreterPath) {
-    const source = (Object.keys(INTERPRETER_SOURCE_LABELS) as InterpreterSource[]).find(
+    const labels = interpreterSourceLabels();
+    const source = (Object.keys(labels) as InterpreterSource[]).find(
       key => key === profile.interpreterSource
     );
-    return `Python 解释器: ${profile.interpreterPath}(来源: ${
-      source ? INTERPRETER_SOURCE_LABELS[source] : profile.interpreterSource
-    })`;
+    return l10nText('Python interpreter: {path} (source: {source})', {
+      path: profile.interpreterPath,
+      source: source ? labels[source] : profile.interpreterSource
+    });
   }
-  return 'Python 解释器: 缺失(未找到 python3/python;可指定设置 kbengine.python.interpreterPath,或在工作区按 kbengine.python.venvDirectories(默认 .venv/venv/.kbenv)建 venv)';
+  return l10nText(
+    'Python interpreter: missing (no python3/python found; set kbengine.python.interpreterPath, or create a venv in the workspace via kbengine.python.venvDirectories, defaults .venv/venv/.kbenv)'
+  );
 }

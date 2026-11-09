@@ -14,6 +14,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { l10nText } from './nlsRuntime';
 import { buildProjectCreationPreviewItems, listMinimalProjectTemplate, planProjectCreation } from './backend/projectTemplate';
 import type { ProjectTemplateEntry } from './backend/projectTemplate';
 import { loadDemoGameTemplateEntries } from './demoGameTemplate';
@@ -85,7 +86,7 @@ export async function createMinimalProject(
   await createProjectFromTemplate(
     context,
     // 最小模板条目防御性拷贝(008 既有口径:清单不被调用方改动影响)
-    { entries: listMinimalProjectTemplate(), successNoun: '最小项目' },
+    { entries: listMinimalProjectTemplate(), successNoun: l10nText('Minimal project') },
     deps
   );
 }
@@ -107,15 +108,15 @@ export async function createDemoGameProject(
     entries = loadDemoGameTemplateEntries(options.templateRoot);
   } catch (error) {
     await vscode.window.showErrorMessage(
-      `demo 游戏模板读取失败(${options.templateRoot}): ${error instanceof Error ? error.message : String(error)}`
+      l10nText('Failed to read the demo game template ({root}): {reason}', { root: options.templateRoot, reason: error instanceof Error ? error.message : String(error) })
     );
     return;
   }
   if (entries.length === 0) {
-    await vscode.window.showErrorMessage(`demo 游戏模板为空，拒绝创建: ${options.templateRoot}`);
+    await vscode.window.showErrorMessage(l10nText('Demo game template is empty; refusing to create: {root}', { root: options.templateRoot }));
     return;
   }
-  await createProjectFromTemplate(context, { entries, successNoun: 'demo 游戏' }, deps);
+  await createProjectFromTemplate(context, { entries, successNoun: l10nText('Demo game') }, deps);
 }
 
 /** 共享创建流:选根→预检→确认→落盘(原子写)→失败回收→建档(008 面) */
@@ -130,7 +131,7 @@ async function createProjectFromTemplate(
     canSelectFolders: true,
     canSelectMany: false,
     canSelectFiles: false,
-    openLabel: '选择项目根目录'
+    openLabel: l10nText('Select the project root directory')
   });
   const targetRoot = pickedFolders?.[0]?.fsPath;
   if (!targetRoot) {
@@ -140,7 +141,7 @@ async function createProjectFromTemplate(
   const plan = planProjectCreation(targetRoot, { exists: candidate => fs.existsSync(candidate) }, options.entries);
   if (plan.conflicts.length > 0) {
     for (const conflict of plan.conflicts) {
-      await vscode.window.showErrorMessage(`目标已存在，拒绝创建: ${conflict.absolutePath}`);
+      await vscode.window.showErrorMessage(l10nText('Target already exists; refusing to create: {path}', { path: conflict.absolutePath }));
     }
     return;
   }
@@ -154,7 +155,7 @@ async function createProjectFromTemplate(
   const landedConflicts = plan.entries.filter(({ absolutePath }) => fs.existsSync(absolutePath));
   if (landedConflicts.length > 0) {
     for (const { absolutePath } of landedConflicts) {
-      await vscode.window.showErrorMessage(`目标已存在，拒绝创建: ${absolutePath}`);
+      await vscode.window.showErrorMessage(l10nText('Target already exists; refusing to create: {path}', { path: absolutePath }));
     }
     return;
   }
@@ -188,7 +189,7 @@ async function createProjectFromTemplate(
   } catch (error) {
     rollbackCreation(createdFiles, createdDirs, implicitRoot);
     await vscode.window.showErrorMessage(
-      `创建失败，已回收本次新增: ${error instanceof Error ? error.message : String(error)}`
+      l10nText('Creation failed; new files from this run were rolled back: {reason}', { reason: error instanceof Error ? error.message : String(error) })
     );
     return;
   }
@@ -204,6 +205,6 @@ async function createProjectFromTemplate(
     interpreterSource: interpreter.interpreterSource
   });
   await vscode.window.showInformationMessage(
-    `已创建${options.successNoun} profile: ${profile.displayName} (${profile.id});${describeInterpreterState(profile)}`
+    l10nText('Created {noun} profile: {name} ({id}); {state}', { noun: options.successNoun, name: profile.displayName, id: profile.id, state: describeInterpreterState(profile) })
   );
 }

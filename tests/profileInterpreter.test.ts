@@ -4,7 +4,7 @@ import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
 import {
-  INTERPRETER_SOURCE_LABELS,
+  interpreterSourceLabels,
   describeInterpreterState,
   locateInterpreterOnPath,
   locateVenvInterpreter,
@@ -142,7 +142,7 @@ describe('workspace venv discovery in the interpreter chain (PY-ENV)', () => {
       platform: 'linux'
     });
     expect(result).toEqual({ interpreterPath: exe, interpreterSource: 'venv' });
-    expect(INTERPRETER_SOURCE_LABELS.venv).toBe('工作区 venv');
+    expect(interpreterSourceLabels().venv).toBe('workspace venv');
     rm(root);
   });
 
@@ -291,9 +291,9 @@ describe('profile interpreter recording (IDE-PRJ-004)', () => {
   it('shows the missing state explicitly in the display text', () => {
     expect(
       describeInterpreterState({ interpreterPath: '/usr/bin/python3', interpreterSource: 'path' })
-    ).toBe(`Python 解释器: /usr/bin/python3(来源: ${INTERPRETER_SOURCE_LABELS.path})`);
+    ).toBe(`Python interpreter: /usr/bin/python3 (source: ${interpreterSourceLabels().path})`);
     expect(describeInterpreterState({ interpreterPath: null, interpreterSource: 'missing' })).toBe(
-      'Python 解释器: 缺失(未找到 python3/python;可指定设置 kbengine.python.interpreterPath,或在工作区按 kbengine.python.venvDirectories(默认 .venv/venv/.kbenv)建 venv)'
+      'Python interpreter: missing (no python3/python found; set kbengine.python.interpreterPath, or create a venv in the workspace via kbengine.python.venvDirectories, defaults .venv/venv/.kbenv)'
     );
   });
 

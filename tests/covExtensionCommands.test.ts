@@ -614,8 +614,8 @@ describe('extension 激活链命令面(补测)', () => {
     } as never);
     try {
       await commands.executeCommand('kbengine.extension.identity');
-      expect(channelLines('Kode 扩展身份')).toContain('cuihairu.kode-core');
-      expect(channelLines('Kode 扩展身份')).toContain('1.2.3');
+      expect(channelLines('Kode Extension Identity')).toContain('cuihairu.kode-core');
+      expect(channelLines('Kode Extension Identity')).toContain('1.2.3');
     } finally {
       fakeExtensionList.length = 0;
     }
@@ -850,9 +850,9 @@ describe('extension 激活链命令面(补测)', () => {
     (workspace as { findFiles: unknown }).findFiles = (async () => []);
     try {
       await commands.executeCommand('kbengine.project.doctor');
-      expect(messages.info.some(message => message.includes('未找到 .def 文件'))).toBe(true);
+      expect(messages.info.some(message => message.includes('No .def files found'))).toBe(true);
       await commands.executeCommand('kbengine.symbolReferences.show');
-      expect(messages.info.some(message => message.includes('未找到 .def 文件'))).toBe(true);
+      expect(messages.info.some(message => message.includes('No .def files found'))).toBe(true);
     } finally {
       (workspace as { findFiles: unknown }).findFiles = originalFindFiles;
     }
@@ -866,9 +866,9 @@ describe('extension 激活链命令面(补测)', () => {
     (workspace as { findFiles: unknown }).findFiles = (async () => [Uri.file(looseDef)]);
     try {
       await commands.executeCommand('kbengine.project.doctor');
-      expect(messages.warning.some(message => message.includes('仅支持标准定义布局'))).toBe(true);
+      expect(messages.warning.some(message => message.includes('only supports the standard definition layout'))).toBe(true);
       await commands.executeCommand('kbengine.symbolReferences.show');
-      expect(messages.warning.some(message => message.includes('仅支持标准定义布局'))).toBe(true);
+      expect(messages.warning.some(message => message.includes('only supports the standard definition layout'))).toBe(true);
     } finally {
       (workspace as { findFiles: unknown }).findFiles = originalFindFiles;
       fs.rmSync(looseDir, { recursive: true, force: true });
@@ -881,7 +881,7 @@ describe('extension 激活链命令面(补测)', () => {
       async () => ({ command: 'kbengine.extension.identity' });
     try {
       await commands.executeCommand('kbengine.workbench.show');
-      expect(channelLines('Kode 扩展身份')).not.toBe('');
+      expect(channelLines('Kode Extension Identity')).not.toBe('');
     } finally {
       (fakeWindow as { showQuickPick: unknown }).showQuickPick = originalQuickPick;
     }
@@ -931,9 +931,9 @@ describe('extension 激活链命令面(补测)', () => {
     );
     try {
       await commands.executeCommand('kbengine.extension.identity');
-      expect(channelLines('Kode 扩展身份')).toContain('cuihairu.kode-b');
+      expect(channelLines('Kode Extension Identity')).toContain('cuihairu.kode-b');
       await commands.executeCommand('kbengine.diagnostics.exportReproSummary');
-      expect(channelLines('Kode 复现配置摘要')).toContain('cuihairu.kode-b');
+      expect(channelLines('Kode Reproduction Summary')).toContain('cuihairu.kode-b');
     } finally {
       fakeExtensionList.length = 0;
     }

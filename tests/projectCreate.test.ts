@@ -110,7 +110,7 @@ describe('minimal project create flow (IDE-PRJ-008)', () => {
       interpreterPath: '/opt/py/python3',
       interpreterSource: 'path'
     });
-    expect(info.at(-1)).toContain('已创建最小项目 profile');
+    expect(info.at(-1)).toContain('Created Minimal project profile');
     expect(errors).toHaveLength(0);
 
     fs.rmSync(base, { recursive: true, force: true });
@@ -198,7 +198,7 @@ describe('minimal project create flow (IDE-PRJ-008)', () => {
     });
 
     expect(fs.existsSync(targetRoot)).toBe(false);
-    expect(errors.some(message => message.includes('创建失败') && message.includes('回收'))).toBe(true);
+    expect(errors.some(message => message.includes('Creation failed') && message.includes('rolled back'))).toBe(true);
     expect(new ProjectProfileStore(memento).list()).toHaveLength(0);
 
     fs.rmSync(base, { recursive: true, force: true });
@@ -230,7 +230,7 @@ describe('minimal project create flow (IDE-PRJ-008)', () => {
     expect(
       errors.some(
         message =>
-          message.includes('目标已存在') && message.includes(path.join(targetRoot, 'scripts', 'entities.xml'))
+          message.includes('Target already exists') && message.includes(path.join(targetRoot, 'scripts', 'entities.xml'))
       )
     ).toBe(true);
     // 并发的 entities.xml 连同其父目录 scripts(同为清单目标)一并如实摊开
@@ -273,7 +273,7 @@ describe('minimal project create flow (IDE-PRJ-008)', () => {
 
     // 字节不再匹配本次写入:他人新增不被回收,如实留下
     expect(fs.readFileSync(path.join(targetRoot, 'scripts', 'entities.xml'), 'utf8')).toBe('他人并发替换的内容');
-    expect(errors.some(message => message.includes('创建失败') && message.includes('回收'))).toBe(true);
+    expect(errors.some(message => message.includes('Creation failed') && message.includes('rolled back'))).toBe(true);
     expect(new ProjectProfileStore(memento).list()).toHaveLength(0);
 
     fs.rmSync(base, { recursive: true, force: true });
@@ -348,7 +348,7 @@ describe('demo game create flow (DEMO-GAME-006)', () => {
     const profiles = new ProjectProfileStore(memento).list();
     expect(profiles).toHaveLength(1);
     expect(profiles[0]).toMatchObject({ displayName: 'mydemo', assetsRoot: targetRoot, engineRoot: '' });
-    expect(info.at(-1)).toContain('已创建demo 游戏 profile');
+    expect(info.at(-1)).toContain('Created Demo game profile');
     expect(errors).toHaveLength(0);
 
     fs.rmSync(base, { recursive: true, force: true });
@@ -375,7 +375,7 @@ describe('demo game create flow (DEMO-GAME-006)', () => {
     await createDemoGameProject({ workspaceState: memento }, { templateRoot: TEMPLATE_ROOT });
 
     expect(quickPickCalls).toBe(0);
-    expect(errors.some(message => message.includes('拒绝创建'))).toBe(true);
+    expect(errors.some(message => message.includes('refusing to create'))).toBe(true);
     expect(fs.readFileSync(path.join(targetRoot, 'scripts', 'entities.xml'), 'utf8')).toBe('既有内容');
     expect(fs.existsSync(path.join(targetRoot, 'scripts', 'cell'))).toBe(false);
     expect(new ProjectProfileStore(memento).list()).toHaveLength(0);
@@ -394,7 +394,7 @@ describe('demo game create flow (DEMO-GAME-006)', () => {
 
     await createDemoGameProject({ workspaceState: memento }, { templateRoot: '/nonexistent/template' });
 
-    expect(errors.some(message => message.includes('demo 游戏模板读取失败'))).toBe(true);
+    expect(errors.some(message => message.includes('Failed to read the demo game template'))).toBe(true);
     expect(new ProjectProfileStore(memento).list()).toHaveLength(0);
   });
 });

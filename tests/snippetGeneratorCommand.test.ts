@@ -105,10 +105,10 @@ describe('kbengine.snippets.generateFromSelection 命令', () => {
     await commands.executeCommand('kbengine.snippets.generateFromSelection');
 
     // 名称/前缀两步的必填校验回调:空串与纯空白拒绝,合法值放行
-    expect(inputOptions[0]?.validateInput?.('')).toBe('片段名称不能为空');
-    expect(inputOptions[0]?.validateInput?.('   ')).toBe('片段名称不能为空');
+    expect(inputOptions[0]?.validateInput?.('')).toBe('Snippet name cannot be empty');
+    expect(inputOptions[0]?.validateInput?.('   ')).toBe('Snippet name cannot be empty');
     expect(inputOptions[0]?.validateInput?.('HpBlock')).toBeNull();
-    expect(inputOptions[1]?.validateInput?.('')).toBe('触发前缀不能为空');
+    expect(inputOptions[1]?.validateInput?.('')).toBe('Trigger prefix cannot be empty');
     expect(inputOptions[1]?.validateInput?.('kbe-hp')).toBeNull();
 
     const parsed = JSON.parse(fs.readFileSync(snippetsFilePath(), 'utf8')) as {
@@ -168,7 +168,7 @@ describe('kbengine.snippets.generateFromSelection 命令', () => {
     parsed = JSON.parse(fs.readFileSync(snippetsFilePath(), 'utf8')) as Record<string, unknown>;
     expect(Object.keys(parsed)).toEqual(['HpBlock', 'Other']);
     expect((parsed.Other as { prefix: string }).prefix).toBe('kbe-other2');
-    expect(messages.warning.at(-1)).toContain('已覆盖同名自定义片段 Other');
+    expect(messages.warning.at(-1)).toContain('Overwrote the existing snippet Other');
 
     for (const disposable of context.subscriptions) {
       disposable.dispose();
@@ -198,11 +198,11 @@ describe('kbengine.snippets.generateFromSelection 命令', () => {
     const context = await activateAndWait();
 
     await commands.executeCommand('kbengine.snippets.generateFromSelection');
-    expect(messages.info.at(-1)).toBe('请先在编辑器中选中要生成片段的文本');
+    expect(messages.info.at(-1)).toBe('Select some text in the editor first to generate a snippet');
 
     windowish.activeTextEditor = makeEditor(HP_DEF, { line: 0, character: 0 }, { line: 0, character: 0 });
     await commands.executeCommand('kbengine.snippets.generateFromSelection');
-    expect(messages.info.at(-1)).toBe('请先在编辑器中选中要生成片段的文本');
+    expect(messages.info.at(-1)).toBe('Select some text in the editor first to generate a snippet');
     expect(windowish.showInputBox).toBe(originalInputBox);
 
     expect(fs.existsSync(snippetsFilePath())).toBe(false);
@@ -218,7 +218,7 @@ describe('kbengine.snippets.generateFromSelection 命令', () => {
     const context = await activateAndWait();
     await commands.executeCommand('kbengine.snippets.generateFromSelection');
 
-    expect(messages.info.at(-1)).toBe('选区不含有效文本,未生成片段');
+    expect(messages.info.at(-1)).toBe('Selection has no usable text; no snippet generated');
     expect(fs.existsSync(snippetsFilePath())).toBe(false);
     for (const disposable of context.subscriptions) {
       disposable.dispose();
@@ -251,7 +251,7 @@ describe('kbengine.snippets.generateFromSelection 命令', () => {
     const context = await activateAndWait();
     await commands.executeCommand('kbengine.snippets.generateFromSelection');
 
-    expect(messages.error.at(-1)).toBe('没有打开的工作区,无法保存自定义片段');
+    expect(messages.error.at(-1)).toBe('No workspace open; cannot save custom snippets');
     expect(fs.existsSync(snippetsFilePath())).toBe(false);
     for (const disposable of context.subscriptions) {
       disposable.dispose();
@@ -269,7 +269,7 @@ describe('kbengine.snippets.generateFromSelection 命令', () => {
     const context = await activateAndWait();
     await commands.executeCommand('kbengine.snippets.generateFromSelection');
 
-    expect(messages.error.at(-1)).toContain('不是合法的对象 JSON');
+    expect(messages.error.at(-1)).toContain('not valid object JSON');
     expect(messages.error.at(-1)).toContain(snippetsFilePath());
     expect(fs.readFileSync(snippetsFilePath(), 'utf8')).toBe(handEdited);
     for (const disposable of context.subscriptions) {
@@ -288,7 +288,7 @@ describe('kbengine.snippets.generateFromSelection 命令', () => {
     const context = await activateAndWait();
     await commands.executeCommand('kbengine.snippets.generateFromSelection');
 
-    expect(messages.error.at(-1)).toContain('无法读取自定义片段文件');
+    expect(messages.error.at(-1)).toContain('Cannot read the custom snippets file');
     expect(messages.error.at(-1)).toContain(snippetsFilePath());
     expect(messages.info).toEqual([]);
     expect(fs.statSync(snippetsFilePath()).isDirectory()).toBe(true);
@@ -308,7 +308,7 @@ describe('kbengine.snippets.generateFromSelection 命令', () => {
     const context = await activateAndWait();
     await commands.executeCommand('kbengine.snippets.generateFromSelection');
 
-    expect(messages.error.at(-1)).toContain('无法写入自定义片段文件');
+    expect(messages.error.at(-1)).toContain('Cannot write the custom snippets file');
     expect(messages.error.at(-1)).toContain(snippetsFilePath());
     expect(messages.info).toEqual([]);
     expect(fs.readFileSync(path.join(root, '.vscode'), 'utf8')).toBe('不是目录');

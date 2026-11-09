@@ -80,7 +80,7 @@ describe('project layout identification (IDE-PRJ-003)', () => {
     fs.rmSync(base, { recursive: true, force: true });
   });
 
-  it('reports missing faces as null and preview items show 未识别', () => {
+  it('reports missing faces as null and preview items show Not identified', () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-import-bare-'));
     fs.mkdirSync(path.join(base, 'scripts'), { recursive: true });
 
@@ -91,10 +91,10 @@ describe('project layout identification (IDE-PRJ-003)', () => {
 
     const items = buildImportPreviewItems(identification);
     expect(items.map(item => item.label)).toEqual(['entities', 'defs', 'scripts', 'engine']);
-    expect(items[0].description).toBe('未识别');
-    expect(items[1].description).toBe('未识别');
+    expect(items[0].description).toBe('Not identified');
+    expect(items[1].description).toBe('Not identified');
     expect(items[2].description).toBe(path.join(base, 'scripts'));
-    expect(items[3].description).toBe('未识别');
+    expect(items[3].description).toBe('Not identified');
 
     fs.rmSync(base, { recursive: true, force: true });
   });
@@ -131,7 +131,7 @@ describe('import existing project flow (IDE-PRJ-003)', () => {
     windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
       const resolved = (await items) as Array<{ label: string; description: string }>;
       previewItems = resolved.slice(1);
-      return resolved.find(item => item.label === '导入');
+      return resolved.find(item => item.label === 'Import');
     };
     windowish.showInformationMessage = async (message: string): Promise<unknown> => {
       info.push(message);
@@ -160,8 +160,8 @@ describe('import existing project flow (IDE-PRJ-003)', () => {
       interpreterPath: '/opt/py/python3',
       interpreterSource: 'path'
     });
-    expect(info.at(-1)).toContain('已导入项目 profile');
-    expect(info.at(-1)).toContain('Python 解释器: /opt/py/python3(来源: PATH)');
+    expect(info.at(-1)).toContain('Project profile imported');
+    expect(info.at(-1)).toContain('Python interpreter: /opt/py/python3 (source: PATH)');
 
     fs.rmSync(base, { recursive: true, force: true });
   });
@@ -172,7 +172,7 @@ describe('import existing project flow (IDE-PRJ-003)', () => {
     windowish.showOpenDialog = async () => [Uri.file(assetsRoot)];
     windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
       const resolved = (await items) as Array<{ label: string }>;
-      return resolved.find(item => item.label === '导入');
+      return resolved.find(item => item.label === 'Import');
     };
     windowish.showInformationMessage = async (message: string): Promise<unknown> => {
       info.push(message);
@@ -186,7 +186,7 @@ describe('import existing project flow (IDE-PRJ-003)', () => {
 
     const profiles = new ProjectProfileStore(memento).list();
     expect(profiles[0]).toMatchObject({ interpreterPath: null, interpreterSource: 'missing' });
-    expect(info.at(-1)).toContain('Python 解释器: 缺失(未找到 python3/python;可指定设置 kbengine.python.interpreterPath,或在工作区按 kbengine.python.venvDirectories(默认 .venv/venv/.kbenv)建 venv)');
+    expect(info.at(-1)).toContain('Python interpreter: missing (no python3/python found; set kbengine.python.interpreterPath, or create a venv in the workspace via kbengine.python.venvDirectories, defaults .venv/venv/.kbenv)');
 
     fs.rmSync(base, { recursive: true, force: true });
   });
@@ -226,7 +226,7 @@ describe('import existing project flow (IDE-PRJ-003)', () => {
 
     // 四面全空:直接拒绝,连预览都不出
     expect(quickPickCalls).toBe(0);
-    expect(warning.at(-1)).toContain('未识别到 KBEngine 资产结构');
+    expect(warning.at(-1)).toContain('No KBEngine asset structure identified');
     expect(new ProjectProfileStore(memento).list()).toHaveLength(0);
 
     fs.rmSync(base, { recursive: true, force: true });

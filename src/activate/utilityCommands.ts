@@ -8,6 +8,7 @@
 // 不返回共享句柄。
 
 import * as vscode from 'vscode';
+import { l10nText } from '../nlsRuntime';
 import { CUSTOM_SNIPPETS_RELATIVE_PATH, mergeSnippetEntry, selectionToSnippetBody } from '../backend/snippetGenerator';
 import { DiscoveryKey, DiscoveryLayoutFacts, DiscoveryPromptDeps } from '../workspaceDiscovery';
 import { MergeSnippetResult } from '../backend/snippetGenerator';
@@ -71,13 +72,13 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
         ? targetUri
         : (await findFilesAcrossRoots('**/*.def'))[0];
       if (!candidateUri) {
-        vscode.window.showInformationMessage('未找到 .def 文件,无法运行 Project Doctor');
+        vscode.window.showInformationMessage(l10nText('No .def files found; Project Doctor needs a .def file to run'));
         return;
       }
 
       const graph = buildDefReferenceGraphFromFile(candidateUri.fsPath);
       if (!graph) {
-        vscode.window.showWarningMessage('未找到 entity_defs 定义根,Project Doctor 仅支持标准定义布局');
+        vscode.window.showWarningMessage(l10nText('entity_defs root not found; Project Doctor only supports the standard definition layout'));
         return;
       }
 
@@ -86,11 +87,11 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
       projectDoctorChannel.appendLine(formatProjectDoctorReport(report));
       projectDoctorChannel.show(true);
       if (report.errors.length > 0) {
-        vscode.window.showWarningMessage(`Project Doctor 发现 ${report.errors.length} 项错误,详见输出面板`);
+        vscode.window.showWarningMessage(l10nText('Project Doctor found {count} errors; see the output panel', { count: report.errors.length }));
       } else if (report.warnings.length > 0) {
-        vscode.window.showInformationMessage(`Project Doctor 完成:${report.warnings.length} 项警告`);
+        vscode.window.showInformationMessage(l10nText('Project Doctor finished: {count} warnings', { count: report.warnings.length }));
       } else {
-        vscode.window.showInformationMessage('Project Doctor 完成:跨文件语义无错误');
+        vscode.window.showInformationMessage(l10nText('Project Doctor finished: no cross-file semantic errors'));
       }
     }
   );
@@ -105,13 +106,13 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
         ? targetUri
         : (await findFilesAcrossRoots('**/*.def'))[0];
       if (!candidateUri) {
-        vscode.window.showInformationMessage('未找到 .def 文件,无法生成符号引用图');
+        vscode.window.showInformationMessage(l10nText('No .def files found; cannot build the symbol reference graph'));
         return;
       }
 
       const graph = buildDefReferenceGraphFromFile(candidateUri.fsPath);
       if (!graph) {
-        vscode.window.showWarningMessage('未找到 entity_defs 定义根,符号引用图仅支持标准定义布局');
+        vscode.window.showWarningMessage(l10nText('entity_defs root not found; the symbol reference graph only supports the standard definition layout'));
         return;
       }
 
@@ -136,24 +137,24 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
     async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor || editor.selection.isEmpty) {
-        vscode.window.showInformationMessage('请先在编辑器中选中要生成片段的文本');
+        vscode.window.showInformationMessage(l10nText('Select some text in the editor first to generate a snippet'));
         return;
       }
 
       const snippetName = await vscode.window.showInputBox({
-        prompt: '输入代码片段名称',
+        prompt: l10nText('Enter the snippet name'),
         placeHolder: 'MyDefTemplate',
-        validateInput: (value) => (!value || value.trim() === '' ? '片段名称不能为空' : null)
+        validateInput: (value) => (!value || value.trim() === '' ? l10nText('Snippet name cannot be empty') : null)
       });
       if (!snippetName) {
         return;
       }
 
       const prefix = await vscode.window.showInputBox({
-        prompt: '输入触发前缀',
+        prompt: l10nText('Enter the trigger prefix'),
         placeHolder: `kbe-${snippetName.toLowerCase()}`,
         value: `kbe-${snippetName.toLowerCase()}`,
-        validateInput: (value) => (!value || value.trim() === '' ? '触发前缀不能为空' : null)
+        validateInput: (value) => (!value || value.trim() === '' ? l10nText('Trigger prefix cannot be empty') : null)
       });
       if (!prefix) {
         return;
@@ -161,7 +162,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
 
       // 描述可选:取消(Esc)按仓库既有口径视为继续,记空串不写该字段
       const description = await vscode.window.showInputBox({
-        prompt: '输入片段描述(可选)',
+        prompt: l10nText('Enter a snippet description (optional)'),
         value: ''
       }) ?? '';
 
@@ -176,13 +177,13 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
         editorTabSize
       );
       if (body.length === 0) {
-        vscode.window.showInformationMessage('选区不含有效文本,未生成片段');
+        vscode.window.showInformationMessage(l10nText('Selection has no usable text; no snippet generated'));
         return;
       }
 
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
       if (!workspaceFolder) {
-        vscode.window.showErrorMessage('没有打开的工作区,无法保存自定义片段');
+        vscode.window.showErrorMessage(l10nText('No workspace open; cannot save custom snippets'));
         return;
       }
 
@@ -199,7 +200,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
           : null;
       } catch (error) {
         vscode.window.showErrorMessage(
-          `无法读取自定义片段文件: ${snippetsFilePath}(${(error as Error).message})`
+          l10nText('Cannot read the custom snippets file: {path} ({reason})', { path: snippetsFilePath, reason: (error as Error).message })
         );
         return;
       }
@@ -214,7 +215,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
         });
       } catch {
         vscode.window.showErrorMessage(
-          `自定义片段文件不是合法的对象 JSON,请先手工整理后再生成: ${snippetsFilePath}`
+          l10nText('The custom snippets file is not valid object JSON; tidy it up by hand first, then retry: {path}', { path: snippetsFilePath })
         );
         return;
       }
@@ -224,18 +225,18 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
         fs.writeFileSync(snippetsFilePath, merged.content, 'utf8');
       } catch (error) {
         vscode.window.showErrorMessage(
-          `无法写入自定义片段文件: ${snippetsFilePath}(${(error as Error).message})`
+          l10nText('Cannot write the custom snippets file: {path} ({reason})', { path: snippetsFilePath, reason: (error as Error).message })
         );
         return;
       }
 
       if (merged.overwritten) {
         vscode.window.showWarningMessage(
-          `已覆盖同名自定义片段 ${snippetName}: ${snippetsFilePath}`
+          l10nText('Overwrote the existing snippet {name}: {path}', { name: snippetName, path: snippetsFilePath })
         );
       } else {
         vscode.window.showInformationMessage(
-          `已生成自定义代码片段 ${snippetName}(前缀 ${prefix}): ${snippetsFilePath}`
+          l10nText('Generated custom snippet {name} (prefix {prefix}): {path}', { name: snippetName, prefix, path: snippetsFilePath })
         );
       }
     }
@@ -249,7 +250,8 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
 
   // 批127 发现与定位诊断:定位失败不再静默——报告摊开每个键的显式配置/
   // 约定链/深扫描/记忆选择与最终取用,写入输出通道供复制回传。
-  const discoveryReportChannel = vscode.window.createOutputChannel('KBEngine 发现与定位');
+  const DISCOVERY_REPORT_CHANNEL_NAME = 'KBEngine Discovery Report';
+  const discoveryReportChannel = vscode.window.createOutputChannel(DISCOVERY_REPORT_CHANNEL_NAME);
   const writeDiscoveryReport = (workspaceRoot: string): number => {
     const config = vscode.workspace.getConfiguration('kbengine');
     const layout = getDefinitionWorkspaceLayout(workspaceRoot);
@@ -285,17 +287,17 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
     () => {
       const currentWorkspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       if (!currentWorkspaceRoot) {
-        vscode.window.showWarningMessage('未打开工作区,无法生成发现与定位诊断');
+        vscode.window.showWarningMessage(l10nText('No workspace open; cannot generate the discovery report'));
         return;
       }
       const issueCount = writeDiscoveryReport(currentWorkspaceRoot);
       discoveryReportChannel.show(true);
       if (issueCount > 0) {
         vscode.window.showWarningMessage(
-          `发现与定位存在 ${issueCount} 项问题,详见「KBEngine 发现与定位」输出面板`
+          l10nText('{count} discovery issues found; see the "{channel}" output panel', { count: issueCount, channel: DISCOVERY_REPORT_CHANNEL_NAME })
         );
       } else {
-        vscode.window.showInformationMessage('发现与定位全部正常');
+        vscode.window.showInformationMessage(l10nText('Discovery report: all clear'));
       }
     }
   );
@@ -304,7 +306,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
   // IDE-MET-001:活动扩展身份报告——区分「安装目录存在」(文件系统核验)与
   // 「当前窗口已激活」(isActive),列宿主位置(remote(name)/local)与
   // 扩展宿主侧(workspace/ui);渲染纯函数在 extensionIdentity.ts。
-  const identityChannel = vscode.window.createOutputChannel('Kode 扩展身份');
+  const identityChannel = vscode.window.createOutputChannel('Kode Extension Identity');
   const identityCommand = vscode.commands.registerCommand('kbengine.extension.identity', () => {
     const entries = vscode.extensions.all
       .filter(extension => extension.id.toLowerCase().startsWith('cuihairu.'))
@@ -348,7 +350,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
   // (诊断排队/在途、注解、索引任务、schema 冷构建+语言服务在册操作)。
   // 连接信息取引擎 dbmgr 数据库接口配置,username/password 渲染层即遮蔽,
   // 全文再过 maskConnectionSecrets 兜底;渲染纯函数在 reproductionSummary.ts。
-  const reproSummaryChannel = vscode.window.createOutputChannel('Kode 复现配置摘要');
+  const reproSummaryChannel = vscode.window.createOutputChannel('Kode Reproduction Summary');
   const reproSummaryCommand = vscode.commands.registerCommand(
     'kbengine.diagnostics.exportReproSummary',
     () => {
@@ -461,7 +463,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
     interpreterStatusBarItem.text = interpreterStatusBarText(resolution);
     interpreterStatusBarItem.tooltip = resolution.interpreterPath
       ? resolution.interpreterPath
-      : 'Python 解释器缺失(点击可选择或创建)';
+      : l10nText('Python interpreter missing (click to select or create one)');
     interpreterStatusBarItem.show();
     // 版本探测失败如实省略版本段,不影响徽标与路径显示
     if (resolution.interpreterPath) {
@@ -482,7 +484,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
           canSelectFolders: true,
           canSelectMany: false,
           defaultUri: vscode.Uri.file(defaultDir),
-          openLabel: '选择放置 venv 的目录'
+          openLabel: l10nText('Select the parent directory for the venv')
         });
         return picks?.[0]?.fsPath ?? null;
       },
@@ -508,7 +510,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
       // withProgress 返回 Thenable,await 归一成 Promise(依赖面签名)
       runVenvModule: async (base, target) =>
         await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: `创建 venv: python -m venv ${target}` },
+          { location: vscode.ProgressLocation.Notification, title: l10nText('Creating venv: python -m venv {target}', { target }) },
           () => runVenvModuleProcess(base, target)
         ),
       // 直接对目标验真(不依赖扫描范围,深层/工作区外目标照常选用)
@@ -532,7 +534,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
         pathInterpreter: () => locateInterpreterOnPath(process.env.PATH, process.platform),
         showQuickPick: async items =>
           await vscode.window.showQuickPick(items, {
-            placeHolder: '选择 Python 解释器(写入 kbengine.python.interpreterPath 即刻生效)'
+            placeHolder: l10nText('Select a Python interpreter (writes kbengine.python.interpreterPath, takes effect immediately)')
           }),
         writeInterpreterSetting: async value =>
           await vscode.workspace
@@ -675,7 +677,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
       const issueCount = writeDiscoveryReport(root);
       if (issueCount > 0) {
         vscode.window.showWarningMessage(
-          `发现与定位存在 ${issueCount} 项问题,详见「KBEngine 发现与定位」输出面板`
+          l10nText('{count} discovery issues found; see the "{channel}" output panel', { count: issueCount, channel: DISCOVERY_REPORT_CHANNEL_NAME })
         );
       }
     },

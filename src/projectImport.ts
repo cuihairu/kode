@@ -10,6 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { l10nText } from './nlsRuntime';
 import { DISCOVERY_CONVENTIONS } from './workspaceDiscovery';
 import { ProjectProfileStore } from './projectProfiles';
 import {
@@ -82,7 +83,7 @@ export interface ImportPreviewItem {
 export function buildImportPreviewItems(identification: ProjectLayoutIdentification): ImportPreviewItem[] {
   const face = (label: string, value: string | null): ImportPreviewItem => ({
     label,
-    description: value ?? '未识别'
+    description: value ?? l10nText('Not identified')
   });
   return [
     face('entities', identification.entitiesXml),
@@ -110,7 +111,7 @@ export async function importExistingProject(
     canSelectFolders: true,
     canSelectMany: false,
     canSelectFiles: false,
-    openLabel: '选择资产根'
+    openLabel: l10nText('Select asset root')
   });
   const assetsRoot = pickedFolders?.[0]?.fsPath;
   if (!assetsRoot) {
@@ -120,16 +121,21 @@ export async function importExistingProject(
   const identification = identifyProjectLayout(assetsRoot);
   if (!identification.entitiesXml && !identification.entityDefsRoot && !identification.scriptsRoot) {
     await vscode.window.showWarningMessage(
-      `未识别到 KBEngine 资产结构(entities/defs/scripts 均未命中),未导入: ${assetsRoot}`
+      l10nText('No KBEngine asset structure identified (entities/defs/scripts all missed); nothing imported: {root}', { root: assetsRoot })
     );
     return;
   }
 
+  // 010d 同约定:确认项标签与比较共用同一调用期 l10n 值,两种语言判定都不漂
+  const importLabel = l10nText('Import');
   const picked = await vscode.window.showQuickPick(
-    [{ label: '导入', description: '按识别结果建立项目 profile' }, ...buildImportPreviewItems(identification)],
-    { placeHolder: `核对识别结果(${assetsRoot})(选择"导入"继续,Esc 取消)` }
+    [
+      { label: importLabel, description: l10nText('Create the project profile from the identified layout') },
+      ...buildImportPreviewItems(identification)
+    ],
+    { placeHolder: l10nText('Review the identified layout ({root}); pick "Import" to continue, Esc to cancel', { root: assetsRoot }) }
   );
-  if (picked?.label !== '导入') {
+  if (picked?.label !== importLabel) {
     return;
   }
 
@@ -143,6 +149,6 @@ export async function importExistingProject(
     interpreterSource: interpreter.interpreterSource
   });
   await vscode.window.showInformationMessage(
-    `已导入项目 profile: ${profile.displayName} (${profile.id});${describeInterpreterState(profile)}`
+    l10nText('Project profile imported: {name} ({id}); {state}', { name: profile.displayName, id: profile.id, state: describeInterpreterState(profile) })
   );
 }

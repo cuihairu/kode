@@ -298,13 +298,13 @@ describe('extension activate 装配', () => {
     activate(context);
 
     await commands.executeCommand('kbengine.discovery.report');
-    const channel = windowState.channels.find(entry => entry.name === 'KBEngine 发现与定位');
+    const channel = windowState.channels.find(entry => entry.name === 'KBEngine Discovery Report');
     expect(channel).toBeDefined();
     const text = channel!.lines.join('');
     expect(text).toContain('Kode 发现与定位诊断');
     // 空工作区:def 根回落约定首项(不存在)计为问题 → 警告提示
     expect(text).toContain('[missing] 实体定义目录 entity_defs');
-    expect(messages.warning.some(message => message.includes('发现与定位存在'))).toBe(true);
+    expect(messages.warning.some(message => message.includes('discovery issues found'))).toBe(true);
 
     fs.rmSync(root, { recursive: true, force: true });
     disposeAll(context);
@@ -316,7 +316,7 @@ describe('extension activate 装配', () => {
     activate(context);
 
     await commands.executeCommand('kbengine.discovery.report');
-    expect(messages.warning).toContain('未打开工作区,无法生成发现与定位诊断');
+    expect(messages.warning).toContain('No workspace open; cannot generate the discovery report');
     disposeAll(context);
   });
 
@@ -329,11 +329,11 @@ describe('extension activate 装配', () => {
       activate(context);
       workspace.workspaceFolders = [{ uri: Uri.file(rootB), name: 'new', index: 0 }];
       await commands.executeCommand('kbengine.discovery.report');
-      const channel = windowState.channels.find(entry => entry.name === 'KBEngine 发现与定位');
+      const channel = windowState.channels.find(entry => entry.name === 'KBEngine Discovery Report');
       expect(channel!.lines.join('')).toContain(`工作区: ${rootB}`);
       workspace.workspaceFolders = [];
       await commands.executeCommand('kbengine.discovery.report');
-      expect(messages.warning).toContain('未打开工作区,无法生成发现与定位诊断');
+      expect(messages.warning).toContain('No workspace open; cannot generate the discovery report');
     } finally {
       disposeAll(context);
       fs.rmSync(rootA, { recursive: true, force: true });
@@ -357,8 +357,8 @@ describe('extension activate 装配', () => {
     activate(context);
 
     try {
-      await until(() => messages.warning.some(message => message.includes('发现与定位存在')), 4000);
-      const channel = windowState.channels.find(entry => entry.name === 'KBEngine 发现与定位');
+      await until(() => messages.warning.some(message => message.includes('discovery issues found')), 4000);
+      const channel = windowState.channels.find(entry => entry.name === 'KBEngine Discovery Report');
       expect(channel).toBeDefined();
       expect(channel!.lines.join('')).toContain('[missing] 实体定义目录 entity_defs');
     } finally {
@@ -403,14 +403,14 @@ describe('extension activate 装配', () => {
       await commands.executeCommand('kbengine.discovery.report');
       // 等激活期发现的 .then 自动落报告跑完(问题数 0 → 不弹提示)
       await new Promise(resolve => setTimeout(resolve, 50));
-      const channel = windowState.channels.find(entry => entry.name === 'KBEngine 发现与定位');
+      const channel = windowState.channels.find(entry => entry.name === 'KBEngine Discovery Report');
       const text = channel!.lines.join('');
       expect(text).toContain('[ok] 实体定义目录 entity_defs');
       expect(text).toContain('[ok] 资产根 kbengine.assetsRoot');
       expect(text).toContain('[ok] 引擎二进制 kbengine.binPath');
       expect(text).toContain('问题 0 项');
-      expect(messages.info).toContain('发现与定位全部正常');
-      expect(messages.warning.some(message => message.includes('发现与定位存在'))).toBe(false);
+      expect(messages.info).toContain('Discovery report: all clear');
+      expect(messages.warning.some(message => message.includes('discovery issues found'))).toBe(false);
     } finally {
       configurationOverrides.delete('kbengine');
       fs.rmSync(root, { recursive: true, force: true });
@@ -1349,7 +1349,7 @@ describe('extension activate 装配', () => {
     activate(context);
     try {
       await commands.executeCommand('kbengine.diagnostics.exportReproSummary');
-      const channel = windowState.channels.find(entry => entry.name === 'Kode 复现配置摘要');
+      const channel = windowState.channels.find(entry => entry.name === 'Kode Reproduction Summary');
       expect(channel).toBeDefined();
       const text = channel!.lines.join('');
       expect(text).toContain('Kode 复现配置摘要');

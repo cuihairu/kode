@@ -86,7 +86,7 @@ describe('激活期项目导入命令装配(IDE-PRJ-003)', () => {
       windowish.showOpenDialog = async () => [Uri.file(assetsRoot)];
       windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
         const resolved = (await items) as Array<{ label: string }>;
-        return resolved.find(item => item.label === '导入');
+        return resolved.find(item => item.label === 'Import');
       };
 
       await commands.executeCommand('kbengine.project.import');
@@ -98,7 +98,7 @@ describe('激活期项目导入命令装配(IDE-PRJ-003)', () => {
       const profiles = profileWrites[0][1] as Array<Record<string, string>>;
       expect(profiles).toHaveLength(1);
       expect(profiles[0]).toMatchObject({ displayName: 'proj', assetsRoot, engineRoot: '' });
-      expect(messages.info.some(info => info.includes('已导入项目 profile'))).toBe(true);
+      expect(messages.info.some(info => info.includes('Project profile imported'))).toBe(true);
     } finally {
       windowish.showOpenDialog = originalOpenDialog;
       windowish.showQuickPick = originalQuickPick;
@@ -146,7 +146,7 @@ describe('激活期最小项目创建命令装配(IDE-PRJ-008)', () => {
       expect(profileWrites).toHaveLength(1);
       const profiles = profileWrites[0][1] as Array<Record<string, string>>;
       expect(profiles[0]).toMatchObject({ displayName: 'fresh', assetsRoot: targetRoot });
-      expect(messages.info.some(entry => entry.includes('已创建最小项目 profile'))).toBe(true);
+      expect(messages.info.some(entry => entry.includes('Created Minimal project profile'))).toBe(true);
     } finally {
       windowish.showOpenDialog = originalOpenDialog;
       windowish.showQuickPick = originalQuickPick;

@@ -47,7 +47,7 @@ describe('kbengine.project.doctor', () => {
     const report = channel?.lines.join('\n') ?? '';
     expect(report).toContain('Project Doctor:');
     expect(report).toContain('Unresolved inherit reference');
-    expect(messages.warning.at(-1)).toContain('Project Doctor 发现 1 项错误');
+    expect(messages.warning.at(-1)).toContain('Project Doctor found 1 errors');
 
     for (const disposable of context.subscriptions) disposable.dispose();
     expect(deactivate()).toBeUndefined();
