@@ -8,9 +8,9 @@
 // 不返回共享句柄。
 
 import * as vscode from 'vscode';
-import { CUSTOM_SNIPPETS_RELATIVE_PATH, mergeSnippetEntry, selectionToSnippetBody } from '../snippetGenerator';
+import { CUSTOM_SNIPPETS_RELATIVE_PATH, mergeSnippetEntry, selectionToSnippetBody } from '../backend/snippetGenerator';
 import { DiscoveryKey, DiscoveryLayoutFacts, DiscoveryPromptDeps } from '../workspaceDiscovery';
-import { MergeSnippetResult } from '../snippetGenerator';
+import { MergeSnippetResult } from '../backend/snippetGenerator';
 import { RUFF_MAX_FILES, runInstallRuffCommand, runRuffLintCommand, RuffDiag } from '../backend/ruffLint';
 import { buildDefReferenceGraphFromFile, buildProjectDoctorReport, formatDefReferenceGraphPreview, formatProjectDoctorReport } from '../backend/defReferenceGraph';
 import { buildDiscoveryReport, renderDiscoveryReport, runWorkspaceDiscovery } from '../workspaceDiscovery';

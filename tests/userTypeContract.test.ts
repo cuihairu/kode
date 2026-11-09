@@ -9,7 +9,7 @@ import {
   contractSymbolName,
   implFileHasContractMethod,
   type UserTypeContractStatus
-} from '../src/userTypeContract';
+} from '../src/backend/userTypeContract';
 
 const fullStatus = (overrides: Partial<UserTypeContractStatus> = {}): UserTypeContractStatus => ({
   name: 'TalentTree',

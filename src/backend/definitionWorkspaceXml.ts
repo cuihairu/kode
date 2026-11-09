@@ -6,8 +6,8 @@
 // 值函数 + 类型导入(自 definitionWorkspace 类型-only,运行时无环);文件读取面
 // (getTypesXmlCustomTypeInfos/buildAliasXmlCustomTypeInfo)与 buildCustomTypeInfo
 // (依赖 findCustomTypePythonFileByImplementation)留在 definitionWorkspace.ts。
-import type { CustomTypePropertyInfo, CustomTypeStructureNode } from './definitionWorkspace';
-import { DefElementNode, getDirectChildElement, getDirectChildElements, getLineNumberAt, getScalarChildValue, parseDefDocument, type DefDocument } from './backend/defParser';
+import type { CustomTypePropertyInfo, CustomTypeStructureNode } from '../definitionWorkspace';
+import { DefElementNode, getDirectChildElement, getDirectChildElements, getLineNumberAt, getScalarChildValue, parseDefDocument, type DefDocument } from './defParser';
 
 export function parseCustomTypeProperties(
   document: DefDocument,

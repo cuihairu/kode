@@ -11,7 +11,7 @@ import { describePropertyDatabaseStoragePublished, getTypeStorageShape, TypeStor
 import { buildPropertyDatabaseStorageHover, describeBuiltinTypeCapacity } from '../databaseSimulator';
 import { findCustomTypeInfo, findTypesXmlImplementedByReference, findDefinitionFileByCategory, findEntityDefinitionFile, findEntityScriptFile, getEntityRuntimeProfile, getRegisteredEntities, getWorkspaceRootForDocument } from '../definitionWorkspace';
 import { describeMethodCallDirection, describePropertySyncDirection } from '../backend/entityFlowGraph';
-import { renderUserTypeContractHoverSection, userTypeContractStatusForName } from '../userTypeContractSource';
+import { renderUserTypeContractHoverSection, userTypeContractStatusForName } from '../backend/userTypeContractSource';
 import { HOOK_CATEGORY_NAMES } from '../hooks';
 import { engineApiVersionAnnotation, summaryForLanguage } from '../kbeModuleIndex';
 import { getEngineVersion } from '../engineVersion';

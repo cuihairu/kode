@@ -24,8 +24,8 @@ import {
   collectDefMethodMissingItems,
   collectPythonMethodNotInDefItems,
 } from '../backend/defMethodConsistency';
-import { USER_TYPE_CONTRACT_MISSING_DIAGNOSTIC_CODE, collectUserTypeContractMissingByImplFile } from '../userTypeContract';
-import { collectUserTypeContractStatuses } from '../userTypeContractSource';
+import { USER_TYPE_CONTRACT_MISSING_DIAGNOSTIC_CODE, collectUserTypeContractMissingByImplFile } from '../backend/userTypeContract';
+import { collectUserTypeContractStatuses } from '../backend/userTypeContractSource';
 import {
   PROPERTY_DIRECTION_DIAGNOSTICS_ENABLED_DEFAULT,
   propertyDirectionDiagnosticItemsAsync,

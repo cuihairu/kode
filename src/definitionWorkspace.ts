@@ -28,7 +28,7 @@ import {
   parseCustomTypeProperties,
   parseXmlDocument,
   parseCustomTypeStructure
-} from './definitionWorkspaceXml';
+} from './backend/definitionWorkspaceXml';
 // 统一注解解析底座(纯逻辑半边)在 pythonTypeStubs;此处只传注册表,调用
 // 均发生在函数体内,模块环(pythonTypeStubs→definitionWorkspace)为惰性引用。
 import {

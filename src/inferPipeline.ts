@@ -14,7 +14,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { InferredDirEntry, listSourceFiles, mirrorPrefixFor, planInferredMirror } from './inferredCopy';
+import { InferredDirEntry, listSourceFiles, mirrorPrefixFor, planInferredMirror } from './backend/inferredCopy';
 import { pathApiFor } from './backend/workspacePath';
 import { detectVcs, planExclusion, planGitignoreAdd, type ManagedExclusionEntry } from './backend/managedDirExclusions';
 import { fileSystemScriptRootDeps, pythonScriptRootCandidates } from './pythonExtraPaths';

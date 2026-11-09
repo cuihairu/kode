@@ -8,7 +8,7 @@ import {
   getCustomTypeInfos,
   findImplementedBySymbolLine,
   readWorkspaceTextFile
-} from './definitionWorkspace';
+} from '../definitionWorkspace';
 import {
   USER_TYPE_CONTRACT_METHODS,
   USER_TYPE_CONTRACT_CONSEQUENCE,

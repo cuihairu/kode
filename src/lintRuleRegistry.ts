@@ -154,7 +154,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Error', roles: 'def',
     toggles: ['kbengine.enableDiagnostics'], trigger: '实时(open/edit)',
     quickFix: '生成空实现', status: 'implemented',
-    source: 'src/userTypeContract.ts'
+    source: 'src/backend/userTypeContract.ts'
   },
   {
     id: 'KBE-DEF-011', code: 'def-method-missing-in-python',

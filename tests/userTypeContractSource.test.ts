@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { collectUserTypeContractStatuses, userTypeSerializationContractDoc, pythonPickleContractDoc, userTypeContractStatusForName, renderUserTypeContractHoverSection } from '../src/userTypeContractSource';
+import { collectUserTypeContractStatuses, userTypeSerializationContractDoc, pythonPickleContractDoc, userTypeContractStatusForName, renderUserTypeContractHoverSection } from '../src/backend/userTypeContractSource';
 
 const write = (root: string, relative: string, content: string): void => {
   const target = path.join(root, ...relative.split('/'));

@@ -6,7 +6,7 @@ import {
   mergeSnippetEntry,
   selectionToSnippetBody,
   stripCommonIndent
-} from '../src/snippetGenerator';
+} from '../src/backend/snippetGenerator';
 
 // 批94「代码片段生成器(自定义代码片段)」纯逻辑层:片段语法转义、
 // 选区归一为片段体、片段文件 JSON 合并(含覆盖判定与坏 JSON 拒绝)。

@@ -4,7 +4,7 @@ import {
   listSourceFiles,
   mirrorPrefixFor,
   planInferredMirror
-} from '../src/inferredCopy';
+} from '../src/backend/inferredCopy';
 
 describe('inferredCopy', () => {
   describe('inferredDirFor', () => {

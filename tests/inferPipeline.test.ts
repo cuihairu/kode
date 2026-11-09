@@ -22,7 +22,7 @@ import {
   workspace as stubWorkspace,
   workspaceState
 } from './helpers/vscodeStub';
-import type { InferredDirEntry } from '../src/inferredCopy';
+import type { InferredDirEntry } from '../src/backend/inferredCopy';
 
 // KODE-CFG-017 装配层执行器测试:三个执行器(隔离面/副本/推断)在假 vscode
 // 注入 deps 下走全链。scripts 根发现用真 fs(临时工作区),读/写/列举/探测
