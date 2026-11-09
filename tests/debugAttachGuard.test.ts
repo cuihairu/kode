@@ -3,7 +3,7 @@ import {
   DEBUG_ATTACH_TIMEOUT_DEFAULT_MS,
   attachWithDeadline,
   type AttachGuardTimers
-} from '../src/debugAttachGuard';
+} from '../src/backend/debugAttachGuard';
 
 // IDE-DBG-007 调试连接的截止与取消:attach 到无人监听的端口时
 // vscode.debug.startDebugging 可能长时间不落定(挂起到 OS 级 TCP 超时),

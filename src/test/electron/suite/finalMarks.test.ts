@@ -13,7 +13,7 @@ import {
   pooledP95,
   type BurstRun,
   type FinalMarksPolicy
-} from '../../../finalMarksVerdict';
+} from '../../../backend/finalMarksVerdict';
 
 // IDE-ACC-010:按场景纠正最终完成标记——热态双指标分判面(真实编辑器,
 // field 同装配:demo 资产+5000 文件外部根)。验收原文「热态 Hover P95≤30ms、

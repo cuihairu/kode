@@ -24,7 +24,7 @@ import {
   type RedisSession
 } from './backend/redisDrift';
 import { enumerateRedisKeys } from './redisKeyspaceCommand';
-import { formatRedisHashPreview } from './redisKeySpace';
+import { formatRedisHashPreview } from './backend/redisKeySpace';
 import { getDerivedDatabaseProfile } from './configDerive';
 import { resolveDatabaseInterfaceConfig, type DatabaseInterfaceConfig } from './serverConfigMerge';
 import { randomNonce } from './webviewSecurity';

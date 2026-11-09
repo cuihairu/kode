@@ -9,7 +9,7 @@ import {
   runBotsCountCommand,
   type BotsControlDeps,
   type BotsTelnetTarget
-} from '../src/botsControl';
+} from '../src/backend/botsControl';
 
 // IDE-BOT-001(机器人,A 案:本地单机闭环)单元锁:
 // - 命令串构造镜像引擎 python 层形态(一次性=单参,分批=三参),非法入参抛错;

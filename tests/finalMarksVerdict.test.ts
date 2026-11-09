@@ -4,7 +4,7 @@ import {
   evaluateFinalMarks,
   pooledP95,
   type BurstRun
-} from '../src/finalMarksVerdict';
+} from '../src/backend/finalMarksVerdict';
 
 // IDE-AUD-020:让延迟越界真正导致最终验收失败——hoverPass 与 definitionPass
 // 分别断言,注入可控延迟证明两者独立失败;采样/宿主争用处理预先规定:

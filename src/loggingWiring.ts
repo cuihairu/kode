@@ -17,7 +17,7 @@ import { renderLintRulesReport } from './lintRuleRegistry';
 import { resolveServerComponent } from './serverCommandTarget';
 import { getDiagnosticScheduler } from './backend/diagnosticScheduler';
 import { setFileReadVerbose } from './backend/fileReadMetrics';
-import { setCpuProfileDirectory, startCpuProfile, stopCpuProfile } from './cpuProfileCapture';
+import { setCpuProfileDirectory, startCpuProfile, stopCpuProfile } from './backend/cpuProfileCapture';
 import {
   getEventLoopDelayReport,
   getHostVitalsReport,
@@ -25,7 +25,7 @@ import {
   startHostVitalsMonitor,
   stopEventLoopDelayMonitor,
   stopHostVitalsMonitor
-} from './hostVitals';
+} from './backend/hostVitals';
 
 export interface LoggingWiring {
   logCollector: KBEngineLogCollector;

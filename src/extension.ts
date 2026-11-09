@@ -35,7 +35,7 @@ import {
   prepareTestRun,
   taskContextScriptsRoot,
   TEST_TASK_CONTEXT_STORAGE_KEY,
-} from './taskContext';
+} from './backend/taskContext';
 import { showEntityMessageTablePreview } from './backend/messageTablePreview';
 import { exportEntityMessageTable } from './backend/messageTableExport';
 import { renderMessageTableJson, renderMessageTableMarkdown, type MessageTable } from './backend/messageTable';

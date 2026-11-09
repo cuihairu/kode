@@ -7,7 +7,7 @@ import {
   startHostVitalsMonitor,
   stopHostVitalsMonitor,
   type HostVitalsWindow
-} from '../src/hostVitals';
+} from '../src/backend/hostVitals';
 
 // IDE-MET-006:同一进程窗口内 CPU 与 RSS。验收口径:CPU 增量正确换算微秒
 // (process.cpuUsage 原生就是微秒,不得再当纳秒/毫秒错乘),采样窗口峰值与

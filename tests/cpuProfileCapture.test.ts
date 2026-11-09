@@ -10,7 +10,7 @@ import {
   startCpuProfile,
   stopCpuProfile,
   type CpuProfilerSessionLike
-} from '../src/cpuProfileCapture';
+} from '../src/backend/cpuProfileCapture';
 
 // IDE-MET-007:扩展宿主 CPU profile 采集入口。验收口径:从卡顿触发到
 // profile 落盘可复现——start/stop 命令化,产物 .cpuprofile + 同名

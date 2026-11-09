@@ -5,7 +5,7 @@ import {
   startEventLoopDelayMonitor,
   stopEventLoopDelayMonitor,
   type EventLoopDelayHistogramLike
-} from '../src/hostVitals';
+} from '../src/backend/hostVitals';
 
 // IDE-MET-005:事件循环延迟采集并统一为毫秒。验收口径:输出写明原始单位
 // (monitorEventLoopDelay 直方图原生纳秒)与采样窗口,纳秒绝不直接冒充毫秒。

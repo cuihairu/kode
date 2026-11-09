@@ -5,7 +5,7 @@ import {
   buildRedisKeyTree,
   classifyRedisKey,
   formatRedisHashPreview
-} from '../src/redisKeySpace';
+} from '../src/backend/redisKeySpace';
 
 describe('classifyRedisKey', () => {
   it('kbe_entitylog:<dbid>:<type> 归为实体日志', () => {

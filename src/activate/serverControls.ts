@@ -76,7 +76,7 @@ import { setDefaultScriptRuntime } from '../quickActions';
 import { readDerivedTelnetTargets } from '../telnetDeriveTargets';
 import { makeProbeOne, TelnetService, updateTelnetStatusBar } from '../telnetService';
 import { TelnetWebView } from '../telnetWebView';
-import { runBotsAddCommand, runBotsCountCommand, type BotsControlDeps } from '../botsControl';
+import { runBotsAddCommand, runBotsCountCommand, type BotsControlDeps } from '../backend/botsControl';
 import { TelnetTreeProvider } from '../telnetTree';
 import { ensureConfigDerivedScanRoot, getDerivedDatabaseProfile } from '../configDerive';
 import {

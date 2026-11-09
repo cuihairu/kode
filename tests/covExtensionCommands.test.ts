@@ -21,7 +21,7 @@ import {
   resetCpuProfileCapture,
   setCpuProfileSessionFactory,
   type CpuProfilerSessionLike
-} from '../src/cpuProfileCapture';
+} from '../src/backend/cpuProfileCapture';
 import { locateInterpreterOnPath } from '../src/profileInterpreter';
 
 // 真实解释器(双平台):测试面板「运行」档会真实 spawn 它跑 pytest——

@@ -5,7 +5,7 @@ import {
   DEBUG_ATTACH_TIMEOUT_DEFAULT_MS,
   attachWithDeadline,
   type AttachGuardOutcome
-} from './debugAttachGuard';
+} from './backend/debugAttachGuard';
 import { parseDebugConfigText } from './backend/debugConfigBootstrap';
 import {
   DEBUGPY_PORT_PROBE_TIMEOUT_MS,

@@ -8,7 +8,7 @@
  */
 
 import * as path from 'path';
-import type { ProjectProfile } from './projectProfiles';
+import type { ProjectProfile } from '../projectProfiles';
 
 /** 可重复运行的任务上下文(一次性快照,之后与 profile 记录解耦) */
 export interface TaskRunContext {

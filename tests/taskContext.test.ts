@@ -5,7 +5,7 @@ import {
   compareTaskRunContexts,
   prepareTestRun,
   type TaskRunContext
-} from '../src/taskContext';
+} from '../src/backend/taskContext';
 import type { ProjectProfile } from '../src/projectProfiles';
 
 // IDE-TSK-006 保存可重复运行的任务上下文:测试面板首次跑时快照

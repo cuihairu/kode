@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import inspector from 'inspector';
-import { getLanguageServiceSummaryReport } from './languageServiceMetrics';
+import { getLanguageServiceSummaryReport } from '../languageServiceMetrics';
 import { getEventLoopDelayReport } from './hostVitals';
 
 /** inspector 会话最小面(post 回调式,与 Node 原生同形,便于替身) */

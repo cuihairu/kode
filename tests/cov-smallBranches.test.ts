@@ -26,7 +26,7 @@ import {
   resetCpuProfileCapture,
   setCpuProfileSessionFactory,
   startCpuProfile
-} from '../src/cpuProfileCapture';
+} from '../src/backend/cpuProfileCapture';
 import { formatTablePreview } from '../src/databaseTablePreviewCommand';
 import { DebugSessionRegistry } from '../src/debug/debugSessionRegistry';
 import { DebugTargetTreeProvider } from '../src/debug/debugStatusTree';
@@ -36,7 +36,7 @@ import {
   compareTaskRunContexts,
   prepareTestRun,
   type TaskRunContext
-} from '../src/taskContext';
+} from '../src/backend/taskContext';
 import {
   QuickActionTreeItem,
   QuickActionTreeProvider
@@ -51,12 +51,12 @@ import {
   getHostVitalsReport,
   sampleHostVitals,
   stopHostVitalsMonitor
-} from '../src/hostVitals';
+} from '../src/backend/hostVitals';
 import {
   describeLiveValidationStatus,
   type LiveValidationRegister
 } from '../src/liveValidationInputs';
-import { attachWithDeadline } from '../src/debugAttachGuard';
+import { attachWithDeadline } from '../src/backend/debugAttachGuard';
 import {
   settleAppliedStatus,
   verifyAppliedReceipt

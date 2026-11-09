@@ -14,7 +14,7 @@ import * as vscode from 'vscode';
 import { getDerivedDatabaseProfile } from './configDerive';
 import { resolveDatabaseInterfaceConfig } from './serverConfigMerge';
 import { openRedisSession, type RedisConnectionConfig, type RedisSession } from './backend/redisDrift';
-import { buildRedisKeyTree, formatRedisHashPreview } from './redisKeySpace';
+import { buildRedisKeyTree, formatRedisHashPreview } from './backend/redisKeySpace';
 
 /** 只读输出通道名(与 mysql 预览同风格,展示面不可编辑)。 */
 export const REDIS_KEYSPACE_CHANNEL_NAME = 'KBEngine Redis 键空间(只读)';
