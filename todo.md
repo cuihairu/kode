@@ -1549,7 +1549,7 @@
 - [x] UX-REVIEW-004b-1 导出在选择实体与输入 DBID 前检查源连接；缺失时可直接进入配置，保存后继续选择，取消不收集后续信息。已覆盖现有导出及新入口（80 项测试通过）；Rust 后端预检和连接测试仍属父项。
 - [x] UX-REVIEW-004c 导入前先检查目标连接及后端；保持目标环境限制、预演、两次写入确认与重复导入保护；取消和失败不误称成功。已完成（511a017b）：导入命令前置三道预检——Target 未配置时提供「配置 Target 连接」向导入口（拒绝/取消即不再收集）；环境闸只认 local/test（其余一律报错，绝不写生产/预发布）；探测会话建立后先跑真实 SELECT VERSION()，失败如实报「目标连接失败:…(导入未开始)」且不登记防重、不生成计划、不写入。预演/两次确认/防重保护原样保留（tests/playerDataCloneImportCommand.test.ts preflight 3 例，prove-red 旧码 3/3 红）。
 - [x] UX-REVIEW-004d 只读查询缺配置时提供项目配置定位和连接检查入口；不会将克隆源/目标设置当成只读查询的引擎配置。已完成（511a017b）：queryByDbid 命令加缺配置闸——降级文案点明连接要素只来自 dbmgr/databaseInterfaces/default 派生「与克隆 Source/Target 台账无关」，并提供两个真实恢复入口（kbengine.discovery.report / 重新派生并检查连接）；配置存在时闸放行（tests/playerDataPanelCoverage.test.ts readOnlyQueryConfigGate 专测）。
-- [ ] UX-REVIEW-004e 验证纯 TS 无 Rust 后端、缺连接、连接失败、无实体、取消、预演与执行结果；对线上只读和本地/测试写入边界做回归。
+- [x] UX-REVIEW-004e 验证纯 TS 无 Rust 后端、缺连接、连接失败、无实体、取消、预演与执行结果；对线上只读和本地/测试写入边界做回归。（2026-11-10,2cf6acb4:新增 tests/cloneBoundaryRegression.test.ts 查询面纯 TS 结构锁 3 例——playerDataPanel.ts 零 Rust 桥 import 且无 no-gate 分支(查询面 Rust 不可用时功能完整)、白名单执行器在链(backend/databaseDrift SELECT/SHOW/DESCRIBE/EXPLAIN+双 executor 创建位)、查询/连接测试/SQL 构造入口在案;prove-red=注入 Rust import 1 例红还原绿;矩阵逐格归属既有测试:纯 TS no-gate 五面=playerDataCloneRust.test,缺连接=cloneCommandsCoverage 警告指引+playerCloneExportPreflight 选择前检查,连接失败=建连失败如实+探测会话失败导入未开始,无实体=导出无实体警告+导入 def 推导不可用,取消=早期/两次确认/Apply 期回滚+取消中断只读执行,预演与执行区分=预览→双确认→Apply+COMMIT 不确定不引导重试,线上只读=databaseDrift 语句白名单+READ ONLY 会话+SELECT 1 探测,本地/测试写入=环境闸非 local/test 拒绝+Rust 侧 fail-closed 复核;门禁 tsc 0/lint 0/全量 vitest 8392 过(hoverDeadline 15ms 预算满载抖动 1 例隔离 10/10 绿)/demo 25 RC=0/docs:build RC=0;004b 余量=Rust 后端预检与连接测试,属并发在编面不碰）
 
 ### UX-REVIEW-005 [P1] 克隆连接配置体验
 
