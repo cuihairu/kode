@@ -47,7 +47,7 @@ import { IndexScheduler, IndexTaskPriority } from './backend/indexScheduler';
 import { PY_SCAN_EXCLUDED_DIRS } from './backend/pythonScanRules';
 import { SemanticIndex, getSemanticIndex, isTypeRegistryFile } from './backend/semanticIndex';
 import { createSharedFileEventMerger, type SharedFileEvent } from './backend/sharedFileEvents';
-import { SemanticDependencyGraph, type SemanticChangeKind } from './dependencyGraph';
+import { SemanticDependencyGraph, type SemanticChangeKind } from './backend/dependencyGraph';
 import type { EntityComponentFace } from './backend/entityBuiltinProperties';
 import { invalidateDatabaseSchemaCacheForFiles, invalidateDatabaseSchemaCacheForTypeRegistry } from './databaseSchema';
 

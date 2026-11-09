@@ -7,7 +7,7 @@ import {
   renderDefCallChainMermaid
 } from './backend/defCallChain';
 import type { DefCallChain } from './backend/defCallChain';
-import { findPythonMethodDeclarations } from './rpcCodeLens';
+import { findPythonMethodDeclarations } from './backend/rpcCodeLens';
 import { withInitialScanTimeout } from './hoverBudget';
 import {
   CALL_CHAIN_TAB_STATE_KEY,

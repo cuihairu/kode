@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import type { EntityMappingManager } from './entityMapping';
-import { findPythonSelfPropertyAccesses, propertyAccessKey } from './propertyCodeLens';
+import { findPythonSelfPropertyAccesses, propertyAccessKey } from './backend/propertyCodeLens';
 import {
   getWorkspaceRootForDocument,
   resolveEntityAnnotationType,

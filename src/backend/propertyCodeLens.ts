@@ -13,7 +13,7 @@
  * 同口径);引擎那套 self.get('属性')/self.set('属性', 值) API 形态不在识别范围。
  */
 
-import type { PropertyFlagDomain } from './backend/defAnalyzer';
+import type { PropertyFlagDomain } from './defAnalyzer';
 
 /** Python 脚本里一处 self.<属性> 访问(位置口径与声明行解析器同源) */
 export interface PythonSelfPropertyAccess {

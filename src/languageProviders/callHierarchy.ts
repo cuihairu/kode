@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { getLineNumberAt } from '../backend/defParser';
 import { EntityMappingManager, EntityMethodSection } from '../entityMapping';
-import { METHOD_DECLARATION_PATTERN } from '../rpcCodeLens';
+import { METHOD_DECLARATION_PATTERN } from '../backend/rpcCodeLens';
 import { METHOD_SECTIONS, parseDefAst } from './shared';
 import { findDefSymbolInfo, resolveDefMethodPythonTarget } from './navigation';
 export class KBEngineCallHierarchyProvider implements vscode.CallHierarchyProvider {

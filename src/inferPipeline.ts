@@ -26,7 +26,7 @@ import {
   assertWritable,
   buildInferArgs,
   discoverPyrefly
-} from './pyreflyInfer';
+} from './backend/pyreflyInfer';
 import { kbeStubDir, readManagedDirSetting, resolveManagedDirName } from './pythonStubExport';
 
 // ---------------------------------------------------------------------------

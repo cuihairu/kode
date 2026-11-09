@@ -163,7 +163,7 @@ describe('注解索引共享构建在途量(IDE-REV-029)', () => {
     const extension = await import('fs').then(async fs => await fs.promises.readFile('src/extension.ts', 'utf8')
       + await fs.promises.readFile('src/activate/utilityCommands.ts', 'utf8'));
     expect(extension.split('annotationBuilds: getAnnotationBuildWorkload()').length).toBe(3);
-    const summary = await import('fs').then(fs => fs.promises.readFile('src/reproductionSummary.ts', 'utf8'));
+    const summary = await import('fs').then(fs => fs.promises.readFile('src/backend/reproductionSummary.ts', 'utf8'));
     expect(summary).toContain('注解索引构建=运行');
     expect(summary).toContain('/等待');
     expect(summary).toContain('/已全取消');

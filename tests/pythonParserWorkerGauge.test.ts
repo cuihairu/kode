@@ -198,7 +198,7 @@ describe('解析 worker 队列与字节占用(IDE-REV-030)', () => {
       + await fs.promises.readFile('src/activate/utilityCommands.ts', 'utf8');
     expect(extension.split('worker: getPythonParserWorkerGauge()').length).toBe(3);
     expect(extension).toContain('getPythonParserWorkerGauge } from');
-    const summary = await fs.promises.readFile('src/reproductionSummary.ts', 'utf8');
+    const summary = await fs.promises.readFile('src/backend/reproductionSummary.ts', 'utf8');
     expect(summary).toContain('worker=运行');
     expect(summary).toContain('worker排队字节=');
     expect(summary).toContain('/预算');

@@ -32,7 +32,7 @@ import { joinWorkspacePath } from '../backend/workspacePath';
 import { locateInterpreterOnPath, resolveInterpreterWith, resolveProfileInterpreter } from '../profileInterpreter';
 import { normalizeVenvDirectoryNames } from '../backend/quickActionConfig';
 import { readBuildCommit } from '../backend/buildCommit';
-import { renderReproductionSummary } from '../reproductionSummary';
+import { renderReproductionSummary } from '../backend/reproductionSummary';
 import { resolveActiveProfile } from '../activeProfile';
 import { StartEntryController } from '../startEntry';
 import { resolveDatabaseInterfaceConfig } from '../serverConfigMerge';

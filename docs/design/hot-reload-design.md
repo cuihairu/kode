@@ -148,7 +148,7 @@ never conflated with FAILED.
 | watch-off 且无版本上下文 | 同上 | 五态原文案逐字不变 |
 
 - **版本 = 每文件单调递增整数**:首次跟踪记 v1;盘上 version token(异步
-  stat 的 `mtimeMs:size`,与 `src/sharedFileEvents.ts` 合并窗口同一口径)变则
+  stat 的 `mtimeMs:size`,与 `src/backend/sharedFileEvents.ts` 合并窗口同一口径)变则
   +1;回退到旧内容也算新一次变化,版本**绝不倒退**。原始 token 不上屏,只显示
   `vN`。
 - **基线随台账**:`HotReloadTargetStateStore` 内的文件版本簿与投递台账同
@@ -176,7 +176,7 @@ never conflated with FAILED.
 > matches the verified baseline (synced); a pair (`热更: … v2→v3`) means
 > baseline → current on-disk version (pending). Versions are monotonically
 > increasing integers per file: first observation = v1, each change of the
-> `mtimeMs:size` version token (same helper as `src/sharedFileEvents.ts`) = +1,
+> `mtimeMs:size` version token (same helper as `src/backend/sharedFileEvents.ts`) = +1,
 > reverting to older content still counts as a change — the number never goes
 > down, and the raw token is never displayed. The baseline lives in the
 > target-state ledger (`HotReloadTargetStateStore`, same lifetime, no extra

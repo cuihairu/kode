@@ -4,7 +4,7 @@ import {
   renderConnectionLine,
   renderReproductionSummary,
   type ReproductionSummaryInput
-} from '../src/reproductionSummary';
+} from '../src/backend/reproductionSummary';
 
 // IDE-REL-007 诊断报告导出复现配置摘要:纯渲染面——活动版本/根/角色
 // (宿主角色=local|remote + 扩展宿主侧)/开关/队列数据五节如实渲染,连接

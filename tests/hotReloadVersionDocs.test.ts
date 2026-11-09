@@ -42,7 +42,7 @@ describe('hot-reload-design.md 状态栏版本号节(中英)对账', () => {
   it('版本口径:单调递增、不暴露 mtime:size 原始 token、回退不倒退', () => {
     expect(design).toContain('每文件单调递增整数');
     expect(design).toContain('`mtimeMs:size`');
-    expect(design).toContain('src/sharedFileEvents.ts');
+    expect(design).toContain('src/backend/sharedFileEvents.ts');
     expect(design).toContain('版本**绝不倒退**');
     expect(design).toContain('原始 token 不上屏');
   });

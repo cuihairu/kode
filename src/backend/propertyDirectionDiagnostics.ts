@@ -11,7 +11,7 @@
 // EntityMappingManager.resolvePropertyDefinitionInfo 回包装配成
 // PropertyDirectionHit),本层不自己读 def 文件。
 
-import { findPythonSelfPropertyAccesses } from '../propertyCodeLens';
+import { findPythonSelfPropertyAccesses } from './propertyCodeLens';
 import { l10nText } from '../nlsRuntime';
 import { inferMethodSectionFromPythonFile } from '../entityMapping';
 import type { PropertyFlagDomain } from './defAnalyzer';

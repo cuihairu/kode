@@ -42,7 +42,7 @@ import {
   QuickActionTreeProvider
 } from '../src/quickActionTree';
 import { getScanRootForFile } from '../src/scanRoots';
-import { SemanticDependencyGraph } from '../src/dependencyGraph';
+import { SemanticDependencyGraph } from '../src/backend/dependencyGraph';
 import { checkExtensionCompatibility } from '../src/backend/engineCompatibility';
 import { fileSystemTestDiscoveryDeps } from '../src/pythonTestDiscovery';
 import { locateInterpreterOnPath } from '../src/profileInterpreter';

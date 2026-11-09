@@ -9,7 +9,7 @@
  */
 
 import * as path from 'path';
-import { pathApiFor } from './backend/workspacePath';
+import { pathApiFor } from './workspacePath';
 
 // ---------------------------------------------------------------------------
 // 写权限闸（用户令 2026-11-03）：scope 外写一律拒绝，不静默。

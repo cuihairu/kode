@@ -1,4 +1,4 @@
-import { normalizeLookupPath } from './backend/definitionSemantics';
+import { normalizeLookupPath } from './definitionSemantics';
 
 // 语义依赖失效图(PR4 A4-2):entities.xml / .def / types.xml / alias.xml /
 // Python 声明 的真实依赖边 + 定向失效计划。铁律:任何变更都不得推导出全仓

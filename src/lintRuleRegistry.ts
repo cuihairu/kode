@@ -178,7 +178,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: 'def/清单',
     toggles: ['kbengine.diagnostics.checkProcessTopology'],
     trigger: '实时(open/edit)', quickFix: false,
-    status: 'implemented', source: 'src/processTopologyDiagnostics.ts'
+    status: 'implemented', source: 'src/backend/processTopologyDiagnostics.ts'
   },
   // ── 工作区配置层实时诊断(implemented,内网开发机环境适配审核
   // docs/analysis/intranet-env-audit.md §4/§5)────────────────────

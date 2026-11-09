@@ -4,7 +4,7 @@ import {
   defaultRpcCodeLensTitle,
   findPythonMethodDeclarations,
   RpcMethodHit
-} from '../src/rpcCodeLens';
+} from '../src/backend/rpcCodeLens';
 import { createDefinitionSelection, RpcCodeLensProvider } from '../src/languageProviders';
 import { EntityMappingManager } from '../src/entityMapping';
 import { configurationOverrides } from './helpers/vscodeStub';

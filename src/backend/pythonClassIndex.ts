@@ -9,7 +9,7 @@ import { parsePythonFile } from './pythonParser';
 import type { PythonClassDef, ParsedPythonFile } from './pythonParser';
 import { parsePythonFileResponsive } from './pythonParserWorkerHost';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
-import { SemanticDependencyGraph } from '../dependencyGraph';
+import { SemanticDependencyGraph } from './dependencyGraph';
 import { INTERACTIVE_INDEX_WAIT_MS, raceWithBudget } from '../hoverBudget';
 import { jumpLog, jumpTimeStart } from '../navigationLog';
 import {

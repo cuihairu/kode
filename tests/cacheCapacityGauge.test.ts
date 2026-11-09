@@ -92,7 +92,7 @@ describe('缓存容量面(IDE-REV-031)', () => {
     expect(extension).toContain('getParsedDocumentCacheGauge()');
     expect(extension).toContain('getDatabaseSchemaCacheGauge()');
     expect(extension).toContain('getReturnAnnotationCacheGauge()');
-    const summary = await fs.promises.readFile('src/reproductionSummary.ts', 'utf8');
+    const summary = await fs.promises.readFile('src/backend/reproductionSummary.ts', 'utf8');
     expect(summary).toContain('缓存:def文档=');
     expect(summary).toContain('schema快照=');
     expect(summary).toContain('注解索引=');

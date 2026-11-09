@@ -6,7 +6,7 @@ import {
   assertWritable,
   buildInferArgs,
   discoverPyrefly
-} from '../src/pyreflyInfer';
+} from '../src/backend/pyreflyInfer';
 
 describe('pyreflyInfer', () => {
   describe('assertWritable (write-scope gate)', () => {

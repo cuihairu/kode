@@ -8,7 +8,7 @@ import {
   isTypeRegistryFile,
   resetSemanticTypeRegistryForTests
 } from '../src/backend/semanticIndex';
-import { SemanticDependencyGraph } from '../src/dependencyGraph';
+import { SemanticDependencyGraph } from '../src/backend/dependencyGraph';
 import { EntityMappingManager } from '../src/entityMapping';
 import { resolveEntityAnnotationType } from '../src/definitionWorkspace';
 import { normalizeFileIdentity } from '../src/backend/pathIdentity';
@@ -603,7 +603,7 @@ describe('同名符号跨根稳定性(A6-5,接 PR5 版本轴)', () => {
 // 同口径:必须整段路径段命中(或裸文件名恰为 entities.xml)。
 describe('KR-AUD-31: entities.xml 判定带路径段锚', () => {
   it('xxxentities.xml 不再误判为 entities-xml', async () => {
-    const { classifySemanticFile } = await import('../src/dependencyGraph');
+    const { classifySemanticFile } = await import('../src/backend/dependencyGraph');
     expect(classifySemanticFile('/ws/myxxxentities.xml')).toBe('other');
     expect(classifySemanticFile('/ws/entities.xml')).toBe('entities-xml');
     expect(classifySemanticFile('/entities.xml')).toBe('entities-xml');

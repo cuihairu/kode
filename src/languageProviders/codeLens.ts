@@ -2,8 +2,8 @@
 import * as vscode from 'vscode';
 import { getDirectChildElements, getLineNumberAt, parseDefDocument } from '../backend/defParser';
 import { EntityMappingManager } from '../entityMapping';
-import { buildRpcCodeLenses, defaultRpcCodeLensTitle, findPythonMethodDeclarations, RpcMethodHit } from '../rpcCodeLens';
-import { buildPropertyCodeLenses, findPythonSelfPropertyAccesses, propertyAccessKey, PropertyCodeLensHit } from '../propertyCodeLens';
+import { buildRpcCodeLenses, defaultRpcCodeLensTitle, findPythonMethodDeclarations, RpcMethodHit } from '../backend/rpcCodeLens';
+import { buildPropertyCodeLenses, findPythonSelfPropertyAccesses, propertyAccessKey, PropertyCodeLensHit } from '../backend/propertyCodeLens';
 import { buildPropertyInitOrderLensSpecs } from '../backend/propertyInitOrderLens';
 import { getTypeStorageUsageIndexReadOnly, indexTypeStorageUsageEntries, onTypeStorageUsageIndexPublished, TypeStorageUsage } from '../databaseSchema';
 import { findEntityDefinitionFile, getDefinitionWorkspaceLayout, getWorkspaceRootForDocument, resolveEntityAnnotationType } from '../definitionWorkspace';

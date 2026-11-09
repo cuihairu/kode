@@ -5,7 +5,7 @@ import {
   findPythonSelfPropertyAccesses,
   propertyAccessKey,
   type PropertyCodeLensHit
-} from '../src/propertyCodeLens';
+} from '../src/backend/propertyCodeLens';
 import { PropertyCodeLensProvider } from '../src/languageProviders';
 import { EntityMappingManager } from '../src/entityMapping';
 import { configurationOverrides, makeTextDocument, Uri } from './helpers/vscodeStub';
