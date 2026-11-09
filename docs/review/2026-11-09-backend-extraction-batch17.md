@@ -23,4 +23,12 @@ fileChangeMeta / fileChangeMetaLog
 
 ## 验收
 
-- `pnpm compile`(tsc)0 / `pnpm lint` 0;全量门禁见提交前记录。
+- `pnpm compile`(tsc)0 / `pnpm lint` 0;全量 vitest 一次过零抖动 693 文件 /
+  8390 过 4 skip RC=0;demo 25 RC=0;docs:build RC=0。
+- **提交 fb0a810f** + **事故与修复 79df6e0c**:暂存清单的 `^wt/` 排除式锚定
+  到行首(porcelain 行首是状态码)永不匹配,6 个 wt/ 嵌入仓库 gitlink 混入
+  fb0a810f 并推出;`git rm -r --cached wt/` 以 79df6e0c 修复推出,树净
+  (git ls-files 零 wt/)。根因两层:①排除式锚定错误(此前批次均未锚定);
+  ②流程破坏——提交前违禁项检查报 6 非零仍继续提交。铁律入账:**违禁项
+  计数非 0 必须停下核查,绝不带病提交**。wt/ 工作目录本身未动,仅索引记录
+  移除。
