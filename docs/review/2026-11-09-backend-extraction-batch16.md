@@ -25,7 +25,12 @@ backgroundWarmup / warmupStages / entryHooks
 
 ## 验收
 
-- `pnpm compile`(tsc)0 / `pnpm lint` 0;全量门禁见提交前记录。
+- `pnpm compile`(tsc)0 / `pnpm lint` 0;合并态全量 vitest 一次过零抖动
+  693 文件 / 8390 过 4 skip RC=0(首次跑被会话中断无记录,干净重跑为准);
+  demo 25 RC=0;docs:build RC=0。
+- **合并提交 b040d82a**(2026-11-09 推 main,含批次 15+16):102 文件
+  209+/146-,并发会话面零牵连(违禁项检查改精确名匹配,杜绝批次 14 的
+  configDerive 前缀误报)。
 
 ## 为何与批次 15 合并提交
 
