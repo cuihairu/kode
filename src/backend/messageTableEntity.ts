@@ -14,7 +14,7 @@ import {
   type MessageTable,
   type MessageTableOptions
 } from './messageTable';
-import type { LocalDefinitionSemantics } from '../definitionSemantics';
+import type { LocalDefinitionSemantics } from './definitionSemantics';
 
 /** def 取源:与 buildMessageTableInRust/buildMessageTable 两路的输入同形 */
 export interface EntityMessageTableSource {

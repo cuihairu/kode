@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 import { parseDefFileSemantics } from '../src/backend/defRenamer';
-import { parseLocalDefinition } from '../src/definitionSemantics';
+import { parseLocalDefinition } from '../src/backend/definitionSemantics';
 import { getCustomTypeInfos } from '../src/definitionWorkspace';
 import { propertyFlagDomainList } from '../src/backend/defAnalyzer';
 import { resolveEngineRoot } from './helpers/engineRoot';

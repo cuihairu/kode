@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
 import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { buildEntityMessageTableShared } from '../src/backend/messageTableEntity';
-import { parseLocalDefinition } from '../src/definitionSemantics';
+import { parseLocalDefinition } from '../src/backend/definitionSemantics';
 import type { MessageTable } from '../src/backend/messageTable';
 
 // IDE-AUD-060 共享构建面:preview/export 同一 buildEntityMessageTableShared,

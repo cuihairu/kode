@@ -10,7 +10,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { randomNonce, webviewAssetUri, webviewScriptCsp } from './webviewSecurity';
-import { createDefinitionSemanticsLoader } from './definitionSemantics';
+import { createDefinitionSemanticsLoader } from './backend/definitionSemantics';
 import { resolveEntityHasCell } from './backend/databaseSchemaCore';
 import { buildSchemaSourcePorts } from './backend/databaseSchemaSource';
 import { getDefinitionWorkspaceLayout } from './definitionWorkspace';

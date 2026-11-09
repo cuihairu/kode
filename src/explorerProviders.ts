@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import { l10nText } from './nlsRuntime';
-import { createDefinitionSemanticsLoader } from './definitionSemantics';
+import { createDefinitionSemanticsLoader } from './backend/definitionSemantics';
 import {
   getDatabaseSchemaSnapshot
 } from './databaseSchema';

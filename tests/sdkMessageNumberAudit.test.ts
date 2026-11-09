@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseLocalDefinition } from '../src/definitionSemantics';
+import { parseLocalDefinition } from '../src/backend/definitionSemantics';
 import type { DefTreeSource } from '../src/backend/messageTable';
 import { buildMessageTable } from '../src/backend/messageTable';
 import { listClientSdkBuiltinTypeNames } from '../src/sdk-gen/clientSdkGenerator';

@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   createDefinitionSemanticsLoader,
   parseLocalDefinition
-} from '../src/definitionSemantics';
+} from '../src/backend/definitionSemantics';
 
 // definitionSemantics 批66 分支补测:生效合并在去重映射上的"已存在即跳过"
 // 假臂——本地属性/方法重复(解析不去重 ⇒ 映射内撞 fullPath/方法名)、

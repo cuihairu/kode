@@ -62,7 +62,7 @@
  */
 
 import { DefMethodSection } from './defParser';
-import { LocalDefinitionSemantics, parseLocalDefinition } from '../definitionSemantics';
+import { LocalDefinitionSemantics, parseLocalDefinition } from './definitionSemantics';
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 import {
   assignAliasIds,

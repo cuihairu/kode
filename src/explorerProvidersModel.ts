@@ -4,7 +4,7 @@ import {
   DefinitionMethod,
   DefinitionProperty,
   parseLocalDefinition
-} from './definitionSemantics';
+} from './backend/definitionSemantics';
 import { DefinitionCategory, DefinitionEntry } from './definitionWorkspace';
 import { DefinitionSymbolIdentity } from './entityMapping';
 

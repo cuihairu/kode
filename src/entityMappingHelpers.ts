@@ -16,8 +16,8 @@ import type {
 import type { DefMethodSection as EntityMethodSection } from './backend/defParser';
 import { buildPythonSymbolsInRust } from './backend/pythonCallGraphRust';
 import type { PythonSymbolCall, PythonSymbolsRustResult } from './backend/pythonCallGraphRust';
-import type { DefinitionSemanticCategory } from './definitionSemantics';
-import { normalizeLookupPath } from './definitionSemantics';
+import type { DefinitionSemanticCategory } from './backend/definitionSemantics';
+import { normalizeLookupPath } from './backend/definitionSemantics';
 import { joinWorkspacePath } from './backend/workspacePath';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 

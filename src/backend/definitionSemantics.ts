@@ -1,5 +1,5 @@
-import { normalizeFileIdentity } from './backend/pathIdentity';
-import { readSharedFileSnapshot } from './sharedFileSnapshot';
+import { normalizeFileIdentity } from './pathIdentity';
+import { readSharedFileSnapshot } from '../sharedFileSnapshot';
 import {
   DefDocument,
   DefElementNode,
@@ -13,14 +13,14 @@ import {
   getScalarChildValue,
   hasTruthyChildTag,
   parseDefDocument
-} from './backend/defParser';
+} from './defParser';
 import {
   DefinitionCategory,
   findDefinitionFileByCategory,
   findEntityDefinitionFile,
   getWorkspaceRootForDocument
-} from './definitionWorkspace';
-import { getReferenceTargetName, INTERFACE_WRAPPER_NAMES } from './backend/defRenamer';
+} from '../definitionWorkspace';
+import { getReferenceTargetName, INTERFACE_WRAPPER_NAMES } from './defRenamer';
 
 export type DefinitionSemanticCategory = Exclude<DefinitionCategory, 'type'>;
 export type DefinitionMemberSourceKind = 'local' | 'interface' | 'parent' | 'component';

@@ -31,7 +31,7 @@ import { formatTablePreview } from '../src/databaseTablePreviewCommand';
 import { DebugSessionRegistry } from '../src/debug/debugSessionRegistry';
 import { DebugTargetTreeProvider } from '../src/debug/debugStatusTree';
 import type { DebugStatusRow } from '../src/debug/debugStatusBoard';
-import { DefinitionSemanticsLoader } from '../src/definitionSemantics';
+import { DefinitionSemanticsLoader } from '../src/backend/definitionSemantics';
 import {
   compareTaskRunContexts,
   prepareTestRun,

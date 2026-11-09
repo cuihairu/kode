@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { createDefinitionSemanticsLoader } from '../src/definitionSemantics';
+import { createDefinitionSemanticsLoader } from '../src/backend/definitionSemantics';
 import { resolveEntityAnnotationType } from '../src/definitionWorkspace';
 import { getDatabaseSchemaSnapshot, invalidateDatabaseSchemaCacheForFiles } from '../src/databaseSchema';
 import type { DatabaseSchemaSnapshot } from '../src/databaseSchema';

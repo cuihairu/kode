@@ -76,7 +76,7 @@ describe('documentStore URI 规范化', () => {
   });
 
   it('文件快照与语义索引使用相同路径身份', async () => {
-    const { normalizeLookupPath } = await import('../src/definitionSemantics');
+    const { normalizeLookupPath } = await import('../src/backend/definitionSemantics');
     for (const fsPath of ['/project/A/Hero.def', '/project/a/Hero.def', 'C:\\Work\\Hero.py', 'c:/WORK/./hero.py']) {
       expect(normalizeDocumentKey(uriOf('file:///source', fsPath))).toBe(normalizeLookupPath(fsPath));
     }

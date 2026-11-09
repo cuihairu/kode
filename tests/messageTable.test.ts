@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   LocalDefinitionSemantics,
   parseLocalDefinition
-} from '../src/definitionSemantics';
+} from '../src/backend/definitionSemantics';
 import {
   buildMessageTable,
   DefTreeSource,

@@ -40,7 +40,7 @@ import { showEntityMessageTablePreview } from './backend/messageTablePreview';
 import { exportEntityMessageTable } from './backend/messageTableExport';
 import { renderMessageTableJson, renderMessageTableMarkdown, type MessageTable } from './backend/messageTable';
 import { buildEntityMessageTableShared } from './backend/messageTableEntity';
-import { createDefinitionSemanticsLoader } from './definitionSemantics';
+import { createDefinitionSemanticsLoader } from './backend/definitionSemantics';
 import { getIndexScanRoots } from './scanRoots';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import { ProjectProfileStore } from './projectProfiles';

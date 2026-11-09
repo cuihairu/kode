@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   createDefinitionSemanticsLoader,
   parseLocalDefinition
-} from '../src/definitionSemantics';
+} from '../src/backend/definitionSemantics';
 
 // definitionSemantics 的解析与继承合并缺口:Interfaces 三种引用形态
 // (自闭合无名/子元素名/引用名)、parseOptionalBoolean 的未知值、

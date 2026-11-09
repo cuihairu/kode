@@ -26,7 +26,7 @@ import type {
   DefinitionMethod,
   DefinitionProperty,
   ResolvedDefinitionSemantics
-} from './definitionSemantics';
+} from './backend/definitionSemantics';
 
 /** 流程图参与方。 */
 export type FlowActor = 'client' | 'base' | 'cell' | 'db' | 'aoi';

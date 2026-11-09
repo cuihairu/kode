@@ -3,7 +3,7 @@ import type {
   DefinitionMethod,
   DefinitionProperty,
   ResolvedDefinitionSemantics
-} from '../src/definitionSemantics';
+} from '../src/backend/definitionSemantics';
 import {
   ED_FLAG_BITS,
   FLOW_ACTOR_LABELS,

@@ -36,7 +36,7 @@ import {
   DefinitionSemanticCategory,
   ResolvedDefinitionSemantics,
   normalizeLookupPath
-} from './definitionSemantics';
+} from './backend/definitionSemantics';
 import {
   findEntityDefsDirForDefFile,
   getDefinitionWorkspaceLayout,

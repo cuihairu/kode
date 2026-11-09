@@ -7,7 +7,7 @@ import {
   createDefinitionSemanticsLoader,
   normalizeLookupPath,
   parseLocalDefinition
-} from '../src/definitionSemantics';
+} from '../src/backend/definitionSemantics';
 
 // 行号与 def 内容一一对应,断言全部基于这些行号(1 基)
 const HERO_DEF = [

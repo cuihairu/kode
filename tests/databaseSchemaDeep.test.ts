@@ -17,7 +17,7 @@ import { KBEngineDatabaseSchemaProvider } from '../src/databaseSchemaPresentatio
 import type { DatabaseSchemaSnapshot, DefSourceRef, TableSchemaDescriptor } from '../src/databaseSchema';
 import { Position, makeTextDocument } from './helpers/vscodeStub';
 import { workspace } from './fake-vscode/workspaceState';
-import { createDefinitionSemanticsLoader } from '../src/definitionSemantics';
+import { createDefinitionSemanticsLoader } from '../src/backend/definitionSemantics';
 
 // databaseSchema 的深层分支:Provider 生命周期、渲染文本上的字段定位、
 // source 定位与反查、dedupe,以及临时真实 def 树上的继承/接口/组件/
