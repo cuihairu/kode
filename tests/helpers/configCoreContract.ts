@@ -294,7 +294,7 @@ function customTelnetOf(tree: ConfigXmlNode | null): { port: number | null; pass
 
 // ---- 门替身工厂:按 `$/kode/config/resolve` 契约回数(调用序可断言) ----
 import { renderConfigXmlSections } from '../../src/serverConfigMerge';
-import type { KodeCoreGate } from '../../src/kodeCoreGate';
+import type { KodeCoreGate } from '../../src/backend/kodeCoreGate';
 
 export interface ContractGateCall {
   method: string;

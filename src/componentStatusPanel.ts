@@ -9,7 +9,7 @@
 
 import * as vscode from 'vscode';
 import { l10nText } from './nlsRuntime';
-import type { KBEngineComponentInfo } from './kbengineProtocol';
+import type { KBEngineComponentInfo } from './backend/kbengineProtocol';
 import type { ConsoleHub } from './kbengineConsoleHub';
 
 export interface PanelThresholds {

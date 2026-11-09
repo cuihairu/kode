@@ -27,7 +27,7 @@ import {
   parseConsoleLogBody,
   parseLogStream,
   type ParsedLogStream
-} from '../kbengineProtocol';
+} from './kbengineProtocol';
 import { parseExceptionSourceLocation, type ExceptionSourceLocation } from './exceptionSourceLocator';
 import type { ConsoleHubDepsLike } from '../kbengineConsoleHub';
 

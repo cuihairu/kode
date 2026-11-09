@@ -6,7 +6,7 @@ import {
 } from '../src/observationConnectionState';
 import { observationTargetFor } from '../src/observationIdentity';
 import { RuntimeQueryWebView, type RuntimeQueryProtocol } from '../src/runtimeQueryWebView';
-import type { KBEngineComponentInfo, SpaceQueryResult, WatcherQueryResult } from '../src/kbengineProtocol';
+import type { KBEngineComponentInfo, SpaceQueryResult, WatcherQueryResult } from '../src/backend/kbengineProtocol';
 import { Uri, type ExtensionContext } from './fake-vscode/core';
 import { panelRegistry } from './fake-vscode/panelRegistry';
 import { configurationOverrides } from './fake-vscode/workspaceState';

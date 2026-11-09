@@ -21,8 +21,8 @@ import {
   createFileChangeRouter,
   registerRustFileChangeConsumer,
   type NonPythonChangeEvent
-} from '../src/fileChangeBypass';
-import { KodeCoreGate, type ShadowClientLike } from '../src/kodeCoreGate';
+} from '../src/backend/fileChangeBypass';
+import { KodeCoreGate, type ShadowClientLike } from '../src/backend/kodeCoreGate';
 import { resetScanRootCache, setActiveProfileScanRoot } from '../src/scanRoots';
 import {
   allFileSystemWatchers,

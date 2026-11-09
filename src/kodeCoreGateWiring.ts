@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
-import { discoverNativeBinary } from './nativeBinary';
+import { discoverNativeBinary } from './backend/nativeBinary';
 
-import { KodeCoreGate, type KodeCoreGateConfig, ShadowDiffEntry } from './kodeCoreGate';
+import { KodeCoreGate, type KodeCoreGateConfig, ShadowDiffEntry } from './backend/kodeCoreGate';
 import { mirrorCorpusToRust } from './kodeCoreCorpusMirror';
-import { setKodeCoreShadowGate } from './kodeCoreShadowFaces';
+import { setKodeCoreShadowGate } from './backend/kodeCoreShadowFaces';
 
 // kode2 PR-012:双轨切流门的扩展装配(设置项默认关,装配零行为差异)。
 // 职责:读 kbengine.core.* 配置 → 门状态同步;shadow 时建输出通道接差异

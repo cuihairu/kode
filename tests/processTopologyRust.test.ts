@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { validateProcessTopologyInRust } from '../src/backend/processTopologyRust';
-import type { KodeCoreGate } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 
 // C-17 进程拓扑校验 Rust 主路径:validateProcessTopologyInRust 经命令级 RPC
 // ($/kode/processTopology/validate)调 Rust 核心;Rust 不可用(无 gate/调用失败/

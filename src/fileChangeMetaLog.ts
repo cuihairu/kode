@@ -16,7 +16,7 @@
 
 import { formatFileChangeMeta, type FileChangeMetaResolver } from './fileChangeMeta';
 import { isJumpLogEnabled, jumpLog } from './navigationLog';
-import type { SharedFileEvent } from './sharedFileEvents';
+import type { SharedFileEvent } from './backend/sharedFileEvents';
 
 /**
  * 记一条索引侧文件变更元信息行。jumpLog 关闭即返回(零 IO);解析失败静默

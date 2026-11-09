@@ -12,7 +12,7 @@ import {
   kbelogLevelBit,
   parseConsoleLogBody,
   parseLogStream
-} from '../src/kbengineProtocol';
+} from '../src/backend/kbengineProtocol';
 import {
   CONSOLE_PROTOCOL_AUDIT,
   CONSOLE_PROTOCOL_AUDIT_VERSION,

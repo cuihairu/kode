@@ -8,8 +8,8 @@ import {
   parseComponentInfo,
   parseWatcherFrame,
   queryWatcherPath
-} from '../src/kbengineProtocol';
-import type { KBEngineComponentInfo } from '../src/kbengineProtocol';
+} from '../src/backend/kbengineProtocol';
+import type { KBEngineComponentInfo } from '../src/backend/kbengineProtocol';
 import { MachineSimulator, makeSimComponentInfo } from './sim/machineSimulator';
 import { WatcherSimulator } from './sim/watcherSimulator';
 import { startSimCluster } from './sim/simCluster';

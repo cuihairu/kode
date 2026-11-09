@@ -10,7 +10,7 @@ import {
   parseWatcherFrame,
   queryWatcherPath,
   type KBEngineComponentInfo
-} from '../src/kbengineProtocol';
+} from '../src/backend/kbengineProtocol';
 
 // discoverLocalComponents 的 UDP 生命周期缺口:socket error 事件拒绝、
 // 绑定回调里 string 地址的绑定失败形态、settled 重入守卫(timer 晚到

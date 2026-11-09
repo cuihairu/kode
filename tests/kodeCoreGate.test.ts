@@ -9,8 +9,8 @@ import {
   firstDiffPath,
   resolveBackendMode,
   type ShadowClientLike,
-} from '../src/kodeCoreGate';
-import { KodeCoreClient } from '../src/kodeCoreClient';
+} from '../src/backend/kodeCoreGate';
+import { KodeCoreClient } from '../src/backend/kodeCoreClient';
 
 // kode2 PR-012:双轨切流门单测。kill-switch 解析、rust serving 门禁、
 // shadow 影像比对四种 verdict、差异日志环形与订阅、compare 永不上浮。

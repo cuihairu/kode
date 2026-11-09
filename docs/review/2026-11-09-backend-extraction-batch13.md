@@ -22,4 +22,5 @@ consoleLogTail 经 `../` 回引)、logHub 装配面 wiring。
 ## 验收
 
 - `pnpm compile`(tsc)0 / `pnpm lint` 0;全量 vitest 一次过零抖动
-  693 文件 / 8390 过 4 skip RC=0;demo / docs 见提交前记录。
+  693 文件 / 8390 过 4 skip RC=0;demo 25 RC=0;docs:build RC=0。
+- **提交 02f3de97**(2026-11-09 推 main):50 文件 79+/53-,并发会话面零牵连。

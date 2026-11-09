@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-import type { KodeCoreGate } from './kodeCoreGate';
+import type { KodeCoreGate } from './backend/kodeCoreGate';
 import { findFilesAcrossRoots } from './scanRoots';
 
 // kode2 服务轨道语料镜像(2026-11-08 用户令「直接切到 rust」)。

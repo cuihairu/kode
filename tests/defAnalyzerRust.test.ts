@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { KodeCoreGate, type ShadowClientLike } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { KodeCoreGate, type ShadowClientLike } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import {
   analyzeDefDocumentInRust,
   analyzeDefDocumentWithRust,

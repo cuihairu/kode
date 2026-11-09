@@ -5,7 +5,7 @@ import {
   runLiveSpacesVerification,
   spacesProtocolSource
 } from '../src/liveSpacesVerification';
-import type { KBEngineComponentInfo, SpaceQueryResult } from '../src/kbengineProtocol';
+import type { KBEngineComponentInfo, SpaceQueryResult } from '../src/backend/kbengineProtocol';
 
 function makeComponent(
   componentType: number,

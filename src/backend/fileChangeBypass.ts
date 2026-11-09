@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { normalizeFileIdentity } from './backend/pathIdentity';
+import { normalizeFileIdentity } from './pathIdentity';
 import { fileVersionTokenFromStats } from './sharedFileEvents';
 
 // 非 py 文件变化的旁路通道(设计文档 §11.2/§11.3)。

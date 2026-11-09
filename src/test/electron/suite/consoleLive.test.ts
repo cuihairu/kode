@@ -16,7 +16,7 @@ import { after, before, describe, it } from 'mocha';
 import * as assert from 'assert';
 import {
   type KBEngineComponentInfo
-} from '../../../kbengineProtocol';
+} from '../../../backend/kbengineProtocol';
 import { parseExceptionSourceLocation, resolveExceptionSource } from '../../../backend/exceptionSourceLocator';
 import { ConsoleHub } from '../../../kbengineConsoleHub';
 import { ConsoleLogTailController } from '../../../backend/consoleLogTail';

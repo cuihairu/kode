@@ -4,7 +4,7 @@ import { tmpdir } from 'os';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { KodeCoreClient, KodeCoreTransportError } from '../src/kodeCoreClient';
+import { KodeCoreClient, KodeCoreTransportError } from '../src/backend/kodeCoreClient';
 
 // kode2 PR-003:BUILD-005 最小 transport 单测(fake stdio server,无 Rust 依赖)。
 // 真实二进制握手 e2e 在 tests/kodeCoreE2E.test.ts。

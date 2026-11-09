@@ -2,8 +2,8 @@ import { mkdtempSync, mkdirSync, rmSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { setKodeCoreShadowGate, type KodeCoreGate } from '../src/kodeCoreShadowFaces';
-import { KodeCoreClient } from '../src/kodeCoreClient';
+import { setKodeCoreShadowGate, type KodeCoreGate } from '../src/backend/kodeCoreShadowFaces';
+import { KodeCoreClient } from '../src/backend/kodeCoreClient';
 import { collectDiscoveryCandidates, preheatDiscoveryScanInRust, resetDiscoveryState, runWorkspaceDiscovery } from '../src/workspaceDiscovery';
 
 const roots: string[] = [];

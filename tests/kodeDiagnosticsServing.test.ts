@@ -13,8 +13,8 @@ import { getLanguageFeatureConfig } from '../src/languageProviders/shared';
 import {
   setKodeCoreShadowGate,
   type LspDiagnosticReportFace
-} from '../src/kodeCoreShadowFaces';
-import type { KodeCoreGate } from '../src/kodeCoreGate';
+} from '../src/backend/kodeCoreShadowFaces';
+import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
 import {
   Diagnostic,
   DiagnosticCollection,

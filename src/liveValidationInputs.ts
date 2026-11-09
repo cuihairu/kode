@@ -7,7 +7,7 @@
  * 模块只管输入登记与状态如实呈现。
  */
 
-import { MACHINE_BROADCAST_PORT } from './kbengineProtocol';
+import { MACHINE_BROADCAST_PORT } from './backend/kbengineProtocol';
 
 export interface LiveValidationEngineVersion {
   /** 引擎仓地址(如 https://github.com/kbengine/kbengine) */

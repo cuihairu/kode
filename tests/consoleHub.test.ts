@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildComponentInfo, type KBEngineComponentInfo } from '../src/kbengineProtocol';
+import { buildComponentInfo, type KBEngineComponentInfo } from '../src/backend/kbengineProtocol';
 import { ConsoleHub, type MachinedState } from '../src/kbengineConsoleHub';
 
 // KB-GC-001 共享连接面:machined UDP 发现轮询 + 组件台账。tail(日志长连)与
@@ -177,7 +177,7 @@ describe('ConsoleHub component identity', () => {
     const wire = buildComponentInfo(info);
     // hub 只消费 parseComponentInfo 的产物;这里用 buildComponentInfo 反构的
     // 缓冲再经协议解析进来,保证台账字段与真实广播回包同源
-    const { parseComponentInfo } = await import('../src/kbengineProtocol');
+    const { parseComponentInfo } = await import('../src/backend/kbengineProtocol');
     const parsed = parseComponentInfo(wire);
     const discover = vi.fn().mockResolvedValue([parsed]);
     const hub = new ConsoleHub({ pollIntervalMs: 1000, discoverFn: discover });

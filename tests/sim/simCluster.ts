@@ -1,4 +1,4 @@
-import type { MachineDiscoveryOptions } from '../../src/kbengineProtocol';
+import type { MachineDiscoveryOptions } from '../../src/backend/kbengineProtocol';
 import { MachineSimulator, makeSimComponentInfo } from './machineSimulator';
 import { WatcherSimulator } from './watcherSimulator';
 import type { WatcherValueMap } from './watcherSimulator';

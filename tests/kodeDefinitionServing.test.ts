@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { KodeCoreGate, type ShadowClientLike } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { KodeCoreGate, type ShadowClientLike } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { KBEngineDefinitionProvider } from '../src/languageProviders/navigation';
 import { Location, Position, Range, Uri, makeTextDocument } from './helpers/vscodeStub';
 

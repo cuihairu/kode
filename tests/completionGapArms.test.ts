@@ -9,8 +9,8 @@ import {
   getAddSpaceGeometryStringPrefix,
   getKnownTypeSuggestions
 } from '../src/languageProviders/completion';
-import { KodeCoreGate, type ShadowClientLike } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { KodeCoreGate, type ShadowClientLike } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { resetScanRootCache } from '../src/scanRoots';
 
 /**

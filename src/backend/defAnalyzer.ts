@@ -13,7 +13,7 @@ import {
   parseDefDocument
 } from './defParser';
 import { findEntityDefsRootFromFile, parseDefFileSemantics } from './defRenamer';
-import { getKodeCoreShadowGate } from '../kodeCoreShadowFaces';
+import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
 // .def 静态分析建议(性能分析建议,COMPLETED_FEATURES「未来增强功能」条目)。
 // 定位与语言侧实时诊断(语法检查,languageProviders)错位:本模块只产出

@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { DefDocument, DefElementNode, getDirectChildElement, getDirectChildElements, getScalarChildValue } from '../backend/defParser';
 import { analyzeEntitiesXml } from '../backend/entitiesXmlAnalysis';
 import { getOrParseDocumentSync } from '../documentStore';
-import { getKodeCoreShadowGate, serveDiagnosticsFromRust, shadowObserveDefDocument, type LspDiagnosticReportFace } from '../kodeCoreShadowFaces';
+import { getKodeCoreShadowGate, serveDiagnosticsFromRust, shadowObserveDefDocument, type LspDiagnosticReportFace } from '../backend/kodeCoreShadowFaces';
 import { analyzeDefDocumentInRust, type DefAnalysisFinding } from '../backend/defAnalyzer';
 import { collectDefPythonParityInput } from '../backend/defPythonParity';
 import { DETAIL_LEVELS, KBENGINE_FLAGS } from '../backend/kbengineMetadata';

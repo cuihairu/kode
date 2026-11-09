@@ -23,8 +23,8 @@ import {
   type ConfigDeriveResult
 } from '../src/configDerive';
 import { prefillEntryScriptBreakpoints } from '../src/entryScriptBreakpoint';
-import type { KodeCoreGate } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { resetRootConfigGenerationForTests } from '../src/rootConfigGeneration';
 
 interface DeriveFacts {

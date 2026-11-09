@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Position, makeTextDocument } from './fake-vscode/core';
 import { KBEngineCompletionProvider, lspCompletionToVscode } from '../src/languageProviders/completion';
-import { KodeCoreGate, type ShadowClientLike } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { KodeCoreGate, type ShadowClientLike } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 
 // 2026-11-08 用户令「直接切到 rust」:补全 provider 服务轨道 Rust 优先。
 // 验收:Rust 非空条目集即用(Rust 优先);Rust 空集/未判定回 TS 既有链路;

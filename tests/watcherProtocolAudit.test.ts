@@ -5,7 +5,7 @@ import {
   WATCHER_PROTOCOL_AUDIT_VERSION,
   verifyWatcherProtocolAgainstAudit
 } from '../src/watcherProtocolAudit';
-import { COMPONENT_NAMES, CONSOLE_WATCHER_CB_MSG_ID, WATCHER_QUERY_MSG_IDS } from '../src/kbengineProtocol';
+import { COMPONENT_NAMES, CONSOLE_WATCHER_CB_MSG_ID, WATCHER_QUERY_MSG_IDS } from '../src/backend/kbengineProtocol';
 
 // IDE-LIV-002 核对一个目标版本的 watcher 协议号:逐条核对记录=组件类
 // 型 → 请求号 → 引擎源码段名(kbe/res/server/messages_fixed_defaults.xml

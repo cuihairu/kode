@@ -16,7 +16,7 @@ import {
   type ConfigXmlNode
 } from '../src/serverConfigMerge';
 import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import {
   extractDatabaseInterfaceConfig,
   makeContractGate,

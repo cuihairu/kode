@@ -20,7 +20,7 @@ import { messages, windowState } from './fake-vscode/windowState';
 import { configurationOverrides, workspace, workspaceState } from './fake-vscode/workspaceState';
 import { Uri, type ExtensionContext } from './fake-vscode/core';
 import { window as stubWindow } from './helpers/vscodeStub';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
 import { makeContractGate } from './helpers/configCoreContract';
 

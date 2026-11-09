@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Position, makeTextDocument } from './fake-vscode/core';
 import { KBEngineHoverProvider } from '../src/languageProviders/hover';
-import { KodeCoreGate, type ShadowClientLike } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { KodeCoreGate, type ShadowClientLike } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 
 // 2026-11-08 用户令「直接切到 rust」:悬停 provider 服务轨道 Rust 优先。
 // 验收:Rust 命中即 markdown 直出 vscode.Hover(不落 TS,镜像以编辑器内容

@@ -23,7 +23,7 @@ import { getKbeAliases, getKbeSymbol, resolveKbeAccessAtPosition } from '../kbeM
 import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, inferDataDictValueType, isKeyInsideLineComment, queryDataDictSitesForAccess, resolveScopeRoot } from '../globalDataIndex';
 import { createHoverRequestDeadline, createWaiterUnionToken, raceWithBudget } from '../hoverBudget';
 import { TAG_HOVER_DOCS, getLanguageFeatureConfig } from './shared';
-import { getKodeCoreShadowGate, serveHoverFromRust } from '../kodeCoreShadowFaces';
+import { getKodeCoreShadowGate, serveHoverFromRust } from '../backend/kodeCoreShadowFaces';
 import { formatDefMethodParameter, formatDefMethodSignature } from './completion';
 import { awaitDataDictIndexReady, getPythonDataDictIndexGeneration, isPythonDataDictIndexEnabled } from './pythonDefinition';
 import { getPythonMethodDeclarationAtPosition } from './callHierarchy';

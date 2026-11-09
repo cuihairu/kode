@@ -7,8 +7,8 @@ import {
   generateClientSdkEntities,
   runClientSdkGenerateCommand
 } from '../src/sdk-gen/clientSdkGenerator';
-import type { KodeCoreGate } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { messages } from './helpers/vscodeStub';
 import { window as windowish } from './helpers/vscodeStub';
 

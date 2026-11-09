@@ -9,7 +9,7 @@ import {
   hasMethodImplementationInSnapshot,
   rustSymbolsToIndexedMethodLocations
 } from '../src/entityMappingHelpers';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import * as path from 'path';

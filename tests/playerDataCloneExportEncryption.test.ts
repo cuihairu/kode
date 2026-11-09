@@ -5,7 +5,7 @@ import {
   openCloneSession,
   probePhysicalTables
 } from '../src/backend/playerDataCloneMysql';
-import { setKodeCoreShadowGate, type KodeCoreGate } from '../src/kodeCoreShadowFaces';
+import { setKodeCoreShadowGate, type KodeCoreGate } from '../src/backend/kodeCoreShadowFaces';
 import {
   runExportCloneCommand,
   type PlayerCloneCommandDeps

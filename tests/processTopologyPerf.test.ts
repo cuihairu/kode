@@ -6,8 +6,8 @@ import { readSharedFileSnapshot } from '../src/sharedFileSnapshot';
 import { mapFindingsToDiagnostics } from '../src/processTopologyDiagnostics';
 import { validateProcessTopologyInRust } from '../src/backend/processTopologyRust';
 import { DiagnosticScheduler } from '../src/diagnosticScheduler';
-import { KodeCoreGate } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 
 // KODE-PERF-006:测量进程拓扑全量诊断成本(CPU 与事件循环延迟)。
 //

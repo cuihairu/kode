@@ -17,8 +17,8 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { API_DOC_ENTRIES, type ApiDocEntry } from '../src/generated/apiDocs';
 import { lookupApiDoc } from '../src/backend/pythonApiHoverDocs';
-import { KodeCoreGate } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import type { HoverLanguage } from '../src/backend/pythonApiHoverDocs';
 
 const KODE_SERVER = path.resolve(__dirname, '..', 'target', 'debug', 'kode-server');

@@ -3,9 +3,9 @@ import { join } from 'path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { KodeCoreClient } from '../src/kodeCoreClient';
-import { KodeCoreGate } from '../src/kodeCoreGate';
-import { serveCompletionFromRust, serveDefinitionFromRust, serveDiagnosticsFromRust, serveHoverFromRust, setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { KodeCoreClient } from '../src/backend/kodeCoreClient';
+import { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { serveCompletionFromRust, serveDefinitionFromRust, serveDiagnosticsFromRust, serveHoverFromRust, setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 
 // 2026-11-08 用户令「直接切到 rust」:定义面 rust 服务 e2e(真实 kode-server
 // 二进制)。证明 switch 不是纸面:gate 服务轨道 + serveDefinitionFromRust

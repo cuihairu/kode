@@ -7,7 +7,7 @@ import { RuntimeQueryWebView } from '../src/runtimeQueryWebView';
 import { Uri, type ExtensionContext } from './fake-vscode/core';
 import { panelRegistry } from './fake-vscode/panelRegistry';
 import { configurationOverrides, envState } from './helpers/vscodeStub';
-import type { KBEngineComponentInfo } from '../src/kbengineProtocol';
+import type { KBEngineComponentInfo } from '../src/backend/kbengineProtocol';
 
 const component: KBEngineComponentInfo = {
   uid: 1000,

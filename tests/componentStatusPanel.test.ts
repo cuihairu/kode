@@ -5,7 +5,7 @@ import {
   describeComponentRow,
   resolveThresholds
 } from '../src/componentStatusPanel';
-import type { KBEngineComponentInfo } from '../src/kbengineProtocol';
+import type { KBEngineComponentInfo } from '../src/backend/kbengineProtocol';
 
 // KB-GC-001 组件状态面板:kbengine-explorer 容器新视图。数据源 = ConsoleHub
 // 组件台账(machine 发现回包即含 cpu/mem/usedmem/state 负载快照,不另起链);

@@ -6,7 +6,7 @@ import {
   discoverLocalComponents,
   queryWatcherPath,
   swapUint16
-} from '../src/kbengineProtocol';
+} from '../src/backend/kbengineProtocol';
 import { MachineSimulator, makeSimComponentInfo } from './sim/machineSimulator';
 import { WatcherSimulator } from './sim/watcherSimulator';
 

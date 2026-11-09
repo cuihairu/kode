@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeDefMd5InRust } from '../src/backend/defMd5Rust';
-import type { KodeCoreGate } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 
 // C-18 引擎官方 def MD5 的 Rust 权威接线:computeDefMd5InRust 主路径经命令级
 // RPC($/kode/def/md5)调 Rust 重放器(引擎 EntityDef::md5 字节序镜像);Rust

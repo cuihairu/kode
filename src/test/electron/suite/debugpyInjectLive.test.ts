@@ -23,7 +23,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { after, before, describe, it } from 'mocha';
 import * as assert from 'assert';
-import { discoverLocalComponents, type KBEngineComponentInfo } from '../../../kbengineProtocol';
+import { discoverLocalComponents, type KBEngineComponentInfo } from '../../../backend/kbengineProtocol';
 import {
   buildDebugpyListenCommand,
   debugpyPortFor,

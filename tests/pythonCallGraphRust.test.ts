@@ -4,8 +4,8 @@ import {
   buildPythonSymbolsInRust,
   normalizeCallGraphPath
 } from '../src/backend/pythonCallGraphRust';
-import type { KodeCoreGate } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 
 // C-20 调用图/符号表 Rust 主路径:buildPythonCallGraphInRust /
 // buildPythonSymbolsInRust 经命令级 RPC 调 Rust 核心;Rust 不可用(无 gate/

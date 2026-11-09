@@ -36,7 +36,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EntityDependencyAnalyzer } from '../src/entityDependency';
-import { KodeCoreClient } from '../src/kodeCoreClient';
+import { KodeCoreClient } from '../src/backend/kodeCoreClient';
 import { Uri, memoryFileSystem, workspace as stubWorkspace } from './helpers/vscodeStub';
 
 const repoRoot = join(__dirname, '..');

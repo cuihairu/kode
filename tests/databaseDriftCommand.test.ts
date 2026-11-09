@@ -16,7 +16,7 @@ import {
   ensureConfigResolved,
   resetConfigResolveForTests
 } from '../src/serverConfigResolve';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { makeContractGate } from './helpers/configCoreContract';
 
 // 漂移校验(批C)命令装配层:kbengine.database.checkDrift 的四段分支——

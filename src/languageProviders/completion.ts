@@ -18,7 +18,7 @@ import {
   getKodeCoreShadowGate,
   serveCompletionFromRust,
   type LspCompletionReportFace
-} from '../kodeCoreShadowFaces';
+} from '../backend/kodeCoreShadowFaces';
 export const TOP_LEVEL_DEF_TAGS = [
   'Parent',
   'Interfaces',

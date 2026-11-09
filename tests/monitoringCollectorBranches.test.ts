@@ -1,7 +1,7 @@
 import * as net from 'net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MonitoringCollector } from '../src/monitoringCollector';
-import type { KBEngineComponentInfo, MachineDiscoveryOptions } from '../src/kbengineProtocol';
+import type { KBEngineComponentInfo, MachineDiscoveryOptions } from '../src/backend/kbengineProtocol';
 import type * as vscode from 'vscode';
 import { MachineSimulator, makeSimComponentInfo } from './sim/machineSimulator';
 import { WatcherSimulator } from './sim/watcherSimulator';
@@ -14,7 +14,7 @@ import { WatcherSimulator } from './sim/watcherSimulator';
 // - logger(type 10)的 stats 缺 secsNumlogs 时的 ?? 0 回落;
 // - details 全空时的 'Watcher' 占位行两臂(根值空 → 短路取 stats 键数)。
 // 后两条走 tests/sim 仿真器(动态端口、复用生产编解码器)的真实 UDP/TCP 链路;
-// 前一条与非 Error 抛出用 vi.mock('../src/kbengineProtocol') 的 getter 工厂
+// 前一条与非 Error 抛出用 vi.mock('../src/backend/kbengineProtocol') 的 getter 工厂
 // 局部替换 discoverLocalComponents(其余导出透传实际实现),用以观察"刷新未
 // 发生"与注入语言合法但实现链不产生的抛出值。
 
@@ -23,8 +23,8 @@ const discoveryState = vi.hoisted(() => ({
     | ((options?: MachineDiscoveryOptions) => Promise<KBEngineComponentInfo[]>)
 }));
 
-vi.mock('../src/kbengineProtocol', async importOriginal => {
-  const actual = await importOriginal<typeof import('../src/kbengineProtocol')>();
+vi.mock('../src/backend/kbengineProtocol', async importOriginal => {
+  const actual = await importOriginal<typeof import('../src/backend/kbengineProtocol')>();
   return {
     ...actual,
     default: actual,

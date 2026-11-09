@@ -6,13 +6,13 @@ import {
   type HotReloadGlobSource,
   type HotReloadWatchOffReason
 } from './hotReloadStatus';
-import { createSharedFileEventMerger, type SharedFileEvent } from './sharedFileEvents';
+import { createSharedFileEventMerger, type SharedFileEvent } from './backend/sharedFileEvents';
 import {
   buildNonPythonChangeEvent,
   createFileChangeRouter,
   type FileChangeKind,
   type FileChangeRouter
-} from './fileChangeBypass';
+} from './backend/fileChangeBypass';
 import { resolveAssetsRootForWorkspace } from './scanRoots';
 import {
   HotReloadTargetStateStore,

@@ -4,12 +4,12 @@ import {
   KodeCoreGate,
   ShadowDiffLog,
   type ShadowClientLike
-} from '../src/kodeCoreGate';
+} from '../src/backend/kodeCoreGate';
 import {
   getKodeCoreShadowGate,
   setKodeCoreShadowGate,
   shadowMirrorCorpusDocument
-} from '../src/kodeCoreShadowFaces';
+} from '../src/backend/kodeCoreShadowFaces';
 import { releaseAllDocumentSnapshots } from '../src/documentStore';
 import { validateDocument } from '../src/languageProviders';
 import {

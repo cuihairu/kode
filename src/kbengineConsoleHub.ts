@@ -19,7 +19,7 @@ import {
   discoverLocalComponents,
   MachineDiscoveryOptions,
   type KBEngineComponentInfo
-} from './kbengineProtocol';
+} from './backend/kbengineProtocol';
 
 export type MachinedState = 'idle' | 'reachable' | 'unreachable';
 

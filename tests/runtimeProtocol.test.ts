@@ -11,7 +11,7 @@ import {
   querySpaces,
   startProfileQuery,
   type KBEngineComponentInfo
-} from '../src/kbengineProtocol';
+} from '../src/backend/kbengineProtocol';
 
 const cstring = (value: string): Buffer => Buffer.concat([Buffer.from(value), Buffer.from([0])]);
 const u32 = (value: number): Buffer => {

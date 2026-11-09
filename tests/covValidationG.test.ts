@@ -27,8 +27,8 @@ import {
   RUST_LIVE_MERGE_CODES,
   UNKNOWN_TYPE_DIAGNOSTIC_CODE
 } from '../src/languageProviders/validation';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
-import type { KodeCoreGate } from '../src/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
+import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
 import {
   DiagnosticCollection,
   Diagnostic,

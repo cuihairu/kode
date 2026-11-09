@@ -25,8 +25,8 @@ import {
   buildDerivedTelnetTargets,
   readDerivedTelnetTargets
 } from '../src/telnetDeriveTargets';
-import type { KodeCoreGate } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { contractResolveResult } from './helpers/configCoreContract';
 import { resetRootConfigGenerationForTests } from '../src/rootConfigGeneration';
 import { ensureConfigResolved } from '../src/serverConfigResolve';

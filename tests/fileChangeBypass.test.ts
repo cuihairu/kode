@@ -12,7 +12,7 @@ import {
   rustFileChangeConsumer,
   type FileChangeConsumer,
   type NonPythonChangeEvent
-} from '../src/fileChangeBypass';
+} from '../src/backend/fileChangeBypass';
 
 // 非 py 文件变化的旁路通道(设计文档 §11.2/§11.3):
 // ① 事件结构是纯数据(不绑 vscode)——将来 watch 下沉 rust 时 TS 只是消费者,
@@ -55,7 +55,7 @@ const eventOf = (overrides: Partial<NonPythonChangeEvent> = {}): NonPythonChange
 
 describe('旁路事件协议(纯数据,不绑 vscode)', () => {
   it('模块零 vscode 引用(将来 watch 下沉 rust,TS 转消费者)', () => {
-    const source = readRepo('src/fileChangeBypass.ts');
+    const source = readRepo('src/backend/fileChangeBypass.ts');
     expect(source).not.toMatch(/from ['"]vscode['"]/);
     expect(source).not.toMatch(/require\(['"]vscode['"]\)/);
     expect(source).not.toContain('vscode.');
@@ -80,7 +80,7 @@ describe('旁路事件协议(纯数据,不绑 vscode)', () => {
     expect(rust).toContain('"$/kode/fileChanged"');
     expect(rust).toContain('FileChangedParams');
     // TS 侧常量确实被发帧方使用(不是写死在别处的字面量)
-    expect(readRepo('src/kodeCoreGate.ts')).toContain('KODE_FILE_CHANGED_METHOD');
+    expect(readRepo('src/backend/kodeCoreGate.ts')).toContain('KODE_FILE_CHANGED_METHOD');
   });
 });
 

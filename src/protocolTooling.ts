@@ -8,7 +8,7 @@
 
 import { execFile } from 'child_process';
 import * as vscode from 'vscode';
-import { discoverNativeBinary } from './nativeBinary';
+import { discoverNativeBinary } from './backend/nativeBinary';
 import { readSchemaState, type SchemaState } from './protocolSchemaSync';
 
 import {
@@ -20,7 +20,7 @@ import {
   parseWiresharkVersion,
   pluginFolderMatchesHost,
   type TsharkPluginEntry,
-} from './protocolToolingDetect';
+} from './backend/protocolToolingDetect';
 
 export const PROTOCOL_CHANNEL_NAME = 'KBEngine Protocol Tooling';
 export const SHOW_PROTOCOL_STATUS_COMMAND = 'kbengine.protocol.showStatus';

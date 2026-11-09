@@ -25,7 +25,7 @@ import {
   readWorkspaceTextFile
 } from '../definitionWorkspace';
 import { parseDefFileSemantics } from '../backend/defRenamer';
-import { getKodeCoreShadowGate } from '../kodeCoreShadowFaces';
+import { getKodeCoreShadowGate } from '../backend/kodeCoreShadowFaces';
 import type { SdkEngineTrace } from './sdkGenerationTrace';
 import {
   buildClientSdkTypeMap,

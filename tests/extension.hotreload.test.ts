@@ -25,7 +25,7 @@ import { createDatabaseSchemaUri, parseDatabaseSchemaRoot } from '../src/databas
 import { getDiagnosticScheduler } from '../src/diagnosticScheduler';
 import { KBE_SCHEME, buildKbeStubDocument } from '../src/kbeModuleIndex';
 import { parseDebugConfigText } from '../src/debugConfigBootstrap';
-import { setKodeCoreShadowGate, getKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { setKodeCoreShadowGate, getKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
 import { ENGINE_DEFAULT_TELNET_PORTS, makeContractGate } from './helpers/configCoreContract';
 import packageJson from '../package.json';

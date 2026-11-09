@@ -10,7 +10,7 @@
 // structuralFingerprintHash(semanticHash) 属 IDE 本地对账,与本模块的引擎
 // 复合 MD5 是**不同输入、不同算法**,跨类永不互比。
 
-import { getKodeCoreShadowGate } from '../kodeCoreShadowFaces';
+import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
 /** Rust `$/kode/def/md5` 入参(镜像 md5_handler 的 JSON 形态) */
 export interface DefMd5RustParams {

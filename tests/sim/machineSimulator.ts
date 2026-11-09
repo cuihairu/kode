@@ -3,8 +3,8 @@ import {
   MACHINE_MSG_QUERY_ALL_INTERFACES,
   buildComponentInfo,
   swapUint16
-} from '../../src/kbengineProtocol';
-import type { KBEngineComponentInfo } from '../../src/kbengineProtocol';
+} from '../../src/backend/kbengineProtocol';
+import type { KBEngineComponentInfo } from '../../src/backend/kbengineProtocol';
 
 /**
  * 本地 machine 组件发现仿真器:UDP 应答端,端口由 OS 动态分配。

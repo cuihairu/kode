@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { createSharedFileEventMerger, type SharedFileEvent } from '../src/sharedFileEvents';
+import { createSharedFileEventMerger, type SharedFileEvent } from '../src/backend/sharedFileEvents';
 
 // 2026-10-28 审核整改(SNP-008 重开):窗口内同 kind 吞并必须区分「同一版本
 // 的重复通知」与「两次真实写入」——窗口到期核对盘上版本(mtime+size),

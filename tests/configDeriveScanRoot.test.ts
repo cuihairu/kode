@@ -27,8 +27,8 @@ import {
   getConfigDerivedScanRootState,
   resetConfigDerivedScanRootForTests
 } from '../src/configDerive';
-import type { KodeCoreGate } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import {
   getIndexScanRoots,
   resetScanRootCache,

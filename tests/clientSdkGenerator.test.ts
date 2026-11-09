@@ -27,8 +27,8 @@ import type {
   ClientSdkTypeMap
 } from '../src/sdk-gen/clientSdkGenerator';
 import type { CustomTypeInfo } from '../src/definitionWorkspace';
-import type { KodeCoreGate } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { Uri, messages } from './helpers/vscodeStub';
 import { window as windowish, workspace as workspaceish } from './helpers/vscodeStub';
 

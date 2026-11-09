@@ -4,7 +4,7 @@ import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import { buildFinalServerConfig, type ConfigXmlNode } from '../src/serverConfigMerge';
 import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
-import { getKodeCoreShadowGate, setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { getKodeCoreShadowGate, setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 // KODE-CFG-009:parse 实现下线(core 唯一),测试夹具走契约镜像
 import { makeContractGate, parseConfigXml } from './helpers/configCoreContract';
 import { resolveEngineRoot } from './helpers/engineRoot';

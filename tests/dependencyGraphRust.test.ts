@@ -3,8 +3,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildDependencyGraphInRust } from '../src/backend/dependencyGraphRust';
-import type { KodeCoreGate } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 
 // IDE-RUST-007 依赖图 Rust 核心接线:buildDependencyGraphInRust 主路径经

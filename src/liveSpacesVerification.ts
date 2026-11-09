@@ -8,7 +8,7 @@
  * 走 CONSOLE_PROFILE_CB 通道(65503)。
  */
 
-import { CELLAPPMGR_QUERY_SPACES_MSG_ID, COMPONENT_NAMES, type KBEngineComponentInfo, type SpaceQueryResult } from './kbengineProtocol';
+import { CELLAPPMGR_QUERY_SPACES_MSG_ID, COMPONENT_NAMES, type KBEngineComponentInfo, type SpaceQueryResult } from './backend/kbengineProtocol';
 import type { RuntimeQueryProtocol } from './runtimeQueryWebView';
 import { liveVerificationIdentity, type LiveVerificationIdentity } from './liveWatcherVerification';
 import { WATCHER_PROTOCOL_AUDIT_VERSION } from './watcherProtocolAudit';

@@ -78,8 +78,8 @@ export { setProcessTopologySchedulerForTests, getProcessTopologySchedulerForTest
 
 
 
-import { registerRustFileChangeConsumer } from './fileChangeBypass';
-import { shadowMirrorCorpusDocument, shadowReleaseCorpusDocument } from './kodeCoreShadowFaces';
+import { registerRustFileChangeConsumer } from './backend/fileChangeBypass';
+import { shadowMirrorCorpusDocument, shadowReleaseCorpusDocument } from './backend/kodeCoreShadowFaces';
 
 
 

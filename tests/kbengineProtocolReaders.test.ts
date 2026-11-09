@@ -9,8 +9,8 @@ import {
   parseWatcherFrame,
   queryWatcherPath,
   swapUint16
-} from '../src/kbengineProtocol';
-import type { KBEngineComponentInfo } from '../src/kbengineProtocol';
+} from '../src/backend/kbengineProtocol';
+import type { KBEngineComponentInfo } from '../src/backend/kbengineProtocol';
 import { MachineSimulator } from './sim/machineSimulator';
 
 // kbengineProtocol 的剩余缺口:parseWatcherFrame 的全部取值类型分支

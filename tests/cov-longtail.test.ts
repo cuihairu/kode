@@ -4,8 +4,8 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { KodeCoreClient } from '../src/kodeCoreClient';
-import { firstDiffPath, KodeCoreGate, type ShadowClientLike } from '../src/kodeCoreGate';
+import { KodeCoreClient } from '../src/backend/kodeCoreClient';
+import { firstDiffPath, KodeCoreGate, type ShadowClientLike } from '../src/backend/kodeCoreGate';
 import {
   CORE_SHADOW_CHANNEL_NAME,
   setupKodeCoreGate,
@@ -24,7 +24,7 @@ import { openSshTunnel, pickFreeLocalPort } from '../src/remoteConnection';
 import { defaultRuntimeQueryProtocol, RuntimeQueryWebView } from '../src/runtimeQueryWebView';
 // 环境守卫探测:本机有真 KBEngine machine daemon(UDP 20086 应答,如 demo 引擎
 // 在跑)时回环广播必有人应答——相关「无人应答」前提用例跳过,不误报
-import { discoverLocalComponents } from '../src/kbengineProtocol';
+import { discoverLocalComponents } from '../src/backend/kbengineProtocol';
 const runtimeDiscoveryHasResponder: boolean = await discoverLocalComponents({ timeoutMs: 400 })
   .then(components => components.length > 0)
   .catch(() => false);
@@ -32,7 +32,7 @@ import type {
   KBEngineComponentInfo,
   SpaceQueryResult,
   WatcherQueryResult
-} from '../src/kbengineProtocol';
+} from '../src/backend/kbengineProtocol';
 import { LogHub, RuntimeLogLevel, type LogBatch } from '../src/backend/logHub';
 import { HttpRequestService } from '../src/httpRequestService';
 import type { HttpRequestEntry } from '../src/httpRequests';

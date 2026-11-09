@@ -12,7 +12,7 @@ import {
   buildFrame,
   parseProfileFrame,
   startProfileQuery
-} from '../src/kbengineProtocol';
+} from '../src/backend/kbengineProtocol';
 import {
   WAIT_BOOTSTRAP_BEGIN,
   WAIT_BOOTSTRAP_END,

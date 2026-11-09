@@ -4,7 +4,7 @@ import {
   KBEngineComponentInfo,
   MachineDiscoveryOptions,
   queryWatcherPath
-} from './kbengineProtocol';
+} from './backend/kbengineProtocol';
 
 export interface ComponentMetrics {
   component: string;

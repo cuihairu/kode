@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createSharedFileEventMerger } from '../src/sharedFileEvents';
+import { createSharedFileEventMerger } from '../src/backend/sharedFileEvents';
 
 // IDE-SNP-008:共享文件事件按 URI 合并——同一保存的重复通知(同 URI 同 kind)
 // 只让每个消费索引应用一次;kind 变化是不同版本语义,立即投递不延迟。每个

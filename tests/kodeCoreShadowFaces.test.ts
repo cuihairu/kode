@@ -4,7 +4,7 @@ import {
   KodeCoreGate,
   ShadowDiffLog,
   type ShadowClientLike,
-} from '../src/kodeCoreGate';
+} from '../src/backend/kodeCoreGate';
 import {
   diagnosticsToLspFace,
   getKodeCoreShadowGate,
@@ -18,7 +18,7 @@ import {
   shadowMirrorCorpusDocument,
   shadowObserveDefDocument,
   shadowReleaseCorpusDocument,
-} from '../src/kodeCoreShadowFaces';
+} from '../src/backend/kodeCoreShadowFaces';
 
 // kode2 Phase2 首片:definition/diagnostics 影子对拍接线单测。
 // 适配面(vscode 形状 → LSP 形状)、shadow-only 门控、verdict 记账、

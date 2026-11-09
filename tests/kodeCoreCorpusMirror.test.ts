@@ -11,7 +11,7 @@ import {
   mirrorCorpusToRust,
   type CorpusFileFinder
 } from '../src/kodeCoreCorpusMirror';
-import type { KodeCoreGate } from '../src/kodeCoreGate';
+import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
 
 // 2026-11-08 用户令「直接切到 rust」:服务轨道语料镜像。Rust 的类型/实体/
 // 别名/继承链只由已镜像文档入库——镜像腿把工作区静态语料全量 didOpen 给

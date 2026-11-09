@@ -11,7 +11,7 @@ import {
   COMPONENT_NAMES,
   type KBEngineComponentInfo,
   type WatcherQueryResult
-} from '../src/kbengineProtocol';
+} from '../src/backend/kbengineProtocol';
 import { WATCHER_MESSAGE_PROTOCOL_AUDIT, WATCHER_PROTOCOL_AUDIT_VERSION } from '../src/watcherProtocolAudit';
 
 function makeComponent(overrides: Partial<KBEngineComponentInfo> = {}): KBEngineComponentInfo {

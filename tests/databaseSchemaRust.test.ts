@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildDatabaseTablesInRust } from '../src/backend/databaseSchemaRust';
-import type { KodeCoreGate } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import type {
   DatabaseSchemaDerivationInput,
   TableSchemaDescriptor

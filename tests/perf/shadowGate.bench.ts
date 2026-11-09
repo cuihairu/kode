@@ -37,9 +37,9 @@ import {
 import { PythonClassIndex } from '../../src/backend/pythonClassIndex';
 import { EntityMappingManager } from '../../src/entityMapping';
 import { resetScanRootCache } from '../../src/scanRoots';
-import { KodeCoreGate, ShadowDiffEntry, ShadowDiffLog, firstDiffPath } from '../../src/kodeCoreGate';
-import { KodeCoreClient } from '../../src/kodeCoreClient';
-import { diagnosticsToLspFace, locationToLspFace } from '../../src/kodeCoreShadowFaces';
+import { KodeCoreGate, ShadowDiffEntry, ShadowDiffLog, firstDiffPath } from '../../src/backend/kodeCoreGate';
+import { KodeCoreClient } from '../../src/backend/kodeCoreClient';
+import { diagnosticsToLspFace, locationToLspFace } from '../../src/backend/kodeCoreShadowFaces';
 import { DiagnosticCollection } from '../fake-vscode/core';
 
 const ASSETS_OUT = path.join(os.tmpdir(), 'kode-shadow-gate-assets');

@@ -14,7 +14,7 @@ import {
   LOGGER_APP_ACTIVE_TICK_MSG_ID,
   LOGGER_DEREGISTER_LOG_WATCHER_MSG_ID,
   LOGGER_REGISTER_LOG_WATCHER_MSG_ID
-} from './kbengineProtocol';
+} from './backend/kbengineProtocol';
 
 /** 核对所用目标版本(引擎仓与文件,登记面 LIV-001 的 engineVersion 对齐) */
 export const WATCHER_PROTOCOL_AUDIT_VERSION = {

@@ -5,7 +5,7 @@ import {
   CELLAPPMGR_QUERY_SPACES_MSG_ID,
   CONSOLE_PROFILE_CB_MSG_ID,
   CONSOLE_WATCHER_CB_MSG_ID
-} from '../src/kbengineProtocol';
+} from '../src/backend/kbengineProtocol';
 
 // C-11(V-08)边界注记 + 回执消息号勘误的防漂移锁。取证文档最初把 watcher 线
 // 回执误记为 65503(根因:Watcher.py 同文件里两个常量都定义了,取错了一个);
@@ -23,7 +23,7 @@ const docPath = join(root, 'docs', 'design', 'space-viewer-watcher.md');
 const zhDocPath = join(root, 'docs', 'zh', 'design', 'space-viewer-watcher.md');
 const doc = readFileSync(docPath, 'utf8');
 const zhDoc = readFileSync(zhDocPath, 'utf8');
-const protocolSource = readFileSync(join(root, 'src', 'kbengineProtocol.ts'), 'utf8');
+const protocolSource = readFileSync(join(root, 'src', 'backend', 'kbengineProtocol.ts'), 'utf8');
 
 const versions: Array<{ label: string; text: string; lang: 'en' | 'zh' }> = [
   { label: 'en(root)', text: doc, lang: 'en' },

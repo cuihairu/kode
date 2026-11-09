@@ -29,7 +29,7 @@ import {
   queryWatcherPath,
   WATCHER_QUERY_MSG_IDS,
   type KBEngineComponentInfo
-} from '../../../kbengineProtocol';
+} from '../../../backend/kbengineProtocol';
 import { defaultRuntimeQueryProtocol } from '../../../runtimeQueryWebView';
 import {
   formatLiveWatcherEvidence,

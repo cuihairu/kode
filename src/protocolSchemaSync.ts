@@ -25,7 +25,7 @@ import {
   type RunBinary
 } from './protocolTooling';
 import { resolveAssetsRootForWorkspace } from './scanRoots';
-import { createSharedFileEventMerger, type SharedFileEventKind } from './sharedFileEvents';
+import { createSharedFileEventMerger, type SharedFileEventKind } from './backend/sharedFileEvents';
 
 export const BUILD_SCHEMA_COMMAND = 'kbengine.protocol.buildSchema';
 /** Schema JSON 落点文件名(globalStorage 下;CLI schema inspect/diff 的输入)。 */

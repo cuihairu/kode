@@ -12,7 +12,7 @@ import {
   parseWatcherFrame,
   swapUint16,
   toIPv4
-} from '../src/kbengineProtocol';
+} from '../src/backend/kbengineProtocol';
 import { resolveEngineRoot } from './helpers/engineRoot';
 
 // 构造与 parseComponentInfo 读取序逐字段对齐的广播包。

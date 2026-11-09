@@ -4,7 +4,7 @@ import { Readable } from 'stream';
 import { mkdtemp, rm } from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { KodeCoreClient } from '../src/kodeCoreClient';
+import { KodeCoreClient } from '../src/backend/kodeCoreClient';
 import { cellToTypedValue, typedValueToBind } from '../src/backend/playerDataCloneWire';
 import { applyImportPlan, columnOrderFromPlan, executeExportPlan, openCloneSession, probePhysicalTables, type CloneMysqlConnection } from '../src/backend/playerDataCloneMysql';
 import type { ImportPlanWire, QueryPlanWire, TypedRowWire } from '../src/backend/playerDataCloneWire';

@@ -10,7 +10,7 @@
 // 行号口径:Rust 0-based 原样透出;1-based 换算在消费点(C-19 entityMapping /
 // 面板)做,与本文件无关。
 
-import { getKodeCoreShadowGate } from '../kodeCoreShadowFaces';
+import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
 /** Rust `$/kode/python/callgraph` 入参(镜像 CallgraphParams) */
 export interface PythonCallGraphRustParams {

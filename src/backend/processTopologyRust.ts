@@ -6,7 +6,7 @@
 // 用(无门/未配 serverPath/调用失败/形状不合规)返回 null,调用方零发现静默
 // (诊断功能不阻塞,错误不出现在诊断面)。无 TS 镜像——Rust 单一实现。
 
-import { getKodeCoreShadowGate } from '../kodeCoreShadowFaces';
+import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
 /** Rust `$/kode/processTopology/validate` 入参(镜像 BuildParams) */
 export interface ProcessTopologyRustParams {

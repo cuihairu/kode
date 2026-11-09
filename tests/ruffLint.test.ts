@@ -9,7 +9,7 @@ import {
   type RuffDiag,
   type RuffLintCommandDeps
 } from '../src/ruffLint';
-import { setKodeCoreShadowGate, type KodeCoreGate } from '../src/kodeCoreShadowFaces';
+import { setKodeCoreShadowGate, type KodeCoreGate } from '../src/backend/kodeCoreShadowFaces';
 
 // IDE-RUST-005 A 案:.py lint via ruff shell-out。本文件锁:
 // - 桥载荷契约(files/ruffPath 直传;坏形状如实 error);

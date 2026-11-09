@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CONSOLE_LOG_MSG_ID, buildFrame, buildLogWatcherRequestBody, KBELOG_TYPES_MASK } from '../src/kbengineProtocol';
+import { CONSOLE_LOG_MSG_ID, buildFrame, buildLogWatcherRequestBody, KBELOG_TYPES_MASK } from '../src/backend/kbengineProtocol';
 import { ConsoleLogTailController, buildTailCodeActions, formatTailLine } from '../src/backend/consoleLogTail';
 
 // KB-GC-001 日志实时 tail 控制器:65501 长连推流 → IDE Output。状态机

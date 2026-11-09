@@ -6,7 +6,7 @@ import {
   observationsFromRound,
   stampObservationPoint
 } from '../src/observationIdentity';
-import type { KBEngineComponentInfo } from '../src/kbengineProtocol';
+import type { KBEngineComponentInfo } from '../src/backend/kbengineProtocol';
 
 function makeCellapp(componentID: bigint, pid: number, groupOrderID = 1): KBEngineComponentInfo {
   return {

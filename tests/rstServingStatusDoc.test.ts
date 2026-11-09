@@ -15,8 +15,8 @@ import { describe, expect, it } from 'vitest';
 const root = join(__dirname, '..');
 const read = (relative: string): string => readFileSync(join(root, relative), 'utf8');
 const proposal = read('docs/review/2026-10-23-rust-core-lsp-proposal.md');
-const gate = read('src/kodeCoreGate.ts');
-const faces = read('src/kodeCoreShadowFaces.ts');
+const gate = read('src/backend/kodeCoreGate.ts');
+const faces = read('src/backend/kodeCoreShadowFaces.ts');
 const pr012 = read('docs/kode2/pr-012.md');
 
 const R3_SECTION = proposal.slice(proposal.indexOf('- [ ] R3'), proposal.indexOf('- [ ] R4'));

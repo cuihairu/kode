@@ -22,8 +22,8 @@ import {
   type DefMd5CheckDeps
 } from '../src/defMd5Check';
 import { computeDefMd5InRust } from '../src/backend/defMd5Rust';
-import { KodeCoreGate } from '../src/kodeCoreGate';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 
 // ---------------------------------------------------------------- fixtures
 

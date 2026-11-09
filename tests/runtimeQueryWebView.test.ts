@@ -11,7 +11,7 @@ import type {
   KBEngineComponentInfo,
   SpaceQueryResult,
   WatcherQueryResult
-} from '../src/kbengineProtocol';
+} from '../src/backend/kbengineProtocol';
 import { Uri, type ExtensionContext } from './fake-vscode/core';
 import { panelRegistry } from './fake-vscode/panelRegistry';
 import { configurationOverrides } from './fake-vscode/workspaceState';

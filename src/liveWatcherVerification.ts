@@ -13,7 +13,7 @@ import {
 } from './watcherProtocolAudit';
 import type { RuntimeQueryProtocol, WatcherResultRow } from './runtimeQueryWebView';
 import { watcherResultRows } from './runtimeQueryWebView';
-import { COMPONENT_NAMES, type KBEngineComponentInfo, type WatcherQueryResult } from './kbengineProtocol';
+import { COMPONENT_NAMES, type KBEngineComponentInfo, type WatcherQueryResult } from './backend/kbengineProtocol';
 
 /** 联验证据里的组件身份段(全部来自广播发现的真实值,不猜) */
 export interface LiveVerificationIdentity {

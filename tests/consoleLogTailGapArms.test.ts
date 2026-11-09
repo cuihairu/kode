@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CONSOLE_LOG_MSG_ID, buildFrame } from '../src/kbengineProtocol';
+import { CONSOLE_LOG_MSG_ID, buildFrame } from '../src/backend/kbengineProtocol';
 import { ConsoleLogTailController, buildTailCodeActions, type TailJumpTarget } from '../src/backend/consoleLogTail';
 
 // consoleLogTail.ts 缺口臂(2026-11-09 覆盖率扫尾):

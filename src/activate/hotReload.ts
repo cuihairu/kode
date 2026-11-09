@@ -24,7 +24,7 @@ import {
   type HotReloadTargetStateWiring,
 } from '../hotReload';
 import { HotReloadStatusController } from '../hotReloadStatus';
-import { createFileChangeRouter } from '../fileChangeBypass';
+import { createFileChangeRouter } from '../backend/fileChangeBypass';
 import { HOT_RELOAD_CHANNEL_STATUS_PRIORITY, HotReloadChannelQuickSwitch, runHotReloadChannelConfigCommand } from '../backend/hotReloadChannelConfig';
 import { HotReloadVersionTracker, matchesHotReloadGlob } from '../backend/hotReloadFileVersion';
 import { resolveReloadTransport, type ReloadTransport } from '../backend/hotReloadTransport';
@@ -40,7 +40,7 @@ import { HotReloadFileStateCodeLensProvider } from '../hotReloadFileStateLens';
 import { runHotReloadFileStateFilterCommand, runShowHotReloadFileStateCommand } from '../backend/hotReloadFileStateFilter';
 import { readTempEditReloadSettings, runTempEditReload, tempEditSectionReader } from '../backend/hotReloadTempEdit';
 import type { FileChangeMetaResolver } from '../fileChangeMeta';
-import type { FileChangeRouter } from '../fileChangeBypass';
+import type { FileChangeRouter } from '../backend/fileChangeBypass';
 import type { QuickActionManager } from '../quickActions';
 
 export interface HotReloadDeps {

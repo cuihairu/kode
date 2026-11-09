@@ -22,7 +22,7 @@ import path from 'node:path';
 import { performance } from 'perf_hooks';
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { KodeCoreClient } from '../../src/kodeCoreClient';
+import { KodeCoreClient } from '../../src/backend/kodeCoreClient';
 
 const OUT_FILE =
   process.env.KODE_SERVING_OUT ?? path.resolve(__dirname, '../../docs/perf/serving-state-run.txt');

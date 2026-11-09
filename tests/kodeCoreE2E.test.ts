@@ -5,8 +5,8 @@ import { join } from 'path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { KodeCoreClient } from '../src/kodeCoreClient';
-import { KodeCoreGate } from '../src/kodeCoreGate';
+import { KodeCoreClient } from '../src/backend/kodeCoreClient';
+import { KodeCoreGate } from '../src/backend/kodeCoreGate';
 
 // kode2 PR-003 e2e(PH1-02,书 §15):真实 Rust kode-server 二进制。
 // 握手 → didOpen/didChange/didClose → cancel → 健康探针 → kill 后自动重启。

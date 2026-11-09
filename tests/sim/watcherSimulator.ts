@@ -5,7 +5,7 @@ import {
   buildFrame,
   buildWatcherDirFrameBody,
   buildWatcherValueFrameBody
-} from '../../src/kbengineProtocol';
+} from '../../src/backend/kbengineProtocol';
 
 /**
  * 本地 watcher 查询仿真器:每个组件一个 TCP 服务,端口动态分配。

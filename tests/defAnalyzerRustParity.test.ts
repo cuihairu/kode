@@ -21,7 +21,7 @@
 import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
-import { KodeCoreClient } from '../src/kodeCoreClient';
+import { KodeCoreClient } from '../src/backend/kodeCoreClient';
 import { analyzeDefDocument } from '../src/backend/defAnalyzer';
 
 const repoRoot = join(__dirname, '..');

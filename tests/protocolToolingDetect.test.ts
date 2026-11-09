@@ -12,7 +12,7 @@ import {
   parseWiresharkVersion,
   pluginFolderMatchesHost,
   wiresharkVersionLine,
-} from '../src/protocolToolingDetect';
+} from '../src/backend/protocolToolingDetect';
 
 // 本机 `tshark -G plugins` 实测行(TAB 分隔,cat -A 验证)。
 const PLUGINS_OUTPUT = [

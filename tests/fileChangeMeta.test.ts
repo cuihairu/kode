@@ -10,7 +10,7 @@ import {
 } from '../src/fileChangeMeta';
 import { resolveModuleDualName } from '../src/backend/hotReloadTempEdit';
 import { normalizeFileIdentity } from '../src/backend/pathIdentity';
-import { createSharedFileEventMerger, type SharedFileEvent } from '../src/sharedFileEvents';
+import { createSharedFileEventMerger, type SharedFileEvent } from '../src/backend/sharedFileEvents';
 
 // 文件变化元信息(方案 B):merger 交付 version token,下游懒解析器按
 // identity+version 记忆化——同版本只读一次、不同版本重读;stat/读失败如实返

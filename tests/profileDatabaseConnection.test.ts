@@ -13,7 +13,7 @@ import {
   resetConfigResolveForTests,
   type ConfigResolveOverrides
 } from '../src/serverConfigResolve';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { makeContractGate } from './helpers/configCoreContract';
 import {
   ProfileDatabaseConnectionService,

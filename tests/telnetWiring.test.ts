@@ -16,7 +16,7 @@ import {
   resetConfigResolveForTests,
   type ConfigResolveOverrides
 } from '../src/serverConfigResolve';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { makeContractGate } from './helpers/configCoreContract';
 
 // KODE-CFG-009:配置读值半由 core(`$/kode/config/resolve`)供给,读值断言

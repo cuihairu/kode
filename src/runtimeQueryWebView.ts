@@ -9,7 +9,7 @@ import {
   type KBEngineComponentInfo,
   type SpaceQueryResult,
   type WatcherQueryResult
-} from './kbengineProtocol';
+} from './backend/kbengineProtocol';
 import {
   createObservationFreshnessTracker,
   type ObservationFreshnessTracker,

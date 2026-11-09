@@ -9,7 +9,7 @@ import {
   settleProviderResult,
   shadowCompareDefinition,
   type LspLocationFace
-} from '../kodeCoreShadowFaces';
+} from '../backend/kodeCoreShadowFaces';
 import { findDatabaseSchemaFieldAtPosition, findDatabaseSchemaSourceLocation, findDatabaseSchemaTargetsForSource, getDatabaseSchemaSnapshot, locateDatabaseSchemaLine } from '../databaseSchema';
 import { createDatabaseSchemaUri, isDatabaseSchemaDocument } from '../databaseSchemaPresentation';
 import { findCustomTypeDeclarationInfo, findCustomTypeInfo, findCustomTypePythonImplementationFile, findImplementedBySymbolLine, findDefinitionEntryByCategory, findDefinitionFileByCategory, findEntityDefsDirForDefFile, findComponentScriptFile, findEntityDefinitionFile, findEntitiesXmlFile, findEntityScriptFile, findInterfaceScriptFile, getDefinitionWorkspaceLayout, getRegisteredCustomTypes, getScriptsRootForDefFile, getWorkspaceRootForDocument, scriptFoldersForRole, notifyEntitiesXmlMissingOnce, readWorkspaceTextFile, readWorkspaceTextLines } from '../definitionWorkspace';

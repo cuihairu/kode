@@ -1265,7 +1265,7 @@ describe('extension 激活链命令面(活动 profile 侧)', () => {
   it('运行时查询:无运行组件如实提示', async ctx => {
     // 环境守卫:本机有真 KBEngine machine daemon(UDP 20086 应答,如 demo 引擎
     // 在跑)时 discovery 必然找到组件,「无组件如实提示」前提不成立——跳过
-    const { discoverLocalComponents } = await import('../src/kbengineProtocol');
+    const { discoverLocalComponents } = await import('../src/backend/kbengineProtocol');
     const live = await discoverLocalComponents({ timeoutMs: 400 }).catch(() => []);
     if (live.length > 0) {
       ctx.skip();

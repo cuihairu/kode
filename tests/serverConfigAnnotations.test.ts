@@ -4,7 +4,7 @@ import * as path from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { buildFinalServerConfig, renderConfigXmlSections, type ConfigXmlNode } from '../src/serverConfigMerge';
 import { ensureConfigResolved, resetConfigResolveForTests } from '../src/serverConfigResolve';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import { makeContractGate, parseConfigXml, type ContractGateCall } from './helpers/configCoreContract';
 import { annotateConfigTree } from '../src/backend/serverConfigAnnotations';
 import {

@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { afterEach, expect, it } from 'vitest';
-import { discoverNativeBinary } from '../src/nativeBinary';
+import { discoverNativeBinary } from '../src/backend/nativeBinary';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) { fs.rmSync(root, { recursive: true, force: true }); } });

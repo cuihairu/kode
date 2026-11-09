@@ -19,7 +19,7 @@ import {
   workspace as stubWorkspace
 } from './helpers/vscodeStub';
 import type { FakeWebviewPanel } from './helpers/vscodeStub';
-import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import type { DependencyGraphRust } from '../src/backend/dependencyGraphRust';
 import type { PythonCallGraphRustResult } from '../src/backend/pythonCallGraphRust';
 

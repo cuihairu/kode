@@ -46,7 +46,7 @@ import { joinWorkspacePath } from './backend/workspacePath';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { PY_SCAN_EXCLUDED_DIRS } from './backend/pythonScanRules';
 import { SemanticIndex, getSemanticIndex, isTypeRegistryFile } from './semanticIndex';
-import { createSharedFileEventMerger, type SharedFileEvent } from './sharedFileEvents';
+import { createSharedFileEventMerger, type SharedFileEvent } from './backend/sharedFileEvents';
 import { SemanticDependencyGraph, type SemanticChangeKind } from './dependencyGraph';
 import type { EntityComponentFace } from './backend/entityBuiltinProperties';
 import { invalidateDatabaseSchemaCacheForFiles, invalidateDatabaseSchemaCacheForTypeRegistry } from './databaseSchema';
