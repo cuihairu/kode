@@ -537,3 +537,21 @@ describe('失败原因遮蔽与动作面(008b)', () => {
     expect(typeof maskPlayerTaskErrorText).toBe('function');
   });
 });
+
+describe('状态归属与刷新语义(008c 验证面)', () => {
+  it('刷新不触碰状态账本:刷新后最近一次状态原样保留', () => {
+    playerTaskStatusStore.clear();
+    playerTaskStatusStore.finish('query', 'success', '查询完成:1 行', new Date(2026, 10, 10, 8, 0, 0).getTime());
+    playerTaskStatusStore.finish('connection', 'failed', '连接失败:ECONNREFUSED', new Date(2026, 10, 10, 8, 0, 1).getTime());
+    const provider = new PlayerDataTreeProvider();
+    provider.getChildren(); // 刷新语义 = 重建树;账本只读
+    const nodes = buildPlayerTaskStatusNodes();
+    expect(nodes[0].label).toBe('玩家查询:成功');
+    expect(nodes[1].label).toBe('连接检查:失败');
+    // 归属随内容走:摘要携带目标身份(dbid/host:port),跨目标不混淆
+    const raw = nodes[1].tooltip;
+    const tooltip = String((raw as { value?: string })?.value ?? raw ?? '');
+    expect(tooltip).toContain('ECONNREFUSED');
+    playerTaskStatusStore.clear();
+  });
+});

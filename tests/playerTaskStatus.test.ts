@@ -84,3 +84,31 @@ describe('PlayerTaskStatusStore(UX-REVIEW-008a)', () => {
     expect(store.attemptsForTests()).toBe(before + 1);
   });
 });
+
+describe('过期异步结果守卫(UX-REVIEW-008c)', () => {
+  it('迟到终态不覆盖新任务:begin #1 后 begin #2,#1 的 finish 被守卫丢弃,#2 状态完好', () => {
+    const store = new PlayerTaskStatusStore();
+    const first = store.begin('query', '等待输入 DBID');
+    store.begin('query', '正在重查 dbid 42'); // 新任务接棒
+    const stale = store.finish('query', 'success', '查询完成:1 行', 1762732800000, first.attempt);
+    expect(stale).toBeNull(); // 过期结果被拒
+    expect(store.get('query')?.outcome).toBe('running'); // 新任务状态不被覆盖
+    expect(store.get('query')?.summary).toBe('正在重查 dbid 42');
+
+    // 新尝试自己的终态照常入账
+    const second = store.begin('connection', '正在检查连接');
+    const done = store.finish('connection', 'failed', '连接失败:ECONNREFUSED', 1762732801000, second.attempt);
+    expect(done?.outcome).toBe('failed');
+    expect(store.get('connection')?.summary).toBe('连接失败:ECONNREFUSED');
+  });
+
+  it('attempt 凭据随 begin 返回且单调递增;无凭据的 finish 照常入账(008a 兼容)', () => {
+    const store = new PlayerTaskStatusStore();
+    const a = store.begin('query', '1');
+    const b = store.begin('query', '2');
+    expect(b.attempt).toBe(a.attempt + 1);
+    const done = store.finish('query', 'empty', '查询完成:0 行', 1762732800000);
+    expect(done).not.toBeNull();
+    expect(store.get('query')?.outcome).toBe('empty');
+  });
+});

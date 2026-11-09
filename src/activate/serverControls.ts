@@ -191,10 +191,11 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
       /* 派生失败走降级文案 */
     });
     // UX-REVIEW-008a:状态账本记账(进行中→终态),面板最近一次状态可回看
-    playerTaskStatusStore.begin('connection', '正在检查连接(只读 SELECT 1)');
+    const begun = playerTaskStatusStore.begin('connection', '正在检查连接(只读 SELECT 1)');
     playerDataProvider.refresh();
     const run = await runPlayerConnectionTest();
-    playerTaskStatusStore.finish('connection', run.outcome, run.message);
+    // 008c:迟到结果不覆盖新任务(期间若又有 begin,本次终态被守卫丢弃)
+    playerTaskStatusStore.finish('connection', run.outcome, run.message, Date.now(), begun.attempt);
     playerDataProvider.refresh();
     await presentPlayerTaskResult(run, runConnectionTask);
   };
@@ -220,7 +221,7 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
       return;
     }
     // UX-REVIEW-008a:过闸即记账进行中(含等待输入);输入取消=已取消
-    playerTaskStatusStore.begin('query', '等待输入 DBID(只读查询 tbl_Account)');
+    const begunQuery = playerTaskStatusStore.begin('query', '等待输入 DBID(只读查询 tbl_Account)');
     playerDataProvider.refresh();
     const dbid = await vscode.window.showInputBox({
       prompt: '玩家 DBID(十进制正整数;只读查询 tbl_Account)',
@@ -231,19 +232,19 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
           : '仅接受十进制正整数'
     });
     if (dbid === undefined || dbid.trim() === '') {
-      playerTaskStatusStore.finish('query', 'cancelled', '已取消(未输入 DBID,未执行查询)');
+      playerTaskStatusStore.finish('query', 'cancelled', '已取消(未输入 DBID,未执行查询)', Date.now(), begunQuery.attempt);
       playerDataProvider.refresh();
       return;
     }
     const run = await runPlayerQueryByDbid(dbid);
-    playerTaskStatusStore.finish('query', run.outcome, run.message);
+    playerTaskStatusStore.finish('query', run.outcome, run.message, Date.now(), begunQuery.attempt);
     playerDataProvider.refresh();
     // 重试 = 同一 dbid 直接重跑(不再弹输入框);重试自身失败仍可再重试
     const retryQuery = async (): Promise<void> => {
-      playerTaskStatusStore.begin('query', `正在重查 dbid ${dbid.trim()}(只读)`);
+      const begunRetry = playerTaskStatusStore.begin('query', `正在重查 dbid ${dbid.trim()}(只读)`);
       playerDataProvider.refresh();
       const retryRun = await runPlayerQueryByDbid(dbid);
-      playerTaskStatusStore.finish('query', retryRun.outcome, retryRun.message);
+      playerTaskStatusStore.finish('query', retryRun.outcome, retryRun.message, Date.now(), begunRetry.attempt);
       playerDataProvider.refresh();
       await presentPlayerTaskResult(retryRun, retryQuery);
     };
