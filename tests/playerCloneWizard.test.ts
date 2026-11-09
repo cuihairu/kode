@@ -5,7 +5,6 @@
 //   (失败带原始原因,测试不落盘)、只有「保存」落盘,保存后可再次修改
 //   (重新运行预填既有配置)。
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import zhBundle from '../l10n/bundle.l10n.zh-cn.json';
 import {
   CLONE_SUMMARY_CANCEL,
   CLONE_SUMMARY_EDIT,
@@ -29,9 +28,9 @@ vi.mock('../src/backend/playerDataCloneMysql', async importOriginal => {
 
 import { openCloneSession, testCloneConnection } from '../src/backend/playerDataCloneMysql';
 
-const t = (message: string): string => (zhBundle as Record<string, string>)[message] ?? message;
-const HOST_PROMPT = t('Source database host');
-const PASSWORD_PROMPT = t('Password (leave empty to remove the saved password)');
+// 010d:default 态(无 localize)=英文源串;两态锁定在 playerCloneI18n.test.ts
+const HOST_PROMPT = 'Source database host';
+const PASSWORD_PROMPT = 'Password (leave empty to remove the saved password)';
 
 interface WizardScript {
   role?: CloneProfileRole;
@@ -63,7 +62,6 @@ const makeWizard = (script: WizardScript = {}) => {
   const inputs = [...(script.inputs ?? [])];
   const picks = [...(script.picks ?? [])];
   const deps: PlayerCloneCommandDeps = {
-    localize: message => (zhBundle as Record<string, string>)[message] ?? message,
     profiles: {
       get: () => script.existing ?? null,
       save: async (role, config, password) => {
@@ -212,7 +210,7 @@ describe('克隆连接向导:分步输入(UX-REVIEW-005a)', () => {
   });
 
   it('返回修改 target 环境:local → test,按新环境保存', async () => {
-    const envPrompt = t('Target environment (production and staging are not allowed)');
+    const envPrompt = 'Target environment (production and staging are not allowed)';
     const { deps, recorded } = makeWizard({
       role: 'target',
       inputs: wizardInputs(),
@@ -261,7 +259,7 @@ describe('克隆连接向导:摘要与保存(UX-REVIEW-005c)', () => {
     });
     await runConfigureCloneProfileCommand(deps, 'source');
     expect(summary).toContain('Source: Host db.host · Port 3307 · User kbe · Database kbe_db');
-    expect(summary).toContain('密码：已输入，保存后生效（不回显）');
+    expect(summary).toContain('Password: entered, applied on save (never echoed)');
     expect(summary).not.toContain('pw-never-echo');
     expect(recorded.saved).toHaveLength(0);
   });
@@ -277,7 +275,7 @@ describe('克隆连接向导:摘要与保存(UX-REVIEW-005c)', () => {
       }]
     });
     await runConfigureCloneProfileCommand(stored.deps, 'source');
-    expect(summaryStored).toContain('密码：已保存，输入留空则清除');
+    expect(summaryStored).toContain('Password: saved; leaving empty clears it');
 
     let summaryNone = '';
     const none = makeWizard({
@@ -288,7 +286,7 @@ describe('克隆连接向导:摘要与保存(UX-REVIEW-005c)', () => {
       }]
     });
     await runConfigureCloneProfileCommand(none.deps, 'source');
-    expect(summaryNone).toContain('密码：未设置');
+    expect(summaryNone).toContain('Password: none yet');
   });
 
   it('摘要页取消:不落盘不提示(取消不得写入半成品)', async () => {
@@ -315,7 +313,7 @@ describe('克隆连接向导:摘要与保存(UX-REVIEW-005c)', () => {
     expect(keepCase.recorded.pickItems.at(-1)).toContain(CLONE_SUMMARY_KEEP_SECRET);
     expect(keepCase.recorded.saved[0]?.password).toBeUndefined(); // undefined = 保留旧密钥
     expect(keepCase.recorded.saved[0]?.config).toMatchObject({ host: 'new.host' });
-    expect(keepCase.recorded.info).toEqual(['源库连接已保存。']);
+    expect(keepCase.recorded.info).toEqual(['Source connection saved.']);
 
     // 未存密钥 → 不出「保留」项
     const noKeep = makeWizard({
@@ -341,7 +339,7 @@ describe('克隆连接向导:摘要与保存(UX-REVIEW-005c)', () => {
       throw new Error('SecretStorage write refused');
     };
     await runConfigureCloneProfileCommand(failing.deps, 'source');
-    expect(failing.recorded.error).toEqual(['保存失败: SecretStorage write refused']);
+    expect(failing.recorded.error).toEqual(['Save failed: SecretStorage write refused']);
     expect(failing.recorded.info).toHaveLength(0);
   });
 
@@ -362,7 +360,7 @@ describe('克隆连接向导:摘要与保存(UX-REVIEW-005c)', () => {
       database: 'kbe_db',
       environment: undefined
     });
-    expect(recorded.info[0]).toContain('连接成功');
+    expect(recorded.info[0]).toContain('connection succeeded');
     expect(recorded.info[0]).toContain('8.0.36');
     expect(connection.end).toHaveBeenCalled();
     // 测试通过后再选「保存」才落盘(两次摘要选择)
@@ -376,7 +374,7 @@ describe('克隆连接向导:摘要与保存(UX-REVIEW-005c)', () => {
       picks: [CLONE_SUMMARY_TEST, CLONE_SUMMARY_CANCEL]
     });
     await runConfigureCloneProfileCommand(deps, 'source');
-    expect(recorded.error[0]).toContain('连接失败');
+    expect(recorded.error[0]).toContain('Connection failed');
     expect(recorded.error[0]).toContain('ECONNREFUSED');
     expect(recorded.saved).toHaveLength(0);
   });
@@ -399,7 +397,7 @@ describe('克隆连接向导:摘要与保存(UX-REVIEW-005c)', () => {
   it('保存成功提示后可再次修改:重跑命令预填刚保存的配置', async () => {
     const first = makeWizard({ inputs: wizardInputs(), picks: [CLONE_SUMMARY_SAVE] });
     await runConfigureCloneProfileCommand(first.deps, 'source');
-    expect(first.recorded.info).toEqual(['源库连接已保存。']);
+    expect(first.recorded.info).toEqual(['Source connection saved.']);
 
     // 第二次运行:预填上次保存值,用户逐项回车确认(密码留空=不设)
     const second = makeWizard({

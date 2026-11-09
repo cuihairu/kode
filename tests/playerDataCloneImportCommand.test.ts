@@ -53,20 +53,20 @@ describe('clone import failure reporting', () => {
     const errors: string[] = [];
     vi.mocked(applyImportPlan).mockRejectedValue(new CloneCommitUnknownError('connection lost'));
     await runImportCloneCommand(makeDeps(errors), '/archive');
-    expect(errors[0]).toContain('结果不确定');
-    expect(errors[0]).not.toContain('已回滚');
+    expect(errors[0]).toContain('Import outcome uncertain');
+    expect(errors[0]).not.toContain('rolled back');
   });
   it('reports committed when verification fails even if closing also fails', async () => {
     const errors: string[] = [];
     vi.mocked(applyImportPlan).mockRejectedValue(new ClonePostCommitError('verification failed'));
     await runImportCloneCommand(makeDeps(errors), '/archive');
-    expect(errors[0]).toContain('已提交');
+    expect(errors[0]).toContain('Import committed');
   });
   it('reports committed when audit writing fails', async () => {
     const errors: string[] = [];
     vi.mocked(applyImportPlan).mockResolvedValue({ verify: [], insertedPerTable: {}, resolvedIds: {}, newRootId: 1, cleanup: [] });
     await runImportCloneCommand(makeDeps(errors), '/archive');
-    expect(errors[0]).toContain('已提交');
+    expect(errors[0]).toContain('Import committed');
     expect(errors[0]).toContain('audit unavailable');
   });
   it('requires an explicit choice before repeating a reserved import', async () => {
@@ -79,7 +79,7 @@ describe('clone import failure reporting', () => {
   it('allows a repeat only after the explicit create-another-copy choice', async () => {
     const errors: string[] = [];
     const deps = makeDeps(errors);
-    deps.showQuickPick = async items => items.find(item => item.startsWith('明确另建副本')) ?? items[0];
+    deps.showQuickPick = async items => items.find(item => item.startsWith('Create another copy anyway')) ?? items[0];
     vi.mocked(reserveCloneImport).mockResolvedValue({ duplicate: true, reservation: '/tmp/reservation' });
     vi.mocked(applyImportPlan).mockResolvedValue({ verify: [], insertedPerTable: {}, resolvedIds: {}, newRootId: 1, cleanup: [] });
     await runImportCloneCommand(deps, '/archive');
@@ -120,7 +120,7 @@ describe('clone import preflight (UX-REVIEW-004c)', () => {
       inputs.push(options.prompt);
       return undefined;
     };
-    depsAccept.showWarningMessage = async () => '配置 Target 连接';
+    depsAccept.showWarningMessage = async () => 'Configure Target connection';
     await runImportCloneCommand(depsAccept, '/archive');
     expect(inputs.length).toBeGreaterThan(0); // 向导确实被拉起(004c 新行为)
     expect(openCloneSession).not.toHaveBeenCalled();
@@ -134,7 +134,7 @@ describe('clone import preflight (UX-REVIEW-004c)', () => {
       resolveConnection: async () => ({ host: 'h', port: 3306, database: 'd', user: 'u', environment: 'prod' })
     } as unknown as CloneProfileStore;
     await runImportCloneCommand(deps, '/archive');
-    expect(errors[0]).toContain('Target 环境仅接受 local/test');
+    expect(errors[0]).toContain('Target environment accepts local/test only');
     expect(openCloneSession).not.toHaveBeenCalled();
     expect(applyImportPlan).not.toHaveBeenCalled();
   });
@@ -147,7 +147,7 @@ describe('clone import preflight (UX-REVIEW-004c)', () => {
       query: async () => { throw new Error('ECONNREFUSED'); }
     } as never);
     await runImportCloneCommand(deps, '/archive');
-    expect(errors[0]).toContain('目标连接失败: ECONNREFUSED(导入未开始)');
+    expect(errors[0]).toContain('Target connection failed: ECONNREFUSED (import not started)');
     // 导入未开始:防重登记与写入面都不触达
     expect(reserveCloneImport).not.toHaveBeenCalled();
     expect(applyImportPlan).not.toHaveBeenCalled();

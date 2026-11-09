@@ -8,7 +8,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { activate, deactivate } from '../src/extension';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { languagesRegistry } from './fake-vscode/languages';
@@ -20,6 +20,22 @@ import {
   readOnlyQueryCheckConnectionLabel,
   readOnlyQueryOpenReportLabel
 } from '../src/playerDataPanel';
+
+// 本文件的命令面全部按「本机无 KBEngine 组件」的诚实降级臂编写。真机
+// 口径下 discoverLocalComponents 走 UDP 广播(127.0.0.1:20086),一旦本机
+// 起了真实引擎进程组(profile.start 的预置前提被打破),profile.start 会
+// 进入真实 5s 采样而超时。注入哑 socket(绑定成功、永不回包)锁定空发现
+// 分支,测试不再依赖宿主机当时的进程状态。
+vi.mock('dgram', () => ({
+  createSocket: () => ({
+    on: () => undefined,
+    bind: (_port: number, _addr: string, cb: () => void) => cb(),
+    setBroadcast: () => undefined,
+    address: () => ({ address: '127.0.0.1', family: 'ipv4', port: 40000 }),
+    send: () => undefined,
+    close: () => undefined
+  })
+}));
 
 let root = '';
 let extDir = '';

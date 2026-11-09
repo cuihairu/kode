@@ -12,7 +12,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import zhBundle from '../l10n/bundle.l10n.zh-cn.json';
 import {
   CLONE_SUMMARY_CANCEL,
   CLONE_SUMMARY_SAVE,
@@ -64,8 +63,8 @@ import {
   writeCloneArchive
 } from '../src/backend/playerDataCloneRust';
 
-const NO_GATE = 'Player Data Clone 需要 Rust 后端(kode-server)可用:请检查 kode-core server 配置。';
-const PERSISTED_NOT_LIVE = '这是数据库已持久化数据副本(Persisted copy),不代表在线当前状态(Live state)。';
+const NO_GATE = 'Player Data Clone requires the Rust backend (kode-server) to be available: check the kode-core server configuration.';
+const PERSISTED_NOT_LIVE = 'This is a persisted copy of the database, not the live online state.';
 
 /** 记录型假连接:预置语句结果(needle → rows/Error),记录全部执行。 */
 class FakeMysqlConnection implements CloneMysqlConnection {
@@ -153,7 +152,6 @@ const makeDeps = (script: DepsScript = {}) => {
   const inputs = [...(script.inputs ?? [])];
   const picks = [...(script.picks ?? [])];
   const deps: PlayerCloneCommandDeps = {
-    localize: message => (zhBundle as Record<string, string>)[message] ?? message,
     profiles: {
       get: (role: CloneProfileRole) =>
         (role === 'source' ? script.sourceProfile : script.targetProfile) ?? null,
@@ -374,9 +372,9 @@ const importRowsCall = () => ({
   }
 });
 
-const CONFIRM_FIRST = '继续到确认(Continue)';
-const CONFIRM_WRITE = '确认写入本地库 127.0.0.1:13307/kbe_local(Confirm import)';
-const CONFIRM_COPY = '明确另建副本(Create another copy)';
+const CONFIRM_FIRST = 'Continue to confirmation';
+const CONFIRM_WRITE = 'Confirm write to local database 127.0.0.1:13307/kbe_local';
+const CONFIRM_COPY = 'Create another copy anyway';
 
 let tmpRoot = '';
 
@@ -397,12 +395,12 @@ describe('pickExportEncryption(导出确认页加密循环)', () => {
     let seenItems: readonly string[] = [];
     const result = await pickExportEncryption(async (items, options) => {
       seenItems = items;
-      expect(options.placeHolder).toContain('3 条只读查询');
+      expect(options.placeHolder).toContain('3 read-only query results');
       return items[0];
     }, 3, true);
     expect(result).toEqual({ confirmed: true, encrypt: true });
     expect(seenItems[0]).toContain(EXPORT_CONFIRM_ITEM);
-    expect(seenItems[0]).toContain('加密(本机钥匙)');
+    expect(seenItems[0]).toContain('Encrypted (local key)');
     expect(seenItems[2]).toBe(EXPORT_CANCEL_ITEM);
   });
 
@@ -412,14 +410,14 @@ describe('pickExportEncryption(导出确认页加密循环)', () => {
       round += 1;
       if (round === 1) {
         // 初始明文:切换项目标态是加密
-        expect(items[0]).toContain('明文(可跨机转移)');
-        expect(items[1]).toContain('切换加密');
-        expect(items[1]).toContain('加密(本机钥匙)');
+        expect(items[0]).toContain('Plaintext (portable)');
+        expect(items[1]).toContain('Toggle encryption');
+        expect(items[1]).toContain('Encrypted (local key)');
         return items[1];
       }
       // 翻转后确认项携带加密态
       expect(items[0]).toContain(EXPORT_CONFIRM_ITEM);
-      expect(items[0]).toContain('加密(本机钥匙)');
+      expect(items[0]).toContain('Encrypted (local key)');
       return items[0];
     }, 1, false);
     expect(result).toEqual({ confirmed: true, encrypt: true });
@@ -448,7 +446,7 @@ describe('runConfigureCloneProfileCommand(0501)', () => {
     expect(recorded.saved).toEqual([
       { role: 'source', config: { host: 'db.host', port: 3307, user: 'kbe', database: 'kbe_db' }, password: 'pw' }
     ]);
-    expect(recorded.info).toEqual(['源库连接已保存。']);
+    expect(recorded.info).toEqual(['Source connection saved.']);
   });
 
   it('target:环境仅 local/test;端口留空落 3306;密码留空不存密钥;摘要选保存', async () => {
@@ -464,8 +462,8 @@ describe('runConfigureCloneProfileCommand(0501)', () => {
         password: null
       }
     ]);
-    expect(recorded.info).toEqual(['目标库连接已保存。']);
-    expect(recorded.pickOptions[0].placeHolder).toContain('不允许生产和预发布环境');
+    expect(recorded.info).toEqual(['Target connection saved.']);
+    expect(recorded.pickOptions[0].placeHolder).toContain('production and staging are not allowed');
   });
 
   it('端口输入校验:非数字拒,空串与纯数字过', async () => {
@@ -473,16 +471,16 @@ describe('runConfigureCloneProfileCommand(0501)', () => {
     await runConfigureCloneProfileCommand(deps, 'target');
     const validate = recorded.inputOptions[1].validateInput;
     expect(validate).toBeDefined();
-    expect(validate!('abc')).toBe('端口必须是数字');
+    expect(validate!('abc')).toBe('Port must be a number');
     expect(validate!('')).toBeNull();
     expect(validate!('3306')).toBeNull();
     expect(validate!('1')).toBeNull();
     expect(validate!('65535')).toBeNull();
-    expect(validate!('0')).toBe('端口必须在 1 到 65535 之间');
-    expect(validate!('65536')).toBe('端口必须在 1 到 65535 之间');
-    expect(recorded.inputOptions[0].validateInput!('  ')).toBe('请输入主机地址');
-    expect(recorded.inputOptions[2].validateInput!('')).toBe('请输入用户名');
-    expect(recorded.inputOptions[4].validateInput!('')).toBe('请输入数据库名称');
+    expect(validate!('0')).toBe('Port must be between 1 and 65535');
+    expect(validate!('65536')).toBe('Port must be between 1 and 65535');
+    expect(recorded.inputOptions[0].validateInput!('  ')).toBe('Enter a host address');
+    expect(recorded.inputOptions[2].validateInput!('')).toBe('Enter a username');
+    expect(recorded.inputOptions[4].validateInput!('')).toBe('Enter a database name');
   });
 
   it('环境声明不是 local/test(quickpick 脚本给 prod)→ 不保存', async () => {
@@ -516,7 +514,7 @@ describe('runTestCloneConnectionCommand(0501 测试连接)', () => {
   it('未配置 → 如实警告', async () => {
     const { deps, recorded } = makeDeps({});
     await runTestCloneConnectionCommand(deps, 'target');
-    expect(recorded.warn).toEqual(['尚未配置 Target 连接。']);
+    expect(recorded.warn).toEqual(['Target connection is not configured.']);
   });
 
   it('连通:版本回显;连接用毕关闭', async () => {
@@ -524,7 +522,7 @@ describe('runTestCloneConnectionCommand(0501 测试连接)', () => {
     connection.reply('SELECT VERSION()', [{ v: '8.0.30' }]);
     openAsThis();
     await runTestCloneConnectionCommand(deps, 'source');
-    expect(recorded.info).toEqual(['Source 连接成功(服务器版本 8.0.30)。']);
+    expect(recorded.info).toEqual(['Source connection succeeded (server version 8.0.30).']);
     expect(connection.ended).toBe(1);
   });
 
@@ -534,7 +532,7 @@ describe('runTestCloneConnectionCommand(0501 测试连接)', () => {
     openAsThis();
     await runTestCloneConnectionCommand(deps, 'target');
     expect(recorded.error).toHaveLength(1);
-    expect(recorded.error[0]).toContain('连接失败: boom');
+    expect(recorded.error[0]).toContain('Connection failed: boom');
     expect(connection.ended).toBe(1);
   });
 
@@ -542,7 +540,7 @@ describe('runTestCloneConnectionCommand(0501 测试连接)', () => {
     const { deps, recorded } = makeDeps({ source: sourceConfig() });
     vi.mocked(openCloneSession).mockRejectedValue(new Error('connection refused'));
     await runTestCloneConnectionCommand(deps, 'source');
-    expect(recorded.error).toEqual(['连接失败: connection refused']);
+    expect(recorded.error).toEqual(['Connection failed: connection refused']);
   });
 });
 
@@ -569,7 +567,7 @@ describe('runInspectCloneArchiveCommand(0503)', () => {
     const { deps, recorded } = makeDeps({ openPath: '/tmp/a.kdpclone' });
     vi.mocked(inspectCloneArchive).mockResolvedValue({ status: 'error', reason: 'archive truncated' });
     await runInspectCloneArchiveCommand(deps);
-    expect(recorded.error).toEqual(['读取归档清单失败: archive truncated']);
+    expect(recorded.error).toEqual(['Failed to read the archive manifest: archive truncated']);
   });
 
   it('ok:清单落输出通道(校验/脱敏报告齐备);Persisted≠Live 提示在案', async () => {
@@ -578,15 +576,15 @@ describe('runInspectCloneArchiveCommand(0503)', () => {
     await runInspectCloneArchiveCommand(deps);
     const text = recorded.lines.join('\n');
     expect(text).toContain('[Player Clone] /tmp/a.kdpclone');
-    expect(text).toContain('归档实体(Entity): Avatar');
-    expect(text).toContain('总行数(Rows): 2');
-    expect(text).toContain('加密(Encrypted): 是');
-    expect(text).toContain('- tbl_Avatar: 1 行');
+    expect(text).toContain('Archive entity: Avatar');
+    expect(text).toContain('Total rows: 2');
+    expect(text).toContain('Encrypted: yes');
+    expect(text).toContain('- tbl_Avatar: 1 rows');
     expect(text).toContain('checksums.json ✓');
     expect(text).toContain('redaction-report.json ✓');
     expect(text).toContain(PERSISTED_NOT_LIVE);
     expect(recorded.shows).toBe(1);
-    expect(recorded.info[0]).toContain('归档清单已输出(Avatar,2 行)');
+    expect(recorded.info[0]).toContain('Archive manifest written to the output (Avatar, 2 rows)');
     expect(recorded.info[0]).toContain(PERSISTED_NOT_LIVE);
   });
 
@@ -595,8 +593,8 @@ describe('runInspectCloneArchiveCommand(0503)', () => {
     vi.mocked(inspectCloneArchive).mockResolvedValue({ status: 'ok', result: archiveMeta([]) });
     await runInspectCloneArchiveCommand(deps);
     const text = recorded.lines.join('\n');
-    expect(text).toContain('校验文件(Checksums): 缺失');
-    expect(text).toContain('脱敏报告(Redaction report): 缺失');
+    expect(text).toContain('Checksums: missing');
+    expect(text).toContain('Redaction report: missing');
   });
 });
 
@@ -608,7 +606,7 @@ describe('runExportCloneCommand(0502)', () => {
   it('工作区无实体 → 警告', async () => {
     const { deps, recorded } = makeDeps({ entities: [] });
     await runExportCloneCommand(deps);
-    expect(recorded.warn).toEqual(['工作区未发现已注册实体(请先打开 KBEngine 工程)。']);
+    expect(recorded.warn).toEqual(['No registered entities found in the workspace (open a KBEngine project first).']);
   });
 
   it.each([
@@ -624,7 +622,7 @@ describe('runExportCloneCommand(0502)', () => {
   it('未配置 Source 连接 → 警告指引', async () => {
     const { deps, recorded } = makeDeps({ entities: ['Avatar'], picks: ['Avatar'], inputs: ['42'] });
     await runExportCloneCommand(deps);
-    expect(recorded.warn).toEqual(['尚未配置源库连接。']);
+    expect(recorded.warn).toEqual(['Source connection is not configured.']);
     expect(recorded.inputPrompts).toEqual([]);
     expect(recorded.pickOptions).toEqual([]);
   });
@@ -634,8 +632,8 @@ describe('runExportCloneCommand(0502)', () => {
     await runExportCloneCommand(deps);
     const validate = recorded.inputOptions[0].validateInput;
     expect(validate).toBeDefined();
-    expect(validate!('abc')).toBe('DBID 必须是数字');
-    expect(validate!('')).toBe('DBID 必须是数字');
+    expect(validate!('abc')).toBe('DBID must be a number');
+    expect(validate!('')).toBe('DBID must be a number');
     expect(validate!('42')).toBeNull();
   });
 
@@ -651,7 +649,7 @@ describe('runExportCloneCommand(0502)', () => {
       ...script
     });
     await runExportCloneCommand(deps);
-    expect(recorded.error).toEqual(['无法从工作区 def 推导实体 Avatar 的表结构。']);
+    expect(recorded.error).toEqual(['Cannot derive table structure for entity Avatar from workspace defs.']);
   });
 
   it('保存路径取消 → 返回', async () => {
@@ -697,7 +695,7 @@ describe('runExportCloneCommand(0502)', () => {
     openAsThis();
     vi.mocked(planCloneExport).mockResolvedValue({ status: 'error', reason: 'table denied' });
     await runExportCloneCommand(deps);
-    expect(recorded.error).toEqual(['生成导出计划失败: table denied']);
+    expect(recorded.error).toEqual(['Failed to generate the export plan: table denied']);
   });
 
   it('加密确认取消 → 不执行导出', async () => {
@@ -716,7 +714,7 @@ describe('runExportCloneCommand(0502)', () => {
     await runExportCloneCommand(deps);
     // 预览已落通道(含缺失表),但未执行导出、未写档
     const text = recorded.lines.join('\n');
-    expect(text).toContain('源库缺失表(Missing in source): tbl_ghost');
+    expect(text).toContain('Missing in source: tbl_ghost');
     expect(text).toContain(PERSISTED_NOT_LIVE);
     expect(recorded.info).toHaveLength(0);
     expect(connection.log.some(entry => entry.sql === 'COMMIT')).toBe(false);
@@ -727,7 +725,7 @@ describe('runExportCloneCommand(0502)', () => {
     const { deps, recorded, connection, openAsThis } = makeDeps({
       entities: ['Avatar'],
       entityTables: { Avatar: avatarTables() },
-      picks: ['Avatar', `${EXPORT_CONFIRM_ITEM},加密(本机钥匙)`],
+      picks: ['Avatar', `${EXPORT_CONFIRM_ITEM},Encrypted (local key)`],
       inputs: ['42'],
       source: sourceConfig(),
       savePath: '/tmp/out.kdpclone',
@@ -746,10 +744,10 @@ describe('runExportCloneCommand(0502)', () => {
 
     const text = recorded.lines.join('\n');
     expect(text).toContain('[Player Clone Export] Avatar DBID=42');
-    expect(text).toContain('表(Tables): tbl_Avatar, tbl_Avatar_items');
-    expect(text).toContain('行预算(Row budget): 100');
+    expect(text).toContain('Tables: tbl_Avatar, tbl_Avatar_items');
+    expect(text).toContain('Row budget: 100');
     expect(text).toContain(PERSISTED_NOT_LIVE);
-    expect(recorded.progressTitles).toEqual(['Player Clone: 读取 Avatar 数据(可取消)']);
+    expect(recorded.progressTitles).toEqual(['Player Clone: reading Avatar data (cancellable)']);
     expect(vi.mocked(writeCloneArchive)).toHaveBeenCalledWith(
       '/tmp/out.kdpclone',
       'Avatar',
@@ -757,8 +755,8 @@ describe('runExportCloneCommand(0502)', () => {
       exportPlan(),
       path.join(tmpRoot, 'keys')
     );
-    expect(recorded.info[0]).toContain('导出完成:2 行 → /tmp/out.kdpclone');
-    expect(recorded.info[0]).toContain('归档已加密');
+    expect(recorded.info[0]).toContain('Export finished: 2 rows → /tmp/out.kdpclone');
+    expect(recorded.info[0]).toContain('archive is encrypted');
     expect(recorded.info[0]).toContain(PERSISTED_NOT_LIVE);
     // 根查询按 DBID 绑定(bigint 直传)
     const rootRun = connection.log.find(entry => entry.sql.includes('FROM tbl_Avatar WHERE'));
@@ -791,7 +789,7 @@ describe('runExportCloneCommand(0502)', () => {
       result: { entity: 'Avatar', total_rows: 2, tables: [] }
     });
     await runExportCloneCommand(deps);
-    expect(recorded.info[0]).toContain('归档为明文(未加密)');
+    expect(recorded.info[0]).toContain('archive is plaintext (not encrypted)');
     // 明文导出不带 keyRoot
     expect(vi.mocked(writeCloneArchive)).toHaveBeenCalledWith(
       '/tmp/out.kdpclone',
@@ -816,7 +814,7 @@ describe('runExportCloneCommand(0502)', () => {
     openAsThis();
     vi.mocked(planCloneExport).mockResolvedValue({ status: 'ok', result: exportPlan() });
     await runExportCloneCommand(deps);
-    expect(recorded.warn).toEqual(['DBID=42 在源库没有读到任何行(未导出)。']);
+    expect(recorded.warn).toEqual(['DBID=42 returned no rows from the source database (nothing exported).']);
     expect(vi.mocked(writeCloneArchive)).not.toHaveBeenCalled();
   });
 
@@ -853,7 +851,7 @@ describe('runExportCloneCommand(0502)', () => {
     vi.mocked(planCloneExport).mockResolvedValue({ status: 'ok', result: exportPlan() });
     vi.mocked(writeCloneArchive).mockResolvedValue({ status: 'error', reason: 'disk full' });
     await runExportCloneCommand(second.deps);
-    expect(second.recorded.error).toEqual(['写归档失败: disk full']);
+    expect(second.recorded.error).toEqual(['Failed to write the archive: disk full']);
   });
 
   it('连接关闭失败不吞导出结果(通道记账)', async () => {
@@ -876,8 +874,8 @@ describe('runExportCloneCommand(0502)', () => {
       result: { entity: 'Avatar', total_rows: 2, tables: [] }
     });
     await runExportCloneCommand(deps);
-    expect(recorded.info[0]).toContain('导出完成');
-    expect(recorded.lines.join('\n')).toContain('关闭只读连接失败: Error: socket already closed');
+    expect(recorded.info[0]).toContain('Export finished');
+    expect(recorded.lines.join('\n')).toContain('Failed to close the read-only connection: Error: socket already closed');
   });
 
   it('导出中途取消 → 警告(只读面无需回滚)', async () => {
@@ -894,7 +892,7 @@ describe('runExportCloneCommand(0502)', () => {
     openAsThis();
     vi.mocked(planCloneExport).mockResolvedValue({ status: 'ok', result: exportPlan() });
     await runExportCloneCommand(deps);
-    expect(recorded.warn).toEqual(['导出已取消(只读面,无需回滚)。']);
+    expect(recorded.warn).toEqual(['Export cancelled (read-only surface; no rollback needed).']);
     expect(recorded.error).toHaveLength(0);
     expect(connection.log.map(entry => entry.sql)).not.toContain('COMMIT');
   });
@@ -910,7 +908,7 @@ describe('runExportCloneCommand(0502)', () => {
     });
     openAsThis();
     await runExportCloneCommand(deps);
-    expect(recorded.error[0]).toContain('导出失败:');
+    expect(recorded.error[0]).toContain('Export failed:');
     expect(recorded.error[0]).toContain('unsafe table name');
     void connection;
   });
@@ -948,7 +946,7 @@ describe('runImportCloneCommand(0504/0505)', () => {
   it('未配置 Target → 警告指引', async () => {
     const { deps, recorded } = makeDeps({ openPath: '/tmp/a.kdpclone' });
     await runImportCloneCommand(deps);
-    expect(recorded.warn).toEqual(['尚未配置 Target 连接(仅 local/test;先运行「配置 Target 连接」)。']);
+    expect(recorded.warn).toEqual(['Target connection is not configured (local/test only; run "Configure Target connection" first).']);
   });
 
   it('清单 no-gate / 出错 → 如实报错', async () => {
@@ -960,14 +958,14 @@ describe('runImportCloneCommand(0504/0505)', () => {
     const second = makeDeps({ openPath: '/tmp/a.kdpclone', target: targetConfig() });
     vi.mocked(inspectCloneArchive).mockResolvedValue({ status: 'error', reason: 'bad archive' });
     await runImportCloneCommand(second.deps);
-    expect(second.recorded.error).toEqual(['读取归档清单失败: bad archive']);
+    expect(second.recorded.error).toEqual(['Failed to read the archive manifest: bad archive']);
   });
 
   it('def 推导不可用 → 如实报错(导入需要目标 schema 对账)', async () => {
     const { deps, recorded } = makeDeps({ openPath: '/tmp/a.kdpclone', target: targetConfig() });
     vi.mocked(inspectCloneArchive).mockResolvedValue({ status: 'ok', result: archiveMeta() });
     await runImportCloneCommand(deps);
-    expect(recorded.error).toEqual(['无法从工作区 def 推导实体 Avatar 的表结构(导入需要目标 schema 对账)。']);
+    expect(recorded.error).toEqual(['Cannot derive table structure for entity Avatar from workspace defs (import needs target schema reconciliation).']);
   });
 
   it.each([
@@ -1008,13 +1006,13 @@ describe('runImportCloneCommand(0504/0505)', () => {
     if (mode === 'pass1-no-gate') {
       expect(recorded.error).toEqual([NO_GATE]);
     } else if (mode === 'pass1-error') {
-      expect(recorded.error).toEqual(['生成导入计划失败: unsupported schema']);
+      expect(recorded.error).toEqual(['Failed to generate the import plan: unsupported schema']);
     } else if (mode === 'rows-no-gate') {
       expect(recorded.error).toEqual([NO_GATE]);
     } else if (mode === 'rows-error') {
-      expect(recorded.error).toEqual(['读取归档行失败: row decode failed']);
+      expect(recorded.error).toEqual(['Failed to read archive rows: row decode failed']);
     } else {
-      expect(recorded.error).toEqual(['导入预演失败: boom pass2']);
+      expect(recorded.error).toEqual(['Failed to rehearse the import: boom pass2']);
       // 两次 planImport 都携 keyRoot(加密档取钥)
       expect(vi.mocked(planCloneImport).mock.calls[0][5]).toBe(path.join(tmpRoot, 'keys'));
       expect(vi.mocked(planCloneImport).mock.calls[1][5]).toBe(path.join(tmpRoot, 'keys'));
@@ -1045,13 +1043,13 @@ describe('runImportCloneCommand(0504/0505)', () => {
     // 预览面:逐表/类别/冲突/绑定/未解决引用 + 告警 + Persisted≠Live
     const preview = recorded.lines[0];
     expect(preview).toContain(`[Player Clone Import] ${archivePath}`);
-    expect(preview).toContain('实体(Entity): Avatar');
-    expect(preview).toContain('语句(Statements): tbl_Avatar×1, tbl_Avatar_items×1');
-    expect(preview).toContain('ID 变更类别(ID categories): rebuilt×1');
-    expect(preview).toContain('唯一键冲突(Unique conflicts): 0');
-    expect(preview).toContain('账号绑定(Account binding): 按邮箱声明绑定');
-    expect(preview).toContain('未解决引用风险(Unresolved references): 0');
-    expect(preview).toContain('- 告警: 账号邮箱为空,登录绑定跳过');
+    expect(preview).toContain('Entity: Avatar');
+    expect(preview).toContain('Statements: tbl_Avatar×1, tbl_Avatar_items×1');
+    expect(preview).toContain('ID categories: rebuilt×1');
+    expect(preview).toContain('Unique conflicts: 0');
+    expect(preview).toContain('Account binding: 按邮箱声明绑定');
+    expect(preview).toContain('Unresolved references: 0');
+    expect(preview).toContain('- warning: 账号邮箱为空,登录绑定跳过');
     expect(preview).toContain(PERSISTED_NOT_LIVE);
     expect(recorded.shows).toBeGreaterThanOrEqual(1);
 
@@ -1093,11 +1091,11 @@ describe('runImportCloneCommand(0504/0505)', () => {
     expect(audit.cleanup_plan_not_executed).toHaveLength(2);
     expect(audit.load_verification).toEqual({
       attempted: false,
-      note: expect.stringContaining('未接线')
+      note: expect.stringContaining('not wired yet')
     });
 
-    expect(recorded.info[0]).toContain('导入完成:新 DBID=1000');
-    expect(recorded.info[0]).toContain('审计 /audit-out/import-Avatar-1700000000.json');
+    expect(recorded.info[0]).toContain('Import finished: new DBID=1000');
+    expect(recorded.info[0]).toContain('audit /audit-out/import-Avatar-1700000000.json');
     expect(recorded.info[0]).toContain(PERSISTED_NOT_LIVE);
     expect(recorded.error).toHaveLength(0);
     // 探测连接 + 写连接各关闭一次
@@ -1117,14 +1115,14 @@ describe('runImportCloneCommand(0504/0505)', () => {
     vi.mocked(readCloneArchiveRows).mockResolvedValue(importRowsCall());
     await runImportCloneCommand(deps);
     expect(recorded.auditWrites).toHaveLength(1);
-    expect(recorded.error[0]).toContain('导入已提交但复核未全过');
+    expect(recorded.error[0]).toContain('Import committed but verification did not fully pass');
     expect(recorded.error[0]).toContain('/audit-out/import-Avatar-1700000000.json');
   });
 
   it('首次确认取消 → 返回(不写不登记)', async () => {
     const archivePath = writeArchiveFile();
     const { deps, recorded, connection, openAsThis } = makeDeps(
-      happyImportScript(archivePath, path.join(tmpRoot, 'keys'), ['取消(Cancel)'])
+      happyImportScript(archivePath, path.join(tmpRoot, 'keys'), ['Cancel'])
     );
     replyInformationSchema(connection);
     openAsThis();
@@ -1141,7 +1139,7 @@ describe('runImportCloneCommand(0504/0505)', () => {
   it('二次确认取消 → 返回(不写不登记)', async () => {
     const archivePath = writeArchiveFile();
     const { deps, recorded, connection, openAsThis } = makeDeps(
-      happyImportScript(archivePath, path.join(tmpRoot, 'keys'), [CONFIRM_FIRST, '取消(Cancel)'])
+      happyImportScript(archivePath, path.join(tmpRoot, 'keys'), [CONFIRM_FIRST, 'Cancel'])
     );
     replyInformationSchema(connection);
     openAsThis();
@@ -1152,11 +1150,11 @@ describe('runImportCloneCommand(0504/0505)', () => {
     expect(connection.log.map(entry => entry.sql)).not.toContain('START TRANSACTION');
     expect(recorded.auditWrites).toHaveLength(0);
     // 二次确认页文案点明「真实写入」(第二次 showQuickPick 调用)
-    expect(recorded.pickOptions[1].placeHolder).toContain('第二次确认');
-    expect(recorded.pickOptions[1].placeHolder).toContain('失败全量回滚');
+    expect(recorded.pickOptions[1].placeHolder).toContain('Second confirmation');
+    expect(recorded.pickOptions[1].placeHolder).toContain('full rollback on failure');
   });
 
-  it('keyRoot 缺失 → fail-closed(导入失败,不建写连接)', async () => {
+  it('keyRoot 缺失 → fail-closed(Import failed,不建写连接)', async () => {
     const archivePath = writeArchiveFile();
     const script = happyImportScript(archivePath, undefined as unknown as string, [CONFIRM_FIRST, CONFIRM_WRITE]);
     const { deps, recorded, connection, openAsThis } = makeDeps(script);
@@ -1166,8 +1164,8 @@ describe('runImportCloneCommand(0504/0505)', () => {
     vi.mocked(planCloneImport).mockResolvedValue({ status: 'ok', result: importPlan() });
     vi.mocked(readCloneArchiveRows).mockResolvedValue(importRowsCall());
     await runImportCloneCommand(deps);
-    expect(recorded.error[0]).toContain('导入失败');
-    expect(recorded.error[0]).toContain('缺少持久化目录');
+    expect(recorded.error[0]).toContain('Import failed');
+    expect(recorded.error[0]).toContain('Missing persistence directory');
     expect(connection.log.map(entry => entry.sql)).not.toContain('START TRANSACTION');
   });
 
@@ -1189,8 +1187,8 @@ describe('runImportCloneCommand(0504/0505)', () => {
     vi.mocked(planCloneImport).mockResolvedValue({ status: 'ok', result: importPlan() });
     vi.mocked(readCloneArchiveRows).mockResolvedValue(importRowsCall());
     await runImportCloneCommand(deps);
-    expect(recorded.error[0]).toContain('导入失败');
-    expect(recorded.error[0]).toContain('归档在导入计划期间发生变化');
+    expect(recorded.error[0]).toContain('Import failed');
+    expect(recorded.error[0]).toContain('The archive changed while the import was being planned');
     expect(connection.log.map(entry => entry.sql)).not.toContain('START TRANSACTION');
   });
 
@@ -1210,7 +1208,7 @@ describe('runImportCloneCommand(0504/0505)', () => {
     expect(first.recorded.info).toHaveLength(1);
 
     // 同归档同目标再次导入 → duplicate 检出;选「取消」即返
-    const second = makeDeps(happyImportScript(archivePath, keyRoot, [CONFIRM_FIRST, CONFIRM_WRITE, '取消(Cancel)']));
+    const second = makeDeps(happyImportScript(archivePath, keyRoot, [CONFIRM_FIRST, CONFIRM_WRITE, 'Cancel']));
     replyInformationSchema(second.connection);
     second.connection.reply('sm_name IN', [{ v: 'hero' }]);
     second.connection.reply('SELECT COUNT(*)', [{ c: 1 }]);
@@ -1219,8 +1217,8 @@ describe('runImportCloneCommand(0504/0505)', () => {
     vi.mocked(planCloneImport).mockResolvedValue({ status: 'ok', result: importPlan() });
     vi.mocked(readCloneArchiveRows).mockResolvedValue(importRowsCall());
     await runImportCloneCommand(second.deps);
-    expect(second.recorded.lines.join('\n')).toContain('检测到此前导入或未完成尝试');
-    expect(second.recorded.pickOptions[2].placeHolder).toContain('此归档已在本机向该目标导入或尝试过');
+    expect(second.recorded.lines.join('\n')).toContain('A previous import or unfinished attempt was detected');
+    expect(second.recorded.pickOptions[2].placeHolder).toContain('This archive has already been imported (or attempted) on this machine for this target');
     expect(second.recorded.info).toHaveLength(0);
     // 未再写入(第二个连接无事务)
     expect(second.connection.log.map(entry => entry.sql)).not.toContain('START TRANSACTION');
@@ -1248,7 +1246,7 @@ describe('runImportCloneCommand(0504/0505)', () => {
     vi.mocked(planCloneImport).mockResolvedValue({ status: 'ok', result: importPlan() });
     vi.mocked(readCloneArchiveRows).mockResolvedValue(importRowsCall());
     await runImportCloneCommand(second.deps);
-    expect(second.recorded.info[0]).toContain('导入完成');
+    expect(second.recorded.info[0]).toContain('Import finished');
   });
 
   it('Apply 期取消 → 警告回滚(未写入任何行)', async () => {
@@ -1265,7 +1263,7 @@ describe('runImportCloneCommand(0504/0505)', () => {
     vi.mocked(readCloneArchiveRows).mockResolvedValue(importRowsCall());
     await runImportCloneCommand(deps);
     expect(recorded.auditWrites).toHaveLength(0);
-    expect(recorded.warn).toEqual(['导入已取消:事务已回滚,未写入任何行。']);
+    expect(recorded.warn).toEqual(['Import cancelled: the transaction was rolled back; no rows were written.']);
     const log = connection.log.map(entry => entry.sql);
     expect(log).toContain('ROLLBACK');
     expect(log).not.toContain('COMMIT');
@@ -1273,7 +1271,7 @@ describe('runImportCloneCommand(0504/0505)', () => {
     expect(log.filter(sql => sql.startsWith('INSERT INTO'))).toHaveLength(0);
   });
 
-  it('COMMIT 结果不确定 → 「导入结果不确定」指引(不引导重试)', async () => {
+  it('COMMIT 结果不确定 → 「Import outcome uncertain」指引(不引导重试)', async () => {
     const archivePath = writeArchiveFile();
     const { deps, recorded, connection, openAsThis } = makeDeps(
       happyImportScript(archivePath, path.join(tmpRoot, 'keys'), [CONFIRM_FIRST, CONFIRM_WRITE])
@@ -1286,9 +1284,9 @@ describe('runImportCloneCommand(0504/0505)', () => {
     vi.mocked(planCloneImport).mockResolvedValue({ status: 'ok', result: importPlan() });
     vi.mocked(readCloneArchiveRows).mockResolvedValue(importRowsCall());
     await runImportCloneCommand(deps);
-    expect(recorded.error[0]).toContain('导入结果不确定');
+    expect(recorded.error[0]).toContain('Import outcome uncertain');
     expect(recorded.error[0]).toContain('COMMIT outcome unknown');
-    expect(recorded.error[0]).toContain('不要直接重试');
+    expect(recorded.error[0]).toContain('do not retry blindly');
   });
 
   it('提交后复核抛错(ClonePostCommitError)→ 与已提交同指引', async () => {
@@ -1304,8 +1302,8 @@ describe('runImportCloneCommand(0504/0505)', () => {
     vi.mocked(planCloneImport).mockResolvedValue({ status: 'ok', result: importPlan() });
     vi.mocked(readCloneArchiveRows).mockResolvedValue(importRowsCall());
     await runImportCloneCommand(deps);
-    expect(recorded.error[0]).toContain('导入已提交，但复核或审计失败');
-    expect(recorded.error[0]).toContain('不要直接重试');
+    expect(recorded.error[0]).toContain('Import committed, but verification or audit failed');
+    expect(recorded.error[0]).toContain('do not retry blindly');
   });
 
   it('审计落盘失败(已提交)→ 与已提交同指引', async () => {
@@ -1322,7 +1320,7 @@ describe('runImportCloneCommand(0504/0505)', () => {
     vi.mocked(planCloneImport).mockResolvedValue({ status: 'ok', result: importPlan() });
     vi.mocked(readCloneArchiveRows).mockResolvedValue(importRowsCall());
     await runImportCloneCommand(deps);
-    expect(recorded.error[0]).toContain('导入已提交，但复核或审计失败');
+    expect(recorded.error[0]).toContain('Import committed, but verification or audit failed');
     expect(recorded.error[0]).toContain('audit disk full');
   });
 
@@ -1339,7 +1337,7 @@ describe('runImportCloneCommand(0504/0505)', () => {
       .mockResolvedValueOnce(new FakeMysqlConnection() as unknown as CloneMysqlConnection)
       .mockRejectedValueOnce(new Error('write conn refused'));
     await runImportCloneCommand(deps);
-    expect(recorded.error[0]).toContain('导入失败');
+    expect(recorded.error[0]).toContain('Import failed');
     expect(recorded.error[0]).toContain('write conn refused');
     expect(recorded.error[0]).toContain('127.0.0.1:13307/kbe_local');
   });
@@ -1365,8 +1363,8 @@ describe('runImportCloneCommand(0504/0505)', () => {
     vi.mocked(planCloneImport).mockResolvedValue({ status: 'ok', result: importPlan() });
     vi.mocked(readCloneArchiveRows).mockResolvedValue(importRowsCall());
     await runImportCloneCommand(deps);
-    expect(recorded.info[0]).toContain('导入完成');
-    expect(recorded.lines.join('\n')).toContain('关闭连接失败: Error: socket already closed');
+    expect(recorded.info[0]).toContain('Import finished');
+    expect(recorded.lines.join('\n')).toContain('Failed to close the connection: Error: socket already closed');
   });
 });
 
@@ -1378,20 +1376,20 @@ describe('runShowCloneAuditCommand(0505)', () => {
   it('无审计记录 → 警告', async () => {
     const { deps, recorded } = makeDeps({ auditFiles: [] });
     await runShowCloneAuditCommand(deps);
-    expect(recorded.warn).toEqual(['暂无导入审计记录(.kode/clone-runs/)。']);
+    expect(recorded.warn).toEqual(['No import audit records yet (.kode/clone-runs/).']);
   });
 
   it('选择取消 → 返回', async () => {
     const { deps, recorded } = makeDeps({ auditFiles: ['a.json'], picks: [undefined] });
     await runShowCloneAuditCommand(deps);
     expect(recorded.lines).toHaveLength(0);
-    expect(recorded.pickOptions[0].placeHolder).toContain('选择要查看的导入审计');
+    expect(recorded.pickOptions[0].placeHolder).toContain('Select an import audit to view');
   });
 
   it('读取失败 → 如实报错', async () => {
     const { deps, recorded } = makeDeps({ auditFiles: ['a.json'], picks: ['a.json'], auditContent: null });
     await runShowCloneAuditCommand(deps);
-    expect(recorded.error).toEqual(['读取审计失败: a.json']);
+    expect(recorded.error).toEqual(['Failed to read the audit: a.json']);
   });
 
   it('读取成功 → 审计全文落输出通道', async () => {

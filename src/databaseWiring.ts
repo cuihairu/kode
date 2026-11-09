@@ -558,7 +558,7 @@ export function wireDatabase(context: vscode.ExtensionContext, deps: DatabaseWir
       return folder ? vscode.Uri.joinPath(folder.uri, '.kode', 'clone-runs') : null;
     };
     playerCloneDeps = {
-    localize: message => l10nText(message),
+    localize: (message, args) => l10nText(message, args),
     profiles: new CloneProfileStore({
       load: () => context.workspaceState.get('kode.playerClone.profiles'),
       save: data => {

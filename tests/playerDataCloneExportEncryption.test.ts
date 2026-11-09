@@ -84,12 +84,12 @@ function makeDeps(
     listEntityNames: () => ['Avatar'],
     resolveEntityTables: () => [{ name: 'tbl_Avatar' }],
     showQuickPick: async (items, options) => {
-      if (options.placeHolder.includes('选择要导出的实体')) {
+      if (options.placeHolder.includes('Select the entity to export')) {
         return 'Avatar';
       }
       menus.push({ items, placeHolder: options.placeHolder });
       const next = confirmQueue.shift();
-      return next ?? '取消(Cancel)';
+      return next ?? 'Cancel';
     },
     showInputBox: async () => '7',
     showInformationMessage: async () => undefined,
@@ -141,10 +141,10 @@ describe('runExportCloneCommand(导出加密选择,设置默认+确认页切换)
 
   it('默认加密:直接导出 → export 载荷带 keyRoot,确认项文案携带加密态', async () => {
     const menus: ConfirmMenu[] = [];
-    await runExportCloneCommand(makeDeps(['导出(Export),加密(本机钥匙)'], menus));
+    await runExportCloneCommand(makeDeps(['Export,Encrypted (local key)'], menus));
     expect(menus).toHaveLength(1);
-    expect(menus[0].items[0]).toContain('加密(本机钥匙)');
-    expect(menus[0].items.some(item => item.startsWith('切换加密'))).toBe(true);
+    expect(menus[0].items[0]).toContain('Encrypted (local key)');
+    expect(menus[0].items.some(item => item.startsWith('Toggle encryption'))).toBe(true);
     expect(exportParams?.keyRoot).toBe('/keys');
     expect(exportParams?.redactSensitive).toBe(true);
   });
@@ -152,38 +152,38 @@ describe('runExportCloneCommand(导出加密选择,设置默认+确认页切换)
   it('确认页切换一次 → 明文导出:载荷 keyRoot undefined,确认项文案翻转为明文', async () => {
     const menus: ConfirmMenu[] = [];
     await runExportCloneCommand(
-      makeDeps(['切换加密 → 明文(可跨机转移)', '导出(Export),明文(可跨机转移)'], menus)
+      makeDeps(['Toggle encryption → Plaintext (portable)', 'Export,Plaintext (portable)'], menus)
     );
     expect(menus).toHaveLength(2);
-    expect(menus[0].items[0]).toContain('加密(本机钥匙)');
-    expect(menus[1].items[0]).toContain('明文(可跨机转移)');
+    expect(menus[0].items[0]).toContain('Encrypted (local key)');
+    expect(menus[1].items[0]).toContain('Plaintext (portable)');
     expect(exportParams?.keyRoot).toBeUndefined();
   });
 
   it('设置默认 plain(getArchiveEncryptionDefault) → 无切换即明文导出', async () => {
     const menus: ConfirmMenu[] = [];
     await runExportCloneCommand(
-      makeDeps(['导出(Export),明文(可跨机转移)'], menus, 'plain')
+      makeDeps(['Export,Plaintext (portable)'], menus, 'plain')
     );
-    expect(menus[0].items[0]).toContain('明文(可跨机转移)');
+    expect(menus[0].items[0]).toContain('Plaintext (portable)');
     expect(exportParams?.keyRoot).toBeUndefined();
   });
 
   it('确认页取消 → 不发 export RPC', async () => {
     const menus: ConfirmMenu[] = [];
-    await runExportCloneCommand(makeDeps(['取消(Cancel)'], menus));
+    await runExportCloneCommand(makeDeps(['Cancel'], menus));
     expect(exportParams).toBeUndefined();
     expect(vi.mocked(executeExportPlan)).not.toHaveBeenCalled();
   });
 
   it('取消已关闭的流时，连接关闭错误不覆盖取消状态', async () => {
-    const deps = makeDeps(['导出(Export),加密(本机钥匙)'], []);
+    const deps = makeDeps(['Export,Encrypted (local key)'], []);
     const warning = vi.fn(async () => undefined);
     deps.showWarningMessage = warning;
     vi.mocked(executeExportPlan).mockRejectedValueOnce(new CloneCancelledError());
     vi.mocked(openCloneSession).mockResolvedValueOnce({ end: async () => { throw new Error('socket already closed'); } } as never);
     await runExportCloneCommand(deps);
-    expect(warning).toHaveBeenCalledWith(expect.stringContaining('导出已取消'));
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('Export cancelled'));
     expect(exportParams).toBeUndefined();
   });
 });
