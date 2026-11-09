@@ -754,6 +754,14 @@ callgraph 模式面板支持：
 - 缺配置闸：未派生出引擎数据库配置时如实降级（绝不把克隆 Source/Target 台账当成查询配置来源），并提供两个真实恢复入口——打开发现与定位报告、重新派生并检查连接
 - 只读约束：结果仅展示；无编辑、无导出副作用（导出/导入走玩家数据克隆专道）
 
+### `kbengine.playerData.showResult`
+
+- 标题：`Show Last Player Query Result`
+- 作用：打开「KBEngine 玩家数据(只读)」输出通道，让最近一次查询/连接检查结果可回看（UX-REVIEW-008A）
+- 行为：
+  - 玩家数据树为每个任务保留最近一次状态——未运行/进行中/空结果/成功/失败/已取消——带完成时间与结果入口（点击状态行即本命令）
+  - 详情（执行的 SQL、JSON 行、连接结果与耗时）都追加进该通道；信息消息保留，但不再是唯一记录
+
 ### `kbengine.httpRequests.run`
 
 - 标题：`Run HTTP Quick Request`

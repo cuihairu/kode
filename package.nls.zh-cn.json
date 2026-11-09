@@ -102,6 +102,7 @@
   "kbengine.command.playerData.testConnection.title": "测试数据库连接(只读 SELECT 1)",
   "kbengine.command.playerData.queryByDbid.title": "按 DBID 查询玩家(只读)",
   "kbengine.command.playerData.previewRedisKeyspace.title": "预览 Redis 键空间(只读)",
+  "kbengine.command.playerData.showResult.title": "查看最近一次玩家查询结果",
   "kbengine.command.httpRequests.run.title": "运行 HTTP 快捷请求",
   "kbengine.command.httpRequest.run.title": "运行指定 HTTP 快捷请求",
   "kbengine.command.hotReload.tempEdit.run.title": "临时改码热更(当前文件)",

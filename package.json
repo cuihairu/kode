@@ -132,6 +132,7 @@
     "onCommand:kbengine.playerData.testConnection",
     "onCommand:kbengine.playerData.queryByDbid",
     "onCommand:kbengine.playerData.previewRedisKeyspace",
+    "onCommand:kbengine.playerData.showResult",
     "onCommand:kbengine.httpRequests.run",
     "onCommand:kbengine.httpRequest.run",
     "onCommand:kbengine.discovery.report",
@@ -811,6 +812,10 @@
       {
         "command": "kbengine.playerData.previewRedisKeyspace",
         "title": "%kbengine.command.playerData.previewRedisKeyspace.title%"
+      },
+      {
+        "command": "kbengine.playerData.showResult",
+        "title": "%kbengine.command.playerData.showResult.title%"
       },
       {
         "command": "kbengine.httpRequests.run",

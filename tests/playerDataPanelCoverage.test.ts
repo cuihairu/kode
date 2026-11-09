@@ -34,8 +34,13 @@ import {
   READ_ONLY_QUERY_MISSING_CONFIG,
   READ_ONLY_QUERY_OPEN_REPORT,
   buildPlayerQuerySql,
+  buildPlayerTaskStatusNodes,
+  playerTaskStatusStore,
   queryPlayerByDbid,
   readOnlyQueryConfigGate,
+  runPlayerConnectionTest,
+  runPlayerQueryByDbid,
+  showPlayerDataResult,
   testPlayerDatabaseConnection
 } from '../src/playerDataPanel';
 import { configurationOverrides } from './fake-vscode/workspaceState';
@@ -137,12 +142,12 @@ describe('PlayerDataTreeProvider(覆盖收口)', () => {
     expect(provider.getTreeItem(node)).toBe(node);
   });
 
-  it('getChildren 顶层:任务入口(004a)+ 派生档案;顺手触发派生刷新', () => {
+  it('getChildren 顶层:任务入口(004a)+ 派生档案 + 最近一次状态(008a);顺手触发派生刷新', () => {
     const provider = new PlayerDataTreeProvider();
     const nodes = provider.getChildren();
     expect(mockedEnsure).toHaveBeenCalledTimes(1);
-    // 3 条任务入口 + 连接档案
-    expect(nodes).toHaveLength(4);
+    // 3 条任务入口 + 连接档案 + 查询状态 + 连接检查状态(008a)
+    expect(nodes).toHaveLength(6);
     expect(nodes[0].label).toBe('只读查询(DBID)');
     expect(nodes[0].command).toMatchObject({ command: 'kbengine.playerData.queryByDbid' });
     expect(nodes[1].label).toBe('导出玩家(Export)');
@@ -163,6 +168,14 @@ describe('PlayerDataTreeProvider(覆盖收口)', () => {
     expect(root.children?.map(child => child.label)).toEqual([
       '类型', '主机', '端口', '账号', '密码', '数据库', '字符集'
     ]);
+    // 008a 最近一次状态:无记录 = 未运行,无时间无入口(不造不可执行按钮)
+    const queryStatus = nodes[4] as { label: string; command?: unknown; description?: string };
+    const connectionStatus = nodes[5] as { label: string; command?: unknown; description?: string };
+    expect(queryStatus.label).toBe('玩家查询:未运行');
+    expect(queryStatus.command).toBeUndefined();
+    expect(queryStatus.description).toBeUndefined();
+    expect(connectionStatus.label).toBe('连接检查:未运行');
+    expect(connectionStatus.command).toBeUndefined();
   });
 
   it('getChildren 子层:元素自带 children → toItem 映射', () => {
@@ -191,10 +204,11 @@ describe('PlayerDataTreeProvider(覆盖收口)', () => {
     mockedResolve.mockReturnValue(null as never);
     const provider = new PlayerDataTreeProvider();
     const nodes = provider.getChildren();
-    // 任务入口(真实命令)不因无档案消失;档案区如实降级单节点
-    expect(nodes).toHaveLength(4);
+    // 任务入口(真实命令)不因无档案消失;档案区如实降级单节点;状态区照常
+    expect(nodes).toHaveLength(6);
     expect(nodes[3].label).toContain('未找到数据库配置段');
     expect(nodes[0].command).toMatchObject({ command: 'kbengine.playerData.queryByDbid' });
+    expect((nodes[4] as { label: string }).label).toBe('玩家查询:未运行');
   });
 
   it('用户令 2026-11-09:最终配置优先于派生档案——面板与连接都以 resolve dbInterface 为准', () => {
@@ -412,5 +426,84 @@ describe('readOnlyQueryConfigGate(004d)', () => {
     // 两个恢复入口都是真实命令面(发现报告 / 重新派生并检查连接)
     expect(typeof READ_ONLY_QUERY_OPEN_REPORT).toBe('string');
     expect(typeof READ_ONLY_QUERY_CHECK_CONNECTION).toBe('string');
+  });
+});
+
+describe('最近一次状态账本(008a:结构化结果+树呈现+可回看)', () => {
+  it('连接检查六态:预检拒绝/失败=failed,成功=success', async () => {
+    // 无配置 → 预检拒绝记 failed(执行未完成,原因进摘要)
+    mockedProfile.mockReturnValue(null as never);
+    mockedResolve.mockReturnValue(null as never);
+    const refused = await runPlayerConnectionTest();
+    expect(refused.outcome).toBe('failed');
+    expect(refused.message).toContain('未找到数据库配置段');
+
+    // 建连成功 → success;探测失败 → failed(重新撒档案:本用例前段已置空)
+    mockedProfile.mockReturnValue(mysqlProfile() as never);
+    mockedResolve.mockReturnValue(finalConfig() as never);
+    const executor = installExecutor();
+    const ok = await runPlayerConnectionTest();
+    expect(ok.outcome).toBe('success');
+    executor.queryError = new Error('ECONNREFUSED');
+    const bad = await runPlayerConnectionTest();
+    expect(bad.outcome).toBe('failed');
+    expect(bad.message).toContain('ECONNREFUSED');
+  });
+
+  it('玩家查询区分空结果/成功/失败;连接检查与查询结果行落输出通道(可回看)', async () => {
+    const executor = installExecutor();
+    const hit = await runPlayerQueryByDbid('7');
+    expect(hit.outcome).toBe('success');
+    expect(hit.message).toContain('1 行');
+
+    executor.result = { columns: [], rows: [] };
+    const miss = await runPlayerQueryByDbid('8');
+    expect(miss.outcome).toBe('empty');
+    expect(miss.message).toContain('0 行');
+
+    executor.queryError = new Error('ER_NO_SUCH_TABLE');
+    const bad = await runPlayerQueryByDbid('9');
+    expect(bad.outcome).toBe('failed');
+    expect(bad.message).toContain('ER_NO_SUCH_TABLE');
+
+    // 可回看:连接检查结果也落通道(此前只有信息消息一闪而过)
+    executor.queryError = null; // 清掉查询失败脚本,连接检查走成功路
+    const lineCountBefore = windowState.channels.filter(c => c.name === PLAYER_DATA_CHANNEL_NAME)
+      .reduce((n, c) => n + c.lines.length, 0);
+    await runPlayerConnectionTest();
+    const lines = windowState.channels
+      .filter(c => c.name === PLAYER_DATA_CHANNEL_NAME)
+      .flatMap(c => c.lines);
+    expect(lines.length).toBeGreaterThan(lineCountBefore);
+    expect(lines.some(line => line.includes('连接检查') && line.includes('只读会话'))).toBe(true);
+  });
+
+  it('状态节点渲染:终态带结果时间与结果入口命令,进行中/未运行无入口', () => {
+    playerTaskStatusStore.clear();
+    // 未运行:无命令(不造不可执行按钮)
+    const none = buildPlayerTaskStatusNodes();
+    expect(none.map(node => node.label)).toEqual(['玩家查询:未运行', '连接检查:未运行']);
+    expect(none.every(node => node.commandId === undefined)).toBe(true);
+
+    // 进行中:无结果时间无入口
+    playerTaskStatusStore.begin('query', '等待输入 DBID');
+    const running = buildPlayerTaskStatusNodes();
+    expect(running[0].label).toBe('玩家查询:进行中');
+    expect(running[0].description).toBeUndefined();
+    expect(running[0].commandId).toBeUndefined();
+
+    // 终态:结果时间 + 结果入口(kbengine.playerData.showResult)
+    playerTaskStatusStore.finish('query', 'success', '查询完成:1 行', new Date(2026, 10, 10, 8, 0, 0).getTime());
+    const done = buildPlayerTaskStatusNodes();
+    expect(done[0].label).toBe('玩家查询:成功');
+    expect(done[0].description).toBe('2026-11-10 08:00:00');
+    expect(done[0].commandId).toBe('kbengine.playerData.showResult');
+    const tooltip = String((done[0].tooltip as { value?: string })?.value ?? done[0].tooltip ?? '');
+    expect(tooltip).toContain('查询完成:1 行');
+    expect(tooltip).toContain('完成于 2026-11-10 08:00:00');
+    // 字符串包装函数与字符串入口共存(cloneBoundaryRegression 源锁口径)
+    expect(typeof queryPlayerByDbid).toBe('function');
+    expect(typeof testPlayerDatabaseConnection).toBe('function');
+    expect(typeof showPlayerDataResult).toBe('function');
   });
 });

@@ -18,6 +18,13 @@ import * as vscode from 'vscode';
 import { ensureConfigDerivedScanRoot, getDerivedDatabaseProfile } from './configDerive';
 import { createMysqlDriftExecutor, type DriftQueryExecutor } from './backend/databaseDrift';
 import {
+  PLAYER_TASK_OUTCOME_LABELS,
+  PlayerTaskStatusStore,
+  formatPlayerTaskTime,
+  type PlayerTaskKind,
+  type PlayerTaskOutcome
+} from './backend/playerTaskStatus';
+import {
   buildConfigTreePair,
   resolveDatabaseInterfaceConfig,
   type DatabaseInterfaceConfig
@@ -25,6 +32,28 @@ import {
 
 /** 只读查询结果输出通道(展示面,不可编辑) */
 export const PLAYER_DATA_CHANNEL_NAME = 'KBEngine 玩家数据(只读)';
+
+/**
+ * UX-REVIEW-008a 最近一次状态账本(查询/连接检查各一条;可回看:
+ * 结果摘要+结果时间+结果入口都在树上,信息消息一闪而过不再是唯一呈现)。
+ */
+export const playerTaskStatusStore = new PlayerTaskStatusStore();
+
+/** 结果输出通道(VS Code 按名复用同一实例;详情落通道=可回看结果入口) */
+function playerDataChannel(): vscode.OutputChannel {
+  return vscode.window.createOutputChannel(PLAYER_DATA_CHANNEL_NAME);
+}
+
+/** UX-REVIEW-008a 结果入口:打开结果详情通道(树节点命令与命令面板共用) */
+export function showPlayerDataResult(): void {
+  playerDataChannel().show(true);
+}
+
+/** 结构化运行结果:消息给信息提示,结果态给状态账本(008a 六态) */
+export interface PlayerTaskRunResult {
+  message: string;
+  outcome: Extract<PlayerTaskOutcome, 'empty' | 'success' | 'failed'>;
+}
 
 interface PlayerDataNodeItem {
   label: string;
@@ -262,8 +291,13 @@ export class PlayerDataTreeProvider implements vscode.TreeDataProvider<PlayerDat
     void ensureConfigDerivedScanRoot().catch(() => {
       /* 派生失败:面板如实降级为未找到 */
     });
-    // 顶层 = 任务入口(004a)+ 连接档案;任务条目指向既有真实命令。
-    return [...buildPlayerDataTaskEntries().map(toItem), ...buildPlayerDataTreeNodes(buildPlayerDatabaseView()).map(toItem)];
+    // 顶层 = 任务入口(004a)+ 连接档案 + 最近一次状态(008a 可回看);
+    // 任务条目指向既有真实命令。
+    return [
+      ...buildPlayerDataTaskEntries().map(toItem),
+      ...buildPlayerDataTreeNodes(buildPlayerDatabaseView()).map(toItem),
+      ...buildPlayerTaskStatusNodes().map(toItem)
+    ];
   }
 }
 
@@ -292,14 +326,20 @@ function buildConnectionConfig(): {
   };
 }
 
-/** 连接测试(只读 SELECT 1):成功给出耗时,失败如实降级(不回显密码)。 */
-export async function testPlayerDatabaseConnection(): Promise<string> {
+/**
+ * 连接测试(只读 SELECT 1):成功给出耗时,失败如实降级(不回显密码)。
+ * 结构化结果供 008a 状态账本记账;结果行同步落输出通道(可回看)。
+ */
+export async function runPlayerConnectionTest(): Promise<PlayerTaskRunResult> {
   const built = buildConnectionConfig();
   if (!built) {
-    return '未找到数据库配置段(dbmgr/databaseInterfaces/default)——未测试';
+    const message = '未找到数据库配置段(dbmgr/databaseInterfaces/default)——未测试';
+    return { message, outcome: 'failed' };
   }
   if (built.config.encrypt && !built.config.plainPassword) {
-    return '密码为引擎 RSA 密文,不解读——未测试(如需测试请在引擎配置中显式 encrypt=false)';
+    const message =
+      '密码为引擎 RSA 密文,不解读——未测试(如需测试请在引擎配置中显式 encrypt=false)';
+    return { message, outcome: 'failed' };
   }
   const startedAt = Date.now();
   let executor: DriftQueryExecutor | null = null;
@@ -307,15 +347,24 @@ export async function testPlayerDatabaseConnection(): Promise<string> {
     executor = await createMysqlDriftExecutor(built.config);
     await executor.runQuery('SELECT 1 AS ok');
     const note = built.defaultsOnly ? `(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})` : '';
-    return `连接成功(${built.config.host}:${built.config.port}/${built.config.databaseName},${Date.now() - startedAt}ms,只读会话)${note}`;
+    const message = `连接成功(${built.config.host}:${built.config.port}/${built.config.databaseName},${Date.now() - startedAt}ms,只读会话)${note}`;
+    playerDataChannel().appendLine(`[连接检查 ${formatPlayerTaskTime(Date.now())}] ${message}`);
+    return { message, outcome: 'success' };
   } catch (error) {
     const note = built.defaultsOnly ? `(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})` : '';
-    return `连接失败:${error instanceof Error ? error.message : String(error)}(只读降级,不影响其他功能)${note}`;
+    const message = `连接失败:${error instanceof Error ? error.message : String(error)}(只读降级,不影响其他功能)${note}`;
+    playerDataChannel().appendLine(`[连接检查 ${formatPlayerTaskTime(Date.now())}] ${message}`);
+    return { message, outcome: 'failed' };
   } finally {
     await executor?.close().catch(() => {
       /* 关闭失败不掩盖主结果 */
     });
   }
+}
+
+/** 连接测试(字符串呈现;状态记账与通道落盘见 runPlayerConnectionTest) */
+export async function testPlayerDatabaseConnection(): Promise<string> {
+  return (await runPlayerConnectionTest()).message;
 }
 
 /** dbid 输入校验:仅十进制正整数(安全内联;非参数面经白名单执行器) */
@@ -327,27 +376,30 @@ export function buildPlayerQuerySql(dbid: string, tablePrefix: string): string |
   return 'SELECT * FROM `' + prefix.replace(/`/g, '') + 'Account` WHERE `id` = ' + dbid.trim();
 }
 
-/** 按 dbid 查询玩家(只读):结果整表 JSON 落输出通道展示,零编辑。 */
-export async function queryPlayerByDbid(dbid: string): Promise<string> {
+/**
+ * 按 dbid 查询玩家(只读):结果整表 JSON 落输出通道展示,零编辑。
+ * 结构化结果区分空结果/成功/失败,供 008a 状态账本记账。
+ */
+export async function runPlayerQueryByDbid(dbid: string): Promise<PlayerTaskRunResult> {
   const sql = buildPlayerQuerySql(
     dbid,
     vscode.workspace.getConfiguration('kbengine').get<string>('db.tablePrefix', '')
   );
   if (!sql) {
-    return 'dbid 仅接受十进制正整数';
+    return { message: 'dbid 仅接受十进制正整数', outcome: 'failed' };
   }
   const built = buildConnectionConfig();
   if (!built) {
-    return '未找到数据库配置段——未查询';
+    return { message: '未找到数据库配置段——未查询', outcome: 'failed' };
   }
   if (!built.config.plainPassword) {
-    return '密码不可读(引擎 RSA 密文或未配置)——未查询';
+    return { message: '密码不可读(引擎 RSA 密文或未配置)——未查询', outcome: 'failed' };
   }
   let executor: DriftQueryExecutor | null = null;
   try {
     executor = await createMysqlDriftExecutor(built.config);
     const result = await executor.runQuery(sql);
-    const channel = vscode.window.createOutputChannel(PLAYER_DATA_CHANNEL_NAME);
+    const channel = playerDataChannel();
     channel.appendLine(`[dbid ${dbid.trim()}] ${sql}`);
     if (built.defaultsOnly) {
       channel.appendLine(`(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})`);
@@ -360,13 +412,46 @@ export async function queryPlayerByDbid(dbid: string): Promise<string> {
     }
     channel.show();
     const note = built.defaultsOnly ? `(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})` : '';
-    return `查询完成:${result.rows.length} 行(结果见输出通道,只读)${note}`;
+    const message = `查询完成:${result.rows.length} 行(结果见输出通道,只读)${note}`;
+    return { message, outcome: result.rows.length === 0 ? 'empty' : 'success' };
   } catch (error) {
     const note = built.defaultsOnly ? `(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})` : '';
-    return `查询失败:${error instanceof Error ? error.message : String(error)}${note}`;
+    const message = `查询失败:${error instanceof Error ? error.message : String(error)}${note}`;
+    return { message, outcome: 'failed' };
   } finally {
     await executor?.close().catch(() => {
       /* 关闭失败不掩盖主结果 */
     });
   }
+}
+
+/** 按 dbid 查询玩家(字符串呈现;状态记账见 runPlayerQueryByDbid) */
+export async function queryPlayerByDbid(dbid: string): Promise<string> {
+  return (await runPlayerQueryByDbid(dbid)).message;
+}
+
+/**
+ * UX-REVIEW-008a 最近一次状态节点(纯装配,便于单测):查询/连接检查各一条,
+ * 六态渲染——未运行(无时间无入口,不造不可执行按钮)/进行中/终态(带
+ * 结果时间与结果入口)。summary 进 tooltip,不进树行(树行保持一行可读)。
+ */
+export function buildPlayerTaskStatusNodes(): PlayerDataNodeItem[] {
+  const tasks: Array<{ task: PlayerTaskKind; label: string }> = [
+    { task: 'query', label: '玩家查询' },
+    { task: 'connection', label: '连接检查' }
+  ];
+  return tasks.map(({ task, label }) => {
+    const status = playerTaskStatusStore.get(task);
+    const kindLabel = PLAYER_TASK_OUTCOME_LABELS[status?.outcome ?? 'not-run'];
+    const hasDetail = Boolean(status?.detailCommandId);
+    return {
+      label: `${label}:${kindLabel}`,
+      description: status?.finishedAt ? formatPlayerTaskTime(status.finishedAt) : undefined,
+      tooltip: status
+        ? `${status.summary}${status.finishedAt ? `(完成于 ${formatPlayerTaskTime(status.finishedAt)})` : ''}`
+        : '本次会话尚未运行过;结果入口在运行后出现。',
+      commandId: hasDetail ? status?.detailCommandId : undefined,
+      contextValue: hasDetail ? `playerTaskStatus${task}` : undefined
+    };
+  });
 }

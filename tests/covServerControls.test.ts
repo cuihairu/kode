@@ -49,6 +49,7 @@ import {
 import { ensureConfigDerivedScanRoot, getDerivedDatabaseProfile } from '../src/configDerive';
 import { createMysqlDriftExecutor, type DriftQueryExecutor } from '../src/backend/databaseDrift';
 import { resolveDatabaseInterfaceConfig } from '../src/serverConfigMerge';
+import { playerTaskStatusStore } from '../src/playerDataPanel';
 
 const mockedProfile = vi.mocked(getDerivedDatabaseProfile);
 const mockedEnsure = vi.mocked(ensureConfigDerivedScanRoot);
@@ -195,6 +196,7 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+  playerTaskStatusStore.clear();
   messages.info.length = 0;
   messages.warning.length = 0;
   messages.error.length = 0;
@@ -225,9 +227,13 @@ describe('serverControls 装配面(覆盖补测)', () => {
     expect(executor.closed).toBe(1);
     const playerChannel = channels.find(channel => channel.name.includes('玩家'));
     expect(playerChannel?.lines.join('')).toContain('[dbid 42]');
+    // UX-REVIEW-008a:最近一次状态入账(成功),可回看入口命令已注册
+    expect(playerTaskStatusStore.get('query')?.outcome).toBe('success');
+    expect(playerTaskStatusStore.get('query')?.detailCommandId).toBe('kbengine.playerData.showResult');
+    expect(commandRegistry.registrations.has('kbengine.playerData.showResult')).toBe(true);
   });
 
-  it('playerData.queryByDbid:输入取消/空串即止,零消息', async () => {
+  it('playerData.queryByDbid:输入取消/空串即止,零消息;状态账本记已取消', async () => {
     mockedProfile.mockReturnValue(mysqlProfile() as never);
     const original = fakeWindow.showInputBox;
     fakeWindow.showInputBox = async () => undefined;
@@ -237,6 +243,8 @@ describe('serverControls 装配面(覆盖补测)', () => {
       fakeWindow.showInputBox = original;
     }
     expect(messages.info).toHaveLength(0);
+    // UX-REVIEW-008a:取消也是一次可回看的结果(与未运行区分)
+    expect(playerTaskStatusStore.get('query')?.outcome).toBe('cancelled');
 
     fakeWindow.showInputBox = async () => '   ';
     try {
@@ -246,6 +254,7 @@ describe('serverControls 装配面(覆盖补测)', () => {
     }
     expect(messages.info).toHaveLength(0);
     expect(mockedCreate).not.toHaveBeenCalled();
+    expect(playerTaskStatusStore.get('query')?.outcome).toBe('cancelled');
   });
 
   it('debug.focusTarget:无参=指引去视图点击;未知 key=如实不在运行中', async () => {

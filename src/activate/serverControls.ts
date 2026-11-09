@@ -81,12 +81,15 @@ import { TelnetTreeProvider } from '../telnetTree';
 import { ensureConfigDerivedScanRoot, getDerivedDatabaseProfile } from '../configDerive';
 import {
   PlayerDataTreeProvider,
-  queryPlayerByDbid,
+  playerTaskStatusStore,
+  runPlayerConnectionTest,
+  runPlayerQueryByDbid,
   readOnlyQueryConfigGate,
+  showPlayerDataResult,
   READ_ONLY_QUERY_CHECK_CONNECTION,
-  READ_ONLY_QUERY_OPEN_REPORT,
-  testPlayerDatabaseConnection
+  READ_ONLY_QUERY_OPEN_REPORT
 } from '../playerDataPanel';
+import { PLAYER_TASK_RESULT_COMMAND } from '../backend/playerTaskStatus';
 import { runRedisKeyspacePreviewCommand } from '../redisKeyspaceCommand';
 import { DatabaseManagementWebView } from '../databaseManagementWebView';
 
@@ -166,9 +169,13 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
       await ensureConfigDerivedScanRoot().catch(() => {
         /* 同上:派生失败走降级文案 */
       });
+      // UX-REVIEW-008a:状态账本记账(进行中→终态),面板最近一次状态可回看
+      playerTaskStatusStore.begin('connection', '正在检查连接(只读 SELECT 1)');
       playerDataProvider.refresh();
-      const message = await testPlayerDatabaseConnection();
-      void vscode.window.showInformationMessage(message);
+      const run = await runPlayerConnectionTest();
+      playerTaskStatusStore.finish('connection', run.outcome, run.message);
+      playerDataProvider.refresh();
+      void vscode.window.showInformationMessage(run.message);
     }),
     vscode.commands.registerCommand('kbengine.playerData.queryByDbid', async () => {
       await ensureConfigDerivedScanRoot().catch(() => {
@@ -190,11 +197,18 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
           await ensureConfigDerivedScanRoot().catch(() => {
             /* 派生失败走连接测试的降级文案 */
           });
+          playerTaskStatusStore.begin('connection', '正在检查连接(只读 SELECT 1)');
           playerDataProvider.refresh();
-          void vscode.window.showInformationMessage(await testPlayerDatabaseConnection());
+          const connectionRun = await runPlayerConnectionTest();
+          playerTaskStatusStore.finish('connection', connectionRun.outcome, connectionRun.message);
+          playerDataProvider.refresh();
+          void vscode.window.showInformationMessage(connectionRun.message);
         }
         return;
       }
+      // UX-REVIEW-008a:过闸即记账进行中(含等待输入);输入取消=已取消
+      playerTaskStatusStore.begin('query', '等待输入 DBID(只读查询 tbl_Account)');
+      playerDataProvider.refresh();
       const dbid = await vscode.window.showInputBox({
         prompt: '玩家 DBID(十进制正整数;只读查询 tbl_Account)',
         placeHolder: '如 1',
@@ -204,10 +218,19 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
             : '仅接受十进制正整数'
       });
       if (dbid === undefined || dbid.trim() === '') {
+        playerTaskStatusStore.finish('query', 'cancelled', '已取消(未输入 DBID,未执行查询)');
+        playerDataProvider.refresh();
         return;
       }
-      const message = await queryPlayerByDbid(dbid);
-      void vscode.window.showInformationMessage(message);
+      const run = await runPlayerQueryByDbid(dbid);
+      playerTaskStatusStore.finish('query', run.outcome, run.message);
+      playerDataProvider.refresh();
+      void vscode.window.showInformationMessage(run.message);
+    }),
+    // UX-REVIEW-008a 结果入口:打开「玩家数据(只读)」输出通道(详情落通道,
+    // 信息消息一闪而过不再是唯一呈现)
+    vscode.commands.registerCommand(PLAYER_TASK_RESULT_COMMAND, () => {
+      showPlayerDataResult();
     }),
     // KODE-REDIS-UI-001:redis 键空间只读预览(仅 dbType='redis' 时生效;
     // mysql 后端如实降级说明)。键空间按 kbe 源码口径枚举,绝不模拟表结构。

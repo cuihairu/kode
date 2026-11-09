@@ -786,6 +786,14 @@ The flow graph panel supports:
   - Unreachable redis / connection failure degrades to an honest failure message (read-only degradation, other features unaffected); an empty keyspace reports "no kbe_* keys" instead of pretending success; a non-redis backend reports it is not previewed (redis-only surface)
   - Read-only constraint: `SCAN`/`TYPE` enumeration only — no writes, no deletes, no TTL changes
 
+### `kbengine.playerData.showResult`
+
+- Title: `Show Last Player Query Result`
+- Purpose: open the 「KBEngine 玩家数据(只读)」 output channel so the last query / connection-check result stays reviewable (UX-REVIEW-008A)
+- Behavior:
+  - The Player Data tree shows each task's latest state — not run / running / empty / success / failed / cancelled — with the finish time and this command as the result entry (click a status row)
+  - Details (executed SQL, rows as JSON, connection result with duration) are appended to that channel; info messages remain, but they are no longer the only record
+
 ### `kbengine.httpRequests.run`
 
 - Title: `Run HTTP Quick Request`

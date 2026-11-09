@@ -102,6 +102,7 @@
   "kbengine.command.playerData.testConnection.title": "Test Database Connection (Read-Only SELECT 1)",
   "kbengine.command.playerData.queryByDbid.title": "Query Player by DBID (Read-Only)",
   "kbengine.command.playerData.previewRedisKeyspace.title": "Preview Redis Keyspace (Read-Only)",
+  "kbengine.command.playerData.showResult.title": "Show Last Player Query Result",
   "kbengine.command.httpRequests.run.title": "Run HTTP Quick Request",
   "kbengine.command.httpRequest.run.title": "Run Named HTTP Quick Request",
   "kbengine.command.hotReload.tempEdit.run.title": "Temp-Edit Hot Reload (Active File)",
