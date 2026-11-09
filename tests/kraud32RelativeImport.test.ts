@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parsePythonFile } from '../src/pythonParser';
+import { parsePythonFile } from '../src/backend/pythonParser';
 
 // KR-AUD-32:`from . import mod` 此前把绑定记成 { module: '.', symbol: 'mod' },
 // 下游 importModuleCandidates 按模块名 '.' 解析出 <目录>.py / <目录>/__init__.py,

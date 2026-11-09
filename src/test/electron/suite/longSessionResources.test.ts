@@ -155,7 +155,7 @@ describe('IDE-REV-034:带实际资源量规的长会话验收(暖机/正式分�
     // 语言服务指标经同模块实例读取(与 fieldBaseline 同口径);worker 分流
     // 同理取同模块实例——连发突发走的是生产 dispatch,不是旁路
     const { getOperationSummary } = await import('../../../languageServiceMetrics');
-    const { parsePythonFileResponsive } = await import('../../../pythonParserWorkerHost');
+    const { parsePythonFileResponsive } = await import('../../../backend/pythonParserWorkerHost');
 
     const defUri = vscode.Uri.file(path.join(WORKSPACE!, DEF_REL));
     const pyUri = vscode.Uri.file(path.join(WORKSPACE!, PY_REL));

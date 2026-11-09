@@ -23,7 +23,7 @@
  *   成员面展开——元素成员访问是另一条推导链,不在本任务验收面。
  */
 import { PYTHON_TYPE_STUB_FALLBACK } from './pythonTypeStubs';
-import type { PythonSelfAccess } from './pythonLanguageUtils';
+import type { PythonSelfAccess } from './backend/pythonLanguageUtils';
 
 /** def 属性定位结果(.def 声明面) */
 export interface DefPropertyLocation {

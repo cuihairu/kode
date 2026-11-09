@@ -15,7 +15,7 @@
 
 import * as path from 'path';
 
-import { parsePythonFile } from '../pythonParser';
+import { parsePythonFile } from './pythonParser';
 import { PYTHON_BUILTIN_TYPE_ANNOTATIONS, PYTHON_TYPE_STUB_FALLBACK } from '../pythonTypeStubs';
 import { readSharedFileSnapshot } from '../sharedFileSnapshot';
 

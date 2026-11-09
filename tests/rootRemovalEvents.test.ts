@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PythonClassIndex } from '../src/pythonClassIndex';
+import { PythonClassIndex } from '../src/backend/pythonClassIndex';
 import { createRootRemovalNotifier } from '../src/rootRemovalEvents';
 
 // IDE-SNP-009:统一移除根通知——工作区根被移除时,一个通知源向全部消费索引

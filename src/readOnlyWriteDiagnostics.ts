@@ -20,7 +20,7 @@
 // 单列(文件级实体身份判定);`del (self.<p>)`/`del self.<p>, x` 的第二项不
 // 报(括号/逗号前缀形态,罕见)。
 
-import { maskPythonNonCode } from './pythonLexicalMask';
+import { maskPythonNonCode } from './backend/pythonLexicalMask';
 import { l10nText } from './nlsRuntime';
 import {
   resolveEntityBuiltinPropertyHit,

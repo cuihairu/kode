@@ -6,7 +6,7 @@ import {
   queueDocumentReturnAnnotations,
   resetPythonReturnAnnotationCache,
   setDocumentExtractionGateForTests
-} from '../src/pythonReturnTypeInference';
+} from '../src/backend/pythonReturnTypeInference';
 
 // IDE-REV-028(原 IDE-MET-008):文档注解更新的待处理量必须覆盖 pending
 // (去抖排队)与 inflight(异步提取执行中)两面——门住异步提取时仍显示在
@@ -136,7 +136,7 @@ describe('文档注解更新待处理量(IDE-REV-028)', () => {
   });
 
   it('源锁:量规覆盖 pending+inflight,finally 带同文件新任务守卫', async () => {
-    const source = await import('fs').then(fs => fs.promises.readFile('src/pythonReturnTypeInference.ts', 'utf8'));
+    const source = await import('fs').then(fs => fs.promises.readFile('src/backend/pythonReturnTypeInference.ts', 'utf8'));
     expect(source).toContain('pendingDocumentUpdates.size + inflightDocumentUpdates.size');
     expect(source).toContain('inflightDocumentUpdates.get(fileKey) === extraction');
     // 旧写法(无条件按键删)不得回流

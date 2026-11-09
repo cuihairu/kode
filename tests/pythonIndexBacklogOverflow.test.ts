@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { PythonClassIndex } from '../src/pythonClassIndex';
-import type { ParsedPythonFile } from '../src/pythonParser';
+import { PythonClassIndex } from '../src/backend/pythonClassIndex';
+import type { ParsedPythonFile } from '../src/backend/pythonParser';
 import { makeTextDocument } from './helpers/vscodeStub';
 import { Uri } from './fake-vscode/core';
 
@@ -13,9 +13,9 @@ const hostMock = vi.hoisted(() => ({
   failuresLeft: 0
 }));
 
-vi.mock('../src/pythonParserWorkerHost', async importOriginal => {
-  const actual = await importOriginal<typeof import('../src/pythonParserWorkerHost')>();
-  const { parsePythonFile } = await import('../src/pythonParser');
+vi.mock('../src/backend/pythonParserWorkerHost', async importOriginal => {
+  const actual = await importOriginal<typeof import('../src/backend/pythonParserWorkerHost')>();
+  const { parsePythonFile } = await import('../src/backend/pythonParser');
   return {
     ...actual,
     parsePythonFileResponsive: vi.fn(async (

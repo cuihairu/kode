@@ -138,7 +138,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
       'kbengine.diagnostics.checkMissingPropertyFields'
     ],
     trigger: '实时结构', quickFix: false,
-    status: 'implemented', source: 'src/defAnalyzer.ts'
+    status: 'implemented', source: 'src/backend/defAnalyzer.ts'
   },
   {
     id: 'KBE-DEF-009', code: 'duplicate-entity-name',
@@ -146,7 +146,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: 'def',
     toggles: [], trigger: '实时(open/edit)',
     quickFix: false, status: 'implemented',
-    source: 'src/entitiesXmlAnalysis.ts'
+    source: 'src/backend/entitiesXmlAnalysis.ts'
   },
   {
     id: 'KBE-DEF-010', code: 'kbengine.userTypeContractMethodMissing',
@@ -162,7 +162,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: 'def',
     toggles: ['kbengine.diagnostics.checkDefMethodMissingInPython'],
     trigger: '实时(open/edit)', quickFix: '生成方法骨架',
-    status: 'implemented', source: 'src/defMethodConsistency.ts'
+    status: 'implemented', source: 'src/backend/defMethodConsistency.ts'
   },
   {
     id: 'KBE-DEF-012', code: 'kbengine.pythonMethodNotInDef',
@@ -170,7 +170,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: 'base/cell/client',
     toggles: ['kbengine.diagnostics.checkPythonMethodNotInDef'],
     trigger: '实时(open/edit)', quickFix: false,
-    status: 'implemented', source: 'src/defMethodConsistency.ts'
+    status: 'implemented', source: 'src/backend/defMethodConsistency.ts'
   },
   {
     id: 'KBE-DEF-013', code: 'kbengine.processTopology',
@@ -236,49 +236,49 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     title: 'BOOL/BOOLEAN/TUPLE/MAP/FIXED_ARRAY 等未注册类型',
     severity: 'Warning', roles: 'def',
     toggles: [], trigger: '按需分析', quickFix: false,
-    status: 'implemented', source: 'src/defAnalyzer.ts'
+    status: 'implemented', source: 'src/backend/defAnalyzer.ts'
   },
   {
     id: 'KBE-DEF-005', code: 'invalid-identifier',
     title: '方法/属性/继承声明非法名称',
     severity: 'Error', roles: 'def',
     toggles: [], trigger: '按需分析', quickFix: false,
-    status: 'implemented', source: 'src/defAnalyzer.ts'
+    status: 'implemented', source: 'src/backend/defAnalyzer.ts'
   },
   {
     id: 'KBE-DEF-005b', code: 'engine-limited-name',
     title: '引擎限定名',
     severity: 'Error', roles: 'def',
     toggles: [], trigger: '按需分析', quickFix: false,
-    status: 'implemented', source: 'src/defAnalyzer.ts'
+    status: 'implemented', source: 'src/backend/defAnalyzer.ts'
   },
   {
     id: 'KBE-DEF-005c', code: 'method-property-collision',
     title: '方法/属性声明名称冲突',
     severity: 'Error', roles: 'def',
     toggles: [], trigger: '按需分析', quickFix: false,
-    status: 'implemented', source: 'src/defAnalyzer.ts'
+    status: 'implemented', source: 'src/backend/defAnalyzer.ts'
   },
   {
     id: 'KBE-DEF-005d', code: 'inherited-name-collision',
     title: '继承名冲突',
     severity: 'Error', roles: 'def',
     toggles: [], trigger: '按需分析', quickFix: false,
-    status: 'implemented', source: 'src/defAnalyzer.ts'
+    status: 'implemented', source: 'src/backend/defAnalyzer.ts'
   },
   {
     id: 'KBE-DEF-006', code: 'heavy-sync-broadcast',
     title: '重负载属性广播',
     severity: 'Warning', roles: 'def',
     toggles: [], trigger: '按需分析', quickFix: false,
-    status: 'implemented', source: 'src/defAnalyzer.ts'
+    status: 'implemented', source: 'src/backend/defAnalyzer.ts'
   },
   {
     id: 'KBE-DEF-006b', code: 'redundant-detail-level',
     title: '无效 DetailLevel 配置',
     severity: 'Warning', roles: 'def',
     toggles: [], trigger: '按需分析', quickFix: false,
-    status: 'implemented', source: 'src/defAnalyzer.ts'
+    status: 'implemented', source: 'src/backend/defAnalyzer.ts'
   },
   // ── 仅提示(hint-only,无诊断)───────────────────────────────────
   // 引擎实体 API(方法,如 teleport/addTimer)角色面表尚未建立 → 保持仅提示;
@@ -289,7 +289,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: null, roles: 'base/cell/client',
     toggles: ['kbengine.entity.builtinProperties'], trigger: 'hover/inlay/补全',
     quickFix: false, status: 'hint-only',
-    source: 'src/entityBuiltinProperties.ts'
+    source: 'src/backend/entityBuiltinProperties.ts'
   },
   {
     id: 'KBE-PY-008b', code: 'kbengine.roleMisuse',

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { findEventCalls } from './eventApi';
 import type { EventCall, EventCallIndex, IndexedEventCall } from './eventIndexTypes';
 import { findFilesAcrossRoots, getExternalScanRoots } from './scanRoots';
-import { PY_SCAN_EXCLUDE } from './pythonScanRules';
+import { PY_SCAN_EXCLUDE } from './backend/pythonScanRules';
 
 // 本地索引缓存（用户令 2026-10-20：跳转/CodeLens 不得每次全仓重扫）。
 // 一次性建索引 + watcher 增量失效；实例由 provider 持有（测试各自全新实例，互不污染）。

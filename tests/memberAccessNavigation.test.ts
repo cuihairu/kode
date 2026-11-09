@@ -8,8 +8,8 @@ import {
   PythonDefinitionProvider,
   setPythonMroJumpEnabled
 } from '../src/languageProviders';
-import { PythonClassIndex } from '../src/pythonClassIndex';
-import { getPythonMemberAccessAtPosition } from '../src/pythonLanguageUtils';
+import { PythonClassIndex } from '../src/backend/pythonClassIndex';
+import { getPythonMemberAccessAtPosition } from '../src/backend/pythonLanguageUtils';
 import { makeTextDocument } from './helpers/vscodeStub';
 import { resetScanRootCache } from '../src/scanRoots';
 import { workspace as stubWorkspace } from './fake-vscode/workspaceState';

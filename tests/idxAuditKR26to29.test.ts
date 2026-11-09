@@ -7,7 +7,7 @@ import { Uri } from './fake-vscode/core';
 import { workspace as stubWorkspace } from './fake-vscode/workspaceState';
 import { GlobalDataDictIndex } from '../src/globalDataIndex';
 import { getActiveOperationCounts } from '../src/languageServiceMetrics';
-import { PythonClassIndex } from '../src/pythonClassIndex';
+import { PythonClassIndex } from '../src/backend/pythonClassIndex';
 import { WorkspaceIndex } from '../src/workspaceIndex';
 
 // KR-AUD-26/27/28/29(索引域外部审核落地)prove-red 用例:

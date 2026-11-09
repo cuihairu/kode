@@ -5,7 +5,7 @@ import { Position, Uri } from './fake-vscode/core';
 import { configurationOverrides, workspace as stubWorkspace } from './fake-vscode/workspaceState';
 import { makeTextDocument } from './helpers/vscodeStub';
 import { EntityMappingManager } from '../src/entityMapping';
-import { PythonClassIndex, PY_SCAN_EXCLUDE } from '../src/pythonClassIndex';
+import { PythonClassIndex, PY_SCAN_EXCLUDE } from '../src/backend/pythonClassIndex';
 import { PythonDefinitionProvider } from '../src/languageProviders';
 import {
   findFilesAcrossRoots,

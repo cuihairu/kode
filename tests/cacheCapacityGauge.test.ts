@@ -13,7 +13,7 @@ import {
   getReturnAnnotationCacheGauge,
   resetPythonReturnAnnotationCache,
   resolveLocalVariableReturnType
-} from '../src/pythonReturnTypeInference';
+} from '../src/backend/pythonReturnTypeInference';
 
 // IDE-REV-031:相关缓存的容量面接入现场报告——条目数、可获取的占用量与
 // 配置上限;填充/淘汰后从量规核对;容量=当前实际持有条目/字节,绝不把

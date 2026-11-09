@@ -11,7 +11,7 @@ import {
   validateDocument,
   validateEntitiesXmlDocument
 } from '../src/languageProviders';
-import { PythonClassIndex } from '../src/pythonClassIndex';
+import { PythonClassIndex } from '../src/backend/pythonClassIndex';
 import { resetScanRootCache } from '../src/scanRoots';
 import {
   Diagnostic,

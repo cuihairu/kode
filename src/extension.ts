@@ -1,7 +1,7 @@
 import { getExternalScanRoots, resetScanRootCache } from './scanRoots';
 
 import { bumpRootConfigGeneration } from './rootConfigGeneration';
-import { disposePythonParserWorker, getPythonParserWorkerGauge } from './pythonParserWorkerHost';
+import { disposePythonParserWorker, getPythonParserWorkerGauge } from './backend/pythonParserWorkerHost';
 import { disposeDefParserWorker } from './backend/defParserWorkerHost';
 
 
@@ -98,7 +98,7 @@ import {
   renameSavedFileAnnotations,
   queueDocumentReturnAnnotations,
   releaseDocumentReturnAnnotations,
-} from './pythonReturnTypeInference';
+} from './backend/pythonReturnTypeInference';
 
 import {
   KBEngineTypeCodeActionProvider,

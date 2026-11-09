@@ -2,7 +2,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import packageJson from '../package.json';
 import { activate } from '../src/extension';
-import { PythonClassIndex } from '../src/pythonClassIndex';
+import { PythonClassIndex } from '../src/backend/pythonClassIndex';
 import {
   KBENGINE_SIDEBAR_VIEW_IDS,
   registerStartupViewPlaceholders

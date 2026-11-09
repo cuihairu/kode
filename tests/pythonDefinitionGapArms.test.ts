@@ -9,7 +9,7 @@ import {
   setDefinitionDispatchGateForTests,
   setPythonMroJumpEnabled
 } from '../src/languageProviders/pythonDefinition';
-import type { PythonClassIndex } from '../src/pythonClassIndex';
+import type { PythonClassIndex } from '../src/backend/pythonClassIndex';
 import type { GlobalDataDictIndex } from '../src/globalDataIndex';
 import { clearRecentJumpLogs, getRecentJumpLogs, setJumpLogEnabled } from '../src/navigationLog';
 import { makeTextDocument, Position, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';

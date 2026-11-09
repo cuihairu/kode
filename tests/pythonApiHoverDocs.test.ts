@@ -17,7 +17,7 @@ import {
   getKbengineApiAccessAtPosition,
   getPythonCallbackDefinitionAtPosition,
   lookupApiDoc
-} from '../src/pythonApiHoverDocs';
+} from '../src/backend/pythonApiHoverDocs';
 
 describe('pythonApiHoverDocs lookup semantics', () => {
   it('域精确优先:fireEvent@base 命中 entity 面', () => {

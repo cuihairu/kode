@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PythonClassIndex, parsePythonFile } from '../src/pythonClassIndex';
+import { PythonClassIndex, parsePythonFile } from '../src/backend/pythonClassIndex';
 import { IndexScheduler, IndexTaskPriority } from '../src/indexScheduler';
 import { clearRecentJumpLogs, getRecentJumpLogs, setJumpLogEnabled } from '../src/navigationLog';
 import { makeTextDocument, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
@@ -43,8 +43,8 @@ const parseState = vi.hoisted(() => ({
     | ((content: string, filePath: string, revision: number) => Promise<unknown>)
 }));
 
-vi.mock('../src/pythonParserWorkerHost', async importOriginal => {
-  const actual = await importOriginal<typeof import('../src/pythonParserWorkerHost')>();
+vi.mock('../src/backend/pythonParserWorkerHost', async importOriginal => {
+  const actual = await importOriginal<typeof import('../src/backend/pythonParserWorkerHost')>();
   return {
     ...actual,
     parsePythonFileResponsive: (...args: unknown[]) =>

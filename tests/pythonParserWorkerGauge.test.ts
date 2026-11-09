@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PYTHON_WORKER_PARSE_THRESHOLD } from '../src/pythonParserWorkerHost';
+import { PYTHON_WORKER_PARSE_THRESHOLD } from '../src/backend/pythonParserWorkerHost';
 
 // IDE-REV-030:解析 worker 队列与字节占用接入现场报告——挂起 worker
 // (已派发不回包)、超预算排队(拒绝+峰值顶格)及恢复(排干)都能从量规
@@ -48,12 +48,12 @@ vi.mock('fs', async importOriginal => {
   };
 });
 
-type HostModule = typeof import('../src/pythonParserWorkerHost');
+type HostModule = typeof import('../src/backend/pythonParserWorkerHost');
 
 const loadHost = async (): Promise<HostModule> => {
   vi.resetModules();
   workerState.instances.length = 0;
-  return import('../src/pythonParserWorkerHost');
+  return import('../src/backend/pythonParserWorkerHost');
 };
 
 const bigContent = 'x'.repeat(PYTHON_WORKER_PARSE_THRESHOLD + 1);
@@ -62,7 +62,7 @@ const parsedStub = {
   classes: [],
   imports: new Map(),
   instanceAssignments: []
-} as unknown as import('../src/pythonParser').ParsedPythonFile;
+} as unknown as import('../src/backend/pythonParser').ParsedPythonFile;
 
 /** 回包所有已派发任务直至排干(链式派发的下一份也会被回包) */
 const drainPosted = (host: HostModule): void => {
@@ -208,7 +208,7 @@ describe('解析 worker 队列与字节占用(IDE-REV-030)', () => {
     expect(summary).toContain('worker在途字节=');
     expect(summary).toContain('worker总保留=');
     // 口径锁:字节与 MAX_QUEUED_PARSE_BYTES 同源,不做第二套估算
-    const host = await fs.promises.readFile('src/pythonParserWorkerHost.ts', 'utf8');
+    const host = await fs.promises.readFile('src/backend/pythonParserWorkerHost.ts', 'utf8');
     expect(host).toContain('maxQueuedBytes: MAX_QUEUED_PARSE_BYTES');
   });
 });

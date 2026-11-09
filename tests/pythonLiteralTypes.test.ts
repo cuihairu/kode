@@ -3,7 +3,7 @@ import {
   inferPythonLiteralAnnotation,
   parsePythonLiteral,
   pythonLiteralAnnotation
-} from '../src/pythonLiteralTypes';
+} from '../src/backend/pythonLiteralTypes';
 
 describe('pythonLiteralTypes(GEN-DEF-1c:def <Default> 字面量 → 精确注解)', () => {
   it('标量字面量精确到基础类型', () => {

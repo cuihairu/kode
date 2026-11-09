@@ -34,7 +34,7 @@ import {
   PythonDefinitionProvider,
   validateDocument
 } from '../../src/languageProviders';
-import { PythonClassIndex } from '../../src/pythonClassIndex';
+import { PythonClassIndex } from '../../src/backend/pythonClassIndex';
 import { EntityMappingManager } from '../../src/entityMapping';
 import { resetScanRootCache } from '../../src/scanRoots';
 import { KodeCoreGate, ShadowDiffEntry, ShadowDiffLog, firstDiffPath } from '../../src/kodeCoreGate';

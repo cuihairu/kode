@@ -17,8 +17,8 @@
  * 静默挑一个。
  */
 
-import { API_DOC_ENTRIES, type ApiDocEntry } from './generated/apiDocs';
-import type { HoverLanguage } from './hoverLocale';
+import { API_DOC_ENTRIES, type ApiDocEntry } from '../generated/apiDocs';
+import type { HoverLanguage } from '../hoverLocale';
 
 /** 脚本面(kbengine.entityBuiltinProperties 的 face)→ 文档库域 */
 const FACE_TO_DOMAIN: Record<string, string> = {

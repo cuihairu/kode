@@ -26,7 +26,7 @@ import { clearDefCallChainFileCache } from './defCallChain';
 import { PYTHON_BUILTIN_TYPE_ANNOTATIONS } from './pythonTypeStubs';
 import { propertyFlagDomainList } from './backend/defAnalyzer';
 import type { PropertyFlagDomain } from './backend/defAnalyzer';
-import { findOwnerSelfPropertyAccesses, findOwnerSelfReceiverCalls } from './pythonSelfScope';
+import { findOwnerSelfPropertyAccesses, findOwnerSelfReceiverCalls } from './backend/pythonSelfScope';
 import {
   createDefinitionSemanticsLoader,
   DefinitionMemberSourceKind,
@@ -44,7 +44,7 @@ import {
 } from './definitionWorkspace';
 import { joinWorkspacePath } from './workspacePath';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
-import { PY_SCAN_EXCLUDED_DIRS } from './pythonScanRules';
+import { PY_SCAN_EXCLUDED_DIRS } from './backend/pythonScanRules';
 import { SemanticIndex, getSemanticIndex, isTypeRegistryFile } from './semanticIndex';
 import { createSharedFileEventMerger, type SharedFileEvent } from './sharedFileEvents';
 import { SemanticDependencyGraph, type SemanticChangeKind } from './dependencyGraph';

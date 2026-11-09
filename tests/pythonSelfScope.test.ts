@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
-import { findOwnerSelfPropertyAccesses } from '../src/pythonSelfScope';
+import { findOwnerSelfPropertyAccesses } from '../src/backend/pythonSelfScope';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 
 // IDE-AUD-028(R2-F05):属性引用按 owner 文件原文正则扫描,结果混入字符串、

@@ -52,7 +52,7 @@ import {
   computeReceiverNoneFindings,
   computeReceiverNoneFindingsAsync
 } from '../src/receiverNoneDiagnostics';
-import { parsePythonFile } from '../src/pythonParser';
+import { parsePythonFile } from '../src/backend/pythonParser';
 import { DebugConfigManager } from '../src/debugConfig';
 import {
   configurationOverrides,
@@ -1214,10 +1214,10 @@ describe('pythonParserWorkerHost(派发抛错收口)', () => {
   });
 
   it('postMessage 抛错:该任务拒绝并释放队列;线程不死,恢复后续接服务', async () => {
-    const loadHost = async (): Promise<typeof import('../src/pythonParserWorkerHost')> => {
+    const loadHost = async (): Promise<typeof import('../src/backend/pythonParserWorkerHost')> => {
       vi.resetModules();
       workerState.instances.length = 0;
-      return import('../src/pythonParserWorkerHost');
+      return import('../src/backend/pythonParserWorkerHost');
     };
     workerState.failPostMessage = true;
     const host = await loadHost();
@@ -1226,7 +1226,7 @@ describe('pythonParserWorkerHost(派发抛错收口)', () => {
       classes: [],
       imports: new Map(),
       instanceAssignments: []
-    } as unknown as import('../src/pythonParser').ParsedPythonFile;
+    } as unknown as import('../src/backend/pythonParser').ParsedPythonFile;
     await expect(host.parsePythonFileResponsive(bigContent, '/post-fail.py', 1)).rejects.toThrow('postMessage blew up');
 
     workerState.failPostMessage = false; // 同一 worker 存活:下一任务照常派发

@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PythonClassIndex } from '../src/pythonClassIndex';
+import { PythonClassIndex } from '../src/backend/pythonClassIndex';
 import { IndexScheduler, IndexTaskSpec } from '../src/indexScheduler';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 

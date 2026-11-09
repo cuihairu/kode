@@ -4,8 +4,8 @@ import {
   PYTHON_RECEIVER_SECTIONS,
   findPythonReceiverCalls,
   type PythonReceiverCall
-} from './pythonLanguageUtils';
-import { maskPythonNonCode } from './pythonLexicalMask';
+} from './backend/pythonLanguageUtils';
+import { maskPythonNonCode } from './backend/pythonLexicalMask';
 
 /**
  * RPC 参数数量 lint(IDE-LINT-008,用户令 2026-11-06;KBE-PY-009 诊断面):

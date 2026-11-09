@@ -11,8 +11,8 @@ import {
   DESTROYED_ENTITY_REFERENCE_CODE,
   TIMER_LEAK_ON_DESTROY_CODE
 } from '../src/behaviorLints';
-import { maskPythonNonCode } from '../src/pythonLexicalMask';
-import { parsePythonFile } from '../src/pythonParser';
+import { maskPythonNonCode } from '../src/backend/pythonLexicalMask';
+import { parsePythonFile } from '../src/backend/pythonParser';
 import type { PropertyDefinitionInfo } from '../src/entityMapping';
 import type { CustomTypeInfo } from '../src/definitionWorkspace';
 

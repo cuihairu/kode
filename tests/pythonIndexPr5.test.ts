@@ -13,7 +13,7 @@ import { workspace as stubWorkspace } from './fake-vscode/workspaceState';
 import {
   COMPOSITION_ROOTS_NODE,
   PythonClassIndex
-} from '../src/pythonClassIndex';
+} from '../src/backend/pythonClassIndex';
 import {
   IndexScheduler,
   IndexTaskHandle,

@@ -21,7 +21,7 @@
 
 - `src/backend/defParser.ts:58` `parseDefDocument` is a generic XML parser (fxp, `parseTagValue:false` see `:55`), it carries no type semantics.
 - `src/entityMapping.ts:152` builds its index only from `findFiles('**/*.def')`; the index structure `:107-123` (`EntityMappingIndex`) only has `methodDefinitions`, `properties: { [name]: { defFile, line } }` etc. — it stores **reference landing points**, passing the Type string through verbatim, storing no type definitions.
-- `src/pythonClassIndex.ts:40` `parsePythonFile` only parses classes/methods of `.py`, scan surface `:247` `findFiles('**/*.py', ...)` — it **never looks at .def**.
+- `src/backend/pythonClassIndex.ts:40` `parsePythonFile` only parses classes/methods of `.py`, scan surface `:247` `findFiles('**/*.py', ...)` — it **never looks at .def**.
 
 → Conclusion: neither of the two indexes named in the question **contains utype definitions**; the definitions live in `entity_defs/types.xml`, parsed by a different line below.
 

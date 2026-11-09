@@ -3,7 +3,7 @@ import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { KBEngineDefinitionProvider, PythonDefinitionProvider } from '../src/languageProviders';
-import { PythonClassIndex } from '../src/pythonClassIndex';
+import { PythonClassIndex } from '../src/backend/pythonClassIndex';
 import { Position, Uri, makeTextDocument, workspace } from './helpers/vscodeStub';
 
 const DEMO = path.join(__dirname, 'fixtures', 'kbengine-demo-assets');

@@ -10,8 +10,8 @@ const parseState = vi.hoisted(() => ({
   impl: undefined as undefined | ((...args: unknown[]) => Promise<unknown>)
 }));
 
-vi.mock('../src/pythonParserWorkerHost', async importOriginal => {
-  const actual = await importOriginal<typeof import('../src/pythonParserWorkerHost')>();
+vi.mock('../src/backend/pythonParserWorkerHost', async importOriginal => {
+  const actual = await importOriginal<typeof import('../src/backend/pythonParserWorkerHost')>();
   return {
     ...actual,
     parsePythonFileResponsive: (...args: unknown[]) => {
@@ -23,7 +23,7 @@ vi.mock('../src/pythonParserWorkerHost', async importOriginal => {
   };
 });
 
-import { PythonClassIndex } from '../src/pythonClassIndex';
+import { PythonClassIndex } from '../src/backend/pythonClassIndex';
 
 type ClassIndexInternals = {
   loadFile(file: string, version: number): Promise<void>;

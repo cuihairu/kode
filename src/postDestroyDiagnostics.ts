@@ -27,7 +27,7 @@
 // ——均不分析,不冒充已实现;`self.<prop>` 仅 `self.` 单段前缀(`other.destroy`
 // 与 `self.cell.destroy` 非销毁自身,不参与)。
 
-import { pythonCodeLines, pythonStatements } from './pythonParser';
+import { pythonCodeLines, pythonStatements } from './backend/pythonParser';
 import { l10nText } from './nlsRuntime';
 import { resolveEntityComponentFaceFromPath, type EntityComponentFace } from './backend/entityBuiltinProperties';
 

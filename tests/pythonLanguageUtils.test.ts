@@ -3,7 +3,7 @@ import {
   getPythonSelfAccessAtPosition,
   getPythonSelfCompletionContext,
   getPythonSelfSymbolAtPosition
-} from '../src/pythonLanguageUtils';
+} from '../src/backend/pythonLanguageUtils';
 
 describe('getPythonSelfAccessAtPosition', () => {
   const line = '    self.avatar.position.x += 1';

@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PythonClassIndex, parsePythonFile } from '../src/pythonClassIndex';
+import { PythonClassIndex, parsePythonFile } from '../src/backend/pythonClassIndex';
 import { PythonDefinitionProvider, setPythonMroJumpEnabled } from '../src/languageProviders';
 import { Position, Uri } from './fake-vscode/core';
 import { workspace } from './fake-vscode/workspaceState';

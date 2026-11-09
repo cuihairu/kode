@@ -1,8 +1,8 @@
 import { expect, it, vi } from 'vitest';
-import * as parser from '../src/pythonParser';
+import * as parser from '../src/backend/pythonParser';
 import { computeReceiverNoneFindings } from '../src/receiverNoneDiagnostics';
 
-vi.mock('../src/pythonParser', { spy: true });
+vi.mock('../src/backend/pythonParser', { spy: true });
 
 it('没有 receiver 使用点时不运行完整 Python parser', () => {
   vi.mocked(parser.parsePythonFile).mockClear();

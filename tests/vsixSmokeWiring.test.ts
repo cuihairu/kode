@@ -39,7 +39,7 @@ describe('vsix 烟测接线守卫(IDE-REL-006)', () => {
     expect(source).toContain('const SMOKE_PY_MIN_BYTES = 300 * 1024');
     // PYTHON_WORKER_PARSE_THRESHOLD 若被抬高,300 KiB 余量耗尽即需同步调整:
     // 守卫读生产常量原文,阈值改小/改大都会在这里暴露不一致。
-    const host = readRepoFile('src/pythonParserWorkerHost.ts');
+    const host = readRepoFile('src/backend/pythonParserWorkerHost.ts');
     expect(host).toContain('export const PYTHON_WORKER_PARSE_THRESHOLD = 256 * 1024');
   });
 

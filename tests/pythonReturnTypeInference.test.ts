@@ -22,7 +22,7 @@ import {
   resolveLocalVariableReturnType,
   resolveLocalVariableReturnTypeFromSnapshot,
   updateDocumentReturnAnnotations
-} from '../src/pythonReturnTypeInference';
+} from '../src/backend/pythonReturnTypeInference';
 import {
   clearRecentAnnotationSourceLogs,
   getRecentAnnotationSourceLogs,

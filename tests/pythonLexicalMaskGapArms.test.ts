@@ -3,7 +3,7 @@ import {
   getPythonMaskPassCountForTests,
   maskPythonNonCode,
   resetPythonMaskPassCountForTests
-} from '../src/pythonLexicalMask';
+} from '../src/backend/pythonLexicalMask';
 
 // pythonLexicalMask 缺口臂(2026-11-09 覆盖率扫尾):字符串前缀识别(普通/
 // 原始/字节/unicode 前缀与非前缀标识符)、f-string 转义花括号/表达式段/

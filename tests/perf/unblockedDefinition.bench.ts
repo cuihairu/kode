@@ -16,7 +16,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, it } from 'vitest';
 import { Uri } from '../fake-vscode/core';
 import { workspace as stubWorkspace } from '../fake-vscode/workspaceState';
-import { PythonClassIndex } from '../../src/pythonClassIndex';
+import { PythonClassIndex } from '../../src/backend/pythonClassIndex';
 import { IndexScheduler } from '../../src/indexScheduler';
 import { resetScanRootCache } from '../../src/scanRoots';
 

@@ -8,7 +8,7 @@ import {
   flushPendingDocumentReturnAnnotationsForTests,
   resetPythonReturnAnnotationCache,
   resolveLocalVariableReturnTypeFromSnapshot
-} from '../src/pythonReturnTypeInference';
+} from '../src/backend/pythonReturnTypeInference';
 
 // 2026-10-28 审核整改(HOV-011/009):每个 Python 编辑事件都在
 // onDidChangeTextDocument 里同步整文件提取注解(889KB ≈ 120ms 阻塞事件

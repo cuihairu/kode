@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveSelfPropertyAnnotation } from '../src/selfPropertyTypeInference';
-import type { PythonSelfAccess } from '../src/pythonLanguageUtils';
+import type { PythonSelfAccess } from '../src/backend/pythonLanguageUtils';
 
 // TYP-ARRAY:def 属性访问的类型推导与数组元素类型(2026-10-30 用户反馈
 // self.equip_track_list 仍 Any;EQUIP_TRACK_LIST 是 list,取出元素应能推导元素

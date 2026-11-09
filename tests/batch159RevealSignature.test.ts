@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
-import { getPythonCallAtPosition } from '../src/pythonLanguageUtils';
+import { getPythonCallAtPosition } from '../src/backend/pythonLanguageUtils';
 import {
   KBEngineHoverProvider,
   KBEngineSignatureHelpProvider,

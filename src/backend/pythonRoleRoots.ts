@@ -12,7 +12,7 @@
  * (extraPaths 只管自己那段)。
  */
 
-import { scriptFoldersForRole } from './definitionWorkspace';
+import { scriptFoldersForRole } from '../definitionWorkspace';
 
 /** 服务端分析角色(client/bots 是客户端/机器人面,不进服务端分析根) */
 export type PythonAnalysisRole = 'base' | 'cell';

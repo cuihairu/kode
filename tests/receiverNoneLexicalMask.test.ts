@@ -7,7 +7,7 @@ import {
 import {
   getPythonMaskPassCountForTests,
   resetPythonMaskPassCountForTests
-} from '../src/pythonLexicalMask';
+} from '../src/backend/pythonLexicalMask';
 
 // IDE-LINT-005:receiver lint 屏蔽注释与字面量。注释、普通/三引号字符串里
 // 的 self.<role>.<name> 形态不产生诊断;f-string 表达式部分按真实代码处理,

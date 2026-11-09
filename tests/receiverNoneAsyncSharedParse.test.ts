@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   disposePythonParserWorker,
   PYTHON_WORKER_PARSE_THRESHOLD
-} from '../src/pythonParserWorkerHost';
-import type { ParsedPythonFile } from '../src/pythonParser';
+} from '../src/backend/pythonParserWorkerHost';
+import type { ParsedPythonFile } from '../src/backend/pythonParser';
 import { DiagnosticScheduler } from '../src/diagnosticScheduler';
-import { PythonClassIndex } from '../src/pythonClassIndex';
+import { PythonClassIndex } from '../src/backend/pythonClassIndex';
 import {
   computeReceiverNoneFindings,
   receiverNoneDiagnosticItemsAsync
@@ -90,8 +90,8 @@ vi.mock('fs', async importOriginal => {
 
 // 宿主侧 parsePythonFile 调用计数:>256KiB 异步入口必须为零(worker 面算
 // 测试线程代行,预先算好不入账)
-vi.mock('../src/pythonParser', async importOriginal => {
-  const actual = await importOriginal<typeof import('../src/pythonParser')>();
+vi.mock('../src/backend/pythonParser', async importOriginal => {
+  const actual = await importOriginal<typeof import('../src/backend/pythonParser')>();
   return {
     ...actual,
     parsePythonFile: (content: string, filePath: string): ParsedPythonFile => {
@@ -101,8 +101,8 @@ vi.mock('../src/pythonParser', async importOriginal => {
   };
 });
 
-const actualParser = async (): Promise<NonNullable<typeof import('../src/pythonParser')>> =>
-  vi.importActual<typeof import('../src/pythonParser')>('../src/pythonParser');
+const actualParser = async (): Promise<NonNullable<typeof import('../src/backend/pythonParser')>> =>
+  vi.importActual<typeof import('../src/backend/pythonParser')>('../src/backend/pythonParser');
 const latestWorker = () => workerState.instances[workerState.instances.length - 1];
 
 /** >256KiB 且有 receiver 调用的样本:行尾注释垫字节,调用数适中(guard 扫描一趟) */

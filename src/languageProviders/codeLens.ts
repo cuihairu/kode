@@ -8,7 +8,7 @@ import { buildPropertyInitOrderLensSpecs } from '../propertyInitOrderLens';
 import { getTypeStorageUsageIndexReadOnly, indexTypeStorageUsageEntries, onTypeStorageUsageIndexPublished, TypeStorageUsage } from '../databaseSchema';
 import { findEntityDefinitionFile, getDefinitionWorkspaceLayout, getWorkspaceRootForDocument, resolveEntityAnnotationType } from '../definitionWorkspace';
 import { getLineCharacterAtOffset } from '../backend/defRenamer';
-import { findPythonReceiverCalls } from '../pythonLanguageUtils';
+import { findPythonReceiverCalls } from '../backend/pythonLanguageUtils';
 import { KBENGINE_SOURCE_REVEAL_COMMAND } from '../sourceRevealCommand';
 import { getLanguageFeatureConfig } from './shared';
 export class RpcCodeLensProvider implements vscode.CodeLensProvider {

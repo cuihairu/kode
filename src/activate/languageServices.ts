@@ -44,7 +44,7 @@ import {
   TypesXmlCodeLensProvider
 } from '../languageProviders';
 import { StartupScriptCompletionProvider, StartupScriptHoverProvider } from '../kbengineStartupScript';
-import { PythonClassIndex } from '../pythonClassIndex';
+import { PythonClassIndex } from '../backend/pythonClassIndex';
 import { PYTHON_TYPE_STUB_FILE_NAME, buildPythonTypeStubLineMap, buildPythonTypeStubPlan } from '../pythonTypeStubs';
 import { bumpRootConfigGeneration } from '../rootConfigGeneration';
 import { createRootRemovalNotifier } from '../rootRemovalEvents';

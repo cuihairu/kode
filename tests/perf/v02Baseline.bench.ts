@@ -34,7 +34,7 @@ import {
   validateEntitiesXmlDocument
 } from '../../src/languageProviders';
 import { EntityMappingManager } from '../../src/entityMapping';
-import { PythonClassIndex } from '../../src/pythonClassIndex';
+import { PythonClassIndex } from '../../src/backend/pythonClassIndex';
 import { resetScanRootCache } from '../../src/scanRoots';
 
 const ASSETS_OUT = path.join(os.tmpdir(), 'kode-perf-v02-assets');

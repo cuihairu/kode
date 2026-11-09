@@ -3,7 +3,7 @@ import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { PythonClassIndex } from '../src/pythonClassIndex';
+import { PythonClassIndex } from '../src/backend/pythonClassIndex';
 import { activate, deactivate } from '../src/extension';
 import { setActiveProfile } from '../src/activeProfile';
 import { getRootConfigGeneration, getRootConfigLastBumpReason } from '../src/rootConfigGeneration';
@@ -15,7 +15,7 @@ import {
   resetPythonReturnAnnotationCache,
   resolveLocalVariableReturnType,
   resolveLocalVariableReturnTypeFromSnapshot
-} from '../src/pythonReturnTypeInference';
+} from '../src/backend/pythonReturnTypeInference';
 import {
   getOperationSummary,
   resetLanguageServiceMetrics

@@ -37,7 +37,7 @@ import { ROLE_MISUSE_DIAGNOSTICS_ENABLED_DEFAULT, roleMisuseDiagnosticItemsAsync
 import { POST_DESTROY_DIAGNOSTICS_ENABLED_DEFAULT, postDestroyDiagnosticItemsAsync, type PostDestroyDiagnosticItem } from '../postDestroyDiagnostics';
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import { EntityMappingManager } from '../entityMapping';
-import { PythonClassIndex } from '../pythonClassIndex';
+import { PythonClassIndex } from '../backend/pythonClassIndex';
 import { getWorkspaceRootForDocument } from '../definitionWorkspace';
 import { getDefinitionWorkspaceLayout, listDefinitionFiles } from '../definitionWorkspace';
 import { readSharedFileSnapshot } from '../sharedFileSnapshot';

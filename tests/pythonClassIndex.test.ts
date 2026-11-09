@@ -11,7 +11,7 @@ import {
   linearizeC3,
   parsePythonFile,
   type PythonClassDef
-} from '../src/pythonClassIndex';
+} from '../src/backend/pythonClassIndex';
 import { EntityMappingManager } from '../src/entityMapping';
 import { PythonDefinitionProvider } from '../src/languageProviders';
 import { makeTextDocument } from './helpers/vscodeStub';

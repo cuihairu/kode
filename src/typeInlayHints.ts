@@ -12,7 +12,7 @@ import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from './selfPr
 import {
   findPythonReceiverCallArguments,
   type PythonReceiverCallWithArguments
-} from './pythonLanguageUtils';
+} from './backend/pythonLanguageUtils';
 import { getKbeAliases } from './kbeModuleIndex';
 import {
   GlobalDataDictIndex,

@@ -13,7 +13,7 @@ import {
   resolveFieldClassSymbols
 } from '../src/compositionRoots';
 import { EntityMappingManager } from '../src/entityMapping';
-import { PythonClassIndex, PY_SCAN_EXCLUDE } from '../src/pythonClassIndex';
+import { PythonClassIndex, PY_SCAN_EXCLUDE } from '../src/backend/pythonClassIndex';
 import { PythonDefinitionProvider } from '../src/languageProviders';
 
 // 组合根(用户 2026-10-16 纠正):entities.xml 派生一组组合根——每个实体、

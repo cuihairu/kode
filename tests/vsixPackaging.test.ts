@@ -41,7 +41,7 @@ describe('VSIX worker 产物结构守卫(IDE-REL-003)', () => {
   });
 
   it('worker 与解析依赖不 import vscode(包内路径可独立启动)', () => {
-    for (const relativePath of ['src/pythonParserWorker.ts', 'src/pythonParser.ts']) {
+    for (const relativePath of ['src/pythonParserWorker.ts', 'src/backend/pythonParser.ts']) {
       const source = readRepoFile(relativePath);
       expect(source.includes('from \'vscode\'')).toBe(false);
     }

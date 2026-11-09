@@ -1,11 +1,11 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
 import * as vscode from 'vscode';
-import { parsePythonFile, isPythonCodePosition } from '../pythonClassIndex';
+import { parsePythonFile, isPythonCodePosition } from '../backend/pythonClassIndex';
 import { DefElementNode, getLineNumberAt } from '../backend/defParser';
 import { EntityMappingManager, EntityMethodSection } from '../entityMapping';
 import { provideTypesXmlReferences } from '../typesXmlReferences';
 import { provideDefSymbolReferences } from '../defSymbolReferences';
-import { PYTHON_RECEIVER_BY_SECTION, getPythonSelfAccessAtPosition } from '../pythonLanguageUtils';
+import { PYTHON_RECEIVER_BY_SECTION, getPythonSelfAccessAtPosition } from '../backend/pythonLanguageUtils';
 import { GlobalDataDictIndex, isKeyInsideLineComment } from '../globalDataIndex';
 import { DEF_SYMBOL_SECTIONS, METHOD_SECTIONS, elementFullRange, elementTagRange, parseDefAst, toSectionName } from './shared';
 import { findDefSymbolInfo } from './navigation';

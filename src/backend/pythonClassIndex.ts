@@ -2,20 +2,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { performance } from 'perf_hooks';
 import * as vscode from 'vscode';
-import { deriveCompositionRoots, type CompositionRootMap } from './compositionRoots';
-import { findFilesAcrossRoots } from './scanRoots';
+import { deriveCompositionRoots, type CompositionRootMap } from '../compositionRoots';
+import { findFilesAcrossRoots } from '../scanRoots';
 import { PY_SCAN_EXCLUDE, PY_SCAN_EXCLUDED_DIRS } from './pythonScanRules';
 import { parsePythonFile } from './pythonParser';
 import type { PythonClassDef, ParsedPythonFile } from './pythonParser';
 import { parsePythonFileResponsive } from './pythonParserWorkerHost';
-import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
-import { SemanticDependencyGraph } from './dependencyGraph';
-import { INTERACTIVE_INDEX_WAIT_MS, raceWithBudget } from './hoverBudget';
-import { jumpLog, jumpTimeStart } from './navigationLog';
+import { IndexScheduler, IndexTaskPriority } from '../indexScheduler';
+import { SemanticDependencyGraph } from '../dependencyGraph';
+import { INTERACTIVE_INDEX_WAIT_MS, raceWithBudget } from '../hoverBudget';
+import { jumpLog, jumpTimeStart } from '../navigationLog';
 import {
   recordLanguageServiceOperation,
   startLanguageServiceOperation
-} from './languageServiceMetrics';
+} from '../languageServiceMetrics';
 
 /**
  * Python 类层级索引(mixin/跨类跳转根因修复)。

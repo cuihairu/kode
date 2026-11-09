@@ -9,7 +9,7 @@ import { KBENGINE_ENTRY_HOOKS, isComponentEntryScriptFile } from '../entryHooks'
 import { DETAIL_LEVELS, KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, KBENGINE_TYPES } from '../kbengineMetadata';
 import { formatEntityBuiltinPropertyDetail, getEntityBuiltinPropertiesForFace, hasKnownEntityBuiltinPropertyType, resolveEntityComponentFaceFromPath, type EntityComponentFace } from '../backend/entityBuiltinProperties';
 import { PYTHON_TYPE_STUB_FALLBACK } from '../pythonTypeStubs';
-import { getPythonSelfCompletionContext } from '../pythonLanguageUtils';
+import { getPythonSelfCompletionContext } from '../backend/pythonLanguageUtils';
 import { filterKbeSymbols, getKbeAliases, getKbeCompletionContext, kbeCompletionDocumentation } from '../kbeModuleIndex';
 import { EngineApiCatalog } from '../engineApiMetadata';
 import { getEngineVersion } from '../engineVersion';

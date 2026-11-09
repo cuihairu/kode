@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { Uri } from './fake-vscode/core';
 import { makeTextDocument } from './fake-vscode/core';
 import { workspace as stubWorkspace } from './fake-vscode/workspaceState';
-import { PythonClassIndex } from '../src/pythonClassIndex';
+import { PythonClassIndex } from '../src/backend/pythonClassIndex';
 import {
   getLanguageServiceSummaryReport,
   getOperationSummary,
@@ -16,7 +16,7 @@ import {
 import {
   flushPendingDocumentReturnAnnotationsForTests,
   resolveLocalVariableReturnTypeFromSnapshot
-} from '../src/pythonReturnTypeInference';
+} from '../src/backend/pythonReturnTypeInference';
 
 // IDE-RST-009:Python 编辑查询四阶段耗时拆分——解析(document-parse,既有
 // PR1 打点)、提交(document-commit)、MRO(python-mro-resolve)、查询

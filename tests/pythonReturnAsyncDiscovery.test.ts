@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import * as path from 'path';
-import { collectProjectPythonFilesAsync, resetPythonReturnAnnotationCache, resolveLocalVariableReturnType, resolveLocalVariableReturnTypeFromSnapshot } from '../src/pythonReturnTypeInference';
+import { collectProjectPythonFilesAsync, resetPythonReturnAnnotationCache, resolveLocalVariableReturnType, resolveLocalVariableReturnTypeFromSnapshot } from '../src/backend/pythonReturnTypeInference';
 
 const { readdir, readFile } = vi.hoisted(() => ({ readdir: vi.fn(), readFile: vi.fn() }));
 vi.mock('fs', () => ({ promises: { readdir, readFile } }));

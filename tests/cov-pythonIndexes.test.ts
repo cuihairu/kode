@@ -20,13 +20,13 @@ import {
   resolveLocalVariableReturnType,
   resolveLocalVariableReturnTypeFromSnapshot,
   updateDocumentReturnAnnotationsAsync
-} from '../src/pythonReturnTypeInference';
+} from '../src/backend/pythonReturnTypeInference';
 import {
   clearRecentAnnotationSourceLogs,
   getRecentAnnotationSourceLogs,
   setAnnotationSourceLogEnabled
 } from '../src/annotationSourceLog';
-import { displayPath, linearizeC3, PythonClassIndex, type PythonClassDef } from '../src/pythonClassIndex';
+import { displayPath, linearizeC3, PythonClassIndex, type PythonClassDef } from '../src/backend/pythonClassIndex';
 import { IndexScheduler, type IndexTaskHandle, type IndexTaskSpec } from '../src/indexScheduler';
 import { clearRecentJumpLogs, getRecentJumpLogs, setJumpLogEnabled } from '../src/navigationLog';
 import {
@@ -53,8 +53,8 @@ import {
 const parseState = vi.hoisted(() => ({
   impl: undefined as undefined | ((...args: unknown[]) => Promise<unknown>)
 }));
-vi.mock('../src/pythonParserWorkerHost', async importOriginal => {
-  const actual = await importOriginal<typeof import('../src/pythonParserWorkerHost')>();
+vi.mock('../src/backend/pythonParserWorkerHost', async importOriginal => {
+  const actual = await importOriginal<typeof import('../src/backend/pythonParserWorkerHost')>();
   return {
     ...actual,
     parsePythonFileResponsive: (...args: unknown[]) =>

@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { recordLanguageServiceOperation } from './languageServiceMetrics';
-import { annotationSourceLog } from './annotationSourceLog';
+import { recordLanguageServiceOperation } from '../languageServiceMetrics';
+import { annotationSourceLog } from '../annotationSourceLog';
 import { maskPythonNonCode } from './pythonLexicalMask';
 
 /**

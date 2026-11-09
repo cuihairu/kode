@@ -55,7 +55,7 @@ describe('IDE-RST-010:Python R2b 决策记录', () => {
 
   it('worker 阈值代码锚点真实存在(暂缓理由的架构事实)', () => {
     const hostSource = readFileSync(
-      join(root, 'src', 'pythonParserWorkerHost.ts'), 'utf8'
+      join(root, 'src', 'backend', 'pythonParserWorkerHost.ts'), 'utf8'
     );
     expect(hostSource).toContain('PYTHON_WORKER_PARSE_THRESHOLD = 256 * 1024');
     const text = doc();

@@ -20,13 +20,13 @@ import { detectDualActivation, formatDualActivationWarning } from '../dualActiva
 import { execFile } from 'child_process';
 import { findFilesAcrossRoots } from '../scanRoots';
 import { getActiveOperationCounts } from '../languageServiceMetrics';
-import { getAnnotationBuildWorkload, getPendingDocumentUpdateCount, getReturnAnnotationCacheGauge } from '../pythonReturnTypeInference';
+import { getAnnotationBuildWorkload, getPendingDocumentUpdateCount, getReturnAnnotationCacheGauge } from '../backend/pythonReturnTypeInference';
 import { getDatabaseSchemaCacheGauge, getPendingTypeStorageColdBuildCount } from '../databaseSchema';
 import { getDefinitionWorkspaceLayout } from '../definitionWorkspace';
 import { getDiagnosticScheduler } from '../diagnosticScheduler';
 import { getIndexScanRoots } from '../scanRoots';
 import { getParsedDocumentCacheGauge } from '../backend/defParser';
-import { getPythonParserWorkerGauge } from '../pythonParserWorkerHost';
+import { getPythonParserWorkerGauge } from '../backend/pythonParserWorkerHost';
 import { hostLabel, renderExtensionIdentityReport, sideLabel } from '../extensionIdentity';
 import { joinWorkspacePath } from '../workspacePath';
 import { locateInterpreterOnPath, resolveInterpreterWith, resolveProfileInterpreter } from '../profileInterpreter';

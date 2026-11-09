@@ -8,7 +8,7 @@ import {
   resetPythonReturnAnnotationCache,
   resolveLocalVariableReturnType,
   setDocumentExtractionGateForTests
-} from '../src/pythonReturnTypeInference';
+} from '../src/backend/pythonReturnTypeInference';
 
 // IDE-REV-029(原 IDE-MET-008):注解索引重建在途量接入诊断报告——冷构建
 // 与 TTL 过期重建被门住时可见(running/waiting),全体等待者取消的归属面
@@ -148,7 +148,7 @@ describe('注解索引共享构建在途量(IDE-REV-029)', () => {
         })
     );
     // 请求独占的逐文件文档更新在途(排队即计入 REV-028 面)
-    const { queueDocumentReturnAnnotations } = await import('../src/pythonReturnTypeInference');
+    const { queueDocumentReturnAnnotations } = await import('../src/backend/pythonReturnTypeInference');
     queueDocumentReturnAnnotations(root, { fileKey: 'file:///a.py', version: 1, source: () => 'def f(): pass' });
     expect(getPendingDocumentUpdateCount()).toBe(1);
     // 共享构建量规不把独占任务混进来

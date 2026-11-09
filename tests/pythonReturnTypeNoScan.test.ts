@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { resetPythonReturnAnnotationCache, resolveLocalVariableReturnType } from '../src/pythonReturnTypeInference';
+import { resetPythonReturnAnnotationCache, resolveLocalVariableReturnType } from '../src/backend/pythonReturnTypeInference';
 
 vi.mock('fs', () => ({
   readdirSync: vi.fn(() => [{ name: 'source.py', isDirectory: () => false, isFile: () => true }]),

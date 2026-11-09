@@ -54,10 +54,10 @@
  * 照常演进,后续方法拿到"假设装载继续"的应然编号,供一次定位全部冲突;
  * loadFailed 与 issues 如实标注引擎真实结局。
  *
- * SRC-012 分片:渲染半边在 src/messageTableRender.ts,实体装配分派半边在
- * src/messageTableEntity.ts,引擎装载模拟半边(常量表 + ModuleAssembly +
+ * SRC-012 分片:渲染半边在 src/backend/messageTableRender.ts,实体装配分派半边在
+ * src/backend/messageTableEntity.ts,引擎装载模拟半边(常量表 + ModuleAssembly +
  * loadDefIntoModule/loadTypesXml/assignAliasIds 等)在
- * src/messageTableEngine.ts;本文件是类型词汇 + 两个构建入口(TS 纯实现与
+ * src/backend/messageTableEngine.ts;本文件是类型词汇 + 两个构建入口(TS 纯实现与
  * Rust 主路径)的枢纽,公开导入路径不变。
  */
 
@@ -430,7 +430,7 @@ export async function buildMessageTableInRust(
 }
 
 // ---------------------------------------------------------------------------
-// 渲染:人读 Markdown + 机读 JSON(SRC-012 迁 src/messageTableRender.ts)
+// 渲染:人读 Markdown + 机读 JSON(SRC-012 迁 src/backend/messageTableRender.ts)
 // ---------------------------------------------------------------------------
 
 export { renderMessageTableJson, renderMessageTableMarkdown } from './messageTableRender';

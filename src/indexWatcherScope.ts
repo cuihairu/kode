@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-import { PY_SCAN_EXCLUDED_DIRS } from './pythonScanRules';
+import { PY_SCAN_EXCLUDED_DIRS } from './backend/pythonScanRules';
 
 // KODE-PERF 重复扫描抑制:watchPythonIndex 在 workspace folders 变化与
 // assetsRoot/enableMroJump 配置变化两处被整组拆除重建。两类事件都可能重复

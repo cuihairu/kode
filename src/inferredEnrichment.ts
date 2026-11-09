@@ -12,7 +12,7 @@
  */
 
 import * as path from 'path';
-import { maskPythonNonCode } from './pythonLexicalMask';
+import { maskPythonNonCode } from './backend/pythonLexicalMask';
 
 /** 源 .py 在镜像里的相对路径（工作区相对路径，复用 mirrorPrefixFor 口径）。 */
 export function mirrorRelPathFor(

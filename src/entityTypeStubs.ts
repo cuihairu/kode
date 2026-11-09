@@ -21,7 +21,7 @@ import {
   kbeTypesModuleOfKey,
   resolveAnnotationTypeWithRegistry
 } from './pythonTypeStubs';
-import { PYTHON_FAMILY_BASE, inferPythonLiteralAnnotation } from './pythonLiteralTypes';
+import { PYTHON_FAMILY_BASE, inferPythonLiteralAnnotation } from './backend/pythonLiteralTypes';
 import {
   readStubSourceMode,
   STUB_SOURCE_MODE_GENERATED

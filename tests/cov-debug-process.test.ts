@@ -39,7 +39,7 @@ import {
   findPythonReceiverCallArguments,
   getPythonCallAtPosition,
   getPythonMemberAccessAtPosition
-} from '../src/pythonLanguageUtils';
+} from '../src/backend/pythonLanguageUtils';
 import type { TelnetTarget } from '../src/telnetService';
 import { configurationOverrides, fakeExtensionList } from './helpers/vscodeStub';
 import { makeSimComponentInfo } from './sim/machineSimulator';

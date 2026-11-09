@@ -1,5 +1,5 @@
 import { parentPort } from 'worker_threads';
-import { parsePythonFile } from './pythonParser';
+import { parsePythonFile } from './backend/pythonParser';
 
 interface ParseRequest {
   id: number;

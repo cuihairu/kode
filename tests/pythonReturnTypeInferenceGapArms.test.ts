@@ -16,10 +16,10 @@ import {
   resolveLocalVariableReturnTypeFromSnapshot,
   updateDocumentReturnAnnotations,
   updateDocumentReturnAnnotationsAsync
-} from '../src/pythonReturnTypeInference';
+} from '../src/backend/pythonReturnTypeInference';
 
 /**
- * Gap-arm coverage for src/pythonReturnTypeInference.ts (baseline uncovered
+ * Gap-arm coverage for src/backend/pythonReturnTypeInference.ts (baseline uncovered
  * statement start-lines 82, 173, 234, 294, 318, 373, 393, 585, 640, 659, 691,
  * 743, 746, 807, 948).
  *

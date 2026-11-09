@@ -92,7 +92,7 @@
 
 ## AUDIT-002 模块树、激活入口与组合根
 
-- 【事实】src/ 顶层 91 个 .ts 模块,共 46,366 行(不含 tests/,193 个测试文件)。最大单件:languageProviders.ts 4,681 行(全部语言 Provider 实现)、extension.ts 2,180 行(唯一入口 `activate()`,extension.ts:172)、entityMapping.ts 2,234、definitionWorkspace.ts 1,559、pythonClassIndex.ts 1,307。
+- 【事实】src/ 顶层 91 个 .ts 模块,共 46,366 行(不含 tests/,193 个测试文件)。最大单件:languageProviders.ts 4,681 行(全部语言 Provider 实现)、extension.ts 2,180 行(唯一入口 `activate()`,extension.ts:172)、entityMapping.ts 2,234、definitionWorkspace.ts 1,559、src/backend/pythonClassIndex.ts 1,307。
 - 【事实】组合根(单实例,均在 extension.ts 内 new):`IndexScheduler`(:354)→ `EntityMappingManager(context, indexScheduler)`(:356)→ 各 Provider 注入 manager;`PythonClassIndex(indexScheduler)`(definition provider 注册处,≈:459)激活即 `scheduleBackgroundScan()`。PR3/PR5 起 EntityMappingManager 首扫与 PythonClassIndex 文件发现均经 IndexScheduler 入队。
 - 【事实】Provider 注册清单(extension.ts):completion×2(:360 def+python 合选区、:619 python)、hover×2(:394 主 hover、:424 serverConfig hover)、definition×2(:433 .def/xml 导航、:459 python)、CodeLens×7(:513-:574、:1664)、InlayHints×2(:584、:594)。诊断走 DiagnosticScheduler(PR6)。无 registerReferenceProvider——引用面走命令 kbengine.symbolReferences.show。
 - 【事实】PR2-PR6 数据面/调度面:documentStore.ts(342 行)、indexScheduler.ts(422)、semanticIndex.ts(329)、dependencyGraph.ts(164)、diagnosticScheduler.ts(322),架构图见 docs/architecture/semantic-index.md。
@@ -118,7 +118,7 @@
 | 书中概念 | 实际名 | 路径:行 |
 |---|---|---|
 | EntityMappingManager | `EntityMappingManager` | src/entityMapping.ts:144 |
-| PythonClassIndex | `PythonClassIndex`(五轴版本:classes/bases/methods/mro/compositionRoots) | src/pythonClassIndex.ts:311 |
+| PythonClassIndex | `PythonClassIndex`(五轴版本:classes/bases/methods/mro/compositionRoots) | src/backend/pythonClassIndex.ts:311 |
 | type registry | `SemanticIndex` + `SemanticTypeRegistrySnapshot<T>` | src/semanticIndex.ts:70 |
 | composition root | src/compositionRoots.ts + PythonClassIndex rootsEpoch/赋值桥指纹 | src/compositionRoots.ts(287 行) |
 | definitionWorkspace | `DefinitionWorkspace`(文件级) | src/definitionWorkspace.ts |
@@ -132,7 +132,7 @@
 - 【事实】`fs.*Sync` 共 121 处,分布 25 个文件;Top:workspaceDiscovery.ts 17、generatorForms.ts 14、entityMapping.ts 10、codeGenerator.ts 9、pythonStubExport.ts 8、definitionWorkspace.ts 6、extension.ts 5、engineCompatibility.ts 5、debugConfigBootstrap.ts 5、serverManager.ts 4、logHub.ts 4、src/backend/defChain.ts 4、clientSdkGenerator.ts 4。
 - 【事实】`getText().split` 全文拆行残余 2 处热区外:languageProviders.ts:4063、eventApi.ts:81(documentStore.ts 内 3 处为注释/口径说明)。hover/inlay 高频路径已改快照行数据(PR2,7d8736b)。
 - 【事实】`statSync` 8 个文件:semanticIndex.ts:249、definitionWorkspace.ts:303、entityMapping.ts:306、scanRoots.ts:23、defCallChain.ts:240、quickActions.ts:774、serverManager.ts:405、logHub.ts:186。PR4 已废除逐次 statSync 类型指纹(类型注册表改纯内存快照)。
-- 【事实】`workspace.findFiles`/glob:scanRoots.ts 12、entityMapping.ts 9、hotReload.ts 7、languageProviders.ts 5、其余零散。`ensureScanned` 14 处引用全部在 pythonClassIndex.ts(PR5 后首查路径不再等全量,后台补全)。
+- 【事实】`workspace.findFiles`/glob:scanRoots.ts 12、entityMapping.ts 9、hotReload.ts 7、languageProviders.ts 5、其余零散。`ensureScanned` 14 处引用全部在 src/backend/pythonClassIndex.ts(PR5 后首查路径不再等全量,后台补全)。
 - 【已测】交互请求无全仓遍历:PR7 验收 §9.2 #5/#6 通过(docs/perf/2026-final-report.md §4)。
 
 ## AUDIT-007 四主请求真实调用链与等待点

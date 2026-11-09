@@ -183,7 +183,7 @@
   tests/, 193 test files). Largest pieces: languageProviders.ts 4,681 lines
   (all language provider implementations), extension.ts 2,180 lines (the only
   entry `activate()`, extension.ts:172), entityMapping.ts 2,234,
-  definitionWorkspace.ts 1,559, pythonClassIndex.ts 1,307.
+  definitionWorkspace.ts 1,559, src/backend/pythonClassIndex.ts 1,307.
 - 【Fact】Composition root (singletons, all new'd inside extension.ts):
   `IndexScheduler` (:354) → `EntityMappingManager(context, indexScheduler)`
   (:356) → providers injected with the manager; `PythonClassIndex(indexScheduler)`
@@ -263,7 +263,7 @@
 | Book concept | Actual name | Path:line |
 |---|---|---|
 | EntityMappingManager | `EntityMappingManager` | src/entityMapping.ts:144 |
-| PythonClassIndex | `PythonClassIndex` (five version axes: classes/bases/methods/mro/compositionRoots) | src/pythonClassIndex.ts:311 |
+| PythonClassIndex | `PythonClassIndex` (five version axes: classes/bases/methods/mro/compositionRoots) | src/backend/pythonClassIndex.ts:311 |
 | type registry | `SemanticIndex` + `SemanticTypeRegistrySnapshot<T>` | src/semanticIndex.ts:70 |
 | composition root | src/compositionRoots.ts + PythonClassIndex rootsEpoch/assignment-bridge fingerprint | src/compositionRoots.ts (287 lines) |
 | definitionWorkspace | `DefinitionWorkspace` (file-level) | src/definitionWorkspace.ts |
@@ -289,7 +289,7 @@
   fingerprint (type registry moved to pure in-memory snapshots).
 - 【Fact】`workspace.findFiles`/glob: scanRoots.ts 12, entityMapping.ts 9,
   hotReload.ts 7, languageProviders.ts 5, others scattered. All 14
-  `ensureScanned` references are in pythonClassIndex.ts (after PR5 the first
+  `ensureScanned` references are in src/backend/pythonClassIndex.ts (after PR5 the first
   query no longer waits for the full scan; background completion).
 - 【Tested】Interactive requests do no repo-wide traversal: PR7 acceptance
   §9.2 #5/#6 passed (docs/perf/2026-final-report.md §4).

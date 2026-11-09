@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import type { EntityMappingManager, EntityMethodDefinitionLocation } from './entityMapping';
 import { inferMethodSectionFromPythonFile } from './entityMapping';
-import { parsePythonFile } from './pythonParser';
+import { parsePythonFile } from './backend/pythonParser';
 import { resolveEntityAnnotationType, getWorkspaceRootForDocument } from './definitionWorkspace';
 import { PYTHON_TYPE_STUB_FALLBACK } from './pythonTypeStubs';
 

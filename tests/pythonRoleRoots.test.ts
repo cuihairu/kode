@@ -3,7 +3,7 @@ import {
   enforceRoleIsolation,
   findCrossRoleModuleCollisions,
   resolveRoleAnalysisRoots
-} from '../src/pythonRoleRoots';
+} from '../src/backend/pythonRoleRoots';
 import { planPythonExtraPaths } from '../src/pythonExtraPaths';
 
 // IDE-PRJ-006:按 base/cell 角色隔离 Python 分析根。KBEngine 服务端

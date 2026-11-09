@@ -35,7 +35,7 @@ import { runClientSdkGenerateCommand } from '../sdk-gen/clientSdkGenerator';
 import { runGeneratorFormWizard } from '../generatorForms';
 import type { EntityMappingManager } from '../entityMapping';
 import type { QuickActionManager } from '../quickActions';
-import type { PythonClassIndex } from '../pythonClassIndex';
+import type { PythonClassIndex } from '../backend/pythonClassIndex';
 
 export interface GeneratorsDeps {
   context: vscode.ExtensionContext;

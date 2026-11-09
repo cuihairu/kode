@@ -19,7 +19,7 @@ import {
   resetLanguageServiceMetrics
 } from '../../src/languageServiceMetrics';
 import { EntityMappingManager } from '../../src/entityMapping';
-import { PythonClassIndex, PY_SCAN_EXCLUDE } from '../../src/pythonClassIndex';
+import { PythonClassIndex, PY_SCAN_EXCLUDE } from '../../src/backend/pythonClassIndex';
 import {
   findFilesAcrossRoots,
   resetScanRootCache

@@ -5,7 +5,7 @@ import {
   receiverNoneDiagnosticItems,
   receiverNoneDiagnosticItemsAsync
 } from '../src/receiverNoneDiagnostics';
-import { parsePythonFile } from '../src/pythonParser';
+import { parsePythonFile } from '../src/backend/pythonParser';
 
 // USER-LINT-02(用户报 2026-11-04):注释形态漏屏蔽复现矩阵。用户实测「整行
 // 注释掉的 self.client 调用仍报 receiver-none Warning」。本矩阵锁定全部注释/

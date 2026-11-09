@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PYTHON_WORKER_PARSE_THRESHOLD } from '../src/pythonParserWorkerHost';
+import { PYTHON_WORKER_PARSE_THRESHOLD } from '../src/backend/pythonParserWorkerHost';
 
 // worker host 直接测试(审核发现 :185):此前只有同步 parsePythonFile 有测试,
 // 大文件 worker 路径、worker 崩溃(failPending)、dispose 停用、旧 revision 回包
@@ -60,12 +60,12 @@ vi.mock('fs', async importOriginal => {
   };
 });
 
-type HostModule = typeof import('../src/pythonParserWorkerHost');
+type HostModule = typeof import('../src/backend/pythonParserWorkerHost');
 
 const loadHost = async (): Promise<HostModule> => {
   vi.resetModules();
   workerState.instances.length = 0;
-  return import('../src/pythonParserWorkerHost');
+  return import('../src/backend/pythonParserWorkerHost');
 };
 
 const bigContent = 'x'.repeat(PYTHON_WORKER_PARSE_THRESHOLD + 1);
@@ -74,7 +74,7 @@ const parsedStub = {
   classes: [],
   imports: new Map(),
   instanceAssignments: []
-} as unknown as import('../src/pythonParser').ParsedPythonFile;
+} as unknown as import('../src/backend/pythonParser').ParsedPythonFile;
 
 afterEach(() => {
   workerState.existsProbe = undefined;

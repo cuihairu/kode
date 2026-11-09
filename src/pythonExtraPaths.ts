@@ -33,7 +33,7 @@ import {
   enforceRoleIsolation,
   findCrossRoleModuleCollisions,
   resolveRoleAnalysisRoots
-} from './pythonRoleRoots';
+} from './backend/pythonRoleRoots';
 
 export const PYTHON_EXTRA_PATHS_SETTING = 'python.analysis.extraPaths';
 export const PYTHON_EXTRA_PATHS_MANAGED_KEY = 'kbengine.python.extraPaths.managed';

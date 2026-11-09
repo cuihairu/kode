@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { performance } from 'perf_hooks';
 import { findFilesAcrossRoots, getExternalScanRoots } from './scanRoots';
-import { PY_SCAN_EXCLUDE } from './pythonScanRules';
+import { PY_SCAN_EXCLUDE } from './backend/pythonScanRules';
 import { getKbeAliases } from './kbeModuleIndex';
 
 // GLOBDATA-001(2026-10-30 用户令):KBEngine.globalData / baseAppData /

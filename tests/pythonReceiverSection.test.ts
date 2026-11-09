@@ -14,7 +14,7 @@ import {
 import {
   findPythonReceiverCalls,
   getPythonReceiverCallAtPosition
-} from '../src/pythonLanguageUtils';
+} from '../src/backend/pythonLanguageUtils';
 import { Position, Uri, makeTextDocument, workspace } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
 

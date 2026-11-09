@@ -5,7 +5,7 @@ import { Position, Uri } from './fake-vscode/core';
 import { workspace as stubWorkspace } from './fake-vscode/workspaceState';
 import { makeTextDocument } from './helpers/vscodeStub';
 import { EntityMappingManager } from '../src/entityMapping';
-import { PythonClassIndex } from '../src/pythonClassIndex';
+import { PythonClassIndex } from '../src/backend/pythonClassIndex';
 import { PythonDefinitionProvider } from '../src/languageProviders';
 import {
   clearRecentJumpLogs,

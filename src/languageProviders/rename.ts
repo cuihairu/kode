@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import { EntityMappingManager } from '../entityMapping';
 import { computeDefRenameEdits, findDefRenameConflict, findDefRenameConflictInClosure, getLineCharacterAtOffset, renameInputsDrifted, resolveRenameSymbolAtOffset, DefRenameFileEdits, RenameInputVersionRef } from '../backend/defRenamer';
 import { readSharedFileSnapshot } from '../sharedFileSnapshot';
-import { PYTHON_RECEIVER_BY_SECTION } from '../pythonLanguageUtils';
+import { PYTHON_RECEIVER_BY_SECTION } from '../backend/pythonLanguageUtils';
 export class KBEngineRenameProvider implements vscode.RenameProvider {
   /**
    * .def 属性/方法重命名(重构支持):符号解析与引用编辑计算在 defRenamer
