@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveSelfPropertyAnnotation } from '../src/selfPropertyTypeInference';
+import { resolveSelfPropertyAnnotation } from '../src/backend/selfPropertyTypeInference';
 import type { PythonSelfAccess } from '../src/backend/pythonLanguageUtils';
 
 // TYP-ARRAY:def 属性访问的类型推导与数组元素类型(2026-10-30 用户反馈

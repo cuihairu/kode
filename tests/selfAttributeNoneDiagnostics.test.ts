@@ -4,7 +4,7 @@ import {
   ATTRIBUTE_NONE_DIAGNOSTIC_CODE,
   attributeNoneDiagnosticItems,
   computeSelfAttributeNoneFindings
-} from '../src/selfAttributeNoneDiagnostics';
+} from '../src/backend/selfAttributeNoneDiagnostics';
 
 // LANG-NAR-1 诊断面:自管属性 self.<attr> 含 None 且未窄化的成员访问报 Warning;
 // 守卫/__init__ 赋值窄化后不报(镜像 receiverNone 判定语义)。

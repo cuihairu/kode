@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   analyzeTimerCleanupOnDestroy,
   TIMER_CLEANUP_ON_DESTROY_DIAGNOSTIC_CODE
-} from '../src/timerCleanupDiagnostics';
+} from '../src/backend/timerCleanupDiagnostics';
 
 // C-23 交付②第三条规则:onDestroy 内定时器注销(KBE-PY-017,数据源=
 // KB-001 生命周期 §Timers)。KB-001 事实:`destroy()` 即

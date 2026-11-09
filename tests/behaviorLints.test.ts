@@ -10,7 +10,7 @@ import {
   FIXED_DICT_NESTED_MUTATION_CODE,
   DESTROYED_ENTITY_REFERENCE_CODE,
   TIMER_LEAK_ON_DESTROY_CODE
-} from '../src/behaviorLints';
+} from '../src/backend/behaviorLints';
 import { maskPythonNonCode } from '../src/backend/pythonLexicalMask';
 import { parsePythonFile } from '../src/backend/pythonParser';
 import type { PropertyDefinitionInfo } from '../src/entityMapping';

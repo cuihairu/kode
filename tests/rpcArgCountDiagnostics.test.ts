@@ -4,7 +4,7 @@ import {
   RPC_ARG_COUNT_DIAGNOSTIC_CODE,
   computeRpcArgCountFindings,
   countCallArguments
-} from '../src/rpcArgCountDiagnostics';
+} from '../src/backend/rpcArgCountDiagnostics';
 import type { EntityMapping } from '../src/entityMapping';
 
 // IDE-LINT-008 验收(KBE-PY-009 诊断面):RPC 调用点顶层实参数与 .def 该方法

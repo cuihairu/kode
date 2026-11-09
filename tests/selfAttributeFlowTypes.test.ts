@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { inferSelfAttributeFlow } from '../src/selfAttributeFlowTypes';
+import { inferSelfAttributeFlow } from '../src/backend/selfAttributeFlowTypes';
 
 // LANG-NAR-1 语义引擎流敏感窄化(用户令 2026-11-02):自管属性 self.<attr> 的
 // 流敏感类型推导——`if self.X is None: self.X = expr` 后收窄为 expr 类型;

@@ -5,12 +5,12 @@ import { DEF_METHOD_MISSING_DIAGNOSTIC_CODE, KBENGINE_DEF_METHOD_CONSISTENCY_REV
 import { EntityMappingManager, EntityMethodSection } from '../entityMapping';
 import { buildPythonMethodSkeletonWithTypes, entityNameOfDefFile } from '../backend/defPythonParity';
 import { readSharedFileSnapshot } from '../sharedFileSnapshot';
-import { RECEIVER_NONE_DIAGNOSTIC_CODE, buildReceiverNoneGuardEdit, buildReceiverNoneWrapEdit } from '../receiverNoneDiagnostics';
+import { RECEIVER_NONE_DIAGNOSTIC_CODE, buildReceiverNoneGuardEdit, buildReceiverNoneWrapEdit } from '../backend/receiverNoneDiagnostics';
 import { KBEngineSectionName, METHOD_SECTIONS, getLanguageFeatureConfig, getNodeValue, parseDefAst } from './shared';
 import { UNKNOWN_TYPE_DIAGNOSTIC_CODE } from './validation';
 import { findDefSymbolInfo } from './navigation';
 import { FIXED_DICT_NESTED_MUTATION_CODE } from '../behaviorKnowledge';
-import { buildFixedDictWholeReassignEdit } from '../behaviorLints';
+import { buildFixedDictWholeReassignEdit } from '../backend/behaviorLints';
 import { findRegisteredTypeSuggestions, getKnownTypeContext } from './completion';
 export class KBEngineTypeCodeActionProvider implements vscode.CodeActionProvider {
   /**

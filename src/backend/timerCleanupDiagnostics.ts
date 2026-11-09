@@ -12,7 +12,7 @@
 // 块(缩进大于方法头且未低于方法头缩进闭合)内的 `self.delTimer(` 实语句;
 // 其他方法、注释同形、无 onDestroy 文件不报。
 
-import { l10nText } from './nlsRuntime';
+import { l10nText } from '../nlsRuntime';
 
 export const TIMER_CLEANUP_ON_DESTROY_DIAGNOSTIC_CODE = 'kbengine.timerCleanupOnDestroy';
 

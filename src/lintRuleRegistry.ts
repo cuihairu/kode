@@ -57,7 +57,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: 'base/cell/client',
     toggles: ['kbengine.receiverNoneDiagnostics'], trigger: '实时(open/edit)',
     quickFix: '包裹守卫/提前返回', status: 'implemented',
-    source: 'src/receiverNoneDiagnostics.ts'
+    source: 'src/backend/receiverNoneDiagnostics.ts'
   },
   {
     id: 'KBE-PY-003', code: 'kbengine.sectionMismatch',
@@ -65,7 +65,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: 'base/cell/client',
     toggles: ['kbengine.receiverNoneDiagnostics'], trigger: '实时(open/edit)',
     quickFix: false, status: 'implemented',
-    source: 'src/receiverNoneDiagnostics.ts'
+    source: 'src/backend/receiverNoneDiagnostics.ts'
   },
   {
     id: 'KBE-PY-011', code: 'kbengine.attributeNone',
@@ -73,7 +73,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: 'base/cell/client',
     toggles: ['kbengine.attributeNoneDiagnostics'], trigger: '实时(open/edit)',
     quickFix: false, status: 'implemented',
-    source: 'src/selfAttributeNoneDiagnostics.ts'
+    source: 'src/backend/selfAttributeNoneDiagnostics.ts'
   },
   {
     id: 'KBE-PY-012', code: 'kbengine.propertyDirectionViolation',
@@ -81,7 +81,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: 'base/cell/client',
     toggles: ['kbengine.propertyDirectionDiagnostics'], trigger: '实时(open/edit)',
     quickFix: false, status: 'implemented',
-    source: 'src/propertyDirectionDiagnostics.ts'
+    source: 'src/backend/propertyDirectionDiagnostics.ts'
   },
   {
     id: 'KBE-PY-012b', code: 'kbengine.propertyDirectionScopeUnknown',
@@ -89,7 +89,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Information', roles: 'base/cell/client',
     toggles: ['kbengine.propertyDirectionDiagnostics'], trigger: '实时(open/edit)',
     quickFix: false, status: 'implemented',
-    source: 'src/propertyDirectionDiagnostics.ts'
+    source: 'src/backend/propertyDirectionDiagnostics.ts'
   },
   {
     id: 'KBE-PY-013', code: 'kbengine.spaceNav',
@@ -97,7 +97,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: 'base/cell',
     toggles: ['kbengine.spaceNavDiagnostics'], trigger: '实时(open/edit)',
     quickFix: false, status: 'implemented',
-    source: 'src/spaceNavDiagnostics.ts'
+    source: 'src/backend/spaceNavDiagnostics.ts'
   },
   {
     id: 'KBE-PY-014', code: 'kbengine.startupScript',
@@ -113,7 +113,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: 'base/cell/client',
     toggles: ['kbengine.readOnlyWriteDiagnostics'], trigger: '实时(open/edit)',
     quickFix: false, status: 'implemented',
-    source: 'src/readOnlyWriteDiagnostics.ts'
+    source: 'src/backend/readOnlyWriteDiagnostics.ts'
   },
   // ── def/结构实时诊断(implemented)────────────────────────────────
   {
@@ -188,7 +188,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: '工作区配置(.kbengine/debug.json)',
     toggles: ['kbengine.configContractDiagnostics'],
     trigger: '实时(open/edit)', quickFix: false,
-    status: 'implemented', source: 'src/configContractDiagnostics.ts'
+    status: 'implemented', source: 'src/backend/configContractDiagnostics.ts'
   },
   {
     id: 'KBE-CFG-002', code: 'kbengine.configContract.debugTelnetPortMismatch',
@@ -196,7 +196,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: '工作区配置(.kbengine/debug.json)',
     toggles: ['kbengine.configContractDiagnostics'],
     trigger: '实时(open/edit)', quickFix: false,
-    status: 'implemented', source: 'src/configContractDiagnostics.ts'
+    status: 'implemented', source: 'src/backend/configContractDiagnostics.ts'
   },
   {
     id: 'KBE-CFG-003', code: 'kbengine.configContract.extraPathsDoubleUp',
@@ -204,7 +204,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: '工作区配置(.vscode/settings.json)',
     toggles: ['kbengine.configContractDiagnostics'],
     trigger: '实时(open/edit)', quickFix: false,
-    status: 'implemented', source: 'src/configContractDiagnostics.ts'
+    status: 'implemented', source: 'src/backend/configContractDiagnostics.ts'
   },
   {
     id: 'KBE-CFG-004', code: 'kbengine.configContract.gitignoreMissingKbengine',
@@ -212,7 +212,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: '工作区配置(.gitignore)',
     toggles: ['kbengine.configContractDiagnostics'],
     trigger: '实时(open/edit)', quickFix: false,
-    status: 'implemented', source: 'src/configContractDiagnostics.ts'
+    status: 'implemented', source: 'src/backend/configContractDiagnostics.ts'
   },
   {
     id: 'KBE-CFG-005', code: 'kbengine.configContract.telnetPasswordDocConflict',
@@ -220,7 +220,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: '工作区配置(文档↔debug.json 对账)',
     toggles: ['kbengine.configContractDiagnostics'],
     trigger: '实时(open/edit)', quickFix: false,
-    status: 'implemented', source: 'src/configContractDiagnostics.ts'
+    status: 'implemented', source: 'src/backend/configContractDiagnostics.ts'
   },
   {
     id: 'KBE-CFG-006', code: 'kbengine.configContract.extraPathsAbsolute',
@@ -228,7 +228,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: '工作区配置(.vscode/settings.json)',
     toggles: ['kbengine.configContractDiagnostics'],
     trigger: '实时(open/edit)', quickFix: false,
-    status: 'implemented', source: 'src/configContractDiagnostics.ts'
+    status: 'implemented', source: 'src/backend/configContractDiagnostics.ts'
   },
   // ── def 按需分析(implemented,非实时)────────────────────────────
   {
@@ -297,7 +297,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: 'base/cell/client',
     toggles: ['kbengine.roleMisuseDiagnostics'], trigger: '实时(open/edit)',
     quickFix: false, status: 'implemented',
-    source: 'src/roleMisuseDiagnostics.ts(属性面表取 entityBuiltinProperties.ts)'
+    source: 'src/backend/roleMisuseDiagnostics.ts(属性面表取 entityBuiltinProperties.ts)'
   },
   {
     id: 'KBE-PY-009', code: 'kbengine.rpcArgCount',
@@ -305,7 +305,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: 'base/cell/client',
     toggles: ['kbengine.rpcArgCountDiagnostics'], trigger: '实时(open/edit)',
     quickFix: false, status: 'implemented',
-    source: 'src/rpcArgCountDiagnostics.ts'
+    source: 'src/backend/rpcArgCountDiagnostics.ts'
   },
   {
     id: 'KBE-PY-010', code: 'kbengine.postDestroy',
@@ -313,7 +313,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: 'base/cell/client',
     toggles: ['kbengine.postDestroyDiagnostics'], trigger: '实时(open/edit)',
     quickFix: false, status: 'implemented',
-    source: 'src/postDestroyDiagnostics.ts'
+    source: 'src/backend/postDestroyDiagnostics.ts'
   },
   // ── KB-001 行为知识流水线(C-23,数据源=src/knowledge/trapsKnowledge.ts)
   {
@@ -322,7 +322,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: 'base/cell/client',
     toggles: ['kbengine.fixedDictMutationDiagnostics'], trigger: '实时(open/edit)',
     quickFix: '整体重赋习语', status: 'implemented',
-    source: 'src/fixedDictMutationDiagnostics.ts(发布 src/trapDiagnosticsWiring.ts)'
+    source: 'src/backend/fixedDictMutationDiagnostics.ts(发布 src/trapDiagnosticsWiring.ts)'
   },
   {
     id: 'KBE-PY-016', code: 'kbengine.destroyedEntityReference',
@@ -330,7 +330,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Warning', roles: 'base/cell/client',
     toggles: ['kbengine.destroyedEntityReferenceDiagnostics'], trigger: '实时(open/edit)',
     quickFix: false, status: 'implemented',
-    source: 'src/destroyedEntityCaptureDiagnostics.ts(发布 src/trapDiagnosticsWiring.ts)'
+    source: 'src/backend/destroyedEntityCaptureDiagnostics.ts(发布 src/trapDiagnosticsWiring.ts)'
   },
   {
     id: 'KBE-PY-017', code: 'kbengine.timerCleanupOnDestroy',
@@ -338,7 +338,7 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     severity: 'Information', roles: 'base/cell/client',
     toggles: ['kbengine.timerCleanupDiagnostics'], trigger: '实时(open/edit)',
     quickFix: false, status: 'implemented',
-    source: 'src/timerCleanupDiagnostics.ts(发布 src/trapDiagnosticsWiring.ts)'
+    source: 'src/backend/timerCleanupDiagnostics.ts(发布 src/trapDiagnosticsWiring.ts)'
   },
   // ── 待实现(pending)────────────────────────────────────────────
   {

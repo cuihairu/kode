@@ -1,13 +1,13 @@
-import type { EntityMapping } from './entityMapping';
-import { l10nText } from './nlsRuntime';
+import type { EntityMapping } from '../entityMapping';
+import { l10nText } from '../nlsRuntime';
 import {
   PYTHON_RECEIVER_SECTIONS,
   findPythonReceiverCalls,
   type PythonReceiverCall
-} from './backend/pythonLanguageUtils';
-import { parsePythonFile } from './backend/pythonParser';
-import { parsePythonFileResponsive } from './backend/pythonParserWorkerHost';
-import { maskPythonNonCode } from './backend/pythonLexicalMask';
+} from './pythonLanguageUtils';
+import { parsePythonFile } from './pythonParser';
+import { parsePythonFileResponsive } from './pythonParserWorkerHost';
+import { maskPythonNonCode } from './pythonLexicalMask';
 
 /**
  * receiver 可能为 None 的诊断(用户令 2026-10-27,任务1):

@@ -1,11 +1,11 @@
-import type { EntityMapping } from './entityMapping';
-import { l10nText } from './nlsRuntime';
+import type { EntityMapping } from '../entityMapping';
+import { l10nText } from '../nlsRuntime';
 import {
   PYTHON_RECEIVER_SECTIONS,
   findPythonReceiverCalls,
   type PythonReceiverCall
-} from './backend/pythonLanguageUtils';
-import { maskPythonNonCode } from './backend/pythonLexicalMask';
+} from './pythonLanguageUtils';
+import { maskPythonNonCode } from './pythonLexicalMask';
 
 /**
  * RPC 参数数量 lint(IDE-LINT-008,用户令 2026-11-06;KBE-PY-009 诊断面):

@@ -23,7 +23,7 @@
  * 开关: kbengine.spaceNavDiagnostics(默认开)。
  */
 
-import { l10nText } from './nlsRuntime';
+import { l10nText } from '../nlsRuntime';
 
 export const SPACE_NAV_DIAGNOSTIC_CODE = 'kbengine.spaceNav';
 export const SPACE_NAV_DIAGNOSTICS_ENABLED_DEFAULT = true;

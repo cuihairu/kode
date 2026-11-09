@@ -28,20 +28,20 @@ import {
   FIXED_DICT_NESTED_MUTATION_CODE,
   DESTROYED_ENTITY_REFERENCE_CODE,
   TIMER_LEAK_ON_DESTROY_CODE
-} from './behaviorKnowledge';
+} from '../behaviorKnowledge';
 
 /** 稳定诊断 code(knowledge 条目同源;消费方(extension/测试)从本模块取) */
 export {
   FIXED_DICT_NESTED_MUTATION_CODE,
   DESTROYED_ENTITY_REFERENCE_CODE,
   TIMER_LEAK_ON_DESTROY_CODE
-} from './behaviorKnowledge';
-import type { PropertyDefinitionInfo } from './entityMapping';
-import type { CustomTypeInfo } from './definitionWorkspace';
-import type { ParsedPythonFile } from './backend/pythonParser';
-import { maskPythonNonCode } from './backend/pythonLexicalMask';
-import { parsePythonFile } from './backend/pythonParser';
-import { FIXED_DICT_TYPE_NAME } from './kbengineMetadata';
+} from '../behaviorKnowledge';
+import type { PropertyDefinitionInfo } from '../entityMapping';
+import type { CustomTypeInfo } from '../definitionWorkspace';
+import type { ParsedPythonFile } from './pythonParser';
+import { maskPythonNonCode } from './pythonLexicalMask';
+import { parsePythonFile } from './pythonParser';
+import { FIXED_DICT_TYPE_NAME } from '../kbengineMetadata';
 
 /** 行为 lint 诊断项(纯数据;extension 侧转 vscode.Diagnostic) */
 export interface BehaviorLintFinding {

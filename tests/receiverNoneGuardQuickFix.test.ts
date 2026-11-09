@@ -9,7 +9,7 @@ import {
   buildReceiverNoneGuardEdit,
   buildReceiverNoneWrapEdit,
   receiverNoneDiagnosticItems
-} from '../src/receiverNoneDiagnostics';
+} from '../src/backend/receiverNoneDiagnostics';
 import {
   CodeActionKind,
   Diagnostic,

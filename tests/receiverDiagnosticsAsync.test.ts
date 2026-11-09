@@ -3,7 +3,7 @@ import { DiagnosticScheduler } from '../src/diagnosticScheduler';
 import {
   computeReceiverNoneFindings,
   computeReceiverNoneFindingsAsync
-} from '../src/receiverNoneDiagnostics';
+} from '../src/backend/receiverNoneDiagnostics';
 
 // IDE-DIA-005:大文件 receiver 诊断移出同步入口——计算分片让出宿主
 // (8,000 调用样本计算期间定时器仍能插进来),版本前进即中止返回 null

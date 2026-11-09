@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { countCallArguments } from '../src/rpcArgCountDiagnostics';
+import { countCallArguments } from '../src/backend/rpcArgCountDiagnostics';
 
 /**
  * IDE-LINT-008 补臂(countCallArguments 词法态剩余分支):

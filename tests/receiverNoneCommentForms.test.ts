@@ -4,7 +4,7 @@ import {
   computeReceiverNoneFindings,
   receiverNoneDiagnosticItems,
   receiverNoneDiagnosticItemsAsync
-} from '../src/receiverNoneDiagnostics';
+} from '../src/backend/receiverNoneDiagnostics';
 import { parsePythonFile } from '../src/backend/pythonParser';
 
 // USER-LINT-02(用户报 2026-11-04):注释形态漏屏蔽复现矩阵。用户实测「整行

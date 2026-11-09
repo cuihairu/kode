@@ -51,7 +51,7 @@ import { resolvePytestEntries, spawnTestProcess } from '../src/pythonTestRunner'
 import {
   computeReceiverNoneFindings,
   computeReceiverNoneFindingsAsync
-} from '../src/receiverNoneDiagnostics';
+} from '../src/backend/receiverNoneDiagnostics';
 import { parsePythonFile } from '../src/backend/pythonParser';
 import { DebugConfigManager } from '../src/debugConfig';
 import {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeSelfAttributeNoneFindings } from '../src/selfAttributeNoneDiagnostics';
+import { computeSelfAttributeNoneFindings } from '../src/backend/selfAttributeNoneDiagnostics';
 
 // KODE-PERF-002:消除流诊断平方级行号计算——旧码每匹配
 // `source.slice(0, match.index).split('\n').length - 1` 是 O(匹配数 × 文件长)

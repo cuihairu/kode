@@ -17,7 +17,7 @@
 // FIXED_DICT 判定(属性类型→types.xml 类型图)在调用方(wiring 层)
 // 完成,本模块只消费属性名集合。
 
-import { l10nText } from './nlsRuntime';
+import { l10nText } from '../nlsRuntime';
 
 export const FIXED_DICT_MUTATION_DIAGNOSTIC_CODE = 'kbengine.fixedDictNestedMutation';
 

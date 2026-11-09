@@ -6,7 +6,7 @@ import {
   analyzeFixedDictMutations,
   buildFixedDictWholeReassignText,
   FIXED_DICT_MUTATION_DIAGNOSTIC_CODE
-} from '../src/fixedDictMutationDiagnostics';
+} from '../src/backend/fixedDictMutationDiagnostics';
 
 const zh = zhCnBundle as Record<string, string>;
 

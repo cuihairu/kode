@@ -11,11 +11,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { CONFIG_CONTRACT_DIAGNOSTICS_ENABLED_DEFAULT, computeConfigContractFindings } from '../configContractDiagnostics';
-import { RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT, receiverNoneDiagnosticItemsAsync, type ReceiverDiagnosticItem } from '../receiverNoneDiagnostics';
-import { ATTRIBUTE_NONE_DIAGNOSTICS_ENABLED_DEFAULT, attributeNoneDiagnosticItems, ATTRIBUTE_NONE_DIAGNOSTIC_CODE } from '../selfAttributeNoneDiagnostics';
-import { SPACE_NAV_DIAGNOSTICS_ENABLED_DEFAULT, SPACE_NAV_DIAGNOSTIC_CODE, computeSpaceNavFindings } from '../spaceNavDiagnostics';
-import { RPC_ARG_COUNT_DIAGNOSTICS_ENABLED_DEFAULT, RPC_ARG_COUNT_DIAGNOSTIC_CODE, computeRpcArgCountFindings } from '../rpcArgCountDiagnostics';
+import { CONFIG_CONTRACT_DIAGNOSTICS_ENABLED_DEFAULT, computeConfigContractFindings } from '../backend/configContractDiagnostics';
+import { RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT, receiverNoneDiagnosticItemsAsync, type ReceiverDiagnosticItem } from '../backend/receiverNoneDiagnostics';
+import { ATTRIBUTE_NONE_DIAGNOSTICS_ENABLED_DEFAULT, attributeNoneDiagnosticItems, ATTRIBUTE_NONE_DIAGNOSTIC_CODE } from '../backend/selfAttributeNoneDiagnostics';
+import { SPACE_NAV_DIAGNOSTICS_ENABLED_DEFAULT, SPACE_NAV_DIAGNOSTIC_CODE, computeSpaceNavFindings } from '../backend/spaceNavDiagnostics';
+import { RPC_ARG_COUNT_DIAGNOSTICS_ENABLED_DEFAULT, RPC_ARG_COUNT_DIAGNOSTIC_CODE, computeRpcArgCountFindings } from '../backend/rpcArgCountDiagnostics';
 import { flowVersionKeyForDocument } from '../flowVersionKey';
 import {
   DEF_METHOD_MISSING_DIAGNOSTIC_CODE,
@@ -31,10 +31,10 @@ import {
   propertyDirectionDiagnosticItemsAsync,
   type PropertyDirectionDiagnosticItem,
   type PropertyDirectionHit,
-} from '../propertyDirectionDiagnostics';
-import { READONLY_WRITE_DIAGNOSTICS_ENABLED_DEFAULT, readOnlyWriteDiagnosticItemsAsync, type ReadOnlyWriteDiagnosticItem } from '../readOnlyWriteDiagnostics';
-import { ROLE_MISUSE_DIAGNOSTICS_ENABLED_DEFAULT, roleMisuseDiagnosticItemsAsync, type RoleMisuseDiagnosticItem } from '../roleMisuseDiagnostics';
-import { POST_DESTROY_DIAGNOSTICS_ENABLED_DEFAULT, postDestroyDiagnosticItemsAsync, type PostDestroyDiagnosticItem } from '../postDestroyDiagnostics';
+} from '../backend/propertyDirectionDiagnostics';
+import { READONLY_WRITE_DIAGNOSTICS_ENABLED_DEFAULT, readOnlyWriteDiagnosticItemsAsync, type ReadOnlyWriteDiagnosticItem } from '../backend/readOnlyWriteDiagnostics';
+import { ROLE_MISUSE_DIAGNOSTICS_ENABLED_DEFAULT, roleMisuseDiagnosticItemsAsync, type RoleMisuseDiagnosticItem } from '../backend/roleMisuseDiagnostics';
+import { POST_DESTROY_DIAGNOSTICS_ENABLED_DEFAULT, postDestroyDiagnosticItemsAsync, type PostDestroyDiagnosticItem } from '../backend/postDestroyDiagnostics';
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import { EntityMappingManager } from '../entityMapping';
 import { PythonClassIndex } from '../backend/pythonClassIndex';

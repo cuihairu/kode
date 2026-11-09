@@ -17,7 +17,7 @@ import {
   findRoleMisuseFindings,
   roleMisuseDiagnosticItemsAsync,
   ROLE_MISUSE_DIAGNOSTIC_CODE
-} from '../src/roleMisuseDiagnostics';
+} from '../src/backend/roleMisuseDiagnostics';
 import { getEntityBuiltinPropertiesForFace } from '../src/backend/entityBuiltinProperties';
 import type { EntityComponentFace } from '../src/backend/entityBuiltinProperties';
 

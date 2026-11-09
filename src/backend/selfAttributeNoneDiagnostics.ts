@@ -1,5 +1,5 @@
-import { maskPythonNonCode } from './backend/pythonLexicalMask';
-import { l10nText } from './nlsRuntime';
+import { maskPythonNonCode } from './pythonLexicalMask';
+import { l10nText } from '../nlsRuntime';
 import { inferSelfAttributeFlow, type SelfAttributeFlowOptions } from './selfAttributeFlowTypes';
 
 /**

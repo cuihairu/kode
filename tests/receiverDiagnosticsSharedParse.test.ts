@@ -6,7 +6,7 @@ import { PythonClassIndex } from '../src/backend/pythonClassIndex';
 import {
   computeReceiverNoneFindings,
   receiverNoneDiagnosticItems
-} from '../src/receiverNoneDiagnostics';
+} from '../src/backend/receiverNoneDiagnostics';
 import {
   getOperationSummary,
   resetLanguageServiceMetrics

@@ -22,7 +22,7 @@ import {
   CONFIG_CONTRACT_DIAGNOSTICS_ENABLED_DEFAULT,
   computeConfigContractFindings,
   type ConfigContractWorkspaceInput
-} from '../src/configContractDiagnostics';
+} from '../src/backend/configContractDiagnostics';
 
 /** 真实内网机口径的「配置正确」基线:任何单项变异都应恰好多出对应 finding */
 const cleanInput = (overrides: Partial<ConfigContractWorkspaceInput> = {}): ConfigContractWorkspaceInput => ({

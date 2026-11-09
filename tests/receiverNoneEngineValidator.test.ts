@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeReceiverNoneFindings } from '../src/receiverNoneDiagnostics';
+import { computeReceiverNoneFindings } from '../src/backend/receiverNoneDiagnostics';
 
 // USER-LINT-01(用户报 2026-11-04):`kbe.isValid(entityRef)` 是 KBEngine
 // 全局 API——实体引用有效(未销毁)返回 True,`isValid(None)`/无效引用返回

@@ -49,3 +49,11 @@ serverConfigMerge 被并发会话在编的 serverConfigResolve 引用,本批不�
   Cannot find module;重基脚本补该形态(并一并覆盖 vi.mock/vi.doMock/
   vi.importMock/importOriginal)。
 - 修后 9 失败文件 89/89 绿;全量门禁见提交前记录。
+- 全量 vitest 8387 过 / 3 失败=既有负载抖动族(hoverDeadlineContext 时间预算、
+  processTopologyPerf Rust RPC 5s 超时、typeStorageColdBuildPhased 深组件链),
+  隔离复跑 3 文件 21/21 绿;demo 25 RC=0;docs:build RC=0。
+- **提交 80d9e743**(2026-11-09 推 main):127 文件 275+/224-,并发会话面
+  (Cargo.lock/crates/**/configDerive/kbeModuleIndex/pythonStubExport/
+  serverConfigResolve 及对应 4 tests/_tmp_verify/wt/)零牵连零提交——4+4
+  排除件 diff 核验无任何批次 5 重基内容,src 侧 14 个未具名改动件逐一核验
+  纯 import 行改动。

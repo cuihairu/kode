@@ -7,10 +7,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setL10nBundle } from './fake-vscode/l10n';
 import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
-import { computeSelfAttributeNoneFindings } from '../src/selfAttributeNoneDiagnostics';
-import { findReadOnlyWriteFindings } from '../src/readOnlyWriteDiagnostics';
-import { computeSpaceNavFindings } from '../src/spaceNavDiagnostics';
-import { findPostDestroyFindings } from '../src/postDestroyDiagnostics';
+import { computeSelfAttributeNoneFindings } from '../src/backend/selfAttributeNoneDiagnostics';
+import { findReadOnlyWriteFindings } from '../src/backend/readOnlyWriteDiagnostics';
+import { computeSpaceNavFindings } from '../src/backend/spaceNavDiagnostics';
+import { findPostDestroyFindings } from '../src/backend/postDestroyDiagnostics';
 
 const zh = zhCnBundle as Record<string, string>;
 

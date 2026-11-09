@@ -2,7 +2,7 @@
 // Submodules live in ./languageProviders/; this file keeps the original import path
 // and re-exports the identical public surface.
 export { EventCodeLensProvider } from './eventApi';
-export { RECEIVER_NONE_DIAGNOSTIC_CODE } from './receiverNoneDiagnostics';
+export { RECEIVER_NONE_DIAGNOSTIC_CODE } from './backend/receiverNoneDiagnostics';
 export * from './languageProviders/reveal';
 export * from './languageProviders/shared';
 export * from './languageProviders/validation';

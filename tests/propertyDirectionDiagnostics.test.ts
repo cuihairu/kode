@@ -9,7 +9,7 @@ import {
   propertyDirectionDiagnosticItems,
   propertyDirectionDiagnosticItemsAsync,
   type PropertyDirectionHit
-} from '../src/propertyDirectionDiagnostics';
+} from '../src/backend/propertyDirectionDiagnostics';
 
 // GEN-DEF-1e ④:方向违规诊断(属性面)。纯函数,resolve 以 stub 替身注入
 // (与 provider 层的 resolvePropertyDefinitionInfo 回包同形),锁三态:

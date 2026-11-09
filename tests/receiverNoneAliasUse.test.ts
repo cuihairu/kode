@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   computeReceiverNoneFindings,
   receiverNoneDiagnosticItems
-} from '../src/receiverNoneDiagnostics';
+} from '../src/backend/receiverNoneDiagnostics';
 
 // IDE-LINT-006:receiver lint 覆盖本地别名使用点。peer = self.cell 之后
 // peer.send() 未判空报 Warning;判空 guard 正例不报;重赋值(含 for 重绑)

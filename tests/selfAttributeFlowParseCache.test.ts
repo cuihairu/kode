@@ -1,10 +1,10 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { computeSelfAttributeNoneFindings } from '../src/selfAttributeNoneDiagnostics';
+import { computeSelfAttributeNoneFindings } from '../src/backend/selfAttributeNoneDiagnostics';
 import {
   inferSelfAttributeFlow,
   resetSelfAttributeFlowParseCacheForTests,
   selfAttributeFlowParseCountForTests
-} from '../src/selfAttributeFlowTypes';
+} from '../src/backend/selfAttributeFlowTypes';
 
 // KODE-PERF-001 流敏感分析按文档版本建缓存:同文档版本(键=uri|version)的
 // 多次流查询——诊断/inlay 同版本共享——只解析一次 AST;版本递增/换文档

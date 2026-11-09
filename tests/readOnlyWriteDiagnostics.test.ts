@@ -15,7 +15,7 @@ import {
   findReadOnlyWriteFindings,
   readOnlyWriteDiagnosticItemsAsync,
   READONLY_WRITE_DIAGNOSTIC_CODE
-} from '../src/readOnlyWriteDiagnostics';
+} from '../src/backend/readOnlyWriteDiagnostics';
 import type { EntityComponentFace } from '../src/backend/entityBuiltinProperties';
 
 const find = (

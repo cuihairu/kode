@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildPropertyInitOrderLensSpecs,
   describePropertyInitOrderTitle
-} from '../src/propertyInitOrderLens';
+} from '../src/backend/propertyInitOrderLens';
 import { PropertyCodeLensProvider, resolvePropertyLandingLine } from '../src/languageProviders';
 import { EntityMappingManager } from '../src/entityMapping';
 import { configurationOverrides, makeTextDocument, Uri } from './helpers/vscodeStub';

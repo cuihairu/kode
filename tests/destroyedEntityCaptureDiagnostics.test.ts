@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   analyzeDestroyedEntityCaptures,
   DESTROYED_ENTITY_REFERENCE_DIAGNOSTIC_CODE
-} from '../src/destroyedEntityCaptureDiagnostics';
+} from '../src/backend/destroyedEntityCaptureDiagnostics';
 
 // C-23 交付②第二条规则:已销毁实体引用滞留(KBE-PY-016,数据源=KB-001
 // 生命周期/内存专题)。KB-001 事实:真正的引用隐患不是定时器(引擎 destroy

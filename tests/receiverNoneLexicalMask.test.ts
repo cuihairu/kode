@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   computeReceiverNoneFindings,
   receiverNoneDiagnosticItems
-} from '../src/receiverNoneDiagnostics';
+} from '../src/backend/receiverNoneDiagnostics';
 import {
   getPythonMaskPassCountForTests,
   resetPythonMaskPassCountForTests

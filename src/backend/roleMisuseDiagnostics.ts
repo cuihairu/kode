@@ -21,13 +21,13 @@
 // 补全元数据),不冒充已实现;`self.<prop>` 仅单段(self.cell.X 等多段访问
 // 不参与——那是 EntityCall 成员面,由 receiver/段错配负责)。
 
-import { maskPythonNonCode } from './backend/pythonLexicalMask';
-import { l10nText } from './nlsRuntime';
+import { maskPythonNonCode } from './pythonLexicalMask';
+import { l10nText } from '../nlsRuntime';
 import {
   getEntityBuiltinPropertiesForFace,
   resolveEntityComponentFaceFromPath,
   type EntityComponentFace
-} from './backend/entityBuiltinProperties';
+} from './entityBuiltinProperties';
 
 export const ROLE_MISUSE_DIAGNOSTIC_CODE = 'kbengine.roleMisuse';
 export const ROLE_MISUSE_DIAGNOSTICS_ENABLED_DEFAULT = true;

@@ -3,7 +3,7 @@ import {
   computeReceiverNoneFindings,
   getGuardPrefixScanCountForTests,
   resetGuardPrefixScanCountForTests
-} from '../src/receiverNoneDiagnostics';
+} from '../src/backend/receiverNoneDiagnostics';
 
 // IDE-DIA-004:按方法复用 receiver guard 分析——同方法同接收者的多处调用
 // 共享一次 guard 前缀扫描(候选行一次收集,逐调用只过闸判定),不再每个

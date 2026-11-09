@@ -8,7 +8,7 @@ import {
   resolveEntityFixedDictMember
 } from './definitionWorkspace';
 import { PYTHON_TYPE_STUB_FALLBACK, resolveAnnotationTypeWithReason } from './pythonTypeStubs';
-import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from './selfPropertyTypeInference';
+import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from './backend/selfPropertyTypeInference';
 import {
   findPythonReceiverCallArguments,
   type PythonReceiverCallWithArguments
@@ -22,7 +22,7 @@ import {
   queryDataDictSitesForAccess,
   resolveScopeRoot
 } from './globalDataIndex';
-import { inferSelfAttributeFlow } from './selfAttributeFlowTypes';
+import { inferSelfAttributeFlow } from './backend/selfAttributeFlowTypes';
 import { flowVersionKeyForDocument } from './flowVersionKey';
 
 // 批154(用户令 todo:7):types.xml 数据类型 inlay hints —— python 侧

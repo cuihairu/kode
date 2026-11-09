@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   computeReceiverNoneFindings,
   receiverNoneDiagnosticItems
-} from '../src/receiverNoneDiagnostics';
+} from '../src/backend/receiverNoneDiagnostics';
 import type { EntityMapping } from '../src/entityMapping';
 
 // receiver 可能为 None 诊断(用户令 2026-10-27 任务1):self.client/self.cell/

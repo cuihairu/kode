@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeReceiverNoneFindings } from '../src/receiverNoneDiagnostics';
+import { computeReceiverNoneFindings } from '../src/backend/receiverNoneDiagnostics';
 
 // IDE-LINT-004:别名证明随赋值与作用域失效。别名重赋值(含 guard 块内、
 // 循环体内)、self.<role> 属性重赋值、嵌套函数边界的跨越都不沿用旧 receiver

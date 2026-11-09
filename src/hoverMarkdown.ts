@@ -9,7 +9,7 @@ import {
   formatEntityBuiltinPropertyHeadline,
   type EntityBuiltinPropertyHit
 } from './backend/entityBuiltinProperties';
-import type { SelfPropertyResolved } from './selfPropertyTypeInference';
+import type { SelfPropertyResolved } from './backend/selfPropertyTypeInference';
 
 /** def 声明方法/接收者调用共用输入:receiver 有值 = 接收者调用面(标题带
  * 接收者段),无值 = 声明面;签名/声明行/Exposed 尾段两面同构。 */

@@ -22,15 +22,15 @@ import {
   analyzeFixedDictMutations,
   buildFixedDictWholeReassignText,
   FIXED_DICT_MUTATION_DIAGNOSTIC_CODE
-} from './fixedDictMutationDiagnostics';
+} from './backend/fixedDictMutationDiagnostics';
 import {
   analyzeDestroyedEntityCaptures,
   DESTROYED_ENTITY_REFERENCE_DIAGNOSTIC_CODE
-} from './destroyedEntityCaptureDiagnostics';
+} from './backend/destroyedEntityCaptureDiagnostics';
 import {
   analyzeTimerCleanupOnDestroy,
   TIMER_CLEANUP_ON_DESTROY_DIAGNOSTIC_CODE
-} from './timerCleanupDiagnostics';
+} from './backend/timerCleanupDiagnostics';
 
 /** 独立诊断集合名(extension.test 注册面对账) */
 export const TRAP_LINT_DIAGNOSTIC_COLLECTION = 'kbengine-trap-lints';

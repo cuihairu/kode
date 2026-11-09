@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeReceiverNoneFindings } from '../src/receiverNoneDiagnostics';
+import { computeReceiverNoneFindings } from '../src/backend/receiverNoneDiagnostics';
 
 // IDE-LINT-003:早退证明要求相关路径真正退出。嵌套条件内的 return(分支可
 // 不走)、字符串字面量/行尾注释里的 return/raise 都不算所有路径退出,仍报;

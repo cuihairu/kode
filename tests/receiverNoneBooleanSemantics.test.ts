@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeReceiverNoneFindings } from '../src/receiverNoneDiagnostics';
+import { computeReceiverNoneFindings } from '../src/backend/receiverNoneDiagnostics';
 
 // IDE-LINT-002:同行/复合条件按可靠布尔语义判定。`or` 不证明非 None 仍报;
 // 顶层 and 分句(含括号包裹)恰为接收者/`is not None` 才认;优先级(and 紧于

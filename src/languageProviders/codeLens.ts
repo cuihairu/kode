@@ -4,7 +4,7 @@ import { getDirectChildElements, getLineNumberAt, parseDefDocument } from '../ba
 import { EntityMappingManager } from '../entityMapping';
 import { buildRpcCodeLenses, defaultRpcCodeLensTitle, findPythonMethodDeclarations, RpcMethodHit } from '../rpcCodeLens';
 import { buildPropertyCodeLenses, findPythonSelfPropertyAccesses, propertyAccessKey, PropertyCodeLensHit } from '../propertyCodeLens';
-import { buildPropertyInitOrderLensSpecs } from '../propertyInitOrderLens';
+import { buildPropertyInitOrderLensSpecs } from '../backend/propertyInitOrderLens';
 import { getTypeStorageUsageIndexReadOnly, indexTypeStorageUsageEntries, onTypeStorageUsageIndexPublished, TypeStorageUsage } from '../databaseSchema';
 import { findEntityDefinitionFile, getDefinitionWorkspaceLayout, getWorkspaceRootForDocument, resolveEntityAnnotationType } from '../definitionWorkspace';
 import { getLineCharacterAtOffset } from '../backend/defRenamer';

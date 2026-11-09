@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   SPACE_NAV_DIAGNOSTIC_CODE,
   computeSpaceNavFindings
-} from '../src/spaceNavDiagnostics';
+} from '../src/backend/spaceNavDiagnostics';
 
 // SP-4: 空间/导航语义诊断(纯文本面,引擎取证):
 // 1) setSpaceData/delSpaceData 用保留键 _mapping → 引擎 AssertionError

@@ -15,9 +15,9 @@ import { apiDocDomainsForFace, formatApiDocHover, formatApiDocSupplement, getKbe
 import { currentHoverLanguageEnv, readHoverLanguageSetting, resolveHoverLanguage } from '../hoverLocale';
 import { resolveLocalVariableReturnTypeFromSnapshot } from '../backend/pythonReturnTypeInference';
 import { resolveAnnotationTypeWithReason } from '../pythonTypeStubs';
-import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from '../selfPropertyTypeInference';
+import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from '../backend/selfPropertyTypeInference';
 import { behaviorEntriesForSymbol, behaviorNotesMarkdown, fixedDictBehaviorNoteMarkdown } from '../behaviorKnowledge';
-import { isFixedDictTypeName } from '../behaviorLints';
+import { isFixedDictTypeName } from '../backend/behaviorLints';
 import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonCallAtPosition, type PythonCallAtPosition } from '../backend/pythonLanguageUtils';
 import { getKbeAliases, getKbeSymbol, resolveKbeAccessAtPosition } from '../kbeModuleIndex';
 import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, inferDataDictValueType, isKeyInsideLineComment, queryDataDictSitesForAccess, resolveScopeRoot } from '../globalDataIndex';

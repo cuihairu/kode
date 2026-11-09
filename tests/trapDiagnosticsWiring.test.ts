@@ -7,13 +7,13 @@ import {
 } from '../src/trapDiagnosticsWiring';
 import {
   FIXED_DICT_MUTATION_DIAGNOSTIC_CODE
-} from '../src/fixedDictMutationDiagnostics';
+} from '../src/backend/fixedDictMutationDiagnostics';
 import {
   DESTROYED_ENTITY_REFERENCE_DIAGNOSTIC_CODE
-} from '../src/destroyedEntityCaptureDiagnostics';
+} from '../src/backend/destroyedEntityCaptureDiagnostics';
 import {
   TIMER_CLEANUP_ON_DESTROY_DIAGNOSTIC_CODE
-} from '../src/timerCleanupDiagnostics';
+} from '../src/backend/timerCleanupDiagnostics';
 import {
   Position,
   Range,

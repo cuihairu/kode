@@ -1,4 +1,4 @@
-import { parsePythonFile, type ParsedPythonFile } from './backend/pythonParser';
+import { parsePythonFile, type ParsedPythonFile } from './pythonParser';
 
 /**
  * LANG-NAR-1 语义引擎流敏感窄化(用户令 2026-11-02):

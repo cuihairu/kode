@@ -15,7 +15,7 @@
 //   - 局部容器、非 self 实参、读操作(`in` 判断)、注释同形不报;
 //   - 闭包逃逸(`lambda: self`)与函数属性等面不分析,如实边界不冒充。
 
-import { l10nText } from './nlsRuntime';
+import { l10nText } from '../nlsRuntime';
 
 export const DESTROYED_ENTITY_REFERENCE_DIAGNOSTIC_CODE = 'kbengine.destroyedEntityReference';
 

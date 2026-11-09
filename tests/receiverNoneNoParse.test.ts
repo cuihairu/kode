@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import * as parser from '../src/backend/pythonParser';
-import { computeReceiverNoneFindings } from '../src/receiverNoneDiagnostics';
+import { computeReceiverNoneFindings } from '../src/backend/receiverNoneDiagnostics';
 
 vi.mock('../src/backend/pythonParser', { spy: true });
 

@@ -3,7 +3,7 @@ import {
   computeReceiverNoneFindings,
   getGuardBlockProbeCountForTests,
   resetGuardBlockProbeCountForTests
-} from '../src/receiverNoneDiagnostics';
+} from '../src/backend/receiverNoneDiagnostics';
 
 // 2026-10-28 审核整改(DIA-004 二次方残留):guard 候选记忆化之后,逐调用
 // 仍对每个候选重跑 blockContains/blockExits(从 guard 行扫到 use 行)——
