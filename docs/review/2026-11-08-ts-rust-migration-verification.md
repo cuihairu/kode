@@ -120,7 +120,7 @@
 | kbengine.python.ruffLint | utilityCommands.ts runRuffLintCommand → ruffLint.ts | `$/kode/ruff/lint` | ruff_lint.rs:26 | 默认即调 | Rust 失败报错；Rust 侧 spawn Ruff 外部工具，非 Rust 自实现解析 | kode-server lint_rules.rs、ruff 单测 | Rust 唯一实现（lint 执行腿；Ruff 本体仍外部工具） |
 | kbengine.python.showCallChain | TS 调用链（perfCallChainDoc 面） | — | — | 不涉 Rust | — | — | 未迁移 |
 | kbengine.clientSdk.generate | sdk-gen/clientSdkGenerator.ts generateClientSdkEntities → generateClientSdkInRust | `$/kode/sdk/generate` | client_sdk/mod.rs:36 | 默认先调 | null 回退 generateClientSdkEntitiesFallback；写入预检与输出编排仍 TS | kode-server dispatch + SDK 单测 | Rust 优先+TS 回退 |
-| kbengine.def.analyze | defAnalysisWiring.ts:23 → analyzeDefDocumentInRust | `$/kode/lint/analyzeDef` | lint/mod.rs:210 | 默认先调 | Rust 不可用回退 TS 分析 | kode-server lint_rules.rs、def 分析单测 | Rust 优先+TS 回退 |
+| kbengine.def.analyze | defAnalysisWiring.ts:23 → analyzeDefDocumentInRust | `$/kode/lint/analyzeDef` | lint/mod.rs:210 | 默认先调 | Rust 不可用回退 TS 分析 | kode-server lint_rules.rs、def 分析单测、**Rust↔TS 行为对拍**（tests/defAnalyzerRustParity.test.ts，真实 kode-server，2026-11-09） | Rust 优先+TS 回退 |
 | kbengine.symbolReferences.show | TS 引用面板 | — | — | 不涉 Rust | — | — | 未迁移 |
 | kbengine.runtimeQuery.show | TS telnet 查询面板 | — | — | 不涉 Rust | — | — | 未迁移 |
 | kbengine.liveObservation.openExceptionSource | TS | — | — | 不涉 Rust | — | — | 未迁移 |
@@ -234,7 +234,7 @@
 1. **hover 面最终形态**：✅ 已复核（2026-11-08）。该会话编辑落定为 04a3fada：服务轨道（serveFromRust，kodeCoreGate.ts:314 `mode==='rust' && serverPath!==''`）下语料 hover Rust 优先、TS 兜底重入；「serveFromRust 恒 false」的旧判词作废。语料面切换证据见 tests/kodeHoverServing.test.ts；Python API 文档面（lookupApiDoc）的切换判定见 E 表 apiDocs/lookup 行。
 2. **诊断收集族的自动触发面**：13 个 collection 的触发时机（保存/编辑/命令）本批只逐一核实了 collection 创建点与 Rust 触点，未逐一核实每个 collection 的调度入口；若某 TS collection 内部间接调用了上表 Rust 腿（如 def-analysis 产物），归类不变（其消费面已单列）。
 3. **kbengine.workbench.show 下游数据源**：面板本身 TS 已核实，但其内部数据请求是否间接经过 Rust 依赖图/调用图缓存未再向下追；需要证据：对 workbench webview 的消息处理函数逐个追调用链。
-4. **行为对拍/契约一致性**：本矩阵全部为静态接线证据。凡标 `Rust 优先+TS 回退` 的行，两条路径的输出是否一致、回退是否无感，本批未验证；需要证据：双路径对拍测试或真实环境验收（第四批 scanAnchors 已有六棵 golden 对拍属个例）。
+4. **行为对拍/契约一致性**：本矩阵全部为静态接线证据。凡标 `Rust 优先+TS 回退` 的行，两条路径的输出是否一致、回退是否无感，本批未验证；需要证据：双路径对拍测试或真实环境验收（第四批 scanAnchors 已有六棵 golden 对拍属个例）。**kbengine.def.analyze 已补对拍证据（2026-11-09）**：真实 kode-server 二进制跑 `$/kode/lint/analyzeDef` 与 TS `analyzeDefDocument` 对同 def 输入比对（合成 5 样本 + kbengine-demo-assets fixture 全 def），断言=每 TS finding 有 Rust 同位等价（同 check/severity/offset/length/name，无能力丢失）+ Rust-only 只出自受控超集规则 `missing-flags`/`unknown-type-reference`（Rust 更严，非丢失）；已知设计差异=heavy-sync-broadcast 行锚点不同（TS 锚属性节点行，Rust 锚 `<Flags>` 节点行，offset/length 一致）。其余 Rust 优先行（dependency/clientSdk/messagetable/discovery/databaseSchema/python symbols）仍待对拍。
 5. **dbClone/readArchiveRows 的直接消费方**：✅ 已核实（2026-11-09）。生产消费链 = `src/playerDataCloneCommands.ts:787`（`handleCloneImport` 的导入预演路径，非仅包装器）：`readCloneArchiveRows(path, deps.getKeyRoot())`（Rust RPC `$/kode/dbClone/readArchiveRows`，`src/playerDataCloneRust.ts:70`）→ 三态（no-gate/error/ok）分别提示或继续 → `rowsByTable = new Map(rowsCall.result.tables.map(t => [t.name, t.rows]))` → `uniqueValuesFromRows(rowsByTable, columnOrder, uniqueKeys)` → `probeExistingValues(connection, candidates)` → pass-2 `planCloneImport` 冲突预演。故该 RPC 是**导入预演的归档行读取腿**（唯一值候选源），非死 RPC，也不与 inspectArchive 同链路（inspectArchive 是归档元数据/清单面，readArchiveRows 是行数据面）。
 
 ### 结论
