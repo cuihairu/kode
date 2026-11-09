@@ -25,8 +25,8 @@ vi.mock('../src/serverConfigMerge', async importOriginal => {
   const actual = await importOriginal<typeof import('../src/serverConfigMerge')>();
   return { ...actual, resolveDatabaseInterfaceConfig: vi.fn() };
 });
-vi.mock('../src/databaseDrift', async importOriginal => {
-  const actual = await importOriginal<typeof import('../src/databaseDrift')>();
+vi.mock('../src/backend/databaseDrift', async importOriginal => {
+  const actual = await importOriginal<typeof import('../src/backend/databaseDrift')>();
   return { ...actual, createMysqlDriftExecutor: vi.fn() };
 });
 
@@ -47,7 +47,7 @@ import {
   type ExtensionContext
 } from './fake-vscode/core';
 import { ensureConfigDerivedScanRoot, getDerivedDatabaseProfile } from '../src/configDerive';
-import { createMysqlDriftExecutor, type DriftQueryExecutor } from '../src/databaseDrift';
+import { createMysqlDriftExecutor, type DriftQueryExecutor } from '../src/backend/databaseDrift';
 import { resolveDatabaseInterfaceConfig } from '../src/serverConfigMerge';
 
 const mockedProfile = vi.mocked(getDerivedDatabaseProfile);

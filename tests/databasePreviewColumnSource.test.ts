@@ -7,8 +7,8 @@ import { runTablePreviewCommand } from '../src/databaseTablePreviewCommand';
 import {
   createPreviewColumnSourceTableResolver,
   renderColumnSourceSection
-} from '../src/databasePreviewColumnSource';
-import type { TableSchemaDescriptor } from '../src/databaseSchemaCore';
+} from '../src/backend/databasePreviewColumnSource';
+import type { TableSchemaDescriptor } from '../src/backend/databaseSchemaCore';
 import { getRegisteredEntities } from '../src/definitionWorkspace';
 import { getDatabaseSchemaSnapshot } from '../src/databaseSchema';
 import { configurationOverrides, workspace } from './fake-vscode/workspaceState';

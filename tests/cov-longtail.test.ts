@@ -17,7 +17,7 @@ import {
   type DriftQueryExecutor,
   type MysqlModuleLike,
   type QueryResult
-} from '../src/databaseDrift';
+} from '../src/backend/databaseDrift';
 import type { DatabaseInterfaceConfig } from '../src/serverConfigMerge';
 import type { DatabaseSchemaSnapshot, TableFieldDescriptor } from '../src/databaseSchema';
 import { openSshTunnel, pickFreeLocalPort } from '../src/remoteConnection';

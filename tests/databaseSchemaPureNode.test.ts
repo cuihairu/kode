@@ -59,14 +59,14 @@ describe('databaseSchemaCore Node 隔离 (R2-F24)', () => {
     const adapter = collectTransitiveImports(path.join(SRC, 'databaseSchema.ts'));
     expect([...adapter.packageSpecs]).toContain('vscode');
 
-    const { packageSpecs, files } = collectTransitiveImports(path.join(SRC, 'databaseSchemaCore.ts'));
+    const { packageSpecs, files } = collectTransitiveImports(path.join(SRC, 'backend', 'databaseSchemaCore.ts'));
     // 闭包确实走起来了(不止入口自身,防走查空转假绿)
     expect(files.size).toBeGreaterThan(1);
     expect([...packageSpecs]).not.toContain('vscode');
   });
 
   it('普通 Node 动态导入后可运行纯推导与别名解析(注入 reader)', async () => {
-    const core = await import('../src/databaseSchemaCore');
+    const core = await import('../src/backend/databaseSchemaCore');
 
     const source = (p: string) => ({
       filePath: '/defs/entity_defs/Gold.def',

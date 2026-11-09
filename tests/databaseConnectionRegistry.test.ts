@@ -3,7 +3,7 @@ import {
   DatabaseConnectionRegistry,
   DatabaseQueryResultCache,
   type DatabaseConnectionConfigSnapshot
-} from '../src/databaseConnectionRegistry';
+} from '../src/backend/databaseConnectionRegistry';
 
 // IDE-DB-001 按 profile 选择只读数据库连接:连接配置与查询结果缓存都
 // 以 profileId 为主键隔离——切换项目后新 profile 读自己的配置,绝不

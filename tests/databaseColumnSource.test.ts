@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatColumnSourceDetail, linkResultColumnsToSources } from '../src/databaseColumnSource';
+import { formatColumnSourceDetail, linkResultColumnsToSources } from '../src/backend/databaseColumnSource';
 import type { TableSchemaDescriptor, TableFieldDescriptor } from '../src/databaseSchema';
 
 // IDE-DB-004 将结果列关联回 def/type 声明:查询结果列 → 虚拟 schema 字

@@ -6,7 +6,7 @@ import {
   DatabaseConnectionRegistry,
   DatabaseQueryResultCache,
   DEFAULT_QUERY_RESULT_TTL_MS
-} from '../src/databaseConnectionRegistry';
+} from '../src/backend/databaseConnectionRegistry';
 import type { DatabaseInterfaceConfig } from '../src/serverConfigMerge';
 import {
   ensureConfigResolved,

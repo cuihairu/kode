@@ -22,7 +22,7 @@ import {
   type DatabaseSchemaSnapshot,
   type PropertyDatabaseStorageInfo
 } from './databaseSchema';
-import type { TableFieldDescriptor } from './databaseSchemaCore';
+import type { TableFieldDescriptor } from './backend/databaseSchemaCore';
 
 export interface SimulatedRow {
   id: number;

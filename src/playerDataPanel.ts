@@ -16,7 +16,7 @@
 import * as vscode from 'vscode';
 
 import { ensureConfigDerivedScanRoot, getDerivedDatabaseProfile } from './configDerive';
-import { createMysqlDriftExecutor, type DriftQueryExecutor } from './databaseDrift';
+import { createMysqlDriftExecutor, type DriftQueryExecutor } from './backend/databaseDrift';
 import {
   buildConfigTreePair,
   resolveDatabaseInterfaceConfig,

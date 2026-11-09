@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { runReadOnlyQueryLifecycle } from '../src/databaseQueryLifecycle';
+import { runReadOnlyQueryLifecycle } from '../src/backend/databaseQueryLifecycle';
 
 // IDE-DB-003 为只读查询增加取消与超时:慢查询到点立即返回 timeout/
 // cancelled 态(不干等),但连接释放等底层结算后 close 恰一次——慢查

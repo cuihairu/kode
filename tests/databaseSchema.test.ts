@@ -13,7 +13,7 @@ import {
   resolveEntityTableName,
   resolveSchemaTablePrefix
 } from '../src/databaseSchema';
-import { buildMysqlTableSchemas, expandColumnNames } from '../src/databaseSchemaCore';
+import { buildMysqlTableSchemas, expandColumnNames } from '../src/backend/databaseSchemaCore';
 import {
   KBENGINE_DATABASE_SCHEMA_SCHEME,
   createDatabaseSchemaUri,
@@ -21,7 +21,7 @@ import {
 } from '../src/databaseSchemaPresentation';
 import { Uri, configurationOverrides, workspace as stubWorkspace } from './helpers/vscodeStub';
 import type { DatabaseSchemaSnapshot } from '../src/databaseSchema';
-import type { DefSourceRef, PersistentPropertyDescriptor } from '../src/databaseSchemaCore';
+import type { DefSourceRef, PersistentPropertyDescriptor } from '../src/backend/databaseSchemaCore';
 
 // databaseSchema 的导出函数段:Uri/文档识别、schema 文本渲染、行定位、
 // mysql 表生成与列展开,均不触 vscode 运行时(vscodeStub 兜住 Uri)。

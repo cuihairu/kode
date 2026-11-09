@@ -14,9 +14,9 @@ import {
   readTableColumns,
   type QueryColumnInfo,
   type QueryResult
-} from './databaseDrift';
-import { previewEntitySchemaImpact, type EntitySchemaImpact } from './databaseSchemaImpact';
-import type { TableSchemaDescriptor } from './databaseSchemaCore';
+} from './backend/databaseDrift';
+import { previewEntitySchemaImpact, type EntitySchemaImpact } from './backend/databaseSchemaImpact';
+import type { TableSchemaDescriptor } from './backend/databaseSchemaCore';
 import type { DatabaseInterfaceConfig } from './serverConfigMerge';
 
 /**

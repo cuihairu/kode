@@ -8,13 +8,13 @@
  * 原因如实报错返回,不退手输面。
  */
 
-import type { QueryResult } from './databaseDrift';
-import { previewTableData, type TablePreviewResult } from './databaseTablePreview';
+import type { QueryResult } from './backend/databaseDrift';
+import { previewTableData, type TablePreviewResult } from './backend/databaseTablePreview';
 import type { DatabaseInterfaceConfig } from './serverConfigMerge';
 import {
   renderColumnSourceSection,
   type ColumnSourceTableResolver
-} from './databasePreviewColumnSource';
+} from './backend/databasePreviewColumnSource';
 
 export interface TablePreviewConnection {
   runQuery(sql: string): Promise<QueryResult>;

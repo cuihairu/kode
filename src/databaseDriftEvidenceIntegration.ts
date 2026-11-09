@@ -11,8 +11,8 @@ import {
   classifyDriftEvidence,
   type DriftEvidenceRecord,
   type DriftEvidenceVerdict
-} from './databaseDriftEvidence';
-import type { DriftReport } from './databaseDrift';
+} from './backend/databaseDriftEvidence';
+import type { DriftReport } from './backend/databaseDrift';
 
 /** workspaceState 持久化键(与 DATABASE_CONNECTIONS_STATE_KEY 同形) */
 export const DRIFT_EVIDENCE_STATE_KEY = 'kbengine.databaseDriftEvidence.v1';

@@ -22,8 +22,8 @@ import {
   DATABASE_DRIFT_CHANNEL_NAME,
   publishDriftReport,
   type DriftReport
-} from './databaseDrift';
-import { classifyDriftEvidence, DriftEvidenceStore } from './databaseDriftEvidence';
+} from './backend/databaseDrift';
+import { classifyDriftEvidence, DriftEvidenceStore } from './backend/databaseDriftEvidence';
 import {
   DRIFT_EVIDENCE_STATE_KEY,
   formatDriftEvidenceSaveLine,
@@ -32,7 +32,7 @@ import {
   runShowDriftEvidenceCommand
 } from './databaseDriftEvidenceIntegration';
 import { runTablePreviewCommand } from './databaseTablePreviewCommand';
-import { createPreviewColumnSourceTableResolver } from './databasePreviewColumnSource';
+import { createPreviewColumnSourceTableResolver } from './backend/databasePreviewColumnSource';
 import { runSchemaImpactCommand } from './databaseSchemaImpactCommand';
 import {
   runConfigureCloneProfileCommand,
@@ -55,7 +55,7 @@ import { getEngineVersion } from './engineVersion';
 import { detectEngineVersionMarker, engineVersionSuggestion } from './engineVersionDetect';
 import { type DatabaseInterfaceConfig } from './serverConfigMerge';
 import { ensureConfigResolved } from './serverConfigResolve';
-import { DatabaseConnectionRegistry, DatabaseQueryResultCache } from './databaseConnectionRegistry';
+import { DatabaseConnectionRegistry, DatabaseQueryResultCache } from './backend/databaseConnectionRegistry';
 import {
   DATABASE_CONNECTIONS_STATE_KEY,
   ProfileDatabaseConnectionService,

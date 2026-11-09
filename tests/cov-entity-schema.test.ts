@@ -30,7 +30,7 @@ import {
   setTypeStorageUsageBackgroundDispatcher,
   type DatabaseSchemaSnapshot
 } from '../src/databaseSchema';
-import { aliasDigestInMap, parseTypeAliasesFromContent } from '../src/databaseSchemaCore';
+import { aliasDigestInMap, parseTypeAliasesFromContent } from '../src/backend/databaseSchemaCore';
 import {
   getWorkspaceIndexYieldCountForTests,
   resetWorkspaceIndexYieldClockForTests,

@@ -6,8 +6,8 @@ import {
   findDefinitionFileByCategory,
   findEntityDefinitionFile,
   getRegisteredEntities
-} from './definitionWorkspace';
-import { readSharedFileSnapshot } from './sharedFileSnapshot';
+} from '../definitionWorkspace';
+import { readSharedFileSnapshot } from '../sharedFileSnapshot';
 import type { SchemaSourcePorts } from './databaseSchemaCore';
 
 export function buildSchemaSourcePorts(): SchemaSourcePorts {

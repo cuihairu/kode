@@ -5,7 +5,7 @@ import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
 import type {
   DatabaseSchemaDerivationInput,
   TableSchemaDescriptor
-} from '../src/databaseSchemaCore';
+} from '../src/backend/databaseSchemaCore';
 
 // IDE-RUST-008 数据库表/列推导 Rust 核心接线:buildDatabaseTablesInRust 主路径经
 // 命令级 RPC($/kode/databaseSchema/build)调 Rust 核心;Rust 不可用(无 gate/

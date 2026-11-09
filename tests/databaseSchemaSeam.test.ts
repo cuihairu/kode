@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
-import { deriveDatabaseTables } from '../src/databaseSchemaCore';
+import { deriveDatabaseTables } from '../src/backend/databaseSchemaCore';
 
 // IDE-ARC-004 schema 三面拆分:①纯 schema 推导(databaseSchemaCore)——
 // deriveDatabaseTables 全管线(类型/解析/合并/建表)不 import vscode;
@@ -39,7 +39,7 @@ describe('schema 三面拆分(IDE-ARC-004)', () => {
   });
 
   it('core 模块不 import vscode(纯推导零 vscode 依赖)', () => {
-    const core = readFileSync(join(root, 'src/databaseSchemaCore.ts'), 'utf8');
+    const core = readFileSync(join(root, 'src/backend/databaseSchemaCore.ts'), 'utf8');
     expect(core.includes("from 'vscode'"), 'core 不得 import vscode').toBe(false);
     expect(core.includes('vscode.')).toBe(false);
   });
@@ -57,6 +57,6 @@ describe('schema 三面拆分(IDE-ARC-004)', () => {
     expect(adapter.includes('export function deriveDatabaseTables')).toBe(false);
     expect(adapter.includes('export class KBEngineDatabaseSchemaProvider')).toBe(false);
     expect(adapter.includes('export function createDatabaseSchemaUri')).toBe(false);
-    expect(adapter.includes("from './databaseSchemaCore'")).toBe(true);
+    expect(adapter.includes("from './backend/databaseSchemaCore'")).toBe(true);
   });
 });

@@ -12,7 +12,7 @@ import { getRootConfigGeneration } from './rootConfigGeneration';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import type { SharedFileVersionRef } from './sharedFileSnapshot';
 import { buildDatabaseTablesInRust } from './backend/databaseSchemaRust';
-import { buildSchemaSourcePorts } from './databaseSchemaSource';
+import { buildSchemaSourcePorts } from './backend/databaseSchemaSource';
 import {
   DB_TABLE_PREFIX,
   aliasDigestInMap,
@@ -37,7 +37,7 @@ import {
   type PersistentPropertyDescriptor,
   type TableFieldDescriptor,
   type TableSchemaDescriptor
-} from './databaseSchemaCore';
+} from './backend/databaseSchemaCore';
 
 export interface DatabaseSchemaSnapshot {
   backend: DatabaseBackend;
@@ -1156,11 +1156,11 @@ export {
   onTypeStorageUsageIndexPublished,
   replaceTypeStorageUsageForEntity,
   setTypeStorageUsageBackgroundDispatcher
-} from './databaseSchemaTypeStorage';
+} from './backend/databaseSchemaTypeStorage';
 export type {
   BackgroundSchemaTaskDispatcher,
   TypeStorageShape,
   TypeStorageUsage,
   TypeStorageUsageColdBuildOptions,
   TypeStorageUsageColdBuildOutcome
-} from './databaseSchemaTypeStorage';
+} from './backend/databaseSchemaTypeStorage';

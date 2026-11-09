@@ -11,7 +11,7 @@ import type {
   DatabaseSchemaDerivationInput,
   DatabaseSchemaDerivationResult,
   TableSchemaDescriptor
-} from '../databaseSchemaCore';
+} from './databaseSchemaCore';
 
 interface DatabaseSchemaRustResult {
   tables: TableSchemaDescriptor[];

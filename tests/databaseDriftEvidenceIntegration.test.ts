@@ -14,8 +14,8 @@ import {
   renderDriftEvidenceRecords,
   runShowDriftEvidenceCommand
 } from '../src/databaseDriftEvidenceIntegration';
-import { classifyDriftEvidence, type DriftEvidenceRecord } from '../src/databaseDriftEvidence';
-import type { DriftReport } from '../src/databaseDrift';
+import { classifyDriftEvidence, type DriftEvidenceRecord } from '../src/backend/databaseDriftEvidence';
+import type { DriftReport } from '../src/backend/databaseDrift';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { messages, windowState } from './fake-vscode/windowState';
 import { configurationOverrides, workspace } from './fake-vscode/workspaceState';

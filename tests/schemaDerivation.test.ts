@@ -7,7 +7,7 @@ import {
   deriveDatabaseTables,
   type DatabaseSchemaDerivationInput,
   type PersistentPropertyDescriptor
-} from '../src/databaseSchemaCore';
+} from '../src/backend/databaseSchemaCore';
 import { configurationOverrides } from './fake-vscode/workspaceState';
 
 // IDE-SCH-001:拆出不访问 VS Code 的 schema 推导函数——deriveDatabaseTables

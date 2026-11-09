@@ -10,16 +10,16 @@ import {
 import { readBuildCommit } from '../src/buildCommit';
 import { CompileallErrorParser } from '../src/buildProblemMatcher';
 import { buildScriptCheckTaskSpec } from '../src/buildTaskSpec';
-import { DatabaseConnectionRegistry } from '../src/databaseConnectionRegistry';
-import { assertReadOnlyStatement, ReadOnlyViolationError } from '../src/databaseDrift';
+import { DatabaseConnectionRegistry } from '../src/backend/databaseConnectionRegistry';
+import { assertReadOnlyStatement, ReadOnlyViolationError } from '../src/backend/databaseDrift';
 import { normalizeCallChainTab } from '../src/backend/defCallChainViewLogic';
 import { propertyFlagDomainList } from '../src/backend/defAnalyzer';
 import { writeFileAtomic } from '../src/atomicFileWrite';
 import { parseEntityNames } from '../src/compositionRoots';
-import { classifyDriftEvidence } from '../src/databaseDriftEvidence';
+import { classifyDriftEvidence } from '../src/backend/databaseDriftEvidence';
 import { recordDriftEvidenceFromReport } from '../src/databaseDriftEvidenceIntegration';
 import { invalidateDatabaseSchemaCacheForFiles } from '../src/databaseSchema';
-import { previewEntitySchemaImpact } from '../src/databaseSchemaImpact';
+import { previewEntitySchemaImpact } from '../src/backend/databaseSchemaImpact';
 import { resolveColumnValueType } from '../src/databaseSimulator';
 import {
   isCpuProfileRunning,

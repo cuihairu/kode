@@ -12,7 +12,7 @@ import {
   QueryTimeoutError,
   type QueryGuard
 } from '../src/databaseQueryLifecycleIntegration';
-import type { DriftConnectionFactory, DriftQueryExecutor, QueryResult } from '../src/databaseDrift';
+import type { DriftConnectionFactory, DriftQueryExecutor, QueryResult } from '../src/backend/databaseDrift';
 import { runTablePreviewCommand } from '../src/databaseTablePreviewCommand';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { messages, windowState } from './fake-vscode/windowState';

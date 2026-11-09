@@ -11,8 +11,8 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { randomNonce, webviewAssetUri, webviewScriptCsp } from './webviewSecurity';
 import { createDefinitionSemanticsLoader } from './definitionSemantics';
-import { resolveEntityHasCell } from './databaseSchemaCore';
-import { buildSchemaSourcePorts } from './databaseSchemaSource';
+import { resolveEntityHasCell } from './backend/databaseSchemaCore';
+import { buildSchemaSourcePorts } from './backend/databaseSchemaSource';
 import { getDefinitionWorkspaceLayout } from './definitionWorkspace';
 import {
   buildEntityFlowGraph,

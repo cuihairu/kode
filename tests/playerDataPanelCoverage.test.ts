@@ -18,14 +18,14 @@ vi.mock('../src/serverConfigMerge', async importOriginal => {
   const actual = await importOriginal<typeof import('../src/serverConfigMerge')>();
   return { ...actual, resolveDatabaseInterfaceConfig: vi.fn(), buildConfigTreePair: vi.fn() };
 });
-vi.mock('../src/databaseDrift', async importOriginal => {
-  const actual = await importOriginal<typeof import('../src/databaseDrift')>();
+vi.mock('../src/backend/databaseDrift', async importOriginal => {
+  const actual = await importOriginal<typeof import('../src/backend/databaseDrift')>();
   return { ...actual, createMysqlDriftExecutor: vi.fn() };
 });
 
 // 依赖 mock 后的模块(import 顺序须在 vi.mock 之后)
 import { ensureConfigDerivedScanRoot, getDerivedDatabaseProfile } from '../src/configDerive';
-import { createMysqlDriftExecutor, type DriftQueryExecutor, type QueryResult } from '../src/databaseDrift';
+import { createMysqlDriftExecutor, type DriftQueryExecutor, type QueryResult } from '../src/backend/databaseDrift';
 import { buildConfigTreePair, resolveDatabaseInterfaceConfig } from '../src/serverConfigMerge';
 import {
   PLAYER_DATA_CHANNEL_NAME,

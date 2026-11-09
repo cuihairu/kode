@@ -1,12 +1,12 @@
 import * as path from 'path';
-import { getDirectChildElement, getDirectChildElements, getScalarChildValue } from './backend/defParser';
-import { getDefinitionEntries } from './definitionWorkspace';
+import { getDirectChildElement, getDirectChildElements, getScalarChildValue } from './defParser';
+import { getDefinitionEntries } from '../definitionWorkspace';
 import { buildSchemaSourcePorts } from './databaseSchemaSource';
 import {
   buildDatabaseSchemaSnapshotAsync,
   getDatabaseSchemaSnapshot,
   type DatabaseSchemaSnapshot
-} from './databaseSchema';
+} from '../databaseSchema';
 import {
   normalizePath,
   parseTypeAliases,

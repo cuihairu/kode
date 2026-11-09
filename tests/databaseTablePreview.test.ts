@@ -4,8 +4,8 @@ import {
   MAX_PREVIEW_ROW_LIMIT,
   buildTablePreviewStatement,
   previewTableData
-} from '../src/databaseTablePreview';
-import { assertReadOnlyStatement } from '../src/databaseDrift';
+} from '../src/backend/databaseTablePreview';
+import { assertReadOnlyStatement } from '../src/backend/databaseDrift';
 
 // IDE-DB-002 提供单表只读数据预览:只执行白名单允许的查询(生成语句
 // 固定 SELECT…LIMIT 形状,执行前再过 databaseDrift 现有 assertReadOnly-

@@ -9,8 +9,8 @@
 import {
   runReadOnlyQueryLifecycle,
   type QueryLifecycleOptions
-} from './databaseQueryLifecycle';
-import type { ConnectionAbortHooks, DriftConnectionFactory, DriftQueryExecutor } from './databaseDrift';
+} from './backend/databaseQueryLifecycle';
+import type { ConnectionAbortHooks, DriftConnectionFactory, DriftQueryExecutor } from './backend/databaseDrift';
 
 /** 单条查询/建连超时:命令层据此展示「超时并已释放」的原因 */
 export class QueryTimeoutError extends Error {

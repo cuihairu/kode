@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { previewEntitySchemaImpact } from '../src/databaseSchemaImpact';
+import { previewEntitySchemaImpact } from '../src/backend/databaseSchemaImpact';
 import type { TableFieldDescriptor, TableSchemaDescriptor } from '../src/databaseSchema';
 
 // IDE-DB-005 提供单实体结构变更影响预览:before/after 两代虚拟 schema

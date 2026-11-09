@@ -4,7 +4,7 @@ import { panelRegistry, window as stubWindow } from './helpers/vscodeStub';
 import { windowState } from './fake-vscode/windowState';
 import { DatabaseManagementWebView } from '../src/databaseManagementWebView';
 import type { DatabaseInterfaceConfig } from '../src/serverConfigMerge';
-import type { DriftQueryExecutor } from '../src/databaseDrift';
+import type { DriftQueryExecutor } from '../src/backend/databaseDrift';
 import type { RedisSession } from '../src/redisDrift';
 import { formatRedisHashPreview } from '../src/redisKeySpace';
 

@@ -11,7 +11,7 @@ import {
   runTablePreviewCommand,
   type TablePreviewCommandDeps
 } from '../src/databaseTablePreviewCommand';
-import type { QueryResult } from '../src/databaseDrift';
+import type { QueryResult } from '../src/backend/databaseDrift';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { messages, windowState } from './fake-vscode/windowState';
 import { configurationOverrides, workspace, workspaceState } from './fake-vscode/workspaceState';

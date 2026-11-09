@@ -12,9 +12,9 @@ import {
   runSchemaImpactCommand,
   type SchemaImpactCommandDeps
 } from '../src/databaseSchemaImpactCommand';
-import { previewEntitySchemaImpact } from '../src/databaseSchemaImpact';
-import type { TableSchemaDescriptor } from '../src/databaseSchemaCore';
-import type { QueryResult } from '../src/databaseDrift';
+import { previewEntitySchemaImpact } from '../src/backend/databaseSchemaImpact';
+import type { TableSchemaDescriptor } from '../src/backend/databaseSchemaCore';
+import type { QueryResult } from '../src/backend/databaseDrift';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { messages, windowState } from './fake-vscode/windowState';
 import { configurationOverrides, workspace, workspaceState } from './fake-vscode/workspaceState';

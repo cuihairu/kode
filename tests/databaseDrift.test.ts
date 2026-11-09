@@ -16,13 +16,13 @@ import {
   publishDriftReport,
   ReadOnlyViolationError,
   renderDriftReport
-} from '../src/databaseDrift';
+} from '../src/backend/databaseDrift';
 import type {
   DriftChannelLike,
   DriftQueryExecutor,
   MysqlModuleLike,
   QueryResult
-} from '../src/databaseDrift';
+} from '../src/backend/databaseDrift';
 import type { DatabaseSchemaSnapshot, TableFieldDescriptor } from '../src/databaseSchema';
 import type { DatabaseInterfaceConfig } from '../src/serverConfigMerge';
 

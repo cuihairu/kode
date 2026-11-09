@@ -3,7 +3,7 @@ import {
   DriftEvidenceStore,
   classifyDriftEvidence,
   type DriftEvidenceRecord
-} from '../src/databaseDriftEvidence';
+} from '../src/backend/databaseDriftEvidence';
 
 // IDE-DB-006 按引擎版本保存 drift 联验证据:记录把「实际查询面」(真实
 // MySQL 查询所得)与「模拟 schema 面」(虚拟表结构推导)分开存,结论分

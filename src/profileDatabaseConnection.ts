@@ -17,8 +17,8 @@ import {
   DatabaseConnectionRegistry,
   DatabaseQueryResultCache,
   type DatabaseConnectionConfigSnapshot
-} from './databaseConnectionRegistry';
-import type { ConnectionAbortHooks, DriftConnectionFactory, QueryResult } from './databaseDrift';
+} from './backend/databaseConnectionRegistry';
+import type { ConnectionAbortHooks, DriftConnectionFactory, QueryResult } from './backend/databaseDrift';
 import {
   resolveDatabaseInterfaceConfig,
   type DatabaseInterfaceConfig

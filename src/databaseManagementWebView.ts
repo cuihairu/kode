@@ -15,8 +15,8 @@ import * as vscode from 'vscode';
 import {
   createMysqlDriftExecutor,
   type DriftQueryExecutor
-} from './databaseDrift';
-import { buildTablePreviewStatement, previewTableData } from './databaseTablePreview';
+} from './backend/databaseDrift';
+import { buildTablePreviewStatement, previewTableData } from './backend/databaseTablePreview';
 import { listPreviewTables } from './databaseTablePreviewCommand';
 import {
   openRedisSession,
