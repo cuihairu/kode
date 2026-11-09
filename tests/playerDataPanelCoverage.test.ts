@@ -16,7 +16,7 @@ vi.mock('../src/configDerive', async importOriginal => {
 });
 vi.mock('../src/serverConfigMerge', async importOriginal => {
   const actual = await importOriginal<typeof import('../src/serverConfigMerge')>();
-  return { ...actual, resolveDatabaseInterfaceConfig: vi.fn() };
+  return { ...actual, resolveDatabaseInterfaceConfig: vi.fn(), buildConfigTreePair: vi.fn() };
 });
 vi.mock('../src/databaseDrift', async importOriginal => {
   const actual = await importOriginal<typeof import('../src/databaseDrift')>();
@@ -26,7 +26,7 @@ vi.mock('../src/databaseDrift', async importOriginal => {
 // 依赖 mock 后的模块(import 顺序须在 vi.mock 之后)
 import { ensureConfigDerivedScanRoot, getDerivedDatabaseProfile } from '../src/configDerive';
 import { createMysqlDriftExecutor, type DriftQueryExecutor, type QueryResult } from '../src/databaseDrift';
-import { resolveDatabaseInterfaceConfig } from '../src/serverConfigMerge';
+import { buildConfigTreePair, resolveDatabaseInterfaceConfig } from '../src/serverConfigMerge';
 import {
   PLAYER_DATA_CHANNEL_NAME,
   PlayerDataTreeProvider,
@@ -44,6 +44,7 @@ import { windowState } from './fake-vscode/windowState';
 const mockedProfile = vi.mocked(getDerivedDatabaseProfile);
 const mockedEnsure = vi.mocked(ensureConfigDerivedScanRoot);
 const mockedResolve = vi.mocked(resolveDatabaseInterfaceConfig);
+const mockedPair = vi.mocked(buildConfigTreePair);
 const mockedCreate = vi.mocked(createMysqlDriftExecutor);
 
 /** 假只读执行器:记录查询与关闭,可脚本化失败。 */
@@ -91,12 +92,33 @@ const installExecutor = (): FakeExecutor => {
   return executor;
 };
 
+/** 最终合成配置全叶样例(用户令 2026-11-09:视图主真源=resolve dbInterface) */
+const finalConfig = (overrides: Record<string, unknown> = {}) => ({
+  host: '127.0.0.1',
+  port: 13306,
+  username: 'kbe',
+  databaseName: 'kbe',
+  encrypt: false,
+  characterSet: 'utf8mb4',
+  plainPassword: 'pw',
+  ...overrides
+});
+
+/** 元件配置在场(非 defaults-only)的树对样例 */
+const treePairWithCustom = () => ({
+  customTree: { name: 'root', text: '', children: [] },
+  defaultsTree: null,
+  customPath: '/assets/res/server/kbengine.xml',
+  defaultsPath: '/engine/kbe/res/server/kbengine_defaults.xml'
+});
+
 beforeEach(() => {
   vi.resetAllMocks();
   windowState.reset();
   configurationOverrides.clear();
   mockedProfile.mockReturnValue(mysqlProfile() as never);
-  mockedResolve.mockReturnValue({ plainPassword: 'pw' } as never);
+  mockedResolve.mockReturnValue(finalConfig() as never);
+  mockedPair.mockReturnValue(treePairWithCustom() as never);
   mockedEnsure.mockResolvedValue({ ok: true } as never);
 });
 
@@ -165,6 +187,8 @@ describe('PlayerDataTreeProvider(覆盖收口)', () => {
 
   it('无派生档案 → 任务入口仍可用 + 单节点「未找到数据库配置段」', () => {
     mockedProfile.mockReturnValue(null);
+    // 最终配置也无:两面皆空 = 真没有,面板如实降级单节点
+    mockedResolve.mockReturnValue(null as never);
     const provider = new PlayerDataTreeProvider();
     const nodes = provider.getChildren();
     // 任务入口(真实命令)不因无档案消失;档案区如实降级单节点
@@ -172,11 +196,76 @@ describe('PlayerDataTreeProvider(覆盖收口)', () => {
     expect(nodes[3].label).toContain('未找到数据库配置段');
     expect(nodes[0].command).toMatchObject({ command: 'kbengine.playerData.queryByDbid' });
   });
+
+  it('用户令 2026-11-09:最终配置优先于派生档案——面板与连接都以 resolve dbInterface 为准', () => {
+    // 派生缓存仍是旧默认(127.0.0.1:13306),最终配置已是部署真值(192.168.5.5):
+    // 面板展示与建连要素都必须跟最终配置走,不吃派生缓存旧值。
+    mockedResolve.mockReturnValue(
+      finalConfig({
+        host: '192.168.5.5',
+        port: 3306,
+        username: 'root',
+        databaseName: 'kode_demo',
+        plainPassword: 'pw-final'
+      }) as never
+    );
+    const provider = new PlayerDataTreeProvider();
+    const nodes = provider.getChildren();
+    const root = nodes[3];
+    expect(root.description).toBe('192.168.5.5:3306/kode_demo');
+    const children = root.children ?? [];
+    const byLabel = (label: string): string =>
+      String(children.find(child => child.label === label)?.description ?? '');
+    expect(byLabel('主机')).toBe('192.168.5.5');
+    expect(byLabel('账号')).toBe('root');
+    expect(byLabel('数据库')).toBe('kode_demo');
+    // 建连要素同源(不再派生 host + resolve 密码异源)
+    const executor = installExecutor();
+    return testPlayerDatabaseConnection().then(result => {
+      expect(result).toContain('连接成功');
+      expect(result).toContain('192.168.5.5:3306/kode_demo');
+      expect(mockedCreate.mock.calls[0][0]).toMatchObject({
+        host: '192.168.5.5',
+        port: 3306,
+        username: 'root',
+        databaseName: 'kode_demo',
+        plainPassword: 'pw-final'
+      });
+      expect(executor.closed).toBe(1);
+    });
+  });
+
+  it('用户令 2026-11-09:defaults-only 如实告警——引擎默认值不许装成最终配置', async () => {
+    mockedPair.mockReturnValue({
+      customTree: null,
+      defaultsTree: null,
+      customPath: null,
+      defaultsPath: null
+    } as never);
+    // 面板:描述带「引擎默认」标记,tooltip 注明未发现元件配置
+    const provider = new PlayerDataTreeProvider();
+    const nodes = provider.getChildren();
+    const root = nodes[3] as { description?: string; tooltip?: { value?: string } };
+    expect(root.description).toBe('127.0.0.1:13306/kbe(引擎默认)');
+    expect(root.tooltip?.value ?? '').toContain('未发现元件 kbengine.xml');
+    // 命令结果:连接成功/失败都追加 defaults-only 注意,不静默
+    const executor = installExecutor();
+    const okResult = await testPlayerDatabaseConnection();
+    expect(okResult).toContain('连接成功');
+    expect(okResult).toContain('注意:');
+    expect(okResult).toContain('kbengine_defaults.xml');
+    executor.queryError = new Error('ECONNREFUSED');
+    const failResult = await testPlayerDatabaseConnection();
+    expect(failResult).toContain('连接失败');
+    expect(failResult).toContain('注意:');
+  });
 });
 
 describe('testPlayerDatabaseConnection 全分支(覆盖收口)', () => {
   it('无派生档案 → 未测试如实降级,不建连', async () => {
     mockedProfile.mockReturnValue(null);
+    // 最终配置也无(resolve null):两面皆空 = 真没有,如实降级
+    mockedResolve.mockReturnValue(null as never);
     const result = await testPlayerDatabaseConnection();
     expect(result).toContain('未找到数据库配置段');
     expect(result).toContain('未测试');
@@ -185,7 +274,7 @@ describe('testPlayerDatabaseConnection 全分支(覆盖收口)', () => {
 
   it('encrypt 且无明文 → RSA 密文不解读,未测试', async () => {
     mockedProfile.mockReturnValue({ ...mysqlProfile(), encrypt: true } as never);
-    mockedResolve.mockReturnValue({} as never);
+    mockedResolve.mockReturnValue({ ...finalConfig(), encrypt: true, plainPassword: undefined } as never);
     const result = await testPlayerDatabaseConnection();
     expect(result).toContain('RSA 密文');
     expect(result).toContain('未测试');
@@ -246,12 +335,14 @@ describe('queryPlayerByDbid 全分支(覆盖收口)', () => {
 
   it('无派生档案 → 未查询如实降级', async () => {
     mockedProfile.mockReturnValue(null);
+    // 最终配置也无:两面皆空 = 真没有,如实降级
+    mockedResolve.mockReturnValue(null as never);
     expect(await queryPlayerByDbid('42')).toContain('未找到数据库配置段——未查询');
     expect(mockedCreate).not.toHaveBeenCalled();
   });
 
   it('明文不可读 → 未查询如实降级(不虚构连接)', async () => {
-    mockedResolve.mockReturnValue({} as never);
+    mockedResolve.mockReturnValue({ ...finalConfig(), plainPassword: undefined } as never);
     expect(await queryPlayerByDbid('42')).toContain('密码不可读');
     expect(await queryPlayerByDbid('42')).toContain('未查询');
     expect(mockedCreate).not.toHaveBeenCalled();

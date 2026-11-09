@@ -4,21 +4,28 @@
 // - 密码永不回显:树节点只有掩码/密文标记,断言不含任何明文字样;
 // - 只读查询 SQL:dbid 仅十进制正整数,表名前缀经反引号剥离;
 // - 派生不可用时如实降级(「未找到数据库配置段」),不虚构连接、不报错。
+//
+// 用户令 2026-11-09:连接要素一律以**最终合成配置**(resolve dbInterface)为
+// 主真源——视图锁 defaults-only 告警(引擎默认值不许装成最终配置)与
+// host/密码同源(不再派生 host + resolve 密码异源组合)。
 
 import { describe, beforeEach, expect, it } from 'vitest';
 
 import {
   buildPlayerDataTreeNodes,
+  buildPlayerDatabaseView,
   buildPlayerQuerySql,
+  PLAYER_DATABASE_DEFAULTS_ONLY_WARNING,
   testPlayerDatabaseConnection,
-  queryPlayerByDbid
+  queryPlayerByDbid,
+  type PlayerDatabaseView
 } from '../src/playerDataPanel';
 import { resetConfigDerivedScanRootForTests } from '../src/configDerive';
 import { resetRootConfigGenerationForTests } from '../src/rootConfigGeneration';
 import { configurationOverrides, workspace as stubWorkspace } from './fake-vscode/workspaceState';
 
-/** 有效派生档案样例(镜像 Rust derive_database 输出形态) */
-const profile = (overrides: Partial<Parameters<typeof buildPlayerDataTreeNodes>[0]> = {}) => ({
+/** 有效面板视图样例(镜像 buildPlayerDatabaseView 产物形态) */
+const view = (overrides: Partial<PlayerDatabaseView> = {}): PlayerDatabaseView => ({
   available: true,
   dbType: 'mysql',
   host: '127.0.0.1',
@@ -27,7 +34,7 @@ const profile = (overrides: Partial<Parameters<typeof buildPlayerDataTreeNodes>[
   databaseName: 'kbe',
   characterSet: 'utf8mb4',
   encrypt: true,
-  passwordAvailable: false,
+  defaultsOnly: false,
   ...overrides
 });
 
@@ -47,7 +54,7 @@ describe('CLONE-P5 玩家数据只读面板(骨架)', () => {
   });
 
   it('mysql 档案:连接要素齐全,密码只出掩码(永不出明文)', () => {
-    const nodes = buildPlayerDataTreeNodes(profile());
+    const nodes = buildPlayerDataTreeNodes(view());
     const iface = nodes[0];
     expect(iface.label).toContain('mysql');
     expect(iface.description).toBe('127.0.0.1:13306/kbe');
@@ -65,18 +72,36 @@ describe('CLONE-P5 玩家数据只读面板(骨架)', () => {
   });
 
   it('明文可读密码(encrypt=false):掩码「明文可读,仅连接用」——仍不出值', () => {
-    const nodes = buildPlayerDataTreeNodes(profile({ encrypt: false, passwordAvailable: true }));
+    const nodes = buildPlayerDataTreeNodes(view({ encrypt: false, plainPassword: 'pw-from-final-config' }));
     const children = nodes[0].children ?? [];
     const password = String(children.find(child => child.label === '密码')?.description ?? '');
     expect(password).toContain('●●●●●●');
     expect(password).toContain('明文可读');
+    expect(password).not.toContain('pw-from-final-config');
   });
 
   it('redis 类型如实标注(KODE-REDIS-UI-001:连接面支持双后端,不再仅展示)', () => {
-    const nodes = buildPlayerDataTreeNodes(profile({ dbType: 'redis' }));
+    const nodes = buildPlayerDataTreeNodes(view({ dbType: 'redis' }));
     expect(nodes[0].label).toContain('redis');
     // redis 已接入连接/预览面,不再标注「仅展示——连接面仅支持 mysql」
     expect(nodes[0].label).not.toContain('仅展示');
+  });
+
+  it('用户令 2026-11-09:defaults-only 如实标注——描述带「引擎默认」,来源注明缺元件配置', () => {
+    const nodes = buildPlayerDataTreeNodes(view({ defaultsOnly: true }));
+    const iface = nodes[0];
+    expect(iface.description).toBe('127.0.0.1:13306/kbe(引擎默认)');
+    const tooltip = String((iface.tooltip as { value?: string })?.value ?? iface.tooltip ?? '');
+    expect(tooltip).toContain('未发现元件 kbengine.xml');
+    expect(tooltip).toContain(PLAYER_DATABASE_DEFAULTS_ONLY_WARNING.slice(0, 20));
+    // 最终配置形态(非 defaults-only)不带告警
+    const finalNodes = buildPlayerDataTreeNodes(view({ defaultsOnly: false }));
+    expect(finalNodes[0].description).toBe('127.0.0.1:13306/kbe');
+    const finalTooltip = String(
+      (finalNodes[0].tooltip as { value?: string })?.value ?? finalNodes[0].tooltip ?? ''
+    );
+    expect(finalTooltip).toContain('最终合成配置');
+    expect(finalTooltip).not.toContain('未发现元件 kbengine.xml');
   });
 
   it('dbid 查询 SQL:仅十进制正整数;前缀缺省 tbl_,反引号剥除', () => {
@@ -98,5 +123,9 @@ describe('CLONE-P5 玩家数据只读面板(骨架)', () => {
 
   it('非法 dbid:查询前即拒绝(仅十进制正整数)', async () => {
     await expect(queryPlayerByDbid('4.2')).resolves.toContain('十进制正整数');
+  });
+
+  it('buildPlayerDatabaseView:双缓存全冷 → null(如实降级,不虚构)', () => {
+    expect(buildPlayerDatabaseView()).toBeNull();
   });
 });

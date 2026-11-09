@@ -2,8 +2,9 @@
  * CLONE-P5 骨架(用户令 2026-11-06):「玩家数据」专用**只读**面板。
  *
  * 硬约束(用户令,非建议):
- * - 不做通用 MySQL 客户端;界面**零编辑字段**——连接要素只来自引擎配置
- *   (Rust derive_database 单一真源),不接受任何手填/改写;
+ * - 不做通用 MySQL 客户端;界面**零编辑字段**——连接要素只来自引擎**最终
+ *   合成配置**(resolve dbInterface:defaults+元件 kbengine.xml 同键覆盖真值,
+ *   与引擎实跑同源;用户令 2026-11-09),不接受任何手填/改写;
  * - 只能查询:连接测试(SELECT 1)与按 dbid 查询玩家(只读 SELECT);
  *   一切查询经 databaseDrift 只读执行器(语句白名单 + READ ONLY 会话双保险);
  * - 密码永不回显:面板只显示掩码/密文标记;明文仅在连接期由
@@ -17,6 +18,7 @@ import * as vscode from 'vscode';
 import { ensureConfigDerivedScanRoot, getDerivedDatabaseProfile } from './configDerive';
 import { createMysqlDriftExecutor, type DriftQueryExecutor } from './databaseDrift';
 import {
+  buildConfigTreePair,
   resolveDatabaseInterfaceConfig,
   type DatabaseInterfaceConfig
 } from './serverConfigMerge';
@@ -84,12 +86,82 @@ export function readOnlyQueryConfigGate(
 }
 
 /**
+ * 连接档案面板视图(用户令 2026-11-09):连接要素一律以**最终合成配置**
+ * (resolve dbInterface,defaults+custom 同键覆盖真值)为准——引擎实跑读的
+ * 就是这份;Rust 派生档案(configDerive 缓存)只补 dbType,并在 core 不可知
+ * 时作如实回落。defaults+custom 两面缓存失效时机不同,主真源唯一后不再
+ * 出现「host 来自派生缓存、密码来自 resolve 缓存」的异源组合。
+ *
+ * defaultsOnly = 未发现元件 kbengine.xml(发现链 customTree 为空):此时
+ * 最终配置就是引擎默认值,连接大概率不通——如实标注,绝不装成实际连接值。
+ */
+export interface PlayerDatabaseView {
+  available: boolean;
+  dbType: string;
+  host: string;
+  port: number;
+  username: string;
+  databaseName: string;
+  encrypt: boolean;
+  characterSet: string;
+  /** 明文密码(仅 encrypt=false 时由 resolve 面提取;RSA 密文不解读) */
+  plainPassword?: string;
+  /** true = 未发现元件 kbengine.xml,当前值为引擎默认(非最终部署真值) */
+  defaultsOnly: boolean;
+}
+
+/** 面板视图装配(同步读两缓存;async 入口须先 ensureConfigDerivedScanRoot) */
+export function buildPlayerDatabaseView(): PlayerDatabaseView | null {
+  const final = resolveDatabaseInterfaceConfig();
+  if (final) {
+    const defaultsOnly = buildConfigTreePair().customTree === null;
+    const profile = getDerivedDatabaseProfile();
+    return {
+      available: true,
+      dbType: profile?.dbType || 'mysql',
+      host: final.host,
+      port: final.port,
+      username: final.username,
+      databaseName: final.databaseName,
+      encrypt: final.encrypt,
+      characterSet: final.characterSet,
+      plainPassword: final.plainPassword,
+      defaultsOnly
+    };
+  }
+  // resolve 无 dbInterface(core 不可知/RPC 失败):派生档案如实回落
+  // (密码不在派生面,plaintextUnavailable 由调用方按无密码处理)。
+  const profile = getDerivedDatabaseProfile();
+  if (!profile) {
+    return null;
+  }
+  return {
+    available: true,
+    dbType: profile.dbType,
+    host: profile.host,
+    port: profile.port,
+    username: profile.username,
+    databaseName: profile.databaseName,
+    encrypt: profile.encrypt,
+    characterSet: profile.characterSet,
+    defaultsOnly: true
+  };
+}
+
+/** defaults-only 告警文案(面板描述/tooltip 与命令结果共用,用户令:不许把
+ * 引擎默认值装成最终配置) */
+export const PLAYER_DATABASE_DEFAULTS_ONLY_WARNING =
+  '未发现元件 kbengine.xml,以上为引擎默认配置(kbengine_defaults.xml)而非最终合成配置;' +
+  '若实际部署使用自定义数据库地址,请把元件 kbengine.xml 放到 assetsRoot 的 res/server/ 下' +
+  '(或检查 kbengine.assetsRoot 设置)后重试。';
+
+/**
  * 连接档案节点(纯函数,便于单测):密码只出掩码标记,永不出值。
  */
 export function buildPlayerDataTreeNodes(
-  profile: ReturnType<typeof getDerivedDatabaseProfile>
+  view: PlayerDatabaseView | null
 ): PlayerDataNodeItem[] {
-  if (!profile) {
+  if (!view || !view.available) {
     return [
       {
         label: '未找到数据库配置段',
@@ -103,39 +175,44 @@ export function buildPlayerDataTreeNodes(
   }
   // KODE-REDIS-UI-001:连接面支持 mysql/redis 双后端;redis 的连接要素
   // 与 mysql 同源(引擎 dbInterface),仅键空间/预览走 redis 面。
-  const kind = profile.dbType === 'mysql' ? 'mysql' : profile.dbType === 'redis' ? 'redis' : `${profile.dbType}(未知)`;
-  const password = profile.encrypt
+  const kind = view.dbType === 'mysql' ? 'mysql' : view.dbType === 'redis' ? 'redis' : `${view.dbType}(未知)`;
+  const password = view.encrypt
     ? '●●●●●●(RSA 密文,不解读)'
-    : profile.passwordAvailable
+    : view.plainPassword
       ? '●●●●●●(明文可读,仅连接用)'
       : '(未配置)';
+  const sourceNote = view.defaultsOnly
+    ? `来源:引擎默认配置(未发现元件 kbengine.xml)——${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING}`
+    : '来源:最终合成配置(引擎 defaults + 元件 kbengine.xml 同键覆盖,只读)';
   return [
     {
       label: `${kind} default`,
-      description: `${profile.host}:${profile.port}/${profile.databaseName}`,
+      description: view.defaultsOnly
+        ? `${view.host}:${view.port}/${view.databaseName}(引擎默认)`
+        : `${view.host}:${view.port}/${view.databaseName}`,
       tooltip: new vscode.MarkdownString(
         [
           '```',
-          `type         ${profile.dbType}`,
-          `host         ${profile.host}`,
-          `port         ${profile.port}`,
-          `username     ${profile.username}`,
+          `type         ${view.dbType}`,
+          `host         ${view.host}`,
+          `port         ${view.port}`,
+          `username     ${view.username}`,
           `password     ${password}`,
-          `database     ${profile.databaseName}`,
-          `charset      ${profile.characterSet}`,
+          `database     ${view.databaseName}`,
+          `charset      ${view.characterSet}`,
           '```',
-          '来源:引擎配置(Rust derive_database 派生,只读)'
+          sourceNote
         ].join('\n')
       ),
       collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
       children: [
-        { label: '类型', description: profile.dbType },
-        { label: '主机', description: profile.host },
-        { label: '端口', description: String(profile.port) },
-        { label: '账号', description: profile.username },
+        { label: '类型', description: view.dbType },
+        { label: '主机', description: view.host },
+        { label: '端口', description: String(view.port) },
+        { label: '账号', description: view.username },
         { label: '密码', description: password },
-        { label: '数据库', description: profile.databaseName },
-        { label: '字符集', description: profile.characterSet }
+        { label: '数据库', description: view.databaseName },
+        { label: '字符集', description: view.characterSet }
       ]
     }
   ];
@@ -186,32 +263,32 @@ export class PlayerDataTreeProvider implements vscode.TreeDataProvider<PlayerDat
       /* 派生失败:面板如实降级为未找到 */
     });
     // 顶层 = 任务入口(004a)+ 连接档案;任务条目指向既有真实命令。
-    return [...buildPlayerDataTaskEntries().map(toItem), ...buildPlayerDataTreeNodes(getDerivedDatabaseProfile()).map(toItem)];
+    return [...buildPlayerDataTaskEntries().map(toItem), ...buildPlayerDataTreeNodes(buildPlayerDatabaseView()).map(toItem)];
   }
 }
 
-/** 派生档案 + 引擎明文密码 → 只读连接(密码只在此处聚合,不落任何日志/展示) */
+/** 最终配置视图 → 只读连接(密码只在此处聚合,不落任何日志/展示) */
 function buildConnectionConfig(): {
   config: DatabaseInterfaceConfig;
   plaintextUnavailable: boolean;
+  defaultsOnly: boolean;
 } | null {
-  const profile = getDerivedDatabaseProfile();
-  if (!profile) {
+  const view = buildPlayerDatabaseView();
+  if (!view) {
     return null;
   }
-  // 明文密码与派生档案同源(引擎配置):RSA 密文读不出明文 → undefined。
-  const plain = resolveDatabaseInterfaceConfig()?.plainPassword;
   return {
     config: {
-      host: profile.host,
-      port: profile.port,
-      username: profile.username,
-      databaseName: profile.databaseName,
-      encrypt: profile.encrypt,
-      characterSet: profile.characterSet,
-      plainPassword: plain
+      host: view.host,
+      port: view.port,
+      username: view.username,
+      databaseName: view.databaseName,
+      encrypt: view.encrypt,
+      characterSet: view.characterSet,
+      plainPassword: view.plainPassword
     },
-    plaintextUnavailable: !plain
+    plaintextUnavailable: !view.plainPassword,
+    defaultsOnly: view.defaultsOnly
   };
 }
 
@@ -229,9 +306,11 @@ export async function testPlayerDatabaseConnection(): Promise<string> {
   try {
     executor = await createMysqlDriftExecutor(built.config);
     await executor.runQuery('SELECT 1 AS ok');
-    return `连接成功(${built.config.host}:${built.config.port}/${built.config.databaseName},${Date.now() - startedAt}ms,只读会话)`;
+    const note = built.defaultsOnly ? `(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})` : '';
+    return `连接成功(${built.config.host}:${built.config.port}/${built.config.databaseName},${Date.now() - startedAt}ms,只读会话)${note}`;
   } catch (error) {
-    return `连接失败:${error instanceof Error ? error.message : String(error)}(只读降级,不影响其他功能)`;
+    const note = built.defaultsOnly ? `(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})` : '';
+    return `连接失败:${error instanceof Error ? error.message : String(error)}(只读降级,不影响其他功能)${note}`;
   } finally {
     await executor?.close().catch(() => {
       /* 关闭失败不掩盖主结果 */
@@ -270,6 +349,9 @@ export async function queryPlayerByDbid(dbid: string): Promise<string> {
     const result = await executor.runQuery(sql);
     const channel = vscode.window.createOutputChannel(PLAYER_DATA_CHANNEL_NAME);
     channel.appendLine(`[dbid ${dbid.trim()}] ${sql}`);
+    if (built.defaultsOnly) {
+      channel.appendLine(`(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})`);
+    }
     if (result.rows.length === 0) {
       channel.appendLine('(0 行——该 dbid 不存在或账号表为空)');
     }
@@ -277,9 +359,11 @@ export async function queryPlayerByDbid(dbid: string): Promise<string> {
       channel.appendLine(JSON.stringify(row));
     }
     channel.show();
-    return `查询完成:${result.rows.length} 行(结果见输出通道,只读)`;
+    const note = built.defaultsOnly ? `(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})` : '';
+    return `查询完成:${result.rows.length} 行(结果见输出通道,只读)${note}`;
   } catch (error) {
-    return `查询失败:${error instanceof Error ? error.message : String(error)}`;
+    const note = built.defaultsOnly ? `(注意:${PLAYER_DATABASE_DEFAULTS_ONLY_WARNING})` : '';
+    return `查询失败:${error instanceof Error ? error.message : String(error)}${note}`;
   } finally {
     await executor?.close().catch(() => {
       /* 关闭失败不掩盖主结果 */
