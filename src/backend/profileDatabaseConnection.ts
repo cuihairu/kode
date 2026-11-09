@@ -17,13 +17,13 @@ import {
   DatabaseConnectionRegistry,
   DatabaseQueryResultCache,
   type DatabaseConnectionConfigSnapshot
-} from './backend/databaseConnectionRegistry';
-import type { ConnectionAbortHooks, DriftConnectionFactory, QueryResult } from './backend/databaseDrift';
+} from './databaseConnectionRegistry';
+import type { ConnectionAbortHooks, DriftConnectionFactory, QueryResult } from './databaseDrift';
 import {
   resolveDatabaseInterfaceConfig,
   type DatabaseInterfaceConfig
-} from './serverConfigMerge';
-import { getConfigResolved, type ConfigResolveOverrides } from './serverConfigResolve';
+} from '../serverConfigMerge';
+import { getConfigResolved, type ConfigResolveOverrides } from '../serverConfigResolve';
 
 /** 无活动 profile 时的台账键:工作区设置链自己的连接(同样不与 profile 混) */
 export const WORKSPACE_DEFAULT_DATABASE_PROFILE_ID = 'workspace-default';

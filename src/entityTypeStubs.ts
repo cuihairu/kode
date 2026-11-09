@@ -32,7 +32,7 @@ import {
   runPyrightDiagnostics,
   summarizePyrightReport,
   type PyrightCommandRunner
-} from './pyrightStubGate';
+} from './backend/pyrightStubGate';
 import * as vscode from 'vscode';
 
 export const ENTITY_TYPE_STUB_FILE_NAME = 'entity_types.pyi';

@@ -21,7 +21,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { KBEngineTelnetClient, type TelnetClientEvents } from './telnetClient';
+import { KBEngineTelnetClient, type TelnetClientEvents } from './backend/telnetClient';
 import { resolveProfileInterpreter } from './profileInterpreter';
 import type { TelnetTarget } from './telnetService';
 import { killProcessTree, spawnProcess } from './backend/processManager';

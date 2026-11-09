@@ -5,7 +5,7 @@ import {
   KBENGINE_DEBUG_JSON_FILE_MATCH,
   buildKbengineDebugJsonSchema,
   kbengineDebugJsonSchema
-} from '../src/debugJsonSchema';
+} from '../src/backend/debugJsonSchema';
 import {
   HTTP_METHODS,
   QUICK_ACTION_TYPES,

@@ -65,7 +65,7 @@ import {
   installProfileDatabaseConnections,
   resolveProfileDatabaseInterfaceConfig,
   profileConfigResolveOverrides
-} from './profileDatabaseConnection';
+} from './backend/profileDatabaseConnection';
 
 export interface DatabaseWiringDeps {
   databaseSchemaProvider: KBEngineDatabaseSchemaProvider;

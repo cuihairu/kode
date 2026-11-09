@@ -10,7 +10,7 @@ import {
   stripAnsiEscapes,
   stripTelnetControl,
   TelnetClientState
-} from '../src/telnetClient';
+} from '../src/backend/telnetClient';
 
 // KBEngineTelnetClient 与引擎 telnet_server.cpp/telnet_handler.cpp 的对齐
 // 验证:真 TCP localhost 仿真服务端按引擎剧本发字节(欢迎横幅/password:

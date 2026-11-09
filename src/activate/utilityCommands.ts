@@ -11,7 +11,7 @@ import * as vscode from 'vscode';
 import { CUSTOM_SNIPPETS_RELATIVE_PATH, mergeSnippetEntry, selectionToSnippetBody } from '../snippetGenerator';
 import { DiscoveryKey, DiscoveryLayoutFacts, DiscoveryPromptDeps } from '../workspaceDiscovery';
 import { MergeSnippetResult } from '../snippetGenerator';
-import { RUFF_MAX_FILES, runInstallRuffCommand, runRuffLintCommand, RuffDiag } from '../ruffLint';
+import { RUFF_MAX_FILES, runInstallRuffCommand, runRuffLintCommand, RuffDiag } from '../backend/ruffLint';
 import { buildDefReferenceGraphFromFile, buildProjectDoctorReport, formatDefReferenceGraphPreview, formatProjectDoctorReport } from '../backend/defReferenceGraph';
 import { buildDiscoveryReport, renderDiscoveryReport, runWorkspaceDiscovery } from '../workspaceDiscovery';
 import { classifyPythonService, collectPythonServiceFacts, renderPythonServiceMessage } from '../pythonLanguageServiceStatus';

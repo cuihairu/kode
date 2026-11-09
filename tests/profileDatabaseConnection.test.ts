@@ -21,7 +21,7 @@ import {
   createProfileScopedDriftExecutor,
   databaseConnectionIdentityKey,
   resolveProfileDatabaseInterfaceConfig
-} from '../src/profileDatabaseConnection';
+} from '../src/backend/profileDatabaseConnection';
 import { configurationOverrides, workspace } from './fake-vscode/workspaceState';
 import { Uri } from './fake-vscode/core';
 

@@ -5,7 +5,7 @@ import {
   isCommandAllowed,
   KBEngineTelnetClient,
   TelnetClientState
-} from './telnetClient';
+} from './backend/telnetClient';
 import { expandWorkspacePlaceholders } from './backend/workspacePath';
 import {
   ensureConfigResolved,

@@ -16,7 +16,7 @@ import {
   PYRIGHT_CLI_CANDIDATES,
   type PyrightCommandRunner,
   type PyrightRunResult
-} from '../src/pyrightStubGate';
+} from '../src/backend/pyrightStubGate';
 import {
   channels,
   configurationOverrides,

@@ -17,7 +17,7 @@
  * - 结果读取诚实:len 查询发送后读输出尾行,读不到就说读不到。
  */
 
-import { BUILTIN_QUICK_COMMANDS, isCommandAllowed } from './telnetClient';
+import { BUILTIN_QUICK_COMMANDS, isCommandAllowed } from './backend/telnetClient';
 import { l10nText } from './nlsRuntime';
 
 export const BOTS_COUNT_COMMAND = 'len(KBEngine.bots)';

@@ -12,8 +12,8 @@
  * - 无 vscode import:UI/进程/诊断面全经 deps 注入(单测驱动纯编排)。
  */
 
-import { getKodeCoreShadowGate } from './backend/kodeCoreShadowFaces';
-import { l10nText } from './nlsRuntime';
+import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
+import { l10nText } from '../nlsRuntime';
 
 export type RustCall<T> =
   | { status: 'ok'; result: T }

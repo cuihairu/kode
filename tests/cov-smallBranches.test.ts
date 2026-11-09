@@ -68,7 +68,7 @@ import {
 import {
   createProfileScopedDriftExecutor,
   ProfileDatabaseConnectionService
-} from '../src/profileDatabaseConnection';
+} from '../src/backend/profileDatabaseConnection';
 import { resolveAssetsRootForWorkspace } from '../src/scanRoots';
 import {
   getOrParseDocumentSync,

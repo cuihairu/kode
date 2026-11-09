@@ -13,7 +13,7 @@
  */
 
 import * as vscode from 'vscode';
-import { BUILTIN_QUICK_COMMANDS } from './telnetClient';
+import { BUILTIN_QUICK_COMMANDS } from './backend/telnetClient';
 import { TelnetProbeState, TelnetService, TelnetTarget } from './telnetService';
 import { randomNonce, webviewScriptCsp } from './webviewSecurity';
 import { KODE_STATUS_COLORS, WEBVIEW_THEME_CSS, type KodeStatusLevel } from './webviewTheme';

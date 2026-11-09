@@ -8,7 +8,7 @@ import {
   RUFF_MAX_FILES,
   type RuffDiag,
   type RuffLintCommandDeps
-} from '../src/ruffLint';
+} from '../src/backend/ruffLint';
 import { setKodeCoreShadowGate, type KodeCoreGate } from '../src/backend/kodeCoreShadowFaces';
 
 // IDE-RUST-005 A 案:.py lint via ruff shell-out。本文件锁:
