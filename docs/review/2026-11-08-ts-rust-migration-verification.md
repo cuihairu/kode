@@ -235,7 +235,7 @@
 2. **诊断收集族的自动触发面**：13 个 collection 的触发时机（保存/编辑/命令）本批只逐一核实了 collection 创建点与 Rust 触点，未逐一核实每个 collection 的调度入口；若某 TS collection 内部间接调用了上表 Rust 腿（如 def-analysis 产物），归类不变（其消费面已单列）。
 3. **kbengine.workbench.show 下游数据源**：面板本身 TS 已核实，但其内部数据请求是否间接经过 Rust 依赖图/调用图缓存未再向下追；需要证据：对 workbench webview 的消息处理函数逐个追调用链。
 4. **行为对拍/契约一致性**：本矩阵全部为静态接线证据。凡标 `Rust 优先+TS 回退` 的行，两条路径的输出是否一致、回退是否无感，本批未验证；需要证据：双路径对拍测试或真实环境验收（第四批 scanAnchors 已有六棵 golden 对拍属个例）。
-5. **dbClone/readArchiveRows 的直接消费方**：该 RPC 的 TS 包装 readCloneArchiveRows 存在，但本批未逐行追认它在 clone 面板哪一步被调用（可能与 inspectArchive 同链路）；需要证据：readCloneArchiveRows 调用点的 file:line。
+5. **dbClone/readArchiveRows 的直接消费方**：✅ 已核实（2026-11-09）。生产消费链 = `src/playerDataCloneCommands.ts:787`（`handleCloneImport` 的导入预演路径，非仅包装器）：`readCloneArchiveRows(path, deps.getKeyRoot())`（Rust RPC `$/kode/dbClone/readArchiveRows`，`src/playerDataCloneRust.ts:70`）→ 三态（no-gate/error/ok）分别提示或继续 → `rowsByTable = new Map(rowsCall.result.tables.map(t => [t.name, t.rows]))` → `uniqueValuesFromRows(rowsByTable, columnOrder, uniqueKeys)` → `probeExistingValues(connection, candidates)` → pass-2 `planCloneImport` 冲突预演。故该 RPC 是**导入预演的归档行读取腿**（唯一值候选源），非死 RPC，也不与 inspectArchive 同链路（inspectArchive 是归档元数据/清单面，readArchiveRows 是行数据面）。
 
 ### 结论
 
