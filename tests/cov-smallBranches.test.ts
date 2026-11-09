@@ -8,8 +8,8 @@ import {
   setAnnotationSourceLogEnabled
 } from '../src/annotationSourceLog';
 import { readBuildCommit } from '../src/backend/buildCommit';
-import { CompileallErrorParser } from '../src/buildProblemMatcher';
-import { buildScriptCheckTaskSpec } from '../src/buildTaskSpec';
+import { CompileallErrorParser } from '../src/backend/buildProblemMatcher';
+import { buildScriptCheckTaskSpec } from '../src/backend/buildTaskSpec';
 import { DatabaseConnectionRegistry } from '../src/backend/databaseConnectionRegistry';
 import { assertReadOnlyStatement, ReadOnlyViolationError } from '../src/backend/databaseDrift';
 import { normalizeCallChainTab } from '../src/backend/defCallChainViewLogic';
@@ -55,7 +55,7 @@ import {
 import {
   describeLiveValidationStatus,
   type LiveValidationRegister
-} from '../src/liveValidationInputs';
+} from '../src/backend/liveValidationInputs';
 import { attachWithDeadline } from '../src/backend/debugAttachGuard';
 import {
   settleAppliedStatus,

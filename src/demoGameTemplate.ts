@@ -17,7 +17,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { ProjectTemplateEntry } from './projectTemplate';
+import type { ProjectTemplateEntry } from './backend/projectTemplate';
 
 /** 模板在扩展安装目录内的相对根(测试/产品同路径形态) */
 export const DEMO_GAME_TEMPLATE_RELATIVE_ROOT = 'templates/demo-game';

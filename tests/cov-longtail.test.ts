@@ -36,7 +36,7 @@ import type {
 import { LogHub, RuntimeLogLevel, type LogBatch } from '../src/backend/logHub';
 import { HttpRequestService } from '../src/backend/httpRequestService';
 import type { HttpRequestEntry } from '../src/backend/httpRequests';
-import { resolveLaunchOrder } from '../src/launchDependencies';
+import { resolveLaunchOrder } from '../src/backend/launchDependencies';
 import { SemanticIndex } from '../src/backend/semanticIndex';
 import { findFilesAcrossRoots, getIndexScanRoots, resetScanRootCache } from '../src/scanRoots';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';

@@ -3,8 +3,8 @@ import {
   createObservationFreshnessTracker,
   describeObservationFreshness,
   summarizeObservationFreshness
-} from '../src/observationConnectionState';
-import { observationTargetFor } from '../src/observationIdentity';
+} from '../src/backend/observationConnectionState';
+import { observationTargetFor } from '../src/backend/observationIdentity';
 import { RuntimeQueryWebView, type RuntimeQueryProtocol } from '../src/runtimeQueryWebView';
 import type { KBEngineComponentInfo, SpaceQueryResult, WatcherQueryResult } from '../src/backend/kbengineProtocol';
 import { Uri, type ExtensionContext } from './fake-vscode/core';

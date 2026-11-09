@@ -14,8 +14,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { buildProjectCreationPreviewItems, listMinimalProjectTemplate, planProjectCreation } from './projectTemplate';
-import type { ProjectTemplateEntry } from './projectTemplate';
+import { buildProjectCreationPreviewItems, listMinimalProjectTemplate, planProjectCreation } from './backend/projectTemplate';
+import type { ProjectTemplateEntry } from './backend/projectTemplate';
 import { loadDemoGameTemplateEntries } from './demoGameTemplate';
 import { confirmGenerationPlanItems } from './generationConfirm';
 import { writeFileAtomic } from './backend/atomicFileWrite';

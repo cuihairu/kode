@@ -10,12 +10,12 @@
  */
 
 import * as vscode from 'vscode';
-import { KBE_COMPILEALL_MATCHER_NAME } from './buildProblemMatcher';
+import { KBE_COMPILEALL_MATCHER_NAME } from './backend/buildProblemMatcher';
 import {
   buildScriptCheckTaskSpec,
   type BuildTaskSpec,
   type BuildTaskSpecInput
-} from './buildTaskSpec';
+} from './backend/buildTaskSpec';
 
 /** 任务源名(任务列表「源」列) */
 export const BUILD_TASK_SOURCE = 'kode';

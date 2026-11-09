@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   resolveEntityTypeStubSource,
   resolvePythonTypeStubSource
-} from '../src/generatedSourceMap';
+} from '../src/backend/generatedSourceMap';
 import { buildPythonTypeStubLineMap } from '../src/pythonTypeStubs';
 import { buildEntityTypeStubLineMap } from '../src/entityTypeStubs';
 import type { EntityTypeStubEntry } from '../src/entityTypeStubs';

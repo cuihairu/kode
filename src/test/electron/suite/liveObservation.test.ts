@@ -42,11 +42,11 @@ import {
   observationTargetFor,
   observationsFromRound,
   describeObservationTarget
-} from '../../../observationIdentity';
+} from '../../../backend/observationIdentity';
 import {
   createObservationFreshnessTracker,
   describeObservationFreshness
-} from '../../../observationConnectionState';
+} from '../../../backend/observationConnectionState';
 import {
   formatUnresolvedException,
   parseExceptionSourceLocation,

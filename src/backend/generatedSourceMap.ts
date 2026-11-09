@@ -1,11 +1,11 @@
 import type {
   EntityTypeStubEntry,
   EntityTypeStubLineMap
-} from './entityTypeStubs';
+} from '../entityTypeStubs';
 import type {
   PythonTypeStubEntry,
   PythonTypeStubLineMap
-} from './pythonTypeStubs';
+} from '../pythonTypeStubs';
 
 export interface GeneratedSourceLocation {
   origin: string;

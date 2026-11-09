@@ -7,7 +7,7 @@ import {
   buildProjectCreationPreviewItems,
   listMinimalProjectTemplate,
   planProjectCreation
-} from '../src/projectTemplate';
+} from '../src/backend/projectTemplate';
 import { identifyProjectLayout } from '../src/projectImport';
 
 // IDE-PRJ-007:最小项目创建模板清单。清单明确新增目录和文件(相对路径

@@ -7,7 +7,7 @@
  * 不换归属。任何观测点缺身份宁可不归组(unknown-target),不落邻居桶。
  */
 
-import type { KBEngineComponentInfo } from './backend/kbengineProtocol';
+import type { KBEngineComponentInfo } from './kbengineProtocol';
 
 /** 稳定目标身份:引擎内唯一、跨发现轮稳定;展示名与 pid 都不参与 */
 export interface ObservationTarget {

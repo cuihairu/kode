@@ -20,7 +20,7 @@ import * as vscode from 'vscode';
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { BUILD_TASK_TYPE, buildScriptCheckTaskSpec, formatBuildTaskPreview } from './buildTaskSpec';
+import { BUILD_TASK_TYPE, buildScriptCheckTaskSpec, formatBuildTaskPreview } from './backend/buildTaskSpec';
 import { KbengineBuildTaskProvider } from './buildTaskProvider';
 import { discoverProjectPythonTests, showPythonTestList } from './pythonTestDiscovery';
 import {

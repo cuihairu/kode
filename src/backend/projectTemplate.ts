@@ -11,7 +11,7 @@
  */
 
 import * as path from 'path';
-import type { GenerationPlanItem } from './generationConfirm';
+import type { GenerationPlanItem } from '../generationConfirm';
 
 /** 清单条目:目录(只建空目录)或文件(相对路径+完整内容) */
 export interface ProjectTemplateDirectory {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { KbengineBuildTaskProvider, BUILD_TASK_SOURCE } from '../src/buildTaskProvider';
-import { BUILD_TASK_TYPE } from '../src/buildTaskSpec';
+import { BUILD_TASK_TYPE } from '../src/backend/buildTaskSpec';
 import { ProcessExecution, Task, TaskScope } from './helpers/vscodeStub';
 
 // IDE-TSK-002 构建 TaskProvider:任务列表(Run Task)逐 profile 出一条

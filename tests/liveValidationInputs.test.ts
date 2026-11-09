@@ -5,7 +5,7 @@ import {
   registerLiveValidationInputs,
   REQUIRED_LIVE_VALIDATION_COMPONENTS,
   REQUIRED_LIVE_VALIDATION_STARTUP_CONDITIONS
-} from '../src/liveValidationInputs';
+} from '../src/backend/liveValidationInputs';
 import { COMPONENT_NAMES, MACHINE_BROADCAST_PORT } from '../src/backend/kbengineProtocol';
 
 // IDE-LIV-001 登记真实引擎联验所需输入:目标版本(kbengine 仓 URL+ref)、

@@ -3,7 +3,7 @@ import { KBENGINE_SOURCE_REVEAL_COMMAND } from './sourceRevealCommand';
 import {
   resolveEntityTypeStubSource,
   resolvePythonTypeStubSource
-} from './generatedSourceMap';
+} from './backend/generatedSourceMap';
 import { getCustomTypeInfos } from './definitionWorkspace';
 import type { EntityTypeStubEntry, EntityTypeStubLineMap } from './entityTypeStubs';
 import type { PythonTypeStubEntry, PythonTypeStubLineMap } from './pythonTypeStubs';

@@ -3,7 +3,7 @@ import {
   BUILD_TASK_TYPE,
   buildScriptCheckTaskSpec,
   formatBuildTaskPreview
-} from '../src/buildTaskSpec';
+} from '../src/backend/buildTaskSpec';
 
 // IDE-TSK-001 profile 的构建任务描述:一个 profile(assets 根+解释器)
 // → 一条可精确预览的脚本编译检查任务——command/args/cwd/env 四要素

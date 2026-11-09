@@ -12,7 +12,7 @@ import {
   resolveLaunchOrder,
   type DependencyReadyState,
   type LaunchTargetSpec
-} from './launchDependencies';
+} from './backend/launchDependencies';
 import { resolveActiveProfile } from './activeProfile';
 import { applyWaitAtStartupEnv } from './debugpyWaitAtStartup';
 

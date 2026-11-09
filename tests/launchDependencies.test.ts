@@ -4,7 +4,7 @@ import {
   resolveLaunchOrder,
   type DependencyReadyState,
   type LaunchTargetSpec
-} from '../src/launchDependencies';
+} from '../src/backend/launchDependencies';
 import { SERVER_COMPONENTS } from '../src/serverManager';
 
 // IDE-RUN-005 启动项直接依赖声明:LaunchTargetSpec.dependsOn 声明直接依赖,

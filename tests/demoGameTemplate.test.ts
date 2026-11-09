@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import { loadDemoGameTemplateEntries } from '../src/demoGameTemplate';
-import { planProjectCreation } from '../src/projectTemplate';
+import { planProjectCreation } from '../src/backend/projectTemplate';
 import { identifyProjectLayout } from '../src/projectImport';
 
 // DEMO-GAME-006:demo 游戏模板载荷契约。模板是夹具

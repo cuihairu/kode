@@ -10,9 +10,9 @@ import {
   COMPILEALL_LOCATION_SOURCE,
   COMPILEALL_MESSAGE_SOURCE,
   CompileallErrorParser
-} from '../src/buildProblemMatcher';
+} from '../src/backend/buildProblemMatcher';
 import { buildTaskFromSpec } from '../src/buildTaskProvider';
-import { buildScriptCheckTaskSpec } from '../src/buildTaskSpec';
+import { buildScriptCheckTaskSpec } from '../src/backend/buildTaskSpec';
 
 // IDE-TSK-003 构建错误定位到源码:compileall -q 的两种错误格式(旧版
 // 单行「in file ... on line」/3.13+ 多行 traceback)都解析成

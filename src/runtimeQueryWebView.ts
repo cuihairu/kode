@@ -14,8 +14,8 @@ import {
   createObservationFreshnessTracker,
   type ObservationFreshnessTracker,
   type ObservationFreshnessState
-} from './observationConnectionState';
-import { observationTargetFor } from './observationIdentity';
+} from './backend/observationConnectionState';
+import { observationTargetFor } from './backend/observationIdentity';
 
 export interface RuntimeQueryProtocol {
   discoverComponents(timeoutMs?: number): Promise<KBEngineComponentInfo[]>;
