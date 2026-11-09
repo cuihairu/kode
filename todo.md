@@ -1572,7 +1572,7 @@
 
 ### UX-REVIEW-008 [P2] 状态与恢复集中展示
 
-- [ ] UX-REVIEW-008a 为玩家查询与连接检查保留可回看的最近一次状态、结果时间和结果入口；结果区分未运行、进行中、空结果、成功、失败与已取消。
+- [x] UX-REVIEW-008a 为玩家查询与连接检查保留可回看的最近一次状态、结果时间和结果入口；结果区分未运行、进行中、空结果、成功、失败与已取消。（2026-11-10 e4687233：新增纯状态模块 src/backend/playerTaskStatus.ts——六态 not-run/running/empty/success/failed/cancelled+中文标签、PlayerTaskStatusStore 每任务保留最近一条(begin→finish 带结果时间与结果入口)、attempts 单调序号预留 008c 守卫；playerDataPanel 结构化运行器 runPlayerConnectionTest/runPlayerQueryByDbid 返回 {message,outcome}(字符串入口保留薄包装,预检拒绝如实记 failed),查询区分 empty(0 行)/success(N 行),连接检查结果行带时间戳落输出通道(此前信息消息一闪而过,现可回看),buildPlayerTaskStatusNodes 树顶状态两行(终态带时间+入口,未运行/进行中无入口不造按钮);serverControls 命令接线 begin/finish+刷新,输入取消=cancelled 与未运行区分(零消息不变);新命令 kbengine.playerData.showResult=结果入口(package.json contributes+activation+nls en/zh+commands.md en/zh 对账,docsCommands 活文档锁放行)。测试+10(playerTaskStatus 7 例/coverage 3 例+getChildren 4→6 锁步两处/covServerControls 成功与取消臂扩展);prove-red 双向=删 cancelled 记账红+empty 映射破坏红,均还原绿。门禁 tsc 0/lint 0(初跑 1 unused import 即修)/全量 vitest 8412 过 4 skip RC=0 零抖动/xvfb demo 25 RC=0/docs:build RC=0。）
 - [ ] UX-REVIEW-008b 为缺配置、连接失败和后端不可用提供与真实原因对应的配置、重试或查看详情操作；原始错误用于诊断但不暴露密码。
 - [ ] UX-REVIEW-008c 验证刷新/工作区切换时状态归属，过期异步结果不覆盖新任务；成功与空结果不混淆，不确定的导入结果不提供直接重试。与 UX-REVIEW-004 衔接。
 
