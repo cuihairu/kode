@@ -1562,7 +1562,7 @@
 
 - [x] UX-REVIEW-006a 盘点工作台现有 12 个动作及已有侧栏/命令入口，按项目、运行调试、数据和分析等用户任务分组；常用入口说明用途和前置条件。
 - [x] UX-REVIEW-006b 接入现有国际化机制：中文界面显示中文名称与说明，英文界面显示英文；保留可搜索的专业术语与原有命令 ID/快捷键。
-- [ ] UX-REVIEW-006c 验证分组选择、取消、命令异常和原有动作逐项可达；不以隐藏高级功能或新增无法执行的按钮充数。
+- [x] UX-REVIEW-006c 验证分组选择、取消、命令异常和原有动作逐项可达；不以隐藏高级功能或新增无法执行的按钮充数。（2026-11-10 2516f65f：tests/workbenchCommand.test.ts 由 1 例扩至 7 例——①逐项可达+不充数=清单恰 12 动作且逐一对照命令注册表 `registrations.has`，清单外无非分隔充数项；②分组选择=三分隔行(Project and environment/Server and runtime/Data and development,经 l10nText 取词)各领 4 动作逐组断言+12 动作逐个选择分发对应命令；③取消=QuickPick 返 undefined 分发 0；④分隔行不可执行=选中分组标题分发 0；⑤命令异常=目标命令 reject 时 workbench 处理器如实上抛不吞错。prove-red 双向：破坏 `'command' in selection` 守卫→分隔行例红；注入 `kbengine.experiments.run` 假按钮→3 例红；还原后 7/7 绿且 monitoring.ts 零 diff。门禁 tsc 0/lint 0/全量 vitest 8399 过 4 skip RC=0 零抖动/xvfb demo 25 RC=0/docs:build RC=0。实现面 006a=502722c7、006b 同笔。）
 
 ### UX-REVIEW-007 [P2] 监控控件可理解且可访问
 
