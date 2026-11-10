@@ -829,7 +829,9 @@ function emitKbeContainerStubClasses(
  *  定长元组/列表;序列(__len__/__getitem__/__setitem__)与算术协议
  *  (nb_add/subtract/multiply/divide/negative/positive/nonzero/inplace_*)
  *  同样导出。只进桩文档与导出 .pyi,声明行恰为 `${entry.signature}:`。 */
-function emitKbeVectorStubClasses(
+/** 官方 typings 未覆盖的运行时向量类型(Vector2/3/4),拼接引擎 checkout 时
+ * 追加;官方 typings 只有 Vector3Like 别名,无 Vector2/3/4 类。 */
+export function emitKbeVectorStubClasses(
   lines: string[],
   symbolLines: Record<string, number>
 ): void {

@@ -10,7 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { buildKbeStubExportContent } from './kbeModuleIndex';
+import { buildKbeStubExportContent, emitKbeVectorStubClasses } from './kbeModuleIndex';
 import {
   MANAGED_DIR_DEFAULT,
   MANAGED_DIR_SETTING_KEY,
@@ -379,6 +379,12 @@ function buildEngineKbeStubContent(typingsRoot: string): string | null {
   for (const module of modules) {
     lines.push('', `# --- ${module.name}.pyi (${typingsRoot}) ---`, ...module.lines);
   }
+  // 官方 typings 只有 Vector3Like 别名,缺 Vector2/3/4 运行时类(引擎
+  // pyscript/vector*.h 真实存在);补上 kode 手写类,否则项目脚本用
+  // `Vector2(...)`/`Vector3(...)` 会被 Pylance 判未定义。
+  lines.push('');
+  lines.push('# --- runtime vector types (not covered by engine typings) ---');
+  emitKbeVectorStubClasses(lines, {});
   lines.push('');
   return lines.join('\n');
 }
@@ -394,15 +400,14 @@ export function buildKbeStubExportContentForWorkspace(
   // 引擎 typings 全量面独立开关(用户令 2026-10-21):总闸 stubExport 旧键
   // 优先管整个导出;此键只管「本地引擎 checkout 拼全量 API」这层增强,
   // =false 时回落 kode 自带精选目录(既有内容,不硬造)。
-  // IDE-STUB-001(用户令批次):拼接引擎 checkout 是「复制真实代码」,只在
-  // real-source 档放行;默认 generated 档一律回落精选目录(不复制真实代码),
-  // stubEngineTypings 子开关只在 real-source 档内继续生效。
-  const sourceMode = readStubSourceMode();
-  const engineTypingsEnabled = sourceMode === STUB_SOURCE_MODE_REAL_SOURCE
-    ? vscode.workspace
-        .getConfiguration('kbengine')
-        .get<boolean>('python.stubEngineTypings', PYTHON_STUB_ENGINE_TYPINGS_ENABLED_DEFAULT)
-    : false;
+  // 用户令 2026-11-09:默认档(generated)也优先走官方引擎 typings 拼接——
+  // 官方 typings import 完整、类型齐全,手写精简模板缺 Dict/Callable/Union/
+  // Entity 等导入导致「Import KBEngine could not be resolved」与「类型不全」。
+  // sourceMode=real-source 时同样启用(向后兼容),stubEngineTypings 不再被
+  // generated 档一票否决;仅在显式关闭或检测不到引擎 checkout 时回落精选目录。
+  const engineTypingsEnabled = vscode.workspace
+    .getConfiguration('kbengine')
+    .get<boolean>('python.stubEngineTypings', PYTHON_STUB_ENGINE_TYPINGS_ENABLED_DEFAULT);
   const engineTypingsRoot = engineTypingsEnabled
     ? resolveEngineTypingsRoot(workspaceRoot, options)
     : null;

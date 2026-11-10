@@ -282,11 +282,20 @@ describe('kbengine.python.stubEngineTypings(KBEngine.pyi 引擎全量导出)', (
     }
   });
 
-  it('默认 generated 档:同一 checkout 也不拼接(不复制真实代码,回落精选目录)', () => {
+  // 用户令 2026-11-09:默认档(generated)也拼接引擎 checkout——官方 typings
+  // import 完整、类型齐全;手写精简模板缺 Dict/Callable/Union/Entity 等导入
+  // 导致「Import KBEngine could not be resolved」与「类型不全」。覆盖旧
+  // IDE-STUB-001 的「generated 档不复制真实代码」;stubEngineTypings=false
+  // 显式关闭时仍回落精选目录(下条)。
+  it('默认 generated 档:显式引擎 checkout 拼全量 API(官方 typings 为唯一事实源)', () => {
     const engineRoot = makeEngineRoot();
     try {
-      expect(buildKbeStubExportContentForWorkspace('/ws', { engineRoot, engineRootEnv: {} }))
-        .toBe(buildKbeStubExportContent());
+      const content = buildKbeStubExportContentForWorkspace('/ws', {
+        engineRoot,
+        engineRootEnv: {}
+      });
+      expect(content).toContain('generated from the local KBEngine typings checkout');
+      expect(content).toContain('class Entity:');
     } finally {
       fs.rmSync(engineRoot, { recursive: true, force: true });
     }
