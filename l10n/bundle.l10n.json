@@ -619,5 +619,19 @@
   "Demo game template is empty; refusing to create: {root}": "Demo game template is empty; refusing to create: {root}",
   "Select the project root directory": "Select the project root directory",
   "Target already exists; refusing to create: {path}": "Target already exists; refusing to create: {path}",
-  "Creation failed; new files from this run were rolled back: {reason}": "Creation failed; new files from this run were rolled back: {reason}"
+  "Creation failed; new files from this run were rolled back: {reason}": "Creation failed; new files from this run were rolled back: {reason}",
+  "$(circuit-board) Kode: not initialized": "$(circuit-board) Kode: not initialized",
+  "$(beaker) Kode: Shadow parity": "$(beaker) Kode: Shadow parity",
+  "$(circuit-board) Kode: Rust": "$(circuit-board) Kode: Rust",
+  "$(warning) Kode: Rust fallback TS": "$(warning) Kode: Rust fallback TS",
+  "$(circuit-board) Kode: TS": "$(circuit-board) Kode: TS",
+  "Kode core not initialized": "Kode core not initialized",
+  "kode-server dual-track shadow comparison (shadow mode)": "kode-server dual-track shadow comparison (shadow mode)",
+  "Rust kode-server service track: {path}": "Rust kode-server service track: {path}",
+  "kbengine.core.backend=rust but kode-server binary not found (auto-discovery missed), falling back to TS": "kbengine.core.backend=rust but kode-server binary not found (auto-discovery missed), falling back to TS",
+  "kbengine.core.backend=ts (pure TS service)": "kbengine.core.backend=ts (pure TS service)",
+  "$(plug) Kode MCP: built": "$(plug) Kode MCP: built",
+  "$(plug) Kode MCP: not built": "$(plug) Kode MCP: not built",
+  "kode-mcp binary present; the extension does not host it, register this path in an external MCP client (not integrated)": "kode-mcp binary present; the extension does not host it, register this path in an external MCP client (not integrated)",
+  "kode-mcp not built (source in crates/kode-mcp); the extension does not host it, register it in an external MCP client": "kode-mcp not built (source in crates/kode-mcp); the extension does not host it, register it in an external MCP client"
 }

@@ -16,7 +16,15 @@ import { RUFF_MAX_FILES, runInstallRuffCommand, runRuffLintCommand, RuffDiag } f
 import { buildDefReferenceGraphFromFile, buildProjectDoctorReport, formatDefReferenceGraphPreview, formatProjectDoctorReport } from '../backend/defReferenceGraph';
 import { buildDiscoveryReport, renderDiscoveryReport, runWorkspaceDiscovery } from '../workspaceDiscovery';
 import { classifyPythonService, collectPythonServiceFacts, renderPythonServiceMessage } from '../pythonLanguageServiceStatus';
-import { createVenvFlow, interpreterStatusBarText, probePythonVersion, runVenvModuleProcess, selectInterpreter } from '../backend/venvInterpreterPicker';
+import {
+  createVenvFlow,
+  interpreterStatusBarText,
+  probePythonVersion,
+  PYTHON_INTERPRETER_EXTENSION_ID,
+  runVenvModuleProcess,
+  selectInterpreter,
+  shouldShowInterpreterStatusBar
+} from '../backend/venvInterpreterPicker';
 import { detectDualActivation, formatDualActivationWarning } from '../backend/dualActivationConflict';
 import { execFile } from 'child_process';
 import { findFilesAcrossRoots } from '../scanRoots';
@@ -458,6 +466,15 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
       vscode.workspace.getConfiguration('kbengine').get('python.venvDirectories')
     );
   const refreshInterpreterStatusBar = async (): Promise<void> => {
+    // venv/Pylance 去重(2026-11-10 用户令):ms-python.python 激活时它自己
+    // 在状态栏显示解释器选择器,本扩展再显示一个相同 venv 是重复——隐藏
+    // 本项;选择/创建 venv 仍经命令面板,不丢功能。
+    const pythonExtActive =
+      vscode.extensions.getExtension(PYTHON_INTERPRETER_EXTENSION_ID)?.isActive === true;
+    if (!shouldShowInterpreterStatusBar(pythonExtActive)) {
+      interpreterStatusBarItem.hide();
+      return;
+    }
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const resolution = resolveProfileInterpreter(root);
     interpreterStatusBarItem.text = interpreterStatusBarText(resolution);
@@ -559,7 +576,17 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
       void refreshInterpreterStatusBar();
     }
   });
-  context.subscriptions.push(selectInterpreterCommand, createVenvCommand, interpreterConfigListener);
+  // venv/Pylance 去重:Python 扩展安装/激活/失活都会改变它是否显示解释器
+  // 选择器,onDidChange 重评估(隐藏/恢复本项)。
+  const interpreterExtListener = vscode.extensions.onDidChange(() => {
+    void refreshInterpreterStatusBar();
+  });
+  context.subscriptions.push(
+    selectInterpreterCommand,
+    createVenvCommand,
+    interpreterConfigListener,
+    interpreterExtListener
+  );
   void refreshInterpreterStatusBar();
 
   // .py lint via ruff(IDE-RUST-005,A 案 shell out):Rust 侧 `$/kode/ruff/lint`

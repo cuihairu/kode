@@ -11,6 +11,7 @@ import {
   interpreterSourceBadge,
   interpreterStatusBarText,
   selectInterpreter,
+  shouldShowInterpreterStatusBar,
   VENV_CREATE_ITEM_LABEL,
   probePythonVersion,
   runVenvModuleProcess
@@ -36,6 +37,13 @@ describe('source badge and status bar text (pure)', () => {
     expect(interpreterSourceBadge('venv')).toBe('auto');
     expect(interpreterSourceBadge('path')).toBe('PATH');
     expect(interpreterSourceBadge('missing')).toBe('missing');
+  });
+
+  it('hides the interpreter status bar item when the python extension shows one (venv/Pylance dedup)', () => {
+    // ms-python.python 激活 → 它在状态栏显示解释器选择器 → 本扩展项隐藏
+    expect(shouldShowInterpreterStatusBar(true)).toBe(false);
+    // Python 扩展未激活 → 本扩展项显示(不丢选择/创建 venv 入口)
+    expect(shouldShowInterpreterStatusBar(false)).toBe(true);
   });
 
   it('status bar text carries venv name, version and badge', () => {

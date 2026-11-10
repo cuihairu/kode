@@ -619,5 +619,19 @@
   "Demo game template is empty; refusing to create: {root}": "demo 游戏模板为空，拒绝创建: {root}",
   "Select the project root directory": "选择项目根目录",
   "Target already exists; refusing to create: {path}": "目标已存在，拒绝创建: {path}",
-  "Creation failed; new files from this run were rolled back: {reason}": "创建失败，已回收本次新增: {reason}"
+  "Creation failed; new files from this run were rolled back: {reason}": "创建失败，已回收本次新增: {reason}",
+  "$(circuit-board) Kode: not initialized": "$(circuit-board) Kode: 未初始化",
+  "$(beaker) Kode: Shadow parity": "$(beaker) Kode: Shadow 对拍",
+  "$(circuit-board) Kode: Rust": "$(circuit-board) Kode: Rust",
+  "$(warning) Kode: Rust fallback TS": "$(warning) Kode: Rust 降级 TS",
+  "$(circuit-board) Kode: TS": "$(circuit-board) Kode: TS",
+  "Kode core not initialized": "Kode 核心未初始化",
+  "kode-server dual-track shadow comparison (shadow mode)": "kode-server 双轨影子比对(shadow 模式)",
+  "Rust kode-server service track: {path}": "Rust kode-server 服务轨道:{path}",
+  "kbengine.core.backend=rust but kode-server binary not found (auto-discovery missed), falling back to TS": "kbengine.core.backend=rust 但 kode-server 二进制未找到(自动发现落空),回落 TS",
+  "kbengine.core.backend=ts (pure TS service)": "kbengine.core.backend=ts(纯 TS 服务)",
+  "$(plug) Kode MCP: built": "$(plug) Kode MCP: 已构建",
+  "$(plug) Kode MCP: not built": "$(plug) Kode MCP: 未构建",
+  "kode-mcp binary present; the extension does not host it, register this path in an external MCP client (not integrated)": "kode-mcp 二进制在位;扩展不托管,在外部 MCP 客户端注册该路径使用(未集成)",
+  "kode-mcp not built (source in crates/kode-mcp); the extension does not host it, register it in an external MCP client": "kode-mcp 未构建(源码在 crates/kode-mcp);扩展不托管,需在外部 MCP 客户端注册"
 }

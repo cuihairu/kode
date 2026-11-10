@@ -12,6 +12,8 @@ import { setPythonDataDictIndexEnabled, setPythonMroJumpEnabled } from '../langu
 import { KBEngineDatabaseSchemaProvider } from '../databaseSchemaPresentation';
 import { buildEngineApiCatalog } from '../backend/engineApiMetadata';
 import { setupKodeCoreGate } from '../kodeCoreGateWiring';
+import { setupKodeServiceStatusBar } from './kodeServiceStatus';
+import { discoverNativeBinary } from '../backend/nativeBinary';
 import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument } from '../kbeModuleIndex';
 import { setJumpLogEnabled } from '../navigationLog';
 import { ensureConfigResolved } from '../serverConfigResolve';
@@ -104,6 +106,13 @@ export function activateInfrastructure(
   // 持有门实例:热更旁路的 rust 投递口(§11.3)要经它的 notifyFileChanged
   // 走现有 LSP stdio。
   const kodeCoreGate = setupKodeCoreGate(context);
+  // 2026-11-10 用户令「如何提示 lsp 和 mcp 的状态是否开启」:Kode 核心(LSP
+  // 服务轨道)与 Kode MCP 状态栏两项。核心读门状态(mode/serverPath),MCP 只
+  // 做二进制在位探测(扩展不托管 MCP,未集成见 tooltip)。
+  setupKodeServiceStatusBar(context, {
+    getGateState: () => kodeCoreGate.state,
+    probeMcpBinary: () => discoverNativeBinary(context.extensionUri.fsPath, 'kode-mcp')
+  });
   // PA-007 第一增量:协议工具链检测命令(Wireshark/TShark/插件/CLI 版本
   // 面报告);通道与命令句柄自进 context.subscriptions,激活零开销。
   setupProtocolTooling(context);

@@ -238,15 +238,17 @@ describe('extension activate 装配', () => {
     expect(stubWithMetadata).toContain('# Source describe:');
     expect(workspaceState.contentProviders.has('kbengine-config')).toBe(true);
 
-    // 状态栏六条:server 灯(右对齐/优先级 100/命令指向扩展视图)、
+    // 状态栏八条:server 灯(右对齐/优先级 100/命令指向扩展视图)、
     // telnet 灯(优先级 99/命令指向 telnet 面板)、热更状态灯(HR-UI-001,
     // 优先级 98/命令指向热更日志,默认 Watch Off 常显)、解释器灯(PY-ENV
     // 二期,优先级 97/命令指向解释器选择,常显)、热更通道灯(快捷切换本批,
-    // 优先级 96/命令指向三选切换,无激活 profile 时显示未配置)与
-    // KB-GC-001 日志 tail 灯(优先级 95/命令指向 tail 切换,连接态文本);
-    // 无运行组件时 server 灯隐藏。批111 用户令:配置未开 telnet 时 telnet 灯同样隐藏,
-    // context key 落 false
-    expect(windowState.statusBars).toHaveLength(6);
+    // 优先级 96/命令指向三选切换,无激活 profile 时显示未配置)、
+    // KB-GC-001 日志 tail 灯(优先级 95/命令指向 tail 切换,连接态文本)、
+    // Kode 核心灯(2026-11-10,优先级 94/命令指向影子对拍日志,显示 LSP
+    // 服务轨道)与 Kode MCP 灯(优先级 93,二进制在位探测,无命令——事实
+    // 在 tooltip);无运行组件时 server 灯隐藏。批111 用户令:配置未开
+    // telnet 时 telnet 灯同样隐藏,context key 落 false
+    expect(windowState.statusBars).toHaveLength(8);
     const tailBar = windowState.statusBars.find(item => item.priority === 95)!;
     expect(tailBar.alignment).toBe(StatusBarAlignment.Right);
     // tail 状态灯只显示连接态文本(connecting/connected/backoff),切换走
@@ -289,6 +291,16 @@ describe('extension activate 装配', () => {
     expect(channelBar.command).toBe('kbengine.hotReload.switchChannel');
     expect(channelBar.text).toContain('默认(http)');
     expect(channelBar.visible).toBe(true);
+    // Kode 核心灯(2026-11-10 用户令「如何提示 lsp 和 mcp 的状态是否开启」):
+    // 显示 LSP 服务轨道,点击开影子对拍日志;Kode MCP 灯做二进制在位探测,
+    // 无命令(事实在 tooltip)。两灯都在右侧且常显。
+    const kodeCoreBar = windowState.statusBars.find(item => item.priority === 94)!;
+    expect(kodeCoreBar.alignment).toBe(StatusBarAlignment.Right);
+    expect(kodeCoreBar.command).toBe('kbengine.core.showShadowDiffLog');
+    expect(kodeCoreBar.visible).toBe(true);
+    const kodeMcpBar = windowState.statusBars.find(item => item.priority === 93)!;
+    expect(kodeMcpBar.alignment).toBe(StatusBarAlignment.Right);
+    expect(kodeMcpBar.visible).toBe(true);
     expect(commandRegistry.contexts.get('kbengine.telnetConfigured')).toBe(false);
 
     // 所有 subscription 都可 dispose
