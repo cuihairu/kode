@@ -35,6 +35,7 @@ import {
   type PropertyDirectionDiagnosticItem,
   type PropertyDirectionHit,
 } from '../backend/propertyDirectionDiagnostics';
+import { buildPropertyDirectionScanBundleWithRust } from '../backend/propertyDirectionRust';
 import { READONLY_WRITE_DIAGNOSTICS_ENABLED_DEFAULT, readOnlyWriteDiagnosticItemsAsync, type ReadOnlyWriteDiagnosticItem } from '../backend/readOnlyWriteDiagnostics';
 import { buildReadOnlyWriteItemsWithRust } from '../backend/readOnlyWriteRust';
 import { ROLE_MISUSE_DIAGNOSTICS_ENABLED_DEFAULT, roleMisuseDiagnosticItemsAsync, type RoleMisuseDiagnosticItem } from '../backend/roleMisuseDiagnostics';
@@ -762,11 +763,15 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
             typeName: info.typeName
           };
         };
+        // AUDIT-005 B2 批 7:Rust-first(`$/kode/lint/analyzePropertyDirection`
+        // 三扫描束;方向分类/影子抑制/cellData 两流判定与消息渲染留 TS);束不可
+        // 用/畸形回本地扫描束,判定核零分叉。
         return propertyDirectionDiagnosticItemsAsync(
           document.getText(),
           document.uri.fsPath,
           resolve,
-          enabled
+          enabled,
+          (await buildPropertyDirectionScanBundleWithRust(document.getText())) ?? undefined
         );
       },
       publish: (items: readonly PropertyDirectionDiagnosticItem[]) => {

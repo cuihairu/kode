@@ -227,25 +227,44 @@ export function findCellDataKeyAccesses(text: string): CellDataKeyAccess[] {
   return accesses;
 }
 
+/** 一次词法扫描束(三扫描面:AUDIT-005 B2 批 7 起 Rust 面可供给,判定核共用) */
+export interface PropertyDirectionScanBundle {
+  accesses: ReturnType<typeof findPythonSelfPropertyAccesses>;
+  initAssigned: InitAssignedSelfProperties;
+  cellDataAccesses: CellDataKeyAccess[];
+}
+
+/** 本地扫描束(兜底与缺省路径;Rust 面同形供给,判定核零分叉) */
+export function scanBundleOf(text: string): PropertyDirectionScanBundle {
+  return {
+    accesses: findPythonSelfPropertyAccesses(text),
+    initAssigned: findInitAssignedSelfProperties(text),
+    cellDataAccesses: findCellDataKeyAccesses(text)
+  };
+}
+
 /**
  * 属性方向违规判定(纯函数):每处 self.<prop> / self.<role>.<prop> 访问,
  * 属性在 def 有声明(解析器命中)且访问域不在 Flags 域位内 → Warning;
  * 无接收者的裸 self.<prop> 且文件作用域不足 → Information(降级,不标 Error)。
  * 解析器未命中(非 def 属性/纯 python 属性)一律跳过,不诊断。
+ * bundle 缺省本地扫描;Rust 面(buildPropertyDirectionScanBundleWithRust)同形
+ * 供给时判定核逐位同语义(两流完整保留,消息渲染留本模块)。
  */
 export function findPropertyDirectionFindings(
   text: string,
   filePath: string,
-  resolve: (propertyPath: string, rootSymbol: string) => PropertyDirectionHit | null | undefined
+  resolve: (propertyPath: string, rootSymbol: string) => PropertyDirectionHit | null | undefined,
+  bundle: PropertyDirectionScanBundle = scanBundleOf(text)
 ): PropertyDirectionFinding[] {
   const fileScope = inferProcessScopeFromPythonFile(filePath);
-  const initAssigned = findInitAssignedSelfProperties(text);
+  const initAssigned = bundle.initAssigned;
   const findings: PropertyDirectionFinding[] = [];
   // 复制属性提示已覆盖的裸访问(行\u0000名):赋值行 LHS 若同时被访问扫描
   // 命中,赋值位提示不重复出
   const emitted = new Set<string>();
 
-  for (const access of findPythonSelfPropertyAccesses(text)) {
+  for (const access of bundle.accesses) {
     const segments = access.fullPath.split('.');
     const root = segments[0] ?? '';
     let receiver: PropertyDirectionScope | undefined;
@@ -392,7 +411,7 @@ export function findPropertyDirectionFindings(
   // key 的 def 面(key: 类型 · 域位),域位不含 cell 追加「不在 cellData」
   // (引擎不会把它放进 cellData);非 def 键(position/direction 引擎自塞键、
   // 脚本自塞键)一律跳过,不发明。
-  for (const access of findCellDataKeyAccesses(text)) {
+  for (const access of bundle.cellDataAccesses) {
     const hit = resolve(access.key, access.key);
     if (!hit || hit.domains.length === 0) {
       continue; // 非 def 键 / Flags 未配置 → 无域位可判,不发明
@@ -502,7 +521,8 @@ export function propertyDirectionShadowHintItems(
  * 异步面:先按 (propertyPath, rootSymbol) 预解析全部去重访问(异步解析器,
  * 如 EntityMappingManager.resolvePropertyDefinitionInfo),再以同步查表
  * 解析器走 findPropertyDirectionFindings——纯判定逻辑零重复,与属性 CodeLens
- * 的「同一属性多处访问只解析一次」同口径。
+ * 的「同一属性多处访问只解析一次」同口径。bundle 缺省本地扫描;Rust 面同形
+ * 供给时预解析与判定核走同一束(零双扫)。
  */
 export async function findPropertyDirectionFindingsAsync(
   text: string,
@@ -510,7 +530,8 @@ export async function findPropertyDirectionFindingsAsync(
   resolve: (
     propertyPath: string,
     rootSymbol: string
-  ) => Promise<PropertyDirectionHit | null | undefined>
+  ) => Promise<PropertyDirectionHit | null | undefined>,
+  bundle: PropertyDirectionScanBundle = scanBundleOf(text)
 ): Promise<PropertyDirectionFinding[]> {
   const cache = new Map<string, PropertyDirectionHit | null>();
   const syncResolve = (
@@ -518,7 +539,7 @@ export async function findPropertyDirectionFindingsAsync(
     rootSymbol: string
   ): PropertyDirectionHit | null | undefined => cache.get(`${propertyPath}\u0000${rootSymbol}`);
 
-  for (const access of findPythonSelfPropertyAccesses(text)) {
+  for (const access of bundle.accesses) {
     const segments = access.fullPath.split('.');
     const root = segments[0] ?? '';
     let propertyPath = access.fullPath;
@@ -534,8 +555,8 @@ export async function findPropertyDirectionFindingsAsync(
   // cellData 键与复制属性键也预解析:同步核同样走 resolve,漏预解析会让
   // 缓存未命中(get 返回 undefined)被当「非 def 属性」静默跳过
   const cellKeys = new Set<string>([
-    ...findCellDataKeyAccesses(text).map(access => access.key),
-    ...initAssignedKeysOf(text)
+    ...bundle.cellDataAccesses.map(access => access.key),
+    ...bundle.initAssigned.cellDataCopyKeys.values()
   ]);
   for (const key of cellKeys) {
     const cacheKey = `${key}\u0000${key}`;
@@ -543,12 +564,8 @@ export async function findPropertyDirectionFindingsAsync(
       cache.set(cacheKey, (await resolve(key, key)) ?? null);
     }
   }
-  return findPropertyDirectionFindings(text, filePath, syncResolve);
+  return findPropertyDirectionFindings(text, filePath, syncResolve, bundle);
 }
-
-/** __init__ 里 RHS 取自 cellData 的键集合(异步预解析用) */
-const initAssignedKeysOf = (text: string): string[] =>
-  [...findInitAssignedSelfProperties(text).cellDataCopyKeys.values()];
 
 /**
  * 诊断项(纯数据;extension 侧转 vscode.Diagnostic,测试免 vscode 依赖):
@@ -578,7 +595,7 @@ export function propertyDirectionDiagnosticItems(
     }));
 }
 
-/** 提示流入口(异步):预解析去重后同步判定,与诊断流同一份分析核 */
+/** 提示流入口(异步):预解析去重后同步判定,与诊断流同一份分析核;bundle 缺省本地扫描(Rust 面同形供给时零双扫,批 7) */
 export async function propertyDirectionShadowHintItemsAsync(
   text: string,
   filePath: string,
@@ -586,12 +603,13 @@ export async function propertyDirectionShadowHintItemsAsync(
     propertyPath: string,
     rootSymbol: string
   ) => Promise<PropertyDirectionHit | null | undefined>,
-  enabled: boolean
+  enabled: boolean,
+  bundle?: PropertyDirectionScanBundle
 ): Promise<PropertyDirectionShadowHintItem[]> {
   if (!enabled) {
     return [];
   }
-  return findPropertyDirectionFindingsAsync(text, filePath, resolve)
+  return findPropertyDirectionFindingsAsync(text, filePath, resolve, bundle)
     .then(findings => findings
       .filter(finding => HINT_STREAM_CODES.has(finding.code))
       .map(finding => ({
@@ -616,12 +634,13 @@ export async function propertyDirectionDiagnosticItemsAsync(
     propertyPath: string,
     rootSymbol: string
   ) => Promise<PropertyDirectionHit | null | undefined>,
-  enabled: boolean
+  enabled: boolean,
+  bundle?: PropertyDirectionScanBundle
 ): Promise<PropertyDirectionDiagnosticItem[]> {
   if (!enabled) {
     return [];
   }
-  return findPropertyDirectionFindingsAsync(text, filePath, resolve)
+  return findPropertyDirectionFindingsAsync(text, filePath, resolve, bundle)
     .then(findings => findings
       .filter(finding => DIAGNOSTIC_STREAM_CODES.has(finding.code))
       .map(finding => ({

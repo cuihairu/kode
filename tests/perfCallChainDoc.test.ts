@@ -241,6 +241,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // completion 注册块前新插 provider 装配 +14 行致 660→674)、
   // languageProviders/inlay.ts 顶部 import +5 行(42→44→49,真位重探);
   // 出处随 baseline 锁步。
+  // 2026-11-11(PD-R1):inlay.ts propertyDirection 臂 Rust-first 接线顶部
+  // import +1 行(49→50,真位重探)。
   ['src/activate/languageServices.ts', 195, "startLanguageServiceOperation('hover'"],
   ['src/activate/languageServices.ts', 246, "startLanguageServiceOperation('definition'"],
   ['src/activate/languageServices.ts', 309, "startLanguageServiceOperation('definition'"],
@@ -256,8 +258,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // 再 +1 行 → 两处诊断打点锚点再 +1(120/133 → 121/134,真位重探)。
   // 2026-11-10(AN-R1):diagnostics.ts attributeNone 臂 Rust-first 接线顶部 import
   // 再 +1 行 → 两处诊断打点锚点再 +1(121/134 → 122/135,真位重探)。
-  ['src/activate/diagnostics.ts', 122, "startLanguageServiceOperation('diagnostics'"],
-  ['src/activate/diagnostics.ts', 135, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-11(PD-R1):diagnostics.ts propertyDirection 臂 Rust-first 接线顶部
+  // import 再 +1 行 → 两处诊断打点锚点再 +1(122/135 → 123/136,真位重探)。
+  ['src/activate/diagnostics.ts', 123, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 136, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -307,7 +311,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // 再 +12(1852/1911/1935/2063/4812/5220/5326/7170),baseline 同步。
   // 2026-11-09:139f7035 新增 InferredMirrorTypeInlayHintsProvider 顶置两行,
   // getDocumentLines 行 42→44,真位重探,出处随 baseline 锁步。
-  ['src/languageProviders/inlay.ts', 49, 'getDocumentLines(document)'],
+  ['src/languageProviders/inlay.ts', 50, 'getDocumentLines(document)'],
   // 2026-11-08:「直接切」批次位移——navigation.ts Rust-first 派发块
   // (serveDefinitionFromRust await + 语料镜像前置,24→47)、completion.ts
   // Rust-first 包装层(provideCompletionRustFirst + lspCompletionToVscode,

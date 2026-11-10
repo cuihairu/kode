@@ -11,6 +11,7 @@ import {
   propertyDirectionShadowHintItemsAsync,
   type PropertyDirectionHit
 } from '../backend/propertyDirectionDiagnostics';
+import { buildPropertyDirectionScanBundleWithRust } from '../backend/propertyDirectionRust';
 /**
  * 内建属性行内类型提示(用户令 2026-10-21 形态升级单 ③):实体脚本内单段
  * `self.<内建属性>` 访问处在其 range 之后渲染 `: <type>` 右对齐提示
@@ -161,7 +162,9 @@ export class KBEnginePropertyShadowInlayHintsProvider implements vscode.InlayHin
       document.getText(),
       document.uri.fsPath,
       resolve,
-      true
+      true,
+      // AUDIT-005 B2 批 7:Rust-first 三扫描束(与诊断流同一判定核),束不可用回本地扫描
+      (await buildPropertyDirectionScanBundleWithRust(document.getText())) ?? undefined
     );
     return items
       // inlay 按可视区要:视图口外的行不出 hint(批154 同口径)
