@@ -36,6 +36,10 @@ export function activateConsole(deps: ConsoleDeps): void {
   // 优先级 95:低于 server 100/telnet 99/热更 98/解释器 97/热更通道灯 96
   // (HOT_RELOAD_CHANNEL_STATUS_PRIORITY),不与任何既有灯同优先级。
   const tailStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 95);
+  // 2026-11-10 用户问「kbe 日志如何打开,statusbar 有但不知道如何打开」:
+  // tail 灯原本只显示连接态文本(无命令绑定),点击无动作——用户看到灯却
+  // 无从打开日志。绑 show 命令:点击灯直接开 KBEngine Console 日志输出通道。
+  tailStatusItem.command = 'kbengine.consoleLogTail.show';
   const tailController = new ConsoleLogTailController({
     hub: consoleHub,
     workspaceRoots: () => (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath),

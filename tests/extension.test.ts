@@ -251,8 +251,9 @@ describe('extension activate 装配', () => {
     expect(windowState.statusBars).toHaveLength(8);
     const tailBar = windowState.statusBars.find(item => item.priority === 95)!;
     expect(tailBar.alignment).toBe(StatusBarAlignment.Right);
-    // tail 状态灯只显示连接态文本(connecting/connected/backoff),切换走
-    // 独立命令 kbengine.consoleLogTail.toggle,灯本身不绑命令。
+    // tail 状态灯显示连接态文本(connecting/connected/backoff);2026-11-10
+    // 用户问「kbe 日志如何打开」——点击灯直接开日志输出通道(不再无命令)。
+    expect(tailBar.command).toBe('kbengine.consoleLogTail.show');
     const bar = windowState.statusBars.find(item => item.priority === 100)!;
     expect(bar.alignment).toBe(StatusBarAlignment.Right);
     expect(bar.command).toBe('workbench.view.extension.kbengine-explorer');
