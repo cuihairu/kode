@@ -13,6 +13,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { CONFIG_CONTRACT_DIAGNOSTICS_ENABLED_DEFAULT, computeConfigContractFindings } from '../backend/configContractDiagnostics';
 import { RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT, receiverNoneDiagnosticItemsAsync, type ReceiverDiagnosticItem } from '../backend/receiverNoneDiagnostics';
+import { buildReceiverNoneItemsWithRust } from '../backend/receiverNoneRust';
 import { ATTRIBUTE_NONE_DIAGNOSTICS_ENABLED_DEFAULT, attributeNoneDiagnosticItems, ATTRIBUTE_NONE_DIAGNOSTIC_CODE } from '../backend/selfAttributeNoneDiagnostics';
 import { SPACE_NAV_DIAGNOSTICS_ENABLED_DEFAULT, SPACE_NAV_DIAGNOSTIC_CODE, computeSpaceNavFindings } from '../backend/spaceNavDiagnostics';
 import { buildSpaceNavItemsWithRust } from '../backend/spaceNavRust';
@@ -230,14 +231,18 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
           ? entityMappingManager.getMappingForPythonFile(document.uri.fsPath)
           : undefined;
         const receiverItems = receiverEnabled
-          ? await receiverNoneDiagnosticItemsAsync(
-              document.getText(),
-              document.uri.fsPath,
-              entityMapping,
-              receiverEnabled,
-              preparsed,
-              { shouldContinue }
-            )
+          // AUDIT-005 B2 批 3:Rust-first(`$/kode/lint/analyzeReceiverNone`,
+          // 解析面与映射投影由 TS 供给,guard 分析在 Rust);不可用/解析中止/
+          // 失败/畸形整面回 TS 异步兜底,不部分采用。
+          ? (await buildReceiverNoneItemsWithRust(document.getText(), document.uri.fsPath, entityMapping, preparsed)
+              ?? await receiverNoneDiagnosticItemsAsync(
+                  document.getText(),
+                  document.uri.fsPath,
+                  entityMapping,
+                  receiverEnabled,
+                  preparsed,
+                  { shouldContinue }
+                ))
           : [];
         if (receiverItems === null) {
           return null; // 异步中止(worker 停用/版本前进),整轮不发布

@@ -18,6 +18,7 @@ pub mod message_table;
 pub mod process_topology;
 pub mod python_callgraph;
 pub mod python_lexical_mask;
+pub mod receiver_none;
 pub mod role_misuse;
 pub mod rpc;
 pub mod ruff_lint;

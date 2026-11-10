@@ -38,6 +38,14 @@ export const RECEIVER_NONE_SOURCES: Record<PythonReceiverCall['receiver'], strin
   base: 'server/cellapp/entity.cpp:74 pyGetBaseEntityCall'
 };
 
+/** receiver-none 消息(单一来源:TS 同步/异步面与 Rust 结构面渲染共用) */
+export function renderReceiverNoneMessage(receiver: PythonReceiverCall['receiver']): string {
+  return l10nText(
+    'self.{receiver} may be None (the engine returns None directly once the player goes offline/disconnects, onClientDeath/onLoseCell → S_RELEASE); check for None before use; engine source: {source}',
+    { receiver, source: RECEIVER_NONE_SOURCES[receiver] }
+  );
+}
+
 export interface ReceiverNoneFinding {
   /** 0 起行(方法名 token 所在行) */
   line: number;
@@ -584,17 +592,26 @@ const indentOf = (line: string): number => {
   return match ? match[0].replace(/\t/g, '    ').length : 0;
 };
 
-/** .def 段错配:方法在 def 声明了,但没有任何一处在接收者对应的 section */
-function sectionMismatch(call: PythonReceiverCall, mapping: EntityMapping): string | undefined {
-  const expected = PYTHON_RECEIVER_SECTIONS[call.receiver];
-  const declarations = mapping.methods?.[call.methodName] ?? [];
+/** .def 段错配消息(声明非空且无一处在接收者对应段时才成消息;否则 undefined) */
+function sectionMismatchMessage(
+  receiver: PythonReceiverCall['receiver'],
+  methodName: string,
+  mapping: EntityMapping
+): string | undefined {
+  const expected = PYTHON_RECEIVER_SECTIONS[receiver];
+  const declarations = mapping.methods?.[methodName] ?? [];
   if (declarations.length === 0) { return undefined; }
   if (declarations.some(declaration => declaration.section === expected)) { return undefined; }
   const declared = [...new Set(declarations.map(declaration => declaration.section))].join('/');
   return l10nText(
     'self.{receiver}.{method} section mismatch: {method} is declared in .def {declared}; calling via {receiver} will not route to that method (use the {expected} declaration)',
-    { receiver: call.receiver, method: call.methodName, declared, expected }
+    { receiver, method: methodName, declared, expected }
   );
+}
+
+/** .def 段错配:方法在 def 声明了,但没有任何一处在接收者对应的 section */
+function sectionMismatch(call: PythonReceiverCall, mapping: EntityMapping): string | undefined {
+  return sectionMismatchMessage(call.receiver, call.methodName, mapping);
 }
 
 /**
@@ -634,10 +651,7 @@ function appendCallFindings(
         receiver: call.receiver,
         methodName: call.methodName,
         kind: 'receiver-none',
-        message: l10nText(
-          'self.{receiver} may be None (the engine returns None directly once the player goes offline/disconnects, onClientDeath/onLoseCell → S_RELEASE); check for None before use; engine source: {source}',
-          { receiver: call.receiver, source: RECEIVER_NONE_SOURCES[call.receiver] }
-        )
+        message: renderReceiverNoneMessage(call.receiver)
       });
     }
     if (mapping) {
@@ -666,7 +680,7 @@ interface ReceiverEvalContext {
 }
 
 /** 文本里疑似有别名赋值(决定是否做别名使用点收集的廉价预检) */
-const RECEIVER_ALIAS_HINT = /\b[A-Za-z_]\w*\s*=\s*self\.(?:cell|base|client)\b/;
+export const RECEIVER_ALIAS_HINT = /\b[A-Za-z_]\w*\s*=\s*self\.(?:cell|base|client)\b/;
 
 function buildEvalContextFromParsed(
   maskedText: string,
@@ -981,4 +995,112 @@ export async function receiverNoneDiagnosticItemsAsync(
   }
   const findings = await computeReceiverNoneFindingsAsync(text, filePath, mapping, preparsed, deps);
   return findings === null ? null : findings.map(findingToDiagnosticItem);
+}
+
+// ---- Rust 面(AUDIT-005 B2 车道批 3:receiverNone 收编) ------------------------
+// `$/kode/lint/analyzeReceiverNone` 经 gate.runInRust(与 analyzeSpaceNav/
+// analyzeRoleMisuse 同口径):Rust 只回结构面(code/line/character/length +
+// kind/receiver/methodName),消息渲染留本模块(l10n 单一来源);段错配的
+// declared 由 TS 侧同一 mapping 快照重算——重算不构成错配 = 语义矛盾,
+// 整面作废回 TS 兜底(禁止部分采用)。
+
+/** Rust 结构面单条产物(`$/kode/lint/analyzeReceiverNone` 应答) */
+export interface ReceiverNoneRustItem {
+  code: string;
+  line: number;
+  character: number;
+  length: number;
+  /** 消息判别:receiverNone | sectionMismatch */
+  kind: string;
+  /** client | cell | base(消息与段错配重算都用) */
+  receiver: string;
+  methodName: string;
+}
+
+/** 结构面单条 → 诊断面(消息渲染);缺参/未知 kind/契约漂移 = 畸形 */
+function renderRustReceiverNoneItem(
+  item: ReceiverNoneRustItem,
+  mapping: EntityMapping | undefined
+): ReceiverDiagnosticItem | null {
+  if (
+    !item
+    || typeof item.code !== 'string'
+    || typeof item.kind !== 'string'
+    || typeof item.line !== 'number'
+    || typeof item.character !== 'number'
+    || typeof item.length !== 'number'
+    || typeof item.receiver !== 'string'
+    || typeof item.methodName !== 'string'
+    || item.methodName.length === 0
+  ) {
+    return null;
+  }
+  const receiver = item.receiver as PythonReceiverCall['receiver'];
+  if (!(receiver in RECEIVER_NONE_SOURCES)) {
+    return null;
+  }
+  if (
+    !Number.isInteger(item.line) || !Number.isInteger(item.character) || !Number.isInteger(item.length)
+    || item.line < 0 || item.character < 0 || item.length < 0
+    || item.length !== item.methodName.length
+  ) {
+    return null;
+  }
+  if (item.kind === 'receiverNone') {
+    if (item.code !== RECEIVER_NONE_DIAGNOSTIC_CODE) {
+      return null;
+    }
+    return {
+      range: {
+        start: { line: item.line, character: item.character },
+        end: { line: item.line, character: item.character + item.length }
+      },
+      message: renderReceiverNoneMessage(receiver),
+      severity: 'Warning' as const,
+      source: 'kbengine' as const,
+      code: RECEIVER_NONE_DIAGNOSTIC_CODE
+    };
+  }
+  if (item.kind === 'sectionMismatch') {
+    if (item.code !== RECEIVER_SECTION_MISMATCH_DIAGNOSTIC_CODE) {
+      return null;
+    }
+    if (!mapping) {
+      return null; // 无映射不可能出段错配条(契约漂移)
+    }
+    const message = sectionMismatchMessage(receiver, item.methodName, mapping);
+    if (!message) {
+      return null; // TS 映射下不构成错配 = 语义矛盾,整面作废
+    }
+    return {
+      range: {
+        start: { line: item.line, character: item.character },
+        end: { line: item.line, character: item.character + item.length }
+      },
+      message,
+      severity: 'Warning' as const,
+      source: 'kbengine' as const,
+      code: RECEIVER_SECTION_MISMATCH_DIAGNOSTIC_CODE
+    };
+  }
+  return null;
+}
+
+/**
+ * 结构面数组 → 诊断面数组(消息渲染);任一条畸形返回 null(整面作废,调用方
+ * 回 TS 兜底 —— 禁止部分采用)。对拍测试共用。
+ */
+export function renderRustReceiverNoneItems(
+  items: readonly unknown[],
+  mapping: EntityMapping | undefined
+): ReceiverDiagnosticItem[] | null {
+  const rendered: ReceiverDiagnosticItem[] = [];
+  for (const item of items) {
+    const renderedItem = renderRustReceiverNoneItem(item as ReceiverNoneRustItem, mapping);
+    if (!renderedItem) {
+      return null;
+    }
+    rendered.push(renderedItem);
+  }
+  return rendered;
 }

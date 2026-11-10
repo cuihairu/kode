@@ -248,8 +248,10 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/activate/languageServices.ts', 674, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
-  ['src/activate/diagnostics.ts', 118, "startLanguageServiceOperation('diagnostics'"],
-  ['src/activate/diagnostics.ts', 131, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
+  // 再 +1 行 → 两处诊断打点锚点再 +1(118/131 → 119/132,真位重探)。
+  ['src/activate/diagnostics.ts', 119, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 132, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
