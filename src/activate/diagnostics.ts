@@ -18,7 +18,7 @@ import { buildAttributeNoneItemsWithRust } from '../backend/attributeNoneRust';
 import { ATTRIBUTE_NONE_DIAGNOSTICS_ENABLED_DEFAULT, attributeNoneDiagnosticItems, ATTRIBUTE_NONE_DIAGNOSTIC_CODE } from '../backend/selfAttributeNoneDiagnostics';
 import { SPACE_NAV_DIAGNOSTICS_ENABLED_DEFAULT, SPACE_NAV_DIAGNOSTIC_CODE, computeSpaceNavFindings } from '../backend/spaceNavDiagnostics';
 import { buildSpaceNavItemsWithRust } from '../backend/spaceNavRust';
-import { RPC_ARG_COUNT_DIAGNOSTICS_ENABLED_DEFAULT, RPC_ARG_COUNT_DIAGNOSTIC_CODE, computeRpcArgCountFindings } from '../backend/rpcArgCountDiagnostics';
+import { RPC_ARG_COUNT_DIAGNOSTICS_ENABLED_DEFAULT, RPC_ARG_COUNT_DIAGNOSTIC_CODE, computeRpcArgCountFindingsAsync } from '../backend/rpcArgCountDiagnostics';
 import { flowVersionKeyForDocument } from '../flowVersionKey';
 import {
   DEF_METHOD_MISSING_DIAGNOSTIC_CODE,
@@ -302,7 +302,10 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         const rpcArgCountEnabled = config
           .get<boolean>('rpcArgCountDiagnostics', RPC_ARG_COUNT_DIAGNOSTICS_ENABLED_DEFAULT);
         const rpcArgCountItems = rpcArgCountEnabled
-          ? computeRpcArgCountFindings(document.getText(), entityMapping).map(finding => ({
+          // AUDIT-005 B2 批 8:Rust-first(`$/kode/lint/analyzeRpcArgCount`,
+          // 发现面/语义闸/消息留 TS,实参计数面在 Rust);门不可用/失败/畸形
+          // 整面回本地计数兜底,禁止部分采用。
+          ? (await computeRpcArgCountFindingsAsync(document.getText(), entityMapping)).map(finding => ({
               range: {
                 start: { line: finding.line, character: finding.character },
                 end: { line: finding.line, character: finding.character + finding.methodName.length }

@@ -19,6 +19,7 @@ pub mod message_table;
 pub mod post_destroy;
 pub mod process_topology;
 pub mod property_direction;
+pub mod rpc_arg_count;
 pub mod python_callgraph;
 pub mod python_lexical_mask;
 pub mod readonly_write;

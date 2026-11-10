@@ -6,6 +6,7 @@ import {
   type PythonReceiverCall
 } from './pythonLanguageUtils';
 import { maskPythonNonCode } from './pythonLexicalMask';
+import { buildRpcArgCountsFromRust } from './rpcArgCountRust';
 
 /**
  * RPC 参数数量 lint(IDE-LINT-008,用户令 2026-11-06;KBE-PY-009 诊断面):
@@ -189,24 +190,18 @@ function resolveDeclaredArgCount(
 }
 
 /**
- * 全量计算:RPC 调用点实参数与 .def <Arg> 数明确不符的 Warning。
- * 纯函数(文本 + 内存映射快照),供诊断调度器同步 compute 面调用;
- * 无映射/无调用点即空集,零额外解析。
+ * 判定核(批 8 抽出共用):发现面调用点 + 实参数槽位(calls 序对齐,null=未知)
+ * → 语义闸与消息渲染。同步面喂本地计数,Rust-first 异步面喂 Rust 槽位;
+ * 两路判定零分叉。
  */
-export function computeRpcArgCountFindings(
-  text: string,
-  mapping?: EntityMapping
+function collectRpcArgCountFindings(
+  calls: readonly PythonReceiverCall[],
+  mapping: EntityMapping,
+  counts: ReadonlyArray<number | null>
 ): RpcArgCountFinding[] {
-  if (!mapping?.methods) { return []; }
-  // IDE-LINT-005 同款词法掩码:字符串/注释先行空白,列偏移不变。调用点发现
-  // 面走掩码(去字符串/注释里的伪调用);实参计数面走原文(计数自带词法态,
-  // 字符串里的逗号不当分隔——见 countCallArguments)。
-  const masked = maskPythonNonCode(text);
-  const calls = findPythonReceiverCalls(masked);
-  if (calls.length === 0) { return []; }
-  const lines = text.split(/\r?\n/);
   const findings: RpcArgCountFinding[] = [];
-  for (const call of calls) {
+  for (let index = 0; index < calls.length; index += 1) {
+    const call = calls[index];
     const declarations = mapping.methods[call.methodName];
     if (!declarations || declarations.length === 0) {
       continue; // 声明未就绪:未知,不报
@@ -216,7 +211,9 @@ export function computeRpcArgCountFindings(
     if (!declared || declared.hasStarArg) {
       continue; // 段外声明/星号形参/歧义:未知,不报
     }
-    const actualCount = countCallArguments(lines, call);
+    // 槽位与 calls 序对齐由两路构造保证(Rust 面校验长度,本地面 map 同序);
+    // Rust 槽位 null=未知合法,不槽位级回退本地(整面纪律,禁部分采用)
+    const actualCount = counts[index] ?? null;
     if (actualCount === null || actualCount === declared.declaredCount) {
       continue; // 未知或数量一致:不报
     }
@@ -243,4 +240,48 @@ export function computeRpcArgCountFindings(
     });
   }
   return findings;
+}
+
+/**
+ * 全量计算:RPC 调用点实参数与 .def <Arg> 数明确不符的 Warning。
+ * 纯函数(文本 + 内存映射快照),同步面;无映射/无调用点即空集,零额外解析。
+ * 实参计数面走本地 countCallArguments。
+ */
+export function computeRpcArgCountFindings(
+  text: string,
+  mapping?: EntityMapping
+): RpcArgCountFinding[] {
+  if (!mapping?.methods) { return []; }
+  // IDE-LINT-005 同款词法掩码:字符串/注释先行空白,列偏移不变。调用点发现
+  // 面走掩码(去字符串/注释里的伪调用);实参计数面走原文(计数自带词法态,
+  // 字符串里的逗号不当分隔——见 countCallArguments)。
+  const masked = maskPythonNonCode(text);
+  const calls = findPythonReceiverCalls(masked);
+  if (calls.length === 0) { return []; }
+  const lines = text.split(/\r?\n/);
+  return collectRpcArgCountFindings(
+    calls,
+    mapping,
+    calls.map(call => countCallArguments(lines, call))
+  );
+}
+
+/**
+ * Rust-first 异步面(AUDIT-005 B2 批 8):发现面/语义闸/消息同同步面,实参
+ * 计数面走 `$/kode/lint/analyzeRpcArgCount`(params.text = 原文——计数自带
+ * 词法态,发现面掩码坐标在原文同位);计数不可用/失败/畸形整面回本地计数,
+ * 禁止部分采用。params.text = 原文口径见 rpcArgCountRust。
+ */
+export async function computeRpcArgCountFindingsAsync(
+  text: string,
+  mapping?: EntityMapping
+): Promise<RpcArgCountFinding[]> {
+  if (!mapping?.methods) { return []; }
+  const masked = maskPythonNonCode(text);
+  const calls = findPythonReceiverCalls(masked);
+  if (calls.length === 0) { return []; }
+  const lines = text.split(/\r?\n/);
+  const rustCounts = await buildRpcArgCountsFromRust(text, calls);
+  const counts = rustCounts ?? calls.map(call => countCallArguments(lines, call));
+  return collectRpcArgCountFindings(calls, mapping, counts);
 }

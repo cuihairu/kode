@@ -121,6 +121,7 @@ impl ServerState {
         crate::def_md5::register(&mut rpc);
         crate::attribute_none::register(&mut rpc);
         crate::property_direction::register(&mut rpc);
+        crate::rpc_arg_count::register(&mut rpc);
         crate::trap_lints::register(&mut rpc);
         crate::post_destroy::register(&mut rpc);
         crate::readonly_write::register(&mut rpc);
