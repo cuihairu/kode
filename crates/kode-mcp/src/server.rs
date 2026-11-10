@@ -208,6 +208,36 @@ impl KodeMcpServer {
                     as usize;
                 crate::read_node::read_node(&self.knowledge, &self.assets_root, &node, limit)
             }
+            "get_dependencies" => {
+                let symbol = arg_str("symbol").unwrap_or_default();
+                if symbol.is_empty() {
+                    Err("missing argument: symbol".to_string())
+                } else {
+                    let max_depth = arguments
+                        .get("maxDepth")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(crate::kb_index::MAX_DEP_DEPTH as u64)
+                        as usize;
+                    let max_nodes = arguments
+                        .get("maxNodes")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(crate::kb_index::MAX_DEP_NODES as u64)
+                        as usize;
+                    self.index.get_dependencies(&symbol, max_depth, max_nodes)
+                }
+            }
+            "query_excel" => {
+                let limit = arguments
+                    .get("limit")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(50) as usize;
+                Ok(self.index.query_excel(
+                    arg_str("file").as_deref(),
+                    arg_str("sheet").as_deref(),
+                    arg_str("text").as_deref(),
+                    limit,
+                ))
+            }
             other => Err(format!("unknown tool: {other}")),
         };
         match result {
@@ -454,6 +484,31 @@ impl ServerHandler for KodeMcpServer {
                             "route": {"type": "string", "description": "optional route override: exact|bm25 (default auto)"}
                         }),
                         &["query"],
+                    ),
+                ),
+                Self::tool(
+                    "get_dependencies",
+                    "Bounded cross-format dependency closure for a symbol: the outgoing reference edges (what a change to this symbol propagates to), each hop carrying its production rule and confidence (determined/inferred/unknown). Covers the indexed rule set: entity-class-name, types.xml type-reference, implementedBy, def-method-name and excel-cell-name-match (same-name heuristic, always unknown confidence). Seeds accept a node id or an exact node name. Honest scope: outgoing references only — incoming dependents are not traced; Python imports, calls and types.xml-to-types.xml references are not indexed, so a small closure does not prove a safe change boundary. Bounds: depth max 6, 256 nodes, reported as truncated when hit.",
+                    schema_of(
+                        serde_json::json!({
+                            "symbol": {"type": "string", "description": "node id or exact node name, e.g. slot, SKILL_SLOT, Avatar"},
+                            "maxDepth": {"type": "integer", "description": "optional traversal depth cap (default 6, hard cap 6)"},
+                            "maxNodes": {"type": "integer", "description": "optional reachable-node cap (default 256, hard cap 256)"}
+                        }),
+                        &["symbol"],
+                    ),
+                ),
+                Self::tool(
+                    "query_excel",
+                    "Query the indexed Excel tables (sheets, header columns, data rows) by file, sheet name, or cell-text substring. Sheet-name matching covers both the sheet node and its `{sheet}.rowN` / `{sheet}.column` children; text matching is a literal substring (`%`/`_` are not wildcards). Returns deterministic matches with A1-style locations; rows beyond the per-sheet index cap are visible only if they were indexed (the sheet node reports the cap).",
+                    schema_of(
+                        serde_json::json!({
+                            "file": {"type": "string", "description": "optional file-path filter (relative path as indexed)"},
+                            "sheet": {"type": "string", "description": "optional sheet-name filter, e.g. Items"},
+                            "text": {"type": "string", "description": "optional cell-text substring filter"},
+                            "limit": {"type": "integer", "description": "max matches (default 50, hard cap 200)"}
+                        }),
+                        &[],
                     ),
                 ),
             ],

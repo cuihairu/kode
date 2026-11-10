@@ -23,6 +23,7 @@ notify = "8"
 blake3 = "1"
 pulldown-cmark = { version = "0.13", default-features = false }
 calamine = "0.38"
+csv = "1"
 
 [dev-dependencies]
 rmcp = { version = "3.7", features = ["client", "transport-child-process"] }

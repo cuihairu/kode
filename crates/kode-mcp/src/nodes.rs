@@ -191,6 +191,20 @@ impl Relation {
             Relation::Calls => "calls",
         }
     }
+
+    /// Inverse of [`Relation::as_str`] (unknown names degrade to References,
+    /// mirroring [`crate::store::semantic_edge`]).
+    pub fn from_name(name: &str) -> Relation {
+        match name {
+            "defines" => Relation::Defines,
+            "imports" => Relation::Imports,
+            "contains" => Relation::Contains,
+            "configures" => Relation::Configures,
+            "implements" => Relation::Implements,
+            "calls" => Relation::Calls,
+            _ => Relation::References,
+        }
+    }
 }
 
 /// Cross-format reference edge (design doc §5/§10).

@@ -46,6 +46,15 @@ impl Confidence {
             Confidence::Unknown => "unknown",
         }
     }
+
+    /// Inverse of [`Confidence::as_str`] (unknown strings degrade to Unknown).
+    pub fn parse(s: &str) -> Confidence {
+        match s {
+            "determined" => Confidence::Determined,
+            "inferred" => Confidence::Inferred,
+            _ => Confidence::Unknown,
+        }
+    }
 }
 
 /// 解析结果:Python 类型表达式 + 置信度 + 解析路径。
@@ -560,6 +569,10 @@ pub(crate) struct SemanticEdgeRow {
     pub relation: &'static str,
     pub rule: &'static str,
     pub confidence: Confidence,
+    /// Endpoint file hints (P4 get_dependencies bridge uses them to pick the
+    /// right node when several files carry the same name).
+    pub from_file: Option<String>,
+    pub to_file: Option<String>,
 }
 
 /// Export the semantic edge set built by the P1 rules (KODE-MCP-KB-002 P2,
@@ -578,6 +591,8 @@ pub(crate) fn semantic_edge_rows(
             relation: e.relation,
             rule: e.rule,
             confidence: e.confidence,
+            from_file: Some(e.from_file),
+            to_file: e.to_file,
         })
         .collect()
 }

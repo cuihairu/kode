@@ -299,6 +299,99 @@ impl KbStore {
         (nodes, edges, by_format)
     }
 
+    /// All persisted edges (get_dependencies traversal input), deterministic
+    /// order so traversals are stable across runs.
+    pub fn edges(&self) -> Vec<crate::nodes::Reference> {
+        let conn = self.conn.lock().expect("store lock");
+        let mut stmt = match conn.prepare(
+            "SELECT source_node, target_node, relation, confidence, rule
+             FROM edges ORDER BY source_node, target_node, relation",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        stmt.query_map([], |r| {
+            let relation: String = r.get(2)?;
+            let confidence: String = r.get(3)?;
+            Ok(crate::nodes::Reference {
+                source_node: r.get(0)?,
+                target_node: r.get(1)?,
+                relation: Relation::from_name(&relation),
+                confidence: Confidence::parse(&confidence),
+                rule: r.get(4)?,
+            })
+        })
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .unwrap_or_default()
+    }
+
+    /// Nodes of the given kinds, deterministic order (excel reference rule and
+    /// name-map inputs).
+    pub fn nodes_of_kinds(&self, kinds: &[&str]) -> Vec<IndexNode> {
+        if kinds.is_empty() {
+            return Vec::new();
+        }
+        let placeholders = kinds
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 1))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let conn = self.conn.lock().expect("store lock");
+        let mut stmt = match conn
+            .prepare(&format!(
+                "SELECT {NODE_COLS} FROM nodes WHERE kind IN ({placeholders})
+                 ORDER BY file_path, id"
+            ))
+        {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        stmt.query_map(rusqlite::params_from_iter(kinds.iter()), row_to_node)
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .unwrap_or_default()
+    }
+
+    /// Excel-format query (query_excel tool): sheet/column/row nodes filtered
+    /// by file, sheet name (the node or its `{sheet}.`-prefixed children), or
+    /// cell-text substring (`%`/`_` are literal, escaped). Deterministic
+    /// order, bounded.
+    pub fn excel_query(
+        &self,
+        file: Option<&str>,
+        sheet: Option<&str>,
+        text: Option<&str>,
+        limit: usize,
+    ) -> Vec<IndexNode> {
+        let escaped = text.map(|t| {
+            t.replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        });
+        let conn = self.conn.lock().expect("store lock");
+        let mut stmt = match conn
+            .prepare(&format!(
+                "SELECT {NODE_COLS} FROM nodes
+                 WHERE kind IN ('excel-sheet', 'excel-column', 'excel-row')
+                   AND (?1 IS NULL OR file_path = ?1)
+                   AND (?2 IS NULL OR name = ?2
+                        OR substr(name, 1, length(?2) + 1) = ?2 || '.')
+                   AND (?3 IS NULL OR content LIKE '%' || ?3 || '%' ESCAPE '\\')
+                 ORDER BY file_path, id
+                 LIMIT ?4"
+            ))
+        {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        stmt.query_map(
+            rusqlite::params![file, sheet, escaped, limit.max(1) as i64],
+            row_to_node,
+        )
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .unwrap_or_default()
+    }
+
     /// Integrity self-check: every node content_hash still matches its
     /// content (content addressing holds after round-trips).
     pub fn content_addressing_intact(&self) -> bool {
@@ -331,14 +424,7 @@ pub fn semantic_edge(
     Reference {
         source_node: from.to_string(),
         target_node: to.to_string(),
-        relation: match relation {
-            "defines" => Relation::Defines,
-            "imports" => Relation::Imports,
-            "contains" => Relation::Contains,
-            "configures" => Relation::Configures,
-            "calls" => Relation::Calls,
-            _ => Relation::References,
-        },
+        relation: Relation::from_name(relation),
         confidence,
         rule: rule.to_string(),
     }

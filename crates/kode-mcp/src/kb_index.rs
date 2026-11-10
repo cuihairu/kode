@@ -41,6 +41,15 @@ const SKIP_COMMON: &[&str] = &[
     "third_party",
 ];
 
+/// Cap for excel-cell reference edges (deterministic row order, overflow
+/// dropped) so a pathological table cannot flood the edge table.
+const MAX_EXCEL_REF_EDGES: usize = 4000;
+
+/// get_dependencies traversal bounds (design doc §7: bounded affected range,
+/// truncation reported — never silently cut).
+pub const MAX_DEP_DEPTH: usize = 6;
+pub const MAX_DEP_NODES: usize = 256;
+
 /// P3 seam: pluggable vector semantic retrieval. Not built in P2; a caller
 /// may register one and NL queries will fuse its results with BM25.
 pub trait SemanticRetriever: Send + Sync + std::fmt::Debug {
@@ -202,7 +211,7 @@ impl KnowledgeIndex {
         push_scan(&["md"], std::slice::from_ref(root));
         push_scan(&["py"], &[root.join("scripts")]);
         push_scan(
-            &["xlsx", "xlsm", "xls", "ods", "xlsb"],
+            &["xlsx", "xlsm", "xls", "ods", "xlsb", "csv"],
             std::slice::from_ref(root),
         );
         // def/xml under scripts (def files + types/alias/entities xml).
@@ -286,13 +295,13 @@ impl KnowledgeIndex {
             let _ = self.fts.remove_file(path);
         }
 
-        // Re-extract changed files. Python/markdown/excel are per-file;
+        // Re-extract changed files. Python/markdown/excel/csv are per-file;
         // def/xml come from the freshly parsed model.
-        let mut changed_rel: HashSet<String> =
+        let changed_rel: HashSet<String> =
             changed_files.iter().map(|e| e.rel_path.clone()).collect();
         for e in &changed_files {
             let ext = e.ext.as_str();
-            if matches!(ext, "md" | "py" | "xlsx" | "xlsm" | "xls" | "ods" | "xlsb") {
+            if matches!(ext, "md" | "py" | "xlsx" | "xlsm" | "xls" | "ods" | "xlsb" | "csv") {
                 match extract::extract_file(&self.project, &self.root, &e.abs_path) {
                     Ok(nodes) => {
                         let _ = self.store.replace_file_nodes(&e.rel_path, &nodes);
@@ -310,7 +319,6 @@ impl KnowledgeIndex {
                         let _ = self.store.set_file(&e.rel_path, &e.blake3);
                     }
                 }
-                changed_rel.remove(&e.rel_path);
             }
         }
 
@@ -318,33 +326,50 @@ impl KnowledgeIndex {
         let def_xml_dirty = changed_rel
             .iter()
             .any(|p| p.ends_with(".def") || p.ends_with(".xml"));
-        if def_xml_dirty || !to_remove.is_empty() {
+        // Edge rebuild triggers: edges are produced from def/xml (P1 rules)
+        // AND from python class/method names AND from excel/csv cell values,
+        // so a python- or excel/csv-only change must rebuild them too (a
+        // markdown-only change cannot create or invalidate edges). Per-file
+        // extracts stay in `changed_rel` so these triggers see them — before
+        // P4 this only ran on def/xml dirt, leaving python/excel-derived
+        // edges stale.
+        let edge_sources_dirty = changed_rel.iter().any(|p| {
+            matches!(
+                p.rsplit('.').next().unwrap_or(""),
+                "def" | "xml" | "py" | "xlsx" | "xlsm" | "xls" | "ods" | "xlsb" | "csv"
+            )
+        }) || !to_remove.is_empty();
+        if def_xml_dirty || edge_sources_dirty {
             let kb = AssetKnowledge::load(&self.root);
-            let model_nodes = extract::def_xml_nodes(&kb, &self.project);
-            let mut by_file: HashMap<String, Vec<IndexNode>> = HashMap::new();
-            for n in &model_nodes {
-                by_file
-                    .entry(n.file_path.clone())
-                    .or_default()
-                    .push(n.clone());
-            }
-            // Replace every model-backed file currently present on disk.
-            let model_files: Vec<String> = disk
-                .iter()
-                .filter(|p| p.ends_with(".def") || p.ends_with(".xml"))
-                .cloned()
-                .collect();
-            for rel in &model_files {
-                let nodes = by_file.remove(rel).unwrap_or_default();
-                let _ = self.store.replace_file_nodes(rel, &nodes);
-                if let Err(err) = self.fts.replace_file(rel, &nodes) {
-                    stats.extract_errors += 1;
-                    stats.errors.push(format!("{rel}: {err}"));
+            if def_xml_dirty {
+                let model_nodes = extract::def_xml_nodes(&kb, &self.project);
+                let mut by_file: HashMap<String, Vec<IndexNode>> = HashMap::new();
+                for n in &model_nodes {
+                    by_file
+                        .entry(n.file_path.clone())
+                        .or_default()
+                        .push(n.clone());
+                }
+                // Replace every model-backed file currently present on disk.
+                let model_files: Vec<String> = disk
+                    .iter()
+                    .filter(|p| p.ends_with(".def") || p.ends_with(".xml"))
+                    .cloned()
+                    .collect();
+                for rel in &model_files {
+                    let nodes = by_file.remove(rel).unwrap_or_default();
+                    let _ = self.store.replace_file_nodes(rel, &nodes);
+                    if let Err(err) = self.fts.replace_file(rel, &nodes) {
+                        stats.extract_errors += 1;
+                        stats.errors.push(format!("{rel}: {err}"));
+                    }
                 }
             }
-            // Rebuild edges from the fresh model (P1 rules, persisted).
+            // Rebuild edges from the fresh model + excel rows (P1 rules +
+            // excel-cell-name-match, persisted).
             let py = crate::code_index::collect_symbols(&self.root);
-            let edges = self.semantic_edges(&kb, &py);
+            let mut edges = self.semantic_edges(&kb, &py);
+            edges.extend(self.excel_edges());
             let _ = self.store.replace_edges(&edges);
             // Update hashes for all model-backed files (they were "changed").
             for e in &entries {
@@ -395,8 +420,103 @@ impl KnowledgeIndex {
     ) -> Vec<Reference> {
         crate::semantic_model::semantic_edge_rows(kb, py, &self.root)
             .into_iter()
-            .map(|r| crate::store::semantic_edge(&r.from, &r.to, r.relation, r.rule, r.confidence))
+            .map(|r| Reference {
+                source_node: self.canonical_endpoint(&r.from, r.from_file.as_deref()),
+                target_node: self.canonical_endpoint(&r.to, r.to_file.as_deref()),
+                relation: crate::nodes::Relation::from_name(r.relation),
+                confidence: r.confidence,
+                rule: r.rule.to_string(),
+            })
             .collect()
+    }
+
+    /// Map a P1 edge endpoint (`def:Avatar.slot`, `def:Avatar.def`,
+    /// `types:SKILL_SLOT`, `py:Impl`, `py:Avatar.make`) to the persisted
+    /// IndexNode id carrying the same identity. The P1 vocabulary predates
+    /// the node-id scheme; the edge table stores canonical node ids so
+    /// get_dependencies traverses rule edges and excel edges in one id
+    /// space. Resolution is exact-name (case-insensitive), filtered by kind,
+    /// preferring the file hint; an unresolvable endpoint keeps its raw P1 id
+    /// and the traversal reports it as unindexed — never silently dropped.
+    fn canonical_endpoint(&self, raw: &str, file_hint: Option<&str>) -> String {
+        let Some((prefix, raw_name)) = raw.split_once(':') else {
+            return raw.to_string();
+        };
+        // The entity-class-name rule names entities by their def file
+        // (`def:Avatar.def`); the node carries the bare class name, so the
+        // `.def` suffix selects the entity kind instead of the dotted
+        // property/method bucket.
+        let (name, kinds): (&str, &[&str]) = match prefix {
+            "types" => (raw_name, &["xml-type"]),
+            "py" => {
+                if raw_name.contains('.') {
+                    (raw_name, &["python-method", "python-function"])
+                } else {
+                    (raw_name, &["python-class"])
+                }
+            }
+            "def" => match raw_name.strip_suffix(".def") {
+                Some(stem) => (stem, &["entity"]),
+                None if raw_name.contains('.') => (raw_name, &["entity-property", "entity-method"]),
+                None => (raw_name, &["entity"]),
+            },
+            _ => return raw.to_string(),
+        };
+        let kind_matched: Vec<_> = self
+            .store
+            .exact_lookup(name)
+            .into_iter()
+            .filter(|n| kinds.contains(&n.kind.as_str()))
+            .collect();
+        let picked = kind_matched
+            .iter()
+            .find(|n| file_hint.is_some_and(|f| n.file_path == f))
+            .or_else(|| kind_matched.first());
+        match picked {
+            Some(node) => node.id.clone(),
+            None => raw.to_string(),
+        }
+    }
+
+    /// Excel-cell reference edges (design doc §10 rule family 2, same-name
+    /// heuristic tier): a non-empty cell that exactly names an indexed entity
+    /// / xml type / Python class yields an `excel-cell-name-match` edge with
+    /// confidence Unknown — never Determined (§10 forbids same-name edges
+    /// from claiming certainty). Deterministic: rows in store order, cells
+    /// left to right; capped at [`MAX_EXCEL_REF_EDGES`] (overflow dropped).
+    fn excel_edges(&self) -> Vec<Reference> {
+        let symbols = self
+            .store
+            .nodes_of_kinds(&["entity", "xml-type", "python-class"]);
+        if symbols.is_empty() {
+            return Vec::new();
+        }
+        let mut by_name: HashMap<&str, Vec<&str>> = HashMap::new();
+        for s in &symbols {
+            by_name.entry(s.name.as_str()).or_default().push(s.id.as_str());
+        }
+        let rows = self.store.nodes_of_kinds(&["excel-row"]);
+        let mut out: Vec<Reference> = Vec::new();
+        'rows: for row in &rows {
+            for cell in row.content.split(" | ") {
+                let cell = cell.trim();
+                if let Some(targets) = by_name.get(cell) {
+                    for target in targets {
+                        if out.len() >= MAX_EXCEL_REF_EDGES {
+                            break 'rows;
+                        }
+                        out.push(Reference {
+                            source_node: row.id.clone(),
+                            target_node: (*target).to_string(),
+                            relation: crate::nodes::Relation::References,
+                            confidence: crate::semantic_model::Confidence::Unknown,
+                            rule: "excel-cell-name-match".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// Start the notify watcher over the root (recursive, noise-filtered).
@@ -553,6 +673,151 @@ impl KnowledgeIndex {
             "vector": vector_info,
             "deterministic": true,
         }))
+    }
+
+    /// Bounded cross-format dependency closure (design doc §7
+    /// `get_dependencies`, §12 P4 "full cross-format trace"): outgoing
+    /// references over the persisted edge set — what a change to the seed
+    /// symbol propagates to. Each hop carries its production rule and
+    /// confidence, so the AI gets the parsed reason per §10. Deterministic
+    /// (BFS in edge-store order), cycle-safe (visited set), bounded by depth
+    /// and node caps with `truncated` reported. Seeds accept a node id or an
+    /// exact node name (structure-first order); unknown symbols error
+    /// honestly instead of returning an empty closure.
+    pub fn get_dependencies(
+        &self,
+        symbol: &str,
+        max_depth: usize,
+        max_nodes: usize,
+    ) -> Result<Value, String> {
+        let mut seeds: Vec<IndexNode> = if let Some(node) = self.store.node_by_id(symbol) {
+            vec![node]
+        } else {
+            self.store.exact_lookup(symbol)
+        };
+        if seeds.is_empty() {
+            return Err(format!("symbol not found in the knowledge index: {symbol}"));
+        }
+        seeds.sort_by(|a, b| a.kind.rank().cmp(&b.kind.rank()).then_with(|| a.id.cmp(&b.id)));
+        seeds.truncate(8);
+
+        let max_depth = max_depth.clamp(1, MAX_DEP_DEPTH);
+        let max_nodes = max_nodes.clamp(1, MAX_DEP_NODES);
+
+        let edges = self.store.edges();
+        let mut adjacency: HashMap<&str, Vec<&Reference>> = HashMap::new();
+        for e in &edges {
+            adjacency
+                .entry(e.source_node.as_str())
+                .or_default()
+                .push(e);
+        }
+
+        let mut visited: std::collections::HashSet<String> =
+            seeds.iter().map(|n| n.id.clone()).collect();
+        let mut queue: std::collections::VecDeque<(String, usize)> = std::collections::VecDeque::new();
+        for s in &seeds {
+            queue.push_back((s.id.clone(), 0));
+        }
+        // (edge, hop depth, whether the reached target is a seed itself)
+        let mut reached: Vec<(&Reference, usize)> = Vec::new();
+        let mut truncated = false;
+        while let Some((id, depth)) = queue.pop_front() {
+            if depth >= max_depth || truncated {
+                continue;
+            }
+            let outgoing = adjacency.get(id.as_str()).cloned().unwrap_or_default();
+            for e in outgoing {
+                if visited.contains(&e.target_node) {
+                    continue; // already reached via a shorter path (cycle-safe)
+                }
+                if visited.len() >= max_nodes {
+                    truncated = true;
+                    break;
+                }
+                visited.insert(e.target_node.clone());
+                reached.push((e, depth + 1));
+                queue.push_back((e.target_node.clone(), depth + 1));
+            }
+        }
+
+        // Node details: seeds + every reached target. Targets may be rule
+        // placeholders not present as nodes (e.g. implementedBy pointing at a
+        // module path with no indexed class) — reported as unindexed, never
+        // silently skipped.
+        let mut node_rows: Vec<Value> = Vec::new();
+        let mut seed_ids: Vec<String> = Vec::new();
+        for s in &seeds {
+            seed_ids.push(s.id.clone());
+            node_rows.push(node_row(s, None));
+        }
+        let mut target_ids: Vec<&String> = reached
+            .iter()
+            .map(|(e, _)| &e.target_node)
+            .collect::<Vec<_>>();
+        target_ids.sort();
+        target_ids.dedup();
+        for id in target_ids {
+            if seeds.iter().any(|s| &s.id == id) {
+                continue;
+            }
+            match self.store.node_by_id(id) {
+                Some(node) => node_rows.push(node_row(&node, None)),
+                None => node_rows.push(json!({
+                    "id": id,
+                    "indexed": false,
+                    "note": "rule target has no indexed node",
+                })),
+            }
+        }
+
+        let edge_rows: Vec<Value> = reached
+            .iter()
+            .map(|(e, hop)| {
+                json!({
+                    "from": e.source_node,
+                    "to": e.target_node,
+                    "relation": e.relation.as_str(),
+                    "rule": e.rule,
+                    "confidence": e.confidence.as_str(),
+                    "hop": hop,
+                })
+            })
+            .collect();
+
+        Ok(json!({
+            "root": symbol,
+            "seeds": seed_ids,
+            "maxDepth": max_depth,
+            "nodeCount": visited.len(),
+            "edgeCount": reached.len(),
+            "truncated": truncated,
+            "nodes": node_rows,
+            "edges": edge_rows,
+            "scope": "outgoing references only (what a change propagates to); incoming dependents are not traced. Python imports, calls and types.xml-to-types.xml references are not indexed edges, so a small closure does not prove a safe change boundary.",
+            "deterministic": true,
+        }))
+    }
+
+    /// Excel query (design doc §7 `query_excel`): filter indexed excel
+    /// sheet/column/row nodes by file, sheet name, or cell-text substring;
+    /// deterministic order, bounded.
+    pub fn query_excel(
+        &self,
+        file: Option<&str>,
+        sheet: Option<&str>,
+        text: Option<&str>,
+        limit: usize,
+    ) -> Value {
+        let nodes = self
+            .store
+            .excel_query(file, sheet, text, limit.clamp(1, 200));
+        let count = nodes.len();
+        json!({
+            "count": count,
+            "matches": nodes.iter().map(|n| node_row(n, None)).collect::<Vec<_>>(),
+            "deterministic": true,
+        })
     }
 
     /// index_status storage face (merged by the server into the P1 status).

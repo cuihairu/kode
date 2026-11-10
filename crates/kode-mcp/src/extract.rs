@@ -570,6 +570,188 @@ pub fn excel_nodes(project: &str, rel_path: &str, path: &Path) -> Result<Vec<Ind
     Ok(out)
 }
 
+/// CSV table → the same sheet/column/row node shape as Excel (single table
+/// per file; the "sheet" is the file stem). UTF-8 only: a non-UTF-8 file
+/// yields one honest sheet node saying so (GBK and friends are not
+/// transcoded — reported, never silently mojibaked). The delimiter is
+/// detected from the header line among `,` `;` tab `|` (most occurrences
+/// outside quotes); field quoting follows RFC 4180 via the csv crate. Same
+/// bounds as Excel: rows beyond [`MAX_EXCEL_ROWS`] and cells beyond
+/// [`MAX_EXCEL_CELLS`] are dropped with the cap recorded in the sheet node,
+/// never silently. A malformed record stops the table with an honest note.
+pub fn csv_nodes(project: &str, rel_path: &str, path: &Path) -> Result<Vec<IndexNode>, String> {
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("csv")
+        .to_string();
+    let bytes = std::fs::read(path).map_err(|e| format!("{rel_path}: {e}"))?;
+    let bom_stripped = bytes
+        .strip_prefix(b"\xEF\xBB\xBF")
+        .unwrap_or(&bytes);
+    let text = match std::str::from_utf8(bom_stripped) {
+        Ok(t) => t.to_string(),
+        Err(_) => {
+            let mut used = std::collections::HashMap::new();
+            let note = format!("sheet {stem} unreadable (not valid UTF-8; only UTF-8 CSV is indexed)");
+            return Ok(vec![node(
+                project,
+                rel_path,
+                NodeKind::ExcelSheet,
+                &stem,
+                &note,
+                SourceLocation::Excel {
+                    sheet: stem.clone(),
+                    range: "unknown".to_string(),
+                },
+                &mut used,
+            )]);
+        }
+    };
+    let delimiter = detect_delimiter(text.lines().next().unwrap_or(""));
+    let mut reader = csv::ReaderBuilder::new()
+        .delimiter(delimiter)
+        .flexible(true)
+        .has_headers(false)
+        .from_reader(text.as_bytes());
+
+    let mut used = std::collections::HashMap::new();
+    let mut out = Vec::new();
+    let mut sheet_text = String::new();
+    let mut row_nodes: Vec<(usize, String, String)> = Vec::new();
+    let mut indexed_rows = 0usize;
+    let mut total_rows = 0usize;
+    let mut malformed: Option<usize> = None;
+    let mut max_cols = 0usize;
+    // Header cells with their original column positions (empty cells keep
+    // the position honest for A1 ranges; empty headers emit no column node).
+    let mut header_cells: Vec<(usize, String)> = Vec::new();
+    for (i, record) in reader.records().enumerate() {
+        let Ok(record) = record else {
+            malformed = Some(i + 1);
+            break;
+        };
+        total_rows += 1;
+        max_cols = max_cols.max(record.len());
+        let absolute_row = i + 1; // 1-based; record 0 is the header row
+        let cells: Vec<String> = record
+            .iter()
+            .take(MAX_EXCEL_CELLS)
+            .map(|c| c.trim().to_string())
+            .filter(|c| !c.is_empty())
+            .collect();
+        if i == 0 {
+            // Header row: indexed as sheet content (unfiltered, mirroring the
+            // Excel adapter) + positioned column nodes.
+            header_cells = record
+                .iter()
+                .take(MAX_EXCEL_CELLS)
+                .enumerate()
+                .map(|(ci, c)| (ci, c.trim().to_string()))
+                .collect();
+            if !cells.is_empty() {
+                sheet_text.push_str(&cells.join(" | "));
+                sheet_text.push('\n');
+            }
+            continue;
+        }
+        if cells.is_empty() {
+            continue;
+        }
+        let joined = cells.join(" | ");
+        if indexed_rows < MAX_EXCEL_ROWS {
+            sheet_text.push_str(&joined);
+            sheet_text.push('\n');
+            let end = col_letter(record.len().saturating_sub(1));
+            row_nodes.push((
+                absolute_row,
+                joined.clone(),
+                format!("A{absolute_row}:{end}{absolute_row}"),
+            ));
+            indexed_rows += 1;
+        }
+    }
+    let truncated_note = match (malformed, total_rows > indexed_rows) {
+        (Some(row), _) => format!(" (stopped at malformed record {row}; {indexed_rows} rows indexed)"),
+        (None, true) => format!(" (rows indexed {indexed_rows}/{total_rows}, capped at {MAX_EXCEL_ROWS})"),
+        (None, false) => String::new(),
+    };
+    let end = col_letter(max_cols.saturating_sub(1));
+    out.push(node(
+        project,
+        rel_path,
+        NodeKind::ExcelSheet,
+        &stem,
+        &format!("sheet {stem} {0}{truncated_note}", bound(&sheet_text)),
+        SourceLocation::Excel {
+            sheet: stem.clone(),
+            range: format!("A1:{end}1"),
+        },
+        &mut used,
+    ));
+    // Column nodes from the positioned header cells (positions keep A1
+    // ranges honest even with empty headers).
+    for (ci, header) in &header_cells {
+        if header.is_empty() {
+            continue;
+        }
+        out.push(node(
+            project,
+            rel_path,
+            NodeKind::ExcelColumn,
+            &format!("{stem}.{header}"),
+            &format!("column of sheet {stem}: {header}"),
+            SourceLocation::Excel {
+                sheet: stem.clone(),
+                range: format!("{}1", col_letter(*ci)),
+            },
+            &mut used,
+        ));
+    }
+    for (absolute_row, joined, range_str) in row_nodes {
+        out.push(node(
+            project,
+            rel_path,
+            NodeKind::ExcelRow,
+            &format!("{stem}.row{absolute_row}"),
+            &joined,
+            SourceLocation::Excel {
+                sheet: stem.clone(),
+                range: range_str,
+            },
+            &mut used,
+        ));
+    }
+    Ok(out)
+}
+
+/// Delimiter detection over the header line: the candidate occurring most
+/// often outside double quotes wins; `,` is the default.
+fn detect_delimiter(header: &str) -> u8 {
+    let count_outside_quotes = |needle: u8| -> usize {
+        let mut in_quotes = false;
+        let mut count = 0usize;
+        for b in header.bytes() {
+            if b == b'"' {
+                in_quotes = !in_quotes;
+            } else if b == needle && !in_quotes {
+                count += 1;
+            }
+        }
+        count
+    };
+    let mut best = b',';
+    let mut best_count = 0usize;
+    for candidate in ",;\t|".bytes() {
+        let count = count_outside_quotes(candidate);
+        if count > best_count {
+            best = candidate;
+            best_count = count;
+        }
+    }
+    best
+}
+
 /// Dispatch a disk file to its adapter by extension. def/xml come from the
 /// parsed model (see [`def_xml_nodes`]), not from this disk path.
 pub fn extract_file(project: &str, root: &Path, path: &Path) -> Result<Vec<IndexNode>, String> {
@@ -589,6 +771,7 @@ pub fn extract_file(project: &str, root: &Path, path: &Path) -> Result<Vec<Index
             Ok(python_nodes(project, &rel_path, path, &source))
         }
         "xlsx" | "xlsm" | "xls" | "ods" | "xlsb" => excel_nodes(project, &rel_path, path),
+        "csv" => csv_nodes(project, &rel_path, path),
         other => Err(format!("{rel_path}: no extractor for .{other}")),
     }
 }
@@ -597,7 +780,7 @@ pub fn extract_file(project: &str, root: &Path, path: &Path) -> Result<Vec<Index
 pub fn is_indexable_ext(ext: &str) -> bool {
     matches!(
         ext,
-        "md" | "py" | "xlsx" | "xlsm" | "xls" | "ods" | "xlsb" | "def" | "xml"
+        "md" | "py" | "xlsx" | "xlsm" | "xls" | "ods" | "xlsb" | "csv" | "def" | "xml"
     )
 }
 

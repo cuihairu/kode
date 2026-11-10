@@ -52,7 +52,7 @@ fn payload_of(result: CallToolResult) -> Value {
 }
 
 #[tokio::test]
-async fn list_tools_exposes_all_twenty_two() {
+async fn list_tools_exposes_all_twenty_four() {
     let client = connect().await;
     let tools = client.list_all_tools().await.expect("list_tools");
     let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
@@ -66,6 +66,7 @@ async fn list_tools_exposes_all_twenty_two() {
             "find_references",
             "find_symbol",
             "get_database_schema",
+            "get_dependencies",
             "get_entity_model",
             "get_entry_scripts",
             "get_final_config",
@@ -74,6 +75,7 @@ async fn list_tools_exposes_all_twenty_two() {
             "index_status",
             "list_config_settings",
             "protocol_frame",
+            "query_excel",
             "query_xml",
             "read_node",
             "search",
