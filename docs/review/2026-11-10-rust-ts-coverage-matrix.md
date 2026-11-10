@@ -15,11 +15,11 @@
 
 ## 二、当前 RPC/服务面总账
 
-Rust 注册面（server.rs 直读；2026-11-10 wire×2 摘除后）：**20 个 `$` RPC 方法 + 4 个 LSP 原生面**（hover/completion/definition/diagnostic，handle_hover:382/handle_completion:425/handle_definition:470/handle_diagnostic:507）+ did_open/did_change/did_close 通知。
+Rust 注册面（server.rs 直读；2026-11-10 wire×2 摘除后 20，同日 AUDIT-005 首批 `$/kode/lint/analyzeTraps` 加入后）：**21 个 `$` RPC 方法 + 4 个 LSP 原生面**（hover/completion/definition/diagnostic，handle_hover:382/handle_completion:425/handle_definition:470/handle_diagnostic:507）+ did_open/did_change/did_close 通知。
 
 TS 消费状态（2026-11-10）：
 
-- **生产消费中（18 RPC + 4 LSP 面）**：config/resolve、config/derive、databaseSchema/build、dbClone×5、def/md5、dependency/graph、lint/analyzeDef、messageTable/build、processTopology/validate、python/callgraph、python/symbols、ruff/lint、sdk/generate、workspace/scanAnchors；LSP 四面经 serveFromRust。
+- **生产消费中（19 RPC + 4 LSP 面）**：config/resolve、config/derive、databaseSchema/build、dbClone×5、def/md5、dependency/graph、lint/analyzeDef、lint/analyzeTraps（AUDIT-005 首批 f30348f8，trap 三规则）、messageTable/build、processTopology/validate、python/callgraph、python/symbols、ruff/lint、sdk/generate、workspace/scanAnchors；LSP 四面经 serveFromRust。
 - **判定不切（1）**：apiDocs/lookup（见上表）。
 - **已摘注册（2026-11-10 AUDIT-004 ①，bb405936）**：`$/kode/wire/encode`、`$/kode/wire/decode`（零 TS 消费者，kode-mcp 直接复用 wire_codec 库不经 RPC；注册面摘除+handler 删除+RPC 边界烟测清理，库面与 golden 往返测试原样保留）；`$/kode/echo` 保留（TS 测试夹具消费的传输健康探针，rpc.rs 注释已标明非用户功能面）。注册面 22→20。
 
@@ -37,9 +37,10 @@ def 结构分析（14 条 lint 规则：duplicate-definition/missing-type/unknow
 pythonParser(+WorkerHost)/pythonClassIndex/pythonLiteralTypes/pythonReturnTypeInference/pythonSelfScope/selfAttributeFlowTypes/selfAttributeNoneDiagnostics/selfPropertyTypeInference/pythonLexicalMask/pythonRoleRoots/pythonScanRules/pyreflyInfer/defPythonParity/inferredEnrichment/inferredCopy/userTypeContract(+Source)/semanticIndex/globalDataIndexCore(+src/flowVersionKey.ts)。
 Rust 侧 kode-python 仅有 symbols/callgraph 两面；**类型推断、self 属性流敏感分析（KODE-PERF-001 流敏感引擎）、None 诊断、userTypeContract、语义索引全部 TS-only**。这是「Rust 覆盖 TS 功能点」的最大未迁移块。
 
-**B2. def/entity 细粒度分析族（约 27 模块）**
+**B2. def/entity 细粒度分析族（约 27 模块；首批 3 模块已收编，2026-11-10 f30348f8）**
 defParser(+WorkerHost)/defChain/defCallChain(+ViewLogic)/defReferenceGraph/defMethodConsistency/defRenamer/definitionSemantics/definitionWorkspaceXml/entitiesXmlAnalysis/entityBuiltinProperties/entityFlowGraph/entityStubRegen/entityWizard/eventIndexTypes/fixedDictMutationDiagnostics/propertyDirectionDiagnostics/propertyCodeLens/propertyInitOrderLens/rpcArgCountDiagnostics/receiverNoneDiagnostics/roleMisuseDiagnostics/spaceNavDiagnostics/timerCleanupDiagnostics/postDestroyDiagnostics/destroyedEntityCaptureDiagnostics/readOnlyWriteDiagnostics/exceptionSourceLocator。
-对照：TS lintRuleRegistry 登记 37 条规则，Rust lint 仅 14 条结构规则；**trap 诊断族（rpcArgCount/receiverNone/roleMisuse/timerCleanup/spaceNav/postDestroy/destroyedCapture/readOnlyWrite/fixedDictMutation/propertyDirection/selfAttributeNone）与 callChain/referenceGraph/renamer/semantics 全部 TS-only**（消费入口 src/lintRuleRegistry.ts、src/trapDiagnosticsWiring.ts:161、src/activate/diagnostics.ts，self-contained 不经 Rust）。11-08 未核实清单 #2 已归类：「其余 collection 计算面全 TS」——本文给出模块级清单。
+**首批收编（AUDIT-005，f30348f8）：trap 三规则 fixedDictMutationDiagnostics/destroyedEntityCaptureDiagnostics/timerCleanupDiagnostics → `$/kode/lint/analyzeTraps`（crates/kode-server/src/trap_lints.rs 手移植，消息渲染留 TS，Rust-first + 畸形整面作废回退；对拍 tests/trapLintsRustParity.test.ts 真实二进制全量深等 + prove-red 验证）**。
+对照：TS lintRuleRegistry 登记 37 条规则，Rust lint 14 条结构规则 + trap 3 条；**trap 诊断族其余 8 条（rpcArgCount/receiverNone/roleMisuse/spaceNav/postDestroy/readOnlyWrite/propertyDirection/selfAttributeNone）与 callChain/referenceGraph/renamer/semantics 仍 TS-only**（消费入口 src/lintRuleRegistry.ts、src/trapDiagnosticsWiring.ts:161、src/activate/diagnostics.ts，self-contained 不经 Rust）。11-08 未核实清单 #2 已归类：「其余 collection 计算面全 TS」——本文给出模块级清单。
 
 **B3. 残留包装器（1）→ 已接线（2026-11-10 AUDIT-004 ②，768f4c81）**：`negotiateEngineDigest` 接入 def/md5 核查链——DefMd5CheckOutcome 携带 handshake（Rust 重算出 workspaceMd5 即协商为 md5/已协商；Rust 不可用退 unknown/未协商），报告增「Digest 协商」逐行可断言行；unknown 恒拒绝与客户端 sha256 互比（compareEngineDigest 闸门语义不变）。
 
@@ -58,7 +59,7 @@ git shell 族（gitRunner/gitHistory/gitRangeTimeline/gitQueryGate 等 7 模块�
 
 1. **wire 孤儿处置 → 已完成（bb405936）**：`$/kode/wire/encode|decode` 从注册面摘除（零消费者，kode-mcp 走库不走 RPC）；echo 保留并在 rpc.rs 标明「测试/传输健康探针，非用户功能面」。
 2. **B3 补接 → 已完成（768f4c81）**：negotiateEngineDigest 接入 def/md5 核查链（见 §B3）。
-3. **B1/B2 收编为分批车道**（大工程，每批单独对拍+切换+回退三面证据，沿 AUDIT-002 纪律）：优先级建议 B2 trap 诊断族先行（与 Rust lint 14 规则同域、输入同 def parse，Rust 已有 kode-parser 底座），B1 python 语义族次之（kode-python 需新增类型推断/流敏感面，跨度最大）。
+3. **B1/B2 收编为分批车道**（大工程，每批单独对拍+切换+回退三面证据，沿 AUDIT-002 纪律）：优先级建议 B2 trap 诊断族先行（与 Rust lint 14 规则同域、输入同 def parse，Rust 已有 kode-parser 底座），B1 python 语义族次之（kode-python 需新增类型推断/流敏感面，跨度最大）。**B2 首批已落地（2026-11-10 f30348f8）：trap 三规则（fixedDictMutation/destroyedEntityCapture/timerCleanup）→ `$/kode/lint/analyzeTraps`，对拍+切换+回退三面齐（tests/trapLintsRustParity.test.ts + trapDiagnosticsWiring.test.ts），B2 剩余约 24 模块续批**。
 4. 本矩阵只证接线不证行为对等；B 类收编每批必须对拍（沿 tests/defAnalyzerRustParity.test.ts / dependencyGraphParity.test.ts 先例）。
 
 ## 五、未验证（如实）
