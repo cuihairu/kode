@@ -81,8 +81,8 @@
 			<item>Client::onUpdateData_xyz_pr</item>
 			<item>Client::onUpdateData_xyz_ypr</item>
 		</disables>
-```
 	</trace_packet>
+```
 
 ```xml
 	<!-- 是否输出entity的创建， 脚本获取属性， 初始化属性等调试信息， 以及def信息
@@ -152,8 +152,8 @@
 					<internal>	0			</internal>
 					<external>	0			</external>
 				</bytes>
-```
 			</send>
+```
 
 ```xml
 			<receive>
@@ -168,9 +168,9 @@
 					<internal>	0			</internal>
 					<external>	2048		</external>
 				</bytes>
-```
 			</receive>
 		</windowOverflow>
+```
 
 ```xml
 		<!-- 加密通信，只对外部通道
@@ -372,9 +372,9 @@
 				-->
 				<loginAutoCreate> true </loginAutoCreate>
 			</account_registration>
-```
 		</account_system>
 	</dbmgr>
+```
 
 ```xml
 	<cellapp>
@@ -504,8 +504,8 @@
 			-->
 			<timeout> 15 </timeout>										<!-- Type: Integer -->
 		</witness>
-```
 	</cellapp>
+```
 
 ```xml
 	<baseapp>
@@ -643,8 +643,8 @@
 			-->
 			<checktick>60</checktick>
 		</respool>
-```
 	</baseapp>
+```
 
 ```xml
 	<cellappmgr>
@@ -782,8 +782,8 @@
 			-->
 			<default_layer> python </default_layer>
 		</telnet_service>
-```
 	</bots>
+```
 
 ```xml
 	<logger>
@@ -802,5 +802,5 @@
 		-->
 		<tick_sync_logs> 32 </tick_sync_logs>
 	</logger>
-```
 </root>
+```

@@ -74,10 +74,10 @@ The basic format:
 			// dictionary of value
 			<Type> typename </Type>
 		</keyName>
-```
 
        </Properties>
 </typename>
+```
 
 About implementedBy see also :Custom types
 
@@ -103,9 +103,9 @@ Example1:
 		<level>
 			<Type>	UINT16	</Type>
 		</level>
-```
 	</Properties>
 </AVATAR_INFOS>
+```
 
 The default format in memory(If you do not implementedBy):
 
@@ -119,9 +119,9 @@ Example2:
 		<values>
 			<Type>	ARRAY <of> AVATAR_INFOS </of>	</Type>
 		</values>
-```
 	</Properties>
 </AVATAR_INFOS_LIST>
+```
 
 The default format in memory(If you do not implementedBy):
 
@@ -140,9 +140,9 @@ Example3:
 		<values>
 			<Type>	ARRAY <of> ARRAY <of>INT64 </of> </of>	</Type>
 		</values>
-```
 	</Properties>
 </BAG>
+```
 
 The default format in memory(If you do not implementedBy):
 

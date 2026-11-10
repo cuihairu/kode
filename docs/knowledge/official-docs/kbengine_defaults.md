@@ -69,8 +69,8 @@ If you need to change the configuration of the engine, as long as the inheritanc
 			<item>Client::onUpdateData_xyz_pr</item>
 			<item>Client::onUpdateData_xyz_ypr</item>
 		</disables>
-```
 	</trace_packet>
+```
 
 ```xml
 	<!-- Whether the output the logs: create the entity, Script get attributes,
@@ -129,8 +129,8 @@ If you need to change the configuration of the engine, as long as the inheritanc
 					<internal>	0			</internal>
 					<external>	0			</external>
 				</bytes>
-```
 			</send>
+```
 
 ```xml
 			<receive>
@@ -145,9 +145,9 @@ If you need to change the configuration of the engine, as long as the inheritanc
 					<internal>	0			</internal>
 					<external>	2048		</external>
 				</bytes>
-```
 			</receive>
 		</windowOverflow>
+```
 
 ```xml
 		<!-- Encrypted communication, channel-external only
@@ -293,9 +293,9 @@ If you need to change the configuration of the engine, as long as the inheritanc
 				<!-- When logged in, the game database can not find the game account is automatically created -->
 				<loginAutoCreate> true </loginAutoCreate>
 			</account_registration>
-```
 		</account_system>
 	</dbmgr>
+```
 
 ```xml
 	<cellapp>
@@ -392,8 +392,8 @@ If you need to change the configuration of the engine, as long as the inheritanc
 			Not observed before timeout again, the recovery state. -->
 			<timeout> 15 </timeout>								<!-- Type: Integer -->
 		</witness>
-```
 	</cellapp>
+```
 
 ```xml
 	<baseapp>
@@ -490,8 +490,8 @@ If you need to change the configuration of the engine, as long as the inheritanc
 			<!-- Resource pool check tick (secs) -->
 			<checktick>60</checktick>
 		</respool>
-```
 	</baseapp>
+```
 
 ```xml
 	<cellappmgr>
@@ -595,8 +595,8 @@ If you need to change the configuration of the engine, as long as the inheritanc
 			<!-- layer of default the command -->
 			<default_layer> python </default_layer>
 		</telnet_service>
-```
 	</bots>
+```
 
 ```xml
 	<logger>
@@ -609,5 +609,5 @@ If you need to change the configuration of the engine, as long as the inheritanc
 		<!-- The number of single-process(baseapp, cellapp, etc..), A tick synchronization to the number of logger -->
 		<tick_sync_logs> 32 </tick_sync_logs>
 	</logger>
-```
 </root>
+```

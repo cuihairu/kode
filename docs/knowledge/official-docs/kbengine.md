@@ -26,7 +26,7 @@ If you need to change the configuration of the engine, as long as the inheritanc
 				<host> localhost </host>
 				<databaseName> kbe </databaseName>
 			</default>
-```
 		</databaseInterfaces>
 	</dbmgr>
 </root>
+```

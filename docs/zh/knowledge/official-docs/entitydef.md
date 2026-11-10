@@ -120,11 +120,11 @@
 			// 数据库索引， 支持UNIQUE与INDEX
 			<Index>			UNIQUE				</Index>
 		</accountName>
-```
 
 		...
 		...
 	</Properties>
+```
 
 ```xml
 	<ClientMethods>
@@ -139,11 +139,11 @@
 			// 自身规则所生成的协议ID, 这个ID必须所有def文件中唯一
 			<Utype>			1001				</Utype>
 		</onReqAvatarList>
-```
 
 		...
 		...
 	</ClientMethods>
+```
 
 ```xml
 	<BaseMethods>
@@ -159,11 +159,11 @@
 			// 自身规则所生成的协议ID, 这个ID必须所有def文件中唯一
 			<Utype>			1002				</Utype>
 		</reqAvatarList>
-```
 
 		...
 		...
 	</BaseMethods>
+```
 
 ```xml
 	<CellMethods>
@@ -179,10 +179,10 @@
 			// 自身规则所生成的协议ID, 这个ID必须所有def文件中唯一
 			<Utype>			1003				</Utype>
 		</hello>
-```
 	</CellMethods>
 
 </root>
+```
 
 例子: 在客户端中调用base方法获得角色列表(Account.py):
 

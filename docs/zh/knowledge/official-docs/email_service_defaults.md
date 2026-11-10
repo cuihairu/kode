@@ -36,8 +36,8 @@ kbengine/kbe/res/server/email_service_defaults.xml
 ```xml
 		<backlink_fail_message>
 		</backlink_fail_message>
-```
 	</email_activation>
+```
 
 ```xml
 	<email_resetpassword>
@@ -58,8 +58,8 @@ kbengine/kbe/res/server/email_service_defaults.xml
 ```xml
 		<backlink_fail_message>
 		</backlink_fail_message>
-```
 	</email_resetpassword>
+```
 
 ```xml
 	<email_bind>
@@ -82,6 +82,6 @@ kbengine/kbe/res/server/email_service_defaults.xml
 ```xml
 		<backlink_fail_message>
 		</backlink_fail_message>
-```
 	</email_bind>
 </root>
+```

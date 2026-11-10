@@ -17,28 +17,28 @@ If the user does not set any environment variables, the engine will automaticall
 
 Startup(nonsupport)
 Windows:
-	%KBE_ROOT%/<your assets>/safe_start.bat
+	%KBE_ROOT%/`<your assets>`/safe_start.bat
 
 Linux:
-	$KBE_ROOT/<your assets>/safe_start.sh
+	$KBE_ROOT/`<your assets>`/safe_start.sh
 
 (Note: The initial start mysql server will automatically build the table, you may need to wait for some time.)
 
 Shutdown
 Windows:
-	%KBE_ROOT%/<your assets>/safe_kill.bat
+	%KBE_ROOT%/`<your assets>`/safe_kill.bat
 
 Linux:
-	$KBE_ROOT/<your assets>/safe_kill.sh
+	$KBE_ROOT/`<your assets>`/safe_kill.sh
 
 Quick Startup and Shutdown
 Linux:
-	[kbe @gameserver ~]$ cd $KBE_ROOT/<your assets>
+	[kbe @gameserver ~]$ cd $KBE_ROOT/`<your assets>`
 	[kbe @gameserver ~]$ sh start_server.sh
 	[kbe @gameserver ~]$ sh kill_server.sh
 
 Windows:
-	cd %KBE_ROOT%/<your assets>
+	cd %KBE_ROOT%/`<your assets>`
 	start_server.bat
 	kill_server.bat
 

@@ -26,7 +26,7 @@
 				<host> localhost </host>
 				<databaseName> kbe </databaseName>
 			</default>
-```
 		</databaseInterfaces>
 	</dbmgr>
 </root>
+```

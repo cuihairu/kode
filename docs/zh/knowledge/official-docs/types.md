@@ -74,9 +74,9 @@ BLOB			N
 			// 字典的值
 			<Type> 类型名称 </Type>
 		</keyName>
-```
 
        </Properties>
+```
 </类型名称>
 
 关于implementedBy机制: 参看: 自定义类型
@@ -103,9 +103,9 @@ BLOB			N
 		<level>
 			<Type>	UINT16	</Type>
 		</level>
-```
 	</Properties>
 </AVATAR_INFOS>
+```
 
 在内存中的默认形式:
 
@@ -119,9 +119,9 @@ BLOB			N
 		<values>
 			<Type>	ARRAY <of> AVATAR_INFOS </of>	</Type>
 		</values>
-```
 	</Properties>
 </AVATAR_INFOS_LIST>
+```
 
 在内存中的默认形式(如果没有实现implementedBy):
 
@@ -140,9 +140,9 @@ BLOB			N
 		<values>
 			<Type>	ARRAY <of> ARRAY <of>INT64 </of> </of>	</Type>
 		</values>
-```
 	</Properties>
 </BAG>
+```
 
 在内存中的默认形式(如果没有实现implementedBy):
 

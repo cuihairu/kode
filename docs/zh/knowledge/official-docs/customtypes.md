@@ -27,8 +27,8 @@ types.xml中基本声明格式类似如下:
 			// 字典的值
 			<Type> 类型名称 </Type>
 		</keyName>
-```
 	</Properties>
+```
 </类型名称>
 
 一个例子:
@@ -47,9 +47,9 @@ assets\scripts\entity_defs\types.xml:
 		<k2>
 			<Type> INT32 </Type>
 		</k2>
-```
        </Properties>
 </XXX>
+```
 
 assets\scripts\user_type\XXX_PICKLER.py:
 
