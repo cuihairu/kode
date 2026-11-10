@@ -60,3 +60,4 @@ coverage/
 /bin/
 # kode managed dir (auto-generated)
 .kbengine/
+wt/
