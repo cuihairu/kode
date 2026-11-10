@@ -16,7 +16,11 @@
  * 不失效),存量绝对路径带工作区前缀的在下次同步时自动迁移,不可迁移的
  * 绝对路径由配置契约诊断 extraPathsAbsolute 报;CFG-03:同一次同步显式写
  * `python.analysis.stubPath`(Pylance 三级优先级:同名 .pyi → stubPath →
- * extraPaths),用户已自设的 stubPath 永不覆盖。
+ * extraPaths),用户已自设的 stubPath 永不覆盖;CFG-04:同一次同步键级合并
+ * `python.analysis.diagnosticSeverityOverrides` 加 reportMissingModuleSource
+ * =none——KBEngine 是 C++ 内嵌注册模块(PyImport_AddModule),磁盘上永远没有
+ * 对应 .py 源,.pyi 落地后 Pylance 的「已找到类型声明、无法从源码解析」是
+ * 嵌入模块常态噪声;用户已设的 override 永不覆盖,其他键原样保留。
  */
 
 import * as fs from 'fs';
@@ -42,6 +46,9 @@ export const PYTHON_EXTRA_PATHS_SYNC_ENABLED_DEFAULT = true;
 /** CFG-03:显式 stubPath 键与「本扩展写过」的记忆键(用户自设值永不覆盖) */
 export const PYTHON_STUB_PATH_SETTING = 'python.analysis.stubPath';
 export const PYTHON_STUB_PATH_MANAGED_KEY = 'kbengine.python.stubPath.managed';
+/** CFG-04:嵌入模块常态噪声(reportMissingModuleSource)所在的合并键 */
+export const PYTHON_DIAG_SEVERITY_OVERRIDES_SETTING =
+  'python.analysis.diagnosticSeverityOverrides';
 /** VS Code 工作区变量前缀(CFG-02:生成面一律变量形态,工作区可移植) */
 export const WORKSPACE_FOLDER_VAR = '${workspaceFolder}';
 
@@ -337,6 +344,25 @@ export async function syncPythonExtraPaths(
         if (storedStubPath !== stubPathValue) {
           await context.workspaceState?.update(stubPathKey, stubPathValue);
         }
+      }
+      // CFG-04:压 reportMissingModuleSource——KBEngine 是 C++ 内嵌注册模块
+      // (py_entitydef.cpp PyImport_AddModule("KBEngine")),磁盘上永远没有对应
+      // .py 源;KBEngine.pyi 落进 stubPath 后 Pylance 的「已找到类型声明,无法
+      // 从源码解析」是嵌入模块的常态而非故障。键级合并:只加自己这一个键,
+      // 用户已有的键(含已设过的 reportMissingModuleSource)一律不动;值恒为
+      // 'none',现值已对齐即零写,无需 managed 记忆键。存根导出关时本面一并
+      // 关(无 .pyi 即无此噪声,与 CFG-03 同口径)。
+      const rawOverrides = scoped.get<unknown>('analysis.diagnosticSeverityOverrides', undefined);
+      const overrides =
+        rawOverrides !== null && typeof rawOverrides === 'object' && !Array.isArray(rawOverrides)
+          ? (rawOverrides as Record<string, unknown>)
+          : {};
+      if (overrides['reportMissingModuleSource'] === undefined) {
+        await scoped.update(
+          'analysis.diagnosticSeverityOverrides',
+          { ...overrides, reportMissingModuleSource: 'none' },
+          vscode.ConfigurationTarget.WorkspaceFolder
+        );
       }
     }
   }

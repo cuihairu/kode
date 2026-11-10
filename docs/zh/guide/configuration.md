@@ -146,6 +146,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.inlayHints.typeData` | boolean | `true` | python 侧 `self.<属性>` 访问处以内联提示显示解析到底的类型注解(types.xml 别名逐层解析到底层内建,如 SERVER_ID→int;PYTHON/未知落 Any 不显示);`self.base/cell/client` RPC 调用点每实参后内联显示 def 已声明的形参类型(`: 类型`,只显类型不带合成形参名,只做已声明的,过段闸);数组 `<of>` 元素类型在 `for item in self.<属性>:` 迭代目标与 `x = self.<属性>[i]` 下标赋值局部变量后内联显示(同一解析链),与属性 F12 同一解析索引(批154;解析到底口径 2026-10-29;元素类型 2026-11-04) |
 | `kbengine.inlayHints.defParams` | boolean | `true` | entity 脚本区块(ClientMethods/BaseMethods/CellMethods)内 def 定义点的内联提示:未手写标注的形参名后内联 def 声明的 `<Arg>` 类型(`: 类型`),声明 `<ReturnType>` 时闭括号后内联 `-> 类型`;跨行 def 不出(与调用点 inlay 同规则) |
 | `kbengine.inlayHints.defProps` | boolean | `true` | entity 脚本内整行注释锚 `# kode:props-from-def` 行尾内联渲染该实体 def 根级属性只读清单(逐属性名+解析类型;段悬停给 def 声明出处)。纯渲染层,不写代码,属性唯一事实源仍为 .def |
+| `kbengine.inlayHints.propertyShadow` | boolean | `true` | 淡色内嵌提示,永不下划线:`self.y = self.cellData["x"]` 赋值行与裸的域外读取处渲染「复制属性 x: <类型> · <域位>」;`self.cellData["key"]` 访问后渲染 key 的 def 面(域位不含 cell 追加「不在 cellData」);受 `kbengine.propertyDirectionDiagnostics` 双控 |
 
 四类 CodeLens 开关变更即时生效,不用重载窗口;inlay 无变更事件,关掉后下一次渲染生效。
 
@@ -308,7 +309,7 @@ guiconsole 协议链（machined UDP 发现 + 直连各组件 TCP）：日志 tai
 
 边界:extraPaths 的管理段只认默认约定目录 `.kbengine/stubs`(导出开且 `KBEngine.pyi` 或 `kbe_types.py` 在盘时并入,两份生成物同居一个目录);用户配置的 `kbengine.python.stubDir` 目录不并入管理段,需要时自行加入 `python.analysis.extraPaths`。
 
-Pylance 对 `KBEngine` 这类模块的解析优先级(从高到低):同名 .pyi → stubPath → extraPaths。kode 把这个顺序显式化:接线 `python.analysis.extraPaths` 的同一次同步会写 `python.analysis.stubPath` = `${workspaceFolder}/.kbengine/stubs`(随 `kbengine.managedDir` 同迁,不跟用户自配的 `kbengine.python.stubDir`;且仅在 `kbengine.python.stubExport` 开启时写)。你自己设的 `python.analysis.stubPath` 永不覆盖;现值已对齐时零写入。
+Pylance 对 `KBEngine` 这类模块的解析优先级(从高到低):同名 .pyi → stubPath → extraPaths。kode 把这个顺序显式化:接线 `python.analysis.extraPaths` 的同一次同步会写 `python.analysis.stubPath` = `${workspaceFolder}/.kbengine/stubs`(随 `kbengine.managedDir` 同迁,不跟用户自配的 `kbengine.python.stubDir`;且仅在 `kbengine.python.stubExport` 开启时写)。你自己设的 `python.analysis.stubPath` 永不覆盖;现值已对齐时零写入。同一次同步还会键级合并 `python.analysis.diagnosticSeverityOverrides` 加 `reportMissingModuleSource: none`:KBEngine 是 C++ 内嵌注册模块(py_entitydef 的 `PyImport_AddModule`),磁盘上永远没有对应 .py 源,Pylance 的「已找到类型声明、无法从源码解析」是嵌入模块常态噪声而非故障;你已设的 override(含 `reportMissingModuleSource` 本身)与其他键一律不动,`kbengine.python.stubExport` 关闭时本面一并关。
 
 ### 代码生成器
 

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import {
+  PYTHON_DIAG_SEVERITY_OVERRIDES_SETTING,
   PYTHON_EXTRA_PATHS_MANAGED_KEY,
   PYTHON_EXTRA_PATHS_SETTING,
   PYTHON_STUB_PATH_MANAGED_KEY,
@@ -27,7 +28,9 @@ import {
 //
 // CFG-02:生成的条目一律 ${workspaceFolder} 变量形态(工作区可移植),
 // 存量绝对路径带工作区前缀的自动迁移;CFG-03:显式写
-// python.analysis.stubPath=${workspaceFolder}/.kbengine/stubs。
+// python.analysis.stubPath=${workspaceFolder}/.kbengine/stubs;CFG-04:键级合并
+// python.analysis.diagnosticSeverityOverrides 压 reportMissingModuleSource=none
+// (C++ 内嵌模块磁盘上无 .py 源,提示是嵌入模块常态噪声)。
 
 const memento = new Map<string, unknown>();
 
@@ -327,14 +330,14 @@ describe('syncPythonExtraPaths(装配层)', () => {
     expect(collisionMessage).toContain('不会因顺序跨角色误解析');
   });
 
-  it('写 WorkspaceFolder 级配置并记忆管理段,第二次同步零写入(CFG-02 变量形态 + CFG-03 stubPath)', async () => {
+  it('写 WorkspaceFolder 级配置并记忆管理段,第二次同步零写入(CFG-02 变量形态 + CFG-03 stubPath + CFG-04 噪声压制)', async () => {
     stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
     const deps = { exists: (): boolean => true, listSubdirs: (): string[] => [] };
     const context = makeContext();
 
     await syncPythonExtraPaths(context, deps);
 
-    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(2);
+    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(3);
     expect(workspaceState.workspaceConfigurationUpdates[0]).toEqual({
       key: PYTHON_EXTRA_PATHS_SETTING,
       value: [
@@ -350,6 +353,13 @@ describe('syncPythonExtraPaths(装配层)', () => {
     expect(workspaceState.workspaceConfigurationUpdates[1]).toEqual({
       key: PYTHON_STUB_PATH_SETTING,
       value: '${workspaceFolder}/.kbengine/stubs',
+      scope: vscode.ConfigurationTarget.WorkspaceFolder,
+      folder: stubWorkspace.workspaceFolders[0]
+    });
+    // CFG-04:同一轮同步键级合并压 reportMissingModuleSource=none
+    expect(workspaceState.workspaceConfigurationUpdates[2]).toEqual({
+      key: PYTHON_DIAG_SEVERITY_OVERRIDES_SETTING,
+      value: { reportMissingModuleSource: 'none' },
       scope: vscode.ConfigurationTarget.WorkspaceFolder,
       folder: stubWorkspace.workspaceFolders[0]
     });
@@ -370,7 +380,8 @@ describe('syncPythonExtraPaths(装配层)', () => {
         '${workspaceFolder}/server_assets/scripts',
         '${workspaceFolder}/.kbengine/stubs'
       ],
-      'analysis.stubPath': '${workspaceFolder}/.kbengine/stubs'
+      'analysis.stubPath': '${workspaceFolder}/.kbengine/stubs',
+      'analysis.diagnosticSeverityOverrides': { reportMissingModuleSource: 'none' }
     });
     workspaceState.workspaceConfigurationUpdates.length = 0;
     await syncPythonExtraPaths(context, deps);
@@ -404,7 +415,7 @@ describe('syncPythonExtraPaths(装配层)', () => {
       listSubdirs: (): string[] => []
     });
 
-    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(2);
+    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(3);
     expect(memento.size).toBe(0);
     stubWorkspace.workspaceFolders = [];
   });
@@ -435,7 +446,7 @@ describe('syncPythonExtraPaths(装配层)', () => {
       listSubdirs: (): string[] => []
     }, { silent: true });
 
-    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(2);
+    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(3);
     expect(messages.info).toHaveLength(0);
     stubWorkspace.workspaceFolders = [];
   });
@@ -516,6 +527,12 @@ describe('syncPythonExtraPaths(装配层)', () => {
       '${workspaceFolder}/assets/scripts',
       '${workspaceFolder}/server_assets/scripts'
     ]);
+    // CFG-04 与 stubPath 同口径:存根导出关时不写噪声压制
+    expect(
+      workspaceState.workspaceConfigurationUpdates.filter(
+        entry => entry.key === PYTHON_DIAG_SEVERITY_OVERRIDES_SETTING
+      )
+    ).toHaveLength(0);
     stubWorkspace.workspaceFolders = [];
   });
 
@@ -588,6 +605,84 @@ describe('syncPythonExtraPaths(装配层)', () => {
 
     expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(0);
     expect(messages.info).toHaveLength(0);
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('CFG-04:同步键级合并压 reportMissingModuleSource=none(内嵌模块常态噪声)', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+
+    await syncPythonExtraPaths(makeContext(), {
+      exists: (): boolean => true,
+      listSubdirs: (): string[] => []
+    });
+
+    const write = workspaceState.workspaceConfigurationUpdates.find(
+      entry => entry.key === PYTHON_DIAG_SEVERITY_OVERRIDES_SETTING
+    );
+    expect(write?.value).toEqual({ reportMissingModuleSource: 'none' });
+    expect(write?.scope).toBe(vscode.ConfigurationTarget.WorkspaceFolder);
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('CFG-04:用户已设的 reportMissingModuleSource 永不覆盖,只管自己那段', async () => {
+    configurationOverrides.set('python', {
+      'analysis.diagnosticSeverityOverrides': {
+        reportUnusedImport: 'warning',
+        reportMissingModuleSource: 'warning'
+      }
+    });
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+
+    await syncPythonExtraPaths(makeContext(), {
+      exists: (): boolean => true,
+      listSubdirs: (): string[] => []
+    });
+
+    expect(
+      workspaceState.workspaceConfigurationUpdates.filter(
+        entry => entry.key === PYTHON_DIAG_SEVERITY_OVERRIDES_SETTING
+      )
+    ).toHaveLength(0);
+    configurationOverrides.delete('python');
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('CFG-04:用户已有其他 override 键时键级合并不吞并', async () => {
+    configurationOverrides.set('python', {
+      'analysis.diagnosticSeverityOverrides': { reportUnusedImport: 'warning' }
+    });
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+
+    await syncPythonExtraPaths(makeContext(), {
+      exists: (): boolean => true,
+      listSubdirs: (): string[] => []
+    });
+
+    const write = workspaceState.workspaceConfigurationUpdates.find(
+      entry => entry.key === PYTHON_DIAG_SEVERITY_OVERRIDES_SETTING
+    );
+    expect(write?.value).toEqual({
+      reportUnusedImport: 'warning',
+      reportMissingModuleSource: 'none'
+    });
+    configurationOverrides.delete('python');
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('CFG-04:overrides 值形态异常(非对象)按空处理照常写', async () => {
+    configurationOverrides.set('python', { 'analysis.diagnosticSeverityOverrides': 'oops' });
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+
+    await syncPythonExtraPaths(makeContext(), {
+      exists: (): boolean => true,
+      listSubdirs: (): string[] => []
+    });
+
+    const write = workspaceState.workspaceConfigurationUpdates.find(
+      entry => entry.key === PYTHON_DIAG_SEVERITY_OVERRIDES_SETTING
+    );
+    expect(write?.value).toEqual({ reportMissingModuleSource: 'none' });
+    configurationOverrides.delete('python');
     stubWorkspace.workspaceFolders = [];
   });
 });
