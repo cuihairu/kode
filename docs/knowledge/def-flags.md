@@ -15,6 +15,28 @@
 (missing an S) is preserved here verbatim — `common.cpp:38-40` even returns the string
 `"UNKOWN"` from `entityDataFlagsToString`.
 
+Bit map (byte layout, bit 7 → bit 0):
+
+```text
+┌───────────┬───────────┬───────────┬───────────┬───────────┬───────────┬───────────┬───────────┐
+│   bit 7   │   bit 6   │   bit 5   │   bit 4   │   bit 3   │   bit 2   │   bit 1   │   bit 0   │
+│    0x80   │    0x40   │    0x20   │    0x10   │    0x08   │    0x04   │    0x02   │    0x01   │
+│ OTHER_    │ BASE      │ BASE_AND_ │ OWN_      │ ALL_      │ CELL_     │ CELL_     │ CELL_     │
+│ CLIENTS   │           │ CLIENTS   │ CLIENT    │ CLIENTS   │ PRIVATE   │ PUBLIC    │ PUBLIC_   │
+│           │           │           │           │           │           │           │ AND_OWN   │
+└───────────┴───────────┴───────────┴───────────┴───────────┴───────────┴───────────┴───────────┘
+```
+
+Legend:
+
+- Each flag owns exactly one bit (one-hot values) — all combination semantics
+  live in the §2 relation masks, never in the flags themselves.
+- The `ED_FLAG_` prefix is omitted in the map: `OTHER_CLIENTS` stands for
+  `ED_FLAG_OTHER_CLIENTS`.
+- `ED_FLAG_UNKOWN` (0x00) occupies no bit — it is the all-zero parse-failure
+  sentinel.
+- `ED_FLAG_ALL` (`common.h:29-31`) is the union of the eight bits above.
+
 | Bit | Name | Engine comment | Meaning |
 | --- | --- | --- | --- |
 | 0x00 | `ED_FLAG_UNKOWN` | 未定义 | no face anywhere (parse-failure sentinel) |

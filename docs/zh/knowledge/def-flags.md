@@ -12,6 +12,25 @@
 `EntityDataFlags` 就是普通位掩码。引擎自带的枚举拼写 `ED_FLAG_UNKOWN`（少个 S）原样
 保留——`common.cpp:38-40` 的 `entityDataFlagsToString` 甚至返回字符串 `"UNKOWN"`。
 
+位图（byte 布局，bit 7 → bit 0）：
+
+```text
+┌───────────┬───────────┬───────────┬───────────┬───────────┬───────────┬───────────┬───────────┐
+│   bit 7   │   bit 6   │   bit 5   │   bit 4   │   bit 3   │   bit 2   │   bit 1   │   bit 0   │
+│    0x80   │    0x40   │    0x20   │    0x10   │    0x08   │    0x04   │    0x02   │    0x01   │
+│ OTHER_    │ BASE      │ BASE_AND_ │ OWN_      │ ALL_      │ CELL_     │ CELL_     │ CELL_     │
+│ CLIENTS   │           │ CLIENTS   │ CLIENT    │ CLIENTS   │ PRIVATE   │ PUBLIC    │ PUBLIC_   │
+│           │           │           │           │           │           │           │ AND_OWN   │
+└───────────┴───────────┴───────────┴───────────┴───────────┴───────────┴───────────┴───────────┘
+```
+
+标记说明：
+
+- 每个旗标独占 1 位（one-hot 位值）——组合语义全部在 §2 的关系掩码里，旗标本身不叠加。
+- 图中省略 `ED_FLAG_` 前缀：`OTHER_CLIENTS` 即 `ED_FLAG_OTHER_CLIENTS`。
+- `ED_FLAG_UNKOWN`（0x00）不占任何位——全零，解析失败哨兵。
+- `ED_FLAG_ALL`（`common.h:29-31`）＝上图 8 位之并。
+
 | 位 | 名字 | 引擎注释 | 含义 |
 | --- | --- | --- | --- |
 | 0x00 | `ED_FLAG_UNKOWN` | 未定义 | 任何进程面都没有（解析失败哨兵值） |
