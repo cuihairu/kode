@@ -52,6 +52,7 @@ impl RpcRegistry {
 }
 
 /// 内建 handler(Phase0 自检):echo 原样回显,验 dispatch 链路贯穿。
+/// 测试/传输健康探针入口(TS 侧仅测试夹具消费),非用户功能面。
 fn echo(params: Value) -> Result<Value, String> {
     Ok(params)
 }

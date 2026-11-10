@@ -33,7 +33,6 @@ mod hex;
 mod message_frame;
 mod method_args;
 mod property_stream;
-mod rpc;
 mod schema;
 mod types;
 mod values;
@@ -48,7 +47,6 @@ pub use property_stream::{
     decode_property_stream, encode_property_stream, BasePropUtype, EntityRef, EntityRefKind,
     PropKind, PropertyEntry, PropertyMode,
 };
-pub use rpc::register;
 pub use schema::WireSchema;
 pub use types::{EntityCallValue, WireField, WireLayout, WireValue};
 pub use values::{decode_value, encode_value};

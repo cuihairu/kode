@@ -7,15 +7,12 @@
 //! - 部分数组流尽早停;STRING 非 ASCII 停;ENTITYCALL 16B 定长;
 //! - WireSchema 结构重解析(SKILL_SLOT/POSITION/ITEM_IDS 嵌套+别名+环+未知);
 //! - 变长帧 ≥65535 扩展长(u16=65535+u32);
-//! - `$/kode/wire/encode|decode` RPC 边界 dispatch 烟测。
 
 use std::collections::HashMap;
 
 use serde_json::{json, Value};
 
-use kode_protocol::{IncomingMessage, Request, RequestId};
 use kode_server::wire_codec::*;
-use kode_server::{handle_message, Outgoing, ServerState};
 
 fn repo_root() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -409,99 +406,6 @@ fn wire_schema_from_sources_tolerant_branches() {
     // FIXED_DICT 无 `<Properties>` → 空字段 FixedDict(schema.rs:165 臂)。
     let schema = WireSchema::from_sources("<root><D> FIXED_DICT </D></root>", "");
     assert_eq!(schema.resolve("D").unwrap(), WireLayout::FixedDict(vec![]));
-}
-
-// ---------------------------------------------------------------------------
-// RPC 边界(`$/kode/wire/encode|decode`)dispatch 烟测
-// ---------------------------------------------------------------------------
-
-fn request(id: i64, method: &str, params: Value) -> IncomingMessage {
-    IncomingMessage::Request(Request {
-        jsonrpc: "2.0".into(),
-        id: RequestId::Number(id),
-        method: method.into(),
-        params: Some(params),
-    })
-}
-
-fn response_of(out: &[Outgoing]) -> &Value {
-    match &out[0] {
-        Outgoing::Response(response) => response.result.as_ref().unwrap(),
-        Outgoing::Notification(_) => panic!("expected response"),
-    }
-}
-
-#[test]
-fn wire_rpc_dispatch_smoke() {
-    let mut state = ServerState::new();
-    handle_message(
-        &mut state,
-        request(0, "initialize", json!({"capabilities": {}})),
-    );
-
-    let out = handle_message(
-        &mut state,
-        request(
-            1,
-            "$/kode/rpc",
-            json!({"method": "$/kode/wire/encode", "params": {"layout": "U32", "value": {"U32": 5}}}),
-        ),
-    );
-    assert_eq!(response_of(&out)["hex"], "05000000");
-
-    let out = handle_message(
-        &mut state,
-        request(
-            2,
-            "$/kode/rpc",
-            json!({"method": "$/kode/wire/decode", "params": {"layout": "U32", "hex": "05000000"}}),
-        ),
-    );
-    assert_eq!(response_of(&out), &json!({"U32": 5}));
-
-    // 固定字典经 RPC 边界(数组+字段名往返)
-    let out = handle_message(
-        &mut state,
-        request(
-            3,
-            "$/kode/rpc",
-            json!({
-                "method": "$/kode/wire/encode",
-                "params": {
-                    "layout": {"FixedDict": [
-                        {"name": "x", "layout": "F32"},
-                        {"name": "count", "layout": "U32"},
-                    ]},
-                    "value": {"FixedDict": [{"F32": 1.5}, {"U32": 2}]},
-                }
-            }),
-        ),
-    );
-    let hex = response_of(&out)["hex"].as_str().unwrap().to_string();
-    // x=1.5 → 0000c03f;count=2 → 02000000
-    assert_eq!(hex, "0000c03f02000000");
-
-    let out = handle_message(
-        &mut state,
-        request(
-            4,
-            "$/kode/rpc",
-            json!({
-                "method": "$/kode/wire/decode",
-                "params": {
-                    "layout": {"FixedDict": [
-                        {"name": "x", "layout": "F32"},
-                        {"name": "count", "layout": "U32"},
-                    ]},
-                    "hex": hex,
-                }
-            }),
-        ),
-    );
-    assert_eq!(
-        response_of(&out),
-        &json!({"FixedDict": [{"F32": 1.5}, {"U32": 2}]})
-    );
 }
 
 #[test]
@@ -1219,122 +1123,6 @@ fn wire_property_stream_decode_layout_error_propagates() {
     )
     .expect_err("布局闭包错误必须传播");
     assert_eq!(err, WireError::UnknownType("no-layout".into()));
-}
-
-// ---------------------------------------------------------------------------
-// RPC 边界:encode/decode 错误通道(畸形入参 → error,不 panic)
-// ---------------------------------------------------------------------------
-
-fn rpc_error_of(out: &[Outgoing]) -> String {
-    match &out[0] {
-        Outgoing::Response(response) => response
-            .error
-            .as_ref()
-            .unwrap_or_else(|| panic!("expected error response"))
-            .message
-            .clone(),
-        Outgoing::Notification(_) => panic!("expected response"),
-    }
-}
-
-/// `$/kode/wire/encode` 的布局/值解析失败与编解码失败经 RPC error 通道。
-#[test]
-fn wire_rpc_encode_error_channel() {
-    let mut state = ServerState::new();
-    handle_message(
-        &mut state,
-        request(0, "initialize", json!({"capabilities": {}})),
-    );
-
-    // 布局非法(serde 失败)→ error
-    let out = handle_message(
-        &mut state,
-        request(
-            1,
-            "$/kode/rpc",
-            json!({"method": "$/kode/wire/encode", "params": {"layout": 42, "value": {}}}),
-        ),
-    );
-    assert!(!rpc_error_of(&out).is_empty(), "非法布局必须 error");
-
-    // 值缺失(serde 默认 null 失败)→ error
-    let out = handle_message(
-        &mut state,
-        request(
-            2,
-            "$/kode/rpc",
-            json!({"method": "$/kode/wire/encode", "params": {"layout": "U32"}}),
-        ),
-    );
-    assert!(!rpc_error_of(&out).is_empty(), "缺值必须 error");
-
-    // 布局/值失配 → 编码错误经 error
-    let out = handle_message(
-        &mut state,
-        request(
-            3,
-            "$/kode/rpc",
-            json!({"method": "$/kode/wire/encode", "params": {"layout": "U32", "value": {"Str": "x"}}}),
-        ),
-    );
-    let msg = rpc_error_of(&out);
-    assert!(msg.contains("type mismatch"), "失配 error: {msg}");
-}
-
-/// `$/kode/wire/decode` 的缺 hex/非法 hex/截断流错误通道。
-#[test]
-fn wire_rpc_decode_error_channel() {
-    let mut state = ServerState::new();
-    handle_message(
-        &mut state,
-        request(0, "initialize", json!({"capabilities": {}})),
-    );
-
-    // 缺 hex → "missing hex"
-    let out = handle_message(
-        &mut state,
-        request(
-            1,
-            "$/kode/rpc",
-            json!({"method": "$/kode/wire/decode", "params": {"layout": "U32"}}),
-        ),
-    );
-    assert_eq!(rpc_error_of(&out), "missing hex");
-
-    // 非法 hex → InvalidHex error
-    let out = handle_message(
-        &mut state,
-        request(
-            2,
-            "$/kode/rpc",
-            json!({"method": "$/kode/wire/decode", "params": {"layout": "U32", "hex": "zz"}}),
-        ),
-    );
-    let msg = rpc_error_of(&out);
-    assert!(msg.contains("invalid hex"), "非法 hex: {msg}");
-
-    // 截断流 → Truncated error
-    let out = handle_message(
-        &mut state,
-        request(
-            3,
-            "$/kode/rpc",
-            json!({"method": "$/kode/wire/decode", "params": {"layout": "U32", "hex": "00"}}),
-        ),
-    );
-    let msg = rpc_error_of(&out);
-    assert!(msg.contains("truncated stream"), "截断: {msg}");
-
-    // 布局非法 → error
-    let out = handle_message(
-        &mut state,
-        request(
-            4,
-            "$/kode/rpc",
-            json!({"method": "$/kode/wire/decode", "params": {"layout": 9, "hex": "00000000"}}),
-        ),
-    );
-    assert!(!rpc_error_of(&out).is_empty(), "非法布局必须 error");
 }
 
 /// STRING 编码拒绝非 ASCII(KODE-AUD-010 同族;嵌入 NUL 已有样例覆盖)。
