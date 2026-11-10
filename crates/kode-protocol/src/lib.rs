@@ -559,7 +559,7 @@ mod file_changed_notification {
     #[test]
     fn method_name_matches_ts_constant() {
         // 跨语言对账锁:TS 侧 KODE_FILE_CHANGED_METHOD 与本常量逐字一致
-        let ts = include_str!("../../../src/fileChangeBypass.ts");
+        let ts = include_str!("../../../src/backend/fileChangeBypass.ts");
         assert_eq!(FILE_CHANGED_NOTIFICATION, "$/kode/fileChanged");
         assert!(
             ts.contains(&format!("'{FILE_CHANGED_NOTIFICATION}'")),
