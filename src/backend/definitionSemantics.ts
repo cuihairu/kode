@@ -1,4 +1,5 @@
 import { normalizeFileIdentity } from './pathIdentity';
+import { propertyFlagDomainList } from './defAnalyzer';
 import { readSharedFileSnapshot } from '../sharedFileSnapshot';
 import {
   DefDocument,
@@ -287,6 +288,21 @@ export class DefinitionSemanticsLoader {
    * IDE-IDX-001:从已定位的本地语义出发解析(名字入口与精确路径入口共用);
    * visited 按 owner 文件路径去重,离开即回退。
    */
+  /**
+   * effective 合并键:属性路径 + 旗标桶集签名。引擎判重是「桶内按名唯一」
+   * (scriptdef_module.cpp:585-593;桶路由 entitydef.cpp:1284-1297)——桶集
+   * 不相交的同名属性合法共存(如 BASE+Persistent 与 ALL_CLIENTS 双条,各有
+   * 独立 utype);桶集相同引擎必拒载,这里保持首条遮蔽语义(lint 已报)。
+   * 分析:docs/review/2026-11-10-def-duplicate-property-and-owner-only-flags.md。
+   */
+  // eslint-disable-next-line no-invalid-this -- 无状态纯函数,static 化会破坏本文件类内私有的排版惯例
+  private effectivePropertyKey(property: DefinitionProperty): string {
+    const domains = propertyFlagDomainList(property.flags).slice().sort();
+    return domains.length > 0
+      ? `${property.fullPath}::${domains.join('+')}`
+      : property.fullPath;
+  }
+
   private resolveSemanticsFromLocal(
     local: LocalDefinitionSemantics,
     context: ResolutionContext
@@ -306,8 +322,8 @@ export class DefinitionSemanticsLoader {
       const seenComponentSlots = new Set<string>();
 
       for (const property of local.properties) {
-        if (!effectivePropertyMap.has(property.fullPath)) {
-          effectivePropertyMap.set(property.fullPath, cloneProperty(property));
+        if (!effectivePropertyMap.has(effectivePropertyKey(property))) {
+          effectivePropertyMap.set(effectivePropertyKey(property), cloneProperty(property));
         }
       }
 
@@ -368,9 +384,9 @@ export class DefinitionSemanticsLoader {
         });
 
         for (const property of interfaceResolved.effectiveProperties) {
-          if (!effectivePropertyMap.has(property.fullPath)) {
+          if (!effectivePropertyMap.has(effectivePropertyKey(property))) {
             effectivePropertyMap.set(
-              property.fullPath,
+              effectivePropertyKey(property),
               cloneProperty(property, undefined, createSource('interface', [interfaceRef.name]))
             );
           }
@@ -451,9 +467,9 @@ export class DefinitionSemanticsLoader {
           });
 
           for (const property of parentResolved.effectiveProperties) {
-            if (!effectivePropertyMap.has(property.fullPath)) {
+            if (!effectivePropertyMap.has(effectivePropertyKey(property))) {
               effectivePropertyMap.set(
-                property.fullPath,
+                effectivePropertyKey(property),
                 cloneProperty(property, undefined, createSource('parent', parentChain))
               );
             }
@@ -890,6 +906,20 @@ function parseOptionalNumber(value: string | undefined): number | undefined {
 
 function buildCacheKey(category: DefinitionSemanticCategory, name: string): string {
   return `${category}:${name}`;
+}
+
+/**
+ * effective 合并键:属性路径 + 旗标桶集签名。引擎判重是「桶内按名唯一」
+ * (scriptdef_module.cpp:585-593;桶路由 entitydef.cpp:1284-1297)——桶集
+ * 不相交的同名属性合法共存(如 BASE+Persistent 与 ALL_CLIENTS 双条,各有
+ * 独立 utype);桶集相同引擎必拒载,这里保持首条遮蔽语义(lint 已报)。
+ * 分析:docs/review/2026-11-10-def-duplicate-property-and-owner-only-flags.md。
+ */
+function effectivePropertyKey(property: DefinitionProperty): string {
+  const domains = propertyFlagDomainList(property.flags).slice().sort();
+  return domains.length > 0
+    ? `${property.fullPath}::${domains.join('+')}`
+    : property.fullPath;
 }
 
 function createSource(

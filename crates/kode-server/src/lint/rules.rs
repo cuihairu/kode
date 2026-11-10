@@ -182,7 +182,9 @@ fn split_flags(raw: &str) -> Vec<String> {
 /// Flags → 三域位(base/cell/client;common.h ENTITY_*_DATA_FLAGS 真值)。
 /// 与 TS propertyFlagDomainList 同源:先经 normalize_flag_tokens 归一(trim+
 /// 大写+CELL→CELL_PUBLIC 别名+遗留拼写折叠),再按 flag_domains 单一来源表
-/// 映射(OWN_CLIENT/OTHER_CLIENTS 仅 client,不入 cell)。
+/// 映射(OWN_CLIENT/OTHER_CLIENTS/ALL_CLIENTS/CELL_PUBLIC_AND_OWN 均为
+/// cell+client 双桶——正是引擎 CELL/CLIENT 桶成员,同名桶相交判重与引擎
+/// 拒载同构)。
 fn flag_scopes(flags: &[String]) -> Vec<String> {
     flag_domains(&normalize_flag_tokens(&flags.join("|")))
         .iter()

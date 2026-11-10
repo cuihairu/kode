@@ -299,6 +299,65 @@ describe('DefinitionSemanticsLoader resolution across inheritance', () => {
   });
 });
 
+describe('同名双域属性(引擎桶形态)', () => {
+  let dupRoot = '';
+
+  beforeAll(() => {
+    dupRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-semantics-dup-'));
+    // 用户实测形态(2026-11-10):同名属性 BASE+Persistent 与 ALL_CLIENTS 各一条,
+    // 引擎判重按桶(scriptdef_module.cpp:585-593)——桶集不相交 → 合法共存;
+    // 再放一对同名同桶(CELL_PRIVATE/CELL_PUBLIC 同属 cell 桶,引擎必拒载)
+    // 锁首条遮蔽语义。分析:docs/review/2026-11-10-def-duplicate-property-and-owner-only-flags.md
+    const dup = [
+      '<root>',
+      '  <Properties>',
+      '    <inUseVehicleId>',
+      '      <Type>UINT32</Type>',
+      '      <Flags>BASE</Flags>',
+      '      <Persistent>true</Persistent>',
+      '    </inUseVehicleId>',
+      '    <inUseVehicleId>',
+      '      <Type>UINT32</Type>',
+      '      <Flags>ALL_CLIENTS</Flags>',
+      '    </inUseVehicleId>',
+      '    <slot>',
+      '      <Type>UINT32</Type>',
+      '      <Flags>CELL_PRIVATE</Flags>',
+      '    </slot>',
+      '    <slot>',
+      '      <Type>UINT32</Type>',
+      '      <Flags>CELL_PUBLIC</Flags>',
+      '    </slot>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n');
+    const file = path.join(dupRoot, 'scripts/entity_defs/VehicleMgr.def');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, dup, 'utf8');
+  });
+
+  afterAll(() => {
+    fs.rmSync(dupRoot, { recursive: true, force: true });
+  });
+
+  it('桶集不相交的同名双条都进 effective 集,各自保留 flags/persistent', () => {
+    const resolved = createDefinitionSemanticsLoader(dupRoot)!.loadResolved('VehicleMgr', 'entity')!;
+    const dup = resolved.effectiveProperties.filter(property => property.name === 'inUseVehicleId');
+    expect(dup).toHaveLength(2);
+    expect(dup.map(property => property.flags).sort()).toEqual(['ALL_CLIENTS', 'BASE']);
+    expect(dup.find(property => property.flags === 'BASE')!.persistent).toBe(true);
+    expect(dup.find(property => property.flags === 'ALL_CLIENTS')!.persistent).toBeFalsy();
+  });
+
+  it('同名同桶仍首条遮蔽(引擎必拒载,判重交 lint)', () => {
+    const resolved = createDefinitionSemanticsLoader(dupRoot)!.loadResolved('VehicleMgr', 'entity')!;
+    const slots = resolved.effectiveProperties.filter(property => property.name === 'slot');
+    expect(slots).toHaveLength(1);
+    expect(slots[0].flags).toBe('CELL_PRIVATE');
+    expect(slots[0].source.kind).toBe('local');
+  });
+});
+
 describe('definition semantics corner cases and clone propagation', () => {
   // 第二夹具:覆盖节点值式接口引用、重复/空组件槽、嵌套 Properties、
   // 接口带组件与父接口(嵌套 Mixin)、组件 Parent 链、空文件与同名目录降级。

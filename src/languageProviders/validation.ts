@@ -7,7 +7,7 @@ import { getKodeCoreShadowGate, serveDiagnosticsFromRust, shadowObserveDefDocume
 import { analyzeDefDocumentInRust, type DefAnalysisFinding } from '../backend/defAnalyzer';
 import { collectDefPythonParityInput } from '../backend/defPythonParity';
 import { DETAIL_LEVELS, KBENGINE_FLAGS } from '../backend/kbengineMetadata';
-import { FLAG_DOMAIN_ALIAS } from '../generated/flagDomains';
+import { FLAG_DOMAIN_ALIAS, normalizeFlagTokens } from '../generated/flagDomains';
 import { ALLOWED_TOP_LEVEL_SECTIONS, KBEngineSectionName, createNodeRange, getLanguageFeatureConfig, getNodeValue, getSectionLabel, parseDefAst, pushDiagnosticForNodeValue, toSectionName, visitElementNodes } from './shared';
 import { ENTITY_BASE_DATA_FLAGS, ENTITY_CELL_DATA_FLAGS, ENTITY_CLIENT_DATA_FLAGS, KnownTypeContext, PROPERTY_SCOPE_LABELS, PropertyScope, getKnownTypeContext } from './completion';
 import { resolveCustomTypeReference } from './navigation';
@@ -523,19 +523,24 @@ export function validatePropertyStructure(
 }
 
 export function getPropertyFlagScopes(propertyNode: DefElementNode): PropertyScope[] {
-  const flags = normalizePropertyFlag(getScalarChildValue(propertyNode, 'Flags'));
-  if (!flags) {
+  // 逐 token 判桶(normalizeFlagTokens 拆 `|` + 别名 + 遗留折叠):组合 Flags
+  // 串(BASE | ALL_CLIENTS)整串 Set 成员判断不中任何桶,判重检查会被静默
+  // 跳过——kode 宽容拆分组合串(def-flags §traps),拆分后逐 token 落桶才能
+  // 让桶相交判重覆盖到组合形态。
+  const tokens = normalizeFlagTokens(getScalarChildValue(propertyNode, 'Flags') ?? '');
+  if (tokens.length === 0) {
     return [];
   }
 
+  const inSet = (set: Set<string>): boolean => tokens.some(token => set.has(token));
   const scopes: PropertyScope[] = [];
-  if (ENTITY_BASE_DATA_FLAGS.has(flags)) {
+  if (inSet(ENTITY_BASE_DATA_FLAGS)) {
     scopes.push('base');
   }
-  if (ENTITY_CELL_DATA_FLAGS.has(flags)) {
+  if (inSet(ENTITY_CELL_DATA_FLAGS)) {
     scopes.push('cell');
   }
-  if (ENTITY_CLIENT_DATA_FLAGS.has(flags)) {
+  if (inSet(ENTITY_CLIENT_DATA_FLAGS)) {
     scopes.push('client');
   }
   return scopes;

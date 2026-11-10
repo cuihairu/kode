@@ -186,6 +186,18 @@ const assetsRootOfDefFile = (file: string): string | null => {
   return root.endsWith('/scripts') ? root.slice(0, -'/scripts'.length) : root;
 };
 
+/**
+ * python 脚本目录域:路径段含 base/cell/client 任一即归域(path.sep 切段,与
+ * collectAllPythonMethodHits 的目录闸同一规则)。判不出 → null。
+ */
+const pythonScriptDomain = (filePath: string): PropertyFlagDomain | null => {
+  const segments = filePath.split(path.sep);
+  if (segments.includes('base')) { return 'base'; }
+  if (segments.includes('cell')) { return 'cell'; }
+  if (segments.includes('client')) { return 'client'; }
+  return null;
+};
+
 /** def 与 python 调用文件是否同一 assets 根(双方都能定根且相等)。 */
 const sharesAssetsRoot = (defFile: string, pythonFile: string): boolean => {
   const pythonRoot = assetsRootOfPythonFile(pythonFile);
@@ -1264,22 +1276,46 @@ export class EntityMappingManager {
     if (!index) {
       return null;
     }
-    return this.findIndexedPropertyIn(index, fullPath, rootSymbol);
+    return this.findIndexedPropertyIn(index, fullPath, rootSymbol, pythonFile);
   }
 
   private findIndexedPropertyIn(
     index: EntityMappingIndex,
     fullPath: string,
-    rootSymbol?: string
+    rootSymbol?: string,
+    pythonFile?: string
   ): IndexedPropertyDefinition | null {
     const normalizedFullPath = normalizePropertyLookupPath(fullPath);
     const normalizedRoot = rootSymbol ? normalizePropertyLookupPath(rootSymbol) : undefined;
 
-    return index.propertyDefinitions.find(item => normalizePropertyLookupPath(item.identity.propertyPath || '') === normalizedFullPath)
-      || (normalizedRoot
-        ? index.propertyDefinitions.find(item => normalizePropertyLookupPath(item.identity.propertyPath || '') === normalizedRoot)
-        : undefined)
-      || null;
+    // 同 path 双域共存(引擎桶形态,BASE 版与 ALL_CLIENTS 版可同文件共存):
+    // 按脚本目录域选条——cell 目录解析到含 cell 域的条、base 目录解析到含 base
+    // 域的条(与引擎 findCell/BasePropertyDescription 按桶查找同构;目录闸规则
+    // 与 collectAllPythonMethodHits 一致)。判不出域或无域内条目 → 首条。
+    const preferredDomain = pythonFile ? pythonScriptDomain(pythonFile) : null;
+    const pickPreferred = (
+      items: IndexedPropertyDefinition[]
+    ): IndexedPropertyDefinition | undefined => {
+      if (!preferredDomain) {
+        return items[0];
+      }
+      return items.find(item => item.domains.includes(preferredDomain)) ?? items[0];
+    };
+
+    const fullPathHits = index.propertyDefinitions.filter(
+      item => normalizePropertyLookupPath(item.identity.propertyPath || '') === normalizedFullPath
+    );
+    const hit = pickPreferred(fullPathHits);
+    if (hit) {
+      return hit;
+    }
+    if (!normalizedRoot) {
+      return null;
+    }
+    const rootHits = index.propertyDefinitions.filter(
+      item => normalizePropertyLookupPath(item.identity.propertyPath || '') === normalizedRoot
+    );
+    return pickPreferred(rootHits) ?? null;
   }
 
   async resolveMethodDefinition(
@@ -1384,7 +1420,7 @@ export class EntityMappingManager {
     if (!index) {
       return null;
     }
-    return this.findIndexedPropertyIn(index, fullPath, rootSymbol);
+    return this.findIndexedPropertyIn(index, fullPath, rootSymbol, callerFile);
   }
 
   async resolveDefinitionSymbolAtPosition(
@@ -2863,12 +2899,23 @@ export class EntityMappingManager {
 
   private toLegacyMapping(index: EntityMappingIndex): EntityMapping {
     const properties: EntityMapping['properties'] = {};
+    // 同 path 双域共存(引擎桶形态)时选含 client 域的条目:legacy mapping 的
+    // 消费面(实体 .pyi 桩等)是客户端脚本视角,客户端解析到的是 client 桶
+    // 描述;无 client 域条目维持首条。
+    const byPath = new Map<string, IndexedPropertyDefinition>();
     for (const property of index.propertyDefinitions) {
       const propertyPath = property.identity.propertyPath;
-      if (!propertyPath || properties[propertyPath]) {
+      if (!propertyPath) {
         continue;
       }
-
+      const existing = byPath.get(propertyPath);
+      if (!existing) {
+        byPath.set(propertyPath, property);
+      } else if (!existing.domains.includes('client') && property.domains.includes('client')) {
+        byPath.set(propertyPath, property);
+      }
+    }
+    for (const [propertyPath, property] of byPath) {
       properties[propertyPath] = {
         defFile: property.defFile,
         line: property.line

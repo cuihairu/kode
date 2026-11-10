@@ -507,6 +507,22 @@ describe('validateSectionStructure / validatePropertyStructure / 纯函数(覆�
     expect(cellOnly).toEqual(['cell']);
   });
 
+  it('getPropertyFlagScopes:组合 Flags 拆 token 判桶,不整串跳过', () => {
+    // 组合串 BASE | ALL_CLIENTS:旧实现整串 Set 成员判断不中任何桶 → 空作用
+    // 域 → 同名判重被静默跳过;拆分后逐 token 落桶(base+cell+client)
+    const composite = getPropertyFlagScopes({
+      name: 'p',
+      children: [{ kind: 'element', name: 'Flags', children: [{ kind: 'text', text: 'BASE | ALL_CLIENTS' }] }]
+    } as never);
+    expect(composite).toEqual(['base', 'cell', 'client']);
+    // 别名组合同样落桶(CELL → CELL_PUBLIC,单 cell)
+    const alias = getPropertyFlagScopes({
+      name: 'p',
+      children: [{ kind: 'element', name: 'Flags', children: [{ kind: 'text', text: 'CELL | BASE' }] }]
+    } as never);
+    expect(alias).toEqual(['base', 'cell']);
+  });
+
   it('normalizePropertyFlag:空/各映射/原样回落', () => {
     expect(normalizePropertyFlag(undefined)).toBeUndefined();
     expect(normalizePropertyFlag('  ')).toBeUndefined();
