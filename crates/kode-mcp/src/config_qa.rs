@@ -556,6 +556,16 @@ mod tests {
         }
     }
 
+    /// 配置解析面测试的统一隔离:解析函数(`custom_config_path` /
+    /// `defaults_config_path` → `match_res_path`)读进程级 `KBE_RES_PATH`,
+    /// 不隔离就会与两个 env 优先级测试并发互染(cargo 默认多线程跑同一测试
+    /// 二进制)。持有同一把锁并在测试期间置空值——空值 = 无可用段,解析回落
+    /// 资产根,与「env 未设」同语义。
+    fn config_env_isolation() -> (std::sync::MutexGuard<'static, ()>, ResPathEnvGuard) {
+        let lock = RES_PATH_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        (lock, ResPathEnvGuard::set(""))
+    }
+
     /// 引擎 `matchRes` 同口径:`KBE_RES_PATH` 段序首个命中即采用,资产根只作兜底。
     #[test]
     fn res_path_env_takes_priority_over_asset_root() {
@@ -673,6 +683,7 @@ mod tests {
 
     #[test]
     fn final_config_merges_defaults_and_exposes_db_interface() {
+        let _iso = config_env_isolation();
         // defaults + 元件合并 → dbInterface 出面(密码不给值,只给可用标记)。
         let root = std::env::temp_dir().join(format!("kode-mcp-dbi-{}", std::process::id()));
         write_config(
@@ -712,6 +723,7 @@ mod tests {
 
     #[test]
     fn why_setting_reports_defaults_path_and_skips_empty_segments() {
+        let _iso = config_env_isolation();
         // 点分键含空段(baseapp..backupPeriod):空段跳过,值照常解析;
         // defaults 在 → defaultsPath 字符串。
         let root = std::env::temp_dir().join(format!("kode-mcp-why-{}", std::process::id()));
@@ -749,6 +761,7 @@ mod tests {
 
     #[test]
     fn final_config_reads_component_xml_and_reports_missing_defaults() {
+        let _iso = config_env_isolation();
         let payload = final_config(&fixture_root());
         // 元件配置在:dbmgr 段 + databaseInterfaces 读得到。
         assert!(payload["customTree"].is_object(), "custom tree parsed");
@@ -766,6 +779,7 @@ mod tests {
 
     #[test]
     fn final_config_on_empty_root_is_honest_not_panic() {
+        let _iso = config_env_isolation();
         let payload = final_config(Path::new("/definitely/not/a/root"));
         assert!(payload["customTree"].is_null());
         assert!(payload["merged"].is_null());
@@ -778,6 +792,7 @@ mod tests {
 
     #[test]
     fn final_config_redacts_passwords_everywhere() {
+        let _iso = config_env_isolation();
         // 带 <password> 值的临时资产根:telnet_service 段 + databaseInterfaces。
         let root = std::env::temp_dir().join(format!("kode-mcp-redact-{}", std::process::id()));
         let conf = root.join("res").join("server");
@@ -809,6 +824,7 @@ mod tests {
 
     #[test]
     fn entry_scripts_reports_module_path_exists_per_component() {
+        let _iso = config_env_isolation();
         let payload = entry_scripts(&fixture_root());
         let facts = payload["entryScripts"].as_array().unwrap();
         let by_process: std::collections::BTreeMap<&str, &Value> = facts
@@ -848,6 +864,7 @@ mod tests {
 
     #[test]
     fn why_setting_answers_value_meaning_and_origin() {
+        let _iso = config_env_isolation();
         let payload = why_setting(
             &fixture_root(),
             "dbmgr.account_system.account_registration.enable",
@@ -878,6 +895,7 @@ mod tests {
 
     #[test]
     fn why_setting_unknown_key_is_found_false_not_error() {
+        let _iso = config_env_isolation();
         let payload = why_setting(&fixture_root(), "no.such.key").expect("graceful");
         assert_eq!(payload["found"], false);
         assert!(payload["meaningZh"].is_null());
@@ -887,11 +905,13 @@ mod tests {
 
     #[test]
     fn why_setting_empty_key_is_error() {
+        let _iso = config_env_isolation();
         assert!(why_setting(&fixture_root(), "  ").is_err());
     }
 
     #[test]
     fn why_setting_catalog_key_absent_in_tree_is_honest_null_value() {
+        let _iso = config_env_isolation();
         // baseapp.archivePeriod 在文案库但元件侧未配置(无 defaults 不猜)。
         let payload = why_setting(&fixture_root(), "baseapp.archivePeriod").expect("answer");
         assert_eq!(payload["found"], true);
@@ -901,6 +921,7 @@ mod tests {
 
     #[test]
     fn why_setting_section_key_lists_children() {
+        let _iso = config_env_isolation();
         // dbmgr.account_system 是容器段 → 值如实列子键名。
         let payload = why_setting(&fixture_root(), "dbmgr.account_system").expect("answer");
         assert_eq!(payload["found"], true);
@@ -911,6 +932,7 @@ mod tests {
 
     #[test]
     fn list_config_settings_enumerates_catalog_with_values() {
+        let _iso = config_env_isolation();
         let payload = list_config_settings(&fixture_root(), None, None);
         let settings = payload["settings"].as_array().unwrap();
         assert!(settings.len() > 200, "full catalog enumerated");
@@ -939,6 +961,7 @@ mod tests {
 
     #[test]
     fn list_config_settings_filters_by_group_and_prefix() {
+        let _iso = config_env_isolation();
         let group = list_config_settings(&fixture_root(), Some("backup"), None);
         let gs = group["settings"].as_array().unwrap();
         assert!(!gs.is_empty(), "backup group non-empty");
