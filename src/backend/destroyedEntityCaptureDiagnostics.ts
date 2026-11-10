@@ -35,6 +35,14 @@ const CONTAINER_INIT = /^([A-Za-z_]\w*)\s*=\s*(\[\]|\{\}|set\(\))\s*$/;
 const CALL_CAPTURE = /\b([A-Za-z_]\w*)\.(append|add|extend|update)\((.+)\)/;
 const SUBSCRIPT_CAPTURE = /\b([A-Za-z_]\w*)\[[^\]]+\]\s*=\s*(.+)/;
 
+/** 诊断文案(l10n 模板单一来源;Rust 结构面经 wiring 层用本函数渲染) */
+export function renderDestroyedEntityReferenceMessage(container: string): string {
+  return l10nText(
+    'Storing self in a module-level container keeps the entity alive after destroy (garbages leak); drop the reference in onDestroy',
+    { container }
+  );
+}
+
 export function analyzeDestroyedEntityCaptures(text: string): DestroyedEntityCaptureFinding[] {
   const findings: DestroyedEntityCaptureFinding[] = [];
   const lines = text.split(/\r?\n/);
@@ -63,10 +71,7 @@ export function analyzeDestroyedEntityCaptures(text: string): DestroyedEntityCap
           length: 'self'.length,
           container: call[1],
           method: call[2],
-          message: l10nText(
-            'Storing self in a module-level container keeps the entity alive after destroy (garbages leak); drop the reference in onDestroy',
-            { container: call[1] }
-          )
+          message: renderDestroyedEntityReferenceMessage(call[1])
         });
       }
       continue;
@@ -81,10 +86,7 @@ export function analyzeDestroyedEntityCaptures(text: string): DestroyedEntityCap
         length: 'self'.length,
         container: subscript[1],
         method: 'subscript',
-        message: l10nText(
-          'Storing self in a module-level container keeps the entity alive after destroy (garbages leak); drop the reference in onDestroy',
-          { container: subscript[1] }
-        )
+        message: renderDestroyedEntityReferenceMessage(subscript[1])
       });
     }
   }

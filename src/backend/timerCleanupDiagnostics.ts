@@ -28,6 +28,13 @@ export interface TimerCleanupFinding {
 const ON_DESTROY_HEADER = /^(\s*)(?:async\s+)?def\s+onDestroy\s*\(\s*self\b/;
 const DEL_TIMER_CALL = /\bself\.delTimer\s*\(/;
 
+/** 诊断文案(l10n 模板单一来源;Rust 结构面经 wiring 层用本函数渲染) */
+export function renderTimerCleanupMessage(): string {
+  return l10nText(
+    'delTimer inside onDestroy is unnecessary: destroy() already cancels all timers (scriptTimers_.cancelAll(); stale ids silently return -1)'
+  );
+}
+
 export function analyzeTimerCleanupOnDestroy(text: string): TimerCleanupFinding[] {
   const findings: TimerCleanupFinding[] = [];
   const lines = text.split(/\r?\n/);
@@ -58,9 +65,7 @@ export function analyzeTimerCleanupOnDestroy(text: string): TimerCleanupFinding[
         line: index,
         character: indent + call.index,
         length: call[0].length,
-        message: l10nText(
-          'delTimer inside onDestroy is unnecessary: destroy() already cancels all timers (scriptTimers_.cancelAll(); stale ids silently return -1)'
-        )
+        message: renderTimerCleanupMessage()
       });
     }
   }

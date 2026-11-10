@@ -85,6 +85,14 @@ function matchFixedDictTarget(
   return null;
 }
 
+/** 诊断文案(l10n 模板单一来源;Rust 结构面经 wiring 层用本函数渲染) */
+export function renderFixedDictMutationMessage(property: string): string {
+  return l10nText(
+    'FIXED_DICT property sub-key assignment does not trigger the property sync event; reassign {property} as a whole',
+    { property: `self.${property}` }
+  );
+}
+
 function buildFinding(
   line: number,
   lineText: string,
@@ -105,10 +113,7 @@ function buildFinding(
     key,
     kind: property.kind,
     statement: lineText.trim(),
-    message: l10nText(
-      'FIXED_DICT property sub-key assignment does not trigger the property sync event; reassign {property} as a whole',
-      { property: `self.${property.name}` }
-    )
+    message: renderFixedDictMutationMessage(property.name)
   };
 }
 

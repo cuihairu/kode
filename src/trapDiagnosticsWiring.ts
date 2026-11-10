@@ -18,17 +18,21 @@ import type { EntityMappingManager } from './entityMapping';
 import { getTypeStorageShape } from './databaseSchema';
 import { getDefinitionWorkspaceLayout } from './definitionWorkspace';
 import { resolveEntityComponentFaceFromPath } from './backend/entityBuiltinProperties';
+import { getKodeCoreShadowGate } from './backend/kodeCoreShadowFaces';
 import {
   analyzeFixedDictMutations,
   buildFixedDictWholeReassignText,
+  renderFixedDictMutationMessage,
   FIXED_DICT_MUTATION_DIAGNOSTIC_CODE
 } from './backend/fixedDictMutationDiagnostics';
 import {
   analyzeDestroyedEntityCaptures,
+  renderDestroyedEntityReferenceMessage,
   DESTROYED_ENTITY_REFERENCE_DIAGNOSTIC_CODE
 } from './backend/destroyedEntityCaptureDiagnostics';
 import {
   analyzeTimerCleanupOnDestroy,
+  renderTimerCleanupMessage,
   TIMER_CLEANUP_ON_DESTROY_DIAGNOSTIC_CODE
 } from './backend/timerCleanupDiagnostics';
 
@@ -103,6 +107,120 @@ export function buildTrapDiagnosticItems(
     }
   }
   return items;
+}
+
+// ---- Rust 面(AUDIT-005 B2 车道首批:trap 三规则收编) -----------------------
+// `$/kode/lint/analyzeTraps` 经 gate.runInRust(命令面,与 analyzeDef 同口径):
+// Rust 只回结构面(code/line/character/length + l10n 参数字段),消息渲染
+// 留 TS(模板单一来源 = 三 analyzer 的 render*Message)。Rust 不可用
+// (无门/未配 serverPath/调用失败)或应答畸形(任一条缺结构字段/缺 l10n
+// 参数)整面作废回 TS 同步路径 —— 禁止部分采用(静默丢能力)。
+
+/** Rust 结构面单条产物(`$/kode/lint/analyzeTraps` 应答) */
+interface RustTrapItem {
+  code: string;
+  line: number;
+  character: number;
+  length: number;
+  /** fixedDictNestedMutation 的 l10n 参数(属性名,消息拼 `self.<name>`) */
+  property?: string;
+  /** destroyedEntityReference 的 l10n 参数(容器名) */
+  container?: string;
+}
+
+const TRAP_LINT_RUST_METHOD = '$/kode/lint/analyzeTraps';
+
+/** 结构面 → 诊断面(消息渲染+严重级映射);缺 l10n 参数 = 畸形,返回 null */
+function renderRustTrapItem(item: RustTrapItem): TrapDiagnosticItem | null {
+  if (
+    typeof item?.code !== 'string'
+    || typeof item.line !== 'number'
+    || typeof item.character !== 'number'
+    || typeof item.length !== 'number'
+  ) {
+    return null;
+  }
+  switch (item.code) {
+    case FIXED_DICT_MUTATION_DIAGNOSTIC_CODE:
+      if (typeof item.property !== 'string') {
+        return null;
+      }
+      return {
+        code: item.code,
+        severity: 'Warning',
+        line: item.line,
+        character: item.character,
+        length: item.length,
+        message: renderFixedDictMutationMessage(item.property)
+      };
+    case DESTROYED_ENTITY_REFERENCE_DIAGNOSTIC_CODE:
+      if (typeof item.container !== 'string') {
+        return null;
+      }
+      return {
+        code: item.code,
+        severity: 'Warning',
+        line: item.line,
+        character: item.character,
+        length: item.length,
+        message: renderDestroyedEntityReferenceMessage(item.container)
+      };
+    case TIMER_CLEANUP_ON_DESTROY_DIAGNOSTIC_CODE:
+      return {
+        code: item.code,
+        severity: 'Information',
+        line: item.line,
+        character: item.character,
+        length: item.length,
+        message: renderTimerCleanupMessage()
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * 结构面数组 → 诊断面数组(消息渲染+严重级映射);任一条畸形返回 null
+ * (整面作废,调用方回 TS 兜底 —— 禁止部分采用)。对拍测试共用。
+ */
+export function renderRustTrapItems(items: readonly unknown[]): TrapDiagnosticItem[] | null {
+  const rendered: TrapDiagnosticItem[] = [];
+  for (const item of items) {
+    const renderedItem = renderRustTrapItem(item as RustTrapItem);
+    if (!renderedItem) {
+      return null;
+    }
+    rendered.push(renderedItem);
+  }
+  return rendered;
+}
+
+/**
+ * Rust-first 三规则产物:gate.runInRust 跑 `$/kode/lint/analyzeTraps`,
+ * 结构面经 renderRustTrapItems 渲染;不可用/失败/畸形回 TS 兜底
+ * buildTrapDiagnosticItems(既有行为不变)。
+ */
+export async function buildTrapDiagnosticItemsWithRust(
+  text: string,
+  deps: TrapLintComputeDeps
+): Promise<TrapDiagnosticItem[]> {
+  const gate = getKodeCoreShadowGate();
+  if (!gate) {
+    return buildTrapDiagnosticItems(text, deps);
+  }
+  const result = await gate.runInRust<unknown>(TRAP_LINT_RUST_METHOD, {
+    text,
+    fixedDictProperties: Object.fromEntries(deps.fixedDictProperties),
+    enabled: deps.enabled
+  });
+  if (!result.ok) {
+    return buildTrapDiagnosticItems(text, deps);
+  }
+  const rustItems = (result.result as { items?: unknown }).items;
+  if (!Array.isArray(rustItems)) {
+    return buildTrapDiagnosticItems(text, deps);
+  }
+  return renderRustTrapItems(rustItems) ?? buildTrapDiagnosticItems(text, deps);
 }
 
 /** 工作区 types.xml 定位(python 文件 → 所属根 → 布局;多根不串,缺根回落首根) */
@@ -182,7 +300,10 @@ export function wireTrapLintDiagnostics(
     const fixedDictProperties = enabled.fixedDictMutation
       ? await collectFixedDictProperties(entityMappingManager, document.fileName)
       : new Map<string, readonly string[]>();
-    const items = buildTrapDiagnosticItems(document.getText(), { fixedDictProperties, enabled });
+    const items = await buildTrapDiagnosticItemsWithRust(document.getText(), {
+      fixedDictProperties,
+      enabled
+    });
     collection.set(
       document.uri,
       items.map(item => {

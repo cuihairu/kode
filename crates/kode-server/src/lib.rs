@@ -20,6 +20,7 @@ pub mod python_callgraph;
 pub mod rpc;
 pub mod ruff_lint;
 pub mod server;
+pub mod trap_lints;
 pub mod wire_codec;
 pub mod workspace_discovery;
 

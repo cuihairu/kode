@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildTrapDiagnosticItems,
+  buildTrapDiagnosticItemsWithRust,
   FixedDictWholeReassignCodeActionProvider,
-  TRAP_LINT_DIAGNOSTIC_COLLECTION
+  renderRustTrapItems,
+  TRAP_LINT_DIAGNOSTIC_COLLECTION,
+  type TrapDiagnosticItem,
+  type TrapLintComputeDeps
 } from '../src/trapDiagnosticsWiring';
 import {
-  FIXED_DICT_MUTATION_DIAGNOSTIC_CODE
+  FIXED_DICT_MUTATION_DIAGNOSTIC_CODE,
+  renderFixedDictMutationMessage
 } from '../src/backend/fixedDictMutationDiagnostics';
 import {
   DESTROYED_ENTITY_REFERENCE_DIAGNOSTIC_CODE
@@ -14,6 +19,8 @@ import {
 import {
   TIMER_CLEANUP_ON_DESTROY_DIAGNOSTIC_CODE
 } from '../src/backend/timerCleanupDiagnostics';
+import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 import {
   Position,
   Range,
@@ -71,6 +78,109 @@ describe('buildTrapDiagnosticItems(C-23 接线层)', () => {
     };
     const items = buildTrapDiagnosticItems(TRAP_TEXT, deps);
     expect(items.map(item => item.code)).toEqual([DESTROYED_ENTITY_REFERENCE_DIAGNOSTIC_CODE]);
+  });
+});
+
+describe('buildTrapDiagnosticItemsWithRust(Rust-first,TS 兜底)', () => {
+  const deps: TrapLintComputeDeps = {
+    fixedDictProperties: new Map([['profile', ['name']]]),
+    enabled: allOn
+  };
+
+  /** 注入门替身;runInRust 按给定应答回,记录 method/params */
+  const withGate = async (
+    respond: (method: string, params: unknown) => unknown,
+    run: () => Promise<void>
+  ): Promise<Array<{ method: string; params: unknown }>> => {
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const gate = {
+      runInRust: async (method: string, params: unknown) => {
+        calls.push({ method, params });
+        return respond(method, params);
+      }
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(gate);
+    try {
+      await run();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+    return calls;
+  };
+
+  it('无门:回 TS 兜底,产物与同步路径逐条一致', async () => {
+    const items = await buildTrapDiagnosticItemsWithRust(TRAP_TEXT, deps);
+    expect(items).toEqual(buildTrapDiagnosticItems(TRAP_TEXT, deps));
+  });
+
+  it('门可用:Rust 结构面经渲染成诊断面(消息=TS 模板,严重级按 code)', async () => {
+    const rustItem = {
+      code: FIXED_DICT_MUTATION_DIAGNOSTIC_CODE,
+      line: 8,
+      character: 8,
+      length: 17,
+      property: 'profile'
+    };
+    await withGate(
+      () => ({ ok: true as const, result: { items: [rustItem] } }),
+      async () => {
+        const items = await buildTrapDiagnosticItemsWithRust(TRAP_TEXT, deps);
+        const expected: TrapDiagnosticItem[] = [{
+          code: FIXED_DICT_MUTATION_DIAGNOSTIC_CODE,
+          severity: 'Warning',
+          line: 8,
+          character: 8,
+          length: 17,
+          message: renderFixedDictMutationMessage('profile')
+        }];
+        expect(items).toEqual(expected);
+      }
+    );
+  });
+
+  it('门调用失败(ok:false):整面回 TS 兜底', async () => {
+    await withGate(
+      () => ({ ok: false as const, reason: 'no serverPath' }),
+      async () => {
+        const items = await buildTrapDiagnosticItemsWithRust(TRAP_TEXT, deps);
+        expect(items).toEqual(buildTrapDiagnosticItems(TRAP_TEXT, deps));
+      }
+    );
+  });
+
+  it('畸形应答(缺 l10n 参数/未知 code/非条目):整面作废回 TS,不部分采用', async () => {
+    // 注:空数组是合法空面(信任 Rust 结果),不属畸形
+    const malformed: unknown[] = [
+      { code: FIXED_DICT_MUTATION_DIAGNOSTIC_CODE, line: 0, character: 0, length: 3 }, // 缺 property
+      { code: 'kbengine.unknownTrapCode', line: 0, character: 0, length: 1 },
+      'not-an-item'
+    ];
+    for (const items of [malformed.slice(0, 1), malformed.slice(1)]) {
+      await withGate(
+        () => ({ ok: true as const, result: { items } }),
+        async () => {
+          const result = await buildTrapDiagnosticItemsWithRust(TRAP_TEXT, deps);
+          expect(result).toEqual(buildTrapDiagnosticItems(TRAP_TEXT, deps));
+        }
+      );
+    }
+    expect(renderRustTrapItems([{ code: 'kbengine.unknownTrapCode', line: 0, character: 0, length: 1 }])).toBeNull();
+  });
+
+  it('RPC 契约:method=analyzeTraps,fixedDictProperties 序列化为普通对象', async () => {
+    const calls = await withGate(
+      () => ({ ok: true as const, result: { items: [] } }),
+      async () => {
+        await buildTrapDiagnosticItemsWithRust(TRAP_TEXT, deps);
+      }
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('$/kode/lint/analyzeTraps');
+    expect(calls[0].params).toEqual({
+      text: TRAP_TEXT,
+      fixedDictProperties: { profile: ['name'] },
+      enabled: allOn
+    });
   });
 });
 

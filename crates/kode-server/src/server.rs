@@ -119,6 +119,7 @@ impl ServerState {
         // wire/encode|decode 不注册:零 TS 消费者,kode-mcp 直复用 wire_codec
         // 库不经 RPC(防「能力已迁移」误导,RUST-MIGRATION-AUDIT-004)。
         crate::def_md5::register(&mut rpc);
+        crate::trap_lints::register(&mut rpc);
         crate::workspace_discovery::register(&mut rpc);
         ServerState {
             initialized: false,
