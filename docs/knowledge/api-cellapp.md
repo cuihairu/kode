@@ -1,7 +1,6 @@
 # Cellapp API reference (KB-API-004)
 
-> Bilingual twin: [中文](../zh/knowledge/api-cellapp.md). Same claims, same
-> citations; this EN page is canonical for line-number drift checks.
+> Same claims, same citations; this EN page is canonical for line-number drift checks.
 >
 > **Scope**: the Python API surface registered by the **cellapp** process —
 > the `KBEngine` module face and the shared `Entity` class as it exists on

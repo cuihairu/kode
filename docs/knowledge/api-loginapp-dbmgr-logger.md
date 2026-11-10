@@ -1,8 +1,6 @@
 # Loginapp / Dbmgr / Logger face API reference (KB-API-006)
 
-> Bilingual twin: [中文](../zh/knowledge/api-loginapp-dbmgr-logger.md). Same
-> claims, same citations; this EN page is canonical for line-number drift
-> checks.
+> Same claims, same citations; this EN page is canonical for line-number drift checks.
 >
 > **Scope**: the script-visible `KBEngine` face of the three thin server
 > processes — **loginapp**, **dbmgr** and **logger** — as documented by the

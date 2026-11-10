@@ -1,7 +1,6 @@
 # Loginapp / Dbmgr / Logger 面 API 参考（KB-API-006）
 
-> 双语镜像：[English](../knowledge/api-loginapp-dbmgr-logger.md)。断言与
-> 引用完全一致；行号漂移核对以 EN 篇为准。
+> 断言与引用完全一致；行号漂移核对以 EN 篇为准。
 >
 > **范围**：三个薄服务进程——**loginapp**、**dbmgr**、**logger**——的
 > 脚本可见 `KBEngine` 面。源料为官方 3.7 口径 CHM 转换文本

@@ -21,8 +21,6 @@
 
 - **`.def` 属性 Flags——引擎完整真值**(2026-11-09,源自「Flags 解析错误 /
   CELL_PUBLIC_AND_OWN」用户报障):
-  - [English](../../knowledge/def-flags.md)
-  - [中文](def-flags.md)
   - 覆盖:9 个位值(含 `ED_FLAG_UNKOWN`,`common.h:19-27`);8 个关系掩码及
     运行时消费位点(`common.h:40-56`,`cellapp/entity.cpp:689/:724/:800/:854/:
     883`,`entity_macro.h:629`);引擎接受的 12 个拼写——8 规范名 + 4 旧式别名
@@ -34,8 +32,6 @@
     (`model.rs` → golden → `src/generated/flagDomains.ts`)。
 
 - **实体对象生命周期与引用释放** — 用户点名的头号专题(内存对象引用与释放):
-  - [English](../../knowledge/entity-lifecycle-reference.md)
-  - [中文](entity-lifecycle-reference.md)
   - 覆盖:活跃注册表强引用(`entities.h:24`);移出注册表进 `garbages` 的销毁
     流程(`entity_macro.h:1486`,`entity_app.h:713`,`entities.h:331`);非持有
     `garbages` 注册表(`entity_garbages.h:23`);销毁后的引用语义;3600 秒泄漏
@@ -46,8 +42,6 @@
     超时回收 + 迁移 pickle(`callbackmgr.h:215`)。
 
 - **实体传送、跨 cellapp 迁移与跨进程引用**:
-  - [English](../../knowledge/entity-migration-and-cross-process-references.md)
-  - [中文](entity-migration-and-cross-process-references.md)
   - 覆盖:一个实体三个可寻址面与 `EntityCall` 的 `(进程, id)` 远程句柄语义
     (`entity_call.h:15`,`common.h:285-291`);`cellData` 设计即旧快照
     (`baseapp/entity.cpp:250/:1024/:1112`);`teleport` 路由与守卫
@@ -60,32 +54,16 @@
     `kbengine@3082ab5`。
 
 - **API 参考:client 面** (KB-API-002):
-  - [English](../../knowledge/api-client.md)
-  - [中文](api-client.md)
 - **API 参考:baseapp 模块 + Entity/Proxy** (KB-API-003):
-  - [English](../../knowledge/api-baseapp.md)
-  - [中文](api-baseapp.md)
 - **API 参考:baseapp Entity 类** (KB-API-003):
-  - [English](../../knowledge/api-baseapp-entity.md)
-  - [中文](api-baseapp-entity.md)
 - **API 参考:cellapp 面** (KB-API-004):
-  - [English](../../knowledge/api-cellapp.md)
-  - [中文](api-cellapp.md)
 
 - **API 参考:interfaces 面** ((KB-API-005)):
-  - [English](../../knowledge/api-interfaces.md)
-  - [中文](api-interfaces.md)
 
 - **API 参考:loginapp/dbmgr/logger 进程全局面** ((KB-API-006)):
-  - [English](../../knowledge/api-loginapp-dbmgr-logger.md)
-  - [中文](api-loginapp-dbmgr-logger.md)
 
 - **API 核心概念地图** ((KB-API-008)):
-  - [English](../../knowledge/api-core-concepts.md)
-  - [中文](api-core-concepts.md)
 - **API 参考:bots 面** (KB-API-007):
-  - [English](../../knowledge/api-bots.md)
-  - [中文](api-bots.md)
   - 覆盖:bots 进程脚本面组装(六个注册点);`KBEngine` 模块 19 个函数
     (8 个已记载 + 11 个 fork 独有),含 `addBots`「请求 vs 即时创建」语义;
     入口脚本回调 `onInit`/`onFinish`(外加 fork 独有的 `onTargetChanged`);
@@ -102,16 +80,12 @@
 - **MCP-001**:将 KB 暴露给 MCP 供 agent 消费(已交付,`crates/kode-mcp/
   src/explain.rs` 的 `explain` 工具:API 面=C-21 共享库,机制面=上文文章索引)。
 - **API 使用模式与频率统计**(桶 ③):
-  - [English](../../knowledge/api-usage-stats.md)
-  - [中文](api-usage-stats.md)
   - 覆盖:`scripts/kbe-api-scan.py`(AST 解析,仅标准库)扫本仓库两树
     (77 文件,0 解析错误);`KBEngine.*` 模块使用表;实体 API 成员热度;
     引擎已知 vs 项目自定义回调划分(约 1/3 项目自定义);观察到的模式
     (定时器纪律——`delTimer` 从未被调用、cell 创建对、远程句柄方向、
     interfaces 轮询对)。口径如实:仅本仓库两树。
 - **语义陷阱索引**(桶 ④):
-  - [English](../../knowledge/traps-index.md)
-  - [中文](traps-index.md)
   - 覆盖:全知识页单行陷阱索引——内存与引用、迁移/传送、定时器与控制器、
     EntityCall 语义、回调命名与面放置、client 面可用性、源材料卫生。每行
     链到承载完整 grounding 根因的文章;不引入目标文章之外的论断。

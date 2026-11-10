@@ -1,7 +1,6 @@
 # Interfaces 进程 API 参考（KB-API-005）
 
-> 双语镜像：[English](../knowledge/api-interfaces.md)。断言与引用完全一致；
-> 行号漂移核对以 EN 篇为准。
+> 断言与引用完全一致；行号漂移核对以 EN 篇为准。
 >
 > **范围**：**interfaces** 进程的 Python API 面——第三方平台接入点
 > （账号注册/登录核验、计费）。重写自官方 3.7 口径 CHM 转换源料

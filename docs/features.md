@@ -1,7 +1,5 @@
 # Supported Features
 
-[中文](./zh/features.md)
-
 Evidence-based feature list for the kode VS Code extension. Each entry carries an evidence pointer; features without verifiable evidence are not listed.
 
 <!-- GROUPS -->

@@ -1,7 +1,6 @@
 # Interfaces process API reference (KB-API-005)
 
-> Bilingual twin: [中文](../zh/knowledge/api-interfaces.md). Same claims, same
-> citations; this EN page is canonical for line-number drift checks.
+> Same claims, same citations; this EN page is canonical for line-number drift checks.
 >
 > **Scope**: the Python API surface of the **interfaces** process — the
 > third-party platform integration point (account create/login check-out,

@@ -23,8 +23,6 @@ The `en/` file is canonical for line-number drift checks.
 
 - **`.def` property Flags — the complete engine truth** (2026-11-09, from the
   "Flags parsed wrong / CELL_PUBLIC_AND_OWN" user report):
-  - [English](def-flags.md)
-  - [中文](../zh/knowledge/def-flags.md)
   - Covers: the 9 bit values incl. `ED_FLAG_UNKOWN` (`common.h:19-27`); the 8
     relation masks with runtime consumption sites (`common.h:40-56`,
     `cellapp/entity.cpp:689/:724/:800/:854/:883`, `entity_macro.h:629`); the
@@ -40,8 +38,6 @@ The `en/` file is canonical for line-number drift checks.
 
 - **Entity lifecycle & object reference release** — the user-named head topic
   (memory object reference & release):
-  - [English](entity-lifecycle-reference.md)
-  - [中文](../zh/knowledge/entity-lifecycle-reference.md)
   - Covers: the live registry strong reference (`entities.h:24`); the destroy
     flow out of the registry into `garbages` (`entity_macro.h:1486`,
     `entity_app.h:713`, `entities.h:331`); the non-owning `garbages` registry
@@ -55,8 +51,6 @@ The `en/` file is canonical for line-number drift checks.
     (`callbackmgr.h:215`).
 
 - **Entity teleport, cross-cellapp migration & cross-process references**:
-  - [English](entity-migration-and-cross-process-references.md)
-  - [中文](../zh/knowledge/entity-migration-and-cross-process-references.md)
   - Covers: the three addressable faces and `EntityCall` as a
     `(component, id)` remote handle (`entity_call.h:15`,
     `common.h:285-291`); `cellData` as a stale-by-design snapshot
@@ -71,8 +65,6 @@ The `en/` file is canonical for line-number drift checks.
     `kbengine@3082ab5`.
 
 - **Python version baseline: 3.7 source material vs fork 3.12** (KB-API-001):
-  - [English](python-version-baseline.md)
-  - [中文](../zh/knowledge/python-version-baseline.md)
 
   - Covers: the 3.7.3 → fork-3.12 version timeline with per-claim evidence;
     the four verified runtime-baseline facts (python312 vcxproj links, source
@@ -89,32 +81,16 @@ Source extraction → manual curation → consumers. Planned consumers
 
 
 - **API reference: client face** (KB-API-002):
-  - [English](api-client.md)
-  - [中文](../zh/knowledge/api-client.md)
 - **API reference: baseapp module + Entity/Proxy** (KB-API-003):
-  - [English](api-baseapp.md)
-  - [中文](../zh/knowledge/api-baseapp.md)
 - **API reference: baseapp entity classes** (KB-API-003):
-  - [English](api-baseapp-entity.md)
-  - [中文](../zh/knowledge/api-baseapp-entity.md)
 - **API reference: cellapp face** (KB-API-004):
-  - [English](api-cellapp.md)
-  - [中文](../zh/knowledge/api-cellapp.md)
 - **API reference: bots face** (KB-API-007):
-  - [English](api-bots.md)
-  - [中文](../zh/knowledge/api-bots.md)
 
 - **API reference: interfaces face** ((KB-API-005)):
-  - [English](api-interfaces.md)
-  - [中文](../zh/knowledge/api-interfaces.md)
 
 - **API reference: loginapp / dbmgr / logger faces** ((KB-API-006)):
-  - [English](api-loginapp-dbmgr-logger.md)
-  - [中文](../zh/knowledge/api-loginapp-dbmgr-logger.md)
 
 - **API core concepts map** ((KB-API-008)):
-  - [English](api-core-concepts.md)
-  - [中文](../zh/knowledge/api-core-concepts.md)
   - Covers: the bots process script-face assembly (six registration sites);
     19 `KBEngine` module functions (8 documented + 11 fork-only), with the
     `addBots` request-vs-instantiation semantics; entry-script callbacks
@@ -125,8 +101,6 @@ Source extraction → manual curation → consumers. Planned consumers
     `cellData`/`isOnGround`/`PyClientApp` items).
 
 - **BigWorld API legacy stubs disposal decision** ((KB-API-009)):
-  - [English](bigworld-legacy-status.md)
-  - [中文](../zh/knowledge/bigworld-legacy-status.md)
   - Covers: the five skeletal `bigworld/` stubs (BigWorld-Engine-14.4.1, not
     KBEngine) are explicitly **not** integrated; the `/*~` source-comment
     surface they reference is verified to exist at the submodule's pinned
@@ -141,8 +115,6 @@ Source extraction → manual curation → consumers. Planned consumers
   `explain` tool in `crates/kode-mcp/src/explain.rs`: API face = the C-21
   shared library, mechanism face = the article index above).
 - **API usage patterns & frequency stats** (bucket ③):
-  - [English](api-usage-stats.md)
-  - [中文](../zh/knowledge/api-usage-stats.md)
   - Covers: `scripts/kbe-api-scan.py` (AST-based, stdlib-only) over the two
     in-repo trees (77 files, 0 parse errors); `KBEngine.*` module usage
     table; entity-API member popularity; engine-known vs project-defined
@@ -150,8 +122,6 @@ Source extraction → manual curation → consumers. Planned consumers
     discipline with `delTimer` never called, cell-creation pair, remote-handle
     direction, interfaces polling pair). Honest scope: in-repo trees only.
 - **Traps index** (bucket ④):
-  - [English](traps-index.md)
-  - [中文](../zh/knowledge/traps-index.md)
   - Covers: one-row-per-trap index across the knowledge pages — memory &
     references, migration/teleport, timers & controllers, EntityCall
     semantics, callback naming/face placement, client-face availability,

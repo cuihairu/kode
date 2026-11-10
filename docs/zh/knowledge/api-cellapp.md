@@ -1,7 +1,6 @@
 # Cellapp 面 API 参考（KB-API-004）
 
-> 双语镜像：[English](../knowledge/api-cellapp.md)。断言与引用完全一致；
-> 行号漂移核对以 EN 篇为准。
+> 断言与引用完全一致；行号漂移核对以 EN 篇为准。
 >
 > **范围**：**cellapp** 进程注册的 Python API 面——`KBEngine` 模块面与
 > 该进程上的 `Entity` 类。重写自官方 3.7 口径 CHM 转换源料
