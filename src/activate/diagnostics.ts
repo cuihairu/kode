@@ -37,6 +37,7 @@ import {
 import { READONLY_WRITE_DIAGNOSTICS_ENABLED_DEFAULT, readOnlyWriteDiagnosticItemsAsync, type ReadOnlyWriteDiagnosticItem } from '../backend/readOnlyWriteDiagnostics';
 import { ROLE_MISUSE_DIAGNOSTICS_ENABLED_DEFAULT, roleMisuseDiagnosticItemsAsync, type RoleMisuseDiagnosticItem } from '../backend/roleMisuseDiagnostics';
 import { POST_DESTROY_DIAGNOSTICS_ENABLED_DEFAULT, postDestroyDiagnosticItemsAsync, type PostDestroyDiagnosticItem } from '../backend/postDestroyDiagnostics';
+import { buildPostDestroyItemsWithRust } from '../backend/postDestroyRust';
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import { EntityMappingManager } from '../entityMapping';
 import { PythonClassIndex } from '../backend/pythonClassIndex';
@@ -915,18 +916,29 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         }
         const enabled = vscode.workspace.getConfiguration('kbengine')
           .get<boolean>('postDestroyDiagnostics', POST_DESTROY_DIAGNOSTICS_ENABLED_DEFAULT);
-        return postDestroyDiagnosticItemsAsync(
-          document.getText(),
-          document.uri.fsPath,
-          () => entityMappingManager.getEntityComponentFacesForPythonFile(document.uri.fsPath),
-          () => {
-            const mapping = entityMappingManager.getMappingForPythonFile(document.uri.fsPath);
-            return Boolean(
-              mapping && (mapping.methods.destroy || mapping.properties.destroy)
-            );
-          },
-          enabled
-        );
+        const fetchDefFaces = () =>
+          entityMappingManager.getEntityComponentFacesForPythonFile(document.uri.fsPath);
+        const isDestroyDeclared = () => {
+          const mapping = entityMappingManager.getMappingForPythonFile(document.uri.fsPath);
+          return Boolean(
+            mapping && (mapping.methods.destroy || mapping.properties.destroy)
+          );
+        };
+        // AUDIT-005 批 4:Rust-first(`$/kode/lint/analyzePostDestroy`,语句面 TS
+        // 供给;块/销毁/早退/访问点分析在 Rust);不可用/畸形整面回 TS 兜底。
+        return (await buildPostDestroyItemsWithRust(
+            document.getText(),
+            document.uri.fsPath,
+            fetchDefFaces,
+            isDestroyDeclared
+          )
+          ?? await postDestroyDiagnosticItemsAsync(
+            document.getText(),
+            document.uri.fsPath,
+            fetchDefFaces,
+            isDestroyDeclared,
+            enabled
+          ));
       },
       publish: (items: readonly PostDestroyDiagnosticItem[]) => {
         postDestroyDiagnostics.set(document.uri, items.map(item => {

@@ -42,6 +42,14 @@ const EARLY_EXIT_STATEMENT = /^(?:return|break|continue|raise)\b/;
 const FUNCTION_HEADER = /^\s*(?:async\s+)?def\s+[A-Za-z_]\w*\s*\(/;
 const ACCESS_PATTERN = /\bself\.(\w+)/g;
 
+/** 消息模板单一来源(TS 渲染,Rust 只回结构面) */
+export function renderPostDestroyMessage(member: string, destroyLine: number): string {
+  return l10nText(
+    'self.{member} accessed after self.destroy() (destroyed at line {line}): the entity is dead after destruction; {member} access triggers the engine destroyed check',
+    { member, line: destroyLine + 1 }
+  );
+}
+
 /** 一处销毁后访问 */
 export interface PostDestroyFinding {
   line: number;
@@ -173,10 +181,7 @@ export function findPostDestroyFindings(
             member,
             destroyLine: destroy.line,
             destroyColumn,
-            message: l10nText(
-              'self.{member} accessed after self.destroy() (destroyed at line {line}): the entity is dead after destruction; {member} access triggers the engine destroyed check',
-              { member, line: destroy.line + 1 }
-            )
+            message: renderPostDestroyMessage(member, destroy.line)
           });
         }
       }
@@ -230,14 +235,82 @@ export async function postDestroyDiagnosticItemsAsync(
       defFaces = null;
     }
   }
-  return findPostDestroyFindings(text, pathFace, defFaces, isDestroyDeclared()).map(finding => ({
+  return findPostDestroyFindings(text, pathFace, defFaces, isDestroyDeclared()).map(postDestroyFindingToItem);
+}
+
+/** finding → 诊断项(纯数据;extension 侧转 vscode.Diagnostic) */
+export function postDestroyFindingToItem(finding: PostDestroyFinding): PostDestroyDiagnosticItem {
+  return {
     range: {
       start: { line: finding.line, character: finding.character },
       end: { line: finding.line, character: finding.character + finding.length }
     },
     message: finding.message,
-    severity: 'Warning' as const,
-    source: 'kbengine' as const,
+    severity: 'Warning',
+    source: 'kbengine',
     code: POST_DESTROY_DIAGNOSTIC_CODE
-  }));
+  };
+}
+
+// ---- Rust 面(AUDIT-005 B2 车道批 4:postDestroy 收编) -------------------------
+// `$/kode/lint/analyzePostDestroy` 经 gate.runInRust(与 analyzeReceiverNone/
+// analyzeSpaceNav 同口径):Rust 只回结构面(line/character/length/member +
+// destroyLine/destroyColumn),消息渲染留本模块(l10n 单一来源)。任一条畸形
+// 返回 null(整面作废,调用方回 TS 兜底 —— 禁止部分采用)。对拍测试共用。
+
+/** Rust 结构面单条产物(`$/kode/lint/analyzePostDestroy` 应答;结构校验逐字段):
+ * {code, line, character, length, member, destroyLine, destroyColumn} */
+const MEMBER_PATTERN = /^[A-Za-z_]\w*$/;
+const SELF_DOT_LENGTH = 'self.'.length;
+
+function renderRustPostDestroyItem(item: unknown): PostDestroyDiagnosticItem | null {
+  if (item === null || typeof item !== 'object') {
+    return null;
+  }
+  const record = item as Record<string, unknown>;
+  if (record.code !== POST_DESTROY_DIAGNOSTIC_CODE) {
+    return null;
+  }
+  const member = record.member;
+  if (typeof member !== 'string' || !MEMBER_PATTERN.test(member) || SAFE_MEMBERS.has(member)) {
+    return null;
+  }
+  const length = record.length;
+  if (typeof length !== 'number' || !Number.isInteger(length) || length !== SELF_DOT_LENGTH + member.length) {
+    return null;
+  }
+  for (const value of [record.line, record.character, record.destroyLine, record.destroyColumn]) {
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+      return null;
+    }
+  }
+  const line = record.line as number;
+  const character = record.character as number;
+  const destroyLine = record.destroyLine as number;
+  return {
+    range: {
+      start: { line, character },
+      end: { line, character: character + length }
+    },
+    message: renderPostDestroyMessage(member, destroyLine),
+    severity: 'Warning',
+    source: 'kbengine',
+    code: POST_DESTROY_DIAGNOSTIC_CODE
+  };
+}
+
+/**
+ * 结构面数组 → 诊断面数组(消息渲染);任一条畸形返回 null(整面作废,调用方
+ * 回 TS 兜底 —— 禁止部分采用)。对拍测试共用。
+ */
+export function renderRustPostDestroyItems(items: readonly unknown[]): PostDestroyDiagnosticItem[] | null {
+  const rendered: PostDestroyDiagnosticItem[] = [];
+  for (const item of items) {
+    const renderedItem = renderRustPostDestroyItem(item);
+    if (!renderedItem) {
+      return null;
+    }
+    rendered.push(renderedItem);
+  }
+  return rendered;
 }

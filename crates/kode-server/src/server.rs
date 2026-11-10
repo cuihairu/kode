@@ -120,6 +120,7 @@ impl ServerState {
         // 库不经 RPC(防「能力已迁移」误导,RUST-MIGRATION-AUDIT-004)。
         crate::def_md5::register(&mut rpc);
         crate::trap_lints::register(&mut rpc);
+        crate::post_destroy::register(&mut rpc);
         crate::role_misuse::register(&mut rpc);
         crate::receiver_none::register(&mut rpc);
         crate::space_nav::register(&mut rpc);

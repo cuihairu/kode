@@ -15,6 +15,7 @@ pub mod flag_domains;
 pub mod hover;
 pub mod lint;
 pub mod message_table;
+pub mod post_destroy;
 pub mod process_topology;
 pub mod python_callgraph;
 pub mod python_lexical_mask;
