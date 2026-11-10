@@ -119,6 +119,51 @@ describe('buildKbeStubExportContentForWorkspace(engine detection)', () => {
     }
   });
 
+  it('默认档(generated)也拼接引擎 checkout,不再回落手写模板', () => {
+    // 用户令 2026-11-09:官方 typings import 完整、类型齐全;手写精选目录缺
+    // Dict/Callable/Union/Entity 等导入 → Pylance 报「Import KBEngine could
+    // not be resolved」且类型不全。默认档必须优先用官方 typings。
+    configurationOverrides.delete('kbengine');
+    const engineRoot = mkdtempSync(join(os.tmpdir(), 'kode-engine-default-'));
+    try {
+      mkdirSync(join(engineRoot, 'typings'), { recursive: true });
+      writeFileSync(
+        join(engineRoot, 'typings', '_KBEngine_common.pyi'),
+        'from typing import Dict, Union\nfrom collections.abc import Callable\n\n'
+          + 'class Entity:\n    id: int\n\n'
+          + 'Vector3Like = Union[tuple[float, float, float], list[float]]\n'
+          + 'def getWatcher(path: str) -> Dict[str, str]: ...\n'
+      );
+      for (const moduleName of [
+        '_KBEngine_baseapp', '_KBEngine_bots', '_KBEngine_cellapp', '_KBEngine_dbmgr',
+        '_KBEngine_hooks', '_KBEngine_interfaces', '_KBEngine_logger',
+        '_KBEngine_loginapp', '_KBEngine_pythonapp', '_KBEngine_server_errors'
+      ]) {
+        writeFileSync(
+          join(engineRoot, 'typings', `${moduleName}.pyi`),
+          'from _KBEngine_common import Entity\n'
+        );
+      }
+      const content = buildKbeStubExportContentForWorkspace('/ws', {
+        engineRoot,
+        engineRootEnv: {}
+      });
+      expect(content).toContain('generated from the local KBEngine typings checkout');
+      expect(content).toContain('from typing import Dict, Union');
+      expect(content).toContain('from collections.abc import Callable');
+      expect(content).toContain('Vector3Like');
+      // 官方 typings 缺 Vector2/3/4 类,拼接后必须补上(引擎真实类型)
+      expect(content).toContain('class Vector2:');
+      expect(content).toContain('class Vector3:');
+      expect(content).toContain('class Vector4:');
+      // 私有模块名一并改写,不留悬空 import
+      expect(content).not.toContain('from _KBEngine_common import');
+      expect(content).not.toBe(buildKbeStubExportContent());
+    } finally {
+      rmSync(engineRoot, { recursive: true, force: true });
+    }
+  });
+
   it('concatenates an explicit engine checkout and rewrites private imports', () => {
     // IDE-STUB-001:引擎 checkout 拼接(复制真实代码)只在 real-source 档执行
     configurationOverrides.set('kbengine', { 'python.stubSourceMode': 'real-source' });

@@ -156,7 +156,9 @@ describe('端到端导出文件面(IDE-STUB-004):复制路径按档触发', () =
     methods: {}
   } as never;
 
-  it('默认 generated 档:exportKbeStubs 落盘的是精选目录内容,无复制标记', async () => {
+  // 用户令 2026-11-09:默认档(generated)落盘的是官方引擎 typings 拼接内容
+  // (import 完整、类型齐全),不再回落手写精选目录;覆盖旧 IDE-STUB-001。
+  it('默认 generated 档:exportKbeStubs 落盘官方 typings 拼接,含复制标记', async () => {
     const engineRoot = makeEngineRoot();
     try {
       const written = await exportKbeStubs(realDeps, {
@@ -166,8 +168,8 @@ describe('端到端导出文件面(IDE-STUB-004):复制路径按档触发', () =
       });
       expect(written).toEqual(['ws']);
       const kbe = readFileSync(join(stubDir, 'KBEngine.pyi'), 'utf8');
-      expect(kbe).not.toContain(ENGINE_TYPINGS_MARKER);
-      expect(kbe).toContain('Content source: src/kbeModuleIndex.ts');
+      expect(kbe).toContain(ENGINE_TYPINGS_MARKER);
+      expect(kbe).toContain('class Entity:');
     } finally {
       removeEngineRoot(engineRoot);
     }
@@ -240,15 +242,17 @@ describe('引擎 typings 拼接(复制真实代码)按档放行(IDE-STUB-001)', 
     configurationOverrides.delete('kbengine');
   });
 
-  it('默认 generated 档:显式引擎 checkout 也不拼接,回落精选目录', () => {
+  // 用户令 2026-11-09:默认档也拼接引擎 checkout(官方 typings 为唯一事实源,
+  // import 完整、类型齐全);旧 IDE-STUB-001「generated 档不复制真实代码」作废。
+  it('默认 generated 档:显式引擎 checkout 也拼接全量 API', () => {
     const engineRoot = makeEngineRoot();
     try {
       const content = buildKbeStubExportContentForWorkspace('/ws', {
         engineRoot,
         engineRootEnv: {}
       });
-      expect(content).not.toContain(ENGINE_TYPINGS_MARKER);
-      expect(content).toBe(buildKbeStubExportContent());
+      expect(content).toContain(ENGINE_TYPINGS_MARKER);
+      expect(content).toContain('class Entity:');
     } finally {
       removeEngineRoot(engineRoot);
     }
