@@ -43,6 +43,13 @@ defParser(+WorkerHost)/defChain/defCallChain(+ViewLogic)/defReferenceGraph/defMe
 
 **B3. 残留包装器（1）**：hotReloadDefHash.ts `negotiateEngineDigest` 仍零生产消费（defMd5Check.ts:5 注释坐实「包装器≠接线」）；def/md5 命令链走的是 computeDefMd5InRust，热更引擎摘要协商腿仍未接。
 
+**B4. 纯 TS 形态保真缺口（反向缺口，2026-11-10 走查实锤）**：`$/kode/config/resolve` **无 TS 回退实现**——serverConfigResolve.ts:366-379 `!gate`/`no serverPath` 直接 `ok:false` 不缓存，无 TS 合并臂。后果：纯 TS 通用包里 dbInterface/telnetSummary 恒 null，四个消费模块降级（面板诚实显示「not found」不造假，但能力缺失）：
+- playerDataPanel.ts:172 `buildPlayerDatabaseView` → Player Data 出「Database config section not found」而非 DSN（009c Linux 走查困惑点 10 的根因，跨形态行为分歧实锤）；
+- telnetService.ts:119-151 → 引擎 telnet 密码/端口自动配置面丢失；
+- backend/profileDatabaseConnection.ts → 克隆档案连接派生降级；
+- configDerive.ts:200-203 → 派生扫描根数据库面降级。
+TS 侧已有合并引擎（serverConfigMerge.ts buildConfigTreePair 树面在纯 TS 包工作），缺的是 dbInterface/telnetSummary 提取的 TS 实现。处置登记 RUST-MIGRATION-AUDIT-007（补 TS 回退 or 文档声明纯 TS 能力边界，待用户定）。
+
 ### C. 宿主面（设计如此，不是缺口）
 
 git shell 族（gitRunner/gitHistory/gitRangeTimeline/gitQueryGate 等 7 模块，shell-out git）、进程/连接族（processManager/remoteConnection/remoteProcessList/sshConfig/telnetClient/debugpyPortProbe/pyspyDump/venvDiscovery 等，OS io）、VS Code API 绑定面（task/debug/webview/tree/documentStore/diagnosticScheduler/indexScheduler 调度）、hotReload 传输族（telnet/payload 投递，协议 io）。这些是 io/宿主边界，收编 Rust 无净收益；其**计算核心**（如 hotReloadDefHash/DefStructure 的哈希与结构 diff）属 B 类可议。

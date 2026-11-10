@@ -1512,6 +1512,8 @@
 - [ ] RUST-MIGRATION-AUDIT-005 [P2] def 细粒度诊断族收编 Rust（B2 车道）：trap 诊断族（rpcArgCount/receiverNone/roleMisuse/timerCleanup/spaceNav/postDestroy/destroyedCapture/readOnlyWrite/fixedDictMutation/propertyDirection/selfAttributeNone）+ defCallChain/defReferenceGraph/defRenamer/definitionSemantics/defMethodConsistency 等约 27 模块全 TS-only；TS lintRuleRegistry 37 条 vs Rust lint 14 条结构规则。Rust 已有 kode-parser 底座且输入同 def parse，同域优先收编；每批沿 AUDIT-002 纪律=对拍+切换+回退三面证据（先例 tests/defAnalyzerRustParity.test.ts）。清单见 docs/review/2026-11-10-rust-ts-coverage-matrix.md §B2。（待用户点火）
 - [ ] RUST-MIGRATION-AUDIT-006 [P2] Python 语义分析族收编 Rust（B1 车道，最大缺口）：类型推断/pythonReturnTypeInference/self 属性流敏感分析（KODE-PERF-001 引擎）/None 诊断/userTypeContract/语义索引约 22 模块全 TS-only；kode-python 现仅 symbols/callgraph 两面，需新增类型推断+流敏感面，跨度最大。清单见 docs/review/2026-11-10-rust-ts-coverage-matrix.md §B1。（待用户点火）
 
+- [ ] RUST-MIGRATION-AUDIT-007 [P2] `$/kode/config/resolve` 补 TS 回退或声明纯 TS 能力边界（反向缺口，2026-11-10 走查实锤）：serverConfigResolve.ts:366-379 门未接/no serverPath 直接 ok:false 无 TS 合并臂——纯 TS 通用包 dbInterface/telnetSummary 恒 null，四消费模块降级（playerDataPanel Player Data 出「not found」而非 DSN=009c 困惑点 10 根因；telnetService.ts:119-151 引擎 telnet 自动配置丢失；profileDatabaseConnection 克隆连接派生降级；configDerive.ts:200-203 派生面降级）。TS 合并引擎已在（serverConfigMerge buildConfigTreePair），缺 dbInterface/telnetSummary 提取的 TS 实现；补齐=对拍锁定（Rust 输出为 golden），不补=文档+面板文案明示「此面需平台包」。见 docs/review/2026-11-10-rust-ts-coverage-matrix.md §B4。（处置待用户定）
+
 ## 2026-11-08 克隆跨版本验证
 
 - [x] KODE-REVIEW-MYSQL57 [P1] 隔离 MySQL 5.7 容器运行 `tests/playerDataCloneMysqlReal.test.ts`，使用实际 kode-server RPC 执行 MySQL→计划/归档→导入计划→目标 MySQL 事务往返，验证一致性快照、i64/u64 边界、大于 2^53 的主键、BLOB/BINARY/VARBINARY、空值和字节预算；1/1 通过。与 MySQL 8 实测覆盖相同路径。
