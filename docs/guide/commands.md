@@ -190,6 +190,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Purpose: export one player entity's persisted rows to a `.kdpclone` archive (CLONE-P5)
 - Entries: Command palette
 - Behavior:
+  - Preflights before anything is collected (UX-REVIEW-004b): Rust backend availability (honest error and no prompts without it), a real source connection test (failure reports the raw reason with retry / configure entries; configure runs the wizard and resumes the flow; dismiss aborts), and the entity's table-derivation check — all before the DBID input, so no typed DBID is ever wasted
   - Pick a registered entity, enter the root DBID (digits only), then choose the save path (`.kdpclone`)
   - The source session is opened read-only; physical tables are probed via `information_schema` (identifiers validated) and the read-only SELECT plan comes from the Rust core (`$/kode/dbClone/planExport`); without the Rust backend the command reports that honestly instead of pretending
   - The plan preview (tables / row budget / missing tables) is printed to the 「KBEngine Player Clone」 channel and requires an explicit confirm before any query runs; execution is cancellable (cancel stops read-only work, nothing to roll back)
