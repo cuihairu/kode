@@ -15,8 +15,7 @@ import * as vscode from 'vscode';
 import { findEngineEntryScript } from './debugpyWaitAtStartup';
 import { getKodeCoreShadowGate } from './backend/kodeCoreShadowFaces';
 import { getRootConfigGeneration } from './rootConfigGeneration';
-import { buildConfigTreePair } from './serverConfigMerge';
-import { ensureConfigResolved } from './serverConfigResolve';
+import { configTreePairFromState, ensureConfigResolved } from './serverConfigResolve';
 import { expandWorkspacePlaceholders } from './backend/workspacePath';
 
 /** `$/kode/config/derive` 的 `{ derive, diagnostics }` 结果(镜像 Rust 序列化) */
@@ -195,10 +194,19 @@ async function refresh(generation: number): Promise<ConfigDerivedScanRootState> 
   // 配置树对(KODE-CFG-009):custom/defaults 两棵树由 core 解析
   // (`$/kode/config/resolve`,TS 只读盘送达原文);customPath 同时作为
   // facts 的配置路径,单次探测不各读各的。
-  let pair: ReturnType<typeof buildConfigTreePair>;
+  //
+  // 竞态修复(用户令 2026-11-09「玩家数据没读到配置」):这里原本是
+  // `await ensureConfigResolved(); pair = buildConfigTreePair();` ——
+  // await 之后再 buildConfigTreePair 内部 `getConfigResolved()` 是**二次
+  // 按 `''` 键回查缓存**,两步之间另一消费者(telnet 探测 {customXmlPath}、
+  // profile 命令面根组合)写入 cacheSlots 触发 8 槽 FIFO 逐出,把 `''` 槽
+  // 挤掉 → getConfigResolved() 返回 null → 全 null 树 → 派生面
+  // database.available=false(玩家数据面板「根本没读到配置」)。改为拿
+  // 到手的 state 直接转树对,绝不二次回查同一键。
+  let pair: ReturnType<typeof configTreePairFromState>;
   try {
-    await ensureConfigResolved();
-    pair = buildConfigTreePair();
+    const state = await ensureConfigResolved();
+    pair = configTreePairFromState(state);
   } catch {
     pair = { customTree: null, defaultsTree: null, customPath: null, defaultsPath: null };
   }

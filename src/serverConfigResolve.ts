@@ -70,6 +70,35 @@ export interface ConfigResolvedState {
 }
 
 /**
+ * 由**已取到**的解析态构造配置树对(不二次读缓存)。
+ *
+ * 为什么需要:`cacheSlots` 只有 8 槽且按 overridesKey 分槽,多消费者
+ * (telnet 探测 `{customXmlPath}`、各 profile 命令面 `{binPath,configRoot}`)
+ * 并发写入会 FIFO 逐出最早写入的 `''` 槽。原先「`await ensureConfigResolved()`
+ * 之后再 `getConfigResolved()`」的二次读法在两步之间就可能被逐出,拿到 null
+ * → 全 null 树 → 派生面 `database.available=false`(玩家数据面板「根本没读到
+ * 配置」)。消费方必须用本函数把手里的 state 直接转成树对,不得二次按同一键
+ * 回查缓存。
+ */
+export function configTreePairFromState(state: ConfigResolvedState | null): {
+  customTree: ConfigXmlNode | null;
+  defaultsTree: ConfigXmlNode | null;
+  customPath: string | null;
+  defaultsPath: string | null;
+} {
+  if (!state) {
+    return { customTree: null, defaultsTree: null, customPath: null, defaultsPath: null };
+  }
+  return {
+    customTree: state.customTree,
+    defaultsTree: state.defaultsTree,
+    customPath: state.customPath,
+    defaultsPath: state.defaultsPath
+  };
+}
+
+
+/**
  * 元件 kbengine.xml 定位(serverConfigMerge 原实现整体迁入,core 不碰盘):
  * kbengine.assetsRoot 下的 kbengine.xml 优先,再按约定路径探测工作区根。
  * 取第一个存在的文件。profile 资产根给定时只在其下找,绝不混工作区/设置链。

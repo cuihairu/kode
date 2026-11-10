@@ -252,8 +252,8 @@ ${overrideLines}
 // "workspaceRoot": "${WORKSPACE_FOLDER_VAR}",
 
 {
-  // 配置版本号,当前固定 1
-  "version": 1,
+  // 配置版本号,当前固定 1.0
+  "version": "1.0",
 
   // telnet 调试段:只影响「Start Debugging」的提示语与自动登录预填,不参与实际探测
   "debug": {

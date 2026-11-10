@@ -9,10 +9,10 @@ use kode_parser::xml;
 
 use super::{
     builtin_table, client_visible_properties, extract_custom_type_alias_type,
-    extract_custom_type_raw_value, fallback_for, parse_custom_type_properties,
-    parse_entity, COMPONENTS_BASENAME, DEFAULT_CSHARP_NAMESPACE, EngineTrace,
-    FIXED_DICTS_BASENAME, FixedDictType, GENERATED_HEADER_LINE, SdkComponent,
-    SdkEntity, SdkGenerateParams, SdkProperty, TRACE_UNKNOWN, TypeMap,
+    extract_custom_type_raw_value, fallback_for, parse_custom_type_properties, parse_entity,
+    EngineTrace, FixedDictType, SdkComponent, SdkEntity, SdkGenerateParams, SdkProperty, TypeMap,
+    COMPONENTS_BASENAME, DEFAULT_CSHARP_NAMESPACE, FIXED_DICTS_BASENAME, GENERATED_HEADER_LINE,
+    TRACE_UNKNOWN,
 };
 /// types.xml → 类型表(内建表 + 别名 + FIXED_DICT;与 TS 同口径)。
 fn build_client_sdk_type_map(types_xml: Option<&str>, language: &str) -> TypeMap {
