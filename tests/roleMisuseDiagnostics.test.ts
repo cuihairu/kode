@@ -14,12 +14,20 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  buildRoleMisuseItemsWithRust,
   findRoleMisuseFindings,
+  renderRoleMisuseMessage,
+  renderRustRoleMisuseItems,
   roleMisuseDiagnosticItemsAsync,
-  ROLE_MISUSE_DIAGNOSTIC_CODE
+  roleMisuseFindingsToItems,
+  ROLE_MISUSE_DIAGNOSTIC_CODE,
+  ROLE_MISUSE_TABLES,
+  type RoleMisuseTables
 } from '../src/backend/roleMisuseDiagnostics';
 import { getEntityBuiltinPropertiesForFace } from '../src/backend/entityBuiltinProperties';
 import type { EntityComponentFace } from '../src/backend/entityBuiltinProperties';
+import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 
 const find = (
   text: string,
@@ -206,5 +214,163 @@ describe('IDE-LINT-009 引擎内建属性角色错用 lint(纯逻辑)', () => {
       true
     );
     expect(items).toHaveLength(0);
+  });
+});
+
+describe('buildRoleMisuseItemsWithRust(Rust-first,TS 兜底)', () => {
+  const TEXT = 'self.velocity = 1.0\n';
+  const deps = { facePropertyNames: ROLE_MISUSE_TABLES, enabled: true };
+
+  /** 注入门替身;runInRust 按给定应答回,记录 method/params */
+  const withGate = async (
+    respond: (method: string, params: unknown) => unknown,
+    run: () => Promise<void>
+  ): Promise<Array<{ method: string; params: unknown }>> => {
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const gate = {
+      runInRust: async (method: string, params: unknown) => {
+        calls.push({ method, params });
+        return respond(method, params);
+      }
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(gate);
+    try {
+      await run();
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+    return calls;
+  };
+
+  const tsFallback = () =>
+    roleMisuseFindingsToItems(findRoleMisuseFindings(TEXT, 'baseapp', null, ROLE_MISUSE_TABLES));
+
+  it('无门:回 TS 兜底,产物与同步路径逐条一致', async () => {
+    const items = await buildRoleMisuseItemsWithRust(TEXT, 'baseapp', null, deps);
+    expect(items).toEqual(tsFallback());
+  });
+
+  it('门可用:Rust 结构面经渲染成诊断面(消息=TS 模板,取证=引擎表)', async () => {
+    const rustItem = {
+      code: ROLE_MISUSE_DIAGNOSTIC_CODE,
+      line: 0,
+      character: 0,
+      length: 'self.velocity'.length,
+      propertyName: 'velocity',
+      registeredFaces: ['client']
+    };
+    await withGate(
+      () => ({ ok: true as const, result: { items: [rustItem] } }),
+      async () => {
+        const items = await buildRoleMisuseItemsWithRust(TEXT, 'baseapp', null, deps);
+        const source = getEntityBuiltinPropertiesForFace('client')
+          .find(p => p.name === 'velocity')!.source;
+        expect(items).toEqual([{
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 'self.velocity'.length } },
+          message: renderRoleMisuseMessage('velocity', 'baseapp', ['client'], source),
+          severity: 'Warning' as const,
+          source: 'kbengine' as const,
+          code: ROLE_MISUSE_DIAGNOSTIC_CODE
+        }]);
+      }
+    );
+  });
+
+  it('门调用失败(ok:false):整面回 TS 兜底', async () => {
+    await withGate(
+      () => ({ ok: false as const, reason: 'no serverPath' }),
+      async () => {
+        const items = await buildRoleMisuseItemsWithRust(TEXT, 'baseapp', null, deps);
+        expect(items).toEqual(tsFallback());
+      }
+    );
+  });
+
+  it('畸形应答(缺字段/未知 code/语义矛盾/非内建):整面作废回 TS,不部分采用', async () => {
+    // 注:空数组是合法空面(信任 Rust 结果),不属畸形
+    const malformed: unknown[] = [
+      { code: ROLE_MISUSE_DIAGNOSTIC_CODE, line: 0, character: 0, length: 3 }, // 缺 propertyName
+      { code: 'kbengine.unknownRoleMisuseCode', line: 0, character: 0, length: 3, propertyName: 'velocity', registeredFaces: ['client'] },
+      { code: ROLE_MISUSE_DIAGNOSTIC_CODE, line: 0, character: 0, length: 3, propertyName: 'velocity', registeredFaces: [] }, // 空注册面(非内建)
+      { code: ROLE_MISUSE_DIAGNOSTIC_CODE, line: 0, character: 0, length: 3, propertyName: 'velocity', registeredFaces: ['baseapp'] }, // 当前面在注册面(矛盾)
+      { code: ROLE_MISUSE_DIAGNOSTIC_CODE, line: 0, character: 0, length: 3, propertyName: 'customProp', registeredFaces: ['client'] }, // 非内建
+      'not-an-item'
+    ];
+    for (const items of [malformed.slice(0, 1), malformed.slice(1)]) {
+      await withGate(
+        () => ({ ok: true as const, result: { items } }),
+        async () => {
+          const result = await buildRoleMisuseItemsWithRust(TEXT, 'baseapp', null, deps);
+          expect(result).toEqual(tsFallback());
+        }
+      );
+    }
+    expect(
+      renderRustRoleMisuseItems(
+        [{ code: 'kbengine.unknownRoleMisuseCode', line: 0, character: 0, length: 3, propertyName: 'velocity', registeredFaces: ['client'] }],
+        'baseapp',
+        ROLE_MISUSE_TABLES
+      )
+    ).toBeNull();
+  });
+
+  it('RPC 契约:method=analyzeRoleMisuse,face/facePropertyNames 序列化', async () => {
+    const calls = await withGate(
+      () => ({ ok: true as const, result: { items: [] } }),
+      async () => {
+        await buildRoleMisuseItemsWithRust(TEXT, 'baseapp', null, deps);
+      }
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('$/kode/lint/analyzeRoleMisuse');
+    expect(calls[0].params).toEqual({
+      text: TEXT,
+      face: 'baseapp',
+      facePropertyNames: ROLE_MISUSE_TABLES
+    });
+  });
+
+  it('enabled=false 零产出(不经门)', async () => {
+    const items = await buildRoleMisuseItemsWithRust(TEXT, 'baseapp', null, {
+      ...deps,
+      enabled: false
+    });
+    expect(items).toHaveLength(0);
+  });
+
+  it('面=null(非实体/歧义)零产出,不经门', async () => {
+    let gated = false;
+    setKodeCoreShadowGate({
+      runInRust: async () => { gated = true; return { ok: true as const, result: { items: [] } }; }
+    } as unknown as KodeCoreGate);
+    try {
+      const items = await buildRoleMisuseItemsWithRust(TEXT, null, ['baseapp', 'cellapp'], deps);
+      expect(items).toHaveLength(0);
+      expect(gated).toBe(false);
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('合成面表注入:Rust 输入用注入表(非生产静态)', async () => {
+    const synthetic: RoleMisuseTables = {
+      baseapp: ['id'],
+      cellapp: ['id', 'position'],
+      client: ['id', 'position']
+    };
+    const calls = await withGate(
+      () => ({ ok: true as const, result: { items: [] } }),
+      async () => {
+        await buildRoleMisuseItemsWithRust(TEXT, 'baseapp', null, {
+          facePropertyNames: synthetic,
+          enabled: true
+        });
+      }
+    );
+    expect(calls[0].params).toEqual({
+      text: TEXT,
+      face: 'baseapp',
+      facePropertyNames: synthetic
+    });
   });
 });
