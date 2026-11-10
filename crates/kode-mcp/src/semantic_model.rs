@@ -39,7 +39,7 @@ pub enum Confidence {
 }
 
 impl Confidence {
-    fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Confidence::Determined => "determined",
             Confidence::Inferred => "inferred",
@@ -549,6 +549,37 @@ fn build_edges(kb: &AssetKnowledge, py: &[PySymbol], root: &Path) -> Vec<RefEdge
         }
     }
     edges
+}
+
+/// P2 storage face (additive; the P1 `find_references` path is untouched):
+/// one exported edge row for persisting in SQLite.
+#[derive(Debug, Clone)]
+pub(crate) struct SemanticEdgeRow {
+    pub from: String,
+    pub to: String,
+    pub relation: &'static str,
+    pub rule: &'static str,
+    pub confidence: Confidence,
+}
+
+/// Export the semantic edge set built by the P1 rules (KODE-MCP-KB-002 P2,
+/// design doc §5/§10) for persistence. Reuses [`build_edges`] verbatim —
+/// single source of reference-edge vocabulary.
+pub(crate) fn semantic_edge_rows(
+    kb: &AssetKnowledge,
+    py: &[PySymbol],
+    root: &Path,
+) -> Vec<SemanticEdgeRow> {
+    build_edges(kb, py, root)
+        .into_iter()
+        .map(|e| SemanticEdgeRow {
+            from: e.from,
+            to: e.to,
+            relation: e.relation,
+            rule: e.rule,
+            confidence: e.confidence,
+        })
+        .collect()
 }
 
 /// `find_references`:查引用某符号/配置的跨格式边(来源节点、目标节点、
@@ -1186,7 +1217,10 @@ mod tests {
         // 无 types_text → 空表;有 text 但无根元素 → 空表(如实,不猜)。
         let k = AssetKnowledge::default();
         assert!(implemented_by_full(&k).is_empty());
-        let k2 = AssetKnowledge { types_text: Some("".into()), ..AssetKnowledge::default() };
+        let k2 = AssetKnowledge {
+            types_text: Some("".into()),
+            ..AssetKnowledge::default()
+        };
         assert!(implemented_by_full(&k2).is_empty());
     }
 

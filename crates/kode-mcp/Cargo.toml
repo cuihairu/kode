@@ -14,6 +14,15 @@ rmcp = { version = "3.7", default-features = true, features = ["server", "transp
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# P2 (KODE-MCP-KB-002): Tantivy BM25/trigram full-text, SQLite storage,
+# notify incremental watch, BLAKE3 content addressing, pulldown-cmark
+# section extraction, calamine Excel reads.
+tantivy = "0.27"
+rusqlite = { version = "0.41", default-features = false, features = ["bundled"] }
+notify = "8"
+blake3 = "1"
+pulldown-cmark = { version = "0.13", default-features = false }
+calamine = "0.38"
 
 [dev-dependencies]
 rmcp = { version = "3.7", features = ["client", "transport-child-process"] }

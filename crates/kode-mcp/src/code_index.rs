@@ -64,7 +64,7 @@ fn to_one_based(line: usize) -> usize {
 }
 
 /// 收集一个文件的所有符号(类 + 模块级函数 + 方法)。
-fn symbols_of(file: &Path, source: &str) -> Vec<PySymbol> {
+pub(crate) fn symbols_of(file: &Path, source: &str) -> Vec<PySymbol> {
     let extraction = parse_ast_symbols(source);
     let mut out = Vec::new();
     for class in &extraction.symbols.classes {

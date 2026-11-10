@@ -22,6 +22,9 @@ pub struct KodeMcpServer {
     pub assets_root: std::path::PathBuf,
     /// 额外知识路径(CLI 附加参数;search_docs 在此+资产根下收 `.md`)。
     pub extra_paths: Vec<std::path::PathBuf>,
+    /// P2 知识索引(Tantivy BM25 + SQLite + notify 增量;search 工具与
+    /// index_status 的 storage 面由此出)。
+    pub index: crate::kb_index::KnowledgeIndex,
 }
 
 fn object(schema: serde_json::Value) -> Arc<rmcp::model::JsonObject> {
@@ -150,10 +153,34 @@ impl KodeMcpServer {
                     limit.max(1),
                 )
             }
-            "index_status" => Ok(crate::semantic_model::index_status(
-                &self.knowledge,
-                &self.assets_root,
-            )),
+            "index_status" => {
+                // P1 语义面 + P2 存储面合并;P1 键保持原样(不破坏既有断言)。
+                let mut status =
+                    crate::semantic_model::index_status(&self.knowledge, &self.assets_root);
+                status["storage"] = self.index.status();
+                Ok(status)
+            }
+            "search" => {
+                let query = arg_str("query").unwrap_or_default();
+                let limit = arguments
+                    .get("limit")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(20) as usize;
+                let route = match arg_str("route").as_deref() {
+                    Some("exact") => crate::kb_index::Route::Exact,
+                    Some("bm25") => crate::kb_index::Route::Bm25,
+                    _ => crate::kb_index::Route::Auto,
+                };
+                self.index.search(
+                    &query,
+                    &crate::kb_index::SearchOptions {
+                        format: arg_str("format"),
+                        kind: arg_str("kind"),
+                        limit: limit.max(1),
+                        route,
+                    },
+                )
+            }
             "find_references" => {
                 let symbol = arg_str("symbol").unwrap_or_default();
                 let limit = arguments
@@ -199,7 +226,8 @@ impl ServerHandler for KodeMcpServer {
                  get_entity_model, get_type_graph, validate_defs, get_message_entry, \
                  encode_decode_sample, db_schema_preview, explain, get_final_config, \
                  get_entry_scripts, get_database_schema, why_setting, list_config_settings, \
-                 search_docs, search_symbols, protocol_frame, find_symbol, index_status, \\\n                 find_references, query_xml, read_node.",
+                 search_docs, search_symbols, protocol_frame, find_symbol, index_status, \
+                 find_references, query_xml, read_node, search.",
             )
     }
 
@@ -414,6 +442,20 @@ impl ServerHandler for KodeMcpServer {
                         &["node"],
                     ),
                 ),
+                Self::tool(
+                    "search",
+                    "Unified knowledge-index search over the four indexed source formats (Markdown docs, Python scripts, def/types.xml schema, Excel tables, plus the curated server-config catalog). Routing is deterministic: an identifier-shaped query that exactly names a known node goes to the structure index (route exact, no BM25 scan); anything else goes to the BM25 inverted index (route bm25) with a CJK-friendly tokenizer for Chinese text and path trigram support. Results are ranked deterministically (score, kind, path). The optional format filter takes markdown|excel|python|def|xml; kind filters by node kind. Natural-language queries are reported as vector-deferred (P3 pluggable module is not built); no vector model runs.",
+                    schema_of(
+                        serde_json::json!({
+                            "query": {"type": "string", "description": "exact node name (routes to structure index) or keyword/term (routes to BM25); Chinese terms supported"},
+                            "limit": {"type": "integer", "description": "max matches (default 20)"},
+                            "format": {"type": "string", "description": "optional format filter: markdown|excel|python|def|xml"},
+                            "kind": {"type": "string", "description": "optional node-kind filter, e.g. entity|entity-property|xml-type|python-class|section|excel-sheet|xml-attribute"},
+                            "route": {"type": "string", "description": "optional route override: exact|bm25 (default auto)"}
+                        }),
+                        &["query"],
+                    ),
+                ),
             ],
             ..Default::default()
         };
@@ -464,14 +506,21 @@ impl ServerHandler for KodeMcpServer {
 }
 
 /// stdio 入口:加载资产根(可选额外知识路径)并服务到进程退出。
+/// P2:启动时建知识索引(Tantivy+SQLite,增量 BLAKE3 对账)并挂 notify 监视。
 pub async fn run_stdio(
     root: std::path::PathBuf,
     extra_paths: Vec<std::path::PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let index = crate::kb_index::KnowledgeIndex::open(&root)?;
+    let knowledge = AssetKnowledge::load(&root);
+    index.build();
+    // 监视失败不致命(网络文件系统等):BLAKE3 对账兜底,index_status 如实报告。
+    let _ = index.start_watch();
     let server = KodeMcpServer {
-        knowledge: AssetKnowledge::load(&root),
+        knowledge,
         assets_root: root,
         extra_paths,
+        index,
     };
     let running = server.serve(stdio()).await?;
     running.waiting().await?;

@@ -13,7 +13,7 @@
 //! (derive 面同款):`dbInterface` 只给连接要素 + `passwordAvailable`
 //! 标记,明文密码留空。读盘容错:单文件缺失如实记 `missing`,不 panic。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use kode_parser::config::{resolve_config, ConfigNode, ENGINE_DEFAULT_TELNET_PORTS};
 use kode_server::config_rpc::ENGINE_TELNET_PORT_NUMBERS;
@@ -21,18 +21,88 @@ use serde_json::{json, Map, Value};
 
 use crate::kb::AssetKnowledge;
 
-/// 元件配置定位:`{root}/res/server/kbengine.xml`(config_derive 同路径)。
-fn custom_config_path(root: &Path) -> std::path::PathBuf {
-    root.join("res").join("server").join("kbengine.xml")
+/// 引擎根回溯深度上限(从资产根向上找 `<层>/kbe/res/server/` 兜底)。
+const ENGINE_ROOT_LOOKUP_DEPTH: usize = 4;
+
+/// 引擎 `KBE_RES_PATH` 环境变量名(与 resmgr.cpp `Resmgr::initialize` 同口径)。
+const KBE_RES_PATH_ENV: &str = "KBE_RES_PATH";
+
+/// 按引擎装载口径分割 `KBE_RES_PATH` 的搜索段(resmgr.cpp `updatePaths`:
+/// 初始按 `;` 分;非 Windows 且段数 <2 时改用 `:`,Windows 保留 `;` 防盘符
+/// 被切开)。空段剔除,段尾补 `/`(与引擎 `respaths_` 一致)。
+fn split_res_path(raw: &str) -> Vec<String> {
+    let mut segments: Vec<String> = if raw.contains(';') {
+        raw.split(';').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect()
+    } else if raw.contains(':') {
+        raw.split(':').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect()
+    } else if !raw.trim().is_empty() {
+        vec![raw.trim().to_string()]
+    } else {
+        Vec::new()
+    };
+    for seg in segments.iter_mut() {
+        if !seg.ends_with('/') {
+            seg.push('/');
+        }
+    }
+    segments
 }
 
-/// 引擎 defaults 的一些资产树会把 `kbengine_defaults.xml` 拷进
-/// `res/server/`;在则作为 defaults 侧参与合并,不在则如实 `null`
-/// (telnet/dbInterface 逐叶回落引擎默认,merged 缺席不猜)。
-fn defaults_config_path(root: &Path) -> std::path::PathBuf {
-    root.join("res")
+/// 引擎 `matchRes` 同口径(resmgr.cpp:194-212):按 `KBE_RES_PATH` 段序拼
+/// `res` 相对路径,`is_file` 即命中,返回**首个命中**。环境变量未设/无命中
+/// → None(调用方回落资产根/回溯兜底,不虚构)。
+fn match_res_path(relative: &str) -> Option<PathBuf> {
+    let raw = std::env::var(KBE_RES_PATH_ENV).ok()?;
+    let segments = split_res_path(&raw);
+    for seg in &segments {
+        let fpath = PathBuf::from(format!("{seg}{relative}"));
+        if fpath.is_file() {
+            return Some(fpath);
+        }
+    }
+    None
+}
+
+/// 元件配置定位:引擎 `KBE_RES_PATH` 命中优先(`matchRes("server/kbengine.xml")`
+/// 同口径);环境变量未设/无命中 → 资产根 `{root}/res/server/kbengine.xml`
+/// (与扩展侧 `resolveCustomConfigXmlPath` 的资产根语义一致)。
+fn custom_config_path(root: &Path) -> PathBuf {
+    match_res_path("server/kbengine.xml").unwrap_or_else(|| {
+        root.join("res").join("server").join("kbengine.xml")
+    })
+}
+
+/// 引擎 defaults 定位:引擎 `KBE_RES_PATH` 命中优先(`matchRes(
+/// "server/kbengine_defaults.xml")` 同口径,引擎 `kbe/res/server/` 段在先);
+/// 环境变量未设/无命中 → 兜底 1. 资产根自身 `{root}/res/server/` 拷贝;
+/// 2. 资产根向上回溯 ≤4 层的 `<层>/kbe/res/server/kbengine_defaults.xml`
+/// (典型布局:`<ws>/assets` + `<ws>/kbe` 同级)。
+/// 找不到 → None(如实 `null`,不猜 defaults 存在)。
+fn defaults_config_path(root: &Path) -> Option<PathBuf> {
+    if let Some(found) = match_res_path("server/kbengine_defaults.xml") {
+        return Some(found);
+    }
+    let local = root
+        .join("res")
         .join("server")
-        .join("kbengine_defaults.xml")
+        .join("kbengine_defaults.xml");
+    if local.is_file() {
+        return Some(local);
+    }
+    let mut ancestor = Some(root);
+    for _ in 0..ENGINE_ROOT_LOOKUP_DEPTH {
+        let Some(dir) = ancestor else { break };
+        let candidate = dir
+            .join("kbe")
+            .join("res")
+            .join("server")
+            .join("kbengine_defaults.xml");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        ancestor = dir.parent();
+    }
+    None
 }
 
 fn read_opt(path: &Path) -> Option<String> {
@@ -141,7 +211,7 @@ pub fn final_config(root: &Path) -> Value {
     let custom_path = custom_config_path(root);
     let defaults_path = defaults_config_path(root);
     let custom_text = read_opt(&custom_path);
-    let defaults_text = read_opt(&defaults_path);
+    let defaults_text = defaults_path.as_deref().and_then(read_opt);
     let resolved = resolve_config(defaults_text.as_deref(), custom_text.as_deref());
     let mut notes: Vec<String> = Vec::new();
     if custom_text.is_none() {
@@ -152,19 +222,16 @@ pub fn final_config(root: &Path) -> Value {
     }
     if defaults_text.is_none() {
         notes.push(
-            "engine defaults xml not present under res/server/ (values below are \
-             the component side only; engine default telnet ports come from the \
-             built-in table)"
-                .to_string(),
+            "engine defaults xml not present (asset root res/server/ nor any "
+                .to_string()
+                + "ancestor kbe/res/server/); values below are the component "
+                + "side only; engine default telnet ports come from the "
+                + "built-in table",
         );
     }
     json!({
         "configPath": custom_path.to_string_lossy(),
-        "defaultsPath": if defaults_text.is_some() {
-            Value::String(defaults_path.to_string_lossy().into_owned())
-        } else {
-            Value::Null
-        },
+        "defaultsPath": defaults_path.as_ref().map(|p| Value::String(p.to_string_lossy().into_owned())).unwrap_or(Value::Null),
         "customTree": resolved.custom_tree.as_ref().map(|t| config_node_to_json(&redact_node(t))),
         "merged": resolved.merged.as_ref().map(|t| config_node_to_json(&redact_node(t))),
         "telnetSummary": resolved.telnet_summary.iter().map(|e| json!({
@@ -208,7 +275,9 @@ fn entry_module_override(tree: Option<&ConfigNode>, component: &str) -> Option<S
 /// 约定:`scripts/kbengine.py`)。路径/存在性如实读盘,不预填不猜。
 pub fn entry_scripts(root: &Path) -> Value {
     let custom_text = read_opt(&custom_config_path(root));
-    let defaults_text = read_opt(&defaults_config_path(root));
+    let defaults_text = defaults_config_path(root)
+        .as_deref()
+        .and_then(read_opt);
     let resolved = resolve_config(defaults_text.as_deref(), custom_text.as_deref());
     // entryScriptFile 是引擎 defaults 键:合并树在则查合并,否则查元件侧。
     let tree = resolved.merged.as_ref().or(resolved.custom_tree.as_ref());
@@ -333,7 +402,7 @@ pub fn why_setting(root: &Path, key: &str) -> Result<Value, String> {
     let custom_path = custom_config_path(root);
     let defaults_path = defaults_config_path(root);
     let custom_text = read_opt(&custom_path);
-    let defaults_text = read_opt(&defaults_path);
+    let defaults_text = defaults_path.as_deref().and_then(read_opt);
     let resolved = resolve_config(defaults_text.as_deref(), custom_text.as_deref());
     let tree = resolved.merged.as_ref().or(resolved.custom_tree.as_ref());
     let node = node_at(tree, key);
@@ -376,11 +445,10 @@ pub fn why_setting(root: &Path, key: &str) -> Result<Value, String> {
     );
     out.insert(
         "defaultsPath".into(),
-        if defaults_text.is_some() {
-            Value::String(defaults_path.to_string_lossy().into_owned())
-        } else {
-            Value::Null
-        },
+        defaults_path
+            .as_ref()
+            .map(|p| Value::String(p.to_string_lossy().into_owned()))
+            .unwrap_or(Value::Null),
     );
     Ok(Value::Object(out))
 }
@@ -393,7 +461,7 @@ pub fn list_config_settings(root: &Path, group: Option<&str>, prefix: Option<&st
     let custom_path = custom_config_path(root);
     let defaults_path = defaults_config_path(root);
     let custom_text = read_opt(&custom_path);
-    let defaults_text = read_opt(&defaults_path);
+    let defaults_text = defaults_path.as_deref().and_then(read_opt);
     let resolved = resolve_config(defaults_text.as_deref(), custom_text.as_deref());
     let tree = resolved.merged.as_ref().or(resolved.custom_tree.as_ref());
 
@@ -444,6 +512,10 @@ pub fn list_config_settings(root: &Path, group: Option<&str>, prefix: Option<&st
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    /// `KBE_RES_PATH` 是进程全局,涉及它的测试必须串行(避免并发串味)。
+    static RES_PATH_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn fixture_root() -> PathBuf {
         let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -457,6 +529,137 @@ mod tests {
         let conf = root.join("res").join("server");
         std::fs::create_dir_all(&conf).unwrap();
         std::fs::write(conf.join(name), text).unwrap();
+    }
+
+    /// 临时设置 KBE_RES_PATH,离开作用域恢复原值(测试串行由调用方的锁保证)。
+    struct ResPathEnvGuard {
+        previous: Option<String>,
+    }
+
+    impl ResPathEnvGuard {
+        fn set(value: &str) -> Self {
+            let previous = std::env::var(KBE_RES_PATH_ENV).ok();
+            // edition 2021 下 set_var/remove_var 是安全函数;并发序列性由
+            // 调用方持有的 RES_PATH_ENV_LOCK 保证(本进程内无并发读写)。
+            std::env::set_var(KBE_RES_PATH_ENV, value);
+            Self { previous }
+        }
+    }
+
+    impl Drop for ResPathEnvGuard {
+        fn drop(&mut self) {
+            // 同上,锁在 guard 存活期间一直持有。
+            match &self.previous {
+                Some(value) => std::env::set_var(KBE_RES_PATH_ENV, value),
+                None => std::env::remove_var(KBE_RES_PATH_ENV),
+            }
+        }
+    }
+
+    /// 引擎 `matchRes` 同口径:`KBE_RES_PATH` 段序首个命中即采用,资产根只作兜底。
+    #[test]
+    fn res_path_env_takes_priority_over_asset_root() {
+        let _lock = RES_PATH_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let base = std::env::temp_dir().join(format!("kode-mcp-respath-{}", std::process::id()));
+        let engine_res = base.join("engine").join("kbe").join("res");
+        let assets = base.join("assets");
+        std::fs::create_dir_all(engine_res.join("server")).unwrap();
+        std::fs::create_dir_all(assets.join("res").join("server")).unwrap();
+        // 引擎段 defaults(真源) + 资产段 custom(覆盖)
+        std::fs::write(
+            engine_res.join("server").join("kbengine_defaults.xml"),
+            "<root><dbmgr><databaseInterfaces><default><host>engine-host</host>\
+             </default></databaseInterfaces></dbmgr></root>",
+        )
+        .unwrap();
+        std::fs::write(
+            assets.join("res").join("server").join("kbengine.xml"),
+            "<root><dbmgr><databaseInterfaces><default><host>asset-host</host>\
+             </default></databaseInterfaces></dbmgr></root>",
+        )
+        .unwrap();
+        // 资产根下再放一份「假的」defaults,验证环境变量优先于资产根
+        std::fs::write(
+            assets.join("res").join("server").join("kbengine_defaults.xml"),
+            "<root><dbmgr><databaseInterfaces><default><host>asset-defaults-host</host>\
+             </default></databaseInterfaces></dbmgr></root>",
+        )
+        .unwrap();
+
+        let res_path = format!("{}/;{}/", engine_res.display(), assets.display());
+        let _env = ResPathEnvGuard::set(&res_path);
+        let payload = final_config(&assets);
+        // defaults 取引擎段(环境变量优先),不取资产根那份
+        assert!(
+            payload["defaultsPath"]
+                .as_str()
+                .unwrap()
+                .contains("engine/kbe/res/server/kbengine_defaults.xml"),
+            "defaults 应按 KBE_RES_PATH 命中引擎段: {}",
+            payload["defaultsPath"]
+        );
+        // custom 取资产段(引擎段无 kbengine.xml → 命中资产段)
+        assert!(
+            payload["configPath"]
+                .as_str()
+                .unwrap()
+                .contains("assets/res/server/kbengine.xml"),
+            "custom 应按 KBE_RES_PATH 命中资产段: {}",
+            payload["configPath"]
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// 环境变量未设时回落到资产根 / 向上回溯 `kbe/`(独立部署无 env 的常态)。
+    #[test]
+    fn without_res_path_env_falls_back_to_asset_root_and_kbe_ancestor() {
+        let _lock = RES_PATH_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let base = std::env::temp_dir().join(format!("kode-mcp-fallback-{}", std::process::id()));
+        let assets = base.join("assets");
+        let engine_res = base.join("kbe").join("res").join("server");
+        std::fs::create_dir_all(assets.join("res").join("server")).unwrap();
+        std::fs::create_dir_all(&engine_res).unwrap();
+        std::fs::write(
+            assets.join("res").join("server").join("kbengine.xml"),
+            "<root><dbmgr><databaseInterfaces><default><host>fallback-host</host>\
+             </default></databaseInterfaces></dbmgr></root>",
+        )
+        .unwrap();
+        std::fs::write(
+            engine_res.join("kbengine_defaults.xml"),
+            "<root><dbmgr><databaseInterfaces><default><databaseName>from-ancestor-kbe</databaseName>\
+             </default></databaseInterfaces></dbmgr></root>",
+        )
+        .unwrap();
+
+        let _env = ResPathEnvGuard::set(""); // 空值 = 无可用段
+        let payload = final_config(&assets);
+        assert_eq!(payload["dbInterface"]["host"], "fallback-host");
+        // 资产根无 defaults → 回溯到 <base>/kbe/res/server/
+        assert!(
+            payload["defaultsPath"]
+                .as_str()
+                .unwrap()
+                .contains("kbe/res/server/kbengine_defaults.xml"),
+            "应回溯祖先 kbe/ 定位 defaults: {}",
+            payload["defaultsPath"]
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// 引擎 `KBE_RES_PATH` 分割:分号优先,段尾补 `/`,空段剔除。
+    #[test]
+    fn split_res_path_matches_engine_semantics() {
+        assert_eq!(
+            split_res_path("/a/kbe/res/;/b/assets/"),
+            vec!["/a/kbe/res/", "/b/assets/"]
+        );
+        // 无分号时按冒号分(非 Windows 引擎口径)
+        assert_eq!(
+            split_res_path("/a/kbe/res:/b/assets"),
+            vec!["/a/kbe/res/", "/b/assets/"]
+        );
+        assert!(split_res_path("   ").is_empty());
     }
 
     #[test]

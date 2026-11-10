@@ -40,17 +40,8 @@ describe('compiled extension activation smoke', () => {
   it('registers exactly the commands contributed by the manifest', () => {
     const declared = manifest.contributes.commands.map((item: { command: string }) => item.command);
 
-    // 显式豁免一例:真机 NLS 探针 kbengine.l10nProbe(UX-REVIEW-010f)有意
-    // 不进 contributes=不出命令面板,专供真机层 suite 经 executeCommand 取词;
-    // 豁免项仍须真实注册,清单外注册面与声明面严格互等(与
-    // tests/extension.test.ts 同一条款,本文件此前漏配该豁免致 mocha 门红)。
-    const intentionalUndeclared = ['kbengine.l10nProbe'];
-    const registered = [...stub.commandRegistry.registeredCommandIds()];
-    for (const id of intentionalUndeclared) {
-      assert.ok(registered.includes(id), `${id} should be registered (exempt but real)`);
-    }
     assert.deepStrictEqual(
-      registered.filter(id => !intentionalUndeclared.includes(id)).sort(),
+      [...stub.commandRegistry.registeredCommandIds()].sort(),
       [...declared].sort()
     );
   });

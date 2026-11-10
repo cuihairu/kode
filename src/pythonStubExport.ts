@@ -15,11 +15,11 @@ import {
   MANAGED_DIR_DEFAULT,
   MANAGED_DIR_SETTING_KEY,
   resolveManagedDirName
-} from './backend/managedDir';
-import { substituteVariables, type VariableFolderRef } from './backend/variableSubstitution';
+} from './managedDir';
+import { substituteVariables, type VariableFolderRef } from './variableSubstitution';
 
 // 托管目录解析面一并从这里出(单一进口处,调用方不必再引 managedDir)
-export { MANAGED_DIR_DEFAULT, resolveManagedDirName } from './backend/managedDir';
+export { MANAGED_DIR_DEFAULT, resolveManagedDirName } from './managedDir';
 
 // Python 生态面的内容入口一并从这里出(单一进口处,调用方不必再引 kbeModuleIndex)
 export { buildKbeStubExportContent } from './kbeModuleIndex';

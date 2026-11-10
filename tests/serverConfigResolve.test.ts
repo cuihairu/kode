@@ -23,9 +23,9 @@ import {
   resetDatabaseInterfaceConfigCache,
   resolveDatabaseInterfaceConfig
 } from '../src/serverConfigMerge';
-import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
+import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
 import { bumpRootConfigGeneration } from '../src/rootConfigGeneration';
-import type { KodeCoreGate } from '../src/backend/kodeCoreGate';
+import type { KodeCoreGate } from '../src/kodeCoreGate';
 
 interface Calls {
   method: string;
