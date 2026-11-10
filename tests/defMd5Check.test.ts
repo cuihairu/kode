@@ -22,6 +22,7 @@ import {
   type DefMd5CheckDeps
 } from '../src/defMd5Check';
 import { computeDefMd5InRust } from '../src/backend/defMd5Rust';
+import { negotiateEngineDigest } from '../src/backend/hotReloadDefHash';
 import { KodeCoreGate } from '../src/backend/kodeCoreGate';
 import { setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 
@@ -337,9 +338,27 @@ describe('AUDIT-003:runDefMd5Check(match/mismatch/unverifiable,不猜)', () => {
       const outcome = await runDefMd5Check(makeDeps(root), async () => null);
       expect(outcome.workspaceMd5).toBeNull();
       expect(outcome.stamps[0]?.verdict).toBe('unverifiable');
+      // AUDIT-004:Digest 协商退化——unknown/未协商,不猜引擎算法
+      expect(outcome.handshake.algorithm).toBe('unknown');
+      expect(outcome.handshake.negotiated).toBe(false);
       const report = renderDefMd5CheckReport(outcome);
       expect(report).toContain('工作区闭包 MD5: 未知');
       expect(report).toContain('无法比对');
+      expect(report).toContain('Digest 协商: 未协商');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AUDIT-004: digest handshake negotiated from the rust-recomputed md5', async () => {
+    const { root, cleanup } = setupWorkspace();
+    try {
+      const outcome = await runDefMd5Check(makeDeps(root), async () => ({ md5: MD5_A }));
+      expect(outcome.handshake.algorithm).toBe('md5');
+      expect(outcome.handshake.negotiated).toBe(true);
+      expect(outcome.handshake.digest).toBe(MD5_A);
+      const report = renderDefMd5CheckReport(outcome);
+      expect(report).toContain(`Digest 协商: md5 已协商(digest=${MD5_A}`);
     } finally {
       cleanup();
     }
@@ -358,7 +377,12 @@ describe('AUDIT-003:runDefMd5Check(match/mismatch/unverifiable,不猜)', () => {
 
 describe('AUDIT-003:renderDefMd5CheckReport(逐行可断言)', () => {
   it('zero-stamp face renders 未检出 with the engine receipt provenance', () => {
-    const report = renderDefMd5CheckReport({ workspaceMd5: MD5_A, notes: [], stamps: [] });
+    const report = renderDefMd5CheckReport({
+      workspaceMd5: MD5_A,
+      handshake: negotiateEngineDigest(MD5_A),
+      notes: [],
+      stamps: []
+    });
     expect(report).toContain('SDK 盖章: 未检出');
     expect(report).toContain('onHelloCB');
     expect(report).toContain(MD5_A);
@@ -367,6 +391,7 @@ describe('AUDIT-003:renderDefMd5CheckReport(逐行可断言)', () => {
   it('mismatch face renders the stamp value and the drift explanation', () => {
     const report = renderDefMd5CheckReport({
       workspaceMd5: MD5_B,
+      handshake: negotiateEngineDigest(MD5_B),
       notes: ['entity_defs/types.xml: 缺失(以空串入流)'],
       stamps: [{ path: '/w/js_sdk/kbengine.js', stamp: MD5_A, verdict: 'mismatch' }]
     });

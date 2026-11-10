@@ -32,6 +32,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { computeDefMd5InRust, type DefMd5RustParams } from './backend/defMd5Rust';
+import { negotiateEngineDigest, type DefDigestHandshake } from './backend/hotReloadDefHash';
 import { findFilesAcrossRoots, resolveAssetsRootForWorkspace } from './scanRoots';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 
@@ -187,6 +188,9 @@ export type StampVerdict = 'match' | 'mismatch' | 'unverifiable';
 export interface DefMd5CheckOutcome {
   /** 工作区闭包引擎 MD5;Rust 不可用为 null(未知面,不猜)。 */
   workspaceMd5: string | null;
+  /** Digest 协商(AUDIT-004 接线):由 workspaceMd5 经 negotiateEngineDigest
+   * 协商;Rust 不可用退化为 unknown/未协商,不猜、不与客户端 sha256 互比。 */
+  handshake: DefDigestHandshake;
   /** 输入收集备注(缺文件入流等,逐条如实)。 */
   notes: string[];
   stamps: Array<EngineSdkStamp & { verdict: StampVerdict }>;
@@ -204,7 +208,13 @@ export async function runDefMd5Check(
 ): Promise<DefMd5CheckOutcome> {
   const collected = await collectDefMd5Inputs(deps);
   if (collected.kind === 'unavailable') {
-    return { workspaceMd5: null, notes: [], stamps: [], unavailableReason: collected.reason };
+    return {
+      workspaceMd5: null,
+      handshake: negotiateEngineDigest(),
+      notes: [],
+      stamps: [],
+      unavailableReason: collected.reason
+    };
   }
   const notes = [...collected.notes];
   const stamps = await findEngineSdkStamps(deps, notes);
@@ -212,6 +222,7 @@ export async function runDefMd5Check(
   const workspaceMd5 = computed?.md5 ?? null;
   return {
     workspaceMd5,
+    handshake: negotiateEngineDigest(workspaceMd5 ?? undefined),
     notes,
     stamps: stamps.map((stamp) => ({
       ...stamp,
@@ -232,6 +243,11 @@ export function renderDefMd5CheckReport(outcome: DefMd5CheckOutcome): string {
     outcome.workspaceMd5 === null
       ? '工作区闭包 MD5: 未知(Rust 权威实现不可用;不猜测,不与客户端 sha256 冒充比对)'
       : `工作区闭包 MD5: ${outcome.workspaceMd5}`
+  );
+  lines.push(
+    outcome.handshake.negotiated && outcome.handshake.digest !== undefined
+      ? `Digest 协商: md5 已协商(digest=${outcome.handshake.digest};C-18 引擎算法,客户端经 Rust 重算)`
+      : 'Digest 协商: 未协商(unknown;Rust 重算不可用,客户端 sha256 不与引擎摘要比对)'
   );
   if (outcome.stamps.length === 0) {
     lines.push('SDK 盖章: 未检出(kbcmd 生成的 kbengine.js / KBEngine.cs;该常量与登录握手 onHelloCB 的引擎摘要同源)');
