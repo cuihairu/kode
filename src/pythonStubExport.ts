@@ -355,6 +355,31 @@ function resolveEngineTypingsRoot(
   return null;
 }
 
+/**
+ * cellData 桩面叠加(2026-11-10 用户报障):引擎 typings 的 Entity 类没有
+ * cellData 声明——它是 baseapp 运行时逐实体安装的属性(baseapp/entity.cpp:238
+ * PyObject_SetAttrString,createCellData :250 仅对 hasCell() 的实体类),静态
+ * .pyi 无从得知,Pylance 因此把脚本里的 self.cellData["x"] 判成未知属性。
+ * 注入声明让 Pylance 接受语法面;语义面(cellData 键须为 cell 域 def 属性、
+ * __init__ 影子属性降级)由 propertyDirectionDiagnostics 分析承担。
+ * 只动导出文档,引擎 typings 原文件与 kbeModuleIndex 锚点不动;找不到
+ * `class Entity:` 头(引擎 typings 结构变化)时不注入,宁缺勿错。
+ */
+function injectCellDataOverlay(lines: string[]): void {
+  const index = lines.findIndex(line => line === 'class Entity:');
+  if (index < 0) {
+    return;
+  }
+  lines.splice(
+    index + 1,
+    0,
+    '    # kode overlay: baseapp-side runtime attribute (baseapp/entity.cpp:238),',
+    '    # installed only on baseapp entities whose def has a cell part;',
+    '    # cellapp/client entities do NOT carry it (cell props are plain attrs there).',
+    '    cellData: Dict[str, Any]'
+  );
+}
+
 function buildEngineKbeStubContent(typingsRoot: string): string | null {
   const modules: Array<{ name: string; lines: string[] }> = [];
   for (const moduleName of ENGINE_TYPINGS_MODULE_ORDER) {
@@ -386,6 +411,7 @@ function buildEngineKbeStubContent(typingsRoot: string): string | null {
   lines.push('# --- runtime vector types (not covered by engine typings) ---');
   emitKbeVectorStubClasses(lines, {});
   lines.push('');
+  injectCellDataOverlay(lines);
   return lines.join('\n');
 }
 

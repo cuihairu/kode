@@ -164,6 +164,68 @@ describe('buildKbeStubExportContentForWorkspace(engine detection)', () => {
     }
   });
 
+  it('engine 拼接导出在 Entity 类头注入 cellData 声明(Pylance 面)', () => {
+    // 2026-11-10 用户报障:cellData 是 baseapp 运行时逐实体安装的属性
+    // (baseapp/entity.cpp:238,仅 hasCell() 实体),静态 .pyi 无从得知,
+    // Pylance 把脚本里的 self.cellData["x"] 判成未知属性。注入声明让
+    // Pylance 接受语法面;引擎 typings 原文件与 kbeModuleIndex 锚点不动。
+    configurationOverrides.delete('kbengine');
+    const engineRoot = mkdtempSync(join(os.tmpdir(), 'kode-engine-celldata-'));
+    try {
+      mkdirSync(join(engineRoot, 'typings'), { recursive: true });
+      writeFileSync(
+        join(engineRoot, 'typings', '_KBEngine_common.pyi'),
+        'from typing import Any, Dict\n\nclass Entity:\n    id: int\n'
+      );
+      for (const moduleName of [
+        '_KBEngine_baseapp', '_KBEngine_bots', '_KBEngine_cellapp', '_KBEngine_dbmgr',
+        '_KBEngine_hooks', '_KBEngine_interfaces', '_KBEngine_logger',
+        '_KBEngine_loginapp', '_KBEngine_pythonapp', '_KBEngine_server_errors'
+      ]) {
+        writeFileSync(
+          join(engineRoot, 'typings', `${moduleName}.pyi`),
+          'from _KBEngine_common import Entity\n'
+        );
+      }
+      const content = buildKbeStubExportContentForWorkspace('/ws', {
+        engineRoot,
+        engineRootEnv: {}
+      });
+      expect(content).toContain('cellData: Dict[str, Any]');
+      expect(content).toContain('# kode overlay: baseapp-side runtime attribute (baseapp/entity.cpp:238),');
+      // 注入紧跟 class Entity: 头之后(注释 3 行 + 声明 1 行)
+      const lines = content.split('\n');
+      const header = lines.findIndex(line => line === 'class Entity:');
+      expect(header).toBeGreaterThanOrEqual(0);
+      expect(lines[header + 4]).toBe('    cellData: Dict[str, Any]');
+    } finally {
+      rmSync(engineRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('引擎 typings 无 Entity 类头时不注入 cellData(宁缺勿错)', () => {
+    configurationOverrides.delete('kbengine');
+    const engineRoot = mkdtempSync(join(os.tmpdir(), 'kode-engine-noentity-'));
+    try {
+      mkdirSync(join(engineRoot, 'typings'), { recursive: true });
+      writeFileSync(join(engineRoot, 'typings', '_KBEngine_common.pyi'), 'def getWatcher(path: str) -> int: ...\n');
+      for (const moduleName of [
+        '_KBEngine_baseapp', '_KBEngine_bots', '_KBEngine_cellapp', '_KBEngine_dbmgr',
+        '_KBEngine_hooks', '_KBEngine_interfaces', '_KBEngine_logger',
+        '_KBEngine_loginapp', '_KBEngine_pythonapp', '_KBEngine_server_errors'
+      ]) {
+        writeFileSync(join(engineRoot, 'typings', `${moduleName}.pyi`), '# fixture\n');
+      }
+      const content = buildKbeStubExportContentForWorkspace('/ws', {
+        engineRoot,
+        engineRootEnv: {}
+      });
+      expect(content).not.toContain('cellData: Dict[str, Any]');
+    } finally {
+      rmSync(engineRoot, { recursive: true, force: true });
+    }
+  });
+
   it('concatenates an explicit engine checkout and rewrites private imports', () => {
     // IDE-STUB-001:引擎 checkout 拼接(复制真实代码)只在 real-source 档执行
     configurationOverrides.set('kbengine', { 'python.stubSourceMode': 'real-source' });

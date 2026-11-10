@@ -236,11 +236,16 @@ const ANCHORS: Array<[string, number, string]> = [
   // inlay.ts 新 provider 顶置 42→44,hover.ts 经 139f7035 链尾段与 6bf9ebed
   // 尾拆净位移 189→183;出处随 baseline 锁步。
 
-  ['src/activate/languageServices.ts', 194, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 245, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 308, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 118, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 660, "startLanguageServiceOperation('completion'"],
+  // 2026-11-10(二):cellData 复制属性批次——languageServices.ts 顶部 import
+  // +1 行(五条打点 118/194/245/308/660 → 119/195/246/309/674,前四条 +1,
+  // completion 注册块前新插 provider 装配 +14 行致 660→674)、
+  // languageProviders/inlay.ts 顶部 import +5 行(42→44→49,真位重探);
+  // 出处随 baseline 锁步。
+  ['src/activate/languageServices.ts', 195, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 246, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 309, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 119, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 674, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   ['src/activate/diagnostics.ts', 118, "startLanguageServiceOperation('diagnostics'"],
@@ -294,7 +299,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // 再 +12(1852/1911/1935/2063/4812/5220/5326/7170),baseline 同步。
   // 2026-11-09:139f7035 新增 InferredMirrorTypeInlayHintsProvider 顶置两行,
   // getDocumentLines 行 42→44,真位重探,出处随 baseline 锁步。
-  ['src/languageProviders/inlay.ts', 44, 'getDocumentLines(document)'],
+  ['src/languageProviders/inlay.ts', 49, 'getDocumentLines(document)'],
   // 2026-11-08:「直接切」批次位移——navigation.ts Rust-first 派发块
   // (serveDefinitionFromRust await + 语料镜像前置,24→47)、completion.ts
   // Rust-first 包装层(provideCompletionRustFirst + lspCompletionToVscode,

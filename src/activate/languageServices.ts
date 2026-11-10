@@ -32,6 +32,7 @@ import {
   KBEngineDocumentSymbolProvider,
   KBEngineHoverProvider,
   KBEngineImplementationProvider,
+  KBEnginePropertyShadowInlayHintsProvider,
   KBEngineReferencesProvider,
   KBEngineRenameProvider,
   KBEngineSignatureHelpProvider,
@@ -584,6 +585,19 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     new InferredMirrorTypeInlayHintsProvider()
   );
   context.subscriptions.push(inferredTypeInlayHintsProvider);
+
+  // cellData 复制属性提示(2026-11-10 用户报障收编):base 侧
+  // self.y = self.cellData["x"] 的 y 是 cell 侧 def 字段 x 的副本,赋值行与
+  // 裸访问处淡色小字「复制属性 x: <type> · <domains>」;cellData["key"] 处
+  // 渲染 key 的 def 面。分析核与方向违规诊断同源;永不下划线(用户令),
+  // 独立开关 kbengine.inlayHints.propertyShadow(默认开)且受
+  // kbengine.propertyDirectionDiagnostics 双控,provider 现读配置
+  // 下一次渲染即生效,不需要配置监听 fire
+  const propertyShadowInlayHintsProvider = vscode.languages.registerInlayHintsProvider(
+    pythonDocumentSelector,
+    new KBEnginePropertyShadowInlayHintsProvider(entityMappingManager)
+  );
+  context.subscriptions.push(propertyShadowInlayHintsProvider);
 
   const callHierarchyProvider = vscode.languages.registerCallHierarchyProvider(
     [

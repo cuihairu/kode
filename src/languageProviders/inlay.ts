@@ -6,6 +6,11 @@ import { hasKnownEntityBuiltinPropertyType, resolveEntityComponentFaceFromPath, 
 import { getLanguageFeatureConfig } from './shared';
 import { diffInferredAnnotations } from '../backend/inferredEnrichment';
 import { readInferredMirrorText } from '../inferredMirrorLookup';
+import {
+  PROPERTY_DIRECTION_DIAGNOSTICS_ENABLED_DEFAULT,
+  propertyDirectionShadowHintItemsAsync,
+  type PropertyDirectionHit
+} from '../backend/propertyDirectionDiagnostics';
 /**
  * 内建属性行内类型提示(用户令 2026-10-21 形态升级单 ③):实体脚本内单段
  * `self.<内建属性>` 访问处在其 range 之后渲染 `: <type>` 右对齐提示
@@ -93,5 +98,83 @@ export class InferredMirrorTypeInlayHintsProvider implements vscode.InlayHintsPr
             vscode.InlayHintKind.Type
           )
       );
+  }
+}
+
+/**
+ * cellData 复制属性提示(2026-11-10 用户报障收编):base 侧
+ * self.y = self.cellData["x"](__init__ 里取值)声明的 y 是 cell 侧 def 字段
+ * x 的副本——赋值行与裸访问处渲染淡色小字「复制属性 x: <type> · <domains>」;
+ * self.cellData["key"] 处渲染 key 的 def 面(key: <type> · <domains>,域位
+ * 不含 cell 追加「不在 cellData」)。分析核与方向违规诊断同源
+ * (propertyDirectionDiagnostics,预解析去重同口径);提示流永不下划线
+ * (用户令「不要下划线,很容易以为是错误」),颜色=主题 inlay 色(淡)。
+ * 开关 kbengine.inlayHints.propertyShadow(默认开)且受总闸
+ * kbengine.propertyDirectionDiagnostics 双控(分析关即无提示),provider
+ * 现读配置下一次渲染即生效。
+ */
+export class KBEnginePropertyShadowInlayHintsProvider implements vscode.InlayHintsProvider {
+  constructor(private readonly entityMappingManager?: EntityMappingManager) {}
+
+  async provideInlayHints(
+    document: vscode.TextDocument,
+    range: vscode.Range
+  ): Promise<vscode.InlayHint[]> {
+    if (document.languageId !== 'python') {
+      return [];
+    }
+    const config = vscode.workspace.getConfiguration('kbengine');
+    if (!config.get<boolean>('propertyDirectionDiagnostics', PROPERTY_DIRECTION_DIAGNOSTICS_ENABLED_DEFAULT)) {
+      return [];
+    }
+    if (!config.get<boolean>('inlayHints.propertyShadow', true)) {
+      return [];
+    }
+    const resolve = async (
+      propertyPath: string,
+      rootSymbol: string
+    ): Promise<PropertyDirectionHit | null | undefined> => {
+      if (!this.entityMappingManager) {
+        return null;
+      }
+      try {
+        const info = await this.entityMappingManager.resolvePropertyDefinitionInfo(
+          document.uri.fsPath,
+          propertyPath,
+          rootSymbol
+        );
+        if (!info) {
+          return null;
+        }
+        return {
+          propertyName: info.identity.symbolName,
+          domains: info.domains,
+          defFile: info.defFile,
+          defLine: info.line,
+          typeName: info.typeName
+        };
+      } catch {
+        return null;
+      }
+    };
+    const items = await propertyDirectionShadowHintItemsAsync(
+      document.getText(),
+      document.uri.fsPath,
+      resolve,
+      true
+    );
+    return items
+      // inlay 按可视区要:视图口外的行不出 hint(批154 同口径)
+      .filter(item => item.position.line >= range.start.line && item.position.line <= range.end.line)
+      .map(item => {
+        const hint = new vscode.InlayHint(
+          new vscode.Position(item.position.line, item.position.character),
+          item.label,
+          vscode.InlayHintKind.Type
+        );
+        hint.tooltip = new vscode.MarkdownString(item.tooltip);
+        hint.paddingLeft = true;
+        return hint;
+      });
   }
 }

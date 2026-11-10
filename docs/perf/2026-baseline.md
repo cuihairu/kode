@@ -82,7 +82,7 @@
 ```mermaid
 flowchart TD
   VC1["VS Code: registerHoverProvider.provideHover(document, position, token)"]
-  M1["activate/languageServices.ts:194 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
+  M1["activate/languageServices.ts:195 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
   HP["KBEngineHoverProvider.provideHover<br/>languageProviders/hover.ts:183"]
   CFG["getLanguageFeatureConfig() 开关快照"]
   WORD["getWordRangeAtPosition + getText(range)<br/>读 VS Code 缓冲区,不读磁盘"]
@@ -98,7 +98,7 @@ flowchart TD
   RS1["resolveDefMethodAnnotation → def 索引<br/>(形参个数/注解类型闸)"]
   RS2["resolveReceiverCallAnnotation<br/>段过滤 → 形参/类型对账"]
   RS3["resolveBuiltinPropertyAnnotation → 分面内建属性表"]
-  LINES["documentStore.getDocumentLines<br/>同版本行快照复用(PR2)<br/>languageProviders/inlay.ts:44 / backend/documentStore.ts:154"]
+  LINES["documentStore.getDocumentLines<br/>同版本行快照复用(PR2)<br/>languageProviders/inlay.ts:49 / backend/documentStore.ts:154"]
   MISS["标注落空 → 回退 provideKnownHover"]
   END1["operation.end(ok|miss) → return Hover|null"]
 
@@ -130,7 +130,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC2["VS Code: provideDefinition(document, position)"]
-  M2["activate/languageServices.ts:245 打点 startLanguageServiceOperation('definition')<br/>(python 侧另有 :308 一路)"]
+  M2["activate/languageServices.ts:246 打点 startLanguageServiceOperation('definition')<br/>(python 侧另有 :309 一路)"]
   AD2["PythonDefinitionProvider.provideDefinition<br/>languageProviders/pythonDefinition.ts:251"]
   TR["provideDefinitionTraced → Impl<br/>semantic-query 打点 :4736 / Impl :4754"]
   CTX{"isPythonCodePosition<br/>注释/字符串内直接 skip"}
@@ -184,7 +184,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC3["VS Code: provideCompletionItems(document, position)"]
-  M3["activate/languageServices.ts:118 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :660 一路)"]
+  M3["activate/languageServices.ts:119 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :674 一路)"]
   CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders/completion.ts:699"]
   KBEC{"kbe./KBEngine. 模块语境?<br/>(已引入/已用别名)"}
   FILTER["filterKbeSymbols 前缀过滤 :4921<br/>(engineApiMetadata 目录)"]

@@ -192,8 +192,9 @@ describe('extension activate 装配', () => {
     // 任务2(2026-10-27)def 定义点形参 inlay 再一份独立注册;
     // C-22 def 属性只读视图 inlay(注释锚形态)再一份独立注册;
     // KODE-CFG-017-R(139f7035)推断镜像类型 inlay 再一份独立注册
-    // (定义点行差分,kbengine.infer.enabled 镜像总闸)
-    expect(languagesRegistry.inlayHintsRegistrations).toHaveLength(5);
+    // (定义点行差分,kbengine.infer.enabled 镜像总闸);2026-11-10 cellData
+    // 复制属性提示再一份(淡色小字,永不下划线,propertyShadow 开关)
+    expect(languagesRegistry.inlayHintsRegistrations).toHaveLength(6);
     // 批91 起:def 分析命令的独立诊断集合与语言侧诊断并存;
     // 书 §19 HR-PR-02:临时编辑热更新问题通道诊断集并存一份;
     // C-19 起 def↔Python 方法一致性独立诊断集再一份(不并 kbengine 主集);

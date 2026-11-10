@@ -743,7 +743,8 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
             propertyName: info.identity.symbolName,
             domains: info.domains,
             defFile: info.defFile,
-            defLine: info.line
+            defLine: info.line,
+            typeName: info.typeName
           };
         };
         return propertyDirectionDiagnosticItemsAsync(

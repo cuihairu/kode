@@ -46,6 +46,7 @@
 | InferredMirrorTypeInlayHintsProvider | languageProviders/inlay.ts:68 | :584 | 托管目录推断镜像注解文件(kbengine.infer.enabled 闸;定义点行差分) | 纯读 |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | 纯读 |
 | DefPropsInlayHintsProvider | defPropsInlayHints.ts:126 | :1432 | EntityMappingManager(`listPropertyDefinitionsForFile` 锚点所属实体的根级属性清单) | 纯读 |
+| KBEnginePropertyShadowInlayHintsProvider | languageProviders/inlay.ts:116 | :596 | EntityMappingManager(`resolvePropertyDefinitionInfo` 复制属性与 cellData 键提示的域位/类型面;`kbengine.inlayHints.propertyShadow` × `kbengine.propertyDirectionDiagnostics` 双控) | 纯读 |
 | KBEngineCallHierarchyProvider | languageProviders.ts:5013 | :1223 | EntityMappingManager(def/python 双选区调用层级) | 纯读 |
 | KBEngineReferencesProvider | languageProviders.ts:5117 | :1235 | EntityMappingManager + defReferenceGraph 引用图 | 纯读 |
 | KBEngineDocumentSymbolProvider | languageProviders.ts:5231 | :1256 | 当前文档 def 结构(构造零依赖) | 纯读 |

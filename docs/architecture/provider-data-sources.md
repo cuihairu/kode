@@ -46,6 +46,7 @@ Registration sites are extension.ts line numbers (2026-11-07 真位复核:KODE-A
 | InferredMirrorTypeInlayHintsProvider | languageProviders/inlay.ts:68 | :584 | Inferred mirror annotation files under managed dir (kbengine.infer.enabled gate; definition-point line diff) | Pure read |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | Pure read |
 | DefPropsInlayHintsProvider | defPropsInlayHints.ts:126 | :1432 | EntityMappingManager (`listPropertyDefinitionsForFile` root-level properties for the anchor's entity) | Pure read |
+| KBEnginePropertyShadowInlayHintsProvider | languageProviders/inlay.ts:116 | :596 | EntityMappingManager (`resolvePropertyDefinitionInfo` domain/type faces for copy-property and cellData-key hints; `kbengine.inlayHints.propertyShadow` × `kbengine.propertyDirectionDiagnostics` dual gate) | Pure read |
 | KBEngineCallHierarchyProvider | languageProviders/callHierarchy.ts:9 | :1425 | EntityMappingManager (def/python dual-selection call hierarchy) | Pure read |
 | KBEngineReferencesProvider | languageProviders/references.ts:22 | :1431 | EntityMappingManager + defReferenceGraph reference graph | Pure read |
 | KBEngineDocumentSymbolProvider | languageProviders/references.ts:267 | :1455 | Current document def structure (zero construction deps) | Pure read |

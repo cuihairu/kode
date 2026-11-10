@@ -1527,6 +1527,11 @@
           "default": true,
           "markdownDescription": "%kbengine.config.inlayHints.defProps.description%"
         },
+        "kbengine.inlayHints.propertyShadow": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.inlayHints.propertyShadow.description%"
+        },
         "kbengine.entityDefsPath": {
           "type": "string",
           "default": "scripts/entity_defs",
