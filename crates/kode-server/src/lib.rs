@@ -12,6 +12,7 @@ pub mod definition;
 pub mod dependency_graph;
 pub mod diagnostics;
 pub mod flag_domains;
+pub mod attribute_none;
 pub mod hover;
 pub mod lint;
 pub mod message_table;

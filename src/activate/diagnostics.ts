@@ -14,6 +14,7 @@ import * as vscode from 'vscode';
 import { CONFIG_CONTRACT_DIAGNOSTICS_ENABLED_DEFAULT, computeConfigContractFindings } from '../backend/configContractDiagnostics';
 import { RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT, receiverNoneDiagnosticItemsAsync, type ReceiverDiagnosticItem } from '../backend/receiverNoneDiagnostics';
 import { buildReceiverNoneItemsWithRust } from '../backend/receiverNoneRust';
+import { buildAttributeNoneItemsWithRust } from '../backend/attributeNoneRust';
 import { ATTRIBUTE_NONE_DIAGNOSTICS_ENABLED_DEFAULT, attributeNoneDiagnosticItems, ATTRIBUTE_NONE_DIAGNOSTIC_CODE } from '../backend/selfAttributeNoneDiagnostics';
 import { SPACE_NAV_DIAGNOSTICS_ENABLED_DEFAULT, SPACE_NAV_DIAGNOSTIC_CODE, computeSpaceNavFindings } from '../backend/spaceNavDiagnostics';
 import { buildSpaceNavItemsWithRust } from '../backend/spaceNavRust';
@@ -252,11 +253,18 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         const attrItems = attrEnabled && isPythonDocument(document)
           // KODE-PERF-001:文档版本键——同版本诊断/inlay 共享一次流解析?
           // 按实例身份版本成键(跨实例重开不撞;flowVersionKey.ts)?
-          ? attributeNoneDiagnosticItems(
+          // AUDIT-005 B2 批 6:Rust-first(`$/kode/lint/analyzeAttributeNone`,
+          // 预掩码文本词法扫描在 Rust;流敏感 None 证据/消息渲染留 TS);不可用/
+          // 失败/畸形整面回 TS 兜底,禁止部分采用。
+          ? ((await buildAttributeNoneItemsWithRust(
+              document.getText(),
+              flowVersionKeyForDocument(document)
+            )
+            ?? attributeNoneDiagnosticItems(
               document.getText(),
               undefined,
               flowVersionKeyForDocument(document)
-            ).map(finding => ({
+            )).map(finding => ({
               range: {
                 start: { line: finding.line, character: finding.character },
                 end: { line: finding.line, character: finding.character + finding.member.length }
@@ -265,7 +273,7 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
               severity: 'Warning' as const,
               source: 'kbengine' as const,
               code: ATTRIBUTE_NONE_DIAGNOSTIC_CODE
-            }))
+            })))
           : [];
         // SP-4: 空间/导航语义诊断(_mapping 保留键/navigate 无 canNavigate/
         // params 字符串层键)——纯文本行级扫描,与 receiver/attr 同通道发布。

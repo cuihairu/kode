@@ -42,6 +42,9 @@ function buildMessage(attr: string, member: string): string {
   );
 }
 
+/** 消息模板单一来源导出(Rust 面渲染与对拍测试共用;Rust 只回结构面) */
+export const renderAttributeNoneMessage = buildMessage;
+
 /**
  * KODE-PERF-002:一次行起始偏移表(每 '\n' 后一位置;0 起行 0 从 0)。
  * 与旧口径 `slice(0, index).split('\n').length - 1` 等值——行号='\n' 计数
@@ -117,4 +120,77 @@ export function attributeNoneDiagnosticItems(
   versionKey?: string
 ): SelfAttributeNoneFinding[] {
   return computeSelfAttributeNoneFindings(source, options, versionKey);
+}
+
+// ---- Rust 词法面(AUDIT-005 B2 车道批 6:attributeNone 收编) --------------------
+// `$/kode/lint/analyzeAttributeNone` 经 gate.runInRust(与 receiverNone/
+// postDestroy 同口径):入参 text 为 TS 预掩码文本(maskPythonNonCode 输出,注释/
+// 字符串已换同长空白),Rust 只回词法结构面(line/character/length/attr/member,
+// 成员列沿用 match[0].indexOf 首次出现语义);流敏感 None 证据与消息渲染留本侧
+// 单一来源(inferSelfAttributeFlow + buildMessage)。逐字段校验:code/attr/member
+// 形态/length===member.length/非负整数/内建 receiver(Rust 漏跳=契约漂移),
+// 任一畸形整面作废(禁止部分采用)。对拍测试共用。
+
+const ATTRIBUTE_NAME_PATTERN = /^[A-Za-z_]\w*$/;
+
+/**
+ * Rust 词法结构面 → findings(流敏感 None 证据 TS 裁定:hasNone 才报,窄化/
+ * 无证据剔除但面合法);任一条畸形或语义漂移(内建 receiver 未跳)返回 null
+ * (整面作废,调用方回 TS 兜底)。maskedLines = 预掩码文本行(与兜底
+ * computeSelfAttributeNoneFindings 同一输入路径,流查询逐位同语义;
+ * (行, 属性) 记忆化与兜底一致)。对拍测试共用。
+ */
+export function renderAttributeNoneRustItems(
+  items: readonly unknown[],
+  maskedSource: string,
+  versionKey?: string
+): SelfAttributeNoneFinding[] | null {
+  const maskedLines = maskedSource.split(/\r?\n/);
+  const memo = new Map<string, boolean>();
+  const findings: SelfAttributeNoneFinding[] = [];
+  for (const item of items) {
+    if (item === null || typeof item !== 'object') {
+      return null;
+    }
+    const record = item as Record<string, unknown>;
+    if (record.code !== ATTRIBUTE_NONE_DIAGNOSTIC_CODE) {
+      return null;
+    }
+    const attr = record.attr;
+    if (typeof attr !== 'string' || !ATTRIBUTE_NAME_PATTERN.test(attr)) {
+      return null;
+    }
+    const member = record.member;
+    if (typeof member !== 'string' || !ATTRIBUTE_NAME_PATTERN.test(member)) {
+      return null;
+    }
+    if (BUILTIN_RECEIVERS.has(attr)) {
+      return null; // Rust 漏跳内建 receiver = 契约漂移,整面作废
+    }
+    const length = record.length;
+    if (typeof length !== 'number' || !Number.isInteger(length) || length !== member.length) {
+      return null;
+    }
+    for (const value of [record.line, record.character]) {
+      if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+        return null;
+      }
+    }
+    const line = record.line as number;
+    const key = `${line}\u0000${attr}`;
+    if (!memo.has(key)) {
+      const flow = inferSelfAttributeFlow(maskedLines, line, attr, undefined, versionKey);
+      memo.set(key, flow !== null && flow.hasNone);
+    }
+    if (memo.get(key)) {
+      findings.push({
+        line,
+        character: record.character as number,
+        attr,
+        member,
+        message: buildMessage(attr, member)
+      });
+    }
+  }
+  return findings;
 }
