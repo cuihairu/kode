@@ -90,7 +90,9 @@ group/world-writable 时 Wireshark 拒扫（安全加固，实测 775 被拒，�
    增量已交付，见下节；手工 Header impl，derive 不适用动态区间）。
 2. ~~真实 KBEngine 报文 pcap 样本端到端：`tshark -r sample.pcap -Y kbengine`
    命中断言~~（2026-11-08 第二增量已交付，见下节）。
-3. Windows/macOS 各一台实机加载验证（CI 或用户机）。
+3. ~~Windows 实机加载验证~~（2026-11-10 imac 已验，见下节「Windows 实机
+   加载验证」）；macOS 不适用（KBEngine 不支持 macOS，按用户口径不再开
+   macOS 验证）。
 
 ## 第二增量：正式插件 crate + 真实 pcap 端到端验收（2026-11-08）
 
@@ -117,6 +119,26 @@ Expert 面：`framing_error`（Malformed/Warning）+ `unknown_message`
 装全局 epan（AppArmor 拦个人目录，见上节）→ `tshark -G plugins` 列出
 dissector → `-Y kbengine` **两模式均 6/6 命中** → `sudo rm` 干净移除
 （grep kbengine = 0，装→验→删可逆闭环）。
+
+### Windows 实机加载验证（2026-11-10，imac）
+
+**宿主**：Windows 10.0.26300（imac，LAN 192.168.5.117）。**Wireshark**：
+4.6.4 portable（`WiresharkPortable64_4.6.4.paf.exe`，7z 解到
+`C:\Users\cui\pa006\ws\App\Wireshark\`，含 libwireshark.dll + tshark.exe）。
+
+**构建**（`plugins/wireshark-kbengine`，rust-version 1.97 满足）：
+`rustc 1.99.1`（scoop 真实 exe，shim 坏）+ MSVC vcvars64（VS18 企业版）+
+`llvm-readobj`（scoop llvm current）→ `set WIRESHARK_DLL=<ws>\libwireshark.dll`
+→ `cargo build --release` RC=0，产物 `wireshark_kbengine.dll`（721,920 字节）。
+libwireshark-sys 在 Windows 未发现 `libwireshark.lib` 时自动
+`llvm-readobj --coff-exports` 生成导入库——实证路径即此。
+
+**加载+端到端**：DLL 落
+`%APPDATA%\Wireshark\plugins\4.6\epan\wireshark_kbengine.dll` →
+`tshark -G plugins` 列出 `wireshark_kbengine.dll 0.1.0 dissector`（加载成功）
+→ `tshark -r <pcap> -o kbengine.loginapp_port:2001 -Y kbengine` → **6/6 命中**，
+6 帧协议栈均 `eth:ethertype:ip:tcp:kbengine`，RC=0（与 Linux 同 `-o` 覆盖口径：
+默认端口 20013≠pcap 2001，裸 `-Y kbengine` 0 命中为预期，非缺陷）。
 
 **与 CLI 面同源对照（插件忠实转发协议 crate 行为，零行为差异）**：
 
