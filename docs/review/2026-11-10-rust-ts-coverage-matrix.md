@@ -43,7 +43,7 @@ defParser(+WorkerHost)/defChain/defCallChain(+ViewLogic)/defReferenceGraph/defMe
 
 **B3. 残留包装器（1）→ 已接线（2026-11-10 AUDIT-004 ②，768f4c81）**：`negotiateEngineDigest` 接入 def/md5 核查链——DefMd5CheckOutcome 携带 handshake（Rust 重算出 workspaceMd5 即协商为 md5/已协商；Rust 不可用退 unknown/未协商），报告增「Digest 协商」逐行可断言行；unknown 恒拒绝与客户端 sha256 互比（compareEngineDigest 闸门语义不变）。
 
-**B4. 纯 TS 形态保真缺口（反向缺口，2026-11-10 走查实锤）**：`$/kode/config/resolve` **无 TS 回退实现**——serverConfigResolve.ts:366-379 `!gate`/`no serverPath` 直接 `ok:false` 不缓存，无 TS 合并臂。后果：纯 TS 通用包里 dbInterface/telnetSummary 恒 null，四个消费模块降级（面板诚实显示「not found」不造假，但能力缺失）：
+**B4. 纯 TS 形态保真缺口（反向缺口，2026-11-10 走查实锤，同日实机证实）**：`$/kode/config/resolve` **无 TS 回退实现**——serverConfigResolve.ts:366-379 `!gate`/`no serverPath` 直接 `ok:false` 不缓存，无 TS 合并臂。后果：纯 TS 通用包里 dbInterface/telnetSummary 恒 null，四个消费模块降级（面板诚实显示「not found」不造假，但能力缺失）。**实机证据（2026-11-10 15:01-15:35 imac Windows 纯 TS 包腿，~/pa007-evidence/009c-windows-purets-report.md）**：Player Data 逐字显示 `No dbmgr/databaseInterfaces/default section found in the engine kbengine.xml / kbengine_defaults.xml.`（pt_05）而非 DSN，与静态审计预判一致；纯 TS 证认同腿完成（日志 rust 零命中/无二进制/backend 默认 ts）。
 - playerDataPanel.ts:172 `buildPlayerDatabaseView` → Player Data 出「Database config section not found」而非 DSN（009c Linux 走查困惑点 10 的根因，跨形态行为分歧实锤）；
 - telnetService.ts:119-151 → 引擎 telnet 密码/端口自动配置面丢失；
 - backend/profileDatabaseConnection.ts → 克隆档案连接派生降级；
