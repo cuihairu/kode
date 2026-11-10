@@ -47,6 +47,19 @@ const AUGMENTED_OPS = new Set([
   '+=', '-=', '*=', '/=', '//=', '%=', '**=', '&=', '|=', '^=', '<<=', '>>=', '@='
 ]);
 
+/** 消息模板单一来源(TS 渲染,Rust 只回结构面) */
+export function renderReadOnlyWriteMessage(propertyName: string, hit: EntityBuiltinPropertyHit, kind: ReadOnlyWriteKind): string {
+  return l10nText(
+    'self.{property} read-only write: {property} is an engine built-in read-only property ({detail}; {source}); {verb} would be rejected by the engine',
+    {
+      property: propertyName,
+      detail: formatEntityBuiltinPropertyDetail(hit.face, hit.property),
+      source: hit.property.source,
+      verb: l10nText(KIND_VERB[kind])
+    }
+  );
+}
+
 /** 引入复合语句套件(一行体 `:`)的语句头关键字 */
 const COMPOUND_KEYWORDS = new Set([
   'if', 'elif', 'else', 'for', 'while', 'with', 'try', 'except', 'finally', 'def', 'class', 'match', 'case'
@@ -199,15 +212,7 @@ export function findReadOnlyWriteFindings(
         hit,
         severity: 'Warning',
         code: READONLY_WRITE_DIAGNOSTIC_CODE,
-        message: l10nText(
-          'self.{property} read-only write: {property} is an engine built-in read-only property ({detail}; {source}); {verb} would be rejected by the engine',
-          {
-            property: propertyName,
-            detail: formatEntityBuiltinPropertyDetail(hit.face, hit.property),
-            source: hit.property.source,
-            verb: l10nText(KIND_VERB[kind])
-          }
-        )
+        message: renderReadOnlyWriteMessage(propertyName, hit, kind)
       });
     }
   }
@@ -258,4 +263,72 @@ export async function readOnlyWriteDiagnosticItemsAsync(
     source: 'kbengine' as const,
     code: finding.code
   }));
+}
+
+// ---- Rust 面(AUDIT-005 B2 车道批 5:readOnlyWrite 收编) -----------------------
+// `$/kode/lint/analyzeReadOnlyWrite` 经 gate.runInRust(与 analyzeReceiverNone/
+// analyzePostDestroy 同口径):Rust 只回结构面(line/character/length/
+// propertyName/kind),只读属性闸由 TS 供给 readonlyNames 集(face 表 readonly
+// 名集);消息渲染与引擎取证留本模块(l10n 单一来源)——TS 侧经
+// resolveEntityBuiltinPropertyHit 重解析作完整性校验,不命中/非只读 = 语义
+// 矛盾整面作废(禁止部分采用)。对拍测试共用。
+
+const KIND_SET = new Set<string>(['assign', 'augmented', 'annotated', 'del']);
+const PROPERTY_NAME_PATTERN = /^[A-Za-z_]\w*$/;
+const SELF_DOT_LENGTH = 'self.'.length;
+
+/**
+ * 结构面数组 → 诊断面数组(属性表重解析 + 消息渲染);任一条畸形或属性表
+ * 重解析矛盾(未命中/非只读)返回 null(整面作废,调用方回 TS 兜底 —— 禁止
+ * 部分采用)。对拍测试共用。
+ */
+export function renderRustReadOnlyWriteItems(
+  items: readonly unknown[],
+  pathFace: EntityComponentFace | null,
+  defFaces: readonly EntityComponentFace[] | null
+): ReadOnlyWriteDiagnosticItem[] | null {
+  const rendered: ReadOnlyWriteDiagnosticItem[] = [];
+  for (const item of items) {
+    if (item === null || typeof item !== 'object') {
+      return null;
+    }
+    const record = item as Record<string, unknown>;
+    if (record.code !== READONLY_WRITE_DIAGNOSTIC_CODE) {
+      return null;
+    }
+    const kind = record.kind;
+    if (typeof kind !== 'string' || !KIND_SET.has(kind)) {
+      return null;
+    }
+    const propertyName = record.propertyName;
+    if (typeof propertyName !== 'string' || !PROPERTY_NAME_PATTERN.test(propertyName)) {
+      return null;
+    }
+    const length = record.length;
+    if (typeof length !== 'number' || !Number.isInteger(length) || length !== SELF_DOT_LENGTH + propertyName.length) {
+      return null;
+    }
+    for (const value of [record.line, record.character]) {
+      if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+        return null;
+      }
+    }
+    const hit = resolveEntityBuiltinPropertyHit(propertyName, pathFace, defFaces);
+    if (!hit || !hit.property.readonly) {
+      return null; // Rust 只读闸放行的名字属性表不认 = 契约漂移,整面作废
+    }
+    const line = record.line as number;
+    const character = record.character as number;
+    rendered.push({
+      range: {
+        start: { line, character },
+        end: { line, character: character + length }
+      },
+      message: renderReadOnlyWriteMessage(propertyName, hit, kind as ReadOnlyWriteKind),
+      severity: 'Warning',
+      source: 'kbengine',
+      code: READONLY_WRITE_DIAGNOSTIC_CODE
+    });
+  }
+  return rendered;
 }

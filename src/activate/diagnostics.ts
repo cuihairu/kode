@@ -35,6 +35,7 @@ import {
   type PropertyDirectionHit,
 } from '../backend/propertyDirectionDiagnostics';
 import { READONLY_WRITE_DIAGNOSTICS_ENABLED_DEFAULT, readOnlyWriteDiagnosticItemsAsync, type ReadOnlyWriteDiagnosticItem } from '../backend/readOnlyWriteDiagnostics';
+import { buildReadOnlyWriteItemsWithRust } from '../backend/readOnlyWriteRust';
 import { ROLE_MISUSE_DIAGNOSTICS_ENABLED_DEFAULT, roleMisuseDiagnosticItemsAsync, type RoleMisuseDiagnosticItem } from '../backend/roleMisuseDiagnostics';
 import { POST_DESTROY_DIAGNOSTICS_ENABLED_DEFAULT, postDestroyDiagnosticItemsAsync, type PostDestroyDiagnosticItem } from '../backend/postDestroyDiagnostics';
 import { buildPostDestroyItemsWithRust } from '../backend/postDestroyRust';
@@ -808,12 +809,21 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         }
         const enabled = vscode.workspace.getConfiguration('kbengine')
           .get<boolean>('readOnlyWriteDiagnostics', READONLY_WRITE_DIAGNOSTICS_ENABLED_DEFAULT);
-        return readOnlyWriteDiagnosticItemsAsync(
-          document.getText(),
-          document.uri.fsPath,
-          () => entityMappingManager.getEntityComponentFacesForPythonFile(document.uri.fsPath),
-          enabled
-        );
+        const fetchDefFaces = () =>
+          entityMappingManager.getEntityComponentFacesForPythonFile(document.uri.fsPath);
+        // AUDIT-005 批 5:Rust-first(`$/kode/lint/analyzeReadOnlyWrite`,只读名集
+        // TS 供给;写入形态分类/掩码扫描在 Rust);不可用/畸形整面回 TS 兜底。
+        return (await buildReadOnlyWriteItemsWithRust(
+            document.getText(),
+            document.uri.fsPath,
+            fetchDefFaces
+          )
+          ?? await readOnlyWriteDiagnosticItemsAsync(
+            document.getText(),
+            document.uri.fsPath,
+            fetchDefFaces,
+            enabled
+          ));
       },
       publish: (items: readonly ReadOnlyWriteDiagnosticItem[]) => {
         readOnlyWriteDiagnostics.set(document.uri, items.map(item => {
