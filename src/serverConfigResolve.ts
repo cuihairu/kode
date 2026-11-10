@@ -17,9 +17,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
-import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
+import { getKodeCoreShadowGate } from './backend/kodeCoreShadowFaces';
 import { getRootConfigGeneration } from './rootConfigGeneration';
-import { expandWorkspacePlaceholders } from './workspacePath';
+import { expandWorkspacePlaceholders } from './backend/workspacePath';
 import { resolveDiscoveredConfigRoot, resolveKbeSourceRoot } from './workspaceDiscovery';
 import type { ConfigXmlNode } from './serverConfigMerge';
 

@@ -13,11 +13,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { findEngineEntryScript } from './debugpyWaitAtStartup';
-import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
+import { getKodeCoreShadowGate } from './backend/kodeCoreShadowFaces';
 import { getRootConfigGeneration } from './rootConfigGeneration';
 import { buildConfigTreePair } from './serverConfigMerge';
 import { ensureConfigResolved } from './serverConfigResolve';
-import { expandWorkspacePlaceholders } from './workspacePath';
+import { expandWorkspacePlaceholders } from './backend/workspacePath';
 
 /** `$/kode/config/derive` 的 `{ derive, diagnostics }` 结果(镜像 Rust 序列化) */
 export interface ConfigDeriveResult {
