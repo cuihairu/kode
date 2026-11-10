@@ -15,6 +15,7 @@ import { CONFIG_CONTRACT_DIAGNOSTICS_ENABLED_DEFAULT, computeConfigContractFindi
 import { RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT, receiverNoneDiagnosticItemsAsync, type ReceiverDiagnosticItem } from '../backend/receiverNoneDiagnostics';
 import { ATTRIBUTE_NONE_DIAGNOSTICS_ENABLED_DEFAULT, attributeNoneDiagnosticItems, ATTRIBUTE_NONE_DIAGNOSTIC_CODE } from '../backend/selfAttributeNoneDiagnostics';
 import { SPACE_NAV_DIAGNOSTICS_ENABLED_DEFAULT, SPACE_NAV_DIAGNOSTIC_CODE, computeSpaceNavFindings } from '../backend/spaceNavDiagnostics';
+import { buildSpaceNavItemsWithRust } from '../backend/spaceNavRust';
 import { RPC_ARG_COUNT_DIAGNOSTICS_ENABLED_DEFAULT, RPC_ARG_COUNT_DIAGNOSTIC_CODE, computeRpcArgCountFindings } from '../backend/rpcArgCountDiagnostics';
 import { flowVersionKeyForDocument } from '../flowVersionKey';
 import {
@@ -261,20 +262,24 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
           : [];
         // SP-4: 空间/导航语义诊断(_mapping 保留键/navigate 无 canNavigate/
         // params 字符串层键)——纯文本行级扫描,与 receiver/attr 同通道发布。
+        // AUDIT-005 B2 批 3:Rust-first(`$/kode/lint/analyzeSpaceNav`),不可用/
+        // 失败/畸形整面回 TS 同步兜底(computeSpaceNavFindings),不部分采用。
         const spaceNavEnabled = config
           .get<boolean>('spaceNavDiagnostics', SPACE_NAV_DIAGNOSTICS_ENABLED_DEFAULT);
-        const spaceNavItems = spaceNavEnabled && isPythonDocument(document)
-          ? computeSpaceNavFindings(document.getText()).map(finding => ({
-              range: {
-                start: { line: finding.line, character: finding.start },
-                end: { line: finding.line, character: finding.end }
-              },
-              message: finding.message,
-              severity: 'Warning' as const,
-              source: 'kbengine' as const,
-              code: finding.code || SPACE_NAV_DIAGNOSTIC_CODE
-            }))
+        const spaceNavFindings = spaceNavEnabled && isPythonDocument(document)
+          ? (await buildSpaceNavItemsWithRust(document.getText())
+              ?? computeSpaceNavFindings(document.getText()))
           : [];
+        const spaceNavItems = spaceNavFindings.map(finding => ({
+            range: {
+              start: { line: finding.line, character: finding.start },
+              end: { line: finding.line, character: finding.end }
+            },
+            message: finding.message,
+            severity: 'Warning' as const,
+            source: 'kbengine' as const,
+            code: finding.code || SPACE_NAV_DIAGNOSTIC_CODE
+          }));
         // IDE-LINT-008:RPC 实参数量 lint——调用点顶层实参数与 .def <Arg> 数
         // 对账,明确数量不符才报;星号实参/动态接收者/声明未就绪保留未知
         // (未知一律不报,不用 inlay 提示替代诊断面)。

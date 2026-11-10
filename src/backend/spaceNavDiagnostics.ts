@@ -255,9 +255,7 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
       line: offsetToLine(starts, keyOffset),
       start: offsetToCol(starts, keyOffset),
       end: offsetToCol(starts, keyOffset) + keyLen,
-      message: l10nText(
-        'The key "_mapping" is an engine reserved key (rejected by both set and del, runtime AssertionError "key{_mapping} is protected!"). Space geometry is managed by addSpaceGeometryMapping; use another key. (spacememory.cpp:740/862)'
-      ),
+      message: renderMappingKeyMessage(),
       code: SPACE_NAV_DIAGNOSTIC_CODE
     });
   }
@@ -286,9 +284,7 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
         line,
         start: offsetToCol(starts, methodOffset),
         end: offsetToCol(starts, methodOffset) + match[1].length,
-        message: l10nText(
-          'navigate/navigatePathPoints called but canNavigate never appears: pathfinding fails silently when nav data is not loaded (paths empty, no move controller). Guard with if self.canNavigate() first. (entity.cpp:2583 not found navhandle; canNavigate entity.cpp:2563)'
-        ),
+        message: renderNavigateNoGuardMessage(),
         code: SPACE_NAV_DIAGNOSTIC_CODE
       });
     }
@@ -316,10 +312,7 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
         line,
         start: offsetToCol(starts, keyOffset),
         end: offsetToCol(starts, keyOffset) + keyLen,
-        message: l10nText(
-          'params-level key {key} is a string literal; the engine requires int keys (PyLong_Check failure raises AssertionError "args(params) error!"). Write {0: "xx.navmesh"}. (spacememory.cpp:194)',
-          { key: token }
-        ),
+        message: renderParamsStringKeyMessage(token),
         code: SPACE_NAV_DIAGNOSTIC_CODE
       });
     }
@@ -327,4 +320,102 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
 
   findings.sort((a, b) => a.line - b.line || a.start - b.start);
   return findings;
+}
+
+// ---- Rust 面(AUDIT-005 B2 车道批 3:spaceNav 收编) ---------------------------
+// `$/kode/lint/analyzeSpaceNav` 经 gate.runInRust(命令面,与 analyzeTraps 同口径):
+// Rust 只回结构面(code/line/character/length + kind/可选 key),消息渲染留本模块
+// (l10n 单一来源)。不可用/失败/畸形整面作废回 TS 同步路径 —— 禁止部分采用。
+
+/** Rust 结构面单条产物(`$/kode/lint/analyzeSpaceNav` 应答) */
+export interface SpaceNavRustItem {
+  code: string;
+  line: number;
+  character: number;
+  length: number;
+  /** 三消息判别:mappingKey | navigateNoGuard | paramsStringKey */
+  kind: string;
+  /** paramsStringKey 的 l10n 参数(键 token) */
+  key?: string;
+}
+
+/** mappingKey 消息(引擎保留键,_mapping 被 set/del 双路径拒绝) */
+export function renderMappingKeyMessage(): string {
+  return l10nText(
+    'The key "_mapping" is an engine reserved key (rejected by both set and del, runtime AssertionError "key{_mapping} is protected!"). Space geometry is managed by addSpaceGeometryMapping; use another key. (spacememory.cpp:740/862)'
+  );
+}
+
+/** navigateNoGuard 消息(调用 navigate 却从未核验 canNavigate 前置) */
+export function renderNavigateNoGuardMessage(): string {
+  return l10nText(
+    'navigate/navigatePathPoints called but canNavigate never appears: pathfinding fails silently when nav data is not loaded (paths empty, no move controller). Guard with if self.canNavigate() first. (entity.cpp:2583 not found navhandle; canNavigate entity.cpp:2563)'
+  );
+}
+
+/** paramsStringKey 消息(引擎要求 int 键) */
+export function renderParamsStringKeyMessage(key: string): string {
+  return l10nText(
+    'params-level key {key} is a string literal; the engine requires int keys (PyLong_Check failure raises AssertionError "args(params) error!"). Write {0: "xx.navmesh"}. (spacememory.cpp:194)',
+    { key }
+  );
+}
+
+/**
+ * 结构面单条 → 诊断面(消息渲染);缺 l10n 参数/未知 kind = 畸形,返回 null。
+ * code/line/character/length 类型核 + kind 判别(与 TS 同步路径同消息源)。
+ */
+function renderRustSpaceNavItem(item: SpaceNavRustItem): SpaceNavFinding | null {
+  if (
+    typeof item?.code !== 'string'
+    || typeof item.line !== 'number'
+    || typeof item.character !== 'number'
+    || typeof item.length !== 'number'
+    || typeof item.kind !== 'string'
+  ) {
+    return null;
+  }
+  if (item.code !== SPACE_NAV_DIAGNOSTIC_CODE) {
+    return null;
+  }
+  let message: string;
+  switch (item.kind) {
+    case 'mappingKey':
+      message = renderMappingKeyMessage();
+      break;
+    case 'navigateNoGuard':
+      message = renderNavigateNoGuardMessage();
+      break;
+    case 'paramsStringKey':
+      if (typeof item.key !== 'string') {
+        return null;
+      }
+      message = renderParamsStringKeyMessage(item.key);
+      break;
+    default:
+      return null;
+  }
+  return {
+    line: item.line,
+    start: item.character,
+    end: item.character + item.length,
+    message,
+    code: SPACE_NAV_DIAGNOSTIC_CODE
+  };
+}
+
+/**
+ * 结构面数组 → 诊断面数组(消息渲染);任一条畸形返回 null(整面作废,调用方
+ * 回 TS 兜底 —— 禁止部分采用)。对拍测试共用。
+ */
+export function renderRustSpaceNavItems(items: readonly unknown[]): SpaceNavFinding[] | null {
+  const rendered: SpaceNavFinding[] = [];
+  for (const item of items) {
+    const renderedItem = renderRustSpaceNavItem(item as SpaceNavRustItem);
+    if (!renderedItem) {
+      return null;
+    }
+    rendered.push(renderedItem);
+  }
+  return rendered;
 }

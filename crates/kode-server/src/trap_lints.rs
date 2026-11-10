@@ -9,6 +9,7 @@
 //!   - 消息文案不出 Rust:只回结构面(code/line/character/length +
 //!     property/container),l10n 渲染留在 TS(调用方逐字段校验,畸形整面
 //!     作废回 TS,与 serveDiagnosticsFromRust 同口径)。
+//!
 //! 入参 `{text, fixedDictProperties?, enabled?}`;出 `{items:[...]}`。
 
 use std::collections::{HashMap, HashSet};
@@ -151,7 +152,7 @@ fn indent_of(line: &str) -> usize {
 fn is_assign_at(bytes: &[u8], at: usize) -> bool {
     match bytes.get(at) {
         Some(b'=') => bytes.get(at + 1).is_some_and(|&next| next != b'='),
-        Some(&op) if matches!(op, b'+' | b'-' | b'*' | b'/' | b'%' | b'|' | b'&' | b'^') => {
+        Some(b'+' | b'-' | b'*' | b'/' | b'%' | b'|' | b'&' | b'^') => {
             bytes.get(at + 1) == Some(&b'=')
         }
         _ => false,

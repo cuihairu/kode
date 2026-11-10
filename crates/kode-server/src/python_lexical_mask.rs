@@ -47,7 +47,7 @@ fn string_prefix_before(text: &[u16], quote_index: usize) -> &[u16] {
 fn is_fstring(text: &[u16], quote_index: usize) -> bool {
     string_prefix_before(text, quote_index)
         .iter()
-        .any(|&code| (code as u8).to_ascii_lowercase() == b'f')
+        .any(|&code| matches!(code as u8, b'f' | b'F'))
 }
 
 /// 掩掉 text[start..] 起的一个字符串字面量(含引号),返回结束后的下标。

@@ -121,6 +121,7 @@ impl ServerState {
         crate::def_md5::register(&mut rpc);
         crate::trap_lints::register(&mut rpc);
         crate::role_misuse::register(&mut rpc);
+        crate::space_nav::register(&mut rpc);
         crate::workspace_discovery::register(&mut rpc);
         ServerState {
             initialized: false,

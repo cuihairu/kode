@@ -9,6 +9,7 @@
 //!   - 消息/取证(source)不出 Rust:只回结构面(code/line/character/length +
 //!     propertyName/registeredFaces),l10n 渲染与引擎取证留 TS(调用方逐字段
 //!     校验,畸形整面作废回 TS,与 serveDiagnosticsFromRust 同口径)。
+//!
 //! 入参 `{text, face, facePropertyNames:{baseapp,cellapp,client}}`(face 由 TS
 //! 解析:目录域优先、def 归属唯一面、歧义/非实体为 null);出 `{items:[...]}`。
 //! 面注册集与 TS FACE_PROPERTY_NAMES 同源(TS 桥接静态属性表)。
