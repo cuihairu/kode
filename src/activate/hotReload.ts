@@ -27,7 +27,7 @@ import { HotReloadStatusController } from '../hotReloadStatus';
 import { createFileChangeRouter } from '../backend/fileChangeBypass';
 import { HOT_RELOAD_CHANNEL_STATUS_PRIORITY, HotReloadChannelQuickSwitch, runHotReloadChannelConfigCommand } from '../backend/hotReloadChannelConfig';
 import { HotReloadVersionTracker, matchesHotReloadGlob } from '../backend/hotReloadFileVersion';
-import { resolveReloadTransport, type ReloadTransport } from '../backend/hotReloadTransport';
+import { resolveReloadTransport, createDefaultHotReloadChannel, type ReloadTransport } from '../backend/hotReloadTransport';
 import { runHotReloadBatchSummaryCommand } from '../backend/hotReloadBatchSummaryCommand';
 import { runHotReloadRetryCommand } from '../backend/hotReloadRetryCommand';
 import { createDefStructuralGate } from '../backend/hotReloadDefGate';
@@ -239,18 +239,27 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
       );
     })
   );
-  // IDE-HOT-102:部署通道发送口(fire 路径与失败目标重试共用同一解出口)——
-  // 当前激活 profile 配了 hotReload 段才解出通道(经 resolveReloadTransport
-  // 校验),未配返回 null,调用方回落既有 actionName 通道。targetId=profile.id
-  // (稳定身份,台账键用,改名不漂移)。交叉修复(二轮):失败重试的目标=
-  // 此目标时接回同一发送通道,不再只反查 quick action 动作。
+  // IDE-HOT-102:部署通道发送口(fire 路径与失败目标重试共用同一解出口)。
+  // 用户令 2026-11-10:「默认就是 http 方式,都提供默认配置」——无激活 profile
+  // 或无 hotReload 段时**不再回落 actionName**,改走**默认 http 通道**:
+  // url/method/headers/body 取 BUILTIN_HTTP_REQUEST_EXAMPLE(与零配置自动热更
+  // 同源模板,端点在 package.json 默认值测试锁同步)。targetId 用稳定
+  // 'default'(台账键 + 回执核验基准;无 profile 身份可漂移,固定串最稳)。
+  // 显式 profile 配了通道仍优先(配置显式 > 默认)。
+  const DEFAULT_CHANNEL_TARGET_ID = 'default';
   const resolveHotReloadChannelTransport = (): { transport: ReloadTransport; targetId: string } | null => {
     const activeProfile = resolveActiveProfile(context.workspaceState);
-    if (!activeProfile?.hotReload) {
-      return null;
+    if (activeProfile?.hotReload) {
+      const transport = resolveReloadTransport(activeProfile.hotReload);
+      if (transport) {
+        return { transport, targetId: activeProfile.id };
+      }
     }
-    const transport = resolveReloadTransport(activeProfile.hotReload);
-    return transport ? { transport, targetId: activeProfile.id } : null;
+    // 默认 http 通道(用户令 2026-11-10):无 profile/无 hotReload 段不回落
+    // actionName,走 createDefaultHotReloadChannel 内置模板(与零配置自动
+    // 热更同源端点,enabled 显式 true)。targetId 用稳定 'default'。
+    const transport = resolveReloadTransport(createDefaultHotReloadChannel());
+    return transport ? { transport, targetId: DEFAULT_CHANNEL_TARGET_ID } : null;
   };
   // §11.2 非 py 旁路通道的公共扩展口:这里持有路由表并交给装配——默认
   // 不注册任何消费者(= 只记录不处理);注册口 = activate 返回的

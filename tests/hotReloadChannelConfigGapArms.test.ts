@@ -345,7 +345,7 @@ describe('hotReloadChannelConfig 缺口臂:状态栏开关', () => {
     // 激活 profile 消失 → refresh 触发 stateKey(),line 513 空串分支
     harness.active = null;
     controller.refresh();
-    expect(harness.bar.text).toBe('$(plug) 热更:未配置');
+    expect(harness.bar.text).toBe('$(plug) 热更:默认(http)');
     expect(harness.bar.backgroundColor).toBeUndefined();
     expect(String(harness.bar.tooltip)).not.toContain('探活通过');
     controller.dispose();
@@ -359,7 +359,7 @@ describe('hotReloadChannelConfig 缺口臂:状态栏开关', () => {
     harness.deps.saveHotReload = async () => null;
     expect(await controller.run()).toBe(false);
     expect(harness.errors.join('')).toContain('保存失败:profile 不存在');
-    expect(harness.bar.text).toBe('$(plug) 热更:未配置'); // note 已清,无红标
+    expect(harness.bar.text).toBe('$(plug) 热更:默认(http)'); // note 已清,无红标
     expect(harness.bar.backgroundColor).toBeUndefined();
     controller.dispose();
   });

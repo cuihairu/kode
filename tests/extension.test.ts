@@ -287,7 +287,7 @@ describe('extension activate 装配', () => {
     const channelBar = windowState.statusBars.find(item => item.priority === 96)!;
     expect(channelBar.alignment).toBe(StatusBarAlignment.Right);
     expect(channelBar.command).toBe('kbengine.hotReload.switchChannel');
-    expect(channelBar.text).toContain('未配置');
+    expect(channelBar.text).toContain('默认(http)');
     expect(channelBar.visible).toBe(true);
     expect(commandRegistry.contexts.get('kbengine.telnetConfigured')).toBe(false);
 

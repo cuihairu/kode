@@ -54,9 +54,11 @@ export const CHANNEL_SHORT_LABEL: Record<ReloadTransportKind, string> = {
   http: '自研HTTP'
 };
 
-/** 短标签:未配通道如实显示未配置 */
+/** 短标签:未配通道如实显示默认(http)——用户令 2026-11-10 起默认部署通道
+ * 即 http(createDefaultHotReloadChannel),无 profile/无 hotReload 段也发默认
+ * http 请求,状态栏不再显示歧义的「未配置」(那会让用户以为没生效)。 */
 export const shortChannelLabel = (channel: ReloadTransportKind | undefined): string =>
-  channel === undefined ? '未配置' : CHANNEL_SHORT_LABEL[channel];
+  channel === undefined ? '默认(http)' : CHANNEL_SHORT_LABEL[channel];
 
 /** 自研接收器预设默认:本机端口/路径(接收器 referenceReceiver.mjs 的 /reload 端点;接收器须以 --port 8000 启动) */
 export const DEFAULT_HTTP_RECEIVER_URL = 'http://127.0.0.1:8000/reload';

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as net from 'net';
 import {
+  createDefaultHotReloadChannel,
   defaultReloadTelnetConnector,
   defaultReloadWaitForReady,
   HttpReloadTransport,
@@ -623,5 +624,21 @@ describe('hotReloadTransport 缺口臂(畸形回执/非 JSON 装饰/真实连接
     const summary = await sendPromise;
     expect(summary.receipts.every(r => r.status === 'sent')).toBe(true);
     await sleep(20); // 关闭事件落在回显之后 → captureEcho 的 finish 二次进入走 done 短路
+  });
+});
+
+describe('createDefaultHotReloadChannel(默认部署通道,用户令 2026-11-10)', () => {
+  it('无 profile/无 hotReload 段时的默认通道:channel=http,url=内置模板,enabled=true', () => {
+    const config = createDefaultHotReloadChannel();
+    expect(config.channel).toBe('http');
+    expect(config.http).toBeDefined();
+    expect(config.http?.url).toBe('http://127.0.0.1:8090/hotfix?module_name=${module}');
+    expect(config.http?.method).toBe('POST');
+    expect(config.http?.body).toBe('module_name=${module}');
+    expect(config.http?.enabled).toBe(true);
+    // 必须能经 resolveReloadTransport 解出真实通道(否则生产解出口拿不到)
+    const transport = resolveReloadTransport(config);
+    expect(transport).not.toBeNull();
+    expect(transport?.kind).toBe('http');
   });
 });

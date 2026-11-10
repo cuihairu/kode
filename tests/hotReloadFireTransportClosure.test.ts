@@ -249,7 +249,10 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
     // SRC-001 L6:装配位自 extension.ts 迁 src/activate/hotReload.ts(纯移动),源锁跟随装配层。
     const source = readFileSync('src/extension.ts', 'utf8') + readFileSync('src/activate/hotReload.ts', 'utf8');
     expect(source).toContain('const transport = resolveReloadTransport(activeProfile.hotReload);');
-    expect(source).toContain('return transport ? { transport, targetId: activeProfile.id } : null;');
+    // 用户令 2026-11-10:无 profile/无 hotReload 段不再回落 actionName,走默认
+    // http 通道(createDefaultHotReloadChannel 内置模板,targetId='default')
+    expect(source).toContain('createDefaultHotReloadChannel()');
+    expect(source).toContain("targetId: DEFAULT_CHANNEL_TARGET_ID");
     // fire 路径与失败目标重试共用同一解出口(setupHotReload 与 retry deps 各一处)
     expect(source.match(/resolveChannelTransport: resolveHotReloadChannelTransport/g)?.length).toBeGreaterThanOrEqual(2);
   });

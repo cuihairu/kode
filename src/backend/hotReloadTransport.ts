@@ -22,6 +22,7 @@
 
 import { defaultTransport as httpDefaultTransport, DEFAULT_HTTP_TIMEOUT_MS } from './httpRequestService';
 import type { HttpRequestEntry } from './httpRequests';
+import { BUILTIN_HTTP_REQUEST_EXAMPLE } from './httpRequests';
 import { resolveVariableExpression, type VariableContext } from './variableSubstitution';
 import { KBEngineTelnetClient } from './telnetClient';
 
@@ -578,6 +579,21 @@ export interface ReloadChannelConfig {
 export interface ReloadTransportDeps {
   http?: ReloadHttpDeps;
   official?: ReloadOfficialDeps;
+}
+
+/**
+ * 默认部署通道(用户令 2026-11-10「默认就是 http 方式,都提供默认配置」):
+ * 无激活 profile 或 profile 未配 hotReload 段时用它——url/method/headers/body
+ * 取内置模板(BUILTIN_HTTP_REQUEST_EXAMPLE,与零配置自动热更同源),端点
+ * `http://127.0.0.1:8090/hotfix?module_name=${module}` 在 package.json 默认值
+ * 测试锁同步。enabled 显式置 true(模板默认 false 是「未启用」语义)。
+ */
+export function createDefaultHotReloadChannel(): ReloadChannelConfig {
+  const entry: HttpRequestEntry = {
+    ...BUILTIN_HTTP_REQUEST_EXAMPLE,
+    enabled: true
+  };
+  return { channel: 'http', http: entry };
 }
 
 /**

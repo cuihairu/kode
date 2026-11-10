@@ -224,9 +224,9 @@ describe('热更通道状态栏快捷开关', () => {
     expect(HOT_RELOAD_CHANNEL_STATUS_PRIORITY).not.toBe(98);
   });
 
-  it('未配通道的 profile → 状态栏显示未配置', () => {
+  it('未配通道的 profile → 状态栏显示默认(http)(用户令 2026-11-10:默认部署通道即 http)', () => {
     const { bar } = build({ profile: profile('p1') });
-    expect(bar.text).toBe('$(plug) 热更:未配置');
+    expect(bar.text).toBe('$(plug) 热更:默认(http)');
   });
 
   it('三选 QuickPick:自研接收器[推荐] / KBEngine 官方(依赖引擎 reloadScript) / 未配置,当前项标记', async () => {
@@ -253,7 +253,7 @@ describe('热更通道状态栏快捷开关', () => {
     expect(harness.saved).toEqual([{ id: 'p1', config: undefined }]);
     expect(harness.infos.join('')).toContain('已清除');
     expect(harness.probed).toHaveLength(0);
-    expect(harness.bar.text).toBe('$(plug) 热更:未配置');
+    expect(harness.bar.text).toBe('$(plug) 热更:默认(http)');
   });
 
   it('选自研接收器 → 默认参数探活通过 → 落 profile,状态栏保持自研 + 提示探活通过', async () => {
@@ -289,7 +289,7 @@ describe('热更通道状态栏快捷开关', () => {
     expect(harness.errors[0].message).toContain('探活不通');
     expect(harness.errors[0].actions).toContain('打开高级配置修参数');
     // 状态栏文字只显示**当前**通道(本次没落盘,仍是我配置),红标 + tooltip 点名试的通道
-    expect(harness.bar.text).toBe('$(error) 热更:未配置');
+    expect(harness.bar.text).toBe('$(error) 热更:默认(http)');
     expect(harness.bar.backgroundColor?.id).toBe('statusBarItem.errorBackground');
     expect(String(harness.bar.tooltip)).toContain('ECONNREFUSED');
     expect(String(harness.bar.tooltip)).toContain('自研接收器');
@@ -374,7 +374,7 @@ describe('热更通道状态栏快捷开关', () => {
     harness.active = { profile: profile('p2') };
     controller.refresh();
     expect(harness.bar.backgroundColor).toBeUndefined();
-    expect(harness.bar.text).toBe('$(plug) 热更:未配置');
+    expect(harness.bar.text).toBe('$(plug) 热更:默认(http)');
   });
 
   it('红标不跨同 profile 的通道参数变更残留:配置身份一变 refresh 即清', async () => {
@@ -466,7 +466,7 @@ describe('热更通道状态栏快捷开关', () => {
     const { harness, bar, controller } = build(HTTP_ACTIVE);
     harness.active = { profile: profile('p1') };
     controller.refresh();
-    expect(bar.text).toBe('$(plug) 热更:未配置');
+    expect(bar.text).toBe('$(plug) 热更:默认(http)');
     controller.dispose();
     expect(bar.disposed).toBe(true);
     expect(harness.commands.size).toBe(0);
