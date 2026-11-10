@@ -38,9 +38,12 @@ it.each([
     showWarningMessage: warning,
     showInputBox,
     showInformationMessage: async () => undefined,
+    showErrorMessage: async () => undefined,
     // 摘要页(005c)选「保存」完成配置;返回值经同一 localize(010d:
     // 比较走调用值,zh bundle 下返回「保存」也必须被摘要循环识别)
     showQuickPick: async () => localize(CLONE_SUMMARY_SAVE),
+    // 实体派生检查已前置(004b):本例只锁源配置 NLS 面,派生面交空即止
+    resolveEntityTables: () => null,
   } as unknown as PlayerCloneCommandDeps;
   await runExportCloneCommand(deps);
   expect(warning.mock.calls[0][1]).toBe(action);

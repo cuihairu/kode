@@ -35,6 +35,8 @@ import { runTablePreviewCommand } from './databaseTablePreviewCommand';
 import { createPreviewColumnSourceTableResolver } from './backend/databasePreviewColumnSource';
 import { runSchemaImpactCommand } from './databaseSchemaImpactCommand';
 import {
+  cloneBackendProbe,
+  cloneSourceConnectionProbe,
   runConfigureCloneProfileCommand,
   runExportCloneCommand,
   runImportCloneCommand,
@@ -657,6 +659,10 @@ export function wireDatabase(context: vscode.ExtensionContext, deps: DatabaseWir
       'plain'
         ? 'plain'
         : 'encrypted',
+    // UX-REVIEW-004b 导出预检:后端门轻探测 + 源连接真实建连测试(SELECT
+    // VERSION() 即关)——都在实体/DBID 收集前如实给原因与恢复入口。
+    probeCloneBackend: cloneBackendProbe(),
+    probeSourceConnection: cloneSourceConnectionProbe(),
     channel: playerCloneChannel,
     now: () => Date.now()
     };

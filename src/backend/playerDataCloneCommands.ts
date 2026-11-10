@@ -20,6 +20,7 @@
 
 import type { CloneProfileRole, CloneProfileStore } from './playerDataCloneProfiles';
 import { fingerprintCloneArchive, reserveCloneImport } from './playerDataCloneImportGuard';
+import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 import {
   applyImportPlan,
   CloneApplyCancelledError,
@@ -29,11 +30,13 @@ import {
   CloneRollbackUnknownError,
   columnOrderFromPlan,
   executeExportPlan,
+  loadMysqlModule,
   openCloneSession,
   probeExistingValues,
   probePhysicalTables,
   testCloneConnection,
-  uniqueValuesFromRows
+  uniqueValuesFromRows,
+  type CloneMysqlModule
 } from './playerDataCloneMysql';
 import {
   inspectCloneArchive,
@@ -108,6 +111,24 @@ export interface PlayerCloneCommandDeps {
    * (加密位探测定,明文/加密归档都能读)。
    */
   getArchiveEncryptionDefault?(): 'encrypted' | 'plain';
+  /**
+   * UX-REVIEW-004b 导出预检:Rust 克隆后端轻探测(true=门在场)。不发 RPC,
+   * 只判 gate 缺席;server 级故障仍由 plan/write 的 no-gate/error 面如实上报。
+   * 缺省=跳过该面(测试替身/旧装配兼容)。
+   */
+  probeCloneBackend?(): boolean;
+  /**
+   * UX-REVIEW-004b 导出预检:源连接真实建连测试(SELECT VERSION();探针会话
+   * 只读即关)。失败带原始原因,导出在实体/DBID 收集前给重试/配置入口。
+   * 缺省=跳过该面(测试替身/旧装配兼容)。
+   */
+  probeSourceConnection?(config: {
+    host: string;
+    port: number;
+    user: string;
+    password?: string;
+    database: string;
+  }): Promise<{ ok: true } | { ok: false; reason: string }>;
   channel: { appendLine(line: string): void; show(preserveFocus?: boolean): void };
   now(): number;
 }
@@ -598,6 +619,37 @@ export async function runInspectCloneArchiveCommand(
 // 0502 导出
 // ---------------------------------------------------------------------------
 
+/**
+ * UX-REVIEW-004b 预检依赖生产装配(004b-1 覆盖配置缺失面,本两件补「可用
+ * 后端 + 连接测试」余量):后端探测=门缺席轻探测;源连接探测=真实建连 +
+ * SELECT VERSION() 即关(探针只读会话,失败带原始原因)。
+ */
+export function cloneBackendProbe(): NonNullable<PlayerCloneCommandDeps['probeCloneBackend']> {
+  return () => getKodeCoreShadowGate() !== null;
+}
+
+export function cloneSourceConnectionProbe(
+  loadModule: () => Promise<CloneMysqlModule> = loadMysqlModule
+): NonNullable<PlayerCloneCommandDeps['probeSourceConnection']> {
+  return async config => {
+    try {
+      const connection = await openCloneSession(config, {}, loadModule);
+      try {
+        const result = await testCloneConnection(connection);
+        return result.ok ? { ok: true } : { ok: false, reason: result.reason };
+      } finally {
+        try {
+          await connection.end();
+        } catch {
+          // 与导出收尾同口径:探针关闭失败不覆盖探测结果。
+        }
+      }
+    } catch (error) {
+      return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    }
+  };
+}
+
 export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promise<void> {
   const l10n: CloneL10n = (message, args) =>
     deps.localize?.(message, args) ?? withL10nArgs(message, args);
@@ -606,6 +658,12 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
     await deps.showWarningMessage(
       l10n('No registered entities found in the workspace (open a KBEngine project first).')
     );
+    return;
+  }
+  // UX-REVIEW-004b:后端可用性预检在输入收集前——无 Rust 门如实告知,
+  // 不先丢实体/DBID。
+  if (deps.probeCloneBackend && !deps.probeCloneBackend()) {
+    await deps.showErrorMessage(l10n(noGateMessage));
     return;
   }
   let config = await deps.profiles.resolveConnection('source');
@@ -618,10 +676,42 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
     config = await deps.profiles.resolveConnection('source');
     if (!config) { return; }
   }
+  // UX-REVIEW-004b:源连接测试入口——配置在场但连不上时,实体/DBID 收集前
+  // 如实给原因与重试/配置入口;探针通过才继续收集。
+  if (deps.probeSourceConnection) {
+    for (;;) {
+      const probe = await deps.probeSourceConnection(config);
+      if (probe.ok) { break; }
+      const retry = l10n('Retry connection test');
+      const configure = l10n('Configure source connection');
+      const choice = await deps.showWarningMessage(
+        l10n('Source connection test failed: {reason}', { reason: probe.reason }),
+        retry,
+        configure
+      );
+      if (choice === configure) {
+        await runConfigureCloneProfileCommand(deps, 'source');
+        const next = await deps.profiles.resolveConnection('source');
+        if (!next) { return; }
+        config = next;
+        continue;
+      }
+      if (choice !== retry) { return; }
+    }
+  }
   const entityName = await deps.showQuickPick(entityNames, {
     placeHolder: l10n('Select the entity to export')
   });
   if (!entityName) {
+    return;
+  }
+  // UX-REVIEW-004b:实体上下文(表结构推导)检查前置到 DBID 输入前——
+  // 推导失败如实报错,不先丢已输入的 DBID。
+  const derivationTables = deps.resolveEntityTables(entityName);
+  if (!derivationTables || derivationTables.length === 0) {
+    await deps.showErrorMessage(
+      l10n('Cannot derive table structure for entity {entity} from workspace defs.', { entity: entityName })
+    );
     return;
   }
   const dbidText = await deps.showInputBox({
@@ -629,13 +719,6 @@ export async function runExportCloneCommand(deps: PlayerCloneCommandDeps): Promi
     validateInput: value => (/^\d+$/.test(value) ? null : l10n('DBID must be a number'))
   });
   if (dbidText === undefined) {
-    return;
-  }
-  const derivationTables = deps.resolveEntityTables(entityName);
-  if (!derivationTables || derivationTables.length === 0) {
-    await deps.showErrorMessage(
-      l10n('Cannot derive table structure for entity {entity} from workspace defs.', { entity: entityName })
-    );
     return;
   }
 

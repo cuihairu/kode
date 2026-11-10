@@ -628,7 +628,8 @@ describe('runExportCloneCommand(0502)', () => {
   });
 
   it('导出 DBID 输入校验:非数字拒,纯数字过', async () => {
-    const { deps, recorded } = makeDeps({ entities: ['Avatar'], picks: ['Avatar'], inputs: ['42'], source: sourceConfig() });
+    // 派生检查已前置于 DBID 输入(UX-REVIEW-004b),须供 entityTables 让流程走到输入位
+    const { deps, recorded } = makeDeps({ entities: ['Avatar'], entityTables: { Avatar: avatarTables() }, picks: ['Avatar'], inputs: ['42'], source: sourceConfig() });
     await runExportCloneCommand(deps);
     const validate = recorded.inputOptions[0].validateInput;
     expect(validate).toBeDefined();
