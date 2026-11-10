@@ -264,6 +264,17 @@ export class HotReloadStatusController {
             ? '一键开启: kbengine.hotReload.enabled=true(保存 .py 即发默认热更请求)'
             : '一键关闭: kbengine.hotReload.enabled=false(不再自动发送)'
         );
+        // 状态栏脸面必须跟着配置走:写回成功即切到对应状态,否则 bar.text
+        // 停留在旧脸面(点击后仍显示「关」)。关=watch-off(disabled 原因),
+        // 开=ready(就绪);ready 的版本块由 kickRefresh 重采补上。
+        this.setState(
+          next ? 'ready' : 'watch-off',
+          next
+            ? '状态:热更已开启(kbengine.hotReload.enabled=true)'
+            : '状态:热更已关闭(kbengine.hotReload.enabled=false)',
+          next ? undefined : 'disabled',
+          true
+        );
         const message = next
           ? '自动热更已开启:保存 .py 即向 http://127.0.0.1:8090/hotfix?module_name=<模块名> 发送(query 与 body 各带一份)'
           : '自动热更已关闭(kbengine.hotReload.enabled=false);点击状态栏「热更」项或再运行 kbengine.hotReload.toggle 可开启';
@@ -341,7 +352,12 @@ export class HotReloadStatusController {
    * 补救出现)也记——否则 ready→ready 的来源切换只进 tooltip、日志留旧值;
    * 内容一字不差的重复仍压掉(防配置抖动刷屏)。
    */
-  private setState(kind: HotReloadStatusKind, changeLog?: string, tooltipNote?: string): void {
+  private setState(
+    kind: HotReloadStatusKind,
+    changeLog?: string,
+    tooltipNote?: string,
+    force = false
+  ): void {
     const changed = kind !== this.kind;
     const contentChanged = changeLog !== undefined && changeLog !== this.lastChangeLog;
     this.kind = kind;
@@ -351,6 +367,16 @@ export class HotReloadStatusController {
     }
     if ((changed || contentChanged) && changeLog) {
       this.log(changeLog);
+    }
+    // force:用户显式动作(状态栏点击开关)不被节流窗吞掉——窗开着时只存
+    // pending 会拖到窗关才上屏,用户看着「点了没反应」。清窗立即可见。
+    if (force) {
+      this.windowOpen = false;
+      this.pendingKind = undefined;
+      if (this.windowHandle !== undefined) {
+        this.deps.timers.clear(this.windowHandle);
+        this.windowHandle = undefined;
+      }
     }
     this.render(kind);
   }

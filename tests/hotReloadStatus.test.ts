@@ -16,6 +16,7 @@ import {
   configurationOverrides,
   lastFileSystemWatcher,
   statusBars,
+  workspace,
   workspaceEvents,
   workspaceState
 } from './helpers/vscodeStub';
@@ -321,6 +322,43 @@ describe('setupHotReload 状态机转移表(装配级)', () => {
     settle(statusClock);
     expect(fake.bar.text).toBe(READY_FACE);
     expect(fake.lines.some(line => line.includes('监视就绪: 1 个模式, 去抖 100ms'))).toBe(true);
+  });
+
+  it('点击状态栏开关:关→开写回配置并立即刷新状态栏(regression HR-UI-002)', async () => {
+    // 真实 VS Code 打开工作区时 workspaceFolders 非空,写回才落 Workspace 级;
+    // stub 默认空数组会误落 Global 级,读回优先工作区校验失败。补一个假文件夹。
+    const fakeFolder = { uri: { scheme: 'file', path: '/test' }, name: 'test', index: 0 };
+    workspace.workspaceFolders.push(fakeFolder);
+    try {
+      configurationOverrides.set('kbengine', { hotReload: { enabled: false } });
+      const clock = makeTimers();
+      const statusClock = makeTimers();
+      const fake = makeStatus(statusClock.timers);
+      const context = makeContext();
+
+      setupHotReload(context, () => undefined, {
+        timers: clock.timers,
+        status: fake.controller
+      });
+      settle(statusClock);
+      // 初始关:状态栏脸面就是「关」
+      expect(fake.bar.text).toBe(OFF_FACE);
+
+      // 点击状态栏 = toggle:写回配置(关→开),配置事件驱动 watcher 重建
+      fake.clickBar();
+      await flushMicrotasks();
+      expect(workspaceState.workspaceConfigurationUpdates).toContainEqual(
+        expect.objectContaining({ key: 'kbengine.hotReload.enabled', value: true })
+      );
+
+      // 用户令 2026-11-10:点击后状态栏必须立即反映新状态(旧 bug 停在「关」)。
+      // 不 fireConfig——复现真实场景:点击写回后,状态栏应立即切到新脸面,
+      // 不依赖配置事件链(apply 走事件驱动,事件没到/延迟时 toggle 自己先反馈)。
+      settle(statusClock);
+      expect(fake.bar.text).toBe(READY_FACE);
+    } finally {
+      workspace.workspaceFolders.pop();
+    }
   });
 
   it('事件→去抖到点→Sending→动作无错完成→Sent(未确认)+结果日志', async () => {
