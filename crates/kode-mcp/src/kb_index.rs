@@ -216,6 +216,12 @@ impl KnowledgeIndex {
         );
         // def/xml under scripts (def files + types/alias/entities xml).
         push_scan(&["def", "xml"], &[root.join("scripts")]);
+        // KB-003: AI/nav JSON configs and Tiled maps live in asset dirs
+        // (res/ etc.), so they scan the whole root — routed to their own
+        // adapters by extension, never into the def/xml model parse (the
+        // model scan above stays scripts-only).
+        push_scan(&["json"], std::slice::from_ref(root));
+        push_scan(&["tmx"], std::slice::from_ref(root));
         // Deterministic order + dedup (a file matches one extension).
         paths.sort();
         paths.dedup();
@@ -301,7 +307,10 @@ impl KnowledgeIndex {
             changed_files.iter().map(|e| e.rel_path.clone()).collect();
         for e in &changed_files {
             let ext = e.ext.as_str();
-            if matches!(ext, "md" | "py" | "xlsx" | "xlsm" | "xls" | "ods" | "xlsb" | "csv") {
+            if matches!(
+                ext,
+                "md" | "py" | "xlsx" | "xlsm" | "xls" | "ods" | "xlsb" | "csv" | "json" | "tmx"
+            ) {
                 match extract::extract_file(&self.project, &self.root, &e.abs_path) {
                     Ok(nodes) => {
                         let _ = self.store.replace_file_nodes(&e.rel_path, &nodes);
@@ -329,8 +338,9 @@ impl KnowledgeIndex {
         // Edge rebuild triggers: edges are produced from def/xml (P1 rules)
         // AND from python class/method names AND from excel/csv cell values,
         // so a python- or excel/csv-only change must rebuild them too (a
-        // markdown-only change cannot create or invalidate edges). Per-file
-        // extracts stay in `changed_rel` so these triggers see them — before
+        // markdown-, json- or tmx-only change cannot create or invalidate
+        // edges — KB-003 assets produce no edge rules). Per-file extracts
+        // stay in `changed_rel` so these triggers see them — before
         // P4 this only ran on def/xml dirt, leaving python/excel-derived
         // edges stale.
         let edge_sources_dirty = changed_rel.iter().any(|p| {
@@ -818,6 +828,37 @@ impl KnowledgeIndex {
             "matches": nodes.iter().map(|n| node_row(n, None)).collect::<Vec<_>>(),
             "deterministic": true,
         })
+    }
+
+    /// Asset query (KODE-MCP-KB-003 `query_assets`): filter indexed JSON
+    /// path keys and TMX map/tileset/layer/objectgroup nodes by format,
+    /// file, name (exact or `{name}.`-prefixed children), or content-text
+    /// substring; deterministic order, bounded. A format that has no adapter
+    /// errors honestly instead of returning an empty result.
+    pub fn query_assets(
+        &self,
+        format: Option<&str>,
+        file: Option<&str>,
+        name: Option<&str>,
+        text: Option<&str>,
+        limit: usize,
+    ) -> Result<Value, String> {
+        if let Some(f) = format {
+            if f != "json" && f != "tmx" {
+                return Err(format!(
+                    "unknown asset format: {f} (supported: json|tmx; other formats go through search/query_excel)"
+                ));
+            }
+        }
+        let nodes = self
+            .store
+            .asset_query(format, file, name, text, limit.clamp(1, 200));
+        let count = nodes.len();
+        Ok(json!({
+            "count": count,
+            "matches": nodes.iter().map(|n| node_row(n, None)).collect::<Vec<_>>(),
+            "deterministic": true,
+        }))
     }
 
     /// index_status storage face (merged by the server into the P1 status).

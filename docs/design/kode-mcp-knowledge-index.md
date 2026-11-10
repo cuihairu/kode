@@ -153,6 +153,8 @@ pub enum NodeKind {
     PythonClass, PythonFunction, PythonMethod, PythonAttribute,
     Entity, EntityProperty, EntityMethod,   // .def
     XmlType, XmlElement, XmlAttribute,      // types.xml / config
+    JsonKey,                                // JSON config path key (KB-003)
+    TmxMap, TmxTileset, TmxLayer, TmxObjectGroup, // Tiled map .tmx (KB-003)
 }
 
 pub enum SourceLocation {
@@ -203,6 +205,7 @@ verify:
 | `get_dependencies` | P1    | cross-file affected range (def change → types.xml → py) |
 | `index_status`   | P1       | index version, files scanned, errors, confidence |
 | `query_excel`    | P4       | by sheet / key / field (needs calamine)          |
+| `query_assets`   | KB-003   | JSON path keys + TMX map/layer/objectgroup/tileset by format/file/name/text |
 
 Existing tools (`search_entities`, `get_entity_model`, `get_type_graph`,
 `get_message_entry`, `get_database_schema`, `explain`, `why_setting`,
@@ -295,6 +298,13 @@ phases.
 - **P3**: pluggable vector module (on-demand), hybrid fusion.
 - **P4**: Excel (`calamine`), knowledge graph, `query_excel`, `get_dependencies`
   full cross-format trace.
+- **KB-003 (2026-11-10, user-directed)**: AI/nav JSON configs (path-key
+  adapter: dot-path address, leaf value as content, bounded expansion with
+  honest caps) and Tiled maps (`.tmx` parsed with kode-parser's byte-exact
+  XML, real 1-based lines; map/tileset/layer/objectgroup faces; tile data
+  blobs not indexed) — scan roots expand beyond `scripts/` to the whole
+  assets root, routed by extension and never into the def/xml model parse.
+  Tool: `query_assets`. Asset formats produce no edge rules.
 
 Honest boundary: P1 does **not** add Tantivy/SQLite/calamine or the vector
 module; it builds the semantic model and exact/reference queries over data the

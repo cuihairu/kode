@@ -238,6 +238,19 @@ impl KodeMcpServer {
                     limit,
                 ))
             }
+            "query_assets" => {
+                let limit = arguments
+                    .get("limit")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(50) as usize;
+                self.index.query_assets(
+                    arg_str("format").as_deref(),
+                    arg_str("file").as_deref(),
+                    arg_str("name").as_deref(),
+                    arg_str("text").as_deref(),
+                    limit,
+                )
+            }
             other => Err(format!("unknown tool: {other}")),
         };
         match result {
@@ -257,7 +270,7 @@ impl ServerHandler for KodeMcpServer {
                  encode_decode_sample, db_schema_preview, explain, get_final_config, \
                  get_entry_scripts, get_database_schema, why_setting, list_config_settings, \
                  search_docs, search_symbols, protocol_frame, find_symbol, index_status, \
-                 find_references, query_xml, read_node, search.",
+                 find_references, query_xml, read_node, search, query_assets.",
             )
     }
 
@@ -474,12 +487,12 @@ impl ServerHandler for KodeMcpServer {
                 ),
                 Self::tool(
                     "search",
-                    "Unified knowledge-index search over the four indexed source formats (Markdown docs, Python scripts, def/types.xml schema, Excel tables, plus the curated server-config catalog). Routing is deterministic: an identifier-shaped query that exactly names a known node goes to the structure index (route exact, no BM25 scan); anything else goes to the BM25 inverted index (route bm25) with a CJK-friendly tokenizer for Chinese text and path trigram support. Results are ranked deterministically (score, kind, path). The optional format filter takes markdown|excel|python|def|xml; kind filters by node kind. Natural-language queries are reported as vector-deferred (P3 pluggable module is not built); no vector model runs.",
+                    "Unified knowledge-index search over the indexed source formats (Markdown docs, Python scripts, def/types.xml schema, Excel tables, JSON configs, Tiled maps, plus the curated server-config catalog). Routing is deterministic: an identifier-shaped query that exactly names a known node goes to the structure index (route exact, no BM25 scan); anything else goes to the BM25 inverted index (route bm25) with a CJK-friendly tokenizer for Chinese text and path trigram support. Results are ranked deterministically (score, kind, path). The optional format filter takes markdown|excel|python|def|xml|json|tmx; kind filters by node kind. Natural-language queries are reported as vector-deferred (P3 pluggable module is not built); no vector model runs.",
                     schema_of(
                         serde_json::json!({
                             "query": {"type": "string", "description": "exact node name (routes to structure index) or keyword/term (routes to BM25); Chinese terms supported"},
                             "limit": {"type": "integer", "description": "max matches (default 20)"},
-                            "format": {"type": "string", "description": "optional format filter: markdown|excel|python|def|xml"},
+                            "format": {"type": "string", "description": "optional format filter: markdown|excel|python|def|xml|json|tmx"},
                             "kind": {"type": "string", "description": "optional node-kind filter, e.g. entity|entity-property|xml-type|python-class|section|excel-sheet|xml-attribute"},
                             "route": {"type": "string", "description": "optional route override: exact|bm25 (default auto)"}
                         }),
@@ -506,6 +519,20 @@ impl ServerHandler for KodeMcpServer {
                             "file": {"type": "string", "description": "optional file-path filter (relative path as indexed)"},
                             "sheet": {"type": "string", "description": "optional sheet-name filter, e.g. Items"},
                             "text": {"type": "string", "description": "optional cell-text substring filter"},
+                            "limit": {"type": "integer", "description": "max matches (default 50, hard cap 200)"}
+                        }),
+                        &[],
+                    ),
+                ),
+                Self::tool(
+                    "query_assets",
+                    "Query the indexed game-asset configs: AI/nav JSON configs (one node per dot path, e.g. tree.nodes.0.name, content = the leaf value or a bounded container summary) and Tiled maps (.tmx: map / tileset / layer / objectgroup nodes with 1-based line locations; tile data blobs are not indexed). Filters: format (json|tmx), file path, node name (exact or prefix-matching `{name}.` children), and a literal content-text substring (`%`/`_` are not wildcards). Deterministic order, bounded. Free-text ranking across every format (including these) belongs to search.",
+                    schema_of(
+                        serde_json::json!({
+                            "format": {"type": "string", "description": "optional format filter: json|tmx (omit for both)"},
+                            "file": {"type": "string", "description": "optional file-path filter (relative path as indexed)"},
+                            "name": {"type": "string", "description": "optional node-name filter: exact JSON dot path or TMX element name, prefix match covers children"},
+                            "text": {"type": "string", "description": "optional content-text substring filter, e.g. a behavior node name or an objectgroup object name"},
                             "limit": {"type": "integer", "description": "max matches (default 50, hard cap 200)"}
                         }),
                         &[],

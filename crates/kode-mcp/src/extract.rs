@@ -28,6 +28,15 @@ const MAX_NODE_CONTENT: usize = 2000;
 const MAX_EXCEL_ROWS: usize = 200;
 /// Excel cells indexed per row.
 const MAX_EXCEL_CELLS: usize = 64;
+/// JSON path keys indexed per file (KODE-MCP-KB-003; overflow counted in the
+/// root node's content, never silently dropped).
+const MAX_JSON_KEYS: usize = 256;
+/// JSON walk depth cap (pathological nesting stops descending; reported in
+/// the root node's content).
+const MAX_JSON_DEPTH: usize = 16;
+/// TMX recursion depth cap for the group-layer walk (natural TMX nesting is
+/// shallow; the cap only guards pathological files).
+const MAX_TMX_DEPTH: usize = 32;
 
 fn bound(s: &str) -> String {
     s.chars().take(MAX_NODE_CONTENT).collect()
@@ -752,6 +761,354 @@ fn detect_delimiter(header: &str) -> u8 {
     best
 }
 
+// -------------------------------------------------------------------- JSON
+
+/// One walked JSON path entry (dot path → bounded scalar/summary content).
+struct JsonEntry {
+    path: String,
+    content: String,
+}
+
+/// Bounded scalar-or-summary content for a JSON value: scalars index their
+/// own text (the searchable leaf value); objects/arrays index a bounded
+/// compact serialization (empty containers as `{}` / `[]`).
+fn json_value_text(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Object(map) if map.is_empty() => "{}".to_string(),
+        serde_json::Value::Array(items) if items.is_empty() => "[]".to_string(),
+        other => bound(&serde_json::to_string(other).unwrap_or_else(|_| "…".to_string())),
+    }
+}
+
+/// Depth-first walk over the parsed JSON, collecting one entry per node
+/// (objects, arrays and scalars alike) as a dot path (`tree.nodes.0.name`;
+/// array segments are decimal indices). Deterministic: object keys are
+/// visited in the parser's map order. Every discovered node is counted even
+/// past the store cap so the truncation note is exact.
+fn walk_json(
+    path: &str,
+    value: &serde_json::Value,
+    depth: usize,
+    sink: &mut Vec<JsonEntry>,
+    discovered: &mut usize,
+    depth_capped: &mut bool,
+) {
+    if depth > MAX_JSON_DEPTH {
+        *depth_capped = true;
+        return;
+    }
+    *discovered += 1;
+    if sink.len() < MAX_JSON_KEYS {
+        sink.push(JsonEntry {
+            path: path.to_string(),
+            content: json_value_text(value),
+        });
+    }
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, child) in map {
+                let child_path = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{path}.{key}")
+                };
+                walk_json(&child_path, child, depth + 1, sink, discovered, depth_capped);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for (i, child) in items.iter().enumerate() {
+                let child_path = if path.is_empty() {
+                    i.to_string()
+                } else {
+                    format!("{path}.{i}")
+                };
+                walk_json(&child_path, child, depth + 1, sink, discovered, depth_capped);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// JSON config → one node per path key (KODE-MCP-KB-003). The dot path is
+/// the node name and address; the leaf value (or bounded container summary)
+/// is the BM25 content. Bounds: [`MAX_JSON_KEYS`] paths and [`MAX_JSON_DEPTH`]
+/// depth per file — overflow is counted in the root node's content, never
+/// silently dropped. serde_json has no per-value spans, so nodes carry the
+/// file-level line span and the path is the precise locator (honest: no
+/// fabricated line numbers). A parse failure is an Err (kept-visible in
+/// reconcile errors), not an empty index.
+pub fn json_nodes(project: &str, rel_path: &str, text: &str) -> Result<Vec<IndexNode>, String> {
+    let stripped = text.strip_prefix('\u{FEFF}').unwrap_or(text);
+    let value: serde_json::Value = serde_json::from_str(stripped)
+        .map_err(|e| format!("{rel_path}: invalid JSON: {e}"))?;
+    let mut sink = Vec::new();
+    let mut discovered = 0usize;
+    let mut depth_capped = false;
+    walk_json("", &value, 0, &mut sink, &mut discovered, &mut depth_capped);
+
+    let truncated_note = match (sink.len() < discovered, depth_capped) {
+        (true, false) => format!(
+            " (paths indexed {}/{}, capped at {MAX_JSON_KEYS})",
+            sink.len(),
+            discovered
+        ),
+        (true, true) => format!(
+            " (paths indexed {}/{}, capped at {MAX_JSON_KEYS}; depth capped at {MAX_JSON_DEPTH})",
+            sink.len(),
+            discovered
+        ),
+        (false, true) => format!(" (depth capped at {MAX_JSON_DEPTH})"),
+        (false, false) => String::new(),
+    };
+
+    let stem = Path::new(rel_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("json")
+        .to_string();
+    let line_count = text.lines().count().max(1);
+    let mut used = std::collections::HashMap::new();
+    let mut out = Vec::new();
+    for entry in &sink {
+        let (name, content) = if entry.path.is_empty() {
+            // The root entry indexes the raw text (BM25 over the whole
+            // document) plus the exact truncation notes. The note is kept
+            // out of the node() bound by reserving its width up front —
+            // a silently truncated note would hide the truncation.
+            let keep = MAX_NODE_CONTENT.saturating_sub(truncated_note.chars().count());
+            (
+                stem.clone(),
+                format!(
+                    "{}{truncated_note}",
+                    text.trim().chars().take(keep).collect::<String>()
+                ),
+            )
+        } else {
+            (entry.path.clone(), entry.content.clone())
+        };
+        out.push(node(
+            project,
+            rel_path,
+            NodeKind::JsonKey,
+            &name,
+            &content,
+            SourceLocation::Lines { start: 1, end: line_count },
+            &mut used,
+        ));
+    }
+    Ok(out)
+}
+
+// --------------------------------------------------------------------- TMX
+
+/// Tiled map (`.tmx`) → map/tileset/layer/objectgroup nodes (KODE-MCP-KB-003).
+/// Parsed with kode-parser's byte-exact XML (spans → real 1-based lines);
+/// never through the def/xml entity model. Tile data blobs (`<data>` bodies)
+/// are not indexed (noise, unbounded) — the layer node records the encoding
+/// and says so. Objects surface inside their objectgroup node's content.
+pub fn tmx_nodes(project: &str, rel_path: &str, text: &str) -> Result<Vec<IndexNode>, String> {
+    let doc = kode_parser::xml::parse(text, false);
+    let root_idx = doc
+        .root()
+        .ok_or_else(|| format!("{rel_path}: no root element (not a TMX map)"))?;
+    let root_el = doc.element(root_idx);
+    if root_el.name != "map" {
+        return Err(format!(
+            "{rel_path}: root element is <{}>, not a TMX <map>",
+            root_el.name
+        ));
+    }
+    let starts = line_starts(text);
+    let line_of = |offset: usize| offset_to_line(&starts, offset);
+    let attrs_text = |el: &kode_parser::xml::ElementData| {
+        let joined = el
+            .attributes
+            .iter()
+            .map(|a| format!("{}={}", a.name, a.value))
+            .collect::<Vec<_>>()
+            .join(" ");
+        bound(&joined)
+    };
+    let stem = Path::new(rel_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("map")
+        .to_string();
+
+    let mut used = std::collections::HashMap::new();
+    let mut out = Vec::new();
+    let diagnostics_note = if doc.diagnostics.is_empty() {
+        String::new()
+    } else {
+        format!(" ({} XML diagnostics recovered)", doc.diagnostics.len())
+    };
+
+    // Counters for the map summary; the walk fills them before the map node
+    // is pushed (node order in the file: map first, children after — so the
+    // map node is constructed after the child walk).
+    let mut tilesets = 0usize;
+    let mut layers = 0usize;
+    let mut objectgroups = 0usize;
+    let mut child_notes: Vec<String> = Vec::new();
+    let mut stack: Vec<(usize, usize)> = vec![(root_idx, 0usize)];
+    while let Some((idx, depth)) = stack.pop() {
+        if depth > MAX_TMX_DEPTH {
+            continue;
+        }
+        for child in doc.child_elements(idx) {
+            let el = doc.element(child);
+            match el.name.as_str() {
+                "tileset" => {
+                    tilesets += 1;
+                    let name = el
+                        .attribute("name")
+                        .map(|a| a.value.clone())
+                        .unwrap_or_else(|| {
+                            el.attribute("source")
+                                .and_then(|a| {
+                                    Path::new(&a.value)
+                                        .file_stem()
+                                        .and_then(|s| s.to_str())
+                                        .map(str::to_string)
+                                })
+                                .unwrap_or_else(|| format!("tileset{tilesets}"))
+                        });
+                    let mut content = attrs_text(el);
+                    // Inline image (source) belongs to the tileset's face.
+                    for image in doc.child_elements(child) {
+                        if doc.element(image).name == "image" {
+                            if let Some(src) = doc.element(image).attribute("source") {
+                                content.push_str(" image ");
+                                content.push_str(&src.value);
+                            }
+                        }
+                    }
+                    out.push(node(
+                        project,
+                        rel_path,
+                        NodeKind::TmxTileset,
+                        &name,
+                        &content,
+                        SourceLocation::Lines {
+                            start: line_of(el.open_span.start),
+                            end: line_of(el.close_span.end.max(el.open_span.end)),
+                        },
+                        &mut used,
+                    ));
+                }
+                "layer" | "imagelayer" => {
+                    layers += 1;
+                    let name = el
+                        .attribute("name")
+                        .map(|a| a.value.clone())
+                        .unwrap_or_else(|| format!("layer{layers}"));
+                    let encoding = doc
+                        .child_elements(child)
+                        .iter()
+                        .find_map(|d| doc.element(*d).attribute("encoding"))
+                        .map(|a| a.value.clone())
+                        .unwrap_or_else(|| "unknown".to_string());
+                    let kind_label = if el.name == "imagelayer" {
+                        "image layer"
+                    } else {
+                        "tile layer"
+                    };
+                    let size = match (
+                        el.attribute("width").map(|a| a.value.clone()),
+                        el.attribute("height").map(|a| a.value.clone()),
+                    ) {
+                        (Some(w), Some(h)) => format!(" {w}x{h}"),
+                        _ => String::new(),
+                    };
+                    out.push(node(
+                        project,
+                        rel_path,
+                        NodeKind::TmxLayer,
+                        &name,
+                        &format!("{kind_label} {name}{size} encoding={encoding} (tile data not indexed)"),
+                        SourceLocation::Lines {
+                            start: line_of(el.open_span.start),
+                            end: line_of(el.close_span.end.max(el.open_span.end)),
+                        },
+                        &mut used,
+                    ));
+                }
+                "objectgroup" => {
+                    objectgroups += 1;
+                    let name = el
+                        .attribute("name")
+                        .map(|a| a.value.clone())
+                        .unwrap_or_else(|| format!("objectgroup{objectgroups}"));
+                    let objects: Vec<String> = doc
+                        .child_elements(child)
+                        .iter()
+                        .filter(|o| doc.element(**o).name == "object")
+                        .map(|o| {
+                            let el = doc.element(*o);
+                            let name = el
+                                .attribute("name")
+                                .map(|a| a.value.clone())
+                                .unwrap_or_else(|| "object".to_string());
+                            match el.attribute("id").map(|a| a.value.clone()) {
+                                Some(id) => format!("{name}({id})"),
+                                None => name,
+                            }
+                        })
+                        .collect();
+                    let object_note = if objects.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" objects: {}", objects.join(", "))
+                    };
+                    out.push(node(
+                        project,
+                        rel_path,
+                        NodeKind::TmxObjectGroup,
+                        &name,
+                        &format!("object group {name} {}{object_note}", attrs_text(el)),
+                        SourceLocation::Lines {
+                            start: line_of(el.open_span.start),
+                            end: line_of(el.close_span.end.max(el.open_span.end)),
+                        },
+                        &mut used,
+                    ));
+                }
+                // Group layers nest layer/objectgroup/tileset children.
+                "group" => {
+                    if depth < MAX_TMX_DEPTH {
+                        stack.push((child, depth + 1));
+                    }
+                }
+                other => {
+                    child_notes.push(other.to_string());
+                }
+            }
+        }
+    }
+
+    let summary = format!(
+        "map {stem} {} layers {layers} objectgroups {objectgroups} tilesets {tilesets}{diagnostics_note}",
+        attrs_text(root_el)
+    );
+    out.push(node(
+        project,
+        rel_path,
+        NodeKind::TmxMap,
+        &stem,
+        &summary,
+        SourceLocation::Lines {
+            start: line_of(root_el.open_span.start),
+            end: line_of(root_el.close_span.end.max(root_el.open_span.end)),
+        },
+        &mut used,
+    ));
+    Ok(out)
+}
+
 /// Dispatch a disk file to its adapter by extension. def/xml come from the
 /// parsed model (see [`def_xml_nodes`]), not from this disk path.
 pub fn extract_file(project: &str, root: &Path, path: &Path) -> Result<Vec<IndexNode>, String> {
@@ -772,6 +1129,14 @@ pub fn extract_file(project: &str, root: &Path, path: &Path) -> Result<Vec<Index
         }
         "xlsx" | "xlsm" | "xls" | "ods" | "xlsb" => excel_nodes(project, &rel_path, path),
         "csv" => csv_nodes(project, &rel_path, path),
+        "json" => {
+            let text = std::fs::read_to_string(path).map_err(|e| format!("{rel_path}: {e}"))?;
+            json_nodes(project, &rel_path, &text)
+        }
+        "tmx" => {
+            let text = std::fs::read_to_string(path).map_err(|e| format!("{rel_path}: {e}"))?;
+            tmx_nodes(project, &rel_path, &text)
+        }
         other => Err(format!("{rel_path}: no extractor for .{other}")),
     }
 }
@@ -781,6 +1146,7 @@ pub fn is_indexable_ext(ext: &str) -> bool {
     matches!(
         ext,
         "md" | "py" | "xlsx" | "xlsm" | "xls" | "ods" | "xlsb" | "csv" | "def" | "xml"
+        | "json" | "tmx"
     )
 }
 
@@ -1022,7 +1388,7 @@ mod tests {
     #[test]
     fn indexable_extensions_cover_all_four_formats() {
         for ext in [
-            "md", "py", "xlsx", "xlsm", "xls", "ods", "xlsb", "def", "xml",
+            "md", "py", "xlsx", "xlsm", "xls", "ods", "xlsb", "def", "xml", "json", "tmx",
         ] {
             assert!(is_indexable_ext(ext), "{ext}");
         }
@@ -1056,5 +1422,121 @@ mod tests {
             .expect("row 2 node");
         assert!(row.content.contains("RedPotion"));
         assert!(matches!(items.location, SourceLocation::Excel { .. }));
+    }
+
+    // ---- JSON (KODE-MCP-KB-003 path-key adapter). ----
+
+    #[test]
+    fn json_nodes_index_dot_paths_and_leaf_values() {
+        let text = r#"{"tree":{"type":"behavior","nodes":[{"id":1,"name":"patrol"},{"id":2,"name":"pursue"}],"speed":3.5,"loop":true}}"#;
+        let nodes = json_nodes(project(), "res/ai/patrol.json", text).unwrap();
+        let root = nodes.iter().find(|n| n.name == "patrol").expect("root");
+        assert_eq!(root.kind, NodeKind::JsonKey);
+        assert!(root.content.contains("behavior"));
+        let leaf = nodes
+            .iter()
+            .find(|n| n.name == "tree.nodes.0.name")
+            .expect("leaf path");
+        assert_eq!(leaf.content, "patrol");
+        let num = nodes
+            .iter()
+            .find(|n| n.name == "tree.speed")
+            .expect("number leaf");
+        assert_eq!(num.content, "3.5");
+        let flag = nodes.iter().find(|n| n.name == "tree.loop").unwrap();
+        assert_eq!(flag.content, "true");
+        let arr = nodes.iter().find(|n| n.name == "tree.nodes").unwrap();
+        assert!(
+            arr.content.contains("patrol"),
+            "array node summarizes children"
+        );
+        // ids unique + kind/format faces
+        let ids: Vec<_> = nodes.iter().map(|n| n.id.clone()).collect();
+        assert_eq!(ids.len(), std::collections::HashSet::<_>::from_iter(ids.iter()).len());
+        assert_eq!(nodes[0].kind.format(), "json");
+    }
+
+    #[test]
+    fn json_truncation_is_counted_in_the_root_node() {
+        let mut text = String::from("{");
+        for i in 0..300 {
+            if i > 0 {
+                text.push(',');
+            }
+            text.push_str(&format!("\"k{i}\":{i}"));
+        }
+        text.push('}');
+        let nodes = json_nodes(project(), "big.json", &text).unwrap();
+        assert_eq!(nodes.len(), MAX_JSON_KEYS, "store cap holds exactly");
+        let root = nodes.iter().find(|n| n.name == "big").unwrap();
+        assert!(
+            root.content.contains("paths indexed 256/301"),
+            "root must report the exact cap: {}",
+            root.content
+        );
+        assert!(root.content.contains(&format!("capped at {MAX_JSON_KEYS}")));
+    }
+
+    #[test]
+    fn json_parse_failure_is_an_error_not_an_empty_index() {
+        assert!(json_nodes(project(), "bad.json", "{not json").is_err());
+        // BOM is tolerated.
+        let bom = "\u{FEFF}{\"a\":1}".to_string();
+        let nodes = json_nodes(project(), "bom.json", &bom).unwrap();
+        assert!(nodes.iter().any(|n| n.name == "a"));
+    }
+
+    // ---- TMX (KODE-MCP-KB-003 Tiled map adapter). ----
+
+    #[test]
+    fn tmx_nodes_index_map_tilesets_layers_and_objectgroups() {
+        let text = "<map version=\"1.10\" orientation=\"orthogonal\" width=\"32\" height=\"24\" tilewidth=\"32\" tileheight=\"32\">\n\
+                    \t<tileset firstgid=\"1\" name=\"terrain\" source=\"../tiles/terrain.tsx\"/>\n\
+                    \t<layer id=\"1\" name=\"ground\" width=\"32\" height=\"24\">\n\
+                    \t\t<data encoding=\"csv\">\n1,2,3\n</data>\n\t</layer>\n\
+                    \t<objectgroup id=\"2\" name=\"spawns\">\n\
+                    \t\t<object id=\"7\" name=\"player_start\" x=\"64\" y=\"32\"/>\n\
+                    \t\t<object id=\"9\" x=\"0\" y=\"0\"/>\n\
+                    \t</objectgroup>\n\
+                    </map>\n";
+        let nodes = tmx_nodes(project(), "res/maps/level01.tmx", text).unwrap();
+        let map = nodes.iter().find(|n| n.kind == NodeKind::TmxMap).unwrap();
+        assert_eq!(map.name, "level01");
+        assert!(map.content.contains("orientation=orthogonal"));
+        assert!(map.content.contains("layers 1 objectgroups 1 tilesets 1"));
+        let tileset = nodes
+            .iter()
+            .find(|n| n.kind == NodeKind::TmxTileset)
+            .unwrap();
+        // External tileset without name attr names itself after the source stem.
+        assert_eq!(tileset.name, "terrain");
+        assert!(tileset.content.contains("firstgid=1"));
+        assert!(tileset.content.contains("source=../tiles/terrain.tsx"));
+        let layer = nodes.iter().find(|n| n.kind == NodeKind::TmxLayer).unwrap();
+        assert_eq!(layer.name, "ground");
+        assert!(layer.content.contains("32x24 encoding=csv"));
+        assert!(layer.content.contains("tile data not indexed"));
+        assert!(
+            !layer.content.contains("1,2,3"),
+            "tile data blob must stay out of the index"
+        );
+        let og = nodes
+            .iter()
+            .find(|n| n.kind == NodeKind::TmxObjectGroup)
+            .unwrap();
+        assert_eq!(og.name, "spawns");
+        assert!(og.content.contains("player_start(7)"));
+        assert!(og.content.contains("object(9)"));
+        // Real 1-based lines from the XML spans (map opens line 1, layer line 3).
+        assert_eq!(map.location.start_line(), Some(1));
+        assert_eq!(layer.location.start_line(), Some(3));
+        assert_eq!(og.location.start_line(), Some(8));
+    }
+
+    #[test]
+    fn tmx_non_map_root_is_an_honest_error() {
+        let text = "<root><Properties /></root>";
+        let err = tmx_nodes(project(), "notamap.tmx", text).unwrap_err();
+        assert!(err.contains("root element is <root>"), "{err}");
     }
 }

@@ -392,6 +392,79 @@ impl KbStore {
         .unwrap_or_default()
     }
 
+    /// Asset-format query (KODE-MCP-KB-003 `query_assets` tool): JSON path
+    /// keys and TMX map/tileset/layer/objectgroup nodes filtered by format
+    /// group, file, node name (exact or `{name}.`-prefixed children, the
+    /// same convention as [`Self::excel_query`]), or content-text substring
+    /// (`%`/`_` literal, escaped). Deterministic order, bounded.
+    pub fn asset_query(
+        &self,
+        format: Option<&str>,
+        file: Option<&str>,
+        name: Option<&str>,
+        text: Option<&str>,
+        limit: usize,
+    ) -> Vec<IndexNode> {
+        let kinds: &[&str] = match format {
+            Some("json") => &["json-key"],
+            Some("tmx") => &["tmx-map", "tmx-tileset", "tmx-layer", "tmx-objectgroup"],
+            _ => &[
+                "json-key",
+                "tmx-map",
+                "tmx-tileset",
+                "tmx-layer",
+                "tmx-objectgroup",
+            ],
+        };
+        let placeholders = kinds
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 1))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let escaped = text.map(|t| {
+            t.replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        });
+        // Placeholder indices: kinds take 1..=kinds.len(); the remaining
+        // filters follow.
+        let n = kinds.len();
+        let (pf, pn, pt, plimit) = (n + 1, n + 2, n + 3, n + 4);
+        let conn = self.conn.lock().expect("store lock");
+        let sql = format!(
+            "SELECT {NODE_COLS} FROM nodes
+             WHERE kind IN ({placeholders})
+               AND (?{pf} IS NULL OR file_path = ?{pf})
+               AND (?{pn} IS NULL OR name = ?{pn}
+                    OR substr(name, 1, length(?{pn}) + 1) = ?{pn} || '.')
+               AND (?{pt} IS NULL OR content LIKE '%' || ?{pt} || '%' ESCAPE '\\')
+             ORDER BY file_path, id
+             LIMIT ?{plimit}"
+        );
+        let mut stmt = match conn.prepare(&sql) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let mut params: Vec<rusqlite::types::Value> = kinds
+            .iter()
+            .map(|k| rusqlite::types::Value::Text((*k).to_string()))
+            .collect();
+        params.push(
+            file.map(|f| rusqlite::types::Value::Text(f.to_string()))
+                .unwrap_or(rusqlite::types::Value::Null),
+        );
+        params.push(
+            name.map(|n| rusqlite::types::Value::Text(n.to_string()))
+                .unwrap_or(rusqlite::types::Value::Null),
+        );
+        params.push(escaped.map(rusqlite::types::Value::Text).unwrap_or(rusqlite::types::Value::Null));
+        params.push(rusqlite::types::Value::Integer(limit.max(1) as i64));
+        stmt.query_map(rusqlite::params_from_iter(params), row_to_node)
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .unwrap_or_default()
+    }
+
     /// Integrity self-check: every node content_hash still matches its
     /// content (content addressing holds after round-trips).
     pub fn content_addressing_intact(&self) -> bool {

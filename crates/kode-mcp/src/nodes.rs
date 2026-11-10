@@ -39,6 +39,17 @@ pub enum NodeKind {
     XmlType,
     XmlElement,
     XmlAttribute,
+    /// KODE-MCP-KB-003: one path-style key of a JSON config (AI behavior
+    /// trees / nav configs); the dot path is the address, the leaf value is
+    /// the searchable content.
+    JsonKey,
+    /// KODE-MCP-KB-003: Tiled map XML (`.tmx`) — indexed by its own shape
+    /// (map / tileset / layer / objectgroup), never through the def/xml
+    /// entity model.
+    TmxMap,
+    TmxTileset,
+    TmxLayer,
+    TmxObjectGroup,
 }
 
 impl NodeKind {
@@ -59,6 +70,11 @@ impl NodeKind {
             NodeKind::XmlType => "xml-type",
             NodeKind::XmlElement => "xml-element",
             NodeKind::XmlAttribute => "xml-attribute",
+            NodeKind::JsonKey => "json-key",
+            NodeKind::TmxMap => "tmx-map",
+            NodeKind::TmxTileset => "tmx-tileset",
+            NodeKind::TmxLayer => "tmx-layer",
+            NodeKind::TmxObjectGroup => "tmx-objectgroup",
         }
     }
 
@@ -73,6 +89,11 @@ impl NodeKind {
             | NodeKind::PythonAttribute => "python",
             NodeKind::Entity | NodeKind::EntityProperty | NodeKind::EntityMethod => "def",
             NodeKind::XmlType | NodeKind::XmlElement | NodeKind::XmlAttribute => "xml",
+            NodeKind::JsonKey => "json",
+            NodeKind::TmxMap
+            | NodeKind::TmxTileset
+            | NodeKind::TmxLayer
+            | NodeKind::TmxObjectGroup => "tmx",
         }
     }
 
@@ -94,6 +115,11 @@ impl NodeKind {
             NodeKind::ExcelColumn => 12,
             NodeKind::ExcelRow => 13,
             NodeKind::PythonAttribute => 14,
+            NodeKind::JsonKey => 15,
+            NodeKind::TmxMap => 16,
+            NodeKind::TmxTileset => 17,
+            NodeKind::TmxLayer => 18,
+            NodeKind::TmxObjectGroup => 19,
         }
     }
 
@@ -114,6 +140,11 @@ impl NodeKind {
             "xml-type" => NodeKind::XmlType,
             "xml-element" => NodeKind::XmlElement,
             "xml-attribute" => NodeKind::XmlAttribute,
+            "json-key" => NodeKind::JsonKey,
+            "tmx-map" => NodeKind::TmxMap,
+            "tmx-tileset" => NodeKind::TmxTileset,
+            "tmx-layer" => NodeKind::TmxLayer,
+            "tmx-objectgroup" => NodeKind::TmxObjectGroup,
             _ => return None,
         })
     }
@@ -304,6 +335,11 @@ mod tests {
             NodeKind::XmlType,
             NodeKind::XmlElement,
             NodeKind::XmlAttribute,
+            NodeKind::JsonKey,
+            NodeKind::TmxMap,
+            NodeKind::TmxTileset,
+            NodeKind::TmxLayer,
+            NodeKind::TmxObjectGroup,
         ];
         for k in &kinds {
             assert_eq!(NodeKind::from_kind_str(k.as_str()), Some(k.clone()));
