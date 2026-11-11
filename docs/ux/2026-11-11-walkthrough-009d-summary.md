@@ -29,7 +29,7 @@ c_def_output.log / c_discovery_report.log。包均从干净 HEAD d7f092a2 构建
 | 3 | 快速执行 confirm:true 防线:7 条动作全带确认,误触被挡(safe_kill.bat 点 Cancel 未执行) | imac Stage B 观察面 + Linux pl_06/07 同源复测 |
 | 4 | 只读查询密码不可解即不查询:RSA 密文不可解 → toast「Password unreadable … — not queried」+ Retry/View details,无假数据、无密码回显 | Linux pl_15/16 |
 | 5 | telnet 诚实降级:无密码停在 Auth required+Connect session 按钮、无命令输入框(无写入路径);无引擎时 showPanel 报完整降级原因 | imac Stage B + WinTS pt_09 |
-| 6 | 导出预检先于上下文收集(004b):缺配置 → toast「Source connection is not configured.」+「Configure source connection」入口,零实体/DBID 收集;向导 Source 1/5 可开 | Linux pl_06/07 + WinTS pt_07/08;自动化回归=UX-REVIEW-004e(2cf6acb4,tests/cloneBoundaryRegression.test.ts)+本批 a041f614 扩展三预检(后端闸/连接测试/派生前置,单测覆盖,真机腿见开放项 8) |
+| 6 | 导出预检先于上下文收集(004b):缺配置 → toast「Source connection is not configured.」+「Configure source connection」入口,零实体/DBID 收集;向导 Source 1/5 可开 | Linux pl_06/07 + WinTS pt_07/08;自动化回归=UX-REVIEW-004e(2cf6acb4,tests/cloneBoundaryRegression.test.ts)+本批 a041f614 扩展三预检(后端闸/连接测试/派生前置);**真机腿 2026-11-11 已补**(Linux xvfb,报告 ~/pa007-evidence/004b-newarm-linux-report.md:缺配置 toast nb_03/探针失败 ECONNREFUSED 双入口 nb_08+通知中心复败核验 nb_09b/向导预填改配置续探过→实体选择 nb_10..nb_23/派生前置先于 DBID+Esc 零收集 nb_24/25;顺带抓出桩包模板未进 VSIX 打包缺口,b849f006 修;内联续接与推导失败臂保持单测口径如实标) |
 | 7 | 纯 TS 包零 rust 痕迹:exthost 日志 grep rust/kode-server 零命中、无原生二进制、out/ 全 JS、backend 默认 ts(设置兼容层保留 rust/shadow 枚举) | WinTS §A 全表 + pt_settings_backend.png + Linux 双通道日志 |
 | 8 | 信任还原可审计:security.workspace.trust.enabled 还原后键不存在(0 出现),与 settings.json.bak-009bC diff IDENTICAL;纯 TS 腿全程零碰全局 settings.json(收尾逐字核对 backend:"rust" 仍在) | Stage C 报告 + WinTS §0/收尾 |
 
@@ -77,7 +77,7 @@ c_def_output.log / c_discovery_report.log。包均从干净 HEAD d7f092a2 构建
 3. **macOS 真机腿**:按用户令 2026-11-10 只编译不测试(nightly darwin 双架构全绿 run 42752103203),真机走查不做。
 4. **无障碍/读屏**:xvfb 与 UIA 树均非读屏视角,未走查。
 5. **imac 侧折叠/滚轮复核**:Restricted Mode 下 KBEngine 视图不注册,sC_12 未完成(Linux/WinTS 侧已证,判词不依赖此腿)。
-6. **克隆向导完整流程**:向导走完→连接测试→实际导出→导入,真机均未执行(无源连接/不破坏性);a041f614 新增的后端闸提示、连接测试失败重试/配置循环、派生前置臂目前仅单测+prove-red,真机腿待补。
+6. **克隆向导完整流程**:a041f614 三预检臂真机腿 2026-11-11 已补(缺配置 toast/探针失败重试·配置循环/派生前置先于 DBID+Esc 零收集,报告 ~/pa007-evidence/004b-newarm-linux-report.md;顺带抓出桩包模板未进 VSIX 的打包缺口,b849f006 修)。仍开放:向导走完→实际导出→导入真机未执行(零写入纪律);单次运行内 probe-fail→Configure→续探→继续收集的内联续接、推导失败臂保持单测口径;后端闸缺席臂按设计只在核心装配异常态可达(kodeCoreGateWiring.ts:114 ts/rust 两模式均装配门,纯 TS 腿实测闸通过),真机不可安全复现,保持单测+prove-red。
 7. **telnet 实连**:无密码真实引擎止步 Auth required,配置密码后的实连未做。
 8. **服务器完整生命周期**(启动/热更/关闭对真实引擎组):场景 5 只覆盖入口与状态面。
 9. **Stage A 观察项**(#9/#10/#14 等):单轮观察未复现,保留。
