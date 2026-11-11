@@ -2,8 +2,11 @@
 //! 引擎本体。同文件接收者定型解析——TS 级联兜底(cascadeAnnotation 全局方法名
 //! 猜测,跨类误绑实测误导 #2)删除后,同文件可推导子集由本面接住:
 //!
-//! - 域门:自 hover 行向上、def/class 名行缩进窄化(TS matchingAssignments
-//!   同域口径——方法体 → 类体 → 模块层逐级放行,兄弟方法体/深层块不借);
+//! - 域门(KBUG-SCOPE 词法作用域链):自 hover 位的最内函数域向外,第一个
+//!   「绑定该名」的域裁定——参数绑定 → 诚实空(遮蔽外层);域内写点绑定 →
+//!   hover 行前最近写点(不可解即止);global/nonlocal 声明 → 向外透传;
+//!   域外尽 → 模块域。类体直系 hover 的链 = 本类体 → 模块;方法体 hover
+//!   跳过类体(类体属性表不在函数词法链上,他类体亦不可借);
 //! - 最近写点胜(替换语义;同行多条语句取执行序最后一条;写点不可解即止,
 //!   不再向上借更早答案 = R2-F16 同语义);
 //! - RHS 推导(流引擎共享表格):`x = f(...)` 同文件模块级 def `-> T`(重名
@@ -16,7 +19,7 @@
 use std::collections::HashSet;
 
 use crate::self_flow::{
-    resolve_shape, BareWrite, CalleeShape, DefReturn, FlowParse, ResolveState, RhsShape,
+    resolve_shape, BareWrite, CalleeShape, DefReturn, FlowParse, FnDomain, ResolveState, RhsShape,
 };
 
 /// 别名链有界跳数(与流面 RESOLVE_MAX_HOPS 同量级;域门扫描每跳严格下行,
@@ -67,15 +70,17 @@ fn is_constant_name(word: &str) -> bool {
     chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
 }
 
-/// 行首缩进(空格/Tab 计数;TS `text.length - trimStart().length` 同口径——
-/// 代码行首部只有空白,掩码不改缩进)。
-fn line_indent(line: &[u16]) -> usize {
-    line.iter().take_while(|&&c| c == 0x20 || c == 0x09).count()
-}
-
-/// 域门扫描(matchingAssignments 镜像):自 start 行向上;`indent < limit` 才
-/// 视为域内候选;def/class 名行把 limit 窄化到 `行缩进 + 1`(放行外层域)。
-/// 写点判定在头行窄化之前(同行复合语句与 TS 同序)。
+/// 域门扫描(KBUG-SCOPE 词法作用域链重铸,替代旧缩进回溯):Python 名字
+/// 解析模型——自 hover 位的最内函数域向外,链上第一个「绑定该名」的域裁定:
+/// - 参数绑定 → 诚实空(参数无返回注解面,且遮蔽外层同名绑定);
+/// - 域内写点绑定 → hover 行前(含)最近写点 → 解析(不可解即止,不外借);
+/// - global/nonlocal 声明 → 本域不绑定该名,解向外层;
+/// - 链外尽 → 模块域(见 `is_module_binding`)。
+///
+/// 类体直系 hover(不在任何函数域内)的链 = 本类体 → 模块:本类体写点可读;
+/// 方法体 hover 的链不含类体(KBUG-SCOPE-04:类体属性表不在函数词法链上,
+/// 他类体写点亦不可借)。写点行域判定取代缩进窄化——def 体写点不再被
+/// def 结束后的模块层读借用,嵌套函数体写点不再外溢。
 fn face_scan(
     fp: &FlowParse,
     state: &mut ResolveState,
@@ -88,23 +93,125 @@ fn face_scan(
     if depth > FACE_MAX_HOPS {
         return None;
     }
-    let writes = fp.bare_writes.get(word)?;
     let start = start_line.min(lines.len() - 1);
-    let mut scope_indent_limit = usize::MAX;
-    for line in (0..=start).rev() {
-        let indent = line_indent(&lines[line]);
-        if indent < scope_indent_limit {
-            // 该行该词的写点(同行多条语句源序取最后 = 执行序最近写)
-            if let Some(write) = writes.iter().rev().find(|w| w.line == line) {
-                if !visited.insert((line, word.to_string())) {
+    // hover 位的作用域链:含 hover 行的函数域,体首行降序(最内先行;
+    // 同首行时体更小者先行 = 嵌套域)
+    let mut chain: Vec<&FnDomain> = fp
+        .fn_domains
+        .iter()
+        .filter(|d| d.start_line <= start && start <= d.end_line)
+        .collect();
+    chain.sort_by(|a, b| {
+        b.start_line
+            .cmp(&a.start_line)
+            .then(a.end_line.cmp(&b.end_line))
+    });
+    for domain in &chain {
+        if domain.globals.iter().any(|n| n == word)
+            || domain.nonlocals.iter().any(|n| n == word)
+        {
+            continue; // global/nonlocal:本域不绑定该名,解向外层
+        }
+        if domain.params.iter().any(|n| n == word) {
+            return None; // 参数绑定:无返回注解面,遮蔽外层同名绑定
+        }
+        // 本域写点 = 该名在本域局部(Python 函数级静态绑定):hover 行前
+        // 最近写点裁定;写点全在 hover 之后 → UnboundLocal 位,诚实空,
+        // 绝不外借模块/外层绑定(KBUG-SCOPE-02)。
+        let domain_writes = fp
+            .bare_writes
+            .get(word)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+
+        let binds_here = |w: &BareWrite| w.method_start == Some(domain.header_line);
+        if domain_writes.iter().any(binds_here) {
+            if let Some(write) = domain_writes
+                .iter()
+                .rev()
+                .find(|w| binds_here(w) && w.line <= start)
+            {
+                if !visited.insert((write.line, word.to_string())) {
                     return None; // `x = x` 身份链/重复解同一写点 → 诚实空
                 }
                 return resolve_face_shape(fp, state, lines, write, depth, visited);
             }
+            return None; // 本域绑定、读前于写 → UnboundLocal,不外借
         }
-        if fp.header_lines.contains(&line) {
-            scope_indent_limit = scope_indent_limit.min(indent + 1);
+        // 本域无该名绑定 → 向外层函数域继续
+    }
+    // 类体直系 hover:本类体绑定(类体 `global` 声明名除外)
+    let hover_class = if chain.is_empty() {
+        fp.classes
+            .iter()
+            .filter(|c| c.start_line <= start && start < c.end_line)
+            .max_by_key(|c| c.start_line)
+    } else {
+        None
+    };
+    if let Some(cls) = hover_class {
+        let declared_global = fp
+            .scope_globals
+            .get(&cls.start_line)
+            .map(|names| names.iter().any(|n| n == word))
+            .unwrap_or(false);
+        if !declared_global {
+            let class_writes: Vec<&BareWrite> = fp
+                .bare_writes
+                .get(word)
+                .map(|ws| {
+                    ws.iter()
+                        .filter(|w| {
+                            w.method_start.is_none() && w.class_start == Some(cls.start_line)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            if let Some(write) = class_writes
+                .iter()
+                .rev()
+                .find(|w| w.line <= start)
+            {
+                if !visited.insert((write.line, word.to_string())) {
+                    return None;
+                }
+                return resolve_face_shape(fp, state, lines, write, depth, visited);
+            }
+            if !class_writes.is_empty() {
+                return None; // 类体绑定在 hover 行后 → 执行序 NameError 位,不落模块
+            }
+            // 本类体未绑定 → 落模块域(类体执行期可见模块名)
         }
+    }
+    // 模块域绑定:非函数域写点;类体直系写点须其类体声明过 `global`;
+    // 函数域写点须其函数域声明过 `global`(写点重定向模块名空间)
+    let is_module_binding = |w: &BareWrite| -> bool {
+        match w.method_start {
+            Some(header) => fp
+                .fn_domains
+                .iter()
+                .find(|d| d.header_line == header)
+                .map(|d| d.globals.iter().any(|n| n == word))
+                .unwrap_or(false),
+            None => match w.class_start {
+                None => true,
+                Some(cls) => fp
+                    .scope_globals
+                    .get(&cls)
+                    .map(|names| names.iter().any(|n| n == word))
+                    .unwrap_or(false),
+            },
+        }
+    };
+    if let Some(write) = fp
+        .bare_writes
+        .get(word)
+        .and_then(|ws| ws.iter().rev().find(|w| w.line <= start && is_module_binding(w)))
+    {
+        if !visited.insert((write.line, word.to_string())) {
+            return None;
+        }
+        return resolve_face_shape(fp, state, lines, write, depth, visited);
     }
     None
 }
@@ -339,15 +446,19 @@ mod tests {
         assert_eq!(face.annotation, "Tree");
     }
 
-    /// 类体直系写点同样放行(类头窄化到类体域)。
+    /// KBUG-SCOPE-04 语义重钉(账本推翻旧口径):方法体裸名不读所属类体的
+    /// 属性表——`data` 在方法 `n` 内是自由名,类体写点不可借,诚实空
+    /// (旧「类头窄化放行」口径答 make() 是误导;类体直系读走
+    /// same_class_body_hover_reads_own_class_write)。
     #[test]
-    fn class_body_write_visible_from_method_body() {
+    fn method_body_does_not_read_class_body_table() {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\nclass A:\n    data = make()\n\n    def n(self):\n        return data\n",
         );
-        let face = local_return_type(&lines, 6, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-            .expect("类体直系写点应被方法体 hover 借到");
-        assert_eq!(face.annotation, "Tree");
+        assert!(
+            local_return_type(&lines, 6, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none()
+        );
     }
 
     /// hover 行上的写点即候选(TS `line <= hoverLine` 含端)。
@@ -490,5 +601,158 @@ mod tests {
             .expect("缓存复用命中");
         assert_eq!(first, second);
         crate::self_flow::reset_self_attribute_flow_parse_cache_for_tests();
+    }
+
+    // ---- KBUG-SCOPE(词法作用域链:参数遮蔽/边界/global/nonlocal)----
+
+    /// SCOPE-01:模块层 `x = make()` 不得借给 `def run(x)` 参数位。
+    #[test]
+    fn kbug_scope_param_shadow_blocks_module_write() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\nx = make()\n\ndef run(x):\n    return x\n",
+        );
+        assert!(
+            local_return_type(&lines, 5, &"x".encode_utf16().collect::<Vec<u16>>(), None).is_none()
+        );
+    }
+
+    /// SCOPE-01:vararg/仅关键字/kwarg 参数同员遮蔽(全参数位一律本域绑定)。
+    #[test]
+    fn kbug_scope_vararg_kwonly_kwarg_params_block() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\nx = make()\n\ndef run(a: Widget, *rest, x=None, **kw):\n    return x\n",
+        );
+        assert!(
+            local_return_type(&lines, 5, &"x".encode_utf16().collect::<Vec<u16>>(), None).is_none()
+        );
+    }
+
+    /// SCOPE-02:读前于写(UnboundLocal 位)不借模块层同名绑定。
+    #[test]
+    fn kbug_scope_unbound_local_position_not_borrow_outer() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\nx = make()\n\ndef run():\n    return x\n\n    x = mystery()\n",
+        );
+        assert!(
+            local_return_type(&lines, 6, &"x".encode_utf16().collect::<Vec<u16>>(), None).is_none()
+        );
+    }
+
+    /// SCOPE-02:函数内写点不可解即止,不退借外层有类型绑定。
+    #[test]
+    fn kbug_scope_local_unresolvable_write_blocks_module() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\nx = make()\n\ndef run():\n    x = mystery()\n    return x\n",
+        );
+        assert!(
+            local_return_type(&lines, 6, &"x".encode_utf16().collect::<Vec<u16>>(), None).is_none()
+        );
+    }
+
+    /// SCOPE-02:lambda 参数遮蔽模块层绑定(直接赋值 lambda 自成一域)。
+    #[test]
+    fn kbug_scope_lambda_param_shadow_blocks() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\nx = make()\n\nfn = lambda x: x\n",
+        );
+        assert!(
+            local_return_type(&lines, 5, &"x".encode_utf16().collect::<Vec<u16>>(), None).is_none()
+        );
+    }
+
+    /// SCOPE-02:嵌套函数参数遮蔽(祖先链上参数同样阻断外层解)。
+    #[test]
+    fn kbug_scope_nested_fn_param_blocks() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\nx = make()\n\ndef outer():\n    def inner(x):\n        return x\n    return inner\n",
+        );
+        assert!(
+            local_return_type(&lines, 6, &"x".encode_utf16().collect::<Vec<u16>>(), None).is_none()
+        );
+    }
+
+    /// SCOPE-02:嵌套函数体内的写点不得被外层行借(函数边界,不外溢)。
+    #[test]
+    fn kbug_scope_nested_fn_write_not_visible_from_outer() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndef outer():\n    def inner():\n        data = make()\n    return data\n",
+        );
+        assert!(
+            local_return_type(&lines, 6, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none()
+        );
+    }
+
+    /// SCOPE-02:def 体写点不得借给 def 结束后的模块层读。
+    #[test]
+    fn kbug_scope_def_body_write_not_borrowed_after_def() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndef run():\n    data = make()\n\nprint(data)\n",
+        );
+        assert!(
+            local_return_type(&lines, 6, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none()
+        );
+    }
+
+    /// SCOPE-03:global 声明的读透传模块绑定(合法借位保留)。
+    #[test]
+    fn kbug_scope_global_read_passes_to_module() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndata = make()\n\ndef run():\n    global data\n    return data\n",
+        );
+        let face =
+            local_return_type(&lines, 7, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .expect("global 声明的读应透传模块层写点");
+        assert_eq!(face.annotation, "Tree");
+    }
+
+    /// SCOPE-03:global 声明的函数内重赋值按模块名空间最近写点裁定
+    /// (重赋值为字面量 → 诚实空,不回借更早答案)。
+    #[test]
+    fn kbug_scope_global_reassigned_literal_stops_earlier() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndata = make()\n\ndef run():\n    global data\n    data = 1\n    return data\n",
+        );
+        assert!(
+            local_return_type(&lines, 8, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none()
+        );
+    }
+
+    /// SCOPE-03:nonlocal 透传外层函数域写点(闭包链合法读保留)。
+    #[test]
+    fn kbug_scope_nonlocal_reads_enclosing_function_write() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndef outer():\n    data = make()\n    def inner():\n        nonlocal data\n        return data\n    return inner\n",
+        );
+        let face =
+            local_return_type(&lines, 7, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .expect("nonlocal 读应解向外层函数域写点");
+        assert_eq!(face.annotation, "Tree");
+    }
+
+    /// SCOPE-04:类体直系读读本类体写点(执行期顺序命名空间,合法保留)。
+    #[test]
+    fn kbug_scope_class_body_hover_reads_own_class_write() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\nclass A:\n    data = make()\n    more = data\n",
+        );
+        let face =
+            local_return_type(&lines, 5, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .expect("类体直系读应读本类体写点");
+        assert_eq!(face.annotation, "Tree");
+    }
+
+    /// SCOPE-04:他类类体写点不借(B 体读不到 A 体)。
+    #[test]
+    fn kbug_scope_other_class_body_not_borrowed() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\nclass A:\n    data = make()\n\nclass B:\n    more = data\n",
+        );
+        assert!(
+            local_return_type(&lines, 7, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none()
+        );
     }
 }

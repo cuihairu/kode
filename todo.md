@@ -64,11 +64,11 @@
 
 复现与依据：已复现：模块 x=make()（make -> int），def run(x): print(x) 的参数 x 被推为 int；class A 内 x=make()，方法内 print(x) 也被错误关联到类属性（无模块 x 时实际名称未定义）。源码：`kode-python/src/local_return.rs:93-106` 用缩进向外回溯。
 
-- [ ] KBUG-SCOPE-01 [P1] 固定函数参数遮蔽回归。验收：模块 x 与 run(x) 同名，函数内 x 不继承模块返回注解；覆盖位置参数、仅关键字参数、*args/**kwargs 及有注解参数，修前复现错误结果。
-- [ ] KBUG-SCOPE-02 [P1] 建立局部变量的词法作用域边界。验收：从 Ruff AST 获取函数/lambda/嵌套函数的局部绑定集合；参数和局部声明阻断外层查找，不能因某个绑定无类型就退借外层类型。
-- [ ] KBUG-SCOPE-03 [P1] 处理 global/nonlocal 显式绑定。验收：按声明解析所属模块/外层函数；合法闭包读仍可查询，未能确定的绑定返回未知；与普通局部遮蔽各有正反例。
-- [ ] KBUG-SCOPE-04 [P1] 修复方法裸名跨类体查找。验收：方法裸名不从所属类的普通属性表取值；self.x 与裸名 x 区分；有同名模块变量时按 Python 规则选择模块绑定。
-- [ ] KBUG-SCOPE-05 [P1] 验收作用域查询与生产接线。验收：用嵌套函数、方法、参数及合法模块读取检查 Rust RPC 和实际 hover；记录未知/已知结果，不能删除所有外层查询来使负例通过。
+- [x] KBUG-SCOPE-01 [P1] 固定函数参数遮蔽回归。验收：模块 x 与 run(x) 同名，函数内 x 不继承模块返回注解；覆盖位置参数、仅关键字参数、*args/**kwargs 及有注解参数，修前复现错误结果。(local_return.rs kbug_scope_param_shadow/vararg_kwonly 例修前红;def 头行 hover 参数位同样遮蔽)
+- [x] KBUG-SCOPE-02 [P1] 建立局部变量的词法作用域边界。验收：从 Ruff AST 获取函数/lambda/嵌套函数的局部绑定集合；参数和局部声明阻断外层查找，不能因某个绑定无类型就退借外层类型。(self_flow.rs 新 FnDomain 表=全部 def+直接赋值 lambda 的体域/参数/global/nonlocal;local_return.rs 域门重铸=缩进回溯→作用域链;域内绑定而读前于写=UnboundLocal 诚实空不外借;def 体写点不再外溢到 def 后模块行,修前 7/7 红)
+- [x] KBUG-SCOPE-03 [P1] 处理 global/nonlocal 显式绑定。验收：按声明解析所属模块/外层函数；合法闭包读仍可查询，未能确定的绑定返回未知；与普通局部遮蔽各有正反例。(声明名=本域不绑定直接外解;global 声明的函数/类体写点重定向模块名空间参与最近写点裁定——字面量重赋值即诚实空不回借更早答案;nonlocal 透传外层函数域写点;正反例 kbug_scope_global*/nonlocal)
+- [x] KBUG-SCOPE-04 [P1] 修复方法裸名跨类体查找。验收：方法裸名不从所属类的普通属性表取值；self.x 与裸名 x 区分；有同名模块变量时按 Python 规则选择模块绑定。(方法体 hover 的作用域链不含类体;旧批 D 测试 class_body_write_visible_from_method_body 语义重钉为 method_body_does_not_read_class_body_table→None;类体直系 hover 读本类体写点/他类体不借各有正反例;self.x 走属性面不受影响)
+- [x] KBUG-SCOPE-05 [P1] 验收作用域查询与生产接线。验收：用嵌套函数、方法、参数及合法模块读取检查 Rust RPC 和实际 hover；记录未知/已知结果，不能删除所有外层查询来使负例通过。(新 crates/kode-server/tests/local_return_dispatch.rs 8 例走完整 $/kode/rpc 链路:参数遮蔽/def 体不外溢/global 透传/类体隔离=诚实空,模块/闭包/类体直系合法读=注解命中,非法入参守卫;合法外层查询保留未删)
 
 ### KBUG-BIND · P1 · 调用目标被参数或重新赋值遮蔽
 

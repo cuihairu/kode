@@ -411,14 +411,32 @@ enum EntryKind {
 }
 
 /// 批 D localReturnType 面:裸名写点全域表条目(模块/类体/方法体三域同表,
-/// 面查询按 matchingAssignments 域门自筛;shape 为 owned 快照)。
+/// 面查询按作用域链自筛;shape 为 owned 快照)。
 #[derive(Debug, Clone)]
 pub(crate) struct BareWrite {
     pub(crate) line: usize,
     pub(crate) shape: RhsShape,
     /// 写点所在类(方法体写点;类体直系=该类;模块层=None)
     pub(crate) class_start: Option<usize>,
+    /// 写点最内所属 def 名行(嵌套 def 各归各;类体直系/模块层=None)
     pub(crate) method_start: Option<usize>,
+}
+
+/// KBUG-SCOPE:函数/lambda 词法域(作用域链与参数遮蔽判定的 AST 事实)。
+/// 全部 def(模块/方法/嵌套)+ 直接赋值 lambda 入表;start/end = 真实体域
+/// (0 起含尾;lambda = 表达式行域;体首行 min 名行兼容同行体)。
+#[derive(Debug, Clone)]
+pub(crate) struct FnDomain {
+    /// def 名行 / lambda 赋值行(写点归属键,与 BareWrite.method_start 同口径)
+    pub(crate) header_line: usize,
+    pub(crate) start_line: usize,
+    pub(crate) end_line: usize,
+    /// 位置/仅关键字/*args/**kwargs 参数全量(参数位一律本域绑定,遮蔽外层)
+    pub(crate) params: Vec<String>,
+    /// `global` 声明名(本域不绑定;域内写点改记模块名空间)
+    pub(crate) globals: Vec<String>,
+    /// `nonlocal` 声明名(本域不绑定,解向外层函数域)
+    pub(crate) nonlocals: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -440,8 +458,10 @@ struct BuildContext {
     locals: HashMap<(usize, String), Vec<(usize, RhsShape)>>,
     /// 批 D localReturnType 面:裸名写点全域表(名 → 源序写点,三域同表)
     bare_writes: HashMap<String, Vec<BareWrite>>,
-    /// def/class 名行集合(域门窄化素材;装饰器不计,与名行口径同)
-    header_lines: HashSet<usize>,
+    /// KBUG-SCOPE:函数/lambda 词法域表(源序追加,build 末按体首行排序)
+    fn_domains: Vec<FnDomain>,
+    /// KBUG-SCOPE:类体 `global` 声明(类名行 → 名;类体直系写点改记模块域)
+    scope_globals: HashMap<usize, Vec<String>>,
     /// 模块级 def `-> T` 表
     def_returns: HashMap<String, DefReturn>,
     /// 类名 → 类名行(同名多个 = 歧义源)
@@ -526,6 +546,90 @@ fn record_walrus_locals(
     }
 }
 
+/// KBUG-SCOPE:直接赋值 lambda 的词法域登记(header=赋值行 = 写点归属键;
+/// 体域 = lambda 表达式行域;无 global/nonlocal 面)。
+fn record_lambda_domain(
+    ast: &ParsedAst,
+    l: &ast::ExprLambda,
+    line: usize,
+    ctx: &mut BuildContext,
+) {
+    let start_line = ast.line_col(l.range.start().to_u32()).0;
+    let end_line = last_char_line(ast, l.range);
+    ctx.fn_domains.push(FnDomain {
+        header_line: line,
+        start_line,
+        end_line: end_line.max(line),
+        params: l
+            .parameters
+            .as_ref()
+            .map(|p| param_names(p))
+            .unwrap_or_default(),
+        globals: Vec::new(),
+        nonlocals: Vec::new(),
+    });
+}
+
+/// 参数名全量(位置/仅位置/仅关键字/vararg/kwarg;注解与默认值无关——
+/// 参数位一律本域绑定)。
+fn param_names(parameters: &ast::Parameters) -> Vec<String> {
+    parameters
+        .iter()
+        .map(|p| p.name().id.to_string())
+        .collect()
+}
+
+/// 函数/类体 `global`/`nonlocal` 声明名(控制块内声明仍归属直接宿主域;
+/// 嵌套 def/class 不下行——声明只归其直接宿主)。
+fn declared_names(body: &[ast::Stmt], global: bool, nonlocal: bool) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_declared(body, global, nonlocal, &mut out);
+    out
+}
+
+fn collect_declared(body: &[ast::Stmt], global: bool, nonlocal: bool, out: &mut Vec<String>) {
+    for stmt in body {
+        match stmt {
+            ast::Stmt::Global(s) if global => {
+                out.extend(s.names.iter().map(|n| n.id.to_string()))
+            }
+            ast::Stmt::Nonlocal(s) if nonlocal => {
+                out.extend(s.names.iter().map(|n| n.id.to_string()))
+            }
+            ast::Stmt::If(s) => {
+                collect_declared(&s.body, global, nonlocal, out);
+                for clause in &s.elif_else_clauses {
+                    collect_declared(&clause.body, global, nonlocal, out);
+                }
+            }
+            ast::Stmt::For(s) => {
+                collect_declared(&s.body, global, nonlocal, out);
+                collect_declared(&s.orelse, global, nonlocal, out);
+            }
+            ast::Stmt::While(s) => {
+                collect_declared(&s.body, global, nonlocal, out);
+                collect_declared(&s.orelse, global, nonlocal, out);
+            }
+            ast::Stmt::With(s) => collect_declared(&s.body, global, nonlocal, out),
+            ast::Stmt::Try(s) => {
+                collect_declared(&s.body, global, nonlocal, out);
+                for h in &s.handlers {
+                    let ast::ExceptHandler::ExceptHandler(inner) = h;
+                    collect_declared(&inner.body, global, nonlocal, out);
+                }
+                collect_declared(&s.orelse, global, nonlocal, out);
+                collect_declared(&s.finalbody, global, nonlocal, out);
+            }
+            ast::Stmt::Match(s) => {
+                for case in &s.cases {
+                    collect_declared(&case.body, global, nonlocal, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// 全模块赋值走查:收集条目快照(方法级 `self.<attr>` 面 + 类体直系裸名面,
 /// 类身份键=类名行——装饰器不计,与 ClassSpan.start_line 同口径)+ 模块级 def/
 /// 类名/类方法表/局部写点。同行复合语句头的体不收集(`if c: self.x = 1` 依
@@ -540,7 +644,8 @@ struct FlowTables {
     class_names: HashMap<String, Vec<usize>>,
     class_methods: HashMap<usize, HashMap<String, Vec<Option<String>>>>,
     bare_writes: HashMap<String, Vec<BareWrite>>,
-    header_lines: HashSet<usize>,
+    fn_domains: Vec<FnDomain>,
+    scope_globals: HashMap<usize, Vec<String>>,
 }
 
 fn assignments_from_ast(ast: &ParsedAst, lines: &[Vec<u16>], classes: &[ClassSpan]) -> FlowTables {
@@ -622,7 +727,13 @@ fn assignments_from_ast(ast: &ParsedAst, lines: &[Vec<u16>], classes: &[ClassSpa
         class_names: ctx.class_names,
         class_methods: ctx.class_methods,
         bare_writes: ctx.bare_writes,
-        header_lines: ctx.header_lines,
+        fn_domains: {
+            // 体首行序(嵌套域按行域嵌套,链构造按 start_line 降序取最内)
+            let mut domains = ctx.fn_domains;
+            domains.sort_by_key(|d| (d.start_line, d.end_line));
+            domains
+        },
+        scope_globals: ctx.scope_globals,
     }
 }
 
@@ -746,7 +857,6 @@ fn walk_assignments(
                 // 类身份 = 类名行(装饰器不计;与 ClassSpan.start_line 同口径,
                 // 基线查找才能命中)
                 let cls_line = ast.line_col(cls.name.range.start().to_u32()).0;
-                ctx.header_lines.insert(cls_line);
                 ctx.class_names
                     .entry(cls.name.id.to_string())
                     .or_default()
@@ -754,6 +864,12 @@ fn walk_assignments(
                 let mut methods = HashMap::new();
                 collect_class_methods(ast, &cls.body, &mut methods);
                 ctx.class_methods.insert(cls_line, methods);
+                // KBUG-SCOPE:类体 `global` 声明 → 类体直系写点改记模块名空间
+                // (读侧据此放行为模块绑定;嵌套 def 不下行,声明归直接宿主)。
+                let cls_globals = declared_names(&cls.body, true, false);
+                if !cls_globals.is_empty() {
+                    ctx.scope_globals.insert(cls_line, cls_globals);
+                }
                 // 类体直系裸名赋值/注解 → class_direct(基线面);嵌套块与
                 // 嵌套类体内不入(与旧基线「类体缩进直系行」同域)。
                 for direct in &cls.body {
@@ -784,7 +900,26 @@ fn walk_assignments(
             }
             ast::Stmt::FunctionDef(fun) => {
                 let fun_line = ast.line_col(fun.name.range.start().to_u32()).0;
-                ctx.header_lines.insert(fun_line);
+                // KBUG-SCOPE:词法域登记(体域 + 参数全量 + global/nonlocal
+                // 声明;嵌套 def 自成一域,与外层域按行域嵌套)。
+                let body_start = fun
+                    .body
+                    .first()
+                    .map(|s| stmt_start_line(ast, s.range()))
+                    .unwrap_or(fun_line);
+                let body_end = fun
+                    .body
+                    .last()
+                    .map(|s| last_char_line(ast, s.range()))
+                    .unwrap_or(fun_line);
+                ctx.fn_domains.push(FnDomain {
+                    header_line: fun_line,
+                    start_line: body_start.min(fun_line),
+                    end_line: body_end.max(fun_line),
+                    params: param_names(&fun.parameters),
+                    globals: declared_names(&fun.body, true, false),
+                    nonlocals: declared_names(&fun.body, false, true),
+                });
                 walk_assignments(ast, &fun.body, Some(start_line), ctx, class_start, Some(fun_line));
             }
             ast::Stmt::If(s) => {
@@ -840,6 +975,11 @@ fn index_assign(
 ) {
     let line = stmt_start_line(ast, a.range);
     record_walrus_locals(&a.value, line, method_start, ctx);
+    // KBUG-SCOPE:直接赋值 lambda 自成一域(参数遮蔽判定;调用/推导式内
+    // 嵌套 lambda 不入表——其体内无裸名写点,越界读按未绑定诚实处理)。
+    if let ast::Expr::Lambda(l) = &*a.value {
+        record_lambda_domain(ast, l, line, ctx);
+    }
     // 元组解包配对:单 Tuple 目标 × 等长 Tuple 值,无 starred 元素
     if let ast::Expr::Tuple(value_tuple) = &*a.value {
         if a.targets.len() == 1 {
@@ -889,6 +1029,10 @@ fn index_ann_assign(
     let value_shape = match &a.value {
         Some(v) => {
             record_walrus_locals(v, line, method_start, ctx);
+            // KBUG-SCOPE:注解赋值 lambda 同员入域表
+            if let ast::Expr::Lambda(l) = v.as_ref() {
+                record_lambda_domain(ast, l, line, ctx);
+            }
             rhs_shape(v)
         }
         None => RhsShape::Typed(TypeSet::new()),
@@ -1203,8 +1347,10 @@ pub struct FlowParse {
     pub class_direct: ClassAssignmentTypes,
     /// 批 D localReturnType 面:裸名写点全域表(名 → 源序写点)
     pub(crate) bare_writes: HashMap<String, Vec<BareWrite>>,
-    /// def/class 名行集合(域门窄化素材)
-    pub(crate) header_lines: HashSet<usize>,
+    /// KBUG-SCOPE:函数/lambda 词法域表(体首行序;作用域链/参数遮蔽素材)
+    pub(crate) fn_domains: Vec<FnDomain>,
+    /// KBUG-SCOPE:类体 `global` 声明(类名行 → 名)
+    pub(crate) scope_globals: HashMap<usize, Vec<String>>,
     /// 模块级 def `-> T` 表
     pub(crate) def_returns: HashMap<String, DefReturn>,
     /// 类名 → 类名行
@@ -1240,7 +1386,8 @@ fn flow_parse_from_lines(lines: &[Vec<u16>]) -> FlowParse {
         assignments: tables.assignments,
         class_direct: tables.class_direct,
         bare_writes: tables.bare_writes,
-        header_lines: tables.header_lines,
+        fn_domains: tables.fn_domains,
+        scope_globals: tables.scope_globals,
         def_returns: tables.def_returns,
         class_names: tables.class_names,
         class_methods: tables.class_methods,
