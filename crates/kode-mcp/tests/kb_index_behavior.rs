@@ -142,16 +142,16 @@ fn watcher_registration_is_idempotent_and_state_honest() {
     let fx = Fixture::new("watch");
     fx.write("docs/a.md", "hello\n");
     let index = fx.index();
-    assert_eq!(index.watcher_active(), false);
+    assert!(!index.watcher_active());
     assert_eq!(index.dirty_pending(), 0);
 
     index.start_watch().expect("first watch registration");
-    assert_eq!(index.watcher_active(), true);
+    assert!(index.watcher_active());
     assert_eq!(index.dirty_pending(), 0);
 
     // 第二次注册是幂等 no-op Ok(不重复挂 watcher、不报错)。
     index.start_watch().expect("second watch registration");
-    assert_eq!(index.watcher_active(), true);
+    assert!(index.watcher_active());
     assert_eq!(index.dirty_pending(), 0);
 }
 
