@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use kode_parser::model::DefFile;
+use kode_parser::model::{flag_domains, DefFile};
 
 use super::facts::{Evidence, Fact, Origin};
 use super::id::Facet;
@@ -29,6 +29,9 @@ pub struct PropertyView {
     pub inherited: bool,
     /// 来源名(`Avatar`/`Mixin`/父实体名)。
     pub from: String,
+    /// 域位(base/cell/client;[`kode_parser::model::flag_domains`] 真值,
+    /// 无 Flags → 空)。CELL-01 cellData 字段面按此过滤。
+    pub domains: Vec<&'static str>,
 }
 
 /// 方法视图(按角色分面)。
@@ -180,6 +183,7 @@ impl EntitySnapshot {
                     line: Some(p.line),
                     inherited: !own_decl,
                     from: from.clone(),
+                    domains: flag_domains(&p.flags),
                 });
             }
         }
