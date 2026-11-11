@@ -23,6 +23,7 @@ import {
   resolveScopeRoot
 } from './globalDataIndex';
 import { inferSelfAttributeFlow } from './backend/selfAttributeFlowTypes';
+import { inferSelfAttributeFlowFromRust } from './backend/selfAttributeFlowRust';
 import { flowVersionKeyForDocument } from './flowVersionKey';
 
 // 批154(用户令 todo:7):types.xml 数据类型 inlay hints —— python 侧
@@ -131,7 +132,7 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
         hit?.annotation ??
         (hit?.member || access.fullPath !== access.rootSymbol
           ? null
-          : resolveUserSelfAttributeFlowAnnotation(
+          : await resolveUserSelfAttributeFlowAnnotation(
               documentLines,
               access.line,
               access.rootSymbol,
@@ -394,14 +395,17 @@ function isMemberCallAt(line: string, endColumn: number): boolean {
  * (fullPath===rootSymbol)才推;嵌套/推不出返回 null(能推才显)。收窄生效时
  * 显示守卫后的 expr 类型(无 None),否则显示收敛基类(可能含 None)。
  */
-function resolveUserSelfAttributeFlowAnnotation(
+async function resolveUserSelfAttributeFlowAnnotation(
   documentLines: string[],
   line: number,
   attr: string,
   versionKey?: string
-): string | null {
-  if (line < 0 || line >= documentLines.length || !attr) {
-    return null;
+): Promise<string | null> {
+  // RUST-MIGRATION-AUDIT-006 批 1:Rust-first(引擎逐字移植 + versionKey LRU),
+  // 无门/失败/畸形 null → TS 引擎兜底,杀开关语义不变。
+  const fromRust = await inferSelfAttributeFlowFromRust(documentLines, line, attr, versionKey);
+  if (fromRust) {
+    return fromRust.annotation;
   }
   const flow = inferSelfAttributeFlow(documentLines, line, attr, undefined, versionKey);
   return flow?.annotation ?? null;

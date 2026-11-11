@@ -3,10 +3,13 @@
 //! 串字面量已替换为同长空白,行/列偏移不变),本模块只做词法扫描:
 //! `\bself\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)` 手工展开 + 内建 receiver
 //! (cell/base/client,receiverNone 专责)跳过 + 0 起行号与成员列计算
-//! (UTF-16 码元基底)。流敏感 None 证据(类型推断/守卫窄化)留 TS 单一来源
-//! (selfAttributeFlowTypes,不经 Rust);成员列沿用 TS `match[0].indexOf(member)`
-//! 首次出现语义逐字对齐(含 self.<a>.<a> 命中 attr 段的既有口径)。
-//! 回结构面 [{code,line,character,length,attr,member}],消息不出 Rust。
+//! (UTF-16 码元基底)。流敏感 None 证据面已于 RUST-MIGRATION-AUDIT-006 批 1
+//! 收编 Rust(引擎 kode-python::self_flow,消费面 typeInlayHints Rust-first,
+//! 见 self_attribute_flow.rs);本词法面的流裁定仍走 TS 引擎(render
+//! AttributeNoneRustItems 记忆化),批 2 统一为本面内联流事实。
+//! 成员列沿用 TS `match[0].indexOf(member)` 首次出现语义逐字对齐(含
+//! self.<a>.<a> 命中 attr 段的既有口径)。回结构面
+//! [{code,line,character,length,attr,member}],消息不出 Rust。
 
 use serde::Deserialize;
 use serde_json::{json, Value};
