@@ -415,7 +415,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.hover.showTagDocs` | `true` | Show .def tag documentation on hover |
 | `kbengine.hover.showValueDocs` | `true` | Show docs for type/Flags/DetailLevel values on hover |
 | `kbengine.hover.showSymbolDocs` | `true` | Show summaries for custom property/method names on hover |
-| `kbengine.hover.returnTypeInference` | `true` | Infer local variable types from Python return annotations on hover (annotation bucket build is Rust-first via `$/kode/python/returnAnnotations` with TS yielding extraction as fallback — RUST-MIGRATION-AUDIT-006 batch 3) |
+| `kbengine.hover.returnTypeInference` | `true` | Infer local variable types from Python return annotations on hover (receiver-typed resolution is Rust-first via `$/kode/python/localReturnType`: same-file def calls / self methods / class-qualified / chained receivers / alias chains, no cross-class name borrowing — precision campaign batch D; the TS chain keeps only the import-binding path, the global method-name cascade guess is deleted; annotation bucket build stays Rust-first via `$/kode/python/returnAnnotations` with TS yielding extraction as fallback — RUST-MIGRATION-AUDIT-006 batch 3) |
 | `kbengine.hover.typeStorage` | `true` | Show database storage info of types.xml custom types on hover |
 | `kbengine.hover.implementedBy` | `true` | Show script implementation location (Implemented-By) on def method hover |
 | `kbengine.hover.entityRegistration` | `true` | Show entities.xml registration info (Utype/list position) on hover |

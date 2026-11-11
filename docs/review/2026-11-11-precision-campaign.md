@@ -140,3 +140,48 @@ clippy -D warnings 0 / cargo test kode-python+kode-server 0 红(221 kode-python 
 2. **局部写点漏登记**:首版只在 walrus 记 locals,普通裸名赋值不入→链恒空 ∅;修=push_entry Name 臂全量登记(method_start None 的类体直系不入=类级链不建模);
 3. **rhs_shape 无 Named 臂**:`self.n = (v := f())` 的 n 形态 Unknown(f 的可推导性丢);修=Named 透传内层;
 4. **深度语义**:条目形态深度 0、每解一层裸名 +1(5 具名变量链的末层已越界)——钉子按此口径写,勿按「跳数」直觉。
+
+## 批 D:返回注解接收者级联修正(杀跨类误绑,2026-11-11)
+
+靶子=实测误导账本 #2:hover 级联兜底 `cascadeAnnotation(methodName)` 全局方法名猜测——`a.get_data()`/`b.get_data()` 都解析到第一个同名注解,接收者类型完全无视。批 D 双侧落地:
+
+**Rust 新面(kode-python/src/local_return.rs + kode-server/src/local_return.rs)**:`$/kode/python/localReturnType` {lines, hoverLine, word, versionKey?} → `{ret: null | {target, annotation, methodName}}`。引擎本体=同文件可推导子集接收者定型:face_scan 按 matchingAssignments 同域口径向上找悬停词最近写入(mask 先行/悬停行含入/def·class 头行收窄 scopeIndentLimit/写点检查先于头行收窄),RHS 形态解析——Call(Name→同文件 def 注解直取,重名歧义恒未知;SelfMethod→所在类限定;Qualified→唯一类名先行,否则变量原子链回退;Chained→接收者定型到唯一同类名原子)/Local(别名链 face_scan 递归,visited 防环=恒等别名诚实空)/Typed 等不答。类实例化原子(`r = Repo()`)经流证据 callee_atom 参与接收者定型,但实例化本身不是返回注解(face 不答)。versionKey LRU 协议继承(与流面共用 flow_parse 解析缓存,一次解析服务两面)。
+
+**TS 小刀(src/backend/pythonReturnTypeInference.ts)**:级联兜底整链删除(hoveredBucket→mergedOtherDocumentAnnotations→cascadeAnnotation;查询消费面不再读文档桶,桶发布改由 extension.ts 文档事件驱动,机制保留供事件面);查询链只留 IDE-HOV-017 import 绑定路径(接收者已正确);接收者不可知→null(诚实,hover 不显)。mergedOtherDocumentAnnotations 无外部消费者随删;新增 getDocumentReturnAnnotationBucketForTests 访问器供机制断言。TS 引擎其余冻结不动(杀开关语义不变)。
+
+**hover 装配(src/languageProviders/hover.ts + src/backend/localReturnTypeRust.ts)**:局部返回注解段 Rust-first(Rust 腿 client 自带超时不占 TS 预算,语料分支同款)→miss/失败/杀开关回落 TS import 绑定链→双 miss 重入下游既有链(localReturnAttempted 重入标记防环,语料分支同款重入口径);批 D 预检=matchingAssignments 零候选时整段零成本跳过(下游 TYP-ARRAY/数据字典/自属性面照走同步原路,不进异步)。
+
+### 语义变化与分歧审计
+
+| 查询形态 | 批 D 前(级联) | 批 D 后 | 裁决 |
+|---|---|---|---|
+| `x = svc.load()`,Repo/Noise 同名 load,svc=Repo() | 首个同名注解(Noise 在前则误答) | REPO_DATA(接收者定型) | **改进**(跨类误绑靶心) |
+| `v = self.get()`,Driver.get 与 A/B 同名 | 全局猜(可能答 A/B) | FROM_DRIVER(所在类限定) | **改进** |
+| `data = get_data()`,同文件 def -> JSONDATA | 级联答 JSONDATA(全工作区同名借用) | Rust 面答 JSONDATA(同文件 def 直取) | **改进**(来源收紧到真定义) |
+| `data = get_data()`,无绑定无同文件 def | 磁盘任意同名注解 | null(诚实不显) | **改进**(误导消除) |
+| `data = get_data()`,from svc import get_data | 磁盘 svc 桶 | 磁盘 svc 桶(不变) | **持平**(接收者已正确) |
+| 文档桶级联(未保存遮蔽/跨文档借名) | 三层级联答话 | 查询不读桶(机制保留) | **改进**(借名面归零) |
+
+### 测试(split-parity)
+
+- Rust 内联 +25(local_return.rs:同文件 def 命中/self 方法/类限定/同类两方法各绑其类/链式别名/链式内联/恒等别名诚实空/字面量覆盖截断/兄弟方法不借用/模块域写点方法体可见/类体写点可见/悬停行写入即答/无注解诚实空/重名歧义诚实空/类实例化非返回注解/self 属性读诚实空/全大写常量跳过/未知接收者链式诚实空/前向引用诚实空/装饰器 def 名行收窄/字符串体伪写点不登记/越界悬停行/互为别名环诚实空/versionKey 缓存命中)+ self_flow +3(实例化流原子/类与 def 同名歧义/裸名变量接收者回退,69 钉全绿)。
+- TS 重铸 25 例+新增访问器断言:JSONDATA 旗舰拆双例(无绑定不猜/import 绑定仍解析);IDE-HOV-011 组桶断言走访问器;REV-010/HOV-012/014/015 组查询断言改走 import 绑定路径(接收者正确);HOV-016 同文件声明例改诚实 null(推导归 Rust 面);AUD-043 本地注解例改诚实 null;首扫在途/TTL 重建/过期索引组绑定化;1 例删除(跨文档未保存遮蔽=级联语义永久退场);GapArms 3 例(659 异步让位走访问器/通配与剥点跳过→诚实 null)+2 例绑定化;documentAnnotationQueue 3 例访问器化;extension 装配例绑定化+访问器化;serving 轨道例重铸(无调用候选零请求预检闸/调用候选恰一次 localReturnType 零镜像);metrics 例改诚实 null 口径;discovery 例绑定化;cov 组 2 例(弃桶不复活访问器化/来源日志 import 面)。
+- 新契约套件 tests/pythonLocalReturnTypeRust.test.ts(7 例,真二进制 withRustGate+直连断言防旧二进制假绿)+ selfAttributeFlowPrecision +1(实例化流原子)。
+
+### 门禁(2026-11-11)
+
+clippy -D warnings 0 / cargo test kode-python+kode-server 840 过 0 红 / eslint 0 / compile 0 / vitest unit 726 文件 8673 过 8 skip 0 红 / xvfb demo 25 RC=0 / ANCHORS 锁步(hover.ts provideHover 183→185 真位重探,baseline 同步)。
+
+### prove-red
+
+Rust face 早退临时置 None + `cargo build -p kode-server`(必重编,TS 钉跑盘上二进制)→新面契约 7 例中 5 例正例恰红(直连/跨类不误绑/链式/self 方法/同域口径;2 例诚实 null 钉按定义不受断面影响)→恢复重编全绿。
+
+### 坑清单(批 D 实录)
+
+1. **裸名接收者形态歧义**:`row = repo.load()` 的 rhs_shape 把 Name 接收者一律归 Qualified{class:"repo"},但 "repo" 可能是变量非类——修=Qualified 臂唯一类名/方法原子先行,否则 Local 变量原子链回退(类名优先序钉死);流面与 local_return 面两处同修;
+2. **Local 臂早退吞掉模块域回退**:`None => return` 跑在模块域回退之前,方法体裸名永远解不到模块级写点;修=method_found 先算再 or_else 模块回退,visited 键换 (method_start.unwrap_or(MAX), name);
+3. **对拍锚点位移**:3 钉写点行号手数错(内联接收者 7 非 6/同类两方法 9,10 非 8,9/装饰器 7 非 6)——查询行按 AST 产物重数;
+4. **TS 面全量重铸 blast radius**:查询消费面移交后 hover 装配曾整段 return 异步链,下游 TYP-ARRAY/数据字典/自属性面被 null 短路(18 文件 41 例红)——修=matchingAssignments 零候选预检闸(零成本跳过)+双 miss 重入下游(localReturnAttempted 防环),下游面同步原路不变;
+5. **serving 轨道断言重铸**:python 文档「零请求直通 TS」前提随 localReturnType 腿失效——重铸为无调用候选零请求(预检闸)+调用候选恰一次请求零镜像;
+6. **假绿二叉**:prove-red 必 `cargo build -p kode-server` 重编,TS 钉跑盘上二进制;
+7. **fileKey 四斜杠**:测试手拼 `'file:///' + root`(root 已带前导 /)得 `file:////tmp/...` 与桶键错位——用 mock Uri.file().toString() 同源构键。
