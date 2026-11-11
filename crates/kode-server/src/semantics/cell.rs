@@ -8,8 +8,10 @@
 //! - **字段取 Cell 属性描述**:域位真值 = [`kode_parser::model::flag_domains`]
 //!   (common.h 真值表,与 TS 生成镜像同源;含 KR-AUD-87 OWN_CLIENT/
 //!   OTHER_CLIENTS);
-//! - **组件另建 Cell 数据**:组件槽是 cellData 的嵌套槽面——本批只登记槽,
-//!   递归展开属 CELL-03;
+//! - **组件另建 Cell 数据**(CELL-03):每组件槽在 cellData 下成键,值 =
+//!   组件 def 的 **Cell 侧字段** 子字典(仅 cell 域;BASE/CLIENT 不纳入);
+//!   嵌套组件段递归展开(环安全+深度界);槽声明跳转面保留
+//!   ([`ComponentCellData::file`/`line`]);
 //! - **内建键**(CELL-02):position/direction 以独立引擎来源登记
 //!   ([`builtin_cell_fields`],不能要求 def 声明);其余 cellapp 内建属性
 //!   (spaceID/controlledBy/topSpeed 等)未核对为 cellData 键 → 不入表;
@@ -117,7 +119,90 @@ pub fn builtin_cell_fields() -> &'static [BuiltinField] {
     ]
 }
 
-/// 有效 cellData 结构(def 字段面 + 引擎内建键面;组件槽展开待 CELL-03)。
+/// 组件槽 cellData 展开面(CELL-03:递归解析 `cellData[组件槽][字段]` 的结构层)。
+///
+/// 引擎事实(design §2:组件另建 Cell 数据):每槽在 cellData 下成键,值 =
+/// 组件 def 的 **Cell 侧字段** 子字典(BASE/CLIENT 域不纳入);组件 def 的
+/// 组件段再递归(嵌套槽)。声明跳转面(槽名所在 def/行)保留——验收
+/// 「保留组件声明跳转」。
+#[derive(Debug, Clone)]
+pub struct ComponentCellData {
+    /// 槽名(cellData 的键;def 组件段标签名)。
+    pub slot: String,
+    /// 组件类型名(声明面 component_type;缺 → None,字段不猜)。
+    pub component_type: Option<String>,
+    /// 声明跳转面(组件声明所在 def/行)。
+    pub file: String,
+    pub line: Option<usize>,
+    /// 组件 def 的 Cell 侧字段(仅 cell 域;展开序同 BAS-05;同名多来源
+    /// 逐条保留,不任取)。
+    pub fields: Vec<PropertyView>,
+    /// 嵌套组件槽的 cell 数据(组件 def 的组件段,递归展开)。
+    pub nested: Vec<ComponentCellData>,
+    /// 展开事实(环/深度溢出/组件 def 侧缺失;与快照 issues 同族)。
+    pub issues: Vec<Fact>,
+}
+
+/// 组件递归深度界(环安全双保险:visited 路径为主,深度界兜底绝不 hang)。
+const COMPONENT_CELL_MAX_DEPTH: usize = 8;
+
+fn expand_component_cell(
+    slot: &ComponentView,
+    resolve: &dyn super::snapshot::DefResolver,
+    graph: &TypeGraph,
+    root_id: kode_vfs::store::RootId,
+    path: &mut Vec<String>,
+    depth: usize,
+) -> ComponentCellData {
+    let mut issues = Vec::new();
+    let (fields, nested) = match &slot.component_type {
+        None => (Vec::new(), Vec::new()),
+        Some(ct) if path.contains(ct) => {
+            issues.push(issue_fact(&format!("component-cell-cycle:{ct}"), root_id, ct));
+            (Vec::new(), Vec::new())
+        }
+        Some(ct) if depth >= COMPONENT_CELL_MAX_DEPTH => {
+            issues.push(issue_fact("component-cell-depth-overflow", root_id, ct));
+            (Vec::new(), Vec::new())
+        }
+        Some(ct) => match resolve.resolve(ct) {
+            None => {
+                // 类型不在场:槽面保留,字段不造(owner 级 missing-component-type
+                // 已在 shape.issues,不重复记账)。
+                (Vec::new(), Vec::new())
+            }
+            Some(component_def) => {
+                let snap = EntitySnapshot::build(component_def, resolve, graph, root_id, ct);
+                let fields: Vec<PropertyView> = snap
+                    .properties
+                    .iter()
+                    .filter(|p| p.domains.contains(&"cell"))
+                    .cloned()
+                    .collect();
+                issues.extend(snap.issues);
+                path.push(ct.clone());
+                let nested: Vec<ComponentCellData> = snap
+                    .components
+                    .iter()
+                    .map(|c| expand_component_cell(c, resolve, graph, root_id, path, depth + 1))
+                    .collect();
+                path.pop();
+                (fields, nested)
+            }
+        },
+    };
+    ComponentCellData {
+        slot: slot.name.clone(),
+        component_type: slot.component_type.clone(),
+        file: slot.file.clone(),
+        line: slot.line,
+        fields,
+        nested,
+        issues,
+    }
+}
+
+/// 有效 cellData 结构(def 字段面 + 引擎内建键面 + 组件槽展开面)。
 #[derive(Debug, Clone)]
 pub struct CellDataShape {
     pub entity: String,
@@ -129,8 +214,10 @@ pub struct CellDataShape {
     pub conflict_names: Vec<String>,
     /// 引擎内建键(有 Cell 部件即有;引擎自塞,与 def 字段面分账不混装)。
     pub builtins: Vec<&'static BuiltinField>,
-    /// 组件槽(CELL-03 递归展开前的槽面;槽在即 cellData 有嵌套面)。
+    /// 组件槽(平槽面:声明序,与 [`Self::component_cells`] 同序对应)。
     pub component_slots: Vec<ComponentView>,
+    /// 组件槽展开面(CELL-03;`cellData[组件槽][字段]` 结构)。
+    pub component_cells: Vec<ComponentCellData>,
     /// 判定事实(cell 部件依据/脚本面;与快照 issues 同族)。
     pub issues: Vec<Fact>,
 }
@@ -198,6 +285,15 @@ impl CellDataShape {
             Vec::new()
         };
 
+        // 组件槽展开(CELL-03):槽在 cellData 下成键,值 = 组件 def 的
+        // cell 侧字段子字典;嵌套组件段递归(环安全 + 深度界)。
+        let mut path: Vec<String> = vec![entity_name.to_string()];
+        let component_cells: Vec<ComponentCellData> = snap
+            .components
+            .iter()
+            .map(|c| expand_component_cell(c, resolve, graph, root_id, &mut path, 0))
+            .collect();
+
         CellDataShape {
             entity: entity_name.to_string(),
             status,
@@ -205,6 +301,7 @@ impl CellDataShape {
             conflict_names,
             builtins,
             component_slots: snap.components,
+            component_cells,
             issues,
         }
     }
@@ -431,5 +528,117 @@ mod tests {
         let shape = build(&own, &map, None);
         assert!(shape.fields.iter().all(|f| f.name != "position"), "def 字段面不含内建键");
         assert!(shape.builtins.iter().all(|b| b.name != "hp"), "内建键面不含 def 字段");
+    }
+
+    fn component(name: &str, component_type: Option<&str>, line: usize) -> ComponentDef {
+        ComponentDef {
+            name: name.into(),
+            name_span: kode_parser::Span::new(0, 0),
+            line,
+            component_type: component_type.map(|s| s.to_string()),
+            persistent: None,
+        }
+    }
+
+    #[test]
+    fn component_slot_expands_only_cell_fields() {
+        let mut weapon = def(None, vec![], vec![
+            prop("ammo", "UINT16", &["CELL_PUBLIC"]),
+            prop("skin", "STRING", &["BASE"]),
+            prop("uid", "UINT64", &["BASE_AND_CLIENT"]),
+        ]);
+        weapon.base_methods = vec![method("onAttach")];
+        let mut own = def(None, vec![], vec![]);
+        own.components = vec![component("weapon", Some("Weapon"), 3)];
+        let map = DefMap(vec![("Weapon", weapon)]);
+        let shape = build(&own, &map, None);
+        assert_eq!(shape.component_cells.len(), 1);
+        let cell = &shape.component_cells[0];
+        // 仅组件 Cell 侧字段进子字典:ammo 进,skin/uid(BASE 域)不进;
+        // 组件 def 的 base 方法不参与(cell 方法才算部件)。
+        let names: Vec<&str> = cell.fields.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["ammo"], "仅组件 Cell 侧字段");
+        assert_eq!(cell.slot, "weapon");
+        assert_eq!(cell.component_type.as_deref(), Some("Weapon"));
+    }
+
+    #[test]
+    fn component_declaration_jump_face_preserved() {
+        let mut own = def(None, vec![], vec![]);
+        own.components = vec![component("weapon", Some("Weapon"), 7)];
+        let map = DefMap(vec![]);
+        let shape = build(&own, &map, None);
+        let cell = &shape.component_cells[0];
+        assert_eq!(cell.file, "Avatar.def", "槽声明跳转=组件声明 def");
+        assert_eq!(cell.line, Some(7));
+    }
+
+    #[test]
+    fn nested_component_recursion() {
+        // Weapon 组件段再挂 Sight → cellData["weapon"]["sight"] 递归。
+        let mut sight = def(None, vec![], vec![prop("zoom", "FLOAT32", &["CELL_PUBLIC"])]);
+        sight.cell_methods = vec![method("track")];
+        let mut weapon = def(None, vec![], vec![prop("ammo", "UINT16", &["CELL_PUBLIC"])]);
+        weapon.components = vec![component("sight", Some("Sight"), 5)];
+        let mut own = def(None, vec![], vec![]);
+        own.components = vec![component("weapon", Some("Weapon"), 3)];
+        let map = DefMap(vec![("Weapon", weapon), ("Sight", sight)]);
+        let shape = build(&own, &map, None);
+        let weapon_cell = &shape.component_cells[0];
+        assert_eq!(weapon_cell.nested.len(), 1, "嵌套槽递归展开");
+        let sight_cell = &weapon_cell.nested[0];
+        assert_eq!(sight_cell.slot, "sight");
+        assert_eq!(sight_cell.fields[0].name, "zoom");
+        assert_eq!(sight_cell.fields[0].from, "Sight", "来源=组件 def");
+    }
+
+    #[test]
+    fn component_cycle_is_diagnosed_not_hang() {
+        // Weapon 挂 Mount,Mount 挂 Weapon(组件段环)→ 记事实不 hang。
+        let mut weapon = def(None, vec![], vec![prop("ammo", "UINT16", &["CELL_PUBLIC"])]);
+        weapon.components = vec![component("mount", Some("Mount"), 4)];
+        let mut mount = def(None, vec![], vec![]);
+        mount.components = vec![component("weapon", Some("Weapon"), 4)];
+        let mut own = def(None, vec![], vec![]);
+        own.components = vec![component("weapon", Some("Weapon"), 3)];
+        let map = DefMap(vec![("Weapon", weapon), ("Mount", mount)]);
+        let shape = build(&own, &map, None);
+        // 环在 Mount 段再挂 Weapon 处闭:path=[Avatar,Weapon,Mount],Weapon
+        // 已在 → 环记在 weapon 槽展开(Avatar>weapon>mount>weapon)。
+        let mount_cell = &shape.component_cells[0].nested[0];
+        assert!(mount_cell.nested[0].issues.iter().any(|f| f.value.contains("component-cell-cycle")), "环记事实");
+        assert!(mount_cell.nested[0].fields.is_empty(), "环内不 hang 不展开");
+    }
+
+    #[test]
+    fn component_type_missing_or_untyped_no_fields_fabricated() {
+        // 组件类型不在场/组件段无类型:槽面保留,字段不造。
+        let mut own = def(None, vec![], vec![]);
+        own.components = vec![
+            component("weapon", Some("Ghost"), 3),
+            component("raw", None, 4),
+        ];
+        let map = DefMap(vec![]);
+        let shape = build(&own, &map, None);
+        assert_eq!(shape.component_cells.len(), 2);
+        assert!(shape.component_cells[0].fields.is_empty(), "类型缺 → 不造字段");
+        assert!(shape.component_cells[1].fields.is_empty(), "无类型 → 不造字段");
+        assert!(shape.component_cells[1].component_type.is_none());
+    }
+
+    #[test]
+    fn component_fields_expand_parent_and_interfaces() {
+        // 组件 def 的继承/接口 cell 字段同样展开(BAS-05 展开语义复用)。
+        let mut weapon = def(Some("WeaponBase"), vec![], vec![prop("ammo", "UINT16", &["CELL_PUBLIC"])]);
+        weapon.components = vec![];
+        let mut weapon_base = def(None, vec![], vec![prop("durability", "UINT16", &["CELL_PUBLIC"])]);
+        weapon_base.components = vec![];
+        let mut own = def(None, vec![], vec![]);
+        own.components = vec![component("weapon", Some("Weapon"), 3)];
+        let map = DefMap(vec![("Weapon", weapon), ("WeaponBase", weapon_base)]);
+        let shape = build(&own, &map, None);
+        let names: Vec<&str> = shape.component_cells[0].fields.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["ammo", "durability"], "组件字段含继承面");
+        assert!(shape.component_cells[0].fields[1].inherited);
     }
 }

@@ -52,6 +52,9 @@ pub struct ComponentView {
     pub name: String,
     pub component_type: Option<String>,
     pub persistent: Option<bool>,
+    /// 声明来源 def(`Avatar.def`;跳转目标,CELL-03 保留组件声明跳转)。
+    pub file: String,
+    pub line: Option<usize>,
 }
 
 /// 冲突(多候选;绝不任取一个)。
@@ -243,7 +246,7 @@ impl EntitySnapshot {
             }
         }
 
-        // 组件槽。
+        // 组件槽(自身声明;跳转面保留组件声明位置)。
         for c in &own.components {
             if let Some(ct) = &c.component_type {
                 if resolve.resolve(ct).is_none() {
@@ -254,6 +257,8 @@ impl EntitySnapshot {
                 name: c.name.clone(),
                 component_type: c.component_type.clone(),
                 persistent: c.persistent,
+                file: format!("{entity_name}.def"),
+                line: Some(c.line),
             });
         }
 
