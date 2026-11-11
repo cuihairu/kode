@@ -17,6 +17,14 @@
 `docs/knowledge/<topic>.md`,`zh/` 双胞胎在 `docs/zh/knowledge/<topic>.md`,
 同一引用、同一结论。`en/` 文件是行号漂移校验的规范件。
 
+站点组织(2026-11-11;`docs/.vitepress/config.mts`):知识库侧栏分四组——
+**引擎基础 / 实体机制 / API 参考 / 语义陷阱**。cellapp API 页拆为两面——
+`api-cellapp.md`(`KBEngine` 模块面 + 双面通用的组装层地图)与
+`api-cellapp-entity.md`(cellapp 上注册的共享 `Entity` 类)——与既有
+baseapp 两篇同构。`knowledge/official-docs/`(kbengine.github.io 原始 HTML
+抓取,每页自带来源链接)是提取工作料:留仓作取证底料,经 `srcExclude`
+不入站。
+
 ## 文章
 
 - **`.def` 属性 Flags——引擎完整真值**(2026-11-09,源自「Flags 解析错误 /
@@ -56,7 +64,8 @@
 - **API 参考:client 面** (KB-API-002):
 - **API 参考:baseapp 模块 + Entity/Proxy** (KB-API-003):
 - **API 参考:baseapp Entity 类** (KB-API-003):
-- **API 参考:cellapp 面** (KB-API-004):
+- **API 参考:cellapp 面** (KB-API-004;拆为模块面 `api-cellapp.md` 与
+  Entity 面 `api-cellapp-entity.md` 两篇):
 
 - **API 参考:interfaces 面** ((KB-API-005)):
 

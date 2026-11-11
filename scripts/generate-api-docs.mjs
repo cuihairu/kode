@@ -44,6 +44,7 @@ const PAGES = [
   { file: 'api-baseapp.md', domain: 'base' },
   { file: 'api-baseapp-entity.md', domain: 'base' },
   { file: 'api-cellapp.md', domain: 'cell' },
+  { file: 'api-cellapp-entity.md', domain: 'cell' },
   { file: 'api-client.md', domain: 'client' },
   { file: 'api-bots.md', domain: 'bots' },
   { file: 'api-interfaces.md', domain: 'interfaces' },

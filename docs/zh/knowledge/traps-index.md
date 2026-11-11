@@ -30,10 +30,10 @@
 
 | 陷阱 | 现象 | 正确姿势 | 详情 |
 | --- | --- | --- | --- |
-| `delTimer` 传过期 id 以为会报错 | 静默返回 `-1`(fork);3.7 材料称会报错 | 检查返回值 | [api-cellapp §偏差表](api-cellapp.md) |
+| `delTimer` 传过期 id 以为会报错 | 静默返回 `-1`(fork);3.7 材料称会报错 | 检查返回值 | [api-cellapp-entity §偏差表](api-cellapp-entity.md) |
 | 以为要在 `onDestroy` 里注销定时器 | 没必要——`destroy()` 全量取消(`scriptTimers_.cancelAll()`) | `delTimer` 只在存活期内提前取消时用 | [生命周期 §定时器](entity-lifecycle-reference.md)、[使用统计](api-usage-stats.md) |
-| `cancelController("SomeType")` | TypeError——只认精确字符串 `"Movement"` | 其他控制器按句柄取消 | [api-cellapp §偏差表](api-cellapp.md) |
-| 调 `trackEntity` / `turnToYaw` | fork 里没有这两个方法 | 用 `moveToEntity` / `addYawRotator` | [api-cellapp §偏差表](api-cellapp.md) |
+| `cancelController("SomeType")` | TypeError——只认精确字符串 `"Movement"` | 其他控制器按句柄取消 | [api-cellapp-entity §偏差表](api-cellapp-entity.md) |
+| 调 `trackEntity` / `turnToYaw` | fork 里没有这两个方法 | 用 `moveToEntity` / `addYawRotator` | [api-cellapp-entity §偏差表](api-cellapp-entity.md) |
 | 模块级 `KBEngine.addTimer` 自绑定回调泄漏 | app 级 timer 强持回调对象(`self.onTick` 即强持实体),实体 `destroy()` 只取消实体自身 `scriptTimers_`,**不会**取消它——回调持续触发/实体进 `garbages` 泄漏 | 句柄存成员,`onDestroy` 里 `KBEngine.delTimer(句柄)`(实体级 `self.addTimer` 无此问题,destroy 自动全量取消) | [生命周期 §定时器](entity-lifecycle-reference.md)、`python_app.cpp:721-748` |
 
 ## 属性同步

@@ -19,7 +19,15 @@ export default withMermaid(defineConfig({
   lastUpdated: true,
   // 单语内部工作稿（review/、reference/ 为英文工作文档，无另一语言对位
   // 文件）：不进入双语站点构建，避免语言切换器渲染指向不存在页面的链接。
-  srcExclude: ['review/**', 'reference/**', '**/mixin-jump.md'],
+  // knowledge/official-docs 为 kbengine.github.io 原始抓取工作料（每页自带
+  // 来源链接），非本站策展内容：不入站，仅作知识页取证底料留在仓库。
+  srcExclude: [
+    'review/**',
+    'reference/**',
+    '**/mixin-jump.md',
+    'knowledge/official-docs/**',
+    'zh/knowledge/official-docs/**'
+  ],
   locales: {
     root: {
       label: 'English',
@@ -36,26 +44,42 @@ export default withMermaid(defineConfig({
         sidebar: {
           '/knowledge/': [
             {
-              text: 'Knowledge base',
+              text: 'Engine basics',
               items: [
                 { text: 'Overview', link: '/knowledge/' },
-                { text: 'Entity lifecycle & reference release', link: '/knowledge/entity-lifecycle-reference' },
-                { text: 'Entity teleport & cross-process references', link: '/knowledge/entity-migration-and-cross-process-references' },
+                { text: 'Startup flow and stack', link: '/knowledge/startup-flow-and-stack' },
                 { text: 'Fixed directories & path resolution', link: '/knowledge/fixed-directories-and-path-resolution' },
                 { text: 'Entry script SPI methods', link: '/knowledge/entry-script-spi-methods' },
-                { text: 'Startup flow and stack', link: '/knowledge/startup-flow-and-stack' },
-                { text: 'Python version baseline (3.7 vs fork 3.12)', link: '/knowledge/python-version-baseline' },
+                { text: 'Python version baseline (3.7 vs fork 3.12)', link: '/knowledge/python-version-baseline' }
+              ]
+            },
+            {
+              text: 'Entity mechanics',
+              items: [
+                { text: 'Entity lifecycle & reference release', link: '/knowledge/entity-lifecycle-reference' },
+                { text: 'Entity teleport & cross-process references', link: '/knowledge/entity-migration-and-cross-process-references' },
+                { text: '.def property Flags — engine truth', link: '/knowledge/def-flags' }
+              ]
+            },
+            {
+              text: 'API reference',
+              items: [
+                { text: 'API core concepts map', link: '/knowledge/api-core-concepts' },
                 { text: 'API: client', link: '/knowledge/api-client' },
-                { text: 'API: baseapp module & Entity/Proxy', link: '/knowledge/api-baseapp' },
-                { text: 'API: baseapp entity classes', link: '/knowledge/api-baseapp-entity' },
-                { text: 'API: cellapp', link: '/knowledge/api-cellapp' },
+                { text: 'API: baseapp module face', link: '/knowledge/api-baseapp' },
+                { text: 'API: baseapp Entity & Proxy', link: '/knowledge/api-baseapp-entity' },
+                { text: 'API: cellapp module face', link: '/knowledge/api-cellapp' },
+                { text: 'API: cellapp Entity face', link: '/knowledge/api-cellapp-entity' },
                 { text: 'API: interfaces', link: '/knowledge/api-interfaces' },
                 { text: 'API: loginapp / dbmgr / logger', link: '/knowledge/api-loginapp-dbmgr-logger' },
                 { text: 'API: bots', link: '/knowledge/api-bots' },
-                { text: 'API: core concepts map', link: '/knowledge/api-core-concepts' },
                 { text: 'API usage patterns & stats', link: '/knowledge/api-usage-stats' },
-                { text: 'Traps index', link: '/knowledge/traps-index' }
+                { text: 'BigWorld legacy stubs disposal', link: '/knowledge/bigworld-legacy-status' }
               ]
+            },
+            {
+              text: 'Traps',
+              items: [{ text: 'Traps index', link: '/knowledge/traps-index' }]
             }
           ],
           '/guide/': [
@@ -131,26 +155,42 @@ export default withMermaid(defineConfig({
         sidebar: {
           '/zh/knowledge/': [
             {
-              text: '知识库',
+              text: '引擎基础',
               items: [
                 { text: '总览', link: '/zh/knowledge/' },
-                { text: '实体生命周期与引用释放', link: '/zh/knowledge/entity-lifecycle-reference' },
-                { text: '实体传送与跨进程引用', link: '/zh/knowledge/entity-migration-and-cross-process-references' },
+                { text: '启动流程与堆栈', link: '/zh/knowledge/startup-flow-and-stack' },
                 { text: '固定目录与路径解析链', link: '/zh/knowledge/fixed-directories-and-path-resolution' },
                 { text: '入口脚本 SPI 方法表', link: '/zh/knowledge/entry-script-spi-methods' },
-                { text: '启动流程与堆栈', link: '/zh/knowledge/startup-flow-and-stack' },
-                { text: 'Python 版本口径（3.7 源料 vs fork 3.12）', link: '/zh/knowledge/python-version-baseline' },
+                { text: 'Python 版本口径（3.7 源料 vs fork 3.12）', link: '/zh/knowledge/python-version-baseline' }
+              ]
+            },
+            {
+              text: '实体机制',
+              items: [
+                { text: '实体生命周期与引用释放', link: '/zh/knowledge/entity-lifecycle-reference' },
+                { text: '实体传送与跨进程引用', link: '/zh/knowledge/entity-migration-and-cross-process-references' },
+                { text: '.def 属性 Flags——引擎真源', link: '/zh/knowledge/def-flags' }
+              ]
+            },
+            {
+              text: 'API 参考',
+              items: [
+                { text: 'API 核心概念地图', link: '/zh/knowledge/api-core-concepts' },
                 { text: 'API：client 面', link: '/zh/knowledge/api-client' },
-                { text: 'API：baseapp 模块与 Entity/Proxy', link: '/zh/knowledge/api-baseapp' },
-                { text: 'API：baseapp 实体类', link: '/zh/knowledge/api-baseapp-entity' },
-                { text: 'API：cellapp 面', link: '/zh/knowledge/api-cellapp' },
+                { text: 'API：baseapp 模块面', link: '/zh/knowledge/api-baseapp' },
+                { text: 'API：baseapp Entity 与 Proxy', link: '/zh/knowledge/api-baseapp-entity' },
+                { text: 'API：cellapp 模块面', link: '/zh/knowledge/api-cellapp' },
+                { text: 'API：cellapp Entity 面', link: '/zh/knowledge/api-cellapp-entity' },
                 { text: 'API：interfaces 面', link: '/zh/knowledge/api-interfaces' },
                 { text: 'API：loginapp / dbmgr / logger', link: '/zh/knowledge/api-loginapp-dbmgr-logger' },
-                { text: 'API：bots', link: '/zh/knowledge/api-bots' },
-                { text: 'API：核心概念地图', link: '/zh/knowledge/api-core-concepts' },
+                { text: 'API：bots 面', link: '/zh/knowledge/api-bots' },
                 { text: 'API 使用模式与统计', link: '/zh/knowledge/api-usage-stats' },
-                { text: '语义陷阱索引', link: '/zh/knowledge/traps-index' }
+                { text: 'BigWorld 遗留桩处置', link: '/zh/knowledge/bigworld-legacy-status' }
               ]
+            },
+            {
+              text: '语义陷阱',
+              items: [{ text: '陷阱索引', link: '/zh/knowledge/traps-index' }]
             }
           ],
           '/zh/guide/': [

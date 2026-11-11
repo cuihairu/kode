@@ -1388,10 +1388,10 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "kind": "attr",
     "signature": "allClients",
     "qualifier": "",
-    "summaryEn": "entity.cpp:76-77 — see §8",
+    "summaryEn": "entity.cpp:76-77 — see §4",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "base",
@@ -1403,7 +1403,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "summaryEn": "entity.cpp:74-75",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "canNavigate",
@@ -1415,7 +1415,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "summaryEn": "True only when the space's navigation data is loaded and usable",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "className",
@@ -1427,7 +1427,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "summaryEn": "entity_macro.h:39",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "client",
@@ -1439,7 +1439,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "summaryEn": "entity.cpp:74-75",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "clientEntity",
@@ -1453,7 +1453,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "sourceRefs": [
       "entity_component.cpp:14"
     ],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "controlledBy",
@@ -1462,10 +1462,10 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "kind": "attr",
     "signature": "controlledBy",
     "qualifier": "",
-    "summaryEn": "entity.cpp:87 — see §9",
+    "summaryEn": "entity.cpp:87 — see §5",
     "summaryZh": "getset（entity.cpp:87）：setter 断言实体为 real",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "destroySpace",
@@ -1479,7 +1479,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "sourceRefs": [
       "entity.cpp:342"
     ],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "direction",
@@ -1491,7 +1491,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "summaryEn": "entity.cpp:84 — (roll, pitch, yaw) radians",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "hasWitness",
@@ -1503,7 +1503,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "summaryEn": "entity.cpp:78-79",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "id",
@@ -1515,7 +1515,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "summaryEn": "entity_macro.h:37",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "isDestroyed",
@@ -1527,7 +1527,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "summaryEn": "entity_macro.h:38, impl :1489-1493",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "isOnGround",
@@ -1536,10 +1536,10 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "kind": "attr",
     "signature": "isOnGround",
     "qualifier": "",
-    "summaryEn": "entity.cpp:80 — present in the material's attribute prose but **missing from its summary table** (§9)",
+    "summaryEn": "entity.cpp:80 — present in the material's attribute prose but **missing from its summary table** (§8)",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "isReal",
@@ -1553,7 +1553,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "sourceRefs": [
       "entity.cpp:1446"
     ],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "isWitnessed",
@@ -1565,7 +1565,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "summaryEn": "entity.cpp:78-79",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "layer",
@@ -1577,7 +1577,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "summaryEn": "entity.cpp:82 — navmesh layer selection (:2242)",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "onRestore",
@@ -1591,7 +1591,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "sourceRefs": [
       "entity.cpp:3864-3868"
     ],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "onSpaceGone",
@@ -1605,7 +1605,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "sourceRefs": [
       "entity.cpp:381-384"
     ],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "otherClients",
@@ -1614,10 +1614,10 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "kind": "attr",
     "signature": "otherClients",
     "qualifier": "",
-    "summaryEn": "entity.cpp:76-77 — see §8",
+    "summaryEn": "entity.cpp:76-77 — see §4",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "position",
@@ -1629,7 +1629,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "summaryEn": "entity.cpp:83; writes go through the position-update path (witness/volatile machinery)",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "spaceID",
@@ -1641,7 +1641,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "summaryEn": "entity.cpp:81",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "topSpeed",
@@ -1653,7 +1653,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "summaryEn": "entity.cpp:85-86 — server-side movement legality bound",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "topSpeedY",
@@ -1665,7 +1665,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "summaryEn": "entity.cpp:85-86 — server-side movement legality bound",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "volatileInfo",
@@ -1677,7 +1677,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "summaryEn": "entity.cpp:88 (:2297) — per-axis volatile sync policy; also declarable in .def <Volatile>",
     "summaryZh": "",
     "sourceRefs": [],
-    "page": "api-cellapp"
+    "page": "api-cellapp-entity"
   },
   {
     "member": "address",
@@ -2006,7 +2006,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "kind": "callback",
     "signature": "onReadyForLogin(isBootstrap)",
     "qualifier": "",
-    "summaryEn": "Cellapp init-progress poller (initprogress_handler.cpp:153-160). Return contract, fork-verified: return True → ready (:163, :177); otherwise a float, and progress counts as complete at >= 0.9999 (:194-196); no callback defined → immediately complete (:184-191). Material's \"≥ 1.0\" is close but the fork threshold is 0.9999 (§12)",
+    "summaryEn": "Cellapp init-progress poller (initprogress_handler.cpp:153-160). Return contract, fork-verified: return True → ready (:163, :177); otherwise a float, and progress counts as complete at >= 0.9999 (:194-196); no callback defined → immediately complete (:184-191). Material's \"≥ 1.0\" is close but the fork threshold is 0.9999 (§5)",
     "summaryZh": "",
     "sourceRefs": [],
     "page": "api-cellapp"

@@ -19,6 +19,16 @@ Language convention (matches the doc site's locale mirror, same as
 the `zh/` twin at `docs/zh/knowledge/<topic>.md`, same citations, same claims.
 The `en/` file is canonical for line-number drift checks.
 
+Site organization (2026-11-11; `docs/.vitepress/config.mts`): the knowledge
+sidebar groups the pages into **Engine basics / Entity mechanics / API
+reference / Traps**. The cellapp API page is split into two faces —
+`api-cellapp.md` (the `KBEngine` module face plus the face-assembly layer
+map) and `api-cellapp-entity.md` (the shared `Entity` class registered on
+cellapp) — mirroring the existing baseapp pair. `knowledge/official-docs/`
+(raw kbengine.github.io HTML dumps, each page carrying its own source link)
+is extraction working material: kept in-repo as grounding stock, excluded
+from the built site via `srcExclude`.
+
 ## Articles
 
 - **`.def` property Flags — the complete engine truth** (2026-11-09, from the
@@ -83,7 +93,8 @@ Source extraction → manual curation → consumers. Planned consumers
 - **API reference: client face** (KB-API-002):
 - **API reference: baseapp module + Entity/Proxy** (KB-API-003):
 - **API reference: baseapp entity classes** (KB-API-003):
-- **API reference: cellapp face** (KB-API-004):
+- **API reference: cellapp face** (KB-API-004; split into the module face
+  `api-cellapp.md` and the Entity face `api-cellapp-entity.md`):
 - **API reference: bots face** (KB-API-007):
 
 - **API reference: interfaces face** ((KB-API-005)):

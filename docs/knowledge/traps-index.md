@@ -32,10 +32,10 @@
 
 | Trap | Symptom | Correct pattern | Details |
 | --- | --- | --- | --- |
-| `delTimer` with a stale id expecting an error | Returns `-1` silently (fork); the 3.7 material claims an error | Check the return value | [api-cellapp §deviations](api-cellapp.md) |
+| `delTimer` with a stale id expecting an error | Returns `-1` silently (fork); the 3.7 material claims an error | Check the return value | [api-cellapp-entity §deviations](api-cellapp-entity.md) |
 | Expecting to cancel timers in `onDestroy` | Unnecessary — `destroy()` cancels all timers (`scriptTimers_.cancelAll()`) | Only `delTimer` matters for early cancel while alive | [lifecycle §Timers](entity-lifecycle-reference.md), [usage stats](api-usage-stats.md) |
-| `cancelController("SomeType")` | TypeError — only the exact string `"Movement"` is accepted | Cancel by handle for other controllers | [api-cellapp §deviations](api-cellapp.md) |
-| Calling `trackEntity` / `turnToYaw` | No such methods in the fork | `moveToEntity` / `addYawRotator` | [api-cellapp §deviations](api-cellapp.md) |
+| `cancelController("SomeType")` | TypeError — only the exact string `"Movement"` is accepted | Cancel by handle for other controllers | [api-cellapp-entity §deviations](api-cellapp-entity.md) |
+| Calling `trackEntity` / `turnToYaw` | No such methods in the fork | `moveToEntity` / `addYawRotator` | [api-cellapp-entity §deviations](api-cellapp-entity.md) |
 | Module-level `KBEngine.addTimer` with a self-bound callback leaks | The app-level timer strongly refs the callback object (`self.onTick` strongly refs the entity); entity `destroy()` cancels only the entity's own `scriptTimers_`, never this one — the callback keeps firing / the entity leaks into `garbages` | Store the handle and call `KBEngine.delTimer(handle)` in `onDestroy` (entity-level `self.addTimer` is safe — destroy auto-cancels all) | [lifecycle §Timers](entity-lifecycle-reference.md), `python_app.cpp:721-748` |
 
 ## Property sync
