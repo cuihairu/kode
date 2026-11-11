@@ -444,6 +444,442 @@ pub(crate) struct FnDomain {
     pub(crate) nonlocals: Vec<String>,
 }
 
+// ---- KBUG-CFGFLOW:域内语句流树(写点裁定从「文本最近」升级为流敏感可达)----
+
+/// 域内语句流树快照:def/class 头是直线一步(体属他域;其体内 global 写点
+/// 借 span 命中,执行序 = 语句序);with 体平铺(直线执行);Try/Match 保守
+/// 并集;Loop 保守(0 次 + ≥1 次并集);Return/Raise/Break/Continue = 终止。
+#[derive(Debug, Clone)]
+pub(crate) enum FlowStmt {
+    Simple { start: usize, end: usize },
+    Branch {
+        start: usize,
+        end: usize,
+        /// 静态可证测试真值(布尔/None/数值/字符串字面量;名字不折叠——
+        /// 可能被重绑定,不执行用户代码,其余条件保留候选)
+        test_const: Option<bool>,
+        then_body: Vec<FlowStmt>,
+        then_span: (usize, usize),
+        else_body: Option<Vec<FlowStmt>>,
+        else_span: Option<(usize, usize)>,
+    },
+    Loop {
+        start: usize,
+        end: usize,
+        body: Vec<FlowStmt>,
+        body_span: (usize, usize),
+        orelse: Vec<FlowStmt>,
+    },
+    /// Try/except/else/finally 与 Match case 的保守并集块
+    Join {
+        start: usize,
+        end: usize,
+        blocks: Vec<(Vec<FlowStmt>, (usize, usize))>,
+    },
+    Terminator { line: usize },
+}
+
+impl FlowStmt {
+    fn span(&self) -> (usize, usize) {
+        match self {
+            FlowStmt::Simple { start, end } => (*start, *end),
+            FlowStmt::Branch { start, end, .. }
+            | FlowStmt::Loop { start, end, .. }
+            | FlowStmt::Join { start, end, .. } => (*start, *end),
+            FlowStmt::Terminator { line } => (*line, *line),
+        }
+    }
+}
+
+/// 流值:查询位该名的可达写点候选(One=唯一确定;Many=合流多候选,
+/// maybe_unbound=含未绑定路径——诚实未知,绝不任取)。
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum FlowVal {
+    Unbound,
+    One(usize),
+    Many(Vec<usize>, bool),
+}
+
+#[derive(Debug, Clone)]
+struct BlockExit {
+    val: FlowVal,
+    terminated: bool,
+}
+
+fn fold_vals(vals: Vec<FlowVal>) -> FlowVal {
+    let mut lines: Vec<usize> = Vec::new();
+    let mut maybe_unbound = false;
+    for v in &vals {
+        match v {
+            FlowVal::Unbound => maybe_unbound = true,
+            FlowVal::One(l) => lines.push(*l),
+            FlowVal::Many(ls, mu) => {
+                lines.extend_from_slice(ls);
+                maybe_unbound |= *mu;
+            }
+        }
+    }
+    lines.sort_unstable();
+    lines.dedup();
+    if lines.is_empty() {
+        FlowVal::Unbound
+    } else if lines.len() == 1 && !maybe_unbound {
+        FlowVal::One(lines[0])
+    } else {
+        FlowVal::Many(lines, maybe_unbound)
+    }
+}
+
+fn tree_span(stmts: &[FlowStmt]) -> (usize, usize) {
+    match (stmts.first(), stmts.last()) {
+        (Some(f), Some(l)) => {
+            let (fs, _) = f.span();
+            let (_, le) = l.span();
+            (fs, le)
+        }
+        _ => (usize::MAX, usize::MAX),
+    }
+}
+
+fn span_has_write(write_lines: &[usize], span: (usize, usize)) -> bool {
+    write_lines.iter().any(|l| *l >= span.0 && *l <= span.1)
+}
+
+/// 静态可证测试真值:仅字面量折叠(布尔/None/数值/字符串/bytes + 一元 not;
+/// 名字不折叠——可能被重绑定;不执行用户代码,其余条件保留候选)。
+fn constant_bool(expr: &ast::Expr) -> Option<bool> {
+    match expr {
+        ast::Expr::BooleanLiteral(b) => Some(b.value),
+        ast::Expr::NoneLiteral(_) => Some(false),
+        ast::Expr::NumberLiteral(n) => match &n.value {
+            ast::Number::Int(i) => i.as_i64().map(|v| v != 0),
+            ast::Number::Float(f) => Some(*f != 0.0),
+            ast::Number::Complex { real, .. } => Some(*real != 0.0),
+        },
+        ast::Expr::StringLiteral(s) => Some(!s.value.is_empty()),
+        ast::Expr::BytesLiteral(b) => Some(!b.value.is_empty()),
+        ast::Expr::UnaryOp(u) if u.op == ast::UnaryOp::Not => {
+            constant_bool(&u.operand).map(|b| !b)
+        }
+        _ => None,
+    }
+}
+
+fn build_flow_tree(ast: &ParsedAst, body: &[ast::Stmt]) -> Vec<FlowStmt> {
+    let mut out = Vec::new();
+    for stmt in body {
+        let start = stmt_start_line(ast, stmt.range());
+        let end = last_char_line(ast, stmt.range());
+        match stmt {
+            ast::Stmt::If(s) => {
+                out.push(build_if_chain(ast, &s.test, &s.body, &s.elif_else_clauses));
+            }
+            ast::Stmt::While(s) => {
+                let b = build_flow_tree(ast, &s.body);
+                let bs = tree_span(&b);
+                out.push(FlowStmt::Loop {
+                    start,
+                    end,
+                    body: b,
+                    body_span: bs,
+                    orelse: build_flow_tree(ast, &s.orelse),
+                });
+            }
+            ast::Stmt::For(s) => {
+                // async for 同型(is_async 旗标;流形态一致)
+                let b = build_flow_tree(ast, &s.body);
+                let bs = tree_span(&b);
+                out.push(FlowStmt::Loop {
+                    start,
+                    end,
+                    body: b,
+                    body_span: bs,
+                    orelse: build_flow_tree(ast, &s.orelse),
+                });
+            }
+            ast::Stmt::Try(s) => {
+                let mut blocks: Vec<(Vec<FlowStmt>, (usize, usize))> = Vec::new();
+                let b = build_flow_tree(ast, &s.body);
+                if !b.is_empty() {
+                    let bs = tree_span(&b);
+                    blocks.push((b, bs));
+                }
+                for h in &s.handlers {
+                    let ast::ExceptHandler::ExceptHandler(inner) = h;
+                    let hb = build_flow_tree(ast, &inner.body);
+                    if !hb.is_empty() {
+                        let hs = tree_span(&hb);
+                        blocks.push((hb, hs));
+                    }
+                }
+                let oe = build_flow_tree(ast, &s.orelse);
+                if !oe.is_empty() {
+                    let os = tree_span(&oe);
+                    blocks.push((oe, os));
+                }
+                let fb = build_flow_tree(ast, &s.finalbody);
+                if !fb.is_empty() {
+                    let fs = tree_span(&fb);
+                    blocks.push((fb, fs));
+                }
+                out.push(FlowStmt::Join { start, end, blocks });
+            }
+            ast::Stmt::Match(s) => {
+                let mut blocks: Vec<(Vec<FlowStmt>, (usize, usize))> = Vec::new();
+                for case in &s.cases {
+                    let cb = build_flow_tree(ast, &case.body);
+                    if !cb.is_empty() {
+                        let cs = tree_span(&cb);
+                        blocks.push((cb, cs));
+                    }
+                }
+                out.push(FlowStmt::Join { start, end, blocks });
+            }
+            ast::Stmt::With(s) => {
+                // with 体直线执行:头一步 + 体平铺
+                out.push(FlowStmt::Simple { start, end: start });
+                out.extend(build_flow_tree(ast, &s.body));
+            }
+            ast::Stmt::Return(_) | ast::Stmt::Raise(_) | ast::Stmt::Break(_)
+            | ast::Stmt::Continue(_) => {
+                out.push(FlowStmt::Terminator { line: start });
+            }
+            _ => out.push(FlowStmt::Simple { start, end }),
+        }
+    }
+    out
+}
+
+/// if/elif/else 链构建(ruff 平铺 elif_else_clauses 重建为嵌套 Branch:
+/// 有 test = elif 递归,无 test = else 体)。
+fn build_if_chain(
+    ast: &ParsedAst,
+    test: &ast::Expr,
+    body: &[ast::Stmt],
+    clauses: &[ast::ElifElseClause],
+) -> FlowStmt {
+    let start = stmt_start_line(ast, test.range());
+    let then_body = build_flow_tree(ast, body);
+    let then_span = tree_span(&then_body);
+    let (else_body, else_span, end) = match clauses.split_first() {
+        None => {
+            let end = last_char_line(ast, body.last().map(|s| s.range()).unwrap_or(test.range()));
+            (None, None, end)
+        }
+        Some((first, rest)) => match &first.test {
+            Some(t) => {
+                let nested = build_if_chain(ast, t, &first.body, rest);
+                let ns = nested.span();
+                (Some(vec![nested]), Some(ns), ns.1)
+            }
+            None => {
+                let eb = build_flow_tree(ast, &first.body);
+                let es = tree_span(&eb);
+                let end =
+                    last_char_line(ast, first.body.last().map(|s| s.range()).unwrap_or(first.range));
+                (Some(eb), Some(es), end)
+            }
+        },
+    };
+    FlowStmt::Branch {
+        start,
+        end,
+        test_const: constant_bool(test),
+        then_body,
+        then_span,
+        else_body,
+        else_span,
+    }
+}
+
+/// 域语句块求值:返回 (查询落点值[query 在块内时 Some], 块出口)。
+/// cur = 块入口该名值;query = hover 行(usize::MAX = 整块执行取出口)。
+fn eval_block(
+    stmts: &[FlowStmt],
+    write_lines: &[usize],
+    mut cur: FlowVal,
+    query: usize,
+) -> (Option<FlowVal>, BlockExit) {
+    for stmt in stmts {
+        let (start, end) = stmt.span();
+        if start > query {
+            break; // 后续语句未执行(执行序严格递增)
+        }
+        if query > end {
+            match stmt {
+                FlowStmt::Simple { .. } => {
+                    if let Some(l) = write_lines
+                        .iter()
+                        .rev()
+                        .find(|l| **l >= start && **l <= end)
+                    {
+                        cur = FlowVal::One(*l); // 替换语义(执行序后写胜)
+                    }
+                }
+                FlowStmt::Terminator { .. } => {
+                    return (None, BlockExit { val: cur, terminated: true });
+                }
+                FlowStmt::Branch {
+                    test_const,
+                    then_body,
+                    else_body,
+                    ..
+                } => {
+                    // 合流:各分支出口并集;终止分支不达语句后 = 剔除
+                    // (CFGFLOW-04);静态死分支不产出口(CFGFLOW-02);
+                    // 无 else = 入口值路径(CFGFLOW-03)
+                    let mut live: Vec<FlowVal> = Vec::new();
+                    let mut any_live = false;
+                    if *test_const != Some(false) {
+                        let (_, e) = eval_block(then_body, write_lines, cur.clone(), usize::MAX);
+                        if !e.terminated {
+                            live.push(e.val);
+                            any_live = true;
+                        }
+                    }
+                    match else_body {
+                        Some(eb) if *test_const != Some(true) => {
+                            let (_, e) = eval_block(eb, write_lines, cur.clone(), usize::MAX);
+                            if !e.terminated {
+                                live.push(e.val);
+                                any_live = true;
+                            }
+                        }
+                        None if *test_const != Some(true) => {
+                            live.push(cur.clone());
+                            any_live = true;
+                        }
+                        _ => {}
+                    }
+                    if !any_live {
+                        return (None, BlockExit { val: cur, terminated: true });
+                    }
+                    cur = fold_vals(live);
+                }
+                FlowStmt::Loop { body, orelse, .. } => {
+                    // 保守:0 次执行(入口值)+ ≥1 次(体出口;break/continue
+                    // 路径值同并入——过近似 = 诚实未知方向)
+                    let (_, be) = eval_block(body, write_lines, cur.clone(), usize::MAX);
+                    let mut live = vec![cur.clone(), be.val];
+                    if !orelse.is_empty() {
+                        let (_, oe) = eval_block(orelse, write_lines, cur.clone(), usize::MAX);
+                        live.push(oe.val);
+                    }
+                    cur = fold_vals(live);
+                }
+                FlowStmt::Join { blocks, .. } => {
+                    let mut live = vec![cur.clone()];
+                    for (blk, _) in blocks {
+                        let (_, e) = eval_block(blk, write_lines, cur.clone(), usize::MAX);
+                        live.push(e.val);
+                    }
+                    cur = fold_vals(live);
+                }
+            }
+            continue;
+        }
+        // query 落在本语句行域内
+        match stmt {
+            FlowStmt::Simple { .. } => {
+                if let Some(l) = write_lines
+                    .iter()
+                    .find(|l| **l >= start && **l <= end && **l <= query)
+                {
+                    cur = FlowVal::One(*l);
+                }
+                let exit = BlockExit { val: cur.clone(), terminated: false };
+                return (Some(cur), exit);
+            }
+            FlowStmt::Terminator { .. } => {
+                let exit = BlockExit { val: cur.clone(), terminated: true };
+                return (Some(cur), exit);
+            }
+            FlowStmt::Branch {
+                test_const,
+                then_body,
+                then_span,
+                else_body,
+                else_span,
+                ..
+            } => {
+                if query >= then_span.0 && query <= then_span.1 {
+                    if *test_const == Some(false) {
+                        // 静态死分支内查询 = 不可达,诚实未绑定
+                        return (
+                            Some(FlowVal::Unbound),
+                            BlockExit { val: cur, terminated: true },
+                        );
+                    }
+                    return eval_block(then_body, write_lines, cur, query);
+                }
+                if let (Some(eb), Some(es)) = (else_body, else_span) {
+                    if query >= es.0 && query <= es.1 {
+                        if *test_const == Some(true) {
+                            return (
+                                Some(FlowVal::Unbound),
+                                BlockExit { val: cur, terminated: true },
+                            );
+                        }
+                        return eval_block(eb, write_lines, cur, query);
+                    }
+                }
+                // 头行/行间隙:语句起点值
+                let exit = BlockExit { val: cur.clone(), terminated: false };
+                return (Some(cur), exit);
+            }
+            FlowStmt::Loop { body, body_span, .. } => {
+                if query >= body_span.0 && query <= body_span.1 {
+                    let (qv, _) = eval_block(body, write_lines, cur.clone(), query);
+                    let qv = qv.unwrap_or_else(|| cur.clone());
+                    if span_has_write(write_lines, *body_span) {
+                        // 环回保守:体内该名任一写点在 ≥2 次迭代可达
+                        let mut vals = vec![qv];
+                        vals.extend(
+                            write_lines
+                                .iter()
+                                .filter(|l| **l >= body_span.0 && **l <= body_span.1)
+                                .map(|l| FlowVal::One(*l)),
+                        );
+                        return (
+                            Some(fold_vals(vals)),
+                            BlockExit { val: cur, terminated: false },
+                        );
+                    }
+                    let exit = BlockExit { val: cur.clone(), terminated: false };
+                    return (Some(qv), exit);
+                }
+                let exit = BlockExit { val: cur.clone(), terminated: false };
+                return (Some(cur), exit);
+            }
+            FlowStmt::Join { blocks, .. } => {
+                for (blk, span) in blocks {
+                    if query >= span.0 && query <= span.1 {
+                        let (qv, _) = eval_block(blk, write_lines, cur.clone(), query);
+                        let qv = qv.unwrap_or_else(|| cur.clone());
+                        // 异常/匹配路径保守:入口值并存
+                        let exit = BlockExit { val: cur.clone(), terminated: false };
+                        return (Some(fold_vals(vec![qv, cur])), exit);
+                    }
+                }
+                let exit = BlockExit { val: cur.clone(), terminated: false };
+                return (Some(cur), exit);
+            }
+        }
+    }
+    (None, BlockExit { val: cur, terminated: false })
+}
+
+/// 域流树查询:hover 行该名的流敏感可达写点值(终止后查询 = 不可达,诚实
+/// 未绑定;行间隙 = 前语句出口值)。
+pub(crate) fn flow_query_value(tree: &[FlowStmt], write_lines: &[usize], query: usize) -> FlowVal {
+    let (qv, exit) = eval_block(tree, write_lines, FlowVal::Unbound, query);
+    match qv {
+        Some(v) => v,
+        None if exit.terminated => FlowVal::Unbound,
+        None => exit.val,
+    }
+}
+
 #[derive(Debug, Clone)]
 struct DeferredEntry {
     kind: EntryKind,
@@ -467,6 +903,10 @@ struct BuildContext {
     fn_domains: Vec<FnDomain>,
     /// KBUG-SCOPE:类体 `global` 声明(类名行 → 名;类体直系写点改记模块域)
     scope_globals: HashMap<usize, Vec<String>>,
+    /// KBUG-CFGFLOW:函数域语句流树(header_line → 树)
+    fn_trees: HashMap<usize, Vec<FlowStmt>>,
+    /// KBUG-CFGFLOW:类体语句流树(类名行 → 树)
+    class_trees: HashMap<usize, Vec<FlowStmt>>,
     /// 模块级 def `-> T` 表
     def_returns: HashMap<String, DefReturn>,
     /// 类名 → 类名行(同名多个 = 歧义源)
@@ -698,6 +1138,9 @@ struct FlowTables {
     bare_writes: HashMap<String, Vec<BareWrite>>,
     fn_domains: Vec<FnDomain>,
     scope_globals: HashMap<usize, Vec<String>>,
+    fn_trees: HashMap<usize, Vec<FlowStmt>>,
+    class_trees: HashMap<usize, Vec<FlowStmt>>,
+    module_tree: Vec<FlowStmt>,
 }
 
 fn assignments_from_ast(ast: &ParsedAst, lines: &[Vec<u16>], classes: &[ClassSpan]) -> FlowTables {
@@ -787,6 +1230,9 @@ fn assignments_from_ast(ast: &ParsedAst, lines: &[Vec<u16>], classes: &[ClassSpa
             domains
         },
         scope_globals: ctx.scope_globals,
+        fn_trees: ctx.fn_trees,
+        class_trees: ctx.class_trees,
+        module_tree: build_flow_tree(ast, &ast.module().body),
     }
 }
 
@@ -923,6 +1369,9 @@ fn walk_assignments(
                 if !cls_globals.is_empty() {
                     ctx.scope_globals.insert(cls_line, cls_globals);
                 }
+                // KBUG-CFGFLOW:类体直系语句流树(类体直系读的流敏感裁定)
+                ctx.class_trees
+                    .insert(cls_line, build_flow_tree(ast, &cls.body));
                 // 类体直系裸名赋值/注解 → class_direct(基线面);嵌套块与
                 // 嵌套类体内不入(与旧基线「类体缩进直系行」同域)。
                 for direct in &cls.body {
@@ -974,6 +1423,9 @@ fn walk_assignments(
                     globals: declared_names(&fun.body, true, false),
                     nonlocals: declared_names(&fun.body, false, true),
                 });
+                // KBUG-CFGFLOW:本域直系语句流树(写点流敏感裁定素材)
+                ctx.fn_trees
+                    .insert(fun_line, build_flow_tree(ast, &fun.body));
                 walk_assignments(ast, &fun.body, Some(start_line), ctx, class_start, Some(fun_line));
             }
             ast::Stmt::If(s) => {
@@ -1566,6 +2018,12 @@ pub struct FlowParse {
     pub(crate) fn_domains: Vec<FnDomain>,
     /// KBUG-SCOPE:类体 `global` 声明(类名行 → 名)
     pub(crate) scope_globals: HashMap<usize, Vec<String>>,
+    /// KBUG-CFGFLOW:函数域语句流树(header_line → 树)
+    pub(crate) fn_trees: HashMap<usize, Vec<FlowStmt>>,
+    /// KBUG-CFGFLOW:类体语句流树(类名行 → 树)
+    pub(crate) class_trees: HashMap<usize, Vec<FlowStmt>>,
+    /// KBUG-CFGFLOW:模块语句流树
+    pub(crate) module_tree: Vec<FlowStmt>,
     /// 模块级 def `-> T` 表
     pub(crate) def_returns: HashMap<String, DefReturn>,
     /// 类名 → 类名行
@@ -1603,6 +2061,9 @@ fn flow_parse_from_lines(lines: &[Vec<u16>]) -> FlowParse {
         bare_writes: tables.bare_writes,
         fn_domains: tables.fn_domains,
         scope_globals: tables.scope_globals,
+        fn_trees: tables.fn_trees,
+        class_trees: tables.class_trees,
+        module_tree: tables.module_tree,
         def_returns: tables.def_returns,
         class_names: tables.class_names,
         class_methods: tables.class_methods,

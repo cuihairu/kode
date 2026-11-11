@@ -88,12 +88,12 @@
 
 复现与依据：已复现：x=a()（a -> int）；if False 内 x=b()（b -> str）；分支后查询 x 返回 str。源码：`local_return.rs:94-102` 按行逆序选最后写点，没有分支合流。
 
-- [ ] KBUG-CFGFLOW-01 [P1] 固定不可达写点回归。验收：if False 内的 str 写点不污染外部 int；同时验证 if True 的确定赋值和普通条件分支，测试明确区分确定结果与未知。
-- [ ] KBUG-CFGFLOW-02 [P1] 排除可静态证明的不可达赋值。验收：处理明确布尔常量及前序无条件终止后的写点；不通过执行用户代码判定条件，其他条件保留候选。
-- [ ] KBUG-CFGFLOW-03 [P1] 实现 if/else 后的写点合流。验收：分别计算分支出口，考虑无 else 时的原值路径；不同结果输出联合或未知，不按源码先后任取最后一支。
-- [ ] KBUG-CFGFLOW-04 [P1] 处理 return/raise 等终止分支。验收：只将能到达查询点的分支出口参与合流；嵌套函数的 return 不终止外层路径，函数边界清楚。
-- [ ] KBUG-CFGFLOW-05 [P1] 界定循环和异常控制流的保守结果。验收：for/while 零次执行、break/continue 以及 try/except/finally 未精确建模时返回保守候选/未知；新增反例证明不会回退为最后文本写点。
-- [ ] KBUG-CFGFLOW-06 [P1] 验收查询位置的流敏感结果。验收：同变量在分支前、分支内、合流后分别得到符合路径的结果；未保存条件修改即时改变结果，合法直线推断保持通过。
+- [x] KBUG-CFGFLOW-01 [P1] 固定不可达写点回归。验收：if False 内的 str 写点不污染外部 int；同时验证 if True 的确定赋值和普通条件分支，测试明确区分确定结果与未知。(self_flow.rs FlowStmt 流树+constant_bool 字面量折叠(名字不折叠不执行用户代码);kbug_cfgflow_if_false_write_not_pollute 修前红/if_true_definite 守卫双绿/kbug_cfgflow_rpc_if_false_reachable_hit RPC 面)
+- [x] KBUG-CFGFLOW-02 [P1] 排除可静态证明的不可达赋值。验收：处理明确布尔常量及前序无条件终止后的写点；不通过执行用户代码判定条件，其他条件保留候选。(Terminator 后语句不再执行;kbug_cfgflow_after_return_unreachable_honest 修前红;死分支内查询=不可达位诚实空 query_in_dead_branch 修前红)
+- [x] KBUG-CFGFLOW-03 [P1] 实现 if/else 后的写点合流。验收：分别计算分支出口，考虑无 else 时的原值路径；不同结果输出联合或未知，不按源码先后任取最后一支。(Branch 合流=各分支出口并集,无 else 入口值路径参与,FlowVal::Many(maybe_unbound) 诚实未知;resolve_flow_val 逐候选解面全同才答;two-differ/no-else/cond-only 三例修前红,same_face 合流守卫绿)
+- [x] KBUG-CFGFLOW-04 [P1] 处理 return/raise 等终止分支。验收：只将能到达查询点的分支出口参与合流；嵌套函数的 return 不终止外层路径，函数边界清楚。(终止分支出口剔除;嵌套 def=直线一步体属他域,嵌套 return 不终止外层——terminated_branch_excluded/nested_def_return_not_terminate_outer 双例修前红)
+- [x] KBUG-CFGFLOW-05 [P1] 界定循环和异常控制流的保守结果。验收：for/while 零次执行、break/continue 以及 try/except/finally 未精确建模时返回保守候选/未知；新增反例证明不会回退为最后文本写点。(Loop 保守=0 次入口值+≥1 次体出口并集,体内读位环回保守;Join=try/except/else/finally+match case 保守并集;loop/loop_body_read/try 三例修前红,RPC loop_conservative_null)
+- [x] KBUG-CFGFLOW-06 [P1] 验收查询位置的流敏感结果。验收：同变量在分支前、分支内、合流后分别得到符合路径的结果；未保存条件修改即时改变结果，合法直线推断保持通过。(positions_flow_sensitive 三位断言修前红;versionKey LRU 键控重解析=未保存修改即时生效既有机制;直线推断守卫双绿;pythonLocalReturnTypeRust 7/7 零新增对拍分歧;修前红 12/14 见 docs/review/2026-11-12-kbug-cfgflow.md)
 
 ### KBUG-ORDER · P2 · 同行赋值顺序和查询列缺失
 

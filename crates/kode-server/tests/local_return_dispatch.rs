@@ -250,3 +250,76 @@ fn kbug_bind_rpc_alias_pass_through_hit() {
         out["ret"]
     );
 }
+
+// ---- KBUG-CFGFLOW(RPC 面流敏感验收)----
+
+/// CFGFLOW-01/02:`if False` 内 str 写点不污染——分支后查询命中可达 int 面。
+#[test]
+fn kbug_cfgflow_rpc_if_false_reachable_hit() {
+    let lines = [
+        "def make() -> Tree:",
+        "    return None",
+        "",
+        "def other() -> Rock:",
+        "    return None",
+        "",
+        "x = make()",
+        "if False:",
+        "    x = other()",
+        "print(x)",
+    ];
+    let out = query(&lines, 9, "x");
+    assert_eq!(
+        out["ret"]["annotation"],
+        "Tree",
+        "死分支写点不应污染,实得 {:?}",
+        out["ret"]
+    );
+}
+
+/// CFGFLOW-03:if/else 两支不同面 → ret null(未知,不任取最后一支)。
+#[test]
+fn kbug_cfgflow_rpc_if_else_differ_null() {
+    let lines = [
+        "def make() -> Tree:",
+        "    return None",
+        "",
+        "def other() -> Rock:",
+        "    return None",
+        "",
+        "if cond:",
+        "    x = make()",
+        "else:",
+        "    x = other()",
+        "print(x)",
+    ];
+    let out = query(&lines, 10, "x");
+    assert!(
+        out["ret"].is_null(),
+        "两支不同面应诚实空,实得 {:?}",
+        out["ret"]
+    );
+}
+
+/// CFGFLOW-05:循环后保守并集候选不同 → ret null。
+#[test]
+fn kbug_cfgflow_rpc_loop_conservative_null() {
+    let lines = [
+        "def make() -> Tree:",
+        "    return None",
+        "",
+        "def other() -> Rock:",
+        "    return None",
+        "",
+        "x = make()",
+        "for i in items:",
+        "    x = other()",
+        "print(x)",
+    ];
+    let out = query(&lines, 9, "x");
+    assert!(
+        out["ret"].is_null(),
+        "循环保守候选应诚实空,实得 {:?}",
+        out["ret"]
+    );
+}

@@ -19,8 +19,8 @@
 use std::collections::HashSet;
 
 use crate::self_flow::{
-    resolve_shape, BareWrite, CalleeBinding, CalleeShape, DefReturn, FlowParse, FnDomain,
-    ResolveState, RhsShape,
+    flow_query_value, resolve_shape, BareWrite, CalleeBinding, CalleeShape, DefReturn, FlowParse,
+    FlowVal, FnDomain, ResolveState, RhsShape,
 };
 
 /// 别名链有界跳数(与流面 RESOLVE_MAX_HOPS 同量级;域门扫描每跳严格下行,
@@ -116,8 +116,9 @@ fn face_scan(
         if domain.params.iter().any(|n| n == word) {
             return None; // 参数绑定:无返回注解面,遮蔽外层同名绑定
         }
-        // 本域写点 = 该名在本域局部(Python 函数级静态绑定):hover 行前
-        // 最近写点裁定;写点全在 hover 之后 → UnboundLocal 位,诚实空,
+        // 本域写点 = 该名在本域局部(Python 函数级静态绑定):写点值经
+        // 语句流树流敏感裁定(KBUG-CFGFLOW:if False/终止后写点不污染,
+        // 合流多候选全同才答);无可达写点 → UnboundLocal 位,诚实空,
         // 绝不外借模块/外层绑定(KBUG-SCOPE-02)。
         let domain_writes = fp
             .bare_writes
@@ -127,17 +128,19 @@ fn face_scan(
 
         let binds_here = |w: &BareWrite| w.method_start == Some(domain.header_line);
         if domain_writes.iter().any(binds_here) {
-            if let Some(write) = domain_writes
-                .iter()
-                .rev()
-                .find(|w| binds_here(w) && w.line <= start)
-            {
-                if !visited.insert((write.line, word.to_string())) {
-                    return None; // `x = x` 身份链/重复解同一写点 → 诚实空
-                }
-                return resolve_face_shape(fp, state, lines, write, depth, visited);
-            }
-            return None; // 本域绑定、读前于写 → UnboundLocal,不外借
+            let domain_write_refs: Vec<&BareWrite> =
+                domain_writes.iter().filter(|w| binds_here(w)).collect();
+            let write_lines: Vec<usize> =
+                domain_write_refs.iter().map(|w| w.line).collect();
+            let val = match fp.fn_trees.get(&domain.header_line) {
+                Some(tree) => flow_query_value(tree, &write_lines, start),
+                // 无树域(直接赋值 lambda 等;其体内无裸名写点):退文本最近
+                None => match domain_write_refs.iter().rev().find(|w| w.line <= start) {
+                    Some(w) => FlowVal::One(w.line),
+                    None => FlowVal::Unbound,
+                },
+            };
+            return resolve_flow_val(fp, state, lines, val, &domain_write_refs, word, depth, visited);
         }
         // 本域无该名绑定 → 向外层函数域继续
     }
@@ -168,24 +171,25 @@ fn face_scan(
                         .collect()
                 })
                 .unwrap_or_default();
-            if let Some(write) = class_writes
-                .iter()
-                .rev()
-                .find(|w| w.line <= start)
-            {
-                if !visited.insert((write.line, word.to_string())) {
-                    return None;
-                }
-                return resolve_face_shape(fp, state, lines, write, depth, visited);
-            }
             if !class_writes.is_empty() {
-                return None; // 类体绑定在 hover 行后 → 执行序 NameError 位,不落模块
+                let write_lines: Vec<usize> =
+                    class_writes.iter().map(|w| w.line).collect();
+                let val = match fp.class_trees.get(&cls.start_line) {
+                    Some(tree) => flow_query_value(tree, &write_lines, start),
+                    None => match class_writes.iter().rev().find(|w| w.line <= start) {
+                        Some(w) => FlowVal::One(w.line),
+                        None => FlowVal::Unbound,
+                    },
+                };
+                return resolve_flow_val(fp, state, lines, val, &class_writes, word, depth, visited);
             }
             // 本类体未绑定 → 落模块域(类体执行期可见模块名)
         }
     }
     // 模块域绑定:非函数域写点;类体直系写点须其类体声明过 `global`;
-    // 函数域写点须其函数域声明过 `global`(写点重定向模块名空间)
+    // 函数域写点须其函数域声明过 `global`(写点重定向模块名空间)。
+    // 写点值经模块语句流树流敏感裁定(KBUG-CFGFLOW;main-guard 等条件块
+    // 内写点是候选而非确定)。
     let is_module_binding = |w: &BareWrite| -> bool {
         match w.method_start {
             Some(header) => fp
@@ -204,17 +208,65 @@ fn face_scan(
             },
         }
     };
-    if let Some(write) = fp
+    let module_writes: Vec<&BareWrite> = fp
         .bare_writes
         .get(word)
-        .and_then(|ws| ws.iter().rev().find(|w| w.line <= start && is_module_binding(w)))
-    {
-        if !visited.insert((write.line, word.to_string())) {
-            return None;
-        }
-        return resolve_face_shape(fp, state, lines, write, depth, visited);
+        .map(|ws| ws.iter().filter(|w| is_module_binding(w)).collect())
+        .unwrap_or_default();
+    if !module_writes.is_empty() {
+        let write_lines: Vec<usize> = module_writes.iter().map(|w| w.line).collect();
+        let val = flow_query_value(&fp.module_tree, &write_lines, start);
+        return resolve_flow_val(fp, state, lines, val, &module_writes, word, depth, visited);
     }
     None
+}
+
+/// 流值 → 面答案:One 直解;Many 逐候选解析——候选面全同 = 该面,不同 =
+/// 未知,绝不按源码先后任取(KBUG-CFGFLOW-03);maybe_unbound = 合流含
+/// 未绑定路径 → 诚实空(可能 NameError);Unbound = 无可达写点(UnboundLocal
+/// /不可达位)。
+#[allow(clippy::too_many_arguments)]
+fn resolve_flow_val(
+    fp: &FlowParse,
+    state: &mut ResolveState,
+    lines: &[Vec<u16>],
+    val: FlowVal,
+    writes: &[&BareWrite],
+    word: &str,
+    depth: usize,
+    visited: &mut HashSet<(usize, String)>,
+) -> Option<LocalReturnFace> {
+    match val {
+        FlowVal::Unbound => None,
+        FlowVal::One(l) => {
+            let write = writes.iter().copied().find(|w| w.line == l)?;
+            if !visited.insert((write.line, word.to_string())) {
+                return None; // `x = x` 身份链/重复解同一写点 → 诚实空
+            }
+            resolve_face_shape(fp, state, lines, write, depth, visited)
+        }
+        FlowVal::Many(cands, maybe_unbound) => {
+            if maybe_unbound {
+                return None;
+            }
+            let mut face: Option<LocalReturnFace> = None;
+            for l in &cands {
+                let Some(write) = writes.iter().copied().find(|w| w.line == *l) else {
+                    continue;
+                };
+                if !visited.insert((write.line, word.to_string())) {
+                    continue;
+                }
+                let f = resolve_face_shape(fp, state, lines, write, depth, visited);
+                face = match (face, f) {
+                    (None, f0) => f0,
+                    (Some(prev), Some(f0)) if prev == f0 => Some(prev),
+                    _ => return None, // 候选结果不同 → 未知
+                };
+            }
+            face
+        }
+    }
 }
 
 /// 最近写点 RHS → 面答案。调用形态直取注解;别名链同域递归;其余形态
@@ -909,6 +961,227 @@ mod tests {
         assert!(
             local_return_type(&lines, 4, &"data".encode_utf16().collect::<Vec<u16>>(), None)
                 .is_none()
+        );
+    }
+
+    // ---- KBUG-CFGFLOW(分支可达性/合流/终止/循环异常保守/查询位)----
+
+    /// CFGFLOW-01/02:`if False` 内 str 写点不污染外部 int 面(静态死分支
+    /// 不可达,不产出口)。
+    #[test]
+    fn kbug_cfgflow_if_false_write_not_pollute() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\nx = make()\nif False:\n    x = other()\nprint(x)\n",
+        );
+        let face = local_return_type(
+            &lines,
+            9,
+            &"x".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("可达 int 写点应命中");
+        assert_eq!(face.annotation, "Tree");
+        assert_eq!(face.method_name, "make");
+    }
+
+    /// CFGFLOW-01 守卫:`if True` = 静态确定分支,str 写点确定生效。
+    #[test]
+    fn kbug_cfgflow_if_true_definite_write() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\nx = make()\nif True:\n    x = other()\nprint(x)\n",
+        );
+        let face = local_return_type(
+            &lines,
+            9,
+            &"x".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("if True 确定写点应命中");
+        assert_eq!(face.annotation, "Rock");
+    }
+
+    /// CFGFLOW-03 守卫:if/else 两支同面(同调用)→ 合流仍命中。
+    #[test]
+    fn kbug_cfgflow_if_else_same_face_confluence() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\nif cond:\n    x = make()\nelse:\n    x = make()\nprint(x)\n",
+        );
+        let face = local_return_type(
+            &lines,
+            7,
+            &"x".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("两支同面合流应命中");
+        assert_eq!(face.annotation, "Tree");
+    }
+
+    /// CFGFLOW-03:if/else 两支不同面 → 未知,不按源码先后任取最后一支。
+    #[test]
+    fn kbug_cfgflow_if_else_differ_honest_unknown() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\nif cond:\n    x = make()\nelse:\n    x = other()\nprint(x)\n",
+        );
+        assert!(
+            local_return_type(&lines, 10, &"x".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none(),
+            "两支不同面应未知"
+        );
+    }
+
+    /// CFGFLOW-03:无 else 条件分支 → 入口值路径并入,候选不同 → 未知。
+    #[test]
+    fn kbug_cfgflow_no_else_differ_honest() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\nx = make()\nif cond:\n    x = other()\nprint(x)\n",
+        );
+        assert!(
+            local_return_type(&lines, 9, &"x".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none(),
+            "无 else 分支候选不同应未知"
+        );
+    }
+
+    /// CFGFLOW-03:仅条件分支赋值(无入口写点)→ 可能未绑定,诚实空。
+    #[test]
+    fn kbug_cfgflow_cond_only_write_maybe_unbound() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\nif cond:\n    x = make()\nprint(x)\n",
+        );
+        assert!(
+            local_return_type(&lines, 5, &"x".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none(),
+            "可能未绑定路径应诚实空"
+        );
+    }
+
+    /// CFGFLOW-04:终止分支(return)出口不达语句后 → 只合流可达路径。
+    #[test]
+    fn kbug_cfgflow_terminated_branch_excluded() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\ndef run():\n    x = make()\n    if cond:\n        x = other()\n        return\n    print(x)\n",
+        );
+        let face = local_return_type(
+            &lines,
+            11,
+            &"x".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("终止分支剔除后应命中可达路径");
+        assert_eq!(face.annotation, "Tree");
+    }
+
+    /// CFGFLOW-04:嵌套 def 的 return 不终止外层路径(函数边界清楚)。
+    #[test]
+    fn kbug_cfgflow_nested_def_return_not_terminate_outer() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\ndef run():\n    x = make()\n    if cond:\n        def inner():\n            return\n        x = other()\n    print(x)\n",
+        );
+        assert!(
+            local_return_type(&lines, 12, &"x".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none(),
+            "嵌套 return 不终止外层:两支候选不同应未知"
+        );
+    }
+
+    /// CFGFLOW-02:前序无条件终止后的写点不可达;不可达位查询诚实空。
+    #[test]
+    fn kbug_cfgflow_after_return_unreachable_honest() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\ndef run():\n    x = make()\n    return\n    x = other()\n    print(x)\n",
+        );
+        assert!(
+            local_return_type(&lines, 10, &"x".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none(),
+            "终止后不可达写点不应命中"
+        );
+    }
+
+    /// CFGFLOW-05:循环保守(0 次执行入口值 + ≥1 次体出口并集),候选不同
+    /// → 未知,绝不回退最后文本写点。
+    #[test]
+    fn kbug_cfgflow_loop_conservative() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\nx = make()\nfor i in items:\n    x = other()\nprint(x)\n",
+        );
+        assert!(
+            local_return_type(&lines, 9, &"x".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none(),
+            "循环后候选不同应未知"
+        );
+    }
+
+    /// CFGFLOW-05:循环体内读位前于写点 → 环回保守(≥2 次迭代可见前轮
+    /// 写点),未知,绝不回退文本首写点。
+    #[test]
+    fn kbug_cfgflow_loop_body_read_before_write_conservative() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\nx = make()\nfor i in items:\n    print(x)\n    x = other()\n",
+        );
+        assert!(
+            local_return_type(&lines, 8, &"x".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none(),
+            "循环体环回候选应未知"
+        );
+    }
+
+    /// CFGFLOW-05:try/except 保守并集(异常路径入口值 + try 体出口),
+    /// 候选不同 → 未知。
+    #[test]
+    fn kbug_cfgflow_try_conservative() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\nx = make()\ntry:\n    x = other()\nexcept ValueError:\n    pass\nprint(x)\n",
+        );
+        assert!(
+            local_return_type(&lines, 11, &"x".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none(),
+            "try 保守候选不同应未知"
+        );
+    }
+
+    /// CFGFLOW-06:查询位流敏感——分支前/分支内/合流后各得路径结果;
+    /// 直线推断保持通过。
+    #[test]
+    fn kbug_cfgflow_positions_flow_sensitive() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\nx = make()\nif cond:\n    print(x)\n    x = other()\ny = x\n",
+        );
+        // 分支前:直线确定
+        let face = local_return_type(
+            &lines,
+            6,
+            &"x".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("分支前直线写点应命中");
+        assert_eq!(face.annotation, "Tree");
+        // 分支内读位前于写:入口值直达
+        let face = local_return_type(
+            &lines,
+            8,
+            &"x".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("分支内入口值应命中");
+        assert_eq!(face.annotation, "Tree");
+        // 合流后:候选不同 → 未知
+        assert!(
+            local_return_type(&lines, 10, &"x".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none(),
+            "合流后候选不同应未知"
+        );
+    }
+
+    /// CFGFLOW-01/02:静态死分支内查询 = 不可达位,诚实空(绝不解析死写点)。
+    #[test]
+    fn kbug_cfgflow_query_in_dead_branch_honest() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\nif False:\n    x = make()\n    print(x)\n",
+        );
+        assert!(
+            local_return_type(&lines, 5, &"x".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none(),
+            "死分支内查询应诚实空"
         );
     }
 }
