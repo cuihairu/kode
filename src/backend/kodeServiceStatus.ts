@@ -27,17 +27,17 @@ export interface KodeCoreStateLite {
 /** 核心状态栏文案:$(circuit-board)=运行/$(warning)=降级/$(beaker)=影子对拍 */
 export function coreStatusBarText(state: KodeCoreStateLite | null): string {
   if (!state) {
-    return l10nText('$(circuit-board) Kode: not initialized');
+    return l10nText('$(circuit-board) Kode LSP: not initialized');
   }
   if (state.mode === 'shadow') {
-    return l10nText('$(beaker) Kode: Shadow parity');
+    return l10nText('$(beaker) Kode LSP: Shadow parity');
   }
   if (state.mode === 'rust') {
     return state.serverPath
-      ? l10nText('$(circuit-board) Kode: Rust')
-      : l10nText('$(warning) Kode: Rust fallback TS');
+      ? l10nText('$(circuit-board) Kode LSP: Rust')
+      : l10nText('$(warning) Kode LSP: Rust fallback TS');
   }
-  return l10nText('$(circuit-board) Kode: TS');
+  return l10nText('$(circuit-board) Kode LSP: TS');
 }
 
 /** 核心 tooltip:当前服务轨道与依据(路径/降级原因) */

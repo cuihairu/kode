@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { setL10nBundle } from './fake-vscode/l10n';
 import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
 import { parseDefinitionStructure } from '../src/explorerProviders';
-import { EntityExplorerProvider, ServerControlProvider } from '../src/explorerProviders';
+import { EntityExplorerProvider, ServerControlProvider, entityExplorerBadgeOf } from '../src/explorerProviders';
 import { KBEngineServerManager, ServerStatus } from '../src/serverManager';
 import { workspace as stubWorkspace, Uri } from './helpers/vscodeStub';
 
@@ -580,5 +580,21 @@ describe('EntityExplorerProvider 分类标签双语(两态)', () => {
     expect(sectionLabels).toContain('接口');
     expect(sectionLabels).toContain('属性');
     expect(sectionLabels).toContain('Base 段方法');
+  });
+});
+
+describe('entityExplorerBadgeOf(UX-REVIEW-011③ 标题计数徽章)', () => {
+  it('合计>0 → 挂徽章,值=四组合计,tooltip=分组明细', () => {
+    const badge = entityExplorerBadgeOf({ types: 3, entities: 12, interfaces: 1, components: 2 });
+    expect(badge).not.toBeNull();
+    expect(badge?.value).toBe(18);
+    expect(badge?.tooltip).toContain('12');
+    expect(badge?.tooltip).toContain('3');
+    expect(badge?.tooltip).toContain('1');
+    expect(badge?.tooltip).toContain('2');
+  });
+
+  it('全零 → null(空项目挂 0 是噪音,不挂)', () => {
+    expect(entityExplorerBadgeOf({ types: 0, entities: 0, interfaces: 0, components: 0 })).toBeNull();
   });
 });

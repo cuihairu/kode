@@ -14,7 +14,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { DefinitionSymbolIdentity, EntityMethodSection } from '../entityMapping';
-import { EntityExplorerProvider } from '../explorerProviders';
+import { EntityExplorerProvider, entityExplorerBadgeOf, type EntityTreeNode } from '../explorerProviders';
 import { parseHttpRequestEntries } from '../backend/httpRequests';
 import { HttpRequestService } from '../backend/httpRequestService';
 import { QuickActionManager } from '../quickActions';
@@ -115,13 +115,29 @@ export interface QuickActionTreeViewsShared {
 export function activateEntityExplorerViews(deps: EntityExplorerViewsDeps): void {
   const { context, entityMappingManager } = deps;
 
-  // 注册侧边栏视图
-  const entityExplorerProvider = new EntityExplorerProvider();
-  const entityExplorerRegistration = vscode.window.registerTreeDataProvider(
-    'kbengine.entityExplorer',
-    entityExplorerProvider
-  );
-  context.subscriptions.push(entityExplorerRegistration);
+  // 注册侧边栏视图。UX-REVIEW-011①置顶(package.json)+③标题计数徽章:
+  // getRootGroups 实跑才回调计数(懒视图不预扫),宿主据此设 TreeView.badge;
+  // 受限宿主(fake-vscode 无 createTreeView)退化为 registerTreeDataProvider,
+  // 徽章面随之缺席(与 gitHistory 同一 guard 先例)。
+  const entityTreeViewRef: { view?: vscode.TreeView<EntityTreeNode> } = {};
+  const entityExplorerProvider = new EntityExplorerProvider(counts => {
+    const badge = entityExplorerBadgeOf(counts);
+    if (entityTreeViewRef.view) {
+      entityTreeViewRef.view.badge = badge ?? undefined;
+    }
+  });
+  if (typeof vscode.window.createTreeView === 'function') {
+    const entityTreeView = vscode.window.createTreeView('kbengine.entityExplorer', {
+      treeDataProvider: entityExplorerProvider,
+      showCollapseAll: false
+    });
+    entityTreeViewRef.view = entityTreeView;
+    context.subscriptions.push(entityTreeView);
+  } else {
+    context.subscriptions.push(
+      vscode.window.registerTreeDataProvider('kbengine.entityExplorer', entityExplorerProvider)
+    );
+  }
 
   // 刷新实体浏览器的命令
   const refreshCommand = vscode.commands.registerCommand(

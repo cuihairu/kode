@@ -316,6 +316,10 @@
     "views": {
       "kbengine-explorer": [
         {
+          "id": "kbengine.entityExplorer",
+          "name": "%kbengine.view.entityExplorer%"
+        },
+        {
           "id": "kbengine.start",
           "name": "%kbengine.view.start%"
         },
@@ -329,7 +333,8 @@
         },
         {
           "id": "kbengine.componentStatus",
-          "name": "%kbengine.view.componentStatus%"
+          "name": "%kbengine.view.componentStatus%",
+          "when": "kbengine.engineReady"
         },
         {
           "id": "kbengine.telnetStatus",
@@ -343,10 +348,6 @@
         {
           "id": "kbengine.remoteServers",
           "name": "%kbengine.view.remoteServers%"
-        },
-        {
-          "id": "kbengine.entityExplorer",
-          "name": "%kbengine.view.entityExplorer%"
         },
         {
           "id": "kbengine.debugTargets",
@@ -592,11 +593,13 @@
       },
       {
         "command": "kbengine.config.showFinal",
-        "title": "%kbengine.command.config.showFinal.title%"
+        "title": "%kbengine.command.config.showFinal.title%",
+        "icon": "$(json)"
       },
       {
         "command": "kbengine.config.visualize",
-        "title": "%kbengine.command.config.visualize.title%"
+        "title": "%kbengine.command.config.visualize.title%",
+        "icon": "$(graph)"
       },
       {
         "command": "kbengine.lintRules.showReport",
@@ -1066,6 +1069,16 @@
           "command": "kbengine.consoleComponentPanel.refresh",
           "when": "view == kbengine.componentStatus",
           "group": "navigation"
+        },
+        {
+          "command": "kbengine.config.showFinal",
+          "when": "view == kbengine.config",
+          "group": "navigation@0"
+        },
+        {
+          "command": "kbengine.config.visualize",
+          "when": "view == kbengine.config",
+          "group": "navigation@1"
         }
       ],
       "editor/title": [

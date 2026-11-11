@@ -39,13 +39,18 @@ describe('Extension manifest', () => {
     assert.ok(snippets.some(entry => entry.language === 'xml' && entry.path === './snippets/kbengine-types-xml.json'));
   });
 
-  it('contributes quick actions as an independent view before Entities', () => {
-    const views = manifest.contributes.views['kbengine-explorer'] as Array<{ id: string; name: string }>;
-    const quickIndex = views.findIndex(view => view.id === 'kbengine.quickActions');
+  it('contributes Entities as the top view with quick actions intact (UX-REVIEW-011)', () => {
+    const views = manifest.contributes.views['kbengine-explorer'] as Array<{ id: string; name: string; when?: string }>;
     const entityIndex = views.findIndex(view => view.id === 'kbengine.entityExplorer');
-    assert.ok(quickIndex >= 0, 'quick actions view missing');
-    assert.ok(entityIndex > quickIndex, 'quick actions should be listed before Entities');
+    const quickIndex = views.findIndex(view => view.id === 'kbengine.quickActions');
+    assert.ok(entityIndex >= 0, 'entities view missing');
+    assert.strictEqual(entityIndex, 0, 'entities view should be listed first (UX-REVIEW-011 top placement)');
+    assert.ok(quickIndex > entityIndex, 'quick actions view missing or before entities');
     assert.strictEqual(views[quickIndex].name, '%kbengine.view.quickActions%');
+    // UX-REVIEW-011②:组件状态视图按 engineReady 隐藏(用户选定 A 案)
+    const componentStatus = views.find(view => view.id === 'kbengine.componentStatus');
+    assert.ok(componentStatus, 'component status view missing');
+    assert.strictEqual(componentStatus.when, 'kbengine.engineReady');
 
     // 分类标签双语:英文 locale 出英文,中文 locale 出中文(与 vscode.l10n 同一 i18n 面)
     const enNames = localizedViewNames(nlsDefault);

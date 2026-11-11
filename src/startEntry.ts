@@ -45,6 +45,20 @@ export function resetStartEntryStateForTests(): void {
   current = { kind: 'no-workspace', workspaceRoot: null, detail: '' };
 }
 
+// ---- UX-REVIEW-011②:engineReady context key ----
+
+/** componentStatus 视图 `when` 门控键(用户选定 A 案:就绪才显示) */
+export const ENGINE_READY_CONTEXT_KEY = 'kbengine.engineReady';
+
+/** 把当前状态落到 context key(初值 + 每次状态变化都要调一次) */
+export function syncEngineReadyContextKey(): void {
+  void vscode.commands.executeCommand(
+    'setContext',
+    ENGINE_READY_CONTEXT_KEY,
+    getStartEntryState().kind === 'ready'
+  );
+}
+
 /**
  * 同步推导识别结论:entity_defs 根是核心锚点(实体浏览全链的输入),
  * 唯一命中且真实存在才算已识别——空列表绝不冒充就绪(002b 验收线)。
@@ -265,6 +279,10 @@ export class StartEntryController {
     this.deps.onDidChangeWorkspaceFolders?.(() => {
       this.begin();
     });
+    // UX-REVIEW-011②:engineReady context key 跟状态机走(初值 + 每次变化)
+    const engineReadySync = onStartEntryStateChanged(() => syncEngineReadyContextKey());
+    this.deps.subscriptions?.push(engineReadySync);
+    syncEngineReadyContextKey();
     const provider = new StartEntryProvider(deps);
     const registration = this.deps.registerTreeDataProvider?.(provider);
     if (registration && this.deps.subscriptions) {

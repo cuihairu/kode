@@ -23,6 +23,9 @@ describe('core status bar (pure)', () => {
   it('maps each backend mode to its honest label (en default)', () => {
     // Rust 服务轨道:backend=rust + serverPath 命中
     expect(coreStatusBarText({ mode: 'rust', serverPath: '/x/kode-server' })).toContain('Rust');
+    // UX-REVIEW-011 追加:核心状态文案点明 LSP(用户反馈「看不出哪条是 LSP」)
+    expect(coreStatusBarText({ mode: 'rust', serverPath: '/x/kode-server' })).toContain('Kode LSP');
+    expect(coreStatusBarText({ mode: 'ts', serverPath: '' })).toContain('Kode LSP');
     // Rust 配置但二进制未找到(自动发现落空)→ 降级 TS
     expect(coreStatusBarText({ mode: 'rust', serverPath: '' })).toContain('fallback');
     // 纯 TS

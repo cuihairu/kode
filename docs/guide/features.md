@@ -42,6 +42,13 @@ Notes:
 the log viewer has not completed the official logger watcher protocol adaptation.
 When the watcher does not respond, the monitoring panel keeps only the base status returned by machine.
 
+### Explorer sidebar layout (UX-REVIEW-011)
+
+- **Entities sits at the top** of the KBEngine explorer (first view in the sidebar). Its title carries a count badge (total of the four root groups) once the tree has rendered at least once — the tooltip breaks the count down to Entities / Types / Interfaces / Components, and an empty project shows no badge at all
+- **Get Started** right below drives project identification; it reports honestly through scanning / not-found / failed states and offers the real retry/report commands
+- **Component Status** is hidden until the engine is ready (`kbengine.engineReady` context key, set by the Get Started state machine) — before that its machined-discovery poll would just show noise
+- **Config view title buttons**: `Show Final Server Config` and `Config Merge Visualization` (the merge-resolution webview panel) are one click on the Config view title — they are also on the command palette
+
 ## Raw Log ERROR Scan (inventory G6)
 
 - The `Scan Raw Log Errors` command picks raw log files or a folder (a folder scans one level of `.log`/`.txt`/`.out`, sorted by name and deduped); the same parser the log panel uses picks out the `ERROR`/`CRITICAL` lines

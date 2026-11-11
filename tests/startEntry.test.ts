@@ -9,6 +9,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   deriveStartEntryOutcome,
+  ENGINE_READY_CONTEXT_KEY,
   getStartEntryState,
   resetStartEntryStateForTests,
   setStartEntryState,
@@ -17,6 +18,7 @@ import {
   type StartEntryState
 } from '../src/startEntry';
 import { resetDiscoveryState } from '../src/workspaceDiscovery';
+import { contexts } from './fake-vscode/commandRegistry';
 
 let rootA = '';
 let rootB = '';
@@ -65,6 +67,32 @@ afterEach(() => {
 });
 
 describe('StartEntry 状态机(UX-REVIEW-002b)', () => {
+  it('engineReady context key 跟状态机走:构造落初值,false→ready=true(UX-REVIEW-011②)', async () => {
+    contexts.clear();
+    // 初值:构造即同步(no-workspace 残留态 → false)
+    const emptyController = new StartEntryController({
+      getWorkspaceRoot: () => null,
+      runDiscovery: async () => undefined
+    });
+    expect(contexts.get(ENGINE_READY_CONTEXT_KEY)).toBe(false);
+    // ready → true
+    makeReadyFixture(rootA);
+    const controller = new StartEntryController({
+      getWorkspaceRoot: () => rootA,
+      runDiscovery: async () => undefined
+    });
+    await controller.retry();
+    expect(contexts.get(ENGINE_READY_CONTEXT_KEY)).toBe(true);
+    // not-found(空根)→ 回落 false
+    const missingController = new StartEntryController({
+      getWorkspaceRoot: () => rootB,
+      runDiscovery: async () => undefined
+    });
+    await missingController.retry();
+    expect(contexts.get(ENGINE_READY_CONTEXT_KEY)).toBe(false);
+    void emptyController;
+  });
+
   it('未打开工作区落 no-workspace,不探测不扫描', async () => {
     const controller = new StartEntryController({
       getWorkspaceRoot: () => null,
@@ -325,7 +353,8 @@ describe('StartEntry 视图(UX-REVIEW-002c)', () => {
     });
     await controller.retry();
     expect(registered).toHaveLength(1);
-    expect(pushed).toHaveLength(1);
+    // UX-REVIEW-011② 起:engineReady 订阅 + provider 注册,两个 disposable
+    expect(pushed).toHaveLength(2);
     expect((registered[0] as StartEntryProvider).getChildren()[0].label).toBe('Project ready');
   });
 });

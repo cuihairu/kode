@@ -46,9 +46,45 @@ import type {
 /** 面板分类/分组标题走 vscode.l10n:调用期求值(语言切换即时生效),默认英文源串 */
 // l10nText 自 ./nlsRuntime 共享实现导入(KODE-I18N-002):六面共用公共取词入口
 
+/** 根分组计数快照(UX-REVIEW-011③:视图标题徽章数据源) */
+export interface EntityExplorerRootCounts {
+  types: number;
+  entities: number;
+  interfaces: number;
+  components: number;
+}
+
+/**
+ * UX-REVIEW-011③:视图标题徽章(合计>0 才挂——空项目挂 0 是噪音;
+ * tooltip=四组明细,侧栏压缩态下仍外露「里面有东西」)。纯函数便于对账,
+ * 宿主(views.ts)只做赋值。
+ */
+export function entityExplorerBadgeOf(
+  counts: EntityExplorerRootCounts
+): { value: number; tooltip: string } | null {
+  const total = counts.types + counts.entities + counts.interfaces + counts.components;
+  if (total <= 0) {
+    return null;
+  }
+  return {
+    value: total,
+    tooltip: l10nText(
+      'Entities {entities} · Types {types} · Interfaces {interfaces} · Components {components}',
+      counts as unknown as Record<string, string | number>
+    )
+  };
+}
+
 export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTreeNode> {
   private _onDidChangeTreeData = new vscode.EventEmitter<EntityTreeNode | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+  /**
+   * UX-REVIEW-011③:根分组每次实际渲染时回调计数快照;宿主(views.ts)
+   * 据此设 TreeView.badge,侧栏压缩态下标题徽章仍外露「里面有东西」。
+   * 计数只在 getRootGroups 真正执行时产生,不做急切扫描,零额外开销。
+   */
+  constructor(private readonly onRootCounts?: (counts: EntityExplorerRootCounts) => void) {}
 
   refresh(): void {
     this._onDidChangeTreeData.fire(undefined);
@@ -119,12 +155,23 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     const interfaces = getDefinitionEntries(workspaceRoot, 'interface');
     const components = getDefinitionEntries(workspaceRoot, 'component');
 
+    this.publishRootCounts({
+      types: types.length,
+      entities: entities.length,
+      interfaces: interfaces.length,
+      components: components.length
+    });
     return [
       new ExplorerGroupItem(l10nText('Types'), 'type', types.length),
       new ExplorerGroupItem(l10nText('Entities'), 'entity', entities.length),
       new ExplorerGroupItem(l10nText('Interfaces'), 'interface', interfaces.length),
       new ExplorerGroupItem(l10nText('Components'), 'component', components.length)
     ];
+  }
+
+  /** 计数快照外发(构造期注入的宿主回调;无注入时为空操作) */
+  private publishRootCounts(counts: EntityExplorerRootCounts): void {
+    this.onRootCounts?.(counts);
   }
 
   private getDefinitionItems(

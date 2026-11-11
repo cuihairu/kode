@@ -42,6 +42,13 @@
 日志查看器当前尚未完成官方 logger watcher 协议适配。
 监控面板在 watcher 无响应时只保留 machine 返回的基础状态。
 
+### 侧栏视图排布（UX-REVIEW-011）
+
+- **实体视图置顶**（KBEngine explorer 第一个视图）。树首次渲染后标题挂计数徽章（四组合计），tooltip 分解为 实体/类型/接口/组件——空项目不挂徽章（挂 0 是噪音）
+- **开始**紧随其后驱动项目识别，scanning / not-found / failed 状态如实可辨，条目全指向真实命令
+- **组件状态**在引擎就绪前隐藏（`kbengine.engineReady` context key，由开始状态机落）——就绪前 machined 发现在轮询也只剩噪音
+- **配置视图标题按钮**：「查看最终服务器配置」与「配置合并可视化」（合并解析 webview 面板）在 Config 视图标题栏一键可达——命令面板同入
+
 ## 原始日志 ERROR 扫描（盘点 G6）
 
 - `Scan Raw Log Errors` 命令选原始日志文件或文件夹（文件夹只扫一层 `.log`/`.txt`/`.out`，按名排序、去重），经与日志面板同一个解析器挑出 `ERROR`/`CRITICAL` 行
