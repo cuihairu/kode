@@ -349,3 +349,62 @@ export function debugExtensionOn37Line(version: string | null): boolean | null {
   );
   return Number.parseInt(match[1], 10) === expectedMajor && Number.parseInt(match[2], 10) === expectedMinor;
 }
+
+/** ms-python.debugpy 扩展 id(debugpy 调试类型提供者,attach 的依赖面) */
+export const DEBUGPY_EXTENSION_ID = 'ms-python.debugpy';
+
+/**
+ * 读扩展宿主里 ms-python.debugpy 的实测版本(DBG-COMPAT-05);未安装/
+ * packageJSON 异常 → null(诚实未知)。registry 注入便于测试,默认真
+ * vscode.extensions。
+ */
+export function readDebugpyExtensionVersion(
+  registry: { getExtension(id: string): { packageJSON?: { version?: unknown } } | undefined } = vscode.extensions
+): string | null {
+  try {
+    const version = registry.getExtension(DEBUGPY_EXTENSION_ID)?.packageJSON?.version;
+    return typeof version === 'string' && version.length > 0 ? version : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface DebugExtensionCompat {
+  kind: 'ok' | 'extension-off-line' | 'extension-missing';
+  /** 非 ok 时的一行可操作文案(固定版本安装 + 禁自动更新步骤) */
+  message: string | null;
+}
+
+/**
+ * 3.7 目标 × 调试扩展线判定(DBG-COMPAT-05):strict 目标(3.7)要求
+ * ms-python.debugpy 落在 2024.0.x——之后的扩展线已移除 Python 3.7 调试
+ * 支持,attach 必败;非 3.7 目标不看扩展线(新线更好);未安装=诚实缺失。
+ * 判定只产出步骤文案,绝不自动降级用户的调试扩展(其他工程不受 3.7 约束)。
+ */
+export function debugExtensionCompatFor(
+  pythonTarget: PythonTarget,
+  extensionVersion: string | null
+): DebugExtensionCompat {
+  const policy = debugpyPolicyFor(pythonTarget.version);
+  if (policy === null || !policy.strict) {
+    return { kind: 'ok', message: null };
+  }
+  if (extensionVersion === null) {
+    return {
+      kind: 'extension-missing',
+      message: `引擎目标 Python ${pythonTarget.version} 的调试依赖 ${DEBUGPY_EXTENSION_ID} 扩展,当前扩展宿主未检测到;` +
+        `Python 3.7 请安装 ${PY37_DEBUGGER_EXTENSION_LINE} 线版本(如 ${PY37_DEBUGGER_EXTENSION_LINE}.0),` +
+        `更高版本线(${Number.parseInt(PY37_DEBUGGER_EXTENSION_LINE.split('.')[0], 10) + 1}.x 起)已移除 3.7 调试支持`
+    };
+  }
+  if (debugExtensionOn37Line(extensionVersion)) {
+    return { kind: 'ok', message: null };
+  }
+  return {
+    kind: 'extension-off-line',
+    message: `引擎目标 Python ${pythonTarget.version} 需要 ${DEBUGPY_EXTENSION_ID} ${PY37_DEBUGGER_EXTENSION_LINE}.x` +
+      `(当前 ${extensionVersion}——其后的扩展线已移除 Python 3.7 调试支持)。请在扩展面板对该扩展` +
+      `「安装特定版本...」选 ${PY37_DEBUGGER_EXTENSION_LINE}.0,并在扩展齿轮菜单选「忽略升级」防自动更新;` +
+      '本扩展绝不自动降级你的调试扩展(非 3.7 工程用新版扩展不受影响)'
+  };
+}

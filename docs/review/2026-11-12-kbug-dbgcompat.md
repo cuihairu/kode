@@ -112,6 +112,39 @@ stash 5 个源文件 → HEAD 兼容探针(旧签名调用、断言修后应有�
   KodeHotReload.py@199 记录);
 - `xvfb-run -a npm run test:demo:editor` 25 RC=0。
 
+## 批次 C(05/06):扩展版本检测与版本分支回归矩阵
+
+1. **扩展版本检测接线(05)**:`pythonTarget.ts` 新增
+   `readDebugpyExtensionVersion`(扩展宿主实测 `ms-python.debugpy` 版本;
+   未装/packageJSON 异常 → null 诚实未知;registry 注入可测)+
+   `debugExtensionCompatFor`(3.7 目标 × 扩展线判定:2024.0.x 在线;
+   新线 → `extension-off-line`,文案给「安装特定版本...」选 2024.0.0 +
+   齿轮「忽略升级」步骤,写明绝不自动降级、非 3.7 工程不受影响;扩展
+   缺失 → `extension-missing` 诚实缺失;非 3.7/未知目标不看扩展线)。
+   接线在 `serverControls.ts` 注入闸:预检放行后核查扩展线,命中问题
+   只记 warning(会话去重,不逐组件 5 连播),**引擎侧注入照常**——
+   监听不依赖扩展,扩展是 attach 侧依赖;只给步骤,绝不自动降级用户
+   扩展。
+2. **版本分支回归矩阵(06)**:新 `tests/dbgcompatVersionMatrix.test.ts`
+   (16 例)把「目标 × 版本 × 生产入口」钉成一张账:安装参数全分支表;
+   同步入口**真 fs 流**(3.7+1.7.0 synced 真复制可读回 / 3.7+1.8.0 严格
+   拒且资产树零写入 / ABI 行不一致拒 / modern 下限拒+放行 / 未知目标
+   拒盲同步(不触探测)/ 用户手放 skipped-user 原样);预检入口(3.7
+   ok+精确 pin / 3.7+1.8.0 incompatible / modern 下限双向 / target-unknown
+   无参数 / 3.6 无支持线);注入放行入口(资产树 1.7.0 放行 / 1.8.0 拦 /
+   读不出拦 / 未知可读放行不背书 / 3.6 恒不放行);宿主新扩展 × 引擎旧
+   目标(2024.1.1+3.7.3 → off-line 账本反例 / 2024.0.7+3.7.3 → ok /
+   新线+3.12 → ok / 缺失 → 诚实缺失);远端口径(closed 指引带实测/
+   目标版本无 -U、target-unknown 无安装动作)。各分支深钉仍在各自套件,
+   本文件防修一处面时另一分支变卦。
+3. **prove-red 说明**:05 为纯新增面(HEAD 上无此判定,不存在旧行为
+   反转;测试文件本身在 HEAD 无法 import 即证明),06 为回归账本(零
+   源码变更);本批行为变化仅在注入闸新增警告路径(additive),正式
+   套件判别力断言承载。
+4. 文档对账:features.md en+zh `kbengine.debug.pythonTarget` 行补扩展
+   线核查子句;一键命令(`debugpyInjectCommand.ts`)不加扩展闸(用户
+   显式动作,attach 侧既有预检/指引覆盖版本面)。
+
 ## 边界与诚实记录
 
 - **引擎二进制扫描未对真实引擎二进制验证**(本机无 KBEngine 二进制
@@ -123,7 +156,8 @@ stash 5 个源文件 → HEAD 兼容探针(旧签名调用、断言修后应有�
   docs/zh/guide/python-debugger-compatibility.md §7):本批只收 01-04
   的**判定与装配面**,07/08(原生/纯 Python 路径与完整调试链)等真机
   验收,导入成功不抵扣监听/断点验证;
-- 05(扩展版本检测接线)/06(版本分支回归矩阵)为下一批;
+- 05/06 已收口(见上方批次 C 节);剩余 07/08(原生/纯 Python 路径与
+  固定扩展完整调试链)等真机验收;
 - 文档对账:`docs/guide{,/zh}/configuration.md` 的 debugpySync/
   autoDebugpy 段落在并发文档会话的脏树里,本批不吞;其
   python-debugger-compatibility.md 基线文档与本批行为一致(版本锁

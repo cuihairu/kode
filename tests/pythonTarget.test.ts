@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   ENGINE_BIN_SCAN_LIMIT,
   PYTHON_TARGET_SETTING,
+  DEBUGPY_EXTENSION_ID,
+  debugExtensionCompatFor,
   debugExtensionOn37Line,
   debugpyInstallSpecFor,
   debugpyPolicyFor,
@@ -10,6 +12,7 @@ import {
   normalizeVersionText,
   pythonLineOf,
   pythonTargetDeps,
+  readDebugpyExtensionVersion,
   resolvePythonTarget,
   scanPythonVersionCandidates,
   setWorkspaceConfigSourceForTests,
@@ -299,5 +302,65 @@ describe('debugExtensionOn37Line(3.7 调试扩展支持线)', () => {
     expect(debugExtensionOn37Line('2023.9.0')).toBe(false);
     expect(debugExtensionOn37Line(null)).toBeNull();
     expect(debugExtensionOn37Line('junk')).toBeNull();
+  });
+});
+
+describe('readDebugpyExtensionVersion(扩展宿主版本探测)', () => {
+  const registryWith = (version: unknown) => ({
+    getExtension: (id: string) =>
+      id === DEBUGPY_EXTENSION_ID ? { packageJSON: { version } } : undefined
+  });
+
+  it('已装扩展读实测版本;未装/版本异常 → null(诚实未知)', () => {
+    expect(readDebugpyExtensionVersion(registryWith('2024.0.7'))).toBe('2024.0.7');
+    expect(readDebugpyExtensionVersion(registryWith('2024.1.1'))).toBe('2024.1.1');
+    expect(readDebugpyExtensionVersion({ getExtension: () => undefined })).toBeNull();
+    expect(readDebugpyExtensionVersion(registryWith(undefined))).toBeNull();
+    expect(readDebugpyExtensionVersion(registryWith(42))).toBeNull();
+    // registry 抛异常也按未知处理,不炸调用面
+    expect(
+      readDebugpyExtensionVersion({
+        getExtension: () => {
+          throw new Error('host unavailable');
+        }
+      })
+    ).toBeNull();
+  });
+});
+
+describe('debugExtensionCompatFor(3.7 目标 × 扩展线判定)', () => {
+  const target = (version: string | null) => ({
+    version,
+    source: 'setting' as const,
+    detail: version === null ? '测试未知' : `测试 ${version}`
+  });
+
+  it('3.7 目标 + 2024.0.x → ok 静默', () => {
+    expect(debugExtensionCompatFor(target('3.7.3'), '2024.0.0')).toEqual({ kind: 'ok', message: null });
+    expect(debugExtensionCompatFor(target('3.7.3'), '2024.0.7')).toEqual({ kind: 'ok', message: null });
+  });
+
+  it('3.7 目标 + 新线扩展 → off-line,给固定版本安装/禁自动更新步骤', () => {
+    const compat = debugExtensionCompatFor(target('3.7.3'), '2024.1.1');
+    expect(compat.kind).toBe('extension-off-line');
+    expect(compat.message).toContain('2024.0');
+    expect(compat.message).toContain('安装特定版本');
+    expect(compat.message).toContain('忽略升级');
+    // 绝不自动降级的承诺写进文案(用户自行操作)
+    expect(compat.message).toContain('绝不自动降级');
+  });
+
+  it('3.7 目标 + 扩展缺失 → 诚实缺失(不假装能 attach)', () => {
+    const compat = debugExtensionCompatFor(target('3.7.3'), null);
+    expect(compat.kind).toBe('extension-missing');
+    expect(compat.message).toContain(DEBUGPY_EXTENSION_ID);
+    expect(compat.message).toContain('未检测到');
+  });
+
+  it('非 3.7 目标不看扩展线(新线更好);未知目标也不判', () => {
+    expect(debugExtensionCompatFor(target('3.12.13'), '2024.1.1')).toEqual({ kind: 'ok', message: null });
+    expect(debugExtensionCompatFor(target('3.9.7'), '2025.5.1')).toEqual({ kind: 'ok', message: null });
+    expect(debugExtensionCompatFor(target(null), '2024.1.1')).toEqual({ kind: 'ok', message: null });
+    expect(debugExtensionCompatFor(target('3.6.9'), '2024.1.1')).toEqual({ kind: 'ok', message: null });
   });
 });

@@ -32,7 +32,12 @@ import {
   type DebugpyInjectTarget,
 } from '../autoDebugpy';
 import { checkInterpreterDebugpy, debugpyPreflightAllowsInjection, debugpyPreflightDeps, readAssetsDebugpyVersion } from '../backend/debugpyPreflight';
-import { pythonTargetDeps, resolvePythonTarget } from '../backend/pythonTarget';
+import {
+  debugExtensionCompatFor,
+  pythonTargetDeps,
+  readDebugpyExtensionVersion,
+  resolvePythonTarget
+} from '../backend/pythonTarget';
 import {
   findEngineEntryScript,
   injectWaitBootstrap,
@@ -403,6 +408,8 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
   // 状态树刷新面(树 provider 在下方创建;注入回调可能先于其定义发生,
   // 用前置持有器解前向引用)
   let refreshDebugTargets = (): void => undefined;
+  // DBG-COMPAT-05 扩展线警告的会话去重:同一次激活只播一次(逐组件会 5 连播)
+  let extensionCompatWarned = false;
   const recordInjection = (serverKey: string, entry: DebugInjectionEntry): void => {
     debugInjections.set(serverKey, entry);
     refreshDebugTargets();
@@ -439,6 +446,16 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
             { outcome: 'failed', detail: preflight.message }
           );
           return;
+        }
+        // DBG-COMPAT-05:3.7 目标 × 调试扩展线核查(ms-python.debugpy
+        // 2024.1 起移除 Python 3.7 调试支持,attach 必败)——只给固定版
+        // 本安装/禁自动更新步骤,绝不自动降级;非 3.7 目标/在线版本静默。
+        // 引擎侧注入照常(监听不依赖扩展,扩展是 attach 侧依赖);会话去重。
+        const extensionCompat = debugExtensionCompatFor(pythonTarget, readDebugpyExtensionVersion());
+        if (extensionCompat.message !== null && !extensionCompatWarned) {
+          extensionCompatWarned = true;
+          const componentName = typeof injectTarget === 'string' ? injectTarget : injectTarget.component;
+          log(componentName, 'warning', `autoDebugpy:${extensionCompat.message}`);
         }
       }
       // DBG-004 等待连接模式:默认实例由入口脚本引导块在启动最早期
