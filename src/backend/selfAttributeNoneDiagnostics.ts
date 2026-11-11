@@ -122,30 +122,29 @@ export function attributeNoneDiagnosticItems(
   return computeSelfAttributeNoneFindings(source, options, versionKey);
 }
 
-// ---- Rust 词法面(AUDIT-005 B2 车道批 6:attributeNone 收编) --------------------
+// ---- Rust 词法面(AUDIT-005 B2 车道批 6:attributeNone 收编;批 2 流证据内联) ----
 // `$/kode/lint/analyzeAttributeNone` 经 gate.runInRust(与 receiverNone/
 // postDestroy 同口径):入参 text 为 TS 预掩码文本(maskPythonNonCode 输出,注释/
-// 字符串已换同长空白),Rust 只回词法结构面(line/character/length/attr/member,
-// 成员列沿用 match[0].indexOf 首次出现语义);流敏感 None 证据与消息渲染留本侧
-// 单一来源(inferSelfAttributeFlow + buildMessage)。逐字段校验:code/attr/member
-// 形态/length===member.length/非负整数/内建 receiver(Rust 漏跳=契约漂移),
-// 任一畸形整面作废(禁止部分采用)。对拍测试共用。
+// 字符串已换同长空白)+ versionKey(直传 KODE-PERF-001 版本键控解析缓存),Rust
+// 回词法结构面(line/character/length/attr/member,成员列沿用 match[0].indexOf
+// 首次出现语义)+ **逐项内联流事实**(flow:{types,annotation,hasNone,narrowed},
+// 引擎 kode-python::self_flow 与 typeInlayHints 同源,每 (行,属性) 一次查询)。
+// 本侧 render 退位为事实校验(types 字符串数组/annotation null 或串/两布尔)+
+// 同 (行,属性) 流事实矛盾整面作废(禁止部分采用);兜底
+// computeSelfAttributeNoneFindings 仍走 TS 引擎自算。对拍测试共用。
 
 const ATTRIBUTE_NAME_PATTERN = /^[A-Za-z_]\w*$/;
 
 /**
- * Rust 词法结构面 → findings(流敏感 None 证据 TS 裁定:hasNone 才报,窄化/
- * 无证据剔除但面合法);任一条畸形或语义漂移(内建 receiver 未跳)返回 null
- * (整面作废,调用方回 TS 兜底)。maskedLines = 预掩码文本行(与兜底
- * computeSelfAttributeNoneFindings 同一输入路径,流查询逐位同语义;
- * (行, 属性) 记忆化与兜底一致)。对拍测试共用。
+ * Rust 词法结构面+内联流事实 → findings(hasNone 事实为裁定依据,才报;窄化/
+ * 无证据剔除但面合法)。逐条校验:code/attr/member 形态/length===member.length/
+ * 非负整数/内建 receiver(Rust 漏跳=契约漂移)/flow 四字段,同 (行,属性) 流
+ * 事实互相矛盾 → 整面作废返回 null(调用方回 TS 兜底,禁止部分采用)。
+ * 对拍测试共用。
  */
 export function renderAttributeNoneRustItems(
-  items: readonly unknown[],
-  maskedSource: string,
-  versionKey?: string
+  items: readonly unknown[]
 ): SelfAttributeNoneFinding[] | null {
-  const maskedLines = maskedSource.split(/\r?\n/);
   const memo = new Map<string, boolean>();
   const findings: SelfAttributeNoneFinding[] = [];
   for (const item of items) {
@@ -177,12 +176,32 @@ export function renderAttributeNoneRustItems(
       }
     }
     const line = record.line as number;
-    const key = `${line}\u0000${attr}`;
-    if (!memo.has(key)) {
-      const flow = inferSelfAttributeFlow(maskedLines, line, attr, undefined, versionKey);
-      memo.set(key, flow !== null && flow.hasNone);
+    // 批 2:流证据随项内联(Rust 引擎同源);null/畸形 = 契约漂移整面作废
+    const flow = record.flow;
+    if (flow === null || typeof flow !== 'object') {
+      return null;
     }
-    if (memo.get(key)) {
+    const face = flow as Record<string, unknown>;
+    if (!Array.isArray(face.types) || face.types.some(entry => typeof entry !== 'string')) {
+      return null;
+    }
+    if (face.annotation !== null && typeof face.annotation !== 'string') {
+      return null;
+    }
+    if (typeof face.hasNone !== 'boolean' || typeof face.narrowed !== 'boolean') {
+      return null;
+    }
+    const key = `${line}\u0000${attr}`;
+    const reported = face.hasNone as boolean;
+    if (memo.has(key)) {
+      if (memo.get(key) !== reported) {
+        // 同 (行,属性) 流事实互相矛盾 = 契约漂移,整面作废
+        return null;
+      }
+    } else {
+      memo.set(key, reported);
+    }
+    if (reported) {
       findings.push({
         line,
         character: record.character as number,

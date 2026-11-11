@@ -75,8 +75,9 @@ fn is_str_prefix_char(code: u16) -> bool {
 
 // ---- pythonCodeLines 掩码(pythonParser.ts:26-51 逐字移植) -----------------
 
-/// `content.split(/\r?\n/)`(尾随 `\r` 剥离)
-fn split_crlf(content: &[u16]) -> Vec<Vec<u16>> {
+/// `content.split(/\r?\n/)`(尾随 `\r` 剥离)。attributeNone 诊断面复用:
+/// 掩码文本行数组与 TS `maskedText.split(/\r?\n/)` 同法。
+pub fn split_crlf(content: &[u16]) -> Vec<Vec<u16>> {
     let mut lines = Vec::new();
     let mut current = Vec::new();
     let mut i = 0usize;

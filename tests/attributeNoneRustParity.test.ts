@@ -1,20 +1,24 @@
 /**
- * attributeNone Rust↔TS 行为对拍(AUDIT-005 B2 车道批 6,沿 readOnlyWriteRustParity
- * 先例):用真实 kode-server 二进制跑 `$/kode/lint/analyzeAttributeNone`,把 Rust
- * 词法结构面经 renderAttributeNoneRustItems 渲染(流敏感 None 证据 TS 裁定),
+ * attributeNone Rust↔TS 行为对拍(AUDIT-005 B2 车道批 6;批 2 流证据内联,沿
+ * readOnlyWriteRustParity 先例):用真实 kode-server 二进制跑
+ * `$/kode/lint/analyzeAttributeNone`,把 Rust 词法结构面+内联流事实经
+ * renderAttributeNoneRustItems 校验渲染(hasNone 事实裁定,TS 不再二次流查询),
  * 与 TS 兜底 attributeNoneDiagnosticItems 对同一语料**全量深等**(有序数组
  * toEqual:range/message/severity/source/code 逐条一致)。
  *
- * 分工:Rust = 预掩码文本词法扫描(match[0].indexOf 首次出现语义逐字对齐);
- * TS = 掩码单一来源 + 流敏感 None 证据 + 消息渲染。入参 text = 预掩码文本
- * (与生产装配 buildAttributeNoneItemsWithRust 同一条路径);原文零 `self.` 线索
- * 生产序短路不发 RPC(掩码只减不增,两侧空面)。
- * 语料 = 合成样本(None 证据全族/窄化全族/内建跳过/indexOf 同名成员/掩码面/
- * 多命中/非 ASCII 列)+ 真实 fixture .py 全量。
+ * 分工:Rust = 预掩码文本词法扫描(match[0].indexOf 首次出现语义逐字对齐)+
+ * 逐项流事实(引擎 kode-python::self_flow 批 1 移植,每 (行,属性) 一次查询);
+ * TS = 掩码单一来源 + TS 引擎流证据(兜底面)+ 消息渲染。入参
+ * {text: 预掩码文本, versionKey}(与生产装配 buildAttributeNoneItemsWithRust
+ * 同一条路径);原文零 `self.` 线索生产序短路不发 RPC(掩码只减不增,两侧空面)。
+ * 两侧裁定各出自自家引擎(Rust 事实 vs TS 引擎),若引擎漂移 findings 即分叉
+ * → 红:对拍强度不减。旧二进制条目缺 flow → render 整面 null → 显式红
+ * (非静默假绿)。语料 = 合成样本(None 证据全族/窄化全族/内建跳过/indexOf
+ * 同名成员/掩码面/多命中/非 ASCII 列)+ 真实 fixture .py 全量。
  *
  * 与 kodeCoreE2E 同口径:二进制缺失(未构建 Rust)则整套 skip,不破坏纯 TS
  * 门禁;二进制在场则跑真实 RPC。versionKey 每样本唯一(流解析缓存按版本键,
- * 同键异文会撞)。
+ * 同键异文会撞——LRU 命中键即复用旧解析)。
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
@@ -149,13 +153,13 @@ suite('attributeNone Rust↔TS 行为对拍(真实 kode-server)', () => {
         const masked = maskPythonNonCode(sample.text);
         const resp = (await client.request('$/kode/rpc', {
           method: '$/kode/lint/analyzeAttributeNone',
-          params: { text: masked }
+          params: { text: masked, versionKey }
         })) as { items?: unknown };
         const rustItems = resp.items ?? [];
-        const rendered = renderAttributeNoneRustItems(rustItems, masked, versionKey);
+        const rendered = renderAttributeNoneRustItems(rustItems);
         expect(
           rendered,
-          `${sample.label}: Rust 结构面含畸形条目(整面作废语义)`
+          `${sample.label}: Rust 结构面/流事实含畸形条目(整面作废语义;旧二进制缺 flow 即红)`
         ).not.toBeNull();
         expect(
           itemsOf(rendered!),
@@ -167,7 +171,7 @@ suite('attributeNone Rust↔TS 行为对拍(真实 kode-server)', () => {
     }
   }, 120000);
 
-  it('合成样本逐面健全(命中在位/边界零报,防双侧同错空转)', async () => {
+  it('合成样本逐面健全(命中在位/流事实在位/边界零报,防双侧同错空转)', async () => {
     const client = new KodeCoreClient({
       binaryPath,
       initializeParams: { processId: process.pid, rootUri: 'file:///workspace/demo', capabilities: {} },
@@ -175,15 +179,25 @@ suite('attributeNone Rust↔TS 行为对拍(真实 kode-server)', () => {
     });
     await client.start();
     try {
+      // versionKey 每文本唯一(流解析缓存按版本键,同键异文会撞旧解析)
+      let keySeq = 0;
       const itemsFor = async (text: string) => {
         const masked = maskPythonNonCode(text);
         const resp = (await client.request('$/kode/rpc', {
           method: '$/kode/lint/analyzeAttributeNone',
-          params: { text: masked }
-        })) as { items?: Array<{ code: string; attr: string; member: string; character: number }> };
+          params: { text: masked, versionKey: `parity-attr-sound:${keySeq++}` }
+        })) as {
+          items?: Array<{
+            code: string;
+            attr: string;
+            member: string;
+            character: number;
+            flow?: { types?: unknown[]; annotation?: unknown; hasNone?: boolean; narrowed?: boolean };
+          }>;
+        };
         return resp.items ?? [];
       };
-      // 裸访问报 1:attr/member/成员列逐项(流证据=TS 单独裁定,此处只验词法面)
+      // 裸访问报 1:attr/member/成员列逐项(本样本无 None 证据 → 流事实 hasNone false)
       const bare = await itemsFor('class Foo:\n    def m(self):\n        self.tree.get(0)\n');
       expect(bare).toHaveLength(1);
       expect(bare[0].code).toBe('kbengine.attributeNone');
@@ -191,6 +205,30 @@ suite('attributeNone Rust↔TS 行为对拍(真实 kode-server)', () => {
       expect(bare[0].member).toBe('get');
       // 匹配起点 36(前两行偏移)+ 'self.tree.get' 内 indexOf('get') = 10
       expect(bare[0].character).toBe(46);
+      expect(bare[0].flow, '批 2 内联流事实必须在场(旧二进制缺 flow 显式红)').toBeDefined();
+      expect(bare[0].flow?.hasNone).toBe(false);
+      // None 证据样本:__init__ `= None` 无守卫 → hasNone true/annotation 'None'
+      const noneEvidence = await itemsFor(
+        'class Foo:\n    def __init__(self):\n        self.tree = None\n    def m(self):\n        self.tree.get(0)\n'
+      );
+      expect(noneEvidence).toHaveLength(1);
+      expect(noneEvidence[0].flow?.hasNone).toBe(true);
+      expect(noneEvidence[0].flow?.annotation).toBe('None');
+      expect(noneEvidence[0].flow?.types).toEqual(['None']);
+      // 窄化样本:守卫后 → hasNone false/narrowed true(事实即裁定,不报)
+      const narrowed = await itemsFor(
+        'class Foo:\n    def __init__(self):\n        self.tree = None\n    def m(self):\n        if self.tree is None:\n            self.tree = make()\n        self.tree.get(0)\n'
+      );
+      expect(narrowed).toHaveLength(1);
+      expect(narrowed[0].flow?.hasNone).toBe(false);
+      expect(narrowed[0].flow?.narrowed).toBe(true);
+      // 同行同属性双命中:两条流事实同值(每 (行,属性) 一次查询克隆)
+      const twin = await itemsFor(
+        'class Foo:\n    def __init__(self):\n        self.cfg = None\n    def m(self):\n        self.cfg.load(); self.cfg.save()\n'
+      );
+      expect(twin).toHaveLength(2);
+      expect(twin[0].flow?.hasNone).toBe(true);
+      expect(twin[1].flow?.hasNone).toBe(true);
       // 内建 receiver 跳过 / 形态失败零报
       expect(await itemsFor('self.cell.tick()\n')).toHaveLength(0);
       expect(await itemsFor('self.x.()\n')).toHaveLength(0);

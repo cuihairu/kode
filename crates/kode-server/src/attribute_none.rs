@@ -4,12 +4,14 @@
 //! `\bself\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)` 手工展开 + 内建 receiver
 //! (cell/base/client,receiverNone 专责)跳过 + 0 起行号与成员列计算
 //! (UTF-16 码元基底)。流敏感 None 证据面已于 RUST-MIGRATION-AUDIT-006 批 1
-//! 收编 Rust(引擎 kode-python::self_flow,消费面 typeInlayHints Rust-first,
-//! 见 self_attribute_flow.rs);本词法面的流裁定仍走 TS 引擎(render
-//! AttributeNoneRustItems 记忆化),批 2 统一为本面内联流事实。
+//! 收编 Rust(引擎 kode-python::self_flow);批 2 起本面**内联逐项流事实**——
+//! 响应条目携带 flow:{types,annotation,hasNone,narrowed}(每 (行,属性) 一次
+//! 引擎查询,项间克隆;入参 versionKey 直传 KODE-PERF-001 版本键控解析缓存),
+//! TS render 退位为事实校验+同键矛盾整面作废,双调用缝消除。行数组取
+//! self_flow::split_crlf(= TS `maskedText.split(/\r?\n/)` 同法,掩码行)。
 //! 成员列沿用 TS `match[0].indexOf(member)` 首次出现语义逐字对齐(含
 //! self.<a>.<a> 命中 attr 段的既有口径)。回结构面
-//! [{code,line,character,length,attr,member}],消息不出 Rust。
+//! [{code,line,character,length,attr,member,flow}],消息不出 Rust。
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -27,9 +29,12 @@ pub fn register(reg: &mut RpcRegistry) {
 struct AttributeNoneParams {
     /// TS 预掩码文本(maskPythonNonCode 输出)
     text: String,
+    /// KODE-PERF-001 版本键控解析缓存键(TS flowVersionKeyForDocument 产物;
+    /// 缺省 = 现解析不缓存,与流引擎纯函数回退同语义)
+    version_key: Option<String>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct AttributeNoneItem {
     code: &'static str,
@@ -40,10 +45,71 @@ struct AttributeNoneItem {
     member: String,
 }
 
+/// 内联流事实面(与 `$/kode/python/selfAttributeFlow` 出参同形;批 2 起随
+/// 词法条目下发,TS render 只做校验+同键矛盾检测,不再二次流查询)
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct AttributeNoneFlowFace {
+    types: Vec<String>,
+    annotation: Option<String>,
+    has_none: bool,
+    narrowed: bool,
+}
+
+/// 响应条目 = 词法结构面 + 内联流事实(引擎查询恒可解:行号来自同文本扫描
+/// 恒在界内、attr 非空;None = 契约漂移,TS 侧整面作废)
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AttributeNoneItemFace {
+    #[serde(flatten)]
+    item: AttributeNoneItem,
+    flow: Option<AttributeNoneFlowFace>,
+}
+
 fn analyze_attribute_none(params: Value) -> Result<Value, String> {
     let params: AttributeNoneParams = serde_json::from_value(params).map_err(|err| err.to_string())?;
     let items = compute_attribute_none_items(&params.text);
-    Ok(json!({ "items": items }))
+    let faces = attach_flow_faces(&params.text, &items, params.version_key.as_deref());
+    Ok(json!({ "items": faces }))
+}
+
+/// 每 (行, 属性) 一次流引擎查询(kode-python::self_flow 批 1 引擎,与
+/// typeInlayHints 同源),项间克隆;行数组 = 掩码文本 split_crlf。
+fn attach_flow_faces(
+    masked_text: &str,
+    items: &[AttributeNoneItem],
+    version_key: Option<&str>,
+) -> Vec<AttributeNoneItemFace> {
+    let text: Vec<u16> = masked_text.encode_utf16().collect();
+    let lines = kode_python::self_flow::split_crlf(&text);
+    let mut cache: std::collections::HashMap<(usize, String), Option<AttributeNoneFlowFace>> =
+        std::collections::HashMap::new();
+    items
+        .iter()
+        .map(|item| {
+            let flow = cache
+                .entry((item.line, item.attr.clone()))
+                .or_insert_with(|| {
+                    kode_python::self_flow::infer_self_attribute_flow(
+                        &lines,
+                        item.line,
+                        &item.attr.encode_utf16().collect::<Vec<u16>>(),
+                        version_key,
+                    )
+                    .map(|flow| AttributeNoneFlowFace {
+                        types: flow.types,
+                        annotation: flow.annotation,
+                        has_none: flow.has_none,
+                        narrowed: flow.narrowed,
+                    })
+                })
+                .clone();
+            AttributeNoneItemFace {
+                item: item.clone(),
+                flow,
+            }
+        })
+        .collect()
 }
 
 /// 内建 receiver 属性(receiverNone 专责,此处跳过避免重复/口径分叉)
@@ -284,4 +350,54 @@ mod tests {
         assert_eq!(encoded["attr"], json!("v"));
         assert_eq!(encoded["member"], json!("read"));
     }
+    // ---- 批 2:内联流事实 ---------------------------------------------------
+
+    #[test]
+    fn flow_face_none_evidence_inline() {
+        // __init__ 仅 = None,无守卫 → hasNone true
+        let text = "class Foo:\n    def __init__(self):\n        self.TalentTree = None\n    def method(self):\n        self.TalentTree.get(0)\n";
+        let items = compute_attribute_none_items(text);
+        let faces = attach_flow_faces(text, &items, None);
+        assert_eq!(faces.len(), 1);
+        let flow = faces[0].flow.as_ref().expect("flow face present");
+        assert!(flow.has_none);
+        assert!(!flow.narrowed);
+        assert_eq!(flow.annotation.as_deref(), Some("None"));
+    }
+
+    #[test]
+    fn flow_face_narrowed_inline() {
+        // 守卫后收窄 → hasNone false/narrowed true,条目流事实即裁定依据
+        let text = "class Foo:\n    def __init__(self):\n        self.TalentTree = None\n    def method(self):\n        if self.TalentTree is None:\n            self.TalentTree = make_tree()\n        self.TalentTree.get(0)\n";
+        let items = compute_attribute_none_items(text);
+        let faces = attach_flow_faces(text, &items, None);
+        let flow = faces[0].flow.as_ref().expect("flow face present");
+        assert!(!flow.has_none);
+        assert!(flow.narrowed);
+    }
+
+    #[test]
+    fn flow_face_shared_across_same_line_attr() {
+        // 同行同属性两条目共享一次引擎查询(hasNone 一致,克隆同值)
+        let text = "class Foo:\n    def __init__(self):\n        self.x = None\n    def m(self):\n        self.x.a(); self.x.b()\n";
+        let items = compute_attribute_none_items(text);
+        assert_eq!(items.len(), 2);
+        let faces = attach_flow_faces(text, &items, None);
+        let f0 = faces[0].flow.as_ref().unwrap();
+        let f1 = faces[1].flow.as_ref().unwrap();
+        assert!(f0.has_none && f1.has_none);
+    }
+
+    #[test]
+    fn flow_face_encoded_shape_is_camel_case() {
+        let text = "class Foo:\n    def __init__(self):\n        self.v = None\n    def m(self):\n        self.v.read()\n";
+        let items = compute_attribute_none_items(text);
+        let faces = attach_flow_faces(text, &items, None);
+        let encoded = serde_json::to_value(&faces[0]).unwrap();
+        assert_eq!(encoded["flow"]["hasNone"], json!(true));
+        assert_eq!(encoded["flow"]["narrowed"], json!(false));
+        assert_eq!(encoded["flow"]["annotation"], json!("None"));
+        assert_eq!(encoded["flow"]["types"], json!(["None"]));
+    }
+
 }
