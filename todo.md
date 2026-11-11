@@ -76,11 +76,11 @@
 
 复现与依据：已复现：模块 def make()->int 存在时，def run(make): x=make() 仍返回模块 make 的 int；A.load()->int、B.load()->str，A=B 后 x=A.load() 仍返回 int。源码：`local_return.rs:140-155` 直接查 def_returns 或优先 unique_class。
 
-- [ ] KBUG-BIND-01 [P1] 固定被调函数参数遮蔽回归。验收：run(make) 内 make() 不借模块同名函数注解；未遮蔽的 make() 仍正确命中；通过生产 Rust RPC 验证。
-- [ ] KBUG-BIND-02 [P1] 让裸名调用先解析当前位置绑定。验收：函数参数、赋值、导入别名和局部函数定义优先于模块声明表；动态 callable 保持未知，不因同名声明存在就确定返回类型。
-- [ ] KBUG-BIND-03 [P1] 固定类名重绑定回归。验收：A=B 后 A.load() 解析到 B 或在无法推导时未知，禁止保留旧 A 返回注解；A=unknown 后也不能沿用原类。
-- [ ] KBUG-BIND-04 [P1] 修复限定接收者的绑定优先级。验收：先解析调用位置的 A 名称绑定，再决定类/实例/别名；原始类静态方法正常命中，重绑定及多候选分支不任取类表首项。
-- [ ] KBUG-BIND-05 [P1] 对齐共享流引擎的调用解析。验收：核查 self_flow 的 callee_atom/resolve_callee 是否复用同样的错误规则；受影响路径共享绑定事实，流类型和 localReturnType 不给出互相矛盾的确定结果。
+- [x] KBUG-BIND-01 [P1] 固定被调函数参数遮蔽回归。验收：run(make) 内 make() 不借模块同名函数注解；未遮蔽的 make() 仍正确命中；通过生产 Rust RPC 验证。(self_flow.rs 新 CalleeBinding/callee_binding 复用 SCOPE 作用域链:参数→Bound(None) 动态 callable 未知;kbug_bind_param_shadow 例修前红;kbug_bind_rpc_unshadowed_call_hit RPC 守卫)
+- [x] KBUG-BIND-02 [P1] 让裸名调用先解析当前位置绑定。验收：函数参数、赋值、导入别名和局部函数定义优先于模块声明表；动态 callable 保持未知，不因同名声明存在就确定返回类型。(域写点=函数级静态绑定,读位前最近写点→local_atom 身份原子透传(kbug_bind_alias_to_annotated_fn 修前红),读位后写点→Unbound 声明仍可用(call_before_binding 守卫);local def 遮蔽(kbug_bind_local_def_shadows_module_def 修前红))
+- [x] KBUG-BIND-03 [P1] 固定类名重绑定回归。验收：A=B 后 A.load() 解析到 B 或在无法推导时未知，禁止保留旧 A 返回注解；A=unknown 后也不能沿用原类。(类体直系+模块步 3 方裁定:A=B→变量链解 B 值身份,解不出→Bound(None) 未知绝不沿用旧注解;kbug_bind_module_class_rebind/module_rebind_to_unknown/module_name_rebind 三例修前红;RPC 面 kbug_bind_rpc_module_class_rebind_not_old_annotation)
+- [x] KBUG-BIND-04 [P1] 修复限定接收者的绑定优先级。验收：先解析调用位置的 A 名称绑定，再决定类/实例/别名；原始类静态方法正常命中，重绑定及多候选分支不任取类表首项。(face_from_callee Qualified 臂:静态类命中仅当 callee_binding==Unbound,否则变量链;original_class_qualified_still_hits 守卫修前后同绿)
+- [x] KBUG-BIND-05 [P1] 对齐共享流引擎的调用解析。验收：核查 self_flow 的 callee_atom/resolve_callee 是否复用同样的错误规则；受影响路径共享绑定事实，流类型和 localReturnType 不给出互相矛盾的确定结果。(resolve_callee Name 臂与 face_from_callee 同走 ResolveState.callee_binding/local_atom 同一作用域链;parity 全语料隔离复跑零新增分歧;证明=dispatch 12 例+单测 48 例全绿,修前红 7/10 见 docs/review/2026-11-12-kbug-bind-callee.md)
 
 ### KBUG-CFGFLOW · P1 · 最近文本赋值忽略分支可达性
 

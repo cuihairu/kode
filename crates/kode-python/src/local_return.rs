@@ -19,7 +19,8 @@
 use std::collections::HashSet;
 
 use crate::self_flow::{
-    resolve_shape, BareWrite, CalleeShape, DefReturn, FlowParse, FnDomain, ResolveState, RhsShape,
+    resolve_shape, BareWrite, CalleeBinding, CalleeShape, DefReturn, FlowParse, FnDomain,
+    ResolveState, RhsShape,
 };
 
 /// 别名链有界跳数(与流面 RESOLVE_MAX_HOPS 同量级;域门扫描每跳严格下行,
@@ -246,10 +247,24 @@ fn face_from_callee(
     let (annotation, method_name) = match callee {
         CalleeShape::Name(f) => {
             // 同文件模块级 def 注解(重名歧义/无注解/类实例化 → 诚实空:
-            // 实例化的类名不是返回注解,面语义不答)
-            match fp.def_returns.get(f)? {
-                DefReturn::Single(Some(ann)) => (ann.clone(), f.clone()),
-                _ => return None,
+            // 实例化的类名不是返回注解,面语义不答)。
+            // KBUG-BIND-01/02:调用位置的绑定事实先于声明表——参数/局部
+            // def/域内先行写点绑定 → 诚实空;模块别名绑定透传值链注解
+            // (与流面 resolve_callee 同规则;绑定值为类名原子 → 实例化
+            // 语义,非返回注解面,诚实空)
+            let declared = |name: &str| match fp.def_returns.get(name)? {
+                DefReturn::Single(Some(ann)) => Some(ann.clone()),
+                _ => None,
+            };
+            match state.callee_binding(f, write.line) {
+                CalleeBinding::Bound(Some(atom)) => {
+                    if state.unique_class(&atom).is_some() {
+                        return None; // 绑定到类名 = 实例化/静态语义,非注解面
+                    }
+                    (declared(&atom)?, f.clone())
+                }
+                CalleeBinding::Bound(None) => return None,
+                CalleeBinding::Unbound => (declared(f)?, f.clone()),
             }
         }
         CalleeShape::SelfMethod(m) => {
@@ -258,27 +273,39 @@ fn face_from_callee(
             (state.method_atom(cls, m)?, m.clone())
         }
         CalleeShape::Qualified { class, method } => {
-            if let Some(cls) = state.unique_class(class) {
-                (state.method_atom(cls, method)?, method.clone())
-            } else {
-                // 裸名接收者二义(批 D):非类名 → 局部/模块变量原子链
-                // (与流面 resolve_callee 同优先级:类限定先,变量链后)
-                let var = RhsShape::Local(class.clone());
-                let atoms = resolve_shape(
-                    state,
-                    &var,
-                    write.line,
-                    write.class_start,
-                    write.method_start,
-                    0,
-                    &mut HashSet::new(),
-                );
-                if atoms.len() != 1 {
-                    return None;
+            // KBUG-BIND-04:原始类静态方法仅在名**未绑定**时命中(A=B /
+            // A=unknown 后 A.load 不沿用原类);名被绑定或类限定未命中 →
+            // 变量原子链裁定(与流面 resolve_callee 同优先级:类限定先,
+            // 变量链后;多候选不任取首项)
+            let static_hit = state
+                .unique_class(class)
+                .and_then(|cls| state.method_atom(cls, method))
+                .map(|ann| (ann, method.to_string()));
+            match static_hit {
+                Some(hit)
+                    if state.callee_binding(class, write.line)
+                        == CalleeBinding::Unbound =>
+                {
+                    hit
                 }
-                let atom = atoms.iter().next().unwrap();
-                let cls = state.unique_class(atom)?;
-                (state.method_atom(cls, method)?, method.clone())
+                _ => {
+                    let var = RhsShape::Local(class.clone());
+                    let atoms = resolve_shape(
+                        state,
+                        &var,
+                        write.line,
+                        write.class_start,
+                        write.method_start,
+                        0,
+                        &mut HashSet::new(),
+                    );
+                    if atoms.len() != 1 {
+                        return None;
+                    }
+                    let atom = atoms.into_iter().next().unwrap();
+                    let cls = state.unique_class(&atom)?;
+                    (state.method_atom(cls, method)?, method.clone())
+                }
             }
         }
         CalleeShape::Chained { receiver, method } => {
@@ -296,8 +323,8 @@ fn face_from_callee(
             if atoms.len() != 1 {
                 return None;
             }
-            let atom = atoms.iter().next().unwrap();
-            let cls = state.unique_class(atom)?;
+            let atom = atoms.into_iter().next().unwrap();
+            let cls = state.unique_class(&atom)?;
             (state.method_atom(cls, method)?, method.clone())
         }
     };
@@ -752,6 +779,135 @@ mod tests {
         );
         assert!(
             local_return_type(&lines, 7, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none()
+        );
+    }
+
+    // ---- KBUG-BIND(调用目标绑定先于声明表)----
+
+    /// BIND-01:被调名被参数遮蔽——`def run(make)` 内 `make()` 不借模块
+    /// def 注解(动态 callable 未知)。
+    #[test]
+    fn kbug_bind_param_shadow_blocks_def_annotation() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndef run(make):\n    data = make()\n    return data\n",
+        );
+        assert!(
+            local_return_type(&lines, 4, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none()
+        );
+    }
+
+    /// BIND-01 守卫:未遮蔽的 `make()` 照常命中模块 def 注解。
+    #[test]
+    fn kbug_bind_unshadowed_call_still_hits() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\ndef run():\n    data = make()\n    return data\n",
+        );
+        let face =
+            local_return_type(&lines, 4, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .expect("未遮蔽调用应命中");
+        assert_eq!(face.annotation, "Tree");
+    }
+
+    /// BIND-02:裸名调用先解析当前位置绑定——域内先行赋值(`fetch =
+    /// mystery`)遮蔽模块 def 声明表(mystery 无声明 → 诚实空)。
+    #[test]
+    fn kbug_bind_local_rebind_by_assignment_blocks_def_table() {
+        let lines = lines_of(
+            "def fetch() -> Tree:\n    return None\n\ndef run():\n    fetch = mystery\n    data = fetch()\n    return data\n",
+        );
+        assert!(
+            local_return_type(&lines, 5, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none()
+        );
+    }
+
+    /// BIND-02:域内局部 def 遮蔽模块同名声明表(无注解局部 def → 诚实空)。
+    #[test]
+    fn kbug_bind_local_def_shadows_module_def() {
+        let lines = lines_of(
+            "def fetch() -> Tree:\n    return None\n\ndef run():\n    def fetch():\n        pass\n    data = fetch()\n    return data\n",
+        );
+        assert!(
+            local_return_type(&lines, 6, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none()
+        );
+    }
+
+    /// BIND-02 守卫:调用位置在绑定之前 → 声明表照常(前向合法,不因
+    /// 域内存在绑定就一刀切)。
+    #[test]
+    fn kbug_bind_call_before_binding_still_declared() {
+        let lines = lines_of(
+            "def fetch() -> Tree:\n    return None\n\ndef run():\n    data = fetch()\n    fetch = mystery\n    return data\n",
+        );
+        let face =
+            local_return_type(&lines, 4, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .expect("绑定前的调用应照常走声明表");
+        assert_eq!(face.annotation, "Tree");
+    }
+
+    /// BIND-02:别名透传——`fetch = real`(real 有注解)后 `fetch()` 命中
+    /// real 的注解面(绑定值为函数名身份原子)。
+    #[test]
+    fn kbug_bind_alias_to_annotated_fn_passes_through() {
+        let lines = lines_of(
+            "def real() -> Tree:\n    return None\n\ndef run():\n    fetch = real\n    data = fetch()\n    return data\n",
+        );
+        let face =
+            local_return_type(&lines, 5, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .expect("别名绑定到有注解函数应透传注解");
+        assert_eq!(face.annotation, "Tree");
+    }
+
+    /// BIND-03:模块层类名重绑定 `A = B` 后 `A.load()` 不沿用旧 A 注解
+    /// (绑定值原子为 B;B 类值链解不出方法面 → 诚实空,绝不含旧 int)。
+    #[test]
+    fn kbug_bind_module_class_rebind_does_not_keep_old_annotation() {
+        let lines = lines_of(
+            "class A:\n    def load(self) -> int:\n        return None\n\nclass B:\n    def load(self) -> str:\n        return None\n\nA = B\ndata = A.load(A())\n",
+        );
+        assert!(
+            local_return_type(&lines, 9, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none()
+        );
+    }
+
+    /// BIND-03:模块层重绑定为未知名 `A = unknown` 后同样不沿用原类。
+    #[test]
+    fn kbug_bind_module_rebind_to_unknown_honest() {
+        let lines = lines_of(
+            "class A:\n    def load(self) -> int:\n        return None\n\nA = unknown\ndata = A.load(A())\n",
+        );
+        assert!(
+            local_return_type(&lines, 5, &"data".encode_utf16().collect::<Vec<u16>>(), None)
+                .is_none()
+        );
+    }
+
+    /// BIND-04 守卫:原始类静态方法(名未绑定)照常命中类限定面。
+    #[test]
+    fn kbug_bind_original_class_qualified_still_hits() {
+        let lines = lines_of(
+            "class Repo:\n    @staticmethod\n    def load() -> Row:\n        return None\n\nr = Repo.load()\n",
+        );
+        let face =
+            local_return_type(&lines, 5, &"r".encode_utf16().collect::<Vec<u16>>(), None)
+                .expect("未绑定类名的类限定调用应命中");
+        assert_eq!(face.annotation, "Row");
+        assert_eq!(face.method_name, "load");
+    }
+
+    /// BIND-03(裸名形态):模块层 `make = mystery` 重绑定后 `make()` 不借
+    /// 模块 def 注解。
+    #[test]
+    fn kbug_bind_module_name_rebind_blocks_def_annotation() {
+        let lines = lines_of(
+            "def make() -> Tree:\n    return None\n\nmake = mystery\ndata = make()\n",
+        );
+        assert!(
+            local_return_type(&lines, 4, &"data".encode_utf16().collect::<Vec<u16>>(), None)
                 .is_none()
         );
     }

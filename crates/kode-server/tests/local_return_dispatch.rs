@@ -175,3 +175,78 @@ fn kbug_scope_rpc_invalid_params_honest_null() {
     let empty_word = query(&lines, 0, "");
     assert!(empty_word["ret"].is_null());
 }
+
+// ---- KBUG-BIND(RPC 面绑定验收;BIND-01/03/05)----
+
+/// BIND-01:被调名被参数遮蔽——`run(make)` 内 `make()` 不借模块 def 注解
+/// → ret null。
+#[test]
+fn kbug_bind_rpc_param_shadow_honest_null() {
+    let lines = [
+        "def make() -> Tree:",
+        "    return None",
+        "",
+        "def run(make):",
+        "    data = make()",
+        "    return data",
+    ];
+    let out = query(&lines, 4, "data");
+    assert!(out["ret"].is_null(), "参数遮蔽的被调应诚实空,实得 {:?}", out["ret"]);
+}
+
+/// BIND-01 守卫:未遮蔽调用照常命中(RPC 面)。
+#[test]
+fn kbug_bind_rpc_unshadowed_call_hit() {
+    let lines = [
+        "def make() -> Tree:",
+        "    return None",
+        "",
+        "def run():",
+        "    data = make()",
+        "    return data",
+    ];
+    let out = query(&lines, 4, "data");
+    assert_eq!(out["ret"]["annotation"], "Tree");
+}
+
+/// BIND-03:模块层 `A = B` 重绑定后 `A.load()` 不沿用旧 A 注解 → ret null
+/// (B 类值链解不出方法面;绝不含旧 int)。
+#[test]
+fn kbug_bind_rpc_module_class_rebind_not_old_annotation() {
+    let lines = [
+        "class A:",
+        "    def load(self) -> int:",
+        "        return None",
+        "",
+        "class B:",
+        "    def load(self) -> str:",
+        "        return None",
+        "",
+        "A = B",
+        "data = A.load(A())",
+    ];
+    let out = query(&lines, 9, "data");
+    assert!(out["ret"].is_null(), "重绑定后不应沿用旧类注解,实得 {:?}", out["ret"]);
+}
+
+/// BIND-02:别名透传——`fetch = real`(real 有注解)后 `fetch()` 命中
+/// real 注解面(绑定值身份原子链)。
+#[test]
+fn kbug_bind_rpc_alias_pass_through_hit() {
+    let lines = [
+        "def real() -> Tree:",
+        "    return None",
+        "",
+        "def run():",
+        "    fetch = real",
+        "    data = fetch()",
+        "    return data",
+    ];
+    let out = query(&lines, 5, "data");
+    assert_eq!(
+        out["ret"]["annotation"],
+        "Tree",
+        "别名绑定应透传 real 注解,实得 {:?}",
+        out["ret"]
+    );
+}

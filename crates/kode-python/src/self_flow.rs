@@ -381,7 +381,9 @@ pub(crate) enum DefReturn {
 
 #[derive(Debug, Clone)]
 pub(crate) enum CalleeShape {
-    /// f(...)
+    /// f(...)——解析期经 [`ResolveState::callee_atom_at`]:流位置的声明
+    /// 前置绑定裁定(def 表/唯一类名二选一,且先被写点/局部 def 绑定则
+    /// 声明表不可用;None = 前置绑定缺失/歧义/被绑定遮蔽)
     Name(String),
     /// A.m(...)
     Qualified { class: String, method: String },
@@ -433,6 +435,9 @@ pub(crate) struct FnDomain {
     pub(crate) end_line: usize,
     /// 位置/仅关键字/*args/**kwargs 参数全量(参数位一律本域绑定,遮蔽外层)
     pub(crate) params: Vec<String>,
+    /// 本域直系 def 名(控制块内 def 同员;嵌套 def 体不下行——属内层域)。
+    /// 局部 def 即本域名字绑定(BIND-02:遮蔽模块声明表)
+    pub(crate) def_names: Vec<String>,
     /// `global` 声明名(本域不绑定;域内写点改记模块名空间)
     pub(crate) globals: Vec<String>,
     /// `nonlocal` 声明名(本域不绑定,解向外层函数域)
@@ -565,6 +570,7 @@ fn record_lambda_domain(
             .as_ref()
             .map(|p| param_names(p))
             .unwrap_or_default(),
+        def_names: Vec::new(),
         globals: Vec::new(),
         nonlocals: Vec::new(),
     });
@@ -585,6 +591,52 @@ fn declared_names(body: &[ast::Stmt], global: bool, nonlocal: bool) -> Vec<Strin
     let mut out = Vec::new();
     collect_declared(body, global, nonlocal, &mut out);
     out
+}
+
+/// 本域直系 def 名(BIND-02 局部 def 绑定素材;控制块内 def 同员,嵌套
+/// def 体不下行——属内层域)。
+fn declared_def_names(body: &[ast::Stmt]) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_declared_def_names(body, &mut out);
+    out
+}
+
+fn collect_declared_def_names(body: &[ast::Stmt], out: &mut Vec<String>) {
+    for stmt in body {
+        match stmt {
+            ast::Stmt::FunctionDef(fun) => out.push(fun.name.id.to_string()),
+            ast::Stmt::If(s) => {
+                collect_declared_def_names(&s.body, out);
+                for clause in &s.elif_else_clauses {
+                    collect_declared_def_names(&clause.body, out);
+                }
+            }
+            ast::Stmt::For(s) => {
+                collect_declared_def_names(&s.body, out);
+                collect_declared_def_names(&s.orelse, out);
+            }
+            ast::Stmt::While(s) => {
+                collect_declared_def_names(&s.body, out);
+                collect_declared_def_names(&s.orelse, out);
+            }
+            ast::Stmt::With(s) => collect_declared_def_names(&s.body, out),
+            ast::Stmt::Try(s) => {
+                collect_declared_def_names(&s.body, out);
+                for h in &s.handlers {
+                    let ast::ExceptHandler::ExceptHandler(inner) = h;
+                    collect_declared_def_names(&inner.body, out);
+                }
+                collect_declared_def_names(&s.orelse, out);
+                collect_declared_def_names(&s.finalbody, out);
+            }
+            ast::Stmt::Match(s) => {
+                for case in &s.cases {
+                    collect_declared_def_names(&case.body, out);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn collect_declared(body: &[ast::Stmt], global: bool, nonlocal: bool, out: &mut Vec<String>) {
@@ -692,6 +744,7 @@ fn assignments_from_ast(ast: &ParsedAst, lines: &[Vec<u16>], classes: &[ClassSpa
         class_names: &ctx.class_names,
         class_methods: &ctx.class_methods,
         bare_writes: &ctx.bare_writes,
+        fn_domains: &ctx.fn_domains,
         raw: &raw,
         raw_class_direct: &raw_direct,
         baseline_memo: HashMap::new(),
@@ -917,6 +970,7 @@ fn walk_assignments(
                     start_line: body_start.min(fun_line),
                     end_line: body_end.max(fun_line),
                     params: param_names(&fun.parameters),
+                    def_names: declared_def_names(&fun.body),
                     globals: declared_names(&fun.body, true, false),
                     nonlocals: declared_names(&fun.body, false, true),
                 });
@@ -1113,9 +1167,21 @@ pub(crate) struct ResolveState<'a> {
     pub(crate) class_names: &'a HashMap<String, Vec<usize>>,
     pub(crate) class_methods: &'a HashMap<usize, HashMap<String, Vec<Option<String>>>>,
     pub(crate) bare_writes: &'a HashMap<String, Vec<BareWrite>>,
+    pub(crate) fn_domains: &'a [FnDomain],
     pub(crate) raw: &'a AssignmentTypes,
     pub(crate) raw_class_direct: &'a ClassAssignmentTypes,
     pub(crate) baseline_memo: HashMap<(usize, String), TypeSet>,
+}
+
+/// 名字绑定事实:该名在流位置之前/之内是否被绑定,及其值原子。
+/// None = 域内参数/局部 def/全局(nonlocal 穿透)/重绑定歧义 → 声明表不可用;
+/// Some = 未被绑定(可用)或绑定为已知值(别名)。
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum CalleeBinding {
+    /// 未被绑定(前置 def/类名照常可用)
+    Unbound,
+    /// 被绑定;值原子(单一原子 Some,否则/不可解 = None)
+    Bound(Option<String>),
 }
 
 impl ResolveState<'_> {
@@ -1132,6 +1198,7 @@ impl ResolveState<'_> {
             class_names: &fp.class_names,
             class_methods: &fp.class_methods,
             bare_writes: &fp.bare_writes,
+            fn_domains: &fp.fn_domains,
             raw: &fp.assignments,
             raw_class_direct: &fp.class_direct,
             baseline_memo: HashMap::new(),
@@ -1189,6 +1256,145 @@ impl ResolveState<'_> {
             (None, Some(v)) if v.len() == 1 => Some(name.to_string()),
             _ => None,
         }
+    }
+
+    /// KBUG-BIND:裸名声明前置绑定——按流位置的**词法作用域链**裁定该名是否
+    /// 被绑定(与 SCOPE 的值查找同链;`callee_atom` 声明表仅在 `Unbound` 时
+    /// 可用)。类体直系/模块域:裸名照常走声明表(模块绑定类名 A=B 只遮蔽
+    /// 裸名 A,类限定 A.load() 照常走原类——真实 import 场景合法)。
+    /// global/nonlocal 声明域穿透(名属模块/外层名空间,声明表可用)。
+    pub(crate) fn callee_binding(&self, name: &str, flow_line: usize) -> CalleeBinding {
+        use CalleeBinding::*;
+        // 域内绑定:链上含 flow_line 的函数域(体首行降序,最内先行)
+        let mut chain: Vec<&FnDomain> = self
+            .fn_domains
+            .iter()
+            .filter(|d| d.start_line <= flow_line && flow_line <= d.end_line)
+            .collect();
+        chain.sort_by(|a, b| {
+            b.start_line
+                .cmp(&a.start_line)
+                .then(a.end_line.cmp(&b.end_line))
+        });
+        for domain in &chain {
+            if domain.globals.iter().any(|n| n == name)
+                || domain.nonlocals.iter().any(|n| n == name)
+            {
+                continue; // global/nonlocal:名属模块/外层名空间,声明表可用
+            }
+            if domain.params.iter().any(|n| n == name)
+                || domain.def_names.iter().any(|n| n == name)
+            {
+                return Bound(None); // 参数/局部 def 调用目标不定 → 声明表不可用
+            }
+            // 域内写点绑定(读前于写 = 调用位置在前,声明表可用)
+            let writes = self
+                .bare_writes
+                .get(name)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            if writes.iter().any(|w| w.method_start == Some(domain.header_line)) {
+                // 绑定值 = 域内最近先行写点(别名链:Local 形态收值;调用/属性
+                // 形态不按声明表猜,收 None)
+                return match writes
+                    .iter()
+                    .rev()
+                    .find(|w| w.method_start == Some(domain.header_line) && w.line < flow_line)
+                {
+                    Some(w) => match &w.shape {
+                        RhsShape::Local(alias) => match self.local_atom(alias, w.line) {
+                            Some(a) => Bound(Some(a)),
+                            None => Bound(None),
+                        },
+                        _ => Bound(None),
+                    },
+                    None => Unbound, // 域内绑定但调用位置在前 → 声明表照常
+                };
+            }
+        }
+        // 类体直系位(不在任何函数域):本类体绑定(直系写点/直系 def)
+        let class_direct = self
+            .classes
+            .iter()
+            .filter(|c| c.start_line <= flow_line && flow_line < c.end_line)
+            .max_by_key(|c| c.start_line);
+        if let Some(cls) = class_direct {
+            let writes = self
+                .bare_writes
+                .get(name)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            let in_class = |w: &BareWrite| {
+                w.method_start.is_none() && w.class_start == Some(cls.start_line)
+            };
+            let bound = writes.iter().any(in_class)
+                || self
+                    .fn_domains
+                    .iter()
+                    .any(|d| d.header_line == cls.start_line && d.def_names.iter().any(|n| n == name));
+            if bound {
+                return match writes.iter().rev().find(|w| in_class(w) && w.line < flow_line) {
+                    Some(w) => match &w.shape {
+                        RhsShape::Local(alias) => Bound(self.local_atom(alias, w.line)),
+                        _ => Bound(None),
+                    },
+                    None => Unbound, // 绑定在调用位置之后 → 声明表照常
+                };
+            }
+            // 类体未绑定 → 落模块
+        }
+        // 模块域(KBUG-BIND-03:模块层重绑定 A=B / A=unknown 一样遮蔽
+        // 声明表;绑定在调用位置之后 = 前向引用,声明表照常)
+        let writes = self
+            .bare_writes
+            .get(name)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let in_module = |w: &BareWrite| w.method_start.is_none() && w.class_start.is_none();
+        if writes.iter().any(in_module) {
+            return match writes.iter().rev().find(|w| in_module(w) && w.line < flow_line) {
+                Some(w) => match &w.shape {
+                    RhsShape::Local(alias) => Bound(self.local_atom(alias, w.line)),
+                    _ => Bound(None),
+                },
+                None => Unbound, // 绑定在调用位置之后 → 声明表照常
+            };
+        }
+        Unbound
+    }
+
+    /// 裸名**身份原子**链(递归一次):唯一类名 / 有 def 声明的函数名本身
+    /// (非其返回注解——注解面由消费方按名再查;流面消费方对函数名套
+    /// callee_atom 即得返回注解原子,类名即实例化原子)。
+    fn local_atom(&self, name: &str, flow_line: usize) -> Option<String> {
+        // 模块层最近先行写点(别名)
+        if let Some(w) = self
+            .bare_writes
+            .get(name)
+            .and_then(|ws| {
+                ws.iter()
+                    .rev()
+                    .find(|w| w.line < flow_line && w.method_start.is_none())
+            })
+            .filter(|w| w.class_start.is_none())
+        {
+            if let RhsShape::Local(alias) = &w.shape {
+                return self.local_atom(alias, w.line);
+            }
+            return None;
+        }
+        let is_unique_class = self
+            .class_names
+            .get(name)
+            .map(|v| v.len() == 1)
+            .unwrap_or(false);
+        if is_unique_class {
+            return Some(name.to_string());
+        }
+        if matches!(self.def_returns.get(name), Some(DefReturn::Single(_))) {
+            return Some(name.to_string());
+        }
+        None
     }
 }
 
@@ -1282,7 +1488,16 @@ fn resolve_callee(
         return TypeSet::new();
     }
     let ann = match callee {
-        CalleeShape::Name(n) => state.callee_atom(n),
+        // KBUG-BIND-02:先解析调用位置的绑定事实——参数/局部 def/域内
+        // 先行写点/别名绑定遮蔽模块声明表;仅 Unbound 时照常走声明表
+        // (动态 callable 未知不因同名声明确定)。
+        CalleeShape::Name(n) => match state.callee_binding(n, flow_line) {
+            // 绑定值=身份原子(类名/函数名):流原子按该名再走声明表
+            // (函数名 → 其返回注解;类名 → 实例化原子)
+            CalleeBinding::Bound(Some(atom)) => state.callee_atom(&atom),
+            CalleeBinding::Bound(None) => None,
+            CalleeBinding::Unbound => state.callee_atom(n),
+        },
         CalleeShape::Qualified { class, method } => state
             .unique_class(class)
             .and_then(|cls| state.method_atom(cls, method))
