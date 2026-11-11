@@ -145,6 +145,27 @@ stash 5 个源文件 → HEAD 兼容探针(旧签名调用、断言修后应有�
    线核查子句;一键命令(`debugpyInjectCommand.ts`)不加扩展闸(用户
    显式动作,attach 侧既有预检/指引覆盖版本面)。
 
+## 批次 D(07):解释器级 debugpy 链验收实录(2026-11-12 本机)
+
+07 的「记录」面在本机解释器上做完(探针脚本在 /tmp,不入库;08 的
+VS Code UI 链 + 引擎内上下文仍待真机/用户验收):
+
+| 记录项 | 实测 |
+| --- | --- |
+| 解释器构建 | `/usr/bin/python3.7` = **CPython 3.7.17**(resolute 包 3.7.17-1,GCC 15.2.0,amd64;行匹配 3.7,非 3.7.3 字面版本) |
+| 包来源 | `pip download debugpy==1.7.0 --platform manylinux2014_x86_64 --python-version 3.7` → wheel 解包 PYTHONPATH(系统 3.7 无 ensurepip,venv 不可用) |
+| wheel/架构 | `debugpy-1.7.0-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl`;原生件齐:`_pydevd_bundle/pydevd_cython.cpython-37m-x86_64-linux-gnu.so`、`_pydevd_frame_eval/pydevd_frame_evaluator.cpython-37m-*.so`、`pydevd_attach_to_process/attach_linux_amd64.so` |
+| 原生路径(cython/frame-eval 默认开) | `debugpy.listen(('127.0.0.1',5810))` → LISTEN-OK + 本机自连 SELF-CONNECT-OK;进程存活等客户端(我方 20s 截止杀,非段错误) |
+| 纯 Python 路径(`PYDEVD_USE_CYTHON=NO PYDEVD_USE_FRAME_EVAL=NO`) | 同探 LISTEN-OK + SELF-CONNECT-OK,进程 EXIT=0 干净退出 |
+| 附加→断点→单步→变量→断连(DAP 1.7.0 + 原生路径) | initialize→attach→`initialized`→setBreakpoints(5 行)→configurationDone→**STOPPED reason=breakpoint 恰在 5 行**→Locals 里 `a=21` 且 `b` 未定义(停点行未执行的语义正确)→next 单步到 6 行→`a=21,b=42`→disconnect(不杀进程)→目标进程续跑打印 `result 42` 干净退出 |
+| 架构事实 | `debugpy.listen` 会 spawn 独立 adapter 进程,listen 口是 **adapter 的 DAP socket**(pydevd 经 127.0.0.1 内部口连 adapter);`initialized` 事件在收到 attach 之后才发(clients.py start-request 尾部),attach 响应延迟到 configurationDone——自研 DAP 客户端/未来 IDE 直连面须按此序 |
+| 对照:前轮 exit 139 | 前轮「临时构建 CPython 3.7.3 + 同 wheel」listen 139 未破案(见固定版本安装说明 §7);本机发行版 3.7.17 同 wheel 全链可用——139 不能归因 wheel 也不能推广到所有 3.7.x 安装,两案并存如实记录 |
+
+结论:**3.7 行 + 钉死 1.7.0 的监听/断点链在本机解释器级可用(原生与
+纯 Python 双路)**;「导入成功不抵扣监听」约束满足——listen/断点/单
+步/变量/断连全部实测。3.7.3 临时构建的 139 与引擎内(python_app 嵌入
+解释器)上下文仍未验,归 08 的真机验收。
+
 ## 边界与诚实记录
 
 - **引擎二进制扫描未对真实引擎二进制验证**(本机无 KBEngine 二进制
@@ -156,8 +177,9 @@ stash 5 个源文件 → HEAD 兼容探针(旧签名调用、断言修后应有�
   docs/zh/guide/python-debugger-compatibility.md §7):本批只收 01-04
   的**判定与装配面**,07/08(原生/纯 Python 路径与完整调试链)等真机
   验收,导入成功不抵扣监听/断点验证;
-- 05/06 已收口(见上方批次 C 节);剩余 07/08(原生/纯 Python 路径与
-  固定扩展完整调试链)等真机验收;
+- 05/06 已收口(见批次 C 节);07 解释器级验收已录(见批次 D 节,原生
+  与纯 Python 双路全链可用);**08(固定扩展完整调试链:实际 VS Code
+  UI、引擎内 listen/断点、VSIX/包哈希留证)仍待真机/用户验收**;
 - 文档对账:`docs/guide{,/zh}/configuration.md` 的 debugpySync/
   autoDebugpy 段落在并发文档会话的脏树里,本批不吞;其
   python-debugger-compatibility.md 基线文档与本批行为一致(版本锁
