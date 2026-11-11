@@ -1375,12 +1375,13 @@ KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Pytho
 ### `kbengine.managedDir.syncExclusions`
 
 - 标题：`KBEngine: Sync .kbengine Exclusions (搜索/watcher/gitignore)`
-- 作用：重新落 `.kbengine` 隔离——`search.exclude` 与 `files.watcherExclude` 补上 `.kbengine/**` 条目（只动 kode 自己写过的键，用户条目绝不删），git 仓库根 `.gitignore` 已存在时幂等追加 `.kbengine/` 行
+- 作用：重新落 `.kbengine` 隔离——`search.exclude` 与 `files.watcherExclude` 补上 `.kbengine/**` 条目（只动 kode 自己写过的键，用户条目绝不删），git 仓库根 `.gitignore` 已存在时追加 `.kbengine/` 行
 - 入口：命令面板
 - 行为：
   - 跑与激活期静默同步同一面，但报告写了什么（哪些工作区拿到 `search.exclude` / `watcherExclude`，哪些 git 根追加了 `.gitignore`）
   - 绝不创建 `.gitignore`（SVN / 无 VCS 工作区不做任何 git 侧写入）
   - 幂等：无变化时二次运行零写入
+  - 显式用户请求：本命令绕过激活期的「写一次记忆」，即使 kode 已判定尊重被删除的条目也会补回缺失的 `.kbengine/` 行（改托管目录名后的正规再入口）
 - 边界：只做隔离；镜像与推断步骤见 `kbengine.infer.run`
 
 ### `kbengine.diagnostics.exportReproSummary`

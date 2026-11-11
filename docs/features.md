@@ -501,7 +501,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.infer.pythonVersion` | `"3.7"` | Target for `pyrefly infer --python-version` — `src/backend/pyreflyInfer.ts` |
 | `kbengine.engineVersion` | `"3.7.3"` | Integrated KBEngine engine version (fork builds use custom values like `fork-3.12`); knowledge-base layering and diagnostics gate by it — `src/engineVersion.ts` |
 | `kbengine.infer.sourceWrite` | `"managed"` | Write-scope gate (managed/user) — `src/backend/pyreflyInfer.ts` |
-| `kbengine.infer.exclusionsSync` | `true` | `.kbengine` isolation (search/watcher/gitignore idempotent; gitignore never created) — `src/backend/managedDirExclusions.ts` |
+| `kbengine.infer.exclusionsSync` | `true` | `.kbengine` isolation (search/watcher own-segment; gitignore write-once memory — a later missing entry is user intent, never re-appended; never created) — `src/backend/managedDirExclusions.ts`, `src/inferPipeline.ts` |
 | `kbengine.types.aliasDiscovery` | `true` | `alias.xml` custom-type discovery — `src/definitionWorkspace.ts:285` |
 | `kbengine.runtimeQuery.enabled` | `false` | Runtime Queries panel operation surface (watcher watch-list add/remove and the result subscription stream; default off keeps the panel to single manual queries) — `src/runtimeQueryWebView.ts` |
 | `kbengine.metrics.fileReadDetail` | `false` | File-read audit detail (path+bytes, 256-entry ring shown by `kbengine.metrics.showSummary`; off keeps only cumulative counters) — `src/backend/fileReadMetrics.ts` |

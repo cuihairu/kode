@@ -464,7 +464,7 @@
 | `kbengine.infer.pythonVersion` | `"3.7"` | pyrefly infer `--python-version` 目标 — `src/backend/pyreflyInfer.ts` |
 | `kbengine.engineVersion` | `"3.7.3"` | 集成的 KBEngine 引擎版本(魔改 fork 填自定义版本号如 `fork-3.12`);知识库分层标注与诊断按此门控 — `src/engineVersion.ts` |
 | `kbengine.infer.sourceWrite` | `"managed"` | 写权限闸 scope（managed/user）— `src/backend/pyreflyInfer.ts` |
-| `kbengine.infer.exclusionsSync` | `true` | .kbengine 隔离（search/watcher/gitignore 幂等，gitignore 绝不创建）— `src/backend/managedDirExclusions.ts` |
+| `kbengine.infer.exclusionsSync` | `true` | .kbengine 隔离（search/watcher 只管自己段；gitignore 写一次记忆——之后再缺失=用户意图，永不补回；绝不创建）— `src/backend/managedDirExclusions.ts`、`src/inferPipeline.ts` |
 | `kbengine.types.aliasDiscovery` | `true` | alias.xml 自定义类型发现 — `src/definitionWorkspace.ts:285` |
 | `kbengine.runtimeQuery.enabled` | `false` | 运行时查询面板操作面（watcher 观察清单增删与结果订阅流；默认关时面板只剩单次手动查询）— `src/runtimeQueryWebView.ts` |
 | `kbengine.metrics.fileReadDetail` | `false` | 文件读取明细审计（路径+字节数，环形缓冲 256 条，`kbengine.metrics.showSummary` 可查；默认关=只累计计数，开销有界）— `src/backend/fileReadMetrics.ts` |

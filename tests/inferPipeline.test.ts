@@ -184,6 +184,68 @@ describe('applyManagedDirExclusions(隔离面执行器)', () => {
     expect(files.size).toBe(0);
   });
 
+  it('写一次记忆:补写后用户删条目,激活期尊重不再补回(A 案)', async () => {
+    const { root } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const gitignorePath = path.join(root, '.gitignore');
+    const files = new Map<string, string>([[gitignorePath, 'node_modules/\n']]);
+    const deps = makeDeps({ files, findGitRoot: () => root });
+    const context = makeContext();
+    await applyManagedDirExclusions(context, deps, { silent: true });
+    expect(files.get(gitignorePath)).toContain('.kbengine/');
+    expect(memento.get(`infer.gitignore.writeOnce:${root}:.kbengine`)).toBe(true);
+    // 用户删掉 kode 段(想把 .kbengine 入库)
+    files.set(gitignorePath, 'node_modules/\n');
+    const result = await applyManagedDirExclusions(context, deps, { silent: true });
+    expect(result.gitignoreWritten).toEqual([]);
+    expect(files.get(gitignorePath)).toBe('node_modules/\n');
+  });
+
+  it('写一次记忆:用户手写条目在场也记已定局,删除后同样不补回', async () => {
+    const { root } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const gitignorePath = path.join(root, '.gitignore');
+    const files = new Map<string, string>([[gitignorePath, 'node_modules/\n.kbengine\n']]);
+    const deps = makeDeps({ files, findGitRoot: () => root });
+    const context = makeContext();
+    const first = await applyManagedDirExclusions(context, deps, { silent: true });
+    expect(first.gitignoreWritten).toEqual([]);
+    files.set(gitignorePath, 'node_modules/\n');
+    const second = await applyManagedDirExclusions(context, deps, { silent: true });
+    expect(second.gitignoreWritten).toEqual([]);
+    expect(files.get(gitignorePath)).toBe('node_modules/\n');
+  });
+
+  it('手动 syncExclusions(userRequested)绕过写一次记忆补写', async () => {
+    const { root } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const gitignorePath = path.join(root, '.gitignore');
+    const files = new Map<string, string>([[gitignorePath, 'node_modules/\n']]);
+    const deps = makeDeps({ files, findGitRoot: () => root });
+    const context = makeContext();
+    await applyManagedDirExclusions(context, deps, { silent: true });
+    files.set(gitignorePath, 'node_modules/\n');
+    await applyManagedDirExclusions(context, deps, { silent: true });
+    expect(files.get(gitignorePath)).toBe('node_modules/\n');
+    const result = await applyManagedDirExclusions(context, deps, { userRequested: true });
+    expect(result.gitignoreWritten).toEqual([root]);
+    expect(files.get(gitignorePath)).toContain('.kbengine/');
+  });
+
+  it('换托管目录名:新目录名另起一键,新名仍补写一次', async () => {
+    const { root } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const gitignorePath = path.join(root, '.gitignore');
+    const files = new Map<string, string>([[gitignorePath, 'node_modules/\n']]);
+    const deps = makeDeps({ files, findGitRoot: () => root });
+    const context = makeContext();
+    await applyManagedDirExclusions(context, deps, { silent: true });
+    configurationOverrides.set('kbengine', { 'managedDir': '.kbe2' });
+    const result = await applyManagedDirExclusions(context, deps, { silent: true });
+    expect(result.gitignoreWritten).toEqual([root]);
+    expect(files.get(gitignorePath)).toContain('.kbe2/');
+  });
+
   it('svn 仓:不写任何 git 专属物,但 search/watcher 照常', async () => {
     const { root } = makeTmpWorkspace();
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];

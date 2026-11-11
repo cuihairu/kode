@@ -1333,12 +1333,13 @@ The flow graph panel supports:
 ### `kbengine.managedDir.syncExclusions`
 
 - Title: `KBEngine: Sync .kbengine Exclusions (搜索/watcher/gitignore)`
-- Purpose: re-apply the `.kbengine` isolation — `search.exclude` and `files.watcherExclude` get the `.kbengine/**` entry (own-segment discipline: only kode's previously-written keys are touched, user entries are never removed) and the git repo root `.gitignore` gets an idempotent `.kbengine/` line when the file already exists
+- Purpose: re-apply the `.kbengine` isolation — `search.exclude` and `files.watcherExclude` get the `.kbengine/**` entry (own-segment discipline: only kode's previously-written keys are touched, user entries are never removed) and the git repo root `.gitignore` gets a `.kbengine/` line when the file already exists
 - Entries: command palette
 - Behavior:
   - runs the same face as the activation-time silent sync, but reports what it wrote (which workspaces got `search.exclude` / `watcherExclude`, which git roots got a `.gitignore` append)
   - `.gitignore` is never created (SVN / no-VCS workspaces get no git-specific write at all)
   - idempotent: a second run with no changes writes nothing
+  - explicit user request: this command bypasses the activation-time write-once memory and appends the missing `.kbengine/` line even after kode has decided to leave a deleted entry alone (the regular re-entry point after renaming the managed dir)
 - Boundary: isolation only; the mirror and infer steps are `kbengine.infer.run`
 
 ## Typical Workflows

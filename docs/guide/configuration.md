@@ -291,7 +291,7 @@ Fields per entry:
 | `kbengine.infer.pyreflyPath` | string | empty | Absolute path to the pyrefly executable (empty = discover on PATH, then the `~/.local/bin` pipx default location; if not found, `kbengine.infer.run` says so honestly and the feature degrades without throwing) |
 | `kbengine.infer.pythonVersion` | string | `3.7` | Target for `pyrefly infer --python-version` (the KBEngine embedded-interpreter version; official minimum is 3.5) |
 | `kbengine.infer.sourceWrite` | string | `managed` | Write-scope gate: `managed` = only `.kbengine/**` is writable (default); `user` = also allows writing user `scripts/**` (explicit opt-in required; any write outside the scope is refused, never silently) |
-| `kbengine.infer.exclusionsSync` | boolean | `true` | Automatically exclude `.kbengine` from `search.exclude` / `files.watcherExclude`, and idempotently append to the git repo-root `.gitignore` when the file already exists (never created; SVN / no-VCS workspaces get no git-specific write) |
+| `kbengine.infer.exclusionsSync` | boolean | `true` | Automatically exclude `.kbengine` from `search.exclude` / `files.watcherExclude`, and append to the git repo-root `.gitignore` when the file already exists (never created; SVN / no-VCS workspaces get no git-specific write). Write-once memory: activation appends at most once per repo root × managed dir — once the entry has been seen in place (kode-written or user-written), a later missing entry is treated as a deliberate user deletion (e.g. committing `.kbengine`) and never re-appended; the `kbengine.managedDir.syncExclusions` command is the explicit bypass and the `KBE-CFG-004` diagnostic keeps warning about the un-ignored `debug.json` password risk |
 
 ### Entity Script Enhancements (2026-10-21)
 

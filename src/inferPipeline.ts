@@ -52,6 +52,15 @@ function watcherExcludeManagedKey(workspaceRoot: string): string {
   return `infer.watcherExclude.managed:${workspaceRoot}`;
 }
 
+/** workspaceState 键：.gitignore 条目写一次记忆（每 仓根×托管目录名 一键）。
+ * A 案（2026-11-11 用户令「万一用户想保存呢」）：kode 至多补写一次——记忆
+ * 在场后条目再缺失 = 用户故意删除（想把 .kbengine 入库）= 尊重，激活期永不
+ * 补回；误提交含密码 debug.json 的风险由 KBE-CFG-004 诊断继续兜底。键带
+ * managedDir：用户改托管目录名后新名另起一键，新名仍可补写一次。 */
+function gitignoreWriteOnceKey(repoRoot: string, managedDir: string): string {
+  return `infer.gitignore.writeOnce:${repoRoot}:${managedDir}`;
+}
+
 export interface InferPipelineDeps {
   exists: (absPath: string) => boolean;
   readText: (absPath: string) => string | null;
@@ -155,13 +164,16 @@ export interface ExclusionsApplyResult {
 
 /**
  * 同步 `.kbengine` 隔离：search.exclude + files.watcherExclude（只管理自己
- * 那一段）+ gitignore（git 仓 + 已存在才幂等追加，绝不创建）。激活期静默，
- * 命令面板手动跑保持播报。
+ * 那一段）+ gitignore（git 仓 + 已存在才追加，绝不创建；**写一次记忆**——
+ * 激活期每 仓根×托管目录名 至多补写一次，条目曾在场即记「已定局」，此后
+ * 缺失 = 用户删除 = 尊重不再补回）。激活期静默，命令面板手动跑
+ * （`kbengine.managedDir.syncExclusions`，userRequested）显式请求绕过记忆，
+ * 补写并播报。
  */
 export async function applyManagedDirExclusions(
   context: vscode.ExtensionContext,
   deps: InferPipelineDeps = fileSystemInferDeps,
-  options: { silent?: boolean } = {}
+  options: { silent?: boolean; userRequested?: boolean } = {}
 ): Promise<ExclusionsApplyResult> {
   const result: ExclusionsApplyResult = {
     searchWritten: [],
@@ -205,10 +217,20 @@ export async function applyManagedDirExclusions(
       result.gitignoreSkippedMissing.push(root);
       continue;
     }
+    const writeOnce = gitignoreWriteOnceKey(root, managedDir);
+    if (!options.userRequested && context.workspaceState?.get<boolean>(writeOnce)) {
+      // 写一次记忆在场：条目缺失是用户删除（想入库），尊重不补回。
+      continue;
+    }
     const plan = planGitignoreAdd(gitignoreContent, managedDir);
     if (plan.action === 'append') {
       deps.writeText(gitignorePath, plan.nextContent);
+      await context.workspaceState?.update(writeOnce, true);
       result.gitignoreWritten.push(root);
+    } else {
+      // 条目已在场（kode 段或用户手写等价条目）：记「已定局」，从此激活期
+      // 不再碰这条目（删除=用户意图）。
+      await context.workspaceState?.update(writeOnce, true);
     }
   }
   if (!options.silent) {
@@ -493,7 +515,9 @@ export function activateInferPipeline(context: vscode.ExtensionContext): void {
   });
   context.subscriptions.push(runCommand);
   const syncExclusionsCommand = vscode.commands.registerCommand('kbengine.managedDir.syncExclusions', () =>
-    applyManagedDirExclusions(context)
+    // 手动命令=用户显式请求:绕过写一次记忆补写(改托管目录名后的正规再入
+    // 口),播报面照旧。
+    applyManagedDirExclusions(context, fileSystemInferDeps, { userRequested: true })
   );
   context.subscriptions.push(syncExclusionsCommand);
   const managedDir = managedDirName();

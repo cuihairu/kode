@@ -291,7 +291,7 @@ guiconsole 协议链（machined UDP 发现 + 直连各组件 TCP）：日志 tai
 | `kbengine.infer.pyreflyPath` | string | 空 | pyrefly 可执行文件绝对路径(留空则按 PATH 再 `~/.local/bin` pipx 默认位发现;找不到时 `kbengine.infer.run` 如实提示,功能降级不报错) |
 | `kbengine.infer.pythonVersion` | string | `3.7` | pyrefly infer `--python-version` 目标(KBEngine 内嵌解释器版本;官方最小支持 3.5) |
 | `kbengine.infer.sourceWrite` | string | `managed` | 写权限闸 scope:`managed`=仅 `.kbengine/**` 可写(默认);`user`=另允许写用户 `scripts/**`(须用户显式开启;scope 外写一律拒绝不静默) |
-| `kbengine.infer.exclusionsSync` | boolean | `true` | 自动把 `.kbengine` 从 `search.exclude` / `files.watcherExclude` 排除,并在 git 仓根 `.gitignore` 已存在时幂等追加(绝不创建;SVN/无 VCS 不写任何 git 专属物) |
+| `kbengine.infer.exclusionsSync` | boolean | `true` | 自动把 `.kbengine` 从 `search.exclude` / `files.watcherExclude` 排除,并在 git 仓根 `.gitignore` 已存在时追加(绝不创建;SVN/无 VCS 不写任何 git 专属物)。写一次记忆:激活期每 仓根×托管目录名 至多补写一次——条目曾在场(kode 写或用户手写)后再缺失=用户故意删除(如想提交 `.kbengine`)=尊重,永不补回;`kbengine.managedDir.syncExclusions` 命令是显式绕过入口,`KBE-CFG-004` 诊断继续提示未忽略 `debug.json` 含密码的误提交风险 |
 
 ### 实体脚本增强(2026-10-21)
 
