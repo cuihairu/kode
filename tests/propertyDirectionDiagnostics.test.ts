@@ -59,7 +59,7 @@ describe('inferProcessScopeFromPythonFile', () => {
     expect(inferProcessScopeFromPythonFile(CLIENT_FILE)).toBe('client');
   });
 
-  it('按 KBEngine 实际目录段 baseapp|cellapp|bots 推断(2026-11-11 用户报障根因)', () => {
+  it('按进程名目录段 baseapp|cellapp|bots 推断(2026-11-11 用户报障根因)', () => {
     expect(inferProcessScopeFromPythonFile('/ws/scripts/baseapp/Hero.py')).toBe('base');
     expect(inferProcessScopeFromPythonFile('/ws/scripts/cellapp/Hero.py')).toBe('cell');
     // bots 的脚本面是 client 面(KB-API-007)

@@ -90,10 +90,12 @@ export function inferOwnerKindFromPythonFile(
 export function inferMethodSectionFromPythonFile(pythonFile: string): EntityMethodSection | undefined {
   const normalizedPath = normalizeLookupPath(pythonFile).toLowerCase();
 
-  // KBEngine 实际目录名(scripts/{baseapp,cellapp,bots,client,...});此前只认
-  // BigWorld 旧名(base/cell/client),baseapp/cellapp 文件全落 undefined——
-  // 段过滤/作用域推断/调用图分段一并瞎(2026-11-11 用户报障根因)。bots 的
-  // 脚本面是 client 面(KB-API-007:ClientObjectBase 组装)。
+  // 进程名目录形态(scripts/{baseapp,cellapp,bots};用户工程在用):此前只认
+  // demo 资产目录形态(scripts/{base,cell,client}),baseapp/cellapp 文件全落
+  // undefined——段过滤/作用域推断/调用图分段一并瞎(2026-11-11 用户报障根因)。
+  // 两层名是两回事:demo 资产按脚本域命名(base/cell/client,引擎 baseapp→
+  // scripts/base、cellapp→scripts/cell 装载),baseapp/cellapp 是引擎进程名;
+  // bots 两层同名,脚本面是 client 面(KB-API-007:ClientObjectBase 组装)。
   if (normalizedPath.includes('/scripts/baseapp/') || normalizedPath.includes('/assets/scripts/baseapp/')
     || normalizedPath.startsWith('baseapp/') || normalizedPath.includes('/baseapp/')) {
     return 'BaseMethods';
@@ -109,7 +111,7 @@ export function inferMethodSectionFromPythonFile(pythonFile: string): EntityMeth
     return 'ClientMethods';
   }
 
-  // BigWorld 旧目录名(兼容仍按 base/cell/client 组织的工程)
+  // demo 资产目录名(scripts/base|cell|client,官方资产模板形态)
   if (normalizedPath.includes('/scripts/base/') || normalizedPath.includes('/assets/scripts/base/')
     || normalizedPath.startsWith('base/') || normalizedPath.includes('/base/')) {
     return 'BaseMethods';

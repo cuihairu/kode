@@ -136,7 +136,7 @@ describe('inferMethodSectionFromPythonFile', () => {
 });
 
 describe('pythonScriptDomain', () => {
-  it('ranks KBEngine actual directories and BigWorld legacy names alike', () => {
+  it('ranks demo asset dirs and process-app dirs alike', () => {
     expect(pythonScriptDomain('/proj/scripts/base/Hero.py')).toBe('base');
     expect(pythonScriptDomain('/proj/scripts/baseapp/Hero.py')).toBe('base');
     expect(pythonScriptDomain('/proj/scripts/cell/Hero.py')).toBe('cell');

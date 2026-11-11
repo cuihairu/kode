@@ -189,8 +189,10 @@ const assetsRootOfDefFile = (file: string): string | null => {
 /**
  * python 脚本目录域:路径段含 base(baseapp)/cell(cellapp)/client(bots 的
  * 脚本面即 client,KB-API-007)任一即归域(path.sep 切段,与
- * collectAllPythonMethodHits 的目录闸同一规则;KBEngine 实际目录名
- * baseapp/cellapp/bots 与 BigWorld 旧名 base/cell/client 同权)。判不出 → null。
+ * collectAllPythonMethodHits 的目录闸同一规则)。两种目录形态同权:demo 资产
+ * 模板的脚本域名 base/cell/client(引擎 baseapp→scripts/base、cellapp→
+ * scripts/cell 装载)与工程侧的进程名目录 baseapp/cellapp/bots——进程名归
+ * 引擎组件层,目录名归资产层,不得混称。判不出 → null。
  */
 export const pythonScriptDomain = (filePath: string): PropertyFlagDomain | null => {
   const segments = filePath.split(path.sep);

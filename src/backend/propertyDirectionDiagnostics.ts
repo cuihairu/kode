@@ -48,7 +48,7 @@ export type PropertyDirectionScope = 'base' | 'cell' | 'client';
 
 /**
  * 进程作用域推断:按 py 文件所在段已知信息(scripts/base|baseapp|cell|
- * cellapp|client|bots,KBEngine 实际目录名与 BigWorld 旧名同权)。
+ * cellapp|client|bots;demo 资产目录形态与进程名目录形态同权)。
  * 与 inferMethodSectionFromPythonFile 同口径(同源路径规则),仅把 def 方法段
  * 映射回作用域名;非角色目录(scripts/common/、根级)返回 undefined = 不足。
  */
