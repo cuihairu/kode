@@ -6,12 +6,13 @@
 //!   1) accesses = `\bself\.(\w+(?:\.\w+)*)`(propertyCodeLens 同正则,列取
 //!      后缀算术 match.index+len-path_len,躲 indexOf 同形子串);
 //!   2) init 赋值扫描 = `def __init__` 出块缩进行扫 + `self.(\w+)\s*=(?!=)`
-//!      + RHS 内 `self.cellData[\"k\"]`/`.get(\"k\")` 键提取(注意 TS 按 '\n'
+//!      以及 RHS 内 `self.cellData[\"k\"]`/`.get(\"k\")` 键提取(注意 TS 按 '\n'
 //!      切分,行尾 \r 全保留;且 `(.*)$` 尾锚下 JS `.` 不匹配行终结符——携
 //!      \r 行整匹配失败即不出赋值,crlf 对拍抓出);
 //!   3) cellData 键访问 = `self.cellData[\"k\"]`(须闭])/`.get(\"k\")`(无须
 //!      闭)),列取 match[0].indexOf(key) 首次出现语义(既有口径,含键名命中
 //!      'self.cellData' 前缀的既行行为)。
+//!
 //! 回结构面 {accesses,initNames,initSites,initCellDataKeys,cellDataAccesses}。
 
 use serde::Deserialize;
@@ -241,18 +242,15 @@ fn cell_data_key_after(text: &[u16]) -> Option<String> {
                     while k < text.len() && is_regex_space(text[k]) {
                         k += 1;
                     }
-                    match text.get(k) {
-                        Some(&q @ (0x22 | 0x27)) => {
-                            let key_start = k + 1;
-                            let mut m = key_start;
-                            while m < text.len() && text[m] != q && text[m] != 0x5D {
-                                m += 1;
-                            }
-                            if m > key_start && text.get(m) == Some(&q) {
-                                return Some(String::from_utf16(&text[key_start..m]).unwrap_or_default());
-                            }
+                    if let Some(&q @ (0x22 | 0x27)) = text.get(k) {
+                        let key_start = k + 1;
+                        let mut m = key_start;
+                        while m < text.len() && text[m] != q && text[m] != 0x5D {
+                            m += 1;
                         }
-                        _ => {}
+                        if m > key_start && text.get(m) == Some(&q) {
+                            return Some(String::from_utf16(&text[key_start..m]).unwrap_or_default());
+                        }
                     }
                 }
                 // 形式二:.get('k')(键止于引号/),须同引号收口)

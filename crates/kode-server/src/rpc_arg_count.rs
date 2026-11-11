@@ -117,8 +117,7 @@ fn count_call_arguments(
 
     // 方法名后同行找 '(';先出现其他非空白 token → 形态不明,未知
     let mut open_paren = None;
-    for i in name_end..first_line.len() {
-        let ch = first_line[i];
+    for (i, &ch) in first_line.iter().enumerate().skip(name_end) {
         if ch == 0x28 {
             open_paren = Some(i);
             break;
@@ -139,8 +138,8 @@ fn count_call_arguments(
     let mut in_string: Option<u16> = None; // 字符串定界引号;None=不在字符串
     let mut triple_string = false;
 
-    for line_idx in line..lines.len() {
-        let text: &[u16] = &lines[line_idx];
+    for (line_idx, line_text) in lines.iter().enumerate().skip(line) {
+        let text: &[u16] = line_text;
         let mut col = if line_idx == line { open_paren + 1 } else { 0 };
         while col < text.len() {
             let ch = text[col];

@@ -432,8 +432,8 @@ fn compute_post_destroy_items(
         // 函数体 = 其后缩进 > def 缩进的语句
         let body_start = s + 1;
         let mut body_end = statements.len();
-        for t in body_start..statements.len() {
-            if statements[t].indent <= header.indent {
+        for (t, stmt) in statements.iter().enumerate().skip(body_start) {
+            if stmt.indent <= header.indent {
                 body_end = t;
                 break;
             }
@@ -458,8 +458,7 @@ fn compute_post_destroy_items(
                 }
                 // 同层早退(return/break/continue/raise)在销毁与访问之间 → 访问死码
                 let mut dead = false;
-                for k in d + 1..a_idx {
-                    let mid = body[k];
+                for mid in body.iter().take(a_idx).skip(d + 1) {
                     let mid_text: Vec<u16> = mid.text.encode_utf16().collect();
                     if mid.indent == access.indent && early_exit_statement(trim_u16(&mid_text)) {
                         dead = true;

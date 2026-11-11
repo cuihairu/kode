@@ -1142,7 +1142,7 @@ fn section_mismatches(
         .find(|(candidate, _)| *candidate == receiver)
         .map(|(_, section)| *section)
         .unwrap_or("");
-    list.iter().any(|section| section == expected) == false
+    !list.iter().any(|section| section == expected)
 }
 
 /// 全量判定(与 TS computeReceiverNoneFindings 同语义):无判空 guard 的
@@ -1167,9 +1167,7 @@ fn compute_receiver_none_items(params: &ReceiverNoneParams) -> Vec<ReceiverNoneI
         }
     }
     let mut items = Vec::new();
-    for (line, character, receiver, method_name) in
-        base_calls.into_iter().chain(alias_calls.into_iter())
-    {
+    for (line, character, receiver, method_name) in base_calls.into_iter().chain(alias_calls) {
         if let Some(span) = enclosing_method_span(&classes, line) {
             let key = (span.start_line, span.end_line, receiver);
             let scan = scan_cache.entry(key).or_insert_with(|| {
@@ -1268,10 +1266,10 @@ mod tests {
     #[test]
     fn early_exit_guard_with_return_suppresses() {
         let text = "class A:\n    def f(self):\n        if not self.cell:\n            return\n        self.cell.foo()\n";
-        let found = run_with(&text, vec![class(0, 6, &[1])], HashMap::new());
+        let found = run_with(text, vec![class(0, 6, &[1])], HashMap::new());
         assert!(found.is_empty());
         let text = "class A:\n    def f(self):\n        if self.cell is None:\n            return\n        self.cell.foo()\n";
-        let found = run_with(&text, vec![class(0, 6, &[1])], HashMap::new());
+        let found = run_with(text, vec![class(0, 6, &[1])], HashMap::new());
         assert!(found.is_empty());
     }
 
@@ -1291,13 +1289,13 @@ mod tests {
     #[test]
     fn same_line_ternary_suppresses() {
         let text = "class A:\n    def f(self):\n        v = self.cell.foo() if self.cell else 0\n";
-        assert!(run_with(&text, vec![class(0, 5, &[1])], HashMap::new()).is_empty());
+        assert!(run_with(text, vec![class(0, 5, &[1])], HashMap::new()).is_empty());
     }
 
     #[test]
     fn masks_strings_and_comments() {
         let text = "class A:\n    def f(self):\n        # self.cell.foo()\n        s = \"self.cell.foo()\"\n";
-        assert!(run_with(&text, vec![class(0, 6, &[1])], HashMap::new()).is_empty());
+        assert!(run_with(text, vec![class(0, 6, &[1])], HashMap::new()).is_empty());
     }
 
     #[test]
@@ -1305,7 +1303,7 @@ mod tests {
         let text = "class A:\n    def f(self):\n        self.base.jump()\n";
         let mut decls = HashMap::new();
         decls.insert("jump".to_string(), vec!["CellMethods".to_string()]);
-        let found = run_with(&text, vec![class(0, 4, &[1])], decls);
+        let found = run_with(text, vec![class(0, 4, &[1])], decls);
         // 无 guard 的接收者引用与段错配各自成条(receiverNone 在前,与 TS 同序)
         assert_eq!(found.len(), 2);
         assert_eq!(found[0].kind, "receiverNone");
@@ -1313,7 +1311,7 @@ mod tests {
         assert_eq!(found[1].code, CODE_SECTION_MISMATCH);
         let mut decls = HashMap::new();
         decls.insert("jump".to_string(), vec!["BaseMethods".to_string()]);
-        let found = run_with(&text, vec![class(0, 4, &[1])], decls);
+        let found = run_with(text, vec![class(0, 4, &[1])], decls);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].kind, "receiverNone");
     }
@@ -1321,7 +1319,7 @@ mod tests {
     #[test]
     fn alias_use_via_local_name_collects_calls() {
         let text = "class A:\n    def f(self):\n        cell = self.cell\n        cell.foo()\n";
-        let found = run_with(&text, vec![class(0, 5, &[1])], HashMap::new());
+        let found = run_with(text, vec![class(0, 5, &[1])], HashMap::new());
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].line, 3);
         assert_eq!(found[0].method_name, "foo");
@@ -1331,7 +1329,7 @@ mod tests {
     fn non_ascii_offsets_stay_in_utf16_code_units() {
         // 字符串内非 ASCII 被掩成同长度空白(码元保长),调用列不漂移
         let text = "class A:\n    def f(self):\n        print(\"庆祝🎉\") ; self.cell.foo()\n";
-        let found = run_with(&text, vec![class(0, 5, &[1])], HashMap::new());
+        let found = run_with(text, vec![class(0, 5, &[1])], HashMap::new());
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].character, 34); // self.cell. 之后 foo 起点(码元列)
     }
