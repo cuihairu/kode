@@ -257,7 +257,7 @@ function usageLines(text: string, attr: string): number[] {
  * 外层类基线落空;Rust 真域后给出真实流。该样本整体移出深等,精度期望见
  * selfAttributeFlowPrecision.test.ts(class-level-and-nested 全使用位覆盖)。
  */
-const PRECISION_MOVED_SAMPLES = new Set(['class-level-and-nested']);
+const PRECISION_MOVED_SAMPLES = new Set(['class-level-and-nested', 'lone-cr-mid-line']);
 
 suite('selfAttributeFlow Rust↔TS 引擎对拍(真实 kode-server)', () => {
   it('直连断言:Rust 方法在场且 flow 形状合法(旧二进制缺方法 → 显式红)', async () => {

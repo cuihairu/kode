@@ -35,6 +35,7 @@ use std::sync::Mutex;
 
 use crate::parse::ParsedAst;
 use ruff_python_ast as ast;
+use ruff_text_size::Ranged;
 
 /// 版本键 LRU 容量(TS PARSE_CACHE_MAX_ENTRIES = 8)
 pub const PARSE_CACHE_MAX_ENTRIES: usize = 8;
@@ -71,14 +72,7 @@ pub(crate) fn is_word(code: u16) -> bool {
     is_name_start(code) || (0x30..=0x39).contains(&code)
 }
 
-fn is_digit(code: u16) -> bool {
-    (0x30..=0x39).contains(&code)
-}
 
-/// 字面量前缀类 `[bBrRuUfF]`
-fn is_str_prefix_char(code: u16) -> bool {
-    matches!(code, 0x62 | 0x42 | 0x72 | 0x52 | 0x75 | 0x55 | 0x66 | 0x46)
-}
 
 // ---- pythonCodeLines 掩码(pythonParser.ts:26-51 逐字移植) -----------------
 
@@ -242,17 +236,331 @@ fn walk_class_scopes(
     }
 }
 
+// ---- 赋值类型索引(精确性主车道批 B:typeOfExpr AST 化) ---------------------
+
+/// 赋值类型索引:键 = (0 起起始行, 目标名),值 = RHS(或无值注解)类型集合。
+/// 「键在、值空」= 赋值成立但类型推不出(替换语义:空集覆盖旧值=诚实未知);
+/// 「键不在」= 该行无此目标赋值(状态保留)。两义必须分开承载。
+#[derive(Debug, Clone, Default)]
+pub struct AssignmentTypes {
+    map: HashMap<(usize, String), TypeSet>,
+}
+
+impl AssignmentTypes {
+    fn insert(&mut self, line: usize, name: &str, types: TypeSet) {
+        self.map.insert((line, name.to_string()), types);
+    }
+
+    /// attr 以 UTF-16 码元查询(与行扫描器同一目标形态)。
+    fn get(&self, line: usize, name: &[u16]) -> Option<&TypeSet> {
+        let key = String::from_utf16(name).ok()?;
+        self.map.get(&(line, key))
+    }
+}
+
+/// 类体直系赋值索引(基线面):键 = (类起始行, 行, 名)。带类身份——嵌套类
+/// 直系条目不进外层类基线(旧引擎靠缩进过滤排除,AST 面以身份键同语义)。
+#[derive(Debug, Clone, Default)]
+pub struct ClassAssignmentTypes {
+    map: HashMap<(usize, usize, String), TypeSet>,
+}
+
+impl ClassAssignmentTypes {
+    fn insert(&mut self, class_start: usize, line: usize, name: &str, types: TypeSet) {
+        self.map
+            .insert((class_start, line, name.to_string()), types);
+    }
+
+    fn get(&self, class_start: usize, line: usize, name: &[u16]) -> Option<&TypeSet> {
+        let key = String::from_utf16(name).ok()?;
+        self.map.get(&(class_start, line, key))
+    }
+}
+
+/// 表达式类型(字面量面;ruff AST 节点直接推导)。
+/// None/bool/int/float/complex/str(bytes/f/t 串分型)/list/set/dict/tuple/
+/// ellipsis;walrus→内层;数值/逻辑一元;其余(调用/属性链/裸名/二元运算/
+/// 推导式/lambda/ternary)→ 空集(不硬造;调用与裸名归批 C)。
+fn ast_type_of_expr(expr: &ast::Expr) -> TypeSet {
+    match expr {
+        ast::Expr::NoneLiteral(_) => atom("None"),
+        ast::Expr::BooleanLiteral(_) => atom("bool"),
+        ast::Expr::NumberLiteral(n) => match &n.value {
+            ast::Number::Int(_) => atom("int"),
+            ast::Number::Float(_) => atom("float"),
+            ast::Number::Complex { .. } => atom("complex"),
+        },
+        ast::Expr::StringLiteral(_) => atom("str"),
+        ast::Expr::BytesLiteral(_) => atom("bytes"),
+        ast::Expr::FString(_) => atom("str"),
+        ast::Expr::TString(_) => atom("str"),
+        ast::Expr::EllipsisLiteral(_) => atom("ellipsis"),
+        ast::Expr::List(_) => atom("list"),
+        ast::Expr::Set(_) => atom("set"),
+        ast::Expr::Dict(_) => atom("dict"),
+        ast::Expr::Tuple(_) => atom("tuple"),
+        ast::Expr::Named(n) => ast_type_of_expr(&n.value),
+        ast::Expr::UnaryOp(u) => match u.op {
+            ast::UnaryOp::Not => atom("bool"),
+            ast::UnaryOp::UAdd | ast::UnaryOp::USub => match numeric_atom(&u.operand) {
+                // -x/+x 保型;bool 经 -/+ 落 int(-True == -1);其余不造
+                NumericAtom::IntOrBool => atom("int"),
+                NumericAtom::Float => atom("float"),
+                NumericAtom::Complex => atom("complex"),
+                NumericAtom::Unknown => TypeSet::new(),
+            },
+            ast::UnaryOp::Invert => match numeric_atom(&u.operand) {
+                NumericAtom::IntOrBool => atom("int"),
+                _ => TypeSet::new(),
+            },
+        },
+        _ => TypeSet::new(),
+    }
+}
+
+/// 数值一元操作数分类(直接按 AST 形态;括号被 ruff 剥除,walrus 取内层,
+/// 嵌套 +/- 继续下钻)。
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum NumericAtom {
+    IntOrBool,
+    Float,
+    Complex,
+    Unknown,
+}
+
+fn numeric_atom(expr: &ast::Expr) -> NumericAtom {
+    match expr {
+        ast::Expr::Named(n) => numeric_atom(&n.value),
+        ast::Expr::UnaryOp(u) if matches!(u.op, ast::UnaryOp::UAdd | ast::UnaryOp::USub) => {
+            numeric_atom(&u.operand)
+        }
+        ast::Expr::NumberLiteral(n) => match &n.value {
+            ast::Number::Int(_) => NumericAtom::IntOrBool,
+            ast::Number::Float(_) => NumericAtom::Float,
+            ast::Number::Complex { .. } => NumericAtom::Complex,
+        },
+        ast::Expr::BooleanLiteral(_) => NumericAtom::IntOrBool,
+        _ => NumericAtom::Unknown,
+    }
+}
+
+/// 注解文本原子:源文本按节点字节区间切片 + trim(与旧「`[^=#]+?` 捕获
+/// trim」口径一致——引号注解带引号、联合注解整串一个原子);空串不产原子。
+fn annotation_text(ast: &ParsedAst, expr: &ast::Expr) -> Option<String> {
+    let start = expr.range().start().to_u32() as usize;
+    let end = expr.range().end().to_u32() as usize;
+    let text = ast.source.get(start..end)?.trim();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text.to_string())
+    }
+}
+
+fn is_self_receiver(expr: &ast::Expr) -> bool {
+    matches!(expr, ast::Expr::Name(n) if n.id.as_str() == "self")
+}
+
+/// 全模块赋值走查:方法级 `self.<attr>` 面 + 类体直系裸名面(精确性主车道
+/// 批 B)。同行复合语句头的体不收集(`if c: self.x = 1` 依条件执行,扫描按
+/// 行序把它当普通行——与旧引擎「行首非 self 不匹配」同语义)。
+fn assignments_from_ast(ast: &ParsedAst) -> (AssignmentTypes, ClassAssignmentTypes) {
+    let mut method_level = AssignmentTypes::default();
+    let mut class_direct = ClassAssignmentTypes::default();
+    walk_assignments(ast, &ast.module().body, None, &mut method_level, &mut class_direct);
+    (method_level, class_direct)
+}
+
+fn stmt_start_line(ast: &ParsedAst, range: ruff_text_size::TextRange) -> usize {
+    ast.line_col(range.start().to_u32()).0
+}
+
+fn walk_assignments(
+    ast: &ParsedAst,
+    body: &[ast::Stmt],
+    header_line: Option<usize>,
+    method_level: &mut AssignmentTypes,
+    class_direct: &mut ClassAssignmentTypes,
+) {
+    for stmt in body {
+        let start_line = stmt_start_line(ast, stmt.range());
+        if header_line == Some(start_line) {
+            continue; // 同行复合语句体的赋值不收集(条件执行不硬套)
+        }
+        match stmt {
+            ast::Stmt::Assign(a) => {
+                index_assign(ast, a, None, method_level, class_direct);
+            }
+            ast::Stmt::AnnAssign(a) => {
+                index_ann_assign(ast, a, None, method_level, class_direct);
+            }
+            ast::Stmt::ClassDef(cls) => {
+                // 类体直系裸名赋值/注解 → class_direct(基线面);嵌套块与
+                // 嵌套类体内不入(与旧基线「类体缩进直系行」同域)。
+                for direct in &cls.body {
+                    let line = stmt_start_line(ast, direct.range());
+                    if line == start_line {
+                        continue; // `class A: x = 1` 同行直系:基线行域不含类行
+                    }
+                    match direct {
+                        ast::Stmt::Assign(a) => {
+                            index_assign(ast, a, Some(start_line), method_level, class_direct);
+                        }
+                        ast::Stmt::AnnAssign(a) => {
+                            index_ann_assign(ast, a, Some(start_line), method_level, class_direct);
+                        }
+                        _ => {}
+                    }
+                }
+                // 递归方法体/控制块/嵌套类(直系赋值已在上面入 class_direct;
+                // 此处再走会以 self.<attr> 面重复命中——类体内无 self 目标,无副作用)
+                walk_assignments(ast, &cls.body, Some(start_line), method_level, class_direct);
+            }
+            ast::Stmt::FunctionDef(fun) => {
+                walk_assignments(ast, &fun.body, Some(start_line), method_level, class_direct);
+            }
+            ast::Stmt::If(s) => {
+                walk_assignments(ast, &s.body, Some(start_line), method_level, class_direct);
+                for clause in &s.elif_else_clauses {
+                    let clause_line = stmt_start_line(ast, clause.range);
+                    walk_assignments(ast, &clause.body, Some(clause_line), method_level, class_direct);
+                }
+            }
+            ast::Stmt::For(s) => {
+                walk_assignments(ast, &s.body, Some(start_line), method_level, class_direct);
+                walk_assignments(ast, &s.orelse, None, method_level, class_direct);
+            }
+            ast::Stmt::While(s) => {
+                walk_assignments(ast, &s.body, Some(start_line), method_level, class_direct);
+                walk_assignments(ast, &s.orelse, None, method_level, class_direct);
+            }
+            ast::Stmt::With(s) => {
+                walk_assignments(ast, &s.body, Some(start_line), method_level, class_direct);
+            }
+            ast::Stmt::Try(s) => {
+                walk_assignments(ast, &s.body, Some(start_line), method_level, class_direct);
+                for h in &s.handlers {
+                    let ast::ExceptHandler::ExceptHandler(inner) = h;
+                    let handler_line = stmt_start_line(ast, inner.range);
+                    walk_assignments(ast, &inner.body, Some(handler_line), method_level, class_direct);
+                }
+                walk_assignments(ast, &s.orelse, None, method_level, class_direct);
+                walk_assignments(ast, &s.finalbody, None, method_level, class_direct);
+            }
+            ast::Stmt::Match(s) => {
+                for case in &s.cases {
+                    let case_line = stmt_start_line(ast, case.range);
+                    walk_assignments(ast, &case.body, Some(case_line), method_level, class_direct);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Assign 收集:目标 Attribute(self.<attr>) → 方法级面;裸名/元组解包目标
+/// (仅类体直系语境)→ class_direct 面。单 Tuple 目标与等长 Tuple 值逐位配对
+/// (`self.x, self.y = 1, 2`;可推导真值);否则全目标共享 RHS 推导(推不出=
+/// 空集替换)。
+fn index_assign(
+    ast: &ParsedAst,
+    a: &ast::StmtAssign,
+    class_start: Option<usize>,
+    method_level: &mut AssignmentTypes,
+    class_direct: &mut ClassAssignmentTypes,
+) {
+    let line = stmt_start_line(ast, a.range);
+    // 元组解包配对:单 Tuple 目标 × 等长 Tuple 值,无 starred 元素
+    if let ast::Expr::Tuple(value_tuple) = &*a.value {
+        if a.targets.len() == 1 {
+            if let ast::Expr::Tuple(target_tuple) = &a.targets[0] {
+                if target_tuple.elts.len() == value_tuple.elts.len()
+                    && target_tuple.elts.iter().chain(value_tuple.elts.iter()).all(
+                        |e| !matches!(e, ast::Expr::Starred(_)),
+                    )
+                {
+                    for (target, value) in target_tuple.elts.iter().zip(value_tuple.elts.iter()) {
+                        let types = ast_type_of_expr(value);
+                        index_single_target(line, target, types, class_start, method_level, class_direct);
+                    }
+                    return;
+                }
+            }
+        }
+    }
+    let types = ast_type_of_expr(&a.value);
+    for target in &a.targets {
+        index_single_target(line, target, types.clone(), class_start, method_level, class_direct);
+    }
+}
+
+/// AnnAssign 收集:注解文本原子 +(有值时)RHS 推导;无值注解 = 声明知识
+/// (与类级 `X: T` 旧口径同语义)。
+fn index_ann_assign(
+    ast: &ParsedAst,
+    a: &ast::StmtAnnAssign,
+    class_start: Option<usize>,
+    method_level: &mut AssignmentTypes,
+    class_direct: &mut ClassAssignmentTypes,
+) {
+    let line = stmt_start_line(ast, a.range);
+    let mut types = TypeSet::new();
+    if let Some(text) = annotation_text(ast, &a.annotation) {
+        types.insert(text);
+    }
+    if let Some(value) = &a.value {
+        types.extend(ast_type_of_expr(value));
+    }
+    index_single_target(line, &a.target, types, class_start, method_level, class_direct);
+}
+
+/// 单目标落表:`self.<attr>` → 方法级面;裸名(仅类体直系语境)→ class_direct。
+/// 其余目标(下标/starred/切片等)不收集。
+fn index_single_target(
+    line: usize,
+    target: &ast::Expr,
+    types: TypeSet,
+    class_start: Option<usize>,
+    method_level: &mut AssignmentTypes,
+    class_direct: &mut ClassAssignmentTypes,
+) {
+    match target {
+        ast::Expr::Attribute(attr) => {
+            if is_self_receiver(&attr.value) {
+                method_level.insert(line, attr.attr.as_str(), types);
+            }
+        }
+        ast::Expr::Name(name) => {
+            if let Some(cls) = class_start {
+                class_direct.insert(cls, line, name.id.as_str(), types);
+            }
+        }
+        _ => {}
+    }
+}
+
 // ---- 版本键 LRU 解析缓存(KODE-PERF-001 语义对齐) --------------------------
 
+/// 一次解析的全量派生(类跨度 + 赋值类型索引),按 versionKey 缓存。
+#[derive(Debug, Clone)]
+pub struct FlowParse {
+    pub classes: Vec<ClassSpan>,
+    /// 方法级 `self.<attr>` 赋值类型(键=起始行;含嵌套函数体——扫描的缩进
+    /// 过滤使其不污染外层流,只在写点查询位命中)
+    pub assignments: AssignmentTypes,
+    /// 类体直系裸名赋值/注解类型(基线面;嵌套块/嵌套类体内不入,按类身份隔离)
+    pub class_direct: ClassAssignmentTypes,
+}
+
 struct ParseCacheEntry {
-    map: HashMap<String, Vec<ClassSpan>>,
+    map: HashMap<String, FlowParse>,
     order: VecDeque<String>,
 }
 
 static PARSE_CACHE: Mutex<Option<ParseCacheEntry>> = Mutex::new(None);
 
-/// 行列表 → 类跨度(UTF-16 行 join('\n') → String → ruff 容错解析)。
-fn class_spans_from_lines(lines: &[Vec<u16>]) -> Vec<ClassSpan> {
+/// 行列表 → 解析派生(UTF-16 行 join('\n') → String → ruff 容错解析)。
+fn flow_parse_from_lines(lines: &[Vec<u16>]) -> FlowParse {
     let mut content: Vec<u16> = Vec::new();
     for (idx, line) in lines.iter().enumerate() {
         if idx > 0 {
@@ -260,16 +568,23 @@ fn class_spans_from_lines(lines: &[Vec<u16>]) -> Vec<ClassSpan> {
         }
         content.extend_from_slice(line);
     }
-    let parsed = ParsedAst::new(String::from_utf16_lossy(&content));
-    class_spans_from_ast(&parsed)
+    let source = String::from_utf16_lossy(&content);
+    let parsed = ParsedAst::new(source);
+    let classes = class_spans_from_ast(&parsed);
+    let (assignments, class_direct) = assignments_from_ast(&parsed);
+    FlowParse {
+        classes,
+        assignments,
+        class_direct,
+    }
 }
 
-fn parse_with_version_cache(lines: &[Vec<u16>], version_key: Option<&str>) -> Vec<ClassSpan> {
+fn parse_with_version_cache(lines: &[Vec<u16>], version_key: Option<&str>) -> FlowParse {
     let key = match version_key {
         Some(key) => key,
         None => {
             // 无键 = 现解析不缓存(纯函数回退)
-            return class_spans_from_lines(lines);
+            return flow_parse_from_lines(lines);
         }
     };
     let mut guard = PARSE_CACHE.lock().unwrap();
@@ -286,7 +601,7 @@ fn parse_with_version_cache(lines: &[Vec<u16>], version_key: Option<&str>) -> Ve
         entry.order.push_back(key.to_string());
         return cached;
     }
-    let parsed = class_spans_from_lines(lines);
+    let parsed = flow_parse_from_lines(lines);
     entry.map.insert(key.to_string(), parsed.clone());
     entry.order.push_back(key.to_string());
     while entry.order.len() > PARSE_CACHE_MAX_ENTRIES {
@@ -341,78 +656,7 @@ fn format_types(types: &TypeSet) -> Option<String> {
 
 // ---- 行形态扫描器(正则手工展开,左优先 + 回溯语义) -------------------------
 
-/// `x = rhs` 形共通核:`^\s*ESC\s*=\s*(?!=)(.+)`。返回 RHS 码元区间。
-/// `\s*` 贪婪回溯:`= =` 形(赋值后空白再 '=')按正则回溯以较少空白使
-/// `(?!=)` 成立,匹配带 '=' 的 RHS(与 JS 引擎一致)。
-fn match_assignment_tail(text: &[u16], head_end: usize) -> Option<(usize, usize)> {
-    let mut i = head_end;
-    while i < text.len() && is_js_space(text[i]) {
-        i += 1;
-    }
-    if text.get(i) != Some(&0x3Du16) {
-        return None;
-    }
-    i += 1;
-    let ws_start = i;
-    while i < text.len() && is_js_space(text[i]) {
-        i += 1;
-    }
-    // `\s*(?!=)(.+)$` 带全回溯:probe 从最长空白向前逐位试,每位过三关——
-    // 前瞻(≠'=')、`.+` 首字符(非行终止符)、余段无终止符(`.` 不匹配
-    // \r/U+2028/U+2029,`$` 无 /m 仅串尾;任一不过即回溯一位)
-    let mut probe = i;
-    loop {
-        match text.get(probe) {
-            None => return None, // 空白耗尽仍无合法起点((.+) 至少一字符)
-            Some(&0x3D) => {
-                if probe == ws_start {
-                    return None;
-                }
-                probe -= 1;
-            }
-            Some(&c) if is_js_line_terminator(c) => {
-                if probe == ws_start {
-                    return None;
-                }
-                probe -= 1;
-            }
-            Some(_) => {
-                if text[probe..].iter().any(|&c| is_js_line_terminator(c)) {
-                    if probe == ws_start {
-                        return None;
-                    }
-                    probe -= 1;
-                    continue;
-                }
-                return Some((probe, text.len()));
-            }
-        }
-    }
-}
 
-/// `^\s*self\.ESC\s*=\s*(?!=)(.+)$` → RHS 区间(attr 精确匹配)
-fn assignment_rhs<'a>(line: &'a [u16], attr: &[u16]) -> Option<&'a [u16]> {
-    let mut i = 0usize;
-    while i < line.len() && is_js_space(line[i]) {
-        i += 1;
-    }
-    for expected in b"self" {
-        if line.get(i) != Some(&(*expected as u16)) {
-            return None;
-        }
-        i += 1;
-    }
-    if line.get(i) != Some(&0x2Eu16) {
-        return None;
-    }
-    i += 1;
-    if line.len() - i < attr.len() || &line[i..i + attr.len()] != attr {
-        return None;
-    }
-    i += attr.len();
-    let (start, end) = match_assignment_tail(line, i)?;
-    Some(&line[start..end])
-}
 
 /// `^\s*if\s+self\.ESC\s+is\s+None\s*:`
 fn none_guard(line: &[u16], attr: &[u16]) -> bool {
@@ -574,46 +818,7 @@ fn terminal_line(line: &[u16]) -> bool {
     false
 }
 
-/// RHS 尾注释剥离(简单形态:字符串外 `#` 截断;引号内 `\'` 转义不闭串)。
-/// 空串/全空白剥离后返回空切片(TS 返回 '',typeOfExpr 空集)。
-fn strip_trailing_comment(rhs: &[u16]) -> &[u16] {
-    let mut in_string: Option<u16> = None;
-    for i in 0..rhs.len() {
-        let ch = rhs[i];
-        if let Some(q) = in_string {
-            if ch == q && i > 0 && rhs[i - 1] != 0x5C {
-                in_string = None;
-            }
-            continue;
-        }
-        if ch == 0x27 || ch == 0x22 {
-            in_string = Some(ch);
-            continue;
-        }
-        if ch == 0x23 {
-            return trim_js(&rhs[..i]);
-        }
-    }
-    trim_js(rhs)
-}
 
-/// JS `String.prototype.trim`(两端 JS \s)
-fn trim_js(text: &[u16]) -> &[u16] {
-    let mut start = 0usize;
-    let mut end = text.len();
-    while start < end && is_js_space(text[start]) {
-        start += 1;
-    }
-    while end > start && is_js_space(text[end - 1]) {
-        end -= 1;
-    }
-    &text[start..end]
-}
-
-/// `&[u16]` 与 ASCII 字面量逐码元相等(UTF-16 码元比较,替代 `[u16]==[u8]`)
-fn eq_word(text: &[u16], word: &str) -> bool {
-    text.iter().copied().eq(word.encode_utf16())
-}
 
 fn atom(name: &str) -> TypeSet {
     let mut set = TypeSet::new();
@@ -621,154 +826,6 @@ fn atom(name: &str) -> TypeSet {
     set
 }
 
-/// 表达式类型(原子集合)。生产契约无回调(调用/裸名解析恒空集)。
-/// 字面量:None/True/False/int/float/bytes|str(前缀 b/B=bytes)/list/dict/
-/// tuple;调用形态与裸名推不出 → 空集(不硬造)。
-fn type_of_expr(expr: &[u16]) -> TypeSet {
-    let text = strip_trailing_comment(expr);
-    if text.is_empty() {
-        return TypeSet::new();
-    }
-    if eq_word(text, "None") {
-        return atom("None");
-    }
-    if eq_word(text, "True") || eq_word(text, "False") {
-        return atom("bool");
-    }
-    // ^[+-]?\d+$
-    {
-        let mut i = 0usize;
-        if text.first() == Some(&0x2B) || text.first() == Some(&0x2D) {
-            i = 1;
-        }
-        let digits_start = i;
-        while i < text.len() && is_digit(text[i]) {
-            i += 1;
-        }
-        if i == text.len() && i > digits_start {
-            return atom("int");
-        }
-    }
-    // ^[+-]?\d+\.\d+$
-    {
-        let mut i = 0usize;
-        if text.first() == Some(&0x2B) || text.first() == Some(&0x2D) {
-            i = 1;
-        }
-        let digits_start = i;
-        while i < text.len() && is_digit(text[i]) {
-            i += 1;
-        }
-        if i > digits_start
-            && text.get(i) == Some(&0x2Eu16)
-            && i + 1 < text.len()
-        {
-            let frac_start = i + 1;
-            let mut j = frac_start;
-            while j < text.len() && is_digit(text[j]) {
-                j += 1;
-            }
-            if j == text.len() && j > frac_start {
-                return atom("float");
-            }
-        }
-    }
-    // 字符串字面量:^([bBrRuUfF]{0,2})['"] 且 ['"]$;b/B 前缀 = bytes
-    if matches!(text.last(), Some(&0x27) | Some(&0x22)) {
-        let mut prefix_len = 0usize;
-        while prefix_len < 2 && prefix_len < text.len() && is_str_prefix_char(text[prefix_len]) {
-            prefix_len += 1;
-        }
-        // {0,2} 贪婪回溯:前缀类先吃满再回退至引号可成立的最短——直接枚举
-        // 前缀长 2/1/0(首位必须是引号)
-        for candidate in [2usize, 1, 0] {
-            if candidate <= prefix_len
-                && matches!(text.get(candidate), Some(&0x27) | Some(&0x22))
-            {
-                let has_b = text[..candidate]
-                    .iter()
-                    .any(|&c| c == 0x62 || c == 0x42);
-                return atom(if has_b { "bytes" } else { "str" });
-            }
-        }
-    }
-    if text.first() == Some(&0x5Bu16) && text.last() == Some(&0x5Du16) {
-        return atom("list");
-    }
-    if text.first() == Some(&0x7Bu16) && text.last() == Some(&0x7Du16) {
-        return atom("dict");
-    }
-    if text.first() == Some(&0x28u16) && text.last() == Some(&0x29u16) {
-        return atom("tuple");
-    }
-    // 调用形态:name(… / a.b.c( → 末段 callee 取注解;无回调恒空集
-    if match_call_form(text) {
-        return TypeSet::new();
-    }
-    // self.Y(有界:不递归)恒空集
-    if match_self_chain(text) {
-        return TypeSet::new();
-    }
-    // 裸名:无回调恒空集
-    if match_bare_name(text) {
-        return TypeSet::new();
-    }
-    TypeSet::new()
-}
-
-/// `^([A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*)\s*\(` 完整形态判定
-fn match_call_form(text: &[u16]) -> bool {
-    let mut i = 0usize;
-    if text.first().map(|&c| is_name_start(c)) != Some(true) {
-        return false;
-    }
-    while i < text.len() && is_word(text[i]) {
-        i += 1;
-    }
-    loop {
-        let save = i;
-        while i < text.len() && is_js_space(text[i]) {
-            i += 1;
-        }
-        if text.get(i) == Some(&0x2Eu16) {
-            i += 1;
-            while i < text.len() && is_js_space(text[i]) {
-                i += 1;
-            }
-            if text.get(i).map(|&c| is_name_start(c)) == Some(true) {
-                while i < text.len() && is_word(text[i]) {
-                    i += 1;
-                }
-                continue;
-            }
-            // '.' 后非名 → 整体失败(正则该分支必填)
-            return false;
-        }
-        i = save;
-        break;
-    }
-    while i < text.len() && is_js_space(text[i]) {
-        i += 1;
-    }
-    text.get(i) == Some(&0x28u16)
-}
-
-/// `^self\.([A-Za-z_]\w*)$`
-fn match_self_chain(text: &[u16]) -> bool {
-    text.len() > 5
-        && text[0] == b's' as u16
-        && text[1] == b'e' as u16
-        && text[2] == b'l' as u16
-        && text[3] == b'f' as u16
-        && text[4] == 0x2E
-        && is_name_start(text[5])
-        && text[6..].iter().all(|&c| is_word(c))
-}
-
-/// `^[A-Za-z_]\w*$`
-fn match_bare_name(text: &[u16]) -> bool {
-    !text.is_empty() && is_name_start(text[0]) && text[1..].iter().all(|&c| is_word(c))
-}
 
 // ---- 方法域定位与流走查器 ---------------------------------------------------
 
@@ -834,9 +891,12 @@ struct ScanResult {
 }
 
 /// 顺序扫描(同缩进层):赋值覆盖/两种 None 守卫/通用块并集/return raise 终止。
-/// stop 非空时到达查询行前停(写点恰是赋值行先落 RHS 语义再停)。
+/// stop 非空时到达查询行前停(写点恰是赋值行先落 RHS 语义再停)。赋值类型
+/// 取自 AST 索引(批 B):键在=赋值成立(空集=未知,替换语义);键不在=该行
+/// 无此赋值,状态保留。
 #[allow(clippy::too_many_arguments)]
 fn scan_sequence(
+    assignments: &AssignmentTypes,
     lines: &[Vec<u16>],
     start_line: usize,
     end_line: usize,
@@ -851,11 +911,9 @@ fn scan_sequence(
         if let Some(stop) = stop_at_line {
             if line >= stop {
                 // 查询位:先落赋值语义(写点 inlay 显 RHS 类型)再停
-                let empty: Vec<u16> = Vec::new();
-                let text = lines.get(line).unwrap_or(&empty);
-                if let Some(rhs) = assignment_rhs(text, attr) {
+                if let Some(types) = assignments.get(line, attr) {
                     return ScanResult {
-                        state: type_of_expr(rhs),
+                        state: types.clone(),
                         terminal: false,
                         reached_stop: true,
                     };
@@ -881,8 +939,8 @@ fn scan_sequence(
             line += 1; // 更深缩进(块体)不属本层,跳过
             continue;
         }
-        if let Some(rhs) = assignment_rhs(text, attr) {
-            state = type_of_expr(rhs);
+        if let Some(types) = assignments.get(line, attr) {
+            state = types.clone();
             line += 1;
             continue;
         }
@@ -891,6 +949,7 @@ fn scan_sequence(
             let body_indent = block_body_indent(lines, line, block_end);
             let none_set = atom("None");
             let inner = scan_sequence(
+                assignments,
                 lines,
                 line + 1,
                 block_end,
@@ -920,6 +979,7 @@ fn scan_sequence(
             let body_indent = block_body_indent(lines, line, block_end);
             let entry = without_none(&state);
             let inner = scan_sequence(
+                assignments,
                 lines,
                 line + 1,
                 block_end,
@@ -948,6 +1008,7 @@ fn scan_sequence(
             let block_end = find_block_end(lines, line, end_line, this_indent);
             let body_indent = block_body_indent(lines, line, block_end);
             let inner = scan_sequence(
+                assignments,
                 lines,
                 line + 1,
                 block_end,
@@ -1021,28 +1082,26 @@ fn block_body_indent(lines: &[Vec<u16>], start_line: usize, end_line: usize) -> 
 
 /// 收敛基类:类级声明(注解 `X: T` T 优先 + 赋值 `X = ...` 推导)∪ __init__
 /// 体流扫描末态(尾部赋值覆盖)
-fn converged_baseline(lines: &[Vec<u16>], cls: &ClassSpan, attr: &[u16]) -> TypeSet {
+fn converged_baseline(
+    class_direct: &ClassAssignmentTypes,
+    assignments: &AssignmentTypes,
+    lines: &[Vec<u16>],
+    cls: &ClassSpan,
+    attr: &[u16],
+) -> TypeSet {
     let mut baseline = TypeSet::new();
-    let class_body_indent = block_body_indent(lines, cls.start_line, cls.end_line.saturating_sub(1));
     let first_method_line = cls
         .method_lines
         .values()
         .copied()
         .min()
         .unwrap_or(cls.end_line.saturating_sub(1));
+    // 类体直系赋值/注解(AST 收集面;`X: T` 无值=注解文本原子,`X: T = v`
+    // = 注解 + RHS 推导)
     let mut j = cls.start_line + 1;
     while j < first_method_line && j < cls.end_line {
-        let empty: Vec<u16> = Vec::new();
-        let text = lines.get(j).unwrap_or(&empty);
-        if !(is_blank(text) || is_comment_only(text)) && indent_of(text) == class_body_indent {
-            // 注解声明 `X: T = ...`(T 优先;`X: T` 无初始值亦算)
-            if let Some(annotation) = match_class_annotated(text, attr) {
-                baseline.insert(String::from_utf16_lossy(trim_js(annotation)));
-            }
-            // 赋值声明 `X = ...`
-            if let Some(assigned) = match_class_assignment(text, attr) {
-                baseline.extend(type_of_expr(assigned));
-            }
+        if let Some(types) = class_direct.get(cls.start_line, j, attr) {
+            baseline.extend(types.iter().cloned());
         }
         j += 1;
     }
@@ -1053,6 +1112,7 @@ fn converged_baseline(lines: &[Vec<u16>], cls: &ClassSpan, attr: &[u16]) -> Type
         };
         let base_indent = method_base_indent(lines, &init_method);
         let result = scan_sequence(
+            assignments,
             lines,
             init_line + 1,
             init_method.end_line,
@@ -1066,73 +1126,7 @@ fn converged_baseline(lines: &[Vec<u16>], cls: &ClassSpan, attr: &[u16]) -> Type
     baseline
 }
 
-/// `^\s*ESC\s*=\s*(?!=)(.+)$`(类级赋值声明)→ RHS 区间
-fn match_class_assignment<'a>(line: &'a [u16], attr: &[u16]) -> Option<&'a [u16]> {
-    let mut i = 0usize;
-    while i < line.len() && is_js_space(line[i]) {
-        i += 1;
-    }
-    if line.len() - i < attr.len() || &line[i..i + attr.len()] != attr {
-        return None;
-    }
-    i += attr.len();
-    let (start, end) = match_assignment_tail(line, i)?;
-    Some(&line[start..end])
-}
 
-/// `^\s*ESC\s*:\s*([^=#]+?)\s*(?:=|$)`(类级注解声明)。惰性捕获带回溯:
-/// 捕获 = 非 `#` 非 `=` 字符;`:` 后的 `\s*`(W1)贪吃满再逐位回吐给捕获
-/// (畸形如 `x: = 5`/`x:␣` 以空白字符作捕获命中,trimmed 后为空串——JS
-/// 引擎同此行为,逐字保真);捕获逐位延伸,每长度试一次 `\s*(=|$)` 边界;
-/// '#' 使当前 W1 全长失败,回吐耗尽则整体失败。
-fn match_class_annotated<'a>(line: &'a [u16], attr: &[u16]) -> Option<&'a [u16]> {
-    let mut i = 0usize;
-    while i < line.len() && is_js_space(line[i]) {
-        i += 1;
-    }
-    if line.len() - i < attr.len() || &line[i..i + attr.len()] != attr {
-        return None;
-    }
-    i += attr.len();
-    while i < line.len() && is_js_space(line[i]) {
-        i += 1;
-    }
-    if line.get(i) != Some(&0x3Au16) {
-        return None;
-    }
-    i += 1;
-    // W1 = ':' 后空白贪吃上界
-    let ws_max = i;
-    let mut run = i;
-    while run < line.len() && is_js_space(line[run]) {
-        run += 1;
-    }
-    let mut w1_end = run;
-    loop {
-        let capture_start = w1_end;
-        // 捕获至少一字符:延伸位越界/不在 [^=#] 类则本 W1 失败
-        let mut end = capture_start;
-        loop {
-            if end >= line.len() || line[end] == 0x3D || line[end] == 0x23 {
-                break;
-            }
-            end += 1;
-            // 边界:`\s*(=|$)`(W2 回溯永不成立,'=' 非空白,略)
-            let mut q = end;
-            while q < line.len() && is_js_space(line[q]) {
-                q += 1;
-            }
-            if q == line.len() || line[q] == 0x3D {
-                return Some(&line[capture_start..end]);
-            }
-        }
-        if w1_end > ws_max {
-            w1_end -= 1;
-        } else {
-            return None;
-        }
-    }
-}
 
 /// 查询位自管属性流敏感类型(纯函数;与 TS inferSelfAttributeFlow 等值)。
 /// None 当:attr 空 / 查询行越界。
@@ -1145,12 +1139,20 @@ pub fn infer_self_attribute_flow(
     if attr.is_empty() || query_line >= lines.len() {
         return None;
     }
-    let classes = parse_with_version_cache(lines, version_key);
-    let enclosing = enclosing_method(&classes, query_line);
+    let flow_parse = parse_with_version_cache(lines, version_key);
+    let classes = &flow_parse.classes;
+    let enclosing = enclosing_method(classes, query_line);
     let (flow, baseline) = if let Some((method, cls_idx)) = enclosing {
-        let baseline = converged_baseline(lines, &classes[cls_idx], attr);
+        let baseline = converged_baseline(
+            &flow_parse.class_direct,
+            &flow_parse.assignments,
+            lines,
+            &classes[cls_idx],
+            attr,
+        );
         let base_indent = method_base_indent(lines, &method);
         let result = scan_sequence(
+            &flow_parse.assignments,
             lines,
             method.start_line + 1,
             method.end_line,
@@ -1168,7 +1170,13 @@ pub fn infer_self_attribute_flow(
             .min_by_key(|c| c.end_line - c.start_line);
         match cls {
             Some(cls) => {
-                let baseline = converged_baseline(lines, cls, attr);
+                let baseline = converged_baseline(
+                    &flow_parse.class_direct,
+                    &flow_parse.assignments,
+                    lines,
+                    cls,
+                    attr,
+                );
                 (baseline.clone(), baseline)
             }
             None => (TypeSet::new(), TypeSet::new()),
@@ -1865,5 +1873,218 @@ mod tests {
         assert_eq!(flow(&body, 3, "x").types, vec!["str"]);
         assert_eq!(flow(&body, 6, "x").types, vec!["int"]);
     }
-}
 
+    // ---- 批 B:typeOfExpr AST 化(字面量面推导升级) -------------------------
+
+    #[test]
+    fn set_literal_not_dict() {
+        // 实测误导账本 #1:{1,2} 首尾字符嗅探误判 dict;AST 后 Set→set,
+        // 空 dict {} 仍 dict,调用 set() 仍不可推导(批 C)。
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        self.s = {1, 2}",
+            "        self.d = {}",
+            "        self.c = set()",
+            "        return self.s",
+        ];
+        assert_eq!(flow(&body, 5, "s").types, vec!["set"]);
+        assert_eq!(flow(&body, 5, "d").types, vec!["dict"]);
+        assert_eq!(flow(&body, 5, "c").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn paren_number_not_tuple() {
+        // 旧引擎按首尾字符 `(x)` 判 tuple:括号被 ruff 丢弃,(5) 就是 int。
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        self.a = (5)",
+            "        self.b = ((5))",
+            "        self.c = (1, 2)",
+            "        return self.a",
+        ];
+        assert_eq!(flow(&body, 5, "a").types, vec!["int"]);
+        assert_eq!(flow(&body, 5, "b").types, vec!["int"]);
+        assert_eq!(flow(&body, 5, "c").types, vec!["tuple"]);
+    }
+
+    #[test]
+    fn walrus_yields_inner_type() {
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        self.n = (v := 10)",
+            "        return self.n",
+        ];
+        assert_eq!(flow(&body, 3, "n").types, vec!["int"]);
+    }
+
+    #[test]
+    fn multiline_rhs_fully_typed() {
+        // 旧引擎 RHS 截到行尾,跨行括号串解不出;AST 取整个表达式节点。
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        self.t = (",
+            "            1,",
+            "        )",
+            "        return self.t",
+        ];
+        assert_eq!(flow(&body, 5, "t").types, vec!["tuple"]);
+    }
+
+    #[test]
+    fn numeric_unary_operators() {
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        self.a = -1.5",
+            "        self.b = +0x10",
+            "        self.c = not flag",
+            "        self.d = -True",
+            "        self.e = ~3",
+            "        self.f = -'str'",
+            "        return self.a",
+        ];
+        assert_eq!(flow(&body, 8, "a").types, vec!["float"]);
+        assert_eq!(flow(&body, 8, "b").types, vec!["int"]);
+        assert_eq!(flow(&body, 8, "c").types, vec!["bool"]);
+        assert_eq!(flow(&body, 8, "d").types, vec!["int"]);
+        assert_eq!(flow(&body, 8, "e").types, vec!["int"]);
+        assert_eq!(flow(&body, 8, "f").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn hex_scientific_and_bool_literals() {
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        self.a = 0xFF",
+            "        self.b = 1e3",
+            "        self.c = 0b101",
+            "        self.d = True",
+            "        self.e = ...",
+            "        return self.a",
+        ];
+        assert_eq!(flow(&body, 7, "a").types, vec!["int"]);
+        assert_eq!(flow(&body, 7, "b").types, vec!["float"]);
+        assert_eq!(flow(&body, 7, "c").types, vec!["int"]);
+        assert_eq!(flow(&body, 7, "d").types, vec!["bool"]);
+        assert_eq!(flow(&body, 7, "e").types, vec!["ellipsis"]);
+    }
+
+    #[test]
+    fn same_line_compound_not_typed() {
+        // `if c: self.x = 1` 条件执行不硬套(与旧引擎「行首非 self 不匹配」
+        // 同语义):按行序扫描把它当普通行,不收集。
+        let body = [
+            "class A:",
+            "    def m(self, c):",
+            "        if c: self.x = 1",
+            "        return self.x",
+        ];
+        assert_eq!(flow(&body, 3, "x").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn tuple_targets_pair_with_value_tuple() {
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        self.x, self.y = 1, 2",
+            "        self.a, self.b = f()",
+            "        return self.x",
+        ];
+        assert_eq!(flow(&body, 4, "x").types, vec!["int"]);
+        assert_eq!(flow(&body, 4, "y").types, vec!["int"]);
+        // RHS 不可推导:替换语义保留(空集覆盖),不回填旧值
+        assert_eq!(flow(&body, 4, "a").types, Vec::<String>::new());
+        assert_eq!(flow(&body, 4, "b").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn chained_targets_all_typed() {
+        // 旧引擎只取首个 RHS 捕获;AST 多目标各自入索引
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        self.x = self.y = 1",
+            "        return self.y",
+        ];
+        assert_eq!(flow(&body, 3, "x").types, vec!["int"]);
+        assert_eq!(flow(&body, 3, "y").types, vec!["int"]);
+    }
+
+    #[test]
+    fn annotated_method_body_assignments() {
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        self.x: MyClass = None",
+            "        self.y: int",
+            "        return self.x",
+        ];
+        // 注解原子 + RHS 推导并存(与类级 AnnAssign 同口径)
+        assert_eq!(flow(&body, 4, "x").types, vec!["MyClass", "None"]);
+        assert_eq!(flow(&body, 4, "y").types, vec!["int"]);
+    }
+
+    #[test]
+    fn bytes_fstring_prefixes() {
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        self.a = b'raw'",
+            "        self.b = f'{v}'",
+            "        self.c = r'regex'",
+            "        return self.a",
+        ];
+        assert_eq!(flow(&body, 5, "a").types, vec!["bytes"]);
+        assert_eq!(flow(&body, 5, "b").types, vec!["str"]);
+        assert_eq!(flow(&body, 5, "c").types, vec!["str"]);
+    }
+
+    #[test]
+    fn docstring_assignment_not_fabricated() {
+        // 旧引擎逐行文本扫描:docstring 里的 `self.x = 1` 被当真赋值(int)。
+        // AST 后它是 StringLiteral 语句,不产赋值——假象消除,诚实空。
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        \"\"\"",
+            "        self.x = 1",
+            "        \"\"\"",
+            "        return self.x",
+        ];
+        assert_eq!(flow(&body, 5, "x").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn semicolon_combo_each_typed() {
+        // 旧引擎 RHS 捕获吞到行尾(`1; self.b = 2` 整段当一个 RHS);AST 按
+        // 语句切分,各自推导。
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        self.a = 1; self.b = 's'",
+            "        return self.a",
+        ];
+        assert_eq!(flow(&body, 3, "a").types, vec!["int"]);
+        assert_eq!(flow(&body, 3, "b").types, vec!["str"]);
+    }
+
+    #[test]
+    fn string_content_assignment_not_fabricated() {
+        // 同 docstring 面:字符串字面量内容里的赋值形文本不是赋值
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        self.s = 'self.x = 1'",
+            "        return self.s",
+        ];
+        assert_eq!(flow(&body, 3, "s").types, vec!["str"]);
+        assert_eq!(flow(&body, 3, "x").types, Vec::<String>::new());
+    }
+
+}

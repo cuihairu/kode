@@ -123,4 +123,40 @@ suite('selfAttributeFlow AST 真域精度(精确性主车道批 A)', () => {
       expect((await inferSelfAttributeFlowFromRust(lines, 13, 'x', key))?.types).toEqual([]);
     });
   });
+
+  it('批 B:lone-CR 行赋值证据如实(字面量推导 AST 化;孤立 CR=行终止符语义)', async () => {
+    await withRustGate(async () => {
+      // ruff(与 CPython 同)把行中孤立 \r 当行终止符:注释里的 \r 使「回车」
+      // 成为模块级语句,类体断裂,容错解析丢弃再缩进的 def(该文件对 CPython
+      // 本身即 SyntaxError)。赋值行证据仍如实给出;断裂后方法体诚实空,不硬造流。
+      // TS 文本引擎则相反:JS 正则 `.` 不吃 \r,同位连赋值证据都解不出(types=[])。
+      const text = 'class Foo:\n    def __init__(self):\n        self.x = None  # 孤立\r回车\n    def m(self):\n        self.x.get(0)\n';
+      const lines = text.split('\n');
+      const key = 'precision:lone-cr';
+      // 赋值行(使用位停查)→ None 证据如实
+      const atAssign = await inferSelfAttributeFlowFromRust(lines, 2, 'x', key);
+      expect(atAssign?.types).toEqual(['None']);
+      expect(atAssign?.hasNone).toBe(true);
+      expect(atAssign?.annotation).toBe('None');
+      // 类体断裂后的 m 体(容错解析已丢 def)→ 诚实空
+      expect((await inferSelfAttributeFlowFromRust(lines, 4, 'x', key))?.types).toEqual([]);
+    });
+  });
+
+  it('批 B:集合字面量 {1,2} 判 set 不再误判 dict(实测误导账本 #1)', async () => {
+    await withRustGate(async () => {
+      const text = [
+        'class A:',
+        '    def m(self):',
+        '        self.s = {1, 2}',
+        '        self.d = {}',
+        '        return self.s',
+      ].join('\n');
+      const lines = text.split('\n');
+      const key = 'precision:set-literal';
+      expect((await inferSelfAttributeFlowFromRust(lines, 4, 's', key))?.types).toEqual(['set']);
+      // 空 dict 仍 dict( braces 歧义只存在于含元素形态)
+      expect((await inferSelfAttributeFlowFromRust(lines, 4, 'd', key))?.types).toEqual(['dict']);
+    });
+  });
 });
