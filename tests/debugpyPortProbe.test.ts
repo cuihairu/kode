@@ -23,11 +23,19 @@ import type { DebugpyPreflightStatus } from '../src/backend/debugpyPreflight';
 const preflight = (
   kind: DebugpyPreflightStatus['kind'],
   interpreterPath: string | null = '/usr/bin/python3',
-  version: string | null = '1.8.0'
+  version: string | null = '1.8.0',
+  installSpec: string[] | null = ['install', 'debugpy>=1.8.0']
 ): DebugpyPreflightStatus => ({
   kind,
   interpreterPath,
   version,
+  python: version === null ? null : '3.12.13',
+  target: {
+    version: '3.12.13',
+    source: 'project-setting',
+    detail: '设置 kbengine.debug.pythonTarget=3.12.13'
+  },
+  installSpec,
   message: `debugpy 预检:${kind}`
 });
 
@@ -64,12 +72,32 @@ describe('buildPortClosedGuidance', () => {
     expect(guidance.installAction).toBe('一键安装 debugpy');
   });
 
-  it('debugpy 过老:同样归因缺包(升级面)', () => {
-    const guidance = buildPortClosedGuidance(refusedProbe(), preflight('debugpy-outdated', '/usr/bin/python3', '1.6.0'));
-    expect(guidance.cause).toBe('debugpy-outdated');
+  it('debugpy 与引擎目标不兼容:归因不兼容,给一键安装(精确 spec 在场)', () => {
+    const guidance = buildPortClosedGuidance(
+      refusedProbe(),
+      preflight('debugpy-incompatible', '/usr/bin/python3', '1.6.0', ['install', 'debugpy>=1.8.0'])
+    );
+    expect(guidance.cause).toBe('debugpy-incompatible');
     expect(guidance.message).toContain('1.6.0');
-    expect(guidance.message).toContain('过老');
+    expect(guidance.message).toContain('不兼容');
     expect(guidance.installAction).toBe('一键安装 debugpy');
+  });
+
+  it('版本不兼容但无安装 spec(目标未知/无支持线):不给一键安装,不盲装', () => {
+    const guidance = buildPortClosedGuidance(
+      refusedProbe(),
+      preflight('debugpy-incompatible', '/usr/bin/python3', '1.6.0', null)
+    );
+    expect(guidance.cause).toBe('debugpy-incompatible');
+    expect(guidance.installAction).toBeUndefined();
+  });
+
+  it('目标未知:归因 target-unknown,给设置键,无安装动作', () => {
+    const guidance = buildPortClosedGuidance(refusedProbe(), preflight('target-unknown'));
+    expect(guidance.cause).toBe('target-unknown');
+    expect(guidance.message).toContain('kbengine.debug.pythonTarget');
+    expect(guidance.message).toContain('未知');
+    expect(guidance.installAction).toBeUndefined();
   });
 
   it('未找到解释器:归因解释器给设置键,无安装动作', () => {
@@ -119,11 +147,17 @@ describe('装完仍未开与手装指引起口径', () => {
     expect(PORT_NEXT_STEP_ACTIONS.listenGuide).toBe('起监听指引');
   });
 
-  it('手装指引:可复制命令 + 同步资产树 + 引擎侧起监听两步', () => {
-    const guide = buildManualInstallGuide('/usr/bin/python3', 5678);
-    expect(guide).toContain('/usr/bin/python3 -m pip install -U debugpy');
+  it('手装指引:可复制命令(来自预检精确 spec)+ 同步资产树 + 引擎侧起监听两步', () => {
+    const guide = buildManualInstallGuide('/usr/bin/python3', '/usr/bin/python3 -m pip install debugpy==1.7.0', 5678);
+    expect(guide).toContain('/usr/bin/python3 -m pip install debugpy==1.7.0');
     expect(guide).toContain('kbengine.python.debugpySync');
     expect(guide).toContain('5678');
+  });
+
+  it('手装指引(目标未知):不给盲装命令,指引先设置目标', () => {
+    const guide = buildManualInstallGuide('/usr/bin/python3', null, 5678);
+    expect(guide).toContain('kbengine.debug.pythonTarget');
+    expect(guide).not.toContain('pip install');
   });
 
   it('探测超时常量与 telnet 探测同口径(1.5s)', () => {
@@ -166,7 +200,7 @@ describe('defaultTcpConnect(真实套接字)', () => {
 
 describe('defaultDebugpyInstallRunner(真实 spawn 的诚实通道)', () => {
   it('解释器起不来:如实失败(含原因),不假成功', async () => {
-    const result = await defaultDebugpyInstallRunner('/nonexistent/python-bin');
+    const result = await defaultDebugpyInstallRunner('/nonexistent/python-bin', ['install', 'debugpy==1.7.0']);
     expect(result.ok).toBe(false);
     expect(result.detail).toContain('无法启动');
   }, 8000);
@@ -174,7 +208,7 @@ describe('defaultDebugpyInstallRunner(真实 spawn 的诚实通道)', () => {
   it('pip 途径不可用(node 当解释器):非零退出如实报退出码与输出尾', async () => {
     // node 自身作解释器:`node -m pip ...` 必然非零退出(无 pip 模块)——
     // 正好验证失败通道把退出码与输出尾部带出来
-    const result = await defaultDebugpyInstallRunner(process.execPath);
+    const result = await defaultDebugpyInstallRunner(process.execPath, ['install', 'debugpy==1.7.0']);
     expect(result.ok).toBe(false);
     expect(result.detail).toMatch(/pip 退出码 \d+/);
   }, 30_000);

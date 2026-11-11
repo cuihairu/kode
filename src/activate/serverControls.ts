@@ -28,11 +28,11 @@ import {
   syncDebugpyPackage,
   allocateDebugpyInstancePort,
   autoDebugpyEnabled,
-  debugpyPackageDir,
   debugpyPortFor,
   type DebugpyInjectTarget,
 } from '../autoDebugpy';
-import { checkInterpreterDebugpy, debugpyPreflightAllowsInjection, debugpyPreflightDeps } from '../backend/debugpyPreflight';
+import { checkInterpreterDebugpy, debugpyPreflightAllowsInjection, debugpyPreflightDeps, readAssetsDebugpyVersion } from '../backend/debugpyPreflight';
+import { pythonTargetDeps, resolvePythonTarget } from '../backend/pythonTarget';
 import {
   findEngineEntryScript,
   injectWaitBootstrap,
@@ -421,10 +421,15 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
     };
     void (async () => {
       if (autoDebugpyEnabled()) {
-        const preflight = await checkInterpreterDebugpy(debugpyPreflightDeps());
+        // 引擎目标逐工作区解析(设置 > 引擎二进制扫描;DBG-COMPAT-01),
+        // 预检按目标策略裁版本;资产树包读出版本核对策略,不再只查存在
+        // (DBG-COMPAT-04)
+        const pythonTarget = resolvePythonTarget(pythonTargetDeps(context.workspaceState));
+        const preflight = await checkInterpreterDebugpy(debugpyPreflightDeps(), pythonTarget);
         const allows = debugpyPreflightAllowsInjection(
           preflight,
-          fs.existsSync(debugpyPackageDir(serverManager.getConfigPath()))
+          pythonTarget,
+          readAssetsDebugpyVersion(serverManager.getConfigPath())
         );
         if (!allows) {
           const componentName = typeof injectTarget === 'string' ? injectTarget : injectTarget.component;
@@ -835,8 +840,14 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
       };
     }
     const assetsRoot = serverManager.getConfigPath();
-    if (!fs.existsSync(debugpyPackageDir(assetsRoot))) {
-      const synced = await syncDebugpyPackage(context, assetsRoot);
+    if (readAssetsDebugpyVersion(assetsRoot) === null) {
+      // 资产树无可读 debugpy 包:同步(同步侧同走引擎目标策略闸,版本
+      // 不兼容/目标未知都会如实报错,不再硬塞一个起不动的包)
+      const synced = await syncDebugpyPackage(
+        context,
+        assetsRoot,
+        resolvePythonTarget(pythonTargetDeps(context.workspaceState))
+      );
       if (synced.status === 'error') {
         return { ok: false, detail: `资产树缺 debugpy 包且同步失败:${synced.message}` };
       }
@@ -903,7 +914,11 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
     'kbengine.python.debugpySync',
     async () => {
       const assetsRoot = serverManager.getConfigPath();
-      const result = await syncDebugpyPackage(context, assetsRoot);
+      const result = await syncDebugpyPackage(
+        context,
+        assetsRoot,
+        resolvePythonTarget(pythonTargetDeps(context.workspaceState))
+      );
       if (result.status === 'error') {
         void vscode.window.showErrorMessage(`debugpy 同步失败: ${result.message}`);
       } else {

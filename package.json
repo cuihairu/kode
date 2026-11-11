@@ -1637,6 +1637,11 @@
           "default": false,
           "markdownDescription": "%kbengine.config.debug.autoDebugpy.description%"
         },
+        "kbengine.debug.pythonTarget": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%kbengine.config.debug.pythonTarget.description%"
+        },
         "kbengine.debug.debugpyInject": {
           "type": "boolean",
           "default": true,

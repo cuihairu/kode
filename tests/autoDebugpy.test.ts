@@ -7,11 +7,8 @@ import * as vscode from 'vscode';
 import {
   AUTO_DEBUGPY_ENABLED_DEFAULT,
   DEBUGPY_PORT_TABLE,
-  EMBEDDED_PYTHON_VERSION,
   defaultRunPython,
-  MIN_DEBUGPY_VERSION,
   buildDebugpyListenCommand,
-  compareVersions,
   debugpyPackageDir,
   debugpyPortFor,
   injectDebugpyAfterStart,
@@ -21,6 +18,8 @@ import {
   syncDebugpyPackage,
   type DebugpySyncDeps
 } from '../src/autoDebugpy';
+import type { PythonTarget } from '../src/backend/pythonTarget';
+import { PYTHON_TARGET_SETTING } from '../src/backend/pythonTarget';
 import { DebugConfigManager } from '../src/debugConfig';
 // KODE-CFG-009:TS 端口常量表删(core 唯一真源);测试对照值取 core 同表镜像
 import { ENGINE_DEFAULT_TELNET_PORTS, type TelnetTarget } from './helpers/configCoreContract';
@@ -133,7 +132,17 @@ const syncDeps = (overrides: Partial<DebugpySyncDeps> = {}): DebugpySyncDeps & {
   };
 };
 
-const SYSTEM_DEBUGPY = { version: '1.8.0', dir: '/usr/lib/python3/dist-packages/debugpy' };
+/** 引擎目标替身:三段版本 + 来源面(DBG-COMPAT-01 形状) */
+const targetAt = (version: string): PythonTarget => ({
+  version,
+  source: 'project-setting',
+  detail: `设置 ${PYTHON_TARGET_SETTING}=${version}`
+});
+/** 现代目标(3.12.13:与旧全局常量同版,回归既有流程面) */
+const MODERN_TARGET = targetAt('3.12.13');
+/** 3.7 目标(本批账本的主角:旧闸对其错用 1.8.0 下限) */
+const TARGET_37 = targetAt('3.7.3');
+const SYSTEM_DEBUGPY = { version: '1.8.0', dir: '/usr/lib/python3/dist-packages/debugpy', python: '3.12.13' };
 
 describe('端口分配表', () => {
   it('五组件定口,互不冲突且全在 5678-5682 段', () => {
@@ -164,14 +173,6 @@ describe('端口分配表', () => {
     expect(debugpyPortFor('bots')).toBeUndefined();
   });
 
-  it('compareVersions 语义化三段比较(后缀按 0)', () => {
-    expect(compareVersions('1.8.0', '1.6.7')).toBeGreaterThan(0);
-    expect(compareVersions('1.8.0', MIN_DEBUGPY_VERSION)).toBe(0);
-    expect(compareVersions('1.7.9', '1.8.0')).toBeLessThan(0);
-    expect(compareVersions('2.0.0', '1.99.99')).toBeGreaterThan(0);
-    expect(compareVersions('1.8', '1.8.0')).toBe(0);
-  });
-
   it('注入命令形面:只绑 127.0.0.1,端口来自分配表', () => {
     expect(buildDebugpyListenCommand(5678))
       .toBe('import debugpy; debugpy.listen(("127.0.0.1", 5678))');
@@ -184,28 +185,91 @@ describe('syncDebugpyPackage(系统 debugpy 复制)', () => {
   });
 
   it('资产根未配置:如实报错不动手', async () => {
-    const result = await syncDebugpyPackage(makeContext(), '', syncDeps());
+    const result = await syncDebugpyPackage(makeContext(), '', MODERN_TARGET, syncDeps());
     expect(result.status).toBe('error');
     expect(result.message).toContain('assetsRoot');
   });
 
+  it('目标未知:拒绝盲同步,文案带设置键(DBG-COMPAT-01 不再拿常量猜)', async () => {
+    const unknown = { version: null, source: 'none' as const, detail: '引擎 Python 版本未知' };
+    const deps = syncDeps();
+    const result = await syncDebugpyPackage(makeContext(), '/ws', unknown, deps);
+    expect(result.status).toBe('error');
+    expect(result.message).toContain(PYTHON_TARGET_SETTING);
+    expect(deps.copies).toHaveLength(0);
+  });
+
   it('系统 Python 没装 debugpy:如实报错不抛', async () => {
-    const result = await syncDebugpyPackage(makeContext(), '/ws', syncDeps());
+    const result = await syncDebugpyPackage(makeContext(), '/ws', MODERN_TARGET, syncDeps());
     expect(result.status).toBe('error');
     expect(result.message).toContain('pip install debugpy');
   });
 
-  it('版本闸:低于 1.8.0 拒绝复制(内嵌 Python 3.12.13 兼容)', async () => {
+  it('3.7 目标 + debugpy 1.7.0(同 3.7 源):放行复制——旧 MIN 1.8.0 闸的账本缺陷反转', async () => {
     const deps = syncDeps({
       runPython: async () => ({
-        stdout: JSON.stringify({ version: '1.6.7', dir: '/old/debugpy' }),
+        stdout: JSON.stringify({ version: '1.7.0', dir: '/py37/debugpy', python: '3.7.3' }),
+        exitCode: 0
+      }),
+      exists: candidate => candidate === '/py37/debugpy'
+    });
+    const result = await syncDebugpyPackage(makeContext(), '/ws/assets', TARGET_37, deps);
+    expect(result.status).toBe('synced');
+    expect(deps.copies).toEqual([{ from: '/py37/debugpy', to: debugpyPackageDir('/ws/assets') }]);
+  });
+
+  it('3.7 目标 + debugpy 1.8.0:严格锁版拒绝(过高也拒,1.8.0 起要求 ≥3.8)', async () => {
+    const deps = syncDeps({
+      runPython: async () => ({
+        stdout: JSON.stringify({ version: '1.8.0', dir: SYSTEM_DEBUGPY.dir, python: '3.7.3' }),
         exitCode: 0
       })
     });
-    const result = await syncDebugpyPackage(makeContext(), '/ws', deps);
+    const result = await syncDebugpyPackage(makeContext(), '/ws/assets', TARGET_37, deps);
+    expect(result.status).toBe('error');
+    expect(result.message).toContain('1.8.0');
+    expect(result.message).toContain('1.7.0');
+    expect(deps.copies).toHaveLength(0);
+  });
+
+  it('同步源解释器 Python 行与目标行不一致:ABI 拒绝(pydevd 原生扩展按 CPython 版本编译)', async () => {
+    const deps = syncDeps({
+      runPython: async () => ({
+        stdout: JSON.stringify({ version: '1.8.13', dir: '/py312/debugpy', python: '3.12.13' }),
+        exitCode: 0
+      })
+    });
+    const result = await syncDebugpyPackage(makeContext(), '/ws/assets', TARGET_37, deps);
+    expect(result.status).toBe('error');
+    expect(result.message).toContain('3.12');
+    expect(result.message).toContain('3.7');
+    expect(deps.copies).toHaveLength(0);
+  });
+
+  it('探测输出缺 python 字段:拒绝同步(ABI 无法核对)', async () => {
+    const deps = syncDeps({
+      runPython: async () => ({
+        stdout: JSON.stringify({ version: '1.8.0', dir: SYSTEM_DEBUGPY.dir }),
+        exitCode: 0
+      })
+    });
+    const result = await syncDebugpyPackage(makeContext(), '/ws/assets', MODERN_TARGET, deps);
+    expect(result.status).toBe('error');
+    expect(result.message).toContain('版本探测失败');
+    expect(deps.copies).toHaveLength(0);
+  });
+
+  it('modern 目标 + debugpy 1.6.7:低于下限 1.8.0 拒绝复制', async () => {
+    const deps = syncDeps({
+      runPython: async () => ({
+        stdout: JSON.stringify({ version: '1.6.7', dir: '/old/debugpy', python: '3.12.13' }),
+        exitCode: 0
+      })
+    });
+    const result = await syncDebugpyPackage(makeContext(), '/ws', MODERN_TARGET, deps);
     expect(result.status).toBe('error');
     expect(result.message).toContain('1.6.7');
-    expect(result.message).toContain(EMBEDDED_PYTHON_VERSION);
+    expect(result.message).toContain('1.8.0');
     expect(deps.copies).toHaveLength(0);
   });
 
@@ -214,7 +278,7 @@ describe('syncDebugpyPackage(系统 debugpy 复制)', () => {
       runPython: async () => ({ stdout: JSON.stringify(SYSTEM_DEBUGPY), exitCode: 0 }),
       exists: candidate => candidate === SYSTEM_DEBUGPY.dir
     });
-    const result = await syncDebugpyPackage(makeContext(), '/ws/assets', deps);
+    const result = await syncDebugpyPackage(makeContext(), '/ws/assets', MODERN_TARGET, deps);
     expect(result.status).toBe('synced');
     expect(deps.copies).toEqual([
       { from: SYSTEM_DEBUGPY.dir, to: debugpyPackageDir('/ws/assets') }
@@ -229,7 +293,7 @@ describe('syncDebugpyPackage(系统 debugpy 复制)', () => {
       exists: candidate => candidate === SYSTEM_DEBUGPY.dir || candidate === target || candidate === path.join(target, '__init__.py'),
       readFileText: () => "__version__ = '1.8.0'\n"
     });
-    const result = await syncDebugpyPackage(makeContext(), '/ws/assets', deps);
+    const result = await syncDebugpyPackage(makeContext(), '/ws/assets', MODERN_TARGET, deps);
     expect(result.status).toBe('skipped-same');
     expect(deps.copies).toHaveLength(0);
   });
@@ -241,7 +305,7 @@ describe('syncDebugpyPackage(系统 debugpy 复制)', () => {
       exists: candidate => candidate === SYSTEM_DEBUGPY.dir || candidate === target || candidate === path.join(target, '__init__.py'),
       readFileText: () => "__version__ = '1.8.2'\n"
     });
-    const result = await syncDebugpyPackage(makeContext(), '/ws/assets', deps);
+    const result = await syncDebugpyPackage(makeContext(), '/ws/assets', MODERN_TARGET, deps);
     expect(result.status).toBe('skipped-user');
     expect(deps.copies).toHaveLength(0);
     expect(result.message).toContain('手动删除');
@@ -252,13 +316,13 @@ describe('syncDebugpyPackage(系统 debugpy 复制)', () => {
     memento.set(`kbengine.debugpySync.managed:${target}`, '1.8.0');
     const deps = syncDeps({
       runPython: async () => ({
-        stdout: JSON.stringify({ version: '1.8.2', dir: SYSTEM_DEBUGPY.dir }),
+        stdout: JSON.stringify({ version: '1.8.2', dir: SYSTEM_DEBUGPY.dir, python: '3.12.13' }),
         exitCode: 0
       }),
       exists: candidate => candidate === SYSTEM_DEBUGPY.dir || candidate === target || candidate === path.join(target, '__init__.py'),
       readFileText: () => "__version__ = '1.8.0'\n"
     });
-    const result = await syncDebugpyPackage(makeContext(), '/ws/assets', deps);
+    const result = await syncDebugpyPackage(makeContext(), '/ws/assets', MODERN_TARGET, deps);
     expect(result.status).toBe('upgraded');
     expect(deps.copies).toHaveLength(1);
     expect(memento.get(`kbengine.debugpySync.managed:${target}`)).toBe('1.8.2');
@@ -270,7 +334,7 @@ describe('syncDebugpyPackage(系统 debugpy 复制)', () => {
       runPython: async () => ({ stdout: JSON.stringify(SYSTEM_DEBUGPY), exitCode: 0 }),
       exists: candidate => candidate === SYSTEM_DEBUGPY.dir || candidate === target
     });
-    const result = await syncDebugpyPackage(makeContext(), '/ws/assets', deps);
+    const result = await syncDebugpyPackage(makeContext(), '/ws/assets', MODERN_TARGET, deps);
     expect(result.status).toBe('skipped-user');
     expect(deps.copies).toHaveLength(0);
   });
@@ -283,7 +347,7 @@ describe('syncDebugpyPackage(系统 debugpy 复制)', () => {
         throw new Error('EROFS: read-only file system');
       }
     });
-    const result = await syncDebugpyPackage(makeContext(), '/ws/assets', deps);
+    const result = await syncDebugpyPackage(makeContext(), '/ws/assets', MODERN_TARGET, deps);
     expect(result.status).toBe('error');
     expect(result.message).toContain('EROFS');
   });

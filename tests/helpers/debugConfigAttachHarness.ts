@@ -143,12 +143,26 @@ export const makeManager = (
     }
   );
 
-/** 本机 debugpy 预检替身(IDE-PDBG-002 分诊的注入面) */
+/** 本机 debugpy 预检替身(IDE-PDBG-002 分诊的注入面;DBG-COMPAT-03 起
+ * 带目标/installSpec 面,默认目标 3.12.13 下限闸) */
 export const preflightStatus = (
   kind: string,
   interpreterPath: string | null = '/usr/bin/python3',
-  version: string | null = '1.8.0'
-) => ({ kind, interpreterPath, version, message: `debugpy 预检:${kind}` });
+  version: string | null = '1.8.0',
+  installSpec: string[] | null = ['install', 'debugpy>=1.8.0']
+) => ({
+  kind,
+  interpreterPath,
+  version,
+  python: version === null ? null : '3.12.13',
+  target: {
+    version: '3.12.13',
+    source: 'project-setting' as const,
+    detail: '设置 kbengine.debug.pythonTarget=3.12.13'
+  },
+  installSpec,
+  message: `debugpy 预检:${kind}`
+});
 
 export const setWorkspaceAt = (fsPath: string | null): void => {
   stubWorkspace.workspaceFolders = fsPath

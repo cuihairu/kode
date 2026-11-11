@@ -32,6 +32,7 @@ import {
   setDebugpyInstallTimeoutMsForTests
 } from '../src/backend/debugpyPortProbe';
 import { checkInterpreterDebugpy, debugpyPreflightDeps } from '../src/backend/debugpyPreflight';
+import type { PythonTarget } from '../src/backend/pythonTarget';
 import { defaultSpawnRunner } from '../src/backend/pyspyDump';
 import { ProcessManager, killProcessTree } from '../src/backend/processManager';
 import { PYLANCE_EXTENSION_ID, collectPythonServiceFacts } from '../src/pythonLanguageServiceStatus';
@@ -43,6 +44,10 @@ import {
 import type { TelnetTarget } from '../src/telnetService';
 import { configurationOverrides, fakeExtensionList } from './helpers/vscodeStub';
 import { makeSimComponentInfo } from './sim/machineSimulator';
+
+/** sync/preflight 真实链用目标替身:3.12.13(与假解释器 JSON 的 python 字段同行,
+ * 策略下限 1.8.0 与替身 debugpy 版本匹配) */
+const MODERN_TARGET: PythonTarget = { version: '3.12.13', source: 'project-setting', detail: '测试目标 3.12.13' };
 
 // 调试/进程链路模块的未覆盖分支补角(ground truth = coverage/lcov.info):
 // 各模块「真实 spawn/socket/fs」默认通道(defaultSpawnRunner/defaultTcpConnect/
@@ -213,7 +218,7 @@ describe('defaultDebugpyInstallRunner(真实 spawn 安装通道)', () => {
     );
     const started = Date.now();
     try {
-      const result = await defaultDebugpyInstallRunner(interpreter);
+      const result = await defaultDebugpyInstallRunner(interpreter, ['install', 'debugpy==1.7.0']);
       expect(result.ok).toBe(false);
       expect(result.detail).toContain('pip 安装超时');
       // 截止附近返回(远小于挂起的 10s)
@@ -230,14 +235,14 @@ describe('defaultDebugpyInstallRunner(真实 spawn 安装通道)', () => {
       'printf \'l1\\nl2\\nl3\\nl4\\n\'',
       'console.log(\'l1\');console.log(\'l2\');console.log(\'l3\');console.log(\'l4\');'
     );
-    const result = await defaultDebugpyInstallRunner(interp);
+    const result = await defaultDebugpyInstallRunner(interp, ['install', 'debugpy>=1.8.0']);
     expect(result.ok).toBe(true);
     expect(result.detail).toContain('l2 | l3 | l4');
     expect(result.detail).not.toContain('l1');
   }, 8000);
 
   it('空命令同步抛:兜住如实失败不假成功', async () => {
-    const result = await defaultDebugpyInstallRunner('');
+    const result = await defaultDebugpyInstallRunner('', ['install', 'debugpy']);
     expect(result.ok).toBe(false);
     expect(result.detail).toContain('TypeError');
   }, 8000);
@@ -252,7 +257,7 @@ describe('debugpyPreflightDeps(真实 spawn 探测面)', () => {
     const bin = makeTempDir('kode-preflight-');
     writeFakeInterpreter(bin, 'printf \'1.8.0\\n\'', 'console.log(\'1.8.0\');');
     process.env.PATH = bin;
-    const status = await checkInterpreterDebugpy(debugpyPreflightDeps());
+    const status = await checkInterpreterDebugpy(debugpyPreflightDeps(), MODERN_TARGET);
     expect(status.kind).toBe('ok');
     // WIN-3:win32 PATH 候选含 python3.cmd(.cmd shim 形态),期望随平台取后缀。
     const expectedInterpreter =
@@ -268,7 +273,7 @@ describe('debugpyPreflightDeps(真实 spawn 探测面)', () => {
     const status = await checkInterpreterDebugpy({
       resolveInterpreter: () => resolution,
       runInterpreterCode: debugpyPreflightDeps().runInterpreterCode
-    });
+    }, MODERN_TARGET);
     expect(status.kind).toBe('debugpy-missing');
     expect(status.version).toBeNull();
   }, 8000);
@@ -311,13 +316,13 @@ describe('syncDebugpyPackage 默认依赖链(真实 spawn + 真 fs)', () => {
     fs.writeFileSync(path.join(src, 'server.py'), '# payload\n', 'utf8');
     writeFakeInterpreter(
       bin,
-      `printf '{"version":"1.8.0","dir":"${src}"}\\n'`,
-      `console.log(${JSON.stringify(JSON.stringify({ version: '1.8.0', dir: src }))});`
+      `printf '{"version":"1.8.0","python":"3.12.13","dir":"${src}"}\\n'`,
+      `console.log(${JSON.stringify(JSON.stringify({ version: '1.8.0', python: '3.12.13', dir: src }))});`
     );
     process.env.PATH = bin;
 
     const memento = makeMemento();
-    const result = await syncDebugpyPackage({ workspaceState: memento }, assets);
+    const result = await syncDebugpyPackage({ workspaceState: memento }, assets, MODERN_TARGET);
 
     expect(result.status).toBe('synced');
     const target = path.join(assets, 'scripts', 'common', 'debugpy');
@@ -330,7 +335,7 @@ describe('syncDebugpyPackage 默认依赖链(真实 spawn + 真 fs)', () => {
     const empty = makeTempDir('kode-sync-empty-');
     process.env.PATH = empty;
 
-    const result = await syncDebugpyPackage({ workspaceState: makeMemento() }, assets);
+    const result = await syncDebugpyPackage({ workspaceState: makeMemento() }, assets, MODERN_TARGET);
 
     expect(result.status).toBe('error');
     expect(result.message).toContain('没有可用的 debugpy 包');
@@ -340,7 +345,7 @@ describe('syncDebugpyPackage 默认依赖链(真实 spawn + 真 fs)', () => {
     writeFakeInterpreter(bin, 'printf \'not-json-at-all\\n\'', 'console.log(\'not-json-at-all\');');
     process.env.PATH = bin;
 
-    const result = await syncDebugpyPackage({ workspaceState: makeMemento() }, assets);
+    const result = await syncDebugpyPackage({ workspaceState: makeMemento() }, assets, MODERN_TARGET);
 
     expect(result.status).toBe('error');
     expect(result.message).toContain('无法解析');
@@ -350,12 +355,12 @@ describe('syncDebugpyPackage 默认依赖链(真实 spawn + 真 fs)', () => {
   it('报出的目录不在盘:如实 error 带路径', async () => {
     writeFakeInterpreter(
       bin,
-      'printf \'{"version":"1.8.0","dir":"/nonexistent-kode-debugpy-dir"}\\n\'',
-      `console.log(${JSON.stringify(JSON.stringify({ version: '1.8.0', dir: '/nonexistent-kode-debugpy-dir' }))});`
+      'printf \'{"version":"1.8.0","python":"3.12.13","dir":"/nonexistent-kode-debugpy-dir"}\\n\'',
+      `console.log(${JSON.stringify(JSON.stringify({ version: '1.8.0', python: '3.12.13', dir: '/nonexistent-kode-debugpy-dir' }))});`
     );
     process.env.PATH = bin;
 
-    const result = await syncDebugpyPackage({ workspaceState: makeMemento() }, assets);
+    const result = await syncDebugpyPackage({ workspaceState: makeMemento() }, assets, MODERN_TARGET);
 
     expect(result.status).toBe('error');
     expect(result.message).toContain('/nonexistent-kode-debugpy-dir');
@@ -367,15 +372,15 @@ describe('syncDebugpyPackage 默认依赖链(真实 spawn + 真 fs)', () => {
     fs.writeFileSync(path.join(src, '__init__.py'), 'pass\n', 'utf8');
     writeFakeInterpreter(
       bin,
-      `printf '{"version":"1.8.0","dir":"${src}"}\\n'`,
-      `console.log(${JSON.stringify(JSON.stringify({ version: '1.8.0', dir: src }))});`
+      `printf '{"version":"1.8.0","python":"3.12.13","dir":"${src}"}\\n'`,
+      `console.log(${JSON.stringify(JSON.stringify({ version: '1.8.0', python: '3.12.13', dir: src }))});`
     );
     process.env.PATH = bin;
     const target = path.join(assets, 'scripts', 'common', 'debugpy');
     fs.mkdirSync(target, { recursive: true });
     fs.writeFileSync(path.join(target, '__init__.py'), '# 用户手放,无版本行\n', 'utf8');
 
-    const result = await syncDebugpyPackage({ workspaceState: makeMemento() }, assets);
+    const result = await syncDebugpyPackage({ workspaceState: makeMemento() }, assets, MODERN_TARGET);
 
     expect(result.status).toBe('skipped-user');
     expect(fs.readFileSync(path.join(target, '__init__.py'), 'utf8')).toContain('用户手放');

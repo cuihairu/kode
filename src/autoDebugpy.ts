@@ -2,7 +2,9 @@
  * 调试启动即 attach(用户令 2026-10-27 ③,调研已完成照做):
  * kbengine.debug.autoDebugpy(默认 false)三件套——
  * (a) kbengine.python.debugpySync 命令:核对系统 pip 的 debugpy 版本与
- *     内嵌 Python 3.12.13 兼容后,把包复制到 <assets>/scripts/common/debugpy/
+ *     引擎目标 Python(pythonTarget.ts 解析:显式设置 > 引擎二进制扫描,
+ *     不再拿全局常量 3.12.13 对所有工程一刀切——DBG-COMPAT-01/02)兼容
+ *     后,把包复制到 <assets>/scripts/common/debugpy/
  *     (python_app.cpp:167 该目录在引擎模块搜索路径第一位,site_import=0
  *     不影响 sys.path 头部插入;scripts/common 本就是引擎约定目录);
  * (b) server start 成功后逐组件连 telnet :python 层注入
@@ -22,6 +24,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { KBEngineTelnetClient, type TelnetClientEvents } from './backend/telnetClient';
+import {
+  PYTHON_TARGET_SETTING,
+  debugpyPolicyFor,
+  debugpyVersionSatisfiesPolicy,
+  pythonLineOf,
+  type PythonTarget
+} from './backend/pythonTarget';
 import { resolveProfileInterpreter } from './profileInterpreter';
 import type { TelnetTarget } from './telnetService';
 import { killProcessTree, spawnProcess } from './backend/processManager';
@@ -79,27 +88,6 @@ export function allocateDebugpyInstancePort(component: string, taken: Iterable<n
   return undefined;
 }
 
-/** 引擎内嵌 Python 版本(kbengine 编译期捆绑,调研结论 3.12.13) */
-export const EMBEDDED_PYTHON_VERSION = '3.12.13';
-/**
- * 支持 Python 3.12 的最低 debugpy 线(1.8.0 起官方 CI 纳入 3.12);
- * 更老版本拒绝复制,如实告警而不是复制一个起不来的包进资产树。
- */
-export const MIN_DEBUGPY_VERSION = '1.8.0';
-
-/** 语义化三段版本比较(后缀字母按 0 处理):a<b 负 / 相等 0 / a>b 正 */
-export function compareVersions(a: string, b: string): number {
-  const parse = (value: string): number[] =>
-    value.split('.').slice(0, 3).map(part => Number.parseInt(part, 10) || 0);
-  const [x, y] = [parse(a), parse(b)];
-  for (let i = 0; i < 3; i += 1) {
-    if ((x[i] ?? 0) !== (y[i] ?? 0)) {
-      return (x[i] ?? 0) - (y[i] ?? 0);
-    }
-  }
-  return 0;
-}
-
 /** debugpy 注入命令(:python 层表达式,127.0.0.1 只本机可达) */
 export function buildDebugpyListenCommand(port: number): string {
   return `import debugpy; debugpy.listen(("127.0.0.1", ${port}))`;
@@ -135,11 +123,14 @@ export interface DebugpySyncDeps {
   copyTree(from: string, to: string): Promise<void>;
 }
 
-/** 探测系统 debugpy 的 python 片段:失败/未装都是非零退出+空 stdout */
+/** 探测系统 debugpy 的 python 片段:失败/未装都是非零退出+空 stdout;
+ * python 字段=同步源解释器自身版本(pydevd 原生扩展按 CPython 版本编译,
+ * 同步前要与引擎目标行核对——DBG-COMPAT-01 ABI 规则) */
 const LOCATE_DEBUGPY_CODE =
-  'import json,os\n' +
+  'import json,os,sys\n' +
   'import debugpy\n' +
-  'print(json.dumps({"version": debugpy.__version__, "dir": os.path.dirname(debugpy.__file__)}))\n';
+  'print(json.dumps({"version": debugpy.__version__, "dir": os.path.dirname(debugpy.__file__), ' +
+  '"python": "%d.%d.%d" % sys.version_info[:3]}))\n';
 
 /**
  * 同步源候选(DBG-003):syncDebugpyPackage 的探测解释器链——所选解释器
@@ -221,17 +212,30 @@ export interface DebugpySyncResult {
 }
 
 /**
- * (a) 同步系统 debugpy 进资产树。只覆盖「自己写过」的目录(workspaceState
- * 记账):用户手放的目录(无记账)一律不碰;同版本跳过;自己的旧版本升级。
- * 返回如实结果,永不抛——命令层直接播报。
+ * (a) 同步系统 debugpy 进资产树。版本闸按「引擎目标 Python」策略走
+ * (DBG-COMPAT-01/02,pythonTarget.ts):目标未知=拒绝盲同步;3.7 严格
+ * 锁 1.7.0(过高也拒);同步源解释器的 Python 行必须等目标行(pydevd
+ * 原生扩展按 CPython 版本编译,跨行包进资产树=引擎里 import 即崩)。
+ * 只覆盖「自己写过」的目录(workspaceState 记账):用户手放的目录(无
+ * 记账)一律不碰;同版本跳过;自己的旧版本升级。返回如实结果,永不抛
+ * ——命令层直接播报。
  */
 export async function syncDebugpyPackage(
   context: Pick<vscode.ExtensionContext, 'workspaceState'>,
   assetsRoot: string,
+  pythonTarget: PythonTarget,
   deps: DebugpySyncDeps = defaultDeps
 ): Promise<DebugpySyncResult> {
   if (!assetsRoot) {
     return { status: 'error', message: '未配置资产根(kbengine.assetsRoot),不知道该把 debugpy 复制到哪' };
+  }
+  const policy = debugpyPolicyFor(pythonTarget.version);
+  if (policy === null) {
+    return {
+      status: 'error',
+      message: `引擎目标 Python 版本未知(${pythonTarget.detail}),拒绝盲同步 debugpy——` +
+        `先在设置 ${PYTHON_TARGET_SETTING} 指定目标版本,再重跑同步`
+    };
   }
   const probe = await deps.runPython(LOCATE_DEBUGPY_CODE);
   if (probe.exitCode !== 0 || probe.stdout.trim().length === 0) {
@@ -240,17 +244,34 @@ export async function syncDebugpyPackage(
       message: '系统 Python 没有可用的 debugpy 包(pip install debugpy 后重试)'
     };
   }
-  let located: { version: string; dir: string };
+  let located: { version: string; dir: string; python?: string };
   try {
-    located = JSON.parse(probe.stdout.trim()) as { version: string; dir: string };
+    located = JSON.parse(probe.stdout.trim()) as { version: string; dir: string; python?: string };
   } catch {
     return { status: 'error', message: `系统 Python 输出无法解析: ${probe.stdout.trim().slice(0, 120)}` };
   }
-  if (compareVersions(located.version, MIN_DEBUGPY_VERSION) < 0) {
+  const sourcePython = pythonLineOf(located.python ?? null);
+  if (sourcePython === null) {
     return {
       status: 'error',
-      message: `系统 debugpy ${located.version} 不支持内嵌 Python ${EMBEDDED_PYTHON_VERSION}` +
-        `(需 ≥ ${MIN_DEBUGPY_VERSION};pip install -U debugpy 后重试)`
+      message: `同步源解释器版本探测失败(${located.python ?? '无输出'}),拒绝同步——` +
+        'pydevd 原生扩展按 CPython 版本编译,必须确认源解释器与引擎目标同版本行'
+    };
+  }
+  if (sourcePython !== policy.line) {
+    return {
+      status: 'error',
+      message: `同步源解释器是 Python ${sourcePython},与引擎目标 ${policy.line} 行不一致,拒绝同步` +
+        `(pydevd 原生扩展按 CPython 版本编译;请在与引擎同版本的解释器上装 debugpy 后重试)`
+    };
+  }
+  if (!debugpyVersionSatisfiesPolicy(located.version, policy)) {
+    const want = policy.pin !== null ? `== ${policy.pin}` : `>= ${policy.floor}`;
+    return {
+      status: 'error',
+      message: `系统 debugpy ${located.version} 不满足引擎 Python ${pythonTarget.version} 的兼容策略(${want})` +
+        `${policy.strict ? `;${policy.pin} 是官方支持 Python ${policy.line} 的版本线,过高直接拒(1.8.0 起要求 ≥3.8)` : ''}` +
+        ';按 docs/guide/python-debugger-compatibility.md 装对应版本后重试'
     };
   }
   if (!located.dir || !deps.exists(located.dir)) {

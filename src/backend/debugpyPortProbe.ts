@@ -94,7 +94,8 @@ const LISTEN_GUIDANCE =
 export type PortClosedCause =
   | 'port-not-listening'
   | 'debugpy-missing'
-  | 'debugpy-outdated'
+  | 'debugpy-incompatible'
+  | 'target-unknown'
   | 'interpreter-missing';
 
 export interface PortClosedGuidance {
@@ -107,22 +108,35 @@ export interface PortClosedGuidance {
 }
 
 /**
- * 端口不通时的主因判定:本机解释器链没装/过老 debugpy → 归因缺包(给
- * 安装动作);解释器缺位 → 归因解释器(给设置指引);预检在位可用 →
- * 归因端口未开(引擎侧没起监听,给起监听指引)。preflight null(探测面
- * 不可用)按端口未开说,不猜。
+ * 端口不通时的主因判定:本机解释器链没装/版本与引擎目标不兼容 → 归因
+ * debugpy(有策略才给一键安装——安装参数取预检的精确 spec,不再盲 -U
+ * 装最新;目标未知不给安装动作);目标未知 → 归因 target-unknown(先
+ * 设置 kbengine.debug.pythonTarget);解释器缺位 → 归因解释器(给设置
+ * 指引);预检在位可用 → 归因端口未开(引擎侧没起监听,给起监听指引)。
+ * preflight null(探测面不可用)按端口未开说,不猜。
  */
 export function buildPortClosedGuidance(
   probe: TcpProbeResult,
   preflight: DebugpyPreflightStatus | null
 ): PortClosedGuidance {
   const reason = portClosedReasonText(probe);
-  if (preflight?.kind === 'debugpy-missing' || preflight?.kind === 'debugpy-outdated') {
-    const verb = preflight.kind === 'debugpy-missing' ? '没有 debugpy' : `的 debugpy ${preflight.version} 过老`;
+  if (preflight?.kind === 'debugpy-missing' || preflight?.kind === 'debugpy-incompatible') {
+    const verb = preflight.kind === 'debugpy-missing'
+      ? '没有 debugpy'
+      : `的 debugpy ${preflight.version} 与引擎目标 Python ${preflight.target.version ?? '?'} 不兼容`;
     return {
       cause: preflight.kind,
       message: `debugpy 端口未开(${reason}),且本机 Python ${preflight.interpreterPath} ${verb}`,
-      installAction: '一键安装 debugpy'
+      // 目标未知/无支持线时不给一键安装(不盲装版本);有策略才给精确 pin
+      installAction: preflight.installSpec === null ? undefined : '一键安装 debugpy'
+    };
+  }
+  if (preflight?.kind === 'target-unknown') {
+    return {
+      cause: 'target-unknown',
+      message: `debugpy 端口未开(${reason});本机 debugpy ${preflight.version ?? ''}已装,` +
+        `但引擎目标 Python 版本未知(${preflight.target.detail}),兼容性无法核对——` +
+        '先在设置 kbengine.debug.pythonTarget 指定;' + LISTEN_GUIDANCE
     };
   }
   if (preflight?.kind === 'interpreter-missing') {
@@ -142,9 +156,18 @@ export function buildAfterInstallStillClosedMessage(host: string, port: number):
   return `debugpy 已装好,但 ${host}:${port} 仍未开——装包不会自己起监听`;
 }
 
-/** 手装指引:给可复制的命令行与后续两步(同步进资产树 + 引擎侧起监听) */
-export function buildManualInstallGuide(interpreterPath: string, port: number): string {
-  return `手动安装:${interpreterPath} -m pip install -U debugpy,再运行 kbengine.python.debugpySync 同步进资产树;端口 ${port} 要等引擎侧起监听才会开`;
+/** 手装指引:给可复制的精确安装命令(来自预检 installSpec,不再写死 -U)
+ * 与后续两步(同步进资产树 + 引擎侧起监听);installCommand null=目标
+ * 未知,指引先设置目标,不盲装 */
+export function buildManualInstallGuide(
+  interpreterPath: string,
+  installCommand: string | null,
+  port: number
+): string {
+  const install = installCommand === null
+    ? `先在设置 kbengine.debug.pythonTarget 指定引擎目标 Python 版本(目标未知不盲装),再给 ${interpreterPath} 装对应兼容版 debugpy`
+    : `手动安装:${installCommand}`;
+  return `${install},再运行 kbengine.python.debugpySync 同步进资产树;端口 ${port} 要等引擎侧起监听才会开`;
 }
 
 /**
@@ -194,7 +217,12 @@ export interface DebugpyInstallResult {
   detail: string;
 }
 
-export type DebugpyInstallRunner = (interpreterPath: string) => Promise<DebugpyInstallResult>;
+export type DebugpyInstallRunner = (
+  interpreterPath: string,
+  /** pip 子命令+参数(来自预检 installSpec,如 ['install','debugpy==1.7.0'];
+   * 不再统一 -U 盲装最新——DBG-COMPAT-02) */
+  pipArgs: string[]
+) => Promise<DebugpyInstallResult>;
 
 /** pip 安装截止:挂起的 pip 不永久等待,超时组杀不留构建孙进程孤儿。 */
 let INSTALL_TIMEOUT_MS = 120_000;
@@ -204,11 +232,12 @@ export function setDebugpyInstallTimeoutMsForTests(ms: number | null): void {
   INSTALL_TIMEOUT_MS = ms ?? 120_000;
 }
 
-/** 真实安装:`<解释器> -m pip install -U debugpy`;起不来/超时/非零退出都算失败,永不抛 */
-export const defaultDebugpyInstallRunner: DebugpyInstallRunner = interpreterPath =>
+/** 真实安装:`<解释器> -m pip <pipArgs>`(精确版本来自目标策略);起不来/
+ * 超时/非零退出都算失败,永不抛 */
+export const defaultDebugpyInstallRunner: DebugpyInstallRunner = (interpreterPath, pipArgs) =>
   new Promise(resolve => {
     try {
-      const child = spawnProcess(interpreterPath, ['-m', 'pip', 'install', '-U', 'debugpy'], {
+      const child = spawnProcess(interpreterPath, ['-m', 'pip', ...pipArgs], {
         windowsHide: true,
         // POSIX 下设进程组长:超时组杀(负 pid 信号)防 pip 派生的孙进程残留
         detached: process.platform !== 'win32'
@@ -239,7 +268,7 @@ export const defaultDebugpyInstallRunner: DebugpyInstallRunner = interpreterPath
       child.on('error', error => finish({ ok: false, detail: `无法启动 ${interpreterPath}: ${error}` }));
       child.on('close', exitCode => {
         if (exitCode === 0) {
-          finish({ ok: true, detail: tail(output) || 'pip install -U debugpy 完成' });
+          finish({ ok: true, detail: tail(output) || `pip ${pipArgs.join(' ')} 完成` });
         } else {
           finish({ ok: false, detail: `pip 退出码 ${exitCode}: ${tail(output) || '无输出'}` });
         }

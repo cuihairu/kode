@@ -28,6 +28,7 @@ import {
   debugpyPreflightDeps,
   type DebugpyPreflightStatus
 } from './backend/debugpyPreflight';
+import { pythonTargetDeps, resolvePythonTarget } from './backend/pythonTarget';
 import { openSshTunnel, resolveComponentConnection, type ServerConnection } from './backend/remoteConnection';
 import type { SshHostEntry } from './backend/sshConfig';
 import {
@@ -143,7 +144,8 @@ export class DebugConfigManager {
       probeTcpPort?: TcpConnectFn;
       /** IDE-PDBG-002:本机 debugpy 预检注入面(缺省既有 debugpyPreflight 链) */
       checkDebugpy?: () => Promise<DebugpyPreflightStatus>;
-      /** IDE-PDBG-002:一键安装注入面(缺省 `<解释器> -m pip install -U debugpy`) */
+      /** IDE-PDBG-002:一键安装注入面(缺省 `<解释器> -m pip <预检 installSpec>`,
+       * 精确版本来自引擎目标策略,不再盲 -U) */
       installDebugpy?: DebugpyInstallRunner;
       /** IDE-PDBG-004:ssh 主机表(连接声明按别名查参数;缺省空表=裸主机名连) */
       listSshHosts?: () => SshHostEntry[];
@@ -902,7 +904,9 @@ export class DebugConfigManager {
     port: number,
     probe: TcpProbeResult
   ): Promise<boolean> {
-    const preflight = await (this.deps.checkDebugpy ?? this.defaultCheckDebugpy)();
+    // 默认预检面 bind 后再交给 ?? 表达式:方法引用抽离调用 this 会丢(真
+    // 解释器探测的兜底路径必须照常拿到 context)
+    const preflight = await (this.deps.checkDebugpy ?? this.defaultCheckDebugpy.bind(this))();
     const guidance = buildPortClosedGuidance(probe, preflight);
     if (guidance.installAction === undefined || preflight.interpreterPath === null) {
       return this.guideNextSteps(componentName, host, port, guidance.message);
@@ -913,8 +917,11 @@ export class DebugConfigManager {
       '手动安装指引'
     );
     if (pick === guidance.installAction) {
+      // 安装参数取预检的精确 spec(DBG-COMPAT-02:目标策略给出 ==pin /
+      // >=floor,不再 -U 盲装最新;guidance.installAction 非空时 spec 必在)
       const install = await (this.deps.installDebugpy ?? defaultDebugpyInstallRunner)(
-        preflight.interpreterPath
+        preflight.interpreterPath,
+        preflight.installSpec ?? ['install', 'debugpy']
       );
       if (!install.ok) {
         // 安装失败如实报错,不假成功不重试轰炸
@@ -940,7 +947,13 @@ export class DebugConfigManager {
     }
     if (pick === '手动安装指引') {
       vscode.window.showInformationMessage(
-        buildManualInstallGuide(preflight.interpreterPath, port)
+        buildManualInstallGuide(
+          preflight.interpreterPath,
+          preflight.installSpec === null
+            ? null
+            : `${preflight.interpreterPath} -m pip ${preflight.installSpec.join(' ')}`,
+          port
+        )
       );
     }
     return false;
@@ -1030,10 +1043,15 @@ export class DebugConfigManager {
     );
   }
 
-  /** 本机 debugpy 预检默认面:PRJ-004 解释器解析链 + 真实 spawn 探版本 */
+  /** 本机 debugpy 预检默认面:PRJ-004 解释器解析链 + 真实 spawn 探版本,
+   * 兼容性按引擎目标策略裁定(DBG-COMPAT-03:设置/引擎二进制解析目标,
+   * 不再拿全局常量判所有工程) */
   private async defaultCheckDebugpy(): Promise<DebugpyPreflightStatus> {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    return checkInterpreterDebugpy(debugpyPreflightDeps(workspaceRoot));
+    // context 可能缺位(探针/测试装配不经 context 构造)——缺位时目标解析
+    // 走无 workspaceState 的生产装配(活动 profile 链照常)
+    const pythonTarget = resolvePythonTarget(pythonTargetDeps(this.context?.workspaceState));
+    return checkInterpreterDebugpy(debugpyPreflightDeps(workspaceRoot), pythonTarget);
   }
 
   /**

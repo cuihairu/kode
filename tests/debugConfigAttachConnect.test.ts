@@ -163,20 +163,21 @@ describe('IDE-PDBG-002 端口模式前置探测(端口未开 / 未装 debugpy �
 
     expect(debugCalls).toHaveLength(0);
     expect(messages.info).toHaveLength(1);
-    expect(messages.info[0]).toContain('/usr/bin/python3 -m pip install -U debugpy');
+    // DBG-COMPAT-02:手装命令来自预检精确 spec,不再写死 -U 盲装最新
+    expect(messages.info[0]).toContain('/usr/bin/python3 -m pip install debugpy>=1.8.0');
     expect(messages.info[0]).toContain('kbengine.python.debugpySync');
   });
 
-  it('debugpy 过老也归因缺包给安装动作;未找到解释器只给设置指引', async () => {
+  it('debugpy 与目标不兼容也归因缺包给安装动作;未找到解释器只给设置指引', async () => {
     setWorkspaceAt('/tmp/kode-dbg');
     writeDebugJson({ baseapp: { debugpyPort: 5678 }, cellapp: { debugpyPort: 5679 } });
     const outdatedManager = makeManager([], new MemoryMemento(), {
       probeTcpPort: closedProbe('timeout', 'connect timeout after 1500ms'),
-      checkDebugpy: async () => preflightStatus('debugpy-outdated', '/usr/bin/python3', '1.6.0')
+      checkDebugpy: async () => preflightStatus('debugpy-incompatible', '/usr/bin/python3', '1.6.0', ['install', 'debugpy>=1.8.0'])
     });
     await flushAsync();
     expect(await outdatedManager.attachToComponent('baseapp')).toBe(false);
-    expect(messages.warn[0]).toContain('过老');
+    expect(messages.warn[0]).toContain('不兼容');
     expect(warnOffers[0].actions).toContain('一键安装 debugpy');
 
     const noInterpreterManager = makeManager([], new MemoryMemento(), {
