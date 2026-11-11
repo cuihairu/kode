@@ -8,6 +8,19 @@
 
 > **2026-10-24 用户令**: kode-v02 此后只在 `main` 开发，phase2 已合并（`377950f`，`--no-ff` 保留合并记录），不再开长期 feature 分支。
 
+## Python 3.7.3 调试工具链兼容（2026-11-11）
+
+官方资料和确切版本基线见 [调试安装约束](docs/zh/guide/python-debugger-compatibility.md)。目标包 `debugpy==1.7.0`、调试扩展 `ms-python.debugpy@2024.0.0`；Python 扩展 `2024.0.1` 是项目复现基线而非声称官方最后支持版本。文档与固定 requirements 已落，下面自动化修复尚未实施。
+
+- [ ] DBG-COMPAT-01 建立引擎目标 Python 版本来源。验收：读取真实引擎版本或显式项目目标，保留来源及未知状态；不再以开发机解释器或全局常量 3.12.13 代替引擎版本，多工程不同版本互不串用。
+- [ ] DBG-COMPAT-02 实现目标与 debugpy 包兼容策略。验收：3.7.x 严格锁 1.7.0，拒绝过高与错误平台包；3.8/更新目标按已核实支持线选择独立版本；未知目标不盲装最新版。
+- [ ] DBG-COMPAT-03 改造一键安装及手工指引。验收：实际 pip 参数使用目标策略的精确版本，不再统一 -U；失败、下载目标 ABI 与宿主版本不同、安装后版本不匹配各给真实结果。
+- [ ] DBG-COMPAT-04 改造同步目录及预检。验收：移除错误的统一 MIN_DEBUGPY_VERSION 门槛；核对源包与目标引擎版本/ABI；资产目录存在也必须验兼容；新旧包不混合，用户手放目录仍受保护。
+- [ ] DBG-COMPAT-05 检测有效 VS Code 调试扩展版本。验收：在实际扩展宿主检查 ms-python.debugpy 版本；3.7 目标误用新版时给固定版本安装/禁自动更新步骤，不能未经用户操作自动降级其他项目扩展。
+- [ ] DBG-COMPAT-06 建立版本分支回归。验收：3.7.3+1.7.0 正例、3.7.3+1.8.x 反例、现代目标分支、宿主新/引擎旧、远程宿主和用户目录均覆盖生产安装/同步/注入入口。
+- [ ] DBG-COMPAT-07 验收 debugpy 原生与纯 Python 路径。验收：分别记录目标解释器构建、wheel/架构、Cython/frame-eval 开关、监听/附加/断点结果；导入成功不抵扣监听和断点验证，异常退出不能记成可用。
+- [ ] DBG-COMPAT-08 验收固定扩展完整调试链。验收：实际 VS Code 固定版本清单、Python 3.7.3 引擎中 listen、connect、断点、单步、变量和断连各留证；Python 包/VSIX/目标平台分别记录版本及哈希，升级后独立复验。
+
 ## Demo 双通道热更新与 Python 3.7.3（2026-11-11）
 
 用户实测：官方与 HTTP 都未看到更新生效；HTTP 明确使用 Guido xreload，运行目标 Python 3.7.3。实现与证据见 [双通道记录](docs/design/demo-hot-reload.md)。以下勾项仅代表对应代码/自动化验证完成，不代表完整真实游戏双通道已验收。
@@ -112,12 +125,12 @@
 
 复现与依据：代码确认：localReturnTypeRust.ts:46 调 runInRust 未传 timeoutMs；kodeCoreClient.ts:188 只在 opts.timeoutMs 有值时启动计时。服务进程存活但不响应时没有该请求的超时兜底。尚未实测服务挂起，不把静态检查记成故障注入已通过。
 
-- [ ] KBUG-TIME-01 [P1] 固定存活无响应故障用例。验收：用受控服务正常 initialize 后对目标 RPC 保持不响应；证明当前请求不会在预期预算内自行降级，测试本身设置外部截止并清理子进程。
-- [ ] KBUG-TIME-02 [P1] 制定交互请求截止时间。验收：定义从用户请求发起覆盖 client.start/排队/响应的端到端预算；与后台命令预算区分，硬超时额外等待必须显式计入。
-- [ ] KBUG-TIME-03 [P1] 为局部类型查询接入截止控制。验收：到期后立即结束交互等待并走现有 TS/未知降级，不能只发送 cancel 后再无界等待；错误不产生未处理 rejection。
-- [ ] KBUG-TIME-04 [P1] 传递用户取消与文档版本。验收：光标移开、文档更新和 provider 取消能结束本次等待；迟到响应不发布旧 hover，也不取消其他请求。
-- [ ] KBUG-TIME-05 [P1] 清理超时请求资源。验收：超时/成功/取消/进程退出均清 pending 与计时器；重复无响应请求不积累监听、待处理项或重启风暴。
-- [ ] KBUG-TIME-06 [P1] 验收前台降级与恢复。验收：真实 provider 在存活无响应、慢启动、长任务排队和正常快速返回四种状态分别记录等待/回退结果；服务恢复后新请求正常，旧响应不覆盖新结果。
+- [x] KBUG-TIME-01 [P1] 固定存活无响应故障用例。验收：用受控服务正常 initialize 后对目标 RPC 保持不响应；证明当前请求不会在预期预算内自行降级，测试本身设置外部截止并清理子进程。（eab7d9df：tests/kodeCoreInteractiveBudget.test.ts silentRpc/silentInitialize 真实进程故障注入，修前 6/6 红[外部截止 8s 抓挂死]，修后 6/6 绿；docs/review/2026-11-11-kbug-time-budget.md）
+- [x] KBUG-TIME-02 [P1] 制定交互请求截止时间。验收：定义从用户请求发起覆盖 client.start/排队/响应的端到端预算；与后台命令预算区分，硬超时额外等待必须显式计入。（eab7d9df：交互面端到端预算 2s——localReturnType 面与语料 serving 四面经 awaitWithInteractiveBudget 整体覆盖含 client.start；initialize 握手新增 startTimeoutMs=10s transport 兜底；硬超时 budget+2000 显式计入清理窗口；后台命令面不接交互预算）
+- [x] KBUG-TIME-03 [P1] 为局部类型查询接入截止控制。验收：到期后立即结束交互等待并走现有 TS/未知降级，不能只发送 cancel 后再无界等待；错误不产生未处理 rejection。（eab7d9df：预算壳到期返回 null → hover 回落 TS 既有链；transport 层同预算发 $/cancelRequest+硬超时；败方 promise 挂 catch 吞迟到结算，无未处理 rejection）
+- [x] KBUG-TIME-04 [P1] 传递用户取消与文档版本。验收：光标移开、文档更新和 provider 取消能结束本次等待；迟到响应不发布旧 hover，也不取消其他请求。（eab7d9df：inferLocalReturnTypeFromRust 第 5 参 isCancelled，hover.ts 传 token 探测，50ms 轮询；取消即时返回[~150ms]且并发未取消请求照常命中；迟到响应不改已定结果。文档版本经既有 versionKey+VS Code 取消语义覆盖）
+- [x] KBUG-TIME-05 [P1] 清理超时请求资源。验收：超时/成功/取消/进程退出均清 pending 与计时器；重复无响应请求不积累监听、待处理项或重启风暴。（eab7d9df：pendingCountForTests 读口；三轮无响应轮 pending 均归零、restartGeneration 恒 0；握手超时 pending 亦清空）
+- [x] KBUG-TIME-06 [P1] 验收前台降级与恢复。验收：真实 provider 在存活无响应、慢启动、长任务排队和正常快速返回四种状态分别记录等待/回退结果；服务恢复后新请求正常，旧响应不覆盖新结果。（eab7d9df：四状态矩阵见 docs/review/2026-11-11-kbug-time-budget.md——存活无响应降级/慢启动 400ms 命中/长队列 2600ms 预算点降级/快速直命中；降级不 kill 进程不置冷却，后续请求照常）
 
 <a id="kbengine-semantic-plan"></a>
 
