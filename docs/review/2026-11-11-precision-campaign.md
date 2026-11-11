@@ -94,3 +94,49 @@ clippy -D warnings 0 / cargo test kode-python+kode-server 780 过(0 红)/ eslint
 ### 门禁(2026-11-11)
 
 clippy -D warnings 0 / cargo test kode-python+kode-server 0 红(189 kode-python 含 48 self_flow 钉)/ eslint 0 / compile 0 / vitest unit 726 文件 8664 过 8 skip(0 红)/ xvfb demo 25 RC=0。批 B 代码 hash 见 todo.md RUST-PRECISION-001 进度注。
+
+## 批 C:in-file 调用/裸名推导(补可推导真值,2026-11-11)
+
+### 改动
+
+- crates/kode-python/src/self_flow.rs:RHS 不再止步字面量——走查期抽取 owned 形态快照(RhsShape:Typed/Call/SelfAttr/Local/Unknown;await 壳透明,walrus 透传内层),推导期按上下文解析:
+  - `name(...)`:同文件模块级 def `-> T` 注解直取(控制块内模块级 def 同员;**重名歧义=未知,不取首定义硬猜**;无注解=未知);
+  - `A.m(...)`:类限定方法注解(同类名多个=歧义不猜);`self.m(...)`:所在类限定(self 接收者先判——Name 臂截胡坑,见坑清单);
+  - `recv.m(...)` 链式:接收者推导出唯一原子且恰为同类名时取该方法注解(`make_repo().load()` → Row);
+  - 方法域内局部裸名链:最近写点胜(替换语义同 self 面),有界跳数(RESOLVE_MAX_HOPS=4,条目形态深度 0 每解一层 +1)+ visited 防环 + 流序前向引用诚实空;
+  - `self.z` 读 → 类属性基线(批 B 收敛基线图在 RAW 索引上算,备忘录防每条目重算);
+  - walrus 目标登记局部写点(顶层/元素级/await 内层);方法域裸名写点全量入 locals(首版漏登记致链恒空,已修)。
+- 两阶段索引:**RAW(字面量面)先行**,基线图与防环都以 RAW 为底(推导不叠加推导,基线与条目解耦、无解析顺序依赖),推导期产出 FINAL 索引;查询面/收敛基线/RPC 形状/版本键 LRU 协议零改动(FlowParse 形状不变)。
+- 类身份键修正(批 B 潜伏坑顺修):walk_assignments 类体直系键原用 stmt.range 起点(装饰器类=装饰器行)与 ClassSpan.start_line(名行)错位,批 C 起统一类名行(装饰器不计),`def` 名行同理。
+- 诚实边界:无注解/未知 callee/环/越界/接收者非同类名原子 → 空集,绝不猜。
+
+### 语义变化与分歧审计
+
+| RHS 形态 | 批 B(字面量止步) | 批 C(AST 推导) | 裁决 |
+|---|---|---|---|
+| `self.x = make_tree()` + 同文件 `def make_tree() -> Tree` | ∅ | {Tree} | **改进**(KBEngine 旗舰面) |
+| `self.x = self.j` | ∅(None 证据丢) | j 的类基线 {None} | **改进**(None 证据如实传播) |
+| `self.x = self.helper()` | ∅ | 所在类 helper 注解 | **改进** |
+| `self.x = make_repo().load()` | ∅ | 链式 {Row} | **改进**(实测误导账本 #5) |
+| `y = self.items; self.x = y` | ∅ | 基线 {None} | **改进** |
+| 重名 def/类/方法、无注解、环、越界 | ∅ | ∅(不猜) | **持平**(诚实边界钉死) |
+
+- 对拍分歧审计:全量跑 parity+attributeNone,**唯一新分歧**=literals-and-bytes@k(`self.k = self.j`:TS ∅ vs Rust {None})——裁决改进(None 证据传播);样本移 PRECISION_MOVED_SAMPLES+precision 双钉(self 属性读/同文件调用)。attributeNone 写点面无新分歧(首跑绿)。
+- 上轮单例抖动:unit 全量首跑 1 失败复跑消失(已知满载抖动族,非本批文件,基线口径=清洁复跑绿)。
+
+### 测试(split-parity)
+
+- Rust 内联 +18:module_call_annotation_hit/quoted_annotation_kept_raw/no_annotation_honest_empty/ambiguous_name_not_guessed/self_method_call_resolved/qualified_class_method_call/qualified_class_ambiguous_not_guessed/chained_call_via_class_atom/chained_receiver_not_class_atom/await_call_transparent/walrus_target_registered_as_local/local_chain_to_self_attr_baseline/local_chain_nearest_write_wins/local_chain_cycle_honest_empty/local_chain_forward_reference_honest_empty/local_chain_hop_bound/guard_narrowing_with_call_annotation/class_direct_call_annotation_in_baseline(66 self_flow 钉全绿)。
+- TS:parity 深等保留(7 样本,3 移精度面;查询量下限 40→20 随样本数同步),precision +2。
+- prove-red:Name 调用臂与 SelfAttr 臂临时置空→Rust 对应钉红+重编 binary 后 TS 两精度钉恰红(断的就是批 C 两推导面);恢复全绿。
+
+### 门禁(2026-11-11)
+
+clippy -D warnings 0 / cargo test kode-python+kode-server 0 红(221 kode-python 含 66 self_flow 钉)/ eslint 0 / compile 0 / vitest unit 726 文件 8665 过 8 skip(0 红,复跑口径)/ xvfb demo 25 RC=0。批 C 代码 hash 见 todo.md RUST-PRECISION-001 进度注。
+
+### 坑清单(批 C 实录)
+
+1. **self 接收者被 Name 臂截胡**:callee 形态匹配 `Name(cn)` 先于 receiver 守卫,`self.helper()` 被当 Qualified{class:"self"}→∅;修=self 先判再归类限定;
+2. **局部写点漏登记**:首版只在 walrus 记 locals,普通裸名赋值不入→链恒空 ∅;修=push_entry Name 臂全量登记(method_start None 的类体直系不入=类级链不建模);
+3. **rhs_shape 无 Named 臂**:`self.n = (v := f())` 的 n 形态 Unknown(f 的可推导性丢);修=Named 透传内层;
+4. **深度语义**:条目形态深度 0、每解一层裸名 +1(5 具名变量链的末层已越界)——钉子按此口径写,勿按「跳数」直觉。
