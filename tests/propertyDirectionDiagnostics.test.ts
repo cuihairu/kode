@@ -53,18 +53,18 @@ const resolver =
     spec[propertyPath] ?? spec[rootSymbol] ?? null;
 
 describe('inferProcessScopeFromPythonFile', () => {
-  it('按 scripts/base|baseapp|cell|cellapp|client|bots 段推断进程作用域', () => {
+  it('按 demo 资产目录段 scripts/base|cell|client|bots 推断进程作用域', () => {
     expect(inferProcessScopeFromPythonFile(BASE_FILE)).toBe('base');
     expect(inferProcessScopeFromPythonFile(CELL_FILE)).toBe('cell');
     expect(inferProcessScopeFromPythonFile(CLIENT_FILE)).toBe('client');
   });
 
-  it('按进程名目录段 baseapp|cellapp|bots 推断(2026-11-11 用户报障根因)', () => {
-    expect(inferProcessScopeFromPythonFile('/ws/scripts/baseapp/Hero.py')).toBe('base');
-    expect(inferProcessScopeFromPythonFile('/ws/scripts/cellapp/Hero.py')).toBe('cell');
-    // bots 的脚本面是 client 面(KB-API-007)
+  it('按 demo 资产 bots 目录段推断 client 面(2026-11-11 缺口收编)', () => {
     expect(inferProcessScopeFromPythonFile('/ws/scripts/bots/Hero.py')).toBe('client');
-    expect(inferProcessScopeFromPythonFile('/ws/assets/scripts/baseapp/Hero.py')).toBe('base');
+    expect(inferProcessScopeFromPythonFile('/ws/assets/scripts/bots/Hero.py')).toBe('client');
+    // 引擎进程名不是资产目录形态,不认
+    expect(inferProcessScopeFromPythonFile('/ws/scripts/baseapp/Hero.py')).toBeUndefined();
+    expect(inferProcessScopeFromPythonFile('/ws/scripts/cellapp/Hero.py')).toBeUndefined();
   });
 
   it('非角色目录(scripts/common)作用域不足 → undefined', () => {
@@ -72,29 +72,21 @@ describe('inferProcessScopeFromPythonFile', () => {
   });
 });
 
-describe('进程元信息修复端到端(baseapp/cellapp/bots 不再瞎)', () => {
-  it('baseapp 文件裸访问照常判定,不再落 scopeUnknown 降级', () => {
-    // baseapp 文件访问 base 域属性:在域内,零产出
+describe('进程元信息端到端(demo 资产目录 bots 不再瞎)', () => {
+  it('bots 文件裸访问按 client 面判定,不再落 scopeUnknown 降级', () => {
+    // bots 文件访问 client 域属性:在域内,零产出
     expect(findPropertyDirectionFindings(
-      'x = self.hp', '/ws/scripts/baseapp/Hero.py', resolver({ hp: hit(['base']) })
+      'x = self.hp', '/ws/scripts/bots/Hero.py', resolver({ hp: hit(['client']) })
     )).toEqual([]);
-    // baseapp 文件访问 cell 域属性:真违规 Warning(旧码此处落 scopeUnknown
+    // bots 文件访问 cell 域属性:真违规 Warning(旧码此处落 scopeUnknown
     // 降级 Information,影子/复制闸也永远走不到)
     const findings = findPropertyDirectionFindings(
-      'x = self.hp', '/ws/scripts/baseapp/Hero.py', resolver({ hp: hit(['cell']) })
+      'x = self.hp', '/ws/scripts/bots/Hero.py', resolver({ hp: hit(['cell']) })
     );
     expect(findings).toHaveLength(1);
     expect(findings[0].code).toBe(PROPERTY_DIRECTION_VIOLATION_DIAGNOSTIC_CODE);
     expect(findings[0].severity).toBe('Warning');
-    expect(findings[0].fileScope).toBe('base');
-  });
-
-  it('baseapp 文件的 __init__ 复制属性照常出提示流', () => {
-    const hints = propertyDirectionShadowHintItems(
-      COPY_FIXTURE, '/ws/scripts/baseapp/Hero.py', resolver({ spaceUType: SPACE_U_TYPE }), true
-    );
-    expect(hints.filter(h => h.code === PROPERTY_DIRECTION_CELL_DATA_COPY_DIAGNOSTIC_CODE)).toHaveLength(2);
-    expect(hints.filter(h => h.code === PROPERTY_DIRECTION_CELL_DATA_KEY_DIAGNOSTIC_CODE)).toHaveLength(1);
+    expect(findings[0].fileScope).toBe('client');
   });
 
   it('cellData 键对任意 def 键通用(不限定特定键名)', () => {

@@ -90,28 +90,18 @@ export function inferOwnerKindFromPythonFile(
 export function inferMethodSectionFromPythonFile(pythonFile: string): EntityMethodSection | undefined {
   const normalizedPath = normalizeLookupPath(pythonFile).toLowerCase();
 
-  // 进程名目录形态(scripts/{baseapp,cellapp,bots};用户工程在用):此前只认
-  // demo 资产目录形态(scripts/{base,cell,client}),baseapp/cellapp 文件全落
-  // undefined——段过滤/作用域推断/调用图分段一并瞎(2026-11-11 用户报障根因)。
-  // 两层名是两回事:demo 资产按脚本域命名(base/cell/client,引擎 baseapp→
-  // scripts/base、cellapp→scripts/cell 装载),baseapp/cellapp 是引擎进程名;
-  // bots 两层同名,脚本面是 client 面(KB-API-007:ClientObjectBase 组装)。
-  if (normalizedPath.includes('/scripts/baseapp/') || normalizedPath.includes('/assets/scripts/baseapp/')
-    || normalizedPath.startsWith('baseapp/') || normalizedPath.includes('/baseapp/')) {
-    return 'BaseMethods';
-  }
-
-  if (normalizedPath.includes('/scripts/cellapp/') || normalizedPath.includes('/assets/scripts/cellapp/')
-    || normalizedPath.startsWith('cellapp/') || normalizedPath.includes('/cellapp/')) {
-    return 'CellMethods';
-  }
-
+  // demo 资产目录名(scripts/base|cell|client|bots,官方资产模板形态;引擎
+  // baseapp→scripts/base、cellapp→scripts/cell、bots→scripts/bots 装载,
+  // bots.cpp:211-228)。此前只认 base/cell/client,demo 资产里实有的
+  // scripts/bots 文件全落 undefined——段过滤/作用域推断/调用图分段一并瞎
+  // (2026-11-11 用户报障收编)。bots 的脚本面是 client 面(KB-API-007:
+  // ClientObjectBase 组装)。引擎进程名(baseapp/cellapp)不是目录名,两层
+  // 名不得混称——目录只按资产层认。
   if (normalizedPath.includes('/scripts/bots/') || normalizedPath.includes('/assets/scripts/bots/')
     || normalizedPath.startsWith('bots/') || normalizedPath.includes('/bots/')) {
     return 'ClientMethods';
   }
 
-  // demo 资产目录名(scripts/base|cell|client,官方资产模板形态)
   if (normalizedPath.includes('/scripts/base/') || normalizedPath.includes('/assets/scripts/base/')
     || normalizedPath.startsWith('base/') || normalizedPath.includes('/base/')) {
     return 'BaseMethods';

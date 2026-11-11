@@ -114,14 +114,14 @@ describe('inferMethodSectionFromPythonFile', () => {
     expect(inferMethodSectionFromPythonFile('/proj/scripts/client/Hero.py')).toBe('ClientMethods');
   });
 
-  it('maps KBEngine actual directories baseapp/cellapp/bots (2026-11-11 user report root cause)', () => {
-    expect(inferMethodSectionFromPythonFile('/proj/scripts/baseapp/Hero.py')).toBe('BaseMethods');
-    expect(inferMethodSectionFromPythonFile('/proj/scripts/cellapp/Hero.py')).toBe('CellMethods');
-    // bots 的脚本面是 client 面(KB-API-007:ClientObjectBase 组装)
+  it('maps the bots dir to ClientMethods (demo asset layout; 2026-11-11 gap fix)', () => {
+    // demo 资产实有 scripts/bots(引擎 bots.cpp:211-228 从此装载;KB-API-007:
+    // 脚本面是 client 面);此前只认 base/cell/client,bots 文件全落 undefined
     expect(inferMethodSectionFromPythonFile('/proj/scripts/bots/Avatar.py')).toBe('ClientMethods');
-    // assets 前缀布局同样命中
-    expect(inferMethodSectionFromPythonFile('/proj/assets/scripts/baseapp/Hero.py')).toBe('BaseMethods');
-    expect(inferMethodSectionFromPythonFile('/proj/assets/scripts/cellapp/Hero.py')).toBe('CellMethods');
+    expect(inferMethodSectionFromPythonFile('/proj/assets/scripts/bots/Avatar.py')).toBe('ClientMethods');
+    // 引擎进程名不是资产目录形态,不认
+    expect(inferMethodSectionFromPythonFile('/proj/scripts/baseapp/Hero.py')).toBeUndefined();
+    expect(inferMethodSectionFromPythonFile('/proj/scripts/cellapp/Hero.py')).toBeUndefined();
   });
 
   it('also accepts the assets-prefixed layout and windows separators', () => {
@@ -136,14 +136,14 @@ describe('inferMethodSectionFromPythonFile', () => {
 });
 
 describe('pythonScriptDomain', () => {
-  it('ranks demo asset dirs and process-app dirs alike', () => {
+  it('ranks demo asset dirs; bots rides the client face (KB-API-007)', () => {
     expect(pythonScriptDomain('/proj/scripts/base/Hero.py')).toBe('base');
-    expect(pythonScriptDomain('/proj/scripts/baseapp/Hero.py')).toBe('base');
     expect(pythonScriptDomain('/proj/scripts/cell/Hero.py')).toBe('cell');
-    expect(pythonScriptDomain('/proj/scripts/cellapp/Hero.py')).toBe('cell');
     expect(pythonScriptDomain('/proj/scripts/client/Hero.py')).toBe('client');
-    // bots 的脚本面是 client 面(KB-API-007)
     expect(pythonScriptDomain('/proj/scripts/bots/Avatar.py')).toBe('client');
+    // 引擎进程名不是资产目录形态,不认
+    expect(pythonScriptDomain('/proj/scripts/baseapp/Hero.py')).toBeNull();
+    expect(pythonScriptDomain('/proj/scripts/cellapp/Hero.py')).toBeNull();
   });
 
   it('returns null outside script domains', () => {

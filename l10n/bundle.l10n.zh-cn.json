@@ -280,7 +280,7 @@
   "{key}{detail}": "{key}{detail}",
   "not in cellData": "不在 cellData",
   "self.{path} is assigned in __init__ — script-maintained attribute shadowing the def field (the engine syncs {path} only to the {domains} domain)": "self.{path} 在 __init__ 中赋值——脚本自维护的同名属性,遮蔽 def 字段(引擎只把 {path} 同步给 {domains} 域)",
-  "Cannot determine the process scope of {path} (file not under scripts/base|baseapp|cell|cellapp|client|bots); direction check downgraded to reference info (not Error)": "无法确定 {path} 的进程作用域(文件不在 scripts/base|cell|client 段),方向判定降级为参考信息(不标 Error)",
+  "Cannot determine the process scope of {path} (file not under scripts/base|cell|client|bots); direction check downgraded to reference info (not Error)": "无法确定 {path} 的进程作用域(文件不在 scripts/base|cell|client 段),方向判定降级为参考信息(不标 Error)",
   "The key \"_mapping\" is an engine reserved key (rejected by both set and del, runtime AssertionError \"key{_mapping} is protected!\"). Space geometry is managed by addSpaceGeometryMapping; use another key. (spacememory.cpp:740/862)": "键 \"_mapping\" 是引擎保留键(set/del 均拒绝,运行时 AssertionError \"key{_mapping} is protected!\")。几何映射由 addSpaceGeometryMapping 管理,请改用其他键。(spacememory.cpp:740/862)",
   "access in the {scope} section is outside its domain": "当前 {scope} 段访问不在其域内",
   "navigate/navigatePathPoints called but canNavigate never appears: pathfinding fails silently when nav data is not loaded (paths empty, no move controller). Guard with if self.canNavigate() first. (entity.cpp:2583 not found navhandle; canNavigate entity.cpp:2563)": "调用 navigate/navigatePathPoints 但全文未出现 canNavigate:导航数据未加载时寻路静默失败(paths 为空,不建移动控制器)。建议先 if self.canNavigate() 守卫。(entity.cpp:2583 not found navhandle;canNavigate entity.cpp:2563)",

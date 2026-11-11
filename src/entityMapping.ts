@@ -187,17 +187,17 @@ const assetsRootOfDefFile = (file: string): string | null => {
 };
 
 /**
- * python 脚本目录域:路径段含 base(baseapp)/cell(cellapp)/client(bots 的
- * 脚本面即 client,KB-API-007)任一即归域(path.sep 切段,与
- * collectAllPythonMethodHits 的目录闸同一规则)。两种目录形态同权:demo 资产
- * 模板的脚本域名 base/cell/client(引擎 baseapp→scripts/base、cellapp→
- * scripts/cell 装载)与工程侧的进程名目录 baseapp/cellapp/bots——进程名归
- * 引擎组件层,目录名归资产层,不得混称。判不出 → null。
+ * python 脚本目录域:路径段含 base/cell/client/bots 任一即归域(path.sep
+ * 切段,与 collectAllPythonMethodHits 的目录闸同一规则)。目录按 demo 资产
+ * 层认(scripts/base|cell|client|bots;引擎 baseapp→scripts/base、cellapp→
+ * scripts/cell、bots→scripts/bots 装载);bots 的脚本面即 client 面
+ * (KB-API-007)。引擎进程名(baseapp/cellapp)不是目录名,不得混称。
+ * 判不出 → null。
  */
 export const pythonScriptDomain = (filePath: string): PropertyFlagDomain | null => {
   const segments = filePath.split(path.sep);
-  if (segments.includes('base') || segments.includes('baseapp')) { return 'base'; }
-  if (segments.includes('cell') || segments.includes('cellapp')) { return 'cell'; }
+  if (segments.includes('base')) { return 'base'; }
+  if (segments.includes('cell')) { return 'cell'; }
   if (segments.includes('client') || segments.includes('bots')) { return 'client'; }
   return null;
 };

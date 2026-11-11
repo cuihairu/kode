@@ -47,8 +47,8 @@ export const PROPERTY_DIRECTION_DIAGNOSTICS_ENABLED_DEFAULT = true;
 export type PropertyDirectionScope = 'base' | 'cell' | 'client';
 
 /**
- * 进程作用域推断:按 py 文件所在段已知信息(scripts/base|baseapp|cell|
- * cellapp|client|bots;demo 资产目录形态与进程名目录形态同权)。
+ * 进程作用域推断:按 py 文件所在段已知信息(demo 资产目录 scripts/base|
+ * cell|client|bots)。
  * 与 inferMethodSectionFromPythonFile 同口径(同源路径规则),仅把 def 方法段
  * 映射回作用域名;非角色目录(scripts/common/、根级)返回 undefined = 不足。
  */
@@ -303,7 +303,7 @@ export function findPropertyDirectionFindings(
         severity: 'Information',
         code: PROPERTY_DIRECTION_SCOPE_UNKNOWN_DIAGNOSTIC_CODE,
         message: l10nText(
-          'Cannot determine the process scope of {path} (file not under scripts/base|baseapp|cell|cellapp|client|bots); direction check downgraded to reference info (not Error)',
+          'Cannot determine the process scope of {path} (file not under scripts/base|cell|client|bots); direction check downgraded to reference info (not Error)',
           { path: propertyPath }
         )
       });
