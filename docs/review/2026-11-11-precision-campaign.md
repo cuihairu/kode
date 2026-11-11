@@ -57,3 +57,40 @@ clippy -D warnings 0 / cargo test kode-python+kode-server 780 过(0 红)/ eslint
 - 批 B:typeOfExpr AST 化——集合字面量 `{...}` 误判 dict 假阳性清除,walrus/多行/括号/负数推导,literal_annotations 钉重铸;
 - 批 C:in-file 调用/裸名推导(同文件 `-> T` 注解直取,重名歧义→未知;赋值链传播防环;类属性基线全图);
 - 批 D:返回注解接收者级联修正——pythonReturnTypeInference.ts:997-1003 全局方法名猜测删除 + `$/kode/python/localReturnType` 接收者定型解析(链式/别名可推导子集,类限定方法表防误绑)。
+
+## 批 B:typeOfExpr AST 化(字面量面假阳性清除,2026-11-11)
+
+### 改动
+
+- crates/kode-python/src/self_flow.rs:赋值收集整链换 ruff AST——`walk_assignments` 走模块体(Assign/AnnAssign/ClassDef/FunctionDef/If(+elif-else)/For/While(+orelse)/With/Try(+handlers/orelse/finalbody)/Match(+case) 全臂),方法级 `self.<attr>` 写点按行预索引(AssignmentTypes),类体直系裸名按类身份隔离(ClassAssignmentTypes 三元键,嵌套类直系条目不进外层基线=旧缩进过滤同语义);`ast_type_of_expr` 按 Expr 节点推导:NoneLiteral/bool/int/float/complex/str(bytes/f/r 前缀分型)/ellipsis/list/**set(杀 {1,2} 误判 dict)**/dict/tuple,Named(walrus)→内层,数值/逻辑一元(-1.5→float/+0x10→int/not→bool/-True→int/~3→int);注解文本=节点字节区间切片 trim(旧 `[^=#]+?` 捕获 trim 同语义)。
+- 删除文本链:type_of_expr/strip_trailing_comment/match_call_form/match_self_chain/match_bare_name/assignment_rhs/match_assignment_tail/match_class_assignment/match_class_annotated/is_str_prefix_char/is_digit/trim_js/eq_word 整段(Rust 内无其他消费者,clippy dead_code 清零);TS 引擎一行未动(冻结兜底)。
+- 语义保留:替换语义(索引命中=空集也覆盖)、同行复合语句头不收集(`if c: self.x = 1` 依条件执行,与旧行扫描「行首非 self 不匹配」同)、For/With/AugAssign 目标不入索引、守卫文本面(none_guard/not_none_guard)不动、versionKey LRU/RPC 形状零改动。
+- 缓存升级:LRU 值从 Vec<ClassSpan> 扩为 FlowParse{classes, assignments, class_direct}(解析一次产齐三面,键协议/容量/reset 不变)。
+
+### 语义变化与分歧审计(逐条裁决)
+
+| 位置类 | 旧引擎(文本嗅探) | 新引擎(AST 推导) | 裁决 |
+|---|---|---|---|
+| `{1,2}` 集合字面量 | 首尾字符 `{...}`→dict(实测误导 #1) | Set→set;空 `{}` 仍 dict | **改进**(用户点名) |
+| 跨行 RHS `self.t = (\n1,\n)` | 截行尾解不出→∅ | 整节点 Tuple→tuple | **改进** |
+| `(5)`/`((5))` 括号数值 | 首尾 `()`→tuple(假) | 括号丢弃→int(真) | **改进** |
+| 十六进制/科学计数/省略号 | 文本不识别→∅ | 0xFF→int/1e3→float/...→ellipsis | **改进** |
+| 方法体 AnnAssign `self.x: T = None` | 无此路径→∅ | 注解原子+RHS 并存 | **改进** |
+| 多目标链 `self.x = self.y = 1` | 只首个 RHS | 各目标入索引 | **改进** |
+| 分号复合行 `a = 1; self.b = 's'` | RHS 吞到行尾(垃圾) | 按语句切分各自推导 | **改进** |
+| docstring/字符串内容里的 `self.x = 1` | 被当真赋值(伪造 int) | StringLiteral 语句不产赋值 | **改进**(假象消除) |
+| 元组解包 `self.x, self.y = 1, 2` | 只匹配首个目标 | 单 Tuple 目标 zip 配对;星号不解(∅) | **改进** |
+| lone-CR 行(行中孤立 \r) | JS 正则 `.` 不吃 \r→连真赋值都解不出 | ruff(=CPython)视 \r 为行终止:赋值行证据如实;类体断裂后 def 被容错解析丢弃→诚实空(该文件对 CPython 本身即 SyntaxError) | **改进/持平**(对拍唯一分歧,详见下) |
+
+- 对拍分歧审计:全量跑 selfAttributeFlowRustParity(10 合成样本+fixture 使用位)与 attributeNoneRustParity(写点面),**唯一分歧**=lone-cr-mid-line@赋值行(TS [] vs Rust [None])——裁决改进(TS 文本引擎 JS `.` 不匹配 \r 致 `(.+)$` 失败=假象;Rust 按语句推导如实);同样本 m 体位 Rust [] 为诚实(类体断裂=SyntaxError 文件,不硬造流)。该样本移入 PRECISION_MOVED_SAMPLES,双面真相钉入 precision 套件。
+- 残余边(记录在案,零语料命中):裸 `else:`/`match:` 后同行一条语句的体(如 `else: self.x = 1`),ruff 对裸 else 无 range,AST 收集面会收进索引而旧行扫描不收——合成面无此形态,生产语料未命中,批 C 若触再裁决。
+
+### 测试(split-parity)
+
+- Rust 内联 +14:set_literal_not_dict/paren_number_not_tuple/walrus_yields_inner_type/multiline_rhs_fully_typed/numeric_unary_operators/hex_scientific_and_bool_literals/same_line_compound_not_typed/tuple_targets_pairing_with_value_tuple/chained_targets_all_typed/annotated_method_body_assignments/bytes_fstring_prefixes/docstring_assignment_not_fabricated/semicolon_combo_each_typed/string_content_assignment_not_fabricated(34 既有钉全绿不动)。
+- TS:对拍深等保留(9 样本),lone-cr-mid-line 移入精度面;precision 套件 +2(lone-CR 双面真相/集合字面量 set-not-dict);attributeNoneRustParity 首跑即绿(写点面无分歧)。
+- prove-red:Set 臂临时改空集→Rust set 钉红 + 重编 binary 后 TS 集合精度钉恰红(断的就是批 B 新推导面);恢复后全绿。
+
+### 门禁(2026-11-11)
+
+clippy -D warnings 0 / cargo test kode-python+kode-server 0 红(189 kode-python 含 48 self_flow 钉)/ eslint 0 / compile 0 / vitest unit 726 文件 8664 过 8 skip(0 红)/ xvfb demo 25 RC=0。批 B 代码 hash 见 todo.md RUST-PRECISION-001 进度注。
