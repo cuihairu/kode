@@ -404,7 +404,7 @@ impl ServerHandler for KodeMcpServer {
                 ),
                 Self::tool(
                     "search_docs",
-                    "Search the project's own Markdown docs (recursively under the assets root plus any configured extra knowledge paths passed as extra CLI args) for a case-insensitive query. Returns matching files with title, headings and a snippet. Complements the built-in explain knowledge articles with the project's own requirement/design docs. Excel data is not indexed (needs a parse dependency).",
+                    "Search the project's own Markdown docs (recursively under the assets root plus any configured extra knowledge paths passed as extra CLI args; when the root is an assets directory, conventional project-root doc dirs — docs/, doc/ next to the assets root — are included automatically) for a case-insensitive query. Returns matching files with title, headings and a snippet. Complements the built-in explain knowledge articles with the project's own requirement/design docs. Excel data is not indexed (needs a parse dependency).",
                     schema_of(
                         serde_json::json!({
                             "query": {"type": "string", "description": "case-insensitive substring to search for in the project's .md docs"},

@@ -112,7 +112,7 @@ cargo run -p kode-mcp -- <assets-root>
 - `protocol_frame(typeName="SKILL_SLOT")` — 自定义类型的线布局。
 - `why_setting("baseapp.archivePeriod")` — 配置值、含义、file:line。
 - `list_config_settings(prefix="baseapp.")` — 全部配置含义。
-- `search_docs("TrainingAvatar")` — 项目 `.md` 文档。
+- `search_docs("TrainingAvatar")` — 项目 `.md` 文档（root 是资产根目录时，项目根旁常规 `docs/`/`doc/` 目录自动并入；显式 CLI 附加路径照旧）。
 - `search_symbols("Avatar")` — Python 类/函数/方法位置。
 - `find_references("SKILL_SLOT")` — 跨格式引用边。
 - `query_xml("entity.Avatar.Properties.level")` — XML 元素导航。

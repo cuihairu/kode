@@ -116,7 +116,7 @@ index. Common queries:
 - `protocol_frame(typeName="SKILL_SLOT")` — wire layout of a custom type.
 - `why_setting("baseapp.archivePeriod")` — config value, meaning, file:line.
 - `list_config_settings(prefix="baseapp.")` — all config meanings.
-- `search_docs("TrainingAvatar")` — project `.md` docs.
+- `search_docs("TrainingAvatar")` — project `.md` docs (assets root plus conventional project-root `docs/`/`doc/` dirs auto-included when the root is an assets directory; explicit CLI extra paths still honored).
 - `search_symbols("Avatar")` — Python class/function/method locations.
 - `find_references("SKILL_SLOT")` — cross-format reference edges.
 - `query_xml("entity.Avatar.Properties.level")` — XML element navigation.
