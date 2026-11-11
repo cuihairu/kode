@@ -158,6 +158,14 @@ describe('formatHotReloadTime(时间格式)', () => {
 });
 
 describe('HotReloadStatusController(渲染与节流)', () => {
+  it('已核验应用的状态可见，并在日志保留目标和文件数量', () => {
+    const clock = makeTimers();
+    const fake = makeStatus(clock.timers);
+    fake.controller.setApplied('目标=default，2 个文件，回执指纹一致');
+    settle(clock);
+    expect(fake.bar.text).toContain('已应用');
+    expect(fake.lines.some(line => line.includes('目标=default') && line.includes('2 个文件'))).toBe(true);
+  });
   it('构造即上屏 Watch Off,状态栏点击绑定一键关命令(写回配置)', async () => {
     const clock = makeTimers();
     const fake = makeStatus(clock.timers);

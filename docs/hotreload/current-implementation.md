@@ -1,3 +1,5 @@
+> 2026-11-11：本文保留历史审计口径；demo HTTP/xreload、官方执行确认与 Python 3.7.3 适配的当前实现见 [双通道实现记录](../design/demo-hot-reload.md)。
+
 # Hot Reload — Current Implementation Audit (HR-PR-01)
 
 - Fixed audit SHA: `36052c47cb26290b6829632c6c3ca31341161c96` (branch `v0.2`).

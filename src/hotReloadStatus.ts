@@ -3,9 +3,9 @@ import type { HotReloadTimerDeps } from './hotReload';
 import { HOT_RELOAD_TOGGLE_COMMAND, toggleHotReloadEnabled } from './hotReloadToggle';
 
 // 热更新状态栏反馈(KODE2 backlog HR-UI-001,docs/kode2/KODE_2_COMPLETE_TODO.md:572):
-// 状态栏项区分 Watch Off → Ready → Sending → Sent(未确认) → Failed。
-// 口径红线:动作完成且无错只记"已发送(未确认)",不校验业务回执、禁标
-// 成功/Applied(回执校验属 HR-STATE 系列,本轮不做)。状态文案与日志同源。
+// 状态栏区分监视、发送、未确认、已核验应用与失败。
+// 动作完成无错只记未确认；只有调用方核验整批引擎回执后才可 setApplied。
+// 状态文案与日志同源。
 // 用户令 2026-11-06:热更默认开启 → 状态栏点击 = 一键关/开(执行
 // kbengine.hotReload.toggle,写回配置),开日志仍走 kbengine.hotReload.showLog
 // 命令面;开与关的说明提示随开关出。状态变更经节流合并(HR-UI-007 同思路):
@@ -27,6 +27,7 @@ export type HotReloadStatusKind =
   | 'ready-with-error'
   | 'sending'
   | 'sent-unverified'
+  | 'applied'
   | 'failed';
 
 /** watch-off 的如实原因(§11.1:缺根与空 globs 绝不混为一谈) */
@@ -57,6 +58,10 @@ const STATUS_FACES: Record<HotReloadStatusKind, { text: string; tooltip: string 
   'sent-unverified': {
     text: '$(cloud-upload) 热更: 已发送(未确认)',
     tooltip: '热更动作已执行且无错;未校验业务回执,不确认已生效'
+  },
+  applied: {
+    text: '$(check) 热更: 已应用',
+    tooltip: '引擎已确认执行热更新，所有文件的回执指纹与本次发送内容一致。详情见 kbengine.hotReload.showLog'
   },
   failed: {
     text: '$(error) 热更: 失败',
@@ -225,6 +230,11 @@ export class HotReloadStatusController {
   setSentUnverified(): void {
     this.setState('sent-unverified');
     this.log('结果: 已发送(未确认)——未校验业务回执');
+  }
+
+  setApplied(detail: string): void {
+    this.setState('applied');
+    this.log(`结果: 已应用: ${detail}`);
   }
 
   setFailed(detail: string): void {

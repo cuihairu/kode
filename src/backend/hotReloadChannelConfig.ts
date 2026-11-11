@@ -67,7 +67,7 @@ export const shortChannelLabel = (channel: ReloadTransportKind | undefined): str
   channel === undefined ? '默认(http)' : CHANNEL_SHORT_LABEL[channel];
 
 /** 自研接收器预设默认:本机端口/路径(接收器 referenceReceiver.mjs 的 /reload 端点;接收器须以 --port 8000 启动) */
-export const DEFAULT_HTTP_RECEIVER_URL = 'http://127.0.0.1:8000/reload';
+export const DEFAULT_HTTP_RECEIVER_URL = 'http://127.0.0.1:8090/hotfix';
 /**
  * 预设默认请求体:JSON **对象**——只有对象体才会被 transport 自动附加
  * `targetId` 与 `sender_digests`(hotReloadTransport autoAttach*),接收端核对
@@ -76,7 +76,9 @@ export const DEFAULT_HTTP_RECEIVER_URL = 'http://127.0.0.1:8000/reload';
 export const DEFAULT_HTTP_RECEIVER_BODY = '{"files":${files}}';
 /** 官方通道预设默认:本机控制台(host/port 不对可走高级配置逐项核对) */
 export const DEFAULT_OFFICIAL_HOST = '127.0.0.1';
-export const DEFAULT_OFFICIAL_PORT = 2560;
+export const DEFAULT_OFFICIAL_PORT = 40000;
+/** Engine kbengine_defaults.xml baseapp/telnet_service; custom deployments override it. */
+export const DEFAULT_OFFICIAL_PASSWORD = 'pwd123456';
 
 /** 默认连通性探测:经真实 transport.probe();不配/畸形如实 ok:false */
 export const defaultProbe = async (config: ReloadChannelConfig): Promise<{ ok: boolean; detail: string }> => {
@@ -119,7 +121,7 @@ export function buildOfficialPresetConfig(existing: ReloadChannelConfig | undefi
     official: {
       host: prior?.host ?? DEFAULT_OFFICIAL_HOST,
       port: prior?.port ?? DEFAULT_OFFICIAL_PORT,
-      ...(prior?.password !== undefined ? { password: prior.password } : {}),
+      password: prior?.password ?? DEFAULT_OFFICIAL_PASSWORD,
       fullReload: prior?.fullReload ?? true
     }
   };

@@ -48,6 +48,8 @@ def onBaseAppShutDown(state):
 	INFO_MSG('onBaseAppShutDown: state=%i' % state)
 		
 def onInit(isReload):
+	import KodeHotReload
+	KodeHotReload.start("base", bool(isReload))
 	"""
 	KBEngine method.
 	当引擎启动后初始化完所有的脚本后这个接口被调用
@@ -61,6 +63,8 @@ def onFini():
 	KBEngine method.
 	引擎正式关闭
 	"""
+	import KodeHotReload
+	KodeHotReload.stop()
 	INFO_MSG('onFini()')
 	
 def onCellAppDeath(addr):

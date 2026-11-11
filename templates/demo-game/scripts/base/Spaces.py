@@ -6,6 +6,7 @@ from KBEDebug import *
 # 空间注册表(模块级):baseapp 内 Account.reqCreateAvatar 据此取 Space 基实体。
 # 同一 baseapp 进程的实体共享本模块,进程存活期间有效。
 spaceByIndex = {}
+__reload_preserve__ = ("spaceByIndex",)
 
 
 class Spaces(KBEngine.Entity):

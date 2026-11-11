@@ -572,17 +572,27 @@ export function setupHotReload(
           now,
           source: channelAuditSource
         }).then(({ sentCount, failedCount }) => {
+          const allApplied = triggers.length > 0 && triggers.every(file => {
+            const rootId = wiring?.resolveRootId(file);
+            return rootId != null &&
+              wiring?.store.get({ rootId, targetId: channelTargetId }, file)?.outcome === 'applied';
+          });
           const result =
             failedCount > 0 && sentCount === 0
               ? `失败(${failedCount})`
               : failedCount > 0
                 ? `部分失败(${failedCount} 失败/${sentCount} 已发)`
-                : `已发送(${sentCount})——未校验业务回执`;
+                : allApplied ? `已应用(${sentCount})——引擎回执指纹已核验`
+                  : `已发送(${sentCount})——未确认引擎应用`;
           // F4:通道审计行带目标标识(状态/审计面区分目标;通道名仍是
           // transport.kind,通道=前缀断言不受影响)
           auditLine(`${transport.kind} 目标=${channelTargetId}`, triggers, result);
           if (failedCount > 0 && sentCount === 0) {
             status.setFailed(`通道 ${transport.kind} 全部失败(${failedCount})`);
+          } else if (allApplied) {
+            status.setApplied(`目标=${channelTargetId}，${sentCount} 个文件，回执指纹一致`);
+          } else if (failedCount > 0) {
+            status.setFailed(`通道 ${transport.kind} 部分失败(${failedCount}/${triggers.length})`);
           } else {
             status.setSentUnverified();
           }

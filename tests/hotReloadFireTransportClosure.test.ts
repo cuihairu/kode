@@ -190,6 +190,7 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
     expect(record?.sentDigest).toBe(digestOf(content));
     expect(record?.channel).toBe('http');
     expect(record?.source).toBe('watcher-auto');
+    expect(channels.some(channel => channel.lines.some(line => line.includes('已应用')))).toBe(true);
   });
 
   it('kbengine-official 通道真发:控制台命令已发送,回执全 sent 绝不 claim applied', async () => {
@@ -222,7 +223,8 @@ describe('fire 路径 × 真实传输实现 × 生产 profile 链端到端闭环
       readFileContent: async () => 'print("x")'
     });
     // 真发:控制台连接建立、命令下发、连接释放
-    expect(commands).toEqual(['KBEngine.reloadScript(True)']);
+    expect(commands[0]).toBe(':python');
+    expect(commands[1]).toContain('KBEngine.reloadScript(True)');
     expect(disconnected).toBe(true);
     expect(runCalls).toEqual([]);
     // 官方通道无回执协议:台账如实 sent-unverified,绝不 applied

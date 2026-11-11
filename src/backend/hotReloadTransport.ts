@@ -6,11 +6,11 @@
  * - 'kbengine-official' = KBEngine 官方方案:经 KBEngineTelnetClient 控制台对
  *   baseapp/cellapp 执行 KBEngine.reloadScript(fullReload)。引擎无 HTTP 回执
  *   协议(AUD-007 实勘),本实现只给「命令已发送/控制台已回显」级证据,
- *   绝不声称 applied。
- * - 'http' = 第三方 HTTP 方案:复用 HttpRequestEntry 模板(url/method/headers/
+ *   普通引擎保持未确认；带 demo observer 的进程可返回带指纹的执行回执。
+ * - 'http' = HTTP/xreload 方案:复用 HttpRequestEntry 模板(url/method/headers/
  *   body),扩展 ${files}(文件列表 JSON)/${fileList}(逗号分隔)占位;回包体走
- *   既有 accepted/applied 协议(HOT-003/004)解析,是唯一能产生 applied 证据
- *   的通道。
+ *   既有 accepted/applied 协议(HOT-003/004)解析；官方通道通过 demo
+ *   observer 也可返回同形核验回执。
  *
  * 通道选择:resolveReloadTransport(部署配置下挂的 hotReload 段)→ 通道实现,
  * 未配/未知 → null(调用方回落既有 actionName quick action 通道)。
@@ -25,6 +25,7 @@ import type { HttpRequestEntry } from './httpRequests';
 import { BUILTIN_HTTP_REQUEST_EXAMPLE } from './httpRequests';
 import { resolveVariableExpression, type VariableContext } from './variableSubstitution';
 import { KBEngineTelnetClient } from './telnetClient';
+import { randomUUID } from 'crypto';
 
 export type ReloadTransportKind = 'kbengine-official' | 'http';
 
@@ -500,9 +501,9 @@ export class KbengineOfficialTransport implements ReloadTransport {
     }
   }
 
-  /** 等第一次回显(命令发送后 awaitEchoMs 窗口),超时/关闭返回空串 */
-  private readonly captureEcho = (conn: ReloadTelnetConnection): Promise<string> => {
-    const awaitEchoMs = this.deps.awaitEchoMs ?? 800;
+  /** 监听执行结果；默认命令等待完整的唯一标记 JSON，自定义命令保留回显模式。 */
+  private readonly captureEcho = (conn: ReloadTelnetConnection, marker?: string): Promise<string> => {
+    const awaitEchoMs = this.deps.awaitEchoMs ?? 8000;
     if (awaitEchoMs <= 0) {
       return Promise.resolve('');
     }
@@ -519,7 +520,12 @@ export class KbengineOfficialTransport implements ReloadTransport {
       };
       conn.onData(text => {
         buffer += text;
-        finish();
+        if (!marker || buffer.split(/\r?\n/).some(line => {
+          if (!line.startsWith(marker)) { return false; }
+          try { JSON.parse(line.slice(marker.length)); return true; } catch { return false; }
+        })) {
+          finish();
+        }
       });
       conn.onClose(() => finish());
       const timer = setTimeout(finish, awaitEchoMs);
@@ -527,11 +533,11 @@ export class KbengineOfficialTransport implements ReloadTransport {
   };
 
   async send(
-    _target: ReloadTarget,
+    target: ReloadTarget,
     fileSet: readonly string[],
     onReceipt: (receipt: ReloadReceipt) => void,
-    // F3 三轮:官方通道无回执协议,冻结 digest 不随控制台命令下发(忽略)
-    _senderDigests?: ReadonlyMap<string, string>
+    // Demo observer 可核验冻结指纹；无 observer 的普通引擎只保留执行层证据。
+    senderDigests?: ReadonlyMap<string, string>
   ): Promise<ReloadSendSummary> {
     const conn = this.connector()(this.config);
     try {
@@ -544,7 +550,26 @@ export class KbengineOfficialTransport implements ReloadTransport {
         }
         return { kind: this.kind, receipts };
       }
-      const command = this.command();
+      const marker = `KODE_RELOAD_${randomUUID().replace(/-/g, '')}:`;
+      const payload = { files: fileSet, targetId: target.targetId, sender_digests: Object.fromEntries(senderDigests ?? []) };
+      const script = [
+        'import KBEngine, json, importlib.util',
+        `payload = json.loads(${JSON.stringify(JSON.stringify(payload))})`,
+        'if importlib.util.find_spec("KodeHotReload") is not None:',
+        '    import KodeHotReload',
+        `    receipts = KodeHotReload.official_reload(payload, ${this.config.fullReload === false ? 'False' : 'True'})`,
+        'else:',
+        `    ${this.command()}`,
+        '    receipts = []',
+        `print(${JSON.stringify(marker)} + json.dumps(receipts))`
+      ].join('\n');
+      const command = this.config.command ?? `exec(${JSON.stringify(script)})`;
+      // Enter Python explicitly; readiness alone may refer to the root console layer.
+      if (!this.config.command && !conn.sendCommand(':python')) {
+        throw new Error('控制台无法进入 Python 层');
+      }
+      // Subscribe BEFORE sending: a fast response must not be lost.
+      const echoPromise = this.captureEcho(conn, this.config.command ? undefined : marker);
       if (!conn.sendCommand(command)) {
         const reason = '控制台未接受命令(非 ready 态或命令被拒)';
         const receipts = fileSet.map(file => ({ status: 'failed' as const, file, reason }));
@@ -553,12 +578,32 @@ export class KbengineOfficialTransport implements ReloadTransport {
         }
         return { kind: this.kind, receipts };
       }
-      const echo = await this.captureEcho(conn);
+      const echo = await echoPromise;
+      const receiptLine = echo.split(/\r?\n/).find(line => line.startsWith(marker));
+      if (receiptLine) {
+        const body = receiptLine.slice(marker.length);
+        const parsed: unknown = JSON.parse(body);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const receipts = parseReloadHttpReceipts(body, fileSet, target.targetId);
+          receipts.forEach(onReceipt);
+          return { kind: this.kind, receipts };
+        }
+      }
+      if (/Traceback \(most recent call last\)|(?:SyntaxError|NameError|ImportError|RuntimeError):/.test(echo)) {
+        const receipts = fileSet.map(file => ({ status: 'failed' as const, file, reason: `控制台执行失败: ${echo}` }));
+        receipts.forEach(onReceipt);
+        return { kind: this.kind, receipts };
+      }
       const detail = `命令已发送: ${command}${echo.length > 0 ? ` | 回显: ${echo}` : ''}(引擎无回执协议,不 claim applied)`;
       const receipts = fileSet.map(file => ({ status: 'sent' as const, file, detail }));
       for (const receipt of receipts) {
         onReceipt(receipt);
       }
+      return { kind: this.kind, receipts };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      const receipts = fileSet.map(file => ({ status: 'failed' as const, file, reason }));
+      receipts.forEach(onReceipt);
       return { kind: this.kind, receipts };
     } finally {
       conn.disconnect();
@@ -583,14 +628,17 @@ export interface ReloadTransportDeps {
 
 /**
  * 默认部署通道(用户令 2026-11-10「默认就是 http 方式,都提供默认配置」):
- * 无激活 profile 或 profile 未配 hotReload 段时用它——url/method/headers/body
- * 取内置模板(BUILTIN_HTTP_REQUEST_EXAMPLE,与零配置自动热更同源),端点
- * `http://127.0.0.1:8090/hotfix?module_name=${module}` 在 package.json 默认值
- * 测试锁同步。enabled 显式置 true(模板默认 false 是「未启用」语义)。
+ * 无激活 profile 或 profile 未配 hotReload 段时用它。端点为
+ * `http://127.0.0.1:8090/hotfix`，JSON 文件集支持 targetId/冻结指纹回执。
+ * 旧单模块表单只保留在兼容的 quick-request 路径。
  */
 export function createDefaultHotReloadChannel(): ReloadChannelConfig {
   const entry: HttpRequestEntry = {
     ...BUILTIN_HTTP_REQUEST_EXAMPLE,
+    // The module-only form cannot carry per-file engine receipts or frozen digests.
+    url: 'http://127.0.0.1:8090/hotfix',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{"files":${files}}',
     enabled: true
   };
   return { channel: 'http', http: entry };

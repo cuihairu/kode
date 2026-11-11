@@ -441,3 +441,7 @@ pnpm test:coverage  # vitest + 覆盖率
 ---
 
 当前发布版本 v0.1.3，已以 `cuihairu.kode-kbengine` 发布到 Marketplace。已落地 121 条命令、110 个配置项；[COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) 的功能清单是 0.1.x 时点快照，测试口径见 [TESTING.md](./TESTING.md)。
+
+### Demo 热更新接收器
+
+Demo 已包含 Base/Cell HTTP 接收器：HTTP 使用适配 Python 3.7.3 的 xreload 原位更新，官方通道使用 KBEngine.reloadScript；核验回执后状态栏显示「已应用」。安装、端口、验证步骤及边界见 [双通道说明](docs/design/demo-hot-reload.md)。

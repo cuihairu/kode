@@ -432,3 +432,7 @@ If this project helps you, consider giving it a star.
 ---
 
 Latest release v0.1.3, published to the Marketplace as `cuihairu.kode-kbengine`. 121 commands and 110 configuration settings are in place; the feature catalog in [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) is a 0.1.x snapshot, and [TESTING.md](./TESTING.md) carries the testing record.
+
+### Demo hot reload receiver
+
+The demo includes Base/Cell HTTP receivers using xreload adapted for Python 3.7.3. The official console channel uses KBEngine.reloadScript. Verified receipts can show an applied state; delivery alone stays unconfirmed. See the [implementation and verification guide](docs/design/demo-hot-reload.md) for setup, ports and limitations.

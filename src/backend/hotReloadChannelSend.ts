@@ -218,6 +218,7 @@ export async function sendFilesViaReloadChannel(deps: ReloadChannelSendDeps): Pr
             };
             switch (receipt.status) {
               case 'applied': {
+                sentCount += 1;
                 // 回执显式 targetId 与通道目标不符 → 整条不认,如实保持未确认
                 if (
                   'targetId' in receipt &&
@@ -276,6 +277,7 @@ export async function sendFilesViaReloadChannel(deps: ReloadChannelSendDeps): Pr
                 break;
               }
               case 'accepted':
+                sentCount += 1;
                 // KR-AUD-46:accepted 语义与 fire 回落路径对齐——台账同样带
                 // HOT-003 注解(「应用仍需核验,仍等 applied」),不冒充终局
                 // 成功;注解结算口(noteStillUnverified)两路径一致只认

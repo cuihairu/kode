@@ -8,6 +8,117 @@
 
 > **2026-10-24 用户令**: kode-v02 此后只在 `main` 开发，phase2 已合并（`377950f`，`--no-ff` 保留合并记录），不再开长期 feature 分支。
 
+## Demo 双通道热更新与 Python 3.7.3（2026-11-11）
+
+用户实测：官方与 HTTP 都未看到更新生效；HTTP 明确使用 Guido xreload，运行目标 Python 3.7.3。实现与证据见 [双通道记录](docs/design/demo-hot-reload.md)。以下勾项仅代表对应代码/自动化验证完成，不代表完整真实游戏双通道已验收。
+
+- [x] HR-DEMO-20261111-01 适配用户指定的 Guido xreload 为 Python 3.7.3：保留原位函数/类更新，替换旧接口、保留导入元数据，支持描述符/继承/super/相同 slots 与显式全局状态保留。验收：临时构建的 CPython 3.7.3 下 `tests/python/test_xreload_py37.py` 19 项通过；布局/闭包迁移等边界明确拒绝。
+- [x] HR-DEMO-20261111-02 在 demo Base/Cell 安装 HTTP 接收器并挂引擎线程执行：Base 8090、Cell 8091，Cell 路由和 common 双侧确认；HTTP 只用 xreload。验收：CPython 3.7.3 下真实回环 HTTP+descriptor 引擎替身 7 项通过，已有实例/绑定方法/函数引用执行结果改变；模板与夹具同步。
+- [x] HR-DEMO-20261111-03 接通默认 JSON 文件集/目标/冻结指纹与 applied 状态栏：整批核验后显示已应用，失败和未确认分别呈现，修正 accepted/applied 未计入发送数量。验收：实际 transport/fire/台账/状态栏相关回归通过；旧单模块表单保持兼容路径。
+- [x] HR-DEMO-20261111-04 修复官方预设与执行观察：端口和默认密码对齐引擎 Baseapp 默认值，明确进入 Python、先监听后发送、等待唯一完整执行标记；带 demo observer 时原生 reloadScript+onInit 确认及指纹回执。验收：官方适配仿真 3 项、控制台分片/异常回执用例通过；官方路径不调用 xreload。
+- [x] HR-DEMO-20261111-05 补文档与旧审计指向：记录安装/启动日志、GET 状态、手工请求、进程路由、两方案区别及重启/状态迁移边界。验收：`docs/design/demo-hot-reload.md` 与 README 中英入口在库；类型检查/涉及文件 ESLint 通过，热更与模板 50 文件 622 测试通过。
+- [ ] HR-DEMO-20261111-06 完整真实 KBEngine demo 验收 HTTP/xreload：启动真实 Base/Cell 与游戏角色，修改实体方法和 common 战斗常量，记录更新前后实际游戏行为、两侧日志/回执/指纹和扩展状态；失败、Cell 未启动及同尺寸连续保存不能假成功。前置：同步接收器并重启一次；现有本机二进制链接 Python 3.14，需另测目标 3.7.3 嵌入式引擎，不用纯解释器测试抵扣。
+- [ ] HR-DEMO-20261111-07 完整真实 KBEngine demo 验收官方通道：分别配置 Base/Cell 实际控制台地址/密码，修改现存实体逻辑并记录 reloadScript 后真实行为与 onInit 观察；区分单进程确认和全部署确认，验证结构变化需重启。前置：可运行的 demo/控制台；不以控制台替身回显测试抵扣。
+
+<a id="kode-bug-audit-20261111"></a>
+
+## 代码 Bug 审核修复（2026-11-11）
+
+审核源码基线：`10f4b85e`。本轮确认 **6 类可复现错误 + 1 处代码路径确认的超时保障缺失**。以下是独立的缺陷修复账本，不能用 KSEM/KFLOW 功能规划任务或历史测试通过替代修复验收。每项尽量 ≤ 半天，超出先拆；完成需记录提交、修前失败/修后通过用例、运行命令和证据位置。全部保持未勾，尚未修复。
+
+验证范围：新编译 `kode-server` 后经真实 stdio JSON-RPC 复现推断和串跳；TS 预检运行源码中的函数验证。`cargo test -p kode-python -p kode-vfs -p kode-index --offline --no-fail-fast` 已通过，**这些新增反例尚未纳入仓库回归测试**，现有套件通过不代表缺陷已修。挂起服务的超时用例尚未执行。
+
+复现临时工件：`/tmp/kode_bug_probe.py`、`/tmp/kode_bug_probe_results.json`、`/tmp/kode_ts_bug_probe.cjs`（不作为永久证据依赖，首个回归任务须转成仓库测试）。复现类型函数的 `pass/...` 仅用于静态解析注解；序列及分支的正确性按 Python 绑定/执行规则判断，不声称已运行这些业务函数。
+
+建议顺序：TIME 的故障注入/截止控制与 ROOT 可独立优先修；SCOPE → BIND，ORDER 的位置模型与 CFGFLOW 共用后再接 GATE 的完整用户路径。GATE 可先补失败测试；全部修复不要求等待完整 KSEM 基础建设。
+
+### KBUG-ROOT · P1 · 跨工程同名实体串跳
+
+依赖/关联：先修身份与查询，再验收生命周期；关联 KSEM-BAS-03/08/09。
+
+复现与依据：已复现：先打开 A/entity_defs/Avatar.def，再打开 B/entity_defs/Avatar.def 和 B/entities.xml，从 B 的 Avatar 注册项请求 definition，实际返回 A 的文件。源码：`hover.rs:387` 按名称首见登记，`definition.rs:185` 无工程限定查询；hover 的 def_exists/def_file 同样消费该表。
+
+- [ ] KBUG-ROOT-01 [P1] 固定跨工程串跳回归。验收：增加真实 ServerState/stdio 用例，A/B 同名 Avatar 的注册跳转分别留在各自工程；交换打开顺序后结果不变；修复前用例明确失败。
+- [ ] KBUG-ROOT-02 [P1] 补齐注册项与定义的工程身份。验收：确定工程/资源根解析规则并传入实体候选登记；多根、外部 assetsRoot 和未归属文件分别有确定或未知状态，不以 basename 当身份。
+- [ ] KBUG-ROOT-03 [P1] 修复实体定义查询范围。验收：按请求文档所属工程/有效 defs 根选择候选；本根缺失不得借其他工程同名文件，同域歧义保留候选或返回未知；注册项 definition 用例通过。
+- [ ] KBUG-ROOT-04 [P1] 同步修复实体 hover 的存在性和来源。验收：hover 的 def_file/def_exists 复用相同查询；B 缺 Avatar 时不得因 A 存在就显示 B 已找到定义。
+- [ ] KBUG-ROOT-05 [P1] 修复同名候选移除与重建。验收：关闭/删除/改名首个同名定义后，其他合法候选仍可查询；重开/未保存版本更新不保留旧路径，索引清理不误删其他根。
+- [ ] KBUG-ROOT-06 [P1] 验收 VS Code 真实导航入口。验收：两个工程同名实体从 provider 发起跳转和 hover；记录实际落点，包含缺失、反转打开顺序、关闭再打开；不能只测内部 map。
+
+### KBUG-SCOPE · P1 · 参数遮蔽及类作用域泄漏
+
+依赖/关联：依赖 AST 作用域事实；关联 KSEM-BAS-07；可与 ROOT 独立实施。
+
+复现与依据：已复现：模块 x=make()（make -> int），def run(x): print(x) 的参数 x 被推为 int；class A 内 x=make()，方法内 print(x) 也被错误关联到类属性（无模块 x 时实际名称未定义）。源码：`kode-python/src/local_return.rs:93-106` 用缩进向外回溯。
+
+- [ ] KBUG-SCOPE-01 [P1] 固定函数参数遮蔽回归。验收：模块 x 与 run(x) 同名，函数内 x 不继承模块返回注解；覆盖位置参数、仅关键字参数、*args/**kwargs 及有注解参数，修前复现错误结果。
+- [ ] KBUG-SCOPE-02 [P1] 建立局部变量的词法作用域边界。验收：从 Ruff AST 获取函数/lambda/嵌套函数的局部绑定集合；参数和局部声明阻断外层查找，不能因某个绑定无类型就退借外层类型。
+- [ ] KBUG-SCOPE-03 [P1] 处理 global/nonlocal 显式绑定。验收：按声明解析所属模块/外层函数；合法闭包读仍可查询，未能确定的绑定返回未知；与普通局部遮蔽各有正反例。
+- [ ] KBUG-SCOPE-04 [P1] 修复方法裸名跨类体查找。验收：方法裸名不从所属类的普通属性表取值；self.x 与裸名 x 区分；有同名模块变量时按 Python 规则选择模块绑定。
+- [ ] KBUG-SCOPE-05 [P1] 验收作用域查询与生产接线。验收：用嵌套函数、方法、参数及合法模块读取检查 Rust RPC 和实际 hover；记录未知/已知结果，不能删除所有外层查询来使负例通过。
+
+### KBUG-BIND · P1 · 调用目标被参数或重新赋值遮蔽
+
+依赖/关联：依赖 SCOPE 的名称绑定；关联 KSEM-BAS-07/KSEM-RPC-03。
+
+复现与依据：已复现：模块 def make()->int 存在时，def run(make): x=make() 仍返回模块 make 的 int；A.load()->int、B.load()->str，A=B 后 x=A.load() 仍返回 int。源码：`local_return.rs:140-155` 直接查 def_returns 或优先 unique_class。
+
+- [ ] KBUG-BIND-01 [P1] 固定被调函数参数遮蔽回归。验收：run(make) 内 make() 不借模块同名函数注解；未遮蔽的 make() 仍正确命中；通过生产 Rust RPC 验证。
+- [ ] KBUG-BIND-02 [P1] 让裸名调用先解析当前位置绑定。验收：函数参数、赋值、导入别名和局部函数定义优先于模块声明表；动态 callable 保持未知，不因同名声明存在就确定返回类型。
+- [ ] KBUG-BIND-03 [P1] 固定类名重绑定回归。验收：A=B 后 A.load() 解析到 B 或在无法推导时未知，禁止保留旧 A 返回注解；A=unknown 后也不能沿用原类。
+- [ ] KBUG-BIND-04 [P1] 修复限定接收者的绑定优先级。验收：先解析调用位置的 A 名称绑定，再决定类/实例/别名；原始类静态方法正常命中，重绑定及多候选分支不任取类表首项。
+- [ ] KBUG-BIND-05 [P1] 对齐共享流引擎的调用解析。验收：核查 self_flow 的 callee_atom/resolve_callee 是否复用同样的错误规则；受影响路径共享绑定事实，流类型和 localReturnType 不给出互相矛盾的确定结果。
+
+### KBUG-CFGFLOW · P1 · 最近文本赋值忽略分支可达性
+
+依赖/关联：依赖 SCOPE 与语句身份；关联 KSEM-BAS-07；先最小控制流再扩复杂结构。
+
+复现与依据：已复现：x=a()（a -> int）；if False 内 x=b()（b -> str）；分支后查询 x 返回 str。源码：`local_return.rs:94-102` 按行逆序选最后写点，没有分支合流。
+
+- [ ] KBUG-CFGFLOW-01 [P1] 固定不可达写点回归。验收：if False 内的 str 写点不污染外部 int；同时验证 if True 的确定赋值和普通条件分支，测试明确区分确定结果与未知。
+- [ ] KBUG-CFGFLOW-02 [P1] 排除可静态证明的不可达赋值。验收：处理明确布尔常量及前序无条件终止后的写点；不通过执行用户代码判定条件，其他条件保留候选。
+- [ ] KBUG-CFGFLOW-03 [P1] 实现 if/else 后的写点合流。验收：分别计算分支出口，考虑无 else 时的原值路径；不同结果输出联合或未知，不按源码先后任取最后一支。
+- [ ] KBUG-CFGFLOW-04 [P1] 处理 return/raise 等终止分支。验收：只将能到达查询点的分支出口参与合流；嵌套函数的 return 不终止外层路径，函数边界清楚。
+- [ ] KBUG-CFGFLOW-05 [P1] 界定循环和异常控制流的保守结果。验收：for/while 零次执行、break/continue 以及 try/except/finally 未精确建模时返回保守候选/未知；新增反例证明不会回退为最后文本写点。
+- [ ] KBUG-CFGFLOW-06 [P1] 验收查询位置的流敏感结果。验收：同变量在分支前、分支内、合流后分别得到符合路径的结果；未保存条件修改即时改变结果，合法直线推断保持通过。
+
+### KBUG-ORDER · P2 · 同行赋值顺序和查询列缺失
+
+依赖/关联：与 CFGFLOW 共享完整位置；关联 KSEM-BAS-07，顺序修复不得仅依赖行号。
+
+复现与依据：已复现：a()->int、b()->str，y=a(); x=y; y=b() 中查询 x 返回 str，应为 int；另有 print(x); x=b() 的前一次读取被整行末写点污染。源码：`local_return.rs:98/126` 按行最后写点与别名同一行递归。
+
+- [ ] KBUG-ORDER-01 [P2] 固定同行别名向未来取值回归。验收：y=a(); x=y; y=b() 的 x 保留 int，反转语句顺序后结果随真实执行次序改变；Rust 单测与 RPC 有一致预期。
+- [ ] KBUG-ORDER-02 [P2] 给写点与读取表达式增加完整位置。验收：保留 AST 字节位置/语句身份，查询列由 UTF-16 正确换算；同一行多个同名读写可区分。
+- [ ] KBUG-ORDER-03 [P2] 修复别名回溯时间边界。验收：解析 RHS 时仅考虑该 RHS 执行前的绑定，禁止看到赋值完成后的同名写点；覆盖链式赋值、自引用、元组同时赋值，未支持形态明确未知。
+- [ ] KBUG-ORDER-04 [P2] 扩展查询协议和调用方传列。验收：localReturnType RPC 和 TS 装配传入实际查询列/位置；旧调用缺列采用保守规则，不能默认为可以读整行最后写点。
+- [ ] KBUG-ORDER-05 [P2] 验收同行不同光标位置。验收：print(x); x=b() 中前读和后读不混；分号、Unicode/代理对、注释及多行表达式的位置各有用例，实际 hover 使用正确列。
+
+### KBUG-GATE · P2 · TS 预检过滤 Rust 可支持的别名和链式调用
+
+依赖/关联：与绑定/顺序修复协调；关联 KSEM-QA-02，不用关闭所有预检替代性能检查。
+
+复现与依据：已执行源码中实际预检函数：x=build() 得到候选；alias=original 和 x=build().load() 均得到 []。`hover.ts:383` 因此不进入 Rust；Rust localReturnType 本身已支持这两类形态，直接测试 helper 会遗漏生产入口问题。
+
+- [ ] KBUG-GATE-01 [P2] 固定预检能力差异回归。验收：在真实 hover provider 层覆盖别名与链式调用，断言 Rust 面确实被调用并产生正确结果；修前应因预检拦截失败。
+- [ ] KBUG-GATE-02 [P2] 调整预检的保守范围。验收：只排除可证明无结果的情况，不用 TS 简单调用正则代表 Rust 全部语法；字符串/注释伪赋值和非法查询仍可快速跳过。
+- [ ] KBUG-GATE-03 [P2] 消除双侧形态判定漂移。验收：明确预检与 Rust 推断的职责，新增 RHS 形态时有共享契约用例；不能在 TS 再复制一套完整推断器。
+- [ ] KBUG-GATE-04 [P2] 验证失败和未命中的后续 hover。验收：Rust null/失败后继续既有 import/其他 hover 面，避免提前 return 吞掉下游；预检放宽不造成递归重入和重复查询。
+- [ ] KBUG-GATE-05 [P2] 验证预检开销与请求量。验收：测同版本重复查询和大文件无候选场景，记录扫描次数/RPC 次数/耗时；不得每次 hover 无界重扫全文以换取功能通过。
+
+### KBUG-TIME · P1 · Rust 类型 hover 未设置请求截止时间
+
+依赖/关联：可独立先修；关联 KSEM-QA-04；本项仅代码路径确认，挂起行为待故障注入。
+
+复现与依据：代码确认：localReturnTypeRust.ts:46 调 runInRust 未传 timeoutMs；kodeCoreClient.ts:188 只在 opts.timeoutMs 有值时启动计时。服务进程存活但不响应时没有该请求的超时兜底。尚未实测服务挂起，不把静态检查记成故障注入已通过。
+
+- [ ] KBUG-TIME-01 [P1] 固定存活无响应故障用例。验收：用受控服务正常 initialize 后对目标 RPC 保持不响应；证明当前请求不会在预期预算内自行降级，测试本身设置外部截止并清理子进程。
+- [ ] KBUG-TIME-02 [P1] 制定交互请求截止时间。验收：定义从用户请求发起覆盖 client.start/排队/响应的端到端预算；与后台命令预算区分，硬超时额外等待必须显式计入。
+- [ ] KBUG-TIME-03 [P1] 为局部类型查询接入截止控制。验收：到期后立即结束交互等待并走现有 TS/未知降级，不能只发送 cancel 后再无界等待；错误不产生未处理 rejection。
+- [ ] KBUG-TIME-04 [P1] 传递用户取消与文档版本。验收：光标移开、文档更新和 provider 取消能结束本次等待；迟到响应不发布旧 hover，也不取消其他请求。
+- [ ] KBUG-TIME-05 [P1] 清理超时请求资源。验收：超时/成功/取消/进程退出均清 pending 与计时器；重复无响应请求不积累监听、待处理项或重启风暴。
+- [ ] KBUG-TIME-06 [P1] 验收前台降级与恢复。验收：真实 provider 在存活无响应、慢启动、长任务排队和正常快速返回四种状态分别记录等待/回退结果；服务恢复后新请求正常，旧响应不覆盖新结果。
+
 <a id="kbengine-semantic-plan"></a>
 
 ## KBEngine 语义精度与跨进程流转重做（2026-11-11）

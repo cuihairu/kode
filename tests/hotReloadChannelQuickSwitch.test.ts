@@ -32,7 +32,7 @@ const HTTP_CONFIG: ReloadChannelConfig = {
   channel: 'http',
   http: {
     name: 'hot-reload',
-    url: 'http://127.0.0.1:8000/reload',
+    url: 'http://127.0.0.1:8090/hotfix',
     method: 'POST',
     headers: {},
     body: '{"files":${files}}',
@@ -277,7 +277,7 @@ describe('热更通道状态栏快捷开关', () => {
     harness.picks.push('kbengine-official');
     expect(await controller.run()).toBe(true);
     expect(harness.probed).toEqual([
-      { channel: 'kbengine-official', official: { host: '127.0.0.1', port: 2560, fullReload: true } }
+      { channel: 'kbengine-official', official: { host: '127.0.0.1', port: 40000, password: 'pwd123456', fullReload: true } }
     ]);
     expect(harness.saved[0].config?.channel).toBe('kbengine-official');
     expect(harness.bar.text).toBe('$(plug) 热更:KBEngine官方');

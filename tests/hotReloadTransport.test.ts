@@ -355,7 +355,8 @@ describe('KbengineOfficialTransport (IDE-HOT-101 验收 1/2)', () => {
     const conn = fakeConn();
     const transport = new KbengineOfficialTransport({ host: 'h', port: 100 }, readyDeps(conn));
     const summary = await transport.send(target, files, () => undefined);
-    expect(conn.sent).toEqual(['KBEngine.reloadScript(True)']);
+    expect(conn.sent[0]).toBe(':python');
+    expect(conn.sent[1]).toContain('KBEngine.reloadScript(True)');
     expect(summary.receipts).toHaveLength(2);
     expect(summary.receipts.every(r => r.status === 'sent')).toBe(true);
     expect(summary.receipts.every(r => r.status !== 'applied')).toBe(true);
@@ -369,7 +370,8 @@ describe('KbengineOfficialTransport (IDE-HOT-101 验收 1/2)', () => {
       readyDeps(conn)
     );
     await transport.send(target, files, () => undefined);
-    expect(conn.sent).toEqual(['KBEngine.reloadScript(False)']);
+    expect(conn.sent[0]).toBe(':python');
+    expect(conn.sent[1]).toContain('KBEngine.reloadScript(False)');
   });
 
   it('自定义 command 优先', async () => {
@@ -380,6 +382,39 @@ describe('KbengineOfficialTransport (IDE-HOT-101 验收 1/2)', () => {
     );
     await transport.send(target, files, () => undefined);
     expect(conn.sent).toEqual(['reloadScript()']);
+  });
+
+  it('官方通道先监听再发送，分片执行回执带指纹才可进入应用核验', async () => {
+    let listener: (text: string) => void = () => undefined;
+    const digest = 'd'.repeat(64);
+    const conn = fakeConn({
+      onData: callback => { listener = callback; },
+      sendCommand: command => {
+        if (command === ':python') { return true; }
+        const marker = /KODE_RELOAD_[a-f0-9]+:/.exec(command)![0];
+        listener('console echo\r\n');
+        const body = JSON.stringify([{ status: 'applied', file: files[0], targetId: target.targetId, digest, revision: 2 }]);
+        listener(marker + body.slice(0, 20));
+        listener(body.slice(20));
+        listener('\r\n');
+        return true;
+      }
+    });
+    const transport = new KbengineOfficialTransport({ host: 'h', port: 40000 }, {
+      connect: () => conn, waitForReady: async () => true, awaitEchoMs: 100
+    });
+    const result = await transport.send(target, [files[0]], () => undefined, new Map([[files[0], digest]]));
+    expect(result.receipts).toEqual([{ status: 'applied', file: files[0], targetId: target.targetId, digest, revision: 2 }]);
+  });
+
+  it('官方控制台 Python 异常不得伪装成已发送成功', async () => {
+    const conn = fakeConn();
+    const transport = new KbengineOfficialTransport({ host: 'h', port: 40000 }, {
+      connect: () => conn, waitForReady: async () => true, awaitEchoMs: 10
+    });
+    const pending = transport.send(target, files, () => undefined);
+    queueMicrotask(() => conn.emitData('Traceback (most recent call last):\r\nNameError: KBEngine\r\n'));
+    expect((await pending).receipts.every(r => r.status === 'failed')).toBe(true);
   });
 
   it('未 ready → 全 failed', async () => {
@@ -632,13 +667,29 @@ describe('createDefaultHotReloadChannel(默认部署通道,用户令 2026-11-10)
     const config = createDefaultHotReloadChannel();
     expect(config.channel).toBe('http');
     expect(config.http).toBeDefined();
-    expect(config.http?.url).toBe('http://127.0.0.1:8090/hotfix?module_name=${module}');
+    expect(config.http?.url).toBe('http://127.0.0.1:8090/hotfix');
     expect(config.http?.method).toBe('POST');
-    expect(config.http?.body).toBe('module_name=${module}');
+    expect(config.http?.body).toBe('{"files":${files}}');
     expect(config.http?.enabled).toBe(true);
     // 必须能经 resolveReloadTransport 解出真实通道(否则生产解出口拿不到)
     const transport = resolveReloadTransport(config);
     expect(transport).not.toBeNull();
     expect(transport?.kind).toBe('http');
+  });
+
+  it('默认请求携带文件、目标和冻结指纹，逐文件引擎回执可被识别', async () => {
+    const requests: unknown[] = [];
+    const digest = 'a'.repeat(64);
+    const transport = resolveReloadTransport(createDefaultHotReloadChannel(), {
+      http: { run: async request => {
+        requests.push(request);
+        return { status: 200, body: JSON.stringify([{ status: 'applied', file: files[0], targetId: 'default', digest, revision: 1 }]) };
+      } }
+    })!;
+    const result = await transport.send({ rootId: '/ws', targetId: 'default' }, [files[0]], () => undefined, new Map([[files[0], digest]]));
+    const request = requests[0] as { url: string; body: string; headers: Record<string, string> };
+    expect(request.url).toBe('http://127.0.0.1:8090/hotfix');
+    expect(JSON.parse(request.body)).toEqual({ files: [files[0]], targetId: 'default', sender_digests: { [files[0]]: digest } });
+    expect(result.receipts[0].status).toBe('applied');
   });
 });

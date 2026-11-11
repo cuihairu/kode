@@ -3,6 +3,8 @@ import KBEngine
 from KBEDebug import *
 
 def onInit(isReload):
+	import KodeHotReload
+	KodeHotReload.start("cell", bool(isReload))
 	"""
 	KBEngine method.
 	当引擎启动后初始化完所有的脚本后这个接口被调用
@@ -51,3 +53,7 @@ def onAllSpaceGeometryLoaded( spaceID, isBootstrap, mapping ):
 	具体哪部分需要由cell负责的范围决定
 	"""
 	pass
+
+def onFini():
+	import KodeHotReload
+	KodeHotReload.stop()
