@@ -157,7 +157,7 @@
 
 依赖：BAS-03..08；先结构再推导与诊断。
 
-- [ ] KSEM-CELL-01 [P1] 抽取 CellData 字段集。验收：按引擎有效 Cell 属性表构建结构，继承/接口展开；缺 Cell 脚本和无 Cell 部件分别给出状态。
+- [x] KSEM-CELL-01 [P1] 抽取 CellData 字段集。验收：按引擎有效 Cell 属性表构建结构，继承/接口展开；缺 Cell 脚本和无 Cell 部件分别给出状态。——已收口(d483ed02 纪实 docs/review/2026-11-12-ksem-cell-01.md):semantics/cell.rs 新模块;引擎事实(entity.cpp:238/250 createCellData)=有 Cell 部件才创建/字段取 Cell 属性描述/组件另建 Cell 数据;展开复用 BAS-05 EntitySnapshot(自身→父链→接口,同名冲突保留候选),snapshot PropertyView 增 domains 域位面(flag_domains common.h 真值,含 KR-AUD-87 OWN_CLIENT/OTHER_CLIENTS);四态互斥=Ready/CellScriptMissing(ScriptUniverse 调用方供脚本宇宙,缺=missing-cell-script 事实)/NoCellPart(no-cell-part 事实,字段恒空)/ScriptUnknown(未供宇宙诚实不猜);组件槽登记不展开(归 CELL-03),内建键缺席刻意(归 CELL-02);测试 9;门禁 clippy 0/cargo 双 crate 985 过 0 挂(语义 72 例)/tsc 0/eslint 0/unit 8758 过 3 挂(1 既知永久红 KodeHotReload.py@199+2 负载抖动隔离 21/21 绿非回归)/demo 25 RC=0;边界=无 RPC 面,消费面待 CELL-04/05。
 - [ ] KSEM-CELL-02 [P1] 登记引擎内建字段。验收：为 position/direction 建独立引擎来源和初始形态；核对其他内建键后才加入，不能要求 def 声明。
 - [ ] KSEM-CELL-03 [P1] 展开组件 Cell 数据。验收：递归解析 cellData[组件槽][字段]；仅纳入组件 Cell 侧字段，保留组件声明跳转。
 - [ ] KSEM-CELL-04 [P1] 实现键补全。验收：在 [] 和 get 的字符串键位置补全字段；替换范围准确，不混入其他实体/角色。
