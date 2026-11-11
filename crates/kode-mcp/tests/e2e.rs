@@ -482,3 +482,141 @@ async fn missing_argument_and_unknown_tool_error_results() {
     assert_eq!(response.is_error, Some(false));
     let _ = client.cancel().await;
 }
+
+#[tokio::test]
+async fn search_routes_query_assets_and_query_excel_dispatch() {
+    let client = connect().await;
+
+    // search 精确路由:节点名(S types.xml 类型)命中结构索引,行不带 BM25 分数。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "search",
+                serde_json::json!({"query": "SKILL_SLOT"}),
+            ))
+            .await
+            .expect("call search exact"),
+    );
+    assert_eq!(payload["route"], "exact");
+    assert!(payload["count"].as_u64().unwrap() >= 1);
+    assert!(payload["matches"][0].get("score").is_none());
+
+    // search 强制 BM25 路由 + python 格式过滤:命中脚本符号,markdown 全被滤除。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "search",
+                serde_json::json!({"query": "Avatar", "route": "bm25", "format": "python"}),
+            ))
+            .await
+            .expect("call search bm25"),
+    );
+    assert_eq!(payload["route"], "bm25");
+    assert!(payload["count"].as_u64().unwrap() >= 1);
+    let matches = payload["matches"].as_array().unwrap();
+    assert!(matches.iter().any(|m| m["kind"] == "python-class"));
+    assert!(matches
+        .iter()
+        .all(|m| !m["file"].as_str().unwrap().ends_with(".md")));
+
+    // query_assets:夹具 json 全根扫描有真节点;tmx 无 → 空集如实。
+    let payload = payload_of(
+        client
+            .call_tool(call_params("query_assets", serde_json::json!({})))
+            .await
+            .expect("call query_assets"),
+    );
+    assert!(payload["count"].as_u64().unwrap() >= 1);
+    assert!(payload["matches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|m| m["file"].as_str().unwrap().ends_with(".json")));
+
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "query_assets",
+                serde_json::json!({"format": "tmx"}),
+            ))
+            .await
+            .expect("call query_assets tmx"),
+    );
+    assert_eq!(payload["count"], 0);
+
+    // query_excel:夹具无表格文件 → 诚实空集(非错误)。
+    let payload = payload_of(
+        client
+            .call_tool(call_params("query_excel", serde_json::json!({})))
+            .await
+            .expect("call query_excel"),
+    );
+    assert_eq!(payload["count"], 0);
+    assert!(payload["matches"].as_array().unwrap().is_empty());
+
+    let _ = client.cancel().await;
+}
+
+#[tokio::test]
+async fn read_node_and_get_dependencies_dispatch() {
+    let client = connect().await;
+
+    // read_node 实体精读:小窗口(limit 2)如实回报 excerptTruncated。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "read_node",
+                serde_json::json!({"node": "Avatar", "limit": 2}),
+            ))
+            .await
+            .expect("call read_node"),
+    );
+    assert!(payload["count"].as_u64().unwrap() >= 1);
+    let entity = payload["matches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["kind"] == "entity")
+        .expect("entity match");
+    assert_eq!(entity["name"], "Avatar");
+    assert_eq!(entity["excerptTruncated"], true);
+
+    // read_node 空 locator → Err 面(工具级错误回 is_error)。
+    let response = client
+        .call_tool(call_params("read_node", serde_json::json!({"node": "   "})))
+        .await
+        .expect("call read_node empty");
+    assert_eq!(response.is_error, Some(true));
+
+    // get_dependencies:依赖边带 rule+confidence,遍历确定性入答。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "get_dependencies",
+                serde_json::json!({"symbol": "SKILL_SLOT"}),
+            ))
+            .await
+            .expect("call get_dependencies"),
+    );
+    assert_eq!(payload["deterministic"], true);
+    let edges = payload["edges"].as_array().unwrap();
+    assert!(!edges.is_empty());
+    assert!(edges
+        .iter()
+        .all(|e| e["rule"].is_string() && e["confidence"].is_string()));
+    assert!(payload["nodes"].as_array().unwrap().iter().any(|n| n["kind"].is_string()));
+
+    // get_dependencies:未知符号诚实 Err;空参缺参 Err。
+    for args in [
+        serde_json::json!({"symbol": "NoSuchSymbolAnywhere"}),
+        serde_json::json!({}),
+    ] {
+        let response = client
+            .call_tool(call_params("get_dependencies", args))
+            .await
+            .expect("call get_dependencies error");
+        assert_eq!(response.is_error, Some(true));
+    }
+
+    let _ = client.cancel().await;
+}

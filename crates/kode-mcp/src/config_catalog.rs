@@ -2329,4 +2329,108 @@ mod tests {
         assert!(archive.zh.contains("存档"));
         assert!(archive.source.contains("kbengine_defaults.xml"));
     }
+
+    #[test]
+    fn unknown_keys_and_wrong_case_are_honest_misses() {
+        // find_doc 是精确等值面:未知键不虚构条目,大小写不放宽——why_setting
+        // 靠「库里查不到」与「库里查到」区分 curated 含义是否可给。
+        assert!(find_doc("no.such.key").is_none());
+        assert!(find_doc("").is_none());
+        // 键为小写点路径:大小写不同的拼写一律查不到(严格等值,不猜)。
+        assert!(find_doc("BASEAPP.ARCHIVEPERIOD").is_none());
+        assert!(find_doc("baseapp.archiveperiod").is_none());
+    }
+
+    #[test]
+    fn keys_are_unique() {
+        // 排序断言不保证唯一(重复键仍有序);重复会让 find_doc 的首个命中
+        // 依赖迭代顺序,生成器去重契约在此锁死。
+        let mut keys: Vec<&str> = SERVER_CONFIG_ITEM_DOCS.iter().map(|(k, _)| *k).collect();
+        keys.sort_unstable();
+        let total = keys.len();
+        keys.dedup();
+        assert_eq!(keys.len(), total, "duplicate keys in catalog");
+    }
+
+    #[test]
+    fn every_dotted_key_has_all_ancestor_entries() {
+        // 树形契约:子键的每级祖先都自己有条目(baseapp、
+        // baseapp.downloadStreaming、…)——why_setting 沿树取段、
+        // list_config_settings 按前缀过滤,都依赖父节点可见。
+        let keys: std::collections::HashSet<&str> =
+            SERVER_CONFIG_ITEM_DOCS.iter().map(|(k, _)| *k).collect();
+        for key in &keys {
+            let mut prefix = String::new();
+            for part in key.split('.') {
+                if !prefix.is_empty() {
+                    prefix.push('.');
+                }
+                prefix.push_str(part);
+                assert!(
+                    keys.contains(prefix.as_str()),
+                    "{key} missing ancestor entry {prefix}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn sources_anchor_to_engine_tree_paths_with_line_refs() {
+        // 溯源契约:source 一律是引擎树内「文件:行(段)」引用,行段只含数字
+        // 与 +-,分隔符——这是 file:line 接地,不是自由文本(生成器产出约束)。
+        for (key, doc) in SERVER_CONFIG_ITEM_DOCS {
+            assert!(
+                doc.source.starts_with("kbe/"),
+                "{key}: source not in engine tree: {}",
+                doc.source
+            );
+            let line_ref = doc.source.rsplit(':').next().unwrap_or("");
+            assert!(
+                !line_ref.is_empty()
+                    && line_ref
+                        .chars()
+                        .all(|c| c.is_ascii_digit() || c == '+' || c == '-' || c == ','),
+                "{key}: source without line ref: {}",
+                doc.source
+            );
+            assert!(
+                line_ref.chars().next().is_some_and(|c| c.is_ascii_digit()),
+                "{key}: line ref must start with a digit: {}",
+                doc.source
+            );
+        }
+    }
+
+    #[test]
+    fn groups_stay_in_documented_taxonomy() {
+        // 分组契约:group 只取 server.rs list_config_settings 过滤文案列出的
+        // 功能组(两处同步,越界分组会让过滤器静默漏结果)。
+        const GROUPS: &[&str] = &[
+            "process", "net", "db", "account", "telnet", "log", "view", "backup", "perf",
+            "test", "general", "custom",
+        ];
+        for (key, doc) in SERVER_CONFIG_ITEM_DOCS {
+            assert!(
+                GROUPS.contains(&doc.group),
+                "{key}: unknown group {}",
+                doc.group
+            );
+        }
+    }
+
+    #[test]
+    fn nested_key_resolves_with_group_and_provenance() {
+        // 深键样例:两级嵌套键可查,条目带组别与行段出处(非仅文件名)。
+        let doc = find_doc("baseapp.downloadStreaming.bitsPerSecondPerClient")
+            .expect("nested key present");
+        assert_eq!(doc.group, "perf");
+        assert!(
+            doc.source.contains("kbengine_defaults.xml:")
+                && doc.source.rsplit(':').next().unwrap_or("").contains('-'),
+            "range provenance expected: {}",
+            doc.source
+        );
+        // zh/en 双语面非同一文本(双语条目,不是复制粘贴占位)。
+        assert_ne!(doc.zh, doc.en);
+    }
 }
