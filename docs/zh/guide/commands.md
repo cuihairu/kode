@@ -413,6 +413,16 @@
   - 定位不到 defaults 时明示报错；默认（`kbengine.showFinalConfigOnOpen`，可用 `kbengine.autoRefreshFinalConfig` 关联动）激活后自动在后台打开
   - telnet 端口/密码等服务参数与该合成口径同源读取
 
+### `kbengine.config.visualize`
+
+- 标题：`Config Merge Visualization`
+- 作用：打开配置合并可视化面板——把配置 resolve 管线的 defaults/custom/merged 三棵树逐键投影成「仅默认/被覆盖/仅覆盖文件新增」三态（KODE-CFG-VIZ-001；与 `kbengine.config.showFinal` 同一 resolve 数据源的纯投影，不二次解析）
+- 行为：
+  - 左树段分组：引擎 10 进程段一组、其余全局段一组；中列键清单带逐键状态徽标，全量键 DTO 一次随包以支撑本地搜索/筛选；右栏详情懒加载三值对照（默认/覆盖/最终）、文案库含义与 `file:line` 出处、源注释、可复制的最终 XML 片段
+  - 重名 `<item>` 表以 1-based `name[k]` 路径寻址，整表替换在详情注明；长值仅列表截断到 120 字符（详情保完整值）
+  - 无自定义配置时出「仅默认」诚实警示条；空态/错误态（无工作区、无可解析配置、RPC 失败）如实呈现，不伪造投影
+  - 刷新强制重取；快速刷新后的旧代回包经画代守卫弃置
+
 ### `kbengine.lintRules.showReport`
 
 - 标题：`Show Lint Rules Capability Report`

@@ -1,4 +1,4 @@
-// webviewStrings:全套 i18n 字符串表(zh 默认 + en 全量)。8 个 webview 面板
+// webviewStrings:全套 i18n 字符串表(zh 默认 + en 全量)。9 个 webview 面板
 // 的全部文案走这里;语言跟随 vscode.env.language(zh-cn/zh-tw→中文,其余→
 // 英文),kbengine.webviewLocale(auto/zh/en)可覆盖。telnet 状态词与现有
 // TelnetProbeState 枚举一一对应(诊断报告 §四)。
@@ -85,7 +85,8 @@ describe('字符串表完整性', () => {
       'entityDependency',
       'entityFlow',
       'defCallChain',
-      'errorScan'
+      'errorScan',
+      'configVisualizer'
     ]) {
       expect(Object.keys(table[ns]).length, `namespace ${ns}`).toBeGreaterThan(0);
     }

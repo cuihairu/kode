@@ -89,6 +89,7 @@
     "onCommand:kbengine.remoteServers.refresh",
     "onCommand:kbengine.debug.updateLaunchJson",
     "onCommand:kbengine.config.showFinal",
+    "onCommand:kbengine.config.visualize",
     "onCommand:kbengine.lintRules.showReport",
     "onCommand:kbengine.metrics.showSummary",
     "onCommand:kbengine.metrics.startCpuProfile",
@@ -592,6 +593,10 @@
       {
         "command": "kbengine.config.showFinal",
         "title": "%kbengine.command.config.showFinal.title%"
+      },
+      {
+        "command": "kbengine.config.visualize",
+        "title": "%kbengine.command.config.visualize.title%"
       },
       {
         "command": "kbengine.lintRules.showReport",
@@ -1161,6 +1166,9 @@
         },
         {
           "command": "kbengine.config.showFinal"
+        },
+        {
+          "command": "kbengine.config.visualize"
         },
         {
           "command": "kbengine.git.showHistory",

@@ -56,6 +56,7 @@
   "kbengine.command.remoteServers.refresh.title": "Refresh Remote Servers",
   "kbengine.command.debug.attachRemote.title": "Attach to Remote Component",
   "kbengine.command.config.showFinal.title": "Show Final Server Config",
+  "kbengine.command.config.visualize.title": "Config Merge Visualization",
   "kbengine.command.lintRules.showReport.title": "Show Lint Rules Capability Report",
   "kbengine.command.debug.updateLaunchJson.title": "Update launch.json",
   "kbengine.command.debug.resetAttachMode.title": "Reset Debug Attach Mode Choice",

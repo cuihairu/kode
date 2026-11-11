@@ -4,7 +4,7 @@
  * 语言策略(诊断 §四 + 派单要求):
  * - 默认跟随 vscode.env.language:zh-cn/zh-tw → 中文,其余 → 英文;
  * - kbengine.webviewLocale(auto/zh/en)显式覆盖 auto。
- * 8 个 webview 面板的全部文案从 strings(locale) 取,面板内不再散落硬编码
+ * 9 个 webview 面板的全部文案从 strings(locale) 取,面板内不再散落硬编码
  * 中英文。telnet 状态词与 TelnetProbeState 现有枚举一一对应(仅翻译,不
  * 改语义)。tests/webviewStrings.test.ts 强制 zh/en 键集合一致。
  */
@@ -251,6 +251,63 @@ const zh = {
     loading: '加载中…',
     keyPreviewEmpty: '（空哈希或无字段）',
     previewTruncated: '（已截断，仅显示前 {limit} 行）'
+  },
+  configVisualizer: {
+    title: '配置合并可视化',
+    sourceBadgeRust: 'Rust 核心',
+    searchLabel: '搜索键名',
+    searchPlaceholder: '搜索键名…',
+    filterLabel: '筛选',
+    filterAll: '全部',
+    filterOverridden: '只看被覆盖',
+    filterCustomOnly: '只看新增',
+    filterDefaultsOnly: '只看默认',
+    refresh: '刷新',
+    groupProcess: '进程段',
+    groupGlobal: '全局段',
+    colKey: '键',
+    colFinalValue: '最终值',
+    colState: '状态',
+    stateDefaultsOnly: '默认',
+    stateOverridden: '覆盖',
+    stateCustomOnly: '新增',
+    restatedNote: '覆盖值与默认值相同(显式重申,以覆盖文件为准)',
+    tableReplaceNote: '重名 item 整表替换(引擎按名整体替换)',
+    sectionTreeLabel: '配置段',
+    keyListLabel: '键列表',
+    detailRegionLabel: '键详情',
+    detailPlaceholder: '在键列表中选择一个键,查看默认值、覆盖值与最终值对照。',
+    detailDefaultValue: '默认值',
+    detailOverrideValue: '覆盖值',
+    detailFinalValue: '最终值',
+    detailFinalNote: '最终值 = 进程实跑读取的合成结果',
+    detailFromDefaults: '来源:引擎默认 kbengine_defaults.xml',
+    detailFromCustom: '来源:元件 kbengine.xml 覆盖',
+    detailCustomOnlyNote: '该键仅存在于覆盖文件,引擎默认中没有此键',
+    detailDoc: '含义',
+    detailDocMissing: '文案库未收录该键',
+    detailDocSource: '文案出处',
+    detailSourceComments: '源注释(输入文件原文)',
+    copyFragment: '复制最终 XML 片段',
+    copyDone: '已复制最终 XML 片段',
+    copyFailed: (error: string) => `复制失败:${error}`,
+    openDefaultsFile: '打开 defaults 文件',
+    openCustomFile: '打开 kbengine.xml',
+    pathCustomMissing: '(未发现)',
+    sectionMeta: (keys: number, overridden: number, customOnly: number) =>
+      `${keys} 键 · 覆盖 ${overridden} · 新增 ${customOnly}`,
+    statusSummary: (sections: number, keys: number, overridden: number, customOnly: number) =>
+      `${sections} 段 · ${keys} 键 · 覆盖 ${overridden} · 新增 ${customOnly}`,
+    loading: '正在解析配置…',
+    emptyNoWorkspace: '未打开工作区,无法定位配置文件。',
+    emptyNoConfig: '未找到 kbengine_defaults.xml(检查 kbengine.binPath / kbengine.assetsRoot 设置)。',
+    defaultsOnlyWarning:
+      '未发现元件 kbengine.xml,以下各键均为引擎默认值(kbengine_defaults.xml)而非最终合成配置;若实际部署使用自定义配置,请把 kbengine.xml 放到 assetsRoot 的 res/server/ 下(或检查 kbengine.assetsRoot 设置)后点刷新。',
+    errorState: '配置解析失败',
+    retry: '重试',
+    searchResultHeading: '搜索结果',
+    noSearchHits: '无匹配键',
+    valueTruncated: (chars: number) => `…(共 ${chars} 字符,详情区可见完整值)`
   }
 };
 
@@ -492,6 +549,63 @@ const en: typeof zh = {
     loading: 'Loading...',
     keyPreviewEmpty: '(empty hash or no fields)',
     previewTruncated: '(truncated, showing only the first {limit} rows)'
+  },
+  configVisualizer: {
+    title: 'Config Merge Visualization',
+    sourceBadgeRust: 'Rust core',
+    searchLabel: 'Search keys',
+    searchPlaceholder: 'Search keys…',
+    filterLabel: 'Filter',
+    filterAll: 'All',
+    filterOverridden: 'Overridden only',
+    filterCustomOnly: 'Custom only',
+    filterDefaultsOnly: 'Defaults only',
+    refresh: 'Refresh',
+    groupProcess: 'Process sections',
+    groupGlobal: 'Global sections',
+    colKey: 'Key',
+    colFinalValue: 'Final value',
+    colState: 'State',
+    stateDefaultsOnly: 'default',
+    stateOverridden: 'overridden',
+    stateCustomOnly: 'custom',
+    restatedNote: 'Override equals the default (explicit restatement; the override file wins)',
+    tableReplaceNote: 'Duplicate <item> replaces the whole table (engine replaces by name)',
+    sectionTreeLabel: 'Config sections',
+    keyListLabel: 'Key list',
+    detailRegionLabel: 'Key details',
+    detailPlaceholder: 'Select a key to compare its default, override and final values.',
+    detailDefaultValue: 'Default',
+    detailOverrideValue: 'Override',
+    detailFinalValue: 'Final',
+    detailFinalNote: 'Final value = the merged result processes actually read',
+    detailFromDefaults: 'Source: engine defaults kbengine_defaults.xml',
+    detailFromCustom: 'Source: overridden by component kbengine.xml',
+    detailCustomOnlyNote: 'This key exists only in the override file; the engine defaults have no such key',
+    detailDoc: 'Meaning',
+    detailDocMissing: 'Not documented in the catalog',
+    detailDocSource: 'Doc source',
+    detailSourceComments: 'Source comments (verbatim from the input file)',
+    copyFragment: 'Copy final XML fragment',
+    copyDone: 'Final XML fragment copied',
+    copyFailed: (error: string) => `Copy failed: ${error}`,
+    openDefaultsFile: 'Open defaults file',
+    openCustomFile: 'Open kbengine.xml',
+    pathCustomMissing: '(not found)',
+    sectionMeta: (keys: number, overridden: number, customOnly: number) =>
+      `${keys} keys · ${overridden} overridden · ${customOnly} custom`,
+    statusSummary: (sections: number, keys: number, overridden: number, customOnly: number) =>
+      `${sections} sections · ${keys} keys · ${overridden} overridden · ${customOnly} custom`,
+    loading: 'Resolving config…',
+    emptyNoWorkspace: 'No workspace folder open; config files cannot be located.',
+    emptyNoConfig: 'kbengine_defaults.xml not found (check kbengine.binPath / kbengine.assetsRoot settings).',
+    defaultsOnlyWarning:
+      'No component kbengine.xml found; every value below is the engine default (kbengine_defaults.xml), not the final merged config. If your deployment uses a custom config, place kbengine.xml under assetsRoot\'s res/server/ (or check the kbengine.assetsRoot setting) and refresh.',
+    errorState: 'Config resolution failed',
+    retry: 'Retry',
+    searchResultHeading: 'Search results',
+    noSearchHits: 'No matching keys',
+    valueTruncated: (chars: number) => `…(${chars} chars total; full value shown in details)`
   }
 };
 

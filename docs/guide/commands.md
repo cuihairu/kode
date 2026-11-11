@@ -424,6 +424,16 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - When defaults cannot be located it errors plainly; by default (`kbengine.showFinalConfigOnOpen`, with refresh linked to `kbengine.autoRefreshFinalConfig`) it auto-opens in the background after activation
   - Service parameters such as telnet port/password are read from the same composed source
 
+### `kbengine.config.visualize`
+
+- Title: `Config Merge Visualization`
+- Purpose: open the config merge visualization panel — projects the defaults/custom/merged three trees from the config resolve pipeline into per-key "defaults-only / overridden / custom-only" states (KODE-CFG-VIZ-001; a pure projection of the same resolve source as `kbengine.config.showFinal`, no second parser)
+- Behavior:
+  - Left tree groups sections into process (the 10 engine process segments) and global groups; the middle key list carries per-key state badges, with the full key DTO shipped in one message to support local search/filtering; the right detail pane lazily loads the three-value comparison (default/override/final), the catalog description with its `file:line` source, source comments, and a copyable final XML fragment
+  - Duplicate `<item>` tables are addressed with 1-based `name[k]` paths and whole-table replacement is flagged in the detail pane; long values truncate at 120 characters in the list only (the detail pane keeps the full value)
+  - A missing custom config shows an honest defaults-only warning banner; empty/error states (no workspace, no resolvable config, RPC failure) are stated plainly instead of faking a projection
+  - Refresh forces a re-resolve; stale replies after a rapid refresh are dropped by the generation guard
+
 ### `kbengine.lintRules.showReport`
 
 - Title: `Show Lint Rules Capability Report`

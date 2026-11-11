@@ -20,6 +20,7 @@ import { HttpRequestService } from '../backend/httpRequestService';
 import { QuickActionManager } from '../quickActions';
 import { QuickActionTreeProvider } from '../quickActionTree';
 import { setupTypeStubRegeneration } from '../pythonTypeStubs';
+import { ConfigVisualizerPanel } from '../configVisualizerPanel';
 import {
   findEntityDefinitionFile,
 } from '../definitionWorkspace';
@@ -338,6 +339,17 @@ export function activateFinalConfigViews(deps: FinalConfigViewsDeps): FinalConfi
     () => openFinalConfig(false)
   );
   context.subscriptions.push(showFinalConfigCommand);
+
+  // KODE-CFG-VIZ-001:配置合并可视化面板(docs/design/config-visualization.md
+  // §10)。单例;重开即 reveal + 重取 resolve。
+  const configVisualizer = new ConfigVisualizerPanel();
+  const visualizeCommand = vscode.commands.registerCommand(
+    'kbengine.config.visualize',
+    () => configVisualizer.show()
+  );
+  context.subscriptions.push(visualizeCommand, {
+    dispose: () => configVisualizer.dispose()
+  });
 
   return {
     openFinalConfig,

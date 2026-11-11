@@ -56,6 +56,7 @@
   "kbengine.command.remoteServers.refresh.title": "刷新远程服务器",
   "kbengine.command.debug.attachRemote.title": "附加到远程组件",
   "kbengine.command.config.showFinal.title": "查看最终服务器配置",
+  "kbengine.command.config.visualize.title": "配置合并可视化",
   "kbengine.command.lintRules.showReport.title": "查看 Lint 规则能力报告",
   "kbengine.command.debug.updateLaunchJson.title": "更新 launch.json",
   "kbengine.command.debug.resetAttachMode.title": "重置调试附加模式选择",

@@ -107,7 +107,7 @@ todo.md CFG-018)。**每键「defaults vs override」出处可由三树对比纯
 │   threads  0 │  └───────────────────────────────────────┘ │                      │
 │   …          │                                            │                      │
 ├──────────────┴────────────────────────────────────────────┴──────────────────────┤
-│ ⚠ defaults-only 警示条(仅该态出现,见 §5.4)                                       │
+│ ⚠ defaults-only 警示条(仅该态出现,见 §5.3)                                       │
 │ 状态栏: 10 进程段 + 12 全局段 · 486 键 · 覆盖 23 · 新增 2                          │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -221,15 +221,21 @@ config-first.md §2.1 `mergeConfigXml`:子节点按名对齐,覆盖命中 → **
 同时:头部双路径行 custom 显示「(未发现)」,筛选片「只看被覆盖/只看新增」置灰
 并给计数 0。
 
-### 5.4 Rust 核心不可用(TS 兜底路径)
+### 5.4 Rust 核心不可用(2026-11-11 修正:无 TS 兜底,直入 error 态)
 
-`ensureConfigResolved()` 回包 `ok:false`(gate 未接线 / RPC 失败,
-`src/serverConfigResolve.ts:366-388` 的降级口径)时,控制器回落 TS 侧既有
-`buildConfigTreePair()`(`src/serverConfigMerge.ts:187`)——TS 解析路径在
-config-first.md §6.2 迁移期内保留为兜底/兼容面,三树对比投影对两条路径同样适用。
-呈现:头部徽标从 `Rust 核心` 换为 `TS 兜底`(徽标词沿用 entityDependency 面板
-既有徽标口径)+ 一条说明条「Rust 核心不可用,以下由 TS 兜底路径解析」。两条路径
-都失败才进 §8 error 态。
+> **修正(2026-11-11,KODE-CFG-VIZ-001 实现期)**:原稿设想「resolve
+> ok=false → 回落 TS 侧 `buildConfigTreePair()`」——该前提已被 KODE-CFG-009
+> 架构收口作废:TS parseConfigXml/mergeConfigXml 已整体下线(config-first.md
+> §6.2 退役清单),`buildConfigTreePair` 只是 core 消费缓存
+> (`ensureConfigResolved` 落槽)的同步读面——ok=false 时缓存里的树恒为
+> null,「TS 兜底解析路径」不存在,原 §8 状态 6(ts-fallback)不可达。
+> 修正后:resolve ok=false(gate 未接线 / RPC 失败)直接进 §8 error 态。
+> 连带裁撤:§8 七态并为六态;§7 文案键 `sourceBadgeTs` /
+> `rustUnavailableNote` 删除;§6 `ConfigVizSummary.source` 字段与
+> `sectionKeys` 回包删除(§5.1 已定键清单随 resolveState 一次附全,
+> selectSection 纯前端本地切换,段级回包成为死协议面)。另补 §7 漏项
+> `pathCustomMissing`(zh `(未发现)` / en `(not found)`,§5.3 paths 行
+> custom 文件未发现时用)。
 
 ### 5.5 刷新与代际守卫
 
@@ -256,7 +262,7 @@ error: string }`(仓库错误面惯例:core 门 `outcome.ok/reason`、kode-mcp �
 export type ConfigVizInbound =
   | { command: 'ready' }                                          // 壳加载完成,请求初始数据
   | { command: 'refresh' }
-  | { command: 'selectSection'; sectionId: string }               // 段切换 → 键清单回包
+  | { command: 'selectSection'; sectionId: string }               // 段切换(键清单已随 resolveState 附全,前端本地渲染,无回包)
   | { command: 'selectKey'; sectionId: string; path: string }     // 键选中 → 详情回包
   | { command: 'copyFragment'; sectionId: string; path: string }  // 复制 → copyDone 回包
   | { command: 'openSource'; file: 'defaults' | 'custom' };
@@ -264,18 +270,20 @@ export type ConfigVizInbound =
 /** controller → webview */
 export type ConfigVizOutbound =
   | { command: 'resolveState'; generation: number; result: ConfigVizResult<ConfigVizSummary> }
-  | { command: 'sectionKeys'; generation: number; result: ConfigVizResult<ConfigVizSection> }
   | { command: 'keyDetail'; generation: number; result: ConfigVizResult<ConfigVizKeyDetail> }
   | { command: 'copyDone'; generation: number; result: ConfigVizResult<{ path: string }> };
 
-export type ConfigVizResult<T> = { ok: true; data: T } | { ok: false; error: string };
+export type ConfigVizResult<T> =
+  | { ok: true; data: T }
+  // errorKind 标注空态(§8-3/§8-4):无工作区/无配置文件是「如实空」而非
+  // 解析失败(§8-6 error),前端据此区分空态文案与错误条+重试(2026-11-11 补)。
+  | { ok: false; error: string; errorKind?: 'no-workspace' | 'no-config' };
 
 /** 键三态(主轴三态;显式重申用 restated 标注,不扩主轴) */
 export type ConfigKeyState = 'defaults-only' | 'overridden' | 'custom-only';
 
 /** resolveState 回包:全量段清单 + 键 DTO(一次附全,支撑本地搜索) */
 export interface ConfigVizSummary {
-  source: 'rust' | 'ts';              // 徽标:Rust 核心 / TS 兜底
   defaultsOnly: boolean;              // customTree === null(诚实警示条)
   defaultsPath: string | null;
   customPath: string | null;
@@ -340,7 +348,6 @@ export interface ConfigVizKeyDetail {
 |---|---|---|
 | title | 配置合并可视化 | Config Merge Visualization |
 | sourceBadgeRust | Rust 核心 | Rust core |
-| sourceBadgeTs | TS 兜底 | TS fallback |
 | searchLabel | 搜索键名 | Search keys |
 | searchPlaceholder | 搜索键名… | Search keys… |
 | filterLabel | 筛选 | Filter |
@@ -385,7 +392,6 @@ export interface ConfigVizKeyDetail {
 | emptyNoWorkspace | 未打开工作区,无法定位配置文件。 | No workspace folder open; config files cannot be located. |
 | emptyNoConfig | 未找到 kbengine_defaults.xml(检查 kbengine.binPath / kbengine.assetsRoot 设置)。 | kbengine_defaults.xml not found (check kbengine.binPath / kbengine.assetsRoot settings). |
 | defaultsOnlyWarning | 未发现元件 kbengine.xml,以下各键均为引擎默认值(kbengine_defaults.xml)而非最终合成配置;若实际部署使用自定义配置,请把 kbengine.xml 放到 assetsRoot 的 res/server/ 下(或检查 kbengine.assetsRoot 设置)后点刷新。 | No component kbengine.xml found; every value below is the engine default (kbengine_defaults.xml), not the final merged config. If your deployment uses a custom config, place kbengine.xml under assetsRoot's res/server/ (or check the kbengine.assetsRoot setting) and refresh. |
-| rustUnavailableNote | Rust 核心不可用,以下由 TS 兜底路径解析。 | Rust core unavailable; the TS fallback path produced the data below. |
 | errorState | 配置解析失败 | Config resolution failed |
 | retry | 重试 | Retry |
 | searchResultHeading | 搜索结果 | Search results |
@@ -394,15 +400,17 @@ export interface ConfigVizKeyDetail {
 
 ## 8. 状态清单
 
+> 2026-11-11 修正:原七态中的「ts-fallback」(§5.4)随 TS 兜底路径退役而
+> 不可达,并入 error 态——本表为六态终版。
+
 | # | 状态 | 进入条件 | 渲染 |
 |---|---|---|---|
 | 1 | loading | 壳已渲染,resolveState 未回 | 壳 + 状态行「正在解析配置…」(`role="status"`);不渲染任何键数据 |
-| 2 | ready | resolveState ok 且非 defaults-only | §3.3 全布局;徽标 Rust 核心/TS 兜底(随 source) |
-| 3 | empty · 无工作区 | workspaceFolders 空 | 空态文案 emptyNoWorkspace;树/表/详情全部占位,刷新仍可点(打开工作区后可重试) |
-| 4 | empty · 无配置文件 | defaultsTree=null(customPath 亦空) | 空态文案 emptyNoConfig;不伪造三态(§4.2-3) |
+| 2 | ready | resolveState ok 且非 defaults-only | §3.3 全布局;徽标 Rust 核心(数据一律出自 core resolve,§5.4 修正后无第二来源) |
+| 3 | empty · 无工作区 | workspaceFolders 空(resolveState errorKind=no-workspace) | 空态文案 emptyNoWorkspace;树/表/详情全部占位,刷新仍可点(打开工作区后可重试) |
+| 4 | empty · 无配置文件 | defaultsTree=null(customPath 亦空;errorKind=no-config) | 空态文案 emptyNoConfig;不伪造三态(§4.2-3) |
 | 5 | defaults-only | customTree === null(路径存在与否均可) | ready 布局 + 诚实警示条(§5.3);全部键标 `默认`;覆盖/新增筛选置灰 |
-| 6 | ts-fallback | resolve ok=false → TS buildConfigTreePair 成功 | ready 布局 + 徽标 TS 兜底 + rustUnavailableNote 说明条 |
-| 7 | error | 两条路径皆失败 | 保留上一份 ready 数据(若有)+ 顶部错误条(errorState + 可读 error)+ 重试按钮;无历史数据则错误条 + 重试占位。刷新失败不吞键——错误必须可见,旧数据标注「来自上次成功解析」 |
+| 6 | error | resolve ok=false(gate 未接线 / RPC 失败) | 保留上一份 ready 数据(若有)+ 顶部错误条(errorState + 可读 error)+ 重试按钮;无历史数据则错误条 + 重试占位。刷新失败不吞键——错误必须可见,旧数据标注「来自上次成功解析」 |
 
 ## 9. 可访问性清单(本面板专项)
 
@@ -430,7 +438,7 @@ export interface ConfigVizKeyDetail {
 |---|---|---|---|
 | `src/configVisualizerModel.ts` | 新 | 纯投影:三树 → 每键三态 DTO(§4.1 判定 + §4.2 细则)+ 详情装配(三值/片段/文案/源注释) | `ConfigXmlNode`(serverConfigMerge.ts:32)、`renderConfigXml`(:60)、`findServerConfigItemDoc`(serverConfigCatalog)、`ConfigResolvedState` 字段 |
 | `src/configVisualizerPanelHtml.ts` | 新 | SRC-012 字符串半边:整页壳 HTML/CSS/内联客户端脚本生产(纯函数,无 vscode import) | `WEBVIEW_THEME_CSS`(webviewTheme)、`strings(resolvePanelLocale())`(webviewStrings)、`webviewScriptCsp`/`randomNonce`/`toJsonForScript`(webviewSecurity)、`escapeHtml`(entityDependencyWebViewHtml.ts:45 同实现) |
-| `src/configVisualizerPanel.ts` | 新 | 控制器:WebviewPanel 生命周期(`retainContextWhenHidden: true`)、消息派发 switch、两级代际守卫(§5.5)、resolve + TS 兜底分流、剪贴板/打开文件动作 | `ensureConfigResolved`/`configTreePairFromState`(serverConfigResolve.ts:297/:83)、`buildConfigTreePair`(serverConfigMerge.ts:187)、`canWriteRefresh` 模式(entityDependencyWebView.ts:102) |
+| `src/configVisualizerPanel.ts` | 新 | 控制器:WebviewPanel 生命周期(`retainContextWhenHidden: true`)、消息派发 switch、两级代际守卫(§5.5)、resolve ok/降级分流(§5.4 修正:无 TS 兜底)、剪贴板/打开文件动作 | `ensureConfigResolved`/`configTreePairFromState`(serverConfigResolve.ts:297/:83)、`canWriteRefresh` 模式(entityDependencyWebView.ts:102) |
 | `src/webviewStrings.ts` | 改 | 增 `configVisualizer` 命名空间(zh+en,§7 全表) | 既有 zh/en 平行结构 |
 | 命令注册 | 改 | `kbengine.config.visualize`(标题「配置合并可视化」)入 package.json contributes + activate/views.ts(先例 :337);showFinal 原样保留 | — |
 | `tests/configVisualizerModel.test.ts` | 新 | 投影判定:三态 + 显式重申 + 容器整名替换 + `<item>` 整表替换 + 长值截断;Rust/TS 两路同投影一致 | `tests/helpers/configCoreContract.ts` 树构造 |
@@ -444,25 +452,25 @@ export interface ConfigVizKeyDetail {
 
 - [ ] 壳 HTML(以含哨兵键值的 fixture 渲染)中**不出现**任何键名/键值——数据只经
       postMessage 达前端(§6 纪律的可测化);
-- [ ] 壳 CSP 串等于 `webviewScriptCsp(nonce, [cspSource])`:`default-src 'none'`,
-      无 img-src、无 CDN、未注册 localResourceRoots;
+- [ ] 壳 CSP 串等于 `webviewScriptCsp(nonce)`(2026-11-11 修正:本面板零媒体
+      资源,不需要 cspSource):`default-src 'none'`,无 img-src、无 CDN、
+      无外联脚本、未注册 localResourceRoots;
 - [ ] 客户端脚本对 resolve 数据只用 createElement/textContent 路径(HTML 模块
       单测:含 `<script>`/引号 fixture 的键名/键值渲染后按文本出现,不产生元素);
 - [ ] webviewStrings parity:zh/en `configVisualizer` 键集合一致(既有 parity
       测试自动覆盖新命名空间);
 - [ ] 三态判定:defaults-only / overridden / custom-only / 显式重申 / 容器整名替换 /
-      `<item>` 整表替换各有一例断言,且 Rust 与 TS 两路输入投影结果一致;
+      `<item>` 整表替换各有一例断言;
 - [ ] defaults-only:`customTree=null` 时警示条可见、全部键标「默认」、覆盖/新增
       筛选置灰(断言文案 + 状态);
-- [ ] ts-fallback:resolve `ok:false` 时徽标 TS 兜底 + 说明条可见,数据来自
-      buildConfigTreePair(断言徽标与数据源标记);
+- [ ] error:resolve `ok:false` 时错误条 + 可读原因 + 重试可见;errorKind=no-workspace /
+      no-config 分别出两空态文案(§8-3/§8-4);
 - [ ] 代际守卫:并发两次 refresh,旧代 `sectionKeys`/`keyDetail` 回包不落 UI
       (controller 单测,fake webview 收信断言);
 - [ ] 截断:列表 >120 字符值截断 + 字符数尾注,详情区同一键完整值可见;
 - [ ] 复制片段:`copyFragment` 回包后的剪贴板内容 === `renderConfigXml` 对该子树
       的输出;copyDone/copyFailed 均经 aria-live 区播报;
-- [ ] 状态矩阵:§8 七态各有渲染断言(loading/ready/两 empty/defaults-only/
-      ts-fallback/error);
+- [ ] 状态矩阵:§8 六态各有渲染断言(loading/ready/两 empty/defaults-only/error);
 - [ ] 只读:controller 公开面无任何配置文件写调用(审计断言);剪贴板与
       openTextDocument 是仅有的两个出面板副作用;
 - [ ] 零新依赖:package.json 不变(diff 断言);
