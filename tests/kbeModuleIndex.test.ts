@@ -6,7 +6,6 @@ import {
   KBE_STUB_PATH,
   KBE_SYMBOLS,
   buildKbeStubDocument,
-  buildKbeStubExportContent,
   buildKbeStubUriString,
   engineApiVersionAnnotation,
   filterKbeSymbols,
@@ -266,8 +265,8 @@ describe('kbe 模块符号索引(批108)', () => {
   });
 
   describe('KBEngine 运行时容器类型(GEN-DEF-1b)', () => {
-    it('导出 .pyi 定义 FixedArray/FixedDict 完整方法体,签名对齐 fixedarray.h/fixeddict.h', () => {
-      const content = buildKbeStubExportContent();
+    it('桩面定义 FixedArray/FixedDict 完整方法体,签名对齐 fixedarray.h/fixeddict.h', () => {
+      const content = buildKbeStubDocument().content;
       // FixedArray:script::Sequence 语义,append/extend/insert/remove 返回 bool,
       // pop 返回被弹出元素(非 Python list 的 None 语义)
       expect(content).toContain('class FixedArray(Generic[T]):');
@@ -316,8 +315,8 @@ describe('kbe 模块符号索引(批108)', () => {
   });
 
   describe('KBEngine 运行时向量类型(GEN-DEF-1c)', () => {
-    it('导出 .pyi 定义 Vector2/3/4 完整方法体,签名对齐 vector2/3/4.h', () => {
-      const content = buildKbeStubExportContent();
+    it('桩面定义 Vector2/3/4 完整方法体,签名对齐 vector2/3/4.h', () => {
+      const content = buildKbeStubDocument().content;
       // Vector2:两个分量,distTo/distSqrTo/cross2D/dot 返回 float,scale 返回
       // 新向量,normalise/set 就地返回 None,tuple()/list() 定长返回。
       expect(content).toContain('class Vector2:');
@@ -474,7 +473,7 @@ describe('KB-VER-002 版本分层标注', () => {
     const lines = stub.content.split('\n');
     const doc = lines.slice(msLine, msLine + 14).join('\n');
     expect(doc).toContain('待取证');
-    expect(buildKbeStubExportContent()).toContain('版本标注 / version:');
+    expect(stub.content).toContain('版本标注 / version:');
   });
 });
 
@@ -499,7 +498,6 @@ describe('KR-AUD-33: 逗号混排 import 的 kbe 别名', () => {
 // 新名字时漏定义直接红,不靠人眼盘点。
 describe('生成 .pyi 自洽(签名引用名全部已定义或导入)', () => {
   const faces: Array<{ content: string; label: string }> = [
-    { content: buildKbeStubExportContent(), label: 'export .pyi' },
     { content: buildKbeStubDocument().content, label: 'virtual stub doc' }
   ];
 
@@ -541,8 +539,8 @@ describe('生成 .pyi 自洽(签名引用名全部已定义或导入)', () => {
     });
   }
 
-  it('export .pyi 定义引擎域别名且 typing 导入补齐 Callable/Dict/Union', () => {
-    const content = buildKbeStubExportContent();
+  it('桩面定义引擎域别名且 typing 导入补齐 Callable/Dict/Union', () => {
+    const content = buildKbeStubDocument().content;
     expect(content).toContain('Address = int');
     expect(content).toContain('Callback = Callable[..., None]');
     expect(content).toContain('WatcherValue = Any');
@@ -554,7 +552,7 @@ describe('生成 .pyi 自洽(签名引用名全部已定义或导入)', () => {
   });
 
   it('别名置于 Vector3 类定义之后(发射序保定义先于使用)', () => {
-    const content = buildKbeStubExportContent();
+    const content = buildKbeStubDocument().content;
     const vectorClass = content.indexOf('class Vector3:');
     const alias = content.indexOf('Vector3Like = Union[');
     expect(vectorClass).toBeGreaterThan(-1);

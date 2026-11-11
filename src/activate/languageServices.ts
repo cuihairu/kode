@@ -10,6 +10,7 @@
 // 回调内晚绑定执行,转交局部 disposables 数组会丢句柄,故不走返回值通道,
 // 销毁所有权仍由组合根 context.subscriptions 单一持有;装配期产出的共享
 // 实例经返回值交组合根注入后续层(事件接线/命令/探针)。
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { CallChainController } from '../defCallChainProvider';
 import { DefParamInlayHintsProvider } from '../defParamInlayHints';
@@ -18,6 +19,7 @@ import { getCustomTypeInfos, getRegisteredEntities } from '../definitionWorkspac
 import { createFileChangeMetaResolver } from '../backend/fileChangeMeta';
 import { logIndexFileChangeMeta } from '../backend/fileChangeMetaLog';
 import { createLinkedCancellationToken, HOVER_ASYNC_BUDGET_MS_DEFAULT, raceWithBudget } from '../hoverBudget';
+import { readManagedDirSetting, readStubDirSetting, resolveManagedDirName, resolveStubDir } from '../pythonStubExport';
 import { IndexTaskPriority } from '../backend/indexScheduler';
 import { isExcludedScanPath, watcherPatternSignature } from '../indexWatcherScope';
 import type { OperationStatus } from '../languageServiceMetrics';
@@ -32,6 +34,8 @@ import {
   KBEngineDocumentSymbolProvider,
   KBEngineHoverProvider,
   KBEngineImplementationProvider,
+  KBEngineProxyInternalAttrHintsProvider,
+  PROXY_INTERNAL_PYE_FILE_NAME,
   KBEnginePropertyShadowInlayHintsProvider,
   KBEngineReferencesProvider,
   KBEngineRenameProvider,
@@ -598,6 +602,28 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     new KBEnginePropertyShadowInlayHintsProvider(entityMappingManager)
   );
   context.subscriptions.push(propertyShadowInlayHintsProvider);
+
+  // 批 ③:Proxy 内部属性提示(__ACCOUNT_NAME__/__PASSWORD__ → 「内部属性 ·
+  // Proxy」+ 项目副本 Proxy.pyi 导航)。跳转面用批142 的三级来源解析同链
+  // (设置 > 环境变量 > 托管默认),用户自指目录的副本同样可跳
+  const proxyInternalAttrHintsProvider = vscode.languages.registerInlayHintsProvider(
+    pythonDocumentSelector,
+    new KBEngineProxyInternalAttrHintsProvider({
+      resolveProxyPyiPath: (document: vscode.TextDocument): string | null => {
+        const folder = vscode.workspace.getWorkspaceFolder(document.uri);
+        if (!folder) {
+          return null;
+        }
+        const resolved = resolveStubDir(folder.uri.fsPath, {
+          setting: readStubDirSetting(),
+          managedDir: resolveManagedDirName(readManagedDirSetting()).name
+        });
+        const proxyPyiPath = `${resolved.dir}/KBEngine/${PROXY_INTERNAL_PYE_FILE_NAME}`;
+        return fs.existsSync(proxyPyiPath) ? proxyPyiPath : null;
+      }
+    })
+  );
+  context.subscriptions.push(proxyInternalAttrHintsProvider);
 
   const callHierarchyProvider = vscode.languages.registerCallHierarchyProvider(
     [

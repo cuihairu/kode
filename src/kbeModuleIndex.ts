@@ -1013,26 +1013,6 @@ export function buildKbeStubDocument(): KbeStubDocument {
   return { content: lines.join('\n'), symbolLines };
 }
 
-/** 生成导出用 .pyi 内容(盘点 G2):同一符号索引,头部改为生成物口径 */
-export function buildKbeStubExportContent(): string {
-  const lines: string[] = [
-    '# KBEngine.pyi — kode 自动生成的 KBEngine Python API 存根',
-    '#',
-    '# Content source: src/kbeModuleIndex.ts. This generated stub is incomplete;',
-    `# ${KBE_SYMBOL_CATALOG_NOTE}`,
-    '# Completion/hover/navigation share this index. Regeneration overwrites edits.',
-    '# 建议在 .gitignore 里忽略 .kbengine/stubs/(生成物,随索引更新)。',
-    '',
-    ...TYPING_IMPORT_LINES
-  ];
-  const symbolLines = emitKbeStubBody(lines);
-  emitKbeContainerStubClasses(lines, symbolLines);
-  emitKbeVectorStubClasses(lines, symbolLines);
-  emitKbeDomainAliases(lines);
-  appendCatalogFootnote(lines);
-  return lines.join('\n');
-}
-
 /** 摘要按固定宽度折行,保持桩文档在常规窗口宽度可读 */
 function wrapSummary(summary: string, width = 72): string[] {
   const words = summary.split(' ');

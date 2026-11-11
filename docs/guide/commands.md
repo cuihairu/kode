@@ -1166,17 +1166,24 @@ The flow graph panel supports:
 ### `kbengine.python.exportStubs`
 
 - Title: `Export KBEngine Python Stubs`
-- Purpose: export the built-in KBEngine Python API symbol index (the same source as kode's completion/hover/navigation) as a real `.pyi` file, which together with the extraPaths wiring lets Pylance resolve `import KBEngine` (virtual stub documents are invisible to the Python extension)
-- Coverage: `KBEngine.pyi` is a curated subset of engine symbols, not a complete engine API; the header states the coverage, and every symbol keeps an original engine typings `file:line` anchor
-- Stub directory resolved in three tiers (batch 142): `kbengine.python.stubDir` setting > env var `KBENGINE_STUB_DIR` > default convention `<workspace>/.kbengine/stubs`; VS Code variables like `${workspaceFolder}`/`${env:NAME}` are supported
-- Entries: command palette `Export KBEngine Python Stubs`; also exported once automatically at activation (`kbengine.python.stubExport` default on, fully silent during activation)
-- Behavior:
-  - The default convention directory is kode-managed: zero write when the content matches disk; stale content (after an index update) is automatically rewritten; manual edits are not kept
-  - A configured user directory is entered but never left: any `.pyi` already in the directory is treated as a user asset and never overwritten; one is generated only when no `.pyi` exists; an unreadable directory (missing/no permission) is reported honestly, never blindly written
-  - Ignoring `.kbengine/stubs/` in `.gitignore` is recommended (a generated artifact that follows kode index updates); pre-existing `.pyi` files in a user-configured directory are user assets — kode neither changes nor deletes them
+- Purpose: copy the plugin's built-in KBEngine stub package (repo-top-level `typings/` template, derived from the cuihairu/kbengine fork typings with the pinned commit recorded in `typings/README.md`) into the project stub directory as a real `KBEngine/` package, which together with the stubPath/extraPaths wiring lets Pylance resolve `import KBEngine`
+- Layout: `KBEngine/__init__.pyi` carries an explicit re-export order (process-layer star imports first, one-class-per-file re-exports last so the server Entity/Proxy models win over the bots-layer same-name client models), plus per-class files, `hooks.pyi` callback protocols, kode-only runtime vector classes (`Vector2/3/4`), and the engine process-layer files
+- Stub directory resolved in three tiers (batch 142): `kbengine.python.stubDir` setting > env var `KBENGINE_STUB_DIR` > default convention `<workspace>/<managedDir>/stubs`; VS Code variables like `${workspaceFolder}`/`${env:NAME}` are supported
+- Entries: command palette `Export KBEngine Python Stubs`; also copied once automatically at activation (`kbengine.python.stubExport` default on, fully silent during activation)
+- Behavior (copy-if-absent, zero overwrite):
+  - A file already on disk is never touched — user edits to the project copies survive every export; overwrite happens only through the explicit reset command with user confirmation
+  - In the kode-managed directory a legacy single-file `KBEngine.pyi` carrying the kode generated marker is migrated away once (the `KBEngine/` package replaces it); unmarked same-name files are user assets and stay untouched
   - An unwritable directory (a read-only mount, etc.) warns and continues with the remaining workspace folders
-  - After a successful export it chains one extraPaths sync so the new stub directory takes effect immediately
+  - After a successful copy it chains one extraPaths sync so the stub directory takes effect immediately
   - Setting `kbengine.python.stubExport: false` turns it all off
+
+### `kbengine.python.resetStubs`
+
+- Title: `Reset KBEngine Python Stubs`
+- Purpose: the only overwrite channel — delete the stub-directory files whose names match the template set and copy them fresh from the built-in template; use it when a plugin update ships a newer template or the project copies drifted from the template
+- Confirmation: a modal dialog asks before acting (`Reset` to proceed); declining performs nothing
+- Scope: only files whose names match the template set; files outside the template set (user's own additions) are never touched; in the kode-managed directory the legacy marker-matched `KBEngine.pyi` is reclaimed as well
+- After a successful reset it chains one extraPaths sync
 
 ### `kbengine.python.exportTypeStubs`
 
@@ -1187,7 +1194,7 @@ The flow graph panel supports:
 - Entity-level types: when a `.def` property references a `types.xml` custom type, activation also generates `entity_types.pyi`, materializing per-entity declarations such as `Avatar.profile: ITEM_INFO`; source comments keep both original `.def` and `types.xml` lines
 - Same directory and switch as `kbengine.python.exportStubs`: the `kbengine.python.stubDir` three-tier resolution, sharing the `kbengine.python.stubExport` switch; exported once automatically at activation, after KBEngine.pyi (silently)
 - Behavior:
-  - Deterministic content: the same input produces byte-identical content (no timestamp in the header), following the same zero-write-when-unchanged, rewrite-when-stale discipline as KBEngine.pyi
+  - Deterministic content: the same input produces byte-identical content (no timestamp in the header), with zero-write-when-unchanged and rewrite-when-stale inside the kode-managed directory
   - Alias assignments are module-level eager evaluations, emitted in dependency topological order; types with empty `types.xml` directives or alias cycles are skipped with the reason stated in the message — no assignment referencing an undefined name is ever generated
   - The built-in type mapping shares the table with the TS generator: integers → `int`, floats → `float`, strings → `str`, `VECTOR2/3/4` → `KBEngine.Vector2/3/4`, `PY_DICT/PY_TUPLE/PY_LIST` → `dict`/`tuple`/`list` with the `<Default>` literal refined when present, `PYTHON` → the def `impl` class when declared else `Any`, `ENTITYCALL` → `KBEngine.EntityCall`, `BLOB` → `bytes`, no counterpart → `Any` (lossy but valid)
   - An existing `kbe_types.py` in a configured user directory is treated as a user asset and never overwritten; the default directory `.kbengine/stubs` is kode-managed

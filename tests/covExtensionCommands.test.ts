@@ -196,6 +196,20 @@ beforeAll(() => {
   );
   fs.mkdirSync(path.join(extDir, 'out'), { recursive: true });
   fs.writeFileSync(path.join(extDir, 'out', 'extension.js'), '', 'utf8');
+  // 批 ③ 桩包模板夹具:resolveKbengineStubTemplateRoot(extensionPath)=
+  // <extDir>/typings,激活链与 entityStubMethods 重导面都要读它(缺了静默
+  // 跳过,桩包复制面整个哑掉)
+  fs.mkdirSync(path.join(extDir, 'typings', 'KBEngine'), { recursive: true });
+  fs.writeFileSync(
+    path.join(extDir, 'typings', 'KBEngine', '__init__.pyi'),
+    '# init fixture\nfrom .Entity import Entity\n',
+    'utf8'
+  );
+  fs.writeFileSync(
+    path.join(extDir, 'typings', 'KBEngine', 'Entity.pyi'),
+    '# entity fixture\nclass Entity:\n    id: int\n',
+    'utf8'
+  );
   gsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-gs-'));
 });
 
@@ -679,33 +693,31 @@ describe('extension 激活链命令面(补测)', () => {
       });
     };
     fire(['kbengine.managedDir']);
-    fire(['kbengine.python.stubEngineTypings', 'kbengine.python.entityStubMethods']);
-    // IDE-STUB-001:档位切换同走即时重导(切回 generated 收回真实引擎代码)
-    fire(['kbengine.python.stubSourceMode']);
+    fire(['kbengine.python.entityStubMethods']);
   });
 
-  it('onDidChangeConfiguration:stubSourceMode 切档即时重导,generated 收回引擎拼接代码', async () => {
-    // 预置 real-source 时代遗留的拼接产物,切回 generated 后内容比对刷新应重写
+  it('onDidChangeConfiguration:entityStubMethods 变更重导,桩包 copy-if-absent 下旧生成物迁移', async () => {
+    // 批 ③ 起桩面是静态模板 copy-if-absent:配置变更触发重导时,模板同名
+    // 已有文件一个字节不动;托管目录里带 kode 生成标记的旧单文件 KBEngine.pyi
+    // 被一次性迁移移除(KBEngine/ 桩包取代)
     const stubFile = path.join(root, '.kbengine', 'stubs', 'KBEngine.pyi');
     fs.mkdirSync(path.dirname(stubFile), { recursive: true });
     fs.writeFileSync(
       stubFile,
-      '# KBEngine.pyi — kode generated from the local KBEngine typings checkout.\nclass Entity:\n    id: int\n',
+      '# KBEngine.pyi — kode generated\n# 旧动态生成内容\nclass Entity:\n    id: int\n',
       'utf8'
     );
-    configurationOverrides.set('kbengine', { 'python.stubSourceMode': 'generated' });
-    try {
-      workspaceEvents.configurationChanged.fire({
-        affectsConfiguration: (key: string) => key === 'kbengine' || key === 'kbengine.python.stubSourceMode'
-      });
-      await new Promise(resolve => setTimeout(resolve, 50));
-      const rewritten = fs.readFileSync(stubFile, 'utf8');
-      expect(rewritten).not.toContain('generated from the local KBEngine typings checkout');
-      // 精选目录内容(内置符号索引发射)
-      expect(rewritten).toContain('Content source: src/kbeModuleIndex.ts');
-    } finally {
-      configurationOverrides.delete('kbengine');
-    }
+    fs.writeFileSync(path.join(path.dirname(stubFile), 'KBEngine', 'Entity.pyi'), '# 用户魔改版\n', 'utf8');
+    workspaceEvents.configurationChanged.fire({
+      affectsConfiguration: (key: string) => key === 'kbengine' || key === 'kbengine.python.entityStubMethods'
+    });
+    await new Promise(resolve => setTimeout(resolve, 50));
+    // 旧生成物:迁移移除,桩包取代
+    expect(fs.existsSync(stubFile)).toBe(false);
+    // 桩包就位(copy-if-absent):模板 __init__.pyi 复制进来
+    expect(fs.existsSync(path.join(path.dirname(stubFile), 'KBEngine', '__init__.pyi'))).toBe(true);
+    // 用户魔改的副本:一个字节不动
+    expect(fs.readFileSync(path.join(path.dirname(stubFile), 'KBEngine', 'Entity.pyi'), 'utf8')).toBe('# 用户魔改版\n');
   });
 
   it('文档事件面:def/types.xml 编辑失效 schema 缓存,python 开合走诊断与注解释放', () => {

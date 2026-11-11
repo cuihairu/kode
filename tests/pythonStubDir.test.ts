@@ -1,23 +1,24 @@
 /**
  * `.pyi` 存根目录用户可配(批142,任务单 kode-pyi.md 用户令:「.pyi 目录也应该
- * 用户配置吧,不配置才默认生成,配置了就扫描,没有 pyi 文件才生成」):
- * 三级来源(设置 > 环境变量 > 默认约定)、VS Code 变量替换、以及
- * 「目录里已有 .pyi 就不动用户文件」的判定,全部走批141 的统一替换实现。
+ * 用户配置吧,不配置才默认生成,配置了就扫描」):三级来源(设置 > 环境变量 >
+ * 默认约定)、VS Code 变量替换,全部走批141 的统一替换实现。批 ③ 静态模板
+ * 定案后导出面是 copy-if-absent 复制:配置的目录(用户所有)同样按模板集
+ * 复制,已有文件一律不覆盖;旧产物迁移只发生在 kode 自管的托管目录。
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
   PYTHON_STUB_DIR_DEFAULT,
   PYTHON_STUB_DIR_ENV,
-  decideStubWrite,
+  KBE_STUB_GENERATED_MARKER,
   exportKbeStubs,
   fileSystemStubExportDeps,
   readStubDirSetting,
   resolveStubDir,
-  scanStubDir
+  type StubExportDeps
 } from '../src/pythonStubExport';
 import {
   configurationOverrides,
@@ -135,89 +136,55 @@ describe('resolveStubDir 路径形态', () => {
   });
 });
 
-describe('scanStubDir 目录扫描', () => {
-  it('列出目录下的 .pyi 文件', () => {
-    const scan = scanStubDir('/ws/main/typings', {
-      listDir: dir => (dir === '/ws/main/typings' ? ['a.pyi', 'notes.md', 'b.pyi'] : [])
-    });
-    expect(scan.pyiFiles).toEqual(['a.pyi', 'b.pyi']);
-    expect(scan.unreadable).toBe(false);
-  });
+// ── 模板夹具(真 tmpdir:collect 走真 fs 判目录;项目侧全内存)──────
+const memory = new Map<string, string>();
+let writes: string[] = [];
+let deleted: string[] = [];
 
-  it('目录为空时无 .pyi', () => {
-    expect(scanStubDir('/ws/main/typings', { listDir: () => [] }).pyiFiles).toEqual([]);
-  });
+const makeTemplateRoot = (): string => {
+  const root = mkdtempSync(join(tmpdir(), 'kode-stubdir-template-'));
+  mkdirSync(join(root, 'KBEngine'), { recursive: true });
+  writeFileSync(join(root, 'KBEngine', '__init__.pyi'), '# init\n');
+  writeFileSync(join(root, 'KBEngine', 'Entity.pyi'), '# entity\n');
+  return root;
+};
 
-  it('目录读不到时如实标 unreadable,不当作空目录', () => {
-    const scan = scanStubDir('/ws/main/typings', {
-      listDir: () => {
-        throw new Error('EACCES');
-      }
-    });
-    expect(scan.unreadable).toBe(true);
-    expect(scan.pyiFiles).toEqual([]);
-  });
-
-  it('只认小写 .pyi 后缀', () => {
-    const scan = scanStubDir('/d', { listDir: () => ['a.PYI', 'b.pyi.txt'] });
-    expect(scan.pyiFiles).toEqual([]);
-  });
-
-  it('抛的不是 Error 时按字符串记原因,不丢信息', () => {
-    const scan = scanStubDir('/d', {
-      listDir: () => {
-        throw 'plain-string';
-      }
-    });
-    expect(scan.unreadableReason).toBe('plain-string');
-  });
+const makeDeps = (templateRoot: string): StubExportDeps => ({
+  exists: (candidate: string): boolean => candidate.startsWith(templateRoot) || memory.has(candidate),
+  readFile: (candidate: string): string => {
+    if (candidate.startsWith(templateRoot)) {
+      return readFileSync(candidate, 'utf8');
+    }
+    const content = memory.get(candidate);
+    if (content === undefined) {
+      throw new Error(`ENOENT: ${candidate}`);
+    }
+    return content;
+  },
+  writeFile: (candidate: string, content: string): void => {
+    writes.push(candidate);
+    memory.set(candidate, content);
+  },
+  mkdir: (): void => undefined,
+  deleteFile: (candidate: string): void => {
+    deleted.push(candidate);
+    memory.delete(candidate);
+  },
+  listDir: (dir: string): string[] => (dir.startsWith(templateRoot) ? readdirSync(dir) : [])
 });
 
-describe('decideStubWrite 覆盖判定', () => {
-  const userDir = resolveStubDir(ROOT, { setting: 'typings' });
-  const defaultDir = resolveStubDir(ROOT, {});
+const folder = (fsPath: string): vscode.WorkspaceFolder =>
+  ({
+    uri: Uri.file(fsPath),
+    name: fsPath.split('/').pop() ?? fsPath,
+    index: 0
+  }) as vscode.WorkspaceFolder;
 
-  it('用户目录里没有 .pyi 时生成', () => {
-    const decision = decideStubWrite(userDir, { pyiFiles: [], unreadable: false });
-    expect(decision.write).toBe(true);
-  });
-
-  it('用户目录里已有 .pyi 时不覆盖用户文件', () => {
-    const decision = decideStubWrite(userDir, { pyiFiles: ['mine.pyi'], unreadable: false });
-    expect(decision.write).toBe(false);
-    expect(decision.reason).toContain('mine.pyi');
-  });
-
-  it('用户目录读不到时不盲写,如实说明', () => {
-    const decision = decideStubWrite(userDir, {
-      pyiFiles: [],
-      unreadable: true,
-      unreadableReason: 'EACCES'
-    });
-    expect(decision.write).toBe(false);
-    expect(decision.reason).toContain('读不到');
-  });
-
-  it('默认目录归 kode 自管:交给内容比对刷新,不因存在 .pyi 就停更', () => {
-    const decision = decideStubWrite(defaultDir, { pyiFiles: ['KBEngine.pyi'], unreadable: false });
-    expect(decision.write).toBe('managed');
-  });
-
-  it('读不到且未带原因时如实写未知原因', () => {
-    const decision = decideStubWrite(userDir, { pyiFiles: [], unreadable: true });
-    expect(decision.reason).toContain('未知原因');
-  });
-});
-
-describe('exportKbeStubs 用户指定目录(装配层)', () => {
-  const folder = (fsPath: string): vscode.WorkspaceFolder =>
-    ({
-      uri: Uri.file(fsPath),
-      name: fsPath.split('/').pop() ?? fsPath,
-      index: 0
-    }) as vscode.WorkspaceFolder;
-
+describe('exportKbeStubs 用户指定目录(copy-if-absent 装配层)', () => {
   beforeEach(() => {
+    memory.clear();
+    writes = [];
+    deleted = [];
     messages.info.length = 0;
     messages.warning.length = 0;
     configurationOverrides.clear();
@@ -225,97 +192,102 @@ describe('exportKbeStubs 用户指定目录(装配层)', () => {
     windowState.reset();
   });
 
-  const makeDeps = (entries: string[] | null) => {
-    const writes: string[] = [];
-    const mkdirs: string[] = [];
-    const deps: import('../src/pythonStubExport').StubExportDeps = {
-      exists: () => false,
-      readFile: () => '',
-      writeFile: (path: string) => {
-        writes.push(path);
-      },
-      mkdir: (dir: string) => {
-        mkdirs.push(dir);
-      },
-      listDir: entries === null
-        ? () => {
-          throw new Error('EACCES');
-        }
-        : () => entries
-    };
-    return { deps, writes, mkdirs };
-  };
-
-  it('配置的目录里没有 .pyi 时生成到该目录', async () => {
+  it('配置的目录(python.stubDir)落用户目录,模板集照复制', async () => {
     configurationOverrides.set('kbengine', { 'python.stubDir': 'typings' });
     stubWorkspace.workspaceFolders = [folder('/ws/main')];
-    const { deps, writes, mkdirs } = makeDeps([]);
+    const root = makeTemplateRoot();
+    try {
+      await exportKbeStubs(makeDeps(root), { templateRoot: root });
 
-    await exportKbeStubs(deps, { engineRoot: null });
-
-    expect(mkdirs).toEqual(['/ws/main/typings']);
-    expect(writes).toEqual(['/ws/main/typings/KBEngine.pyi']);
-    stubWorkspace.workspaceFolders = [];
+      expect(writes.sort()).toEqual([
+        '/ws/main/typings/KBEngine/Entity.pyi',
+        '/ws/main/typings/KBEngine/__init__.pyi'
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      stubWorkspace.workspaceFolders = [];
+    }
   });
 
-  it('配置的目录里已有 .pyi 时不生成不覆盖,如实播报', async () => {
+  it('用户目录里已有同名文件不覆盖(copy-if-absent 对用户目录同样成立)', async () => {
     configurationOverrides.set('kbengine', { 'python.stubDir': 'typings' });
     stubWorkspace.workspaceFolders = [folder('/ws/main')];
-    const { deps, writes } = makeDeps(['mine.pyi']);
+    const root = makeTemplateRoot();
+    memory.set('/ws/main/typings/KBEngine/Entity.pyi', '# 用户魔改版\n');
+    try {
+      await exportKbeStubs(makeDeps(root), { templateRoot: root });
 
-    await exportKbeStubs(deps, { engineRoot: null });
-
-    expect(writes).toEqual([]);
-    expect(messages.info[0]).toContain('mine.pyi');
-    stubWorkspace.workspaceFolders = [];
+      expect(writes).toEqual(['/ws/main/typings/KBEngine/__init__.pyi']);
+      expect(memory.get('/ws/main/typings/KBEngine/Entity.pyi')).toBe('# 用户魔改版\n');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      stubWorkspace.workspaceFolders = [];
+    }
   });
 
-  it('配置的目录读不到时不盲写', async () => {
+  it('用户目录不迁移:同名 KBEngine.pyi 即使带 kode 生成标记也不删', async () => {
     configurationOverrides.set('kbengine', { 'python.stubDir': 'typings' });
     stubWorkspace.workspaceFolders = [folder('/ws/main')];
-    const { deps, writes } = makeDeps(null);
+    const root = makeTemplateRoot();
+    memory.set('/ws/main/typings/KBEngine.pyi', `${KBE_STUB_GENERATED_MARKER}\n`);
+    try {
+      await exportKbeStubs(makeDeps(root), { templateRoot: root });
 
-    await exportKbeStubs(deps, { engineRoot: null });
-
-    expect(writes).toEqual([]);
-    expect(messages.info[0]).toContain('读不到');
-    stubWorkspace.workspaceFolders = [];
+      expect(deleted).toEqual([]);
+      expect(memory.has('/ws/main/typings/KBEngine.pyi')).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      stubWorkspace.workspaceFolders = [];
+    }
   });
 
-  it('deps 未注入目录扫描能力时按读不到处理,不放行盲写', async () => {
+  it('deps 未注入目录枚举能力时按模板缺失处理,不盲写', async () => {
     configurationOverrides.set('kbengine', { 'python.stubDir': 'typings' });
     stubWorkspace.workspaceFolders = [folder('/ws/main')];
-    const { deps, writes } = makeDeps([]);
+    const root = makeTemplateRoot();
+    const deps = makeDeps(root);
     delete deps.listDir;
+    try {
+      await exportKbeStubs(deps, { templateRoot: root });
 
-    await exportKbeStubs(deps, { engineRoot: null });
-
-    expect(writes).toEqual([]);
-    expect(messages.info[0]).toContain('未注入目录扫描能力');
-    stubWorkspace.workspaceFolders = [];
+      expect(writes).toEqual([]);
+      expect(messages.warning[0]).toContain('模板读不到');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      stubWorkspace.workspaceFolders = [];
+    }
   });
 
-  it('静默模式跳过用户目录时零提示', async () => {
+  it('静默模式零提示', async () => {
     configurationOverrides.set('kbengine', { 'python.stubDir': 'typings' });
     stubWorkspace.workspaceFolders = [folder('/ws/main')];
-    const { deps } = makeDeps(['mine.pyi']);
+    const root = makeTemplateRoot();
+    try {
+      await exportKbeStubs(makeDeps(root), { templateRoot: root, silent: true });
 
-    await exportKbeStubs(deps, { engineRoot: null, silent: true });
-
-    expect(messages.info).toHaveLength(0);
-    stubWorkspace.workspaceFolders = [];
+      expect(messages.info).toHaveLength(0);
+      expect(messages.warning).toHaveLength(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      stubWorkspace.workspaceFolders = [];
+    }
   });
 
   it('工作区列表为 undefined 时按空处理,如实说明', async () => {
-    stubWorkspace.workspaceFolders = undefined as never;
-    const { deps } = makeDeps([]);
+    const root = makeTemplateRoot();
+    try {
+      stubWorkspace.workspaceFolders = undefined as never;
+      const deps = makeDeps(root);
 
-    await exportKbeStubs(deps, { engineRoot: null });
-    expect(messages.info[0]).toContain('未打开工作区');
+      await exportKbeStubs(deps, { templateRoot: root });
+      expect(messages.info[0]).toContain('未打开工作区');
 
-    await exportKbeStubs(deps, { engineRoot: null, silent: true });
-    expect(messages.info).toHaveLength(1);
-    stubWorkspace.workspaceFolders = [];
+      await exportKbeStubs(deps, { templateRoot: root, silent: true });
+      expect(messages.info).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      stubWorkspace.workspaceFolders = [];
+    }
   });
 
   it('默认真 fs 依赖的目录扫描能读出条目', () => {
@@ -343,4 +315,3 @@ describe('resolveStubDir 装配层读设置', () => {
     expect(readStubDirSetting()).toBe('');
   });
 });
-

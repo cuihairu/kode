@@ -643,5 +643,6 @@
   "kode-mcp binary present; the extension does not host it, register this path in an external MCP client (not integrated)": "kode-mcp binary present; the extension does not host it, register this path in an external MCP client (not integrated)",
   "kode-mcp not built (source in crates/kode-mcp); the extension does not host it, register it in an external MCP client": "kode-mcp not built (source in crates/kode-mcp); the extension does not host it, register it in an external MCP client",
   "Source connection test failed: {reason}": "Source connection test failed: {reason}",
-  "Retry connection test": "Retry connection test"
+  "Retry connection test": "Retry connection test",
+  "internal attribute": "internal attribute"
 }

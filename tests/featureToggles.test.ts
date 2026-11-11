@@ -11,10 +11,6 @@ import {
   PythonCompletionProvider,
   PythonDefinitionProvider
 } from '../src/languageProviders';
-import {
-  buildKbeStubExportContent,
-  buildKbeStubExportContentForWorkspace
-} from '../src/pythonStubExport';
 import { buildEntityTypeStubPlan } from '../src/entityTypeStubs';
 import { getCustomTypeInfos } from '../src/definitionWorkspace';
 import { configurationOverrides, Position, Uri, makeTextDocument, workspace } from './helpers/vscodeStub';
@@ -49,7 +45,7 @@ describe('package.json 开关注册(默认值断言)', () => {
   const expectedKeys = [
     'kbengine.entity.builtinProperties',
     'kbengine.entity.receiverSections',
-    'kbengine.python.stubEngineTypings',
+    'kbengine.python.proxyInternalAttrHints',
     'kbengine.python.entityStubMethods',
     'kbengine.python.builtinTypeInlayHints',
     'kbengine.types.aliasDiscovery',
@@ -243,73 +239,22 @@ describe('kbengine.entity.receiverSections(接收者段过滤)', () => {
   });
 });
 
-describe('kbengine.python.stubEngineTypings(KBEngine.pyi 引擎全量导出)', () => {
-  const makeEngineRoot = (): string => {
-    const engineRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-toggle-engine-'));
-    fs.mkdirSync(path.join(engineRoot, 'typings'), { recursive: true });
-    fs.writeFileSync(
-      path.join(engineRoot, 'typings', '_KBEngine_common.pyi'),
-      'class Entity:\n    id: int\n',
-      'utf8'
-    );
-    for (const moduleName of [
-      '_KBEngine_baseapp', '_KBEngine_bots', '_KBEngine_cellapp', '_KBEngine_dbmgr',
-      '_KBEngine_hooks', '_KBEngine_interfaces', '_KBEngine_logger', '_KBEngine_loginapp',
-      '_KBEngine_pythonapp', '_KBEngine_server_errors'
-    ]) {
-      fs.writeFileSync(path.join(engineRoot, 'typings', `${moduleName}.pyi`), '# fixture\n', 'utf8');
-    }
-    return engineRoot;
-  };
-
-  afterEach(() => {
-    configurationOverrides.delete('kbengine');
-  });
-
-  // IDE-STUB-001 起:引擎 checkout 拼接(复制真实代码)只在 real-source 档执行
-  it('real-source 档:显式引擎 checkout 拼全量 API', () => {
-    const engineRoot = makeEngineRoot();
-    try {
-      configurationOverrides.set('kbengine', { 'python.stubSourceMode': 'real-source' });
-      const content = buildKbeStubExportContentForWorkspace('/ws', {
-        engineRoot,
-        engineRootEnv: {}
-      });
-      expect(content).toContain('generated from the local KBEngine typings checkout');
-      expect(content).toContain('class Entity:');
-    } finally {
-      fs.rmSync(engineRoot, { recursive: true, force: true });
-    }
-  });
-
-  // 用户令 2026-11-09:默认档(generated)也拼接引擎 checkout——官方 typings
-  // import 完整、类型齐全;手写精简模板缺 Dict/Callable/Union/Entity 等导入
-  // 导致「Import KBEngine could not be resolved」与「类型不全」。覆盖旧
-  // IDE-STUB-001 的「generated 档不复制真实代码」;stubEngineTypings=false
-  // 显式关闭时仍回落精选目录(下条)。
-  it('默认 generated 档:显式引擎 checkout 拼全量 API(官方 typings 为唯一事实源)', () => {
-    const engineRoot = makeEngineRoot();
-    try {
-      const content = buildKbeStubExportContentForWorkspace('/ws', {
-        engineRoot,
-        engineRootEnv: {}
-      });
-      expect(content).toContain('generated from the local KBEngine typings checkout');
-      expect(content).toContain('class Entity:');
-    } finally {
-      fs.rmSync(engineRoot, { recursive: true, force: true });
-    }
-  });
-
-  it('false:回落精选目录(不读引擎 checkout)', () => {
-    const engineRoot = makeEngineRoot();
-    try {
-      configurationOverrides.set('kbengine', { 'python.stubEngineTypings': false });
-      expect(buildKbeStubExportContentForWorkspace('/ws', { engineRoot, engineRootEnv: {} }))
-        .toBe(buildKbeStubExportContent());
-    } finally {
-      fs.rmSync(engineRoot, { recursive: true, force: true });
-    }
+describe('批 ③ 退役面(静态模板定案)', () => {
+  it('stubSourceMode/stubEngineTypings 随动态生成链退役,不再出现在 package.json', () => {
+    const pkg = JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as {
+      contributes: {
+        configuration: { properties: Record<string, unknown> };
+        commands: Array<{ command: string }>;
+      };
+    };
+    const props = pkg.contributes.configuration.properties;
+    expect(props['kbengine.python.stubSourceMode']).toBeUndefined();
+    expect(props['kbengine.python.stubEngineTypings']).toBeUndefined();
+    // 新配置面:内部属性提示开关 + 模板集重置命令
+    expect(props['kbengine.python.proxyInternalAttrHints']).toBeDefined();
+    expect(
+      pkg.contributes.commands.some(entry => entry.command === 'kbengine.python.resetStubs')
+    ).toBe(true);
   });
 });
 

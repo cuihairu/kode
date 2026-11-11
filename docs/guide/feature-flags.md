@@ -135,6 +135,5 @@ These switches are real but their effect does not present as a headless-capturab
 | `kbengine.hotReload.tempEdit.enabled` | Hot reload temp edit | `false` → `true` | On, the one-shot hot-reload flow takes the temp-edit → reloadScript → auto-restore path (default off, accident guard) |
 | `kbengine.debug.debugpyInject` | debugpy injection | `false` → `true` | On, a debug session injects debugpy into the target process and reports on the debug status board; off, no injection |
 | `kbengine.debug.autoDebugpy` | Auto debugpy | `false` → `true` | On, debug startup auto-discovers/launches a debugpy listener and waits for attachment (default off) |
-| `kbengine.python.stubSourceMode` | Stub source mode | `generated` → `real-source` | Exported .pyi stubs come from the generator (generated) or reference real source (real-source); the diff lands in stub file content |
 | `kbengine.runtimeQuery.enabled` | Runtime Queries panel | `false` → `true` | The panel always opens; off, in-panel queries/streaming error with "enable kbengine.runtimeQuery.enabled"; on, queries work |
 | `kbengine.showFinalConfigOnOpen` | Auto-open final config view | `false` → `true` | On, opening the engine defaults file tries to auto-open the final-config view beside it (needs a runnable engine bin for the computation; without an engine the auto-open does not trigger) |

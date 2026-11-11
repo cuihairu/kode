@@ -11,7 +11,7 @@ import * as vscode from 'vscode';
 import { DEBUG_CONFIG_CHANNEL_NAME, ensureDebugConfig, fileSystemBootstrapDeps } from '../backend/debugConfigBootstrap';
 import { GeneratedSourceCodeLensProvider } from '../generatedSourceLenses';
 import { KBEngineCodeGenerator } from '../codeGenerator';
-import { STUB_SOURCE_MODE_SETTING, exportKbeStubs, fileSystemStubExportDeps, readManagedDirSetting, resolveManagedDirName } from '../pythonStubExport';
+import { exportKbeStubs, fileSystemStubExportDeps, readManagedDirSetting, resetKbeStubs, resolveKbengineStubTemplateRoot, resolveManagedDirName } from '../pythonStubExport';
 import { activateInferPipeline } from '../inferPipeline';
 import { bindSdkGenerationToProfile } from '../sdk-gen/sdkGenerationProfile';
 import { buildEntityTypeStubLineMap, buildEntityTypeStubPlan, exportEntityTypeStubs } from '../entityTypeStubs';
@@ -72,11 +72,25 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
   const exportKbeStubsCommand = vscode.commands.registerCommand(
     'kbengine.python.exportStubs',
     async () => {
-      await exportKbeStubs();
+      await exportKbeStubs(fileSystemStubExportDeps, {
+        templateRoot: resolveKbengineStubTemplateRoot(context.extensionPath)
+      });
       await syncPythonExtraPaths(context);
     }
   );
   context.subscriptions.push(exportKbeStubsCommand);
+  // 批 ③(用户令 2026-11-11):copy-if-absent 铁律下,覆盖只走显式重置命令
+  // 且要用户确认——模板集同名文件删除后按模板重复制,模板外文件不碰
+  const resetKbeStubsCommand = vscode.commands.registerCommand(
+    'kbengine.python.resetStubs',
+    async () => {
+      await resetKbeStubs(fileSystemStubExportDeps, {
+        templateRoot: resolveKbengineStubTemplateRoot(context.extensionPath)
+      });
+      await syncPythonExtraPaths(context);
+    }
+  );
+  context.subscriptions.push(resetKbeStubsCommand);
   // types.xml 自定义类型桩(docs/design/def-pyi-stubs.md §6):kbe_types.pyi 分件与
   // KBEngine.pyi 同开关同目录,命令导出后同样链一次同步让新目录即刻生效
   const exportPythonTypeStubsCommand = vscode.commands.registerCommand(
@@ -112,7 +126,10 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
   // + .kbengine/inferred 副本同步 + 脚本变更 watcher + kbengine.infer.run 命令
   activateInferPipeline(context);
   void (async () => {
-    await exportKbeStubs(fileSystemStubExportDeps, { silent: true });
+    await exportKbeStubs(fileSystemStubExportDeps, {
+      silent: true,
+      templateRoot: resolveKbengineStubTemplateRoot(context.extensionPath)
+    });
     await exportPythonTypeStubs(fileSystemStubExportDeps, { silent: true });
     await exportEntityTypeStubs(entityMappingManager);
     await syncPythonExtraPaths(context, fileSystemScriptRootDeps, { silent: true });
@@ -151,7 +168,10 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
     managedDirName: resolveManagedDirName(readManagedDirSetting()).name
   });
   const regenerateManagedDirAssets = (): void => {
-    void exportKbeStubs(fileSystemStubExportDeps, { silent: true });
+    void exportKbeStubs(fileSystemStubExportDeps, {
+      silent: true,
+      templateRoot: resolveKbengineStubTemplateRoot(context.extensionPath)
+    });
     void exportPythonTypeStubs(fileSystemStubExportDeps, { silent: true });
     void exportEntityTypeStubs(entityMappingManager);
     ensureDebugConfig(
@@ -184,18 +204,14 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
       regenerateManagedDirAssets();
     })
   );
-  // 存根内容面开关变更即时重导(用户令 2026-10-21:配置开关变更即时生效):
-  // 关掉引擎 typings 全量/实体方法面后,下次激活前先把已生成的 .pyi 收回
-  // 到关掉后的内容(总闸 kbengine.python.stubExport 关时导出函数自门,零写)
+  // 实体方法面开关变更即时重导(用户令 2026-10-21:配置开关变更即时生效):
+  // 关掉实体方法面后,下次激活前先把已生成的 entity_types.pyi 收回到关掉后
+  // 的内容(总闸 kbengine.python.stubExport 关时导出函数自门,零写)。
+  // 批 ③ 起 KBEngine 桩面是静态模板 copy-if-absent,配置变更不再触碰它
+  // (触发重导也只会零复制,留在这里只为 entity_types 面继续即时生效)
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(event => {
-      if (
-        event.affectsConfiguration('kbengine.python.stubEngineTypings') ||
-        event.affectsConfiguration('kbengine.python.entityStubMethods') ||
-        // IDE-STUB-001:档位切换即时重导——real-source 切回 generated 后,
-        // 已拼接的真实引擎代码在内容比对刷新下被收回精选目录内容
-        event.affectsConfiguration(`kbengine.${STUB_SOURCE_MODE_SETTING}`)
-      ) {
+      if (event.affectsConfiguration('kbengine.python.entityStubMethods')) {
         regenerateManagedDirAssets();
       }
     })

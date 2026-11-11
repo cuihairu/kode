@@ -1,16 +1,20 @@
 /**
- * KBEngine Python API 存根导出(功能差距盘点 G2,docs/reference-feature-gap.md):
- * kbeModuleIndex 的符号索引只服务 kode 自己的补全/悬停/跳转(虚拟桩文档
- * Pylance 看不见),Python 扩展只认 extraPaths 里的真实文件。把同一份索引
- * 导出成 `<工作区>/.kbengine/stubs/KBEngine.pyi`,配合 G1 的 extraPaths
- * 接线,`import KBEngine` 才能解析。内容与虚拟桩文档同源发射,不抄
- * KBEngine Nex X 的文件;内容与磁盘一致时零写,不打扰。
+ * KBEngine Python 桩包导出(批 ③,用户令 2026-11-11 静态模板定案):
+ * 插件内置静态模板(顶层 typings/,派生自 cuihairu/kbengine fork 的 typings,
+ * 钉点 commit 见 typings/README.md),激活期复制到 `<工作区>/.kbengine/stubs/`
+ * 供 Python 扩展解析 `import KBEngine`。
+ *
+ * 铁律 copy-if-absent 零覆盖:目标文件已存在就一个字节不动——用户魔改的
+ * 项目副本永久保留;覆盖只走显式重置命令(kbengine.python.resetStubs)且
+ * 要用户确认。旧动态生成链(引擎 checkout 拼接 / 精选目录回退 / 托管目录
+ * 内容比对重写)整体退役——重写正是会吃掉用户魔改的形态;托管目录里
+ * kode 生成的旧单文件 KBEngine.pyi 按 kode 生成标记识别后移除(一次性迁移,
+ * KBEngine/ 桩包取代它)。
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { buildKbeStubExportContent, emitKbeVectorStubClasses } from './kbeModuleIndex';
 import {
   MANAGED_DIR_DEFAULT,
   MANAGED_DIR_SETTING_KEY,
@@ -21,68 +25,72 @@ import { substituteVariables, type VariableFolderRef } from './backend/variableS
 // 托管目录解析面一并从这里出(单一进口处,调用方不必再引 managedDir)
 export { MANAGED_DIR_DEFAULT, resolveManagedDirName } from './backend/managedDir';
 
-// Python 生态面的内容入口一并从这里出(单一进口处,调用方不必再引 kbeModuleIndex)
-export { buildKbeStubExportContent } from './kbeModuleIndex';
-
-export const PYTHON_STUB_EXPORT_SETTING = 'kbengine.python.stubExport';
+export const PYTHON_STUB_EXPORT_SETTING = 'python.stubExport';
 /** 导出开关(kbengine.python.stubExport,默认开) */
 export const PYTHON_STUB_EXPORT_ENABLED_DEFAULT = true;
+/**
+ * 旧单文件产物名(迁移面):托管目录里带 kode 生成标记的 KBEngine.pyi 会被
+ * 一次性移除,由 KBEngine/ 桩包取代;用户目录里同名文件一律不碰。
+ */
 export const KBE_STUB_FILE_NAME = 'KBEngine.pyi';
+/** 旧动态链产物头标记(迁移判定面:命中才算 kode 生成物) */
+export const KBE_STUB_GENERATED_MARKER = '# KBEngine.pyi — kode generated';
+/** 内置模板根(扩展安装目录相对路径;与 fork typings 同形) */
+export const KBENGINE_STUB_TEMPLATE_RELATIVE_ROOT = 'typings';
 
-/**
- * 存根来源档位(IDE-STUB-001,用户令批次):`kbengine.python.stubSourceMode`,
- * `generated`(默认)/ `real-source` 两档。语义:generated=stub 由内置生成链
- * 产出(entityTypeStubs.ts / pythonTypeStubs.ts 生成链),**不复制真实代码**;
- * real-source=既有「复制真实代码导出」路径(本地引擎 typings checkout 拼接
- * 全量 API,fantasydemoRealExport 所测路径)仅在此档执行。
- */
-export const STUB_SOURCE_MODE_SETTING = 'python.stubSourceMode';
-export const STUB_SOURCE_MODE_GENERATED = 'generated';
-export const STUB_SOURCE_MODE_REAL_SOURCE = 'real-source';
-export const STUB_SOURCE_MODES = [
-  STUB_SOURCE_MODE_GENERATED,
-  STUB_SOURCE_MODE_REAL_SOURCE
-] as const;
-export type StubSourceMode = (typeof STUB_SOURCE_MODES)[number];
-export const STUB_SOURCE_MODE_DEFAULT: StubSourceMode = STUB_SOURCE_MODE_GENERATED;
+/** 模板根解析:扩展安装目录 + 相对根(装配层接线用);无 extensionPath 的
+ * 极简宿主(嵌入/烟测替身)落空串,模板收集按缺失处理,激活链不炸 */
+export function resolveKbengineStubTemplateRoot(extensionPath: string): string {
+  return extensionPath ? path.join(extensionPath, KBENGINE_STUB_TEMPLATE_RELATIVE_ROOT) : '';
+}
 
-export interface StubSourceModeReading {
-  /** kbengine.python.stubSourceMode 的原始设置值;缺省直读 vscode 配置 */
-  setting?: unknown;
+export interface KbengineStubTemplateFile {
+  /** 模板根相对路径(正斜杠,如 `KBEngine/Entity.pyi`) */
+  relativePath: string;
+  content: string;
 }
 
 /**
- * 档位读取口(单独导出:测试不必搭假配置树)。未知值一律回落 generated——
- * 只认两档,不认第三档;generated 是安全默认(不复制真实代码)。
+ * 收集内置模板文件清单(只收 .pyi;README.md 是作者期元数据,不进项目)。
+ * 按 relativePath 排序,复制顺序确定。模板根缺失/不可读返回 null——调用方
+ * 如实告警,不静默装作无事。
  */
-export function readStubSourceMode(reading: StubSourceModeReading = {}): StubSourceMode {
-  const raw = reading.setting === undefined
-    ? vscode.workspace.getConfiguration('kbengine').get(STUB_SOURCE_MODE_SETTING, STUB_SOURCE_MODE_DEFAULT)
-    : reading.setting;
-  return raw === STUB_SOURCE_MODE_REAL_SOURCE ? STUB_SOURCE_MODE_REAL_SOURCE : STUB_SOURCE_MODE_GENERATED;
-}
-
-/** 引擎 typings 全量面开关默认值(kbengine.python.stubEngineTypings,默认开) */
-export const PYTHON_STUB_ENGINE_TYPINGS_ENABLED_DEFAULT = true;
-
-const ENGINE_TYPINGS_MARKER = 'typings/_KBEngine_common.pyi';
-const ENGINE_TYPINGS_MODULE_ORDER = [
-  '_KBEngine_common',
-  '_KBEngine_baseapp',
-  '_KBEngine_bots',
-  '_KBEngine_cellapp',
-  '_KBEngine_dbmgr',
-  '_KBEngine_hooks',
-  '_KBEngine_interfaces',
-  '_KBEngine_logger',
-  '_KBEngine_loginapp',
-  '_KBEngine_pythonapp',
-  '_KBEngine_server_errors'
-] as const;
-
-export interface KbeStubEngineOptions {
-  engineRoot?: string | null;
-  engineRootEnv?: Record<string, string | undefined>;
+export function collectKbengineStubTemplateFiles(
+  templateRoot: string,
+  deps: { exists: (path: string) => boolean; listDir: (dir: string) => string[]; readFile: (path: string) => string }
+): KbengineStubTemplateFile[] | null {
+  if (!deps.exists(templateRoot)) {
+    return null;
+  }
+  const files: KbengineStubTemplateFile[] = [];
+  const walk = (dir: string, prefix: string): void => {
+    let entries: string[];
+    try {
+      entries = deps.listDir(dir);
+    } catch {
+      return;
+    }
+    for (const name of entries.sort()) {
+      const absolute = path.join(dir, name);
+      const relative = prefix ? `${prefix}/${name}` : name;
+      let statIsDirectory = false;
+      try {
+        statIsDirectory = fs.statSync(absolute).isDirectory();
+      } catch {
+        continue;
+      }
+      if (statIsDirectory) {
+        walk(absolute, relative);
+        continue;
+      }
+      if (!name.endsWith('.pyi')) {
+        continue;
+      }
+      files.push({ relativePath: relative, content: deps.readFile(absolute) });
+    }
+  };
+  walk(templateRoot, '');
+  return files.length > 0 ? files.sort((a, b) => (a.relativePath < b.relativePath ? -1 : 1)) : null;
 }
 
 /** 存根目录设置键(kbengine.python.stubDir,默认空串=走默认约定;旧键不废) */
@@ -123,6 +131,11 @@ export function kbeStubFilePath(workspaceRoot: string): string {
   return joinPath(kbeStubDir(workspaceRoot), KBE_STUB_FILE_NAME);
 }
 
+/** 桩包入口:`<managedDir>/stubs/KBEngine/__init__.pyi`(extraPaths 探测面) */
+export function kbeStubPackageInitPath(workspaceRoot: string, managedDirName: string = MANAGED_DIR_DEFAULT): string {
+  return joinPath(kbeStubDir(workspaceRoot, managedDirName), 'KBEngine', '__init__.pyi');
+}
+
 export type StubDirSource = 'setting' | 'env' | 'default';
 
 export interface ResolvedStubDir {
@@ -135,8 +148,8 @@ export interface ResolvedStubDir {
   /** 来源标注:设置键 / 环境变量名 / 默认约定名 */
   origin: string;
   /**
-   * 目录归谁所有:false = kode 自管的 .kbengine/stubs(内容比对刷新);
-   * true = 用户指定的目录(已有 .pyi 一律不碰)。
+   * 目录归谁所有:false = kode 自管的 .kbengine/stubs(旧产物迁移面);
+   * true = 用户指定的目录(已有文件一律不碰,重置也只动模板同名文件)。
    */
   userOwned: boolean;
 }
@@ -174,8 +187,8 @@ export function readStubDirSetting(): unknown {
 /**
  * `.pyi` 目录三级来源解析(批142,用户令:「不配置才默认生成,配置了就扫描」):
  * 设置 > 环境变量 > 默认约定,取到的来源随值一起返回,供「配置来源」视图
- * 展示当前生效值来自哪里(执行单要求「配置来源要可见」「冲突时显示取舍」——
- * 取值即取舍,设置压环境变量,来源字段就是这个取舍的显式登记)。
+ * 展示当前生效值来自哪里(取值即取舍,设置压环境变量,来源字段就是这个
+ * 取舍的显式登记)。
  */
 export function resolveStubDir(
   workspaceRoot: string,
@@ -225,249 +238,118 @@ export function resolveStubDir(
   return { dir, raw, source, origin, userOwned: true };
 }
 
-export interface StubDirScan {
-  /** 目录下已有的 .pyi 文件名(按读出顺序) */
-  pyiFiles: string[];
-  /** 目录读不到(不存在/无权限);true 时不可当空目录处理 */
-  unreadable: boolean;
-  /** 读不到的原因,用于如实回话 */
-  unreadableReason?: string;
-}
-
-/**
- * 扫一遍目录里的 .pyi(用户令:「配置了就扫描」)。只认小写 .pyi 后缀;
- * 目录不存在与无权限都归 unreadable——分不开也不必分,两种情况都不该盲写。
- */
-export function scanStubDir(
-  dir: string,
-  deps: { listDir: (dir: string) => string[] }
-): StubDirScan {
-  let entries: string[];
-  try {
-    entries = deps.listDir(dir);
-  } catch (error) {
-    return {
-      pyiFiles: [],
-      unreadable: true,
-      unreadableReason: error instanceof Error ? error.message : String(error)
-    };
-  }
-  return {
-    pyiFiles: entries.filter(name => name.endsWith('.pyi')),
-    unreadable: false
-  };
-}
-
-export type StubWriteDecision =
-  /** 直接生成(用户目录里没有 .pyi) */
-  | { write: true; reason: string }
-  /** 归 kode 自管目录:交给内容比对刷新(保持 G2 陈旧重写语义) */
-  | { write: 'managed'; reason: string }
-  /** 不动用户文件,附原因 */
-  | { write: false; reason: string };
-
-/**
- * 覆盖判定(用户令:「没有 pyi 文件才生成」)。默认约定目录归 kode 自管,
- * 里面那份 KBEngine.pyi 是 kode 自己的产物,按内容比对刷新(批139 起的 G2
- * 语义);用户指定的目录一律只进不出——已有 .pyi 就当用户资产,读不到也
- * 不盲写。
- */
-export function decideStubWrite(
-  resolved: ResolvedStubDir,
-  scan: StubDirScan
-): StubWriteDecision {
-  if (!resolved.userOwned) {
-    return {
-      write: 'managed',
-      reason: `${resolved.dir}(默认约定目录,按内容比对刷新)`
-    };
-  }
-  if (scan.unreadable) {
-    return {
-      write: false,
-      reason: `${resolved.dir} 读不到(${scan.unreadableReason ?? '未知原因'}),未动用户文件`
-    };
-  }
-  if (scan.pyiFiles.length > 0) {
-    return {
-      write: false,
-      reason: `${resolved.dir} 已有 .pyi(${scan.pyiFiles.join('、')}),按用户资产不覆盖`
-    };
-  }
-  return {
-    write: true,
-    reason: `${resolved.dir}(来源:${resolved.origin})无 .pyi,生成`
-  };
-}
-
 export interface StubExportDeps {
   /** 路径存在性判定(测试注入,装配层为 fs.existsSync) */
   exists: (path: string) => boolean;
-  /** 读现有内容做一致性比对;读不到(权限等)按陈旧处理触发重写 */
   readFile: (path: string) => string;
   writeFile: (path: string, content: string) => void;
   /** 建存根目录(递归) */
   mkdir: (dir: string) => void;
-  /**
-   * 列目录条目名(批142 用户目录扫描用;缺省表示本 deps 不支持扫描,
-   * 此时用户目录一律判「读不到」不盲写,默认约定目录不受影响)。
-   */
+  /** 删除单文件(迁移/重置面;缺省表示本 deps 不支持删除) */
+  deleteFile?: (path: string) => void;
+  /** 列目录条目名(模板清单收集用) */
   listDir?: (dir: string) => string[];
 }
 
-/** 装配层默认注入:真 fs;readFile 失败回落空串(→ 判陈旧重写) */
+/** 装配层默认注入:真 fs */
 export const fileSystemStubExportDeps: StubExportDeps = {
   exists: (candidate: string): boolean => fs.existsSync(candidate),
-  readFile: (path: string): string => {
-    try {
-      return fs.readFileSync(path, 'utf8');
-    } catch {
-      return '';
-    }
-  },
+  readFile: (path: string): string => fs.readFileSync(path, 'utf8'),
   writeFile: (path: string, content: string): void => {
     fs.writeFileSync(path, content, 'utf8');
   },
   mkdir: (dir: string): void => {
     fs.mkdirSync(dir, { recursive: true });
   },
+  deleteFile: (path: string): void => {
+    fs.rmSync(path, { force: true });
+  },
   listDir: (dir: string): string[] => fs.readdirSync(dir)
-};
-
-function resolveEngineTypingsRoot(
-  workspaceRoot: string,
-  options: KbeStubEngineOptions
-): string | null {
-  if (options.engineRoot === null) {
-    return null;
-  }
-  const env = options.engineRootEnv ?? process.env;
-  const candidates = [
-    options.engineRoot,
-    env.KBENGINE_ROOT,
-    path.resolve(workspaceRoot, '..', 'kbengine')
-  ];
-  for (const candidate of candidates) {
-    if (candidate && fs.existsSync(path.join(candidate, ENGINE_TYPINGS_MARKER))) {
-      return path.join(candidate, 'typings');
-    }
-  }
-  return null;
-}
-
-/**
- * cellData 桩面叠加(2026-11-10 用户报障):引擎 typings 的 Entity 类没有
- * cellData 声明——它是 baseapp 运行时逐实体安装的属性(baseapp/entity.cpp:238
- * PyObject_SetAttrString,createCellData :250 仅对 hasCell() 的实体类),静态
- * .pyi 无从得知,Pylance 因此把脚本里的 self.cellData["x"] 判成未知属性。
- * 注入声明让 Pylance 接受语法面;语义面(cellData 键须为 cell 域 def 属性、
- * __init__ 影子属性降级)由 propertyDirectionDiagnostics 分析承担。
- * 只动导出文档,引擎 typings 原文件与 kbeModuleIndex 锚点不动;找不到
- * `class Entity:` 头(引擎 typings 结构变化)时不注入,宁缺勿错。
- */
-function injectCellDataOverlay(lines: string[]): void {
-  const index = lines.findIndex(line => line === 'class Entity:');
-  if (index < 0) {
-    return;
-  }
-  lines.splice(
-    index + 1,
-    0,
-    '    # kode overlay: baseapp-side runtime attribute (baseapp/entity.cpp:238),',
-    '    # installed only on baseapp entities whose def has a cell part;',
-    '    # cellapp/client entities do NOT carry it (cell props are plain attrs there).',
-    '    cellData: Dict[str, Any]'
-  );
-}
-
-function buildEngineKbeStubContent(typingsRoot: string): string | null {
-  const modules: Array<{ name: string; lines: string[] }> = [];
-  for (const moduleName of ENGINE_TYPINGS_MODULE_ORDER) {
-    let content: string;
-    try {
-      content = fs.readFileSync(path.join(typingsRoot, `${moduleName}.pyi`), 'utf8');
-    } catch {
-      return null;
-    }
-    const rewritten = content.replace(/\r\n/g, '\n').replace(/\s+$/, '').replace(
-      /^(\s*from\s+)_KBEngine_([^.\s]+)(\s+import\s+)/gm,
-      '$1KBEngine$3'
-    );
-    modules.push({ name: moduleName, lines: rewritten.split('\n') });
-  }
-  const lines = [
-    '# KBEngine.pyi — kode generated from the local KBEngine typings checkout.',
-    '# Engine typings are concatenated so Python tools can resolve the full API;',
-    '# if no engine checkout is detected, kode falls back to its curated catalog.',
-    '# Completion/hover/navigation inside kode still use the curated catalog.'
-  ];
-  for (const module of modules) {
-    lines.push('', `# --- ${module.name}.pyi (${typingsRoot}) ---`, ...module.lines);
-  }
-  // 官方 typings 只有 Vector3Like 别名,缺 Vector2/3/4 运行时类(引擎
-  // pyscript/vector*.h 真实存在);补上 kode 手写类,否则项目脚本用
-  // `Vector2(...)`/`Vector3(...)` 会被 Pylance 判未定义。
-  lines.push('');
-  lines.push('# --- runtime vector types (not covered by engine typings) ---');
-  emitKbeVectorStubClasses(lines, {});
-  lines.push('');
-  injectCellDataOverlay(lines);
-  return lines.join('\n');
-}
-
-/**
- * Engine checkouts provide the authoritative full API; concatenate them in a
- * stable order. Workspaces without an engine retain the curated catalog.
- */
-export function buildKbeStubExportContentForWorkspace(
-  workspaceRoot: string,
-  options: KbeStubEngineOptions = {}
-): string {
-  // 引擎 typings 全量面独立开关(用户令 2026-10-21):总闸 stubExport 旧键
-  // 优先管整个导出;此键只管「本地引擎 checkout 拼全量 API」这层增强,
-  // =false 时回落 kode 自带精选目录(既有内容,不硬造)。
-  // 用户令 2026-11-09:默认档(generated)也优先走官方引擎 typings 拼接——
-  // 官方 typings import 完整、类型齐全,手写精简模板缺 Dict/Callable/Union/
-  // Entity 等导入导致「Import KBEngine could not be resolved」与「类型不全」。
-  // sourceMode=real-source 时同样启用(向后兼容),stubEngineTypings 不再被
-  // generated 档一票否决;仅在显式关闭或检测不到引擎 checkout 时回落精选目录。
-  const engineTypingsEnabled = vscode.workspace
-    .getConfiguration('kbengine')
-    .get<boolean>('python.stubEngineTypings', PYTHON_STUB_ENGINE_TYPINGS_ENABLED_DEFAULT);
-  const engineTypingsRoot = engineTypingsEnabled
-    ? resolveEngineTypingsRoot(workspaceRoot, options)
-    : null;
-  const engineContent = engineTypingsRoot ? buildEngineKbeStubContent(engineTypingsRoot) : null;
-  if (engineContent) {
-    return engineContent;
-  }
-  return buildKbeStubExportContent();
 }
 
 export interface StubExportOptions {
   /** 激活期自动导出传 true:全程零提示;命令面板手动导出保持播报 */
   silent?: boolean;
-  engineRoot?: string | null;
-  engineRootEnv?: Record<string, string | undefined>;
+  /** 内置模板根(装配层传 extensionPath/typings;缺省不复制并如实告警) */
+  templateRoot?: string;
+}
+
+interface FolderCopyOutcome {
+  folder: string;
+  copied: number;
+  /** 迁移面:移除的旧 kode 生成物(KBEngine.pyi 单文件) */
+  migrated: boolean;
+  failed: boolean;
 }
 
 /**
- * 逐工作区把符号索引导出为 .kbengine/stubs/KBEngine.pyi。设置
- * `kbengine.python.stubExport` 关闭时只说明不动手;内容一致时零写;
- * 目录不可写(只读工作区等)告警并继续其余文件夹。返回实际写入的
- * 文件夹名列表。
+ * 单工作区 copy-if-absent 复制(铁律:目标已存在零字节动;读不到/写不了
+ * 如实记账,不挡其余文件夹)。托管目录额外做旧产物迁移:带 kode 生成标记
+ * 的旧单文件 KBEngine.pyi 移除(桩包取代它);用户目录里同名文件绝不碰。
+ */
+function copyTemplateIntoFolder(
+  folderName: string,
+  folderRoot: string,
+  resolved: ResolvedStubDir,
+  templateFiles: KbengineStubTemplateFile[],
+  deps: StubExportDeps
+): FolderCopyOutcome {
+  const outcome: FolderCopyOutcome = { folder: folderName, copied: 0, migrated: false, failed: false };
+  let dirReadable = true;
+  try {
+    deps.exists(resolved.dir);
+  } catch {
+    dirReadable = false;
+  }
+  if (!dirReadable) {
+    outcome.failed = true;
+    return outcome;
+  }
+  // 迁移面(仅托管目录):旧单文件 KBEngine.pyi 带 kode 生成标记才移除;
+  // 无标记 = 用户资产,一字节不动。
+  if (!resolved.userOwned) {
+    const legacyPath = joinPath(resolved.dir, KBE_STUB_FILE_NAME);
+    try {
+      if (deps.exists(legacyPath) && deps.readFile(legacyPath).startsWith(KBE_STUB_GENERATED_MARKER)) {
+        deps.deleteFile?.(legacyPath);
+        outcome.migrated = true;
+      }
+    } catch {
+      // 读不到(权限等):不动,照旧走逐文件复制
+    }
+  }
+  for (const file of templateFiles) {
+    const target = joinPath(resolved.dir, file.relativePath);
+    try {
+      if (deps.exists(target)) {
+        continue;
+      }
+      deps.mkdir(path.dirname(target));
+      deps.writeFile(target, file.content);
+      outcome.copied += 1;
+    } catch {
+      outcome.failed = true;
+    }
+  }
+  return outcome;
+}
+
+/**
+ * 逐工作区把内置 KBEngine 桩包复制到存根目录(copy-if-absent 零覆盖)。
+ * 设置 `kbengine.python.stubExport` 关闭时只说明不动手;模板根缺失告警;
+ * 目录不可写(只读工作区等)记账并继续其余文件夹。返回实际有复制的文件夹名。
  */
 export async function exportKbeStubs(
   deps: StubExportDeps = fileSystemStubExportDeps,
-  options: StubExportOptions & KbeStubEngineOptions = {}
+  options: StubExportOptions = {}
 ): Promise<string[]> {
   const enabled = vscode.workspace
     .getConfiguration('kbengine')
-    .get<boolean>('python.stubExport', PYTHON_STUB_EXPORT_ENABLED_DEFAULT);
+    .get<boolean>(PYTHON_STUB_EXPORT_SETTING, PYTHON_STUB_EXPORT_ENABLED_DEFAULT);
   if (!enabled) {
     if (!options.silent) {
       await vscode.window.showInformationMessage(
-        'KBEngine 存根导出已关闭(kbengine.python.stubExport)'
+        'KBEngine 桩包复制已关闭(kbengine.python.stubExport)'
       );
     }
     return [];
@@ -475,15 +357,33 @@ export async function exportKbeStubs(
   const folders = vscode.workspace.workspaceFolders ?? [];
   if (folders.length === 0) {
     if (!options.silent) {
-      await vscode.window.showInformationMessage('未打开工作区,跳过 KBEngine 存根导出');
+      await vscode.window.showInformationMessage('未打开工作区,跳过 KBEngine 桩包复制');
     }
     return [];
   }
-  const written: string[] = [];
-  const failed: string[] = [];
-  const skipped: string[] = [];
+  const templateRoot = options.templateRoot;
+  const templateFiles = templateRoot
+    ? collectKbengineStubTemplateFiles(templateRoot, {
+      exists: deps.exists,
+      listDir: dir => {
+        if (!deps.listDir) {
+          throw new Error('未注入目录枚举能力');
+        }
+        return deps.listDir(dir);
+      },
+      readFile: deps.readFile
+    })
+    : null;
+  if (!templateFiles) {
+    if (!options.silent) {
+      await vscode.window.showWarningMessage(
+        `KBEngine 桩包内置模板读不到(${templateRoot ?? '未提供 templateRoot'}),跳过复制`
+      );
+    }
+    return [];
+  }
+  const outcomes: FolderCopyOutcome[] = [];
   for (const folder of folders) {
-    const desired = buildKbeStubExportContentForWorkspace(folder.uri.fsPath, options);
     // 批142 用户令:目录以配置为准(设置 > 环境变量 > 默认约定),来源随值
     // 一起带出,供播报与「配置来源」视图说明当前生效值来自哪里
     const resolved = resolveStubDir(folder.uri.fsPath, {
@@ -492,58 +392,114 @@ export async function exportKbeStubs(
       folders: [{ fsPath: folder.uri.fsPath, name: folder.name }],
       filePath: vscode.window.activeTextEditor?.document.fileName
     });
-    const target = joinPath(resolved.dir, KBE_STUB_FILE_NAME);
-    // 用户指定目录先扫一遍:已有 .pyi 就当用户资产,不生成不覆盖;目录读不到
-    // 也不盲写(看不见的目录不该被写)。默认约定目录归 kode 自管,跳过扫描,
-    // 直接走下面的内容比对刷新(保住 G2 的陈旧重写语义)。
-    if (resolved.userOwned) {
-      const scan = scanStubDir(resolved.dir, {
-        listDir: dir => {
-          if (!deps.listDir) {
-            throw new Error('未注入目录扫描能力');
-          }
-          return deps.listDir(dir);
+    outcomes.push(
+      copyTemplateIntoFolder(folder.name, folder.uri.fsPath, resolved, templateFiles, deps)
+    );
+  }
+  const copiedFolders = outcomes.filter(outcome => outcome.copied > 0).map(outcome => outcome.folder);
+  const failedFolders = outcomes.filter(outcome => outcome.failed).map(outcome => outcome.folder);
+  const migratedFolders = outcomes.filter(outcome => outcome.migrated).map(outcome => outcome.folder);
+  if (!options.silent) {
+    if (copiedFolders.length > 0) {
+      await vscode.window.showInformationMessage(
+        `已为 ${copiedFolders.join('、')} 复制 KBEngine 桩包(copy-if-absent,已有文件不动;配合 stubPath/extraPaths 供 Python 扩展解析)`
+      );
+    }
+    if (migratedFolders.length > 0) {
+      await vscode.window.showInformationMessage(
+        `已移除 kode 旧生成物 KBEngine.pyi:${migratedFolders.join('、')}(KBEngine/ 桩包取代;用户目录不受影响)`
+      );
+    }
+    if (failedFolders.length > 0) {
+      await vscode.window.showWarningMessage(
+        `KBEngine 桩包复制失败(目录不可写?): ${failedFolders.join('、')}`
+      );
+    }
+  }
+  return copiedFolders;
+}
+
+/**
+ * 显式重置(覆盖只走此命令且要用户确认,用户令 2026-11-11):删掉模板集
+ * 同名文件后按模板重复制。托管目录额外回收旧 kode 生成物;模板集之外的
+ * 未知文件一律不碰。确认弹窗取消=零动作。
+ */
+export async function resetKbeStubs(
+  deps: StubExportDeps = fileSystemStubExportDeps,
+  options: StubExportOptions = {}
+): Promise<string[]> {
+  if (!options.silent) {
+    const choice = await vscode.window.showWarningMessage(
+      '重置 KBEngine 桩包?将删除存根目录里模板集同名文件(含你的修改)后重新复制,模板集之外的文件不动。',
+      { modal: true },
+      '重置'
+    );
+    if (choice !== '重置') {
+      return [];
+    }
+  }
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  const templateRoot = options.templateRoot;
+  const templateFiles = templateRoot
+    ? collectKbengineStubTemplateFiles(templateRoot, {
+      exists: deps.exists,
+      listDir: dir => {
+        if (!deps.listDir) {
+          throw new Error('未注入目录枚举能力');
         }
-      });
-      const decision = decideStubWrite(resolved, scan);
-      if (decision.write !== true) {
-        skipped.push(`${folder.name}(${decision.reason})`);
-        continue;
+        return deps.listDir(dir);
+      },
+      readFile: deps.readFile
+    })
+    : null;
+  if (!templateFiles) {
+    if (!options.silent) {
+      await vscode.window.showWarningMessage(
+        `KBEngine 桩包内置模板读不到(${templateRoot ?? '未提供 templateRoot'}),跳过重置`
+      );
+    }
+    return [];
+  }
+  const reset: string[] = [];
+  for (const folder of folders) {
+    const resolved = resolveStubDir(folder.uri.fsPath, {
+      setting: readStubDirSetting(),
+      managedDir: resolveManagedDirName(readManagedDirSetting()).name,
+      folders: [{ fsPath: folder.uri.fsPath, name: folder.name }],
+      filePath: vscode.window.activeTextEditor?.document.fileName
+    });
+    let touched = false;
+    for (const file of templateFiles) {
+      const target = joinPath(resolved.dir, file.relativePath);
+      try {
+        if (deps.exists(target)) {
+          deps.deleteFile?.(target);
+          touched = true;
+        }
+      } catch {
+        // 删不掉(权限等):照旧尝试覆盖写
       }
     }
-    // 一致性比对段防御:存在性判定/读取抛错(权限等)按陈旧处理触发重写
-    let unchanged = false;
-    try {
-      unchanged = deps.exists(target) && deps.readFile(target) === desired;
-    } catch {
-      unchanged = false;
+    if (!resolved.userOwned) {
+      const legacyPath = joinPath(resolved.dir, KBE_STUB_FILE_NAME);
+      try {
+        if (deps.exists(legacyPath) && deps.readFile(legacyPath).startsWith(KBE_STUB_GENERATED_MARKER)) {
+          deps.deleteFile?.(legacyPath);
+          touched = true;
+        }
+      } catch {
+        // 读不到:不动
+      }
     }
-    if (unchanged) {
-      continue;
-    }
-    try {
-      deps.mkdir(resolved.dir);
-      deps.writeFile(target, desired);
-      written.push(folder.name);
-    } catch {
-      // 目录不可写(只读挂载/权限):如实告警,不挡其余文件夹
-      failed.push(folder.name);
+    const outcome = copyTemplateIntoFolder(folder.name, folder.uri.fsPath, resolved, templateFiles, deps);
+    if (touched || outcome.copied > 0) {
+      reset.push(folder.name);
     }
   }
-  if (skipped.length > 0 && !options.silent) {
+  if (!options.silent && reset.length > 0) {
     await vscode.window.showInformationMessage(
-      `KBEngine 存根导出已跳过:${skipped.join(';')}`
+      `已重置 ${reset.join('、')} 的 KBEngine 桩包(模板集同名文件按模板重建)`
     );
   }
-  if (failed.length > 0 && !options.silent) {
-    await vscode.window.showWarningMessage(
-      `KBEngine 存根导出失败(目录不可写?): ${failed.join('、')}`
-    );
-  }
-  if (written.length > 0 && !options.silent) {
-    await vscode.window.showInformationMessage(
-      `已为 ${written.join('、')} 导出 KBEngine.pyi 存根(kbengine.python.stubDir 指定目录,配合 extraPaths 接线供 Python 扩展解析)`
-    );
-  }
-  return written;
+  return reset;
 }

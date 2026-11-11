@@ -23,7 +23,8 @@ const TREE_GUARD = /describeWithEngineTree|describe\.skipIf|\bskipIf\(/;
 
 describe('集成 tag 接线', () => {
   it('集成清单非空,每个文件都存在且自带树守卫', () => {
-    expect(includedSuites.length).toBeGreaterThanOrEqual(4);
+    // 批 ③ 退役 fantasydemoRealExport(动态拼接导出链整体退役),清单 3 文件
+    expect(includedSuites.length).toBeGreaterThanOrEqual(3);
     const missing = includedSuites.filter(suite => !existsSync(join(root, suite)));
     expect(missing, `集成清单指向不存在的文件: ${missing.join(', ')}`).toEqual([]);
     const unguarded = includedSuites.filter(suite => !TREE_GUARD.test(readFileSync(join(root, suite), 'utf8')));

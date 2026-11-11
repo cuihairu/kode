@@ -165,6 +165,7 @@
     "onCommand:kbengine.hotReload.switchChannel",
     "onCommand:kbengine.hotReload.confirmDefBaseline",
     "onCommand:kbengine.python.exportStubs",
+    "onCommand:kbengine.python.resetStubs",
     "onCommand:kbengine.python.exportTypeStubs",
     "onCommand:kbengine.python.showCallChain",
     "onCommand:kbengine.python.selectInterpreter",
@@ -899,6 +900,10 @@
       {
         "command": "kbengine.python.exportStubs",
         "title": "%kbengine.command.python.exportStubs.title%"
+      },
+      {
+        "command": "kbengine.python.resetStubs",
+        "title": "%kbengine.command.python.resetStubs.title%"
       },
       {
         "command": "kbengine.python.exportTypeStubs",
@@ -1950,18 +1955,10 @@
           "default": "",
           "markdownDescription": "%kbengine.config.python.stubDir.description%"
         },
-        "kbengine.python.stubSourceMode": {
-          "type": "string",
-          "enum": [
-            "generated",
-            "real-source"
-          ],
-          "default": "generated",
-          "markdownEnumDescriptions": [
-            "%kbengine.config.python.stubSourceMode.enum.0%",
-            "%kbengine.config.python.stubSourceMode.enum.1%"
-          ],
-          "markdownDescription": "%kbengine.config.python.stubSourceMode.description%"
+        "kbengine.python.proxyInternalAttrHints": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.python.proxyInternalAttrHints.description%"
         },
         "kbengine.python.enableMroJump": {
           "type": "boolean",
@@ -2086,11 +2083,6 @@
             "%kbengine.config.entity.methodStubBody.enum.1%"
           ],
           "markdownDescription": "%kbengine.config.entity.methodStubBody.description%"
-        },
-        "kbengine.python.stubEngineTypings": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.python.stubEngineTypings.description%"
         },
         "kbengine.python.entityStubMethods": {
           "type": "boolean",

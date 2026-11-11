@@ -279,10 +279,8 @@ guiconsole 协议链（machined UDP 发现 + 直连各组件 TCP）：日志 tai
 | `kbengine.python.interpreterPath` | string | 空 | 项目 profile 连来源一并记录的 Python 解释器路径:本设置存在才采用(支持 `${workspaceFolder}`);否则工作区扫描已验证环境(`pyvenv.cfg`/`conda-meta` 证据 + 解释器二进制,深度封顶、依赖/构建目录剪枝);否则定位 PATH 里的 python3/python;都找不到时 profile 如实记缺失状态,不伪造路径 |
 | `kbengine.python.venvDirectories` | string[] | `[".venv", "venv", ".kbenv"]` | 虚拟环境目录名清单(单段目录名,不含路径分隔符):快速执行动作启用 venv 且未写 `venv.path` 时,按此清单在动作目录与配置根逐名探测(动作目录优先);解释器链在 `interpreterPath` 为空时把该清单作为工作区环境扫描的同深度优先提示。非数组或全无效回落默认 |
 | `kbengine.python.extraPathsSync` | boolean | `true` | 自动把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`(WorkspaceFolder 级)。生成的 `python.analysis.extraPaths` 条目一律写成 `${workspaceFolder}/...` 变量形态;工作区前缀可替换的存量绝对路径在下次同步时自动迁移,不可替换的绝对路径由 `kbengine.configContract.extraPathsAbsolute` 报出。只管理本扩展写入的那一段(除该工作区前缀迁移外用户手填路径原样保留;无变化不写)。关掉后 `kbengine.python.syncExtraPaths` 命令只说明不写 |
-| `kbengine.python.stubExport` | boolean | `true` | 自动把内置 KBEngine Python API 索引(与补全/悬停/跳转同源)导出为 `KBEngine.pyi` 存根,并把 types.xml 自定义类型导出为 `kbe_types.py` 类型桩(`FIXED_DICT`→`TypedDict`、别名→类型名),配合 extraPaths 接线供 Pylance 解析 `import KBEngine`/`import kbe_types`(虚拟桩文档 Python 扩展看不见)。激活期静默自动一次,`kbengine.python.exportStubs`/`kbengine.python.exportTypeStubs` 手动入口 |
+| `kbengine.python.stubExport` | boolean | `true` | 把插件内置 KBEngine 桩包(仓库顶层 `typings/` 模板,派生自 cuihairu/kbengine fork typings;copy-if-absent,项目副本永不覆盖)复制到存根目录供 Pylance 解析 `import KBEngine`,并把 types.xml 自定义类型导出为 `kbe_types.py` 类型桩(`FIXED_DICT`→`TypedDict`、别名→类型名)。激活期静默自动一次,`kbengine.python.exportStubs`/`kbengine.python.exportTypeStubs` 手动入口,`kbengine.python.resetStubs` 是唯一覆盖通道 |
 | `kbengine.python.stubDir` | string | 空 | `.pyi` 存根目录,三级解析:设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `.kbengine/stubs`。支持 `${workspaceFolder}`/`${env:NAME}` 等 VS Code 变量;相对路径按工作区根拼接,绝对路径原样使用 |
-| `kbengine.python.stubSourceMode` | string | `generated` | 存根来源档位。`generated`(默认):存根由内置生成链产出(`entity_types.pyi` 来自 `*.def` + types.xml;`KBEngine.pyi` / `kbe_types.pyi` 来自内置 API 符号索引与 types.xml 解析链),不复制真实引擎代码——默认 fresh workspace 不触发复制代码行为。`real-source`:既有「复制真实代码导出」路径(本地引擎 typings checkout 拼接全量 API 进 `KBEngine.pyi`)仅在此档执行,档内 `kbengine.python.stubEngineTypings` 子开关照常生效。切档即时重导(内容比对刷新,切回 `generated` 即收回已拼接的引擎代码) |
-| `kbengine.python.stubEngineTypings` | boolean | `true` | `KBEngine.pyi` 导出优先拼接本地引擎 checkout 的 typings 全量 API(默认开);关掉回落 kode 自带精选目录。总闸仍是 `kbengine.python.stubExport` |
 | `kbengine.python.entityStubMethods` | boolean | `true` | `entity_types.pyi` 实体存根包含 def 方法面(Base/Cell/ClientMethods,默认开);关掉回落只含属性面 |
 
 ### 无标注函数 stub 推断(2026-11-03,pyrefly)
@@ -303,6 +301,7 @@ guiconsole 协议链（machined UDP 发现 + 直连各组件 TCP）：日志 tai
 | `kbengine.entity.receiverSections` | boolean | `true` | `self.cell.`/`self.base.`/`self.client.` 调用按接收者段过滤 def 候选(悬停/F12/RPC 镜链,默认开);关掉回归不感知段的旧解析,def 形参/类型闸门不受影响 |
 | `kbengine.entity.methodStubBody` | string | `pass` | def 侧一键生成实现骨架的体:`pass`(空体)或 `raise`(`raise NotImplementedError`);形参自 def `<Arg>` 类型映射——内建发注解(`int`/`float`/`str`/`bool`/`bytes`),其余裸形参名 |
 | `kbengine.python.builtinTypeInlayHints` | boolean | `true` | 实体脚本 `self.<内建属性>` 访问处行内 `: <类型>` 提示(与悬停同一命中底座,默认开);受总闸 `kbengine.entity.builtinProperties` 与本键双控,任一关闭都不渲染内建属性 inlay |
+| `kbengine.python.proxyInternalAttrHints` | boolean | `true` | 实体脚本 `self.__ACCOUNT_NAME__` / `self.__ACCOUNT_PASSWORD__` 访问处渲染「内部属性 · Proxy」淡色小字(名字表 entitydef/common.h:142-143,baseapp 在 baseapp.cpp:4241-4246 注入);项目桩副本 `KBEngine/Proxy.pyi` 在盘时提示带导航(Ctrl+点击直达声明行);声明行现场扫描项目副本(副本可魔改,钉死行号必漂) |
 | `kbengine.types.aliasDiscovery` | boolean | `true` | 从 `scripts/entity_defs/alias.xml` 发现自定义类型并入类型表(默认开);关掉回落只认 `types.xml` |
 
 `kbengine.python.stubDir` 留空(默认)时目录是 kode 自管的 `.kbengine/stubs`:内容一致零写、陈旧(索引更新后)自动重写、手改不保留,建议在 `.gitignore` 里忽略。**配了目录则目录归用户所有**:kode 只扫描不覆盖——目录里已有任何 `.pyi` 一律当用户资产不碰,没有 `.pyi` 才生成一份;目录读不到(不存在/无权限)如实提示,不盲写。
@@ -690,7 +689,7 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 | `kbengine.telnet.probeIntervalSeconds` | 数值 5 | 否 | **保留**(频率偏好) |
 | `kbengine.httpRequests` | 默认一条停用示例(`enabled: false`) | 否(用户业务接口) | **保留**,示例默认停用不产生副作用 |
 
-计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126 起在此表之外新增 12 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`/`stubSourceMode`、`kbengine.python.enableMroJump`、`kbengine.engineVersion`),均已在总览分区表登记。
+计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126 起在此表之外新增 12 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`/`stubSourceMode`、`kbengine.python.enableMroJump`、`kbengine.engineVersion`),均已在总览分区表登记。2026-11-11 静态模板桩车道起,`kbengine.python.stubSourceMode` 与 `kbengine.python.stubEngineTypings` 退役,新增 `kbengine.python.proxyInternalAttrHints`(三项均已在总览分区表对账)。
 
 ## 常见问题
 

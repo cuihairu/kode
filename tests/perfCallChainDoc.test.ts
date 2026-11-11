@@ -243,11 +243,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // 出处随 baseline 锁步。
   // 2026-11-11(PD-R1):inlay.ts propertyDirection 臂 Rust-first 接线顶部
   // import +1 行(49→50,真位重探)。
-  ['src/activate/languageServices.ts', 195, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 246, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 309, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 119, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 674, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 199, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 250, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 313, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 123, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 700, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
@@ -311,7 +311,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // 再 +12(1852/1911/1935/2063/4812/5220/5326/7170),baseline 同步。
   // 2026-11-09:139f7035 新增 InferredMirrorTypeInlayHintsProvider 顶置两行,
   // getDocumentLines 行 42→44,真位重探,出处随 baseline 锁步。
-  ['src/languageProviders/inlay.ts', 50, 'getDocumentLines(document)'],
+  ['src/languageProviders/inlay.ts', 52, 'getDocumentLines(document)'],
   // 2026-11-08:「直接切」批次位移——navigation.ts Rust-first 派发块
   // (serveDefinitionFromRust await + 语料镜像前置,24→47)、completion.ts
   // Rust-first 包装层(provideCompletionRustFirst + lspCompletionToVscode,

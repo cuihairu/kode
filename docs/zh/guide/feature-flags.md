@@ -135,6 +135,5 @@ python3 scripts/config-switch-gifs/generate.py --switch inlay-type-data
 | `kbengine.hotReload.tempEdit.enabled` | 热更临时编辑 | `false` → `true` | 开启后一键热更流程会走「临时修改→reloadScript→自动还原」路径（默认关，防误触） |
 | `kbengine.debug.debugpyInject` | debugpy 注入 | `false` → `true` | 开启时启动调试会话会把 debugpy 注入目标进程并上调试状态板；关闭则不注入 |
 | `kbengine.debug.autoDebugpy` | 自动 debugpy | `false` → `true` | 开启后调试启动自动寻找/拉起 debugpy 监听并等待接入（默认关） |
-| `kbengine.python.stubSourceMode` | 存根源模式 | `generated` → `real-source` | 导出的 `.pyi` 存根由生成器产出（generated）或直接引用真实源码（real-source），差异在存根文件内容 |
 | `kbengine.runtimeQuery.enabled` | Runtime Queries 面板 | `false` → `true` | 面板本身始终可打开；关闭时面板内查询/结果流报「请启用 kbengine.runtimeQuery.enabled」，开启后查询可用 |
 | `kbengine.showFinalConfigOnOpen` | 自动打开最终配置视图 | `false` → `true` | 开启后打开引擎默认配置文件会尝试自动并排打开最终配置视图（需可运行的引擎 bin 完成最终配置计算；纯工作区无引擎时自动打开不触发） |

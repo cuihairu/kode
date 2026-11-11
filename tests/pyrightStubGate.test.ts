@@ -188,7 +188,9 @@ describe('exportEntityTypeStubs × pyright 接线(generated 档)', () => {
     expect(lines).toMatch(/降级|不可用/);
   });
 
-  it('real-source 档:不接 pyright(档位闸只认 generated)', async () => {
+  it('退役键不复活闸:stubSourceMode 已随动态生成链退役,pyright 校验恒开', async () => {
+    // 批 ③ 起桩面全部来自内置静态模板,real-source 档退役;该旧键即使被
+    // 残留配置碰到也只是一个无效键,校验闸不再认它
     configurationOverrides.set('kbengine', { 'python.stubSourceMode': 'real-source' });
     const runner = scriptedRunner(() => ok('1.1.500'));
     const written = await exportEntityTypeStubs(new EntityMappingManager({ subscriptions: [] } as vscode.ExtensionContext), realDeps, {
@@ -198,7 +200,7 @@ describe('exportEntityTypeStubs × pyright 接线(generated 档)', () => {
       ...pyrightOption(runner)
     });
     expect(written).toEqual(['ws']);
-    expect(runner.calls.length).toBe(0);
+    expect(runner.calls.length).toBeGreaterThan(0);
   });
 
   it('空工作区(无任何落盘 stub)不触发 pyright', async () => {

@@ -643,5 +643,6 @@
   "kode-mcp binary present; the extension does not host it, register this path in an external MCP client (not integrated)": "kode-mcp 二进制在位;扩展不托管,在外部 MCP 客户端注册该路径使用(未集成)",
   "kode-mcp not built (source in crates/kode-mcp); the extension does not host it, register it in an external MCP client": "kode-mcp 未构建(源码在 crates/kode-mcp);扩展不托管,需在外部 MCP 客户端注册",
   "Source connection test failed: {reason}": "源连接测试失败：{reason}",
-  "Retry connection test": "重试连接测试"
+  "Retry connection test": "重试连接测试",
+  "internal attribute": "内部属性"
 }

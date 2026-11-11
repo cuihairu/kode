@@ -29,6 +29,7 @@ import {
   PYTHON_STUB_EXPORT_ENABLED_DEFAULT,
   kbeStubDir,
   kbeStubFilePath,
+  kbeStubPackageInitPath,
   readManagedDirSetting,
   resolveManagedDirName
 } from './pythonStubExport';
@@ -283,9 +284,13 @@ export async function syncPythonExtraPaths(
     // 配置值形态不由本扩展控制:不是数组按没有现值处理,不炸
     const raw = scoped.get<unknown>('analysis.extraPaths', []);
     const currentPaths = Array.isArray(raw) ? raw : [];
+    // 存根在盘判定:批 ③ 起桩面是 KBEngine/ 桩包(copy-if-absent 复制),
+    // 旧单文件 KBEngine.pyi 是迁移期残留,两者任一在盘即接线(旧判定只认
+    // 单文件,桩包-only 的工作区会被漏接)
     const extraManaged =
       stubExportEnabled &&
       (deps.exists(kbeStubFilePath(workspaceRoot)) ||
+        deps.exists(kbeStubPackageInitPath(workspaceRoot, managedDirName)) ||
         typeStubArtifactExists(deps, workspaceRoot, managedDirName))
         ? [kbeStubDir(workspaceRoot, managedDirName)]
         : [];

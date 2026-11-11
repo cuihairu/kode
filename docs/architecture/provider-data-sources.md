@@ -38,15 +38,16 @@ Registration sites are extension.ts line numbers (2026-11-07 真位复核:KODE-A
 | CallChainController | defCallChainProvider.ts:49 | :1096 | EntityMappingManager | webview panel creation/update (UI side effect) |
 | PropertyCodeLensProvider | languageProviders/codeLens.ts:182 | :1304 | EntityMappingManager (types.xml property back-references) | fireConfigurationChanged event |
 | EventCodeLensProvider | eventApi.ts:95 | :1128 | EventCallIndex small interface (`allEventCalls`, ARC-002; injected sharedWorkspaceIndex) | After the 8s pre-start delay, enqueues the shared index's repo-wide py scan (the only scan entry) |
-| TypesXmlCodeLensProvider | languageProviders/codeLens.ts:360 | activate/languageServices.ts:508 (SRC-001 L2) | databaseSchema type-storage usage index (`onTypeStorageUsageIndexPublished` subscription; zero construction deps) | fireConfigurationChanged event; watcher belongs to the assembly line (ARC-005) |
-| GeneratedSourceCodeLensProvider (python stubs) | generatedSourceLenses.ts:11 | activate/languageServices.ts:519 (SRC-001 L2) | Construction-time snapshot buildPythonTypeStubPlan(getCustomTypeInfos) | Pure read |
+| TypesXmlCodeLensProvider | languageProviders/codeLens.ts:360 | activate/languageServices.ts:514 (SRC-001 L2) | databaseSchema type-storage usage index (`onTypeStorageUsageIndexPublished` subscription; zero construction deps) | fireConfigurationChanged event; watcher belongs to the assembly line (ARC-005) |
+| GeneratedSourceCodeLensProvider (python stubs) | generatedSourceLenses.ts:11 | activate/languageServices.ts:538 (SRC-001 L2) | Construction-time snapshot buildPythonTypeStubPlan(getCustomTypeInfos) | Pure read |
 | GeneratedSourceCodeLensProvider (entity stubs) | generatedSourceLenses.ts:11 | activate/generators.ts:90 (SRC-001 L7) | Construction-time snapshot buildEntityTypeStubPlan(getAllMappings + getCustomTypeInfos) | Pure read |
 | PythonTypeInlayHintsProvider | typeInlayHints.ts:33 | :1197 | EntityMappingManager | Pure read |
 | KBEngineBuiltinTypeInlayHintsProvider | languageProviders/inlay.ts:16 | :1406 | EntityMappingManager | Pure read |
 | InferredMirrorTypeInlayHintsProvider | languageProviders/inlay.ts:68 | :584 | Inferred mirror annotation files under managed dir (kbengine.infer.enabled gate; definition-point line diff) | Pure read |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | Pure read |
 | DefPropsInlayHintsProvider | defPropsInlayHints.ts:126 | :1432 | EntityMappingManager (`listPropertyDefinitionsForFile` root-level properties for the anchor's entity) | Pure read |
-| KBEnginePropertyShadowInlayHintsProvider | languageProviders/inlay.ts:116 | :596 | EntityMappingManager (`resolvePropertyDefinitionInfo` domain/type faces for copy-property and cellData-key hints; `kbengine.inlayHints.propertyShadow` × `kbengine.propertyDirectionDiagnostics` dual gate) | Pure read |
+| KBEnginePropertyShadowInlayHintsProvider | languageProviders/inlay.ts:122 | :600 | EntityMappingManager (`resolvePropertyDefinitionInfo` domain/type faces for copy-property and cellData-key hints; `kbengine.inlayHints.propertyShadow` × `kbengine.propertyDirectionDiagnostics` dual gate) | Pure read |
+| KBEngineProxyInternalAttrHintsProvider | languageProviders/inlay.ts:225 | :609 | Project stub-copy Proxy.pyi (line-scanned declaration rows; `kbengine.python.proxyInternalAttrHints` gate; demo asset script domains only) | Pure read |
 | KBEngineCallHierarchyProvider | languageProviders/callHierarchy.ts:9 | :1425 | EntityMappingManager (def/python dual-selection call hierarchy) | Pure read |
 | KBEngineReferencesProvider | languageProviders/references.ts:22 | :1431 | EntityMappingManager + defReferenceGraph reference graph | Pure read |
 | KBEngineDocumentSymbolProvider | languageProviders/references.ts:267 | :1455 | Current document def structure (zero construction deps) | Pure read |

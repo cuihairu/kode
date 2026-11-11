@@ -193,8 +193,10 @@ describe('extension activate 装配', () => {
     // C-22 def 属性只读视图 inlay(注释锚形态)再一份独立注册;
     // KODE-CFG-017-R(139f7035)推断镜像类型 inlay 再一份独立注册
     // (定义点行差分,kbengine.infer.enabled 镜像总闸);2026-11-10 cellData
-    // 复制属性提示再一份(淡色小字,永不下划线,propertyShadow 开关)
-    expect(languagesRegistry.inlayHintsRegistrations).toHaveLength(6);
+    // 复制属性提示再一份(淡色小字,永不下划线,propertyShadow 开关);
+    // 批 ③ Proxy 内部属性提示(内部属性 · Proxy + 项目副本 Proxy.pyi 导航)
+    // 再一份独立注册(proxyInternalAttrHints 开关)
+    expect(languagesRegistry.inlayHintsRegistrations).toHaveLength(7);
     // 批91 起:def 分析命令的独立诊断集合与语言侧诊断并存;
     // 书 §19 HR-PR-02:临时编辑热更新问题通道诊断集并存一份;
     // C-19 起 def↔Python 方法一致性独立诊断集再一份(不并 kbengine 主集);
@@ -481,7 +483,7 @@ describe('extension activate 装配', () => {
 
     // 盘点 G2 KBEngine 存根导出:无工作区时如实说明并跳过(不写任何文件)
     await commands.executeCommand('kbengine.python.exportStubs');
-    expect(messages.info.some(message => message.includes('跳过 KBEngine 存根导出'))).toBe(true);
+    expect(messages.info.some(message => message.includes('跳过 KBEngine 桩包复制'))).toBe(true);
 
     // def-pyi-stubs §6 类型桩导出:无工作区时同样如实说明并跳过
     await commands.executeCommand('kbengine.python.exportTypeStubs');

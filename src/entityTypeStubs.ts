@@ -23,10 +23,6 @@ import {
 } from './pythonTypeStubs';
 import { PYTHON_FAMILY_BASE, inferPythonLiteralAnnotation } from './backend/pythonLiteralTypes';
 import {
-  readStubSourceMode,
-  STUB_SOURCE_MODE_GENERATED
-} from './pythonStubExport';
-import {
   childProcessPyrightRunner,
   detectPyrightCommand,
   runPyrightDiagnostics,
@@ -149,10 +145,11 @@ export async function exportEntityTypeStubs(
     .getConfiguration('kbengine')
     .get<boolean>('python.entityStubMethods', ENTITY_STUB_METHODS_ENABLED_DEFAULT);
   const written: string[] = [];
-  // IDE-STUB-002:pyright 校验(默认装配即触发;generated 档收据循环后统一
-  // 收集落盘 stub——不依赖本次是否发生写入:实体桩内容一致零写、或只有
-  // KBEngine.pyi/kbe_types 分件在盘时同样校验;real-source 档不校验)
-  const pyrightGateActive = readStubSourceMode() === STUB_SOURCE_MODE_GENERATED;
+  // IDE-STUB-002:pyright 校验(默认装配即触发;收据循环后统一收集落盘
+  // stub——不依赖本次是否发生写入:实体桩内容一致零写、或只有桩包分件/
+  // kbe_types 分件在盘时同样校验。批 ③ 起桩面全部来自内置静态模板,不再有
+  // real-source 档(复制真实代码车道退役),校验闸恒开)
+  const pyrightGateActive = true;
   for (const folder of folders) {
     const plan = buildEntityTypeStubPlan(
       listMappings(folder.uri.fsPath),

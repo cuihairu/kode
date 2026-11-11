@@ -1,19 +1,22 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'fs';
 import * as os from 'os';
 import { join } from 'path';
-import { writeFileSync } from 'fs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import {
+  KBENGINE_STUB_TEMPLATE_RELATIVE_ROOT,
   KBE_STUB_FILE_NAME,
+  KBE_STUB_GENERATED_MARKER,
   PYTHON_STUB_EXPORT_ENABLED_DEFAULT,
-  buildKbeStubExportContent,
-  buildKbeStubExportContentForWorkspace,
+  collectKbengineStubTemplateFiles,
   exportKbeStubs,
   kbeStubDir,
-  kbeStubFilePath
+  kbeStubFilePath,
+  kbeStubPackageInitPath,
+  resetKbeStubs,
+  resolveKbengineStubTemplateRoot,
+  type StubExportDeps
 } from '../src/pythonStubExport';
-import { KBE_SYMBOLS, buildKbeStubDocument } from '../src/kbeModuleIndex';
 import {
   configurationOverrides,
   messages,
@@ -23,397 +26,340 @@ import {
   workspaceState
 } from './helpers/vscodeStub';
 
-// 功能差距盘点 G2(docs/reference-feature-gap.md):kbeModuleIndex 符号索引
-// 只服务 kode 自己的补全/悬停/跳转,Pylance 看不见——把同一份索引导出成
-// `.kbengine/stubs/KBEngine.pyi` 真文件,配合 G1 的 extraPaths 接线才能解析
-// `import KBEngine`。纯内容段断言同源性;导出段注入 deps 不碰真 fs。
+// 批 ③(用户令 2026-11-11 静态模板定案):插件内置模板(顶层 typings/,
+// 派生自 fork typings)copy-if-absent 复制到存根目录。铁律=零覆盖:目标
+// 已存在一个字节不动,覆盖只走显式 reset 且要用户确认。模板侧用真 tmpdir
+// (collect 走真 fs 判目录),项目侧全内存注入,不碰真盘。
 
-interface DepsScript {
-  existing?: string[];
-  initial?: Record<string, string>;
-  readFails?: boolean;
-  writeFails?: boolean;
-}
+// ── 模板夹具(真 tmpdir;形状对齐内置 typings/ 的最小子集)──────────
+const makeTemplateRoot = (): string => {
+  const root = mkdtempSync(join(os.tmpdir(), 'kode-stub-template-'));
+  mkdirSync(join(root, 'KBEngine'), { recursive: true });
+  writeFileSync(join(root, 'KBEngine', '__init__.pyi'), '# init\nfrom .Entity import Entity\n');
+  writeFileSync(join(root, 'KBEngine', 'Entity.pyi'), '# entity template\nclass Entity:\n    id: int\n');
+  writeFileSync(join(root, 'KBEngine', 'Proxy.pyi'), '# proxy template\nclass Proxy(Entity):\n    __ACCOUNT_NAME__: str\n');
+  writeFileSync(join(root, 'README.md'), '# author metadata, never copied\n');
+  return root;
+};
 
-const makeDeps = (script: DepsScript = {}): {
-  deps: import('../src/pythonStubExport').StubExportDeps;
-  writes: Array<{ path: string; content: string }>;
-  mkdirs: string[];
-} => {
-  const writes: Array<{ path: string; content: string }> = [];
-  const mkdirs: string[] = [];
-  return {
-    writes,
-    mkdirs,
-    deps: {
-      exists: (candidate: string): boolean => (script.existing ?? []).includes(candidate),
-      readFile: (path: string): string => {
-        if (script.readFails) {
-          throw new Error('EACCES');
-        }
-        return script.initial?.[path] ?? '';
-      },
-      writeFile: (path: string, content: string): void => {
-        if (script.writeFails) {
-          throw new Error('EROFS');
-        }
-        writes.push({ path, content });
-      },
-      mkdir: (dir: string): void => {
-        if (script.writeFails) {
-          throw new Error('EROFS');
-        }
-        mkdirs.push(dir);
-      }
+const templateRealDeps = (templateRoot: string): Pick<StubExportDeps, 'exists' | 'readFile' | 'listDir'> => ({
+  exists: (candidate: string): boolean => candidate.startsWith(templateRoot) || memory.has(candidate),
+  readFile: (candidate: string): string => {
+    if (candidate.startsWith(templateRoot)) {
+      return readFileSync(candidate, 'utf8');
     }
+    const content = memory.get(candidate);
+    if (content === undefined) {
+      throw new Error(`ENOENT: ${candidate}`);
+    }
+    return content;
+  },
+  listDir: (dir: string): string[] => readdirSync(dir)
+});
+
+// ── 项目侧内存 fs ────────────────────────────────────────────────
+const memory = new Map<string, string>();
+let writes: Array<{ path: string; content: string }> = [];
+let mkdirs: string[] = [];
+let deleted: string[] = [];
+let writeFailFor = new Set<string>();
+let readFailFor = new Set<string>();
+
+const makeDeps = (templateRoot?: string): StubExportDeps => {
+  const real = templateRoot ? templateRealDeps(templateRoot) : undefined;
+  return {
+    exists: (candidate: string): boolean => real?.exists(candidate) ?? memory.has(candidate),
+    readFile: (candidate: string): string => {
+      if (readFailFor.has(candidate)) {
+        throw new Error('EACCES');
+      }
+      if (real && candidate.startsWith(templateRoot!)) {
+        return real.readFile(candidate);
+      }
+      const content = memory.get(candidate);
+      if (content === undefined) {
+        throw new Error(`ENOENT: ${candidate}`);
+      }
+      return content;
+    },
+    writeFile: (candidate: string, content: string): void => {
+      if (writeFailFor.has(candidate)) {
+        throw new Error('EROFS');
+      }
+      writes.push({ path: candidate, content });
+      memory.set(candidate, content);
+    },
+    mkdir: (dir: string): void => {
+      mkdirs.push(dir);
+    },
+    deleteFile: (candidate: string): void => {
+      deleted.push(candidate);
+      memory.delete(candidate);
+    },
+    listDir: (dir: string): string[] => real ? real.listDir(dir) : readdirSync(dir)
   };
 };
 
 const folder = (fsPath: string): vscode.WorkspaceFolder =>
   ({ uri: Uri.file(fsPath), name: fsPath.split('/').pop() ?? fsPath, index: 0 }) as vscode.WorkspaceFolder;
 
-describe('存根文件路径(kbeStubDir/kbeStubFilePath)', () => {
-  it('落在 .kbengine/stubs 约定目录,文件名 KBEngine.pyi', () => {
+beforeEach(() => {
+  memory.clear();
+  writes = [];
+  mkdirs = [];
+  deleted = [];
+  writeFailFor = new Set();
+  readFailFor = new Set();
+  messages.info.length = 0;
+  messages.warning.length = 0;
+  messages.error.length = 0;
+  windowState.reset();
+  workspaceState.reset();
+  configurationOverrides.clear();
+  stubWorkspace.workspaceFolders = [];
+});
+
+describe('存根路径面(kbeStubDir/kbeStubFilePath/kbeStubPackageInitPath)', () => {
+  it('落在托管目录 stubs 约定下,桩包入口 KBEngine/__init__.pyi', () => {
     expect(kbeStubDir('/ws')).toBe('/ws/.kbengine/stubs');
     expect(kbeStubFilePath('/ws')).toBe('/ws/.kbengine/stubs/KBEngine.pyi');
+    expect(kbeStubPackageInitPath('/ws')).toBe('/ws/.kbengine/stubs/KBEngine/__init__.pyi');
+    expect(kbeStubPackageInitPath('/ws', 'mykb')).toBe('/ws/mykb/stubs/KBEngine/__init__.pyi');
+  });
+
+  it('迁移判定标记与模板相对根常量', () => {
     expect(KBE_STUB_FILE_NAME).toBe('KBEngine.pyi');
+    expect(KBE_STUB_GENERATED_MARKER).toBe('# KBEngine.pyi — kode generated');
+    expect(KBENGINE_STUB_TEMPLATE_RELATIVE_ROOT).toBe('typings');
+    expect(resolveKbengineStubTemplateRoot('/ext')).toBe('/ext/typings');
   });
 });
 
-describe('buildKbeStubExportContent(与符号索引同源)', () => {
-  const content = buildKbeStubExportContent();
-
-  it('头部明示 kode 自动生成、重导出覆盖', () => {
-    expect(content).toContain('kode 自动生成');
-    expect(content).toContain('Regeneration overwrites edits');
-    expect(content).toContain('not a complete engine API catalog');
-  });
-
-  it('不带虚拟桩文档措辞(导出的是真文件,不是只读桩)', () => {
-    expect(content).not.toContain('只读');
-    expect(content).not.toContain('跳转目标为本桩文档');
-  });
-
-  it('索引每条符号都出现在导出内容里,签名与桩文档同形', () => {
-    const stub = buildKbeStubDocument();
-    for (const entry of KBE_SYMBOLS) {
-      expect(content).toContain(`${entry.signature}:`);
-      expect(stub.content).toContain(`${entry.signature}:`);
-    }
-  });
-});
-
-describe('buildKbeStubExportContentForWorkspace(engine detection)', () => {
-  it('falls back to the curated catalog when engine detection is disabled', () => {
-    const previous = process.env.KBENGINE_ROOT;
-    process.env.KBENGINE_ROOT = '/definitely/missing';
+describe('collectKbengineStubTemplateFiles(内置模板清单)', () => {
+  it('递归收集 .pyi,相对路径正斜杠排序,README.md 不进项目', () => {
+    const root = makeTemplateRoot();
     try {
-      expect(buildKbeStubExportContentForWorkspace('/ws', { engineRoot: null }))
-        .toBe(buildKbeStubExportContent());
+      const files = collectKbengineStubTemplateFiles(root, templateRealDeps(root) as StubExportDeps);
+      expect(files).not.toBeNull();
+      expect(files!.map(file => file.relativePath)).toEqual([
+        'KBEngine/Entity.pyi',
+        'KBEngine/Proxy.pyi',
+        'KBEngine/__init__.pyi'
+      ]);
+      expect(files!.find(file => file.relativePath === 'KBEngine/Entity.pyi')?.content).toContain('# entity template');
     } finally {
-      if (previous === undefined) {
-        delete process.env.KBENGINE_ROOT;
-      } else {
-        process.env.KBENGINE_ROOT = previous;
-      }
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it('默认档(generated)也拼接引擎 checkout,不再回落手写模板', () => {
-    // 用户令 2026-11-09:官方 typings import 完整、类型齐全;手写精选目录缺
-    // Dict/Callable/Union/Entity 等导入 → Pylance 报「Import KBEngine could
-    // not be resolved」且类型不全。默认档必须优先用官方 typings。
-    configurationOverrides.delete('kbengine');
-    const engineRoot = mkdtempSync(join(os.tmpdir(), 'kode-engine-default-'));
+  it('模板根缺失或无 .pyi 时返回 null(调用方如实告警)', () => {
+    expect(collectKbengineStubTemplateFiles('/definitely/missing', templateRealDeps('/definitely/missing') as StubExportDeps)).toBeNull();
+    const root = makeTemplateRoot();
     try {
-      mkdirSync(join(engineRoot, 'typings'), { recursive: true });
-      writeFileSync(
-        join(engineRoot, 'typings', '_KBEngine_common.pyi'),
-        'from typing import Dict, Union\nfrom collections.abc import Callable\n\n'
-          + 'class Entity:\n    id: int\n\n'
-          + 'Vector3Like = Union[tuple[float, float, float], list[float]]\n'
-          + 'def getWatcher(path: str) -> Dict[str, str]: ...\n'
-      );
-      for (const moduleName of [
-        '_KBEngine_baseapp', '_KBEngine_bots', '_KBEngine_cellapp', '_KBEngine_dbmgr',
-        '_KBEngine_hooks', '_KBEngine_interfaces', '_KBEngine_logger',
-        '_KBEngine_loginapp', '_KBEngine_pythonapp', '_KBEngine_server_errors'
-      ]) {
-        writeFileSync(
-          join(engineRoot, 'typings', `${moduleName}.pyi`),
-          'from _KBEngine_common import Entity\n'
-        );
-      }
-      const content = buildKbeStubExportContentForWorkspace('/ws', {
-        engineRoot,
-        engineRootEnv: {}
-      });
-      expect(content).toContain('generated from the local KBEngine typings checkout');
-      expect(content).toContain('from typing import Dict, Union');
-      expect(content).toContain('from collections.abc import Callable');
-      expect(content).toContain('Vector3Like');
-      // 官方 typings 缺 Vector2/3/4 类,拼接后必须补上(引擎真实类型)
-      expect(content).toContain('class Vector2:');
-      expect(content).toContain('class Vector3:');
-      expect(content).toContain('class Vector4:');
-      // 私有模块名一并改写,不留悬空 import
-      expect(content).not.toContain('from _KBEngine_common import');
-      expect(content).not.toBe(buildKbeStubExportContent());
+      rmSync(join(root, 'KBEngine'), { recursive: true, force: true });
+      expect(collectKbengineStubTemplateFiles(root, templateRealDeps(root) as StubExportDeps)).toBeNull();
     } finally {
-      rmSync(engineRoot, { recursive: true, force: true });
-    }
-  });
-
-  it('engine 拼接导出在 Entity 类头注入 cellData 声明(Pylance 面)', () => {
-    // 2026-11-10 用户报障:cellData 是 baseapp 运行时逐实体安装的属性
-    // (baseapp/entity.cpp:238,仅 hasCell() 实体),静态 .pyi 无从得知,
-    // Pylance 把脚本里的 self.cellData["x"] 判成未知属性。注入声明让
-    // Pylance 接受语法面;引擎 typings 原文件与 kbeModuleIndex 锚点不动。
-    configurationOverrides.delete('kbengine');
-    const engineRoot = mkdtempSync(join(os.tmpdir(), 'kode-engine-celldata-'));
-    try {
-      mkdirSync(join(engineRoot, 'typings'), { recursive: true });
-      writeFileSync(
-        join(engineRoot, 'typings', '_KBEngine_common.pyi'),
-        'from typing import Any, Dict\n\nclass Entity:\n    id: int\n'
-      );
-      for (const moduleName of [
-        '_KBEngine_baseapp', '_KBEngine_bots', '_KBEngine_cellapp', '_KBEngine_dbmgr',
-        '_KBEngine_hooks', '_KBEngine_interfaces', '_KBEngine_logger',
-        '_KBEngine_loginapp', '_KBEngine_pythonapp', '_KBEngine_server_errors'
-      ]) {
-        writeFileSync(
-          join(engineRoot, 'typings', `${moduleName}.pyi`),
-          'from _KBEngine_common import Entity\n'
-        );
-      }
-      const content = buildKbeStubExportContentForWorkspace('/ws', {
-        engineRoot,
-        engineRootEnv: {}
-      });
-      expect(content).toContain('cellData: Dict[str, Any]');
-      expect(content).toContain('# kode overlay: baseapp-side runtime attribute (baseapp/entity.cpp:238),');
-      // 注入紧跟 class Entity: 头之后(注释 3 行 + 声明 1 行)
-      const lines = content.split('\n');
-      const header = lines.findIndex(line => line === 'class Entity:');
-      expect(header).toBeGreaterThanOrEqual(0);
-      expect(lines[header + 4]).toBe('    cellData: Dict[str, Any]');
-    } finally {
-      rmSync(engineRoot, { recursive: true, force: true });
-    }
-  });
-
-  it('引擎 typings 无 Entity 类头时不注入 cellData(宁缺勿错)', () => {
-    configurationOverrides.delete('kbengine');
-    const engineRoot = mkdtempSync(join(os.tmpdir(), 'kode-engine-noentity-'));
-    try {
-      mkdirSync(join(engineRoot, 'typings'), { recursive: true });
-      writeFileSync(join(engineRoot, 'typings', '_KBEngine_common.pyi'), 'def getWatcher(path: str) -> int: ...\n');
-      for (const moduleName of [
-        '_KBEngine_baseapp', '_KBEngine_bots', '_KBEngine_cellapp', '_KBEngine_dbmgr',
-        '_KBEngine_hooks', '_KBEngine_interfaces', '_KBEngine_logger',
-        '_KBEngine_loginapp', '_KBEngine_pythonapp', '_KBEngine_server_errors'
-      ]) {
-        writeFileSync(join(engineRoot, 'typings', `${moduleName}.pyi`), '# fixture\n');
-      }
-      const content = buildKbeStubExportContentForWorkspace('/ws', {
-        engineRoot,
-        engineRootEnv: {}
-      });
-      expect(content).not.toContain('cellData: Dict[str, Any]');
-    } finally {
-      rmSync(engineRoot, { recursive: true, force: true });
-    }
-  });
-
-  it('concatenates an explicit engine checkout and rewrites private imports', () => {
-    // IDE-STUB-001:引擎 checkout 拼接(复制真实代码)只在 real-source 档执行
-    configurationOverrides.set('kbengine', { 'python.stubSourceMode': 'real-source' });
-    const engineRoot = mkdtempSync(join(os.tmpdir(), 'kode-engine-'));
-    mkdirSync(join(engineRoot, 'typings'), { recursive: true });
-    writeFileSync(join(engineRoot, 'typings', '_KBEngine_common.pyi'), 'from _KBEngine_server_errors import *\n\nclass Entity:\n    id: int\n');
-    writeFileSync(join(engineRoot, 'typings', '_KBEngine_baseapp.pyi'), 'from _KBEngine_common import Entity\n\ndef address() -> int: ...\n');
-    for (const moduleName of [
-      '_KBEngine_bots', '_KBEngine_cellapp', '_KBEngine_dbmgr', '_KBEngine_hooks',
-      '_KBEngine_interfaces', '_KBEngine_logger', '_KBEngine_loginapp',
-      '_KBEngine_pythonapp', '_KBEngine_server_errors'
-    ]) {
-      writeFileSync(join(engineRoot, 'typings', `${moduleName}.pyi`), '# fixture\n');
-    }
-    const content = buildKbeStubExportContentForWorkspace('/ws', {
-      engineRoot,
-      engineRootEnv: {}
-    });
-    try {
-      expect(content).toContain('generated from the local KBEngine typings checkout');
-      expect(content).toContain('from KBEngine import');
-      expect(content).not.toContain('from _KBEngine_common import');
-      expect(content).not.toContain('from _KBEngine_server_errors import');
-      expect(content).toContain('class Entity:');
-      expect(content).toContain('def address() -> int: ...');
-    } finally {
-      rmSync(engineRoot, { recursive: true, force: true });
-      configurationOverrides.delete('kbengine');
-    }
-  });
-
-  it('falls back to the curated catalog when a typings module file is missing', () => {
-    // 树只带 marker(_KBEngine_common.pyi),模块序列第二个文件缺失 →
-    // 读取抛错落 catch → 引擎内容判 null → 回落精选目录,不产出残缺存根。
-    const engineRoot = mkdtempSync(join(os.tmpdir(), 'kode-engine-partial-'));
-    try {
-      mkdirSync(join(engineRoot, 'typings'), { recursive: true });
-      writeFileSync(join(engineRoot, 'typings', '_KBEngine_common.pyi'), 'class Entity:\n    id: int\n');
-      const content = buildKbeStubExportContentForWorkspace('/ws', {
-        engineRoot,
-        engineRootEnv: {}
-      });
-      expect(content).toBe(buildKbeStubExportContent());
-      expect(content).not.toContain('generated from the local KBEngine typings checkout');
-    } finally {
-      rmSync(engineRoot, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });
 
-describe('exportKbeStubs(装配层)', () => {
-  beforeEach(() => {
-    messages.info.length = 0;
-    messages.warning.length = 0;
-    messages.error.length = 0;
-    windowState.reset();
-    workspaceState.reset();
-    configurationOverrides.clear();
-  });
-
+describe('exportKbeStubs(copy-if-absent 复制)', () => {
   it('默认设置为开', () => {
     expect(PYTHON_STUB_EXPORT_ENABLED_DEFAULT).toBe(true);
   });
 
-  it('设置关闭时说明返回,不写任何文件', async () => {
+  it('设置关闭时说明返回,不写任何文件;静默模式零提示', async () => {
     configurationOverrides.set('kbengine', { 'python.stubExport': false });
     stubWorkspace.workspaceFolders = [folder('/ws')];
-    const { deps, writes } = makeDeps();
+    const root = makeTemplateRoot();
+    try {
+      const deps = makeDeps(root);
+      await exportKbeStubs(deps, { templateRoot: root });
+      expect(messages.info[0]).toContain('已关闭');
+      expect(writes).toHaveLength(0);
 
-    await exportKbeStubs(deps, { engineRoot: null });
-
-    expect(messages.info[0]).toContain('已关闭');
-    expect(writes).toHaveLength(0);
-
-    // 静默模式(激活期)下关闭同样零提示
-    await exportKbeStubs(deps, { engineRoot: null, silent: true });
-    expect(messages.info).toHaveLength(1);
-    stubWorkspace.workspaceFolders = [];
+      await exportKbeStubs(deps, { templateRoot: root, silent: true });
+      expect(messages.info).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('未打开工作区时如实说明', async () => {
-    stubWorkspace.workspaceFolders = [];
-    const { deps } = makeDeps();
-
-    await exportKbeStubs(deps, { engineRoot: null });
-
-    expect(messages.info[0]).toContain('未打开工作区');
-    expect(messages.info[0]).toContain('存根导出');
-  });
-
-  it('首次导出:建目录写文件,内容即同源生成物,播报文件夹', async () => {
-    stubWorkspace.workspaceFolders = [folder('/ws')];
-    const { deps, writes, mkdirs } = makeDeps();
-
-    await exportKbeStubs(deps, { engineRoot: null });
-
-    expect(mkdirs).toEqual(['/ws/.kbengine/stubs']);
-    expect(writes).toHaveLength(1);
-    expect(writes[0].path).toBe('/ws/.kbengine/stubs/KBEngine.pyi');
-    expect(writes[0].content).toBe(buildKbeStubExportContent());
-    expect(messages.info[0]).toContain('ws');
-  });
-
-  it('内容一致时零写零提示(idempotent)', async () => {
-    stubWorkspace.workspaceFolders = [folder('/ws')];
-    const { deps, writes } = makeDeps({
-      existing: ['/ws/.kbengine/stubs/KBEngine.pyi'],
-      initial: { '/ws/.kbengine/stubs/KBEngine.pyi': buildKbeStubExportContent() }
-    });
-
-    await exportKbeStubs(deps, { engineRoot: null });
-
-    expect(writes).toHaveLength(0);
-    expect(messages.info).toHaveLength(0);
-  });
-
-  it('磁盘内容陈旧时重写', async () => {
-    stubWorkspace.workspaceFolders = [folder('/ws')];
-    const { deps, writes } = makeDeps({
-      existing: ['/ws/.kbengine/stubs/KBEngine.pyi'],
-      initial: { '/ws/.kbengine/stubs/KBEngine.pyi': '# 旧版本存根' }
-    });
-
-    await exportKbeStubs(deps, { engineRoot: null });
-
-    expect(writes).toHaveLength(1);
-    expect(writes[0].content).toBe(buildKbeStubExportContent());
-  });
-
-  it('文件在但读不到时按陈旧处理重写', async () => {
-    stubWorkspace.workspaceFolders = [folder('/ws')];
-    const { deps, writes } = makeDeps({
-      existing: ['/ws/.kbengine/stubs/KBEngine.pyi'],
-      readFails: true
-    });
-
-    await exportKbeStubs(deps, { engineRoot: null });
-
-    expect(writes).toHaveLength(1);
-  });
-
-  it('静默模式:全程零提示,写文件照做', async () => {
-    stubWorkspace.workspaceFolders = [folder('/ws')];
-    const { deps, writes } = makeDeps();
-
-    await exportKbeStubs(deps, { engineRoot: null, silent: true });
-
-    expect(writes).toHaveLength(1);
-    expect(messages.info).toHaveLength(0);
-  });
-
-  it('默认真 fs 依赖:存根路径上是目录时读取抛错按陈旧处理,重写失败如实告警', async () => {
-    const { mkdtempSync, mkdirSync, rmSync } = require('fs') as typeof import('fs');
-    const { tmpdir } = require('os') as typeof import('os');
-    const dir = mkdtempSync(join(tmpdir(), 'kode-stub-'));
+    const root = makeTemplateRoot();
     try {
-      // 存根目标路径被一个同名目录占住:exists 真,readFileSync 抛 EISDIR →
-      // 判陈旧 → mkdir(已存在,recursive 幂等) → writeFile 抛 → failed 臂
-      mkdirSync(kbeStubFilePath(dir), { recursive: true });
-      stubWorkspace.workspaceFolders = [folder(dir)];
-
-      // 不注入 deps,走 fileSystemStubExportDeps 真实 fs
-      await exportKbeStubs(undefined, { engineRoot: null });
-
-      expect(messages.warning[0]).toContain(dir.split('/').pop() ?? dir);
-      expect(messages.info).toHaveLength(0);
+      await exportKbeStubs(makeDeps(root), { templateRoot: root });
+      expect(messages.info[0]).toContain('未打开工作区');
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
-    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('模板根缺失时告警跳过,不写任何文件', async () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    await exportKbeStubs(makeDeps(), { templateRoot: '/definitely/missing' });
+    expect(messages.warning[0]).toContain('模板读不到');
+    expect(writes).toHaveLength(0);
+  });
+
+  it('首次复制:模板全部 .pyi 落桩包目录,README 不复制,播报文件夹', async () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const root = makeTemplateRoot();
+    try {
+      await exportKbeStubs(makeDeps(root), { templateRoot: root });
+
+      const writtenPaths = writes.map(write => write.path);
+      expect(writtenPaths).toEqual([
+        '/ws/.kbengine/stubs/KBEngine/Entity.pyi',
+        '/ws/.kbengine/stubs/KBEngine/Proxy.pyi',
+        '/ws/.kbengine/stubs/KBEngine/__init__.pyi'
+      ]);
+      expect(mkdirs).toContain('/ws/.kbengine/stubs/KBEngine');
+      expect(messages.info[0]).toContain('ws');
+      expect(messages.info[0]).toContain('copy-if-absent');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('copy-if-absent 铁律:目标已存在零字节动(用户魔改保留),缺的补上', async () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const root = makeTemplateRoot();
+    memory.set('/ws/.kbengine/stubs/KBEngine/Entity.pyi', '# 用户魔改版 Entity\n');
+    try {
+      await exportKbeStubs(makeDeps(root), { templateRoot: root });
+
+      expect(writes.map(write => write.path)).toEqual([
+        '/ws/.kbengine/stubs/KBEngine/Proxy.pyi',
+        '/ws/.kbengine/stubs/KBEngine/__init__.pyi'
+      ]);
+      expect(memory.get('/ws/.kbengine/stubs/KBEngine/Entity.pyi')).toBe('# 用户魔改版 Entity\n');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('托管目录旧产物迁移:带 kode 生成标记的 KBEngine.pyi 移除', async () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const root = makeTemplateRoot();
+    memory.set(
+      '/ws/.kbengine/stubs/KBEngine.pyi',
+      `${KBE_STUB_GENERATED_MARKER}\n# 旧动态生成内容\n`
+    );
+    try {
+      await exportKbeStubs(makeDeps(root), { templateRoot: root });
+
+      expect(deleted).toEqual(['/ws/.kbengine/stubs/KBEngine.pyi']);
+      expect(messages.info.some(line => line.includes('旧生成物'))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('无标记的同名 KBEngine.pyi 是用户资产,一字节不动', async () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const root = makeTemplateRoot();
+    memory.set('/ws/.kbengine/stubs/KBEngine.pyi', '# 用户手写,无 kode 标记\n');
+    try {
+      await exportKbeStubs(makeDeps(root), { templateRoot: root });
+
+      expect(deleted).toHaveLength(0);
+      expect(memory.get('/ws/.kbengine/stubs/KBEngine.pyi')).toBe('# 用户手写,无 kode 标记\n');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('用户目录(python.stubDir)不迁移:同名文件即使带标记也不碰', async () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    configurationOverrides.set('kbengine', { 'python.stubDir': '/user-stubs' });
+    const root = makeTemplateRoot();
+    memory.set('/user-stubs/KBEngine.pyi', `${KBE_STUB_GENERATED_MARKER}\n# 用户目录里的旧文件\n`);
+    try {
+      await exportKbeStubs(makeDeps(root), { templateRoot: root });
+
+      expect(deleted).toHaveLength(0);
+      expect(memory.get('/user-stubs/KBEngine.pyi')).toContain('用户目录里的旧文件');
+      expect(writes.every(write => write.path.startsWith('/user-stubs/'))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('目录不可写时告警并继续,不影响其他文件夹', async () => {
     stubWorkspace.workspaceFolders = [folder('/ro'), folder('/ok')];
-    const writable = makeDeps();
-    const failing = makeDeps({ writeFails: true });
-    // 只让 /ro 不可写:按路径分派
-    const mixed = {
-      exists: (p: string): boolean => p.startsWith('/ro') ? failing.deps.exists(p) : writable.deps.exists(p),
-      readFile: (p: string): string => p.startsWith('/ro') ? failing.deps.readFile(p) : writable.deps.readFile(p),
-      writeFile: (p: string, c: string): void => void (p.startsWith('/ro') ? failing.deps.writeFile(p, c) : writable.deps.writeFile(p, c)),
-      mkdir: (p: string): void => void (p.startsWith('/ro') ? failing.deps.mkdir(p) : writable.deps.mkdir(p))
-    };
+    const root = makeTemplateRoot();
+    writeFailFor = new Set(['/ro/.kbengine/stubs/KBEngine/Entity.pyi']);
+    try {
+      await exportKbeStubs(makeDeps(root), { templateRoot: root });
 
-    await exportKbeStubs(mixed, { engineRoot: null });
+      expect(messages.warning[0]).toContain('ro');
+      expect(messages.info[0]).toContain('ok');
+      expect(memory.has('/ok/.kbengine/stubs/KBEngine/Entity.pyi')).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 
-    expect(writable.writes.map(write => write.path)).toEqual(['/ok/.kbengine/stubs/KBEngine.pyi']);
-    expect(messages.warning[0]).toContain('ro');
-    expect(messages.info[0]).toContain('ok');
+  it('静默模式:全程零提示,复制照做', async () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const root = makeTemplateRoot();
+    try {
+      await exportKbeStubs(makeDeps(root), { templateRoot: root, silent: true });
+
+      expect(writes).toHaveLength(3);
+      expect(messages.info).toHaveLength(0);
+      expect(messages.warning).toHaveLength(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('resetKbeStubs(显式重置,唯一覆盖通道)', () => {
+  it('确认弹窗取消=零动作', async () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const root = makeTemplateRoot();
+    memory.set('/ws/.kbengine/stubs/KBEngine/Entity.pyi', '# 用户魔改版\n');
+    const original = vscode.window.showWarningMessage;
+    vscode.window.showWarningMessage = (async (): Promise<undefined> => undefined) as typeof original;
+    try {
+      await resetKbeStubs(makeDeps(root), { templateRoot: root });
+
+      expect(deleted).toHaveLength(0);
+      expect(writes).toHaveLength(0);
+      expect(memory.get('/ws/.kbengine/stubs/KBEngine/Entity.pyi')).toBe('# 用户魔改版\n');
+    } finally {
+      vscode.window.showWarningMessage = original;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('确认重置:模板集同名文件删后按模板重复制,模板外文件与用户资产不动', async () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const root = makeTemplateRoot();
+    memory.set('/ws/.kbengine/stubs/KBEngine/Entity.pyi', '# 用户魔改版\n');
+    memory.set('/ws/.kbengine/stubs/KBEngine/unknown_extra.pyi', '# 模板集之外\n');
+    memory.set('/ws/.kbengine/stubs/KBEngine.pyi', `${KBE_STUB_GENERATED_MARKER}\n# 旧生成物\n`);
+    const original = vscode.window.showWarningMessage;
+    vscode.window.showWarningMessage = (async (): Promise<string> => '重置') as typeof original;
+    try {
+      await resetKbeStubs(makeDeps(root), { templateRoot: root });
+
+      // 模板集同名文件:删后重建
+      expect(deleted).toContain('/ws/.kbengine/stubs/KBEngine/Entity.pyi');
+      expect(memory.get('/ws/.kbengine/stubs/KBEngine/Entity.pyi')).toContain('# entity template');
+      // 模板集之外:不碰
+      expect(deleted).not.toContain('/ws/.kbengine/stubs/KBEngine/unknown_extra.pyi');
+      expect(memory.get('/ws/.kbengine/stubs/KBEngine/unknown_extra.pyi')).toBe('# 模板集之外\n');
+      // 旧生成物:回收且不再重建
+      expect(deleted).toContain('/ws/.kbengine/stubs/KBEngine.pyi');
+      expect(memory.has('/ws/.kbengine/stubs/KBEngine.pyi')).toBe(false);
+      expect(messages.info[0]).toContain('重置');
+    } finally {
+      vscode.window.showWarningMessage = original;
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

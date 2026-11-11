@@ -21,7 +21,6 @@ export default defineConfig({
     include: [
       'tests/engineTreeProbe.test.ts',
       'tests/realEngineIntegration.test.ts',
-      'tests/fantasydemoRealExport.test.ts',
       'tests/fantasydemoDefAnalysis.test.ts'
     ],
     environment: 'node'

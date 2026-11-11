@@ -38,15 +38,16 @@
 | CallChainController | defCallChainProvider.ts:49 | :1096 | EntityMappingManager | webview 面板创建/更新(UI 副作用) |
 | PropertyCodeLensProvider | languageProviders.ts:4819 | :1114 | EntityMappingManager(types.xml 属性回指) | fireConfigurationChanged 事件 |
 | EventCodeLensProvider | eventApi.ts:95 | :1128 | EventCallIndex 小接口(`allEventCalls`,ARC-002;注入 sharedWorkspaceIndex) | 预启动延迟 8s 后共享索引全仓 py 扫描入队(唯一扫描入口) |
-| TypesXmlCodeLensProvider | languageProviders.ts:4964 | activate/languageServices.ts:508 (SRC-001 L2) | databaseSchema 类型存储使用索引(`onTypeStorageUsageIndexPublished` 订阅;构造零依赖) | fireConfigurationChanged 事件;watcher 归装配线(ARC-005) |
-| GeneratedSourceCodeLensProvider(python 桩) | generatedSourceLenses.ts:11 | activate/languageServices.ts:519(SRC-001 L2) | 构造期快照 buildPythonTypeStubPlan(getCustomTypeInfos) | 纯读 |
+| TypesXmlCodeLensProvider | languageProviders/codeLens.ts:360 | activate/languageServices.ts:514 (SRC-001 L2) | databaseSchema 类型存储使用索引(`onTypeStorageUsageIndexPublished` 订阅;构造零依赖) | fireConfigurationChanged 事件;watcher 归装配线(ARC-005) |
+| GeneratedSourceCodeLensProvider(python 桩) | generatedSourceLenses.ts:11 | activate/languageServices.ts:538(SRC-001 L2) | 构造期快照 buildPythonTypeStubPlan(getCustomTypeInfos) | 纯读 |
 | GeneratedSourceCodeLensProvider(entity 桩) | generatedSourceLenses.ts:11 | activate/generators.ts:90(SRC-001 L7) | 构造期快照 buildEntityTypeStubPlan(getAllMappings + getCustomTypeInfos) | 纯读 |
 | PythonTypeInlayHintsProvider | typeInlayHints.ts:33 | :1197 | EntityMappingManager | 纯读 |
 | KBEngineBuiltinTypeInlayHintsProvider | languageProviders.ts:649 | :1207 | EntityMappingManager | 纯读 |
 | InferredMirrorTypeInlayHintsProvider | languageProviders/inlay.ts:68 | :584 | 托管目录推断镜像注解文件(kbengine.infer.enabled 闸;定义点行差分) | 纯读 |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | 纯读 |
 | DefPropsInlayHintsProvider | defPropsInlayHints.ts:126 | :1432 | EntityMappingManager(`listPropertyDefinitionsForFile` 锚点所属实体的根级属性清单) | 纯读 |
-| KBEnginePropertyShadowInlayHintsProvider | languageProviders/inlay.ts:116 | :596 | EntityMappingManager(`resolvePropertyDefinitionInfo` 复制属性与 cellData 键提示的域位/类型面;`kbengine.inlayHints.propertyShadow` × `kbengine.propertyDirectionDiagnostics` 双控) | 纯读 |
+| KBEnginePropertyShadowInlayHintsProvider | languageProviders/inlay.ts:122 | :600 | EntityMappingManager(`resolvePropertyDefinitionInfo` 复制属性与 cellData 键提示的域位/类型面;`kbengine.inlayHints.propertyShadow` × `kbengine.propertyDirectionDiagnostics` 双控) | 纯读 |
+| KBEngineProxyInternalAttrHintsProvider | languageProviders/inlay.ts:225 | :609 | 项目桩副本 Proxy.pyi(声明行现场扫描;`kbengine.python.proxyInternalAttrHints` 单闸;仅 demo 资产脚本域) | 纯读 |
 | KBEngineCallHierarchyProvider | languageProviders.ts:5013 | :1223 | EntityMappingManager(def/python 双选区调用层级) | 纯读 |
 | KBEngineReferencesProvider | languageProviders.ts:5117 | :1235 | EntityMappingManager + defReferenceGraph 引用图 | 纯读 |
 | KBEngineDocumentSymbolProvider | languageProviders.ts:5231 | :1256 | 当前文档 def 结构(构造零依赖) | 纯读 |

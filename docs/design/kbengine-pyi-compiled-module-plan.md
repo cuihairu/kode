@@ -3,6 +3,7 @@
 - 日期：2026-11-09
 - 提案人：用户（「根据源码精确的校验的版本，然后内部集成，然后生成的时候复制过去」；「真正生成完整 KBEngine.pyi」）
 - 状态：**方案定稿（源码枚举主车道），待点火**。编译 .so 车道已实测并**否决**（见 §4 实测记录 + §5 否决理由）。
+- **状态更新（2026-11-11，批 ③ 落地）：本方案被静态模板车道取代。** 最终形态：插件内置静态模板（kode 仓库顶层 `typings/`，派生自用户 fork `cuihairu/kbengine` 的 typings，钉点 commit **28d2117**，`scripts/derive-kbengine-stub-typings.mjs` 按 fork 布局一类一文件切分；kode overlay = `Entity.pyi` 的 `cellData` 声明、`Proxy.pyi` 的 `__ACCOUNT_NAME__`/`__ACCOUNT_PASSWORD__` 内部属性标注、`_vectors.pyi`），激活期 **copy-if-absent** 复制到 `<managedDir>/stubs/`（零覆盖铁律，覆盖只走 `kbengine.python.resetStubs` 显式命令且要用户确认；旧动态生成链——引擎 checkout 拼接/精选目录回退/托管目录内容比对重写——与 `stubSourceMode`/`stubEngineTypings` 设置一并退役）。本文件的枚举器/合并器（Phase 1/2）未再点火：fork typings 已覆盖成员集，签名质量即 fork 手工质量（与 §1.3 结论一致）；如未来发现 fork 缺成员，再回到本车道补枚举。§4 编译 .so 否决实测记录原样保留。
 - 关联：todo `IDE-STUB-005`（pyrefly stubgen 车道拍板——本方案是其演化终态：pyrefly stubgen 对无标注代码全落 `Incomplete`（KODE-CFG-017 实测结论，`src/pyreflyInfer.ts` 头注），不采用；crates.io `pyrefly` 是 0.0.1 占位符（"Coming soon to crates.io"，0 依赖），Rust 库直集成不可行，维持 CLI shell-out）。
 
 ## 0. 一句话方案

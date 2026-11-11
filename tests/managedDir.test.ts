@@ -94,17 +94,21 @@ describe('托管目录落点(pythonStubExport 面)', () => {
 
   it('导出链按配置目录落盘(默认 .kbengine 之外的 managedDir)', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-managed-'));
+    const templateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-managed-template-'));
     try {
+      fs.mkdirSync(path.join(templateRoot, 'KBEngine'), { recursive: true });
+      fs.writeFileSync(path.join(templateRoot, 'KBEngine', '__init__.pyi'), '# init\n', 'utf8');
       stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
       configurationOverrides.set('kbengine', { managedDir: '.kbe2' });
-      const written = await exportKbeStubs(fileSystemStubExportDeps, { engineRoot: null, silent: true });
+      const written = await exportKbeStubs(fileSystemStubExportDeps, { templateRoot, silent: true });
       expect(written).toEqual(['ws']);
-      expect(fs.existsSync(path.join(root, '.kbe2', 'stubs', 'KBEngine.pyi'))).toBe(true);
+      expect(fs.existsSync(path.join(root, '.kbe2', 'stubs', 'KBEngine', '__init__.pyi'))).toBe(true);
       expect(fs.existsSync(path.join(root, '.kbengine'))).toBe(false);
     } finally {
       configurationOverrides.clear();
       stubWorkspace.workspaceFolders = [];
       fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(templateRoot, { recursive: true, force: true });
     }
   });
 });

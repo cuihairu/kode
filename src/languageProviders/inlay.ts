@@ -1,6 +1,8 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
+import * as fs from 'fs';
 import * as vscode from 'vscode';
-import { EntityMappingManager } from '../entityMapping';
+import { EntityMappingManager, pythonScriptDomain } from '../entityMapping';
+import { l10nText } from '../nlsRuntime';
 import { getDocumentLines } from '../backend/documentStore';
 import { hasKnownEntityBuiltinPropertyType, resolveEntityComponentFaceFromPath, collectEntityBuiltinPropertyInlayTargets, type EntityComponentFace } from '../backend/entityBuiltinProperties';
 import { getLanguageFeatureConfig } from './shared';
@@ -193,5 +195,94 @@ export class KBEnginePropertyShadowInlayHintsProvider implements vscode.InlayHin
         }
         return hint;
       });
+  }
+}
+
+/**
+ * Proxy 内部属性提示(批 ③,用户令 2026-11-11:「proxy 的 __ACCOUNT_NAME__
+ * __ACCOUNT_PASSWORD__ 没有作为内部属性提示…需要提示为内部属性之类的,跳转
+ * 到 对应的pyi中」):实体脚本内 `self.__ACCOUNT_NAME__`/`self.__ACCOUNT_PASSWORD__`
+ * 访问处其后渲染「内部属性 · Proxy」淡色小字;项目桩包 KBEngine/Proxy.pyi 在
+ * 盘时经 InlayHintLabelPart.location 出导航(Ctrl+点击直达属性声明行,与复制
+ * 属性提示同一惯用法)。内部属性本身已在模板 Proxy.pyi 声明(名字表
+ * entitydef/common.h:142-143,注入点 server/baseapp/baseapp.cpp:4241-4246),
+ * Pylance 补全由桩面承担;本 provider 补的是「这是内部属性」的现场标识与
+ * 跳转。行号现场扫描项目副本——副本可被用户魔改,钉死行号必漂。开关
+ * kbengine.python.proxyInternalAttrHints(默认开),provider 现读配置下一次
+ * 渲染即生效。
+ */
+export const PROXY_INTERNAL_ATTR_HINTS_SETTING = 'python.proxyInternalAttrHints';
+const PROXY_INTERNAL_ATTR_NAMES = ['__ACCOUNT_NAME__', '__ACCOUNT_PASSWORD__'] as const;
+export const PROXY_INTERNAL_PYE_FILE_NAME = 'Proxy.pyi';
+
+export interface ProxyInternalAttrHintDeps {
+  /** 项目内桩包 Proxy.pyi 绝对路径;null=桩未复制(只出标签,不出导航) */
+  resolveProxyPyiPath: (document: vscode.TextDocument) => string | null;
+  /** 读项目副本(测试注入;缺省真 fs) */
+  readFile?: (path: string) => string;
+}
+
+export class KBEngineProxyInternalAttrHintsProvider implements vscode.InlayHintsProvider {
+  constructor(private readonly deps?: ProxyInternalAttrHintDeps) {}
+
+  async provideInlayHints(
+    document: vscode.TextDocument,
+    range: vscode.Range
+  ): Promise<vscode.InlayHint[]> {
+    if (document.languageId !== 'python') {
+      return [];
+    }
+    if (!vscode.workspace.getConfiguration('kbengine').get<boolean>(PROXY_INTERNAL_ATTR_HINTS_SETTING, true)) {
+      return [];
+    }
+    // 只在 demo 资产脚本域(scripts/base|cell|client|bots)内提示;目录按资产
+    // 层认,引擎进程名不是目录名(2026-11-11 用户令两层名不得混称)
+    if (pythonScriptDomain(document.uri.fsPath) === null) {
+      return [];
+    }
+    // 项目副本在盘才出导航;副本是用户可改面,声明行现场扫描,钉死必漂
+    const pyiPath = this.deps?.resolveProxyPyiPath(document) ?? null;
+    const declarationLines: Partial<Record<typeof PROXY_INTERNAL_ATTR_NAMES[number], number>> = {};
+    if (pyiPath) {
+      try {
+        const content = (this.deps?.readFile ?? ((candidate: string): string => fs.readFileSync(candidate, 'utf8')))(pyiPath);
+        const lines = content.split('\n');
+        for (const attr of PROXY_INTERNAL_ATTR_NAMES) {
+          const index = lines.findIndex(line => line.trim() === `${attr}: str`);
+          if (index >= 0) {
+            declarationLines[attr] = index;
+          }
+        }
+      } catch {
+        // 副本读不到(权限等):导航面缺位,标签照出
+      }
+    }
+    const regex = /\bself\.(__ACCOUNT_NAME__|__ACCOUNT_PASSWORD__)\b/g;
+    const text = document.getText();
+    const hints: vscode.InlayHint[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(text)) !== null) {
+      const attr = match[1] as typeof PROXY_INTERNAL_ATTR_NAMES[number];
+      const position = document.positionAt(match.index + match[0].length);
+      // inlay 按可视区要:视图口外的行不出 hint(同属性影提示口径)
+      if (position.line < range.start.line || position.line > range.end.line) {
+        continue;
+      }
+      const part = new vscode.InlayHintLabelPart(`${l10nText('internal attribute')} · Proxy`);
+      const declarationLine = declarationLines[attr];
+      if (pyiPath && declarationLine !== undefined) {
+        part.location = new vscode.Location(
+          vscode.Uri.file(pyiPath),
+          new vscode.Position(declarationLine, 0)
+        );
+      }
+      part.tooltip = new vscode.MarkdownString(
+        '由 baseapp 在登录成功后注入的内部属性,脚本只读,勿赋值。\n' +
+        'Internal attribute injected by baseapp on successful login; read-only from scripts.'
+      );
+      const hint = new vscode.InlayHint(position, [part]);
+      hints.push(hint);
+    }
+    return hints;
   }
 }

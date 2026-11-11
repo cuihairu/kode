@@ -1117,17 +1117,24 @@ callgraph 模式面板支持：
 ### `kbengine.python.exportStubs`
 
 - 标题：`Export KBEngine Python Stubs`
-- 作用：把内置 KBEngine Python API 符号索引（与 kode 的补全/悬停/跳转同源）导出为真实 `.pyi` 文件，配合 extraPaths 接线让 Pylance 解析 `import KBEngine`（虚拟桩文档 Python 扩展看不见）
-- 覆盖口径：`KBEngine.pyi` 是精选引擎符号子集，不是完整引擎 API；页头逐批声明覆盖状态，每个符号保留引擎 typings 的原始 `file:line` 锚点
-- 存根目录三级解析（批142）：`kbengine.python.stubDir` 设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `<工作区>/.kbengine/stubs`；支持 `${workspaceFolder}`/`${env:NAME}` 等 VS Code 变量
-- 入口：命令面板 `Export KBEngine Python Stubs`；扩展激活时也会自动导出一次（`kbengine.python.stubExport` 默认开，激活期全程静默）
-- 行为：
-  - 默认约定目录归 kode 自管：内容与磁盘一致时零写；内容陈旧（索引更新后）自动重写覆盖，手改不保留
-  - 配置的用户目录只进不出：目录里已有任何 `.pyi` 一律按用户资产不覆盖，没有 `.pyi` 才生成；目录读不到（不存在/无权限）如实提示，不盲写
-  - 建议在 `.gitignore` 里忽略 `.kbengine/stubs/`（生成物，随 kode 索引更新）；用户自配目录的既有 `.pyi` 属于用户资产，kode 不改不删
+- 作用：把插件内置 KBEngine 桩包（仓库顶层 `typings/` 模板，派生自 cuihairu/kbengine fork typings，钉点 commit 见 `typings/README.md`）复制到项目存根目录成真实 `KBEngine/` 包，配合 stubPath/extraPaths 接线让 Pylance 解析 `import KBEngine`
+- 布局：`KBEngine/__init__.pyi` 带显式重导出顺序（进程层星导入在前、一类一文件重导出殿后——服务端 Entity/Proxy 模型压过 bots 层同名客户端模型），含逐类分件、`hooks.pyi` 回调协议、kode 独有运行时向量类（`Vector2/3/4`）与引擎进程层文件
+- 存根目录三级解析（批142）：`kbengine.python.stubDir` 设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `<工作区>/<managedDir>/stubs`；支持 `${workspaceFolder}`/`${env:NAME}` 等 VS Code 变量
+- 入口：命令面板 `Export KBEngine Python Stubs`；扩展激活时也会自动复制一次（`kbengine.python.stubExport` 默认开，激活期全程静默）
+- 行为（copy-if-absent 零覆盖）：
+  - 已在盘的文件一个字节不动——对项目副本的修改/魔改在每次导出后都保留；覆盖只走显式重置命令且要用户确认
+  - kode 自管目录里带 kode 生成标记的旧单文件 `KBEngine.pyi` 一次性迁移移除（`KBEngine/` 桩包取代）；无标记的同名文件是用户资产，不碰
   - 目录不可写（只读挂载等）时告警并继续其余工作区文件夹
-  - 导出成功后链一次 extraPaths 同步，新存根目录即刻生效
+  - 复制成功后链一次 extraPaths 同步，存根目录即刻生效
   - 设置 `kbengine.python.stubExport: false` 可整体关闭
+
+### `kbengine.python.resetStubs`
+
+- 标题：`Reset KBEngine Python Stubs`
+- 作用：唯一覆盖通道——删除存根目录里与模板集同名的文件后按内置模板重新复制；插件更新带了新模板或项目副本与模板漂移时使用
+- 确认：执行前弹模态确认（`重置` 才动手）；取消零动作
+- 范围：只动与模板集同名的文件；模板集之外的文件（用户自加内容）一律不碰；kode 自管目录里带生成标记的旧 `KBEngine.pyi` 一并回收
+- 重置成功后链一次 extraPaths 同步
 
 ### `kbengine.python.exportTypeStubs`
 
@@ -1138,7 +1145,7 @@ callgraph 模式面板支持：
 - 实体级类型：`.def` 属性引用 `types.xml` 自定义类型时，激活期同时生成 `entity_types.pyi`，逐实体落成 `Avatar.profile: ITEM_INFO` 这类声明；来源注释保留 `.def` 与 `types.xml` 双原始行
 - 目录与开关与 `kbengine.python.exportStubs` 同一套：`kbengine.python.stubDir` 三级解析、共用 `kbengine.python.stubExport` 开关；扩展激活时在 KBEngine.pyi 之后自动导出一次（静默）
 - 行为：
-  - 内容确定：同输入生成逐字节一致的内容（头部无时间戳），与 KBEngine.pyi 同一套「内容一致零写、陈旧重写」纪律
+  - 内容确定：同输入生成逐字节一致的内容（头部无时间戳），kode 自管目录内「内容一致零写、陈旧重写」
   - 别名赋值是模块级急切求值，按依赖拓扑排序发射；`types.xml` 指引为空或别名成环的类型跳过并在提示里说明原因，绝不生成引用未定义名字的赋值
   - 内置类型映射与 TS 生成器同表：整型 → `int`、浮点 → `float`、字符串 → `str`、`VECTOR2/3/4` → `KBEngine.Vector2/3/4`、`PY_DICT/PY_TUPLE/PY_LIST` → `dict`/`tuple`/`list`（有 `<Default>` 时按字面量精化）、`PYTHON` → def 声明了 `impl` 时按 impl 类否则 `Any`、`ENTITYCALL` → `KBEngine.EntityCall`、`BLOB` → `bytes`、无对应物 → `Any`（有损但合法）
   - 配置的用户目录里已有同名 `kbe_types.py` 按用户资产不覆盖；默认目录 `.kbengine/stubs` 归 kode 自管
