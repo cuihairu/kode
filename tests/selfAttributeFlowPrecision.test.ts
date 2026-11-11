@@ -182,4 +182,27 @@ suite('selfAttributeFlow AST 真域精度(精确性主车道批 A)', () => {
       expect((await inferSelfAttributeFlowFromRust(lines, 9, 'r', key))?.types).toEqual(['Row']);
     });
   });
+
+  it('批 D:类实例化写点升流原子(接收者定型证据,借名误绑的反面)', async () => {
+    await withRustGate(async () => {
+      const text = [
+        'class Repo:',
+        '    def load(self) -> Row:',
+        '        return None',
+        '',
+        'class Avatar:',
+        '    def __init__(self):',
+        '        self.r = Repo()',
+        '',
+        '    def tick(self):',
+        '        self.r.load()',
+      ].join('\n');
+      const lines = text.split('\n');
+      const key = 'precision:instantiation-atom';
+      // self.r = Repo() → r 的流型 = {Repo}(类名原子;旧引擎 call 无回调=空集)
+      expect((await inferSelfAttributeFlowFromRust(lines, 6, 'r', key))?.types).toEqual(['Repo']);
+      // 读点走基线:原子仍在(接收者定型证据可被下游消费)
+      expect((await inferSelfAttributeFlowFromRust(lines, 9, 'r', key))?.types).toEqual(['Repo']);
+    });
+  });
 });

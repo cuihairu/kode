@@ -12,6 +12,7 @@ import { isPythonMroJumpEnabled } from '../src/languageProviders';
 import {
   applySavedFileAnnotations,
   flushPendingDocumentReturnAnnotationsForTests,
+  getDocumentReturnAnnotationBucketForTests,
   resetPythonReturnAnnotationCache,
   resolveLocalVariableReturnType,
   resolveLocalVariableReturnTypeFromSnapshot
@@ -736,19 +737,23 @@ describe('extension activate 装配', () => {
       configurationOverrides.delete('kbengine.python');
 
       // IDE-HOV-012:保存事件只换该文件注解桶(python 分支换桶;非 python 跳过)
+      // 批 D:查询断言走 import 绑定路径(接收者正确)
       fs.writeFileSync(
         path.join(root, 'svc_saved.py'),
         'def get_data() -> JSONDATA:\n    pass\n',
         'utf8'
       );
-      await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+      await resolveLocalVariableReturnType(
+        ['from svc_saved import get_data', 'data = get_data()'], 1, 'data', root
+      );
       const savedPy = makeTextDocument('def get_data() -> SAVED:\n    pass\n', {
         fileName: path.join(root, 'svc_saved.py'),
         languageId: 'python'
       });
       workspaceEvents.documentSaved.fire(savedPy);
-      expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
-        .toMatchObject({ annotation: 'SAVED' });
+      expect(resolveLocalVariableReturnTypeFromSnapshot(
+        ['from svc_saved import get_data', 'data = get_data()'], 1, 'data', root
+      )).toMatchObject({ annotation: 'SAVED' });
       const savedPlain = makeTextDocument('hello', {
         fileName: path.join(root, 'notes-saved.txt'),
         languageId: 'plaintext'
@@ -761,10 +766,11 @@ describe('extension activate 装配', () => {
         path.join(root, 'svc_gone.py'),
         'def only_svc() -> SVCONLY:\n    pass\n'
       );
-      expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root))
+      const goneLines = ['from svc_gone import only_svc', 'y = only_svc()'];
+      expect(resolveLocalVariableReturnTypeFromSnapshot(goneLines, 1, 'y', root))
         .toMatchObject({ annotation: 'SVCONLY' });
       workspaceEvents.filesDeleted.fire({ files: [Uri.file(path.join(root, 'svc_gone.py'))] });
-      expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root)).toBeNull();
+      expect(resolveLocalVariableReturnTypeFromSnapshot(goneLines, 1, 'y', root)).toBeNull();
       workspaceEvents.filesDeleted.fire({ files: [Uri.file(path.join(root, 'notes.txt'))] });
 
       // IDE-HOV-015:重命名迁移注解来源(python→python 承接;python→非 python 移除)
@@ -773,17 +779,21 @@ describe('extension activate 装配', () => {
         path.join(root, 'svc_ren.py'),
         'def only_ren() -> RENONLY:\n    pass\n'
       );
-      expect(resolveLocalVariableReturnTypeFromSnapshot(['z = only_ren()'], 0, 'z', root))
-        .toMatchObject({ annotation: 'RENONLY' });
+      expect(resolveLocalVariableReturnTypeFromSnapshot(
+        ['from svc_ren import only_ren', 'z = only_ren()'], 1, 'z', root
+      )).toMatchObject({ annotation: 'RENONLY' });
       workspaceEvents.filesRenamed.fire({
         files: [{ oldUri: Uri.file(path.join(root, 'svc_ren.py')), newUri: Uri.file(path.join(root, 'svc_ren2.py')) }]
       });
-      expect(resolveLocalVariableReturnTypeFromSnapshot(['z = only_ren()'], 0, 'z', root))
-        .toMatchObject({ annotation: 'RENONLY' });
+      expect(resolveLocalVariableReturnTypeFromSnapshot(
+        ['from svc_ren2 import only_ren', 'z = only_ren()'], 1, 'z', root
+      )).toMatchObject({ annotation: 'RENONLY' });
       workspaceEvents.filesRenamed.fire({
         files: [{ oldUri: Uri.file(path.join(root, 'svc_ren2.py')), newUri: Uri.file(path.join(root, 'svc_ren2.txt')) }]
       });
-      expect(resolveLocalVariableReturnTypeFromSnapshot(['z = only_ren()'], 0, 'z', root)).toBeNull();
+      expect(resolveLocalVariableReturnTypeFromSnapshot(
+        ['from svc_ren2 import only_ren', 'z = only_ren()'], 1, 'z', root
+      )).toBeNull();
 
       // 批154:CodeLens 四类功能开关变更即时 fire 各 provider(emitter
       // 挂在 provider 实例上,注册后即可订阅);事件须同时含 'kbengine'
@@ -1323,13 +1333,15 @@ describe('extension activate 装配', () => {
         languageId: 'python',
         version: 1
       });
-      // 编辑事件只排队:桶未同步可见(此前每个编辑事件同步整文件提取 120ms)
+      // 编辑事件只排队:桶未同步可见(此前每个编辑事件同步整文件提取 120ms;
+      // 批 D 后断言走桶访问器,查询不再消费桶)
       workspaceEvents.documentChanged.fire({ document: doc });
-      expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root)).toBeNull();
-      // 冲刷队列:让出式异步提取完成后桶才可查
+      expect(getDocumentReturnAnnotationBucketForTests(root, Uri.file(path.join(root, 'main.py')).toString()))
+        .toBeUndefined();
+      // 冲刷队列:让出式异步提取完成后桶才落地
       await flushPendingDocumentReturnAnnotationsForTests();
-      expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
-        .toMatchObject({ annotation: 'NEW' });
+      expect(getDocumentReturnAnnotationBucketForTests(root, Uri.file(path.join(root, 'main.py')).toString())?.annotations.get('get_data'))
+        .toBe('NEW');
     } finally {
       disposeAll(context);
       workspace.workspaceFolders = originalFolders;

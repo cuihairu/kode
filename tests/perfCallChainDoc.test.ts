@@ -323,7 +323,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // +1 行),provideHover 真位重探 188→189,出处随 baseline 锁步。
   // 2026-11-09:139f7035 链尾段与 6bf9ebed 尾拆(hoverBuilders)叠加后
   // provideHover 净位移 189→183,真位重探,出处随 baseline 锁步。
-  ['src/languageProviders/hover.ts', 183, 'provideHover('],
+  // 2026-11-11(批 D 精确性主车道):provideHoverTimed 签名 +1 参
+  // (localReturnAttempted)与 gate 重入透传 +2,provideHover 真位重探
+  // 183→185,出处随 baseline 锁步。
+  ['src/languageProviders/hover.ts', 185, 'provideHover('],
   ['src/languageProviders/navigation.ts', 47, 'shadowCompareDefinition'],
   // 2026-11-09(flags 别名归一批):validation.ts 顶部加 FLAG_DOMAIN_ALIAS
   // import(+1 行),其后 validation.ts 三锚点真位重探 13→14/37→38/255→256,

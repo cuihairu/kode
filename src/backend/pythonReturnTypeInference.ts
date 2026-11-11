@@ -690,27 +690,13 @@ export async function flushPendingDocumentReturnAnnotationsForTests(): Promise<v
   await Promise.all([...inflightDocumentUpdates.values()]);
 }
 
-/** 悬停文档自己的桶(最优先)之外,其余打开文档的桶按 fileKey 序合并(先见优先)。 */
-function mergedOtherDocumentAnnotations(
+/** 测试面:直读文档注解桶(批 D 级联删除后查询不再读桶;发布机制仍由
+ * extension.ts 文档事件驱动,机制断言走本访问器)。 */
+export function getDocumentReturnAnnotationBucketForTests(
   workspaceRoot: string,
-  hoveredFileKey: string | null
-): { annotations: PythonReturnAnnotationIndex; shadowedNames: Set<string> } {
-  const annotations: PythonReturnAnnotationIndex = new Map();
-  const shadowedNames = new Set<string>();
-  const rootBuckets = documentAnnotationBuckets.get(workspaceRoot);
-  if (!rootBuckets) { return { annotations, shadowedNames }; }
-  for (const fileKey of [...rootBuckets.keys()].sort()) {
-    const bucket = rootBuckets.get(fileKey)!;
-    if (fileKey === hoveredFileKey) {
-      for (const name of bucket.unannotatedNames) { shadowedNames.add(name); }
-      continue;
-    }
-    for (const [name, annotation] of bucket.annotations) {
-      if (!annotations.has(name)) { annotations.set(name, annotation); }
-    }
-    for (const name of bucket.unannotatedNames) { shadowedNames.add(name); }
-  }
-  return { annotations, shadowedNames };
+  fileKey: string
+): DocumentAnnotationBucket | undefined {
+  return documentAnnotationBuckets.get(workspaceRoot)?.get(fileKey);
 }
 
 async function getReturnAnnotationIndex(workspaceRoot: string, token?: AnnotationCancellation): Promise<PythonReturnAnnotationIndex> {
@@ -872,7 +858,9 @@ function locateModuleBucket(
  * 遮蔽)返回空——不再把更早的调用答案借给被覆盖的变量(R2-F16 反例
  * `x=original(); x=0` 此前仍推导 EXPECTED)。
  */
-function matchingAssignments(lines: readonly string[], hoverLine: number, word: string): LocalAssignmentCall[] {
+/** 悬停词的最新写入候选(调用形态)。批 D:hover 预检同款闸——无候选时
+ * Rust/TS 双链都必空,调用方可零成本跳过接收者定型腿(不进异步、不改下游面)。 */
+export function matchingAssignments(lines: readonly string[], hoverLine: number, word: string): LocalAssignmentCall[] {
   // KR-AUD-64:掩码先行——全文掩一次(pythonLexicalMask 跨行记三引号态,
   // 保行保列),三引号字符串体内的 `名 = 调用` 形行不再被当成真实赋值候选。
   // 单行 maskCodeLine 只能处理同行引号,跨行三引号体必须全文掩。
@@ -931,46 +919,22 @@ function resolveLocalVariableReturnTypeFromSnapshotImpl(
   hoverLine: number,
   word: string,
   workspaceRoot: string | null,
-  documentContext?: DocumentAnnotationContext
+  // 批 D:查询消费面(文档桶级联)已删;参数保留(hover 装配与既有调用方
+  // 签名不变)但不再参与解析——桶发布由 extension.ts 文档事件驱动
+  _documentContext?: DocumentAnnotationContext
 ): LocalVariableReturnType | null {
   if (!workspaceRoot || !word || /^[A-Z_][A-Z0-9_]*$/.test(word)) return null;
   const candidates = matchingAssignments(lines, hoverLine, word);
   if (candidates.length === 0) return null;
-  // 2026-10-28 审核整改(HOV-009):先查赋值候选——无候选的 hover 不做全文
-  // 注解提取(此前先更新桶再查候选,无赋值词的 hover 也白做全文件提取)。
-  // IDE-REV-010:首次 hover 不做同步整文件提取——本查询只读已发布桶;桶
-  // 版本落后(首次/编辑后)交给受控异步更新发布(queueDocumentReturnAnnotations
-  // 同文件合并到最新版本、让出式提取、版本/关闭竞态守卫),发布后下次查询
-  // 可见;冷版本本轮回级联(其余打开文档桶→磁盘新鲜索引),不等待发布。
-  if (documentContext) {
-    queueDocumentReturnAnnotations(workspaceRoot, documentContext);
-  }
-  const hoveredBucket = documentContext
-    ? documentAnnotationBuckets.get(workspaceRoot)?.get(documentContext.fileKey)
-    : undefined;
-  const { annotations: otherAnnotations, shadowedNames } = mergedOtherDocumentAnnotations(
-    workspaceRoot,
-    hoveredBucket ? documentContext!.fileKey : null
-  );
+  // 精确性主车道批 D:级联兜底(悬停文档桶→其余打开文档桶→磁盘索引的全局
+  // 方法名猜测,跨类误绑)整链删除——接收者不可知 → null(诚实,不显示);
+  // 同文件可推导子集由 Rust localReturnType 面接住(hover.ts Rust-first 腿),
+  // 本链只保留 IDE-HOV-017 import 绑定路径(接收者已正确)。查询路不再喂
+  // 文档桶(桶发布改由 extension.ts 文档事件驱动,查询消费面已随级联删除)。
   const cached = returnAnnotationCaches.get(workspaceRoot);
   // 2026-10-28 审核整改:TTL 过期检查必须在命中之前——过期索引不再答磁盘
   // 旧注解(原检查放在级联命中返回之后,过期旧值可无限命中)。
   const diskIndexFresh = cached !== undefined && Date.now() - cached.builtAtMs < INDEX_TTL_MS;
-  // 三段级联(单名):悬停文档桶 → 其余打开文档桶 → 磁盘已发布索引(仅新鲜;遮蔽名不借)
-  // IDE-REV-037:级联各层答话时把所用来源落日志(验收「日志明确所用来源」)
-  const cascadeAnnotation = (methodName: string): { annotation: string; source: string } | null => {
-    const fromHovered = hoveredBucket?.annotations.get(methodName);
-    if (fromHovered && fromHovered !== 'Any') { return { annotation: fromHovered, source: 'hovered-document' }; }
-    // IDE-AUD-043:当前文件显式无注解声明(在 unannotatedNames,不在 annotations)
-    // 是权威本地定义——不得再借其他打开文档的同名注解(旧码在 shadowed 检查前先借 fromOthers)。
-    if (hoveredBucket?.unannotatedNames.has(methodName)) { return null; }
-    const fromOthers = otherAnnotations.get(methodName);
-    if (fromOthers && fromOthers !== 'Any') { return { annotation: fromOthers, source: 'other-document' }; }
-    if (shadowedNames.has(methodName)) { return null; }
-    const fromDisk = diskIndexFresh ? cached!.index.get(methodName) : undefined;
-    if (fromDisk && fromDisk !== 'Any') { return { annotation: fromDisk, source: 'disk-snapshot' }; }
-    return null;
-  };
   // IDE-HOV-017:显式 import 绑定的候选只解析到对应模块的文件桶;
   // 绑定模块无注解、模块文件找不到或多处同名(无法确定)都不回退全局。
   const bindings = extractFileImports(lines);
@@ -994,13 +958,7 @@ function resolveLocalVariableReturnTypeFromSnapshotImpl(
       }
       continue;
     }
-    const resolved = cascadeAnnotation(assignment.methodName);
-    if (resolved) {
-      annotationSourceLog('info', () =>
-        `hover-resolve word=${word} method=${assignment.methodName} source=${resolved.source}`
-      );
-      return { target: word, annotation: resolved.annotation, methodName: assignment.methodName };
-    }
+    // 非绑定候选:接收者不可知 → 不猜(诚实 miss;不借任何同名注解)
   }
   if (!cached || Date.now() - cached.builtAtMs >= INDEX_TTL_MS) {
     // IDE-REV-037:过期/冷盘未命中在日志里明确——不借旧值答话,受控重建

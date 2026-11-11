@@ -15,6 +15,7 @@ import {
   extractFileReturnAnnotations,
   extractFileReturnAnnotationsAsync,
   flushPendingDocumentReturnAnnotationsForTests,
+  getDocumentReturnAnnotationBucketForTests,
   releaseDocumentReturnAnnotations,
   removeSavedFileAnnotations,
   renameSavedFileAnnotations,
@@ -154,7 +155,7 @@ describe('返回类型推导(局部变量 hover)', () => {
     expect([...index]).toEqual([['value', 'First'], ['missing', 'Found']]);
   });
 
-  it('JSONDATA 正例:data = activity_data.get_data() → data: JSONDATA,标注来源', async () => {
+  it('JSONDATA 正例(接收者不可知):无 import 绑定的同名猜测不再答(级联已删,批 D)', async () => {
     const { put } = setupWorkspace();
     put(
       'scripts/entity/Activity.py',
@@ -165,9 +166,31 @@ describe('返回类型推导(局部变量 hover)', () => {
       'class Avatar:\n    def tick(self):\n        data = activity_data.get_data()\n        return data\n',
       path.join(workspace.workspaceFolders![0].uri.fsPath, 'scripts/base/Avatar.py')
     );
+    // 预热磁盘索引:证明「索引在场也不再猜名」——get_data 无绑定、接收者
+    // activity_data 不可定型 → 不显示(跨类同名误绑是批 D 删除的误导面;
+    // 同文件可推导子集由 Rust localReturnType 面接收者定型接住)
     await resolveLocalVariableReturnType(doc.getText().split(/\r?\n/), 2, 'data', workspace.workspaceFolders![0].uri.fsPath);
     const text = hoverText(
       await Promise.resolve(provider.provideHover(doc, new Position(2, 8))) // 光标在 data 上
+    );
+    expect(text).not.toContain('**data:**');
+    expect(text).not.toContain('推导自');
+  });
+
+  it('JSONDATA import 绑定正例:from 模块显式绑定仍解析(接收者正确路径保留)', async () => {
+    const { put } = setupWorkspace();
+    put(
+      'scripts/entity/Activity.py',
+      'class Activity:\n    def get_data(self) -> JSONDATA:\n        return None\n'
+    );
+    const provider = new KBEngineHoverProvider(makeManager());
+    const doc = pyDoc(
+      'from scripts.entity.Activity import get_data\n\ndata = get_data()\n',
+      path.join(workspace.workspaceFolders![0].uri.fsPath, 'scripts/base/Avatar.py')
+    );
+    await resolveLocalVariableReturnType(doc.getText().split(/\r?\n/), 2, 'data', workspace.workspaceFolders![0].uri.fsPath);
+    const text = hoverText(
+      await Promise.resolve(provider.provideHover(doc, new Position(2, 1)))
     );
     expect(text).toContain('**data: JSONDATA**');
     expect(text).toContain('推导自 get_data() 返回注解');
@@ -277,29 +300,24 @@ describe('三提示面无 Any(能推才显闸)', () => {
   });
 });
 
-describe('IDE-HOV-011 按文档版本更新当前文件注解', () => {
-  it('未保存的注解变化经受控异步发布进入当前文件桶:发布后同文件 hover 见新值,不等磁盘与 TTL', async () => {
-    const { root, put } = setupWorkspace();
-    // 磁盘仍是旧值 JSONDATA;文档未保存改为 OTHERDATA
-    put('main.py', 'def get_data() -> JSONDATA:\n    pass\n\ndata = get_data()\n');
-    const provider = new KBEngineHoverProvider(makeManager());
-    const docV1 = makeTextDocument(
-      'def get_data() -> JSONDATA:\n    pass\n\ndata = get_data()\n',
-      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 1 }
-    );
-    // IDE-REV-010:hover 只读已发布桶并触发受控异步更新;发布后查询可见
-    await Promise.resolve(provider.provideHover(docV1, new Position(3, 1)));
+describe('IDE-HOV-011 按文档版本更新当前文件注解(批 D:桶发布由文档事件驱动,查询消费面移交 Rust 接收者定型)', () => {
+  it('未保存的注解变化经受控异步发布进入当前文件桶:发布后桶见新值,不等磁盘与 TTL', async () => {
+    const { root } = setupWorkspace();
+    updateDocumentReturnAnnotations(root, {
+      fileKey: 'file:///main.py', version: 1,
+      source: () => 'def get_data() -> JSONDATA:\n    pass\n'
+    });
     await flushPendingDocumentReturnAnnotationsForTests();
-    const v1 = hoverText(await Promise.resolve(provider.provideHover(docV1, new Position(3, 1))));
-    expect(v1).toContain('**data: JSONDATA**');
-    const docV2 = makeTextDocument(
-      'def get_data() -> OTHERDATA:\n    pass\n\ndata = get_data()\n',
-      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 2 }
-    );
-    await Promise.resolve(provider.provideHover(docV2, new Position(3, 1)));
+    expect(getDocumentReturnAnnotationBucketForTests(root, 'file:///main.py')?.annotations.get('get_data'))
+      .toBe('JSONDATA');
+    // 版本前进(未保存编辑)→ 重提取换桶,新值即时入桶
+    updateDocumentReturnAnnotations(root, {
+      fileKey: 'file:///main.py', version: 2,
+      source: () => 'def get_data() -> OTHERDATA:\n    pass\n'
+    });
     await flushPendingDocumentReturnAnnotationsForTests();
-    const v2 = hoverText(await Promise.resolve(provider.provideHover(docV2, new Position(3, 1))));
-    expect(v2).toContain('**data: OTHERDATA**');
+    expect(getDocumentReturnAnnotationBucketForTests(root, 'file:///main.py')?.annotations.get('get_data'))
+      .toBe('OTHERDATA');
   });
 
   it('旧版本/同版本不得覆盖新版本,且仅在版本前进时读取全文', () => {
@@ -320,39 +338,30 @@ describe('IDE-HOV-011 按文档版本更新当前文件注解', () => {
     const sourceSame = vi.fn(() => 'def get_data() -> SAME:\n    pass\n');
     updateDocumentReturnAnnotations(root, { fileKey: 'file:///a.py', version: 3, source: sourceSame });
     expect(sourceSame).not.toHaveBeenCalled();
-    const resolved = resolveLocalVariableReturnTypeFromSnapshot(
-      ['data = get_data()'], 0, 'data', root,
-      { fileKey: 'file:///a.py', version: 3, source: () => '' }
-    );
-    expect(resolved).toMatchObject({ annotation: 'THREE' });
+    // 桶保持 v3 内容(THREE);批 D 后查询不再读桶,机制断言走桶访问器
+    expect(getDocumentReturnAnnotationBucketForTests(root, 'file:///a.py')?.annotations.get('get_data'))
+      .toBe('THREE');
   });
 
-  it('删除注解(def 在而注解缺)立即遮蔽磁盘旧注解,不借旧值', async () => {
+  it('删除注解(def 在而注解缺)入桶 unannotatedNames;查询不再借磁盘旧值(级联删除)', async () => {
     const { root, put } = setupWorkspace();
     put('main.py', 'def get_data() -> JSONDATA:\n    pass\n\ndata = get_data()\n');
     // 磁盘索引就绪(旧值 JSONDATA 已可解析)
     await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
-    const provider = new KBEngineHoverProvider(makeManager());
-    // 正例前置:注解在时(同文件 v1)确实显示——证明删除后的「不显」是遮蔽生效而非链路断
-    const docV1 = makeTextDocument(
-      'def get_data() -> JSONDATA:\n    pass\n\ndata = get_data()\n',
-      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 1 }
-    );
-    const v1 = hoverText(await Promise.resolve(provider.provideHover(docV1, new Position(3, 1))));
-    expect(v1).toContain('**data: JSONDATA**');
-    const docV2 = makeTextDocument(
-      'def get_data():\n    pass\n\ndata = get_data()\n',
-      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 2 }
-    );
-    // IDE-REV-010:删除注解的变化同样经受控异步发布;发布后遮蔽生效
-    await Promise.resolve(provider.provideHover(docV2, new Position(3, 1)));
+    // 删除注解的变化(文档事件驱动)发布后:get_data 入 unannotatedNames(不再有注解)
+    updateDocumentReturnAnnotations(root, {
+      fileKey: 'file:///main.py', version: 2,
+      source: () => 'def get_data():\n    pass\n\ndata = get_data()\n'
+    });
     await flushPendingDocumentReturnAnnotationsForTests();
-    const text = hoverText(await Promise.resolve(provider.provideHover(docV2, new Position(3, 1))));
-    expect(text).not.toContain('JSONDATA');
-    expect(text).not.toContain('推导自');
+    const bucket = getDocumentReturnAnnotationBucketForTests(root, 'file:///main.py');
+    expect(bucket?.annotations.has('get_data')).toBe(false);
+    expect(bucket?.unannotatedNames.has('get_data')).toBe(true);
+    // 查询面:无绑定候选不借磁盘旧值(级联已删;同文件推导归 Rust 接收者定型面)
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root)).toBeNull();
   });
 
-  it('其他打开文档的未保存注解同样遮蔽磁盘旧值', async () => {
+  it('关闭文档弃桶:桶随关闭消失;import 绑定查询回磁盘口径(未保存修改随关闭消失)', async () => {
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
     await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
@@ -360,26 +369,19 @@ describe('IDE-HOV-011 按文档版本更新当前文件注解', () => {
       fileKey: 'file:///svc.py', version: 2,
       source: () => 'def get_data() -> OTHER:\n    pass\n'
     });
-    const resolved = resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root);
-    expect(resolved).toMatchObject({ annotation: 'OTHER' });
-  });
-
-  it('关闭文档弃桶:回到磁盘口径(未保存修改随关闭消失)', async () => {
-    const { root, put } = setupWorkspace();
-    put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
-    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
-    updateDocumentReturnAnnotations(root, {
-      fileKey: 'file:///svc.py', version: 2,
-      source: () => 'def get_data() -> OTHER:\n    pass\n'
-    });
+    await flushPendingDocumentReturnAnnotationsForTests();
+    expect(getDocumentReturnAnnotationBucketForTests(root, 'file:///svc.py')).toBeDefined();
     releaseDocumentReturnAnnotations(root, 'file:///svc.py');
-    const resolved = resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root);
-    expect(resolved).toMatchObject({ annotation: 'JSONDATA' });
+    expect(getDocumentReturnAnnotationBucketForTests(root, 'file:///svc.py')).toBeUndefined();
+    // 绑定查询走磁盘桶:弃桶后即磁盘口径(JSONDATA;OTHER 随关闭消失)
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc import get_data', 'data = get_data()'], 1, 'data', root
+    )).toMatchObject({ annotation: 'JSONDATA' });
   });
 });
 
-describe('IDE-REV-010:首次 hover 不做同步整文件注解提取', () => {
-  it('大文件首次 hover 同步段零 source() 调用(只读已发布桶),发布后能查到新注解', async () => {
+describe('IDE-REV-010:查询路零整文件提取(批 D:查询消费面移交 Rust 面,桶发布由文档事件驱动)', () => {
+  it('大文件首次查询同步段零 source() 调用(不提取);文档事件发布后桶见新注解', async () => {
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
     // 磁盘索引就绪(旧值 JSONDATA);文档未保存改为 OTHERDATA(大文件:候选后垫注释行)
@@ -396,87 +398,87 @@ describe('IDE-REV-010:首次 hover 不做同步整文件注解提取', () => {
       bigSource.split('\n'), 2, 'data', root,
       { fileKey: 'file:///main.py', version: 1, source: () => { sourceCalls += 1; return bigSource; } }
     );
-    // 同步段零提取:source() 未被调用(修复前红:同步整文件提取在此处即调),
-    // 本轮回磁盘旧值(JSONDATA),冷版本交受控异步更新
+    // 查询路零提取:source() 未被调用(修复前红:同步整文件提取在此处即调);
+    // 批 D 后无 import 绑定 → 诚实 null(不借磁盘旧值猜)
     expect(sourceCalls).toBe(0);
-    expect(first).toMatchObject({ annotation: 'JSONDATA' });
+    expect(first).toBeNull();
 
-    // 受控异步更新发布后,新注解可查(发布后能查到新注解)
+    // 桶发布改由文档事件驱动(非查询触发):发布后桶见新注解
+    updateDocumentReturnAnnotations(root, {
+      fileKey: 'file:///main.py', version: 1, source: () => bigSource
+    });
     await flushPendingDocumentReturnAnnotationsForTests();
-    const second = resolveLocalVariableReturnTypeFromSnapshot(
-      bigSource.split('\n'), 2, 'data', root,
-      { fileKey: 'file:///main.py', version: 1, source: () => { sourceCalls += 1; return bigSource; } }
-    );
-    expect(second).toMatchObject({ annotation: 'OTHERDATA' });
+    expect(getDocumentReturnAnnotationBucketForTests(root, 'file:///main.py')?.annotations.get('get_data'))
+      .toBe('OTHERDATA');
   });
 
-  it('编辑后立即 hover 同步段零提取;发布后见新值;旧版本不覆盖', async () => {
+  it('编辑后立即查询零提取(诚实 null);文档事件发布后桶见新值;旧版本不覆盖', async () => {
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
     await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
-    const ctx = (version: number, text: string, counter: { calls: number }) => ({
-      fileKey: 'file:///main.py',
-      version,
-      source: (): string => { counter.calls += 1; return text; }
-    });
-    const v2 = { calls: 0 };
-    // 编辑(v2,THIRDDATA)后立即 hover:同步段零提取
+    // 编辑(v2,THIRDDATA)后立即查询:查询路零提取,无绑定候选 → 诚实 null
     const text2 = 'def get_data() -> THIRDDATA:\n    pass\n\ndata = get_data()\n';
-    const immediate = resolveLocalVariableReturnTypeFromSnapshot(
-      text2.split('\n'), 3, 'data', root, ctx(2, text2, v2)
-    );
-    expect(v2.calls).toBe(0);
-    expect(immediate).toMatchObject({ annotation: 'JSONDATA' }); // 旧桶未发布,回磁盘旧值
-    await flushPendingDocumentReturnAnnotationsForTests();
+    const sourceV2 = vi.fn(() => text2);
     expect(resolveLocalVariableReturnTypeFromSnapshot(
-      text2.split('\n'), 3, 'data', root, ctx(2, text2, { calls: 0 })
-    )).toMatchObject({ annotation: 'THIRDDATA' });
+      text2.split('\n'), 3, 'data', root,
+      { fileKey: 'file:///main.py', version: 2, source: sourceV2 }
+    )).toBeNull();
+    expect(sourceV2).not.toHaveBeenCalled();
+    // 桶发布由文档事件驱动:发布后桶见 THIRDDATA
+    updateDocumentReturnAnnotations(root, { fileKey: 'file:///main.py', version: 2, source: sourceV2 });
+    await flushPendingDocumentReturnAnnotationsForTests();
+    expect(sourceV2).toHaveBeenCalledTimes(1);
+    expect(getDocumentReturnAnnotationBucketForTests(root, 'file:///main.py')?.annotations.get('get_data'))
+      .toBe('THIRDDATA');
 
     // 旧版本(v1,STALE)不能覆盖已发布的 v2:提取前版本闸拒绝(source 零调用)
-    const stale = { calls: 0 };
     const text1 = 'def get_data() -> STALE:\n    pass\n\ndata = get_data()\n';
-    resolveLocalVariableReturnTypeFromSnapshot(
-      text1.split('\n'), 3, 'data', root, ctx(1, text1, stale)
-    );
+    const sourceStale = vi.fn(() => text1);
+    updateDocumentReturnAnnotations(root, { fileKey: 'file:///main.py', version: 1, source: sourceStale });
     await flushPendingDocumentReturnAnnotationsForTests();
-    expect(stale.calls).toBe(0);
-    expect(resolveLocalVariableReturnTypeFromSnapshot(
-      text2.split('\n'), 3, 'data', root, ctx(2, text2, { calls: 0 })
-    )).toMatchObject({ annotation: 'THIRDDATA' });
+    expect(sourceStale).not.toHaveBeenCalled();
+    expect(getDocumentReturnAnnotationBucketForTests(root, 'file:///main.py')?.annotations.get('get_data'))
+      .toBe('THIRDDATA');
   });
 });
 
-describe('IDE-HOV-012 保存文件时只替换该文件注解桶', () => {
+describe('IDE-HOV-012 保存文件时只替换该文件注解桶(批 D:查询断言走 import 绑定路径)', () => {
   it('保存删除注解后不再可查,且不重读任何文件(纯内存换桶)', async () => {
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
     put('other.py', 'def load_all() -> PAYLOAD:\n    pass\n');
-    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    await resolveLocalVariableReturnType(['from svc import get_data', 'data = get_data()'], 1, 'data', root);
     const read = vi.spyOn(fs.promises, 'readFile');
     applySavedFileAnnotations(root, path.join(root, 'svc.py'), 'def get_data():\n    pass\n');
     expect(read).not.toHaveBeenCalled();
     read.mockRestore();
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root)).toBeNull();
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc import get_data', 'data = get_data()'], 1, 'data', root
+    )).toBeNull();
     // 其他文件桶未动:load_all 仍可查
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['x = load_all()'], 0, 'x', root))
-      .toMatchObject({ annotation: 'PAYLOAD' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from other import load_all', 'x = load_all()'], 1, 'x', root
+    )).toMatchObject({ annotation: 'PAYLOAD' });
   });
 
   it('保存新注解即时并入合并视图(换桶后取新值)', async () => {
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data():\n    pass\n');
-    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root)).toBeNull();
+    await resolveLocalVariableReturnType(['from svc import get_data', 'data = get_data()'], 1, 'data', root);
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc import get_data', 'data = get_data()'], 1, 'data', root
+    )).toBeNull();
     applySavedFileAnnotations(root, path.join(root, 'svc.py'), 'def get_data() -> FRESH:\n    pass\n');
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
-      .toMatchObject({ annotation: 'FRESH' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc import get_data', 'data = get_data()'], 1, 'data', root
+    )).toMatchObject({ annotation: 'FRESH' });
   });
 
   it('新文件保存后新增注解桶:可查其注解,目录发现不重跑', async () => {
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
     // 索引就绪时 extra.py 尚不存在(不在任何桶里)
-    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    await resolveLocalVariableReturnType(['from svc import get_data', 'data = get_data()'], 1, 'data', root);
     const read = vi.spyOn(fs.promises, 'readFile');
     const readdir = vi.spyOn(fs.promises, 'readdir');
     applySavedFileAnnotations(root, path.join(root, 'extra.py'), 'def load_all() -> PAYLOAD:\n    pass\n');
@@ -484,94 +486,121 @@ describe('IDE-HOV-012 保存文件时只替换该文件注解桶', () => {
     expect(readdir).not.toHaveBeenCalled();
     read.mockRestore();
     readdir.mockRestore();
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['x = load_all()'], 0, 'x', root))
-      .toMatchObject({ annotation: 'PAYLOAD' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from extra import load_all', 'x = load_all()'], 1, 'x', root
+    )).toMatchObject({ annotation: 'PAYLOAD' });
     // 既有桶不受新桶影响
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
-      .toMatchObject({ annotation: 'JSONDATA' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc import get_data', 'data = get_data()'], 1, 'data', root
+    )).toMatchObject({ annotation: 'JSONDATA' });
   });
 
   it('冷缓存无桶可换为 no-op:不虚建部分索引', async () => {
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
     applySavedFileAnnotations(root, path.join(root, 'svc.py'), 'def get_data() -> STALE:\n    pass\n');
-    const built = await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const built = await resolveLocalVariableReturnType(
+      ['from svc import get_data', 'data = get_data()'], 1, 'data', root
+    );
     expect(built).toMatchObject({ annotation: 'JSONDATA' });
   });
 });
 
-describe('IDE-HOV-014 删除文件时移除注解桶', () => {
+describe('IDE-HOV-014 删除文件时移除注解桶(批 D:查询断言走 import 绑定路径)', () => {
   it('删除后该来源注解消失,其他同名方法来源仍存在(纯内存,零文件读取)', async () => {
     const { root, put } = setupWorkspace();
     put('svc.py', 'def load_all() -> SVC:\n    pass\n\ndef only_svc() -> SVCONLY:\n    pass\n');
     put('other.py', 'def load_all() -> PAYLOAD:\n    pass\n');
-    await resolveLocalVariableReturnType(['x = load_all()'], 0, 'x', root);
-    // 正例前置:两来源在册(目录扫描次序不保证,load_all 命中其一即可)
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['x = load_all()'], 0, 'x', root))
-      .toMatchObject({ target: 'x', methodName: 'load_all' });
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root))
-      .toMatchObject({ annotation: 'SVCONLY' });
+    await resolveLocalVariableReturnType(['from svc import load_all', 'x = load_all()'], 1, 'x', root);
+    // 正例前置:svc 来源在册(绑定路径接收者正确,不再依赖目录扫描次序)
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc import load_all', 'x = load_all()'], 1, 'x', root
+    )).toMatchObject({ target: 'x', annotation: 'SVC', methodName: 'load_all' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc import only_svc', 'y = only_svc()'], 1, 'y', root
+    )).toMatchObject({ annotation: 'SVCONLY' });
     const read = vi.spyOn(fs.promises, 'readFile');
     removeSavedFileAnnotations(root, path.join(root, 'svc.py'));
     expect(read).not.toHaveBeenCalled();
     read.mockRestore();
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['x = load_all()'], 0, 'x', root))
-      .toMatchObject({ annotation: 'PAYLOAD' });
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root)).toBeNull();
+    // svc 来源的注解随桶消失;其他同名来源(other.py)不受影响
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc import load_all', 'x = load_all()'], 1, 'x', root
+    )).toBeNull();
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from other import load_all', 'x = load_all()'], 1, 'x', root
+    )).toMatchObject({ annotation: 'PAYLOAD' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc import only_svc', 'y = only_svc()'], 1, 'y', root
+    )).toBeNull();
   });
 
   it('冷缓存删除为 no-op:不虚建索引,下一次查询按磁盘真量全量建', async () => {
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
     removeSavedFileAnnotations(root, path.join(root, 'svc.py'));
-    const built = await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const built = await resolveLocalVariableReturnType(
+      ['from svc import get_data', 'data = get_data()'], 1, 'data', root
+    );
     expect(built).toMatchObject({ annotation: 'JSONDATA' });
   });
 
   it('删不在册的文件路径为 no-op:不抛不动', async () => {
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
-    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    await resolveLocalVariableReturnType(['from svc import get_data', 'data = get_data()'], 1, 'data', root);
     removeSavedFileAnnotations(root, path.join(root, 'never_scanned.py'));
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
-      .toMatchObject({ annotation: 'JSONDATA' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc import get_data', 'data = get_data()'], 1, 'data', root
+    )).toMatchObject({ annotation: 'JSONDATA' });
   });
 });
 
-describe('IDE-HOV-015 重命名文件时迁移注解来源', () => {
+describe('IDE-HOV-015 重命名文件时迁移注解来源(批 D:查询断言走 import 绑定路径)', () => {
   it('迁移保内容保次序:新 URI 承接桶,旧 URI 不留双份', async () => {
     const { root, put } = setupWorkspace();
     put('a.py', 'def dup() -> FROM_A:\n    pass\n\ndef a_only() -> A:\n    pass\n');
     put('svc.py', 'def dup() -> FROM_SVC:\n    pass\n\ndef only_svc() -> SVCONLY:\n    pass\n');
-    await resolveLocalVariableReturnType(['x = dup()'], 0, 'x', root);
-    const before = resolveLocalVariableReturnTypeFromSnapshot(['x = dup()'], 0, 'x', root)!;
-    expect(before).toMatchObject({ target: 'x', methodName: 'dup' });
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root))
-      .toMatchObject({ annotation: 'SVCONLY' });
+    await resolveLocalVariableReturnType(['from svc import dup', 'x = dup()'], 1, 'x', root);
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc import dup', 'x = dup()'], 1, 'x', root
+    )).toMatchObject({ target: 'x', annotation: 'FROM_SVC', methodName: 'dup' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc import only_svc', 'y = only_svc()'], 1, 'y', root
+    )).toMatchObject({ annotation: 'SVCONLY' });
     const read = vi.spyOn(fs.promises, 'readFile');
     renameSavedFileAnnotations(root, path.join(root, 'svc.py'), path.join(root, 'svc2.py'));
     expect(read).not.toHaveBeenCalled();
     read.mockRestore();
-    // 迁移后:合并次序不变(dup 仍解析同源)、独有注解仍可查(承接不丢)
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['x = dup()'], 0, 'x', root))
-      .toMatchObject({ annotation: before.annotation });
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root))
-      .toMatchObject({ annotation: 'SVCONLY' });
-    // 弃新桶后 dup 只剩 a.py 来源、独有注解落空——证明旧 svc.py 桶未残留双份
+    // 迁移后:新模块名承接桶(dup 仍 FROM_SVC)、独有注解仍可查
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc2 import dup', 'x = dup()'], 1, 'x', root
+    )).toMatchObject({ annotation: 'FROM_SVC' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc2 import only_svc', 'y = only_svc()'], 1, 'y', root
+    )).toMatchObject({ annotation: 'SVCONLY' });
+    // 弃新桶后 dup 只剩 a.py 来源、svc 独有注解落空——证明旧 svc.py 桶未残留双份
     removeSavedFileAnnotations(root, path.join(root, 'svc2.py'));
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['x = dup()'], 0, 'x', root))
-      .toMatchObject({ annotation: 'FROM_A' });
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root)).toBeNull();
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from a import dup', 'x = dup()'], 1, 'x', root
+    )).toMatchObject({ annotation: 'FROM_A' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc2 import only_svc', 'y = only_svc()'], 1, 'y', root
+    )).toBeNull();
   });
 
   it('保存改写走新 URI:旧 URI 不再是活桶', async () => {
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
-    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    await resolveLocalVariableReturnType(['from svc import get_data', 'data = get_data()'], 1, 'data', root);
     renameSavedFileAnnotations(root, path.join(root, 'svc.py'), path.join(root, 'svc2.py'));
     applySavedFileAnnotations(root, path.join(root, 'svc2.py'), 'def get_data() -> FRESH:\n    pass\n');
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
-      .toMatchObject({ annotation: 'FRESH' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc2 import get_data', 'data = get_data()'], 1, 'data', root
+    )).toMatchObject({ annotation: 'FRESH' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc import get_data', 'data = get_data()'], 1, 'data', root
+    )).toBeNull();
   });
 
   it('冷缓存与不在册路径均为 no-op', async () => {
@@ -579,16 +608,19 @@ describe('IDE-HOV-015 重命名文件时迁移注解来源', () => {
     put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
     renameSavedFileAnnotations(null, '/x/old.py', '/x/new.py');
     renameSavedFileAnnotations(root, path.join(root, 'svc.py'), path.join(root, 'svc2.py'));
-    const built = await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const built = await resolveLocalVariableReturnType(
+      ['from svc import get_data', 'data = get_data()'], 1, 'data', root
+    );
     expect(built).toMatchObject({ annotation: 'JSONDATA' });
     renameSavedFileAnnotations(root, path.join(root, 'ghost.py'), path.join(root, 'ghost2.py'));
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
-      .toMatchObject({ annotation: 'JSONDATA' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      ['from svc import get_data', 'data = get_data()'], 1, 'data', root
+    )).toMatchObject({ annotation: 'JSONDATA' });
   });
 });
 
-describe('IDE-HOV-016 按当前文件限定返回注解候选', () => {
-  it('同文件明确声明优先于项目无关同名方法', async () => {
+describe('IDE-HOV-016 按当前文件限定返回注解候选(批 D:同文件 def 推导移交 Rust 接收者定型面)', () => {
+  it('接收者不可知的同名候选不再借名:同文件 def/项目同名都不答(级联已删)', async () => {
     const { root, put } = setupWorkspace();
     put('main.py', 'def get_data() -> LOCAL:\n    pass\n\ndata = get_data()\n');
     put('other.py', 'def get_data() -> REMOTE:\n    pass\n');
@@ -598,18 +630,22 @@ describe('IDE-HOV-016 按当前文件限定返回注解候选', () => {
       'def get_data() -> LOCAL:\n    pass\n\ndata = get_data()\n',
       { fileName: path.join(root, 'main.py'), languageId: 'python', version: 1 }
     );
+    // 批 D:级联兜底已删,TS 链不借名(同文件 def 推导归 Rust 面,单测无 Rust 门)
     const text = hoverText(await Promise.resolve(provider.provideHover(doc, new Position(3, 1))));
-    expect(text).toContain('**data: LOCAL**');
+    expect(text).not.toContain('LOCAL');
     expect(text).not.toContain('REMOTE');
+    expect(text).not.toContain('推导自');
   });
 
   it('不跨作用域借用赋值:兄弟方法内的同名赋值不接管', async () => {
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
-    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    await resolveLocalVariableReturnType(['from svc import get_data', 'data = get_data()'], 1, 'data', root);
     const provider = new KBEngineHoverProvider(makeManager());
     const doc = makeTextDocument(
-      'class Avatar:\n'
+      'from svc import get_data\n'
+      + '\n'
+      + 'class Avatar:\n'
       + '    def a(self):\n'
       + '        data = get_data()\n'
       + '\n'
@@ -617,11 +653,11 @@ describe('IDE-HOV-016 按当前文件限定返回注解候选', () => {
       + '        return data\n',
       { fileName: path.join(root, 'main.py'), languageId: 'python', version: 1 }
     );
-    // 正例前置:a() 内同作用域赋值可推,证明链路通(否则下面的「不显」是链路断)
-    const inA = hoverText(await Promise.resolve(provider.provideHover(doc, new Position(2, 9))));
+    // 正例前置:a() 内同作用域赋值可推(import 绑定路径),证明链路通
+    const inA = hoverText(await Promise.resolve(provider.provideHover(doc, new Position(4, 9))));
     expect(inA).toContain('**data: JSONDATA**');
     // 兄弟方法 b() 内不借 a() 的赋值:不显示任何推导类型
-    const inB = hoverText(await Promise.resolve(provider.provideHover(doc, new Position(5, 16))));
+    const inB = hoverText(await Promise.resolve(provider.provideHover(doc, new Position(7, 16))));
     expect(inB).not.toContain('JSONDATA');
     expect(inB).not.toContain('推导自');
   });
@@ -669,8 +705,8 @@ describe('IDE-AUD-042 返回类型推导尊重最后一次变量写入(R2-F16)',
     const { root, put } = setupWorkspace();
     put('orig.py', 'def original() -> EXPECTED:\n    pass\n');
     const annotation = await resolveLocalVariableReturnType(
-      ['x = original()'],
-      0,
+      ['from orig import original', 'x = original()'],
+      1,
       'x',
       root
     );
@@ -701,7 +737,7 @@ describe('IDE-AUD-043 显式本地无注解声明阻止跨文档借名(R2-F16 �
     expect(result).toBeNull();
   });
 
-  it('本地明确注解优先于其他打开文件', () => {
+  it('本地明确注解不再经 TS 链跨文档回答(级联已删;接收者定型归 Rust 面)', () => {
     const { root } = setupWorkspace();
     updateDocumentReturnAnnotations(root, {
       fileKey: 'file:///main.py',
@@ -713,6 +749,8 @@ describe('IDE-AUD-043 显式本地无注解声明阻止跨文档借名(R2-F16 �
       version: 1,
       source: () => 'def original() -> OTHER_FILE:\n    pass\n'
     });
+    // 批 D:TS 链无 import 绑定即诚实 null——同文件 def 推导由 Rust localReturnType
+    // 面接住(hover.ts Rust-first 腿),文档桶仍在(机制面)但查询不再消费
     const result = resolveLocalVariableReturnTypeFromSnapshot(
       ['def original() -> LOCAL:', '    pass', '', 'x = original()'],
       3,
@@ -720,7 +758,7 @@ describe('IDE-AUD-043 显式本地无注解声明阻止跨文档借名(R2-F16 �
       root,
       { fileKey: 'file:///main.py', version: 1, source: () => '' }
     );
-    expect(result).toMatchObject({ target: 'x', annotation: 'LOCAL', methodName: 'original' });
+    expect(result).toBeNull();
   });
 
   it('同文件无注解也挡磁盘同名注解(不留旧值)', () => {
@@ -883,12 +921,13 @@ describe('2026-10-28 审核整改:首扫在途窗口内的文件事件不被丢�
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data() -> OLD:\n    pass\n');
     const release = gateFirstScan();
-    const pending = resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const lines = ['from svc import get_data', 'data = get_data()'];
+    const pending = resolveLocalVariableReturnType(lines, 1, 'data', root);
     applySavedFileAnnotations(root, path.join(root, 'svc.py'), 'def get_data() -> FRESH:\n    pass\n');
     release();
     const resolved = await pending;
     expect(resolved).toMatchObject({ annotation: 'FRESH' });
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
+    expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'data', root))
       .toMatchObject({ annotation: 'FRESH' });
   });
 
@@ -896,11 +935,12 @@ describe('2026-10-28 审核整改:首扫在途窗口内的文件事件不被丢�
     const { root, put } = setupWorkspace();
     put('svc.py', 'def only_svc() -> PAYLOAD:\n    pass\n');
     const release = gateFirstScan();
-    const pending = resolveLocalVariableReturnType(['y = only_svc()'], 0, 'y', root);
+    const lines = ['from svc import only_svc', 'y = only_svc()'];
+    const pending = resolveLocalVariableReturnType(lines, 1, 'y', root);
     removeSavedFileAnnotations(root, path.join(root, 'svc.py'));
     release();
     expect(await pending).toBeNull();
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root)).toBeNull();
+    expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'y', root)).toBeNull();
   });
 
   it('重命名(HOV-015):首扫在途的迁键在发布时生效,import 绑定按新模块命中', async () => {
@@ -946,21 +986,23 @@ describe('IDE-REV-006:TTL 重建在途窗口内的保存事件不被覆盖', () 
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data() -> OLD:\n    pass\n');
     put('other.py', 'def other_fn() -> OTHER_VAL:\n    pass\n');
-    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root); // 预热发布
+    const svcLines = ['from svc import get_data', 'data = get_data()'];
+    const otherLines = ['from other import other_fn', 'y = other_fn()'];
+    await resolveLocalVariableReturnType(svcLines, 1, 'data', root); // 预热发布
     const advanced = Date.now() + 4000; // 越过 INDEX_TTL_MS(3s)
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(advanced);
     try {
       const release = gateRebuildScan(); // 门住重建:扫描期读到的磁盘内容仍是 OLD
-      const pending = resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+      const pending = resolveLocalVariableReturnType(svcLines, 1, 'data', root);
       applySavedFileAnnotations(root, path.join(root, 'svc.py'), 'def get_data() -> FRESH:\n    pass\n');
       release();
       const resolved = await pending;
       // 重建发布必须重放窗口内保存:旧读的 OLD 不得覆盖 FRESH
       expect(resolved).toMatchObject({ annotation: 'FRESH' });
-      expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
+      expect(resolveLocalVariableReturnTypeFromSnapshot(svcLines, 1, 'data', root))
         .toMatchObject({ annotation: 'FRESH' });
       // 单文件保存不动其他文件桶:other 的注解原样可查
-      expect(resolveLocalVariableReturnTypeFromSnapshot(['y = other_fn()'], 0, 'y', root))
+      expect(resolveLocalVariableReturnTypeFromSnapshot(otherLines, 1, 'y', root))
         .toMatchObject({ annotation: 'OTHER_VAL' });
     } finally {
       nowSpy.mockRestore();
@@ -975,19 +1017,22 @@ describe('IDE-REV-007:TTL 重建在途窗口内的删除事件不复活来源', 
     const { root, put } = setupWorkspace();
     put('a.py', 'def get_data() -> FROM_A:\n    pass\n');
     put('b.py', 'def get_data() -> FROM_B:\n    pass\n');
-    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root); // 预热发布
+    const aLines = ['from a import get_data', 'data = get_data()'];
+    const bLines = ['from b import get_data', 'data = get_data()'];
+    await resolveLocalVariableReturnType(bLines, 1, 'data', root); // 预热发布
     const advanced = Date.now() + 4000; // 越过 INDEX_TTL_MS(3s)
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(advanced);
     try {
       const release = gateRebuildScan(); // 门住重建:扫描期仍读到 a.py(旧读)
-      const pending = resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+      const pending = resolveLocalVariableReturnType(bLines, 1, 'data', root);
       removeSavedFileAnnotations(root, path.join(root, 'a.py'));
       release();
       const resolved = await pending;
-      // a.py 来源不得复活;同名方法由 b.py 来源兜底
+      // a.py 来源不得复活(绑定模块 a 无桶 → null);同名方法由 b.py 来源兜底
       expect(resolved).toMatchObject({ annotation: 'FROM_B' });
-      expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
+      expect(resolveLocalVariableReturnTypeFromSnapshot(bLines, 1, 'data', root))
         .toMatchObject({ annotation: 'FROM_B' });
+      expect(resolveLocalVariableReturnTypeFromSnapshot(aLines, 1, 'data', root)).toBeNull();
     } finally {
       nowSpy.mockRestore();
     }
@@ -1052,12 +1097,13 @@ describe('2026-10-28 审核整改:过期磁盘索引不得继续答', () => {
   it('TTL 过期后快照面不再从磁盘旧注解答', async () => {
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data() -> OLD:\n    pass\n');
-    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const lines = ['from svc import get_data', 'data = get_data()'];
+    await resolveLocalVariableReturnType(lines, 1, 'data', root);
     const advanced = Date.now() + 4000; // 越过 INDEX_TTL_MS(3s)
     const now = vi.spyOn(Date, 'now').mockReturnValue(advanced);
     try {
-      // 命中前先过期:磁盘 OLD 不得再答(原 TTL 检查在命中返回之后)
-      expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
+      // 命中前先过期:绑定路径也不再从磁盘 OLD 答(原 TTL 检查在命中返回之后)
+      expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'data', root))
         .toBeNull();
     } finally {
       now.mockRestore();

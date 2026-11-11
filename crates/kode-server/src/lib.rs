@@ -13,6 +13,7 @@ pub mod dependency_graph;
 pub mod diagnostics;
 pub mod flag_domains;
 pub mod attribute_none;
+pub mod local_return;
 pub mod self_attribute_flow;
 pub mod return_annotations;
 pub mod user_type_contract;

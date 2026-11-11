@@ -78,9 +78,8 @@ describe('IDE-RST-009:Python 编辑查询耗时阶段拆分', () => {
     resetLanguageServiceMetrics();
     const source = ['data = get_data()', '', 'def get_data() -> JSONDATA:', '\tpass'].join('\n');
     const context = { fileKey: path.join(dir, 'm.py'), version: 1, source: () => source };
-    // IDE-REV-010:首次查询只读已发布桶并触发受控异步更新;发布后查询可见
-    resolveLocalVariableReturnTypeFromSnapshot(source.split('\n'), 0, 'data', dir, context);
-    await flushPendingDocumentReturnAnnotationsForTests();
+    // 批 D:无 import 绑定 → 诚实 null(同文件 def 推导归 Rust 面),但注解
+    // 查询段照常计样本(耗时面覆盖含诚实 miss 的全路径)
     const resolved = resolveLocalVariableReturnTypeFromSnapshot(
       source.split('\n'),
       0,
@@ -89,7 +88,7 @@ describe('IDE-RST-009:Python 编辑查询耗时阶段拆分', () => {
       context
     );
 
-    expect(resolved?.annotation).toBe('JSONDATA');
+    expect(resolved).toBeNull();
     expect((getOperationSummary('python-annotation-query')?.count ?? 0)).toBeGreaterThanOrEqual(1);
   });
 

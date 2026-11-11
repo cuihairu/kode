@@ -374,13 +374,13 @@ const RESOLVE_MAX_HOPS: usize = 4;
 
 /// 模块级 def 返回注解:Single(注解或无)= 唯一定义;Ambiguous = 同名多个。
 #[derive(Debug, Clone)]
-enum DefReturn {
+pub(crate) enum DefReturn {
     Single(Option<String>),
     Ambiguous,
 }
 
 #[derive(Debug, Clone)]
-enum CalleeShape {
+pub(crate) enum CalleeShape {
     /// f(...)
     Name(String),
     /// A.m(...)
@@ -393,7 +393,7 @@ enum CalleeShape {
 
 /// RHS 形态快照(owned;AST 在解析派生后即弃,只留可推导面)。
 #[derive(Debug, Clone)]
-enum RhsShape {
+pub(crate) enum RhsShape {
     /// 字面量面(批 B)已定型
     Typed(TypeSet),
     Call(CalleeShape),
@@ -408,6 +408,17 @@ enum RhsShape {
 enum EntryKind {
     SelfAttr,
     ClassDirect,
+}
+
+/// 批 D localReturnType 面:裸名写点全域表条目(模块/类体/方法体三域同表,
+/// 面查询按 matchingAssignments 域门自筛;shape 为 owned 快照)。
+#[derive(Debug, Clone)]
+pub(crate) struct BareWrite {
+    pub(crate) line: usize,
+    pub(crate) shape: RhsShape,
+    /// 写点所在类(方法体写点;类体直系=该类;模块层=None)
+    pub(crate) class_start: Option<usize>,
+    pub(crate) method_start: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -427,6 +438,10 @@ struct BuildContext {
     entries: Vec<DeferredEntry>,
     /// 方法域内局部裸名写点:(方法起始行, 名) → [(行, RHS 形态)](源序追加)
     locals: HashMap<(usize, String), Vec<(usize, RhsShape)>>,
+    /// 批 D localReturnType 面:裸名写点全域表(名 → 源序写点,三域同表)
+    bare_writes: HashMap<String, Vec<BareWrite>>,
+    /// def/class 名行集合(域门窄化素材;装饰器不计,与名行口径同)
+    header_lines: HashSet<usize>,
     /// 模块级 def `-> T` 表
     def_returns: HashMap<String, DefReturn>,
     /// 类名 → 类名行(同名多个 = 歧义源)
@@ -515,11 +530,20 @@ fn record_walrus_locals(
 /// 类身份键=类名行——装饰器不计,与 ClassSpan.start_line 同口径)+ 模块级 def/
 /// 类名/类方法表/局部写点。同行复合语句头的体不收集(`if c: self.x = 1` 依
 /// 条件执行,扫描按行序把它当普通行——与旧引擎「行首非 self 不匹配」同语义)。
-fn assignments_from_ast(
-    ast: &ParsedAst,
-    lines: &[Vec<u16>],
-    classes: &[ClassSpan],
-) -> (AssignmentTypes, ClassAssignmentTypes) {
+/// 收集期产物全量表格(流面与 localReturnType 面同源消费;批 D 起
+/// assignments_from_ast 一并交还,FlowParse 携带)。
+struct FlowTables {
+    assignments: AssignmentTypes,
+    class_direct: ClassAssignmentTypes,
+    locals: HashMap<(usize, String), Vec<(usize, RhsShape)>>,
+    def_returns: HashMap<String, DefReturn>,
+    class_names: HashMap<String, Vec<usize>>,
+    class_methods: HashMap<usize, HashMap<String, Vec<Option<String>>>>,
+    bare_writes: HashMap<String, Vec<BareWrite>>,
+    header_lines: HashSet<usize>,
+}
+
+fn assignments_from_ast(ast: &ParsedAst, lines: &[Vec<u16>], classes: &[ClassSpan]) -> FlowTables {
     let mut ctx = BuildContext::default();
     // 模块级 def `-> T` 表(控制块内的模块级 def 同员;类/函数体内不入)
     let mut module_defs: HashMap<String, Vec<Option<String>>> = HashMap::new();
@@ -558,7 +582,11 @@ fn assignments_from_ast(
     let mut state = ResolveState {
         lines,
         classes,
-        build: &ctx,
+        locals: &ctx.locals,
+        def_returns: &ctx.def_returns,
+        class_names: &ctx.class_names,
+        class_methods: &ctx.class_methods,
+        bare_writes: &ctx.bare_writes,
         raw: &raw,
         raw_class_direct: &raw_direct,
         baseline_memo: HashMap::new(),
@@ -586,7 +614,16 @@ fn assignments_from_ast(
             }
         }
     }
-    (final_map, final_direct)
+    FlowTables {
+        assignments: final_map,
+        class_direct: final_direct,
+        locals: ctx.locals,
+        def_returns: ctx.def_returns,
+        class_names: ctx.class_names,
+        class_methods: ctx.class_methods,
+        bare_writes: ctx.bare_writes,
+        header_lines: ctx.header_lines,
+    }
 }
 
 /// 模块级 def 收集(控制块内同员;类/函数体内 def 不入裸名调用表)。
@@ -709,6 +746,7 @@ fn walk_assignments(
                 // 类身份 = 类名行(装饰器不计;与 ClassSpan.start_line 同口径,
                 // 基线查找才能命中)
                 let cls_line = ast.line_col(cls.name.range.start().to_u32()).0;
+                ctx.header_lines.insert(cls_line);
                 ctx.class_names
                     .entry(cls.name.id.to_string())
                     .or_default()
@@ -746,6 +784,7 @@ fn walk_assignments(
             }
             ast::Stmt::FunctionDef(fun) => {
                 let fun_line = ast.line_col(fun.name.range.start().to_u32()).0;
+                ctx.header_lines.insert(fun_line);
                 walk_assignments(ast, &fun.body, Some(start_line), ctx, class_start, Some(fun_line));
             }
             ast::Stmt::If(s) => {
@@ -885,6 +924,17 @@ fn push_entry(
             }
         }
         ast::Expr::Name(name) => {
+            // 批 D localReturnType 面:裸名写点全域登记(模块/类体/方法体三域
+            // 同表;面查询按域门自筛,不影响既有链面语义)
+            ctx.bare_writes
+                .entry(name.id.to_string())
+                .or_default()
+                .push(BareWrite {
+                    line,
+                    shape: value.clone(),
+                    class_start,
+                    method_start,
+                });
             // 方法域内裸名写点 → 局部链面(最近写点解析的素材);类体直系
             // (method_start=None)不入局部链(类级链不建模,诚实空)
             if let Some(ms) = method_start {
@@ -909,17 +959,41 @@ fn push_entry(
     }
 }
 
-/// 推导状态:RAW 索引(字面量面)+ 类跨度 + 收集面;基线图备忘录防每条目重算。
-struct ResolveState<'a> {
-    lines: &'a [Vec<u16>],
-    classes: &'a [ClassSpan],
-    build: &'a BuildContext,
-    raw: &'a AssignmentTypes,
-    raw_class_direct: &'a ClassAssignmentTypes,
-    baseline_memo: HashMap<(usize, String), TypeSet>,
+/// 推导状态:RAW 索引(字面量面)+ 类跨度 + 收集面表格;基线图备忘录防每条目
+/// 重算。表格以引用携带(FlowParse 与收集期 BuildContext 两处同构消费)。
+pub(crate) struct ResolveState<'a> {
+    pub(crate) lines: &'a [Vec<u16>],
+    pub(crate) classes: &'a [ClassSpan],
+    pub(crate) locals: &'a HashMap<(usize, String), Vec<(usize, RhsShape)>>,
+    pub(crate) def_returns: &'a HashMap<String, DefReturn>,
+    pub(crate) class_names: &'a HashMap<String, Vec<usize>>,
+    pub(crate) class_methods: &'a HashMap<usize, HashMap<String, Vec<Option<String>>>>,
+    pub(crate) bare_writes: &'a HashMap<String, Vec<BareWrite>>,
+    pub(crate) raw: &'a AssignmentTypes,
+    pub(crate) raw_class_direct: &'a ClassAssignmentTypes,
+    pub(crate) baseline_memo: HashMap<(usize, String), TypeSet>,
 }
 
 impl ResolveState<'_> {
+    /// FlowParse → 推导状态(localReturnType 面与流面同源)。
+    pub(crate) fn from_flow_parse<'a>(
+        fp: &'a FlowParse,
+        lines: &'a [Vec<u16>],
+    ) -> ResolveState<'a> {
+        ResolveState {
+            lines,
+            classes: &fp.classes,
+            locals: &fp.locals,
+            def_returns: &fp.def_returns,
+            class_names: &fp.class_names,
+            class_methods: &fp.class_methods,
+            bare_writes: &fp.bare_writes,
+            raw: &fp.assignments,
+            raw_class_direct: &fp.class_direct,
+            baseline_memo: HashMap::new(),
+        }
+    }
+
     fn class_span(&self, class_start: usize) -> Option<&ClassSpan> {
         self.classes.iter().find(|c| c.start_line == class_start)
     }
@@ -945,26 +1019,30 @@ impl ResolveState<'_> {
     }
 
     /// 方法注解原子(同名方法多个 = 歧义不猜)。
-    fn method_atom(&self, class_start: usize, method: &str) -> Option<String> {
-        let rets = self.build.class_methods.get(&class_start)?.get(method)?;
+    pub(crate) fn method_atom(&self, class_start: usize, method: &str) -> Option<String> {
+        let rets = self.class_methods.get(&class_start)?.get(method)?;
         if rets.len() != 1 {
             return None;
         }
         rets[0].clone()
     }
 
-    /// 模块级 def 注解原子(重名歧义不猜;无注解=未知)。
-    fn def_atom(&self, name: &str) -> Option<String> {
-        match self.build.def_returns.get(name)? {
-            DefReturn::Single(r) => r.clone(),
-            DefReturn::Ambiguous => None,
+    /// 唯一同类名(重名类 = 歧义不猜)。
+    pub(crate) fn unique_class(&self, name: &str) -> Option<usize> {
+        match self.class_names.get(name) {
+            Some(v) if v.len() == 1 => Some(v[0]),
+            _ => None,
         }
     }
 
-    /// 唯一同类名(重名类 = 歧义不猜)。
-    fn unique_class(&self, name: &str) -> Option<usize> {
-        match self.build.class_names.get(name) {
-            Some(v) if v.len() == 1 => Some(v[0]),
+    /// 批 D:裸名 callee 原子——def 注解与唯一同类名二选一,并存=歧义不猜
+    /// (类实例化产类名原子;`x = Repo()` 流证据如实)。
+    pub(crate) fn callee_atom(&self, name: &str) -> Option<String> {
+        let def = self.def_returns.get(name);
+        let cls = self.class_names.get(name);
+        match (def, cls) {
+            (Some(DefReturn::Single(r)), None) => r.clone(),
+            (None, Some(v)) if v.len() == 1 => Some(name.to_string()),
             _ => None,
         }
     }
@@ -972,7 +1050,7 @@ impl ResolveState<'_> {
 
 /// RHS 形态推导(有界;环防;越域/未知 → 空集)。flow_line = 当前流位置
 /// (局部链最近写点 = 该位置之前最近一条)。
-fn resolve_shape(
+pub(crate) fn resolve_shape(
     state: &mut ResolveState,
     shape: &RhsShape,
     flow_line: usize,
@@ -991,23 +1069,36 @@ fn resolve_shape(
             None => TypeSet::new(),
         },
         RhsShape::Local(name) => {
-            let ms = match method_start {
-                Some(ms) => ms,
-                None => return TypeSet::new(), // 类体直系无局部链(诚实空)
-            };
-            if !visited.insert((ms, name.clone())) {
+            if !visited.insert((method_start.unwrap_or(usize::MAX), name.clone())) {
                 return TypeSet::new(); // 环
             }
-            let found = state
-                .build
-                .locals
-                .get(&(ms, name.clone()))
-                .and_then(|v| {
+            // 方法域内最近写点(类体直系 method_start=None 无局部链——模块层
+            // 回退仍可解,见下)
+            let method_found = method_start.and_then(|ms| {
+                state
+                    .locals
+                    .get(&(ms, name.clone()))
+                    .and_then(|v| {
+                        v.iter()
+                            .rev()
+                            .find(|(l, _)| *l < flow_line)
+                            .map(|(l, s)| (*l, s))
+                    })
+            });
+            let found = method_found.or_else(|| {
+                // 模块层写点回退(批 D):模块域裸名对方法体/类体可见(Python
+                // 读语义);只认模块层写点(类体实例写点对方法体不可见,诚实漏)
+                state.bare_writes.get(name).and_then(|v| {
                     v.iter()
                         .rev()
-                        .find(|(l, _)| *l < flow_line)
-                        .map(|(l, s)| (*l, s))
-                });
+                        .find(|w| {
+                            w.line < flow_line
+                                && w.method_start.is_none()
+                                && w.class_start.is_none()
+                        })
+                        .map(|w| (w.line, &w.shape))
+                })
+            });
             match found {
                 Some((l, s)) => resolve_shape(
                     state,
@@ -1047,10 +1138,32 @@ fn resolve_callee(
         return TypeSet::new();
     }
     let ann = match callee {
-        CalleeShape::Name(n) => state.def_atom(n),
+        CalleeShape::Name(n) => state.callee_atom(n),
         CalleeShape::Qualified { class, method } => state
             .unique_class(class)
-            .and_then(|cls| state.method_atom(cls, method)),
+            .and_then(|cls| state.method_atom(cls, method))
+            .or_else(|| {
+                // 裸名接收者二义(批 D):`A.m(...)` 类限定之外还有「局部/模块
+                // 变量.m(...)」——变量原子链裁定(先类限定,非类名才走变量;
+                // 同名类与变量并存时类解释优先)
+                let var = RhsShape::Local(class.clone());
+                let atoms = resolve_shape(
+                    state,
+                    &var,
+                    flow_line,
+                    class_start,
+                    method_start,
+                    depth + 1,
+                    visited,
+                );
+                if atoms.len() != 1 {
+                    return None;
+                }
+                let atom = atoms.iter().next().unwrap();
+                state
+                    .unique_class(atom)
+                    .and_then(|cls| state.method_atom(cls, method))
+            }),
         CalleeShape::SelfMethod(m) => class_start.and_then(|cls| state.method_atom(cls, m)),
         CalleeShape::Chained { receiver, method } => {
             let recv = resolve_shape(
@@ -1079,7 +1192,7 @@ fn resolve_callee(
 
 // ---- 版本键 LRU 解析缓存(KODE-PERF-001 语义对齐) --------------------------
 
-/// 一次解析的全量派生(类跨度 + 赋值类型索引),按 versionKey 缓存。
+/// 一次解析的全量派生(类跨度 + 赋值类型索引 + 收集面表格),按 versionKey 缓存。
 #[derive(Debug, Clone)]
 pub struct FlowParse {
     pub classes: Vec<ClassSpan>,
@@ -1088,6 +1201,18 @@ pub struct FlowParse {
     pub assignments: AssignmentTypes,
     /// 类体直系裸名赋值/注解类型(基线面;嵌套块/嵌套类体内不入,按类身份隔离)
     pub class_direct: ClassAssignmentTypes,
+    /// 批 D localReturnType 面:裸名写点全域表(名 → 源序写点)
+    pub(crate) bare_writes: HashMap<String, Vec<BareWrite>>,
+    /// def/class 名行集合(域门窄化素材)
+    pub(crate) header_lines: HashSet<usize>,
+    /// 模块级 def `-> T` 表
+    pub(crate) def_returns: HashMap<String, DefReturn>,
+    /// 类名 → 类名行
+    pub(crate) class_names: HashMap<String, Vec<usize>>,
+    /// 类名行 → 方法名 → return 注解收集
+    pub(crate) class_methods: HashMap<usize, HashMap<String, Vec<Option<String>>>>,
+    /// 方法域内局部裸名写点(批 C 链素材;面与流共享)
+    pub(crate) locals: HashMap<(usize, String), Vec<(usize, RhsShape)>>,
 }
 
 struct ParseCacheEntry {
@@ -1109,12 +1234,23 @@ fn flow_parse_from_lines(lines: &[Vec<u16>]) -> FlowParse {
     let source = String::from_utf16_lossy(&content);
     let parsed = ParsedAst::new(source);
     let classes = class_spans_from_ast(&parsed);
-    let (assignments, class_direct) = assignments_from_ast(&parsed, lines, &classes);
+    let tables = assignments_from_ast(&parsed, lines, &classes);
     FlowParse {
         classes,
-        assignments,
-        class_direct,
+        assignments: tables.assignments,
+        class_direct: tables.class_direct,
+        bare_writes: tables.bare_writes,
+        header_lines: tables.header_lines,
+        def_returns: tables.def_returns,
+        class_names: tables.class_names,
+        class_methods: tables.class_methods,
+        locals: tables.locals,
     }
+}
+
+/// 行列表 → 全量派生(localReturnType 面 entry;versionKey 协议同流面)。
+pub fn flow_parse(lines: &[Vec<u16>], version_key: Option<&str>) -> FlowParse {
+    parse_with_version_cache(lines, version_key)
 }
 
 fn parse_with_version_cache(lines: &[Vec<u16>], version_key: Option<&str>) -> FlowParse {
@@ -1168,7 +1304,7 @@ pub struct SelfAttributeFlow {
     pub narrowed: bool,
 }
 
-type TypeSet = BTreeSet<String>;
+pub(crate) type TypeSet = BTreeSet<String>;
 
 fn union_types(sets: &[&TypeSet]) -> TypeSet {
     let mut out = TypeSet::new();
@@ -2762,6 +2898,60 @@ mod tests {
             "        return self.r",
         ];
         assert_eq!(flow(&body, 8, "r").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn instantiation_flows_class_atom() {
+        // 批 D:callee 原子面补全——类实例化产类名原子(`x = Repo()` 流证据如实)
+        let body = [
+            "class Repo:",
+            "    pass",
+            "",
+            "class A:",
+            "    def __init__(self):",
+            "        self.r = Repo()",
+            "        return self.r",
+        ];
+        assert_eq!(flow(&body, 5, "r").types, vec!["Repo"]);
+    }
+
+    #[test]
+    fn class_and_def_same_name_callee_atom_ambiguous() {
+        // 批 D:def 与唯一同类名并存 = 歧义,不猜(诚实空)
+        let body = [
+            "class Repo:",
+            "    pass",
+            "",
+            "def Repo() -> int:",
+            "    return None",
+            "",
+            "class A:",
+            "    def __init__(self):",
+            "        self.r = Repo()",
+            "        return self.r",
+        ];
+        assert_eq!(flow(&body, 8, "r").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn qualified_bare_name_variable_receiver_in_flow() {
+        // 批 D:裸名接收者二义——非类名走变量原子链(模块 `repo` → Repo 原子)
+        let body = [
+            "class Repo:",
+            "    def load(self) -> Row:",
+            "        return None",
+            "",
+            "def make_repo() -> Repo:",
+            "    return None",
+            "",
+            "repo = make_repo()",
+            "",
+            "class A:",
+            "    def m(self):",
+            "        self.row = repo.load()",
+            "        return self.row",
+        ];
+        assert_eq!(flow(&body, 10, "row").types, vec!["Row"]);
     }
 
     #[test]

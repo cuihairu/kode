@@ -126,20 +126,33 @@ describe('悬停服务轨道 Rust 优先', () => {
     expect(spy.mock.calls[1][4]).toBe(true);
   });
 
-  it('python 文档:零请求直通 TS(不镜像不请求)', async () => {
+  it('python 文档:无调用候选零请求(预检闸);调用候选恰一次 localReturnType,零镜像', async () => {
     const { client } = makeStubClient();
     setKodeCoreShadowGate(makeGate(client));
     const provider = new KBEngineHoverProvider();
     const spy = vi.spyOn(provider, 'provideHoverTimed');
-    const document = makeTextDocument('self.hp = 1\n', {
+    // 无调用形写候选(自属性写点):预检闸零成本跳过 Rust 腿——零请求(批 D)
+    const attrDoc = makeTextDocument('self.hp = 1\n', {
       fileName: '/workspace/demo/scripts/base/Avatar.py',
       languageId: 'python',
       version: 1
     });
-    await provider.provideHoverTimed(document, new Position(0, 5));
-
+    await provider.provideHoverTimed(attrDoc, new Position(0, 5));
     expect(client.calls).toHaveLength(0);
     expect(spy.mock.calls).toHaveLength(1);
+
+    // 调用形写候选:localReturnType 腿恰一次请求;语料镜像仍零参与
+    // (miss 后重入走下游链,spy 计 2 次进面)
+    const varDoc = makeTextDocument('data = get_data()\n', {
+      fileName: '/workspace/demo/scripts/base/Avatar.py',
+      languageId: 'python',
+      version: 1
+    });
+    await provider.provideHoverTimed(varDoc, new Position(0, 2));
+    expect(client.calls.filter(call => call.method === 'request:textDocument/hover')).toHaveLength(0);
+    expect(client.calls.filter(call => call.method === 'request:$/kode/rpc')).toHaveLength(1);
+    // spy 总计 3:attrDoc 1 次 + varDoc 2 次(初试 + miss 重入,无再入环)
+    expect(spy.mock.calls).toHaveLength(3);
   });
 
   it('非语料文档(plaintext):零请求,语料闸在镜像前回落 TS', async () => {

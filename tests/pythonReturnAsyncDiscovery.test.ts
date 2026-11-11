@@ -60,15 +60,17 @@ it('冷 hover 只读快照，不等待挂起的项目发现', async () => {
   let release!: (entries: unknown[]) => void;
   readdir.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
   readFile.mockResolvedValue('def get_data() -> JSONDATA:\n    pass\n');
-  const lines = ['data = get_data()'];
-  expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 0, 'data', '/project')).toBeNull();
-  expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 0, 'data', '/project')).toBeNull();
+  // 批 D:查询断言走 import 绑定路径(接收者正确);冷查询零等待、发现挂起
+  // 期间不阻塞快照读的语义不变
+  const lines = ['from source import get_data', 'data = get_data()'];
+  expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'data', '/project')).toBeNull();
+  expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'data', '/project')).toBeNull();
   await Promise.resolve();
   expect(readdir).toHaveBeenCalledTimes(1);
-  const built = resolveLocalVariableReturnType(lines, 0, 'data', '/project');
+  const built = resolveLocalVariableReturnType(lines, 1, 'data', '/project');
   release([{ name: 'source.py', isDirectory: () => false, isFile: () => true }]);
   await built;
-  expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 0, 'data', '/project'))
+  expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'data', '/project'))
     .toMatchObject({ annotation: 'JSONDATA' });
 });
 

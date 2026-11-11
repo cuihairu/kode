@@ -13,7 +13,9 @@ import { resolveEntityBuiltinPropertyHit, resolveEntityComponentFaceFromPath, ty
 import { formatBuiltinPropertyHover, formatEntityDefMethodHover, formatEventStatsHover, formatInferredReturnHover, formatSelfPropertyTypeHover } from '../backend/hoverMarkdown';
 import { apiDocDomainsForFace, formatApiDocHover, formatApiDocSupplement, getKbengineApiAccessAtPosition, getPythonCallbackDefinitionAtPosition, lookupApiDoc } from '../backend/pythonApiHoverDocs';
 import { currentHoverLanguageEnv, readHoverLanguageSetting, resolveHoverLanguage } from '../hoverLocale';
-import { resolveLocalVariableReturnTypeFromSnapshot } from '../backend/pythonReturnTypeInference';
+import { matchingAssignments, resolveLocalVariableReturnTypeFromSnapshot } from '../backend/pythonReturnTypeInference';
+import { inferLocalReturnTypeFromRust } from '../backend/localReturnTypeRust';
+import { flowVersionKeyForDocument } from '../flowVersionKey';
 import { resolveAnnotationTypeWithReason } from '../pythonTypeStubs';
 import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from '../backend/selfPropertyTypeInference';
 import { behaviorEntriesForSymbol, behaviorNotesMarkdown, fixedDictBehaviorNoteMarkdown } from '../backend/behaviorKnowledge';
@@ -207,13 +209,16 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     token?: vscode.CancellationToken,
     timer?: HoverPhaseTimer,
     // 直接切重入标记:true = Rust 腿已试过(miss),本轮直接走 TS 既有链
-    rustHoverAttempted?: boolean
+    rustHoverAttempted?: boolean,
+    // 批 D 重入标记:true = 局部返回注解面(Rust 接收者定型)已试过(miss),
+    // 本轮直接走下游既有链(TYP-ARRAY/数据字典/自属性等)
+    localReturnAttempted?: boolean
   ): vscode.ProviderResult<vscode.Hover> {
     if (token?.isCancellationRequested) { return null; }
     if (hoverInFlightGateForTests) {
       // IDE-REV-032:门住一段确定性在途窗口;释放方负责清闸,重入走原路径
       const gate = hoverInFlightGateForTests;
-      return gate().then(() => this.provideHoverTimed(document, position, token, timer, rustHoverAttempted));
+      return gate().then(() => this.provideHoverTimed(document, position, token, timer, rustHoverAttempted, localReturnAttempted));
     }
     // 2026-11-08 用户令「直接切到 rust」:服务轨道下语料文档(.def + 三类
     // XML)hover 先走 Rust(kode-server textDocument/hover);Rust 命中即用,
@@ -228,7 +233,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       return serveHoverFromRust(document, position).then(value =>
         value !== null
           ? new vscode.Hover(new vscode.MarkdownString(value))
-          : this.provideHoverTimed(document, position, token, timer, true)
+          : this.provideHoverTimed(document, position, token, timer, true, localReturnAttempted)
       );
     }
     const featureConfig = getLanguageFeatureConfig();
@@ -360,34 +365,64 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     }
 
     // 局部变量返回类型推导(用户令 2026-10-21:「data = activity_data.get_data()
-    // → data: JSONDATA」):光标落在变量名上时,按右侧单层调用的被调函数返回
-    // 注解推导(python `def get_data(...) -> X:` 注解先行;.def 方法无返回声明
-    // 语法故该层结构性缺位)。解出才提示并标注来源;解不出不显示任何类型
-    // (不显 Any、不显空类型,落回普通 hover 链)。
+    // → data: JSONDATA」):光标落在变量名上时,按右侧调用的被调函数返回注解
+    // 推导。解出才提示并标注来源;解不出不显示任何类型(不显 Any、不显空类型,
+    // 落回普通 hover 链)。
+    // 批 D(精确性主车道,2026-11-08 用户令「直接切 rust」同车):Rust-first
+    // 接收者定型(localReturnType 面:同文件 def 调用/self 方法/类限定/链式/
+    // 别名链,matchingAssignments 同域口径)——TS 级联兜底(全局方法名猜测,
+    // 跨类误绑)已删除,TS 链只留 import 绑定路径。Rust 腿 client 自带超时,
+    // 不占 TS 预算(与语料 hover 分支同理);miss/失败/杀开关(kbengine.core.
+    // backend=ts)回落 TS 既有链,返回承诺(面内 await,语义不变)。
     if (document.languageId === 'python' && vscode.workspace.getConfiguration('kbengine').get<boolean>('hover.returnTypeInference', true)) {
-      // PR2 快照接入:局部变量推导复用快照行数据(同版本不重拆);
-      // IDE-HOV-011:按文档版本喂当前文件注解桶(未保存变化立即生效)
-      // IDE-MET-003:推导整段属注解查询面(annotation-query)
-      const stopInfer = timer?.start('annotation-query');
-      let inferred: ReturnType<typeof resolveLocalVariableReturnTypeFromSnapshot>;
-      try {
-        inferred = resolveLocalVariableReturnTypeFromSnapshot(
-          getDocumentLines(document),
-          position.line,
-          word,
-          getWorkspaceRootForDocument(document),
-          {
-            fileKey: document.uri.toString(),
-            version: document.version,
-            source: () => document.getText()
+      // PR2 快照接入:局部变量推导复用快照行数据(同版本不重拆)
+      // IDE-MET-003:推导整段属注解查询面(annotation-query;Rust 腿同段计量)
+      // 批 D 预检:无调用形写候选时 Rust/TS 双链必空——零成本跳过本段,下游
+      // 既有面(TYP-ARRAY/数据字典/自属性)照走同步原路(不进异步不重入)
+      const docLines = getDocumentLines(document);
+      if (!localReturnAttempted && matchingAssignments(docLines, position.line, word).length > 0) {
+        const stopQuery = timer?.start('annotation-query');
+        const resolveInferred = async (): Promise<ReturnType<typeof resolveLocalVariableReturnTypeFromSnapshot>> => {
+          try {
+            const fromRust = await inferLocalReturnTypeFromRust(
+              docLines,
+              position.line,
+              word,
+              flowVersionKeyForDocument(document)
+            );
+            if (fromRust) {
+              return fromRust;
+            }
+          } finally {
+            stopQuery?.();
           }
-        );
-      } finally { stopInfer?.(); }
-      if (inferred) {
-        const markdown = new vscode.MarkdownString();
-        markdown.appendMarkdown(formatInferredReturnHover(inferred.target, inferred.annotation, inferred.methodName));
-        deadline.dispose();
-        return new vscode.Hover(markdown);
+          // miss/失败/杀开关 → TS 既有链(import 绑定路径;级联猜测已删)
+          const stopInfer = timer?.start('annotation-query');
+          try {
+            return resolveLocalVariableReturnTypeFromSnapshot(
+              docLines,
+              position.line,
+              word,
+              getWorkspaceRootForDocument(document),
+              {
+                fileKey: document.uri.toString(),
+                version: document.version,
+                source: () => document.getText()
+              }
+            );
+          } finally { stopInfer?.(); }
+        };
+        return resolveInferred().then(inferred => {
+          deadline.dispose();
+          if (!inferred) {
+            // 双链都推不出(接收者不可知)→ 诚实无类型段,重入下游既有链
+            // (语料分支同款重入口径;localReturnAttempted 防再入)
+            return this.provideHoverTimed(document, position, token, timer, rustHoverAttempted, true);
+          }
+          const markdown = new vscode.MarkdownString();
+          markdown.appendMarkdown(formatInferredReturnHover(inferred.target, inferred.annotation, inferred.methodName));
+          return new vscode.Hover(markdown);
+        });
       }
     }
 

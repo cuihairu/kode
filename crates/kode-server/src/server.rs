@@ -122,6 +122,7 @@ impl ServerState {
         crate::attribute_none::register(&mut rpc);
         crate::self_attribute_flow::register(&mut rpc);
         crate::return_annotations::register(&mut rpc);
+        crate::local_return::register(&mut rpc);
         crate::user_type_contract::register(&mut rpc);
         crate::property_direction::register(&mut rpc);
         crate::rpc_arg_count::register(&mut rpc);

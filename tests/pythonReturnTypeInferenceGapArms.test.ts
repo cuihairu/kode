@@ -7,6 +7,7 @@ import {
   collectProjectPythonFilesAsync,
   extractFileReturnAnnotations,
   extractFileReturnAnnotationsAsync,
+  getDocumentReturnAnnotationBucketForTests,
   getReturnAnnotationCacheGauge,
   parseLocalAssignmentCall,
   queueDocumentReturnAnnotations,
@@ -98,7 +99,9 @@ describe('null workspaceRoot no-op arms (373, 393, 585, 640)', () => {
     // 全部 no-op,无抛无副作用:后续真实 root 查询不受影响
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data() -> OK:\n    pass\n');
-    const resolved = await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const resolved = await resolveLocalVariableReturnType(
+      ['from svc import get_data', 'data = get_data()'], 1, 'data', root
+    );
     expect(resolved).toMatchObject({ annotation: 'OK' });
   });
 });
@@ -112,28 +115,31 @@ describe('updateDocumentReturnAnnotationsAsync superseded-during-extraction (659
     const pending = updateDocumentReturnAnnotationsAsync(root, { fileKey, version: 1, source: () => bigSource });
     updateDocumentReturnAnnotations(root, { fileKey, version: 5, source: () => 'def get_data() -> NEWER:\n    pass\n' });
     await pending;
-    // 若 659 不拦,v1(OLDER)会覆盖 v5 → 断 NEWER 证明「期间已入更新版本」生效
-    const resolved = resolveLocalVariableReturnTypeFromSnapshot(
-      ['data = get_data()'], 0, 'data', root, { fileKey, version: 5, source: () => '' }
-    );
-    expect(resolved).toMatchObject({ annotation: 'NEWER' });
+    // 若 659 不拦,v1(OLDER)会覆盖 v5 → 桶见 NEWER 证明「期间已入更新版本」生效
+    // (批 D:查询不再消费文档桶,机制断言走桶访问器)
+    expect(getDocumentReturnAnnotationBucketForTests(root, fileKey)?.annotations.get('get_data'))
+      .toBe('NEWER');
   });
 });
 
 describe('other-document unannotated shadowing (691, 948)', () => {
-  it('a no-annotation def in another open doc shadows the disk annotation', async () => {
+  it('a no-annotation def in another open doc lands in shadowedNames; query no longer borrows disk', async () => {
     const { root, put } = setupWorkspace();
     put('svc.py', 'def shadow_me() -> DISK_VAL:\n    pass\n');
     // 预热磁盘索引(新鲜 DISK_VAL)
-    await resolveLocalVariableReturnType(['x = shadow_me()'], 0, 'x', root);
+    await resolveLocalVariableReturnType(
+      ['from svc import shadow_me', 'x = shadow_me()'], 1, 'x', root
+    );
     // 另一打开文档显式声明 shadow_me 无注解 → 进入 shadowedNames(691)
     updateDocumentReturnAnnotations(root, {
       fileKey: 'file:///other.py', version: 1, source: () => 'def shadow_me():\n    pass\n'
     });
-    // 无 documentContext:该桶归入「其他打开文档」;948 因 shadowed 返回 null,
-    // 不借磁盘 DISK_VAL(若 691 未生效,948 会借到 DISK_VAL → 非 null)
-    const resolved = resolveLocalVariableReturnTypeFromSnapshot(['x = shadow_me()'], 0, 'x', root);
-    expect(resolved).toBeNull();
+    // 批 D:查询不再消费文档桶(级联已删)——无绑定候选 → 诚实 null,不借磁盘
+    // DISK_VAL;桶机制面仍记 shadowedNames(691 臂由本次发布走到)
+    const bucket = getDocumentReturnAnnotationBucketForTests(root, 'file:///other.py');
+    expect(bucket?.annotations.has('shadow_me')).toBe(false);
+    expect(bucket?.unannotatedNames.has('shadow_me')).toBe(true);
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['x = shadow_me()'], 0, 'x', root)).toBeNull();
   });
 });
 
@@ -185,29 +191,33 @@ describe('build cancellation arms (743, 746)', () => {
 });
 
 describe('import wildcard / relative-empty skip arms (807)', () => {
-  it('from mod import * : binding skipped, cascade resolves from disk', () => {
+  it('from mod import * : binding skipped → honest null(批 D:级联已删,不借磁盘同名)', () => {
     const { root, put } = setupWorkspace();
     put('helpers.py', 'def load_all():\n    pass\n');
     put('unrelated.py', 'def load_all() -> FROM_UNRELATED:\n    pass\n');
-    // 预热磁盘索引
-    return resolveLocalVariableReturnType(['data = load_all()'], 0, 'data', root).then(() => {
-      // 若 807 未跳过通配,模块桶 helpers 无 load_all → null;跳过则级联借磁盘
+    // 预热磁盘索引(命中面仍是磁盘旧值,但查询不再借名)
+    return resolveLocalVariableReturnType(
+      ['from unrelated import load_all', 'data = load_all()'], 1, 'data', root
+    ).then(() => {
+      // 807 跳过通配绑定 → 无绑定候选 → 诚实 null(级联删除后不借 unrelated 同名)
       const resolved = resolveLocalVariableReturnTypeFromSnapshot(
         ['from helpers import *', 'data = load_all()'], 1, 'data', root
       );
-      expect(resolved).toMatchObject({ annotation: 'FROM_UNRELATED' });
+      expect(resolved).toBeNull();
     });
   });
 
-  it('from . import x (empty module after dot-strip) : binding skipped, cascade resolves', () => {
+  it('from . import x (empty module after dot-strip) : binding skipped → honest null(级联已删)', () => {
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data() -> DISK:\n    pass\n');
-    return resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root).then(() => {
-      // module 剥点后为空 → !module → continue(807);级联从磁盘借 DISK
+    return resolveLocalVariableReturnType(
+      ['from svc import get_data', 'data = get_data()'], 1, 'data', root
+    ).then(() => {
+      // module 剥点后为空 → !module → continue(807);无绑定候选 → 诚实 null
       const resolved = resolveLocalVariableReturnTypeFromSnapshot(
         ['from . import get_data', 'data = get_data()'], 1, 'data', root
       );
-      expect(resolved).toMatchObject({ annotation: 'DISK' });
+      expect(resolved).toBeNull();
     });
   });
 });

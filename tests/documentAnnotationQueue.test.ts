@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
+  getDocumentReturnAnnotationBucketForTests,
   queueDocumentReturnAnnotations,
   releaseDocumentReturnAnnotations,
   flushPendingDocumentReturnAnnotationsForTests,
@@ -27,15 +28,15 @@ afterEach(() => {
 
 const fileKey = (name: string): string => `file:///ws/${name}`;
 
-describe('2026-10-28 审核整改:文档注解桶走队列不占编辑同步路径', () => {
+describe('2026-10-28 审核整改:文档注解桶走队列不占编辑同步路径(批 D:断言走桶访问器,查询不再消费桶)', () => {
   it('编辑事件不触发同步提取:queue 后桶未更新,冲刷后才入桶', async () => {
     const source = vi.fn(() => 'def get_data() -> NEW:\n    pass\n');
     queueDocumentReturnAnnotations(ROOT, { fileKey: fileKey('a.py'), version: 1, source });
-    // 编辑同步路径上桶必须还不可见(原文未改的旧口径)
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', ROOT)).toBeNull();
+    // 编辑同步路径上桶必须还未落地(冲刷前)
+    expect(getDocumentReturnAnnotationBucketForTests(ROOT, fileKey('a.py'))).toBeUndefined();
     await flushPendingDocumentReturnAnnotationsForTests();
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', ROOT))
-      .toMatchObject({ annotation: 'NEW' });
+    expect(getDocumentReturnAnnotationBucketForTests(ROOT, fileKey('a.py'))?.annotations.get('get_data'))
+      .toBe('NEW');
   });
 
   it('同文件连续编辑版本去重:只按最新版本提取一次', async () => {
@@ -44,8 +45,8 @@ describe('2026-10-28 审核整改:文档注解桶走队列不占编辑同步路�
     queueDocumentReturnAnnotations(ROOT, { fileKey: fileKey('b.py'), version: 2, source: () => { sources.push('v2'); return 'def f() -> V2:\n    pass\n'; } });
     await flushPendingDocumentReturnAnnotationsForTests();
     expect(sources).toEqual(['v2']); // v1 被合并,只提取最新版本
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['x = f()'], 0, 'x', ROOT))
-      .toMatchObject({ annotation: 'V2' });
+    expect(getDocumentReturnAnnotationBucketForTests(ROOT, fileKey('b.py'))?.annotations.get('f'))
+      .toBe('V2');
   });
 
   it('大文件提取让出事件循环:提取期间定时器可响应(事件循环延迟验证)', async () => {
@@ -65,7 +66,8 @@ describe('2026-10-28 审核整改:文档注解桶走队列不占编辑同步路�
     queueDocumentReturnAnnotations(ROOT, { fileKey: fileKey('c.py'), version: 1, source: () => 'def f() -> X:\n    pass\n' });
     releaseDocumentReturnAnnotations(ROOT, fileKey('c.py')); // 关文档弃桶
     await flushPendingDocumentReturnAnnotationsForTests();
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['x = f()'], 0, 'x', ROOT)).toBeNull();
+    // 在途更新随关闭取消:冲刷后桶不存在(不复活)
+    expect(getDocumentReturnAnnotationBucketForTests(ROOT, fileKey('c.py'))).toBeUndefined();
   });
 });
 

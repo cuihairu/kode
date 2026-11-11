@@ -17,6 +17,7 @@
 pub mod callgraph;
 pub mod dataflow;
 pub mod graph;
+pub mod local_return;
 pub mod model;
 pub mod parse;
 pub mod self_flow;

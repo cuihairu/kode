@@ -14,6 +14,7 @@ import {
   extractDefReturnAnnotation,
   extractFileReturnAnnotations,
   extractFileReturnAnnotationsAsync,
+  getDocumentReturnAnnotationBucketForTests,
   parseLocalAssignmentCall,
   releaseDocumentReturnAnnotations,
   resetPythonReturnAnnotationCache,
@@ -320,31 +321,33 @@ describe('pythonReturnTypeInference 覆盖补齐', () => {
         return 'def get_data() -> GHOST:\n    pass\n';
       }
     });
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root)).toBeNull();
+    // 提取期间关文档:代际前进,回包不落桶(批 D 后断言走桶访问器)
+    expect(getDocumentReturnAnnotationBucketForTests(root, fileKey)).toBeUndefined();
     // 重新「打开」(新版本)后恢复正常提取入桶
     await updateDocumentReturnAnnotationsAsync(root, {
       fileKey,
       version: 6,
       source: () => 'def get_data() -> ALIVE:\n    pass\n'
     });
-    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root)?.annotation).toBe('ALIVE');
+    expect(getDocumentReturnAnnotationBucketForTests(root, fileKey)?.annotations.get('get_data')).toBe('ALIVE');
   });
 
-  it('注解来源日志:磁盘快照命中落 hover-resolve source=disk-snapshot(非 import 面)', async () => {
+  it('注解来源日志:import 绑定磁盘快照命中落 hover-resolve source=disk-snapshot(import)', async () => {
+    // 批 D:磁盘快照只答 import 绑定候选(级联猜测已删);来源日志标记 (import)
     const paths = makeRoot({ 'svc.py': 'def get_data() -> DISK_ONLY:\n    return None\n' });
     const root = rootDirOf(paths['svc.py']);
     pointWorkspaceAt(root);
     // 先走一次完整解析暖盘
-    const warmed = await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const lines = ['from svc import get_data', 'data = get_data()'];
+    const warmed = await resolveLocalVariableReturnType(lines, 1, 'data', root);
     expect(warmed?.annotation).toBe('DISK_ONLY');
     setAnnotationSourceLogEnabled(true);
     clearRecentAnnotationSourceLogs();
-    const resolved = resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root);
+    const resolved = resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'data', root);
     expect(resolved?.annotation).toBe('DISK_ONLY');
-    const lines = getRecentAnnotationSourceLogs().join('\n');
-    expect(lines).toContain('hover-resolve');
-    expect(lines).toContain('source=disk-snapshot');
-    expect(lines).not.toContain('(import)');
+    const logLines = getRecentAnnotationSourceLogs().join('\n');
+    expect(logLines).toContain('hover-resolve');
+    expect(logLines).toContain('source=disk-snapshot(import)');
   });
 
   it('resolveLocalVariableReturnType:全大写常量与无根工作区直接 null(不起异步)', () => {
