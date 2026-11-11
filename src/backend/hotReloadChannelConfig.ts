@@ -37,6 +37,12 @@ export interface HotReloadChannelConfigDeps {
    * 探真 transport.probe,不触碰 profile(探测不保存)。
    */
   probe?(config: ReloadChannelConfig): Promise<{ ok: boolean; detail: string }>;
+  /**
+   * 零 profile 兜底(用户令 2026-11-10「创建默认的」):空列表时先自动创建
+   * 并激活默认 profile,返回新档;已有 profile 或不适用返回 null。缺省
+   * (未注入)维持既有「无部署 profile」提示不变(测试替身向后兼容)。
+   */
+  ensureDefaultProfile?(): Promise<ProjectProfile | null>;
 }
 
 /**
@@ -342,10 +348,16 @@ export async function runHotReloadChannelConfigCommand(
   deps: HotReloadChannelConfigDeps,
   options: HotReloadChannelConfigCommandOptions = {}
 ): Promise<boolean> {
-  const profiles = deps.listProfiles();
+  let profiles = deps.listProfiles();
   if (profiles.length === 0) {
-    await deps.ui.showInformationMessage('无部署 profile:先创建 profile 再配置热更通道');
-    return false;
+    // 零 profile 先兜默认档(创建+激活);兜不出(未注入/已有 profile/判空)
+    // 维持既有提示——挡点语义不悄悄降级
+    const created = (await deps.ensureDefaultProfile?.()) ?? null;
+    if (!created) {
+      await deps.ui.showInformationMessage('无部署 profile:先创建 profile 再配置热更通道');
+      return false;
+    }
+    profiles = deps.listProfiles();
   }
   let profile: ProjectProfile;
   if (options.profileId !== undefined) {
@@ -456,6 +468,12 @@ export interface HotReloadChannelSwitchDeps {
    * (测试替身同形)。
    */
   dangerBackgroundColor?: unknown;
+  /**
+   * 零 profile 兜底(用户令 2026-11-10「创建默认的」):无激活 profile 时
+   * 先自动创建并激活默认 profile,返回新档;已有 profile 或不适用返回 null。
+   * 缺省(未注入)维持既有「无激活部署 profile」报错不变(测试替身向后兼容)。
+   */
+  ensureDefaultProfile?(): Promise<ProjectProfile | null>;
 }
 
 const FIX_ACTION = '打开高级配置修参数';
@@ -520,10 +538,18 @@ export class HotReloadChannelQuickSwitch {
 
   /** 三选切换;返回是否写盘成功(取消/探活不通/无 profile=false) */
   async run(): Promise<boolean> {
-    const active = this.deps.getActiveProfile();
+    let active = this.deps.getActiveProfile();
     if (!active) {
-      await this.deps.ui.showErrorMessage('无激活部署 profile:先创建并激活 profile 再切换热更通道');
-      return false;
+      // 零激活 profile 先兜默认档(创建+激活);兜不出(未注入/已有 profile/
+      // 激活面仍取不到)维持既有报错——挡点语义不悄悄降级
+      const created = (await this.deps.ensureDefaultProfile?.()) ?? null;
+      if (created) {
+        active = this.deps.getActiveProfile();
+      }
+      if (!active) {
+        await this.deps.ui.showErrorMessage('无激活部署 profile:先创建并激活 profile 再切换热更通道');
+        return false;
+      }
     }
     // 打开三选前冻结「激活 profile + 该 profile 通道配置」身份:选择器等待期间
     // 或探活期间 profile/配置被改,本次切换一律作废不写(不把旧状态的结论算到新状态上)

@@ -908,7 +908,7 @@ callgraph 模式面板支持：
   - **连通性测试**（高级配置内）对收集到的配置跑 `transport.probe()`，不保存（探测绝不写 profile）；畸形配置如实报（通道配置不完整）不猜
   - 每步可取消，最后一步「保存」前零写入——任一步取消返回 false 且 profile 原样
   - 面板走 quick-pick + input 流（仓内 profile 编辑既有模式）；未知 id 报 保存失败，绝不静默新建
-  - **零配置可直接调起**：无 profile 时如实提示「无部署 profile」；单 profile 未配通道时首屏就是预设列表（多 profile 才先选 profile），带 `{ entry: 'advanced', profileId }` 参数则直达该 profile 的高级配置——不因未配置而静默失败
+  - **零配置可直接调起**：无 profile 时先自动创建并激活一条默认档（默认部署 profile 兜底，2026-11-10 用户令——种子取 assetsRoot 发现链/布局判定/解释器解析，判不出如实空串），只有兜底走不通（未注入/建档返回 null）才保留如实提示「无部署 profile」；单 profile 未配通道时首屏就是预设列表（多 profile 才先选 profile），带 `{ entry: 'advanced', profileId }` 参数则直达该 profile 的高级配置——不因未配置而静默失败
 - 激活 profile 配了通道时，fire 路径整批走 `transport.send`（回执直喂双维台账）不再走 quick action；未配通道则 actionName 路径原样
 
 ### `kbengine.hotReload.switchChannel`
@@ -917,6 +917,7 @@ callgraph 模式面板支持：
 - 作用：状态栏通道灯的点击入口——三选 QuickPick（自研接收器[推荐] / KBEngine 官方 / 未配置）一键切换激活 profile 的热更通道，选中即探活
 - 行为：
   - 通道灯显示当前通道：`热更:自研HTTP` / `热更:KBEngine官方` / `热更:未配置`；无激活 profile 如实显示未配置
+  - 无激活 profile 时点击先走默认部署 profile 兜底（自动创建+激活一条 default 档，2026-11-10 用户令）再进三选；兜底走不通（未注入/建档返回 null）才保留「无激活部署 profile」如实报错
   - 三选项带「(当前)」标记；选中写的是激活 profile 的 `hotReload` 段（与 `configureChannel` 同一保存面）
   - **探活反馈**：通 = 默认底 + `$(plug)` + 「探活通过」信息提示并落盘；不通 = `$(error)` + 状态栏错误色（红底）+ 错误提示带「打开高级配置修参数」**一键修**按钮——**直达该 profile 的高级配置**（跳过 profile/预设首屏），通道不切换、不写盘
   - 灯上文字**始终显示当前已配置的通道**：探活失败时配置没动，文字仍是原通道，红标与 tooltip 才点名这次试的通道——未落盘的通道不冒充当前状态

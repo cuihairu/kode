@@ -92,7 +92,10 @@ const makeDeps = (
       return profile(id, '主线服');
     },
     ui: overrides.ui ?? scriptedUi([]),
-    ...(overrides.probe ? { probe: overrides.probe } : {})
+    ...(overrides.probe ? { probe: overrides.probe } : {}),
+    ...(overrides.ensureDefaultProfile
+      ? { ensureDefaultProfile: overrides.ensureDefaultProfile }
+      : {})
   };
 };
 
@@ -278,6 +281,40 @@ describe('hotReloadChannelConfig 高级配置流程 (IDE-HOT-102)', () => {
     expect(await run(deps)).toBe(false);
     expect(deps.saved).toHaveLength(0);
     expect(calls.info.join('')).toContain('无部署 profile');
+  });
+
+  it('零 profile + 默认档兜底(ensure 建档激活)→ 不提示无 profile,直接进单 profile 流(用户令 2026-11-10)', async () => {
+    const pool: ProjectProfile[] = [];
+    const deps = makeDeps({
+      profiles: pool,
+      ensureDefaultProfile: async () => {
+        // 真装配 = ensureDefaultDeploymentProfile:创建 default 档并入册
+        const created = profile('pd', 'default');
+        pool.push(created);
+        return created;
+      }
+    });
+    // 单 profile(default)直用 → 预设首屏;取消收场,零错误提示
+    const { ui, calls } = makeUi([async () => undefined]);
+    deps.ui = ui;
+    expect(await run(deps)).toBe(false);
+    expect(calls.quickPick).toBe(1);
+    expect(calls.error).toHaveLength(0);
+    expect(calls.info.join('')).not.toContain('无部署 profile');
+    expect(deps.saved).toHaveLength(0);
+  });
+
+  it('零 profile + 兜底返回 null → 维持既有「无部署 profile」提示', async () => {
+    const deps = makeDeps({
+      profiles: [],
+      ensureDefaultProfile: async () => null
+    });
+    const { ui, calls } = makeUi([infoStep()]);
+    deps.ui = ui;
+    expect(await run(deps)).toBe(false);
+    expect(deps.saved).toHaveLength(0);
+    expect(calls.info.join('')).toContain('无部署 profile');
+    expect(calls.quickPick).toBe(0);
   });
 
   it('高级配置 + 选未配通道 + 保存 → 清除 hotReload(回落既有通道)', async () => {

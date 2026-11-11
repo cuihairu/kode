@@ -101,6 +101,8 @@ interface Harness {
   switchProfileDuringPick: { profile: ProjectProfile } | null;
   /** 写盘挂起钩子:saveHotReload 落盘后、返回前 await 它(模拟返回前的并发窗口) */
   saveHook?: () => Promise<void>;
+  /** 零 profile 兜底钩子(用户令 2026-11-10「创建默认的」):设置即注入 ensure 依赖 */
+  ensureHook?: () => Promise<ProjectProfile | null>;
   /** profile 注册表(按 id 写盘的事实源;active 只是「当前显示哪条」) */
   registry: ProjectProfile[];
   commands: Map<string, () => unknown>;
@@ -189,7 +191,9 @@ const makeHarness = (active: { profile: ProjectProfile } | null, bar: FakeBar): 
       }
       return harness.advancedResult;
     },
-    ui
+    ui,
+    // 零 profile 兜底:调用期读钩子(测试在 build() 之后才脚本化 ensureHook)
+    ensureDefaultProfile: () => (harness.ensureHook ? harness.ensureHook() : Promise.resolve(null))
   };
   return harness;
 };
@@ -318,6 +322,32 @@ describe('热更通道状态栏快捷开关', () => {
     expect(harness.saved).toHaveLength(0);
     expect(harness.errors).toHaveLength(1);
     expect(harness.errors[0].message).toContain('无激活');
+  });
+
+  it('无激活 profile + 默认档兜底(ensure 建档激活)→ 不报错直接进三选(用户令 2026-11-10)', async () => {
+    const { harness, controller } = build(null);
+    // 兜底:自动创建 default 档并激活(真装配 = ensureDefaultDeploymentProfile)
+    harness.ensureHook = async () => {
+      const created = profile('pd');
+      harness.registry.push(created);
+      harness.active = { profile: created };
+      return created;
+    };
+    // 三选弹出后取消:run 返回 false,但走的是「有 profile 的正常流」
+    expect(await controller.run()).toBe(false);
+    expect(harness.errors).toHaveLength(0);
+    expect(harness.quickPickTitles).toHaveLength(1);
+    expect(harness.quickPickTitles[0]).toContain('主线服');
+    expect(harness.saved).toHaveLength(0);
+  });
+
+  it('兜底返回 null(已有档/未注入同路)→ 维持旧错误,不弹三选', async () => {
+    const { harness, controller } = build(null);
+    harness.ensureHook = async () => null;
+    expect(await controller.run()).toBe(false);
+    expect(harness.errors).toHaveLength(1);
+    expect(harness.errors[0].message).toContain('无激活');
+    expect(harness.quickPickTitles).toHaveLength(0);
   });
 
   it('已配官方通道、试自研探活不通 → 状态栏仍显示当前通道(官方),红标 + tooltip 点名自研', async () => {

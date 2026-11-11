@@ -9,7 +9,7 @@
 // hotReloadStateViewRefresh/hotReloadVersionRefresh 前向引用 holder(组合根
 // 声明,经 deps 传回,`.refresh =` 写回共享对象,区域原文零改动)。
 
-import { onDidChangeActiveProfile, resolveActiveProfile } from '../activeProfile';
+import { onDidChangeActiveProfile, resolveActiveProfile, setActiveProfile } from '../activeProfile';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -28,6 +28,7 @@ import { createFileChangeRouter } from '../backend/fileChangeBypass';
 import { HOT_RELOAD_CHANNEL_STATUS_PRIORITY, HotReloadChannelQuickSwitch, runHotReloadChannelConfigCommand } from '../backend/hotReloadChannelConfig';
 import { HotReloadVersionTracker, matchesHotReloadGlob } from '../backend/hotReloadFileVersion';
 import { resolveReloadTransport, createDefaultHotReloadChannel, type ReloadTransport } from '../backend/hotReloadTransport';
+import { ensureDefaultDeploymentProfile } from '../ensureDefaultProfile';
 import { runHotReloadBatchSummaryCommand } from '../backend/hotReloadBatchSummaryCommand';
 import { runHotReloadRetryCommand } from '../backend/hotReloadRetryCommand';
 import { createDefStructuralGate } from '../backend/hotReloadDefGate';
@@ -110,11 +111,29 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
   // ($(error)+errorBackground)=不通不写盘并给「一键修=打开高级配置」。发送态灯
   // (hotReloadStatus,优先级 98)照旧只渲染发送态,通道灯走 96 不抢位不抢色;
   // profile 切换事件与配置面板写盘后都 refresh 跟住当前通道。
+  // 零 profile 兜底(用户令 2026-11-10「创建默认的」):切换/配置两面共用
+  // 同一默认档创建闭包——零 profile 时自动建 + 激活(种子=发现链/布局判定/
+  // 解释器解析,判不出的字段落空串如实记录),创建成功报一声;已有 profile
+  // 不代主(ensure 返回 null,挡点走既有提示)。
+  const ensureDefaultProfileDep = async () => {
+    const created = await ensureDefaultDeploymentProfile({
+      store: new ProjectProfileStore(context.workspaceState),
+      activateProfile: id => setActiveProfile(context.workspaceState, id),
+      workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? null
+    });
+    if (created) {
+      void vscode.window.showInformationMessage(
+        `已创建并激活默认部署 profile:default(${created.id.slice(0, 8)})`
+      );
+    }
+    return created;
+  };
   const hotReloadChannelSwitch = new HotReloadChannelQuickSwitch({
     getActiveProfile: () => {
       const activeProfile = resolveActiveProfile(context.workspaceState);
       return activeProfile ? { profile: activeProfile } : null;
     },
+    ensureDefaultProfile: ensureDefaultProfileDep,
     saveHotReload: (id, config) => new ProjectProfileStore(context.workspaceState).saveHotReload(id, config),
     createStatusBarItem: () => vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, HOT_RELOAD_CHANNEL_STATUS_PRIORITY),
     registerCommand: (command, handler) => vscode.commands.registerCommand(command, handler),
@@ -331,6 +350,7 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
       const saved = await runHotReloadChannelConfigCommand({
         listProfiles: () => profileStore.list(),
         saveHotReload: (id, config) => profileStore.saveHotReload(id, config),
+        ensureDefaultProfile: ensureDefaultProfileDep,
         ui: {
           showQuickPick: (items, options) => Promise.resolve(vscode.window.showQuickPick(items, { title: options.title })),
           showInputBox: options =>

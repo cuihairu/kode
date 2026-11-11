@@ -940,7 +940,7 @@ The flow graph panel supports:
   - A **connectivity test** (inside the advanced flow) runs `transport.probe()` on the collected config without saving (probe never writes the profile); a malformed config is reported honestly (通道配置不完整) rather than guessed
   - Every step is cancellable and nothing is written until the final 保存 — cancel at any step reports `false` and leaves the profile untouched
   - The panel is a quick-pick + input flow (the existing profile-edit pattern); unknown ids save as 保存失败 and never silently create
-  - **Callable with zero configuration**: with no profile it says so honestly (无部署 profile); with a single profile but no channel the first screen is already the preset list (multiple profiles pick one first), and passing `{ entry: 'advanced', profileId }` goes straight to that profile's advanced flow — never a silent no-op
+  - **Callable with zero configuration**: with no profile a default one is auto-created and activated first (default-deployment-profile fallback, 2026-11-10 user order — seeds from the assets-root discovery chain / layout identification / interpreter resolution, honest empty strings when undetectable), and the honest 无部署 profile message remains only when that fallback cannot proceed (fallback not wired / creation returned null); with a single profile but no channel the first screen is already the preset list (multiple profiles pick one first), and passing `{ entry: 'advanced', profileId }` goes straight to that profile's advanced flow — never a silent no-op
 - When a profile has a channel configured and is active, the fire path sends the whole reload batch through `transport.send` (receipts feed the per-target ledger directly) instead of the quick action; with no channel configured the actionName path is unchanged
 
 ### `kbengine.hotReload.switchChannel`
@@ -949,6 +949,7 @@ The flow graph panel supports:
 - Purpose: the status-bar channel lamp's click entry — a three-preset QuickPick (in-house receiver [recommended] / KBEngine official / unset) that switches the active profile's hot-reload channel in one pick, probing immediately after the selection
 - Behavior:
   - The lamp shows the current channel: `热更:自研HTTP` / `热更:KBEngine官方` / `热更:未配置`; with no active profile it honestly reads 未配置
+  - Clicking with no active profile first runs the default-deployment-profile fallback (auto-create + activate a default profile, 2026-11-10 user order) and goes straight into the three-pick; the honest 无激活 error remains only when the fallback cannot proceed
   - Each option carries a `(当前)` marker; the selection writes the active profile's `hotReload` section (same persistence surface as `configureChannel`)
   - **Probe feedback**: green = default background + `$(plug)` + an "探活通过" info notice, then the profile is written; red = `$(error)` + the status-bar error background + an error notice carrying a **one-click repair** button (打开高级配置修参数) that jumps straight into that profile's advanced flow — the channel is neither switched nor written
   - The lamp text always names the **configured** channel (a failed probe leaves the config untouched, so the text stays on the old channel while the red mark and tooltip name the attempted one)

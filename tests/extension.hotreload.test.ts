@@ -5,7 +5,8 @@ import * as path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PythonClassIndex } from '../src/backend/pythonClassIndex';
 import { activate, deactivate } from '../src/extension';
-import { setActiveProfile } from '../src/activeProfile';
+import { resolveActiveProfile, setActiveProfile } from '../src/activeProfile';
+import { ProjectProfileStore } from '../src/projectProfiles';
 import { getRootConfigGeneration, getRootConfigLastBumpReason } from '../src/rootConfigGeneration';
 import { getActiveProfileScanRoot, resetScanRootCache, setActiveProfileScanRoot } from '../src/scanRoots';
 import { isPythonMroJumpEnabled } from '../src/languageProviders';
@@ -137,15 +138,38 @@ describe('extension activate MRO 启动门控(P0-3e)', () => {
 });
 
 describe('热更通道快捷启用命令的零配置入口(快捷切换本批)', () => {
-  it('零 profile 时 configureChannel 如实报告(不抛错不静默)', async () => {
-    const context = makeContext();
+  it('零 profile 时先自动创建并激活默认档(用户令 2026-11-10「创建默认的」),不再报无 profile', async () => {
+    // workspaceState 显式给 memento:makeContext 不带,store 退化会话内记忆,
+    // 落盘断言要可读回(与 :193 既有用例同法)
+    const map = new Map<string, unknown>();
+    const mementoLike = {
+      get: <T,>(key: string, defaultValue?: T): T | undefined =>
+        map.has(key) ? (map.get(key) as T) : defaultValue,
+      update: (key: string, value: unknown): Promise<void> => {
+        map.set(key, value);
+        return Promise.resolve();
+      }
+    };
+    const context: ExtensionContext = { ...makeContext(), workspaceState: mementoLike };
     const originalInfoCount = messages.info.length;
     try {
       activate(context);
       await commands.executeCommand('kbengine.hotReload.configureChannel');
-      expect(messages.info.slice(originalInfoCount).some(entry => entry.includes('无部署 profile'))).toBe(
-        true
-      );
+      // 新契约:零 profile 先兜默认档(创建+激活+报一声),「无部署 profile」
+      // 只在兜底走不通时才出现
+      expect(
+        messages.info
+          .slice(originalInfoCount)
+          .some(entry => entry.includes('已创建并激活默认部署 profile'))
+      ).toBe(true);
+      expect(
+        messages.info.slice(originalInfoCount).some(entry => entry.includes('无部署 profile'))
+      ).toBe(false);
+      // 档真落了 workspaceState 且已激活(持久化身份,不是一次性对象)
+      const store = new ProjectProfileStore(context.workspaceState);
+      expect(store.list()).toHaveLength(1);
+      expect(store.list()[0].displayName).toBe('default');
+      expect(resolveActiveProfile(context.workspaceState)?.id).toBe(store.list()[0].id);
     } finally {
       messages.info.length = originalInfoCount;
       disposeAll(context);
