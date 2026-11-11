@@ -1,13 +1,17 @@
 /**
  * 流敏感 self.<attr> 类型 Rust↔TS 引擎对拍(RUST-MIGRATION-AUDIT-006 B1 车道
- * 批 1,沿 propertyDirectionRustParity 先例):真实 kode-server 跑
+ * 批 1;精确性主车道批 A 起改 split-parity):真实 kode-server 跑
  * `$/kode/python/selfAttributeFlow`,经生产装配 inferSelfAttributeFlowFromRust
  * (门注入真实 client,校验/转换同一条路径)与 TS 引擎 inferSelfAttributeFlow
- * **全量深等**(flow 四面:types 升序 / annotation / hasNone / narrowed)。
+ * 在**使用位**(`self.<attr>` 出现行——inlay/attributeNone 的全部生产查询面)
+ * 深等(flow 四面:types 升序 / annotation / hasNone / narrowed)。
  * 查询面 = 合成样本(守卫窄化/早退/__init__ 覆盖/类级声明/字面量与 bytes
  * 前缀/并集含 else-elif-try/`+=` `!=` 不算赋值/嵌套类/多类/docstring 行/类体
- * 行/CRLF/孤立 \r/非 ASCII 行)× 每属性 × **每行全量** + 真实 fixture .py
- * 全量同法;行数组口径与生产一致(getText().split(/\r?\n/),两侧同输入)。
+ * 行/CRLF/孤立 \r/非 ASCII 行)× 每属性 × 使用位全量 + 真实 fixture .py
+ * 同法;行数组口径与生产一致(getText().split(/\r?\n/),两侧同输入)。
+ * 非使用位(方法间空行/类尾/装饰器行)不再深等——批 A 起 Rust 类跨度换 ruff
+ * AST 真域,空隙行从「上一方法流」改为诚实落空(类基线),合法改进见
+ * selfAttributeFlowPrecision.test.ts;生产面不查空隙位。
  * versionKey 逐样本不透明键(两侧各自 LRU,同键语义)。非法入参(attr 空/
  * 越界)两侧同 null。二进制缺失(未构建 Rust)整套 skip,不破坏纯 TS 门禁;
  * 二进制在场则首例先做**直连 ok 断言**(Rust 侧 flow 字段在场)——旧二进制
@@ -228,6 +232,33 @@ async function withRustGate(
   }
 }
 
+/**
+ * 使用位:attr 以 `self.<attr>` 形态出现的**代码行**(生产查询面:inlay 写点/
+ * 读点、attributeNone 写点)。注释行(首非空白 `#`)与空行排除——生产面虽会
+ * 在其上文本命中,但两引擎在此均为启发式位(批 A 起 Rust 真域:方法尾注释行
+ * 落类基线,与类体内其他非代码位一致;旧引擎=被不可解析调用抹空的方法流,
+ * 见审计 docs/review/2026-11-11-precision-campaign.md)。
+ */
+function usageLines(text: string, attr: string): number[] {
+  const pattern = new RegExp(`\\bself\\.${attr}\\b`);
+  return documentLinesOf(text)
+    .map((line, idx) => {
+      const trimmed = line.trimStart();
+      if (trimmed.length === 0 || trimmed.startsWith('#')) {
+        return -1;
+      }
+      return pattern.test(line) ? idx : -1;
+    })
+    .filter(idx => idx >= 0);
+}
+
+/**
+ * 批 A 已知精度修正样本:嵌套类方法体的流,旧引擎(含 TS 兜底)跨类误绑为
+ * 外层类基线落空;Rust 真域后给出真实流。该样本整体移出深等,精度期望见
+ * selfAttributeFlowPrecision.test.ts(class-level-and-nested 全使用位覆盖)。
+ */
+const PRECISION_MOVED_SAMPLES = new Set(['class-level-and-nested']);
+
 suite('selfAttributeFlow Rust↔TS 引擎对拍(真实 kode-server)', () => {
   it('直连断言:Rust 方法在场且 flow 形状合法(旧二进制缺方法 → 显式红)', async () => {
     await withRustGate(async calls => {
@@ -242,14 +273,17 @@ suite('selfAttributeFlow Rust↔TS 引擎对拍(真实 kode-server)', () => {
     });
   });
 
-  it('合成样本:每属性×每行全量,四面深等;非法入参两侧同 null', async () => {
+  it('合成样本:使用位四面深等;非法入参两侧同 null', async () => {
     await withRustGate(async () => {
       let queries = 0;
       for (const sample of SYNTHETIC_SAMPLES) {
+        if (PRECISION_MOVED_SAMPLES.has(sample.label)) {
+          continue; // 精度修正样本,全使用位期望在 precision 文件
+        }
         const lines = documentLinesOf(sample.text);
         const versionKey = `parity:${sample.label}`;
         for (const attr of candidateAttrs(sample.text)) {
-          for (let line = 0; line < lines.length; line += 1) {
+          for (const line of usageLines(sample.text, attr)) {
             const tsFlow = inferSelfAttributeFlow(lines, line, attr, undefined, versionKey);
             const rustFace = await inferSelfAttributeFlowFromRust(lines, line, attr, versionKey);
             if (tsFlow === null) {
@@ -267,11 +301,23 @@ suite('selfAttributeFlow Rust↔TS 引擎对拍(真实 kode-server)', () => {
           }
         }
       }
-      expect(queries).toBeGreaterThan(150);
+      expect(queries).toBeGreaterThan(40);
+      // 非法入参:attr 空 / 行越界,两侧同 null
+      const lines0 = documentLinesOf(SYNTHETIC_SAMPLES[0].text);
+      expect(
+        await inferSelfAttributeFlowFromRust(lines0, 0, '', 'parity:oob-empty')
+      ).toBeNull();
+      expect(
+        await inferSelfAttributeFlowFromRust(lines0, lines0.length, 'TalentTree', 'parity:oob-line')
+      ).toBeNull();
+      expect(inferSelfAttributeFlow(lines0, 0, '', undefined, 'parity:oob-empty')).toBeNull();
+      expect(
+        inferSelfAttributeFlow(lines0, lines0.length, 'TalentTree', undefined, 'parity:oob-line')
+      ).toBeNull();
     });
   }, 60000);
 
-  it('fixture 全量:真实语料每属性×每行四面深等', async () => {
+  it('fixture 全量:真实语料使用位四面深等', async () => {
     await withRustGate(async () => {
       const files = collectPythonFiles(FIXTURE_ROOT);
       expect(files.length).toBeGreaterThan(10);
@@ -281,7 +327,7 @@ suite('selfAttributeFlow Rust↔TS 引擎对拍(真实 kode-server)', () => {
         const lines = documentLinesOf(text);
         const versionKey = `parity:fixture:${file}`;
         for (const attr of candidateAttrs(text)) {
-          for (let line = 0; line < lines.length; line += 1) {
+          for (const line of usageLines(text, attr)) {
             const tsFlow = inferSelfAttributeFlow(lines, line, attr, undefined, versionKey);
             const rustFace = await inferSelfAttributeFlowFromRust(lines, line, attr, versionKey);
             if (tsFlow === null) {
@@ -299,7 +345,7 @@ suite('selfAttributeFlow Rust↔TS 引擎对拍(真实 kode-server)', () => {
           }
         }
       }
-      expect(queries).toBeGreaterThan(500);
+      expect(queries).toBeGreaterThan(200);
     });
   }, 120000);
 });

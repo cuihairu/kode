@@ -1,17 +1,21 @@
 //! LANG-NAR-1 语义引擎流敏感窄化(RUST-MIGRATION-AUDIT-006 B1 车道批 1)。
 //!
-//! TS `src/backend/selfAttributeFlowTypes.ts`(567 行)逐字移植,含其唯一解析
-//! 依赖 `src/backend/pythonParser.ts` 的掩码/语句合并/类跨度提取段——**不换
-//! ruff**:对拍纪律要求与 TS 引擎字节级等价(嵌套类/语句合并/缩进口径以 TS
-//! 正则解析器为准;ruff 换道留给后续精确性车道,见战役计划后续章节)。
+//! TS `src/backend/selfAttributeFlowTypes.ts`(567 行)移植:行扫描器/守卫/
+//! 类型推导段逐字保真;类跨度提取段在精确性主车道批 A 换道 ruff AST
+//! (class_spans_from_ast)——域正确性升级(嵌套类/条件 def 真域、未闭合
+//! 文件不再吞尾),行扫描语义仍以 TS 引擎为基准(平铺文件跨度等值,见
+//! ClassSpan 注)。TS 引擎冻结为杀开关兜底,不再作字节对拍基准(输出
+//! 合法变好,split-parity:未触及维度保留深等,升级维度精度断言)。
 //!
 //! 移植口径(逐字对齐要点):
 //! - 全程 UTF-16 码元(与 JS 字符串索引同基底);行走查器吃调用方原样行
 //!   (inlay 路原文/诊断路掩码行,Rust 不二次掩码——与 TS 纯函数同契约);
-//! - 解析路径 = 行 join('\n') 后按 `/\r?\n/` 再切(尾随 `\r` 剥离)→
-//!   `pythonCodeLines` 掩码 → `pythonStatements` 括号/续行合并 → 类/def 栈式
-//!   提取。引擎只用 ClassSpan{name,startLine,endLine,methods:名→行};
-//!   TS methods 的 character 列引擎不读,不移植(列口径无消费者);
+//! - 类跨度路径 = 行 join('\n') → UTF-8 → ruff 容错解析(部分 AST,半成品
+//!   文件尽力产出)→ AST 走查产 ClassSpan{name,start_line,end_line,
+//!   method_lines:名→def 名行,method_domains:真实体域}。装饰器不计行号
+//!   (ruff class/def range 含 @ 前缀,取 name.range 起点校正);end_line=
+//!   语句末字符行+1(排他);嵌套类自成一个 ClassSpan、类体控制块内 def
+//!   仍归类(与旧展平口径同员),def 体内不下行(与旧 scope.function 同员);
 //! - 正则全部手工展开成扫描器,左优先交替 + 回溯语义逐字保真
 //!   (anyBlockOpen 的 `else` 命中后词边界失败不换关键字的 JS 行为等);
 //!   `\s` 取 JS 全类(含  /　/﻿ 等),`\w` = `[A-Za-z0-9_]`;
@@ -28,6 +32,9 @@
 
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::sync::Mutex;
+
+use crate::parse::ParsedAst;
+use ruff_python_ast as ast;
 
 /// 版本键 LRU 容量(TS PARSE_CACHE_MAX_ENTRIES = 8)
 pub const PARSE_CACHE_MAX_ENTRIES: usize = 8;
@@ -97,92 +104,7 @@ pub fn split_crlf(content: &[u16]) -> Vec<Vec<u16>> {
     lines
 }
 
-/// 掩码注释/字符串字面量为同长占位(quote 态跨行持续;triple 三引号成段)。
-/// 逐字对齐 TS:转义内两码元占位、三引号开/闭各三码元占位、`#` 起尾段全空白。
-fn python_code_lines(content: &[u16]) -> Vec<Vec<u16>> {
-    let mut lines = split_crlf(content);
-    let mut quote: u16 = 0; // 0 = 无引号态
-    let mut triple = false;
-    for raw in lines.iter_mut() {
-        let original = std::mem::take(raw);
-        let mut masked: Vec<u16> = Vec::with_capacity(original.len());
-        let mut col = 0usize;
-        while col < original.len() {
-            let ch = original[col];
-            if quote != 0 {
-                if ch == 0x5C {
-                    // TS: masked += '  '; col += 1; continue(循环再 +1,共进 2)
-                    masked.push(0x20);
-                    masked.push(0x20);
-                    col += 2;
-                    continue;
-                }
-                let is_triple_close = triple
-                    && col + 3 <= original.len()
-                    && original[col] == quote
-                    && original.get(col + 1) == Some(&quote)
-                    && original.get(col + 2) == Some(&quote);
-                if is_triple_close {
-                    quote = 0;
-                    triple = false;
-                    masked.push(0x20);
-                    masked.push(0x20);
-                    masked.push(0x20);
-                    col += 3; // TS: col += 2 后循环 +1
-                    continue;
-                }
-                if !triple && ch == quote {
-                    quote = 0;
-                    masked.push(0x20);
-                } else {
-                    masked.push(0x20);
-                }
-                col += 1;
-                continue;
-            }
-            if ch == 0x23 {
-                // '#':尾段全空白补齐到行尾,终止
-                while masked.len() < original.len() {
-                    masked.push(0x20);
-                }
-                break;
-            }
-            if ch == 0x27 || ch == 0x22 {
-                quote = ch;
-                let is_triple_open = col + 3 <= original.len()
-                    && original.get(col + 1) == Some(&ch)
-                    && original.get(col + 2) == Some(&ch);
-                triple = is_triple_open;
-                if triple {
-                    masked.push(0x5F);
-                    masked.push(0x5F);
-                    masked.push(0x5F);
-                    col += 3;
-                } else {
-                    masked.push(0x5F);
-                    col += 1;
-                }
-                continue;
-            }
-            masked.push(ch);
-            col += 1;
-        }
-        *raw = masked;
-    }
-    lines
-}
-
-// ---- pythonStatements(pythonParser.ts:64-88 逐字移植) ---------------------
-
-/// 合并后的语句(括号深度/续行归并;文本=掩码行以单空格连接,首行坐标保留)
-#[derive(Debug)]
-pub struct PyStatement {
-    pub text: Vec<u16>,
-    pub line: usize,
-    #[allow(dead_code)]
-    pub end_line: usize,
-    pub indent: usize,
-}
+// ---- 行基础判定(行扫描器/AST 跨度共用) ------------------------------------
 
 /// 行首 `[ \t]*` 缩进(tab 计 4)
 fn indent_of(line: &[u16]) -> usize {
@@ -213,261 +135,111 @@ fn is_comment_only(line: &[u16]) -> bool {
     i == line.len() || line[i] == 0x23
 }
 
-fn python_statements(content: &[u16]) -> Vec<PyStatement> {
-    let mut statements: Vec<PyStatement> = Vec::new();
-    let mut depth = 0i64;
-    let mut pending: Vec<u16> = Vec::new();
-    let mut start = 0usize;
-    let mut indent = 0usize;
-    for (line_no, masked) in python_code_lines(content).into_iter().enumerate() {
-        let trimmed_nonempty = masked.iter().any(|&code| !is_js_space(code));
-        if pending.is_empty() && !trimmed_nonempty {
-            continue;
-        }
-        if pending.is_empty() {
-            start = line_no;
-            indent = indent_of(&masked);
-        }
-        for &ch in &masked {
-            if ch == 0x28 || ch == 0x5B || ch == 0x7B {
-                depth += 1;
-            }
-            if ch == 0x29 || ch == 0x5D || ch == 0x7D {
-                depth = std::cmp::max(0, depth - 1);
-            }
-        }
-        // /\\\s*$/:行尾反斜杠 + 其后空白(仅此段剥除,其余尾随空白保留——
-        // TS `masked.replace(/\\\s*$/, '')` 逐字语义)
-        let mut content_end = masked.len();
-        while content_end > 0 && is_js_space(masked[content_end - 1]) {
-            content_end -= 1;
-        }
-        let continued = content_end > 0 && masked[content_end - 1] == 0x5C;
-        if !pending.is_empty() {
-            pending.push(0x20);
-        }
-        if continued {
-            pending.extend_from_slice(&masked[..content_end - 1]);
-        } else {
-            pending.extend_from_slice(&masked);
-        }
-        if depth == 0 && !continued {
-            statements.push(PyStatement {
-                text: std::mem::take(&mut pending),
-                line: start,
-                end_line: line_no,
-                indent,
-            });
-        }
-    }
-    statements
-}
+// ---- 类跨度提取(ruff AST 派生;精确性主车道批 A) --------------------------
 
-// ---- 类跨度提取(parsePythonFile 类/def 段逐字移植) ------------------------
+/// 方法真实体域(0 起,含尾):def 名行 .. def 语句末字符行。
+#[derive(Debug, Clone)]
+pub struct MethodDomain {
+    pub name: String,
+    pub start_line: usize,
+    pub end_line: usize,
+}
 
 /// 类跨度(引擎所需字段;TS methods 的 character 列引擎不读,不移植)
 #[derive(Debug, Clone)]
 pub struct ClassSpan {
     pub name: String,
-    /// 0 起起始行(class 语句行)
+    /// 0 起起始行(class 名行;装饰器不计——ruff range 含 @ 前缀,名行校正)
     pub start_line: usize,
-    /// 0 起结束行(不含);未闭合 = 全文行数
+    /// 0 起结束行(不含)= 类语句末字符行 + 1(尾随空行/注释不再计入类;
+    /// 未闭合到 EOF 时自然收敛于文末)
     pub end_line: usize,
-    /// 方法名 → 0 起起始行
+    /// 方法名 → 0 起 def 名行(同名后者覆盖,与旧 HashMap 语义一致)
     pub method_lines: HashMap<String, usize>,
+    /// 方法真实体域(enclosing_method 内含最小域者胜;嵌套类/条件 def 归属修正)
+    pub method_domains: Vec<MethodDomain>,
 }
 
-/// 语句文本上匹配 `^\s*class\s+([A-Za-z_]\w*)\s*(?:\((.*)\))?\s*:`(贪婪
-/// `(.*)` 回溯语义:取**最后一个**其后缀匹配 `\s*:` 的 `)`)。
-fn match_class_statement(text: &[u16]) -> Option<usize> {
-    let mut i = 0usize;
-    while i < text.len() && is_js_space(text[i]) {
-        i += 1;
-    }
-    for expected in b"class" {
-        if text.get(i) != Some(&(*expected as u16)) {
-            return None;
-        }
-        i += 1;
-    }
-    let ws_start = i;
-    while i < text.len() && is_js_space(text[i]) {
-        i += 1;
-    }
-    if i == ws_start {
-        return None; // \s+ 至少一空白
-    }
-    if text.get(i).map(|&c| is_name_start(c)) != Some(true) {
-        return None;
-    }
-    let name_start = i;
-    while i < text.len() && is_word(text[i]) {
-        i += 1;
-    }
-    let _name_end = i;
-    while i < text.len() && is_js_space(text[i]) {
-        i += 1;
-    }
-    if text.get(i) == Some(&0x28u16) {
-        // 带基类括号:贪婪 `(.*)` 取最后一个使 `\)\s*:` 成立的 ')';`.*`
-        // 不匹配行终止符 → 首终止符之后的位置不可达(孤立 \r 截断回溯域)
-        let open = i;
-        let mut limit = text.len();
-        for (pos, &c) in text.iter().enumerate().skip(open + 1) {
-            if is_js_line_terminator(c) {
-                limit = pos;
-                break;
-            }
-        }
-        let mut j = limit;
-        while j > open + 1 {
-            j -= 1;
-            if text[j] == 0x29 {
-                // 检查 ')' 之后 `\s*:`(\s 含终止符)
-                let mut k = j + 1;
-                while k < text.len() && is_js_space(text[k]) {
-                    k += 1;
-                }
-                if text.get(k) == Some(&0x3Au16) {
-                    return Some(name_start);
-                }
-            }
-        }
-        // 括号组不成 → 整体失败(正则可选组失败后 `\s*:` 遇 '(' 不成立)
-        None
-    } else if text.get(i) == Some(&0x3Au16) {
-        Some(name_start)
-    } else {
-        None
-    }
+/// 语句末字符所在行(0 起;range end 为排他字节 offset,容错空 range 饱和回退)。
+fn last_char_line(ast: &ParsedAst, range: ruff_text_size::TextRange) -> usize {
+    ast.line_col(range.end().to_u32().saturating_sub(1)).0
 }
 
-/// 语句文本上匹配 `^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(`,返回方法名
-/// 码元区间。
-fn match_def_statement(text: &[u16]) -> Option<(usize, usize)> {
-    let mut i = 0usize;
-    while i < text.len() && is_js_space(text[i]) {
-        i += 1;
-    }
-    // (?:async\s+)?
-    let mut j = i;
-    for expected in b"async" {
-        if text.get(j) != Some(&(*expected as u16)) {
-            j = i;
-            break;
-        }
-        j += 1;
-    }
-    if j != i {
-        let ws = j;
-        while j < text.len() && is_js_space(text[j]) {
-            j += 1;
-        }
-        if j == ws {
-            j = i; // async 后无空白 → 可选组整体不成立
-        }
-    }
-    i = j;
-    for expected in b"def" {
-        if text.get(i) != Some(&(*expected as u16)) {
-            return None;
-        }
-        i += 1;
-    }
-    let ws_start = i;
-    while i < text.len() && is_js_space(text[i]) {
-        i += 1;
-    }
-    if i == ws_start {
-        return None;
-    }
-    if text.get(i).map(|&c| is_name_start(c)) != Some(true) {
-        return None;
-    }
-    let name_start = i;
-    while i < text.len() && is_word(text[i]) {
-        i += 1;
-    }
-    let name_end = i;
-    while i < text.len() && is_js_space(text[i]) {
-        i += 1;
-    }
-    if text.get(i) == Some(&0x28u16) {
-        Some((name_start, name_end))
-    } else {
-        None
-    }
-}
-
-/// parsePythonFile 类/def 提取段:栈式作用域(函数体内的类不入表;仅类体直系
-/// def 记方法;闭合行=收拢语句起始行;未闭合=全文行数)。
-pub fn parse_class_spans(content: &[u16]) -> Vec<ClassSpan> {
-    let total_lines = split_crlf(content).len();
+/// 类跨度 = ruff 容错解析后的 AST 走查(半成品文件尽力产出部分跨度)。
+pub fn class_spans_from_ast(ast: &ParsedAst) -> Vec<ClassSpan> {
     let mut classes: Vec<ClassSpan> = Vec::new();
-    // 栈帧:indent + 该层是否类(类在 classes 的下标)/ 是否函数
-    struct Scope {
-        indent: usize,
-        cls: Option<usize>,
-        function: bool,
-    }
-    let mut stack: Vec<Scope> = Vec::new();
-    for statement in python_statements(content) {
-        let text = &statement.text;
-        let line = statement.line;
-        let indent = statement.indent;
-        let trimmed_nonempty = text.iter().any(|&code| !is_js_space(code));
-        if !trimmed_nonempty {
-            continue;
-        }
-        while let Some(top) = stack.last() {
-            if top.indent >= indent {
-                let closed = stack.pop().unwrap();
-                if let Some(idx) = closed.cls {
-                    classes[idx].end_line = line;
-                }
-            } else {
-                break;
-            }
-        }
-        if stack.iter().any(|scope| scope.function) {
-            continue;
-        }
-        if let Some(name_start) = match_class_statement(text) {
-            let mut name_end = name_start;
-            while name_end < text.len() && is_word(text[name_end]) {
-                name_end += 1;
-            }
-            let name = String::from_utf16_lossy(&text[name_start..name_end]);
-            classes.push(ClassSpan {
-                name,
-                start_line: line,
-                end_line: total_lines,
-                method_lines: HashMap::new(),
-            });
-            stack.push(Scope {
-                indent,
-                cls: Some(classes.len() - 1),
-                function: false,
-            });
-            continue;
-        }
-        if let Some((name_start, name_end)) = match_def_statement(text) {
-            if let Some(top) = stack.last() {
-                if let Some(idx) = top.cls {
-                    let name = String::from_utf16_lossy(&text[name_start..name_end]);
-                    classes[idx].method_lines.insert(name, line);
-                }
-            }
-            stack.push(Scope {
-                indent,
-                cls: None,
-                function: true,
-            });
-            continue;
-        }
-        // import / 实例赋值段引擎不消费,不移植(注:不影响类跨度/方法集)
-    }
+    walk_class_scopes(ast, &ast.module().body, None, &mut classes);
     classes
+}
+
+/// 作用域走查:类体直系 + 控制块内 def 仍归属当前类(与旧展平口径同员);
+/// def 体内不下行(函数内类/方法不入表,与旧 scope.function 口径同员);
+/// 嵌套类自成一个 ClassSpan(其方法归嵌套类,不归外层类)。
+fn walk_class_scopes(
+    ast: &ParsedAst,
+    body: &[ast::Stmt],
+    owner: Option<usize>,
+    classes: &mut Vec<ClassSpan>,
+) {
+    for stmt in body {
+        match stmt {
+            ast::Stmt::ClassDef(cls) => {
+                let start_line = ast.line_col(cls.name.range.start().to_u32()).0;
+                classes.push(ClassSpan {
+                    name: cls.name.as_str().to_string(),
+                    start_line,
+                    end_line: last_char_line(ast, cls.range) + 1,
+                    method_lines: HashMap::new(),
+                    method_domains: Vec::new(),
+                });
+                let idx = classes.len() - 1;
+                walk_class_scopes(ast, &cls.body, Some(idx), classes);
+            }
+            ast::Stmt::FunctionDef(fun) => {
+                if let Some(idx) = owner {
+                    let name = fun.name.as_str().to_string();
+                    let start_line = ast.line_col(fun.name.range.start().to_u32()).0;
+                    let end_line = last_char_line(ast, fun.range);
+                    classes[idx].method_lines.insert(name.clone(), start_line);
+                    classes[idx].method_domains.push(MethodDomain {
+                        name,
+                        start_line,
+                        end_line,
+                    });
+                }
+            }
+            ast::Stmt::If(s) => {
+                walk_class_scopes(ast, &s.body, owner, classes);
+                for clause in &s.elif_else_clauses {
+                    walk_class_scopes(ast, &clause.body, owner, classes);
+                }
+            }
+            ast::Stmt::For(s) => {
+                walk_class_scopes(ast, &s.body, owner, classes);
+                walk_class_scopes(ast, &s.orelse, owner, classes);
+            }
+            ast::Stmt::While(s) => {
+                walk_class_scopes(ast, &s.body, owner, classes);
+                walk_class_scopes(ast, &s.orelse, owner, classes);
+            }
+            ast::Stmt::With(s) => walk_class_scopes(ast, &s.body, owner, classes),
+            ast::Stmt::Try(s) => {
+                walk_class_scopes(ast, &s.body, owner, classes);
+                for h in &s.handlers {
+                    let ast::ExceptHandler::ExceptHandler(inner) = h;
+                    walk_class_scopes(ast, &inner.body, owner, classes);
+                }
+                walk_class_scopes(ast, &s.orelse, owner, classes);
+                walk_class_scopes(ast, &s.finalbody, owner, classes);
+            }
+            ast::Stmt::Match(s) => {
+                for case in &s.cases {
+                    walk_class_scopes(ast, &case.body, owner, classes);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 // ---- 版本键 LRU 解析缓存(KODE-PERF-001 语义对齐) --------------------------
@@ -479,19 +251,25 @@ struct ParseCacheEntry {
 
 static PARSE_CACHE: Mutex<Option<ParseCacheEntry>> = Mutex::new(None);
 
+/// 行列表 → 类跨度(UTF-16 行 join('\n') → String → ruff 容错解析)。
+fn class_spans_from_lines(lines: &[Vec<u16>]) -> Vec<ClassSpan> {
+    let mut content: Vec<u16> = Vec::new();
+    for (idx, line) in lines.iter().enumerate() {
+        if idx > 0 {
+            content.push(0x0A);
+        }
+        content.extend_from_slice(line);
+    }
+    let parsed = ParsedAst::new(String::from_utf16_lossy(&content));
+    class_spans_from_ast(&parsed)
+}
+
 fn parse_with_version_cache(lines: &[Vec<u16>], version_key: Option<&str>) -> Vec<ClassSpan> {
     let key = match version_key {
         Some(key) => key,
         None => {
             // 无键 = 现解析不缓存(纯函数回退)
-            let mut content: Vec<u16> = Vec::new();
-            for (idx, line) in lines.iter().enumerate() {
-                if idx > 0 {
-                    content.push(0x0A);
-                }
-                content.extend_from_slice(line);
-            }
-            return parse_class_spans(&content);
+            return class_spans_from_lines(lines);
         }
     };
     let mut guard = PARSE_CACHE.lock().unwrap();
@@ -508,14 +286,7 @@ fn parse_with_version_cache(lines: &[Vec<u16>], version_key: Option<&str>) -> Ve
         entry.order.push_back(key.to_string());
         return cached;
     }
-    let mut content: Vec<u16> = Vec::new();
-    for (idx, line) in lines.iter().enumerate() {
-        if idx > 0 {
-            content.push(0x0A);
-        }
-        content.extend_from_slice(line);
-    }
-    let parsed = parse_class_spans(&content);
+    let parsed = class_spans_from_lines(lines);
     entry.map.insert(key.to_string(), parsed.clone());
     entry.order.push_back(key.to_string());
     while entry.order.len() > PARSE_CACHE_MAX_ENTRIES {
@@ -1006,27 +777,35 @@ struct MethodSpan {
     end_line: usize,
 }
 
-/// 方法体界(0 起,含尾):类方法排序区间;查询行在类内但先于首方法/类外 → None
+/// 方法体界(0 起,含尾):AST 真实体域,全类集合中内含查询行的**最小域**
+/// 者胜(嵌套类行归嵌套类方法、条件 def 域不再越界吞邻;类外/方法间空隙 →
+/// None——空隙行不是使用位,落空即诚实)。
 fn enclosing_method(classes: &[ClassSpan], line: usize) -> Option<(MethodSpan, usize)> {
+    let mut best: Option<(MethodSpan, usize)> = None;
     for (idx, cls) in classes.iter().enumerate() {
-        if line < cls.start_line || line >= cls.end_line {
-            continue;
-        }
-        let mut starts: Vec<usize> = cls.method_lines.values().copied().collect();
-        starts.sort_unstable();
-        for i in (0..starts.len()).rev() {
-            if starts[i] <= line {
-                let end_line = if i + 1 < starts.len() {
-                    starts[i + 1] - 1
-                } else {
-                    cls.end_line - 1
-                };
-                return Some((MethodSpan { start_line: starts[i], end_line }, idx));
+        for domain in &cls.method_domains {
+            if line < domain.start_line || line > domain.end_line {
+                continue;
+            }
+            let better = match &best {
+                None => true,
+                Some((current, _)) => {
+                    domain.end_line - domain.start_line
+                        < current.end_line - current.start_line
+                }
+            };
+            if better {
+                best = Some((
+                    MethodSpan {
+                        start_line: domain.start_line,
+                        end_line: domain.end_line,
+                    },
+                    idx,
+                ));
             }
         }
-        return None;
     }
-    None
+    best
 }
 
 /// 方法体基础缩进:方法行后首个非空行缩进;无体行 = 方法行缩进 + 1
@@ -1382,10 +1161,11 @@ pub fn infer_self_attribute_flow(
         );
         (result.state, baseline)
     } else {
-        // 类体/模块层:无方法流,直接用收敛基类
+        // 类体/模块层:无方法流,直接用收敛基类(内含最小类者胜——嵌套类归属正确)
         let cls = classes
             .iter()
-            .find(|c| query_line >= c.start_line && query_line < c.end_line);
+            .filter(|c| query_line >= c.start_line && query_line < c.end_line)
+            .min_by_key(|c| c.end_line - c.start_line);
         match cls {
             Some(cls) => {
                 let baseline = converged_baseline(lines, cls, attr);
@@ -1985,4 +1765,105 @@ mod tests {
             .is_some());
         assert!(infer_self_attribute_flow(&lines, 5, &attr_u16("X"), None).is_some());
     }
+
+    // ---- 精确性主车道批 A:AST 真域 ------------------------------------
+
+    #[test]
+    fn ast_span_shape_flat_and_nested() {
+        let src = [
+            "class Outer:",
+            "    def m(self):",
+            "        pass",
+            "    class Inner:",
+            "        pass",
+        ]
+        .join("\n");
+        let spans = class_spans_from_ast(&ParsedAst::new(src));
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].name, "Outer");
+        assert_eq!(spans[0].start_line, 0);
+        assert_eq!(spans[0].end_line, 5);
+        assert_eq!(spans[0].method_lines.get("m"), Some(&1));
+        assert_eq!(spans[0].method_domains.len(), 1);
+        assert_eq!(spans[0].method_domains[0].start_line, 1);
+        assert_eq!(spans[0].method_domains[0].end_line, 2);
+        assert_eq!(spans[1].name, "Inner");
+        assert_eq!(spans[1].start_line, 3);
+        assert_eq!(spans[1].end_line, 5);
+        assert!(spans[1].method_domains.is_empty());
+    }
+
+    #[test]
+    fn decorated_class_and_def_lines_exclude_decorator() {
+        // ruff class/def range 含 @ 前缀;名行校正后与旧「def 名行」口径一致
+        let src = "@deco\nclass A:\n    @prop\n    def m(self):\n        pass\n";
+        let spans = class_spans_from_ast(&ParsedAst::new(src.to_string()));
+        assert_eq!(spans[0].name, "A");
+        assert_eq!(spans[0].start_line, 1);
+        assert_eq!(spans[0].method_domains[0].name, "m");
+        assert_eq!(spans[0].method_domains[0].start_line, 3);
+        assert_eq!(spans[0].method_domains[0].end_line, 4);
+    }
+
+    #[test]
+    fn nested_class_lines_attributed_to_inner_class() {
+        // 旧引擎:嵌套类体内查询行被外层类吞(先含者胜+下一方法起点−1),self.y
+        // 误绑到 Outer.m 的流;真域后归 Inner.n,且 Inner 域内查 x 不跨类硬套。
+        let body = [
+            "class Outer:",
+            "    def m(self):",
+            "        self.x = 1",
+            "    class Inner:",
+            "        def n(self):",
+            "            self.y = 2",
+            "            return self.y",
+        ];
+        assert_eq!(flow(&body, 6, "y").types, vec!["int"]);
+        assert_eq!(flow(&body, 6, "x").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn trailing_class_body_lines_leave_method_domain() {
+        // 旧引擎把类尾行吞进最后方法域(下一方法起点−1→类尾);真域后类级行
+        // 不再继承方法流(查询 m 的写点仍得 int,类级行落基线=诚实空)。
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        self.x = 1",
+            "    y = 2",
+        ];
+        assert_eq!(flow(&body, 2, "x").types, vec!["int"]);
+        assert_eq!(flow(&body, 3, "x").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn decorator_lines_are_not_method_domain() {
+        // 装饰器行不在任何方法域(与旧引擎同:类体分支=基线)
+        let body = [
+            "class A:",
+            "    @property",
+            "    def m(self):",
+            "        self.x = 1",
+            "        return self.x",
+        ];
+        assert_eq!(flow(&body, 4, "x").types, vec!["int"]);
+        assert_eq!(flow(&body, 1, "x").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn conditional_def_stays_within_its_true_body() {
+        // if TYPE_CHECKING 体内 def:成员归属类(旧展平口径同员),域取真实体
+        let body = [
+            "class A:",
+            "    if TYPE_CHECKING:",
+            "        def helper(self):",
+            "            self.x = \"t\"",
+            "    def real(self):",
+            "        self.x = 1",
+            "        return self.x",
+        ];
+        assert_eq!(flow(&body, 3, "x").types, vec!["str"]);
+        assert_eq!(flow(&body, 6, "x").types, vec!["int"]);
+    }
 }
+
