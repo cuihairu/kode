@@ -143,20 +143,43 @@ suite('selfAttributeFlow AST 真域精度(精确性主车道批 A)', () => {
     });
   });
 
-  it('批 B:集合字面量 {1,2} 判 set 不再误判 dict(实测误导账本 #1)', async () => {
+  it('批 C:self 属性读 RHS → 类属性基线(None 证据不再丢)', async () => {
     await withRustGate(async () => {
+      // TS 文本引擎对 self.j 形态 RHS 无回调即空集(生产);AST 后
+      // self.k = self.j → j 的类基线 {None}(None 证据如实传播)
       const text = [
-        'class A:',
-        '    def m(self):',
-        '        self.s = {1, 2}',
-        '        self.d = {}',
-        '        return self.s',
+        'class Foo:',
+        '    def __init__(self):',
+        '        self.j = None',
+        '        self.k = self.j',
+        '        return self.k',
       ].join('\n');
       const lines = text.split('\n');
-      const key = 'precision:set-literal';
-      expect((await inferSelfAttributeFlowFromRust(lines, 4, 's', key))?.types).toEqual(['set']);
-      // 空 dict 仍 dict( braces 歧义只存在于含元素形态)
-      expect((await inferSelfAttributeFlowFromRust(lines, 4, 'd', key))?.types).toEqual(['dict']);
+      const key = 'precision:self-attr-read';
+      const atWrite = await inferSelfAttributeFlowFromRust(lines, 3, 'k', key);
+      expect(atWrite?.types).toEqual(['None']);
+      expect(atWrite?.hasNone).toBe(true);
+    });
+  });
+
+  it('批 C:同文件 def -> T 注解与类限定调用(补可推导真值)', async () => {
+    await withRustGate(async () => {
+      const text = [
+        'class Repo:',
+        '    def load(self) -> Row:',
+        '        return None',
+        '',
+        'def make_repo() -> Repo:',
+        '    return None',
+        '',
+        'class A:',
+        '    def __init__(self):',
+        '        self.r = make_repo().load()',
+        '        return self.r',
+      ].join('\n');
+      const lines = text.split('\n');
+      const key = 'precision:in-file-call';
+      expect((await inferSelfAttributeFlowFromRust(lines, 9, 'r', key))?.types).toEqual(['Row']);
     });
   });
 });

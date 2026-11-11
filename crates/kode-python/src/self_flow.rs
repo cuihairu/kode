@@ -30,7 +30,7 @@
 //!
 //! 诚实边界:类型以原子注解字符串集合表示,推不出即空集(不硬造 Any)。
 
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Mutex;
 
 use crate::parse::ParsedAst;
@@ -361,14 +361,326 @@ fn is_self_receiver(expr: &ast::Expr) -> bool {
     matches!(expr, ast::Expr::Name(n) if n.id.as_str() == "self")
 }
 
-/// 全模块赋值走查:方法级 `self.<attr>` 面 + 类体直系裸名面(精确性主车道
-/// 批 B)。同行复合语句头的体不收集(`if c: self.x = 1` 依条件执行,扫描按
-/// 行序把它当普通行——与旧引擎「行首非 self 不匹配」同语义)。
-fn assignments_from_ast(ast: &ParsedAst) -> (AssignmentTypes, ClassAssignmentTypes) {
-    let mut method_level = AssignmentTypes::default();
-    let mut class_direct = ClassAssignmentTypes::default();
-    walk_assignments(ast, &ast.module().body, None, &mut method_level, &mut class_direct);
-    (method_level, class_direct)
+/// 批 C:in-file 调用/裸名推导(补可推导真值)。RHS 不再止步字面量:
+/// - 同文件模块级 def `-> T` 注解(`name(...)` 直取;重名歧义=未知,不取首定义硬猜);
+/// - `A.m(...)` 类限定方法注解(同类名多个=歧义不猜);`self.m(...)` 所在类限定;
+/// - 链式 `recv.m(...)`:接收者可推导出唯一原子且恰为同类名时取该方法注解;
+/// - 方法域内局部裸名赋值链(最近写点胜=替换语义,有界跳数 + visited 防环);
+/// - `self.z` 读 → 类属性基线(批 B 收敛基线图,RAW 索引上算,备忘录防重算);
+/// - await 壳透明;walrus 目标登记为局部写点(顶层/元素级,更深层诚实漏)。
+///
+/// 诚实边界:无注解/未知 callee/环/越域 → 空集,绝不猜。
+const RESOLVE_MAX_HOPS: usize = 4;
+
+/// 模块级 def 返回注解:Single(注解或无)= 唯一定义;Ambiguous = 同名多个。
+#[derive(Debug, Clone)]
+enum DefReturn {
+    Single(Option<String>),
+    Ambiguous,
+}
+
+#[derive(Debug, Clone)]
+enum CalleeShape {
+    /// f(...)
+    Name(String),
+    /// A.m(...)
+    Qualified { class: String, method: String },
+    /// self.m(...) —— 所在类限定
+    SelfMethod(String),
+    /// <expr>.m(...) —— 接收者推导出唯一同类名时取该方法注解
+    Chained { receiver: Box<RhsShape>, method: String },
+}
+
+/// RHS 形态快照(owned;AST 在解析派生后即弃,只留可推导面)。
+#[derive(Debug, Clone)]
+enum RhsShape {
+    /// 字面量面(批 B)已定型
+    Typed(TypeSet),
+    Call(CalleeShape),
+    /// self.z 读 → 类属性基线
+    SelfAttr(String),
+    /// 局部裸名(方法域内最近写点链)
+    Local(String),
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum EntryKind {
+    SelfAttr,
+    ClassDirect,
+}
+
+#[derive(Debug, Clone)]
+struct DeferredEntry {
+    kind: EntryKind,
+    line: usize,
+    name: String,
+    /// 注解原子(AnnAssign;`X: T` 无值也成立)
+    ann: Option<String>,
+    value: RhsShape,
+    class_start: Option<usize>,
+    method_start: Option<usize>,
+}
+
+#[derive(Debug, Default)]
+struct BuildContext {
+    entries: Vec<DeferredEntry>,
+    /// 方法域内局部裸名写点:(方法起始行, 名) → [(行, RHS 形态)](源序追加)
+    locals: HashMap<(usize, String), Vec<(usize, RhsShape)>>,
+    /// 模块级 def `-> T` 表
+    def_returns: HashMap<String, DefReturn>,
+    /// 类名 → 类名行(同名多个 = 歧义源)
+    class_names: HashMap<String, Vec<usize>>,
+    /// 类名行 → 方法名 → return 注解收集(>1 个同名方法 = 歧义)
+    class_methods: HashMap<usize, HashMap<String, Vec<Option<String>>>>,
+}
+
+/// RHS 形态抽取:字面量定型优先(批 B),其余按调用/属性/裸名形态留 owned 快照;
+/// await 壳透明(括号已被 ruff 剥除)。
+fn rhs_shape(expr: &ast::Expr) -> RhsShape {
+    let typed = ast_type_of_expr(expr);
+    if !typed.is_empty() {
+        return RhsShape::Typed(typed);
+    }
+    match expr {
+        ast::Expr::Call(c) => {
+            RhsShape::Call(match &*c.func {
+                ast::Expr::Name(n) => CalleeShape::Name(n.id.to_string()),
+                ast::Expr::Attribute(a) => {
+                    // self 接收者先行判(self 是 Name,先查接收者再归类限定)
+                    let recv = &*a.value;
+                    if is_self_receiver(recv) {
+                        CalleeShape::SelfMethod(a.attr.to_string())
+                    } else if let ast::Expr::Name(cn) = recv {
+                        CalleeShape::Qualified {
+                            class: cn.id.to_string(),
+                            method: a.attr.to_string(),
+                        }
+                    } else {
+                        CalleeShape::Chained {
+                            receiver: Box::new(rhs_shape(recv)),
+                            method: a.attr.to_string(),
+                        }
+                    }
+                }
+                _ => return RhsShape::Unknown,
+            })
+        }
+        ast::Expr::Attribute(a) if is_self_receiver(&a.value) => {
+            RhsShape::SelfAttr(a.attr.to_string())
+        }
+        ast::Expr::Name(n) => RhsShape::Local(n.id.to_string()),
+        ast::Expr::Await(aw) => rhs_shape(&aw.value),
+        ast::Expr::Named(n) => rhs_shape(&n.value),
+        _ => RhsShape::Unknown,
+    }
+}
+
+/// RHS 内 walrus 目标登记为局部写点(顶层 Named + 元组/列表元素 + await 内层;
+/// 更深层嵌套诚实漏,不入链)。
+fn record_walrus_locals(
+    expr: &ast::Expr,
+    line: usize,
+    method_start: Option<usize>,
+    ctx: &mut BuildContext,
+) {
+    let Some(ms) = method_start else {
+        return;
+    };
+    match expr {
+        ast::Expr::Named(n) => {
+            if let ast::Expr::Name(t) = &*n.target {
+                ctx.locals
+                    .entry((ms, t.id.to_string()))
+                    .or_default()
+                    .push((line, rhs_shape(&n.value)));
+            }
+        }
+        ast::Expr::Await(aw) => record_walrus_locals(&aw.value, line, method_start, ctx),
+        ast::Expr::Tuple(t) => {
+            for e in &t.elts {
+                record_walrus_locals(e, line, method_start, ctx);
+            }
+        }
+        ast::Expr::List(l) => {
+            for e in &l.elts {
+                record_walrus_locals(e, line, method_start, ctx);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// 全模块赋值走查:收集条目快照(方法级 `self.<attr>` 面 + 类体直系裸名面,
+/// 类身份键=类名行——装饰器不计,与 ClassSpan.start_line 同口径)+ 模块级 def/
+/// 类名/类方法表/局部写点。同行复合语句头的体不收集(`if c: self.x = 1` 依
+/// 条件执行,扫描按行序把它当普通行——与旧引擎「行首非 self 不匹配」同语义)。
+fn assignments_from_ast(
+    ast: &ParsedAst,
+    lines: &[Vec<u16>],
+    classes: &[ClassSpan],
+) -> (AssignmentTypes, ClassAssignmentTypes) {
+    let mut ctx = BuildContext::default();
+    // 模块级 def `-> T` 表(控制块内的模块级 def 同员;类/函数体内不入)
+    let mut module_defs: HashMap<String, Vec<Option<String>>> = HashMap::new();
+    collect_module_defs(ast, &ast.module().body, &mut module_defs);
+    for (name, rets) in module_defs {
+        let entry = if rets.len() == 1 {
+            DefReturn::Single(rets.into_iter().next().unwrap())
+        } else {
+            DefReturn::Ambiguous
+        };
+        ctx.def_returns.insert(name, entry);
+    }
+    walk_assignments(ast, &ast.module().body, None, &mut ctx, None, None);
+
+    // RAW(字面量面)索引:基线图与防环推导都以它为底(推导不叠加推导,
+    // 保证基线与条目解耦、无解析顺序依赖)
+    let mut raw = AssignmentTypes::default();
+    let mut raw_direct = ClassAssignmentTypes::default();
+    for e in &ctx.entries {
+        let mut types = TypeSet::new();
+        if let Some(a) = &e.ann {
+            types.insert(a.clone());
+        }
+        if let RhsShape::Typed(t) = &e.value {
+            types.extend(t.iter().cloned());
+        }
+        match e.kind {
+            EntryKind::SelfAttr => raw.insert(e.line, &e.name, types),
+            EntryKind::ClassDirect => {
+                raw_direct.insert(e.class_start.unwrap(), e.line, &e.name, types)
+            }
+        }
+    }
+
+    // 推导期:非字面量形态按上下文解析(基线图备忘录/方法表/局部链)
+    let mut state = ResolveState {
+        lines,
+        classes,
+        build: &ctx,
+        raw: &raw,
+        raw_class_direct: &raw_direct,
+        baseline_memo: HashMap::new(),
+    };
+    let mut final_map = AssignmentTypes::default();
+    let mut final_direct = ClassAssignmentTypes::default();
+    for e in &ctx.entries {
+        let mut types = TypeSet::new();
+        if let Some(a) = &e.ann {
+            types.insert(a.clone());
+        }
+        types.extend(resolve_shape(
+            &mut state,
+            &e.value,
+            e.line,
+            e.class_start,
+            e.method_start,
+            0,
+            &mut HashSet::new(),
+        ));
+        match e.kind {
+            EntryKind::SelfAttr => final_map.insert(e.line, &e.name, types),
+            EntryKind::ClassDirect => {
+                final_direct.insert(e.class_start.unwrap(), e.line, &e.name, types)
+            }
+        }
+    }
+    (final_map, final_direct)
+}
+
+/// 模块级 def 收集(控制块内同员;类/函数体内 def 不入裸名调用表)。
+fn collect_module_defs(
+    ast: &ParsedAst,
+    body: &[ast::Stmt],
+    out: &mut HashMap<String, Vec<Option<String>>>,
+) {
+    for stmt in body {
+        match stmt {
+            ast::Stmt::FunctionDef(fun) => {
+                let ret = fun.returns.as_ref().and_then(|e| annotation_text(ast, e));
+                out.entry(fun.name.id.to_string()).or_default().push(ret);
+            }
+            ast::Stmt::ClassDef(_) => {}
+            ast::Stmt::If(s) => {
+                collect_module_defs(ast, &s.body, out);
+                for clause in &s.elif_else_clauses {
+                    collect_module_defs(ast, &clause.body, out);
+                }
+            }
+            ast::Stmt::For(s) => {
+                collect_module_defs(ast, &s.body, out);
+                collect_module_defs(ast, &s.orelse, out);
+            }
+            ast::Stmt::While(s) => {
+                collect_module_defs(ast, &s.body, out);
+                collect_module_defs(ast, &s.orelse, out);
+            }
+            ast::Stmt::With(s) => collect_module_defs(ast, &s.body, out),
+            ast::Stmt::Try(s) => {
+                collect_module_defs(ast, &s.body, out);
+                for h in &s.handlers {
+                    let ast::ExceptHandler::ExceptHandler(inner) = h;
+                    collect_module_defs(ast, &inner.body, out);
+                }
+                collect_module_defs(ast, &s.orelse, out);
+                collect_module_defs(ast, &s.finalbody, out);
+            }
+            ast::Stmt::Match(s) => {
+                for case in &s.cases {
+                    collect_module_defs(ast, &case.body, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// 类体方法表收集(控制块内 def 同员=批 A 成员口径;嵌套类/嵌套函数不入)。
+fn collect_class_methods(
+    ast: &ParsedAst,
+    body: &[ast::Stmt],
+    out: &mut HashMap<String, Vec<Option<String>>>,
+) {
+    for stmt in body {
+        match stmt {
+            ast::Stmt::FunctionDef(fun) => {
+                let ret = fun.returns.as_ref().and_then(|e| annotation_text(ast, e));
+                out.entry(fun.name.id.to_string()).or_default().push(ret);
+            }
+            ast::Stmt::ClassDef(_) => {}
+            ast::Stmt::If(s) => {
+                collect_class_methods(ast, &s.body, out);
+                for clause in &s.elif_else_clauses {
+                    collect_class_methods(ast, &clause.body, out);
+                }
+            }
+            ast::Stmt::For(s) => {
+                collect_class_methods(ast, &s.body, out);
+                collect_class_methods(ast, &s.orelse, out);
+            }
+            ast::Stmt::While(s) => {
+                collect_class_methods(ast, &s.body, out);
+                collect_class_methods(ast, &s.orelse, out);
+            }
+            ast::Stmt::With(s) => collect_class_methods(ast, &s.body, out),
+            ast::Stmt::Try(s) => {
+                collect_class_methods(ast, &s.body, out);
+                for h in &s.handlers {
+                    let ast::ExceptHandler::ExceptHandler(inner) = h;
+                    collect_class_methods(ast, &inner.body, out);
+                }
+                collect_class_methods(ast, &s.orelse, out);
+                collect_class_methods(ast, &s.finalbody, out);
+            }
+            ast::Stmt::Match(s) => {
+                for case in &s.cases {
+                    collect_class_methods(ast, &case.body, out);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn stmt_start_line(ast: &ParsedAst, range: ruff_text_size::TextRange) -> usize {
@@ -379,8 +691,9 @@ fn walk_assignments(
     ast: &ParsedAst,
     body: &[ast::Stmt],
     header_line: Option<usize>,
-    method_level: &mut AssignmentTypes,
-    class_direct: &mut ClassAssignmentTypes,
+    ctx: &mut BuildContext,
+    class_start: Option<usize>,
+    method_start: Option<usize>,
 ) {
     for stmt in body {
         let start_line = stmt_start_line(ast, stmt.range());
@@ -388,13 +701,21 @@ fn walk_assignments(
             continue; // 同行复合语句体的赋值不收集(条件执行不硬套)
         }
         match stmt {
-            ast::Stmt::Assign(a) => {
-                index_assign(ast, a, None, method_level, class_direct);
-            }
+            ast::Stmt::Assign(a) => index_assign(ast, a, None, ctx, class_start, method_start),
             ast::Stmt::AnnAssign(a) => {
-                index_ann_assign(ast, a, None, method_level, class_direct);
+                index_ann_assign(ast, a, None, ctx, class_start, method_start)
             }
             ast::Stmt::ClassDef(cls) => {
+                // 类身份 = 类名行(装饰器不计;与 ClassSpan.start_line 同口径,
+                // 基线查找才能命中)
+                let cls_line = ast.line_col(cls.name.range.start().to_u32()).0;
+                ctx.class_names
+                    .entry(cls.name.id.to_string())
+                    .or_default()
+                    .push(cls_line);
+                let mut methods = HashMap::new();
+                collect_class_methods(ast, &cls.body, &mut methods);
+                ctx.class_methods.insert(cls_line, methods);
                 // 类体直系裸名赋值/注解 → class_direct(基线面);嵌套块与
                 // 嵌套类体内不入(与旧基线「类体缩进直系行」同域)。
                 for direct in &cls.body {
@@ -404,53 +725,61 @@ fn walk_assignments(
                     }
                     match direct {
                         ast::Stmt::Assign(a) => {
-                            index_assign(ast, a, Some(start_line), method_level, class_direct);
+                            index_assign(
+                                ast,
+                                a,
+                                Some(cls_line),
+                                ctx,
+                                Some(cls_line),
+                                None,
+                            );
                         }
                         ast::Stmt::AnnAssign(a) => {
-                            index_ann_assign(ast, a, Some(start_line), method_level, class_direct);
+                            index_ann_assign(ast, a, Some(cls_line), ctx, Some(cls_line), None);
                         }
                         _ => {}
                     }
                 }
-                // 递归方法体/控制块/嵌套类(直系赋值已在上面入 class_direct;
-                // 此处再走会以 self.<attr> 面重复命中——类体内无 self 目标,无副作用)
-                walk_assignments(ast, &cls.body, Some(start_line), method_level, class_direct);
+                // 递归方法体/控制块/嵌套类(直系已在上面收过;此处再走以
+                // self.<attr>/嵌套类面继续——类体直系裸名不会重复入表)
+                walk_assignments(ast, &cls.body, Some(start_line), ctx, Some(cls_line), None);
             }
             ast::Stmt::FunctionDef(fun) => {
-                walk_assignments(ast, &fun.body, Some(start_line), method_level, class_direct);
+                let fun_line = ast.line_col(fun.name.range.start().to_u32()).0;
+                walk_assignments(ast, &fun.body, Some(start_line), ctx, class_start, Some(fun_line));
             }
             ast::Stmt::If(s) => {
-                walk_assignments(ast, &s.body, Some(start_line), method_level, class_direct);
+                walk_assignments(ast, &s.body, Some(start_line), ctx, class_start, method_start);
                 for clause in &s.elif_else_clauses {
                     let clause_line = stmt_start_line(ast, clause.range);
-                    walk_assignments(ast, &clause.body, Some(clause_line), method_level, class_direct);
+                    walk_assignments(ast, &clause.body, Some(clause_line), ctx, class_start, method_start);
                 }
             }
             ast::Stmt::For(s) => {
-                walk_assignments(ast, &s.body, Some(start_line), method_level, class_direct);
-                walk_assignments(ast, &s.orelse, None, method_level, class_direct);
+                walk_assignments(ast, &s.body, Some(start_line), ctx, class_start, method_start);
+                walk_assignments(ast, &s.orelse, None, ctx, class_start, method_start);
             }
             ast::Stmt::While(s) => {
-                walk_assignments(ast, &s.body, Some(start_line), method_level, class_direct);
-                walk_assignments(ast, &s.orelse, None, method_level, class_direct);
+                walk_assignments(ast, &s.body, Some(start_line), ctx, class_start, method_start);
+                walk_assignments(ast, &s.orelse, None, ctx, class_start, method_start);
             }
             ast::Stmt::With(s) => {
-                walk_assignments(ast, &s.body, Some(start_line), method_level, class_direct);
+                walk_assignments(ast, &s.body, Some(start_line), ctx, class_start, method_start);
             }
             ast::Stmt::Try(s) => {
-                walk_assignments(ast, &s.body, Some(start_line), method_level, class_direct);
+                walk_assignments(ast, &s.body, Some(start_line), ctx, class_start, method_start);
                 for h in &s.handlers {
                     let ast::ExceptHandler::ExceptHandler(inner) = h;
                     let handler_line = stmt_start_line(ast, inner.range);
-                    walk_assignments(ast, &inner.body, Some(handler_line), method_level, class_direct);
+                    walk_assignments(ast, &inner.body, Some(handler_line), ctx, class_start, method_start);
                 }
-                walk_assignments(ast, &s.orelse, None, method_level, class_direct);
-                walk_assignments(ast, &s.finalbody, None, method_level, class_direct);
+                walk_assignments(ast, &s.orelse, None, ctx, class_start, method_start);
+                walk_assignments(ast, &s.finalbody, None, ctx, class_start, method_start);
             }
             ast::Stmt::Match(s) => {
                 for case in &s.cases {
                     let case_line = stmt_start_line(ast, case.range);
-                    walk_assignments(ast, &case.body, Some(case_line), method_level, class_direct);
+                    walk_assignments(ast, &case.body, Some(case_line), ctx, class_start, method_start);
                 }
             }
             _ => {}
@@ -465,32 +794,44 @@ fn walk_assignments(
 fn index_assign(
     ast: &ParsedAst,
     a: &ast::StmtAssign,
+    direct_class: Option<usize>,
+    ctx: &mut BuildContext,
     class_start: Option<usize>,
-    method_level: &mut AssignmentTypes,
-    class_direct: &mut ClassAssignmentTypes,
+    method_start: Option<usize>,
 ) {
     let line = stmt_start_line(ast, a.range);
+    record_walrus_locals(&a.value, line, method_start, ctx);
     // 元组解包配对:单 Tuple 目标 × 等长 Tuple 值,无 starred 元素
     if let ast::Expr::Tuple(value_tuple) = &*a.value {
         if a.targets.len() == 1 {
             if let ast::Expr::Tuple(target_tuple) = &a.targets[0] {
                 if target_tuple.elts.len() == value_tuple.elts.len()
-                    && target_tuple.elts.iter().chain(value_tuple.elts.iter()).all(
-                        |e| !matches!(e, ast::Expr::Starred(_)),
-                    )
+                    && target_tuple
+                        .elts
+                        .iter()
+                        .chain(value_tuple.elts.iter())
+                        .all(|e| !matches!(e, ast::Expr::Starred(_)))
                 {
                     for (target, value) in target_tuple.elts.iter().zip(value_tuple.elts.iter()) {
-                        let types = ast_type_of_expr(value);
-                        index_single_target(line, target, types, class_start, method_level, class_direct);
+                        push_entry(
+                            line,
+                            target,
+                            None,
+                            rhs_shape(value),
+                            direct_class,
+                            class_start,
+                            method_start,
+                            ctx,
+                        );
                     }
                     return;
                 }
             }
         }
     }
-    let types = ast_type_of_expr(&a.value);
+    let shape = rhs_shape(&a.value);
     for target in &a.targets {
-        index_single_target(line, target, types.clone(), class_start, method_level, class_direct);
+        push_entry(line, target, None, shape.clone(), direct_class, class_start, method_start, ctx);
     }
 }
 
@@ -499,43 +840,240 @@ fn index_assign(
 fn index_ann_assign(
     ast: &ParsedAst,
     a: &ast::StmtAnnAssign,
+    direct_class: Option<usize>,
+    ctx: &mut BuildContext,
     class_start: Option<usize>,
-    method_level: &mut AssignmentTypes,
-    class_direct: &mut ClassAssignmentTypes,
+    method_start: Option<usize>,
 ) {
     let line = stmt_start_line(ast, a.range);
-    let mut types = TypeSet::new();
-    if let Some(text) = annotation_text(ast, &a.annotation) {
-        types.insert(text);
-    }
-    if let Some(value) = &a.value {
-        types.extend(ast_type_of_expr(value));
-    }
-    index_single_target(line, &a.target, types, class_start, method_level, class_direct);
+    let ann = annotation_text(ast, &a.annotation);
+    let value_shape = match &a.value {
+        Some(v) => {
+            record_walrus_locals(v, line, method_start, ctx);
+            rhs_shape(v)
+        }
+        None => RhsShape::Typed(TypeSet::new()),
+    };
+    push_entry(line, &a.target, ann, value_shape, direct_class, class_start, method_start, ctx);
 }
 
-/// 单目标落表:`self.<attr>` → 方法级面;裸名(仅类体直系语境)→ class_direct。
-/// 其余目标(下标/starred/切片等)不收集。
-fn index_single_target(
+/// 条目落表:`self.<attr>` → 方法级面(类语境=所在类,方法语境=所在方法);
+/// 裸名(仅类体直系语境)→ class_direct。其余目标(下标/starred/切片等)不收集。
+#[allow(clippy::too_many_arguments)]
+fn push_entry(
     line: usize,
     target: &ast::Expr,
-    types: TypeSet,
+    ann: Option<String>,
+    value: RhsShape,
+    direct_class: Option<usize>,
     class_start: Option<usize>,
-    method_level: &mut AssignmentTypes,
-    class_direct: &mut ClassAssignmentTypes,
+    method_start: Option<usize>,
+    ctx: &mut BuildContext,
 ) {
     match target {
         ast::Expr::Attribute(attr) => {
             if is_self_receiver(&attr.value) {
-                method_level.insert(line, attr.attr.as_str(), types);
+                ctx.entries.push(DeferredEntry {
+                    kind: EntryKind::SelfAttr,
+                    line,
+                    name: attr.attr.to_string(),
+                    ann,
+                    value,
+                    class_start,
+                    method_start,
+                });
             }
         }
         ast::Expr::Name(name) => {
-            if let Some(cls) = class_start {
-                class_direct.insert(cls, line, name.id.as_str(), types);
+            // 方法域内裸名写点 → 局部链面(最近写点解析的素材);类体直系
+            // (method_start=None)不入局部链(类级链不建模,诚实空)
+            if let Some(ms) = method_start {
+                ctx.locals
+                    .entry((ms, name.id.to_string()))
+                    .or_default()
+                    .push((line, value.clone()));
+            }
+            if let Some(dc) = direct_class {
+                ctx.entries.push(DeferredEntry {
+                    kind: EntryKind::ClassDirect,
+                    line,
+                    name: name.id.to_string(),
+                    ann,
+                    value,
+                    class_start: Some(dc),
+                    method_start: None,
+                });
             }
         }
         _ => {}
+    }
+}
+
+/// 推导状态:RAW 索引(字面量面)+ 类跨度 + 收集面;基线图备忘录防每条目重算。
+struct ResolveState<'a> {
+    lines: &'a [Vec<u16>],
+    classes: &'a [ClassSpan],
+    build: &'a BuildContext,
+    raw: &'a AssignmentTypes,
+    raw_class_direct: &'a ClassAssignmentTypes,
+    baseline_memo: HashMap<(usize, String), TypeSet>,
+}
+
+impl ResolveState<'_> {
+    fn class_span(&self, class_start: usize) -> Option<&ClassSpan> {
+        self.classes.iter().find(|c| c.start_line == class_start)
+    }
+
+    /// 类属性基线(RAW 索引上收敛;备忘录)。
+    fn baseline(&mut self, class_start: usize, attr: &str) -> TypeSet {
+        let key = (class_start, attr.to_string());
+        if let Some(t) = self.baseline_memo.get(&key) {
+            return t.clone();
+        }
+        let out = match self.class_span(class_start) {
+            Some(cls) => converged_baseline(
+                self.raw_class_direct,
+                self.raw,
+                self.lines,
+                cls,
+                &attr.encode_utf16().collect::<Vec<u16>>(),
+            ),
+            None => TypeSet::new(),
+        };
+        self.baseline_memo.insert(key, out.clone());
+        out
+    }
+
+    /// 方法注解原子(同名方法多个 = 歧义不猜)。
+    fn method_atom(&self, class_start: usize, method: &str) -> Option<String> {
+        let rets = self.build.class_methods.get(&class_start)?.get(method)?;
+        if rets.len() != 1 {
+            return None;
+        }
+        rets[0].clone()
+    }
+
+    /// 模块级 def 注解原子(重名歧义不猜;无注解=未知)。
+    fn def_atom(&self, name: &str) -> Option<String> {
+        match self.build.def_returns.get(name)? {
+            DefReturn::Single(r) => r.clone(),
+            DefReturn::Ambiguous => None,
+        }
+    }
+
+    /// 唯一同类名(重名类 = 歧义不猜)。
+    fn unique_class(&self, name: &str) -> Option<usize> {
+        match self.build.class_names.get(name) {
+            Some(v) if v.len() == 1 => Some(v[0]),
+            _ => None,
+        }
+    }
+}
+
+/// RHS 形态推导(有界;环防;越域/未知 → 空集)。flow_line = 当前流位置
+/// (局部链最近写点 = 该位置之前最近一条)。
+fn resolve_shape(
+    state: &mut ResolveState,
+    shape: &RhsShape,
+    flow_line: usize,
+    class_start: Option<usize>,
+    method_start: Option<usize>,
+    depth: usize,
+    visited: &mut HashSet<(usize, String)>,
+) -> TypeSet {
+    if depth > RESOLVE_MAX_HOPS {
+        return TypeSet::new();
+    }
+    match shape {
+        RhsShape::Typed(t) => t.clone(),
+        RhsShape::SelfAttr(attr) => match class_start {
+            Some(cls) => state.baseline(cls, attr),
+            None => TypeSet::new(),
+        },
+        RhsShape::Local(name) => {
+            let ms = match method_start {
+                Some(ms) => ms,
+                None => return TypeSet::new(), // 类体直系无局部链(诚实空)
+            };
+            if !visited.insert((ms, name.clone())) {
+                return TypeSet::new(); // 环
+            }
+            let found = state
+                .build
+                .locals
+                .get(&(ms, name.clone()))
+                .and_then(|v| {
+                    v.iter()
+                        .rev()
+                        .find(|(l, _)| *l < flow_line)
+                        .map(|(l, s)| (*l, s))
+                });
+            match found {
+                Some((l, s)) => resolve_shape(
+                    state,
+                    s,
+                    l,
+                    class_start,
+                    method_start,
+                    depth + 1,
+                    visited,
+                ),
+                None => TypeSet::new(),
+            }
+        }
+        RhsShape::Call(callee) => resolve_callee(
+            state,
+            callee,
+            flow_line,
+            class_start,
+            method_start,
+            depth,
+            visited,
+        ),
+        RhsShape::Unknown => TypeSet::new(),
+    }
+}
+
+fn resolve_callee(
+    state: &mut ResolveState,
+    callee: &CalleeShape,
+    flow_line: usize,
+    class_start: Option<usize>,
+    method_start: Option<usize>,
+    depth: usize,
+    visited: &mut HashSet<(usize, String)>,
+) -> TypeSet {
+    if depth > RESOLVE_MAX_HOPS {
+        return TypeSet::new();
+    }
+    let ann = match callee {
+        CalleeShape::Name(n) => state.def_atom(n),
+        CalleeShape::Qualified { class, method } => state
+            .unique_class(class)
+            .and_then(|cls| state.method_atom(cls, method)),
+        CalleeShape::SelfMethod(m) => class_start.and_then(|cls| state.method_atom(cls, m)),
+        CalleeShape::Chained { receiver, method } => {
+            let recv = resolve_shape(
+                state,
+                receiver,
+                flow_line,
+                class_start,
+                method_start,
+                depth + 1,
+                visited,
+            );
+            if recv.len() != 1 {
+                return TypeSet::new(); // 接收者不唯一/未知 → 不猜
+            }
+            let atom = recv.iter().next().unwrap();
+            state
+                .unique_class(atom)
+                .and_then(|cls| state.method_atom(cls, method))
+        }
+    };
+    match ann {
+        Some(text) => atom(&text),
+        None => TypeSet::new(),
     }
 }
 
@@ -571,7 +1109,7 @@ fn flow_parse_from_lines(lines: &[Vec<u16>]) -> FlowParse {
     let source = String::from_utf16_lossy(&content);
     let parsed = ParsedAst::new(source);
     let classes = class_spans_from_ast(&parsed);
-    let (assignments, class_direct) = assignments_from_ast(&parsed);
+    let (assignments, class_direct) = assignments_from_ast(&parsed, lines, &classes);
     FlowParse {
         classes,
         assignments,
@@ -2075,6 +2613,308 @@ mod tests {
     }
 
     #[test]
+    fn module_call_annotation_hit() {
+        // 批 C:同文件 def `-> T` 注解直取(裸名调用面)
+        let body = [
+            "def make_tree() -> Tree:",
+            "    return None",
+            "",
+            "class A:",
+            "    def __init__(self):",
+            "        self.t = None",
+            "    def load(self):",
+            "        self.t = make_tree()",
+            "        return self.t",
+        ];
+        let f = flow(&body, 8, "t");
+        assert_eq!(f.types, vec!["Tree"]);
+        assert!(!f.has_none);
+        assert!(f.narrowed); // 基线 None 被可推导调用覆盖 → 窄化如实
+    }
+
+    #[test]
+    fn module_call_quoted_annotation_kept_raw() {
+        // 字符串注解切片带引号保留(与旧注解原子口径一致)
+        let body = [
+            "def make_cfg() -> \"Config\":",
+            "    return None",
+            "",
+            "class A:",
+            "    def m(self):",
+            "        self.c = make_cfg()",
+            "        return self.c",
+        ];
+        assert_eq!(flow(&body, 5, "c").types, vec!["\"Config\""]);
+    }
+
+    #[test]
+    fn module_call_no_annotation_honest_empty() {
+        let body = [
+            "def make_thing():",
+            "    return None",
+            "",
+            "class A:",
+            "    def m(self):",
+            "        self.x = make_thing()",
+            "        return self.x",
+        ];
+        assert_eq!(flow(&body, 5, "x").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn module_call_ambiguous_name_not_guessed() {
+        // 同名两个模块级 def:歧义=未知,不取首定义硬猜
+        let body = [
+            "def make() -> Foo:",
+            "    return None",
+            "",
+            "def make() -> Bar:",
+            "    return None",
+            "",
+            "class A:",
+            "    def m(self):",
+            "        self.x = make()",
+            "        return self.x",
+        ];
+        assert_eq!(flow(&body, 8, "x").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn self_method_call_resolved_in_own_class() {
+        let body = [
+            "class A:",
+            "    def helper(self) -> int:",
+            "        return 1",
+            "    def m(self):",
+            "        self.n = self.helper()",
+            "        return self.n",
+        ];
+        assert_eq!(flow(&body, 5, "n").types, vec!["int"]);
+    }
+
+    #[test]
+    fn qualified_class_method_call() {
+        let body = [
+            "class Repo:",
+            "    def load(self) -> Row:",
+            "        return None",
+            "",
+            "class A:",
+            "    def m(self):",
+            "        self.r = Repo.load(Repo)",
+            "        return self.r",
+        ];
+        assert_eq!(flow(&body, 6, "r").types, vec!["Row"]);
+    }
+
+    #[test]
+    fn qualified_class_ambiguous_not_guessed() {
+        // 同名类两个:类限定解析歧义 → 诚实空
+        let body = [
+            "class Repo:",
+            "    def load(self) -> Row:",
+            "        return None",
+            "",
+            "class Repo:",
+            "    pass",
+            "",
+            "class A:",
+            "    def m(self):",
+            "        self.r = Repo.load(Repo)",
+            "        return self.r",
+        ];
+        assert_eq!(flow(&body, 8, "r").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn chained_call_via_class_atom() {
+        // 链式 f().g():f 注解恰为同类名 → 该类方法注解(实测误导账本 #5)
+        let body = [
+            "class Repo:",
+            "    def load(self) -> Row:",
+            "        return None",
+            "",
+            "def make_repo() -> Repo:",
+            "    return None",
+            "",
+            "class A:",
+            "    def m(self):",
+            "        self.r = make_repo().load()",
+            "        return self.r",
+        ];
+        assert_eq!(flow(&body, 8, "r").types, vec!["Row"]);
+    }
+
+    #[test]
+    fn chained_receiver_not_class_atom_honest_empty() {
+        // 接收者原子不是同类名(int)→ 不猜
+        let body = [
+            "class Repo:",
+            "    def load(self) -> Row:",
+            "        return None",
+            "",
+            "def make_count() -> int:",
+            "    return None",
+            "",
+            "class A:",
+            "    def m(self):",
+            "        self.r = make_count().load()",
+            "        return self.r",
+        ];
+        assert_eq!(flow(&body, 8, "r").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn await_call_transparent() {
+        let body = [
+            "def load() -> dict:",
+            "    return None",
+            "",
+            "class A:",
+            "    async def m(self):",
+            "        self.d = await load()",
+            "        return self.d",
+        ];
+        assert_eq!(flow(&body, 5, "d").types, vec!["dict"]);
+    }
+
+    #[test]
+    fn walrus_target_registered_as_local() {
+        let body = [
+            "def get_count() -> int:",
+            "    return None",
+            "",
+            "class A:",
+            "    def m(self):",
+            "        self.n = (v := get_count())",
+            "        self.m2 = v",
+            "        return self.m2",
+        ];
+        assert_eq!(flow(&body, 6, "n").types, vec!["int"]);
+        assert_eq!(flow(&body, 7, "m2").types, vec!["int"]);
+    }
+
+    #[test]
+    fn local_chain_to_self_attr_baseline() {
+        // `x = self.z` → 类属性基线(深度 1);基线图在 RAW 索引上收敛
+        let body = [
+            "class A:",
+            "    def __init__(self):",
+            "        self.items = None",
+            "    def m(self):",
+            "        y = self.items",
+            "        self.x = y",
+            "        return self.x",
+        ];
+        let f = flow(&body, 6, "x");
+        assert_eq!(f.types, vec!["None"]);
+        assert!(f.has_none);
+    }
+
+    #[test]
+    fn local_chain_nearest_write_wins() {
+        let body = [
+            "class A:",
+            "    def __init__(self):",
+            "        self.items = None",
+            "    def m(self):",
+            "        y = 1",
+            "        y = self.items",
+            "        self.x = y",
+            "        return self.x",
+        ];
+        // 最近写点胜(替换语义同 self.<attr> 面)
+        assert_eq!(flow(&body, 7, "x").types, vec!["None"]);
+        assert_eq!(flow(&body, 5, "x").types, Vec::<String>::new()); // y=1 之前:无写点
+    }
+
+    #[test]
+    fn local_chain_cycle_honest_empty() {
+        // b = a; a = b(流序环):visited 防环 → 诚实空
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        b = a",
+            "        a = b",
+            "        self.x = a",
+            "        return self.x",
+        ];
+        assert_eq!(flow(&body, 5, "x").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn local_chain_forward_reference_honest_empty() {
+        // a = b 在 b 写点之前:流序前向引用不可推导 → 诚实空
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        a = b",
+            "        b = 1",
+            "        self.x = a",
+            "        return self.x",
+        ];
+        assert_eq!(flow(&body, 5, "x").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn local_chain_hop_bound() {
+        // 有界跳数:条目形态深度 0,每解一层裸名 +1(RESOLVE_MAX_HOPS=4)
+        // → 4 具名变量链在界内(v1 形态深度 4),6 具名变量链越界诚实空
+        let body = [
+            "class A:",
+            "    def m(self):",
+            "        v1 = 5",
+            "        v2 = v1",
+            "        v3 = v2",
+            "        v4 = v3",
+            "        v5 = v4",
+            "        v6 = v5",
+            "        self.ok = v4",
+            "        self.deep = v6",
+            "        return self.ok",
+        ];
+        assert_eq!(flow(&body, 8, "ok").types, vec!["int"]);
+        assert_eq!(flow(&body, 8, "deep").types, Vec::<String>::new());
+    }
+
+    #[test]
+    fn guard_narrowing_with_call_annotation() {
+        // KBEngine 旗舰形态:__init__ None + 守卫后可推导调用 → 窄化如实
+        let body = [
+            "def make_tree() -> Tree:",
+            "    return None",
+            "",
+            "class Foo:",
+            "    def __init__(self):",
+            "        self.TalentTree = None",
+            "    def method(self):",
+            "        if self.TalentTree is None:",
+            "            self.TalentTree = make_tree()",
+            "        x = self.TalentTree",
+        ];
+        let f = flow(&body, 9, "TalentTree");
+        assert_eq!(f.types, vec!["Tree"]);
+        assert!(!f.has_none);
+        assert!(f.narrowed);
+        // 守卫前仍是 None 证据
+        assert!(flow(&body, 7, "TalentTree").has_none);
+    }
+
+    #[test]
+    fn class_direct_call_annotation_in_baseline() {
+        let body = [
+            "def make_tree() -> Tree:",
+            "    return None",
+            "",
+            "class A:",
+            "    tree = make_tree()",
+            "    def m(self):",
+            "        return self.tree",
+        ];
+        assert_eq!(flow(&body, 5, "tree").types, vec!["Tree"]);
+    }
+
+    #[test]
     fn string_content_assignment_not_fabricated() {
         // 同 docstring 面:字符串字面量内容里的赋值形文本不是赋值
         let body = [
@@ -2086,5 +2926,6 @@ mod tests {
         assert_eq!(flow(&body, 3, "s").types, vec!["str"]);
         assert_eq!(flow(&body, 3, "x").types, Vec::<String>::new());
     }
+
 
 }
