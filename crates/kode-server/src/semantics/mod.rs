@@ -20,7 +20,7 @@
 //!   不覆盖新版本;删除/重开清理事实;工程视图 = fold 确定性折叠);
 //!   [`ProjectDefResolver`] 为工程级 def 解析(文件名字根 = 类型名);
 //! - [`deps`] BAS-09 增量依赖边(def/types/Python/config → 消费文件反向
-//!   依赖;单文件变更只失效相关项);
+//!   依赖;单文件变更只失效相关项;级联失效有界 BFS,删除对称清理);
 //! - [`query`] BAS-10 共享查询契约(Rust 事实查询与 TS/LSP 消费边界;
 //!   同一结构供 hover/completion/definition/diagnostics;缺服务降级)。
 
