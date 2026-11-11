@@ -237,6 +237,7 @@ async fn call_tools_return_real_data() {
     assert!(baseapp["path"]
         .as_str()
         .unwrap()
+        .replace('\\', "/")
         .ends_with("scripts/base/kbemain.py"));
     assert!(facts
         .iter()
@@ -328,7 +329,11 @@ async fn call_tools_return_real_data() {
         .find(|m| m["kind"] == "class")
         .expect("class symbol");
     assert!(sym["name"].as_str().unwrap().contains("Avatar"));
-    assert!(sym["file"].as_str().unwrap().contains("scripts/"));
+    assert!(sym["file"]
+        .as_str()
+        .unwrap()
+        .replace('\\', "/")
+        .contains("scripts/"));
 
     // protocol_frame(KODE-MCP-KB-001 ③):协议帧结构真数据(自定义类型 + 方法帧)。
     let payload = payload_of(

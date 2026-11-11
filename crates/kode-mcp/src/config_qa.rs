@@ -604,6 +604,7 @@ mod tests {
             payload["defaultsPath"]
                 .as_str()
                 .unwrap()
+                .replace('\\', "/")
                 .contains("engine/kbe/res/server/kbengine_defaults.xml"),
             "defaults 应按 KBE_RES_PATH 命中引擎段: {}",
             payload["defaultsPath"]
@@ -613,6 +614,7 @@ mod tests {
             payload["configPath"]
                 .as_str()
                 .unwrap()
+                .replace('\\', "/")
                 .contains("assets/res/server/kbengine.xml"),
             "custom 应按 KBE_RES_PATH 命中资产段: {}",
             payload["configPath"]
@@ -650,6 +652,7 @@ mod tests {
             payload["defaultsPath"]
                 .as_str()
                 .unwrap()
+                .replace('\\', "/")
                 .contains("kbe/res/server/kbengine_defaults.xml"),
             "应回溯祖先 kbe/ 定位 defaults: {}",
             payload["defaultsPath"]
@@ -841,12 +844,14 @@ mod tests {
         assert!(base["path"]
             .as_str()
             .unwrap()
+            .replace('\\', "/")
             .ends_with("scripts/base/kbemain.py"));
         // interface 单复数回退:interfaces 目录无 kbemain.py → 落 interface/。
         let interfaces = by_process["interfaces"];
         assert!(interfaces["path"]
             .as_str()
             .unwrap()
+            .replace('\\', "/")
             .ends_with("scripts/interface/kbemain.py"));
         assert_eq!(interfaces["exists"], true);
         // 共享引擎包装脚本:夹具无 scripts/kbengine.py → exists:false 如实。
@@ -859,6 +864,7 @@ mod tests {
         assert!(wrapper_fact["path"]
             .as_str()
             .unwrap()
+            .replace('\\', "/")
             .ends_with("scripts/kbengine.py"));
     }
 
