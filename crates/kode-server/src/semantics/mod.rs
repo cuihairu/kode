@@ -15,7 +15,7 @@
 //! - [`facts`] BAS-06 事实与诊断证据(声明事实/代码推导/未知/冲突 +
 //!   来源路径;未知不自动转错误);
 //! - [`expr`] BAS-07 Python 表达式来源(Ruff AST 属性/下标/调用/局部赋值;
-//!   别名重绑定失效;同行按列序);**在途门控**(见下);
+//!   别名重绑定失效;同行按列序);
 //! - [`store`] BAS-08 带版本查询快照(文档 overlay + 工程代数;过期构建
 //!   不覆盖新版本;删除/重开清理事实);
 //! - [`deps`] BAS-09 增量依赖边(def/types/Python/config → 消费文件反向
@@ -24,8 +24,7 @@
 //!   同一结构供 hover/completion/definition/diagnostics;缺服务降级)。
 
 pub mod deps;
-// pub mod expr; // BAS-07 在途:AST 变体名/生命周期未对齐 ruff 0.0.20,
-// 编译不通过(32 错),门控至 BAS-07 批次修复接线;文件保留勿删。
+pub mod expr;
 pub mod facts;
 pub mod id;
 pub mod query;
