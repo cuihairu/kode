@@ -142,7 +142,7 @@
 
 依赖：无；先完成本组，再按各组依赖推进。
 
-- [ ] KSEM-BAS-01 [P1] 盘点能力与消费入口。验收：列出 cellData/类型桩/RPC/配置/编解码/三类图的源文件、生产入口和测试；逐项标记已有、部分、缺失、待核实，不能以注册 RPC 代表用户可用。
+- [x] KSEM-BAS-01 [P1] 盘点能力与消费入口。验收：列出 cellData/类型桩/RPC/配置/编解码/三类图的源文件、生产入口和测试；逐项标记已有、部分、缺失、待核实，不能以注册 RPC 代表用户可用。——已收口(9b2fedda 盘点账 docs/review/2026-11-12-ksem-bas-01-inventory.md):已有=cellData(inlay+诊断双消费面,Rust-first)、类型桩(3 命令+静默导出+watcher;KBEngine 桩静态 curated,源码枚举车道已定案未实施)、RPC(KBE-PY-009 诊断+CodeLens 注册+rename/nav;@RemoteMethod 问法勘误=引擎惯例是 Exposed)、配置(showFinal/可视化/contract 诊断全链)、编解码消息表(preview/export 用户可达,Rust-first)、三类图中调用图/def 调用链/实体依赖图(+flow 图)均已有;部分=数据流图(def-use 计算面在 Rust,无图 UI);缺失=Python 类图;待核实=取证族 crates 接线意图/self.cellData 裸 hover 缺口/桩源码枚举实施;每域「用户消费面」独立列命令 ID/provider 注册点,唯一注册不消费面 $/kode/echo 已注明 test-only;抽查=CodeLens 注册/消息表命令体/content provider 三处到源核实。
 - [ ] KSEM-BAS-02 [P1] 登记引擎契约版本。验收：记录 engine commit、相关源码符号、角色和行为；切换引擎版本时标记受影响契约待复核。
 - [ ] KSEM-BAS-03 [P1] 定义语义身份。验收：建立工程/资源根/实体/角色/组件/声明的稳定 ID；同名跨工程和 Base/Cell 不串联。
 - [ ] KSEM-BAS-04 [P1] 定义结构类型表达式。验收：支持标量、范围、别名、数组、固定字典、组件、实体引用、可空、联合和未知；保留字段名、声明序及源码位置。
