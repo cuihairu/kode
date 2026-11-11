@@ -10,12 +10,12 @@
 
 ## Python 3.7.3 调试工具链兼容（2026-11-11）
 
-官方资料和确切版本基线见 [调试安装约束](docs/zh/guide/python-debugger-compatibility.md)。目标包 `debugpy==1.7.0`、调试扩展 `ms-python.debugpy@2024.0.0`；Python 扩展 `2024.0.1` 是项目复现基线而非声称官方最后支持版本。文档与固定 requirements 已落，下面自动化修复尚未实施。
+官方资料和确切版本基线见 [调试安装约束](docs/zh/guide/python-debugger-compatibility.md)。目标包 `debugpy==1.7.0`、调试扩展 `ms-python.debugpy@2024.0.0`；Python 扩展 `2024.0.1` 是项目复现基线而非声称官方最后支持版本。文档与固定 requirements 已落；01-04 自动化已收口（decb938e，判定与装配面），05-08（扩展检测/回归矩阵/真机验收链）待续。
 
-- [ ] DBG-COMPAT-01 建立引擎目标 Python 版本来源。验收：读取真实引擎版本或显式项目目标，保留来源及未知状态；不再以开发机解释器或全局常量 3.12.13 代替引擎版本，多工程不同版本互不串用。
-- [ ] DBG-COMPAT-02 实现目标与 debugpy 包兼容策略。验收：3.7.x 严格锁 1.7.0，拒绝过高与错误平台包；3.8/更新目标按已核实支持线选择独立版本；未知目标不盲装最新版。
-- [ ] DBG-COMPAT-03 改造一键安装及手工指引。验收：实际 pip 参数使用目标策略的精确版本，不再统一 -U；失败、下载目标 ABI 与宿主版本不同、安装后版本不匹配各给真实结果。
-- [ ] DBG-COMPAT-04 改造同步目录及预检。验收：移除错误的统一 MIN_DEBUGPY_VERSION 门槛；核对源包与目标引擎版本/ABI；资产目录存在也必须验兼容；新旧包不混合，用户手放目录仍受保护。
+- [x] DBG-COMPAT-01 建立引擎目标 Python 版本来源。验收：读取真实引擎版本或显式项目目标，保留来源及未知状态；不再以开发机解释器或全局常量 3.12.13 代替引擎版本，多工程不同版本互不串用。——decb938e：`src/backend/pythonTarget.ts`（设置 `kbengine.debug.pythonTarget` > 引擎二进制扫描 `<engineRoot>/kbe/bin/server` 前 3 个×32MB 版本串跨二进制投票；判不出=诚实未知带 detail，绝不回落开发机解释器/常量；逐工作区走活动 profile）。18 例单测钉住来源优先级/扫描/投票/弱证据标注。
+- [x] DBG-COMPAT-02 实现目标与 debugpy 包兼容策略。验收：3.7.x 严格锁 1.7.0，拒绝过高与错误平台包；3.8/更新目标按已核实支持线选择独立版本；未知目标不盲装最新版。——decb938e：`debugpyPolicyFor`（3.7→严格锁 1.7.0 过高也拒；3.8→1.8.1、3.9→1.8.13 pin+下限；3.10+→floor 1.8.0；3.6/未知→无策略不盲装）+ `debugpyVersionSatisfiesPolicy` 单一裁决闸（同步/预检/资产树核对三处共用）+ `debugpyInstallSpecFor` 精确 pip 参数（`==pin`/`>=floor`）。错误平台包拒绝蕴含在同步探测机制（同步源=目标解释器上成功 import 的包）。
+- [x] DBG-COMPAT-03 改造一键安装及手工指引。验收：实际 pip 参数使用目标策略的精确版本，不再统一 -U；失败、下载目标 ABI 与宿主版本不同、安装后版本不匹配各给真实结果。——decb938e：`DebugpyInstallRunner(path, pipArgs)` spawn `<解释器> -m pip <spec>`（超时组杀/非零退出如实报错）；`buildManualInstallGuide` 用预检 spec 拼可复制命令，目标未知（spec null）指引先设置目标不给盲装命令；安装后版本不符由下一次预检以 `debugpy-incompatible` 如实报实际与期望。
+- [x] DBG-COMPAT-04 改造同步目录及预检。验收：移除错误的统一 MIN_DEBUGPY_VERSION 门槛；核对源包与目标引擎版本/ABI；资产目录存在也必须验兼容；新旧包不混合，用户手放目录仍受保护。——decb938e：`syncDebugpyPackage` 三闸（目标未知拒盲同步/源解释器 Python 行≠目标行拒=ABI 规则/版本不满足策略拒）删 `MIN_DEBUGPY_VERSION`；预检 kind 换 `debugpy-incompatible`+新 `target-unknown` 诚实态，`debugpyPreflightAllowsInjection` 对资产树包从查存在升级为读 `__init__.__version__` 核对策略；workspaceState 记账+skipped-user 保护原样。prove-red 4/4 红（HEAD 上 sync 3.7+1.7.0 错杀/预检 1.7.0 误判 outdated/指引含 -U/资产树 exists-only 放行）；门禁 lint 0+tsc 双 0+unit 全量唯一红=既有 selfAttributeFlowRustParity+xvfb demo 25 RC=0；纪实 docs/review/2026-11-12-kbug-dbgcompat.md。
 - [ ] DBG-COMPAT-05 检测有效 VS Code 调试扩展版本。验收：在实际扩展宿主检查 ms-python.debugpy 版本；3.7 目标误用新版时给固定版本安装/禁自动更新步骤，不能未经用户操作自动降级其他项目扩展。
 - [ ] DBG-COMPAT-06 建立版本分支回归。验收：3.7.3+1.7.0 正例、3.7.3+1.8.x 反例、现代目标分支、宿主新/引擎旧、远程宿主和用户目录均覆盖生产安装/同步/注入入口。
 - [ ] DBG-COMPAT-07 验收 debugpy 原生与纯 Python 路径。验收：分别记录目标解释器构建、wheel/架构、Cython/frame-eval 开关、监听/附加/断点结果；导入成功不抵扣监听和断点验证，异常退出不能记成可用。
