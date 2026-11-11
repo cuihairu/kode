@@ -10,8 +10,9 @@
 //!   OTHER_CLIENTS);
 //! - **组件另建 Cell 数据**:组件槽是 cellData 的嵌套槽面——本批只登记槽,
 //!   递归展开属 CELL-03;
-//! - **内建键不在本批**:position/direction 是引擎自塞键,CELL-02 以独立
-//!   引擎来源登记(不能要求 def 声明);
+//! - **内建键**(CELL-02):position/direction 以独立引擎来源登记
+//!   ([`builtin_cell_fields`],不能要求 def 声明);其余 cellapp 内建属性
+//!   (spaceID/controlledBy/topSpeed 等)未核对为 cellData 键 → 不入表;
 //! - **脚本面**(KR-AUD-74 布局):引擎按 `scripts/cell/<Name>.py` 装载 cell
 //!   部件脚本——脚本宇宙由调用方提供(TS 已知工作区脚本集);未提供时脚本面
 //!   [`CellDataStatus::ScriptUnknown`](诚实,不猜存在与否)。
@@ -63,7 +64,60 @@ impl ScriptUniverse for ScriptNameSet {
     }
 }
 
-/// 有效 cellData 结构(def 面;CELL-02 内建键与 CELL-03 组件槽展开前的形态)。
+/// 引擎内建键初始形态。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BuiltinShape {
+    /// 三轴浮点;position 轴序 x/y/z,direction 轴序 roll/pitch/yaw
+    /// (引擎建表六列同源:sm_0/1/2_position → position.x/y/z,
+    /// sm_0/1/2_direction → direction.roll/pitch/yaw;脚本可见类型
+    /// Vector3Like = Union[Tuple[float, float, float], Sequence[float]],
+    /// 修正版 pyi _KBEngine_common.pyi:22)。
+    Vector3 { axes: [&'static str; 3] },
+}
+
+impl BuiltinShape {
+    /// 脚本可见类型显示文本(与 TS entityBuiltinProperties 同标签)。
+    pub fn type_label(&self) -> &'static str {
+        match self {
+            BuiltinShape::Vector3 { .. } => "Vector3Like",
+        }
+    }
+}
+
+/// 引擎内建键(独立引擎来源;不是 def 声明,不能要求 def)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuiltinField {
+    pub name: &'static str,
+    pub shape: BuiltinShape,
+    /// 引擎取证(file:line;createCellData 把该键塞进 cellData 的引擎面)。
+    pub source: &'static str,
+}
+
+/// 已核对为 cellData 键的引擎内建键(**封闭表**,新增须引擎源码核对后入)。
+///
+/// 核对链:design §2(kbe/src/server/baseapp/entity.cpp:238/250
+/// `Entity::createCellData` 额外加入 position/direction)+ 引擎建表六列
+/// (EntityTableMysql,position x/y/z + direction roll/pitch/yaw)。
+/// 其余 cellapp 内建属性(spaceID/controlledBy/topSpeed/topSpeedY/layer/
+/// volatileInfo/allClients/otherClients/isWitnessed/hasWitness/isOnGround,
+/// TS entityBuiltinProperties.ts 已核为 **Entity 属性**)未核对为
+/// **cellData 键** → 一律不入表(不猜;核对后按 CELL-02 口径增补)。
+pub fn builtin_cell_fields() -> &'static [BuiltinField] {
+    &[
+        BuiltinField {
+            name: "position",
+            shape: BuiltinShape::Vector3 { axes: ["x", "y", "z"] },
+            source: "server/baseapp/entity.cpp:250",
+        },
+        BuiltinField {
+            name: "direction",
+            shape: BuiltinShape::Vector3 { axes: ["roll", "pitch", "yaw"] },
+            source: "server/baseapp/entity.cpp:250",
+        },
+    ]
+}
+
+/// 有效 cellData 结构(def 字段面 + 引擎内建键面;组件槽展开待 CELL-03)。
 #[derive(Debug, Clone)]
 pub struct CellDataShape {
     pub entity: String,
@@ -73,6 +127,8 @@ pub struct CellDataShape {
     pub fields: Vec<PropertyView>,
     /// 同名多来源的 cell 字段名(冲突保留候选)。
     pub conflict_names: Vec<String>,
+    /// 引擎内建键(有 Cell 部件即有;引擎自塞,与 def 字段面分账不混装)。
+    pub builtins: Vec<&'static BuiltinField>,
     /// 组件槽(CELL-03 递归展开前的槽面;槽在即 cellData 有嵌套面)。
     pub component_slots: Vec<ComponentView>,
     /// 判定事实(cell 部件依据/脚本面;与快照 issues 同族)。
@@ -133,11 +189,21 @@ impl CellDataShape {
             }
         };
 
+        // 内建键:有 Cell 部件才创建 cellData(entity.cpp:238/250),故
+        // 无部件 → 无内建键;有部件 → 引擎自塞键恒在(与脚本面无关——脚本
+        // 缺失不影响引擎行为,只影响分析可用面)。
+        let builtins: Vec<&'static BuiltinField> = if has_cell_part {
+            builtin_cell_fields().iter().collect()
+        } else {
+            Vec::new()
+        };
+
         CellDataShape {
             entity: entity_name.to_string(),
             status,
             fields,
             conflict_names,
+            builtins,
             component_slots: snap.components,
             issues,
         }
@@ -324,5 +390,46 @@ mod tests {
         let shape = build(&own, &map, None);
         assert_eq!(shape.fields.len(), 2, "同名冲突项逐条保留,不任取");
         assert_eq!(shape.conflict_names, ["x"]);
+    }
+
+    #[test]
+    fn builtin_registry_is_verified_closed_set() {
+        let reg = builtin_cell_fields();
+        let names: Vec<&str> = reg.iter().map(|b| b.name).collect();
+        assert_eq!(names, ["position", "direction"], "封闭表=已核对集;其余内建未核对不入");
+        assert!(reg.iter().all(|b| b.source.contains("entity.cpp")), "内建键带引擎取证");
+    }
+
+    #[test]
+    fn builtin_axes_pin_engine_column_truth() {
+        let reg = builtin_cell_fields();
+        let pos = reg.iter().find(|b| b.name == "position").unwrap();
+        let dir = reg.iter().find(|b| b.name == "direction").unwrap();
+        assert_eq!(pos.shape, BuiltinShape::Vector3 { axes: ["x", "y", "z"] });
+        assert_eq!(dir.shape, BuiltinShape::Vector3 { axes: ["roll", "pitch", "yaw"] });
+        assert_eq!(pos.shape.type_label(), "Vector3Like");
+    }
+
+    #[test]
+    fn builtins_present_only_with_cell_part() {
+        let cell_own = def(None, vec![], vec![prop("hp", "UINT16", &["CELL_PUBLIC"])]);
+        let map = DefMap(vec![]);
+        let with = build(&cell_own, &map, None);
+        assert_eq!(with.builtins.len(), 2, "有部件 → 引擎自塞键恒在(与脚本面无关)");
+
+        let mut base_own = def(None, vec![], vec![prop("level", "UINT8", &["BASE"])]);
+        base_own.base_methods = vec![method("tp")];
+        let without = build(&base_own, &map, Some(&ScriptNameSet::from_names(vec!["Avatar".into()])));
+        assert_eq!(without.status, CellDataStatus::NoCellPart);
+        assert!(without.builtins.is_empty(), "无部件 → 引擎不建 cellData,无内建键");
+    }
+
+    #[test]
+    fn builtins_stay_engine_face_not_def_fields() {
+        let own = def(None, vec![], vec![prop("hp", "UINT16", &["CELL_PUBLIC"])]);
+        let map = DefMap(vec![]);
+        let shape = build(&own, &map, None);
+        assert!(shape.fields.iter().all(|f| f.name != "position"), "def 字段面不含内建键");
+        assert!(shape.builtins.iter().all(|b| b.name != "hp"), "内建键面不含 def 字段");
     }
 }

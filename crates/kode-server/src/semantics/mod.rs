@@ -23,9 +23,9 @@
 //!   依赖;单文件变更只失效相关项;级联失效有界 BFS,删除对称清理);
 //! - [`query`] BAS-10 共享查询契约(Rust 事实查询与 TS/LSP 消费边界;
 //!   同一结构供 hover/completion/definition/diagnostics;缺服务降级)。
-//! - [`cell`] CELL-01 cellData 字段集(引擎有效 Cell 属性表,继承/接口
-//!   展开复用 BAS-05;缺 Cell 脚本/无 Cell 部件分状态;内建键与组件槽
-//!   展开归 CELL-02/03,本模块不造)。
+//! - [`cell`] CELL-01/02 cellData 字段集与引擎内建键(有效 Cell 属性表,
+//!   继承/接口展开复用 BAS-05;缺 Cell 脚本/无 Cell 部件分状态;内建键
+//!   position/direction 独立引擎来源封闭表;组件槽展开归 CELL-03)。
 
 pub mod cell;
 pub mod deps;
