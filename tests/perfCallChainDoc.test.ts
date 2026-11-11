@@ -260,8 +260,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // 再 +1 行 → 两处诊断打点锚点再 +1(121/134 → 122/135,真位重探)。
   // 2026-11-11(PD-R1):diagnostics.ts propertyDirection 臂 Rust-first 接线顶部
   // import 再 +1 行 → 两处诊断打点锚点再 +1(122/135 → 123/136,真位重探)。
-  ['src/activate/diagnostics.ts', 123, "startLanguageServiceOperation('diagnostics'"],
-  ['src/activate/diagnostics.ts', 136, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-11(UTC-R1):diagnostics.ts userTypeContract 臂 Rust-first 接线顶部
+  // import 再 +1 行 → 两处诊断打点锚点再 +1(123/136 → 124/137,真位重探)。
+  ['src/activate/diagnostics.ts', 124, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 137, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的

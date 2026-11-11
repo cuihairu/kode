@@ -15,6 +15,7 @@ pub mod flag_domains;
 pub mod attribute_none;
 pub mod self_attribute_flow;
 pub mod return_annotations;
+pub mod user_type_contract;
 pub mod hover;
 pub mod lint;
 pub mod message_table;

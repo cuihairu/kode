@@ -28,6 +28,7 @@ import {
   collectPythonMethodNotInDefItems,
 } from '../backend/defMethodConsistency';
 import { USER_TYPE_CONTRACT_MISSING_DIAGNOSTIC_CODE, collectUserTypeContractMissingByImplFile } from '../backend/userTypeContract';
+import { collectUserTypeContractMissingByImplFileFromRust } from '../backend/userTypeContractRust';
 import { collectUserTypeContractStatuses } from '../backend/userTypeContractSource';
 import {
   PROPERTY_DIRECTION_DIAGNOSTICS_ENABLED_DEFAULT,
@@ -669,10 +670,16 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
           return [];
         }
         const statuses = collectUserTypeContractStatuses(workspaceRoot);
-        const items = collectUserTypeContractMissingByImplFile(
-          statuses,
-          document.uri.fsPath
-        );
+        // 批 4:探测/收集核收编 Rust(`$/kode/python/userTypeContract`),
+        // Rust-first + TS collectUserTypeContractMissingByImplFile 兜底
+        const items =
+          (await collectUserTypeContractMissingByImplFileFromRust(
+            statuses,
+            document.uri.fsPath
+          )) ?? collectUserTypeContractMissingByImplFile(
+            statuses,
+            document.uri.fsPath
+          );
         const text = document.getText();
         const lineStarts = computeLineStarts(text);
         return items.map(item => {

@@ -23,6 +23,7 @@ pub mod self_flow;
 
 pub mod return_annotations;
 pub mod symbols;
+pub mod user_type_contract;
 
 pub use callgraph::{extract_call_graph_detailed, DetailedCallEdge};
 pub use dataflow::{dataflow_for_module, MethodDataflow};
