@@ -53,14 +53,76 @@ const resolver =
     spec[propertyPath] ?? spec[rootSymbol] ?? null;
 
 describe('inferProcessScopeFromPythonFile', () => {
-  it('按 scripts/base|cell|client 段推断进程作用域', () => {
+  it('按 scripts/base|baseapp|cell|cellapp|client|bots 段推断进程作用域', () => {
     expect(inferProcessScopeFromPythonFile(BASE_FILE)).toBe('base');
     expect(inferProcessScopeFromPythonFile(CELL_FILE)).toBe('cell');
     expect(inferProcessScopeFromPythonFile(CLIENT_FILE)).toBe('client');
   });
 
+  it('按 KBEngine 实际目录段 baseapp|cellapp|bots 推断(2026-11-11 用户报障根因)', () => {
+    expect(inferProcessScopeFromPythonFile('/ws/scripts/baseapp/Hero.py')).toBe('base');
+    expect(inferProcessScopeFromPythonFile('/ws/scripts/cellapp/Hero.py')).toBe('cell');
+    // bots 的脚本面是 client 面(KB-API-007)
+    expect(inferProcessScopeFromPythonFile('/ws/scripts/bots/Hero.py')).toBe('client');
+    expect(inferProcessScopeFromPythonFile('/ws/assets/scripts/baseapp/Hero.py')).toBe('base');
+  });
+
   it('非角色目录(scripts/common)作用域不足 → undefined', () => {
     expect(inferProcessScopeFromPythonFile(AMBIGUOUS_FILE)).toBeUndefined();
+  });
+});
+
+describe('进程元信息修复端到端(baseapp/cellapp/bots 不再瞎)', () => {
+  it('baseapp 文件裸访问照常判定,不再落 scopeUnknown 降级', () => {
+    // baseapp 文件访问 base 域属性:在域内,零产出
+    expect(findPropertyDirectionFindings(
+      'x = self.hp', '/ws/scripts/baseapp/Hero.py', resolver({ hp: hit(['base']) })
+    )).toEqual([]);
+    // baseapp 文件访问 cell 域属性:真违规 Warning(旧码此处落 scopeUnknown
+    // 降级 Information,影子/复制闸也永远走不到)
+    const findings = findPropertyDirectionFindings(
+      'x = self.hp', '/ws/scripts/baseapp/Hero.py', resolver({ hp: hit(['cell']) })
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0].code).toBe(PROPERTY_DIRECTION_VIOLATION_DIAGNOSTIC_CODE);
+    expect(findings[0].severity).toBe('Warning');
+    expect(findings[0].fileScope).toBe('base');
+  });
+
+  it('baseapp 文件的 __init__ 复制属性照常出提示流', () => {
+    const hints = propertyDirectionShadowHintItems(
+      COPY_FIXTURE, '/ws/scripts/baseapp/Hero.py', resolver({ spaceUType: SPACE_U_TYPE }), true
+    );
+    expect(hints.filter(h => h.code === PROPERTY_DIRECTION_CELL_DATA_COPY_DIAGNOSTIC_CODE)).toHaveLength(2);
+    expect(hints.filter(h => h.code === PROPERTY_DIRECTION_CELL_DATA_KEY_DIAGNOSTIC_CODE)).toHaveLength(1);
+  });
+
+  it('cellData 键对任意 def 键通用(不限定特定键名)', () => {
+    const text = [
+      'class Hero:',
+      '    def __init__(self):',
+      '        self.hp = self.cellData["hp"]',
+      '        self.level = self.cellData["level"]',
+      ''
+    ].join('\n');
+    const hints = propertyDirectionShadowHintItems(
+      text, BASE_FILE,
+      resolver({
+        hp: hit(['cell'], { propertyName: 'hp', typeName: 'UINT8' }),
+        level: hit(['cell'], { propertyName: 'level', typeName: 'UINT16' })
+      }),
+      true
+    );
+    const copies = hints.filter(h => h.code === PROPERTY_DIRECTION_CELL_DATA_COPY_DIAGNOSTIC_CODE);
+    expect(copies.map(h => h.label).sort()).toEqual([
+      'copied property hp: UINT8 · cell',
+      'copied property level: UINT16 · cell'
+    ]);
+    const keys = hints.filter(h => h.code === PROPERTY_DIRECTION_CELL_DATA_KEY_DIAGNOSTIC_CODE);
+    expect(keys.map(h => h.label).sort()).toEqual([
+      'hp: UINT8 · cell',
+      'level: UINT16 · cell'
+    ]);
   });
 });
 
@@ -436,12 +498,19 @@ describe('propertyDirectionShadowHintItems 提示流(inlay 淡色小字)', () =>
     const copies = hints.filter(hint => hint.code === PROPERTY_DIRECTION_CELL_DATA_COPY_DIAGNOSTIC_CODE);
     expect(copies).toHaveLength(2); // 赋值行一行一条,裸访问行一条
     for (const copy of copies) {
-      expect(copy.label).toBe('copied property spaceUType: UINT32 · cell|client');
+      // 标签只显 cell 面(2026-11-11 用户令:base 侧读到的就是 cell 侧那份,
+      // 裸并集 cell|client 是噪音);完整并集留悬停
+      expect(copy.label).toBe('copied property spaceUType: UINT32 · cell');
       expect(copy.tooltip).toContain('copy');
+      expect(copy.tooltip).toContain('cell|client');
     }
     // 裸访问行锚在 self.spaceUType 之后
     const bare = copies.find(copy => copy.position.line === 5);
     expect(bare?.position.character).toBe('        return self.spaceUType'.length);
+    // 全部提示带 def 落点(导航与非复制提示一致,用户令 2026-11-11)
+    for (const hint of hints) {
+      expect(hint.location).toEqual({ uri: '/ws/scripts/entity_defs/Hero.def', line: 10 });
+    }
   });
 
   it('cellData["key"] 提示:key 是 def 属性带 def 面;域位含 cell 无后缀', () => {
@@ -451,8 +520,26 @@ describe('propertyDirectionShadowHintItems 提示流(inlay 淡色小字)', () =>
     const keys = hints.filter(hint => hint.code === PROPERTY_DIRECTION_CELL_DATA_KEY_DIAGNOSTIC_CODE);
     expect(keys).toHaveLength(1);
     expect(keys[0].position.line).toBe(2);
-    expect(keys[0].label).toBe('spaceUType: UINT32 · cell|client');
+    expect(keys[0].label).toBe('spaceUType: UINT32 · cell');
     expect(keys[0].tooltip).toContain('carries');
+  });
+
+  it('复制属性域位不含 cell:保持原域位并追加「不在 cellData」,悬停保留完整并集', () => {
+    const text = [
+      'class A:',
+      '    def __init__(self):',
+      '        self.mana = self.cellData["mana"]',
+      ''
+    ].join('\n');
+    const hints = propertyDirectionShadowHintItems(
+      text, CELL_FILE, resolver({ mana: hit(['base', 'client'], { propertyName: 'mana', typeName: 'UINT8' }) }), true
+    );
+    // 赋值行两条(复制属性 + cellData 键),按列序复制在前
+    expect(hints.map(h => h.label)).toEqual([
+      'copied property mana: UINT8 · base|client · not in cellData',
+      'mana: UINT8 · base|client · not in cellData'
+    ]);
+    expect(hints[0].tooltip).toContain('base|client');
   });
 
   it('key 是 def 属性但域位不含 cell:追加「不在 cellData」', () => {
@@ -505,8 +592,8 @@ describe('propertyDirectionShadowHintItemsAsync 异步提示流', () => {
     const asyncHints = await propertyDirectionShadowHintItemsAsync(
       COPY_FIXTURE, BASE_FILE, async () => SPACE_U_TYPE, true
     );
-    expect(asyncHints.map(hint => [hint.position, hint.label, hint.code]))
-      .toEqual(sync.map(hint => [hint.position, hint.label, hint.code]));
+    expect(asyncHints.map(hint => [hint.position, hint.label, hint.code, hint.location]))
+      .toEqual(sync.map(hint => [hint.position, hint.label, hint.code, hint.location]));
   });
 
   it('cellData 键与复制键预解析去重(异步解析器只解析一次)', async () => {

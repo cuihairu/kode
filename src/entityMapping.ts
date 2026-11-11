@@ -187,14 +187,16 @@ const assetsRootOfDefFile = (file: string): string | null => {
 };
 
 /**
- * python 脚本目录域:路径段含 base/cell/client 任一即归域(path.sep 切段,与
- * collectAllPythonMethodHits 的目录闸同一规则)。判不出 → null。
+ * python 脚本目录域:路径段含 base(baseapp)/cell(cellapp)/client(bots 的
+ * 脚本面即 client,KB-API-007)任一即归域(path.sep 切段,与
+ * collectAllPythonMethodHits 的目录闸同一规则;KBEngine 实际目录名
+ * baseapp/cellapp/bots 与 BigWorld 旧名 base/cell/client 同权)。判不出 → null。
  */
-const pythonScriptDomain = (filePath: string): PropertyFlagDomain | null => {
+export const pythonScriptDomain = (filePath: string): PropertyFlagDomain | null => {
   const segments = filePath.split(path.sep);
-  if (segments.includes('base')) { return 'base'; }
-  if (segments.includes('cell')) { return 'cell'; }
-  if (segments.includes('client')) { return 'client'; }
+  if (segments.includes('base') || segments.includes('baseapp')) { return 'base'; }
+  if (segments.includes('cell') || segments.includes('cellapp')) { return 'cell'; }
+  if (segments.includes('client') || segments.includes('bots')) { return 'client'; }
   return null;
 };
 

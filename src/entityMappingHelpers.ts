@@ -90,6 +90,26 @@ export function inferOwnerKindFromPythonFile(
 export function inferMethodSectionFromPythonFile(pythonFile: string): EntityMethodSection | undefined {
   const normalizedPath = normalizeLookupPath(pythonFile).toLowerCase();
 
+  // KBEngine 实际目录名(scripts/{baseapp,cellapp,bots,client,...});此前只认
+  // BigWorld 旧名(base/cell/client),baseapp/cellapp 文件全落 undefined——
+  // 段过滤/作用域推断/调用图分段一并瞎(2026-11-11 用户报障根因)。bots 的
+  // 脚本面是 client 面(KB-API-007:ClientObjectBase 组装)。
+  if (normalizedPath.includes('/scripts/baseapp/') || normalizedPath.includes('/assets/scripts/baseapp/')
+    || normalizedPath.startsWith('baseapp/') || normalizedPath.includes('/baseapp/')) {
+    return 'BaseMethods';
+  }
+
+  if (normalizedPath.includes('/scripts/cellapp/') || normalizedPath.includes('/assets/scripts/cellapp/')
+    || normalizedPath.startsWith('cellapp/') || normalizedPath.includes('/cellapp/')) {
+    return 'CellMethods';
+  }
+
+  if (normalizedPath.includes('/scripts/bots/') || normalizedPath.includes('/assets/scripts/bots/')
+    || normalizedPath.startsWith('bots/') || normalizedPath.includes('/bots/')) {
+    return 'ClientMethods';
+  }
+
+  // BigWorld 旧目录名(兼容仍按 base/cell/client 组织的工程)
   if (normalizedPath.includes('/scripts/base/') || normalizedPath.includes('/assets/scripts/base/')
     || normalizedPath.startsWith('base/') || normalizedPath.includes('/base/')) {
     return 'BaseMethods';

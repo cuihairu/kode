@@ -47,7 +47,8 @@ export const PROPERTY_DIRECTION_DIAGNOSTICS_ENABLED_DEFAULT = true;
 export type PropertyDirectionScope = 'base' | 'cell' | 'client';
 
 /**
- * 进程作用域推断:按 py 文件所在段已知信息(scripts/base|cell|client)。
+ * 进程作用域推断:按 py 文件所在段已知信息(scripts/base|baseapp|cell|
+ * cellapp|client|bots,KBEngine 实际目录名与 BigWorld 旧名同权)。
  * 与 inferMethodSectionFromPythonFile 同口径(同源路径规则),仅把 def 方法段
  * 映射回作用域名;非角色目录(scripts/common/、根级)返回 undefined = 不足。
  */
@@ -99,6 +100,10 @@ export interface PropertyDirectionFinding {
   endCharacter?: number;
   /** def <Type> 直文本(提示展示用;解析未命中不带) */
   typeName?: string;
+  /** def 声明文件(提示流导航目标;解析未命中不带) */
+  defFile?: string;
+  /** def 声明行(0 起;提示流导航目标) */
+  defLine?: number;
 }
 
 /** 接收者段 → 属性域位(与 PYTHON_RECEIVER_SECTIONS 段名一一对应) */
@@ -286,7 +291,7 @@ export function findPropertyDirectionFindings(
 
     const accessedDomain = receiver ?? fileScope;
     if (!accessedDomain) {
-      // 无接收者且文件作用域不足(不在 scripts/base|cell|client):降级为参考信息
+      // 无接收者且文件作用域不足(不在六角色目录段):降级为参考信息
       findings.push({
         line: access.line,
         character: charStart,
@@ -298,7 +303,7 @@ export function findPropertyDirectionFindings(
         severity: 'Information',
         code: PROPERTY_DIRECTION_SCOPE_UNKNOWN_DIAGNOSTIC_CODE,
         message: l10nText(
-          'Cannot determine the process scope of {path} (file not under scripts/base|cell|client); direction check downgraded to reference info (not Error)',
+          'Cannot determine the process scope of {path} (file not under scripts/base|baseapp|cell|cellapp|client|bots); direction check downgraded to reference info (not Error)',
           { path: propertyPath }
         )
       });
@@ -337,6 +342,8 @@ export function findPropertyDirectionFindings(
               cellDataKey: cellKey,
               endCharacter: charStart + propertyPath.length,
               typeName: hit.typeName,
+              defFile: hit.defFile,
+              defLine: hit.defLine,
               message: l10nText(
                 'base-side copy of the cell def field {key} — assigned in __init__ from self.cellData; the engine syncs {key} only to the {domains} domain, reads here see the copy',
                 { key: cellKey, domains: domainLabel(domains) }
@@ -400,6 +407,8 @@ export function findPropertyDirectionFindings(
       cellDataKey: key,
       endCharacter: site.character,
       typeName: keyHit?.typeName,
+      defFile: keyHit?.defFile,
+      defLine: keyHit?.defLine,
       message: l10nText(
         'base-side copy of the cell def field {key} — assigned in __init__ from self.cellData; the engine syncs {key} only to the {domains} domain, reads here see the copy',
         { key, domains: domainLabel(keyHit?.domains ?? []) }
@@ -428,6 +437,8 @@ export function findPropertyDirectionFindings(
       cellDataKey: access.key,
       endCharacter: access.accessEnd,
       typeName: hit.typeName,
+      defFile: hit.defFile,
+      defLine: hit.defLine,
       message: carries
         ? l10nText(
           'cellData["{key}"] carries the {domains} def field — the cell side writes it, base reads the copy here',
@@ -458,37 +469,42 @@ const DIAGNOSTIC_STREAM_CODES = new Set([
 
 /**
  * 提示短文案(用户令「就提示复制属性开头」):复制属性 =
- * 「复制属性 key: 类型 · 域位」;cellData 键 = 「key: 类型 · 域位」,
- * 域位不含 cell 追加「不在 cellData」。类型缺失就裸显 key+域位。
+ * 「复制属性 key: 类型 · cell」;cellData 键 = 「key: 类型 · cell」。
+ * 标签展示 cell 面(用户令 2026-11-11:base 侧读到的就是 cell 侧同步来的
+ * 那份,裸并集 cell|client 是噪音);域位不含 cell 保持原域位并追加
+ * 「不在 cellData」(引擎不会把它放进 cellData,副本永远读不到值)。
+ * 完整域位并集留悬停全文(诊断消息同源),不丢信息。
  */
 export function shadowHintLabelOf(finding: PropertyDirectionFinding): string {
+  const inCellData = finding.domains.includes('cell');
   const detail =
     (finding.typeName ? `: ${finding.typeName}` : '') +
-    (finding.domains.length > 0 ? ` · ${domainLabel(finding.domains)}` : '');
+    (finding.domains.length > 0 ? ` · ${inCellData ? 'cell' : domainLabel(finding.domains)}` : '');
   if (finding.code === PROPERTY_DIRECTION_CELL_DATA_COPY_DIAGNOSTIC_CODE) {
-    return l10nText('copied property {key}{detail}', {
+    const label = l10nText('copied property {key}{detail}', {
       key: finding.cellDataKey ?? finding.propertyPath,
       detail
     });
+    return inCellData ? label : `${label} · ${l10nText('not in cellData')}`;
   }
   const label = l10nText('{key}{detail}', {
     key: finding.cellDataKey ?? finding.propertyPath,
     detail
   });
-  return finding.domains.includes('cell')
-    ? label
-    : `${label} · ${l10nText('not in cellData')}`;
+  return inCellData ? label : `${label} · ${l10nText('not in cellData')}`;
 }
 
 /** 一条淡色内嵌提示的纯数据形态(provider 层转 vscode.InlayHint,测试免 vscode 依赖) */
 export interface PropertyDirectionShadowHintItem {
   /** 锚点(self.<名> token / cellData 访问表达式之后) */
   position: { line: number; character: number };
-  /** 短文案(「复制属性 …」/「key: 类型 · 域位」) */
+  /** 短文案(「复制属性 …」/「key: 类型 · cell」) */
   label: string;
-  /** 悬停全文(诊断级解释同源) */
+  /** 悬停全文(诊断级解释同源,完整域位并集在此) */
   tooltip: string;
   code: string;
+  /** def 声明落点(文件路径 + 0 起行;导航面与非复制提示 F12 一致,解析未命中不带) */
+  location?: { uri: string; line: number };
 }
 
 /**
@@ -513,7 +529,10 @@ export function propertyDirectionShadowHintItems(
       },
       label: shadowHintLabelOf(finding),
       tooltip: finding.message,
-      code: finding.code
+      code: finding.code,
+      ...(finding.defFile !== undefined && finding.defLine !== undefined
+        ? { location: { uri: finding.defFile, line: finding.defLine } }
+        : {})
     }));
 }
 
@@ -619,7 +638,10 @@ export async function propertyDirectionShadowHintItemsAsync(
         },
         label: shadowHintLabelOf(finding),
         tooltip: finding.message,
-        code: finding.code
+        code: finding.code,
+        ...(finding.defFile !== undefined && finding.defLine !== undefined
+          ? { location: { uri: finding.defFile, line: finding.defLine } }
+          : {})
       })));
 }
 

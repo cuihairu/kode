@@ -105,14 +105,17 @@ export class InferredMirrorTypeInlayHintsProvider implements vscode.InlayHintsPr
 /**
  * cellData 复制属性提示(2026-11-10 用户报障收编):base 侧
  * self.y = self.cellData["x"](__init__ 里取值)声明的 y 是 cell 侧 def 字段
- * x 的副本——赋值行与裸访问处渲染淡色小字「复制属性 x: <type> · <domains>」;
- * self.cellData["key"] 处渲染 key 的 def 面(key: <type> · <domains>,域位
- * 不含 cell 追加「不在 cellData」)。分析核与方向违规诊断同源
- * (propertyDirectionDiagnostics,预解析去重同口径);提示流永不下划线
- * (用户令「不要下划线,很容易以为是错误」),颜色=主题 inlay 色(淡)。
- * 开关 kbengine.inlayHints.propertyShadow(默认开)且受总闸
- * kbengine.propertyDirectionDiagnostics 双控(分析关即无提示),provider
- * 现读配置下一次渲染即生效。
+ * x 的副本——赋值行与裸访问处渲染淡色小字「复制属性 x: <type> · cell」;
+ * self.cellData["key"] 处渲染 key 的 def 面(key: <type> · cell,域位不含
+ * cell 追加「不在 cellData」)。标签只显 cell 面(2026-11-11 用户令:base
+ * 侧读到的就是 cell 侧那份,裸并集是噪音),完整域位并集留悬停全文。
+ * 分析核与方向违规诊断同源(propertyDirectionDiagnostics,预解析去重同
+ * 口径);提示流永不下划线(用户令「不要下划线,很容易以为是错误」),
+ * 颜色=主题 inlay 色(淡);带 def 落点的 hint 经 InlayHintLabelPart.location
+ * 出导航(Ctrl+点击直达 def 声明行,与非复制提示一致,用户令「复制属性
+ * 提示也是导航保持和非复制一致」)。开关 kbengine.inlayHints.propertyShadow(默认开)且受
+ * 总闸 kbengine.propertyDirectionDiagnostics 双控(分析关即无提示),
+ * provider 现读配置下一次渲染即生效。
  */
 export class KBEnginePropertyShadowInlayHintsProvider implements vscode.InlayHintsProvider {
   constructor(private readonly entityMappingManager?: EntityMappingManager) {}
@@ -177,6 +180,17 @@ export class KBEnginePropertyShadowInlayHintsProvider implements vscode.InlayHin
         );
         hint.tooltip = new vscode.MarkdownString(item.tooltip);
         hint.paddingLeft = true;
+        // 导航面与非复制提示一致(用户令「复制属性提示也是导航保持和非复制
+        // 一致」):vscode.InlayHint 类无 location 字段,扩展 API 的导航惯用
+        // 法是 label part——part.location 让 Ctrl+点击直达 def 声明行。
+        if (item.location) {
+          const part = new vscode.InlayHintLabelPart(item.label);
+          part.location = new vscode.Location(
+            vscode.Uri.file(item.location.uri),
+            new vscode.Position(item.location.line, 0)
+          );
+          hint.label = [part];
+        }
         return hint;
       });
   }

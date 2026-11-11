@@ -8,6 +8,7 @@ import {
   inferMethodSectionFromPythonFile,
   inferOwnerKindFromPythonFile,
   parsePythonMethodBlocks,
+  pythonScriptDomain,
   sameIdentity,
   uniqueFilePaths
 } from '../src/entityMapping';
@@ -113,6 +114,16 @@ describe('inferMethodSectionFromPythonFile', () => {
     expect(inferMethodSectionFromPythonFile('/proj/scripts/client/Hero.py')).toBe('ClientMethods');
   });
 
+  it('maps KBEngine actual directories baseapp/cellapp/bots (2026-11-11 user report root cause)', () => {
+    expect(inferMethodSectionFromPythonFile('/proj/scripts/baseapp/Hero.py')).toBe('BaseMethods');
+    expect(inferMethodSectionFromPythonFile('/proj/scripts/cellapp/Hero.py')).toBe('CellMethods');
+    // bots 的脚本面是 client 面(KB-API-007:ClientObjectBase 组装)
+    expect(inferMethodSectionFromPythonFile('/proj/scripts/bots/Avatar.py')).toBe('ClientMethods');
+    // assets 前缀布局同样命中
+    expect(inferMethodSectionFromPythonFile('/proj/assets/scripts/baseapp/Hero.py')).toBe('BaseMethods');
+    expect(inferMethodSectionFromPythonFile('/proj/assets/scripts/cellapp/Hero.py')).toBe('CellMethods');
+  });
+
   it('also accepts the assets-prefixed layout and windows separators', () => {
     expect(inferMethodSectionFromPythonFile('/proj/assets/scripts/cell/Hero.py')).toBe('CellMethods');
     expect(inferMethodSectionFromPythonFile('C:\\proj\\scripts\\base\\Hero.py')).toBe('BaseMethods');
@@ -121,6 +132,23 @@ describe('inferMethodSectionFromPythonFile', () => {
   it('returns undefined outside method directories', () => {
     expect(inferMethodSectionFromPythonFile('/proj/scripts/entity/Hero.py')).toBeUndefined();
     expect(inferMethodSectionFromPythonFile('/proj/scripts/Hero.py')).toBeUndefined();
+  });
+});
+
+describe('pythonScriptDomain', () => {
+  it('ranks KBEngine actual directories and BigWorld legacy names alike', () => {
+    expect(pythonScriptDomain('/proj/scripts/base/Hero.py')).toBe('base');
+    expect(pythonScriptDomain('/proj/scripts/baseapp/Hero.py')).toBe('base');
+    expect(pythonScriptDomain('/proj/scripts/cell/Hero.py')).toBe('cell');
+    expect(pythonScriptDomain('/proj/scripts/cellapp/Hero.py')).toBe('cell');
+    expect(pythonScriptDomain('/proj/scripts/client/Hero.py')).toBe('client');
+    // bots 的脚本面是 client 面(KB-API-007)
+    expect(pythonScriptDomain('/proj/scripts/bots/Avatar.py')).toBe('client');
+  });
+
+  it('returns null outside script domains', () => {
+    expect(pythonScriptDomain('/proj/scripts/entity/Hero.py')).toBeNull();
+    expect(pythonScriptDomain('/proj/scripts/common/Common.py')).toBeNull();
   });
 });
 
