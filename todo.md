@@ -143,7 +143,7 @@
 依赖：无；先完成本组，再按各组依赖推进。
 
 - [x] KSEM-BAS-01 [P1] 盘点能力与消费入口。验收：列出 cellData/类型桩/RPC/配置/编解码/三类图的源文件、生产入口和测试；逐项标记已有、部分、缺失、待核实，不能以注册 RPC 代表用户可用。——已收口(9b2fedda 盘点账 docs/review/2026-11-12-ksem-bas-01-inventory.md):已有=cellData(inlay+诊断双消费面,Rust-first)、类型桩(3 命令+静默导出+watcher;KBEngine 桩静态 curated,源码枚举车道已定案未实施)、RPC(KBE-PY-009 诊断+CodeLens 注册+rename/nav;@RemoteMethod 问法勘误=引擎惯例是 Exposed)、配置(showFinal/可视化/contract 诊断全链)、编解码消息表(preview/export 用户可达,Rust-first)、三类图中调用图/def 调用链/实体依赖图(+flow 图)均已有;部分=数据流图(def-use 计算面在 Rust,无图 UI);缺失=Python 类图;待核实=取证族 crates 接线意图/self.cellData 裸 hover 缺口/桩源码枚举实施;每域「用户消费面」独立列命令 ID/provider 注册点,唯一注册不消费面 $/kode/echo 已注明 test-only;抽查=CodeLens 注册/消息表命令体/content provider 三处到源核实。
-- [ ] KSEM-BAS-02 [P1] 登记引擎契约版本。验收：记录 engine commit、相关源码符号、角色和行为；切换引擎版本时标记受影响契约待复核。
+- [x] KSEM-BAS-02 [P1] 登记引擎契约版本。验收：记录 engine commit、相关源码符号、角色和行为；切换引擎版本时标记受影响契约待复核。——已收口(e46cd483 登记账 docs/review/2026-11-12-ksem-bas-02-engine-contract-registry.md,与并发会话行为契约表 2026-11-11-ksem-bas-01-02.md §二互补):版图=10 提交拓扑实测(现行基线 3082ab5;f85ad81 审计钉点 94 提交漂移;c2a3b8f/6d12b8f 知识 grounding;28d2117 typings 派生钉(typings/ 此后零漂移);上游 bf1a9cd6 v2.5.10 wire 取证线;e257ab7 构建树不入账);契约登记按钉点分 5 组列源码符号/角色/守护测试;无钉点缺口 7 项如实登记(configCatalog 255 键/entityFlowGraph/messageTableEngine/kbeModuleIndex/hooks 等 file:line 锚无 commit);结构性风险=11 个引擎树条件测试套件断言落稿提交无处记录,树动静默重定基线;漂移复核实录=f85ad81→3082ab5 逐项实测全过(datatypes.cpp 仅 delDataType 守卫、utype 21/21 对拍一致、watcher 零漂移、entitydef 仅运行时守卫),零待复核项;切换机制 5 步落账(定位漂移→复核面→标记待复核不静默沿用→钉点更新须跑守护测→版本宏变动连锁清单)。
 - [ ] KSEM-BAS-03 [P1] 定义语义身份。验收：建立工程/资源根/实体/角色/组件/声明的稳定 ID；同名跨工程和 Base/Cell 不串联。
 - [ ] KSEM-BAS-04 [P1] 定义结构类型表达式。验收：支持标量、范围、别名、数组、固定字典、组件、实体引用、可空、联合和未知；保留字段名、声明序及源码位置。
 - [ ] KSEM-BAS-05 [P1] 构建有效实体声明快照。验收：展开 Parent/Interfaces/组件并记录覆盖和冲突；缺失、环和多候选不任取一个。
