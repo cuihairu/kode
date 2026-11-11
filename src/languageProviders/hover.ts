@@ -393,7 +393,10 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
               flowVersionKeyForDocument(document),
               // KBUG-TIME-04:provider 取消(光标移开/文档更新/token 取消)
               // 即时结束 Rust 等待,迟到响应不发布旧 hover
-              () => token?.isCancellationRequested ?? false
+              () => token?.isCancellationRequested ?? false,
+              // KBUG-ORDER-04:同行光标列透传(0 基 UTF-16 同 VSCode 口径;
+              // 同行读/写按列裁定,缺列 Rust 侧保守回退行首非空白列)
+              position.character
             );
             if (fromRust) {
               return fromRust;

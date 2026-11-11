@@ -159,6 +159,24 @@ fn last_char_line(ast: &ParsedAst, range: ruff_text_size::TextRange) -> usize {
     ast.line_col(range.end().to_u32().saturating_sub(1)).0
 }
 
+/// KBUG-ORDER:0 基行 + 0 基 UTF-16 列(与 VSCode Position.character 同口径;
+/// line_col 产物即 UTF-16 列,代理对计 2)。字典序 = 源码执行序。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct Pos {
+    pub(crate) line: usize,
+    pub(crate) col: usize,
+}
+
+fn stmt_pos(ast: &ParsedAst, range: ruff_text_size::TextRange) -> Pos {
+    let (line, col) = ast.line_col(range.start().to_u32());
+    Pos { line, col }
+}
+
+fn stmt_end_pos(ast: &ParsedAst, range: ruff_text_size::TextRange) -> Pos {
+    let (line, col) = ast.line_col(range.end().to_u32().saturating_sub(1));
+    Pos { line, col }
+}
+
 /// 类跨度 = ruff 容错解析后的 AST 走查(半成品文件尽力产出部分跨度)。
 pub fn class_spans_from_ast(ast: &ParsedAst) -> Vec<ClassSpan> {
     let mut classes: Vec<ClassSpan> = Vec::new();
@@ -417,11 +435,27 @@ enum EntryKind {
 #[derive(Debug, Clone)]
 pub(crate) struct BareWrite {
     pub(crate) line: usize,
+    /// KBUG-ORDER:写点(赋值目标/语句头)0 基 UTF-16 列
+    pub(crate) col: usize,
+    /// KBUG-ORDER:写点所在语句末字符位(时间边界判「光标是否越过本句」)
+    pub(crate) stmt_end: Pos,
+    /// KBUG-ORDER-03:RHS 起始位(别名/RHS 读回溯的时间边界——只看严格
+    /// 先于该位的绑定,自引用/同行后写不可见)
+    pub(crate) rhs_pos: Pos,
     pub(crate) shape: RhsShape,
     /// 写点所在类(方法体写点;类体直系=该类;模块层=None)
     pub(crate) class_start: Option<usize>,
     /// 写点最内所属 def 名行(嵌套 def 各归各;类体直系/模块层=None)
     pub(crate) method_start: Option<usize>,
+}
+
+impl BareWrite {
+    pub(crate) fn pos(&self) -> Pos {
+        Pos {
+            line: self.line,
+            col: self.col,
+        }
+    }
 }
 
 /// KBUG-SCOPE:函数/lambda 词法域(作用域链与参数遮蔽判定的 AST 事实)。
@@ -451,42 +485,42 @@ pub(crate) struct FnDomain {
 /// 并集;Loop 保守(0 次 + ≥1 次并集);Return/Raise/Break/Continue = 终止。
 #[derive(Debug, Clone)]
 pub(crate) enum FlowStmt {
-    Simple { start: usize, end: usize },
+    Simple { start: Pos, end: Pos },
     Branch {
-        start: usize,
-        end: usize,
+        start: Pos,
+        end: Pos,
         /// 静态可证测试真值(布尔/None/数值/字符串字面量;名字不折叠——
         /// 可能被重绑定,不执行用户代码,其余条件保留候选)
         test_const: Option<bool>,
         then_body: Vec<FlowStmt>,
-        then_span: (usize, usize),
+        then_span: (Pos, Pos),
         else_body: Option<Vec<FlowStmt>>,
-        else_span: Option<(usize, usize)>,
+        else_span: Option<(Pos, Pos)>,
     },
     Loop {
-        start: usize,
-        end: usize,
+        start: Pos,
+        end: Pos,
         body: Vec<FlowStmt>,
-        body_span: (usize, usize),
+        body_span: (Pos, Pos),
         orelse: Vec<FlowStmt>,
     },
     /// Try/except/else/finally 与 Match case 的保守并集块
     Join {
-        start: usize,
-        end: usize,
-        blocks: Vec<(Vec<FlowStmt>, (usize, usize))>,
+        start: Pos,
+        end: Pos,
+        blocks: Vec<(Vec<FlowStmt>, (Pos, Pos))>,
     },
-    Terminator { line: usize },
+    Terminator { pos: Pos, end: Pos },
 }
 
 impl FlowStmt {
-    fn span(&self) -> (usize, usize) {
+    fn span(&self) -> (Pos, Pos) {
         match self {
             FlowStmt::Simple { start, end } => (*start, *end),
             FlowStmt::Branch { start, end, .. }
             | FlowStmt::Loop { start, end, .. }
             | FlowStmt::Join { start, end, .. } => (*start, *end),
-            FlowStmt::Terminator { line } => (*line, *line),
+            FlowStmt::Terminator { pos, end } => (*pos, *end),
         }
     }
 }
@@ -496,8 +530,8 @@ impl FlowStmt {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum FlowVal {
     Unbound,
-    One(usize),
-    Many(Vec<usize>, bool),
+    One(Pos),
+    Many(Vec<Pos>, bool),
 }
 
 #[derive(Debug, Clone)]
@@ -507,42 +541,45 @@ struct BlockExit {
 }
 
 fn fold_vals(vals: Vec<FlowVal>) -> FlowVal {
-    let mut lines: Vec<usize> = Vec::new();
+    let mut positions: Vec<Pos> = Vec::new();
     let mut maybe_unbound = false;
     for v in &vals {
         match v {
             FlowVal::Unbound => maybe_unbound = true,
-            FlowVal::One(l) => lines.push(*l),
-            FlowVal::Many(ls, mu) => {
-                lines.extend_from_slice(ls);
+            FlowVal::One(p) => positions.push(*p),
+            FlowVal::Many(ps, mu) => {
+                positions.extend_from_slice(ps);
                 maybe_unbound |= *mu;
             }
         }
     }
-    lines.sort_unstable();
-    lines.dedup();
-    if lines.is_empty() {
+    positions.sort_unstable();
+    positions.dedup();
+    if positions.is_empty() {
         FlowVal::Unbound
-    } else if lines.len() == 1 && !maybe_unbound {
-        FlowVal::One(lines[0])
+    } else if positions.len() == 1 && !maybe_unbound {
+        FlowVal::One(positions[0])
     } else {
-        FlowVal::Many(lines, maybe_unbound)
+        FlowVal::Many(positions, maybe_unbound)
     }
 }
 
-fn tree_span(stmts: &[FlowStmt]) -> (usize, usize) {
+fn tree_span(stmts: &[FlowStmt]) -> (Pos, Pos) {
     match (stmts.first(), stmts.last()) {
         (Some(f), Some(l)) => {
             let (fs, _) = f.span();
             let (_, le) = l.span();
             (fs, le)
         }
-        _ => (usize::MAX, usize::MAX),
+        _ => (
+            Pos { line: usize::MAX, col: usize::MAX },
+            Pos { line: usize::MAX, col: usize::MAX },
+        ),
     }
 }
 
-fn span_has_write(write_lines: &[usize], span: (usize, usize)) -> bool {
-    write_lines.iter().any(|l| *l >= span.0 && *l <= span.1)
+fn span_has_write(writes: &[&BareWrite], span: (Pos, Pos)) -> bool {
+    writes.iter().any(|w| w.pos() >= span.0 && w.pos() <= span.1)
 }
 
 /// 静态可证测试真值:仅字面量折叠(布尔/None/数值/字符串/bytes + 一元 not;
@@ -568,8 +605,8 @@ fn constant_bool(expr: &ast::Expr) -> Option<bool> {
 fn build_flow_tree(ast: &ParsedAst, body: &[ast::Stmt]) -> Vec<FlowStmt> {
     let mut out = Vec::new();
     for stmt in body {
-        let start = stmt_start_line(ast, stmt.range());
-        let end = last_char_line(ast, stmt.range());
+        let start = stmt_pos(ast, stmt.range());
+        let end = stmt_end_pos(ast, stmt.range());
         match stmt {
             ast::Stmt::If(s) => {
                 out.push(build_if_chain(ast, &s.test, &s.body, &s.elif_else_clauses));
@@ -598,7 +635,7 @@ fn build_flow_tree(ast: &ParsedAst, body: &[ast::Stmt]) -> Vec<FlowStmt> {
                 });
             }
             ast::Stmt::Try(s) => {
-                let mut blocks: Vec<(Vec<FlowStmt>, (usize, usize))> = Vec::new();
+                let mut blocks: Vec<(Vec<FlowStmt>, (Pos, Pos))> = Vec::new();
                 let b = build_flow_tree(ast, &s.body);
                 if !b.is_empty() {
                     let bs = tree_span(&b);
@@ -625,7 +662,7 @@ fn build_flow_tree(ast: &ParsedAst, body: &[ast::Stmt]) -> Vec<FlowStmt> {
                 out.push(FlowStmt::Join { start, end, blocks });
             }
             ast::Stmt::Match(s) => {
-                let mut blocks: Vec<(Vec<FlowStmt>, (usize, usize))> = Vec::new();
+                let mut blocks: Vec<(Vec<FlowStmt>, (Pos, Pos))> = Vec::new();
                 for case in &s.cases {
                     let cb = build_flow_tree(ast, &case.body);
                     if !cb.is_empty() {
@@ -642,7 +679,9 @@ fn build_flow_tree(ast: &ParsedAst, body: &[ast::Stmt]) -> Vec<FlowStmt> {
             }
             ast::Stmt::Return(_) | ast::Stmt::Raise(_) | ast::Stmt::Break(_)
             | ast::Stmt::Continue(_) => {
-                out.push(FlowStmt::Terminator { line: start });
+                // 终止语句整句为域(悬 return x 的表达式位仍在句内,不误判
+                // 「终止后不可达」;句尾之后的位才是不可达)
+                out.push(FlowStmt::Terminator { pos: start, end });
             }
             _ => out.push(FlowStmt::Simple { start, end }),
         }
@@ -658,12 +697,13 @@ fn build_if_chain(
     body: &[ast::Stmt],
     clauses: &[ast::ElifElseClause],
 ) -> FlowStmt {
-    let start = stmt_start_line(ast, test.range());
+    let start = stmt_pos(ast, test.range());
     let then_body = build_flow_tree(ast, body);
     let then_span = tree_span(&then_body);
     let (else_body, else_span, end) = match clauses.split_first() {
         None => {
-            let end = last_char_line(ast, body.last().map(|s| s.range()).unwrap_or(test.range()));
+            let end =
+                stmt_end_pos(ast, body.last().map(|s| s.range()).unwrap_or(test.range()));
             (None, None, end)
         }
         Some((first, rest)) => match &first.test {
@@ -675,8 +715,10 @@ fn build_if_chain(
             None => {
                 let eb = build_flow_tree(ast, &first.body);
                 let es = tree_span(&eb);
-                let end =
-                    last_char_line(ast, first.body.last().map(|s| s.range()).unwrap_or(first.range));
+                let end = stmt_end_pos(
+                    ast,
+                    first.body.last().map(|s| s.range()).unwrap_or(first.range),
+                );
                 (Some(eb), Some(es), end)
             }
         },
@@ -693,27 +735,27 @@ fn build_if_chain(
 }
 
 /// 域语句块求值:返回 (查询落点值[query 在块内时 Some], 块出口)。
-/// cur = 块入口该名值;query = hover 行(usize::MAX = 整块执行取出口)。
+/// cur = 块入口该名值;query = hover 位(usize::MAX 行 = 整块执行取出口)。
 fn eval_block(
     stmts: &[FlowStmt],
-    write_lines: &[usize],
+    writes: &[&BareWrite],
     mut cur: FlowVal,
-    query: usize,
+    query: Pos,
 ) -> (Option<FlowVal>, BlockExit) {
     for stmt in stmts {
         let (start, end) = stmt.span();
         if start > query {
-            break; // 后续语句未执行(执行序严格递增)
+            break; // 后续语句未执行(执行序 = Pos 字典序严格递增)
         }
         if query > end {
             match stmt {
                 FlowStmt::Simple { .. } => {
-                    if let Some(l) = write_lines
-                        .iter()
-                        .rev()
-                        .find(|l| **l >= start && **l <= end)
+                    // 整句已执行完:句内全部写点生效(执行序后写胜;无 RHS
+                    // 边界问题——query 已越过整句)
+                    if let Some(w) =
+                        writes.iter().rev().find(|w| w.pos() >= start && w.pos() <= end)
                     {
-                        cur = FlowVal::One(*l); // 替换语义(执行序后写胜)
+                        cur = FlowVal::One(w.pos());
                     }
                 }
                 FlowStmt::Terminator { .. } => {
@@ -731,7 +773,8 @@ fn eval_block(
                     let mut live: Vec<FlowVal> = Vec::new();
                     let mut any_live = false;
                     if *test_const != Some(false) {
-                        let (_, e) = eval_block(then_body, write_lines, cur.clone(), usize::MAX);
+                        let (_, e) =
+                            eval_block(then_body, writes, cur.clone(), END_OF_FILE);
                         if !e.terminated {
                             live.push(e.val);
                             any_live = true;
@@ -739,7 +782,8 @@ fn eval_block(
                     }
                     match else_body {
                         Some(eb) if *test_const != Some(true) => {
-                            let (_, e) = eval_block(eb, write_lines, cur.clone(), usize::MAX);
+                            let (_, e) =
+                                eval_block(eb, writes, cur.clone(), END_OF_FILE);
                             if !e.terminated {
                                 live.push(e.val);
                                 any_live = true;
@@ -759,10 +803,10 @@ fn eval_block(
                 FlowStmt::Loop { body, orelse, .. } => {
                     // 保守:0 次执行(入口值)+ ≥1 次(体出口;break/continue
                     // 路径值同并入——过近似 = 诚实未知方向)
-                    let (_, be) = eval_block(body, write_lines, cur.clone(), usize::MAX);
+                    let (_, be) = eval_block(body, writes, cur.clone(), END_OF_FILE);
                     let mut live = vec![cur.clone(), be.val];
                     if !orelse.is_empty() {
-                        let (_, oe) = eval_block(orelse, write_lines, cur.clone(), usize::MAX);
+                        let (_, oe) = eval_block(orelse, writes, cur.clone(), END_OF_FILE);
                         live.push(oe.val);
                     }
                     cur = fold_vals(live);
@@ -770,7 +814,7 @@ fn eval_block(
                 FlowStmt::Join { blocks, .. } => {
                     let mut live = vec![cur.clone()];
                     for (blk, _) in blocks {
-                        let (_, e) = eval_block(blk, write_lines, cur.clone(), usize::MAX);
+                        let (_, e) = eval_block(blk, writes, cur.clone(), END_OF_FILE);
                         live.push(e.val);
                     }
                     cur = fold_vals(live);
@@ -778,14 +822,19 @@ fn eval_block(
             }
             continue;
         }
-        // query 落在本语句行域内
+        // query 落在本语句位域内
         match stmt {
             FlowStmt::Simple { .. } => {
-                if let Some(l) = write_lines
-                    .iter()
-                    .find(|l| **l >= start && **l <= end && **l <= query)
-                {
-                    cur = FlowVal::One(*l);
+                if let Some(w) = writes.iter().find(|w| {
+                    w.pos() >= start
+                        && w.pos() <= end
+                        && w.pos() <= query
+                        // KBUG-ORDER 时间边界:光标仍在本写点语句域内 → 悬停
+                        // 目标(先于 RHS 起始位)= 新值、悬停 RHS 内 = 旧值;
+                        // 已越过本句(同行后句/经由 def 头跨度命中)= 生效
+                        && (query > w.stmt_end || query < w.rhs_pos)
+                }) {
+                    cur = FlowVal::One(w.pos());
                 }
                 let exit = BlockExit { val: cur.clone(), terminated: false };
                 return (Some(cur), exit);
@@ -810,7 +859,7 @@ fn eval_block(
                             BlockExit { val: cur, terminated: true },
                         );
                     }
-                    return eval_block(then_body, write_lines, cur, query);
+                    return eval_block(then_body, writes, cur, query);
                 }
                 if let (Some(eb), Some(es)) = (else_body, else_span) {
                     if query >= es.0 && query <= es.1 {
@@ -820,7 +869,7 @@ fn eval_block(
                                 BlockExit { val: cur, terminated: true },
                             );
                         }
-                        return eval_block(eb, write_lines, cur, query);
+                        return eval_block(eb, writes, cur, query);
                     }
                 }
                 // 头行/行间隙:语句起点值
@@ -829,16 +878,16 @@ fn eval_block(
             }
             FlowStmt::Loop { body, body_span, .. } => {
                 if query >= body_span.0 && query <= body_span.1 {
-                    let (qv, _) = eval_block(body, write_lines, cur.clone(), query);
+                    let (qv, _) = eval_block(body, writes, cur.clone(), query);
                     let qv = qv.unwrap_or_else(|| cur.clone());
-                    if span_has_write(write_lines, *body_span) {
+                    if span_has_write(writes, *body_span) {
                         // 环回保守:体内该名任一写点在 ≥2 次迭代可达
                         let mut vals = vec![qv];
                         vals.extend(
-                            write_lines
+                            writes
                                 .iter()
-                                .filter(|l| **l >= body_span.0 && **l <= body_span.1)
-                                .map(|l| FlowVal::One(*l)),
+                                .filter(|w| w.pos() >= body_span.0 && w.pos() <= body_span.1)
+                                .map(|w| FlowVal::One(w.pos())),
                         );
                         return (
                             Some(fold_vals(vals)),
@@ -854,7 +903,7 @@ fn eval_block(
             FlowStmt::Join { blocks, .. } => {
                 for (blk, span) in blocks {
                     if query >= span.0 && query <= span.1 {
-                        let (qv, _) = eval_block(blk, write_lines, cur.clone(), query);
+                        let (qv, _) = eval_block(blk, writes, cur.clone(), query);
                         let qv = qv.unwrap_or_else(|| cur.clone());
                         // 异常/匹配路径保守:入口值并存
                         let exit = BlockExit { val: cur.clone(), terminated: false };
@@ -869,10 +918,14 @@ fn eval_block(
     (None, BlockExit { val: cur, terminated: false })
 }
 
-/// 域流树查询:hover 行该名的流敏感可达写点值(终止后查询 = 不可达,诚实
-/// 未绑定;行间隙 = 前语句出口值)。
-pub(crate) fn flow_query_value(tree: &[FlowStmt], write_lines: &[usize], query: usize) -> FlowVal {
-    let (qv, exit) = eval_block(tree, write_lines, FlowVal::Unbound, query);
+/// 「整块执行到出口」哨兵位(usize::MAX 行;任何真实写点位/span 都先于它,
+/// eval_block 只做大小比较,不触文件真实末行)。
+static END_OF_FILE: Pos = Pos { line: usize::MAX, col: 0 };
+
+/// 域流树查询:hover 位该名的流敏感可达写点值(终止后查询 = 不可达,诚实
+/// 未绑定;位间隙 = 前语句出口值)。
+pub(crate) fn flow_query_value(tree: &[FlowStmt], writes: &[&BareWrite], query: Pos) -> FlowVal {
+    let (qv, exit) = eval_block(tree, writes, FlowVal::Unbound, query);
     match qv {
         Some(v) => v,
         None if exit.terminated => FlowVal::Unbound,
@@ -1487,6 +1540,7 @@ fn index_assign(
         record_lambda_domain(ast, l, line, ctx);
     }
     // 元组解包配对:单 Tuple 目标 × 等长 Tuple 值,无 starred 元素
+    // (KBUG-ORDER:逐元素记位——目标位/RHS 元素位,交换读旧值边界按元素裁定)
     if let ast::Expr::Tuple(value_tuple) = &*a.value {
         if a.targets.len() == 1 {
             if let ast::Expr::Tuple(target_tuple) = &a.targets[0] {
@@ -1497,9 +1551,16 @@ fn index_assign(
                         .chain(value_tuple.elts.iter())
                         .all(|e| !matches!(e, ast::Expr::Starred(_)))
                 {
+                    let stmt_end = stmt_end_pos(ast, a.range);
+                    // 同时赋值:全部目标在整句完成时一起绑定——RHS 边界统一取
+                    // 整个值元组起始位(RHS 域内悬停一律读旧值,不逐元素放行)
+                    let tuple_rhs = stmt_pos(ast, value_tuple.range());
                     for (target, value) in target_tuple.elts.iter().zip(value_tuple.elts.iter()) {
                         push_entry(
                             line,
+                            stmt_pos(ast, target.range()),
+                            stmt_end,
+                            tuple_rhs,
                             target,
                             None,
                             rhs_shape(value),
@@ -1515,8 +1576,23 @@ fn index_assign(
         }
     }
     let shape = rhs_shape(&a.value);
+    let rhs_pos = stmt_pos(ast, a.value.range());
+    let stmt_end = stmt_end_pos(ast, a.range);
     for target in &a.targets {
-        push_entry(line, target, None, shape.clone(), direct_class, class_start, method_start, ctx);
+        // 链式赋值 `x = y = v`:各目标记各自位,同一 RHS 起始位
+        push_entry(
+            line,
+            stmt_pos(ast, target.range()),
+            stmt_end,
+            rhs_pos,
+            target,
+            None,
+            shape.clone(),
+            direct_class,
+            class_start,
+            method_start,
+            ctx,
+        );
     }
 }
 
@@ -1543,14 +1619,36 @@ fn index_ann_assign(
         }
         None => RhsShape::Typed(TypeSet::new()),
     };
-    push_entry(line, &a.target, ann, value_shape, direct_class, class_start, method_start, ctx);
+    let rhs_pos = match &a.value {
+        Some(v) => stmt_pos(ast, v.range()),
+        // 无值注解 = 声明知识,无 RHS 读边界(注解尾前即生效)
+        None => stmt_end_pos(ast, a.annotation.range()),
+    };
+    push_entry(
+        line,
+        stmt_pos(ast, a.target.range()),
+        stmt_end_pos(ast, a.range),
+        rhs_pos,
+        &a.target,
+        ann,
+        value_shape,
+        direct_class,
+        class_start,
+        method_start,
+        ctx,
+    );
 }
 
 /// 条目落表:`self.<attr>` → 方法级面(类语境=所在类,方法语境=所在方法);
 /// 裸名(仅类体直系语境)→ class_direct。其余目标(下标/starred/切片等)不收集。
+/// `pos`/`stmt_end`/`rhs_pos` = KBUG-ORDER 写点位/语句尾位/RHS 起始位
+/// (裸名面时间边界三件)。
 #[allow(clippy::too_many_arguments)]
 fn push_entry(
     line: usize,
+    pos: Pos,
+    stmt_end: Pos,
+    rhs_pos: Pos,
     target: &ast::Expr,
     ann: Option<String>,
     value: RhsShape,
@@ -1581,6 +1679,9 @@ fn push_entry(
                 .or_default()
                 .push(BareWrite {
                     line,
+                    col: pos.col,
+                    stmt_end,
+                    rhs_pos,
                     shape: value.clone(),
                     class_start,
                     method_start,

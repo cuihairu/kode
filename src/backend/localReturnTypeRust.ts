@@ -4,7 +4,8 @@
  * pythonReturnTypeInference.ts 级联兜底删除后的同文件可推导子集:同文件 def
  * 调用/self 方法/类限定/链式/别名链,matchingAssignments 同域口径);TS 链
  * 保留 import 绑定路径为兜底(kbengine.core.backend=ts 杀开关语义不变)。
- * 入参 lines 为调用方行数组原样,hoverLine 0 基,versionKey 为
+ * 入参 lines 为调用方行数组原样,hoverLine 0 基,hoverColumn 0 基 UTF-16 列
+ * (缺省 = 保守回退行首非空白列,绝不伪造整行最后写点),versionKey 为
  * flowVersionKeyForDocument 产物的不透明缓存键。响应 ret 缺失/畸形
  * (target/annotation/methodName 任一非串)整面弃用返回 null(hover 回落
  * TS 链)——禁止部分采用;Rust ret:null 与 TS 链 miss 同判据。装配面预检
@@ -40,7 +41,8 @@ export async function inferLocalReturnTypeFromRust(
   hoverLine: number,
   word: string,
   versionKey?: string,
-  isCancelled?: () => boolean
+  isCancelled?: () => boolean,
+  hoverColumn?: number
 ): Promise<LocalReturnTypeFace | null> {
   const gate = getKodeCoreShadowGate();
   if (!gate) {
@@ -51,6 +53,12 @@ export async function inferLocalReturnTypeFromRust(
     return null;
   }
   const params: Record<string, unknown> = { lines, hoverLine, word };
+  if (hoverColumn !== undefined) {
+    // KBUG-ORDER-04:同行光标列透传(0 基 UTF-16;负值不传,Rust 侧同保守回退)
+    if (hoverColumn >= 0) {
+      params.hoverColumn = hoverColumn;
+    }
+  }
   if (versionKey !== undefined) {
     params.versionKey = versionKey;
   }

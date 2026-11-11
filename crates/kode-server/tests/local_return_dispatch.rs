@@ -48,6 +48,33 @@ fn query(lines: &[&str], hover_line: i64, word: &str) -> Value {
     response_of(&out).clone()
 }
 
+
+/// ORDER-04:带显式 hoverColumn(0 基 UTF-16 列)的查询。
+fn query_col(lines: &[&str], hover_line: i64, hover_column: i64, word: &str) -> Value {
+    let mut state = ServerState::new();
+    handle_message(
+        &mut state,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
+    let out = handle_message(
+        &mut state,
+        request(
+            1,
+            "$/kode/rpc",
+            json!({
+                "method": "$/kode/python/localReturnType",
+                "params": {
+                    "lines": lines,
+                    "hoverLine": hover_line,
+                    "hoverColumn": hover_column,
+                    "word": word,
+                }
+            }),
+        ),
+    );
+    response_of(&out).clone()
+}
+
 /// SCOPE-01:模块层 `x = make()` 不得借给 `def run(x)` 参数位 → ret null。
 #[test]
 fn kbug_scope_rpc_param_shadow_honest_null() {
@@ -321,5 +348,68 @@ fn kbug_cfgflow_rpc_loop_conservative_null() {
         out["ret"].is_null(),
         "循环保守候选应诚实空,实得 {:?}",
         out["ret"]
+    );
+}
+
+/// ORDER-04/05:同一行两个同名写点,显式列分序——列 4(first x)→ int,
+/// 列 13(second x)→ str;缺列旧调用走保守回退(行首非空白列 → 首语句
+/// 内 → 该句目标位仍生效 → int,不默认整行末写点)。
+#[test]
+fn kbug_order_rpc_explicit_column_distinguishes_same_line() {
+    let lines = [
+        "def a() -> int:",
+        "    return None",
+        "",
+        "def b() -> str:",
+        "    return None",
+        "",
+        "x = a(); x = b()",
+        "",
+        "print(x)",
+    ];
+    // 行 6(模块层无缩进):x1=0,a=4,;=7,空=8,x2=9,b=13
+    let out = query_col(&lines, 6, 0, "x");
+    assert_eq!(out["ret"]["annotation"], "int", "列 0 应见第一写点 int");
+    let out = query_col(&lines, 6, 9, "x");
+    assert_eq!(out["ret"]["annotation"], "str", "列 9 应见第二写点 str");
+    // 缺列(query 无 hoverColumn):保守回退行首非空白列 0 → 首语句 x=a()
+    // 目标位 → int(不是整行末写点的 str)
+    let out = query(&lines, 6, "x");
+    assert_eq!(out["ret"]["annotation"], "int", "缺列应保守回退,非整行末写点");
+}
+
+/// ORDER-05 RPC:同行读前于写——`print(x); x = b()` 悬 print 内 x(显式列)
+/// = 诚实空;缺列同判(保守回退落在首语句内)。
+#[test]
+fn kbug_order_rpc_read_before_write_honest_null() {
+    let lines = [
+        "def b() -> str:",
+        "    return None",
+        "",
+        "def run():",
+        "    print(x); x = b()",
+    ];
+    // 行 4:print 内 x 列 10
+    let out = query_col(&lines, 4, 10, "x");
+    assert!(out["ret"].is_null(), "读前写点应诚实空,实得 {:?}", out["ret"]);
+    // 缺列:保守回退列 4(print 语句内)→ 诚实空
+    let out = query(&lines, 4, "x");
+    assert!(out["ret"].is_null(), "缺列应保守,实得 {:?}", out["ret"]);
+}
+
+/// ORDER-04:负列 = 缺列口径(保守回退),不报错。
+#[test]
+fn kbug_order_rpc_negative_column_falls_back_conservative() {
+    let lines = [
+        "def a() -> int:",
+        "    return None",
+        "",
+        "x = a()",
+        "print(x)",
+    ];
+    let out = query_col(&lines, 4, -1, "x");
+    assert_eq!(
+        out["ret"]["annotation"], "int",
+        "负列应保守回退(行首非空白 → print 语句内,前值 int)"
     );
 }

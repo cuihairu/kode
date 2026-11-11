@@ -101,11 +101,11 @@
 
 复现与依据：已复现：a()->int、b()->str，y=a(); x=y; y=b() 中查询 x 返回 str，应为 int；另有 print(x); x=b() 的前一次读取被整行末写点污染。源码：`local_return.rs:98/126` 按行最后写点与别名同一行递归。
 
-- [ ] KBUG-ORDER-01 [P2] 固定同行别名向未来取值回归。验收：y=a(); x=y; y=b() 的 x 保留 int，反转语句顺序后结果随真实执行次序改变；Rust 单测与 RPC 有一致预期。
-- [ ] KBUG-ORDER-02 [P2] 给写点与读取表达式增加完整位置。验收：保留 AST 字节位置/语句身份，查询列由 UTF-16 正确换算；同一行多个同名读写可区分。
-- [ ] KBUG-ORDER-03 [P2] 修复别名回溯时间边界。验收：解析 RHS 时仅考虑该 RHS 执行前的绑定，禁止看到赋值完成后的同名写点；覆盖链式赋值、自引用、元组同时赋值，未支持形态明确未知。
-- [ ] KBUG-ORDER-04 [P2] 扩展查询协议和调用方传列。验收：localReturnType RPC 和 TS 装配传入实际查询列/位置；旧调用缺列采用保守规则，不能默认为可以读整行最后写点。
-- [ ] KBUG-ORDER-05 [P2] 验收同行不同光标位置。验收：print(x); x=b() 中前读和后读不混；分号、Unicode/代理对、注释及多行表达式的位置各有用例，实际 hover 使用正确列。
+- [x] KBUG-ORDER-01 [P2] 固定同行别名向未来取值回归。验收：y=a(); x=y; y=b() 的 x 保留 int，反转语句顺序后结果随真实执行次序改变；Rust 单测与 RPC 有一致预期。(2026-11-12 收口:Pos(行,UTF-16 列)流值,同行写点按列分序;same_line/multiline_alias_future_value 单测+RPC 同口径;纪实 docs/review/2026-11-12-kbug-order.md)
+- [x] KBUG-ORDER-02 [P2] 给写点与读取表达式增加完整位置。验收：保留 AST 字节位置/语句身份，查询列由 UTF-16 正确换算；同一行多个同名读写可区分。(2026-11-12 收口:BareWrite 增 col/stmt_end/rhs_pos 三件,FlowStmt/FlowVal 全链 Pos 化,emoji_utf16_columns 钉代理对计 2)
+- [x] KBUG-ORDER-03 [P2] 修复别名回溯时间边界。验收：解析 RHS 时仅考虑该 RHS 执行前的绑定，禁止看到赋值完成后的同名写点；覆盖链式赋值、自引用、元组同时赋值，未支持形态明确未知。(2026-11-12 收口:别名递归查询位=rhs_pos;tuple_swap/chained/self_reference 单测;元组 RHS 边界=整值元组起始位;unsupported 形态诚实空)
+- [x] KBUG-ORDER-04 [P2] 扩展查询协议和调用方传列。验收：localReturnType RPC 和 TS 装配传入实际查询列/位置；旧调用缺列采用保守规则，不能默认为可以读整行最后写点。(2026-11-12 收口:RPC hoverColumn(负=缺列)+TS hoverColumn 末位参+hover.ts 传 position.character;缺列回退行首非空白列,RPC 三例钉)
+- [x] KBUG-ORDER-05 [P2] 验收同行不同光标位置。验收：print(x); x=b() 中前读和后读不混；分号、Unicode/代理对、注释及多行表达式的位置各有用例，实际 hover 使用正确列。(2026-11-12 收口:read_before_write/write_then_read/emoji/注释/多行 RHS 各有单测+RPC;生产 hover.ts 传真实列)
 
 ### KBUG-GATE · P2 · TS 预检过滤 Rust 可支持的别名和链式调用
 

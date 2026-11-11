@@ -4,10 +4,12 @@
 //! 本文件只做参数/响应形状。
 //!
 //! 契约:
-//! - 入参 `{lines: string[], hoverLine, word, versionKey?}`:lines = 调用方
-//!   行数组原样(hover 路传 `getText().split(/\r?\n/)` 产物,Rust 不二次掩码/
-//!   不切行);hoverLine 0 基;word = hover 词;versionKey = 不透明缓存键
-//!   (缺省 = 现解析不缓存);
+//! - 入参 `{lines: string[], hoverLine, hoverColumn?, word, versionKey?}`:
+//!   lines = 调用方行数组原样(hover 路传 `getText().split(/\r?\n/)` 产物,
+//!   Rust 不二次掩码/不切行);hoverLine 0 基;hoverColumn = 0 基 UTF-16 列
+//!   (VSCode Position.character 同口径;缺省 = 保守回退行首非空白列,绝不
+//!   伪造整行最后写点);word = hover 词;versionKey = 不透明缓存键(缺省 =
+//!   现解析不缓存);
 //! - 出参 `{ret: null | {target, annotation, methodName}}`:null = 同文件无可
 //!   推导返回注解(诚实空,hover 回落 TS 链);非法入参(word 空/行越界/
 //!   hoverLine 负)→ ret:null;
@@ -32,6 +34,8 @@ struct LocalReturnParams {
     lines: Vec<String>,
     /// 0 基 hover 行(负值非法 → ret null)
     hover_line: i64,
+    /// 0 基 UTF-16 hover 列(负值非法 → 缺列保守回退)
+    hover_column: Option<i64>,
     /// hover 词(空 → ret null)
     word: String,
     /// LRU 解析缓存键(不透明字符串;缺省不缓存)
@@ -59,6 +63,8 @@ fn local_return(params: Value) -> Result<Value, String> {
         local_return_type(
             &lines,
             params.hover_line as usize,
+            // 负列 = 缺列口径,保守回退(不伪造同行后写)
+            params.hover_column.filter(|c| *c >= 0).map(|c| c as usize),
             &params.word.encode_utf16().collect::<Vec<u16>>(),
             params.version_key.as_deref(),
         )
