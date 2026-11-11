@@ -20,6 +20,8 @@ pub mod graph;
 pub mod model;
 pub mod parse;
 pub mod self_flow;
+
+pub mod return_annotations;
 pub mod symbols;
 
 pub use callgraph::{extract_call_graph_detailed, DetailedCallEdge};

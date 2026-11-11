@@ -4,11 +4,20 @@ import * as path from 'path';
 import { recordLanguageServiceOperation } from '../languageServiceMetrics';
 import { annotationSourceLog } from './annotationSourceLog';
 import { maskPythonNonCode } from './pythonLexicalMask';
+import { extractFileReturnAnnotationFactsFromRust } from './pythonReturnAnnotationsRust';
 
 /**
  * 局部变量返回类型推导(用户令 2026-10-21:「data = activity_data.get_data()
  * → data: JSONDATA」):`<名> = <右值>` 的 hover 面按右值被调函数的返回注解
  * 推导变量类型。目录发现和源码读取均异步执行，不 import vscode。
+ *
+ * 批 3(RUST-MIGRATION-AUDIT-006 B1 车道):逐文件提取核
+ * (maskCodeLine/collectFileAnnotationFacts/extractFileImports/
+ * parseLocalAssignmentCall)已收编 Rust(`$/kode/python/returnAnnotations`,
+ * 逐字移植),异步桶构建面(extractFileReturnAnnotationsAsync,cold build 逐
+ * 文件)Rust-first+TS 让出式提取兜底;同步路径(保存换桶/文档版本桶/重放)
+ * 与查询级联(matchingAssignments/extractFileImports/三级级联)留 TS——
+ * 同步边界无法 await RPC,宿主机械不动。
  *
  * 解析优先级(用户令原话):python 实现的 `def get_data(...) -> X:` 返回注解
  * (按方法名在项目 python 文件内定位定义,单层调用 + 属性直调 a.b() 一层即
@@ -198,8 +207,9 @@ export type PythonReturnAnnotationIndex = Map<string, string>;
  * 一次按行遍历提取「每个方法首次定义」的注解事实(IDE-HOV-002/003 同口径):
  * record(name, annotation) 在签名收口处触发;def 在而 `->` 缺 → annotation=null
  * (文档桶据此遮蔽磁盘同名的旧注解);截断/被后续定义顶替的签名不记事实。
+ * 导出=Rust↔TS 对拍测试共用(事实单一来源面)。
  */
-function collectFileAnnotationFacts(
+export function collectFileAnnotationFacts(
   source: string,
   record: (name: string, annotation: string | null) => void
 ): void {
@@ -319,8 +329,18 @@ async function collectFileAnnotationFactsAsync(
   }
 }
 
-/** 与同步提取器同口径；大文件和单个长签名均按字符预算让出事件循环。 */
+/** 与同步提取器同口径;大文件和单个长签名均按字符预算让出事件循环。
+ * 批 3:Rust-first(`$/kode/python/returnAnnotations` facts 面同口径建表,
+ * 插入序=事实序;无门/失败/畸形 null → 让出式 TS 提取兜底)。 */
 export async function extractFileReturnAnnotationsAsync(source: string): Promise<PythonReturnAnnotationIndex> {
+  const rustFacts = await extractFileReturnAnnotationFactsFromRust(source);
+  if (rustFacts !== null) {
+    const rustResult: PythonReturnAnnotationIndex = new Map();
+    for (const fact of rustFacts) {
+      if (fact.annotation !== null) { rustResult.set(fact.name, fact.annotation); }
+    }
+    return rustResult;
+  }
   const result: PythonReturnAnnotationIndex = new Map();
   await collectFileAnnotationFactsAsync(source, (name, annotation) => {
     if (annotation !== null) { result.set(name, annotation); }
@@ -784,7 +804,7 @@ interface FromImportBinding {
   module: string;
   symbol: string;
 }
-interface FileImportBindings {
+export interface FileImportBindings {
   names: Map<string, FromImportBinding>;
   receivers: Map<string, string>;
 }
@@ -796,7 +816,8 @@ const BARE_IMPORT_PATTERN =
   /^\s*import\s+([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(?:\s+as\s+([A-Za-z_]\w*))?\s*(?:#.*)?$/;
 const IMPORT_ALIAS_PATTERN = /^([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?$/;
 
-function extractFileImports(lines: readonly string[]): FileImportBindings {
+/** 导出=Rust↔TS 对拍测试共用(绑定面单一来源) */
+export function extractFileImports(lines: readonly string[]): FileImportBindings {
   const names = new Map<string, FromImportBinding>();
   const receivers = new Map<string, string>();
   for (const raw of lines) {

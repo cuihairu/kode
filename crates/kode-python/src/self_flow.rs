@@ -36,7 +36,7 @@ pub const PARSE_CACHE_MAX_ENTRIES: usize = 8;
 
 /// JS `\s` 全类(码元):\t \n \v \f \r 空格      -
 ///
-fn is_js_space(code: u16) -> bool {
+pub(crate) fn is_js_space(code: u16) -> bool {
     matches!(code, 0x09 | 0x0A | 0x0B | 0x0C | 0x0D | 0x20)
         || code == 0xA0
         || code == 0x1680
@@ -50,17 +50,17 @@ fn is_js_space(code: u16) -> bool {
 }
 
 /// JS 行终止符(`.` 排除集;行内孤立 `\r`/U+2028/U+2029 使 `.+/$` 形失配)
-fn is_js_line_terminator(code: u16) -> bool {
+pub(crate) fn is_js_line_terminator(code: u16) -> bool {
     matches!(code, 0x0A | 0x0D | 0x2028 | 0x2029)
 }
 
 /// TS 词首字符类 `[A-Za-z_]`(不含数字)
-fn is_name_start(code: u16) -> bool {
+pub(crate) fn is_name_start(code: u16) -> bool {
     code == 0x5F || (0x41..=0x5A).contains(&code) || (0x61..=0x7A).contains(&code)
 }
 
 /// TS `\w` = `[A-Za-z0-9_]`
-fn is_word(code: u16) -> bool {
+pub(crate) fn is_word(code: u16) -> bool {
     is_name_start(code) || (0x30..=0x39).contains(&code)
 }
 
