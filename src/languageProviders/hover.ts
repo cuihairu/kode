@@ -224,7 +224,8 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     // XML)hover 先走 Rust(kode-server textDocument/hover);Rust 命中即用,
     // 未命中(null:词未知/非语料/任何失败)重入下方 TS 既有链(rustHover-
     // Attempted 防重入)。Python 文档零请求直通 TS。本分支在 deadline 建立
-    // 之前:Rust 腿由 client 自带超时,miss 后重入再走预算闸,不占 TS 预算。
+    // 之前:Rust 腿自带端到端交互预算(INTERACTIVE_SERVE_BUDGET_MS;
+    // KBUG-TIME),miss 后重入再走 TS 预算闸,不占 TS 预算。
     if (
       !rustHoverAttempted &&
       document.languageId !== 'python' &&
@@ -371,9 +372,10 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     // 批 D(精确性主车道,2026-11-08 用户令「直接切 rust」同车):Rust-first
     // 接收者定型(localReturnType 面:同文件 def 调用/self 方法/类限定/链式/
     // 别名链,matchingAssignments 同域口径)——TS 级联兜底(全局方法名猜测,
-    // 跨类误绑)已删除,TS 链只留 import 绑定路径。Rust 腿 client 自带超时,
-    // 不占 TS 预算(与语料 hover 分支同理);miss/失败/杀开关(kbengine.core.
-    // backend=ts)回落 TS 既有链,返回承诺(面内 await,语义不变)。
+    // 跨类误绑)已删除,TS 链只留 import 绑定路径。Rust 腿自带端到端交互预算
+    // (LOCAL_RETURN_RUST_BUDGET_MS,覆盖 start/排队/响应;KBUG-TIME),
+    // 不占 TS 预算;provider 取消即提前结束。miss/失败/超时/杀开关
+    // (kbengine.core.backend=ts)回落 TS 既有链,返回承诺(面内 await,语义不变)。
     if (document.languageId === 'python' && vscode.workspace.getConfiguration('kbengine').get<boolean>('hover.returnTypeInference', true)) {
       // PR2 快照接入:局部变量推导复用快照行数据(同版本不重拆)
       // IDE-MET-003:推导整段属注解查询面(annotation-query;Rust 腿同段计量)
@@ -388,7 +390,10 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
               docLines,
               position.line,
               word,
-              flowVersionKeyForDocument(document)
+              flowVersionKeyForDocument(document),
+              // KBUG-TIME-04:provider 取消(光标移开/文档更新/token 取消)
+              // 即时结束 Rust 等待,迟到响应不发布旧 hover
+              () => token?.isCancellationRequested ?? false
             );
             if (fromRust) {
               return fromRust;

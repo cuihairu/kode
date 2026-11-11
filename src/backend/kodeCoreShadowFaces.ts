@@ -131,6 +131,55 @@ export function diagnosticsToLspFace(diagnostics: readonly DiagnosticLike[]): Ls
 
 // ---- 入口(provider/validate 面调用;非 shadow 或未装配时零开销) ----------
 
+/**
+ * 交互 serving 面端到端预算(KBUG-TIME-02):语料四面(definition/completion/
+ * hover/diagnostic)从发起(含 mirror 的 client.start/排队/响应)到回落的
+ * 总时长。后台命令面不经此预算。transport 层硬超时(+2000ms)在预算外
+ * 显式计入清理窗口,pending/计时器照常回收(KBUG-TIME-05)。
+ */
+export const INTERACTIVE_SERVE_BUDGET_MS = 2000;
+
+/** 取消探测周期(ms) */
+const CANCEL_POLL_MS = 50;
+
+/**
+ * 交互等待壳:预算计时 + 取消探测,任一先到即放弃 Rust 等待(返回 null,
+ * 调用方走 TS 降级)。败方 promise 挂 catch 吞迟到结算——不产生未处理
+ * rejection,迟到响应不改变已定结果(KBUG-TIME-03/04)。work 收到与预算
+ * 同值的 timeoutMs,transport 层同步发 $/cancelRequest + 硬超时清理。
+ */
+export async function awaitWithInteractiveBudget<T>(
+  work: (opts: { timeoutMs: number }) => Promise<T>,
+  budgetMs: number,
+  isCancelled?: () => boolean
+): Promise<T | null> {
+  if (isCancelled?.()) {
+    return null;
+  }
+  let budgetTimer: NodeJS.Timeout | undefined;
+  let pollTimer: NodeJS.Timeout | undefined;
+  const rustPromise = work({ timeoutMs: budgetMs });
+  rustPromise.catch(() => undefined);
+  const budget = new Promise<null>(resolve => {
+    budgetTimer = setTimeout(() => resolve(null), budgetMs);
+  });
+  const cancelled = new Promise<null>(resolve => {
+    pollTimer = setInterval(() => {
+      if (isCancelled?.()) {
+        resolve(null);
+      }
+    }, CANCEL_POLL_MS);
+  });
+  try {
+    return await Promise.race([rustPromise, budget, cancelled]);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(budgetTimer);
+    clearInterval(pollTimer);
+  }
+}
+
 const isDefDocument = (document: DocumentLike): boolean =>
   document.languageId === 'kbengine-def' ||
   document.uri.fsPath.toLowerCase().endsWith('.def');
@@ -193,14 +242,19 @@ export async function serveDefinitionFromRust(
     return null;
   }
   const uri = document.uri.fsPath;
-  await gate
-    .mirrorDocument(uri, document.languageId, document.version, document.getText())
-    .catch(() => undefined);
   const params = {
     textDocument: { uri },
     position: { line: position.line, character: position.character }
   };
-  const result = await gate.serveInRust<unknown>('textDocument/definition', params, null);
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>('textDocument/definition', params, null, opts);
+    },
+    INTERACTIVE_SERVE_BUDGET_MS
+  );
   if (!result || typeof result !== 'object') {
     return null;
   }
@@ -231,14 +285,19 @@ export async function serveCompletionFromRust(
     return null;
   }
   const uri = document.uri.fsPath;
-  await gate
-    .mirrorDocument(uri, document.languageId, document.version, document.getText())
-    .catch(() => undefined);
   const params = {
     textDocument: { uri },
     position: { line: position.line, character: position.character }
   };
-  const result = await gate.serveInRust<unknown>('textDocument/completion', params, null);
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>('textDocument/completion', params, null, opts);
+    },
+    INTERACTIVE_SERVE_BUDGET_MS
+  );
   if (!result || typeof result !== 'object') {
     return null;
   }
@@ -269,14 +328,19 @@ export async function serveHoverFromRust(
     return null;
   }
   const uri = document.uri.fsPath;
-  await gate
-    .mirrorDocument(uri, document.languageId, document.version, document.getText())
-    .catch(() => undefined);
   const params = {
     textDocument: { uri },
     position: { line: position.line, character: position.character }
   };
-  const result = await gate.serveInRust<unknown>('textDocument/hover', params, null);
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>('textDocument/hover', params, null, opts);
+    },
+    INTERACTIVE_SERVE_BUDGET_MS
+  );
   if (!result || typeof result !== 'object') {
     return null;
   }
@@ -308,13 +372,14 @@ export async function serveDiagnosticsFromRust(
     return null;
   }
   const uri = document.uri.fsPath;
-  await gate
-    .mirrorDocument(uri, document.languageId, document.version, document.getText())
-    .catch(() => undefined);
-  const result = await gate.serveInRust<unknown>(
-    'textDocument/diagnostic',
-    { textDocument: { uri } },
-    null
+  const result = await awaitWithInteractiveBudget(
+    async opts => {
+      await gate
+        .mirrorDocument(uri, document.languageId, document.version, document.getText())
+        .catch(() => undefined);
+      return gate.serveInRust<unknown>('textDocument/diagnostic', { textDocument: { uri } }, null, opts);
+    },
+    INTERACTIVE_SERVE_BUDGET_MS
   );
   if (!result || typeof result !== 'object') {
     return null;

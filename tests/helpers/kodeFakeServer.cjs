@@ -9,18 +9,37 @@
 //     failHandshakeAfterCrash — 与 markerPath=<file> 配合:crashMethod 触发时
 //                       写标记文件;重启后的新进程 initialize 看到标记即回
 //                       -32002 SERVER_NOT_INITIALIZED(测 CORE-3 握手失败语义)
+//     silentRpc       — $/kode/rpc 请求永不回包(进程存活但不响应;测交互
+//                       请求截止控制,KBUG-TIME 故障注入)
+//     silentInitialize — initialize 请求永不回包(测 start 端到端预算)
+//     delayRpc=<ms>   — $/kode/rpc 延迟 ms 后回正常结果(测慢队列降级/快路径)
+//     delayInitialize=<ms> — initialize 延迟 ms 后再回包(测慢启动)
 'use strict';
 
 const fs = require('fs');
 
-const MODE_TOKENS = ['hangShutdown', 'exitOnShutdown', 'traceCancels', 'failHandshakeAfterCrash'];
+const MODE_TOKENS = ['hangShutdown', 'exitOnShutdown', 'traceCancels', 'failHandshakeAfterCrash', 'silentRpc', 'silentInitialize'];
 const args = process.argv.slice(2);
-const crashMethod = args.find(a => !MODE_TOKENS.includes(a) && !a.startsWith('markerPath=')) || null;
+const crashMethod = args.find(a => !MODE_TOKENS.includes(a) && !a.startsWith('markerPath=') && !a.startsWith('delayRpc=') && !a.startsWith('delayInitialize=')) || null;
 const hangShutdown = args.includes('hangShutdown');
 const exitOnShutdown = args.includes('exitOnShutdown');
 const traceCancels = args.includes('traceCancels');
 const failHandshakeAfterCrash = args.includes('failHandshakeAfterCrash');
+const silentRpc = args.includes('silentRpc');
+const silentInitialize = args.includes('silentInitialize');
+const delayRpcMs = msArg(args, 'delayRpc=');
+const delayInitializeMs = msArg(args, 'delayInitialize=');
 const markerPath = (args.find(a => a.startsWith('markerPath=')) || '').slice('markerPath='.length) || null;
+
+/** delayXxx=<ms> 解析;无令牌返回 null(未启用该模式) */
+function msArg(list, prefix) {
+  const hit = list.find(a => a.startsWith(prefix));
+  if (hit === undefined) {
+    return null;
+  }
+  const ms = Number(hit.slice(prefix.length));
+  return Number.isFinite(ms) ? ms : null;
+}
 
 let buffer = Buffer.alloc(0);
 let shutdown = false;
@@ -58,6 +77,20 @@ function handle(msg) {
   }
   switch (msg.method) {
     case 'initialize':
+      if (silentInitialize) {
+        // KBUG-TIME 替身:initialize 永不回包(start 端到端预算靶)
+        return;
+      }
+      if (delayInitializeMs !== null) {
+        const initId = msg.id;
+        setTimeout(() => {
+          reply(initId, {
+            capabilities: { textDocumentSync: { openClose: true, change: 1 } },
+            serverInfo: { name: 'kode-fake-server', version: '0.0.0-test' },
+          });
+        }, delayInitializeMs);
+        return;
+      }
       if (failHandshakeAfterCrash && markerPath && fs.existsSync(markerPath)) {
         // 行为对齐 kode-server/src/server.rs 未初始化态的 -32002
         return replyError(msg.id, -32002, 'Server not initialized');
@@ -66,6 +99,19 @@ function handle(msg) {
         capabilities: { textDocumentSync: { openClose: true, change: 1 } },
         serverInfo: { name: 'kode-fake-server', version: '0.0.0-test' },
       });
+    case '$/kode/rpc':
+      if (silentRpc) {
+        // KBUG-TIME 替身:进程存活但目标 RPC 永不回包
+        return;
+      }
+      if (delayRpcMs !== null) {
+        const rpcId = msg.id;
+        setTimeout(() => {
+          reply(rpcId, { ret: { target: 'data', annotation: 'DATA', methodName: 'build' } });
+        }, delayRpcMs);
+        return;
+      }
+      return replyError(msg.id, -32601, 'method not found: $/kode/rpc');
     case 'initialized':
       return;
     case 'shutdown':

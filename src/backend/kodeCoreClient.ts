@@ -12,6 +12,13 @@ const RESTART_MAX_DEFAULT = 3;
 /** dispose 优雅关闭上限:shutdown 回包等待超过即判定服务器挂死,直接 SIGKILL(CORE-1) */
 const DISPOSE_SHUTDOWN_TIMEOUT_MS_DEFAULT = 5_000;
 
+/**
+ * initialize 握手预算(KBUG-TIME-02):进程存活但不回 initialize 时 start()
+ * 原本无限挂起,后续所有请求排队堆积。10s 供慢启动/排队;交互面另有更短
+ * 端到端预算(如 localReturnType 面自行 race),此处是 transport 层兜底。
+ */
+const START_TIMEOUT_MS_DEFAULT = 10_000;
+
 export interface KodeCoreClientOptions {
   /** kode-server 二进制路径(cargo build 产物) */
   binaryPath: string;
@@ -22,6 +29,11 @@ export interface KodeCoreClientOptions {
   restart?: { maxRestarts?: number; windowMs?: number };
   /** dispose 时 shutdown 回包等待上限(ms);默认 5000,超时判定挂死并 SIGKILL(CORE-1) */
   shutdownTimeoutMs?: number;
+  /**
+   * initialize 握手预算(ms);默认 10000。超时 start() 以 TIMEOUT 拒绝,
+   * pending/计时器照常清理(KBUG-TIME-02/05:存活不响应不得无限挂起)。
+   */
+  startTimeoutMs?: number;
   /** initialize 参数;不传用最小集 */
   initializeParams?: KodeCoreInitializeParams;
   /** 重启完成回调(测试/可观测用) */
@@ -119,6 +131,11 @@ export class KodeCoreClient {
     return this.child;
   }
 
+  /** 在途请求数(测试用;KBUG-TIME-05 清理验收读口) */
+  pendingCountForTests(): number {
+    return this.pending.size;
+  }
+
   /**
    * 重启代数读口(E-2):下游账本(如切流门的语料镜像账)据此感知自动重启,
    * 新进程是空库,旧账本必须随重启失效。
@@ -166,7 +183,10 @@ export class KodeCoreClient {
         restartGeneration: this.restartGeneration,
       },
     };
-    return (await this.request('initialize', params)) as KodeCoreInitializeResult;
+    // KBUG-TIME-02:握手带预算(存活不响应时 start() 以 TIMEOUT 拒绝,
+    // 不无限挂起;重启路径的握手失败语义不变,走既有 catch 处理)
+    const startTimeoutMs = this.options.startTimeoutMs ?? START_TIMEOUT_MS_DEFAULT;
+    return (await this.request('initialize', params, { timeoutMs: startTimeoutMs })) as KodeCoreInitializeResult;
   }
 
   /** 发送请求并等待响应;opts.timeoutMs 超时先发 $/cancelRequest 再硬超时 */

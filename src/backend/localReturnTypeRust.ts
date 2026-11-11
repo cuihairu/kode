@@ -10,9 +10,17 @@
  * TS 链)——禁止部分采用;Rust ret:null 与 TS 链 miss 同判据。装配面预检
  * (词空/全大写常量/行越界)与 TS Impl 守卫同判据先行短路不发 RPC。
  */
-import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
+import { awaitWithInteractiveBudget, getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
 const LOCAL_RETURN_RUST_METHOD = '$/kode/python/localReturnType';
+
+/**
+ * 交互请求端到端预算(KBUG-TIME-02):从发起(含 client.start/排队/响应)
+ * 到降级 null 的总时长。transport 层硬超时在本预算之外再等
+ * +2000ms 兜底拒绝(显式计入清理窗口,资源照常回收)。后台命令面
+ * (messageTable/def lint 等)不经此预算,沿用各自语义。
+ */
+export const LOCAL_RETURN_RUST_BUDGET_MS = 2000;
 
 /** Rust 局部返回注解面(与 TS LocalVariableReturnType 字段同形) */
 export interface LocalReturnTypeFace {
@@ -23,13 +31,16 @@ export interface LocalReturnTypeFace {
 
 /**
  * Rust-first 局部变量返回注解:无门/失败/畸形/非法入参一律 null(纯函数回退
- * 面)。词空/全大写常量/行越界与 TS 链判据一致,不发 RPC。
+ * 面)。词空/全大写常量/行越界与 TS 链判据一致,不发 RPC。整次调用(含
+ * client.start/排队/响应)受 LOCAL_RETURN_RUST_BUDGET_MS 端到端预算约束,
+ * 到期或 isCancelled() 为真即降级 null(KBUG-TIME-03/04,不再无限等待)。
  */
 export async function inferLocalReturnTypeFromRust(
   lines: readonly string[],
   hoverLine: number,
   word: string,
-  versionKey?: string
+  versionKey?: string,
+  isCancelled?: () => boolean
 ): Promise<LocalReturnTypeFace | null> {
   const gate = getKodeCoreShadowGate();
   if (!gate) {
@@ -43,8 +54,12 @@ export async function inferLocalReturnTypeFromRust(
   if (versionKey !== undefined) {
     params.versionKey = versionKey;
   }
-  const response = await gate.runInRust<unknown>(LOCAL_RETURN_RUST_METHOD, params);
-  if (!response.ok) {
+  const response = await awaitWithInteractiveBudget(
+    opts => gate.runInRust<unknown>(LOCAL_RETURN_RUST_METHOD, params, opts),
+    LOCAL_RETURN_RUST_BUDGET_MS,
+    isCancelled
+  );
+  if (!response || !response.ok) {
     return null;
   }
   const ret = (response.result as { ret?: unknown } | undefined)?.ret;
