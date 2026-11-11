@@ -304,8 +304,10 @@ describe('hover entry branches', () => {
     expect(hoverText(hover)).toContain('reload');
   });
 
-  it('returns null for an unknown word in a python document', () => {
-    const hover = hoverAt([
+  it('returns null for an unknown word in a python document', async () => {
+    // KBUG-GATE:同名写点存在(类属性 zzzunknown)→ 预检放行问一次 Rust
+    // (无门直答 null),双链推不出仍诚实 null——异步收口,不显伪类型
+    const hover = await hoverAt([
       'class Hero:',
       '    zzzunknown = 1'
     ].join('\n').replace('zzzunknown', 'zzzunkno|wn'), 'scripts/base/Hero.py', 'python');

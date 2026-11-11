@@ -854,13 +854,19 @@ function locateModuleBucket(
  * 作用域(兄弟方法/被嵌套函数),不再借用;模块级(缩进 0)赋值不受限
  * (Python 全局读语义)。
  * IDE-AUD-042:尊重最后一次变量写入——自 hover 行向上只认最近一次对
- * word 的赋值:是单层调用则作为唯一候选返回,否则(常量/未知表达式/局部
- * 遮蔽)返回空——不再把更早的调用答案借给被覆盖的变量(R2-F16 反例
- * `x=original(); x=0` 此前仍推导 EXPECTED)。
+ * word 的赋值(不再把更早的调用答案借给被覆盖的变量;R2-F16 反例
+ * `x=original(); x=0` 此前仍推导 EXPECTED)。调用形态过滤不属本扫描
+ * (归 matchingAssignments),预检用存在性口径(归 hasLocalReturnCandidate)。
  */
-/** 悬停词的最新写入候选(调用形态)。批 D:hover 预检同款闸——无候选时
- * Rust/TS 双链都必空,调用方可零成本跳过接收者定型腿(不进异步、不改下游面)。 */
-export function matchingAssignments(lines: readonly string[], hoverLine: number, word: string): LocalAssignmentCall[] {
+/**
+ * 悬停词的最近同名写点(掩码后文本)。null = 作用域内无同名写点。
+ * KBUG-GATE-03:作用域/掩码/最近写点扫描是 TS 链(matchingAssignments)与
+ * hover 预检(hasLocalReturnCandidate)共用的单一实现——两侧永不各自漂移。
+ */
+function nearestSameNameWrite(lines: readonly string[], hoverLine: number, word: string): { text: string } | null {
+  if (!word) {
+    return null;
+  }
   // KR-AUD-64:掩码先行——全文掩一次(pythonLexicalMask 跨行记三引号态,
   // 保行保列),三引号字符串体内的 `名 = 调用` 形行不再被当成真实赋值候选。
   // 单行 maskCodeLine 只能处理同行引号,跨行三引号体必须全文掩。
@@ -872,8 +878,7 @@ export function matchingAssignments(lines: readonly string[], hoverLine: number,
     if (indent < scopeIndentLimit) {
       const write = ASSIGNMENT_PATTERN.exec(text);
       if (write && write[2] === word) {
-        const assignment = parseLocalAssignmentCall(text);
-        return assignment ? [assignment] : [];
+        return { text };
       }
     }
     const scopeHeader = /^\s*(?:async\s+def|def|class)\s/.exec(text);
@@ -881,7 +886,33 @@ export function matchingAssignments(lines: readonly string[], hoverLine: number,
       scopeIndentLimit = Math.min(scopeIndentLimit, indent + 1);
     }
   }
-  return [];
+  return null;
+}
+
+/** 悬停词的最新写入候选(调用形态)。TS 链候选面:最近写点是单层/属性调用
+ * 才作为唯一候选返回,否则(常量/别名/未知表达式/局部遮蔽)返回空——
+ * IDE-AUD-042 不把更早的调用答案借给被覆盖的变量;可推导形态裁定归 Rust 面,
+ * 本函数不再充当 hover 预检闸(KBUG-GATE)。 */
+export function matchingAssignments(lines: readonly string[], hoverLine: number, word: string): LocalAssignmentCall[] {
+  const write = nearestSameNameWrite(lines, hoverLine, word);
+  if (!write) {
+    return [];
+  }
+  const assignment = parseLocalAssignmentCall(write.text);
+  return assignment ? [assignment] : [];
+}
+
+/**
+ * KBUG-GATE-02/03:hover 预检(存在性口径,形态无关)——作用域内有同名
+ * 写点即放行 Rust localReturnType 腿;可推导性与答案诚实性由 Rust 引擎裁定
+ * (别名链/链式调用等形态不再被 TS 侧「单层调用」正则克隆闸拦截——修前
+ * `x = alias`/`x = build().load()` 在生产入口被吞,Rust 根本收不到查询)。
+ * 只排除可证明无结果:字符串/注释伪赋值(掩码,KR-AUD-64)、空词/行越界、
+ * 作用域内无同名写点——伪赋值与非法查询零 RPC 快跳;不在 TS 复制 Rust 的
+ * RHS 形态判定(GATE-03),常量/字面量写点放行后由 Rust 诚实答 null。
+ */
+export function hasLocalReturnCandidate(lines: readonly string[], hoverLine: number, word: string): boolean {
+  return nearestSameNameWrite(lines, hoverLine, word) !== null;
 }
 
 function resolveFromAnnotationIndex(candidates: readonly LocalAssignmentCall[], word: string, index: PythonReturnAnnotationIndex): LocalVariableReturnType | null {

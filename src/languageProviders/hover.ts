@@ -13,7 +13,7 @@ import { resolveEntityBuiltinPropertyHit, resolveEntityComponentFaceFromPath, ty
 import { formatBuiltinPropertyHover, formatEntityDefMethodHover, formatEventStatsHover, formatInferredReturnHover, formatSelfPropertyTypeHover } from '../backend/hoverMarkdown';
 import { apiDocDomainsForFace, formatApiDocHover, formatApiDocSupplement, getKbengineApiAccessAtPosition, getPythonCallbackDefinitionAtPosition, lookupApiDoc } from '../backend/pythonApiHoverDocs';
 import { currentHoverLanguageEnv, readHoverLanguageSetting, resolveHoverLanguage } from '../hoverLocale';
-import { matchingAssignments, resolveLocalVariableReturnTypeFromSnapshot } from '../backend/pythonReturnTypeInference';
+import { hasLocalReturnCandidate, resolveLocalVariableReturnTypeFromSnapshot } from '../backend/pythonReturnTypeInference';
 import { inferLocalReturnTypeFromRust } from '../backend/localReturnTypeRust';
 import { flowVersionKeyForDocument } from '../flowVersionKey';
 import { resolveAnnotationTypeWithReason } from '../pythonTypeStubs';
@@ -371,7 +371,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     // 落回普通 hover 链)。
     // 批 D(精确性主车道,2026-11-08 用户令「直接切 rust」同车):Rust-first
     // 接收者定型(localReturnType 面:同文件 def 调用/self 方法/类限定/链式/
-    // 别名链,matchingAssignments 同域口径)——TS 级联兜底(全局方法名猜测,
+    // 别名链,hasLocalReturnCandidate 同域存在性预检)——TS 级联兜底(全局方法名猜测,
     // 跨类误绑)已删除,TS 链只留 import 绑定路径。Rust 腿自带端到端交互预算
     // (LOCAL_RETURN_RUST_BUDGET_MS,覆盖 start/排队/响应;KBUG-TIME),
     // 不占 TS 预算;provider 取消即提前结束。miss/失败/超时/杀开关
@@ -379,10 +379,14 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     if (document.languageId === 'python' && vscode.workspace.getConfiguration('kbengine').get<boolean>('hover.returnTypeInference', true)) {
       // PR2 快照接入:局部变量推导复用快照行数据(同版本不重拆)
       // IDE-MET-003:推导整段属注解查询面(annotation-query;Rust 腿同段计量)
-      // 批 D 预检:无调用形写候选时 Rust/TS 双链必空——零成本跳过本段,下游
-      // 既有面(TYP-ARRAY/数据字典/自属性)照走同步原路(不进异步不重入)
+      // KBUG-GATE 预检(存在性口径,形态无关):作用域内无同名写点 = Rust/TS
+      // 双链必空,零成本跳过本段,下游既有面(TYP-ARRAY/数据字典/自属性)照走
+      // 同步原路(不进异步不重入);伪赋值(字符串/注释,掩码)与非法查询快跳。
+      // 不在 TS 侧用「单层调用」正则克隆 Rust 的 RHS 形态判定——修前别名链
+      // (x = alias)与链式调用(x = build().load())在生产入口被吞,Rust
+      // 根本收不到查询;形态可推导性与答案诚实性由 Rust 面裁定。
       const docLines = getDocumentLines(document);
-      if (!localReturnAttempted && matchingAssignments(docLines, position.line, word).length > 0) {
+      if (!localReturnAttempted && hasLocalReturnCandidate(docLines, position.line, word)) {
         const stopQuery = timer?.start('annotation-query');
         const resolveInferred = async (): Promise<ReturnType<typeof resolveLocalVariableReturnTypeFromSnapshot>> => {
           try {

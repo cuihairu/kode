@@ -113,11 +113,11 @@
 
 复现与依据：已执行源码中实际预检函数：x=build() 得到候选；alias=original 和 x=build().load() 均得到 []。`hover.ts:383` 因此不进入 Rust；Rust localReturnType 本身已支持这两类形态，直接测试 helper 会遗漏生产入口问题。
 
-- [ ] KBUG-GATE-01 [P2] 固定预检能力差异回归。验收：在真实 hover provider 层覆盖别名与链式调用，断言 Rust 面确实被调用并产生正确结果；修前应因预检拦截失败。
-- [ ] KBUG-GATE-02 [P2] 调整预检的保守范围。验收：只排除可证明无结果的情况，不用 TS 简单调用正则代表 Rust 全部语法；字符串/注释伪赋值和非法查询仍可快速跳过。
-- [ ] KBUG-GATE-03 [P2] 消除双侧形态判定漂移。验收：明确预检与 Rust 推断的职责，新增 RHS 形态时有共享契约用例；不能在 TS 再复制一套完整推断器。
-- [ ] KBUG-GATE-04 [P2] 验证失败和未命中的后续 hover。验收：Rust null/失败后继续既有 import/其他 hover 面，避免提前 return 吞掉下游；预检放宽不造成递归重入和重复查询。
-- [ ] KBUG-GATE-05 [P2] 验证预检开销与请求量。验收：测同版本重复查询和大文件无候选场景，记录扫描次数/RPC 次数/耗时；不得每次 hover 无界重扫全文以换取功能通过。
+- [x] KBUG-GATE-01 [P2] 固定预检能力差异回归。验收：在真实 hover provider 层覆盖别名与链式调用，断言 Rust 面确实被调用并产生正确结果；修前应因预检拦截失败。（本批：tests/kbugGateHoverPrefilter.test.ts provider 层 8 例——别名 `x = alias`/链式 `x = build().load()` 悬停断言 $/kode/rpc 恰 1 次且 markdown 直出 `推导自 …() 返回注解`；修前 4/8 红[别名/链式/null 重入/重复查询全部 RPC=0,预检吞查询];docs/review/2026-11-12-kbug-gate.md）
+- [x] KBUG-GATE-02 [P2] 调整预检的保守范围。验收：只排除可证明无结果的情况，不用 TS 简单调用正则代表 Rust 全部语法；字符串/注释伪赋值和非法查询仍可快速跳过。（同上批:新 hasLocalReturnCandidate 存在性口径(作用域内有同名写点即放行,形态裁定归 Rust);只排除掩码伪赋值[字符串/注释/三引号体,守卫例修前后同绿零请求]/空词/行越界/无同名写点;常量名走 RPC 装配守卫零请求）
+- [x] KBUG-GATE-03 [P2] 消除双侧形态判定漂移。验收：明确预检与 Rust 推断的职责，新增 RHS 形态时有共享契约用例；不能在 TS 再复制一套完整推断器。（同上批:抽 nearestSameNameWrite 私有单一实现[掩码+作用域上扫+最近写点],matchingAssignments[TS 链调用形态语义逐字节保留]与 hasLocalReturnCandidate[预检存在性]共用;单元面 5 例钉共享契约——别名/链式/调用形态/跨作用域/常量写点两侧口径;TS 零新增形态判定）
+- [x] KBUG-GATE-04 [P2] 验证失败和未命中的后续 hover。验收：Rust null/失败后继续既有 import/其他 hover 面，避免提前 return 吞掉下游；预检放宽不造成递归重入和重复查询。（同上批:ret:null → 重入恰一次[spy=2,重入参数 localReturnAttempted=true,rustHoverAttempted 未动],RPC 恰 1 次无再入环,双链推不出诚实 null 不显伪类型;契约位重铸 2 例[languageProvidersGaps 未知词/cellappIndexHover 不劫持]改 await 后断言原样保留）
+- [x] KBUG-GATE-05 [P2] 验证预检开销与请求量。验收：测同版本重复查询和大文件无候选场景，记录扫描次数/RPC 次数/耗时；不得每次 hover 无界重扫全文以换取功能通过。（同上批:20k 行无候选实测 61ms 零 RPC[断言宽松上界 5000ms 防无界重扫回归,实测值打印留痕];同版本 5 次重复查询 RPC 恰 5 次[每 hover 1 扫描+1 请求,无累积放大];代价=写点存在悬停异步化[1 次 Rust 查询诚实空+下游重入,2000ms 交互预算封顶],纪实在 docs/review/2026-11-12-kbug-gate.md）
 
 ### KBUG-TIME · P1 · Rust 类型 hover 未设置请求截止时间
 
