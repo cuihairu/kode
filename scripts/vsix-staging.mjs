@@ -27,6 +27,9 @@ export function packageVsix({ target, pureTS = false }) {
       'package.nls.json', 'package.nls.zh-cn.json',
       'language-configuration.json',
       'out', 'media', 'l10n', 'resources', 'schemas', 'snippets', 'syntaxes', 'templates',
+      // 顶层 typings/ 是 KBEngine 桩包静态模板(激活期 copy-if-absent 的复制源);
+      // 漏 stage 会让打包安装的宿主报「桩包内置模板读不到」(2026-11-11 004b 真机走查抓到)。
+      'typings',
       ...(!pureTS ? ['bin'] : []),
     ]) {
       if (fs.existsSync(name)) { fs.cpSync(name, path.join(stage, name), { recursive: true }); }

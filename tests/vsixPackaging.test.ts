@@ -46,4 +46,12 @@ describe('VSIX worker 产物结构守卫(IDE-REL-003)', () => {
       expect(source.includes('from \'vscode\'')).toBe(false);
     }
   });
+
+  it('vsix-staging:stage 名单必须含顶层 typings/(KBEngine 桩包模板随包分发)', () => {
+    // 结构守卫:运行时从 <extensionPath>/typings 读内置模板(src/pythonStubExport.ts
+    // KBENGINE_STUB_TEMPLATE_RELATIVE_ROOT),stage 名单漏掉 typings 时打包安装的
+    // 宿主只会收到「桩包内置模板读不到」告警(2026-11-11 004b 真机走查抓到)。
+    const lines = readRepoFile(path.join('scripts', 'vsix-staging.mjs')).split('\n').map(line => line.trim());
+    expect(lines.some(line => line.includes("'typings'"))).toBe(true);
+  });
 });
