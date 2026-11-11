@@ -2,22 +2,26 @@
 //
 // TS 只做「定位 + 读盘 + 送达」:defaults/元件 kbengine.xml 的定位与读取
 // 留在 TS(设计 §6.2:location/cache/watching 不迁),解析/合并/telnet 速览/
-// 数据库连接要素全部由 Rust core 经 `$/kode/config/resolve` 一次出全——
-// 旧 TS parseConfigXml/mergeConfigXml/summarizeFinalTelnet/
-// extractDatabaseInterfaceConfig 同步下线(设计 §6.1 step 3),core 是唯一
-// 解析实现。
+// 数据库连接要素由 Rust core 经 `$/kode/config/resolve` 一次出全。
+// AUDIT-007(2026-11-11 用户令)补 TS 回落臂:门接线但无 serverPath(纯 TS
+// 通用包常态)或 RPC 失败时,同一原文交 src/serverConfigFallbackCore.ts
+// 出全量产物(语义逐条镜像 Rust,真实二进制对拍钉死),ok=true +
+// resolver:'ts' 如实标注——纯 TS 包四消费面(Player Data DSN/telnet 自动
+// 配置/克隆连接派生/configDerive)不再降级。
 //
 // 缓存口径与 configDerive 同款(IDE-SNP-010 generation 键控 + 单次在途):
 // 同代且两份文件 stat 指纹未变 → 直接回缓存;generation bump 或文件变化
-// → 重新 resolve。RPC 失败/门未接线 → 如实降级(ok=false,trees 全 null,
-// 定位事实 customPath/defaultsPath 保留——configDerive facts 与消费端
-// 「引擎不可知」路径依赖),绝不回退本地解析。
+// → 重新 resolve。回落态缓存分两档:no serverPath(同步零成本探测)为
+// 软缓存,每次 ensure 重试 Rust、接线后即被 Rust 态替换;其余 RPC 失败为
+// 硬缓存(同旧失败态:代/指纹前进才重试,不重锤坏 server)。门未接线
+// (激活前/停用后)仍为瞬态不缓存。
 
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
 import { getKodeCoreShadowGate } from './backend/kodeCoreShadowFaces';
+import { resolveConfigProductsInTs } from './serverConfigFallbackCore';
 import { getRootConfigGeneration } from './rootConfigGeneration';
 import { expandWorkspacePlaceholders } from './backend/workspacePath';
 import { resolveDiscoveredConfigRoot, resolveKbeSourceRoot } from './workspaceDiscovery';
@@ -51,7 +55,8 @@ export interface CoreDatabaseInterfaceConfig {
 
 /** `$/kode/config/resolve` 消费态(定位事实 + core 解析产物) */
 export interface ConfigResolvedState {
-  /** false = RPC 失败/门未接线:core 产物全空,定位事实仍在 */
+  /** false 仅剩门未接线(瞬态):产物全空,定位事实仍在。RPC 失败/无
+   * serverPath 经 TS 回落臂出 ok=true(AUDIT-007),不再全空降级 */
   ok: boolean;
   generation: number;
   customTree: ConfigXmlNode | null;
@@ -60,12 +65,14 @@ export interface ConfigResolvedState {
   defaultsPath: string | null;
   merged: ConfigXmlNode | null;
   telnetSummary: CoreTelnetSummaryEntry[];
-  /** 引擎写死端口表(core 唯一真源;TS 常量表已删) */
+  /** 引擎写死端口表(Rust 唯一真源,TS 回落核同表) */
   telnetDefaultPorts: Record<string, number>;
   /** 元件配置 telnet_service 段读值(无段 → null) */
   customTelnet: CoreCustomTelnet | null;
   dbInterface: CoreDatabaseInterfaceConfig | null;
-  /** ok=false 时的降级原因(观测面) */
+  /** 产物解析方:'rust' = core RPC;'ts' = 回落核(镜像语义,对拍钉死) */
+  resolver?: 'rust' | 'ts';
+  /** 降级/回落原因(ok=false 失败原因;resolver='ts' 时为回落原因,观测面) */
   reason?: string;
 }
 
@@ -246,6 +253,9 @@ function fingerprint(p: string | null): string {
 interface CacheSlot extends ConfigResolvedState {
   overridesKey: string;
   fingerprint: string;
+  /** true = TS 回落软缓存(no serverPath):每次 ensure 重试 Rust,接线后
+   * 即被 Rust 态替换;其余 RPC 失败回落为硬缓存,代/指纹前进才重试 */
+  softRetry?: boolean;
 }
 
 /**
@@ -303,7 +313,13 @@ export async function ensureConfigResolved(
   const mark = `${fingerprint(located.defaultsPath)}|${fingerprint(located.customPath)}`;
   const hit = cacheSlots.get(overridesKey);
   if (hit && hit.generation === generation && hit.fingerprint === mark) {
-    return hit;
+    if (!hit.softRetry) {
+      return hit;
+    }
+    // 软缓存(AUDIT-007):TS 回落态不拦 Rust 重试——no serverPath 探测
+    // 同步零成本,接线后下一次 ensure 即被 Rust 态替换;仍不可用则重走
+    // 回落(产物 memo 化,零重解析)。并发软重试由下方 inflight 键(同代+
+    // 同指纹+同代际边界+同键)共享单次在途,不重入。
   }
   // 在途请求按「代 + 文件指纹 + 键」隔离:配置落盘/设置变化(invalidate 或
   // 指纹前进)后,同键新调用不得复用旧配置的在途请求——否则变更后立即重取
@@ -372,19 +388,32 @@ async function refresh(
     customXml: located.customXml
   });
   if (!outcome.ok) {
-    if (outcome.reason === 'no serverPath') {
-      // 门未接线(核心服务未配,装配面默认态):瞬态同「gate unavailable」,
-      // 不缓存——替身/真服务接线后下一次 ensure 即取到;runInRust 在此形态
-      // 下同步返回不建进程,无「重锤宕机 server」面,重复取零成本。
-      return { ...base, reason: outcome.reason };
+    // AUDIT-007 TS 回落(2026-11-11 用户令):同一原文交回落核出全量产物
+    // (镜像 Rust 语义,真实二进制对拍钉死),ok=true + resolver:'ts' 如实
+    // 标注,reason 留回落原因。缓存两档:no serverPath(同步零成本探测)
+    // 软缓存,每次 ensure 重试 Rust;其余 RPC 失败硬缓存(同旧失败态:代/
+    // 指纹前进才重试,不重锤坏 server)。
+    const products = resolveConfigProductsInTs(located.defaultsXml, located.customXml);
+    const fallback: ConfigResolvedState = {
+      ok: true,
+      generation,
+      ...products,
+      customPath: located.customPath,
+      defaultsPath: located.defaultsPath,
+      resolver: 'ts',
+      reason: outcome.reason
+    };
+    const slot: CacheSlot = {
+      ...fallback,
+      overridesKey,
+      fingerprint: mark,
+      softRetry: outcome.reason === 'no serverPath'
+    };
+    if (stale()) {
+      return fallback;
     }
-    // RPC 失败:如实降级不缓存失败态为最终(缓存住,同代不重锤宕机
-    // server;文件/代变化后重试),消费面按「core 不可知」降级。
-    const failed: CacheSlot = { ...base, reason: outcome.reason, overridesKey, fingerprint: mark };
-    if (!stale()) {
-      storeSlot(overridesKey, failed);
-    }
-    return failed;
+    storeSlot(overridesKey, slot);
+    return slot;
   }
   const result = outcome.result;
   const state: ConfigResolvedState = {
@@ -399,7 +428,8 @@ async function refresh(
     telnetDefaultPorts:
       (result['telnetDefaultPorts'] as Record<string, number> | undefined) ?? {},
     customTelnet: (result['customTelnet'] as CoreCustomTelnet | null) ?? null,
-    dbInterface: (result['dbInterface'] as CoreDatabaseInterfaceConfig | null) ?? null
+    dbInterface: (result['dbInterface'] as CoreDatabaseInterfaceConfig | null) ?? null,
+    resolver: 'rust'
   };
   if (stale()) {
     return state;

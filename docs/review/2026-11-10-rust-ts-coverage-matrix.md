@@ -60,6 +60,8 @@ defParser(+WorkerHost)/defChain/defCallChain(+ViewLogic)/defReferenceGraph/defMe
 - configDerive.ts:200-203 → 派生扫描根数据库面降级。
 TS 侧已有合并引擎（serverConfigMerge.ts buildConfigTreePair 树面在纯 TS 包工作），缺的是 dbInterface/telnetSummary 提取的 TS 实现。处置登记 RUST-MIGRATION-AUDIT-007（补 TS 回退 or 文档声明纯 TS 能力边界，待用户定）。
 
+**B4 处置收口（AUDIT-007，2026-11-11 用户令「补 TS 回退」）**：TS 回落臂落地——`src/serverConfigFallbackCore.ts` 纯 TS 出全量 resolve 产物（parseConfigXml 伪根/`<root>` 包裹二层容差 + mergeConfigXml 四分支整表替换/源注释 override 优先 + extractDatabaseInterfaceConfig 引擎默认回落 + telnetSummary 写死表序 + customTelnet 文档序首段，语义逐条镜像 crates/kode-parser/src/config.rs，含 leaf_number 拒 0x 前缀、encrypt 大小写不敏感、plainPassword 仅 encrypt=false 等边界），**真实二进制 RPC 对拍钉死**（tests/serverConfigFallbackParity.test.ts：`$/kode/config/resolve` 全字段深等，真实 defaults/元件 fixture + 合成边界 CRLF/0x/明文密码/缺段/flat/纯注释/空串/整表替换 9 样本）；serverConfigResolve.ts 接线：RPC 失败或无 serverPath → ok=true + `resolver:'ts'`（reason 留回落原因），四消费面（Player Data DSN / telnet 自动配置 / 克隆连接派生 / configDerive）纯 TS 包不再降级——009c 实机的 pt_05「Database config section not found」类缺口由此关闭。缓存两档：no serverPath 软缓存（同步零成本探测，每次 ensure 重试 Rust、接线后即被 Rust 态替换）；其余 RPC 失败硬缓存（代/指纹前进才重试，不重锤坏 server）；门未接线仍瞬态不缓存。契约替身单一事实源：tests/helpers/configCoreContract.ts 改为 re-export 生产回落核（替身 ≡ TS 回落 ≡ Rust）。
+
 ### C. 宿主面（设计如此，不是缺口）
 
 git shell 族（gitRunner/gitHistory/gitRangeTimeline/gitQueryGate 等 7 模块，shell-out git）、进程/连接族（processManager/remoteConnection/remoteProcessList/sshConfig/telnetClient/debugpyPortProbe/pyspyDump/venvDiscovery 等，OS io）、VS Code API 绑定面（task/debug/webview/tree/documentStore/diagnosticScheduler/indexScheduler 调度）、hotReload 传输族（telnet/payload 投递，协议 io）。这些是 io/宿主边界，收编 Rust 无净收益；其**计算核心**（如 hotReloadDefHash/DefStructure 的哈希与结构 diff）属 B 类可议。

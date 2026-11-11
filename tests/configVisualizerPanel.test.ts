@@ -156,7 +156,7 @@ describe('六态分流(§8)', () => {
     expect(contractCalls).toHaveLength(0);
   });
 
-  it('RPC 失败:error 态如实降级,不带空态 errorKind', async () => {
+  it('RPC 失败走 TS 回落:回落产物照常渲染,不再进 error 态(AUDIT-007)', async () => {
     installRealDefaults();
     setKodeCoreShadowGate({ runInRust: async () => ({ ok: false, reason: 'boom' }) } as never);
     const panel = await showPanel();
@@ -166,10 +166,12 @@ describe('六态分流(§8)', () => {
       ok: boolean;
       error?: string;
       errorKind?: string;
+      data?: { defaultsOnly?: boolean };
     };
-    expect(result.ok).toBe(false);
-    expect(result.error).toBe('boom');
+    expect(result.ok).toBe(true);
+    expect(result.error).toBeUndefined();
     expect(result.errorKind).toBeUndefined();
+    expect(result.data?.defaultsOnly).toBe(true);
   });
 
   it('core ok 但树缺失:errorKind=no-config,不伪造三态', async () => {

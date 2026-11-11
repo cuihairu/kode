@@ -4,9 +4,10 @@
  * 三树投影在 configVisualizerModel.ts(纯函数),壳 HTML 在
  * configVisualizerPanelHtml.ts(纯字符串)——本文件不拼 HTML、不碰树形。
  *
- * ok/降级分流按 §5.4 修正(2026-11-11):无 TS 兜底解析——resolve 失败
- * 直接进 §8 error 态;仅「无工作区 / 无 defaults 文件」两个空态由控制器
- * 判定(errorKind),数据面真值一律出自 core 回包。
+ * ok/降级分流(AUDIT-007 后口径):resolve 失败经 TS 回落臂出 ok=true
+ * (configVisualizerModel 照常投影回落产物),error 态只剩门未接线瞬态;
+ * 仅「无工作区 / 无 defaults 文件」两个空态由控制器判定(errorKind),
+ * 数据面真值一律出自 core 回包或回落核。
  */
 
 import * as vscode from 'vscode';
@@ -155,7 +156,7 @@ export class ConfigVisualizerPanel {
     }
     this.lastState = state;
     if (!state.ok) {
-      // §5.4 修正:无 TS 兜底——RPC 失败/门未接线直接 error 态,如实降级
+      // AUDIT-007 后此分支只剩门未接线瞬态(RPC 失败已由回落臂出 ok=true)
       this.lastSummary = null;
       return { ok: false, error: state.reason ?? t.errorState };
     }

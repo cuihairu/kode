@@ -1,10 +1,12 @@
-// KODE-CFG-009 验收:TS 消费通道全改走 core 解析结果(`$/kode/config/resolve`),
-// 旧 parseConfigXml/mergeConfigXml 本地解析实现下线——合成树、telnet 速览、
-// 数据库连接要素都来自 core 单一真源;RPC 失败/门未接线 → 如实降级(trees
-// 为 null,定位事实 customPath/defaultsPath 保留),不回退本地解析。
+// KODE-CFG-009 验收:TS 消费通道走 core 解析结果(`$/kode/config/resolve`)——
+// 合成树、telnet 速览、数据库连接要素优先来自 core 真源;门接线但无
+// serverPath(纯 TS 通用包常态)或 RPC 失败时走 TS 回落(AUDIT-007,
+// 2026-11-11 用户令):ok=true + resolver:'ts' 如实标注,四消费面不再降级。
+// 门未接线(激活前/停用后)仍为瞬态降级(trees null,定位事实保留)。
 //
 // 门替身按 dispatch 契约响应(契约真值由 Rust rpc_dispatch + resolve units
-// 钉死,此处只验 TS 接线:原文送达 → core 树消费 → 缓存/降级/重解析)。
+// 钉死,回落核与替身同一实现);此处验 TS 接线:原文送达 → core 树消费 →
+// 回落/软硬缓存/重解析。
 
 import * as fs from 'fs';
 import * as os from 'os';
@@ -135,19 +137,76 @@ describe('KODE-CFG-009 消费通道走 core 解析', () => {
     expect(resolveDatabaseInterfaceConfig()).toEqual(CORE_DB);
   });
 
-  it('RPC 失败如实降级:树为 null、定位事实保留、不回退本地解析', async () => {
+  it('RPC 失败走 TS 回落:ok=true resolver=ts、回落核出树与 dbInterface、硬缓存', async () => {
     installFakeGate(false);
     await ensureConfigResolved();
     const state = getConfigResolved();
-    expect(state?.ok).toBe(false);
-    expect(state?.merged).toBeNull();
-    expect(buildMergedConfigTree().merged).toBeNull();
+    expect(state?.ok).toBe(true);
+    expect(state?.resolver).toBe('ts');
+    expect(state?.reason).toBe('resolve unavailable');
+    // 回落核产物 = 磁盘原文镜像解析(entryScriptFile 是 local 值,判别非 core)。
+    // 定位:伪根一层直挂段与 <root> 包裹二层都找(merge 后 defaults 侧整段
+    // <root> 包裹保留在前、custom 侧 flat baseapp 追加在后,两层并存)
+    const baseapp =
+      state?.merged?.children.find(c => c.name === 'baseapp') ??
+      state?.merged?.children.find(c => c.name === 'root')?.children.find(c => c.name === 'baseapp');
+    const leaf = baseapp?.children.find(c => c.name === 'entryScriptFile');
+    expect(leaf?.text).toBe('local-parsed-entry');
+    expect(buildMergedConfigTree().merged).not.toBeNull();
+    // fixture 无 dbmgr 段:镜像 Rust 语义 dbInterface=null(如实无数据库配置)
     expect(resolveDatabaseInterfaceConfig()).toBeNull();
-    // 定位事实是 TS 侧职责,降级时保留(configDerive facts 依赖)
+    // 定位事实是 TS 侧职责,回落时保留(configDerive facts 依赖)
     expect(state?.customPath).toBe(path.join(root, 'kbengine.xml'));
     expect(state?.defaultsPath).toBe(
       path.join(root, 'kbe', 'res', 'server', 'kbengine_defaults.xml')
     );
+    // 硬缓存:同代同指纹不再重锤坏 server(重试待代/指纹前进)
+    await ensureConfigResolved();
+    expect(calls).toHaveLength(1);
+    bumpRootConfigGeneration('test');
+    await ensureConfigResolved();
+    expect(calls).toHaveLength(2);
+  });
+
+  it('无 serverPath 走 TS 回落并软缓存:每次 ensure 重试 Rust,接线后即被 Rust 态替换', async () => {
+    setKodeCoreShadowGate({
+      runInRust: async (_method: string, params: unknown) => {
+        const typed = params as { defaultsXml: string | null; customXml: string | null };
+        calls.push({ method: '$/kode/config/resolve', params: typed });
+        return { ok: false as const, reason: 'no serverPath' };
+      }
+    } as unknown as KodeCoreGate);
+    let state = await ensureConfigResolved();
+    expect(state.ok).toBe(true);
+    expect(state.resolver).toBe('ts');
+    expect(state.reason).toBe('no serverPath');
+    expect(state.merged).not.toBeNull();
+    // 同步消费面可读(软缓存已落槽)
+    expect(getConfigResolved()?.resolver).toBe('ts');
+    // 软缓存:同代同指纹第二次 ensure 仍重试 Rust(零成本探测)
+    await ensureConfigResolved();
+    expect(calls).toHaveLength(2);
+    // 接线后:下一次 ensure 即被 Rust 态替换
+    installFakeGate(true);
+    state = await ensureConfigResolved();
+    expect(state.resolver).toBe('rust');
+    expect(state.reason).toBeUndefined();
+    await ensureConfigResolved();
+    expect(calls).toHaveLength(3); // Rust 态硬缓存,不再探测
+  });
+
+  it('门未接线仍为瞬态降级:ok=false 产物全空,定位事实保留,不缓存', async () => {
+    const state = await ensureConfigResolved();
+    expect(state.ok).toBe(false);
+    expect(state.reason).toBe('gate unavailable');
+    expect(state.merged).toBeNull();
+    expect(state.resolver).toBeUndefined();
+    expect(state.customPath).toBe(path.join(root, 'kbengine.xml'));
+    expect(state.defaultsPath).toBe(
+      path.join(root, 'kbe', 'res', 'server', 'kbengine_defaults.xml')
+    );
+    // 瞬态不落槽:同步缓存读不到
+    expect(getConfigResolved()).toBeNull();
   });
 
   it('按 generation 缓存:bump 后才重新 resolve', async () => {

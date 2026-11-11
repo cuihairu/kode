@@ -221,7 +221,7 @@ config-first.md §2.1 `mergeConfigXml`:子节点按名对齐,覆盖命中 → **
 同时:头部双路径行 custom 显示「(未发现)」,筛选片「只看被覆盖/只看新增」置灰
 并给计数 0。
 
-### 5.4 Rust 核心不可用(2026-11-11 修正:无 TS 兜底,直入 error 态)
+### 5.4 Rust 核心不可用(2026-11-11 二次修正:AUDIT-007 恢复 TS 回落臂)
 
 > **修正(2026-11-11,KODE-CFG-VIZ-001 实现期)**:原稿设想「resolve
 > ok=false → 回落 TS 侧 `buildConfigTreePair()`」——该前提已被 KODE-CFG-009
@@ -236,6 +236,17 @@ config-first.md §2.1 `mergeConfigXml`:子节点按名对齐,覆盖命中 → **
 > selectSection 纯前端本地切换,段级回包成为死协议面)。另补 §7 漏项
 > `pathCustomMissing`(zh `(未发现)` / en `(not found)`,§5.3 paths 行
 > custom 文件未发现时用)。
+
+> **二次修正(2026-11-11,AUDIT-007 用户令「补 TS 回退」)**:RUST-MIGRATION-AUDIT-007
+> 落地 TS 回落臂——`src/serverConfigFallbackCore.ts` 纯 TS 出全量 resolve
+> 产物(parse/merge/telnet/dbInterface,语义逐条镜像 Rust config.rs,真实
+> 二进制 RPC 对拍钉死)。resolve RPC 失败或无 serverPath(纯 TS 通用包常态)
+> → `ensureConfigResolved` 出 ok=true + `resolver:'ts'`(reason 留回落原因,
+> 观测面),面板照常按 ready / defaults-only 渲染回落产物——不恢复独立
+> ts-fallback 态、来源徽标不回归(回落与 core 产物同构投影,error 态收敛
+> 后仅剩 gate 未接线瞬态,§8 表同步)。缓存两档:no serverPath 软缓存(每次
+> ensure 重试 Rust,接线后即被 Rust 态替换);其余 RPC 失败硬缓存(代/指纹
+> 前进才重试)。
 
 ### 5.5 刷新与代际守卫
 
@@ -400,17 +411,18 @@ export interface ConfigVizKeyDetail {
 
 ## 8. 状态清单
 
-> 2026-11-11 修正:原七态中的「ts-fallback」(§5.4)随 TS 兜底路径退役而
-> 不可达,并入 error 态——本表为六态终版。
+> 2026-11-11 修正:原七态中的「ts-fallback」(§5.4)不可达,并入 error 态
+> (首次修正裁撤;AUDIT-007 恢复 TS 回落臂后回落产物并入 ready /
+> defaults-only 渲染,独立态不回归)——本表为六态终版。
 
 | # | 状态 | 进入条件 | 渲染 |
 |---|---|---|---|
 | 1 | loading | 壳已渲染,resolveState 未回 | 壳 + 状态行「正在解析配置…」(`role="status"`);不渲染任何键数据 |
-| 2 | ready | resolveState ok 且非 defaults-only | §3.3 全布局;徽标 Rust 核心(数据一律出自 core resolve,§5.4 修正后无第二来源) |
+| 2 | ready | resolveState ok 且非 defaults-only | §3.3 全布局;徽标 Rust 核心(数据出自 core resolve 或 TS 回落核,两者语义对拍钉死,AUDIT-007) |
 | 3 | empty · 无工作区 | workspaceFolders 空(resolveState errorKind=no-workspace) | 空态文案 emptyNoWorkspace;树/表/详情全部占位,刷新仍可点(打开工作区后可重试) |
 | 4 | empty · 无配置文件 | defaultsTree=null(customPath 亦空;errorKind=no-config) | 空态文案 emptyNoConfig;不伪造三态(§4.2-3) |
 | 5 | defaults-only | customTree === null(路径存在与否均可) | ready 布局 + 诚实警示条(§5.3);全部键标 `默认`;覆盖/新增筛选置灰 |
-| 6 | error | resolve ok=false(gate 未接线 / RPC 失败) | 保留上一份 ready 数据(若有)+ 顶部错误条(errorState + 可读 error)+ 重试按钮;无历史数据则错误条 + 重试占位。刷新失败不吞键——错误必须可见,旧数据标注「来自上次成功解析」 |
+| 6 | error | resolve ok=false(仅 gate 未接线瞬态;RPC 失败经 TS 回落臂出 ok=true,AUDIT-007) | 保留上一份 ready 数据(若有)+ 顶部错误条(errorState + 可读 error)+ 重试按钮;无历史数据则错误条 + 重试占位。刷新失败不吞键——错误必须可见,旧数据标注「来自上次成功解析」 |
 
 ## 9. 可访问性清单(本面板专项)
 
@@ -438,7 +450,7 @@ export interface ConfigVizKeyDetail {
 |---|---|---|---|
 | `src/configVisualizerModel.ts` | 新 | 纯投影:三树 → 每键三态 DTO(§4.1 判定 + §4.2 细则)+ 详情装配(三值/片段/文案/源注释) | `ConfigXmlNode`(serverConfigMerge.ts:32)、`renderConfigXml`(:60)、`findServerConfigItemDoc`(serverConfigCatalog)、`ConfigResolvedState` 字段 |
 | `src/configVisualizerPanelHtml.ts` | 新 | SRC-012 字符串半边:整页壳 HTML/CSS/内联客户端脚本生产(纯函数,无 vscode import) | `WEBVIEW_THEME_CSS`(webviewTheme)、`strings(resolvePanelLocale())`(webviewStrings)、`webviewScriptCsp`/`randomNonce`/`toJsonForScript`(webviewSecurity)、`escapeHtml`(entityDependencyWebViewHtml.ts:45 同实现) |
-| `src/configVisualizerPanel.ts` | 新 | 控制器:WebviewPanel 生命周期(`retainContextWhenHidden: true`)、消息派发 switch、两级代际守卫(§5.5)、resolve ok/降级分流(§5.4 修正:无 TS 兜底)、剪贴板/打开文件动作 | `ensureConfigResolved`/`configTreePairFromState`(serverConfigResolve.ts:297/:83)、`canWriteRefresh` 模式(entityDependencyWebView.ts:102) |
+| `src/configVisualizerPanel.ts` | 新 | 控制器:WebviewPanel 生命周期(`retainContextWhenHidden: true`)、消息派发 switch、两级代际守卫(§5.5)、resolve ok/降级分流(§5.4:AUDIT-007 后 error 态只剩 gate 未接线瞬态)、剪贴板/打开文件动作 | `ensureConfigResolved`/`configTreePairFromState`(serverConfigResolve.ts:297/:83)、`canWriteRefresh` 模式(entityDependencyWebView.ts:102) |
 | `src/webviewStrings.ts` | 改 | 增 `configVisualizer` 命名空间(zh+en,§7 全表) | 既有 zh/en 平行结构 |
 | 命令注册 | 改 | `kbengine.config.visualize`(标题「配置合并可视化」)入 package.json contributes + activate/views.ts(先例 :337);showFinal 原样保留 | — |
 | `tests/configVisualizerModel.test.ts` | 新 | 投影判定:三态 + 显式重申 + 容器整名替换 + `<item>` 整表替换 + 长值截断;Rust/TS 两路同投影一致 | `tests/helpers/configCoreContract.ts` 树构造 |
