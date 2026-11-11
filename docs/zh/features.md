@@ -378,7 +378,7 @@
 | `kbengine.hover.showTagDocs` | `true` | 悬停显示 .def 标签说明 |
 | `kbengine.hover.showValueDocs` | `true` | 悬停显示类型/Flags/DetailLevel 取值说明 |
 | `kbengine.hover.showSymbolDocs` | `true` | 悬停显示自定义属性/方法名摘要 |
-| `kbengine.hover.returnTypeInference` | `true` | 悬停时根据 Python 返回注解推导局部变量类型 |
+| `kbengine.hover.returnTypeInference` | `true` | 悬停时根据 Python 返回注解推导局部变量类型（注解桶构建 Rust-first 走 `$/kode/python/returnAnnotations`，TS 让出式提取兜底——RUST-MIGRATION-AUDIT-006 批 3） |
 | `kbengine.hover.typeStorage` | `true` | 悬停显示 types.xml 自定义类型落库信息 |
 | `kbengine.hover.implementedBy` | `true` | 悬停显示 def 方法的脚本实现位置（Implemented-By 反链） |
 | `kbengine.hover.entityRegistration` | `true` | 悬停显示 entities.xml 注册信息（Utype/清单位置） |
