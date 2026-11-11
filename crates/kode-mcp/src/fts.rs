@@ -484,4 +484,61 @@ mod tests {
         assert_eq!(fts.doc_count(), 1);
         std::fs::remove_dir_all(&dir).ok();
     }
+
+    #[test]
+    fn open_on_a_file_path_is_an_honest_error() {
+        // open 的首个动作是 create_dir_all:路径被同名文件占住时必须报错
+        // (错误携带路径)而不是 panic/静默——MCP 启动面依赖这个诚实错误。
+        let base =
+            std::env::temp_dir().join(format!("kode-mcp-fts-open-err-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let occupied = base.join("occupied");
+        std::fs::write(&occupied, "a file, not a directory").unwrap();
+        let err = FtsIndex::open(&occupied).expect_err("opening a file path must fail");
+        assert!(
+            err.contains(&occupied.to_string_lossy().to_string()),
+            "error should carry the offending path: {err}"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn limit_zero_and_oversized_limits_still_answer() {
+        let fts = FtsIndex::open_in_memory().unwrap();
+        fts.replace_file(
+            "a.md",
+            &[
+                node("s:a", "a.md", "Alpha", "sigma delta sigma"),
+                node("s:b", "a.md", "Beta", "sigma gamma"),
+            ],
+        )
+        .unwrap();
+        // limit 0 按契约收敛为至少搜 1 条(limit.max(1)):不报错、不挂起。
+        let hits = fts.search("sigma", 0).unwrap();
+        assert_eq!(hits.len(), 1, "limit 0 answers exactly one hit");
+        assert_eq!(fts.search("sigma", 1).unwrap().len(), 1);
+        // 超出语料规模的 limit 如实返回全量,不是错误。
+        assert_eq!(fts.search("sigma", 100).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn name_match_outranks_content_only_match() {
+        let fts = FtsIndex::open_in_memory().unwrap();
+        // 同词频(各 1 次)同语料规模:name 命中(name 字段 3.0 boost)必须排在
+        // 仅正文命中的前面——字段加权是搜索排序的设计决策,锁死。
+        fts.replace_file(
+            "a.md",
+            &[node("s:a", "a.md", "Gateway", "other words here")],
+        )
+        .unwrap();
+        fts.replace_file(
+            "b.md",
+            &[node("s:b", "b.md", "Router", "a gateway appears here")],
+        )
+        .unwrap();
+        let hits = fts.search("gateway", 10).unwrap();
+        assert_eq!(hits.len(), 2, "both docs contain the term once");
+        assert_eq!(hits[0].0, "s:a", "name-boosted doc must rank first");
+        assert!(hits[0].1 > hits[1].1);
+    }
 }
