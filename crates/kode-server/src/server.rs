@@ -276,6 +276,13 @@ fn handle_initialize(state: &mut ServerState, request: Request) -> Response {
             state.roots.register(root.as_path());
         }
     }
+    // KBUG-ROOT:多工作区文件夹逐个注册(LSP workspaceFolders);归属依据,
+    // 跨根同名实体隔离依赖此注册齐全。
+    for folder in params.workspace_folders.into_iter().flatten() {
+        if let Ok(root) = CanonicalUri::parse(&folder.uri) {
+            state.roots.register(root.as_path());
+        }
+    }
     state.initialized = true;
     let result = InitializeResult {
         capabilities: ServerCapabilities {

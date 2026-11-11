@@ -21,6 +21,11 @@ const CORPORA = [
   'tests/fixtures/kbengine-tpl-scripts'
 ] as const;
 
+// 语料工程根归属(KBUG-ROOT):文件所属 CORPORA 前缀即其资源根(与生产
+// root_for/各语料工程各注册一根同口径,跨工程同名实体不再首见借路径)。
+const corpusRootOf = (file: string): string =>
+  CORPORA.find(corpus => file.startsWith(`${corpus}/`)) ?? '';
+
 // ---- 语料收集(与 Rust collect_corpus 同序:rel 路径字典序) ----------------
 
 interface CorpusFile {
@@ -88,7 +93,7 @@ const line1Of = (text: string, offset: number): number => offsetToPos(text, offs
 
 interface Engine {
   corpusDefs: Set<string>;
-  defByName: Map<string, string>;
+  defCandidates: Map<string, Map<string, string[]>>; // 根 → 实体名 → 入库序候选(KBUG-ROOT)
   entitiesDirs: Set<string>;
   entitiesByPath: Map<string, EntityProbe[]>;
   typesDecls: Map<string, { name: string; line1: number }[]>;
@@ -107,7 +112,7 @@ const dirOf = (filePath: string): string | null => {
 const buildEngine = (corpus: CorpusFile[]): Engine => {
   const engine: Engine = {
     corpusDefs: new Set(),
-    defByName: new Map(),
+    defCandidates: new Map(),
     entitiesDirs: new Set(),
     entitiesByPath: new Map(),
     typesDecls: new Map()
@@ -116,9 +121,14 @@ const buildEngine = (corpus: CorpusFile[]): Engine => {
     if (file.kind === 'def') {
       engine.corpusDefs.add(file.file);
       const stem = stemOf(file.file);
-      if (!engine.defByName.has(stem)) {
-        engine.defByName.set(stem, file.file);
+      const root = corpusRootOf(file.file);
+      const byStem = engine.defCandidates.get(root) ?? new Map<string, string[]>();
+      const candidates = byStem.get(stem) ?? [];
+      if (!candidates.includes(file.file)) {
+        candidates.push(file.file);
       }
+      byStem.set(stem, candidates);
+      engine.defCandidates.set(root, byStem);
     }
     if (file.kind === 'entities') {
       const dir = dirOf(file.file);
@@ -326,8 +336,11 @@ const recomputeFile = (engine: Engine, file: CorpusFile): ExpectedDefinition[] =
       return null;
     }
     if (file.kind === 'entities') {
-      const target = engine.defByName.get(word);
-      return target ? headLocation(target) : null;
+      // KBUG-ROOT:候选按查询方语料工程根定域;唯一候选才落点,同根同名
+      // 歧义不硬猜首见 → null(与 Rust definition 实体臂同口径)。
+      const candidates =
+        engine.defCandidates.get(corpusRootOf(file.file))?.get(word) ?? [];
+      return candidates.length === 1 ? headLocation(candidates[0]) : null;
     }
     if (file.kind === 'types') {
       return lineStartLocation(file.file, line1);

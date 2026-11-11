@@ -4,7 +4,7 @@ import { tmpdir } from 'os';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { KodeCoreClient, KodeCoreTransportError } from '../src/backend/kodeCoreClient';
+import { KodeCoreClient, KodeCoreTransportError, type KodeCoreInitializeResult } from '../src/backend/kodeCoreClient';
 
 // kode2 PR-003:BUILD-005 最小 transport 单测(fake stdio server,无 Rust 依赖)。
 // 真实二进制握手 e2e 在 tests/kodeCoreE2E.test.ts。
@@ -200,6 +200,29 @@ describe('kodeCoreClient transport(fake stdio server)', () => {
     expect(Date.now() - startedAt).toBeLessThan(process.platform === 'win32' ? 4000 : 1500); // 正常路径不等超时窗(win32 终止链路慢,平台化阈值)
     expect(await exitCode).toBe(0); // shutdown→exit 协议走完的优雅退出
     expect(client.childProcess).toBeNull();
+  }, 10_000);
+
+  it('KBUG-ROOT: initializeParams.workspaceFolders 随握手上行(根归属参数)', async () => {
+    const client = tracked(
+      makeClient({
+        initializeParams: {
+          processId: 1,
+          capabilities: {},
+          workspaceFolders: [
+            { uri: 'file:///ws/alpha', name: 'alpha' },
+            { uri: 'file:///ws/beta', name: 'beta' },
+          ],
+        },
+      })
+    );
+    const result = (await client.start()) as KodeCoreInitializeResult & {
+      receivedWorkspaceFolders: { uri: string; name?: string }[] | null;
+    };
+    // 替身服务器把收到的 workspaceFolders 回显:证明参数真的随 initialize 上行
+    expect(result.receivedWorkspaceFolders).toEqual([
+      { uri: 'file:///ws/alpha', name: 'alpha' },
+      { uri: 'file:///ws/beta', name: 'beta' },
+    ]);
   }, 10_000);
 
   it('KodeCoreTransportError 携带分类码', () => {

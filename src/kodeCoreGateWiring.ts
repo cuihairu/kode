@@ -53,6 +53,17 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
   const gate = new KodeCoreGate();
   const extensionRoot = context.extensionUri.fsPath;
   gate.setConfig(readCoreGateConfig(extensionRoot));
+  // KBUG-ROOT 根归属:把多工作区文件夹作为 LSP initialize.workspaceFolders
+  // 注册给 kode-server(逐个成为资源根),跨根同名实体不再首见借路径。
+  // 必须在首次语料镜像(ensureClient)之前设置,握手即携带。
+  gate.setInitializeParams({
+    processId: process.pid,
+    capabilities: {},
+    workspaceFolders: (vscode.workspace.workspaceFolders ?? []).map(folder => ({
+      uri: folder.uri.toString(),
+      name: folder.name,
+    })),
+  });
   // 2026-11-08 用户令「直接切」:服务轨道生效时把工作区语料全量镜像给 Rust
   // (类型/实体/别名/继承链只由已镜像文档入库)。fire-and-forget,不阻塞
   // 激活;非服务轨道零开销。

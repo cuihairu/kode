@@ -1,4 +1,4 @@
-import { KodeCoreClient, KodeCoreTransportError } from './kodeCoreClient';
+import { KodeCoreClient, KodeCoreTransportError, type KodeCoreInitializeParams } from './kodeCoreClient';
 import { KODE_FILE_CHANGED_METHOD } from './fileChangeBypass';
 
 // kode2 PR-012:双轨切流门(kill-switch / shadow / 差异日志)。
@@ -238,6 +238,8 @@ export class KodeCoreGate {
   private config: KodeCoreGateConfig = { ...DEFAULT_CORE_GATE_CONFIG };
   private client: ShadowClientLike | null = null;
   private clientServerPath = '';
+  /** initialize 握手参数(KBUG-ROOT:多工作区文件夹根归属);未设置 = 默认参数 */
+  private initializeParams: KodeCoreInitializeParams | undefined;
   private nextAttemptAt = 0;
   /** 语料镜像账:uri → 已镜像版本(shadow 会话内;kill-switch 清空) */
   private mirroredVersions = new Map<string, number>();
@@ -259,6 +261,15 @@ export class KodeCoreGate {
   }
 
   /** 应用新配置;离开镜像轨道(ts kill-switch)或换二进制即停 Rust 进程 */
+  /**
+   * initialize 握手参数(KBUG-ROOT 根归属):仅存储;在此之后创建的客户端
+   * 实例握手即携带(自动重启重建同样生效)。装配路径在首次 ensureClient
+   * 前调用;已存活客户端不因此重启。
+   */
+  setInitializeParams(params: KodeCoreInitializeParams): void {
+    this.initializeParams = params;
+  }
+
   setConfig(config: KodeCoreGateConfig): void {
     const previous = this.config;
     this.config = { ...config };
@@ -412,7 +423,10 @@ export class KodeCoreGate {
     try {
       this.client =
         this.options.clientFactory?.(this.config.serverPath) ??
-        new KodeCoreClient({ binaryPath: this.config.serverPath });
+        new KodeCoreClient({
+          binaryPath: this.config.serverPath,
+          initializeParams: this.initializeParams,
+        });
       this.clientServerPath = this.config.serverPath;
       return this.client;
     } catch (error) {

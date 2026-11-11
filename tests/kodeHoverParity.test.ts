@@ -27,6 +27,11 @@ const CORPORA = [
   'tests/fixtures/kbengine-tpl-scripts'
 ] as const;
 
+// 语料工程根归属(KBUG-ROOT):文件所属 CORPORA 前缀即其资源根(与生产
+// root_for 同口径,跨工程同名实体不再首见借路径)。
+const corpusRootOf = (file: string): string =>
+  CORPORA.find(corpus => file.startsWith(`${corpus}/`)) ?? '';
+
 // ---- 语料收集(与 Rust collect_corpus 同序:排序遍历,rel 路径字典序) ----
 
 interface CorpusFile {
@@ -218,7 +223,10 @@ const inheritedFaceOf = (absPath: string): InheritedFace => {
   };
 };
 
-const computeHovers = (corpus: CorpusFile[], defsByStem: Map<string, string>): ExpectedHover[] => {
+const computeHovers = (
+  corpus: CorpusFile[],
+  defsByStem: Map<string, Map<string, string[]>>
+): ExpectedHover[] => {
   // 逐文件产出(顺序 = Rust extract_records / parse 顺序)。
   const all: ExpectedHover[] = [];
   for (const { file, kind, text } of corpus) {
@@ -319,7 +327,8 @@ const computeHovers = (corpus: CorpusFile[], defsByStem: Map<string, string>): E
           if (node.name === 'root') {
             continue; // root 伪条目排除(与 Rust parse_entities 同口径)
           }
-          const defPath = defsByStem.get(node.name);
+          // KBUG-ROOT:候选按查询方语料工程根定域(defFile 报根内首候选)。
+          const defPath = defsByStem.get(corpusRootOf(file))?.get(node.name)?.[0];
           hovers.push({
             line: getLineNumberAt(document, node.tagStart),
             word: node.name,
@@ -402,11 +411,18 @@ describe('kode2 PR-010 hover 对拍(Rust hover 响应链 vs TS hover 面)', () =
   };
 
   const corpus = collectCorpus();
-  // 实体名 → def rel 路径(语料序首见优先,与 Rust def_views 首写优先一致)。
-  const defsByStem = new Map<string, string>();
+  // 实体名 → def 候选(按语料工程根隔离,根内入库序;KBUG-ROOT)。
+  const defsByStem = new Map<string, Map<string, string[]>>();
   for (const { file, kind } of corpus) {
-    if (kind === 'def' && !defsByStem.has(defEntityName(file))) {
-      defsByStem.set(defEntityName(file), file);
+    if (kind === 'def') {
+      const root = corpusRootOf(file);
+      const byStem = defsByStem.get(root) ?? new Map<string, string[]>();
+      const candidates = byStem.get(defEntityName(file)) ?? [];
+      if (!candidates.includes(file)) {
+        candidates.push(file);
+      }
+      byStem.set(defEntityName(file), candidates);
+      defsByStem.set(root, byStem);
     }
   }
   const computedFiles = corpus.map(({ file, kind }) => ({ file, kind: kind as string }));

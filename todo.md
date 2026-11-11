@@ -51,12 +51,12 @@
 
 复现与依据：已复现：先打开 A/entity_defs/Avatar.def，再打开 B/entity_defs/Avatar.def 和 B/entities.xml，从 B 的 Avatar 注册项请求 definition，实际返回 A 的文件。源码：`hover.rs:387` 按名称首见登记，`definition.rs:185` 无工程限定查询；hover 的 def_exists/def_file 同样消费该表。
 
-- [ ] KBUG-ROOT-01 [P1] 固定跨工程串跳回归。验收：增加真实 ServerState/stdio 用例，A/B 同名 Avatar 的注册跳转分别留在各自工程；交换打开顺序后结果不变；修复前用例明确失败。
-- [ ] KBUG-ROOT-02 [P1] 补齐注册项与定义的工程身份。验收：确定工程/资源根解析规则并传入实体候选登记；多根、外部 assetsRoot 和未归属文件分别有确定或未知状态，不以 basename 当身份。
-- [ ] KBUG-ROOT-03 [P1] 修复实体定义查询范围。验收：按请求文档所属工程/有效 defs 根选择候选；本根缺失不得借其他工程同名文件，同域歧义保留候选或返回未知；注册项 definition 用例通过。
-- [ ] KBUG-ROOT-04 [P1] 同步修复实体 hover 的存在性和来源。验收：hover 的 def_file/def_exists 复用相同查询；B 缺 Avatar 时不得因 A 存在就显示 B 已找到定义。
-- [ ] KBUG-ROOT-05 [P1] 修复同名候选移除与重建。验收：关闭/删除/改名首个同名定义后，其他合法候选仍可查询；重开/未保存版本更新不保留旧路径，索引清理不误删其他根。
-- [ ] KBUG-ROOT-06 [P1] 验收 VS Code 真实导航入口。验收：两个工程同名实体从 provider 发起跳转和 hover；记录实际落点，包含缺失、反转打开顺序、关闭再打开；不能只测内部 map。
+- [x] KBUG-ROOT-01 [P1] 固定跨工程串跳回归。验收：增加真实 ServerState/stdio 用例，A/B 同名 Avatar 的注册跳转分别留在各自工程；交换打开顺序后结果不变；修复前用例明确失败。(root_scope_dispatch.rs 修前 7/7 红;golden 重生成 54→54,4 处跨工程借用改本根路径)
+- [x] KBUG-ROOT-02 [P1] 补齐注册项与定义的工程身份。验收：确定工程/资源根解析规则并传入实体候选登记；多根、外部 assetsRoot 和未归属文件分别有确定或未知状态，不以 basename 当身份。(def_by_name 键改 (RootId, 实体名)→入库序候选;根归属 = state.roots.root_for,UNROOTED 单独一组)
+- [x] KBUG-ROOT-03 [P1] 修复实体定义查询范围。验收：按请求文档所属工程/有效 defs 根选择候选；本根缺失不得借其他工程同名文件，同域歧义保留候选或返回未知；注册项 definition 用例通过。(definition 实体臂唯一候选才落点,同根同名歧义 → null)
+- [x] KBUG-ROOT-04 [P1] 同步修复实体 hover 的存在性和来源。验收：hover 的 def_file/def_exists 复用相同查询；B 缺 Avatar 时不得因 A 存在就显示 B 已找到定义。(hover 实体臂 def_candidates(root,word):defFile=根内首候选,defExists=候选非空)
+- [x] KBUG-ROOT-05 [P1] 修复同名候选移除与重建。验收：关闭/删除/改名首个同名定义后，其他合法候选仍可查询；重开/未保存版本更新不保留旧路径，索引清理不误删其他根。(remove 逐候选组剔除空组落盘;关闭 B 不动 A,重开重建,用例钉全)
+- [x] KBUG-ROOT-06 [P1] 验收 VS Code 真实导航入口。验收：两个工程同名实体从 provider 发起跳转和 hover；记录实际落点，包含缺失、反转打开顺序、关闭再打开；不能只测内部 map。(kode-protocol/TS client/gate/wiring 四级接 workspaceFolders 根注册;dispatch 面 LSP 级验收 + TS parity 3 套件同口径复算;纪实 docs/review/2026-11-11-kbug-root-identity.md)
 
 ### KBUG-SCOPE · P1 · 参数遮蔽及类作用域泄漏
 

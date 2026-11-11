@@ -12,6 +12,7 @@ pub mod definition;
 pub mod dependency_graph;
 pub mod diagnostics;
 pub mod flag_domains;
+pub(crate) mod golden_corpus;
 pub mod attribute_none;
 pub mod local_return;
 pub mod self_attribute_flow;

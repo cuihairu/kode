@@ -28,7 +28,7 @@ use kode_parser::dep::{file_kind_of_uri, FileKind, ParsedUnit};
 use kode_parser::diag::LineMap;
 use kode_parser::model::{parse_alias, parse_def, parse_entities, parse_types};
 use kode_parser::xml;
-use kode_vfs::store::{DocumentKey, RootId};
+use kode_vfs::store::DocumentKey;
 
 use crate::hover::{category_of, parent_dir, word_at, Category, HoverEngine};
 
@@ -182,7 +182,14 @@ impl HoverEngine {
                     .entities
                     .iter()
                     .find(|e| e.name == word && e.line == line1)?;
-                let def_path = self.def_by_name.get(word)?;
+                // KBUG-ROOT:候选按查询方根定域;唯一候选才落点,同根同名
+                // 多候选歧义不硬猜首见 → null(TS 面兜底)。
+                let candidates = self.def_candidates(key.root, word);
+                let def_path = if candidates.len() == 1 {
+                    Some(&candidates[0])
+                } else {
+                    None
+                }?;
                 Some(file_head_location(def_path))
             }
             FileKind::Types => {
@@ -448,14 +455,11 @@ pub fn dump_definition_golden(repo_root: &std::path::Path) -> String {
     use kode_parser::json::{collect_corpus, PARITY_CORPORA};
 
     let files = collect_corpus(repo_root, PARITY_CORPORA);
+    let registry = crate::golden_corpus::corpus_registry();
     let mut engine = HoverEngine::new();
-    // 先全量入库(字典序 = TS 语料序,首写优先口径一致)。
+    // 先全量入库(字典序 = TS 语料序;键 = 各语料工程根,KBUG-ROOT 隔离)。
     for (path, (_kind, text)) in &files {
-        let key = DocumentKey::new(
-            RootId::UNROOTED,
-            kode_vfs::uri::CanonicalUri::from_path(path),
-        );
-        engine.update(key, text);
+        engine.update(crate::golden_corpus::corpus_key(&registry, path), text);
     }
     let mut dump = GoldenDump {
         generator: "kode-server dump-definition-golden",
@@ -464,10 +468,7 @@ pub fn dump_definition_golden(repo_root: &std::path::Path) -> String {
         files: Vec::new(),
     };
     for (path, (kind, text)) in &files {
-        let key = DocumentKey::new(
-            RootId::UNROOTED,
-            kode_vfs::uri::CanonicalUri::from_path(path),
-        );
+        let key = crate::golden_corpus::corpus_key(&registry, path);
         let mut probes: Vec<(usize, String)> = Vec::new();
         match *kind {
             "def" => {

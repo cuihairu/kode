@@ -98,6 +98,10 @@ function handle(msg) {
       return reply(msg.id, {
         capabilities: { textDocumentSync: { openClose: true, change: 1 } },
         serverInfo: { name: 'kode-fake-server', version: '0.0.0-test' },
+        // KBUG-ROOT:回显握手携带的 workspaceFolders,供客户端侧验证根归属参数真的上路
+        receivedWorkspaceFolders: msg.params && msg.params.workspaceFolders
+          ? msg.params.workspaceFolders
+          : null,
       });
     case '$/kode/rpc':
       if (silentRpc) {

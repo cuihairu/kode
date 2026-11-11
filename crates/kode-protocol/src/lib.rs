@@ -156,11 +156,24 @@ pub struct InitializeParams {
     pub process_id: Option<u64>,
     #[serde(default)]
     pub root_uri: Option<String>,
+    /// LSP 多工作区文件夹(VFS-009/KBUG-ROOT):逐个注册为资源根,跨根同名
+    /// 实体隔离的归属依据;缺省只落 rootUri。
+    #[serde(default)]
+    pub workspace_folders: Option<Vec<WorkspaceFolder>>,
     #[serde(default)]
     pub capabilities: Option<serde_json::Value>,
     /// kode2 扩展位:restartGeneration 等客户端状态经此传入(CORE-015 对账)。
     #[serde(default)]
     pub initialization_options: Option<serde_json::Value>,
+}
+
+/// LSP 工作区文件夹(initialize.workspaceFolders 条目;uri 必需)。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceFolder {
+    pub uri: String,
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 /// `initialize` 响应。

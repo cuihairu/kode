@@ -45,6 +45,8 @@ export interface KodeCoreClientOptions {
 export interface KodeCoreInitializeParams {
   processId?: number;
   rootUri?: string;
+  /** LSP 多工作区文件夹(KBUG-ROOT 根归属);缺省只落 rootUri。 */
+  workspaceFolders?: { uri: string; name?: string }[];
   capabilities?: Record<string, unknown>;
   initializationOptions?: Record<string, unknown>;
 }

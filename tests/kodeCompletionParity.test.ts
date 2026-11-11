@@ -25,6 +25,11 @@ const CORPORA = [
   'tests/fixtures/kbengine-tpl-scripts'
 ] as const;
 
+// 语料工程根归属(KBUG-ROOT):文件所属 CORPORA 前缀即其资源根(与生产
+// root_for 同口径,补全实体条目/Parent 取值不再跨工程借路径)。
+const corpusRootOf = (file: string): string =>
+  CORPORA.find(corpus => file.startsWith(`${corpus}/`)) ?? '';
+
 // ---- 语料收集(与 Rust collect_corpus 同序:排序遍历,rel 路径字典序) ----
 
 interface CorpusFile {
@@ -198,20 +203,32 @@ interface ResponseFace {
 }
 
 interface CorpusMaps {
-  defsByStem: Map<string, string>;
+  defsByStem: Map<string, Map<string, string[]>>; // 根 → 实体名 → 入库序候选(KBUG-ROOT)
   typeItems: ItemFace[]; // 预去重(同名首见,路径序)
   aliasItems: ItemFace[];
 }
 
+const byStemSorted = (maps: CorpusMaps, root: string): [string, string[]][] =>
+  [...(maps.defsByStem.get(root) ?? new Map<string, string[]>())].sort((a, b) =>
+    a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0
+  );
+
 const buildCorpusMaps = (corpus: CorpusFile[]): CorpusMaps => {
-  const defsByStem = new Map<string, string>();
+  const defsByStem = new Map<string, Map<string, string[]>>();
   const typeItems: ItemFace[] = [];
   const aliasItems: ItemFace[] = [];
   const seenTypes = new Set<string>();
   const seenAliases = new Set<string>();
   for (const { file, kind, text } of corpus) {
-    if (kind === 'def' && !defsByStem.has(defEntityName(file))) {
-      defsByStem.set(defEntityName(file), file);
+    if (kind === 'def') {
+      const root = corpusRootOf(file);
+      const byStem = defsByStem.get(root) ?? new Map<string, string[]>();
+      const candidates = byStem.get(defEntityName(file)) ?? [];
+      if (!candidates.includes(file)) {
+        candidates.push(file);
+      }
+      byStem.set(defEntityName(file), candidates);
+      defsByStem.set(root, byStem);
     }
     if (kind === 'types') {
       const document = parseDefDocument(text);
@@ -356,12 +373,12 @@ const computeResponse = (
         };
       }
       if (top === 'Components') {
-        return entitiesFace('openTag', 'Components', fragment, maps);
+        return entitiesFace('openTag', 'Components', fragment, maps, corpusRootOf(file));
       }
       return null;
     }
     if (kind === 'entities' && top === 'root') {
-      return entitiesFace('openTag', 'Entities', fragment, maps);
+      return entitiesFace('openTag', 'Entities', fragment, maps, corpusRootOf(file));
     }
     return null;
   }
@@ -389,9 +406,10 @@ const computeResponse = (
   }
   const items: ItemFace[] = [];
   if (section === 'Entity') {
-    for (const name of [...maps.defsByStem.keys()].sort()) {
+    // KBUG-ROOT:条目按查询方语料工程根定域(detail = 根内首候选)。
+    for (const [name, candidates] of byStemSorted(maps, corpusRootOf(file))) {
       if (name.startsWith(fragment)) {
-        items.push({ label: name, kind: 'entity', facet: null, detail: maps.defsByStem.get(name) ?? null, inheritedFrom: null });
+        items.push({ label: name, kind: 'entity', facet: null, detail: candidates[0] ?? null, inheritedFrom: null });
       }
     }
   } else {
@@ -410,11 +428,12 @@ const computeResponse = (
   };
 };
 
-const entitiesFace = (kind: 'openTag', section: string, fragment: string, maps: CorpusMaps): ResponseFace => {
+const entitiesFace = (kind: 'openTag', section: string, fragment: string, maps: CorpusMaps, root: string): ResponseFace => {
   const items: ItemFace[] = [];
-  for (const name of [...maps.defsByStem.keys()].sort()) {
+  // KBUG-ROOT:条目按查询方语料工程根定域(detail = 根内首候选)。
+  for (const [name, candidates] of byStemSorted(maps, root)) {
     if (name.startsWith(fragment)) {
-      items.push({ label: name, kind: 'entity', facet: null, detail: maps.defsByStem.get(name) ?? null, inheritedFrom: null });
+      items.push({ label: name, kind: 'entity', facet: null, detail: candidates[0] ?? null, inheritedFrom: null });
     }
   }
   return {

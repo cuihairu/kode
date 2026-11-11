@@ -98,7 +98,9 @@ describe('KBUG-TIME 交互请求截止控制(存活不响应/慢启动/长队列
   }, 15_000);
 
   it('KBUG-TIME-04: provider 取消即时结束等待,并发其他请求不受误伤', async () => {
-    const gate = tracked(makeGate(['delayRpc=0']));
+    // delayRpc=1000:响应远晚于取消探测(100ms+50ms 轮询),取消结果确定;
+    // delayRpc=0 时快速响应会先于取消探测结算(满载抖动下竞态翻车实录)。
+    const gate = tracked(makeGate(['delayRpc=1000']));
     setKodeCoreShadowGate(gate);
     let cancelled = false;
     setTimeout(() => {

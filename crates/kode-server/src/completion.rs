@@ -35,7 +35,7 @@ use serde_json::Value;
 use kode_index::symbol::def_entity_name;
 use kode_parser::dep::{file_kind_of_uri, FileKind};
 use kode_parser::model::{parse_def, DefFile, MethodSection, TypeKind};
-use kode_vfs::store::DocumentKey;
+use kode_vfs::store::{DocumentKey, RootId};
 
 use crate::hover::HoverEngine;
 
@@ -173,12 +173,12 @@ impl HoverEngine {
                         ))
                     }
                     "Components" => {
-                        Some(self.entities_response("openTag", "Components", &fragment))
+                        Some(self.entities_response(key, "openTag", "Components", &fragment))
                     }
                     _ => None,
                 },
                 FileKind::Entities if top == "root" => {
-                    Some(self.entities_response("openTag", "Entities", &fragment))
+                    Some(self.entities_response(key, "openTag", "Entities", &fragment))
                 }
                 _ => None,
             }
@@ -210,7 +210,7 @@ impl HoverEngine {
             };
             let mut items = Vec::new();
             if kind_ctx == "entity" {
-                self.push_entity_items(&mut items, &fragment);
+                self.push_entity_items(&mut items, &fragment, key.root);
             } else {
                 self.push_type_items(&mut items, &fragment);
                 self.push_alias_items(&mut items, &fragment);
@@ -323,15 +323,17 @@ impl HoverEngine {
         }
     }
 
-    /// 实体面条目:def 语料注册名(路径字典序 = 首写优先;detail = 语料路径)。
+    /// 实体面条目:def 语料注册名(根内路径字典序;detail = 语料路径;
+    /// KBUG-ROOT:只列查询方根的候选)。
     fn entities_response(
         &self,
+        key: &DocumentKey,
         kind: &'static str,
         section: &'static str,
         fragment: &str,
     ) -> CompletionResponse {
         let mut items = Vec::new();
-        self.push_entity_items(&mut items, fragment);
+        self.push_entity_items(&mut items, fragment, key.root);
         CompletionResponse {
             context: CompletionContextFace {
                 kind,
@@ -344,14 +346,22 @@ impl HoverEngine {
         }
     }
 
-    fn push_entity_items(&self, items: &mut Vec<CompletionItemFace>, fragment: &str) {
-        for (name, path) in &self.def_by_name {
+    fn push_entity_items(
+        &self,
+        items: &mut Vec<CompletionItemFace>,
+        fragment: &str,
+        root: RootId,
+    ) {
+        for ((candidate_root, name), paths) in &self.def_by_name {
+            if *candidate_root != root {
+                continue;
+            }
             if name.starts_with(fragment) {
                 items.push(CompletionItemFace {
                     label: name.clone(),
                     kind: "entity",
                     facet: None,
-                    detail: Some(path.clone()),
+                    detail: Some(paths[0].clone()),
                     inherited_from: None,
                 });
             }
@@ -687,14 +697,11 @@ fn fragment16(name: &str) -> u32 {
 /// 整个语料的 completion golden JSON(每文件每场景点一条响应)。
 pub fn dump_completion_golden(repo_root: &std::path::Path) -> String {
     let files = kode_parser::json::collect_corpus(repo_root, kode_parser::json::PARITY_CORPORA);
+    let registry = crate::golden_corpus::corpus_registry();
     let mut engine = HoverEngine::new();
-    // 先全量入库(字典序 = TS 语料序,首写优先口径一致)。
+    // 先全量入库(字典序 = TS 语料序;键 = 各语料工程根,KBUG-ROOT 隔离)。
     for (path, (_kind, text)) in &files {
-        let key = DocumentKey::new(
-            kode_vfs::store::RootId::UNROOTED,
-            kode_vfs::uri::CanonicalUri::from_path(path),
-        );
-        engine.update(key, text);
+        engine.update(crate::golden_corpus::corpus_key(&registry, path), text);
     }
     let mut dump = GoldenDump {
         generator: "kode-server dump-completion-golden",
@@ -703,10 +710,7 @@ pub fn dump_completion_golden(repo_root: &std::path::Path) -> String {
         files: Vec::new(),
     };
     for (path, (kind, text)) in &files {
-        let key = DocumentKey::new(
-            kode_vfs::store::RootId::UNROOTED,
-            kode_vfs::uri::CanonicalUri::from_path(path),
-        );
+        let key = crate::golden_corpus::corpus_key(&registry, path);
         let mut scenarios = Vec::new();
         for (line1, character) in enumerate_scenarios(kind, text) {
             if let Some(response) = engine.completion(&key, text, line1 as u32 - 1, character) {

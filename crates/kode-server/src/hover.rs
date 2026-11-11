@@ -340,9 +340,10 @@ pub struct HoverEngine {
     /// def 语义视图:**按路径**键(与 TS 逐路径读文件同语义,跨语料同名
     /// 实体互不串扰)。
     def_files: BTreeMap<String, DefFile>,
-    /// 实体名(file stem)→ 首见路径(entities.xml 注册项的 defFile 面;
-    /// 与 TS 语料序首见一致)。
-    pub(crate) def_by_name: BTreeMap<String, String>,
+    /// 实体名(file stem)→ 同根候选路径(entities.xml 注册项的 defFile 面;
+    /// KBUG-ROOT:按 DocumentKey.root 隔离,跨工程根同名互不借用;根内按
+    /// 入库序,同名多候选歧义不硬猜首见)。
+    pub(crate) def_by_name: BTreeMap<(RootId, String), Vec<String>>,
     /// 已入库 def 文件路径(存在性判定,对应 TS 的 fs.existsSync 面)。
     pub(crate) corpus_defs: BTreeSet<String>,
     /// entities.xml 所在目录(defsRoot 向上探测用)。
@@ -384,7 +385,10 @@ impl HoverEngine {
                 self.corpus_defs.insert(path.clone());
                 self.def_files.insert(path.clone(), parse_def(text));
                 if let Some(name) = def_entity_name(&path) {
-                    self.def_by_name.entry(name).or_insert(path);
+                    let candidates = self.def_by_name.entry((key.root, name)).or_default();
+                    if !candidates.contains(&path) {
+                        candidates.push(path);
+                    }
                 }
             }
             FileKind::Entities => {
@@ -412,8 +416,20 @@ impl HoverEngine {
         self.entities_files.remove(&path);
         self.types_files.remove(&path);
         self.alias_files.remove(&path);
-        self.def_by_name.retain(|_, p| p != &path);
+        self.def_by_name.retain(|_, paths| {
+            paths.retain(|p| p != &path);
+            !paths.is_empty()
+        });
         removed
+    }
+
+    /// 同根同名 def 候选(入库序)。KBUG-ROOT:查询方 DocumentKey.root 定域,
+    /// 跨根不借用;无候选返回空切片。
+    pub(crate) fn def_candidates(&self, root: RootId, name: &str) -> &[String] {
+        self.def_by_name
+            .get(&(root, name.to_string()))
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     /// 交互入口:UTF-16 position → 词 → 响应链。
@@ -559,7 +575,8 @@ impl HoverEngine {
                     .entities
                     .iter()
                     .find(|e| e.name == word && e.line == line1)?;
-                let def_path = self.def_by_name.get(word);
+                let candidates = self.def_candidates(key.root, word);
+                let def_path = candidates.first();
                 Some(HoverResponse {
                     face: HoverFace::EntitiesXml,
                     symbol: HoverSymbol {
@@ -570,7 +587,7 @@ impl HoverEngine {
                     },
                     signature: HoverSignature {
                         def_file: Some(def_path.cloned().unwrap_or_else(|| format!("{word}.def"))),
-                        def_exists: Some(def_path.is_some()),
+                        def_exists: Some(!candidates.is_empty()),
                         ..HoverSignature::default()
                     },
                     inherited: None,
@@ -952,14 +969,11 @@ fn parse_by_kind(kind: &str, text: &str) -> Option<ParsedUnit> {
 /// 整个语料的 hover golden JSON(每文件每声明符号一条响应链)。
 pub fn dump_hover_golden(repo_root: &std::path::Path) -> String {
     let files = collect_corpus(repo_root, PARITY_CORPORA);
+    let registry = crate::golden_corpus::corpus_registry();
     let mut engine = HoverEngine::new();
-    // 先全量入库(字典序 = TS 语料序,首写优先口径一致)。
+    // 先全量入库(字典序 = TS 语料序;键 = 各语料工程根,KBUG-ROOT 隔离)。
     for (path, (_kind, text)) in &files {
-        let key = DocumentKey::new(
-            RootId::UNROOTED,
-            kode_vfs::uri::CanonicalUri::from_path(path),
-        );
-        engine.update(key, text);
+        engine.update(crate::golden_corpus::corpus_key(&registry, path), text);
     }
     let mut dump = GoldenDump {
         generator: "kode-server dump-hover-golden",
@@ -971,10 +985,7 @@ pub fn dump_hover_golden(repo_root: &std::path::Path) -> String {
         let Some(unit) = parse_by_kind(kind, text) else {
             continue;
         };
-        let key = DocumentKey::new(
-            RootId::UNROOTED,
-            kode_vfs::uri::CanonicalUri::from_path(path),
-        );
+        let key = crate::golden_corpus::corpus_key(&registry, path);
         let (records, _) = extract_records(&key, &unit);
         let mut hovers = Vec::new();
         for record in &records {
