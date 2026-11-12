@@ -134,7 +134,13 @@ describe('compiled extension activation smoke', () => {
 
     await executeCommand('kbengine.logs.showViewer');
 
-    assert.strictEqual(stub.panelRegistry.panels[0]?.viewType, 'kbengine.logViewer');
+    // 默认 finalConfigView=gui(2026-11-12 用户令):激活尾焰可能已按默认开出一枚
+    // 配置可视化面板,故按 viewType 判,不断言 panels[0] 的位置序。
+    const viewer = stub.panelRegistry.panels.find(
+      panel => panel.viewType === 'kbengine.logViewer'
+    );
+    assert.ok(viewer);
+    assert.strictEqual(viewer.viewType, 'kbengine.logViewer');
   });
 
   it('deactivates cleanly and the dispose chain tears registrations down', () => {
