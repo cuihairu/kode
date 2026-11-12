@@ -281,6 +281,8 @@
 
 ## 调试相关
 
+> **Python 3.7.3 版本约束：**引擎包锁定 `debugpy==1.7.0`，VS Code 调试器锁定 `ms-python.debugpy@2024.0.0`，Python 扩展复现基线为 `2024.0.1`。现有自动安装/同步路径仍假定新版 Python，不能用于该目标；请按[固定版本安装说明](python-debugger-compatibility.md)手工准备。
+
 ### `kbengine.debug.updateLaunchJson`
 
 - 标题：`Update launch.json`
@@ -406,11 +408,19 @@
 ### `kbengine.config.showFinal`
 
 - 标题：`Show Final Server Config`
-- 作用：打开「最终生效配置」只读视图——按引擎装载规则合成：先载引擎默认 `kbengine_defaults.xml`（经 `kbengine.binPath` 推导），再以元件 `kbengine.xml`（`kbengine.assetsRoot` 下优先，其次约定路径 `kbengine.xml`/`res/server/kbengine.xml`/`assets/res/server/kbengine.xml`）同键覆盖（子键按名对齐）
+- 作用：按默认视图打开「最终生效配置」——`kbengine.finalConfigView` 决定打开面：`gui`（默认）打开配置合并可视化面板；`text` 打开下方只读合成文档（2026-11-12 用户令：图形界面为默认；两个面同一 resolve 数据源，不二次解析）
+- 行为：
+  - 默认（`kbengine.showFinalConfigOnOpen`）激活后按默认视图在后台自动打开；定位不到 defaults 时自动路径静默跳过、手动命令明示报错
+  - 可视化面板工具栏有「文本视图」按钮，可直接打开合成文档
+
+### `kbengine.config.showFinalText`
+
+- 标题：`Show Final Server Config (Text)`
+- 作用：恒开文本合成视图（不随 `kbengine.finalConfigView`）——按引擎装载规则合成：先载引擎默认 `kbengine_defaults.xml`（经 `kbengine.binPath` 推导），再以元件 `kbengine.xml`（`kbengine.assetsRoot` 下优先，其次约定路径 `kbengine.xml`/`res/server/kbengine.xml`/`assets/res/server/kbengine.xml`）同键覆盖（子键按名对齐）
 - 行为：
   - 合成文件不落盘，虚拟文档 `kbengine-final.xml`，字段可悬浮看作用说明
   - 文档头注标明 defaults 与元件配置的来源路径
-  - 定位不到 defaults 时明示报错；默认（`kbengine.showFinalConfigOnOpen`，可用 `kbengine.autoRefreshFinalConfig` 关联动）激活后自动在后台打开
+  - 定位不到 defaults 时明示报错
   - telnet 端口/密码等服务参数与该合成口径同源读取
 
 ### `kbengine.config.visualize`
@@ -468,7 +478,7 @@
 - 入口：命令面板 `Copy System debugpy into Assets`
 - 行为：
   - 按序探测取包解释器：所选解释器（`kbengine.python.interpreterPath` → PATH 链，与调试预检同一条链）→ `python3` → `python`，以 `-c "import debugpy"` 定位；未安装/目录不可读时如实报告，零复制
-  - 版本闸：引擎内嵌 Python 为 3.12.13，debugpy 自 1.8.0 起支持 3.12——更老的系统版本说明原因后拒绝（`pip install -U debugpy`），绝不盲复制
+  - 当前实现限制：同步闸硬编码 Python 3.12.13/debugpy ≥1.8.0，不代表所有引擎版本；它会错误拒绝 Python 3.7.3 所需的 1.7.0。目标版本感知校验实现前，使用上方固定版本手工流程
   - 只动自己键：非本扩展写入的目标目录（workspaceState 无记账）不论什么版本一律视为用户手放、绝不动；同版本在位零写入跳过；自己的旧版本升级
   - 永不抛——结果（已复制/跳过/已升级/失败及原因）作为命令结果消息如实播报
 - 边界：本命令只放包；起监听是 `kbengine.debug.autoDebugpy` 启动联动的事，附加调试是生成的 launch.json 条目的事

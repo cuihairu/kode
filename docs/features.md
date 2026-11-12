@@ -443,7 +443,8 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.binPath` | `"${workspaceFolder}/kbe/bin/server"` | KBEngine server binaries path; supports ${workspaceFolder} and ${env:VAR}. Unset (CFG-01): the default takes effect when on disk, otherwise the auto-discovery scan runs, and only a full miss warns via the launch check chain |
 | `kbengine.assetsRoot` | `""` | KBEngine assets root (res/server/kbengine.xml + scripts/ underneath); empty = convention-path and deep-scan auto-discovery |
 | `kbengine.jumpLog` | `false` | Navigation decision-path logging to the KBEngine Navigation output channel (off = zero cost) |
-| `kbengine.showFinalConfigOnOpen` | `true` | Auto-open the synthesized read-only final-config view on activation when the engine default config is locatable |
+| `kbengine.showFinalConfigOnOpen` | `true` | Auto-open the final config on activation when the engine default config is locatable; which view opens follows `kbengine.finalConfigView` |
+| `kbengine.finalConfigView` | `"gui"` | Default view for the final config: `gui` = the config visualization panel (default), `text` = the synthesized read-only `kbengine-final.xml` text view; Show Final Config follows this, and `kbengine.config.showFinalText` always opens the text view |
 | `kbengine.autoRefreshFinalConfig` | `true` | Recompute the open final-config view when engine/component kbengine.xml files change |
 | `kbengine.finalConfigComments` | `true` | Put a sourced purpose comment inside every element of the final-config view and order elements by functional sub-category; custom keys fall into "Custom (unrecognized)". Comments follow the VS Code display language |
 | `kbengine.debug.remoteTargets` | `[]` | Remote debug target list offered by Attach to Remote Component (debugpy connect; an entry with both `localRoot`/`remoteRoot` gets those pathMappings, partial or absent stays omitted) |

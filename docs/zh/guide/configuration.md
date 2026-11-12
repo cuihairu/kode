@@ -216,7 +216,8 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `kbengine.showFinalConfigOnOpen` | boolean | `true` | 扩展激活且能定位 defaults 时,自动在后台打开 `kbengine-final.xml`(preview 标签,不抢焦点);定位失败静默跳过,不弹错。关闭后仍可用命令或侧栏 Config 视图的「最终配置」节点手动打开 |
+| `kbengine.showFinalConfigOnOpen` | boolean | `true` | 扩展激活且能定位 defaults 时,自动在后台打开最终配置(不抢焦点);定位失败静默跳过,不弹错。关闭后仍可用命令或侧栏 Config 视图的「最终配置」节点手动打开 |
+| `kbengine.finalConfigView` | string enum | `gui` | 最终配置打开哪个面:`gui`=配置合并可视化面板(默认,2026-11-12 用户令),`text`=只读合成文档 `kbengine-final.xml`。作用于 `kbengine.config.showFinal`、侧栏 Config 视图「最终配置」节点与激活自动打开;`kbengine.config.showFinalText` 恒开文本面,面板工具栏「文本视图」按钮恒开图形面的文本对照 |
 | `kbengine.autoRefreshFinalConfig` | boolean | `true` | defaults 或元件 `kbengine.xml` 保存、新增、删除后,自动重算已打开的合成文档。关闭后需重开文档或重跑命令 |
 | `kbengine.finalConfigComments` | boolean | `true` | 合成的最终配置视图里为每个配置元素在元素内部加作用注释并按段内功能子分类排序(查不到含义的自定义项归入「自定义配置」标「未识别」);注释逐条取证自引擎默认配置与源码,语言跟随 VS Code 显示语言。关闭则按原顺序、无注释展示 |
 

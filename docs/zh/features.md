@@ -405,7 +405,8 @@
 | `kbengine.binPath` | `"${workspaceFolder}/kbe/bin/server"` | KBEngine 服务端二进制路径；支持 ${workspaceFolder} 与 ${env:VAR}。未显式配置时（CFG-01）默认值在盘即生效，不在盘回落自动发现扫描，扫描也落空才由启动检查链报警 |
 | `kbengine.assetsRoot` | `""` | KBEngine 资产根（其下应有 res/server/kbengine.xml 与 scripts/）；留空走约定路径与深扫描自动发现 |
 | `kbengine.jumpLog` | `false` | 跳转决策路径日志打到 KBEngine Navigation 输出通道（关 = 零开销） |
-| `kbengine.showFinalConfigOnOpen` | `true` | 激活期能定位引擎默认配置时自动打开合成的只读最终配置视图 |
+| `kbengine.showFinalConfigOnOpen` | `true` | 激活期能定位引擎默认配置时自动打开最终配置;打开哪种视图跟随 `kbengine.finalConfigView` |
+| `kbengine.finalConfigView` | `"gui"` | 最终配置默认视图:`gui`=配置合并可视化面板(默认),`text`=合成只读 `kbengine-final.xml` 文本视图;「查看最终服务器配置」跟随此项,`kbengine.config.showFinalText` 恒开文本视图 |
 | `kbengine.autoRefreshFinalConfig` | `true` | 引擎/元件 kbengine.xml 变更后自动重算并刷新已打开的最终配置视图 |
 | `kbengine.finalConfigComments` | `true` | 最终配置视图里每个元素内部带取证注释并按功能子分类排序;自定义项归入「自定义配置·未识别」,注释语言跟随 VS Code 显示语言 |
 | `kbengine.debug.remoteTargets` | `[]` | 「Attach to Remote Component」的远程调试目标列表（debugpy connect；条目带成对 `localRoot`/`remoteRoot` 时写入该 pathMappings，半配或未配保持省略） |

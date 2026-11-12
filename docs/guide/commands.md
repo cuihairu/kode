@@ -292,6 +292,8 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 
 ## Debugging
 
+> **Python 3.7.3 compatibility:** pin engine `debugpy==1.7.0` and VS Code `ms-python.debugpy@2024.0.0`; the project reproduction baseline for `ms-python.python` is `2024.0.1`. The existing automatic installer/synchronizer still assumes newer Python and must not be used for this target. Follow the [version-pinned installation guide](python-debugger-compatibility.md).
+
 ### `kbengine.debug.updateLaunchJson`
 
 - Title: `Update launch.json`
@@ -417,11 +419,19 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 ### `kbengine.config.showFinal`
 
 - Title: `Show Final Server Config`
-- Purpose: open the read-only "final effective config" view — composed per the engine's loading rules: engine defaults `kbengine_defaults.xml` first (located via `kbengine.binPath`), then same-key overrides from the component `kbengine.xml` (under `kbengine.assetsRoot` first, then the conventional paths `kbengine.xml`/`res/server/kbengine.xml`/`assets/res/server/kbengine.xml`; sub-keys aligned by name)
+- Purpose: open the final effective config in the default view — `kbengine.finalConfigView` picks the face: `gui` (default) opens the config merge visualization panel; `text` opens the read-only composed document below (the GUI is the default per the 2026-11-12 user call; the two faces share one resolve source, no second parser)
+- Behavior:
+  - By default (`kbengine.showFinalConfigOnOpen`) the config auto-opens in the background after activation, in the default view; when defaults cannot be located the auto path stays silent and the manual command errors plainly
+  - The panel toolbar carries a `Text view` button that opens the composed document directly
+
+### `kbengine.config.showFinalText`
+
+- Title: `Show Final Server Config (Text)`
+- Purpose: always open the text composed view regardless of `kbengine.finalConfigView` — composed per the engine's loading rules: engine defaults `kbengine_defaults.xml` first (located via `kbengine.binPath`), then same-key overrides from the component `kbengine.xml` (under `kbengine.assetsRoot` first, then the conventional paths `kbengine.xml`/`res/server/kbengine.xml`/`assets/res/server/kbengine.xml`; sub-keys aligned by name)
 - Behavior:
   - The composed file is never written to disk; it is the virtual document `kbengine-final.xml`, with hoverable field explanations
   - The document header notes the source paths of defaults and component config
-  - When defaults cannot be located it errors plainly; by default (`kbengine.showFinalConfigOnOpen`, with refresh linked to `kbengine.autoRefreshFinalConfig`) it auto-opens in the background after activation
+  - When defaults cannot be located it errors plainly
   - Service parameters such as telnet port/password are read from the same composed source
 
 ### `kbengine.config.visualize`
@@ -481,7 +491,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Entries: command palette `Copy System debugpy into Assets`
 - Behavior:
   - Locates the source debugpy by probing interpreters in order: the selected interpreter (the `kbengine.python.interpreterPath` → PATH chain, same as the debug preflight), then `python3`, then `python` (`-c "import debugpy"`); a missing package or unreadable install directory is reported honestly, nothing is copied
-  - Version gate: the embedded engine Python is 3.12.13 and debugpy supports 3.12 from 1.8.0 on — older system versions are rejected with the reason (`pip install -U debugpy`), never copied blind
+  - Current implementation limitation: the sync gate hardcodes Python 3.12.13/debugpy >=1.8.0. That is not a universal engine version; it incorrectly rejects 1.7.0 for Python 3.7.3. Use the pinned manual procedure above until target-aware compatibility checks are implemented
   - Own-key discipline: a target directory kode did not write (no workspaceState ledger entry) is treated as user-placed and never touched, whatever its version; the same version already in place is a zero-write skip; kode's own older copy is upgraded
   - Never throws — the outcome (synced / skipped / upgraded / error, with the reason) is surfaced as the command result message
 - Boundary: this command only places the package; starting the listener is the job of the `kbengine.debug.autoDebugpy` start-time injection, and attaching is the job of the generated launch.json entries
