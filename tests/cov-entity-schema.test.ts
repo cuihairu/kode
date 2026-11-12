@@ -262,7 +262,10 @@ describe('entityTypeStubs 守卫分支', () => {
       mkdir: dir => { made.push(dir); }
     }, { listMappings: () => [stubMapping], pyright: { candidates: [] } });
     expect(written).toEqual(['estub']);
-    expect(made).toHaveLength(1);
+    // 进程隔离布局(5200bfc0):base/cell/bots/client 四个进程根各落一份
+    // 实体桩(role 档保留实体壳,属性按 domains 过滤),readFile 抛错按陈旧
+    // → 四份全部照常重写,mkdir 4 次
+    expect(made).toHaveLength(4);
     expect([...writes.keys()].some(file => file.endsWith('entity_types.pyi'))).toBe(true);
   });
 

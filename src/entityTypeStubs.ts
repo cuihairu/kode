@@ -171,8 +171,18 @@ export async function exportEntityTypeStubs(
         { includeMethods, workspaceRoot: folder.uri.fsPath, role: output.role });
       if (!plan.content) { continue; }
       const target = `${output.dir}/${ENTITY_TYPE_STUB_FILE_NAME}`;
+      // 陈旧探测单独成段:读现有存根抛错(权限/IO)= 按陈旧处理,捕获后照常
+      // 重写(契约钉在 cov-entity-schema「读现有存根抛错按陈旧处理」);写盘
+      // 失败才是「导出失败」警告面。两段不可合并——合并后读失败会连写盘
+      // 一起跳过(5200bfc0 回归,2026-11-12 修复)。
+      let unchanged = false;
       try {
-        if (deps.exists(target) && deps.readFile(target) === plan.content) { continue; }
+        unchanged = deps.exists(target) && deps.readFile(target) === plan.content;
+      } catch {
+        unchanged = false;
+      }
+      if (unchanged) { continue; }
+      try {
         deps.mkdir(output.dir);
         deps.writeFile(target, plan.content);
         if (!written.includes(folder.name)) { written.push(folder.name); }
