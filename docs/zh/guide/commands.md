@@ -943,6 +943,17 @@ callgraph 模式面板支持：
   - 把闸本会话见过的每个 def 文件按当前盘上内容重定基线，在热更日志 + 信息提示报告确认文件数
   - 被拦批次（结构变更 / 无基线 / 不可读）永不前进基线——无重启确认时同一被拦内容的第二次保存仍被拦，不会借滚动基线静默放行
   - 不可读文件跳过（不伪造）；报告数就是实际重定基线的文件数
+  - 同时清掉全部已知 `(rootId, targetId)` 键上的 `RESTART_REQUIRED` 标记并刷呈现面（角标 + 文件顶部状态点）——重启本身就是解除「需重启」拦下的确认，紫色 `R` 不应在重启后仍挂着（2026-11-12 用户报障：本命令原先只重建基线、从不清标记）。`.py` 的 DIRTY/SENT/FAILED 是投递事实、不是重启事实，本命令不动——那些要靠窗口重载清掉（热更状态全在内存，不落地）
+
+### `kbengine.hotReload.materializeGlobs`
+
+- 标题：`Hot Reload: Generate Watch Glob Default (Write into Settings)`
+- 作用：把原本靠派生得出的监视范围写进 `kbengine.hotReload.globs`，给用户一个可见可改的值，不必先去配 `kbengine.assetsRoot` 再靠插件默默派生（2026-11-12 用户令）
+- 行为：
+  - 写入 `<assetsRoot>/**/*.py` 一条——**绝对路径形态**，绝不写派生口径的 `${workspaceFolder}/...` 形态。显式 globs 是原样交给文件监视器注册口的，而该注册口不展开 `${workspaceFolder}`（派生口径靠 `RelativePattern` 才落地）；把变量形态写回=按字面匹配绝对路径，监视范围静默落空
+  - globs 已显式写过就原样不动——含显式空数组（那是另一态「不监视任何模式」）——不覆盖用户意图，如实提示已可改
+  - 解不到 `assetsRoot` 就如实跳过并报缺根，绝不写全扫形态
+  - 写值触发配置变更事件，watcher 按既有签名判据重建，无需额外接线
 
 ### `kbengine.core.showShadowDiffLog`
 

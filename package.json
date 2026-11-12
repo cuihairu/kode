@@ -961,6 +961,10 @@
         "title": "%kbengine.command.hotReload.confirmDefBaseline.title%"
       },
       {
+        "command": "kbengine.hotReload.materializeGlobs",
+        "title": "%kbengine.command.hotReload.materializeGlobs.title%"
+      },
+      {
         "command": "kbengine.debug.focusTarget",
         "title": "%kbengine.command.debug.focusTarget.title%"
       },

@@ -38,6 +38,8 @@ import { HotReloadTargetStateStore } from '../backend/hotReloadTargetState';
 import { HotReloadFileStateMachine } from '../backend/hotReloadFileState';
 import { HotReloadFileDecorationProvider } from '../hotReloadFileDecorations';
 import { HotReloadFileStateCodeLensProvider } from '../hotReloadFileStateLens';
+import { materializeHotReloadGlobs, HOT_RELOAD_MATERIALIZE_GLOBS_COMMAND } from '../backend/hotReloadGlobsMaterialize';
+import { resolveAssetsRootForWorkspace } from '../scanRoots';
 import { runHotReloadFileStateFilterCommand, runShowHotReloadFileStateCommand } from '../backend/hotReloadFileStateFilter';
 import { readTempEditReloadSettings, runTempEditReload, tempEditSectionReader } from '../backend/hotReloadTempEdit';
 import type { FileChangeMetaResolver } from '../backend/fileChangeMeta';
@@ -273,6 +275,66 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
           `def 结构基线已对齐当前内容(${confirmed} 个文件);${cleared} 个文件的「需重启」标记已清除`
         )
       ).catch(() => undefined);
+    })
+  );
+  // 用户令 2026-11-12:把派生口径下实际生效的监视范围**写进配置**
+  // (kbengine.hotReload.globs),给用户一个可见可改的靶子——不必先配
+  // assetsRoot 再靠插件默默派生。未写才生成,已写(含显式空数组)不动;
+  // 生成给绝对路径形态(见模块注释:显式 globs 走 createFileSystemWatcher,
+  // 不展开 ${workspaceFolder},变量形态写回即静默失效)。写回后配置变更事件
+  // 驱动 watcher 按签名重建,无需额外接线。
+  context.subscriptions.push(
+    vscode.commands.registerCommand(HOT_RELOAD_MATERIALIZE_GLOBS_COMMAND, async () => {
+      let glob = '';
+      try {
+        const result = await materializeHotReloadGlobs({
+          config: {
+            // 读路径与生产同口径(hotReloadSectionReader:先取 hotReload 段再取
+            // globs)。不能读点串键——「已显式写过」判据要与监视器实际读到的
+            // 值一致,否则判空即把用户已配范围当未写覆盖掉。
+            readRaw: () =>
+              vscode.workspace
+                .getConfiguration('kbengine')
+                .get<Record<string, unknown> | undefined>('hotReload', undefined)?.globs,
+            update: patterns =>
+              vscode.workspace
+                .getConfiguration('kbengine')
+                .update(
+                  // 写用点串键:真实 VS Code 按点串拆层级写嵌套设置(单键更新,
+                  // 不覆盖同段的 enabled/actionName/tempEdit 等兄弟键)。
+                  'hotReload.globs',
+                  patterns,
+                  (vscode.workspace.workspaceFolders ?? []).length > 0
+                    ? vscode.ConfigurationTarget.Workspace
+                    : vscode.ConfigurationTarget.Global
+                )
+          },
+          resolveAssetsRoot: () => {
+            try {
+              return resolveAssetsRootForWorkspace(
+                vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath ?? ''
+              );
+            } catch {
+              return ''; // 解析异常按缺根处理:显式报错,不写空值
+            }
+          }
+        });
+        glob = result.written ?? '';
+        const note = result.skipped;
+        const message = glob
+          ? `已生成热更监视默认值: ${glob}(已写入 kbengine.hotReload.globs,可直接改)`
+          : note === 'explicit'
+            ? 'kbengine.hotReload.globs 已有显式配置,未改动(要换默认值请先清空该项)'
+            : '未配 kbengine.assetsRoot,无法生成监视默认值;补救:配置 kbengine.assetsRoot,或把工作区设为资产根目录的父目录';
+        hotReloadStatus.log(glob ? `globs 默认值生成: ${glob}` : `globs 默认值生成跳过: ${note}`);
+        void Promise.resolve(
+          vscode.window.showInformationMessage(message)
+        ).catch(() => undefined);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        hotReloadStatus.log(`globs 默认值生成失败: ${detail}`);
+        void Promise.resolve(vscode.window.showErrorMessage(`热更监视默认值生成失败: ${detail}`)).catch(() => undefined);
+      }
     })
   );
   // IDE-HOT-102:部署通道发送口(fire 路径与失败目标重试共用同一解出口)。

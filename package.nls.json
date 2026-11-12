@@ -135,6 +135,7 @@
   "kbengine.command.hotReload.configureChannel.title": "Hot Reload: Configure Deployment Channel",
   "kbengine.command.hotReload.switchChannel.title": "Hot Reload: Switch Channel (Status Bar Quick Switch)",
   "kbengine.command.hotReload.confirmDefBaseline.title": "Hot Reload: Confirm Restart (Rebuild def Structure Baselines)",
+  "kbengine.command.hotReload.materializeGlobs.title": "Hot Reload: Generate Watch Glob Default (Write into Settings)",
   "kbengine.command.debug.focusTarget.title": "debugpy: Focus Debug Target",
   "kbengine.command.build.previewTask.title": "Build: Preview Task Description",
   "kbengine.command.tests.list.title": "Tests: List Project Python Tests",

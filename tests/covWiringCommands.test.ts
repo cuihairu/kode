@@ -280,6 +280,29 @@ describe('激活链低覆盖命令面(wiring 补测)', () => {
   });
 });
 
+  it('hotReload.materializeGlobs:未写 globs → 生成绝对路径形态写入配置(2026-11-12 用户令「生成默认值到配置中」)', async () => {
+    fs.mkdirSync(path.join(root, 'assets'), { recursive: true });
+    configurationOverrides.set('kbengine', { assetsRoot: path.join(root, 'assets') });
+    await commands.executeCommand('kbengine.hotReload.materializeGlobs');
+    // 形态红线:生成给绝对路径,不得是 ${workspaceFolder} 变量形态
+    // (嵌套段按 . 拆首段落表,故以对象形态取回)
+    const written = (configurationOverrides.get('kbengine') as { hotReload?: Record<string, unknown> })
+      ?.hotReload?.globs;
+    expect(written).toEqual([`${path.join(root, 'assets')}/**/*.py`]);
+    expect(lastInfo()).toContain('已生成热更监视默认值');
+    configurationOverrides.delete('kbengine');
+  });
+
+  it('hotReload.materializeGlobs:已显式写过 → 不动,不覆盖用户意图', async () => {
+    configurationOverrides.set('kbengine', { hotReload: { globs: ['/explicit/**/*.py'] } });
+    await commands.executeCommand('kbengine.hotReload.materializeGlobs');
+    const kept = (configurationOverrides.get('kbengine') as { hotReload?: Record<string, unknown> })
+      ?.hotReload?.globs;
+    expect(kept).toEqual(['/explicit/**/*.py']);
+    expect(lastInfo()).toContain('已有显式配置');
+    configurationOverrides.delete('kbengine');
+  });
+
 describe('配置联动与文档诊断面(覆盖补测)', () => {
   const settle = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
   const fire = (keys: string[]): void => {

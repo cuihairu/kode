@@ -974,6 +974,17 @@ The flow graph panel supports:
   - Re-baselines every def file the gate has seen this session to its current on-disk content and reports the confirmed file count in the hot-reload log + an info notice
   - Blocked batches (structural change / no baseline / unreadable) never advance baselines — without a restart confirmation the second save of the same blocked content stays blocked instead of silently passing on the rolled baseline
   - Unreadable files are skipped (not fabricated); the count reported is the number of files actually re-baselined
+  - Also clears the `RESTART_REQUIRED` markers across every known `(rootId, targetId)` key and refreshes the presentation face (badges + file-top state lens) — the restart is the confirmation that lifts the "needs restart" hold, so the purple `R` mark must not stay lit after it (2026-11-12 user report: the command rebuilt baselines but never cleared the marker). The `.py` DIRTY/SENT/FAILED states are delivery facts, not restart facts, so they are left alone — a window reload is what resets those (all hot-reload state is in-memory, nothing is persisted)
+
+### `kbengine.hotReload.materializeGlobs`
+
+- Title: `Hot Reload: Generate Watch Glob Default (Write into Settings)`
+- Purpose: write the watch scope that would otherwise be derived into `kbengine.hotReload.globs`, so the user has a visible, editable value instead of having to set `kbengine.assetsRoot` first and rely on silent derivation (2026-11-12 user request)
+- Behavior:
+  - Writes `<assetsRoot>/**/*.py` as the single entry — an **absolute path form**, never the derived `${workspaceFolder}/...` form. Explicit globs go verbatim to the file-watcher registration, which does not expand `${workspaceFolder}` (derivation only lands because it builds a `RelativePattern`); writing the variable form back would silently match nothing
+  - No-op when globs is already explicitly set — including an explicit empty array, which is the distinct "watch nothing" state — so it never overwrites user intent; it reports that the value is already editable
+  - No-op with an honest report when `assetsRoot` cannot be resolved; it never writes a whole-workspace sweep
+  - Writing the value raises the configuration-change event, which already rebuilds the watchers by signature — no extra wiring
 
 ### `kbengine.core.showShadowDiffLog`
 

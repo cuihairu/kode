@@ -135,6 +135,7 @@
   "kbengine.command.hotReload.configureChannel.title": "热更: 配置部署通道",
   "kbengine.command.hotReload.switchChannel.title": "热更: 切换通道(状态栏快速切换)",
   "kbengine.command.hotReload.confirmDefBaseline.title": "热更: 确认重启(重建 def 结构基线)",
+  "kbengine.command.hotReload.materializeGlobs.title": "热更: 生成监视默认值(写入设置)",
   "kbengine.command.debug.focusTarget.title": "debugpy: 聚焦调试目标",
   "kbengine.command.build.previewTask.title": "构建: 预览任务描述",
   "kbengine.command.tests.list.title": "测试: 列出项目 Python 测试",
