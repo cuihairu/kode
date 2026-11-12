@@ -22,6 +22,9 @@ const WILL = 251;
 const SB = 250;
 const SE = 240;
 
+/** 半包保留上限:恶意/故障服务端持续不产完整帧时强制作帧,内存有界 */
+export const TELNET_PENDING_CAP = 64 * 1024;
+
 /** 剥离 telnet 控制序列(IAC 协商/子协商),IAC IAC 转义为字面 IAC 字节 */
 export function stripTelnetControl(buf: Buffer): Buffer {
   const out: number[] = [];
@@ -53,6 +56,94 @@ export function stripTelnetControl(buf: Buffer): Buffer {
     }
   }
   return Buffer.from(out);
+}
+
+/**
+ * 把到达字节切成「完整帧 + 保留半包」:
+ * - tail 若落在 IAC 序列中间(IAC 后缺命令/参数、IAC SB 未到 IAC SE) →
+ *   该序列起点起保留,正文先出;
+ * - 帧尾若截断多字节 UTF-8 字符 → 该字符起点起保留(下一块拼齐再解码),
+ *   避免逐块 toString 产生 U+FFFD 替换字符。
+ * 返回 frame=可立即解码的完整前缀,rest=待与下一块拼装的半包。
+ */
+export function consumeTelnetFrame(buf: Buffer): { frame: Buffer; rest: Buffer } {
+  let cut = buf.length;
+  for (let i = 0; i < buf.length; i += 1) {
+    if (buf[i] !== IAC) {
+      continue;
+    }
+    const next = buf[i + 1];
+    if (next === undefined) {
+      cut = i;
+      break;
+    }
+    if (next === IAC) {
+      i += 1;
+      continue;
+    }
+    if (next === DO || next === DONT || next === WILL || next === WONT) {
+      if (buf[i + 2] === undefined) {
+        cut = i;
+        break;
+      }
+      i += 2;
+      continue;
+    }
+    if (next === SB) {
+      let j = i + 2;
+      let complete = false;
+      while (j < buf.length) {
+        if (buf[j] === IAC) {
+          if (buf[j + 1] === SE) {
+            complete = true;
+            break;
+          }
+          if (buf[j + 1] === IAC) {
+            j += 2;
+            continue;
+          }
+        }
+        j += 1;
+      }
+      if (!complete) {
+        cut = i;
+        break;
+      }
+      i = j + 1;
+      continue;
+    }
+    i += 1; // 其他两字节命令:命令字节在位,整体吞掉
+  }
+  const frameEnd = utf8CompletePrefixLen(buf, cut);
+  return { frame: buf.subarray(0, frameEnd), rest: buf.subarray(frameEnd) };
+}
+
+/** [0, limit) 内最后一个完整 UTF-8 字符边界(截断尾部字符回退到其起点)。 */
+function utf8CompletePrefixLen(buf: Buffer, limit: number): number {
+  if (limit <= 0) {
+    return 0;
+  }
+  let i = limit - 1;
+  while (i >= 0 && (buf[i] & 0xc0) === 0x80) {
+    i -= 1;
+  }
+  if (i < 0) {
+    return limit;
+  }
+  const b = buf[i];
+  let len: number;
+  if ((b & 0x80) === 0x00) {
+    len = 1;
+  } else if ((b & 0xe0) === 0xc0) {
+    len = 2;
+  } else if ((b & 0xf0) === 0xe0) {
+    len = 3;
+  } else if ((b & 0xf8) === 0xf0) {
+    len = 4;
+  } else {
+    return limit; // 孤立续字节/非法头:原样,不猜测
+  }
+  return i + len <= limit ? limit : i;
 }
 
 /** 剥离 ANSI 转义序列(CSI 与单字符 ESC 序列);\x1b 就是本函数要剥的目标字节 */
@@ -238,17 +329,33 @@ export class KBEngineTelnetClient {
     // 服务端有字节回来即视为连接建立,解除 connect 超时(KR-AUD-51)
     this.clearConnectTimer();
     this.pending = Buffer.concat([this.pending, chunk]);
-    // 逐到达块清洗;引擎协商字节集中在前几字节,不做跨块 IAC 半包拼装。
-    // 引擎五条 IAC 协商命令的数组末尾各带字面 '\0' 终止字节
-    // (telnet_handler.cpp L884-900):不属于 IAC 序列、上面的剥离吃不掉,
-    // 会缀在提示符之后,把结尾检测搅死——再把 C0 控制字节(\r\n\t 除外)
-    // 一并剥掉,提示符检测才能看到干净结尾
-    const text = stripAnsiEscapes(stripTelnetControl(this.pending).toString('utf8')).replace(
+    if (this.pending.length > TELNET_PENDING_CAP) {
+      // 恶意/故障服务端持续不产完整帧:强制作一帧,内存有界不悬挂
+      const { frame } = consumeTelnetFrame(this.pending);
+      this.pending = Buffer.alloc(0);
+      this.emitTelnetFrame(frame);
+      return;
+    }
+    const { frame, rest } = consumeTelnetFrame(this.pending);
+    this.pending = rest;
+    if (frame.length === 0) {
+      // 全为半包(IAC 序列起点 / UTF-8 字符尾部):等下一块拼齐
+      return;
+    }
+    this.emitTelnetFrame(frame);
+  }
+
+  private emitTelnetFrame(frame: Buffer): void {
+    // 引擎协商字节集中在前几字节;跨块 IAC 序列与多字节 UTF-8 由
+    // consumeTelnetFrame 半包拼装,此处每帧必为完整序列。引擎五条 IAC 协商
+    // 命令的数组末尾各带字面 '\0' 终止字节(telnet_handler.cpp L884-900):
+    // 不属于 IAC 序列、上面的剥离吃不掉,会缀在提示符之后,把结尾检测搅死
+    // ——再把 C0 控制字节(\r\n\t 除外)一并剥掉,提示符检测才能看到干净结尾
+    const text = stripAnsiEscapes(stripTelnetControl(frame).toString('utf8')).replace(
       // eslint-disable-next-line no-control-regex
       /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g,
       ''
     );
-    this.pending = Buffer.alloc(0);
     if (text.length === 0) {
       return;
     }

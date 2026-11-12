@@ -3,12 +3,14 @@ import { EventEmitter } from 'events';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   BUILTIN_QUICK_COMMANDS,
+  consumeTelnetFrame,
   isCommandAllowed,
   KBEngineTelnetClient,
   looksLikePrompt,
   parseBanner,
   stripAnsiEscapes,
   stripTelnetControl,
+  TELNET_PENDING_CAP,
   TelnetClientState
 } from '../src/backend/telnetClient';
 
@@ -62,6 +64,118 @@ const makeClient = (port: number, password?: string): KBEngineTelnetClient =>
     password,
     events: {}
   });
+
+/** 记录型假 socket:仿真服务端分块吐字节(write/end/destroy 记面)。 */
+class FakeTelnetSocket extends EventEmitter {
+  written: Buffer[] = [];
+  ended = 0;
+  destroyed = 0;
+  write(data: Buffer | string): boolean {
+    this.written.push(Buffer.isBuffer(data) ? data : Buffer.from(data));
+    return true;
+  }
+  end(): void {
+    this.ended += 1;
+  }
+  destroy(): void {
+    this.destroyed += 1;
+  }
+  unref(): void {}
+}
+
+describe('consumeTelnetFrame(跨块半包拼装)', () => {
+  it('尾部落 IAC 半包保留,下一块拼齐成完整帧,剥控后正文出', () => {
+    const r1 = consumeTelnetFrame(Buffer.from([65, 66, 255]));
+    expect([...r1.frame]).toEqual([65, 66]);
+    expect([...r1.rest]).toEqual([255]);
+    // 分帧只切半包;完整序列仍在 frame,剥控在 stripTelnetControl 面
+    const r2 = consumeTelnetFrame(Buffer.concat([r1.rest, Buffer.from([253, 1, 67])]));
+    expect([...r2.frame]).toEqual([255, 253, 1, 67]);
+    expect(r2.rest.length).toBe(0);
+    // 帧只含第二块字节;剥控后余尾段 67
+    expect([...stripTelnetControl(r2.frame)]).toEqual([67]);
+  });
+
+  it('IAC DO 缺参数半包保留,参数到位后整段成帧', () => {
+    const r1 = consumeTelnetFrame(Buffer.from([255, 253]));
+    expect(r1.frame.length).toBe(0);
+    expect([...r1.rest]).toEqual([255, 253]);
+    const r2 = consumeTelnetFrame(Buffer.concat([r1.rest, Buffer.from([1])]));
+    expect([...r2.frame]).toEqual([255, 253, 1]);
+    expect(r2.rest.length).toBe(0);
+    expect([...stripTelnetControl(r2.frame)]).toEqual([]);
+  });
+
+  it('IAC SB 未到 SE 整段保留,SE 后正文成帧', () => {
+    const r1 = consumeTelnetFrame(Buffer.from([255, 250, 31, 7]));
+    expect(r1.frame.length).toBe(0);
+    expect([...r1.rest]).toEqual([255, 250, 31, 7]);
+    const r2 = consumeTelnetFrame(Buffer.concat([r1.rest, Buffer.from([255, 240, 65])]));
+    expect([...r2.frame]).toEqual([255, 250, 31, 7, 255, 240, 65]);
+    expect(r2.rest.length).toBe(0);
+    expect([...stripTelnetControl(r2.frame)]).toEqual([65]);
+  });
+
+  it('完整块原样出;IAC IAC 跨块拼为字面 IAC', () => {
+    const whole = consumeTelnetFrame(Buffer.from('hello'));
+    expect(whole.frame.toString()).toBe('hello');
+    expect(whole.rest.length).toBe(0);
+    const r1 = consumeTelnetFrame(Buffer.from([65, 255]));
+    expect([...r1.frame]).toEqual([65]);
+    expect([...r1.rest]).toEqual([255]);
+    const r2 = consumeTelnetFrame(Buffer.concat([r1.rest, Buffer.from([255, 66])]));
+    expect([...r2.frame]).toEqual([255, 255, 66]);
+    expect(r2.rest.length).toBe(0);
+    // 帧只含第二块字节;IAC IAC → 字面 IAC,余 255,66
+    expect([...stripTelnetControl(r2.frame)]).toEqual([255, 66]);
+  });
+
+  it('跨块多字节 UTF-8:半包拼齐再解码,无替换字符', () => {
+    const bytes = Buffer.from('你好', 'utf8');
+    const r1 = consumeTelnetFrame(bytes.subarray(0, 2));
+    expect(r1.frame.length).toBe(0);
+    expect(r1.rest.length).toBeGreaterThan(0);
+    const r2 = consumeTelnetFrame(Buffer.concat([r1.rest, bytes.subarray(2)]));
+    expect(r2.frame.toString('utf8')).toBe('你好');
+    expect(r2.rest.length).toBe(0);
+  });
+});
+
+describe('KBEngineTelnetClient 跨块帧(客户端接线)', () => {
+  const fakeClient = (): { socket: FakeTelnetSocket; client: KBEngineTelnetClient; texts: string[] } => {
+    const socket = new FakeTelnetSocket();
+    const texts: string[] = [];
+    const client = new KBEngineTelnetClient({
+      host: '127.0.0.1',
+      port: 1,
+      events: { onData: t => texts.push(t) },
+      socketFactory: () => socket as unknown as net.Socket
+    });
+    return { socket, client, texts };
+  };
+
+  it('跨块 IAC 协商:半包拼装后剥净,控制字节不漏进正文', async () => {
+    const { socket, client, texts } = fakeClient();
+    client.connect();
+    // 第一块:IAC 半包;第二块:DO ECHO 参数 + 正文
+    socket.emit('data', Buffer.from([255]));
+    socket.emit('data', Buffer.concat([Buffer.from([253, 1]), Buffer.from('hello')]));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(texts.join('')).toBe('hello');
+    expect(texts.join('')).not.toContain('ý'); // 无漏出控制字节
+    client.disconnect();
+  });
+
+  it('半包超上限:强制成帧,不无限缓冲(内存有界)', async () => {
+    const { socket, client, texts } = fakeClient();
+    client.connect();
+    socket.emit('data', Buffer.concat([Buffer.from([255, 250]), Buffer.alloc(TELNET_PENDING_CAP + 1, 7)]));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(texts.join('')).toBe(''); // 全部为控制半包,强制成帧后剥净
+    expect((client as unknown as { pending: Buffer }).pending.length).toBe(0);
+    client.disconnect();
+  });
+});
 
 describe('telnet 文本清洗纯函数', () => {
   it('stripTelnetControl:协商两字节/子协商整段吞掉,IAC IAC 转义为字面 IAC', () => {
