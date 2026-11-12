@@ -6,7 +6,10 @@ import {
   buildPythonTypeStubContent,
   buildPythonTypeStubPlan,
   exportPythonTypeStubs,
+  groupCustomTypesByModule,
   kbeTypeStubFilePath,
+  resolveAnnotationTypeWithReason,
+  resolveAnnotationTypeWithRegistry,
   resolveCustomTypePropertyAnnotation,
   resolveFixedDictMember,
   setupTypeStubRegeneration,
@@ -1263,5 +1266,101 @@ describe('resolveFixedDictMember(FIXED_DICT 子成员推断)', () => {
     expect(resolveCustomTypePropertyAnnotation(prop, types)).toBe('int');
     const arrayProp = { name: 'slots', typeName: 'ARRAY', line: 1 };
     expect(resolveCustomTypePropertyAnnotation(arrayProp, types)).toBe('FixedArray[Any]');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// KSEM-STRUCT-08:对齐类型桩与编辑器结果——同一语义快照下,存根发射
+// (buildPythonTypeStubPlan)与交互解析链(resolveAnnotationTypeWithRegistry/
+// WithReason/resolveCustomTypePropertyAnnotation)对同名两源/循环别名/未知
+// 类型给出一致结果。同名去重统一口径=引擎 datatypes.cpp addDataType 拒重复
+// 注册:types.xml 先注册、alias.xml 后到,先见保留(与注册表提取
+// getCustomTypeInfos 三方共用 dedupeCustomTypesByName)。
+// ---------------------------------------------------------------------------
+
+describe('KSEM-STRUCT-08 存根与交互解析同源一致', () => {
+  const DUP_LIST = [
+    makeType({ name: 'DUP', aliasType: 'STRING', rawValue: 'STRING' }),
+    makeType({ name: 'DUP', aliasType: 'UINT8', rawValue: 'UINT8', filePath: '/ws/scripts/entity_defs/alias.xml' })
+  ];
+
+  it('同名两源:交互链先见保留(types.xml 胜出),与存根 plan 同一条', () => {
+    const plan = buildPythonTypeStubPlan(DUP_LIST);
+    const stubEntry = plan.entries.find(entry => entry.name === 'DUP');
+    expect(stubEntry?.kind === 'alias' && stubEntry.annotation).toBe('str');
+    expect(plan.content).toContain('DUP = str');
+    expect(plan.content).not.toContain('DUP = int');
+
+    // 旧口径 buildResolutionContext 按名序 Map 后见覆盖会取 alias.xml 的 int,
+    // 与桩相反——统一后交互面同取 types.xml 先见条
+    expect(resolveAnnotationTypeWithRegistry('DUP', DUP_LIST)).toBe('str');
+    const withReason = resolveAnnotationTypeWithReason('DUP', DUP_LIST);
+    expect(withReason.annotation).toBe('str');
+    expect(withReason.reason).toBeNull();
+  });
+
+  it('属性面同名两源同口径(FD 字段引用先见条)', () => {
+    const container = makeType({
+      name: 'HOLDER',
+      aliasType: 'FIXED_DICT',
+      rawValue: 'FIXED_DICT',
+      properties: [{ name: 'payload', typeName: 'DUP' }]
+    });
+    const prop = resolveCustomTypePropertyAnnotation(
+      { name: 'payload', typeName: 'DUP', line: 1 },
+      [...DUP_LIST, container]
+    );
+    expect(prop).toBe('str');
+  });
+
+  it('循环别名两向一致:桩整链跳过(原因写明环),交互 Any+环原因', () => {
+    const cyc = [
+      makeType({ name: 'CY_A', aliasType: 'CY_B', rawValue: 'CY_B' }),
+      makeType({ name: 'CY_B', aliasType: 'CY_A', rawValue: 'CY_A' })
+    ];
+    const plan = buildPythonTypeStubPlan(cyc);
+    expect(plan.entries.filter(entry => entry.name === 'CY_A' || entry.name === 'CY_B')).toHaveLength(0);
+    expect(plan.skipped.find(item => item.name === 'CY_A')?.reason).toContain('环');
+
+    const withReason = resolveAnnotationTypeWithReason('CY_A', cyc);
+    expect(withReason.annotation).toBe(PYTHON_TYPE_STUB_FALLBACK);
+    expect(withReason.reason).toContain('环');
+  });
+
+  it('未知类型两向一致:桩发射 Any,交互 Any+未解析原因', () => {
+    const ghost = makeType({ name: 'GHOST_REF', aliasType: 'GHOST', rawValue: 'GHOST' });
+    const plan = buildPythonTypeStubPlan([ghost]);
+    const stubEntry = plan.entries.find(entry => entry.name === 'GHOST_REF');
+    expect(stubEntry?.kind === 'alias' && stubEntry.annotation).toBe(PYTHON_TYPE_STUB_FALLBACK);
+
+    const withReason = resolveAnnotationTypeWithReason('GHOST', []);
+    expect(withReason.annotation).toBe(PYTHON_TYPE_STUB_FALLBACK);
+    expect(withReason.reason).toContain('GHOST');
+    expect(withReason.reason).toContain('未在 types.xml/alias.xml 解析到');
+  });
+
+  it('不同镜像目录同名类型:分件各自发射互不吞噬(跨模块引用面)', () => {
+    const cellSide = makeType({
+      name: 'SHARED',
+      aliasType: 'STRING',
+      rawValue: 'STRING',
+      filePath: '/ws/scripts/cellapp/entity_defs/types.xml'
+    });
+    const baseSide = makeType({
+      name: 'SHARED',
+      aliasType: 'UINT8',
+      rawValue: 'UINT8',
+      filePath: '/ws/scripts/base/entity_defs/types.xml'
+    });
+    const groups = groupCustomTypesByModule([cellSide, baseSide], '/ws');
+    expect(groups.size).toBe(2);
+    for (const group of groups.values()) {
+      const plan = buildPythonTypeStubPlan(group);
+      const entry = plan.entries.find(candidate => candidate.name === 'SHARED');
+      expect(entry).toBeDefined();
+      expect(plan.skipped.filter(item => item.name === 'SHARED')).toHaveLength(0);
+    }
+    // 目录内同名仍按先见保留(cellapp 文档序第一)
+    expect(buildPythonTypeStubPlan([cellSide, { ...cellSide, aliasType: 'UINT8', rawValue: 'UINT8' }]).content).toContain('SHARED = str');
   });
 });

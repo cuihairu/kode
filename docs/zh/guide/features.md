@@ -22,6 +22,7 @@
 - def 属性标量赋值校验（KSEM-STRUCT-05）：整行字面量赋给可解析为引擎标量的目标（`self.<属性> = <字面量>` 根形态含别名链、`self.<属性>["<键>"]… = <字面量>` FD 字段形态、`self.<属性>[<整数>] = <字面量>` 数组元素形态）按 CELL-08 同一引擎标量真源裁结构错配（字符串/bytes/向量/None）与整数越界（BigInt 精确边界）,报 `kbengine.scalarAssign` Warning 并附声明来源;引擎标量名注册表层裁定（不凭 Python 类型名）,`bool` 按 `int` 放行,dict 字面量归构造面;名字/调用 RHS、目标不可解析、FD 容器、数组 FD 元素与混合链一律诚实落空
 - implementedBy 绑定解析（KSEM-STRUCT-06）：types.xml 自定义类型悬停把 `implementedBy` 解析到真实 Python 绑定——引擎真形 `loadImplModule`（恰两段,class/def/赋值皆合法）,真实导入解析包 `__init__.py` 胜同名 `.py`（CPython 包优先,本地实测）,符号形态分类为类/函数/对象（别名一跳到本文件 class/def 单处定义以对象绑定）;重名（同文件多定义/跨根同模块）、动态赋值 RHS 与模块/符号缺失一律保留未知并在悬停给出随引擎依据的原因
 - 对象表示与传输表示区分（KSEM-STRUCT-07）：`implementedBy` 重定义 FIXED_DICT 内存形式（访问面由实现类定义——官方示例是 list 子类）,FIXED_DICT `Properties` 键位只描述引擎在 `getDictFromObj` 边界还原的传输/存储形式——字典键位面（下标补全/悬停/跳转、标量赋值链、构造点校验）不再穿过 implementedBy 容器,implementedBy 接收者的字符串下标悬停给机制说明,自定义类型悬停把 Properties 标题框为「传输/存储形式」（普通类型不变）;非 FD 自定义类型本就在 aliasType 门之外——既有口径钉住
+- 类型桩与编辑器结果对齐（KSEM-STRUCT-08）：自定义类型注册表在提取层单点去重,口径=引擎 `datatypes.cpp addDataType` 拒重复注册——types.xml 先注册、alias.xml 后到、先见保留；这一份去重同时喂 pyi 存根发射 plan、交互注解解析链、实体桩注解表,同名并存（或单文件重复声明）时生成的桩与补全/悬停/跳转解析到同一条；循环/未知类型/跨镜像目录同名保持既有一致行为（共享解析器/两向 Any/独立 kbe_types 分件）——钉住
 - def 属性只读视图内联提示（C-22）：Python 文件里含锚 `# kode:props-from-def` 的整行注释,在该行尾内联显示所属实体 .def 声明的根级属性总览（逐段 `名称: 类型`,每个锚一条;逐段悬停给 def 声明行/可见域/持久化;类型解析不出只显名——如实不伪造）。纯渲染不写代码:属性唯一事实源仍是 `.def`,属性 F12 照旧直达声明行;FIXED_DICT 子键与组件槽成员不进总览（各有访问点既有提示）;无所属实体或无属性零渲染;受 `kbengine.inlayHints.defProps` 控制（下一次渲染生效）
 - `.def` 属性/方法 F2 重命名（同文件声明 + 后代 def 复述，见语言能力页边界说明）
 

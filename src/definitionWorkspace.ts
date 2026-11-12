@@ -438,6 +438,40 @@ export function getRegisteredEntities(workspaceRoot: string): RegisteredEntityIn
   return entities;
 }
 
+/**
+ * KSEM-STRUCT-08:同名类型去重统一口径(引擎 datatypes.cpp addDataType 对重复
+ * 名报错并拒注册):types.xml 先注册、alias.xml 后到,同名后到整条作废;同类
+ * 之内文档序先见优先。注册表提取(getCustomTypeInfos)、存根发射
+ * (buildPythonTypeStubPlan)与交互解析链(buildResolutionContext)三方共用,
+ * 保证同一语义快照下桩与编辑器结果一致——同名两源时不再各取一条。
+ */
+export interface CustomTypesDedupeResult {
+  /** 保留条目(canonical 序:alias.xml 靠后,名字序) */
+  kept: CustomTypeInfo[];
+  /** 被作废的同名后到条目(encounter 序;胜者在 kept 内同名回查) */
+  duplicates: CustomTypeInfo[];
+}
+
+export function dedupeCustomTypesByName(
+  customTypes: readonly CustomTypeInfo[]
+): CustomTypesDedupeResult {
+  const ordered = [...customTypes].sort((left, right) => {
+    const leftAlias = left.filePath.endsWith('alias.xml') ? 1 : 0;
+    const rightAlias = right.filePath.endsWith('alias.xml') ? 1 : 0;
+    return leftAlias - rightAlias || left.name.localeCompare(right.name);
+  });
+  const keptByName = new Map<string, CustomTypeInfo>();
+  const duplicates: CustomTypeInfo[] = [];
+  for (const info of ordered) {
+    if (keptByName.has(info.name)) {
+      duplicates.push(info);
+      continue;
+    }
+    keptByName.set(info.name, info);
+  }
+  return { kept: ordered.filter(info => keptByName.get(info.name) === info), duplicates };
+}
+
 export function getCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {
   const types = [...getTypesXmlCustomTypeInfos(workspaceRoot)];
   // alias.xml 类型发现独立开关(用户令 2026-10-21):kbengine.types.aliasDiscovery
@@ -446,7 +480,9 @@ export function getCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {
     .getConfiguration('kbengine')
     .get<boolean>('types.aliasDiscovery', ALIAS_DISCOVERY_ENABLED_DEFAULT);
   const aliases = aliasDiscoveryEnabled ? getAliasXmlCustomTypeInfos(workspaceRoot) : [];
-  return [...types, ...aliases].sort((left, right) => left.name.localeCompare(right.name));
+  // KSEM-STRUCT-08:提取层单点去重(addDataType 先见保留口径)——交互快照/
+  // 存根发射/契约扫描同源一致;kept 已是名字序。
+  return dedupeCustomTypesByName([...types, ...aliases]).kept;
 }
 
 /**

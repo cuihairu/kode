@@ -24,6 +24,7 @@
 
 import * as vscode from 'vscode';
 import {
+  dedupeCustomTypesByName,
   getCustomTypeInfos,
   type CustomTypeInfo,
   type CustomTypePropertyInfo,
@@ -439,11 +440,12 @@ export function resolveAnnotationTypeWithReason(
   return { annotation, reason: `类型 ${trimmed} 未在 types.xml/alias.xml 解析到,回退 Any` };
 }
 
-/** 注册表解析上下文(名字序建表,确定性;poisoned/external 面随次解析独立) */
+/** 注册表解析上下文(KSEM-STRUCT-08:同名去重与存根发射同源——addDataType
+ * 先见保留,types.xml 先注册 alias.xml 后到;旧口径按名序 Map 后见覆盖,同名
+ * 两源时与存根 plan 各取一条,桩与编辑器不一致;poisoned/external 随次解析独立) */
 function buildResolutionContext(customTypes: readonly CustomTypeInfo[]): ResolutionContext {
-  const sorted = [...customTypes].sort((left, right) => left.name.localeCompare(right.name));
   return {
-    byName: new Map(sorted.map(info => [info.name, info])),
+    byName: new Map(dedupeCustomTypesByName(customTypes).kept.map(info => [info.name, info])),
     resolving: new Set(),
     poisoned: new Map(),
     referencedExternals: new Map()
@@ -537,28 +539,19 @@ export function buildPythonTypeStubPlan(
   customTypes: readonly CustomTypeInfo[],
   options: PythonTypeStubPlanOptions = {}
 ): PythonTypeStubPlan {
-  // 同名去重(引擎口径,datatypes.cpp addDataType 对重复名报错并拒注册):
-  // types.xml 先注册、alias.xml 后到,同名后到整条作废;两类之内先见优先。
-  const ordered = [...customTypes].sort((left, right) => {
-    const leftAlias = left.filePath.endsWith('alias.xml') ? 1 : 0;
-    const rightAlias = right.filePath.endsWith('alias.xml') ? 1 : 0;
-    return leftAlias - rightAlias || left.name.localeCompare(right.name);
-  });
-  const kept = new Map<string, CustomTypeInfo>();
-  const duplicateSkipped: PythonTypeStubSkipped[] = [];
-  for (const info of ordered) {
-    const winner = kept.get(info.name);
-    if (winner === undefined) {
-      kept.set(info.name, info);
-      continue;
-    }
-    duplicateSkipped.push({
+  // 同名去重(KSEM-STRUCT-08 统一口径,引擎 datatypes.cpp addDataType 对重复
+  // 名报错并拒注册):types.xml 先注册、alias.xml 后到,同名后到整条作废;
+  // 两类之内先见优先。与注册表提取/交互解析链共用 dedupeCustomTypesByName。
+  const { kept: keptList, duplicates } = dedupeCustomTypesByName(customTypes);
+  const kept = new Map<string, CustomTypeInfo>(keptList.map(info => [info.name, info]));
+  const duplicateSkipped: PythonTypeStubSkipped[] = duplicates.map(info => {
+    const winner = kept.get(info.name) as CustomTypeInfo;
+    return {
       name: info.name,
       reason: `与 ${sourceLabelOf(winner.filePath)}:${winner.line} 同名,引擎 addDataType 拒绝重复注册,后到不发射`
-    });
-  }
-  const sorted = ordered.filter(info => kept.get(info.name) === info)
-    .sort((left, right) => left.name.localeCompare(right.name));
+    };
+  });
+  const sorted = keptList;
   const context: ResolutionContext = {
     byName: kept,
     resolving: new Set(),

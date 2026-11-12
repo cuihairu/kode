@@ -1,5 +1,6 @@
 import type { EntityMapping } from './entityMapping';
 import {
+  dedupeCustomTypesByName,
   getCustomTypeInfos,
   type CustomTypeInfo
 } from './definitionWorkspace';
@@ -326,7 +327,9 @@ export function buildEntityTypeStubPlan(
   options: { includeMethods?: boolean; workspaceRoot?: string; role?: 'base' | 'cell' | 'client' } = {}
 ): EntityTypeStubPlan {
   const context: EntityStubContext = {
-    customTypes: new Map(customTypes.map(info => [info.name, info])),
+    // KSEM-STRUCT-08:同名去重与 kbe_types 发射同源(addDataType 先见保留)——
+    // 实体桩注解不再 Map 后见覆盖(alias.xml 后到),同名两源时与类型桩一致
+    customTypes: new Map(dedupeCustomTypesByName(customTypes).kept.map(info => [info.name, info])),
     customTypeModules: collectCustomTypeModules(customTypes, options.workspaceRoot),
     customTypeList: customTypes
   };

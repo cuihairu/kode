@@ -166,3 +166,42 @@ describe('getCustomTypeInfos alias.xml compatibility', () => {
     }
   });
 });
+
+describe('getCustomTypeInfos 同名去重(KSEM-STRUCT-08)', () => {
+  it('types.xml 与 alias.xml 同名并存:先见保留(types.xml 胜出),后到作废', () => {
+    const dupRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-defws-dedup-'));
+    try {
+      write(dupRoot, 'scripts/entity_defs/types.xml', [
+        '<root>',
+        '  <FOO> STRING </FOO>',
+        '  <ONLY_TYPES> UINT8 </ONLY_TYPES>',
+        '</root>'
+      ].join('\n'));
+      write(dupRoot, 'scripts/entity_defs/alias.xml', [
+        '<root>',
+        '  <FOO><Type>UINT8</Type></FOO>',
+        '  <ONLY_ALIAS><Type>UINT8</Type></ONLY_ALIAS>',
+        '</root>'
+      ].join('\n'));
+
+      const infos = getCustomTypeInfos(dupRoot);
+      // canonical 序:types.xml 条目在 alias.xml 之前(去重口径 alias 靠后 + 名字序)
+      expect(infos.map(info => info.name)).toEqual(['FOO', 'ONLY_TYPES', 'ONLY_ALIAS']);
+      // types.xml 先见条胜出(引擎 addDataType 拒重复注册口径),alias.xml 后到作废
+      expect(infos.find(info => info.name === 'FOO')?.aliasType).toBe('STRING');
+      expect(infos.find(info => info.name === 'FOO')?.filePath).toContain('types.xml');
+      // types.xml 内部同名:文档序先见优先
+      write(dupRoot, 'scripts/entity_defs/types.xml', [
+        '<root>',
+        '  <TWICE> STRING </TWICE>',
+        '  <TWICE> UINT8 </TWICE>',
+        '</root>'
+      ].join('\n'));
+      const twice = getCustomTypeInfos(dupRoot).filter(info => info.name === 'TWICE');
+      expect(twice).toHaveLength(1);
+      expect(twice[0]?.aliasType).toBe('STRING');
+    } finally {
+      fs.rmSync(dupRoot, { recursive: true, force: true });
+    }
+  });
+});
