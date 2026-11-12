@@ -33,6 +33,8 @@ import {
   type CellDataKeyEntry
 } from './backend/cellDataCompletion';
 import {
+  cellDataAliasNames,
+  cellDataAliasState,
   cellDataHintPosition,
   cellDataKeyProvablyPresent,
   resolveCellDataReadType,
@@ -319,12 +321,15 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
   }
 
   /**
-   * KSEM-CELL-06 cellData 读取类型提示:下标读取/get 的字段类型推导并
+   * KSEM-CELL-06/07 cellData 读取类型提示:下标读取/get 的字段类型推导并
    * 传给局部变量(纯赋值 RHS)与表达式(其余位置),get 按可证明存在性
-   * 与 default 算可空/联合,del 后不再沿用必有键。开关复用
-   * kbengine.inlayHints.typeData(顶部已拦)。能推才显:键宇宙无此键/
-   * 字段类型解析落 Any/get default 类型未知 → 不出。键宇宙按文档版本
-   * 键缓存(同版本多次渲染零重复 RPC,有界防膨胀)。
+   * 与 default 算可空/联合,del 后不再沿用必有键。CELL-07 别名传播:
+   * `data = self.cellData` 后透过别名的同形访问按同一键宇宙推导,可确定
+   * 常量键(`k = "hp"`);重绑定后不再关联;别名逃逸(传参/return/属性存/
+   * 非 get 方法调用)后存在性不再可证(get 降级可空,下标类型不变)。
+   * 开关复用 kbengine.inlayHints.typeData(顶部已拦)。能推才显:键宇宙无
+   * 此键/字段类型解析落 Any/get default 类型未知 → 不出。键宇宙按文档
+   * 版本键缓存(同版本多次渲染零重复 RPC,有界防膨胀)。
    */
   private async collectCellDataReadHints(
     document: vscode.TextDocument,
@@ -364,7 +369,9 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
     for (const entry of keys) {
       keyByLiteral.set(entry.key, entry);
     }
-    const ops = scanCellDataKeyOperations(document.getText());
+    const text = document.getText();
+    const receiverNames = ['self.cellData', ...cellDataAliasNames(text)];
+    const ops = scanCellDataKeyOperations(text, receiverNames);
     const annotationCache = new Map<string, string | null>();
     const resolveLabel = (label: string): string | null => {
       const cached = annotationCache.get(label);
@@ -386,6 +393,18 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
       if (op.line < range.start.line || op.line > range.end.line) {
         continue;
       }
+      // 别名接收者:核定有效(最近赋值仍是 = self.cellData)才关联;逃逸
+      // 后存在性降级(get 可空)
+      let escape: { line: number } | null = null;
+      if (op.receiver !== 'self.cellData') {
+        const alias = cellDataAliasState(text, op.receiver, op.line);
+        if (!alias.valid) {
+          continue;
+        }
+        if (alias.escaped && alias.escapedLine !== null) {
+          escape = { line: alias.escapedLine };
+        }
+      }
       const entry = keyByLiteral.get(op.key);
       if (!entry || !entry.typeLabel) {
         continue; // 未知键/无类型:不出(能推才显)
@@ -394,8 +413,8 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
       if (fieldAnnotation === null) {
         continue;
       }
-      // 键在宇宙 → 初始必有;写/删流定当前状态
-      const provablyPresent = cellDataKeyProvablyPresent(ops, op, documentLines, true);
+      // 键在宇宙 → 初始必有;写/删流(含透过有效别名)与逃逸定当前状态
+      const provablyPresent = cellDataKeyProvablyPresent(ops, op, text, true, escape);
       const hasDefault = op.defaultExpr !== null;
       const defaultAnnotation = hasDefault ? inferDataDictValueType(op.defaultExpr) : null;
       const annotation = resolveCellDataReadType({

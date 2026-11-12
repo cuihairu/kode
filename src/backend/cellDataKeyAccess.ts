@@ -4,8 +4,10 @@
  *
  * 与 cellDataCompletion 分工:补全只关心开引号+片段(键入中),本模块只认
  * 完整闭合的字符串字面量键(落点在键上才跳转/引用)。诚实边界:
- * - 只收字符串字面量键;动态键(`self.cellData[var]`)/f-string/拼接 → 不
- *   扫描不探测(不可静态关联,不硬猜);
+ * - CELL-05 面(跳转/引用)只收字符串字面量键;动态键(`self.cellData[var]`)/
+ *   f-string/拼接 → 不跳转不引用(不可静态关联,不硬猜);
+ * - CELL-06/07 面(读类型/别名)经 parseCellDataKeyAccess 拿到 `rawKey`
+ *   (key=null + keyLiteral=false)自行做常数解析,本模块不越界;
  * - 词法掩码剔除注释/字符串里的伪访问(跨行三引号/docstring 同口径);
  * - 键字面量解引支持转义(\\ \' \" \n \t 等单字符 + 八进制/十六进制/Unicode,
  *   非法转义 → 该键跳过,不改写键值)。
@@ -27,7 +29,12 @@ export interface CellDataKeyAccessSite {
 }
 
 export interface ParsedKeyAccess {
-  key: string;
+  /** 解引后的键(字符串字面量);非常量(变量/数字/拼接)→ null(调用方决定常数解析)。 */
+  key: string | null;
+  /** 键原始文本(引号内/括号内,去首尾空白);如 `hp`、`k`、`0`。 */
+  rawKey: string;
+  /** 键是否为字符串字面量(解引成功)。 */
+  keyLiteral: boolean;
   keyStart: number;
   keyEnd: number;
   /** 整个访问表达式尾后一列(扫描前进位)。 */
@@ -131,9 +138,9 @@ function decodeEscape(text: string, index: number): { value: string; next: numbe
 
 /**
  * 字符串字面量(整体为 `'...'`/`"..."`)→ 按 Python 值解引内容;非字面量/
- * 含未转义同引号/含非法转义 → null。
+ * 含未转义同引号/含非法转义 → null。CELL-07 常数键解析复用(`k = "hp"`)。
  */
-function decodeStringLiteral(raw: string): string | null {
+export function decodeStringLiteral(raw: string): string | null {
   const trimmed = raw.trim();
   if (trimmed.length < 2) {
     return null;
@@ -214,9 +221,11 @@ function matchCloseParen(lineText: string, openParen: number): number {
 }
 
 /**
- * 在 `self.cellData` 之后的 `[..]` / `.get(..)` 里解析字符串字面量键。
- * 键非字面量(动态/拼接/f-string)→ null(不静态关联)。返回访问面(键区间
- * + 访问尾位);`[`/`(` 未闭合(跨行)或键解析失败 → null。
+ * 在 `self.cellData`(或别名,CELL-07)之后的 `[..]` / `.get(..)` 里解析键
+ * 访问。字符串字面量键 → `key` 解引值 + `keyLiteral: true`;非常量键(变量/
+ * 数字/拼接/f-string)→ `key: null` + `rawKey`(调用方决定常数解析,CELL-07),
+ * CELL-05 面(跳转/引用)只认 `keyLiteral`。`[`/`(` 未闭合(跨行)或键段
+ * 为空 → null(不是一次可关联的键访问)。
  */
 export function parseCellDataKeyAccess(lineText: string, from: number): ParsedKeyAccess | null {
   const after = skipWhitespace(lineText, from);
@@ -263,10 +272,16 @@ export function parseCellDataKeyAccess(lineText: string, from: number): ParsedKe
       return null;
     }
     const key = decodeStringLiteral(span.raw);
-    if (key === null) {
-      return null;
-    }
-    return { key, keyStart: span.lo + 1, keyEnd: span.hi - 1, accessEnd: close + 1, kind: 'subscript', defaultExpr: null };
+    return {
+      key,
+      rawKey: span.raw,
+      keyLiteral: key !== null,
+      keyStart: span.lo + 1,
+      keyEnd: span.hi - 1,
+      accessEnd: close + 1,
+      kind: 'subscript',
+      defaultExpr: null
+    };
   }
   if (ch === '.') {
     const head = /^\.get[ \t]*\(/.exec(lineText.slice(after));
@@ -316,16 +331,22 @@ export function parseCellDataKeyAccess(lineText: string, from: number): ParsedKe
       return null;
     }
     const key = decodeStringLiteral(span.raw);
-    if (key === null) {
-      return null;
-    }
     // 第二个实参(default):首个顶层逗号之后到闭括号的文本;无逗号/空 → null
     let defaultExpr: string | null = null;
     if (firstEnd < close) {
       const defaultRaw = lineText.slice(firstEnd + 1, close).trim();
       defaultExpr = defaultRaw.length > 0 ? defaultRaw : null;
     }
-    return { key, keyStart: span.lo + 1, keyEnd: span.hi - 1, accessEnd: close + 1, kind: 'get', defaultExpr };
+    return {
+      key,
+      rawKey: span.raw,
+      keyLiteral: key !== null,
+      keyStart: span.lo + 1,
+      keyEnd: span.hi - 1,
+      accessEnd: close + 1,
+      kind: 'get',
+      defaultExpr
+    };
   }
   return null;
 }
@@ -349,8 +370,9 @@ export function cellDataKeyAccessAtPosition(
     const receiverEnd = receiverStart + match[0].length;
     const parsed = parseCellDataKeyAccess(lineText, receiverEnd);
     // 键内容区间 [keyStart, keyEnd)(keyEnd 为尾后一列=闭引号列):闭引号/
-    // 闭括号上的落点不是键内容,不命中。
-    if (parsed && character >= parsed.keyStart && character < parsed.keyEnd) {
+    // 闭括号上的落点不是键内容,不命中。非常量键(keyLiteral=false)不静态
+    // 关联,CELL-05 跳转面只认字面量键。
+    if (parsed && parsed.key !== null && character >= parsed.keyStart && character < parsed.keyEnd) {
       return { key: parsed.key, keyStart: parsed.keyStart, keyEnd: parsed.keyEnd, kind: parsed.kind };
     }
     search = parsed ? Math.max(parsed.accessEnd, receiverEnd) : receiverEnd;
@@ -384,12 +406,13 @@ export function scanCellDataKeyAccesses(text: string): CellDataKeyAccessSite[] {
         continue;
       }
       const parsed = parseCellDataKeyAccess(raw, receiverEnd);
-      if (parsed) {
+      // key !== null 才收索引;keyLiteral 是布尔别名,不足以收窄 key 的可空性
+      if (parsed && parsed.key !== null && parsed.keyLiteral) {
         sites.push({ key: parsed.key, keyStart: parsed.keyStart, keyEnd: parsed.keyEnd, line, kind: parsed.kind });
         search = parsed.accessEnd;
         continue;
       }
-      search = receiverEnd;
+      search = parsed ? parsed.accessEnd : receiverEnd;
     }
   }
   return sites;
