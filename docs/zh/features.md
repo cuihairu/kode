@@ -366,6 +366,7 @@
 | `kbengine.roleMisuseDiagnostics` | `true` | 角色错用诊断：实体脚本里 `self.<内建属性>` 属于其他角色面（baseapp/cellapp/client）而当前面未注册时报 `kbengine.roleMisuse` Warning（默认启用）；角色不明与普通 Python 类不猜，属性面表与内建属性 hover 元数据同源 |
 | `kbengine.postDestroyDiagnostics` | `true` | 销毁后访问诊断：同一函数内可确定的同块 `self.destroy()` 之后直接访问 `self.<成员>`（id/isDestroyed/className/destroy 除外）且两者间无同层无条件早退，报 `kbengine.postDestroy` Warning（默认启用）；条件销毁/跨块/跨回调/异常/def 声明 destroy（动态分派）一律不猜 |
 | `kbengine.cellDataWriteDiagnostics` | `true` | cellData 已知字段写入诊断：对已知 `self.cellData["<键>"]` 字段的整行字面量赋值按声明类型校验引擎标量结构与取值范围，结构/范围不符报 `kbengine.cellDataWriteType` Warning 并附实际/期望类型及声明来源（默认启用）；未知键、非标量类型（PYTHON 族/ARRAY/FIXED_DICT/自定义别名）、右侧非字面量或跨行、bool 入整数、int 入 FLOAT 一律不报；别名接收者按最近赋值规则核定，重绑定后不查 |
+| `kbengine.cellDataWrongKeyDiagnostics` | `true` | cellData 错键提示:未知键的裸下标读已证缺失且文档内无追踪不到的增键面(动态键写/`update`/`setdefault`)时报 `kbengine.cellDataWrongKey` Warning 并给最接近的声明键候选与声明来源(默认启用);世界开放或 `.get` 形态只给低置信建议(`.get` 永不报必然 KeyError);声明键/内建键、写点(写即引入键)、已证存在的未知键一律不报;距离超上限或平局不给候选 |
 | `kbengine.fixedDictMutationDiagnostics` | `true` | FIXED_DICT 子键赋值诊断：子键赋值（点号/下标，含增强）不触发属性同步事件，报 `kbengine.fixedDictNestedMutation` Warning +「整体重赋」quick fix |
 | `kbengine.destroyedEntityReferenceDiagnostics` | `true` | 已销毁实体引用滞留诊断：`self` 存入模块级容器报 `kbengine.destroyedEntityReference` Warning（3600 s 后 garbages 泄漏告警；onDestroy 里解除引用） |
 | `kbengine.timerCleanupDiagnostics` | `true` | 定时器注销提示：`onDestroy` 内 `self.delTimer(...)` 报 `kbengine.timerCleanupOnDestroy` Information——引擎 destroy() 已取消全部定时器 |

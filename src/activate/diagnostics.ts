@@ -44,6 +44,16 @@ import { POST_DESTROY_DIAGNOSTICS_ENABLED_DEFAULT, postDestroyDiagnosticItemsAsy
 import { buildPostDestroyItemsWithRust } from '../backend/postDestroyRust';
 import { CELL_DATA_WRITE_DIAGNOSTICS_ENABLED_DEFAULT, analyzeCellDataFieldWrites, cellDataWriteFindingToItem, type CellDataWriteDiagnosticItem } from '../backend/cellDataWriteCheck';
 import { cellScriptRoleAndEntity, collectCellDataDefUniverse, fetchCellDataKeys } from '../backend/cellDataCompletion';
+import {
+  cellDataKeyWorldOpen,
+  trackCellDataKeys
+} from '../backend/cellDataKeyTracking';
+import {
+  CELL_DATA_WRONG_KEY_DIAGNOSTICS_ENABLED_DEFAULT,
+  cellDataWrongKeyFindingToItem,
+  cellDataWrongKeyFindings,
+  type CellDataWrongKeyDiagnosticItem
+} from '../backend/cellDataWrongKey';
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import { EntityMappingManager } from '../entityMapping';
 import { PythonClassIndex } from '../backend/pythonClassIndex';
@@ -117,6 +127,9 @@ export interface DiagnosticsShared {
   postDestroyScheduler: DiagnosticScheduler;
   cellDataWriteDiagnostics: vscode.DiagnosticCollection;
   cellDataWriteScheduler: DiagnosticScheduler;
+  scheduleCellDataWrongKeyDiagnostics: ScheduleDiagnostics;
+  cellDataWrongKeyDiagnostics: vscode.DiagnosticCollection;
+  cellDataWrongKeyScheduler: DiagnosticScheduler;
   processTopologyDiagnostics: vscode.DiagnosticCollection;
   processTopologyScheduler: DiagnosticScheduler;
 }
@@ -1073,6 +1086,81 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     }
   };
 
+  // KSEM-CELL-10:cellData 错键提示。键宇宙与 CELL-08 同源(Rust cellDataKeys),
+  // 判据用 CELL-09 的键跟踪事实:裸下标读已证 absent 且世界封闭 → 确定性缺失;
+  // 世界开放(动态键写/update/setdefault)或 .get 形态 → 只给低置信建议(get
+  // 从不报必然 KeyError);声明/内建键与写点一律不报。
+  const cellDataWrongKeyDiagnostics = vscode.languages.createDiagnosticCollection(
+    'kbengine-celldata-wrongkey'
+  );
+  context.subscriptions.push(cellDataWrongKeyDiagnostics);
+  const cellDataWrongKeyScheduler = new DiagnosticScheduler();
+  const scheduleCellDataWrongKeyDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    if (!isPythonDocument(document)) {
+      return;
+    }
+    const capturedVersion = document.version;
+    const options = {
+      layer: 'local' as const,
+      computeAsync: async (): Promise<readonly CellDataWrongKeyDiagnosticItem[] | null> => {
+        if (document.version !== capturedVersion) {
+          return [];
+        }
+        const enabled = vscode.workspace.getConfiguration('kbengine')
+          .get<boolean>('cellDataWrongKeyDiagnostics', CELL_DATA_WRONG_KEY_DIAGNOSTICS_ENABLED_DEFAULT);
+        if (!enabled) {
+          return [];
+        }
+        const role = cellScriptRoleAndEntity(document.fileName);
+        if (!role) {
+          return []; // client/bots/其他角色:cellData 面不可达
+        }
+        const defs = collectCellDataDefUniverse(role.entity, (name, category) => {
+          const filePath = findDefinitionFileByCategory(name, category, document);
+          if (!filePath) {
+            return null;
+          }
+          try {
+            return fs.readFileSync(filePath, 'utf8');
+          } catch {
+            return null; // 读失败 = 缺席贡献,不猜
+          }
+        });
+        const entries = await fetchCellDataKeys(role.entity, defs);
+        if (!entries || entries.length === 0) {
+          return []; // Rust 不可用/畸形/实体缺:不造键,不出诊断
+        }
+        const text = document.getText();
+        const worldOpen = cellDataKeyWorldOpen(text);
+        return cellDataWrongKeyFindings(trackCellDataKeys(text, entries), entries, worldOpen)
+          .map(cellDataWrongKeyFindingToItem);
+      },
+      publish: (items: readonly CellDataWrongKeyDiagnosticItem[]) => {
+        cellDataWrongKeyDiagnostics.set(document.uri, items.map(item => {
+          const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(
+              item.range.start.line, item.range.start.character,
+              item.range.end.line, item.range.end.character
+            ),
+            item.message,
+            vscode.DiagnosticSeverity.Warning
+          );
+          diagnostic.source = item.source;
+          diagnostic.code = item.code;
+          return diagnostic;
+        }));
+      }
+    };
+    if (channel === 'queued') {
+      cellDataWrongKeyScheduler.requestQueued(document, options);
+    } else {
+      cellDataWrongKeyScheduler.request(document, options);
+    }
+  };
+
   // C-17:进程拓扑定义期错配预警(清单 process_topology.xml + defs → Rust 校验)。
   // 独立诊断集合 + 独立调度器(共享调度器每 URI 单排队槽,会顶掉 def 结构
   // 诊断任务,必独立,同 C-19 范式)。缺清单=静默零发现(零误报)。
@@ -1282,6 +1370,9 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     postDestroyScheduler,
     cellDataWriteDiagnostics,
     cellDataWriteScheduler,
+    scheduleCellDataWrongKeyDiagnostics,
+    cellDataWrongKeyDiagnostics,
+    cellDataWrongKeyScheduler,
     processTopologyDiagnostics,
     processTopologyScheduler
   };

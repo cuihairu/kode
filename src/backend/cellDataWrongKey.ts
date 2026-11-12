@@ -235,3 +235,34 @@ function makeFinding(
     message: `${head}${candidatePart}${sourcePart}${defaultPart}`
   };
 }
+/** 诊断项(纯数据;extension 侧转 vscode.Diagnostic,测试免 vscode 依赖)。
+ * 与 CELL-08 的 item 形状同形,便于共用装配面。 */
+export interface CellDataWrongKeyDiagnosticItem {
+  range: {
+    start: { line: number; character: number };
+    end: { line: number; character: number };
+  };
+  message: string;
+  severity: 'Warning';
+  source: 'kbengine';
+  code: string;
+}
+
+/** 错键提示 → 诊断项(区间 = 键字面量本体,不含引号)。 */
+export function cellDataWrongKeyFindingToItem(
+  finding: CellDataWrongKeyFinding
+): CellDataWrongKeyDiagnosticItem {
+  return {
+    range: {
+      start: { line: finding.line, character: finding.character },
+      end: { line: finding.line, character: finding.character + finding.length }
+    },
+    message: finding.message,
+    severity: 'Warning',
+    source: 'kbengine',
+    code: CELL_DATA_WRONG_KEY_CODE
+  };
+}
+
+/** 开关默认值(与 CELL-08 同口径:默认开)。 */
+export const CELL_DATA_WRONG_KEY_DIAGNOSTICS_ENABLED_DEFAULT = true;

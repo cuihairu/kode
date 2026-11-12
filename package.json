@@ -1395,6 +1395,11 @@
           "default": true,
           "markdownDescription": "%kbengine.config.cellDataWriteDiagnostics.description%"
         },
+        "kbengine.cellDataWrongKeyDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.cellDataWrongKeyDiagnostics.description%"
+        },
         "kbengine.fixedDictMutationDiagnostics": {
           "type": "boolean",
           "default": true,

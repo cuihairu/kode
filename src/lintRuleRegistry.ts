@@ -323,6 +323,14 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     quickFix: false, status: 'implemented',
     source: 'src/backend/cellDataWriteCheck.ts'
   },
+  {
+    id: 'KBE-PY-019', code: 'kbengine.cellDataWrongKey',
+    title: 'cellData 错键提示(未知键缺失/拼写候选,按世界开放度分级)',
+    severity: 'Warning', roles: 'cell',
+    toggles: ['kbengine.cellDataWrongKeyDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/backend/cellDataWrongKey.ts'
+  },
   // ── KB-001 行为知识流水线(C-23,数据源=src/knowledge/trapsKnowledge.ts)
   {
     id: 'KBE-PY-015', code: 'kbengine.fixedDictNestedMutation',
