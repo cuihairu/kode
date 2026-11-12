@@ -32,9 +32,15 @@
 //!   按源码;类未知保持未知不猜;`bind_self_role` 逐面逐属性绑定
 //!   self.base/cell/client——cellapp 的 self.client=CLIENT_VIA_BASE 陷阱钉死,
 //!   转发链=绑定+面跳复合;`AliasTable` 别名传播——重绑定即遮蔽不回落旧引用、
-//!   合流异值成候选不任取、未知不按同名方法猜;方法/组件槽落点归 RPC-04)。
+//!   合流异值成候选不任取、未知不按同名方法猜)。
+//! - [`dispatch`] RPC-04 方法/组件槽落点(只查对应面 Methods 段——远程句柄
+//!   分面=调用类型目标面,本地引用=脚本面;组件槽远程路径查组件自身 def
+//!   模块对应面表,本地真身=plain Python 派发、def 同面声明缀附;
+//!   def + Python 实现双跳转,歧义多候选全列;类未知/面缺声明/槽缺失
+//!   一律 Unknown 带因不硬造)。
 
 pub mod cell;
+pub mod dispatch;
 pub mod refs;
 pub mod deps;
 pub mod expr;
