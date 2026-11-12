@@ -13,6 +13,7 @@ export interface ProcessApiSymbol {
 
 // require keeps author-time JSON outside tsc's src/rootDir while esbuild embeds
 // the exact same JSON used by Rust. No runtime filesystem lookup is performed.
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- embed-time JSON outside tsc rootDir; import would fail rootDir check
 const processApi = require('../../typings/process-api.json') as Record<PythonProcess, {
   component: string; symbols: ProcessApiSymbol[];
 }>;
