@@ -13,9 +13,9 @@ class EntityCall:
         ...
 
     @overload
-    def getComponent(self, componentName: str, all: Literal[False]=False, /) -> Union[EntityComponentCall, None]:
+    def getComponent(self, __componentName: str, __all: Literal[False]=False) -> Union[EntityComponentCall, None]:
         ...
 
     @overload
-    def getComponent(self, componentName: str, all: Literal[True], /) -> Tuple[EntityComponentCall, ...]:
+    def getComponent(self, __componentName: str, __all: Literal[True]) -> Tuple[EntityComponentCall, ...]:
         ...

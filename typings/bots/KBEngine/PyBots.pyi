@@ -9,28 +9,28 @@ EntityEventCallback = Callable[..., Any]
 
 class PyBots:
 
-    def has_key(self, clientID: int, /) -> bool:
+    def has_key(self, __clientID: int) -> bool:
         ...
 
-    def keys(self, /) -> List[int]:
+    def keys(self) -> List[int]:
         ...
 
-    def values(self, /) -> List[ClientObject]:
+    def values(self) -> List[ClientObject]:
         ...
 
-    def items(self, /) -> List[Tuple[int, ClientObject]]:
-        ...
-
-    @overload
-    def get(self, clientID: int, /) -> Union[ClientObject, None]:
+    def items(self) -> List[Tuple[int, ClientObject]]:
         ...
 
     @overload
-    def get(self, clientID: int, default: Any, /) -> Union[ClientObject, Any]:
+    def get(self, __clientID: int) -> Union[ClientObject, None]:
         ...
 
-    def __len__(self, /) -> int:
+    @overload
+    def get(self, __clientID: int, __default: Any) -> Union[ClientObject, Any]:
         ...
 
-    def __getitem__(self, key: int, /) -> ClientObject:
+    def __len__(self) -> int:
+        ...
+
+    def __getitem__(self, __key: int) -> ClientObject:
         ...

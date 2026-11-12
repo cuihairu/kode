@@ -19,7 +19,7 @@ LOG_TYPE_DBG: int
 LOG_TYPE_WAR: int
 component: Literal['client']
 
-def scriptLogType(logType: int, /) -> None:
+def scriptLogType(__logType: int) -> None:
     ...
 
 def genUUID64() -> int:
@@ -28,53 +28,53 @@ def genUUID64() -> int:
 def publish() -> int:
     ...
 
-def hasRes(res: str, /) -> bool:
+def hasRes(__res: str) -> bool:
     ...
 
-def open(res: str, mode: str='r', /) -> Union[IO[Any], TextIO, BinaryIO]:
+def open(__res: str, __mode: str='r') -> Union[IO[Any], TextIO, BinaryIO]:
     ...
 
-def listPathRes(path: str, extension: Union[str, Sequence[str]]='*', /) -> Tuple[str, ...]:
+def listPathRes(__path: str, __extension: Union[str, Sequence[str]]='*') -> Tuple[str, ...]:
     ...
 
-def matchPath(res: str, /) -> str:
+def matchPath(__res: str) -> str:
     ...
 
-def getWatcher(path: str, /) -> WatcherValue:
+def getWatcher(__path: str) -> WatcherValue:
     ...
 
-def getWatcherDir(path: str, /) -> Tuple[str, ...]:
-    ...
-
-@overload
-def urlopen(url: str, /) -> None:
+def getWatcherDir(__path: str) -> Tuple[str, ...]:
     ...
 
 @overload
-def urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], /) -> None:
+def urlopen(__url: str) -> None:
     ...
 
 @overload
-def urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], data: Union[bytes, Dict[str, str]], /) -> None:
+def urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any]) -> None:
     ...
 
 @overload
-def urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], postData: bytes, headers: Dict[str, str], /) -> None:
+def urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __data: Union[bytes, Dict[str, str]]) -> None:
     ...
 
-def getResFullPath(res: str, /) -> str:
+@overload
+def urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __postData: bytes, __headers: Dict[str, str]) -> None:
     ...
 
-def fireEvent(eventName: str, /, *args: Any) -> None:
+def getResFullPath(__res: str) -> str:
+    ...
+
+def fireEvent(__eventName: str, *args: Any) -> None:
     ...
 
 def player() -> Union[Entity, None]:
     ...
 
-def callback(initialOffset: float, callbackObj: Callable[[], Any], /) -> int:
+def callback(__initialOffset: float, __callbackObj: Callable[[], Any]) -> int:
     ...
 
-def cancelCallback(id: int, /) -> None:
+def cancelCallback(__id: int) -> None:
     ...
 
 def disconnect() -> None:
@@ -83,5 +83,5 @@ def disconnect() -> None:
 def kbassert() -> None:
     ...
 
-def getSpaceData(key: str, /) -> str:
+def getSpaceData(__key: str) -> str:
     ...

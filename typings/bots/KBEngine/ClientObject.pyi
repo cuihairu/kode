@@ -12,26 +12,26 @@ class ClientObject:
     id: int
     entities: Entities
 
-    def player(self, /) -> Union[Entity, None]:
+    def player(self) -> Union[Entity, None]:
         ...
 
-    def getSpaceData(self, key: str, /) -> str:
+    def getSpaceData(self, __key: str) -> str:
         ...
 
-    def callback(self, initialOffset: float, callbackObj: BotCallback, /) -> int:
+    def callback(self, __initialOffset: float, __callbackObj: BotCallback) -> int:
         ...
 
-    def cancelCallback(self, id: int, /) -> None:
+    def cancelCallback(self, __id: int) -> None:
         ...
 
-    def getWatcher(self, path: str, /) -> WatcherValue:
+    def getWatcher(self, __path: str) -> WatcherValue:
         ...
 
-    def getWatcherDir(self, path: str, /) -> Tuple[str, ...]:
+    def getWatcherDir(self, __path: str) -> Tuple[str, ...]:
         ...
 
-    def disconnect(self, lock_secs: int=0, /) -> None:
+    def disconnect(self, __lock_secs: int=0) -> None:
         ...
 
-    def kbassert(self, /) -> None:
+    def kbassert(self) -> None:
         ...

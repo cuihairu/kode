@@ -8,38 +8,38 @@ EntityEventCallback = Callable[..., Any]
 
 class GlobalDataClient:
 
-    def __len__(self, /) -> int:
+    def __len__(self) -> int:
         ...
 
-    def __iter__(self, /) -> Iterator[Any]:
+    def __iter__(self) -> Iterator[Any]:
         ...
 
-    def __contains__(self, key: object, /) -> bool:
+    def __contains__(self, __key: object) -> bool:
         ...
 
-    def __getitem__(self, key: Any, /) -> Any:
+    def __getitem__(self, __key: Any) -> Any:
         ...
 
-    def __setitem__(self, key: Any, value: Any, /) -> None:
+    def __setitem__(self, __key: Any, __value: Any) -> None:
         ...
 
-    def __delitem__(self, key: Any, /) -> None:
+    def __delitem__(self, __key: Any) -> None:
         ...
 
-    def has_key(self, key: Any, /) -> bool:
+    def has_key(self, __key: Any) -> bool:
         ...
 
-    def keys(self, /) -> List[Any]:
+    def keys(self) -> List[Any]:
         ...
 
-    def values(self, /) -> List[Any]:
+    def values(self) -> List[Any]:
         ...
 
-    def items(self, /) -> List[Tuple[Any, Any]]:
+    def items(self) -> List[Tuple[Any, Any]]:
         ...
 
-    def update(self, values: Dict[Any, Any], /) -> None:
+    def update(self, __values: Dict[Any, Any]) -> None:
         ...
 
-    def get(self, key: Any, default: Any=None, /) -> Any:
+    def get(self, __key: Any, __default: Any=None) -> Any:
         ...

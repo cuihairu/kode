@@ -9,35 +9,35 @@ EntityEventCallback = Callable[..., Any]
 
 class Entities:
 
-    def __len__(self, /) -> int:
+    def __len__(self) -> int:
         ...
 
-    def __contains__(self, key: object, /) -> bool:
+    def __contains__(self, __key: object) -> bool:
         ...
 
-    def __getitem__(self, key: int, /) -> Entity:
+    def __getitem__(self, __key: int) -> Entity:
         ...
 
-    def has_key(self, key: int, /) -> bool:
+    def has_key(self, __key: int) -> bool:
         ...
 
-    def keys(self, /) -> List[int]:
+    def keys(self) -> List[int]:
         ...
 
-    def values(self, /) -> List[Entity]:
+    def values(self) -> List[Entity]:
         ...
 
-    def items(self, /) -> List[Tuple[int, Entity]]:
-        ...
-
-    @overload
-    def get(self, key: int, /) -> Union[Entity, None]:
+    def items(self) -> List[Tuple[int, Entity]]:
         ...
 
     @overload
-    def get(self, key: int, default: _T, /) -> Union[Entity, _T]:
+    def get(self, __key: int) -> Union[Entity, None]:
+        ...
+
+    @overload
+    def get(self, __key: int, __default: _T) -> Union[Entity, _T]:
         ...
 
     @property
-    def garbages(self, /) -> Any:
+    def garbages(self) -> Any:
         ...

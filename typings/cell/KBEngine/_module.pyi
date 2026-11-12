@@ -21,19 +21,19 @@ component: Literal['cellapp']
 def publish() -> int:
     ...
 
-def scriptLogType(logType: int, /) -> None:
+def scriptLogType(__logType: int) -> None:
     ...
 
-def getResFullPath(res: str, /) -> str:
+def getResFullPath(__res: str) -> str:
     ...
 
-def hasRes(res: str, /) -> bool:
+def hasRes(__res: str) -> bool:
     ...
 
-def listPathRes(path: str, extension: Union[str, Sequence[str]]='*', /) -> Tuple[str, ...]:
+def listPathRes(__path: str, __extension: Union[str, Sequence[str]]='*') -> Tuple[str, ...]:
     ...
 
-def matchPath(res: str, /) -> str:
+def matchPath(__res: str) -> str:
     ...
 
 def debugTracing() -> None:
@@ -42,38 +42,38 @@ def debugTracing() -> None:
 def genUUID64() -> int:
     ...
 
-def registerReadFileDescriptor(fileDescriptor: int, callback: Callback, /) -> None:
+def registerReadFileDescriptor(__fileDescriptor: int, __callback: Callback) -> None:
     ...
 
-def registerWriteFileDescriptor(fileDescriptor: int, callback: Callback, /) -> None:
+def registerWriteFileDescriptor(__fileDescriptor: int, __callback: Callback) -> None:
     ...
 
-def deregisterReadFileDescriptor(fileDescriptor: int, /) -> None:
+def deregisterReadFileDescriptor(__fileDescriptor: int) -> None:
     ...
 
-def deregisterWriteFileDescriptor(fileDescriptor: int, /) -> None:
+def deregisterWriteFileDescriptor(__fileDescriptor: int) -> None:
     ...
 
-def executeRawDatabaseCommand(command: str, callback: Union[Callback, None]=None, threadID: int=0, dbInterfaceName: str='default', /) -> None:
+def executeRawDatabaseCommand(__command: str, __callback: Union[Callback, None]=None, __threadID: int=0, __dbInterfaceName: str='default') -> None:
     ...
 
-def open(res: str, mode: str='r', /) -> Union[IO[Any], TextIO, BinaryIO]:
-    ...
-
-@overload
-def urlopen(url: str, /) -> None:
+def open(__res: str, __mode: str='r') -> Union[IO[Any], TextIO, BinaryIO]:
     ...
 
 @overload
-def urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], /) -> None:
+def urlopen(__url: str) -> None:
     ...
 
 @overload
-def urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], data: Union[bytes, Dict[str, str]], /) -> None:
+def urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any]) -> None:
     ...
 
 @overload
-def urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], postData: bytes, headers: Dict[str, str], /) -> None:
+def urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __data: Union[bytes, Dict[str, str]]) -> None:
+    ...
+
+@overload
+def urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __postData: bytes, __headers: Dict[str, str]) -> None:
     ...
 entities: Entities
 globalData: GlobalDataClient
@@ -91,51 +91,51 @@ def time() -> int:
 def isShuttingDown() -> bool:
     ...
 
-def getWatcher(path: str, /) -> WatcherValue:
+def getWatcher(__path: str) -> WatcherValue:
     ...
 
-def getWatcherDir(path: str, /) -> Tuple[str, ...]:
+def getWatcherDir(__path: str) -> Tuple[str, ...]:
     ...
 
-def addWatcher(path: str, dataType: str, getFunction: Callable[[], WatcherValue], /) -> None:
+def addWatcher(__path: str, __dataType: str, __getFunction: Callable[[], WatcherValue]) -> None:
     ...
 
-def delWatcher(path: str, /) -> None:
+def delWatcher(__path: str) -> None:
     ...
 
-def setAppFlags(flags: int, /) -> None:
+def setAppFlags(__flags: int) -> None:
     ...
 
 def getAppFlags() -> int:
     ...
 
-def reloadScript(fullReload: bool=False, /) -> None:
+def reloadScript(__fullReload: bool=False) -> None:
     ...
 
-def createEntity(entityType: str, spaceID: int, position: Vector3Like, direction: Vector3Like, params: Union[Dict[str, Any], None]=None, /) -> Union[Entity, None]:
+def createEntity(__entityType: str, __spaceID: int, __position: Vector3Like, __direction: Vector3Like, __params: Union[Dict[str, Any], None]=None) -> Union[Entity, None]:
     ...
 
-def addSpaceGeometryMapping(spaceID: int, mapper: Any, path: str, shouldLoadOnServer: bool=True, params: Union[Dict[int, str], None]=None, /) -> None:
+def addSpaceGeometryMapping(__spaceID: int, __mapper: Any, __path: str, __shouldLoadOnServer: bool=True, __params: Union[Dict[int, str], None]=None) -> None:
     ...
 
-def getSpaceGeometryMapping(spaceID: int, /) -> str:
+def getSpaceGeometryMapping(__spaceID: int) -> str:
     ...
 
-def setSpaceData(spaceID: int, key: str, value: str, /) -> None:
+def setSpaceData(__spaceID: int, __key: str, __value: str) -> None:
     ...
 
-def getSpaceData(spaceID: int, key: str, /) -> str:
+def getSpaceData(__spaceID: int, __key: str) -> str:
     ...
 
-def delSpaceData(spaceID: int, key: str, /) -> None:
-    ...
-
-@overload
-def raycast(spaceID: int, src: Vector3Like, dst: Vector3Like, /) -> Union[Tuple[Tuple[float, float, float], ...], None]:
+def delSpaceData(__spaceID: int, __key: str) -> None:
     ...
 
 @overload
-def raycast(spaceID: int, layer: int, src: Vector3Like, dst: Vector3Like, /) -> Union[Tuple[Tuple[float, float, float], ...], None]:
+def raycast(__spaceID: int, __src: Vector3Like, __dst: Vector3Like) -> Union[Tuple[Tuple[float, float, float], ...], None]:
+    ...
+
+@overload
+def raycast(__spaceID: int, __layer: int, __src: Vector3Like, __dst: Vector3Like) -> Union[Tuple[Tuple[float, float, float], ...], None]:
     ...
 SERVER_SUCCESS: int = 0
 SERVER_ERR_SRV_NO_READY: int = 1

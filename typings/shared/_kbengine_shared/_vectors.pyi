@@ -79,19 +79,19 @@ class Vector2:
         ...
 
     @overload
-    def __init__(self, value: Union[float, Sequence[float], Vector2], /) -> None:
+    def __init__(self, __value: Union[float, Sequence[float], Vector2]) -> None:
         ...
 
     @overload
-    def __init__(self, x: float, y: float, /) -> None:
+    def __init__(self, __x: float, __y: float) -> None:
         ...
 
     @overload
-    def set(self, value: Union[float, Sequence[float], Vector2], /) -> None:
+    def set(self, __value: Union[float, Sequence[float], Vector2]) -> None:
         ...
 
     @overload
-    def set(self, x: float, y: float, /) -> None:
+    def set(self, __x: float, __y: float) -> None:
         ...
 
     @property
@@ -187,19 +187,19 @@ class Vector3:
         ...
 
     @overload
-    def __init__(self, value: Union[float, Sequence[float], Vector3], /) -> None:
+    def __init__(self, __value: Union[float, Sequence[float], Vector3]) -> None:
         ...
 
     @overload
-    def __init__(self, x: float, y: float, z: float, /) -> None:
+    def __init__(self, __x: float, __y: float, __z: float) -> None:
         ...
 
     @overload
-    def set(self, value: Union[float, Sequence[float], Vector3], /) -> None:
+    def set(self, __value: Union[float, Sequence[float], Vector3]) -> None:
         ...
 
     @overload
-    def set(self, x: float, y: float, z: float, /) -> None:
+    def set(self, __x: float, __y: float, __z: float) -> None:
         ...
 
     @property
@@ -287,19 +287,19 @@ class Vector4:
         ...
 
     @overload
-    def __init__(self, value: Union[float, Sequence[float], Vector4], /) -> None:
+    def __init__(self, __value: Union[float, Sequence[float], Vector4]) -> None:
         ...
 
     @overload
-    def __init__(self, x: float, y: float, z: float, w: float, /) -> None:
+    def __init__(self, __x: float, __y: float, __z: float, __w: float) -> None:
         ...
 
     @overload
-    def set(self, value: Union[float, Sequence[float], Vector4], /) -> None:
+    def set(self, __value: Union[float, Sequence[float], Vector4]) -> None:
         ...
 
     @overload
-    def set(self, x: float, y: float, z: float, w: float, /) -> None:
+    def set(self, __x: float, __y: float, __z: float, __w: float) -> None:
         ...
 
     @property

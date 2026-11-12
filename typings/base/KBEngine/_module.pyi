@@ -22,19 +22,19 @@ component: Literal['baseapp']
 def publish() -> int:
     ...
 
-def scriptLogType(logType: int, /) -> None:
+def scriptLogType(__logType: int) -> None:
     ...
 
-def getResFullPath(res: str, /) -> str:
+def getResFullPath(__res: str) -> str:
     ...
 
-def hasRes(res: str, /) -> bool:
+def hasRes(__res: str) -> bool:
     ...
 
-def listPathRes(path: str, extension: Union[str, Sequence[str]]='*', /) -> Tuple[str, ...]:
+def listPathRes(__path: str, __extension: Union[str, Sequence[str]]='*') -> Tuple[str, ...]:
     ...
 
-def matchPath(res: str, /) -> str:
+def matchPath(__res: str) -> str:
     ...
 
 def debugTracing() -> None:
@@ -43,38 +43,38 @@ def debugTracing() -> None:
 def genUUID64() -> int:
     ...
 
-def registerReadFileDescriptor(fileDescriptor: int, callback: Callback, /) -> None:
+def registerReadFileDescriptor(__fileDescriptor: int, __callback: Callback) -> None:
     ...
 
-def registerWriteFileDescriptor(fileDescriptor: int, callback: Callback, /) -> None:
+def registerWriteFileDescriptor(__fileDescriptor: int, __callback: Callback) -> None:
     ...
 
-def deregisterReadFileDescriptor(fileDescriptor: int, /) -> None:
+def deregisterReadFileDescriptor(__fileDescriptor: int) -> None:
     ...
 
-def deregisterWriteFileDescriptor(fileDescriptor: int, /) -> None:
+def deregisterWriteFileDescriptor(__fileDescriptor: int) -> None:
     ...
 
-def executeRawDatabaseCommand(command: str, callback: Union[Callback, None]=None, threadID: int=0, dbInterfaceName: str='default', /) -> None:
+def executeRawDatabaseCommand(__command: str, __callback: Union[Callback, None]=None, __threadID: int=0, __dbInterfaceName: str='default') -> None:
     ...
 
-def open(res: str, mode: str='r', /) -> Union[IO[Any], TextIO, BinaryIO]:
-    ...
-
-@overload
-def urlopen(url: str, /) -> None:
+def open(__res: str, __mode: str='r') -> Union[IO[Any], TextIO, BinaryIO]:
     ...
 
 @overload
-def urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], /) -> None:
+def urlopen(__url: str) -> None:
     ...
 
 @overload
-def urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], data: Union[bytes, Dict[str, str]], /) -> None:
+def urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any]) -> None:
     ...
 
 @overload
-def urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], postData: bytes, headers: Dict[str, str], /) -> None:
+def urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __data: Union[bytes, Dict[str, str]]) -> None:
+    ...
+
+@overload
+def urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __postData: bytes, __headers: Dict[str, str]) -> None:
     ...
 entities: Entities
 globalData: GlobalDataClient
@@ -92,58 +92,58 @@ def time() -> int:
 def isShuttingDown() -> bool:
     ...
 
-def getWatcher(path: str, /) -> WatcherValue:
+def getWatcher(__path: str) -> WatcherValue:
     ...
 
-def getWatcherDir(path: str, /) -> Tuple[str, ...]:
+def getWatcherDir(__path: str) -> Tuple[str, ...]:
     ...
 
-def addWatcher(path: str, dataType: str, getFunction: Callable[[], WatcherValue], /) -> None:
+def addWatcher(__path: str, __dataType: str, __getFunction: Callable[[], WatcherValue]) -> None:
     ...
 
-def delWatcher(path: str, /) -> None:
+def delWatcher(__path: str) -> None:
     ...
 
-def setAppFlags(flags: int, /) -> None:
+def setAppFlags(__flags: int) -> None:
     ...
 
 def getAppFlags() -> int:
     ...
 
-def reloadScript(fullReload: bool=False, /) -> None:
+def reloadScript(__fullReload: bool=False) -> None:
     ...
 
 def quantumPassedPercent() -> int:
     ...
 
-def createEntity(entityType: str, params: Union[Dict[str, Any], None]=None, /) -> Union[Entity, None]:
+def createEntity(__entityType: str, __params: Union[Dict[str, Any], None]=None) -> Union[Entity, None]:
     ...
 
-def createEntityLocally(entityType: str, params: Union[Dict[str, Any], None]=None, /) -> Union[Entity, None]:
+def createEntityLocally(__entityType: str, __params: Union[Dict[str, Any], None]=None) -> Union[Entity, None]:
     ...
 
-def createEntityAnywhere(entityType: str, params: Union[Dict[str, Any], None]=None, callback: Union[Callback, None]=None, /) -> None:
+def createEntityAnywhere(__entityType: str, __params: Union[Dict[str, Any], None]=None, __callback: Union[Callback, None]=None) -> None:
     ...
 
-def createEntityRemotely(entityType: str, baseMB: EntityCall, params: Union[Dict[str, Any], None]=None, callback: Union[Callback, None]=None, /) -> None:
+def createEntityRemotely(__entityType: str, __baseMB: EntityCall, __params: Union[Dict[str, Any], None]=None, __callback: Union[Callback, None]=None) -> None:
     ...
 
-def createEntityFromDBID(entityType: str, dbID: int, callback: Union[Callback, None]=None, dbInterfaceName: str='default', /) -> None:
+def createEntityFromDBID(__entityType: str, __dbID: int, __callback: Union[Callback, None]=None, __dbInterfaceName: str='default') -> None:
     ...
 
-def createEntityAnywhereFromDBID(entityType: str, dbID: int, callback: Union[Callback, None]=None, dbInterfaceName: str='default', /) -> None:
+def createEntityAnywhereFromDBID(__entityType: str, __dbID: int, __callback: Union[Callback, None]=None, __dbInterfaceName: str='default') -> None:
     ...
 
-def createEntityRemotelyFromDBID(entityType: str, dbID: int, baseMB: EntityCall, callback: Union[Callback, None]=None, dbInterfaceName: str='default', /) -> None:
+def createEntityRemotelyFromDBID(__entityType: str, __dbID: int, __baseMB: EntityCall, __callback: Union[Callback, None]=None, __dbInterfaceName: str='default') -> None:
     ...
 
-def charge(ordersID: str, dbID: int, byteDatas: bytes, pycallback: Callback, /) -> None:
+def charge(__ordersID: str, __dbID: int, __byteDatas: bytes, __pycallback: Callback) -> None:
     ...
 
-def deleteEntityByDBID(entityType: str, dbID: int, callback: Union[Callback, None]=None, dbInterfaceName: str='default', /) -> None:
+def deleteEntityByDBID(__entityType: str, __dbID: int, __callback: Union[Callback, None]=None, __dbInterfaceName: str='default') -> None:
     ...
 
-def lookUpEntityByDBID(entityType: str, dbID: int, callback: Callback, dbInterfaceName: str='default', /) -> None:
+def lookUpEntityByDBID(__entityType: str, __dbID: int, __callback: Callback, __dbInterfaceName: str='default') -> None:
     ...
 LOG_ON_ACCEPT: int
 LOG_ON_REJECT: int

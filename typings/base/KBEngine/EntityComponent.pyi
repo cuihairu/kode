@@ -16,10 +16,10 @@ class EntityComponent:
     def __getattr__(self, name: str) -> Any:
         ...
 
-    def addTimer(self, initialOffset: float, repeatOffset: float=0.0, userArg: int=0, /) -> int:
+    def addTimer(self, __initialOffset: float, __repeatOffset: float=0.0, __userArg: int=0) -> int:
         ...
 
-    def delTimer(self, id: Union[int, str], /) -> None:
+    def delTimer(self, __id: Union[int, str]) -> None:
         ...
 
     @property

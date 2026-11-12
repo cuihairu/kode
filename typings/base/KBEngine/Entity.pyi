@@ -22,27 +22,27 @@ class Entity:
     def __reduce_ex__(self, protocol: Any) -> Any:
         ...
 
-    def __getDEP__(self, /) -> Any:
+    def __getDEP__(self) -> Any:
         ...
 
-    def addTimer(self, initialOffset: float, repeatOffset: float=0.0, userArg: int=0, /) -> int:
+    def addTimer(self, __initialOffset: float, __repeatOffset: float=0.0, __userArg: int=0) -> int:
         ...
 
-    def delTimer(self, id: Union[int, str], /) -> None:
+    def delTimer(self, __id: Union[int, str]) -> None:
         ...
 
     def destroy(self, deleteFromDB: bool=False, writeToDB: bool=False) -> None:
         ...
 
-    def writeToDB(self, callback: Union[Callback, None]=None, shouldAutoLoad: bool=False, dbInterfaceName: str='default', /) -> None:
+    def writeToDB(self, __callback: Union[Callback, None]=None, __shouldAutoLoad: bool=False, __dbInterfaceName: str='default') -> None:
         ...
 
     @overload
-    def getComponent(self, componentName: str, all: Literal[False]=False, /) -> Union[EntityComponent, None]:
+    def getComponent(self, __componentName: str, __all: Literal[False]=False) -> Union[EntityComponent, None]:
         ...
 
     @overload
-    def getComponent(self, componentName: str, all: Literal[True], /) -> Tuple[EntityComponent, ...]:
+    def getComponent(self, __componentName: str, __all: Literal[True]) -> Tuple[EntityComponent, ...]:
         ...
 
     def fireEvent(self, eventName: str, *args: Any) -> None:
@@ -54,13 +54,13 @@ class Entity:
     def deregisterEvent(self, eventName: str, callback: Callback) -> None:
         ...
 
-    def createCellEntity(self, cellEntityCall: Union[EntityCall, None]=None, /) -> None:
+    def createCellEntity(self, __cellEntityCall: Union[EntityCall, None]=None) -> None:
         ...
 
-    def createCellEntityInNewSpace(self, cellappIndex: int=0, /) -> None:
+    def createCellEntityInNewSpace(self, __cellappIndex: int=0) -> None:
         ...
 
-    def destroyCellEntity(self, /) -> None:
+    def destroyCellEntity(self) -> None:
         ...
 
     @property

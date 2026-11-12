@@ -341,7 +341,7 @@
       {
         "name": "addWatcher",
         "kind": "function",
-        "signature": "def addWatcher(path: str, dataType: str, getFunction: Callable[[], WatcherValue], /) -> None",
+        "signature": "def addWatcher(__path: str, __dataType: str, __getFunction: Callable[[], WatcherValue]) -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 101
       },
@@ -362,7 +362,7 @@
       {
         "name": "charge",
         "kind": "function",
-        "signature": "def charge(ordersID: str, dbID: int, byteDatas: bytes, pycallback: Callback, /) -> None",
+        "signature": "def charge(__ordersID: str, __dbID: int, __byteDatas: bytes, __pycallback: Callback) -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 140
       },
@@ -376,49 +376,49 @@
       {
         "name": "createEntity",
         "kind": "function",
-        "signature": "def createEntity(entityType: str, params: Union[Dict[str, Any], None]=None, /) -> Union[Entity, None]",
+        "signature": "def createEntity(__entityType: str, __params: Union[Dict[str, Any], None]=None) -> Union[Entity, None]",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 119
       },
       {
         "name": "createEntityAnywhere",
         "kind": "function",
-        "signature": "def createEntityAnywhere(entityType: str, params: Union[Dict[str, Any], None]=None, callback: Union[Callback, None]=None, /) -> None",
+        "signature": "def createEntityAnywhere(__entityType: str, __params: Union[Dict[str, Any], None]=None, __callback: Union[Callback, None]=None) -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 125
       },
       {
         "name": "createEntityAnywhereFromDBID",
         "kind": "function",
-        "signature": "def createEntityAnywhereFromDBID(entityType: str, dbID: int, callback: Union[Callback, None]=None, dbInterfaceName: str='default', /) -> None",
+        "signature": "def createEntityAnywhereFromDBID(__entityType: str, __dbID: int, __callback: Union[Callback, None]=None, __dbInterfaceName: str='default') -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 134
       },
       {
         "name": "createEntityFromDBID",
         "kind": "function",
-        "signature": "def createEntityFromDBID(entityType: str, dbID: int, callback: Union[Callback, None]=None, dbInterfaceName: str='default', /) -> None",
+        "signature": "def createEntityFromDBID(__entityType: str, __dbID: int, __callback: Union[Callback, None]=None, __dbInterfaceName: str='default') -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 131
       },
       {
         "name": "createEntityLocally",
         "kind": "function",
-        "signature": "def createEntityLocally(entityType: str, params: Union[Dict[str, Any], None]=None, /) -> Union[Entity, None]",
+        "signature": "def createEntityLocally(__entityType: str, __params: Union[Dict[str, Any], None]=None) -> Union[Entity, None]",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 122
       },
       {
         "name": "createEntityRemotely",
         "kind": "function",
-        "signature": "def createEntityRemotely(entityType: str, baseMB: EntityCall, params: Union[Dict[str, Any], None]=None, callback: Union[Callback, None]=None, /) -> None",
+        "signature": "def createEntityRemotely(__entityType: str, __baseMB: EntityCall, __params: Union[Dict[str, Any], None]=None, __callback: Union[Callback, None]=None) -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 128
       },
       {
         "name": "createEntityRemotelyFromDBID",
         "kind": "function",
-        "signature": "def createEntityRemotelyFromDBID(entityType: str, dbID: int, baseMB: EntityCall, callback: Union[Callback, None]=None, dbInterfaceName: str='default', /) -> None",
+        "signature": "def createEntityRemotelyFromDBID(__entityType: str, __dbID: int, __baseMB: EntityCall, __callback: Union[Callback, None]=None, __dbInterfaceName: str='default') -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 137
       },
@@ -432,28 +432,28 @@
       {
         "name": "delWatcher",
         "kind": "function",
-        "signature": "def delWatcher(path: str, /) -> None",
+        "signature": "def delWatcher(__path: str) -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 104
       },
       {
         "name": "deleteEntityByDBID",
         "kind": "function",
-        "signature": "def deleteEntityByDBID(entityType: str, dbID: int, callback: Union[Callback, None]=None, dbInterfaceName: str='default', /) -> None",
+        "signature": "def deleteEntityByDBID(__entityType: str, __dbID: int, __callback: Union[Callback, None]=None, __dbInterfaceName: str='default') -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 143
       },
       {
         "name": "deregisterReadFileDescriptor",
         "kind": "function",
-        "signature": "def deregisterReadFileDescriptor(fileDescriptor: int, /) -> None",
+        "signature": "def deregisterReadFileDescriptor(__fileDescriptor: int) -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 52
       },
       {
         "name": "deregisterWriteFileDescriptor",
         "kind": "function",
-        "signature": "def deregisterWriteFileDescriptor(fileDescriptor: int, /) -> None",
+        "signature": "def deregisterWriteFileDescriptor(__fileDescriptor: int) -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 55
       },
@@ -467,7 +467,7 @@
       {
         "name": "executeRawDatabaseCommand",
         "kind": "function",
-        "signature": "def executeRawDatabaseCommand(command: str, callback: Union[Callback, None]=None, threadID: int=0, dbInterfaceName: str='default', /) -> None",
+        "signature": "def executeRawDatabaseCommand(__command: str, __callback: Union[Callback, None]=None, __threadID: int=0, __dbInterfaceName: str='default') -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 58
       },
@@ -488,21 +488,21 @@
       {
         "name": "getResFullPath",
         "kind": "function",
-        "signature": "def getResFullPath(res: str, /) -> str",
+        "signature": "def getResFullPath(__res: str) -> str",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 28
       },
       {
         "name": "getWatcher",
         "kind": "function",
-        "signature": "def getWatcher(path: str, /) -> WatcherValue",
+        "signature": "def getWatcher(__path: str) -> WatcherValue",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 95
       },
       {
         "name": "getWatcherDir",
         "kind": "function",
-        "signature": "def getWatcherDir(path: str, /) -> Tuple[str, ...]",
+        "signature": "def getWatcherDir(__path: str) -> Tuple[str, ...]",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 98
       },
@@ -516,7 +516,7 @@
       {
         "name": "hasRes",
         "kind": "function",
-        "signature": "def hasRes(res: str, /) -> bool",
+        "signature": "def hasRes(__res: str) -> bool",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 31
       },
@@ -537,28 +537,28 @@
       {
         "name": "listPathRes",
         "kind": "function",
-        "signature": "def listPathRes(path: str, extension: Union[str, Sequence[str]]='*', /) -> Tuple[str, ...]",
+        "signature": "def listPathRes(__path: str, __extension: Union[str, Sequence[str]]='*') -> Tuple[str, ...]",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 34
       },
       {
         "name": "lookUpEntityByDBID",
         "kind": "function",
-        "signature": "def lookUpEntityByDBID(entityType: str, dbID: int, callback: Callback, dbInterfaceName: str='default', /) -> None",
+        "signature": "def lookUpEntityByDBID(__entityType: str, __dbID: int, __callback: Callback, __dbInterfaceName: str='default') -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 146
       },
       {
         "name": "matchPath",
         "kind": "function",
-        "signature": "def matchPath(res: str, /) -> str",
+        "signature": "def matchPath(__res: str) -> str",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 37
       },
       {
         "name": "open",
         "kind": "function",
-        "signature": "def open(res: str, mode: str='r', /) -> Union[IO[Any], TextIO, BinaryIO]",
+        "signature": "def open(__res: str, __mode: str='r') -> Union[IO[Any], TextIO, BinaryIO]",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 61
       },
@@ -579,35 +579,35 @@
       {
         "name": "registerReadFileDescriptor",
         "kind": "function",
-        "signature": "def registerReadFileDescriptor(fileDescriptor: int, callback: Callback, /) -> None",
+        "signature": "def registerReadFileDescriptor(__fileDescriptor: int, __callback: Callback) -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 46
       },
       {
         "name": "registerWriteFileDescriptor",
         "kind": "function",
-        "signature": "def registerWriteFileDescriptor(fileDescriptor: int, callback: Callback, /) -> None",
+        "signature": "def registerWriteFileDescriptor(__fileDescriptor: int, __callback: Callback) -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 49
       },
       {
         "name": "reloadScript",
         "kind": "function",
-        "signature": "def reloadScript(fullReload: bool=False, /) -> None",
+        "signature": "def reloadScript(__fullReload: bool=False) -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 113
       },
       {
         "name": "scriptLogType",
         "kind": "function",
-        "signature": "def scriptLogType(logType: int, /) -> None",
+        "signature": "def scriptLogType(__logType: int) -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 25
       },
       {
         "name": "setAppFlags",
         "kind": "function",
-        "signature": "def setAppFlags(flags: int, /) -> None",
+        "signature": "def setAppFlags(__flags: int) -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 107
       },
@@ -621,7 +621,7 @@
       {
         "name": "urlopen",
         "kind": "function",
-        "signature": "def urlopen(url: str, /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], data: Union[bytes, Dict[str, str]], /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], postData: bytes, headers: Dict[str, str], /) -> None",
+        "signature": "def urlopen(__url: str) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any]) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __data: Union[bytes, Dict[str, str]]) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __postData: bytes, __headers: Dict[str, str]) -> None",
         "sourceFile": "typings/base/KBEngine/_module.pyi",
         "sourceLine": 65
       },
@@ -1039,14 +1039,14 @@
       {
         "name": "addSpaceGeometryMapping",
         "kind": "function",
-        "signature": "def addSpaceGeometryMapping(spaceID: int, mapper: Any, path: str, shouldLoadOnServer: bool=True, params: Union[Dict[int, str], None]=None, /) -> None",
+        "signature": "def addSpaceGeometryMapping(__spaceID: int, __mapper: Any, __path: str, __shouldLoadOnServer: bool=True, __params: Union[Dict[int, str], None]=None) -> None",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 118
       },
       {
         "name": "addWatcher",
         "kind": "function",
-        "signature": "def addWatcher(path: str, dataType: str, getFunction: Callable[[], WatcherValue], /) -> None",
+        "signature": "def addWatcher(__path: str, __dataType: str, __getFunction: Callable[[], WatcherValue]) -> None",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 100
       },
@@ -1074,7 +1074,7 @@
       {
         "name": "createEntity",
         "kind": "function",
-        "signature": "def createEntity(entityType: str, spaceID: int, position: Vector3Like, direction: Vector3Like, params: Union[Dict[str, Any], None]=None, /) -> Union[Entity, None]",
+        "signature": "def createEntity(__entityType: str, __spaceID: int, __position: Vector3Like, __direction: Vector3Like, __params: Union[Dict[str, Any], None]=None) -> Union[Entity, None]",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 115
       },
@@ -1088,28 +1088,28 @@
       {
         "name": "delSpaceData",
         "kind": "function",
-        "signature": "def delSpaceData(spaceID: int, key: str, /) -> None",
+        "signature": "def delSpaceData(__spaceID: int, __key: str) -> None",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 130
       },
       {
         "name": "delWatcher",
         "kind": "function",
-        "signature": "def delWatcher(path: str, /) -> None",
+        "signature": "def delWatcher(__path: str) -> None",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 103
       },
       {
         "name": "deregisterReadFileDescriptor",
         "kind": "function",
-        "signature": "def deregisterReadFileDescriptor(fileDescriptor: int, /) -> None",
+        "signature": "def deregisterReadFileDescriptor(__fileDescriptor: int) -> None",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 51
       },
       {
         "name": "deregisterWriteFileDescriptor",
         "kind": "function",
-        "signature": "def deregisterWriteFileDescriptor(fileDescriptor: int, /) -> None",
+        "signature": "def deregisterWriteFileDescriptor(__fileDescriptor: int) -> None",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 54
       },
@@ -1123,7 +1123,7 @@
       {
         "name": "executeRawDatabaseCommand",
         "kind": "function",
-        "signature": "def executeRawDatabaseCommand(command: str, callback: Union[Callback, None]=None, threadID: int=0, dbInterfaceName: str='default', /) -> None",
+        "signature": "def executeRawDatabaseCommand(__command: str, __callback: Union[Callback, None]=None, __threadID: int=0, __dbInterfaceName: str='default') -> None",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 57
       },
@@ -1144,35 +1144,35 @@
       {
         "name": "getResFullPath",
         "kind": "function",
-        "signature": "def getResFullPath(res: str, /) -> str",
+        "signature": "def getResFullPath(__res: str) -> str",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 27
       },
       {
         "name": "getSpaceData",
         "kind": "function",
-        "signature": "def getSpaceData(spaceID: int, key: str, /) -> str",
+        "signature": "def getSpaceData(__spaceID: int, __key: str) -> str",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 127
       },
       {
         "name": "getSpaceGeometryMapping",
         "kind": "function",
-        "signature": "def getSpaceGeometryMapping(spaceID: int, /) -> str",
+        "signature": "def getSpaceGeometryMapping(__spaceID: int) -> str",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 121
       },
       {
         "name": "getWatcher",
         "kind": "function",
-        "signature": "def getWatcher(path: str, /) -> WatcherValue",
+        "signature": "def getWatcher(__path: str) -> WatcherValue",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 94
       },
       {
         "name": "getWatcherDir",
         "kind": "function",
-        "signature": "def getWatcherDir(path: str, /) -> Tuple[str, ...]",
+        "signature": "def getWatcherDir(__path: str) -> Tuple[str, ...]",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 97
       },
@@ -1186,7 +1186,7 @@
       {
         "name": "hasRes",
         "kind": "function",
-        "signature": "def hasRes(res: str, /) -> bool",
+        "signature": "def hasRes(__res: str) -> bool",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 30
       },
@@ -1207,21 +1207,21 @@
       {
         "name": "listPathRes",
         "kind": "function",
-        "signature": "def listPathRes(path: str, extension: Union[str, Sequence[str]]='*', /) -> Tuple[str, ...]",
+        "signature": "def listPathRes(__path: str, __extension: Union[str, Sequence[str]]='*') -> Tuple[str, ...]",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 33
       },
       {
         "name": "matchPath",
         "kind": "function",
-        "signature": "def matchPath(res: str, /) -> str",
+        "signature": "def matchPath(__res: str) -> str",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 36
       },
       {
         "name": "open",
         "kind": "function",
-        "signature": "def open(res: str, mode: str='r', /) -> Union[IO[Any], TextIO, BinaryIO]",
+        "signature": "def open(__res: str, __mode: str='r') -> Union[IO[Any], TextIO, BinaryIO]",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 60
       },
@@ -1235,49 +1235,49 @@
       {
         "name": "raycast",
         "kind": "function",
-        "signature": "def raycast(spaceID: int, src: Vector3Like, dst: Vector3Like, /) -> Union[Tuple[Tuple[float, float, float], ...], None]\ndef raycast(spaceID: int, layer: int, src: Vector3Like, dst: Vector3Like, /) -> Union[Tuple[Tuple[float, float, float], ...], None]",
+        "signature": "def raycast(__spaceID: int, __src: Vector3Like, __dst: Vector3Like) -> Union[Tuple[Tuple[float, float, float], ...], None]\ndef raycast(__spaceID: int, __layer: int, __src: Vector3Like, __dst: Vector3Like) -> Union[Tuple[Tuple[float, float, float], ...], None]",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 134
       },
       {
         "name": "registerReadFileDescriptor",
         "kind": "function",
-        "signature": "def registerReadFileDescriptor(fileDescriptor: int, callback: Callback, /) -> None",
+        "signature": "def registerReadFileDescriptor(__fileDescriptor: int, __callback: Callback) -> None",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 45
       },
       {
         "name": "registerWriteFileDescriptor",
         "kind": "function",
-        "signature": "def registerWriteFileDescriptor(fileDescriptor: int, callback: Callback, /) -> None",
+        "signature": "def registerWriteFileDescriptor(__fileDescriptor: int, __callback: Callback) -> None",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 48
       },
       {
         "name": "reloadScript",
         "kind": "function",
-        "signature": "def reloadScript(fullReload: bool=False, /) -> None",
+        "signature": "def reloadScript(__fullReload: bool=False) -> None",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 112
       },
       {
         "name": "scriptLogType",
         "kind": "function",
-        "signature": "def scriptLogType(logType: int, /) -> None",
+        "signature": "def scriptLogType(__logType: int) -> None",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 24
       },
       {
         "name": "setAppFlags",
         "kind": "function",
-        "signature": "def setAppFlags(flags: int, /) -> None",
+        "signature": "def setAppFlags(__flags: int) -> None",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 106
       },
       {
         "name": "setSpaceData",
         "kind": "function",
-        "signature": "def setSpaceData(spaceID: int, key: str, value: str, /) -> None",
+        "signature": "def setSpaceData(__spaceID: int, __key: str, __value: str) -> None",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 124
       },
@@ -1291,7 +1291,7 @@
       {
         "name": "urlopen",
         "kind": "function",
-        "signature": "def urlopen(url: str, /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], data: Union[bytes, Dict[str, str]], /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], postData: bytes, headers: Dict[str, str], /) -> None",
+        "signature": "def urlopen(__url: str) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any]) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __data: Union[bytes, Dict[str, str]]) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __postData: bytes, __headers: Dict[str, str]) -> None",
         "sourceFile": "typings/cell/KBEngine/_module.pyi",
         "sourceLine": 64
       },
@@ -1422,7 +1422,7 @@
       {
         "name": "addBots",
         "kind": "function",
-        "signature": "def addBots(reqCreateAndLoginTotalCount: int, reqCreateAndLoginTickCount: int=0, reqCreateAndLoginTickTime: float=0.0, /) -> None",
+        "signature": "def addBots(__reqCreateAndLoginTotalCount: int, __reqCreateAndLoginTickCount: int=0, __reqCreateAndLoginTickTime: float=0.0) -> None",
         "sourceFile": "typings/bots/KBEngine/_module.pyi",
         "sourceLine": 24
       },
@@ -1436,14 +1436,14 @@
       {
         "name": "callback",
         "kind": "function",
-        "signature": "def callback(initialOffset: float, callbackObj: Callable[[], Any], /) -> int",
+        "signature": "def callback(__initialOffset: float, __callbackObj: Callable[[], Any]) -> int",
         "sourceFile": "typings/bots/KBEngine/_module.pyi",
         "sourceLine": 79
       },
       {
         "name": "cancelCallback",
         "kind": "function",
-        "signature": "def cancelCallback(id: int, /) -> None",
+        "signature": "def cancelCallback(__id: int) -> None",
         "sourceFile": "typings/bots/KBEngine/_module.pyi",
         "sourceLine": 82
       },
@@ -1464,7 +1464,7 @@
       {
         "name": "fireEvent",
         "kind": "function",
-        "signature": "def fireEvent(eventName: str, /, *args: Any) -> None",
+        "signature": "def fireEvent(__eventName: str, *args: Any) -> None",
         "sourceFile": "typings/bots/KBEngine/_module.pyi",
         "sourceLine": 73
       },
@@ -1478,35 +1478,35 @@
       {
         "name": "getResFullPath",
         "kind": "function",
-        "signature": "def getResFullPath(res: str, /) -> str",
+        "signature": "def getResFullPath(__res: str) -> str",
         "sourceFile": "typings/bots/KBEngine/_module.pyi",
         "sourceLine": 70
       },
       {
         "name": "getSpaceData",
         "kind": "function",
-        "signature": "def getSpaceData(key: str, /) -> str",
+        "signature": "def getSpaceData(__key: str) -> str",
         "sourceFile": "typings/bots/KBEngine/_module.pyi",
         "sourceLine": 91
       },
       {
         "name": "getWatcher",
         "kind": "function",
-        "signature": "def getWatcher(path: str, /) -> WatcherValue",
+        "signature": "def getWatcher(__path: str) -> WatcherValue",
         "sourceFile": "typings/bots/KBEngine/_module.pyi",
         "sourceLine": 48
       },
       {
         "name": "getWatcherDir",
         "kind": "function",
-        "signature": "def getWatcherDir(path: str, /) -> Tuple[str, ...]",
+        "signature": "def getWatcherDir(__path: str) -> Tuple[str, ...]",
         "sourceFile": "typings/bots/KBEngine/_module.pyi",
         "sourceLine": 51
       },
       {
         "name": "hasRes",
         "kind": "function",
-        "signature": "def hasRes(res: str, /) -> bool",
+        "signature": "def hasRes(__res: str) -> bool",
         "sourceFile": "typings/bots/KBEngine/_module.pyi",
         "sourceLine": 36
       },
@@ -1520,21 +1520,21 @@
       {
         "name": "listPathRes",
         "kind": "function",
-        "signature": "def listPathRes(path: str, extension: Union[str, Sequence[str]]='*', /) -> Tuple[str, ...]",
+        "signature": "def listPathRes(__path: str, __extension: Union[str, Sequence[str]]='*') -> Tuple[str, ...]",
         "sourceFile": "typings/bots/KBEngine/_module.pyi",
         "sourceLine": 42
       },
       {
         "name": "matchPath",
         "kind": "function",
-        "signature": "def matchPath(res: str, /) -> str",
+        "signature": "def matchPath(__res: str) -> str",
         "sourceFile": "typings/bots/KBEngine/_module.pyi",
         "sourceLine": 45
       },
       {
         "name": "open",
         "kind": "function",
-        "signature": "def open(res: str, mode: str='r', /) -> Union[IO[Any], TextIO, BinaryIO]",
+        "signature": "def open(__res: str, __mode: str='r') -> Union[IO[Any], TextIO, BinaryIO]",
         "sourceFile": "typings/bots/KBEngine/_module.pyi",
         "sourceLine": 39
       },
@@ -1555,14 +1555,14 @@
       {
         "name": "scriptLogType",
         "kind": "function",
-        "signature": "def scriptLogType(logType: int, /) -> None",
+        "signature": "def scriptLogType(__logType: int) -> None",
         "sourceFile": "typings/bots/KBEngine/_module.pyi",
         "sourceLine": 27
       },
       {
         "name": "urlopen",
         "kind": "function",
-        "signature": "def urlopen(url: str, /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], data: Union[bytes, Dict[str, str]], /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], postData: bytes, headers: Dict[str, str], /) -> None",
+        "signature": "def urlopen(__url: str) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any]) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __data: Union[bytes, Dict[str, str]]) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __postData: bytes, __headers: Dict[str, str]) -> None",
         "sourceFile": "typings/bots/KBEngine/_module.pyi",
         "sourceLine": 55
       },
@@ -1679,14 +1679,14 @@
       {
         "name": "callback",
         "kind": "function",
-        "signature": "def callback(initialOffset: float, callbackObj: Callable[[], Any], /) -> int",
+        "signature": "def callback(__initialOffset: float, __callbackObj: Callable[[], Any]) -> int",
         "sourceFile": "typings/client/KBEngine/_module.pyi",
         "sourceLine": 74
       },
       {
         "name": "cancelCallback",
         "kind": "function",
-        "signature": "def cancelCallback(id: int, /) -> None",
+        "signature": "def cancelCallback(__id: int) -> None",
         "sourceFile": "typings/client/KBEngine/_module.pyi",
         "sourceLine": 77
       },
@@ -1707,7 +1707,7 @@
       {
         "name": "fireEvent",
         "kind": "function",
-        "signature": "def fireEvent(eventName: str, /, *args: Any) -> None",
+        "signature": "def fireEvent(__eventName: str, *args: Any) -> None",
         "sourceFile": "typings/client/KBEngine/_module.pyi",
         "sourceLine": 68
       },
@@ -1721,35 +1721,35 @@
       {
         "name": "getResFullPath",
         "kind": "function",
-        "signature": "def getResFullPath(res: str, /) -> str",
+        "signature": "def getResFullPath(__res: str) -> str",
         "sourceFile": "typings/client/KBEngine/_module.pyi",
         "sourceLine": 65
       },
       {
         "name": "getSpaceData",
         "kind": "function",
-        "signature": "def getSpaceData(key: str, /) -> str",
+        "signature": "def getSpaceData(__key: str) -> str",
         "sourceFile": "typings/client/KBEngine/_module.pyi",
         "sourceLine": 86
       },
       {
         "name": "getWatcher",
         "kind": "function",
-        "signature": "def getWatcher(path: str, /) -> WatcherValue",
+        "signature": "def getWatcher(__path: str) -> WatcherValue",
         "sourceFile": "typings/client/KBEngine/_module.pyi",
         "sourceLine": 43
       },
       {
         "name": "getWatcherDir",
         "kind": "function",
-        "signature": "def getWatcherDir(path: str, /) -> Tuple[str, ...]",
+        "signature": "def getWatcherDir(__path: str) -> Tuple[str, ...]",
         "sourceFile": "typings/client/KBEngine/_module.pyi",
         "sourceLine": 46
       },
       {
         "name": "hasRes",
         "kind": "function",
-        "signature": "def hasRes(res: str, /) -> bool",
+        "signature": "def hasRes(__res: str) -> bool",
         "sourceFile": "typings/client/KBEngine/_module.pyi",
         "sourceLine": 31
       },
@@ -1763,21 +1763,21 @@
       {
         "name": "listPathRes",
         "kind": "function",
-        "signature": "def listPathRes(path: str, extension: Union[str, Sequence[str]]='*', /) -> Tuple[str, ...]",
+        "signature": "def listPathRes(__path: str, __extension: Union[str, Sequence[str]]='*') -> Tuple[str, ...]",
         "sourceFile": "typings/client/KBEngine/_module.pyi",
         "sourceLine": 37
       },
       {
         "name": "matchPath",
         "kind": "function",
-        "signature": "def matchPath(res: str, /) -> str",
+        "signature": "def matchPath(__res: str) -> str",
         "sourceFile": "typings/client/KBEngine/_module.pyi",
         "sourceLine": 40
       },
       {
         "name": "open",
         "kind": "function",
-        "signature": "def open(res: str, mode: str='r', /) -> Union[IO[Any], TextIO, BinaryIO]",
+        "signature": "def open(__res: str, __mode: str='r') -> Union[IO[Any], TextIO, BinaryIO]",
         "sourceFile": "typings/client/KBEngine/_module.pyi",
         "sourceLine": 34
       },
@@ -1798,14 +1798,14 @@
       {
         "name": "scriptLogType",
         "kind": "function",
-        "signature": "def scriptLogType(logType: int, /) -> None",
+        "signature": "def scriptLogType(__logType: int) -> None",
         "sourceFile": "typings/client/KBEngine/_module.pyi",
         "sourceLine": 22
       },
       {
         "name": "urlopen",
         "kind": "function",
-        "signature": "def urlopen(url: str, /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], data: Union[bytes, Dict[str, str]], /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], postData: bytes, headers: Dict[str, str], /) -> None",
+        "signature": "def urlopen(__url: str) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any]) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __data: Union[bytes, Dict[str, str]]) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __postData: bytes, __headers: Dict[str, str]) -> None",
         "sourceFile": "typings/client/KBEngine/_module.pyi",
         "sourceLine": 50
       },
@@ -2202,7 +2202,7 @@
       {
         "name": "addTimer",
         "kind": "function",
-        "signature": "def addTimer(initialOffset: float, repeatOffset: float, callbackObj: TimerCallback, /) -> int",
+        "signature": "def addTimer(__initialOffset: float, __repeatOffset: float, __callbackObj: TimerCallback) -> int",
         "sourceFile": "typings/dbmgr/KBEngine/_module.pyi",
         "sourceLine": 44
       },
@@ -2223,28 +2223,28 @@
       {
         "name": "delTimer",
         "kind": "function",
-        "signature": "def delTimer(id: int, /) -> int",
+        "signature": "def delTimer(__id: int) -> int",
         "sourceFile": "typings/dbmgr/KBEngine/_module.pyi",
         "sourceLine": 47
       },
       {
         "name": "deregisterReadFileDescriptor",
         "kind": "function",
-        "signature": "def deregisterReadFileDescriptor(fileDescriptor: int, /) -> None",
+        "signature": "def deregisterReadFileDescriptor(__fileDescriptor: int) -> None",
         "sourceFile": "typings/dbmgr/KBEngine/_module.pyi",
         "sourceLine": 56
       },
       {
         "name": "deregisterWriteFileDescriptor",
         "kind": "function",
-        "signature": "def deregisterWriteFileDescriptor(fileDescriptor: int, /) -> None",
+        "signature": "def deregisterWriteFileDescriptor(__fileDescriptor: int) -> None",
         "sourceFile": "typings/dbmgr/KBEngine/_module.pyi",
         "sourceLine": 59
       },
       {
         "name": "executeRawDatabaseCommand",
         "kind": "function",
-        "signature": "def executeRawDatabaseCommand(command: str, callback: Union[DatabaseCommandCallback, None]=None, threadID: int=0, dbInterfaceName: str='default', /) -> None",
+        "signature": "def executeRawDatabaseCommand(__command: str, __callback: Union[DatabaseCommandCallback, None]=None, __threadID: int=0, __dbInterfaceName: str='default') -> None",
         "sourceFile": "typings/dbmgr/KBEngine/_module.pyi",
         "sourceLine": 80
       },
@@ -2258,35 +2258,35 @@
       {
         "name": "getResFullPath",
         "kind": "function",
-        "signature": "def getResFullPath(res: str, /) -> str",
+        "signature": "def getResFullPath(__res: str) -> str",
         "sourceFile": "typings/dbmgr/KBEngine/_module.pyi",
         "sourceLine": 23
       },
       {
         "name": "hasRes",
         "kind": "function",
-        "signature": "def hasRes(res: str, /) -> bool",
+        "signature": "def hasRes(__res: str) -> bool",
         "sourceFile": "typings/dbmgr/KBEngine/_module.pyi",
         "sourceLine": 26
       },
       {
         "name": "listPathRes",
         "kind": "function",
-        "signature": "def listPathRes(path: str, extension: Union[str, Sequence[str]]='*', /) -> Tuple[str, ...]",
+        "signature": "def listPathRes(__path: str, __extension: Union[str, Sequence[str]]='*') -> Tuple[str, ...]",
         "sourceFile": "typings/dbmgr/KBEngine/_module.pyi",
         "sourceLine": 32
       },
       {
         "name": "matchPath",
         "kind": "function",
-        "signature": "def matchPath(res: str, /) -> str",
+        "signature": "def matchPath(__res: str) -> str",
         "sourceFile": "typings/dbmgr/KBEngine/_module.pyi",
         "sourceLine": 35
       },
       {
         "name": "open",
         "kind": "function",
-        "signature": "def open(res: str, mode: str='r', /) -> Union[IO[Any], TextIO, BinaryIO]",
+        "signature": "def open(__res: str, __mode: str='r') -> Union[IO[Any], TextIO, BinaryIO]",
         "sourceFile": "typings/dbmgr/KBEngine/_module.pyi",
         "sourceLine": 29
       },
@@ -2300,28 +2300,28 @@
       {
         "name": "registerReadFileDescriptor",
         "kind": "function",
-        "signature": "def registerReadFileDescriptor(fileDescriptor: int, callback: FileDescriptorCallback, /) -> None",
+        "signature": "def registerReadFileDescriptor(__fileDescriptor: int, __callback: FileDescriptorCallback) -> None",
         "sourceFile": "typings/dbmgr/KBEngine/_module.pyi",
         "sourceLine": 50
       },
       {
         "name": "registerWriteFileDescriptor",
         "kind": "function",
-        "signature": "def registerWriteFileDescriptor(fileDescriptor: int, callback: FileDescriptorCallback, /) -> None",
+        "signature": "def registerWriteFileDescriptor(__fileDescriptor: int, __callback: FileDescriptorCallback) -> None",
         "sourceFile": "typings/dbmgr/KBEngine/_module.pyi",
         "sourceLine": 53
       },
       {
         "name": "scriptLogType",
         "kind": "function",
-        "signature": "def scriptLogType(logType: int, /) -> None",
+        "signature": "def scriptLogType(__logType: int) -> None",
         "sourceFile": "typings/dbmgr/KBEngine/_module.pyi",
         "sourceLine": 20
       },
       {
         "name": "urlopen",
         "kind": "function",
-        "signature": "def urlopen(url: str, /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], data: Union[bytes, Dict[str, str]], /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], postData: bytes, headers: Dict[str, str], /) -> None",
+        "signature": "def urlopen(__url: str) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any]) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __data: Union[bytes, Dict[str, str]]) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __postData: bytes, __headers: Dict[str, str]) -> None",
         "sourceFile": "typings/dbmgr/KBEngine/_module.pyi",
         "sourceLine": 63
       },
@@ -2697,21 +2697,21 @@
       {
         "name": "accountLoginResponse",
         "kind": "function",
-        "signature": "def accountLoginResponse(commitName: str, realAccountName: str, extraDatas: bytes, errorCode: int, /) -> None",
+        "signature": "def accountLoginResponse(__commitName: str, __realAccountName: str, __extraDatas: bytes, __errorCode: int) -> None",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 80
       },
       {
         "name": "addTimer",
         "kind": "function",
-        "signature": "def addTimer(initialOffset: float, repeatOffset: float, callbackObj: TimerCallback, /) -> int",
+        "signature": "def addTimer(__initialOffset: float, __repeatOffset: float, __callbackObj: TimerCallback) -> int",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 44
       },
       {
         "name": "chargeResponse",
         "kind": "function",
-        "signature": "def chargeResponse(orderID: str, extraDatas: bytes, errorCode: int, /) -> None",
+        "signature": "def chargeResponse(__orderID: str, __extraDatas: bytes, __errorCode: int) -> None",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 86
       },
@@ -2725,7 +2725,7 @@
       {
         "name": "createAccountResponse",
         "kind": "function",
-        "signature": "def createAccountResponse(commitName: str, realAccountName: str, extraDatas: bytes, errorCode: int, /) -> None",
+        "signature": "def createAccountResponse(__commitName: str, __realAccountName: str, __extraDatas: bytes, __errorCode: int) -> None",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 83
       },
@@ -2739,28 +2739,28 @@
       {
         "name": "delTimer",
         "kind": "function",
-        "signature": "def delTimer(id: int, /) -> int",
+        "signature": "def delTimer(__id: int) -> int",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 47
       },
       {
         "name": "deregisterReadFileDescriptor",
         "kind": "function",
-        "signature": "def deregisterReadFileDescriptor(fileDescriptor: int, /) -> None",
+        "signature": "def deregisterReadFileDescriptor(__fileDescriptor: int) -> None",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 56
       },
       {
         "name": "deregisterWriteFileDescriptor",
         "kind": "function",
-        "signature": "def deregisterWriteFileDescriptor(fileDescriptor: int, /) -> None",
+        "signature": "def deregisterWriteFileDescriptor(__fileDescriptor: int) -> None",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 59
       },
       {
         "name": "executeRawDatabaseCommand",
         "kind": "function",
-        "signature": "def executeRawDatabaseCommand(command: str, callback: DatabaseCommandCallback | None=None, threadID: int=0, dbInterfaceName: str='default', /) -> None",
+        "signature": "def executeRawDatabaseCommand(__command: str, __callback: DatabaseCommandCallback | None=None, __threadID: int=0, __dbInterfaceName: str='default') -> None",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 89
       },
@@ -2774,35 +2774,35 @@
       {
         "name": "getResFullPath",
         "kind": "function",
-        "signature": "def getResFullPath(res: str, /) -> str",
+        "signature": "def getResFullPath(__res: str) -> str",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 23
       },
       {
         "name": "hasRes",
         "kind": "function",
-        "signature": "def hasRes(res: str, /) -> bool",
+        "signature": "def hasRes(__res: str) -> bool",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 26
       },
       {
         "name": "listPathRes",
         "kind": "function",
-        "signature": "def listPathRes(path: str, extension: Union[str, Sequence[str]]='*', /) -> Tuple[str, ...]",
+        "signature": "def listPathRes(__path: str, __extension: Union[str, Sequence[str]]='*') -> Tuple[str, ...]",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 32
       },
       {
         "name": "matchPath",
         "kind": "function",
-        "signature": "def matchPath(res: str, /) -> str",
+        "signature": "def matchPath(__res: str) -> str",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 35
       },
       {
         "name": "open",
         "kind": "function",
-        "signature": "def open(res: str, mode: str='r', /) -> Union[IO[Any], TextIO, BinaryIO]",
+        "signature": "def open(__res: str, __mode: str='r') -> Union[IO[Any], TextIO, BinaryIO]",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 29
       },
@@ -2816,28 +2816,28 @@
       {
         "name": "registerReadFileDescriptor",
         "kind": "function",
-        "signature": "def registerReadFileDescriptor(fileDescriptor: int, callback: FileDescriptorCallback, /) -> None",
+        "signature": "def registerReadFileDescriptor(__fileDescriptor: int, __callback: FileDescriptorCallback) -> None",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 50
       },
       {
         "name": "registerWriteFileDescriptor",
         "kind": "function",
-        "signature": "def registerWriteFileDescriptor(fileDescriptor: int, callback: FileDescriptorCallback, /) -> None",
+        "signature": "def registerWriteFileDescriptor(__fileDescriptor: int, __callback: FileDescriptorCallback) -> None",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 53
       },
       {
         "name": "scriptLogType",
         "kind": "function",
-        "signature": "def scriptLogType(logType: int, /) -> None",
+        "signature": "def scriptLogType(__logType: int) -> None",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 20
       },
       {
         "name": "urlopen",
         "kind": "function",
-        "signature": "def urlopen(url: str, /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], data: Union[bytes, Dict[str, str]], /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], postData: bytes, headers: Dict[str, str], /) -> None",
+        "signature": "def urlopen(__url: str) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any]) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __data: Union[bytes, Dict[str, str]]) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __postData: bytes, __headers: Dict[str, str]) -> None",
         "sourceFile": "typings/interfaces/KBEngine/_module.pyi",
         "sourceLine": 63
       },
@@ -2926,7 +2926,7 @@
       {
         "name": "addTimer",
         "kind": "function",
-        "signature": "def addTimer(initialOffset: float, repeatOffset: float, callbackObj: TimerCallback, /) -> int",
+        "signature": "def addTimer(__initialOffset: float, __repeatOffset: float, __callbackObj: TimerCallback) -> int",
         "sourceFile": "typings/logger/KBEngine/_module.pyi",
         "sourceLine": 44
       },
@@ -2947,21 +2947,21 @@
       {
         "name": "delTimer",
         "kind": "function",
-        "signature": "def delTimer(id: int, /) -> int",
+        "signature": "def delTimer(__id: int) -> int",
         "sourceFile": "typings/logger/KBEngine/_module.pyi",
         "sourceLine": 47
       },
       {
         "name": "deregisterReadFileDescriptor",
         "kind": "function",
-        "signature": "def deregisterReadFileDescriptor(fileDescriptor: int, /) -> None",
+        "signature": "def deregisterReadFileDescriptor(__fileDescriptor: int) -> None",
         "sourceFile": "typings/logger/KBEngine/_module.pyi",
         "sourceLine": 56
       },
       {
         "name": "deregisterWriteFileDescriptor",
         "kind": "function",
-        "signature": "def deregisterWriteFileDescriptor(fileDescriptor: int, /) -> None",
+        "signature": "def deregisterWriteFileDescriptor(__fileDescriptor: int) -> None",
         "sourceFile": "typings/logger/KBEngine/_module.pyi",
         "sourceLine": 59
       },
@@ -2975,35 +2975,35 @@
       {
         "name": "getResFullPath",
         "kind": "function",
-        "signature": "def getResFullPath(res: str, /) -> str",
+        "signature": "def getResFullPath(__res: str) -> str",
         "sourceFile": "typings/logger/KBEngine/_module.pyi",
         "sourceLine": 23
       },
       {
         "name": "hasRes",
         "kind": "function",
-        "signature": "def hasRes(res: str, /) -> bool",
+        "signature": "def hasRes(__res: str) -> bool",
         "sourceFile": "typings/logger/KBEngine/_module.pyi",
         "sourceLine": 26
       },
       {
         "name": "listPathRes",
         "kind": "function",
-        "signature": "def listPathRes(path: str, extension: Union[str, Sequence[str]]='*', /) -> Tuple[str, ...]",
+        "signature": "def listPathRes(__path: str, __extension: Union[str, Sequence[str]]='*') -> Tuple[str, ...]",
         "sourceFile": "typings/logger/KBEngine/_module.pyi",
         "sourceLine": 32
       },
       {
         "name": "matchPath",
         "kind": "function",
-        "signature": "def matchPath(res: str, /) -> str",
+        "signature": "def matchPath(__res: str) -> str",
         "sourceFile": "typings/logger/KBEngine/_module.pyi",
         "sourceLine": 35
       },
       {
         "name": "open",
         "kind": "function",
-        "signature": "def open(res: str, mode: str='r', /) -> Union[IO[Any], TextIO, BinaryIO]",
+        "signature": "def open(__res: str, __mode: str='r') -> Union[IO[Any], TextIO, BinaryIO]",
         "sourceFile": "typings/logger/KBEngine/_module.pyi",
         "sourceLine": 29
       },
@@ -3017,28 +3017,28 @@
       {
         "name": "registerReadFileDescriptor",
         "kind": "function",
-        "signature": "def registerReadFileDescriptor(fileDescriptor: int, callback: FileDescriptorCallback, /) -> None",
+        "signature": "def registerReadFileDescriptor(__fileDescriptor: int, __callback: FileDescriptorCallback) -> None",
         "sourceFile": "typings/logger/KBEngine/_module.pyi",
         "sourceLine": 50
       },
       {
         "name": "registerWriteFileDescriptor",
         "kind": "function",
-        "signature": "def registerWriteFileDescriptor(fileDescriptor: int, callback: FileDescriptorCallback, /) -> None",
+        "signature": "def registerWriteFileDescriptor(__fileDescriptor: int, __callback: FileDescriptorCallback) -> None",
         "sourceFile": "typings/logger/KBEngine/_module.pyi",
         "sourceLine": 53
       },
       {
         "name": "scriptLogType",
         "kind": "function",
-        "signature": "def scriptLogType(logType: int, /) -> None",
+        "signature": "def scriptLogType(__logType: int) -> None",
         "sourceFile": "typings/logger/KBEngine/_module.pyi",
         "sourceLine": 20
       },
       {
         "name": "urlopen",
         "kind": "function",
-        "signature": "def urlopen(url: str, /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], data: Union[bytes, Dict[str, str]], /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], postData: bytes, headers: Dict[str, str], /) -> None",
+        "signature": "def urlopen(__url: str) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any]) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __data: Union[bytes, Dict[str, str]]) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __postData: bytes, __headers: Dict[str, str]) -> None",
         "sourceFile": "typings/logger/KBEngine/_module.pyi",
         "sourceLine": 63
       },
@@ -3400,7 +3400,7 @@
       {
         "name": "addTimer",
         "kind": "function",
-        "signature": "def addTimer(initialOffset: float, repeatOffset: float, callbackObj: TimerCallback, /) -> int",
+        "signature": "def addTimer(__initialOffset: float, __repeatOffset: float, __callbackObj: TimerCallback) -> int",
         "sourceFile": "typings/loginapp/KBEngine/_module.pyi",
         "sourceLine": 44
       },
@@ -3421,21 +3421,21 @@
       {
         "name": "delTimer",
         "kind": "function",
-        "signature": "def delTimer(id: int, /) -> int",
+        "signature": "def delTimer(__id: int) -> int",
         "sourceFile": "typings/loginapp/KBEngine/_module.pyi",
         "sourceLine": 47
       },
       {
         "name": "deregisterReadFileDescriptor",
         "kind": "function",
-        "signature": "def deregisterReadFileDescriptor(fileDescriptor: int, /) -> None",
+        "signature": "def deregisterReadFileDescriptor(__fileDescriptor: int) -> None",
         "sourceFile": "typings/loginapp/KBEngine/_module.pyi",
         "sourceLine": 56
       },
       {
         "name": "deregisterWriteFileDescriptor",
         "kind": "function",
-        "signature": "def deregisterWriteFileDescriptor(fileDescriptor: int, /) -> None",
+        "signature": "def deregisterWriteFileDescriptor(__fileDescriptor: int) -> None",
         "sourceFile": "typings/loginapp/KBEngine/_module.pyi",
         "sourceLine": 59
       },
@@ -3449,35 +3449,35 @@
       {
         "name": "getResFullPath",
         "kind": "function",
-        "signature": "def getResFullPath(res: str, /) -> str",
+        "signature": "def getResFullPath(__res: str) -> str",
         "sourceFile": "typings/loginapp/KBEngine/_module.pyi",
         "sourceLine": 23
       },
       {
         "name": "hasRes",
         "kind": "function",
-        "signature": "def hasRes(res: str, /) -> bool",
+        "signature": "def hasRes(__res: str) -> bool",
         "sourceFile": "typings/loginapp/KBEngine/_module.pyi",
         "sourceLine": 26
       },
       {
         "name": "listPathRes",
         "kind": "function",
-        "signature": "def listPathRes(path: str, extension: Union[str, Sequence[str]]='*', /) -> Tuple[str, ...]",
+        "signature": "def listPathRes(__path: str, __extension: Union[str, Sequence[str]]='*') -> Tuple[str, ...]",
         "sourceFile": "typings/loginapp/KBEngine/_module.pyi",
         "sourceLine": 32
       },
       {
         "name": "matchPath",
         "kind": "function",
-        "signature": "def matchPath(res: str, /) -> str",
+        "signature": "def matchPath(__res: str) -> str",
         "sourceFile": "typings/loginapp/KBEngine/_module.pyi",
         "sourceLine": 35
       },
       {
         "name": "open",
         "kind": "function",
-        "signature": "def open(res: str, mode: str='r', /) -> Union[IO[Any], TextIO, BinaryIO]",
+        "signature": "def open(__res: str, __mode: str='r') -> Union[IO[Any], TextIO, BinaryIO]",
         "sourceFile": "typings/loginapp/KBEngine/_module.pyi",
         "sourceLine": 29
       },
@@ -3491,28 +3491,28 @@
       {
         "name": "registerReadFileDescriptor",
         "kind": "function",
-        "signature": "def registerReadFileDescriptor(fileDescriptor: int, callback: FileDescriptorCallback, /) -> None",
+        "signature": "def registerReadFileDescriptor(__fileDescriptor: int, __callback: FileDescriptorCallback) -> None",
         "sourceFile": "typings/loginapp/KBEngine/_module.pyi",
         "sourceLine": 50
       },
       {
         "name": "registerWriteFileDescriptor",
         "kind": "function",
-        "signature": "def registerWriteFileDescriptor(fileDescriptor: int, callback: FileDescriptorCallback, /) -> None",
+        "signature": "def registerWriteFileDescriptor(__fileDescriptor: int, __callback: FileDescriptorCallback) -> None",
         "sourceFile": "typings/loginapp/KBEngine/_module.pyi",
         "sourceLine": 53
       },
       {
         "name": "scriptLogType",
         "kind": "function",
-        "signature": "def scriptLogType(logType: int, /) -> None",
+        "signature": "def scriptLogType(__logType: int) -> None",
         "sourceFile": "typings/loginapp/KBEngine/_module.pyi",
         "sourceLine": 20
       },
       {
         "name": "urlopen",
         "kind": "function",
-        "signature": "def urlopen(url: str, /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], data: Union[bytes, Dict[str, str]], /) -> None\ndef urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], postData: bytes, headers: Dict[str, str], /) -> None",
+        "signature": "def urlopen(__url: str) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any]) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __data: Union[bytes, Dict[str, str]]) -> None\ndef urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __postData: bytes, __headers: Dict[str, str]) -> None",
         "sourceFile": "typings/loginapp/KBEngine/_module.pyi",
         "sourceLine": 63
       },

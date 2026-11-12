@@ -11,32 +11,32 @@ class MemoryStream:
     def __init__(self) -> None:
         ...
 
-    def append(self, dataType: str, value: Any, /) -> None:
+    def append(self, __dataType: str, __value: Any) -> None:
         ...
 
-    def pop(self, dataType: str, /) -> Any:
+    def pop(self, __dataType: str) -> Any:
         ...
 
-    def bytes(self, /) -> bytes:
-        ...
-
-    @overload
-    def rpos(self, /) -> int:
+    def bytes(self) -> bytes:
         ...
 
     @overload
-    def rpos(self, pos: int, /) -> None:
+    def rpos(self) -> int:
         ...
 
     @overload
-    def wpos(self, /) -> int:
+    def rpos(self, __pos: int) -> None:
         ...
 
     @overload
-    def wpos(self, pos: int, /) -> None:
+    def wpos(self) -> int:
         ...
 
-    def fill(self, val: Union[bytes, 'MemoryStream'], /) -> None:
+    @overload
+    def wpos(self, __pos: int) -> None:
+        ...
+
+    def fill(self, __val: Union[bytes, 'MemoryStream']) -> None:
         ...
 
     def __reduce_ex__(self, protocol: Any) -> Any:

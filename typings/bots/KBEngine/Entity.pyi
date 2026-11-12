@@ -16,22 +16,22 @@ class Entity:
     def __getattr__(self, name: str) -> Any:
         ...
 
-    def moveToPoint(self, destination: Vector3Like, velocity: float, distance: float, userData: Any, faceMovement: int, moveVertically: int, /) -> int:
+    def moveToPoint(self, __destination: Vector3Like, __velocity: float, __distance: float, __userData: Any, __faceMovement: int, __moveVertically: int) -> int:
         ...
 
-    def cancelController(self, controllerID: Union[int, str], /) -> None:
+    def cancelController(self, __controllerID: Union[int, str]) -> None:
         ...
 
-    def addTimer(self, initialOffset: float, repeatOffset: float, userArg: int, /) -> int:
+    def addTimer(self, __initialOffset: float, __repeatOffset: float, __userArg: int) -> int:
         ...
 
-    def delTimer(self, id: Union[int, str], /) -> None:
+    def delTimer(self, __id: Union[int, str]) -> None:
         ...
 
-    def isPlayer(self, /) -> bool:
+    def isPlayer(self) -> bool:
         ...
 
-    def getComponent(self, componentName: str, all: bool=False, /) -> Any:
+    def getComponent(self, __componentName: str, __all: bool=False) -> Any:
         ...
 
     def fireEvent(self, eventName: str, *args: Any) -> None:
@@ -44,19 +44,19 @@ class Entity:
         ...
 
     @property
-    def position(self, /) -> Vector3:
+    def position(self) -> Vector3:
         ...
 
     @position.setter
-    def position(self, value: Vector3Like, /) -> None:
+    def position(self, __value: Vector3Like) -> None:
         ...
 
     @property
-    def direction(self, /) -> Vector3:
+    def direction(self) -> Vector3:
         ...
 
     @direction.setter
-    def direction(self, value: Vector3Like, /) -> None:
+    def direction(self, __value: Vector3Like) -> None:
         ...
 
     @property

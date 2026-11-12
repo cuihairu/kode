@@ -22,8 +22,30 @@ def parse(source):
     return ast.parse(source).body
 
 
+def textualize(nodes):
+    module = ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[]))
+    # Position-only is carried as posonlyargs (engine C bindings register
+    # METH_VARARGS, no keyword calls), but the `/` separator only parses from
+    # Python 3.8 and the engine embeds 3.7.3. Emit the typeshed stub
+    # convention instead: in a stub a parameter name starting with `__` is
+    # positional-only for every checker (verified against pyright 2026-11:
+    # `f(x=1)` on `def f(__x: int)` reports "Expected 1 more positional
+    # argument"). self/cls and keyword-only args keep their names.
+    for func in ast.walk(module):
+        if isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for argument in func.args.posonlyargs:
+                if argument.arg not in ('self', 'cls') and not argument.arg.startswith('__'):
+                    argument.arg = '__' + argument.arg
+            # Drop the separator itself: demote posonly back to plain leading
+            # params (order and defaults alignment are unchanged — defaults
+            # bind to the trailing n params across posonly+args as one list).
+            func.args.args = func.args.posonlyargs + func.args.args
+            func.args.posonlyargs = []
+    return ast.unparse(module) + '\n'
+
+
 def text(nodes):
-    return ast.unparse(ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[]))) + '\n'
+    return textualize(nodes)
 
 
 def cls(name, module=None):

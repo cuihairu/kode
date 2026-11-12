@@ -17,22 +17,22 @@ component: Literal['loginapp']
 def publish() -> int:
     ...
 
-def scriptLogType(logType: int, /) -> None:
+def scriptLogType(__logType: int) -> None:
     ...
 
-def getResFullPath(res: str, /) -> str:
+def getResFullPath(__res: str) -> str:
     ...
 
-def hasRes(res: str, /) -> bool:
+def hasRes(__res: str) -> bool:
     ...
 
-def open(res: str, mode: str='r', /) -> Union[IO[Any], TextIO, BinaryIO]:
+def open(__res: str, __mode: str='r') -> Union[IO[Any], TextIO, BinaryIO]:
     ...
 
-def listPathRes(path: str, extension: Union[str, Sequence[str]]='*', /) -> Tuple[str, ...]:
+def listPathRes(__path: str, __extension: Union[str, Sequence[str]]='*') -> Tuple[str, ...]:
     ...
 
-def matchPath(res: str, /) -> str:
+def matchPath(__res: str) -> str:
     ...
 
 def debugTracing() -> None:
@@ -41,38 +41,38 @@ def debugTracing() -> None:
 def genUUID64() -> int:
     ...
 
-def addTimer(initialOffset: float, repeatOffset: float, callbackObj: TimerCallback, /) -> int:
+def addTimer(__initialOffset: float, __repeatOffset: float, __callbackObj: TimerCallback) -> int:
     ...
 
-def delTimer(id: int, /) -> int:
+def delTimer(__id: int) -> int:
     ...
 
-def registerReadFileDescriptor(fileDescriptor: int, callback: FileDescriptorCallback, /) -> None:
+def registerReadFileDescriptor(__fileDescriptor: int, __callback: FileDescriptorCallback) -> None:
     ...
 
-def registerWriteFileDescriptor(fileDescriptor: int, callback: FileDescriptorCallback, /) -> None:
+def registerWriteFileDescriptor(__fileDescriptor: int, __callback: FileDescriptorCallback) -> None:
     ...
 
-def deregisterReadFileDescriptor(fileDescriptor: int, /) -> None:
+def deregisterReadFileDescriptor(__fileDescriptor: int) -> None:
     ...
 
-def deregisterWriteFileDescriptor(fileDescriptor: int, /) -> None:
-    ...
-
-@overload
-def urlopen(url: str, /) -> None:
+def deregisterWriteFileDescriptor(__fileDescriptor: int) -> None:
     ...
 
 @overload
-def urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], /) -> None:
+def urlopen(__url: str) -> None:
     ...
 
 @overload
-def urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], data: Union[bytes, Dict[str, str]], /) -> None:
+def urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any]) -> None:
     ...
 
 @overload
-def urlopen(url: str, callback: Callable[[int, str, str, bool, str], Any], postData: bytes, headers: Dict[str, str], /) -> None:
+def urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __data: Union[bytes, Dict[str, str]]) -> None:
+    ...
+
+@overload
+def urlopen(__url: str, __callback: Callable[[int, str, str, bool, str], Any], __postData: bytes, __headers: Dict[str, str]) -> None:
     ...
 SERVER_SUCCESS: int = 0
 SERVER_ERR_SRV_NO_READY: int = 1

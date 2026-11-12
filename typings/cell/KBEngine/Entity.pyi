@@ -24,21 +24,21 @@ class Entity:
     def __reduce_ex__(self, protocol: Any) -> Any:
         ...
 
-    def __getDEP__(self, /) -> Any:
+    def __getDEP__(self) -> Any:
         ...
 
-    def addTimer(self, initialOffset: float, repeatOffset: float=0.0, userArg: int=0, /) -> int:
+    def addTimer(self, __initialOffset: float, __repeatOffset: float=0.0, __userArg: int=0) -> int:
         ...
 
-    def delTimer(self, id: Union[int, str], /) -> None:
-        ...
-
-    @overload
-    def getComponent(self, componentName: str, all: Literal[False]=False, /) -> Union[EntityComponent, None]:
+    def delTimer(self, __id: Union[int, str]) -> None:
         ...
 
     @overload
-    def getComponent(self, componentName: str, all: Literal[True], /) -> Tuple[EntityComponent, ...]:
+    def getComponent(self, __componentName: str, __all: Literal[False]=False) -> Union[EntityComponent, None]:
+        ...
+
+    @overload
+    def getComponent(self, __componentName: str, __all: Literal[True]) -> Tuple[EntityComponent, ...]:
         ...
 
     def fireEvent(self, eventName: str, *args: Any) -> None:
@@ -50,94 +50,94 @@ class Entity:
     def deregisterEvent(self, eventName: str, callback: Callback) -> None:
         ...
 
-    def clientEntity(self, destID: int, /) -> EntityCall:
+    def clientEntity(self, __destID: int) -> EntityCall:
         ...
 
-    def isReal(self, /) -> bool:
+    def isReal(self) -> bool:
         ...
 
-    def cancelController(self, controllerID: Union[int, str], /) -> None:
+    def cancelController(self, __controllerID: Union[int, str]) -> None:
         ...
 
-    def canNavigate(self, /) -> bool:
+    def canNavigate(self) -> bool:
         ...
 
-    def setViewRadius(self, radius: float, hyst: float=5.0, /) -> None:
+    def setViewRadius(self, __radius: float, __hyst: float=5.0) -> None:
         ...
 
-    def getViewRadius(self, /) -> float:
+    def getViewRadius(self) -> float:
         ...
 
-    def getViewHystArea(self, /) -> float:
+    def getViewHystArea(self) -> float:
         ...
 
-    def addProximity(self, range_xz: float, range_y: float, userArg: int, /) -> int:
+    def addProximity(self, __range_xz: float, __range_y: float, __userArg: int) -> int:
         ...
 
-    def addYawRotator(self, yaw: float, velocity: float, userData: Any, /) -> int:
+    def addYawRotator(self, __yaw: float, __velocity: float, __userData: Any) -> int:
         ...
 
-    def navigate(self, destination: Vector3Like, velocity: float, distance: float, maxMoveDistance: float, maxDistance: float, faceMovement: int, layer: int, userData: Any, /) -> int:
+    def navigate(self, __destination: Vector3Like, __velocity: float, __distance: float, __maxMoveDistance: float, __maxDistance: float, __faceMovement: int, __layer: int, __userData: Any) -> int:
         ...
 
-    def navigatePathPoints(self, destination: Vector3Like, maxSearchDistance: float, layer: int, /) -> List[Vector3]:
+    def navigatePathPoints(self, __destination: Vector3Like, __maxSearchDistance: float, __layer: int) -> List[Vector3]:
         ...
 
-    def getRandomPoints(self, centerPos: Vector3Like, maxRadius: float, maxPoints: int, layer: int, /) -> List[Vector3]:
+    def getRandomPoints(self, __centerPos: Vector3Like, __maxRadius: float, __maxPoints: int, __layer: int) -> List[Vector3]:
         ...
 
-    def moveToPoint(self, destination: Vector3Like, velocity: float, distance: float, userData: Any, faceMovement: int, moveVertically: int, /) -> int:
-        ...
-
-    @overload
-    def moveToEntity(self, targetID: int, velocity: float, distance: float, userData: Any, faceMovement: int, moveVertically: int, /) -> int:
+    def moveToPoint(self, __destination: Vector3Like, __velocity: float, __distance: float, __userData: Any, __faceMovement: int, __moveVertically: int) -> int:
         ...
 
     @overload
-    def moveToEntity(self, targetID: int, velocity: float, distance: float, userData: Any, faceMovement: int, moveVertically: int, offset: Vector3Like, /) -> int:
+    def moveToEntity(self, __targetID: int, __velocity: float, __distance: float, __userData: Any, __faceMovement: int, __moveVertically: int) -> int:
         ...
 
-    def accelerate(self, type: str, acceleration: float, /) -> float:
+    @overload
+    def moveToEntity(self, __targetID: int, __velocity: float, __distance: float, __userData: Any, __faceMovement: int, __moveVertically: int, __offset: Vector3Like) -> int:
         ...
 
-    def entitiesInView(self, pending: bool=False, /) -> List[Entity]:
+    def accelerate(self, __type: str, __acceleration: float) -> float:
         ...
 
-    def entitiesInRange(self, range: float, entityType: Union[str, None]=None, position: Union[Vector3Like, None]=None, /) -> List[Entity]:
+    def entitiesInView(self, __pending: bool=False) -> List[Entity]:
         ...
 
-    def teleport(self, nearbyMBRef: Union[EntityCall, Entity, None], position: Vector3Like, direction: Vector3Like, /) -> None:
+    def entitiesInRange(self, __range: float, __entityType: Union[str, None]=None, __position: Union[Vector3Like, None]=None) -> List[Entity]:
         ...
 
-    def destroySpace(self, /) -> None:
+    def teleport(self, __nearbyMBRef: Union[EntityCall, Entity, None], __position: Vector3Like, __direction: Vector3Like) -> None:
         ...
 
-    def debugView(self, /) -> None:
+    def destroySpace(self) -> None:
         ...
 
-    def getWitnesses(self, /) -> Tuple[Entity, ...]:
+    def debugView(self) -> None:
+        ...
+
+    def getWitnesses(self) -> Tuple[Entity, ...]:
         ...
 
     @property
-    def position(self, /) -> Vector3:
+    def position(self) -> Vector3:
         ...
 
     @position.setter
-    def position(self, value: Vector3Like, /) -> None:
+    def position(self, __value: Vector3Like) -> None:
         ...
 
     @property
-    def direction(self, /) -> Vector3:
+    def direction(self) -> Vector3:
         ...
 
     @direction.setter
-    def direction(self, value: Vector3Like, /) -> None:
+    def direction(self, __value: Vector3Like) -> None:
         ...
 
     def destroy(self) -> None:
         ...
 
-    def writeToDB(self, shouldAutoLoad: bool=False, dbInterfaceName: str='default', /) -> None:
+    def writeToDB(self, __shouldAutoLoad: bool=False, __dbInterfaceName: str='default') -> None:
         ...
 
     @property

@@ -9,22 +9,22 @@ EntityEventCallback = Callable[..., Any]
 
 class Proxy(Entity):
 
-    def disconnect(self, /) -> None:
+    def disconnect(self) -> None:
         ...
 
-    def getClientType(self, /) -> int:
+    def getClientType(self) -> int:
         ...
 
-    def getClientDatas(self, /) -> Tuple[bytes, bytes]:
+    def getClientDatas(self) -> Tuple[bytes, bytes]:
         ...
 
-    def giveClientTo(self, proxy: Proxy, /) -> None:
+    def giveClientTo(self, __proxy: Proxy) -> None:
         ...
 
-    def streamFileToClient(self, resourceName: str, desc: str='', id: int=-1, /) -> int:
+    def streamFileToClient(self, __resourceName: str, __desc: str='', __id: int=-1) -> int:
         ...
 
-    def streamStringToClient(self, data: Union[str, bytes], desc: str='', id: int=-1, /) -> int:
+    def streamStringToClient(self, __data: Union[str, bytes], __desc: str='', __id: int=-1) -> int:
         ...
 
     @property
