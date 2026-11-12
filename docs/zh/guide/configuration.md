@@ -83,6 +83,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.rpcArgCountDiagnostics` | boolean | `true` | RPC 实参数量诊断:`self.base/cell/client.<method>(...)` 调用点顶层实参数与 .def 该方法(调用所属 section)声明的 `<Arg>` 数明确不符时报 `kbengine.rpcArgCount` Warning(默认启用);星号实参/动态接收者/声明未就绪/段外声明/括号不闭合保留未知一律不报,inlay 提示不替代诊断 |
 | `kbengine.roleMisuseDiagnostics` | boolean | `true` | 角色错用诊断:实体脚本里 `self.<内建属性>` 属于其他角色面(baseapp/cellapp/client)而当前面未注册时报 `kbengine.roleMisuse` Warning 并引注册面引擎源码(默认启用);角色不明与普通 Python 类不猜,属性面表与内建属性 hover 元数据同源 |
 | `kbengine.postDestroyDiagnostics` | boolean | `true` | 销毁后访问诊断:同一函数内可确定的同块 `self.destroy()` 之后直接访问 `self.<成员>`(id/isDestroyed/className/destroy 除外),且两者间无同层无条件早退,报 `kbengine.postDestroy` Warning(默认启用);条件销毁/跨块/跨回调/异常/def 声明 destroy(动态分派)一律不猜 |
+| `kbengine.cellDataWriteDiagnostics` | boolean | `true` | cellData 已知字段写入诊断:对已知 `self.cellData["<键>"]` 字段的字面量赋值按声明类型校验引擎标量结构与取值范围(datatypes.cpp 注册表),报 `kbengine.cellDataWriteType` Warning 并附声明来源(默认启用);未知键、非标量类型(PYTHON 族、ARRAY、FIXED_DICT、自定义别名)、右侧非字面量或跨行、bool 入整数、int 入 FLOAT 一律不报;别名接收者按最近赋值规则核定,重绑定后不查 |
 | `kbengine.fixedDictMutationDiagnostics` | boolean | `true` | FIXED_DICT 子键赋值诊断(KBE-PY-015):FIXED_DICT 属性的子键赋值(`self.<属性>.<键>` / `self.<属性>['<键>']`,含增强赋值)不触发属性同步事件,报 `kbengine.fixedDictNestedMutation` Warning 并给「整体重赋」quick fix(`{**old, key: rhs}`);属性顶层整体赋值/非 FIXED_DICT 属性不报 |
 | `kbengine.destroyedEntityReferenceDiagnostics` | boolean | `true` | 已销毁实体引用滞留诊断(KBE-PY-016):把 `self` 存入模块级 list/dict/set 报 `kbengine.destroyedEntityReference` Warning——实体销毁后引用滞留,引擎 3600 s 后打 garbages 泄漏告警,应在 `onDestroy` 里解除引用;局部容器/非 self 实参/读操作不报 |
 | `kbengine.timerCleanupDiagnostics` | boolean | `true` | 定时器注销提示(KBE-PY-017):`onDestroy` 方法体内的 `self.delTimer(...)` 实语句报 `kbengine.timerCleanupOnDestroy` Information——引擎 `destroy()` 已取消全部定时器(`scriptTimers_.cancelAll()`),销毁期注销冗余;陈旧 id 静默返回 -1 |
@@ -244,6 +245,8 @@ guiconsole 协议链（machined UDP 发现 + 直连各组件 TCP）：日志 tai
 | `kbengine.componentStatusPanel.memThresholdMb` | number | `1024` | 内存红色阈值（MB）；线上 `usedmem` 字段实为字节，按字节换算后比较（真机实测口径） |
 
 ### 远程调试
+
+> **Python 3.7.3 版本约束：**引擎包锁定 `debugpy==1.7.0`，VS Code 调试器锁定 `ms-python.debugpy@2024.0.0`，Python 扩展复现基线为 `2024.0.1`。现有自动安装/同步路径仍假定新版 Python，不能用于该目标；请按[固定版本安装说明](python-debugger-compatibility.md)手工准备。
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |

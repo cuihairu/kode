@@ -31,6 +31,7 @@
 | KBE-PY-015 | FIXED_DICT 属性子键赋值不触发属性同步事件 | 已实现（C-23 行为知识流水线）：FIXED_DICT 属性的子键赋值（`self.<属性>.<键>` / `self.<属性>['<键>']`，含增强赋值）报 Warning，quick fix 给整体重赋习语 `{**old, key: rhs}`（仅直接赋值单段键）；属性顶层整体赋值/非 FIXED_DICT 属性/注释字符串同形不报 | `kbengine.fixedDictNestedMutation`；`fixedDictMutationDiagnostics.ts`（FIXED_DICT 判定走 types.xml 类型图，发布 `trapDiagnosticsWiring.ts`） |
 | KBE-PY-016 | `self` 存入模块级容器（销毁后引用滞留/garbages 泄漏） | 已实现（C-23 行为知识流水线）：把 `self` 存入模块级 list/dict/set（append/add/extend/update/下标赋值）报 Warning；局部容器/非 self 实参/读操作/lambda 逃逸不分析不冒充 | `kbengine.destroyedEntityReference`；`destroyedEntityCaptureDiagnostics.ts`（发布 `trapDiagnosticsWiring.ts`） |
 | KBE-PY-017 | `onDestroy` 内 `delTimer` 冗余（引擎 destroy 已 cancelAll） | 已实现（C-23 行为知识流水线）：onDestroy 方法体内 `self.delTimer(...)` 实语句报 Information——`destroy()` 即 `scriptTimers_.cancelAll()`，销毁期注销多余；陈旧 id 静默返回 -1；其他方法/注释同形不报 | `kbengine.timerCleanupOnDestroy`；`timerCleanupDiagnostics.ts`（发布 `trapDiagnosticsWiring.ts`） |
+| KBE-PY-018 | cellData 已知字段写入类型不符（结构/引擎标量范围） | 已实现（KSEM-CELL-08）：已知 `self.cellData["<键>"]` 字段的整行字面量赋值按声明类型校验结构与范围，不符报 Warning 并附实际/期望类型及声明来源；未知键/非标量类型（PYTHON 族/ARRAY/FIXED_DICT/自定义别名）/右侧非字面量或跨行/bool 入整数/int 入 FLOAT 不报；别名接收者按最近赋值核定，重绑定后不查 | `kbengine.cellDataWriteType`；`cellDataWriteCheck.ts`（键宇宙同 CELL-04 补全面，标量范围=datatypes.cpp 注册表） |
 | KBE-DEF-001 | 未知 Type、Flags、DetailLevel | 已有实时校验；未知 Type 有稳定 code | `kbengine.unknownType`；`languageProviders.ts` |
 | KBE-DEF-002 | 将多个 Flags 用 `\|` 拼接成组合值 | 已有未知 Flags 校验 | 引擎按单个映射值解析；分析器的容错拆分不代表引擎接受 |
 | KBE-DEF-003 | 同域重复定义、缺少/重复必需字段 | 已有结构诊断（发布时**不带诊断 code**，与其余规则不同；受结构开关与重复/必需字段子开关共同控制） | `validateSectionStructure`、`validatePropertyStructure`；`kbengine.enableStructureDiagnostics`/`checkDuplicateDefinitions`/`checkMissingPropertyFields` |
@@ -136,6 +137,12 @@ if self.cell is not None:
 已实现（IDE-LINT-010，KBE-PY-010）：引擎事实——`destroy` 是各面实体宏公共方法（`entity_macro.h:20` `SCRIPT_METHOD_DECLARE("destroy", pyDestroyEntity, ...)`），`self.destroy()` 销毁自身；销毁后各 getter（如 `Entity::pyGetCellEntityCall`）检查 destroyed，访问即异常。判定：同一函数内同一块（同缩进，中间无 dedent）的销毁语句（整句 `self.destroy()` 或 `x = self.destroy()`）先于访问语句，且两者间无同层 `return`/`break`/`continue`/`raise`（无条件早退，访问为死码）→ 报 `kbengine.postDestroy`（Warning）。成员集：排除 `id`/`isDestroyed`/`className`（销毁后仍可读的身份/状态项，读 `isDestroyed` 正是确认销毁）与 `destroy`（重复销毁非本 lint 面向的访问错用），其余任何成员（属性/方法/EntityCall）访问都报。
 
 已知边界（不冒充已实现）：销毁在访问之后、条件销毁（`if`/`while` 内）、销毁在祖先块而访问在嵌套块（或反之）、跨函数/跨回调（回调里销毁，另一回调访问）、异常路径（销毁抛错未完成）、动态分派（def 声明 `destroy` 方法/属性 → `self.destroy()` 可能非引擎销毁，整文件不分析）——均不报，不做全文件误报；`self.<prop>` 仅 `self.` 单段前缀（`other.destroy`/`self.cell.destroy` 非销毁自身，不参与）。开关 `kbengine.postDestroyDiagnostics=true`（默认开启），关闭只停止提示，不改变引擎行为。
+
+## cellData 已知字段写入类型：结构与引擎标量范围可判才判
+
+已实现（KSEM-CELL-08，KBE-PY-018）：引擎事实——cellData 字段类型在 `.def` 声明，引擎标量（datatypes.cpp `DataTypes::initialize` 注册表）按带宽与符号定封闭范围：UINT8/16/32/64、INT8/16/32/64、FLOAT/DOUBLE、STRING/UNICODE、BLOB、VECTOR2/3/4（定元数数值向量）。判定：已知键（CELL-04 键宇宙，与补全/读取提示同源）且类型在标量表时，`self.cellData["<键>"] = <整行字面量>` 按声明类型校验——字符串入数值/向量、None/dict/set 入数值/字符串/字节流/向量、列表入数值/字符串标量、字节串入字符串/数值为结构不符；整数字面量超出标量封闭区间（负入无符号/越界）为范围不符；VECTOR 元数不符或元素含非数值字面量亦报 → 报 `kbengine.cellDataWriteType`（Warning），消息附实际/期望类型及声明来源（`Avatar.def:5`）。bool 是 int 子类入整数/浮点不报；浮点字面量入整数族报（与声明结构不符）；写点/别名/常量键与 CELL-06/07 同面：只查直赋写型（增强/`.get`/del 不参与），别名逃逸不影响写型（字典形状不变），重绑定后的别名不查。
+
+已知边界（不冒充已实现）：未知键（CELL-09/10 面）、无类型标签、PYTHON 与 PY_DICT/PY_TUPLE/PY_LIST/ENTITYCALL、ARRAY/FIXED_DICT/types.xml 自定义别名（结构未知）不查；右侧非整段单行字面量（名字/调用/跨行/尾随表达式/未闭合）一律不猜，绝不据此报错配；元素含未知表达式的向量只保元数面。开关 `kbengine.cellDataWriteDiagnostics=true`（默认开启），关闭只停止提示，不改变引擎行为。
 
 ## 行为知识流水线（C-23，KBE-PY-015/016/017）
 
