@@ -210,7 +210,9 @@ suite('selfAttributeFlow AST 真域精度(精确性主车道批 A)', () => {
 // 2026-11-12:demo 资产 KodeHotReload.py 的批 C 精度位移使用位(对拍深等面
 // 豁免见 selfAttributeFlowRustParity.test.ts PRECISION_MOVED_FIXTURE_USAGES)。
 // 真实语料逐位钉死:行号随已提交夹具锁步,夹具位移即红(重探后改行)。
-describe('demo-asset:KodeHotReload.py in-file 调用注解与裸名写链(真实夹具)', () => {
+// suite(非裸 describe):Rust 真型面,无 kode-server 二进制(纯 TS 门禁/CI
+// vitest 段未构建 Rust)整套 skip,与对拍套件同闸。
+suite('demo-asset:KodeHotReload.py in-file 调用注解与裸名写链(真实夹具)', () => {
   it('self.http → 嵌套类调用注解 HTTPServer;self.last 裸名写链 → list', async () => {
     const text = readFileSync(
       join(repoRoot, 'tests', 'fixtures', 'kbengine-demo-assets', 'scripts', 'common', 'KodeHotReload.py'),
