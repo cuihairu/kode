@@ -309,7 +309,11 @@ guiconsole 协议链（machined UDP 发现 + 直连各组件 TCP）：日志 tai
 
 边界:extraPaths 的管理段只认默认约定目录 `.kbengine/stubs`(导出开且 `KBEngine.pyi` 或 `kbe_types.py` 在盘时并入,两份生成物同居一个目录);用户配置的 `kbengine.python.stubDir` 目录不并入管理段,需要时自行加入 `python.analysis.extraPaths`。
 
-Pylance 对 `KBEngine` 这类模块的解析优先级(从高到低):同名 .pyi → stubPath → extraPaths。kode 把这个顺序显式化:接线 `python.analysis.extraPaths` 的同一次同步会写 `python.analysis.stubPath` = `${workspaceFolder}/.kbengine/stubs`(随 `kbengine.managedDir` 同迁,不跟用户自配的 `kbengine.python.stubDir`;且仅在 `kbengine.python.stubExport` 开启时写)。你自己设的 `python.analysis.stubPath` 永不覆盖;现值已对齐时零写入。同一次同步还会键级合并 `python.analysis.diagnosticSeverityOverrides` 加 `reportMissingModuleSource: none`:KBEngine 是 C++ 内嵌注册模块(py_entitydef 的 `PyImport_AddModule`),磁盘上永远没有对应 .py 源,Pylance 的「已找到类型声明、无法从源码解析」是嵌入模块常态噪声而非故障;你已设的 override(含 `reportMissingModuleSource` 本身)与其他键一律不动,`kbengine.python.stubExport` 关闭时本面一并关。
+kode 按进程导出独立桩包：`.kbengine/stubs/processes/base`、`cell`、`bots`、`client`、`dbmgr`、`interfaces`、`logger`、`loginapp`。脚本目录 `scripts/base`、`scripts/cell` 分别对应引擎组件 `baseapp`、`cellapp`，选择同名的 `base`、`cell` 桩根。`pyrightconfig.json` 的 executionEnvironments 为每个脚本目录优先配置对应进程的 extraPaths。各进程还有独立的 `entity_types.pyi`，按属性 Flags、方法所属侧过滤，并分别声明远程句柄；不会在业务脚本旁生成遮蔽实现的同名桩。
+
+解析仍遵循同名 .pyi → stubPath → extraPaths。为防止旧混合 KBEngine 桩抢先命中，kode 管理的 `python.analysis.stubPath` 改为 `${workspaceFolder}/.kbengine/stubs/_shared`，项目配置使用等价相对路径；路径随 `kbengine.managedDir`、自定义 `kbengine.python.stubDir` 或 `KBENGINE_STUB_DIR` 解析。用户路径、JSONC 注释和其他配置保留。已有 TOML Pyright 配置、extends、冲突的用户执行环境或自设全局 stubPath 需要显式接入，kode 保留配置并报告冲突。同步还会键级合并 `python.analysis.diagnosticSeverityOverrides` 中的 `reportMissingModuleSource: none`，消除 C++ 内嵌模块没有 .py 源码的提示。导出与同步总开关继续生效。
+
+已有桩文件仍遵守 copy-if-absent，新进程目录与旧副本并存；旧根桩不会覆盖进程分析。需要替换修改过的进程模板时，使用显式重置命令并核对确认提示。未归属具体进程的公共脚本只获得公共向量/容器类型，不再获得服务器与 bots API 的混合超集。详见[进程类型设计](../../design/python-process-typings.md)。
 
 ### 代码生成器
 

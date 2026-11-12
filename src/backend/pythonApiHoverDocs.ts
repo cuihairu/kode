@@ -24,7 +24,8 @@ import type { HoverLanguage } from '../hoverLocale';
 const FACE_TO_DOMAIN: Record<string, string> = {
   baseapp: 'base',
   cellapp: 'cell',
-  client: 'client'
+  client: 'client', bots: 'bots', base: 'base', cell: 'cell',
+  logger: 'logger', dbmgr: 'dbmgr', interfaces: 'interfaces', loginapp: 'loginapp'
 };
 
 /** 文档库域代称(bots 脚本目录按 client 面惯例,另试 bots 域) */
@@ -75,6 +76,7 @@ export function lookupApiDoc(
       }
     }
   }
+  if (domains.length > 0) { return { kind: 'miss' }; }
   const owners = new Set(byName.map(entry => entry.owner));
   if (byName.length === 1 || owners.size === 1) {
     return { kind: 'hit', hit: { entry: byName[0], summary: localize(byName[0], locale), locale } };

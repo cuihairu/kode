@@ -72,12 +72,12 @@ describe('分册属性表(纯逻辑)', () => {
     });
   });
 
-  it('cellapp 面 18 项;position 可写 Vector3Like;databaseID 不在 cellapp 面', () => {
+  it('cellapp 面 18 项;position 可写 Vector3;databaseID 不在 cellapp 面', () => {
     const props = getEntityBuiltinPropertiesForFace('cellapp');
     expect(props).toHaveLength(18);
     expect(props.find(item => item.name === 'position')).toMatchObject({
       readonly: false,
-      type: 'Vector3Like',
+      type: 'Vector3',
       source: 'server/cellapp/entity.cpp:83'
     });
     expect(props.some(item => item.name === 'databaseID')).toBe(false);
@@ -107,12 +107,13 @@ describe('分册属性表(纯逻辑)', () => {
     ]);
   });
 
-  it('目录域判面:base/cell/client 段各归其面;平铺与 bots 段判不出', () => {
+  it('目录域判面:base/cell/client 段各归其面;bots 归客户端面，平铺判不出', () => {
     expect(resolveEntityComponentFaceFromPath('/proj/scripts/base/Avatar.py')).toBe('baseapp');
     expect(resolveEntityComponentFaceFromPath('/proj/scripts/cell/Avatar.py')).toBe('cellapp');
     expect(resolveEntityComponentFaceFromPath('/proj/scripts/client/Avatar.py')).toBe('client');
     expect(resolveEntityComponentFaceFromPath('/proj/scripts/Avatar.py')).toBeNull();
-    expect(resolveEntityComponentFaceFromPath('/proj/scripts/bots/Bot.py')).toBeNull();
+    expect(resolveEntityComponentFaceFromPath('/proj/scripts/bots/Bot.py')).toBe('client');
+    expect(resolveEntityComponentFaceFromPath('/cell/proj/scripts/common/util.py')).toBeNull();
   });
 
   it('命中解析:cell 面命中 position 不命中 databaseID;非实体不接管', () => {
@@ -120,7 +121,7 @@ describe('分册属性表(纯逻辑)', () => {
     const cellHit = resolveEntityBuiltinPropertyHit('position', 'cellapp', null);
     expect(cellHit).toMatchObject({
       face: 'cellapp',
-      property: { name: 'position', readonly: false, type: 'Vector3Like' }
+      property: { name: 'position', readonly: false, type: 'Vector3' }
     });
     expect(resolveEntityBuiltinPropertyHit('databaseID', 'cellapp', null)).toBeNull();
 
@@ -149,7 +150,7 @@ describe('分册属性表(纯逻辑)', () => {
   it('详情段单一 formatter:「<组件>面 · 只读/可写」;判不出面标公共面', () => {
     expect(
       formatEntityBuiltinPropertyDetail('cellapp', {
-        name: 'position', readonly: false, type: 'Vector3Like', source: 'x'
+        name: 'position', readonly: false, type: 'Vector3', source: 'x'
       })
     ).toBe('cellapp面 · 可写');
     expect(
@@ -172,9 +173,9 @@ describe('分册属性表(纯逻辑)', () => {
     ).toBe('**self.databaseID: int** — baseapp面 · 只读');
     expect(
       formatEntityBuiltinPropertyHeadline('position', 'cellapp', {
-        name: 'position', readonly: false, type: 'Vector3Like', source: 'x'
+        name: 'position', readonly: false, type: 'Vector3', source: 'x'
       })
-    ).toBe('**self.position: Vector3Like** — cellapp面 · 可写');
+    ).toBe('**self.position: Vector3** — cellapp面 · 可写');
   });
 });
 
@@ -237,7 +238,7 @@ describe('def 归属面解析(EntityMappingManager)', () => {
 describe('Hover 接线(目录域判面)', () => {
   const provider = new KBEngineHoverProvider(makeManager());
 
-  it('cell 脚本 self.position → cellapp 面 · 可写 · Vector3Like,带引擎取证', async () => {
+  it('cell 脚本 self.position → cellapp 面 · 可写 · Vector3,带引擎取证', async () => {
     const doc = pyDoc(
       'class Avatar:\n    def tick(self):\n        self.position = (1, 2, 3)\n',
       '/proj/scripts/cell/Avatar.py'
@@ -245,7 +246,7 @@ describe('Hover 接线(目录域判面)', () => {
     const text = hoverText(
       await Promise.resolve(provider.provideHover(doc, new Position(2, '        self.'.length)))
     );
-    expect(text).toContain('**self.position: Vector3Like** — cellapp面 · 可写');
+    expect(text).toContain('**self.position: Vector3** — cellapp面 · 可写');
     expect(text).toContain('server/cellapp/entity.cpp:83');
   });
 
@@ -310,7 +311,7 @@ describe('补全接线', () => {
     expect(labels).not.toContain('databaseID');
     const position = list.find(item => item.label.label === 'position');
     // Pylance 同款:名称旁右列灰字类型(label.description)
-    expect(position?.label.description).toBe('Vector3Like');
+    expect(position?.label.description).toBe('Vector3');
     expect(position?.detail).toBe('cellapp面 · 可写');
     expect(position?.kind).toBe(CompletionItemKind.Property);
   });

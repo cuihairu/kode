@@ -13,6 +13,7 @@ import { formatEntityBuiltinPropertyDetail, getEntityBuiltinPropertiesForFace, h
 import { PYTHON_TYPE_STUB_FALLBACK } from '../pythonTypeStubs';
 import { getPythonSelfCompletionContext } from '../backend/pythonLanguageUtils';
 import { filterKbeSymbols, getKbeAliases, getKbeCompletionContext, kbeCompletionDocumentation } from '../kbeModuleIndex';
+import { pythonProcessFromPath, processApiSymbols } from '../backend/pythonProcess';
 import { EngineApiCatalog } from '../backend/engineApiMetadata';
 import { getEngineVersion } from '../engineVersion';
 import { getLanguageFeatureConfig } from './shared';
@@ -452,8 +453,10 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
       }
 
       if (lineText.match(/KBEngine\.[a-zA-Z]*$/)) {
+        const role = pythonProcessFromPath(document.fileName);
         KBENGINE_RELOAD_FUNCTIONS
-          .filter(fn => fn.name.startsWith('KBEngine.'))
+          .filter(fn => fn.name.startsWith('KBEngine.') && (!role ||
+            processApiSymbols(role).some(symbol => symbol.name === fn.name.slice('KBEngine.'.length))))
           .forEach(fn => {
             const shortName = fn.name.replace('KBEngine.', '');
             const item = new vscode.CompletionItem(shortName, vscode.CompletionItemKind.Function);
@@ -792,11 +795,11 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
     const kbeAliases = getKbeAliases(document.getText());
     const kbeContext = getKbeCompletionContext(linePrefix, kbeAliases);
     if (kbeContext) {
-      const entries = filterKbeSymbols(kbeContext.partialSymbol);
+      const entries = filterKbeSymbols(kbeContext.partialSymbol, pythonProcessFromPath(document.fileName));
       return entries.map(entry => {
         const item = new vscode.CompletionItem(
           entry.name,
-          entry.kind === 'class' ? vscode.CompletionItemKind.Class : vscode.CompletionItemKind.Function
+          entry.kind === 'class' ? vscode.CompletionItemKind.Class : entry.kind === 'variable' ? vscode.CompletionItemKind.Variable : vscode.CompletionItemKind.Function
         );
         item.detail = entry.signature;
         item.documentation = new vscode.MarkdownString(

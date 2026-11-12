@@ -22,6 +22,7 @@ import { behaviorEntriesForSymbol, behaviorNotesMarkdown, fixedDictBehaviorNoteM
 import { isFixedDictTypeName } from '../backend/behaviorLints';
 import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonCallAtPosition, type PythonCallAtPosition } from '../backend/pythonLanguageUtils';
 import { getKbeAliases, getKbeSymbol, resolveKbeAccessAtPosition } from '../kbeModuleIndex';
+import { pythonProcessFromPath } from '../backend/pythonProcess';
 import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, inferDataDictValueType, isKeyInsideLineComment, queryDataDictSitesForAccess, resolveScopeRoot } from '../globalDataIndex';
 import { createHoverRequestDeadline, createWaiterUnionToken, raceWithBudget } from '../hoverBudget';
 import { TAG_HOVER_DOCS, getLanguageFeatureConfig } from './shared';
@@ -927,7 +928,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
           getKbeAliases(document.getText())
         );
         if (kbeAccess) {
-          const kbeEntry = getKbeSymbol(kbeAccess.symbol);
+          const kbeEntry = getKbeSymbol(kbeAccess.symbol, pythonProcessFromPath(document.fileName));
           if (kbeEntry) {
             return createKbeSymbolHover(kbeEntry);
           }
@@ -959,9 +960,9 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       const callbackDef = apiAccess ? null : getPythonCallbackDefinitionAtPosition(lineText, position.character);
       const name = apiAccess?.member ?? callbackDef?.name;
       if (name) {
-        const face = resolveEntityComponentFaceFromPath(document.fileName);
+        const face = pythonProcessFromPath(document.fileName) ?? resolveEntityComponentFaceFromPath(document.fileName);
         const locale = resolveHoverLanguage(readHoverLanguageSetting(), currentHoverLanguageEnv());
-        const lookup = lookupApiDoc(name, callbackDef ? [] : apiDocDomainsForFace(face), locale);
+        const lookup = lookupApiDoc(name, apiDocDomainsForFace(face), locale);
         if (lookup.kind !== 'miss') {
           return new vscode.Hover(formatApiDocHover(lookup));
         }

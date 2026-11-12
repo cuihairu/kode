@@ -10,7 +10,7 @@ import {
 } from '../src/languageProviders';
 import { EntityMappingManager } from '../src/entityMapping';
 import { buildEngineApiCatalog } from '../src/backend/engineApiMetadata';
-import { KBE_SYMBOLS } from '../src/kbeModuleIndex';
+import { filterKbeSymbols } from '../src/kbeModuleIndex';
 import {
   CompletionItemKind,
   Position,
@@ -437,7 +437,7 @@ describe('PythonCompletionProvider', () => {
     const address = items.find(item => item.label === 'address');
     expect(address?.detail).toContain('def address');
     expect(address?.documentation.value)
-      .toContain('原始声明: `typings/_KBEngine_baseapp.pyi:21`');
+      .toContain('原始声明: `typings/processes/base/KBEngine/_module.pyi:');
   });
 
   it('KBEngine API 补全 documentation 按 IDE 语言选 summary(GEN-DEF-1d)', async () => {
@@ -615,7 +615,7 @@ describe('KBEngineCompletionProvider type suggestions', () => {
 });
 
 describe('PythonCompletionProvider kbe 模块符号补全(批108 装配)', () => {
-  it('kbe. 语境返回全部索引符号(类/函数分型,detail 带签名)', () => {
+  it('base 脚本的 kbe. 语境只返回该进程符号(类/函数分型,detail 带签名)', () => {
     // 走查分支先于 self 补全返回,不触及映射管理器
     const provider = new PythonCompletionProvider({} as unknown as EntityMappingManager);
     const { document, position } = pyDoc('import kbe\nx = kbe.|');
@@ -626,11 +626,11 @@ describe('PythonCompletionProvider kbe 模块符号补全(批108 装配)', () =>
       detail?: string;
     }>;
 
-    expect(items).toHaveLength(KBE_SYMBOLS.length);
+    expect(items).toHaveLength(filterKbeSymbols('', 'base').length);
     const byName = new Map(items.map(item => [item.label, item]));
-    // 类与函数各抽一:KBEntity(kind Class)与 createEntity(kind Function)
-    expect(byName.get('KBEntity')).toMatchObject({ label: 'KBEntity' });
-    expect(byName.get('KBEntity')?.kind).toBe(CompletionItemKind.Class);
+    expect(byName.get('Entity')).toMatchObject({ label: 'Entity' });
+    expect(byName.get('Entity')?.kind).toBe(CompletionItemKind.Class);
+    expect(byName.has('addSpaceGeometryMapping')).toBe(false);
     expect(byName.get('createEntity')?.kind).toBe(CompletionItemKind.Function);
     expect(byName.get('createEntity')?.detail).toContain('def createEntity(');
   });

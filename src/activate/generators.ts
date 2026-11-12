@@ -131,8 +131,8 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
       templateRoot: resolveKbengineStubTemplateRoot(context.extensionPath)
     });
     await exportPythonTypeStubs(fileSystemStubExportDeps, { silent: true });
-    await exportEntityTypeStubs(entityMappingManager);
     await syncPythonExtraPaths(context, fileSystemScriptRootDeps, { silent: true });
+    await exportEntityTypeStubs(entityMappingManager);
     await syncJsoncAssociation(context, { silent: true });
   })();
   // 批143(用户单 kode-debug-json.md):`.kbengine/debug.json` 缺失即生成带注释

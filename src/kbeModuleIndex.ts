@@ -15,7 +15,9 @@
 export const KBE_SCHEME = 'kbe-stub';
 export const KBE_STUB_PATH = '/KBEngine.pyi';
 
-export type KbeSymbolKind = 'class' | 'function';
+import { processApiSymbols, PYTHON_PROCESSES, type PythonProcess } from './backend/pythonProcess';
+
+export type KbeSymbolKind = 'class' | 'function' | 'variable';
 
 export interface KbeSymbolEntry {
   name: string;
@@ -467,7 +469,8 @@ export const KBE_SYMBOL_CATALOG_NOTE =
 
 const KBE_SYMBOL_BY_NAME = new Map(KBE_SYMBOLS.map(entry => [entry.name, entry]));
 
-export function getKbeSymbol(name: string): KbeSymbolEntry | null {
+export function getKbeSymbol(name: string, process?: PythonProcess | null): KbeSymbolEntry | null {
+  if (process) { return filterKbeSymbols(name, process).find(entry => entry.name === name) ?? null; }
   return KBE_SYMBOL_BY_NAME.get(name) ?? null;
 }
 
@@ -699,8 +702,28 @@ export function getKbeCompletionContext(
 }
 
 /** 按部分符号过滤索引(前缀匹配,大小写不敏感;空串返回全量) */
-export function filterKbeSymbols(partialSymbol: string): KbeSymbolEntry[] {
+export function filterKbeSymbols(partialSymbol: string, process?: PythonProcess | null): KbeSymbolEntry[] {
   const partialLower = partialSymbol.toLowerCase();
+  if (process) {
+    const entries = processApiSymbols(process)
+      .filter(entry => entry.name.toLowerCase().startsWith(partialLower))
+      .map(entry => {
+        const known = KBE_SYMBOLS.find(symbol => symbol.name === entry.name);
+        return {
+          ...known, ...entry,
+          summary: known?.summary ?? `KBEngine ${process} 进程 API`,
+          summaryEn: known?.summaryEn ?? `KBEngine ${process} process API`,
+          sourceFile: entry.sourceFile ?? `typings/processes/${process}/KBEngine/${entry.name.startsWith('Vector') ? '_vectors.pyi' : `${entry.name}.pyi`}`,
+          sourceLine: entry.sourceLine ?? 1
+        };
+      });
+    // KBEntity is a documented kode/kbe compatibility alias, not a native
+    // KBEngine export. Keep its navigation when its target exists on this role.
+    const aliases = KBE_SYMBOLS.filter(entry => entry.aliasOf &&
+      processApiSymbols(process).some(symbol => symbol.name === entry.aliasOf) &&
+      entry.name.toLowerCase().startsWith(partialLower));
+    return [...entries, ...aliases];
+  }
   if (!partialLower) {
     return KBE_SYMBOLS;
   }
@@ -994,7 +1017,22 @@ function emitKbeDomainAliases(lines: string[]): void {
 }
 
 /** 生成只读桩文档:逐符号 class/def + docstring + 引擎 typings 锚点 */
-export function buildKbeStubDocument(): KbeStubDocument {
+export function buildKbeStubDocument(process?: PythonProcess | null): KbeStubDocument {
+  if (process) {
+    const lines = [`# KBEngine process: ${process}`, ...TYPING_IMPORT_LINES];
+    const symbolLines: Record<string, number> = {};
+    for (const symbol of filterKbeSymbols('', process)) {
+      lines.push('');
+      const signatures = symbol.signature.split('\n');
+      if (signatures.length > 1) { lines.push('@overload'); }
+      symbolLines[symbol.name] = lines.length;
+      signatures.forEach((signature, index) => {
+        if (index > 0) { lines.push('@overload'); }
+        lines.push(symbol.kind === 'variable' ? signature : `${signature}: ...`);
+      });
+    }
+    return { content: lines.join('\n'), symbolLines };
+  }
   const lines: string[] = [
     '# KBEngine Python API 内置桩(kode 提供,只读)',
     '#',
@@ -1038,6 +1076,11 @@ function wrapSummary(summary: string, width = 72): string[] {
 }
 
 /** 跳转目标的 URI 字符串(装配侧 vscode.Uri.parse 成 Location) */
-export function buildKbeStubUriString(): string {
-  return `${KBE_SCHEME}:${KBE_STUB_PATH}`;
+export function buildKbeStubUriString(process?: PythonProcess | null): string {
+  return `${KBE_SCHEME}:${KBE_STUB_PATH}${process ? `?process=${process}` : ''}`;
+}
+
+export function kbeStubProcessFromQuery(query: string | undefined): PythonProcess | null {
+  const role = query?.startsWith('process=') ? query.slice('process='.length) : '';
+  return PYTHON_PROCESSES.includes(role as PythonProcess) ? role as PythonProcess : null;
 }

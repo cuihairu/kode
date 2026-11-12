@@ -6,7 +6,7 @@
  * 数据全部取证自仓内事实源,零自创:
  * - 读写性与引擎注册面 → 报告 §2(file:line 记在每项 source);
  * - 类型 → docs/reference/kbengine-typings-2026-10-21/ 修正版引擎 pyi
- *   (common Entity: id: int / position: Vector3Like / shouldAutoBackup:
+ *   (process Entity: id: int / position getter: Vector3 / shouldAutoBackup:
  *   Union[bool, int] 等;client 面 bots Entity: velocity: float / clientapp: Any)。
  *
  * 组件面判定(§4-3):base/cell/client 目录域规则与 entityMapping 的
@@ -16,6 +16,7 @@
  */
 
 import { maskPythonNonCode } from './pythonLexicalMask';
+import { pythonProcessFromPath } from './pythonProcess';
 
 /** 组件面(报告 §2:baseapp/cellapp/client 各一套 getset 表) */
 export type EntityComponentFace = 'baseapp' | 'cellapp' | 'client';
@@ -62,8 +63,8 @@ const CELLAPP_FACE_PROPERTIES: readonly EntityBuiltinProperty[] = [
   { name: 'isOnGround', readonly: true, type: 'bool', source: 'server/cellapp/entity.cpp:80' },
   { name: 'spaceID', readonly: true, type: 'int', source: 'server/cellapp/entity.cpp:81' },
   { name: 'layer', readonly: false, type: 'int', source: 'server/cellapp/entity.cpp:82' },
-  { name: 'position', readonly: false, type: 'Vector3Like', source: 'server/cellapp/entity.cpp:83' },
-  { name: 'direction', readonly: false, type: 'Vector3Like', source: 'server/cellapp/entity.cpp:84' },
+  { name: 'position', readonly: false, type: 'Vector3', source: 'server/cellapp/entity.cpp:83' },
+  { name: 'direction', readonly: false, type: 'Vector3', source: 'server/cellapp/entity.cpp:84' },
   { name: 'topSpeed', readonly: false, type: 'float', source: 'server/cellapp/entity.cpp:85' },
   { name: 'topSpeedY', readonly: false, type: 'float', source: 'server/cellapp/entity.cpp:86' },
   { name: 'controlledBy', readonly: false, type: 'Any', source: 'server/cellapp/entity.cpp:87' },
@@ -82,8 +83,8 @@ const CLIENT_FACE_PROPERTIES: readonly EntityBuiltinProperty[] = [
   { name: 'base', readonly: true, type: 'Union[EntityCall, None]', source: 'lib/client_lib/entity.cpp:41' },
   { name: 'cell', readonly: true, type: 'Union[EntityCall, None]', source: 'lib/client_lib/entity.cpp:42' },
   { name: 'clientapp', readonly: true, type: 'Any', source: 'lib/client_lib/entity.cpp:43' },
-  { name: 'position', readonly: false, type: 'Vector3Like', source: 'lib/client_lib/entity.cpp:44' },
-  { name: 'direction', readonly: false, type: 'Vector3Like', source: 'lib/client_lib/entity.cpp:45' },
+  { name: 'position', readonly: false, type: 'Vector3', source: 'lib/client_lib/entity.cpp:44' },
+  { name: 'direction', readonly: false, type: 'Vector3', source: 'lib/client_lib/entity.cpp:45' },
   { name: 'velocity', readonly: false, type: 'float', source: 'lib/client_lib/entity.cpp:46' }
 ];
 
@@ -107,21 +108,12 @@ export function getEntityBuiltinPropertiesForFace(
  * 目录域 → 组件面:路径段含 base/cell/client 任一即归面(与 entityMapping
  * collectAllPythonMethodHits 的 domain 目录闸同一规则:filePath 按
  * path.sep 切段 includes 判定)。判不出 → null(交由 def 归属或兜底)。
- * 同路径含多域段时按 base > cell > client 定序(官方布局 base/cell 互斥,
- * client 面目录不与服务器域同居,实测无冲突形态)。
+ * 进程目录映射复用 pythonProcess，bots/client 使用客户端实体面。
  */
 export function resolveEntityComponentFaceFromPath(filePath: string): EntityComponentFace | null {
-  const segments = filePath.split(/[\\/]/);
-  if (segments.includes('base')) {
-    return 'baseapp';
-  }
-  if (segments.includes('cell')) {
-    return 'cellapp';
-  }
-  if (segments.includes('client')) {
-    return 'client';
-  }
-  return null;
+  const role = pythonProcessFromPath(filePath);
+  return role === 'base' ? 'baseapp' : role === 'cell' ? 'cellapp' :
+    role === 'client' || role === 'bots' ? 'client' : null;
 }
 
 export interface EntityBuiltinPropertyHit {

@@ -94,6 +94,8 @@ pub fn to_lsp_items(response: &CompletionResponse) -> Value {
         .map(|item| {
             let kind = match item.kind {
                 "method" => 2,
+                "function" => 3,
+                "variable" => 6,
                 "property" => 10,
                 _ => 7,
             };
@@ -121,6 +123,10 @@ impl HoverEngine {
         line0: u32,
         character: u32,
     ) -> Option<CompletionResponse> {
+        if key.uri.as_path().ends_with(".py") {
+            let prefix = line_prefix(text, line0, character as usize)?;
+            return crate::python_process::completion(key.uri.as_path(), text, &prefix);
+        }
         if matches!(file_kind_of_uri(&key.uri), FileKind::Other) {
             return None;
         }

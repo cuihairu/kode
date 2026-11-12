@@ -100,7 +100,7 @@ describe('kbengine.entity.builtinProperties(内建属性 hover+self. 补全)', (
     const text = hoverText(
       await Promise.resolve(hover.provideHover(hoverDoc, new Position(2, '        self.'.length)))
     );
-    expect(text).toContain('**self.position: Vector3Like** — cellapp面 · 可写');
+    expect(text).toContain('**self.position: Vector3** — cellapp面 · 可写');
   });
 
   it('false:补全空表不接管、hover 落回普通链(无内建属性标注)', async () => {
@@ -121,7 +121,7 @@ describe('kbengine.entity.builtinProperties(内建属性 hover+self. 补全)', (
     const text = hoverText(
       await Promise.resolve(hover.provideHover(hoverDoc, new Position(2, '        self.'.length)))
     );
-    expect(text).not.toContain('**self.position: Vector3Like**');
+    expect(text).not.toContain('**self.position: Vector3**');
   });
 });
 

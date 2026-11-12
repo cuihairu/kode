@@ -242,7 +242,7 @@ describe('三提示面无 Any(能推才显闸)', () => {
       .toBe('**self.allClients** — cellapp面 · 只读');
     const position = cellProps.find(item => item.name === 'position')!;
     expect(formatEntityBuiltinPropertyHeadline('position', 'cellapp', position))
-      .toBe('**self.position: Vector3Like** — cellapp面 · 可写');
+      .toBe('**self.position: Vector3** — cellapp面 · 可写');
   });
 
   it('内建属性补全:Any 位 label 右列无类型;已知位仍出类型', async () => {
@@ -263,7 +263,7 @@ describe('三提示面无 Any(能推才显闸)', () => {
       expect(anySlot!.label.description ?? '').toBe('');
     }
     const position = list.find(item => item.label.label === 'position');
-    expect(position?.label.description).toBe('Vector3Like');
+    expect(position?.label.description).toBe('Vector3');
     expect(list.every(item => item.kind === CompletionItemKind.Property)).toBe(true);
   });
 
@@ -279,7 +279,7 @@ describe('三提示面无 Any(能推才显闸)', () => {
       new Range(new Position(0, 0), new Position(99, 0))
     )) as unknown as Array<{ label: string; kind: number }>;
     const labels = hints.map(hint => hint.label);
-    expect(labels).toContain(': Vector3Like');
+    expect(labels).toContain(': Vector3');
     expect(labels.join('\n')).not.toContain('Any');
     expect(hints.every(hint => hint.kind === InlayHintKind.Type)).toBe(true);
   });

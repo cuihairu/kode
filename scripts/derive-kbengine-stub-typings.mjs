@@ -2,14 +2,11 @@
 // cuihairu/kbengine typings(钉点 commit)-> kode 顶层 typings/ 模板。
 // Static template derivation: fork typings -> kode top-level typings/.
 //
-// Shape (user ratified / 形态,用户已定):
-//   typings/KBEngine/__init__.pyi   显式 re-export 顺序(类文件最后,服务端
-//                                   Entity/Proxy 压同名 bots 层模型)
-//   typings/KBEngine/<Class>.pyi    一类一文件(用户提案;真正的编辑面——
-//                                   项目副本可改,kode 永不覆盖)
-//   typings/KBEngine/hooks.pyi      回调协议(fork _KBEngine_hooks 折入)
-//   typings/KBEngine/_vectors.pyi   kode 独有运行时 Vector2/3/4
-//   typings/KBEngine/_KBEngine_*.pyi 进程层函数/常量,import 改写为包内相对
+// Shipped shape / 最终形态 (lib/process-stubs.py refines the split inputs):
+//   typings/processes/{base,cell,bots,...}/KBEngine/__init__.pyi
+//   typings/processes/<role>/KBEngine/<Class>.pyi — one class per file
+//   typings/KBEngine/ — process-neutral vectors / container types only
+//   typings/process-api.json — shared TS / Rust process symbol catalog
 //
 // Run: node scripts/derive-kbengine-stub-typings.mjs --typings ../kbengine/typings --out typings [--pin 28d2117]
 // 产物入库;fork typings 演进后重跑 / emitted files are committed; rerun after
@@ -17,7 +14,8 @@
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 // ---- CLI -----------------------------------------------------------------
 
@@ -372,88 +370,10 @@ class Vector4:
     def __itruediv__(self, factor: float) -> Vector4: ...
 `;
 
-// ---- __init__.pyi -------------------------------------------------------------
-
-// Re-export order is the shadowing contract (classes last -> server Entity/Proxy
-// win over bots-layer same-name models). Module-level __getattr__ is declared
-// here because star-import never re-exports underscore names — without it the
-// engine's dynamic-attr fallback (`KBEngine.<anything>`) would go unresolved.
-const emitInit = () => [
-  '# kode KBEngine 桩包(用户令 2026-11-11:静态模板、一类一文件、copy-if-absent)',
-  '# kode KBEngine stub package (static template, one class per file,',
-  '# copy-if-absent — project copies are user-editable).',
-  '# 派生自 cuihairu/kbengine typings(钉点 commit 见 typings/README.md),由',
-  '# scripts/derive-kbengine-stub-typings.mjs 生成;改内容请重跑,勿手工合并 /',
-  '# derived by the derive script; regenerate there, do not hand-merge.',
-  '#',
-  '# 下面 re-export 顺序是有意设计,可改 / re-export order is intentional and editable:',
-  '#   1. 进程层:server_errors -> pythonapp -> baseapp/cellapp/dbmgr/',
-  '#      interfaces/logger/loginapp -> bots(后层压前层同名),',
-  '#   2. 公共超集随后 / the common superset after them,',
-  '#   3. 类文件最后 re-export:服务端 Entity/Proxy 模型压过 bots 层同名客户端',
-  '#      模型(bots 的 Entity 仍在 _KBEngine_bots 上,此处有意遮蔽)/ per-class',
-  '#      files LAST so the server Entity/Proxy models win over the bots-layer',
-  '#      client models of the same names.',
-  '# 项目需要另一套模型时,改下面顺序即可翻转遮蔽 / edit the order to flip shadowing.',
-  'from ._KBEngine_server_errors import *',
-  'from ._KBEngine_pythonapp import *',
-  'from ._KBEngine_baseapp import *',
-  'from ._KBEngine_cellapp import *',
-  'from ._KBEngine_dbmgr import *',
-  'from ._KBEngine_interfaces import *',
-  'from ._KBEngine_logger import *',
-  'from ._KBEngine_loginapp import *',
-  'from ._KBEngine_bots import *',
-  'from ._KBEngine_common import *',
-  'from ._vectors import Vector2, Vector3, Vector4',
-  'from .Entity import Entity',
-  'from .Proxy import Proxy',
-  'from .Space import Space',
-  'from .EntityCall import EntityCall',
-  'from .EntityComponentCall import EntityComponentCall',
-  'from .EntityComponent import EntityComponent',
-  'from .MemoryStream import MemoryStream',
-  'from .GlobalDataClient import GlobalDataClient',
-  'from .Entities import Entities',
-  '',
-  'from typing import Any',
-  '',
-  '',
-  'def __getattr__(name: str) -> Any:',
-  '    ...'
-];
-
-// ---- README (kode-authored provenance) -----------------------------------------
-
-const emitReadme = (head) => `# kode KBEngine stub typings
-
-KBEngine Python 桩包静态模板(批 ③,2026-11-11)/ static template for the
-\`KBEngine\` Python stub package.
-
-- 源 / source: \`cuihairu/kbengine\` fork \`typings/\`,钉点 commit / pinned commit **${head}**。
-- 派生 / derived by \`scripts/derive-kbengine-stub-typings.mjs\` —— 改内容重跑,勿手工合并 /
-  regenerate, do not hand-merge:
-  \`node scripts/derive-kbengine-stub-typings.mjs --typings <fork>/typings --out typings --pin ${head}\`
-- 运行期 / runtime:激活时复制到 \`<managedDir>/stubs/\`,**copy-if-absent** ——
-  kode 永不覆盖项目副本,项目内的修改/魔改永久保留 / kode never overwrites
-  project copies; edits in the project survive.
-- \`KBEngine/\` 是桩包:\`__init__.pyi\` 的 re-export 顺序裁决同名遮蔽(文件内有
-  说明),类一类一文件,项目内修改局部可审 / \`__init__.pyi\` re-export order
-  decides same-name shadowing (documented in the file); one class per file.
-- kode 独有内容 / kode-only content:\`KBEngine/_vectors.pyi\`(运行时向量类)、
-  \`Entity.pyi\` 的 \`cellData\` overlay(baseapp/entity.cpp:238)、\`Proxy.pyi\`
-  的内部属性标注(entitydef/common.h:142-143 + baseapp.cpp:4241-4246)。
-- \`_KBEngine_*.pyi\` 命名勿改:与 fork 布局 1:1(仅 \`_KBEngine_hooks\` 折入
-  \`KBEngine/hooks.pyi\`,按引擎 sdk_templates 形态)/ names mirror the fork
-  layout 1:1 (only \`_KBEngine_hooks\` folded into \`KBEngine/hooks.pyi\`).
-- 边界 / boundaries:per-script 旁路 .pyi(kbemain.pyi/Account.pyi 同目录影子)
-  是引擎仓 pyrightconfig 机制,kode 不往用户 scripts/ 写文件,回调签名已由
-  \`KBEngine/hooks.pyi\` 承载;实体 def 驱动的逐实体桩走 kode 既有
-  kbe_types/entity_types 导出面,不在本模板 / per-script shadow .pyi files are
-  an engine-repo pyrightconfig mechanism (kode writes nothing into user
-  scripts/); entity-def-driven per-entity stubs ride kode's existing
-  kbe_types/entity_types exporters.
-`;
+// The Python refinement step replaces these intermediate metadata files with
+// the process-neutral entry and complete provenance documentation.
+const emitInit = () => ['# Intermediate package; refined by lib/process-stubs.py.'];
+const emitReadme = (head) => `# KBEngine process typings\n\nSource: cuihairu/kbengine, pinned commit **${head}**.\n`;
 
 // ---- write ---------------------------------------------------------------------
 
@@ -476,4 +396,7 @@ outputs.set(join(outDir, 'README.md'), emitReadme(head));
 for (const [filePath, content] of outputs) {
   writeFileSync(filePath, content, 'utf8');
 }
-console.log(`[derive] wrote ${outputs.size} files -> ${outDir} (fork HEAD ${head})`);
+// Refine the pinned templates into process-specific public interfaces. This is
+// author-time tooling; installed extensions only copy the committed artifacts.
+execFileSync('python3', [fileURLToPath(new URL('./lib/process-stubs.py', import.meta.url)), outDir], { stdio: 'inherit' });
+console.log(`[derive] generated process packages and API catalog -> ${outDir} (fork typings ${head})`);

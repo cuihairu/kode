@@ -14,7 +14,7 @@ import { buildEngineApiCatalog } from '../backend/engineApiMetadata';
 import { setupKodeCoreGate } from '../kodeCoreGateWiring';
 import { setupKodeServiceStatusBar } from './kodeServiceStatus';
 import { discoverNativeBinary } from '../backend/nativeBinary';
-import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument } from '../kbeModuleIndex';
+import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument, kbeStubProcessFromQuery } from '../kbeModuleIndex';
 import { setJumpLogEnabled } from '../navigationLog';
 import { ensureConfigResolved } from '../serverConfigResolve';
 import { registerStartupViewPlaceholders } from '../startupViewPlaceholders';
@@ -77,8 +77,8 @@ export function activateInfrastructure(
   }
   disposables.push(
     vscode.workspace.registerTextDocumentContentProvider(KBE_SCHEME, {
-      provideTextDocumentContent(): string {
-        const stub = buildKbeStubDocument();
+      provideTextDocumentContent(uri: vscode.Uri): string {
+        const stub = buildKbeStubDocument(kbeStubProcessFromQuery(uri?.query));
         return engineApiCatalog
           ? appendEngineApiMetadata(stub.content, engineApiCatalog.metadata)
           : stub.content;
@@ -147,8 +147,8 @@ export function activateInfrastructure(
   // kbe 模块符号桩文档(批108):go-to-definition 的只读跳转源
   disposables.push(
     vscode.workspace.registerTextDocumentContentProvider(KBE_SCHEME, {
-      provideTextDocumentContent(): string {
-        const stub = buildKbeStubDocument();
+      provideTextDocumentContent(uri: vscode.Uri): string {
+        const stub = buildKbeStubDocument(kbeStubProcessFromQuery(uri?.query));
         return engineApiCatalog
           ? appendEngineApiMetadata(stub.content, engineApiCatalog.metadata)
           : stub.content;

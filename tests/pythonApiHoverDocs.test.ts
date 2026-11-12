@@ -47,6 +47,11 @@ describe('pythonApiHoverDocs lookup semantics', () => {
     expect(lookupApiDoc('__no_such_member__', [], 'en').kind).toBe('miss');
   });
 
+  it('指定进程时不回退到其他进程的同名 API', () => {
+    expect(lookupApiDoc('createEntity', ['logger'], 'en').kind).toBe('miss');
+    expect(lookupApiDoc('charge', ['cell'], 'en').kind).toBe('miss');
+  });
+
   it('zh 命中用中文摘要;zh 缺失回退 en 并如实标注', () => {
     const withZh = API_DOC_ENTRIES.find(e => e.summaryZh && e.domain === 'base');
     expect(withZh).toBeTruthy();

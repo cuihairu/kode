@@ -421,6 +421,11 @@ fn handle_hover(state: &mut ServerState, request: Request) -> Response {
         return Response::success(request.id, serde_json::Value::Null);
     };
     let text = buffer.text().to_string();
+    if let Some(hover) = crate::python_process::hover(
+        key.uri.as_path(), &text, params.position.line, params.position.character,
+    ) {
+        return Response::success(request.id, hover);
+    }
     let hover = state
         .hover
         .hover(&key, &text, params.position.line, params.position.character);

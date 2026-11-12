@@ -116,6 +116,9 @@ pub fn api_docs_lookup(name: &str, domain: Option<&str>, locale: &str) -> Value 
             if !owners.is_empty() && owners.iter().all(|o| *o == owners[0]) {
                 return entry_json(in_domain[0], locale);
             }
+            if in_domain.is_empty() {
+                return Value::Null;
+            }
         }
     }
     let owners: Vec<&str> = by_name.iter().map(|e| e.owner.as_str()).collect();
@@ -183,6 +186,12 @@ mod tests {
             fallback.get("signature").is_some(),
             "唯一 owner 应回退命中: {fallback}"
         );
+    }
+
+    #[test]
+    fn explicit_process_never_falls_back_to_another_process() {
+        assert!(api_docs_lookup("createEntity", Some("logger"), "en").is_null());
+        assert!(api_docs_lookup("charge", Some("cell"), "en").is_null());
     }
 
     #[test]

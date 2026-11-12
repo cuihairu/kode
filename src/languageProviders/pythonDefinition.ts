@@ -10,6 +10,7 @@ import { jumpLog, jumpTimeStart } from '../navigationLog';
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonMemberAccessAtPosition, type PythonMemberAccess } from '../backend/pythonLanguageUtils';
 import { buildKbeStubDocument, buildKbeStubUriString, getKbeAliases, getKbeFromImportedSymbols, getKbeSymbol, getPythonClassBaseAtPosition, resolveKbeAccessAtPosition } from '../kbeModuleIndex';
+import { pythonProcessFromPath } from '../backend/pythonProcess';
 import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, isKeyInsideLineComment, queryDataDictSitesForAccess, resolveScopeRoot, type KbeDataDictSite } from '../globalDataIndex';
 import { withInitialScanTimeout } from '../hoverBudget';
 import { getLanguageFeatureConfig } from './shared';
@@ -374,12 +375,13 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       position.character,
       getKbeAliases(document.getText())
     );
-    if (kbeAccess && getKbeSymbol(kbeAccess.symbol)) {
-      const stub = buildKbeStubDocument();
+    const process = pythonProcessFromPath(document.fileName);
+    if (kbeAccess && getKbeSymbol(kbeAccess.symbol, process)) {
+      const stub = buildKbeStubDocument(process);
       jumpLog('info', () => `前置命中 kbe-stub:${kbeAccess.symbol} → 内置桩`);
       return {
         location: new vscode.Location(
-          vscode.Uri.parse(buildKbeStubUriString()),
+          vscode.Uri.parse(buildKbeStubUriString(process)),
           new vscode.Position(stub.symbolLines[kbeAccess.symbol], 0)
         ),
         layers: [{ layer: 'kbe-stub', query: kbeAccess.symbol, status: 'hit', detail: 'kbe module stub' }]
@@ -397,12 +399,12 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     const explicitlyImportedBase = !!pythonBase && baseImports?.has(pythonBase.split('.')[0]) === true;
     if (classBase) {
       const fromImports = getKbeFromImportedSymbols(document.getText());
-      if (fromImports.has(classBase) && getKbeSymbol(classBase)) {
-        const stub = buildKbeStubDocument();
+      if (fromImports.has(classBase) && getKbeSymbol(classBase, process)) {
+        const stub = buildKbeStubDocument(process);
         jumpLog('info', () => `前置命中 class-base:${classBase} → kbe from-import 桩`);
         return {
           location: new vscode.Location(
-            vscode.Uri.parse(buildKbeStubUriString()),
+            vscode.Uri.parse(buildKbeStubUriString(process)),
             new vscode.Position(stub.symbolLines[classBase], 0)
           ),
           layers: [{ layer: 'class-base', query: classBase, status: 'hit', detail: 'kbe from-import stub' }]

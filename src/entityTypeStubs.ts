@@ -7,8 +7,9 @@ import { EntityMappingManager } from './entityMapping';
 import {
   PYTHON_STUB_EXPORT_ENABLED_DEFAULT,
   fileSystemStubExportDeps,
-  kbeStubDir,
   readManagedDirSetting,
+  readStubDirSetting,
+  resolveStubDir,
   resolveManagedDirName,
   type StubExportDeps
 } from './pythonStubExport';
@@ -30,6 +31,7 @@ import {
   type PyrightCommandRunner
 } from './backend/pyrightStubGate';
 import * as vscode from 'vscode';
+import { processStubRoot } from './backend/pythonProcess';
 
 export const ENTITY_TYPE_STUB_FILE_NAME = 'entity_types.pyi';
 /** 方法面开关默认值(kbengine.python.entityStubMethods,默认开) */
@@ -55,6 +57,8 @@ export interface EntityTypeStubEntry {
   entity: string;
   properties: EntityTypePropertyEntry[];
   methods: EntityTypeMethodEntry[];
+  role?: 'base' | 'cell' | 'client';
+  remoteMethods?: EntityTypeMethodEntry[];
 }
 
 export interface EntityTypeMethodEntry {
@@ -151,35 +155,31 @@ export async function exportEntityTypeStubs(
   // real-source 档(复制真实代码车道退役),校验闸恒开)
   const pyrightGateActive = true;
   for (const folder of folders) {
-    const plan = buildEntityTypeStubPlan(
-      listMappings(folder.uri.fsPath),
-      listCustomTypes(folder.uri.fsPath),
-      { includeMethods, workspaceRoot: folder.uri.fsPath }
-    );
-    if (!plan.content) {
-      continue;
-    }
-    // 托管目录可配置(任务 B):entity_types.pyi 与 KBEngine.pyi/kbe_types.pyi
-    // 同居 <managedDir>/stubs,随 kbengine.managedDir 同迁(旧键 stubDir 不经此处)
     const managedDirName = resolveManagedDirName(readManagedDirSetting()).name;
-    const stubDir = kbeStubDir(folder.uri.fsPath, managedDirName);
-    const target = `${stubDir}/${ENTITY_TYPE_STUB_FILE_NAME}`;
-    let unchanged = false;
-    try {
-      unchanged = deps.exists(target) && deps.readFile(target) === plan.content;
-    } catch {
-      unchanged = false;
-    }
-    if (unchanged) {
-      continue;
-    }
-    try {
-      deps.mkdir(stubDir);
-      deps.writeFile(target, plan.content);
-      written.push(folder.name);
-    } catch {
-      if (!options.silent) {
-        await vscode.window.showWarningMessage(`实体类型桩导出失败: ${folder.name}`);
+    const stubDir = resolveStubDir(folder.uri.fsPath, {
+      managedDir: managedDirName, setting: readStubDirSetting(),
+      folders: [{ fsPath: folder.uri.fsPath, name: folder.name }]
+    }).dir;
+    const isolated = deps.exists(`${processStubRoot(stubDir, 'base')}/KBEngine/__init__.pyi`);
+    const outputs = isolated
+      ? (['base', 'cell', 'bots', 'client'] as const).map(process => ({
+        dir: processStubRoot(stubDir, process), role: process === 'bots' ? 'client' as const : process
+      }))
+      : [{ dir: stubDir, role: undefined }];
+    for (const output of outputs) {
+      const plan = buildEntityTypeStubPlan(listMappings(folder.uri.fsPath), listCustomTypes(folder.uri.fsPath),
+        { includeMethods, workspaceRoot: folder.uri.fsPath, role: output.role });
+      if (!plan.content) { continue; }
+      const target = `${output.dir}/${ENTITY_TYPE_STUB_FILE_NAME}`;
+      try {
+        if (deps.exists(target) && deps.readFile(target) === plan.content) { continue; }
+        deps.mkdir(output.dir);
+        deps.writeFile(target, plan.content);
+        if (!written.includes(folder.name)) { written.push(folder.name); }
+      } catch {
+        if (!options.silent) {
+          await vscode.window.showWarningMessage(`实体类型桩导出失败: ${folder.name}`);
+        }
       }
     }
   }
@@ -191,7 +191,11 @@ export async function exportEntityTypeStubs(
     const pyrightTargets: string[] = [];
     for (const folder of folders) {
       const managedDirName = resolveManagedDirName(readManagedDirSetting()).name;
-      const stubDir = kbeStubDir(folder.uri.fsPath, managedDirName);
+      const stubDir = resolveStubDir(folder.uri.fsPath, {
+        managedDir: managedDirName, setting: readStubDirSetting(),
+        folders: [{ fsPath: folder.uri.fsPath, name: folder.name }]
+      }).dir;
+      const isolated = deps.exists(`${processStubRoot(stubDir, 'base')}/KBEngine/__init__.pyi`);
       const candidates = [
         `${stubDir}/${ENTITY_TYPE_STUB_FILE_NAME}`,
         `${stubDir}/KBEngine.pyi`,
@@ -207,6 +211,17 @@ export async function exportEntityTypeStubs(
           continue;
         }
         candidates.push(`${stubDir}/${moduleKey}/${PYTHON_TYPE_STUB_FILE_NAME}`);
+      }
+      if (isolated) {
+        const project = `${folder.uri.fsPath}/pyrightconfig.json`;
+        if (deps.exists(project)) {
+          const targets = ['base', 'cell', 'bots', 'client'].flatMap(role => {
+            const root = processStubRoot(stubDir, role as 'base' | 'cell' | 'bots' | 'client');
+            return [`${root}/${ENTITY_TYPE_STUB_FILE_NAME}`, `${root}/KBEngine`].filter(deps.exists);
+          });
+          if (targets.length > 0) { await runPyrightStubGate(['--project', project, ...targets], options.pyright ?? {}); }
+        }
+        continue;
       }
       for (const candidate of candidates) {
         try {
@@ -298,7 +313,7 @@ function collectCustomTypeModules(
 export function buildEntityTypeStubPlan(
   mappings: readonly EntityMapping[],
   customTypes: readonly CustomTypeInfo[],
-  options: { includeMethods?: boolean; workspaceRoot?: string } = {}
+  options: { includeMethods?: boolean; workspaceRoot?: string; role?: 'base' | 'cell' | 'client' } = {}
 ): EntityTypeStubPlan {
   const context: EntityStubContext = {
     customTypes: new Map(customTypes.map(info => [info.name, info])),
@@ -316,6 +331,7 @@ export function buildEntityTypeStubPlan(
           identity: { symbolName: string };
           typeName?: string;
           defaultValue?: string;
+          domains?: Array<'base' | 'cell' | 'client'>;
         }>
       };
       // ARRAY of 折叠(用户报 bug 2026-10-27):parseProperties 对 ARRAY of 的
@@ -324,7 +340,12 @@ export function buildEntityTypeStubPlan(
       // 非法标识符。[] 子路径一律不落行,折叠回顶层属性;顶层元素(恰好 `x[]`
       // 那条)的 typeName 经同链解析,可解析则升级 list[元素类型],否则保持
       // 顶层自身注解(裸 ARRAY 无元素声明仍 list[Any],诚实不硬造)。
-      const rawEntries = Object.entries(mapping.properties);
+      const rawEntries = Object.entries(mapping.properties).filter(([name]) => {
+        if (!options.role) { return true; }
+        const definition = withDefinitions.propertyDefinitions?.find(p => p.identity.symbolName === name);
+        // Unknown flags must not be advertised on every process.
+        return definition?.domains?.includes(options.role) ?? false;
+      });
       const elementAnnotations = new Map<string, { annotation: string; customTypeLine?: number }>();
       for (const [name] of rawEntries) {
         const cut = name.indexOf('[]');
@@ -372,10 +393,15 @@ export function buildEntityTypeStubPlan(
             };
           })
           .sort((left, right) => left.name.localeCompare(right.name)),
-        methods: includeMethods ? collectEntityTypeMethods(mapping) : []
+        methods: includeMethods ? collectEntityTypeMethods(mapping).filter(method => !options.role ||
+          method.section === ({ base: 'BaseMethods', cell: 'CellMethods', client: 'ClientMethods' } as const)[options.role]) : [],
+        ...(options.role ? {
+          role: options.role,
+          remoteMethods: includeMethods ? collectEntityTypeMethods(mapping) : []
+        } : {})
       };
     })
-    .filter(entry => entry.properties.length > 0 || entry.methods.length > 0);
+    .filter(entry => options.role || entry.properties.length > 0 || entry.methods.length > 0);
   return {
     content: entries.length === 0
       ? null
@@ -474,7 +500,7 @@ function renderEntityTypeStub(
 ): string {
   // mailbox 面(pyi ④ 任务1):有方法面的实体配 <Entity>MB(EntityCall)
   // 远端句柄类,方法签名与实体类同源同链(同一 methodArgAnnotation)。
-  const anyMailbox = entries.some(entry => entry.methods.length > 0);
+  const anyMailbox = entries.some(entry => entry.methods.length > 0 || entry.role);
   // KBEngine 导入面(GEN-DEF-1b/1c):注解面出现 ARRAY 容器时 FixedArray 一并从
   // KBEngine 导入(运行时容器真实类型,KBEngine.pyi 定义);方法形参注解经
   // ARRAY 别名同链解析也可能落 FixedArray,一并扫。VECTOR2/3/4 属性注解用
@@ -491,7 +517,7 @@ function renderEntityTypeStub(
     for (const property of entry.properties) {
       collectKbeNames(property.annotation);
     }
-    for (const method of entry.methods) {
+    for (const method of [...entry.methods, ...(entry.remoteMethods ?? [])]) {
       for (const arg of method.args) {
         collectKbeNames(methodArgAnnotation(arg, customTypes));
       }
@@ -530,7 +556,7 @@ function renderEntityTypeStub(
     for (const property of entry.properties) {
       identifierOf(property.annotation);
     }
-    for (const method of entry.methods) {
+    for (const method of [...entry.methods, ...(entry.remoteMethods ?? [])]) {
       for (const arg of method.args) {
         identifierOf(methodArgAnnotation(arg, customTypes));
       }
@@ -550,9 +576,21 @@ function renderEntityTypeStub(
     }
   }
   for (const entry of entries) {
+    if (entry.role) {
+      const channels = ['base', 'cell', 'client'] as const;
+      for (const channel of channels) {
+        if (channel === entry.role) { continue; }
+        lines.push('', `class ${entry.entity}${channel[0].toUpperCase()}${channel.slice(1)}MB(EntityCall):`);
+        const section = ({ base: 'BaseMethods', cell: 'CellMethods', client: 'ClientMethods' } as const)[channel];
+        const methods = (entry.remoteMethods ?? []).filter(m => m.section === section &&
+          (entry.role !== 'client' || m.exposed));
+        if (methods.length === 0) { lines.push('    pass'); }
+        for (const method of methods) { lines.push(...methodFaceLines(method, customTypes)); }
+      }
+    }
     // mailbox 类先于实体类:实体类的 base/cell/client 注解按名引用它
     // (.pyi 注解不求值,前后引用皆可;就近排放为可读性)。
-    if (entry.methods.length > 0) {
+    if (!entry.role && entry.methods.length > 0) {
       lines.push('', `# Mailbox face: ${entry.entity} 远端句柄,.def 方法面(Base/Cell/Client)`);
       lines.push(`class ${entry.entity}MB(EntityCall):`);
       for (const method of entry.methods) {
@@ -560,11 +598,16 @@ function renderEntityTypeStub(
       }
     }
     lines.push('', `class ${entry.entity}(Entity):`);
-    if (entry.properties.length === 0 && entry.methods.length === 0) {
+    if (!entry.role && entry.properties.length === 0 && entry.methods.length === 0) {
       lines.push('    pass');
       continue;
     }
-    if (entry.methods.length > 0) {
+    if (entry.role) {
+      for (const channel of ['base', 'cell', 'client'] as const) {
+        if (channel === entry.role) { continue; }
+        lines.push(`    ${channel}: Union[${entry.entity}${channel[0].toUpperCase()}${channel.slice(1)}MB, None]`);
+      }
+    } else if (entry.methods.length > 0) {
       // 引擎 Entity 基类的 client/base/cell 语义存在但无逐实体类型;此处
       // 按本实体 MB 收窄(取舍见 docs/design/def-pyi-stubs.md §8.4)。
       lines.push(`    # mailbox handles: Union[${entry.entity}MB, None]`);

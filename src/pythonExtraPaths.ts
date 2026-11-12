@@ -27,12 +27,15 @@ import * as fs from 'fs';
 import * as vscode from 'vscode';
 import {
   PYTHON_STUB_EXPORT_ENABLED_DEFAULT,
-  kbeStubDir,
   kbeStubFilePath,
   kbeStubPackageInitPath,
   readManagedDirSetting,
-  resolveManagedDirName
+  resolveManagedDirName,
+  readStubDirSetting,
+  resolveStubDir
 } from './pythonStubExport';
+import { processStubRoot } from './backend/pythonProcess';
+import { syncProcessPythonConfiguration, processConfigFs, type ProcessConfigDeps } from './pythonProcessConfig';
 import { typeStubArtifactExists } from './pythonTypeStubs';
 import {
   enforceRoleIsolation,
@@ -233,6 +236,7 @@ export interface PythonExtraPathsSyncOptions {
   /** 激活期自动同步传 true:全程零提示,不打扰开窗;命令面板手动重跑
    *  保持默认完整播报。 */
   silent?: boolean;
+  processConfigDeps?: ProcessConfigDeps;
 }
 
 /**
@@ -279,6 +283,14 @@ export async function syncPythonExtraPaths(
   const managedDirName = resolveManagedDirName(readManagedDirSetting()).name;
   for (const folder of folders) {
     const workspaceRoot = folder.uri.fsPath;
+    const stubRoot = resolveStubDir(workspaceRoot, {
+      setting: readStubDirSetting(), managedDir: managedDirName,
+      folders: [{ fsPath: workspaceRoot, name: folder.name }]
+    }).dir;
+    const configDeps = options.processConfigDeps ?? processConfigFs;
+    const processMode = stubExportEnabled && configDeps.exists(
+      `${processStubRoot(stubRoot, 'base')}/KBEngine/__init__.pyi`
+    );
     const managedKey = `${PYTHON_EXTRA_PATHS_MANAGED_KEY}:${workspaceRoot}`;
     const scoped = vscode.workspace.getConfiguration('python', folder);
     // 配置值形态不由本扩展控制:不是数组按没有现值处理,不炸
@@ -289,10 +301,10 @@ export async function syncPythonExtraPaths(
     // 单文件,桩包-only 的工作区会被漏接)
     const extraManaged =
       stubExportEnabled &&
-      (deps.exists(kbeStubFilePath(workspaceRoot)) ||
+      (processMode || deps.exists(kbeStubFilePath(workspaceRoot)) ||
         deps.exists(kbeStubPackageInitPath(workspaceRoot, managedDirName)) ||
         typeStubArtifactExists(deps, workspaceRoot, managedDirName))
-        ? [kbeStubDir(workspaceRoot, managedDirName)]
+        ? [stubRoot]
         : [];
     const plan = planPythonExtraPaths({
       workspaceRoot,
@@ -329,8 +341,9 @@ export async function syncPythonExtraPaths(
     // 随 kbengine.managedDir 同迁)——Pylance 三级优先级(同名 .pyi → stubPath →
     // extraPaths)由此确定。只管自己那段:用户已自设的值永不覆盖;存根导出关
     // 时 kode 的存根面整个关掉,也不写。与 extraPaths 差量解耦:现值已对齐即零写。
+    let userStubPath: string | undefined;
     if (stubExportEnabled) {
-      const stubPathValue = toWorkspaceFolderVar(kbeStubDir(workspaceRoot, managedDirName), workspaceRoot);
+      const stubPathValue = toWorkspaceFolderVar(processMode ? `${stubRoot}/_shared` : stubRoot, workspaceRoot);
       const stubPathKey = `${PYTHON_STUB_PATH_MANAGED_KEY}:${workspaceRoot}`;
       const currentStubPath = scoped.get<string>('analysis.stubPath', '') ?? '';
       const storedStubPath = context.workspaceState?.get<string>(stubPathKey) ?? '';
@@ -349,6 +362,8 @@ export async function syncPythonExtraPaths(
         if (storedStubPath !== stubPathValue) {
           await context.workspaceState?.update(stubPathKey, stubPathValue);
         }
+      } else {
+        userStubPath = currentStubPath;
       }
       // CFG-04:压 reportMissingModuleSource——KBEngine 是 C++ 内嵌注册模块
       // (py_entitydef.cpp PyImport_AddModule("KBEngine")),磁盘上永远没有对应
@@ -369,6 +384,10 @@ export async function syncPythonExtraPaths(
           vscode.ConfigurationTarget.WorkspaceFolder
         );
       }
+    }
+    if (processMode) {
+      await syncProcessPythonConfiguration(context, workspaceRoot,
+        pythonScriptRootCandidates(workspaceRoot, deps), stubRoot, plan.userPaths, configDeps, userStubPath);
     }
   }
   if (written.length > 0 && !options.silent) {
