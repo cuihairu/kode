@@ -93,6 +93,59 @@ destroy the engine also `backupCellData()` and sends `onLoseCell` to the base
 destroyed, which is why a base-side reference to a destroyed cell entity can
 still read the last `cellData`.
 
+## Cell state table
+
+Line numbers below are the base side
+(`kbe/src/server/baseapp/entity.cpp`) unless noted, verified at
+`kbengine@3082ab5`.
+
+| State | Set by | Cleared by | Script callback |
+|---|---|---|---|
+| base created, no cell | ctor `:59` (`creatingCell_ = false`) | — | — |
+| **creating cell** (request in flight) | `createCellEntity` `:1463`; `restoreCell` `:1473` | `onGetCell` `:1021`; `onCreateCellFailure` `:881` | none — the request is asynchronous |
+| **has cell** | `onGetCell` `:1028` (builds `cellEntityCall_`) | `onLoseCell` `:1059` (`S_RELEASE`) | `onGetCell` `:1030-1032`, skipped when `inRestore_` |
+| cell lost, base still alive | `onLoseCell` `:1059` | — (`cellData` reinstated later, `:1122`) | `onLoseCell` `:1065` |
+| **restoring** (after a baseapp crash) | `restoreCell` `:1474` (`inRestore_ = true`) | `onRestore` `:1085` | `onRestore` `:1080`, driven from `restore_entity_handler.cpp:173,266` |
+| destroyed | — | — | base `Entity::onDestroy` `:164` (fires `onDestroy` when `callScript`); cellapp `:204` |
+
+The restore entry is `RestoreEntityHandler::process`
+(`restore_entity_handler.cpp:89`), fed per entity from `baseapp.cpp:709,723`;
+it calls `restoreCell` (`:159`, `:304`), which reuses the normal cell path but
+with `inRestore_` set, then fires `onRestore` from the handler
+(`:173`, `:266`) **after** the cell has arrived.
+
+### A create call never proves a cell is held
+
+`createCellEntity` (`:1416`) ends by setting `creatingCell_ = true`
+(`:1463`), sending `Baseapp::createCellEntity(...)`, and returning —
+**synchronously**, with `cellEntityCall_` still `NULL`. The only observation
+that a cell is held is the `entity.cell` property
+(getter `pyGetCellEntityCall`, `:750`; attribute table `:36`), which reads
+`cellEntityCall_` and is therefore `None` until `onGetCell`. The in-flight flag
+itself is `creatingCell_` (`entity.h:295`), readable only as `creatingCell()`
+(`entity.h:107`) — an engine-internal accessor with no Python surface.
+
+While `creatingCell_` is set, `destroy()` is **deferred**, not rejected
+(`:641`): it warns "creating cell! automatic 'destroy' process will begin after
+'onGetCell'" and raises `ENTITY_FLAGS_DESTROY_AFTER_GETCELL`
+(`entity_macro.h:268`). The two paths that later honour that flag differ in
+**what** they destroy: `onGetCell` calls `destroyCellEntity()` (drop the cell
+part, `:1037-1041`), while `onLoseCell` calls `destroy()` (drop the base,
+`:1069-1074`). Calling `createCellEntity` twice fails instead:
+`AssertionError "has a cell"` when `creatingCell_ || cellEntityCall()`
+(`:1435`).
+
+`onGetCell` also runs `destroyCellData()` (`:1024`) — the `cellData` attribute
+is **deleted** the moment the cell exists (`destroyCellData`, `:560`; the dict
+object `cellDataDict_` survives for backup, only the Python attribute goes).
+
+Corollary that bites: the engine has **no** `isOnCell`/`isOnDB`/`isPersisted`
+predicate. The base `Entity` attribute surface is `cell`, `client`,
+`databaseID`, `databaseInterfaceName`, `shouldAutoBackup`,
+`shouldAutoArchive` (`:35-41`) plus `id`, `isDestroyed`, `className`
+(`entity_macro.h:33-35`). Code that reasons about "does it have a cell" must
+read `entity.cell`, not the fact that a create was called.
+
 ## Timers: no strong reference, cancelled on destroy
 
 Timers are per-entity. Python `addTimer(interval, repeat, userArg)` builds a

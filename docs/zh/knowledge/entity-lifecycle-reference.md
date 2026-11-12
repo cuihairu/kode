@@ -83,6 +83,53 @@ return entity;                 // ③ 以 PyObjectPtr 返回(保活供 destroy()
 `onLoseCell`(`:216-220`)——即便 cell 实体已销毁,base 仍保有 cell 数据快照,
 这解释了为何 base 侧对已销毁 cell 实体的引用仍能读到最后的 `cellData`。
 
+## Cell 状态表
+
+下列行号除注明外均为 base 侧
+(`kbe/src/server/baseapp/entity.cpp`),已对 `kbengine@3082ab5` 源码逐个核过。
+
+| 状态 | 置位 | 清除 | 脚本回调 |
+|---|---|---|---|
+| base 已建,无 cell | 构造 `:59`(`creatingCell_ = false`) | — | — |
+| **创建 cell 中**(请求在途) | `createCellEntity` `:1463`;`restoreCell` `:1473` | `onGetCell` `:1021`;`onCreateCellFailure` `:881` | 无——请求是异步的 |
+| **持有 cell** | `onGetCell` `:1028`(建 `cellEntityCall_`) | `onLoseCell` `:1059`(`S_RELEASE`) | `onGetCell` `:1030-1032`,`inRestore_` 时跳过 |
+| cell 丢失,base 仍存活 | `onLoseCell` `:1059` | —(之后重装 `cellData`,`:1122`) | `onLoseCell` `:1065` |
+| **恢复中**(baseapp 崩溃后) | `restoreCell` `:1474`(`inRestore_ = true`) | `onRestore` `:1085` | `onRestore` `:1080`,由 `restore_entity_handler.cpp:173,266` 驱动 |
+| 已销毁 | — | — | base `Entity::onDestroy` `:164`(`callScript` 时触发 `onDestroy`);cellapp `:204` |
+
+恢复入口是 `RestoreEntityHandler::process`
+(`restore_entity_handler.cpp:89`),实体由 `baseapp.cpp:709,723` 逐个喂入;它调
+`restoreCell`(`:159`、`:304`)——复用常规 cell 路径但置 `inRestore_`,cell 到达后
+才由 handler 触发 `onRestore`(`:173`、`:266`)。
+
+### 一次创建调用从不证明已持有 cell
+
+`createCellEntity`(`:1416`)的收尾是置 `creatingCell_ = true`(`:1463`)、发出
+`Baseapp::createCellEntity(...)`,然后**同步返回**——此刻 `cellEntityCall_`
+仍是 `NULL`。「已持有 cell」唯一可观测点是 `entity.cell` 属性
+(getter `pyGetCellEntityCall` `:750`;属性表 `:36`),它读 `cellEntityCall_`,
+所以在 `onGetCell` 之前恒为 `None`。在途标志本身是 `creatingCell_`
+(`entity.h:295`),仅能以 `creatingCell()`(`entity.h:107`)读到——那是引擎内部
+访问器,**没有 Python 面**。
+
+由此一条会咬人的推论:引擎**没有** `isOnCell`/`isOnDB`/`isPersisted` 谓词。
+base `Entity` 的属性面是 `cell`、`client`、`databaseID`、
+`databaseInterfaceName`、`shouldAutoBackup`、`shouldAutoArchive`
+(`:35-41`),外加 `id`、`isDestroyed`、`className`(`entity_macro.h:33-35`)。
+凡需判断「有没有 cell」的代码必须读 `entity.cell`,不能由「调过一次创建」推断。
+
+`creatingCell_` 置位期间,`destroy()` 是**延迟**而非拒绝(`:641`):警告
+"creating cell! automatic 'destroy' process will begin after 'onGetCell'" 并置
+`ENTITY_FLAGS_DESTROY_AFTER_GETCELL`(`entity_macro.h:268`)。之后两处兑现该标志的
+路径**销毁对象不同**:`onGetCell` 调 `destroyCellEntity()`(摘掉 cell 部分,
+`:1037-1041`),`onLoseCell` 调 `destroy()`(销毁 base,`:1069-1074`)。重复调
+`createCellEntity` 会直接失败:`creatingCell_ || cellEntityCall()` 时报
+`AssertionError "has a cell"`(`:1435`)。
+
+`onGetCell` 还会跑 `destroyCellData()`(`:1024`)——cell 一旦建成,`cellData`
+属性即被**删除**(`destroyCellData` `:560`;dict 对象 `cellDataDict_` 为备份保留,
+去掉的只是 Python 属性)。
+
 ## 定时器:不持强引用,销毁即取消
 
 定时器按实体归属。Python `addTimer(interval, repeat, userArg)` 构造每个定时

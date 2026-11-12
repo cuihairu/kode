@@ -83,7 +83,7 @@ One entity, layered by part (all references are callbacks/entry points documente
 ```
                     ┌─ create ─────────────────────────────────────────────┐
  base (baseapp)     │ createEntity* / createEntityLocally        baseapp/KBEngine.md:171-364
-                    │ → onRestore  → onGetCell / onLoseCell      baseapp/Entity.md:310-318,285-298
+                    │ → onGetCell / onLoseCell; onRestore last   baseapp/Entity.md:285-298,310-318
                     │ → onPreArchive → onWriteToDB (persistence)  baseapp/Entity.md:299-309,333-343
                     │ → onDestroy                                 baseapp/Entity.md:277-284
                     │

@@ -83,7 +83,7 @@ API 文档按「数据在何处权威」切分实体数据：
 ```
                     ┌─ 创建 ──────────────────────────────────────────────┐
  base（baseapp）    │ createEntity* / createEntityLocally        baseapp/KBEngine.md:171-364
-                    │ → onRestore → onGetCell / onLoseCell       baseapp/Entity.md:310-318,285-298
+                    │ → onGetCell / onLoseCell; onRestore 最后    baseapp/Entity.md:285-298,310-318
                     │ → onPreArchive → onWriteToDB（持久化）      baseapp/Entity.md:299-309,333-343
                     │ → onDestroy                                baseapp/Entity.md:277-284
                     │
