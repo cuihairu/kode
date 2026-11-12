@@ -396,8 +396,9 @@ export function cellDataKeyProvablyPresent(
 /**
  * 自目标向上找同一键最近的有效写/删(作用域限);透过无效别名的写/删跳过
  * (重绑定后操作的是别的字典,不是 cellData 存在性证据)。无 → null。
+ * CELL-09 键跟踪消费(伪删与真实 del 同形入列)。
  */
-function findNearestKeyMutation(
+export function findNearestKeyMutation(
   ops: readonly CellDataKeyOperation[],
   target: CellDataKeyOperation,
   text: string
