@@ -331,6 +331,14 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     quickFix: false, status: 'implemented',
     source: 'src/backend/cellDataWrongKey.ts'
   },
+  {
+    id: 'KBE-PY-020', code: 'kbengine.cellDataLifecycle',
+    title: 'cellData 回调入口访问(onGetCell 内读已删属性必抛,base 侧)',
+    severity: 'Warning', roles: 'base',
+    toggles: ['kbengine.cellDataCallbackDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/backend/cellDataCallbackCheck.ts'
+  },
   // ── KB-001 行为知识流水线(C-23,数据源=src/knowledge/trapsKnowledge.ts)
   {
     id: 'KBE-PY-015', code: 'kbengine.fixedDictNestedMutation',

@@ -33,6 +33,7 @@
 | KBE-PY-017 | `onDestroy` 内 `delTimer` 冗余（引擎 destroy 已 cancelAll） | 已实现（C-23 行为知识流水线）：onDestroy 方法体内 `self.delTimer(...)` 实语句报 Information——`destroy()` 即 `scriptTimers_.cancelAll()`，销毁期注销多余；陈旧 id 静默返回 -1；其他方法/注释同形不报 | `kbengine.timerCleanupOnDestroy`；`timerCleanupDiagnostics.ts`（发布 `trapDiagnosticsWiring.ts`） |
 | KBE-PY-018 | cellData 已知字段写入类型不符（结构/引擎标量范围） | 已实现（KSEM-CELL-08）：已知 `self.cellData["<键>"]` 字段的整行字面量赋值按声明类型校验结构与范围，不符报 Warning 并附实际/期望类型及声明来源；未知键/非标量类型（PYTHON 族/ARRAY/FIXED_DICT/自定义别名）/右侧非字面量或跨行/bool 入整数/int 入 FLOAT 不报；别名接收者按最近赋值核定，重绑定后不查 | `kbengine.cellDataWriteType`；`cellDataWriteCheck.ts`（键宇宙同 CELL-04 补全面，标量范围=datatypes.cpp 注册表） |
 | KBE-PY-019 | cellData 错键提示（未知键缺失/拼写候选） | 已实现（KSEM-CELL-10）：未知键的裸下标读已证缺失且文档内无追踪不到的增键面时报 Warning 并给最接近的声明键候选与声明来源；世界开放（动态键写/`update(`/`setdefault(`）或 `.get` 形态只给低置信建议（`.get` 永不报必然 KeyError）；声明键/内建键、写点（写即引入键）、已证存在的未知键一律不报；距离超上限或平局不给候选 | `kbengine.cellDataWrongKey`；`cellDataWrongKey.ts`（事实面=KSEM-CELL-09 键跟踪 `cellDataKeyTracking.ts`，键宇宙同 CELL-04） |
+| KBE-PY-020 | cellData 回调入口访问（onGetCell 内读已删属性必抛，base 侧） | 已实现（KSEM-CELL-12）：onGetCell 是唯一确定窗口——引擎先 destroyCellData（baseapp/entity.cpp:1024）再调脚本回调（:1030），回调内先读 self.cellData 必抛 AttributeError；方法内普通赋值重建属性后读取静默，del 之后再读重新可报，下标/`.get`/迭代/别名都按读取算；仅 base 角色实体脚本，其余回调一律不分析 | `kbengine.cellDataLifecycle`；`cellDataCallbackCheck.ts` |
 | KBE-DEF-001 | 未知 Type、Flags、DetailLevel | 已有实时校验；未知 Type 有稳定 code | `kbengine.unknownType`；`languageProviders.ts` |
 | KBE-DEF-002 | 将多个 Flags 用 `\|` 拼接成组合值 | 已有未知 Flags 校验 | 引擎按单个映射值解析；分析器的容错拆分不代表引擎接受 |
 | KBE-DEF-003 | 同域重复定义、缺少/重复必需字段 | 已有结构诊断（发布时**不带诊断 code**，与其余规则不同；受结构开关与重复/必需字段子开关共同控制） | `validateSectionStructure`、`validatePropertyStructure`；`kbengine.enableStructureDiagnostics`/`checkDuplicateDefinitions`/`checkMissingPropertyFields` |
@@ -144,6 +145,12 @@ if self.cell is not None:
 已实现（KSEM-CELL-08，KBE-PY-018）：引擎事实——cellData 字段类型在 `.def` 声明，引擎标量（datatypes.cpp `DataTypes::initialize` 注册表）按带宽与符号定封闭范围：UINT8/16/32/64、INT8/16/32/64、FLOAT/DOUBLE、STRING/UNICODE、BLOB、VECTOR2/3/4（定元数数值向量）。判定：已知键（CELL-04 键宇宙，与补全/读取提示同源）且类型在标量表时，`self.cellData["<键>"] = <整行字面量>` 按声明类型校验——字符串入数值/向量、None/dict/set 入数值/字符串/字节流/向量、列表入数值/字符串标量、字节串入字符串/数值为结构不符；整数字面量超出标量封闭区间（负入无符号/越界）为范围不符；VECTOR 元数不符或元素含非数值字面量亦报 → 报 `kbengine.cellDataWriteType`（Warning），消息附实际/期望类型及声明来源（`Avatar.def:5`）。bool 是 int 子类入整数/浮点不报；浮点字面量入整数族报（与声明结构不符）；写点/别名/常量键与 CELL-06/07 同面：只查直赋写型（增强/`.get`/del 不参与），别名逃逸不影响写型（字典形状不变），重绑定后的别名不查。
 
 已知边界（不冒充已实现）：未知键（CELL-09/10 面）、无类型标签、PYTHON 与 PY_DICT/PY_TUPLE/PY_LIST/ENTITYCALL、ARRAY/FIXED_DICT/types.xml 自定义别名（结构未知）不查；右侧非整段单行字面量（名字/调用/跨行/尾随表达式/未闭合）一律不猜，绝不据此报错配；元素含未知表达式的向量只保元数面。开关 `kbengine.cellDataWriteDiagnostics=true`（默认开启），关闭只停止提示，不改变引擎行为。
+
+## cellData 回调入口访问：onGetCell 是唯一确定窗口
+
+已实现（KSEM-CELL-12，KBE-PY-020）：引擎事实——baseapp 的 onGetCell 先 `destroyCellData()` 删除 cellData 属性（baseapp/entity.cpp:1024，`PyObject_DelAttrString` :564），之后才调用脚本回调（:1030-1032，恢复路径 inRestore_ 跳过）；cellData 无类型级 getter（纯实例属性，installCellDataAttr :217/:238），引擎侧重建只有构造路径（:252）与 onBackupCellData 的 isDirty 分支（:1122），onLoseCell（:1052）从不触碰。判定：onGetCell 方法体内两态流——普通赋值（深度 0 `=`，排除 `==`/`<=`/`>=`/`!=`/增强赋值/walrus）视为重建属性，其后读取静默；`del self.cellData` 报当前缺失并使后续读取重新可报；缺失态下任何读取（裸属性读/下标写/`.get`/迭代/别名）报 `kbengine.cellDataLifecycle`（Warning），消息引引擎行为（baseapp/entity.cpp:1024 在脚本回调 :1030 之前删属性），读取面文案另附「需要的数据请在请求 cell 前存入 base 自有属性」。范围：仅 base 角色实体脚本（与 cellData 补全同一角色判定），模块级代码/onLoseCell/onRestore/其他方法一律不分析；注释字符串掩码后判定。
+
+已知边界（不冒充已实现）：onGetCell 之外的回调不做确定结论——异步备份回写（onBackupCellData isDirty :1122）与引擎内部时机无法在静态分析中排除，未知调用时机不做确定结论；闭包/推导式内读取在方法体跨度内照扫；组件（entity_component）脚本不报（引擎不给组件挂 cellData 属性）。开关 `kbengine.cellDataCallbackDiagnostics=true`（默认开启），关闭只停止提示，不改变引擎行为。
 
 ## 行为知识流水线（C-23，KBE-PY-015/016/017）
 

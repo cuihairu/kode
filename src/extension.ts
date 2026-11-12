@@ -287,6 +287,9 @@ export function activate(context: vscode.ExtensionContext) {
     scheduleCellDataWrongKeyDiagnostics,
     cellDataWrongKeyDiagnostics,
     cellDataWrongKeyScheduler,
+    scheduleCellDataCallbackDiagnostics,
+    cellDataCallbackDiagnostics,
+    cellDataCallbackScheduler,
     processTopologyDiagnostics,
     processTopologyScheduler
   } = activateDiagnostics({
@@ -350,6 +353,8 @@ export function activate(context: vscode.ExtensionContext) {
       scheduleCellDataWriteDiagnostics(document, 'immediate');
       // KSEM-CELL-10:打开 python 文档即错键诊断(immediate)
       scheduleCellDataWrongKeyDiagnostics(document, 'immediate');
+      // KSEM-CELL-12:打开 python 文档即回调入口访问诊断(immediate)
+      scheduleCellDataCallbackDiagnostics(document, 'immediate');
     }));
     const closeWatcher = vscode.workspace.onDidCloseTextDocument(document => {
       releaseDocument(document);
@@ -381,6 +386,9 @@ export function activate(context: vscode.ExtensionContext) {
       // KSEM-CELL-10:cellData 错键诊断随文档生命周期(关闭即摘除)。
       cellDataWrongKeyDiagnostics.delete(document.uri);
       cellDataWrongKeyScheduler.releaseDocument(document);
+      // KSEM-CELL-12:回调入口访问诊断同生命周期。
+      cellDataCallbackDiagnostics.delete(document.uri);
+      cellDataCallbackScheduler.releaseDocument(document);
       // E-4:撤 Rust 侧镜像 overlay 与版本账(连续开合不积累)
       shadowReleaseCorpusDocument(document);
       // IDE-HOV-011:弃当前文件注解桶(未保存修改随关闭消失,回磁盘口径)
@@ -447,6 +455,8 @@ export function activate(context: vscode.ExtensionContext) {
         scheduleCellDataWriteDiagnostics(event.document, 'queued');
         // KSEM-CELL-10:编辑排队重算(queued)
         scheduleCellDataWrongKeyDiagnostics(event.document, 'queued');
+        // KSEM-CELL-12:编辑排队重算(queued)
+        scheduleCellDataCallbackDiagnostics(event.document, 'queued');
         const owningDefFile = entityMappingManager.getDefFileForPythonFile(
           event.document.uri.fsPath
         );
@@ -752,6 +762,10 @@ export function activate(context: vscode.ExtensionContext) {
       cellDataWrongKeyScheduler.setEnabled(enabled, () =>
         cellDataWrongKeyDiagnostics.clear()
       );
+      // KSEM-CELL-12:主开关同闸回调入口访问管线(关→清集合,开→强制重算)
+      cellDataCallbackScheduler.setEnabled(enabled, () =>
+        cellDataCallbackDiagnostics.clear()
+      );
     }
     const diagnosticsInputsChanged =
       event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
@@ -765,6 +779,7 @@ export function activate(context: vscode.ExtensionContext) {
       event.affectsConfiguration('kbengine.postDestroyDiagnostics') ||
       event.affectsConfiguration('kbengine.cellDataWriteDiagnostics') ||
       event.affectsConfiguration('kbengine.cellDataWrongKeyDiagnostics') ||
+      event.affectsConfiguration('kbengine.cellDataCallbackDiagnostics') ||
       event.affectsConfiguration('kbengine.startupScriptDiagnostics');
     // C-19:def↔Python 一致性两开关 + 骨架体配置,任一变更即重算已开文档。
     const defMethodConsistencyInputsChanged =
@@ -846,6 +861,10 @@ export function activate(context: vscode.ExtensionContext) {
           // KSEM-CELL-10:cellData 错键开关变更 → 立即重算已开 python 文档
           if (event.affectsConfiguration('kbengine.cellDataWrongKeyDiagnostics')) {
             scheduleCellDataWrongKeyDiagnostics(doc, 'immediate');
+          }
+          // KSEM-CELL-12:回调入口访问开关变更 → 立即重算已开 python 文档
+          if (event.affectsConfiguration('kbengine.cellDataCallbackDiagnostics')) {
+            scheduleCellDataCallbackDiagnostics(doc, 'immediate');
           }
         } else if (isStartupScriptDocument(doc)) {
           // KBEXP-1:启动脚本诊断开关变更 → 立即重算已开启动脚本(compute

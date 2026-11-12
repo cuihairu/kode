@@ -221,6 +221,7 @@ describe('extension activate 装配', () => {
       'kbengine-post-destroy',
       'kbengine-celldata-write',
       'kbengine-celldata-wrongkey',
+      'kbengine-celldata-callback',
       'kbengine-process-topology',
       'KBEngine 临时编辑热更新',
       'kbengine-def-analysis',

@@ -54,6 +54,12 @@ import {
   cellDataWrongKeyFindings,
   type CellDataWrongKeyDiagnosticItem
 } from '../backend/cellDataWrongKey';
+import {
+  CELL_DATA_CALLBACK_DIAGNOSTICS_ENABLED_DEFAULT,
+  cellDataCallbackFindingToItem,
+  cellDataCallbackFindings,
+  type CellDataCallbackDiagnosticItem
+} from '../backend/cellDataCallbackCheck';
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import { EntityMappingManager } from '../entityMapping';
 import { PythonClassIndex } from '../backend/pythonClassIndex';
@@ -130,6 +136,9 @@ export interface DiagnosticsShared {
   scheduleCellDataWrongKeyDiagnostics: ScheduleDiagnostics;
   cellDataWrongKeyDiagnostics: vscode.DiagnosticCollection;
   cellDataWrongKeyScheduler: DiagnosticScheduler;
+  scheduleCellDataCallbackDiagnostics: ScheduleDiagnostics;
+  cellDataCallbackDiagnostics: vscode.DiagnosticCollection;
+  cellDataCallbackScheduler: DiagnosticScheduler;
   processTopologyDiagnostics: vscode.DiagnosticCollection;
   processTopologyScheduler: DiagnosticScheduler;
 }
@@ -1161,6 +1170,63 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     }
   };
 
+  // KSEM-CELL-12:cellData 回调入口访问。onGetCell 是唯一「确定」窗口——引擎
+  // 在脚本回调前已删 cellData 属性(baseapp/entity.cpp:1024 在 :1030 之前),
+  // 回调内求值必抛 AttributeError;其余回调(unknown 时机)按验收口径一律沉默。
+  // 本面无需键宇宙/RPC:角色闸(base)+方法定位+行内求值/存储分类,纯本地。
+  const cellDataCallbackDiagnostics = vscode.languages.createDiagnosticCollection(
+    'kbengine-celldata-callback'
+  );
+  context.subscriptions.push(cellDataCallbackDiagnostics);
+  const cellDataCallbackScheduler = new DiagnosticScheduler();
+  const scheduleCellDataCallbackDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    if (!isPythonDocument(document)) {
+      return;
+    }
+    const capturedVersion = document.version;
+    const options = {
+      layer: 'local' as const,
+      computeAsync: async (): Promise<readonly CellDataCallbackDiagnosticItem[] | null> => {
+        if (document.version !== capturedVersion) {
+          return [];
+        }
+        const enabled = vscode.workspace.getConfiguration('kbengine')
+          .get<boolean>('cellDataCallbackDiagnostics', CELL_DATA_CALLBACK_DIAGNOSTICS_ENABLED_DEFAULT);
+        if (!enabled) {
+          return [];
+        }
+        const role = cellScriptRoleAndEntity(document.fileName);
+        if (!role || role.role !== 'base') {
+          return []; // onGetCell 只有 base 侧会被引擎调用;cell/client/bots 不报
+        }
+        return cellDataCallbackFindings(document.getText()).map(cellDataCallbackFindingToItem);
+      },
+      publish: (items: readonly CellDataCallbackDiagnosticItem[]) => {
+        cellDataCallbackDiagnostics.set(document.uri, items.map(item => {
+          const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(
+              item.range.start.line, item.range.start.character,
+              item.range.end.line, item.range.end.character
+            ),
+            item.message,
+            vscode.DiagnosticSeverity.Warning
+          );
+          diagnostic.source = item.source;
+          diagnostic.code = item.code;
+          return diagnostic;
+        }));
+      }
+    };
+    if (channel === 'queued') {
+      cellDataCallbackScheduler.requestQueued(document, options);
+    } else {
+      cellDataCallbackScheduler.request(document, options);
+    }
+  };
+
   // C-17:进程拓扑定义期错配预警(清单 process_topology.xml + defs → Rust 校验)。
   // 独立诊断集合 + 独立调度器(共享调度器每 URI 单排队槽,会顶掉 def 结构
   // 诊断任务,必独立,同 C-19 范式)。缺清单=静默零发现(零误报)。
@@ -1373,6 +1439,9 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     scheduleCellDataWrongKeyDiagnostics,
     cellDataWrongKeyDiagnostics,
     cellDataWrongKeyScheduler,
+    scheduleCellDataCallbackDiagnostics,
+    cellDataCallbackDiagnostics,
+    cellDataCallbackScheduler,
     processTopologyDiagnostics,
     processTopologyScheduler
   };
