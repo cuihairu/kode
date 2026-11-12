@@ -91,11 +91,16 @@ export function cellScriptRoleAndEntity(
  * 的 Parent 也是组件、接口不走 Parent 边——与 collectInheritedNames 出边
  * 同口径)。缺文件跳过不造;visited 环安全。
  */
-export function collectCellDataDefUniverse(
+/** def 宇宙条目(带来源类别;KSEM-CELL-05 跳转按类别解析 `{from}.def`)。 */
+export interface CellDataDefSourceWithCategory extends CellDataDefSource {
+  category: 'entity' | 'interface' | 'component';
+}
+
+export function collectCellDataDefUniverseWithCategory(
   entity: string,
   findDefText: (name: string, category: 'entity' | 'interface' | 'component') => string | null
-): CellDataDefSource[] {
-  const defs: CellDataDefSource[] = [];
+): CellDataDefSourceWithCategory[] {
+  const defs: CellDataDefSourceWithCategory[] = [];
   const seen = new Set<string>();
   const queue: Array<{ name: string; category: 'entity' | 'interface' | 'component' }> = [
     { name: entity, category: 'entity' }
@@ -111,7 +116,7 @@ export function collectCellDataDefUniverse(
     if (text === null) {
       continue; // 缺文件:该贡献缺席,不猜
     }
-    defs.push({ name: current.name, text });
+    defs.push({ name: current.name, category: current.category, text });
     const semantics = parseDefFileSemantics(text);
     if (!semantics) {
       continue;
@@ -131,6 +136,14 @@ export function collectCellDataDefUniverse(
     }
   }
   return defs;
+}
+
+/** def 宇宙闭包(BFS;不带类别,补全面消费)。 */
+export function collectCellDataDefUniverse(
+  entity: string,
+  findDefText: (name: string, category: 'entity' | 'interface' | 'component') => string | null
+): CellDataDefSource[] {
+  return collectCellDataDefUniverseWithCategory(entity, findDefText).map(({ name, text }) => ({ name, text }));
 }
 
 const isKind = (value: unknown): value is CellDataKeyEntry['kind'] =>

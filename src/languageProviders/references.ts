@@ -1,4 +1,6 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
+import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { parsePythonFile, isPythonCodePosition } from '../backend/pythonClassIndex';
 import { DefElementNode, getLineNumberAt } from '../backend/defParser';
@@ -11,6 +13,9 @@ import { DEF_SYMBOL_SECTIONS, METHOD_SECTIONS, elementFullRange, elementTagRange
 import { findDefSymbolInfo } from './navigation';
 import { resolveDataDictSitesAtPosition } from './pythonDefinition';
 import { createSelectionRange } from './callHierarchy';
+import { cellScriptRoleAndEntity, collectCellDataDefUniverseWithCategory, fetchCellDataKeys } from '../backend/cellDataCompletion';
+import { cellDataKeyAccessAtPosition, isCellDataKeyInsideLineComment, scanCellDataKeyAccesses } from '../backend/cellDataKeyAccess';
+import { findEntityScriptFile, findDefinitionFileByCategory } from '../definitionWorkspace';
 /**
  * IDE-NAV-001:def 原生引用查询入口(Shift+F12)。引用结果复用统一符号
  * 身份——与调用层级 prepare 完全同链(findDefSymbolInfo →
@@ -43,6 +48,59 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
             vscode.Uri.file(site.file),
             new vscode.Position(site.line, site.keyStart)
           ));
+      }
+      // KSEM-CELL-05:cellData 字符串键 Shift+F12 → 当前实体脚本(cell/base
+      // 面)内同键全部字面量访问点(含自身)。实体身份隔离:仅扫当前实体
+      // 自身脚本,不跨实体/不混入无关实体;未知键(键宇宙无此键)→ 交回
+      // 下方属性链(如实,不伪造声明);内建键是引擎自塞面,脚本内同键
+      // 访问仍可列出(引用面如实)。
+      const cellRefLine = document.lineAt(position.line).text;
+      const cellRefHit = cellDataKeyAccessAtPosition(cellRefLine, position.character);
+      if (cellRefHit && !isCellDataKeyInsideLineComment(cellRefLine, cellRefHit.keyStart)) {
+        const cellRole = cellScriptRoleAndEntity(document.fileName);
+        if (cellRole) {
+          const cellDefs = collectCellDataDefUniverseWithCategory(cellRole.entity, (name, category) => {
+            const filePath = findDefinitionFileByCategory(name, category, document);
+            if (!filePath) {
+              return null;
+            }
+            try {
+              return fs.readFileSync(filePath, 'utf8');
+            } catch {
+              return null; // 读失败 = 缺席贡献,不猜
+            }
+          });
+          const cellKeys = await fetchCellDataKeys(cellRole.entity, cellDefs);
+          if (token?.isCancellationRequested) {
+            return null;
+          }
+          if (cellKeys && cellKeys.some(entry => entry.key === cellRefHit.key)) {
+            const scriptPath = findEntityScriptFile(cellRole.entity, cellRole.role, document);
+            if (scriptPath) {
+              const sameFile = path.resolve(scriptPath) === path.resolve(document.fileName);
+              let scriptText: string | null;
+              if (sameFile) {
+                scriptText = document.getText();
+              } else {
+                try {
+                  scriptText = fs.readFileSync(scriptPath, 'utf8');
+                } catch {
+                  scriptText = null;
+                }
+              }
+              if (scriptText !== null) {
+                const sites = scanCellDataKeyAccesses(scriptText);
+                return sites
+                  .filter(site => site.key === cellRefHit.key)
+                  .map(site =>
+                    new vscode.Location(
+                      vscode.Uri.file(scriptPath),
+                      new vscode.Position(site.line, site.keyStart)
+                    ));
+              }
+            }
+          }
+        }
       }
       // 2026-11-04 用户反馈:py 侧 self.<属性> 的 Shift+F12(含 Shift+Alt+F12,
       // 同一 ReferenceProvider)此前无条件 null——补 def 声明 + py 使用处;

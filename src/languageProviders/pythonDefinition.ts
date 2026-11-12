@@ -1,11 +1,14 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { eventDefinitionAt } from '../eventApi';
 import { getScanRootForFile } from '../scanRoots';
 import { parsePythonFile, linearizeC3, isPythonCodePosition, getPythonBaseExpressionAtPosition, PythonClassIndex, PythonClassDef, PythonMethodLocation } from '../backend/pythonClassIndex';
 import { EntityMappingManager } from '../entityMapping';
-import { findTypesXmlImplementedByReference, findEntityDefinitionFile, getEntityRuntimeProfile, getWorkspaceRootForDocument } from '../definitionWorkspace';
+import { findTypesXmlImplementedByReference, findEntityDefinitionFile, getEntityRuntimeProfile, getWorkspaceRootForDocument, findDefinitionFileByCategory } from '../definitionWorkspace';
+import { cellScriptRoleAndEntity, collectCellDataDefUniverseWithCategory, fetchCellDataKeys } from '../backend/cellDataCompletion';
+import { cellDataKeyAccessAtPosition, isCellDataKeyInsideLineComment } from '../backend/cellDataKeyAccess';
 import { jumpLog, jumpTimeStart } from '../navigationLog';
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonMemberAccessAtPosition, type PythonMemberAccess } from '../backend/pythonLanguageUtils';
@@ -166,8 +169,9 @@ export interface JumpLayerTrace {
    * entity-def = .def 派生索引(对象级类粒度 → 文件级 owner 归属两个子探);
    * python-mro = PythonClassIndex 跨文件 C3-MRO + 组合根;
    * file-scope = 当前文件类作用域 / 本文件 MRO;
-   * kbe-stub / class-base / types-reverse / globaldata-key = 前置契约分支
-   * (命中即终点);globaldata-key = 数据字典键跨进程互链(GLOBDATA-001);
+   * kbe-stub / class-base / types-reverse / globaldata-key / cellData-key
+   * = 前置契约分支(命中即终点);globaldata-key = 数据字典键跨进程互链
+   * (GLOBDATA-001);cellData-key = cellData 字符串键来源 def 跳转(KSEM-CELL-05);
    * member-access = 非 self 接收者成员调用(avatar.SendErrorInfo,批158);
    * context = 入参形态判定(既非 self 访问/成员调用也非方法声明)。
    */
@@ -176,6 +180,7 @@ export interface JumpLayerTrace {
     | 'class-base'
     | 'types-reverse'
     | 'globaldata-key'
+    | 'cellData-key'
     | 'entity-def'
     | 'python-mro'
     | 'file-scope'
@@ -349,6 +354,61 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
               detail: `${access.kind} → ${path.basename(target.file)}:${target.line + 1}`
             }]
           };
+        }
+      }
+    }
+
+    // KSEM-CELL-05:cellData 字符串键 F12 → 键来源 def 声明(def 字段/组件
+    // 槽)。与 GLOBDATA-001 同理置于 isPythonCodePosition 守卫之前(键是
+    // 字符串字面量,该守卫会把其内位置判 skip)。诚实边界:内建键(引擎
+    // 文件,不在 workspace)不跳转、不伪造声明;未知键/非实体脚本面/键
+    // 宇宙不可用 → 交回常规链。
+    const cellKeyHit = cellDataKeyAccessAtPosition(line.text, position.character);
+    if (cellKeyHit && !isCellDataKeyInsideLineComment(line.text, cellKeyHit.keyStart)) {
+      const cellRole = cellScriptRoleAndEntity(document.fileName);
+      if (cellRole) {
+        const cellDefs = collectCellDataDefUniverseWithCategory(cellRole.entity, (name, category) => {
+          const filePath = findDefinitionFileByCategory(name, category, document);
+          if (!filePath) {
+            return null;
+          }
+          try {
+            return fs.readFileSync(filePath, 'utf8');
+          } catch {
+            return null; // 读失败 = 缺席贡献,不猜
+          }
+        });
+        const cellKeys = await fetchCellDataKeys(cellRole.entity, cellDefs);
+        if (token?.isCancellationRequested) {
+          return cancelledDefinitionResult();
+        }
+        if (cellKeys) {
+          const keyEntry = cellKeys.find(entry => entry.key === cellKeyHit.key);
+          if (keyEntry && keyEntry.kind !== 'builtin' && keyEntry.sourceFile) {
+            const fromName = keyEntry.sourceFile.replace(/\.def$/, '');
+            const sourceDef = cellDefs.find(def => def.name === fromName);
+            if (sourceDef) {
+              const targetPath = findDefinitionFileByCategory(fromName, sourceDef.category, document);
+              if (targetPath) {
+                const targetLine = Math.max(0, (keyEntry.sourceLine ?? 1) - 1);
+                jumpLog('info', () =>
+                  `前置命中 cellData-key:${cellKeyHit.key} → ${path.basename(targetPath)}:${targetLine + 1}`
+                );
+                return {
+                  location: new vscode.Location(
+                    vscode.Uri.file(targetPath),
+                    new vscode.Position(targetLine, 0)
+                  ),
+                  layers: [{
+                    layer: 'cellData-key',
+                    query: cellKeyHit.key,
+                    status: 'hit',
+                    detail: `${path.basename(targetPath)}:${targetLine + 1}`
+                  }]
+                };
+              }
+            }
+          }
         }
       }
     }
