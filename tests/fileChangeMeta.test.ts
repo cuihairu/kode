@@ -111,8 +111,8 @@ describe('fileChangeMeta:字段面与同口径解析', () => {
     expect(meta.kind).toBe('change');
     expect(meta.fileName).toBe('Avatar.py');
     expect(meta.ext).toBe('.py');
-    expect(meta.module).toBe('cell.Avatar');
-    expect(meta.package).toBe('cell');
+    expect(meta.module).toBe('Avatar');
+    expect(meta.package).toBeUndefined();
     expect(meta.processKind).toBe('cellapp');
     expect(meta.processSource).toBe('path');
     expect(meta.processReason).toBeUndefined();
@@ -157,7 +157,7 @@ describe('fileChangeMeta:字段面与同口径解析', () => {
 
     expect(meta.kind).toBe('delete');
     expect(meta.sha256).toBeUndefined();
-    expect(meta.module).toBe('cell.Avatar');
+    expect(meta.module).toBe('Avatar');
     expect(meta.processKind).toBe('cellapp');
     expect(io.reads, 'delete 无内容可读').toEqual([]);
     expect(meta.reason, 'delete 省略 sha256 不是失败').toBeUndefined();
@@ -173,8 +173,8 @@ describe('fileChangeMeta:字段面与同口径解析', () => {
 
     expect(line).toContain('Avatar.py');
     expect(line).toContain('ext=.py');
-    expect(line).toContain('module=cell.Avatar');
-    expect(line).toContain('package=cell');
+    expect(line).toContain('module=Avatar');
+    expect(line).toContain('package=-');
     expect(line).toContain('process=cellapp');
     expect(line).toMatch(/sha256=[0-9a-f]{12}…/);
     expect(line).toContain('version=1700000000000:19');
@@ -197,7 +197,7 @@ describe('fileChangeMeta:字段面与同口径解析', () => {
 
     expect(meta.sha256).toBeUndefined();
     expect(meta.size).toBe(19);
-    expect(meta.module).toBe('cell.Avatar');
+    expect(meta.module).toBe('Avatar');
     expect(meta.reason).toContain('EACCES');
   });
 
@@ -215,7 +215,7 @@ describe('fileChangeMeta:字段面与同口径解析', () => {
     expect(meta.mtimeMs).toBeUndefined();
     expect(meta.reason).toContain('ENOENT');
     expect(meta.sha256, 'stat 失败仍试读,读到就如实给 hash').toBe(sha256Of('class Avatar: pass\n'));
-    expect(meta.module).toBe('cell.Avatar');
+    expect(meta.module).toBe('Avatar');
   });
 });
 
@@ -297,7 +297,7 @@ describe('fileChangeMeta:watcher 无关(metaForPath 与事件路径同实现同�
 
     expect(viaEvent).not.toBe(manual); // 不同实例:不是同一个缓存对象
     expect(viaEvent).toEqual(manual); // 逐字段相等
-    expect(manual.module).toBe('cell.Avatar');
+    expect(manual.module).toBe('Avatar');
     expect(manual.processKind).toBe('cellapp');
     expect(manual.sha256).toBe(sha256Of('class Avatar: pass\n'));
     expect(manual.version, '版本 token 同形(mtimeMs:size)')
@@ -311,7 +311,7 @@ describe('fileChangeMeta:watcher 无关(metaForPath 与事件路径同实现同�
     });
     const meta = await resolver.metaForPath('/ws/assets/scripts/cell/Ghost.py');
     expect(meta.fileName).toBe('Ghost.py');
-    expect(meta.module).toBe('cell.Ghost'); // 路径可解的字段照给
+    expect(meta.module).toBe('Ghost'); // 路径可解的字段照给
     expect(meta.sha256).toBeUndefined();
     expect(meta.reason).toBeTruthy();
   });
@@ -437,8 +437,8 @@ describe('fileChangeMeta:module/package 仅 .py 才解析(Python 概念不外溢
 
     const meta = await resolver.metaFor(ev(file, 'change', '1700000000000:19'));
 
-    expect(meta.module).toBe('cell.Avatar');
-    expect(meta.package).toBe('cell');
+    expect(meta.module).toBe('Avatar');
+    expect(meta.package).toBeUndefined();
     expect(meta.processKind).toBe('cellapp');
   });
 
@@ -451,8 +451,8 @@ describe('fileChangeMeta:module/package 仅 .py 才解析(Python 概念不外溢
     const meta = await resolver.metaFor(ev(file, 'change', '1700000000000:19'));
 
     expect(meta.ext).toBe('.PY');
-    expect(meta.module).toBe('cell.Avatar');
-    expect(meta.package).toBe('cell');
+    expect(meta.module).toBe('Avatar');
+    expect(meta.package).toBeUndefined();
   });
 
   it('渲染层对非 py:module=- package=-(缺省只在渲染层落 -),进程照常', async () => {

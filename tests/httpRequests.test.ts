@@ -123,9 +123,23 @@ describe('resolvePythonModulePath(批153 __init__.py 包边界)', () => {
     expect(resolvePythonModulePath('/ws/entities/fight/FightAI.py', probe)).toBe('FightAI');
   });
 
-  it('base 自带 __init__.py 时按 Python 语义照收(规则通用,不特判角色名)', () => {
+  it('base 自带 __init__.py 也不作模块段(进程角色目录断链,2026-11-12 报障根因)', () => {
+    // 用户工程 scripts/base/ 下确有 __init__.py——按 Python 包语义照收会得到
+    // scripts.base.FightAI,但引擎进程 sys.modules 里没有这些前缀(baseapp 按
+    // scripts/base 作进程装载根),module_name 认不出 → 请求收下却重载不到模块。
+    // 进程角色目录在包边界扫描中一律断链,不论 __init__.py 是否存在。
     const probe = probeFor(['/ws/scripts', '/ws/scripts/base']);
-    expect(resolvePythonModulePath('/ws/scripts/base/FightAI.py', probe)).toBe('scripts.base.FightAI');
+    expect(resolvePythonModulePath('/ws/scripts/base/FightAI.py', probe)).toBe('FightAI');
+    // 真包段仍逐段收:entities/fight 带 __init__.py 时给出全路径
+    const pkgs = probeFor([
+      '/ws/scripts',
+      '/ws/scripts/base',
+      '/ws/scripts/base/entities',
+      '/ws/scripts/base/entities/fight'
+    ]);
+    expect(
+      resolvePythonModulePath('/ws/scripts/base/entities/fight/FightAI.py', pkgs)
+    ).toBe('entities.fight.FightAI');
   });
 
   it('不注入探针:按无包边界处理,模块=文件名去 .py', () => {
@@ -135,7 +149,7 @@ describe('resolvePythonModulePath(批153 __init__.py 包边界)', () => {
   it('非 .py 扩展保留全名;空路径返回空串;win32 反斜杠归一', () => {
     expect(resolvePythonModulePath('/ws/docs/x.json', probeFor(['/ws/docs']))).toBe('docs.x.json');
     expect(resolvePythonModulePath('')).toBe('');
-    expect(resolvePythonModulePath('C:\\ws\\base\\A.py', probeFor(['C:/ws/base']))).toBe('base.A');
+    expect(resolvePythonModulePath('C:\\ws\\base\\A.py', probeFor(['C:/ws/base']))).toBe('A');
   });
 });
 

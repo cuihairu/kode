@@ -53,7 +53,7 @@ describe('fileChangeMeta 整改:进程归属的根归一(Windows/UNC/根目录)'
     // 整改前:根只 toPosix 不小写 → `C:/Proj/Scripts` 对不上 `c:/proj/...` 假 unresolved
     expect(meta.processKind).toBe('cellapp');
     expect(meta.processSource).toBe('path');
-    expect(meta.module).toBe('cell.Foo');
+    expect(meta.module).toBe('Foo');
   });
 
   it('UNC 路径:根与文件同走 normalizeFileIdentity,归属与模块都解得出', async () => {
@@ -72,7 +72,7 @@ describe('fileChangeMeta 整改:进程归属的根归一(Windows/UNC/根目录)'
     });
 
     expect(meta.processKind).toBe('cellapp');
-    expect(meta.module).toBe('cell.Foo');
+    expect(meta.module).toBe('Foo');
   });
 
   it('脚本根为 `/`:归一后只剩一个斜杠,不许被 trim 成空串而整片 unresolved', async () => {
@@ -107,13 +107,13 @@ describe('fileChangeMeta 整改:缓存键带路径形态(热切换不过期)', (
     };
 
     const before = await resolver.metaFor(event);
-    expect(before.module).toBe('cell.Foo');
+    expect(before.module).toBe('Foo');
     expect(before.processKind).toBe('cellapp');
 
     root = '/ws'; // 配置热切换:同一文件现在是 scripts/cell/Foo.py
     const after = await resolver.metaFor(event);
 
-    expect(after.module, '切根后必须重算模块名,不许命中旧缓存').toBe('scripts.cell.Foo');
+    expect(after.module, '切根后必须重算模块名,不许命中旧缓存').toBe('scripts.Foo');
     expect(after.processKind).toBe('cellapp');
     expect(after).not.toBe(before);
     expect(reads, '换键即重读(低频事件,一次读换字段不过期)').toHaveLength(2);
@@ -136,7 +136,7 @@ describe('fileChangeMeta 整改:缓存键带路径形态(热切换不过期)', (
     expect(dotted.fsPath).toBe('/ws/assets/scripts/./cell/A.py');
     expect(clean.fsPath).toBe('/ws/assets/scripts/cell/A.py');
     expect(clean).not.toBe(dotted); // 路径写法不同 = 不同键,不拿首个 fsPath 冒充
-    expect(clean.module).toBe('cell.A');
+    expect(clean.module).toBe('A');
     // 点段路径按双名称口径拒绝解析(不编造),进程归属走身份键照常解出
     expect(dotted.module).toBeUndefined();
     expect(dotted.processKind).toBe('cellapp');

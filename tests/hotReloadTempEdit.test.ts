@@ -23,8 +23,8 @@ const ROOT = '/ws/scripts';
 describe('resolveModuleDualName(书 §19.1 四示例与 explicit unsupported)', () => {
   it('四个书定示例:fullModule=根相对全段,requestModule=父目录+短名', () => {
     expect(resolveModuleDualName(`${ROOT}/base/Avatar.py`, ROOT)).toEqual({
-      fullModule: 'base.Avatar',
-      requestModule: 'base.Avatar',
+      fullModule: 'Avatar',
+      requestModule: 'Avatar',
       fileStem: 'Avatar',
       parentName: 'base'
     });
@@ -89,8 +89,8 @@ describe('resolveModuleDualName(书 §19.1 四示例与 explicit unsupported)', 
 
   it('Windows 反斜杠路径同解析(与仓内 toPosix 口径一致)', () => {
     expect(resolveModuleDualName('C:\\ws\\scripts\\base\\Avatar.py', 'C:/ws/scripts')).toEqual({
-      fullModule: 'base.Avatar',
-      requestModule: 'base.Avatar',
+      fullModule: 'Avatar',
+      requestModule: 'Avatar',
       fileStem: 'Avatar',
       parentName: 'base'
     });

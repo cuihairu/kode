@@ -19,6 +19,7 @@
  */
 
 import { resolveVariableExpression, type VariableContext } from './variableSubstitution';
+import { PYTHON_PROCESS_ROLE_DIRS } from './hotReloadTempEdit';
 
 export interface HttpRequestEntry {
   /** 展示名(quick pick 与日志前缀) */
@@ -140,6 +141,13 @@ export function resolvePythonModulePath(
   const segments: string[] = [];
   for (let i = parts.length - 2; i >= 1; i--) {
     if (!isPackageDir || !isPackageDir(parts.slice(0, i + 1).join('/'))) {
+      break;
+    }
+    // 进程角色目录(scripts/{base,cell,client,bots})是引擎的进程装载根,不是
+    // Python 模块段——引擎 sys.modules 里没有这些前缀(baseapp 按 scripts/base
+    // 作进程目录装载)。即使该目录带 __init__.py 也在此断链:带着 base./cell.
+    // 前缀的 module_name 服务端认不出,请求被收下却重载不到任何模块。
+    if (PYTHON_PROCESS_ROLE_DIRS.has(parts[i].toLowerCase())) {
       break;
     }
     segments.unshift(parts[i]);

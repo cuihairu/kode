@@ -172,8 +172,8 @@ describe('fileChangeMeta 消费端①:热更投递审计行', () => {
     const metaLine = lines.find(line => line.startsWith('文件元信息: '));
     expect(metaLine, `审计元信息行应落在状态日志里: ${JSON.stringify(lines)}`).toBeDefined();
     expect(metaLine).toContain('Avatar.py');
-    expect(metaLine).toContain('module=cell.Avatar');
-    expect(metaLine).toContain('package=cell');
+    expect(metaLine).toContain('module=Avatar');
+    expect(metaLine).toContain('package=-');
     expect(metaLine).toContain('process=cellapp');
     expect(metaLine).toMatch(/sha256=[0-9a-f]{12}…/);
     expect(metaLine).toMatch(/version=\d+(\.\d+)?:\d+/);
@@ -296,7 +296,7 @@ describe('fileChangeMeta 消费端②:python 索引事件', () => {
     expect(reads, '开关开启才解析(每版本一次)').toEqual([file]);
     const line = getRecentJumpLogs().find(text => text.includes('py 变更 '));
     expect(line, `索引日志应含元信息行: ${JSON.stringify(getRecentJumpLogs())}`).toBeDefined();
-    expect(line).toContain('module=cell.Avatar');
+    expect(line).toContain('module=Avatar');
     expect(line).toContain('process=cellapp');
     expect(line).toMatch(/sha256=[0-9a-f]{12}…/);
     expect(line).toMatch(/version=\d+(\.\d+)?:\d+/);

@@ -378,7 +378,12 @@ export function createFileChangeMetaResolver(deps: FileChangeMetaDeps): FileChan
           fileName,
           ext: path.posix.extname(fileName),
           module: moduleName,
-          package: moduleName !== undefined ? moduleName.split('.')[0] : undefined,
+          // 顶层模块(无 '.')没有包名:cell/Avatar.py 剥掉进程角色目录后模块名
+          // 就是 Avatar,split('.')[0] 会把模块名自己当包名(错)。
+          package:
+            moduleName !== undefined && moduleName.includes('.')
+              ? moduleName.split('.')[0]
+              : undefined,
           ...processVerdict,
           sha256,
           size,

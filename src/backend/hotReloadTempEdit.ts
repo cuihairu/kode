@@ -47,6 +47,17 @@ const splitSegments = (value: string): string[] => toPosix(value).split('/');
  * - 根下单层脚本判 unsupported(HR-MOD-008:默认未解析,需显式 fallback);
  * - requestModule = 直接父目录 + '.' + 文件短名;fullModule = 全部目录段 + 短名。
  */
+/**
+ * KBEngine 进程角色目录名(scripts/{base,cell,client,bots})。它们是**进程装载根**
+ * (baseapp 按 scripts/base、cellapp 按 scripts/cell 装载,KB-API-007: bots 的
+ * 脚本面是 client 面),不是 Python 模块段——引擎进程 sys.modules 里没有这些
+ * 前缀。即使目录里带 __init__.py 也不得作模块段:带着 base./cell. 前缀的
+ * module_name 服务端认不出,请求被收下却重载不到任何模块(2026-11-12 用户报障:
+ * 热更「发了但不生效」的直接原因)。模块名推导统一按此集合剥段。
+ */
+export const PYTHON_PROCESS_ROLE_DIRS: ReadonlySet<string> =
+  new Set(['base', 'cell', 'client', 'bots']);
+
 export function resolveModuleDualName(filePath: string, scriptRoot: string): ModuleDualNameResult {
   const root = trimSlashes(toPosix(scriptRoot));
   const file = toPosix(filePath);
@@ -76,9 +87,15 @@ export function resolveModuleDualName(filePath: string, scriptRoot: string): Mod
     return { unsupported: `脚本根下单层脚本(HR-MOD-008:需显式 single-level fallback): ${file}` };
   }
   const parentName = directories[directories.length - 1];
+  // 进程角色目录(base/cell/client/bots)是引擎的进程装载根,不是 Python 模块段——
+  // 引擎 sys.modules 里没有这些前缀(baseapp 按 scripts/base 作进程目录装载)。
+  // 即使该目录带 __init__.py 也不作段:带上前缀的 module_name 服务端认不出,
+  // 请求会被收下却重载不到任何模块。
+  const moduleDirs = directories.filter(segment => !PYTHON_PROCESS_ROLE_DIRS.has(segment.toLowerCase()));
+  const lastModuleDir = moduleDirs.length > 0 ? moduleDirs[moduleDirs.length - 1] : '';
   return {
-    fullModule: [...directories, stem].join('.'),
-    requestModule: `${parentName}.${stem}`,
+    fullModule: [...moduleDirs, stem].join('.'),
+    requestModule: lastModuleDir.length > 0 ? `${lastModuleDir}.${stem}` : stem,
     fileStem: stem,
     parentName
   };
