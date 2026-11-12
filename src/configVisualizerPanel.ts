@@ -48,6 +48,12 @@ export class ConfigVisualizerPanel {
   private lastState: ConfigResolvedState | null = null;
   private lastSummary: ConfigVizSummary | null = null;
 
+  /**
+   * openTextView:面板「文本视图」按钮回调(最终配置文本合成视图,装配侧
+   * 传 openFinalConfig(false));缺省 = 按钮静默无操作(独立使用面)。
+   */
+  constructor(private readonly openTextView?: () => void) {}
+
   async show(): Promise<void> {
     if (this.panel) {
       this.panel.reveal();
@@ -96,6 +102,9 @@ export class ConfigVisualizerPanel {
         break;
       case 'openSource':
         await this.openSource(message.file);
+        break;
+      case 'openTextView':
+        this.openTextView?.();
         break;
     }
   }

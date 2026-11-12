@@ -89,6 +89,7 @@
     "onCommand:kbengine.remoteServers.refresh",
     "onCommand:kbengine.debug.updateLaunchJson",
     "onCommand:kbengine.config.showFinal",
+    "onCommand:kbengine.config.showFinalText",
     "onCommand:kbengine.config.visualize",
     "onCommand:kbengine.lintRules.showReport",
     "onCommand:kbengine.metrics.showSummary",
@@ -595,6 +596,11 @@
       {
         "command": "kbengine.config.showFinal",
         "title": "%kbengine.command.config.showFinal.title%",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "kbengine.config.showFinalText",
+        "title": "%kbengine.command.config.showFinalText.title%",
         "icon": "$(json)"
       },
       {
@@ -1186,6 +1192,9 @@
           "command": "kbengine.config.showFinal"
         },
         {
+          "command": "kbengine.config.showFinalText"
+        },
+        {
           "command": "kbengine.config.visualize"
         },
         {
@@ -1592,6 +1601,12 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "%kbengine.config.showFinalConfigOnOpen.description%"
+        },
+        "kbengine.finalConfigView": {
+          "type": "string",
+          "enum": ["gui", "text"],
+          "default": "gui",
+          "markdownDescription": "%kbengine.config.finalConfigView.description%"
         },
         "kbengine.autoRefreshFinalConfig": {
           "type": "boolean",

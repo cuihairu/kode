@@ -62,7 +62,7 @@ import { activateCoreServices } from './activate/coreServices';
 import { activateLanguageServices } from './activate/languageServices';
 import { activateDiagnostics } from './activate/diagnostics';
 import { activateServerControls } from './activate/serverControls';
-import { activateEntityExplorerViews, activateFinalConfigTreeViews, activateFinalConfigViews, activateGitHistoryViews } from './activate/views';
+import { activateEntityExplorerViews, activateFinalConfigTreeViews, activateFinalConfigViews, activateGitHistoryViews, finalConfigViewPreference } from './activate/views';
 import { activateHttpRequestViews, activateQuickActionTreeViews } from './activate/views';
 import { activateHotReload } from './activate/hotReload';
 import { activateGenerators } from './activate/generators';
@@ -1215,8 +1215,10 @@ export function activate(context: vscode.ExtensionContext) {
 
   // SRC-001 L5:最终配置合成视图(内容 provider/打开/手动命令)迁
   // activate/views.ts(纯移动);openFinalConfig 供激活尾默认开启令、
-  // finalConfigProvider 供常驻树与联动 watcher 消费。
-  const { openFinalConfig, finalConfigProvider } = activateFinalConfigViews({ context });
+  // finalConfigProvider 供常驻树与联动 watcher 消费;
+  // showFinalConfigGui 供激活尾令按 finalConfigView 设置走图形面。
+  const { openFinalConfig, finalConfigProvider, showFinalConfigGui } =
+    activateFinalConfigViews({ context });
 
   // SRC-001 L5:文件历史/范围历史树视图、版本虚拟文档 provider 与六命令迁
   // activate/views.ts(纯移动,查询门/开关门随域,装配顺序由本调用点保持)。
@@ -1314,11 +1316,17 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   // 默认开启令:激活即出最终配置视图(后台标签,不抢焦点);定位不到
-  // defaults(未配 binPath 或引擎目录不在)静默跳过,不弹错
+  // defaults(未配 binPath 或引擎目录不在)静默跳过,不弹错。
+  // 2026-11-12 用户令:默认视图=图形界面(可视化面板);finalConfigView=text
+  // 回到文本合成视图(auto 路径,保留有界重试语义)。
   if (
     vscode.workspace.getConfiguration('kbengine').get<boolean>('showFinalConfigOnOpen', true)
   ) {
-    void openFinalConfig(true);
+    if (finalConfigViewPreference() === 'text') {
+      void openFinalConfig(true);
+    } else {
+      void showFinalConfigGui();
+    }
   }
 
   // 清理资源

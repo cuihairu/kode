@@ -94,6 +94,16 @@ export interface FinalConfigViewsDeps {
 export interface FinalConfigViewsShared {
   openFinalConfig: (auto: boolean) => Promise<void>;
   finalConfigProvider: FinalConfigContentProvider;
+  /** 可视化面板(GUI)打开;激活尾令按 finalConfigView 设置二选一 */
+  showFinalConfigGui: () => Promise<void>;
+}
+
+/**
+ * 最终配置默认视图(`kbengine.finalConfigView`,2026-11-12 用户令:最终配置
+ * 打开默认图形界面)。gui=可视化面板(默认);text=文本合成视图。
+ */
+export function finalConfigViewPreference(): 'gui' | 'text' {
+  return vscode.workspace.getConfiguration('kbengine').get<'gui' | 'text'>('finalConfigView', 'gui');
 }
 
 export interface FinalConfigTreeViewsDeps {
@@ -352,13 +362,30 @@ export function activateFinalConfigViews(deps: FinalConfigViewsDeps): FinalConfi
 
   const showFinalConfigCommand = vscode.commands.registerCommand(
     'kbengine.config.showFinal',
-    () => openFinalConfig(false)
+    () => {
+      // 2026-11-12 用户令:最终配置打开默认图形界面;finalConfigView=text 时
+      // 回到文本合成视图(旧行为)。
+      if (finalConfigViewPreference() === 'text') {
+        return openFinalConfig(false);
+      }
+      return configVisualizer.show();
+    }
   );
   context.subscriptions.push(showFinalConfigCommand);
 
+  // 文本合成视图的显式入口(不随 finalConfigView 设置)。
+  const showFinalTextCommand = vscode.commands.registerCommand(
+    'kbengine.config.showFinalText',
+    () => openFinalConfig(false)
+  );
+  context.subscriptions.push(showFinalTextCommand);
+
   // KODE-CFG-VIZ-001:配置合并可视化面板(docs/design/config-visualization.md
-  // §10)。单例;重开即 reveal + 重取 resolve。
-  const configVisualizer = new ConfigVisualizerPanel();
+  // §10)。单例;重开即 reveal + 重取 resolve。「文本视图」按钮回调最终配置
+  // 文本合成视图(手动路径,明示报错)。
+  const configVisualizer = new ConfigVisualizerPanel(() => {
+    void openFinalConfig(false);
+  });
   const visualizeCommand = vscode.commands.registerCommand(
     'kbengine.config.visualize',
     () => configVisualizer.show()
@@ -369,7 +396,8 @@ export function activateFinalConfigViews(deps: FinalConfigViewsDeps): FinalConfi
 
   return {
     openFinalConfig,
-    finalConfigProvider
+    finalConfigProvider,
+    showFinalConfigGui: () => configVisualizer.show()
   };
 }
 

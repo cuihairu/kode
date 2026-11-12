@@ -261,4 +261,23 @@ describe('键详情/复制/出处(§6 出站)', () => {
     await new Promise(resolve => setTimeout(resolve, 10));
     expect(workspaceState.openTextDocumentCalls).toHaveLength(1);
   });
+
+  it('openTextView:回调被调(装配侧传文本合成视图打开);未注入则静默无操作', async () => {
+    installRealDefaults();
+    let opened = 0;
+    const controller = new ConfigVisualizerPanel(() => {
+      opened += 1;
+    });
+    await controller.show();
+    const panel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    send(panel, { command: 'openTextView' });
+    await until(() => opened === 1);
+
+    const bare = new ConfigVisualizerPanel();
+    await bare.show();
+    const barePanel = panelRegistry.panels[panelRegistry.panels.length - 1];
+    send(barePanel, { command: 'openTextView' });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(opened).toBe(1);
+  });
 });

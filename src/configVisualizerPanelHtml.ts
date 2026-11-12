@@ -231,6 +231,7 @@ export function renderConfigVisualizerWebview(options: ConfigVisualizerWebviewOp
           <button id="cfg-filter-defaults" class="kode-btn" type="button" aria-pressed="false">${escapeHtml(t.filterDefaultsOnly)}</button>
         </div>
         <button id="cfg-refresh" class="kode-btn primary" type="button">${escapeHtml(t.refresh)}</button>
+        <button id="cfg-open-text" class="kode-btn" type="button">${escapeHtml(t.openTextButton)}</button>
       </div>
     </div>
     <div id="cfg-paths" class="paths-line"></div>
@@ -418,7 +419,9 @@ export function renderConfigVisualizerWebview(options: ConfigVisualizerWebviewOp
           for (var s = 0; s < sections.length; s++) {
             var keys = sections[s].keys;
             for (var k = 0; k < keys.length; k++) {
-              if (keys[k].name.toLowerCase().indexOf(q) !== -1) {
+              // 内容搜索:键名或最终值任一命中即入列(值转小写匹配)
+              if (keys[k].name.toLowerCase().indexOf(q) !== -1 ||
+                  String(keys[k].finalValue).toLowerCase().indexOf(q) !== -1) {
                 rows.push({ sectionId: sections[s].id, entry: keys[k] });
               }
             }
@@ -758,6 +761,9 @@ export function renderConfigVisualizerWebview(options: ConfigVisualizerWebviewOp
 
     // ---- 交互接线(nonce CSP 下内联事件处理器不执行,一律脚本绑定) ----
     el('cfg-refresh').addEventListener('click', function () { requestRefresh(); });
+    el('cfg-open-text').addEventListener('click', function () {
+      vscode.postMessage({ command: 'openTextView' });
+    });
     for (var f = 0; f < FILTER_BUTTONS.length; f++) {
       (function (pair) {
         el(pair[0]).addEventListener('click', function () {

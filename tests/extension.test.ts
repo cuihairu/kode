@@ -447,6 +447,28 @@ describe('extension activate 装配', () => {
   // WIN-3:win32 状态灯稳态等待最长 3s,平台化超时
   }, 15000);
 
+  it('最终配置默认图形界面(2026-11-12 用户令):showFinal 开可视化面板,finalConfigView=text 回文本', async () => {
+    const context = makeContext();
+    activate(context);
+    try {
+      await commands.executeCommand('kbengine.config.showFinal');
+      await until(() => panelRegistry.panels.some(panel => panel.viewType === 'kbengine.configVisualizer'));
+
+      configurationOverrides.set('kbengine', { finalConfigView: 'text' });
+      await commands.executeCommand('kbengine.config.showFinal');
+      await new Promise(resolve => setTimeout(resolve, 10));
+      expect(panelRegistry.panels.filter(panel => panel.viewType === 'kbengine.configVisualizer')).toHaveLength(1);
+      expect(messages.error.length).toBeGreaterThan(0);
+
+      await commands.executeCommand('kbengine.config.showFinalText');
+      await new Promise(resolve => setTimeout(resolve, 10));
+      expect(panelRegistry.panels.filter(panel => panel.viewType === 'kbengine.configVisualizer')).toHaveLength(1);
+    } finally {
+      configurationOverrides.delete('kbengine');
+      disposeAll(context);
+    }
+  });
+
   it('激活后逐条执行命令,关键链路经 CommandRegistry 真分发', async () => {
     const context = makeContext();
     activate(context);

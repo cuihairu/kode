@@ -81,6 +81,7 @@ describe('版式与可访问性骨架(§5.2/§5.3)', () => {
       'cfg-filter-custom',
       'cfg-filter-defaults',
       'cfg-refresh',
+      'cfg-open-text',
       'cfg-badge',
       'cfg-paths',
       'cfg-warning',
@@ -105,5 +106,22 @@ describe('版式与可访问性骨架(§5.2/§5.3)', () => {
     expect(html).toContain('aria-live="polite"');
     expect(html.match(/role="status"/g)?.length).toBeGreaterThanOrEqual(3);
     expect(html).toContain('id="cfg-badge" class="source-badge" hidden');
+  });
+
+  it('内容搜索:命中面=键名或最终值(2026-11-12 用户令);文本视图按钮回报 openTextView', () => {
+    const html = render();
+    // 搜索谓词同时匹配 name 与 finalValue(值转小写 indexOf)
+    expect(html).toContain("keys[k].name.toLowerCase().indexOf(q) !== -1");
+    expect(html).toContain("String(keys[k].finalValue).toLowerCase().indexOf(q) !== -1");
+    // 文本视图按钮经 T 文案注入,点击回报 openTextView 消息
+    expect(html).toContain('id="cfg-open-text"');
+    expect(html).toContain('"openTextButton"');
+    expect(html).toContain("command: 'openTextView'");
+    // 搜索占位文案=键名或值(双语)
+    stub.envState.language = 'en';
+    expect(render()).toContain('Search key or value…');
+    stub.envState.language = 'zh-CN';
+    expect(render()).toContain('搜索键名或值…');
+    stub.envState.language = 'en';
   });
 });
