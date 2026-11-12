@@ -84,7 +84,7 @@ cellData 为普通 Python dict，允许脚本附加键。动态键、动态反�
 
 ## 8. 原子任务索引
 
-以下只列分组、依赖和 ID 范围。所有勾选状态仅维护在 [项目 TODO](../../todo.md#kbengine-semantic-plan)，不建立第二套重复勾账。
+以下只列分组、依赖和 ID 范围。所有勾选状态仅维护在 [项目 TODO](https://github.com/cuihairu/kode/blob/main/todo.md#kbengine-semantic-plan)，不建立第二套重复勾账。
 
 - **KSEM-BAS**：共同语义基础，10 项（`KSEM-BAS-01` 至 `KSEM-BAS-10`）；依赖：无；先完成本组，再按各组依赖推进。
 - **KSEM-CELL**：cellData 结构和生命周期，15 项（`KSEM-CELL-01` 至 `KSEM-CELL-15`）；依赖：BAS-03..08；先结构再推导与诊断。
