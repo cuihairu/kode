@@ -1019,6 +1019,8 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         return null;
       }
       const workspaceRoot = getWorkspaceRootForDocument(document);
+      // KSEM-STRUCT-03:注册表前移供接收者定型(迭代目标/下标 RHS 元素型)
+      const customTypes = getEntityCustomTypesSnapshot(workspaceRoot ?? '');
       const rootTypeName = await fixedDictChainRootType(
         ctx.receiver,
         getDocumentLines(document),
@@ -1037,7 +1039,8 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
             propertyName
           );
           return location?.typeName ?? null;
-        }
+        },
+        customTypes
       );
       if (!rootTypeName || sharedToken.isCancellationRequested) {
         return null;
@@ -1046,7 +1049,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         rootTypeName,
         ctx.segments.slice(0, -1),
         lastSegment.key,
-        getEntityCustomTypesSnapshot(workspaceRoot ?? '')
+        customTypes
       );
     } finally {
       stopMapping?.();

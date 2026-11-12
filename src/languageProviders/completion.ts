@@ -578,6 +578,8 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
       return null;
     }
     const documentLines = document.getText().split(/\r?\n/);
+    // KSEM-STRUCT-03:注册表前移供接收者定型(迭代目标/下标 RHS 元素型)
+    const customTypes = getEntityCustomTypesSnapshot(workspaceRoot);
     const rootTypeName = await fixedDictChainRootType(
       ctx.receiver,
       documentLines,
@@ -592,12 +594,12 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
           propertyName
         );
         return location?.typeName ?? null;
-      }
+      },
+      customTypes
     );
     if (!rootTypeName || token?.isCancellationRequested) {
       return null;
     }
-    const customTypes = getEntityCustomTypesSnapshot(workspaceRoot);
     const resolution = resolveFixedDictSubscriptKey(
       rootTypeName,
       ctx.segments.slice(0, openIndex),

@@ -295,7 +295,14 @@ describe('resolveFixedDictSubscriptKey 逐层解析', () => {
 // ---------------------------------------------------------------------------
 
 describe('fixedDictChainRootType 接收者定型', () => {
-  const locator = async (prop: string) => (prop === 'pos' ? 'POSITION' : prop === 'info' ? 'AVATAR_INFO' : null);
+  const locator = async (prop: string) =>
+    (prop === 'pos' ? 'POSITION' : prop === 'info' ? 'AVATAR_INFO' : prop === 'bag' ? 'POS_BAG' : null);
+
+  it('self.<属性> 直达与裸名别名一层', async () => {
+    expect(await fixedDictChainRootType('self.pos', ['v = self.pos["x"]'], 0, locator)).toBe('POSITION');
+    const lines = ['data = self.pos', 'v = data["x"]'];
+    expect(await fixedDictChainRootType('data', lines, 1, locator)).toBe('POSITION');
+  });
 
   it('self.<属性> 直达与裸名别名一层', async () => {
     expect(await fixedDictChainRootType('self.pos', ['v = self.pos["x"]'], 0, locator)).toBe('POSITION');
@@ -315,6 +322,75 @@ describe('fixedDictChainRootType 接收者定型', () => {
     expect(await fixedDictChainRootType('data', ['v = data["x"]'], 0, locator)).toBeNull();
     expect(await fixedDictChainRootType('data', ['# data = self.pos', 'v = data["x"]'], 1, locator)).toBeNull();
     expect(await fixedDictChainRootType('self.unknown', ['v = self.unknown["x"]'], 0, locator)).toBeNull();
+  });
+
+  it('KSEM-STRUCT-03 下标 RHS:整数下标取元素,切片保留数组原形', async () => {
+    // d = self.bag[0] → POS_BAG 注解 FixedArray[POSITION] → 元素 POSITION
+    const indexed = ['d = self.bag[0]', 'v = d["x"]'];
+    expect(await fixedDictChainRootType('d', indexed, 1, locator, REGISTRY)).toBe('POSITION');
+    expect(
+      resolveFixedDictSubscriptKey('POSITION', [], 'x', REGISTRY)?.annotation
+    ).toBe('float');
+
+    // 切片仍是同元素数组 → 根为 FixedArray[POSITION],w = d[0] 再剥一层
+    const sliced = ['d = self.bag[1:]', 'w = d[0]', 'v = w["x"]'];
+    expect(await fixedDictChainRootType('d', sliced, 1, locator, REGISTRY)).toBe('FixedArray[POSITION]');
+    expect(await fixedDictChainRootType('w', sliced, 2, locator, REGISTRY)).toBe('POSITION');
+
+    // 裸名 base 的下标链(x = d[0],d 为数组别名)
+    expect(await fixedDictChainRootType('w', sliced, 2, locator, REGISTRY)).toBe('POSITION');
+  });
+
+  it('KSEM-STRUCT-03 迭代目标:数组迭代继承元素结构', async () => {
+    const lines = ['for pos in self.bag:', '    v = pos["x"]'];
+    expect(await fixedDictChainRootType('pos', lines, 1, locator, REGISTRY)).toBe('POSITION');
+
+    // 迭代式走别名:bagAlias = self.bag 再 for pos in bagAlias
+    const viaAlias = ['bagAlias = self.bag', 'for pos in bagAlias:', '    v = pos["x"]'];
+    expect(await fixedDictChainRootType('pos', viaAlias, 2, locator, REGISTRY)).toBe('POSITION');
+  });
+
+  it('KSEM-STRUCT-03 非法下标类型与动态操作保留边界(诚实落空)', async () => {
+    // FIXED_DICT 上整数下标:键型不符 → 断
+    expect(await fixedDictChainRootType('d', ['d = self.pos[0]', 'v = d["x"]'], 1, locator, REGISTRY)).toBeNull();
+    // 数组上字符串键:非法下标类型 → 断
+    expect(await fixedDictChainRootType('d', ['d = self.bag["k"]', 'v = d["x"]'], 1, locator, REGISTRY)).toBeNull();
+    // 调用 RHS / 运算符杂质:动态形态 → 断
+    expect(await fixedDictChainRootType('d', ['d = getBag()', 'v = d["x"]'], 1, locator, REGISTRY)).toBeNull();
+    expect(await fixedDictChainRootType('d', ['d = self.bag[0] + self.bag[1]', 'v = d["x"]'], 1, locator, REGISTRY)).toBeNull();
+    // FD(字典)迭代产出键串、.values() 动态可变 → 元素结构不追
+    expect(await fixedDictChainRootType('k', ['for k in self.info:', '    v = k'], 1, locator, REGISTRY)).toBeNull();
+    expect(await fixedDictChainRootType('v', ['for v in self.info.values():', '    x = v'], 1, locator, REGISTRY)).toBeNull();
+    // enumerate 多元目标:目标不是元素 → 断
+    expect(await fixedDictChainRootType('pos', ['for i, pos in enumerate(self.bag):', '    v = pos["x"]'], 1, locator, REGISTRY)).toBeNull();
+    // 下标 RHS 后接成员/未闭括号:非简单链 → 断
+    expect(await fixedDictChainRootType('d', ['d = self.bag[0].name', 'v = d["x"]'], 1, locator, REGISTRY)).toBeNull();
+    expect(await fixedDictChainRootType('d', ['d = self.bag[0', 'v = d["x"]'], 1, locator, REGISTRY)).toBeNull();
+  });
+
+  it('KSEM-STRUCT-03 无注册表(旧调用方)新形态不追,简单形态契约不变', async () => {
+    expect(await fixedDictChainRootType('d', ['d = self.bag[0]', 'v = d["x"]'], 1, locator)).toBeNull();
+    expect(await fixedDictChainRootType('pos', ['for pos in self.bag:', '    v = pos["x"]'], 1, locator)).toBeNull();
+  });
+
+  it('KSEM-STRUCT-03 解析器接受注解形态根:FixedArray 根走数组状态', () => {
+    // 数组根直接键:字符串键打数组 → null(非法)
+    expect(resolveFixedDictSubscriptKey('FixedArray[POSITION]', [], 'x', REGISTRY)).toBeNull();
+    // 数组根 + 整数下标前缀 → 元素 FD → 键命中
+    const hit = resolveFixedDictSubscriptKey('FixedArray[POSITION]', [indexSeg], 'x', REGISTRY);
+    expect(hit?.container.name).toBe('POSITION');
+    expect(hit?.annotation).toBe('float');
+    // 切片别名链:d = self.bag[1:] 后 d[0]["x"](探测到 index+key 两段)
+    const ctx = fixedDictSubscriptContextAt('d[0]["x"]', keyCol('d[0]["x"]', 'x'));
+    expect(ctx?.cursor).toBe('key');
+    expect(ctx?.segments.map(segment => segment.kind)).toEqual(['index', 'key']);
+    const nested = resolveFixedDictSubscriptKey(
+      'FixedArray[POSITION]',
+      ctx!.segments.slice(0, -1) as FixedDictChainSegment[],
+      'x',
+      REGISTRY
+    );
+    expect(nested?.annotation).toBe('float');
   });
 });
 
@@ -489,6 +565,34 @@ describe('KSEM-STRUCT-02 Provider 三面(补全/跳转/悬停)', () => {
     expect(brokenChain.map(item => item.label)).not.toContain('x');
   });
 
+  it('KSEM-STRUCT-03 迭代目标与下标别名接收者:补全继承元素结构', async () => {
+    // for pos in self.bag: → 迭代变量即 POSITION 元素
+    const forDoc = cellDoc('for pos in self.bag:\n    v = pos["');
+    const forProvider = new KBEngineCompletionProvider(manager());
+    const forItems = (await forProvider.provideCompletionItems(
+      forDoc,
+      new Position(1, '    v = pos["'.length)
+    )) as CompletionLike[] | undefined;
+    expect((forItems ?? []).map(item => item.label).sort()).toEqual(['x', 'y', 'z']);
+
+    // d = self.bag[0] → 下标结果即 POSITION 元素
+    const aliasProvider = new KBEngineCompletionProvider(manager());
+    const aliasDoc = cellDoc('d = self.bag[0]\nv = d["');
+    const aliasItems = (await aliasProvider.provideCompletionItems(
+      aliasDoc,
+      new Position(1, 'v = d["'.length)
+    )) as CompletionLike[] | undefined;
+    expect((aliasItems ?? []).map(item => item.label).sort()).toEqual(['x', 'y', 'z']);
+
+    // 非法下标类型(FD 上整数下标):元素结构不继承,不造键
+    const illegalDoc = cellDoc('d = self.pos[0]\nv = d["');
+    const illegalItems = (await aliasProvider.provideCompletionItems(
+      illegalDoc,
+      new Position(1, 'v = d["'.length)
+    )) as CompletionLike[] | undefined;
+    expect((illegalItems ?? []).map(item => item.label)).not.toContain('x');
+  });
+
   it('无 manager 注入:诚实落空(不接管)', async () => {
     const provider = new KBEngineCompletionProvider();
     const items = (await provider.provideCompletionItems(cellDoc('v = self.pos["'), new Position(0, 14))) as
@@ -567,5 +671,25 @@ describe('KSEM-STRUCT-02 Provider 三面(补全/跳转/悬停)', () => {
     const anyField = 'v = self.skills["missing"]';
     const anyHover = (await hoverAt([anyField], 0, keyCol(anyField, 'missing'))) ?? '';
     expect(anyHover).not.toContain('**missing:');
+  });
+
+  it('KSEM-STRUCT-03 迭代目标/下标别名:跳转与悬停继承元素结构', async () => {
+    const provider = new PythonDefinitionProvider(manager(), undefined, undefined);
+
+    // F12 经下标别名:d = self.bag[0] 后 v = d["x"] → types.xml <x>
+    const aliasLine = 'v = d["x"]';
+    const aliasDoc = cellDoc(`d = self.bag[0]\n${aliasLine}`);
+    const aliasTraced = await provider.provideDefinitionTraced(aliasDoc, new Position(1, keyCol(aliasLine, 'x')));
+    expect(aliasTraced.location?.uri.fsPath).toBe(path.join(root, 'scripts', 'entity_defs', 'types.xml'));
+    expect(aliasTraced.location?.range.start.line).toBe(xmlLine('<x>') - 1);
+    expect(aliasTraced.layers[0]).toMatchObject({ layer: 'fixeddict-key', status: 'hit' });
+
+    // 悬停经迭代目标:for pos in self.bag: 后 pos["x"] → **x: float**
+    const forHover = await hoverAt(['for pos in self.bag:', '    v = pos["x"]'], 1, keyCol('    v = pos["x"]', 'x'));
+    expect(forHover).toContain('**x: float**');
+
+    // 非法下标类型:悬停不造类型(能推才显)
+    const illegalHover = (await hoverAt(['d = self.pos[0]', 'v = d["x"]'], 1, keyCol('v = d["x"]', 'x'))) ?? '';
+    expect(illegalHover).not.toContain('**x:');
   });
 });

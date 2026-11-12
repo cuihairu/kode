@@ -378,7 +378,8 @@ export function fixedDictSubscriptContextAt(
   return null;
 }
 
-/** 链内整数/切片/未知表达式下标段(数字下标的元素型推导面归 STRUCT-03)。 */
+/** 链内整数/切片/未知表达式下标段:整数下标打数组=元素位(STRUCT-03 接收者
+ * 定型与解析器数组状态消化);未知表达式下标在链中=诚实断链。 */
 
 /** 解析中的链状态:FIXED_DICT 容器或元素为 FIXED_DICT 的数组。 */
 type FixedDictChainState =
@@ -443,7 +444,10 @@ export function resolveFixedDictSubscriptKey(
     return null;
   }
   const rootResolved = resolveAnnotationTypeWithReason(trimmedRoot, customTypes);
-  let state = chainStateFromAnnotation(rootResolved.annotation, customTypes);
+  // KSEM-STRUCT-03:根可以是已语义化的注解形态(下标 RHS/迭代定型产出
+  // `FixedArray[元素]`),解析不出类型名时按原文注解形态再试一次
+  let state = chainStateFromAnnotation(rootResolved.annotation, customTypes) ??
+    chainStateFromAnnotation(trimmedRoot, customTypes);
   for (const segment of prefixSegments) {
     if (!state) {
       return null;
@@ -486,18 +490,231 @@ export const FIXED_DICT_CHAIN_ALIAS_LOOKBACK_LINES = 200;
 /** 别名间接深度上限(接收者 → 赋值源 → 再一层;更深诚实不追)。 */
 const FIXED_DICT_CHAIN_ALIAS_MAX_DEPTH = 2;
 
+/** 下标原子分类:整数/变量下标 / 字符串键 / 切片;不可判定 → null(断链)。 */
+type SubscriptAtomKind = 'index' | 'key' | 'slice';
+
+/** 括号配对(引号感知):open 起 `[` 的配对 `]` 位;未闭返回 -1。 */
+function matchBracket(text: string, open: number): number {
+  let depth = 0;
+  let quote: string | null = null;
+  for (let i = open; i < text.length; i += 1) {
+    const ch = text[i];
+    if (quote !== null) {
+      if (ch === '\\') {
+        i += 1;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === '[') {
+      depth += 1;
+    } else if (ch === ']') {
+      depth -= 1;
+      if (depth === 0) {
+        return i;
+      }
+    }
+  }
+  return -1;
+}
+
+/** 下标内容分类:顶层含 `:`(引号感知)→ 切片;整段恰为一个字符串字面量 →
+ * 键;空/不可判定 → null;其余(数字/变量/表达式)→ 整数下标。 */
+function classifySubscriptContent(content: string): SubscriptAtomKind | null {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return null;
+  }
+  let quote: string | null = null;
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const ch = trimmed[i];
+    if (quote !== null) {
+      if (ch === '\\') {
+        i += 1;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === ':') {
+      return 'slice';
+    }
+  }
+  if (/^"(?:[^"\\]|\\.)*"$/.test(trimmed) || /^'(?:[^'\\]|\\.)*'$/.test(trimmed)) {
+    return 'key';
+  }
+  return 'index';
+}
+
 /**
- * 接收者表达式 → 根类型名(def 属性 <Type> 直文本)。`self.<属性>` 直接
- * 定位;裸局部名向上找最近赋值(`x = self.<属性>` / `x = y` 一层间接),
- * RHS 带下标/调用的链式形态不追(数组下标别名面归 STRUCT-03)。定位器由
- * 调用方注入(EntityMappingManager.resolvePropertyDefinitionInfo),纯逻辑
- * 可测。
+ * RHS/迭代式 → base + 下标原子链(如 `self.bag[0]`、`bags[1:]`、
+ * `matrix[0][1]`)。base 必须恰为 `self.<prop>` 或裸标识符;组间只允许空白,
+ * 组后出现 `.x`/运算符等杂质 → null(非简单链,诚实不追)。无下标返回 null
+ * (调用方按简单形态自理)。
+ */
+function parseSubscriptChain(expr: string): { base: string; atoms: SubscriptAtomKind[] } | null {
+  let quote: string | null = null;
+  let baseEnd = -1;
+  for (let i = 0; i < expr.length; i += 1) {
+    const ch = expr[i];
+    if (quote !== null) {
+      if (ch === '\\') {
+        i += 1;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === '[') {
+      baseEnd = i;
+      break;
+    }
+  }
+  if (baseEnd < 0) {
+    return null;
+  }
+  const base = expr.slice(0, baseEnd).trim();
+  if (!/^self\s*\.\s*[A-Za-z_]\w*$/.test(base) && !/^[A-Za-z_]\w*$/.test(base)) {
+    return null;
+  }
+  const atoms: SubscriptAtomKind[] = [];
+  let pos = baseEnd;
+  for (;;) {
+    while (pos < expr.length && /\s/.test(expr[pos])) {
+      pos += 1;
+    }
+    if (pos >= expr.length) {
+      break;
+    }
+    if (expr[pos] !== '[') {
+      return null;
+    }
+    const close = matchBracket(expr, pos);
+    if (close < 0) {
+      return null;
+    }
+    const atom = classifySubscriptContent(expr.slice(pos + 1, close));
+    if (atom === null) {
+      return null;
+    }
+    atoms.push(atom);
+    pos = close + 1;
+  }
+  return atoms.length > 0 ? { base, atoms } : null;
+}
+
+/** 数组注解 → 元素注解(`FixedArray[X]`/`list[X]` → X,嵌套剥一层);
+ * 非数组(FIXED_DICT 整数下标=非法下标类型)或元素缺声明(Any)→ null。 */
+function takeArrayElementAnnotation(annotation: string): string | null {
+  const match = /^(?:FixedArray|list)\[(.+)\]$/.exec(annotation.trim());
+  if (!match) {
+    return null;
+  }
+  const element = match[1].trim();
+  if (!element || element === PYTHON_TYPE_STUB_FALLBACK) {
+    return null;
+  }
+  return element;
+}
+
+/** 递归产出的根文本 → 注解:`FixedArray[…]`/`list[…]` 原文直通(解析器侧
+ * 有原生回退臂),其余按类型名过解析链。 */
+function annotateRootText(raw: string, customTypes: readonly CustomTypeInfo[]): string {
+  const trimmed = raw.trim();
+  if (/^(?:FixedArray|list)\[/.test(trimmed)) {
+    return trimmed;
+  }
+  return resolveAnnotationTypeWithReason(trimmed, customTypes).annotation;
+}
+
+/** 赋值 RHS / for 迭代式 → 根注解或类型名。简单形态(self.<prop>/裸名)保持
+ * 旧契约(返回 def <Type> 直文本/递归结果);下标链形态(KSEM-STRUCT-03)按
+ * 原子逐层剥:整数下标=取元素、切片=数组原形保留、字符串键=断链(数组上
+ * 非法;FD 字段别名面不属本批),调用/运算符等动态形态不入链。无注册表
+ * (customTypes 缺省)不追下标链——旧调用方行为不变。 */
+async function resolveRootExprFromRhs(
+  expr: string,
+  lines: readonly string[],
+  lineIndex: number,
+  resolveSelfPropertyType: (propertyName: string) => Promise<string | null | undefined>,
+  customTypes: readonly CustomTypeInfo[] | undefined,
+  depth: number
+): Promise<string | null> {
+  const trimmed = expr.trim();
+  const selfProp = /^self\s*\.\s*([A-Za-z_]\w*)$/.exec(trimmed);
+  if (selfProp) {
+    return (await resolveSelfPropertyType(selfProp[1])) ?? null;
+  }
+  if (/^[A-Za-z_]\w*$/.test(trimmed)) {
+    return fixedDictChainRootType(trimmed, lines, lineIndex, resolveSelfPropertyType, customTypes, depth + 1);
+  }
+  const chain = parseSubscriptChain(trimmed);
+  if (!chain || !customTypes) {
+    return null;
+  }
+  let current: string | null;
+  const baseSelf = /^self\s*\.\s*([A-Za-z_]\w*)$/.exec(chain.base);
+  if (baseSelf) {
+    const typeName = await resolveSelfPropertyType(baseSelf[1]);
+    if (!typeName) {
+      return null;
+    }
+    current = resolveAnnotationTypeWithReason(typeName, customTypes).annotation;
+  } else {
+    const baseRoot = await fixedDictChainRootType(
+      chain.base, lines, lineIndex, resolveSelfPropertyType, customTypes, depth + 1
+    );
+    if (!baseRoot) {
+      return null;
+    }
+    current = annotateRootText(baseRoot, customTypes);
+  }
+  if (current === PYTHON_TYPE_STUB_FALLBACK) {
+    return null;
+  }
+  for (const atom of chain.atoms) {
+    if (!current) {
+      return null;
+    }
+    if (atom === 'index') {
+      current = takeArrayElementAnnotation(current);
+    } else if (atom === 'slice') {
+      if (!/^(?:FixedArray|list)\[.+\]$/.test(current)) {
+        return null;
+      }
+    } else {
+      return null; // 字符串键:诚实断链
+    }
+  }
+  return current;
+}
+
+/**
+ * 接收者表达式 → 根类型名/注解。`self.<属性>` 直接定位;裸局部名向上找最近
+ * 绑定(200 行窗口,深度 ≤2):
+ * - `x = self.<属性>` / `x = y` 赋值(旧面,契约不变);
+ * - `for x in ITER:` 迭代目标(KSEM-STRUCT-03):ITER 注解剥 `FixedArray[…]`
+ *   一层得元素注解——数组迭代继承元素结构;FD(字典)迭代产出键串、非数组
+ *   一律诚实落空;
+ * - `x = self.<属性>[0]` 下标 RHS(KSEM-STRUCT-03):整数下标取元素、切片
+ *   保留数组原形、字符串键/调用/运算符不追。
+ * 产出可为 def `<Type>` 直文本或语义注解(`FixedArray[…]`),解析器两侧
+ * 同收。定位器由调用方注入(EntityMappingManager.resolvePropertyDefinitionInfo),
+ * 注册表快照(5 参)供元素/切片定型,缺省时新形态不追(纯逻辑可测)。
  */
 export async function fixedDictChainRootType(
   receiver: string,
   lines: readonly string[],
   lineIndex: number,
   resolveSelfPropertyType: (propertyName: string) => Promise<string | null | undefined>,
+  customTypes?: readonly CustomTypeInfo[],
   depth = 0
 ): Promise<string | null> {
   if (receiver.startsWith('self.')) {
@@ -516,19 +733,20 @@ export async function fixedDictChainRootType(
     line -= 1
   ) {
     const assign = /^\s*([A-Za-z_]\w*)\s*=\s*(?!=)(.+?)\s*$/.exec(lines[line]);
-    if (!assign || assign[1] !== receiver) {
-      continue;
+    if (assign && assign[1] === receiver) {
+      return resolveRootExprFromRhs(assign[2], lines, line, resolveSelfPropertyType, customTypes, depth);
     }
-    const rhs = assign[2];
-    const selfProp = /^self\s*\.\s*([A-Za-z_]\w*)$/.exec(rhs);
-    if (selfProp) {
-      return (await resolveSelfPropertyType(selfProp[1])) ?? null;
+    const forMatch = /^\s*for\s+([A-Za-z_]\w*)\s+in\s+(.+?)\s*:\s*(?:#.*)?$/.exec(lines[line]);
+    if (forMatch && forMatch[1] === receiver) {
+      const iterable = await resolveRootExprFromRhs(
+        forMatch[2], lines, line, resolveSelfPropertyType, customTypes, depth
+      );
+      // simple self.<prop> iterables resolve to def-Type text (e.g. POS_BAG);
+      // normalize to annotation form (FixedArray[...]) before taking the element
+      return iterable && customTypes
+        ? takeArrayElementAnnotation(annotateRootText(iterable, customTypes))
+        : null;
     }
-    // 一层别名间接(x = y 再向上追 y 的来源)
-    if (/^[A-Za-z_]\w*$/.test(rhs)) {
-      return fixedDictChainRootType(rhs, lines, line, resolveSelfPropertyType, depth + 1);
-    }
-    return null; // 链式/调用 RHS:不追(STRUCT-03 数组下标别名面再议)
   }
   return null;
 }

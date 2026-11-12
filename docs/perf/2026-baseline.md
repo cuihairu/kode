@@ -78,7 +78,7 @@
 > 口径说明:§3 的数字是 PR1 时点(提交 89e8783)实测;本节四条链是 **main 当前代码**的真实调用路径(file:line 以落稿时该分支 HEAD b0732e8 为准,含 PR2 快照/PR3 调度器/PR5 去阻塞/PR6 诊断版本守卫,以及 kode2 phase2-slice-a 双轨 shadow 对拍面)。等待点(可能阻塞请求返回的位置)统一用虚线框标出;shadow 对拍腿均为 fire-and-forget,不阻塞返回,不标等待点。
 >
 > 2026-11-12(CELL-15 批):出处整体对账重探——diagnostics.ts +1(import)、extension.ts 409→410/495→499、hover.ts 277→271(注记挂共享入口后 provideHover 295,contents 数组归一化再 +4 → 299)、pythonDefinition.ts provideDefinition 出处 251→254(HEAD 真位,此前出处欠账)/773→765/879→871、completion.ts 775→766、languageServices 五打点(先 +4 对账,注记装配共享入口后再移 200/257/320/124/707)、inlay.ts 49→52、documentStore.ts 154→155(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
-> 2026-11-13(KSEM-STRUCT-02):FIXED_DICT 子字段键三面接线后真位重探——hover.ts 顶部 fixedDictSubscript import 块 +8/键悬停臂与 resolveFixedDictKeyHover 前插后净 provideHover 299→306;pythonDefinition.ts 顶部 import +2、FIXED_DICT 键跳转面 arm +60(provideDefinition 254→260——HEAD 真位 256,出处欠账 2 行随本批一并校准——、provideDefinitionTracedImpl 308→312、层0 接收者段闸 765→827、首扫超时闸 871→933);completion.ts 键位派发块前插 FIXED_DICT 键补全面(provideCompletionItems 301→328)+ provideFixedDictKeyCompletions 后接 → PythonCompletionProvider.provideCompletionItems 766→853(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
+> 2026-11-13(KSEM-STRUCT-02):FIXED_DICT 子字段键三面接线后真位重探——hover.ts 顶部 fixedDictSubscript import 块 +8/键悬停臂与 resolveFixedDictKeyHover 前插后净 provideHover 299→306;pythonDefinition.ts 顶部 import +2、FIXED_DICT 键跳转面 arm +60(provideDefinition 254→260——HEAD 真位 256,出处欠账 2 行随本批一并校准——、provideDefinitionTracedImpl 308→312、层0 接收者段闸 765→827、首扫超时闸 871→933);completion.ts 键位派发块前插 FIXED_DICT 键补全面(provideCompletionItems 301→328)+ provideFixedDictKeyCompletions 后接 → PythonCompletionProvider.provideCompletionItems 766→853,出处随 baseline 锁步);STRUCT-03 接收者定型接线——completion.ts provideFixedDictKeyCompletions 注册表前移 +2(PythonCompletionProvider.provideCompletionItems 853→855)、pythonDefinition.ts fdKeyHit 臂注册表前移 +2(层0 闸 827→829/首扫超时闸 933→935;provideDefinition 260/provideDefinitionTracedImpl 312/hover provideHover 306 不变)(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 
 ### 7.1 Hover(Python → 实体标注 → 同步回退)
 
@@ -144,7 +144,7 @@ flowchart TD
   CB2["pythonClassIndex.resolveClassBase :1228<br/>(显式 import 绑定优先)"]
   CB3["findEntityDefinitionFile → .def<br/>getEntityRuntimeProfile → 实体脚本"]
   REV["types.xml implementedBy 反向跳转"]
-  L0["层0 接收者段闸(languageProviders/pythonDefinition.ts:827)<br/>self.段.方法:段不符即 miss"]
+  L0["层0 接收者段闸(languageProviders/pythonDefinition.ts:829)<br/>self.段.方法:段不符即 miss"]
   L1["层1 entity-def 属性子探<br/>resolvePropertyDefinitionForClass / resolvePropertyDefinition"]
   SCAN["indexScheduler 队列(首扫在途时)"]
   TY["findCustomTypeDeclarationInfo 自定义类型声明"]
@@ -170,7 +170,7 @@ flowchart TD
   MRO -- "①② 落空" --> PASS2 --> END2
   AD2 -.->|对拍| SHD
 
-  WAITB("等待点 B:withInitialScanTimeout 5s<br/>languageProviders/pythonDefinition.ts:933,层1 属性命中后补类型信息时")
+  WAITB("等待点 B:withInitialScanTimeout 5s<br/>languageProviders/pythonDefinition.ts:935,层1 属性命中后补类型信息时")
   WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(backend/pythonClassIndex.ts:657,打点 :543)")
   WAITD("等待点 D:pass2 await ensureScanned<br/>①② 均落空才等全量收敛——PR5 主路径首查不等这里")
   L1 -.->|等待| WAITB
@@ -188,7 +188,7 @@ flowchart TD
 flowchart TD
   VC3["VS Code: provideCompletionItems(document, position)"]
   M3["activate/languageServices.ts:124 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :707 一路)"]
-  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders/completion.ts:853"]
+  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders/completion.ts:855"]
   KBEC{"kbe./KBEngine. 模块语境?<br/>(已引入/已用别名)"}
   FILTER["filterKbeSymbols 前缀过滤 :4921<br/>(engineApiMetadata 目录)"]
   SELFC{"self. 语境?<br/>getPythonSelfCompletionContext :4935"}

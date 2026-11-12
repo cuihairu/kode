@@ -420,6 +420,8 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       const lastSegment = fdKeyHit.segments[fdKeyHit.segments.length - 1];
       if (lastSegment && lastSegment.kind === 'key' && lastSegment.keyEnd !== null) {
         const documentLines = document.getText().split(/\r?\n/);
+        // KSEM-STRUCT-03:注册表前移供接收者定型(迭代目标/下标 RHS 元素型)
+        const customTypes = getEntityCustomTypesSnapshot(getWorkspaceRootForDocument(document) ?? '');
         const rootTypeName = await fixedDictChainRootType(
           fdKeyHit.receiver,
           documentLines,
@@ -434,15 +436,15 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
               propertyName
             );
             return location?.typeName ?? null;
-          }
+          },
+          customTypes
         );
         if (!token?.isCancellationRequested && rootTypeName) {
-          const workspaceRoot = getWorkspaceRootForDocument(document);
           const resolution = resolveFixedDictSubscriptKey(
             rootTypeName,
             fdKeyHit.segments.slice(0, -1),
             lastSegment.key,
-            getEntityCustomTypesSnapshot(workspaceRoot ?? '')
+            customTypes
           );
           if (resolution?.field) {
             const targetLine = Math.max(0, resolution.field.line - 1);
