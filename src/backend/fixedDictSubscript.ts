@@ -387,13 +387,18 @@ type FixedDictChainState =
   | { kind: 'array'; element: CustomTypeInfo };
 
 /** Python 注解 → 链状态:FIXED_DICT 类名 → fd;FixedArray[X](X 为 FIXED_DICT
- * 类名)→ array;其余(标量/list/嵌套数组元素非 FD)→ null = 本面不接管。 */
+ * 类名)→ array;其余(标量/list/嵌套数组元素非 FD)→ null = 本面不接管。
+ * KSEM-STRUCT-07:implementedBy 类型不产生链状态——内存形式为实现类结构,
+ * Properties 键位属传输形式,字典键位面对内存形式不接管(数组元素同理)。 */
 function chainStateFromAnnotation(
   annotation: string,
   customTypes: readonly CustomTypeInfo[]
 ): FixedDictChainState | null {
   const fd = customTypes.find(
-    info => info.name === annotation && info.aliasType === FIXED_DICT_TYPE_NAME
+    info =>
+      info.name === annotation &&
+      info.aliasType === FIXED_DICT_TYPE_NAME &&
+      !info.implementedBy
   );
   if (fd) {
     return { kind: 'fd', info: fd };
@@ -401,7 +406,10 @@ function chainStateFromAnnotation(
   const array = /^FixedArray\[(.+)\]$/.exec(annotation);
   if (array) {
     const element = customTypes.find(
-      info => info.name === array[1] && info.aliasType === FIXED_DICT_TYPE_NAME
+      info =>
+        info.name === array[1] &&
+        info.aliasType === FIXED_DICT_TYPE_NAME &&
+        !info.implementedBy
     );
     if (element) {
       return { kind: 'array', element };
@@ -412,6 +420,34 @@ function chainStateFromAnnotation(
 
 /** 链深度有界(诚实上限:更深链是病态类型图,不追)。 */
 const FIXED_DICT_CHAIN_MAX_SEGMENTS = 8;
+
+/**
+ * KSEM-STRUCT-07:implementedBy FD 容器识别(注解解析后直配)。
+ *
+ * 引擎真源(customtypes.md/types.md,2026-11-13 盘点锚定):implementedBy
+ * 重定义 FIXED_DICT 的**内存形式**——createObjFromDict 返回什么脚本侧就
+ * 是什么(官方示例是 list 子类,键位/访问面由实现类定义),引擎存储与
+ * 网络传输时才还原 FIXED_DICT 字典(getDictFromObj 边界)。所以
+ * Properties 键位只描述**传输/存储形式**,内存形式的下标键位不可知,
+ * 字典键位面(补全/悬停/跳转/构造校验)一律不接管——不把实现对象当
+ * TypedDict。非 FD 自定义类型本就进不了 chainStateFromAnnotation 的
+ * aliasType 门,同不接管。
+ */
+export function implementedByFixedDictOfAnnotation(
+  annotation: string | null | undefined,
+  customTypes: readonly CustomTypeInfo[]
+): CustomTypeInfo | null {
+  const trimmed = annotation?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return customTypes.find(
+    info =>
+      info.name === trimmed &&
+      info.aliasType === FIXED_DICT_TYPE_NAME &&
+      !!info.implementedBy
+  ) ?? null;
+}
 
 /** 键解析结果:容器=键所在的 FIXED_DICT 类型;field/annotation 为键命中面。 */
 export interface FixedDictKeyResolution {

@@ -72,3 +72,16 @@ export interface FixedDictKeyHoverInput {
 export function formatFixedDictKeyHover(input: FixedDictKeyHoverInput): string {
   return `**${input.key}: ${input.annotation}**\n\nFIXED_DICT \`${input.containerName}\` 字段声明: \`${basename(input.file)}:${input.line}\``;
 }
+
+/** KSEM-STRUCT-07 implementedBy 下标悬停说明输入(容器名+绑定值)。 */
+export interface ImplementedBySubscriptNoteInput {
+  containerName: string;
+  implementedBy: string;
+}
+
+/** implementedBy FD 的字符串下标悬停说明:内存形式为实现类结构,键位由实现
+ * 类定义;FIXED_DICT Properties 只描述传输/存储形式(getDictFromObj 边界
+ * 还原),不按其判定内存下标——给机制说明,不把实现对象当 TypedDict。 */
+export function formatImplementedBySubscriptNoteHover(input: ImplementedBySubscriptNoteInput): string {
+  return `**${input.containerName}**:implementedBy 类型\n\n内存形式由实现类 \`${input.implementedBy}\` 重定义(键位/访问面由实现类定义);FIXED_DICT Properties 键位仅描述传输/存储形式(引擎经 getDictFromObj 还原后使用),不适用于内存下标。`;
+}

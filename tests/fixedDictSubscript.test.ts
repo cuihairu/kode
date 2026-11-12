@@ -12,6 +12,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   fixedDictChainRootType,
   fixedDictSubscriptContextAt,
+  implementedByFixedDictOfAnnotation,
   resolveFixedDictSubscriptKey,
   type FixedDictChainSegment
 } from '../src/backend/fixedDictSubscript';
@@ -691,5 +692,192 @@ describe('KSEM-STRUCT-02 Provider 三面(补全/跳转/悬停)', () => {
     // 非法下标类型:悬停不造类型(能推才显)
     const illegalHover = (await hoverAt(['d = self.pos[0]', 'v = d["x"]'], 1, keyCol('v = d["x"]', 'x'))) ?? '';
     expect(illegalHover).not.toContain('**x:');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// KSEM-STRUCT-07:implementedBy 内存形式 vs 传输形式
+// 引擎真源(customtypes.md/types.md):implementedBy 重定义 FIXED_DICT 内存
+// 形式(createObjFromDict 任意形态,官方示例 list 子类),传输/存储时才还原
+// FIXED_DICT 字典(getDictFromObj 边界)。Properties 键位只描述传输形式,
+// 字典键位面(解析/补全/悬停/跳转)对内存形式不接管——不把实现对象当
+// TypedDict。
+// ---------------------------------------------------------------------------
+
+describe('KSEM-STRUCT-07 implementedBy 类型不按字典键位判定', () => {
+  const TALENT_LIST = customType('TALENT_LIST', 'FIXED_DICT', [
+    scalarField('values', 'UINT32', 72)
+  ], 70);
+  TALENT_LIST.implementedBy = 'user_type.TalentPickler.inst';
+
+  const PROFILE = customType('PROFILE', 'FIXED_DICT', [
+    scalarField('talents', 'TALENT_LIST', 82)
+  ], 80);
+
+  const TALENT_BAG = customType('TALENT_BAG', 'ARRAY', [], 90, node('ARRAY', 90, [{ tag: 'of', value: node('TALENT_LIST', 91) }]));
+
+  const REGISTRY_07: CustomTypeInfo[] = [POSITION, TALENT_LIST, PROFILE, TALENT_BAG];
+
+  it('implementedBy FD 容器识别:正/负两向', () => {
+    expect(implementedByFixedDictOfAnnotation('TALENT_LIST', REGISTRY_07)?.implementedBy).toBe('user_type.TalentPickler.inst');
+    expect(implementedByFixedDictOfAnnotation('POSITION', REGISTRY_07)).toBeNull();
+    expect(implementedByFixedDictOfAnnotation('UINT16', REGISTRY_07)).toBeNull();
+    expect(implementedByFixedDictOfAnnotation('', REGISTRY_07)).toBeNull();
+    expect(implementedByFixedDictOfAnnotation(undefined, REGISTRY_07)).toBeNull();
+  });
+
+  it('字符串键解析:implementedBy 根不产链状态(内存键位不可知不猜)', () => {
+    expect(resolveFixedDictSubscriptKey('TALENT_LIST', [], 'values', REGISTRY_07)).toBeNull();
+  });
+
+  it('链中途 implementedBy 字段:诚实断链', () => {
+    expect(resolveFixedDictSubscriptKey('PROFILE', [keySeg('talents')], 'values', REGISTRY_07)).toBeNull();
+  });
+
+  it('数组元素为 implementedBy FD:整数下标后断链', () => {
+    expect(resolveFixedDictSubscriptKey('FixedArray[TALENT_LIST]', [indexSeg], 'values', REGISTRY_07)).toBeNull();
+  });
+
+  it('普通 FD 同注册表照常解析(门只收窄不误伤)', () => {
+    const hit = resolveFixedDictSubscriptKey('POSITION', [], 'x', REGISTRY_07);
+    expect(hit?.field?.name).toBe('x');
+  });
+
+  it('标量自定义类型当 TypedDict 面:既有口径钉住(不接管)', () => {
+    // 非 FD(aliasType=UINT8)本就进不了链状态门——验收「任意自定义对象
+    // 不当 TypedDict」的既有证据面
+    const scalarType = customType('HP_POINT', 'UINT8', [], 100);
+    expect(resolveFixedDictSubscriptKey('HP_POINT', [], 'x', [...REGISTRY_07, scalarType])).toBeNull();
+  });
+});
+
+describe('KSEM-STRUCT-07 Provider 三面(补全/悬停/跳转)对 implementedBy 不接管', () => {
+  const ORIGINAL_FOLDERS = workspace.workspaceFolders;
+  const ORIGINAL_FIND_FILES = workspace.findFiles;
+
+  let root = '';
+
+  const put = (relative: string, content: string) => {
+    const file = path.join(root, relative);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content, 'utf8');
+  };
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-struct07-'));
+    const typesXml = [
+      '<root>',
+      '  <POSITION>',
+      '    FIXED_DICT',
+      '    <Properties>',
+      '      <x>',
+      '        <Type> FLOAT </Type>',
+      '      </x>',
+      '      <y>',
+      '        <Type> FLOAT </Type>',
+      '      </y>',
+      '    </Properties>',
+      '  </POSITION>',
+      '  <TALENT_LIST>',
+      '    FIXED_DICT',
+      '    <implementedBy>user_type.TalentPickler.inst</implementedBy>',
+      '    <Properties>',
+      '      <values>',
+      '        <Type> UINT32 </Type>',
+      '      </values>',
+      '    </Properties>',
+      '  </TALENT_LIST>',
+      '</root>'
+    ].join('\n');
+    put('scripts/entity_defs/types.xml', typesXml);
+    put('scripts/entities.xml', '<root>\n  <Avatar hasBase="true" hasCell="true"/>\n</root>');
+    put('scripts/cell/Avatar.py', 'class Avatar(object):\n    pass\n');
+    put(
+      'scripts/entity_defs/Avatar.def',
+      [
+        '<root>',
+        '  <Properties>',
+        '    <pos><Type>POSITION</Type><Flags>CELL_PUBLIC</Flags></pos>',
+        '    <talents><Type>TALENT_LIST</Type><Flags>CELL_PUBLIC</Flags></talents>',
+        '  </Properties>',
+        '</root>'
+      ].join('\n')
+    );
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'struct07', index: 0 }];
+    const walkDefs = (dir: string, results: Uri[]): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walkDefs(full, results);
+        } else if (entry.name.endsWith('.def')) {
+          results.push(Uri.file(full));
+        }
+      }
+    };
+    workspace.findFiles = (async () => {
+      const results: Uri[] = [];
+      walkDefs(root, results);
+      return results;
+    }) as unknown as typeof workspace.findFiles;
+  });
+
+  afterEach(() => {
+    workspace.workspaceFolders = ORIGINAL_FOLDERS;
+    workspace.findFiles = ORIGINAL_FIND_FILES;
+    if (root) {
+      fs.rmSync(root, { recursive: true, force: true });
+      root = '';
+    }
+  });
+
+  const cellDoc = (text: string) =>
+    makeTextDocument(`${text}\n`, { fileName: path.join(root, 'scripts', 'cell', 'Avatar.py'), languageId: 'python' });
+
+  const manager = () => new EntityMappingManager({ subscriptions: [] } as never);
+
+  const hoverAt = async (lines: string[], line: number, character: number) => {
+    const document = makeTextDocument(`${lines.join('\n')}\n`, {
+      fileName: path.join(root, 'scripts', 'cell', 'Avatar.py'),
+      languageId: 'python'
+    });
+    const provider = new KBEngineHoverProvider(manager());
+    const hover = (await provider.provideHover(document as never, new Position(line, character))) as
+      | { contents?: unknown }
+      | null;
+    const contents = hover?.contents as unknown;
+    const parts = Array.isArray(contents) ? contents : contents !== undefined ? [contents] : [];
+    const first = parts[0] as { value?: string } | undefined;
+    return first?.value ?? null;
+  };
+
+  it('补全:implementedBy 属性开键串不补声明键(内存键位不可知)', async () => {
+    const provider = new KBEngineCompletionProvider(manager());
+    const line = 'v = self.talents["';
+    const items = (await provider.provideCompletionItems(cellDoc(line), new Position(0, line.length))) as
+      | { label: string }[]
+      | undefined;
+    expect((items ?? []).map(item => item.label)).not.toContain('values');
+  });
+
+  it('悬停:机制说明替代键位(内存形式为实现类结构)', async () => {
+    const line = 'v = self.talents["values"]';
+    const note = await hoverAt([line], 0, keyCol(line, 'values'));
+    expect(note).toContain('**TALENT_LIST**:implementedBy 类型');
+    expect(note).toContain('user_type.TalentPickler.inst');
+    expect(note).toContain('内存形式');
+    expect(note).not.toContain('**values:');
+  });
+
+  it('悬停:普通 FD 键位照常(门只收窄不误伤)', async () => {
+    const line = 'v = self.pos["x"]';
+    const hit = await hoverAt([line], 0, keyCol(line, 'x'));
+    expect(hit).toContain('**x: float**');
+  });
+
+  it('跳转:implementedBy 键不造 fixeddict-key 层(交回常规链)', async () => {
+    const line = 'v = self.talents["values"]';
+    const provider = new PythonDefinitionProvider(manager(), undefined, undefined);
+    const traced = await provider.provideDefinitionTraced(cellDoc(line), new Position(0, keyCol(line, 'values')));
+    expect(traced.layers.some(layer => layer.layer === 'fixeddict-key')).toBe(false);
   });
 });

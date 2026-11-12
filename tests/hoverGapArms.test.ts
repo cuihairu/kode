@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
+  createCustomTypeHover,
   createKbeSymbolHover,
   KBEngineHoverProvider,
   KBEngineSignatureHelpProvider,
@@ -298,6 +299,42 @@ describe('hover 缺口臂:implementedBy 绑定真形段(KSEM-STRUCT-06)', () => 
       stubWorkspace.workspaceFolders = ORIGINAL_FOLDERS;
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('hover 缺口臂:implementedBy 两表示框架(KSEM-STRUCT-07)', () => {
+  const hoverValue = (hover: unknown): string => {
+    const contents = (hover as { contents?: unknown }).contents as unknown;
+    const parts = Array.isArray(contents) ? contents : [contents];
+    return (parts[0] as { value?: string } | undefined)?.value ?? '';
+  };
+
+  const info = (implementedBy?: string) => ({
+    name: 'TALENT_LIST',
+    filePath: '/entity_defs/types.xml',
+    line: 70,
+    implementedByLine: 71,
+    startOffset: 0,
+    endOffset: 0,
+    aliasType: 'FIXED_DICT',
+    rawValue: 'FIXED_DICT',
+    structure: { name: 'FIXED_DICT', rawValue: 'FIXED_DICT', children: [], line: 70 },
+    properties: [{ name: 'values', typeName: 'UINT32', line: 72 }],
+    implementedBy
+  });
+
+  it('implementedBy 类型:Properties 标题为传输/存储形式 + 内存形式注记', () => {
+    const withImpl = hoverValue(createCustomTypeHover(info('user_type.TalentPickler.inst') as never, 'summary'));
+    expect(withImpl).toContain('**Properties(传输/存储形式)**:');
+    expect(withImpl).toContain('内存形式由实现类重定义');
+    expect(withImpl).toContain('字典键位不适用于内存形式');
+  });
+
+  it('普通类型:Properties 标题保持原样(不误伤)', () => {
+    const plain = hoverValue(createCustomTypeHover(info() as never, 'summary'));
+    expect(plain).toContain('**Properties**:');
+    expect(plain).not.toContain('传输/存储形式');
+    expect(plain).not.toContain('内存形式由实现类重定义');
   });
 });
 

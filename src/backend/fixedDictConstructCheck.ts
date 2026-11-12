@@ -129,7 +129,11 @@ function containerSource(container: CustomTypeInfo): string {
   return container.line > 0 ? `${base}:${container.line}` : base;
 }
 
-/** 注解/类型名 → FD 容器(名字直配 aliasType;别名链由上游解析链消化)。 */
+/** 注解/类型名 → FD 容器(名字直配 aliasType;别名链由上游解析链消化)。
+ * KSEM-STRUCT-07:implementedBy 类型豁免——内存形式由实现类重定义
+ * (createObjFromDict 任意形态),dict 字面量对准的键位是实现类自定义的,
+ * 不是 FIXED_DICT Properties(那只描述传输/存储形式);按声明键集校验
+ * 内存构造点会把实现对象当 TypedDict,故不接管。 */
 function fdContainerOfAnnotation(
   annotation: string | null | undefined,
   customTypes: readonly CustomTypeInfo[]
@@ -139,7 +143,10 @@ function fdContainerOfAnnotation(
     return null;
   }
   return customTypes.find(
-    info => info.name === trimmed && info.aliasType === FIXED_DICT_TYPE_NAME
+    info =>
+      info.name === trimmed &&
+      info.aliasType === FIXED_DICT_TYPE_NAME &&
+      !info.implementedBy
   ) ?? null;
 }
 

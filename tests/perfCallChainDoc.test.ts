@@ -375,7 +375,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // formatFixedDictKeyHover/getEntityCustomTypesSnapshot import +4、
   // provideHover 后插 resolveFixedDictKeyHover 臂(+3),provideHover
   // 真位重探 299→306,出处随 baseline 锁步。
-  ['src/languageProviders/hover.ts', 306, 'provideHover('],
+  // 2026-11-13(KSEM-STRUCT-07):hover.ts fixedDictSubscript import +1
+  // (implementedByFixedDictOfAnnotation),provideHover 真位重探 306→307,
+  // 出处随 baseline 锁步。
+  ['src/languageProviders/hover.ts', 307, 'provideHover('],
   ['src/languageProviders/navigation.ts', 47, 'shadowCompareDefinition'],
   // 2026-11-09(flags 别名归一批):validation.ts 顶部加 FLAG_DOMAIN_ALIAS
   // import(+1 行),其后 validation.ts 三锚点真位重探 13→14/37→38/255→256,

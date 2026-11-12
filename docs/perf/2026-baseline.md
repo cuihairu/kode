@@ -80,6 +80,7 @@
 > 2026-11-12(CELL-15 批):出处整体对账重探——diagnostics.ts +1(import)、extension.ts 409→410/495→499、hover.ts 277→271(注记挂共享入口后 provideHover 295,contents 数组归一化再 +4 → 299)、pythonDefinition.ts provideDefinition 出处 251→254(HEAD 真位,此前出处欠账)/773→765/879→871、completion.ts 775→766、languageServices 五打点(先 +4 对账,注记装配共享入口后再移 200/257/320/124/707)、inlay.ts 49→52、documentStore.ts 154→155(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-13(KSEM-STRUCT-02):FIXED_DICT 子字段键三面接线后真位重探——hover.ts 顶部 fixedDictSubscript import 块 +8/键悬停臂与 resolveFixedDictKeyHover 前插后净 provideHover 299→306;pythonDefinition.ts 顶部 import +2、FIXED_DICT 键跳转面 arm +60(provideDefinition 254→260——HEAD 真位 256,出处欠账 2 行随本批一并校准——、provideDefinitionTracedImpl 308→312、层0 接收者段闸 765→827、首扫超时闸 871→933);completion.ts 键位派发块前插 FIXED_DICT 键补全面(provideCompletionItems 301→328)+ provideFixedDictKeyCompletions 后接 → PythonCompletionProvider.provideCompletionItems 766→853,出处随 baseline 锁步);STRUCT-03 接收者定型接线——completion.ts provideFixedDictKeyCompletions 注册表前移 +2(PythonCompletionProvider.provideCompletionItems 853→855)、pythonDefinition.ts fdKeyHit 臂注册表前移 +2(层0 闸 827→829/首扫超时闸 933→935;provideDefinition 260/provideDefinitionTracedImpl 312/hover provideHover 306 不变)(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-13(KSEM-STRUCT-04):FD 构造点诊断接线真位重探——diagnostics.ts 顶部 import +2 与 DiagnosticsShared 声明 +4 → 两处诊断打点锚点 152/165→162/175;extension.ts 解构 +2、open 钩 +2 → onDidChangeTextDocument 锚点 410→415,change queued 钩 +2/types.xml 注册表分支 +2 → flushQueued 锚点 499→508,flush timer 内 FD 构造点调度器冲刷 +5(CELL-15 同形)在锚点之后不再位移(与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
+> 2026-11-13(KSEM-STRUCT-07):implementedBy 两表示收口——hover.ts fixedDictSubscript import +1(implementedByFixedDictOfAnnotation)→ provideHover 306→307,出处随 baseline 锁步。
 
 ### 7.1 Hover(Python → 实体标注 → 同步回退)
 
@@ -87,7 +88,7 @@
 flowchart TD
   VC1["VS Code: registerHoverProvider.provideHover(document, position, token)"]
   M1["activate/languageServices.ts:200 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
-  HP["KBEngineHoverProvider.provideHover<br/>languageProviders/hover.ts:306"]
+  HP["KBEngineHoverProvider.provideHover<br/>languageProviders/hover.ts:307"]
   CFG["getLanguageFeatureConfig() 开关快照"]
   WORD["getWordRangeAtPosition + getText(range)<br/>读 VS Code 缓冲区,不读磁盘"]
   BR{"languageId==python 且<br/>注入 EntityMappingManager?"}

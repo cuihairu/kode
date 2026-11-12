@@ -311,7 +311,8 @@ describe('type value reference hovers', () => {
     ].join('\n'), 'scripts/entity_defs/types.xml');
 
     const text = hoverText(provider.provideHover(document, position));
-    expect(text).toContain('**Properties**:');
+    // KSEM-STRUCT-07:DOLL 带 implementedBy——Properties 标题为传输/存储形式
+    expect(text).toContain('**Properties(传输/存储形式)**:');
     expect(text).toContain('`name`: `UNICODE`');
     expect(text).toContain('`dbid`: `UNKNOWN`');
   });

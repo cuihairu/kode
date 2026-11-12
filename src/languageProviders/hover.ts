@@ -10,7 +10,7 @@ import { getHookByName } from '../hooks';
 import { getEntryHookByName, isComponentEntryScriptFile } from '../backend/entryHooks';
 import { DETAIL_LEVELS, KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, KBENGINE_TYPES } from '../backend/kbengineMetadata';
 import { resolveEntityBuiltinPropertyHit, resolveEntityComponentFaceFromPath, type EntityComponentFace } from '../backend/entityBuiltinProperties';
-import { formatBuiltinPropertyHover, formatEntityDefMethodHover, formatEventStatsHover, formatFixedDictKeyHover, formatInferredReturnHover, formatSelfPropertyTypeHover } from '../backend/hoverMarkdown';
+import { formatBuiltinPropertyHover, formatEntityDefMethodHover, formatEventStatsHover, formatFixedDictKeyHover, formatImplementedBySubscriptNoteHover, formatInferredReturnHover, formatSelfPropertyTypeHover } from '../backend/hoverMarkdown';
 import { apiDocDomainsForFace, formatApiDocHover, formatApiDocSupplement, getKbengineApiAccessAtPosition, getPythonCallbackDefinitionAtPosition, lookupApiDoc } from '../backend/pythonApiHoverDocs';
 import { currentHoverLanguageEnv, readHoverLanguageSetting, resolveHoverLanguage } from '../hoverLocale';
 import { hasLocalReturnCandidate, resolveLocalVariableReturnTypeFromSnapshot } from '../backend/pythonReturnTypeInference';
@@ -21,6 +21,7 @@ import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from '../backe
 import {
   fixedDictChainRootType,
   fixedDictSubscriptContextAt,
+  implementedByFixedDictOfAnnotation,
   resolveFixedDictSubscriptKey,
   type FixedDictKeyResolution,
   type FixedDictSubscriptChainContext
@@ -1044,6 +1045,21 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       );
       if (!rootTypeName || sharedToken.isCancellationRequested) {
         return null;
+      }
+      // KSEM-STRUCT-07:接收者是 implementedBy FD——内存形式为实现类结构
+      // (键位由实现类定义),FIXED_DICT Properties 键位属传输/存储形式,
+      // 不按其判定内存下标(不得把实现对象当 TypedDict)。给机制说明;
+      // 链中途 implementedBy 字段照旧由解析链诚实断链(resolve → null)。
+      const rootAnnotation = resolveAnnotationTypeWithReason(rootTypeName, customTypes).annotation;
+      const implContainer = implementedByFixedDictOfAnnotation(rootAnnotation, customTypes) ??
+        implementedByFixedDictOfAnnotation(rootTypeName, customTypes);
+      if (implContainer && !sharedToken.isCancellationRequested) {
+        return new vscode.Hover(
+          new vscode.MarkdownString(formatImplementedBySubscriptNoteHover({
+            containerName: implContainer.name,
+            implementedBy: implContainer.implementedBy ?? ''
+          }))
+        );
       }
       resolution = resolveFixedDictSubscriptKey(
         rootTypeName,

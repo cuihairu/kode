@@ -408,9 +408,21 @@ export function createCustomTypeHover(
   }
 
   if (customTypeInfo.properties.length > 0) {
-    markdown.appendMarkdown('**Properties**:\n');
+    // KSEM-STRUCT-07:implementedBy 类型——Properties 键位属传输/存储形式
+    // (引擎经 getDictFromObj 还原后使用),内存形式由实现类重定义(见绑定段),
+    // 标题区分两表示,不把实现对象当 TypedDict。
+    markdown.appendMarkdown(
+      customTypeInfo.implementedBy
+        ? '**Properties(传输/存储形式)**:\n'
+        : '**Properties**:\n'
+    );
     for (const property of customTypeInfo.properties) {
       markdown.appendMarkdown(`- \`${property.name}\`: \`${property.typeName || 'UNKNOWN'}\`\n`);
+    }
+    if (customTypeInfo.implementedBy) {
+      markdown.appendMarkdown(
+        '\n内存形式由实现类重定义,下标/访问面以实现类为准(字典键位不适用于内存形式)。\n'
+      );
     }
   }
 

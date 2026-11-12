@@ -314,3 +314,46 @@ describe('fixedDictConstructFindingToItem', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// KSEM-STRUCT-07:implementedBy 类型豁免构造校验——内存形式由实现类重定义,
+// dict 字面量对准的键位是实现类自定义的,不是 FIXED_DICT Properties(那只
+// 描述传输/存储形式,引擎经 getDictFromObj 还原后使用);按声明键集校验会
+// 把实现对象当 TypedDict。普通 FD 同注册表照常(门只收窄不误伤)。
+// ---------------------------------------------------------------------------
+
+describe('KSEM-STRUCT-07 implementedBy 类型不按 FIXED_DICT 键集校验', () => {
+  const TALENT_LIST = customType('TALENT_LIST', 'FIXED_DICT', [
+    scalarField('values', 'UINT32', 72)
+  ], 70);
+  TALENT_LIST.implementedBy = 'user_type.TalentPickler.inst';
+
+  const REGISTRY_07: CustomTypeInfo[] = [...REGISTRY, TALENT_LIST];
+
+  const analyze07 = (
+    text: string,
+    table: Record<string, string | null>
+  ) => analyzeFixedDictConstructWrites(text, makeResolver(table), REGISTRY_07);
+
+  it('直接形态:implementedBy 属性上的 dict 字面量零报告(不判缺键/多键)', async () => {
+    const findings = await analyze07(wrap('self.talents = {"values": [1]}'), { talents: 'TALENT_LIST' });
+    expect(findings).toHaveLength(0);
+    // 内存键位是实现类自定义的:不合声明键集的字面量同样不报
+    const foreign = await analyze07(wrap('self.talents = {"kbengine": 1}'), { talents: 'TALENT_LIST' });
+    expect(foreign).toHaveLength(0);
+  });
+
+  it('链形态:implementedBy 字段上的构造点零报告', async () => {
+    const findings = await analyze07(wrap('self.profile["talents"] = {}'), {
+      profile: 'AVATAR_INFO',
+      talents: null
+    });
+    expect(findings).toHaveLength(0);
+  });
+
+  it('普通 FD 同注册表照常(门只收窄不误伤)', async () => {
+    const findings = await analyze07(wrap('self.pos = {"x": 1.0}'), { pos: 'POSITION' });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ kind: 'missing', container: 'POSITION' });
+  });
+});
