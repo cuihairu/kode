@@ -26,13 +26,15 @@ export interface CellDataKeyAccessSite {
   kind: 'subscript' | 'get';
 }
 
-interface ParsedKeyAccess {
+export interface ParsedKeyAccess {
   key: string;
   keyStart: number;
   keyEnd: number;
   /** 整个访问表达式尾后一列(扫描前进位)。 */
   accessEnd: number;
   kind: 'subscript' | 'get';
+  /** get 形态第二个实参(default)文本(去首尾空白);无/空 → null。 */
+  defaultExpr: string | null;
 }
 
 /** 全文每行起始偏移(按 `\n` 切分,兼容 `\r\n`)。 */
@@ -216,7 +218,7 @@ function matchCloseParen(lineText: string, openParen: number): number {
  * 键非字面量(动态/拼接/f-string)→ null(不静态关联)。返回访问面(键区间
  * + 访问尾位);`[`/`(` 未闭合(跨行)或键解析失败 → null。
  */
-function parseCellDataKeyAccess(lineText: string, from: number): ParsedKeyAccess | null {
+export function parseCellDataKeyAccess(lineText: string, from: number): ParsedKeyAccess | null {
   const after = skipWhitespace(lineText, from);
   const ch = lineText[after];
   if (ch === '[') {
@@ -264,7 +266,7 @@ function parseCellDataKeyAccess(lineText: string, from: number): ParsedKeyAccess
     if (key === null) {
       return null;
     }
-    return { key, keyStart: span.lo + 1, keyEnd: span.hi - 1, accessEnd: close + 1, kind: 'subscript' };
+    return { key, keyStart: span.lo + 1, keyEnd: span.hi - 1, accessEnd: close + 1, kind: 'subscript', defaultExpr: null };
   }
   if (ch === '.') {
     const head = /^\.get[ \t]*\(/.exec(lineText.slice(after));
@@ -317,7 +319,13 @@ function parseCellDataKeyAccess(lineText: string, from: number): ParsedKeyAccess
     if (key === null) {
       return null;
     }
-    return { key, keyStart: span.lo + 1, keyEnd: span.hi - 1, accessEnd: close + 1, kind: 'get' };
+    // 第二个实参(default):首个顶层逗号之后到闭括号的文本;无逗号/空 → null
+    let defaultExpr: string | null = null;
+    if (firstEnd < close) {
+      const defaultRaw = lineText.slice(firstEnd + 1, close).trim();
+      defaultExpr = defaultRaw.length > 0 ? defaultRaw : null;
+    }
+    return { key, keyStart: span.lo + 1, keyEnd: span.hi - 1, accessEnd: close + 1, kind: 'get', defaultExpr };
   }
   return null;
 }

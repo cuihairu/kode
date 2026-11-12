@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 import type { EntityMappingManager } from './entityMapping';
 import { findPythonSelfPropertyAccesses, propertyAccessKey } from './backend/propertyCodeLens';
@@ -5,7 +6,8 @@ import {
   getWorkspaceRootForDocument,
   resolveEntityAnnotationType,
   resolveEntityAnnotationTypeWithReason,
-  resolveEntityFixedDictMember
+  resolveEntityFixedDictMember,
+  findDefinitionFileByCategory
 } from './definitionWorkspace';
 import { PYTHON_TYPE_STUB_FALLBACK, resolveAnnotationTypeWithReason } from './pythonTypeStubs';
 import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from './backend/selfPropertyTypeInference';
@@ -24,7 +26,27 @@ import {
 } from './globalDataIndex';
 import { inferSelfAttributeFlow } from './backend/selfAttributeFlowTypes';
 import { inferSelfAttributeFlowFromRust } from './backend/selfAttributeFlowRust';
+import {
+  cellScriptRoleAndEntity,
+  collectCellDataDefUniverse,
+  fetchCellDataKeys,
+  type CellDataKeyEntry
+} from './backend/cellDataCompletion';
+import {
+  cellDataHintPosition,
+  cellDataKeyProvablyPresent,
+  resolveCellDataReadType,
+  scanCellDataKeyOperations
+} from './backend/cellDataReadType';
 import { flowVersionKeyForDocument } from './flowVersionKey';
+
+/**
+ * KSEM-CELL-06 cellData 键宇宙缓存:按文档版本键(flowVersionKey)记忆
+ * fetchCellDataKeys 结果,同版本多次 inlay 渲染(诊断/滚动)零重复 RPC。
+ * 有界防膨胀:超过阈值清空(下次渲染重取)。
+ */
+const cellDataKeysCache = new Map<string, CellDataKeyEntry[] | null>();
+const CELL_DATA_KEYS_CACHE_MAX = 200;
 
 // 批154(用户令 todo:7):types.xml 数据类型 inlay hints —— python 侧
 // self.<属性> 访问处原位渲染 def 声明的 <Type> 注解(2026-10-29 用户定
@@ -157,6 +179,7 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
     await this.collectSelfPropertyElementHints(document, range, documentLines, propertyWorkspaceRoot, hints);
     await this.collectRpcParameterHints(document, range, hints);
     await this.collectDataDictHints(document, range, documentLines, hints);
+    await this.collectCellDataReadHints(document, range, documentLines, hints);
     return hints;
   }
 
@@ -292,6 +315,107 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
           ));
         }
       }
+    }
+  }
+
+  /**
+   * KSEM-CELL-06 cellData 读取类型提示:下标读取/get 的字段类型推导并
+   * 传给局部变量(纯赋值 RHS)与表达式(其余位置),get 按可证明存在性
+   * 与 default 算可空/联合,del 后不再沿用必有键。开关复用
+   * kbengine.inlayHints.typeData(顶部已拦)。能推才显:键宇宙无此键/
+   * 字段类型解析落 Any/get default 类型未知 → 不出。键宇宙按文档版本
+   * 键缓存(同版本多次渲染零重复 RPC,有界防膨胀)。
+   */
+  private async collectCellDataReadHints(
+    document: vscode.TextDocument,
+    range: vscode.Range,
+    documentLines: string[],
+    hints: vscode.InlayHint[]
+  ): Promise<void> {
+    const role = cellScriptRoleAndEntity(document.fileName);
+    if (!role) {
+      return; // client/bots/其他角色:cellData 面不可达
+    }
+    const workspaceRoot = getWorkspaceRootForDocument(document);
+    const cacheKey = flowVersionKeyForDocument(document);
+    let keys = cellDataKeysCache.get(cacheKey);
+    if (keys === undefined) {
+      const defs = collectCellDataDefUniverse(role.entity, (name, category) => {
+        const filePath = findDefinitionFileByCategory(name, category, document);
+        if (!filePath) {
+          return null;
+        }
+        try {
+          return fs.readFileSync(filePath, 'utf8');
+        } catch {
+          return null; // 读失败 = 缺席贡献,不猜
+        }
+      });
+      keys = await fetchCellDataKeys(role.entity, defs);
+      if (cellDataKeysCache.size >= CELL_DATA_KEYS_CACHE_MAX) {
+        cellDataKeysCache.clear();
+      }
+      cellDataKeysCache.set(cacheKey, keys);
+    }
+    if (!keys || keys.length === 0) {
+      return; // Rust 不可用/畸形/实体缺:不造键,不出提示
+    }
+    const keyByLiteral = new Map<string, CellDataKeyEntry>();
+    for (const entry of keys) {
+      keyByLiteral.set(entry.key, entry);
+    }
+    const ops = scanCellDataKeyOperations(document.getText());
+    const annotationCache = new Map<string, string | null>();
+    const resolveLabel = (label: string): string | null => {
+      const cached = annotationCache.get(label);
+      if (cached !== undefined) {
+        return cached;
+      }
+      const annotation = workspaceRoot
+        ? resolveEntityAnnotationTypeWithReason(workspaceRoot, label).annotation
+        : resolveAnnotationTypeWithReason(label, []).annotation;
+      const result = annotation === PYTHON_TYPE_STUB_FALLBACK ? null : annotation;
+      annotationCache.set(label, result);
+      return result;
+    };
+    for (const op of ops) {
+      // 只读/get 出类型提示;写/删只做存在性(写类型校验归 CELL-08)
+      if (op.kind !== 'read') {
+        continue;
+      }
+      if (op.line < range.start.line || op.line > range.end.line) {
+        continue;
+      }
+      const entry = keyByLiteral.get(op.key);
+      if (!entry || !entry.typeLabel) {
+        continue; // 未知键/无类型:不出(能推才显)
+      }
+      const fieldAnnotation = resolveLabel(entry.typeLabel);
+      if (fieldAnnotation === null) {
+        continue;
+      }
+      // 键在宇宙 → 初始必有;写/删流定当前状态
+      const provablyPresent = cellDataKeyProvablyPresent(ops, op, documentLines, true);
+      const hasDefault = op.defaultExpr !== null;
+      const defaultAnnotation = hasDefault ? inferDataDictValueType(op.defaultExpr) : null;
+      const annotation = resolveCellDataReadType({
+        accessKind: op.accessKind,
+        fieldAnnotation,
+        hasDefault,
+        defaultAnnotation,
+        provablyPresent
+      });
+      if (annotation === null) {
+        continue;
+      }
+      const position = cellDataHintPosition(documentLines[op.line] ?? '', op);
+      hints.push(
+        new vscode.InlayHint(
+          new vscode.Position(position.line, position.character),
+          `: ${annotation}`,
+          vscode.InlayHintKind.Type
+        )
+      );
     }
   }
 
