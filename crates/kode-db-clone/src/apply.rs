@@ -406,6 +406,11 @@ impl ImportApplier {
                 note: "engine load verification not attempted: local KBEngine wiring is applied at the UI phase (PDC-0003 environment)".into(),
             },
         };
+        // 数据已提交(原子完整):无论核对成败,指纹先落账——重复导入闸
+        // (:249 find_by_fingerprint)靠它识别同一导入重试;核对失败也记录,
+        // 否则 retry 后数据重复而闸不认(回滚早已不可能,数据真实在库)。
+        // 强制重导由 control.allow_duplicate 面开启,不受影响。
+        store.record(run.clone());
         if !run.verify.passed {
             // 数据已提交(原子完整);核对失败如实上报,不回滚已提交事务,
             // 清理计划随错误对象之外的 run 报告由调用方取回处理。
@@ -418,7 +423,6 @@ impl ImportApplier {
                     .collect::<Vec<_>>()
             )));
         }
-        store.record(run.clone());
         Ok(ApplyOutcome::Applied(run))
     }
 }

@@ -742,9 +742,10 @@ fn apply_records_declared_account_binding_without_credential_writes() {
 }
 
 #[test]
-fn verify_undercount_surfaces_post_commit_drift_and_records_no_run() {
-    // 提交后核对失败:如实报 DriftMismatch;数据已原子提交,run 不落账
-    // (调用方拿错误对象 + 清理计划处理,绝不谎报通过)。
+fn verify_undercount_surfaces_post_commit_drift_and_records_run() {
+    // 提交后核对失败:如实报 DriftMismatch;数据已原子提交,run 照常落账
+    // (重复导入闸 :249 靠指纹识别同一导入重试——核对失败也记录,否则
+    // retry 后数据重复而闸不认;强制重导走 allow_duplicate 面)。
     let dir = temp_dir("undercount");
     let (plan, archive) = fixture(&dir);
 
@@ -765,12 +766,49 @@ fn verify_undercount_surfaces_post_commit_drift_and_records_no_run() {
         matches!(err, CloneError::DriftMismatch(ref m) if m.contains("post-commit verification failed")),
         "{err:?}"
     );
-    // 数据已提交(原子完整,不回滚已提交事务),但 run 不进账。
+    // 数据已提交(原子完整,不回滚已提交事务),run 进账供重试闸识别。
     assert_eq!(db.committed_total(), 4);
     assert_eq!(db.begins, 1);
     assert_eq!(db.commits, 1);
     let fingerprint = archive_fingerprint(&archive).unwrap();
-    assert!(store.find_by_fingerprint(&fingerprint).is_none());
+    assert!(store.find_by_fingerprint(&fingerprint).is_some());
+
+    // 同导入重试(未开 allow_duplicate)→ 重复导入闸现拒,不再二进库。
+    match ImportApplier
+        .apply(
+            &plan,
+            &archive,
+            &local_target(),
+            &mut db,
+            &mut store,
+            &ApplyControl::default(),
+        )
+        .expect("retry must be rejected as duplicate")
+    {
+        ApplyOutcome::DuplicateRejected(dup) => {
+            assert!(!dup.prior_run.verify.passed);
+        }
+        other => panic!("expected DuplicateRejected, got {other:?}"),
+    }
+    // 重试未再写库(闸在写前触发)
+    assert_eq!(db.commits, 1);
+
+    // 开 allow_duplicate 才放行(强制重导面不受影响)
+    let mut store2 = MemoryRunStore::new();
+    let err2 = ImportApplier
+        .apply(
+            &plan,
+            &archive,
+            &local_target(),
+            &mut db,
+            &mut store2,
+            &ApplyControl { allow_duplicate: true, ..ApplyControl::default() },
+        )
+        .unwrap_err();
+    assert!(
+        matches!(err2, CloneError::DriftMismatch(ref m) if m.contains("post-commit verification failed")),
+        "{err2:?}"
+    );
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
