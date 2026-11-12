@@ -60,11 +60,31 @@ native runner 上跑真实 MCP 握手（`initialize` + `tools/list` 返回 25 �
 
 | 变量 | 位置 | 用途 |
 |---|---|---|
-| `NODE_AUTH_TOKEN` | 仅 CI，由 `NPM_TOKEN` secret 注入 | npm 认证令牌。**不要**写进 `.npmrc`——npm 会告警，且它会落进产物。 |
+| `NODE_AUTH_TOKEN` | 仅 CI，由 `NPM_TOKEN` secret 注入 | 它只是 `.npmrc` 里一个**被展开的占位符**；npm 自己从不读这个名字，见下节。 |
 | `NPM_TOKEN` | GitHub Actions 仓库 secret | Granular access token，范围 **All packages**，权限 **Read and write**。classic token 不能用于自动化发布。 |
 | `KODE_NPM_PUBLISH=1` | 本地或 CI | 显式闸门。`scripts/npm-package.mjs publish` 未设此变量即拒绝执行，构建不会误发。 |
 | `KODE_MCP_BINARY` | 客户端运行时 | `kode-mcp` 二进制的绝对路径。优先于平台包查找——离线安装、或 IDE 已持有构建时用。 |
 | `RUST_LOG=off` | smoke 脚手架 | 握手检查期间让暂存二进制安静。 |
+
+### 注意：`NODE_AUTH_TOKEN` 是 `.npmrc` 占位符，不是 npm 变量
+
+对照 npm 11.19.0 与 `actions/setup-node` 实测核实：
+
+- 在整个 npm 安装里 grep `NODE_AUTH_TOKEN`、`NPM_TOKEN`，**命中 0 处**。npm 只从
+  config 读 `_authToken`。
+- 只设 `NODE_AUTH_TOKEN` 时 `npm publish` 报 `ENEEDAUTH / need auth … using
+  npm adduser`——**在任何网络请求之前**就本地拒绝了。
+- `setup-node` 的 `authutil.ts` 把 `//<host>/:_authToken=${NODE_AUTH_TOKEN}` 写进
+  生成的 `.npmrc`；npm 读取时展开那个 `${...}`。
+
+对本 workflow 的三条推论：
+
+1. `setup-node` **必须给 `registry-url`**——不给就不会写 `.npmrc`，令牌等于摆设。
+   `npm.yml` 里已配。
+2. 令牌**不要**写进本仓库自己的 `.npmrc`：那会被提交。setup-node 生成的
+   `.npmrc` 落在 runner 的临时目录，不出仓库。
+3. 本地等价做法是 `npm config set //registry.npmjs.org/:_authToken <token>`，或写在
+   用户级 `~/.npmrc`——**永远不写仓库文件**。
 
 ### 一次性账号配置
 

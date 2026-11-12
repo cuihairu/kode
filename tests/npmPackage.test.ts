@@ -170,3 +170,44 @@ describe('kode-mcp npm packaging script', () => {
     expect(text).toContain('newline-delimited JSON');
   });
 });
+
+describe('kode-mcp npm workflow', () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const workflow = () =>
+    readFileSync(join(root, '.github', 'workflows', 'npm.yml'), 'utf8');
+
+  it('gives setup-node a registry-url so the token actually reaches npm', () => {
+    // setup-node writes the .npmrc only when registry-url is provided; without it
+    // npm has no credential at all and fails ENEEDAUTH before any request.
+    // NODE_AUTH_TOKEN is not read by npm itself — it is merely a placeholder
+    // that npm expands from that generated .npmrc.
+    //
+    // Assert on the publish job only: an earlier setup-node step (dependency
+    // caching) also contains the string, so a whole-file match would stay green
+    // after this line were deleted.
+    const text = workflow();
+    const publishJob = text.slice(text.indexOf('  publish:'));
+    expect(publishJob, 'publish job must exist').not.toBe('');
+    expect(publishJob).toContain('registry-url');
+    expect(publishJob).toContain('NODE_AUTH_TOKEN');
+  });
+
+  it('keeps the token out of version control and behind an explicit gate', () => {
+    const text = workflow();
+    // The secret comes from the workflow secret, never from the repo.
+    expect(text).toContain('secrets.NPM_TOKEN');
+    // The publish job is manual-only and opt-in per run.
+    expect(text).toContain('workflow_dispatch');
+    expect(text).toContain('KODE_NPM_PUBLISH');
+    // Repository-owned files must stay readable by anyone.
+    expect(text).toContain('contents: read');
+    // Publishing never rides on a push or pull request.
+    expect(text, 'publish workflow must not trigger on push').not.toMatch(/^  push:/m);
+    expect(text, 'publish workflow must not trigger on pull_request').not.toMatch(/^  pull_request:/m);
+  });
+
+  it('never writes a token into the repository .npmrc', () => {
+    const npmrc = readFileSync(join(root, '.npmrc'), 'utf8');
+    expect(npmrc, 'repository .npmrc must not carry credentials').not.toMatch(/_authToken/);
+  });
+});

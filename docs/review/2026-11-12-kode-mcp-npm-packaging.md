@@ -116,7 +116,7 @@ runner / rust target / musl `rust-lld` 配方；`prepare` 任务在下载回的 
 
 | 变量 / secret | 位置 | 用途 |
 |---|---|---|
-| `NODE_AUTH_TOKEN` | 仅 CI，由 `NPM_TOKEN` 注入 | npm 认证。**不得**写 `.npmrc`（npm 会告警，且会落进产物） |
+| `NODE_AUTH_TOKEN` | 仅 CI，由 `NPM_TOKEN` 注入 | **不是 npm 认的变量**——只是 setup-node 写进生成 `.npmrc` 的占位符，见下节 |
 | `NPM_TOKEN` | GitHub Actions secret | Granular access token，范围 All packages、权限 Read and write。**classic token 不能用于自动化发布** |
 | `KODE_NPM_PUBLISH=1` | 本地或 CI | `publish` 的显式闸门 |
 | `KODE_MCP_BINARY` | 客户端运行时 | 覆盖平台包查找的二进制绝对路径 |
@@ -125,6 +125,30 @@ runner / rust target / musl `rust-lld` 配方；`prepare` 任务在下载回的 
 账号侧一次性：浏览器 `npm profile login`（npm 对全账号强制 2FA，令牌从 2FA 页面创建）；
 `@cuihairu/*` 归属**个人**账号——npm 无免费组织作用域，故不指望 `@kode/...`；
 每个包都带 `"publishConfig": {"access":"public"}`，scoped 包缺它会回 `402`。
+
+### 第 4 个坑：`NODE_AUTH_TOKEN` 不是 npm 认的变量
+
+初版 `npm.yml` 的 publish job 只设了
+`env: NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}`，**没配 `registry-url`**。这会让裸
+`npm publish` 直接 `ENEEDAUTH` 失败。三层证据（npm 11.19.0 实测 + setup-node 源码）：
+
+| 证据 | 结果 |
+|---|---|
+| grep 整个 npm 安装 | `NODE_AUTH_TOKEN` **0 命中**、`NPM_TOKEN` **0 命中**；`_authToken` 仅 3 处（全在 `auth.js`，是 config 键名） |
+| 只设 `NODE_AUTH_TOKEN` 后真 `npm publish` | `ENEEDAUTH / need auth … using npm adduser`——**在发网络请求前**本地拒绝 |
+| `actions/setup-node` `src/authutil.ts` | 写 `//<host>/:_authToken=${NODE_AUTH_TOKEN}` 进生成的 `.npmrc`；`main.ts` 的守卫是 `if (registryUrl) { auth.configAuthentication(registryUrl) }` |
+
+机制是 **npm 的 `.npmrc` 环境变量替换**：setup-node 往 `.npmrc` 写一行占位符，
+npm 读取时展开 `${NODE_AUTH_TOKEN}`。**npm 自己从不读这个名字**，它只是 `.npmrc`
+里一个待展开的符号。由此两条硬结论：
+
+1. `setup-node` **必须给 `registry-url`**，否则 `.npmrc` 根本不生成，令牌等于摆设。
+2. 令牌**不得**写进本仓库的 `.npmrc`（会被提交）；setup-node 生成的那份落在
+   runner 临时目录，不出仓库。
+
+`tests/npmPackage.test.ts` 用 **publish job 块**而非全文断言——因为 workflow 里更早的
+setup-node（依赖缓存用）也含 `registry-url` 字样，全文匹配会让这道闸永远绿。
+prove-red：删掉 publish job 的 `registry-url` 行 → 恰好 1 红 16 绿；补回 17/17 绿。
 
 ## 7. 门禁
 

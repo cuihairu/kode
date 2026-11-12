@@ -68,11 +68,31 @@ build can never reach the registry on its own.
 
 | Variable | Where | Purpose |
 |---|---|---|
-| `NODE_AUTH_TOKEN` | CI only, injected from the `NPM_TOKEN` secret | npm's authentication token. Never write it to `.npmrc` — npm warns and it lands in artifacts. |
+| `NODE_AUTH_TOKEN` | CI only, injected from the `NPM_TOKEN` secret | The value npm expands **from `.npmrc`**. npm does not read this name itself — see the note below. |
 | `NPM_TOKEN` | GitHub Actions repository secret | Granular access token, scope **All packages**, permission **Read and write**. A classic token cannot be used for automated publish. |
 | `KODE_NPM_PUBLISH=1` | local or CI | The explicit gate. `scripts/npm-package.mjs publish` refuses to run without it, so a build cannot publish by accident. |
 | `KODE_MCP_BINARY` | client runtime | Absolute path to a `kode-mcp` binary. Overrides platform-package lookup — use it for offline installs or when an IDE already owns a build. |
 | `RUST_LOG=off` | smoke harness | Quietens the staged binary during the handshake check. |
+
+### Note: `NODE_AUTH_TOKEN` is a `.npmrc` placeholder, not an npm variable
+
+Verified against npm 11.19.0 and `actions/setup-node`:
+
+- Grepping the whole npm installation for `NODE_AUTH_TOKEN` and `NPM_TOKEN`
+  returns **zero** hits. npm reads `_authToken` from config only.
+- With only `NODE_AUTH_TOKEN` set, `npm publish` fails with `ENEEDAUTH /
+  need auth … using npm adduser` — **before any network request**.
+- `setup-node`'s `authutil.ts` writes `//<host>/:_authToken=${NODE_AUTH_TOKEN}`
+  into a generated `.npmrc`; npm expands that `${...}` at read time.
+
+Consequences for this workflow:
+
+1. `setup-node` must be given `registry-url` — otherwise it never writes the
+   `.npmrc` and the token is dead. `npm.yml` sets it.
+2. Do **not** put the token in the repository's own `.npmrc`: it would be
+   committed. The generated `.npmrc` lives in the runner's temp dir.
+3. Locally, `npm config set //registry.npmjs.org/:_authToken <token>` or a
+   user-level `~/.npmrc` is the equivalent — never a repository file.
 
 ### One-time account setup
 

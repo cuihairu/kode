@@ -155,6 +155,15 @@ jobs:
           path: dist/npm
       - name: Verify downloaded package set
         run: node scripts/verify-npm-set.mjs dist/npm
+      # setup-node only writes the .npmrc that npm actually reads when given a
+      # registry-url: it appends `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`
+      # and npm expands that placeholder at runtime. Setting NODE_AUTH_TOKEN
+      # alone is a no-op — npm 11.19 contains zero references to it, and a bare
+      # `npm publish` then fails with ENEEDAUTH before any network request.
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
       - name: Publish to the npm registry
         env:
           KODE_NPM_PUBLISH: '1'
