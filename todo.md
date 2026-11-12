@@ -208,7 +208,7 @@
 
 依赖：BAS 身份/类型/来源；FLOW 复用此结果。
 
-- [ ] KSEM-RPC-01 [P1] 构建角色化引用类型。验收：引入 EntityCall<实体,角色> 与本地 Entity 区分；原生 ENTITYCALL 接受 None/实体的规则按源码保留，具体类未知时不猜。
+- [x] KSEM-RPC-01 [P1] 构建角色化引用类型。验收：引入 EntityCall<实体,角色> 与本地 Entity 区分；原生 ENTITYCALL 接受 None/实体的规则按源码保留，具体类未知时不猜。——已收口(dc79257e 纪实 docs/review/2026-11-13-ksem-rpc-01-role-refs.md:semantics/refs.rs 三形态引用+七调用类型全矩阵 21 组合钉死+isSameType 接受规则,类未知 Option 保持不猜)
 - [ ] KSEM-RPC-02 [P1] 解析 self 角色引用。验收：绑定 self.base/cell/client 及已证明的转发链；实际支持的链形态逐条查引擎。
 - [ ] KSEM-RPC-03 [P1] 传播引用别名。验收：peer=self.cell 后保留实体/角色；重绑定、合流和未知接收者不按同名方法猜对象。
 - [ ] KSEM-RPC-04 [P1] 解析 RPC 与组件落点。验收：只在对应 Methods 段及组件槽查找，提供 def 和 Python 实现两种跳转；歧义展示多候选。
