@@ -104,7 +104,7 @@ Line numbers below are the base side
 | base created, no cell | ctor `:59` (`creatingCell_ = false`) | — | — |
 | **creating cell** (request in flight) | `createCellEntity` `:1463`; `restoreCell` `:1473` | `onGetCell` `:1021`; `onCreateCellFailure` `:881` | none — the request is asynchronous |
 | **has cell** | `onGetCell` `:1028` (builds `cellEntityCall_`) | `onLoseCell` `:1059` (`S_RELEASE`) | `onGetCell` `:1030-1032`, skipped when `inRestore_` |
-| cell lost, base still alive | `onLoseCell` `:1059` | — (`cellData` reinstated later, `:1122`) | `onLoseCell` `:1065` |
+| cell lost, base still alive | `onLoseCell` `:1059` | — (nothing reinstates `cellData` here; the Python attribute **stays deleted**, see below) | `onLoseCell` `:1065` |
 | **restoring** (after a baseapp crash) | `restoreCell` `:1474` (`inRestore_ = true`) | `onRestore` `:1085` | `onRestore` `:1080`, driven from `restore_entity_handler.cpp:173,266` |
 | destroyed | — | — | base `Entity::onDestroy` `:164` (fires `onDestroy` when `callScript`); cellapp `:204` |
 
@@ -136,8 +136,23 @@ part, `:1037-1041`), while `onLoseCell` calls `destroy()` (drop the base,
 (`:1435`).
 
 `onGetCell` also runs `destroyCellData()` (`:1024`) — the `cellData` attribute
-is **deleted** the moment the cell exists (`destroyCellData`, `:560`; the dict
-object `cellDataDict_` survives for backup, only the Python attribute goes).
+is **deleted** the moment the cell exists.
+
+### Reading `cellData` after the cell exists raises `AttributeError`
+
+`destroyCellData` (`:560`) deletes the attribute with
+`PyObject_DelAttrString(this, "cellData")` (`:564`). There is **no type-level
+getter** for `cellData` anywhere in the base `Entity` method table — it is a
+pure instance attribute installed by `installCellDataAttr`
+(`:217`, via `PyObject_SetAttrString`, `:238`). So after deletion a script read
+of `self.cellData` raises `AttributeError`; there is no fallback to
+`cellDataDict_`, which the comment at `:562-563` states survives only so the
+engine can still back it up.
+
+Reading it back is not automatic either: the only reinstall site is
+`onBackupCellData` (`:1109`), and it reinstalls **only when `isDirty`**
+(`:1116-1122`). `onLoseCell` (`:1052`) does not touch `cellData` at all, so a
+base entity whose cell was destroyed keeps `cellData` deleted.
 
 Corollary that bites: the engine has **no** `isOnCell`/`isOnDB`/`isPersisted`
 predicate. The base `Entity` attribute surface is `cell`, `client`,

@@ -93,7 +93,7 @@ return entity;                 // ③ 以 PyObjectPtr 返回(保活供 destroy()
 | base 已建,无 cell | 构造 `:59`(`creatingCell_ = false`) | — | — |
 | **创建 cell 中**(请求在途) | `createCellEntity` `:1463`;`restoreCell` `:1473` | `onGetCell` `:1021`;`onCreateCellFailure` `:881` | 无——请求是异步的 |
 | **持有 cell** | `onGetCell` `:1028`(建 `cellEntityCall_`) | `onLoseCell` `:1059`(`S_RELEASE`) | `onGetCell` `:1030-1032`,`inRestore_` 时跳过 |
-| cell 丢失,base 仍存活 | `onLoseCell` `:1059` | —(之后重装 `cellData`,`:1122`) | `onLoseCell` `:1065` |
+| cell 丢失,base 仍存活 | `onLoseCell` `:1059` | —(此路**不重装** `cellData`,Python 属性保持已删,见下) | `onLoseCell` `:1065` |
 | **恢复中**(baseapp 崩溃后) | `restoreCell` `:1474`(`inRestore_ = true`) | `onRestore` `:1085` | `onRestore` `:1080`,由 `restore_entity_handler.cpp:173,266` 驱动 |
 | 已销毁 | — | — | base `Entity::onDestroy` `:164`(`callScript` 时触发 `onDestroy`);cellapp `:204` |
 
@@ -127,8 +127,20 @@ base `Entity` 的属性面是 `cell`、`client`、`databaseID`、
 `AssertionError "has a cell"`(`:1435`)。
 
 `onGetCell` 还会跑 `destroyCellData()`(`:1024`)——cell 一旦建成,`cellData`
-属性即被**删除**(`destroyCellData` `:560`;dict 对象 `cellDataDict_` 为备份保留,
-去掉的只是 Python 属性)。
+属性即被**删除**。
+
+### cell 建成后读 `cellData` 会抛 `AttributeError`
+
+`destroyCellData`(`:560`)用 `PyObject_DelAttrString(this, "cellData")`
+(`:564`)删属性。base `Entity` 的方法表里**没有任何 type 级 `cellData` getter**
+——它只是 `installCellDataAttr`(`:217`,经 `PyObject_SetAttrString` `:238`)装的
+实例属性。所以删除之后,脚本读 `self.cellData` 抛 `AttributeError`;**没有**回退到
+`cellDataDict_` 的路径,`destroyCellData` 的注释(`:562-563`)明说该 dict 只为
+引擎备份而留。
+
+重装也不是自动的:唯一的重装点是 `onBackupCellData`(`:1109`),且**仅在
+`isDirty` 时**重装(`:1116-1122`)。`onLoseCell`(`:1052`)完全不碰 `cellData`,
+故 cell 被销毁的 base 实体,`cellData` 保持已删。
 
 ## 定时器:不持强引用,销毁即取消
 
