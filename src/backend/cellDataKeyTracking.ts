@@ -104,6 +104,18 @@ function stripLineComment(lineText: string): string {
  * 只看单行(与操作扫描同口径);匹配段须在词法代码域。别名有效性不核定
  * (保守:无效别名的动态写落在别的字典上,也算开放)。
  */
+/**
+ * 文档内是否存在追踪不到的增键面(CELL-10 置信度判据,与 trackCellDataKeys
+ * 内部用的是同一判定,消费面不必各自重算一遍):动态键下标写 /
+ * update( / setdefault()。有 → 世界开放,unknown 键不报确定性缺失。
+ */
+export function cellDataKeyWorldOpen(text: string, extraReceivers?: readonly string[]): boolean {
+  const receivers = extraReceivers && extraReceivers.length > 0
+    ? extraReceivers
+    : ['self.cellData', ...cellDataAliasNames(text)];
+  return hasDynamicKeyAddition(text, receivers);
+}
+
 function hasDynamicKeyAddition(text: string, receivers: readonly string[]): boolean {
   const faces = scanFacesOf(text);
   for (const receiver of receivers) {
