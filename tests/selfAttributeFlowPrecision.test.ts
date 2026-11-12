@@ -12,7 +12,7 @@
  * 冻结为杀开关兜底,其旧值不再作为基准。二进制缺失整套 skip(纯 TS 门禁
  * 不破坏);首例直连断言防旧二进制静默假绿。
  */
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 import { KodeCoreClient } from '../src/backend/kodeCoreClient';
@@ -203,6 +203,32 @@ suite('selfAttributeFlow AST 真域精度(精确性主车道批 A)', () => {
       expect((await inferSelfAttributeFlowFromRust(lines, 6, 'r', key))?.types).toEqual(['Repo']);
       // 读点走基线:原子仍在(接收者定型证据可被下游消费)
       expect((await inferSelfAttributeFlowFromRust(lines, 9, 'r', key))?.types).toEqual(['Repo']);
+    });
+  });
+});
+
+// 2026-11-12:demo 资产 KodeHotReload.py 的批 C 精度位移使用位(对拍深等面
+// 豁免见 selfAttributeFlowRustParity.test.ts PRECISION_MOVED_FIXTURE_USAGES)。
+// 真实语料逐位钉死:行号随已提交夹具锁步,夹具位移即红(重探后改行)。
+describe('demo-asset:KodeHotReload.py in-file 调用注解与裸名写链(真实夹具)', () => {
+  it('self.http → 嵌套类调用注解 HTTPServer;self.last 裸名写链 → list', async () => {
+    const text = readFileSync(
+      join(repoRoot, 'tests', 'fixtures', 'kbengine-demo-assets', 'scripts', 'common', 'KodeHotReload.py'),
+      'utf8'
+    );
+    const lines = text.split('\n');
+    await withRustGate(async () => {
+      // self.http = HTTPServer(...)(嵌套类,行 32)→ in-file 类调用注解,
+      // 读点/写点后基线恒 {HTTPServer};TS 冻结引擎该面为空集
+      for (const line of [95, 99, 103, 106, 109, 110]) {
+        const face = await inferSelfAttributeFlowFromRust(lines, line, 'http', 'precision:demo-http');
+        expect(face, `http@${line}`).not.toBeNull();
+        expect(face?.types).toEqual(['HTTPServer']);
+        expect(face?.annotation).toBe('HTTPServer');
+      }
+      // self.last = receipts(receipts = [] 裸名写链)→ list;写点前一行
+      // (with self.lock)仍是初始基线 []
+      expect((await inferSelfAttributeFlowFromRust(lines, 199, 'last', 'precision:demo-last'))?.types).toEqual(['list']);
     });
   });
 });

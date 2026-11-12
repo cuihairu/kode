@@ -328,7 +328,7 @@ describe('批109 验收走查:entities.xml 链路导航', () => {
     );
 
     const location = await pyProvider.provideDefinition(document, position) as unknown as LocationLike;
-    const stub = buildKbeStubDocument();
+    const stub = buildKbeStubDocument('base'); // 进程感知桩文档(5200bfc0):夹具走 scripts/base,与 provider 同参比对
     expect(location?.uri.scheme).toBe('kbe-stub');
     // fake-vscode 的 Uri.parse 会吞 scheme 后的首个 '/'(stub 伪影),
     // 路径口径由 kbeModuleIndex 的 buildKbeStubUriString 单测锁定,这里只锁 scheme+行
@@ -349,7 +349,7 @@ describe('批109 验收走查:entities.xml 链路导航', () => {
     );
 
     const location = await pyProvider.provideDefinition(document, position) as unknown as LocationLike;
-    const stub = buildKbeStubDocument();
+    const stub = buildKbeStubDocument('base'); // 进程感知桩文档(5200bfc0):夹具走 scripts/base,与 provider 同参比对
     expect(location?.uri.scheme).toBe('kbe-stub');
     expect(location?.range.start.line).toBe(stub.symbolLines['KBEntity']);
   });

@@ -89,7 +89,9 @@ describe('hover on KBEngine.addSpaceGeometryMapping (SP-2)', () => {
     expect(doc).toContain('addSpaceGeometryMapping');
     expect(doc).toMatch(/layer/i);
     expect(doc).toMatch(/onSpaceGeometryLoaded|onAllSpaceGeometryLoaded/);
-    expect(doc).toContain('_KBEngine_cellapp.pyi');
+    // 进程平铺布局(3b10568b):cellapp 桩出处收敛为 typings/cell/KBEngine/
+    // _module.pyi(原 _KBEngine_cellapp.pyi 单文件命名退役)
+    expect(doc).toContain('typings/cell/KBEngine/_module.pyi');
   });
 
   it('documents setSpaceData with onSpaceData callback', () => {

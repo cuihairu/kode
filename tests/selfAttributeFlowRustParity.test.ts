@@ -259,6 +259,23 @@ function usageLines(text: string, attr: string): number[] {
  */
 const PRECISION_MOVED_SAMPLES = new Set(['class-level-and-nested', 'lone-cr-mid-line', 'literals-and-bytes']);
 
+/**
+ * 真实语料已知精度位移使用位(`文件基名@0基行:属性`):批 C in-file 调用/
+ * 裸名推导上线后,Rust 对 demo 资产 KodeHotReload.py 的 `self.http = HTTPServer(...)`
+ * (嵌套类调用注解)与 `self.last = receipts`(裸名 list 写链)给出真型,
+ * TS 冻结引擎(兜底面)维持空集——输出合法变好,不再深等;精度期望见
+ * selfAttributeFlowPrecision.test.ts(demo-asset 块逐位钉死)。
+ */
+const PRECISION_MOVED_FIXTURE_USAGES = new Set([
+  'KodeHotReload.py@95:http',
+  'KodeHotReload.py@99:http',
+  'KodeHotReload.py@103:http',
+  'KodeHotReload.py@106:http',
+  'KodeHotReload.py@109:http',
+  'KodeHotReload.py@110:http',
+  'KodeHotReload.py@199:last'
+]);
+
 suite('selfAttributeFlow Rust↔TS 引擎对拍(真实 kode-server)', () => {
   it('直连断言:Rust 方法在场且 flow 形状合法(旧二进制缺方法 → 显式红)', async () => {
     await withRustGate(async calls => {
@@ -328,6 +345,9 @@ suite('selfAttributeFlow Rust↔TS 引擎对拍(真实 kode-server)', () => {
         const versionKey = `parity:fixture:${file}`;
         for (const attr of candidateAttrs(text)) {
           for (const line of usageLines(text, attr)) {
+            if (PRECISION_MOVED_FIXTURE_USAGES.has(`${file.split('/').pop()}@${line}:${attr}`)) {
+              continue; // 精度位移使用位,期望在 precision 文件钉死
+            }
             const tsFlow = inferSelfAttributeFlow(lines, line, attr, undefined, versionKey);
             const rustFace = await inferSelfAttributeFlowFromRust(lines, line, attr, versionKey);
             if (tsFlow === null) {

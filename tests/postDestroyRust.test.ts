@@ -47,7 +47,7 @@ const notDeclared = (): boolean => false;
 
 describe('buildPostDestroyItemsWithRust(Rust-first,TS 兜底)', () => {
   it('无门:返回 null,调用方回 TS 兜底', async () => {
-    const items = await buildPostDestroyItemsWithRust(TEXT, '/proj/base/demo.py', noFaces, notDeclared);
+    const items = await buildPostDestroyItemsWithRust(TEXT, '/proj/scripts/base/demo.py', noFaces, notDeclared);
     expect(items).toBeNull();
   });
 
@@ -55,7 +55,7 @@ describe('buildPostDestroyItemsWithRust(Rust-first,TS 兜底)', () => {
     const calls = await withGate(
       () => ({ ok: true as const, result: { items: [] } }),
       async () => {
-        const items = await buildPostDestroyItemsWithRust(TEXT, '/proj/base/demo.py', noFaces, () => true);
+        const items = await buildPostDestroyItemsWithRust(TEXT, '/proj/scripts/base/demo.py', noFaces, () => true);
         expect(items).toEqual([]);
       }
     );
@@ -96,7 +96,7 @@ describe('buildPostDestroyItemsWithRust(Rust-first,TS 兜底)', () => {
     await withGate(
       () => ({ ok: true as const, result: { items: rustItems } }),
       async () => {
-        const items = await buildPostDestroyItemsWithRust(TEXT, '/proj/cell/demo.py', noFaces, notDeclared);
+        const items = await buildPostDestroyItemsWithRust(TEXT, '/proj/scripts/cell/demo.py', noFaces, notDeclared);
         expect(items).toEqual([
           {
             range: { start: { line: 2, character: 4 }, end: { line: 2, character: 11 } },
@@ -114,7 +114,7 @@ describe('buildPostDestroyItemsWithRust(Rust-first,TS 兜底)', () => {
     await withGate(
       () => ({ ok: false as const, reason: 'no serverPath' }),
       async () => {
-        const items = await buildPostDestroyItemsWithRust(TEXT, '/proj/cell/demo.py', noFaces, notDeclared);
+        const items = await buildPostDestroyItemsWithRust(TEXT, '/proj/scripts/cell/demo.py', noFaces, notDeclared);
         expect(items).toBeNull();
       }
     );
@@ -142,7 +142,7 @@ describe('buildPostDestroyItemsWithRust(Rust-first,TS 兜底)', () => {
         () => ({ ok: true as const, result: { items } }),
         async () => {
           expect(
-            await buildPostDestroyItemsWithRust(TEXT, '/proj/cell/demo.py', noFaces, notDeclared),
+            await buildPostDestroyItemsWithRust(TEXT, '/proj/scripts/cell/demo.py', noFaces, notDeclared),
             JSON.stringify(items)
           ).toBeNull();
         }
@@ -154,7 +154,7 @@ describe('buildPostDestroyItemsWithRust(Rust-first,TS 兜底)', () => {
     await withGate(
       () => ({ ok: true as const, result: { items: [] } }),
       async () => {
-        expect(await buildPostDestroyItemsWithRust(TEXT, '/proj/cell/demo.py', noFaces, notDeclared)).toEqual([]);
+        expect(await buildPostDestroyItemsWithRust(TEXT, '/proj/scripts/cell/demo.py', noFaces, notDeclared)).toEqual([]);
       }
     );
   });
@@ -163,7 +163,7 @@ describe('buildPostDestroyItemsWithRust(Rust-first,TS 兜底)', () => {
     const calls = await withGate(
       () => ({ ok: true as const, result: { items: [] } }),
       async () => {
-        await buildPostDestroyItemsWithRust(TEXT, '/proj/cell/demo.py', noFaces, notDeclared);
+        await buildPostDestroyItemsWithRust(TEXT, '/proj/scripts/cell/demo.py', noFaces, notDeclared);
       }
     );
     expect(calls).toHaveLength(1);
