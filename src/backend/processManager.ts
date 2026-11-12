@@ -466,6 +466,9 @@ export class ProcessManager {
       return new Promise<void>(resolve => {
         if (item.process.exitCode !== null || item.process.signalCode !== null) resolve();
         item.process.once('exit', resolve);
+        // KR-AUD-39 同族:spawn 失败子进程 error-only(只发 error 不发 exit),
+        // dispose 等待面认 error 为终局,不悬挂
+        item.process.once('error', resolve);
       });
     }));
     this.processes.clear();

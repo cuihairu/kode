@@ -98,6 +98,22 @@ describe('ProcessManager', () => {
     void manager.dispose();
   });
 
+  // KR-AUD-39 同族:error-only 子进程(只发 error 永不发 exit)在 dispose 已
+  // 快照后 error 到场——dispose 等待面须认 error 为终局,否则悬挂
+  it('dispose 对 error-only 子进程即时返回,不悬挂', async () => {
+    const child = new DeafChild();
+    child.pid = 0; // spawn 失败形态:树杀被闸挡下(R2-F23),exit 永不来
+    const manager = new ProcessManager(() => child);
+    manager.start({ id: 'svc', command: 'server', readyAfterMs: 1 });
+    await new Promise(resolve => setTimeout(resolve, 5));
+
+    const startedAt = Date.now();
+    const disposed = manager.dispose();
+    child.emit('error', new Error('spawn ENOENT'));
+    await expect(disposed).resolves.toBeUndefined();
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+  });
+
   // KR-AUD-39 超时兜底:升级击杀被 R2-F23 无效 pid 闸挡下或进程装死时 exit
   // 也不来——等待面必须按时终结,stop 绝不悬挂
   it('stop 超时兜底:树杀后仍无 exit/error 也按时终结,不悬挂', async () => {
