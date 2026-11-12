@@ -776,6 +776,47 @@ const rootOnlyPlan = (): ImportPlanWire => ({
   }
 });
 
+/** preserve 归档原值计划:id/引用列全 literal(计划期不产占位)。 */
+const preservePlan = (): ImportPlanWire => ({
+  entity_name: 'Avatar',
+  mode: 'preserve-archive',
+  autoload_policy: 'preserve-archive',
+  order: ['tbl_Avatar', 'tbl_Avatar_items'],
+  statements: [
+    {
+      sequence: 0,
+      table: 'tbl_Avatar',
+      row_index: 0,
+      columns: ['id', 'sm_autoLoad', 'sm_name'],
+      cells: [{ kind: 'literal' }, { kind: 'policy-override' }, { kind: 'literal' }],
+      insert_sql: 'INSERT INTO tbl_Avatar (id, sm_autoLoad, sm_name) VALUES (?, ?, ?)'
+    },
+    {
+      sequence: 1,
+      table: 'tbl_Avatar_items',
+      row_index: 0,
+      columns: ['id', 'parentID', 'sm_value'],
+      cells: [{ kind: 'literal' }, { kind: 'literal' }, { kind: 'literal' }],
+      insert_sql: 'INSERT INTO tbl_Avatar_items (id, parentID, sm_value) VALUES (?, ?, ?)'
+    }
+  ],
+  idmap: [],
+  conflicts: [],
+  account_binding: { declaration: null, login_ready: false, note: '' },
+  schema_notes: [],
+  warnings: [],
+  summary: {
+    entity_name: 'Avatar',
+    mode: 'preserve-archive',
+    autoload_policy: 'preserve-archive',
+    statements_per_table: { tbl_Avatar: 1, tbl_Avatar_items: 1 },
+    id_categories: {},
+    unique_conflicts: 0,
+    login_ready: false,
+    unresolved_reference_risks: 0
+  }
+});
+
 describe('applyImportPlan(单事务执行器)', () => {
   it('正常流:占位回填/策略覆写/重建值/引用绑定/逐表核对/逆拓扑清理', async () => {
     const connection = new FakeMysqlConnection();
@@ -816,6 +857,64 @@ describe('applyImportPlan(单事务执行器)', () => {
     const childBind = connection.log.find(entry => entry.sql.includes('INSERT INTO tbl_Avatar_items'));
     expect(childBind?.values?.[1]).toBe('9007199254740993');
     expect(result.newRootId).toBe('9007199254740993');
+  });
+
+  it('preserve 模式:id 列 literal 取归档原值——核对/清理/根句柄不空集', async () => {
+    const connection = new FakeMysqlConnection();
+    connection.reply('SELECT COUNT(*)', [{ c: 1 }]);
+    const result = await applyImportPlan(connection, preservePlan(), miniRows(), miniColumnOrder());
+
+    // 归档原值原样写入(root id=7,child id=100/parentID=7)
+    const rootBind = connection.log.find(entry => entry.sql.includes('INSERT INTO tbl_Avatar ('));
+    const childBind = connection.log.find(entry => entry.sql.includes('INSERT INTO tbl_Avatar_items'));
+    expect(rootBind?.values).toEqual([7, 1, 'hero']);
+    expect(childBind?.values).toEqual([100, 7, 'sword']);
+
+    // 核对按归档 id 发 COUNT(旧码 ids 空集静默跳过)
+    const countCalls = connection.log.filter(entry => entry.sql.includes('SELECT COUNT(*)'));
+    expect(countCalls).toHaveLength(2);
+    expect(countCalls[0].sql).toContain('FROM tbl_Avatar WHERE');
+    expect(countCalls[0].values).toEqual([7]);
+    expect(countCalls[1].values).toEqual([100]);
+    expect(result.verify).toEqual([
+      { table: 'tbl_Avatar', expected: 1, found: 1, ok: true },
+      { table: 'tbl_Avatar_items', expected: 1, found: 1, ok: true }
+    ]);
+
+    // 清理计划携带归档 id(旧码缺失)
+    expect(result.cleanup.map(step => step.sql)).toEqual([
+      'DELETE FROM tbl_Avatar_items WHERE id IN (?)',
+      'DELETE FROM tbl_Avatar WHERE id IN (?)'
+    ]);
+    expect(result.cleanup[1].params).toEqual([7]);
+    expect(result.cleanup[0].params).toEqual([100]);
+
+    // 根句柄 = 归档根 id(旧码恒 null)
+    expect(result.newRootId).toBe(7);
+  });
+
+  it('preserve 模式:非 id 列的 literal 不混入 id 集(列位对齐才认)', async () => {
+    const connection = new FakeMysqlConnection();
+    connection.reply('SELECT COUNT(*)', [{ c: 1 }]);
+    const plan = preservePlan();
+    // 根表 id 列挪到第 3 列(与归档行值 tvBigUInt(7) 对齐),第 1 列放普通 literal
+    plan.statements[0].columns = ['sm_name', 'sm_autoLoad', 'id'];
+    plan.statements[0].cells = [
+      { kind: 'literal' },
+      { kind: 'policy-override' },
+      { kind: 'literal' }
+    ];
+    const rows = miniRows();
+    rows.set('tbl_Avatar', [{ table: 'tbl_Avatar', values: [tvText('hero'), tvUInt(1), tvBigUInt(7)] }]);
+    const order = miniColumnOrder();
+    order.set('tbl_Avatar', ['sm_name', 'sm_autoLoad', 'id']);
+    const result = await applyImportPlan(connection, plan, rows, order);
+
+    const countCalls = connection.log.filter(entry => entry.sql.includes('SELECT COUNT(*)'));
+    expect(countCalls).toHaveLength(2);
+    // id 集取第 3 列的 7,不取第 1 列的 'hero'
+    expect(countCalls[0].values).toEqual([7]);
+    expect(result.newRootId).toBe(7);
   });
 
   it('语句引用的归档行不存在 → 报错并回滚', async () => {
@@ -861,7 +960,7 @@ describe('applyImportPlan(单事务执行器)', () => {
     expect(sqlLog(connection)).toContain('ROLLBACK');
   });
 
-  it('insertId 0(new-key 不回填)→ 无 resolvedIds/核对/清理,newRootId null', async () => {
+  it('insertId 0(new-key 不回填)→ 无 resolvedIds/根句柄;核对如实发查询不静默跳过', async () => {
     const connection = new FakeMysqlConnection();
     connection.reply('INSERT INTO tbl_Avatar (', { insertId: 0 });
     const plan = rootOnlyPlan();
@@ -872,7 +971,12 @@ describe('applyImportPlan(单事务执行器)', () => {
     const result = await applyImportPlan(connection, plan, rows, order);
     expect(result.resolvedIds).toEqual({});
     expect(result.newRootId).toBeNull();
-    expect(result.verify).toEqual([]);
+    // id 集空(占位未回填)不再静默跳过:核对查询照发,如实记 found≠expected
+    // (真 MySQL 下空 IN () 为语法错 → ClonePostCommitError,同为响亮失败)
+    const countCalls = connection.log.filter(entry => entry.sql.includes('SELECT COUNT(*)'));
+    expect(countCalls).toHaveLength(1);
+    expect(result.verify).toEqual([{ table: 'tbl_Avatar', expected: 1, found: 0, ok: false }]);
+    // 清理面与 Rust 同口径:空 id 集跳过
     expect(result.cleanup).toEqual([]);
     expect(sqlLog(connection)).toContain('COMMIT');
   });

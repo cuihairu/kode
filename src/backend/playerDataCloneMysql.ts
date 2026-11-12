@@ -524,9 +524,11 @@ export async function applyImportPlan(
   const verify: CloneApplyResult['verify'] = [];
   try {
   for (const table of plan.order) {
-    const ids = newIdsForTable(plan, resolvedIds, table);
+    const ids = newIdsForTable(plan, resolvedIds, rowsByTable, table);
     const expected = insertedPerTable[table] ?? 0;
-    if (expected === 0 || ids.length === 0) {
+    // 与 Rust apply.rs 同口径:只跳过 expected===0;id 集空(计划缺 id 列)
+    // 让 IN () 查询如实报错,不做静默空核对
+    if (expected === 0) {
       continue;
     }
     const placeholders = ids.map(() => '?').join(', ');
@@ -547,7 +549,7 @@ export async function applyImportPlan(
   // ---- 清理计划:逆拓扑序,只生成(PDC-0408) ----
   const cleanup: CloneApplyResult['cleanup'] = [];
   for (const table of [...plan.order].reverse()) {
-    const ids = newIdsForTable(plan, resolvedIds, table);
+    const ids = newIdsForTable(plan, resolvedIds, rowsByTable, table);
     if (ids.length === 0) {
       continue;
     }
@@ -558,15 +560,12 @@ export async function applyImportPlan(
     });
   }
 
+  // 根表新主键(UI 句柄面):allocate=数据库分配值,preserve=归档原值——
+  // 与 Rust apply.rs 同口径,取根表 id 集首项再提标量(typed_id_to_u64);
+  // 只认 new-key 占位会令 preserve 模式恒 null
   const rootTable = plan.order[0];
-  const rootStatement = rootTable
-    ? plan.statements.find(s => s.table === rootTable && s.cells.some(c => c.kind === 'new-key'))
-    : undefined;
-  const rootPlaceholder = rootStatement?.cells.find(c => c.kind === 'new-key');
-  const newRootId =
-    rootPlaceholder && rootPlaceholder.kind === 'new-key'
-      ? (resolvedIds.get(rootPlaceholder.placeholder) ?? null)
-      : null;
+  const rootIds = rootTable ? newIdsForTable(plan, resolvedIds, rowsByTable, rootTable) : [];
+  const newRootId = rootIds.length > 0 ? typedIdScalar(rootIds[0]) : null;
 
   return { insertedPerTable, resolvedIds: Object.fromEntries(resolvedIds), newRootId, verify, cleanup };
 }
@@ -606,6 +605,7 @@ function resolveCellBind(
 function newIdsForTable(
   plan: ImportPlanWire,
   resolvedIds: Map<number, number | string>,
+  rowsByTable: Map<string, TypedRowWire[]>,
   table: string
 ): TypedValueWire[] {
   const ids: TypedValueWire[] = [];
@@ -613,14 +613,31 @@ function newIdsForTable(
     if (statement.table !== table) {
       continue;
     }
-    for (const cell of statement.cells) {
+    const idColumnIndex = statement.columns.indexOf('id');
+    for (const [cellIndex, cell] of statement.cells.entries()) {
       if (cell.kind === 'new-key') {
         const id = resolvedIds.get(cell.placeholder);
         if (id !== undefined) {
           ids.push(tvBigUInt(id));
         }
+      } else if (cell.kind === 'literal' && cellIndex === idColumnIndex) {
+        // preserve 模式主键列是归档原值(计划期不产占位):只认占位会空集
+        // → 核对静默跳过/清理计划缺失/根句柄恒 null(与 Rust new_ids_for_table
+        // Literal if id_col == Some(idx) 臂同口径)
+        const value = rowsByTable.get(table)?.[statement.row_index]?.values[cellIndex];
+        if (value) {
+          ids.push(value);
+        }
       }
     }
   }
   return ids;
+}
+
+/** 主键绑定值 → 标量(UI 句柄;非整型族=null,与 Rust typed_id_to_u64 同口径)。 */
+function typedIdScalar(value: TypedValueWire): number | string | null {
+  if (value.t === 'big-u-int' || value.t === 'u-int' || value.t === 'int') {
+    return typeof value.v === 'number' || typeof value.v === 'string' ? value.v : String(value.v);
+  }
+  return null;
 }
