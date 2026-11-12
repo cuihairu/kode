@@ -64,9 +64,9 @@ describe('process Python configuration', () => {
     const envs = buildProcessEnvironments('/p', ['/p/scripts'], '/p/.kbengine/stubs', file =>
       ['/p/scripts/base', '/p/scripts/cell', '/p/scripts/bots'].includes(file));
     const base = envs.find(e => e.root === 'scripts/base')!;
-    expect(base.extraPaths[0]).toBe('.kbengine/stubs/processes/base');
+    expect(base.extraPaths[0]).toBe('.kbengine/stubs/base');
     expect(base.extraPaths).not.toContain('scripts/cell');
-    expect(base.extraPaths).not.toContain('.kbengine/stubs/processes/cell');
+    expect(base.extraPaths).not.toContain('.kbengine/stubs/cell');
   });
 
   it('preserves JSONC and user settings, is idempotent, and retains edited environments', async () => {
@@ -120,6 +120,7 @@ describe.skipIf(!hasPyright)('real Pyright process isolation', () => {
       fs.cpSync(template, stubs, { recursive: true });
       // Simulate an edited legacy root package: copy-if-absent preserves it,
       // but neither process nor common scripts may use this permissive face.
+      fs.mkdirSync(path.join(stubs, 'KBEngine'), { recursive: true });
       fs.writeFileSync(path.join(stubs, 'KBEngine/__init__.pyi'), 'from typing import Any\ndef __getattr__(name: str) -> Any: ...\n');
       const samples: Record<string, string> = {
         base: `import KBEngine\nfrom typing import assert_type\ne = KBEngine.Entity()\nassert_type(e.id, int)\nassert_type(e.cellData, dict[str, object])  # replaced below\nKBEngine.createEntity("Avatar", {})\nKBEngine.listPathRes("scripts", ["py", "xml"])\nKBEngine.EntityComponent().owner.id\nKBEngine.addSpaceGeometryMapping(1, None, "world")  # EXPECT_ERROR\n`,
@@ -141,7 +142,7 @@ describe.skipIf(!hasPyright)('real Pyright process isolation', () => {
       } as unknown as EntityMapping;
       for (const role of ['base', 'cell', 'bots', 'client'] as const) {
         const plan = buildEntityTypeStubPlan([mapping], [], { role: role === 'bots' ? 'client' : role });
-        fs.writeFileSync(path.join(stubs, 'processes', role, 'entity_types.pyi'), plan.content!);
+        fs.writeFileSync(path.join(stubs, role, 'entity_types.pyi'), plan.content!);
         if (role in samples) {
           samples[role] += `from entity_types import Avatar\nassert_type(Avatar().${role === 'base' ? 'baseOnly' : 'hp'}, int)\n`;
         }
@@ -157,7 +158,7 @@ describe.skipIf(!hasPyright)('real Pyright process isolation', () => {
         });
       }
       fs.writeFileSync(path.join(root, 'pyrightconfig.json'), JSON.stringify({
-        include: ['scripts', ...['base', 'cell', 'bots', 'client'].map(role => `.kbengine/stubs/processes/${role}/entity_types.pyi`)],
+        include: ['scripts', ...['base', 'cell', 'bots', 'client'].map(role => `.kbengine/stubs/${role}/entity_types.pyi`)],
         pythonVersion: '3.11', typeCheckingMode: 'strict'
       }));
       await syncProcessPythonConfiguration(makeContext(), root, [path.join(root, 'scripts')], stubs, []);
@@ -171,9 +172,15 @@ describe.skipIf(!hasPyright)('real Pyright process isolation', () => {
   }, 30000);
 
   it('checks every shipped .pyi for unresolved annotations and invalid overrides', () => {
-    const result = spawnSync('pyright', ['--pythonversion', '3.11', '--outputjson', template], { encoding: 'utf8', timeout: 20000 });
-    expect(result.error).toBeUndefined();
-    const report = JSON.parse(result.stdout);
-    expect(report.summary.errorCount, JSON.stringify(report.generalDiagnostics, null, 2)).toBe(0);
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-shipped-typings-'));
+    try {
+      fs.writeFileSync(path.join(root, 'pyrightconfig.json'), JSON.stringify({
+        include: [template], extraPaths: [path.join(template, 'shared')], reportMissingModuleSource: false
+      }));
+      const result = spawnSync('pyright', ['--pythonversion', '3.11', '--outputjson', '-p', root], { encoding: 'utf8', timeout: 20000 });
+      expect(result.error).toBeUndefined();
+      const report = JSON.parse(result.stdout);
+      expect(report.summary.errorCount, JSON.stringify(report.generalDiagnostics, null, 2)).toBe(0);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
   }, 30000);
 });

@@ -309,7 +309,7 @@ guiconsole 协议链（machined UDP 发现 + 直连各组件 TCP）：日志 tai
 
 边界:extraPaths 的管理段只认默认约定目录 `.kbengine/stubs`(导出开且 `KBEngine.pyi` 或 `kbe_types.py` 在盘时并入,两份生成物同居一个目录);用户配置的 `kbengine.python.stubDir` 目录不并入管理段,需要时自行加入 `python.analysis.extraPaths`。
 
-kode 按进程导出独立桩包：`.kbengine/stubs/processes/base`、`cell`、`bots`、`client`、`dbmgr`、`interfaces`、`logger`、`loginapp`。脚本目录 `scripts/base`、`scripts/cell` 分别对应引擎组件 `baseapp`、`cellapp`，选择同名的 `base`、`cell` 桩根。`pyrightconfig.json` 的 executionEnvironments 为每个脚本目录优先配置对应进程的 extraPaths。各进程还有独立的 `entity_types.pyi`，按属性 Flags、方法所属侧过滤，并分别声明远程句柄；不会在业务脚本旁生成遮蔽实现的同名桩。
+kode 按进程导出独立桩包：`.kbengine/stubs/base`、`cell`、`bots`、`client`、`dbmgr`、`interfaces`、`logger`、`loginapp`。脚本目录 `scripts/base`、`scripts/cell` 分别对应引擎组件 `baseapp`、`cellapp`，选择同名的 `base`、`cell` 桩根。`pyrightconfig.json` 的 executionEnvironments 为每个脚本目录优先配置对应进程的 extraPaths。各进程还有独立的 `entity_types.pyi`，按属性 Flags、方法所属侧过滤，并分别声明远程句柄；不会在业务脚本旁生成遮蔽实现的同名桩。
 
 解析仍遵循同名 .pyi → stubPath → extraPaths。为防止旧混合 KBEngine 桩抢先命中，kode 管理的 `python.analysis.stubPath` 改为 `${workspaceFolder}/.kbengine/stubs/_shared`，项目配置使用等价相对路径；路径随 `kbengine.managedDir`、自定义 `kbengine.python.stubDir` 或 `KBENGINE_STUB_DIR` 解析。用户路径、JSONC 注释和其他配置保留。已有 TOML Pyright 配置、extends、冲突的用户执行环境或自设全局 stubPath 需要显式接入，kode 保留配置并报告冲突。同步还会键级合并 `python.analysis.diagnosticSeverityOverrides` 中的 `reportMissingModuleSource: none`，消除 C++ 内嵌模块没有 .py 源码的提示。导出与同步总开关继续生效。
 

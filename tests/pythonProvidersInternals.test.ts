@@ -437,7 +437,7 @@ describe('PythonCompletionProvider', () => {
     const address = items.find(item => item.label === 'address');
     expect(address?.detail).toContain('def address');
     expect(address?.documentation.value)
-      .toContain('原始声明: `typings/processes/base/KBEngine/_module.pyi:');
+      .toContain('原始声明: `typings/base/KBEngine/_module.pyi:');
   });
 
   it('KBEngine API 补全 documentation 按 IDE 语言选 summary(GEN-DEF-1d)', async () => {

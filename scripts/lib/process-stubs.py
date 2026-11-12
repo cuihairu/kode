@@ -157,6 +157,8 @@ class EntityComponentCall:
 
 CLASS_NAMES = ['Entity', 'Proxy', 'Space', 'EntityComponent', 'Entities',
                'EntityCall', 'EntityComponentCall', 'MemoryStream', 'GlobalDataClient']
+SHARED_CLASSES = {'EntityCall', 'EntityComponentCall', 'MemoryStream', 'GlobalDataClient'}
+SHARED = ROOT / 'shared' / '_kbengine_shared'
 TYPING = 'from typing import Any, BinaryIO, Callable, Dict, IO, Iterator, List, Literal, Sequence, TextIO, Tuple, TypeAlias, TypeVar, Union, overload\n'
 ALIASES = '''
 from ._vectors import Vector2, Vector3, Vector4
@@ -167,12 +169,17 @@ Callback = Callable[..., Any]
 '''
 
 
+def class_import(name, explicit=False):
+    module = '_kbengine_shared.' if name in SHARED_CLASSES else '.'
+    return f'from {module}{name} import {name}' + (f' as {name}' if explicit else '') + '\n'
+
+
 def class_source(c, available):
     used = {n.id for n in ast.walk(c) if isinstance(n, ast.Name)}
-    imports = ''.join(f'from .{name} import {name}\n' for name in sorted(available)
+    imports = ''.join(class_import(name) for name in sorted(available)
                       if name != c.name and name in used)
-    return TYPING + 'from ._types import Address, Callback, Vector3Like, WatcherValue\n' + \
-        'from ._vectors import Vector2, Vector3, Vector4\n' + imports + \
+    return TYPING + 'from _kbengine_shared._types import Address, Callback, Vector3Like, WatcherValue\n' + \
+        'from _kbengine_shared._vectors import Vector2, Vector3, Vector4\n' + imports + \
         "_T = TypeVar('_T')\nBotCallback = Callable[[], Any]\nEntityEventCallback = Callable[..., Any]\n\n" + text([c])
 
 
@@ -282,8 +289,13 @@ COMPONENT_COMMON = {'ownerID', 'owner', 'name', 'className', 'isDestroyed', '__i
 ROLES = {'base': 'baseapp', 'cell': 'cellapp', 'bots': 'bots', 'client': 'bots',
          'dbmgr': 'dbmgr', 'interfaces': 'interfaces', 'logger': 'logger', 'loginapp': 'loginapp'}
 manifest = {}
+write(SHARED / '__init__.pyi', '# Internal shared runtime types.\n')
+write(SHARED / '_vectors.pyi', vector_source)
+write(SHARED / '_types.pyi', TYPING + ALIASES)
+write(SHARED / 'FixedArray.pyi', container_source)
+shared_classes = {}
 for role, layer in ROLES.items():
-    directory = ROOT / 'processes' / role / 'KBEngine'
+    directory = ROOT / role / 'KBEngine'
     classes = {}
     if role in ('base', 'cell'):
         classes = {name: cls(name) for name in CLASS_NAMES}
@@ -379,28 +391,35 @@ def getSpaceData(key: str) -> str: ...
     grouped['urlopen'] = copy.deepcopy(urlopen)
     nodes = [n for group in grouped.values() for n in group]
     for c in classes.values():
-        write(directory / (c.name + '.pyi'), class_source(c, classes))
-    write(directory / '_vectors.pyi', vector_source)
-    write(directory / '_types.pyi', TYPING + ALIASES)
-    write(directory / 'FixedArray.pyi', container_source)
+        content = class_source(c, classes)
+        if c.name in SHARED_CLASSES:
+            if c.name in shared_classes and shared_classes[c.name] != content:
+                raise RuntimeError(f'Shared class differs by process: {c.name}')
+            shared_classes[c.name] = content
+            write(SHARED / (c.name + '.pyi'), content)
+        else:
+            write(directory / (c.name + '.pyi'), content)
+    # Remove only the known generated copies from the preceding layout.
+    for name in ['_vectors.pyi', '_types.pyi', 'FixedArray.pyi'] + [n + '.pyi' for n in SHARED_CLASSES]:
+        (directory / name).unlink(missing_ok=True)
     # Resolve references in module signatures without re-exporting helper types.
-    module_imports = ''.join(f'from .{name} import {name}\n' for name in sorted(classes))
-    write(directory / '_module.pyi', TYPING + 'from ._types import Address, Callback, Vector3Like, WatcherValue\n' + module_imports + '\n' + text(nodes))
+    module_imports = ''.join(class_import(name) for name in sorted(classes))
+    write(directory / '_module.pyi', TYPING + 'from _kbengine_shared._types import Address, Callback, Vector3Like, WatcherValue\n' + module_imports + '\n' + text(nodes))
     exports = sorted(names([n for n in nodes if isinstance(n, (ast.FunctionDef, ast.AnnAssign)) or
                             isinstance(n, ast.Assign) and isinstance(n.value, ast.Constant)]))
     public_classes = [n for n in classes if n not in ('ClientObject', 'PyBots')]
     init = '# Process: ' + role + ' (engine component: ' + layer + ')\n'
     init += ''.join(f'from ._module import {name} as {name}\n' for name in exports)
-    init += ''.join(f'from .{name} import {name} as {name}\n' for name in sorted(public_classes))
-    init += 'from ._vectors import Vector2 as Vector2, Vector3 as Vector3, Vector4 as Vector4\n'
-    init += 'from .FixedArray import FixedArray as FixedArray\n'
+    init += ''.join(class_import(name, explicit=True) for name in sorted(public_classes))
+    init += 'from _kbengine_shared._vectors import Vector2 as Vector2, Vector3 as Vector3, Vector4 as Vector4\n'
+    init += 'from _kbengine_shared.FixedArray import FixedArray as FixedArray\n'
     write(directory / '__init__.pyi', init)
     selected_hooks = {'base': ['BaseAppModuleHooks', 'BaseEntityHooks', 'ProxyHooks'],
                       'cell': ['CellAppModuleHooks', 'CellEntityHooks'], 'bots': ['BotsModuleHooks'],
                       'client': [], 'dbmgr': ['DBMgrModuleHooks'], 'interfaces': ['InterfacesModuleHooks'],
                       'logger': ['LoggerModuleHooks'], 'loginapp': ['LoginAppModuleHooks']}[role]
     hook_import = 'from .Entity import Entity\n' if 'Entity' in classes else ''
-    write(directory / 'hooks.pyi', 'from typing import Any, Protocol, Union\nfrom ._types import Address\n' + hook_import + text([hook_classes[n] for n in selected_hooks]))
+    write(directory / 'hooks.pyi', 'from typing import Any, Protocol, Union\nfrom _kbengine_shared._types import Address\n' + hook_import + text([hook_classes[n] for n in selected_hooks]))
     manifest[role] = {'component': layer if role != 'client' else 'client', 'symbols': []}
     for name in exports:
         group = grouped.get(name, [])
@@ -411,25 +430,45 @@ def getSpaceData(key: str) -> str: ...
         module_lines = (directory / '_module.pyi').read_text().splitlines()
         line = next((i + 1 for i, content in enumerate(module_lines) if content.startswith(f'def {name}(') or content.startswith(f'{name}:')), 1)
         manifest[role]['symbols'].append({'name': name, 'kind': 'function' if isinstance(group[0], ast.FunctionDef) else 'variable',
-            'signature': signature, 'sourceFile': f'typings/processes/{role}/KBEngine/_module.pyi', 'sourceLine': line})
+            'signature': signature, 'sourceFile': f'typings/{role}/KBEngine/_module.pyi', 'sourceLine': line})
     for name in sorted(public_classes) + ['Vector2', 'Vector3', 'Vector4', 'FixedArray']:
         file = '_vectors.pyi' if name.startswith('Vector') else name + '.pyi'
-        source = (directory / file).read_text().splitlines()
+        source_dir = SHARED if name in SHARED_CLASSES or name.startswith('Vector') or name == 'FixedArray' else directory
+        source = (source_dir / file).read_text().splitlines()
         line = next(i + 1 for i, content in enumerate(source) if content.startswith(f'class {name}:') or content.startswith(f'class {name}('))
         manifest[role]['symbols'].append({'name': name, 'kind': 'class', 'signature': source[line - 1].removesuffix(':'),
-            'sourceFile': f'typings/processes/{role}/KBEngine/{file}', 'sourceLine': line})
+            'sourceFile': 'typings/' + (source_dir / file).relative_to(ROOT).as_posix(), 'sourceLine': line})
 
 # Unclassified/common scripts must not inherit a random process's API. Remove
 # intermediate union declarations after deriving the complete process packages.
-write(PACKAGE / '__init__.pyi', '# No process selected. See processes/<role>/KBEngine.\nfrom ._vectors import Vector2 as Vector2, Vector3 as Vector3, Vector4 as Vector4\nfrom .FixedArray import FixedArray as FixedArray\n')
 for intermediate in PACKAGE.glob('*.pyi'):
-    if intermediate.name not in {'__init__.pyi', '_vectors.pyi', 'FixedArray.pyi'}:
-        intermediate.unlink()
+    intermediate.unlink()
+try:
+    PACKAGE.rmdir()
+except OSError:
+    pass  # Preserve any non-template files.
 # A fresh neutral root keeps old copy-if-absent project packages out of common
 # script resolution as well. It is not an engine process and has no API catalog.
-shared = ROOT / 'processes' / 'shared' / 'KBEngine'
-for file in PACKAGE.glob('*.pyi'):
-    write(shared / file.name, file.read_text().removeprefix(HEADER))
+write(ROOT / 'shared' / 'KBEngine' / '__init__.pyi',
+      'from _kbengine_shared._vectors import Vector2 as Vector2, Vector3 as Vector3, Vector4 as Vector4\n'
+      'from _kbengine_shared.FixedArray import FixedArray as FixedArray\n')
+# Clean generated artifacts from the retired nested layout, preserving unknown
+# project files if this author-time tool is pointed at an existing output tree.
+legacy = ROOT / 'processes'
+if legacy.exists():
+    for file in legacy.rglob('*.pyi'):
+        if file.read_text().startswith(HEADER):
+            file.unlink()
+    for directory in sorted(legacy.rglob('*'), reverse=True):
+        if directory.is_dir():
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
+    try:
+        legacy.rmdir()
+    except OSError:
+        pass
 (ROOT / 'process-api.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
 pin = re.search(r'pinned commit \*\*(\w+)\*\*', (ROOT / 'README.md').read_text()).group(1)
 (ROOT / 'README.md').write_text(f'''# kode KBEngine process typings
@@ -446,19 +485,20 @@ TS and Rust embed that same process catalog. 不手工修改生成文件。
 
 | 脚本目录 / script directory | 桩根 / stub root | 引擎组件 / component |
 | --- | --- | --- |
-| scripts/base | processes/base | baseapp |
-| scripts/cell | processes/cell | cellapp |
-| scripts/bots | processes/bots | bots |
-| scripts/client | processes/client | client |
-| scripts/dbmgr | processes/dbmgr | dbmgr |
-| scripts/interfaces | processes/interfaces | interfaces |
-| scripts/logger | processes/logger | logger |
-| scripts/loginapp | processes/loginapp | loginapp |
+| scripts/base | base | baseapp |
+| scripts/cell | cell | cellapp |
+| scripts/bots | bots | bots |
+| scripts/client | client | client |
+| scripts/dbmgr | dbmgr | dbmgr |
+| scripts/interfaces | interfaces | interfaces |
+| scripts/logger | logger | logger |
+| scripts/loginapp | loginapp | loginapp |
 
 Each process contains `KBEngine/__init__.pyi`, one class per file, and its own
 module functions, constants, and hooks. baseapp/cellapp script-directory aliases
-map explicitly to base/cell. 公共 `KBEngine/` 只包含向量与 FixedArray，
-不再保留不同进程 API 混成的超集声明。
+map explicitly to base/cell. 公共类型集中在 `shared/_kbengine_shared/`，
+各进程直接引用同一份向量、容器、MemoryStream 和远程句柄声明；
+`shared/KBEngine/__init__.pyi` 为公共脚本只导出向量与 FixedArray。
 
 Activation copies templates into `<managedDir>/stubs/` with **copy-if-absent**:
 existing project edits are preserved. New process directories work alongside old

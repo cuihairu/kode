@@ -33,5 +33,5 @@ export function processApiSymbols(process: PythonProcess): readonly ProcessApiSy
 }
 
 export function processStubRoot(stubRoot: string, process: PythonProcess): string {
-  return `${stubRoot.replace(/[\\/]+$/, '')}/processes/${process}`.replace(/\\/g, '/');
+  return `${stubRoot.replace(/[\\/]+$/, '')}/${process}`.replace(/\\/g, '/');
 }

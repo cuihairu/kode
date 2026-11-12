@@ -10,16 +10,22 @@ import { describe, expect, it } from 'vitest';
 // 钉点见 README)派生,再生成走脚本,不手改。
 
 const TEMPLATE_ROOT = join(__dirname, '..', 'typings');
-const PACKAGE_DIR = join(TEMPLATE_ROOT, 'KBEngine');
+const PACKAGE_DIR = join(TEMPLATE_ROOT, 'shared', 'KBEngine');
 
 const read = (relative: string): string => readFileSync(join(TEMPLATE_ROOT, relative), 'utf8');
 
 describe('typings/ 内置桩包模板(清单)', () => {
   it('公共包仅含共享类型,具体进程分别有独立入口与类文件', () => {
-    expect(readdirSync(PACKAGE_DIR).sort()).toEqual(['FixedArray.pyi', '__init__.pyi', '_vectors.pyi']);
+    expect(readdirSync(PACKAGE_DIR).sort()).toEqual(['__init__.pyi']);
+    expect(existsSync(join(TEMPLATE_ROOT, 'processes'))).toBe(false);
+    expect(existsSync(join(TEMPLATE_ROOT, 'KBEngine'))).toBe(false);
     for (const role of ['base', 'cell', 'bots']) {
-      for (const name of ['__init__.pyi', 'Entity.pyi', 'EntityComponent.pyi', 'Entities.pyi', 'MemoryStream.pyi']) {
-        expect(existsSync(join(TEMPLATE_ROOT, 'processes', role, 'KBEngine', name))).toBe(true);
+      for (const name of ['__init__.pyi', 'Entity.pyi', 'EntityComponent.pyi', 'Entities.pyi']) {
+        expect(existsSync(join(TEMPLATE_ROOT, role, 'KBEngine', name))).toBe(true);
+      }
+      for (const name of ['_vectors.pyi', 'FixedArray.pyi', 'MemoryStream.pyi', 'EntityCall.pyi']) {
+        expect(existsSync(join(TEMPLATE_ROOT, role, 'KBEngine', name))).toBe(false);
+        expect(existsSync(join(TEMPLATE_ROOT, 'shared', '_kbengine_shared', name))).toBe(true);
       }
     }
   });
@@ -34,7 +40,7 @@ describe('typings/ 内置桩包模板(清单)', () => {
 
 describe('typings 进程入口与 Entity 模型', () => {
   it('公共入口不再星导入所有进程或以 Any 吞掉未定义 API', () => {
-    const init = read('KBEngine/__init__.pyi');
+    const init = read('shared/KBEngine/__init__.pyi');
     expect(init).not.toContain('import *');
     expect(init).not.toContain('__getattr__');
     expect(init).toContain('Vector3 as Vector3');
@@ -42,13 +48,13 @@ describe('typings 进程入口与 Entity 模型', () => {
 
   it('每个进程显式导出自身 API,base/cell/bots 实体互相隔离', () => {
     for (const role of ['base', 'cell', 'bots', 'client', 'dbmgr', 'interfaces', 'logger', 'loginapp']) {
-      const init = read(`processes/${role}/KBEngine/__init__.pyi`);
+      const init = read(`${role}/KBEngine/__init__.pyi`);
       expect(init).not.toContain('import *');
       expect(init).not.toContain('__getattr__');
     }
-    const base = read('processes/base/KBEngine/Entity.pyi');
-    const cell = read('processes/cell/KBEngine/Entity.pyi');
-    const bots = read('processes/bots/KBEngine/Entity.pyi');
+    const base = read('base/KBEngine/Entity.pyi');
+    const cell = read('cell/KBEngine/Entity.pyi');
+    const bots = read('bots/KBEngine/Entity.pyi');
     expect(base).toContain('cellData: Dict[str, Any]');
     expect(cell).not.toContain('cellData:');
     expect(bots).not.toContain('cellData:');
@@ -59,7 +65,7 @@ describe('typings 进程入口与 Entity 模型', () => {
 });
 
 describe('typings/KBEngine/Proxy.pyi(内部属性注入面)', () => {
-  const proxy = read('processes/base/KBEngine/Proxy.pyi');
+  const proxy = read('base/KBEngine/Proxy.pyi');
 
   it('登录内部属性为只读字符串', () => {
     expect(proxy).toContain('class Proxy(Entity):');
@@ -70,7 +76,7 @@ describe('typings/KBEngine/Proxy.pyi(内部属性注入面)', () => {
 
 describe('typings/KBEngine/_vectors.pyi(kode 唯一自绘面)', () => {
   it('Vector2/3/4 在案,类型名称有导入且包含构造重载', () => {
-    const vectors = read('KBEngine/_vectors.pyi');
+    const vectors = read('shared/_kbengine_shared/_vectors.pyi');
     expect(vectors).toContain('class Vector2:');
     expect(vectors).toContain('class Vector3:');
     expect(vectors).toContain('class Vector4:');
@@ -82,11 +88,11 @@ describe('typings/KBEngine/_vectors.pyi(kode 唯一自绘面)', () => {
 describe('typings/ 导入改写净度(派生脚本净度闸)', () => {
   it('全部 .pyi 无未改写的 `from _KBEngine_*` 顶层导入(留了就是断链 import)', () => {
     const violations: string[] = [];
-    for (const name of readdirSync(join(TEMPLATE_ROOT, 'processes/base/KBEngine'))) {
+    for (const name of readdirSync(join(TEMPLATE_ROOT, 'base/KBEngine'))) {
       if (!name.endsWith('.pyi')) {
         continue;
       }
-      const content = readFileSync(join(TEMPLATE_ROOT, 'processes/base/KBEngine', name), 'utf8');
+      const content = readFileSync(join(TEMPLATE_ROOT, 'base/KBEngine', name), 'utf8');
       for (const [index, line] of content.split('\n').entries()) {
         if (/^from _KBEngine_/.test(line)) {
           violations.push(`KBEngine/${name}:${index + 1}: ${line}`);

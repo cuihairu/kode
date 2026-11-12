@@ -3,7 +3,7 @@
 `import KBEngine` denotes a different native module on each process. It cannot
 be represented accurately by star-importing every process into a single stub.
 
-The committed templates under `typings/processes/<role>/KBEngine` keep each
+The committed templates under `typings/<role>/KBEngine` keep each
 class in its own file, explicitly re-export public symbols, and expose only the
 selected process's functions, constants and callbacks. The directory names are
 `base`, `cell`, `bots`, `client`, `dbmgr`, `interfaces`, `logger`, `loginapp`.
@@ -11,6 +11,12 @@ selected process's functions, constants and callbacks. The directory names are
 Directory aliases `scripts/baseapp` and `scripts/cellapp` map to the same roles.
 All directory matching is anchored to `scripts/`; an ancestor folder named
 `base` does not classify a shared module as a base process.
+
+The obsolete `processes/` wrapper and root `KBEngine/` package are removed.
+Process-independent vectors, FixedArray, MemoryStream, EntityCall,
+EntityComponentCall and GlobalDataClient each have a single implementation in
+`typings/shared/_kbengine_shared/`. Process packages import and explicitly
+re-export those declarations; they do not maintain copied definitions.
 
 `scripts/derive-kbengine-stub-typings.mjs` reads the pinned fork typings, then
 `scripts/lib/process-stubs.py` applies the C++ corrections and filters process
@@ -22,7 +28,7 @@ embedded by both TS and Rust for matching module completion/hover signatures.
 Activation creates missing templates only. It then merges per-directory
 `executionEnvironments` into `pyrightconfig.json`, preserving JSONC and unrelated
 settings. Each environment's extraPaths begins with its own process stub root,
-followed by its script directory and common dependencies. Generated stub roots
+followed by `stubs/shared`, its script directory and common dependencies. Generated stub roots
 also receive environments: imports inside their `entity_types.pyi` must resolve
 to the same KBEngine class identities as consuming scripts.
 
@@ -35,7 +41,7 @@ TOML project configuration, inherited configuration, and conflicting user paths
 are reported without replacing those configurations. These cases require
 explicit integration using the exported process roots.
 
-The .def generator writes `processes/{base,cell,bots,client}/entity_types.pyi`:
+The .def generator writes `{base,cell,bots,client}/entity_types.pyi`:
 properties are selected using the resolved Flags domains, local methods by their
 Base/Cell/ClientMethods section, and each remote channel has its own mailbox
 class. Client/bots remote methods are limited to exposed methods. Custom types
@@ -44,9 +50,11 @@ shadow Python implementation files.
 
 The common package contains only vectors and FixedArray; intermediate union
 declarations are removed after derivation. Common imports do not silently gain
-an arbitrary process's API. Its fresh copy at `processes/shared/KBEngine` leads
+an arbitrary process's API. The neutral entry at `shared/KBEngine` leads
 the default extraPaths, so a preserved, edited legacy root package cannot leak
 into common scripts either. This shared directory is not an engine process.
+Shared implementation files have their own execution environment so their
+absolute `_kbengine_shared` imports resolve identically from every process.
 Module-level `__getattr__ -> Any` is omitted from
 selected process entries, so misspelled or cross-process module APIs are errors.
 Entity and remote-handle dynamic attribute fallbacks remain for def-defined and

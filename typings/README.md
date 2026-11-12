@@ -12,19 +12,20 @@ TS and Rust embed that same process catalog. 不手工修改生成文件。
 
 | 脚本目录 / script directory | 桩根 / stub root | 引擎组件 / component |
 | --- | --- | --- |
-| scripts/base | processes/base | baseapp |
-| scripts/cell | processes/cell | cellapp |
-| scripts/bots | processes/bots | bots |
-| scripts/client | processes/client | client |
-| scripts/dbmgr | processes/dbmgr | dbmgr |
-| scripts/interfaces | processes/interfaces | interfaces |
-| scripts/logger | processes/logger | logger |
-| scripts/loginapp | processes/loginapp | loginapp |
+| scripts/base | base | baseapp |
+| scripts/cell | cell | cellapp |
+| scripts/bots | bots | bots |
+| scripts/client | client | client |
+| scripts/dbmgr | dbmgr | dbmgr |
+| scripts/interfaces | interfaces | interfaces |
+| scripts/logger | logger | logger |
+| scripts/loginapp | loginapp | loginapp |
 
 Each process contains `KBEngine/__init__.pyi`, one class per file, and its own
 module functions, constants, and hooks. baseapp/cellapp script-directory aliases
-map explicitly to base/cell. 公共 `KBEngine/` 只包含向量与 FixedArray，
-不再保留不同进程 API 混成的超集声明。
+map explicitly to base/cell. 公共类型集中在 `shared/_kbengine_shared/`，
+各进程直接引用同一份向量、容器、MemoryStream 和远程句柄声明；
+`shared/KBEngine/__init__.pyi` 为公共脚本只导出向量与 FixedArray。
 
 Activation copies templates into `<managedDir>/stubs/` with **copy-if-absent**:
 existing project edits are preserved. New process directories work alongside old

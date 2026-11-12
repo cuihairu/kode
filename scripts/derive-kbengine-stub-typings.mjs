@@ -3,9 +3,10 @@
 // Static template derivation: fork typings -> kode top-level typings/.
 //
 // Shipped shape / 最终形态 (lib/process-stubs.py refines the split inputs):
-//   typings/processes/{base,cell,bots,...}/KBEngine/__init__.pyi
-//   typings/processes/<role>/KBEngine/<Class>.pyi — one class per file
-//   typings/KBEngine/ — process-neutral vectors / container types only
+//   typings/{base,cell,bots,...}/KBEngine/__init__.pyi
+//   typings/<role>/KBEngine/<Class>.pyi — one class per file
+//   typings/shared/_kbengine_shared/ — one implementation of shared classes
+//   typings/shared/KBEngine/ — process-neutral entry
 //   typings/process-api.json — shared TS / Rust process symbol catalog
 //
 // Run: node scripts/derive-kbengine-stub-typings.mjs --typings ../kbengine/typings --out typings [--pin 28d2117]

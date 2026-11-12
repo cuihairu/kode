@@ -40,7 +40,7 @@ export function buildProcessEnvironments(
     return roots.filter(exists).map(root => ({
       root: portable(workspaceRoot, root),
       extraPaths: [...new Set([
-        processStubRoot(stubRoot, role), root, path.join(scriptsRoot, 'common'), scriptsRoot,
+        processStubRoot(stubRoot, role), path.join(stubRoot, 'shared'), root, path.join(scriptsRoot, 'common'), scriptsRoot,
         stubRoot, ...userExtraPaths.map(p => p.replace('${workspaceFolder}', workspaceRoot))
       ].map(p => path.isAbsolute(p) ? portable(workspaceRoot, p) : p))]
     }));
@@ -50,8 +50,12 @@ export function buildProcessEnvironments(
   for (const role of PYTHON_PROCESSES) {
     const root = processStubRoot(stubRoot, role);
     if (exists(`${root}/KBEngine/__init__.pyi`)) {
-      environments.push({ root: portable(workspaceRoot, root), extraPaths: [portable(workspaceRoot, root), portable(workspaceRoot, stubRoot)] });
+      environments.push({ root: portable(workspaceRoot, root), extraPaths: [portable(workspaceRoot, root), portable(workspaceRoot, path.join(stubRoot, 'shared')), portable(workspaceRoot, stubRoot)] });
     }
+  }
+  const shared = path.join(stubRoot, 'shared');
+  if (exists(path.join(shared, 'KBEngine', '__init__.pyi'))) {
+    environments.push({ root: portable(workspaceRoot, shared), extraPaths: [portable(workspaceRoot, shared), portable(workspaceRoot, stubRoot)] });
   }
   return environments;
 }
@@ -83,7 +87,7 @@ export async function syncProcessPythonConfiguration(
   try {
     const toml = path.join(workspaceRoot, 'pyproject.toml');
     if (!deps.exists(target) && deps.exists(toml) && /^\s*\[tool\.pyright(?:\]|\.)/m.test(deps.readFile(toml))) {
-      await warn('检测到 pyproject.toml 的 tool.pyright，请在其 executionEnvironments 中接入 stubs/processes/<进程>，避免覆盖已有配置。');
+      await warn('检测到 pyproject.toml 的 tool.pyright，请在其 executionEnvironments 中接入 stubs/<进程> 和 stubs/shared，避免覆盖已有配置。');
       return;
     }
     let source = deps.exists(target) ? deps.readFile(target) : '{}\n';
@@ -141,7 +145,7 @@ export async function syncProcessPythonConfiguration(
       ['executionEnvironments', environments]
     ];
     if (userConfigPath === undefined) { edits.push(['stubPath', stubPath]); }
-    const extraPaths = [path.join(stubRoot, 'processes', 'shared'), ...scriptsRoots, stubRoot, ...userExtraPaths]
+    const extraPaths = [path.join(stubRoot, 'shared'), ...scriptsRoots, stubRoot, ...userExtraPaths]
         .map(p => p.replace('${workspaceFolder}', workspaceRoot))
         .map(p => path.isAbsolute(p) ? portable(workspaceRoot, p) : p);
     if (config.extraPaths === undefined || same(config.extraPaths, previous?.extraPaths)) {

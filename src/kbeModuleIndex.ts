@@ -713,7 +713,7 @@ export function filterKbeSymbols(partialSymbol: string, process?: PythonProcess 
           ...known, ...entry,
           summary: known?.summary ?? `KBEngine ${process} 进程 API`,
           summaryEn: known?.summaryEn ?? `KBEngine ${process} process API`,
-          sourceFile: entry.sourceFile ?? `typings/processes/${process}/KBEngine/${entry.name.startsWith('Vector') ? '_vectors.pyi' : `${entry.name}.pyi`}`,
+          sourceFile: entry.sourceFile ?? `typings/${process}/KBEngine/${entry.name.startsWith('Vector') ? '_vectors.pyi' : `${entry.name}.pyi`}`,
           sourceLine: entry.sourceLine ?? 1
         };
       });
