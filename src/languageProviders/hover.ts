@@ -5,12 +5,12 @@ import { documentEventCacheKey, findEventCallsCached } from '../eventApi';
 import { EntityMappingManager } from '../entityMapping';
 import { getDocumentLines } from '../backend/documentStore';
 import { getTypeStorageShape } from '../databaseSchema';
-import { getWorkspaceRootForDocument, findDefinitionTextByCategory, defBufferStampForRoot, resolveEntityAnnotationType, resolveEntityAnnotationTypeWithReason } from '../definitionWorkspace';
+import { getWorkspaceRootForDocument, findDefinitionTextByCategory, defBufferStampForRoot, resolveEntityAnnotationType, resolveEntityAnnotationTypeWithReason, getEntityCustomTypesSnapshot } from '../definitionWorkspace';
 import { getHookByName } from '../hooks';
 import { getEntryHookByName, isComponentEntryScriptFile } from '../backend/entryHooks';
 import { DETAIL_LEVELS, KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, KBENGINE_TYPES } from '../backend/kbengineMetadata';
 import { resolveEntityBuiltinPropertyHit, resolveEntityComponentFaceFromPath, type EntityComponentFace } from '../backend/entityBuiltinProperties';
-import { formatBuiltinPropertyHover, formatEntityDefMethodHover, formatEventStatsHover, formatInferredReturnHover, formatSelfPropertyTypeHover } from '../backend/hoverMarkdown';
+import { formatBuiltinPropertyHover, formatEntityDefMethodHover, formatEventStatsHover, formatFixedDictKeyHover, formatInferredReturnHover, formatSelfPropertyTypeHover } from '../backend/hoverMarkdown';
 import { apiDocDomainsForFace, formatApiDocHover, formatApiDocSupplement, getKbengineApiAccessAtPosition, getPythonCallbackDefinitionAtPosition, lookupApiDoc } from '../backend/pythonApiHoverDocs';
 import { currentHoverLanguageEnv, readHoverLanguageSetting, resolveHoverLanguage } from '../hoverLocale';
 import { hasLocalReturnCandidate, resolveLocalVariableReturnTypeFromSnapshot } from '../backend/pythonReturnTypeInference';
@@ -18,6 +18,13 @@ import { inferLocalReturnTypeFromRust } from '../backend/localReturnTypeRust';
 import { flowVersionKeyForDocument } from '../flowVersionKey';
 import { resolveAnnotationTypeWithReason } from '../pythonTypeStubs';
 import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from '../backend/selfPropertyTypeInference';
+import {
+  fixedDictChainRootType,
+  fixedDictSubscriptContextAt,
+  resolveFixedDictSubscriptKey,
+  type FixedDictKeyResolution,
+  type FixedDictSubscriptChainContext
+} from '../backend/fixedDictSubscript';
 import { behaviorEntriesForSymbol, behaviorNotesMarkdown, fixedDictBehaviorNoteMarkdown } from '../backend/behaviorKnowledge';
 import { isFixedDictTypeName } from '../backend/behaviorLints';
 import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonCallAtPosition, type PythonCallAtPosition } from '../backend/pythonLanguageUtils';
@@ -574,6 +581,28 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         )
         : null;
     const isDataDictPosition = dictAccess !== null;
+    // KSEM-STRUCT-02:FIXED_DICT 子字段下标链键类型悬停 —— 落点在下标链键串
+    // 内容上时,键的 types.xml 字段注解与声明位置(嵌套层逐段解析;引擎实际
+    // 支持的读取面=字符串下标+字典方法,属性透传不在引擎面,本面同口径)。
+    // 解析不出(非 FD 根/链断/键未声明/注解 Any)→ 落回下方自属性/数据字典/
+    // 普通链(能推才显);总闸复用实体脚本属性 hover(与 TYP-ARRAY 同款)。
+    const fdKeyHoverContext =
+      document.languageId === 'python' && featureConfig.entityBuiltinProperties && !isDataDictPosition
+        ? fixedDictSubscriptContextAt(dictLineText, position.character)
+        : null;
+    if (manager && fdKeyHoverContext?.cursor === 'key') {
+      return respond(this.memoizedHover(hoverMemoKey(document, position), document.version, sharedToken =>
+        raceWithBudget(
+          'hover:fixeddict-key',
+          this.resolveFixedDictKeyHover(manager, document, position, fdKeyHoverContext, sharedToken, timer)
+            .then(hover => hover ?? this.provideKnownHover(document, position, featureConfig, range, word)),
+          deadline.remainingMs(),
+          sharedToken,
+          // R2-F18:预算到期传播取消(见 def-method 分支)
+          () => deadline.cancel()
+        )
+      , deadline.token));
+    }
     if (
       manager &&
       document.languageId === 'python' &&
@@ -964,6 +993,80 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       }
       return new vscode.Hover(markdown);
     } finally { stopRender?.(); }
+  }
+
+  /**
+   * KSEM-STRUCT-02:FIXED_DICT 下标链键类型悬停——键段命中 types.xml 字段时,
+   * 值注解+声明位置。诚实边界:测试替身 manager 无定位面、接收者根不是
+   * FIXED_DICT、链断、键未声明、注解 Any → null(能推才显,交回普通链)。
+   */
+  private async resolveFixedDictKeyHover(
+    manager: EntityMappingManager,
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    ctx: FixedDictSubscriptChainContext,
+    sharedToken: vscode.CancellationToken,
+    timer?: HoverPhaseTimer
+  ): Promise<vscode.Hover | null> {
+    const lastSegment = ctx.segments[ctx.segments.length - 1];
+    if (!lastSegment || lastSegment.kind !== 'key' || lastSegment.keyEnd === null) {
+      return null; // 光标态契约外(防御):key 态上下文末段恒为闭键段
+    }
+    const stopMapping = timer?.start('def-mapping');
+    let resolution: FixedDictKeyResolution | null;
+    try {
+      if (sharedToken.isCancellationRequested) {
+        return null;
+      }
+      const workspaceRoot = getWorkspaceRootForDocument(document);
+      const rootTypeName = await fixedDictChainRootType(
+        ctx.receiver,
+        getDocumentLines(document),
+        position.line,
+        async propertyName => {
+          // 测试替身无该面(与自属性 hover 同款防御)→ 视为无 def 属性位置
+          if (
+            sharedToken.isCancellationRequested ||
+            typeof manager.resolvePropertyDefinitionInfo !== 'function'
+          ) {
+            return null;
+          }
+          const location = await manager.resolvePropertyDefinitionInfo(
+            document.fileName,
+            propertyName,
+            propertyName
+          );
+          return location?.typeName ?? null;
+        }
+      );
+      if (!rootTypeName || sharedToken.isCancellationRequested) {
+        return null;
+      }
+      resolution = resolveFixedDictSubscriptKey(
+        rootTypeName,
+        ctx.segments.slice(0, -1),
+        lastSegment.key,
+        getEntityCustomTypesSnapshot(workspaceRoot ?? '')
+      );
+    } finally {
+      stopMapping?.();
+    }
+    if (!resolution?.field || !resolution.annotation) {
+      return null; // 键未声明/注解 Any:能推才显
+    }
+    const stopRender = timer?.start('render');
+    try {
+      const markdown = new vscode.MarkdownString();
+      markdown.appendMarkdown(formatFixedDictKeyHover({
+        containerName: resolution.container.name,
+        key: lastSegment.key,
+        annotation: resolution.annotation,
+        file: resolution.container.filePath,
+        line: resolution.field.line
+      }));
+      return new vscode.Hover(markdown);
+    } finally {
+      stopRender?.(); }
   }
 
   private provideKnownHover(

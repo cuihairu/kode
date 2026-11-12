@@ -5,9 +5,10 @@ import { eventDefinitionAt } from '../eventApi';
 import { getScanRootForFile } from '../scanRoots';
 import { parsePythonFile, linearizeC3, isPythonCodePosition, getPythonBaseExpressionAtPosition, PythonClassIndex, PythonClassDef, PythonMethodLocation } from '../backend/pythonClassIndex';
 import { EntityMappingManager } from '../entityMapping';
-import { findTypesXmlImplementedByReference, findEntityDefinitionFile, getEntityRuntimeProfile, getWorkspaceRootForDocument, findDefinitionFileByCategory, findDefinitionTextByCategory } from '../definitionWorkspace';
+import { findTypesXmlImplementedByReference, findEntityDefinitionFile, getEntityRuntimeProfile, getWorkspaceRootForDocument, findDefinitionFileByCategory, findDefinitionTextByCategory, getEntityCustomTypesSnapshot } from '../definitionWorkspace';
 import { cellScriptRoleAndEntity, collectCellDataDefUniverseWithCategory, fetchCellDataKeys } from '../backend/cellDataCompletion';
 import { cellDataKeyAccessAtPosition, isCellDataKeyInsideLineComment } from '../backend/cellDataKeyAccess';
+import { fixedDictChainRootType, fixedDictSubscriptContextAt, resolveFixedDictSubscriptKey } from '../backend/fixedDictSubscript';
 import { jumpLog, jumpTimeStart } from '../navigationLog';
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonMemberAccessAtPosition, type PythonMemberAccess } from '../backend/pythonLanguageUtils';
@@ -168,9 +169,11 @@ export interface JumpLayerTrace {
    * entity-def = .def 派生索引(对象级类粒度 → 文件级 owner 归属两个子探);
    * python-mro = PythonClassIndex 跨文件 C3-MRO + 组合根;
    * file-scope = 当前文件类作用域 / 本文件 MRO;
-   * kbe-stub / class-base / types-reverse / globaldata-key / cellData-key
-   * = 前置契约分支(命中即终点);globaldata-key = 数据字典键跨进程互链
-   * (GLOBDATA-001);cellData-key = cellData 字符串键来源 def 跳转(KSEM-CELL-05);
+   * kbe-stub / class-base / types-reverse / globaldata-key / cellData-key /
+   * fixeddict-key = 前置契约分支(命中即终点);globaldata-key = 数据字典键
+   * 跨进程互链(GLOBDATA-001);cellData-key = cellData 字符串键来源 def 跳转
+   * (KSEM-CELL-05);fixeddict-key = FIXED_DICT 下标链键 → types.xml 字段声明
+   * 跳转(KSEM-STRUCT-02);
    * member-access = 非 self 接收者成员调用(avatar.SendErrorInfo,批158);
    * context = 入参形态判定(既非 self 访问/成员调用也非方法声明)。
    */
@@ -180,6 +183,7 @@ export interface JumpLayerTrace {
     | 'types-reverse'
     | 'globaldata-key'
     | 'cellData-key'
+    | 'fixeddict-key'
     | 'entity-def'
     | 'python-mro'
     | 'file-scope'
@@ -400,6 +404,64 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
                 };
               }
             }
+          }
+        }
+      }
+    }
+
+    // KSEM-STRUCT-02:FIXED_DICT 子字段下标链键 F12 → types.xml 字段声明行
+    // (Properties 子元素标签=字段名)。与 cellData-key 同理置于
+    // isPythonCodePosition 守卫之前(键是字符串字面量,该守卫判 skip);
+    // 行内注释位在探测内排除。cellData 首层键位已被上方 RPC 宇宙跳转面接管
+    // (def 声明/内建/组件槽);本面接嵌套层与其他 FIXED_DICT 型 def 属性。
+    // 解析不出(非 FD 根/链断/键不在 types.xml 字段)→ 交回常规链,不造跳转。
+    const fdKeyHit = fixedDictSubscriptContextAt(line.text, position.character);
+    if (fdKeyHit?.cursor === 'key') {
+      const lastSegment = fdKeyHit.segments[fdKeyHit.segments.length - 1];
+      if (lastSegment && lastSegment.kind === 'key' && lastSegment.keyEnd !== null) {
+        const documentLines = document.getText().split(/\r?\n/);
+        const rootTypeName = await fixedDictChainRootType(
+          fdKeyHit.receiver,
+          documentLines,
+          position.line,
+          async propertyName => {
+            if (token?.isCancellationRequested) {
+              return null;
+            }
+            const location = await this.entityMappingManager.resolvePropertyDefinitionInfo(
+              document.fileName,
+              propertyName,
+              propertyName
+            );
+            return location?.typeName ?? null;
+          }
+        );
+        if (!token?.isCancellationRequested && rootTypeName) {
+          const workspaceRoot = getWorkspaceRootForDocument(document);
+          const resolution = resolveFixedDictSubscriptKey(
+            rootTypeName,
+            fdKeyHit.segments.slice(0, -1),
+            lastSegment.key,
+            getEntityCustomTypesSnapshot(workspaceRoot ?? '')
+          );
+          if (resolution?.field) {
+            const targetLine = Math.max(0, resolution.field.line - 1);
+            jumpLog('info', () =>
+              `前置命中 fixeddict-key:${resolution.container.name}.${lastSegment.key} → ` +
+              `${path.basename(resolution.container.filePath)}:${targetLine + 1}`
+            );
+            return {
+              location: new vscode.Location(
+                vscode.Uri.file(resolution.container.filePath),
+                new vscode.Position(targetLine, 0)
+              ),
+              layers: [{
+                layer: 'fixeddict-key',
+                query: `${resolution.container.name}.${lastSegment.key}`,
+                status: 'hit',
+                detail: `${path.basename(resolution.container.filePath)}:${targetLine + 1}`
+              }]
+            };
           }
         }
       }

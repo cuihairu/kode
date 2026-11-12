@@ -45,6 +45,8 @@ KBEngine `datatypes.cpp` 口径（fixture 注释引证，`tests/fixtures/kbengin
 
 **约束核对**：布局面由 `fields`（名+序+形状）承载——不以丢字段名的扁平引用图代替布局；`field_refs` 仅作为引用展开的存量通道。
 
+> **2026-11-13（STRUCT-02 落地时的分侧处置，第 1-4 步的兑现归属）**：本条 §4 第 1-4 步是 **Rust 侧**补齐，其消费者是 STRUCT-04（缺键/多键/错型诊断）与 STRUCT-05（标量范围）——**诊断面**。而 STRUCT-02 要的是 IDE **交互面**（子键类型/补全/跳转），其数据源在 TS 高保真面 `CustomTypeInfo`（§2 第 2 行）已完备（字段名 + 内联 `ARRAY<of>` 形状 + 声明序俱在），不必等 Rust。故 STRUCT-02 先按 §2 第 2 行落地 TS 三面（`src/backend/fixedDictSubscript.ts` 纯核 + 补全/跳转/悬停三臂），Rust 第 1-4 步（含 parity golden 增 `fields` 键、`kodeParserParity` 同步、`dump-golden` 重生成）留给 STRUCT-04/05 批与 STRUCT-08 桩对齐一并兑现。分侧依据与引擎真源核（`FixedDict : script::Map` 无 `tp_getattro` 字段直通 → 引擎面=字符串下标+dict 方法）见 `docs/review/2026-11-13-ksem-struct-02-fixed-dict-subscript.md`。
+
 ## 5. 验收对账
 
 - 盘点 ✓：§2 五层逐层保真差异（含行号证据）+ §3 四条结论；

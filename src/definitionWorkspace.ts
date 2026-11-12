@@ -519,21 +519,14 @@ export function resolveEntityAnnotationTypeWithReason(
 }
 
 /**
- * FIXED_DICT 子成员解析入口(2026-10-30 用户令):self.<FIXED_DICT 属性>.<字段
- * 或字典方法> 钻入 types.xml 类型结构。根类型名是 FIXED_DICT 且成员命中字段
- * (values 等)或字典方法(items/keys/values/get)时返回 Python 注解,否则
- * null(不接管,调用方落回根注解)。快照口径与 resolveEntityAnnotationType
- * 同源(语义索引缓存,open-document 前进时精确作废),但此处无打分子阶段
- * (打分面仍归 type-registry-query 单口径)。
+ * 本根 CustomTypeInfo 注册表快照(KSEM-STRUCT-02):与 resolveEntityAnnotationType
+ * 同一快照口径(语义索引缓存,open-document 前进时精确作废),供下标链
+ * (fixedDictSubscript)等需要整张注册表的面直取;无打分子阶段(打分面仍归
+ * type-registry-query 单口径)。无根语境返回空表(内建面由消费方自理)。
  */
-export function resolveEntityFixedDictMember(
-  workspaceRoot: string,
-  rootTypeName: string,
-  member: string,
-  isCall: boolean
-): string | null {
+export function getEntityCustomTypesSnapshot(workspaceRoot: string): readonly CustomTypeInfo[] {
   if (!workspaceRoot) {
-    return null;
+    return [];
   }
   const aliasDiscoveryEnabled = vscode.workspace
     .getConfiguration('kbengine')
@@ -554,7 +547,27 @@ export function resolveEntityFixedDictMember(
       openVersions
     );
   }
-  const hit = resolveFixedDictMember(rootTypeName, member, isCall, snapshot.entries);
+  return snapshot.entries;
+}
+
+/**
+ * FIXED_DICT 子成员解析入口(2026-10-30 用户令):self.<FIXED_DICT 属性>.<字段
+ * 或字典方法> 钻入 types.xml 类型结构。根类型名是 FIXED_DICT 且成员命中字段
+ * (values 等)或字典方法(items/keys/values/get)时返回 Python 注解,否则
+ * null(不接管,调用方落回根注解)。快照口径与 resolveEntityAnnotationType
+ * 同源(getEntityCustomTypesSnapshot 同一提取)。
+ */
+export function resolveEntityFixedDictMember(
+  workspaceRoot: string,
+  rootTypeName: string,
+  member: string,
+  isCall: boolean
+): string | null {
+  if (!workspaceRoot) {
+    return null;
+  }
+  const entries = getEntityCustomTypesSnapshot(workspaceRoot);
+  const hit = resolveFixedDictMember(rootTypeName, member, isCall, entries);
   return hit ? hit.annotation : null;
 }
 

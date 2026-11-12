@@ -58,3 +58,17 @@ export function formatSelfPropertyTypeHover(resolved: SelfPropertyResolved): str
     : '';
   return `${headline}\n\n${source}${reason}`;
 }
+
+/** KSEM-STRUCT-02 FIXED_DICT 子字段键标注输入(键+值注解+声明位置)。 */
+export interface FixedDictKeyHoverInput {
+  containerName: string;
+  key: string;
+  annotation: string;
+  file: string;
+  line: number;
+}
+
+/** FIXED_DICT 子字段键标注:首行 `**键: 注解**` + types.xml 声明段。 */
+export function formatFixedDictKeyHover(input: FixedDictKeyHoverInput): string {
+  return `**${input.key}: ${input.annotation}**\n\nFIXED_DICT \`${input.containerName}\` 字段声明: \`${basename(input.file)}:${input.line}\``;
+}

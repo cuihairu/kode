@@ -3,13 +3,14 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { findFilesAcrossRoots } from '../scanRoots';
 import { EntityMappingManager } from '../entityMapping';
-import { findDefinitionTextByCategory, getRegisteredCustomTypes, getRegisteredAliasTypes, getRegisteredEntities, getWorkspaceRootForDocument, resolveEntityAnnotationType } from '../definitionWorkspace';
+import { findDefinitionTextByCategory, getEntityCustomTypesSnapshot, getRegisteredCustomTypes, getRegisteredAliasTypes, getRegisteredEntities, getWorkspaceRootForDocument, resolveEntityAnnotationType } from '../definitionWorkspace';
 import { HOOK_CATEGORY_NAMES, KBENGINE_HOOKS } from '../hooks';
 import { cellDataKeyCompletionContext, cellScriptRoleAndEntity, collectCellDataDefUniverse, fetchCellDataKeys, type CellDataKeyCompletionContext } from '../backend/cellDataCompletion';
+import { fixedDictChainRootType, fixedDictSubscriptContextAt, resolveFixedDictSubscriptKey, type FixedDictSubscriptChainContext } from '../backend/fixedDictSubscript';
 import { KBENGINE_ENTRY_HOOKS, isComponentEntryScriptFile } from '../backend/entryHooks';
 import { DETAIL_LEVELS, KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, KBENGINE_TYPES } from '../backend/kbengineMetadata';
 import { formatEntityBuiltinPropertyDetail, getEntityBuiltinPropertiesForFace, hasKnownEntityBuiltinPropertyType, resolveEntityComponentFaceFromPath, type EntityComponentFace } from '../backend/entityBuiltinProperties';
-import { PYTHON_TYPE_STUB_FALLBACK } from '../pythonTypeStubs';
+import { PYTHON_TYPE_STUB_FALLBACK, resolveCustomTypePropertyAnnotation } from '../pythonTypeStubs';
 import { getPythonSelfCompletionContext } from '../backend/pythonLanguageUtils';
 import { filterKbeSymbols, getKbeAliases, getKbeCompletionContext, kbeCompletionDocumentation } from '../kbeModuleIndex';
 import { pythonProcessFromPath, processApiSymbols } from '../backend/pythonProcess';
@@ -318,6 +319,21 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
         items => (items !== null ? items : this.provideCompletionItemsSync(document, position, token))
       );
     }
+    // KSEM-STRUCT-02:FIXED_DICT 子字段下标链键位(嵌套 ["k"]["k2"] / .get("k")
+    // 与任意 FIXED_DICT 型 def 属性首层)→ types.xml 字段补全。与 cellData 键位
+    // 同理先于 Rust-first 判定(字符串键位里 def 链/Rust 补全面均无效);
+    // cellData 首层键位已被上方 RPC 宇宙面接管(内建/跨 def 闭包更全),本面
+    // 只接其嵌套层与其他 FD 接收者。解析不出(非 FD 根/链断)→ null 落回
+    // 既有链,非键位路径契约不变。
+    const fdChainCtx = fixedDictSubscriptContextAt(
+      document.lineAt(position.line).text,
+      position.character
+    );
+    if (fdChainCtx?.cursor === 'open-key') {
+      return this.provideFixedDictKeyCompletions(document, position, fdChainCtx, token).then(
+        items => (items !== null ? items : this.provideCompletionItemsSync(document, position, token))
+      );
+    }
     // 2026-11-08 用户令「直接切」:服务轨道下补全先走 Rust(语料文档)。Rust
     // 判定出上下文且有条目即 Rust 优先;空集(null 或 items=[])回 TS 既有链
     // (方法面 def 链与 TS 的 KBENGINE_HOOKS 语义不同,Rust 空集时让位,
@@ -530,6 +546,77 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
       if (detailParts.length > 0) {
         item.detail = detailParts.join(' · ');
       }
+      item.range = range;
+      return item;
+    });
+  }
+
+  /**
+   * FIXED_DICT 子字段键位补全(KSEM-STRUCT-02):下标链开键串位 → 链前段
+   * 全解析后的容器类型逐字段补全(detail = 值注解 · types.xml 声明行,与
+   * cellData 键位同款)。诚实边界:无 manager/无根语境/接收者根不是
+   * FIXED_DICT、链中未知键或断链 → null(不接管,不造键);替换范围 =
+   * 引号内片段精确区间(不含引号)。
+   */
+  private async provideFixedDictKeyCompletions(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    ctx: FixedDictSubscriptChainContext,
+    token?: vscode.CancellationToken
+  ): Promise<vscode.CompletionItem[] | null> {
+    const manager = this.entityMappingManager;
+    if (!manager || typeof manager.resolvePropertyDefinitionInfo !== 'function') {
+      return null;
+    }
+    const workspaceRoot = getWorkspaceRootForDocument(document);
+    if (!workspaceRoot) {
+      return null;
+    }
+    const openIndex = ctx.segments.length - 1;
+    const openSegment = ctx.segments[openIndex];
+    if (!openSegment || openSegment.kind !== 'key' || openSegment.keyEnd !== null) {
+      return null;
+    }
+    const documentLines = document.getText().split(/\r?\n/);
+    const rootTypeName = await fixedDictChainRootType(
+      ctx.receiver,
+      documentLines,
+      position.line,
+      async propertyName => {
+        if (token?.isCancellationRequested) {
+          return null;
+        }
+        const location = await manager.resolvePropertyDefinitionInfo(
+          document.fileName,
+          propertyName,
+          propertyName
+        );
+        return location?.typeName ?? null;
+      }
+    );
+    if (!rootTypeName || token?.isCancellationRequested) {
+      return null;
+    }
+    const customTypes = getEntityCustomTypesSnapshot(workspaceRoot);
+    const resolution = resolveFixedDictSubscriptKey(
+      rootTypeName,
+      ctx.segments.slice(0, openIndex),
+      '',
+      customTypes
+    );
+    if (!resolution || token?.isCancellationRequested) {
+      return null;
+    }
+    const range = new vscode.Range(position.line, ctx.replaceStart, position.line, position.character);
+    return resolution.container.properties.map(property => {
+      const item = new vscode.CompletionItem(property.name, vscode.CompletionItemKind.Field);
+      const annotation = resolveCustomTypePropertyAnnotation(property, customTypes);
+      const detailParts: string[] = [];
+      if (annotation && annotation !== PYTHON_TYPE_STUB_FALLBACK) {
+        detailParts.push(annotation);
+      }
+      detailParts.push(`${path.basename(resolution.container.filePath)}:${property.line}`);
+      item.detail = detailParts.join(' · ');
       item.range = range;
       return item;
     });
