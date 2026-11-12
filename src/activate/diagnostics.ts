@@ -49,6 +49,12 @@ import {
   fixedDictConstructFindingToItem,
   type FixedDictConstructDiagnosticItem
 } from '../backend/fixedDictConstructCheck';
+import {
+  SCALAR_ASSIGN_DIAGNOSTICS_ENABLED_DEFAULT,
+  analyzeScalarAssignWrites,
+  scalarAssignFindingToItem,
+  type ScalarAssignDiagnosticItem
+} from '../backend/scalarAssignCheck';
 import { cellScriptRoleAndEntity, collectCellDataDefUniverseWithCategory, fetchCellDataKeys, resolveCellDataDeclAnchor, type CellDataRelatedLocation } from '../backend/cellDataCompletion';
 import {
   cellDataKeyWorldOpen,
@@ -143,6 +149,10 @@ export interface DiagnosticsShared {
   cellDataWriteScheduler: DiagnosticScheduler;
   fixedDictConstructDiagnostics: vscode.DiagnosticCollection;
   fixedDictConstructScheduler: DiagnosticScheduler;
+  scheduleScalarAssignDiagnostics: ScheduleDiagnostics;
+  rescheduleScalarAssignForRegistryChange: () => void;
+  scalarAssignDiagnostics: vscode.DiagnosticCollection;
+  scalarAssignScheduler: DiagnosticScheduler;
   scheduleCellDataWrongKeyDiagnostics: ScheduleDiagnostics;
   cellDataWrongKeyDiagnostics: vscode.DiagnosticCollection;
   cellDataWrongKeyScheduler: DiagnosticScheduler;
@@ -1206,6 +1216,89 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     }
   };
 
+  // KSEM-STRUCT-05:def 属性标量赋值范围/结构校验。kbengine.scalarAssignDiagnostics
+  // 默认开;独立诊断集合 + 独立调度器(同 C-19/cellData/STRUCT-04 族范式)。
+  const scalarAssignDiagnostics = vscode.languages.createDiagnosticCollection(
+    'kbengine-scalar-assign'
+  );
+  context.subscriptions.push(scalarAssignDiagnostics);
+  const scalarAssignScheduler = new DiagnosticScheduler();
+  const scheduleScalarAssignDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    if (!isPythonDocument(document)) {
+      return;
+    }
+    const capturedVersion = document.version;
+    const options = {
+      layer: 'local' as const,
+      computeAsync: async (): Promise<readonly ScalarAssignDiagnosticItem[] | null> => {
+        if (document.version !== capturedVersion) {
+          return [];
+        }
+        const enabled = vscode.workspace.getConfiguration('kbengine')
+          .get<boolean>('scalarAssignDiagnostics', SCALAR_ASSIGN_DIAGNOSTICS_ENABLED_DEFAULT);
+        if (!enabled) {
+          return [];
+        }
+        const workspaceRoot = getWorkspaceRootForDocument(document) ?? '';
+        const customTypes = getEntityCustomTypesSnapshot(workspaceRoot);
+        if (customTypes.length === 0) {
+          return []; // types.xml 不可解析:注册表空,不造诊断
+        }
+        const findings = await analyzeScalarAssignWrites(
+          document.getText(),
+          async propertyName => {
+            const info = await entityMappingManager.resolvePropertyDefinitionInfo(
+              document.uri.fsPath,
+              propertyName,
+              propertyName
+            );
+            if (!info?.typeName) {
+              return null;
+            }
+            const base = info.defFile.split(/[\\/]/).pop() ?? info.defFile;
+            const source = info.line > 0 ? `${base}:${info.line}` : base;
+            return { typeName: info.typeName, source };
+          },
+          customTypes
+        );
+        return findings.map(scalarAssignFindingToItem);
+      },
+      publish: (items: readonly ScalarAssignDiagnosticItem[]) => {
+        scalarAssignDiagnostics.set(document.uri, items.map(item => {
+          const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(
+              item.range.start.line, item.range.start.character,
+              item.range.end.line, item.range.end.character
+            ),
+            item.message,
+            vscode.DiagnosticSeverity.Warning
+          );
+          diagnostic.source = item.source;
+          diagnostic.code = item.code;
+          return diagnostic;
+        }));
+      }
+    };
+    if (channel === 'queued') {
+      scalarAssignScheduler.requestQueued(document, options);
+    } else {
+      scalarAssignScheduler.request(document, options);
+    }
+  };
+
+  /** 类型注册表(types.xml/alias.xml)变更:标量赋值输入变,重排全部已打开 python 文档。 */
+  const rescheduleScalarAssignForRegistryChange = (): void => {
+    scalarAssignScheduler.invalidateAll();
+    for (const doc of vscode.workspace.textDocuments) {
+      if (isPythonDocument(doc)) {
+        scheduleScalarAssignDiagnostics(doc, 'queued');
+      }
+    }
+  };
+
   // KSEM-CELL-10:cellData 错键提示。键宇宙与 CELL-08 同源(Rust cellDataKeys),
   // 判据用 CELL-09 的键跟踪事实:裸下标读已证 absent 且世界封闭 → 确定性缺失;
   // 世界开放(动态键写/update/setdefault)或 .get 形态 → 只给低置信建议(get
@@ -1372,6 +1465,7 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     cellDataWrongKeyScheduler.invalidateAll();
     cellDataCallbackScheduler.invalidateAll();
     fixedDictConstructScheduler.invalidateAll(); // KSEM-STRUCT-04:def 属性类型也是 FD 构造输入
+    scalarAssignScheduler.invalidateAll(); // KSEM-STRUCT-05:def 属性 <Type> 也是标量赋值输入
     for (const document of vscode.workspace.textDocuments) {
       if (document.uri.toString() === defDocument.uri.toString()) {
         continue; // def 自身不是 cellData 消费面(它是键宇宙输入)
@@ -1398,6 +1492,7 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         continue;
       }
       scheduleFixedDictConstructDiagnostics(document, 'queued');
+      scheduleScalarAssignDiagnostics(document, 'queued');
     }
   };
 
@@ -1597,6 +1692,8 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     scheduleCellDataWriteDiagnostics,
     scheduleFixedDictConstructDiagnostics,
     rescheduleFixedDictConstructForRegistryChange,
+    scheduleScalarAssignDiagnostics,
+    rescheduleScalarAssignForRegistryChange,
     scheduleProcessTopologyDiagnostics,
     defMethodConsistencyDiagnostics,
     defMethodConsistencyScheduler,
@@ -1614,6 +1711,8 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     cellDataWriteScheduler,
     fixedDictConstructDiagnostics,
     fixedDictConstructScheduler,
+    scalarAssignDiagnostics,
+    scalarAssignScheduler,
     scheduleCellDataWrongKeyDiagnostics,
     cellDataWrongKeyDiagnostics,
     cellDataWrongKeyScheduler,

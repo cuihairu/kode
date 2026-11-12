@@ -565,3 +565,30 @@ export function judgeCellDataValueStructure(
   }
   return { ok: false, actual: verdict.actual };
 }
+
+// ---- KSEM-STRUCT-05 复用面(同一引擎标量真源,不复制表) ----
+
+/** STRUCT-05 标量赋值裁定结果:范围面在此不豁免。 */
+export interface CellDataValueVerdict {
+  reason: 'structure' | 'range';
+  /** 实际值类文案。 */
+  actual: string;
+  /** range 面:涉事整数字面量文本。 */
+  valueText?: string;
+}
+
+/**
+ * 全量裁定(STRUCT-05 def 属性/FD 字段/数组元素标量赋值复用):非标量类型或
+ * 整段推不出 → null(不裁定);结构或范围错配 → 错配面。与
+ * judgeCellDataValueStructure 同一 SCALAR_FAMILIES,仅范围面不豁免。
+ */
+export function judgeCellDataValueWithRange(
+  literal: CellDataValueLiteral,
+  typeLabel: string
+): CellDataValueVerdict | null {
+  const family = SCALAR_FAMILIES.get(typeLabel);
+  if (!family) {
+    return null;
+  }
+  return checkWriteAgainstFamily(literal, family);
+}

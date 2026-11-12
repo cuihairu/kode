@@ -347,6 +347,14 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     quickFix: false, status: 'implemented',
     source: 'src/backend/fixedDictConstructCheck.ts(发布 src/activate/diagnostics.ts)'
   },
+  {
+    id: 'KBE-PY-022', code: 'kbengine.scalarAssign',
+    title: 'def 属性标量赋值校验(结构错配/整数值越引擎标量范围)',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.scalarAssignDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/backend/scalarAssignCheck.ts(发布 src/activate/diagnostics.ts)'
+  },
   // ── KB-001 行为知识流水线(C-23,数据源=src/knowledge/trapsKnowledge.ts)
   {
     id: 'KBE-PY-015', code: 'kbengine.fixedDictNestedMutation',

@@ -210,6 +210,8 @@ describe('extension activate 装配', () => {
     // KSEM-CELL-08 cellData 已知字段写入类型诊断集再一份(kbengine-celldata-write);
     // KSEM-STRUCT-04 FD 构造点诊断集再一份(kbengine-fixeddict-construct,注册点
     // 紧随 kbengine-celldata-write——集合创建序即注册表序,消费方按序取集合);
+    // KSEM-STRUCT-05 标量赋值诊断集再一份(kbengine-scalar-assign,注册点紧随
+    // kbengine-fixeddict-construct——集合创建序即注册表序);
     // KSEM-CELL-10 cellData 错键诊断集再一份(kbengine-celldata-wrongkey);
     // C-23 行为知识三规则独立诊断集再一份(kbengine-trap-lints,注册点在
     // 全部既有集合之后——集合创建序即注册表序,消费方按序取集合)
@@ -223,6 +225,7 @@ describe('extension activate 装配', () => {
       'kbengine-post-destroy',
       'kbengine-celldata-write',
       'kbengine-fixeddict-construct',
+      'kbengine-scalar-assign',
       'kbengine-celldata-wrongkey',
       'kbengine-celldata-callback',
       'kbengine-process-topology',
