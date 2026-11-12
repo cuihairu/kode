@@ -75,7 +75,12 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
     const previousGate = getKodeCoreShadowGate();
     try {
       workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
-      configurationOverrides.set('kbengine', { binPath: '${workspaceFolder}/kbe/bin/server' });
+      configurationOverrides.set('kbengine', {
+        binPath: '${workspaceFolder}/kbe/bin/server',
+        // 默认 gui(2026-11-12 用户令)后激活尾令开可视化面板,本例验文本视图
+        // 自动打开路径,显式钉 text;默认视图本身在 extension.test.ts 验。
+        finalConfigView: 'text'
+      });
       const context = makeContext();
       activate(context);
       // KODE-CFG-009:合成读值经 core 解析(`$/kode/config/resolve`)——契约门
@@ -132,7 +137,11 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
   });
 
   it('手动命令:定位失败明示报错;autoRefreshFinalConfig=false 不挂 watcher', async () => {
-    configurationOverrides.set('kbengine', { autoRefreshFinalConfig: false });
+    configurationOverrides.set('kbengine', {
+      autoRefreshFinalConfig: false,
+      // 默认 gui 后 showFinal 开可视化面板;本例验文本视图定位失败提示路径
+      finalConfigView: 'text'
+    });
     // 批134 起 types.xml 反扫镜在激活期挂 def/types.xml/entities.xml 三个
     // watcher,lastFileSystemWatcher 不再能当"终配 watcher 是否存在"用;
     // 这里记录本激活创建的全部样式,直接断言 kbengine*.xml 不在列
@@ -178,7 +187,11 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
     };
     try {
       workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
-      configurationOverrides.set('kbengine', { binPath: '${workspaceFolder}/kbe/bin/server' });
+      configurationOverrides.set('kbengine', {
+        binPath: '${workspaceFolder}/kbe/bin/server',
+        // 默认 gui 后激活尾令开可视化面板;本例验文本视图(自动+手动聚焦)路径
+        finalConfigView: 'text'
+      });
       const context = makeContext();
       activate(context);
       // KODE-CFG-009:契约门替身在 activate 后装(auto 重试与手动命令都经

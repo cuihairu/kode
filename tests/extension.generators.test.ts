@@ -41,7 +41,7 @@ import {
   workspaceState,
   configurationOverrides
 } from './fake-vscode/workspaceState';
-import { panelRegistry } from './fake-vscode/panelRegistry';
+import { panelRegistry, type FakeWebviewPanel } from './fake-vscode/panelRegistry';
 import { fakeExtensionList } from './fake-vscode/extensionsState';
 import { tests as testsRegistry } from './fake-vscode/core';
 import { FakeComponentBin } from './sim/fakeComponentBin';
@@ -75,15 +75,19 @@ describe('extension activate 原始日志 ERROR 扫描装配(盘点 G6)', () => 
     try {
       activate(context);
 
-      // 对话框默认取消(fake 默认 undefined):不建面板
+      // 对话框默认取消(fake 默认 undefined):不建面板。
+      // 激活尾焰可能已按 finalConfigView 默认开出一枚配置可视化面板,故按
+      // viewType 判,不断言总条数(总条数会被默认视图设置影响)。
+      const scanPanels = (): FakeWebviewPanel[] =>
+        panelRegistry.panels.filter(panel => panel.viewType === 'kbengine.logErrorScan');
       await commands.executeCommand('kbengine.logs.scanErrors');
-      expect(panelRegistry.panels).toHaveLength(0);
+      expect(scanPanels()).toHaveLength(0);
 
       // 选中日志文件:扫出 ERROR 聚合面板
       windowish.showOpenDialog = async () => [Uri.file('/ws/logs/server.log')];
       await commands.executeCommand('kbengine.logs.scanErrors');
-      expect(panelRegistry.panels).toHaveLength(1);
-      const panel = panelRegistry.panels[0];
+      expect(scanPanels()).toHaveLength(1);
+      const panel = scanPanels()[0];
       expect(panel.viewType).toBe('kbengine.logErrorScan');
       expect(panel.webview.html).toContain('saveAvatar(N) failed: not found');
       expect(panel.webview.html).toContain('loadBalance failed');
@@ -103,7 +107,7 @@ describe('extension activate 原始日志 ERROR 扫描装配(盘点 G6)', () => 
       );
       panelRegistry.fireMessage(panel, { command: 'rescan' });
       await until(() => panel.webview.html.includes('disk full on volume N'));
-      expect(panelRegistry.panels).toHaveLength(1);
+      expect(scanPanels()).toHaveLength(1);
     } finally {
       windowish.showOpenDialog = originalShowOpenDialog;
       disposeAll(context);

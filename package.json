@@ -1604,9 +1604,16 @@
         },
         "kbengine.finalConfigView": {
           "type": "string",
-          "enum": ["gui", "text"],
+          "enum": [
+            "gui",
+            "text"
+          ],
           "default": "gui",
-          "markdownDescription": "%kbengine.config.finalConfigView.description%"
+          "markdownDescription": "%kbengine.config.finalConfigView.description%",
+          "markdownEnumDescriptions": [
+            "%kbengine.config.finalConfigView.enum.gui%",
+            "%kbengine.config.finalConfigView.enum.text%"
+          ]
         },
         "kbengine.autoRefreshFinalConfig": {
           "type": "boolean",
