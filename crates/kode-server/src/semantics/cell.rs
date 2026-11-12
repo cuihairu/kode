@@ -42,6 +42,18 @@ pub enum CellDataStatus {
     ScriptUnknown,
 }
 
+impl CellDataStatus {
+    /// RPC/显示面稳定字符串(契约面,消费方按此判型)。
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CellDataStatus::Ready => "ready",
+            CellDataStatus::NoCellPart => "no-cell-part",
+            CellDataStatus::CellScriptMissing => "cell-script-missing",
+            CellDataStatus::ScriptUnknown => "script-unknown",
+        }
+    }
+}
+
 /// 实体脚本可用面(调用方供工作区已知脚本集;引擎不重读盘)。
 pub trait ScriptUniverse {
     /// cell 部件脚本是否在(`scripts/cell/<Name>.py`,KR-AUD-74 布局)。
@@ -202,6 +214,31 @@ fn expand_component_cell(
     }
 }
 
+/// cellData 键来源面(补全/跳转消费:哪个面提供的键)。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum CellDataKeyKind {
+    /// def 字段(cell 域;含继承/接口展开来源)。
+    DefField,
+    /// 引擎内建键(CELL-02;position/direction)。
+    Builtin,
+    /// 组件槽(cellData[槽] 下再嵌字段,CELL-03)。
+    ComponentSlot,
+}
+
+/// cellData 键视图(键补全/跳转/类型消费面)。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CellDataKeyView {
+    pub key: String,
+    pub kind: CellDataKeyKind,
+    /// 类型显示文本(def 字段类型 / Vector3Like / 组件槽 None)。
+    pub type_label: Option<String>,
+    /// 跳转目标(def 声明 `{from}.def` / 引擎取证 / 组件声明 `{entity}.def`)。
+    pub source_file: Option<String>,
+    pub source_line: Option<usize>,
+}
+
 /// 有效 cellData 结构(def 字段面 + 引擎内建键面 + 组件槽展开面)。
 #[derive(Debug, Clone)]
 pub struct CellDataShape {
@@ -304,6 +341,40 @@ impl CellDataShape {
             component_cells,
             issues,
         }
+    }
+
+    /// 键宇宙视图(键补全/跳转消费面):def 字段 → 内建键 → 组件槽,
+    /// 各自声明序,确定性;来源面不混装(kind 区分)。
+    pub fn key_views(&self) -> Vec<CellDataKeyView> {
+        let mut views = Vec::new();
+        for f in &self.fields {
+            views.push(CellDataKeyView {
+                key: f.name.clone(),
+                kind: CellDataKeyKind::DefField,
+                type_label: Some(f.ty.display()),
+                source_file: Some(f.file.clone()),
+                source_line: f.line,
+            });
+        }
+        for b in &self.builtins {
+            views.push(CellDataKeyView {
+                key: b.name.to_string(),
+                kind: CellDataKeyKind::Builtin,
+                type_label: Some(b.shape.type_label().to_string()),
+                source_file: Some(b.source.to_string()),
+                source_line: None,
+            });
+        }
+        for c in &self.component_cells {
+            views.push(CellDataKeyView {
+                key: c.slot.clone(),
+                kind: CellDataKeyKind::ComponentSlot,
+                type_label: c.component_type.clone(),
+                source_file: Some(c.file.clone()),
+                source_line: c.line,
+            });
+        }
+        views
     }
 }
 

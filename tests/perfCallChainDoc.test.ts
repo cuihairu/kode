@@ -351,7 +351,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // 守卫 provider 前新增 receiverFromDiagnosticLine helper(区间归属提取)+
   // 提取块重写,+31 行,7007 后锚点随之 +31(真位重探 7038;其余 languageProviders
   // 锚点均在 helper 之前,不受影响;出处随 baseline 锁步)。
-  ['src/languageProviders/completion.ts', 699, 'provideCompletionItems('],
+  // 2026-11-12(KSEM-CELL-04):completion.ts 顶部 import +2(fs/findDefinitionFileByCategory)
+  // + cellDataCompletion import +1 + KBEngineCompletionProvider.provideCompletionItems
+  // 键位派发块(cellCtx 探测 + provideCellDataKeyCompletions 前插,299→301 起后文 +73)
+  // → PythonCompletionProvider.provideCompletionItems 699→772,出处随 baseline 锁步。
+  ['src/languageProviders/completion.ts', 772, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)

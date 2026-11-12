@@ -33,6 +33,7 @@ pub mod role_misuse;
 pub mod rpc;
 pub mod ruff_lint;
 pub mod semantics;
+pub mod semantics_rpc;
 pub mod server;
 pub mod space_nav;
 pub mod trap_lints;

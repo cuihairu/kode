@@ -1,10 +1,12 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { findFilesAcrossRoots } from '../scanRoots';
 import { EntityMappingManager } from '../entityMapping';
-import { getRegisteredCustomTypes, getRegisteredAliasTypes, getRegisteredEntities, getWorkspaceRootForDocument, resolveEntityAnnotationType } from '../definitionWorkspace';
+import { findDefinitionFileByCategory, getRegisteredCustomTypes, getRegisteredAliasTypes, getRegisteredEntities, getWorkspaceRootForDocument, resolveEntityAnnotationType } from '../definitionWorkspace';
 import { HOOK_CATEGORY_NAMES, KBENGINE_HOOKS } from '../hooks';
+import { cellDataKeyCompletionContext, cellScriptRoleAndEntity, collectCellDataDefUniverse, fetchCellDataKeys, type CellDataKeyCompletionContext } from '../backend/cellDataCompletion';
 import { KBENGINE_ENTRY_HOOKS, isComponentEntryScriptFile } from '../backend/entryHooks';
 import { DETAIL_LEVELS, KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, KBENGINE_TYPES } from '../backend/kbengineMetadata';
 import { formatEntityBuiltinPropertyDetail, getEntityBuiltinPropertiesForFace, hasKnownEntityBuiltinPropertyType, resolveEntityComponentFaceFromPath, type EntityComponentFace } from '../backend/entityBuiltinProperties';
@@ -302,6 +304,20 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     token?: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.CompletionItem[]> {
     if (token?.isCancellationRequested) return null;
+    // KSEM-CELL-04: cellData 字符串键位(`self.cellData["…"` / `.get("…"`)
+    // → Rust 键宇宙补全。键位上下文里 def 链成员补全无效,先于 Rust-first
+    // 判定接管;非实体脚本面(键补全返回 null)落回既有同步链——非键位
+    // 路径同步返回契约不变,既有消费方零感知。
+    const cellCtx = cellDataKeyCompletionContext(
+      [document.lineAt(position.line).text],
+      0,
+      position.character
+    );
+    if (cellCtx) {
+      return this.provideCellDataKeyCompletions(document, position, cellCtx, token).then(
+        items => (items !== null ? items : this.provideCompletionItemsSync(document, position, token))
+      );
+    }
     // 2026-11-08 用户令「直接切」:服务轨道下补全先走 Rust(语料文档)。Rust
     // 判定出上下文且有条目即 Rust 优先;空集(null 或 items=[])回 TS 既有链
     // (方法面 def 链与 TS 的 KBENGINE_HOOKS 语义不同,Rust 空集时让位,
@@ -466,6 +482,63 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     }
 
     return items;
+  }
+
+  /**
+   * cellData 键位补全(KSEM-CELL-04):实体 cell/base 脚本内字符串键位 →
+   * Rust 键宇宙(defField/builtin/componentSlot 三面,CELL-01/02/03 语义)。
+   * 诚实边界:非实体脚本面返回 null(不接管,不混入其他实体/角色);Rust
+   * 不可用/形状不合规 → [](键位不给任何项,与既有行为一致——原链对键位
+   * 文本本就无项);def 宇宙经 Parent/Interfaces/组件类型闭包供给,缺文件
+   * 缺席不猜。替换范围 = 引号内片段精确区间(不含引号)。
+   */
+  private async provideCellDataKeyCompletions(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    ctx: CellDataKeyCompletionContext,
+    token?: vscode.CancellationToken
+  ): Promise<vscode.CompletionItem[] | null> {
+    const role = cellScriptRoleAndEntity(document.fileName);
+    if (!role) {
+      return null; // client/bots/其他角色:不接管(cellData 面不可达)
+    }
+    const defs = collectCellDataDefUniverse(role.entity, (name, category) => {
+      const filePath = findDefinitionFileByCategory(name, category, document);
+      if (!filePath) {
+        return null;
+      }
+      try {
+        return fs.readFileSync(filePath, 'utf8');
+      } catch {
+        return null; // 读失败 = 缺席贡献,不猜
+      }
+    });
+    const keys = await fetchCellDataKeys(role.entity, defs);
+    if (token?.isCancellationRequested) {
+      return [];
+    }
+    if (!keys) {
+      return []; // Rust 不可用/畸形:键位不补全,绝不造键
+    }
+    const range = new vscode.Range(position.line, ctx.replaceStart, position.line, position.character);
+    return keys.map(entry => {
+      const item = new vscode.CompletionItem(
+        entry.key,
+        entry.kind === 'builtin' ? vscode.CompletionItemKind.Constant : vscode.CompletionItemKind.Field
+      );
+      const detailParts: string[] = [];
+      if (entry.typeLabel) {
+        detailParts.push(entry.typeLabel);
+      }
+      if (entry.sourceFile) {
+        detailParts.push(entry.sourceLine != null ? `${entry.sourceFile}:${entry.sourceLine}` : entry.sourceFile);
+      }
+      if (detailParts.length > 0) {
+        item.detail = detailParts.join(' · ');
+      }
+      item.range = range;
+      return item;
+    });
   }
 
   /**
