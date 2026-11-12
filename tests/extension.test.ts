@@ -207,6 +207,7 @@ describe('extension activate 装配', () => {
     // IDE-LINT-007 只读写入诊断集再一份(kbengine-readonly-write);
     // IDE-LINT-009 角色错用诊断集再一份(kbengine-role-misuse);
     // IDE-LINT-010 销毁后访问诊断集再一份(kbengine-post-destroy);
+    // KSEM-CELL-08 cellData 已知字段写入类型诊断集再一份(kbengine-celldata-write);
     // C-23 行为知识三规则独立诊断集再一份(kbengine-trap-lints,注册点在
     // 全部既有集合之后——集合创建序即注册表序,消费方按序取集合)
     expect(languagesRegistry.diagnosticCollections.map(entry => entry.name)).toEqual([
@@ -217,6 +218,7 @@ describe('extension activate 装配', () => {
       'kbengine-readonly-write',
       'kbengine-role-misuse',
       'kbengine-post-destroy',
+      'kbengine-celldata-write',
       'kbengine-process-topology',
       'KBEngine 临时编辑热更新',
       'kbengine-def-analysis',

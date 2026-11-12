@@ -644,5 +644,7 @@
   "kode-mcp not built (source in crates/kode-mcp); the extension does not host it, register it in an external MCP client": "kode-mcp 未构建(源码在 crates/kode-mcp);扩展不托管,需在外部 MCP 客户端注册",
   "Source connection test failed: {reason}": "源连接测试失败：{reason}",
   "Retry connection test": "重试连接测试",
-  "internal attribute": "内部属性"
+  "internal attribute": "内部属性",
+  "cellData[\"{key}\"] expects {expected} as declared in {source}; got {actual}": "cellData[\"{key}\"] 期望 {expected}（声明于 {source}），实际为 {actual}",
+  "cellData[\"{key}\"] value {value} is out of range for {expected} as declared in {source}": "cellData[\"{key}\"] 的值 {value} 超出 {expected}（声明于 {source}）的范围"
 }

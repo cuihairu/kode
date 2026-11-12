@@ -1377,6 +1377,11 @@
           "default": true,
           "markdownDescription": "%kbengine.config.postDestroyDiagnostics.description%"
         },
+        "kbengine.cellDataWriteDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.cellDataWriteDiagnostics.description%"
+        },
         "kbengine.fixedDictMutationDiagnostics": {
           "type": "boolean",
           "default": true,

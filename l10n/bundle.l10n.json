@@ -644,5 +644,7 @@
   "kode-mcp not built (source in crates/kode-mcp); the extension does not host it, register it in an external MCP client": "kode-mcp not built (source in crates/kode-mcp); the extension does not host it, register it in an external MCP client",
   "Source connection test failed: {reason}": "Source connection test failed: {reason}",
   "Retry connection test": "Retry connection test",
-  "internal attribute": "internal attribute"
+  "internal attribute": "internal attribute",
+  "cellData[\"{key}\"] expects {expected} as declared in {source}; got {actual}": "cellData[\"{key}\"] expects {expected} as declared in {source}; got {actual}",
+  "cellData[\"{key}\"] value {value} is out of range for {expected} as declared in {source}": "cellData[\"{key}\"] value {value} is out of range for {expected} as declared in {source}"
 }

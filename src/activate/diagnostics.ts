@@ -42,10 +42,12 @@ import { buildReadOnlyWriteItemsWithRust } from '../backend/readOnlyWriteRust';
 import { ROLE_MISUSE_DIAGNOSTICS_ENABLED_DEFAULT, roleMisuseDiagnosticItemsAsync, type RoleMisuseDiagnosticItem } from '../backend/roleMisuseDiagnostics';
 import { POST_DESTROY_DIAGNOSTICS_ENABLED_DEFAULT, postDestroyDiagnosticItemsAsync, type PostDestroyDiagnosticItem } from '../backend/postDestroyDiagnostics';
 import { buildPostDestroyItemsWithRust } from '../backend/postDestroyRust';
+import { CELL_DATA_WRITE_DIAGNOSTICS_ENABLED_DEFAULT, analyzeCellDataFieldWrites, cellDataWriteFindingToItem, type CellDataWriteDiagnosticItem } from '../backend/cellDataWriteCheck';
+import { cellScriptRoleAndEntity, collectCellDataDefUniverse, fetchCellDataKeys } from '../backend/cellDataCompletion';
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import { EntityMappingManager } from '../entityMapping';
 import { PythonClassIndex } from '../backend/pythonClassIndex';
-import { getWorkspaceRootForDocument } from '../definitionWorkspace';
+import { getWorkspaceRootForDocument, findDefinitionFileByCategory } from '../definitionWorkspace';
 import { getDefinitionWorkspaceLayout, listDefinitionFiles } from '../definitionWorkspace';
 import { readSharedFileSnapshot } from '../sharedFileSnapshot';
 import { isPythonMroJumpEnabled, validateDocument, validateEntitiesXmlDocument } from '../languageProviders';
@@ -99,6 +101,7 @@ export interface DiagnosticsShared {
   scheduleReadOnlyWriteDiagnostics: ScheduleDiagnostics;
   scheduleRoleMisuseDiagnostics: ScheduleDiagnostics;
   schedulePostDestroyDiagnostics: ScheduleDiagnostics;
+  scheduleCellDataWriteDiagnostics: ScheduleDiagnostics;
   scheduleProcessTopologyDiagnostics: ScheduleDiagnostics;
   defMethodConsistencyDiagnostics: vscode.DiagnosticCollection;
   defMethodConsistencyScheduler: DiagnosticScheduler;
@@ -112,6 +115,8 @@ export interface DiagnosticsShared {
   roleMisuseScheduler: DiagnosticScheduler;
   postDestroyDiagnostics: vscode.DiagnosticCollection;
   postDestroyScheduler: DiagnosticScheduler;
+  cellDataWriteDiagnostics: vscode.DiagnosticCollection;
+  cellDataWriteScheduler: DiagnosticScheduler;
   processTopologyDiagnostics: vscode.DiagnosticCollection;
   processTopologyScheduler: DiagnosticScheduler;
 }
@@ -996,6 +1001,78 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     }
   };
 
+  // KSEM-CELL-08:cellData 已知字段写入类型校验(独立集合,键宇宙与读型提示
+  // 同源 CELL-04)。已知键的字面量赋值按声明类型校验引擎标量结构(datatypes.cpp
+  // 注册表)与取值范围;RHS 整段字面量才判,未知键/非标量类型/推不出的值不猜;
+  // 别名接收者经 CELL-07 最近赋值核定,重绑定后不查(逃逸不影响写型)。
+  const cellDataWriteDiagnostics = vscode.languages.createDiagnosticCollection(
+    'kbengine-celldata-write'
+  );
+  context.subscriptions.push(cellDataWriteDiagnostics);
+  const cellDataWriteScheduler = new DiagnosticScheduler();
+  const scheduleCellDataWriteDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    if (!isPythonDocument(document)) {
+      return;
+    }
+    const capturedVersion = document.version;
+    const options = {
+      layer: 'local' as const,
+      computeAsync: async (): Promise<readonly CellDataWriteDiagnosticItem[] | null> => {
+        if (document.version !== capturedVersion) {
+          return [];
+        }
+        const enabled = vscode.workspace.getConfiguration('kbengine')
+          .get<boolean>('cellDataWriteDiagnostics', CELL_DATA_WRITE_DIAGNOSTICS_ENABLED_DEFAULT);
+        if (!enabled) {
+          return [];
+        }
+        const role = cellScriptRoleAndEntity(document.fileName);
+        if (!role) {
+          return []; // client/bots/其他角色:cellData 面不可达
+        }
+        const defs = collectCellDataDefUniverse(role.entity, (name, category) => {
+          const filePath = findDefinitionFileByCategory(name, category, document);
+          if (!filePath) {
+            return null;
+          }
+          try {
+            return fs.readFileSync(filePath, 'utf8');
+          } catch {
+            return null; // 读失败 = 缺席贡献,不猜
+          }
+        });
+        const entries = await fetchCellDataKeys(role.entity, defs);
+        if (!entries || entries.length === 0) {
+          return []; // Rust 不可用/畸形/实体缺:不造键,不出诊断
+        }
+        return analyzeCellDataFieldWrites(document.getText(), entries).map(cellDataWriteFindingToItem);
+      },
+      publish: (items: readonly CellDataWriteDiagnosticItem[]) => {
+        cellDataWriteDiagnostics.set(document.uri, items.map(item => {
+          const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(
+              item.range.start.line, item.range.start.character,
+              item.range.end.line, item.range.end.character
+            ),
+            item.message,
+            vscode.DiagnosticSeverity.Warning
+          );
+          diagnostic.source = item.source;
+          diagnostic.code = item.code;
+          return diagnostic;
+        }));
+      }
+    };
+    if (channel === 'queued') {
+      cellDataWriteScheduler.requestQueued(document, options);
+    } else {
+      cellDataWriteScheduler.request(document, options);
+    }
+  };
+
   // C-17:进程拓扑定义期错配预警(清单 process_topology.xml + defs → Rust 校验)。
   // 独立诊断集合 + 独立调度器(共享调度器每 URI 单排队槽,会顶掉 def 结构
   // 诊断任务,必独立,同 C-19 范式)。缺清单=静默零发现(零误报)。
@@ -1189,6 +1266,7 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     scheduleReadOnlyWriteDiagnostics,
     scheduleRoleMisuseDiagnostics,
     schedulePostDestroyDiagnostics,
+    scheduleCellDataWriteDiagnostics,
     scheduleProcessTopologyDiagnostics,
     defMethodConsistencyDiagnostics,
     defMethodConsistencyScheduler,
@@ -1202,6 +1280,8 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     roleMisuseScheduler,
     postDestroyDiagnostics,
     postDestroyScheduler,
+    cellDataWriteDiagnostics,
+    cellDataWriteScheduler,
     processTopologyDiagnostics,
     processTopologyScheduler
   };

@@ -315,6 +315,14 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     quickFix: false, status: 'implemented',
     source: 'src/backend/postDestroyDiagnostics.ts'
   },
+  {
+    id: 'KBE-PY-018', code: 'kbengine.cellDataWriteType',
+    title: 'cellData 已知字段写入类型校验(结构与引擎标量范围)',
+    severity: 'Warning', roles: 'cell',
+    toggles: ['kbengine.cellDataWriteDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/backend/cellDataWriteCheck.ts'
+  },
   // ── KB-001 行为知识流水线(C-23,数据源=src/knowledge/trapsKnowledge.ts)
   {
     id: 'KBE-PY-015', code: 'kbengine.fixedDictNestedMutation',

@@ -268,6 +268,7 @@ export function activate(context: vscode.ExtensionContext) {
     scheduleReadOnlyWriteDiagnostics,
     scheduleRoleMisuseDiagnostics,
     schedulePostDestroyDiagnostics,
+    scheduleCellDataWriteDiagnostics,
     scheduleProcessTopologyDiagnostics,
     defMethodConsistencyDiagnostics,
     defMethodConsistencyScheduler,
@@ -281,6 +282,8 @@ export function activate(context: vscode.ExtensionContext) {
     roleMisuseScheduler,
     postDestroyDiagnostics,
     postDestroyScheduler,
+    cellDataWriteDiagnostics,
+    cellDataWriteScheduler,
     processTopologyDiagnostics,
     processTopologyScheduler
   } = activateDiagnostics({
@@ -340,6 +343,8 @@ export function activate(context: vscode.ExtensionContext) {
       scheduleRoleMisuseDiagnostics(document, 'immediate');
       // IDE-LINT-010:打开 python 文件即排销毁后访问诊断
       schedulePostDestroyDiagnostics(document, 'immediate');
+      // KSEM-CELL-08:打开 python 文件即排 cellData 写入类型诊断
+      scheduleCellDataWriteDiagnostics(document, 'immediate');
     }));
     const closeWatcher = vscode.workspace.onDidCloseTextDocument(document => {
       releaseDocument(document);
@@ -365,6 +370,9 @@ export function activate(context: vscode.ExtensionContext) {
       // IDE-LINT-010:销毁后访问诊断随文档生命周期(关闭即摘除)。
       postDestroyDiagnostics.delete(document.uri);
       postDestroyScheduler.releaseDocument(document);
+      // KSEM-CELL-08:cellData 写入类型诊断随文档生命周期(关闭即摘除)。
+      cellDataWriteDiagnostics.delete(document.uri);
+      cellDataWriteScheduler.releaseDocument(document);
       // E-4:撤 Rust 侧镜像 overlay 与版本账(连续开合不积累)
       shadowReleaseCorpusDocument(document);
       // IDE-HOV-011:弃当前文件注解桶(未保存修改随关闭消失,回磁盘口径)
@@ -427,6 +435,8 @@ export function activate(context: vscode.ExtensionContext) {
         scheduleRoleMisuseDiagnostics(event.document, 'queued');
         // IDE-LINT-010:python 改动 → 重排本文件的销毁后访问诊断
         schedulePostDestroyDiagnostics(event.document, 'queued');
+        // KSEM-CELL-08:python 改动 → 重排本文件的 cellData 写入类型诊断
+        scheduleCellDataWriteDiagnostics(event.document, 'queued');
         const owningDefFile = entityMappingManager.getDefFileForPythonFile(
           event.document.uri.fsPath
         );
@@ -724,6 +734,10 @@ export function activate(context: vscode.ExtensionContext) {
       postDestroyScheduler.setEnabled(enabled, () =>
         postDestroyDiagnostics.clear()
       );
+      // KSEM-CELL-08:主开关同闸 cellData 写入类型管线(关→清集合,开→强制重算)
+      cellDataWriteScheduler.setEnabled(enabled, () =>
+        cellDataWriteDiagnostics.clear()
+      );
     }
     const diagnosticsInputsChanged =
       event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
@@ -735,6 +749,7 @@ export function activate(context: vscode.ExtensionContext) {
       event.affectsConfiguration('kbengine.readOnlyWriteDiagnostics') ||
       event.affectsConfiguration('kbengine.roleMisuseDiagnostics') ||
       event.affectsConfiguration('kbengine.postDestroyDiagnostics') ||
+      event.affectsConfiguration('kbengine.cellDataWriteDiagnostics') ||
       event.affectsConfiguration('kbengine.startupScriptDiagnostics');
     // C-19:def↔Python 一致性两开关 + 骨架体配置,任一变更即重算已开文档。
     const defMethodConsistencyInputsChanged =
@@ -808,6 +823,10 @@ export function activate(context: vscode.ExtensionContext) {
           // IDE-LINT-010:销毁后访问开关变更 → 立即重算已开 python 文档
           if (event.affectsConfiguration('kbengine.postDestroyDiagnostics')) {
             schedulePostDestroyDiagnostics(doc, 'immediate');
+          }
+          // KSEM-CELL-08:cellData 写入类型开关变更 → 立即重算已开 python 文档
+          if (event.affectsConfiguration('kbengine.cellDataWriteDiagnostics')) {
+            scheduleCellDataWriteDiagnostics(doc, 'immediate');
           }
         } else if (isStartupScriptDocument(doc)) {
           // KBEXP-1:启动脚本诊断开关变更 → 立即重算已开启动脚本(compute
