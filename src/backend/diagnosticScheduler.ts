@@ -268,7 +268,16 @@ export class DiagnosticScheduler {
       let sliced = false;
       let roundStart = performance.now();
       for (let index = 0; index < batch.length; index += 1) {
-        this.processQueuedEntry(batch[index]);
+        try {
+          this.processQueuedEntry(batch[index]);
+        } catch {
+          // 排队面同步 compute 抛错:调用方 (extension.ts `void flushQueued()`)
+          // 无 catch 面——重抛成 UnhandledPromiseRejection,且剩余批次任务
+          // 全丢、drainingCount 卡死;与 KR-AUD-04 异步面同口径:记 errored、
+          // 吞掉不重抛,本条目之后的条目照常处理(互不连坐)。
+          // (request() 直接同步路径的既有传播语义不受影响,由该入口自持)
+          this.stats.errored += 1;
+        }
         this.drainingCount -= 1;
         if (index === batch.length - 1) {
           break;

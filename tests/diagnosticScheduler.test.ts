@@ -857,4 +857,41 @@ describe('KR-AUD-04(DIA-1)computeAsync 失败路径:无 unhandled rejection,错�
     // 同步抛错不记异步失败计数(errored 只面向 computeAsync 失败面)
     expect(scheduler.getStats().errored).toBe(0);
   });
+
+  it('flushQueued 同步 compute 抛错:不悬挂/批次余任务照常处理/errored 计数', async () => {
+    const scheduler = new DiagnosticScheduler();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => { unhandled.push(reason); };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const docA = { uri: { toString: () => 'file:///q/a.py' }, version: 1 };
+      const docB = { uri: { toString: () => 'file:///q/b.py' }, version: 1 };
+      const publishedB: number[][] = [];
+      const boom = new Error('sync compute boom');
+      // 条目 A 同步抛错,条目 B 正常:A 失败不得连坐 B,不得成 unhandled rejection
+      scheduler.requestQueued(docA, {
+        layer: 'local',
+        compute: () => { throw boom; },
+        publish: () => undefined
+      });
+      scheduler.requestQueued(docB, {
+        layer: 'local',
+        compute: () => [7],
+        publish: items => publishedB.push([...items])
+      });
+      await scheduler.flushQueued();
+      await scheduler.pendingComputations();
+      for (let i = 0; i < 3; i += 1) {
+        await new Promise<void>(resolve => { setImmediate(resolve); });
+      }
+      expect(unhandled).toEqual([]);
+      const stats = scheduler.getStats();
+      expect(stats.errored).toBe(1);
+      expect(stats.computed).toBe(1);
+      expect(publishedB).toEqual([[7]]);
+      expect(scheduler.hasQueuedTasks()).toBe(false);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
 });
