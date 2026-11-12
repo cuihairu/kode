@@ -9,7 +9,11 @@
  *    scripts/client/<Name>.py;类名必须与实体名逐字一致(无 Cell/Base 后缀)。
  *  - base/cell 段类继承 KBEngine.Entity,__init__ 先 KBEngine.Entity.__init__(self)。
  *  - onTimer(id, userArg) 是脚本钩子(配合 addTimer),不是 def 方法——绝不写进 def。
- *  - onWriteToDB(self, cellData) 是 base 段钩子,cellData 即「cell 数据字典」约定。
+ *  - onWriteToDB(self, cellData) 是 base 段钩子;参数是引擎内部快照 dict
+ *    (cellDataDict_,最后一次备份回写或默认值,非 self.cellData 属性),
+ *    入库前最后变更点(改写字段直接进紧随其后的序列化)。
+ *  - cellapp 侧同名回调是 0 参(引擎对同名回调按进程分发不同实参),本向导
+ *    只在 base 段生成该钩子,天然避开双签名陷阱(勿手工加进 cell 段)。
  *  - def 属性 Flags 决定可见段位(BASE/CELL_PUBLIC/ALL_CLIENTS 等);Persistent=false
  *    即 TEMP 属性(不持久化)。
  *  - ARRAY 内联:<Type> ARRAY <of> 元素类型 </of> </Type>;FIXED_DICT 只能引用
@@ -232,12 +236,15 @@ export function buildEntityPartPythonContent(
   lines.push('');
 
   if (part === 'base') {
-    // base 段:onWriteToDB(self, cellData) —— cellData 即「cell 数据字典」约定
+    // base 段:onWriteToDB(self, cellData) —— 参数是引擎内部快照 dict(非
+    // self.cellData 属性,属性在 onGetCell 后已删);cellapp 同名回调 0 参,
+    // 勿把本钩子手工加进 cell 段。
     lines.push('\tdef onWriteToDB(self, cellData):');
     lines.push('\t\t"""');
     lines.push('\t\tKBEngine method.');
-    lines.push('\t\t将 cell 数据持久化到数据库时调用, cellData 为需要保存的 cell 数据字典。');
-    lines.push('\t\t如需过滤字段, 修改 cellData 后按默认逻辑落库。');
+    lines.push('\t\t入库前最后变更点: cellData 是引擎内部快照 dict (最后一次备份');
+    lines.push('\t\t回写或默认值, 不是 self.cellData 属性), 此处修改直接进序列化。');
+    lines.push('\t\t仅当脚本无 cell 面时为 None; 循环内调用 writeToDB 会无限递归。');
     lines.push('\t\t"""');
     lines.push('\t\tpass');
     lines.push('');

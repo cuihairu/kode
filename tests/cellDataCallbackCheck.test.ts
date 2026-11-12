@@ -3,7 +3,8 @@ import {
   CELL_DATA_CALLBACK_CODE,
   CELL_DATA_CALLBACK_DIAGNOSTICS_ENABLED_DEFAULT,
   cellDataCallbackFindingToItem,
-  cellDataCallbackFindings
+  cellDataCallbackFindings,
+  cellDataProvenStateAtLine
 } from '../src/backend/cellDataCallbackCheck';
 
 const wrap = (body: string): string =>
@@ -135,5 +136,74 @@ describe('cellDataCallbackFindings (KSEM-CELL-12)', () => {
 
   it('keeps the toggle default on, matching the CELL-08/10 convention', () => {
     expect(CELL_DATA_CALLBACK_DIAGNOSTICS_ENABLED_DEFAULT).toBe(true);
+  });
+});
+
+describe('cellDataProvenStateAtLine (KSEM-CELL-14 hover face)', () => {
+  it('reports the absent engine state on the first body line of onGetCell', () => {
+    const text = wrap('v = self.cellData["level"]');
+    // wrap: 0=class, 1=def, body starts at 2; 状态 = 处理完 [1, 2)(仅 def 行)后
+    expect(cellDataProvenStateAtLine(text, 2)).toEqual({ inWindow: true, state: 'absent' });
+  });
+
+  it('reports present after an in-method store on an earlier line', () => {
+    const text = wrap('self.cellData = {}\nlevel = self.cellData["level"]');
+    expect(cellDataProvenStateAtLine(text, 3)).toEqual({ inWindow: true, state: 'present' });
+  });
+
+  it('reports absent again after store-then-del', () => {
+    const text = wrap('self.cellData = {}\ndel self.cellData\nv = self.cellData["x"]');
+    expect(cellDataProvenStateAtLine(text, 4)).toEqual({ inWindow: true, state: 'absent' });
+  });
+
+  it('gives the same verdict the diagnostics face reports at that line', () => {
+    // 与 CELL-12 诊断面互证:每个报点位置 proven 态必为 absent(读取见已删属性)
+    const text = wrap('v = self.cellData["a"]\nw = self.cellData["b"]');
+    const findings = cellDataCallbackFindings(text);
+    expect(findings.map(f => f.line)).toEqual([2, 3]);
+    for (const finding of findings) {
+      expect(cellDataProvenStateAtLine(text, finding.line)).toEqual({ inWindow: true, state: 'absent' });
+    }
+  });
+
+  it('stays outside the window for other methods in the same file', () => {
+    const text = [
+      'class Avatar:',
+      '    def onGetCell(self):',
+      '        pass',
+      '',
+      '    def onLoseCell(self):',
+      '        v = self.cellData',
+      ''
+    ].join('\n');
+    expect(cellDataProvenStateAtLine(text, 5)).toEqual({ inWindow: false, state: null });
+  });
+
+  it('returns out-of-window for files without any onGetCell', () => {
+    const text = ['class Avatar:', '    def anyMethod(self):', '        pass', ''].join('\n');
+    expect(cellDataProvenStateAtLine(text, 2)).toEqual({ inWindow: false, state: null });
+  });
+
+  it('picks the window of the class the queried line belongs to', () => {
+    const text = [
+      'class A:',
+      '    def onGetCell(self):',
+      '        pass',
+      '',
+      'class B:',
+      '    def onGetCell(self):',
+      '        self.cellData = {}',
+      '        v = self.cellData["x"]',
+      ''
+    ].join('\n');
+    // A 体(2 行)仍处引擎删除态;B 体先存后读 → present
+    expect(cellDataProvenStateAtLine(text, 2)).toEqual({ inWindow: true, state: 'absent' });
+    expect(cellDataProvenStateAtLine(text, 7)).toEqual({ inWindow: true, state: 'present' });
+  });
+
+  it('treats a line past the method end as out of window (indent close)', () => {
+    const text = wrap('v = self.cellData["x"]');
+    // wrap 末尾补一空行后整体 4 行;无第 5 行 → 越界同样窗口外
+    expect(cellDataProvenStateAtLine(text, 4)).toEqual({ inWindow: false, state: null });
   });
 });

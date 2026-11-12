@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { cellDataWrongKeyFindings } from '../src/backend/cellDataWrongKey';
+import {
+  cellDataWrongKeyFindings,
+  cellDataWrongKeyFindingToItem
+} from '../src/backend/cellDataWrongKey';
 import {
   trackCellDataKeys,
   cellDataKeyWorldOpen
 } from '../src/backend/cellDataKeyTracking';
+import { resolveCellDataDeclAnchor, type CellDataDefSourceWithCategory } from '../src/backend/cellDataCompletion';
 import type { CellDataKeyEntry } from '../src/backend/cellDataCompletion';
 
 // KSEM-CELL-10 错键提示判据面。三条验收各一条断言:
@@ -43,7 +47,10 @@ describe('cellDataWrongKeyFindings(封闭世界)', () => {
     expect(findings[0]?.candidate).toBe('hp');
     expect(findings[0]?.message).toContain('不存在于该实体已声明的字段');
     expect(findings[0]?.message).toContain('最接近的声明键是「hp」');
-    expect(findings[0]?.message).toContain('Avatar.def:5');
+    // sourceLine 是 1 基人读行号(Rust LineMap::line_of `lo+1`),原样展示;
+    // 旧码 `+1` 错位显示,CELL-14 顺修(消息与关联跳转同源一致)
+    expect(findings[0]?.message).toContain('Avatar.def:4');
+    expect(findings[0]?.candidateFile).toBe('Avatar.def');
   });
 
   it('未知键无候选 → 仍确定性缺失,不给建议', () => {
@@ -154,5 +161,58 @@ describe('事实面消费契约', () => {
     );
     expect(fact?.presence).toBe('absent');
     expect(fact?.keyClass).toBe('unknown');
+  });
+});
+
+describe('声明锚点关联跳转(KSEM-CELL-14)', () => {
+  const defs: CellDataDefSourceWithCategory[] = [
+    { name: 'Avatar', category: 'entity', text: '<root/>' },
+    { name: 'Combat', category: 'interface', text: '<root/>' }
+  ];
+
+  it('finding 带候选声明文件名,与 sourceSegment 同源', () => {
+    const text = wrap('        v = self.cellData["hpe"]');
+    const [finding] = cellDataWrongKeyFindings(trackCellDataKeys(text, UNIVERSE), UNIVERSE, false);
+    expect(finding?.candidateFile).toBe('Avatar.def');
+    expect(finding?.candidateLine).toBe(4);
+  });
+
+  it('item.related 由装配面解析后携带(文件/0 基行/标签)', () => {
+    const text = wrap('        v = self.cellData["hpe"]');
+    const [finding] = cellDataWrongKeyFindings(trackCellDataKeys(text, UNIVERSE), UNIVERSE, false);
+    const anchor = resolveCellDataDeclAnchor(
+      finding?.candidateFile ?? null,
+      defs,
+      (name, category) => (name === 'Avatar' && category === 'entity' ? '/w/scripts/Avatar.def' : null)
+    );
+    const item = cellDataWrongKeyFindingToItem(finding!, anchor && {
+      file: anchor.file,
+      line: Math.max(0, (finding?.candidateLine ?? 1) - 1),
+      label: `声明键 ${finding?.candidate} · Avatar.def:4`
+    });
+    expect(item.related?.file).toBe('/w/scripts/Avatar.def');
+    expect(item.related?.line).toBe(3); // 1 基 sourceLine 4 → 0 基 3
+    expect(item.related?.label).toContain('声明键 hp');
+  });
+
+  it('无 related 时 item 不带该字段(既有形状不变)', () => {
+    const text = wrap('        v = self.cellData["zzzzzzz"]');
+    const [finding] = cellDataWrongKeyFindings(trackCellDataKeys(text, UNIVERSE), UNIVERSE, false);
+    const item = cellDataWrongKeyFindingToItem(finding!);
+    expect(item.related).toBeUndefined();
+    expect(Object.keys(item)).not.toContain('related');
+  });
+
+  it('resolveCellDataDeclAnchor:def 锚解析/内建证据不造假跳转/未知名不猜', () => {
+    expect(resolveCellDataDeclAnchor('Avatar.def', defs, () => '/w/Avatar.def'))
+      .toEqual({ file: '/w/Avatar.def' });
+    // 内建键的引擎证据路径不是工作区文件
+    expect(resolveCellDataDeclAnchor('server/baseapp/entity.cpp:250', defs, () => '/w/x'))
+      .toBeNull();
+    expect(resolveCellDataDeclAnchor(null, defs, () => '/w/x')).toBeNull();
+    // 名字不在供给宇宙(类别未知)→ 不猜
+    expect(resolveCellDataDeclAnchor('Ghost.def', defs, () => '/w/x')).toBeNull();
+    // 宇宙有名但解析不出路径 → null
+    expect(resolveCellDataDeclAnchor('Combat.def', defs, () => null)).toBeNull();
   });
 });

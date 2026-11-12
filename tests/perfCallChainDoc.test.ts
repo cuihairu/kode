@@ -344,7 +344,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // (provideDefinitionTracedImpl 303→309)、cellData 键跳转面 +62
   // (层0 接收者段闸 711→773,首扫超时闸 817→879);completion.ts 顶部
   // import +3(provideCompletionItems 772→775),出处随 baseline 锁步。
-  ['src/languageProviders/hover.ts', 186, 'provideHover('],
+  // 2026-11-12(二,CELL-14):hover.ts 顶部 fs import +1、cellData 三行
+  // import +3、applyBehaviorNotes 后挂 cellData 生命周期注记块 +87,
+  // provideHover 真位重探 186→277,出处随 baseline 锁步。
+  ['src/languageProviders/hover.ts', 277, 'provideHover('],
   ['src/languageProviders/navigation.ts', 47, 'shadowCompareDefinition'],
   // 2026-11-09(flags 别名归一批):validation.ts 顶部加 FLAG_DOMAIN_ALIAS
   // import(+1 行),其后 validation.ts 三锚点真位重探 13→14/37→38/255→256,

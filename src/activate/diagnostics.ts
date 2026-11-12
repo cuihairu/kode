@@ -43,7 +43,7 @@ import { ROLE_MISUSE_DIAGNOSTICS_ENABLED_DEFAULT, roleMisuseDiagnosticItemsAsync
 import { POST_DESTROY_DIAGNOSTICS_ENABLED_DEFAULT, postDestroyDiagnosticItemsAsync, type PostDestroyDiagnosticItem } from '../backend/postDestroyDiagnostics';
 import { buildPostDestroyItemsWithRust } from '../backend/postDestroyRust';
 import { CELL_DATA_WRITE_DIAGNOSTICS_ENABLED_DEFAULT, analyzeCellDataFieldWrites, cellDataWriteFindingToItem, type CellDataWriteDiagnosticItem } from '../backend/cellDataWriteCheck';
-import { cellScriptRoleAndEntity, collectCellDataDefUniverse, fetchCellDataKeys } from '../backend/cellDataCompletion';
+import { cellScriptRoleAndEntity, collectCellDataDefUniverseWithCategory, fetchCellDataKeys, resolveCellDataDeclAnchor, type CellDataRelatedLocation } from '../backend/cellDataCompletion';
 import {
   cellDataKeyWorldOpen,
   trackCellDataKeys
@@ -1055,7 +1055,7 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         if (!role) {
           return []; // client/bots/其他角色:cellData 面不可达
         }
-        const defs = collectCellDataDefUniverse(role.entity, (name, category) => {
+        const defs = collectCellDataDefUniverseWithCategory(role.entity, (name, category) => {
           const filePath = findDefinitionFileByCategory(name, category, document);
           if (!filePath) {
             return null;
@@ -1070,7 +1070,21 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         if (!entries || entries.length === 0) {
           return []; // Rust 不可用/畸形/实体缺:不造键,不出诊断
         }
-        return analyzeCellDataFieldWrites(document.getText(), entries).map(cellDataWriteFindingToItem);
+        // KSEM-CELL-14:声明锚点关联跳转(仅 def 字段面;内建引擎证据路径
+        // 不是工作区文件,不造假跳转)。line 已转 0 基 vscode 口径。
+        return analyzeCellDataFieldWrites(document.getText(), entries).map(finding => {
+          const anchor = resolveCellDataDeclAnchor(finding.declaredFile, defs, (name, category) =>
+            findDefinitionFileByCategory(name, category, document));
+          const related: CellDataRelatedLocation | undefined =
+            anchor && finding.declaredLine != null
+              ? {
+                file: anchor.file,
+                line: Math.max(0, finding.declaredLine - 1),
+                label: `字段 ${finding.key} 声明 · ${finding.declaredFile}:${finding.declaredLine}`
+              }
+              : undefined;
+          return cellDataWriteFindingToItem(finding, related);
+        });
       },
       publish: (items: readonly CellDataWriteDiagnosticItem[]) => {
         cellDataWriteDiagnostics.set(document.uri, items.map(item => {
@@ -1084,6 +1098,17 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
           );
           diagnostic.source = item.source;
           diagnostic.code = item.code;
+          if (item.related) {
+            diagnostic.relatedInformation = [
+              new vscode.DiagnosticRelatedInformation(
+                new vscode.Location(
+                  vscode.Uri.file(item.related.file),
+                  new vscode.Range(item.related.line, 0, item.related.line, 0)
+                ),
+                item.related.label
+              )
+            ];
+          }
           return diagnostic;
         }));
       }
@@ -1127,7 +1152,7 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         if (!role) {
           return []; // client/bots/其他角色:cellData 面不可达
         }
-        const defs = collectCellDataDefUniverse(role.entity, (name, category) => {
+        const defs = collectCellDataDefUniverseWithCategory(role.entity, (name, category) => {
           const filePath = findDefinitionFileByCategory(name, category, document);
           if (!filePath) {
             return null;
@@ -1144,8 +1169,22 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         }
         const text = document.getText();
         const worldOpen = cellDataKeyWorldOpen(text);
+        // KSEM-CELL-14:候选声明锚点关联跳转(仅 def 字段面;内建证据路径
+        // 不是工作区文件,不造假跳转)。line 已转 0 基 vscode 口径。
         return cellDataWrongKeyFindings(trackCellDataKeys(text, entries), entries, worldOpen)
-          .map(cellDataWrongKeyFindingToItem);
+          .map(finding => {
+            const anchor = resolveCellDataDeclAnchor(finding.candidateFile, defs, (name, category) =>
+              findDefinitionFileByCategory(name, category, document));
+            const related: CellDataRelatedLocation | undefined =
+              anchor && finding.candidateLine != null
+                ? {
+                  file: anchor.file,
+                  line: Math.max(0, finding.candidateLine - 1),
+                  label: `声明键 ${finding.candidate} · ${finding.candidateFile}:${finding.candidateLine}`
+                }
+                : undefined;
+            return cellDataWrongKeyFindingToItem(finding, related);
+          });
       },
       publish: (items: readonly CellDataWrongKeyDiagnosticItem[]) => {
         cellDataWrongKeyDiagnostics.set(document.uri, items.map(item => {
@@ -1159,6 +1198,17 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
           );
           diagnostic.source = item.source;
           diagnostic.code = item.code;
+          if (item.related) {
+            diagnostic.relatedInformation = [
+              new vscode.DiagnosticRelatedInformation(
+                new vscode.Location(
+                  vscode.Uri.file(item.related.file),
+                  new vscode.Range(item.related.line, 0, item.related.line, 0)
+                ),
+                item.related.label
+              )
+            ];
+          }
           return diagnostic;
         }));
       }

@@ -33,7 +33,7 @@ import {
   scanCellDataKeyOperations,
   type CellDataKeyOperation
 } from './cellDataReadType';
-import type { CellDataKeyEntry } from './cellDataCompletion';
+import type { CellDataKeyEntry, CellDataRelatedLocation } from './cellDataCompletion';
 import { findLineCommentIndex } from './globalDataIndexCore';
 
 export const CELL_DATA_WRITE_TYPE_DIAGNOSTIC_CODE = 'kbengine.cellDataWriteType';
@@ -112,10 +112,16 @@ export interface CellDataWriteFinding {
   actual: string;
   /** 错配面:structure=结构不符;range=整数值越引擎标量范围。 */
   reason: 'structure' | 'range';
+  /** 键声明文件名(`{from}.def` / 内建证据路径;KSEM-CELL-14 关联跳转用)。 */
+  declaredFile: string | null;
+  /** 键声明行(Rust sourceLine,1 基人读行号;内建/缺 → null)。 */
+  declaredLine: number | null;
   message: string;
 }
 
-/** 诊断项(纯数据;extension 侧转 vscode.Diagnostic,测试免 vscode 依赖)。 */
+/** 诊断项(纯数据;extension 侧转 vscode.Diagnostic,测试免 vscode 依赖)。
+ * related=声明锚点(KSEM-CELL-14 关联跳转;装配面经 resolveCellDataDeclAnchor
+ * 解析后传入)。 */
 export interface CellDataWriteDiagnosticItem {
   range: {
     start: { line: number; character: number };
@@ -125,6 +131,7 @@ export interface CellDataWriteDiagnosticItem {
   severity: 'Warning';
   source: 'kbengine';
   code: string;
+  related?: CellDataRelatedLocation;
 }
 
 /** 字面量值类(RHS 整段恰为一个字面量时才有类;否则 unknown 不猜)。 */
@@ -475,6 +482,8 @@ export function analyzeCellDataFieldWrites(
       typeLabel: entry.typeLabel,
       actual: verdict.actual,
       reason: verdict.reason,
+      declaredFile: entry.sourceFile ?? null,
+      declaredLine: entry.sourceLine ?? null,
       message
     });
   }
@@ -507,7 +516,10 @@ function writeRhsLiteral(
 }
 
 /** finding → 诊断项(纯数据;extension 侧转 vscode.Diagnostic)。 */
-export function cellDataWriteFindingToItem(finding: CellDataWriteFinding): CellDataWriteDiagnosticItem {
+export function cellDataWriteFindingToItem(
+  finding: CellDataWriteFinding,
+  related?: CellDataRelatedLocation
+): CellDataWriteDiagnosticItem {
   return {
     range: {
       start: { line: finding.line, character: finding.character },
@@ -516,6 +528,7 @@ export function cellDataWriteFindingToItem(finding: CellDataWriteFinding): CellD
     message: finding.message,
     severity: 'Warning',
     source: 'kbengine',
-    code: CELL_DATA_WRITE_TYPE_DIAGNOSTIC_CODE
+    code: CELL_DATA_WRITE_TYPE_DIAGNOSTIC_CODE,
+    ...(related ? { related } : {})
   };
 }

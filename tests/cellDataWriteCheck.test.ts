@@ -365,4 +365,27 @@ describe('消息渲染与 finding → 诊断项', () => {
       code: CELL_DATA_WRITE_TYPE_DIAGNOSTIC_CODE
     });
   });
+
+  it('finding 携带声明锚点(文件/1 基行),内建键如实给 null', () => {
+    const entries = [entry('hp', 'UINT16'), entry('mobility', 'UINT8', { kind: 'builtin', sourceFile: 'typings/cell/KBEngine/_module.pyi', sourceLine: null })];
+    const text = wrap('self.cellData["hp"] = "x"', 'self.cellData["mobility"] = "x"');
+    const findings = analyzeCellDataFieldWrites(text, entries);
+    expect(findings[0].declaredFile).toBe('Avatar.def');
+    expect(findings[0].declaredLine).toBe(5);
+    expect(findings[1].declaredFile).toBe('typings/cell/KBEngine/_module.pyi');
+    expect(findings[1].declaredLine).toBeNull();
+  });
+
+  it('item.related 携带解析后的 0 基声明锚点(CELL-14 关联跳转)', () => {
+    const text = wrap('self.cellData["hp"] = "x"');
+    const [finding] = analyzeCellDataFieldWrites(text, BASIC_ENTRIES);
+    const item = cellDataWriteFindingToItem(finding, {
+      file: '/w/scripts/Avatar.def',
+      line: Math.max(0, (finding.declaredLine ?? 1) - 1),
+      label: `字段 hp 声明 · Avatar.def:5`
+    });
+    expect(item.related?.file).toBe('/w/scripts/Avatar.def');
+    expect(item.related?.line).toBe(4); // 1 基 5 → 0 基 4
+    expect(item.related?.label).toContain('字段 hp');
+  });
 });

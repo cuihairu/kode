@@ -110,10 +110,10 @@ function isDelStatement(maskedLine: string, tokenStart: number): boolean {
 }
 
 /** cellData 属性态:absent=引擎已删(onGetCell 入口即此态);present=脚本在本方法体内重建过。 */
-type AttrState = 'absent' | 'present';
+export type AttrState = 'absent' | 'present';
 
-/** onGetCell 中的 self.cellData 访问检查(纯函数)。 */
-export function cellDataCallbackFindings(text: string): CellDataCallbackFinding[] {
+/** onGetCell 方法跨度集(0 基 def 行;模块级同名函数不在 classes.methods 里,天然排除)。 */
+function onGetCellSpans(text: string): Array<{ line: number; character: number }> {
   const parsed = parsePythonFile(text, 'virtual.py');
   const spans: Array<{ line: number; character: number }> = [];
   for (const cls of parsed.classes) {
@@ -122,6 +122,55 @@ export function cellDataCallbackFindings(text: string): CellDataCallbackFinding[
       spans.push(loc);
     }
   }
+  return spans;
+}
+
+/**
+ * 两态流单行推进:对 masked 行内每个 `self.cellData` 访问按 存/del/读 分类,
+ * 更新状态;absent 态的 del/读经 onFinding 上报(存储不报)。行序从左到右。
+ */
+function advanceLine(
+  masked: string,
+  state: AttrState,
+  lineNo: number,
+  onFinding: ((finding: CellDataCallbackFinding) => void) | null
+): AttrState {
+  let next = state;
+  ACCESS_RE.lastIndex = 0;
+  let match = ACCESS_RE.exec(masked);
+  while (match) {
+    const tokenStart = match.index;
+    const tokenEnd = tokenStart + match[0].length;
+    if (isAttributeStore(masked, tokenEnd)) {
+      next = 'present';
+    } else if (isDelStatement(masked, tokenStart)) {
+      // 引擎依据写进文案:删除在回调前(cellapp/entity.cpp 同族结论不混用,
+      // 本面只谈 base 侧 onGetCell)。del 与读在 absent 态同抛 AttributeError。
+      if (next === 'absent' && onFinding) {
+        onFinding({
+          line: lineNo,
+          character: tokenStart,
+          length: match[0].length,
+          message: 'onGetCell 触发时 self.cellData 已被引擎删除(cell 建成即删属性,baseapp/entity.cpp:1024 在脚本回调 :1030 之前),此处 del 同样抛 AttributeError'
+        });
+      }
+      next = 'absent';
+    } else if (next === 'absent' && onFinding) {
+      onFinding({
+        line: lineNo,
+        character: tokenStart,
+        length: match[0].length,
+        message: 'onGetCell 触发时 self.cellData 已被引擎删除(cell 建成即删属性,baseapp/entity.cpp:1024 在脚本回调 :1030 之前),此处读取必然抛 AttributeError;需要的数据请在请求 cell 前存入 base 自有属性'
+      });
+    }
+    match = ACCESS_RE.exec(masked);
+  }
+  return next;
+}
+
+/** onGetCell 中的 self.cellData 访问检查(纯函数)。 */
+export function cellDataCallbackFindings(text: string): CellDataCallbackFinding[] {
+  const spans = onGetCellSpans(text);
   if (spans.length === 0) {
     return [];
   }
@@ -132,39 +181,44 @@ export function cellDataCallbackFindings(text: string): CellDataCallbackFinding[
     const body = methodBodySpan(maskedLines, span.line);
     let state: AttrState = 'absent';
     for (let lineNo = body.start; lineNo < body.end; lineNo += 1) {
-      const masked = maskedLines[lineNo];
-      ACCESS_RE.lastIndex = 0;
-      let match = ACCESS_RE.exec(masked);
-      while (match) {
-        const tokenStart = match.index;
-        const tokenEnd = tokenStart + match[0].length;
-        if (isAttributeStore(masked, tokenEnd)) {
-          state = 'present';
-        } else if (isDelStatement(masked, tokenStart)) {
-          // 引擎依据写进文案:删除在回调前(cellapp/entity.cpp 同族结论不混用,
-          // 本面只谈 base 侧 onGetCell)。del 与读在 absent 态同抛 AttributeError。
-          if (state === 'absent') {
-            findings.push({
-              line: lineNo,
-              character: tokenStart,
-              length: match[0].length,
-              message: 'onGetCell 触发时 self.cellData 已被引擎删除(cell 建成即删属性,baseapp/entity.cpp:1024 在脚本回调 :1030 之前),此处 del 同样抛 AttributeError'
-            });
-          }
-          state = 'absent';
-        } else if (state === 'absent') {
-          findings.push({
-            line: lineNo,
-            character: tokenStart,
-            length: match[0].length,
-            message: 'onGetCell 触发时 self.cellData 已被引擎删除(cell 建成即删属性,baseapp/entity.cpp:1024 在脚本回调 :1030 之前),此处读取必然抛 AttributeError;需要的数据请在请求 cell 前存入 base 自有属性'
-          });
-        }
-        match = ACCESS_RE.exec(masked);
-      }
+      state = advanceLine(maskedLines[lineNo], state, lineNo, finding => {
+        findings.push(finding);
+      });
     }
   }
   return findings;
+}
+
+/** CELL-14:hover 面——位置所在 onGetCell 窗口与进入该行前的两态流状态。 */
+export interface CellDataProvenWindow {
+  /** 位置是否落在某个 onGetCell 方法体内。 */
+  inWindow: boolean;
+  /** 窗口内:该行**首个访问**将见到的属性态(absent=引擎已删/present=已重建);窗口外 null。 */
+  state: AttrState | null;
+}
+
+/**
+ * 位置行 proven 状态(纯函数):状态 = 处理完 [方法体起点, 查询行) 后的属性态
+ * (同一行多个访问时 hover 给「该行第一个访问将见到」的态;窗口外不证)。
+ */
+export function cellDataProvenStateAtLine(text: string, line: number): CellDataProvenWindow {
+  const spans = onGetCellSpans(text);
+  if (spans.length === 0) {
+    return { inWindow: false, state: null };
+  }
+  const maskedLines = pythonCodeLines(text);
+  for (const span of spans) {
+    const body = methodBodySpan(maskedLines, span.line);
+    if (line < body.start || line >= body.end) {
+      continue;
+    }
+    let state: AttrState = 'absent';
+    for (let lineNo = body.start; lineNo < line; lineNo += 1) {
+      state = advanceLine(maskedLines[lineNo], state, lineNo, null);
+    }
+    return { inWindow: true, state };
+  }
+  return { inWindow: false, state: null };
 }
 
 /** 发现 → 诊断项(区间 = `self.cellData` 本体)。 */

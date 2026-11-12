@@ -25,7 +25,7 @@
  * text 经 trackCellDataKeys 转事实后进入本面,直接可测。
  */
 import type { CellDataKeyFact } from './cellDataKeyTracking';
-import type { CellDataKeyEntry } from './cellDataCompletion';
+import type { CellDataKeyEntry, CellDataRelatedLocation } from './cellDataCompletion';
 import type { CellDataKeyOperation } from './cellDataReadType';
 
 /** 本面产出的提示码(与 lintRuleRegistry 锁步)。 */
@@ -52,7 +52,9 @@ export interface CellDataWrongKeyFinding {
   candidate: string;
   /** 候选声明来源(有候选时给出,便于「跳去声明处」)。 */
   candidateSource: string;
-  /** 候选声明行(0 基;无 → null)。 */
+  /** 候选声明文件名(`{from}.def`;无 → null;KSEM-CELL-14 关联跳转解析用)。 */
+  candidateFile: string | null;
+  /** 候选声明行(Rust sourceLine,1 基人读行号;无 → null)。 */
   candidateLine: number | null;
   /** 是否带默认值的 get(消息里区分「不会因缺失抛错」)。 */
   hasDefault: boolean;
@@ -140,8 +142,11 @@ function sourceSegment(entry: CellDataKeyEntry): string {
   if (!file) {
     return '';
   }
+  // sourceLine 已是 1 基人读行号(kode-parser LineMap::line_of `lo+1`;
+  // CELL-05 跳转/补全 detail 同口径),原样展示。旧码 `+1` 是错位显示,
+  // KSEM-CELL-14 顺修(消息与关联跳转必须一致)。
   return entry.sourceLine !== null && entry.sourceLine !== undefined
-    ? `${file}:${entry.sourceLine + 1}`
+    ? `${file}:${entry.sourceLine}`
     : file;
 }
 
@@ -230,13 +235,15 @@ function makeFinding(
     kind,
     candidate: candidate?.key ?? '',
     candidateSource: source,
+    candidateFile: candidate?.sourceFile ?? null,
     candidateLine: candidate?.sourceLine ?? null,
     hasDefault,
     message: `${head}${candidatePart}${sourcePart}${defaultPart}`
   };
 }
 /** 诊断项(纯数据;extension 侧转 vscode.Diagnostic,测试免 vscode 依赖)。
- * 与 CELL-08 的 item 形状同形,便于共用装配面。 */
+ * 与 CELL-08 的 item 形状同形,便于共用装配面。related=声明锚点(KSEM-CELL-14
+ * 关联跳转;装配面经 resolveCellDataDeclAnchor 解析后传入)。 */
 export interface CellDataWrongKeyDiagnosticItem {
   range: {
     start: { line: number; character: number };
@@ -246,11 +253,13 @@ export interface CellDataWrongKeyDiagnosticItem {
   severity: 'Warning';
   source: 'kbengine';
   code: string;
+  related?: CellDataRelatedLocation;
 }
 
 /** 错键提示 → 诊断项(区间 = 键字面量本体,不含引号)。 */
 export function cellDataWrongKeyFindingToItem(
-  finding: CellDataWrongKeyFinding
+  finding: CellDataWrongKeyFinding,
+  related?: CellDataRelatedLocation
 ): CellDataWrongKeyDiagnosticItem {
   return {
     range: {
@@ -260,7 +269,8 @@ export function cellDataWrongKeyFindingToItem(
     message: finding.message,
     severity: 'Warning',
     source: 'kbengine',
-    code: CELL_DATA_WRONG_KEY_CODE
+    code: CELL_DATA_WRONG_KEY_CODE,
+    ...(related ? { related } : {})
   };
 }
 

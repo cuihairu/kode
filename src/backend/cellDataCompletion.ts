@@ -36,6 +36,36 @@ export interface CellDataKeyEntry {
   sourceLine?: number | null;
 }
 
+/** 诊断关联跳转面(KSEM-CELL-14):声明锚点解析产物(纯数据,publish 面
+ * 转 vscode.DiagnosticRelatedInformation)。file=绝对路径;line=0 基 vscode 行。 */
+export interface CellDataRelatedLocation {
+  file: string;
+  line: number;
+  label: string;
+}
+
+/**
+ * sourceFile 锚点解析(KSEM-CELL-14):`{from}.def` 名 → 宇宙内类别 → 真实
+ * 路径(pythonDefinition 的 cellData-key 跳转同口径)。内建键的引擎证据路径
+ * (server/baseapp/entity.cpp:250)与解析不出的名字 → null,不造假跳转。
+ */
+export function resolveCellDataDeclAnchor(
+  sourceFile: string | null | undefined,
+  defs: readonly CellDataDefSourceWithCategory[],
+  findDefFile: (name: string, category: 'entity' | 'interface' | 'component') => string | null
+): { file: string } | null {
+  if (!sourceFile || !sourceFile.endsWith('.def')) {
+    return null;
+  }
+  const fromName = sourceFile.replace(/\.def$/, '');
+  const sourceDef = defs.find(def => def.name === fromName);
+  if (!sourceDef) {
+    return null;
+  }
+  const targetPath = findDefFile(fromName, sourceDef.category);
+  return targetPath ? { file: targetPath } : null;
+}
+
 /** 键补全上下文(替换区间面)。 */
 export interface CellDataKeyCompletionContext {
   /** 已键入的键片段(可为空串:光标紧跟引号/`[`)。 */

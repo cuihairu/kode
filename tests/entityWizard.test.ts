@@ -126,6 +126,16 @@ describe('GEN-DEF-2 实体脚本(按引擎约定)', () => {
     expect(content).toContain('def onWriteToDB(self, cellData):');
   });
 
+  it('onWriteToDB 骨架注释点明快照语义而非属性可见性(CELL-13/14)', () => {
+    const content = buildEntityPartPythonContent(baseInput, 'base', '2026-01-01T00:00:00.000Z');
+    expect(content).toContain('引擎内部快照 dict');
+    expect(content).toContain('不是 self.cellData 属性');
+    expect(content).toContain('无限递归');
+    // 陷阱规避:骨架只在 base 段发 1 参钩子,cell 段绝不出现
+    const cell = buildEntityPartPythonContent(baseInput, 'cell', '2026-01-01T00:00:00.000Z');
+    expect(cell).not.toContain('onWriteToDB');
+  });
+
   it('cell 段有 onEnterWorld/onLeaveWorld,base 段没有', () => {
     const cell = buildEntityPartPythonContent(baseInput, 'cell', '2026-01-01T00:00:00.000Z');
     const base = buildEntityPartPythonContent(baseInput, 'base', '2026-01-01T00:00:00.000Z');

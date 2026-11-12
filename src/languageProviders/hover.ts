@@ -1,11 +1,12 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { documentEventCacheKey, findEventCallsCached } from '../eventApi';
 import { EntityMappingManager } from '../entityMapping';
 import { getDocumentLines } from '../backend/documentStore';
 import { getTypeStorageShape } from '../databaseSchema';
-import { getWorkspaceRootForDocument, resolveEntityAnnotationType, resolveEntityAnnotationTypeWithReason } from '../definitionWorkspace';
+import { getWorkspaceRootForDocument, findDefinitionFileByCategory, resolveEntityAnnotationType, resolveEntityAnnotationTypeWithReason } from '../definitionWorkspace';
 import { getHookByName } from '../hooks';
 import { getEntryHookByName, isComponentEntryScriptFile } from '../backend/entryHooks';
 import { DETAIL_LEVELS, KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, KBENGINE_TYPES } from '../backend/kbengineMetadata';
@@ -21,6 +22,9 @@ import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from '../backe
 import { behaviorEntriesForSymbol, behaviorNotesMarkdown, fixedDictBehaviorNoteMarkdown } from '../backend/behaviorKnowledge';
 import { isFixedDictTypeName } from '../backend/behaviorLints';
 import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonCallAtPosition, type PythonCallAtPosition } from '../backend/pythonLanguageUtils';
+import { cellScriptRoleAndEntity, collectCellDataDefUniverse, fetchCellDataKeys, type CellDataKeyEntry } from '../backend/cellDataCompletion';
+import { cellDataProvenStateAtLine } from '../backend/cellDataCallbackCheck';
+import { cellDataHoverMarkdown } from '../backend/cellDataHover';
 import { getKbeAliases, getKbeSymbol, resolveKbeAccessAtPosition } from '../kbeModuleIndex';
 import { pythonProcessFromPath } from '../backend/pythonProcess';
 import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, inferDataDictValueType, isKeyInsideLineComment, queryDataDictSitesForAccess, resolveScopeRoot } from '../globalDataIndex';
@@ -125,6 +129,93 @@ function applyBehaviorNotes(
   return new vscode.Hover(new vscode.MarkdownString(notes.replace(/^\n\n---\n\n/, '')));
 }
 
+/**
+ * KSEM-CELL-14:cellData 生命周期注记挂靠——光标落在 `self.cellData` 接收者
+ * token 上时,给「字段来源(def 键宇宙)/ 快照含义(base 快照 dict vs cellapp
+ * 不安装属性)/ 当前可证明状态(onGetCell 两态流)」双语段。复用 C-23 知识
+ * 呈现通道总闸(hoverBehaviorNotes):同为静态知识注记面,不另开开关;键宇宙
+ * RPC 按文档版本键缓存(同 typeInlayHints 口径,有界防膨胀)。
+ */
+const CELL_DATA_HOVER_KEYS_CACHE_MAX = 8;
+const cellDataHoverKeysCache = new Map<string, CellDataKeyEntry[] | null>();
+
+/** 同步探针:仅 `self.cellData` 单段接收者接管;命中才把结果链变异步。 */
+function cellDataLifecycleProbe(
+  document: vscode.TextDocument,
+  position: vscode.Position
+): { role: 'cell' | 'base'; entity: string } | null {
+  if (document.languageId !== 'python') {
+    return null;
+  }
+  if (!getLanguageFeatureConfig().hoverBehaviorNotes) {
+    return null;
+  }
+  const access = getPythonSelfAccessAtPosition(
+    document.lineAt(position.line).text,
+    position.character
+  );
+  if (!access || access.currentSymbol !== 'cellData' || access.fullPath !== 'cellData') {
+    return null;
+  }
+  return cellScriptRoleAndEntity(document.fileName);
+}
+
+async function attachCellDataLifecycleNote(
+  hover: vscode.Hover | null | undefined,
+  document: vscode.TextDocument,
+  position: vscode.Position
+): Promise<vscode.Hover | null> {
+  const role = cellDataLifecycleProbe(document, position);
+  if (!role) {
+    return hover ?? null;
+  }
+  const cacheKey = `${flowVersionKeyForDocument(document)}#${role.entity}`;
+  let keys = cellDataHoverKeysCache.get(cacheKey);
+  if (keys === undefined) {
+    const defs = collectCellDataDefUniverse(role.entity, (name, category) => {
+      const filePath = findDefinitionFileByCategory(name, category, document);
+      if (!filePath) {
+        return null;
+      }
+      try {
+        return fs.readFileSync(filePath, 'utf8');
+      } catch {
+        return null; // 读失败 = 缺席贡献,不猜
+      }
+    });
+    try {
+      keys = await fetchCellDataKeys(role.entity, defs);
+    } catch {
+      keys = null; // 传输失败降级:生命周期语义仍在,不造键
+    }
+    if (cellDataHoverKeysCache.size >= CELL_DATA_HOVER_KEYS_CACHE_MAX) {
+      cellDataHoverKeysCache.clear();
+    }
+    cellDataHoverKeysCache.set(cacheKey, keys);
+  }
+  const proven = cellDataProvenStateAtLine(document.getText(), position.line);
+  const note = cellDataHoverMarkdown({
+    role: role.role,
+    entity: role.entity,
+    keys,
+    inWindow: proven.inWindow,
+    state: proven.state
+  });
+  const contents = hover?.contents as unknown;
+  if (contents && typeof contents === 'object' && 'value' in contents
+    && typeof (contents as vscode.MarkdownString).value === 'string') {
+    // 重建新实例再拼(memo 缓存跨请求共享同一 Hover 实例,原地 append 会重复叠加)
+    return new vscode.Hover(new vscode.MarkdownString(
+      `${(contents as vscode.MarkdownString).value}${note}`
+    ));
+  }
+  if (hover) {
+    return hover; // 未知 contents 形态:不猜,原样返回
+  }
+  // 无既有 hover:注记单独成 hover(去掉段首分隔线)
+  return new vscode.Hover(new vscode.MarkdownString(note.replace(/^\n\n---\n\n/, '')));
+}
+
 export class KBEngineHoverProvider implements vscode.HoverProvider {
   // 实体 def 方法标注面(用户令:只凭名字标 KBEngine 函数不严谨)需要 def
   // 索引,按 RpcCodeLensProvider 同款注入;可选参数保持既有无参用例口径。
@@ -190,10 +281,18 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
   ): vscode.ProviderResult<vscode.Hover> {
     // C-23(交付③):出口统一挂行为注记——KB-001 结构化条目按悬停词挂靠,
     // 覆盖所有 hover 分支出口(注记纯静态知识,零索引查询,不进预算闸)
-    return attachBehaviorNotesToHoverResult(
+    const noted = attachBehaviorNotesToHoverResult(
       this.provideHoverTimed(document, position, token),
       document,
       position
+    );
+    // KSEM-CELL-14:仅 `self.cellData` 接收者 token 接管(同步探针先行,其余
+    // 位置保持既有同步返回口径);命中才把结果链变异步挂生命周期注记
+    if (!cellDataLifecycleProbe(document, position)) {
+      return noted;
+    }
+    return Promise.resolve(noted).then(hover =>
+      attachCellDataLifecycleNote(hover, document, position)
     );
   }
 
