@@ -28,6 +28,9 @@ import {
 } from '../src/backend/playerDataCloneMysql';
 import {
   tvBigUInt,
+  tvBytesHex,
+  tvDecimal,
+  tvDouble,
   tvNull,
   tvText,
   tvUInt,
@@ -312,6 +315,63 @@ describe('probeExistingValues(目标既有值有界探测)', () => {
     expect(avatar?.values).toEqual(['hero', 'hero2']);
     const account = connection.log.find(entry => entry.sql.includes('FROM tbl_Account WHERE'));
     expect(account?.values).toEqual(['a@x']);
+  });
+
+  // 非文本列家族:DB 返回值须按候选自身类型归键才命中——硬编码 'varchar'
+  // 令这些列 present 恒空(既有值全误判为不存在)→ 唯一键冲突漏报
+  it('bigint unsigned 列:字符串返回值归 big-u-int 键命中(审计修复)', async () => {
+    const connection = new FakeMysqlConnection();
+    connection.reply('FROM tbl_Avatar WHERE', [{ v: '9007199254740993' }]);
+    const existing = await probeExistingValues(connection, [
+      { table: 'tbl_Avatar', column: 'id', value: tvBigUInt('9007199254740993') }
+    ]);
+    expect(existing).toEqual([{ table: 'tbl_Avatar', column: 'id', value: tvBigUInt('9007199254740993') }]);
+  });
+
+  it('int unsigned 列:数值返回值归 u-int 键命中(审计修复)', async () => {
+    const connection = new FakeMysqlConnection();
+    connection.reply('FROM tbl_Avatar WHERE', [{ v: 7 }]);
+    const existing = await probeExistingValues(connection, [
+      { table: 'tbl_Avatar', column: 'uid', value: tvUInt(7) }
+    ]);
+    expect(existing).toEqual([{ table: 'tbl_Avatar', column: 'uid', value: tvUInt(7) }]);
+  });
+
+  it('double 列:数值返回值归 double 键命中(审计修复)', async () => {
+    const connection = new FakeMysqlConnection();
+    connection.reply('FROM tbl_Avatar WHERE', [{ v: 1.5 }]);
+    const existing = await probeExistingValues(connection, [
+      { table: 'tbl_Avatar', column: 'score', value: tvDouble(1.5) }
+    ]);
+    expect(existing).toEqual([{ table: 'tbl_Avatar', column: 'score', value: tvDouble(1.5) }]);
+  });
+
+  it('decimal 列:字符串返回值归 decimal 键命中(审计修复)', async () => {
+    const connection = new FakeMysqlConnection();
+    connection.reply('FROM tbl_Avatar WHERE', [{ v: '3.14' }]);
+    const existing = await probeExistingValues(connection, [
+      { table: 'tbl_Avatar', column: 'price', value: tvDecimal('3.14') }
+    ]);
+    expect(existing).toEqual([{ table: 'tbl_Avatar', column: 'price', value: tvDecimal('3.14') }]);
+  });
+
+  it('blob 列:Buffer 返回值归 bytes 键命中(审计修复)', async () => {
+    const connection = new FakeMysqlConnection();
+    connection.reply('FROM tbl_Avatar WHERE', [{ v: Buffer.from('a1b2', 'hex') }]);
+    const existing = await probeExistingValues(connection, [
+      { table: 'tbl_Avatar', column: 'payload', value: tvBytesHex('a1b2') }
+    ]);
+    expect(existing).toEqual([{ table: 'tbl_Avatar', column: 'payload', value: tvBytesHex('a1b2') }]);
+  });
+
+  it('同列混合候选各自归型;未命中项仍丢弃', async () => {
+    const connection = new FakeMysqlConnection();
+    connection.reply('FROM tbl_Avatar WHERE', [{ v: '5' }]);
+    const existing = await probeExistingValues(connection, [
+      { table: 'tbl_Avatar', column: 'num', value: tvBigUInt('5') },
+      { table: 'tbl_Avatar', column: 'num', value: tvBigUInt('6') }
+    ]);
+    expect(existing).toEqual([{ table: 'tbl_Avatar', column: 'num', value: tvBigUInt('5') }]);
   });
 
   it('不安全标识符拒绝(防注入面)', async () => {

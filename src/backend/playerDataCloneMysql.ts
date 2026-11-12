@@ -239,9 +239,13 @@ export async function probeExistingValues(
       `SELECT ${column} AS v FROM ${table} WHERE ${column} IN (${placeholders})`,
       binds
     );
+    // 按该列候选值自身类型反推物理列型提示:整型/二进制/时间列 DB 返回值
+    // 须与候选同型归键才能比对命中——硬编码 'varchar' 令整型等列 present
+    // 恒空(所有值误判为不存在,唯一键冲突/重复重建漏报)
+    const hint = columnTypeHintFor(values);
     const present = new Set(
       (Array.isArray(rows) ? (rows as Array<Record<string, unknown>>) : []).map(r =>
-        typedValueKeyOf(cellToTypedValue(r.v, 'varchar'))
+        typedValueKeyOf(cellToTypedValue(r.v, hint))
       )
     );
     for (const value of values) {
@@ -255,6 +259,28 @@ export async function probeExistingValues(
 
 function typedValueKeyOf(value: TypedValueWire): string {
   return `${value.t}:${String(value.v ?? '')}`;
+}
+
+/** TypedValueWire 类型标签 → 物理列型提示(cellToTypedValue 逆映射,归键同型)。 */
+function columnTypeHintFor(values: TypedValueWire[]): string {
+  switch (values[0]?.t) {
+    case 'int':
+      return 'int';
+    case 'u-int':
+      return 'int unsigned';
+    case 'big-u-int':
+      return 'bigint unsigned';
+    case 'double':
+      return 'double';
+    case 'decimal':
+      return 'decimal';
+    case 'bytes':
+      return 'blob';
+    case 'date-time':
+      return 'datetime';
+    default:
+      return 'varchar'; // text / null
+  }
 }
 
 /** Apply 取消(§6.4:Apply 期取消 → 回滚)。 */
