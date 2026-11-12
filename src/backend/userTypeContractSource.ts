@@ -3,9 +3,14 @@
 // 纯逻辑(判定/定位)在 userTypeContract;本模块只做 I/O 与注册表解析:
 // getCustomTypeInfos → 带 implementedBy 的自定义类型 → impl 文件 → 三契约
 // 方法存在性快照。序列化契约描述(口径①②)也在此,供 hover/stub 文档复用。
+// KSEM-STRUCT-06:implementedBy 绑定真形采集(候选发现+读源)也在此,
+// 判定在 implementedByBinding 纯核。
 
+import * as fs from 'node:fs';
+import * as nodePath from 'node:path';
 import {
   getCustomTypeInfos,
+  getDefinitionWorkspaceLayout,
   findImplementedBySymbolLine,
   readWorkspaceTextFile
 } from '../definitionWorkspace';
@@ -16,6 +21,7 @@ import {
   type UserTypeContractStatus,
   implFileHasContractMethod
 } from './userTypeContract';
+import { resolveImplementedByBinding, type ImplementedByBinding, type ImplementedByCandidate } from './implementedByBinding';
 
 /**
  * 收集全部 user_type 契约快照(带 implementedBy 的自定义类型;纯 FIXED_DICT/
@@ -136,4 +142,40 @@ export function renderUserTypeContractHoverSection(
   lines.push('');
   lines.push(userTypeSerializationContractDoc(status.implementedBy));
   return lines.join('\n');
+}
+
+/**
+ * KSEM-STRUCT-06:implementedBy 绑定真形采集(判定在 implementedByBinding 纯核)。
+ * 候选发现按真实导入序:`module.py` 与 `module/__init__.py` 同名并存时
+ * **包目录胜出**(CPython FileFinder 包优先,本地 python3 实测定案),
+ * 每个 user_type 根至多产出一个候选;跨根同名模块并存交由纯核裁定
+ * (ambiguous-module,工程内 sys.path 序不可判)。
+ * implementedBy 为空 → null(无绑定面,与契约段同门槛)。
+ */
+export function implementedByBindingForWorkspace(
+  workspaceRoot: string,
+  implementedBy?: string
+): ImplementedByBinding | null {
+  if (!implementedBy?.trim()) {
+    return null;
+  }
+  const moduleName = implementedBy.trim().split('.')[0];
+  if (!moduleName) {
+    // 非两段值等畸形:候选无从谈起,交纯核如实报 malformed
+    return resolveImplementedByBinding(implementedBy, []);
+  }
+  const moduleRel = moduleName.replace(/\./g, '/');
+  const candidates: ImplementedByCandidate[] = [];
+  for (const root of getDefinitionWorkspaceLayout(workspaceRoot).userTypeRoots) {
+    const packageInitPath = nodePath.join(root, moduleRel, '__init__.py');
+    if (fs.existsSync(packageInitPath)) {
+      candidates.push({ filePath: packageInitPath, source: readWorkspaceTextFile(packageInitPath), kind: 'package' });
+      continue; // 包优先(同根包目录胜过同名文件)
+    }
+    const filePath = nodePath.join(root, `${moduleRel}.py`);
+    if (fs.existsSync(filePath)) {
+      candidates.push({ filePath, source: readWorkspaceTextFile(filePath), kind: 'module' });
+    }
+  }
+  return resolveImplementedByBinding(implementedBy, candidates);
 }

@@ -11,7 +11,8 @@ import { describePropertyDatabaseStoragePublished, getTypeStorageShape, TypeStor
 import { buildPropertyDatabaseStorageHover, describeBuiltinTypeCapacity } from '../databaseSimulator';
 import { findCustomTypeInfo, findTypesXmlImplementedByReference, findDefinitionFileByCategory, findEntityDefinitionFile, findEntityScriptFile, getEntityRuntimeProfile, getRegisteredEntities, getWorkspaceRootForDocument } from '../definitionWorkspace';
 import { describeMethodCallDirection, describePropertySyncDirection } from '../backend/entityFlowGraph';
-import { renderUserTypeContractHoverSection, userTypeContractStatusForName } from '../backend/userTypeContractSource';
+import { renderUserTypeContractHoverSection, userTypeContractStatusForName, implementedByBindingForWorkspace } from '../backend/userTypeContractSource';
+import { renderImplementedByBindingSection } from '../backend/implementedByBinding';
 import { HOOK_CATEGORY_NAMES } from '../hooks';
 import { engineApiVersionAnnotation, summaryForLanguage } from '../kbeModuleIndex';
 import { getEngineVersion } from '../engineVersion';
@@ -221,6 +222,24 @@ export function resolveUserTypeContractSection(
   return renderUserTypeContractHoverSection(status);
 }
 
+// KSEM-STRUCT-06:implementedBy 绑定真形段(形态/落点/未知原因)。
+// 无 implementedBy / 文档不在工作区 → null(与契约段同门槛);绑定未知也
+// 有段(如实呈现未知原因),缺的是「面」不是「绑定」。
+export function resolveImplementedByBindingSection(
+  document: vscode.TextDocument,
+  customTypeInfo: NonNullable<ReturnType<typeof findCustomTypeInfo>>
+): string | null {
+  if (!customTypeInfo.implementedBy) {
+    return null;
+  }
+  const workspaceRoot = getWorkspaceRootForDocument(document);
+  if (!workspaceRoot) {
+    return null;
+  }
+  const binding = implementedByBindingForWorkspace(workspaceRoot, customTypeInfo.implementedBy);
+  return binding ? renderImplementedByBindingSection(binding) : null;
+}
+
 export function getCustomTypeHover(
   document: vscode.TextDocument,
   position: vscode.Position,
@@ -240,7 +259,8 @@ export function getCustomTypeHover(
     'Custom type from `types.xml`',
     // 批134:声明行悬停追加落库形态;implementedBy 值上的悬停只谈引用,不谈存储
     customTypeTarget.isImplementedByValue ? null : getTypeStorageShapeMarkdown(document, word),
-    resolveUserTypeContractSection(document, customTypeTarget.info)
+    resolveUserTypeContractSection(document, customTypeTarget.info),
+    resolveImplementedByBindingSection(document, customTypeTarget.info)
   );
 }
 
@@ -367,7 +387,8 @@ export function createCustomTypeHover(
   customTypeInfo: NonNullable<ReturnType<typeof findCustomTypeInfo>>,
   summary: string,
   shapeMarkdown: string | null = null,
-  contractSection: string | null = null
+  contractSection: string | null = null,
+  bindingSection: string | null = null
 ): vscode.Hover {
   const markdown = new vscode.MarkdownString();
   markdown.appendMarkdown(`**${customTypeInfo.name}**\n\n`);
@@ -391,6 +412,12 @@ export function createCustomTypeHover(
     for (const property of customTypeInfo.properties) {
       markdown.appendMarkdown(`- \`${property.name}\`: \`${property.typeName || 'UNKNOWN'}\`\n`);
     }
+  }
+
+  // KSEM-STRUCT-06:绑定真形段(形态/落点/未知原因)在契约段之前——
+  // 先说绑到哪,再说契约要求什么。
+  if (bindingSection) {
+    markdown.appendMarkdown(bindingSection);
   }
 
   // GEN-DEF-1e ②+口径①:user_type 带 impl 时补三契约方法状态与双向序列化契约

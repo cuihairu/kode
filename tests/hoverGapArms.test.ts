@@ -6,6 +6,7 @@ import {
   createKbeSymbolHover,
   KBEngineHoverProvider,
   KBEngineSignatureHelpProvider,
+  resolveImplementedByBindingSection,
   resolveUserTypeContractSection,
   setPythonDataDictIndexEnabled
 } from '../src/languageProviders';
@@ -237,6 +238,64 @@ describe('hover 缺口臂:apiDoc 面 / 签名帮助抛错 / kbe 符号标注 / �
       );
       expect(result).toBeNull();
     } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('hover 缺口臂:implementedBy 绑定真形段(KSEM-STRUCT-06)', () => {
+  const IMPL = [
+    'class TalentTreeImpl:',
+    '    def createObjFromDict(self, dictData):',
+    '        return dictData',
+    '    def getDictFromObj(self, obj):',
+    '        return {}',
+    '    def isSameType(self, obj):',
+    '        return True'
+  ].join('\n');
+
+  it('无 implementedBy → 无绑定段(如实 null)', () => {
+    const doc = makeTextDocument('x = 1\n', { fileName: '/nowhere/scripts/entity_defs/T.xml', languageId: 'kbengine-def' });
+    expect(resolveImplementedByBindingSection(doc, { name: 'SOME_DATA' } as never)).toBeNull();
+  });
+
+  it('文档不在工作区内 → 如实 null', () => {
+    stubWorkspace.workspaceFolders = [];
+    const doc = makeTextDocument('x = 1\n', { fileName: '/nowhere/scripts/entity_defs/T.xml', languageId: 'kbengine-def' });
+    expect(
+      resolveImplementedByBindingSection(doc, { name: 'SOME_DATA', implementedBy: 'talent.TalentTreeImpl' } as never)
+    ).toBeNull();
+  });
+
+  it('绑定成立:真形落点进段(形态/文件:行);模块缺失:未知原因进段', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-hover-gap-bind-'));
+    try {
+      stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+      fs.mkdirSync(path.join(root, 'scripts', 'entity_defs'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'scripts', 'entity_defs', 'types.xml'), '<root/>', 'utf8');
+      fs.mkdirSync(path.join(root, 'scripts', 'user_type'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'scripts', 'user_type', 'talent.py'), IMPL, 'utf8');
+
+      const doc = makeTextDocument('x = 1\n', {
+        fileName: path.join(root, 'scripts', 'entity_defs', 'T.xml'),
+        languageId: 'kbengine-def'
+      });
+      const bound = resolveImplementedByBindingSection(
+        doc,
+        { name: 'TalentTree', implementedBy: 'talent.TalentTreeImpl' } as never
+      );
+      expect(bound).toContain('**implementedBy 绑定**');
+      expect(bound).toContain('类');
+      expect(bound).toContain('talent.py:1');
+
+      const missing = resolveImplementedByBindingSection(
+        doc,
+        { name: 'Ghost', implementedBy: 'ghost.Nothing' } as never
+      );
+      expect(missing).toContain('未绑定');
+      expect(missing).toContain('user_type 根下解析到');
+    } finally {
+      stubWorkspace.workspaceFolders = ORIGINAL_FOLDERS;
       fs.rmSync(root, { recursive: true, force: true });
     }
   });

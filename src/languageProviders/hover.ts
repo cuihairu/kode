@@ -1396,5 +1396,6 @@ export {
   getSymbolHover,
   getTypeStorageShapeMarkdown,
   getTypeValueHover,
+  resolveImplementedByBindingSection,
   resolveUserTypeContractSection,
 } from './hoverBuilders';
