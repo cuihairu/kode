@@ -12,7 +12,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { activate, deactivate } from '../src/extension';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { languagesRegistry } from './fake-vscode/languages';
-import { messages, window as fakeWindow, windowState } from './fake-vscode/windowState';
+import { channels, messages, window as fakeWindow, windowState } from './fake-vscode/windowState';
 import { panelRegistry } from './fake-vscode/panelRegistry';
 import { configurationOverrides, workspace, workspaceEvents, workspaceState } from './fake-vscode/workspaceState';
 import { makeTextDocument, Uri, type ExtensionContext } from './fake-vscode/core';
@@ -260,6 +260,17 @@ describe('激活链低覆盖命令面(wiring 补测)', () => {
   it('hotReload.confirmDefBaseline:空基线 → 0 个文件的完成提示', async () => {
     await commands.executeCommand('kbengine.hotReload.confirmDefBaseline');
     expect(lastInfo()).toContain('def 结构基线已对齐当前内容(0 个文件)');
+  });
+
+  it('hotReload.confirmDefBaseline:重启确认后清 RESTART_REQUIRED 标记(2026-11-12 用户问「重启后怎么清状态」)', async () => {
+    // 装配层此前的缺口:命令只重建 def 基线,从不清状态机的 RESTART_REQUIRED
+    // 标记(全仓只有测试调 clearRestartRequired)。角标/状态点的紫色 R 在重启
+    // 后仍挂着。断言两条只在新接线里存在的文案——去掉清除分支即红。
+    await commands.executeCommand('kbengine.hotReload.confirmDefBaseline');
+    expect(lastInfo()).toContain('「需重启」标记已清除');
+    const logLines =
+      channels.find(channel => channel.name === 'KBEngine 热更新')?.lines ?? [];
+    expect(logLines.some(line => line.includes('个被拦文件解除需重启标记'))).toBe(true);
   });
 
   it('hotReload.filterByState / showFileState:取消即止不抛', async () => {

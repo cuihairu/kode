@@ -7,6 +7,7 @@ import {
   runHotReloadFileStateFilterCommand,
   runShowHotReloadFileStateCommand
 } from '../src/backend/hotReloadFileStateFilter';
+import { formatHotReloadTime } from '../src/hotReloadStatus';
 
 // IDE-HOT-100 §3.4 状态过滤:「看哪些改了还没重载」= DIRTY ∪ SENT 的过滤
 // 视图,遍历已知键筛注意力集,报告落通道。FAILED/RESTART_REQUIRED 不混进。
@@ -50,6 +51,13 @@ describe('renderHotReloadAttentionReport(注意力报告)', () => {
     expect(report).toContain(FILE_DIRTY);
     expect(report).toContain(DIGEST_A.slice(0, 12));
     expect(report).toContain('accepted');
+  });
+
+  it('逐文件带最近投递时间(与状态点同一把格式)', () => {
+    const views: HotReloadFileStateView[] = [
+      { file: FILE_DIRTY, state: 'SENT', baselineDigest: DIGEST_A, updatedAt: 1000 }
+    ];
+    expect(renderHotReloadAttentionReport(views)).toContain(`上次 ${formatHotReloadTime(1000)}`);
   });
 });
 

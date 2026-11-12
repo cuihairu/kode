@@ -112,6 +112,13 @@ describe('acceptance 4: 投递失败/回执超时 → FAILED 带原因,不冒充
     expect(view.state).not.toBe('APPLIED');
   });
 
+  it('updatedAt 透传台账投递时刻(呈现面据此显示「上次 HH:MM:SS」)', () => {
+    const sm = makeState();
+    const store = makeStore();
+    store.record(KEY, FILE, 'sent-unverified', { sentDigest: DIGEST_A, now: 1000 });
+    expect(sm.derive(store, KEY, FILE, CONTENT_A).updatedAt).toBe(1000);
+  });
+
   it('回执超时未确认 → FAILED(未确认/超时),不冒充 applied', () => {
     // 窗口 = 1000 + 10000 = 11000;now=20000 已过
     const sm = makeState(20000);

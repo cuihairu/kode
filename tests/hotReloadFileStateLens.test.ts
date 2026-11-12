@@ -11,6 +11,7 @@ import {
   formatHotReloadStateLens,
   HotReloadFileStateCodeLensProvider
 } from '../src/hotReloadFileStateLens';
+import { formatHotReloadTime } from '../src/hotReloadStatus';
 
 // IDE-HOT-100 §3.4 文件顶部状态点:CodeLens 挂 状态点 + 当前基线 hash 前
 // 12 位 + 最近一次投递 detail;跨目标取最重态,点击命令落完整报告。
@@ -58,6 +59,27 @@ describe('formatHotReloadStateLens(状态点文字)', () => {
   it('FAILED 用 reason 优先(不混叫 detail)', () => {
     const view: HotReloadFileStateView = { file: FILE, state: 'FAILED', reason: 'HTTP 状态 500' };
     expect(formatHotReloadStateLens(view)).toContain('HTTP 状态 500');
+  });
+
+  it('带最近投递时间(用户在文件顶就要看到「哪一次、什么时候」)', () => {
+    const epoch = Date.parse('2026-11-12T12:34:56Z');
+    const view: HotReloadFileStateView = {
+      file: FILE,
+      state: 'APPLIED',
+      baselineDigest: DIGEST_A,
+      updatedAt: epoch,
+      detail: '回执 applied 且 digest 一致'
+    };
+    const text = formatHotReloadStateLens(view);
+    // 期望串按同一把格式同算(时区无关:两侧共用 formatHotReloadTime)
+    expect(text).toContain(`上次 ${formatHotReloadTime(epoch)}`);
+    // 时间在 detail 之前:先定位「哪一次、什么时候」,再看详情
+    expect(text.indexOf('上次 ')).toBeLessThan(text.indexOf('回执 applied'));
+  });
+
+  it('无记录(无 updatedAt)不出现时间,不填空位', () => {
+    const view: HotReloadFileStateView = { file: FILE, state: 'CLEAN' };
+    expect(formatHotReloadStateLens(view)).not.toContain('上次');
   });
 });
 

@@ -11,6 +11,7 @@ import {
   type HotReloadFileStateMachine,
   type HotReloadFileStateView
 } from './hotReloadFileState';
+import { formatHotReloadTime } from '../hotReloadStatus';
 
 /** 注意力报告渲染:头部计数 + 逐文件 状态/基线前 12 位/明细;空=如实无 */
 export function renderHotReloadAttentionReport(views: HotReloadFileStateView[]): string {
@@ -22,6 +23,9 @@ export function renderHotReloadAttentionReport(views: HotReloadFileStateView[]):
     const parts = [`${view.file} → ${view.state}`];
     if (view.baselineDigest !== undefined) {
       parts.push(`基线 ${view.baselineDigest.slice(0, 12)}…`);
+    }
+    if (view.updatedAt !== undefined) {
+      parts.push(`上次 ${formatHotReloadTime(view.updatedAt)}`);
     }
     const tail = view.reason ?? view.annotation ?? view.detail;
     if (tail !== undefined) {
@@ -75,6 +79,9 @@ export function renderHotReloadFileStateDetail(file: string, views: HotReloadFil
     const parts = [`${view.state}`];
     if (view.baselineDigest !== undefined) {
       parts.push(`基线 ${view.baselineDigest.slice(0, 12)}…`);
+    }
+    if (view.updatedAt !== undefined) {
+      parts.push(`上次 ${formatHotReloadTime(view.updatedAt)}`);
     }
     if (view.attempt !== undefined) {
       parts.push(`发送 #${view.attempt}`);

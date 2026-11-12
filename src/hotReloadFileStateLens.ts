@@ -13,6 +13,7 @@ import {
   type HotReloadFileStateMachine,
   type HotReloadFileStateView
 } from './backend/hotReloadFileState';
+import { formatHotReloadTime } from './hotReloadStatus';
 
 export const HOT_RELOAD_SHOW_FILE_STATE_COMMAND = 'kbengine.hotReload.showFileState';
 
@@ -23,11 +24,18 @@ export interface HotReloadFileStateLensDeps {
   targetsForRoot(rootId: string): string[] | Promise<string[]>;
 }
 
-/** 状态点文字(状态 + 基线 hash 前 12 位 + 最近 detail);纯函数便于直测 */
+/**
+ * 状态点文字(状态 + 基线 hash 前 12 位 + 最近投递时间 + 最近 detail);
+ * 纯函数便于直测。时间放 detail 前:先定位「哪一次、什么时候」再看详情,
+ * 与台账 OUTPUT 报告行的顺序同口径。
+ */
 export function formatHotReloadStateLens(view: HotReloadFileStateView): string {
   const parts: string[] = [`$(circle-filled) 热更: ${view.state}`];
   if (view.baselineDigest !== undefined) {
     parts.push(`基线 ${view.baselineDigest.slice(0, 12)}…`);
+  }
+  if (view.updatedAt !== undefined) {
+    parts.push(`上次 ${formatHotReloadTime(view.updatedAt)}`);
   }
   const tail = view.reason ?? view.annotation ?? view.detail;
   if (tail !== undefined) {

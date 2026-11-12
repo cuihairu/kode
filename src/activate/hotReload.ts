@@ -252,10 +252,27 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
   context.subscriptions.push(
     vscode.commands.registerCommand('kbengine.hotReload.confirmDefBaseline', async () => {
       const confirmed = (await hotReloadDefGate.confirmLoaded?.()) ?? 0;
-      hotReloadStatus.log(`def 结构基线重建(重启确认):${confirmed} 个文件基线已对齐当前内容(结构性变更仍会在下次发送前拦下)`);
-      void Promise.resolve(vscode.window.showInformationMessage(`def 结构基线已对齐当前内容(${confirmed} 个文件)`)).catch(
-        () => undefined
+      // 重启确认 = 引擎已加载当前 def 内容,RESTART_REQUIRED 拦下随之解除:
+      // 逐个目标键清被拦文件并刷呈现面。此前本命令只重建基线,不清标记,
+      // 角标/状态点的紫色 R 在重启后仍挂着——用户「重启后怎么清状态」的答案。
+      let cleared = 0;
+      for (const key of hotReloadFileStateMachine.knownKeys(hotReloadTargetStateStore)) {
+        const files = hotReloadFileStateMachine.restartRequiredFiles(key);
+        if (files.length === 0) {
+          continue;
+        }
+        hotReloadFileStateMachine.clearRestartRequired(key, files);
+        cleared += files.length;
+      }
+      hotReloadStateViewRefresh.refresh?.();
+      hotReloadStatus.log(
+        `def 结构基线重建(重启确认):${confirmed} 个文件基线已对齐当前内容,${cleared} 个被拦文件解除需重启标记(结构性变更仍会在下次发送前拦下)`
       );
+      void Promise.resolve(
+        vscode.window.showInformationMessage(
+          `def 结构基线已对齐当前内容(${confirmed} 个文件);${cleared} 个文件的「需重启」标记已清除`
+        )
+      ).catch(() => undefined);
     })
   );
   // IDE-HOT-102:部署通道发送口(fire 路径与失败目标重试共用同一解出口)。

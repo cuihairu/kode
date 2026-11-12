@@ -48,6 +48,8 @@ export interface HotReloadFileStateView {
   baselineDigest?: string;
   /** 最近一次投递 detail(透传台账,原样不加工) */
   detail?: string;
+  /** 最近一次投递时刻(透传台账 recordedAt,注入时钟,ms;呈现面渲染成时间) */
+  updatedAt?: number;
   /** 最近一次投递代际(IDE-AUD-005) */
   attempt?: number;
   /** FAILED 原因(投递失败 detail 或 未确认/超时 说明);RESTART_REQUIRED 带拦截原因 */
@@ -86,6 +88,9 @@ export function deriveHotReloadFileState(input: {
   }
   if (record !== undefined) {
     view.attempt = record.attempt;
+    // recordedAt 是台账记录的必填时刻(注入时钟),恒有值:透传给呈现面渲染
+    // 成时间,与 detail 同口径(缺省字段才是「该事实不可得」,时间不属此类)
+    view.updatedAt = record.recordedAt;
     if (record.detail !== undefined) {
       view.detail = record.detail;
     }
