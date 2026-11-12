@@ -132,7 +132,15 @@ The view system is witness-based: an entity with a bound `Witness`
   occupies.
 - `writeToDB(shouldAutoLoad, dbInterfaceName)` (`entity_macro.h:18`):
   archives the entity to dbmgr (base+cell data); `onWriteToDB` fires on the
-  script side when implemented.
+  script side when implemented — and on the cellapp it fires with **zero
+  arguments** (`entity.cpp:1238`, immediately followed by
+  `backupCellData()` `:1239` and serialization). The same entity class's
+  base-side callback of the same name takes one `cellData` snapshot
+  argument (`cellDataDict_`, see
+  [api-baseapp-entity](api-baseapp-entity.md)); write the signature as
+  `def onWriteToDB(self, cellData=None)` to work on both. A cellapp entity
+  has no cellData attribute (`installCellDataAttr` is never installed
+  here) — cell properties are plain instance attributes.
 - `teleport(nearbyMBRef, position, direction)` (`entity.cpp:3392`):
   cross-space jump. `nearbyMBRef=None` teleports within the current cell.
   Failure paths call `onTeleportFailure()` (`entity.cpp:3471`, `:3481`,

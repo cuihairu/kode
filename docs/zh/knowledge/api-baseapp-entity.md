@@ -118,8 +118,42 @@ base 部分真正销毁之后触发。`entity.cpp:164-169`。
 
 ### `entity.onWriteToDB(cellData)` *（回调）*
 
-实体数据即将写入数据库时触发；`cellData` 为将入库的 dict。在此回调内再
-调 `writeToDB` 会无限循环。`entity.cpp:1397-1405`。
+base 侧入库前的最后变更点：`Entity::onCellWriteToDBCompleted` 在
+`onPreArchive` 之后、序列化送 dbmgr **之前**触发（`entity.cpp:1295-1310`）；
+写库完成回调是 `writeToDB(callback)` 的 callback
+（`onWriteToDBCallback` `entity.cpp:1239-1289`）。`cellData` 绑定内部快照
+dict `cellDataDict_`（`entity.h:276`），不是 `self.cellData` 属性
+（onGetCell 即删 `:1024`）；脚本模块无 cell 面时为 `None`，否则是最后一
+次备份快照或构造默认值——绝非 cellapp 活值。回调内再调 `writeToDB`
+会无限循环。
+
+触发细节：先 `onPreArchive`（`:1298`）再调脚本 `onWriteToDB`（`:1305`，
+分发 `Entity::onWriteToDB` `:1397-1405`），之后才
+`addPersistentsDataToStream` 序列化（调用 `:1329`）；序列化结果与上次
+逐字节相同则整个写库跳过、用户 callback 不触发（`persistentDigest_`
+去重 `:1353`）。回调内改写 `cellData[键]` 会直接进紧随其后的序列化流。
+
+参数与属性的两回事：`self.cellData` 属性在 `onGetCell` 即被
+`destroyCellData()` 删除（`:1024`），dict 内部保留供备份/落库
+（`:562-563` 注释）；属性重建只有构造路径（`:71`→`createCellData`
+`:250`）与备份回写 isDirty 分支（`:1108-1123`）。故参数在场**不代表**
+`self.cellData` 属性在场——此刻 base 侧该属性通常已删；组件同样收到本
+回调（`CALL_ENTITY_AND_COMPONENTS_METHOD`），而组件对象从来没有
+cellData 属性。可空条件：分发处 `cd = cellDataDict_; if (!cd)
+cd = Py_None;`（`:1401-1403`）——`None` 当且仅当 `cellDataDict_` 从未
+创建，即脚本模块无 cell 面（`hasCell` 为假时 `createCellData` 早退
+`:250-261`）；有 cell 面的脚本 dict 自构造起非 `None`（可能只有各属性
+默认值加 `position`/`direction` 三元组，`:284`/`:307-308`）。快照兜的
+是 base 侧无 cell 的写库面：有活 cell 时入库数据在 cellapp 侧序列化
+（baseapp 只发 `reqWriteToDBFromBaseapp` `:1229-1236`），无 cell 时
+`addPersistentsDataToStream` 优先取 `cellDataDict_`（`:431-433`），回落
+`__dict__`，再回落默认值并告警（`:523`）。
+
+同名回调在 cellapp 侧以 **0 参**触发（`cellapp/entity.cpp:1255-1262`，
+活实体落库前）；同一实体类两进程共用，`def onWriteToDB(self, cellData)`
+会在 cellapp 侧抛 TypeError——签名须写 `cellData=None` 默认值两头兼容。
+再调 `writeToDB` 会再走完整写库链（`DBID_ > 0` 时 `isArchiveing_` 在本
+回调后即复位 `:1310-1311`），无条件再写即无限循环。
 
 ### `entity.databaseID` *（只读，uint64）*
 

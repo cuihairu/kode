@@ -361,10 +361,12 @@
       "kind": "callback",
       "signature": "entity.onWriteToDB(cellData)",
       "qualifier": "callback",
-      "summaryEn": "Fires when entity data is about to be written to the database; cellData is the dict that will be stored. Calling writeToDB inside it loops forever. entity.cpp:1397-1405.",
-      "summaryZh": "实体数据即将写入数据库时触发；cellData 为将入库的 dict。在此回调内再 调 writeToDB 会无限循环。entity.cpp:1397-1405。",
+      "summaryEn": "The last mutation point before the DB write: fires in Entity::onCellWriteToDBCompleted after onPreArchive, **before** serialization for dbmgr (entity.cpp:1295-1310); the write-completion callback is the callback of writeToDB(callback) (entity.cpp:1239-1289). cellData binds to the internal snapshot dict cellDataDict_ (entity.h:276), not the self.cellData attribute (deleted in onGetCell :1024); None iff the script module has no cell face, else the last backup snapshot or defaults — never live cellapp values. Calling writeToDB inside loops forever.",
+      "summaryZh": "base 侧入库前的最后变更点：Entity::onCellWriteToDBCompleted 在 onPreArchive 之后、序列化送 dbmgr **之前**触发（entity.cpp:1295-1310）； 写库完成回调是 writeToDB(callback) 的 callback （onWriteToDBCallback entity.cpp:1239-1289）。cellData 绑定内部快照 dict cellDataDict_（entity.h:276），不是 self.cellData 属性 （onGetCell 即删 :1024）；脚本模块无 cell 面时为 None，否则是最后一 次备份快照或构造默认值——绝非 cellapp 活值。回调内再调 writeToDB 会无限循环。",
       "sourceRefs": [
-        "entity.cpp:1397-1405"
+        "entity.cpp:1295-1310",
+        "entity.cpp:1239-1289",
+        "entity.h:276"
       ],
       "page": "api-baseapp-entity"
     },

@@ -131,9 +131,51 @@ absence of the callback) proceeds. Invoked inside
 
 ### `entity.onWriteToDB(cellData)` *(callback)*
 
-Fires when entity data is about to be written to the database; `cellData` is
-the dict that will be stored. Calling `writeToDB` inside it loops forever.
-`entity.cpp:1397-1405`.
+The last mutation point before the DB write: fires in
+`Entity::onCellWriteToDBCompleted` after `onPreArchive`, **before**
+serialization for dbmgr (`entity.cpp:1295-1310`); the write-completion
+callback is the `callback` of `writeToDB(callback)`
+(`entity.cpp:1239-1289`). `cellData` binds to the internal snapshot dict
+`cellDataDict_` (`entity.h:276`), not the `self.cellData` attribute
+(deleted in `onGetCell` `:1024`); `None` iff the script module has no cell
+face, else the last backup snapshot or defaults — never live cellapp
+values. Calling `writeToDB` inside loops forever.
+
+Trigger details: `onPreArchive` first (`:1298`), then the script
+`onWriteToDB` (`:1305`, dispatcher `Entity::onWriteToDB` `:1397-1405`),
+then `addPersistentsDataToStream` serializes (call site `:1329`); if the
+serialized bytes are identical to the previous write the whole write is
+skipped and the user callback never fires (`persistentDigest_` dedup
+`:1353`). Mutating `cellData[<key>]` in the callback feeds directly into
+the serialization that follows.
+
+Argument vs attribute: the `self.cellData` attribute is deleted by
+`destroyCellData()` in `onGetCell` (`:1024`) while the dict is kept
+internally for backup/save (`:562-563` comment); the attribute is rebuilt
+only by the constructor path (`:71` → `createCellData` `:250`) and the
+dirty backup branch (`:1108-1123`). So the argument being present does
+**not** mean the attribute is present — on the base side it is usually
+gone at this moment; components receive this callback too
+(`CALL_ENTITY_AND_COMPONENTS_METHOD`) and a component object never has a
+cellData attribute. Nullability: the dispatcher does `cd = cellDataDict_;
+if (!cd) cd = Py_None;` (`:1401-1403`) — `None` iff `cellDataDict_` was
+never created, i.e. the script module has no cell face (`createCellData`
+returns early when `hasCell` is false `:250-261`); for has-cell scripts
+the dict is non-`None` from construction (possibly only property defaults
+plus the `position`/`direction` tuples, `:284`/`:307-308`). The snapshot
+backs the base-side save without a cell: with a live cell the stored data
+is serialized on the cellapp side (baseapp only sends
+`reqWriteToDBFromBaseapp` `:1229-1236`), without a cell
+`addPersistentsDataToStream` prefers `cellDataDict_` (`:431-433`), falls
+back to `__dict__`, then to defaults with a warning (`:523`).
+
+The same-named callback on the cellapp fires with **zero arguments**
+(`cellapp/entity.cpp:1255-1262`, before the live entity is saved); one
+entity class is shared by both processes, so `def onWriteToDB(self,
+cellData)` raises TypeError on the cellapp — write the signature as
+`cellData=None` to work on both. Calling `writeToDB` again starts another
+full save chain (`isArchiveing_` is reset right after this callback when
+`DBID_ > 0` `:1310-1311`); calling it unconditionally loops forever.
 
 ### `entity.databaseID` *(read-only, uint64)*
 

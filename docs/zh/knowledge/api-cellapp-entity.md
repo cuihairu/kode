@@ -119,7 +119,12 @@ View 系统基于 witness：绑定了 `Witness` 的实体
 - `destroySpace()`（`entity.cpp:342`）：销毁本实体所在空间。
 - `writeToDB(shouldAutoLoad, dbInterfaceName)`（`entity_macro.h:18`）：把
   实体（base+cell 数据）归档到 dbmgr；脚本定义了 `onWriteToDB` 会在落库前
-  触发。
+  触发，且 cellapp 侧以 **0 参**触发（`entity.cpp:1238`，紧接
+  `backupCellData()` `:1239` 再序列化）——同一实体类在 base 侧的同名回调
+  却带 1 个 `cellData` 快照参数（`cellDataDict_`，见
+  [api-baseapp-entity](api-baseapp-entity.md)），签名须写
+  `def onWriteToDB(self, cellData=None)` 两头兼容；cellapp 实体没有
+  cellData 属性（不装 `installCellDataAttr`），cell 属性就是普通实例属性。
 - `teleport(nearbyMBRef, position, direction)`（`entity.cpp:3392`）：跨空间
   传送。`nearbyMBRef=None` 在当前 cell 内传送。失败路径调用
   `onTeleportFailure()`（`entity.cpp:3471`、`:3481`、`:3490`、`:3522`、
