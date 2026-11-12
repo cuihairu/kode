@@ -169,6 +169,32 @@ describe('validateDocument 诊断开关与结构/标量校验(覆盖率)', () =>
     }
   });
 
+  it('接口区块:实体挂多个不同接口不误报重复(文本形态,身份=接口名);同一接口两次才报', () => {
+    const interfacesDef = (interfaces: string[]): string => [
+      '<root>',
+      '  <Interfaces>',
+      ...interfaces.map(name => `    <interface>${name}</interface>`),
+      '  </Interfaces>',
+      '</root>'
+    ].join('\n');
+    const messagesOf = (text: string): string[] => {
+      const collection = new DiagnosticCollection();
+      const doc = defDoc(text);
+      try {
+        validateDocument(doc, collection);
+        return collection.get(doc.uri).map(item => item.message);
+      } finally {
+        configurationOverrides.clear();
+      }
+    };
+    // 多接口是合法形态(`<interface>` 标签只是四拼写之一,身份取节点值)
+    expect(messagesOf(interfacesDef(['Combat', 'Trade']))).toEqual([]);
+    // 同一接口写两次 = 真重复,提示给接口名而非标签名
+    const duplicated = messagesOf(interfacesDef(['Combat', 'Combat']));
+    expect(duplicated.some(message => message.includes('接口区块中存在重复定义: Combat'))).toBe(true);
+    expect(duplicated.some(message => message.includes('Combat 在 接口区块 中已定义'))).toBe(true);
+  });
+
   it('diagnostics.checkUnknownFlags=false:未知 Flags 跳过,DetailLevel 校验不受影响', () => {
     configurationOverrides.set('kbengine', { 'diagnostics.checkUnknownFlags': false });
     const collection = new DiagnosticCollection();

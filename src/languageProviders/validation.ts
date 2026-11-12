@@ -443,6 +443,10 @@ export function validateSectionStructure(
 
   for (const symbolNode of getDirectChildElements(sectionNode)) {
     const symbolRange = createNodeRange(document, symbolNode);
+    // 接口区块条目是文本形态(`<interface>Name</interface>`,标签只是四拼写
+    // 之一):身份取节点值(接口名)而非标签名——同标签不同接口是合法形态
+    // (实体可挂多接口),按标签名判重会把第二个接口误报重复。
+    const symbolIdentity = sectionName === 'Interfaces' ? getNodeValue(symbolNode) : symbolNode.name;
     if (featureConfig.diagnosticsCheckDuplicateDefinitions && sectionName === 'Properties') {
       const propertyScopes = getPropertyFlagScopes(symbolNode);
       const seenScopes = seenPropertyScopes.get(symbolNode.name) || new Map<PropertyScope, vscode.Range>();
@@ -475,20 +479,20 @@ export function validateSectionStructure(
         seenPropertyScopes.set(symbolNode.name, seenScopes);
       }
     } else {
-      const existing = seenSymbols.get(symbolNode.name);
+      const existing = seenSymbols.get(symbolIdentity);
       if (featureConfig.diagnosticsCheckDuplicateDefinitions && existing) {
         diagnosticsList.push(new vscode.Diagnostic(
           symbolRange,
-          `${getSectionLabel(sectionName)}中存在重复定义: ${symbolNode.name}`,
+          `${getSectionLabel(sectionName)}中存在重复定义: ${symbolIdentity}`,
           vscode.DiagnosticSeverity.Warning
         ));
         diagnosticsList.push(new vscode.Diagnostic(
           existing,
-          `${symbolNode.name} 在 ${getSectionLabel(sectionName)} 中已定义`,
+          `${symbolIdentity} 在 ${getSectionLabel(sectionName)} 中已定义`,
           vscode.DiagnosticSeverity.Information
         ));
       } else {
-        seenSymbols.set(symbolNode.name, symbolRange);
+        seenSymbols.set(symbolIdentity, symbolRange);
       }
     }
 

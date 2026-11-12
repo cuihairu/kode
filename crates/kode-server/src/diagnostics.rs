@@ -396,23 +396,31 @@ fn structure_pass(text: &str, doc: &Document, root: usize, out: &mut Vec<Diagnos
                             .or_insert_with(|| symbol_range.clone());
                     }
                 }
-            } else if !seen_symbols.contains_key(&symbol_data.name) {
-                seen_symbols.insert(symbol_data.name.clone(), symbol_range.clone());
             } else {
-                let existing = seen_symbols
-                    .get(&symbol_data.name)
-                    .expect("checked")
-                    .clone();
-                out.push(DiagnosticFace {
-                    range: symbol_range.clone(),
-                    severity: SEVERITY_WARNING,
-                    message: format!("{label}中存在重复定义: {}", symbol_data.name),
-                });
-                out.push(DiagnosticFace {
-                    range: existing,
-                    severity: SEVERITY_INFORMATION,
-                    message: format!("{} 在 {label} 中已定义", symbol_data.name),
-                });
+                // 接口区块条目是文本形态(`<interface>Name</interface>`,标签只是
+                // 四拼写之一):身份取节点值(接口名)而非标签名——同标签不同接口
+                // 是合法形态(实体可挂多接口),按标签名判重会把第二个接口误报
+                // 重复(TS validateSectionStructure 同源)。
+                let identity = if section_data.name == "Interfaces" {
+                    node_value(doc, symbol)
+                } else {
+                    symbol_data.name.clone()
+                };
+                if !seen_symbols.contains_key(&identity) {
+                    seen_symbols.insert(identity.clone(), symbol_range.clone());
+                } else {
+                    let existing = seen_symbols.get(&identity).expect("checked").clone();
+                    out.push(DiagnosticFace {
+                        range: symbol_range.clone(),
+                        severity: SEVERITY_WARNING,
+                        message: format!("{label}中存在重复定义: {}", identity),
+                    });
+                    out.push(DiagnosticFace {
+                        range: existing,
+                        severity: SEVERITY_INFORMATION,
+                        message: format!("{} 在 {label} 中已定义", identity),
+                    });
+                }
             }
             if is_properties {
                 // 属性结构:缺 <Type>/<Flags>(Error,节点整体区间)。
