@@ -243,11 +243,22 @@ const ANCHORS: Array<[string, number, string]> = [
   // 出处随 baseline 锁步。
   // 2026-11-11(PD-R1):inlay.ts propertyDirection 臂 Rust-first 接线顶部
   // import +1 行(49→50,真位重探)。
-  ['src/activate/languageServices.ts', 199, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 250, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 313, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 123, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 700, "startLanguageServiceOperation('completion'"],
+  // 2026-11-12(四，CELL-15 追补):hover 装配漂移修复——languageServices.ts
+  // 顶部 import +1(provideHoverWithNotes)与计时装配 +5,五打点 199→200/
+  // 250→257/313→320/123→124/700→707;hover.ts 注记挂共享入口 provideHover
+  // WithNotes(+24),provideHover 271→295;Hover contents 数组归一化再 +4
+  // (295→299,真位重探),出处随 baseline 锁步。
+    // 2026-11-12(三，CELL-15):def 脏 overlay 读面进 cellData 五面——
+  // diagnostics.ts 顶部 import 行 +1(151/164→152/165)、extension.ts 顶部
+  // destructure +1 与 isDefDocument 臂 +4(409→410,495→499)、hover.ts 净删
+  // fs import 等(-6,277→271)、pythonDefinition.ts 净删/换 import
+  // (309→308,773→765,879→871)、completion.ts 净删(-9,775→766,真位仍在
+  // PythonCompletionProvider);出处随 baseline 锁步。
+  ['src/activate/languageServices.ts', 200, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 257, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 320, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 124, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 707, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
@@ -275,8 +286,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // +8(393→401);close +3/change +2/开关面在锚点之后 → flushQueued 锚点
   // +10(475→485)。出处随 baseline 锁步。
   // baseline 锁步。
-  ['src/activate/diagnostics.ts', 151, "startLanguageServiceOperation('diagnostics'"],
-  ['src/activate/diagnostics.ts', 164, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 152, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 165, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -286,8 +297,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // runPyspySchedule 引入)→ 上列 9 处 extension.ts 锚点整体 +2(真位重探 683/696/980/
   // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450);
   // HOT-VER 再 +3(见上)→ 后段锚点 2373/2453;DEMO-GAME-006 再 +2(见上)→ 2375/2455。
-  ['src/extension.ts', 409, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 495, 'flushQueued()'],
+  ['src/extension.ts', 410, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 499, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。
@@ -347,7 +358,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-12(二,CELL-14):hover.ts 顶部 fs import +1、cellData 三行
   // import +3、applyBehaviorNotes 后挂 cellData 生命周期注记块 +87,
   // provideHover 真位重探 186→277,出处随 baseline 锁步。
-  ['src/languageProviders/hover.ts', 277, 'provideHover('],
+  ['src/languageProviders/hover.ts', 299, 'provideHover('],
   ['src/languageProviders/navigation.ts', 47, 'shadowCompareDefinition'],
   // 2026-11-09(flags 别名归一批):validation.ts 顶部加 FLAG_DOMAIN_ALIAS
   // import(+1 行),其后 validation.ts 三锚点真位重探 13→14/37→38/255→256,
@@ -362,12 +373,12 @@ const ANCHORS: Array<[string, number, string]> = [
   // describeTypeStorageShape 各形态分支附容量行,2776 后 +11;其后锚点
   // 随之 +11(真位重探 4741/5162/5268/7112;2005 前不受影响;出处随 baseline
   // 锁步)。
-  ['src/languageProviders/pythonDefinition.ts', 309, 'provideDefinitionTracedImpl'],
+  ['src/languageProviders/pythonDefinition.ts', 308, 'provideDefinitionTracedImpl'],
   // 2026-11-06(六):二次并入 origin main(KR-AUD-84 引擎整串开关表在 4725 后
   // +13)——层0 接收者段闸/withInitialScanTimeout/provideCompletionItems 锚点
   // 再 +13(真位重探 5146/5252/7063,出处随 baseline 锁步)。
-  ['src/languageProviders/pythonDefinition.ts', 773, '层0 接收者段闸'],
-  ['src/languageProviders/pythonDefinition.ts', 879, 'withInitialScanTimeout'],
+  ['src/languageProviders/pythonDefinition.ts', 765, '层0 接收者段闸'],
+  ['src/languageProviders/pythonDefinition.ts', 871, 'withInitialScanTimeout'],
   // 2026-11-06:IDE-LINT-012 快速修复边界——languageProviders.ts 在 receiver
   // 守卫 provider 前新增 receiverFromDiagnosticLine helper(区间归属提取)+
   // 提取块重写,+31 行,7007 后锚点随之 +31(真位重探 7038;其余 languageProviders
@@ -376,7 +387,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // + cellDataCompletion import +1 + KBEngineCompletionProvider.provideCompletionItems
   // 键位派发块(cellCtx 探测 + provideCellDataKeyCompletions 前插,299→301 起后文 +73)
   // → PythonCompletionProvider.provideCompletionItems 699→772,出处随 baseline 锁步。
-  ['src/languageProviders/completion.ts', 775, 'provideCompletionItems('],
+  ['src/languageProviders/completion.ts', 766, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)

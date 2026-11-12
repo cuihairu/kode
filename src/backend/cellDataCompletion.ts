@@ -179,13 +179,22 @@ export function collectCellDataDefUniverse(
 const isKind = (value: unknown): value is CellDataKeyEntry['kind'] =>
   value === 'defField' || value === 'builtin' || value === 'componentSlot';
 
+/**
+ * wire kind 形状:Rust CellDataKeyKind 带 `#[serde(tag = "kind")]`,线上是
+ * 内嵌标签对象 `{"kind":"defField"}`,不是平面串(2026-11-12 真机全链验收
+ * 实锤:平面串形状校验恒拒 → fetchCellDataKeys 真机恒 null → 键宇宙五面
+ * 全哑;unit mock 用了 TS 侧平面串形状,掩盖了这一契约漂移)。
+ */
+const isWireKind = (value: unknown): value is { kind: CellDataKeyEntry['kind'] } =>
+  typeof value === 'object' && value !== null && isKind((value as Record<string, unknown>).kind);
+
 /** 单条键形状校验(缺省字段宽容,核心面在才收;畸形 → false)。 */
-function isKeyEntry(value: unknown): value is CellDataKeyEntry {
+function isWireKeyEntry(value: unknown): value is { [K in keyof CellDataKeyEntry]: K extends 'kind' ? { kind: CellDataKeyEntry['kind'] } : CellDataKeyEntry[K] } {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
   const entry = value as Record<string, unknown>;
-  if (typeof entry.key !== 'string' || !isKind(entry.kind)) {
+  if (typeof entry.key !== 'string' || !isWireKind(entry.kind)) {
     return false;
   }
   return true;
@@ -194,6 +203,8 @@ function isKeyEntry(value: unknown): value is CellDataKeyEntry {
 /**
  * Rust 键宇宙查询:整面形状校验(畸形 → null 整面作废,不部分采用);
  * 无 gate / 调用失败 / 实体缺(defs 空) → null 或空集,调用方不补全。
+ * wire kind 内嵌标签对象在此解包为 TS 平面串,下游(entry.kind==='builtin'
+ * 等)不受 wire 形状影响。
  */
 export async function fetchCellDataKeys(
   entity: string,
@@ -208,8 +219,14 @@ export async function fetchCellDataKeys(
     return null;
   }
   const keys = response.result.keys;
-  if (!keys.every(isKeyEntry)) {
+  if (!keys.every(isWireKeyEntry)) {
     return null;
   }
-  return keys as CellDataKeyEntry[];
+  return keys.map(entry => ({
+    key: entry.key,
+    kind: entry.kind.kind,
+    typeLabel: entry.typeLabel,
+    sourceFile: entry.sourceFile,
+    sourceLine: entry.sourceLine
+  }));
 }

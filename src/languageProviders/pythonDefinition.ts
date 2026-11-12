@@ -1,12 +1,11 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
-import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { eventDefinitionAt } from '../eventApi';
 import { getScanRootForFile } from '../scanRoots';
 import { parsePythonFile, linearizeC3, isPythonCodePosition, getPythonBaseExpressionAtPosition, PythonClassIndex, PythonClassDef, PythonMethodLocation } from '../backend/pythonClassIndex';
 import { EntityMappingManager } from '../entityMapping';
-import { findTypesXmlImplementedByReference, findEntityDefinitionFile, getEntityRuntimeProfile, getWorkspaceRootForDocument, findDefinitionFileByCategory } from '../definitionWorkspace';
+import { findTypesXmlImplementedByReference, findEntityDefinitionFile, getEntityRuntimeProfile, getWorkspaceRootForDocument, findDefinitionFileByCategory, findDefinitionTextByCategory } from '../definitionWorkspace';
 import { cellScriptRoleAndEntity, collectCellDataDefUniverseWithCategory, fetchCellDataKeys } from '../backend/cellDataCompletion';
 import { cellDataKeyAccessAtPosition, isCellDataKeyInsideLineComment } from '../backend/cellDataKeyAccess';
 import { jumpLog, jumpTimeStart } from '../navigationLog';
@@ -367,17 +366,10 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     if (cellKeyHit && !isCellDataKeyInsideLineComment(line.text, cellKeyHit.keyStart)) {
       const cellRole = cellScriptRoleAndEntity(document.fileName);
       if (cellRole) {
-        const cellDefs = collectCellDataDefUniverseWithCategory(cellRole.entity, (name, category) => {
-          const filePath = findDefinitionFileByCategory(name, category, document);
-          if (!filePath) {
-            return null;
-          }
-          try {
-            return fs.readFileSync(filePath, 'utf8');
-          } catch {
-            return null; // 读失败 = 缺席贡献,不猜
-          }
-        });
+        // KSEM-CELL-15:def 文本走脏 overlay 读取——未保存的 def 编辑立即进键
+        // 宇宙(跳转落点行取自脏缓冲解析结果,打开的 def 编辑器即真位)。
+        const cellDefs = collectCellDataDefUniverseWithCategory(cellRole.entity, (name, category) =>
+          findDefinitionTextByCategory(name, category, document));
         const cellKeys = await fetchCellDataKeys(cellRole.entity, cellDefs);
         if (token?.isCancellationRequested) {
           return cancelledDefinitionResult();

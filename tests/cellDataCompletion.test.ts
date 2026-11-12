@@ -162,7 +162,8 @@ describe('fetchCellDataKeys(Rust 键宇宙查询)', () => {
         return {
           ok: true,
           result: {
-            keys: [{ key: 'hp', kind: 'defField', typeLabel: 'UINT16', sourceFile: 'Avatar.def', sourceLine: 5 }]
+            // wire 形状:Rust CellDataKeyKind 带 serde tag="kind"(内嵌标签对象)
+            keys: [{ key: 'hp', kind: { kind: 'defField' }, typeLabel: 'UINT16', sourceFile: 'Avatar.def', sourceLine: 5 }]
           }
         };
       }
@@ -181,9 +182,9 @@ describe('fetchCellDataKeys(Rust 键宇宙查询)', () => {
     expect(await fetchCellDataKeys('Avatar', [])).toBeNull();
     setKodeCoreShadowGate(gate({}));
     expect(await fetchCellDataKeys('Avatar', [])).toBeNull();
-    setKodeCoreShadowGate(gate({ keys: [{ kind: 'defField' }] }));
+    setKodeCoreShadowGate(gate({ keys: [{ kind: { kind: 'defField' } }] }));
     expect(await fetchCellDataKeys('Avatar', [])).toBeNull();
-    setKodeCoreShadowGate(gate({ keys: [{ key: 'hp', kind: 'nope' }] }));
+    setKodeCoreShadowGate(gate({ keys: [{ key: 'hp', kind: { kind: 'nope' } }] }));
     expect(await fetchCellDataKeys('Avatar', [])).toBeNull();
   });
 });
@@ -229,10 +230,12 @@ describe('KBEngineCompletionProvider cellData 键位分支(CELL-04 全链)', () 
     }
   });
 
+  // wire 形状(Rust serde tag="kind" 内嵌标签对象;fetchCellDataKeys 解包为
+  // 平面串后下游才见 kind: 'defField')
   const CANNED_KEYS = [
-    { key: 'hp', kind: 'defField', typeLabel: 'UINT16', sourceFile: 'Avatar.def', sourceLine: 5 },
-    { key: 'position', kind: 'builtin', typeLabel: 'Vector3Like', sourceFile: 'server/baseapp/entity.cpp:250', sourceLine: null },
-    { key: 'weapon', kind: 'componentSlot', typeLabel: 'Weapon', sourceFile: 'Avatar.def', sourceLine: 7 }
+    { key: 'hp', kind: { kind: 'defField' }, typeLabel: 'UINT16', sourceFile: 'Avatar.def', sourceLine: 5 },
+    { key: 'position', kind: { kind: 'builtin' }, typeLabel: 'Vector3Like', sourceFile: 'server/baseapp/entity.cpp:250', sourceLine: null },
+    { key: 'weapon', kind: { kind: 'componentSlot' }, typeLabel: 'Weapon', sourceFile: 'Avatar.def', sourceLine: 7 }
   ];
 
   const installGate = (

@@ -1,4 +1,3 @@
-import * as fs from 'fs';
 import * as vscode from 'vscode';
 import type { EntityMappingManager } from './entityMapping';
 import { findPythonSelfPropertyAccesses, propertyAccessKey } from './backend/propertyCodeLens';
@@ -7,7 +6,8 @@ import {
   resolveEntityAnnotationType,
   resolveEntityAnnotationTypeWithReason,
   resolveEntityFixedDictMember,
-  findDefinitionFileByCategory
+  findDefinitionTextByCategory,
+  defBufferStampForRoot
 } from './definitionWorkspace';
 import { PYTHON_TYPE_STUB_FALLBACK, resolveAnnotationTypeWithReason } from './pythonTypeStubs';
 import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from './backend/selfPropertyTypeInference';
@@ -342,20 +342,14 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
       return; // client/bots/其他角色:cellData 面不可达
     }
     const workspaceRoot = getWorkspaceRootForDocument(document);
-    const cacheKey = flowVersionKeyForDocument(document);
+    // KSEM-CELL-15:缓存键带 def 缓冲代——打开 def 的未保存编辑/保存/关闭
+    // 改变签名即缓存失效,键宇宙随之刷新(python 文档版本不变也生效)。
+    const cacheKey =
+      `${flowVersionKeyForDocument(document)}#${workspaceRoot ? defBufferStampForRoot(workspaceRoot) : ''}`;
     let keys = cellDataKeysCache.get(cacheKey);
     if (keys === undefined) {
-      const defs = collectCellDataDefUniverse(role.entity, (name, category) => {
-        const filePath = findDefinitionFileByCategory(name, category, document);
-        if (!filePath) {
-          return null;
-        }
-        try {
-          return fs.readFileSync(filePath, 'utf8');
-        } catch {
-          return null; // 读失败 = 缺席贡献,不猜
-        }
-      });
+      const defs = collectCellDataDefUniverse(role.entity, (name, category) =>
+        findDefinitionTextByCategory(name, category, document));
       keys = await fetchCellDataKeys(role.entity, defs);
       if (cellDataKeysCache.size >= CELL_DATA_KEYS_CACHE_MAX) {
         cellDataKeysCache.clear();

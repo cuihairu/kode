@@ -371,9 +371,10 @@ describe('KSEM-CELL-06/07 provider 全链(inlay 读取类型)', () => {
     fs.writeFileSync(file, content, 'utf8');
   };
 
+  // wire 形状(Rust serde tag="kind" 内嵌标签对象)
   const CANNED_KEYS = [
-    { key: 'hp', kind: 'defField', typeLabel: 'UINT16', sourceFile: 'Avatar.def', sourceLine: 5 },
-    { key: 'position', kind: 'builtin', typeLabel: 'VECTOR3', sourceFile: 'server/baseapp/entity.cpp:250', sourceLine: null }
+    { key: 'hp', kind: { kind: 'defField' }, typeLabel: 'UINT16', sourceFile: 'Avatar.def', sourceLine: 5 },
+    { key: 'position', kind: { kind: 'builtin' }, typeLabel: 'VECTOR3', sourceFile: 'server/baseapp/entity.cpp:250', sourceLine: null }
   ];
 
   const installGate = (keys: typeof CANNED_KEYS | null): void => {

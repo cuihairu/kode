@@ -63,7 +63,7 @@ import {
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import { EntityMappingManager } from '../entityMapping';
 import { PythonClassIndex } from '../backend/pythonClassIndex';
-import { getWorkspaceRootForDocument, findDefinitionFileByCategory } from '../definitionWorkspace';
+import { getWorkspaceRootForDocument, findDefinitionFileByCategory, findDefinitionTextByCategory } from '../definitionWorkspace';
 import { getDefinitionWorkspaceLayout, listDefinitionFiles } from '../definitionWorkspace';
 import { readSharedFileSnapshot } from '../sharedFileSnapshot';
 import { isPythonMroJumpEnabled, validateDocument, validateEntitiesXmlDocument } from '../languageProviders';
@@ -139,6 +139,7 @@ export interface DiagnosticsShared {
   scheduleCellDataCallbackDiagnostics: ScheduleDiagnostics;
   cellDataCallbackDiagnostics: vscode.DiagnosticCollection;
   cellDataCallbackScheduler: DiagnosticScheduler;
+  retriggerCellDataDiagnosticsForDefChange: (defDocument: vscode.TextDocument) => void;
   processTopologyDiagnostics: vscode.DiagnosticCollection;
   processTopologyScheduler: DiagnosticScheduler;
 }
@@ -1055,17 +1056,9 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         if (!role) {
           return []; // client/bots/其他角色:cellData 面不可达
         }
-        const defs = collectCellDataDefUniverseWithCategory(role.entity, (name, category) => {
-          const filePath = findDefinitionFileByCategory(name, category, document);
-          if (!filePath) {
-            return null;
-          }
-          try {
-            return fs.readFileSync(filePath, 'utf8');
-          } catch {
-            return null; // 读失败 = 缺席贡献,不猜
-          }
-        });
+        // KSEM-CELL-15:def 文本走脏 overlay 读取——未保存的 def 编辑立即进键宇宙
+        const defs = collectCellDataDefUniverseWithCategory(role.entity, (name, category) =>
+          findDefinitionTextByCategory(name, category, document));
         const entries = await fetchCellDataKeys(role.entity, defs);
         if (!entries || entries.length === 0) {
           return []; // Rust 不可用/畸形/实体缺:不造键,不出诊断
@@ -1152,17 +1145,9 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         if (!role) {
           return []; // client/bots/其他角色:cellData 面不可达
         }
-        const defs = collectCellDataDefUniverseWithCategory(role.entity, (name, category) => {
-          const filePath = findDefinitionFileByCategory(name, category, document);
-          if (!filePath) {
-            return null;
-          }
-          try {
-            return fs.readFileSync(filePath, 'utf8');
-          } catch {
-            return null; // 读失败 = 缺席贡献,不猜
-          }
-        });
+        // KSEM-CELL-15:def 文本走脏 overlay 读取——未保存的 def 编辑立即进键宇宙
+        const defs = collectCellDataDefUniverseWithCategory(role.entity, (name, category) =>
+          findDefinitionTextByCategory(name, category, document));
         const entries = await fetchCellDataKeys(role.entity, defs);
         if (!entries || entries.length === 0) {
           return []; // Rust 不可用/畸形/实体缺:不造键,不出诊断
@@ -1274,6 +1259,38 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
       cellDataCallbackScheduler.requestQueued(document, options);
     } else {
       cellDataCallbackScheduler.request(document, options);
+    }
+  };
+
+  // KSEM-CELL-15:def 缓冲变更(含未保存编辑)是 cellData 键宇宙的输入面——
+  // 键集变化必须反映到同根已打开实体脚本的三诊断(写入类型/错键/回调入口)。
+  // 先失效诊断输入代(同版本已发布的文档强制重算,否则同版本请求会被
+  // skippedCurrentVersion 跳过),再逐文档重排。跨根 def 不是本根脚本的键
+  // 宇宙,不串扰;invalidateAll 是全调度器代,跨根文档的下一次自身编辑会
+  // 多算一次(保守正确,非错误面)。
+  const retriggerCellDataDiagnosticsForDefChange = (
+    defDocument: vscode.TextDocument
+  ): void => {
+    const root = getWorkspaceRootForDocument(defDocument);
+    if (!root) {
+      return;
+    }
+    cellDataWriteScheduler.invalidateAll();
+    cellDataWrongKeyScheduler.invalidateAll();
+    cellDataCallbackScheduler.invalidateAll();
+    for (const document of vscode.workspace.textDocuments) {
+      if (document.uri.toString() === defDocument.uri.toString()) {
+        continue; // def 自身不是 cellData 消费面(它是键宇宙输入)
+      }
+      if (!isPythonDocument(document) || !cellScriptRoleAndEntity(document.fileName)) {
+        continue;
+      }
+      if (getWorkspaceRootForDocument(document) !== root) {
+        continue;
+      }
+      scheduleCellDataWriteDiagnostics(document, 'queued');
+      scheduleCellDataWrongKeyDiagnostics(document, 'queued');
+      scheduleCellDataCallbackDiagnostics(document, 'queued');
     }
   };
 
@@ -1492,6 +1509,7 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     scheduleCellDataCallbackDiagnostics,
     cellDataCallbackDiagnostics,
     cellDataCallbackScheduler,
+    retriggerCellDataDiagnosticsForDefChange,
     processTopologyDiagnostics,
     processTopologyScheduler
   };

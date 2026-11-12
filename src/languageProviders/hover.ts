@@ -1,12 +1,11 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
-import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { documentEventCacheKey, findEventCallsCached } from '../eventApi';
 import { EntityMappingManager } from '../entityMapping';
 import { getDocumentLines } from '../backend/documentStore';
 import { getTypeStorageShape } from '../databaseSchema';
-import { getWorkspaceRootForDocument, findDefinitionFileByCategory, resolveEntityAnnotationType, resolveEntityAnnotationTypeWithReason } from '../definitionWorkspace';
+import { getWorkspaceRootForDocument, findDefinitionTextByCategory, defBufferStampForRoot, resolveEntityAnnotationType, resolveEntityAnnotationTypeWithReason } from '../definitionWorkspace';
 import { getHookByName } from '../hooks';
 import { getEntryHookByName, isComponentEntryScriptFile } from '../backend/entryHooks';
 import { DETAIL_LEVELS, KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, KBENGINE_TYPES } from '../backend/kbengineMetadata';
@@ -139,6 +138,30 @@ function applyBehaviorNotes(
 const CELL_DATA_HOVER_KEYS_CACHE_MAX = 8;
 const cellDataHoverKeysCache = new Map<string, CellDataKeyEntry[] | null>();
 
+/**
+ * hover 出口统一挂靠(C-23 行为注记 + KSEM-CELL-14 cellData 生命周期注记)。
+ * 类 provideHover 与 languageServices 计时装配必须共用本入口——此前装配直呼
+ * provideHoverTimed 绕过了两层注记(2026-11-12 真机全链验收实锤:生命周期
+ * 注记的生产装配面恒缺,unit 用例走类 provideHover 掩盖了装配漂移)。
+ */
+export function provideHoverWithNotes(
+  timed: vscode.ProviderResult<vscode.Hover>,
+  document: vscode.TextDocument,
+  position: vscode.Position
+): vscode.ProviderResult<vscode.Hover> {
+  // C-23(交付③):出口统一挂行为注记——KB-001 结构化条目按悬停词挂靠,
+  // 覆盖所有 hover 分支出口(注记纯静态知识,零索引查询,不进预算闸)
+  const noted = attachBehaviorNotesToHoverResult(timed, document, position);
+  // KSEM-CELL-14:仅 `self.cellData` 接收者 token 接管(同步探针先行,其余
+  // 位置保持既有同步返回口径);命中才把结果链变异步挂生命周期注记
+  if (!cellDataLifecycleProbe(document, position)) {
+    return noted;
+  }
+  return Promise.resolve(noted).then(hover =>
+    attachCellDataLifecycleNote(hover, document, position)
+  );
+}
+
 /** 同步探针:仅 `self.cellData` 单段接收者接管;命中才把结果链变异步。 */
 function cellDataLifecycleProbe(
   document: vscode.TextDocument,
@@ -169,20 +192,15 @@ async function attachCellDataLifecycleNote(
   if (!role) {
     return hover ?? null;
   }
-  const cacheKey = `${flowVersionKeyForDocument(document)}#${role.entity}`;
+  // KSEM-CELL-15:缓存键带 def 缓冲代(同 typeInlayHints 口径)——打开 def
+  // 的未保存编辑/保存/关闭即缓存失效,生命周期注记的键宇宙随之刷新。
+  const hoverRoot = getWorkspaceRootForDocument(document);
+  const cacheKey =
+    `${flowVersionKeyForDocument(document)}#${role.entity}#${hoverRoot ? defBufferStampForRoot(hoverRoot) : ''}`;
   let keys = cellDataHoverKeysCache.get(cacheKey);
   if (keys === undefined) {
-    const defs = collectCellDataDefUniverse(role.entity, (name, category) => {
-      const filePath = findDefinitionFileByCategory(name, category, document);
-      if (!filePath) {
-        return null;
-      }
-      try {
-        return fs.readFileSync(filePath, 'utf8');
-      } catch {
-        return null; // 读失败 = 缺席贡献,不猜
-      }
-    });
+    const defs = collectCellDataDefUniverse(role.entity, (name, category) =>
+      findDefinitionTextByCategory(name, category, document));
     try {
       keys = await fetchCellDataKeys(role.entity, defs);
     } catch {
@@ -201,13 +219,17 @@ async function attachCellDataLifecycleNote(
     inWindow: proven.inWindow,
     state: proven.state
   });
-  const contents = hover?.contents as unknown;
-  if (contents && typeof contents === 'object' && 'value' in contents
-    && typeof (contents as vscode.MarkdownString).value === 'string') {
-    // 重建新实例再拼(memo 缓存跨请求共享同一 Hover 实例,原地 append 会重复叠加)
-    return new vscode.Hover(new vscode.MarkdownString(
-      `${(contents as vscode.MarkdownString).value}${note}`
-    ));
+  // contents 归一(2026-11-12 真机实锤):真 vscode.Hover 的 contents 恒为数组
+  // (构造单 MarkdownString 也被归一),只认单对象会漏判→注记静默丢失;数组/
+  // 单对象两形都重建首段再拼。重建新实例再拼(memo 缓存跨请求共享同一 Hover
+  // 实例,原地 append 会重复叠加)。
+  const rawContents = hover?.contents as unknown;
+  const parts: unknown[] = Array.isArray(rawContents) ? rawContents : [rawContents];
+  const first = parts[0] as { value?: string } | undefined;
+  if (first && typeof first === 'object' && typeof first.value === 'string') {
+    const rebuilt = parts.slice();
+    rebuilt[0] = new vscode.MarkdownString(`${first.value}${note}`);
+    return new vscode.Hover(rebuilt as vscode.MarkdownString[]);
   }
   if (hover) {
     return hover; // 未知 contents 形态:不猜,原样返回
@@ -279,21 +301,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     position: vscode.Position,
     token?: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.Hover> {
-    // C-23(交付③):出口统一挂行为注记——KB-001 结构化条目按悬停词挂靠,
-    // 覆盖所有 hover 分支出口(注记纯静态知识,零索引查询,不进预算闸)
-    const noted = attachBehaviorNotesToHoverResult(
-      this.provideHoverTimed(document, position, token),
-      document,
-      position
-    );
-    // KSEM-CELL-14:仅 `self.cellData` 接收者 token 接管(同步探针先行,其余
-    // 位置保持既有同步返回口径);命中才把结果链变异步挂生命周期注记
-    if (!cellDataLifecycleProbe(document, position)) {
-      return noted;
-    }
-    return Promise.resolve(noted).then(hover =>
-      attachCellDataLifecycleNote(hover, document, position)
-    );
+    return provideHoverWithNotes(this.provideHoverTimed(document, position, token), document, position);
   }
 
   /**

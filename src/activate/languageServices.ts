@@ -33,6 +33,7 @@ import {
   KBEngineDefinitionProvider,
   KBEngineDocumentSymbolProvider,
   KBEngineHoverProvider,
+  provideHoverWithNotes,
   KBEngineImplementationProvider,
   KBEngineProxyInternalAttrHintsProvider,
   PROXY_INTERNAL_PYE_FILE_NAME,
@@ -203,9 +204,15 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
         try {
           // IDE-MET-003:hover 分支耗时经 per-request 计时器直传进 provider,
           // 落到 operation.subPhases(总耗时仍由 operation.elapsedMs 承担)。
-          const result = await kbengineHoverImpl.provideHoverTimed(document, position, token, {
-            start: label => operation.startSubPhase(label)
-          });
+          // C-23/CELL-14 注记挂靠走共享入口——直呼 provideHoverTimed 会绕过
+          // 两层注记(2026-11-12 真机验收实锤的装配漂移,勿回退)。
+          const result = await provideHoverWithNotes(
+            kbengineHoverImpl.provideHoverTimed(document, position, token, {
+              start: label => operation.startSubPhase(label)
+            }),
+            document,
+            position
+          );
           operation.end(emptyResultStatus(result));
           return result;
         } catch (error) {

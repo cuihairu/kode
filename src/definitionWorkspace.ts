@@ -1234,6 +1234,54 @@ export function findDefinitionFileByCategory(
   return findDefinitionEntryByCategory(name, category, target)?.filePath || null;
 }
 
+// KSEM-CELL-15:cellData 全链消费面的 def 文本读取统一走这里——打开文档缓冲
+// 优先(未保存的 def 编辑立即生效:「打开文档是文本事实源」,与
+// typesXmlReferences/defSymbolReferences 同一 overlay 口径),关闭文档回落
+// 磁盘。读失败 = 缺席贡献,不猜。
+export function findDefinitionTextByCategory(
+  name: string,
+  category: DefinitionCategory,
+  target?: string | Pick<vscode.TextDocument, 'fileName'>
+): string | null {
+  const filePath = findDefinitionFileByCategory(name, category, target);
+  if (!filePath) {
+    return null;
+  }
+  const open = vscode.workspace.textDocuments.find(doc => doc.fileName === filePath);
+  if (open) {
+    return open.getText();
+  }
+  try {
+    return fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * def 缓冲代(KSEM-CELL-15):根内已打开 .def 文档的「相对路径#版本#脏标」
+ * 签名,作 cellData 键宇宙缓存键的 def 侧成分。打开文档的编辑(版本前进)/
+ * 保存(脏标翻转)/关闭(移出 textDocuments)都会改变签名,缓存即失效;
+ * 关闭文档的磁盘变更不经此签名(与既有各 def 消费面同一口径,不扩承诺)。
+ * 跨根文档不进本根签名(同名 def 跨根互不串扰)。
+ */
+export function defBufferStampForRoot(root: string): string {
+  const parts: string[] = [];
+  for (const doc of vscode.workspace.textDocuments) {
+    if (!doc.fileName.endsWith('.def')) {
+      continue;
+    }
+    const relative = path.relative(root, doc.fileName);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+      continue;
+    }
+    const version = typeof doc.version === 'number' ? doc.version : 0;
+    const dirty = doc.isDirty === true ? 1 : 0;
+    parts.push(`${relative}#${version}#${dirty}`);
+  }
+  return parts.sort().join('|');
+}
+
 export function findDefinitionEntryByCategory(
   name: string,
   category: DefinitionCategory,

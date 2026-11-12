@@ -290,6 +290,7 @@ export function activate(context: vscode.ExtensionContext) {
     scheduleCellDataCallbackDiagnostics,
     cellDataCallbackDiagnostics,
     cellDataCallbackScheduler,
+    retriggerCellDataDiagnosticsForDefChange,
     processTopologyDiagnostics,
     processTopologyScheduler
   } = activateDiagnostics({
@@ -428,6 +429,9 @@ export function activate(context: vscode.ExtensionContext) {
         scheduleDefMethodConsistencyDiagnostics(event.document, 'queued');
         // C-17:def 变更 → 拓扑校验(该 def 是全局输入之一)。
         scheduleProcessTopologyDiagnostics(event.document, 'queued');
+        // KSEM-CELL-15:def 缓冲变更(含未保存编辑)→ 重排同根实体脚本的
+        // cellData 三诊断(键宇宙输入变了,已发布诊断随之刷新)。
+        retriggerCellDataDiagnosticsForDefChange(event.document);
       } else if (isEntitiesXmlDocument(event.document)) {
         scheduleEntitiesDiagnostics(event.document, 'queued');
         // C-17:entities.xml 变更 → 拓扑校验(实体注册信息是输入)。
@@ -508,6 +512,12 @@ export function activate(context: vscode.ExtensionContext) {
           // KODE-AUD-001:进程拓扑诊断调度器同节拍冲刷——此前编辑事件面只
           // requestQueued 不冲刷,queued 任务滞留不发布致编辑期诊断不更新
           void processTopologyScheduler.flushQueued();
+          // KSEM-CELL-15:cellData 三调度器同节拍冲刷——python 编辑重排与
+          // def 变更重排都只 requestQueued,滞留不发布致编辑期/def 变更期
+          // 三诊断(写入类型/错键/回调入口)不刷新(同 AUD-001 形)。
+          void cellDataWriteScheduler.flushQueued();
+          void cellDataWrongKeyScheduler.flushQueued();
+          void cellDataCallbackScheduler.flushQueued();
         }, 0);
       }
       // Python 类索引增量失效:只重解析该文件,避免大仓全量扫描卡输入;

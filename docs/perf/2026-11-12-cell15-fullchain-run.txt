@@ -1,0 +1,9 @@
+cell15.baseline.wrongKeys=1
+cell15.dirty.bonusDefLine=6
+cell15.dirty.completionHasBonus=true
+cell15.dirty.f12Line=6
+cell15.dirty.inlayHasUINT8=true
+cell15.dirty.hoverHasBonus=true
+cell15.dirty.wrongKeyBonusGone=true
+cell15.dirty.writeTypeBonus=true
+cell15.crossRoot.bCompletions=alien

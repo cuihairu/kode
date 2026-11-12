@@ -176,10 +176,11 @@ describe('KSEM-CELL-05 provider 全链(跳转/引用)', () => {
     }
   });
 
+  // wire 形状(Rust serde tag="kind" 内嵌标签对象)
   const CANNED_KEYS = [
-    { key: 'hp', kind: 'defField', typeLabel: 'UINT16', sourceFile: 'Avatar.def', sourceLine: 5 },
-    { key: 'position', kind: 'builtin', typeLabel: 'Vector3Like', sourceFile: 'server/baseapp/entity.cpp:250', sourceLine: null },
-    { key: 'weapon', kind: 'componentSlot', typeLabel: 'Weapon', sourceFile: 'Avatar.def', sourceLine: 7 }
+    { key: 'hp', kind: { kind: 'defField' }, typeLabel: 'UINT16', sourceFile: 'Avatar.def', sourceLine: 5 },
+    { key: 'position', kind: { kind: 'builtin' }, typeLabel: 'Vector3Like', sourceFile: 'server/baseapp/entity.cpp:250', sourceLine: null },
+    { key: 'weapon', kind: { kind: 'componentSlot' }, typeLabel: 'Weapon', sourceFile: 'Avatar.def', sourceLine: 7 }
   ];
 
   const installGate = (keys: typeof CANNED_KEYS | null): { method: string; params: unknown } => {

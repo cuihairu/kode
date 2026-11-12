@@ -1,10 +1,9 @@
 // KODE-ARCH-001 pure-move split from src/languageProviders.ts (zero behavior change).
-import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { findFilesAcrossRoots } from '../scanRoots';
 import { EntityMappingManager } from '../entityMapping';
-import { findDefinitionFileByCategory, getRegisteredCustomTypes, getRegisteredAliasTypes, getRegisteredEntities, getWorkspaceRootForDocument, resolveEntityAnnotationType } from '../definitionWorkspace';
+import { findDefinitionTextByCategory, getRegisteredCustomTypes, getRegisteredAliasTypes, getRegisteredEntities, getWorkspaceRootForDocument, resolveEntityAnnotationType } from '../definitionWorkspace';
 import { HOOK_CATEGORY_NAMES, KBENGINE_HOOKS } from '../hooks';
 import { cellDataKeyCompletionContext, cellScriptRoleAndEntity, collectCellDataDefUniverse, fetchCellDataKeys, type CellDataKeyCompletionContext } from '../backend/cellDataCompletion';
 import { KBENGINE_ENTRY_HOOKS, isComponentEntryScriptFile } from '../backend/entryHooks';
@@ -505,17 +504,9 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     if (!role) {
       return null; // client/bots/其他角色:不接管(cellData 面不可达)
     }
-    const defs = collectCellDataDefUniverse(role.entity, (name, category) => {
-      const filePath = findDefinitionFileByCategory(name, category, document);
-      if (!filePath) {
-        return null;
-      }
-      try {
-        return fs.readFileSync(filePath, 'utf8');
-      } catch {
-        return null; // 读失败 = 缺席贡献,不猜
-      }
-    });
+    // KSEM-CELL-15:def 文本走脏 overlay 读取——未保存的 def 编辑立即进键宇宙
+    const defs = collectCellDataDefUniverse(role.entity, (name, category) =>
+      findDefinitionTextByCategory(name, category, document));
     const keys = await fetchCellDataKeys(role.entity, defs);
     if (token?.isCancellationRequested) {
       return [];

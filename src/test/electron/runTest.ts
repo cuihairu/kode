@@ -93,6 +93,9 @@ async function main(): Promise<void> {
     process.env.KODE_ELECTRON_SUITE = 'manifestnls';
   }
   const dirtyMode = process.argv.includes('--dirty');
+  // KSEM-CELL-15:cellData 全链(未保存 def 编辑 → 补全/F12/inlay/hover/诊断
+  // 五面联动;真实 Rust 门)。kode-server 二进制缺席时整模式自动降级。
+  const celldataMode = process.argv.includes('--celldata');
   let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
   let dbgLaunchArgs: string[] = [];
@@ -725,6 +728,177 @@ async function main(): Promise<void> {
     process.env.KODE_ELECTRON_SUITE = 'dirty';
     process.env.KODE_DIRTY_ROOT = temporaryRoot;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  } else if (celldataMode) {
+    // KSEM-CELL-15 未保存 def 编辑的 cellData 全链验收(真实编辑器+真实 Rust
+    // 门):双根工作区,根 A ChainEntity 走 Parent(ChainBase)/接口(ROLE)/组件
+    // 槽(BagBox)三边,根 B 同名实体只带 alien 键(跨根负例)。套件中途真实
+    // 编辑手势:打开根 A 实体 def 插入 bonus 属性(不保存),随后补全/F12/
+    // inlay/hover/错键+写入类型诊断五面必须一起反映未保存内容。键宇宙走
+    // $/kode/semantics/cellDataKeys(kode-server 二进制)——自动发现落空时
+    // 整模式降级为默认工作区(套件不入列),不伪造通过。
+    const repoRoot = path.resolve(extensionDevelopmentPath);
+    const serverExecutable = process.platform === 'win32' ? 'kode-server.exe' : 'kode-server';
+    const serverBinary = ['bin', path.join('target', 'debug'), path.join('target', 'release')]
+      .map(dir => path.join(repoRoot, dir, serverExecutable))
+      .find(candidate => { try { return fs.statSync(candidate).isFile(); } catch { return false; } });
+    // 陈旧二进制预检:扩展自动发现与这里同序(bin 优先)。bin/ 里的旧构建
+    // 不含 cellDataKeys 方法时 runInRust 静默失败→诊断恒空,先在此点名,
+    // 免得烧一轮真机运行才定位(2026-11-12 实测 bin/ 停在 11-08 无此方法)。
+    const serverBinaryHasCellDataKeys = (candidate: string): boolean => {
+      try {
+        return fs.readFileSync(candidate).includes(Buffer.from('cellDataKeys'));
+      } catch {
+        return false;
+      }
+    };
+    if (!serverBinary) {
+      console.warn('[celldata] kode-server binary not found; cellData full-chain suite skipped.');
+    } else if (!serverBinaryHasCellDataKeys(serverBinary)) {
+      console.warn(
+        `[celldata] ${serverBinary} lacks cellDataKeys; rebuild it (cargo build -p kode-server --release && cp target/release/kode-server bin/) or the suite will fail with empty diagnostics.`
+      );
+    } else {
+      const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-celldata-'));
+      const rootA = path.join(temporaryRoot, 'rootA');
+      const rootB = path.join(temporaryRoot, 'rootB');
+      const stageRoot = (root: string, defLines: string[], baseLines: string[], cellLines: string[]): void => {
+        fs.mkdirSync(path.join(root, 'scripts', 'entity_defs', 'interfaces'), { recursive: true });
+        fs.mkdirSync(path.join(root, 'scripts', 'entity_defs', 'components'), { recursive: true });
+        fs.mkdirSync(path.join(root, 'scripts', 'base'), { recursive: true });
+        fs.mkdirSync(path.join(root, 'scripts', 'cell'), { recursive: true });
+        fs.writeFileSync(path.join(root, 'scripts', 'entities.xml'), [
+          '<root>',
+          '\t<ChainEntity hasBase="true" hasCell="true"></ChainEntity>',
+          '</root>'
+        ].join('\n'));
+        fs.writeFileSync(path.join(root, 'scripts', 'entity_defs', 'ChainEntity.def'), defLines.join('\n'));
+        fs.writeFileSync(path.join(root, 'scripts', 'base', 'ChainEntity.py'), baseLines.join('\n'));
+        fs.writeFileSync(path.join(root, 'scripts', 'cell', 'ChainEntity.py'), cellLines.join('\n'));
+      };
+      stageRoot(rootA, [
+        '<root>',
+        '    <Properties>',
+        '        <gold>',
+        '            <Type>UINT32</Type>',
+        '            <Flags>CELL_PUBLIC</Flags>',
+        '        </gold>',
+        '    </Properties>',
+        '    <Parent>ChainBase</Parent>',
+        '    <Interfaces>',
+        '        <Interface>ROLE</Interface>',
+        '    </Interfaces>',
+        '    <Components>',
+        '        <bag>',
+        '            <Type>BagBox</Type>',
+        '        </bag>',
+        '    </Components>',
+        '</root>'
+      ], [
+        // base 侧只读:无动态键写入 → 世界封闭,未声明键的裸下标读可证 absent
+        // (错键「确认」级诊断的成立前提;KSEM-CELL-09/10 开放世界语义)
+        'class ChainEntity:',
+        '',
+        '    def onGetCellCellData(self, cellData):',
+        '        self.snapshot = cellData',
+        '',
+        '    def audit(self):',
+        '        total = self.cellData["gold"]',
+        '        mana = self.cellData["mana"]',
+        '        rank = self.cellData["roleRank"]',
+        '        bag = self.cellData["bag"]',
+        '        data = self.cellData',
+        '        score = data["bonus"]',
+        // 直读行:CELL-05 跳转面只认 self.cellData 直读(别名面是键宇宙/诊断
+        // 面能力,跳转面不覆盖),F12 靶点用本行;上一行别名读留给 inlay 面
+        '        dup = self.cellData["bonus"]',
+        '        ghost = self.cellData["ghost"]'
+      ], [
+        // cell 侧承载动态键写入(写入类型面的靶点):worldOpen 只作用于错键面
+        // (读缺失不可证),不影响写入类型校验(键声明后 str→UINT8 即报)
+        'class ChainEntity:',
+        '',
+        '    def onGetCellCellData(self, cellData):',
+        '        self.snapshot = cellData',
+        '',
+        '    def tune(self):',
+        '        data = self.cellData',
+        '        self.cellData["bonus"] = "x"',
+        '        weight = self.cellData["gold"]'
+      ]);
+      fs.writeFileSync(path.join(rootA, 'scripts', 'entity_defs', 'ChainBase.def'), [
+        '<root>',
+        '    <Properties>',
+        '        <mana>',
+        '            <Type>UINT16</Type>',
+        '            <Flags>CELL_PUBLIC</Flags>',
+        '        </mana>',
+        '    </Properties>',
+        '</root>'
+      ].join('\n'));
+      fs.writeFileSync(path.join(rootA, 'scripts', 'entity_defs', 'interfaces', 'ROLE.def'), [
+        '<root>',
+        '    <Properties>',
+        '        <roleRank>',
+        '            <Type>UINT8</Type>',
+        '            <Flags>CELL_PUBLIC</Flags>',
+        '        </roleRank>',
+        '    </Properties>',
+        '</root>'
+      ].join('\n'));
+      fs.writeFileSync(path.join(rootA, 'scripts', 'entity_defs', 'components', 'BagBox.def'), [
+        '<root>',
+        '    <Properties>',
+        '        <pouch>',
+        '            <Type>UINT32</Type>',
+        '        </pouch>',
+        '    </Properties>',
+        '</root>'
+      ].join('\n'));
+      stageRoot(rootB, [
+        '<root>',
+        '    <Properties>',
+        '        <alien>',
+        '            <Type>UINT8</Type>',
+        '            <Flags>CELL_PUBLIC</Flags>',
+        '        </alien>',
+        '    </Properties>',
+        '</root>'
+      ], [
+        'class ChainEntity:',
+        '',
+        '    def onGetCellCellData(self, cellData):',
+        '        self.snapshot = cellData',
+        '',
+        '    def audit(self):',
+        '        value = self.cellData["alien"]',
+        '        cross = self.cellData["gold"]'
+      ], [
+        'class ChainEntity:',
+        '',
+        '    def onGetCellCellData(self, cellData):',
+        '        self.snapshot = cellData',
+        '',
+        '    def audit(self):',
+        '        value = self.cellData["alien"]',
+        '        cross = self.cellData["gold"]'
+      ]);
+      fs.mkdirSync(path.join(temporaryRoot, '.vscode'), { recursive: true });
+      const wsFile = path.join(temporaryRoot, 'dual.code-workspace');
+      fs.writeFileSync(wsFile, JSON.stringify({
+        folders: [{ path: rootA }, { path: rootB }],
+        settings: {
+          'kbengine.showFinalConfigOnOpen': false,
+          'kbengine.python.stubExport': false,
+          'kbengine.python.extraPathsSync': false
+        }
+      }, null, 2));
+      workspacePath = wsFile;
+      process.env.KODE_ELECTRON_SUITE = 'celldata';
+      process.env.KODE_CELLDATA_ROOT = temporaryRoot;
+      process.env.KODE_CELLDATA_ROOT_A = rootA;
+      process.env.KODE_CELLDATA_ROOT_B = rootB;
+      process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+    }
   } else if (stormMode) {
     // IDE-ACC-006 连续输入后的补全与诊断验收:StormEntity 的 def 把 mA/mB
     // 都声明在 BaseMethods,python 经 self.cell 调用必出「段错配」诊断且
