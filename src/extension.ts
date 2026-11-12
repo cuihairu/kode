@@ -269,6 +269,8 @@ export function activate(context: vscode.ExtensionContext) {
     scheduleRoleMisuseDiagnostics,
     schedulePostDestroyDiagnostics,
     scheduleCellDataWriteDiagnostics,
+    scheduleFixedDictConstructDiagnostics,
+    rescheduleFixedDictConstructForRegistryChange,
     scheduleProcessTopologyDiagnostics,
     defMethodConsistencyDiagnostics,
     defMethodConsistencyScheduler,
@@ -290,6 +292,7 @@ export function activate(context: vscode.ExtensionContext) {
     scheduleCellDataCallbackDiagnostics,
     cellDataCallbackDiagnostics,
     cellDataCallbackScheduler,
+    fixedDictConstructScheduler,
     retriggerCellDataDiagnosticsForDefChange,
     processTopologyDiagnostics,
     processTopologyScheduler
@@ -352,6 +355,8 @@ export function activate(context: vscode.ExtensionContext) {
       schedulePostDestroyDiagnostics(document, 'immediate');
       // KSEM-CELL-08:打开 python 文件即排 cellData 写入类型诊断
       scheduleCellDataWriteDiagnostics(document, 'immediate');
+      // KSEM-STRUCT-04:打开 python 文件即排 FIXED_DICT 构造点诊断
+      scheduleFixedDictConstructDiagnostics(document, 'immediate');
       // KSEM-CELL-10:打开 python 文档即错键诊断(immediate)
       scheduleCellDataWrongKeyDiagnostics(document, 'immediate');
       // KSEM-CELL-12:打开 python 文档即回调入口访问诊断(immediate)
@@ -457,6 +462,8 @@ export function activate(context: vscode.ExtensionContext) {
         schedulePostDestroyDiagnostics(event.document, 'queued');
         // KSEM-CELL-08:python 改动 → 重排本文件的 cellData 写入类型诊断
         scheduleCellDataWriteDiagnostics(event.document, 'queued');
+        // KSEM-STRUCT-04:python 改动 → 重排本文件的 FIXED_DICT 构造点诊断
+        scheduleFixedDictConstructDiagnostics(event.document, 'queued');
         // KSEM-CELL-10:编辑排队重算(queued)
         scheduleCellDataWrongKeyDiagnostics(event.document, 'queued');
         // KSEM-CELL-12:编辑排队重算(queued)
@@ -476,6 +483,8 @@ export function activate(context: vscode.ExtensionContext) {
         // GEN-DEF-1e:types.xml/alias.xml 变更 = user_type 契约输入变,
         // 重排全部已打开 impl 文件的契约诊断。
         rescheduleUserTypeContractForRegistryChange();
+        // KSEM-STRUCT-04:types.xml 字段集变 → FD 构造点诊断重排
+        rescheduleFixedDictConstructForRegistryChange();
       } else if (isStartupScriptDocument(event.document)) {
         // KBEXP-1:启动脚本改动 → 重排本文件启动参数诊断(行级纯文本扫描)。
         scheduleStartupScriptDiagnostics(event.document, 'queued');
@@ -518,6 +527,10 @@ export function activate(context: vscode.ExtensionContext) {
           void cellDataWriteScheduler.flushQueued();
           void cellDataWrongKeyScheduler.flushQueued();
           void cellDataCallbackScheduler.flushQueued();
+          // KSEM-STRUCT-04:FD 构造点调度器同节拍冲刷——python 编辑重排与
+          // def/types.xml 变更重排都只 requestQueued,滞留不发布致编辑期
+          // 构造点诊断不刷新(同 CELL-15/AUD-001 形)。
+          void fixedDictConstructScheduler.flushQueued();
         }, 0);
       }
       // Python 类索引增量失效:只重解析该文件,避免大仓全量扫描卡输入;
@@ -867,6 +880,10 @@ export function activate(context: vscode.ExtensionContext) {
           // KSEM-CELL-08:cellData 写入类型开关变更 → 立即重算已开 python 文档
           if (event.affectsConfiguration('kbengine.cellDataWriteDiagnostics')) {
             scheduleCellDataWriteDiagnostics(doc, 'immediate');
+          }
+          // KSEM-STRUCT-04:FD 构造点开关变更 → 立即重算已开 python 文档
+          if (event.affectsConfiguration('kbengine.fixedDictConstructDiagnostics')) {
+            scheduleFixedDictConstructDiagnostics(doc, 'immediate');
           }
           // KSEM-CELL-10:cellData 错键开关变更 → 立即重算已开 python 文档
           if (event.affectsConfiguration('kbengine.cellDataWrongKeyDiagnostics')) {

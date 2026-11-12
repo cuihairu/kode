@@ -286,8 +286,15 @@ const ANCHORS: Array<[string, number, string]> = [
   // +8(393→401);close +3/change +2/开关面在锚点之后 → flushQueued 锚点
   // +10(475→485)。出处随 baseline 锁步。
   // baseline 锁步。
-  ['src/activate/diagnostics.ts', 152, "startLanguageServiceOperation('diagnostics'"],
-  ['src/activate/diagnostics.ts', 165, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-13(KSEM-STRUCT-04):diagnostics.ts 顶部 import +2
+  // (fixedDictConstructCheck/definitionWorkspace 扩展)与 DiagnosticsShared 声明 +4
+  // → 两处诊断打点锚点 +10(152/165 → 162/175,真位重探);FD 构造点管线块在其后
+  // 不再位移。extension.ts 解构 +2、open 钩 +2 → onDidChangeTextDocument 锚点
+  // +5(410→415);change queued 钩 +2/types.xml 注册表分支 +2 → flushQueued 锚点
+  // +9(499→508);flush timer 内 FD 构造点调度器冲刷 +5(CELL-15 同形)在锚点之后
+  // 不再位移。出处随 baseline 锁步。
+  ['src/activate/diagnostics.ts', 162, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 175, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -297,8 +304,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // runPyspySchedule 引入)→ 上列 9 处 extension.ts 锚点整体 +2(真位重探 683/696/980/
   // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450);
   // HOT-VER 再 +3(见上)→ 后段锚点 2373/2453;DEMO-GAME-006 再 +2(见上)→ 2375/2455。
-  ['src/extension.ts', 410, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 499, 'flushQueued()'],
+  ['src/extension.ts', 415, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 508, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。

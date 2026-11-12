@@ -43,6 +43,12 @@ import { ROLE_MISUSE_DIAGNOSTICS_ENABLED_DEFAULT, roleMisuseDiagnosticItemsAsync
 import { POST_DESTROY_DIAGNOSTICS_ENABLED_DEFAULT, postDestroyDiagnosticItemsAsync, type PostDestroyDiagnosticItem } from '../backend/postDestroyDiagnostics';
 import { buildPostDestroyItemsWithRust } from '../backend/postDestroyRust';
 import { CELL_DATA_WRITE_DIAGNOSTICS_ENABLED_DEFAULT, analyzeCellDataFieldWrites, cellDataWriteFindingToItem, type CellDataWriteDiagnosticItem } from '../backend/cellDataWriteCheck';
+import {
+  FIXED_DICT_CONSTRUCT_DIAGNOSTICS_ENABLED_DEFAULT,
+  analyzeFixedDictConstructWrites,
+  fixedDictConstructFindingToItem,
+  type FixedDictConstructDiagnosticItem
+} from '../backend/fixedDictConstructCheck';
 import { cellScriptRoleAndEntity, collectCellDataDefUniverseWithCategory, fetchCellDataKeys, resolveCellDataDeclAnchor, type CellDataRelatedLocation } from '../backend/cellDataCompletion';
 import {
   cellDataKeyWorldOpen,
@@ -63,7 +69,7 @@ import {
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import { EntityMappingManager } from '../entityMapping';
 import { PythonClassIndex } from '../backend/pythonClassIndex';
-import { getWorkspaceRootForDocument, findDefinitionFileByCategory, findDefinitionTextByCategory } from '../definitionWorkspace';
+import { getWorkspaceRootForDocument, findDefinitionFileByCategory, findDefinitionTextByCategory, getEntityCustomTypesSnapshot } from '../definitionWorkspace';
 import { getDefinitionWorkspaceLayout, listDefinitionFiles } from '../definitionWorkspace';
 import { readSharedFileSnapshot } from '../sharedFileSnapshot';
 import { isPythonMroJumpEnabled, validateDocument, validateEntitiesXmlDocument } from '../languageProviders';
@@ -118,6 +124,8 @@ export interface DiagnosticsShared {
   scheduleRoleMisuseDiagnostics: ScheduleDiagnostics;
   schedulePostDestroyDiagnostics: ScheduleDiagnostics;
   scheduleCellDataWriteDiagnostics: ScheduleDiagnostics;
+  scheduleFixedDictConstructDiagnostics: ScheduleDiagnostics;
+  rescheduleFixedDictConstructForRegistryChange: () => void;
   scheduleProcessTopologyDiagnostics: ScheduleDiagnostics;
   defMethodConsistencyDiagnostics: vscode.DiagnosticCollection;
   defMethodConsistencyScheduler: DiagnosticScheduler;
@@ -133,6 +141,8 @@ export interface DiagnosticsShared {
   postDestroyScheduler: DiagnosticScheduler;
   cellDataWriteDiagnostics: vscode.DiagnosticCollection;
   cellDataWriteScheduler: DiagnosticScheduler;
+  fixedDictConstructDiagnostics: vscode.DiagnosticCollection;
+  fixedDictConstructScheduler: DiagnosticScheduler;
   scheduleCellDataWrongKeyDiagnostics: ScheduleDiagnostics;
   cellDataWrongKeyDiagnostics: vscode.DiagnosticCollection;
   cellDataWrongKeyScheduler: DiagnosticScheduler;
@@ -1113,6 +1123,89 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     }
   };
 
+  // KSEM-STRUCT-04:FIXED_DICT 构造点诊断(缺键/多键/字段值结构)。确定结构
+  // 消费点 = 赋值目标可解析为 FD 容器(`self.<属性> = {…}` /
+  // `self.<属性>["键"]… = {…}`,键链复用 STRUCT-02 单一解析链);普通 dict
+  // 目标不套封闭约束。数据源 = CustomTypeInfo 注册表 + def 属性定型
+  // (resolvePropertyDefinitionInfo,与属性 CodeLens 同索引同口径)。开关
+  // kbengine.fixedDictConstructDiagnostics 默认开;独立诊断集合 + 独立
+  // 调度器(同 C-19/cellData 族范式)。
+  const fixedDictConstructDiagnostics = vscode.languages.createDiagnosticCollection(
+    'kbengine-fixeddict-construct'
+  );
+  context.subscriptions.push(fixedDictConstructDiagnostics);
+  const fixedDictConstructScheduler = new DiagnosticScheduler();
+  const scheduleFixedDictConstructDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    if (!isPythonDocument(document)) {
+      return;
+    }
+    const capturedVersion = document.version;
+    const options = {
+      layer: 'local' as const,
+      computeAsync: async (): Promise<readonly FixedDictConstructDiagnosticItem[] | null> => {
+        if (document.version !== capturedVersion) {
+          return [];
+        }
+        const enabled = vscode.workspace.getConfiguration('kbengine')
+          .get<boolean>('fixedDictConstructDiagnostics', FIXED_DICT_CONSTRUCT_DIAGNOSTICS_ENABLED_DEFAULT);
+        if (!enabled) {
+          return [];
+        }
+        const workspaceRoot = getWorkspaceRootForDocument(document) ?? '';
+        const customTypes = getEntityCustomTypesSnapshot(workspaceRoot);
+        if (customTypes.length === 0) {
+          return []; // types.xml 不可解析:注册表空,不造诊断
+        }
+        const findings = await analyzeFixedDictConstructWrites(
+          document.getText(),
+          async propertyName => {
+            const info = await entityMappingManager.resolvePropertyDefinitionInfo(
+              document.uri.fsPath,
+              propertyName,
+              propertyName
+            );
+            return info?.typeName ?? null;
+          },
+          customTypes
+        );
+        return findings.map(fixedDictConstructFindingToItem);
+      },
+      publish: (items: readonly FixedDictConstructDiagnosticItem[]) => {
+        fixedDictConstructDiagnostics.set(document.uri, items.map(item => {
+          const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(
+              item.range.start.line, item.range.start.character,
+              item.range.end.line, item.range.end.character
+            ),
+            item.message,
+            vscode.DiagnosticSeverity.Warning
+          );
+          diagnostic.source = item.source;
+          diagnostic.code = item.code;
+          return diagnostic;
+        }));
+      }
+    };
+    if (channel === 'queued') {
+      fixedDictConstructScheduler.requestQueued(document, options);
+    } else {
+      fixedDictConstructScheduler.request(document, options);
+    }
+  };
+
+  /** 类型注册表(types.xml/alias.xml)变更:FD 构造输入变,重排全部已打开 python 文档。 */
+  const rescheduleFixedDictConstructForRegistryChange = (): void => {
+    fixedDictConstructScheduler.invalidateAll();
+    for (const doc of vscode.workspace.textDocuments) {
+      if (isPythonDocument(doc)) {
+        scheduleFixedDictConstructDiagnostics(doc, 'queued');
+      }
+    }
+  };
+
   // KSEM-CELL-10:cellData 错键提示。键宇宙与 CELL-08 同源(Rust cellDataKeys),
   // 判据用 CELL-09 的键跟踪事实:裸下标读已证 absent 且世界封闭 → 确定性缺失;
   // 世界开放(动态键写/update/setdefault)或 .get 形态 → 只给低置信建议(get
@@ -1278,6 +1371,7 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     cellDataWriteScheduler.invalidateAll();
     cellDataWrongKeyScheduler.invalidateAll();
     cellDataCallbackScheduler.invalidateAll();
+    fixedDictConstructScheduler.invalidateAll(); // KSEM-STRUCT-04:def 属性类型也是 FD 构造输入
     for (const document of vscode.workspace.textDocuments) {
       if (document.uri.toString() === defDocument.uri.toString()) {
         continue; // def 自身不是 cellData 消费面(它是键宇宙输入)
@@ -1291,6 +1385,19 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
       scheduleCellDataWriteDiagnostics(document, 'queued');
       scheduleCellDataWrongKeyDiagnostics(document, 'queued');
       scheduleCellDataCallbackDiagnostics(document, 'queued');
+    }
+    // KSEM-STRUCT-04:FD 构造面不设 cell 角色闸(def 属性三域皆有),全 python 重排
+    for (const document of vscode.workspace.textDocuments) {
+      if (document.uri.toString() === defDocument.uri.toString()) {
+        continue;
+      }
+      if (!isPythonDocument(document)) {
+        continue;
+      }
+      if (getWorkspaceRootForDocument(document) !== root) {
+        continue;
+      }
+      scheduleFixedDictConstructDiagnostics(document, 'queued');
     }
   };
 
@@ -1488,6 +1595,8 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     scheduleRoleMisuseDiagnostics,
     schedulePostDestroyDiagnostics,
     scheduleCellDataWriteDiagnostics,
+    scheduleFixedDictConstructDiagnostics,
+    rescheduleFixedDictConstructForRegistryChange,
     scheduleProcessTopologyDiagnostics,
     defMethodConsistencyDiagnostics,
     defMethodConsistencyScheduler,
@@ -1503,6 +1612,8 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     postDestroyScheduler,
     cellDataWriteDiagnostics,
     cellDataWriteScheduler,
+    fixedDictConstructDiagnostics,
+    fixedDictConstructScheduler,
     scheduleCellDataWrongKeyDiagnostics,
     cellDataWrongKeyDiagnostics,
     cellDataWrongKeyScheduler,

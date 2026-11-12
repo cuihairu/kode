@@ -339,6 +339,14 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     quickFix: false, status: 'implemented',
     source: 'src/backend/cellDataCallbackCheck.ts'
   },
+  {
+    id: 'KBE-PY-021', code: 'kbengine.fixedDictConstruct',
+    title: 'FIXED_DICT 构造点校验(缺声明字段/未知键/字段值结构错配)',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.fixedDictConstructDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/backend/fixedDictConstructCheck.ts(发布 src/activate/diagnostics.ts)'
+  },
   // ── KB-001 行为知识流水线(C-23,数据源=src/knowledge/trapsKnowledge.ts)
   {
     id: 'KBE-PY-015', code: 'kbengine.fixedDictNestedMutation',

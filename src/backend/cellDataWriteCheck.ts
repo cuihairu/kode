@@ -532,3 +532,36 @@ export function cellDataWriteFindingToItem(
     ...(related ? { related } : {})
   };
 }
+
+// ---- KSEM-STRUCT-04 复用面(同一引擎标量真源,不复制表) ----
+
+/** 字面量值类(STRUCT-04 FD 构造校验按值段分类复用)。 */
+export type CellDataValueLiteral = ValueLiteral;
+
+/** 引擎标量期望文案;非标量类型(PYTHON 族/ARRAY/FIXED_DICT/自定义别名)→ null。 */
+export function cellDataScalarFamilyLabel(typeLabel: string): string | null {
+  return SCALAR_FAMILIES.get(typeLabel)?.label ?? null;
+}
+
+/**
+ * 结构面裁定(STRUCT-04 FD 构造字段值复用):非标量类型或整段推不出 →
+ * null(不裁定);范围面越界 → ok(STRUCT-05 车道,本面不报);结构错配 →
+ * ok:false + actual 文案。
+ */
+export function judgeCellDataValueStructure(
+  literal: CellDataValueLiteral,
+  typeLabel: string
+): { ok: true } | { ok: false; actual: string } | null {
+  const family = SCALAR_FAMILIES.get(typeLabel);
+  if (!family) {
+    return null;
+  }
+  const verdict = checkWriteAgainstFamily(literal, family);
+  if (!verdict) {
+    return { ok: true };
+  }
+  if (verdict.reason === 'range') {
+    return { ok: true }; // 范围面归 STRUCT-05,构造面不重复报
+  }
+  return { ok: false, actual: verdict.actual };
+}

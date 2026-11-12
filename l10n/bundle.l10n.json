@@ -646,5 +646,8 @@
   "Retry connection test": "Retry connection test",
   "internal attribute": "internal attribute",
   "cellData[\"{key}\"] expects {expected} as declared in {source}; got {actual}": "cellData[\"{key}\"] expects {expected} as declared in {source}; got {actual}",
-  "cellData[\"{key}\"] value {value} is out of range for {expected} as declared in {source}": "cellData[\"{key}\"] value {value} is out of range for {expected} as declared in {source}"
+  "cellData[\"{key}\"] value {value} is out of range for {expected} as declared in {source}": "cellData[\"{key}\"] value {value} is out of range for {expected} as declared in {source}",
+  "{target} constructs {container} but is missing field(s) {fields} declared in {source}": "{target} constructs {container} but is missing field(s) {fields} declared in {source}",
+  "\"{key}\" is not a field of {container} (declared in {source}); a FIXED_DICT construction accepts only declared fields": "\"{key}\" is not a field of {container} (declared in {source}); a FIXED_DICT construction accepts only declared fields",
+  "{target} field \"{key}\" expects {expected} as declared in {source}; got {actual}": "{target} field \"{key}\" expects {expected} as declared in {source}; got {actual}"
 }
