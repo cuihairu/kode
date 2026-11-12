@@ -1,0 +1,160 @@
+#!/usr/bin/env node
+// kode-mcp npm launcher.
+//
+// The Rust binary itself ships in a per-platform package
+// (@cuihairu/mcp-<os>-<arch>); this shim locates it and execs it with argv and
+// stdio passed straight through, so MCP clients see one stable command name no
+// matter which platform package npm installed.
+//
+// Resolution order (first hit wins):
+//   1. KODE_MCP_BINARY — explicit path, for offline use or for a client that
+//      already owns a build (same idea as the extension's packaged `bin/`).
+//   2. The platform package inside a node_modules, searching from this file
+//      upward and from the client's cwd (covers npx, global installs, workspaces).
+//   3. require.resolve for exotic installers.
+
+'use strict';
+
+const child = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+const { createRequire } = require('node:module');
+
+const SCOPE = '@cuihairu';
+const BINARY = 'kode-mcp';
+const EXE_SUFFIX = process.platform === 'win32' ? '.exe' : '';
+
+// os/arch → platform package suffix. Node reports arm64 on modern kernels.
+// Unsupported combinations are absent on purpose: a missing key makes the
+// launcher fail with a clear message instead of running the wrong binary.
+const ARCH = {
+  linux: { x64: 'linux-x64', arm64: 'linux-arm64' },
+  darwin: { x64: 'darwin-x64', arm64: 'darwin-arm64' },
+  win32: { x64: 'win32-x64', arm64: 'win32-arm64' }
+};
+
+function platformSuffix(platform = process.platform, arch = process.arch) {
+  const table = ARCH[platform];
+  return table ? table[arch] : undefined;
+}
+
+/** File name of the prebuilt binary for a platform package suffix. */
+function binaryName(suffix) {
+  return suffix.startsWith('win32') ? `${BINARY}.exe` : BINARY;
+}
+
+/** node_modules directories to search, from this file's folder upward. */
+function* nodeModulesRoots(start = __dirname) {
+  let here = start;
+  for (;;) {
+    const dir = path.join(here, 'node_modules');
+    if (fs.existsSync(dir)) {
+      yield dir;
+    }
+    const parent = path.dirname(here);
+    if (parent === here) {
+      return;
+    }
+    here = parent;
+  }
+}
+
+/** Locate the platform binary without touching process.env. */
+function findInNodeModules(suffix, cwd = process.cwd()) {
+  const packageDir = `${SCOPE}/mcp-${suffix}`;
+  const relative = path.join('bin', binaryName(suffix));
+  for (const nodeModules of nodeModulesRoots()) {
+    const candidate = path.join(nodeModules, packageDir, relative);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  const fromCwd = path.resolve(cwd, 'node_modules', packageDir, relative);
+  return fs.existsSync(fromCwd) ? fromCwd : '';
+}
+
+function fail(message) {
+  process.stderr.write(`kode-mcp: ${message}\n`);
+  process.stderr.write(
+    'Install a matching platform package, or point KODE_MCP_BINARY at the binary.\n'
+  );
+  process.exit(1);
+}
+
+function resolve() {
+  const explicit = process.env.KODE_MCP_BINARY;
+  if (explicit) {
+    if (fs.existsSync(explicit)) {
+      return explicit;
+    }
+    fail(`KODE_MCP_BINARY does not exist: ${explicit}`);
+  }
+  const suffix = platformSuffix();
+  if (!suffix) {
+    fail(`no prebuilt binary for ${process.platform}-${process.arch}`);
+  }
+  const found = findInNodeModules(suffix) || findByRequire(suffix);
+  if (!found) {
+    fail(
+      `missing platform package ${SCOPE}/mcp-${suffix} ` +
+        '(install @cuihairu/kode-mcp on a supported platform)'
+    );
+  }
+  return found;
+}
+
+function findByRequire(suffix) {
+  const manifest = `${SCOPE}/mcp-${suffix}/package.json`;
+  try {
+    const resolved = createRequire(__filename).resolve(manifest);
+    const candidate = path.join(path.dirname(resolved), 'bin', binaryName(suffix));
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  } catch {
+    // Platform package for this architecture is not installed.
+  }
+  return '';
+}
+
+function run(target) {
+  if (process.platform !== 'win32') {
+    // npm preserves file modes, but extracted archives and some package
+    // managers do not; a non-executable binary would fail with EACCES.
+    try {
+      const mode = fs.statSync(target).mode;
+      if (!(mode & 0o111)) {
+        fs.chmodSync(target, 0o755);
+      }
+    } catch {
+      // chmod is best effort; spawn reports the real error.
+    }
+  }
+  const spawned = child.spawn(target, process.argv.slice(2), {
+    stdio: 'inherit',
+    env: process.env,
+    cwd: process.cwd()
+  });
+  spawned.on('error', error => fail(`cannot run ${target}: ${error.message}`));
+  spawned.on('close', (code, signal) => {
+    if (signal) {
+      process.kill(process.pid, signal);
+    } else {
+      process.exit(code === null ? 1 : code);
+    }
+  });
+}
+
+// Only run when executed directly, so tests can import the helpers.
+if (require.main === module) {
+  run(resolve());
+}
+
+module.exports = {
+  SCOPE,
+  BINARY,
+  ARCH,
+  platformSuffix,
+  binaryName,
+  findInNodeModules
+};

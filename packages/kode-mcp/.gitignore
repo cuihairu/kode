@@ -1,0 +1,5 @@
+# Staged prebuilt binaries and their digests are build outputs: CI stages them,
+# `npm publish` ships them, and they must never reach the git tree (hundreds of
+# MB per platform). package.json of each platform dir stays under version
+# control so the package layout is reviewable.
+mcp-*/bin/

@@ -1,0 +1,19 @@
+{
+  "name": "@cuihairu/mcp-linux-x64",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Prebuilt kode-mcp binary for linux x64 (musl).",
+  "license": "Apache-2.0",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@cuihairu/mcp-win32-arm64",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Prebuilt kode-mcp binary for windows arm64.",
+  "license": "Apache-2.0",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

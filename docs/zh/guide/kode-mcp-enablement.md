@@ -31,6 +31,87 @@ cargo run -p kode-mcp -- <assets-root>
 - **额外路径**（可选）：资产根之外要索引的附加知识目录或文件（如项目
   `.md` 文档、Excel）。
 
+## 从 npm 安装（打包机制已建，尚未发布）
+
+二进制按 `esbuild`、`@swc/core` 同款方式发布：`@cuihairu/kode-mcp` 里只有
+一个 launcher 脚本，平台二进制走 per-platform 的可选依赖
+（`@cuihairu/mcp-linux-x64`、`-linux-arm64`、`-darwin-x64`、`-darwin-arm64`、
+`-win32-x64`、`-win32-arm64`）。npm 只会装其中一个，因此客户端配置在任何系统上
+都是同一个稳定命令：
+
+```
+npm install @cuihairu/kode-mcp
+# 配置里指向 launcher 而非 cargo 构建：
+{ "command": "kode-mcp", "args": ["/abs/path/to/assets"] }
+```
+
+**这些 tarball 还没上 registry。** 打包机制已在仓库内建好并验证——
+`scripts/npm-package.mjs`（`build`/`pack`/`verify`/`smoke`/`prepare`/`publish`）
+与手动的 `npm.yml` workflow 会为六个目标交叉编译 `kode-mcp`、打包，并在每个
+native runner 上跑真实 MCP 握手（`initialize` + `tools/list` 返回 25 个工具）。
+发布刻意留给显式触发且由人工给版本号，与本项目的发版口径一致。在那之前，用
+上面的 cargo 构建，或用 `KODE_MCP_BINARY` 指向已有二进制——launcher 优先听它。
+
+## 发布：所需环境变量与凭据
+
+需要凭据的有三样，且刻意分开，使构建本身永远无法碰到 registry。
+
+### 环境变量
+
+| 变量 | 位置 | 用途 |
+|---|---|---|
+| `NODE_AUTH_TOKEN` | 仅 CI，由 `NPM_TOKEN` secret 注入 | npm 认证令牌。**不要**写进 `.npmrc`——npm 会告警，且它会落进产物。 |
+| `NPM_TOKEN` | GitHub Actions 仓库 secret | Granular access token，范围 **All packages**，权限 **Read and write**。classic token 不能用于自动化发布。 |
+| `KODE_NPM_PUBLISH=1` | 本地或 CI | 显式闸门。`scripts/npm-package.mjs publish` 未设此变量即拒绝执行，构建不会误发。 |
+| `KODE_MCP_BINARY` | 客户端运行时 | `kode-mcp` 二进制的绝对路径。优先于平台包查找——离线安装、或 IDE 已持有构建时用。 |
+| `RUST_LOG=off` | smoke 脚手架 | 握手检查期间让暂存二进制安静。 |
+
+### 一次性账号配置
+
+1. 浏览器里 `npm profile login`（npm 对每个账号强制 2FA，所以令牌是从账号的
+   2FA 页面创建的，而非普通密码）。
+2. 发布作用域：`@cuihairu/*` 归属你的**个人** npm 账号。npm 没有免费的组织
+   作用域，所以除非 `@kode/...` 本来就是你名下的，否则别指望它能用。
+3. 每个包都已带 `"publishConfig": { "access": "public" }`，这是 scoped 包的
+   必需项——缺了 npm 会回 `402`。
+4. 脚本自动带 `--access public`，包即对所有人可见。
+
+### 从 CI 发布
+
+`.github/workflows/npm.yml` 只手动触发（`workflow_dispatch`），与 `publish.yml`
+同构：
+
+```
+version:  0.2.0     # 必须等于已提交的 package.json 版本
+publish:   false     # 只有为 true 才在全部校验通过后发布
+```
+
+`permissions: contents: read` 与 `concurrency: kode-npm-publish` 保证一次运行
+不会在 rebase 途中发出去。`prepare` 任务在发货前对下载回的 tarball 重跑
+`verify-npm-set.mjs`，`verify` 里的二进制体积上限（200 MB）会挡住未裁剪的
+debug 构建。
+
+### 本地发布
+
+```
+export KODE_NPM_PUBLISH=1
+export NODE_AUTH_TOKEN=<granular token>
+node scripts/npm-package.mjs pack            # 产出 dist/npm/*.tgz
+node scripts/npm-package.mjs publish --dry   # 先核对确切上传内容
+node scripts/npm-package.mjs publish         # 上传
+```
+
+`publish` 上传的是打包好的 tarball 而非重新打包目录，因此离开本机的内容与
+`pack` 校验过的一字不差。
+
+### 不发任何东西就能验证
+
+```
+node scripts/npm-package.mjs verify   # 静态检查，任何时候都安全
+node scripts/npm-package.mjs smoke    # 在暂存二进制上跑真实 MCP 握手
+node scripts/npm-package.mjs sizes     # tarball 与二进制的体积
+```
+
 ## Claude Code — `.mcp.json`（项目根）
 
 ```json

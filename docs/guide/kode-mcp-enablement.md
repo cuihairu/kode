@@ -34,6 +34,95 @@ cargo run -p kode-mcp -- <assets-root>
 - **extra paths** (optional): additional knowledge directories or files to
   index (e.g. project `.md` docs, Excel files) beyond the assets root.
 
+## Installing from npm (packaging ready, not yet published)
+
+The binary is published the way `esbuild` and `@swc/core` ship theirs:
+`@cuihairu/kode-mcp` contains only a launcher script, and the platform
+binary comes from a per-platform optional dependency
+(`@cuihairu/mcp-linux-x64`, `-linux-arm64`, `-darwin-x64`, `-darwin-arm64`,
+`-win32-x64`, `-win32-arm64`). npm installs exactly one of those, so the
+client config stays a single stable command on every OS:
+
+```
+npm install @cuihairu/kode-mcp
+# config then points at the launcher instead of a cargo build:
+{ "command": "kode-mcp", "args": ["/abs/path/to/assets"] }
+```
+
+**The tarballs are not on the registry yet.** The packaging mechanism is built
+and verified in this repository — `scripts/npm-package.mjs`
+(`build`/`pack`/`verify`/`smoke`/`prepare`/`publish`) and the manual
+`npm.yml` workflow cross-compile `kode-mcp` for all six targets, pack, and run
+a real MCP handshake (`initialize` + `tools/list` returning 25 tools) on each
+native runner. Publishing is intentionally left to an explicit trigger that
+supplies the version number, matching how this project releases. Until then,
+use the cargo build above, or point `KODE_MCP_BINARY` at a binary you already
+have — the launcher honours it first.
+
+## Publishing: required environment and secrets
+
+Three different things need credentials; they are deliberately separated so a
+build can never reach the registry on its own.
+
+### Environment variables
+
+| Variable | Where | Purpose |
+|---|---|---|
+| `NODE_AUTH_TOKEN` | CI only, injected from the `NPM_TOKEN` secret | npm's authentication token. Never write it to `.npmrc` — npm warns and it lands in artifacts. |
+| `NPM_TOKEN` | GitHub Actions repository secret | Granular access token, scope **All packages**, permission **Read and write**. A classic token cannot be used for automated publish. |
+| `KODE_NPM_PUBLISH=1` | local or CI | The explicit gate. `scripts/npm-package.mjs publish` refuses to run without it, so a build cannot publish by accident. |
+| `KODE_MCP_BINARY` | client runtime | Absolute path to a `kode-mcp` binary. Overrides platform-package lookup — use it for offline installs or when an IDE already owns a build. |
+| `RUST_LOG=off` | smoke harness | Quietens the staged binary during the handshake check. |
+
+### One-time account setup
+
+1. `npm profile login` in a browser (npm enforces 2FA on every account, so a
+   token is created from the account's 2FA page rather than a plain password).
+2. Publish scope: `@cuihairu/*` resolves to your **personal** npm account. npm
+   has no free organisation scope, so do not expect `@kode/...` unless that
+   scope is already yours.
+3. Every package already carries `"publishConfig": { "access": "public" }`,
+   which is required for scoped packages — without it npm answers `402`.
+4. First publish is unpublished by default. Add `--access public` (done
+   automatically by the script) when a package should be visible to everyone.
+
+### Publishing from CI
+
+`.github/workflows/npm.yml` is manual-only (`workflow_dispatch`) and mirrors
+`publish.yml`:
+
+```
+version:  0.2.0     # must equal the committed package.json version
+publish:   false     # true only publishes after all validation passes
+```
+
+`permissions: contents: read` and `concurrency: kode-npm-publish` keep a run
+from publishing mid-rebase. The `prepare` job re-runs
+`verify-npm-set.mjs` on the downloaded tarballs before anything ships, and the
+binary-size cap in `verify` blocks an unstripped debug build (200 MB limit).
+
+### Publishing locally
+
+```
+export KODE_NPM_PUBLISH=1
+export NODE_AUTH_TOKEN=<granular token>
+node scripts/npm-package.mjs pack            # build dist/npm/*.tgz
+node scripts/npm-package.mjs publish --dry   # inspect the exact upload
+node scripts/npm-package.mjs publish         # upload
+```
+
+`publish` uploads the packed tarballs rather than re-packing the directories,
+so what leaves the machine is byte-for-byte what `pack` verified.
+
+### Verifying without publishing anything
+
+```
+node scripts/npm-package.mjs verify   # static checks, always safe
+node scripts/npm-package.mjs smoke    # real MCP handshake on a staged binary
+node scripts/npm-package.mjs sizes     # tarball and binary sizes
+```
+
+
 ## Claude Code — `.mcp.json` (project root)
 
 ```json

@@ -8,6 +8,23 @@
 
 > **2026-10-24 用户令**: kode-v02 此后只在 `main` 开发，phase2 已合并（`377950f`，`--no-ff` 保留合并记录），不再开长期 feature 分支。
 
+## kode-mcp 上 npm：平台包分发（2026-11-12）
+
+`kode-mcp` 是 Rust 原生二进制，不能塞进一个 npm 包发出去。取 esbuild / `@swc/core`
+同款**方案 A 平台包**：`@cuihairu/kode-mcp` 只含 launcher 脚本，二进制按 `os`/`cpu`
+拆成 6 个 optionalDependencies 平台包（`-linux-x64/-linux-arm64/-darwin-x64/
+-darwin-arm64/-win32-x64/-win32-arm64`），npm 只装命中的那个。打包机制已建并在本机
+走通全链路；**上传留给显式触发且由用户给版本号**（版本红线），故整项保持未勾。
+纪实 `docs/review/2026-11-12-kode-mcp-npm-packaging.md`。
+
+- [x] NPM-PKG-01 建立平台包骨架与 launcher 定位逻辑。验收：主包只发一个文件、optionalDependencies 恰为 6 平台包、launcher 三级定位（`KODE_MCP_BINARY` > 向上找 `node_modules` > `createRequire` 兜底）、不支持的 `os`/`arch` 组合不猜。——待提交：`packages/kode-mcp/`（主包 + 6 平台包 + `.gitignore` 挡暂存二进制）+ `packages/kode-mcp/bin/kode-mcp`；`tests/npmPackage.test.ts` 14 例。
+- [x] NPM-PKG-02 建立打包与校验脚本，含三道防误发闸门。验收：`verify`/`smoke`/`sizes`/`pack`/`build`/`prepare`/`publish` 六档按危险度分层；`KODE_NPM_PUBLISH=1` 闸、200 MB 体积闸挡未裁剪 debug 构建（实测本机 debug 308 MB 被正确拒）、`publish` 上传 `pack` 产出的 tarball 而非重打包。——待提交：`scripts/npm-package.mjs` + `scripts/verify-npm-set.mjs`；实测 `pack` 出主包 2538 B、平台包 69 044 605 B，`npm-index.json` 落 `dist/npm/`。
+- [x] NPM-PKG-03 用真实 MCP 握手验证，并纠正 MCP stdio 帧格式。验收：握手 `initialize` 返回 `serverInfo`、`tools/list` 25 工具、进程干净退出；单测断言脚本里不得出现 `Content-Length: `。——坑：首版误用 `kode-server`（LSP）的 `Content-Length` 帧 → `ConnectionClosed("initialize request")`；rmcp `transport::io::StdioReader` 实为**每行一条 JSON**。另：initialize 未完成时读到 EOF 即报连接关闭，故握手三帧须同批输入。
+- [x] NPM-PKG-04 真实安装链路端到端。验收：临时消费工程 `npm install` 主包生成 `.bin/kode-mcp` shim、平台包就位，经 shim 调真实 `kode-mcp`（喂 `tests/fixtures/kbengine-demo-assets`）返回 25 工具、退出码 0。
+- [x] NPM-PKG-05 建立手动 CI workflow。验收：`npm.yml` 只 `workflow_dispatch`、`contents: read`、`concurrency: kode-npm-publish`；输入 `version` 须逐字等于已提交 `package.json` 版本、`publish` 默认 false；六平台矩阵复用 `platform-vsix.yml` 的 runner/target/musl `rust-lld`；`prepare` 在下载回 tarball 上重跑 `verify-npm-set.mjs`。
+- [x] NPM-PKG-06 文档对账。验收：`docs/guide/kode-mcp-enablement.md` + zh 补「从 npm 安装（打包机制已建，尚未发布）」与「发布：所需环境变量与凭据」两节（`NODE_AUTH_TOKEN`/`NPM_TOKEN`/`KODE_NPM_PUBLISH`/`KODE_MCP_BINARY`/`RUST_LOG` 五变量表 + 账号侧一次性配置 + CI/本地发布 + 只验证不发布的命令）；如实写「tarball 还没上 registry」。
+- [ ] NPM-PKG-07 发布。验收：账号登录（`npm profile login`，npm 强制 2FA）→ 建 granular token（All packages / Read and write）配为 `NPM_TOKEN` secret → 由用户给版本号后触发 `npm.yml`（`publish: true`）。**版本号只能由用户手动给出并触发**；未经验收的包不得对外。依赖 NPM-PKG-01..06 + 用户账号凭据。
+
 ## Python 3.7.3 调试工具链兼容（2026-11-11）
 
 官方资料和确切版本基线见 [调试安装约束](docs/zh/guide/python-debugger-compatibility.md)。目标包 `debugpy==1.7.0`、调试扩展 `ms-python.debugpy@2024.0.0`；Python 扩展 `2024.0.1` 是项目复现基线而非声称官方最后支持版本。文档与固定 requirements 已落；01-07 已收口（decb938e+3349f97a，07 含本机解释器级实录）；**08（固定扩展完整调试链真机验收：实际 VS Code UI、引擎内 listen/断点、VSIX/包哈希留证）待真机/用户验收**。

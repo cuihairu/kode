@@ -1,0 +1,162 @@
+name: Build and verify kode-mcp npm packages
+
+# Option A packaging for crates/kode-mcp: the Rust binary ships in a per-platform
+# npm package (@cuihairu/mcp-<os>-<arch>) and @cuihairu/kode-mcp carries only a
+# launcher shim that locates it. See scripts/npm-package.mjs.
+#
+# Publishing is deliberately manual-only, mirroring publish.yml:
+# the version must already be committed in package.json, and publish defaults to
+# false so a plain run only builds and verifies.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version matching package.json (for example 0.2.0)'
+        required: true
+        type: string
+      publish:
+        description: 'Publish to the npm registry after validation (false only validates)'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kode-npm-publish
+  cancel-in-progress: false
+
+jobs:
+  platform:
+    name: Build and pack ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runner: ubuntu-22.04
+            rust: x86_64-unknown-linux-musl
+            native: true
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+            rust: aarch64-unknown-linux-musl
+            native: true
+          - target: win32-x64
+            runner: windows-2025
+            rust: x86_64-pc-windows-msvc
+            native: true
+          - target: win32-arm64
+            runner: windows-11-arm
+            rust: aarch64-pc-windows-msvc
+            native: true
+          - target: darwin-x64
+            runner: macos-15-intel
+            rust: x86_64-apple-darwin
+            native: true
+          - target: darwin-arm64
+            runner: macos-15
+            rust: aarch64-apple-darwin
+            native: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - name: Install pinned Rust toolchain and target
+        run: |
+          rustup show active-toolchain
+          rustup target add '${{ matrix.rust }}'
+      - name: Use Rust's bundled musl CRT and linker (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          echo 'CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=rust-lld' >> "$GITHUB_ENV"
+          echo 'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=rust-lld' >> "$GITHUB_ENV"
+      - name: Check requested version is the committed version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          node -e 'const p=require("./package.json"); const v=process.env.REQUESTED_VERSION.replace(/^[vV]/, ""); if(v!==p.version) { console.error("Requested npm version does not match package.json"); process.exit(1); }'
+      - name: Cross-compile kode-mcp
+        run: >-
+          cargo build --locked --release --target '${{ matrix.rust }}'
+          -p kode-mcp
+      - name: Stage binary into the platform package
+        run: node scripts/npm-package.mjs build --target '${{ matrix.target }}'
+      - name: Verify packaging and binary size
+        run: node scripts/npm-package.mjs verify
+      - name: MCP handshake smoke on the native target
+        if: matrix.native
+        run: node scripts/npm-package.mjs smoke --target '${{ matrix.target }}'
+      - name: Pack the platform package and launcher
+        run: node scripts/npm-package.mjs pack --target '${{ matrix.target }}'
+      - name: Upload packed tarballs
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: npm-${{ matrix.target }}
+          path: |
+            dist/npm/*.tgz
+            dist/npm/npm-index.json
+          if-no-files-found: error
+          retention-days: 14
+
+  prepare:
+    name: Verify complete package set
+    needs: platform
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: npm-*
+          path: dist/npm
+          merge-multiple: true
+      - name: Verify all six platform tarballs and the launcher are present
+        run: node scripts/verify-npm-set.mjs dist/npm
+      - name: Re-verify packaging without a staged binary
+        run: node scripts/npm-package.mjs verify
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: npm-verified-${{ github.sha }}
+          path: |
+            dist/npm/*.tgz
+            dist/npm/npm-index.json
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish verified tarballs to npm
+    needs: prepare
+    if: inputs.publish
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-verified-${{ github.sha }}
+          path: dist/npm
+      - name: Verify downloaded package set
+        run: node scripts/verify-npm-set.mjs dist/npm
+      - name: Publish to the npm registry
+        env:
+          KODE_NPM_PUBLISH: '1'
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node scripts/npm-package.mjs publish

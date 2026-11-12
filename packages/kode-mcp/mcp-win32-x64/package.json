@@ -1,0 +1,19 @@
+{
+  "name": "@cuihairu/mcp-win32-x64",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Prebuilt kode-mcp binary for windows x64.",
+  "license": "Apache-2.0",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "name": "@cuihairu/kode-mcp",
+  "version": "0.2.0",
+  "description": "MCP server that exposes a KBEngine asset tree (entity defs, XML, config, protocol and project knowledge) to AI agents. The Rust binary ships in a platform package; this package only carries the launcher.",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "kbengine",
+    "game-server",
+    "entity-defs",
+    "ai-agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cuihairu/kode.git"
+  },
+  "bin": {
+    "kode-mcp": "bin/kode-mcp"
+  },
+  "files": [
+    "bin/kode-mcp"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "node ../../../scripts/npm-package.mjs build",
+    "verify": "node ../../../scripts/npm-package.mjs verify",
+    "smoke": "node ../../../scripts/npm-package.mjs smoke"
+  },
+  "optionalDependencies": {
+    "@cuihairu/mcp-linux-x64": "^0.2.0",
+    "@cuihairu/mcp-linux-arm64": "^0.2.0",
+    "@cuihairu/mcp-darwin-x64": "^0.2.0",
+    "@cuihairu/mcp-darwin-arm64": "^0.2.0",
+    "@cuihairu/mcp-win32-x64": "^0.2.0",
+    "@cuihairu/mcp-win32-arm64": "^0.2.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
