@@ -157,7 +157,7 @@ prove-red：删掉 publish job 的 `registry-url` 行 → 恰好 1 红 16 绿；
 | `node --check` × 3（launcher / npm-package / verify-npm-set） | 0 |
 | `npm run lint`（eslint src） | 0 |
 | `npm run compile`（tsc -p ./） | 0 |
-| `tests/npmPackage.test.ts` | 14 例全绿 |
+| `tests/npmPackage.test.ts` | 17 例全绿（含 publish job `registry-url` 闸） |
 | `npm run test:unit` | 741 文件（740 过 / 1 skip）；8981 例过 / 8 skip；RC=0 |
 | `xvfb-run -a npm run test:demo:editor` | 25 passing；RC=0 |
 | 真实 `npm install` + shim 端到端握手 | 25 工具，退出 0 |
