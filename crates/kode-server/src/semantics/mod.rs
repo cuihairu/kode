@@ -26,8 +26,13 @@
 //! - [`cell`] CELL-01/02 cellData 字段集与引擎内建键(有效 Cell 属性表,
 //!   继承/接口展开复用 BAS-05;缺 Cell 脚本/无 Cell 部件分状态;内建键
 //!   position/direction 独立引擎来源封闭表;组件槽展开归 CELL-03)。
+//! - [`refs`] RPC-01 角色化引用类型(EntityCall<类,调用类型> 与本地 Entity
+//!   区分;七种调用类型的目标面表归属/自名闸/面跳全矩阵;ENTITYCALL 字段
+//!   取值接受=EntityCall/None/Entity 按源码;类未知保持未知不猜;self 角色绑定
+//!   归 RPC-02,方法/组件槽落点归 RPC-04)。
 
 pub mod cell;
+pub mod refs;
 pub mod deps;
 pub mod expr;
 pub mod facts;
