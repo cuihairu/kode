@@ -42,6 +42,7 @@
 pub mod cell;
 pub mod dispatch;
 pub mod refs;
+pub mod rules;
 pub mod deps;
 pub mod expr;
 pub mod facts;
