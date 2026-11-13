@@ -12,8 +12,10 @@ import {
   RpcCodeLensProvider
 } from '../src/languageProviders';
 import {
+  PYTHON_RECEIVER_FACES,
   findPythonReceiverCalls,
-  getPythonReceiverCallAtPosition
+  getPythonReceiverCallAtPosition,
+  pythonReceiverSectionFor
 } from '../src/backend/pythonLanguageUtils';
 import { Position, Uri, makeTextDocument, workspace } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
@@ -265,5 +267,63 @@ describe('接收者段闸三面(真实索引装配)', () => {
         new KBEngineHoverProvider(manager).provideHover(baseDoc, new Position(2, baseChar))
       )
     ).toBeNull();
+  });
+});
+
+// 逐面语义表(深审-3 收口):self.<role> 的合法派发按调用面裁定,与 Rust
+// bind_self_role 九面表同源(baseapp 有 .cell/.client、cellapp 有 .base/.client、
+// client 有 .base/.cell;同面无此属性 = AttributeError 引用)。面上无效引用
+// 不进发现面(诊断闸不裁),导航面(不传 face)保旧口径。
+describe('逐面语义表 PYTHON_RECEIVER_FACES(九面)', () => {
+  it('九面矩阵与引擎 getter 表一致', () => {
+    expect(PYTHON_RECEIVER_FACES.base).toEqual({
+      cell: 'CellMethods',
+      base: null,
+      client: 'ClientMethods'
+    });
+    expect(PYTHON_RECEIVER_FACES.cell).toEqual({
+      cell: null,
+      base: 'BaseMethods',
+      client: 'ClientMethods'
+    });
+    expect(PYTHON_RECEIVER_FACES.client).toEqual({
+      cell: 'CellMethods',
+      base: 'BaseMethods',
+      client: null
+    });
+  });
+
+  it('pythonReceiverSectionFor:面已知按表裁定,面未知保旧口径', () => {
+    expect(pythonReceiverSectionFor('cell', 'cell')).toBeNull();
+    expect(pythonReceiverSectionFor('cell', 'base')).toBe('BaseMethods');
+    expect(pythonReceiverSectionFor(undefined, 'cell')).toBe('CellMethods');
+    expect(pythonReceiverSectionFor(null, 'client')).toBe('ClientMethods');
+  });
+
+  it('findPythonReceiverCalls 带面:面上无效引用不进发现面,有效引用带面带段', () => {
+    const text = 'class A:\n    def f(self):\n        self.cell.foo()\n        self.base.bar()\n';
+    const calls = findPythonReceiverCalls(text, 'cell');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      receiver: 'base',
+      section: 'BaseMethods',
+      methodName: 'bar',
+      callerFace: 'cell'
+    });
+    expect(findPythonReceiverCalls(text, 'base')).toHaveLength(1);
+    expect(findPythonReceiverCalls(text, 'base')[0]).toMatchObject({ receiver: 'cell' });
+  });
+
+  it('findPythonReceiverCalls 无面:全量收集(旧口径,导航/CodeLens 不变)', () => {
+    const text = 'self.cell.a()\nself.base.b()\nself.client.c()';
+    expect(findPythonReceiverCalls(text)).toHaveLength(3);
+    expect(findPythonReceiverCalls(text)[0].callerFace).toBeUndefined();
+  });
+
+  it('getPythonReceiverCallAtPosition 带面:面上无效引用 → null(不产出派生信息)', () => {
+    const line = '        self.cell.reborn(1)';
+    expect(getPythonReceiverCallAtPosition(line, line.indexOf('reborn'), 'cell')).toBeNull();
+    const hit = getPythonReceiverCallAtPosition(line, line.indexOf('reborn'), 'base');
+    expect(hit).toMatchObject({ receiver: 'cell', section: 'CellMethods', callerFace: 'base' });
   });
 });

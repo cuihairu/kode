@@ -221,3 +221,43 @@ describe('IDE-LINT-008 RPC 实参数量对账(computeRpcArgCountFindings)', () =
     ]);
   });
 });
+
+// 逐面语义闸(深审-3 收口):发现面带调用面(第三参)后,面上无此角色属性的
+// 引用(cellapp 上 self.cell 等)不进对账面——AttributeError 引用没有「Arg 数
+// 对不对」可言,报它就是把非法派发当合法对账。面上有效引用照常对账。
+describe('逐面语义闸(发现面过滤)', () => {
+  const text = [
+    'class Avatar:',
+    '    def onTick(self):',
+    '        self.cell.tick(1)',
+    '        self.base.backup(1, 2)',
+    ''
+  ].join('\n');
+
+  const mapping = mappingWithMethods({
+    tick: [{ section: 'CellMethods', declaredArgs: ['a', 'b'] }],
+    backup: [{ section: 'BaseMethods', declaredArgs: ['x', 'y'] }]
+  });
+
+  it('cellapp 面:self.cell 引用滤除,self.base 照常对账(2 实参对 2 形参不报)', () => {
+    expect(computeRpcArgCountFindings(text, mapping, 'cell')).toEqual([]);
+  });
+
+  it('cellapp 面:self.base 数量不符照常报', () => {
+    const bad = [
+      'class Avatar:',
+      '    def onTick(self):',
+      '        self.base.backup(1)',
+      ''
+    ].join('\n');
+    const findings = computeRpcArgCountFindings(bad, mapping, 'cell');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ receiver: 'base', methodName: 'backup', declaredCount: 2, actualCount: 1 });
+  });
+
+  it('无调用面(旧口径):self.cell 照常对账(1 实参对 2 形参报不符)', () => {
+    const findings = computeRpcArgCountFindings(text, mapping);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ receiver: 'cell', methodName: 'tick', declaredCount: 2, actualCount: 1 });
+  });
+});

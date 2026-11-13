@@ -73,7 +73,7 @@ import {
   type CellDataCallbackDiagnosticItem
 } from '../backend/cellDataCallbackCheck';
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
-import { EntityMappingManager } from '../entityMapping';
+import { EntityMappingManager, pythonScriptDomain } from '../entityMapping';
 import { PythonClassIndex } from '../backend/pythonClassIndex';
 import { getWorkspaceRootForDocument, findDefinitionFileByCategory, findDefinitionTextByCategory, getEntityCustomTypesSnapshot } from '../definitionWorkspace';
 import { getDefinitionWorkspaceLayout, listDefinitionFiles } from '../definitionWorkspace';
@@ -354,7 +354,11 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
           // AUDIT-005 B2 批 8:Rust-first(`$/kode/lint/analyzeRpcArgCount`,
           // 发现面/语义闸/消息留 TS,实参计数面在 Rust);门不可用/失败/畸形
           // 整面回本地计数兜底,禁止部分采用。
-          ? (await computeRpcArgCountFindingsAsync(document.getText(), entityMapping)).map(finding => ({
+          ? (await computeRpcArgCountFindingsAsync(
+              document.getText(),
+              entityMapping,
+              pythonScriptDomain(document.uri.fsPath) ?? undefined
+            )).map(finding => ({
               range: {
                 start: { line: finding.line, character: finding.character },
                 end: { line: finding.line, character: finding.character + finding.methodName.length }

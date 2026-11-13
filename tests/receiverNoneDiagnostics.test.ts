@@ -209,3 +209,78 @@ describe('receiver 可能为 None 诊断(用户令 2026-10-27 任务1)', () => {
     expect(receiverNoneDiagnosticItems(unguarded, '/avatar.py', undefined, false)).toEqual([]);
   });
 });
+
+// 逐面语义闸(深审-3 收口):调用面由脚本目录域换算(pythonScriptDomain);
+// 面上无此角色属性的引用(base.base/cell.cell/client.client)是 AttributeError
+// 而非「可能为 None」,guard/段对账都不判——与 Rust bind_self_role 九面表同口径。
+describe('receiver 诊断逐面语义闸(调用面换算)', () => {
+  const source = py([
+    'class Avatar:',
+    '    def onTick(self):',
+    '        self.cell.tick()',
+    '        self.base.backup()',
+    ''
+  ]);
+
+  it('cellapp 面(scripts/cell):self.cell 引用不报,self.base 照常报', () => {
+    const findings = computeReceiverNoneFindings(source, '/proj/scripts/cell/avatar.py');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ receiver: 'base', methodName: 'backup', kind: 'receiver-none' });
+  });
+
+  it('baseapp 面(scripts/base):self.base 引用不报,self.cell 照常报', () => {
+    const findings = computeReceiverNoneFindings(source, '/proj/scripts/base/avatar.py');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ receiver: 'cell', methodName: 'tick' });
+  });
+
+  it('client 面:base/cell 都报,同面 self.client 不报', () => {
+    const withClient = py([
+      'class Avatar:',
+      '    def onTick(self):',
+    '        self.client.showTip()',
+    '        self.base.backup()',
+      ''
+    ]);
+    const findings = computeReceiverNoneFindings(withClient, '/proj/scripts/client/avatar.py');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ receiver: 'base' });
+  });
+
+  it('面未知(/avatar.py 无目录域):全量报(旧口径)', () => {
+    expect(computeReceiverNoneFindings(source, '/avatar.py')).toHaveLength(2);
+  });
+
+  it('段错配同闸:cellapp 面 self.cell 段外声明不报(self.cell 本就无效)', () => {
+    const mapping = mappingWithMethods({ tick: [{ section: 'BaseMethods' }] });
+    const findings = computeReceiverNoneFindings(source, '/proj/scripts/cell/avatar.py', mapping);
+    // self.base.backup() 无声明 → 无段错配;self.cell.tick() 被面闸滤除
+    expect(findings).toHaveLength(1);
+    expect(findings[0].kind).toBe('receiver-none');
+    const baseOnly = py([
+      'class Avatar:',
+      '    def onTick(self):',
+      '        self.base.backup()',
+      ''
+    ]);
+    const mismatch = computeReceiverNoneFindings(
+      baseOnly,
+      '/proj/scripts/cell/avatar.py',
+      mappingWithMethods({ backup: [{ section: 'ClientMethods' }] })
+    );
+    // 同一次调用两诊断并存(既有语义):无 guard 的 receiverNone + 段错配
+    expect(mismatch.map(finding => finding.kind)).toEqual(['receiver-none', 'section-mismatch']);
+  });
+
+  it('别名使用点同闸:cellapp 面 self.cell 别名不产生使用点', () => {
+    const aliasSource = py([
+      'class Avatar:',
+    '    def onTick(self):',
+      '        cell = self.cell',
+      '        cell.tick()',
+      ''
+    ]);
+    expect(computeReceiverNoneFindings(aliasSource, '/proj/scripts/cell/avatar.py')).toEqual([]);
+    expect(computeReceiverNoneFindings(aliasSource, '/avatar.py')).toHaveLength(1);
+  });
+});

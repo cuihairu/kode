@@ -1,8 +1,8 @@
 import type { EntityMapping } from '../entityMapping';
 import { l10nText } from '../nlsRuntime';
 import {
-  PYTHON_RECEIVER_SECTIONS,
   findPythonReceiverCalls,
+  type PythonCallerFace,
   type PythonReceiverCall
 } from './pythonLanguageUtils';
 import { maskPythonNonCode } from './pythonLexicalMask';
@@ -206,7 +206,9 @@ function collectRpcArgCountFindings(
     if (!declarations || declarations.length === 0) {
       continue; // 声明未就绪:未知,不报
     }
-    const expectedSection = PYTHON_RECEIVER_SECTIONS[call.receiver];
+    // 目标段随发现面带来(face-aware 发现面已滤 AttributeError 引用;
+    // 无调用面时 = 旧口径 receiver → 段,值相同)
+    const expectedSection = call.section;
     const declared = resolveDeclaredArgCount(declarations, expectedSection);
     if (!declared || declared.hasStarArg) {
       continue; // 段外声明/星号形参/歧义:未知,不报
@@ -249,14 +251,16 @@ function collectRpcArgCountFindings(
  */
 export function computeRpcArgCountFindings(
   text: string,
-  mapping?: EntityMapping
+  mapping?: EntityMapping,
+  callerFace?: PythonCallerFace
 ): RpcArgCountFinding[] {
   if (!mapping?.methods) { return []; }
   // IDE-LINT-005 同款词法掩码:字符串/注释先行空白,列偏移不变。调用点发现
   // 面走掩码(去字符串/注释里的伪调用);实参计数面走原文(计数自带词法态,
-  // 字符串里的逗号不当分隔——见 countCallArguments)。
+  // 字符串里的逗号不当分隔——见 countCallArguments)。callerFace 给定 →
+  // 发现面按逐面语义表滤 AttributeError 引用(深审-3)。
   const masked = maskPythonNonCode(text);
-  const calls = findPythonReceiverCalls(masked);
+  const calls = findPythonReceiverCalls(masked, callerFace);
   if (calls.length === 0) { return []; }
   const lines = text.split(/\r?\n/);
   return collectRpcArgCountFindings(
@@ -274,11 +278,13 @@ export function computeRpcArgCountFindings(
  */
 export async function computeRpcArgCountFindingsAsync(
   text: string,
-  mapping?: EntityMapping
+  mapping?: EntityMapping,
+  callerFace?: PythonCallerFace
 ): Promise<RpcArgCountFinding[]> {
   if (!mapping?.methods) { return []; }
+  // 发现面掩码 + 逐面语义滤(与同步面同口径);实参计数面原文口径不变
   const masked = maskPythonNonCode(text);
-  const calls = findPythonReceiverCalls(masked);
+  const calls = findPythonReceiverCalls(masked, callerFace);
   if (calls.length === 0) { return []; }
   const lines = text.split(/\r?\n/);
   const rustCounts = await buildRpcArgCountsFromRust(text, calls);

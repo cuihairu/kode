@@ -41,6 +41,19 @@ const SECTIONS: [(&str, &str); 3] = [
     ("client", "ClientMethods"),
 ];
 
+/// 逐面语义闸(深审-3;与 refs.rs bind_self_role 九面属性表同源:baseapp
+/// 有 .cell/.client(entity.cpp:750/:800)、cellapp 有 .base/.client(:391/:573)、
+/// client 有 .base/.cell(client_lib/entity.cpp:104/:115);同面无此属性 =
+/// AttributeError 引用)。面未知(None)→ 恒 false,保旧口径。
+fn receiver_not_on_face(caller_face: Option<&str>, receiver: &str) -> bool {
+    match caller_face {
+        Some("base") => receiver != "cell" && receiver != "client",
+        Some("cell") => receiver != "base" && receiver != "client",
+        Some("client") => receiver != "base" && receiver != "cell",
+        _ => false,
+    }
+}
+
 pub fn register(reg: &mut RpcRegistry) {
     reg.register("$/kode/lint/analyzeReceiverNone", analyze_receiver_none);
 }
@@ -56,6 +69,12 @@ struct ReceiverNoneParams {
     /// mapping.methods 投影(段错配面;空表 = 无映射,段错配零产出)
     #[serde(default)]
     declarations: HashMap<String, Vec<String>>,
+    /// 调用面(深审-3 逐面语义闸;TS pythonScriptDomain 目录域换算)。
+    /// Some 且该面无此角色属性(九面表 base.base/cell.cell/client.client,
+    /// 与 refs.rs bind_self_role 同源)→ 该引用是 AttributeError,发现面即
+    /// 滤除(receiverNone/段错配都不判);None = 面未知,保旧口径。
+    #[serde(default)]
+    caller_face: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -1168,6 +1187,11 @@ fn compute_receiver_none_items(params: &ReceiverNoneParams) -> Vec<ReceiverNoneI
     }
     let mut items = Vec::new();
     for (line, character, receiver, method_name) in base_calls.into_iter().chain(alias_calls) {
+        // 逐面语义闸(深审-3):面上无此角色属性 = AttributeError 引用,
+        // guard 扫描与段对账都不适用;别名使用点同闸(同文件同面)。
+        if receiver_not_on_face(params.caller_face.as_deref(), receiver) {
+            continue;
+        }
         if let Some(span) = enclosing_method_span(&classes, line) {
             let key = (span.start_line, span.end_line, receiver);
             let scan = scan_cache.entry(key).or_insert_with(|| {
@@ -1209,6 +1233,7 @@ mod tests {
             text: text.to_string(),
             methods: Vec::new(),
             declarations: HashMap::new(),
+            caller_face: None,
         })
     }
 
@@ -1221,6 +1246,7 @@ mod tests {
             text: text.to_string(),
             methods,
             declarations,
+            caller_face: None,
         })
     }
 
@@ -1323,6 +1349,50 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].line, 3);
         assert_eq!(found[0].method_name, "foo");
+    }
+
+    /// 带 caller_face 的判定(Rust-first 面与 TS 兜底同口径对拍用)。
+    fn run_face(
+        text: &str,
+        methods: Vec<ClassMethodsInput>,
+        declarations: HashMap<String, Vec<String>>,
+        caller_face: Option<&str>,
+    ) -> Vec<ReceiverNoneItem> {
+        compute_receiver_none_items(&ReceiverNoneParams {
+            text: text.to_string(),
+            methods,
+            declarations,
+            caller_face: caller_face.map(str::to_string),
+        })
+    }
+
+    #[test]
+    fn face_invalid_receiver_is_filtered_not_diagnosed() {
+        // 逐面语义闸(深审-3):cellapp(cell 面)上 self.cell 是 AttributeError
+        // 引用(九面表,refs.rs bind_self_role 同源),guard/段对账都不判;
+        // 面上有效的 self.base 照常报;面未知(None)保旧口径全报。
+        let text = "class A:\n    def f(self):\n        self.cell.foo()\n        self.base.bar()\n";
+        let methods = || vec![class(0, 5, &[1])];
+        // 面未知:两处都报(旧口径)
+        assert_eq!(run_face(text, methods(), HashMap::new(), None).len(), 2);
+        // cell 面:self.cell 滤除,self.base 报 receiverNone
+        let found = run_face(text, methods(), HashMap::new(), Some("cell"));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kind, "receiverNone");
+        assert_eq!(found[0].method_name, "bar");
+        // base 面:self.base 滤除,self.cell 报
+        let found = run_face(text, methods(), HashMap::new(), Some("base"));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].method_name, "foo");
+        // client 面:self.client 滤除(本样本无),base/cell 都报
+        assert_eq!(run_face(text, methods(), HashMap::new(), Some("client")).len(), 2);
+        // 段错配面同闸:cell 面 self.cell 段外声明也不报
+        let mut decls = HashMap::new();
+        decls.insert("foo".to_string(), vec!["BaseMethods".to_string()]);
+        assert_eq!(
+            run_face(text, methods(), decls, Some("cell")).len(),
+            1
+        );
     }
 
     #[test]

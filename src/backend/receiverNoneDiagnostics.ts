@@ -1,8 +1,11 @@
 import type { EntityMapping } from '../entityMapping';
+import { pythonScriptDomain } from '../entityMapping';
 import { l10nText } from '../nlsRuntime';
 import {
   PYTHON_RECEIVER_SECTIONS,
   findPythonReceiverCalls,
+  pythonReceiverSectionFor,
+  type PythonCallerFace,
   type PythonReceiverCall
 } from './pythonLanguageUtils';
 import { parsePythonFile } from './pythonParser';
@@ -534,7 +537,8 @@ interface AliasScope {
  */
 function collectAliasUseCalls(
   lines: readonly string[],
-  span: MethodSpan
+  span: MethodSpan,
+  callerFace?: PythonCallerFace
 ): PythonReceiverCall[] {
   const calls: PythonReceiverCall[] = [];
   const scopes: AliasScope[] = [{ indent: -1, bindings: new Map() }];
@@ -575,12 +579,17 @@ function collectAliasUseCalls(
       }
       const binding = holder?.bindings.get(match[1]);
       if (!binding || binding.line === j) { continue; }
+      // 逐面语义闸(深审-3):调用面无此角色属性(如 cellapp 上 self.cell
+      // 别名)→ 绑定源头即 AttributeError,使用点不进诊断面。
+      const section = pythonReceiverSectionFor(callerFace, binding.receiver);
+      if (section === null) { continue; }
       calls.push({
         line: j,
         character: match.index + match[0].length - match[2].length,
         receiver: binding.receiver,
-        section: PYTHON_RECEIVER_SECTIONS[binding.receiver],
-        methodName: match[2]
+        section,
+        methodName: match[2],
+        callerFace
       });
     }
   }
@@ -684,7 +693,8 @@ export const RECEIVER_ALIAS_HINT = /\b[A-Za-z_]\w*\s*=\s*self\.(?:cell|base|clie
 
 function buildEvalContextFromParsed(
   maskedText: string,
-  parsed: ReturnType<typeof parsePythonFile>
+  parsed: ReturnType<typeof parsePythonFile>,
+  callerFace?: PythonCallerFace
 ): ReceiverEvalContext {
   const methodSpans = buildMethodSpans(parsed);
   const lines = maskedText.split(/\r?\n/);
@@ -710,7 +720,7 @@ function buildEvalContextFromParsed(
   if (RECEIVER_ALIAS_HINT.test(maskedText)) {
     for (const cls of methodSpans) {
       for (const span of cls.methods) {
-        aliasUseCalls.push(...collectAliasUseCalls(lines, span));
+        aliasUseCalls.push(...collectAliasUseCalls(lines, span, callerFace));
       }
     }
   }
@@ -743,12 +753,16 @@ export function computeReceiverNoneFindings(
 ): ReceiverNoneFinding[] {
   // IDE-LINT-005:全文掩码一次,调用发现与 guard 分析共用(列偏移不变)
   const masked = maskPythonNonCode(text);
-  const baseCalls = findPythonReceiverCalls(masked);
+  // 逐面语义闸(深审-3):调用面由脚本目录域换算;面上无此角色属性的引用
+  // (base.base/cell.cell/client.client)在发现面即滤除——AttributeError 面,
+  // guard/段对账都不适用,与 Rust bind_self_role 九面表同口径
+  const callerFace = pythonScriptDomain(filePath) ?? undefined;
+  const baseCalls = findPythonReceiverCalls(masked, callerFace);
   if (baseCalls.length === 0 && !RECEIVER_ALIAS_HINT.test(masked)) { return []; }
   const parsed = typeof preparsed === 'function'
     ? preparsed()
     : preparsed ?? parsePythonFile(text, filePath);
-  const context = buildEvalContextFromParsed(masked, parsed);
+  const context = buildEvalContextFromParsed(masked, parsed, callerFace);
   const findings: ReceiverNoneFinding[] = [];
   appendCallFindings(baseCalls.concat(context.aliasUseCalls), context.lines,
     context.methodSpans, context.scanFor, mapping, findings);
@@ -792,7 +806,9 @@ export async function computeReceiverNoneFindingsAsync(
   const yieldToHost = deps.yieldToHost ?? yieldToHostDefault;
   // IDE-LINT-005:全文掩码一次,调用发现与 guard 分析共用(列偏移不变)
   const masked = maskPythonNonCode(text);
-  const baseCalls = findPythonReceiverCalls(masked);
+  // 逐面语义闸(深审-3):与同步面同口径(见 computeReceiverNoneFindings)
+  const callerFace = pythonScriptDomain(filePath) ?? undefined;
+  const baseCalls = findPythonReceiverCalls(masked, callerFace);
   if (baseCalls.length === 0 && !RECEIVER_ALIAS_HINT.test(masked)) { return []; }
   const parsed = await resolveParsedAsync(text, filePath, preparsed);
   if (!parsed) {
@@ -801,7 +817,7 @@ export async function computeReceiverNoneFindingsAsync(
   if (deps.shouldContinue && !deps.shouldContinue()) {
     return null; // 解析等待期间版本已前进:旧版本回包由调用方丢弃
   }
-  const context = buildEvalContextFromParsed(masked, parsed);
+  const context = buildEvalContextFromParsed(masked, parsed, callerFace);
   const calls = baseCalls.concat(context.aliasUseCalls);
   const findings: ReceiverNoneFinding[] = [];
   for (let start = 0; start < calls.length; start += chunkSize) {

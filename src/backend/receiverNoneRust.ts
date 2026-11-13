@@ -8,6 +8,7 @@
  * (diagnostics.ts receiver 臂)回 TS 异步兜底——禁止部分采用(静默丢能力)。
  */
 import type { EntityMapping } from '../entityMapping';
+import { pythonScriptDomain } from '../entityMapping';
 import { findPythonReceiverCalls } from './pythonLanguageUtils';
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 import { maskPythonNonCode } from './pythonLexicalMask';
@@ -55,9 +56,11 @@ export async function buildReceiverNoneItemsWithRust(
     return null;
   }
   // 廉价预检(与 computeReceiverNoneFindings 同口径):掩码一次 + 线性扫描,
-  // 零 receiver 线索零产出,不取解析也不发 RPC(懒解析语义保持)
+  // 零 receiver 线索零产出,不取解析也不发 RPC(懒解析语义保持)。逐面语义
+  // 闸(深审-3):调用面随 RPC 下发,face 无效引用在 Rust 侧同口径滤除
+  const callerFace = pythonScriptDomain(filePath) ?? undefined;
   const masked = maskPythonNonCode(text);
-  const baseCalls = findPythonReceiverCalls(masked);
+  const baseCalls = findPythonReceiverCalls(masked, callerFace);
   if (baseCalls.length === 0 && !RECEIVER_ALIAS_HINT.test(masked)) {
     return [];
   }
@@ -79,7 +82,8 @@ export async function buildReceiverNoneItemsWithRust(
   const response = await gate.runInRust<unknown>(RECEIVER_NONE_RUST_METHOD, {
     text,
     methods,
-    declarations
+    declarations,
+    callerFace
   });
   if (!response.ok) {
     return null;

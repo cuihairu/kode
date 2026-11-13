@@ -101,6 +101,9 @@ const AVATAR_DEF = [
   '  </BaseMethods>',
   '  <CellMethods>',
   '    <cellFly/>',
+  '    <cellMove>',
+  '      <Arg>UINT32</Arg>',
+  '    </cellMove>',
   '  </CellMethods>',
   '</root>',
   ''
@@ -109,8 +112,11 @@ const AVATAR_DEF = [
 // base 面实体脚本:一条文档同时踩中 只读写入(self.id)/角色错用(self.position
 // = cellapp/client 专属)/方向违规(self.mana = CELL 域位,base 文件访问)/
 // 销毁后访问(destroy 后 self.hp)/空间导航(setSpaceData _mapping 保留键 +
-// navigate 无 canNavigate)/RPC 实参不符(reqPos 声明 2 参实传 1 参)/
+// navigate 无 canNavigate)/RPC 实参不符(cellMove 声明 1 参实传 2 参)/
 // 反向方法缺口(ghostMethod 不在 def)。
+// RPC 调用样本必须面对齐(深审-3 逐面语义闸):base 面合法接收者是
+// self.cell/self.client;self.base 在 baseapp 是 AttributeError 引用,
+// 发现面即滤除,踩不到任何 receiver/实参家族。
 const AVATAR_PY = [
   'REGISTRY = []',
   '',
@@ -123,7 +129,7 @@ const AVATAR_PY = [
   '        y = self.hp',
   '        cellData.setSpaceData(1, "_mapping")',
   '        self.navigate(3)',
-  '        self.base.reqPos(1)',
+  '        self.cell.cellMove(1, 2)',
   '',
   '    def ghostMethod(self):',
   '        pass',

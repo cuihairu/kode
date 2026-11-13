@@ -22,6 +22,7 @@ import {
   receiverNoneDiagnosticItems
 } from '../src/backend/receiverNoneDiagnostics';
 import type { EntityMapping } from '../src/entityMapping';
+import { pythonScriptDomain } from '../src/entityMapping';
 
 const repoRoot = join(__dirname, '..');
 const binaryPath = join(repoRoot, 'target', 'debug', 'kode-server');
@@ -202,9 +203,12 @@ suite('receiverNone Rust↔TS 行为对拍(真实 kode-server)', () => {
             declarations[name] = locations.map(location => location.section);
           }
         }
+        // 逐面语义闸(深审-3):生产装配面从文档路径换算调用面下发给 Rust
+        // (buildReceiverNoneItemsWithRust 同口径),两侧同输入对拍才成立
+        const callerFace = pythonScriptDomain(sample.label) ?? undefined;
         const resp = (await client.request('$/kode/rpc', {
           method: '$/kode/lint/analyzeReceiverNone',
-          params: { text: sample.text, methods, declarations }
+          params: { text: sample.text, methods, declarations, callerFace }
         })) as { items?: unknown };
         const rustItems = resp.items ?? [];
         const rendered = renderRustReceiverNoneItems(rustItems, mapping);
@@ -234,11 +238,12 @@ suite('receiverNone Rust↔TS 行为对拍(真实 kode-server)', () => {
       const itemsFor = async (
         text: string,
         methods: Array<{ startLine: number; endLine: number; defLines: number[] }>,
-        declarations: Record<string, string[]> = {}
+        declarations: Record<string, string[]> = {},
+        callerFace?: string
       ) => {
         const resp = (await client.request('$/kode/rpc', {
           method: '$/kode/lint/analyzeReceiverNone',
-          params: { text, methods, declarations }
+          params: { text, methods, declarations, callerFace }
         })) as { items?: Array<{ code: string; kind: string; line: number; character: number; receiver: string; methodName: string }> };
         return resp.items ?? [];
       };
@@ -267,6 +272,14 @@ suite('receiverNone Rust↔TS 行为对拍(真实 kode-server)', () => {
       // 注释/字符串掩码零报
       expect(await itemsFor('class A:\n    def f(self):\n        # self.cell.foo()\n        s = "self.cell.foo()"\n', methods))
         .toHaveLength(0);
+      // 逐面语义闸(wire 契约,深审-3):callerFace=cell → self.cell(AttributeError
+      // 面)滤除,self.base 照常报;face 缺省(旧口径)两处都报
+      const faceSample = 'class A:\n    def f(self):\n        self.cell.foo()\n        self.base.bar()\n';
+      const faceFiltered = await itemsFor(faceSample, methods, {}, 'cell');
+      expect(faceFiltered).toHaveLength(1);
+      expect(faceFiltered[0].receiver).toBe('base');
+      expect(faceFiltered[0].methodName).toBe('bar');
+      expect(await itemsFor(faceSample, methods)).toHaveLength(2);
     } finally {
       await client.dispose().catch(() => undefined);
     }

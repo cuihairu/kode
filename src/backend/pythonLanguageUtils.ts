@@ -60,6 +60,11 @@ export interface PythonReceiverCall {
   section: PythonReceiverSection;
   /** 被调用的方法名 */
   methodName: string;
+  /**
+   * 调用面(脚本目录域换算;逐面语义闸依据)。未换算(调用方未给路径
+   * 域)→ undefined:语义闸按旧口径走(receiver → 段),不裁合法性。
+   */
+  callerFace?: PythonCallerFace;
 }
 
 /** 接收者段 → def 方法区块(用户令 2026-10-21:cell→CellMethods 等,一一对应) */
@@ -82,6 +87,49 @@ export const PYTHON_RECEIVER_BY_SECTION: Record<
   ClientMethods: 'client'
 };
 
+/**
+ * 调用面(脚本目录域:scripts/base|cell|client|bots;与 entityMapping
+ * pythonScriptDomain 同名同域,此处不引依赖,值由调用方换算)。
+ */
+export type PythonCallerFace = 'base' | 'cell' | 'client';
+
+/**
+ * 逐面语义表(深审-3 收口,引擎九面属性表;与 Rust refs.rs bind_self_role
+ * 同源单点语义):每个调用面上 self.<receiver> 的合法派发目标段;该面无此
+ * 角色属性 → null。引擎依据(SCRIPT_GET_DECLARE 构造点逐个核):
+ * baseapp 有 .cell/.client(baseapp/entity.cpp:750/:800)、cellapp 有
+ * .base/.client(cellapp/entity.cpp:391/:573,.client 是 CLIENT_VIA_BASE,
+ * 目标段仍是 ClientMethods)、client 有 .base/.cell(client_lib/entity.cpp:
+ * 104/:115);同面无此属性(base.base/cell.cell/client.client,自身即该面;
+ * client 面同名 .clientapp 是应用对象非角色引用)。照旧无条件段映射会把
+ * AttributeError 的引用当合法派发去对账 def 段——与 bind_self_role 矛盾
+ * (九面表:非法 face·attr 组合 → None),诊断闸须先过本表。
+ */
+export const PYTHON_RECEIVER_FACES: Record<
+  PythonCallerFace,
+  Record<PythonReceiverCall['receiver'], PythonReceiverSection | null>
+> = {
+  base: { cell: 'CellMethods', base: null, client: 'ClientMethods' },
+  cell: { cell: null, base: 'BaseMethods', client: 'ClientMethods' },
+  client: { cell: 'CellMethods', base: 'BaseMethods', client: null }
+};
+
+/**
+ * 逐面语义闸:解析接收者在该调用面的目标段(段闸依据)。调用面已知 →
+ * 九面表裁定(面上无此属性 → null,该引用是 AttributeError,def 段对账
+ * 不适用);调用面未知 → 保旧口径(receiver → 段,目标段映射 whenever
+ * 该引用合法恒真,未知面不裁合法性与目标段无关)。
+ */
+export function pythonReceiverSectionFor(
+  callerFace: PythonCallerFace | null | undefined,
+  receiver: PythonReceiverCall['receiver']
+): PythonReceiverSection | null {
+  if (callerFace) {
+    return PYTHON_RECEIVER_FACES[callerFace][receiver];
+  }
+  return PYTHON_RECEIVER_SECTIONS[receiver];
+}
+
 /** 只认 self.<role>.<name> 形态;entity.cell.X 等局部接收者不识别(用户令) */
 const PYTHON_RECEIVER_CALL_PATTERN =
   /\bself\.(cell|base|client)\.([A-Za-z_][A-Za-z0-9_]*)/g;
@@ -89,10 +137,12 @@ const PYTHON_RECEIVER_CALL_PATTERN =
 /**
  * 光标处的接收者调用解析:F12/Hover 面用。光标必须落在方法名 token 上
  * (self.cell./self.base./self.client. 的第三段);落在接收者段或别处 → null。
+ * callerFace 可选(逐面语义闸依据,见 pythonReceiverSectionFor)。
  */
 export function getPythonReceiverCallAtPosition(
   lineText: string,
-  character: number
+  character: number,
+  callerFace?: PythonCallerFace
 ): PythonReceiverCall | null {
   const regex = new RegExp(PYTHON_RECEIVER_CALL_PATTERN.source, 'g');
   let match: RegExpExecArray | null;
@@ -107,12 +157,17 @@ export function getPythonReceiverCallAtPosition(
       continue;
     }
     const receiver = match[1] as PythonReceiverCall['receiver'];
+    const section = pythonReceiverSectionFor(callerFace, receiver);
+    if (section === null) {
+      return null; // 调用面无此角色属性(AttributeError 面):不产出派生信息
+    }
     return {
       line: 0,
       character: nameStart,
       receiver,
-      section: PYTHON_RECEIVER_SECTIONS[receiver],
-      methodName
+      section,
+      methodName,
+      callerFace
     };
   }
 
@@ -120,7 +175,10 @@ export function getPythonReceiverCallAtPosition(
 }
 
 /** 全文档接收者调用扫描(CodeLens 面):每行每处 self.<role>.<name> 一条 */
-export function findPythonReceiverCalls(text: string): PythonReceiverCall[] {
+export function findPythonReceiverCalls(
+  text: string,
+  callerFace?: PythonCallerFace
+): PythonReceiverCall[] {
   const calls: PythonReceiverCall[] = [];
   const lines = text.split(/\r?\n/);
 
@@ -130,12 +188,18 @@ export function findPythonReceiverCalls(text: string): PythonReceiverCall[] {
 
     while ((match = regex.exec(lines[index])) !== null) {
       const methodName = match[2];
+      const receiver = match[1] as PythonReceiverCall['receiver'];
+      const section = pythonReceiverSectionFor(callerFace, receiver);
+      if (section === null) {
+        continue; // 调用面无此角色属性:不进发现面(诊断闸裁合法性的前置)
+      }
       calls.push({
         line: index,
         character: match.index + match[0].length - methodName.length,
-        receiver: match[1] as PythonReceiverCall['receiver'],
-        section: PYTHON_RECEIVER_SECTIONS[match[1] as PythonReceiverCall['receiver']],
-        methodName
+        receiver,
+        section,
+        methodName,
+        callerFace
       });
     }
   }
@@ -262,9 +326,10 @@ function finishArgumentSpan(
 
 /** 全文档接收者调用实参扫描(inlay 形参提示面):调用 + 同行实参区间 */
 export function findPythonReceiverCallArguments(
-  text: string
+  text: string,
+  callerFace?: PythonCallerFace
 ): PythonReceiverCallWithArguments[] {
-  return findPythonReceiverCalls(text).map(call => {
+  return findPythonReceiverCalls(text, callerFace).map(call => {
     const lineText = text.split(/\r?\n/)[call.line] ?? '';
     const nameEnd = call.character + call.methodName.length;
     const arguments_ = parseSingleLineCallArguments(lineText, nameEnd);
