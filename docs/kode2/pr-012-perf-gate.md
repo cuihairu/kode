@@ -1,6 +1,6 @@
 # PR-012 perf/gate-phase2 — 真实大型数据压力测试与性能/正确性验收报告(门禁判定)
 
-- 日期:2026-10-23 · 分支 v0.2 · 依据:docs/kode2/KODE_2_COMPLETE_TODO.md §17 PR-012 原文(L440):「真实大型数据压力测试和性能/正确性验收,不通过禁止继续扩大迁移」
+- 日期:2026-10-23 · 分支 v0.2 · 依据:todo.md「Kode 2.0 Rust Core 重构账本」§17 PR-012（原文见 git 历史该文件 L440）:「真实大型数据压力测试和性能/正确性验收,不通过禁止继续扩大迁移」
 - 执行器:`tests/perf/shadowGate.bench.ts`(bench 专用配置,不进 pnpm test 门禁);原始输出正本:`docs/kode2/pr-012-gate2-run.txt`(GATE2-* 行,逐数字可对账)
 - 资产集:`scripts/generate-perf-assets.mjs` 同参数 30k(large=30005 文件 + def-heavy=1323 文件 + 其余场景),`/tmp` 下生成后对拍
 - Rust 侧:`cargo build -p kode-server --release` 产物(release,kode-server 0.2.0);TS 侧:真实 EntityMappingManager + KBEngineHoverProvider/KBEngineCompletionProvider(零改动)

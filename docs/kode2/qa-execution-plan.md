@@ -1,7 +1,7 @@
 # QA-001..017 执行计划（v0.2.0 发布门禁）
 
 - 日期：2026-11-03 · 仓：/home/cui/workspaces/kode（分支 main，工作树有未提交改动）
-- 依据：`docs/kode2/KODE_2_COMPLETE_TODO.md` §14（L348-364）+ §15 PH7-01（L407）
+- 依据：`todo.md`「Kode 2.0 Rust Core 重构账本」§14/§15（原 KODE_2 文件已合并删除，行号见 git 历史）
 - 性质：**只读评估 + 计划**。本文档不改任何源码；除本文档外未写入仓库任何文件。
 - 评估方法：逐项到源码/工作流核实并附 file:line；实跑两条基线命令取真实数字（见 §2）。
 
@@ -173,7 +173,7 @@
 
 ### QA-014 生成覆盖率达到门槛前不得标「所有 Python 文件类型完整生成」
 - 现状：**缺失（门槛与量测都没有）；好消息是文案未越界**。
-- 证据：`grep '所有 Python 文件类型完整生成'` **只命中 `docs/kode2/KODE_2_COMPLETE_TODO.md:361`**（即任务书本身），README/docs/CHANGELOG/src 无此宣称 → 无现存越界。
+- 证据：`grep '所有 Python 文件类型完整生成'` **只命中 `todo.md 合并节 §1（原 KODE_2 L361）`**（即任务书本身），README/docs/CHANGELOG/src 无此宣称 → 无现存越界。
   - pyi 生成面：`src/pythonTypeStubs.ts`、`src/entityTypeStubs.ts`，todo「pyi 存根修复与增强」段 5 项全 [x]（`todo.md:166-172`）
   - **无「Python 文件类型生成覆盖率」量测**
 - 桶：**桶1**。估 **1.5**。

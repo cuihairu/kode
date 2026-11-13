@@ -3,7 +3,7 @@
 # 热更新 — 现状实现审计（HR-PR-01）
 
 - 锚定审计 SHA：`6934c63abd9b21afaff51a135d69535ea167f069`（分支 `main`）。
-- 范围：HR-AUDIT-001..012，账本 `docs/kode2/KODE_2_COMPLETE_TODO.md` §19.2。
+- 范围：HR-AUDIT-001..012，账本 `todo.md`「Kode 2.0 — Rust Core 高性能重构账本」§19.2（原 docs/kode2/KODE_2_COMPLETE_TODO.md 已合并删除）。
 - 红线遵守：Watch/Hash/成功确认度一律给出有证据的事实或 `unknown`；下文任何一句都不超出代码实际所做。
 - 端点/参数长期契约（2026-11-06 用户令）：快速请求示例 query 与 body 双载 `module_name=<module>`；全仓拼写门禁照旧（`tests/hotfixSpellingGate.test.ts`）。
 - 本 PR 不改任何行为。纯审计。
