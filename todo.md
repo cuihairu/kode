@@ -2421,7 +2421,7 @@
 - [ ] HR-WATCH-018 单测模拟 onSave、外部改动、原子覆盖、批量 rename、删除后重建、忽略目录、配置变更、远程 URI。
 
 #### 19.5 HTTP 适配、调度、幂等与成功确认（HR-HTTP）
-- [ ] HR-HTTP-001 从现有 Quick Requests 抽取可复用 RequestExecutor；不可破坏普通通用 HTTP 功能。
+- [x] HR-HTTP-001 从现有 Quick Requests 抽取可复用 RequestExecutor；不可破坏普通通用 HTTP 功能。(HR-PR-03,21cc4848,新纯核 src/backend/httpRequestExecutor.ts:快捷请求 HttpRequestService.runEntry 与默认热更 sendDefaultHotfix 统一走 executeHttpRequest+交换状态机,不再各带一套传输分支;服务层分支仍读 transportOk=传输面原始 ok 布尔,日志行/错误弹窗/布尔返回逐字不变=通用 HTTP 零回归,tests/httpRequestService.test.ts 既有钉全绿)
 - [ ] HR-HTTP-002 `HotReloadProvider` 接受 module identity、target、revision、request correlation id，产生结构化 outcome。
 - [ ] HR-HTTP-003 保持自定义 URL/method/headers/body/变量模板，处理 URL query encoding、JSON escaping 与 HTTP method semantics。
 - [x] HR-HTTP-004 HTTP 字段拼写口径：2026-11-06 用户令更正为 `http://127.0.0.1:8090/hotfix` + `module_name=`，旧错误拼写全仓清零（`tests/hotfixSpellingGate.test.ts` 门断言）。
@@ -2430,14 +2430,14 @@
 - [ ] HR-HTTP-007 按目标维护有界并发队列，默认同目标串行；其他目标允许独立并发且全局上限。
 - [ ] HR-HTTP-008 支持请求取消和超时，明确取消不等于远端撤销；发送后未知状态必须显示 uncertain。
 - [ ] HR-HTTP-009 重试策略：默认不自动重试状态未知的非幂等更新；仅服务端提供 idempotency key 后开启有限退避重试。
-- [ ] HR-HTTP-010 解析网络失败、DNS/connect、非 2xx、2xx 无回执、显式 `accepted`、显式 `applied`、应用失败。
+- [x] HR-HTTP-010 解析网络失败、DNS/connect、非 2xx、2xx 无回执、显式 `accepted`、显式 `applied`、应用失败。(HR-PR-03,21cc4848,传输层 classifyExecution 六分类 ok/non-2xx/timeout/network-error/invalid-url/unsupported-protocol+八细类(连接拒绝/DNS/重置/超时/URL/协议/http-status/unknown),事实决定分类推不出如实 unknown;回执层 accepted/applied/sent(无回执/非 JSON)经真网 e2e 验,failed 分支既有 tests/hotReloadTransport.test.ts:114 覆盖;本地超时绝不报成应用失败=服务端随后仍完成 200 有钉)
 - [ ] HR-HTTP-011 引擎端如能返回 appliedRevision/appliedHash/targetProcess，则验证与当前请求 fingerprint 匹配才显示已应用。
 - [ ] HR-HTTP-012 兼容老 HTTP 服务端纯文本/JSON 格式，通过 ResponseInterpreter 版本化策略解析，无法确证显示 `sent_unverified`。
 - [ ] HR-HTTP-013 防旧响应覆盖新任务：结果 CAS 对比 targetId + canonical URI + requestedVersion；按时间戳不能代替版本校验。
-- [ ] HR-HTTP-014 每次执行都生成 correlation_id，在日志、详情、服务端支持时贯穿；避免记录完整 token/header 凭证。
+- [ ] HR-HTTP-014 每次执行都生成 correlation_id，在日志、详情、服务端支持时贯穿；避免记录完整 token/header 凭证。(进行中:HR-PR-03,21cc4848,生成+贯穿 outcome 已落=每次执行 crypto.randomUUID(),外部可自带 id,测试钉两条 id 不同;日志/详情展示面随 HR-PR-06 历史面板,请求头贯穿刻意不做=线路字节变更(与「不做 URL 编码」同边界),待接收端契约解冻(HR-AUDIT-009);不落 token/header 凭证=outcome 无请求头字段(header 不回显),只含 status/durationMs/响应 body)
 - [ ] HR-HTTP-015 断连/重连更新 endpoint health；health success 不等于任何模块已更新成功。
 - [ ] HR-HTTP-016 在 HTTP 层额外提供 `Preview request`，用户确认精确 URL/method/参数后启用自动模式。
-- [ ] HR-HTTP-017 Mock server e2e：慢响应、chunked、malformed JSON、状态码、断网、重复请求、服务端成功但本地超时。
+- [x] HR-HTTP-017 Mock server e2e：慢响应、chunked、malformed JSON、状态码、断网、重复请求、服务端成功但本地超时。(HR-PR-03,21cc4848,tests/httpRequestExecutorMockServer.test.ts 10 例真网(node http 每例独立临时服务,端口 0 随机)打默认传输面:慢响应+短超时→timeout 且服务端随后仍完成 200/状态码 500→non-2xx/malformed JSON→2xx 已送达不 claim applied/chunked 拼接/chunk 重复请求 hits=2 且关联 id 独立/断网两形=端口已关 ECONNREFUSED+响应中途摧毁 socket→connection-reset/URL 无法解析+协议不支持;顺抓真缺陷=默认传输在服务端响应中断时 promise 永不结算(实测 node 在响应流发 aborted 而 req 已销毁,超时无法自救),已修 res.on('aborted')/('error') 显式收口)
 - [ ] HR-HTTP-018 使用真实引擎侧服务联调，文档化实际回执字段；无法改服务端时 UI 明确显示未验证。
 
 #### 19.6 热更新生命周期状态与历史（HR-STATE）
@@ -2526,7 +2526,7 @@
 #### 19.11 建议的 Hot Reload PR 顺序及依赖（先复用现有功能）
 - [x] HR-PR-01 `audit/hotreload-current`：HR-AUDIT 全部；输出调用链和已实现/缺失矩阵，不改功能。(HR-PR-01,6934c63a,docs/hotreload/current-implementation.md 全量刷新+docs/zh/ 1:1 镜像;§HR-AUDIT-001..012 事实表+§2 已实现/缺失/unknown 矩阵+§3 对上期结转;零功能改动;审计发现一并记录未修=首跑通知『打开日志』locale 不匹配 src/hotReload.ts:1046)
 - [ ] HR-PR-02 `hotreload/module-identity`：HR-MOD 全部 + pure resolver tests；手动热更先使用双名称模型；兼容原 `${module}`。(进行中:HR-PR-02,c120287c,HR-MOD-001/002/003/004/005/007/009/012/015 已勾,006/008/010/011/013/014 部分落地暂缓注记见各行;手动热更双名=hotReloadDefaultHotfix 双名优先+${module} 回落已接线;UI/配置暴露/发送路径双名切换随 HR-PR-03+)
-- [ ] HR-PR-03 `hotreload/request-adapter`：抽取通用 RequestExecutor + 状态机 + mock server；保证旧 Quick Requests 不回归。
+- [ ] HR-PR-03 `hotreload/request-adapter`：抽取通用 RequestExecutor + 状态机 + mock server；保证旧 Quick Requests 不回归。(进行中:HR-PR-03,21cc4848,HR-HTTP-001/010/017 已勾+014 生成面已落;三件主体皆已交付=通用执行器+交换状态机+真网 mock server 套件;旧 Quick Requests 回归=既有 tests/httpRequestService.test.ts 钉逐字不变全绿;余=关联 id 线路贯穿(接收端契约)+002 provider 面(随 HR-PR-04/05))
 - [ ] HR-PR-04 `hotreload/save-watch`：onSave 默认关闭，可开关、去抖、稳定性/幂等队列、基本语法检查。
 - [ ] HR-PR-05 `hotreload/disk-watch`：外部变更、Git 批量变更、目录过滤、target 合并、远端环境。
 - [ ] HR-PR-06 `hotreload/ui-status`：状态栏、资源树、历史面板、完整模块名、失败重试与可信回执。
