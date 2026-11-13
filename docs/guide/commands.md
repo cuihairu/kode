@@ -865,6 +865,25 @@ The flow graph panel supports:
   - `${sel}`: the selected text
   - With no active editor, each variable substitutes to the empty string
 
+### `kbengine.httpRequest.preview`
+
+- Title: `Preview Hot Reload HTTP Requests`
+- Purpose: show what requests *would* be sent for the active file — across the configured `kbengine.httpRequests` entries and the zero-config default hot-reload face — without sending anything
+- Behavior:
+  - Requires an active editor; without one it says so honestly (it never guesses a file)
+  - Each row shows the entry name, its source, the substituted method/URL/headers/body, and the three module names side by side (`fullModule` / `requestModule` dual names plus the legacy `${module}` value); disabled entries are listed with their skip reason, never silently dropped
+  - Output goes to the "KBEngine HTTP 快捷请求" channel and opens it; the `kbengine.hotReload.allowRootLevelStem` key (HR-MOD-008) is honored in the default-face row exactly as the real send would
+
+### `kbengine.httpRequests.migrateLegacyModule`
+
+- Title: `Migrate Legacy ${module} Templates (Dual-Name)`
+- Purpose: compatibility migration for saved URL templates still using the legacy `${module}` placeholder (HR-MOD-013) — suggest replacing it with `${fullModule}` from the dual-name face (HR-MOD-012)
+- Behavior:
+  - Scans the raw saved entries and lists every entry containing `${module}` with per-field occurrence counts (url / body / header values)
+  - Never silently rewrites: you pick an entry, then explicitly confirm the write; cancel at any step and nothing changes
+  - The rewrite touches only the confirmed entry's template strings — every other entry (including unknown custom fields) stays byte-for-byte intact
+  - If `kbengine.hotReload.tempEdit.scriptRoot` is not configured the migration refuses and explains why (`${fullModule}` would expand to the empty string — fix the script root first)
+
 ### `kbengine.hotReload.tempEdit.run`
 
 - Title: `Temp-Edit Hot Reload (Active File)`

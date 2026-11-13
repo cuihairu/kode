@@ -833,6 +833,25 @@ callgraph 模式面板支持：
   - `${sel}`：选中文本
   - 无活动编辑器时各变量替换为空串
 
+### `kbengine.httpRequest.preview`
+
+- 标题：`预览热更 HTTP 请求(不发送)`
+- 作用：对活动文件展示「将会发出什么」——覆盖 kbengine.httpRequests 配置条目与零配置默认热更面——只构造不发送
+- 行为：
+  - 需要活动编辑器；没有时如实提示（绝不猜文件）
+  - 每行给出条目名、来源、模板替换后的方法/URL/请求头/请求体，以及三个模块名并列（`fullModule`/`requestModule` 双名 + legacy `${module}` 语义值）；停用条目也如实列出并带原因，绝不静默丢弃
+  - 输出进「KBEngine HTTP 快捷请求」通道并自动打开；`kbengine.hotReload.allowRootLevelStem`（HR-MOD-008）在默认面行与真实发送逐字同口径
+
+### `kbengine.httpRequests.migrateLegacyModule`
+
+- 标题：`迁移旧配置 ${module} 模板(双名面)`
+- 作用：对仍在用旧 `${module}` 占位的已保存 URL 模板做兼容迁移（HR-MOD-013）——建议换成双名面的 `${fullModule}`（HR-MOD-012）
+- 行为：
+  - 扫描原始已存条目，逐条列出含 `${module}` 的条目与逐字段出现次数（url/请求体/请求头值）
+  - 绝不静默改写：先选条目、再显式确认写入；任意一步取消都不改任何配置
+  - 改写只动确认条目的模板字符串——其余条目（含解析器不认识的自定义字段）逐字保留
+  - 未配置 `kbengine.hotReload.tempEdit.scriptRoot` 时拒绝迁移并说明原因（`${fullModule}` 会展开空串——先配脚本资源根）
+
 ### `kbengine.hotReload.tempEdit.run`
 
 - 标题：`Temp-Edit Hot Reload (Active File)`

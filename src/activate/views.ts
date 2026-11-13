@@ -17,6 +17,13 @@ import { DefinitionSymbolIdentity, EntityMethodSection } from '../entityMapping'
 import { EntityExplorerProvider, entityExplorerBadgeOf, type EntityTreeNode } from '../explorerProviders';
 import { parseHttpRequestEntries } from '../backend/httpRequests';
 import { HttpRequestService } from '../backend/httpRequestService';
+import {
+  analyzeRawLegacyModuleEntries,
+  buildRequestPreviewRows,
+  rewriteRawEntryLegacyModule,
+  spliceMigratedEntry
+} from '../backend/hotReloadRequestPreview';
+import { hotReloadSectionReader, readHotReloadSettings } from '../hotReload';
 import { QuickActionManager } from '../quickActions';
 import { QuickActionTreeProvider } from '../quickActionTree';
 import { setupTypeStubRegeneration } from '../pythonTypeStubs';
@@ -306,7 +313,103 @@ export function activateHttpRequestViews(deps: HttpRequestViewsDeps): HttpReques
       }
     }
   );
-  context.subscriptions.push(httpRequestChannel, runHttpQuickPickCommand, runNamedHttpCommand);
+  // HR-MOD-013 用户可见命令:请求预览(只构造不发送)+旧配置 ${module} 兼容
+  // 迁移(分析/建议/显式确认才写;不静默篡改已保存模板=纯核只动确认条目)。
+  const activeFile = (): string => vscode.window.activeTextEditor?.document.uri.fsPath ?? '';
+  const hotReloadScriptRoot = (): string =>
+    vscode.workspace.getConfiguration('kbengine').get<string>('hotReload.tempEdit.scriptRoot', '');
+  const previewHttpRequestCommand = vscode.commands.registerCommand(
+    'kbengine.httpRequest.preview',
+    () => {
+      const file = activeFile();
+      if (file.length === 0) {
+        void vscode.window.showInformationMessage('请求预览需要活动编辑器(打开一个 .py 文件后再试)');
+        return;
+      }
+      const editor = vscode.window.activeTextEditor;
+      const rows = buildRequestPreviewRows({
+        file,
+        entries: parseHttpRequestEntries(vscode.workspace.getConfiguration('kbengine').get('httpRequests')),
+        scriptRoot: hotReloadScriptRoot(),
+        isPackageDir: dirPath => fs.existsSync(path.join(dirPath, '__init__.py')),
+        allowRootLevelStem: readHotReloadSettings(hotReloadSectionReader()).allowRootLevelStem,
+        cursorLineZeroBased: editor?.selection.active.line,
+        selection: editor ? editor.document.getText(editor.selection) : undefined,
+        workspaceRoots: (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath)
+      });
+      if (rows.length === 0) {
+        httpRequestChannel.appendLine('请求预览:无可预览请求(未配置 kbengine.httpRequests 条目)');
+      }
+      for (const row of rows) {
+        httpRequestChannel.appendLine(`── ${row.name}(${row.source}${row.skippedReason ? ` · ${row.skippedReason}` : ''})`);
+        httpRequestChannel.appendLine(`    双名: fullModule=${row.moduleNames.fullModule || '(不可解)'} · requestModule=${row.moduleNames.requestModule || '(不可解)'} · legacy ${'${module}'}=${row.moduleNames.legacyModule}`);
+        httpRequestChannel.appendLine(`    ${row.method} ${row.url}`);
+        for (const [key, value] of Object.entries(row.headers)) {
+          httpRequestChannel.appendLine(`    ${key}: ${value}`);
+        }
+        if (row.body.length > 0) {
+          httpRequestChannel.appendLine(`    body: ${row.body}`);
+        }
+      }
+      httpRequestChannel.show(true);
+    }
+  );
+  const migrateLegacyModuleCommand = vscode.commands.registerCommand(
+    'kbengine.httpRequests.migrateLegacyModule',
+    async () => {
+      const configuration = vscode.workspace.getConfiguration('kbengine');
+      const raw = configuration.get<unknown>('httpRequests', undefined);
+      const analysis = analyzeRawLegacyModuleEntries(raw);
+      if (analysis.usages.length === 0) {
+        void vscode.window.showInformationMessage(
+          '没有条目使用旧 ${module} 占位,无需迁移(kbengine.httpRequests)'
+        );
+        return;
+      }
+      const picked = await vscode.window.showQuickPick(
+        analysis.usages.map(usage => ({
+          label: usage.name,
+          description: `${usage.total} 处 ${'${module}'}(${usage.fields.map(field => `${field.field}${field.key ? `:${field.key}` : ''}×${field.count}`).join(', ')})`,
+          usage
+        })),
+        { placeHolder: '选择要迁移的条目(旧 ${module} → ${fullModule},双名面)' }
+      );
+      if (!picked) {
+        return;
+      }
+      if (!analysis.canSuggest) {
+        return;
+      }
+      if (!vscode.workspace.getConfiguration('kbengine').get<string>('hotReload.tempEdit.scriptRoot', '')) {
+        void vscode.window.showWarningMessage(
+          '未配置 kbengine.hotReload.tempEdit.scriptRoot,迁移后 ${fullModule} 会展开空串——先配脚本资源根再迁移'
+        );
+        return;
+      }
+      const confirmed = await vscode.window.showQuickPick(
+        [
+          { label: `迁移 '${picked.usage.name}':${'${module}'} → ${'${fullModule}'}(写入工作区设置)` },
+          { label: '取消(不改任何配置)' }
+        ],
+        { placeHolder: '确认写入?其余条目逐字保留,仅改确认条目的模板字符串' }
+      );
+      if (!confirmed || !confirmed.label.startsWith('迁移')) {
+        return;
+      }
+      const rawArray = Array.isArray(raw) ? raw : [];
+      const target = rawArray[picked.usage.index];
+      if (typeof target !== 'object' || target === null) {
+        return;
+      }
+      const { next } = rewriteRawEntryLegacyModule(target as Record<string, unknown>);
+      const updated = spliceMigratedEntry(rawArray, picked.usage.index, next);
+      await configuration.update('httpRequests', updated, vscode.ConfigurationTarget.Workspace);
+      void vscode.window.showInformationMessage(
+        `已迁移 '${picked.usage.name}'(${picked.usage.total} 处 ${'${module}'} → ${'${fullModule}'});其余条目逐字保留`
+      );
+    }
+  );
+  context.subscriptions.push(httpRequestChannel, runHttpQuickPickCommand, runNamedHttpCommand, previewHttpRequestCommand, migrateLegacyModuleCommand);
 
   return {
     httpRequestService,

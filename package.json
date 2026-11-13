@@ -141,6 +141,8 @@
     "onCommand:kbengine.playerData.showResult",
     "onCommand:kbengine.httpRequests.run",
     "onCommand:kbengine.httpRequest.run",
+    "onCommand:kbengine.httpRequest.preview",
+    "onCommand:kbengine.httpRequests.migrateLegacyModule",
     "onCommand:kbengine.discovery.report",
     "onCommand:kbengine.start.retryDiscovery",
     "onCommand:kbengine.extension.identity",
@@ -863,6 +865,16 @@
       {
         "command": "kbengine.httpRequest.run",
         "title": "%kbengine.command.httpRequest.run.title%"
+      },
+      {
+        "command": "kbengine.httpRequest.preview",
+        "title": "%kbengine.command.httpRequest.preview.title%",
+        "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.httpRequests.migrateLegacyModule",
+        "title": "%kbengine.command.httpRequests.migrateLegacyModule.title%",
+        "category": "KBEngine"
       },
       {
         "command": "kbengine.hotReload.tempEdit.run",
