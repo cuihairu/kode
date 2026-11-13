@@ -24,6 +24,7 @@ import {
   type PackageDirProbe
 } from './httpRequests';
 import { DEFAULT_HTTP_TIMEOUT_MS, defaultTransport, type HttpTransport } from './httpRequestService';
+import { executeHttpRequest } from './httpRequestExecutor';
 import { resolveModuleDualName } from './hotReloadTempEdit';
 
 export interface DefaultHotfixRequest {
@@ -105,19 +106,24 @@ export async function sendDefaultHotfix(
     const request = buildDefaultHotfixRequest(file, deps);
     requests.push(request);
     deps.onRequest?.(request, file);
-    const result = await transport({
-      url: request.url,
-      method: request.method,
-      headers: request.headers,
-      body: request.body,
-      timeoutMs
-    });
-    if (!result.ok) {
-      failures.push(`${file}: ${result.error ?? '未知错误'}`);
+    // HR-HTTP-001(HR-PR-03):发送走通用执行器(每文件一个关联 id),
+    // 失败分支仍按 transportOk=传输面原始 ok,detail 字符串逐字不变。
+    const outcome = await executeHttpRequest(
+      {
+        url: request.url,
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+        timeoutMs
+      },
+      { transport }
+    );
+    if (!outcome.transportOk) {
+      failures.push(`${file}: ${outcome.errorMessage ?? '未知错误'}`);
       continue;
     }
-    if (result.status < 200 || result.status > 299) {
-      failures.push(`${file}: HTTP ${result.status}`);
+    if (outcome.status < 200 || outcome.status > 299) {
+      failures.push(`${file}: HTTP ${outcome.status}`);
     }
   }
   return { ok: failures.length === 0, detail: failures.join('; '), requests };

@@ -175,3 +175,11 @@
 - HR-MOD-011 UI 显示 `fullModule`/`requestModule`:HR-UI 簇(HR-PR-06)。
 - HR-MOD-013 旧配置迁移/预览 UX:用户可见命令暂缓;纯核心 + 模板双名面已存在。
 - HR-MOD-014 台账/历史双名字段:历史形状扩展暂缓(HR-PR-06)。
+
+## 5. HR-PR-03 增量（2026-11-13,通用请求执行器）
+
+- `src/backend/httpRequestExecutor.ts` —— 单一执行路径(HR-HTTP-001):HTTP 快捷请求(`HttpRequestService.runEntry`)与默认热更(`sendDefaultHotfix`)现统一走 `executeHttpRequest` + 交换状态机(`idle→in-flight→settled` 单向,非法迁移带原因拒绝),不再各自带一套传输分支。通用 HTTP 语义不变:服务层仍按 `transportOk` = 传输面原始 `ok` 布尔分支,日志行、错误弹窗、布尔返回逐字一致。
+- 结构化 outcome(HR-HTTP-010):`classifyExecution` 按传输事实映射六分类(`ok` / `non-2xx` / `timeout` / `network-error` / `invalid-url` / `unsupported-protocol`)+ 错误细类(`connection-refused` / `dns` / `connection-reset` / `timeout` / `invalid-url` / `unsupported-protocol` / `http-status` / `unknown`);推不出细类如实 `unknown`,不猜。回执解析(`parseReloadHttpReceipts`)在其上层,未改。
+- 关联 id(HR-HTTP-014):每次执行生成 `crypto.randomUUID()`,贯穿 outcome(调用方可自带)。刻意不做请求头贯穿——那是线路字节变更,与「不做 URL 编码」同边界;线路贯穿待接收端契约解冻(HR-AUDIT-009)。
+- Mock server e2e(HR-HTTP-017):`tests/httpRequestExecutorMockServer.test.ts` 用真 node 传输面打每例独立的临时服务(端口 0)——2xx JSON 回执→applied、2xx 非 JSON→`sent`(不 claim applied)、500→`non-2xx`、慢响应+短超时→`timeout`(服务端随后仍完成 200:本地超时绝不报成应用失败)、端口已关→`connection-refused`、响应中途摧毁 socket→`connection-reset`、chunked 拼接、重复请求(2 次命中,关联 id 各自独立)、URL 无法解析/协议不支持。
+- 缺陷修复(由新 e2e 发现):默认传输在服务端响应中途中断时**永不结算**——node 在响应流上发 `aborted`,而 `req` 已随 socket 销毁,`req.on('error')` 与 socket 超时都无法解决该 promise,调用方永久挂起。旧注释声称由 `req.on('error')` 统一收口,实测不成立。现由 `res.on('aborted')` / `res.on('error')` 显式收口为失败(Promise 只认首次 resolve)。既有的服务层「不悬挂」测试仍绿,因为它注入的是假传输——mock-vs-wire 契约漂移。

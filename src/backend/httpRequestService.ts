@@ -10,6 +10,7 @@
 
 import * as http from 'http';
 import * as https from 'https';
+import { executeHttpRequest } from './httpRequestExecutor';
 import {
   buildHttpRequest,
   buildOfficialVariableContext,
@@ -88,8 +89,30 @@ export const defaultTransport: HttpTransport = request =>
           }
           received += chunk.length;
         });
-        // 响应侧中断(服务端提前断开)在 req 上以 error(ECONNRESET)呈现,
-        // 由下方 req.on('error') 统一收口;此处只处理正常收尾。
+        // 响应侧中断(服务端提前断开):实测 node 在响应流上以 'aborted'
+        // 呈现,而 req 随 socket 已销毁——req.on('error') 不再触发,原先
+        // 「由 req.on('error') 统一收口」的前提不成立,传输 promise 会永久
+        // 不结算(超时也无法自救:req 已 destroyed,destroy(err) 不再发
+        // error)。在此显式收口为失败;Promise 只认首次 resolve,后到的
+        // 重复调用天然无效,无需额外哨兵。
+        res.on('aborted', () => {
+          resolve({
+            ok: false,
+            status: 0,
+            durationMs: Date.now() - startedAt,
+            body: '',
+            error: '响应中断:服务端提前断开连接(aborted)'
+          });
+        });
+        res.on('error', (err: Error) => {
+          resolve({
+            ok: false,
+            status: 0,
+            durationMs: Date.now() - startedAt,
+            body: '',
+            error: err.message
+          });
+        });
         // end 触发时响应头必已解析(statusCode 实况恒有值);类型上
         // number|undefined 以解构默认值收口为 0(与失败路径的「无状态码」
         // 语义一致),不引入覆盖率的 ?? 死臂。
@@ -188,26 +211,32 @@ export class HttpRequestService {
     const request = buildHttpRequest(entry, vars, buildOfficialVariableContext(editorContext));
     this.deps.log(`▶ [${entry.name}] ${request.method} ${request.url}`);
 
-    const result = await this.transport({
-      url: request.url,
-      method: request.method,
-      headers: request.headers,
-      body: request.body,
-      timeoutMs: this.timeoutMs
-    });
+    // HR-HTTP-001(HR-PR-03):传输走通用执行器(关联 id + 结构化分类
+    // 在 outcome 上),服务层分支仍按 transportOk=传输面原始 ok 布尔,
+    // 日志/弹窗/布尔契约逐字不变,通用 HTTP 功能零回归。
+    const outcome = await executeHttpRequest(
+      {
+        url: request.url,
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+        timeoutMs: this.timeoutMs
+      },
+      { transport: this.transport }
+    );
 
     // AUD-054(R2-F27):真实响应到达即上报观察者(回执解析面)——2xx/非 2xx/
     // 传输失败(status=0)都按真实事实回调,观察者分类落账不靠猜;仅 hook
     // 直连本服务时生效(execute 终端闭包路径拿不到 status/body,不回调)。
-    onHttpResponse?.({ status: result.status, body: result.body });
+    onHttpResponse?.({ status: outcome.status, body: outcome.body });
 
-    if (result.ok) {
-      this.deps.log(`✓ ${result.status} · ${result.durationMs}ms`);
-      this.deps.log(this.previewBody(result.body));
+    if (outcome.transportOk) {
+      this.deps.log(`✓ ${outcome.status} · ${outcome.durationMs}ms`);
+      this.deps.log(this.previewBody(outcome.body));
       return true;
     }
-    this.deps.log(`✗ [${entry.name}] ${request.method} ${request.url} · ${result.durationMs}ms · ${result.error ?? '未知错误'}`);
-    this.deps.notifyError(`HTTP 快捷请求「${entry.name}」失败: ${result.error ?? '未知错误'}`);
+    this.deps.log(`✗ [${entry.name}] ${request.method} ${request.url} · ${outcome.durationMs}ms · ${outcome.errorMessage ?? '未知错误'}`);
+    this.deps.notifyError(`HTTP 快捷请求「${entry.name}」失败: ${outcome.errorMessage ?? '未知错误'}`);
     return false;
   }
 
