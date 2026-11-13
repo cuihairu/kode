@@ -1955,6 +1955,6 @@
 - [x] KSEM-CREATE-05 [P2] 检查初始化参数字典。验收：已知实体字段做类型校验；源码核实 params 自定义键、Cell 数据和普通属性路径后再定缺键/多键规则。（7137f60f）
 - [x] KSEM-CREATE-06 [P2] 检查 Cell 创建目标。验收：核实 space/目标 EntityCall 的 API 前置条件；仅报告静态可证明的角色和类型错误。（e55e2025）
 - [x] 给 def 解析按引用类别分池并校验候选类别（`crates/kode-server/src/semantics/store.rs:138`）—— 防同名接口/父实体/组件/实体跨类别串接污染快照。（6f4e6f01）
-- [ ] 实现 def Arg 文本到 `SemType` 的转换桥（`crates/kode-server/src/semantics/rpcargs.rs:78`）—— 打通真实 RPC 参数检查链并避免默认 PYTHON 过宽。
+- [x] 实现 def Arg 文本到 `SemType` 的转换桥（`crates/kode-server/src/semantics/rpcargs.rs:78`）—— 打通真实 RPC 参数检查链并避免默认 PYTHON 过宽。【2026-11-13 收口 5224a257:`arg_text_to_sem_type(text, graph)`=两端 trim+内建直映(无图)+有图走 `from_type_graph` 递归(alias/ARRAY/FIXED_DICT/UserType→Entity);红线=无图未识别 `Unknown("unresolved:名;type-graph-missing")` 绝不默认 PYTHON(可 pickle 全接受,默认它=吞光 mismatch)、显式 `<Arg>PYTHON</Arg>` 才合法;+10 测试含端到端喂 `check_rpc_args`(UINT32 过/int→FLOAT 引擎真值不符/未识别位 Unknown);prove-red 三发=默认 PYTHON 2 红/去 trim 1 红/抹图臂 4 红,恢复 diff 字节一致;首轮快照误拍写测试前致变异恢复回滚新测试(14 passed 假象)已纠=重拍重发,细节 docs/review/2026-11-13-rpcargs-arg-text-bridge.md;门禁 clippy 0+cargo 1189 过 0 败 55 套件+tsc 0+lint 0+vitest RC=0+xvfb demo 25 RC=0】
 - [ ] 将 `PYTHON_RECEIVER_SECTIONS` 改为按 caller face/entity owner 的逐面语义表（`src/backend/pythonLanguageUtils.ts:66`）—— 消除与 `bind_self_role` 的矛盾和跨实体误对账。
 - [ ] 显式区分组件槽宿主缺失与结构缺失分诊（`crates/kode-server/src/semantics/rules.rs:64`）—— 防声明未就绪被误报为方向不可达。
