@@ -277,6 +277,11 @@ export class HotReloadSavePipeline {
     return this.wave.map(event => event.uri);
   }
 
+  /** 自省:文件当前版本号(HR-WATCH-011 响应面快照用;未定稿过=0) */
+  revisionOf(file: string): number {
+    return this.revisionByUri.get(canonicalizeScriptFilePath(file)) ?? 0;
+  }
+
   /**
    * 登记一次原始事件(save 或 disk-change)。同文件已有 pending → 归并
    * (coalesced+1;save 后紧跟的 disk 事件记 disk-save-overlap 原因,

@@ -369,4 +369,46 @@ describe('setupHotReload accepted 回执接线(IDE-REV-022)', () => {
       receiver.dispose();
     }
   });
+
+  it('HR-WATCH-011 响应面:滞代响应在台账注解「响应过期」(绑定本代),新代响应不注', async () => {
+    const clock = makeTimers();
+    const store = new HotReloadTargetStateStore({ now: () => 7 });
+    enableHotReload();
+    // 响应挂起的动作替身:onHttpResponse 由测试在恰当时机显式触发
+    const captured: Array<{ onHttpResponse?: (r: { status: number; body?: string }) => void }> = [];
+    const resolvers: Array<(value: boolean) => void> = [];
+    setupHotReload(
+      makeContext(),
+      (_name, sendOptions) => {
+        captured.push(sendOptions);
+        return new Promise<boolean>(resolve => resolvers.push(resolve));
+      },
+      {
+        timers: clock.timers,
+        targetState: { store, resolveTargetId: () => 't1', resolveRootId: () => '/ws' }
+      }
+    );
+
+    fireFiles(['/ws/a.py']);
+    clock.tick(); // 定稿 rev1 + 合并窗 → fire#1
+    fireFiles(['/ws/a.py']);
+    clock.tick(); // 再定稿 rev2 → fire#2;此刻 rev=2
+    await flush(); // def 结构闸放行 → 两次动作发起(响应挂起,由测试显式投递)
+    expect(captured).toHaveLength(2);
+    expect(store.get(KEY, '/ws/a.py')).toBeUndefined(); // 响应未到,台账未落
+
+    captured[0]?.onHttpResponse?.({ status: 200, body: 'not-json' }); // 滞代响应#1
+    resolvers[0]?.(true);
+    await flush();
+    const staleRecord = store.get(KEY, '/ws/a.py');
+    expect(staleRecord?.outcome).toBe('sent-unverified');
+    expect(staleRecord?.detail ?? '').toContain('响应过期');
+
+    captured[1]?.onHttpResponse?.({ status: 200, body: 'not-json' }); // 新代响应#2
+    resolvers[1]?.(true);
+    await flush();
+    const fresh = store.get(KEY, '/ws/a.py');
+    expect(fresh?.outcome).toBe('sent-unverified');
+    expect(fresh?.detail ?? '').not.toContain('响应过期'); // 新代不背旧响应的注解
+  });
 });

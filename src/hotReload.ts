@@ -31,7 +31,7 @@ import { normalizeFileIdentity } from './backend/pathIdentity';
 import type { ReloadTransport } from './backend/hotReloadTransport';
 import type { HttpTransport } from './backend/httpRequestService';
 import type { PackageDirProbe } from './backend/httpRequests';
-import { HotReloadSavePipeline } from './backend/hotReloadSavePipeline';
+import { HotReloadSavePipeline, isStaleResponse } from './backend/hotReloadSavePipeline';
 import type { FileSnapshot, SyntaxCheck } from './backend/hotReloadSavePipeline';
 import { createPythonSyntaxGate } from './backend/hotReloadSyntaxGate';
 import { runPythonCompile } from './hotReloadPythonCompile';
@@ -515,6 +515,34 @@ export function setupHotReload(
   const runFire = (triggers: string[]): void => {
     const settings = readHotReloadSettings(hotReloadSectionReader());
     status.setSending(triggers, settings.debounceMs);
+    // HR-WATCH-011 响应面:发送时刻的版本快照——响应落地时该文件已又定稿
+    // 新版本(isStaleResponse 真)则旧响应如实注解,绝不作为新版本的成功依据。
+    // 「末版本必被请求」由链路自身保证:再定稿必再进合并窗再 fire
+    // (tests/hotReloadRevisionGate 钉);此处只补「旧响应不冒充新版本成功」。
+    // 发送代际的实例快照:响应面比对锚定发起发送的那个流水线实例(apply
+    // 重建后新实例版本簿重置,旧响应只对旧代版本负责,不与新代混淆)
+    const pipelineAtFire = pipeline;
+    const sentRevisions = new Map<string, number>(
+      pipelineAtFire ? triggers.map(file => [file, pipelineAtFire.revisionOf(file)]) : []
+    );
+    const STALE_RESPONSE_NOTE = '响应过期(发送后该文件又有新版本定稿,本响应不作为新版本的成功依据)';
+    const staleSinceFire = (file: string): boolean => {
+      const sent = sentRevisions.get(file);
+      return (
+        sent !== undefined &&
+        pipelineAtFire !== undefined &&
+        isStaleResponse(sent, pipelineAtFire.revisionOf(file))
+      );
+    };
+    const annotateStaleResponses = (files: readonly string[]): void => {
+      const stale = files.filter(staleSinceFire);
+      if (stale.length === 0) {
+        return;
+      }
+      status.log(
+        `响应过期: ${stale.length} 个文件发送后又有新版本定稿,本响应不作为新版本的成功依据(${stale.join(', ')})`
+      );
+    };
     // 默认热更请求(用户令 2026-11-06):未配动作名时保存即 POST
     // http://127.0.0.1:8090/hotfix?module_name=<模块名>,body 同带
     // module_name=<模块名>(双带);成败按传输
@@ -529,6 +557,7 @@ export function setupHotReload(
       }).then(
         result => {
           if (result.ok) {
+            annotateStaleResponses(triggers);
             status.setSentUnverified();
             return;
           }
@@ -667,6 +696,7 @@ export function setupHotReload(
           now,
           source: channelAuditSource
         }).then(({ sentCount, failedCount }) => {
+          annotateStaleResponses(triggers);
           const allApplied = triggers.length > 0 && triggers.every(file => {
             const rootId = wiring?.resolveRootId(file);
             return rootId != null &&
@@ -809,7 +839,15 @@ export function setupHotReload(
               }
               scheduleAppliedSettle(wiring, key, file, sentAt, attempt);
             }
+            // HR-WATCH-011:响应相对本代发送已过期(文件又定稿新版本)→ 台账
+            // 记录如实注解,读者不会把旧响应误读成新版本的成功依据;只注解
+            // sent-unverified(accepted/applied 是发送内容的事实,锚定冻结
+            // 基准,不冒充),绑定本代 attempt(新代记录不背旧响应的注解)
+            if (staleSinceFire(file)) {
+              noteStillUnverified(wiring, key, file, STALE_RESPONSE_NOTE, attempt);
+            }
           }
+          annotateStaleResponses(triggers);
         };
         const sendOptions: HotReloadSendOptions | undefined = options.targetState
           ? { onHttpResponse: handleResponse }

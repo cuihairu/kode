@@ -294,3 +294,12 @@
 - 测试:`tests/hotReloadConfigFaces.test.ts`(9 例装配钉:键关→替身想进也不进/键开→面进/闸拦下零后续计时器/波次窗单批单发/超阈滞留→日志+命令放行/空放行如实/真读面文件缺失如实删失)、`tests/hotReloadSavePipeline.test.ts`(+4:窗 0 拦截、窗 0 放行带哈希去重、异步检查器拦截不占 revision、缺省无面钉;harness 面改 opt-in,旧无面路径逐字节不变)、`tests/hotReload.test.ts` 容忍式读取例。
 - 文档对账:NLS 双语言(带配置指南链接)、features.md Settings 行 en+zh、configuration.md 指南行 en+zh、commands.md `kbengine.hotReload.releasePreview` 小节 en+zh、config-description 默认值锁。
 - 仍暂缓:revision 消费面(stale 应答闸)、profile capabilities/路径 allow-deny 规则(HR-WATCH-013,HR-MOD-006 同因)、在途请求取消策略(HR-WATCH-014)。
+
+## 16. HR-PR-04 revision 消费增量（2026-11-13,stale 应答闸落地）
+
+- 发送时点版本快照:`runFire` 经新核心自省口 `revisionOf` 捕获每个发出文件的流水线版本号(canonical 路径为键,未定稿=0)。快照锚定发送时点的流水线实例(`pipelineAtFire`)——`apply()` 重建后新实例版本簿重置,在途响应只对它所属代的版本负责。
+- 末版本必被请求:再定稿必再进合并窗再 fire——链路既有性质,本批以测试钉死(两次定稿→两次请求)。
+- 旧响应绝不冒充新版本成功:响应落地时,版本已越过发送版本的文件(`isStaleResponse` 真)如实注解。default-hotfix 与通道面上「响应过期」审计日志(每次响应至多一条,点名文件);动作响应路径额外把 stale 注解追加进该代 attempt 绑定的 `sent-unverified` 台账记录——`accepted`/`applied` 不动(发送内容的事实记录,锚定发送时点冻结基准,不冒充),新代记录绝不背旧响应的注解。
+- 测试:`tests/hotReloadSavePipeline.test.ts` revisionOf 钉;`tests/hotReloadRevisionGate.test.ts` 4 例装配钉(再请求链/仅旧响应上日志/新响应不上日志/通道面上日志且台账最新代不被污染);`tests/hotReloadResponseReceiptWiring.test.ts` 台账注解绑定(挂起响应动作:stale 注解落滞代记录,下一代记录干净)。
+- prove-red:中和 stale 判定后三面转红(两条日志面+台账注解)。
+- HR-WATCH-011 与 HR-PR-04 随本增量收官。

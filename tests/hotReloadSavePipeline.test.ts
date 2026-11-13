@@ -346,6 +346,21 @@ describe('HR-WATCH-010 去重(canonical URI + targetId + 内容哈希)', () => {
     expect(h.emitted[1].events[0].revision).toBe(2);
   });
 
+  it('revisionOf 自省:发出面版本号可查,未定稿文件如实 0(HR-WATCH-011 响应面快照用)', async () => {
+    const h = makePipeline({ stabilityWindowMs: 200 });
+    expect(h.pipeline.revisionOf('/ws/a.py')).toBe(0); // 未定稿如实 0
+    h.disk.set('/ws/a.py', { hash: 'h1', content: 'x=1' });
+    h.pipeline.offer('/ws/a.py', 'save');
+    await stabilityCycle(h);
+    expect(h.emitted).toHaveLength(1);
+    expect(h.pipeline.revisionOf('/ws/a.py')).toBe(1);
+    // 再定稿新版本递增;响应面比对(isStaleResponse)以此为当前值
+    h.disk.set('/ws/a.py', { hash: 'h2', content: 'x=2' });
+    h.pipeline.offer('/ws/a.py', 'save');
+    await stabilityCycle(h);
+    expect(h.pipeline.revisionOf('/ws/a.py')).toBe(2);
+  });
+
   it('同内容换目标(targetId 维度):不是重复,照发', async () => {
     const h = makePipeline({ stabilityWindowMs: 200 });
     h.disk.set('/ws/a.py', { hash: 'h1', content: 'x=1' });
