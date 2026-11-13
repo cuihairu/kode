@@ -57,10 +57,14 @@
 //!   API;回调三分=单参实体|句柄、三参 OKi、onGetCell 无参;callable 闸
 //!   两分=非 DBID 静默忽略 vs DBID 族 AssertionError;FromDBID 失败通知
 //!   不闭合=None/False/静默丢三态并存;直连闸 BASE/CELL 分明)。
+//! - [`entity_name`] CREATE-02 创建 API 实体名解析(字面量→目录解析+所需
+//!   段检验,缺段分引擎硬闸(InNewSpace hasCell)与结构缺两档;前缀候选=
+//!   补全面;动态名=Unknown 不猜;目录未就绪=IndexMissing 绝不判 Missing)。
 
 pub mod broadcast;
 pub mod callers;
 pub mod create_api;
+pub mod entity_name;
 pub mod impact;
 pub mod cell;
 pub mod dispatch;
