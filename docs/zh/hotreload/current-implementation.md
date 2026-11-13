@@ -235,3 +235,13 @@
 - `hotReloadDefStructure.ts` 加性扩展:`DEF_FINGERPRINT_SPEC_VERSION`(`'def-structural-fp/1'`,指纹值按版本走、跨版本不可比)与 `semanticFingerprintReport`(specVersion+`scope: 'file-only-semantic'`+note 点名依赖核验义务;解析失败 `hash: null` 如实不造)。消费方(`hotReloadDefGate`、`hotReloadRevisionEvidenceCommand`)只读,不受影响。
 - 装配接线暂缓:HR-HASH-002(变更时 VFS 字节复用)/006 profile 消费面/007 完整 Hash Inspector UI/008 修改触发与结论呈现——随接线批;009 差异分类细化另账。
 - 测试:`tests/hotReloadFingerprintCompare.test.ts` 11 例+`hotReloadDefStructure.test.ts` 新增 2 例。prove-red 两轮:拆协商闸 → applied unknown 用例红;改 scope 标注 → 报告用例红(null 判序缺陷修复前被 null 用例天然红=TypeError 抓获)。门禁:lint 0 / tsc 0 / unit 757 文件 9323 例 / xvfb demo 25 RC=0。
+
+## 10. HR-PR-08 增量（2026-11-13,版本化插件 API 纯核）
+
+- 新纯核 `src/backend/hotReloadPluginApi.ts` —— 零 `vscode`,`HOT_RELOAD_PLUGIN_API_VERSION = '1'` 钉接口形状;不兼容变更递增大版本,消费方可按版本拒绝旧实现而非静默误读。
+- `FingerprintProvider` 及默认实现:纯委托既有已证核(`hashDefContent` / `semanticFingerprintReport` / `negotiateEngineDigest` / `resolveFingerprintProfile`)——不自创哈希、不替引擎猜算法(HR-HASH-005/006 纪律原样继承)。fork/版本差异靠换 provider 实现解决,默认实现绝不冒充。
+- `HotReloadProvider` 发送插槽:`canSend(profile)` 按 engine profile 分派;`send` transport-faithful(结果透传不解释)。默认注册表不带任何发送 provider——resolve 返回 null 是如实态。
+- `EngineProfile` 版本化:`engineVersion: null` 即未知如实(engineVersionDetect 同口径,绝不编造);`buildEngineProfile` 纯(探测值与协商输入由调用方给,本核零 IO)。
+- `HotReloadProviderRegistry` 如实规则:重复 id 与 apiVersion 不符的注册带原因拒绝(绝不静默替换、绝不静默收编);`resolveSendProvider` 第一个 canSend 应答者胜,无人应答返回 `null` 不回落默认——热更是写引擎内存的动作,静默回落=拿默认实现冒充用户环境。
+- 装配接线暂缓:真实扩展宿主装配(注册时机/生命周期)与 fork 侧具体 provider 实现随接线批。
+- 测试:`tests/hotReloadPluginApi.test.ts` 9 例。prove-red 三轮:允许重复 id 覆盖 → 重复用例红;无人应答回落第一个注册者 → 如实 null 用例红;拆版本闸 → 版本不符用例红。门禁:lint 0 / tsc 0 / unit 758 文件 9332 例 / xvfb demo 25 RC=0。
