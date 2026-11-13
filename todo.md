@@ -227,7 +227,7 @@
 - [x] KSEM-CREATE-03 [P2] 推导同步创建返回值。验收：按具体 API 赋予 Entity/EntityCall/可空/无返回类型；不将所有创建 API 视为返回本地对象。（c63b148c）
 - [x] KSEM-CREATE-04 [P2] 绑定异步创建回调。验收：传播明确回调实参的实体身份及失败值；支持可解析 bound method/函数，动态回调不猜。（4e67fe09）
 - [x] KSEM-CREATE-05 [P2] 检查初始化参数字典。验收：已知实体字段做类型校验；源码核实 params 自定义键、Cell 数据和普通属性路径后再定缺键/多键规则。（7137f60f）
-- [ ] KSEM-CREATE-06 [P2] 检查 Cell 创建目标。验收：核实 space/目标 EntityCall 的 API 前置条件；仅报告静态可证明的角色和类型错误。
+- [x] KSEM-CREATE-06 [P2] 检查 Cell 创建目标。验收：核实 space/目标 EntityCall 的 API 前置条件；仅报告静态可证明的角色和类型错误。（e55e2025）
 
 ### KSEM-SER · P1 · 固定格式序列化和反序列化
 
@@ -1948,12 +1948,12 @@
 
 ## Codex 深审发现（2026-11-13，luna profile 近5 commit 审核，1C/4M/3m，待修）
 
-- [ ] KSEM-CREATE-01 [P2] 登记创建 API 契约表。验收：分别核对 Base/Cell 的本地、远端、Anywhere、FromDBID API 签名、返回值、失败和回调参数；记录引擎出处。
-- [ ] KSEM-CREATE-02 [P2] 解析字面量实体名。验收：补全/跳转实体名字并检验所需脚本部件；动态名称保持候选或未知。
-- [ ] KSEM-CREATE-03 [P2] 推导同步创建返回值。验收：按具体 API 赋予 Entity/EntityCall/可空/无返回类型；不将所有创建 API 视为返回本地对象。
-- [ ] KSEM-CREATE-04 [P2] 绑定异步创建回调。验收：传播明确回调实参的实体身份及失败值；支持可解析 bound method/函数，动态回调不猜。
-- [ ] KSEM-CREATE-05 [P2] 检查初始化参数字典。验收：已知实体字段做类型校验；源码核实 params 自定义键、Cell 数据和普通属性路径后再定缺键/多键规则。
-- [ ] KSEM-CREATE-06 [P2] 检查 Cell 创建目标。验收：核实 space/目标 EntityCall 的 API 前置条件；仅报告静态可证明的角色和类型错误。
+- [x] KSEM-CREATE-01 [P2] 登记创建 API 契约表。验收：分别核对 Base/Cell 的本地、远端、Anywhere、FromDBID API 签名、返回值、失败和回调参数；记录引擎出处。（dab8cd6f）
+- [x] KSEM-CREATE-02 [P2] 解析字面量实体名。验收：补全/跳转实体名字并检验所需脚本部件；动态名称保持候选或未知。（6791c193）
+- [x] KSEM-CREATE-03 [P2] 推导同步创建返回值。验收：按具体 API 赋予 Entity/EntityCall/可空/无返回类型；不将所有创建 API 视为返回本地对象。（c63b148c）
+- [x] KSEM-CREATE-04 [P2] 绑定异步创建回调。验收：传播明确回调实参的实体身份及失败值；支持可解析 bound method/函数，动态回调不猜。（4e67fe09）
+- [x] KSEM-CREATE-05 [P2] 检查初始化参数字典。验收：已知实体字段做类型校验；源码核实 params 自定义键、Cell 数据和普通属性路径后再定缺键/多键规则。（7137f60f）
+- [x] KSEM-CREATE-06 [P2] 检查 Cell 创建目标。验收：核实 space/目标 EntityCall 的 API 前置条件；仅报告静态可证明的角色和类型错误。（e55e2025）
 - [ ] 给 def 解析按引用类别分池并校验候选类别（`crates/kode-server/src/semantics/store.rs:138`）—— 防同名接口/父实体/组件/实体跨类别串接污染快照。
 - [ ] 实现 def Arg 文本到 `SemType` 的转换桥（`crates/kode-server/src/semantics/rpcargs.rs:78`）—— 打通真实 RPC 参数检查链并避免默认 PYTHON 过宽。
 - [ ] 将 `PYTHON_RECEIVER_SECTIONS` 改为按 caller face/entity owner 的逐面语义表（`src/backend/pythonLanguageUtils.ts:66`）—— 消除与 `bind_self_role` 的矛盾和跨实体误对账。
