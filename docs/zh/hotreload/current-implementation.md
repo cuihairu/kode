@@ -197,7 +197,7 @@
 - 语法闸(HR-WATCH-012)注入式,不通过出 `blocked` 且不发送半成品。每次定稿只检查一次(初版调了两遍,已改)。
 - HR-WATCH-014 `dispose` 一并清空 pending/波次/预览滞留,并停止受理新事件。HR-WATCH-016 超阈值批次只预览、显式放行才发;滞留期间新批次并入同一滞留批次。HR-WATCH-017 诊断事件:`trigger` / `filtered` / `debounced` / `deduped` / `blocked` / `scheduled` / `preview` / `flushed`。
 - `isWatchableScriptFile`(HR-WATCH-004)纯词法过滤:扩展名(缺省 `.py`,大小写不敏感)、显式根集合按严格前缀+整段边界匹配(`/ws/scripts` 不认领 `/ws/scripts2`)、默认排除目录(`.git`、`.venv`、`venv`、`node_modules`、`__pycache__`、`.kbengine`、`.mypy_cache`、`.pytest_cache`、`.ruff_cache`)与调用方追加项取并集、备份/临时文件名(`.swp` / `.swo` / `.bak` / `.tmp` / 尾 `~` / `#名#`)。
-- 装配接线(2026-11-13 HR-PR-04 子批已落):live 触发链已重接为两级形态——进料级 `HotReloadSavePipeline`(每文件尾窗去抖/max-delay 封顶/去重指纹/版本号)+合并窗 `HotReloadTrigger`(def 闸整批契约);测试替身时钟 handle 撞号(`handles.size` 作 id)在重接中暴露并对齐真 setTimeout 单调语义(20 个测试文件统一修正)。余下暂缓:模式选择配置面(稳定窗/语法闸/波次归集窗/批量预览阈的配置键与注入面)随配置面子批——现注入面缺省=稳定窗/语法闸不做、0 冲口定稿即汇合并池,与既有全局去抖时序同感。
+- 装配接线(2026-11-13 已落):save 侧与 disk 侧均已汇入两级触发链(见 §12/§13)——进料级 `HotReloadSavePipeline`(每文件尾窗去抖/max-delay 封顶/去重指纹/版本号)+合并窗 `HotReloadTrigger`(def 闸整批契约);测试替身时钟 handle 撞号(`handles.size` 作 id)在重接中暴露并对齐真 setTimeout 单调语义(20 个测试文件统一修正)。余下暂缓:模式选择配置面(稳定窗/语法闸/波次归集窗/批量预览阈的配置键与注入面)随配置面子批——现注入面缺省=稳定窗/语法闸不做、0 冲口定稿即汇合并池,与既有全局去抖时序同感。
 - 测试:`tests/hotReloadSavePipeline.test.ts` 31 例,时钟与定时器全虚拟(内存 timer 队列,`advance()` 按到期序冲)。prove-red 三轮:去掉 max-delay 封顶 → save storm 用例转红;关掉预览阈值判断 → 3 个预览用例转红;让 `forgetSent` 空转 → HR-WATCH-008 用例转红。
 
 ## 7. HR-PR-05 增量（2026-11-13,磁盘监视装配核）
@@ -209,7 +209,7 @@
 - Git 批量变更(切分支/checkout 爆发)由流水线三层兜住,且经真 HR-PR-04 核全链验证:30 文件爆发归集单波次一批(不放大);还原同字节即去重(checkout 未变内容不重发);超预览阈值的爆发只滞留预览、显式放行才发(HR-WATCH-016 兜底)。
 - HR-WATCH-005 控制器面:`dispose` 全 dispose 每个 watcher 且后续一切调用拒收(含 `watchRoots` / `arm` / `rebuild`);`rebuild(roots)` 全 dispose 旧 watcher 按新根重建,`armed` 保持。
 - 记一个 JSDoc 坑:块注释里写 `/**/*.py` 字面量会自我截断(内含 `*/`),症状是 TS1109 级联解析错——注释一律用文字描述 glob,字面量只留在字符串字面量里。
-- 装配接线(2026-11-13 HR-PR-04 子批,save 侧已落):watcher 事件(save 形态)已喂进两级触发链(见 §6/§11 注记);disk 侧 `vscode.createFileSystemWatcher` 真适配(HR-PR-05 `hotReloadDiskWatch.ts` 已在库,`DiskWatcherFactory` 注入位)与 `extension.ts` 侧事件汇入仍属独立子批。§6 所记 HR-WATCH-001 冲突已按 2026-11-06 用户令解决;模式选择配置面随配置面子批。
+- 装配接线(2026-11-13 已落,save+disk 双侧):watcher 事件(save 形态)与磁盘事件(`disk-change` 形态,经真 `vscode.createFileSystemWatcher` 适配汇入)都已喂进两级触发链(见 §6/§12/§13)。§6 所记 HR-WATCH-001 冲突已按 2026-11-06 用户令解决;模式选择配置面随配置面子批。
 - 测试:`tests/hotReloadDiskWatch.test.ts` 16 例——内存 watcher 总线 + 虚拟时钟,驱动真保存流水线全链。prove-red 两轮:拆掉基线闸 → HR-WATCH-015 用例转红;旁路过滤层 → filtered 诊断用例转红。门禁:lint 0 / tsc 0 / unit 754 文件 9286 例 / xvfb demo 25 RC=0。
 
 ## 8. HR-PR-06 增量（2026-11-13,ui-status 审计 + 历史库纯核）

@@ -32,6 +32,13 @@ import type { ReloadTransport } from './backend/hotReloadTransport';
 import type { HttpTransport } from './backend/httpRequestService';
 import type { PackageDirProbe } from './backend/httpRequests';
 import { HotReloadSavePipeline } from './backend/hotReloadSavePipeline';
+import {
+  HotReloadDiskWatchController,
+  type DiskWatchDiagnostic,
+  type DiskWatcherFactory
+} from './backend/hotReloadDiskWatch';
+import { matchesHotReloadGlob } from './backend/hotReloadFileVersion';
+import { canonicalizeScriptFilePath } from './backend/hotReloadModuleIdentity';
 
 export { HOT_RELOAD_TOGGLE_COMMAND } from './hotReloadToggle';
 
@@ -352,6 +359,20 @@ export interface SetupHotReloadOptions {
    * 无消费者的私有路由。
    */
   readonly fileChangeRouter?: FileChangeRouter;
+  /**
+   * HR-PR-05 磁盘侧接线(HR-WATCH-003/005/015):注入 watcher 工厂才建磁盘
+   * 监视面——按已声明根建 watcher(HR-WATCH-004,每根派生「根下递归全部
+   * .py」模式,过滤层再拦排除目录/备份名),change/create 经规范化后以
+   * 'disk-change' 进同一流水线(与 save 的重叠在纯核归并记 disk-save-overlap,
+   * 不双发),建后即 arm(HR-WATCH-015 基线窗,启动绝不把既有文件当变更),
+   * rebuild/dispose 绑定本装配生命周期(§11.4 配置/根变更 apply 重跑即重建,
+   * 释放全清)。范围与热更域同口径(显式 globs=相对路径命中;派生=assetsRoot
+   * 前缀),绝不比既有 watcher 面宽。不注入=不建(既有装配与测试行为不变)。
+   */
+  readonly diskWatch?: {
+    readonly createWatcher: DiskWatcherFactory;
+    readonly onDiagnostic?: (diagnostic: DiskWatchDiagnostic) => void;
+  };
 }
 
 /**
@@ -857,6 +878,42 @@ export function setupHotReload(
       }
     });
 
+  // HR-PR-05 磁盘侧接线面(HR-WATCH-003/005/015):注入 watcher 工厂才建。
+  // 事件与 save 同链汇流(版本簿→流水线→合并窗),source='disk-change' 与
+  // save 的重叠去重在流水线纯核归并(同 pending 单条,不双发);控制器随
+  // apply 重建(每次新实例:filterOptions 的 roots 声明取当次工作区根,不
+  // 留陈根;arm 窗在同步块内关,重建不产生可滑入的事件空档),范围闸与既有
+  // watcher 面同口径(diskOfferInScope,见 apply)。
+  let diskWatch: HotReloadDiskWatchController | undefined;
+  let diskDebounceMs = 0;
+  /** 磁盘 offer 的热更域范围闸输入(apply 按最新计划落盘;关/错面=null 不收) */
+  let diskScope: {
+    readonly mode: 'explicit' | 'derived';
+    readonly globs: readonly string[];
+    readonly assetsRoot: string;
+    readonly roots: readonly string[];
+  } | null = null;
+  const diskOfferInScope = (file: string): boolean => {
+    if (!diskScope) {
+      return false;
+    }
+    if (diskScope.mode === 'derived') {
+      // 派生:assetsRoot 前缀即热更域(与派生 watcher 的 RelativePattern 同界)
+      const root = diskScope.assetsRoot;
+      return root.length > 0 && (file === root || file.startsWith(`${root}/`));
+    }
+    // 显式:任一工作区根下相对路径命中配置 globs(与显式 watcher 同界,
+    // 复用版本徽标同一匹配核,不另写第二套 glob 语义)
+    for (const root of diskScope.roots) {
+      if (file === root || file.startsWith(`${root}/`)) {
+        if (matchesHotReloadGlob(file.slice(root.length + 1), diskScope.globs)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
   const watchers: vscode.FileSystemWatcher[] = [];
   // IDE-REV-023 applied 核验窗口的结算定时器:随装配释放一并清掉
   const settleHandles = new Set<unknown>();
@@ -995,6 +1052,11 @@ export function setupHotReload(
 
   const apply = (): void => {
     disposeWatchers();
+    // 磁盘面随 apply 重建(HR-WATCH-005):旧控制器连同其 watcher 全清,
+    // 新面按本次计划/根重建(关/错面=null,磁盘事件就此不进)
+    diskWatch?.dispose();
+    diskWatch = undefined;
+    diskScope = null;
     // 重建流水线:在途待定稿与在途合并批随旧实例弃置(与旧 trigger.cancel+
     // 清攒批同义),新实例按最新 debounceMs 建——去抖窗随配置联动重建(§11.4)
     pipeline?.dispose();
@@ -1059,6 +1121,40 @@ export function setupHotReload(
       });
     }
     status.setReady(plan.globs, source, settings.debounceMs);
+    // HR-PR-05 磁盘面接线(HR-WATCH-003/004/015):按已声明根建 watcher,
+    // change/create 经过滤规范化后以 'disk-change' 进同一流水线(与 save 重叠
+    // 纯核归并);建后即 arm——apply 同步块内完成,真事件只能在后续宏任务到
+    // 达,HR-WATCH-015 基线窗保证启动既有文件不被当变更。范围闸按本次计划
+    // 落盘(显式=globs 匹配,派生=assetsRoot 前缀),与既有 watcher 面同界。
+    if (options.diskWatch) {
+      const folderRoots = (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath);
+      diskDebounceMs = settings.debounceMs;
+      diskScope = {
+        mode: source === 'explicit' ? 'explicit' : 'derived',
+        globs: [...plan.globs],
+        assetsRoot: canonicalizeScriptFilePath(assetsRoot),
+        roots: folderRoots.map(root => canonicalizeScriptFilePath(root))
+      };
+      diskWatch = new HotReloadDiskWatchController({
+        offer: (file, diskSource) => {
+          if (!diskOfferInScope(file)) {
+            return; // 热更域外如实不进(显式收窄 globs 不被磁盘面放大)
+          }
+          options.onWatchedFileChange?.(file);
+          pipeline?.offer(file, diskSource);
+          // 合并窗重排与 scheduleHot 同序(先排进料、后排合并,同拍先定稿后合并)
+          trigger.schedule(diskDebounceMs);
+        },
+        createWatcher: options.diskWatch.createWatcher,
+        ...(options.diskWatch.onDiagnostic
+          ? { onDiagnostic: options.diskWatch.onDiagnostic }
+          : {}),
+        // HR-WATCH-004 深层防御:watcher 模式管根界,过滤层再拦排除目录/备份名
+        filterOptions: { roots: folderRoots.map(root => canonicalizeScriptFilePath(root)) }
+      });
+      diskWatch.watchRoots(folderRoots);
+      diskWatch.arm();
+    }
   };
 
   const subscription = vscode.workspace.onDidChangeConfiguration(event => {
@@ -1077,6 +1173,9 @@ export function setupHotReload(
       subscription.dispose();
       unsubscribeBypass();
       bypassMerger.dispose();
+      diskWatch?.dispose();
+      diskWatch = undefined;
+      diskScope = null;
       pipeline?.dispose();
       trigger.dispose();
       pendingOut.clear();

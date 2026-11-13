@@ -42,6 +42,7 @@ import { materializeHotReloadGlobs, HOT_RELOAD_MATERIALIZE_GLOBS_COMMAND } from 
 import { resolveAssetsRootForWorkspace } from '../scanRoots';
 import { runHotReloadFileStateFilterCommand, runShowHotReloadFileStateCommand } from '../backend/hotReloadFileStateFilter';
 import { readTempEditReloadSettings, runTempEditReload, tempEditSectionReader } from '../backend/hotReloadTempEdit';
+import type { DiskWatcherFactory } from '../backend/hotReloadDiskWatch';
 import type { FileChangeMetaResolver } from '../backend/fileChangeMeta';
 import type { FileChangeRouter } from '../backend/fileChangeBypass';
 import type { QuickActionManager } from '../quickActions';
@@ -365,6 +366,20 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
   // KodeCoreGate.notifyFileChanged(现有 LSP stdio 的 `$/kode/fileChanged`
   // 通知帧,进程未起/写失败 → false 静默降级)。
   const fileChangeRouter = createFileChangeRouter();
+  // HR-PR-05 磁盘侧真适配(HR-WATCH-003):vscode.createFileSystemWatcher 薄
+  // 适配(DiskWatcherHandle 面),事件 uri 转 fsPath 交纯核过滤/规范化。watcher
+  // 的 dispose 只随控制器走(setupHotReload 生命周期全清,不另挂 subscriptions
+  // 免双 dispose)。
+  const hotReloadDiskWatcherFactory: DiskWatcherFactory = pattern => {
+    const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+    return {
+      pattern,
+      onDidChange: cb => watcher.onDidChange(uri => cb(uri.fsPath)),
+      onDidCreate: cb => watcher.onDidCreate(uri => cb(uri.fsPath)),
+      onDidDelete: cb => watcher.onDidDelete(uri => cb(uri.fsPath)),
+      dispose: () => watcher.dispose()
+    };
+  };
   setupHotReload(context, runQuickActionForHotReload, {
     fileChangeRouter,
     status: hotReloadStatus,
@@ -383,6 +398,22 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     // 文件变化元信息(方案 B):审计行后逐文件补元信息行(module/process/
     // sha256/version),与 python 索引日志同一格式;懒异步,不阻塞发送。
     fileChangeMeta: fileChangeMetaResolver,
+    // HR-PR-05 磁盘侧接线(HR-WATCH-003):真工厂汇入,change/create 以
+    // 'disk-change' 进同一流水线(与 save 重叠纯核归并不双发)。诊断只把生命
+    // 周期类(watch-created/dropped-before-arm/disposed)走通道日志;filtered/
+    // delete-ignored 不逐条刷——Git 批量爆发会刷屏,语义由纯核测试钉死。
+    diskWatch: {
+      createWatcher: hotReloadDiskWatcherFactory,
+      onDiagnostic: diagnostic => {
+        if (
+          diagnostic.type === 'watch-created' ||
+          diagnostic.type === 'dropped-before-arm' ||
+          diagnostic.type === 'disposed'
+        ) {
+          hotReloadStatus.log(`磁盘监视[${diagnostic.type}]: ${diagnostic.detail}`);
+        }
+      }
+    },
     noteEngineDigest: (key, file, body) => hotReloadEngineDigestRegister.note(key, file, body),
     // HOT-VER:watcher 事件 → 版本簿采样建档/跳号(版本簿的默认事件来源;
     // 手动触发路径不经这里,写同一台账同一实现,同 token 只 +1)
