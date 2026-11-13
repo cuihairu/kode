@@ -1945,3 +1945,16 @@
 - [x] AUD-KODE-P1-6 [P1] kode-db-clone apply.rs 提交后 verify 失败也 `store.record`：record(run) 移到 verify 检查前，指纹落账供重复导入闸 :249 find_by_fingerprint 识别同一导入重试；allow_duplicate 强制重导不受影响。（026b8399；crates/kode-db-clone/tests/golden_apply.rs:741 重写为 records_run+重试拒 DuplicateRejected+allow_duplicate 放行；prove-red=旧码下 find_by_fingerprint is_some 断言红）
 
 批完成：cargo test -p kode-db-clone 全绿(131+2+10+9+1+2+12+4+3+4 过,2 docker 测试 ignored 正常)/clippy -D warnings 0/净检出 worktree 验证；六项 commit 全推 main(a73d3a22/7619bd3e/f6fa2e3c/4329e9fe/026b8399)。
+
+## Codex 深审发现（2026-11-13，luna profile 近5 commit 审核，1C/4M/3m，待修）
+
+- [ ] KSEM-CREATE-01 [P2] 登记创建 API 契约表。验收：分别核对 Base/Cell 的本地、远端、Anywhere、FromDBID API 签名、返回值、失败和回调参数；记录引擎出处。
+- [ ] KSEM-CREATE-02 [P2] 解析字面量实体名。验收：补全/跳转实体名字并检验所需脚本部件；动态名称保持候选或未知。
+- [ ] KSEM-CREATE-03 [P2] 推导同步创建返回值。验收：按具体 API 赋予 Entity/EntityCall/可空/无返回类型；不将所有创建 API 视为返回本地对象。
+- [ ] KSEM-CREATE-04 [P2] 绑定异步创建回调。验收：传播明确回调实参的实体身份及失败值；支持可解析 bound method/函数，动态回调不猜。
+- [ ] KSEM-CREATE-05 [P2] 检查初始化参数字典。验收：已知实体字段做类型校验；源码核实 params 自定义键、Cell 数据和普通属性路径后再定缺键/多键规则。
+- [ ] KSEM-CREATE-06 [P2] 检查 Cell 创建目标。验收：核实 space/目标 EntityCall 的 API 前置条件；仅报告静态可证明的角色和类型错误。
+- [ ] 给 def 解析按引用类别分池并校验候选类别（`crates/kode-server/src/semantics/store.rs:138`）—— 防同名接口/父实体/组件/实体跨类别串接污染快照。
+- [ ] 实现 def Arg 文本到 `SemType` 的转换桥（`crates/kode-server/src/semantics/rpcargs.rs:78`）—— 打通真实 RPC 参数检查链并避免默认 PYTHON 过宽。
+- [ ] 将 `PYTHON_RECEIVER_SECTIONS` 改为按 caller face/entity owner 的逐面语义表（`src/backend/pythonLanguageUtils.ts:66`）—— 消除与 `bind_self_role` 的矛盾和跨实体误对账。
+- [ ] 显式区分组件槽宿主缺失与结构缺失分诊（`crates/kode-server/src/semantics/rules.rs:64`）—— 防声明未就绪被误报为方向不可达。
