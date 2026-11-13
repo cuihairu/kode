@@ -406,6 +406,34 @@ fn describe_arg(arg: &CallArg) -> String {
     }
 }
 
+/// def `<Arg>` 文本 → `SemType` 转换桥(深审-2)。
+///
+/// def `<Arg>` 的真实形态是**单个 datatype 名**(可带空白,fixtures/引擎
+/// 实证:`UINT32`/`VECTOR3`/types.xml 自定义名 `ENTITY_ID`);ARRAY/FIXED_DICT
+/// 经 types.xml 节点定义,不在 Arg 文本内联:
+///
+/// - 内建名 → `Builtin`(直映);
+/// - 有类型图 → [`SemType::from_type_graph`] 递归(alias/ARRAY/FIXED_DICT/
+///   UserType→Entity);
+/// - 无图或图内无此名 → **`Unknown` 带原文**——绝不默认 `Builtin("PYTHON")`
+///   (PYTHON=可 pickle 全接受,默认它=吞掉全部 mismatch,深审红线);
+///   显式写 `<Arg>PYTHON</Arg>` 才是 `Builtin("PYTHON")`(显式合法)。
+///
+/// 消费方:`check_rpc_args` 的 `declared` 逐位取桥结果即可(打通真实
+/// RPC 参数检查链)。
+pub fn arg_text_to_sem_type(text: &str, graph: Option<&kode_types::TypeGraph>) -> SemType {
+    let name = text.trim();
+    if name.is_empty() {
+        return SemType::Unknown("empty-arg-text".into());
+    }
+    match graph {
+        Some(g) => SemType::from_type_graph(g, name, 8),
+        // 无图:只有内建名可判,其余保留未知(不猜 PYTHON,不猜 Entity)。
+        None if kode_types::is_builtin(name) => SemType::Builtin(name.to_string()),
+        None => SemType::Unknown(format!("unresolved:{name};type-graph-missing")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -628,5 +656,158 @@ mod tests {
         };
         let r = check_rpc_args(&[ranged_ok], None, 7, &[CallArg::Literal(LiteralValue::Int(50))]);
         assert_eq!(r[0].verdict, ArgVerdict::Compatible);
+    }
+
+    // ---- 深审-2:def `<Arg>` 文本 → SemType 转换桥 ----
+
+    fn push_node(g: &mut kode_types::TypeGraph, node: kode_types::TypeNode) {
+        let name = node.name().to_string();
+        let id = kode_types::TypeId(g.nodes.len() as u32);
+        g.nodes.push(node);
+        g.by_name.insert(name, id);
+    }
+
+    #[test]
+    fn bridge_builtin_direct_without_graph() {
+        assert_eq!(arg_text_to_sem_type("UINT32", None), bt("UINT32"));
+        assert_eq!(arg_text_to_sem_type("VECTOR3", None), bt("VECTOR3"));
+        assert_eq!(arg_text_to_sem_type("ENTITYCALL", None), bt("ENTITYCALL"));
+    }
+
+    #[test]
+    fn bridge_trims_surrounding_whitespace() {
+        // fixtures 实证 Arg 文本可带空白。
+        assert_eq!(arg_text_to_sem_type("  VECTOR3  ", None), bt("VECTOR3"));
+        assert_eq!(arg_text_to_sem_type("\tUINT8\n", None), bt("UINT8"));
+    }
+
+    #[test]
+    fn bridge_explicit_python_is_legal() {
+        // 显式 <Arg>PYTHON</Arg> 才是 PYTHON(可 pickle 全接受,引擎 :1177)。
+        assert_eq!(arg_text_to_sem_type("PYTHON", None), bt("PYTHON"));
+    }
+
+    #[test]
+    fn bridge_unknown_text_never_defaults_to_python() {
+        // 深审红线:未识别文本绝不默认 Builtin("PYTHON")
+        // (PYTHON=全接受,默认它=吞光全部 mismatch)。
+        let t = arg_text_to_sem_type("ENTITY_ID", None);
+        assert!(
+            !matches!(&t, SemType::Builtin(n) if n == "PYTHON"),
+            "未识别不得默认 PYTHON"
+        );
+        match &t {
+            SemType::Unknown(r) => {
+                assert!(r.contains("unresolved:ENTITY_ID"), "未知带原文: {r}");
+                assert!(r.contains("type-graph-missing"));
+            }
+            other => panic!("expected Unknown, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bridge_empty_text_is_unknown() {
+        assert!(
+            matches!(arg_text_to_sem_type("", None), SemType::Unknown(ref r) if r.contains("empty-arg-text"))
+        );
+        assert!(matches!(arg_text_to_sem_type("   ", None), SemType::Unknown(_)));
+    }
+
+    #[test]
+    fn bridge_alias_via_graph() {
+        let mut g = kode_types::TypeGraph::new();
+        let mk = |name: &str, tgt: &str| kode_parser::model::AliasDecl {
+            name: name.into(),
+            name_span: kode_parser::Span::new(0, 0),
+            line: 1,
+            alias_type: tgt.into(),
+        };
+        g.add_alias(&kode_parser::model::AliasFile {
+            aliases: vec![mk("ENTITY_ID", "UINT32")],
+            ..Default::default()
+        });
+        assert_eq!(
+            arg_text_to_sem_type("ENTITY_ID", Some(&g)),
+            SemType::Alias("ENTITY_ID".into(), Box::new(bt("UINT32")))
+        );
+    }
+
+    #[test]
+    fn bridge_array_and_fixed_dict_via_graph() {
+        use kode_parser::model::TypeKind;
+        let mut g = kode_types::TypeGraph::new();
+        let td = |name: &str, kind: TypeKind, element: Option<&str>, fields: Vec<&str>| {
+            kode_parser::model::TypeDecl {
+                name: name.into(),
+                name_span: kode_parser::Span::new(0, 0),
+                line: 1,
+                kind,
+                directive: None,
+                implemented_by_symbol: None,
+                field_refs: fields.into_iter().map(|s| s.into()).collect(),
+                element_ref: element.map(|s| s.into()),
+            }
+        };
+        g.add_types(&kode_parser::model::TypesFile {
+            types: vec![
+                td("Ints", TypeKind::Array, Some("UINT32"), vec![]),
+                td("Pos", TypeKind::FixedDict, None, vec!["x", "y"]),
+            ],
+            ..Default::default()
+        });
+        assert_eq!(
+            arg_text_to_sem_type("Ints", Some(&g)),
+            SemType::Array(Box::new(bt("UINT32"))),
+            "ARRAY 节点递归出元素"
+        );
+        match arg_text_to_sem_type("Pos", Some(&g)) {
+            SemType::FixedDict { fields, .. } => {
+                assert_eq!(fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["x", "y"]);
+            }
+            other => panic!("expected FixedDict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bridge_user_type_via_graph_is_entity() {
+        let mut g = kode_types::TypeGraph::new();
+        push_node(&mut g, kode_types::TypeNode::UserType { name: "Avatar".into() });
+        assert_eq!(arg_text_to_sem_type("Avatar", Some(&g)), SemType::Entity("Avatar".into()));
+    }
+
+    #[test]
+    fn bridge_missing_name_with_graph_is_unknown() {
+        let g = kode_types::TypeGraph::new();
+        match arg_text_to_sem_type("Ghost", Some(&g)) {
+            SemType::Unknown(r) => assert!(r.contains("unresolved:Ghost"), "{r}"),
+            other => panic!("expected Unknown, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bridge_feeds_check_rpc_args_end_to_end() {
+        // 真实链:声明位 = 桥产物。已识别位照常精查(int→FLOAT 引擎真值
+        // 不符);未知声明位 verdict Unknown——绝不因默认 PYTHON 而 Compatible。
+        let declared = vec![
+            arg_text_to_sem_type("UINT32", None),
+            arg_text_to_sem_type("FLOAT", None),
+            arg_text_to_sem_type("ENTITY_ID", None), // 无图未识别
+        ];
+        let r = check_rpc_args(
+            &declared,
+            Some(3),
+            40,
+            &[
+                CallArg::Literal(LiteralValue::Int(5)),
+                CallArg::Literal(LiteralValue::Int(5)),
+                CallArg::Literal(LiteralValue::Int(5)),
+            ],
+        );
+        assert_eq!(r[0].verdict, ArgVerdict::Compatible);
+        assert_eq!(r[1].verdict, ArgVerdict::DefiniteMismatch);
+        assert!(
+            matches!(r[2].verdict, ArgVerdict::Unknown(_)),
+            "未知声明位保留未知,不吞 mismatch"
+        );
     }
 }
