@@ -212,7 +212,7 @@
 - [x] KSEM-RPC-02 [P1] 解析 self 角色引用。验收：绑定 self.base/cell/client 及已证明的转发链；实际支持的链形态逐条查引擎。——已收口(e14b1592 纪实 docs/review/2026-11-13-ksem-rpc-02-self-role-refs.md:bind_self_role 九面属性全表,getter 三文件逐行核,cellapp self.client=CLIENT_VIA_BASE 陷阱 prove-red 变异钉死,转发链=绑定+面跳复合)
 - [x] KSEM-RPC-03 [P1] 传播引用别名。验收：peer=self.cell 后保留实体/角色；重绑定、合流和未知接收者不按同名方法猜对象。——已收口(e14b1592 纪实 docs/review/2026-11-13-ksem-rpc-03-alias-propagation.md:AliasTable 重绑定即遮蔽不回落旧引用/合流异值候选不任取/未知不猜,陈旧别名变异 prove-red 红咬合)
 - [x] KSEM-RPC-04 [P1] 解析 RPC 与组件落点。验收：只在对应 Methods 段及组件槽查找，提供 def 和 Python 实现两种跳转；歧义展示多候选。——已收口(32a40189 纪实 docs/review/2026-11-13-ksem-rpc-04-dispatch-targets.md:semantics/dispatch.rs 三引擎路径(远程句柄目标面方法表/组件槽查组件自身 def 模块/本地真身 plain Python 派发 def 缀附),def+Python 双跳转,歧义多候选全列,变异三发全咬合)
-- [ ] KSEM-RPC-05 [P1] 检查角色与暴露规则。验收：客户端 Exposed、服务端调用方向及缺方法分开诊断；声明尚未就绪时不报确定缺失。
+- [x] KSEM-RPC-05 [P1] 检查角色与暴露规则。验收：客户端 Exposed、服务端调用方向及缺方法分开诊断；声明尚未就绪时不报确定缺失。——已收口(dbd9fd99 纪实 docs/review/2026-11-13-ksem-rpc-05-exposure-direction-rules.md:RpcCheck 六态分诊(Exposed 闸 entity_call.cpp:117-121+组件同闸/方向=逐面可获取集 client 面 {BASE,CELL} 种子集+cell 面缺直连 CLIENT/缺方法=段确认/NotReady 永不判缺),两项引擎发现(client 进程面跳自返 :164-171、服务端去直连链闭包近全连通),变异三发咬合)
 - [ ] KSEM-RPC-06 [P1] 校验普通 RPC 参数类型。验收：以 Arg 类型逐位置检查字面量及可推导变量，报告调用点/期望/实际/声明；动态 *args 保留未知。
 - [ ] KSEM-RPC-07 [P1] 校验特殊 caller 规则。验收：核实 EXPOSED_AND_CALLER_CHECK 的不同调用上下文，分别处理传输参数和实现参数，避免额外 caller 导致数量误报。
 - [ ] KSEM-RPC-08 [P1] 登记广播调用语义。验收：区分 allClients/otherClients 等实际引擎 API 的接收者集合；逐项核实，不把广播画成单客户端。
