@@ -215,7 +215,7 @@
 - [x] KSEM-RPC-05 [P1] 检查角色与暴露规则。验收：客户端 Exposed、服务端调用方向及缺方法分开诊断；声明尚未就绪时不报确定缺失。——已收口(dbd9fd99 纪实 docs/review/2026-11-13-ksem-rpc-05-exposure-direction-rules.md:RpcCheck 六态分诊(Exposed 闸 entity_call.cpp:117-121+组件同闸/方向=逐面可获取集 client 面 {BASE,CELL} 种子集+cell 面缺直连 CLIENT/缺方法=段确认/NotReady 永不判缺),两项引擎发现(client 进程面跳自返 :164-171、服务端去直连链闭包近全连通),变异三发咬合)
 - [x] KSEM-RPC-06 [P1] 校验普通 RPC 参数类型。验收：以 Arg 类型逐位置检查字面量及可推导变量，报告调用点/期望/实际/声明；动态 *args 保留未知。——已收口(9e954071 纪实 docs/review/2026-11-13-ksem-rpc-06-arg-types.md:rpcargs.rs isSameType 源码语义逐位检查(int→FLOAT PyFloat 单查陷阱钉死/整族值域精查/None 特例/联合不任取分支),ArgReport 四元报告,*args/**kwargs 全 Unknown 红线,变异三发咬合)
 - [x] KSEM-RPC-07 [P1] 校验特殊 caller 规则。验收：核实 EXPOSED_AND_CALLER_CHECK 的不同调用上下文，分别处理传输参数和实现参数，避免额外 caller 导致数量误报。——已收口(ead2daad 纪实 docs/review/2026-11-13-ksem-rpc-07-caller-contexts.md:callers.rs 四语境分开——注入唯一=cellapp×cell×exposed(method.cpp:83 三处同条件),传输/调用点恒=声明位(callerID 不上流 :165-171),实现位=声明位+1 仅注入语境;发现:base·client 段 exposed 实现+1 启动静默升级但运行时必 TypeError(CallerNeverInjected);expected_arity 按侧取数防两向误报,变异三发咬合)
-- [ ] KSEM-RPC-08 [P1] 登记广播调用语义。验收：区分 allClients/otherClients 等实际引擎 API 的接收者集合；逐项核实，不把广播画成单客户端。
+- [x] KSEM-RPC-08 [P1] 登记广播调用语义。验收：区分 allClients/otherClients 等实际引擎 API 的接收者集合；逐项核实，不把广播画成单客户端。——已收口(e0477419 纪实 docs/review/2026-11-13-ksem-rpc-08-broadcast.md:broadcast.rs RecipientSet 三态逐项登记——allClients=自己客户端+观察者们/otherClients=仅观察者可零收/与单收 self.client 三向互异红线钉死;发现:属性仅 cellapp 注册(baseapp/client 无 getter 运行时 AttributeError),广播只查 client 段,组件广播查组件自身 def 模块透传标志防跨模块同名误绑,无 Exposed 闸;变异三发咬合)
 - [ ] KSEM-RPC-09 [P1] 实现 RPC 修改影响查询。验收：修改方法/Arg 后列出确定调用点及不确定候选；索引缺失显式说明而非返回完整零影响。
 
 ### KSEM-CREATE · P2 · 创建 API 与回调类型
