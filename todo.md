@@ -8,6 +8,14 @@
 
 > **2026-10-24 用户令**: kode-v02 此后只在 `main` 开发，phase2 已合并（`377950f`，`--no-ff` 保留合并记录），不再开长期 feature 分支。
 
+## 账本现状总览（2026-11-13 整理）
+
+- **总口径**：勾 1136 行=历史收官账（各节自带 commit/证据，保留不删）；未勾 403 行分三类，无沉淀债。本次整理补勾 15 行已实现未勾（AUDIT-001..002/004..015+PERF-001，证据=docs/architecture/current-state.md+docs/architecture/migration-inventory.csv+docs/perf/hardware.md，2026-10-23 取照 36052c4）；另一批未勾行属「部分完成」，已在行内补「(部分：…)」注。
+- **进行中（唯一活跃车道）**：HR-PR-02..08 装配接线批（巡检单 2026-10-20）：02/03/04/05/07/08 已收官推 main，06 在途（热更历史 UI 装配），随后 HR-MOD-008/HR-MOD-013 用户可见面收口；对应行=HR-MOD/HR-WATCH/HR-HTTP/HR-UI/HR-STATE 各族带「(进行中:…)」注的行+HR-PR-02/03/06/09。勾行纪律：每块验证绿→单 commit+push→勾行带 hash。
+- **等用户/外部验收（勿点火，不算债）**：NPM-PKG-07（npm 2FA 账号+granular token+版本号由用户给，版本红线）、DBG-COMPAT-08（真机 VS Code+Python 3.7.3 引擎验收）、HR-DEMO-20261111-06/07（需可运行真实 KBEngine demo）、KDB-EXPORT-001（等用户补充报错原文）、PH5-02A（等接线批收官后验收）。
+- **规划账本（未点火，非过期非债）**：①语义精度与跨进程流转重做（2026-11-11 用户令，§KBEngine 语义精度）：KSEM-SER/CFG/DATA、KFLOW-CORE/UI/TRACE、KSEM-QA 共 63 行，同节前四族（KSEM-BAS/CELL/STRUCT/RPC/CREATE）已收官；②Kode 2.0 Rust Core 重构账本（下方合并段，约 335 行：PH0..PH7/PR/ADR+BUILD/CORE/SEM/IDX/LSP/PY/KBE/EXEC/PLUG/UI/QA/HR 远期族），点火顺序由用户定。
+- **口径对账（冲突澄清）**：PR-001 基线报告已由 KODE-PERF-007（`aa3cf8c`，docs/perf/2026-11-04-v02-baseline.md）实质落；PR-002 的 A2/A3 止血已由 A 车道 PR2/PR3 收官实质覆盖，不另起 TS 止血 PR（对账注见 §17 各行）；PH2-03「双轨」措辞按 2026-11-08 服务轨道「直接切 rust」易帜口径执行——parity 对拍是迁移期安全网，TS 兜底非长期态；venv 能力三段节（2026-11-06）标题中的 feat 分支口径已被 2026-10-24 main-only 令取代（该节行已全勾，历史保留）。
+
 ## kode-mcp 上 npm：平台包分发（2026-11-12）
 
 `kode-mcp` 是 Rust 原生二进制，不能塞进一个 npm 包发出去。取 esbuild / `@swc/core`
@@ -2008,6 +2016,8 @@
 # Kode 2.0 — Rust Core 高性能重构账本（自 docs/kode2/KODE_2_COMPLETE_TODO.md 合并，2026-11-13）
 
 > 来源文件已删除；设计红线/性能预算等叙述性内容见 git 历史（该文件 668 行版本）。此处保留全部 checklist 账本，勾选状态原样迁移。
+>
+> **状态注（2026-11-13 整理）**：本段为 Rust Core 重构设计序列，执行以用户逐批点火为准，整段未勾≠债务；已落部分见各行「(落地/进行中/基础版…)」注（PR-003..010、kode-scheduler、kode-vfs 等）。取证阶段（PH0）的 AUDIT-001..015/PERF-001 已于 2026-11-13 复核补勾（证据=docs/architecture/current-state.md+migration-inventory.csv+docs/perf/hardware.md）；PR-001/PR-002 与主 todo 既有车道重复，对账注见 §17 各行。
 
 #### 0.2 严格设计原则
 - [ ] ARCH-001 扩展宿主不得同步执行全仓扫描、语义求解、全量 XML 解析、巨型日志处理。
@@ -2034,11 +2044,11 @@
 
 > > 所有数值为候选预算，必须附硬件、系统、数据集、时间窗口、样本数。P95/P99 与 cold/warm 区分；不要把合成基准误当真实 KBEngine 工程表现。 | 场景 | 候选目标 | 绝对规则 | |---|---|---| | 扩展激活（不含 Core 全量索引） | P95 ≤300ms | 不阻塞编辑器 UI | | Core 热启动至握手
 
-- [ ] PERF-001 编写 docs/perf/hardware.md：CPU、核数、RAM、磁盘、OS、VS Code/Node/Rust/KBEngine 版本。
-- [ ] PERF-002 fixtures 分 S(200 files)、M(2k)、L(10k)、XL(50k+)、XRoot(3+ resources 根)；附文件大小与符号数统计。
-- [ ] PERF-003 fixtures 包含同名实体、跨 root 同名 Python class、深继承、循环别名、不完整 XML、非 ASCII 路径、符号冲突。
+- [x] PERF-001 编写 docs/perf/hardware.md：CPU、核数、RAM、磁盘、OS、VS Code/Node/Rust/KBEngine 版本。——`36052c47`：docs/perf/hardware.md（2026-10-23 lscpu/free/lsblk 实测全表+版本面+测量偏差细则；本 tidy 2026-11-13 复核存在且面齐）。
+- [ ] PERF-002 fixtures 分 S(200 files)、M(2k)、L(10k)、XL(50k+)、XRoot(3+ resources 根)；附文件大小与符号数统计。(部分：S/L(30,005 文件)/XRoot(3 根) 已覆盖，M(2k)/XL(50k+) 待建——docs/perf/hardware.md §3+current-state.md §PERF-002/003/004)
+- [ ] PERF-003 fixtures 包含同名实体、跨 root 同名 Python class、深继承、循环别名、不完整 XML、非 ASCII 路径、符号冲突。(部分：同名实体/跨 root 同名类已覆盖；深继承/循环别名/不完整 XML/非 ASCII 路径待补——同上节)
 - [ ] PERF-004 fixtures 含真实 KBEngine 引擎样例（版权/版本可用时），与可合成开源样例隔离。
-- [ ] PERF-005 测量 extension activation、Core spawn、handshake、workspace discovery、parse、resolve、index、publish 的分段时延。
+- [ ] PERF-005 测量 extension activation、Core spawn、handshake、workspace discovery、parse、resolve、index、publish 的分段时延。(部分：分段纪律与已测/未测清单已立——current-state.md §PERF-005；Core spawn/handshake 量测随 Rust Core 落地)
 - [ ] PERF-006 延迟结果按 cold/warm、idle/busy、SSD/network FS、local/remote、root 数量分组。
 - [ ] PERF-007 每个关键请求采集 P50/P95/P99/max、队列耗时、执行耗时、排队长度、取消率、cache hit/miss。
 - [ ] PERF-008 统计文件枚举/读取/解析次数、局部失效节点数、索引版本和 RPC 消息字节数。
@@ -2048,25 +2058,25 @@
 - [ ] PERF-012 做请求风暴：快速连续编辑、切换 tab、批量重命名、依赖变更、并发跳转补全。
 - [ ] PERF-013 做 1h soak test、OOM 限额、杀进程恢复、损坏索引自动回建、取消与重试。
 - [ ] PERF-014 对超大文件启用 degraded mode 并明示能力限制；不得锁死 UI。
-- [ ] PERF-015 跨机器不直接比较绝对速度；主报告使用固定基准机器和统计置信范围。
+- [ ] PERF-015 跨机器不直接比较绝对速度；主报告使用固定基准机器和统计置信范围。(部分：固定基准机纪律已立——hardware.md §1/§2；统计置信区间/bench `--repeat` 待建——hardware.md §2#1)
 - [ ] PERF-016 在 docs/perf/decisions.md 记录每一项优化的 profiling 证据、取舍、回退策略。
 
 ### 2. 现有代码取证与迁移清单（首个强制阶段）
-- [ ] AUDIT-001 固定仓库 commit SHA / tag，保存 working tree 状态；确认旧 TODO 每条任务的真实完成状态。
-- [ ] AUDIT-002 抽取 `src/` 模块树、入口 activation、各 provider 注册、manager 生命周期及 import 依赖图。
-- [ ] AUDIT-003 标出 `onLanguage:python` 激活是否不必要地初始化 KBEngine 服务；增加无 KBEngine 工作区负案例。
-- [ ] AUDIT-004 枚举 `.def` / types.xml / entities.xml / alias.xml 的所有解析器与调用方，找重复 parse/read。
-- [ ] AUDIT-005 枚举 PythonClassIndex、EntityMappingManager、type registry、composition root、definitionWorkspace 及实际名称/路径。
-- [ ] AUDIT-006 核查所有 `fs.*Sync`、`getText().split`、递归 workspace.findFiles、glob、statSync、首次查询 ensureScanned。
-- [ ] AUDIT-007 记录 hover/definition/completion/diagnostics/references 四层真实调用链与等待点。
-- [ ] AUDIT-008 枚举全部用户功能、commands、views、configuration、debug provider、test 清单，为迁移建立能力矩阵。
-- [ ] AUDIT-009 核查现有 `.pyi` 生成算法与类型来源，是否基于 Python AST、动态运行或文本正则。
-- [ ] AUDIT-010 核查代码生成向用户目录的写入行为、覆盖保护、源位置跳转、版本与冲突处理。
-- [ ] AUDIT-011 审核 log/terminal/HTTP/telnet/watcher 运行时边界和现存进程/连接生命周期。
-- [ ] AUDIT-012 产出 docs/architecture/current-state.md：事实、推断、已测结论分栏标记。
-- [ ] AUDIT-013 产出 docs/architecture/migration-inventory.csv：模块、owner、输入、输出、耗时、迁移方式、测试、风险。
-- [ ] AUDIT-014 明确旧 A1-A7 对新 Phase 的映射；保留所有当前已修复的永转/超时问题回归测试。
-- [ ] AUDIT-015 将产品已有 feature 进行 retained/moved/reworked/deferred 分类，避免重构丢能力。
+- [x] AUDIT-001 固定仓库 commit SHA / tag，保存 working tree 状态；确认旧 TODO 每条任务的真实完成状态。——current-state.md §AUDIT-001（审计基点 36052c47cb26 全 SHA+干净树+旧 TODO 逐项对账 PR1..PR7/B-1..B-5 commit 核实；本 tidy 2026-11-13 复核）。
+- [x] AUDIT-002 抽取 `src/` 模块树、入口 activation、各 provider 注册、manager 生命周期及 import 依赖图。——current-state.md §AUDIT-002。
+- [ ] AUDIT-003 标出 `onLanguage:python` 激活是否不必要地初始化 KBEngine 服务；增加无 KBEngine 工作区负案例。(部分：初始化面已标出=激活即建全套 KBEngine 机制、负案例未实现未测——current-state.md §AUDIT-003；负案例归 PR-006 root-discovery 范围)
+- [x] AUDIT-004 枚举 `.def` / types.xml / entities.xml / alias.xml 的所有解析器与调用方，找重复 parse/read。——current-state.md §AUDIT-004。
+- [x] AUDIT-005 枚举 PythonClassIndex、EntityMappingManager、type registry、composition root、definitionWorkspace 及实际名称/路径。——current-state.md §AUDIT-005。
+- [x] AUDIT-006 核查所有 `fs.*Sync`、`getText().split`、递归 workspace.findFiles、glob、statSync、首次查询 ensureScanned。——current-state.md §AUDIT-006（同步 IO 普查，非测试代码）。
+- [x] AUDIT-007 记录 hover/definition/completion/diagnostics/references 四层真实调用链与等待点。——current-state.md §AUDIT-007。
+- [x] AUDIT-008 枚举全部用户功能、commands、views、configuration、debug provider、test 清单，为迁移建立能力矩阵。——current-state.md §AUDIT-008（能力矩阵；细目=docs/architecture/migration-inventory.csv）。
+- [x] AUDIT-009 核查现有 `.pyi` 生成算法与类型来源，是否基于 Python AST、动态运行或文本正则。——current-state.md §AUDIT-009（结论：纯文本生成，无 AST/无动态执行）。
+- [x] AUDIT-010 核查代码生成向用户目录的写入行为、覆盖保护、源位置跳转、版本与冲突处理。——current-state.md §AUDIT-010（.def/.py 直写无覆盖保护等实证）。
+- [x] AUDIT-011 审核 log/terminal/HTTP/telnet/watcher 运行时边界和现存进程/连接生命周期。——current-state.md §AUDIT-011。
+- [x] AUDIT-012 产出 docs/architecture/current-state.md：事实、推断、已测结论分栏标记。——docs/architecture/current-state.md 本体（2026-10-23 取照 36052c4，【Fact】/【Inference】/【Tested】分栏；2026-11-05..07 state refresh 追加，本 tidy 2026-11-13 复核）。
+- [x] AUDIT-013 产出 docs/architecture/migration-inventory.csv：模块、owner、输入、输出、耗时、迁移方式、测试、风险。——docs/architecture/migration-inventory.csv（列=模块/路径/职责(输入→输出)/owner/耗时证据/迁移方式/测试/风险）。
+- [x] AUDIT-014 明确旧 A1-A7 对新 Phase 的映射；保留所有当前已修复的永转/超时问题回归测试。——current-state.md §AUDIT-014（A1..A7→Phase 映射表+永转/超时回归测试锁在案）。
+- [x] AUDIT-015 将产品已有 feature 进行 retained/moved/reworked/deferred 分类，避免重构丢能力。——current-state.md §AUDIT-015+CSV 迁移方式列。
 - [x] AUDIT-016 执行 HR-AUDIT，确认已有 HTTP/Watch/Hash 代码真相并建立差异清单。(HR-PR-01,6934c63a,docs/hotreload/current-implementation.md §1/§2+§3)
 
 ### 3. Repository / 构建 / 发布基础设施
@@ -2299,7 +2309,7 @@
 - [ ] QA-017 自动发布必须遵循现有仓库的手动发布规则，避免重构顺手改变 release governance。
 
 #### Phase 0 — 基线与冻结（先于任何重写）
-- [ ] PH0-01 完成 AUDIT-001..015 与 PERF-001..016；生成现状架构图、基准报告、迁移表。
+- [ ] PH0-01 完成 AUDIT-001..015 与 PERF-001..016；生成现状架构图、基准报告、迁移表。(部分：AUDIT-001..015 已齐（见 §2 取证节，current-state.md+CSV）；PERF 余量=006..014 量测面+016 decisions.md)
 - [ ] PH0-02 锁定旧功能 parity fixture 和旧 TODO 完成状态；输出 release gate。
 - [ ] PH0-GATE 无完整基准和正确性 fixture **禁止进入 Rust 替换阶段**。
 
@@ -2312,7 +2322,7 @@
 #### Phase 2 — 解析与索引（最大性能收益路径）
 - [ ] PH2-01 完成 VFS、SYNTAX 与 IDX 的基础版本，先 `.def`/types.xml/entities.xml/alias.xml。
 - [ ] PH2-02 文件监听与增量失效；运行 10k fixture，不出现全仓 rebuild 风暴。
-- [ ] PH2-03 迁移 hover/definition/diagnostics 到 Rust 双轨模式；记录 latency correctness 差异。
+- [ ] PH2-03 迁移 hover/definition/diagnostics 到 Rust 双轨模式；记录 latency correctness 差异。(口径：按 2026-11-08 服务轨道「直接切 rust」易帜——双轨 parity 对拍是迁移期安全网与验收手段，TS 兜底非长期态；hover 已有 PR-010 基础版对拍)
 - [ ] PH2-GATE 同输入与旧行为比对完成，增量命中率与尾延迟过关，无严重语义回归。
 
 #### Phase 3 — 专业 KBEngine 语义和完整 LSP
@@ -2328,7 +2338,7 @@
 #### Phase 5 — KBEngine 专业 IDE
 - [ ] PH5-01 实现 KBE-001..018、UI-001..012，保持已有工具能力。
 - [ ] PH5-02 将运行时协议/DB/debug/log 控制拆成独立服务，避免影响 LSP latency。
-- [ ] PH5-02A 将 HR-PR-02..07 纳入专业 IDE 验收，先行交付的 TS 功能保持兼容。
+- [ ] PH5-02A 将 HR-PR-02..07 纳入专业 IDE 验收，先行交付的 TS 功能保持兼容。(等接线批：HR-PR-02..08 装配接线批进行中（06 在途），收官后按本行验收；行文写 02..07，实际巡检单范围=02..08)
 - [ ] PH5-GATE 界面功能 parity 与多个真实引擎工程测试通过。
 
 #### Phase 6 — 插件与执行管理
@@ -2344,8 +2354,8 @@
 - [ ] PH7-GATE 真实大型项目性能达标、无未解决阻塞缺陷，才发布稳定 2.0。
 
 ### 17. 建议的首批 12 个 PR（严格顺序，避免大爆炸重构）
-- [ ] PR-001 `audit/perf-baseline`：现有入口/四主请求调用链、profile、fixtures、基线报告；不改行为。
-- [ ] PR-002 `fix/ts-hotpath`：将旧 TODO A2/A3 已识别的明显阻塞路径止血并提供测量证据。
+- [ ] PR-001 `audit/perf-baseline`：现有入口/四主请求调用链、profile、fixtures、基线报告；不改行为。(对账：基线报告已由 KODE-PERF-007 实质落=`aa3cf8c` docs/perf/2026-11-04-v02-baseline.md+provider 级 bench（四主请求×三场景）；调用链取证已由 AUDIT-007/current-state.md 落；余量=PERF-002..004 fixture 矩阵补齐)
+- [ ] PR-002 `fix/ts-hotpath`：将旧 TODO A2/A3 已识别的明显阻塞路径止血并提供测量证据。(对账：A2/A3 阻塞路径已由主 todo A 车道 PR2/PR3 收官实质止血（7d8736b/2aca694，current-state.md §AUDIT-014 亦判定本行应改向消费基线 §6 余量清单），不另起 TS 止血 PR)
 - [x] PR-003 `infra/rust-workspace`：Cargo workspace + binary packaging + protocol handshake + e2e。(落地:crates/kode-{protocol,server}+rust-toolchain pin+ADR-001/002+src/kodeCoreClient.ts;证据 docs/kode2/pr-003.md)
 - [x] PR-004 `core/vfs-snapshot`：overlay + incremental edit + canonical paths + version tests。(落地:crates/kode-vfs+kode-server 文档同步对接+协议 Position/Range DTO;证据 docs/kode2/pr-004.md)
 - [x] PR-005 `core/def-xml-parser`：精确源位置与错误恢复 + fuzz + parser benchmarks。(落地:crates/kode-parser(自研零依赖字节级 XML 状态机,ADR-102)+ 对拍 golden 双向门禁(TS 28/28=100%)+ 增量零重建注册表 + release bench(P50 6µs/大样本 19.9MB/s)+ 盲样 1149 例 0 panic;fuzz 纲要随 fuzz 单;证据 docs/kode2/pr-005.md)
