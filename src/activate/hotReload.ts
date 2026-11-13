@@ -42,6 +42,10 @@ import { materializeHotReloadGlobs, HOT_RELOAD_MATERIALIZE_GLOBS_COMMAND } from 
 import { resolveAssetsRootForWorkspace } from '../scanRoots';
 import { runHotReloadFileStateFilterCommand, runShowHotReloadFileStateCommand } from '../backend/hotReloadFileStateFilter';
 import { readTempEditReloadSettings, runTempEditReload, tempEditSectionReader } from '../backend/hotReloadTempEdit';
+import { resolveModuleDualName } from '../backend/hotReloadTempEdit';
+import { setupHotReloadHistoryView, HOT_RELOAD_HISTORY_STATE_KEY } from '../hotReloadHistoryView';
+import { HotReloadHistoryCore, type HotReloadHistoryEntry } from '../backend/hotReloadHistoryCore';
+import type { HotReloadDeliveryRecord } from '../backend/hotReloadTargetState';
 import type { DiskWatcherFactory } from '../backend/hotReloadDiskWatch';
 import type { FileChangeMetaResolver } from '../backend/fileChangeMeta';
 import type { FileChangeRouter } from '../backend/fileChangeBypass';
@@ -64,14 +68,52 @@ export interface HotReloadShared {
 export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
   const { context, quickActionManager, hotReloadStateViewRefresh, hotReloadVersionRefresh, httpRequestChannel, fileChangeMetaResolver } = deps;
 
+  // HR-PR-06 接线批:热更历史视图(树+面板+搜索)。台账是事实源——store
+  // 的 onRecord 逐条投影进历史库(树标题 fullModule,tooltip 双名;requestId
+  // 按 目标键/文件#代际 稳定成键,同执行回执升级幂等原位替换);persist 面
+  // 用 context.workspaceState 适配(HR-MOD-014 会话留存);feed 独立于面板
+  // 生命周期(HR-UI-012 关面板不停服务)。store 先建,feed 句柄晚绑定。
+  const hotReloadHistoryFeedRef: { current: { handle(record: HotReloadDeliveryRecord): void } | null } = {
+    current: null
+  };
   const hotReloadTargetStateStore = new HotReloadTargetStateStore({
     now: () => Date.now(),
     onRecorded: () => {
       hotReloadStateViewRefresh.refresh?.();
       // applied 回执落账 → 重采盘上版本并结算基线追平(单号/双号跟住回执)
       hotReloadVersionRefresh.refresh?.();
+    },
+    onRecord: record => hotReloadHistoryFeedRef.current?.handle(record)
+  });
+  const hotReloadHistoryFeed = setupHotReloadHistoryView(context, {
+    core: new HotReloadHistoryCore(),
+    resolveNames: file => {
+      const scriptRoot = readTempEditReloadSettings(
+        tempEditSectionReader(vscode.workspace.getConfiguration('kbengine').get<unknown>('hotReload', undefined))
+      ).scriptRoot;
+      if (scriptRoot.length > 0) {
+        const dualName = resolveModuleDualName(file, scriptRoot);
+        if (!('unsupported' in dualName)) {
+          return { fullModule: dualName.fullModule, requestModule: dualName.requestModule };
+        }
+      }
+      // 未配脚本根/解析不支持:双名如实不可解,回落文件 stem(不猜包结构)
+      const stem = path.basename(file).replace(/\.py$/, '');
+      return { fullModule: stem, requestModule: stem };
+    },
+    feedStatus: () => ({
+      watchMode: readHotReloadSettings(hotReloadSectionReader()).triggerMode,
+      target: ''
+    }),
+    persist: {
+      // 宿主无 workspaceState(测试替身语境)时如实退化为不持久化,不炸激活
+      load: () => context.workspaceState?.get(HOT_RELOAD_HISTORY_STATE_KEY),
+      save: (entries: readonly HotReloadHistoryEntry[]) => {
+        void context.workspaceState?.update(HOT_RELOAD_HISTORY_STATE_KEY, entries);
+      }
     }
   });
+  hotReloadHistoryFeedRef.current = hotReloadHistoryFeed;
   // HOT-VER:文件版本簿(状态栏版本号)。台账独立于 watcher——监视范围只看
   // globs(与 enabled 开关正交),采样口缺省走 fs.stat 的 mtimeMs:size;watcher
   // 事件、回执落账、手动触发(showFileState/retryFailed/手动跑动作)都写同一份

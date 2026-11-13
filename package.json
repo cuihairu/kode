@@ -119,6 +119,8 @@
     "onCommand:kbengine.def.analyze",
     "onCommand:kbengine.def.checkEngineMd5",
     "onCommand:kbengine.def.fingerprintInspector",
+    "onCommand:kbengine.hotReload.historyPanel",
+    "onCommand:kbengine.hotReload.historySearch",
     "onCommand:kbengine.project.doctor",
     "onCommand:kbengine.symbolReferences.show",
     "onCommand:kbengine.profile.start",
@@ -331,6 +333,10 @@
         {
           "id": "kbengine.quickActions",
           "name": "%kbengine.view.quickActions%"
+        },
+        {
+          "id": "kbengine.hotReloadHistory",
+          "name": "%kbengine.view.hotReloadHistory%"
         },
         {
           "id": "kbengine.serverControl",
@@ -753,6 +759,16 @@
       {
         "command": "kbengine.def.fingerprintInspector",
         "title": "%kbengine.command.def.fingerprintInspector.title%",
+        "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.hotReload.historyPanel",
+        "title": "%kbengine.command.hotReload.historyPanel.title%",
+        "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.hotReload.historySearch",
+        "title": "%kbengine.command.hotReload.historySearch.title%",
         "category": "KBEngine"
       },
       {

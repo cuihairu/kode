@@ -16,6 +16,8 @@ export const KBENGINE_SIDEBAR_VIEW_IDS: readonly string[] = [
   // UX-REVIEW-002c 侧栏「开始」入口(项目识别状态 + 按状态可执行操作)
   'kbengine.start',
   'kbengine.quickActions',
+  // HR-PR-06 热更历史视图(HR-UI-002;台账投影树)
+  'kbengine.hotReloadHistory',
   'kbengine.serverControl',
   // KB-GC-001 guiconsole 期一:组件状态面板(与 tail 共用 ConsoleHub 发现链;
   // 置于服务控制之后,实时负载/存活在侧栏首屏可见)
