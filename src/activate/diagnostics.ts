@@ -50,6 +50,10 @@ import {
   type FixedDictConstructDiagnosticItem
 } from '../backend/fixedDictConstructCheck';
 import {
+  computeGetDictFromObjReturnFindings,
+  fixedDictReturnFindingToItem
+} from '../backend/getDictFromObjReturnCheck';
+import {
   SCALAR_ASSIGN_DIAGNOSTICS_ENABLED_DEFAULT,
   analyzeScalarAssignWrites,
   scalarAssignFindingToItem,
@@ -1185,7 +1189,21 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
           },
           customTypes
         );
-        return findings.map(fixedDictConstructFindingToItem);
+        const items = findings.map(fixedDictConstructFindingToItem);
+        // KSEM-SER-03:序列化出口面——本文档是某 FD user_type 的 impl 文件时,
+        // getDictFromObj 返回 dict 对 schema 校验(缺键/多键/字段值结构;引擎
+        // 对缺键/错型静默写默认值,datatype.cpp addToStreamEx)。绑定未成立的
+        // (implementedBy 未解析/指他文件)不进判定面。
+        const implBindings = customTypes
+          .filter(info => info.implementedBy && info.pythonFilePath === document.uri.fsPath)
+          .map(info => ({ container: info, symbol: info.implementedBy!.split('.').pop() ?? '' }));
+        if (implBindings.length > 0) {
+          items.push(
+            ...computeGetDictFromObjReturnFindings(document.getText(), implBindings)
+              .map(fixedDictReturnFindingToItem)
+          );
+        }
+        return items;
       },
       publish: (items: readonly FixedDictConstructDiagnosticItem[]) => {
         fixedDictConstructDiagnostics.set(document.uri, items.map(item => {

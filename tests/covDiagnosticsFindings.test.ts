@@ -151,6 +151,21 @@ const BROKEN_IMPL_PY = [
   ''
 ].join('\n');
 
+// KSEM-SER-03:FD 序列化出口面 fixture——契约三方法齐备(不触发 user-type-contract
+// 面),getDictFromObj 返回缺 y 的字面量 → fixedDictReturnSchema 面一条 missing。
+const SERIALIZERS_IMPL_PY = [
+  'class VectorBagSer:',
+  '    def createObjFromDict(self, dct):',
+  '        return self',
+  '',
+  '    def getDictFromObj(self, obj):',
+  '        return {"x": 1}',
+  '',
+  '    def isSameType(self, obj):',
+  '        return True',
+  ''
+].join('\n');
+
 const START_SH = [
   '#!/bin/sh',
   'source scripts/profile.sh',
@@ -183,6 +198,18 @@ beforeAll(() => {
       '  <BrokenType>',
       '    <implementedBy>broken.BrokenImpl</implementedBy>',
       '  </BrokenType>',
+      '  <VectorBag>',
+      '    FIXED_DICT',
+      '    <implementedBy>serializers_impl.VectorBagSer</implementedBy>',
+      '    <Properties>',
+      '      <x>',
+      '        <Type>UINT8</Type>',
+      '      </x>',
+      '      <y>',
+      '        <Type>UINT8</Type>',
+      '      </y>',
+      '    </Properties>',
+      '  </VectorBag>',
       '  <ProfileBag>',
       '    FIXED_DICT',
       '    <Properties>',
@@ -203,6 +230,11 @@ beforeAll(() => {
   );
   fs.writeFileSync(path.join(root, 'scripts', 'base', 'Avatar.py'), AVATAR_PY, 'utf8');
   fs.writeFileSync(path.join(root, 'scripts', 'user_type', 'broken.py'), BROKEN_IMPL_PY, 'utf8');
+  fs.writeFileSync(
+    path.join(root, 'scripts', 'user_type', 'serializers_impl.py'),
+    SERIALIZERS_IMPL_PY,
+    'utf8'
+  );
   fs.writeFileSync(path.join(root, 'start.sh'), START_SH, 'utf8');
   fs.writeFileSync(path.join(root, 'process_topology.xml'), TOPO_XML, 'utf8');
   fs.writeFileSync(path.join(root, '.kbengine', 'debug.json'), DEBUG_JSON, 'utf8');
@@ -230,6 +262,7 @@ afterAll(() => {
 let defDoc: ReturnType<typeof makeTextDocument>;
 let pyDoc: ReturnType<typeof makeTextDocument>;
 let userTypeDoc: ReturnType<typeof makeTextDocument>;
+let serializersDoc: ReturnType<typeof makeTextDocument>;
 let shellDoc: ReturnType<typeof makeTextDocument>;
 let topoDoc: ReturnType<typeof makeTextDocument>;
 let readmeDoc: ReturnType<typeof makeTextDocument>;
@@ -248,7 +281,8 @@ beforeAll(async () => {
     if (pattern === '**/*.py') {
       return [
         Uri.file(path.join(root, 'scripts', 'base', 'Avatar.py')),
-        Uri.file(path.join(root, 'scripts', 'user_type', 'broken.py'))
+        Uri.file(path.join(root, 'scripts', 'user_type', 'broken.py')),
+        Uri.file(path.join(root, 'scripts', 'user_type', 'serializers_impl.py'))
       ];
     }
     return [];
@@ -265,6 +299,10 @@ beforeAll(async () => {
     fileName: path.join(root, 'scripts', 'user_type', 'broken.py'),
     languageId: 'python'
   });
+  serializersDoc = makeTextDocument(SERIALIZERS_IMPL_PY, {
+    fileName: path.join(root, 'scripts', 'user_type', 'serializers_impl.py'),
+    languageId: 'python'
+  });
   shellDoc = makeTextDocument(START_SH, {
     fileName: path.join(root, 'start.sh'),
     languageId: 'shellscript'
@@ -277,7 +315,7 @@ beforeAll(async () => {
     fileName: path.join(root, 'README.md'),
     languageId: 'markdown'
   });
-  workspace.textDocuments = [defDoc, pyDoc, userTypeDoc, shellDoc, topoDoc, readmeDoc];
+  workspace.textDocuments = [defDoc, pyDoc, userTypeDoc, serializersDoc, shellDoc, topoDoc, readmeDoc];
   context = {
     subscriptions: [],
     extensionUri: Uri.file(extDir),
@@ -369,6 +407,14 @@ describe('诊断家族发现级映射臂(覆盖补测)', () => {
     expectFindings('kbengine-def-method-consistency', pyDoc.uri, 1);
     // user_type 契约缺失(BrokenImpl 缺 createObjFromDict)
     expectFindings('kbengine-user-type-contract', userTypeDoc.uri, 1);
+    // KSEM-SER-03:FD 序列化出口面(VectorBagSer.getDictFromObj 缺 y;打开即排)
+    workspaceEvents.documentOpened.fire(serializersDoc);
+    await settle(500);
+    const serializersItems = collection('kbengine-fixeddict-construct')!.get(serializersDoc.uri) ?? [];
+    expect(
+      serializersItems.map(item => String(item.code)),
+      'serializers_impl 应有 fixedDictReturnSchema 缺 y 发现'
+    ).toContain('kbengine.fixedDictReturnSchema');
     // 进程拓扑(mock Rust RPC 返回 findings;TS 侧映射/分组/发布走真实码)
     expectFindings('kbengine-process-topology', Uri.file(path.join(root, 'process_topology.xml')), 1);
     const topoDiagnostic = collection('kbengine-process-topology')!.get(

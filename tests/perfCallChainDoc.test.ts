@@ -299,8 +299,12 @@ const ANCHORS: Array<[string, number, string]> = [
   // onDidChangeTextDocument 锚点 +5(415→420);change queued 钩 +2/types.xml
   // 注册表分支 +2 → flushQueued 锚点 +9(508→517);flush timer 内标量赋值
   // 调度器冲刷 +2(CELL-15 同形)在锚点之后不再位移。出处随 baseline 锁步。
-  ['src/activate/diagnostics.ts', 172, "startLanguageServiceOperation('diagnostics'"],
-  ['src/activate/diagnostics.ts', 185, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-13(KSEM-SER-03):diagnostics.ts 顶部 import +4
+  // (computeGetDictFromObjReturnFindings/fixedDictReturnFindingToItem)→
+  // 两处诊断打点锚点 +4(172/185 → 176/189,真位重探);FD 出口面组装块
+  // 在其后不再位移。出处随 baseline 锁步。
+  ['src/activate/diagnostics.ts', 176, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 189, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的

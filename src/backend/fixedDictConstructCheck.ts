@@ -124,7 +124,7 @@ export function renderFixedDictConstructTypeMessage(
 }
 
 /** 声明来源段(types.xml 基名:行)。 */
-function containerSource(container: CustomTypeInfo): string {
+export function containerSource(container: CustomTypeInfo): string {
   const base = container.filePath.split(/[\\/]/).pop() ?? container.name;
   return container.line > 0 ? `${base}:${container.line}` : base;
 }
@@ -151,7 +151,7 @@ function fdContainerOfAnnotation(
 }
 
 /** 跨行花括号配对结果:内容串 + 每行在内容串中的起始下标(偏移映射用)。 */
-interface MatchedBraces {
+export interface MatchedBraces {
   joined: string;
   /** 配对窗内第 i 行(绝对行号 startLine+i)在 joined 的起始下标。 */
   lineStarts: number[];
@@ -171,7 +171,7 @@ function isTripleQuote(text: string, pos: number, quote: string): boolean {
  * 感知;注释以空格原位抹除保偏移映射对齐;三引号态跨行连续)。窗口超界或
  * 未闭合 → null(整点不猜)。
  */
-function matchDictBraces(
+export function matchDictBraces(
   lines: readonly string[],
   startLine: number,
   startColumn: number
@@ -284,7 +284,7 @@ function indexToPos(matched: MatchedBraces, index: number): { line: number; char
 }
 
 /** 键值对(偏移均已转绝对行列)。 */
-interface DictPair {
+export interface DictPair {
   /** 键字面量名;动态键(f 字串/变量/bytes/残缺)→ null(宇宙开放)。 */
   key: string | null;
   keyStart: { line: number; character: number };
@@ -301,7 +301,7 @@ interface DictPair {
  * 诚实退化,不误报。无冒号的裸段(`**展开`/残缺)置 openUniverse——键
  * 宇宙开放,缺键不可判。
  */
-function parseDictPairs(matched: MatchedBraces): { pairs: DictPair[]; openUniverse: boolean } {
+export function parseDictPairs(matched: MatchedBraces): { pairs: DictPair[]; openUniverse: boolean } {
   const body = matched.joined;
   const openBrace = body.indexOf('{');
   const closeBrace = body.lastIndexOf('}');
