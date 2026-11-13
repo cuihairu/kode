@@ -2082,6 +2082,16 @@
           "default": 500,
           "markdownDescription": "%kbengine.config.hotReload.debounceMs.description%"
         },
+        "kbengine.hotReload.triggerMode": {
+          "type": "string",
+          "enum": ["onSave", "onDiskChange"],
+          "default": "onSave",
+          "markdownDescription": "%kbengine.config.hotReload.triggerMode.description%",
+          "markdownEnumDescriptions": [
+            "%kbengine.config.hotReload.triggerMode.onSave%",
+            "%kbengine.config.hotReload.triggerMode.onDiskChange%"
+          ]
+        },
         "kbengine.hotReload.tempEdit.enabled": {
           "type": "boolean",
           "default": false,

@@ -117,7 +117,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       actionName: '',
       globs: [],
       globsSpec: 'unset',
-      debounceMs: 500
+      debounceMs: 500,
+      triggerMode: 'onSave'
     });
     // §11.1:未写 globs 不再回落裸 `**/*.py`(旧默认会全工作区扫),
     // 空表 + spec=unset 交给 assetsRoot 派生(见 hotReloadAssetsRootWatch)
@@ -139,7 +140,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       actionName: '热更',
       globs: ['**/*.py', '**/*.def'],
       globsSpec: 'explicit',
-      debounceMs: 0
+      debounceMs: 0,
+      triggerMode: 'onSave'
     });
   });
 
@@ -158,12 +160,22 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       actionName: '',
       globs: [],
       globsSpec: 'unset',
-      debounceMs: 500
+      debounceMs: 500,
+      triggerMode: 'onSave'
     });
     // 非数字不硬转:字符串去抖值同样回落默认
     expect(readHotReloadSettings(readerOf({ debounceMs: '500' }))).toMatchObject({
       debounceMs: 500
     });
+  });
+
+  it('triggerMode(HR-WATCH-001):缺省 onSave;枚举外写法一律回落默认,不猜半态', () => {
+    expect(readHotReloadSettings(readerOf({ triggerMode: 'onDiskChange' }))).toMatchObject({
+      triggerMode: 'onDiskChange'
+    });
+    for (const bad of ['onSave?', 7, true, 'disk', '']) {
+      expect(readHotReloadSettings(readerOf({ triggerMode: bad })).triggerMode).toBe('onSave');
+    }
   });
 
   it('globs 里的空串与非字符串项被剔除,剔空按「显式空数组」处理(watch-off)', () => {
@@ -175,6 +187,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       globs: ['**/*.def'],
       globsSpec: 'explicit',
       debounceMs: 500
+ ,
+      triggerMode: 'onSave'
     });
     // 用户碰过 globs 字段(哪怕全是空项)= 显式空 → 不监视,既不回落旧默认
     // `**/*.py`,也不交给 assetsRoot 派生(§11.1 empty-globs 关法)
@@ -184,6 +198,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       globs: [],
       globsSpec: 'explicit',
       debounceMs: 500
+ ,
+      triggerMode: 'onSave'
     });
   });
 });

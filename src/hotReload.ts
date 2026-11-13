@@ -80,7 +80,15 @@ export interface HotReloadSettings {
   readonly globs: string[];
   readonly globsSpec: HotReloadGlobsSpec;
   readonly debounceMs: number;
+  /** HR-WATCH-001 触发源模式:onSave(默认推荐,watcher 写盘事件)/
+   *  onDiskChange(另建按根磁盘监视,外部改动/生成/Git checkout 进同一链) */
+  readonly triggerMode: HotReloadTriggerMode;
 }
+
+/** HR-WATCH-001 触发源模式(与 package.json kbengine.hotReload.triggerMode 枚举锁同步) */
+export type HotReloadTriggerMode = 'onSave' | 'onDiskChange';
+
+export const HOT_RELOAD_DEFAULT_TRIGGER_MODE: HotReloadTriggerMode = 'onSave';
 
 /** 配置读取口:与 vscode.ConfigurationShape 同形,测试用内存替身驱动 */
 export interface ConfigReader {
@@ -110,6 +118,7 @@ export function readHotReloadSettings(reader: ConfigReader): HotReloadSettings {
   const enabled = reader.get<boolean>('enabled', true);
   const actionName = reader.get<string>('actionName', '');
   const debounceMs = reader.get<number>('debounceMs', HOT_RELOAD_DEFAULT_DEBOUNCE_MS);
+  const triggerMode = reader.get<string>('triggerMode', HOT_RELOAD_DEFAULT_TRIGGER_MODE);
   const { globs, globsSpec } = readGlobs(reader.get<unknown>('globs', undefined));
   return {
     enabled: typeof enabled === 'boolean' ? enabled : true,
@@ -117,7 +126,9 @@ export function readHotReloadSettings(reader: ConfigReader): HotReloadSettings {
     globs,
     globsSpec,
     debounceMs:
-      typeof debounceMs === 'number' && debounceMs >= 0 ? debounceMs : HOT_RELOAD_DEFAULT_DEBOUNCE_MS
+      typeof debounceMs === 'number' && debounceMs >= 0 ? debounceMs : HOT_RELOAD_DEFAULT_DEBOUNCE_MS,
+    // 容忍式:枚举外的写法(含写坏类型)一律回落默认 onSave,不猜半态
+    triggerMode: triggerMode === 'onDiskChange' ? 'onDiskChange' : HOT_RELOAD_DEFAULT_TRIGGER_MODE
   };
 }
 
@@ -1126,7 +1137,9 @@ export function setupHotReload(
     // 纯核归并);建后即 arm——apply 同步块内完成,真事件只能在后续宏任务到
     // 达,HR-WATCH-015 基线窗保证启动既有文件不被当变更。范围闸按本次计划
     // 落盘(显式=globs 匹配,派生=assetsRoot 前缀),与既有 watcher 面同界。
-    if (options.diskWatch) {
+    // HR-WATCH-001 模式面:onDiskChange 显式选中才建(默认 onSave 只走既有
+    // watcher 面);模式属 kbengine 段,配置变更即 apply 重建,切回即拆。
+    if (options.diskWatch && settings.triggerMode === 'onDiskChange') {
       const folderRoots = (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath);
       diskDebounceMs = settings.debounceMs;
       diskScope = {

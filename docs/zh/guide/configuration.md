@@ -439,6 +439,7 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 | `kbengine.hotReload.actionName` | string | 空 | 要触发的动作名,须在 `quickActions` 数组里存在;留空(默认)= 发默认热更请求 `POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`(body `module_name=<模块名>`,两处都带) |
 | `kbengine.hotReload.globs` | string[] | 未设 → 按 `kbengine.assetsRoot` 派生 | 监视模式(VS Code glob),每个模式各建一个文件监视。未设时派生 `<assetsRoot>/**/*.py`(只盯 .py,绝不全工作区扫);显式填空数组 = 不建监视 |
 | `kbengine.hotReload.debounceMs` | number | `500` | 触发前去抖毫秒数,`0` 为不去抖 |
+| `kbengine.hotReload.triggerMode` | string 枚举 | `onSave` | 触发源模式(HR-WATCH-001):`onSave` = watcher 写盘事件驱动热更(编辑器保存/自动保存即发,未保存的缓冲编辑永不进链)——默认;`onDiskChange` = 另建按已声明根的原生文件监视,外部改动/生成文件/Git checkout 也触发热更(与保存事件在同一流水线内重叠去重不双发) |
 | `kbengine.hotReload.tempEdit.enabled` | boolean | `false` | 临时编辑热更新命令总开关(默认关;与 `hotReload.enabled` 相互独立——后者默认开,本命令默认关) |
 | `kbengine.hotReload.tempEdit.actionName` | string | 空 | 第 3 步 reloadScript 按名触发的 quick action(HTTP/终端均可);留空按配置错误中止 |
 | `kbengine.hotReload.tempEdit.autoRestore` | boolean | `true` | 发送 reloadScript 前自动还原原始内容;还原失败即中止请求 |

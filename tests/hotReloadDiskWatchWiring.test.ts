@@ -97,7 +97,9 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
     };
   };
 
-  const boot = (options: { globs?: string[]; withDisk?: boolean } = {}): {
+  const boot = (
+    options: { globs?: string[]; withDisk?: boolean; triggerMode?: string } = {}
+  ): {
     clock: ReturnType<typeof makeTimers>;
     context: vscode.ExtensionContext;
     diagnostics: DiskWatchDiagnostic[];
@@ -108,7 +110,9 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
         enabled: true,
         globs: options.globs ?? ['**/*.py'],
         actionName: '热更',
-        debounceMs: 100
+        debounceMs: 100,
+        // 本文件专测磁盘面:一律显式选中 onDiskChange(缺省 onSave 不建,另行钉)
+        triggerMode: options.triggerMode ?? 'onDiskChange'
       }
     });
     const clock = makeTimers();
@@ -133,6 +137,59 @@ describe('setupHotReload 磁盘侧接线(HR-PR-05)', () => {
   it('不注入 diskWatch:不建磁盘面,既有 watcher 面照旧', () => {
     boot({ withDisk: false });
     expect(allFileSystemWatchers.map(watcher => watcher.pattern)).toEqual(['**/*.py']);
+  });
+
+  it('缺省模式 onSave:注入也不建磁盘面(HR-WATCH-001 默认推荐保存面)', () => {
+    boot({ triggerMode: 'onSave' });
+    expect(allFileSystemWatchers.map(watcher => watcher.pattern)).toEqual(['**/*.py']);
+  });
+
+  it('切到 onDiskChange:配置变更即建面;切回 onSave 即拆(HR-WATCH-001/005)', async () => {
+    const first = boot({ triggerMode: 'onSave' });
+    expect(allFileSystemWatchers).toHaveLength(1);
+
+    configurationOverrides.set('kbengine', {
+      hotReload: {
+        enabled: true,
+        globs: ['**/*.py'],
+        actionName: '热更',
+        debounceMs: 100,
+        triggerMode: 'onDiskChange'
+      }
+    });
+    workspaceEvents.configurationChanged.fire({
+      affectsConfiguration: (section: string) => section === 'kbengine'
+    });
+    // 旧 save watcher 随 apply 重建被 dispose 再建:栈顶两枚=新 save 面+磁盘面
+    expect(allFileSystemWatchers[allFileSystemWatchers.length - 1].pattern).toBe('/ws/**/*.py');
+    expect(allFileSystemWatchers[allFileSystemWatchers.length - 2].pattern).toBe('**/*.py');
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/scripts/A.py' } as never);
+    expect(first.clock.tick()).toBe(2);
+    await flush();
+    expect(first.runCalls).toEqual(['热更']);
+
+    configurationOverrides.set('kbengine', {
+      hotReload: {
+        enabled: true,
+        globs: ['**/*.py'],
+        actionName: '热更',
+        debounceMs: 100,
+        triggerMode: 'onSave'
+      }
+    });
+    workspaceEvents.configurationChanged.fire({
+      affectsConfiguration: (section: string) => section === 'kbengine'
+    });
+    // 切回 onSave:磁盘面不再重建,栈顶=新 save 面(**/*.py)
+    expect(allFileSystemWatchers[allFileSystemWatchers.length - 1].pattern).toBe('**/*.py');
+  });
+
+  it('未保存的编辑不触发(HR-WATCH-002):缓冲变更不进链,写盘 watcher 事件才进', async () => {
+    const { clock, runCalls } = boot();
+    workspaceEvents.documentChanged.fire({ document: { uri: { fsPath: '/ws/scripts/A.py' } } } as never);
+    expect(clock.tick()).toBe(0);
+    await flush();
+    expect(runCalls).toEqual([]);
   });
 
   it('注入即建:按根派生递归模式,磁盘 change 进链触发动作一批(HR-WATCH-004/003)', async () => {

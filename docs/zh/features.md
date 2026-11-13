@@ -471,6 +471,7 @@
 | `kbengine.hotReload.actionName` | `""` | 要触发的快速动作名（须存在于 .kbengine/debug.json quickActions）；留空 = 走上面的默认热更请求 |
 | `kbengine.hotReload.globs` | 未设 → 按 `kbengine.assetsRoot` 派生 | 监视的文件匹配模式（每模式一个 watcher）；未设时派生 `<assetsRoot>/**/*.py`，只盯 .py（绝不全工作区扫） |
 | `kbengine.hotReload.debounceMs` | `500` | 触发前去抖毫秒数（0 = 不去抖） |
+| `kbengine.hotReload.triggerMode` | `"onSave"` | 热更触发源模式（HR-WATCH-001）：`onSave` = watcher 写盘事件驱动热更（编辑器保存/自动保存即发，未保存的缓冲编辑永不进链）——默认推荐；`onDiskChange` = 另建按已声明根的原生文件监视，外部改动/生成文件/Git checkout 也触发热更（与保存事件在同一流水线内重叠去重不双发；监视范围绝不比热更域宽） |
 | `kbengine.hotReload.tempEdit.enabled` | `false` | 临时编辑热更新 quick action 总开关（默认关；与 `kbengine.hotReload.enabled` 相互独立——后者默认开，本命令默认关）；开启后 `kbengine.hotReload.tempEdit.run` 才会写入临时编辑、触发重载并还原（src/backend/hotReloadTempEdit.ts） |
 | `kbengine.hotReload.tempEdit.actionName` | `""` | 第 3 步 reloadScript 按名触发的 quick action 名（HTTP 或终端动作均可）；留空视为配置错误中止，不编辑不发请求 |
 | `kbengine.hotReload.tempEdit.autoRestore` | `true` | 发送 reloadScript 前是否自动还原原始内容；还原失败会中止请求并在问题通道报错，文件停留在临时编辑态需手工处理 |

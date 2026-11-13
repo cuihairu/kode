@@ -256,7 +256,8 @@ describe('readHotReloadSettings globs 口径', () => {
       actionName: '',
       globs: [],
       globsSpec: 'unset',
-      debounceMs: 500
+      debounceMs: 500,
+      triggerMode: 'onSave'
     });
   });
 

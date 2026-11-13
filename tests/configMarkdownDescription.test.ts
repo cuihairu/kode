@@ -172,6 +172,8 @@ describe('package.json configuration prompt contract', () => {
       // 永远走不到,见 hot-reload-design.md §11.1);未设 = undefined → 派生
       'kbengine.hotReload.globs': undefined,
       'kbengine.hotReload.debounceMs': 500,
+      // HR-WATCH-001 触发源模式:默认推荐保存面(readHotReloadSettings 回落口径同)
+      'kbengine.hotReload.triggerMode': 'onSave',
       // definitionWorkspace.ts getDefinitionWorkspaceLayout 约定链
       'kbengine.entityDefsPath': 'scripts/entity_defs',
       'kbengine.entitiesXmlPath': 'scripts/entities.xml',

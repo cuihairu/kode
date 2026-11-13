@@ -209,7 +209,7 @@
 - Git 批量变更(切分支/checkout 爆发)由流水线三层兜住,且经真 HR-PR-04 核全链验证:30 文件爆发归集单波次一批(不放大);还原同字节即去重(checkout 未变内容不重发);超预览阈值的爆发只滞留预览、显式放行才发(HR-WATCH-016 兜底)。
 - HR-WATCH-005 控制器面:`dispose` 全 dispose 每个 watcher 且后续一切调用拒收(含 `watchRoots` / `arm` / `rebuild`);`rebuild(roots)` 全 dispose 旧 watcher 按新根重建,`armed` 保持。
 - 记一个 JSDoc 坑:块注释里写 `/**/*.py` 字面量会自我截断(内含 `*/`),症状是 TS1109 级联解析错——注释一律用文字描述 glob,字面量只留在字符串字面量里。
-- 装配接线(2026-11-13 已落,save+disk 双侧):watcher 事件(save 形态)与磁盘事件(`disk-change` 形态,经真 `vscode.createFileSystemWatcher` 适配汇入)都已喂进两级触发链(见 §6/§12/§13)。§6 所记 HR-WATCH-001 冲突已按 2026-11-06 用户令解决;模式选择配置面随配置面子批。
+- 装配接线(2026-11-13 已落,save+disk 双侧):watcher 事件(save 形态)与磁盘事件(`disk-change` 形态,经真 `vscode.createFileSystemWatcher` 适配汇入)都已喂进两级触发链(见 §6/§12/§13)。§6 所记 HR-WATCH-001 冲突已按 2026-11-06 用户令解决;模式选择配置面 2026-11-13 已落(见 §14)。
 - 测试:`tests/hotReloadDiskWatch.test.ts` 16 例——内存 watcher 总线 + 虚拟时钟,驱动真保存流水线全链。prove-red 两轮:拆掉基线闸 → HR-WATCH-015 用例转红;旁路过滤层 → filtered 诊断用例转红。门禁:lint 0 / tsc 0 / unit 754 文件 9286 例 / xvfb demo 25 RC=0。
 
 ## 8. HR-PR-06 增量（2026-11-13,ui-status 审计 + 历史库纯核）
@@ -264,4 +264,23 @@
 - **合并窗必须存在的原因**：def 结构闸「整批拦下」契约（`tests/hotReloadDefGateWiring.test.ts` 混批用例钉死）依赖同批共见——逐文件定稿直发会让混批里的 `.py` 绕过闸单独 reload，结构性 def 变更 + py 热更同落=引擎状态不一致。两级的同刻时序靠定时器插入序保证（offer 先排进料级、后排合并窗，同拍先定稿后合并）；真机 fire 时机保持「末次事件+窗」（emit 只在合并窗无在途计时才补排，`pending()` 查询），与旧全局去抖时序同感。
 - 0 冲口（`batchFlushMs: 0`）= 定稿即汇入合并池，不起波次窗；波次归集/批量预览阈/预览放行为配置面子批预留（核心机制 HR-WATCH-013/016 在库已钉，`batchFlushMs=0` 语义有核心测试钉）。
 - 测试替身时钟 handle 撞号修复：20 个测试文件的 `makeTimers` 用 `handles.size` 作定时器 id，clear+set 后撞号覆写另一计时器（真 `setTimeout` id 单调，替身语义缺陷）——统一改单调计数器 `nextHandle++`。装配在途计时计数 1→2（两级）为如实重钉（4 处 `toBe(1)`→`toBe(2)`、2 处 `tick()` 返回值），行为断言零改动。
-- 门禁：eslint 0 / tsc 0 / unit 759 文件 9345+8skip RC=0（+1 核心钉：0 冲口定稿即发）/ xvfb demo 25 RC=0。余下暂缓：disk 侧 `vscode.createFileSystemWatcher` 真适配与 `extension.ts` 汇入（HR-PR-05 接线子批）、配置面（稳定窗/语法闸/波次窗/预览阈配置键）、`extension.ts` 侧 revision 消费（stale 应答闸）。
+- 门禁：eslint 0 / tsc 0 / unit 759 文件 9345+8skip RC=0（+1 核心钉：0 冲口定稿即发）/ xvfb demo 25 RC=0。余下暂缓：disk 侧 `vscode.createFileSystemWatcher` 真适配与 `extension.ts` 汇入（HR-PR-05 接线子批）、配置面（稳定窗/语法闸/波次窗/预览阈配置键）、`extension.ts` 侧 revision 消费（stale 应答闸）。（磁盘侧接线 2026-11-13 已落——见 §13；模式选择配置面同日落——见 §14。）
+
+## 13. HR-PR-05 接线增量（2026-11-13，磁盘侧进料上线）
+
+- 磁盘侧进料已接线（`src/hotReload.ts` + `src/activate/hotReload.ts`）：装配注入真 `vscode.createFileSystemWatcher` 适配（`hotReloadDiskWatcherFactory`，薄 `DiskWatcherHandle` 包装，uri→fsPath）到 `setupHotReload` 新增的 `diskWatch` 选项。`setupHotReload` 每次 `apply()` 建 `HotReloadDiskWatchController`：每声明根一条 `根/**/*.py` watcher（HR-WATCH-004），change/create 规范化后以 `disk-change` 进同一两级触发链（同一进料流水线+合并窗），delete 不进管线（只记诊断），创建后立即 `arm()`——apply 块是同步的，真事件只能在后续宏任务到达，HR-WATCH-015 基线窗漏不进启动文件。不注入 `diskWatch` =原装配行为不变（全部既有测试不受影响）。
+- 范围同界：磁盘面绝不比既有热更域更宽。装配内范围闸（`diskOfferInScope`）镜像同一 plan——派生模式=assetsRoot 前缀（两侧均规范化），显式模式=对 workspace 相对路径跑 `matchesHotReloadGlob`（与版本徽章同一匹配器，不造第二套 glob 语义）。域外磁盘事件在闸处丢弃、不记诊断：控制器自身过滤层已对扩展名/目录/备份名报 `filtered`，闸在其上（双重上报会双计数）。
+- 生命周期（HR-WATCH-005）：控制器随每次 `apply()` 重建——配置/根/签名变更本就重跑 apply;旧控制器 dispose 全部 watcher,新控制器取当前 folder roots（`filterOptions.roots` 永不陈旧）。plan 关/错 → 旧控制器 dispose,不建新面。扩展释放随装配其余件一并清理。
+- 诊断路由：生命周期类（`watch-created` / `dropped-before-arm` / `disposed`）进热更通道日志;`filtered` / `delete-ignored` 不逐事件 live 记录——git checkout 爆发数百条 delete 会淹没审计通道;其语义留在纯核测试里钉死。
+- 重叠去重上线（HR-WATCH-003）：两面喂同一条流水线,编辑器保存同时以磁盘写形式浮现时归并为单条 pending（`disk-save-overlap`,单批）——手册的「两入口一流水线」模型。
+- 测试:`tests/hotReloadDiskWatchWiring.test.ts` 8 例——不注入行为不变/按根 pattern+单批触发/save+disk 重叠单批/delete 忽略带诊断/显式收窄 globs 不放大/配置关拆面/context dispose 静默/真适配源锁。
+- 仍暂缓:余下流水线配置键(稳定窗/语法闸/波次窗/预览阈注入)与 revision 消费(stale 应答闸)。(模式选择面 2026-11-13 同日落——见 §14。)
+
+## 14. HR-WATCH-001/002 增量（2026-11-13,触发源模式配置面）
+
+- `kbengine.hotReload.triggerMode` 字符串枚举:`onSave`(默认)/`onDiskChange`。默认随手册(「onSave 默认推荐」)加 2026-11-06 常设令(零配置热更开、保存即自动发)。容忍式读取:枚举外写法一律回落 `onSave`——不猜半态。
+- 语义:`onSave` =仅既有 watcher 面(写盘事件驱动热更;编辑器保存/自动保存即发)。`onDiskChange` =另建 HR-PR-05 磁盘面(按根原生 watcher、`disk-change` 源、arm 基线、范围闸)——即手册的重叠去重模型,两面喂同一条流水线。模式是 kbengine 域配置,配置变更即重跑 `apply()`:切过去建面、切回来拆面(双向接线钉)。
+- 设置面:`package.json` 贡献(`markdownDescription`+逐选项 `markdownEnumDescriptions` 经 NLS,双语言文件)、features.md Settings 行(en+zh,对账闸)、configuration.md 指南行(en+zh)。默认值在配置描述测试中锁死。
+- HR-WATCH-002 钉死:未保存的缓冲编辑不进链(document-change 事件不接线——只有 watcher 磁盘事件进),onSave 范围=配置 globs 域(显式 glob 保存面钉+§13 磁盘面范围闸测试)。
+- 测试:`tests/hotReloadDiskWatchWiring.test.ts` +3 例(缺省模式不建磁盘面/切换建面拆面/未保存编辑不触发)、`tests/hotReload.test.ts` 读取面例(缺省、枚举容忍)、`tests/configMarkdownDescription.test.ts` 默认值锁。
+- 仍暂缓:余下流水线配置键(稳定窗/语法闸/波次窗/预览阈注入面——HR-WATCH-007/012/013/016 接线)与 revision 消费(stale 应答闸)。
