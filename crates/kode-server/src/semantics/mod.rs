@@ -52,9 +52,15 @@
 //!   不确定候选/不受影响三桶分诊,过近似纪律宁可候选不漏报;索引覆盖态
 //!   由消费方显式声明,Partial/Missing 不构成零影响依据;no_impact_claim
 //!   只在覆盖完备∧两列表皆空才产结论——零影响红线钉在 API 形状上)。
+//! - [`create_api`] CREATE-01 创建 API 契约表(九 API 逐条登记签名/同步
+//!   返回/回调形态/callable 闸/结构前置+引擎出处;同步返实体仅两个本地
+//!   API;回调三分=单参实体|句柄、三参 OKi、onGetCell 无参;callable 闸
+//!   两分=非 DBID 静默忽略 vs DBID 族 AssertionError;FromDBID 失败通知
+//!   不闭合=None/False/静默丢三态并存;直连闸 BASE/CELL 分明)。
 
 pub mod broadcast;
 pub mod callers;
+pub mod create_api;
 pub mod impact;
 pub mod cell;
 pub mod dispatch;
