@@ -417,6 +417,7 @@
 | `kbengine.codeLens.property` | `true` | `self.<属性>` 访问处属性 CodeLens（回跳 def） |
 | `kbengine.codeLens.propertyInitOrder` | `true` | 实体类 `__init__` 声明处「属性先于 __init__ 装载 · 来自 <实体>.def」CodeLens（点击回 def） |
 | `kbengine.codeLens.typesXml` | `true` | types.xml 类型声明行落库镜链 CodeLens（引用反扫） |
+| `kbengine.codeLens.processOwnership` | `true` | Python 实体脚本顶部进程归属 CodeLens（`scripts/<role>` 目录判定 baseapp/cellapp/client/bots，判不出不出镜；其他进程同名对应文件并列可点击 tag，点击打开对应文件） |
 | `kbengine.inlayHints.typeData` | `true` | `self.<属性>` 访问处内联显示 def 声明的 types.xml 数据类型;`self.base/cell/client` RPC 调用点内联显示 def 已声明的形参类型;数组 `<of>` 元素类型在 `for ... in self.<属性>` 目标与下标赋值局部变量后内联显示 |
 | `kbengine.inlayHints.defParams` | `true` | entity 脚本区块内 def 未标注形参内联 def 声明的 `<Arg>` 类型;声明 `<ReturnType>` 时内联 `-> 类型` |
 | `kbengine.inlayHints.defProps` | `true` | 整行注释锚 `# kode:props-from-def` 行尾内联渲染该实体 def 根级属性只读清单(名+类型;悬停给声明出处) |

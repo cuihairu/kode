@@ -42,6 +42,7 @@ import {
   KBEngineRenameProvider,
   KBEngineSignatureHelpProvider,
   KBEngineWorkspaceSymbolProvider,
+  ProcessOwnershipCodeLensProvider,
   PropertyCodeLensProvider,
   PythonCompletionProvider,
   PythonDefinitionProvider,
@@ -90,6 +91,7 @@ export interface LanguageServicesShared {
   sharedWorkspaceIndex: WorkspaceIndex;
   rpcCodeLensProviderImpl: RpcCodeLensProvider;
   propertyCodeLensProviderImpl: PropertyCodeLensProvider;
+  processOwnershipCodeLensProviderImpl: ProcessOwnershipCodeLensProvider;
   eventCodeLensProviderImpl: EventCodeLensProvider;
   typesXmlCodeLensProviderImpl: TypesXmlCodeLensProvider;
 }
@@ -469,6 +471,20 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
   );
   context.subscriptions.push(propertyCodeLensProvider);
 
+  // 文件顶部进程归属标记(PROC-TAG-001,用户令 2026-11-13):Python 实体
+  // 脚本顶部标当前文件所属进程(scripts/<role> 目录判定,判不出不出镜),
+  // 其他进程同名对应文件并列可点击 tag 快速切换(既有 reveal 命令);独立
+  // 开关 kbengine.codeLens.processOwnership
+  const processOwnershipCodeLensProviderImpl = new ProcessOwnershipCodeLensProvider(entityMappingManager);
+  const processOwnershipCodeLensProvider = vscode.languages.registerCodeLensProvider(
+    pythonDocumentSelector,
+    processOwnershipCodeLensProviderImpl
+  );
+  context.subscriptions.push(
+    processOwnershipCodeLensProvider,
+    processOwnershipCodeLensProviderImpl
+  );
+
   // 事件回调标记(批154 从 RPC 镜链返回值里拆出独立注册):addEvent/
   // registerEvent 的回调 def 声明处标「事件回调 · EV_X」、emitEvent 处标
   // 监听数,独立开关 kbengine.codeLens.eventCallbacks,与 RPC 互不影响
@@ -737,6 +753,7 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     sharedWorkspaceIndex,
     rpcCodeLensProviderImpl,
     propertyCodeLensProviderImpl,
+    processOwnershipCodeLensProviderImpl,
     eventCodeLensProviderImpl,
     typesXmlCodeLensProviderImpl
   };

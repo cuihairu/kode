@@ -226,6 +226,7 @@ export function activate(context: vscode.ExtensionContext) {
     sharedWorkspaceIndex,
     rpcCodeLensProviderImpl,
     propertyCodeLensProviderImpl,
+  processOwnershipCodeLensProviderImpl,
     eventCodeLensProviderImpl,
     typesXmlCodeLensProviderImpl
   } = activateLanguageServices({
@@ -692,6 +693,7 @@ export function activate(context: vscode.ExtensionContext) {
       eventCodeLensProviderImpl.fireConfigurationChanged();
       propertyCodeLensProviderImpl.fireConfigurationChanged();
       typesXmlCodeLensProviderImpl.fireConfigurationChanged();
+      processOwnershipCodeLensProviderImpl.fireConfigurationChanged();
     }
 
     // 实体面开关变更即时生效(用户令 2026-10-21):hover/补全/跳转各 provider

@@ -455,6 +455,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.codeLens.property` | `true` | Property CodeLens at `self.<property>` access sites (reverse jump to def) |
 | `kbengine.codeLens.propertyInitOrder` | `true` | `属性先于 __init__ 装载 · 来自 <实体>.def` CodeLens on entity-class `__init__` declarations (click jumps to def) |
 | `kbengine.codeLens.typesXml` | `true` | Database storage lens chain on types.xml type declaration lines (reference back-scan) |
+| `kbengine.codeLens.processOwnership` | `true` | Process-ownership CodeLens at the top of Python entity scripts (`scripts/<role>` directory decides baseapp/cellapp/client/bots; no lens when undeterminable; sibling same-name files of other processes listed as clickable tags that open the counterpart file) |
 | `kbengine.inlayHints.typeData` | `true` | Inline def-declared types.xml data types at `self.<property>` sites; declared parameter types at `self.base/cell/client` RPC call sites; array `<of>` element types after `for ... in self.<property>` targets and subscript-assignment locals |
 | `kbengine.inlayHints.defParams` | `true` | Un-annotated `def` parameters in entity script sections get the `.def`-declared `<Arg>` type inline; declared `<ReturnType>` renders `-> type` |
 | `kbengine.inlayHints.defProps` | `true` | Whole-line comment anchor `# kode:props-from-def` renders the entity's `.def` root-level properties as a read-only inline view (name + type; hover shows the declaration source) |

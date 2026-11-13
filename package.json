@@ -1582,6 +1582,11 @@
           "default": true,
           "markdownDescription": "%kbengine.config.codeLens.typesXml.description%"
         },
+        "kbengine.codeLens.processOwnership": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.codeLens.processOwnership.description%"
+        },
         "kbengine.inlayHints.typeData": {
           "type": "boolean",
           "default": true,

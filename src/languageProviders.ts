@@ -12,6 +12,7 @@ export * from './languageProviders/hover';
 export * from './languageProviders/navigation';
 export * from './languageProviders/pythonDefinition';
 export * from './languageProviders/codeLens';
+export * from './languageProviders/processOwnership';
 export * from './languageProviders/callHierarchy';
 export * from './languageProviders/references';
 export * from './languageProviders/codeAction';

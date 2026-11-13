@@ -71,6 +71,9 @@ export const workspaceEvents = {
   documentClosed: new EventEmitter<unknown>(),
   filesRenamed: new EventEmitter<{ files: Array<{ oldUri: Uri; newUri: Uri }> }>(),
   filesDeleted: new EventEmitter<{ uris: Uri[] }>(),
+  // PROC-TAG-001 进程归属镜的刷新源:同名对应文件新建触发重取(真 API
+  // FileCreateEvent 形状 files: Uri[])
+  filesCreated: new EventEmitter<{ files: Uri[] }>(),
   foldersChanged: new EventEmitter<unknown>(),
   configurationChanged: new EventEmitter<{ affectsConfiguration: (section: string) => boolean }>()
 };
@@ -211,6 +214,7 @@ export const workspace = {
   onDidCloseTextDocument: workspaceEvents.documentClosed.event,
   onDidRenameFiles: workspaceEvents.filesRenamed.event,
   onDidDeleteFiles: workspaceEvents.filesDeleted.event,
+  onDidCreateFiles: workspaceEvents.filesCreated.event,
   onDidChangeWorkspaceFolders: workspaceEvents.foldersChanged.event,
   onDidChangeConfiguration: workspaceEvents.configurationChanged.event,
   registerTextDocumentContentProvider: (scheme: string, provider: unknown): { dispose(): void } => {

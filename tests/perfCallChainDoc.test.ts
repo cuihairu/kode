@@ -254,11 +254,18 @@ const ANCHORS: Array<[string, number, string]> = [
   // fs import 等(-6,277→271)、pythonDefinition.ts 净删/换 import
   // (309→308,773→765,879→871)、completion.ts 净删(-9,775→766,真位仍在
   // PythonCompletionProvider);出处随 baseline 锁步。
-  ['src/activate/languageServices.ts', 200, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 257, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 320, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 124, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 707, "startLanguageServiceOperation('completion'"],
+  // 2026-11-13(PROC-TAG-001):languageServices.ts 顶部 import +1(Process
+  // OwnershipCodeLensProvider)与 LanguageServicesShared 声明 +1 → 五打点
+  // 200/257/320/124/707 → 202/259/322/126/707(前三 +2 与打点间注册块无关,
+  // 707 另加进程归属镜注册块 +14 = +16,真位重探);extension.ts 解构 +1 与
+  // codeLens fire 块 +1 → onDidChangeTextDocument 420→421、flushQueued
+  // 517→518(+1,均在其前仅解构位移;fire 块在两锚点之后不再位移)。出处随
+  // baseline 锁步。
+  ['src/activate/languageServices.ts', 202, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 259, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 322, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 126, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 723, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
@@ -314,8 +321,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // runPyspySchedule 引入)→ 上列 9 处 extension.ts 锚点整体 +2(真位重探 683/696/980/
   // 1062/1113/1176/1499/2368/2448 → 685/698/982/1064/1115/1178/1501/2370/2450);
   // HOT-VER 再 +3(见上)→ 后段锚点 2373/2453;DEMO-GAME-006 再 +2(见上)→ 2375/2455。
-  ['src/extension.ts', 420, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 517, 'flushQueued()'],
+  ['src/extension.ts', 421, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 518, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。
