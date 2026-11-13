@@ -104,7 +104,7 @@
 - 证据：
   - `crates/kode-root/tests/discovery.rs:324`（root002_platform_case_folding_matrix）、`:342`（root002_wsl_unc_semantics）；`crates/kode-root/src/platform.rs:36` `cfg!(target_os = "windows")`
   - TS 侧 win32 分支：`tests/workspacePath.test.ts`、`tests/debugConfig.test.ts` 等 10 个文件
-  - **CI 单平台**：`ci.yml` `runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}`，`grep 'matrix.*os|windows-latest|macos-latest' .github/workflows` **0 命中**
+  - **CI 单平台**：<code v-pre>ci.yml</code> <code v-pre>runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}</code>，`grep 'matrix.*os|windows-latest|macos-latest' .github/workflows` **0 命中**
   - todo `IDE-ACC-010` 明列「跨平台面未复现」为保留开放项
 - 桶：**桶3（需外部条件 = 多平台 runner）**。估（降级范围）**2.0**；全量不可行。
 - 验收（降级）口径：ci.yml 增 `matrix.os: [ubuntu-latest, windows-latest, macos-latest]` 的 cargo+vitest job，三平台连绿 3 次；WSL/SSH/containers **显式标 0.3 推迟**，不进 v0.2.0 判定。
