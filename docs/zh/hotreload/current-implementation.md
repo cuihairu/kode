@@ -224,3 +224,14 @@
 - 树视图分组(HR-UI-002):`groupByFile` / `groupByTarget` 组键按首次出现序、组内最新在前(喂 `newestFirst()`)。
 - 装配接线刻意暂缓:TreeView/面板/搜索框注册、配置面(HR-UI-005)、i18n+无障碍渲染(HR-UI-011)、生命周期绑定(HR-UI-012)、点击动作(HR-UI-008 定位/开日志)随接线批。
 - 测试:`tests/hotReloadHistoryCore.test.ts` 16 例。prove-red 三轮:放开终态迁移 → 迁移守卫用例转红;去掉大小写不敏 → 子串用例转红;拆掉合并窗 → 合并用例转红。门禁:lint 0 / tsc 0 / unit 756 文件 9302 例 / xvfb demo 25 RC=0。
+
+## 9. HR-PR-07 增量（2026-11-13,def-fingerprint 审计 + 三路比对纯核）
+
+- 先审计:三层 Hash 已全在 live 且有钉——`hashDefContent`(原始字节 sha256)/`structuralFingerprintHash`(规范化结构指纹)/`negotiateEngineDigest`(md5=C-18 规范推导,或如实 `unknown`),且 `hotReloadRevisionEvidence` 对三类各自点名来源、拒跨类比较。凭证据勾 HR-HASH-001/003/004/005(004 走「如实标注」臂,003 缺的规范版本由本批补)。
+- 新纯核 `src/backend/hotReloadFingerprintCompare.ts`:
+  - HR-HASH-008 `compareFingerprints` —— 三路独立结论:`fileChanged` 只比 fileHash 对,`semanticChanged` 只比语义指纹对,`appliedConsistency` 要三环齐(引擎算法已协商+引擎回执 Digest+本地按同算法重算)才给 consistent/different;缺任一环如实 `unknown` 并点名原因。跨类比对(客户端 sha256 vs 引擎复合 MD5)绝不执行——继承 `compareEngineDigest` 的纪律。
+  - HR-HASH-006 `resolveFingerprintProfile` —— 协商出算法 label=算法名;协商不出如实标 `not available`,绝不猜。
+- 新测试抓住真缺陷:`compareSameKind` 把空串判放在 null 判之前,语义指纹为 null(def 解析失败)时直接 `TypeError: Cannot read properties of null` 崩溃。修复=null 判序先于 length 取值。
+- `hotReloadDefStructure.ts` 加性扩展:`DEF_FINGERPRINT_SPEC_VERSION`(`'def-structural-fp/1'`,指纹值按版本走、跨版本不可比)与 `semanticFingerprintReport`(specVersion+`scope: 'file-only-semantic'`+note 点名依赖核验义务;解析失败 `hash: null` 如实不造)。消费方(`hotReloadDefGate`、`hotReloadRevisionEvidenceCommand`)只读,不受影响。
+- 装配接线暂缓:HR-HASH-002(变更时 VFS 字节复用)/006 profile 消费面/007 完整 Hash Inspector UI/008 修改触发与结论呈现——随接线批;009 差异分类细化另账。
+- 测试:`tests/hotReloadFingerprintCompare.test.ts` 11 例+`hotReloadDefStructure.test.ts` 新增 2 例。prove-red 两轮:拆协商闸 → applied unknown 用例红;改 scope 标注 → 报告用例红(null 判序缺陷修复前被 null 用例天然红=TypeError 抓获)。门禁:lint 0 / tsc 0 / unit 757 文件 9323 例 / xvfb demo 25 RC=0。
