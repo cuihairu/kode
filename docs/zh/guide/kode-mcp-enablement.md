@@ -10,6 +10,8 @@
 
 ## 前置：构建（或经 cargo 运行）
 
+**平台 VSIX（nightly/platform 包）已自带 `kode-mcp` 二进制**（`extension/bin/kode-mcp`，2026-11-13 内建 MCP 托管批次入包，与 kode-server/kode-kbengine 同清单同 SHA256 manifest）——装平台包即被扩展的内建 MCP 定义发现（`kbengine.mcp.enabled` 默认开），无需本节构建。源码 checkout 或纯 TS 包需自行构建：
+
 服务器是本仓库的普通 Rust 二进制：
 
 ```

@@ -12,6 +12,8 @@ config file location and format differ.
 
 ## Prerequisite: build (or run via cargo)
 
+**Platform VSIX packages (nightly/platform builds) ship the `kode-mcp` binary** (`extension/bin/kode-mcp`, packaged since the 2026-11-13 built-in MCP hosting batch, same manifest/SHA256 list as kode-server/kode-kbengine) — installing a platform package is enough for the extension's built-in MCP definition to discover it (`kbengine.mcp.enabled` default on); this section's build is for source checkouts or pure-TS packages.
+
 The server is a normal Rust binary in this repo:
 
 ```

@@ -13,7 +13,7 @@ export const targets = {
   'darwin-x64': { rust: 'x86_64-apple-darwin', os: 'darwin', arch: 'x64' },
   'darwin-arm64': { rust: 'aarch64-apple-darwin', os: 'darwin', arch: 'arm64' },
 };
-export const binaries = ['kode-server', 'kode-kbengine'];
+export const binaries = ['kode-server', 'kode-kbengine', 'kode-mcp'];
 export const sha256 = data => createHash('sha256').update(data).digest('hex');
 
 export function smokeBinaries(directory, target) {
@@ -76,6 +76,26 @@ export function smokeBinaries(directory, target) {
   if (report.valid !== true || report.entities < 1 || !/^[a-f0-9]{64}$/.test(report.sha256)) {
     throw new Error(`CLI schema validation failed: ${schema.stdout}`);
   }
+  // kode-mcp stdio smoke (MCP uses newline-delimited JSON, not LSP framing;
+  // 2026-11-13 built-in MCP hosting ships the binary in platform packages).
+  const mcpInput = [
+    JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {
+      protocolVersion: '2024-11-05', capabilities: {},
+      clientInfo: { name: 'platform-smoke', version: '0.0.0' } } }),
+    JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} }),
+    JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
+  ].join('\n') + '\n';
+  const mcp = run(path.resolve(directory, `kode-mcp${suffix}`), [path.resolve('tests/fixtures/kbengine-demo-assets')], {
+    input: mcpInput, encoding: 'utf8', stdio: 'pipe', timeout: 20000, maxBuffer: 4 * 1024 * 1024,
+  });
+  const mcpReplies = mcp.stdout.split('\n').filter(Boolean)
+    .map(line => { try { return JSON.parse(line); } catch { return null; } })
+    .filter(Boolean);
+  if (!mcpReplies.some(reply => reply.id === 1 && reply.result?.serverInfo?.name === 'kode-mcp')
+      || !mcpReplies.some(reply => reply.id === 2 && Array.isArray(reply.result?.tools) && reply.result.tools.length >= 20)
+      || mcpReplies.some(reply => reply.error)) {
+    throw new Error(`MCP handshake smoke failed: ${mcp.stdout}\n${mcp.stderr}`);
+  }
   console.log(`Native executable smoke passed: ${target}`);
 }
 
@@ -90,7 +110,8 @@ export function packagePlatform(target) {
     env[key] ??= 'rust-lld';
   }
   run('cargo', ['build', '--locked', '--release', '--target', spec.rust,
-    '-p', 'kode-server', '--bin', 'kode-server', '-p', 'kode-kbengine', '--bin', 'kode-kbengine'], { env });
+    '-p', 'kode-server', '--bin', 'kode-server', '-p', 'kode-kbengine', '--bin', 'kode-kbengine',
+    '-p', 'kode-mcp', '--bin', 'kode-mcp'], { env });
   fs.rmSync('bin', { recursive: true, force: true });
   fs.mkdirSync('bin');
   const files = {};
