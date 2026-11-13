@@ -119,11 +119,12 @@ describe('compiled extension activation smoke', () => {
     assert.ok(core);
     assert.strictEqual(core.visible, true);
     assert.strictEqual(core.command, 'kbengine.core.showShadowDiffLog');
-    // Kode MCP 灯:常亮,无点击动作(事实在 tooltip)
+    // Kode MCP 灯:常亮,点击启停内建 MCP(2026-11-13 内建托管态,80c6893c;
+    // 原生 MCP 服务器列表经 kodeMcpHost 的 onDidChange 同步刷新)
     const mcp = stub.windowState.statusBars.find(bar => bar.priority === 93);
     assert.ok(mcp);
     assert.strictEqual(mcp.visible, true);
-    assert.strictEqual(mcp.command, undefined);
+    assert.strictEqual(mcp.command, 'kbengine.mcp.toggle');
   });
 
   it('dispatches a compiled command end to end', async () => {
