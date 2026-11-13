@@ -315,3 +315,12 @@
 - 测试:`tests/hotReloadForgetSentWiring.test.ts` 3 钉(失败后同内容照发/成功后去重仍有效/通道混批只重发失败文件)。注入读面的引导走异步定稿路径(合并窗空转,`onEmit` 补排窗——每次 fire `tick(2) → flush → tick(1) → flush`)。
 - prove-red:中和四处 `pipeline?.forgetSent(file)` 调用面后,失败钉与通道钉转红;成功/去重钉按构造保持绿。
 - HR-WATCH-008 随本增量收官:指纹分离(交发送面那一刻记,如实失败撤回)端到端落地,台账内容事实记录仍是独立账本(同内容重发推进流水线版本号;台账记录锚定各自代际不变)。
+## 18. HR-PR-08 接线增量（2026-11-13,发送 provider 注册表进真装配）
+
+- provider 注册表随本增量进入真装配:装配时创建,随复合 disposable 释放清册(不半态)。注册时机=装配时;解析序=注入序先到先应答——经新 `hotReloadProviders` 注入面传入的 fork 专属实现排在内置实现之前,fork 通道优先于通用面。
+- fork 侧具体实现为真:`createHttpHotfixSendProvider` 委托既有 `sendDefaultHotfix` 核(请求构造/双名解析/逐文件执行/结果映射全复用,零第二套发送语义),`defaultHotfix` 面在即注册,以 `kbengine.http-hotfix` 应答。
+- 新配置键 `kbengine.hotReload.sendViaProviders`(默认 `false`):开启后,无动作名自动发送先问注册表(profile 由 `buildEngineProfile` 组装,engineVersion 如实 `null`——本链尚未接版本探测);无人应答回落既有默认热更面。关闭=面不进链,行为与既有完全一致。重复 id/apiVersion 不符的注册如实拒并上日志,绝不静默替换。
+- provider 结果逐字映射既有面:ok → `sent-unverified`+审计行 `provider:<id>`;失败/抛错 → `failed`+HR-WATCH-008 指纹撤回(provider 失败后同内容照发)+审计行+状态,同步抛错在 promise 边界收口(不在事件边界裸抛)。
+- 测试:`tests/hotReloadProviderAssembly.test.ts` 6 钉(canSend 如实/transport-faithful 请求形状/先到先应答序/重复 id 拒/apiVersion 拒/dispose 清册);`tests/hotReloadProviderWiring.test.ts` 8 例装配钉(键开→provider 接单默认 transport 不动/失败撤指纹再接单/抛错如实 failed/键关→面不进链/fork 不应答→内置按注册序接单/内置经注册表 transport-faithfully 接单/重复 id 先者胜+拒上日志/apiVersion 不符绝不收编)。容忍读取闸新增布尔键循环;manifest 默认锁钉 `false`。
+- prove-red:中和 provider 臂咨询面后键开钉转红(provider 不接单,默认面走)。
+

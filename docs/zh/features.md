@@ -476,6 +476,7 @@
 | `kbengine.hotReload.syntaxGate` | `false` | 语法闸（HR-WATCH-012）：定稿内容先经解释器 `compile()` 全量语法检查再发送（只编译不执行）；检查器自身故障放行并记日志，绝不拦热更 |
 | `kbengine.hotReload.batchFlushMs` | `0` | 波次冲口（HR-WATCH-013）：同窗定稿文件归集成批发送；`0` = 定稿即汇入合并池（现有时序） |
 | `kbengine.hotReload.batchPreviewThreshold` | `50` | 批量预览阈值（HR-WATCH-016）：超阈批次滞留预览，用「KBEngine: 放行热更预览批次」命令显式放行；`0` = 一律滞留 |
+| `kbengine.hotReload.sendViaProviders` | `false` | 发送 provider 插槽（HR-PR-08）：开启后未配动作名的自动热更先问 provider 注册表（fork 实现优先应答），无人应答才落默认 HTTP hotfix 面；关闭 = 该面不进链 |
 | `kbengine.hotReload.tempEdit.enabled` | `false` | 临时编辑热更新 quick action 总开关（默认关；与 `kbengine.hotReload.enabled` 相互独立——后者默认开，本命令默认关）；开启后 `kbengine.hotReload.tempEdit.run` 才会写入临时编辑、触发重载并还原（src/backend/hotReloadTempEdit.ts） |
 | `kbengine.hotReload.tempEdit.actionName` | `""` | 第 3 步 reloadScript 按名触发的 quick action 名（HTTP 或终端动作均可）；留空视为配置错误中止，不编辑不发请求 |
 | `kbengine.hotReload.tempEdit.autoRestore` | `true` | 发送 reloadScript 前是否自动还原原始内容；还原失败会中止请求并在问题通道报错，文件停留在临时编辑态需手工处理 |

@@ -444,6 +444,7 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 | `kbengine.hotReload.syntaxGate` | boolean | `false` | 语法闸(HR-WATCH-012):定稿内容先经解释器 `compile()` 全量语法检查(只编译不执行)再发送,语法错的内容被拦下且不占版本号。检查器自身故障(解释器缺失/超时)一律放行并记一次日志,绝不因检查器不可用拦热更 |
 | `kbengine.hotReload.batchFlushMs` | number | `0` | 波次冲口(HR-WATCH-013):同窗定稿的文件在波尾归集成一批(延迟=定稿后最多再加本窗)。`0` = 定稿即汇入合并池(现有时序);设为如 `300` 让同窗文件合成单批(也是批量预览阈值生效的前提——阈值按批计数) |
 | `kbengine.hotReload.batchPreviewThreshold` | number | `50` | 批量预览阈值(HR-WATCH-016):一波批次文件数超过此值时只滞留预览不自动发,用「KBEngine: 放行热更预览批次」命令显式放行;滞留期间新批次并入同批。`0` = 一律滞留 |
+| `kbengine.hotReload.sendViaProviders` | boolean | `false` | 发送 provider 插槽(HR-PR-08):开启后,未配动作名的自动热更先问发送 provider 注册表(fork 专属实现优先应答,按注入序先到先应答;重复 id/apiVersion 不符的注册如实拒绝不静默替换),无人应答才落默认 HTTP hotfix 面;关闭(默认)时该面不进链,发送行为与既有完全一致 |
 | `kbengine.hotReload.tempEdit.enabled` | boolean | `false` | 临时编辑热更新命令总开关(默认关;与 `hotReload.enabled` 相互独立——后者默认开,本命令默认关) |
 | `kbengine.hotReload.tempEdit.actionName` | string | 空 | 第 3 步 reloadScript 按名触发的 quick action(HTTP/终端均可);留空按配置错误中止 |
 | `kbengine.hotReload.tempEdit.autoRestore` | boolean | `true` | 发送 reloadScript 前自动还原原始内容;还原失败即中止请求 |
