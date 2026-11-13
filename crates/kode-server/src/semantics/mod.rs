@@ -60,10 +60,16 @@
 //! - [`entity_name`] CREATE-02 创建 API 实体名解析(字面量→目录解析+所需
 //!   段检验,缺段分引擎硬闸(InNewSpace hasCell)与结构缺两档;前缀候选=
 //!   补全面;动态名=Unknown 不猜;目录未就绪=IndexMissing 绝不判 Missing)。
+//! - [`create_return`] CREATE-03 创建 API 返回值推导(同步返实体仅两个
+//!   本地 createEntity,类名按 entityType 字面量、动态名 Unknown 不硬造;
+//!   七条异步 API 调用表达式=AsyncNone 绝不视作本地对象;回调交付面=
+//!   单参实体|ENTITYCALL 句柄联合、三参 Nullable 实体+DBID+wasActive、
+//!   cell 族 onGetCell 浮出;查无此 API=None 不猜)。
 
 pub mod broadcast;
 pub mod callers;
 pub mod create_api;
+pub mod create_return;
 pub mod entity_name;
 pub mod impact;
 pub mod cell;
