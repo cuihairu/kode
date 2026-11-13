@@ -379,6 +379,14 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     quickFix: false, status: 'implemented',
     source: 'src/backend/convertedObjMembers.ts(发布 src/activate/diagnostics.ts,KSEM-SER-05)'
   },
+  {
+    id: 'KBE-PY-026', code: 'kbengine.fixedDictRoundTripSchema',
+    title: '转换往返字段对应对拍:getDictFromObj 产出键集与 createObjFromDict 读取键集差集(单向缺失=往返丢字段/恒默认值;值往返与语义等价不静态断言,归运行时样本)',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.fixedDictConstructDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/backend/roundTripFields.ts(发布 src/activate/diagnostics.ts,KSEM-SER-06)'
+  },
   // ── KB-001 行为知识流水线(C-23,数据源=src/knowledge/trapsKnowledge.ts)
   {
     id: 'KBE-PY-015', code: 'kbengine.fixedDictNestedMutation',

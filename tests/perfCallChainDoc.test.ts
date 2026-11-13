@@ -317,8 +317,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-14(KSEM-SER-05):diagnostics.ts 顶部 import +7(convertedObjMembers
   // 导入块)+ 组装块扩展 +13(SER-05 成员 findings push + createInputs 提升)
   // → 两处诊断打点锚点 +5(182/195 → 187/200,真位重探);出处随 baseline 锁步。
-  ['src/activate/diagnostics.ts', 187, "startLanguageServiceOperation('diagnostics'"],
-  ['src/activate/diagnostics.ts', 200, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 191, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 204, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -472,6 +472,7 @@ const ANCHORS: Array<[string, number, string]> = [
   // 真位重探到新模块文件,出处随 baseline 锁步;行映射由拆分脚本机械推导,
   // 零行为变更。
 ];
+  // 2026-11-14(KSEM-SER-06):diagnostics.ts 顶部 import +3 + push 面锚定线移位(187/200→191/204),baseline §7 同步
 
 describe('perf baseline §7 调用链图结构面', () => {
   it('四条调用链的 mermaid 块齐备且都是 flowchart TD', () => {

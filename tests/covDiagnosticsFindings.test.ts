@@ -167,6 +167,16 @@ const SERIALIZERS_IMPL_PY = [
   '',
   '    def isSameType(self, obj):',
   '        return True',
+  '',
+  'class RoundTripBagSer:',
+  '    def createObjFromDict(self, dct):',
+  '        return {"x": dct["x"]}',
+  '',
+  '    def getDictFromObj(self, obj):',
+  '        return {"x": obj["x"], "y": obj["y"]}',
+  '',
+  '    def isSameType(self, obj):',
+  '        return True',
   ''
 ].join('\n');
 
@@ -214,6 +224,18 @@ beforeAll(() => {
       '      </y>',
       '    </Properties>',
       '  </VectorBag>',
+      '  <RoundBag>',
+      '    FIXED_DICT',
+      '    <implementedBy>serializers_impl.RoundTripBagSer</implementedBy>',
+      '    <Properties>',
+      '      <x>',
+      '        <Type>UINT8</Type>',
+      '      </x>',
+      '      <y>',
+      '        <Type>UINT8</Type>',
+      '      </y>',
+      '    </Properties>',
+      '  </RoundBag>',
       '  <ProfileBag>',
       '    FIXED_DICT',
       '    <Properties>',
@@ -430,6 +452,12 @@ describe('诊断家族发现级映射臂(覆盖补测)', () => {
       serializersItems.map(item => String(item.code)),
       'serializers_impl 应有 fixedDictOutputMemberSchema 缺成员 w 发现'
     ).toContain('kbengine.fixedDictOutputMemberSchema');
+    // KSEM-SER-06:转换往返字段对拍(getDictFromObj 产出 {x,y},
+    // createObjFromDict 只读 x → encodeOnly y 单向缺失发现)
+    expect(
+      serializersItems.map(item => String(item.code)),
+      'serializers_impl 应有 fixedDictRoundTripSchema 往返缺 y 发现'
+    ).toContain('kbengine.fixedDictRoundTripSchema');
     // 进程拓扑(mock Rust RPC 返回 findings;TS 侧映射/分组/发布走真实码)
     expectFindings('kbengine-process-topology', Uri.file(path.join(root, 'process_topology.xml')), 1);
     const topoDiagnostic = collection('kbengine-process-topology')!.get(

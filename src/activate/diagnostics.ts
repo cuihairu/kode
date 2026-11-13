@@ -65,6 +65,10 @@ import {
   convertedObjMemberFindingToItem
 } from '../backend/convertedObjMembers';
 import {
+  computeRoundTripFieldFindings,
+  roundTripFieldFindingToItem
+} from '../backend/roundTripFields';
+import {
   SCALAR_ASSIGN_DIAGNOSTICS_ENABLED_DEFAULT,
   analyzeScalarAssignWrites,
   scalarAssignFindingToItem,
@@ -1235,6 +1239,16 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
               resolveImplMethodInputs(docText, implBindings, 'getDictFromObj'),
               customTypes
             ).map(convertedObjMemberFindingToItem)
+          );
+          // KSEM-SER-06:转换往返字段对应面——getDictFromObj 可解析产出键集
+          // 与 createObjFromDict 可解析读取键集静态对拍(差集=遗漏/错误字段
+          // 映射;值往返/语义等价不静态断言,运行时样本属 SER-14 车道)
+          items.push(
+            ...computeRoundTripFieldFindings(
+              docText,
+              createInputs,
+              resolveImplMethodInputs(docText, implBindings, 'getDictFromObj')
+            ).map(roundTripFieldFindingToItem)
           );
         }
         return items;
