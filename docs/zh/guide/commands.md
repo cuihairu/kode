@@ -698,6 +698,16 @@ callgraph 模式面板支持：
   - 盖章失配 = SDK 生成后 def 集改过（重新生成 SDK 即重新盖章）；引擎在登录握手（`onHelloCB`）下发同一摘要，失配客户端会中止
 - 输出：报告写入「KBEngine Def 分析」输出面板；通知汇总一致/失配/未知数量
 
+### `kbengine.def.fingerprintInspector`
+
+- 标题：`查看 Def 指纹详情`
+- 作用：对活动 `.def` 文件做指纹快照（sha256 文件哈希 + 结构语义指纹），与会话台账里的上次快照并排展示，给出三路判定（文件哈希 / 语义指纹 / 引擎已应用摘要）
+- 行为：
+  - 要求活动编辑器为 `.def`；读面优先复用打开缓冲区字节（VFS 复用——未保存编辑参与指纹；来源 document/disk 如实标注）
+  - 首见文件只存底（记基线），如实说明、不伪造变更结论
+  - 引擎已应用维度如实「未知」：def 文件没有逐文件运行时回执；工作区闭包 MD5 面（SDK 盖章）是另一账——若跑过 `kbengine.def.checkEngineMd5`，面板如实转显其最近结果，绝不冒充逐文件 applied 结论
+  - 完整报告同步写入「KBEngine Def 分析」输出面板
+
 ## 代码片段生成
 
 ### `kbengine.snippets.generateFromSelection`

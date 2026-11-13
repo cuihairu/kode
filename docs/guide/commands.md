@@ -721,6 +721,16 @@ The flow graph panel supports:
   - A stamp mismatch means the def set changed after the SDK was generated (regenerate the SDK to re-stamp); the engine sends the same digest in the login handshake (`onHelloCB`), so a mismatched client aborts
 - Output: the report goes to the 「KBEngine Def 分析」 output channel; the notification summarizes match/mismatch/unknown counts
 
+### `kbengine.def.fingerprintInspector`
+
+- Title: `Inspect Def Fingerprints`
+- Purpose: snapshot the active `.def` file's fingerprints (sha256 file hash + structural semantic fingerprint) and show them side-by-side with the previous snapshot from the in-session ledger, as a three-way verdict (file hash / semantic fingerprint / engine-applied digest)
+- Behavior:
+  - Requires an active `.def` editor; the read face reuses the open buffer bytes first (VFS reuse — unsaved edits participate; the source, document or disk, is shown honestly)
+  - First sight of a file records the baseline only and reports it as such (no fabricated change verdict)
+  - The engine-applied dimension is honestly 未知 (unknown): def files have no per-file runtime receipts; the workspace-closure MD5 face (SDK stamps) is a separate ledger — if `kbengine.def.checkEngineMd5` has run, its most recent result is shown as-is, never as a per-file applied verdict
+  - Also logs the full report to the 「KBEngine Def 分析」 output channel
+
 ## Snippet Generation
 
 ### `kbengine.snippets.generateFromSelection`

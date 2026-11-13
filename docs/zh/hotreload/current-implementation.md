@@ -324,3 +324,11 @@
 - 测试:`tests/hotReloadProviderAssembly.test.ts` 6 钉(canSend 如实/transport-faithful 请求形状/先到先应答序/重复 id 拒/apiVersion 拒/dispose 清册);`tests/hotReloadProviderWiring.test.ts` 8 例装配钉(键开→provider 接单默认 transport 不动/失败撤指纹再接单/抛错如实 failed/键关→面不进链/fork 不应答→内置按注册序接单/内置经注册表 transport-faithfully 接单/重复 id 先者胜+拒上日志/apiVersion 不符绝不收编)。容忍读取闸新增布尔键循环;manifest 默认锁钉 `false`。
 - prove-red:中和 provider 臂咨询面后键开钉转红(provider 不接单,默认面走)。
 
+
+## 19. HR-HASH-007/008 接线增量（2026-11-13,def 指纹 Inspector + 保存触发三路判定上线）
+
+- 新命令 `kbengine.def.fingerprintInspector`(要求活动编辑器为 `.def`):计算当前快照——sha256 文件哈希(`hashDefContent`)、结构语义指纹(`semanticFingerprintReport`,规格 `def-structural-fp/1`)、字节数、计算耗时——与会话台账的上次快照并排展示,给出三路判定(file/semantic/applied),附算法档案(`resolveFingerprintProfile`,无摘要协商时如实「未协商」)、插件 API 版本、读面来源(document=打开缓冲区字节复用/disk=磁盘补载)、哈希值复制按钮。面板=普通 `createWebviewPanel`,与既有面板同模式,不新造框架。
+- 保存触发三路判定(HR-HASH-008):每个 `.def` 保存事件 → 快照 → 台账比对 → 「KBEngine Def 分析」通道一行结论(与 MD5 核查同通道,有意合并)。首见只存底(`def 指纹首见(只存底)`),绝不伪造变更结论;后续保存按 file/semantic/applied 三面带原因上报。
+- VFS 字节复用(HR-HASH-002):读面走 `readSharedFileSnapshot`(打开缓冲区优先),未保存编辑参与指纹,UI 显示绝不为此单独重读磁盘;来源标签随面板与台账同走。
+- applied 维度诚实边界:def 文件没有逐文件运行时回执(回执注册表只收热更 `.py` 面),三路判定的 applied 面如实 `unknown` 并点名原因,绝不用客户端 sha256 顶替。工作区闭包 MD5+SDK 盖章保持另账(`kbengine.def.checkEngineMd5`);跑过时面板如实转显最近结果并标注「另账」。
+- 测试:`tests/hotReloadDefFingerprintLedger.test.ts`(纯核台账/三路组装钉)+ `tests/defFingerprintInspector.test.ts`(deps 注入编排:快照生产/首见只存底/变更·无变更判定/通道行/保存过滤/不可读如实/HTML 面)。prove-red:中和台账比对面后变更判定钉转红。
