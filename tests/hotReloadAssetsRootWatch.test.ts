@@ -261,7 +261,8 @@ describe('readHotReloadSettings globs 口径', () => {
       stabilityWindowMs: 0,
       syntaxGate: false,
       batchFlushMs: 0,
-      batchPreviewThreshold: 50
+      batchPreviewThreshold: 50,
+      sendViaProviders: false
     });
   });
 

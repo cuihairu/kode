@@ -122,7 +122,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       stabilityWindowMs: 0,
       syntaxGate: false,
       batchFlushMs: 0,
-      batchPreviewThreshold: 50
+      batchPreviewThreshold: 50,
+      sendViaProviders: false
     });
     // §11.1:未写 globs 不再回落裸 `**/*.py`(旧默认会全工作区扫),
     // 空表 + spec=unset 交给 assetsRoot 派生(见 hotReloadAssetsRootWatch)
@@ -149,7 +150,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       stabilityWindowMs: 0,
       syntaxGate: false,
       batchFlushMs: 0,
-      batchPreviewThreshold: 50
+      batchPreviewThreshold: 50,
+      sendViaProviders: false
     });
   });
 
@@ -173,7 +175,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       stabilityWindowMs: 0,
       syntaxGate: false,
       batchFlushMs: 0,
-      batchPreviewThreshold: 50
+      batchPreviewThreshold: 50,
+      sendViaProviders: false
     });
     // 非数字不硬转:字符串去抖值同样回落默认
     expect(readHotReloadSettings(readerOf({ debounceMs: '500' }))).toMatchObject({
@@ -203,7 +206,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       stabilityWindowMs: 0,
       syntaxGate: false,
       batchFlushMs: 0,
-      batchPreviewThreshold: 50
+      batchPreviewThreshold: 50,
+      sendViaProviders: false
     });
     // 用户碰过 globs 字段(哪怕全是空项)= 显式空 → 不监视,既不回落旧默认
     // `**/*.py`,也不交给 assetsRoot 派生(§11.1 empty-globs 关法)
@@ -217,7 +221,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       stabilityWindowMs: 0,
       syntaxGate: false,
       batchFlushMs: 0,
-      batchPreviewThreshold: 50
+      batchPreviewThreshold: 50,
+      sendViaProviders: false
     });
   });
 
@@ -245,6 +250,10 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
     // 闸是布尔键:`true` 是合法值原样通过;非布尔才回落 false
     for (const badGate of ['true', 1, null]) {
       expect(readHotReloadSettings(readerOf({ syntaxGate: badGate })).syntaxGate).toBe(false);
+    }
+    // HR-PR-08 插槽也是布尔键:同一容忍口径(非布尔一律回落 false=面不进链)
+    for (const badSlot of ['true', 1, null]) {
+      expect(readHotReloadSettings(readerOf({ sendViaProviders: badSlot })).sendViaProviders).toBe(false);
     }
     // 阈值 0 是合法值(纯核语义=一律滞留预览全批次),不当作类型错回落
     expect(readHotReloadSettings(readerOf({ batchPreviewThreshold: 0 })).batchPreviewThreshold).toBe(0);

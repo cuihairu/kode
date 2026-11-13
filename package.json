@@ -2238,6 +2238,11 @@
           "type": "number",
           "default": 50,
           "markdownDescription": "%kbengine.config.hotReload.batchPreviewThreshold.description%"
+        },
+        "kbengine.hotReload.sendViaProviders": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%kbengine.config.hotReload.sendViaProviders.description%"
         }
       }
     },

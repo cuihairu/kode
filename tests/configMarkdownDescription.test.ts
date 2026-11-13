@@ -174,6 +174,9 @@ describe('package.json configuration prompt contract', () => {
       'kbengine.hotReload.debounceMs': 500,
       // HR-WATCH-001 触发源模式:默认推荐保存面(readHotReloadSettings 回落口径同)
       'kbengine.hotReload.triggerMode': 'onSave',
+      // HR-PR-08 发送 provider 插槽:默认关=readHotReloadSettings 回落口径,
+      // 键关面不进链(装配钉 hotReloadProviderWiring)
+      'kbengine.hotReload.sendViaProviders': false,
       // definitionWorkspace.ts getDefinitionWorkspaceLayout 约定链
       'kbengine.entityDefsPath': 'scripts/entity_defs',
       'kbengine.entitiesXmlPath': 'scripts/entities.xml',

@@ -136,4 +136,9 @@ export class HotReloadProviderRegistry {
   registeredSendProviderIds(): string[] {
     return [...this.sendProviders.keys()];
   }
+
+  /** 生命周期:清空全部注册(宿主 dispose 面;重注册即重建,不半态) */
+  clear(): void {
+    this.sendProviders.clear();
+  }
 }

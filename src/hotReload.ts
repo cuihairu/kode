@@ -33,6 +33,12 @@ import type { HttpTransport } from './backend/httpRequestService';
 import type { PackageDirProbe } from './backend/httpRequests';
 import { HotReloadSavePipeline, isStaleResponse } from './backend/hotReloadSavePipeline';
 import type { FileSnapshot, SyntaxCheck } from './backend/hotReloadSavePipeline';
+import {
+  createHotReloadProviderHost,
+  createHttpHotfixSendProvider,
+  type HotReloadProviderHost
+} from './backend/hotReloadProviderAssembly';
+import { buildEngineProfile, type HotReloadProvider } from './backend/hotReloadPluginApi';
 import { createPythonSyntaxGate } from './backend/hotReloadSyntaxGate';
 import { runPythonCompile } from './hotReloadPythonCompile';
 import { resolveProfileInterpreter } from './profileInterpreter';
@@ -95,6 +101,9 @@ export interface HotReloadSettings {
   readonly batchFlushMs: number;
   /** HR-WATCH-016 批量预览阈值(波批文件数超此值只滞留预览,命令放行) */
   readonly batchPreviewThreshold: number;
+  /** HR-PR-08 发送 provider 插槽:开=true 时无动作名发送先问注册表
+   *  (应答者胜),无人应答回落既有默认热更面;false=默认,面不进链 */
+  readonly sendViaProviders: boolean;
 }
 
 /** HR-WATCH-001 触发源模式(与 package.json kbengine.hotReload.triggerMode 枚举锁同步) */
@@ -141,6 +150,7 @@ export function readHotReloadSettings(reader: ConfigReader): HotReloadSettings {
     'batchPreviewThreshold',
     HOT_RELOAD_DEFAULT_BATCH_PREVIEW_THRESHOLD
   );
+  const sendViaProviders = reader.get<boolean>('sendViaProviders', false);
   const { globs, globsSpec } = readGlobs(reader.get<unknown>('globs', undefined));
   return {
     enabled: typeof enabled === 'boolean' ? enabled : true,
@@ -159,7 +169,8 @@ export function readHotReloadSettings(reader: ConfigReader): HotReloadSettings {
     batchPreviewThreshold:
       typeof batchPreviewThreshold === 'number' && batchPreviewThreshold >= 0
         ? batchPreviewThreshold
-        : HOT_RELOAD_DEFAULT_BATCH_PREVIEW_THRESHOLD
+        : HOT_RELOAD_DEFAULT_BATCH_PREVIEW_THRESHOLD,
+    sendViaProviders: typeof sendViaProviders === 'boolean' ? sendViaProviders : false
   };
 }
 
@@ -376,6 +387,12 @@ export interface SetupHotReloadOptions {
     readonly syntaxCheck?: SyntaxCheck;
   };
   /**
+   * HR-PR-08 fork 侧发送 provider 实现(注册时机=装配时,应答序=注入序
+   * 先到先应答,注入实现排在内置实现之前):重复 id/apiVersion 不符的
+   * 注册被如实拒并上日志,不静默替换。默认无注入=注册表只有内置实现。
+   */
+  readonly hotReloadProviders?: readonly HotReloadProvider[];
+  /**
    * 默认热更请求注入面(用户令 2026-11-06):未配 actionName 时保存即发
    * `POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`(body 同带
    * module_name=<模块名>,双带兼容不同服务端实现)。
@@ -510,6 +527,26 @@ export function setupHotReload(
       // VS Code 关闭期间提示 API 可能不可用,仍保持 watcher 回调安全。
     }
   };
+  // HR-PR-08 装配:发送 provider 宿主(注册时机=装配时;fork 侧注入实现
+  // 在前、内置 HTTP hotfix 实现在后=应答序 fork 专属优先;重复 id/apiVersion
+  // 不符如实拒并上日志,不静默收编;dispose 随复合释放清册)
+  const providerHost: HotReloadProviderHost = createHotReloadProviderHost({
+    providers: [
+      ...(options.hotReloadProviders ?? []),
+      ...(options.defaultHotfix
+        ? [
+            createHttpHotfixSendProvider({
+              transport: options.defaultHotfix.transport,
+              scriptRoot: options.defaultHotfix.resolveScriptRoot?.(),
+              isPackageDir: options.defaultHotfix.isPackageDir
+            })
+          ]
+        : [])
+    ],
+    onRejection: rejection => {
+      status.log(`热更 provider 注册被拒: ${rejection.providerId} (${rejection.reason})`);
+    }
+  });
   // HR-PR-04 接线:发送编排入口由「全局去抖 fire」改为「保存流水线波次出口」
   // ——定稿文件清单作为参数进来,状态/审计/闸/通道面编排逐字保留。
   const runFire = (triggers: string[]): void => {
@@ -597,10 +634,44 @@ export function setupHotReload(
           .then(meta => status.log(`文件元信息: ${formatFileChangeMeta(meta)}`), () => undefined);
       }
     };
+    // HR-PR-08 provider 插槽发送面(键开才进链):应答者胜,结果如实映射
+    // 既有状态/审计/指纹撤回面;无人应答(null=注册表空/全不应答)回落
+    // 既有默认热更面,不冒充、不空转。
+    const runViaProvider = (provider: HotReloadProvider): void => {
+      // .then 工厂起调:实现同步抛错也落拒绝分支(不在事件边界裸抛)
+      void Promise.resolve().then(() => provider.send({ targetId: '', files: triggers })).then(
+        result => {
+          annotateStaleResponses(triggers);
+          if (result.ok) {
+            status.setSentUnverified();
+            auditLine(`provider:${provider.providerId}`, triggers, `已发送${result.detail ? `——${result.detail}` : ''}`);
+            return;
+          }
+          forgetSentFailed(triggers);
+          status.setFailed(result.detail && result.detail.length > 0 ? result.detail : `provider ${provider.providerId} 发送失败`);
+          auditLine(`provider:${provider.providerId}`, triggers, `失败${result.detail ? `——${result.detail}` : ''}`);
+        },
+        (error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          forgetSentFailed(triggers);
+          status.setFailed(message);
+          auditLine(`provider:${provider.providerId}`, triggers, `失败——${message}`);
+        }
+      );
+    };
     const proceed = (): void => {
       if (settings.actionName.length === 0) {
         // 未配动作名不再空转(旧行为 setSkippedNoAction):改发默认热更请求。
         // 走到这里说明 def 结构闸已放行本批,结构性 def 变更照旧拦下不发。
+        // HR-PR-08:键开时先问发送 provider 注册表(应答者胜),无人应答
+        // 才落默认热更面;键关=面不进链,行为与既有完全一致。
+        if (settings.sendViaProviders) {
+          const provider = providerHost.registry.resolveSendProvider(buildEngineProfile({}));
+          if (provider) {
+            runViaProvider(provider);
+            return;
+          }
+        }
         runDefaultHotfix();
         return;
       }
@@ -1374,6 +1445,7 @@ export function setupHotReload(
       diskWatch?.dispose();
       diskWatch = undefined;
       diskScope = null;
+      providerHost.dispose();
       pipeline?.dispose();
       trigger.dispose();
       pendingOut.clear();
