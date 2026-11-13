@@ -345,5 +345,10 @@
   "kbengine.config.finalConfigView.enum.text": "text:合成只读 kbengine-final.xml 文本视图——每个元素内部带取证注释",
   "kbengine.command.mcp.toggle.title": "Toggle Kode MCP",
   "kbengine.config.mcp.enabled.description": "内置 Kode MCP 服务器定义开关（Built-in Kode MCP server definition toggle）。默认开启：扩展经 VS Code 原生 MCP API 注册 kode-mcp 服务器定义（每工作区文件夹一个，command=kode-mcp 二进制、args=[资产根]），装上即出现在 VS Code 的 MCP 服务器列表；状态栏 Kode MCP 项点击即切换。二进制未构建（扩展根下 bin/ 或 target/{debug,release} 无 kode-mcp）时不注册不硬造；需 VS Code ≥1.101 原生 MCP API，老版本自动回落为仅状态栏二进制探测\n\n默认值：开启（`true`）\n\n详见 [Kode MCP 启用指南](https://cuihairu.github.io/kode/guide/kode-mcp-enablement)",
-  "kbengine.mcp.provider.label": "Kode MCP (KBEngine project knowledge)"
+  "kbengine.mcp.provider.label": "Kode MCP (KBEngine project knowledge)",
+  "kbengine.config.hotReload.stabilityWindowMs.description": "写入稳定窗（HR-WATCH-007）：事件后先做两拍快照比对，两拍内容一致才判定写稳并发送；探测超过上限仍不稳则如实发送并标注原因。默认值：`0`（不做稳定等待，保存即刻走去抖链）；设为如 `200` 启用（毫秒）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#auto-hot-reload)",
+  "kbengine.config.hotReload.syntaxGate.description": "语法闸（HR-WATCH-012）：定稿后先经 Python 解释器 compile() 做全量语法检查（只编译不执行），语法错误的内容被拦下、不发送也不占版本号。检查器自身故障（解释器缺失/超时）一律放行并在热更通道记日志，绝不因检查器不可用拦热更。默认值：`false`（不检查，如实放行）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#auto-hot-reload)",
+  "kbengine.config.hotReload.batchFlushMs.description": "波次冲口（HR-WATCH-013）：同窗定稿的多个文件在波尾归集成一批发送（延迟=定稿后最多再加本窗）。默认值：`0`（定稿即汇入合并池，与既有全局去抖时序同感）；设为如 `300` 可让同窗多文件合并成单批（也是批量预览阈值生效的前提——阈值按批计数）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#auto-hot-reload)",
+  "kbengine.config.hotReload.batchPreviewThreshold.description": "批量预览阈值（HR-WATCH-016）：一波批次文件数超过此值时只滞留预览、不自动发送，用「KBEngine: 放行热更预览批次」命令显式放行；滞留期间新批次并入同批。默认值：`50`；设 `0` = 一律滞留预览（所有批次都要手动放行）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#auto-hot-reload)",
+  "kbengine.command.hotReload.releasePreview.title": "Release Hot Reload Preview Batch"
 }

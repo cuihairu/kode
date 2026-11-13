@@ -841,6 +841,16 @@ callgraph 模式面板支持：
   - 写回配置失败如实上报（日志 + 错误提示），不改状态机脸面
 
 
+### `kbengine.hotReload.releasePreview`
+
+- 标题：`Release Hot Reload Preview Batch`
+- 作用：显式放行预览滞留的热更批次(HR-WATCH-016 / HR-PR-04):`kbengine.hotReload.batchPreviewThreshold` 滞留批次后,不发送任何内容,直到本命令放行——滞留在日志可见(批量预览滞留 行,HR-WATCH-017 诊断面),放行是用户决定,绝不自动冲掉
+- 行为：
+  - 滞留批经合并池整批一次发出;滞留期间新批次并入同批,一次放行全发
+  - 无滞留时如实报告(没有滞留的热更预览批次),不假装放行
+  - 阈值按批计数,到阈值需先成批(`kbengine.hotReload.batchFlushMs > 0`);`batchPreviewThreshold: 0` = 一律滞留
+
+
 ### `kbengine.hotReload.showBatchSummary`
 
 - 标题：`Show Hot Reload Batch Summary`

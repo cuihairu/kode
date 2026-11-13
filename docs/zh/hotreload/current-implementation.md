@@ -284,3 +284,13 @@
 - HR-WATCH-002 钉死:未保存的缓冲编辑不进链(document-change 事件不接线——只有 watcher 磁盘事件进),onSave 范围=配置 globs 域(显式 glob 保存面钉+§13 磁盘面范围闸测试)。
 - 测试:`tests/hotReloadDiskWatchWiring.test.ts` +3 例(缺省模式不建磁盘面/切换建面拆面/未保存编辑不触发)、`tests/hotReload.test.ts` 读取面例(缺省、枚举容忍)、`tests/configMarkdownDescription.test.ts` 默认值锁。
 - 仍暂缓:余下流水线配置键(稳定窗/语法闸/波次窗/预览阈注入面——HR-WATCH-007/012/013/016 接线)与 revision 消费(stale 应答闸)。
+
+## 15. HR-PR-04 配置面增量（2026-11-13,流水线注入键落地）
+
+- 四键全部默认关=现有时序逐字节不变,配置才变:`kbengine.hotReload.stabilityWindowMs`(`0`=不做稳定等待;`>0` 注入快照读面——稳定路径两拍探测)、`kbengine.hotReload.syntaxGate`(`false`=不注入检查器)、`kbengine.hotReload.batchFlushMs`(`0`=定稿即汇入合并池;`>0` 起波次窗,同窗定稿归集成批)、`kbengine.hotReload.batchPreviewThreshold`(`50` 同纯核缺省;`0`=一律滞留是合法值不是错误)。
+- 真语法闸(HR-WATCH-012):`createPythonSyntaxGate`(装配核,零 vscode/child_process 导入)包 `runPythonCompile`——spawn 解释器跑 `compile(sys.stdin.read(), …)`(只编译不执行;内容走 stdin;stderr 末行作错误;5s 超时)。fail-open 策略:解释器解析不到/子进程故障/超时一律放行并至多记一次日志——绝不因检查器不可用拦热更;只有明确 `{ok:false}` 才拦。解释器随闸创建经 profile 解析器解析一次。
+- 内容流接缝:内容原本只在稳定路径流动,`窗 0`+闸开=闸是死面。`due()` 现按「读面已注入**且**(窗>0 **或** 闸开)」进快照路径,窗 0 分支单拍直取即定稿——闸拿到内容,该路径的去重指纹也拿到真哈希。
+- 预览滞留可见性+放行:流水线 `preview` 诊断面上热更通道日志(批量预览滞留);新命令 `kbengine.hotReload.releasePreview` 把滞留批经合并池整批一次发出,无滞留如实报空,命令注册在 composite 之前、随 composite 内部 dispose(恰一订阅契约不破)。
+- 测试:`tests/hotReloadConfigFaces.test.ts`(9 例装配钉:键关→替身想进也不进/键开→面进/闸拦下零后续计时器/波次窗单批单发/超阈滞留→日志+命令放行/空放行如实/真读面文件缺失如实删失)、`tests/hotReloadSavePipeline.test.ts`(+4:窗 0 拦截、窗 0 放行带哈希去重、异步检查器拦截不占 revision、缺省无面钉;harness 面改 opt-in,旧无面路径逐字节不变)、`tests/hotReload.test.ts` 容忍式读取例。
+- 文档对账:NLS 双语言(带配置指南链接)、features.md Settings 行 en+zh、configuration.md 指南行 en+zh、commands.md `kbengine.hotReload.releasePreview` 小节 en+zh、config-description 默认值锁。
+- 仍暂缓:revision 消费面(stale 应答闸)、profile capabilities/路径 allow-deny 规则(HR-WATCH-013,HR-MOD-006 同因)、在途请求取消策略(HR-WATCH-014)。

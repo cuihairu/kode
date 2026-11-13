@@ -118,7 +118,11 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       globs: [],
       globsSpec: 'unset',
       debounceMs: 500,
-      triggerMode: 'onSave'
+      triggerMode: 'onSave',
+      stabilityWindowMs: 0,
+      syntaxGate: false,
+      batchFlushMs: 0,
+      batchPreviewThreshold: 50
     });
     // §11.1:未写 globs 不再回落裸 `**/*.py`(旧默认会全工作区扫),
     // 空表 + spec=unset 交给 assetsRoot 派生(见 hotReloadAssetsRootWatch)
@@ -141,7 +145,11 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       globs: ['**/*.py', '**/*.def'],
       globsSpec: 'explicit',
       debounceMs: 0,
-      triggerMode: 'onSave'
+      triggerMode: 'onSave',
+      stabilityWindowMs: 0,
+      syntaxGate: false,
+      batchFlushMs: 0,
+      batchPreviewThreshold: 50
     });
   });
 
@@ -161,7 +169,11 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       globs: [],
       globsSpec: 'unset',
       debounceMs: 500,
-      triggerMode: 'onSave'
+      triggerMode: 'onSave',
+      stabilityWindowMs: 0,
+      syntaxGate: false,
+      batchFlushMs: 0,
+      batchPreviewThreshold: 50
     });
     // 非数字不硬转:字符串去抖值同样回落默认
     expect(readHotReloadSettings(readerOf({ debounceMs: '500' }))).toMatchObject({
@@ -186,9 +198,12 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       actionName: '',
       globs: ['**/*.def'],
       globsSpec: 'explicit',
-      debounceMs: 500
- ,
-      triggerMode: 'onSave'
+      debounceMs: 500,
+      triggerMode: 'onSave',
+      stabilityWindowMs: 0,
+      syntaxGate: false,
+      batchFlushMs: 0,
+      batchPreviewThreshold: 50
     });
     // 用户碰过 globs 字段(哪怕全是空项)= 显式空 → 不监视,既不回落旧默认
     // `**/*.py`,也不交给 assetsRoot 派生(§11.1 empty-globs 关法)
@@ -197,10 +212,42 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       actionName: '',
       globs: [],
       globsSpec: 'explicit',
-      debounceMs: 500
- ,
-      triggerMode: 'onSave'
+      debounceMs: 500,
+      triggerMode: 'onSave',
+      stabilityWindowMs: 0,
+      syntaxGate: false,
+      batchFlushMs: 0,
+      batchPreviewThreshold: 50
     });
+  });
+
+  it('流水线注入面四键(HR-WATCH-007/012/013/016):容忍式读取,类型错/负值回落默认', () => {
+    // 合法值原样回显(stabilityWindowMs>0/语法闸开/波次窗>0/阈值合法)
+    expect(
+      readHotReloadSettings(
+        readerOf({ stabilityWindowMs: 200, syntaxGate: true, batchFlushMs: 300, batchPreviewThreshold: 1 })
+      )
+    ).toMatchObject({
+      stabilityWindowMs: 200,
+      syntaxGate: true,
+      batchFlushMs: 300,
+      batchPreviewThreshold: 1
+    });
+    // 类型错/负值一律回落默认(窗 0=不做稳定等待;闸 false=不拦;冲口 0=定稿即汇合并池;阈 50=纯核缺省)
+    for (const bad of ['200', -1, null, true]) {
+      const mixed = readHotReloadSettings(
+        readerOf({ stabilityWindowMs: bad, batchFlushMs: bad, batchPreviewThreshold: bad })
+      );
+      expect(mixed.stabilityWindowMs).toBe(0);
+      expect(mixed.batchFlushMs).toBe(0);
+      expect(mixed.batchPreviewThreshold).toBe(50);
+    }
+    // 闸是布尔键:`true` 是合法值原样通过;非布尔才回落 false
+    for (const badGate of ['true', 1, null]) {
+      expect(readHotReloadSettings(readerOf({ syntaxGate: badGate })).syntaxGate).toBe(false);
+    }
+    // 阈值 0 是合法值(纯核语义=一律滞留预览全批次),不当作类型错回落
+    expect(readHotReloadSettings(readerOf({ batchPreviewThreshold: 0 })).batchPreviewThreshold).toBe(0);
   });
 });
 

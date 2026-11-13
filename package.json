@@ -1042,6 +1042,10 @@
       {
         "command": "kbengine.mcp.toggle",
         "title": "%kbengine.command.mcp.toggle.title%"
+      },
+      {
+        "command": "kbengine.hotReload.releasePreview",
+        "title": "%kbengine.command.hotReload.releasePreview.title%"
       }
     ],
     "menus": {
@@ -2084,7 +2088,10 @@
         },
         "kbengine.hotReload.triggerMode": {
           "type": "string",
-          "enum": ["onSave", "onDiskChange"],
+          "enum": [
+            "onSave",
+            "onDiskChange"
+          ],
           "default": "onSave",
           "markdownDescription": "%kbengine.config.hotReload.triggerMode.description%",
           "markdownEnumDescriptions": [
@@ -2211,6 +2218,26 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "%kbengine.config.mcp.enabled.description%"
+        },
+        "kbengine.hotReload.stabilityWindowMs": {
+          "type": "number",
+          "default": 0,
+          "markdownDescription": "%kbengine.config.hotReload.stabilityWindowMs.description%"
+        },
+        "kbengine.hotReload.syntaxGate": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%kbengine.config.hotReload.syntaxGate.description%"
+        },
+        "kbengine.hotReload.batchFlushMs": {
+          "type": "number",
+          "default": 0,
+          "markdownDescription": "%kbengine.config.hotReload.batchFlushMs.description%"
+        },
+        "kbengine.hotReload.batchPreviewThreshold": {
+          "type": "number",
+          "default": 50,
+          "markdownDescription": "%kbengine.config.hotReload.batchPreviewThreshold.description%"
         }
       }
     },

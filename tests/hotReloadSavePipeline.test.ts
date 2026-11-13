@@ -91,9 +91,19 @@ interface Harness {
   readBehavior: (file: string) => Snapshot | null;
   /** 语法闸判定(默认通过);测试改写以拦截 */
   syntaxVerdict: { ok: boolean; errors?: string[] };
+  /** 语法闸异步面钉:置真后检查器返回 Promise(真解释器编译形态) */
+  syntaxAsync: boolean;
 }
 
-const makePipeline = (overrides: Partial<HotReloadSavePipelineOptions> = {}): Harness => {
+const makePipeline = (
+  overrides: Partial<HotReloadSavePipelineOptions> = {},
+  faces: { withSnapshot?: boolean; withChecker?: boolean } = {}
+): Harness => {
+  // 注入面按需挂载(与真装配同形:键关/窗 0 =面不进,核如实不读不检):
+  // 稳定窗>0 必带快照读;窗 0 但显式 withSnapshot(=语法闸内容面)才读;
+  // 检查器只随 withChecker 进(缺省装配无检查器,如实不拦)
+  const wantSnapshot = faces.withSnapshot === true || (overrides.stabilityWindowMs ?? 0) > 0;
+  const wantChecker = faces.withChecker === true;
   const clock = new VirtualTime();
   const emitted: Emitted[] = [];
   const diagnostics: SavePipelineDiagnostic[] = [];
@@ -109,6 +119,7 @@ const makePipeline = (overrides: Partial<HotReloadSavePipelineOptions> = {}): Ha
     disk,
     readBehavior: file => disk.get(file) ?? null,
     syntaxVerdict: { ok: true },
+    syntaxAsync: false,
     // 装配完成后回填(pipeline 构造需要 harness 的行为面,harness 引用 pipeline)
     pipeline: undefined as unknown as HotReloadSavePipeline
   };
@@ -120,11 +131,20 @@ const makePipeline = (overrides: Partial<HotReloadSavePipelineOptions> = {}): Ha
     ...overrides,
     timers: overrides.timers ?? clock.timerDeps,
     now: overrides.now ?? (() => clock.now()),
-    readSnapshot: async file => {
-      readCalls.push(file);
-      return harness.readBehavior(file);
-    },
-    checkSyntax: () => harness.syntaxVerdict,
+    ...(wantSnapshot
+      ? {
+          readSnapshot: async (file: string) => {
+            readCalls.push(file);
+            return harness.readBehavior(file);
+          }
+        }
+      : {}),
+    ...(wantChecker
+      ? {
+          checkSyntax: () =>
+            harness.syntaxAsync ? Promise.resolve(harness.syntaxVerdict) : harness.syntaxVerdict
+        }
+      : {}),
     targetOf: file => targets.get(file) ?? '',
     onDiagnostic: diagnostic => {
       diagnostics.push(diagnostic);
@@ -388,7 +408,7 @@ describe('HR-WATCH-008 投递指纹生命周期(失败不永久跳过)', () => {
 
 describe('HR-WATCH-012 语法闸(注入检查器不通过即拦)', () => {
   it('检查不通过:blocked,不发送半成品', async () => {
-    const h = makePipeline({ stabilityWindowMs: 200 });
+    const h = makePipeline({ stabilityWindowMs: 200 }, { withChecker: true });
     h.disk.set('/ws/a.py', { hash: 'h1', content: 'def broken(' });
     h.syntaxVerdict = { ok: false, errors: ['line 1: SyntaxError: unexpected EOF'] };
     h.pipeline.offer('/ws/a.py', 'save');
@@ -400,7 +420,7 @@ describe('HR-WATCH-012 语法闸(注入检查器不通过即拦)', () => {
   });
 
   it('拦截不占版本号:被拦版本不递增,首发即 revision=1(HR-WATCH-011 不被误判 stale)', async () => {
-    const h = makePipeline({ stabilityWindowMs: 200 });
+    const h = makePipeline({ stabilityWindowMs: 200 }, { withChecker: true });
     h.disk.set('/ws/a.py', { hash: 'h1', content: 'def broken(' });
     h.syntaxVerdict = { ok: false, errors: ['line 1: bad'] };
     h.pipeline.offer('/ws/a.py', 'save');
@@ -603,5 +623,67 @@ describe('HR-WATCH-017 诊断事件(全量可注入观察)', () => {
     expect(h.pipeline.pendingFiles()).toHaveLength(0);
     const filtered = h.diagnostics.filter(d => d.type === 'filtered');
     expect(filtered).toHaveLength(2);
+  });
+});
+
+describe('HR-WATCH-012 语法闸·窗 0 内容面(单拍直取,闸不死面)', () => {
+  it('窗 0+快照读:单拍读即定稿,闸收到真实内容并拦下(不读两次,无稳定窗 sleep)', async () => {
+    const h = makePipeline({ stabilityWindowMs: 0 }, { withSnapshot: true, withChecker: true });
+    h.disk.set('/ws/a.py', { hash: 'h1', content: 'def broken(' });
+    h.syntaxVerdict = { ok: false, errors: ['SyntaxError: bad'] };
+    h.pipeline.offer('/ws/a.py', 'save');
+    await h.clock.advance(100); // 到期 → 单拍读 → 定稿带内容 → 闸拦
+    await h.clock.advance(50); // 波次冲口(空)
+    expect(h.emitted).toHaveLength(0);
+    const blocked = h.diagnostics.find(d => d.type === 'blocked');
+    expect(blocked?.uri).toBe('/ws/a.py');
+    expect(blocked?.detail).toContain('SyntaxError');
+    expect(h.readCalls).toHaveLength(1); // 单拍一次读(窗 0 不做稳定等待)
+  });
+
+  it('窗 0+闸通过:发出且带真实哈希;同内容再发被去重(哈希面随读接通)', async () => {
+    const h = makePipeline({ stabilityWindowMs: 0 }, { withSnapshot: true, withChecker: true });
+    h.disk.set('/ws/a.py', { hash: 'h1', content: 'x=1' });
+    h.pipeline.offer('/ws/a.py', 'save');
+    await h.clock.advance(100);
+    await h.clock.advance(50);
+    expect(h.emitted).toHaveLength(1);
+    expect(h.emitted[0].events[0].diskHash).toBe('h1');
+    h.pipeline.offer('/ws/a.py', 'save'); // 同内容再发(新去抖窗)
+    await h.clock.advance(100);
+    await h.clock.advance(50);
+    expect(h.emitted).toHaveLength(1); // 去重拦下
+    expect(h.diagnostics.some(d => d.type === 'deduped' && d.uri === '/ws/a.py')).toBe(true);
+  });
+
+  it('异步检查器(HR-WATCH-012 异步面):Promise 判定拦下,微任务后续言不串批', async () => {
+    const h = makePipeline({ stabilityWindowMs: 200 }, { withChecker: true });
+    h.syntaxAsync = true;
+    h.disk.set('/ws/a.py', { hash: 'h1', content: 'def broken(' });
+    h.syntaxVerdict = { ok: false, errors: ['SyntaxError: async'] };
+    h.pipeline.offer('/ws/a.py', 'save');
+    await h.clock.advance(100); // 到期 → 第一拍
+    await h.clock.advance(200); // 第二拍一致 → 定稿 → await 异步判定
+    await h.clock.advance(50);
+    expect(h.emitted).toHaveLength(0); // Promise 判定同样拦下
+    expect(h.diagnostics.some(d => d.type === 'blocked')).toBe(true);
+    h.syntaxVerdict = { ok: true };
+    h.pipeline.offer('/ws/a.py', 'save');
+    await h.clock.advance(100);
+    await h.clock.advance(200);
+    await h.clock.advance(50);
+    expect(h.emitted).toHaveLength(1); // 通过后照发
+    expect(h.emitted[0].events[0].revision).toBe(1); // 拦截不占号
+  });
+
+  it('缺省装配形态(无读无检):定稿空哈希直发,全程不触快照(现有时序不变)', async () => {
+    const h = makePipeline({ stabilityWindowMs: 0 });
+    h.pipeline.offer('/ws/a.py', 'save');
+    await h.clock.advance(100);
+    await h.clock.advance(50);
+    expect(h.emitted).toHaveLength(1);
+    expect(h.emitted[0].events[0].diskHash).toBe(''); // 无读面=无哈希(如实)
+    expect(h.readCalls).toHaveLength(0);
+    expect(h.diagnostics.some(d => d.type === 'blocked')).toBe(false);
   });
 });

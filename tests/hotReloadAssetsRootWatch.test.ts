@@ -257,7 +257,11 @@ describe('readHotReloadSettings globs 口径', () => {
       globs: [],
       globsSpec: 'unset',
       debounceMs: 500,
-      triggerMode: 'onSave'
+      triggerMode: 'onSave',
+      stabilityWindowMs: 0,
+      syntaxGate: false,
+      batchFlushMs: 0,
+      batchPreviewThreshold: 50
     });
   });
 

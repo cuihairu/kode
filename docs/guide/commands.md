@@ -873,6 +873,16 @@ The flow graph panel supports:
   - A failed configuration write is reported honestly (log + error notification) and leaves the status machine face untouched
 
 
+### `kbengine.hotReload.releasePreview`
+
+- Title: `Release Hot Reload Preview Batch`
+- Purpose: explicitly release the preview-held hot-reload batch (HR-WATCH-016 / HR-PR-04): once `kbengine.hotReload.batchPreviewThreshold` holds a wave batch, nothing sends until this command releases it — the hold is visible in the log (批量预览滞留 line, HR-WATCH-017 diagnostic) and the release is a user decision, never an automatic flush
+- Behavior:
+  - The held batch goes out through the merge pool as one fire (the whole batch in a single send); batches that arrive while held merge into the same hold, so one release sends all of them
+  - With nothing held the command reports honestly (没有滞留的热更预览批次) and sends nothing
+  - The threshold counts per batch, so reaching it requires wave batching (`kbengine.hotReload.batchFlushMs > 0`); `batchPreviewThreshold: 0` holds every batch
+
+
 ### `kbengine.hotReload.showBatchSummary`
 
 - Title: `Show Hot Reload Batch Summary`

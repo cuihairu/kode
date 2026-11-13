@@ -32,6 +32,10 @@ import type { ReloadTransport } from './backend/hotReloadTransport';
 import type { HttpTransport } from './backend/httpRequestService';
 import type { PackageDirProbe } from './backend/httpRequests';
 import { HotReloadSavePipeline } from './backend/hotReloadSavePipeline';
+import type { FileSnapshot, SyntaxCheck } from './backend/hotReloadSavePipeline';
+import { createPythonSyntaxGate } from './backend/hotReloadSyntaxGate';
+import { runPythonCompile } from './hotReloadPythonCompile';
+import { resolveProfileInterpreter } from './profileInterpreter';
 import {
   HotReloadDiskWatchController,
   type DiskWatchDiagnostic,
@@ -83,12 +87,23 @@ export interface HotReloadSettings {
   /** HR-WATCH-001 触发源模式:onSave(默认推荐,watcher 写盘事件)/
    *  onDiskChange(另建按根磁盘监视,外部改动/生成/Git checkout 进同一链) */
   readonly triggerMode: HotReloadTriggerMode;
+  /** HR-WATCH-007 写入稳定窗(两拍快照一致才发);0=不做稳定等待(缺省) */
+  readonly stabilityWindowMs: number;
+  /** HR-WATCH-012 语法闸(解释器 compile 全量检查);false=不检查如实放行 */
+  readonly syntaxGate: boolean;
+  /** HR-WATCH-013 波次冲口(同窗定稿归集成批);0=定稿即汇合并池(缺省) */
+  readonly batchFlushMs: number;
+  /** HR-WATCH-016 批量预览阈值(波批文件数超此值只滞留预览,命令放行) */
+  readonly batchPreviewThreshold: number;
 }
 
 /** HR-WATCH-001 触发源模式(与 package.json kbengine.hotReload.triggerMode 枚举锁同步) */
 export type HotReloadTriggerMode = 'onSave' | 'onDiskChange';
 
 export const HOT_RELOAD_DEFAULT_TRIGGER_MODE: HotReloadTriggerMode = 'onSave';
+
+/** HR-WATCH-016 批量预览阈值缺省(与流水线纯核缺省同值) */
+export const HOT_RELOAD_DEFAULT_BATCH_PREVIEW_THRESHOLD = 50;
 
 /** 配置读取口:与 vscode.ConfigurationShape 同形,测试用内存替身驱动 */
 export interface ConfigReader {
@@ -119,6 +134,13 @@ export function readHotReloadSettings(reader: ConfigReader): HotReloadSettings {
   const actionName = reader.get<string>('actionName', '');
   const debounceMs = reader.get<number>('debounceMs', HOT_RELOAD_DEFAULT_DEBOUNCE_MS);
   const triggerMode = reader.get<string>('triggerMode', HOT_RELOAD_DEFAULT_TRIGGER_MODE);
+  const stabilityWindowMs = reader.get<number>('stabilityWindowMs', 0);
+  const syntaxGate = reader.get<boolean>('syntaxGate', false);
+  const batchFlushMs = reader.get<number>('batchFlushMs', 0);
+  const batchPreviewThreshold = reader.get<number>(
+    'batchPreviewThreshold',
+    HOT_RELOAD_DEFAULT_BATCH_PREVIEW_THRESHOLD
+  );
   const { globs, globsSpec } = readGlobs(reader.get<unknown>('globs', undefined));
   return {
     enabled: typeof enabled === 'boolean' ? enabled : true,
@@ -128,9 +150,30 @@ export function readHotReloadSettings(reader: ConfigReader): HotReloadSettings {
     debounceMs:
       typeof debounceMs === 'number' && debounceMs >= 0 ? debounceMs : HOT_RELOAD_DEFAULT_DEBOUNCE_MS,
     // 容忍式:枚举外的写法(含写坏类型)一律回落默认 onSave,不猜半态
-    triggerMode: triggerMode === 'onDiskChange' ? 'onDiskChange' : HOT_RELOAD_DEFAULT_TRIGGER_MODE
+    triggerMode: triggerMode === 'onDiskChange' ? 'onDiskChange' : HOT_RELOAD_DEFAULT_TRIGGER_MODE,
+    // 容忍式数值面:类型写坏/负值一律回落默认,配置写坏不拖垮装配
+    stabilityWindowMs:
+      typeof stabilityWindowMs === 'number' && stabilityWindowMs >= 0 ? stabilityWindowMs : 0,
+    syntaxGate: typeof syntaxGate === 'boolean' ? syntaxGate : false,
+    batchFlushMs: typeof batchFlushMs === 'number' && batchFlushMs >= 0 ? batchFlushMs : 0,
+    batchPreviewThreshold:
+      typeof batchPreviewThreshold === 'number' && batchPreviewThreshold >= 0
+        ? batchPreviewThreshold
+        : HOT_RELOAD_DEFAULT_BATCH_PREVIEW_THRESHOLD
   };
 }
+
+/** HR-WATCH-007 稳定窗快照读(真实现):workspace.fs 读全文+sha256;读不到
+ *  (已删除/不可读)如实 null,核按删失丢弃,不猜内容 */
+const readScriptSnapshot = async (file: string): Promise<FileSnapshot | null> => {
+  try {
+    const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(file));
+    const content = Buffer.from(bytes).toString('utf8');
+    return { hash: createHash('sha256').update(content).digest('hex'), content };
+  } catch {
+    return null;
+  }
+};
 
 /** 路径归一成 glob 用正斜杠并去尾斜杠(Windows 反斜杠一并归一) */
 const normalizePathForGlob = (value: string): string => value.replace(/\\/g, '/').replace(/\/+$/, '');
@@ -322,6 +365,17 @@ export interface SetupHotReloadOptions {
   /** 时钟注入口(测试用);缺省真 Date.now,用于 applied 核验窗口结算 */
   readonly now?: () => number;
   /**
+   * HR-PR-04 流水线注入面替身(测试用):稳定窗快照读与语法闸的真实现
+   * (workspace.fs 读/解释器 compile)在这里被替身顶替;不注入=真实现。
+   * 对应配置键开关面照常生效(窗 0/闸关=不注入任何面,替身也不进)。
+   */
+  readonly pipelineFaces?: {
+    /** HR-WATCH-007 快照读替身(真实现=workspace.fs 读+sha256) */
+    readonly readSnapshot?: (file: string) => Promise<FileSnapshot | null>;
+    /** HR-WATCH-012 语法闸替身(真实现=解释器 compile 门,fail-open) */
+    readonly syntaxCheck?: SyntaxCheck;
+  };
+  /**
    * 默认热更请求注入面(用户令 2026-11-06):未配 actionName 时保存即发
    * `POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`(body 同带
    * module_name=<模块名>,双带兼容不同服务端实现)。
@@ -417,7 +471,7 @@ export interface HotReloadSendOptions {
 
 /**
  * 装配自动热重载。context.subscriptions 只挂一条复合 disposable:
- * 配置变更监听、watcher 拆建与状态栏项随其一并释放。默认关时不建任何
+ * 配置变更监听、watcher 拆建、预览放行命令与状态栏项随其一并释放。默认关时不建任何
  * watcher(激活与既有装配断言不受影响),把配置改成开才按 globs 各建一个
  * watcher。状态栏节流走真 setTimeout(与注入的测试计时器隔离,不污染
  * 去抖 pending 计数);点击状态栏项开「KBEngine 热更」日志通道。
@@ -852,12 +906,14 @@ export function setupHotReload(
 
   // HR-PR-04 接线(HR-WATCH 纯核→live 触发链),两级形态:
   // ①进料级 HotReloadSavePipeline——每文件尾窗去抖(同文件连发归并)、
-  //   max-delay 封顶、去重指纹/版本号册内建;稳定窗与语法闸随注入面启用
-  //   (未注入=如实不做,不猜)。0 冲口=定稿即汇入合并池。
+  //   max-delay 封顶、去重指纹/版本号册内建;稳定窗(HR-WATCH-007)/语法闸
+  //   (HR-WATCH-012)/波次冲口(HR-WATCH-013)/预览阈(HR-WATCH-016)随配置
+  //   键启用(键关=如实不做,不猜;替身经 pipelineFaces 只在键开时顶替)。
+  //   0 冲口=定稿即汇入合并池(缺省时序不变)。
   // ②合并窗 HotReloadTrigger(既有全局去抖,与旧时序同感)——把同窗定稿
   //   合成一批交给发送编排。def 结构闸「整批拦下」契约依赖同批共见,逐文件
-  //   直发会让混批里的 py 绕过闸,故合并窗必须在 fire 前兜住整批;纯核波次
-  //   窗(batchFlushMs)为配置面子批预留,届时可接管本合并窗。
+  //   直发会让混批里的 py 绕过闸,故合并窗必须在 fire 前兜住整批;波次窗
+  //   (>0)在进料级先归集,合并窗仍兜整批(双层窗,延迟如实叠加)。
   // 同刻时序:offer 先排流水线去抖、后排合并窗,虚拟/真定时器都按插入序
   // 先定稿后合并,单拍(测试 tick)内即完成「定稿→合并→fire」。
   const pendingOut = new Set<string>();
@@ -870,10 +926,37 @@ export function setupHotReload(
     runFire(triggers);
   }, timers);
   let pipeline: HotReloadSavePipeline | undefined;
-  const buildPipeline = (debounceMs: number): HotReloadSavePipeline =>
+  // HR-WATCH-012 真语法闸:解释器解析一次随面建立(venv 深扫不进热更链路);
+  // 配置面重建 apply 时闸随建,解释器变更自然刷新
+  const buildRealSyntaxGate = (): SyntaxCheck =>
+    createPythonSyntaxGate({
+      resolveInterpreter: () => resolveProfileInterpreter().interpreterPath,
+      compile: runPythonCompile,
+      onUnavailable: reason => {
+        status.log(`热更语法闸不可用: ${reason}`);
+      }
+    });
+  const buildPipeline = (current: HotReloadSettings): HotReloadSavePipeline =>
     new HotReloadSavePipeline({
-      debounceMs,
-      batchFlushMs: 0,
+      debounceMs: current.debounceMs,
+      stabilityWindowMs: current.stabilityWindowMs,
+      batchFlushMs: current.batchFlushMs,
+      batchPreviewThreshold: current.batchPreviewThreshold,
+      // HR-WATCH-007/012 快照读:稳定窗>0(两拍比对)或语法闸开(内容面)
+      // 才注入——闸没有内容就是死面,如实接通;窗 0 时核单拍直取内容
+      ...(current.stabilityWindowMs > 0 || current.syntaxGate
+        ? { readSnapshot: options.pipelineFaces?.readSnapshot ?? readScriptSnapshot }
+        : {}),
+      // HR-WATCH-012 语法闸:开关开启才注入(检查器故障放行,不拦热更)
+      ...(current.syntaxGate
+        ? { checkSyntax: options.pipelineFaces?.syntaxCheck ?? buildRealSyntaxGate() }
+        : {}),
+      // HR-WATCH-016 滞留可见性:预览滞留必须上日志,否则放行命令无从发现
+      onDiagnostic: diagnostic => {
+        if (diagnostic.type === 'preview') {
+          status.log(`热更批量预览滞留: ${diagnostic.detail}`);
+        }
+      },
       timers,
       now,
       onEmit: events => {
@@ -884,10 +967,27 @@ export function setupHotReload(
         // 定稿晚到(稳定窗/封顶延迟的边缘路径)时才由这里补排,晚到文件
         // 随下一批走,不丢
         if (!trigger.pending()) {
-          trigger.schedule(debounceMs);
+          trigger.schedule(current.debounceMs);
         }
       }
     });
+
+  // HR-WATCH-016 预览放行命令:闭锁 pipeline 变量,随 apply 重建仍操作当前
+  // 实例;滞留为空时如实报空,不假装放行。滞留面上日志(见 buildPipeline
+  // 的 onDiagnostic),命令入口从命令面板可达。命令随复合 disposable 一并
+  // 释放(subscriptions 只挂一条复合,见函数头注)。
+  const releasePreviewCommand = vscode.commands.registerCommand(
+    'kbengine.hotReload.releasePreview',
+    () => {
+      const held = pipeline?.previewHeldFiles() ?? [];
+      if (held.length === 0) {
+        void vscode.window.showInformationMessage('没有滞留的热更预览批次');
+        return;
+      }
+      pipeline?.releasePreview();
+      void vscode.window.showInformationMessage(`已放行热更预览批次(${held.length} 文件)`);
+    }
+  );
 
   // HR-PR-05 磁盘侧接线面(HR-WATCH-003/005/015):注入 watcher 工厂才建。
   // 事件与 save 同链汇流(版本簿→流水线→合并窗),source='disk-change' 与
@@ -1075,7 +1175,7 @@ export function setupHotReload(
     pendingOut.clear();
     const inputs = readWatchInputs();
     const { settings, workspaceRoot, assetsRoot } = inputs;
-    pipeline = buildPipeline(settings.debounceMs);
+    pipeline = buildPipeline(settings);
     lastWatchSignature = watchSignatureOf(inputs);
     const plan = planHotReloadWatch({
       enabled: settings.enabled,
@@ -1183,6 +1283,7 @@ export function setupHotReload(
   });
   context.subscriptions.push({
     dispose: (): void => {
+      releasePreviewCommand.dispose();
       subscription.dispose();
       unsubscribeBypass();
       bypassMerger.dispose();

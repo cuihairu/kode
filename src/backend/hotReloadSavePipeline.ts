@@ -87,8 +87,12 @@ export interface FileSnapshot {
   readonly content: string;
 }
 
-/** 轻量语法检查注入面(HR-WATCH-012):检查器本体由装配决定,不通过即拦 */
-export type SyntaxCheck = (content: string) => { readonly ok: boolean; readonly errors?: readonly string[] };
+/** 语法闸判定形状(HR-WATCH-012):ok=false 即拦,errors 逐条进诊断 */
+export type SyntaxVerdict = { readonly ok: boolean; readonly errors?: readonly string[] };
+
+/** 轻量语法检查注入面(HR-WATCH-012):检查器本体由装配决定,不通过即拦;
+ *  同步判定或 Promise 判定皆可(真解释器编译是异步面)。 */
+export type SyntaxCheck = (content: string) => SyntaxVerdict | Promise<SyntaxVerdict>;
 
 /** 阵列输出模式:auto=直接发;preview-release=预览放行(HR-WATCH-016) */
 export type SavePipelineEmitMode = 'auto' | 'preview-release';
@@ -392,7 +396,9 @@ export class HotReloadSavePipeline {
     if (!entry || this.disposed || this.settling.has(uri)) {
       return;
     }
-    if (this.stabilityWindowMs > 0 && this.readSnapshot) {
+    // 快照读面服务两件事:稳定窗两拍比对(窗>0)与语法闸的内容面(窗=0 时
+    // 单拍直取内容——闸没有内容就是死面,如实接通)。两者都不需要时不读。
+    if (this.readSnapshot && (this.stabilityWindowMs > 0 || this.checkSyntax)) {
       await this.awaitStable(uri, entry, 0);
       return;
     }
@@ -417,6 +423,12 @@ export class HotReloadSavePipeline {
       if (first === null || first === undefined) {
         this.pending.delete(uri);
         this.diagnostic({ type: 'filtered', uri, detail: '读不到快照(已删除/不可读),丢弃' });
+        return;
+      }
+      if (this.stabilityWindowMs === 0) {
+        // 窗 0=不做稳定等待(单拍直取内容):读一次即定稿——语法闸的内容面
+        // 由此送达(闸没有内容就是死面);真实哈希也进去重指纹面
+        await this.settle(uri, entry, first.hash, first.content);
         return;
       }
       await this.sleep(this.stabilityWindowMs);
@@ -463,9 +475,14 @@ export class HotReloadSavePipeline {
     }
     this.pending.delete(uri);
     const targetId = this.targetOf(uri);
-    // 语法闸只检一次(HR-WATCH-012):不通过即拦,不默认发送半成品
+    // 语法闸只检一次(HR-WATCH-012):不通过即拦,不默认发送半成品。
+    // 异步检查器(真解释器编译)在此等待;期间 dispose 由 flushWave 的
+    // disposed 守卫兜住(不假发),再 offer 走全新 pending 条目不串批
     if (this.checkSyntax && content.length > 0) {
-      const verdict = this.checkSyntax(content);
+      const verdict = await this.checkSyntax(content);
+      if (this.disposed) {
+        return;
+      }
       if (!verdict.ok) {
         const errors = verdict.errors ?? [];
         this.diagnostic({
