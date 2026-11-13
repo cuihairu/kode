@@ -38,7 +38,13 @@
 //!   模块对应面表,本地真身=plain Python 派发、def 同面声明缀附;
 //!   def + Python 实现双跳转,歧义多候选全列;类未知/面缺声明/槽缺失
 //!   一律 Unknown 带因不硬造)。
+//! - [`callers`] RPC-07 特殊 caller 规则(EXPOSED_AND_CALLER_CHECK 四语境
+//!   分开:传输/调用点恒按 def 声明位——callerID 不上流、调用点永不传;
+//!   实现位仅 cellapp cell 段 exposed 注入恰多一参;启动对账 exposed+1
+//!   升级/其余拒;base·client 段实现+1=静默升级但运行时必 TypeError;
+//!   expected_arity 按侧取数,两侧共用一个数必出一向误报)。
 
+pub mod callers;
 pub mod cell;
 pub mod dispatch;
 pub mod refs;
