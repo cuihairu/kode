@@ -1960,3 +1960,47 @@
 - [x] 实现 def Arg 文本到 `SemType` 的转换桥（`crates/kode-server/src/semantics/rpcargs.rs:78`）—— 打通真实 RPC 参数检查链并避免默认 PYTHON 过宽。【2026-11-13 收口 5224a257:`arg_text_to_sem_type(text, graph)`=两端 trim+内建直映(无图)+有图走 `from_type_graph` 递归(alias/ARRAY/FIXED_DICT/UserType→Entity);红线=无图未识别 `Unknown("unresolved:名;type-graph-missing")` 绝不默认 PYTHON(可 pickle 全接受,默认它=吞光 mismatch)、显式 `<Arg>PYTHON</Arg>` 才合法;+10 测试含端到端喂 `check_rpc_args`(UINT32 过/int→FLOAT 引擎真值不符/未识别位 Unknown);prove-red 三发=默认 PYTHON 2 红/去 trim 1 红/抹图臂 4 红,恢复 diff 字节一致;首轮快照误拍写测试前致变异恢复回滚新测试(14 passed 假象)已纠=重拍重发,细节 docs/review/2026-11-13-rpcargs-arg-text-bridge.md;门禁 clippy 0+cargo 1189 过 0 败 55 套件+tsc 0+lint 0+vitest RC=0+xvfb demo 25 RC=0】
 - [x] 将 `PYTHON_RECEIVER_SECTIONS` 改为按 caller face/entity owner 的逐面语义表（`src/backend/pythonLanguageUtils.ts:66`）—— 消除与 `bind_self_role` 的矛盾和跨实体误对账。【2026-11-13 收口 d634ae42:九面表落地=pythonLanguageUtils 新 PythonCallerFace+PYTHON_RECEIVER_FACES(引擎 getter 表 bind_self_role 同源:baseapp .cell/.client、cellapp .base/.client(CLIENT_VIA_BASE→ClientMethods)、client .base/.cell;同面无此属性→null)+pythonReceiverSectionFor(面未知保旧口径);面上无效引用(baseapp self.base/cellapp self.cell/client self.client)=AttributeError,从 receiver-none/段错配/RPC 实参数三 lane 发现面滤除(别名使用点同闸),不再当合法派发对账 def 段;receiverNoneRust RPC 契约加 callerFace,Rust receiver_none.rs receiver_not_on_face 循环头同闸;导航/展示面(hover/F12/CodeLens/inlay)不传 face 零行为变化=辅助面不是断言面;+15 测试例,真二进制 parity harness 两侧同喂 face(mock-vs-wire);真回归两起=闸生效活证据(covDiagnosticsFindings fixture self.base 在 base 文件误报→改 self.cell.cellMove 面对齐;parity 漂移=harness 未带 face);prove-red 三发=表翻格 8 红/滤除回落 6 红/Rust 闸抹除 1 红,恢复 diff 字节一致;门禁 cargo 429+297 全过/clippy 0/tsc 0/eslint 0/vitest 748 文件 9187+8skip/xvfb demo 25 RC=0;细节 docs/review/2026-11-13-python-receiver-face-table.md】
 - [x] 显式区分组件槽宿主缺失与结构缺失分诊（`crates/kode-server/src/semantics/rules.rs:64`）—— 防声明未就绪被误报为方向不可达。【2026-11-13 收口 e519e55b:两面同修——面一(根因)snapshot.rs 组件槽按引擎序合并 接口→自身→父链(entitydef.cpp:351/:363/:372,addComponentDescription :1070 后装覆盖=链上最深祖先胜),此前父/接口声明的槽在快照不可见→合法派发误报「槽未声明」;同名多来源记冲突 component-defined-in-multiple-sources,missing-component-type 逐来源登记(被覆盖槽引擎照样装属性 :742 不免检),平槽面保持声明序首现位(BTreeMap 键序曾击中 cell.rs 既有例=序契约活证据,即改 comp_order);面二 rules.rs 槽缺失臂分诊:宿主 issues 前缀命中 missing-parent/missing-interface/inheritance-cycle/inheritance-chain-overflow/interface-cycle-or-duplicate → NotReady(来源不完整不判结构缺失),链完整才 DirectionUnreachable(「全链无此槽」);+5 测试;prove-red 两发=comp_sources 削单源 2 红/缺失臂回退旧码 1 红,恢复 diff 字节一致;父实体接口不展开=模型缺口注释注明(与属性/方法口径一致);门禁 cargo 428+297 全过/clippy 0/tsc 0/eslint 0/unit 9173+8skip RC=0/xvfb demo 25 RC=0;细节 docs/review/2026-11-13-ksem-cell-16-component-slot-triage.md】
+## 账本合并核对（2026-11-13）
+
+> 用户令 `kode-ledger-merge.md`（优先于 kode2 推进）。只读核对+文档合并，不改功能代码。
+> 背景：主 todo.md 与 docs/kode2/KODE_2_COMPLETE_TODO.md 此前零交叉引用（kode2 无 KSEM/KFLOW 字样，grep=0 实证）。本节为统一视角：**kode2 = Rust Core 重构主体账，主 todo.md = 产品功能主体账**，关联面以指针互引，禁止双口径（同一工作两处状态不一）。
+
+### 两本账现状（核对时点 cbe9d3f2）
+- 主 todo.md：1089 项 checkbox，已勾 1021（93.8%），未勾 68。未勾 68 = 52 项 KSEM/KFLOW 六族（下方逐族判定）+ 16 项其他（KSEM-SER-04..14、NPM-PKG-07、DBG-COMPAT-08、HR-DEMO-06/07、KDB-EXPORT-001）。
+- kode2：449 项，已勾 60（13.4%），未勾 389；未勾中 **17 项**带「进行中/基础版/已落/已裁决」真实进度注且逐条带 PR 证据（行 130/149-152/159-160/183/186/188/195/197/230/374/376/380/438）。
+
+### 52 项逐族判定：重复合并 0 / 独立 52 / 已实现未勾 0
+
+| 族 | 项数 | kode2 关联章节（指针，非重复） | 判定 |
+| --- | --- | --- | --- |
+| KSEM-CFG-01..11 | 11 | §10 KBE-010（配置合并视图）/KBE-017（Project Doctor）、§8 LSP-001/LSP-004/LSP-009、§13 UI-011、§6.2 SEM-011 | 独立，归属主 todo。kode2 无配置契约/补全/校验专章，属产品线独有面 |
+| KSEM-DATA-01..06 | 6 | §6.2 SEM-007（分面）/SEM-009（多根同名）/SEM-010（base/cell/client 区分）、§8 LSP-001/002、§10 KBE-005 | 独立，归属主 todo。sharedData/spaceData 契约 kode2 无对应条目 |
+| KFLOW-CORE-01..13 | 13 | §8 LSP-012（CallHierarchy）、§9 PY-003（Python symbol 索引）、§7 IDX-002/003/015（DAG 边与增量失效）、§10 KBE-006（RPC 检查）/KBE-008（实体关系浏览器）、SEM-008 | 关联非重复。KFLOW=TS 侧产品功能线；CORE-04/05（本地调用解析/树）↔ LSP-012+PY-003 同族，CORE-07/08（RPC/广播边）↔ KBE-006+KBE-008 同族，CORE-13（增量失效）↔ IDX-003/015 同族 |
+| KFLOW-UI-01..08 | 8 | §13 UI-008（Graph view 按需加载/CSP）/UI-010（多根归属）、§8 LSP-017（虚拟列表） | 关联非重复。KFLOW-UI-06 大图按需展开与 UI-008/LSP-017 同一机制约束 |
+| KFLOW-TRACE-01..08 | 8 | §10 KBE-013（runtime adapter）/KBE-014（协议未验证不宣称）、§11 EXEC-006/007/008（日志事件模型/多源入口/ring buffer） | 关联非重复。TRACE-02 事件协议须与 EXEC-006 字段对齐，防两套事件模型 |
+| KSEM-QA-01..06 | 6 | §14 QA-001..017（golden/differential/e2e/性能门禁）、§15 Phase gates | 同类不同面。KSEM-QA 验收对象=语义精度战役现行为；kode2 QA=Rust 迁移门禁。QA-01 真值语料可作 QA-003 golden 输入，QA-02 端到端方法可复用 QA-005 手段 |
+
+- **重复合并 0**：逐项比对无任何一条与 kode2 已勾/未勾条目描述同一交付物。两账是不同实现层（TS 产品线 vs Rust Core 面）的不同工作，分账不构成双口径。
+- **已实现未勾 0**：六族 52 项均无实改痕迹（无对应 commit/测试/模块），无虚账也无可补勾项。
+- **防漂移约定（后续执行时强制）**：① KFLOW-CORE-02/03 图协议落地后，kode2 LSP-012/KBE-008 实现必须消费同一协议，不得另造；② KFLOW-TRACE-02 trace 事件协议与 EXEC-006 日志事件模型字段对齐；③ KSEM-QA-01 真值语料登记后同时登记为 kode2 QA-003 golden 候选输入。
+- 本节部分充当 kode2 AUDIT-014（旧账映射）的输入，但 AUDIT-014 本体（A1-A7→Phase 映射+永转/超时回归保留）仍未勾，不因本节视为完成。
+
+### kode2 已勾 60 项抽查（10/10 证据成立，虚勾 0）
+
+| 抽查项 | 勾行证据 | 复核结果（cbe9d3f2 实测） |
+| --- | --- | --- |
+| BUILD-003 | toolchain pin+MSRV+clippy 门 | rust-toolchain.toml pin 1.99.0 在；Cargo.toml rust-version 现 1.97（注释记录随 kode-python 升级，勾行「MSRV 1.82」数字过时但 pin/clippy 真实，维持勾选） |
+| CORE-001 | FrameDecoder+11 帧单测 | kode-protocol/src/lib.rs:391 FrameDecoder 在；tests/framing.rs 11 例精确吻合 |
+| VFS-002 | DocumentKey{root_id,uri} | kode-vfs/src/store.rs:29 在 |
+| VFS-004 | line_index+坐标对拍 | line_index.rs+tests/coordinates.rs 均在 |
+| SYNTAX-002 | xml 字节 span+pr-005 证据 | xml.rs 68 处 span；docs/kode2/pr-005.md 在 |
+| SEM-004 | alias 链环诊断 | kode-types/src/graph.rs:351 ChainStatus::Cycle 环截断在 |
+| IDX-006 | 倒排+反向依赖 | index.rs:81 by_name BTreeMap + :258 dependents_of 在 |
+| PR-011 | completion 链+证据文档 | server.rs:225 textDocument/completion 分发在；pr-011.md 在 |
+| PR-012 | gate2 FAIL→gate3 PASS 复判 | pr-012-gate2-run.txt/gate3-run.txt/perf-gate.md 三件在；perf-gate.md §门禁表 G-C FAIL→复判 PASS 与勾行逐字吻合 |
+| HR-HTTP-004 | 拼写门+双载口径 | tests/hotfixSpellingGate.test.ts 在；httpRequests.ts:55/58 query+body 双 `module_name=` 在 |
+
+### 统一视角与真实完成率
+- **kode2 主体（Rust Core 重构）**：449 项。严格勾选口径 60/449=**13.4%**；含 17 项有证据基础版/进行中的宽口径 77/449=**17.2%**。剩余大头：§8 LSP 全族、§9 PY 全族、§10 KBE 全族、§12 PLUG 全族、§13 UI 全族、§14 QA 全族、§19 HR-MOD/WATCH/HTTP/STATE/UI/HASH/EXT/QA 族。
+- **主 todo 主体（产品功能）**：1089 项，已勾 1021=**93.8%**；未勾 68 全部登记在案（52 项 2026-11-11 语义战役未启动面+KSEM-SER-04..14+4 项发布/验收散项）。
+- 结论：两账**无重复状态冲突**，无需互相改勾；统一视角=kode2 管 Rust Core 面、主 todo 管 TS 产品面，关联条目以本节指针维护。后续任何一侧实现到关联条目时，必须回写本节所列指针关系，防双口径回潮。
