@@ -23,9 +23,15 @@ import {
   fixedDictSubscriptContextAt,
   implementedByFixedDictOfAnnotation,
   resolveFixedDictSubscriptKey,
+  resolveWireDictSubscriptKeyFromContainer,
   type FixedDictKeyResolution,
   type FixedDictSubscriptChainContext
 } from '../backend/fixedDictSubscript';
+import {
+  implBindingsForDocument,
+  resolveCreateObjFromDictInputBindings,
+  resolveCreateObjFromDictInputReceiver
+} from '../backend/createObjFromDictInput';
 import { behaviorEntriesForSymbol, behaviorNotesMarkdown, fixedDictBehaviorNoteMarkdown } from '../backend/behaviorKnowledge';
 import { isFixedDictTypeName } from '../backend/behaviorLints';
 import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonCallAtPosition, type PythonCallAtPosition } from '../backend/pythonLanguageUtils';
@@ -1022,6 +1028,39 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       const workspaceRoot = getWorkspaceRootForDocument(document);
       // KSEM-STRUCT-03:注册表前移供接收者定型(迭代目标/下标 RHS 元素型)
       const customTypes = getEntityCustomTypesSnapshot(workspaceRoot ?? '');
+      // KSEM-SER-04:createObjFromDict 入参=wire 形态 FD(接收者=入参名,
+      // 键位=types.xml 声明字段)——先于内存形态根解析接管(STRUCT-07 的
+      // 机制说明是属性内存形态口径,传输形式入参不受其管辖)
+      const documentText = document.getText();
+      const inputContainer = resolveCreateObjFromDictInputReceiver(
+        documentText,
+        resolveCreateObjFromDictInputBindings(
+          documentText,
+          implBindingsForDocument(customTypes, document.fileName)
+        ),
+        position.line,
+        ctx.receiver
+      );
+      if (inputContainer && !sharedToken.isCancellationRequested) {
+        resolution = resolveWireDictSubscriptKeyFromContainer(
+          inputContainer,
+          ctx.segments.slice(0, -1),
+          lastSegment.key,
+          customTypes
+        );
+        if (!resolution?.field || !resolution.annotation) {
+          return null; // 键未声明/注解 Any:能推才显(与内存形态同口径)
+        }
+        const renderMd = new vscode.MarkdownString();
+        renderMd.appendMarkdown(formatFixedDictKeyHover({
+          containerName: resolution.container.name,
+          key: lastSegment.key,
+          annotation: resolution.annotation,
+          file: resolution.container.filePath,
+          line: resolution.field.line
+        }));
+        return new vscode.Hover(renderMd);
+      }
       const rootTypeName = await fixedDictChainRootType(
         ctx.receiver,
         getDocumentLines(document),

@@ -8,7 +8,8 @@ import { EntityMappingManager } from '../entityMapping';
 import { findTypesXmlImplementedByReference, findEntityDefinitionFile, getEntityRuntimeProfile, getWorkspaceRootForDocument, findDefinitionFileByCategory, findDefinitionTextByCategory, getEntityCustomTypesSnapshot } from '../definitionWorkspace';
 import { cellScriptRoleAndEntity, collectCellDataDefUniverseWithCategory, fetchCellDataKeys } from '../backend/cellDataCompletion';
 import { cellDataKeyAccessAtPosition, isCellDataKeyInsideLineComment } from '../backend/cellDataKeyAccess';
-import { fixedDictChainRootType, fixedDictSubscriptContextAt, resolveFixedDictSubscriptKey } from '../backend/fixedDictSubscript';
+import { fixedDictChainRootType, fixedDictSubscriptContextAt, resolveFixedDictSubscriptKey, resolveWireDictSubscriptKeyFromContainer } from '../backend/fixedDictSubscript';
+import { implBindingsForDocument, resolveCreateObjFromDictInputBindings, resolveCreateObjFromDictInputReceiver } from '../backend/createObjFromDictInput';
 import { jumpLog, jumpTimeStart } from '../navigationLog';
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonMemberAccessAtPosition, type PythonMemberAccess } from '../backend/pythonLanguageUtils';
@@ -419,9 +420,48 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     if (fdKeyHit?.cursor === 'key') {
       const lastSegment = fdKeyHit.segments[fdKeyHit.segments.length - 1];
       if (lastSegment && lastSegment.kind === 'key' && lastSegment.keyEnd !== null) {
-        const documentLines = document.getText().split(/\r?\n/);
+        const documentText = document.getText();
+        const documentLines = documentText.split(/\r?\n/);
         // KSEM-STRUCT-03:注册表前移供接收者定型(迭代目标/下标 RHS 元素型)
         const customTypes = getEntityCustomTypesSnapshot(getWorkspaceRootForDocument(document) ?? '');
+        // KSEM-SER-04:createObjFromDict 入参=wire 形态 FD(接收者=入参名,
+        // 键位=types.xml 声明字段)——先于内存形态根解析接管
+        const inputContainer = resolveCreateObjFromDictInputReceiver(
+          documentText,
+          resolveCreateObjFromDictInputBindings(
+            documentText,
+            implBindingsForDocument(customTypes, document.fileName)
+          ),
+          position.line,
+          fdKeyHit.receiver
+        );
+        if (!token?.isCancellationRequested && inputContainer) {
+          const inputResolution = resolveWireDictSubscriptKeyFromContainer(
+            inputContainer,
+            fdKeyHit.segments.slice(0, -1),
+            lastSegment.key,
+            customTypes
+          );
+          if (inputResolution?.field) {
+            const targetLine = Math.max(0, inputResolution.field.line - 1);
+            jumpLog('info', () =>
+              `前置命中 fixeddict-wire-input:${inputResolution.container.name}.${lastSegment.key} → ` +
+              `${path.basename(inputResolution.container.filePath)}:${targetLine + 1}`
+            );
+            return {
+              location: new vscode.Location(
+                vscode.Uri.file(inputResolution.container.filePath),
+                new vscode.Position(targetLine, 0)
+              ),
+              layers: [{
+                layer: 'fixeddict-key',
+                query: `${inputResolution.container.name}.${lastSegment.key}`,
+                status: 'hit',
+                detail: `${path.basename(inputResolution.container.filePath)}:${targetLine + 1}`
+              }]
+            };
+          }
+        }
         const rootTypeName = await fixedDictChainRootType(
           fdKeyHit.receiver,
           documentLines,

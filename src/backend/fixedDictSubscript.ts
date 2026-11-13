@@ -472,9 +472,6 @@ export function resolveFixedDictSubscriptKey(
   key: string,
   customTypes: readonly CustomTypeInfo[]
 ): FixedDictKeyResolution | null {
-  if (prefixSegments.length > FIXED_DICT_CHAIN_MAX_SEGMENTS) {
-    return null;
-  }
   const trimmedRoot = rootTypeName?.trim();
   if (!trimmedRoot) {
     return null;
@@ -482,8 +479,31 @@ export function resolveFixedDictSubscriptKey(
   const rootResolved = resolveAnnotationTypeWithReason(trimmedRoot, customTypes);
   // KSEM-STRUCT-03:根可以是已语义化的注解形态(下标 RHS/迭代定型产出
   // `FixedArray[元素]`),解析不出类型名时按原文注解形态再试一次
-  let state = chainStateFromAnnotation(rootResolved.annotation, customTypes) ??
+  const state = chainStateFromAnnotation(rootResolved.annotation, customTypes) ??
     chainStateFromAnnotation(trimmedRoot, customTypes);
+  return walkFixedDictChainKeys(state, prefixSegments, key, customTypes, chainStateFromAnnotation);
+}
+
+/**
+ * 键步进核心(prefix 走一段、末键落位):两条解析面共用——
+ * - 内存形态(resolveFixedDictSubscriptKey):implementedBy 容器不出链
+ *   状态(STRUCT-07 口径,不把实现对象当 TypedDict);
+ * - wire 形态(resolveWireDictSubscriptKeyFromContainer,KSEM-SER-04):
+ *   入参本身是传输字典,implementedBy 容器照收(嵌套字段同)。
+ * 断链边界两面同口径:链中未知键、FD 上的整数下标、数组上的字符串键、
+ * 超深链、prefix 走完不在 FD 上 → null。
+ */
+export function walkFixedDictChainKeys(
+  initialState: FixedDictChainState | null,
+  prefixSegments: readonly FixedDictChainSegment[],
+  key: string,
+  customTypes: readonly CustomTypeInfo[],
+  stateFromAnnotation: (annotation: string, customTypes: readonly CustomTypeInfo[]) => FixedDictChainState | null
+): FixedDictKeyResolution | null {
+  if (prefixSegments.length > FIXED_DICT_CHAIN_MAX_SEGMENTS) {
+    return null;
+  }
+  let state = initialState;
   for (const segment of prefixSegments) {
     if (!state) {
       return null;
@@ -497,7 +517,7 @@ export function resolveFixedDictSubscriptKey(
         return null; // 链中未知键:诚实断链(开放世界键不猜)
       }
       const annotation = resolveCustomTypePropertyAnnotation(field, customTypes);
-      state = chainStateFromAnnotation(annotation, customTypes);
+      state = stateFromAnnotation(annotation, customTypes);
     } else {
       if (state.kind !== 'array') {
         return null; // FIXED_DICT 上的整数/表达式下标:键型不符,断链
@@ -518,6 +538,56 @@ export function resolveFixedDictSubscriptKey(
     field,
     annotation: annotation === PYTHON_TYPE_STUB_FALLBACK ? null : annotation
   };
+}
+
+/**
+ * wire 形态链状态(KSEM-SER-04):FIXED_DICT 类名 → fd、FixedArray[X](X 为
+ * FIXED_DICT)→ array,**不设 implementedBy 门**——createObjFromDict 入参
+ * 是 createFromStreamEx 递归建好的传输字典(datatype.cpp:2673 嵌套 FD 字段
+ * 同为 wire FixedDict),嵌套 implementedBy 容器的键位=其 types.xml 声明
+ * 字段,照收;这与内存形态 chainStateFromAnnotation(STRUCT-07 不接管口径)
+ * 是同一注册表的两套语义,勿混用。
+ */
+function wireChainStateFromAnnotation(
+  annotation: string,
+  customTypes: readonly CustomTypeInfo[]
+): FixedDictChainState | null {
+  const fd = customTypes.find(
+    info => info.name === annotation && info.aliasType === FIXED_DICT_TYPE_NAME
+  );
+  if (fd) {
+    return { kind: 'fd', info: fd };
+  }
+  const array = /^FixedArray\[(.+)\]$/.exec(annotation);
+  if (array) {
+    const element = customTypes.find(
+      info => info.name === array[1] && info.aliasType === FIXED_DICT_TYPE_NAME
+    );
+    if (element) {
+      return { kind: 'array', element };
+    }
+  }
+  return null;
+}
+
+/**
+ * KSEM-SER-04:从已给定的 FD 容器(wire 形态)起解析下标链键——
+ * createObjFromDict 入参字典的键位面。容器可为 implementedBy FD(入参正是
+ * 传输形式本身);嵌套字段走 wire 形态步进。断链边界与内存形态同口径。
+ */
+export function resolveWireDictSubscriptKeyFromContainer(
+  container: CustomTypeInfo,
+  prefixSegments: readonly FixedDictChainSegment[],
+  key: string,
+  customTypes: readonly CustomTypeInfo[]
+): FixedDictKeyResolution | null {
+  return walkFixedDictChainKeys(
+    { kind: 'fd', info: container },
+    prefixSegments,
+    key,
+    customTypes,
+    wireChainStateFromAnnotation
+  );
 }
 
 /** 别名接收者的向上回看行数上限(与赋值局部变量延续面同量级的有界窗口)。 */

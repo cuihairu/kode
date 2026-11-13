@@ -656,5 +656,6 @@
   "kode-mcp not built (source in crates/kode-mcp); build the binary to enable the built-in MCP server; click toggles enable state": "kode-mcp 未构建(源码在 crates/kode-mcp);构建二进制后内建 MCP 服务器即可用;点击切换启用态",
   "{container}.getDictFromObj returns a dict missing field(s) {fields} declared in {source}; the engine silently substitutes default values for missing keys": "{container} 的 getDictFromObj 返回字典缺少在 {source} 声明的字段：{fields}；引擎对缺失键会静默写入默认值",
   "\"{key}\" is not a field of {container} (declared in {source}); getDictFromObj must return only declared fields": "“{key}”不是 {container} 的字段（在 {source} 声明）；getDictFromObj 只能返回声明过的字段",
-  "{container}.getDictFromObj field \"{key}\" expects {expected} (declared in {source}) but this value reads as {actual}; a wrong-typed field is silently replaced by the default value on wire": "{container} 的 getDictFromObj 字段“{key}”应为 {expected}（在 {source} 声明），但该值读作 {actual}；错型字段在 wire 上会被静默替换为默认值"
+  "{container}.getDictFromObj field \"{key}\" expects {expected} (declared in {source}) but this value reads as {actual}; a wrong-typed field is silently replaced by the default value on wire": "{container} 的 getDictFromObj 字段“{key}”应为 {expected}（在 {source} 声明），但该值读作 {actual}；错型字段在 wire 上会被静默替换为默认值",
+  "\"{key}\" is not a field of {container} (declared in {source}); the createObjFromDict input dict only carries declared keys, so this subscript raises KeyError at runtime (.get silently returns the default)": "“{key}”不是 {container} 的字段（在 {source} 声明）；createObjFromDict 入参字典只承载声明过的键，该下标运行时抛 KeyError（.get 静默返回默认值）"
 }

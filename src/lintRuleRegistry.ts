@@ -363,6 +363,14 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     quickFix: false, status: 'implemented',
     source: 'src/backend/getDictFromObjReturnCheck.ts(发布 src/activate/diagnostics.ts,KSEM-SER-03)'
   },
+  {
+    id: 'KBE-PY-024', code: 'kbengine.fixedDictInputKeySchema',
+    title: 'createObjFromDict 入参字典键读取对 FIXED_DICT schema 校验(未声明键运行时 KeyError/.get 静默返默认)',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.fixedDictConstructDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/backend/createObjFromDictInput.ts(发布 src/activate/diagnostics.ts,KSEM-SER-04)'
+  },
   // ── KB-001 行为知识流水线(C-23,数据源=src/knowledge/trapsKnowledge.ts)
   {
     id: 'KBE-PY-015', code: 'kbengine.fixedDictNestedMutation',

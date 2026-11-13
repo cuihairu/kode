@@ -151,12 +151,13 @@ const BROKEN_IMPL_PY = [
   ''
 ].join('\n');
 
-// KSEM-SER-03:FD 序列化出口面 fixture——契约三方法齐备(不触发 user-type-contract
-// 面),getDictFromObj 返回缺 y 的字面量 → fixedDictReturnSchema 面一条 missing。
+// KSEM-SER-03/SER-04:FD 序列化器 fixture——契约三方法齐备(不触发 user-type-contract
+// 面):getDictFromObj 返回缺 y 的字面量 → fixedDictReturnSchema 一条 missing;
+// createObjFromDict 入参 wire 字典读未声明键 w → fixedDictInputKeySchema 一条。
 const SERIALIZERS_IMPL_PY = [
   'class VectorBagSer:',
   '    def createObjFromDict(self, dct):',
-  '        return self',
+  '        return dct["w"]',
   '',
   '    def getDictFromObj(self, obj):',
   '        return {"x": 1}',
@@ -415,6 +416,11 @@ describe('诊断家族发现级映射臂(覆盖补测)', () => {
       serializersItems.map(item => String(item.code)),
       'serializers_impl 应有 fixedDictReturnSchema 缺 y 发现'
     ).toContain('kbengine.fixedDictReturnSchema');
+    // KSEM-SER-04:入参 wire 字典未声明键读取(w 引擎侧 KeyError/.get 静默默认)
+    expect(
+      serializersItems.map(item => String(item.code)),
+      'serializers_impl 应有 fixedDictInputKeySchema 未声明 w 发现'
+    ).toContain('kbengine.fixedDictInputKeySchema');
     // 进程拓扑(mock Rust RPC 返回 findings;TS 侧映射/分组/发布走真实码)
     expectFindings('kbengine-process-topology', Uri.file(path.join(root, 'process_topology.xml')), 1);
     const topoDiagnostic = collection('kbengine-process-topology')!.get(

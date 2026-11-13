@@ -310,8 +310,12 @@ const ANCHORS: Array<[string, number, string]> = [
   // (computeGetDictFromObjReturnFindings/fixedDictReturnFindingToItem)→
   // 两处诊断打点锚点 +4(172/185 → 176/189,真位重探);FD 出口面组装块
   // 在其后不再位移。出处随 baseline 锁步。
-  ['src/activate/diagnostics.ts', 176, "startLanguageServiceOperation('diagnostics'"],
-  ['src/activate/diagnostics.ts', 189, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-14(KSEM-SER-04):diagnostics.ts 顶部 import +2(createObjFromDictInput
+  // 导入块)+ SER-03 组装块扩展 +4(SER-04 输入键 findings push +1 行并入既有
+  // 组装块)→ 两处诊断打点锚点 +6(176/189 → 182/195,真位重探);出处随
+  // baseline 锁步。
+  ['src/activate/diagnostics.ts', 182, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 195, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -389,7 +393,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-13(KSEM-STRUCT-07):hover.ts fixedDictSubscript import +1
   // (implementedByFixedDictOfAnnotation),provideHover 真位重探 306→307,
   // 出处随 baseline 锁步。
-  ['src/languageProviders/hover.ts', 307, 'provideHover('],
+  // 2026-11-14(KSEM-SER-04):hover.ts 顶部 createObjFromDictInput 导入 +1、
+  // resolveWireDictSubscriptKeyFromContainer 并入 fixedDictSubscript import +1、
+  // resolveFixedDictKeyHover 内输入面臂 +4 → provideHover 真位重探 307→313,
+  // 出处随 baseline 锁步。
+  ['src/languageProviders/hover.ts', 313, 'provideHover('],
   ['src/languageProviders/navigation.ts', 47, 'shadowCompareDefinition'],
   // 2026-11-09(flags 别名归一批):validation.ts 顶部加 FLAG_DOMAIN_ALIAS
   // import(+1 行),其后 validation.ts 三锚点真位重探 13→14/37→38/255→256,
@@ -408,15 +416,20 @@ const ANCHORS: Array<[string, number, string]> = [
   // getEntityCustomTypesSnapshot import +4、definitionWorkspace 的
   // getEntityCustomTypesSnapshot import +1、FIXED_DICT 键跳转面 arm +3,
   // 真位重探 308→312,出处随 baseline 锁步。
-  ['src/languageProviders/pythonDefinition.ts', 312, 'provideDefinitionTracedImpl'],
+  // 2026-11-14(KSEM-SER-04):pythonDefinition.ts 顶部 createObjFromDictInput
+  // 导入 +1 与 fixedDictSubscript import 扩 1 符 → provideDefinitionTracedImpl
+  // 真位重探 312→313;fdKeyHit 臂输入面接管块 +40 落在 provideDefinition 之后
+  // → 层0 接收者段闸 829→869、withInitialScanTimeout 935→975(真位重探);
+  // 出处随 baseline 锁步。
+  ['src/languageProviders/pythonDefinition.ts', 313, 'provideDefinitionTracedImpl'],
   // 2026-11-06(六):二次并入 origin main(KR-AUD-84 引擎整串开关表在 4725 后
   // +13)——层0 接收者段闸/withInitialScanTimeout/provideCompletionItems 锚点
   // 再 +13(真位重探 5146/5252/7063,出处随 baseline 锁步)。
   // 2026-11-13(KSEM-STRUCT-03):fdKeyHit 臂注册表前移 +2 行(注释+customTypes
   // const,provideDefinition 260/provideDefinitionTracedImpl 312 不变)→ 其后锚点
   // +2(真位重探 829/935,出处随 baseline 锁步)。
-  ['src/languageProviders/pythonDefinition.ts', 829, '层0 接收者段闸'],
-  ['src/languageProviders/pythonDefinition.ts', 935, 'withInitialScanTimeout'],
+  ['src/languageProviders/pythonDefinition.ts', 869, '层0 接收者段闸'],
+  ['src/languageProviders/pythonDefinition.ts', 975, 'withInitialScanTimeout'],
   // 2026-11-06:IDE-LINT-012 快速修复边界——languageProviders.ts 在 receiver
   // 守卫 provider 前新增 receiverFromDiagnosticLine helper(区间归属提取)+
   // 提取块重写,+31 行,7007 后锚点随之 +31(真位重探 7038;其余 languageProviders
@@ -429,7 +442,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // Rust-first 闸前),provideCompletionItems 真位 766→853,出处随 baseline 锁步。
   // 2026-11-13(KSEM-STRUCT-03):provideFixedDictKeyCompletions 注册表前移 +2 行
   // (注释+customTypes const,删除后位原 const 净零)→ 真位 853→855,出处随 baseline 锁步。
-  ['src/languageProviders/completion.ts', 855, 'provideCompletionItems('],
+  // 2026-11-14(KSEM-SER-04):completion.ts 顶部 createObjFromDictInput 导入块
+  // +3、fixedDictSubscript import 扩 1 符与 fdKeyCompletionsOf 抽取重排
+  // (provideFixedDictKeyCompletions 内输入面臂 +27)→ provideCompletionItems
+  // 真位重探 855→897,出处随 baseline 锁步。
+  ['src/languageProviders/completion.ts', 897, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)

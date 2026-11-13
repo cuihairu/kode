@@ -3,10 +3,15 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { findFilesAcrossRoots } from '../scanRoots';
 import { EntityMappingManager } from '../entityMapping';
-import { findDefinitionTextByCategory, getEntityCustomTypesSnapshot, getRegisteredCustomTypes, getRegisteredAliasTypes, getRegisteredEntities, getWorkspaceRootForDocument, resolveEntityAnnotationType } from '../definitionWorkspace';
+import { findDefinitionTextByCategory, getEntityCustomTypesSnapshot, getRegisteredCustomTypes, getRegisteredAliasTypes, getRegisteredEntities, getWorkspaceRootForDocument, resolveEntityAnnotationType, type CustomTypeInfo } from '../definitionWorkspace';
 import { HOOK_CATEGORY_NAMES, KBENGINE_HOOKS } from '../hooks';
 import { cellDataKeyCompletionContext, cellScriptRoleAndEntity, collectCellDataDefUniverse, fetchCellDataKeys, type CellDataKeyCompletionContext } from '../backend/cellDataCompletion';
-import { fixedDictChainRootType, fixedDictSubscriptContextAt, resolveFixedDictSubscriptKey, type FixedDictSubscriptChainContext } from '../backend/fixedDictSubscript';
+import { fixedDictChainRootType, fixedDictSubscriptContextAt, resolveFixedDictSubscriptKey, resolveWireDictSubscriptKeyFromContainer, type FixedDictSubscriptChainContext } from '../backend/fixedDictSubscript';
+import {
+  implBindingsForDocument,
+  resolveCreateObjFromDictInputBindings,
+  resolveCreateObjFromDictInputReceiver
+} from '../backend/createObjFromDictInput';
 import { KBENGINE_ENTRY_HOOKS, isComponentEntryScriptFile } from '../backend/entryHooks';
 import { DETAIL_LEVELS, KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, KBENGINE_TYPES } from '../backend/kbengineMetadata';
 import { formatEntityBuiltinPropertyDetail, getEntityBuiltinPropertiesForFace, hasKnownEntityBuiltinPropertyType, resolveEntityComponentFaceFromPath, type EntityComponentFace } from '../backend/entityBuiltinProperties';
@@ -577,9 +582,33 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     if (!openSegment || openSegment.kind !== 'key' || openSegment.keyEnd !== null) {
       return null;
     }
-    const documentLines = document.getText().split(/\r?\n/);
+    const documentText = document.getText();
+    const documentLines = documentText.split(/\r?\n/);
     // KSEM-STRUCT-03:注册表前移供接收者定型(迭代目标/下标 RHS 元素型)
     const customTypes = getEntityCustomTypesSnapshot(workspaceRoot);
+    // KSEM-SER-04:createObjFromDict 入参=wire 形态 FD(接收者=入参名,
+    // 键位=types.xml 声明字段)——先于内存形态根解析接管
+    const inputContainer = resolveCreateObjFromDictInputReceiver(
+      documentText,
+      resolveCreateObjFromDictInputBindings(
+        documentText,
+        implBindingsForDocument(customTypes, document.fileName)
+      ),
+      position.line,
+      ctx.receiver
+    );
+    if (inputContainer) {
+      const inputResolution = resolveWireDictSubscriptKeyFromContainer(
+        inputContainer,
+        ctx.segments.slice(0, openIndex),
+        '',
+        customTypes
+      );
+      if (!inputResolution || token?.isCancellationRequested) {
+        return null;
+      }
+      return this.fixedDictKeyCompletionsOf(inputResolution.container, ctx, position, customTypes);
+    }
     const rootTypeName = await fixedDictChainRootType(
       ctx.receiver,
       documentLines,
@@ -609,15 +638,28 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     if (!resolution || token?.isCancellationRequested) {
       return null;
     }
+    return this.fixedDictKeyCompletionsOf(resolution.container, ctx, position, customTypes);
+  }
+
+  /**
+   * 键补全条目构造(内存形态/入参 wire 形态两解析面共用):容器逐字段,
+   * detail = 值注解 · types.xml 声明行;替换范围 = 引号内片段精确区间。
+   */
+  private fixedDictKeyCompletionsOf(
+    container: CustomTypeInfo,
+    ctx: FixedDictSubscriptChainContext,
+    position: vscode.Position,
+    customTypes: readonly CustomTypeInfo[]
+  ): vscode.CompletionItem[] {
     const range = new vscode.Range(position.line, ctx.replaceStart, position.line, position.character);
-    return resolution.container.properties.map(property => {
+    return container.properties.map(property => {
       const item = new vscode.CompletionItem(property.name, vscode.CompletionItemKind.Field);
       const annotation = resolveCustomTypePropertyAnnotation(property, customTypes);
       const detailParts: string[] = [];
       if (annotation && annotation !== PYTHON_TYPE_STUB_FALLBACK) {
         detailParts.push(annotation);
       }
-      detailParts.push(`${path.basename(resolution.container.filePath)}:${property.line}`);
+      detailParts.push(`${path.basename(container.filePath)}:${property.line}`);
       item.detail = detailParts.join(' · ');
       item.range = range;
       return item;

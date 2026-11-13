@@ -54,6 +54,12 @@ import {
   fixedDictReturnFindingToItem
 } from '../backend/getDictFromObjReturnCheck';
 import {
+  computeCreateObjFromDictInputKeyFindings,
+  createObjFromDictInputFindingToItem,
+  implBindingsForDocument,
+  resolveCreateObjFromDictInputBindings
+} from '../backend/createObjFromDictInput';
+import {
   SCALAR_ASSIGN_DIAGNOSTICS_ENABLED_DEFAULT,
   analyzeScalarAssignWrites,
   scalarAssignFindingToItem,
@@ -1194,13 +1200,23 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         // getDictFromObj 返回 dict 对 schema 校验(缺键/多键/字段值结构;引擎
         // 对缺键/错型静默写默认值,datatype.cpp addToStreamEx)。绑定未成立的
         // (implementedBy 未解析/指他文件)不进判定面。
-        const implBindings = customTypes
-          .filter(info => info.implementedBy && info.pythonFilePath === document.uri.fsPath)
-          .map(info => ({ container: info, symbol: info.implementedBy!.split('.').pop() ?? '' }));
+        const implBindings = implBindingsForDocument(
+          customTypes, document.uri.fsPath
+        );
         if (implBindings.length > 0) {
+          const docText = document.getText();
           items.push(
-            ...computeGetDictFromObjReturnFindings(document.getText(), implBindings)
+            ...computeGetDictFromObjReturnFindings(docText, implBindings)
               .map(fixedDictReturnFindingToItem)
+          );
+          // KSEM-SER-04:序列化入口面——入参 wire 字典的键读取对 schema 校验
+          // (未声明键引擎侧抛 KeyError/.get 静默返默认,静态面唯一可见处)
+          items.push(
+            ...computeCreateObjFromDictInputKeyFindings(
+              docText,
+              resolveCreateObjFromDictInputBindings(docText, implBindings),
+              customTypes
+            ).map(createObjFromDictInputFindingToItem)
           );
         }
         return items;
