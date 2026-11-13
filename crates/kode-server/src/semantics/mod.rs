@@ -75,6 +75,10 @@
 //!   cellData 两通道、def 未声明键=动态 setattr 不拦提示级;缺键不报=
 //!   initProperty 默认值兜底无必填概念;字面量值家族对拍=静态纪律提示级
 //!   非引擎错误预测;目录未就绪=IndexMissing 绝不判未声明)。
+//! - [`create_target`] CREATE-06 Cell 创建目标检查(仅报告静态可证明的
+//!   角色和类型错误:目标 EntityCall 角色闸=cell 族要 CELL/remotely 族要
+//!   BASE 直连,角色未折叠=Unknown 不报;spaceID 存在性=运行时态登记
+//!   RuntimeGate 不判;inNewSpace 非 int 静默兜底 0/负数回绕=提示级)。
 
 pub mod broadcast;
 pub mod callers;
@@ -82,6 +86,7 @@ pub mod create_api;
 pub mod create_bind;
 pub mod create_params;
 pub mod create_return;
+pub mod create_target;
 pub mod entity_name;
 pub mod impact;
 pub mod cell;
