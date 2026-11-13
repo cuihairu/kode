@@ -2401,24 +2401,24 @@
 - [x] HR-MOD-015 纯函数单测覆盖上述四个示例及特殊文件、路径穿越、URL encoding、Unicode、同名根/文件。(HR-PR-02,c120287c,tests/hotReloadModuleIdentity.test.ts:§19.1 四示例(含 base/Avatar 引擎偏差钉)、特殊文件(__init__/.json/.pyi/.pyc)、路径穿越(词法上卷落根外拒)、URL encoding(%20 解码出空白短名拒/坏转义保留)、Unicode 短名合法(PEP 3130)、同名文件两根各自解析 rootId 区分+嵌套根歧义拒、override 合法/非法、root-level 默认拒/显式开;核心 reason/开关例在 tests/hotReloadTempEdit.test.ts)
 
 #### 19.4 Watch / Save 事件流水线（HR-WATCH）
-- [ ] HR-WATCH-001 默认 `off`，用户按 workspace/target 显式启用 `onSave`（默认推荐）或 `onDiskChange`。
-- [ ] HR-WATCH-002 `onSave` 仅选择属于配置 script roots 且规则准许的 `.py` 文件；未保存的编辑不触发 HTTP。
-- [ ] HR-WATCH-003 `onDiskChange` 使用原生 VS Code FileSystemWatcher，外部改动/生成/Git checkout 与 save 重叠需去重。
-- [ ] HR-WATCH-004 只监听已声明的脚本根；排除 `.git`, `.venv`, `node_modules`, generated stubs, caches, 临时文件、swp、备份文件。
-- [ ] HR-WATCH-005 监听生命周期绑定到 workspace/target/config，deactivate、root 移除、模式切换及时 dispose。
-- [ ] HR-WATCH-006 实现 per-file debounce 与全局 max-delay 上限：防 save storm 也不无限推迟。
-- [ ] HR-WATCH-007 等待写入稳定（短时间连续 stat/hash 一致）后再发送；尊重磁盘原子替换、rename 顺序。
-- [ ] HR-WATCH-008 文件 hash 与最近已提交/已成功应用的版本指纹区分，不因一次失败永久跳过。
-- [ ] HR-WATCH-009 原始事件归并为 `FileChanged{uri,revision,diskHash,source,time}`，记录合并原因供诊断。
-- [ ] HR-WATCH-010 使用 canonical URI + targetId 合并待执行同文件更新；同内容同目标不重复发送。
-- [ ] HR-WATCH-011 当文件 A 更新请求执行时又保存 B 版本，保证最终版本被请求，不把旧响应写成新版本成功。
-- [ ] HR-WATCH-012 先做轻量 Python 语法检查/配置检查；有错误时标 `blocked`，不默认发送半成品代码。
-- [ ] HR-WATCH-013 引擎脚本可热更规则支持 profile capabilities、路径 allowlist/denylist、自定义过滤器。
-- [ ] HR-WATCH-014 停用时清理待提交队列；处理中请求依据策略取消/自然完成并更新 UI，不再重新入队。
-- [ ] HR-WATCH-015 初次启动、切换分支、恢复窗口不默认对全仓历史文件触发更新；基线扫描不等于变更事件。
-- [ ] HR-WATCH-016 大批量文件变化进入安全批次预览模式（可配置数量阈值），防无意向服务器发数百请求。
-- [ ] HR-WATCH-017 写入用户可审查的诊断事件：trigger、filtered、debounced、deduped、blocked、scheduled。
-- [ ] HR-WATCH-018 单测模拟 onSave、外部改动、原子覆盖、批量 rename、删除后重建、忽略目录、配置变更、远程 URI。
+- [ ] HR-WATCH-001 默认 `off`，用户按 workspace/target 显式启用 `onSave`（默认推荐）或 `onDiskChange`。（进行中:HR-PR-04,60ccc545,纯核已落但未接线=配置面与默认开关刻意未做;冲突=本条「默认 off」与用户 2026-11-06 令(零配置默认开、保存即自动发)直接对立,默认值由用户裁定后才动)
+- [ ] HR-WATCH-002 `onSave` 仅选择属于配置 script roots 且规则准许的 `.py` 文件；未保存的编辑不触发 HTTP。（进行中:HR-PR-04,纯过滤 isWatchableScriptFile 已落+钉=扩展名/根严格前缀整段边界/排除目录/备份名;onSave 事件绑定与「未保存编辑不触发」=装配面随接线批)
+- [ ] HR-WATCH-003 `onDiskChange` 使用原生 VS Code FileSystemWatcher，外部改动/生成/Git checkout 与 save 重叠需去重。（进行中:HR-PR-04,重叠去重逻辑已落+钉=disk-save-overlap 仅记 save→disk 方向且同 pending 归并不双发;原生 FileSystemWatcher 绑定=装配面随接线批)
+- [ ] HR-WATCH-004 只监听已声明的脚本根；排除 `.git`, `.venv`, `node_modules`, generated stubs, caches, 临时文件、swp、备份文件。（进行中:HR-PR-04,isWatchableScriptFile 纯过滤已落+钉=默认排除表(.git/.venv/venv/node_modules/__pycache__/.kbengine/.mypy_cache/.pytest_cache/.ruff_cache)+调用方追加并集+备份名(.swp/.swo/.bak/.tmp/尾~/首尾#)+根严格前缀整段边界(/ws/scripts 不认领 /ws/scripts2);watcher 只收过滤结果=装配面随接线批)
+- [ ] HR-WATCH-005 监听生命周期绑定到 workspace/target/config，deactivate、root 移除、模式切换及时 dispose。（进行中:HR-PR-04,pipeline.dispose 已落+钉=清空 pending/波次/预览滞留并停止受理、定时器全清;watcher 生命周期绑定 workspace/target/config=装配面随接线批)
+- [x] HR-WATCH-006 实现 per-file debounce 与全局 max-delay 上限：防 save storm 也不无限推迟。(HR-PR-04,60ccc545,src/backend/hotReloadSavePipeline.ts:per-file 尾窗去抖=再发事件重排窗,排窗预算取 min(debounceMs, max(0, maxDelayMs-elapsed)) 封顶;首窗亦封顶故 maxDelay<debounce 时窗即封顶;截断如实记 max-delay-capped 因;pin tests/hotReloadSavePipeline.test.ts『max-delay 封顶』save storm 4 连发至多推迟到 1000ms 且 coalesceReason=debounced:4;max-delay-capped,prove-red 去掉封顶即红)
+- [x] HR-WATCH-007 等待写入稳定（短时间连续 stat/hash 一致）后再发送；尊重磁盘原子替换、rename 顺序。(HR-PR-04,60ccc545,src/backend/hotReloadSavePipeline.ts:两拍快照哈希一致才发(注入 readSnapshot)+探测次数有界超限如实发末拍记 unstable-after-N-probes+读不到/已删除如实丢弃不猜+settling 守卫防同 URI 异步两拍期间并行第二个定稿;pin tests/hotReloadSavePipeline.test.ts『两拍一致恰读 2 次』『持续变化超 3 探测记 unstable』『首拍读不到丢弃』『稳定窗内消失丢弃』四例)
+- [ ] HR-WATCH-008 文件 hash 与最近已提交/已成功应用的版本指纹区分，不因一次失败永久跳过。（进行中:HR-PR-04,「不因一次失败永久跳过」已落+钉=投递指纹与去重指纹分离(批次交发送面那一刻才记,forgetSent 撤回失败指纹,同内容变更照发,prove-red 令 forgetSent 空转即红);与「最近已提交/已成功应用」指纹台账的区分=回执/台账簇随接线批)
+- [x] HR-WATCH-009 原始事件归并为 `FileChanged{uri,revision,diskHash,source,time}`，记录合并原因供诊断。(HR-PR-04,60ccc545,src/backend/hotReloadSavePipeline.ts:同 canonical URI 同 pending 归并为单条 FileChanged{uri,revision,diskHash,source,time,coalesced,coalesceReason},原因逐项记(单发=single,归并=debounced:N,写盘重叠=disk-save-overlap,封顶=max-delay-capped,不稳定=unstable-after-N-probes)并可加号;pin tests/hotReloadSavePipeline.test.ts『连发归并 coalesced=3』『save→disk 记 overlap 代表源=最新』『disk→save 不记 overlap』『file:// 与裸路径同 canonical 归并』)
+- [x] HR-WATCH-010 使用 canonical URI + targetId 合并待执行同文件更新；同内容同目标不重复发送。(HR-PR-04,60ccc545,src/backend/hotReloadSavePipeline.ts:去重键=canonical URI(HR-PR-02 canonicalizeScriptFilePath 复用)+targetId+内容哈希,三同即 deduped 不发;换目标(同内容新 targetId)不视为重复照发;pin tests/hotReloadSavePipeline.test.ts『同内容同目标 deduped』『同内容换目标照发 revision=2』+isDuplicateUpdate 纯判四形)
+- [ ] HR-WATCH-011 当文件 A 更新请求执行时又保存 B 版本，保证最终版本被请求，不把旧响应写成新版本成功。（进行中:HR-PR-04,版本号语义已落=revision 只随实际发出的新内容版本递增(去重/拦截不占号,否则同内容在途响应被 isStaleResponse 误判 stale,测试钉 revision 边界)+同文件单 pending 归并保证末版本胜出;isStaleResponse 纯判已落;响应到达面「不得写成新版本成功」的执行点=投递/回执簇随接线批,本批未接线故不勾)
+- [ ] HR-WATCH-012 先做轻量 Python 语法检查/配置检查；有错误时标 `blocked`，不默认发送半成品代码。（进行中:HR-PR-04,闸机制已落+钉=注入 checkSyntax 不通过出 blocked 诊断且不发送(测试钉 detail 带检查器错误)+每次定稿只检一次;真实轻量 Python 语法检查器/配置检查器由装配注入=随接线批)
+- [ ] HR-WATCH-013 引擎脚本可热更规则支持 profile capabilities、路径 allowlist/denylist、自定义过滤器。（进行中:HR-PR-04,规则面的可注入形态已落=extensions/excludedDirs 追加/roots 严格前缀+targetOf 目标归属;profile capabilities 与 allowlist/denylist 配置键属配置面(HR-MOD-006 同因)随该面点火)
+- [ ] HR-WATCH-014 停用时清理待提交队列；处理中请求依据策略取消/自然完成并更新 UI，不再重新入队。（进行中:HR-PR-04,清队列已落+钉=dispose 清 pending/波次/预览滞留且停止受理(dispose 后 offer 进不来、波次与滞留一并清、放行不再发);在途请求取消/自然完成策略与 UI 更新=装配面随接线批)
+- [ ] HR-WATCH-015 初次启动、切换分支、恢复窗口不默认对全仓历史文件触发更新；基线扫描不等于变更事件。（未做:HR-PR-04 未覆盖=纯核只处理 offer 进来的事件,无「基线扫描」概念;基线/首次挂载语义需装配面的挂载事件源与基线集合,随接线批)
+- [x] HR-WATCH-016 大批量文件变化进入安全批次预览模式（可配置数量阈值），防无意向服务器发数百请求。(HR-PR-04,60ccc545,src/backend/hotReloadSavePipeline.ts:超 batchPreviewThreshold(可配)的批次只出 preview 诊断不自动发、releasePreview 显式放行才发(放行出 preview-release 模式)+滞留期间新批次并入同一滞留批次维持单一批次+dispose 一并清滞留;pin tests/hotReloadSavePipeline.test.ts『超阈值只预览』『放行原样发出』『滞留期新批次并入共 4』『无滞留放行如实空放』四例,prove-red 关阈值判断 3 例转红)
+- [ ] HR-WATCH-017 写入用户可审查的诊断事件：trigger、filtered、debounced、deduped、blocked、scheduled。（进行中:HR-PR-04,诊断面已落=八型 trigger/filtered/debounced/deduped/blocked/scheduled/preview/flushed 全量可注入观察(测试钉典型序列 trigger→scheduled→debounced→flushed 与空路径 filtered 两例);「用户可审查」的呈现面(OutputChannel/面板)=装配面随接线批)
+- [ ] HR-WATCH-018 单测模拟 onSave、外部改动、原子覆盖、批量 rename、删除后重建、忽略目录、配置变更、远程 URI。（进行中:HR-PR-04,已模拟=外部改动(disk-change 源)+删除后重建(稳定窗内快照消失丢弃/首拍读不到丢弃)+忽略目录与备份名(过滤矩阵)+原子覆盖形态(内容哈希换档即新内容照发);未模拟=onSave 事件绑定/批量 rename/配置变更/远程 URI(依赖 vscode 装配面,随接线批)
 
 #### 19.5 HTTP 适配、调度、幂等与成功确认（HR-HTTP）
 - [x] HR-HTTP-001 从现有 Quick Requests 抽取可复用 RequestExecutor；不可破坏普通通用 HTTP 功能。(HR-PR-03,21cc4848,新纯核 src/backend/httpRequestExecutor.ts:快捷请求 HttpRequestService.runEntry 与默认热更 sendDefaultHotfix 统一走 executeHttpRequest+交换状态机,不再各带一套传输分支;服务层分支仍读 transportOk=传输面原始 ok 布尔,日志行/错误弹窗/布尔返回逐字不变=通用 HTTP 零回归,tests/httpRequestService.test.ts 既有钉全绿)
@@ -2527,7 +2527,7 @@
 - [x] HR-PR-01 `audit/hotreload-current`：HR-AUDIT 全部；输出调用链和已实现/缺失矩阵，不改功能。(HR-PR-01,6934c63a,docs/hotreload/current-implementation.md 全量刷新+docs/zh/ 1:1 镜像;§HR-AUDIT-001..012 事实表+§2 已实现/缺失/unknown 矩阵+§3 对上期结转;零功能改动;审计发现一并记录未修=首跑通知『打开日志』locale 不匹配 src/hotReload.ts:1046)
 - [ ] HR-PR-02 `hotreload/module-identity`：HR-MOD 全部 + pure resolver tests；手动热更先使用双名称模型；兼容原 `${module}`。(进行中:HR-PR-02,c120287c,HR-MOD-001/002/003/004/005/007/009/012/015 已勾,006/008/010/011/013/014 部分落地暂缓注记见各行;手动热更双名=hotReloadDefaultHotfix 双名优先+${module} 回落已接线;UI/配置暴露/发送路径双名切换随 HR-PR-03+)
 - [ ] HR-PR-03 `hotreload/request-adapter`：抽取通用 RequestExecutor + 状态机 + mock server；保证旧 Quick Requests 不回归。(进行中:HR-PR-03,21cc4848,HR-HTTP-001/010/017 已勾+014 生成面已落;三件主体皆已交付=通用执行器+交换状态机+真网 mock server 套件;旧 Quick Requests 回归=既有 tests/httpRequestService.test.ts 钉逐字不变全绿;余=关联 id 线路贯穿(接收端契约)+002 provider 面(随 HR-PR-04/05))
-- [ ] HR-PR-04 `hotreload/save-watch`：onSave 默认关闭，可开关、去抖、稳定性/幂等队列、基本语法检查。
+- [ ] HR-PR-04 `hotreload/save-watch`：onSave 默认关闭，可开关、去抖、稳定性/幂等队列、基本语法检查。（进行中:HR-PR-04 纯核已落=新 src/backend/hotReloadSavePipeline.ts 零 IO 零 vscode(时钟/定时器/快照读/语法闸全注入,与 VFS-001、hotReloadModuleIdentity 同边界)+tests/hotReloadSavePipeline.test.ts 31 例(时钟定时器全虚拟)+prove-red 三轮闭环;HR-WATCH-006/007/009/010/016 已勾,002/003/004/005/008/011/012/013/014/017/018 部分落地见各行注记,015 未覆盖,001 未做=与用户 2026-11-06 零配置默认开令冲突待裁定;接线暂缓两因=001 默认值冲突(冲突解决权在用户)+真实触发链(全局 HotReloadTrigger+pendingTriggers 批次)被约 50 个 hotReload* 测试文件钉住属独立子批;本批另纠正四处自身设计缺陷=批处理路径原为死代码(每次定稿只传 1 事件故批量阈值永不可达,改为波次归集)、去抖原为固定前置窗(改真尾窗+排窗封顶)、revision 原按 offer 占号致同内容在途响应被误判 stale(改仅实际发出的新内容版本递增)、投递指纹原在定稿时记致一次失败永久跳过同内容(HR-WATCH-008,改在交发送面那一刻记+forgetSent 撤回))
 - [ ] HR-PR-05 `hotreload/disk-watch`：外部变更、Git 批量变更、目录过滤、target 合并、远端环境。
 - [ ] HR-PR-06 `hotreload/ui-status`：状态栏、资源树、历史面板、完整模块名、失败重试与可信回执。
 - [ ] HR-PR-07 `hotreload/def-fingerprint`：file/semantic/engine 三种 Hash、影响分析、重启提示。

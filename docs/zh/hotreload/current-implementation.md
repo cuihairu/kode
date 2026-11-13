@@ -183,3 +183,19 @@
 - 关联 id(HR-HTTP-014):每次执行生成 `crypto.randomUUID()`,贯穿 outcome(调用方可自带)。刻意不做请求头贯穿——那是线路字节变更,与「不做 URL 编码」同边界;线路贯穿待接收端契约解冻(HR-AUDIT-009)。
 - Mock server e2e(HR-HTTP-017):`tests/httpRequestExecutorMockServer.test.ts` 用真 node 传输面打每例独立的临时服务(端口 0)——2xx JSON 回执→applied、2xx 非 JSON→`sent`(不 claim applied)、500→`non-2xx`、慢响应+短超时→`timeout`(服务端随后仍完成 200:本地超时绝不报成应用失败)、端口已关→`connection-refused`、响应中途摧毁 socket→`connection-reset`、chunked 拼接、重复请求(2 次命中,关联 id 各自独立)、URL 无法解析/协议不支持。
 - 缺陷修复(由新 e2e 发现):默认传输在服务端响应中途中断时**永不结算**——node 在响应流上发 `aborted`,而 `req` 已随 socket 销毁,`req.on('error')` 与 socket 超时都无法解决该 promise,调用方永久挂起。旧注释声称由 `req.on('error')` 统一收口,实测不成立。现由 `res.on('aborted')` / `res.on('error')` 显式收口为失败(Promise 只认首次 resolve)。既有的服务层「不悬挂」测试仍绿,因为它注入的是假传输——mock-vs-wire 契约漂移。
+
+## 6. HR-PR-04 增量（2026-11-13,保存事件流水线纯核）
+
+- `src/backend/hotReloadSavePipeline.ts` —— 纯核,零 IO 零 `vscode` 导入(时钟、定时器、快照读、语法检查全部注入;与 `kode-vfs` VFS-001、`hotReloadModuleIdentity` 同边界)。装配面(vscode 事件绑定、配置面、默认开关)不在本核。
+- 每文件去抖(尾窗)+ 全局 max-delay 封顶(HR-WATCH-006):再发事件**重排**去抖窗(真尾窗,不是固定前置窗),且排窗预算以 `maxDelayMs` 为上限,save storm 至多推迟到 max-delay,绝不无限推迟;封顶截断如实记 `max-delay-capped` 因。封顶在**排窗时**生效而非到期时补判——尾窗公式已把 timer 限制在 `first + maxDelay`,到期补判不可达。首窗同样封顶(`min(debounceMs, maxDelayMs)`),故 `maxDelay < debounce` 时窗即封顶。
+- 事件源归并(HR-WATCH-003/009):同 canonical URI + 同 pending 归并为一条 `FileChanged{uri,revision,diskHash,source,time}` 并记合并原因;`disk-save-overlap` 只在 save→disk-change 方向记录(一次写盘同时触发两类事件),代表源取最新一次。
+- 写入稳定(HR-WATCH-007):两拍快照哈希一致才发;探测次数有界(`maxStabilityProbes`),超限如实发末拍快照并记 `unstable-after-N-probes`。读不到/已删除如实丢弃并记诊断,不猜。`settling` 守卫阻止同一 URI 在异步两拍等待期间并行起第二个定稿。
+- 波次归集:同一去抖窗内定稿的文件合成一批发出(波次冲口 `batchFlushMs`)。没有波次的话每次定稿只传 1 个事件,HR-WATCH-016 的批量阈值**永远无法触发**——原批处理路径是死代码。
+- 去重键(HR-WATCH-010):canonical URI + targetId + 内容哈希,复用 HR-PR-02 的 `canonicalizeScriptFilePath`(`file://` 与裸路径同归一条)。
+- 版本守卫(HR-WATCH-011):`revision` 只在**实际发出的新内容版本**递增——去重与语法拦截不占号。若在 offer 时占号,同内容在途响应会被 `isStaleResponse(sent, current)` 误判 stale。
+- 投递指纹与去重指纹分离(HR-WATCH-008):指纹在批次交给发送面的那一刻记(`emitBatch` / `releasePreview` 内),因为本核不知投递成败;投递失败由装配调 `forgetSent(file)` 撤回,同内容不会被一次失败永久跳过。
+- 语法闸(HR-WATCH-012)注入式,不通过出 `blocked` 且不发送半成品。每次定稿只检查一次(初版调了两遍,已改)。
+- HR-WATCH-014 `dispose` 一并清空 pending/波次/预览滞留,并停止受理新事件。HR-WATCH-016 超阈值批次只预览、显式放行才发;滞留期间新批次并入同一滞留批次。HR-WATCH-017 诊断事件:`trigger` / `filtered` / `debounced` / `deduped` / `blocked` / `scheduled` / `preview` / `flushed`。
+- `isWatchableScriptFile`(HR-WATCH-004)纯词法过滤:扩展名(缺省 `.py`,大小写不敏感)、显式根集合按严格前缀+整段边界匹配(`/ws/scripts` 不认领 `/ws/scripts2`)、默认排除目录(`.git`、`.venv`、`venv`、`node_modules`、`__pycache__`、`.kbengine`、`.mypy_cache`、`.pytest_cache`、`.ruff_cache`)与调用方追加项取并集、备份/临时文件名(`.swp` / `.swo` / `.bak` / `.tmp` / 尾 `~` / `#名#`)。
+- 装配接线刻意暂缓:账本条 HR-WATCH-001 写「默认 off」,与 2026-11-06 用户令(零配置默认**开**、保存即自动发)冲突——冲突解决权在用户,故本批不做配置面与默认开关。真实触发链(全局 `HotReloadTrigger` + `pendingTriggers` 批次)被约五十个 `hotReload*` 测试文件钉住,重接属独立子批,不作顺手改动。
+- 测试:`tests/hotReloadSavePipeline.test.ts` 31 例,时钟与定时器全虚拟(内存 timer 队列,`advance()` 按到期序冲)。prove-red 三轮:去掉 max-delay 封顶 → save storm 用例转红;关掉预览阈值判断 → 3 个预览用例转红;让 `forgetSent` 空转 → HR-WATCH-008 用例转红。
