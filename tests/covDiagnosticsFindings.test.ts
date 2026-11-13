@@ -151,16 +151,19 @@ const BROKEN_IMPL_PY = [
   ''
 ].join('\n');
 
-// KSEM-SER-03/SER-04:FD 序列化器 fixture——契约三方法齐备(不触发 user-type-contract
-// 面):getDictFromObj 返回缺 y 的字面量 → fixedDictReturnSchema 一条 missing;
-// createObjFromDict 入参 wire 字典读未声明键 w → fixedDictInputKeySchema 一条。
+// KSEM-SER-03/SER-04/SER-05:FD 序列化器 fixture——契约三方法齐备(不触发
+// user-type-contract 面):getDictFromObj 返回缺 y 字面量 → fixedDictReturnSchema
+// missing;createObjFromDict 入参 wire 字典读未声明键 w → fixedDictInputKeySchema
+// 一条(get 形态);createObjFromDict 透传入参 → 推导 wire 键集,getDictFromObj
+// 读推导键集缺失的 w → fixedDictOutputMemberSchema 一条。
 const SERIALIZERS_IMPL_PY = [
   'class VectorBagSer:',
   '    def createObjFromDict(self, dct):',
-  '        return dct["w"]',
+  '        w = dct.get("w")',
+  '        return dct',
   '',
   '    def getDictFromObj(self, obj):',
-  '        return {"x": 1}',
+  '        return {"x": obj["x"], "w": obj["w"]}',
   '',
   '    def isSameType(self, obj):',
   '        return True',
@@ -421,6 +424,12 @@ describe('诊断家族发现级映射臂(覆盖补测)', () => {
       serializersItems.map(item => String(item.code)),
       'serializers_impl 应有 fixedDictInputKeySchema 未声明 w 发现'
     ).toContain('kbengine.fixedDictInputKeySchema');
+    // KSEM-SER-05:透传入参 → 推导 wire 键集 {x,y};getDictFromObj 读推导键集
+    // 缺失的 w(序列化时引擎记脚本错误并整体按默认值序列化)
+    expect(
+      serializersItems.map(item => String(item.code)),
+      'serializers_impl 应有 fixedDictOutputMemberSchema 缺成员 w 发现'
+    ).toContain('kbengine.fixedDictOutputMemberSchema');
     // 进程拓扑(mock Rust RPC 返回 findings;TS 侧映射/分组/发布走真实码)
     expectFindings('kbengine-process-topology', Uri.file(path.join(root, 'process_topology.xml')), 1);
     const topoDiagnostic = collection('kbengine-process-topology')!.get(

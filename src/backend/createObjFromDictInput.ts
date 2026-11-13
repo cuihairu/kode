@@ -21,6 +21,10 @@
  *   入参重绑定(=/for/with-as)后读取不判、嵌套 def 域跳过、
  *   注释/字符串位不判(掩码核验)、赋值目标键不判(只判读取)。
  *
+ * SER-05 复用(convertedObjMembers.ts,getDictFromObj obj 入参面):
+ * resolveImplMethodInputs(方法名参数化)与 isParamReboundAt / keyAccessAt /
+ * KeyAccessMatch / wireFdOfAnnotation / splitTopLevelParams 同口径消费。
+ *
  * 纯逻辑层,不 import vscode。
  */
 
@@ -34,11 +38,12 @@ import { parsePythonFile, pythonCodeLines } from './pythonParser';
 
 export const FIXED_DICT_INPUT_KEY_SCHEMA_DIAGNOSTIC_CODE = 'kbengine.fixedDictInputKeySchema';
 
-/** 一条输入绑定面(SER-03 绑定面 + 入参名与方法体域)。 */
-export interface CreateObjFromDictInputBinding {
+/** 一条契约方法入参绑定面(SER-03 绑定面 + 入参名与方法体域;SER-04
+ *  createObjFromDict 与 SER-05 getDictFromObj 两面共用同一形状)。 */
+export interface ImplMethodInputBinding {
   container: CustomTypeInfo;
   symbol: string;
-  /** createObjFromDict 的入参名(self/cls 之外的首个形参)。 */
+  /** 方法入参名(self/cls 之外的首个形参)。 */
   paramName: string;
   /** 方法体域(0 基行,含端点;签名收括号行+1 到体末非空行)。 */
   bodyStartLine: number;
@@ -137,8 +142,8 @@ function defSignatureParams(realLines: readonly string[], defLine: number): DefS
   return null;
 }
 
-/** 顶层逗号切分(括号/引号感知)。 */
-function splitTopLevelParams(text: string): string[] {
+/** 顶层逗号切分(括号/引号感知;SER-05 dict 字面量键条目切分同用)。 */
+export function splitTopLevelParams(text: string): string[] {
   const parts: string[] = [];
   let depth = 0;
   let quote: string | null = null;
@@ -214,15 +219,17 @@ function paramNameOf(rawParam: string): string {
 }
 
 /**
- * 推导本文档全部 createObjFromDict 输入绑定面:绑定唯一类 → 方法在 →
- * 签名可解析 → 入参名(self/cls 之外首个形参;无 → 零产出,静态方法式
- * 单参也收)。同名多类歧义不猜(SER-03 同口径)。
+ * 推导本文档全部指定契约方法的入参绑定面(SER-04 createObjFromDict /
+ * SER-05 getDictFromObj 共用推导口径):绑定唯一类 → 方法在 → 签名可解析
+ * → 入参名(self/cls 之外首个形参;无 → 零产出,静态方法式单参也收)。
+ * 同名多类歧义不猜(SER-03 同口径)。
  */
-export function resolveCreateObjFromDictInputBindings(
+export function resolveImplMethodInputs(
   text: string,
-  bindings: readonly FixedDictImplBinding[]
-): CreateObjFromDictInputBinding[] {
-  const inputs: CreateObjFromDictInputBinding[] = [];
+  bindings: readonly FixedDictImplBinding[],
+  methodName: string
+): ImplMethodInputBinding[] {
+  const inputs: ImplMethodInputBinding[] = [];
   if (bindings.length === 0) {
     return inputs;
   }
@@ -239,7 +246,7 @@ export function resolveCreateObjFromDictInputBindings(
       continue; // 同名多类:歧义不猜
     }
     const cls = classes[0];
-    const def = cls.methods.get('createObjFromDict');
+    const def = cls.methods.get(methodName);
     if (!def) {
       continue; // 方法缺失归 userTypeContract lane,此处零产出
     }
@@ -278,11 +285,19 @@ export function resolveCreateObjFromDictInputBindings(
   return inputs;
 }
 
+/** SER-04 面:createObjFromDict 输入字典绑定(resolveImplMethodInputs 特化)。 */
+export function resolveCreateObjFromDictInputBindings(
+  text: string,
+  bindings: readonly FixedDictImplBinding[]
+): ImplMethodInputBinding[] {
+  return resolveImplMethodInputs(text, bindings, 'createObjFromDict');
+}
+
 /**
  * 行级重绑判定(掩码行):入参名被赋值/for 迭代目标/with-as 重绑 → 之后的
- * 读取不再是 wire 字典,不可靠不判。
+ * 读取不再是原字典/原对象,不可靠不判(SER-04 入参面/SER-05 obj 面同用)。
  */
-function isParamReboundAt(maskedLine: string, paramName: string): boolean {
+export function isParamReboundAt(maskedLine: string, paramName: string): boolean {
   if (new RegExp(`^\\s*${paramName}\\s*=(?![=])`).test(maskedLine)) {
     return true;
   }
@@ -302,7 +317,7 @@ function isParamReboundAt(maskedLine: string, paramName: string): boolean {
  */
 export function resolveCreateObjFromDictInputReceiver(
   text: string,
-  inputs: readonly CreateObjFromDictInputBinding[],
+  inputs: readonly ImplMethodInputBinding[],
   line: number,
   receiver: string
 ): CustomTypeInfo | null {
@@ -352,8 +367,9 @@ export function resolveCreateObjFromDictInputReceiver(
   return null;
 }
 
-/** 键访问形态(`["k"]` 下标 / `.get("k")` 方法)在原文行上的扫描游标。 */
-interface KeyAccessMatch {
+/** 键访问形态(`["k"]` 下标 / `.get("k")` 方法)在原文行上的扫描游标
+ *  (SER-04 入参面/SER-05 obj 面同用)。 */
+export interface KeyAccessMatch {
   /** 0 基列(引号位或 get 名位)。 */
   character: number;
   /** 键串内容(引号内,不含引号)。 */
@@ -366,7 +382,7 @@ interface KeyAccessMatch {
 }
 
 /** pos 列起解析一个键访问段;非键访问返回 null(数字/变量/切片断链)。 */
-function keyAccessAt(lineText: string, pos: number): KeyAccessMatch | null {
+export function keyAccessAt(lineText: string, pos: number): KeyAccessMatch | null {
   if (lineText[pos] === '[') {
     let i = pos + 1;
     while (i < lineText.length && /\s/.test(lineText[i])) {
@@ -438,7 +454,7 @@ function keyAccessAt(lineText: string, pos: number): KeyAccessMatch | null {
  */
 export function computeCreateObjFromDictInputKeyFindings(
   text: string,
-  inputs: readonly CreateObjFromDictInputBinding[],
+  inputs: readonly ImplMethodInputBinding[],
   customTypes: readonly CustomTypeInfo[]
 ): CreateObjFromDictInputKeyFinding[] {
   const findings: CreateObjFromDictInputKeyFinding[] = [];
@@ -484,8 +500,9 @@ export function computeCreateObjFromDictInputKeyFindings(
   return findings;
 }
 
-/** wire 形态字段注解 → 嵌套 FD 容器(implementedBy 容器照收;非 FD → null 止链)。 */
-function wireFdOfAnnotation(
+/** wire 形态字段注解 → 嵌套 FD 容器(implementedBy 容器照收;非 FD → null
+ *  止链;SER-04 入参面/SER-05 obj 面同用)。 */
+export function wireFdOfAnnotation(
   annotation: string | null,
   customTypes: readonly CustomTypeInfo[]
 ): CustomTypeInfo | null {
@@ -502,7 +519,7 @@ function inputKeyReadsOnLine(
   rawLine: string,
   maskedLine: string,
   line: number,
-  input: CreateObjFromDictInputBinding,
+  input: ImplMethodInputBinding,
   customTypes: readonly CustomTypeInfo[]
 ): CreateObjFromDictInputKeyFinding[] {
   const findings: CreateObjFromDictInputKeyFinding[] = [];

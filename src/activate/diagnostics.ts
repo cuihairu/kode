@@ -57,8 +57,13 @@ import {
   computeCreateObjFromDictInputKeyFindings,
   createObjFromDictInputFindingToItem,
   implBindingsForDocument,
-  resolveCreateObjFromDictInputBindings
+  resolveCreateObjFromDictInputBindings,
+  resolveImplMethodInputs
 } from '../backend/createObjFromDictInput';
+import {
+  computeConvertedObjMemberFindings,
+  convertedObjMemberFindingToItem
+} from '../backend/convertedObjMembers';
 import {
   SCALAR_ASSIGN_DIAGNOSTICS_ENABLED_DEFAULT,
   analyzeScalarAssignWrites,
@@ -1205,6 +1210,7 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         );
         if (implBindings.length > 0) {
           const docText = document.getText();
+          const createInputs = resolveCreateObjFromDictInputBindings(docText, implBindings);
           items.push(
             ...computeGetDictFromObjReturnFindings(docText, implBindings)
               .map(fixedDictReturnFindingToItem)
@@ -1214,9 +1220,21 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
           items.push(
             ...computeCreateObjFromDictInputKeyFindings(
               docText,
-              resolveCreateObjFromDictInputBindings(docText, implBindings),
+              createInputs,
               customTypes
             ).map(createObjFromDictInputFindingToItem)
+          );
+          // KSEM-SER-05:转换输出对象成员面——createObjFromDict 可解析返回
+          // (字面量/透传)推导输出结构,getDictFromObj 体内 obj 入参成员读取
+          // 对键集校验(缺成员序列化时引擎整体按默认值顶替;自定义转换不凭
+          // 函数名推定结构)
+          items.push(
+            ...computeConvertedObjMemberFindings(
+              docText,
+              createInputs,
+              resolveImplMethodInputs(docText, implBindings, 'getDictFromObj'),
+              customTypes
+            ).map(convertedObjMemberFindingToItem)
           );
         }
         return items;

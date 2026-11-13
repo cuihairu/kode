@@ -371,6 +371,14 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     quickFix: false, status: 'implemented',
     source: 'src/backend/createObjFromDictInput.ts(发布 src/activate/diagnostics.ts,KSEM-SER-04)'
   },
+  {
+    id: 'KBE-PY-025', code: 'kbengine.fixedDictOutputMemberSchema',
+    title: 'getDictFromObj obj 入参成员读取对 createObjFromDict 推导结构校验(缺成员序列化时引擎记脚本错误并整体按默认值序列化;自定义转换不凭函数名推定)',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.fixedDictConstructDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/backend/convertedObjMembers.ts(发布 src/activate/diagnostics.ts,KSEM-SER-05)'
+  },
   // ── KB-001 行为知识流水线(C-23,数据源=src/knowledge/trapsKnowledge.ts)
   {
     id: 'KBE-PY-015', code: 'kbengine.fixedDictNestedMutation',
