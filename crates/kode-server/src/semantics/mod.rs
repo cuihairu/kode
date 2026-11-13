@@ -48,9 +48,14 @@
 //!   可零收,绝不画成单客户端;仅 cellapp 进程有此属性,base/client 语境
 //!   AttributeError;广播只查 client 段,组件广播查组件自身 def 模块并透传
 //!   标志,宿主同名不混入;client 段未命中回落属性臂,快照缺不判缺失)。
+//! - [`impact`] RPC-09 RPC 修改影响查询(方法/Arg 变更 → 确定调用点/
+//!   不确定候选/不受影响三桶分诊,过近似纪律宁可候选不漏报;索引覆盖态
+//!   由消费方显式声明,Partial/Missing 不构成零影响依据;no_impact_claim
+//!   只在覆盖完备∧两列表皆空才产结论——零影响红线钉在 API 形状上)。
 
 pub mod broadcast;
 pub mod callers;
+pub mod impact;
 pub mod cell;
 pub mod dispatch;
 pub mod refs;
