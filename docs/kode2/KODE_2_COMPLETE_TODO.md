@@ -92,7 +92,7 @@ Kode 是面向 KBEngine 游戏服务端开发的专业 VS Code 集成环境。�
 - [ ] AUDIT-013 产出 docs/architecture/migration-inventory.csv：模块、owner、输入、输出、耗时、迁移方式、测试、风险。
 - [ ] AUDIT-014 明确旧 A1-A7 对新 Phase 的映射；保留所有当前已修复的永转/超时问题回归测试。
 - [ ] AUDIT-015 将产品已有 feature 进行 retained/moved/reworked/deferred 分类，避免重构丢能力。
-- [ ] AUDIT-016 执行 HR-AUDIT，确认已有 HTTP/Watch/Hash 代码真相并建立差异清单。
+- [x] AUDIT-016 执行 HR-AUDIT，确认已有 HTTP/Watch/Hash 代码真相并建立差异清单。(HR-PR-01,6934c63a,docs/hotreload/current-implementation.md §1/§2+§3)
 
 ## 3. Repository / 构建 / 发布基础设施
 
@@ -483,18 +483,18 @@ scripts/common/utils/math.py      -> requestModule=utils.math,    fullModule=com
 **安全约束**：默认自动热更新关闭；必须显式开启某个可信 workspace 的特定 target；只允许经过批准的 endpoint、脚本根与可热更文件类型；`.def`、`types.xml`、`entities.xml` 不得默认自动应用，原则上显示变化、风险和“可能需重启”。
 
 ### 19.2 现状审计及兼容迁移（HR-AUDIT）
-- [ ] HR-AUDIT-001 固定当前 commit SHA；核对 `package.json` commands/config/views/keybindings、README 和旧 todo 的 HTTP 热更新说明，建立逐项事实表。
-- [ ] HR-AUDIT-002 使用 `rg 'httpRequests|reload|hotfix|hotReload|watch|\.def|digest|md5|sha256|hash'` 以及 import graph 找出全部相关实现和注册入口。
-- [ ] HR-AUDIT-003 追踪现有 Quick Request：用户操作→变量展开→URI/Body 组装→HTTP transport→错误处理→输出面板。
-- [ ] HR-AUDIT-004 提取现有 `${module}` 的确切逻辑、资源根识别、大小写处理、特殊 `.py` 文件处理，记录所有现有模板变量。
-- [ ] HR-AUDIT-005 搜索现有 VS Code `FileSystemWatcher` / `onDidSaveTextDocument` / 低层 fs watcher / config watcher 的创建、dispose、生命周期与功能归属。
-- [ ] HR-AUDIT-006 确认 HTTP 快捷请求中支持的方法、header、URL、body、超时、重试、输出与 SecretStorage 等已有实现，避免重造。
-- [ ] HR-AUDIT-007 检查是否已存在热更新历史、状态栏、TreeView 装饰、通知、实时请求时序、失败重试。
-- [ ] HR-AUDIT-008 搜索 `.def` Hash/Digest/协议签名与 KBEngine 引擎实际算法实现，区分文件哈希、语义指纹及引擎 Digest。
-- [ ] HR-AUDIT-009 找到引擎/HTTP 服务端实现或协议说明，确认请求参数拼写、响应 JSON 字段、目标进程、是否可查询 applied revision。
-- [ ] HR-AUDIT-010 在真实项目测试手动更新成功、HTTP 200 但应用失败、服务器未响应、模块名冲突，记录原始响应供 fixture。
-- [ ] HR-AUDIT-011 建立保留/封装/替换矩阵；现有通用 Quick Requests 保留通用用途，Hot Reload 用 adapter 复用。
-- [ ] HR-AUDIT-012 记录复用模块确切路径与 owner 到 `docs/hotreload/current-implementation.md`；没有源码证据的项目标 `unknown`。
+- [x] HR-AUDIT-001 固定当前 commit SHA；核对 `package.json` commands/config/views/keybindings、README 和旧 todo 的 HTTP 热更新说明，建立逐项事实表。(HR-PR-01,6934c63a,锚定 SHA 6934c63a;§HR-AUDIT-001 事实表:package.json:846-968 命令/2058-2098 配置/12 onCommand 全齐;通道在部署档案 store 无 channel 键;BUILTIN 示例 enabled:false)
+- [x] HR-AUDIT-002 使用 `rg 'httpRequests|reload|hotfix|hotReload|watch|\.def|digest|md5|sha256|hash'` 以及 import graph 找出全部相关实现和注册入口。(HR-PR-01,6934c63a,§HR-AUDIT-002 模块清单:触发核心 hotReload.ts 1062L+activate 接线 742L(extension.ts:1360)+发送/回执/状态三簇 src/backend/*+legacy 快速请求 views.ts:233-303+接收侧 KodeHotReload.py/xreload.py)
+- [x] HR-AUDIT-003 追踪现有 Quick Request：用户操作→变量展开→URI/Body 组装→HTTP transport→错误处理→输出面板。(HR-PR-01,6934c63a,§HR-AUDIT-003 热更发射路径 6 步链:watcher→pendingTriggers→全局去抖→def 结构门拦截 RESTART_REQUIRED→通道/actionName/默认热修三派发→回执阶梯 sent→accepted→applied(摘要双证据+10s 沉降)→失败重试重入)
+- [x] HR-AUDIT-004 提取现有 `${module}` 的确切逻辑、资源根识别、大小写处理、特殊 `.py` 文件处理，记录所有现有模板变量。(HR-PR-01,6934c63a,§HR-AUDIT-004 双名模型:resolveModuleDualName 剥 base/cell/client/bots 角色目录(hotReloadTempEdit.ts:61-102)+resolvePythonModulePath 角色目录断链上溯(httpRequests.ts:130-156);变量清单 ${module}/${files}/${fileList}/${targetId} 等,URL 编码仍无)
+- [x] HR-AUDIT-005 搜索现有 VS Code `FileSystemWatcher` / `onDidSaveTextDocument` / 低层 fs watcher / config watcher 的创建、dispose、生命周期与功能归属。(HR-PR-01,6934c63a,§HR-AUDIT-005 watcher 生命周期表:热更挂载点 hotReload.ts:935 唯一,配置变更重建+复合 dispose;触发仍单一全局去抖;onDidSaveTextDocument 4 处注册无一触发发送,onWillSave=0)
+- [x] HR-AUDIT-006 确认 HTTP 快捷请求中支持的方法、header、URL、body、超时、重试、输出与 SecretStorage 等已有实现，避免重造。(HR-PR-01,6934c63a,§HR-AUDIT-006 三路能力对照表:legacy 快速请求/通道传输/默认热修;通道自动增附 targetId+sender_digests;超时 10s 固定,重试/取消/SecretStorage 三路皆无)
+- [x] HR-AUDIT-007 检查是否已存在热更新历史、状态栏、TreeView 装饰、通知、实时请求时序、失败重试。(HR-PR-01,6934c63a,§HR-AUDIT-007:灯 98 发送状态(hotReloadStatus.ts:168)+灯 96 通道(hotReloadChannelConfig.ts:434);5 态文件装饰+CodeLens+OUTPUT 台账;历史 webview/TreeView 无=缺失;首跑通知+重试命令已在)
+- [x] HR-AUDIT-008 搜索 `.def` Hash/Digest/协议签名与 KBEngine 引擎实际算法实现，区分文件哈希、语义指纹及引擎 Digest。(HR-PR-01,6934c63a,§HR-AUDIT-008 三分法定案:hashDefContent sha256 面在但零生产调用;活门=classifyDefChange 结构指纹;negotiateEngineDigest 仅 md5 32 字符,compareEngineDigest 永久拒比;三类修订证据互不可比)
+- [x] HR-AUDIT-009 找到引擎/HTTP 服务端实现或协议说明，确认请求参数拼写、响应 JSON 字段、目标进程、是否可查询 applied revision。(HR-PR-01,6934c63a,§HR-AUDIT-009:回执契约字段全录(file/status∈accepted|applied|failed/digest/targetId/revision 数字);官方通道 KODE_RELOAD_<uuid> 回声协议;applied-revision 轮询无;targetId 为通道附挂标签非服务端进程身份=unknown)
+- [x] HR-AUDIT-010 在真实项目测试手动更新成功、HTTP 200 但应用失败、服务器未响应、模块名冲突，记录原始响应供 fixture。(HR-PR-01,6934c63a,§HR-AUDIT-010:真实引擎/外部 HTTP 服务仍未测=如实记录阻塞于活服务;仓内已有 demo 回环桥+pytest xreload 220L+TS 往返 harness 覆盖 200-but-unapplied/摘要不符/过期 generation/非 JSON/非 2xx/targetId 不符)
+- [x] HR-AUDIT-011 建立保留/封装/替换矩阵；现有通用 Quick Requests 保留通用用途，Hot Reload 用 adapter 复用。(HR-PR-01,6934c63a,§HR-AUDIT-011 矩阵:quickRequests/httpRequestService/hotReloadTransport 三保留=adapter 接缝即 ReloadTransport 抽象;全局去抖 watcher 渐进替换;hashDefContent 待决接线或删除)
+- [x] HR-AUDIT-012 记录复用模块确切路径与 owner 到 `docs/hotreload/current-implementation.md`；没有源码证据的项目标 `unknown`。(HR-PR-01,6934c63a,§HR-AUDIT-012 九行路径+导出+owner 表已落 docs/hotreload/current-implementation.md(zh 镜像 docs/zh/ 同步);无证据项一律 unknown 不硬造)
 
 ### 19.3 模块识别、双名称模型与兼容配置（HR-MOD）
 - [ ] HR-MOD-001 定义 `HotReloadModuleIdentity{workspaceId,rootId,fileUri,fullModule,requestModule,fileStem,parentName,language,sourceVersion}` DTO。
@@ -637,7 +637,7 @@ scripts/common/utils/math.py      -> requestModule=utils.math,    fullModule=com
 - [ ] HR-QA-018 安全与功能完成矩阵按 target、engine profile、文件类型、触发方式逐项签收。
 
 ### 19.11 建议的 Hot Reload PR 顺序及依赖（先复用现有功能）
-- [ ] HR-PR-01 `audit/hotreload-current`：HR-AUDIT 全部；输出调用链和已实现/缺失矩阵，不改功能。
+- [x] HR-PR-01 `audit/hotreload-current`：HR-AUDIT 全部；输出调用链和已实现/缺失矩阵，不改功能。(HR-PR-01,6934c63a,docs/hotreload/current-implementation.md 全量刷新+docs/zh/ 1:1 镜像;§HR-AUDIT-001..012 事实表+§2 已实现/缺失/unknown 矩阵+§3 对上期结转;零功能改动;审计发现一并记录未修=首跑通知『打开日志』locale 不匹配 src/hotReload.ts:1046)
 - [ ] HR-PR-02 `hotreload/module-identity`：HR-MOD 全部 + pure resolver tests；手动热更先使用双名称模型；兼容原 `${module}`。
 - [ ] HR-PR-03 `hotreload/request-adapter`：抽取通用 RequestExecutor + 状态机 + mock server；保证旧 Quick Requests 不回归。
 - [ ] HR-PR-04 `hotreload/save-watch`：onSave 默认关闭，可开关、去抖、稳定性/幂等队列、基本语法检查。

@@ -1,176 +1,159 @@
-> 2026-11-11：本文保留历史审计口径；demo HTTP/xreload、官方执行确认与 Python 3.7.3 适配的当前实现见 [双通道实现记录](../design/demo-hot-reload.md)。
+> 2026-11-13 refresh (HR-PR-01 re-execution): audited at HEAD `6934c63a` (main). The 2026-11-11 audit (SHA `36052c47`) is superseded — the hot-reload surface grew from ~5 modules to 30+ (state machine, receipts, retry, channels, UI cluster). Receiver-side implementation record (demo loopback + Python 3.7.3 xreload): [demo-hot-reload design](../design/demo-hot-reload.md).
 
 # Hot Reload — Current Implementation Audit (HR-PR-01)
 
-- Fixed audit SHA: `36052c47cb26290b6829632c6c3ca31341161c96` (branch `v0.2`).
+- Fixed audit SHA: `6934c63abd9b21afaff51a135d69535ea167f069` (branch `main`).
 - Scope: HR-AUDIT-001..012, book `docs/kode2/KODE_2_COMPLETE_TODO.md` §19.2.
-- Red lines honored: Watch/Hash/success-confirmation implementation degree is reported as evidence-backed facts or `unknown`.
-- Superseded 2026-11-06 (user order): the example endpoint/parameter were corrected repo-wide to `POST http://127.0.0.1:8090/hotfix?module_name=<module>` with `module_name=<module>` in both the query and the body (so a server reading either one gets it; the duplicated same value is harmless); the old mis-spelled parameter recorded at the audit SHA is no longer carried anywhere, and a repo-wide grep gate keeps it out.
+- Red lines honored: Watch/Hash/success-confirmation degree reported as evidence-backed facts or `unknown`; nothing below claims more than the code does.
+- Standing endpoint/parameter contract (2026-11-06 user order): quick-request example carries `module_name=<module>` in both query and body; the repo-wide spelling gate stays (`tests/hotfixSpellingGate.test.ts`).
 - This PR changes no behavior. Audit only.
 
 ## 1. Fact table (verified against source at the SHA above)
 
-### HR-AUDIT-001 — Anchors: package.json / README / old docs
+### HR-AUDIT-001 — Anchors: package.json / README / docs
 
 | Item | Fact | Evidence |
 | --- | --- | --- |
-| Commands | `kbengine.httpRequests.run` (quick pick over merged list), `kbengine.httpRequest.run` (named, needs `args.name`) | `package.json` contributes.commands; `src/extension.ts:1135,1163` |
-| Keybindings | None registered for the two HTTP commands (only display string `keybinding` per entry; real binding is manual via VS Code keybindings UI) | `package.json` keybindings (telnet only); `src/httpRequests.ts:36-41` |
-| Views | No hot-reload view. `kbengine.quickActions` TreeView lists HTTP request entries as runnable nodes | `package.json` contributes.views; `src/quickActions.ts:507` |
-| Config: `kbengine.httpRequests` | array; default = one **disabled** example `{"name":"热更新(示例)","url":"http://127.0.0.1:8090/hotfix?module_name=${module}","method":"POST","body":"module_name=${module}"}` (updated 2026-11-06) | `package.json` configuration default; `src/httpRequests.ts` `BUILTIN_HTTP_REQUEST_EXAMPLE` (test-locked sync) |
-| Config: `kbengine.hotReload.*` | `enabled=true` (default on since 2026-11-06), `actionName=""` (= send the default hotfix request), `globs=["**/*.py"]`, `debounceMs=500` | `package.json`; `src/hotReload.ts` `readHotReloadSettings` |
-| README/docs | `README.md`, `README.zh.md`, `docs/guide/configuration.md` (HTTP Quick Requests section), `docs/zh/guide/configuration.md`, `docs/features.md` all document the settings list, the `${module}` package-boundary semantics, and the default endpoint shape `curl -X POST 'http://127.0.0.1:8090/hotfix?module_name=entities.fight.FightAI' -d 'module_name=entities.fight.FightAI'` (`module_name` in both query and body) (updated 2026-11-06) | files at fixed SHA |
-| Old gap ledger | `docs/reference-feature-gap.md` G5 claims "automatic hot reload implemented (batch 136)" — that claim covers **watch→trigger a quick action** only, not the §19 state/confirmation model | `docs/reference-feature-gap.md:40,55` |
+| Commands | 12 `kbengine.hotReload.*` commands: `tempEdit.run`, `showLog`, `toggle`, `showBatchSummary`, `retryFailed`, `showRevisionEvidence`, `filterByState`, `showFileState`, `configureChannel`, `switchChannel`, `confirmDefBaseline`, `materializeGlobs`; plus legacy `kbengine.httpRequests.run` / `kbengine.httpRequest.run` | `package.json:846-968` (hotReload block), `:1042-1045` (mcp toggle, non-HR); registrations `src/activate/hotReload.ts` (table in §4) |
+| Activation events | All 12 hotReload commands have matching `onCommand:` events (programmatic cross-check: zero missing) | `package.json:36-37,161-176` |
+| Keybindings | None registered for hot reload | `package.json` keybindings (telnet only) |
+| Views | No hot-reload TreeView/webview. State surfaces instead: global FileDecorationProvider + CodeLens + OUTPUT channel ledger | `src/activate/hotReload.ts:582,592`; `src/hotReloadStatus.ts:21` |
+| Config: `kbengine.hotReload.*` | `enabled=true` (default on), `actionName=""`, `globs=null` (unset → derived from `kbengine.assetsRoot`, `src/hotReload.ts:83-95`), `debounceMs=500`, `tempEdit.enabled=false`, `tempEdit.actionName=""`, `tempEdit.autoRestore=true`, `tempEdit.scriptRoot=""` | `package.json:2058-2098` |
+| Config: channel/profile | No `kbengine.hotReload.channel` key — channel lives in the deployment-profile store (`workspaceState`), surfaced via `configureChannel`/`switchChannel` | `src/projectProfiles.ts:31,170`; `src/backend/hotReloadChannelConfig.ts:349-425` |
+| Config: `kbengine.httpRequests` | array; default = one **disabled** example `POST http://127.0.0.1:8090/hotfix?module_name=${module}` body `module_name=${module}` | `src/backend/httpRequests.ts:53-61` (`BUILTIN_HTTP_REQUEST_EXAMPLE`) |
+| README/docs | README(.zh)/`docs/guide/configuration.md`/features docs cover quick requests + zero-config auto reload + endpoint shape | files at fixed SHA |
 
-### HR-AUDIT-002 — rg sweep: all implementation and registration entry points
+### HR-AUDIT-002 — Module inventory (registration entry points)
 
-Sweeps run: `httpRequests|reload|hotfix|hotReload|watch|\.def|digest|md5|sha256|hash` over `src/`, `package.json`, README, `docs/`, `tests/` (node_modules excluded).
-
-| Module | Role |
-| --- | --- |
-| `src/httpRequests.ts` | Pure logic: entry parsing, custom template vars, `${module}` resolver, request assembly |
-| `src/httpRequestService.ts` | Settings-path executor: node http/https transport, OUTPUT panel流水, error popup |
-| `src/quickActions.ts` | Second HTTP executor (`fetchHttp`/`terminalHttp`) for `.kbengine/debug.json` actions; dispatch `@http:debug|settings:<idx>`; curl command builder (tests only) |
-| `src/quickActionConfig.ts` | debug.json/httpRequests parsing; `resolveActionVariables` (official variable table, throws on unresolved) |
-| `src/quickActionTree.ts` | TreeView nodes for quick actions + HTTP requests |
-| `src/variableSubstitution.ts` | Official VS Code variable family (single source of truth) |
-| `src/hotReload.ts` | Auto hot reload: config gate, per-glob `FileSystemWatcher`, global debounce, runs quick action by name |
-| `src/debugJsonSchema.ts` | Schema for `.kbengine/debug.json` incl. `httpRequests` and quick-action `type:"http"` |
-| `src/debugConfigBootstrap.ts` | Generates `.kbengine/debug.json` template with commented `http` hot-update action example (`http://127.0.0.1:8090/hotfix?module_name=${module}`, POST, body `module_name=${module}` — aligned 2026-11-06, the parameter is carried in both places) |
-| Registration | `src/extension.ts:1113-1180` (channel + service + 2 commands), `:1591-1592` (settings entries injected into QuickActionManager), `:1624-1626` (`setupHotReload` → `quickActionManager.runByName(name, {suppressConfirm:true})`) |
-| Engine-side metadata | `src/kbengineMetadata.ts:114-116` documents `KBEngine.reloadScript(fullReload)` (baseapp/cellapp only) — hover/snippet surface, no HTTP involved |
-
-### HR-AUDIT-003 — Quick Request end-to-end trace (settings path)
-
-1. User: `kbengine.httpRequests.run` → quick pick of merged entries (debug.json + settings, annotated by source) or `kbengine.httpRequest.run` with `args.name`.
-2. Parse: `parseHttpRequestEntries` (`src/httpRequests.ts:62`) — bad entries skipped as-is, method uppercased, headers string-only.
-3. Variables: `buildTemplateVars(editorContext, isPackageDir)` + `buildOfficialVariableContext` → `buildHttpRequest` single-pass substitution (custom placeholders first, then official table, unknown kept literal).
-4. Transport: `defaultTransport` (`src/httpRequestService.ts:47-123`) — `URL` parse guard, http/https only, `req.setTimeout` 10s destroys request, receive window capped at `RESPONSE_PREVIEW_LIMIT*4` bytes (16 KiB).
-5. Output: channel `KBEngine HTTP 快捷请求` — `▶ [name] METHOD URL`, then `✓ <status> · <ms>` + body preview (4000 chars, truncated marker), or `✗ …` + error popup. `result.ok` is true for **any** status the server returned (including non-2xx); status semantics are not classified.
-6. Failure modes covered: URL unparseable, unsupported protocol, timeout, socket/DNS error (all resolve, never reject).
-
-debug.json quick-action path diverges: `runHttpRequestFrom` resolves **official variables only** (unresolved → throw), then `terminalHttp` → `fetchHttp` → result logged to LogHub as `http:<name>` component, info if 2xx else error.
-
-### HR-AUDIT-004 — `${module}` exact logic and all template variables
-
-`resolvePythonModulePath` (`src/httpRequests.ts:122-141`):
-
-- Splits the POSIX-normalized file path; stem = filename with trailing `.py` stripped via regex `/\.py$/i` (case-insensitive; `.PY` stripped; `.pyi`/`.pyc` **not** matched due to the `$` anchor).
-- Walks from the file's directory upward; a directory counts as a package segment **only if** the injected probe says it contains `__init__.py`; first non-package directory stops the walk. Drive-letter segments cannot be packages.
-- KBEngine role dirs (`base/`, `cell/`) have no `__init__.py` → module name = bare file stem. With real packages (`entities/`, `fight/` each containing `__init__.py`) → `entities.fight.FightAI`.
-- No probe injected → module = file stem only.
-- Case preserved everywhere. `__init__.py` gets stem `__init__` — **no special-case handling exists**.
-
-Full variable inventory:
-
-| Variable | Source | Semantics |
+| Cluster | Modules | Role |
 | --- | --- | --- |
-| `${module}` | custom | package-boundary module path (above) |
-| `${moduleBasename}` | custom | last `.` segment of `${module}` |
-| `${filename}` | custom | file name incl. `.py` (renamed from `${file}` in batch 153) |
-| `${line}` | custom | cursor line, 1-based |
-| `${sel}` | custom | selected text |
-| official family | `src/variableSubstitution.ts` | `${file}`=abs path, `${workspaceFolder}`, `${workspaceFolder:Name}`, `${fileBasename}`, `${fileBasenameNoExtension}`, `${fileDirname}`, `${fileExtname}`, `${relativeFile}`, `${relativeFileDirname}`, `${env:NAME}`, `${cwd}`, `${userHome}`, `${pathSeparator}` |
-| unknown placeholders | — | kept literal, never emptied; values are **not URL-encoded** |
+| Trigger core | `src/hotReload.ts` (1062 L) | settings read, watch plan, global debounce (`HotReloadTrigger` :220), fire-path orchestration: def gate (:777-809) → channel send (:561) → actionName quick action (:609) → default hotfix POST (:427-446); watcher attach/rebuild (:928-1008); config-change rebuild (:1010-1020) |
+| Activation wiring | `src/activate/hotReload.ts` (742 L), entered from `src/extension.ts:1360-1367` | ledger + version tracker + status controller instantiation (:91-133), def-gate shared instance (:246-250), all 12 command registrations, decoration/lens provider registration (:574-615) |
+| Send cluster | `src/backend/hotReloadDefaultHotfix.ts`, `hotReloadChannelConfig.ts` (679 L), `hotReloadChannelSend.ts`, `hotReloadTransport.ts` (739 L), `hotReloadDelivery.ts` | channel config panel + quick switch lamp; batch channel send with receipt switch; transport abstraction (http / kbengine-official); delivery classifier |
+| Receipt cluster | `src/backend/hotReloadReceipt.ts`, `hotReloadAppliedCheck.ts`, `hotReloadRetry.ts` (65 L), `hotReloadRetryCommand.ts` (361 L), `hotReloadRevisionEvidence.ts` + `Command.ts`, `hotReloadTargetState.ts` (401 L), `hotReloadBatchSummary.ts` + `Command.ts` | accepted receipt parser; applied digest double-evidence + 10 s settle; retry planner + single-target resend command; three-kind revision evidence; dual-dimension delivery ledger + HOT-VER version book; per-target aggregation |
+| State/UI cluster | `src/backend/hotReloadFileState.ts` (368 L), `hotReloadFileStateFilter.ts`, `hotReloadFileVersion.ts` (303 L), `src/hotReloadStatus.ts` (476 L), `src/hotReloadToggle.ts`, `src/hotReloadFileDecorations.ts`, `src/hotReloadFileStateLens.ts`, `src/backend/hotReloadNotice.ts`, `src/backend/hotReloadGlobsMaterialize.ts`, `src/backend/hotReloadTempEdit.ts`, `src/backend/hotReloadDefGate.ts`, `hotReloadDefHash.ts`, `hotReloadDefStructure.ts` | lifecycle state machine; attention filter/detail commands; per-file version book; send-state lamp; toggle; file decorations; CodeLens; first-run notice; globs materialization; temp-edit reload; def structural gate; def hash three-path; def structural classifier |
+| Legacy quick requests | `src/backend/httpRequests.ts`, `src/backend/httpRequestService.ts`, `src/quickActions.ts`, `src/quickActionConfig.ts`, `src/quickActionTree.ts`, `src/variableSubstitution.ts`, `src/backend/debugJsonSchema.ts`, `src/debugConfigBootstrap.ts` | unchanged semantics; moved under `src/backend/` (SRC-001); HTTP registration now `src/activate/views.ts:233-303` (call site `src/extension.ts:1276-1277`) |
+| Receiver side (repo, non-extension) | `templates/demo-game/scripts/common/KodeHotReload.py` (352 L) + `xreload.py` (214 L, Python 3.7.3), mirrored in `tests/fixtures/kbengine-demo-assets/`; `scripts/hot-reload-receiver/referenceReceiver.mjs` | demo loopback bridge: HTTP `/hotfix` `/reload` `/status` on 127.0.0.1, ports 8090 base / 8091 cell; xreload = Guido van Rossum's algorithm adapted to 3.7.3; digest validation + applied receipts |
 
-debug.json quick-action variables: official table only, unresolved → hard error (different failure semantics from settings path — both paths verified).
+### HR-AUDIT-003 — Send path end-to-end trace (current fire path)
 
-### HR-AUDIT-005 — File watchers: creation, purpose, lifecycle
+1. Trigger: FileSystemWatcher events → `pendingTriggers` (`src/hotReload.ts:417`) → single global debounce (500 ms default, `HotReloadTrigger` :220-251).
+2. Gate: pure-Python batch passes synchronously (:779-782); batch containing `.def` runs the structural gate (`gateDefChanges` :777-809 → `hotReloadDefGate.check` :107-166). Structural diff → **blocked**: `RESTART_REQUIRED` marked (:784), audit line `拦截:需重启` (:792), baseline NOT rolled forward (:805 runs only on pass).
+3. Dispatch (first match wins): deployment channel → `sendFilesViaReloadChannel` (`src/hotReload.ts:561`; transport resolved at `src/activate/hotReload.ts:340-361`, default channel with `targetId='default'` at :347); else `actionName` quick action (:609-756); else default hotfix POST (`runDefaultHotfix` :427-446).
+4. Channel send sequence (`hotReloadChannelSend.ts:68-328`): generation records before transport (:74-93) → frozen sha256 digests read per file (:95-116) → root grouping (:117-123) → send → receipts parsed (`parseReloadHttpReceipts` :163-253) → ledger switch `applied`/`accepted`/`failed`/`sent-unverified` (:219-306) → applied settle window anchored at send start (:172-197).
+5. Receipt upgrade ladder: transport 2xx = `sent-unverified` only (`hotReloadDelivery.ts:24-35`; non-2xx = `failed` :34); `status:"accepted"` + file echo → `accepted` (`hotReloadReceipt.ts:25-52`); `status:"applied"` + file echo + `digest` == frozen sha256 → `applied` (`hotReloadAppliedCheck.ts:43-96`); settle 10 s (`HOT_RELOAD_APPLIED_SETTLE_MS` :21) ends `unconfirmed-timeout`, never a fake terminal state (:105-119).
+6. Failure handling: retry command re-enters the same gate + channel/receipt stream (`hotReloadRetryCommand.ts:101-303`, `source:'retry'` :136-147).
+
+### HR-AUDIT-004 — Module identity and template variables (dual-name model)
+
+- **Dual-name resolver** `resolveModuleDualName` (`src/backend/hotReloadTempEdit.ts:61-102`): KBEngine process-role dirs `base|cell|client|bots` (:58-59) are **stripped from module segments** (:94) — baseapp loads `scripts/base` as process root, `sys.modules` has no `base.` prefix (rationale :50-57; the 2026-11-12 "sent but not applied" bug). Returns `fullModule` (:97) + `requestModule` (last real module dir + stem, :98).
+- **Legacy resolver** `resolvePythonModulePath` (`src/backend/httpRequests.ts:130-156`): `__init__.py` package-boundary walk upward, **breaks the chain at a role dir** (:150-152); used by `resolveDefaultHotfixModule` fallback (`hotReloadDefaultHotfix.ts:44-53`) and legacy `${module}`.
+- Default-hotfix module choice: dual-name when `scriptRoot` given, else legacy walk (`hotReloadDefaultHotfix.ts:44-53`).
+- `__init__.py` still has no special-case beyond rejection in the dual-name path (:82); case preserved; `.pyi`/`.pyc` not matched (`$` anchor).
+- Variable inventory: custom `${module}`/`${moduleBasename}`/`${filename}`/`${line}`/`${sel}` (settings path) + official VS Code family (`variableSubstitution.ts`) + channel placeholders `${files}` (JSON array), `${fileList}`, `${targetId}` (`hotReloadTransport.ts:89-92`). Values still not URL-encoded.
+- Derived `package` field no longer reports a dotless module as its own package (`src/backend/fileChangeMeta.ts:381-385`).
+
+### HR-AUDIT-005 — Watchers: creation, purpose, lifecycle
 
 | Location | Pattern | Purpose | Lifecycle |
 | --- | --- | --- | --- |
-| `src/hotReload.ts:162-193` | per `kbengine.hotReload.globs` (default `**/*.py`) | hot reload: 3-channel events (change/create/delete) → single global debounce trigger → run quick action by name | default **off** (no watcher created); `onDidChangeConfiguration('kbengine')` disposes+rebuilds; one composite disposable in `context.subscriptions` disposes watchers + timer + config listener |
-| `src/extension.ts:491` | `**/*.{py,def,xml}` + external scan roots | Python class index invalidation | disposed via `context.subscriptions` array |
-| `src/extension.ts:1395` | `**/kbengine*.xml` | final server config view refresh | `context.subscriptions` |
-| `src/extension.ts:1720` | `**/<managedDir>`, `**/<managedDir>/**` | `.kbengine` asset regeneration | per-watcher `context.subscriptions` |
-| `src/pythonTypeStubs.ts:602` | `**/types.xml` | stub re-export | `context.subscriptions` |
-| `src/languageProviders.ts:4321` | `**/*.def`, `**/types.xml`, `**/entities.xml` | CodeLens invalidation | provider-level, disposed with subscription |
-| `src/entityMapping.ts:829,859,898` | def/xml patterns | entity mapping caches | `context.subscriptions` |
-| `src/workspaceIndex.ts:36` | `**/*.py` glob | workspace python index | explicit dispose |
-| `src/debugConfig.ts:221` | config pattern | debug config regeneration | `this.configWatcher` disposed |
+| `src/hotReload.ts:935` (`attachWatcher` :928-946) | per explicit glob / `**/*` bypass surface / derived dual-duty (`assetsRoot/**/*.py`) | hot reload: change/create/delete → `pendingTriggers` → global debounce → gate → send | off until `enabled` (boot `apply()` :1035); full rebuild on config change (:1010-1020, signature :883-890); composite dispose :1021-1034 |
+| bypass merger | `**/*` non-py surface | 30 ms shared-file event merge → state/version bookkeeping (`createSharedFileEventMerger`, `src/backend/sharedFileEvents.ts:47,91`) | same composite |
+| `src/extension.ts:491` | `**/*.{py,def,xml}` | python class index invalidation | unchanged |
+| other watchers | unchanged from 2026-11-11 audit (config view, asset regen, stubs, CodeLens, mapping, workspace index, debug config) | — | — |
 
-Additional facts: **no `onDidSaveTextDocument`/`onWillSaveTextDocument` usage anywhere** — save-triggered reload does not exist; `onDidChangeTextDocument` used once (`src/extension.ts:662`, call-chain view refresh, not hot reload). The hot-reload trigger is a **global single debounce** (not per-file) and does not dedupe by file, does not hash content, and fires the configured quick action regardless of which file changed.
+Facts: trigger is **still a single global debounce** — per-file info accumulates in `pendingTriggers` and drains wholesale (:420-421); per-file intelligence lives in the version book (`hotReloadFileVersion.ts:154`) and the state machine (`hotReloadFileState.ts:159`), both fed from watcher events. Save events: 4 `onDidSaveTextDocument` registrations exist (`src/globalDataIndex.ts:233`, `src/extension.ts:568`, `src/activate/hotReload.ts:603` — decorations/lens refresh only, no send, `src/activate/diagnostics.ts:562`); **none triggers a send**; `onWillSaveTextDocument`: zero.
 
-### HR-AUDIT-006 — Existing HTTP capability inventory (avoid rebuilding)
+### HR-AUDIT-006 — HTTP capability inventory (no rebuilding)
 
-| Capability | Settings path (`HttpRequestService`) | debug.json path (`fetchHttp`/`terminalHttp`) |
-| --- | --- | --- |
-| Methods | any, uppercased, default GET | any, default GET |
-| URL/headers/body | templated (custom + official vars); headers sent | official vars only; **headers resolved but dropped — `HttpRunOptions` has no `headers` field, `fetchHttp` passes only `{method}`** (`src/quickActions.ts:75-79,217`) |
-| Timeout | fixed 10s (`DEFAULT_HTTP_TIMEOUT_MS`), not configurable per entry | fixed 10s (`QUICK_ACTION_TIMEOUT_MS`) |
-| Response cap | 16 KiB window / 4000-char preview | 4000-char window |
-| Retry | none | none |
-| Cancellation | none | none |
-| SecretStorage | **zero `secrets`/SecretStorage usage in `src/`** (telnet password comes from settings, socket-only, never logged — separate feature) | none |
-| Proxy/TLS options | none | none |
-| Concurrency | unbounded, per-invocation | unbounded |
-| Output | dedicated OUTPUT channel + error popup | LogHub entry + error popup |
-| Non-2xx handling | reported as `ok:true` + status code (no classification) | info/error log level by 2xx |
+| Capability | Legacy quick-request service (`httpRequestService.ts`) | Channel transport (`hotReloadTransport.ts`) | Default hotfix |
+| --- | --- | --- | --- |
+| Methods | any, default GET | template method verbatim | POST fixed |
+| Headers | sent (settings entries) | substituted; auto `Content-Type` on default channel | form-urlencoded |
+| Body | templated | JSON object auto-augmented with `targetId` (:306-321) + `sender_digests` (:326-353) | `module_name=<module>` |
+| Timeout | 10 s fixed (`DEFAULT_HTTP_TIMEOUT_MS`, `httpRequestService.ts:22`) | same runner | same |
+| Probe | none | GET empty-body probe (:263-287) | none |
+| Response | 2xx/not classified as `ok` (any status) | receipts protocol; non-2xx = per-file `failed` (:373-380); non-JSON = `sent` ("无协议回执,不 claim applied", :171-177) | 200-299 ok, else failure |
+| Retry | none | none (explicit retry command only) | none |
+| Cancellation | none | none | none |
+| SecretStorage | zero usage (unchanged) | none | none |
 
-A `buildCurlCommand` helper supporting headers exists (`src/quickActions.ts:178`) but is referenced only by tests — dead in the execution path.
+### HR-AUDIT-007 — Status / history / UI surface
 
-### HR-AUDIT-007 — Hot reload history / status bar / decorations / retry
-
-- No hot-reload history store, no request timeline, no failure retry anywhere in `src/`.
-- Status bars: exactly two — telnet (`src/extension.ts:1595`) and running-server count (`src/extension.ts:2742`). No hot-reload status item.
-- TreeView: `kbengine.quickActions` lists HTTP entries as static runnable nodes; no reload state, no decoration.
-- Notifications: hot-reload path pops errors only; no success notification exists (nothing to silence).
-- Conclusion: HR-STATE (§19.6) and HR-UI (§19.7) are **greenfield**; only the trigger plumbing and the two HTTP executors are reusable.
+- Status bar lamps: 8 total, all Right — 100 server count, 99 telnet, **98 hot-reload send-state** (`src/hotReloadStatus.ts:168`; 7 faces :40-70: 关/就绪/就绪(未监视)/发送中/已发送(未确认)/已应用/失败 + HOT-VER version suffix `v3`/`v2→v3` :421-422), 97 interpreter, **96 hot-reload channel** (`hotReloadChannelConfig.ts:434`; `默认(http)` label, red on failed probe), 95 console tail, 94 Kode core, 93 MCP toggle.
+- File decorations: global provider (`src/activate/hotReload.ts:582`), 5 decorated states — DIRTY/D orange, SENT/S blue, APPLIED/A green, FAILED/F red, RESTART_REQUIRED/R purple (`src/backend/hotReloadFileState.ts:358-368`), worst-wins per file.
+- CodeLens on `**/*.{py,def}`: top-of-file state line (state | baseline hash12 | last time | reason) (`src/hotReloadFileStateLens.ts:32-45`).
+- Commands: filterByState (DIRTY ∪ SENT report), showFileState (per-file detail), showBatchSummary (worst-wins per target, `hotReloadBatchSummary.ts:45-50`), retryFailed, showRevisionEvidence (fileHash/semanticHash/engineDigest), confirmDefBaseline (clears R marks), toggle, switchChannel, configureChannel, materializeGlobs, tempEdit.run, showLog.
+- History: **no webview/TreeView history store** — the OUTPUT channel `KBEngine 热更新` append-only ledger + version ledger dump is the only history.
+- Notifications: first-run notice (once per workspace, `hotReloadNotice.ts`) with Open logs / Turn off now; per-send errors.
 
 ### HR-AUDIT-008 — `.def` Hash / Digest status
 
-- Repo-wide `digest|md5|sha256|sha1|createHash|fingerprint` sweep: the only cryptographic hash is `src/logHub.ts:101` (sha256 of log text for dedupe fingerprinting). `src/backend/defAnalyzer.ts`, `src/backend/defParser.ts`, `src/semanticIndex.ts` contain **no hashing of any kind**.
-- Three-layer model (fileHash / semanticHash / engineDigest): **none exists**. No file hash, no semantic fingerprint, no engine digest code.
-- Engine-side evidence in repo: `KBENGINE_SOURCE_AUDIT_PLAN.md` §14 (source-verified) confirms `KBEngine.reloadScript(fullReload)` exists on baseapp/cellapp and that `KBEngine.reloadEntityDef()`/`isReload()` were **retracted** as non-existent public APIs. No engine Digest algorithm is documented anywhere in this repo.
+- `hashDefContent` (`src/backend/hotReloadDefHash.ts:39-43`): sha256 over raw UTF-8 + byteLength; boundary declared "local reconciliation only". **Not wired into any gate — production callers zero (tests only).**
+- The live gate is **structural, not content-hash**: `classifyDefChange` (`hotReloadDefStructure.ts:186`) fingerprints Properties `{Type,Flags,Persistent,Utype}` (:109-119), method Arg signatures (:120-129), Parent/Interfaces/Components (:130-153); comments/whitespace/order/description non-structural (:5-11); unparseable = conservative structural (:189-195).
+- Engine digest: `negotiateEngineDigest` (:172) — `md5` only when a 32-char engine-format MD5 is handed over (client side computes it in Rust, `computeDefMd5InRust`, consumer `src/defMd5Check.ts:213,225`, command `kbengine.def.checkEngineMd5`, verdict `match|mismatch|unverifiable`); `compareEngineDigest` (:203-217) is a **permanent refuse** (`comparable: false` both branches) — raw-content sha256 and engine composite MD5 are never cross-compared.
+- Revision evidence (`hotReloadRevisionEvidence.ts`): three kinds `fileHash` (local sha256) / `semanticHash` (structural fingerprint hash, `hotReloadDefStructure.ts:165`) / `engineDigest` (parsed from responses only, :85-108); cross-kind comparison always `incomparable` (:52-60).
+- Engine API metadata: `KBEngine.reloadScript(fullReload)` (baseapp/cellapp) remains the only engine-side reload surface; `reloadEntityDef()`/`isReload()` retracted as non-existent.
 
 ### HR-AUDIT-009 — Server-side protocol evidence
 
-- No server implementation ships in this repo. The endpoint shape in force is the one fixed by the 2026-11-06 user order: `POST http://127.0.0.1:8090/hotfix?module_name=<module>` with `module_name=<module>` in both the query and the body (README, docs/guide/configuration.md, builtin example, and the zero-config auto hot-reload sender `src/hotReloadDefaultHotfix.ts` all take it from the same constant).
-- Parameter naming: corrected repo-wide on 2026-11-06 by explicit user order; the old mis-spelled parameter recorded at the audit SHA is no longer carried anywhere (grep gate `tests/hotfixSpellingGate.test.ts`).
-- Response JSON fields, target-process identification, applied-revision query: **unknown — no evidence in repo**.
+- **HTTP receipt contract (now implemented end-to-end)**: request = channel body JSON object (auto `targetId` + `sender_digests`); response = JSON (array or object), per-item `file` (verbatim echo, required), `status` ∈ `accepted|applied|failed` (+`reason`), optional `targetId` (mismatch → rejected), `digest` (applied requires frozen-sha256 equality), `note`, `revision` (number only). Non-JSON → all `sent`. (`hotReloadTransport.ts:163-253`)
+- **Official-channel echo contract**: telnet console exec script with unique marker `KODE_RELOAD_<uuid>:`; payload `{files,targetId,sender_digests}`; when the engine has `KodeHotReload` installed it is preferred (`hotReloadTransport.ts:558-561`), receipts returned via printed marker line, re-parsed through the same HTTP receipt parser (:582-590); without observer: Traceback → `failed`, else `sent` ("引擎无回执协议").
+- Demo receiver: `templates/demo-game/scripts/common/KodeHotReload.py` — HTTP loopback `/hotfix` `/reload` `/status`, ports 8090 base / 8091 cell (env-overridable), validates `sender_digests`, computes sha256, replies `applied`, downlinks cell files base→cell; `xreload.py` = Python 3.7.3 adaptation of Guido van Rossum's xreload.
+- Applied-revision queryability: **still not implemented** — no polling/validation request; `revision` is only parsed from receipts (informational).
+- Target-process identification: `targetId` is a channel-attached label (`'default'` for the built-in channel; per-instance otherwise), not a server-discovered process identity — `unknown` how real deployments will map it.
 
 ### HR-AUDIT-010 — Real-project test record
 
-- **Not performed** (no reachable engine/HTTP service from this audit environment). Status: `untested`.
-- Existing automated coverage (scripted transports only, no real server): `tests/httpRequests.test.ts`, `tests/httpRequestService.test.ts`, `tests/httpRequestWiring.test.ts`, `tests/quickActionManager.test.ts`, `tests/hotReload.test.ts`, `tests/quickActionRunners.test.ts`.
-- Required fixtures (HTTP 200-but-failed, server silent, module-name conflict, raw responses) remain to be captured per HR-AUDIT-010; blocked on a live service.
+- **External real engine/HTTP service: still untested** from this environment (unchanged from 2026-11-11).
+- What exists now beyond scripted transports: demo loopback bridge (Python) + pytest suite `tests/python/test_xreload_py37.py` (220 L, CPython 3.7.3 + newer), `test_demo_hot_reload.py`, `test_demo_official_reload.py`; TS receiver roundtrip harness (`tests/hotReloadReceiverRoundtrip.test.ts`, helpers/hotReloadReceiverHarness) covering 200-but-unapplied / digest mismatch / stale-generation / non-JSON / non-2xx / targetId mismatch classes; ~49 hot-reload test files ≈560 tests.
+- Remaining HR-AUDIT-010 items (real-network silence, real module-name conflicts, raw-response capture from a production service): blocked on a live service.
 
-## 2. Facts vs Unknowns summary
+### HR-AUDIT-011 — Keep / Wrap / Replace matrix (refreshed)
 
-| Area | Implemented (evidence above) | Unknown / Not implemented |
+| Existing module | Verdict | Rationale |
 | --- | --- | --- |
-| Manual HTTP quick request (settings + debug.json) | yes | per-entry timeout, retry, secret storage |
-| Template vars incl. `${module}` | yes (package-boundary scan) | no `${reloadModule}`/`${fullModule}`/`${relativePath}`/`${targetId}` |
-| Watch → trigger quick action | yes (gated off, global debounce) | per-file dedupe, hash, syntax gate, save-trigger, root scoping, stability wait |
-| Success confirmation | **no** — `ok` means transport answered, 2xx not distinguished | accepted/applied semantics entirely unknown |
-| Status/history/UI for reload | **no** | all of §19.6/§19.7 |
-| `.def` file/semantic/engine hash | **no** | engine Digest algorithm |
-| Server response contract | request shape only (user's real service) | response fields, applied revision, target/process, server-side parameter naming |
+| Legacy quick-request entry parsing + templates (`backend/httpRequests.ts`) | **Keep** | generic Quick Requests must not regress; legacy `${module}` compat stays |
+| `backend/httpRequestService.ts` transport | **Keep** | now also the channel transport runner; single seam `ReloadHttpRunner` |
+| `hotReloadTransport.ts` channel abstraction | **Keep** | the HR-HTTP adapter seam itself (http + kbengine-official) |
+| `hotReload.ts` global debounce watcher | **Replace progressively** (HR-WATCH per-file pipeline still pending) | per-file dedupe/syntax gate/stability wait not yet built |
+| `resolvePythonModulePath` | **Keep as legacy** | dual-name `resolveModuleDualName` is the hot-reload face; both strip role dirs |
+| State machine / receipts / retry / evidence / UI cluster | **Keep** | these already implement large parts of HR-STATE/HR-UI/HR-HTTP |
+| `hashDefContent` | **Decide** (wire or delete) | sha256 face exists, zero production callers |
+| `buildCurlCommand` (`src/quickActions.ts:205`) | **Keep or delete** | still test-only |
+| demo receiver `KodeHotReload.py`/`xreload.py` | **Keep** (template-scoped) | reference receiver, not shipped as engine code |
 
-## 3. Keep / Wrap / Replace matrix (HR-AUDIT-011)
-
-| Existing module | Verdict | Rationale / target |
-| --- | --- | --- |
-| `src/httpRequests.ts` entry parsing + template machinery | **Keep** (general Quick Requests) | generic feature must not regress (HR-HTTP-001); `${module}` audited here, mapping to new vars decided in HR-MOD-012 |
-| `src/httpRequestService.ts` `HttpRequestService` + transport | **Wrap** | extract reusable `RequestExecutor` behind `HttpTransport` seam (already injectable); Hot Reload becomes a caller |
-| `src/quickActions.ts` `fetchHttp`/`terminalHttp` | **Wrap** (fix header drop separately) | second executor; unify on one executor or keep as debug.json adapter |
-| `src/variableSubstitution.ts` | **Keep** | single source of truth for official vars |
-| `src/quickActionConfig.ts` `resolveActionVariables` | **Keep** for quick actions | throw-on-unresolved semantics intentional |
-| `src/hotReload.ts` watcher + debounce | **Replace** (progressively, HR-WATCH) | global debounce/per-glob model superseded by per-file pipeline; keep gate-off default and config-rebuild lifecycle pattern |
-| `resolvePythonModulePath` | **Replace** in hot-reload path by pure `ModuleResolver` (HR-MOD-002) | stays for legacy `${module}` compat |
-| quickActions TreeView HTTP nodes | **Keep** | hot-reload UI is new surface, not a fork of this tree |
-| `buildCurlCommand` | **Keep or delete** | currently test-only |
-
-## 4. Reuse module paths and owners (HR-AUDIT-012)
+### HR-AUDIT-012 — Reuse module paths and owners
 
 | Reuse target | Exact path | Key exports | Owner |
 | --- | --- | --- | --- |
-| Entry parsing / templates | `src/httpRequests.ts` | `parseHttpRequestEntries`, `buildTemplateVars`, `applyTemplateWithContext`, `buildHttpRequest`, `resolvePythonModulePath`, `BUILTIN_HTTP_REQUEST_EXAMPLE` | cuihairu (sole author per git log) |
-| HTTP transport / execution | `src/httpRequestService.ts` | `HttpRequestService`, `HttpTransport`, `defaultTransport`, `DEFAULT_HTTP_TIMEOUT_MS` | cuihairu |
-| debug.json HTTP path | `src/quickActions.ts` | `fetchHttp`, `terminalHttp`, `QuickActionManager.runHttpRequestFrom`, `runByName` | cuihairu |
-| Official variable table | `src/variableSubstitution.ts` | `resolveVariableExpression`, `VariableContext` | cuihairu |
-| Watcher lifecycle pattern | `src/hotReload.ts` | `setupHotReload`, `HotReloadTrigger`, `readHotReloadSettings` | cuihairu |
-| Config schema surfaces | `package.json` (`kbengine.httpRequests`, `kbengine.hotReload.*`), `src/debugJsonSchema.ts` | — | cuihairu |
-| Engine-side API metadata | `src/kbengineMetadata.ts` (`KBEngine.reloadScript`), `KBENGINE_SOURCE_AUDIT_PLAN.md` §14 | — | cuihairu |
+| Trigger/debounce/gate orchestration | `src/hotReload.ts` | `setupHotReload`, `readHotReloadSettings`, `planHotReloadWatch`, `HotReloadTrigger` | cuihairu |
+| Activation wiring + commands | `src/activate/hotReload.ts` | `activateHotReload` | cuihairu |
+| Channel transport | `src/backend/hotReloadTransport.ts` | `ReloadTransport`, `HttpReloadTransport`, `KbengineOfficialTransport`, `resolveReloadTransport`, `parseReloadHttpReceipts`, `createDefaultHotReloadChannel` | cuihairu |
+| Ledger + versions | `src/backend/hotReloadTargetState.ts` | `HotReloadTargetStateStore`, `HotReloadDeliveryRecord` | cuihairu |
+| Receipt chain | `src/backend/hotReloadDelivery.ts` / `hotReloadReceipt.ts` / `hotReloadAppliedCheck.ts` | `classifyHttpDelivery`, `parseHotReloadAcceptedReceipt`, `verifyAppliedReceipt`, `settleAppliedStatus` | cuihairu |
+| Def gate/hash | `src/backend/hotReloadDefGate.ts` / `hotReloadDefStructure.ts` / `hotReloadDefHash.ts` | `createDefStructuralGate`, `classifyDefChange`, `hashDefContent`, `negotiateEngineDigest` | cuihairu |
+| Module identity | `src/backend/hotReloadTempEdit.ts` / `backend/httpRequests.ts` | `resolveModuleDualName`, `resolvePythonModulePath`, `PYTHON_PROCESS_ROLE_DIRS` | cuihairu |
+| UI faces | `src/hotReloadStatus.ts`, `hotReloadFileDecorations.ts`, `hotReloadFileStateLens.ts` | `HotReloadStatusController`, `HotReloadFileDecorationProvider`, `HotReloadFileStateCodeLensProvider` | cuihairu |
+| Legacy quick requests | `src/backend/httpRequests.ts` / `httpRequestService.ts` / `src/variableSubstitution.ts` | `parseHttpRequestEntries`, `buildHttpRequest`, `HttpRequestService`, `resolveVariableExpression` | cuihairu |
 
-Items without source evidence above are recorded as `unknown`: server response contract, engine Digest algorithm, applied-revision queryability, server-side parameter naming, all real-project behaviors (HR-AUDIT-010 untested).
+## 2. Implemented vs missing vs unknown (summary matrix)
+
+| Area | Implemented (evidence above) | Missing / Unknown |
+| --- | --- | --- |
+| Manual HTTP quick request | yes (settings + debug.json paths, unchanged) | per-entry timeout, retry, secrets |
+| Template vars incl. `${module}` | yes + dual-name model (role dirs stripped) | URL encoding; `${targetId}` in legacy quick requests |
+| Watch → trigger | yes (globs explicit/derived/bypass; auto default on) | per-file debounce dedupe, syntax gate, stability wait, save-trigger |
+| Def structural gate | yes (send-block + RESTART_REQUIRED + confirm command) | — |
+| `.def` file hash | sha256 face exists (`hashDefContent`) | **not wired into any gate** |
+| Semantic fingerprint | structural fingerprint hash (as revision evidence) | unwired beyond evidence display |
+| Engine digest | md5 negotiation stub + `defMd5Check` command comparison | algorithm negotiation with a real engine: `unknown`; cross-comparison permanently refused |
+| Success confirmation | accepted receipt + applied digest double-evidence + 10 s settle + worst-wins aggregation | applied-revision polling: no; real-engine semantics: `unknown` |
+| Status/UI | 2 lamps, 5-state decorations, CodeLens, batch summary, evidence/retry/state commands, first-run notice | history webview/TreeView: no; applied-timeline view: no |
+| Retry | explicit command, one pass, gate-checked, channel re-entry | no automatic backoff/attempt cap |
+| Receiver side | demo loopback bridge + xreload (py3.7.3) + reference receiver + receipt protocol | production-grade external receiver: `unknown` |
+| Known defect (recorded, not fixed here) | — | first-run notice "Open logs" click compares hard-coded `'打开日志'` against `l10nText('Open logs')` — under a non-zh locale the button does not open the log channel (`src/hotReload.ts:1046` vs `src/backend/hotReloadNotice.ts:39`) |
+
+## 3. Facts vs Unknowns carry-over from 2026-11-11
+
+Resolved by implementation since the last audit: status/history surface (§19.6/§19.7 no longer greenfield — lamps/decorations/lens/ledger exist), success-confirmation model (accepted/applied contract + settle), def structural gate, dual-name module identity, channel model with default. Still `unknown`: server response contract of a production (non-demo) service, engine Digest algorithm, applied-revision query, target-process identity mapping, all real-network behaviors (HR-AUDIT-010).
