@@ -543,6 +543,14 @@ export function setupHotReload(
         `响应过期: ${stale.length} 个文件发送后又有新版本定稿,本响应不作为新版本的成功依据(${stale.join(', ')})`
       );
     };
+    // HR-WATCH-008:投递失败撤回去重指纹——同内容变更照发,不因一次失败
+    // 永久跳过。指纹在批次交发送面那一刻记(核面),撤回只发生在如实失败的
+    // 发送代际(成功代际不撤,去重仍有效)
+    const forgetSentFailed = (files: readonly string[]): void => {
+      for (const file of files) {
+        pipeline?.forgetSent(file);
+      }
+    };
     // 默认热更请求(用户令 2026-11-06):未配动作名时保存即 POST
     // http://127.0.0.1:8090/hotfix?module_name=<模块名>,body 同带
     // module_name=<模块名>(双带);成败按传输
@@ -561,9 +569,11 @@ export function setupHotReload(
             status.setSentUnverified();
             return;
           }
+          forgetSentFailed(triggers);
           status.setFailed(result.detail.length > 0 ? result.detail : '默认热更请求失败');
         },
         (error: unknown) => {
+          forgetSentFailed(triggers);
           status.setFailed(error instanceof Error ? error.message : String(error));
         }
       );
@@ -605,6 +615,10 @@ export function setupHotReload(
       // (actionName:<名>),与通道发送面共用审计五要素语义。
       const fallbackChannel = `actionName:${settings.actionName}`;
       const recordOutcomes = (targetId: string | null, outcome: HotReloadDeliveryOutcome, detail?: string): void => {
+        // HR-WATCH-008:脚本/命令动作整批一果,失败即整批撤回指纹(同内容照发)
+        if (outcome === 'failed') {
+          forgetSentFailed(triggers);
+        }
         const wiring = options.targetState;
         if (!wiring || targetId === null) {
           return;
@@ -697,6 +711,17 @@ export function setupHotReload(
           source: channelAuditSource
         }).then(({ sentCount, failedCount }) => {
           annotateStaleResponses(triggers);
+          // HR-WATCH-008:逐文件精确撤回——最新回执为 failed 的文件才撤指纹,
+          // 已送达文件的去重不受影响
+          if (failedCount > 0 && wiring) {
+            for (const file of triggers) {
+              const rootId = wiring.resolveRootId(file);
+              const record = rootId == null ? undefined : wiring.store.get({ rootId, targetId: channelTargetId }, file);
+              if (record?.outcome === 'failed') {
+                pipeline?.forgetSent(file);
+              }
+            }
+          }
           const allApplied = triggers.length > 0 && triggers.every(file => {
             const rootId = wiring?.resolveRootId(file);
             return rootId != null &&
@@ -727,6 +752,22 @@ export function setupHotReload(
             reportActionError(new Error(`通道 ${transport.kind} 发送失败:${failedCount} 个文件未送达`));
           }
         }, (error: unknown) => {
+          // HR-WATCH-008:整批异常无法区分逐文件结果——无回执(未确认送达)
+          // 或回执为 failed 的文件一律撤指纹,允许同内容重发;回执查询自身
+          // 抛错时退化为整批撤回,绝不因撤回吞掉失败上报面
+          try {
+            for (const file of triggers) {
+              const rootId = wiring?.resolveRootId(file);
+              const record = rootId == null ? undefined : wiring?.store.get({ rootId, targetId: channelTargetId }, file);
+              if (record === undefined || record.outcome === 'failed') {
+                pipeline?.forgetSent(file);
+              }
+            }
+          } catch {
+            for (const file of triggers) {
+              pipeline?.forgetSent(file);
+            }
+          }
           status.setFailed(error instanceof Error ? error.message : String(error));
           reportActionError(error);
         });
@@ -784,6 +825,11 @@ export function setupHotReload(
             options.noteEngineDigest?.(key, file, response.body);
             // 观察者只在响应到达时触发 → 传输已成功,分类按 status 走
             const record = recordHttpDelivery(wiring.store, key, file, { ok: true, status: response.status }, {});
+            // HR-WATCH-008:非 2xx=投递失败,撤回去重指纹(同内容变更照发,
+            // 不因一次失败永久跳过)
+            if (record.outcome === 'failed') {
+              pipeline?.forgetSent(file);
+            }
             // IDE-AUD-005:该次发送的代际——回执/注解/核验结算全绑定它,旧代
             // 异步结果绝不改新代记录(晚到的第一次核验不翻第二次的失败)
             const attempt = record.attempt;
