@@ -226,7 +226,7 @@
 - [x] KSEM-CREATE-02 [P2] 解析字面量实体名。验收：补全/跳转实体名字并检验所需脚本部件；动态名称保持候选或未知。——已收口(6791c193 纪实 docs/review/2026-11-13-ksem-create-02-entity-name.md:entity_name.rs 三形态(Literal/PartialPrefix/Dynamic)×五态(Resolved 缺段分引擎硬闸(InNewSpace hasCell baseapp.cpp:2523-2529)与结构缺(直连路径无闸)/Missing/Candidates 补全面/Unknown/IndexMissing 绝不判 Missing 红线);kind==Local 双义 is_cellapp_local 显式分流;测试抓出目录闸遮动态名次序错;变异三发咬合)
 - [x] KSEM-CREATE-03 [P2] 推导同步创建返回值。验收：按具体 API 赋予 Entity/EntityCall/可空/无返回类型；不将所有创建 API 视为返回本地对象。（c63b148c）
 - [x] KSEM-CREATE-04 [P2] 绑定异步创建回调。验收：传播明确回调实参的实体身份及失败值；支持可解析 bound method/函数，动态回调不猜。（4e67fe09）
-- [ ] KSEM-CREATE-05 [P2] 检查初始化参数字典。验收：已知实体字段做类型校验；源码核实 params 自定义键、Cell 数据和普通属性路径后再定缺键/多键规则。
+- [x] KSEM-CREATE-05 [P2] 检查初始化参数字典。验收：已知实体字段做类型校验；源码核实 params 自定义键、Cell 数据和普通属性路径后再定缺键/多键规则。（7137f60f）
 - [ ] KSEM-CREATE-06 [P2] 检查 Cell 创建目标。验收：核实 space/目标 EntityCall 的 API 前置条件；仅报告静态可证明的角色和类型错误。
 
 ### KSEM-SER · P1 · 固定格式序列化和反序列化
