@@ -1,0 +1,3 @@
+# HR-PR-09 reliability gate 实测(2026-11-13,真时钟纯内存,node v24.21.0)
+SOAK-METRIC offers=10000 files=1000 emittedEvents=1000 offerMs=37 totalMs=157
+DEDUPE-METRIC sameContentSecondWaveNewEmitted=0 totalEmitted=1

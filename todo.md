@@ -2340,7 +2340,7 @@
 - [ ] PH7-01 运行 QA-001..017 全套、48h 真实项目试用、跨平台打包与文档。
 - [ ] PH7-02 仅在双轨功能 parity 和回退措施成熟后删除旧 TS 全仓解析逻辑。
 - [ ] PH7-03 文档整理、版本说明、迁移配置、已知限制与性能对照报告。
-- [ ] PH7-04 完成 HR-DOD-001..010 与 HR-PR-09 的安全、性能和状态正确性门禁。
+- [ ] PH7-04 完成 HR-DOD-001..010 与 HR-PR-09 的安全、性能和状态正确性门禁。(进行中:HR-PR-09 组合门禁套件已落=风暴/过期/断网/安全四门+缩放 soak 见 §19 HR-PR-09 行;DOD-004 连续保存不重复请求/旧回执不冒当前=套件风暴+过期门纯核级证据,装配级验收随接线批)
 - [ ] PH7-GATE 真实大型项目性能达标、无未解决阻塞缺陷，才发布稳定 2.0。
 
 ### 17. 建议的首批 12 个 PR（严格顺序，避免大爆炸重构）
@@ -2532,7 +2532,7 @@
 - [ ] HR-PR-06 `hotreload/ui-status`：状态栏、资源树、历史面板、完整模块名、失败重试与可信回执。（进行中:90200003;本批核实既有 live 面并勾 001(七态状态机 hotReloadStatus.ts)/003(文件装饰+CodeLens)/009(sent-unverified vs applied 口径 status+receipt);新落历史库纯核 src/backend/hotReloadHistoryCore.ts 零 vscode(容量/时钟语义注入;记录幂等/单向迁移守卫/过滤/分组/分页/高频合并/名称投影)+tests/hotReloadHistoryCore.test.ts 16 例;prove-red 三轮=拆迁移守卫红/破坏大小写不敏红/拆合并窗红;门禁 lint 0/tsc 0/unit 756 文件 9302+8skip RC=0/xvfb demo 25 RC=0;差=TreeView/面板/搜索 UI 注册装配与 005/011/012 配置·i18n·生命周期面=接线批;本行不勾等接线批收官)
 - [ ] HR-PR-07 `hotreload/def-fingerprint`：file/semantic/engine 三种 Hash、影响分析、重启提示。（进行中:406b3268;本批审计+勾 001/003/004/005(三层全在 live:hashDefContent/structuralFingerprintHash+版本化/negotiateEngineDigest 跨类闸);新落 src/backend/hotReloadFingerprintCompare.ts(006 profile+008 三路比对,修 null 判序真缺陷)+hotReloadDefStructure.ts 加性扩展(DEF_FINGERPRINT_SPEC_VERSION+semanticFingerprintReport scope 标注,消费面 DefGate/RevisionEvidenceCommand 只读不受影响);tests/hotReloadFingerprintCompare.test.ts 11 例+hotReloadDefStructure.test.ts +2 例;门禁 lint 0/tsc 0/unit 757 文件 9323+8skip RC=0/xvfb demo 25 RC=0;差=002 VFS 字节复用/006 profile 消费/007 完整 Inspector UI/008 修改触发接线=接线批;009 差异分类与影响分析细化另账;本行不勾等接线批收官)
 - [ ] HR-PR-08 `hotreload/plugin-api`：HotReloadProvider/FingerprintProvider/Engine Profile 版本化扩展。（进行中:HR-PR-08,5622af19,新纯核 src/backend/hotReloadPluginApi.ts 零 vscode=HOT_RELOAD_PLUGIN_API_VERSION='1' 版本钉形状+FingerprintProvider 接口(默认实现 defaultHotReloadFingerprintProvider 纯委托 hashDefContent/semanticFingerprintReport/negotiateEngineDigest 不自创不猜)+HotReloadProvider 发送插槽(canSend 按 profile 分派+send 透传 transport-faithful)+EngineProfile 版本化(engineVersion null=未知如实)+HotReloadProviderRegistry(重复 id/apiVersion 不符如实拒不静默替换;resolve 应答者胜无人应答 null 不回落——热更是写引擎内存动作,回落=拿默认实现冒充用户环境);tests/hotReloadPluginApi.test.ts 9 例;prove-red 三轮=拆重复 id 拒红/拆无人应答 null 红回退伪回落红/拆版本闸红;门禁 lint 0/tsc 0/unit 758 文件 9332+8skip RC=0/xvfb demo 25 RC=0;差=真实扩展宿主装配(注册时机/生命周期)与 fork 侧具体 provider 实现=接线批;本行不勾等接线批收官)
-- [ ] HR-PR-09 `hotreload/reliability-gate`：风暴/过期/断网/安全/24h soak 与跨平台性能报告。
+- [ ] HR-PR-09 `hotreload/reliability-gate`：风暴/过期/断网/安全/24h soak 与跨平台性能报告。(进行中:HR-PR-09,a14bd1a2,组合门禁套件已落=tests/hotReloadReliabilityGate.test.ts 7 例零新增生产代码(风暴归并不放大/超阈预览/过期拒记/断网撤回重发含风暴批/语法拦截不占版本号/10k 缩放 soak,虚拟时钟零 IO,prove-red=拆 forgetSent 撤回断网门恰红),真时钟吞吐实测 10k offer→37ms/全链 157ms+同内容第二波判重新发 0,报告 docs/perf/2026-11-13-hotreload-reliability-gate.md;如实边界:24h 真 soak 未跑(需装配面,缩放 soak 为本车道口径)/跨平台仅 Linux 实测不编造数字/端到端网络时延归 HR-HTTP-017;装配级风暴验收随接线批)
 
 #### 19.12 专项 Definition of Done（逐条不可跳过）
 - [ ] HR-DOD-001 更改 `scripts/entities/fight/FightAI.py`：自动模式启用后只送 `fight.FightAI`；UI 展示 `entities.fight.FightAI`。
@@ -2546,3 +2546,7 @@
 - [ ] HR-DOD-009 保留现有手动通用 HTTP 请求功能，文档明确旧 `${module}` 迁移与模板预览。
 - [ ] HR-DOD-010 每一个任务附源码路径、commit、测试命令、结果截图或报告，未经验证不得打勾。
 
+
+## 用户令 2026-11-13：文件顶部进程标签 + 跨进程同名文件快速切换
+
+- [ ] PROC-TAG-001 [P1] def/脚本文件顶部显示所属进程标签，可点击快速切换同实体跨进程同名文件（用户令 2026-11-13「kode 可以提供一个功能，在文件的顶部显示当前文件属于哪一个进程，这个根据Flags 和 BaseMethods 和CellMethods 之类的可以判断，然后其他进程也存在对应的文件也需要显示其他进程的tag,可以点击快速切换文件」）。要求拆解：①顶部标签=CodeLens 面（vscode.languages.registerCodeLensProvider，文件首行可点击命令链接）；②进程判据=def 结构面（BaseMethods/CellMethods/ClientMethods/Flags 等顶层段）+目录角色（cell/base/client/db/bots 等 per-process 脚本目录与 entity_defs 布局），推导为纯核零 vscode；③同实体跨进程同名文件互链（cell/X.py↔base/X.py↔client/X.py），其他进程存在对应文件时并列显示其 tag，点击跳转对应文件；④纯辅助导航面：不改任何诊断/补全/发送行为。审计先行：refs.rs 角色化引用（RPC-01 bind_self_role 九面表）、entityMappingManager def 定位、hotReload 模块名剥进程角色目录（879f47d5）、KSEM semantics store 角色池——尽量复用既有角色事实源，避免第三套角色推导。

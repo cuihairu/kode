@@ -245,3 +245,15 @@
 - `HotReloadProviderRegistry` 如实规则:重复 id 与 apiVersion 不符的注册带原因拒绝(绝不静默替换、绝不静默收编);`resolveSendProvider` 第一个 canSend 应答者胜,无人应答返回 `null` 不回落默认——热更是写引擎内存的动作,静默回落=拿默认实现冒充用户环境。
 - 装配接线暂缓:真实扩展宿主装配(注册时机/生命周期)与 fork 侧具体 provider 实现随接线批。
 - 测试:`tests/hotReloadPluginApi.test.ts` 9 例。prove-red 三轮:允许重复 id 覆盖 → 重复用例红;无人应答回落第一个注册者 → 如实 null 用例红;拆版本闸 → 版本不符用例红。门禁:lint 0 / tsc 0 / unit 758 文件 9332 例 / xvfb demo 25 RC=0。
+
+## 11. HR-PR-09 增量（2026-11-13,可靠性门禁套件 + 性能报告）
+
+- 新组合门禁套件 `tests/hotReloadReliabilityGate.test.ts` —— 不新增生产代码;把已证纯核(`hotReloadSavePipeline`)在风暴/过期/断网/安全场景下组合钉死,虚拟时钟零 IO。四门+缩放 soak,7 例:
+  - **风暴**(HR-WATCH-006/016):50 文件×4 连发=200 offer → 每文件恰一次发出、归并=4、总量不放大;5001 文件超 5000 阈 → 只预览滞留,`releasePreview` 一批放出。
+  - **过期**(HR-WATCH-011):首笔在途期间新内容发出 → v1 响应晚到=stale,不得记成新版本成功。
+  - **断网**(HR-WATCH-008):投递失败在异步发送结果回调里 `forgetSent` 撤回(装配真实时序——核心在 `onEmit` 返回后才 markSent,onEmit 内同步撤回会被覆盖;harness 如实建模回调时序)。恢复后同内容照发;断网风暴 20 文件批量失败全撤回、恢复一批全重发。
+  - **安全**(HR-WATCH-012):风暴中语法坏内容一律拦截——不发送、不占版本号(恢复后从 revision 1 起)。
+  - **缩放 soak**:1000 文件×10=10000 offer → 恰 1000 事件、每文件一次、结束 pending 清零。
+- prove-red:拆除 harness 的 `forgetSent` 撤回 → 断网门两例恰红(指纹未撤→同内容判重→不重发),恢复复绿。撤回时序建模本身就是抓出的一处测试缺陷:onEmit 内同步撤回会被核心的 onEmit 后 markSent 覆盖——套件改为如实建模异步回调。
+- 性能报告:`docs/perf/2026-11-13-hotreload-reliability-gate.md`(附 run 记录)。真时钟纯内存实测:10k offer → 1000 事件,offer 登记路径 37 ms,全链 157 ms;同内容第二波全量判重(带稳定窗口径新发 0)。如实边界:**24h 真 soak 未跑**(需装配面就绪,本车道口径=缩放 soak),**仅 Linux 实测**(套件零 IO 零 vscode,凡 vitest 可跑处即可复跑;不编造跨平台数字),不含端到端网络时延(归 HR-HTTP-017 真网套件)。
+- 装配级(真 watcher→真发送链)的风暴/衰减验收随接线批(HR-PR-02..08 各行保持注记不勾)。
