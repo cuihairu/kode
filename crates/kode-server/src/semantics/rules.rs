@@ -7,11 +7,12 @@
 //!   本地实体/本地组件为 plain Python 派发,无此闸;
 //! - **服务端调用方向**:引用形态在当前脚本面不可获取——self 角色属性
 //!   该面没有(RPC-02 三面表)+ 面跳闭包推不到的调用类型(RPC-01 矩阵)
-//!   + None 引用 + 组件槽结构缺失(槽未声明/未指定类型);
+//!   + None 引用 + 组件槽结构缺失(链完整仍无此槽/未指定类型);
 //! - **缺方法**:声明就绪(类已知、快照在手、槽链齐)、对应面 Methods 段
 //!   确认无此名 → 远程句柄路径 entity_call.cpp:126-177 属性错误尾;
-//! - **声明尚未就绪**(类未知/快照缺/组件类缺/基类链未展开)一律
-//!   [`RpcCheck::NotReady`],绝不判确定缺失(验收红线)。
+//! - **声明尚未就绪**(类未知/快照缺/组件类缺/基类链未展开/组件槽缺失
+//!   但宿主继承·接口链有缺口)一律 [`RpcCheck::NotReady`],绝不判确定
+//!   缺失(验收红线)。
 
 use super::dispatch::{resolve_dispatch, DispatchTarget, MethodCandidate, PyClassResolver, Receiver};
 use super::refs::{bind_self_role, CallType, EntityRef, ScriptFace};
@@ -29,7 +30,7 @@ pub enum RpcCheck {
     /// Exposed 回落普通属性臂 → 属性错误)。
     ClientNotExposed { method: String, facet: Facet },
     /// 调用方向/结构不可达:引用形态该面不可获取、None 引用、组件槽
-    /// 未声明/未指定类型(引擎无此路径)。
+    /// 链完整仍无此槽/未指定类型(引擎无此路径)。
     DirectionUnreachable { reason: String },
     /// 缺方法:声明就绪、对应面 Methods 段确认无此名。
     MethodMissing {
@@ -72,9 +73,29 @@ pub fn check_rpc_call(
             let comp_view = match owner.components.iter().find(|c| c.name == *slot) {
                 Some(c) => c,
                 None => {
-                    return RpcCheck::DirectionUnreachable {
-                        reason: format!("组件槽 {slot} 未声明(槽宿主 def 无此槽)"),
+                    // 槽不在快照:组件按 接口→自身→父链 合并(entitydef.cpp
+                    // :351/:363/:372),来源面有缺口(缺父/缺接口/环/溢出)
+                    // 时合并结果不完整,「全链无此槽」证不出来 → 声明未就绪,
+                    // 绝不升级成方向不可达(深审-4 红线:不完整 ≠ 结构缺失);
+                    // 链完整才证得出结构缺失。
+                    let sources_incomplete = owner.issues.iter().any(|fact| {
+                        let v = &fact.value;
+                        v.starts_with("missing-parent:")
+                            || v.starts_with("missing-interface:")
+                            || v.starts_with("inheritance-cycle")
+                            || v.starts_with("inheritance-chain-overflow")
+                            || v.starts_with("interface-cycle-or-duplicate")
+                    });
+                    if sources_incomplete {
+                        return RpcCheck::NotReady {
+                            reason: format!(
+                                "组件槽 {slot} 不在快照,且宿主继承/接口链有缺口,来源不完整不判结构缺失"
+                            ),
+                        };
                     }
+                    return RpcCheck::DirectionUnreachable {
+                        reason: format!("组件槽 {slot} 未声明(宿主 def 全链无此槽)"),
+                    };
                 }
             };
             if comp_view.component_type.is_none() {
@@ -250,6 +271,7 @@ fn acquirable_calls(face: ScriptFace) -> Vec<CallType> {
 #[cfg(test)]
 mod tests {
     use super::super::dispatch::{PyClassFacts, PyMethodFacts};
+    use super::super::facts::{Fact, Origin};
     use super::super::snapshot::{ComponentView, MethodView};
     use super::*;
     use std::collections::HashMap;
@@ -722,6 +744,40 @@ mod tests {
             &py,
         );
         assert!(matches!(no_comp, RpcCheck::NotReady { .. }));
+    }
+
+    #[test]
+    fn component_slot_absent_with_chain_gaps_is_not_ready() {
+        // 槽不在快照 + 宿主继承/接口链有缺口(缺父/环):组件按
+        // 接口→自身→父链合并(entitydef.cpp:351/:363/:372),来源不完整
+        // 时「全链无此槽」证不出来 → 未就绪,绝不报方向不可达(深审-4:
+        // 不完整 ≠ 结构缺失)。
+        let py = StubPy(HashMap::new());
+        let recv = |call| Receiver::ComponentSlot {
+            parent: EntityRef::Remote {
+                class: Some("Avatar".into()),
+                call,
+            },
+            slot: "weapon".into(),
+            script_face: None,
+        };
+        let mut missing_parent = slot_host("bag", Some("Bag"));
+        missing_parent.issues.push(Fact::new(
+            "missing-parent:Base".to_string(),
+            Origin::unknown("missing-parent:Base"),
+        ));
+        let r = check(ScriptFace::Cell, &recv(CallType::Cell), "swing", Some(&missing_parent), &py);
+        match r {
+            RpcCheck::NotReady { reason } => assert!(reason.contains("来源不完整")),
+            other => panic!("期望 NotReady,得 {other:?}"),
+        }
+        let mut cycle = slot_host("bag", Some("Bag"));
+        cycle.issues.push(Fact::new(
+            "inheritance-cycle:Avatar".to_string(),
+            Origin::unknown("inheritance-cycle:Avatar"),
+        ));
+        let r = check(ScriptFace::Cell, &recv(CallType::Cell), "swing", Some(&cycle), &py);
+        assert!(matches!(r, RpcCheck::NotReady { .. }));
     }
 
     #[test]

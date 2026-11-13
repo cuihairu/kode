@@ -268,20 +268,72 @@ impl EntitySnapshot {
             }
         }
 
-        // 组件槽(自身声明;跳转面保留组件声明位置)。
-        for c in &own.components {
-            if let Some(ct) = &c.component_type {
-                if resolve.resolve(ReferenceKind::Component, ct).is_none() {
-                    snap.issues.push(issue_fact(&format!("missing-component-type:{ct}"), root_id, entity_name));
-                }
+        // 组件槽:引擎把各来源 <Components> 装进同一 ScriptDefModule——接口
+        // 先(entitydef.cpp:351→:616,同一模块)、自身次(:363)、父链最后
+        // (loadParentClass :372 递归 loadDefInfo :915 同模块);
+        // addComponentDescription 对同名槽直接覆盖(scriptdef_module.cpp:1070
+        // map 赋值)= 后装胜出 → 装载序里最深的祖先定义胜出。此前只并自身
+        // def:父实体/接口声明的槽在快照里不存在,rpc 结构守卫把引擎合法
+        // 派发误报「槽未声明」(深审-4 实证)。同名多来源记冲突(与属性/
+        // 方法同款);缺失组件类型逐来源登记——被覆盖的槽引擎照样装属性
+        // (entitydef.cpp:742 addComponentProperty),不因覆盖而免检。
+        // 父实体的接口不展开(模型面 parent.interfaces 未解析,与属性/方法
+        // 来源口径一致)。
+        let mut comp_sources: Vec<(String, &DefFile)> = Vec::new();
+        for name in &own.interfaces {
+            if let Some(d) = resolve.resolve(ReferenceKind::Interface, name) {
+                comp_sources.push((name.clone(), d));
             }
-            snap.components.push(ComponentView {
-                name: c.name.clone(),
-                component_type: c.component_type.clone(),
-                persistent: c.persistent,
-                file: format!("{entity_name}.def"),
-                line: Some(c.line),
-            });
+        }
+        comp_sources.push((entity_name.to_string(), own));
+        for name in snap.parent_chain.iter().skip(1) {
+            if let Some(d) = resolve.resolve(own_kind, name) {
+                comp_sources.push((name.clone(), d));
+            }
+        }
+        let mut comp_seen: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+        let mut comp_winner: std::collections::HashMap<&str, ComponentView> = std::collections::HashMap::new();
+        let mut comp_order: Vec<&str> = Vec::new();
+        for (from, def) in &comp_sources {
+            for c in &def.components {
+                let entry = comp_seen.entry(c.name.as_str()).or_default();
+                if !entry.contains(from) {
+                    entry.push(from.clone());
+                }
+                if !comp_order.contains(&c.name.as_str()) {
+                    comp_order.push(c.name.as_str());
+                }
+                if let Some(ct) = &c.component_type {
+                    if resolve.resolve(ReferenceKind::Component, ct).is_none() {
+                        snap.issues.push(issue_fact(&format!("missing-component-type:{ct}"), root_id, entity_name));
+                    }
+                }
+                comp_winner.insert(
+                    c.name.as_str(),
+                    ComponentView {
+                        name: c.name.clone(),
+                        component_type: c.component_type.clone(),
+                        persistent: c.persistent,
+                        file: format!("{from}.def"),
+                        line: Some(c.line),
+                    },
+                );
+            }
+        }
+        // 平槽面保持声明序(槽名首次出现位;cell.rs 键宇宙契约),值取
+        // 引擎覆盖语义的胜者。
+        snap.components = comp_order
+            .iter()
+            .filter_map(|k| comp_winner.remove(k))
+            .collect();
+        for (name, froms) in &comp_seen {
+            if froms.len() > 1 {
+                snap.conflicts.push(Conflict {
+                    name: (*name).to_string(),
+                    candidates: froms.clone(),
+                    reason: "component-defined-in-multiple-sources".into(),
+                });
+            }
         }
 
         snap
@@ -460,5 +512,105 @@ mod tests {
         let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
         assert_eq!(snap.components.len(), 1);
         assert!(snap.issues.iter().any(|f| f.value.contains("missing-component-type:Weapon")));
+    }
+
+    fn comp(name: &str, ty: Option<&str>) -> ComponentDef {
+        ComponentDef {
+            name: name.into(),
+            name_span: kode_parser::Span::new(0, 0),
+            line: 3,
+            component_type: ty.map(|t| t.into()),
+            persistent: Some(false),
+        }
+    }
+
+    #[test]
+    fn components_merge_parent_chain_and_interfaces() {
+        // 引擎把 接口→自身→父链 的 <Components> 装进同一 ScriptDefModule
+        // (entitydef.cpp:351/:363/:372):父/接口声明的槽必须可见,否则
+        // rpc 结构守卫会把合法派发误报「槽未声明」(深审-4)。
+        let mut own = def(Some("Monster"), vec!["Mixin"], vec![]);
+        own.components = vec![comp("tail", Some("Tail"))];
+        let mut monster = def(None, vec![], vec![]);
+        monster.components = vec![comp("weapon", Some("Weapon"))];
+        let mut mixin = def(None, vec![], vec![]);
+        mixin.components = vec![comp("aura", Some("Aura"))];
+        let resolve = DefMap(vec![
+            (super::ReferenceKind::Entity, "Monster", monster),
+            (super::ReferenceKind::Interface, "Mixin", mixin),
+            (super::ReferenceKind::Component, "Weapon", def(None, vec![], vec![])),
+            (super::ReferenceKind::Component, "Aura", def(None, vec![], vec![])),
+            (super::ReferenceKind::Component, "Tail", def(None, vec![], vec![])),
+        ]);
+        let g = kode_types::TypeGraph::new();
+        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        let mut names: Vec<&str> = snap.components.iter().map(|c| c.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["aura", "tail", "weapon"]);
+    }
+
+    #[test]
+    fn component_same_name_deepest_ancestor_wins_with_conflict() {
+        // 同名槽:引擎 addComponentDescription 直接覆盖(scriptdef_module.cpp
+        // :1070 map 赋值),装载序 接口→自身→父链 → 链上最深祖先胜出;
+        // 多来源记冲突,不吞。
+        let mut own = def(Some("Monster"), vec!["Mixin"], vec![]);
+        own.components = vec![comp("weapon", Some("OwnW"))];
+        let mut monster = def(None, vec![], vec![]);
+        monster.components = vec![comp("weapon", Some("MonsterW"))];
+        let mut mixin = def(None, vec![], vec![]);
+        mixin.components = vec![comp("weapon", Some("MixinW"))];
+        let resolve = DefMap(vec![
+            (super::ReferenceKind::Entity, "Monster", monster),
+            (super::ReferenceKind::Interface, "Mixin", mixin),
+            (super::ReferenceKind::Component, "OwnW", def(None, vec![], vec![])),
+            (super::ReferenceKind::Component, "MonsterW", def(None, vec![], vec![])),
+            (super::ReferenceKind::Component, "MixinW", def(None, vec![], vec![])),
+        ]);
+        let g = kode_types::TypeGraph::new();
+        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        assert_eq!(snap.components.len(), 1);
+        assert_eq!(snap.components[0].component_type.as_deref(), Some("MonsterW"));
+        assert_eq!(snap.components[0].file, "Monster.def");
+        let conflict = snap.conflicts.iter().find(|c| c.name == "weapon").expect("conflict recorded");
+        assert_eq!(conflict.reason, "component-defined-in-multiple-sources");
+        assert_eq!(conflict.candidates, ["Mixin", "Avatar", "Monster"]);
+    }
+
+    #[test]
+    fn own_slot_beats_interface_declaration() {
+        // 自身 def 的同名槽压过接口声明(引擎序:接口先装,自身后装覆盖)。
+        let mut own = def(None, vec!["Mixin"], vec![]);
+        own.components = vec![comp("weapon", Some("OwnW"))];
+        let mut mixin = def(None, vec![], vec![]);
+        mixin.components = vec![comp("weapon", Some("MixinW"))];
+        let resolve = DefMap(vec![
+            (super::ReferenceKind::Interface, "Mixin", mixin),
+            (super::ReferenceKind::Component, "OwnW", def(None, vec![], vec![])),
+            (super::ReferenceKind::Component, "MixinW", def(None, vec![], vec![])),
+        ]);
+        let g = kode_types::TypeGraph::new();
+        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        assert_eq!(snap.components.len(), 1);
+        assert_eq!(snap.components[0].component_type.as_deref(), Some("OwnW"));
+        assert_eq!(snap.components[0].file, "Avatar.def");
+    }
+
+    #[test]
+    fn overwritten_slot_still_records_missing_type() {
+        // 被同名覆盖的槽引擎照样装属性(entitydef.cpp:742),其缺失组件
+        // 类型仍要登记,不因覆盖而免检。
+        let mut own = def(Some("Monster"), vec![], vec![]);
+        own.components = vec![comp("weapon", Some("Ghost"))];
+        let mut monster = def(None, vec![], vec![]);
+        monster.components = vec![comp("weapon", Some("RealW"))];
+        let resolve = DefMap(vec![
+            (super::ReferenceKind::Entity, "Monster", monster),
+            (super::ReferenceKind::Component, "RealW", def(None, vec![], vec![])),
+        ]);
+        let g = kode_types::TypeGraph::new();
+        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        assert!(snap.issues.iter().any(|f| f.value.contains("missing-component-type:Ghost")));
+        assert_eq!(snap.components[0].component_type.as_deref(), Some("RealW"));
     }
 }
