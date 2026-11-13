@@ -269,6 +269,14 @@ export function renderDefMd5CheckReport(outcome: DefMd5CheckOutcome): string {
   return lines.join('\n');
 }
 
+/** 最近一次核查结果(HR-HASH-007 指纹 Inspector 转显闭包面;会话内存,不落盘) */
+let lastMd5CheckOutcome: DefMd5CheckOutcome | null = null;
+
+/** 读取最近一次引擎盖章核查结果(未跑过=null,消费面如实显「未运行」) */
+export function getLastDefMd5CheckOutcome(): DefMd5CheckOutcome | null {
+  return lastMd5CheckOutcome;
+}
+
 const md5CheckChannels = new WeakMap<vscode.ExtensionContext, vscode.OutputChannel>();
 
 function ensureDefMd5Channel(context: vscode.ExtensionContext): vscode.OutputChannel {
@@ -294,6 +302,7 @@ export function setupDefMd5Check(
   const compute = opts.compute ?? computeDefMd5InRust;
   const command = vscode.commands.registerCommand(DEF_MD5_CHECK_COMMAND, async () => {
     const outcome = await runDefMd5Check(deps, compute);
+    lastMd5CheckOutcome = outcome;
     const channel = ensureDefMd5Channel(context);
     channel.clear();
     channel.appendLine(renderDefMd5CheckReport(outcome));

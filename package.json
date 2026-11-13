@@ -118,6 +118,7 @@
     "onCommand:kbengine.clientSdk.generate",
     "onCommand:kbengine.def.analyze",
     "onCommand:kbengine.def.checkEngineMd5",
+    "onCommand:kbengine.def.fingerprintInspector",
     "onCommand:kbengine.project.doctor",
     "onCommand:kbengine.symbolReferences.show",
     "onCommand:kbengine.profile.start",
@@ -747,6 +748,11 @@
       {
         "command": "kbengine.def.checkEngineMd5",
         "title": "%kbengine.command.def.checkEngineMd5.title%",
+        "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.def.fingerprintInspector",
+        "title": "%kbengine.command.def.fingerprintInspector.title%",
         "category": "KBEngine"
       },
       {

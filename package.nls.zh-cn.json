@@ -351,5 +351,6 @@
   "kbengine.config.hotReload.batchFlushMs.description": "波次冲口（HR-WATCH-013）：同窗定稿的多个文件在波尾归集成一批发送（延迟=定稿后最多再加本窗）。默认值：`0`（定稿即汇入合并池，与既有全局去抖时序同感）；设为如 `300` 可让同窗多文件合并成单批（也是批量预览阈值生效的前提——阈值按批计数）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#auto-hot-reload)",
   "kbengine.config.hotReload.batchPreviewThreshold.description": "批量预览阈值（HR-WATCH-016）：一波批次文件数超过此值时只滞留预览、不自动发送，用「KBEngine: 放行热更预览批次」命令显式放行；滞留期间新批次并入同批。默认值：`50`；设 `0` = 一律滞留预览（所有批次都要手动放行）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#auto-hot-reload)",
   "kbengine.config.hotReload.sendViaProviders.description": "发送 provider 插槽（HR-PR-08）：开启后，未配动作名的自动热更先问发送 provider 注册表（fork 专属实现优先应答，按注入序先到先应答；重复 id/apiVersion 不符的注册如实拒绝不静默替换），无人应答才落默认 HTTP hotfix 面；关闭（默认）时该面不进链，发送行为与既有完全一致。默认值：`false`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#auto-hot-reload)",
-  "kbengine.command.hotReload.releasePreview.title": "放行热更预览批次"
+  "kbengine.command.hotReload.releasePreview.title": "放行热更预览批次",
+  "kbengine.command.def.fingerprintInspector.title": "查看 Def 指纹详情"
 }
