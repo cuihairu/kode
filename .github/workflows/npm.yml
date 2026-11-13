@@ -78,6 +78,13 @@ jobs:
         run: |
           rustup show active-toolchain
           rustup target add '${{ matrix.rust }}'
+      - name: Install musl C toolchain (bundled sqlite/zstd need a musl cc)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          echo 'CC_X86_64_UNKNOWN_LINUX_MUSL=musl-gcc' >> "$GITHUB_ENV"
+          echo 'CC_AARCH64_UNKNOWN_LINUX_MUSL=musl-gcc' >> "$GITHUB_ENV"
       - name: Use Rust's bundled musl CRT and linker (Linux)
         if: runner.os == 'Linux'
         run: |
