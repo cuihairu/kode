@@ -43,7 +43,13 @@
 //!   实现位仅 cellapp cell 段 exposed 注入恰多一参;启动对账 exposed+1
 //!   升级/其余拒;base·client 段实现+1=静默升级但运行时必 TypeError;
 //!   expected_arity 按侧取数,两侧共用一个数必出一向误报)。
+//! - [`broadcast`] RPC-08 广播调用语义(allClients/otherClients 接收者集合
+//!   逐项登记:allClients=自己客户端+全部观察者客户端、otherClients=仅观察者
+//!   可零收,绝不画成单客户端;仅 cellapp 进程有此属性,base/client 语境
+//!   AttributeError;广播只查 client 段,组件广播查组件自身 def 模块并透传
+//!   标志,宿主同名不混入;client 段未命中回落属性臂,快照缺不判缺失)。
 
+pub mod broadcast;
 pub mod callers;
 pub mod cell;
 pub mod dispatch;
