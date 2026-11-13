@@ -2394,10 +2394,10 @@
 - [ ] HR-MOD-008 脚本资源根直接包含 `Foo.py` 时，必须有显式 single-level fallback 配置；默认标 unresolved。(进行中:HR-PR-02,c120287c,核心已落=allowRootLevelStem 显式开关,默认拒(reason=root-level)诊断消息附开启指引;用户可见配置键+发送路径接线暂缓=会改零配置默认热更行为,暴露面待点火)
 - [x] HR-MOD-009 URI canonicalization 兼容 Windows、Linux、macOS、WSL、Remote SSH、symlink、大小写敏感差异。(HR-PR-02,c120287c,canonicalizeScriptFilePath 词法规范化:file:// 剥 scheme+有守卫 percent 解码(坏转义原样保留)、反斜杠、UNC // 保留(WSL //wsl$、//wsl.localhost、Remote SSH 形)、重复斜杠折叠、./.. 词法消解、盘符大写、大小写保留;symlink/fs 级大小写=IO 专项不在纯面(kode-vfs VFS-001 同边界),四平台实机验证随分发面)
 - [ ] HR-MOD-010 避免不同 root 的 `fight.FightAI` 请求映射错误；请求目标须包含 target 与 root/context（如服务端不支持则拒绝歧义自动更新）。（进行中:HR-PR-02,c120287c,解析器侧本质已落=rootId 入 DTO+多根歧义拒绝,跨根同名 fight.FightAI 误映射已不可能;请求线上 root/target 上下文=接收端契约冻结待真实服务验证(HR-AUDIT-009)）
-- [ ] HR-MOD-011 UI 默认显示 `fullModule`，辅以工作区/目标环境；请求详情显示 `requestModule`，不因列宽缩短实体身份。(进行中:UI 面属 HR-UI 簇(HR-PR-06);HR-PR-02,c120287c 已落 fullModule/requestModule 双名字段供 UI 消费)
+- [ ] HR-MOD-011 UI 默认显示 `fullModule`，辅以工作区/目标环境；请求详情显示 `requestModule`，不因列宽缩短实体身份。(进行中:UI 面属 HR-UI 簇(HR-PR-06);HR-PR-02,c120287c 已落双名字段;HR-PR-06 历史库纯核已落名称投影(buildHistoryEntryLabel 取 fullModule 不因列宽缩短,tooltip 双名),tests/hotReloadHistoryCore.test.ts 钉;UI 渲染=接线批)
 - [x] HR-MOD-012 设计 `${reloadModule}`、`${fullModule}`、`${fileName}`、`${relativePath}`、`${workspaceRoot}`、`${targetId}` 模板变量；现有 `${module}` 先审计再决定兼容映射。(HR-PR-02,c120287c,六变量全落 buildTemplateVars/applyTemplate/applyTemplateWithContext:双名 scriptRoot 配置才解析否则如实空串、${fileName}=filename 别名、${relativePath}/${workspaceRoot} 首含根派生、${targetId} 透传;${module} 兼容映射决策=保持 legacy __init__.py 包边界语义不动(审计 HR-AUDIT-004 在案),双名走新占位不混语义,形状钉测试锁)
 - [ ] HR-MOD-013 对旧配置提供兼容迁移和预览请求的功能；不静默篡改已保存 URL 模板。(进行中:纯核心已存在=双名面+模板六变量(HR-PR-02,c120287c);兼容迁移/预览请求的用户可见命令暂缓;不静默篡改已保存模板=现实现本就不改用户配置)
-- [ ] HR-MOD-014 所有日志/历史同时存 fullModule/requestModule/fileUri/targetId，便于排查用户看到的名称与请求名称不同。(进行中:历史形状扩展随 HR-PR-06;identity DTO 已带全字段供历史面直接存(HR-PR-02,c120287c))
+- [ ] HR-MOD-014 所有日志/历史同时存 fullModule/requestModule/fileUri/targetId，便于排查用户看到的名称与请求名称不同。(进行中:HR-PR-06 历史库纯核已落=HotReloadHistoryEntry 同存 fullModule/requestModule/fileUri/targetId/requestId/time/status/errorSummary 七字段,同 requestId 幂等替换不重复成行,tests/hotReloadHistoryCore.test.ts 钉;日志面与历史持久化=接线批;identity DTO=HR-PR-02,c120287c)
 - [x] HR-MOD-015 纯函数单测覆盖上述四个示例及特殊文件、路径穿越、URL encoding、Unicode、同名根/文件。(HR-PR-02,c120287c,tests/hotReloadModuleIdentity.test.ts:§19.1 四示例(含 base/Avatar 引擎偏差钉)、特殊文件(__init__/.json/.pyi/.pyc)、路径穿越(词法上卷落根外拒)、URL encoding(%20 解码出空白短名拒/坏转义保留)、Unicode 短名合法(PEP 3130)、同名文件两根各自解析 rootId 区分+嵌套根歧义拒、override 合法/非法、root-level 默认拒/显式开;核心 reason/开关例在 tests/hotReloadTempEdit.test.ts)
 
 #### 19.4 Watch / Save 事件流水线（HR-WATCH）
@@ -2456,20 +2456,20 @@
 - [ ] HR-STATE-013 reducer/property tests 覆盖乱序返回、重复回执、失败后文件再编辑、目标切换、Core 重启。
 
 #### 19.7 热更新 UI / 可视反馈（HR-UI）
-- [ ] HR-UI-001 状态栏区分 `Watch Off`、`Ready`、`Sending`、`Sent (unverified)`、`Applied`、`Failed`、`Restart Required`。
-- [ ] HR-UI-002 TreeView 提供最近更新/文件/目标分组，节点标题显示 **fullModule**，tooltip 显示 requestModule、URI、target、时间、请求 id。
-- [ ] HR-UI-003 编辑器使用文件装饰或 CodeLens/overview 合理呈现最近热更状态，避免长期污染每一行代码。
-- [ ] HR-UI-004 独立 Hot Reload 面板展示实时队列、历史、失败、当前目标、监听模式、请求详情和错误诊断。
+- [x] HR-UI-001 状态栏区分 `Watch Off`、`Ready`、`Sending`、`Sent (unverified)`、`Applied`、`Failed`、`Restart Required`。(live 面已齐=src/hotReloadStatus.ts 七态状态机 watch-off(按原因如实分 disabled/empty-globs 双注 §11.1)/ready(+error)/sending/sent-unverified/applied/failed/restart-required 全实现,依赖注入 StatusBarItemLike,pin tests/hotReloadStatus.test.ts;HR-PR-06 批核实勾)
+- [ ] HR-UI-002 TreeView 提供最近更新/文件/目标分组，节点标题显示 **fullModule**，tooltip 显示 requestModule、URI、target、时间、请求 id。（进行中:HR-PR-06 历史库纯核已落 src/backend/hotReloadHistoryCore.ts=newestFirst/按文件按目标分组(组键首次出现序+组内最新在前)/buildHistoryEntryLabel 标题取 fullModule 缺失如实回落/buildHistoryEntryTooltipLines 投影 requestModule·file·target·time·requestId·status·error 七字段(tests/hotReloadHistoryCore.test.ts 钉);差=TreeView 注册与节点装配=接线批)
+- [x] HR-UI-003 编辑器使用文件装饰或 CodeLens/overview 合理呈现最近热更状态，避免长期污染每一行代码。(live 面已齐=src/hotReloadFileDecorations.ts 文件装饰+src/hotReloadFileStateLens.ts 定点 CodeLens(非逐行污染),pin tests/hotReloadFileDecorations.test.ts+tests/hotReloadFileStateLens.test.ts;HR-PR-06 批核实勾)
+- [ ] HR-UI-004 独立 Hot Reload 面板展示实时队列、历史、失败、当前目标、监听模式、请求详情和错误诊断。（进行中:HR-PR-06 历史库纯核已落=面板数据面(entries/filter/page/updateStatus/容量有界)(tests/hotReloadHistoryCore.test.ts 钉);实时队列面=HR-PR-04 流水线 pendingFiles/waveFiles/previewHeldFiles 自省;差=面板注册与 UI 装配=接线批)
 - [ ] HR-UI-005 配置界面支持启用自动更新、监听模式、root、target、网络超时、语法检查、去抖参数、敏感操作警告。
-- [ ] HR-UI-006 UI 明确完整名称与发送名称：`entities.fight.FightAI`；详情 `发送模块 fight.FightAI`。
-- [ ] HR-UI-007 事件变化时高频 UI 更新合并节流；列表上千记录采用虚拟滚动与增量加载。
-- [ ] HR-UI-008 失败点击定位文件、打开输出日志、查看 HTTP 概要（密钥遮蔽）、可选择重试。
-- [ ] HR-UI-009 成功状态只用在确认 `applied` 的情境；`2xx` 没有业务回执用“已发送，未确认”。
-- [ ] HR-UI-010 支持按 fullModule/target/status/时间范围过滤与搜索；路径相同但 target 不同分别显示。
+- [ ] HR-UI-006 UI 明确完整名称与发送名称：`entities.fight.FightAI`；详情 `发送模块 fight.FightAI`。（进行中:HR-PR-06 历史库纯核已落名称投影=buildHistoryEntryLabel 标题取 fullModule/buildHistoryEntryTooltipLines 仅在双名不同时列 requestModule 行(HR-UI-006 详情语义)(tests/hotReloadHistoryCore.test.ts 钉);双名字段=HR-PR-02,c120287c;差=UI 面消费渲染=接线批)
+- [ ] HR-UI-007 事件变化时高频 UI 更新合并节流；列表上千记录采用虚拟滚动与增量加载。（进行中:HR-PR-06 历史库纯核已落=coalesceHistoryUpdates 同 requestId 窗内合并取末态跨窗不合并+HotReloadHistoryCore.page 分页窗口(offset/pageSize/total/hasMore,越界如实空页)+容量有界环形淘汰缺省 200(tests/hotReloadHistoryCore.test.ts 钉);差=UI 重渲染节流应用与虚拟滚动装配=接线批)
+- [ ] HR-UI-008 失败点击定位文件、打开输出日志、查看 HTTP 概要（密钥遮蔽）、可选择重试。（进行中:重试面已齐=hotReloadRetry 纯核(只重失败目标/成功侧跳过/每跳取消探针)+RetryCommand+RetryChannel+DefGate 四文件 pin(hotReloadRetry*.test.ts);失败提示=hotReload.ts showErrorMessage;HTTP 概要密钥遮蔽=outcome 无请求头字段 header 不回显(HR-HTTP-014 注)按不存在遮蔽;定位文件/打开日志点击动作=接线批)
+- [x] HR-UI-009 成功状态只用在确认 `applied` 的情境；`2xx` 没有业务回执用“已发送，未确认”。(live 面已齐=hotReloadStatus setApplied 仅回执核验后(文件头注)=2xx 无回执走 setSentUnverified;历史库同口径迁移单向 sent-unverified→applied/failed 终态不回退伪造(HR-PR-06 src/backend/hotReloadHistoryCore.ts);pin tests/hotReloadStatus.test.ts+tests/hotReloadReceipt.test.ts+tests/hotReloadHistoryCore.test.ts;HR-PR-06 批核实勾)
+- [ ] HR-UI-010 支持按 fullModule/target/status/时间范围过滤与搜索；路径相同但 target 不同分别显示。（进行中:HR-PR-06 历史库纯核已落=filter 全条件 AND(fullModule 大小写不敏子串/targetId/status/fileUri/时间含边界)+同文件不同 target 两行独立并存(行身份含 targetId)(tests/hotReloadHistoryCore.test.ts 钉);差=搜索框/过滤 UI 装配=接线批)
 - [ ] HR-UI-011 全面支持主题、国际化中文/英文、无障碍快捷键与 screen reader 状态文本。
 - [ ] HR-UI-012 UI 关闭、隐藏、切换工作区不停止热更新服务，且不丢状态；deactivate 时可靠释放。
 - [ ] HR-UI-013 热更新通知可配置：成功静默、失败提示、批量结果摘要；禁止每次保存弹通知风暴。
-- [ ] HR-UI-014 同一完整模块名归属多个 workspace 时显示 root/target，防用户误认更新哪个服务。
+- [ ] HR-UI-014 同一完整模块名归属多个 workspace 时显示 root/target，防用户误认更新哪个服务。（进行中:HR-PR-06 历史库纯核已落数据面=行身份含 targetId 同路径不同 target 分别成行+groupByTarget 按目标分组(tests/hotReloadHistoryCore.test.ts 钉);多 root 归属显示(root 维度)与 UI 呈现=接线批;双名解析歧义拒判=HR-PR-02,c120287c)
 
 #### 19.8 `.def` / types.xml / entities.xml Hash 与运行时一致性（HR-HASH）
 - [ ] HR-HASH-001 明确三层：`fileHash`（例如 SHA-256 原始字节）、`semanticHash`（稳定规范化语义结构）、`engineDigest`（实际引擎协议报告/确认的指纹）。
@@ -2529,7 +2529,7 @@
 - [ ] HR-PR-03 `hotreload/request-adapter`：抽取通用 RequestExecutor + 状态机 + mock server；保证旧 Quick Requests 不回归。(进行中:HR-PR-03,21cc4848,HR-HTTP-001/010/017 已勾+014 生成面已落;三件主体皆已交付=通用执行器+交换状态机+真网 mock server 套件;旧 Quick Requests 回归=既有 tests/httpRequestService.test.ts 钉逐字不变全绿;余=关联 id 线路贯穿(接收端契约)+002 provider 面(随 HR-PR-04/05))
 - [ ] HR-PR-04 `hotreload/save-watch`：onSave 默认关闭，可开关、去抖、稳定性/幂等队列、基本语法检查。（进行中:HR-PR-04 纯核已落=新 src/backend/hotReloadSavePipeline.ts 零 IO 零 vscode(时钟/定时器/快照读/语法闸全注入,与 VFS-001、hotReloadModuleIdentity 同边界)+tests/hotReloadSavePipeline.test.ts 31 例(时钟定时器全虚拟)+prove-red 三轮闭环;HR-WATCH-006/007/009/010/016 已勾,002/003/004/005/008/011/012/013/014/017/018 部分落地见各行注记,015 未覆盖,001 未做=与用户 2026-11-06 零配置默认开令冲突待裁定;接线暂缓两因=001 默认值冲突(冲突解决权在用户)+真实触发链(全局 HotReloadTrigger+pendingTriggers 批次)被约 50 个 hotReload* 测试文件钉住属独立子批;本批另纠正四处自身设计缺陷=批处理路径原为死代码(每次定稿只传 1 事件故批量阈值永不可达,改为波次归集)、去抖原为固定前置窗(改真尾窗+排窗封顶)、revision 原按 offer 占号致同内容在途响应被误判 stale(改仅实际发出的新内容版本递增)、投递指纹原在定稿时记致一次失败永久跳过同内容(HR-WATCH-008,改在交发送面那一刻记+forgetSent 撤回))
 - [ ] HR-PR-05 `hotreload/disk-watch`：外部变更、Git 批量变更、目录过滤、target 合并、远端环境。（进行中:ae3a2c7a,装配核已落 src/backend/hotReloadDiskWatch.ts=零 vscode 导入,DiskWatcherFactory 注入,watchRoots/arm/rebuild/dispose,HR-WATCH-015 基线闸,过滤层接 isWatchableScriptFile,delete 忽略,UNC/WSL canonical;tests/hotReloadDiskWatch.test.ts 16 例钉含 Git checkout 爆发经真流水线(30 文件单波次一批/同内容还原去重不重发/超阈只预览 HR-WATCH-016 兜底/save+disk 重叠归并/dispose+rebuild 生命周期/file: 与 UNC 形态);prove-red 两轮=拆基线闸红/断过滤层红;坑账=块注释含 `/**/*.py` 的 `*/` 子串提前终止注释(TS1109 级联);门禁 lint 0/tsc 0/unit 754 文件 9286 例/xvfb demo 25 RC=0;差=vscode.createFileSystemWatcher 真适配+extension.ts 接线(save+disk 喂 live 触发面,~50 热更测试文件钉现触发路径,为独立接线子批防本批膨胀);本行不勾等接线批收官)
-- [ ] HR-PR-06 `hotreload/ui-status`：状态栏、资源树、历史面板、完整模块名、失败重试与可信回执。
+- [ ] HR-PR-06 `hotreload/ui-status`：状态栏、资源树、历史面板、完整模块名、失败重试与可信回执。（进行中:本批核实既有 live 面并勾 001(七态状态机 hotReloadStatus.ts)/003(文件装饰+CodeLens)/009(sent-unverified vs applied 口径 status+receipt);新落历史库纯核 src/backend/hotReloadHistoryCore.ts 零 vscode(容量/时钟语义注入;记录幂等/单向迁移守卫/过滤/分组/分页/高频合并/名称投影)+tests/hotReloadHistoryCore.test.ts 16 例;prove-red 三轮=拆迁移守卫红/破坏大小写不敏红/拆合并窗红;门禁 lint 0/tsc 0/unit 756 文件 9302+8skip RC=0/xvfb demo 25 RC=0;差=TreeView/面板/搜索 UI 注册装配与 005/011/012 配置·i18n·生命周期面=接线批;本行不勾等接线批收官)
 - [ ] HR-PR-07 `hotreload/def-fingerprint`：file/semantic/engine 三种 Hash、影响分析、重启提示。
 - [ ] HR-PR-08 `hotreload/plugin-api`：HotReloadProvider/FingerprintProvider/Engine Profile 版本化扩展。
 - [ ] HR-PR-09 `hotreload/reliability-gate`：风暴/过期/断网/安全/24h soak 与跨平台性能报告。

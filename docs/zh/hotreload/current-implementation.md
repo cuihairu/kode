@@ -211,3 +211,16 @@
 - 记一个 JSDoc 坑:块注释里写 `/**/*.py` 字面量会自我截断(内含 `*/`),症状是 TS1109 级联解析错——注释一律用文字描述 glob,字面量只留在字符串字面量里。
 - 装配接线刻意暂缓:`vscode.createFileSystemWatcher` 真适配与 `extension.ts` 把 save+disk 事件喂进真实触发链(全局 `HotReloadTrigger` + `pendingTriggers`)属独立子批——该链被约五十个 `hotReload*` 测试文件钉住,不作顺手重接。§6 所记 HR-WATCH-001 冲突已按 2026-11-06 用户令解决;模式选择配置面随接线批。
 - 测试:`tests/hotReloadDiskWatch.test.ts` 16 例——内存 watcher 总线 + 虚拟时钟,驱动真保存流水线全链。prove-red 两轮:拆掉基线闸 → HR-WATCH-015 用例转红;旁路过滤层 → filtered 诊断用例转红。门禁:lint 0 / tsc 0 / unit 754 文件 9286 例 / xvfb demo 25 RC=0。
+
+## 8. HR-PR-06 增量（2026-11-13,ui-status 审计 + 历史库纯核）
+
+- 先说审计结论:HR-UI 簇相当一部分已有 live 面且有测试钉——七态状态机(`src/hotReloadStatus.ts`,含 `watch-off` 按 §11.1 双原因如实分注)、文件装饰+定点 CodeLens(`hotReloadFileDecorations.ts` / `hotReloadFileStateLens.ts`)、可信回执语义(`setApplied` 仅回执核验后;2xx 无业务回执走 `setSentUnverified`)、重试族(`hotReloadRetry` 纯核+命令+通道+def 闸,四个钉文件)。凭此证据勾掉账本 HR-UI-001/003/009。
+- 真正缺的是历史:全仓此前无任何历史存储。新纯核 `src/backend/hotReloadHistoryCore.ts` —— 零 `vscode` 导入,容量语义注入,与流水线/磁盘监视核同边界。
+- 行形状(HR-UI-002/006/HR-MOD-014):每行同存 `fullModule` 与 `requestModule`,外加 `fileUri` / `targetId` / `time` / `requestId` / `status` / `errorSummary` —— 用户看到的名称与请求携带的名称永不混用。`buildHistoryEntryLabel` 标题取 `fullModule`(缺失如实回落);`buildHistoryEntryTooltipLines` 投影 requestModule(仅双名不同时)/file/target/time(ISO)/requestId/status/error。
+- 行身份:`requestId`(HR-HTTP-014 每次执行生成)。同 id 重记录=原位幂等替换,不重复成行,顺序不动;同文件不同 target 保持两行(HR-UI-010/014),`targetId` 是行身份的一部分。
+- 可信回执同口径(HR-UI-009):状态迁移单向 `sent-unverified → applied | failed`;终态拒一切迁移、同态重写也拒,各自如实返回 `false` 不静默装成功;被淘汰/不存在的 id 同样如实 `false`。
+- 过滤(HR-UI-010):全条件 AND——`fullModuleContains`(大小写不敏子串)/`targetId`/`fileUri`/`status`/含边界时间范围。
+- 高频合并+有界内存(HR-UI-007):`coalesceHistoryUpdates` 同 requestId 窗内多条合并取末态(跨窗不合并;不同 requestId 各自独立);`page(offset, pageSize)` 返回 `{items, total, hasMore}`,越界如实空页;缺省容量 200,淘汰最旧。
+- 树视图分组(HR-UI-002):`groupByFile` / `groupByTarget` 组键按首次出现序、组内最新在前(喂 `newestFirst()`)。
+- 装配接线刻意暂缓:TreeView/面板/搜索框注册、配置面(HR-UI-005)、i18n+无障碍渲染(HR-UI-011)、生命周期绑定(HR-UI-012)、点击动作(HR-UI-008 定位/开日志)随接线批。
+- 测试:`tests/hotReloadHistoryCore.test.ts` 16 例。prove-red 三轮:放开终态迁移 → 迁移守卫用例转红;去掉大小写不敏 → 子串用例转红;拆掉合并窗 → 合并用例转红。门禁:lint 0 / tsc 0 / unit 756 文件 9302 例 / xvfb demo 25 RC=0。
