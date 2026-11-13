@@ -27,7 +27,7 @@
 
 | 簇 | 模块 | 职责 |
 | --- | --- | --- |
-| 触发核心 | `src/hotReload.ts`（1062 行） | 设置读取、watch 计划、全局去抖（`HotReloadTrigger` :220）、发射路径编排：def 门（:777-809）→ 通道发送（:561）→ actionName 快速动作（:609）→ 默认热修 POST（:427-446）；watcher 挂载/重建（:928-1008）；配置变更重建（:1010-1020） |
+| 触发核心 | `src/hotReload.ts`（1118 行） | 设置读取、watch 计划、两级触发链（HR-PR-04 接线，:825-859）：进料级保存流水线 `HotReloadSavePipeline`（:840-858，每文件尾窗去抖/max-delay 封顶/去重指纹/版本号）+ 合并窗 `HotReloadTrigger`（:224-265，`pending()` :255）；发射路径编排：def 门（:786-818）→ 通道发送（:570）→ actionName 快速动作（:618）→ 默认热修 POST（:436-455）；watcher 挂载/重建（:976-1062）；配置变更重建（:1064-1074） |
 | 激活接线 | `src/activate/hotReload.ts`（742 行），自 `src/extension.ts:1360-1367` 进入 | 台账 + 版本追踪 + 状态控制器实例化（:91-133），def 门共享实例（:246-250），全部 12 条命令注册，装饰/lens provider 注册（:574-615） |
 | 发送簇 | `src/backend/hotReloadDefaultHotfix.ts`、`hotReloadChannelConfig.ts`（679 行）、`hotReloadChannelSend.ts`、`hotReloadTransport.ts`（739 行）、`hotReloadDelivery.ts` | 通道配置面板 + 快速切换灯；带回执切换的批式通道发送；传输抽象（http / kbengine-official）；投递分类器 |
 | 回执簇 | `src/backend/hotReloadReceipt.ts`、`hotReloadAppliedCheck.ts`、`hotReloadRetry.ts`（65 行）、`hotReloadRetryCommand.ts`（361 行）、`hotReloadRevisionEvidence.ts` + `Command.ts`、`hotReloadTargetState.ts`（401 行）、`hotReloadBatchSummary.ts` + `Command.ts` | accepted 回执解析器；applied 摘要双证据 + 10 秒沉降；重试规划 + 单目标重发命令；三类修订证据；双维度投递台账 + HOT-VER 版本册；按目标聚合 |
@@ -37,7 +37,7 @@
 
 ### HR-AUDIT-003 — 发送路径端到端链（现行发射路径）
 
-1. 触发：FileSystemWatcher 事件 → `pendingTriggers`（`src/hotReload.ts:417`）→ 单一全局去抖（默认 500ms，`HotReloadTrigger` :220-251）。
+1. 触发（HR-PR-04 接线后两级）：FileSystemWatcher 事件 → `scheduleHot`（`src/hotReload.ts:1032-1038`）→ 进料级 `HotReloadSavePipeline.offer`（每文件尾窗去抖，同文件连发归并；`pipeline.offer` :287 起）+ 合并窗重排（`trigger.schedule` :1037）→ 定稿汇入 `pendingOut`（:832）→ 合并窗 fire（:834-841）→ `runFire`（:429）。
 2. 门：纯 Python 批同步放行（:779-782）；含 `.def` 的批走结构门（`gateDefChanges` :777-809 → `hotReloadDefGate.check` :107-166）。结构差异 → **拦截**：标 `RESTART_REQUIRED`（:784），审计行 `拦截:需重启`（:792），基线不前滚（:805 仅放行时执行）。
 3. 派发（首中即用）：部署通道 → `sendFilesViaReloadChannel`（`src/hotReload.ts:561`；传输在 `src/activate/hotReload.ts:340-361` 解析，默认通道 `targetId='default'` 在 :347）；否则 `actionName` 快速动作（:609-756）；否则默认热修 POST（`runDefaultHotfix` :427-446）。
 4. 通道发送序列（`hotReloadChannelSend.ts:68-328`）：先记 generation 再进传输（:74-93）→ 逐文件冻结 sha256 摘要（:95-116）→ 按根分组（:117-123）→ 发送 → 回执解析（`parseReloadHttpReceipts` :163-253）→ 台账切换 `applied`/`accepted`/`failed`/`sent-unverified`（:219-306）→ applied 沉降窗以发送起点锚定（:172-197）。
@@ -57,12 +57,12 @@
 
 | 位置 | 模式 | 用途 | 生命周期 |
 | --- | --- | --- | --- |
-| `src/hotReload.ts:935`（`attachWatcher` :928-946） | 逐显式 glob / `**/*` bypass 面 / 派生双职（`assetsRoot/**/*.py`） | 热更：change/create/delete → `pendingTriggers` → 全局去抖 → 门 → 发送 | `enabled` 前不挂（启动 `apply()` :1035）；配置变更全量重建（:1010-1020，签名 :883-890）；复合 dispose :1021-1034 |
+| `src/hotReload.ts:976-994`（`attachWatcher` :976-994） | 逐显式 glob / `**/*` bypass 面 / 派生双职（`assetsRoot/**/*.py`） | 热更：change/create/delete → `scheduleHot`（:1032-1038）→ 进料级流水线 offer + 合并窗重排 → 门 → 发送 | `enabled` 前不挂（启动 `apply()` :1092）；配置变更全量重建（:1064-1074，签名 `watchSignatureOf` :939-947）；复合 dispose :1075-1090 |
 | bypass 合并器 | `**/*` 非 py 面 | 30ms 共享文件事件合并 → 状态/版本簿记（`createSharedFileEventMerger`，`src/backend/sharedFileEvents.ts:47,91`） | 同一复合体 |
 | `src/extension.ts:491` | `**/*.{py,def,xml}` | python 类索引失效 | 不变 |
 | 其余 watcher | 与 2026-11-11 审计一致（config 视图、资产再生、stubs、CodeLens、mapping、workspace 索引、debug config） | — | — |
 
-事实：触发**仍是单一全局去抖**——逐文件信息在 `pendingTriggers` 积累、整体清空（:420-421）；逐文件智能活在版本册（`hotReloadFileVersion.ts:154`）与状态机（`hotReloadFileState.ts:159`），均由 watcher 事件供料。保存事件：现存 4 处 `onDidSaveTextDocument` 注册（`src/globalDataIndex.ts:233`、`src/extension.ts:568`、`src/activate/hotReload.ts:603`——仅装饰/lens 刷新、不发送、`src/activate/diagnostics.ts:562`）；**无一触发发送**；`onWillSaveTextDocument`：零。
+事实：触发在 HR-PR-04 接线（2026-11-13）后是**两级链**——进料级 `HotReloadSavePipeline`（每文件尾窗去抖、max-delay 封顶、去重指纹/版本号册；稳定窗/语法闸未注入=如实不做）、合并窗 `HotReloadTrigger`（:224，def 闸「整批拦下」契约依赖同批共见，逐文件直发会让混批里的 py 绕过闸）；逐文件智能仍在版本册（`hotReloadFileVersion.ts:154`）与状态机（`hotReloadFileState.ts:159`），均由 watcher 事件供料。保存事件：现存 4 处 `onDidSaveTextDocument` 注册（`src/globalDataIndex.ts:233`、`src/extension.ts:568`、`src/activate/hotReload.ts:603`——仅装饰/lens 刷新、不发送、`src/activate/diagnostics.ts:562`）；**无一触发发送**；`onWillSaveTextDocument`：零。
 
 ### HR-AUDIT-006 — HTTP 能力清单（不重造轮子）
 
@@ -197,7 +197,7 @@
 - 语法闸(HR-WATCH-012)注入式,不通过出 `blocked` 且不发送半成品。每次定稿只检查一次(初版调了两遍,已改)。
 - HR-WATCH-014 `dispose` 一并清空 pending/波次/预览滞留,并停止受理新事件。HR-WATCH-016 超阈值批次只预览、显式放行才发;滞留期间新批次并入同一滞留批次。HR-WATCH-017 诊断事件:`trigger` / `filtered` / `debounced` / `deduped` / `blocked` / `scheduled` / `preview` / `flushed`。
 - `isWatchableScriptFile`(HR-WATCH-004)纯词法过滤:扩展名(缺省 `.py`,大小写不敏感)、显式根集合按严格前缀+整段边界匹配(`/ws/scripts` 不认领 `/ws/scripts2`)、默认排除目录(`.git`、`.venv`、`venv`、`node_modules`、`__pycache__`、`.kbengine`、`.mypy_cache`、`.pytest_cache`、`.ruff_cache`)与调用方追加项取并集、备份/临时文件名(`.swp` / `.swo` / `.bak` / `.tmp` / 尾 `~` / `#名#`)。
-- 装配接线刻意暂缓:账本条 HR-WATCH-001 写「默认 off」,与 2026-11-06 用户令(零配置默认**开**、保存即自动发)冲突——已按该用户令解决(默认开覆账本文字;live 码本就默认 enabled)。模式选择配置面与默认开关本批不做。真实触发链(全局 `HotReloadTrigger` + `pendingTriggers` 批次)被约五十个 `hotReload*` 测试文件钉住,重接属独立子批,不作顺手改动。
+- 装配接线(2026-11-13 HR-PR-04 子批已落):live 触发链已重接为两级形态——进料级 `HotReloadSavePipeline`(每文件尾窗去抖/max-delay 封顶/去重指纹/版本号)+合并窗 `HotReloadTrigger`(def 闸整批契约);测试替身时钟 handle 撞号(`handles.size` 作 id)在重接中暴露并对齐真 setTimeout 单调语义(20 个测试文件统一修正)。余下暂缓:模式选择配置面(稳定窗/语法闸/波次归集窗/批量预览阈的配置键与注入面)随配置面子批——现注入面缺省=稳定窗/语法闸不做、0 冲口定稿即汇合并池,与既有全局去抖时序同感。
 - 测试:`tests/hotReloadSavePipeline.test.ts` 31 例,时钟与定时器全虚拟(内存 timer 队列,`advance()` 按到期序冲)。prove-red 三轮:去掉 max-delay 封顶 → save storm 用例转红;关掉预览阈值判断 → 3 个预览用例转红;让 `forgetSent` 空转 → HR-WATCH-008 用例转红。
 
 ## 7. HR-PR-05 增量（2026-11-13,磁盘监视装配核）
@@ -209,7 +209,7 @@
 - Git 批量变更(切分支/checkout 爆发)由流水线三层兜住,且经真 HR-PR-04 核全链验证:30 文件爆发归集单波次一批(不放大);还原同字节即去重(checkout 未变内容不重发);超预览阈值的爆发只滞留预览、显式放行才发(HR-WATCH-016 兜底)。
 - HR-WATCH-005 控制器面:`dispose` 全 dispose 每个 watcher 且后续一切调用拒收(含 `watchRoots` / `arm` / `rebuild`);`rebuild(roots)` 全 dispose 旧 watcher 按新根重建,`armed` 保持。
 - 记一个 JSDoc 坑:块注释里写 `/**/*.py` 字面量会自我截断(内含 `*/`),症状是 TS1109 级联解析错——注释一律用文字描述 glob,字面量只留在字符串字面量里。
-- 装配接线刻意暂缓:`vscode.createFileSystemWatcher` 真适配与 `extension.ts` 把 save+disk 事件喂进真实触发链(全局 `HotReloadTrigger` + `pendingTriggers`)属独立子批——该链被约五十个 `hotReload*` 测试文件钉住,不作顺手重接。§6 所记 HR-WATCH-001 冲突已按 2026-11-06 用户令解决;模式选择配置面随接线批。
+- 装配接线(2026-11-13 HR-PR-04 子批,save 侧已落):watcher 事件(save 形态)已喂进两级触发链(见 §6/§11 注记);disk 侧 `vscode.createFileSystemWatcher` 真适配(HR-PR-05 `hotReloadDiskWatch.ts` 已在库,`DiskWatcherFactory` 注入位)与 `extension.ts` 侧事件汇入仍属独立子批。§6 所记 HR-WATCH-001 冲突已按 2026-11-06 用户令解决;模式选择配置面随配置面子批。
 - 测试:`tests/hotReloadDiskWatch.test.ts` 16 例——内存 watcher 总线 + 虚拟时钟,驱动真保存流水线全链。prove-red 两轮:拆掉基线闸 → HR-WATCH-015 用例转红;旁路过滤层 → filtered 诊断用例转红。门禁:lint 0 / tsc 0 / unit 754 文件 9286 例 / xvfb demo 25 RC=0。
 
 ## 8. HR-PR-06 增量（2026-11-13,ui-status 审计 + 历史库纯核）
@@ -257,3 +257,11 @@
 - prove-red:拆除 harness 的 `forgetSent` 撤回 → 断网门两例恰红(指纹未撤→同内容判重→不重发),恢复复绿。撤回时序建模本身就是抓出的一处测试缺陷:onEmit 内同步撤回会被核心的 onEmit 后 markSent 覆盖——套件改为如实建模异步回调。
 - 性能报告:`docs/perf/2026-11-13-hotreload-reliability-gate.md`(附 run 记录)。真时钟纯内存实测:10k offer → 1000 事件,offer 登记路径 37 ms,全链 157 ms;同内容第二波全量判重(带稳定窗口径新发 0)。如实边界:**24h 真 soak 未跑**(需装配面就绪,本车道口径=缩放 soak),**仅 Linux 实测**(套件零 IO 零 vscode,凡 vitest 可跑处即可复跑;不编造跨平台数字),不含端到端网络时延(归 HR-HTTP-017 真网套件)。
 - 装配级(真 watcher→真发送链)的风暴/衰减验收随接线批(HR-PR-02..08 各行保持注记不勾)。
+
+## 12. HR-PR-04 接线增量（2026-11-13，两级触发链上线）
+
+- live 触发链重接为**两级形态**（`src/hotReload.ts` :825-859）：①进料级 `HotReloadSavePipeline`——每文件尾窗去抖（同文件连发归并）、全局 max-delay 封顶、去重指纹/版本号册内建；稳定窗与语法闸随注入面启用（本批未注入=如实不做）。②合并窗 `HotReloadTrigger`（既有全局去抖复用，新增 `pending()` :255）——把同窗定稿合成一批交给发送编排。
+- **合并窗必须存在的原因**：def 结构闸「整批拦下」契约（`tests/hotReloadDefGateWiring.test.ts` 混批用例钉死）依赖同批共见——逐文件定稿直发会让混批里的 `.py` 绕过闸单独 reload，结构性 def 变更 + py 热更同落=引擎状态不一致。两级的同刻时序靠定时器插入序保证（offer 先排进料级、后排合并窗，同拍先定稿后合并）；真机 fire 时机保持「末次事件+窗」（emit 只在合并窗无在途计时才补排，`pending()` 查询），与旧全局去抖时序同感。
+- 0 冲口（`batchFlushMs: 0`）= 定稿即汇入合并池，不起波次窗；波次归集/批量预览阈/预览放行为配置面子批预留（核心机制 HR-WATCH-013/016 在库已钉，`batchFlushMs=0` 语义有核心测试钉）。
+- 测试替身时钟 handle 撞号修复：20 个测试文件的 `makeTimers` 用 `handles.size` 作定时器 id，clear+set 后撞号覆写另一计时器（真 `setTimeout` id 单调，替身语义缺陷）——统一改单调计数器 `nextHandle++`。装配在途计时计数 1→2（两级）为如实重钉（4 处 `toBe(1)`→`toBe(2)`、2 处 `tick()` 返回值），行为断言零改动。
+- 门禁：eslint 0 / tsc 0 / unit 759 文件 9345+8skip RC=0（+1 核心钉：0 冲口定稿即发）/ xvfb demo 25 RC=0。余下暂缓：disk 侧 `vscode.createFileSystemWatcher` 真适配与 `extension.ts` 汇入（HR-PR-05 接线子批）、配置面（稳定窗/语法闸/波次窗/预览阈配置键）、`extension.ts` 侧 revision 消费（stale 应答闸）。

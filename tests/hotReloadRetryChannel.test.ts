@@ -16,9 +16,10 @@ const KEY = { rootId: '/ws', targetId: 'profile-9' };
 
 const makeTimers = (): HotReloadTimerDeps => {
   const handles = new Map<unknown, () => void>();
+  let nextHandle = 0;
   return {
     set: (callback): unknown => {
-      const handle = handles.size;
+      const handle = nextHandle++;
       handles.set(handle, callback);
       return handle;
     },

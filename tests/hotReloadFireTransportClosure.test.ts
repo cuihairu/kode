@@ -24,6 +24,7 @@ const digestOf = (content: string): string =>
 
 const makeTimers = (): { timers: HotReloadTimerDeps; tick: () => void } => {
   const handles = new Map<unknown, () => void>();
+  let nextHandle = 0;
   return {
     tick: () => {
       const callbacks = [...handles.values()];
@@ -34,7 +35,7 @@ const makeTimers = (): { timers: HotReloadTimerDeps; tick: () => void } => {
     },
     timers: {
       set: (callback): unknown => {
-        const handle = handles.size;
+        const handle = nextHandle++;
         handles.set(handle, callback);
         return handle;
       },

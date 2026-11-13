@@ -31,6 +31,7 @@ import { normalizeFileIdentity } from './backend/pathIdentity';
 import type { ReloadTransport } from './backend/hotReloadTransport';
 import type { HttpTransport } from './backend/httpRequestService';
 import type { PackageDirProbe } from './backend/httpRequests';
+import { HotReloadSavePipeline } from './backend/hotReloadSavePipeline';
 
 export { HOT_RELOAD_TOGGLE_COMMAND } from './hotReloadToggle';
 
@@ -216,7 +217,10 @@ export const realHotReloadTimerDeps: HotReloadTimerDeps = {
   clear: handle => clearTimeout(handle as ReturnType<typeof setTimeout>)
 };
 
-/** 去抖触发器:同一时刻只保留最后一次,连续保存合并成一次触发 */
+/** 去抖触发器:同一时刻只保留最后一次,连续保存合并成一次触发。
+ *  HR-PR-04 接线后作为装配级合并窗保留:流水线逐文件定稿汇入 pendingOut,
+ *  由本类合成一批交给发送编排(def 结构闸「整批拦下」契约依赖同批共见,
+ *  逐文件直发会让混批里的 py 绕过闸——hotReloadDefGateWiring 钉死此契约)。 */
 export class HotReloadTrigger {
   private readonly fire: () => void;
   private readonly timers: HotReloadTimerDeps;
@@ -243,6 +247,13 @@ export class HotReloadTrigger {
   cancel(): void {
     this.timers.clear(this.handle);
     this.handle = undefined;
+  }
+
+  /** 合并窗是否已有在途计时(HR-PR-04 两级形态:进料级定稿 emit 只在无在途
+   *  合并计时才补排——offer 时已排的合并窗照旧走,fire 时机保持「末次事件
+   *  +窗」不后移;在途窗已 fire 而定稿晚到(稳定窗/封顶延迟)时才由 emit 补排) */
+  pending(): boolean {
+    return this.handle !== undefined;
   }
 
   dispose(): void {
@@ -413,12 +424,10 @@ export function setupHotReload(
       // VS Code 关闭期间提示 API 可能不可用,仍保持 watcher 回调安全。
     }
   };
-  // 去抖期间攒到的触发文件:fire 时一次性结账进状态与日志(连发保存合并)
-  const pendingTriggers = new Set<string>();
-  const trigger = new HotReloadTrigger(() => {
+  // HR-PR-04 接线:发送编排入口由「全局去抖 fire」改为「保存流水线波次出口」
+  // ——定稿文件清单作为参数进来,状态/审计/闸/通道面编排逐字保留。
+  const runFire = (triggers: string[]): void => {
     const settings = readHotReloadSettings(hotReloadSectionReader());
-    const triggers = [...pendingTriggers];
-    pendingTriggers.clear();
     status.setSending(triggers, settings.debounceMs);
     // 默认热更请求(用户令 2026-11-06):未配动作名时保存即 POST
     // http://127.0.0.1:8090/hotfix?module_name=<模块名>,body 同带
@@ -807,7 +816,46 @@ export function setupHotReload(
       });
     };
     gateDefChanges();
+  };
+
+  // HR-PR-04 接线(HR-WATCH 纯核→live 触发链),两级形态:
+  // ①进料级 HotReloadSavePipeline——每文件尾窗去抖(同文件连发归并)、
+  //   max-delay 封顶、去重指纹/版本号册内建;稳定窗与语法闸随注入面启用
+  //   (未注入=如实不做,不猜)。0 冲口=定稿即汇入合并池。
+  // ②合并窗 HotReloadTrigger(既有全局去抖,与旧时序同感)——把同窗定稿
+  //   合成一批交给发送编排。def 结构闸「整批拦下」契约依赖同批共见,逐文件
+  //   直发会让混批里的 py 绕过闸,故合并窗必须在 fire 前兜住整批;纯核波次
+  //   窗(batchFlushMs)为配置面子批预留,届时可接管本合并窗。
+  // 同刻时序:offer 先排流水线去抖、后排合并窗,虚拟/真定时器都按插入序
+  // 先定稿后合并,单拍(测试 tick)内即完成「定稿→合并→fire」。
+  const pendingOut = new Set<string>();
+  const trigger = new HotReloadTrigger(() => {
+    const triggers = [...pendingOut];
+    pendingOut.clear();
+    if (triggers.length === 0) {
+      return; // 定稿全被拦/去重时合并窗空转:如实不 fire 不推状态
+    }
+    runFire(triggers);
   }, timers);
+  let pipeline: HotReloadSavePipeline | undefined;
+  const buildPipeline = (debounceMs: number): HotReloadSavePipeline =>
+    new HotReloadSavePipeline({
+      debounceMs,
+      batchFlushMs: 0,
+      timers,
+      now,
+      onEmit: events => {
+        for (const event of events) {
+          pendingOut.add(event.uri);
+        }
+        // offer 时已排的合并窗照旧走(不后移 fire 时机);在途窗已 fire 而
+        // 定稿晚到(稳定窗/封顶延迟的边缘路径)时才由这里补排,晚到文件
+        // 随下一批走,不丢
+        if (!trigger.pending()) {
+          trigger.schedule(debounceMs);
+        }
+      }
+    });
 
   const watchers: vscode.FileSystemWatcher[] = [];
   // IDE-REV-023 applied 核验窗口的结算定时器:随装配释放一并清掉
@@ -947,10 +995,14 @@ export function setupHotReload(
 
   const apply = (): void => {
     disposeWatchers();
+    // 重建流水线:在途待定稿与在途合并批随旧实例弃置(与旧 trigger.cancel+
+    // 清攒批同义),新实例按最新 debounceMs 建——去抖窗随配置联动重建(§11.4)
+    pipeline?.dispose();
     trigger.cancel();
-    pendingTriggers.clear();
+    pendingOut.clear();
     const inputs = readWatchInputs();
     const { settings, workspaceRoot, assetsRoot } = inputs;
+    pipeline = buildPipeline(settings.debounceMs);
     lastWatchSignature = watchSignatureOf(inputs);
     const plan = planHotReloadWatch({
       enabled: settings.enabled,
@@ -978,10 +1030,12 @@ export function setupHotReload(
     // 走到这里必是显式或派生(错误/关闭已 return)
     const source: HotReloadGlobSource = plan.source === 'explicit' ? 'explicit' : 'derived';
     const scheduleHot = (uri: vscode.Uri): void => {
-      pendingTriggers.add(uri.fsPath);
       // HOT-VER:watcher 热更域事件(.py/.def,含 create/change/delete)→ 版本簿
       // 采样(建档/跳号);与手动触发路径共用同一台账。域外文件不入台账。
       options.onWatchedFileChange?.(uri.fsPath);
+      pipeline?.offer(uri.fsPath, 'save');
+      // 合并窗与进料级同窗重排(尾窗语义与旧全局去抖同感):先排流水线
+      // 去抖、后排合并窗,同拍定时器按插入序先定稿后合并
       trigger.schedule(settings.debounceMs);
     };
     if (source === 'explicit') {
@@ -1023,7 +1077,9 @@ export function setupHotReload(
       subscription.dispose();
       unsubscribeBypass();
       bypassMerger.dispose();
+      pipeline?.dispose();
       trigger.dispose();
+      pendingOut.clear();
       for (const handle of settleHandles) {
         timers.clear(handle);
       }

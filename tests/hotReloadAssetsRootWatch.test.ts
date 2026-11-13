@@ -50,6 +50,7 @@ const makeTimers = (): {
   tick: () => number;
 } => {
   const handles = new Map<unknown, () => void>();
+  let nextHandle = 0;
   return {
     pending: () => handles.size,
     tick: () => {
@@ -62,7 +63,7 @@ const makeTimers = (): {
     },
     timers: {
       set: (callback): unknown => {
-        const handle = handles.size;
+        const handle = nextHandle++;
         handles.set(handle, callback);
         return handle;
       },
@@ -380,7 +381,8 @@ describe('装配(§11.1/§11.4 watcher 生命周期)', () => {
 
     // py 变化 → 热更动作照常触发
     watcher.fireChange(Uri.file(path.join(assets, 'scripts', 'base', 'Account.py')));
-    expect(clock.pending()).toBe(1);
+    // py 事件:进料级去抖+合并窗两枚
+    expect(clock.pending()).toBe(2);
     clock.tick();
     expect(runCalls).toEqual(['热更']);
   });
@@ -528,7 +530,8 @@ describe('装配(§11.1/§11.4 watcher 生命周期)', () => {
     // .def 仍在热更域:确实进投递(会话首见无基线 → 结构闸保守不发,那是
     // IDE-HOT-005/REV-024 的口径,不是没进投递)
     explicitWatcher.fireChange(Uri.file(path.join(assets, 'entity_defs', 'Avatar.def')));
-    expect(clock.pending()).toBe(1);
+    // def 事件:进料级去抖+合并窗两枚
+    expect(clock.pending()).toBe(2);
     clock.tick();
     expect(status.lines.some(line => line.includes('触发:') && line.includes('Avatar.def'))).toBe(true);
     expect(runCalls).toEqual([]);
@@ -536,7 +539,8 @@ describe('装配(§11.1/§11.4 watcher 生命周期)', () => {
 
     // .py 同样照常:不经闸,直接执行动作
     explicitWatcher.fireChange(Uri.file(path.join(assets, 'scripts', 'base', 'Account.py')));
-    expect(clock.pending()).toBe(1);
+    // py 事件:进料级去抖+合并窗两枚
+    expect(clock.pending()).toBe(2);
     clock.tick();
     expect(runCalls).toEqual(['热更']);
   });

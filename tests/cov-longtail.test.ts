@@ -941,6 +941,7 @@ describe('scanRoots(回退与遍历边角)', () => {
 describe('hotReload(装配边角)', () => {
   const makeTimers = (): { timers: HotReloadTimerDeps; pending: () => number; tick: () => number } => {
     const handles = new Map<unknown, () => void>();
+    let nextHandle = 0;
     return {
       pending: () => handles.size,
       tick: () => {
@@ -953,7 +954,7 @@ describe('hotReload(装配边角)', () => {
       },
       timers: {
         set: callback => {
-          const handle = handles.size;
+          const handle = nextHandle++;
           handles.set(handle, callback);
           return handle;
         },
@@ -1075,9 +1076,10 @@ describe('hotReload(装配边角)', () => {
 describe('hotReloadRetryCommand(重发核验阻塞注解)', () => {
   const makeTimers = (): HotReloadTimerDeps => {
     const handles = new Map<unknown, () => void>();
+    let nextHandle = 0;
     return {
       set: callback => {
-        const handle = handles.size;
+        const handle = nextHandle++;
         handles.set(handle, callback);
         return handle;
       },

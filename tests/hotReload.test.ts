@@ -40,6 +40,7 @@ const makeTimers = (): {
   tick: () => number;
 } => {
   const handles = new Map<unknown, () => void>();
+  let nextHandle = 0;
   return {
     pending: () => handles.size,
     tick: () => {
@@ -52,7 +53,7 @@ const makeTimers = (): {
     },
     timers: {
       set: (callback): unknown => {
-        const handle = handles.size;
+        const handle = nextHandle++;
         handles.set(handle, callback);
         return handle;
       },
@@ -311,9 +312,11 @@ describe('setupHotReload(装配)', () => {
 
     expect(lastFileSystemWatcher.current).not.toBeNull();
     lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/scripts/base/Account.py' } as never);
-    expect(clock.pending()).toBe(1);
+    // HR-PR-04 两级形态:在途计时=进料级流水线去抖 + 合并窗,各一枚
+    expect(clock.pending()).toBe(2);
     lastFileSystemWatcher.current!.fireCreate({ fsPath: '/ws/scripts/base/Account.py' } as never);
-    expect(clock.pending()).toBe(1);
+    // 同文件重排:两枚都重排(尾窗),不增枚
+    expect(clock.pending()).toBe(2);
 
     clock.tick();
     expect(runCalls).toEqual(['热更']);
@@ -331,7 +334,8 @@ describe('setupHotReload(装配)', () => {
     lastFileSystemWatcher.current!.fireChange({ fsPath: '/a.py' } as never);
     clock.tick();
     lastFileSystemWatcher.current!.fireChange({ fsPath: '/b.py' } as never);
-    expect(clock.tick()).toBe(1);
+    // HR-PR-04 两级形态:b.py 的进料级去抖 + 合并窗,同拍各一枚
+    expect(clock.tick()).toBe(2);
 
     expect(runCalls).toEqual(['热更', '热更']);
   });
@@ -474,7 +478,8 @@ describe('setupHotReload(装配)', () => {
     const watcher = lastFileSystemWatcher.current;
     expect(watcher).not.toBeNull();
     watcher!.fireChange({ fsPath: '/a.py' } as never);
-    expect(clock.pending()).toBe(1);
+    // HR-PR-04 两级形态:进料级去抖 + 合并窗,在途两枚
+    expect(clock.pending()).toBe(2);
 
     // 去抖期间关掉:计时取消、watcher 拆除、动作不执行
     let firstDisposed = 0;

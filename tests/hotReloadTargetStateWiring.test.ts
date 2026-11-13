@@ -14,6 +14,7 @@ import { configurationOverrides, lastFileSystemWatcher } from './helpers/vscodeS
 
 const makeTimers = (): { timers: HotReloadTimerDeps; tick: () => number } => {
   const handles = new Map<unknown, () => void>();
+  let nextHandle = 0;
   return {
     tick: () => {
       const callbacks = [...handles.values()];
@@ -25,7 +26,7 @@ const makeTimers = (): { timers: HotReloadTimerDeps; tick: () => number } => {
     },
     timers: {
       set: (callback): unknown => {
-        const handle = handles.size;
+        const handle = nextHandle++;
         handles.set(handle, callback);
         return handle;
       },
@@ -208,7 +209,8 @@ describe('setupHotReload targetState 接线(IDE-REV-021)', () => {
     setupHotReload(makeContext(), name => void runCalls.push(name), { timers: clock.timers });
 
     fireFiles(['/ws/a.py']);
-    expect(clock.tick()).toBe(1);
+    // HR-PR-04 两级形态:进料级去抖+合并窗同拍各一枚
+    expect(clock.tick()).toBe(2);
     await flush();
     expect(runCalls).toEqual(['热更']);
   });

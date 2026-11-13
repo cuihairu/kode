@@ -40,6 +40,7 @@ const makeTimers = (): {
   tick: () => number;
 } => {
   const handles = new Map<unknown, () => void>();
+  let nextHandle = 0;
   return {
     pending: () => handles.size,
     tick: () => {
@@ -52,7 +53,7 @@ const makeTimers = (): {
     },
     timers: {
       set: (callback): unknown => {
-        const handle = handles.size;
+        const handle = nextHandle++;
         handles.set(handle, callback);
         return handle;
       },
@@ -385,7 +386,8 @@ describe('setupHotReload 状态机转移表(装配级)', () => {
     settle(statusClock);
 
     lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/scripts/base/Account.py' } as never);
-    expect(clock.pending()).toBe(1);
+    // HR-PR-04 两级形态:进料级去抖+合并窗两枚
+    expect(clock.pending()).toBe(2);
     clock.tick();
     settle(statusClock);
     expect(fake.bar.text).toBe(SENDING_FACE);
@@ -451,7 +453,8 @@ describe('setupHotReload 状态机转移表(装配级)', () => {
     expect(fake.bar.text).toBe(READY_FACE);
 
     lastFileSystemWatcher.current!.fireChange({ fsPath: '/a.py' } as never);
-    expect(clock.pending()).toBe(1);
+    // HR-PR-04 两级形态:进料级去抖+合并窗两枚
+    expect(clock.pending()).toBe(2);
 
     configurationOverrides.set('kbengine', { hotReload: { enabled: false } });
     fireConfig('kbengine');

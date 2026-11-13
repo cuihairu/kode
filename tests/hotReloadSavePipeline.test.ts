@@ -473,6 +473,15 @@ describe('波次归集(同窗多文件合成一批)', () => {
     expect(h.emitted[0].events).toHaveLength(3);
     expect(h.pipeline.waveFiles()).toHaveLength(0);
   });
+
+  it('batchFlushMs=0 定稿即发:不起归集窗,去抖到期当拍直接出批(接线默认形态)', async () => {
+    const h = makePipeline({ batchFlushMs: 0 });
+    h.pipeline.offer('/ws/a.py', 'save');
+    await h.clock.advance(100); // 去抖到期当拍:定稿即出,无需再等冲口
+    expect(h.emitted).toHaveLength(1);
+    expect(h.emitted[0].events.map(event => event.uri)).toEqual(['/ws/a.py']);
+    expect(h.pipeline.waveFiles()).toHaveLength(0);
+  });
 });
 
 describe('HR-WATCH-014 dispose(清空待提交队列,后续事件不再受理)', () => {

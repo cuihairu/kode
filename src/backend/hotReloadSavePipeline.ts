@@ -104,7 +104,10 @@ export interface HotReloadSavePipelineOptions {
   readonly maxStabilityProbes?: number;
   /** 批量预览阈值(缺省 50):一波触及超过此数的批次只预览不放行(HR-WATCH-016) */
   readonly batchPreviewThreshold?: number;
-  /** 波次冲出口(缺省=debounceMs):本波最后一次定稿后延时归集,同窗多文件合成一批 */
+  /**
+   * 波次冲出口(缺省=debounceMs):本波最后一次定稿后延时归集,同窗多文件
+   * 合成一批。0=定稿即发(不起归集窗;装配接线默认,与既有全局去抖时序同感)
+   */
   readonly batchFlushMs?: number;
   /** 定时器注入(缺省真 setTimeout;测试用内存时钟) */
   readonly timers?: SavePipelineTimerDeps;
@@ -498,6 +501,12 @@ export class HotReloadSavePipeline {
       coalesceReason: this.coalesceReasonOf(entry)
     };
     this.wave.push(event);
+    if (this.batchFlushMs === 0) {
+      // 0 冲口=定稿即发(装配接线默认,与既有全局去抖时序同感):不起归集
+      // 窗,本批立即出窗;波次归集窗(>0)为配置面子批预留,核机制不变
+      this.flushWave();
+      return;
+    }
     if (!this.waveArmed) {
       this.waveArmed = true;
       this.waveTimer = this.timers.set(() => {

@@ -35,6 +35,7 @@ const makeTimers = (): {
   tick: () => number;
 } => {
   const handles = new Map<unknown, () => void>();
+  let nextHandle = 0;
   return {
     pending: () => handles.size,
     tick: () => {
@@ -47,7 +48,7 @@ const makeTimers = (): {
     },
     timers: {
       set: (callback): unknown => {
-        const handle = handles.size;
+        const handle = nextHandle++;
         handles.set(handle, callback);
         return handle;
       },

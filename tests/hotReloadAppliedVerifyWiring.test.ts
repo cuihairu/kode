@@ -19,6 +19,7 @@ import { configurationOverrides, lastFileSystemWatcher, workspace as stubWorkspa
 
 const makeTimers = (): { timers: HotReloadTimerDeps; tick: () => number } => {
   const handles = new Map<unknown, () => void>();
+  let nextHandle = 0;
   return {
     tick: () => {
       const callbacks = [...handles.values()];
@@ -30,7 +31,7 @@ const makeTimers = (): { timers: HotReloadTimerDeps; tick: () => number } => {
     },
     timers: {
       set: (callback): unknown => {
-        const handle = handles.size;
+        const handle = nextHandle++;
         handles.set(handle, callback);
         return handle;
       },

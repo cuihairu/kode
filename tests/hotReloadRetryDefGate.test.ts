@@ -32,6 +32,7 @@ const NONSTRUCTURAL_DEF = `<!-- 注释不进指纹 -->\n${BASE_DEF}`;
 
 const makeTimers = (): { timers: HotReloadTimerDeps; tick: () => void } => {
   const handles = new Map<unknown, () => void>();
+  let nextHandle = 0;
   return {
     tick: () => {
       const callbacks = [...handles.values()];
@@ -42,7 +43,7 @@ const makeTimers = (): { timers: HotReloadTimerDeps; tick: () => void } => {
     },
     timers: {
       set: (callback): unknown => {
-        const handle = handles.size;
+        const handle = nextHandle++;
         handles.set(handle, callback);
         return handle;
       },
