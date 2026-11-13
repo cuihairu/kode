@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { classifyDefChange, defChangeVerdictDetail } from '../src/backend/hotReloadDefStructure';
+import {
+  classifyDefChange,
+  defChangeVerdictDetail,
+  semanticFingerprintReport
+} from '../src/backend/hotReloadDefStructure';
 
 // IDE-HOT-005 将结构性 def 变更标记需重启:影响序列化(Properties 的
 // Type/Flags/增删)或 RPC 参数(三方法段方法的增删/Arg 类型签名)的变
@@ -276,5 +280,25 @@ describe('defChangeVerdictDetail(需重启标注文案)', () => {
 
     const cosmetic = classifyDefChange(BASE, BASE);
     expect(defChangeVerdictDetail(cosmetic)).toContain('非结构性');
+  });
+});
+
+describe('semanticFingerprintReport(HR-HASH-003/004 版本+作用域)', () => {
+  it('可解析:版本常量稳定+scope=仅本文件语义+note 点名依赖核验义务', () => {
+    const report = semanticFingerprintReport(BASE);
+    expect(report.specVersion).toBe('def-structural-fp/1');
+    expect(report.scope).toBe('file-only-semantic');
+    expect(report.hash).not.toBeNull();
+    expect(report.note).toContain('仅本文件语义');
+    expect(report.note).toContain('依赖');
+    // 同文本指纹稳定;同版本内可比
+    expect(semanticFingerprintReport(BASE).hash).toBe(report.hash);
+  });
+
+  it('解析不了:hash=null 如实不造,note 如实说明', () => {
+    const report = semanticFingerprintReport('not a def document');
+    expect(report.hash).toBeNull();
+    expect(report.specVersion).toBe('def-structural-fp/1');
+    expect(report.note).toContain('解析失败');
   });
 });

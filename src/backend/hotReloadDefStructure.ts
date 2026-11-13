@@ -156,6 +156,42 @@ function buildStructuralFingerprint(text: string): DefStructuralFingerprint | nu
 }
 
 /**
+ * 语义指纹规范版本(HR-HASH-003):指纹行序列化规则(排序/形状串格式/
+ * 收录面)变更时递增,指纹值随版本走——不同版本指纹不可比。
+ */
+export const DEF_FINGERPRINT_SPEC_VERSION = 'def-structural-fp/1';
+
+/** 语义指纹报告(HR-HASH-003/004):版本+作用域如实标注的取值面 */
+export interface SemanticFingerprintReport {
+  /** 规范版本:同版本内指纹可比,跨版本不可比 */
+  readonly specVersion: typeof DEF_FINGERPRINT_SPEC_VERSION;
+  /**
+   * HR-HASH-004 如实标注:本指纹只读**单个** def 文档,Parent 指向的
+   * 接口/组件文件、被引用类型的版本**不在指纹内**——防「依赖文件变了
+   * 本文件指纹没变」被误读成完全一致。
+   */
+  readonly scope: 'file-only-semantic';
+  /** 解析不了=null(如实,不造一个) */
+  readonly hash: string | null;
+  /** 作用域与依赖核验义务的说明(详情面直显) */
+  readonly note: string;
+}
+
+/** 语义指纹报告(structuralFingerprintHash 的版本化包装,判定面不变) */
+export function semanticFingerprintReport(text: string): SemanticFingerprintReport {
+  const hash = structuralFingerprintHash(text);
+  return {
+    specVersion: DEF_FINGERPRINT_SPEC_VERSION,
+    scope: 'file-only-semantic',
+    hash,
+    note:
+      hash === null
+        ? 'def 解析失败,无语义指纹(如实,不造)'
+        : '仅本文件语义:Parent/接口/组件等被依赖文件的版本不在指纹内,依赖变更需另行核验'
+  };
+}
+
+/**
  * 结构语义指纹的稳定哈希(IDE-REV-027 semanticHash 证据):对序列化面
  * (属性 {Type,Flags,Persistent,Utype})+RPC 面(方法 Arg 签名)+装载面
  * (Parent/接口/组件)+未建模顶段(保守)的指纹行做 sha256——注释/空白/
