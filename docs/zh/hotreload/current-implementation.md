@@ -353,3 +353,12 @@
 - 两个发送面都认它:无动作名自动发送经新 `resolveAllowRootLevelStem` 注入逐次读取(生产读 `readHotReloadSettings`——同一容忍面,配置写坏回落关);provider 注册表内置 `kbengine.http-hotfix` 在装配时捕获。
 - 配置面四件套:package.json 键+NLS markdownDescription(双语言,默认值节+配置指南深链)、`readHotReloadSettings` 容忍布尔读取(非布尔→`false`)、features.md Settings 行(en+zh)、configuration.md 指南行(en+zh)。
 - 测试:默认热更钉(默认→包探针命中 scripts 目录时回落 `module_name=scripts.Foo`;键开→query 与 body 双带裸名 `Foo`)、provider 接线两态钉(同一装配,只差配置:未配→`scripts.Lone`,开启→`Lone`——证明配置真经设置读取面流进发送)、设置容忍布尔循环+`true` 直通、manifest 默认锁 `false`。本块不做 sed prove-red:两态装配钉按构造自证(关=旧形态,开=新形态,同一 harness)。
+
+
+## 22. HR-MOD-013 用户可见面增量（2026-11-13,请求预览+旧模板迁移命令上线）
+
+- 新命令 `kbengine.httpRequest.preview`:对活动文件展示「将会发出什么」——全部 kbengine.httpRequests 配置条目(停用条目也列出并带原因,绝不静默丢弃)加零配置默认热更面——只构造不发送。每行带模板替换后的方法/URL/请求头/请求体与三个模块名并列(fullModule/requestModule 双名+legacy `${module}` 语义值),双名与 legacy 的差异逐请求可见。输出进既有「KBEngine HTTP 快捷请求」通道;HR-MOD-008 `allowRootLevelStem` 在默认面行与真实发送逐字同口径。
+- 新命令 `kbengine.httpRequests.migrateLegacyModule`:对仍用旧 `${module}` 占位的已保存 URL 模板做兼容迁移(HR-AUDIT-004 刻意保留其默认语义——迁移是显式选择,绝不自动)。扫描**原始**已存条目(分析面刻意绕开解析器规范化——写回就不可能静默把别的条目补默认),逐条列出逐字段出现次数(url/请求体/请求头值);写入前要求显式选条目+显式二次确认,任意一步取消都不改任何配置。
+- 不静默篡改是结构性的:纯核零配置写入面;改写只动确认条目的模板字符串(`${module}` → `${fullModule}`),其余条目逐字保留(拼接数组里同一引用,未知自定义字段原样),确认两次后才经 `ConfigurationTarget.Workspace` 整体写回。未配置 `kbengine.hotReload.tempEdit.scriptRoot` 时拒绝迁移并点名原因(`${fullModule}` 会展开空串——先配脚本资源根),绝不给一个自己知道会断链的改写建议。
+- 注册位于 `activateHttpRequestViews`,与既有 HTTP 快捷请求命令同侧;严格命令奇偶闸(每声明 id 必注册,每注册 id 必声明)覆盖装配面,NLS 标题双语言齐。
+- 测试:`tests/hotReloadRequestPreview.test.ts` 7 钉——预览行(替换后形状/三名字并列/停用条目带原因列出)、空文件如实、未配 scriptRoot 双名如实空串而 legacy 值照常、HR-MOD-008 开关进默认面预览、原始条目分析逐字段计数、无占位/未配置如实、改写其余字段逐字保留、拼接保留兄弟条目同一引用。prove-red:迁移改写中和为 no-op 后改写钉转红;默认面开关硬写 `false` 后 HR-MOD-008 预览钉转红——逆向 sed 恢复,7/7 绿。
