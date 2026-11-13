@@ -435,7 +435,10 @@ export function activateHotReload(deps: HotReloadDeps): HotReloadShared {
     defaultHotfix: {
       isPackageDir: dirPath => fs.existsSync(path.join(dirPath, '__init__.py')),
       resolveScriptRoot: () =>
-        vscode.workspace.getConfiguration('kbengine').get<string>('hotReload.tempEdit.scriptRoot', '') ?? ''
+        vscode.workspace.getConfiguration('kbengine').get<string>('hotReload.tempEdit.scriptRoot', '') ?? '',
+      // HR-MOD-008 根下单层回退(kbengine.hotReload.allowRootLevelStem,默认
+      // 拒):读同一容忍口径(readHotReloadSettings),配置写坏回落关
+      resolveAllowRootLevelStem: () => readHotReloadSettings(hotReloadSectionReader()).allowRootLevelStem
     },
     // 文件变化元信息(方案 B):审计行后逐文件补元信息行(module/process/
     // sha256/version),与 python 索引日志同一格式;懒异步,不阻塞发送。

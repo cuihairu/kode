@@ -123,7 +123,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       syntaxGate: false,
       batchFlushMs: 0,
       batchPreviewThreshold: 50,
-      sendViaProviders: false
+      sendViaProviders: false,
+      allowRootLevelStem: false
     });
     // §11.1:未写 globs 不再回落裸 `**/*.py`(旧默认会全工作区扫),
     // 空表 + spec=unset 交给 assetsRoot 派生(见 hotReloadAssetsRootWatch)
@@ -151,7 +152,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       syntaxGate: false,
       batchFlushMs: 0,
       batchPreviewThreshold: 50,
-      sendViaProviders: false
+      sendViaProviders: false,
+      allowRootLevelStem: false
     });
   });
 
@@ -176,7 +178,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       syntaxGate: false,
       batchFlushMs: 0,
       batchPreviewThreshold: 50,
-      sendViaProviders: false
+      sendViaProviders: false,
+      allowRootLevelStem: false
     });
     // 非数字不硬转:字符串去抖值同样回落默认
     expect(readHotReloadSettings(readerOf({ debounceMs: '500' }))).toMatchObject({
@@ -207,7 +210,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       syntaxGate: false,
       batchFlushMs: 0,
       batchPreviewThreshold: 50,
-      sendViaProviders: false
+      sendViaProviders: false,
+      allowRootLevelStem: false
     });
     // 用户碰过 globs 字段(哪怕全是空项)= 显式空 → 不监视,既不回落旧默认
     // `**/*.py`,也不交给 assetsRoot 派生(§11.1 empty-globs 关法)
@@ -222,7 +226,8 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
       syntaxGate: false,
       batchFlushMs: 0,
       batchPreviewThreshold: 50,
-      sendViaProviders: false
+      sendViaProviders: false,
+      allowRootLevelStem: false
     });
   });
 
@@ -255,6 +260,11 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
     for (const badSlot of ['true', 1, null]) {
       expect(readHotReloadSettings(readerOf({ sendViaProviders: badSlot })).sendViaProviders).toBe(false);
     }
+    // HR-MOD-008 根下单层回退也是布尔键:非布尔一律回落 false=默认拒(零配置不变)
+    for (const badStem of ['true', 1, null]) {
+      expect(readHotReloadSettings(readerOf({ allowRootLevelStem: badStem })).allowRootLevelStem).toBe(false);
+    }
+    expect(readHotReloadSettings(readerOf({ allowRootLevelStem: true })).allowRootLevelStem).toBe(true);
     // 阈值 0 是合法值(纯核语义=一律滞留预览全批次),不当作类型错回落
     expect(readHotReloadSettings(readerOf({ batchPreviewThreshold: 0 })).batchPreviewThreshold).toBe(0);
   });

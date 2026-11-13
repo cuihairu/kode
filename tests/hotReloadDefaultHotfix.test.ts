@@ -53,6 +53,32 @@ describe('buildDefaultHotfixRequest(默认端点与参数名)', () => {
       'Avatar'
     );
   });
+
+  it('HR-MOD-008 根下单层:默认拒走包边界扫描;显式 allowRootLevelStem 才直接裸短名', () => {
+    // 默认(未开):root-level 拒 → 回落 ${module} 包边界扫描——scripts 目录
+    // 带 __init__.py 时扫描会收 scripts 段(引擎 sys.modules 里是裸名,此名
+    // 收得下却重载不到,正是本键要解的形态)
+    const probe = probeFor(['/ws/scripts']);
+    expect(
+      resolveDefaultHotfixModule('/ws/scripts/Foo.py', { scriptRoot: '/ws/scripts', isPackageDir: probe })
+    ).toBe('scripts.Foo');
+    // 显式开:双名称面直接回落裸短名(=进程根直下文件的 sys.modules 形态)
+    expect(
+      resolveDefaultHotfixModule('/ws/scripts/Foo.py', {
+        scriptRoot: '/ws/scripts',
+        isPackageDir: probe,
+        allowRootLevelStem: true
+      })
+    ).toBe('Foo');
+    // 请求体/query 同面:flag on 时 module_name=Foo
+    const request = buildDefaultHotfixRequest('/ws/scripts/Foo.py', {
+      scriptRoot: '/ws/scripts',
+      isPackageDir: probe,
+      allowRootLevelStem: true
+    });
+    expect(request.body).toBe('module_name=Foo');
+    expect(request.url).toBe('http://127.0.0.1:8090/hotfix?module_name=Foo');
+  });
 });
 
 describe('sendDefaultHotfix(传输事实,不假成功)', () => {

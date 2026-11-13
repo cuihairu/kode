@@ -2265,6 +2265,11 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "%kbengine.config.hotReload.sendViaProviders.description%"
+        },
+        "kbengine.hotReload.allowRootLevelStem": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%kbengine.config.hotReload.allowRootLevelStem.description%"
         }
       }
     },

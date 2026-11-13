@@ -39,13 +39,21 @@ export interface DefaultHotfixDeps {
   readonly scriptRoot?: string;
   /** Python 包目录探针(目录含 __init__.py 判定),${module} 回落面用 */
   readonly isPackageDir?: PackageDirProbe;
+  /**
+   * HR-MOD-008 根下单层回退(kbengine.hotReload.allowRootLevelStem):
+   * 显式开 = 根直下 `Foo.py` 解析裸短名 Foo;缺省关 = 默认拒(书 §19.1
+   * 「默认标 unresolved」),回落包边界扫描。默认值与零配置行为不变。
+   */
+  readonly allowRootLevelStem?: boolean;
 }
 
 /** 单文件的默认热更模块名:双名称优先,回落 ${module} 包边界扫描 */
 export function resolveDefaultHotfixModule(filePath: string, deps: DefaultHotfixDeps = {}): string {
   const scriptRoot = deps.scriptRoot ?? '';
   if (scriptRoot.length > 0) {
-    const dualName = resolveModuleDualName(filePath, scriptRoot);
+    const dualName = resolveModuleDualName(filePath, scriptRoot, {
+      ...(deps.allowRootLevelStem === true ? { allowRootLevelStem: true } : {})
+    });
     if (!('unsupported' in dualName)) {
       return dualName.fullModule;
     }

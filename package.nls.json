@@ -355,5 +355,6 @@
   "kbengine.command.def.fingerprintInspector.title": "Inspect Def Fingerprints",
   "kbengine.view.hotReloadHistory": "Hot Reload History",
   "kbengine.command.hotReload.historyPanel.title": "Open Hot Reload History Panel",
-  "kbengine.command.hotReload.historySearch.title": "Search Hot Reload History"
+  "kbengine.command.hotReload.historySearch.title": "Search Hot Reload History",
+  "kbengine.config.hotReload.allowRootLevelStem.description": "根下单层回退（HR-MOD-008）：脚本资源根直接包含 `scripts/Foo.py` 时，双名称解析默认判不支持（reason `root-level`，书 §19.1 口径），默认热更回落包边界扫描——扫描可能收进 scripts 段（服务端收得下却重载不到任何模块）。开启后才显式回落裸短名（`Foo` = `fullModule` = `requestModule`，与引擎进程根直下文件在 `sys.modules` 里的裸名解析一致）。关闭（默认）时零配置行为不变。默认值：`false`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#auto-hot-reload)"
 }

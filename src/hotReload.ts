@@ -104,6 +104,9 @@ export interface HotReloadSettings {
   /** HR-PR-08 发送 provider 插槽:开=true 时无动作名发送先问注册表
    *  (应答者胜),无人应答回落既有默认热更面;false=默认,面不进链 */
   readonly sendViaProviders: boolean;
+  /** HR-MOD-008 根下单层回退:开=true 根直下 Foo.py 解析裸短名;
+   *  false=默认拒(书 §19.1),零配置行为不变 */
+  readonly allowRootLevelStem: boolean;
 }
 
 /** HR-WATCH-001 触发源模式(与 package.json kbengine.hotReload.triggerMode 枚举锁同步) */
@@ -151,6 +154,7 @@ export function readHotReloadSettings(reader: ConfigReader): HotReloadSettings {
     HOT_RELOAD_DEFAULT_BATCH_PREVIEW_THRESHOLD
   );
   const sendViaProviders = reader.get<boolean>('sendViaProviders', false);
+  const allowRootLevelStem = reader.get<boolean>('allowRootLevelStem', false);
   const { globs, globsSpec } = readGlobs(reader.get<unknown>('globs', undefined));
   return {
     enabled: typeof enabled === 'boolean' ? enabled : true,
@@ -170,7 +174,9 @@ export function readHotReloadSettings(reader: ConfigReader): HotReloadSettings {
       typeof batchPreviewThreshold === 'number' && batchPreviewThreshold >= 0
         ? batchPreviewThreshold
         : HOT_RELOAD_DEFAULT_BATCH_PREVIEW_THRESHOLD,
-    sendViaProviders: typeof sendViaProviders === 'boolean' ? sendViaProviders : false
+    sendViaProviders: typeof sendViaProviders === 'boolean' ? sendViaProviders : false,
+    // HR-MOD-008 同一布尔容忍口径:非布尔一律回落 false=默认拒,零配置不变
+    allowRootLevelStem: typeof allowRootLevelStem === 'boolean' ? allowRootLevelStem : false
   };
 }
 
@@ -405,6 +411,8 @@ export interface SetupHotReloadOptions {
     readonly isPackageDir?: PackageDirProbe;
     /** 双名称解析的脚本资源根(kbengine.hotReload.tempEdit.scriptRoot) */
     readonly resolveScriptRoot?: () => string;
+    /** HR-MOD-008 根下单层回退开关(kbengine.hotReload.allowRootLevelStem;缺省关) */
+    readonly resolveAllowRootLevelStem?: () => boolean;
   };
 
   /**
@@ -538,7 +546,8 @@ export function setupHotReload(
             createHttpHotfixSendProvider({
               transport: options.defaultHotfix.transport,
               scriptRoot: options.defaultHotfix.resolveScriptRoot?.(),
-              isPackageDir: options.defaultHotfix.isPackageDir
+              isPackageDir: options.defaultHotfix.isPackageDir,
+              allowRootLevelStem: options.defaultHotfix.resolveAllowRootLevelStem?.()
             })
           ]
         : [])
@@ -598,6 +607,7 @@ export function setupHotReload(
         transport: injected.transport,
         isPackageDir: injected.isPackageDir,
         scriptRoot: injected.resolveScriptRoot?.() ?? '',
+        allowRootLevelStem: injected.resolveAllowRootLevelStem?.() ?? false,
         onRequest: request => status.log(`默认热更: ${request.method} ${request.url} · body=${request.body}`)
       }).then(
         result => {

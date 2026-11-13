@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
-import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
+import { hotReloadSectionReader, readHotReloadSettings, setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
 import {
   HOT_RELOAD_PLUGIN_API_VERSION,
   type HotReloadProvider
@@ -79,6 +79,11 @@ describe('setupHotReload 发送 provider 宿主接线(HR-PR-08)', () => {
     sendViaProviders?: boolean;
     transportUrls?: string[];
     providers?: readonly HotReloadProvider[];
+    allowRootLevelStem?: boolean;
+    /** 双名称解析脚本根(注入 defaultHotfix.resolveScriptRoot;缺省不注入=回落包扫描) */
+    hotfixScriptRoot?: string;
+    /** 包边界探针命中目录(注入 defaultHotfix.isPackageDir) */
+    hotfixPackageDirs?: Set<string>;
   } = {}): { clock: ReturnType<typeof makeTimers>; fireChange: (fsPath: string) => void } => {
     configurationOverrides.set('kbengine', {
       hotReload: {
@@ -87,7 +92,8 @@ describe('setupHotReload 发送 provider 宿主接线(HR-PR-08)', () => {
         actionName: '',
         debounceMs: 100,
         syntaxGate: true,
-        ...(options.sendViaProviders === undefined ? {} : { sendViaProviders: options.sendViaProviders })
+        ...(options.sendViaProviders === undefined ? {} : { sendViaProviders: options.sendViaProviders }),
+        ...(options.allowRootLevelStem === undefined ? {} : { allowRootLevelStem: options.allowRootLevelStem })
       }
     });
     statusCalls.length = 0;
@@ -117,7 +123,14 @@ describe('setupHotReload 发送 provider 宿主接线(HR-PR-08)', () => {
               transport: request => {
                 options.transportUrls?.push(request.url);
                 return Promise.resolve({ ok: true, status: 200, durationMs: 1, body: 'ok' });
-              }
+              },
+              ...(options.hotfixScriptRoot ? { resolveScriptRoot: () => options.hotfixScriptRoot } : {}),
+              ...(options.hotfixPackageDirs
+                ? { isPackageDir: (dir: string) => (options.hotfixPackageDirs as Set<string>).has(dir) }
+                : {}),
+              // 生产同口径:读 hotReload 段容忍面(HR-MOD-008 配置开→flag 流进发送)
+              resolveAllowRootLevelStem: () =>
+                readHotReloadSettings(hotReloadSectionReader()).allowRootLevelStem
             }
           }
         : {}),
@@ -234,6 +247,32 @@ describe('setupHotReload 发送 provider 宿主接线(HR-PR-08)', () => {
     expect(sends).toHaveLength(0); // provider 未被问
     expect(urls).toHaveLength(1); // 默认热更面照常
     expect(statusCalls.some(line => line.includes('provider:'))).toBe(false);
+  });
+
+  it('HR-MOD-008 接线:allowRootLevelStem 配置开=根直下文件裸短名;缺省=默认拒走包边界扫描', async () => {
+    const bootCase = async (allowRootLevelStem: boolean | undefined): Promise<string[]> => {
+      const urls: string[] = [];
+      const { clock, fireChange } = boot({
+        transportUrls: urls,
+        hotfixScriptRoot: '/ws/scripts',
+        // scripts 目录带 __init__.py:包边界扫描会收 scripts 段——正是默认
+        // 拒回落形态与本键裸短名形态的可观测分界
+        hotfixPackageDirs: new Set(['/ws/scripts']),
+        ...(allowRootLevelStem === undefined ? {} : { allowRootLevelStem })
+      });
+      fireChange('/ws/scripts/Lone.py');
+      expect(clock.tick()).toBe(2);
+      await flush();
+      expect(clock.tick()).toBe(1);
+      await flush();
+      return urls;
+    };
+    // 缺省(未配):root-level 拒 → 包边界扫描收 scripts 段(收得下却重载不到)
+    const defaultUrls = await bootCase(undefined);
+    expect(defaultUrls.some(url => url.includes('module_name=scripts.Lone'))).toBe(true);
+    // 配置开:双名称面直接裸短名(=进程根直下文件 sys.modules 形态)
+    const enabledUrls = await bootCase(true);
+    expect(enabledUrls.some(url => url.includes('module_name=Lone'))).toBe(true);
   });
 
   it('键开+注入实现不应答:内置实现按注册序接单(fork 专属优先,内置兜底序)', async () => {

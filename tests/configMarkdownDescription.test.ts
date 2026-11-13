@@ -177,6 +177,8 @@ describe('package.json configuration prompt contract', () => {
       // HR-PR-08 发送 provider 插槽:默认关=readHotReloadSettings 回落口径,
       // 键关面不进链(装配钉 hotReloadProviderWiring)
       'kbengine.hotReload.sendViaProviders': false,
+      // HR-MOD-008 根下单层回退:默认关=默认拒(零配置行为不变)
+      'kbengine.hotReload.allowRootLevelStem': false,
       // definitionWorkspace.ts getDefinitionWorkspaceLayout 约定链
       'kbengine.entityDefsPath': 'scripts/entity_defs',
       'kbengine.entitiesXmlPath': 'scripts/entities.xml',
