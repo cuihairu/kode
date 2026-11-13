@@ -344,3 +344,12 @@
 - 持久化(HR-MOD-014):`persist` 注入面,装配侧以 `context.workspaceState` 适配、键 `kbengine.hotReload.history`——每次投影落全量行,启动回载,形状不符的条目如实丢弃(绝不硬造成行)。无 `workspaceState` 的宿主(测试替身)经可选链如实退化为不持久化——激活绝不因缺面而崩。
 - 启动视图契约保持:新 id 进 `KBENGINE_SIDEBAR_VIEW_IDS`(占位先行注册,装配时真 provider 接管),占位契约闸保持 13 视图 × 2 登记。
 - 测试:`tests/hotReloadHistoryView.test.ts` 16 钉——翻译钉(同执行 requestId 稳定/三态如实/双名透传)、树登记+三组、最新在前与标题/description/tooltip、按文件/按目标键组与同路径异目标分行、节流合并+dispose 清钟、搜索命令三态、面板页头/行/双名/过滤/分页/关面板不停 feed、持久化回载+脏数据丢弃+状态键契约、三态状态类名纯渲染钉。prove-red:中和台账→历史投影面后 10 钉转红。
+
+
+## 21. HR-MOD-008 暴露面增量（2026-11-13,根下单层回退键上线）
+
+- 新用户可见配置键 `kbengine.hotReload.allowRootLevelStem`(布尔,默认 `false`):脚本资源根直接包含 `scripts/Foo.py` 时,双名称解析默认仍判不支持(reason `root-level`,书 §19.1)——本键只是把纯核既有的 `allowRootLevelStem` 开关(HR-PR-02,c120287c 交付)暴露进发送路径。关闭(默认)=零配置行为不变,与点火注记要求一致。
+- 发送路径接线:`DefaultHotfixDeps` 增 `allowRootLevelStem`;`resolveDefaultHotfixModule` 把它透传进 `resolveModuleDualName`——键开后根直下文件解析裸短名(`Foo` = `fullModule` = `requestModule`),不再回落包边界扫描;扫描在 scripts 目录带 `__init__.py` 时可能收进多余的 `scripts.` 段(服务端收得下却永远重载不到,正是本键要解的错误形态)。
+- 两个发送面都认它:无动作名自动发送经新 `resolveAllowRootLevelStem` 注入逐次读取(生产读 `readHotReloadSettings`——同一容忍面,配置写坏回落关);provider 注册表内置 `kbengine.http-hotfix` 在装配时捕获。
+- 配置面四件套:package.json 键+NLS markdownDescription(双语言,默认值节+配置指南深链)、`readHotReloadSettings` 容忍布尔读取(非布尔→`false`)、features.md Settings 行(en+zh)、configuration.md 指南行(en+zh)。
+- 测试:默认热更钉(默认→包探针命中 scripts 目录时回落 `module_name=scripts.Foo`;键开→query 与 body 双带裸名 `Foo`)、provider 接线两态钉(同一装配,只差配置:未配→`scripts.Lone`,开启→`Lone`——证明配置真经设置读取面流进发送)、设置容忍布尔循环+`true` 直通、manifest 默认锁 `false`。本块不做 sed prove-red:两态装配钉按构造自证(关=旧形态,开=新形态,同一 harness)。
