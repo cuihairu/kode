@@ -70,11 +70,17 @@
 //!   失败值面逐族登记=首参 None/id 分配失败单参 False/实体化失败不触发;
 //!   形参数错=ArityMismatch;动态回调=Unresolved 不猜;未传=合法缺省;
 //!   契约无参位=NoCallbackSlot,cell 族浮出走 onGetCell)。
+//! - [`create_params`] CREATE-05 初始化参数字典检查(params 逐键按
+//!   createNamespace 三路分诊:cellData 特殊键必须 dict、def 属性普通/
+//!   cellData 两通道、def 未声明键=动态 setattr 不拦提示级;缺键不报=
+//!   initProperty 默认值兜底无必填概念;字面量值家族对拍=静态纪律提示级
+//!   非引擎错误预测;目录未就绪=IndexMissing 绝不判未声明)。
 
 pub mod broadcast;
 pub mod callers;
 pub mod create_api;
 pub mod create_bind;
+pub mod create_params;
 pub mod create_return;
 pub mod entity_name;
 pub mod impact;
