@@ -458,6 +458,18 @@ describe('诊断家族发现级映射臂(覆盖补测)', () => {
       serializersItems.map(item => String(item.code)),
       'serializers_impl 应有 fixedDictRoundTripSchema 往返缺 y 发现'
     ).toContain('kbengine.fixedDictRoundTripSchema');
+    // KSEM-SER-07:isSameType 契约边界面(两类签名合规 return True →
+    // acceptAll 免检证明状态 Information;零 arity 面——签名合规)
+    const sameTypeItems = serializersItems.filter(
+      item => String(item.code) === 'kbengine.isSameTypeBinding'
+    );
+    expect(
+      sameTypeItems.map(item => String(item.message)),
+      'serializers_impl 应有 acceptAll 证明状态发现(两类各一)'
+    ).toEqual([
+      expect.stringContaining('returns True unconditionally'),
+      expect.stringContaining('returns True unconditionally')
+    ]);
     // 进程拓扑(mock Rust RPC 返回 findings;TS 侧映射/分组/发布走真实码)
     expectFindings('kbengine-process-topology', Uri.file(path.join(root, 'process_topology.xml')), 1);
     const topoDiagnostic = collection('kbengine-process-topology')!.get(

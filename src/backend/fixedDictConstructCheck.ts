@@ -76,7 +76,7 @@ export interface FixedDictConstructDiagnosticItem {
     end: { line: number; character: number };
   };
   message: string;
-  severity: 'Warning';
+  severity: 'Warning' | 'Information';
   source: 'kbengine';
   code: string;
 }

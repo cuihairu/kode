@@ -45,6 +45,8 @@ export interface ImplMethodInputBinding {
   symbol: string;
   /** 方法入参名(self/cls 之外的首个形参)。 */
   paramName: string;
+  /** def 行(0 基;签名/arity 面锚定用)。 */
+  defLine: number;
   /** 方法体域(0 基行,含端点;签名收括号行+1 到体末非空行)。 */
   bodyStartLine: number;
   bodyEndLine: number;
@@ -91,13 +93,13 @@ export function implBindingsForDocument(
 }
 
 /** def 签名解析产物:括号内顶层形参 + 收括号所在行(0 基,方法体起点据此定)。 */
-interface DefSignature {
+export interface DefSignature {
   params: string[];
   closeLine: number;
 }
 
 /** def 签名括号内容(def 行起跨行平衡,原文行;收括号未闭 → null 不猜)。 */
-function defSignatureParams(realLines: readonly string[], defLine: number): DefSignature | null {
+export function defSignatureParams(realLines: readonly string[], defLine: number): DefSignature | null {
   let text = '';
   let line = defLine;
   let found = false;
@@ -184,7 +186,7 @@ export function splitTopLevelParams(text: string): string[] {
 }
 
 /** 形参名:剥默认值(顶层 `=`)与注解(顶层 `:`);*args/**kwargs/非标识符 → 空。 */
-function paramNameOf(rawParam: string): string {
+export function paramNameOf(rawParam: string): string {
   let depth = 0;
   let quote: string | null = null;
   let cut = rawParam.length;
@@ -227,7 +229,8 @@ function paramNameOf(rawParam: string): string {
 export function resolveImplMethodInputs(
   text: string,
   bindings: readonly FixedDictImplBinding[],
-  methodName: string
+  methodName: string,
+  allowMissingObj = false
 ): ImplMethodInputBinding[] {
   const inputs: ImplMethodInputBinding[] = [];
   if (bindings.length === 0) {
@@ -255,7 +258,10 @@ export function resolveImplMethodInputs(
       continue;
     }
     const names = signature.params.map(paramNameOf).filter(name => name !== '' && name !== 'self' && name !== 'cls');
-    if (names.length === 0) {
+    // SER-07 arity 面例外(allowMissingObj):self/星形参之外无 obj
+    // 恰是裁定面本身,保绑(paramName 置空;isSameType 消费面只用
+    // defLine/体域,不用 paramName)
+    if (names.length === 0 && !allowMissingObj) {
       continue; // 只有 self:转换函数收不到字典,零产出不猜
     }
     // 方法体域:签名收括号行为界,首个缩进 ≤ def 缩进的非空行收尾
@@ -277,7 +283,8 @@ export function resolveImplMethodInputs(
     inputs.push({
       container: binding.container,
       symbol: binding.symbol,
-      paramName: names[0],
+      paramName: names.length > 0 ? names[0] : '',
+      defLine: def.line,
       bodyStartLine: signature.closeLine + 1,
       bodyEndLine: bodyEnd
     });

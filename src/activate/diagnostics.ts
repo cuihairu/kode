@@ -69,6 +69,10 @@ import {
   roundTripFieldFindingToItem
 } from '../backend/roundTripFields';
 import {
+  computeSameTypeFindings,
+  sameTypeFindingToItem
+} from '../backend/isSameTypeContract';
+import {
   SCALAR_ASSIGN_DIAGNOSTICS_ENABLED_DEFAULT,
   analyzeScalarAssignWrites,
   scalarAssignFindingToItem,
@@ -1250,6 +1254,17 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
               resolveImplMethodInputs(docText, implBindings, 'getDictFromObj')
             ).map(roundTripFieldFindingToItem)
           );
+          // KSEM-SER-07:isSameType 契约边界面——签名对引擎单位置实参
+          // 绑定的静态裁定(不符=每次判定 TypeError,Warning)+ 返回值
+          // 兼容性证明状态(恒 True 短路免检 / 非 True 常量恒被引擎无视
+          // 回落内建 / 动态返回=待运行验证,Information;引擎按指针恒等
+          // 只认 True,datatype.cpp :2458/:2497-2512)
+          items.push(
+            ...computeSameTypeFindings(
+              docText,
+              resolveImplMethodInputs(docText, implBindings, 'isSameType', true)
+            ).map(sameTypeFindingToItem)
+          );
         }
         return items;
       },
@@ -1261,7 +1276,9 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
               item.range.end.line, item.range.end.character
             ),
             item.message,
-            vscode.DiagnosticSeverity.Warning
+            item.severity === 'Information'
+              ? vscode.DiagnosticSeverity.Information
+              : vscode.DiagnosticSeverity.Warning
           );
           diagnostic.source = item.source;
           diagnostic.code = item.code;

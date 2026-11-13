@@ -387,6 +387,14 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     quickFix: false, status: 'implemented',
     source: 'src/backend/roundTripFields.ts(发布 src/activate/diagnostics.ts,KSEM-SER-06)'
   },
+  {
+    id: 'KBE-PY-027', code: 'kbengine.isSameTypeBinding',
+    title: 'isSameType 契约边界:签名对引擎单位置实参绑定静态裁定(不符恒 TypeError)+ 返回值兼容性证明状态(恒 True 免检/非 True 常量恒被无视/动态返回=待运行验证)',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.fixedDictConstructDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/backend/isSameTypeContract.ts(发布 src/activate/diagnostics.ts,KSEM-SER-07)'
+  },
   // ── KB-001 行为知识流水线(C-23,数据源=src/knowledge/trapsKnowledge.ts)
   {
     id: 'KBE-PY-015', code: 'kbengine.fixedDictNestedMutation',
