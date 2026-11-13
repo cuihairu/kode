@@ -303,3 +303,15 @@
 - 测试:`tests/hotReloadSavePipeline.test.ts` revisionOf 钉;`tests/hotReloadRevisionGate.test.ts` 4 例装配钉(再请求链/仅旧响应上日志/新响应不上日志/通道面上日志且台账最新代不被污染);`tests/hotReloadResponseReceiptWiring.test.ts` 台账注解绑定(挂起响应动作:stale 注解落滞代记录,下一代记录干净)。
 - prove-red:中和 stale 判定后三面转红(两条日志面+台账注解)。
 - HR-WATCH-011 与 HR-PR-04 随本增量收官。
+
+## 17. HR-WATCH-008 接线增量（2026-11-13,投递失败撤回指纹落地）
+
+- `forgetSent` 至此才被真装配调用——本增量之前核心方法零调用点,一次投递失败会在生产路径永久跳过同内容变更。撤回助手(`forgetSentFailed`)与 stale 闸同层驻留 fire 作用域,每条投递面如实撤回:
+  - 默认热更:`result.ok === false` 与拒绝分支撤整批触发文件(一动作一果)。
+  - 脚本/命令动作:`recordOutcomes` 在 `failed` 时于落账前撤整批(撤回不依赖台账装配是否在场)。
+  - 通道:逐文件精确——只有最新回执为 `failed` 的文件撤指纹(`sent-unverified`/`accepted`/`applied` 回执不撤,已送达文件的去重不受影响);整批异常时无回执或回执 failed 的文件一律撤(未确认送达即允许重发)。
+  - 动作响应路径:`handleResponse` 对 `recordHttpDelivery` 判为非 2xx(`failed`)的文件撤指纹。
+- 成功代际绝不撤——成功/去重钉证明成功发送后同内容再定稿仍被去重。
+- 测试:`tests/hotReloadForgetSentWiring.test.ts` 3 钉(失败后同内容照发/成功后去重仍有效/通道混批只重发失败文件)。注入读面的引导走异步定稿路径(合并窗空转,`onEmit` 补排窗——每次 fire `tick(2) → flush → tick(1) → flush`)。
+- prove-red:中和四处 `pipeline?.forgetSent(file)` 调用面后,失败钉与通道钉转红;成功/去重钉按构造保持绿。
+- HR-WATCH-008 随本增量收官:指纹分离(交发送面那一刻记,如实失败撤回)端到端落地,台账内容事实记录仍是独立账本(同内容重发推进流水线版本号;台账记录锚定各自代际不变)。

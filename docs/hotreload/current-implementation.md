@@ -303,3 +303,15 @@ Deferred with reasons (ledger lines stay unchecked, no fake completion):
 - Tests: `tests/hotReloadSavePipeline.test.ts` revisionOf pin; `tests/hotReloadRevisionGate.test.ts` 4 assembly pins (re-request chain / stale log on the old response only / fresh response logs nothing / channel face logs while the latest-generation ledger record stays unpolluted); `tests/hotReloadResponseReceiptWiring.test.ts` ledger-note binding (deferred-response action: the stale note attaches to the stale generation's record, the next generation's record stays clean).
 - Prove-red: neutralizing the stale check turns the three gate faces red (both log faces + the ledger note).
 - HR-WATCH-011 and HR-PR-04 close with this increment.
+
+## 17. HR-WATCH-008 wiring increment (2026-11-13, delivery-failure fingerprint withdrawal live)
+
+- `forgetSent` is now called by the real assembly — until this increment the core method existed with zero live call sites, so one failed delivery permanently skipped same-content changes in production. The withdrawal helper (`forgetSentFailed`) lives fire-scope next to the stale gate, and every delivery face withdraws honestly:
+  - Default-hotfix: `result.ok === false` and the rejection branch withdraw the whole trigger batch (one action, one outcome).
+  - Script/command actions: `recordOutcomes` withdraws the whole batch on `failed` before the ledger write (the withdrawal does not depend on ledger wiring being present).
+  - Channel: per-file precise — only files whose latest receipt landed `failed` are withdrawn (`sent-unverified`/`accepted`/`applied` receipts keep their fingerprints, so delivered files stay deduped); a whole-batch rejection withdraws files with no receipt or a failed receipt (unconfirmed delivery = allowed to re-send).
+  - Action-response path: `handleResponse` withdraws a file when `recordHttpDelivery` classifies its response non-2xx (`failed`).
+- Success generations never withdraw — the success/dedup pin proves a same-content re-settle still dedupes after a successful send.
+- Tests: `tests/hotReloadForgetSentWiring.test.ts`, 3 pins (failed send re-sends same content / successful send keeps dedup / channel mixed batch re-sends only the failed file). The reader-injected boots go through the async settle path (merge callback finds `pendingOut` empty, `onEmit` schedules the make-up window — `tick(2) → flush → tick(1) → flush` per fire).
+- Prove-red: neutralizing the four `pipeline?.forgetSent(file)` call faces turns the failure and channel pins red; the success/dedup pin stays green by construction.
+- HR-WATCH-008 closes with this increment: the fingerprint split (recorded at hand-off to the sender, withdrawn on honest failure) is now live end-to-end, and the ledger's content-fact records remain a separate book (the same-content re-send bumps the pipeline revision; ledger records stay anchored to their own generation).
