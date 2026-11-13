@@ -497,21 +497,21 @@ scripts/common/utils/math.py      -> requestModule=utils.math,    fullModule=com
 - [x] HR-AUDIT-012 记录复用模块确切路径与 owner 到 `docs/hotreload/current-implementation.md`；没有源码证据的项目标 `unknown`。(HR-PR-01,6934c63a,§HR-AUDIT-012 九行路径+导出+owner 表已落 docs/hotreload/current-implementation.md(zh 镜像 docs/zh/ 同步);无证据项一律 unknown 不硬造)
 
 ### 19.3 模块识别、双名称模型与兼容配置（HR-MOD）
-- [ ] HR-MOD-001 定义 `HotReloadModuleIdentity{workspaceId,rootId,fileUri,fullModule,requestModule,fileStem,parentName,language,sourceVersion}` DTO。
-- [ ] HR-MOD-002 定义 `ModuleResolver` 纯函数；输入 URI、明确资源根、profile、user override；输出 Result/diagnostics，无隐式 IO。
-- [ ] HR-MOD-003 Python 模块拆分保留大小写，`.py` 仅移除结尾后缀，不因 `.pyi`、`.pyc` 假匹配。
-- [ ] HR-MOD-004 生成完整模块名使用脚本根相对路径全部目录段；请求名只使用直接父目录+file stem。
-- [ ] HR-MOD-005 手动命令与 Watch 使用同一个 ModuleResolver，禁止复制两套字符串处理。
-- [ ] HR-MOD-006 多 script roots 使用 engine profile 明确优先级；未唯一确定根则要求选择/配置，不猜测。
-- [ ] HR-MOD-007 `__init__.py` 专门规则经真实 HTTP 服务验证后实现；验证前跳过并给出诊断。
-- [ ] HR-MOD-008 脚本资源根直接包含 `Foo.py` 时，必须有显式 single-level fallback 配置；默认标 unresolved。
-- [ ] HR-MOD-009 URI canonicalization 兼容 Windows、Linux、macOS、WSL、Remote SSH、symlink、大小写敏感差异。
-- [ ] HR-MOD-010 避免不同 root 的 `fight.FightAI` 请求映射错误；请求目标须包含 target 与 root/context（如服务端不支持则拒绝歧义自动更新）。
-- [ ] HR-MOD-011 UI 默认显示 `fullModule`，辅以工作区/目标环境；请求详情显示 `requestModule`，不因列宽缩短实体身份。
-- [ ] HR-MOD-012 设计 `${reloadModule}`、`${fullModule}`、`${fileName}`、`${relativePath}`、`${workspaceRoot}`、`${targetId}` 模板变量；现有 `${module}` 先审计再决定兼容映射。
-- [ ] HR-MOD-013 对旧配置提供兼容迁移和预览请求的功能；不静默篡改已保存 URL 模板。
-- [ ] HR-MOD-014 所有日志/历史同时存 fullModule/requestModule/fileUri/targetId，便于排查用户看到的名称与请求名称不同。
-- [ ] HR-MOD-015 纯函数单测覆盖上述四个示例及特殊文件、路径穿越、URL encoding、Unicode、同名根/文件。
+- [x] HR-MOD-001 定义 `HotReloadModuleIdentity{workspaceId,rootId,fileUri,fullModule,requestModule,fileStem,parentName,language,sourceVersion}` DTO。(HR-PR-02,c120287c,src/backend/hotReloadModuleIdentity.ts:24 九字段只读 DTO,测试 toEqual 全形钉)
+- [x] HR-MOD-002 定义 `ModuleResolver` 纯函数；输入 URI、明确资源根、profile、user override；输出 Result/diagnostics，无隐式 IO。(HR-PR-02,c120287c,resolveHotReloadModuleIdentity 纯函数:根候选选择→委托 resolveModuleDualName→诊断映射,零 IO 零 vscode 导入;Result+结构化 diagnostics 十码;profile 输入槽未建随 HR-MOD-006 暂缓,余输入 URI/资源根/user override/fallback 开关齐)
+- [x] HR-MOD-003 Python 模块拆分保留大小写，`.py` 仅移除结尾后缀，不因 `.pyi`、`.pyc` 假匹配。(HR-PR-02,c120287c,核心仅剥结尾 .py 尾缀,.pyi/.pyc 拒解析(reason=not-python);其余大小写保留,规范化面只大写盘符)
+- [x] HR-MOD-004 生成完整模块名使用脚本根相对路径全部目录段；请求名只使用直接父目录+file stem。(HR-PR-02,c120287c,fullModule=根相对全部目录段+stem,requestModule=直接父目录+stem;角色目录 base/cell/client/bots 剥段=879f47d5 引擎实证(sys.modules 无角色前缀),书 §19.1 四示例草拟于该发现前,base/Avatar 实际=Avatar,测试钉住偏差并注因)
+- [x] HR-MOD-005 手动命令与 Watch 使用同一个 ModuleResolver，禁止复制两套字符串处理。(HR-PR-02,c120287c,单一字符串核心=resolveModuleDualName;身份面/httpRequests 模板双名/hotReloadDefaultHotfix/fileChangeMeta 四消费方全委托同函数,身份面只做根选择+规范化+诊断映射,零第二套字符串推导;Watch 侧随 HR-PR-04 复用同一入口)
+- [ ] HR-MOD-006 多 script roots 使用 engine profile 明确优先级；未唯一确定根则要求选择/配置，不猜测。(进行中:HR-PR-02,c120287c,解析器侧「不猜」本质已落=多根命中>1 一律 ambiguous-root 拒绝并列全候选,相邻目录假包含不命中;engine profile 优先级需 profile 配置面(kode2 §6)随该面点火)
+- [x] HR-MOD-007 `__init__.py` 专门规则经真实 HTTP 服务验证后实现；验证前跳过并给出诊断。(HR-PR-02,c120287c,本条验收=验证前跳过并给出诊断:核心判 unsupported(reason=init-file)+身份面诊断码透传;验证后专门规则仍开,真实 HTTP 服务验证阻塞于活服务(HR-AUDIT-010 同因))
+- [ ] HR-MOD-008 脚本资源根直接包含 `Foo.py` 时，必须有显式 single-level fallback 配置；默认标 unresolved。(进行中:HR-PR-02,c120287c,核心已落=allowRootLevelStem 显式开关,默认拒(reason=root-level)诊断消息附开启指引;用户可见配置键+发送路径接线暂缓=会改零配置默认热更行为,暴露面待点火)
+- [x] HR-MOD-009 URI canonicalization 兼容 Windows、Linux、macOS、WSL、Remote SSH、symlink、大小写敏感差异。(HR-PR-02,c120287c,canonicalizeScriptFilePath 词法规范化:file:// 剥 scheme+有守卫 percent 解码(坏转义原样保留)、反斜杠、UNC // 保留(WSL //wsl$、//wsl.localhost、Remote SSH 形)、重复斜杠折叠、./.. 词法消解、盘符大写、大小写保留;symlink/fs 级大小写=IO 专项不在纯面(kode-vfs VFS-001 同边界),四平台实机验证随分发面)
+- [ ] HR-MOD-010 避免不同 root 的 `fight.FightAI` 请求映射错误；请求目标须包含 target 与 root/context（如服务端不支持则拒绝歧义自动更新）。（进行中:HR-PR-02,c120287c,解析器侧本质已落=rootId 入 DTO+多根歧义拒绝,跨根同名 fight.FightAI 误映射已不可能;请求线上 root/target 上下文=接收端契约冻结待真实服务验证(HR-AUDIT-009)）
+- [ ] HR-MOD-011 UI 默认显示 `fullModule`，辅以工作区/目标环境；请求详情显示 `requestModule`，不因列宽缩短实体身份。(进行中:UI 面属 HR-UI 簇(HR-PR-06);HR-PR-02,c120287c 已落 fullModule/requestModule 双名字段供 UI 消费)
+- [x] HR-MOD-012 设计 `${reloadModule}`、`${fullModule}`、`${fileName}`、`${relativePath}`、`${workspaceRoot}`、`${targetId}` 模板变量；现有 `${module}` 先审计再决定兼容映射。(HR-PR-02,c120287c,六变量全落 buildTemplateVars/applyTemplate/applyTemplateWithContext:双名 scriptRoot 配置才解析否则如实空串、${fileName}=filename 别名、${relativePath}/${workspaceRoot} 首含根派生、${targetId} 透传;${module} 兼容映射决策=保持 legacy __init__.py 包边界语义不动(审计 HR-AUDIT-004 在案),双名走新占位不混语义,形状钉测试锁)
+- [ ] HR-MOD-013 对旧配置提供兼容迁移和预览请求的功能；不静默篡改已保存 URL 模板。(进行中:纯核心已存在=双名面+模板六变量(HR-PR-02,c120287c);兼容迁移/预览请求的用户可见命令暂缓;不静默篡改已保存模板=现实现本就不改用户配置)
+- [ ] HR-MOD-014 所有日志/历史同时存 fullModule/requestModule/fileUri/targetId，便于排查用户看到的名称与请求名称不同。(进行中:历史形状扩展随 HR-PR-06;identity DTO 已带全字段供历史面直接存(HR-PR-02,c120287c))
+- [x] HR-MOD-015 纯函数单测覆盖上述四个示例及特殊文件、路径穿越、URL encoding、Unicode、同名根/文件。(HR-PR-02,c120287c,tests/hotReloadModuleIdentity.test.ts:§19.1 四示例(含 base/Avatar 引擎偏差钉)、特殊文件(__init__/.json/.pyi/.pyc)、路径穿越(词法上卷落根外拒)、URL encoding(%20 解码出空白短名拒/坏转义保留)、Unicode 短名合法(PEP 3130)、同名文件两根各自解析 rootId 区分+嵌套根歧义拒、override 合法/非法、root-level 默认拒/显式开;核心 reason/开关例在 tests/hotReloadTempEdit.test.ts)
 
 ### 19.4 Watch / Save 事件流水线（HR-WATCH）
 - [ ] HR-WATCH-001 默认 `off`，用户按 workspace/target 显式启用 `onSave`（默认推荐）或 `onDiskChange`。
@@ -638,7 +638,7 @@ scripts/common/utils/math.py      -> requestModule=utils.math,    fullModule=com
 
 ### 19.11 建议的 Hot Reload PR 顺序及依赖（先复用现有功能）
 - [x] HR-PR-01 `audit/hotreload-current`：HR-AUDIT 全部；输出调用链和已实现/缺失矩阵，不改功能。(HR-PR-01,6934c63a,docs/hotreload/current-implementation.md 全量刷新+docs/zh/ 1:1 镜像;§HR-AUDIT-001..012 事实表+§2 已实现/缺失/unknown 矩阵+§3 对上期结转;零功能改动;审计发现一并记录未修=首跑通知『打开日志』locale 不匹配 src/hotReload.ts:1046)
-- [ ] HR-PR-02 `hotreload/module-identity`：HR-MOD 全部 + pure resolver tests；手动热更先使用双名称模型；兼容原 `${module}`。
+- [ ] HR-PR-02 `hotreload/module-identity`：HR-MOD 全部 + pure resolver tests；手动热更先使用双名称模型；兼容原 `${module}`。(进行中:HR-PR-02,c120287c,HR-MOD-001/002/003/004/005/007/009/012/015 已勾,006/008/010/011/013/014 部分落地暂缓注记见各行;手动热更双名=hotReloadDefaultHotfix 双名优先+${module} 回落已接线;UI/配置暴露/发送路径双名切换随 HR-PR-03+)
 - [ ] HR-PR-03 `hotreload/request-adapter`：抽取通用 RequestExecutor + 状态机 + mock server；保证旧 Quick Requests 不回归。
 - [ ] HR-PR-04 `hotreload/save-watch`：onSave 默认关闭，可开关、去抖、稳定性/幂等队列、基本语法检查。
 - [ ] HR-PR-05 `hotreload/disk-watch`：外部变更、Git 批量变更、目录过滤、target 合并、远端环境。
