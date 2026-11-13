@@ -708,6 +708,21 @@ callgraph 模式面板支持：
   - 引擎已应用维度如实「未知」：def 文件没有逐文件运行时回执；工作区闭包 MD5 面（SDK 盖章）是另一账——若跑过 `kbengine.def.checkEngineMd5`，面板如实转显其最近结果，绝不冒充逐文件 applied 结论
   - 完整报告同步写入「KBEngine Def 分析」输出面板
 
+### `kbengine.hotReload.historyPanel`
+
+- 标题：`打开热更历史面板`
+- 作用：打开热更历史面板——页头（监听模式 / 目标 / 显示与总行数）、过滤条（fullModule 子串 / 目标 id / 状态）与最新在前的表格（模块按 `fullModule` 显示,双名不同时并列发送名 requestModule,另有文件/目标/状态/时间/请求 id/错误摘要列），带「加载更多」分页
+- 行为：
+  - 数据来自投递台账的逐条投影(台账是事实源,面板绝不造行)
+  - 关闭面板不停止热更流水线——feed 照常记录,树照常节流刷新
+  - 过滤/加载更多按钮经 webview 消息回装配,从台账背书的历史库重渲染
+
+### `kbengine.hotReload.historySearch`
+
+- 标题：`搜索热更历史`
+- 作用：按 `fullModule` 子串过滤热更历史树(大小写不敏);留空清除过滤
+- 行为：作用于树的三组(最近更新 / 按文件 / 按目标);仅目标不同的行保持分行
+
 ## 代码片段生成
 
 ### `kbengine.snippets.generateFromSelection`

@@ -731,6 +731,21 @@ The flow graph panel supports:
   - The engine-applied dimension is honestly 未知 (unknown): def files have no per-file runtime receipts; the workspace-closure MD5 face (SDK stamps) is a separate ledger — if `kbengine.def.checkEngineMd5` has run, its most recent result is shown as-is, never as a per-file applied verdict
   - Also logs the full report to the 「KBEngine Def 分析」 output channel
 
+### `kbengine.hotReload.historyPanel`
+
+- Title: `Open Hot Reload History Panel`
+- Purpose: open the hot reload history panel — header (watch mode / target / shown-vs-total counts), filter bar (fullModule substring / target id / status), and a latest-first table (module shown as `fullModule` with the sent `requestModule` listed when the two differ, file, target, status, time, request id, error summary) with "load more" paging
+- Behavior:
+  - Data comes from the delivery ledger via the per-record projection (the ledger is the source of truth; the panel never fabricates rows)
+  - Closing the panel does not stop the hot reload pipeline — the feed keeps recording and the tree keeps its throttled refresh
+  - Filter/load-more buttons talk to the assembly via webview messages and re-render from the ledger-backed history core
+
+### `kbengine.hotReload.historySearch`
+
+- Title: `Search Hot Reload History`
+- Purpose: filter the history tree view by a `fullModule` substring (case-insensitive); an empty input clears the filter
+- Behavior: applies to the three tree groups (recent updates / by file / by target); rows whose module differs only by target stay separate rows
+
 ## Snippet Generation
 
 ### `kbengine.snippets.generateFromSelection`

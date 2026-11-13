@@ -332,3 +332,15 @@
 - VFS 字节复用(HR-HASH-002):读面走 `readSharedFileSnapshot`(打开缓冲区优先),未保存编辑参与指纹,UI 显示绝不为此单独重读磁盘;来源标签随面板与台账同走。
 - applied 维度诚实边界:def 文件没有逐文件运行时回执(回执注册表只收热更 `.py` 面),三路判定的 applied 面如实 `unknown` 并点名原因,绝不用客户端 sha256 顶替。工作区闭包 MD5+SDK 盖章保持另账(`kbengine.def.checkEngineMd5`);跑过时面板如实转显最近结果并标注「另账」。
 - 测试:`tests/hotReloadDefFingerprintLedger.test.ts`(纯核台账/三路组装钉)+ `tests/defFingerprintInspector.test.ts`(deps 注入编排:快照生产/首见只存底/变更·无变更判定/通道行/保存过滤/不可读如实/HTML 面)。prove-red:中和台账比对面后变更判定钉转红。
+
+
+## 20. HR-PR-06 接线增量（2026-11-13,热更历史 UI 上线）
+
+- 新侧栏视图 `kbengine.hotReloadHistory`(package.json 声明在「快速执行」与「服务器」之间,`%kbengine.view.hotReloadHistory%`):投递台账(`HotReloadTargetStateStore`)是事实源——新 `onRecord` 依赖把每次发送/回执升级/注解写回即时投影进 `HotReloadHistoryCore`,历史绝不重读过期快照。行键=「目标键/文件#代际」(`buildHotReloadTargetKeyId`+文件名+attempt):同一次执行的回执升级幂等原位替换,新代际=新行。
+- 状态三态如实映射:台账 `accepted`(回执中段,未核验)呈现为「已发送(未确认)」,绝不拔高成「已应用」;`applied`/`failed` 逐字透传并带错误摘要。
+- 树面(HR-UI-002/010/014):根三组——最近更新(最新在前,页大小封顶)、按文件、按目标——键组下再套行,同路径不同目标天然分行。行标题=`buildHistoryEntryLabel`(fullModule,HR-MOD-011),description=状态·目标,tooltip=双名+file+target+时间+requestId。台账事件重渲染走合并窗节流(缺省 500 ms,HR-UI-007);无 `createTreeView` 的受限宿主退化为 `registerTreeDataProvider`(与既有侧栏视图同契约)。
+- 新命令:`kbengine.hotReload.historySearch`(树面 fullModule 子串过滤,大小写不敏,留空清除,取消不动)与 `kbengine.hotReload.historyPanel`(普通 `createWebviewPanel`,不新造框架):页头=监听模式/目标/显示 N/M 行(未配置如实占位 `(未配置)`/`(默认)`),过滤表单(模块子串/目标 id/状态),最新在前表格,行=fullModule(双名不同时并列 `发送: requestModule`,HR-UI-006)+file+target+状态+时间+requestId(HR-HTTP-014 展示面)+错误摘要,「加载更多」逐页增量拉满为止(HR-UI-007)。
+- feed 独立(HR-UI-012):面板关闭不停任何服务——只清面板引用;feed 与树照常入账,重开面板见全量历史。全部句柄进 `context.subscriptions`;dispose 清节流 pending 钟,拆除后不再 fire。
+- 持久化(HR-MOD-014):`persist` 注入面,装配侧以 `context.workspaceState` 适配、键 `kbengine.hotReload.history`——每次投影落全量行,启动回载,形状不符的条目如实丢弃(绝不硬造成行)。无 `workspaceState` 的宿主(测试替身)经可选链如实退化为不持久化——激活绝不因缺面而崩。
+- 启动视图契约保持:新 id 进 `KBENGINE_SIDEBAR_VIEW_IDS`(占位先行注册,装配时真 provider 接管),占位契约闸保持 13 视图 × 2 登记。
+- 测试:`tests/hotReloadHistoryView.test.ts` 16 钉——翻译钉(同执行 requestId 稳定/三态如实/双名透传)、树登记+三组、最新在前与标题/description/tooltip、按文件/按目标键组与同路径异目标分行、节流合并+dispose 清钟、搜索命令三态、面板页头/行/双名/过滤/分页/关面板不停 feed、持久化回载+脏数据丢弃+状态键契约、三态状态类名纯渲染钉。prove-red:中和台账→历史投影面后 10 钉转红。
