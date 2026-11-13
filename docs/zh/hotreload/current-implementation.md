@@ -197,5 +197,17 @@
 - 语法闸(HR-WATCH-012)注入式,不通过出 `blocked` 且不发送半成品。每次定稿只检查一次(初版调了两遍,已改)。
 - HR-WATCH-014 `dispose` 一并清空 pending/波次/预览滞留,并停止受理新事件。HR-WATCH-016 超阈值批次只预览、显式放行才发;滞留期间新批次并入同一滞留批次。HR-WATCH-017 诊断事件:`trigger` / `filtered` / `debounced` / `deduped` / `blocked` / `scheduled` / `preview` / `flushed`。
 - `isWatchableScriptFile`(HR-WATCH-004)纯词法过滤:扩展名(缺省 `.py`,大小写不敏感)、显式根集合按严格前缀+整段边界匹配(`/ws/scripts` 不认领 `/ws/scripts2`)、默认排除目录(`.git`、`.venv`、`venv`、`node_modules`、`__pycache__`、`.kbengine`、`.mypy_cache`、`.pytest_cache`、`.ruff_cache`)与调用方追加项取并集、备份/临时文件名(`.swp` / `.swo` / `.bak` / `.tmp` / 尾 `~` / `#名#`)。
-- 装配接线刻意暂缓:账本条 HR-WATCH-001 写「默认 off」,与 2026-11-06 用户令(零配置默认**开**、保存即自动发)冲突——冲突解决权在用户,故本批不做配置面与默认开关。真实触发链(全局 `HotReloadTrigger` + `pendingTriggers` 批次)被约五十个 `hotReload*` 测试文件钉住,重接属独立子批,不作顺手改动。
+- 装配接线刻意暂缓:账本条 HR-WATCH-001 写「默认 off」,与 2026-11-06 用户令(零配置默认**开**、保存即自动发)冲突——已按该用户令解决(默认开覆账本文字;live 码本就默认 enabled)。模式选择配置面与默认开关本批不做。真实触发链(全局 `HotReloadTrigger` + `pendingTriggers` 批次)被约五十个 `hotReload*` 测试文件钉住,重接属独立子批,不作顺手改动。
 - 测试:`tests/hotReloadSavePipeline.test.ts` 31 例,时钟与定时器全虚拟(内存 timer 队列,`advance()` 按到期序冲)。prove-red 三轮:去掉 max-delay 封顶 → save storm 用例转红;关掉预览阈值判断 → 3 个预览用例转红;让 `forgetSent` 空转 → HR-WATCH-008 用例转红。
+
+## 7. HR-PR-05 增量（2026-11-13,磁盘监视装配核）
+
+- `src/backend/hotReloadDiskWatch.ts` —— 装配核,零 `vscode` 导入:FileSystemWatcher 以 `DiskWatcherFactory` 注入(真接线适配 `vscode.createFileSystemWatcher`;测试用内存 watcher 总线),与保存流水线纯核同边界。
+- HR-WATCH-004 watcher 面:`watchRoots` 每个规范化根派生一条递归 glob(根下全部 `.py`;`deriveWatchGlob` 供适配面复用),根外事件天然到不了控制器。排除目录由过滤层拦下并记 `filtered` 诊断;备份名在 watcher glob 层就到不了(`.py` glob 不会送达 `.bak` 名——测试实测),`isWatchableScriptFile` 保留作更宽事件源的深层防御。
+- HR-WATCH-015 基线闸:`arm()` 之前到达的磁盘事件一律丢弃并记 `dropped-before-arm` 诊断——激活期先建 watcher 后 arm,启动绝不把既有文件当变更。`rebuild` 保持 `armed`:重建 watcher 不重开基线窗(真 watcher 重建不补发既有文件;重开反而制造启动全仓发送风险)。
+- HR-WATCH-003:change/create 事件经滤波后以 `disk-change` offer,先规范化——与发送面同键,`file://` 与 UNC `//wsl$` 形态与裸路径同归一条。delete 事件不进管线(只记 `delete-ignored` 诊断):已删除文件由流水线稳定等待如实丢弃。save 与 disk 重叠经真流水线归并为单事件并记 `disk-save-overlap` 因,不双发。
+- Git 批量变更(切分支/checkout 爆发)由流水线三层兜住,且经真 HR-PR-04 核全链验证:30 文件爆发归集单波次一批(不放大);还原同字节即去重(checkout 未变内容不重发);超预览阈值的爆发只滞留预览、显式放行才发(HR-WATCH-016 兜底)。
+- HR-WATCH-005 控制器面:`dispose` 全 dispose 每个 watcher 且后续一切调用拒收(含 `watchRoots` / `arm` / `rebuild`);`rebuild(roots)` 全 dispose 旧 watcher 按新根重建,`armed` 保持。
+- 记一个 JSDoc 坑:块注释里写 `/**/*.py` 字面量会自我截断(内含 `*/`),症状是 TS1109 级联解析错——注释一律用文字描述 glob,字面量只留在字符串字面量里。
+- 装配接线刻意暂缓:`vscode.createFileSystemWatcher` 真适配与 `extension.ts` 把 save+disk 事件喂进真实触发链(全局 `HotReloadTrigger` + `pendingTriggers`)属独立子批——该链被约五十个 `hotReload*` 测试文件钉住,不作顺手重接。§6 所记 HR-WATCH-001 冲突已按 2026-11-06 用户令解决;模式选择配置面随接线批。
+- 测试:`tests/hotReloadDiskWatch.test.ts` 16 例——内存 watcher 总线 + 虚拟时钟,驱动真保存流水线全链。prove-red 两轮:拆掉基线闸 → HR-WATCH-015 用例转红;旁路过滤层 → filtered 诊断用例转红。门禁:lint 0 / tsc 0 / unit 754 文件 9286 例 / xvfb demo 25 RC=0。
