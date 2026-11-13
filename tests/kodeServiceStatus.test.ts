@@ -53,19 +53,26 @@ describe('core status bar (pure)', () => {
 });
 
 describe('mcp status bar (pure)', () => {
-  it('shows built / not-built from binary presence (en default)', () => {
-    expect(mcpStatusBarText(true)).toContain('built');
-    expect(mcpStatusBarText(false)).toContain('not built');
+  it('shows built / not-built / off across enabled x binary (en default)', () => {
+    // 2026-11-13 内建 MCP 三可见态:enabled × binary
+    expect(mcpStatusBarText(true, true)).toContain('built');
+    expect(mcpStatusBarText(false, true)).toContain('not built');
+    expect(mcpStatusBarText(true, false)).toContain('off');
+    expect(mcpStatusBarText(false, false)).toContain('off');
   });
 
   it('renders zh-cn translations when bundle injected', () => {
     setL10nBundle(zhCnBundle);
-    expect(mcpStatusBarText(true)).toContain('已构建');
-    expect(mcpStatusBarText(false)).toContain('未构建');
+    expect(mcpStatusBarText(true, true)).toContain('已构建');
+    expect(mcpStatusBarText(false, true)).toContain('未构建');
+    expect(mcpStatusBarText(true, false)).toContain('已关闭');
   });
 
-  it('tooltip states the extension does not host mcp (未集成 fact)', () => {
-    expect(mcpStatusBarTooltip(true)).toContain('does not host');
-    expect(mcpStatusBarTooltip(false)).toContain('does not host');
+  it('tooltip states built-in hosting with click-to-toggle (集成 fact)', () => {
+    // 内建托管新口径:注册事实 + 点击启停(2026-11-13 用户令)
+    expect(mcpStatusBarTooltip(true, true)).toContain('built-in MCP server definition registered');
+    expect(mcpStatusBarTooltip(true, true)).toContain('click to disable');
+    expect(mcpStatusBarTooltip(false, true)).toContain('build the binary');
+    expect(mcpStatusBarTooltip(true, false)).toContain('click to enable');
   });
 });

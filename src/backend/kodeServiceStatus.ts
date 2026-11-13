@@ -10,10 +10,11 @@
  * - 核心(kode-server):backend=rust 且 serverPath 命中 → Rust 服务轨道;
  *   backend=rust 但二进制未找到 → Rust 降级 TS(自动发现落空,服务回落);
  *   backend=ts → 纯 TS;backend=shadow → 双轨影子对拍。
- * - Kode MCP(kode-mcp):扩展**不托管** MCP(无 mcp 贡献,不启动),状态栏只
- *   做二进制在位探测:已构建/未构建;「未集成」以 tooltip 说明(扩展不托管,
- *   由外部 MCP 客户端注册),不作第三可见态——扩展从不集成 MCP,恒显示
- *   「未集成」会误导读状态而非事实。
+ * - Kode MCP(kode-mcp):**内建 MCP**(2026-11-13 用户令「内置 mcp,点击
+ *   开启,默认开启」,推翻 2026-11-10「不托管」口径):扩展经 VS Code 原生
+ *   MCP 扩展 API 注册服务器定义(kodeMcpHost.ts,默认 kbengine.mcp.enabled=
+ *   true),状态栏项点击即启停;三可见态=已构建(二进制在位+开启)/未构建
+ *   (开启但二进制缺)/已关闭(用户关)。
  */
 
 import { l10nText } from '../nlsRuntime';
@@ -56,16 +57,22 @@ export function coreStatusBarTooltip(state: KodeCoreStateLite | null): string {
   return l10nText('kbengine.core.backend=ts (pure TS service)');
 }
 
-/** MCP 状态栏文案:$(plug) built / not built(二进制在位探测) */
-export function mcpStatusBarText(binaryFound: boolean): string {
+/** MCP 状态栏文案:$(plug) built / not built / off(内建 MCP 三可见态) */
+export function mcpStatusBarText(binaryFound: boolean, enabled: boolean): string {
+  if (!enabled) {
+    return l10nText('$(plug) Kode MCP: off');
+  }
   return binaryFound
     ? l10nText('$(plug) Kode MCP: built')
     : l10nText('$(plug) Kode MCP: not built');
 }
 
-/** MCP tooltip:二进制在位 + 未集成说明(扩展不托管,外部客户端注册) */
-export function mcpStatusBarTooltip(binaryFound: boolean): string {
+/** MCP tooltip:内建托管事实 + 点击启停提示(点击=kbengine.mcp.toggle) */
+export function mcpStatusBarTooltip(binaryFound: boolean, enabled: boolean): string {
+  if (!enabled) {
+    return l10nText('Kode MCP is disabled; click to enable the built-in MCP server');
+  }
   return binaryFound
-    ? l10nText('kode-mcp binary present; the extension does not host it, register this path in an external MCP client (not integrated)')
-    : l10nText('kode-mcp not built (source in crates/kode-mcp); the extension does not host it, register it in an external MCP client');
+    ? l10nText('kode-mcp binary present; built-in MCP server definition registered (VS Code native MCP); click to disable')
+    : l10nText('kode-mcp not built (source in crates/kode-mcp); build the binary to enable the built-in MCP server; click toggles enable state');
 }

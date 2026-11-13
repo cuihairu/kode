@@ -964,6 +964,17 @@ callgraph 模式面板支持：
   - `ts`/`rust` 模式：通道不存在——信息提示当前 `backend` 取值且日志为空；不创建任何东西
   - 任何模式下 Rust 结果都不影响用户可见行为；该日志是 parity 扩量与回滚演练的诊断证据，不是服务路径
 
+### `kbengine.mcp.toggle`
+
+- 标题：`Toggle Kode MCP`
+- 作用：翻转 `kbengine.mcp.enabled`——内建 Kode MCP 服务器定义（2026-11-13 用户令「内置 mcp，点击开启，默认开启」，推翻 2026-11-10「不托管」口径）。状态栏 `$(plug) Kode MCP` 项绑定本命令
+- 行为：
+  - 开启（默认）且 `kode-mcp` 二进制在位（扩展根 bin/ 或 target/{debug,release}）：扩展经 VS Code 原生 MCP API（`vscode.lm.registerMcpServerDefinitionProvider`，VS Code ≥1.101）按工作区文件夹逐个注册 stdio 服务器——command=二进制路径、args=[资产根]；服务器默认出现在 VS Code 原生 MCP 服务器列表
+  - 切到关闭：definition provider 返回空并发射变化事件，原生 MCP 列表摘除服务器；状态栏项显示「已关闭」
+  - 二进制缺失：不注册不硬造（诚实无服务器），状态保持「未构建」
+  - 老版 VS Code 无原生 MCP API：激活时 feature-detect 跳过注册，命令仍翻转设置与状态栏态——绝不静默拉起 MCP 进程
+  - 每文件夹资产根走与扫描器同一发现链（`kbengine.assetsRoot` 配置 → 约定链 → 深探针）；解析落空的文件夹跳过，不硬造根
+
 ### `kbengine.discovery.report`
 
 - 标题：`Show Discovery Report`

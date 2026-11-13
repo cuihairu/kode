@@ -240,6 +240,8 @@
 
 ## 监控与 SDK
 
+- **内建 Kode MCP 服务器（KODE-MCP-HOST）** —— 扩展以原生方式自带 MCP 服务器定义（2026-11-13 用户令「内置 mcp，点击开启，默认开启」，推翻 2026-11-10「不托管」口径）：经 `vscode.lm.registerMcpServerDefinitionProvider`（VS Code ≥1.101，激活时 feature-detect——老宿主保持仅状态栏回落，引擎基线 1.82 不动）按工作区文件夹逐个注册 `kode-mcp` stdio 服务器（command=扩展根 bin/ 或 target/{debug,release} 下发现的二进制、args=[资产根，与扫描器同一发现链]）；定义**默认**出现在 VS Code 原生 MCP 服务器列表（`kbengine.mcp.enabled` 默认 `true`），状态栏 `$(plug) Kode MCP` 项点击启停（三态如实：已构建/未构建/已关闭），原生列表经 provider 变化事件同步刷新；二进制缺失或资产根解析落空不注册不硬造，绝不静默拉起 MCP 进程——服务器只由 VS Code MCP 宿主启动
+   ——（证据：package.json#contributes `mcpServerDefinitionProviders`（`kodeMcpServers`）+ `kbengine.mcp.toggle`；src/kodeMcpHost.ts、src/backend/kodeMcpDefinitions.ts、src/activate/kodeServiceStatus.ts、src/backend/kodeServiceStatus.ts；tests/kodeMcpDefinitions.test.ts、tests/kodeServiceStatus.test.ts）
 - **服务器监控面板** —— webview 可视化服务器性能与状态指标 ——（证据：package.json#contributes.commands `kbengine.monitoring.show`；src/monitoringCollector.ts、src/monitoringWebView.ts）
 - **日志查看器与收集器** —— 日志 webview、启动自动连接、清除/导出、增量合批推送带上限 ——（证据：package.json#contributes.commands `kbengine.logs.showViewer|connect|disconnect|clear|export`；package.json#configuration `kbengine.logAutoConnect|maxLogEntries|loggerPort`；src/backend/logHub.ts、src/logWebView.ts、src/logCollector.ts）
 - **原始日志 ERROR 扫描** —— 选文件/文件夹按「组件+归一签名」聚合 ERROR/CRITICAL，点击行开源文件定位 ——（证据：package.json#contributes.commands `kbengine.logs.scanErrors`；todo.md:51；src/logErrorScan.ts）
@@ -473,6 +475,7 @@
 | `kbengine.core.backend` | `"rust"` | 双轨后端开关（kill-switch）：默认 `rust`（2026-11-08 用户令「直接切」——definition/completion 由 kode-server Rust-first 服务，空结果/失败回落 TS）；任何非 `shadow`/`rust` 值（含拼错）一律回落 `ts`；改回 `ts` 立即停用 Rust 进程，用户无感（src/backend/kodeCoreGate.ts） |
 | `kbengine.core.serverPath` | `""` | kode-server 二进制路径（cargo build -p kode-server 产物）；`rust` 服务轨道与影子比对共用；留空自动按扩展根下 target/{debug,release}/kode-server 探测，探测也落空时 backend=rust 回落 ts（不启动进程） |
 | `kbengine.core.shadow.timeoutMs` | `2000` | 影子比对镜像请求超时（毫秒）；超时只记差异日志 rust-timeout，不影响 TS 服务路径 |
+| `kbengine.mcp.enabled` | `true` | 内建 Kode MCP 服务器定义（VS Code 原生 MCP API，≥1.101）：每工作区文件夹一个 kode-mcp stdio 服务器（command=发现的二进制、args=[资产根]）；状态栏项点击切换；二进制缺失或老宿主=诚实不注册回落 —— `src/kodeMcpHost.ts`、`src/backend/kodeMcpDefinitions.ts` |
 | `kbengine.managedDir` | `` `.kbengine` `` | kode 托管目录名（运行时读取键，不在 contributes 中；改名后自动重建） |
 | `kbengine.entity.builtinProperties` | `true` | 内建属性 hover + `self.` 补全（分面），以及 def 声明属性类型 / 数组元素类型 hover — `src/languageProviders.ts:400,561` |
 | `kbengine.entity.receiverSections` | `true` | hover/F12/RPC 镜的接收者段过滤 — `src/languageProviders.ts:515,3374,3897` |

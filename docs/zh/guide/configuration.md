@@ -485,6 +485,12 @@ macOS 同理，**用户键位规则用 `key` 字段**（`keybindings.json` 不�
 
 铁律：默认 `ts` 下 Rust 路径完全不参与，用户可见行为与纯 TS 单轨一致；`shadow` 模式 Rust 结果只进输出通道「KBEngine Core Shadow」的差异日志（命令 `kbengine.core.showShadowDiffLog` 查看），永不影响任何用户可见结果。
 
+### 内建 Kode MCP
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.mcp.enabled` | boolean | `true` | 内建 Kode MCP 服务器定义（VS Code 原生 MCP API，≥1.101）：`kode-mcp` 二进制在位时扩展按工作区文件夹逐个注册 stdio 服务器（command=二进制路径、args=[资产根]）；服务器默认出现在原生 MCP 服务器列表，状态栏 `$(plug) Kode MCP` 项点击即切换。二进制缺失 → 不注册不硬造；老宿主回落为仅状态栏探测。启用详见 [Kode MCP 启用指南](https://cuihairu.github.io/kode/guide/kode-mcp-enablement) |
+
 ### 协议工具链检测（PA-007）
 
 | 配置项 | 类型 | 默认值 | 说明 |

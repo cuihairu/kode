@@ -1037,6 +1037,10 @@
         "command": "kbengine.protocol.analyzePcap",
         "title": "%kbengine.command.protocol.analyzePcap.title%",
         "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.mcp.toggle",
+        "title": "%kbengine.command.mcp.toggle.title%"
       }
     ],
     "menus": {
@@ -2186,6 +2190,11 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "%kbengine.config.protocol.schemaAutoBuild.description%"
+        },
+        "kbengine.mcp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.mcp.enabled.description%"
         }
       }
     },
@@ -2216,6 +2225,12 @@
             "severity": "error"
           }
         ]
+      }
+    ],
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "kodeMcpServers",
+        "label": "%kbengine.mcp.provider.label%"
       }
     ]
   },

@@ -13,6 +13,7 @@ import { KBEngineDatabaseSchemaProvider } from '../databaseSchemaPresentation';
 import { buildEngineApiCatalog } from '../backend/engineApiMetadata';
 import { setupKodeCoreGate } from '../kodeCoreGateWiring';
 import { setupKodeServiceStatusBar } from './kodeServiceStatus';
+import { setupKodeMcpHost, toggleKodeMcpEnabled, KODE_MCP_TOGGLE_COMMAND } from '../kodeMcpHost';
 import { discoverNativeBinary } from '../backend/nativeBinary';
 import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument, kbeStubProcessFromQuery } from '../kbeModuleIndex';
 import { setJumpLogEnabled } from '../navigationLog';
@@ -111,6 +112,16 @@ export function activateInfrastructure(
   // 做二进制在位探测(扩展不托管 MCP,未集成见 tooltip)。
   setupKodeServiceStatusBar(context, {
     getGateState: () => kodeCoreGate.state,
+    probeMcpBinary: () => discoverNativeBinary(context.extensionUri.fsPath, 'kode-mcp')
+  });
+  // 2026-11-13 用户令「内置 mcp,点击开启,默认开启」:内建 MCP 服务器定义
+  // 注册(原生 MCP API feature-detect,VS Code ≥1.101;老宿主静默回落)+
+  // kbengine.mcp.toggle 命令(状态栏 MCP 项点击即启停;kbengine.mcp.enabled
+  // 默认 true=装上即出现在原生 MCP 服务器列表)。
+  context.subscriptions.push(
+    vscode.commands.registerCommand(KODE_MCP_TOGGLE_COMMAND, () => toggleKodeMcpEnabled())
+  );
+  setupKodeMcpHost(context, {
     probeMcpBinary: () => discoverNativeBinary(context.extensionUri.fsPath, 'kode-mcp')
   });
   // PA-007 第一增量:协议工具链检测命令(Wireshark/TShark/插件/CLI 版本

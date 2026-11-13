@@ -485,6 +485,12 @@ Boundary: these are engine *runtime* console-observation protocol messages, only
 
 Iron rule: the switch is a live kill-switch — with the default `rust`, definition/completion serve from kode-server Rust-first (TS fallback on empty/failure; diagnostics still serve from TS); with `ts`, the Rust process stops immediately and user-visible behavior matches the pure-TS single track; in `shadow` mode Rust results go only into the diff log of the 「KBEngine Core Shadow」 output channel (inspect via `kbengine.core.showShadowDiffLog`) and never affect any user-visible result.
 
+### Built-in Kode MCP
+
+| Setting | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `kbengine.mcp.enabled` | boolean | `true` | Built-in Kode MCP server definition (VS Code native MCP API, VS Code ≥ 1.101): with the `kode-mcp` binary present the extension registers one stdio server per workspace folder (command = binary path, args = [assets root]); servers appear in the native MCP servers view by default and the status bar `$(plug) Kode MCP` item toggles this. Binary missing → no registration (nothing fabricated); older hosts fall back to status-bar-only probing. Enablement details: [Kode MCP guide](https://cuihairu.github.io/kode/guide/kode-mcp-enablement) |
+
 ### Protocol Tooling Detection (PA-007)
 
 | Setting | Type | Default | Purpose |

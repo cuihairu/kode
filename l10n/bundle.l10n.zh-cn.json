@@ -640,8 +640,6 @@
   "kbengine.core.backend=ts (pure TS service)": "kbengine.core.backend=ts(纯 TS 服务)",
   "$(plug) Kode MCP: built": "$(plug) Kode MCP: 已构建",
   "$(plug) Kode MCP: not built": "$(plug) Kode MCP: 未构建",
-  "kode-mcp binary present; the extension does not host it, register this path in an external MCP client (not integrated)": "kode-mcp 二进制在位;扩展不托管,在外部 MCP 客户端注册该路径使用(未集成)",
-  "kode-mcp not built (source in crates/kode-mcp); the extension does not host it, register it in an external MCP client": "kode-mcp 未构建(源码在 crates/kode-mcp);扩展不托管,需在外部 MCP 客户端注册",
   "Source connection test failed: {reason}": "源连接测试失败：{reason}",
   "Retry connection test": "重试连接测试",
   "internal attribute": "内部属性",
@@ -651,5 +649,9 @@
   "\"{key}\" is not a field of {container} (declared in {source}); a FIXED_DICT construction accepts only declared fields": "“{key}”不是 {container}（声明于 {source}）的字段；FIXED_DICT 构造只接受声明字段",
   "{target} field \"{key}\" expects {expected} as declared in {source}; got {actual}": "{target} 的字段 \"{key}\" 应为 {expected}（声明于 {source}），实际为 {actual}",
   "{target} expects {expected} as declared in {source}; got {actual}": "{target} 应为 {expected}（声明于 {source}），实际为 {actual}",
-  "{target} value {value} is out of range for {expected} as declared in {source}": "{target} 的值 {value} 超出 {expected}（声明于 {source}）的范围"
+  "{target} value {value} is out of range for {expected} as declared in {source}": "{target} 的值 {value} 超出 {expected}（声明于 {source}）的范围",
+  "$(plug) Kode MCP: off": "$(plug) Kode MCP: 已关闭",
+  "Kode MCP is disabled; click to enable the built-in MCP server": "Kode MCP 已关闭;点击开启内建 MCP 服务器",
+  "kode-mcp binary present; built-in MCP server definition registered (VS Code native MCP); click to disable": "kode-mcp 二进制在位;内建 MCP 服务器定义已注册(VS Code 原生 MCP);点击关闭",
+  "kode-mcp not built (source in crates/kode-mcp); build the binary to enable the built-in MCP server; click toggles enable state": "kode-mcp 未构建(源码在 crates/kode-mcp);构建二进制后内建 MCP 服务器即可用;点击切换启用态"
 }

@@ -995,6 +995,17 @@ The flow graph panel supports:
   - In `ts`/`rust` mode: no channel exists — an info notice states the current `backend` value and that the log is empty; nothing is created
   - Rust results never affect any user-visible behavior in any mode; the log is diagnostic evidence for parity expansion and the rollback drill, not a serving path
 
+### `kbengine.mcp.toggle`
+
+- Title: `Toggle Kode MCP`
+- Purpose: flip `kbengine.mcp.enabled` — the built-in Kode MCP server definition (2026-11-13 user order "built-in MCP, click to enable, enabled by default", superseding the 2026-11-10 "not hosted" stance). The status bar `$(plug) Kode MCP` item is bound to this command
+- Behavior:
+  - Enabled (default) + `kode-mcp` binary present (extension-root `bin/` / `target/{debug,release}`): the extension registers one stdio server per workspace folder via VS Code's native MCP API (`vscode.lm.registerMcpServerDefinitionProvider`, VS Code ≥ 1.101) — command = binary path, args = [assets root]; the servers appear in VS Code's native MCP servers view by default
+  - Toggle to off: the definition provider returns nothing and the native MCP list drops the servers (change event fired); the status bar item shows `off`
+  - Binary missing: nothing is registered or fabricated (honest no-server), status stays `not built`
+  - Older VS Code without the native MCP API: registration is skipped at activation (feature-detected) and the command still flips the setting plus status-bar state — it never silently spawns an MCP process
+  - Assets root per folder resolves through the same discovery chain as the scanner (`kbengine.assetsRoot` config → convention chain → deep probe); a folder whose assets root cannot be resolved is skipped, not fabricated
+
 ### `kbengine.discovery.report`
 
 - Title: `Show Discovery Report`
