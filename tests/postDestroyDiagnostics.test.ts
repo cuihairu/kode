@@ -2,7 +2,7 @@
 // 同函数可确定的 `self.destroy()` 后直接访问 `self.<成员>` 报 Warning;
 // 跨回调/异常/动态分派/跨块/条件销毁不报(不冒充已实现)。
 //
-// 验收断言(逐条对应 todo.md:722):
+// 验收断言(逐条对应 todo.md:1703):
 //   - 从 getter 的 destroyed 行为核验(引擎 entity_macro.h:20 destroy 宏公共,
 //     pyGetCellEntityCall 等检查 destroyed);
 //   - 先覆盖同函数可确定的 destroy 后直接访问;

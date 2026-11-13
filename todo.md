@@ -1,4 +1,4 @@
-# Kode TODO（细粒度账本，2026-10-22 重拆）
+# Kode TODO（细粒度账本，2026-10-22 重拆；2026-11-14 功能域重整）
 
 <!--
 本账本保留未完成任务及完成索引；较长的历史证据存档于 docs/review/2026-11-08-todo-completed-history.md。
@@ -8,15 +8,778 @@
 
 > **2026-10-24 用户令**: kode-v02 此后只在 `main` 开发，phase2 已合并（`377950f`，`--no-ff` 保留合并记录），不再开长期 feature 分支。
 
-## 账本现状总览（2026-11-13 整理）
 
-- **总口径**：勾 1136 行=历史收官账（各节自带 commit/证据，保留不删）；未勾 403 行分三类，无沉淀债。本次整理补勾 15 行已实现未勾（AUDIT-001..002/004..015+PERF-001，证据=docs/architecture/current-state.md+docs/architecture/migration-inventory.csv+docs/perf/hardware.md，2026-10-23 取照 36052c4）；另一批未勾行属「部分完成」，已在行内补「(部分：…)」注。
-- **已收官（接线批全线完成）**：HR-PR-02..08 装配接线批（巡检单 2026-10-20）全部收官：02/03/04/05/07/08 此前已推 main；06 热更历史 UI 装配 `f7451a81`+`6ad84f76`、HR-MOD-008 根下单层键 `50c9f9de`+`c7b7f83e`、HR-MOD-013 预览+旧模板迁移 `fa4a2129`+`20c251ca`（末块两笔因 2026-11-13 夜 github.com TLS 中断待推，推送会话自动重试；本地门禁全绿后提交）。余下未勾 HR 项两类：①需真实引擎/用户动作验收（HR-AUDIT-009 真服务 correlation_id 贯穿、HR-AUDIT-010 等）；②残余 UI/展示面已在行内注（HR-UI-004 实时队列面、HR-UI-005 配置面板化、HR-UI-007 虚拟滚动、HR-UI-012 工作区切换钉、HR-UI-014 root 维度、HR-MOD-014 版本事件双名、HR-HTTP-014 服务端贯穿）。勾行纪律：每块验证绿→单 commit+push→勾行带 hash。
-- **等用户/外部验收（勿点火，不算债）**：NPM-PKG-07（npm 2FA 账号+granular token+版本号由用户给，版本红线）、DBG-COMPAT-08（真机 VS Code+Python 3.7.3 引擎验收）、HR-DEMO-20261111-06/07（需可运行真实 KBEngine demo）、KDB-EXPORT-001（等用户补充报错原文）、PH5-02A（等接线批收官后验收）。
-- **规划账本（未点火，非过期非债）**：①语义精度与跨进程流转重做（2026-11-11 用户令，§KBEngine 语义精度）：KSEM-SER/CFG/DATA、KFLOW-CORE/UI/TRACE、KSEM-QA 共 63 行，同节前四族（KSEM-BAS/CELL/STRUCT/RPC/CREATE）已收官；②Kode 2.0 Rust Core 重构账本（下方合并段，约 335 行：PH0..PH7/PR/ADR+BUILD/CORE/SEM/IDX/LSP/PY/KBE/EXEC/PLUG/UI/QA/HR 远期族），点火顺序由用户定。
-- **口径对账（冲突澄清）**：PR-001 基线报告已由 KODE-PERF-007（`aa3cf8c`，docs/perf/2026-11-04-v02-baseline.md）实质落；PR-002 的 A2/A3 止血已由 A 车道 PR2/PR3 收官实质覆盖，不另起 TS 止血 PR（对账注见 §17 各行）；PH2-03「双轨」措辞按 2026-11-08 服务轨道「直接切 rust」易帜口径执行——parity 对拍是迁移期安全网，TS 兜底非长期态；venv 能力三段节（2026-11-06）标题中的 feat 分支口径已被 2026-10-24 main-only 令取代（该节行已全勾，历史保留）。
+## 账本现状总览（2026-11-14 功能域重整）
 
-## kode-mcp 上 npm：平台包分发（2026-11-12）
+- 全账 1563 条（已勾 1173 / 未勾 390），与重整前一致；本次核对零取消勾选、零删除，仅结构重整与编号迁移。
+- 账本按功能域分节：七个 Active 域（SEM/FLOW/HOT/RUST/EXEC/DIST/QA）承载全部未勾条目；全部已勾历史分节整节搬入尾部 Archive（编号为旧制，不改不引）。
+- 编号规则：域内条目按原账本出现顺序重编为 `<域>-NNN`，旧编号以（旧 X）随行保留一次；「进行中：」注记原样保留。
+- Kode 2.0 Rust Core 账本已并入 RUST 域（2026-11-13 自 docs/kode2/KODE_2_COMPLETE_TODO.md 合并，该文件已不存在）；合并核对结论见下节。
+- 勾选抽检（2026-11-14 重整）：275 条分层抽检（≈23%，进行中域加倍），结论 OK 258 / PROCESS 14（盘点/梳理类非代码项）/ CORE-ONLY 2（纯核已落装配未接）/ 虚勾 0；6 处账本瑕疵已随行注记（WIN-4/WIN-7/KODE-I18N-001/003 hash 误挂、CLONE-P0 计数漂移、IDE-STUB-001 设置已退役）。
+
+| 域 | 名称 | 未勾 | 已勾 |
+|---|---|---|---|
+| SEM | KBEngine 语义分析（KSEM 族：cellData / 序列化 / 配置 / 共享数据） | 23 | 24 |
+| FLOW | 进程流转与调用树（KFLOW 族） | 29 | 0 |
+| HOT | 热更新（Demo 双通道与 Python 3.7.3 联验） | 2 | 5 |
+| RUST | Kode 2.0 Rust Core 高性能重构账本（自 docs/kode2/KODE_2_COMPLETE_TODO.md 合并，2026-11-13） | 328 | 121 |
+| EXEC | 后台执行与调试（Python 3.7.3 调试工具链） | 1 | 7 |
+| DIST | 分发与平台包（kode-mcp 上 npm） | 1 | 6 |
+| QA | 验收与文档交付（KSEM-QA） | 6 | 0 |
+
+---
+
+## 账本合并核对（2026-11-13）
+
+> 用户令 `kode-ledger-merge.md`（优先于 kode2 推进）。只读核对+文档合并，不改功能代码。
+> 背景：主 todo.md 与 docs/kode2/KODE_2_COMPLETE_TODO.md 此前零交叉引用（kode2 无 KSEM/KFLOW 字样，grep=0 实证）。本节为统一视角：**kode2 = Rust Core 重构主体账，主 todo.md = 产品功能主体账**，关联面以指针互引，禁止双口径（同一工作两处状态不一）。
+
+### 两本账现状（核对时点 cbe9d3f2）
+- 主 todo.md：1089 项 checkbox，已勾 1021（93.8%），未勾 68。未勾 68 = 52 项 KSEM/KFLOW 六族（下方逐族判定）+ 16 项其他（KSEM-SER-04..14、NPM-PKG-07、DBG-COMPAT-08、HR-DEMO-06/07、KDB-EXPORT-001）。
+- kode2：449 项，已勾 60（13.4%），未勾 389；未勾中 **17 项**带「进行中/基础版/已落/已裁决」真实进度注且逐条带 PR 证据（行 130/149-152/159-160/183/186/188/195/197/230/374/376/380/438）。
+
+### 52 项逐族判定：重复合并 0 / 独立 52 / 已实现未勾 0
+
+| 族 | 项数 | kode2 关联章节（指针，非重复） | 判定 |
+| --- | --- | --- | --- |
+| KSEM-CFG-01..11 | 11 | §10 KBE-010（配置合并视图）/KBE-017（Project Doctor）、§8 LSP-001/LSP-004/LSP-009、§13 UI-011、§6.2 SEM-011 | 独立，归属主 todo。kode2 无配置契约/补全/校验专章，属产品线独有面 |
+| KSEM-DATA-01..06 | 6 | §6.2 SEM-007（分面）/SEM-009（多根同名）/SEM-010（base/cell/client 区分）、§8 LSP-001/002、§10 KBE-005 | 独立，归属主 todo。sharedData/spaceData 契约 kode2 无对应条目 |
+| KFLOW-CORE-01..13 | 13 | §8 LSP-012（CallHierarchy）、§9 PY-003（Python symbol 索引）、§7 IDX-002/003/015（DAG 边与增量失效）、§10 KBE-006（RPC 检查）/KBE-008（实体关系浏览器）、SEM-008 | 关联非重复。KFLOW=TS 侧产品功能线；CORE-04/05（本地调用解析/树）↔ LSP-012+PY-003 同族，CORE-07/08（RPC/广播边）↔ KBE-006+KBE-008 同族，CORE-13（增量失效）↔ IDX-003/015 同族 |
+| KFLOW-UI-01..08 | 8 | §13 UI-008（Graph view 按需加载/CSP）/UI-010（多根归属）、§8 LSP-017（虚拟列表） | 关联非重复。KFLOW-UI-06 大图按需展开与 UI-008/LSP-017 同一机制约束 |
+| KFLOW-TRACE-01..08 | 8 | §10 KBE-013（runtime adapter）/KBE-014（协议未验证不宣称）、§11 EXEC-006/007/008（日志事件模型/多源入口/ring buffer） | 关联非重复。TRACE-02 事件协议须与 EXEC-006 字段对齐，防两套事件模型 |
+| KSEM-QA-01..06 | 6 | §14 QA-001..017（golden/differential/e2e/性能门禁）、§15 Phase gates | 同类不同面。KSEM-QA 验收对象=语义精度战役现行为；kode2 QA=Rust 迁移门禁。QA-01 真值语料可作 QA-003 golden 输入，QA-02 端到端方法可复用 QA-005 手段 |
+
+- **重复合并 0**：逐项比对无任何一条与 kode2 已勾/未勾条目描述同一交付物。两账是不同实现层（TS 产品线 vs Rust Core 面）的不同工作，分账不构成双口径。
+- **已实现未勾 0**：六族 52 项均无实改痕迹（无对应 commit/测试/模块），无虚账也无可补勾项。
+- **防漂移约定（后续执行时强制）**：① KFLOW-CORE-02/03 图协议落地后，kode2 LSP-012/KBE-008 实现必须消费同一协议，不得另造；② KFLOW-TRACE-02 trace 事件协议与 EXEC-006 日志事件模型字段对齐；③ KSEM-QA-01 真值语料登记后同时登记为 kode2 QA-003 golden 候选输入。
+- 本节部分充当 kode2 AUDIT-014（旧账映射）的输入，但 AUDIT-014 本体（A1-A7→Phase 映射+永转/超时回归保留）仍未勾，不因本节视为完成。
+
+### kode2 已勾 60 项抽查（10/10 证据成立，虚勾 0）
+
+| 抽查项 | 勾行证据 | 复核结果（cbe9d3f2 实测） |
+| --- | --- | --- |
+| BUILD-003 | toolchain pin+MSRV+clippy 门 | rust-toolchain.toml pin 1.99.0 在；Cargo.toml rust-version 现 1.97（注释记录随 kode-python 升级，勾行「MSRV 1.82」数字过时但 pin/clippy 真实，维持勾选） |
+| CORE-001 | FrameDecoder+11 帧单测 | kode-protocol/src/lib.rs:391 FrameDecoder 在；tests/framing.rs 11 例精确吻合 |
+| VFS-002 | DocumentKey{root_id,uri} | kode-vfs/src/store.rs:29 在 |
+| VFS-004 | line_index+坐标对拍 | line_index.rs+tests/coordinates.rs 均在 |
+| SYNTAX-002 | xml 字节 span+pr-005 证据 | xml.rs 68 处 span；docs/kode2/pr-005.md 在 |
+| SEM-004 | alias 链环诊断 | kode-types/src/graph.rs:351 ChainStatus::Cycle 环截断在 |
+| IDX-006 | 倒排+反向依赖 | index.rs:81 by_name BTreeMap + :258 dependents_of 在 |
+| PR-011 | completion 链+证据文档 | server.rs:225 textDocument/completion 分发在；pr-011.md 在 |
+| PR-012 | gate2 FAIL→gate3 PASS 复判 | pr-012-gate2-run.txt/gate3-run.txt/perf-gate.md 三件在；perf-gate.md §门禁表 G-C FAIL→复判 PASS 与勾行逐字吻合 |
+| HR-HTTP-004 | 拼写门+双载口径 | tests/hotfixSpellingGate.test.ts 在；httpRequests.ts:55/58 query+body 双 `module_name=` 在 |
+
+### 统一视角与真实完成率
+- **kode2 主体（Rust Core 重构）**：449 项。严格勾选口径 60/449=**13.4%**；含 17 项有证据基础版/进行中的宽口径 77/449=**17.2%**。剩余大头：§8 LSP 全族、§9 PY 全族、§10 KBE 全族、§12 PLUG 全族、§13 UI 全族、§14 QA 全族、§19 HR-MOD/WATCH/HTTP/STATE/UI/HASH/EXT/QA 族。
+- **主 todo 主体（产品功能）**：1089 项，已勾 1021=**93.8%**；未勾 68 全部登记在案（52 项 2026-11-11 语义战役未启动面+KSEM-SER-04..14+4 项发布/验收散项）。
+- 结论：两账**无重复状态冲突**，无需互相改勾；统一视角=kode2 管 Rust Core 面、主 todo 管 TS 产品面，关联条目以本节指针维护。后续任何一侧实现到关联条目时，必须回写本节所列指针关系，防双口径回潮。
+
+## SEM — KBEngine 语义分析（KSEM 族：cellData / 序列化 / 配置 / 共享数据）
+
+> 编号 2026-11-14 功能域重整：本域条目按原账本出现顺序重编为 SEM-001 起，旧编号以（旧 X）随行保留；来源分节标题原样。
+
+### KSEM-CELL · P1 · cellData 结构和生命周期
+
+依赖：BAS-03..08；先结构再推导与诊断。
+
+- [x] SEM-001 （旧 KSEM-CELL-01） [P1] 抽取 CellData 字段集。验收：按引擎有效 Cell 属性表构建结构，继承/接口展开；缺 Cell 脚本和无 Cell 部件分别给出状态。——已收口(d483ed02 纪实 docs/review/2026-11-12-ksem-cell-01.md):semantics/cell.rs 新模块;引擎事实(entity.cpp:238/250 createCellData)=有 Cell 部件才创建/字段取 Cell 属性描述/组件另建 Cell 数据;展开复用 BAS-05 EntitySnapshot(自身→父链→接口,同名冲突保留候选),snapshot PropertyView 增 domains 域位面(flag_domains common.h 真值,含 KR-AUD-87 OWN_CLIENT/OTHER_CLIENTS);四态互斥=Ready/CellScriptMissing(ScriptUniverse 调用方供脚本宇宙,缺=missing-cell-script 事实)/NoCellPart(no-cell-part 事实,字段恒空)/ScriptUnknown(未供宇宙诚实不猜);组件槽登记不展开(归 CELL-03),内建键缺席刻意(归 CELL-02);测试 9;门禁 clippy 0/cargo 双 crate 985 过 0 挂(语义 72 例)/tsc 0/eslint 0/unit 8758 过 3 挂(1 既知永久红 KodeHotReload.py@199+2 负载抖动隔离 21/21 绿非回归)/demo 25 RC=0;边界=无 RPC 面,消费面待 CELL-04/05。
+- [x] SEM-002 （旧 KSEM-CELL-02） [P1] 登记引擎内建字段。验收：为 position/direction 建独立引擎来源和初始形态；核对其他内建键后才加入，不能要求 def 声明。——已收口(e70d401e 纪实 docs/review/2026-11-12-ksem-cell-02.md):BuiltinField{name,shape,source=engine 取证 server/baseapp/entity.cpp:250}+BuiltinShape::Vector3{axes}(position x/y/z,direction roll/pitch/yaw,引擎建表六列同源;Vector3Like=pyi :22 标签);builtin_cell_fields()=封闭表恰[position,direction](design §2 createCellData 额外加入+建表六列;其余 cellapp 内建=已核 Entity 属性未核 cellData 键一律不入,核对后增补);CellDataShape.builtins=有 Cell 部件即有/无部件恒空,与 def 字段面分账不混装(合并裁决归 CELL-05);测试 4(cell 累计 13);门禁 clippy 0/cargo 双 crate 989 过 0 挂(语义 76 例)/tsc 0/eslint 0/unit 8760 过 1 挂(唯既知永久红 KodeHotReload.py@199)/demo 25 RC=0;边界=无 RPC 面,消费面待 CELL-04/05。
+- [x] SEM-003 （旧 KSEM-CELL-03） [P1] 展开组件 Cell 数据。验收：递归解析 cellData[组件槽][字段]；仅纳入组件 Cell 侧字段，保留组件声明跳转。——已收口(a7286158 纪实 docs/review/2026-11-12-ksem-cell-03.md):ComponentCellData{slot,component_type,file,line,fields,nested,issues};槽=cellData 键,值=组件 def Cell 侧字段子字典(flag_domains cell 域过滤,BASE/CLIENT 不纳),组件 def 组件段递归(嵌套槽),组件 def 继承/接口 cell 字段展开(BAS-05 复用);环安全=visited 路径+深度界 8(溢出记事实),类型缺/无类型→槽面保留字段不造;ComponentView 增 file/line(additive)声明跳转面;CellDataShape.component_cells 展开面(与 component_slots 同序);测试 6(cell 累计 19);门禁 clippy 0/cargo 双 crate 995 过 0 挂(语义 82 例)/tsc 0/eslint 0/unit 8760 过 1 挂(唯既知永久红 KodeHotReload.py@199)/demo 25 RC=0;边界=无 RPC 面,消费面待 CELL-04/05。
+- [x] SEM-004 （旧 KSEM-CELL-04） [P1] 实现键补全。验收：在 [] 和 get 的字符串键位置补全字段；替换范围准确，不混入其他实体/角色。——已收口(0f3f5011 纪实 docs/review/2026-11-12-ksem-cell-04.md):Rust 面 semantics_rpc.rs 注册 `$/kode/semantics/cellDataKeys`({entity,defs}→{status,keys},无状态 handler,def 数据流 TS→Rust 按请求供给,实体缺=entity-missing 不造键,畸形参数 Err);TS 纯模块 backend/cellDataCompletion.ts(键位上下文探测闭引号/闭括号/非 self 接收者不接管、scripts/cell|base 角色隔离 client/bots 拒、def 宇宙 BFS 闭包接口不走 Parent 边、RPC 整面形状校验);接线 KBEngineCompletionProvider 键位派发先于 Rust-first def 链(键位 def 链补全无效不混入),非键位路径同步契约不变(首版整体 async 打挂 def 标签补全 15 例,纠偏=仅键位分支 Promise),range=引号内片段精确区间,builtin→Constant/defField·componentSlot→Field,detail=typeLabel·sourceFile:line;测试 24(TS)+4(Rust);门禁 clippy 0/cargo 702+297 全过/tsc 0/lint 0/unit 净检出 8754 过唯既知永久红+tmp 后缀撞词环境例/demo 净检出 25/25 RC=0;共树混编期提交走临时索引+commit-tree 外科分拆(completion.ts/lib.rs/server.rs 剔除并发会话 python_process 混改,blob 级入账),顺带推 docs 死链修复(163c6b4e)复绿 Docs CI;锚点 provideCompletionItems 699→772 锁步。
+- [x] SEM-005 （旧 KSEM-CELL-05） [P1] 实现键跳转与引用。验收：字面量键关联真实 def/组件来源；引用按实体身份隔离，未知键不伪造声明。——已收口(026254bc 纪实 docs/review/2026-11-12-ksem-cell-05.md):TS 纯模块 backend/cellDataKeyAccess.ts(键落点探测 cellDataKeyAccessAtPosition 键内容区间 [keyStart,keyEnd) 闭引号不命中/全文扫描 scanCellDataKeyAccesses 词法掩码剔注释与三引号伪访问/转义解引 单字符+八进制+hex+unicode/注释伪访问 isCellDataKeyInsideLineComment,动态键不静态关联);cellDataCompletion.ts 增 collectCellDataDefUniverseWithCategory(带来源类别,原函数变薄壳转调);跳转接线 pythonDefinition.ts provideDefinitionTracedImpl GLOBDATA 后 isPythonCodePosition 前(键=字符串字面量该守卫判 skip),按 sourceFile.replace(/\.def$/) 定类别 findDefinitionFileByCategory 定位,sourceLine 1基→0基,builtin(引擎文件不在 workspace)不跳/未知键交回常规链,JumpLayerTrace.layer 加 cellData-key;引用接线 references.ts provideReferences python 分支 GLOBDATA 后,键宇宙含键才扫当前实体脚本(cell/base 面 findEntityScriptFile,同文档 getText 脏缓冲否则读盘)同键访问点,实体身份隔离不跨实体/未知键交回属性链;测试 20(纯模块 13+带类别宇宙 1+provider 全链 6);门禁 tsc 0/lint 0/unit 净检出 HEAD 红集 6 文件⊆主树红集 8(6=并发会话 5200bfc0/3b10568b 归因,hotfixSpellingGate 全量负载 timeout 单独绿,selfAttributeFlowRustParity HEAD 同红既有对拍分歧)零新回归;prove-red 净检出 HEAD+新模块+HEAD 版 provider 集成 2 红纯模块 18 绿。
+- [x] SEM-006 （旧 KSEM-CELL-06） [P1] 传播读取类型。验收：下标读取类型传给局部变量和表达式；get 根据可证明存在性及 default 计算可空/联合，删除后不能沿用必有键。——已收口(2cc385db 纪实 docs/review/2026-11-12-ksem-cell-06.md):TS 纯模块 backend/cellDataReadType.ts(scanCellDataKeyOperations 读/写/删分类:下标后 `=` 非 `==`→write、`del` 前缀→del、`.get`/裸下标→read,复用 parseCellDataKeyAccess 词法掩码剔伪访问;cellDataKeyProvablyPresent 同一键最近写/删自目标向上作用域限定状态,无写/删→初始(def 字段/内建/组件槽必有,未知键必无);resolveCellDataReadType 下标→字段型、get 必有→字段型、get 非必有无 default→字段|None、get 非必有有 default(类型已知)→字段|default 去重、default 类型未知→null 不猜、字段型未知→null 能推才显;cellDataHintPosition 纯赋值 RHS→目标变量后,其余→表达式尾后);cellDataKeyAccess.ts 增补导出 parseCellDataKeyAccess/ParsedKeyAccess+get defaultExpr(行为零变化,CELL-05 20 例保绿);inlay 接线 typeInlayHints.ts collectCellDataReadHints(cell/base 角色隔离、键宇宙与补全同源 cellScriptRoleAndEntity+collectCellDataDefUniverse+findDefinitionFileByCategory+fetchCellDataKeys RPC、flowVersionKey 版本缓存有界 200、typeData 开关同款;每读点 typeLabel 解析非 Any→存在性+get default 类型 inferDataDictValueType→resolveCellDataReadType→`: <type>` kind=Type;写/删只做存在性,写类型校验归 CELL-08);测试 28(纯模块 20+provider 全链 8);门禁 tsc 0/lint 0/定向回归 102/102/unit 净检出 15 红全为基线已知(6 并发会话 5200bfc0/3b10568b 归因+selfAttributeFlowRustParity 既有分歧,hotfixSpellingGate 负载抖动单独绿)零新回归/demo 25 RC=0;prove-red 净检出 HEAD+新模块+改动版 cellDataKeyAccess+HEAD 版 typeInlayHints(无 collector)集成 6 红纯模块 22 绿。
+- [x] SEM-007 （旧 KSEM-CELL-07） [P1] 传播字典别名。验收：支持 data=self.cellData 及可确定常量键；重新绑定和动态逃逸后降低确定性。——已收口(7952b271 纪实 docs/review/2026-11-12-ksem-cell-07.md):cellDataReadType.ts 别名流四件(cellDataAliasNames `NAME = self.cellData` 词法域候选序;cellDataAliasState 最近赋值核定+逃逸走查 def/class 体跳过+`NAME[...]`/`.get(`/裸局部整体引用不算逃逸+for·with-as·增强·海象重绑定即断;resolveCellDataConstantKey 常量键字面量直解+标识符最近字面量赋值解引,推不出 null 不猜;scanCellDataKeyOperations receiverNames 别名同形入列 op 增 receiver,合并文档序);cellDataKeyProvablyPresent escape 入参+无效别名写/删不作证据继续向早找;cellDataKeyAccess.ts ParsedKeyAccess 增 rawKey/keyLiteral 非常量键不返 null(CELL-05 跳转/引用面零变化,别名访问不入索引);typeInlayHints collectCellDataReadHints 别名接收者核定无效不出/逃逸传 escape get 降可空下标型不变;测试 31 新增(纯模块 21+provider 10,文件 28→59);门禁 tsc 0/lint 0/unit 净检出 7952b271 全绿 8860+25skip/demo 25 RC=0;prove-red stash 三 src 25 红恢复 79/79 绿;坑=逃逸走查 def/class 闸「比别名更深」误判改任意头行起体跳过/布尔 keyLiteral 不收窄 key 可空。
+- [x] SEM-008 （旧 KSEM-CELL-08） [P1] 检查字段写入类型。验收：已知字段赋值校验结构与引擎标量范围；提示实际/期望类型及声明来源。——已收口(525bb686 纪实 docs/review/2026-11-12-ksem-cell-08.md):纯模块 backend/cellDataWriteCheck.ts(code kbengine.cellDataWriteType;SCALAR_FAMILIES 引擎标量表=datatypes.cpp 注册表,UINT/INT 8 档 BigInt 精确封闭区间(target<ES2020 禁 0n 字面量,全 BigInt() 构造,64 位界字符串入参)/FLOAT/DOUBLE/STRING/UNICODE/BLOB/VECTOR2-3-4 定元数;classifyCellDataWriteValue RHS 整段恰一字面量才给类(十进制/0x/0o/0b BigInt 精确解析、浮点分数可缺 `10.`、引号闭后须收尾、`(5)` 括号表达式非元组/`(5,)` 才是、`{}` 空 dict、顶层冒号引号深度感知分 dict/set、元素含 unknown 只保元数);checkWriteAgainstFamily unknown 一律不查(测试抓出真缺陷:compute()/未闭合列表曾误报 actual=unknown 的错配)、integer 族 bool 入/int 入+BigInt 区间 range 面、float 字面量入整数族报 structure、vector 元数不符/元素含非数值字面量报而 elements=null 不猜;analyzeCellDataFieldWrites 写点/别名/常量键全复用 CELL-06/07 同面,只查 write 型,别名逃逸不豁免写型(字典形状不变)而重绑定不查,键须 CELL-04 宇宙+有 typeLabel+在标量表,消息附实际/期望类型及声明来源(Avatar.def:5));接线诊断族先例同款(activate/diagnostics.ts postDestroy 后注册 kbengine-celldata-write 独立集+scheduler+capturedVersion 守卫;extension.ts open 即时/change 排队/close 删除+releaseDocument/总闸 setEnabled/diagnosticsInputsChanged/配置面即时重跑);package.json setting+nls en/zh+configuration.md en/zh 表行;lintRuleRegistry 新 KBE-PY-018(孤儿开关闸)+lint-rules.md en/zh 行与详节+features.md en/zh Settings 表行与主题 bullet(docsCommands Settings 全量对账闸+lintRuleRegistry 孤儿开关闸集成抓漏已补);测试 25 新增(纯模块;extension.test.ts 注册序钉增 kbengine-celldata-write)+2 闸复绿;ANCHORS 锁步 diagnostics.ts 124/137→129/142、extension.ts 385→393、465→475(+5/+8/+10 hunk 计数对照 da34656d)+2026-baseline.md 三处引用;门禁 tsc 0/lint 0/unit 736 文件 8916+8skip RC=0/xvfb demo 25 RC=0;prove-red=模块移出整套件红 RC=1 恢复 25/25 绿;坑=PY_ 族列举文案含 `*/` 序列提前终止块注释改「PYTHON 族、ARRAY、FIXED_DICT、自定义别名」。
+- [x] SEM-009 （旧 KSEM-CELL-09） [P1] 跟踪脚本附加键。验收：区分声明键、内建键、局部已写键和未知键；有显式新增键的合法代码不得误报。——已收口(a636fbe2 纪实 docs/review/2026-11-12-celldata-key-lifetime-trace.md):纯模块 backend/cellDataKeyTracking.ts(无 vscode/无引擎依赖)cellDataKeyPresent 复用 CELL-06/07 的 findNearestKeyMutation(cellDataReadType 本批导出),判据=自读点向上找**最近**有效写/删:有效键操作(CELL-07 已剔除无效别名写/删)与伪写点(del/解包删/clear)合并同一次走查按行序比较,删除即否定证据与真实 del 同形入列;越过 def/async def/class 边界即停返回 null(作用域外的写对当前读不是证据,不硬造,回 null 不猜);重绑定别名下的写跳过继续向更早找;读点之后的写不算证据;注释剥离复用 buildPythonCodeMask 不另造解析。四键面区分:声明键/内建键由 kbengine.cellDataKeys 宇宙先给,局部已写键仅在其作用域内读点算存在,未知键保持未赋值;显式新增键有 write 证据即判存在,不报缺失(验收第二句)。测试 34 例(存在/删除/作用域限/别名/不硬造/伪操作合并);门禁 tsc 0/lint 0/unit 738 文件 8952+8skip RC=0/demo 25 RC=0;prove-red 去作用域边界闸→作用域专例红,恢复 34/34 绿;坑=按全文写过判存在会误报跨作用域读,只按顶层写又误报闭包内合法新增,故取最近证据+边界停。
+- [x] SEM-010 （旧 KSEM-CELL-10） [P1] 提示可证明的错键。验收：未赋值且结构可封闭时提示缺失/拼写候选；开放字典只给低置信建议，get 不按必然 KeyError 报错。——已收口(82074f05 检测面+接线,纪实 docs/review/2026-11-12-ksem-cell-10.md):纯模块 backend/cellDataWrongKey.ts(CELL-09 事实→提示分级,无 vscode);三级判据=裸下标读 presence=absent 且世界封闭→confirmed(附候选)、世界开放/不可证→hint、get 形态永不给 confirmed(不按必然 KeyError 报错,只给低置信建议+带默认值点明「不会因缺失抛错」);候选只在键宇宙(声明∪内建)内算 Levenshtein(公共前后缀修剪),距离上限 3 且平局不给(不硬造唯一性),scriptAdded/未知键不进候选;声明/内建键与写点(写即引入键)与已证存在键一律不报,声明键中途被删归 CELL-12 生命周期面不猜成因;CELL-09 的 hasDynamicKeyAddition 导出为 cellDataKeyWorldOpen 供事实面/提示面同源不重算;接线镜像 CELL-08 五件套(独立集合 kbengine-celldata-wrongkey+独立调度器;open immediate/change queued/close 摘除/主开关 setEnabled 清集合/本项开关即时重算并进 diagnosticsInputsChanged);诊断码 kbengine.cellDataWrongKey(KBE-PY-019 lintRuleRegistry 非孤儿)+设置 kbengine.cellDataWrongKeyDiagnostics 默认开(package.json+nls en/zh 含闸令字面「默认值」「详见 [」+configuration en/zh 表行+features en/zh 行+lint-rules zh KBE-PY-019 行);测试 13 例(封闭世界缺失+候选/无候选仍报缺失/开放世界只给建议/update( 判开放/get 不给 confirmed/get 带默认值措辞/get 已知键不报/写点不报/声明键不报/先写后读不报/平局无候选/超距无候选/事实面契约);prove-red=摘 extension.test 注册序数组行→该闸红(13 vs 12)补回 22/22 绿;门禁 tsc 0/lint 0/unit 740 文件 8967+8skip RC=0/xvfb demo 25 RC=0;ANCHORS 锁步 diagnostics.ts 129/142→142/155、extension.ts 393→401、475→485(+13/+8/+10 hunk 计数对照);坑=英文 nls 也须含字面「默认值」「详见 [」(configMarkdownDescription 闸不分语言)、get 整条 continue 会漏掉 .get("hpe") 这类真实笔误故拆成「hint 面进、confirmed 面不进」。
+- [x] SEM-011 （旧 KSEM-CELL-11） [P1] 核实生命周期状态表。验收：源码核实创建中/获得 Cell/丢失 Cell/恢复/销毁入口及回调前后顺序；不能根据一次异步创建调用断定已有 Cell。——已收口(纪实=知识库 `docs/knowledge/entity-lifecycle-reference.md` 新增「Cell state table」节 + zh 同款,行号逐个对真源码核过):六态表=无 cell/创建中/持有 cell/cell 丢失/恢复中/已销毁,每态给置位行、清除行、脚本回调行(base 侧 `baseapp/entity.cpp`);五入口=创建 `createCellEntity :1416`、获得 `onGetCell :1014`、丢失 `onLoseCell :1052`、恢复 `RestoreEntityHandler::process restore_entity_handler.cpp:89`←`baseapp.cpp:709,723`(每实体 `:159`/`:304` 喂入)、销毁 base `Entity::onDestroy :164`+cellapp `:204`;回调前后顺序=恢复路 `restoreCell`→`onGetCell`(置 `creatingCell_=false`、`destroyCellData()`、建 `cellEntityCall_`,但 `inRestore_` 时**脚本 `onGetCell` 被跳过** `:1030`)→**之后** handler 才触发 `onRestore`(`:173`/`:266`);**顺修** `docs/knowledge/api-core-concepts.md`+zh 第 86 行 ASCII 图原写 `onRestore → onGetCell` 顺序画反,改 `onGetCell / onLoseCell; onRestore last` 并把引文行号对齐源码(`Entity.md:285-298,310-318`);验收第二句「不能根据一次异步创建调用断定已有 Cell」=源码依据落成一段专述:`createCellEntity` 收尾置 `creatingCell_ = true`(`:1463`)后**同步返回**、`cellEntityCall_` 仍 `NULL`,唯一可观测点是 `entity.cell`(getter `:750`),在途标志 `creatingCell_`(`entity.h:295`)仅经 `creatingCell()`(`entity.h:107`)可见、**无 Python 面**;并钉死引擎**无** `isOnCell`/`isOnDB`/`isPersisted` 谓词(属性面 `:35-41`+`entity_macro.h:33-35` 枚举即无);另记 `creatingCell_` 期间 `destroy()` 是延迟而非拒绝(`:641` 警告+`ENTITY_FLAGS_DESTROY_AFTER_GETCELL` `entity_macro.h:268`),且兑现该标志的两路销毁对象**不同**(`onGetCell :1037-1041` 走 `destroyCellEntity()` 摘 cell、`onLoseCell :1069-1074` 走 `destroy()` 毁 base),`onGetCell` 还跑 `destroyCellData()`(`:1024`)即 cell 建成时 `cellData` 属性被删(归 CELL-12/13 消费面);门禁 lint 0/tsc 0/unit 740 文件 8984+8skip RC=0/xvfb demo 25 RC=0(纯 markdown,未动 src/crates);坑=引擎 C++ 源码在 `~/workspaces/kbengine/kbe/src/server/`(深度 5),`find -maxdepth 4` 会漏致误判「源码不可用」,已写入记忆 `kbengine-cell-holding-predicate.md`;另注 `entity-lifecycle-reference.md` 文件头注记锚定 `kbengine@c2a3b8f` 而迁移篇与本机检出为 `3082ab5`,本批行号按本机 `3082ab5` 核,两版并存已在表内显式声明未改文件头。
+- [x] SEM-012 （旧 KSEM-CELL-12） [P1] 检查明确回调入口。验收：onGetCell 中 self.cellData 访问根据引擎删除行为诊断；未知调用时机不做确定结论。——已收口(085370cf 检测面+接线+docs,纪实 docs/review/2026-11-12-ksem-cell-12.md):纯模块 backend/cellDataCallbackCheck.ts(无 vscode);确定窗口封闭性论证=onGetCell 先 destroyCellData(baseapp/entity.cpp:1024,PyObject_DelAttrString :564)再调脚本回调(:1030-1032,inRestore_ 跳过),脚本单线程使方法内普通赋值成唯一重建途径、异步备份回写(:1122)插不进执行中方法体——出 onGetCell 论证即失效,其余回调(onLoseCell/onRestore/任意方法)按「未知调用时机不做确定结论」一律沉默;两态流判定=深度 0 普通赋值(排除 ==/<=/>=/!=/增强/walrus,链式/元组解包目标位算存)→present、del 报缺失并转 absent(存→删→读在读取处再报)、缺失态任何读取(裸读/下标写/.get/迭代/别名)报 kbengine.cellDataLifecycle Warning 并引引擎行为+出路文案「请求 cell 前存入 base 自有属性」;范围闸=roles base(cellScriptRoleAndEntity 非 base 零发现,组件脚本不报——引擎 convertDictDataToEntityComponent entity_component.cpp:1461 只填 dict 不挂 cellData 属性)、模块级 onGetCell 不分析、注释字符串掩码;接线镜像 CELL-08/10 七点(独立集合 kbengine-celldata-callback+独立调度器;open immediate/change queued/close 摘除/主开关 setEnabled/开关进 diagnosticsInputsChanged/recompute 逐键 immediate);设置 kbengine.cellDataCallbackDiagnostics 默认开(package.json+nls en/zh 含闸令字面「默认值」「详见 [」)+configuration en/zh 表行+features en/zh 行+lint-rules zh KBE-PY-020 行+详节+lintRuleRegistry KBE-PY-020(非孤儿);测试 18 例(读取四形态/存不报/存后读静默/存删读再报/del 措辞/下标写/增强赋值/元组解包静默/onLoseCell/onRestore/任意方法静默/模块级忽略/掩码/双类/闭包/空集/item 形状/默认开);prove-red=stash diagnostics.ts+extension.ts→extension.test 注册序闸红(缺 kbengine-celldata-callback)pop 回 23 例绿;开发期测试抓出两实现缺陷(includes('') 恒真误判读/del 缺状态转移漏报)即二次 prove-red;门禁 tsc 0/lint 0/unit 742 文件 9002+8skip RC=0(首轮 3 例满载抖动 solo 复跑绿)/xvfb demo 25 RC=0/mocha 烟测 12 RC=0;ANCHORS 锁步 diagnostics.ts 142→151、155→164、extension.ts 401→409、485→495(+9/+9/+8/+10 hunk 计数对照)+2026-baseline.md 锁步;顺修(独立外科 commit c2f86d1c)=主线 CI 自 74ab5dc3 起红的 mocha manifest 闸(热更 lane c0eeda35 漏登记 onCommand:kbengine.hotReload.materializeGlobs,docs-only 推送不触发 CI 故红未现)一行补登记,临时索引分拆不混本批。
+- [x] SEM-013 （旧 KSEM-CELL-13） [P1] 区分持久化回调参数。验收：onWriteToDB(cellData) 参数绑定内部数据结构及可空条件；不得等同 self.cellData 属性可见性。——已收口(96c42f70 纯取证/文档批,纪实 docs/review/2026-11-12-ksem-cell-13.md,行号逐一对真源码 baseapp/entity.cpp @3082ab5):触发链=onCellWriteToDBCompleted 内 onPreArchive(:1298)→脚本 onWriteToDB(:1305,分发 :1397-1405)→addPersistentsDataToStream 序列化(:1329),即入库前最后变更点而非写库完成回调(完成回调=writeToDB(callback) 的 callback, onWriteToDBCallback :1239-1289;persistentDigest_ 去重 :1353 相同则跳过整个写库用户 callback 不触发);参数绑定=cd=cellDataDict_(entity.h:276) 内部快照 dict,:1401-1403 `if(!cd) cd=Py_None` 可空条件=None ⟺ cellDataDict_ 从未创建 ⟺ 脚本模块无 cell 面(createCellData :250 hasCell 假早退;有 cell 面构造 :71 即建 dict 填默认值+position/direction :307/:308 永不为 None);快照语义=最后备份回写(onBackupCellData isDirty :1108-1123)或构造默认值,非 cellapp 活值;有活 cell 入库序列化在 cellapp 侧(reqWriteToDBFromBaseapp :1229-1236),快照兜 base 无 cell 写库面(addPersistentsDataToStream 优先 cellDataDict_ :431-433 回落 __dict__ 再回落默认值+告警 :523);属性可见性区分=onGetCell destroyCellData(:1024) 删属性不删 dict(:562-563 注释),参数在场≠self.cellData 属性在场(属性此刻通常已删,CELL-12 已证),组件同收回调但组件对象从无 cellData 属性;双签名陷阱=同名回调 cellapp 0 参(cellapp/entity.cpp:1238,分发 :1255-1262)/base 1 参(:1405 "O"),def onWriteToDB(self,cellData) 在 cellapp 抛 TypeError 须 cellData=None 兜;递归=DBID_>0 时 isArchiveing_ 回调后即复位(:1310-1311)无条件再写无限循环;交付面=api-baseapp-entity en/zh 节重写(首段 hover 抽取面 600 字帽内不截断)+api-cellapp-entity en/zh writeToDB 条目补 0 参签名与陷阱互引+apiDocs 生成面重生成(api-docs.json+apiDocs.ts,225 条目仅 onWriteToDB 条目变更,--check 过)+向导骨架核对不改(entityWizard.ts:236 只在 base 段发 1 参签名,cell 段不发,目录分部署天然规避陷阱);门禁 lint 0/tsc 0/unit 742 文件全量 RC=0/xvfb demo 25 RC=0/generate-api-docs --check ok;坑=apiDocsRustParity 3 例红是 Rust 二进制 include_str 编译期嵌入旧资产,改 crates/kode-server/assets/api-docs.json 必须 cargo build -p kode-server 重编(重编后 7/7 绿);prove-red 口径=旧二进制对新 TS 表 3 例红即闸在捕获本批变更,重编转绿为反证。
+- [x] SEM-014 （旧 KSEM-CELL-14） [P1] 呈现副本和生命周期解释。验收：hover 展示 Cell 字段来源/快照含义/当前可证明状态；诊断带引擎证据与可执行跳转。——已收口(162e54c5 检测面+接线+docs,纪实 docs/review/2026-11-12-ksem-cell-14.md):hover 面=纯构建器 backend/cellDataHover.ts(零 vscode/零 RPC,双语 `---` 分段与 C-23 behaviorNote 同形)挂 provideHover 出口第三挂靠(同步探针仅 self.cellData 单段接收者 token+复用 kbengine.hover.behaviorNotes 知识通道闸(shared.ts:38 读取的未 declared 隐藏开关,默认开);命中才变异步,其余 hover 保持既有同步返回口径;键宇宙 RPC 按文档版本键缓存有界 8(同 typeInlayHints 口径);单 MarkdownString 重建新实例防 memo 共享实例重复叠加);四段=来源(Rust cellDataKeys 键宇宙,sourceLine 1 基原样展示,null=不造键/空集=声明集为空如实说/>12 键折叠计数)+快照含义(role 分支:base=内部快照 dict cellDataDict_ 语义引 entity.h:276/entity.cpp:1108-1123/:1024/:562-563;cell=cellapp 不安装属性 entity_macro.h:408-412,静态面与引擎安装面分层如实呈现)+可证明状态(cellDataProvenStateAtLine 与 CELL-12 同一两态流推进器,状态=进入查询行前的两态值,窗口外不证;测试与诊断面互证:每个报点位置 proven 态必 absent)+跳转(发布站真实路径 zh/en 各挂);诊断跳转面=wrongkey/writecheck finding 增 candidateFile/declaredFile(内建键如实 null)+item 增 related?(CellDataRelatedLocation,resolveCellDataDeclAnchor:{from}.def→宇宙类别→真实路径,内建引擎证据路径不造假跳转),两 computeAsync 切 collectCellDataDefUniverseWithCategory(fetchCellDataKeys 结构兼容超集,零 RPC 变更)+1 基→0 基换算,两 publish 映射 DiagnosticRelatedInformation(与 DEF_METHOD_MISSING 同款);callback 族证据在消息文案(引擎 C++ 行号无工作区落点),跳转由 hover 知识链接承担;顺修①=cellDataWrongKey sourceSegment 去 +1(sourceLine 已 1 基,kode-parser LineMap::line_of `lo+1`,pythonDefinition.ts:393+cellDataKeyAccess.test.ts:217 双证,旧码错位显示一位,消息与关联跳转同源一致);顺修②(CELL-13 §3 顺延件)=entityWizard onWriteToDB 头注释+骨架 docstring 写明快照语义(内部快照 dict 非属性/无 cell 面 None/循环调 writeToDB 无限递归/cellapp 同名回调 0 参勿手工进 cell 段),签名不变(base 段 1 参正确);测试+27(cellDataHover 12/proven-state 8/wrongkey 锚点 4/writecheck 锚点 2/向导注释 1);prove-red=stash 三后端模块 13 例红恢复 70/70 绿;门禁 lint 0/tsc 0/unit 742 文件 9029+8skip RC=0/xvfb demo 25 RC=0;ANCHORS 锁步=hover.ts provideHover 186→277(顶部 fs import +1+cellData 三行 import +3+attach 块 +87),perfCallChainDoc ANCHORS 表+2026-baseline.md §7.1 出处锁步;坑=门禁管道 `| grep` 取计数照样吞 vitest 非 0 RC(grep 命中失败行 RC 仍 0,&& 链照走),必须 set -o pipefail/PIPESTATUS 取真 RC(已写入记忆 unit-gate-pipefail-discipline)。
+- [x] SEM-015 （旧 KSEM-CELL-15） [P1] 验收真实 Provider 全链。验收：未保存 def 改字段后 Python 键补全/跳转/类型/诊断一起更新；覆盖继承、组件、附加键、别名和跨根负例。——已收口(94e35199 检测面+四顺修+真机套件,纪实 docs/review/2026-11-13-ksem-cell-15.md):脏 overlay 读面=findDefinitionTextByCategory(打开 def 文档缓冲优先/关闭回落磁盘,读失败=缺席贡献不猜)+defBufferStampForRoot(相对路径#版本#脏标 签名进键宇宙缓存键,编辑/保存/关闭三态换代)+retriggerCellDataDiagnosticsForDefChange(def 变更→三调度器 invalidateAll 强制同版本 python 重算→同根角色文档逐个 queued 重排,跨根不串扰/def 自身跳过);真机验收套件 cellDataFullChain.test.ts(真实编辑器宿主+真实 bin/kode-server 门,runTest.ts 双根装台+角色分工夹具+二进制预检 serverBinaryHasCellDataKeys):基线五面按磁盘 def(补全三边键齐/跨根双向隔离/inlay 继承键 UINT16/错键 bonus+ghost/写入面无 bonus)→applyEdit 真实插入 <bonus> UINT8 不保存断言脏态→五面联动断言+九行证据 docs/perf/2026-11-12-cell15-fullchain-run.txt 全绿(补全含 bonus/F12 落脏缓冲行/inlay UINT8/hover 键集含 bonus/错键 bonus 收编 ghost 保留/写入类型点名 str→UINT8/跨根隔离不变);覆盖面:继承(Parent)+接口(ROLE)+组件槽(BagBox)三边供给、别名面(inlay+错键 score=data["bonus"])、附加键(插入的 bonus)、跨根负例双向;**真机抓出四个生产缺陷**(单元 mock 结构性抓不住,每修一个失败点前移一面):①serde tagged enum 线上形状 kind 是嵌套对象 {"kind":"defField"},TS isKeyEntry 按扁平字符串判→五面自 CELL-02/03 起生产静默死亡,顺修 fetchCellDataKeys 边界校验+解包+4 个门 mock 迁线上形状(坑:bin/ 产物 git-ignored 不随 cargo build 刷新,须 cargo build -p kode-server --release && cp target/release/kode-server bin/,预检拦截给指引);②languageServices hover 适配器直调 provideHoverTimed 绕过类包装→C-23 注记与 CELL-14 生命周期注记生产全不挂,顺修共享入口 provideHoverWithNotes(类委托+适配器同走,计时打点保留);③真实 vscode.Hover.contents 是数组 [md],单对象判断静默丢注记,顺修数组归一化;④cellData 三调度器全仓无 flushQueued 调用点→queued 任务(CELL-08/10/12 python 编辑重排+本条 def 重排)永远滞留,只有打开路径 immediate 发布过,与 KODE-AUD-001 同形,顺修共享冲刷定时器补三行;夹具方法论:世界开闭角色分工(base 只读=封闭世界错键成立/cell 承载写入,写入面不受开闭影响)+F12 靶点须 self.cellData 直读行(CELL-05 口径);门禁 lint 0/tsc 0/unit 全量 RC=0(743 文件 9037+8skip)/xvfb celldata 1 passing RC=0/xvfb demo 25 RC=0;ANCHORS 锁步两波(hover.ts 277→271→295→299,languageServices 五打点 200/257/320/124/707,diagnostics 152/165,extension 410/499,pythonDefinition 308/765/871,completion 766)+2026-baseline.md §7 出处同步;坑重申=门禁管道 | tail 吞 vitest 非 0 RC(本批单元红被掩盖真机白跑一轮),必须 set -o pipefail;挂账=features.md en/zh 族级 cellData 段落缺失(CELL-01..14 同缺,等用户点火)、其余 runInRust 命令面 serde tagged enum 同族契约审计。
+- [ ] SEM-016 （旧 KDB-EXPORT-001） [P1] 用户报(2026-11-12):导出用户数据提示找不到 t_account 表,查明原因。初步侦察(代码面,待用户补充报错原文复现):kode 侧零处出现字面 `t_account`(全仓 TS/Rust/docs grep 空);引擎真身=kbe/src/lib/db_interface/entity_table.h:37 `KBE_TABLE_PERFIX "kbe"` → 账号表 `kbe_accountinfos`(kbe_table_mysql.cpp:584 建表),实体表前缀=kode DB_TABLE_PREFIX `tbl_`(databaseSchemaCore.ts:59,entity_table_mysql.cpp TABLE_PREFIX 同源);导出链=clone.export resolveEntityTables(def 推导 tbl_<Entity>)→probePhysicalTables(精确名查 information_schema)→Rust planner 缺表不入计划(planner.rs:148 resolved_names 过滤,不会对缺表发 SELECT,MySQL ER_NO_SUCH_TABLE 理论上到不了);候选因:①用户库真有/需要 `t_account`(工程自定义或旧版前缀,db.tablePrefix 配置缺口/大小写)②导出的实体在用户工程非持久化实体(表从未建)③报错来自用户侧 MySQL 原文转述。待定:用户给的精确报错文本+所用命令面+真实库 `SHOW TABLES LIKE '%account%'`+kbengine.db.tablePrefix 当前值。
+
+### KSEM-SER · P1 · 固定格式序列化和反序列化
+
+依赖：BAS + STRUCT；优先引擎契约，项目格式需显式来源。
+
+- [x] SEM-017 （旧 KSEM-SER-01） [P1] 盘点序列化入口与格式来源。验收：分别登记引擎 wire、FIXED_DICT implementedBy、PYTHON/pickle、项目 JSON/自定义 pack/unpack；列出现有 codec 和缺失消费入口。——已收口(a9a7a555,盘点文档 docs/review/2026-11-13-ksem-ser-01-serialization-inventory.md,引擎树 /home/cui/workspaces/kbengine @ 3082ab5 检出实测):四来源登记=①引擎 wire(DataType addToStream/createFromStream/isSameType datatype.h:46/:48/:50 纯虚,datatype.cpp ~80 实现;帧形=消息id→实体id→alias uint8/UID uint32 二选一(usePropertyDescrAlias)→类型载荷 baseapp/entity.cpp:128-151;属性同步/ghost 广播(cellapp:705)/方法实参(entity_remotemethod.cpp:68)/反向 createFromStream(baseapp entity.cpp:994)调用点全列;DB blob 同一流序 entity_table.h:145/:150/:230/:330/:340,PYTHON 等复杂类型→BLOB 列 entity_table_mysql.cpp:699-711,ARRAY/FIXED_DICT/Component/ENTITYCALL/VECTOR 各有展开)②FIXED_DICT implementedBy(loadImplModule datatype.cpp:2331-2357 两段值,三契约 setImplModule :2383-2397 GetAttrString,转换入口 impl_createObjFromDict :2031,字段槽 :1917/:1918/:1935/:1936)③PYTHON/pickle(Pickler pickler.h:11 代理 cPickle;datatype.cpp:1185/:1227/:1240/:1296/:1352/:1408;实体 initData baseapp.cpp:2661/:2722/:2891/:2956;baseapp 共享数据 :3734/:3754;pickle 桶不透明无字段结构=SER-11 边界的引擎依据)④项目 JSON/自定义 pack/unpack(引擎不拦截 stdlib json 无 hook,kode 现有 JSON 面仅 hotReloadTransport.ts:557/:564 传输脚本非分析面);现有 codec 盘点=TS 7 模块(userTypeContract/implementedByBinding/fixedDictConstructCheck/fixedDictSubscript/fixedDictMutationDiagnostics/hoverMarkdown 双视图/playerDataCloneWire=kode 自有通道)+Rust 2 面(implemented_by_symbol 字段/refs·rpcargs Arg 面);缺失消费入口 13 条逐项映射 SER-02..14(契约模型/双向绑定输出输入/成员·往返/isSameType 边界/项目 schema/静态字典/JSON 传播/pickle 传递证据/wire 布局解释·兼容/往返样本均未建);纯盘点零代码改动;门禁 lint 0/tsc 0/unit 748 文件 9187+8skip RC=0/xvfb demo 25 RC=0。
+- [x] SEM-018 （旧 KSEM-SER-02） [P1] 登记序列化契约模型。验收：记录编码器/解码器、逻辑对象结构、传输结构、字段序、版本、证据；字节格式与对象结构分别表达。——已收口(55980256,模型文档 docs/review/2026-11-13-ksem-ser-02-contract-model.md,引擎树 3082ab5 锚点逐一实测):六维记录(编码器解码器/逻辑对象/传输结构/字段序/版本/证据);**字节格式与对象结构分表表达**=§2 传输结构(底写原语 memorystream.h:599 memcpy 主机序无规范化/operator<< string NUL 终止 :221/appendBlob uint32 长度前缀 :543;逐类型布局表:整数族 sizeof(T) 原样 IntType<T> datatype.h:874-898 转换失败写 0 不中止/STRING NUL 终止无长度前缀 datatype.cpp:1050 内嵌 NUL 截断/UNICODE·PYTHON·BLOB uint32 长度+载荷 :1129/:1225/:1448/PYTHON 空 blob 解出 None :1234/ENTITYCALL id int32→cid uint64→type uint16→utype uint16 :1573-1577 None 写四零/FIXED_ARRAY uint32 数+序列序 :1837/FIXED_DICT 无键名无键数按声明序连排 :2592;FD 三条编码器行为契约=hasImpl 先 impl_getDictFromObj :2595/缺键或 isSameType 失败**静默 parseDefaultStr 默认值顶替** :2627/:2642/嵌套递归 onlyPersistents 下传)§3 对象结构(整数族 isSameType 范围检查 datatype.h:858-867/FD 有 impl=用户类实例过 isSameType 校验等);**通道分叉表**(wire vs DB 三者全不同:字节集/字段序/自描述性——wire=帧头+裸载荷事件驱动,DB=utype 标签记录[uint16 0 alias 槽+uint16 utype+payload] baseapp/entity.cpp:440/:456/:471/:491+hasCell 先装 position·direction 保留 utype entity_macro.h:1501-1513+persistent 子集 addToStreamEx(true) property.cpp:277/:336);字段序=FD 声明序 vs **DB 顶层属性名字典序**(std::map<std::string> scriptdef_module.h:31,非声明序——属性重名改动 DB 记录序不触 FD 序,SER-13 两条判据);版本维=defs-md5(entitydef.h:185/:255+entitydef.cpp:243+baseapp.cpp:4910)/alias·UID 双布局 baseapp entity.cpp:139-148/onlyPersistents 通道分叉/转换实现变更不改布局只改语义;消费映射 SER-03..14 逐条到 §2..§5;边界=纯模型文档零代码,物化批次以本表为契约真源,冲突先改表注明证据。门禁 lint 0/tsc 0/unit 748 文件 9187+8skip RC=0/xvfb demo 25 RC=0(首轮 hoverDeadlineContext·次轮 debugConfigAttach 各超时一例=满载抖动族,外部 dotnet/meshlet 构建 load 66→35,两例隔离均绿,第三轮全量绿)。
+- [x] SEM-019 （旧 KSEM-SER-03） [P1] 绑定 getDictFromObj 输出。验收：将明确 implementedBy 转换输出关联 FIXED_DICT schema；缺键/多键/字段类型错误定位到 return 或构造写点。——已收口(673a61ae,新纯核 src/backend/getDictFromObjReturnCheck.ts,引擎契约真源=SER-02 模型 §2:FixedDictType::addToStreamEx hasImpl 先 impl_getDictFromObj datatype.cpp:2595,**缺键/isSameType 失败静默 parseDefaultStr 默认值顶替** :2627/:2642——序列化出口的结构错误引擎侧零提示,静态面是唯一可见面):绑定推导=CustomTypeInfo.implementedBy 指向**本文档**(pythonFilePath===fsPath)+符号末段,类形态才判(函数形/歧义/缺失→零产出不猜);三面发现=缺键(宇宙封闭才判,声明集−字面量键,声明序逗号串)/多键(展开开放宇宙也照报单键)/字段值结构(复用 CELL-08 同一标量真源 classify+judge,仅内置标量裁定);锚位=直接 `return {…}` 锚 return 字面量,裸名 `return d` 锚构造写点(验收原句「定位到 return 或构造写点」),名字重绑定非字面量→作废不猜;嵌套 def 域诚实跳过;docstring/注释假阳性=pythonCodeLines 掩码行做语句形状判定(掩码行 `___` 挡住 `^\s*return`),**花括号配对与键串校验走原文 realLines**(掩码行串内容被抹空会致配对失败全报缺键——实测坑,已修);接线=diagnostics.ts scheduleFixedDictConstructDiagnostics 组装面追加(items.push),同开关 kbengine.fixedDictConstructDiagnostics,发布集合 kbengine-fixeddict-construct;规则 KBE-PY-023 code kbengine.fixedDictReturnSchema 入 lintRuleRegistry;l10n 三模板双语(缺键/多键/字段值结构,zh 说明静默默认值语义);features en+zh 新条目+开关行补 getDictFromObj 子句;测试=新 getDictFromObjReturnCheck.test.ts 15 例(三面×锚位×开放宇宙×嵌套 def×歧义×缺失方法×重绑定作废×掩码)+covDiagnosticsFindings 真接线端到端例(types.xml VectorBag implementedBy→serializers_impl.py 缺 y→collection 含 fixedDictReturnSchema);prove-red 两刀=M1 纯核删除 8 红/M2 接线移除 fixture 例红,恢复字节一致双绿;perfCallChainDoc ANCHORS 锚点 +4 位移锁步(diagnostics.ts 顶部 import 4 行,172/185→176/189,表内历史注带批号);门禁 lint 0/tsc 0/unit 740 文件 8967+8skip RC=0/xvfb demo 25 RC=0(categoryI18n 首轮真红=3 模板缺 bundle 条目已补,perfCallChainDoc 锚点真红已修,均非满载抖动)。
+- [x] SEM-020 （旧 KSEM-SER-04） [P1] 绑定 createObjFromDict 输入。验收：转换函数输入字典获得 schema，内部 key 补全/跳转/读取类型可用；错误 key 有可靠上下文时诊断。——已收口(f24f6bc4,新纯核 src/backend/createObjFromDictInput.ts,引擎契约真源=SER-01 实测 datatype.cpp:2673 FixedDictType::createFromStreamEx:hasImpl 先按 keyTypes_ 声明序建好 wire FixedDict(嵌套 FD 递归同建)再 impl_createObjFromDict 交给实现——入参收到的正是声明键位传输字典,与 STRUCT-07「内存形态键位不接管」是同一注册表两套语义:fixedDictSubscript 抽 walkFixedDictChainKeys 键步进核心,内存形态 chainStateFromAnnotation 设 implementedBy 门/wire 形态新 wireChainStateFromAnnotation 不设——嵌套 implementedBy 容器 wire 面照收);绑定面=pythonFilePath===fsPath+implementedBy 末段符号与 SER-03 同口径,新增入参名/方法体域(签名括号跨行平衡解析收括号行+1 起体,尾随空行不延长域);三面=completion/hover/pythonDefinition 输入面先于内存形态根解析接管,补全面抽 fixedDictKeyCompletionsOf 两 lane 共用;诊断=入参名字符串键读取(`d["k"]`/`d.get("k")` 含嵌套链)对声明集校验,首段未声明即报并止链,可靠上下文门(绑定唯一/方法缺失/只有 self/*args/收括号未闭→零产出,入参重绑 =/for/with-as 后不判,嵌套 def 域跳过,注释/字符串位掩码核验,赋值目标键不判而 +=/==/!= 照判),code kbengine.fixedDictInputKeySchema 挂既有 kbengine.fixedDictConstructDiagnostics 开关与 kbengine-fixeddict-construct 集合(零新开关),规则 KBE-PY-024 入表;测试=新 createObjFromDictInput.test.ts 35 例(绑定/接收者/wire 链/发现/三面真 workspace 含嵌套 implementedBy 穿透与重绑诚实边界)+covDiagnosticsFindings 端到端 fixtures 扩展;prove-red=接收者与发现面早退双刀 16 例红恢复字节一致;perfCallChainDoc ANCHORS 七锚真位重探锁步(diagnostics 176/189→182/195、hover 307→313、pythonDefinition 312/829/935→313/869/975、completion 855→897)+baseline §7 出处随锁步;门禁 lint 0/tsc 0/unit 770 文件 9473+8skip RC=0/xvfb demo 25 RC=0。
+- [x] SEM-021 （旧 KSEM-SER-05） [P1] 检查转换后的对象成员。验收：将可解析构造/赋值与输出对象成员关联；无法静态执行的自定义转换不凭函数名推定结构。——已收口(78262b3b,新纯核 src/backend/convertedObjMembers.ts,引擎真源=datatype.cpp:2435-2447 impl_getDictFromObj:Python 调用内异常→NULL→SCRIPT_ERROR_CHECK 记脚本错误且 parseDefaultStr("") **整体按默认值顶替**,.get 则静默返 None;addToStreamEx 调用处无 try/except——结构错误引擎侧零提示,静态面是唯一可见面,消息文案据此):**结构推导=createObjFromDict 可解析返回**(验收原句「将可解析构造/赋值与输出对象成员关联」)=①字典字面量(直返/别名返,多行 joinBalancedBraces 平衡接行;`**` 展开/字典推导/动态键→open 开放宇宙;`{1,2}` 集合字面量/`{x for …}` 集合推导→非字典→unknown)②wire 透传(`return dct` 未重绑→键集=types.xml 声明;`return dct["chain"]` 纯字符串键链→逐段解出嵌套 wire 容器)③其余一律 unknown——构造/方法调用/`return self`/None/属性读/无 return/混合分歧/重绑,**不凭函数名推定结构**(负验收面,苏格拉底式 callee 名字暗示样本钉零产出);检查面=getDictFromObj obj 入参字符串键读(`obj["k"]`/`obj.get("k")`)对推导键集裁定:字典形态只查首段(嵌套字面量形态是 SER-03 车道),wire 形态穿 wire 容器走全链;开放宇宙门(cellData 错键先例口径)=接收者动态键写/非字面量下标写/深度≥2 写/.setdefault(/.update( →缺键零产出,字面量单段写点并入键宇宙(obj 接收者文档级;createObjFromDict 入参+别名为体域级并折入结构——wire+动态写→降级 dict-open);**raw/masked 双流坑**=pythonCodeLines 掩码行串内容抹空(引号→_),键/字面量/链段必须读 RAW 行,def 跳过/重绑/位置判定走 MASKED 行,列对齐;SER-04 机器复用=resolveImplMethodInputs 泛化(ImplMethodInputBinding 两面同形,行为零变化 SER-04 测试未动),组装面 createInputs 提升共享;规则 KBE-PY-025 code kbengine.fixedDictOutputMemberSchema 入 lintRuleRegistry,挂既有 kbengine.fixedDictConstructDiagnostics 开关与 kbengine-fixeddict-construct 集合(零新开关);l10n 双语模板(EN 恒等键,ZH 记引擎默认值顶替语义);features en+zh 开关行补转换输出子句;测试=新 convertedObjMembers.test.ts 34 例(结构 16+发现 14+消息模板/finding→item 4)+covDiagnosticsFindings 真接线端到端(透传→推导 wire {x,y}→obj["w"] 缺失→fixedDictOutputMemberSchema 一条);prove-red=检查面入口早退一刀(纯核 4 红/30 绿+e2e SER-05 断言红),python count 断言还原;**纪实=还原后 sha256 与基线不符**(插入/还原窗口内并发会话外触本文件,函数区 cat -A 逐字节核对正确),按现字节全门禁复跑为准;perfCallChainDoc ANCHORS 打点 182/195→187/200 真位重探锁步+baseline §7 出处同步;门禁 lint 0/tsc 0/unit 771 文件 9507+8skip RC=0/xvfb demo 25 RC=0。
+- [x] SEM-022 （旧 KSEM-SER-06） [P1] 检查转换往返结构。验收：静态比较可确定的 encode/decode 字段对应，报告遗漏/错误字段映射；语义等价和数值往返需真实样本验证。——已收口(bc4693fb,新纯核 src/backend/roundTripFields.ts,引擎真源=addToStreamEx hasImpl 先 impl_getDictFromObj(datatype.cpp:2595)缺声明键静默 parseDefaultStr 整体顶替(:2627/:2642),createFromStreamEx 按声明序重建 wire 后交 impl_createObjFromDict(:2673);往返链 obj→getDictFromObj→wire→createObjFromDict→新 obj,encode 产出键集×decode 读取键集差集=单向缺失):**encode 键集**=getDictFromObj 全部 return 位闭合字面量并集(直返/别名返;字面量后单段字面量键写点并入;`**` 展开/动态键写/setdefault/update/`+=`/未知 return/无 return→整容器跳过不凭函数名推定)×**decode 键集**=createObjFromDict 入参+直接别名(`x = 入参`整行形态,重绑剔除,嵌套 def 域跳过)字符串键读取首段(`obj["k"]`/`obj.get("k")`;`return 入参`/`{**入参}` 透传→整容器跳过);**只在 ∩声明 键内裁差零重复**(E−声明=SER-03 多键车道、声明−E=SER-03 缺键车道、D−声明=SER-04 车道);D 域开放(动态下标读/setdefault/update/`+=`)只压 encodeOnly 方向;**值往返/语义等价不静态断言**(验收原句明文,归 SER-14 运行时样本车道);坑账=①测试 pair 夹具朝向反装(encodeBody 误挂 createObjFromDict、decodeBody 误挂 getDictFromObj)致 16 红,手排绑定探针逐字节证模块朝向白,翻转夹具方法序(行位不变)后绿——手排布局的手写用例(三键容器)反证夹具错;②锚列双口径=encode 字面量键锚引号列(parseDictPairs keyStart,SER-03 同族)/decode 读锚键内容列(keyAccessAt i+1,SER-04 同族),测试按侧断言;③**写点面真 bug**=writeMatch.index 恒 0(`^\s*` 锚)致掩码名位核验打在缩进列→字面量键写点并键面全死码,修复=匹配体内名首锚+键列改引号首现锚(名/键同名不撞 indexOf 前缀);④decodeOnly 差集键必须落在声明容器(PAIR x/y 装 z 键样本三处错装,改 TRIO/SINGLE 容器);嵌套链 `dct["x"]["hp"]` 首段 x 计入读取压 encodeOnly、次段不入对拍域;规则 KBE-PY-026 code kbengine.fixedDictRoundTripSchema 入 lintRuleRegistry,挂既有 kbengine.fixedDictConstructDiagnostics 开关与 kbengine-fixeddict-construct 集合(零新开关);l10n 双语模板 2 键(EN 恒等,ZH 记 wire 往返丢失/缺键整包默认值顶替语义);features en+zh 开关行补往返子句;测试=新 roundTripFields.test.ts 21 例(encodeOnly 7/decodeOnly 5/配对与诚实边界 7/消息模板·finding→item 2)+covDiagnosticsFindings 真接线端到端(serializers_impl 增 RoundTripBagSer:encode {x,y}、decode 读 x→fixedDictRoundTripSchema 一条,types.xml 增 RoundBag);prove-red=对拍门一刀(kind!=='literal'||keys.size===0→if(true))红 12/26,逆替换还原;纪实=跨命令手转 64hex 哈希比对不可信(HASH_MATCH 打印自不可靠字面量),弃比对改**现字节全门禁复跑**为准;ANCHORS 锁步=diagnostics.ts 顶部 import +3+push 面 +10,打点 187/200→191/204 真位重探,perfCallChainDoc.test+baseline §7 同步带日期注;门禁 eslint 0/tsc 0/unit 773 文件 9528+8skip RC=0/xvfb demo 25 RC=0。
+- [x] SEM-023 （旧 KSEM-SER-07） [P1] 验证 isSameType 契约边界(38f34fd8)。契约边界面落地:src/backend/isSameTypeContract.ts 纯核 + diagnostics.ts 发布(arity 面 Warning/证明状态面 Information,聚合 acceptAll>pending>fallback)。引擎真源 datatype.cpp:单位置实参绑定 PyObject_CallFunction "(O)"(:2450-2452)、判真=指针恒等 Py_True==pyRet(:2458)、impl True 短路免检/False 被无视回落内建(FixedDictType::isSameType :2497-2512)——isSameType 是转换链兼容性闸门(impl_createObjFromDict 后置校验 :2421)。静态判定:签名不符(零位置承接/多余无默认/仅关键字必需;*args 承接合法/**kwargs 不承接)恒 TypeError 锚 def 行方法名;恒 True=acceptAll 免检;全部返回位非 True 常量(指针恒等恒被无视)=fallback;动态返回=pending 待运行验证(不冒称已证明兼容,验收核心句);isinstance 全元素可解析(内建名∪本文件类名,元组叶子展开)→ 已证明零产出,任一未解析 → pending 锚该元素;嵌套 def 域跳过/注释字符串位掩码核验/签名不可解析零产出不猜。resolver 加 allowMissingObj 第四参(SER-04/05/06 默认不变)保缺 obj 绑定供 arity 裁定;30 单测 + e2e 断言(两类 acceptAll Information)+ ANCHORS 191/204→195/208 锁步(baseline §7 日期注);prove-red neuter→24+1 红/恢复全绿;门禁 lint 0/compile 0/unit 773 文件 9558+8skip/demo 25 RC=0。
+- [x] SEM-024 （旧 KSEM-SER-08） [P1] 支持项目显式序列化 schema。验收:设计项目级 schema/注解绑定方式及版本规则,避免污染业务代码;无 schema 时不声称 json.loads 返回固定类型。——已收口(8f98b676,设计文档 docs/review/2026-11-14-ksem-ser-08-project-schema-design.md,纯设计零代码改动):绑定方式=路线 A 声明式文件绑定 .kbengine/serialization.json(types 标量族复用 CELL-08 cellDataWriteCheck SCALAR_FAMILIES 真源:58 + bindings 按消费点证据 {path glob, type};路线 B 代码内注解否决=污染业务代码+双源真相,先例一致性=types.xml implementedBy 哲学);版本规则=schema_version 项目作者维护单调整数(仅展示不推断)+ 推导 LRU 键=(文档身份, schema 内容 md5)(flowVersionKey src/flowVersionKey.ts 协议同族,SER-02 §5 defs-md5 同哲学;绑定歧义→未知不猜);诚实契约=现状审计双引擎零声称(Rust crates/kode-python grep loads/pickle 零命中;TS 仅 hotReloadTransport 传输自用非分析面)→ 无 schema 时 json.loads 三禁(不凭名字推定/不给补全悬停字段面/诊断零产出=未知静默即诚实),pickle 零绑定能力(裸 PYTHON≠FIXED_DICT,SER-11 边界);SER-09/10/11 消费契约各一段;默认裁定表(固定 .kbengine/serialization.json/fnmatch glob/校验失败记诊断 configContract 车道形态);开放问题随批裁定给默认值。门禁 lint 0/tsc 0/unit 773 文件 9558+8skip RC=0/xvfb demo 25 RC=0。
+- [x] SEM-025 （旧 KSEM-SER-09） [P1] 推导项目静态字典格式。验收：从确定的 dict 构造/写点提取必有、可选及值类型；分支合流、多写者和动态 update 扩展为开放结构。——已收口(5493605f,src/backend/dictFormatDerivation.ts 纯核心 + tests/dictFormatDerivation.test.ts 35 例,零 vscode 依赖):推导模型=模块作用域 v1 写点收集(def/class 体绝不落入=同名跨作用域合流是谎报;if/elif/else/for/while/try/except/finally/with 体仍是模块作用域),执行保证三级 always(顶层无条件)> complete(带 else if 组全臂齐键,恰好一臂执行)> maybe(无 else if 臂/循环/try/with 体);必有 = always 键或 complete 全臂键,其余有证据键=可选;顺序语义=无条件字面量赋值重绑(先前条件证据作废)+ 增量写点(下标/update/setdefault/|=)并入不重置;无条件非字面量 RHS=unknown 终局(其后写点转 open+observed);开放结构=任意动态证据(变量键下标/update 非字面量/|=/del/**展开/推导式),observed 保留已观测键;值类型面=字面量分类 str/int/float/bool/none/list(元素同质收敛,空/混合→null)/嵌套 dict 递归(setdefault 的 dict 实参=被插入值非键面合并),跨写点同键类型分歧→unknown 不猜;坑账 8 件:else/elif 同缩进先收后找组恒落空需组帧豁免收缩(分支合流面死)、try:/finally: 单 token 带冒号恒不中 maybe 名单(头 token 剥尾冒号)、except/finally 体漏 maybe 名单、subWrite 形状匹配须走原文行(掩码抹引号成 _ 落 dynWrite 误开宇宙)+名位掩码核验、rebind 字段区分重绑/增量(否则 d={a};d|={x} 丢 a)、comprehension 检测须剥值自带外层括号(否则 for 恒深度 1 漏检)、open 零观测证据=无形状声称不入 map(缺键即未知)。门禁 lint 0/tsc 0/unit 774 文件 9593+8skip RC=0/xvfb demo 25 RC=0;prove-red=neuter 早退空 map 28 红(7 例缺席断言恒绿=空 map 正确敏感度)/byte-exact restore cmp=0 复绿。
+- [ ] SEM-026 （旧 KSEM-SER-10） [P1] 传播 JSON 编码解码结构。验收：仅对有绑定或可证明来源的 dumps/loads 链传播结构；处理 JSON key/tuple/数值转换，来源不明则未知。
+- [ ] SEM-027 （旧 KSEM-SER-11） [P1] 处理 pickle/PYTHON 边界。验收：保留已有对象类型可传递证据；不把裸 PYTHON 当 FIXED_DICT，不执行反序列化不可信数据来推断。
+- [ ] SEM-028 （旧 KSEM-SER-12） [P1] 接入 wire 布局解释。验收：复用现有编解码/跨度结果展示字段路径、类型、偏移及错误位置；不以能解析字节证明业务对象类型正确。
+- [ ] SEM-029 （旧 KSEM-SER-13） [P1] 检查 wire 布局兼容变化。验收：schema 变更比较字段顺序、类型、Arg 布局/版本；区分静态不兼容风险和引擎握手实际拒绝条件。
+- [ ] SEM-030 （旧 KSEM-SER-14） [P1] 建立引擎往返样本。验收：用可信夹具验证嵌套 ARRAY/FIXED_DICT/别名/自定义转换及边界值；引擎未运行的项不标成真实往返通过。
+
+### KSEM-CFG · P1 · 固定配置 key/value 与配置消费代码
+
+依赖：BAS + STRUCT；复用 configDerive/merge/catalog/schema。
+
+- [ ] SEM-031 （旧 KSEM-CFG-01） [P1] 盘点配置读取路径。验收：登记引擎 defaults/custom/覆盖层、项目 XML/JSON/JSONC/Python 配置对象及真实读取函数；区分 schema 已有和只存在文档目录。
+- [ ] SEM-032 （旧 KSEM-CFG-02） [P1] 提取配置权威契约。验收：关联引擎读取源码、默认 XML、已有 schema；记录类型、枚举、单位、范围、可重复节点、动态键和版本，不从默认值猜全部约束。
+- [ ] SEM-033 （旧 KSEM-CFG-03） [P1] 统一配置字段身份。验收：以配置根/层级路径/工程/版本定位字段；map 动态键与固定对象字段区分。
+- [ ] SEM-034 （旧 KSEM-CFG-04） [P1] 实现配置键和枚举补全。验收：父路径限定可用 key，value 按确定枚举/类型补全；已有 provider 复用，不重复注册冲突项。
+- [ ] SEM-035 （旧 KSEM-CFG-05） [P1] 实现配置值校验。验收：校验有源码/schema 依据的类型、范围、枚举和必填；引擎容忍/忽略未知 key 的行为与确实报错分级。
+- [ ] SEM-036 （旧 KSEM-CFG-06） [P1] 实现配置来源跳转。验收：代码配置读取 key 跳有效值及 schema/默认声明；hover 展示覆盖来源和单位，敏感值脱敏。
+- [ ] SEM-037 （旧 KSEM-CFG-07） [P1] 传播配置读取结果类型。验收：给可确定配置 loader 和字段访问绑定 schema；dict/get/别名/嵌套访问保留类型及缺省值联合。
+- [ ] SEM-038 （旧 KSEM-CFG-08） [P1] 提取项目配置结构。验收：显式 schema 优先，其次静态构造和可证明读取约束；动态 key/多文件冲突保持开放并提供来源。
+- [ ] SEM-039 （旧 KSEM-CFG-09） [P1] 检查配置关联约束。验收：逐条核实路径基准、字段组合、引用目标等可静态检查关系；端口冲突按绑定地址/协议/部署角色判断，不简单全局去重。
+- [ ] SEM-040 （旧 KSEM-CFG-10） [P1] 联动配置修改影响。验收：改 key/类型列出读取点、默认回退及受影响模块；修改未保存内容也刷新，禁止覆盖用户配置。
+- [ ] SEM-041 （旧 KSEM-CFG-11） [P1] 建立配置负例集。验收：覆盖自定义合法键、重复节点、环境覆盖、缺文件、多根、JSONC、敏感值和版本差异；不允许默认值推断产生伪错误。
+
+### KSEM-DATA · P2 · 共享数据与空间数据
+
+依赖：BAS + STRUCT；承接已有 globalDataIndex。
+
+- [ ] SEM-042 （旧 KSEM-DATA-01） [P2] 复核共享数据现有接线。验收：核实 globalData/baseAppData/cellAppData 的引用/跳转/类型消费和工程隔离；已有功能只记录差距不重复实施。
+- [ ] SEM-043 （旧 KSEM-DATA-02） [P2] 补共享数据键补全。验收：按工程和共享数据域列 key 与写入来源，静态常量按真实绑定解析，不把同名标识符恒当同一键值。
+- [ ] SEM-044 （旧 KSEM-DATA-03） [P2] 合并多写者类型。验收：不同写入点类型形成联合及来源说明；只有声明契约冲突才报错，正常多态不误报。
+- [ ] SEM-045 （旧 KSEM-DATA-04） [P2] 表达异步可用性。验收：共享数据发现写点不代表读时已存在；get/default、删除及进程域对类型和提示产生影响。
+- [ ] SEM-046 （旧 KSEM-DATA-05） [P2] 登记 spaceData 契约。验收：核实 key/value 字符串约束、空间范围、客户端可见路径和 _mapping 保护规则，记录出处。
+- [ ] SEM-047 （旧 KSEM-DATA-06） [P2] 实现空间数据读写关联。验收：可确定 spaceID 与 key 建索引/补全/跳转；动态空间不合并为同一确定对象，保护键写入有明确诊断。
+
+## FLOW — 进程流转与调用树（KFLOW 族）
+
+> 编号 2026-11-14 功能域重整：本域条目按原账本出现顺序重编为 FLOW-001 起，旧编号以（旧 X）随行保留；来源分节标题原样。
+
+### KFLOW-CORE · P1 · 重做 Client 与进程流转模型及本地调用树
+
+依赖：用户反馈现有版本不可用；BAS/RPC 提供身份，不以旧图完成项抵扣。
+
+- [ ] FLOW-001 （旧 KFLOW-CORE-01） [P1] 记录现有图失败样本。验收：选真实入口收集缺失本地帧、错误跨进程落点、合成 client 和同名混边；保留原图与预期路径做回归依据。
+- [ ] FLOW-002 （旧 KFLOW-CORE-02） [P1] 定义三种图的产品契约。验收：明确进程流转图、本地调用树/静态调用路径、运行时调用栈的独立数据与入口；禁止将静态可能路径称为实际堆栈。
+- [ ] FLOW-003 （旧 KFLOW-CORE-03） [P1] 定义流转节点和边协议。验收：节点含工程/角色/实例候选/实体/函数/源码；边含调用点、方向、同步/异步、条件、消息/RPC、证据及未解析原因。
+- [ ] FLOW-004 （旧 KFLOW-CORE-04） [P1] 实现本地函数调用解析。验收：解析直接函数、self 方法、导入和可证明接收者；输出真实调用点及声明，不以方法名全局匹配。
+- [ ] FLOW-005 （旧 KFLOW-CORE-05） [P1] 实现本地调用树展开。验收：支持入口向下/调用者向上、分支条件、递归环和深度截断；同一函数多次调用保留调用点，不直接压成一个帧。
+- [ ] FLOW-006 （旧 KFLOW-CORE-06） [P1] 解析 Client 真实调用入口。验收：有客户端源代码时绑定实际调用点到 Exposed RPC；无客户端源码只显示外部入口和证据，不能伪造 Client 函数栈。
+- [ ] FLOW-007 （旧 KFLOW-CORE-07） [P1] 连接 Base/Cell/Client RPC。验收：用角色化 EntityCall 与有效 def 找接收实现；消息发送与远端执行是独立边，不画成同步 Python 子栈。
+- [ ] FLOW-008 （旧 KFLOW-CORE-08） [P1] 连接广播和组件调用。验收：展示单目标/多目标/AOI 受众及组件槽；广播不虚构一个固定接收实例。
+- [ ] FLOW-009 （旧 KFLOW-CORE-09） [P1] 核实其他进程桥接契约。验收：逐条登记 loginapp/dbmgr/interfaces 等 API 请求/回调桥；machine/logger 等只在有真实业务边时出现，禁止拓扑全连接。
+- [ ] FLOW-010 （旧 KFLOW-CORE-10） [P1] 连接引擎回调与异步续段。验收：创建实体、数据库返回、timer 等以契约关联请求和回调；回调未可确定绑定时保留断点与原因。
+- [ ] FLOW-011 （旧 KFLOW-CORE-11） [P1] 保留外部及动态边。验收：动态 getattr、未知 receiver、第三方/native 函数显示未解析边及原因；不静默消失或猜唯一落点。
+- [ ] FLOW-012 （旧 KFLOW-CORE-12） [P1] 构建一次业务场景路径。验收：选定入口查询 Client→Base→Cell→Client 的本地帧和跨进程边；分支为候选而非固定执行顺序。
+- [ ] FLOW-013 （旧 KFLOW-CORE-13） [P1] 实现图增量失效。验收：改实现/def/角色映射只更新相关节点和调用方；删除、重命名、未保存文本及跨根隔离有验证。
+
+### KFLOW-UI · P1 · 进程泳道和可展开调用堆栈视图
+
+依赖：KFLOW-CORE 协议稳定；用户要求为实际流程可读。
+
+- [ ] FLOW-014 （旧 KFLOW-UI-01） [P1] 制作评审用场景样图。验收：以真实调用夹具画泳道、消息和本地函数帧，标出分支/异步/未知；样图中每条边可追溯证据。
+- [ ] FLOW-015 （旧 KFLOW-UI-02） [P1] 实现按角色分组泳道。验收：Client/Base/Cell 和已涉及其他进程按角色分泳道；静态角色不冒充运行中实例，运行实例带组件 ID。
+- [ ] FLOW-016 （旧 KFLOW-UI-03） [P1] 实现本地帧折叠展开。验收：默认展示业务主要路径，展开能看到入口到 helper 的调用树；调用点与声明可分别跳转。
+- [ ] FLOW-017 （旧 KFLOW-UI-04） [P1] 呈现跨进程消息。验收：边显示方法/方向/Arg 类型和来源；异步发送、接收、回调及广播可辨识，避免所有边一个箭头。
+- [ ] FLOW-018 （旧 KFLOW-UI-05） [P1] 实现选中路径和反查。验收：从编辑器函数/调用点打开图，选择节点反查上游/下游，保留导航历史；未知和歧义结果可查看。
+- [ ] FLOW-019 （旧 KFLOW-UI-06） [P1] 实现大图按需展开。验收：初次只加载有界场景子图，支持搜索/过滤/缩放/定位，截断有可继续入口；取消后停止后台扩展。
+- [ ] FLOW-020 （旧 KFLOW-UI-07） [P1] 提供文本路径和错误恢复。验收：图和文本消费同一模型，渲染失败保留路径/未解析原因并可重试；中英文、键盘操作可用。
+- [ ] FLOW-021 （旧 KFLOW-UI-08） [P1] 验收真实业务流转。验收：用登录/创建角色入场/一次战斗 RPC 三个项目实际存在的场景核对；缺场景则建明确测试夹具，不冒充真实项目覆盖。
+
+### KFLOW-TRACE · P2 · 真实调用栈与跨进程运行时追踪
+
+依赖：静态路径先交付；采集为单独增量，不以静态图替代。
+
+- [ ] FLOW-022 （旧 KFLOW-TRACE-01） [P2] 核实运行时采集可行性。验收：评估 debugpy 停止栈、Python profile/trace、引擎消息钩子、日志和 py-spy 各自能获取的数据/代价；采样栈不冒充完整请求轨迹。
+- [ ] FLOW-023 （旧 KFLOW-TRACE-02） [P2] 定义 trace 事件协议。验收：定义会话/进程/线程/实体/时间/帧/消息关联/来源及丢失标记；异步跨进程使用因果边，不伪装共享栈。
+- [ ] FLOW-024 （旧 KFLOW-TRACE-03） [P2] 导入单进程真实堆栈。验收：先支持一个已验证来源的真实帧顺序、文件行和异常位置；字段缺失明示，栈展开可跳源码。
+- [ ] FLOW-025 （旧 KFLOW-TRACE-04） [P2] 采集受控单进程调用事件。验收：独立可关闭的采集入口和有界缓冲，记录开始/结束/异常/丢弃；不默认开启高开销全量 trace。
+- [ ] FLOW-026 （旧 KFLOW-TRACE-05） [P2] 验证跨进程关联方案。验收：核实消息是否已有可用关联 ID；没有则设计显式可选引擎/脚本适配，未经协议核实不得擅改 wire 消息。
+- [ ] FLOW-027 （旧 KFLOW-TRACE-06） [P2] 串联发送接收与回调。验收：有可靠 ID 时连接事件，无 ID 只展示候选关联并解释；禁止仅按方法名/邻近时间宣称因果。
+- [ ] FLOW-028 （旧 KFLOW-TRACE-07） [P2] 回放实例级流转图。验收：以真实组件实例泳道展示本地栈段和消息流；多次相同 RPC/乱序/广播/缺失事件可区分。
+- [ ] FLOW-029 （旧 KFLOW-TRACE-08） [P2] 验收开销及失败清理。验收：预登记采集时间/容量/开销预算，测停止/断连/引擎退出/丢事件/时钟偏差；报告实际采样边界。
+
+## HOT — 热更新（Demo 双通道与 Python 3.7.3 联验）
+
+> 编号 2026-11-14 功能域重整：本域条目按原账本出现顺序重编为 HOT-001 起，旧编号以（旧 X）随行保留；来源分节标题原样。
+
+### Demo 双通道热更新与 Python 3.7.3（2026-11-11）
+
+用户实测：官方与 HTTP 都未看到更新生效；HTTP 明确使用 Guido xreload，运行目标 Python 3.7.3。实现与证据见 [双通道记录](docs/design/demo-hot-reload.md)。以下勾项仅代表对应代码/自动化验证完成，不代表完整真实游戏双通道已验收。
+
+- [x] HOT-001 （旧 HR-DEMO-20261111-01） 适配用户指定的 Guido xreload 为 Python 3.7.3：保留原位函数/类更新，替换旧接口、保留导入元数据，支持描述符/继承/super/相同 slots 与显式全局状态保留。验收：临时构建的 CPython 3.7.3 下 `tests/python/test_xreload_py37.py` 19 项通过；布局/闭包迁移等边界明确拒绝。
+- [x] HOT-002 （旧 HR-DEMO-20261111-02） 在 demo Base/Cell 安装 HTTP 接收器并挂引擎线程执行：Base 8090、Cell 8091，Cell 路由和 common 双侧确认；HTTP 只用 xreload。验收：CPython 3.7.3 下真实回环 HTTP+descriptor 引擎替身 7 项通过，已有实例/绑定方法/函数引用执行结果改变；模板与夹具同步。
+- [x] HOT-003 （旧 HR-DEMO-20261111-03） 接通默认 JSON 文件集/目标/冻结指纹与 applied 状态栏：整批核验后显示已应用，失败和未确认分别呈现，修正 accepted/applied 未计入发送数量。验收：实际 transport/fire/台账/状态栏相关回归通过；旧单模块表单保持兼容路径。
+- [x] HOT-004 （旧 HR-DEMO-20261111-04） 修复官方预设与执行观察：端口和默认密码对齐引擎 Baseapp 默认值，明确进入 Python、先监听后发送、等待唯一完整执行标记；带 demo observer 时原生 reloadScript+onInit 确认及指纹回执。验收：官方适配仿真 3 项、控制台分片/异常回执用例通过；官方路径不调用 xreload。
+- [x] HOT-005 （旧 HR-DEMO-20261111-05） 补文档与旧审计指向：记录安装/启动日志、GET 状态、手工请求、进程路由、两方案区别及重启/状态迁移边界。验收：`docs/design/demo-hot-reload.md` 与 README 中英入口在库；类型检查/涉及文件 ESLint 通过，热更与模板 50 文件 622 测试通过。
+- [ ] HOT-006 （旧 HR-DEMO-20261111-06） 完整真实 KBEngine demo 验收 HTTP/xreload：启动真实 Base/Cell 与游戏角色，修改实体方法和 common 战斗常量，记录更新前后实际游戏行为、两侧日志/回执/指纹和扩展状态；失败、Cell 未启动及同尺寸连续保存不能假成功。前置：同步接收器并重启一次；现有本机二进制链接 Python 3.14，需另测目标 3.7.3 嵌入式引擎，不用纯解释器测试抵扣。
+- [ ] HOT-007 （旧 HR-DEMO-20261111-07） 完整真实 KBEngine demo 验收官方通道：分别配置 Base/Cell 实际控制台地址/密码，修改现存实体逻辑并记录 reloadScript 后真实行为与 onInit 观察；区分单进程确认和全部署确认，验证结构变化需重启。前置：可运行的 demo/控制台；不以控制台替身回显测试抵扣。
+
+<a id="kode-bug-audit-20261111"></a>
+
+## RUST — Rust Core 高性能重构账本（自 docs/kode2/KODE_2_COMPLETE_TODO.md 合并，2026-11-13）
+
+> 编号 2026-11-14 功能域重整：本域条目按原账本出现顺序重编为 RUST-001 起，旧编号以（旧 X）随行保留；17 个子节结构与「进行中：」注记原样。
+
+
+> 来源文件已删除；设计红线/性能预算等叙述性内容见 git 历史（该文件 668 行版本）。此处保留全部 checklist 账本，勾选状态原样迁移。
+>
+> **状态注（2026-11-13 整理）**：本段为 Rust Core 重构设计序列，执行以用户逐批点火为准，整段未勾≠债务；已落部分见各行「(落地/进行中/基础版…)」注（PR-003..010、kode-scheduler、kode-vfs 等）。取证阶段（PH0）的 AUDIT-001..015/PERF-001 已于 2026-11-13 复核补勾（证据=docs/architecture/current-state.md+migration-inventory.csv+docs/perf/hardware.md）；PR-001/PR-002 与主 todo 既有车道重复，对账注见 §17 各行。
+
+#### 0.2 严格设计原则
+- [ ] RUST-001 （旧 ARCH-001） 扩展宿主不得同步执行全仓扫描、语义求解、全量 XML 解析、巨型日志处理。
+- [ ] RUST-002 （旧 ARCH-002） Core 是常驻进程，语言请求不得 spawn Python/Rust 进程；运行脚本须独立的可复用执行服务。
+- [ ] RUST-003 （旧 ARCH-003） 文件快照按 root + canonical URI + document version 唯一标识；打开文件内存优先。
+- [ ] RUST-004 （旧 ARCH-004） 索引查询无阻塞全量初始化前置；允许明确标注 partial/incomplete，禁止悄悄返回假完整结果。
+- [ ] RUST-005 （旧 ARCH-005） 所有发布到编辑器的结果带请求/文档/索引版本，拒绝旧结果覆盖新结果。
+- [ ] RUST-006 （旧 ARCH-006） 优先局部解析和受影响依赖更新；无理由的「任意改动→全仓重建」视为架构缺陷。
+- [ ] RUST-007 （旧 ARCH-007） 语义正确性、内存上限、稳定性与尾延迟均为发布门槛。
+- [ ] RUST-008 （旧 ARCH-008） 自有协议版本化，公共 API 与内部存储隔离；插件默认无文件写权限、无网络权限、无任意执行权限。
+- [ ] RUST-009 （旧 ARCH-009） UI 在降级、Core 崩溃、无 KBEngine 引擎源码时仍可用。
+- [ ] RUST-010 （旧 ARCH-010） 支持 Windows/macOS/Linux、x64/arm64 和 Remote SSH/WSL/Containers 的正确执行位置。
+- [ ] RUST-011 （旧 ARCH-011） 索引存储为派生缓存而非数据真相，损坏可以重建，不可静默修改用户文件。
+- [ ] RUST-012 （旧 ARCH-012） 无实验数据不得声称 Rust 性能一定快 N 倍；禁止靠删功能换性能。
+
+#### 0.3 不做的事情
+- [ ] RUST-013 （旧 SCOPE-001） 不重写 VS Code UI 为 Rust GUI。
+- [ ] RUST-014 （旧 SCOPE-002） 不从零重写完整 Python 解释器或 Python 语言服务器。
+- [ ] RUST-015 （旧 SCOPE-003） 不把服务器部署、集群调度、云资源与游戏业务运维塞入语言服务核心。
+- [ ] RUST-016 （旧 SCOPE-004） 不允许没有协议隔离的第三方插件直接加载到高可信 Core 进程。
+- [ ] RUST-017 （旧 SCOPE-005） 不承诺纯浏览器 VS Code 可以执行原生 Core；单独设计 Web 降级或远程部署。
+
+### 1. 验收性能预算及方法
+
+> > 所有数值为候选预算，必须附硬件、系统、数据集、时间窗口、样本数。P95/P99 与 cold/warm 区分；不要把合成基准误当真实 KBEngine 工程表现。 | 场景 | 候选目标 | 绝对规则 | |---|---|---| | 扩展激活（不含 Core 全量索引） | P95 ≤300ms | 不阻塞编辑器 UI | | Core 热启动至握手
+
+- [x] RUST-018 （旧 PERF-001） 编写 docs/perf/hardware.md：CPU、核数、RAM、磁盘、OS、VS Code/Node/Rust/KBEngine 版本。——`36052c47`：docs/perf/hardware.md（2026-10-23 lscpu/free/lsblk 实测全表+版本面+测量偏差细则；本 tidy 2026-11-13 复核存在且面齐）。
+- [ ] RUST-019 （旧 PERF-002） fixtures 分 S(200 files)、M(2k)、L(10k)、XL(50k+)、XRoot(3+ resources 根)；附文件大小与符号数统计。(部分：S/L(30,005 文件)/XRoot(3 根) 已覆盖，M(2k)/XL(50k+) 待建——docs/perf/hardware.md §3+current-state.md §PERF-002/003/004)
+- [ ] RUST-020 （旧 PERF-003） fixtures 包含同名实体、跨 root 同名 Python class、深继承、循环别名、不完整 XML、非 ASCII 路径、符号冲突。(部分：同名实体/跨 root 同名类已覆盖；深继承/循环别名/不完整 XML/非 ASCII 路径待补——同上节)
+- [ ] RUST-021 （旧 PERF-004） fixtures 含真实 KBEngine 引擎样例（版权/版本可用时），与可合成开源样例隔离。
+- [ ] RUST-022 （旧 PERF-005） 测量 extension activation、Core spawn、handshake、workspace discovery、parse、resolve、index、publish 的分段时延。(部分：分段纪律与已测/未测清单已立——current-state.md §PERF-005；Core spawn/handshake 量测随 Rust Core 落地)
+- [ ] RUST-023 （旧 PERF-006） 延迟结果按 cold/warm、idle/busy、SSD/network FS、local/remote、root 数量分组。
+- [ ] RUST-024 （旧 PERF-007） 每个关键请求采集 P50/P95/P99/max、队列耗时、执行耗时、排队长度、取消率、cache hit/miss。
+- [ ] RUST-025 （旧 PERF-008） 统计文件枚举/读取/解析次数、局部失效节点数、索引版本和 RPC 消息字节数。
+- [ ] RUST-026 （旧 PERF-009） 监测 VS Code extension host event loop delay、Core CPU/内存/线程及磁盘 IO。
+- [ ] RUST-027 （旧 PERF-010） CI 建立基准报告和可配置回归阈值；有噪声控制和重复执行。
+- [ ] RUST-028 （旧 PERF-011） 自动生成基线 → PR 对比 → 历史趋势，不通过基准不得合并关键核心 PR。
+- [ ] RUST-029 （旧 PERF-012） 做请求风暴：快速连续编辑、切换 tab、批量重命名、依赖变更、并发跳转补全。
+- [ ] RUST-030 （旧 PERF-013） 做 1h soak test、OOM 限额、杀进程恢复、损坏索引自动回建、取消与重试。
+- [ ] RUST-031 （旧 PERF-014） 对超大文件启用 degraded mode 并明示能力限制；不得锁死 UI。
+- [ ] RUST-032 （旧 PERF-015） 跨机器不直接比较绝对速度；主报告使用固定基准机器和统计置信范围。(部分：固定基准机纪律已立——hardware.md §1/§2；统计置信区间/bench `--repeat` 待建——hardware.md §2#1)
+- [ ] RUST-033 （旧 PERF-016） 在 docs/perf/decisions.md 记录每一项优化的 profiling 证据、取舍、回退策略。
+
+### 2. 现有代码取证与迁移清单（首个强制阶段）
+- [x] RUST-034 （旧 AUDIT-001） 固定仓库 commit SHA / tag，保存 working tree 状态；确认旧 TODO 每条任务的真实完成状态。——current-state.md §AUDIT-001（审计基点 36052c47cb26 全 SHA+干净树+旧 TODO 逐项对账 PR1..PR7/B-1..B-5 commit 核实；本 tidy 2026-11-13 复核）。
+- [x] RUST-035 （旧 AUDIT-002） 抽取 `src/` 模块树、入口 activation、各 provider 注册、manager 生命周期及 import 依赖图。——current-state.md §AUDIT-002。
+- [ ] RUST-036 （旧 AUDIT-003） 标出 `onLanguage:python` 激活是否不必要地初始化 KBEngine 服务；增加无 KBEngine 工作区负案例。(部分：初始化面已标出=激活即建全套 KBEngine 机制、负案例未实现未测——current-state.md §AUDIT-003；负案例归 PR-006 root-discovery 范围)
+- [x] RUST-037 （旧 AUDIT-004） 枚举 `.def` / types.xml / entities.xml / alias.xml 的所有解析器与调用方，找重复 parse/read。——current-state.md §AUDIT-004。
+- [x] RUST-038 （旧 AUDIT-005） 枚举 PythonClassIndex、EntityMappingManager、type registry、composition root、definitionWorkspace 及实际名称/路径。——current-state.md §AUDIT-005。
+- [x] RUST-039 （旧 AUDIT-006） 核查所有 `fs.*Sync`、`getText().split`、递归 workspace.findFiles、glob、statSync、首次查询 ensureScanned。——current-state.md §AUDIT-006（同步 IO 普查，非测试代码）。
+- [x] RUST-040 （旧 AUDIT-007） 记录 hover/definition/completion/diagnostics/references 四层真实调用链与等待点。——current-state.md §AUDIT-007。
+- [x] RUST-041 （旧 AUDIT-008） 枚举全部用户功能、commands、views、configuration、debug provider、test 清单，为迁移建立能力矩阵。——current-state.md §AUDIT-008（能力矩阵；细目=docs/architecture/migration-inventory.csv）。
+- [x] RUST-042 （旧 AUDIT-009） 核查现有 `.pyi` 生成算法与类型来源，是否基于 Python AST、动态运行或文本正则。——current-state.md §AUDIT-009（结论：纯文本生成，无 AST/无动态执行）。
+- [x] RUST-043 （旧 AUDIT-010） 核查代码生成向用户目录的写入行为、覆盖保护、源位置跳转、版本与冲突处理。——current-state.md §AUDIT-010（.def/.py 直写无覆盖保护等实证）。
+- [x] RUST-044 （旧 AUDIT-011） 审核 log/terminal/HTTP/telnet/watcher 运行时边界和现存进程/连接生命周期。——current-state.md §AUDIT-011。
+- [x] RUST-045 （旧 AUDIT-012） 产出 docs/architecture/current-state.md：事实、推断、已测结论分栏标记。——docs/architecture/current-state.md 本体（2026-10-23 取照 36052c4，【Fact】/【Inference】/【Tested】分栏；2026-11-05..07 state refresh 追加，本 tidy 2026-11-13 复核）。
+- [x] RUST-046 （旧 AUDIT-013） 产出 docs/architecture/migration-inventory.csv：模块、owner、输入、输出、耗时、迁移方式、测试、风险。——docs/architecture/migration-inventory.csv（列=模块/路径/职责(输入→输出)/owner/耗时证据/迁移方式/测试/风险）。
+- [x] RUST-047 （旧 AUDIT-014） 明确旧 A1-A7 对新 Phase 的映射；保留所有当前已修复的永转/超时问题回归测试。——current-state.md §AUDIT-014（A1..A7→Phase 映射表+永转/超时回归测试锁在案）。
+- [x] RUST-048 （旧 AUDIT-015） 将产品已有 feature 进行 retained/moved/reworked/deferred 分类，避免重构丢能力。——current-state.md §AUDIT-015+CSV 迁移方式列。
+- [x] RUST-049 （旧 AUDIT-016） 执行 HR-AUDIT，确认已有 HTTP/Watch/Hash 代码真相并建立差异清单。(HR-PR-01,6934c63a,docs/hotreload/current-implementation.md §1/§2+§3)
+
+### 3. Repository / 构建 / 发布基础设施
+
+> 建议的目标树（先做设计审查，确认后生成，不代表仓库当前已有）： ```text kode/ extension/                 # TypeScript VS Code extension and UI src/{activation,client,views,commands,debug,services,plugins}/ crates
+
+- [x] RUST-050 （旧 BUILD-001） 决策记录 ADR-001：LSP stdio 为默认常驻本地/远端通信；扩展协议只处理非标准能力。(PR-003,docs/kode2/adr/ADR-001-stdio-default-transport.md)
+- [x] RUST-051 （旧 BUILD-002） ADR-002：Rust 解析器/查询核心 vs 现有 TS，先用基准决定是否逐模块替换。(PR-003,docs/kode2/adr/ADR-002-benchmark-first-rust-migration.md)
+- [x] RUST-052 （旧 BUILD-003） 建 Cargo workspace，pin toolchain 与依赖，定义 MSRV；启用 cargo fmt/clippy/test。(PR-003:Cargo.toml+rust-toolchain.toml pin 1.99.0/MSRV 1.82,`cargo clippy --workspace --all-targets -- -D warnings` 过)
+- [ ] RUST-053 （旧 BUILD-004） Cargo features 分割 optional engines/runtime/plugin host，减小基础包和启动成本。
+- [ ] RUST-054 （旧 BUILD-005） TS client 统一 transport / reconnection / cancellation / diagnostics 管理。(PR-003 已落最小版 spawn/握手/取消/崩溃重启:src/kodeCoreClient.ts;Provider 接线与 diagnostics 管理留 PR-010)
+- [ ] RUST-055 （旧 BUILD-006） 固定生成的协议 schema；Rust/TS types 从同一规范生成，CI 测兼容。
+- [ ] RUST-056 （旧 BUILD-007） 对多平台目标构建 x64/arm64；单独核查 Windows path/casing 和 macOS 签名/隔离。
+- [ ] RUST-057 （旧 BUILD-008） VSIX 拆分 target-specific 原生包与统一扩展包的策略，明确 platform fallback。
+- [ ] RUST-058 （旧 BUILD-009） VS Code Remote：在 extension host 所在机器选择对应平台 Core，勿错误在 UI 本地启动。
+- [ ] RUST-059 （旧 BUILD-010） Web extension：检测环境后声明有限功能或连接远端 Core，不假装支持本地 native。
+- [ ] RUST-060 （旧 BUILD-011） 发布产物 SHA256/来源审计/SBOM/license scanning，避免可执行文件被替换。
+- [ ] RUST-061 （旧 BUILD-012） 构建缓存、依赖离线策略、可复现版本、CI 并行矩阵。
+- [ ] RUST-062 （旧 BUILD-013） Crash 报告只含脱敏本地 diagnostics；不默认上传源码、路径或日志。
+- [ ] RUST-063 （旧 BUILD-014） Profile release LTO/strip/codegen-units 等选项以测量为准，不盲目最大化编译优化。
+- [ ] RUST-064 （旧 BUILD-015） 定义 Rust/TS 协议的版本不匹配提示、自动重启和回退机制。
+- [ ] RUST-065 （旧 BUILD-016） 插件/缓存/临时文件路径兼容多工作区；清理不删除用户文件。
+
+### 4. Rust Core 运行时、请求调度与资源控制
+- [x] RUST-066 （旧 CORE-001） stdio LSP framed JSON-RPC：Content-Length 正确处理短读/分包/非法帧。(PR-003:crates/kode-protocol FrameDecoder,11 帧Codec单测)
+- [x] RUST-067 （旧 CORE-002） `initialize` 协商 capabilities、project roots、server version、extension capabilities。(PR-003:kode-server initialize 幂等协商,initializationOptions.restartGeneration 对账)
+- [x] RUST-068 （旧 CORE-003） 所有请求 request_id/span_id；日志与 tracing 可串联扩展↔Core↔后台任务。(PR-003 最小版:request_id 数字/字符串保真贯穿响应/取消/日志(stderr 对账),span/tracing 体系留后续)
+- [ ] RUST-069 （旧 CORE-004） 单实例一个 workspace session；多个 root 配隔离 root_id 与受控共享缓存。
+- [ ] RUST-070 （旧 CORE-005） 工作优先级：打开文档小范围交互 > 直接语义查询 > 局部依赖刷新 > 后台首扫 > 大图/SDK/报表。(PR-009 基础版:crates/kode-scheduler 五级优先级+seq 公平序+交互冷却限流,与 TS indexScheduler 对拍;server 装配接线随 provider 单)
+- [ ] RUST-071 （旧 CORE-006） 队列具备公平性和抗饥饿机制；不可永久推迟后台 indexing。(PR-009 基础版:kode-scheduler 同优 FIFO+有界队列淘汰+后台饥饿上限绕过冷却晋升;server 接线随装配单)
+- [ ] RUST-072 （旧 CORE-007） 按 request/document/root 级 cancel token，传播至文件读取、解析、计算、响应封装。(PR-009 基础版:kode-scheduler CancelToken+句柄/批量取消,运行中不中断;向 IO/解析/响应的传播随 server 装配)
+- [ ] RUST-073 （旧 CORE-008） 去重同文件同版本工作；singleflight 共享解析结果；异步结果晚到必须 version check。(PR-009 基础版:kode-scheduler 同文件同版本合并+过期版本丢弃/取消让位+keyed 单例;singleflight 随 provider 接线)
+- [ ] RUST-074 （旧 CORE-009） 首扫后台完成，同时允许 on-demand target parse；冷请求绝不无期限等待全仓。
+- [ ] RUST-075 （旧 CORE-010） CPU pool 对交互请求预留容量；后台 worker 并发有硬上限，避免把 CPU 全核占满。
+- [ ] RUST-076 （旧 CORE-011） IO task 与 CPU task 分离，禁止锁跨 await，审计 contention/priority inversion。
+- [ ] RUST-077 （旧 CORE-012） 大结果限流、分页、stream chunk + cancel；限制 JSON payload 体积。
+- [ ] RUST-078 （旧 CORE-013） 缓存预算配置（resident bytes、LRU、idle aging）与内存压力下主动回收。
+- [ ] RUST-079 （旧 CORE-014） 读写索引时使用一致快照，避免定义和引用来自不同 generation。
+- [ ] RUST-080 （旧 CORE-015） Core crash/restart 自动恢复，服务不可用时最小语法功能继续使用。(PR-003 已落最小版:TS client 崩溃检测+自动 respawn+重握手(10s 窗口 3 次);「最小语法功能兜底」留 Provider 接线时实现)
+- [ ] RUST-081 （旧 CORE-016） 启动探针、健康状态、索引进度、可观察恢复原因。(PR-003 已落 `$/kode/health` 探针(status/pid/uptime/文档摘要/restartGeneration)+ stderr 诊断留痕;索引进度随索引模块)
+- [ ] RUST-082 （旧 CORE-017） 文件通知合并 debounce + max latency；原子替换/rename、delete/create 合并处理。(PR-009 调度决策面:kode-scheduler StormBuffer 风暴合并(同文件并一/最新版本胜出/超限强制落批);didChange 接线与 debounce 参数随 server 单)
+- [ ] RUST-083 （旧 CORE-018） 建立 long-running fuzz/load/stress CI，检测死锁、永久 pending 和取消泄漏。
+
+### 5. VFS / 文件发现 / 文档快照
+- [x] RUST-084 （旧 VFS-001） Path identity：URI、大小写规则、符号链接、Unicode normalization、Windows UNC、WSL 路径语义文档。(PR-004 基础版:crates/kode-vfs/src/uri.rs CanonicalUri——percent 解码/词法消解/盘符大写/非 file scheme 拒绝,语义文档化在模块头;PR-006:crates/kode-root/src/platform.rs 落 UNC/WSL(//wsl$ 与 //wsl.localhost 拆 distro 段)/Win+mac 大小写折叠身份比较,APFS case-sensitive 卷误合为已声明边界;Unicode normalization 与 symlink 的 fs 级 canonicalize 属 IO 专项,跟随模式护栏已落 scan.rs)
+- [x] RUST-085 （旧 VFS-002） root_id + canonical URI + open buffer version 作为查询身份，禁止仅以文件 basename 建索引。(PR-004:crates/kode-vfs/src/store.rs DocumentKey{root_id,uri};RootId::UNROOTED=0 保留)
+- [x] RUST-086 （旧 VFS-003） Open overlay 优先磁盘；didOpen/didChange/didClose 做正确 version transition。(PR-004:DocumentStore open/change/close,version 严格递增,stale 回 VersionConflict::Stale;kode-server 已切到该 store)
+- [x] RUST-087 （旧 VFS-004） 增量文本编辑坐标 UTF-16 ↔ bytes ↔ line/column 精确转换；覆盖 emoji / CRLF。(PR-004:crates/kode-vfs/src/line_index.rs + tests/coordinates.rs 全坐标对拍,样例表见 docs/kode2/pr-004.md)
+- [x] RUST-088 （旧 VFS-005） 文档 rope/line index，避免每个 hover 全文 split 与复制。(PR-004 基础版:LineIndex 行起点表+二分,查询零 split;编辑整段重建,增量 rope 待基准数据)
+- [x] RUST-089 （旧 VFS-006） Disk fingerprint 不只依赖 mtime；必要时 size/hash 做一致性校验。(PR-004 基础版:crates/kode-vfs/src/disk.rs mtime_secs+mtime_nanos+size 三元组;hash 留指纹专项)
+- [x] RUST-090 （旧 VFS-007） 工作区 glob：排除 `.git`, `node_modules`, `.venv`, build, generated 及用户排除目录。(PR-004:crates/kode-vfs/src/walk.rs DEFAULT_EXCLUDED_DIRS + 用户通配追加)
+- [x] RUST-091 （旧 VFS-008） `.def`, `types.xml`, `entities.xml`, `alias.xml`, Python, KBEngine engine source 的独立发现规则。(PR-004 基础版:walk.rs FileKind 路径分类;引擎版本 profile 规则随 PR-005/006)
+- [x] RUST-092 （旧 VFS-009） 资源根顺序显式定义（kbengine.xml/config/环境变量/用户配置/工作区推断），冲突出诊断。(PR-004 基础版:store.rs RootRegistry 注册顺序=优先顺序、最长前缀、overlapping_roots 冲突入口;PR-006:crates/kode-root/src/resolve.rs DiscoveryEngine 落 config/env 前的发现层——约定探针链/深扫描兜底/多根 PlatformRootRegistry 折叠感知归属与冲突入口;config/env 两个来源的接线随 server 装配层)
+- [x] RUST-093 （旧 VFS-010） 遇到网络 FS、不可读取文件、符号链接循环、权限拒绝时安全处理。(PR-004:walk 读失败跳过并计数、目录 symlink 不跟随、深度封顶;disk 非法输入回 Err 不 panic)
+- [x] RUST-094 （旧 VFS-011） Document parse cache 仅保留最新有效快照并支持 recent successful AST、负缓存。(PR-004:crates/kode-vfs/src/parse_cache.rs `ParseCache<V>` + FNV-1a 输入指纹)
+- [x] RUST-095 （旧 VFS-012） 删除/重命名/跨根移动应移除过期 symbol 与旧 diagnostics。(PR-004:store.rs remove/rename/invalidate_root 返回 RemovedDocument 回执 + ParseCache::invalidate;下游清理随 PR-007 接线)
+- [x] RUST-096 （旧 VFS-013） 测试 100 次编辑、保存竞态、重命名过程、未保存变更、工作区根切换。(PR-004:crates/kode-vfs/tests/vfs.rs 五场景;cargo test --workspace 76 passed)
+
+#### 6.1 语法数据结构
+- [ ] RUST-097 （旧 SYNTAX-001） 对 `.def`、`types.xml`、`entities.xml`、`alias.xml` 分别建立 grammar spec 和 invalid fixtures。(进行中:PR-005 已落 invalid fixtures/盲样变异;PR-008 pr-008.md 已定型四类文件的语义面口径(decls/aliases/composition/entities 抽取规则+对拍 golden),正式 grammar spec 文档仍待专单)
+- [x] RUST-098 （旧 SYNTAX-002） 明确 XML 解析保持节点/属性/文本精确 Span：不可以只做值解析丢定位。(PR-005:crates/kode-parser/src/xml.rs 开/闭/内容/名称/属性字节 span,伪注释掩码字节长度不变;证据 docs/kode2/pr-005.md)
+- [x] RUST-099 （旧 SYNTAX-003） CST/AST 支持容错解析（缺闭合标签/临时不完整编辑），诊断精确位置。(PR-005 基础版:截断/坏标签/未闭合结构化诊断 13 码,树前缀不丢,逐字节截断扫描测试;CST 级增量重解析随 PR-007)
+- [ ] RUST-100 （旧 SYNTAX-004） 验证 quick-xml + 自定义位置层 vs rowan CST 的成本与热更新性能；ADR 选型。(PR-005 已裁决 ADR-102:自研零依赖状态机,quick-xml/rowan 未引入;若增量基准证明成瓶颈按 ADR-002 重评)
+- [x] RUST-101 （旧 SYNTAX-005） AST 对未知字段保留以适应引擎分支/扩展，不因未知标签完全失败。(PR-005:extra_tags/extra_sections 保留 + 遗留拼写容忍)
+- [ ] RUST-102 （旧 SYNTAX-006） 大文件解析/增量与缓存基准，禁止任何 debug build 性能结论代替 release。(进行中:PR-005 release bench 基线已立(P50 6µs/大样本 19.9MB/s/增量二扫零重建),热更新性能与增量 rope 基准随 PR-007/009)
+
+#### 6.2 类型与实体语义
+- [ ] RUST-103 （旧 SEM-001） 定义稳定 `SymbolId`、`TypeId`、`EntityId`、`RootId`、`Location`、`Origin`。
+- [x] RUST-104 （旧 SEM-002） 类型 IR：Builtin、Alias、Array、FixedDict、UserType、EntityRef、Component、Optional/Unknown/Error（以真实 KBEngine 支持语义落地）。(基础版:PR-008 crates/kode-types TypeNode 四类节点+六种边;Builtin=21 项引用终点清单,EntityRef/Component 以边种表达,Optional 随 LSP 面)
+- [ ] RUST-105 （旧 SEM-003） 每个类型记录 deklaration/definition/reference/source span、原始 root/version、生成映射。
+- [x] RUST-106 （旧 SEM-004） 解析引擎内建类型与 `types.xml` 自定义类型；alias 链与循环诊断。(PR-008:types.xml 重定向条目(alias 注册)与 alias.xml 条目成 Alias 节点;resolve_alias_chain 环截断 Cycle/终点未注册 Unknown 显式诊断)
+- [ ] RUST-107 （旧 SEM-005） 容器嵌套、数组元素、FixedDict 字段、模块注册、自定义扩展类型解析。(进行中:PR-008 已落数组元素/FixedDict 字段/嵌套 ARRAY of 容器边;模块注册与自定义扩展类型解析随 SEM-008/PY 面)
+- [ ] RUST-108 （旧 SEM-006） `.def` 方法参数、返回类型、Cell/Base/Client methods、Property flags 与调用权限元数据。
+- [ ] RUST-109 （旧 SEM-007） 组件、组件属性、实体继承、分面语义与方法可见性统一定义。(进行中:PR-008 已落实体继承链(环/未注册父显式诊断)与组件/属性类型引用边;分面语义与方法可见性随 LSP 面)
+- [ ] RUST-110 （旧 SEM-008） `entities.xml` 注册映射 → `.def` → Python 实现，跨语言可逆导航。
+- [ ] RUST-111 （旧 SEM-009） 支持多个 root 的同名实体/组件/类型，显式查找顺序和歧义 diagnostics。
+- [ ] RUST-112 （旧 SEM-010） Python base/cell/client 文件与实体 `.def`、组件绑定区分、重复定义检测。
+- [ ] RUST-113 （旧 SEM-011） 引擎关键 API、回调、内建对象、常量作为版本化 metadata layer，外部版本可覆盖。
+- [ ] RUST-114 （旧 SEM-012） symbol 名称重命名策略：用户代码可改，内建和生成代码不可直接改；冲突预检查。
+- [x] RUST-115 （旧 SEM-013） 类型解析错误使用 Unknown/Error 并保留理由，不借用任意类型掩盖缺失。(PR-008:TypeClass::Unknown + ChainStatus::Unknown/Missing 均以终端名/该级名为理由,不冒充内建)
+- [ ] RUST-116 （旧 SEM-014） 建立语义 fixture 金标数据，跨 Rust/TS 老逻辑差异必须人工分类审查。
+- [ ] RUST-117 （旧 SEM-015） 引擎版本差异经 capability profile 决定，不用 `if version` 散落调用方。
+
+### 7. 增量索引、依赖图和缓存
+- [x] RUST-118 （旧 IDX-001） 明确四层：文件目录索引、语法索引、符号/类型索引、跨文件关系图。(基础版:PR-007 crates/kode-index 符号/类型层+跨文件反向依赖;文件目录层=kode-vfs walk/store,语法层=kode-parser;证据 docs/kode2/pr-007.md)
+- [x] RUST-119 （旧 IDX-002） DAG 边类型：declaration/import/entity registration/type alias/component/inheritance/method binding/generation dependency。(基础版:PR-007 类型引用/Parent/组件/接口/entities 注册边(parser RefSet)+实体继承边;import/generation 边随 PR-008/009)
+- [x] RUST-120 （旧 IDX-003） 区分文本改动、signature 改动、body-only 改动、声明删除；相应差异化失效。(基础版:PR-005 dep.rs+PR-007 指纹级零重建;文本/签名/正文细分随 CST 增量,PR-009 面)
+- [x] RUST-121 （旧 IDX-004） AST 和语义 query 采用 memoization + fingerprint + revision；测量是否选 Salsa。(基础版:PR-007 复用 VFS-011 ParseCache+FNV-1a 指纹+generation;ADR-101 Salsa 选型仍未裁决,不预设)
+- [x] RUST-122 （旧 IDX-005） 对循环依赖与 SCC 计算提供终止保障和精确诊断。(基础版:PR-005 resolve_parent_chain 环截断诊断+PR-007 索引侧 entity_chain 互为 Parent 有限步终止)
+- [x] RUST-123 （旧 IDX-006） 永久索引结构支持定向 symbol lookup 与 reverse reference lookup；杜绝每次 O(workspace files) 查询。(基础版:PR-007 名称倒排 BTreeMap+dependents_of 反向依赖+前缀 workspace_symbols 有序范围扫描)
+- [x] RUST-124 （旧 IDX-007） 索引更新批量提交/原子 generation，读取并发不读到一半的关联。(基础版:PR-007 update_batch 全批应用后一次 bump,零改动空批不 bump)
+- [ ] RUST-125 （旧 IDX-008） 非活跃文件懒加载；当前打开文件优先 warm；初扫扫描优先级按资源根/最近文件调整。
+- [ ] RUST-126 （旧 IDX-009） 磁盘缓存 key 包含 Core schema、engine profile、root identity、workspace config、解析器版本。
+- [ ] RUST-127 （旧 IDX-010） 缓存崩溃写入用临时文件+原子 rename/WAL 等，损坏可清理重建。
+- [ ] RUST-128 （旧 IDX-011） 持久化格式候选 SQLite/redb/自定义二进制；先做 cold start、读写放大、文件数基准。
+- [ ] RUST-129 （旧 IDX-012） 内存索引结构评测紧凑字符串 interning / arenas / small vectors，防止 50k 文件内存爆炸。
+- [x] RUST-130 （旧 IDX-013） 热更新回归须断言“仅影响相关节点”和“文件读取/解析次数”，而非只看结果正确。(基础版:PR-007 rebuild 计数断言:6 文件首扫6/二扫0/单改1;200 文件 bench 同构,证据 docs/kode2/pr-007.md)
+- [x] RUST-131 （旧 IDX-014） 文件 rename/delete 后引用、diagnostics、缓存和生成源映射自动清理。(基础版:PR-007 remove/rename 连带清符号/倒排/反向依赖/继承边/解析缓存;diagnostics 与生成源映射随对应模块接线)
+- [x] RUST-132 （旧 IDX-015） 对 root 增删及 engine profile 切换使用 scoped invalidation，不总是全仓重算。(基础版:PR-007 invalidate_root 只触该根文件;profile 切换入口随 PR-006 root 模型接线)
+- [ ] RUST-133 （旧 IDX-016） 记录索引缺口（unindexed / partial / stale），按需补齐，避免误报无法找到定义。
+
+### 8. LSP 与 IDE 编辑体验
+- [ ] RUST-134 （旧 LSP-001） Completion（声明、类型、实体属性/方法、RPC 参数、组件、内建 API）共享语义查询。
+- [ ] RUST-135 （旧 LSP-002） Completion 支持 resolve 延迟补详情，snippet、sortText、filterText、文档与来源。
+- [ ] RUST-136 （旧 LSP-003） Hover 展示完整类型、来源、可用分面、版本与注释，严禁阻塞等待全局索引。(基础版:PR-010 kode-server hover 响应链(定位/签名/继承链+成员展开,def 视图零 IO 应答;分面可见性/版本/注释随语义面扩展;证据 docs/kode2/pr-010.md)
+- [ ] RUST-137 （旧 LSP-004） Definition / Declaration / TypeDefinition：`.def` ↔ `types.xml` ↔ `.py` ↔ 引擎源码。
+- [ ] RUST-138 （旧 LSP-005） References：跨 root 实体/方法/组件/类型，区分语法同名和真实语义引用。
+- [ ] RUST-139 （旧 LSP-006） DocumentSymbol / WorkspaceSymbol 提供快速搜索与稳定排序。
+- [ ] RUST-140 （旧 LSP-007） SignatureHelp / parameter hints 使用类型 IR，不单独实现一套解析。
+- [ ] RUST-141 （旧 LSP-008） Rename 全工作区可编辑范围分析；合成 preview，避免重命名错误同名符号。
+- [ ] RUST-142 （旧 LSP-009） Diagnostics 分 local syntax / semantic / engine compatibility / runtime config，独立节流。
+- [ ] RUST-143 （旧 LSP-010） CodeAction 包含创建缺失定义、修复参数类型、定位冲突、调整 include/registry。
+- [ ] RUST-144 （旧 LSP-011） InlayHints (RPC 参数名/类型) 与 SemanticTokens；评测增量 token 更新成本。
+- [ ] RUST-145 （旧 LSP-012） CallHierarchy、TypeHierarchy、Entity dependency navigation 可借 LSP 标准能力。
+- [ ] RUST-146 （旧 LSP-013） Outline / breadcrumbs / folding / linked editing 不触发另一次完整 parse。
+- [ ] RUST-147 （旧 LSP-014） 无 KBEngine 工作区的普通 Python 文件不得受到 Kode 语义劣化影响。
+- [ ] RUST-148 （旧 LSP-015） Pylance/Pyright 等 Python 语言服务间职责与冲突矩阵；禁止重复 diagnostics、重复 completion 轰炸。
+- [ ] RUST-149 （旧 LSP-016） 所有 LSP 功能测 stale response、cancel、cold workspace、workspace root 变化和 Core 重启。
+- [ ] RUST-150 （旧 LSP-017） UI 大结果 views 采用虚拟列表和延迟节点加载，避免 Webview 一次渲染万级节点。
+
+### 9. Python 分析与 typings（关键产品能力）
+- [ ] RUST-151 （旧 PY-001） 明确 Python version、语法方言与 KBEngine 引擎支持版本；以 workspace profile 区分。
+- [ ] RUST-152 （旧 PY-002） 对接可复用的 Python AST/语言服务分析能力；如需 Rust parser，先验证覆盖率与来源定位。
+- [ ] RUST-153 （旧 PY-003） Python class / method / function / variable 分层 symbol 索引与 importer map。
+- [ ] RUST-154 （旧 PY-004） `entities.xml + *.def + types.xml + *.py` 映射在同一语义图中保留 sources。
+- [ ] RUST-155 （旧 PY-005） 自定义 type（包括被 `types.xml` 引用的用户定义）生成有效 `.pyi`。
+- [ ] RUST-156 （旧 PY-006） 所有 `.def` entity、组件及 Cell/Base/Client API 生成相应 `.pyi`，保留精确参数与容器类型。
+- [ ] RUST-157 （旧 PY-007） 所有项目 Python 文件的 typings 策略：需要澄清是解析输出镜像、类型增强或导出 .pyi；先写产品 spec，禁止以空壳 `Any` 作为完整实现。
+- [ ] RUST-158 （旧 PY-008） 为未注解 Python 签名按可置信信息推断；未知保留 `Any`/`Unknown` 并输出覆盖率与原因。
+- [ ] RUST-159 （旧 PY-009） KBEngine 引擎 builtin API `.pyi` 按版本/commit 生成，支持用户引擎分支覆盖。
+- [ ] RUST-160 （旧 PY-010） 生成 `.pyi` 源映射记录生成符号→原文件 URI/span/root，含多源汇聚优先级。
+- [ ] RUST-161 （旧 PY-011） `.pyi` 跳转用户定义时配置拦截策略：从 stub 逆向跳源；适配 Python LS 的定义规则。
+- [ ] RUST-162 （旧 PY-012） `.pyi` 输出目录隔离、`pyrightconfig` / analysis.extraPaths 集成，禁止不经确认覆盖现有配置。
+- [ ] RUST-163 （旧 PY-013） 增量生成仅刷新受影响 stubs；输出原子写入、不改未受影响文件 mtime。
+- [ ] RUST-164 （旧 PY-014） 生成稳定排序/格式，避免无意义 diff；输出 manifest/hash/源映射/schema 版本。
+- [ ] RUST-165 （旧 PY-015） import 循环、自定义 alias、容器递归、同名类、重名实体和重复 root 测试。
+- [ ] RUST-166 （旧 PY-016） 生成输出目录默认 `.gitignore` 建议而非擅自编辑；manifest 标注 Generated，不允许重命名覆盖用户自写 stubs。
+- [ ] RUST-167 （旧 PY-017） 快速预览 API 类型树、typing coverage、缺失映射和来源跳转。
+- [ ] RUST-168 （旧 PY-018） 开启/关闭 typings 时测试语言服务器行为、索引失效与诊断收敛。
+- [ ] RUST-169 （旧 PY-019） 类型生成器作为 API provider 可扩展，但官方核心类型 IR 是唯一数据源。
+- [ ] RUST-170 （旧 PY-020） 对 Pylance/Pyright 分别用真实环境验证导航和 stub 优先级，不凭猜测宣称跳源成功。
+
+### 10. KBEngine 工程、引擎版本与专业工具链
+- [ ] RUST-171 （旧 KBE-001） workspace discovery：从资源目录、环境变量、配置、源码结构识别 KBEngine 工程，明确优先级。
+- [ ] RUST-172 （旧 KBE-002） 项目向导含引擎版本、资源 roots、脚本环境、component paths、server startup config。
+- [ ] RUST-173 （旧 KBE-003） Engine profile：官方版本、fork、commit、特性探测能力；unknown 时不伪造版本。
+- [ ] RUST-174 （旧 KBE-004） API metadata 与真实 engine source 绑定，支持导航到 engine C++/Python 定义和 version constraints。
+- [ ] RUST-175 （旧 KBE-005） 校验 entities.xml 注册完整性，`.def`/Python 配对、组件缺失、属性与方法一致性。
+- [ ] RUST-176 （旧 KBE-006） KBEngine RPC 方法参数与序列化类型兼容性检查，指出 client/base/cell 分面。
+- [ ] RUST-177 （旧 KBE-007） 检查别名循环、类型重定义、不可序列化字段、未知类型和覆盖规则。
+- [ ] RUST-178 （旧 KBE-008） 实体关系浏览器：实体—组件—继承—引用双向探索和懒加载图谱。
+- [ ] RUST-179 （旧 KBE-009） 创建实体/组件/RPC/数据类型的向导，预览实际受改文件并允许撤销。
+- [ ] RUST-180 （旧 KBE-010） 配置合并视图（来源、优先级、冲突、最终值）不阻塞语言请求。
+- [ ] RUST-181 （旧 KBE-011） 数据库 schema 视图和 drift 检查与语义 Core 相连，但 DB driver/SQL 操作走独立隔离服务。
+- [ ] RUST-182 （旧 KBE-012） Debug Adapter 边界：Python debug、远端 attach、engine session 生命周期，不让 Core 兼任 debugger。
+- [ ] RUST-183 （旧 KBE-013） 运行时 Process/Telnet/Watcher/Log 的 service adapter 分离、权限校验、断线重连、资源清理。
+- [ ] RUST-184 （旧 KBE-014） Space/Watcher 按真实引擎协议实现：协议未验证前不得宣称支持 mutation/subscription。
+- [ ] RUST-185 （旧 KBE-015） 集成示例项目和真实 engine fixture；与 KBEngine forks 差异测试。
+- [ ] RUST-186 （旧 KBE-016） Multi-workspace 子项目和多资源 root 的工程模型；显式配置文件示例。
+- [ ] RUST-187 （旧 KBE-017） Project Doctor：缺少引擎路径、Python 环境、错误 root 顺序、重复实体、索引状态。
+- [ ] RUST-188 （旧 KBE-018） 保留现有 dashboard/monitor/log viewer 能力，迁移前后做功能 parity 表。
+
+### 11. 后台执行器、命令与日志（独立于 LSP）
+- [ ] RUST-189 （旧 EXEC-001） 抽象 CommandDefinition / RunSession / ProcessHandle / TerminalHandle，不同执行语义各有适配器。
+- [ ] RUST-190 （旧 EXEC-002） 提供“复用运行会话”与“每次隔离进程”两种模式，按任务性质选择。
+- [ ] RUST-191 （旧 EXEC-003） Python REPL 常驻 worker 用 JSON-RPC/有界消息、心跳、取消和异常恢复，绝不默认跨任务污染解释器状态。
+- [ ] RUST-192 （旧 EXEC-004） 交互式程序使用 VS Code terminal/Pseudoterminal，后台批处理使用可见输出面板和 session 管理。
+- [ ] RUST-193 （旧 EXEC-005） 后台执行时不弹出终端（如用户选择），但要清楚显示进程状态、退出码、可取消/可查看日志。
+- [ ] RUST-194 （旧 EXEC-006） 日志统一事件模型：time、source、level、session、correlation_id、structured fields、line text。
+- [ ] RUST-195 （旧 EXEC-007） stdout/stderr/file/telnet/remote log 统一入口，保留流来源；去重仅在明确规则下执行。
+- [ ] RUST-196 （旧 EXEC-008） 日志聚合 ring buffer、流式过滤、磁盘轮转、文件 tail；避免把全部日志导入 Webview。
+- [ ] RUST-197 （旧 EXEC-009） 大日志 viewer 分页/virtualization/backpressure；搜索和导出可取消。
+- [ ] RUST-198 （旧 EXEC-010） 执行命令必须遵守 workspace trust、用户确认、机密遮蔽；默认不自动运行项目脚本。
+- [ ] RUST-199 （旧 EXEC-011） Windows/Linux/macOS 环境变量、shell 引号、编码和终止进程树的测试。
+- [ ] RUST-200 （旧 EXEC-012） Session 重用与纯进程启动建立基准，准确分辨“terminal 窗口”与“Python 冷启动”耗时。
+- [ ] RUST-201 （旧 EXEC-013） 诊断命令 hangs、空闲 session、进程退出、pipe 阻塞和输出丢失。
+
+#### 12.1 扩展层级
+
+> 1. Workspace declarative pack：schema/API metadata、模板、诊断规则描述符（无代码执行）。 2. TypeScript VS Code-side extension：UI、命令、导航面板，通过 VS Code extension API 及 Kode public API 协作。 3. Out-of-proces
+
+- [ ] RUST-202 （旧 PLUG-001） 定义 `kode-plugin.json` schema：id/version/apiVersion/entrypoint/capabilities/contributions/permissions。
+- [ ] RUST-203 （旧 PLUG-002） 扩展点：type provider、engine-version provider、diagnostic rule、code action、generator、project detector、template、runtime adapter、view contribution。
+- [ ] RUST-204 （旧 PLUG-003） 插件只能请求 QueryService / TypeService / ProjectService / ArtifactService 的稳定 DTO，不暴露 mutable Rust graph。
+- [ ] RUST-205 （旧 PLUG-004） 为 CPU、超时、内存、RPC 输出大小、并发配额制定 policy，阻止慢插件拖垮语言请求。
+- [ ] RUST-206 （旧 PLUG-005） 安全隔离：默认 trusted built-in；第三方需要显式安装/授权，声明文件/网络/执行能力。
+- [ ] RUST-207 （旧 PLUG-006） Plugin host 崩溃、挂起、协议不兼容时自动停用插件并保留核心功能。
+- [ ] RUST-208 （旧 PLUG-007） 插件贡献顺序显式：builtin < engine profile < workspace override（示例，最终按 ADR 审核）；冲突显示来源。
+- [ ] RUST-209 （旧 PLUG-008） 插件 API SemVer、版本协商、弃用窗口、兼容性检查。
+- [ ] RUST-210 （旧 PLUG-009） 配置隔离及密钥在 SecretStorage，禁止写插件 metadata 或 trace。
+- [ ] RUST-211 （旧 PLUG-010） 诊断规则执行结果以 file version/generation 固定，废弃过期插件结果。
+- [ ] RUST-212 （旧 PLUG-011） generator 支持 dry-run/preview、权限列表、atomic write 和冲突合并。
+- [ ] RUST-213 （旧 PLUG-012） 测试最小 sample 插件：新增自定义类型、诊断、生成器、version profile 四项。
+- [ ] RUST-214 （旧 PLUG-013） 独立插件测试工具与 manifest validator，例子/文档/教程。
+- [ ] RUST-215 （旧 PLUG-014） 插件市场属于远期选项，第一版优先稳定 SDK 与本地安装能力。
+- [ ] RUST-216 （旧 PLUG-015） 对“Python 插件”采用独立 Python worker RPC，不把 CPython 嵌入语言 Core；验证启动/内存成本。
+- [ ] RUST-217 （旧 PLUG-016） 插件基准：安装 0/5/20 插件下 hover/definition 尾延迟不超配额，恶意死循环隔离测试。
+
+### 13. UI / UX / 可观测与故障恢复
+- [ ] RUST-218 （旧 UI-001） Project Explorer lazy-load；实体、组件、类型、脚本视图共享 Core 索引。
+- [ ] RUST-219 （旧 UI-002） 状态栏：Core ready/indexing/partial/error、engine profile、resource root、索引进度。
+- [ ] RUST-220 （旧 UI-003） 专业性能面板：队列、缓存、索引生成、P95/P99、主要慢请求及处理建议。
+- [ ] RUST-221 （旧 UI-004） Core 重启功能、清缓存功能（展示范围/影响）、export diagnostics；勿要求用户清空 workspace 才能修。
+- [ ] RUST-222 （旧 UI-005） 所有非即时能力使用 progress + cancel，避免「一直转圈」。
+- [ ] RUST-223 （旧 UI-006） 生成 typings 的预览/路径/来源图/覆盖率与冲突说明。
+- [ ] RUST-224 （旧 UI-007） 类型信息 UI 显示 Cell/Base/Client 上下文与版本差异，明确 unknown。
+- [ ] RUST-225 （旧 UI-008） Graph view 小图即时渲染，大图按需加载；Webview CSP 禁用远程 CDN。
+- [ ] RUST-226 （旧 UI-009） 远端不可用、未安装 Core、协议不匹配、索引异常的可理解错误与修复操作。
+- [ ] RUST-227 （旧 UI-010） 多根工作区用户可选择 active project/root，并在跨根跳转时展示完整归属。
+- [ ] RUST-228 （旧 UI-011） 设置分组 performance/semantic/python/typings/engine/runtime/plugins，兼顾默认简洁和高级选项。
+- [ ] RUST-229 （旧 UI-012） 记录用户可禁用重扫描的配置，但禁用后必须标明结果可能部分不可用。
+
+### 14. 测试、正确性、安全与发布门禁
+- [ ] RUST-230 （旧 QA-001） Unit: parser errors, byte spans, UTF-16 position, alias cycles, entity facets, source map。
+- [ ] RUST-231 （旧 QA-002） Property-based/fuzz: XML/DEF invalid input never panic/hang；path canonicalization 无碰撞。
+- [ ] RUST-232 （旧 QA-003） Golden: 基于真实引擎 fixtures 的 hover/definition/diagnostics/typings snapshot。
+- [ ] RUST-233 （旧 QA-004） Differential: 对旧 TS 输出与新 Rust 输出逐项差异审查，已知旧 bug 单独定标。
+- [ ] RUST-234 （旧 QA-005） Integration: VS Code Extension Host + native server e2e，对比用户可见结果。
+- [ ] RUST-235 （旧 QA-006） Python LS interoperability：Pylance / Pyright、不同 Python 环境和 .pyi 优先级。
+- [ ] RUST-236 （旧 QA-007） Workspace 兼容：Windows path、Linux case、macOS case-insensitive、WSL、SSH、containers。
+- [ ] RUST-237 （旧 QA-008） Engine 兼容：官方支持版本 + 用户 fork，profile 未知降级。
+- [ ] RUST-238 （旧 QA-009） Security：workspace trust、命令注入、路径穿越、生成文件覆盖、恶意插件、高频日志敏感数据。
+- [ ] RUST-239 （旧 QA-010） Resilience：Core kill、client disconnect、损坏缓存、文件 watcher flood、磁盘满、权限拒绝。
+- [ ] RUST-240 （旧 QA-011） Memory & race：1h 编辑负载、循环增删根、索引与 diagnostics 并发、高频 restart。
+- [ ] RUST-241 （旧 QA-012） Protocol compatibility：旧客户端/新 Core、新客户端/旧 Core 均有正确握手/错误。
+- [ ] RUST-242 （旧 QA-013） 性能发布门槛同时检测 P95、P99、max、CPU、RAM、index correctness。
+- [ ] RUST-243 （旧 QA-014） 生成覆盖率达到门槛前不得标“所有 Python 文件类型完整生成”。
+- [ ] RUST-244 （旧 QA-015） 每个修复 PR 附复现脚本、测试证据、profile/perf delta、回退计划。
+- [ ] RUST-245 （旧 QA-016） 大型功能启用 feature flag，只有 parity/perf 完成后再移除旧实现。
+- [ ] RUST-246 （旧 QA-017） 自动发布必须遵循现有仓库的手动发布规则，避免重构顺手改变 release governance。
+
+#### Phase 0 — 基线与冻结（先于任何重写）
+- [ ] RUST-247 （旧 PH0-01） 完成 AUDIT-001..015 与 PERF-001..016；生成现状架构图、基准报告、迁移表。(部分：AUDIT-001..015 已齐（见 §2 取证节，current-state.md+CSV）；PERF 余量=006..014 量测面+016 decisions.md)
+- [ ] RUST-248 （旧 PH0-02） 锁定旧功能 parity fixture 和旧 TODO 完成状态；输出 release gate。
+- [ ] RUST-249 （旧 PH0-GATE） 无完整基准和正确性 fixture **禁止进入 Rust 替换阶段**。
+
+#### Phase 1 — Core 骨架（最小垂直切片）
+- [ ] RUST-250 （旧 PH1-01） 实现 BUILD-001..016、CORE-001..004、CORE-015..016。(进行中:PR-003 已落 BUILD-001/002/003、CORE-001/002/003、CORE-015/016 最小版,证据见 docs/kode2/pr-003.md;余项随 PR-004..007)
+- [x] RUST-251 （旧 PH1-02） Rust 服务与 TS client 握手、打开/编辑/关闭文件、cancel、健康状态 e2e。(PR-003:tests/kodeCoreE2E.test.ts 真实 kode-server 二进制,4 用例)
+- [ ] RUST-252 （旧 PH1-03） 实现 VFS 基础；以单文件 `.def` Hover 或 Definition 做真实垂直切片。(进行中:PR-004 已落 VFS-001..013 基础版+kode-server 文档同步对接,证据 docs/kode2/pr-004.md;PR-010 已落 Hover 垂直切片(响应链+TS 面对拍 100%),Definition 随后续单)
+- [ ] RUST-253 （旧 PH1-GATE） Rust 与旧实现同场景一致；无长任务阻塞 VS Code；跨平台可启动。
+
+#### Phase 2 — 解析与索引（最大性能收益路径）
+- [ ] RUST-254 （旧 PH2-01） 完成 VFS、SYNTAX 与 IDX 的基础版本，先 `.def`/types.xml/entities.xml/alias.xml。
+- [ ] RUST-255 （旧 PH2-02） 文件监听与增量失效；运行 10k fixture，不出现全仓 rebuild 风暴。
+- [ ] RUST-256 （旧 PH2-03） 迁移 hover/definition/diagnostics 到 Rust 双轨模式；记录 latency correctness 差异。(口径：按 2026-11-08 服务轨道「直接切 rust」易帜——双轨 parity 对拍是迁移期安全网与验收手段，TS 兜底非长期态；hover 已有 PR-010 基础版对拍)
+- [ ] RUST-257 （旧 PH2-GATE） 同输入与旧行为比对完成，增量命中率与尾延迟过关，无严重语义回归。
+
+#### Phase 3 — 专业 KBEngine 语义和完整 LSP
+- [ ] RUST-258 （旧 PH3-01） 完成 SEM、LSP；实体/组件/继承/Cell/Base/Client 信息统一。
+- [ ] RUST-259 （旧 PH3-02） 支持多 root 同名，引用、rename、代码操作与 CallHierarchy。
+- [ ] RUST-260 （旧 PH3-GATE） 冷启动/热缓存/并发编辑/跨 root 场景全部性能和正确性过关。
+
+#### Phase 4 — Python 与 typings
+- [ ] RUST-261 （旧 PH4-01） 完成 PY-001..020；与现有 Python LS 共同工作。
+- [ ] RUST-262 （旧 PH4-02） types.xml 自定义类型、用户 Python 文件、引擎 API stubs、生成→源导航全流程。
+- [ ] RUST-263 （旧 PH4-GATE） 在实际 Pylance/Pyright 环境验证类型提示与源跳转，不只测输出文本。
+
+#### Phase 5 — KBEngine 专业 IDE
+- [ ] RUST-264 （旧 PH5-01） 实现 KBE-001..018、UI-001..012，保持已有工具能力。
+- [ ] RUST-265 （旧 PH5-02） 将运行时协议/DB/debug/log 控制拆成独立服务，避免影响 LSP latency。
+- [ ] RUST-266 （旧 PH5-02A） 将 HR-PR-02..07 纳入专业 IDE 验收，先行交付的 TS 功能保持兼容。(等接线批：HR-PR-02..08 装配接线批进行中（06 在途），收官后按本行验收；行文写 02..07，实际巡检单范围=02..08)
+- [ ] RUST-267 （旧 PH5-GATE） 界面功能 parity 与多个真实引擎工程测试通过。
+
+#### Phase 6 — 插件与执行管理
+- [ ] RUST-268 （旧 PH6-01） 实现 PLUG-001..016、EXEC-001..013，提供 sample 插件和 SDK。
+- [ ] RUST-269 （旧 PH6-02） Python plugin 作为隔离进程 PoC，通过延迟与安全测试再正式发布。
+- [ ] RUST-270 （旧 PH6-GATE） 三方插件负载不会导致核心 language latency 显著劣化；权限隔离有效。
+
+#### Phase 7 — 稳定发布与去旧
+- [ ] RUST-271 （旧 PH7-01） 运行 QA-001..017 全套、48h 真实项目试用、跨平台打包与文档。
+- [ ] RUST-272 （旧 PH7-02） 仅在双轨功能 parity 和回退措施成熟后删除旧 TS 全仓解析逻辑。
+- [ ] RUST-273 （旧 PH7-03） 文档整理、版本说明、迁移配置、已知限制与性能对照报告。
+- [ ] RUST-274 （旧 PH7-04） 完成 HR-DOD-001..010 与 HR-PR-09 的安全、性能和状态正确性门禁。(进行中:HR-PR-09 组合门禁套件已落=风暴/过期/断网/安全四门+缩放 soak 见 §19 HR-PR-09 行;DOD-004 连续保存不重复请求/旧回执不冒当前=套件风暴+过期门纯核级证据,装配级验收随接线批)
+- [ ] RUST-275 （旧 PH7-GATE） 真实大型项目性能达标、无未解决阻塞缺陷，才发布稳定 2.0。
+
+### 17. 建议的首批 12 个 PR（严格顺序，避免大爆炸重构）
+- [ ] RUST-276 （旧 PR-001） `audit/perf-baseline`：现有入口/四主请求调用链、profile、fixtures、基线报告；不改行为。(对账：基线报告已由 KODE-PERF-007 实质落=`aa3cf8c` docs/perf/2026-11-04-v02-baseline.md+provider 级 bench（四主请求×三场景）；调用链取证已由 AUDIT-007/current-state.md 落；余量=PERF-002..004 fixture 矩阵补齐)
+- [ ] RUST-277 （旧 PR-002） `fix/ts-hotpath`：将旧 TODO A2/A3 已识别的明显阻塞路径止血并提供测量证据。(对账：A2/A3 阻塞路径已由主 todo A 车道 PR2/PR3 收官实质止血（7d8736b/2aca694，current-state.md §AUDIT-014 亦判定本行应改向消费基线 §6 余量清单），不另起 TS 止血 PR)
+- [x] RUST-278 （旧 PR-003） `infra/rust-workspace`：Cargo workspace + binary packaging + protocol handshake + e2e。(落地:crates/kode-{protocol,server}+rust-toolchain pin+ADR-001/002+src/kodeCoreClient.ts;证据 docs/kode2/pr-003.md)
+- [x] RUST-279 （旧 PR-004） `core/vfs-snapshot`：overlay + incremental edit + canonical paths + version tests。(落地:crates/kode-vfs+kode-server 文档同步对接+协议 Position/Range DTO;证据 docs/kode2/pr-004.md)
+- [x] RUST-280 （旧 PR-005） `core/def-xml-parser`：精确源位置与错误恢复 + fuzz + parser benchmarks。(落地:crates/kode-parser(自研零依赖字节级 XML 状态机,ADR-102)+ 对拍 golden 双向门禁(TS 28/28=100%)+ 增量零重建注册表 + release bench(P50 6µs/大样本 19.9MB/s)+ 盲样 1149 例 0 panic;fuzz 纲要随 fuzz 单;证据 docs/kode2/pr-005.md)
+- [x] RUST-281 （旧 PR-006） `core/root-discovery`：多 resource root / engine profile / URI scopes。(落地:crates/kode-root(ROOT-001..015 基础版:优先级链显式配置>记忆>约定>有界深扫描+宁缺勿猜;平台路径规则 Win 折叠/mac 折叠声明/Linux 敏感/WSL UNC 拆段;submodule/vendored 边界+mount/symlink 环护栏+别名身份+敏感目录台账;引擎配置规则自 TS workspaceDiscovery 移植并逐条 file:line 证据化;UR+Path 双支持;诊断仅新启;TS 对拍 golden 双向门禁 6 树 48/48 字段=100%,tests/kodeRootParity.test.ts;证据 docs/kode2/pr-006.md)
+- [x] RUST-282 （旧 PR-007） `core/symbol-index`：文件/符号索引、定向查找、generation 与删除清理。(落地:crates/kode-index(IDX-001..007+013/014/015 基础版,六类符号实体/属性/方法/类型/别名/组件,名称倒排+文件级增量复用 ParseCache 指纹零重建+原子 generation)+ 符号对拍 golden 双向门禁(TS 90/90=100%)+ 增量 rebuild 实测(200 文件首扫200/二扫0/单改1);证据 docs/kode2/pr-007.md)
+- [x] RUST-283 （旧 PR-008） `core/type-graph`：types.xml、alias、entity facets、component、inheritance。(落地:crates/kode-types(书命名 kode-semantic;SEM-002/004/005/007/013 基础版:类型图 IR+六种边+别名链/继承链/全图三色 DFS 环检测,有限步显式诊断)+ 类型面对拍 golden 双向门禁(文件面 28/28+图级 37/37=100%,TS 用现有 defParser/compositionRoots 复算;按 ARCH-012 不做性能对比);证据 docs/kode2/pr-008.md)
+- [x] RUST-284 （旧 PR-009） `core/invalidation-scheduler`：reverse DAG、任务优先级与 cancel。(落地:crates/kode-scheduler(SCHED-001..021 内部清单=§4 CORE-005..008/017+§7 IDX-003/013/015 调度面基础版,书无 SCHED 编号已如实映射;失效图文件→声明名→反向受影响集+分批重建+风暴合并+五级优先级+取消+有界队列+暂停恢复+崩溃恢复台账+指标)+ 调度面对拍 golden 双向门禁(10 场景,TS 真实 IndexScheduler 复算 148 字段=100%,tests/kodeSchedulerParity.test.ts);证据 docs/kode2/pr-009.md)
+- [ ] RUST-285 （旧 PR-010） `lsp/definition-hover`：首批 TS→Rust provider 双轨对比，逐步切流。(基础版落地:kode-server hover 响应链(定位→文档→签名→继承成员,textDocument/hover+hoverProvider capability+didOpen/Change/Close 语料视图联动)+对拍 golden 双向门禁(TS defParser/compositionRoots/defChain 复算:文件面 28/28+悬停面 90/90=100%)+环截断/缺父/UTF-16 词提取单测;Provider 切流随后续单;证据 docs/kode2/pr-010.md)
+- [x] RUST-286 （旧 PR-011） `lsp/completion-diagnostics`：版本化发布与可取消查询。(基础版落地:kode-server textDocument/completion 请求链(URI→position→上下文→条目集:实体/属性/方法分面/类型/别名/继承成员)+completionProvider capability+可取消(-32800)+版本化应答(overlay 严格 version 转移)+对拍 golden 双向门禁(TS defParser/defChain 复算:文件面 28/28+场景面 205/205=100%,671 条目/继承 13)+环截断/UTF-16/遮蔽单测;TS provider 零改动不切流,切流属 PR-012;证据 docs/kode2/pr-011.md)
+- [x] RUST-287 （旧 PR-012） `perf/gate-phase2`：真实大型数据压力测试和性能/正确性验收，不通过禁止继续扩大迁移。(gate2 61fe132 总判定 FAIL（G-C 201×1 别名面差）→ 修复 5db0a33 → gate3 复判 PASS 五门全绿: compDiverge 201→0、悬停双轮 404/404、双轨 P95<1ms、burst 0 错/RSS 4.97MB; 正本 pr-012-gate2-run.txt + pr-012-gate3-run.txt + pr-012-perf-gate.md 复判节; 剩余差异 §8 设计边界（.py 面归 PH1）; 扩大迁移禁止解除, 切流仍受 pr-012 §4 前置清单约束, serveFromRust 恒 false 不变)
+
+### 18. 关键架构决策待验证清单（不提前拍脑袋）
+- [ ] RUST-288 （旧 ADR-101） Salsa 与自研 revision query engine：根据 query DAG 大小、内存、工程维护成本决定。
+- [ ] RUST-289 （旧 ADR-102） quick-xml + spans / rowan / tree-sitter：根据错误恢复、源映射、增量表现决定。
+- [ ] RUST-290 （旧 ADR-103） SQLite vs redb vs mmap cache：用 2k/10k/50k 数据集比较 cold startup/写放大。
+- [ ] RUST-291 （旧 ADR-104） 标准 LSP vs custom RPC：标准编辑器功能优先 LSP，专用交互使用命名空间协议。
+- [ ] RUST-292 （旧 ADR-105） Python engine AST/LS 方案：优先复用成熟 Python 工具的行为，避免维护第二套完整 Python LS。
+- [ ] RUST-293 （旧 ADR-106） Rust plugin runtime：进程隔离先于 WASM 嵌入；Python provider out-of-process PoC。
+- [ ] RUST-294 （旧 ADR-107） 用户工作区引擎源码 metadata：自动索引范围与成本预算，允许仅需的 symbols。
+- [ ] RUST-295 （旧 ADR-108） 插件规则优先级与文件写权限；明确可解释来源和冲突机制。
+- [ ] RUST-296 （旧 ADR-109） 同名多根实体的判定/排序/冲突语义，由 fixture 和实际引擎加载行为确定。
+- [ ] RUST-297 （旧 ADR-110） `.pyi` navigation source mapping 接入方式：Pylance/Pyright 限制需要实测。
+
+#### 19.2 现状审计及兼容迁移（HR-AUDIT）
+- [x] RUST-298 （旧 HR-AUDIT-001） 固定当前 commit SHA；核对 `package.json` commands/config/views/keybindings、README 和旧 todo 的 HTTP 热更新说明，建立逐项事实表。(HR-PR-01,6934c63a,锚定 SHA 6934c63a;§HR-AUDIT-001 事实表:package.json:846-968 命令/2058-2098 配置/12 onCommand 全齐;通道在部署档案 store 无 channel 键;BUILTIN 示例 enabled:false)
+- [x] RUST-299 （旧 HR-AUDIT-002） 使用 `rg 'httpRequests|reload|hotfix|hotReload|watch|\.def|digest|md5|sha256|hash'` 以及 import graph 找出全部相关实现和注册入口。(HR-PR-01,6934c63a,§HR-AUDIT-002 模块清单:触发核心 hotReload.ts 1062L+activate 接线 742L(extension.ts:1360)+发送/回执/状态三簇 src/backend/*+legacy 快速请求 views.ts:233-303+接收侧 KodeHotReload.py/xreload.py)
+- [x] RUST-300 （旧 HR-AUDIT-003） 追踪现有 Quick Request：用户操作→变量展开→URI/Body 组装→HTTP transport→错误处理→输出面板。(HR-PR-01,6934c63a,§HR-AUDIT-003 热更发射路径 6 步链:watcher→pendingTriggers→全局去抖→def 结构门拦截 RESTART_REQUIRED→通道/actionName/默认热修三派发→回执阶梯 sent→accepted→applied(摘要双证据+10s 沉降)→失败重试重入)
+- [x] RUST-301 （旧 HR-AUDIT-004） 提取现有 `${module}` 的确切逻辑、资源根识别、大小写处理、特殊 `.py` 文件处理，记录所有现有模板变量。(HR-PR-01,6934c63a,§HR-AUDIT-004 双名模型:resolveModuleDualName 剥 base/cell/client/bots 角色目录(hotReloadTempEdit.ts:61-102)+resolvePythonModulePath 角色目录断链上溯(httpRequests.ts:130-156);变量清单 ${module}/${files}/${fileList}/${targetId} 等,URL 编码仍无)
+- [x] RUST-302 （旧 HR-AUDIT-005） 搜索现有 VS Code `FileSystemWatcher` / `onDidSaveTextDocument` / 低层 fs watcher / config watcher 的创建、dispose、生命周期与功能归属。(HR-PR-01,6934c63a,§HR-AUDIT-005 watcher 生命周期表:热更挂载点 hotReload.ts:935 唯一,配置变更重建+复合 dispose;触发仍单一全局去抖;onDidSaveTextDocument 4 处注册无一触发发送,onWillSave=0)
+- [x] RUST-303 （旧 HR-AUDIT-006） 确认 HTTP 快捷请求中支持的方法、header、URL、body、超时、重试、输出与 SecretStorage 等已有实现，避免重造。(HR-PR-01,6934c63a,§HR-AUDIT-006 三路能力对照表:legacy 快速请求/通道传输/默认热修;通道自动增附 targetId+sender_digests;超时 10s 固定,重试/取消/SecretStorage 三路皆无)
+- [x] RUST-304 （旧 HR-AUDIT-007） 检查是否已存在热更新历史、状态栏、TreeView 装饰、通知、实时请求时序、失败重试。(HR-PR-01,6934c63a,§HR-AUDIT-007:灯 98 发送状态(hotReloadStatus.ts:168)+灯 96 通道(hotReloadChannelConfig.ts:434);5 态文件装饰+CodeLens+OUTPUT 台账;历史 webview/TreeView 无=缺失;首跑通知+重试命令已在)
+- [x] RUST-305 （旧 HR-AUDIT-008） 搜索 `.def` Hash/Digest/协议签名与 KBEngine 引擎实际算法实现，区分文件哈希、语义指纹及引擎 Digest。(HR-PR-01,6934c63a,§HR-AUDIT-008 三分法定案:hashDefContent sha256 面在但零生产调用;活门=classifyDefChange 结构指纹;negotiateEngineDigest 仅 md5 32 字符,compareEngineDigest 永久拒比;三类修订证据互不可比)
+- [x] RUST-306 （旧 HR-AUDIT-009） 找到引擎/HTTP 服务端实现或协议说明，确认请求参数拼写、响应 JSON 字段、目标进程、是否可查询 applied revision。(HR-PR-01,6934c63a,§HR-AUDIT-009:回执契约字段全录(file/status∈accepted|applied|failed/digest/targetId/revision 数字);官方通道 KODE_RELOAD_<uuid> 回声协议;applied-revision 轮询无;targetId 为通道附挂标签非服务端进程身份=unknown)
+- [x] RUST-307 （旧 HR-AUDIT-010） 在真实项目测试手动更新成功、HTTP 200 但应用失败、服务器未响应、模块名冲突，记录原始响应供 fixture。(HR-PR-01,6934c63a,§HR-AUDIT-010:真实引擎/外部 HTTP 服务仍未测=如实记录阻塞于活服务;仓内已有 demo 回环桥+pytest xreload 220L+TS 往返 harness 覆盖 200-but-unapplied/摘要不符/过期 generation/非 JSON/非 2xx/targetId 不符)
+- [x] RUST-308 （旧 HR-AUDIT-011） 建立保留/封装/替换矩阵；现有通用 Quick Requests 保留通用用途，Hot Reload 用 adapter 复用。(HR-PR-01,6934c63a,§HR-AUDIT-011 矩阵:quickRequests/httpRequestService/hotReloadTransport 三保留=adapter 接缝即 ReloadTransport 抽象;全局去抖 watcher 渐进替换;hashDefContent 待决接线或删除)
+- [x] RUST-309 （旧 HR-AUDIT-012） 记录复用模块确切路径与 owner 到 `docs/hotreload/current-implementation.md`；没有源码证据的项目标 `unknown`。(HR-PR-01,6934c63a,§HR-AUDIT-012 九行路径+导出+owner 表已落 docs/hotreload/current-implementation.md(zh 镜像 docs/zh/ 同步);无证据项一律 unknown 不硬造)
+
+#### 19.3 模块识别、双名称模型与兼容配置（HR-MOD）
+- [x] RUST-310 （旧 HR-MOD-001） 定义 `HotReloadModuleIdentity{workspaceId,rootId,fileUri,fullModule,requestModule,fileStem,parentName,language,sourceVersion}` DTO。(HR-PR-02,c120287c,src/backend/hotReloadModuleIdentity.ts:24 九字段只读 DTO,测试 toEqual 全形钉)
+- [x] RUST-311 （旧 HR-MOD-002） 定义 `ModuleResolver` 纯函数；输入 URI、明确资源根、profile、user override；输出 Result/diagnostics，无隐式 IO。(HR-PR-02,c120287c,resolveHotReloadModuleIdentity 纯函数:根候选选择→委托 resolveModuleDualName→诊断映射,零 IO 零 vscode 导入;Result+结构化 diagnostics 十码;profile 输入槽未建随 HR-MOD-006 暂缓,余输入 URI/资源根/user override/fallback 开关齐)
+- [x] RUST-312 （旧 HR-MOD-003） Python 模块拆分保留大小写，`.py` 仅移除结尾后缀，不因 `.pyi`、`.pyc` 假匹配。(HR-PR-02,c120287c,核心仅剥结尾 .py 尾缀,.pyi/.pyc 拒解析(reason=not-python);其余大小写保留,规范化面只大写盘符)
+- [x] RUST-313 （旧 HR-MOD-004） 生成完整模块名使用脚本根相对路径全部目录段；请求名只使用直接父目录+file stem。(HR-PR-02,c120287c,fullModule=根相对全部目录段+stem,requestModule=直接父目录+stem;角色目录 base/cell/client/bots 剥段=879f47d5 引擎实证(sys.modules 无角色前缀),书 §19.1 四示例草拟于该发现前,base/Avatar 实际=Avatar,测试钉住偏差并注因)
+- [x] RUST-314 （旧 HR-MOD-005） 手动命令与 Watch 使用同一个 ModuleResolver，禁止复制两套字符串处理。(HR-PR-02,c120287c,单一字符串核心=resolveModuleDualName;身份面/httpRequests 模板双名/hotReloadDefaultHotfix/fileChangeMeta 四消费方全委托同函数,身份面只做根选择+规范化+诊断映射,零第二套字符串推导;Watch 侧随 HR-PR-04 复用同一入口)
+- [ ] RUST-315 （旧 HR-MOD-006） 多 script roots 使用 engine profile 明确优先级；未唯一确定根则要求选择/配置，不猜测。(进行中:HR-PR-02,c120287c,解析器侧「不猜」本质已落=多根命中>1 一律 ambiguous-root 拒绝并列全候选,相邻目录假包含不命中;engine profile 优先级需 profile 配置面(kode2 §6)随该面点火)
+- [x] RUST-316 （旧 HR-MOD-007） `__init__.py` 专门规则经真实 HTTP 服务验证后实现；验证前跳过并给出诊断。(HR-PR-02,c120287c,本条验收=验证前跳过并给出诊断:核心判 unsupported(reason=init-file)+身份面诊断码透传;验证后专门规则仍开,真实 HTTP 服务验证阻塞于活服务(HR-AUDIT-010 同因))
+- [x] RUST-317 （旧 HR-MOD-008） 脚本资源根直接包含 `Foo.py` 时，必须有显式 single-level fallback 配置；默认标 unresolved。(HR-PR-02,c120287c 纯核=allowRootLevelStem 显式开关,默认拒(reason=root-level)诊断消息附开启指引;HR-MOD-008 暴露面,50c9f9de:用户可见配置键 kbengine.hotReload.allowRootLevelStem(默认 false=默认拒,零配置行为不变)+发送路径接线(DefaultHotfixDeps.allowRootLevelStem 透传 resolveModuleDualName;自动发送经 resolveAllowRootLevelStem 逐次读容忍设置面;内置 provider 装配捕获)+四件套(NLS en+zh/features en+zh/configuration en+zh/manifest 默认锁 false)+容忍布尔循环钉;两态装配钉(未配→scripts.Lone/开→Lone)按构造自证;门禁 lint 0/tsc 0/unit 9431+8skip RC=0/xvfb demo 25 RC=0)
+- [x] RUST-318 （旧 HR-MOD-009） URI canonicalization 兼容 Windows、Linux、macOS、WSL、Remote SSH、symlink、大小写敏感差异。(HR-PR-02,c120287c,canonicalizeScriptFilePath 词法规范化:file:// 剥 scheme+有守卫 percent 解码(坏转义原样保留)、反斜杠、UNC // 保留(WSL //wsl$、//wsl.localhost、Remote SSH 形)、重复斜杠折叠、./.. 词法消解、盘符大写、大小写保留;symlink/fs 级大小写=IO 专项不在纯面(kode-vfs VFS-001 同边界),四平台实机验证随分发面)
+- [ ] RUST-319 （旧 HR-MOD-010） 避免不同 root 的 `fight.FightAI` 请求映射错误；请求目标须包含 target 与 root/context（如服务端不支持则拒绝歧义自动更新）。（进行中:HR-PR-02,c120287c,解析器侧本质已落=rootId 入 DTO+多根歧义拒绝,跨根同名 fight.FightAI 误映射已不可能;请求线上 root/target 上下文=接收端契约冻结待真实服务验证(HR-AUDIT-009)）
+- [x] RUST-320 （旧 HR-MOD-011） UI 默认显示 `fullModule`，辅以工作区/目标环境；请求详情显示 `requestModule`，不因列宽缩短实体身份。(HR-PR-06,f7451a81 UI 面落=树行标题 fullModule+tooltip 双名/target;历史面板行 fullModule 与「发送: requestModule」并列(双名不同时)+目标列+requestId 列;双名字段=HR-PR-02,c120287c;纯核名称投影=90200003,tests/hotReloadHistoryCore.test.ts 钉;UI 钉=tests/hotReloadHistoryView.test.ts)
+- [x] RUST-321 （旧 HR-MOD-012） 设计 `${reloadModule}`、`${fullModule}`、`${fileName}`、`${relativePath}`、`${workspaceRoot}`、`${targetId}` 模板变量；现有 `${module}` 先审计再决定兼容映射。(HR-PR-02,c120287c,六变量全落 buildTemplateVars/applyTemplate/applyTemplateWithContext:双名 scriptRoot 配置才解析否则如实空串、${fileName}=filename 别名、${relativePath}/${workspaceRoot} 首含根派生、${targetId} 透传;${module} 兼容映射决策=保持 legacy __init__.py 包边界语义不动(审计 HR-AUDIT-004 在案),双名走新占位不混语义,形状钉测试锁)
+- [x] RUST-322 （旧 HR-MOD-013） 对旧配置提供兼容迁移和预览请求的功能；不静默篡改已保存 URL 模板。(fa4a2129:新命令 kbengine.httpRequest.preview=活动文件「将发什么」只构造不发送(全部条目含停用如实列出带原因+零配置默认热更面,三名字并列 fullModule/requestModule/legacy,HR-MOD-008 开关同口径);kbengine.httpRequests.migrateLegacyModule=原始条目扫描 ${module} 分布+显式选条目+显式二次确认才写(改写只动确认条目模板字符串→${fullModule},其余条目逐字保留,未配 scriptRoot 拒迁并点名原因);纯核零写配置=不静默篡改是结构性;命令奇偶闸覆盖装配面,NLS 双语言;tests/hotReloadRequestPreview.test.ts 7 钉,prove-red 两臂中和各转红逆向恢复;门禁 lint 0/tsc 0/unit 9438+8skip RC=0(首轮 5 例负载抖动复跑消失)/xvfb demo 25 RC=0;双名面+模板六变量=HR-PR-02,c120287c;${module} 默认语义保留=HR-AUDIT-004 口径)
+- [ ] RUST-323 （旧 HR-MOD-014） 所有日志/历史同时存 fullModule/requestModule/fileUri/targetId，便于排查用户看到的名称与请求名称不同。(进行中:HR-PR-06,90200003,历史库纯核已落=HotReloadHistoryEntry 同存 fullModule/requestModule/fileUri/targetId/requestId/time/status/errorSummary 七字段,同 requestId 幂等替换不重复成行,tests/hotReloadHistoryCore.test.ts 钉;HR-PR-06,f7451a81 历史持久化面落=workspaceState 键 kbengine.hotReload.history 全量行落/启动回载,脏形状如实丢弃;差=版本事件日志面(noteDeliveryEvent)存 rootId/targetId/file 不存双名;identity DTO=HR-PR-02,c120287c)
+- [x] RUST-324 （旧 HR-MOD-015） 纯函数单测覆盖上述四个示例及特殊文件、路径穿越、URL encoding、Unicode、同名根/文件。(HR-PR-02,c120287c,tests/hotReloadModuleIdentity.test.ts:§19.1 四示例(含 base/Avatar 引擎偏差钉)、特殊文件(__init__/.json/.pyi/.pyc)、路径穿越(词法上卷落根外拒)、URL encoding(%20 解码出空白短名拒/坏转义保留)、Unicode 短名合法(PEP 3130)、同名文件两根各自解析 rootId 区分+嵌套根歧义拒、override 合法/非法、root-level 默认拒/显式开;核心 reason/开关例在 tests/hotReloadTempEdit.test.ts)
+
+#### 19.4 Watch / Save 事件流水线（HR-WATCH）
+- [x] RUST-325 （旧 HR-WATCH-001） 默认 `off`，用户按 workspace/target 显式启用 `onSave`（默认推荐）或 `onDiskChange`。(HR-PR-04,60ccc545 纯核+e54acba1 配置面:默认冲突已按 2026-11-06 用户令裁定(零配置默认开、保存即自动发)覆本条「默认 off」,readHotReloadSettings 默认 enabled=true 与令一致;模式选择配置面 kbengine.hotReload.triggerMode 枚举 onSave(默认)/onDiskChange=package.json 贡献(markdownDescription+逐选项 markdownEnumDescriptions 经 NLS 双语言文件)+容忍式读取(枚举外写法一律回落默认 onSave,不猜半态,reader 钉)+onDiskChange 才建磁盘面(缺省 onSave 注入也不建,wiring 钉)+设置暴露=features.md en+zh Settings 行(字符串默认值带引号 "onSave",对账闸)+configuration.md en+zh 指南行+configMarkdownDescription 默认值锁;docs/hotreload/current-implementation.md §14 en+zh)
+- [x] RUST-326 （旧 HR-WATCH-002） `onSave` 仅选择属于配置 script roots 且规则准许的 `.py` 文件；未保存的编辑不触发 HTTP。(HR-PR-04,60ccc545 纯过滤 isWatchableScriptFile=扩展名/根严格前缀整段边界(/ws/scripts 不认领 /ws/scripts2)/排除目录/备份名+e54acba1 装配钉:save watcher 面绑定配置 globs(既有面不变;显式收窄 globs 不被磁盘面放大=范围闸同界,disk wiring 钉);未保存的编辑不触发=wiring 钉 document-change 事件不进链,只有 watcher 写盘事件进(缓冲变更 fire 后 0 计时器 0 动作,hotReloadDiskWatchWiring 用例))
+- [x] RUST-327 （旧 HR-WATCH-003） `onDiskChange` 使用原生 VS Code FileSystemWatcher，外部改动/生成/Git checkout 与 save 重叠需去重。(HR-PR-05,60ccc545 纯核+edcfaeaf live 接线:磁盘监视装配核=watchRoots 按根建 watcher+change/create 经过滤规范化后 offer(disk-change)+delete 不进管线记 delete-ignored+与 save 重叠经真流水线归并记 disk-save-overlap 不双发;接线=setupHotReload 新 diskWatch 注入面控制器随 apply 重建+activate/hotReload.ts 真适配 vscode.createFileSystemWatcher(pattern) 薄包 uri→fsPath,事件汇入同一两级触发链(同进料级+合并窗,重叠纯核归并单批,wiring 钉磁盘+save 同文件单批不双发);范围闸与热更域同界(显式 globs=matchesHotReloadGlob 相对路径命中,派生=assetsRoot 规范化前缀),磁盘面绝不比既有 watcher 面宽;诊断路由=watch-created/dropped-before-arm/disposed 走通道日志,filtered/delete-ignored 不逐条刷(Git 批量爆发防刷屏,语义纯核钉);tests/hotReloadDiskWatch.test.ts 16 例纯核+tests/hotReloadDiskWatchWiring.test.ts 8 例接线钉;不注入 diskWatch=原装配行为不变)
+- [x] RUST-328 （旧 HR-WATCH-004） 只监听已声明的脚本根；排除 `.git`, `.venv`, `node_modules`, generated stubs, caches, 临时文件、swp、备份文件。(HR-PR-05,60ccc545 纯核+edcfaeaf live 接线:watchRoots 每根派生递归 glob(根下全部 .py)根外事件到不了+filterOptions.roots 每次取当次工作区根规范化做深层防御(apply 重建不留陈根)+排除目录(.git/.hg/.svn/.venv/venv/node_modules/__pycache__/.kbengine(stubs)/.mypy_cache/.pytest_cache/.ruff_cache)经过滤层拦 filtered 诊断+备份/临时名(.swp/.swo/.bak/.tmp/尾~/#名#)过滤层拦+备份名 watcher glob 层拦(实测 .bak 不到过滤层);范围闸再收窄到热更域(显式 globs 匹配/派生 assetsRoot 前缀),磁盘面绝不放大既有 watcher 面(wiring 钉:显式收窄 globs 时域外磁盘事件如实不进))
+- [ ] RUST-329 （旧 HR-WATCH-005） 监听生命周期绑定到 workspace/target/config，deactivate、root 移除、模式切换及时 dispose。（进行中:HR-PR-05,ae3a2c7a 控制器面+edcfaeaf live 绑定=dispose 全清(watcher disposeCalls 钉)后续事件不受理+rebuild 旧 watcher 全 dispose 按新根重建且 armed 保持(重建不重开基线窗)+dispose 后 watchRoots/arm/rebuild 拒收(纯核钉);接线=控制器随 apply 重建(配置/计划签名变更即拆旧建新,filterOptions.roots 每次取当次工作区根不留陈根)+context dispose 全清(wiring 钉:dispose 后磁盘事件不进)+配置关面拆(wiring 钉:enabled=false 旧 watcher 失效且不建新面);差=target 维根绑定(按部署 target 的脚本根监听);模式切换配置面已落(e54acba1:triggerMode 双向 wiring 钉——切 onDiskChange 建面、切回 onSave 拆面,随 apply 重建);流水线 dispose 面 HR-PR-04,60ccc545)
+- [x] RUST-330 （旧 HR-WATCH-006） 实现 per-file debounce 与全局 max-delay 上限：防 save storm 也不无限推迟。(HR-PR-04,60ccc545,src/backend/hotReloadSavePipeline.ts:per-file 尾窗去抖=再发事件重排窗,排窗预算取 min(debounceMs, max(0, maxDelayMs-elapsed)) 封顶;首窗亦封顶故 maxDelay<debounce 时窗即封顶;截断如实记 max-delay-capped 因;pin tests/hotReloadSavePipeline.test.ts『max-delay 封顶』save storm 4 连发至多推迟到 1000ms 且 coalesceReason=debounced:4;max-delay-capped,prove-red 去掉封顶即红)
+- [x] RUST-331 （旧 HR-WATCH-007） 等待写入稳定（短时间连续 stat/hash 一致）后再发送；尊重磁盘原子替换、rename 顺序。(HR-PR-04,60ccc545,src/backend/hotReloadSavePipeline.ts:两拍快照哈希一致才发(注入 readSnapshot)+探测次数有界超限如实发末拍记 unstable-after-N-probes+读不到/已删除如实丢弃不猜+settling 守卫防同 URI 异步两拍期间并行第二个定稿;pin tests/hotReloadSavePipeline.test.ts『两拍一致恰读 2 次』『持续变化超 3 探测记 unstable』『首拍读不到丢弃』『稳定窗内消失丢弃』四例;配置面 5939c549=stabilityWindowMs 键(容忍式读取,类型错/负值回落 0)+键>0 才注入快照读面(0=现有时序不变,装配钉 tests/hotReloadConfigFaces.test.ts)+装配 buildPipeline 直传键值(漏传即纯核缺省 200 潜生效,栈迹抓出后补直传)
+- [x] RUST-332 （旧 HR-WATCH-008） 文件 hash 与最近已提交/已成功应用的版本指纹区分，不因一次失败永久跳过。（收官 2026-11-13,2c9bd350=forgetSent 装配接线落地——此前核心方法零调用点,一次投递失败在生产路径永久跳过同内容;五面如实撤:默认热更失败/拒绝整批撤、recordOutcomes failed 整批撤(不依赖台账在场)、通道逐文件精确撤(仅最新回执 failed 者撤,已送达文件去重不受影响)、整批异常无回执或 failed 者撤(回执查询抛错退化整批撤,绝不吞失败上报面——gapArms 既有钉抓出 resolveRootId 抛错掩盖上报回归)、handleResponse 非 2xx 逐文件撤;与「最近已提交/已成功应用」指纹台账的区分成立=台账记录锚定各自代际(内容事实不动),指纹账本只管重发资格,同内容重发推进流水线版本号;tests/hotReloadForgetSentWiring.test.ts 3 钉(失败照发/成功去重仍有效/通道混批只重发失败文件),prove-red=中和四处调用面失败钉+通道钉转红、成功钉按构造绿;门禁 eslint 0/tsc 0/unit 763 文件 9380+8skip/xvfb demo 25 RC=0)
+- [x] RUST-333 （旧 HR-WATCH-009） 原始事件归并为 `FileChanged{uri,revision,diskHash,source,time}`，记录合并原因供诊断。(HR-PR-04,60ccc545,src/backend/hotReloadSavePipeline.ts:同 canonical URI 同 pending 归并为单条 FileChanged{uri,revision,diskHash,source,time,coalesced,coalesceReason},原因逐项记(单发=single,归并=debounced:N,写盘重叠=disk-save-overlap,封顶=max-delay-capped,不稳定=unstable-after-N-probes)并可加号;pin tests/hotReloadSavePipeline.test.ts『连发归并 coalesced=3』『save→disk 记 overlap 代表源=最新』『disk→save 不记 overlap』『file:// 与裸路径同 canonical 归并』)
+- [x] RUST-334 （旧 HR-WATCH-010） 使用 canonical URI + targetId 合并待执行同文件更新；同内容同目标不重复发送。(HR-PR-04,60ccc545,src/backend/hotReloadSavePipeline.ts:去重键=canonical URI(HR-PR-02 canonicalizeScriptFilePath 复用)+targetId+内容哈希,三同即 deduped 不发;换目标(同内容新 targetId)不视为重复照发;pin tests/hotReloadSavePipeline.test.ts『同内容同目标 deduped』『同内容换目标照发 revision=2』+isDuplicateUpdate 纯判四形)
+- [x] RUST-335 （旧 HR-WATCH-011） 当文件 A 更新请求执行时又保存 B 版本，保证最终版本被请求，不把旧响应写成新版本成功。(HR-PR-04,60ccc545 版本号语义=revision 只随实际发出的新内容版本递增(去重/拦截不占号,否则同内容在途响应被 isStaleResponse 误判 stale,测试钉 revision 边界)+同文件单 pending 归并保证末版本胜出+isStaleResponse 纯判;响应面执行点已落 88171384=runFire 发送时点版本快照(revisionOf 核心自省口,锚定发送代际流水线实例,apply 重建新实例不混代)+末版本必被请求(再定稿必再进合并窗再 fire,tests/hotReloadRevisionGate 钉两次定稿→两次请求)+旧响应不冒充=default-hotfix/通道面「响应过期」审计日志(每次响应至多一条点名文件)+动作响应路径 stale 注解追加进该代 attempt 绑定的 sent-unverified 台账记录(accepted/applied 锚定冻结基准不动,新代记录不背旧响应注解,tests/hotReloadResponseReceiptWiring 钉绑定);prove-red 中和 stale 判定三面转红)
+- [ ] RUST-336 （旧 HR-WATCH-012） 先做轻量 Python 语法检查/配置检查；有错误时标 `blocked`，不默认发送半成品代码。（进行中:HR-PR-04,闸机制已落+钉=注入 checkSyntax 不通过出 blocked 诊断且不发送(测试钉 detail 带检查器错误)+每次定稿只检一次;真实轻量 Python 语法检查器/配置检查器由装配注入=随接线批;真实现+配置面已落 5939c549=syntaxGate 键(默认 false=不注入检查器如实不拦,装配钉)+createPythonSyntaxGate 装配核(src/backend/hotReloadSyntaxGate.ts,fail-open:解释器解析不到/子进程故障/超时一律放行并至多通知一次,绝不因检查器不可用拦热更,只有明确 ok=false 才拦)+runPythonCompile 真编译面(src/hotReloadPythonCompile.ts,spawn 解释器 -c 'compile(sys.stdin.read())' 只编译不执行,内容走 stdin,stderr 末行作错误,5s 超时)+窗 0 单拍直取内容面(内容原本只在稳定路径流动,闸开+窗 0=闸是死面——due() 条件与窗 0 单拍分支接通,拦截 probes=1 钉)+拦下不占版本号不进波次不排合并窗(零后续计时器钉);差=配置检查器(值域/一致性校验)随配置余面)
+- [ ] RUST-337 （旧 HR-WATCH-013） 引擎脚本可热更规则支持 profile capabilities、路径 allowlist/denylist、自定义过滤器。（进行中:HR-PR-04,规则面的可注入形态已落=extensions/excludedDirs 追加/roots 严格前缀+targetOf 目标归属;profile capabilities 与 allowlist/denylist 配置键属配置面(HR-MOD-006 同因)随该面点火)
+- [ ] RUST-338 （旧 HR-WATCH-014） 停用时清理待提交队列；处理中请求依据策略取消/自然完成并更新 UI，不再重新入队。（进行中:HR-PR-04,清队列已落+钉=dispose 清 pending/波次/预览滞留且停止受理(dispose 后 offer 进不来、波次与滞留一并清、放行不再发);在途请求取消/自然完成策略与 UI 更新=装配面随接线批)
+- [x] RUST-339 （旧 HR-WATCH-015） 初次启动、切换分支、恢复窗口不默认对全仓历史文件触发更新；基线扫描不等于变更事件。(HR-PR-05,ae3a2c7a 基线闸=arm() 前到达的磁盘事件一律丢弃记 dropped-before-arm 诊断+rebuild 保持 armed 不重开基线窗(prove-red:拆闸该例红);激活时序装配已落 edcfaeaf=setupHotReload 磁盘面 watchRoots(建 watcher)后 arm() 同步块内先建后 arm(无事件空档,启动不把既有文件当变更,tests/hotReloadDiskWatchWiring 钉);切换分支=Git checkout 爆发经真流水线单波次一批+同内容还原去重不重发(tests/hotReloadDiskWatch 钉);恢复窗口=rebuild 保持 armed)
+- [x] RUST-340 （旧 HR-WATCH-016） 大批量文件变化进入安全批次预览模式（可配置数量阈值），防无意向服务器发数百请求。(HR-PR-04,60ccc545,src/backend/hotReloadSavePipeline.ts:超 batchPreviewThreshold(可配)的批次只出 preview 诊断不自动发、releasePreview 显式放行才发(放行出 preview-release 模式)+滞留期间新批次并入同一滞留批次维持单一批次+dispose 一并清滞留;pin tests/hotReloadSavePipeline.test.ts『超阈值只预览』『放行原样发出』『滞留期新批次并入共 4』『无滞留放行如实空放』四例,prove-red 关阈值判断 3 例转红;配置面 5939c549=batchPreviewThreshold 键(默认 50 同纯核,0=一律滞留为合法值不回落)+kbengine.hotReload.releasePreview 命令(注册在 composite 前随 composite 内 dispose=恰一订阅契约不破;无滞留如实报空)+滞留可见性(批量预览滞留 上热更通道日志,HR-WATCH-017 preview 诊断面)+commands.md en+zh 小节)
+- [ ] RUST-341 （旧 HR-WATCH-017） 写入用户可审查的诊断事件：trigger、filtered、debounced、deduped、blocked、scheduled。（进行中:HR-PR-04,诊断面已落=八型 trigger/filtered/debounced/deduped/blocked/scheduled/preview/flushed 全量可注入观察(测试钉典型序列 trigger→scheduled→debounced→flushed 与空路径 filtered 两例);「用户可审查」的呈现面(OutputChannel/面板)=装配面随接线批)
+- [ ] RUST-342 （旧 HR-WATCH-018） 单测模拟 onSave、外部改动、原子覆盖、批量 rename、删除后重建、忽略目录、配置变更、远程 URI。（进行中:HR-PR-04,已模拟=外部改动(disk-change 源)+删除后重建(稳定窗内快照消失丢弃/首拍读不到丢弃)+忽略目录与备份名(过滤矩阵)+原子覆盖形态(内容哈希换档即新内容照发);未模拟=onSave 事件绑定/批量 rename/配置变更/远程 URI(依赖 vscode 装配面,随接线批)
+
+#### 19.5 HTTP 适配、调度、幂等与成功确认（HR-HTTP）
+- [x] RUST-343 （旧 HR-HTTP-001） 从现有 Quick Requests 抽取可复用 RequestExecutor；不可破坏普通通用 HTTP 功能。(HR-PR-03,21cc4848,新纯核 src/backend/httpRequestExecutor.ts:快捷请求 HttpRequestService.runEntry 与默认热更 sendDefaultHotfix 统一走 executeHttpRequest+交换状态机,不再各带一套传输分支;服务层分支仍读 transportOk=传输面原始 ok 布尔,日志行/错误弹窗/布尔返回逐字不变=通用 HTTP 零回归,tests/httpRequestService.test.ts 既有钉全绿)
+- [ ] RUST-344 （旧 HR-HTTP-002） `HotReloadProvider` 接受 module identity、target、revision、request correlation id，产生结构化 outcome。
+- [ ] RUST-345 （旧 HR-HTTP-003） 保持自定义 URL/method/headers/body/变量模板，处理 URL query encoding、JSON escaping 与 HTTP method semantics。
+- [x] RUST-346 （旧 HR-HTTP-004） HTTP 字段拼写口径：2026-11-06 用户令更正为 `http://127.0.0.1:8090/hotfix` + `module_name=`，旧错误拼写全仓清零（`tests/hotfixSpellingGate.test.ts` 门断言）。
+- [ ] RUST-347 （旧 HR-HTTP-005） 所有自动 HTTP 请求仅能发送到用户明确批准的 target endpoint；Workspaces 未信任时禁止发送。
+- [ ] RUST-348 （旧 HR-HTTP-006） 配置网络超时（连接/请求）、最大响应体、header/body redaction；HTTP client 连接池复用。
+- [ ] RUST-349 （旧 HR-HTTP-007） 按目标维护有界并发队列，默认同目标串行；其他目标允许独立并发且全局上限。
+- [ ] RUST-350 （旧 HR-HTTP-008） 支持请求取消和超时，明确取消不等于远端撤销；发送后未知状态必须显示 uncertain。
+- [ ] RUST-351 （旧 HR-HTTP-009） 重试策略：默认不自动重试状态未知的非幂等更新；仅服务端提供 idempotency key 后开启有限退避重试。
+- [x] RUST-352 （旧 HR-HTTP-010） 解析网络失败、DNS/connect、非 2xx、2xx 无回执、显式 `accepted`、显式 `applied`、应用失败。(HR-PR-03,21cc4848,传输层 classifyExecution 六分类 ok/non-2xx/timeout/network-error/invalid-url/unsupported-protocol+八细类(连接拒绝/DNS/重置/超时/URL/协议/http-status/unknown),事实决定分类推不出如实 unknown;回执层 accepted/applied/sent(无回执/非 JSON)经真网 e2e 验,failed 分支既有 tests/hotReloadTransport.test.ts:114 覆盖;本地超时绝不报成应用失败=服务端随后仍完成 200 有钉)
+- [ ] RUST-353 （旧 HR-HTTP-011） 引擎端如能返回 appliedRevision/appliedHash/targetProcess，则验证与当前请求 fingerprint 匹配才显示已应用。
+- [ ] RUST-354 （旧 HR-HTTP-012） 兼容老 HTTP 服务端纯文本/JSON 格式，通过 ResponseInterpreter 版本化策略解析，无法确证显示 `sent_unverified`。
+- [ ] RUST-355 （旧 HR-HTTP-013） 防旧响应覆盖新任务：结果 CAS 对比 targetId + canonical URI + requestedVersion；按时间戳不能代替版本校验。
+- [ ] RUST-356 （旧 HR-HTTP-014） 每次执行都生成 correlation_id，在日志、详情、服务端支持时贯穿；避免记录完整 token/header 凭证。(进行中:HR-PR-03,21cc4848,生成+贯穿 outcome 已落=每次执行 crypto.randomUUID(),外部可自带 id,测试钉两条 id 不同;HR-PR-06,f7451a81 展示面落=历史面板 requestId 列+树 tooltip requestId(correlation id 指纹全显),请求头贯穿刻意不做=线路字节变更(与「不做 URL 编码」同边界),待接收端契约解冻(HR-AUDIT-009);不落 token/header 凭证=outcome 无请求头字段(header 不回显),只含 status/durationMs/响应 body)
+- [ ] RUST-357 （旧 HR-HTTP-015） 断连/重连更新 endpoint health；health success 不等于任何模块已更新成功。
+- [ ] RUST-358 （旧 HR-HTTP-016） 在 HTTP 层额外提供 `Preview request`，用户确认精确 URL/method/参数后启用自动模式。
+- [x] RUST-359 （旧 HR-HTTP-017） Mock server e2e：慢响应、chunked、malformed JSON、状态码、断网、重复请求、服务端成功但本地超时。(HR-PR-03,21cc4848,tests/httpRequestExecutorMockServer.test.ts 10 例真网(node http 每例独立临时服务,端口 0 随机)打默认传输面:慢响应+短超时→timeout 且服务端随后仍完成 200/状态码 500→non-2xx/malformed JSON→2xx 已送达不 claim applied/chunked 拼接/chunk 重复请求 hits=2 且关联 id 独立/断网两形=端口已关 ECONNREFUSED+响应中途摧毁 socket→connection-reset/URL 无法解析+协议不支持;顺抓真缺陷=默认传输在服务端响应中断时 promise 永不结算(实测 node 在响应流发 aborted 而 req 已销毁,超时无法自救),已修 res.on('aborted')/('error') 显式收口)
+- [ ] RUST-360 （旧 HR-HTTP-018） 使用真实引擎侧服务联调，文档化实际回执字段；无法改服务端时 UI 明确显示未验证。
+
+#### 19.6 热更新生命周期状态与历史（HR-STATE）
+- [ ] RUST-361 （旧 HR-STATE-001） 定义 `disabled/idle/dirty/queued/checking/sending/accepted/applied/sent_unverified/failed/blocked/restart_required/unknown` 状态和迁移表。
+- [ ] RUST-362 （旧 HR-STATE-002） 区分 `lastRequestedHash`、`lastAcceptedHash`、`lastVerifiedAppliedHash`、`currentDiskHash`，不混用。
+- [ ] RUST-363 （旧 HR-STATE-003） `applied` 仅在可信回执或引擎状态查询一致时赋值；旧版本已应用且磁盘又修改时显示 `dirty`。
+- [ ] RUST-364 （旧 HR-STATE-004） 状态按 `(workspaceId, rootId, targetId, uri)` 分区，不允许切换目标后复用旧绿色状态。
+- [ ] RUST-365 （旧 HR-STATE-005） 文件改名/移走/删除及时 tombstone 清理；旧 UI 不继续假显示成功。
+- [ ] RUST-366 （旧 HR-STATE-006） 多服务器多进程返回部分成功时显示 partial，并详细列出失败目标；不要合并成绿色。
+- [ ] RUST-367 （旧 HR-STATE-007） 保存可检索操作历史：time、trigger、fullModule、requestModule、target、duration、result、errorCategory、hash。
+- [ ] RUST-368 （旧 HR-STATE-008） 历史存储大小与保留时间限额，支持导出脱敏 JSON；无需持久化所有 HTTP body。
+- [ ] RUST-369 （旧 HR-STATE-009） 历史快照与当前文件状态分离；重启后不自动相信上一会话的 applied 状态，除非可复核运行时 revision。
+- [ ] RUST-370 （旧 HR-STATE-010） 错误原因可操作：配置错误、模块冲突、语法错误、目标不可达、应用失败、回执不可信、需重启。
+- [ ] RUST-371 （旧 HR-STATE-011） 接口支持 cancel、retry、retry-all-failed、pause、resume、clear-history；重试需要遵守幂等确认。
+- [ ] RUST-372 （旧 HR-STATE-012） event store/UI 更新批处理并限制频率；1000 事件/秒不得产生 1000 次完整 UI 渲染。
+- [ ] RUST-373 （旧 HR-STATE-013） reducer/property tests 覆盖乱序返回、重复回执、失败后文件再编辑、目标切换、Core 重启。
+
+#### 19.7 热更新 UI / 可视反馈（HR-UI）
+- [x] RUST-374 （旧 HR-UI-001） 状态栏区分 `Watch Off`、`Ready`、`Sending`、`Sent (unverified)`、`Applied`、`Failed`、`Restart Required`。(live 面已齐=src/hotReloadStatus.ts 七态状态机 watch-off(按原因如实分 disabled/empty-globs 双注 §11.1)/ready(+error)/sending/sent-unverified/applied/failed/restart-required 全实现,依赖注入 StatusBarItemLike,pin tests/hotReloadStatus.test.ts;HR-PR-06 批核实勾)
+- [x] RUST-375 （旧 HR-UI-002） TreeView 提供最近更新/文件/目标分组，节点标题显示 **fullModule**，tooltip 显示 requestModule、URI、target、时间、请求 id。（HR-PR-06,f7451a81 树装配=src/hotReloadHistoryView.ts kbengine.hotReloadHistory 视图,根三组(最近更新最新在前页大小封顶/按文件/按目标)+键组套行,行标题=buildHistoryEntryLabel(fullModule),tooltip 双名/URI/target/时间/请求 id+status/error;台账事件经 onRecord 投影,重渲染 500ms 合并窗节流,受限宿主退化 registerTreeDataProvider;纯核分组=90200003,tests/hotReloadHistoryCore.test.ts;UI 钉=tests/hotReloadHistoryView.test.ts）
+- [x] RUST-376 （旧 HR-UI-003） 编辑器使用文件装饰或 CodeLens/overview 合理呈现最近热更状态，避免长期污染每一行代码。(live 面已齐=src/hotReloadFileDecorations.ts 文件装饰+src/hotReloadFileStateLens.ts 定点 CodeLens(非逐行污染),pin tests/hotReloadFileDecorations.test.ts+tests/hotReloadFileStateLens.test.ts;HR-PR-06 批核实勾)
+- [ ] RUST-377 （旧 HR-UI-004） 独立 Hot Reload 面板展示实时队列、历史、失败、当前目标、监听模式、请求详情和错误诊断。（进行中:HR-PR-06,f7451a81 面板已装配=historyPanel 命令 src/hotReloadHistoryView.ts(页头监听模式/目标/计数+过滤条+最新在前表格+分页+错误摘要列,数据面=投递台账逐条投影);纯核数据面=90200003,tests/hotReloadHistoryCore.test.ts;差=实时队列面(HR-PR-04 流水线 pendingFiles/waveFiles/previewHeldFiles 自省进 UI)未装配）
+- [ ] RUST-378 （旧 HR-UI-005） 配置界面支持启用自动更新、监听模式、root、target、网络超时、语法检查、去抖参数、敏感操作警告。(进行中:配置键族已齐=kbengine.hotReload.enabled/triggerMode/sendViaProviders 等经 workspace settings 消费(package.json configuration 贡献+容忍式读取,HR-PR-04/05/08 批);差=面板化配置编辑 UI(表单化界面)未做,现面=VS Code 设置面+命令面板)
+- [x] RUST-379 （旧 HR-UI-006） UI 明确完整名称与发送名称：`entities.fight.FightAI`；详情 `发送模块 fight.FightAI`。（HR-PR-06,f7451a81 UI 消费面落=树行/面板行 fullModule 为主,双名不同时面板行并列「发送: requestModule」、tooltip 双名;纯核名称投影=90200003(buildHistoryEntryLabel 标题 fullModule,tooltip 双名不同才列 requestModule 行);双名字段=HR-PR-02,c120287c;UI 钉=tests/hotReloadHistoryView.test.ts）
+- [ ] RUST-380 （旧 HR-UI-007） 事件变化时高频 UI 更新合并节流；列表上千记录采用虚拟滚动与增量加载。（进行中:HR-PR-06,f7451a81 节流+增量加载已落=树重渲染 500ms 合并窗(窗内多次台账事件一次 fire;dispose 清 pending 钟)+面板「加载更多」逐页增量;纯核=90200003(coalesceHistoryUpdates 同 requestId 窗内合并/page 分页窗口/容量有界环形淘汰缺省 200);差=webview 表格虚拟滚动(上千记录渲染面)未做）
+- [ ] RUST-381 （旧 HR-UI-008） 失败点击定位文件、打开输出日志、查看 HTTP 概要（密钥遮蔽）、可选择重试。（进行中:重试面已齐=hotReloadRetry 纯核(只重失败目标/成功侧跳过/每跳取消探针)+RetryCommand+RetryChannel+DefGate 四文件 pin(hotReloadRetry*.test.ts);失败提示=hotReload.ts showErrorMessage;HTTP 概要密钥遮蔽=outcome 无请求头字段 header 不回显(HR-HTTP-014 注)按不存在遮蔽;定位文件/打开日志点击动作=接线批)
+- [x] RUST-382 （旧 HR-UI-009） 成功状态只用在确认 `applied` 的情境；`2xx` 没有业务回执用“已发送，未确认”。(live 面已齐=hotReloadStatus setApplied 仅回执核验后(文件头注)=2xx 无回执走 setSentUnverified;历史库同口径迁移单向 sent-unverified→applied/failed 终态不回退伪造(HR-PR-06 src/backend/hotReloadHistoryCore.ts);pin tests/hotReloadStatus.test.ts+tests/hotReloadReceipt.test.ts+tests/hotReloadHistoryCore.test.ts;HR-PR-06 批核实勾)
+- [x] RUST-383 （旧 HR-UI-010） 支持按 fullModule/target/status/时间范围过滤与搜索；路径相同但 target 不同分别显示。（HR-PR-06,f7451a81 UI 装配=historySearch 命令 fullModule 子串过滤树(大小写不敏/留空清除/取消不动)+面板过滤条(模块子串/目标 id/状态,计数随过滤更新);同路径不同 target 分行呈现(树目标键组+行身份含 targetId,面板目标列);纯核 filter 全条件 AND+时间含边界=90200003,tests/hotReloadHistoryCore.test.ts;UI 钉=tests/hotReloadHistoryView.test.ts）
+- [ ] RUST-384 （旧 HR-UI-011） 全面支持主题、国际化中文/英文、无障碍快捷键与 screen reader 状态文本。
+- [ ] RUST-385 （旧 HR-UI-012） UI 关闭、隐藏、切换工作区不停止热更新服务，且不丢状态；deactivate 时可靠释放。(进行中:HR-PR-06,f7451a81 关闭面钉=面板 dispose 只清面板引用不停 feed(关后照常入账,重开见新行);deactivate 释放=全部句柄进 context.subscriptions,dispose 清节流 pending 钟;树隐藏不挂任何停机钩;持久化跨会话不丢=workspaceState 全量行;差=工作区切换场景(切换文件夹根)状态保持未钉)
+- [ ] RUST-386 （旧 HR-UI-013） 热更新通知可配置：成功静默、失败提示、批量结果摘要；禁止每次保存弹通知风暴。
+- [ ] RUST-387 （旧 HR-UI-014） 同一完整模块名归属多个 workspace 时显示 root/target，防用户误认更新哪个服务。（进行中:HR-PR-06,f7451a81 target 维度已落=树行 description/tooltip 带 target+按目标键组+面板目标列;纯核行身份含 targetId+groupByTarget=90200003;双名解析歧义拒判=HR-PR-02,c120287c;差=root 维度呈现(行/分组加 root 标注)未做）
+
+#### 19.8 `.def` / types.xml / entities.xml Hash 与运行时一致性（HR-HASH）
+- [x] RUST-388 （旧 HR-HASH-001） 明确三层：`fileHash`（例如 SHA-256 原始字节）、`semanticHash`（稳定规范化语义结构）、`engineDigest`（实际引擎协议报告/确认的指纹）。(三层全在 live 且钉=hashDefContent sha256 原始字节(src/backend/hotReloadDefHash.ts)/structuralFingerprintHash 结构语义指纹(src/backend/hotReloadDefStructure.ts,版本化面 semanticFingerprintReport HR-PR-07)/negotiateEngineDigest 引擎 Digest(md5=C-18 规范推导或 unknown 退化);hotReloadRevisionEvidence.ts 三类证据各自带来源标签且跨类不比较;pin hotReloadDefHash.test.ts+hotReloadDefStructure.test.ts+hotReloadRevisionEvidence.test.ts;HR-PR-07 批核实勾)
+- [x] RUST-389 （旧 HR-HASH-002） fileHash 在变更时流式增量/批量读取，复用 VFS 已有字节；避免 UI 每次显示都重新读文件。(接线批收官 4b211068:def 指纹读面走 readSharedFileSnapshot 打开缓冲区优先(VFS 已有字节复用,未保存编辑参与指纹),来源标签 document/disk 如实入面板与台账;UI 显示与修改触发共用同一读面,绝不为显示单独重读磁盘;流式增量读不再欠账=字节已在内存驻留,单遍 hashDefContent 即终态,无流可增;pin tests/defFingerprintInspector.test.ts computeDefFingerprintSnapshot 节)
+- [x] RUST-390 （旧 HR-HASH-003） semanticHash 输入为解析后的规范化 AST/IR，规范版本、字段顺序、空白/注释处理规则文档化。(live 面=hotReloadDefStructure.ts 结构指纹:规范化规则(注释/空白/顺序/描述文本/默认值不进指纹;属性/方法/装载/未建模四段排序序列化)文档化于模块头并测试钉(重排/注释/空白=非结构性用例);规范版本=HR-PR-07,406b3268,新增 DEF_FINGERPRINT_SPEC_VERSION='def-structural-fp/1'+semanticFingerprintReport.specVersion(跨版本指纹不可比);pin tests/hotReloadDefStructure.test.ts)
+- [x] RUST-391 （旧 HR-HASH-004） 语义 Hash 必须计入所依赖类型/引用定义的版本或在详情标明“仅本文件语义”，防误报完全一致。(HR-PR-07,406b3268,选「如实标注」臂=semanticFingerprintReport.scope='file-only-semantic'+note 点名 Parent/接口/组件被依赖文件版本不在指纹内、依赖变更需另行核验,解析失败 hash=null 如实不造;依赖版本计入指纹臂未选(依赖闭包收集=另一量级,如需再立账);prove-red=改 scope 标注该例红;pin tests/hotReloadDefStructure.test.ts『semanticFingerprintReport』节)
+- [x] RUST-392 （旧 HR-HASH-005） 引擎 Digest 仅来自已验证引擎算法或服务端回执；不能把本地 SHA-256 错标为运行时协议 Hash。(live 面=hotReloadDefHash.ts:compareEngineDigest 闸=unknown/未协商一律拒比,md5 已协商也拒(客户端原文 sha256 与引擎复合 MD5 不同算法/不同输入跨类永不互比);negotiateEngineDigest 只认引擎回执报告的真实 32 位摘要形,缺省退化 unknown;engineDigest 一词只用于运行时回执(revisionEvidence 标签面);pin hotReloadDefHash.test.ts;HR-PR-07 批核实勾)
+- [x] RUST-393 （旧 HR-HASH-006） 若项目 fork/引擎版本不同则交由 FingerprintProvider(profile) 解析；未知标 `not available`。(接线批收官 4b211068:profile 消费面落地=Inspector 命令与报告/HTML 三面均显算法档案(resolveFingerprintProfile;无摘要协商时如实标 not available 未协商,不替引擎猜算法);fork 侧具体 provider 实现已随 HR-PR-08(c7557bc5)落地=createHttpHotfixSendProvider 经注册表应答;pin hotReloadFingerprintCompare.test.ts+hotReloadPluginApi.test.ts+defFingerprintInspector.test.ts)
+- [x] RUST-394 （旧 HR-HASH-007） 为 `.def` 增加 Hash Inspector：完整路径、三类值、算法/版本、计算时间、来源、复制按钮。(接线批收官 4b211068:新命令 kbengine.def.fingerprintInspector(活动编辑器须 .def)=完整路径+三类值(fileHash sha256/语义指纹/引擎面如实另账)+算法档案与插件 API 版本+计算耗时+读面来源+哈希复制按钮(webview postMessage→剪贴板),复用既有 createWebviewPanel 单列面板模式不新造框架;applied 维度如实 unknown 点名原因,工作区闭包 MD5+SDK 盖章=defMd5Check 另账转显(getLastDefMd5CheckOutcome),不冒充逐文件结论;pin tests/defFingerprintInspector.test.ts 11 例)
+- [x] RUST-395 （旧 HR-HASH-008） 文件发生修改时比较上次本地指纹、当前语义指纹、服务端已应用 Digest（若可得），给出一致/不同/未知。(接线批收官 4b211068:触发接线落地=.def 保存事件(onDidSaveTextDocument)→台账上次快照 vs 当前快照三路判定→「KBEngine Def 分析」通道一行结论(def 指纹首见(只存底)/def 指纹变更判定 file=…|semantic=…|applied=…,unknown 面带归位原因);首见只存底绝不伪造变更结论;applied 维度 def 无逐文件回执=如实 unknown;命令与保存共用同一台账(命令首存后保存即出判定行);台账纯核 DefFingerprintLedger last/record/clear;pin tests/hotReloadDefFingerprintLedger.test.ts 8 例+defFingerprintInspector.test.ts;prove-red=中和台账 record 后变更判定钉 3 例红)
+- [ ] RUST-396 （旧 HR-HASH-009） `.def` 差异分类：字段新增/删除/重排、类型更改、方法参数/分面变化、继承/组件变化、纯空白/注释。
+- [ ] RUST-397 （旧 HR-HASH-010） 对可能影响协议、序列化、Cell/Base/Client 兼容的更改默认标记 `restart_required`/`needs_review`，不自动热更。
+- [ ] RUST-398 （旧 HR-HASH-011） 对 `types.xml` 自定义类型变化分析 reverse dependency 受影响的全部 `.def`；生成影响报告。
+- [ ] RUST-399 （旧 HR-HASH-012） `entities.xml` 注册项变化标注影响实体与版本状态；默认不发 Python 热更请求替代结构变更。
+- [ ] RUST-400 （旧 HR-HASH-013） 显示信息入口：`.def` 编辑器 CodeLens、状态条 tooltip、Definition Explorer 面板；巨大工程懒加载。
+- [ ] RUST-401 （旧 HR-HASH-014） 持久化仅必要 metadata 指纹，版本升级后需重新计算；不缓存敏感源码副本。
+- [ ] RUST-402 （旧 HR-HASH-015） 单测：同内容路径不同、换行变化、注释变化、语义改变、依赖变更、编译器/引擎 Profile 不同。
+- [ ] RUST-403 （旧 HR-HASH-016） 性能：单文件修改不触发全项目 Hash 重算；统计 bytes read、rehashed files、affected dependency nodes。
+- [ ] RUST-404 （旧 HR-HASH-017） Engine Digest 兼容性测试必须对真实引擎实现验证，缺乏证据时明示不可用，不允许宣称引擎已经同步。
+
+#### 19.9 扩展 API 与引擎适配器（HR-EXT）
+- [ ] RUST-405 （旧 HR-EXT-001） 定义版本化 `HotReloadProvider`：canReload、resolveModule、prepareRequest、execute、interpretResponse、queryAppliedRevision。
+- [ ] RUST-406 （旧 HR-EXT-002） 定义 `FingerprintProvider`：computeLocalFile、computeSemantic、fetchEngineDigest、compare；声明算法版本与可信度。
+- [ ] RUST-407 （旧 HR-EXT-003） 定义 `HotReloadEligibilityRule`：按 engine profile、root、文件类型、上下文判定 auto/manual/restart。
+- [ ] RUST-408 （旧 HR-EXT-004） 第三方扩展无权限直接截获所有保存事件并随意联网；声明 workspace/network/exec 权限。
+- [ ] RUST-409 （旧 HR-EXT-005） Python 插件通过隔离 Worker 可贡献 eligibility/response adapter，不允许在热路径无界阻塞。
+- [ ] RUST-410 （旧 HR-EXT-006） 自定义 HTTP 模板也视为 runtime adapter 的一个实现，用户可替换，不把 `reload` URL 写死在 Rust Core。
+- [ ] RUST-411 （旧 HR-EXT-007） 提供一个 stub provider 和 mock HTTP provider 的 SDK 示例、集成测试与权限用例。
+- [ ] RUST-412 （旧 HR-EXT-008） 新增 Provider 不应影响已有语言服务 hover/definition 尾延迟；经调度隔离与基准验证。
+
+#### 19.10 性能、可靠性、安全专项门禁（HR-QA）
+
+> > 以下为**候选目标**，须用当前仓库真实基线和固定机器明确最终阈值：单文件 Save→队列（不含配置 debounce）P95≤30ms；热更新本地 pipeline CPU 时间 P95≤15ms；UI 单次状态更新节流后≤100ms；高频保存不导致 extension host 事件循环长阻塞；网络耗时单独统计，不混为本地性能。
+
+- [ ] RUST-413 （旧 HR-QA-001） 基准定义：文件数 200/2k/10k/50k；单文件持续保存、Git checkout 500 文件、写入风暴、远端 SSH/workspace。
+- [ ] RUST-414 （旧 HR-QA-002） 统计 Watch→过滤→哈希→语法检查→队列→HTTP→回执→UI 各段耗时、P95/P99/max、排队与丢弃原因。
+- [ ] RUST-415 （旧 HR-QA-003） 连续保存 100 次同一文件验证 debouncing、最终版本提交、不会无限请求或错误绿色状态。
+- [ ] RUST-416 （旧 HR-QA-004） 500 文件同时变动触发批次确认/限流机制，无全仓热更风暴；UI 不冻结。
+- [ ] RUST-417 （旧 HR-QA-005） 模拟 10 秒 HTTP 超时+用户继续编辑；请求返回后不得把过期版本标成当前成功。
+- [ ] RUST-418 （旧 HR-QA-006） 模拟 HTTP 200 body `error`：状态必须失败；HTTP 200 无规范回执为未确认。
+- [ ] RUST-419 （旧 HR-QA-007） endpoint 不可达、证书错误、代理错误、target 重启、部分节点成功各自输出可用错误。
+- [ ] RUST-420 （旧 HR-QA-008） 默认只允许经确认的 loopback/trusted endpoint；若允许非 loopback，要有明确授权与安全警告。
+- [ ] RUST-421 （旧 HR-QA-009） 确保 HTTP header/token 不出现在 output、trace、history、UI tooltip、导出数据中。
+- [ ] RUST-422 （旧 HR-QA-010） 阻止配置模板造成 SSRF/任意 file URI 泄露、路径穿越、恶意脚本执行；workspace trust 强制生效。
+- [ ] RUST-423 （旧 HR-QA-011） Windows/macOS/Linux/WSL/SSH/DevContainer 路径与 localhost 指向测试，明确 HTTP 请求运行在本地还是远端。
+- [ ] RUST-424 （旧 HR-QA-012） 模块名矩阵测试（根、两级、三级、`__init__`、Unicode、重复根），HTTP 正确传短名且 UI 永远完整名。
+- [ ] RUST-425 （旧 HR-QA-013） Rust Core 正在重建索引时热更新可继续工作，CPU/线程池/锁不可导致语言服务 tail latency 大幅恶化。
+- [ ] RUST-426 （旧 HR-QA-014） 存在热更新插件 0/5/20 个分别做 load test，插件崩溃不影响核心与主线程。
+- [ ] RUST-427 （旧 HR-QA-015） 用受控真实测试服务验证“accepted”与“applied”语义并固化协议 fixture。
+- [ ] RUST-428 （旧 HR-QA-016） 24h Watch/HTTP soak：无 watcher 泄漏、状态增长无界、连接泄漏、错误重试风暴。
+- [ ] RUST-429 （旧 HR-QA-017） 性能不达标时允许关 Watch 和回退至手动 Quick Requests；设置可恢复且无状态数据破坏。
+- [ ] RUST-430 （旧 HR-QA-018） 安全与功能完成矩阵按 target、engine profile、文件类型、触发方式逐项签收。
+
+#### 19.11 建议的 Hot Reload PR 顺序及依赖（先复用现有功能）
+- [x] RUST-431 （旧 HR-PR-01） `audit/hotreload-current`：HR-AUDIT 全部；输出调用链和已实现/缺失矩阵，不改功能。(HR-PR-01,6934c63a,docs/hotreload/current-implementation.md 全量刷新+docs/zh/ 1:1 镜像;§HR-AUDIT-001..012 事实表+§2 已实现/缺失/unknown 矩阵+§3 对上期结转;零功能改动;审计发现一并记录未修=首跑通知『打开日志』locale 不匹配 src/hotReload.ts:1046)
+- [ ] RUST-432 （旧 HR-PR-02） `hotreload/module-identity`：HR-MOD 全部 + pure resolver tests；手动热更先使用双名称模型；兼容原 `${module}`。(进行中:HR-PR-02,c120287c,HR-MOD-001/002/003/004/005/007/009/012/015 已勾,006/008/010/011/013/014 部分落地暂缓注记见各行;手动热更双名=hotReloadDefaultHotfix 双名优先+${module} 回落已接线;UI/配置暴露/发送路径双名切换随 HR-PR-03+)
+- [ ] RUST-433 （旧 HR-PR-03） `hotreload/request-adapter`：抽取通用 RequestExecutor + 状态机 + mock server；保证旧 Quick Requests 不回归。(进行中:HR-PR-03,21cc4848,HR-HTTP-001/010/017 已勾+014 生成面已落;三件主体皆已交付=通用执行器+交换状态机+真网 mock server 套件;旧 Quick Requests 回归=既有 tests/httpRequestService.test.ts 钉逐字不变全绿;余=关联 id 线路贯穿(接收端契约)+002 provider 面(随 HR-PR-04/05))
+- [x] RUST-434 （旧 HR-PR-04） `hotreload/save-watch`：onSave 默认关闭，可开关、去抖、稳定性/幂等队列、基本语法检查。（收官:HR-PR-04 纯核已落=新 src/backend/hotReloadSavePipeline.ts 零 IO 零 vscode(时钟/定时器/快照读/语法闸全注入,与 VFS-001、hotReloadModuleIdentity 同边界)+tests/hotReloadSavePipeline.test.ts(时钟定时器全虚拟)+prove-red 闭环;HR-WATCH-006/007/009/010/011/016 已勾,002/003/004/005/008/012/013/014/017/018 部分落地见各行注记(015 见 HR-WATCH-015 行),001 已按 2026-11-06 用户令裁定=默认开;本批另纠正四处自身设计缺陷=批处理路径原为死代码(每次定稿只传 1 事件故批量阈值永不可达,改为波次归集)、去抖原为固定前置窗(改真尾窗+排窗封顶)、revision 原按 offer 占号致同内容在途响应被误判 stale(改仅实际发出的新内容版本递增)、投递指纹原在定稿时记致一次失败永久跳过同内容(HR-WATCH-008,改在交发送面那一刻记+forgetSent 撤回);**save 侧接线已落(2026-11-13 子批,dc24d825)**=live 触发链重接两级形态(src/hotReload.ts :825-859:进料级 HotReloadSavePipeline 每文件尾窗去抖/max-delay 封顶/去重指纹/版本号 + 合并窗 HotReloadTrigger 保 def 闸整批契约,混批 py 绕闸真缺陷被 wiring 测试抓出=合并窗必须存在的实证;0 冲口定稿即汇合并池,波次窗/预览阈/稳定窗/语法闸随配置面子批;fire 时机保「末次事件+窗」=pending() 查询防 emit 侧补排后移;核心 +1 钉 batchFlushMs=0;测试替身时钟 handle 撞号(handles.size 作 id,clear+set 覆写另一计时器)暴露=20 文件统一改单调 nextHandle++,真 setTimeout 语义对齐;在途计时 1→2 如实重钉 6 处,行为断言零改动;门禁 eslint 0/tsc 0/unit 759 文件 9345+8skip RC=0/xvfb demo 25 RC=0;001 冲突已按 2026-11-06 用户令裁定=默认开;revision 消费面已收官(2026-11-13,88171384,见 HR-WATCH-011 行);配置键面已收官(2026-11-13,5939c549=稳定窗/语法闸/波次冲口/预览阈四键装配钉 tests/hotReloadConfigFaces.test.ts 9 例(键开→面进/键关→替身想进也不进/命令→当前实例/真实现面删失如实)+语法闸真实现(fail-open 装配核+解释器 compile 真编译)+releasePreview 放行命令+滞留日志可见性+NLS 双语言+features/configuration/commands/current-implementation 文档对账全闸;模式选择见 HR-WATCH-001 行 e54acba1),disk 侧接线已落(2026-11-13,edcfaeaf,见 HR-WATCH-003/004/005 行注记),本行收官——子项余段各归各行(005 target 维根绑定/008 回执簇指纹台账/012 配置检查器/013 profile capabilities/014 在途取消/017 呈现面/018 余模拟,均见各行注记,不属本模块交付面))
+- [x] RUST-435 （旧 HR-PR-05） `hotreload/disk-watch`：外部变更、Git 批量变更、目录过滤、target 合并、远端环境。(收官:ae3a2c7a 装配核已落 src/backend/hotReloadDiskWatch.ts=零 vscode 导入,DiskWatcherFactory 注入,watchRoots/arm/rebuild/dispose,HR-WATCH-015 基线闸,过滤层接 isWatchableScriptFile,delete 忽略,UNC/WSL canonical;tests/hotReloadDiskWatch.test.ts 16 例钉含 Git checkout 爆发经真流水线(30 文件单波次一批/同内容还原去重不重发/超阈只预览 HR-WATCH-016 兜底/save+disk 重叠归并/dispose+rebuild 生命周期/file: 与 UNC 形态);prove-red 两轮=拆基线闸红/断过滤层红;真适配+接线已落 edcfaeaf=src/activate/hotReload.ts vscode.createFileSystemWatcher 薄适配(HR-WATCH-003:change/create 以 disk-change 进同一流水线,与 save 重叠纯核归并不双发;watcher dispose 只随控制器走不另挂 subscriptions)+triggerMode=onDiskChange 才建面(装配钉:缺省 onSave 不建/切换建拆双向/配置关拆面/context dispose 全清,tests/hotReloadDiskWatchWiring.test.ts 11 例含源锁钉真适配)+诊断只走生命周期类通道日志(filtered/delete-ignored 不逐条刷防 Git 爆发刷屏,语义纯核钉);坑账=块注释含 `/**/*.py` 的 `*/` 子串提前终止注释(TS1109 级联);门禁 lint 0/tsc 0/unit 全绿/xvfb demo 25 RC=0;target 维根绑定余段见 HR-WATCH-005 行注记)
+- [x] RUST-436 （旧 HR-PR-06） `hotreload/ui-status`：状态栏、资源树、历史面板、完整模块名、失败重试与可信回执。(收官:001 七态状态机/003 文件装饰+CodeLens/009 口径面=既有 live 面 HR-PR-06 批核实勾;90200003 历史库纯核(容量/幂等/迁移单向/过滤/分组/分页/合并/名称投影);f7451a81 UI 装配=kbengine.hotReloadHistory 视图(三组/键组/节流刷新/占位契约 13×2)+historySearch/historyPanel 两命令(过滤/分页/双名/requestId 列)+台账 onRecord 逐条投影+workspaceState 持久化回载;tests/hotReloadHistoryView.test.ts 16 钉,prove-red 中和投影面 10 钉红;门禁 lint 0/tsc 0/unit 768 文件 9429+8skip RC=0(首轮 2 例负载抖动复跑消失)/xvfb demo 25 RC=0;残余已注行内=HR-UI-004 实时队列面/HR-UI-005 配置面板化/HR-UI-007 虚拟滚动/HR-UI-012 工作区切换钉/HR-UI-014 root 维度/HR-HTTP-014 服务端贯穿(HR-AUDIT-009)/HR-MOD-014 版本事件双名)
+- [x] RUST-437 （旧 HR-PR-07） `hotreload/def-fingerprint`：file/semantic/engine 三种 Hash、影响分析、重启提示。(接线批收官 4b211068,推 main:差项全清=002 VFS 字节复用(readSharedFileSnapshot 缓冲区优先+来源标签)/006 profile 消费面(Inspector 三面显档案,未协商如实 not available)/007 完整 Inspector UI(kbengine.def.fingerprintInspector,三值+算法版本+耗时+来源+复制按钮,普通 webview 面板)/008 修改触发接线(.def 保存→台账三路判定→通道一行,首见只存底);新落 src/backend/hotReloadDefFingerprintLedger.ts 台账纯核+src/defFingerprintInspector.ts 编排(deps 注入,vscode 薄壳)+defMd5Check 加 getLastDefMd5CheckOutcome 供闭包面另账转显;门禁 lint 0/tsc 0/unit 767 文件 9413+8skip RC=0(+2 文件+19 例)/xvfb demo 25 RC=0;prove-red=中和台账 record 后变更判定钉红;接线期真缺陷一枚=通道装配期抢建同名通道会遮蔽 def-analyzer 断言首通道面,改惰性建与 defMd5Check 同口径;docs/guide/commands.md en+zh+docs/hotreload/current-implementation.md §19 en+zh 对账;009 差异分类与影响分析细化另账)
+- [x] RUST-438 （旧 HR-PR-08） `hotreload/plugin-api`：HotReloadProvider/FingerprintProvider/Engine Profile 版本化扩展。（进行中:HR-PR-08,5622af19,新纯核 src/backend/hotReloadPluginApi.ts 零 vscode=HOT_RELOAD_PLUGIN_API_VERSION='1' 版本钉形状+FingerprintProvider 接口(默认实现 defaultHotReloadFingerprintProvider 纯委托 hashDefContent/semanticFingerprintReport/negotiateEngineDigest 不自创不猜)+HotReloadProvider 发送插槽(canSend 按 profile 分派+send 透传 transport-faithful)+EngineProfile 版本化(engineVersion null=未知如实)+HotReloadProviderRegistry(重复 id/apiVersion 不符如实拒不静默替换;resolve 应答者胜无人应答 null 不回落——热更是写引擎内存动作,回落=拿默认实现冒充用户环境);tests/hotReloadPluginApi.test.ts 9 例;prove-red 三轮=拆重复 id 拒红/拆无人应答 null 红回退伪回落红/拆版本闸红);**装配接线已收官(2026-11-13,c7557bc5)**=真实扩展宿主装配落地(src/hotReload.ts:注册时机=装配时,宿主 createHotReloadProviderHost 批量注册+重复 id/apiVersion 不符经 onRejection 如实拒上日志不静默收编+dispose 随复合释放清册不半态;fork 侧具体 provider 实现=createHttpHotfixSendProvider 委托 sendDefaultHotfix 核零第二套发送语义,defaultHotfix 面在即注册,以 kbengine.http-hotfix 应答;注入序=应答序先到先应答,fork 注入实现排内置之前=fork 专属优先;新配置键 kbengine.hotReload.sendViaProviders 默认 false=键关面不进链行为不变,键开无动作名发送先问注册表无人应答回落默认热更面;provider 结果逐字映射既有面=ok→sent-unverified+审计 provider:<id>,失败/抛错→failed+HR-WATCH-008 指纹撤回+同步抛错 promise 边界收口;新装配核 src/backend/hotReloadProviderAssembly.ts 零 vscode;测试=hotReloadProviderAssembly.test.ts 6 钉+hotReloadProviderWiring.test.ts 8 装配钉,prove-red=中和 provider 臂咨询面键开钉 6 例转红;manifest 默认锁 false+容忍读取布尔循环+NLS 双包+features/configuration 双语对账+current-implementation §18 en+zh;门禁 lint 0/tsc 0/unit 765 文件 9394+8skip RC=0/xvfb demo 25 RC=0);本行收官)
+- [ ] RUST-439 （旧 HR-PR-09） `hotreload/reliability-gate`：风暴/过期/断网/安全/24h soak 与跨平台性能报告。(进行中:HR-PR-09,a14bd1a2,组合门禁套件已落=tests/hotReloadReliabilityGate.test.ts 7 例零新增生产代码(风暴归并不放大/超阈预览/过期拒记/断网撤回重发含风暴批/语法拦截不占版本号/10k 缩放 soak,虚拟时钟零 IO,prove-red=拆 forgetSent 撤回断网门恰红),真时钟吞吐实测 10k offer→37ms/全链 157ms+同内容第二波判重新发 0,报告 docs/perf/2026-11-13-hotreload-reliability-gate.md;如实边界:24h 真 soak 未跑(需装配面,缩放 soak 为本车道口径)/跨平台仅 Linux 实测不编造数字/端到端网络时延归 HR-HTTP-017;装配级风暴验收随接线批,docs b25774c5)
+
+#### 19.12 专项 Definition of Done（逐条不可跳过）
+- [ ] RUST-440 （旧 HR-DOD-001） 更改 `scripts/entities/fight/FightAI.py`：自动模式启用后只送 `fight.FightAI`；UI 展示 `entities.fight.FightAI`。
+- [ ] RUST-441 （旧 HR-DOD-002） 手动命令、onSave 和 onDiskChange 对同一模块生成完全一致的短名/全名。
+- [ ] RUST-442 （旧 HR-DOD-003） 在 HTTP 返回 200 但未提供可验证应用回执时 UI **不显示已热更新成功**。
+- [ ] RUST-443 （旧 HR-DOD-004） 连续保存 100 次不会导致同一旧版本无限请求或把旧回执当作当前结果。
+- [ ] RUST-444 （旧 HR-DOD-005） 关闭自动更新、未知根/特殊脚本、未知协议或不可信 workspace 均不产生自动 HTTP。
+- [ ] RUST-445 （旧 HR-DOD-006） `.def` 编辑器能查看 File Hash / Semantic Hash / Engine Digest（不可得时明确标识），结构变化默认不自动应用。
+- [ ] RUST-446 （旧 HR-DOD-007） 跨目标、多 root、远端 SSH 不串数据、不串状态、不误发 HTTP。
+- [ ] RUST-447 （旧 HR-DOD-008） 热更新功能不拉高语言服务 P95/P99、无主线程同步文件风暴、内存/连接/watchers 不泄漏。
+- [ ] RUST-448 （旧 HR-DOD-009） 保留现有手动通用 HTTP 请求功能，文档明确旧 `${module}` 迁移与模板预览。
+- [ ] RUST-449 （旧 HR-DOD-010） 每一个任务附源码路径、commit、测试命令、结果截图或报告，未经验证不得打勾。
+
+
+## EXEC — 后台执行与调试（Python 3.7.3 调试工具链）
+
+> 编号 2026-11-14 功能域重整：本域条目按原账本出现顺序重编为 EXEC-001 起，旧编号以（旧 X）随行保留；来源分节标题原样。
+
+### Python 3.7.3 调试工具链兼容（2026-11-11）
+
+官方资料和确切版本基线见 [调试安装约束](docs/zh/guide/python-debugger-compatibility.md)。目标包 `debugpy==1.7.0`、调试扩展 `ms-python.debugpy@2024.0.0`；Python 扩展 `2024.0.1` 是项目复现基线而非声称官方最后支持版本。文档与固定 requirements 已落；01-07 已收口（decb938e+3349f97a，07 含本机解释器级实录）；**08（固定扩展完整调试链真机验收：实际 VS Code UI、引擎内 listen/断点、VSIX/包哈希留证）待真机/用户验收**。
+
+- [x] EXEC-001 （旧 DBG-COMPAT-01） 建立引擎目标 Python 版本来源。验收：读取真实引擎版本或显式项目目标，保留来源及未知状态；不再以开发机解释器或全局常量 3.12.13 代替引擎版本，多工程不同版本互不串用。——decb938e：`src/backend/pythonTarget.ts`（设置 `kbengine.debug.pythonTarget` > 引擎二进制扫描 `<engineRoot>/kbe/bin/server` 前 3 个×32MB 版本串跨二进制投票；判不出=诚实未知带 detail，绝不回落开发机解释器/常量；逐工作区走活动 profile）。18 例单测钉住来源优先级/扫描/投票/弱证据标注。
+- [x] EXEC-002 （旧 DBG-COMPAT-02） 实现目标与 debugpy 包兼容策略。验收：3.7.x 严格锁 1.7.0，拒绝过高与错误平台包；3.8/更新目标按已核实支持线选择独立版本；未知目标不盲装最新版。——decb938e：`debugpyPolicyFor`（3.7→严格锁 1.7.0 过高也拒；3.8→1.8.1、3.9→1.8.13 pin+下限；3.10+→floor 1.8.0；3.6/未知→无策略不盲装）+ `debugpyVersionSatisfiesPolicy` 单一裁决闸（同步/预检/资产树核对三处共用）+ `debugpyInstallSpecFor` 精确 pip 参数（`==pin`/`>=floor`）。错误平台包拒绝蕴含在同步探测机制（同步源=目标解释器上成功 import 的包）。
+- [x] EXEC-003 （旧 DBG-COMPAT-03） 改造一键安装及手工指引。验收：实际 pip 参数使用目标策略的精确版本，不再统一 -U；失败、下载目标 ABI 与宿主版本不同、安装后版本不匹配各给真实结果。——decb938e：`DebugpyInstallRunner(path, pipArgs)` spawn `<解释器> -m pip <spec>`（超时组杀/非零退出如实报错）；`buildManualInstallGuide` 用预检 spec 拼可复制命令，目标未知（spec null）指引先设置目标不给盲装命令；安装后版本不符由下一次预检以 `debugpy-incompatible` 如实报实际与期望。
+- [x] EXEC-004 （旧 DBG-COMPAT-04） 改造同步目录及预检。验收：移除错误的统一 MIN_DEBUGPY_VERSION 门槛；核对源包与目标引擎版本/ABI；资产目录存在也必须验兼容；新旧包不混合，用户手放目录仍受保护。——decb938e：`syncDebugpyPackage` 三闸（目标未知拒盲同步/源解释器 Python 行≠目标行拒=ABI 规则/版本不满足策略拒）删 `MIN_DEBUGPY_VERSION`；预检 kind 换 `debugpy-incompatible`+新 `target-unknown` 诚实态，`debugpyPreflightAllowsInjection` 对资产树包从查存在升级为读 `__init__.__version__` 核对策略；workspaceState 记账+skipped-user 保护原样。prove-red 4/4 红（HEAD 上 sync 3.7+1.7.0 错杀/预检 1.7.0 误判 outdated/指引含 -U/资产树 exists-only 放行）；门禁 lint 0+tsc 双 0+unit 全量唯一红=既有 selfAttributeFlowRustParity+xvfb demo 25 RC=0；纪实 docs/review/2026-11-12-kbug-dbgcompat.md。
+- [x] EXEC-005 （旧 DBG-COMPAT-05） 检测有效 VS Code 调试扩展版本。验收：在实际扩展宿主检查 ms-python.debugpy 版本；3.7 目标误用新版时给固定版本安装/禁自动更新步骤，不能未经用户操作自动降级其他项目扩展。——3349f97a：`readDebugpyExtensionVersion`（扩展宿主实测 `ms-python.debugpy` 版本；未装/读不出=null 诚实未知）+ `debugExtensionCompatFor`（3.7 目标须 2024.0.x 线，新线→`extension-off-line` 文案给「安装特定版本...」选 2024.0.0 + 齿轮「忽略升级」步骤，写明绝不自动降级、非 3.7 工程不受影响；扩展缺失→`extension-missing`；非 3.7/未知目标不看扩展线）。接线 `serverControls` 注入闸：预检放行后核查，warning 会话去重不逐组件连播，引擎侧注入照常（监听不依赖扩展，扩展是 attach 侧依赖）。
+- [x] EXEC-006 （旧 DBG-COMPAT-06） 建立版本分支回归。验收：3.7.3+1.7.0 正例、3.7.3+1.8.x 反例、现代目标分支、宿主新/引擎旧、远程宿主和用户目录均覆盖生产安装/同步/注入入口。——3349f97a：新 `tests/dbgcompatVersionMatrix.test.ts` 16 例钉全组合账——安装参数全分支表（3.7==1.7.0/3.8/3.9/3.10+ 下限/3.6·未知 null）；同步入口**真 fs 流**（3.7+1.7.0 synced 真复制可读回 / 3.7+1.8.0 严格拒且资产树零写入 / 源解释器 3.8→ABI 拒 / modern 下限双向 / 未知目标拒盲同步不触探测 / 用户手放 skipped-user 原样）；预检入口（3.7 ok+精确 pin / 3.7+1.8.0 incompatible / 3.12 双向 / target-unknown 无参数 / 3.6 无支持线）；注入放行入口（资产树 1.7.0 放行/1.8.0 拦/读不出拦/未知可读放行不背书/3.6 恒不放行）；宿主新扩展×引擎旧（2024.1.1+3.7.3→off-line 账本反例/2024.0.7+3.7.3→ok/新线+3.12→ok/缺失→诚实缺失）；远端口径（closed 指引报实测/目标版本无 -U、target-unknown 无安装动作）。门禁 lint 0+tsc 0+unit 全量唯一红=既有 selfAttributeFlowRustParity+xvfb demo 25 RC=0；prove-red 说明（05 纯新增面无旧行为可反转/06 零源码变更回归账本）见 docs/review/2026-11-12-kbug-dbgcompat.md 批次 C 节。
+- [x] EXEC-007 （旧 DBG-COMPAT-07） 验收 debugpy 原生与纯 Python 路径。验收：分别记录目标解释器构建、wheel/架构、Cython/frame-eval 开关、监听/附加/断点结果；导入成功不抵扣监听和断点验证，异常退出不能记成可用。——2026-11-12 本机解释器级实录（docs/review/2026-11-12-kbug-dbgcompat.md 批次 D 节）：`/usr/bin/python3.7`=CPython **3.7.17**（resolute 包，GCC 15.2.0，amd64，行匹配非 3.7.3 字面）；wheel=debugpy-1.7.0-cp37-cp37m-manylinux_2_17_x86_64（原生件齐：pydevd_cython/frame_evaluator cp37 .so + attach_linux_amd64.so）；**原生路径与纯 Python 路径（PYDEVD_USE_CYTHON/FRAME_EVAL=NO）listen+自连双通过**；DAP 全链：attach→断点恰停 5 行→Locals `a=21` 且 `b` 未定义（停点行未执行语义正确）→单步 6 行→`b=42`→断连后进程续跑干净退出——导入成功未抵扣，监听/断点全实测。对照记录：前轮临时构建 3.7.3 同 wheel listen exit 139 未破案（安装说明 §7），本机 3.7.17 全链可用——139 不归因 wheel 亦不推广；**3.7.3 具体构建与引擎内上下文归 08 真机验收**。附带架构事实：`debugpy.listen` spawn 独立 adapter，listen 口=adapter 的 DAP socket，`initialized` 在 attach 后才发、attach 响应延迟到 configurationDone（自研 DAP 客户端须按此序）。
+- [ ] EXEC-008 （旧 DBG-COMPAT-08） 验收固定扩展完整调试链。验收：实际 VS Code 固定版本清单、Python 3.7.3 引擎中 listen、connect、断点、单步、变量和断连各留证；Python 包/VSIX/目标平台分别记录版本及哈希，升级后独立复验。
+
+## DIST — 分发与平台包（kode-mcp 上 npm）
+
+> 编号 2026-11-14 功能域重整：本域条目按原账本出现顺序重编为 DIST-001 起，旧编号以（旧 X）随行保留；来源分节标题原样。
+
+### kode-mcp 上 npm：平台包分发（2026-11-12）
 
 `kode-mcp` 是 Rust 原生二进制，不能塞进一个 npm 包发出去。取 esbuild / `@swc/core`
 同款**方案 A 平台包**：`@cuihairu/kode-mcp` 只含 launcher 脚本，二进制按 `os`/`cpu`
@@ -25,40 +788,33 @@
 走通全链路；**上传留给显式触发且由用户给版本号**（版本红线），故整项保持未勾。
 纪实 `docs/review/2026-11-12-kode-mcp-npm-packaging.md`。
 
-- [x] NPM-PKG-01 建立平台包骨架与 launcher 定位逻辑。验收：主包只发一个文件、optionalDependencies 恰为 6 平台包、launcher 三级定位（`KODE_MCP_BINARY` > 向上找 `node_modules` > `createRequire` 兜底）、不支持的 `os`/`arch` 组合不猜。——`c0794178`：`packages/kode-mcp/`（主包 + 6 平台包 + `.gitignore` 挡暂存二进制）+ `packages/kode-mcp/bin/kode-mcp`；`tests/npmPackage.test.ts` 17 例。
-- [x] NPM-PKG-02 建立打包与校验脚本，含三道防误发闸门。验收：`verify`/`smoke`/`sizes`/`pack`/`build`/`prepare`/`publish` 六档按危险度分层；`KODE_NPM_PUBLISH=1` 闸、200 MB 体积闸挡未裁剪 debug 构建（实测本机 debug 308 MB 被正确拒）、`publish` 上传 `pack` 产出的 tarball 而非重打包。——`c0794178`：`scripts/npm-package.mjs` + `scripts/verify-npm-set.mjs`；实测 `pack` 出主包 2538 B、平台包 69 044 605 B，`npm-index.json` 落 `dist/npm/`。
-- [x] NPM-PKG-03 用真实 MCP 握手验证，并纠正 MCP stdio 帧格式。验收：握手 `initialize` 返回 `serverInfo`、`tools/list` 25 工具、进程干净退出；单测断言脚本里不得出现 `Content-Length: `。——`c0794178`。坑：首版误用 `kode-server`（LSP）的 `Content-Length` 帧 → `ConnectionClosed("initialize request")`；rmcp `transport::io::StdioReader` 实为**每行一条 JSON**。另：initialize 未完成时读到 EOF 即报连接关闭，故握手三帧须同批输入。
-- [x] NPM-PKG-04 真实安装链路端到端。验收：临时消费工程 `npm install` 主包生成 `.bin/kode-mcp` shim、平台包就位，经 shim 调真实 `kode-mcp`（喂 `tests/fixtures/kbengine-demo-assets`）返回 25 工具、退出码 0。
-- [x] NPM-PKG-05 建立手动 CI workflow。验收：`npm.yml` 只 `workflow_dispatch`、`contents: read`、`concurrency: kode-npm-publish`；输入 `version` 须逐字等于已提交 `package.json` 版本、`publish` 默认 false；六平台矩阵复用 `platform-vsix.yml` 的 runner/target/musl `rust-lld`；`prepare` 在下载回 tarball 上重跑 `verify-npm-set.mjs`。——`c0794178` 建 workflow；`6867d516` 补 publish job 的 `registry-url`（不设则 `NODE_AUTH_TOKEN` 无效、裸 publish 直接 `ENEEDAUTH`；机制见纪实 §6）。
-- [x] NPM-PKG-06 文档对账。验收：`docs/guide/kode-mcp-enablement.md` + zh 补「从 npm 安装（打包机制已建，尚未发布）」与「发布：所需环境变量与凭据」两节（`NODE_AUTH_TOKEN`/`NPM_TOKEN`/`KODE_NPM_PUBLISH`/`KODE_MCP_BINARY`/`RUST_LOG` 五变量表 + 账号侧一次性配置 + CI/本地发布 + 只验证不发布的命令）；如实写「tarball 还没上 registry」。——`c0794178` 建两节；`6867d516` 补「`NODE_AUTH_TOKEN` 是 `.npmrc` 占位符、不是 npm 变量」节（实测三层证据）。
-- [ ] NPM-PKG-07 发布。验收：账号登录（`npm profile login`，npm 强制 2FA）→ 建 granular token（All packages / Read and write）配为 `NPM_TOKEN` secret → 由用户给版本号后触发 `npm.yml`（`publish: true`）。**版本号只能由用户手动给出并触发**；未经验收的包不得对外。依赖 NPM-PKG-01..06 + 用户账号凭据。
+- [x] DIST-001 （旧 NPM-PKG-01） 建立平台包骨架与 launcher 定位逻辑。验收：主包只发一个文件、optionalDependencies 恰为 6 平台包、launcher 三级定位（`KODE_MCP_BINARY` > 向上找 `node_modules` > `createRequire` 兜底）、不支持的 `os`/`arch` 组合不猜。——`c0794178`：`packages/kode-mcp/`（主包 + 6 平台包 + `.gitignore` 挡暂存二进制）+ `packages/kode-mcp/bin/kode-mcp`；`tests/npmPackage.test.ts` 17 例。
+- [x] DIST-002 （旧 NPM-PKG-02） 建立打包与校验脚本，含三道防误发闸门。验收：`verify`/`smoke`/`sizes`/`pack`/`build`/`prepare`/`publish` 六档按危险度分层；`KODE_NPM_PUBLISH=1` 闸、200 MB 体积闸挡未裁剪 debug 构建（实测本机 debug 308 MB 被正确拒）、`publish` 上传 `pack` 产出的 tarball 而非重打包。——`c0794178`：`scripts/npm-package.mjs` + `scripts/verify-npm-set.mjs`；实测 `pack` 出主包 2538 B、平台包 69 044 605 B，`npm-index.json` 落 `dist/npm/`。
+- [x] DIST-003 （旧 NPM-PKG-03） 用真实 MCP 握手验证，并纠正 MCP stdio 帧格式。验收：握手 `initialize` 返回 `serverInfo`、`tools/list` 25 工具、进程干净退出；单测断言脚本里不得出现 `Content-Length: `。——`c0794178`。坑：首版误用 `kode-server`（LSP）的 `Content-Length` 帧 → `ConnectionClosed("initialize request")`；rmcp `transport::io::StdioReader` 实为**每行一条 JSON**。另：initialize 未完成时读到 EOF 即报连接关闭，故握手三帧须同批输入。
+- [x] DIST-004 （旧 NPM-PKG-04） 真实安装链路端到端。验收：临时消费工程 `npm install` 主包生成 `.bin/kode-mcp` shim、平台包就位，经 shim 调真实 `kode-mcp`（喂 `tests/fixtures/kbengine-demo-assets`）返回 25 工具、退出码 0。
+- [x] DIST-005 （旧 NPM-PKG-05） 建立手动 CI workflow。验收：`npm.yml` 只 `workflow_dispatch`、`contents: read`、`concurrency: kode-npm-publish`；输入 `version` 须逐字等于已提交 `package.json` 版本、`publish` 默认 false；六平台矩阵复用 `platform-vsix.yml` 的 runner/target/musl `rust-lld`；`prepare` 在下载回 tarball 上重跑 `verify-npm-set.mjs`。——`c0794178` 建 workflow；`6867d516` 补 publish job 的 `registry-url`（不设则 `NODE_AUTH_TOKEN` 无效、裸 publish 直接 `ENEEDAUTH`；机制见纪实 §6）。
+- [x] DIST-006 （旧 NPM-PKG-06） 文档对账。验收：`docs/guide/kode-mcp-enablement.md` + zh 补「从 npm 安装（打包机制已建，尚未发布）」与「发布：所需环境变量与凭据」两节（`NODE_AUTH_TOKEN`/`NPM_TOKEN`/`KODE_NPM_PUBLISH`/`KODE_MCP_BINARY`/`RUST_LOG` 五变量表 + 账号侧一次性配置 + CI/本地发布 + 只验证不发布的命令）；如实写「tarball 还没上 registry」。——`c0794178` 建两节；`6867d516` 补「`NODE_AUTH_TOKEN` 是 `.npmrc` 占位符、不是 npm 变量」节（实测三层证据）。
+- [ ] DIST-007 （旧 NPM-PKG-07） 发布。验收：账号登录（`npm profile login`，npm 强制 2FA）→ 建 granular token（All packages / Read and write）配为 `NPM_TOKEN` secret → 由用户给版本号后触发 `npm.yml`（`publish: true`）。**版本号只能由用户手动给出并触发**；未经验收的包不得对外。依赖 NPM-PKG-01..06 + 用户账号凭据。
 
-## Python 3.7.3 调试工具链兼容（2026-11-11）
+## QA — 验收与文档交付（KSEM-QA）
 
-官方资料和确切版本基线见 [调试安装约束](docs/zh/guide/python-debugger-compatibility.md)。目标包 `debugpy==1.7.0`、调试扩展 `ms-python.debugpy@2024.0.0`；Python 扩展 `2024.0.1` 是项目复现基线而非声称官方最后支持版本。文档与固定 requirements 已落；01-07 已收口（decb938e+3349f97a，07 含本机解释器级实录）；**08（固定扩展完整调试链真机验收：实际 VS Code UI、引擎内 listen/断点、VSIX/包哈希留证）待真机/用户验收**。
+> 编号 2026-11-14 功能域重整：本域条目按原账本出现顺序重编为 QA-001 起，旧编号以（旧 X）随行保留；来源分节标题原样。
 
-- [x] DBG-COMPAT-01 建立引擎目标 Python 版本来源。验收：读取真实引擎版本或显式项目目标，保留来源及未知状态；不再以开发机解释器或全局常量 3.12.13 代替引擎版本，多工程不同版本互不串用。——decb938e：`src/backend/pythonTarget.ts`（设置 `kbengine.debug.pythonTarget` > 引擎二进制扫描 `<engineRoot>/kbe/bin/server` 前 3 个×32MB 版本串跨二进制投票；判不出=诚实未知带 detail，绝不回落开发机解释器/常量；逐工作区走活动 profile）。18 例单测钉住来源优先级/扫描/投票/弱证据标注。
-- [x] DBG-COMPAT-02 实现目标与 debugpy 包兼容策略。验收：3.7.x 严格锁 1.7.0，拒绝过高与错误平台包；3.8/更新目标按已核实支持线选择独立版本；未知目标不盲装最新版。——decb938e：`debugpyPolicyFor`（3.7→严格锁 1.7.0 过高也拒；3.8→1.8.1、3.9→1.8.13 pin+下限；3.10+→floor 1.8.0；3.6/未知→无策略不盲装）+ `debugpyVersionSatisfiesPolicy` 单一裁决闸（同步/预检/资产树核对三处共用）+ `debugpyInstallSpecFor` 精确 pip 参数（`==pin`/`>=floor`）。错误平台包拒绝蕴含在同步探测机制（同步源=目标解释器上成功 import 的包）。
-- [x] DBG-COMPAT-03 改造一键安装及手工指引。验收：实际 pip 参数使用目标策略的精确版本，不再统一 -U；失败、下载目标 ABI 与宿主版本不同、安装后版本不匹配各给真实结果。——decb938e：`DebugpyInstallRunner(path, pipArgs)` spawn `<解释器> -m pip <spec>`（超时组杀/非零退出如实报错）；`buildManualInstallGuide` 用预检 spec 拼可复制命令，目标未知（spec null）指引先设置目标不给盲装命令；安装后版本不符由下一次预检以 `debugpy-incompatible` 如实报实际与期望。
-- [x] DBG-COMPAT-04 改造同步目录及预检。验收：移除错误的统一 MIN_DEBUGPY_VERSION 门槛；核对源包与目标引擎版本/ABI；资产目录存在也必须验兼容；新旧包不混合，用户手放目录仍受保护。——decb938e：`syncDebugpyPackage` 三闸（目标未知拒盲同步/源解释器 Python 行≠目标行拒=ABI 规则/版本不满足策略拒）删 `MIN_DEBUGPY_VERSION`；预检 kind 换 `debugpy-incompatible`+新 `target-unknown` 诚实态，`debugpyPreflightAllowsInjection` 对资产树包从查存在升级为读 `__init__.__version__` 核对策略；workspaceState 记账+skipped-user 保护原样。prove-red 4/4 红（HEAD 上 sync 3.7+1.7.0 错杀/预检 1.7.0 误判 outdated/指引含 -U/资产树 exists-only 放行）；门禁 lint 0+tsc 双 0+unit 全量唯一红=既有 selfAttributeFlowRustParity+xvfb demo 25 RC=0；纪实 docs/review/2026-11-12-kbug-dbgcompat.md。
-- [x] DBG-COMPAT-05 检测有效 VS Code 调试扩展版本。验收：在实际扩展宿主检查 ms-python.debugpy 版本；3.7 目标误用新版时给固定版本安装/禁自动更新步骤，不能未经用户操作自动降级其他项目扩展。——3349f97a：`readDebugpyExtensionVersion`（扩展宿主实测 `ms-python.debugpy` 版本；未装/读不出=null 诚实未知）+ `debugExtensionCompatFor`（3.7 目标须 2024.0.x 线，新线→`extension-off-line` 文案给「安装特定版本...」选 2024.0.0 + 齿轮「忽略升级」步骤，写明绝不自动降级、非 3.7 工程不受影响；扩展缺失→`extension-missing`；非 3.7/未知目标不看扩展线）。接线 `serverControls` 注入闸：预检放行后核查，warning 会话去重不逐组件连播，引擎侧注入照常（监听不依赖扩展，扩展是 attach 侧依赖）。
-- [x] DBG-COMPAT-06 建立版本分支回归。验收：3.7.3+1.7.0 正例、3.7.3+1.8.x 反例、现代目标分支、宿主新/引擎旧、远程宿主和用户目录均覆盖生产安装/同步/注入入口。——3349f97a：新 `tests/dbgcompatVersionMatrix.test.ts` 16 例钉全组合账——安装参数全分支表（3.7==1.7.0/3.8/3.9/3.10+ 下限/3.6·未知 null）；同步入口**真 fs 流**（3.7+1.7.0 synced 真复制可读回 / 3.7+1.8.0 严格拒且资产树零写入 / 源解释器 3.8→ABI 拒 / modern 下限双向 / 未知目标拒盲同步不触探测 / 用户手放 skipped-user 原样）；预检入口（3.7 ok+精确 pin / 3.7+1.8.0 incompatible / 3.12 双向 / target-unknown 无参数 / 3.6 无支持线）；注入放行入口（资产树 1.7.0 放行/1.8.0 拦/读不出拦/未知可读放行不背书/3.6 恒不放行）；宿主新扩展×引擎旧（2024.1.1+3.7.3→off-line 账本反例/2024.0.7+3.7.3→ok/新线+3.12→ok/缺失→诚实缺失）；远端口径（closed 指引报实测/目标版本无 -U、target-unknown 无安装动作）。门禁 lint 0+tsc 0+unit 全量唯一红=既有 selfAttributeFlowRustParity+xvfb demo 25 RC=0；prove-red 说明（05 纯新增面无旧行为可反转/06 零源码变更回归账本）见 docs/review/2026-11-12-kbug-dbgcompat.md 批次 C 节。
-- [x] DBG-COMPAT-07 验收 debugpy 原生与纯 Python 路径。验收：分别记录目标解释器构建、wheel/架构、Cython/frame-eval 开关、监听/附加/断点结果；导入成功不抵扣监听和断点验证，异常退出不能记成可用。——2026-11-12 本机解释器级实录（docs/review/2026-11-12-kbug-dbgcompat.md 批次 D 节）：`/usr/bin/python3.7`=CPython **3.7.17**（resolute 包，GCC 15.2.0，amd64，行匹配非 3.7.3 字面）；wheel=debugpy-1.7.0-cp37-cp37m-manylinux_2_17_x86_64（原生件齐：pydevd_cython/frame_evaluator cp37 .so + attach_linux_amd64.so）；**原生路径与纯 Python 路径（PYDEVD_USE_CYTHON/FRAME_EVAL=NO）listen+自连双通过**；DAP 全链：attach→断点恰停 5 行→Locals `a=21` 且 `b` 未定义（停点行未执行语义正确）→单步 6 行→`b=42`→断连后进程续跑干净退出——导入成功未抵扣，监听/断点全实测。对照记录：前轮临时构建 3.7.3 同 wheel listen exit 139 未破案（安装说明 §7），本机 3.7.17 全链可用——139 不归因 wheel 亦不推广；**3.7.3 具体构建与引擎内上下文归 08 真机验收**。附带架构事实：`debugpy.listen` spawn 独立 adapter，listen 口=adapter 的 DAP socket，`initialized` 在 attach 后才发、attach 响应延迟到 configurationDone（自研 DAP 客户端须按此序）。
-- [ ] DBG-COMPAT-08 验收固定扩展完整调试链。验收：实际 VS Code 固定版本清单、Python 3.7.3 引擎中 listen、connect、断点、单步、变量和断连各留证；Python 包/VSIX/目标平台分别记录版本及哈希，升级后独立复验。
+### KSEM-QA · P1 · 分批验收与文档交付
 
-## Demo 双通道热更新与 Python 3.7.3（2026-11-11）
+依赖：每个能力批次单独执行，不等全部实现。
 
-用户实测：官方与 HTTP 都未看到更新生效；HTTP 明确使用 Guido xreload，运行目标 Python 3.7.3。实现与证据见 [双通道记录](docs/design/demo-hot-reload.md)。以下勾项仅代表对应代码/自动化验证完成，不代表完整真实游戏双通道已验收。
+- [ ] QA-001 （旧 KSEM-QA-01） [P1] 建立人工真值语料。验收：每类能力有引擎/声明依据的正例、反例、未知例；TS/Rust 一致不等于正确。
+- [ ] QA-002 （旧 KSEM-QA-02） [P1] 建立 Provider 端到端验证。验收：同一文件实际走补全/hover/跳转/诊断/图入口，包含 RPC 缺失、旧二进制和失败降级，避免只测核心函数。
+- [ ] QA-003 （旧 KSEM-QA-03） [P1] 验证编辑和跨工程隔离。验收：未保存修改、连续输入、同名跨根、关闭重开、重命名删除均不出过期结果。
+- [ ] QA-004 （旧 KSEM-QA-04） [P1] 测量交互截止与降级。验收：记录排队/解析/查询/IPC/渲染分段及 P50/P95/P99；服务存活但无响应时真实超时，取消不能只改 UI。
+- [ ] QA-005 （旧 KSEM-QA-05） [P1] 测量大仓及图资源预算。验收：测试冷/热态、索引重建、长 RPC 同时运行与大图展开；预登记阈值和样本，不挑最快一轮。
+- [ ] QA-006 （旧 KSEM-QA-06） [P1] 交付每批用户能力说明。验收：更新中英功能/配置/限制说明及真实例图；只有生产接线和对应验收通过才勾任务，附提交和证据路径。
 
-- [x] HR-DEMO-20261111-01 适配用户指定的 Guido xreload 为 Python 3.7.3：保留原位函数/类更新，替换旧接口、保留导入元数据，支持描述符/继承/super/相同 slots 与显式全局状态保留。验收：临时构建的 CPython 3.7.3 下 `tests/python/test_xreload_py37.py` 19 项通过；布局/闭包迁移等边界明确拒绝。
-- [x] HR-DEMO-20261111-02 在 demo Base/Cell 安装 HTTP 接收器并挂引擎线程执行：Base 8090、Cell 8091，Cell 路由和 common 双侧确认；HTTP 只用 xreload。验收：CPython 3.7.3 下真实回环 HTTP+descriptor 引擎替身 7 项通过，已有实例/绑定方法/函数引用执行结果改变；模板与夹具同步。
-- [x] HR-DEMO-20261111-03 接通默认 JSON 文件集/目标/冻结指纹与 applied 状态栏：整批核验后显示已应用，失败和未确认分别呈现，修正 accepted/applied 未计入发送数量。验收：实际 transport/fire/台账/状态栏相关回归通过；旧单模块表单保持兼容路径。
-- [x] HR-DEMO-20261111-04 修复官方预设与执行观察：端口和默认密码对齐引擎 Baseapp 默认值，明确进入 Python、先监听后发送、等待唯一完整执行标记；带 demo observer 时原生 reloadScript+onInit 确认及指纹回执。验收：官方适配仿真 3 项、控制台分片/异常回执用例通过；官方路径不调用 xreload。
-- [x] HR-DEMO-20261111-05 补文档与旧审计指向：记录安装/启动日志、GET 状态、手工请求、进程路由、两方案区别及重启/状态迁移边界。验收：`docs/design/demo-hot-reload.md` 与 README 中英入口在库；类型检查/涉及文件 ESLint 通过，热更与模板 50 文件 622 测试通过。
-- [ ] HR-DEMO-20261111-06 完整真实 KBEngine demo 验收 HTTP/xreload：启动真实 Base/Cell 与游戏角色，修改实体方法和 common 战斗常量，记录更新前后实际游戏行为、两侧日志/回执/指纹和扩展状态；失败、Cell 未启动及同尺寸连续保存不能假成功。前置：同步接收器并重启一次；现有本机二进制链接 Python 3.14，需另测目标 3.7.3 嵌入式引擎，不用纯解释器测试抵扣。
-- [ ] HR-DEMO-20261111-07 完整真实 KBEngine demo 验收官方通道：分别配置 Base/Cell 实际控制台地址/密码，修改现存实体逻辑并记录 reloadScript 后真实行为与 onInit 观察；区分单进程确认和全部署确认，验证结构变化需重启。前置：可运行的 demo/控制台；不以控制台替身回显测试抵扣。
 
-<a id="kode-bug-audit-20261111"></a>
+# Archive（历史凭证，编号为旧制）
+
+> 2026-11-14 功能域重整：以下各节全部条目已勾（或为纯盘点/文档说明节），整节搬运归档，原节标题与旧编号原样保留（含「2026-11-14 重整核对」注记）；不重编号、不作 Active 口径。
 
 ## 代码 Bug 审核修复（2026-11-11）
 
@@ -160,6 +916,7 @@
 <a id="kbengine-semantic-plan"></a>
 
 ## KBEngine 语义精度与跨进程流转重做（2026-11-11）
+> 2026-11-14 重整注记：本节 KSEM-CELL/KSEM-SER/KSEM-CFG/KSEM-DATA/KFLOW-CORE/KFLOW-UI/KFLOW-TRACE/KSEM-QA 八个含未勾条目的分节已迁入 Active 域（SEM/FLOW/QA），见头部索引；以下为余留分节。
 
 完整范围、引擎依据、既有能力盘点及设计边界见 [设计记录](docs/design/kbengine-semantic-precision-and-process-flow.md)。用户新增要求：固定格式序列化/反序列化对象及配置 key/value 联动；调用链重做为 Client 与各进程业务流转图，能展开本地调用帧并支持真实堆栈。以下全部是待实施/待验收任务，旧 B-4/C-20 的已勾状态不抵扣本次目标。单项尽量 ≤ 半天，超出先拆；勾选需提交、验证及证据。
 
@@ -177,27 +934,6 @@
 - [x] KSEM-BAS-08 [P1] 发布带版本的查询快照。验收：查询使用文档 overlay 和工程代数；过期构建不得覆盖新版本，删除/重开文档清理对应事实。——已收口(71eaa3b2 纪实 docs/review/2026-11-12-ksem-bas-08.md):overlay 由 VFS-003 承载不重造,其上 SnapshotStore{每文档一槽 (version,facts);commit 拒过期(版本<槽,现有保留)接受新版本与同版本幂等重算;get 查询即当前槽不重扫;remove 清槽返回被清事实;clear 全清;fold=工程代数键升序确定性折叠};ProjectDefResolver 跨文档解析 def(文件名字根=类型名 KBEngine 约定,同名取键序首个,冲突裁决留 snapshot 层);Build 版本来源契约如实=打开文档 VFS overlay 版本/磁盘文档基线调用方定不伪造;测试 9;门禁 clippy 0/cargo 双 crate 961 过 0 挂(语义 48 例)/tsc 0/eslint 0/unit 8760 过 1 挂(唯既知永久红 KodeHotReload.py@199)/demo 25 RC=0;边界=无 RPC 面,消费面待 BAS-10。
 - [x] KSEM-BAS-09 [P1] 定义增量依赖边。验收：记录 def/types/Python/config 到消费文件的反向依赖；单文件变更只失效相关项。——已收口(43cbe6b0 纪实 docs/review/2026-11-12-ksem-bas-09.md):DependencyGraph=producer→consumers 反向依赖两向互补(reverse/forward),边幂等,消费者 BTreeSet 确定性序;invalidate=直接消费者(相关项不触全仓重扫),invalidate_closure=有界 BFS 级联(边距离≤max_hops,0→空,visited 环安全去重),remove=删除对称清理(两角色全清无悬空键);producer_kind 按扩展名(def/types/xml·yaml·yml·json/py),非 producer None 不猜;测试 6;门禁 clippy 0/cargo 双 crate 967 过 0 挂(语义 54 例)/tsc 0/eslint 0/unit 8759 过 2 挂(1 既知永久红 KodeHotReload.py@199+1 负载抖动 hoverBudget 隔离复跑 15/15 绿非回归)/demo 25 RC=0;边界=无 RPC 面,消费面待 BAS-10。
 - [x] KSEM-BAS-10 [P1] 定义共享查询契约。验收：明确 Rust 事实查询与 TS/LSP 消费边界；同一结构供 hover/completion/definition/diagnostics 使用，缺服务可降级。——已收口(63155240 纪实 docs/review/2026-11-12-ksem-bas-10.md):契约=serde JSON kind-tagged QueryRequest(exprKind/typeAt/bindingAt/entitySnapshot/invalidate/ping)+QueryResponse(同一结构供 hover/completion/definition/diagnostics);缺服务可降级=Unavailable{reason} 为定义好降级值非错误,is_unavailable 统一回退;SemanticQueryService trait(对象安全 available+query(source 由调用方供全文));ContractEngine=能答的答(expr/binding 走 BAS-07,entitySnapshot 走 BAS-05+08,invalidated 走 BAS-09),typeAt 未接线诚实降级;测试 9;门禁 clippy 0/cargo 双 crate 976 过 0 挂(语义 63 例)/tsc 0/eslint 0/unit 8760 过 1 挂(唯既知永久红 KodeHotReload.py@199)/demo 25 RC=0;边界=协议已定未接 $/kode/rpc(接线在各域增量批次),typeAt 不猜,快照视图关键面。**KSEM-BAS-01..10 全部收口**:共同语义基础模块树(id/types/snapshot/facts/expr/store/deps/query)全编译全测,纯库面无 RPC 注册,消费边界协议已定。
-
-### KSEM-CELL · P1 · cellData 结构和生命周期
-
-依赖：BAS-03..08；先结构再推导与诊断。
-
-- [x] KSEM-CELL-01 [P1] 抽取 CellData 字段集。验收：按引擎有效 Cell 属性表构建结构，继承/接口展开；缺 Cell 脚本和无 Cell 部件分别给出状态。——已收口(d483ed02 纪实 docs/review/2026-11-12-ksem-cell-01.md):semantics/cell.rs 新模块;引擎事实(entity.cpp:238/250 createCellData)=有 Cell 部件才创建/字段取 Cell 属性描述/组件另建 Cell 数据;展开复用 BAS-05 EntitySnapshot(自身→父链→接口,同名冲突保留候选),snapshot PropertyView 增 domains 域位面(flag_domains common.h 真值,含 KR-AUD-87 OWN_CLIENT/OTHER_CLIENTS);四态互斥=Ready/CellScriptMissing(ScriptUniverse 调用方供脚本宇宙,缺=missing-cell-script 事实)/NoCellPart(no-cell-part 事实,字段恒空)/ScriptUnknown(未供宇宙诚实不猜);组件槽登记不展开(归 CELL-03),内建键缺席刻意(归 CELL-02);测试 9;门禁 clippy 0/cargo 双 crate 985 过 0 挂(语义 72 例)/tsc 0/eslint 0/unit 8758 过 3 挂(1 既知永久红 KodeHotReload.py@199+2 负载抖动隔离 21/21 绿非回归)/demo 25 RC=0;边界=无 RPC 面,消费面待 CELL-04/05。
-- [x] KSEM-CELL-02 [P1] 登记引擎内建字段。验收：为 position/direction 建独立引擎来源和初始形态；核对其他内建键后才加入，不能要求 def 声明。——已收口(e70d401e 纪实 docs/review/2026-11-12-ksem-cell-02.md):BuiltinField{name,shape,source=engine 取证 server/baseapp/entity.cpp:250}+BuiltinShape::Vector3{axes}(position x/y/z,direction roll/pitch/yaw,引擎建表六列同源;Vector3Like=pyi :22 标签);builtin_cell_fields()=封闭表恰[position,direction](design §2 createCellData 额外加入+建表六列;其余 cellapp 内建=已核 Entity 属性未核 cellData 键一律不入,核对后增补);CellDataShape.builtins=有 Cell 部件即有/无部件恒空,与 def 字段面分账不混装(合并裁决归 CELL-05);测试 4(cell 累计 13);门禁 clippy 0/cargo 双 crate 989 过 0 挂(语义 76 例)/tsc 0/eslint 0/unit 8760 过 1 挂(唯既知永久红 KodeHotReload.py@199)/demo 25 RC=0;边界=无 RPC 面,消费面待 CELL-04/05。
-- [x] KSEM-CELL-03 [P1] 展开组件 Cell 数据。验收：递归解析 cellData[组件槽][字段]；仅纳入组件 Cell 侧字段，保留组件声明跳转。——已收口(a7286158 纪实 docs/review/2026-11-12-ksem-cell-03.md):ComponentCellData{slot,component_type,file,line,fields,nested,issues};槽=cellData 键,值=组件 def Cell 侧字段子字典(flag_domains cell 域过滤,BASE/CLIENT 不纳),组件 def 组件段递归(嵌套槽),组件 def 继承/接口 cell 字段展开(BAS-05 复用);环安全=visited 路径+深度界 8(溢出记事实),类型缺/无类型→槽面保留字段不造;ComponentView 增 file/line(additive)声明跳转面;CellDataShape.component_cells 展开面(与 component_slots 同序);测试 6(cell 累计 19);门禁 clippy 0/cargo 双 crate 995 过 0 挂(语义 82 例)/tsc 0/eslint 0/unit 8760 过 1 挂(唯既知永久红 KodeHotReload.py@199)/demo 25 RC=0;边界=无 RPC 面,消费面待 CELL-04/05。
-- [x] KSEM-CELL-04 [P1] 实现键补全。验收：在 [] 和 get 的字符串键位置补全字段；替换范围准确，不混入其他实体/角色。——已收口(0f3f5011 纪实 docs/review/2026-11-12-ksem-cell-04.md):Rust 面 semantics_rpc.rs 注册 `$/kode/semantics/cellDataKeys`({entity,defs}→{status,keys},无状态 handler,def 数据流 TS→Rust 按请求供给,实体缺=entity-missing 不造键,畸形参数 Err);TS 纯模块 backend/cellDataCompletion.ts(键位上下文探测闭引号/闭括号/非 self 接收者不接管、scripts/cell|base 角色隔离 client/bots 拒、def 宇宙 BFS 闭包接口不走 Parent 边、RPC 整面形状校验);接线 KBEngineCompletionProvider 键位派发先于 Rust-first def 链(键位 def 链补全无效不混入),非键位路径同步契约不变(首版整体 async 打挂 def 标签补全 15 例,纠偏=仅键位分支 Promise),range=引号内片段精确区间,builtin→Constant/defField·componentSlot→Field,detail=typeLabel·sourceFile:line;测试 24(TS)+4(Rust);门禁 clippy 0/cargo 702+297 全过/tsc 0/lint 0/unit 净检出 8754 过唯既知永久红+tmp 后缀撞词环境例/demo 净检出 25/25 RC=0;共树混编期提交走临时索引+commit-tree 外科分拆(completion.ts/lib.rs/server.rs 剔除并发会话 python_process 混改,blob 级入账),顺带推 docs 死链修复(163c6b4e)复绿 Docs CI;锚点 provideCompletionItems 699→772 锁步。
-- [x] KSEM-CELL-05 [P1] 实现键跳转与引用。验收：字面量键关联真实 def/组件来源；引用按实体身份隔离，未知键不伪造声明。——已收口(026254bc 纪实 docs/review/2026-11-12-ksem-cell-05.md):TS 纯模块 backend/cellDataKeyAccess.ts(键落点探测 cellDataKeyAccessAtPosition 键内容区间 [keyStart,keyEnd) 闭引号不命中/全文扫描 scanCellDataKeyAccesses 词法掩码剔注释与三引号伪访问/转义解引 单字符+八进制+hex+unicode/注释伪访问 isCellDataKeyInsideLineComment,动态键不静态关联);cellDataCompletion.ts 增 collectCellDataDefUniverseWithCategory(带来源类别,原函数变薄壳转调);跳转接线 pythonDefinition.ts provideDefinitionTracedImpl GLOBDATA 后 isPythonCodePosition 前(键=字符串字面量该守卫判 skip),按 sourceFile.replace(/\.def$/) 定类别 findDefinitionFileByCategory 定位,sourceLine 1基→0基,builtin(引擎文件不在 workspace)不跳/未知键交回常规链,JumpLayerTrace.layer 加 cellData-key;引用接线 references.ts provideReferences python 分支 GLOBDATA 后,键宇宙含键才扫当前实体脚本(cell/base 面 findEntityScriptFile,同文档 getText 脏缓冲否则读盘)同键访问点,实体身份隔离不跨实体/未知键交回属性链;测试 20(纯模块 13+带类别宇宙 1+provider 全链 6);门禁 tsc 0/lint 0/unit 净检出 HEAD 红集 6 文件⊆主树红集 8(6=并发会话 5200bfc0/3b10568b 归因,hotfixSpellingGate 全量负载 timeout 单独绿,selfAttributeFlowRustParity HEAD 同红既有对拍分歧)零新回归;prove-red 净检出 HEAD+新模块+HEAD 版 provider 集成 2 红纯模块 18 绿。
-- [x] KSEM-CELL-06 [P1] 传播读取类型。验收：下标读取类型传给局部变量和表达式；get 根据可证明存在性及 default 计算可空/联合，删除后不能沿用必有键。——已收口(2cc385db 纪实 docs/review/2026-11-12-ksem-cell-06.md):TS 纯模块 backend/cellDataReadType.ts(scanCellDataKeyOperations 读/写/删分类:下标后 `=` 非 `==`→write、`del` 前缀→del、`.get`/裸下标→read,复用 parseCellDataKeyAccess 词法掩码剔伪访问;cellDataKeyProvablyPresent 同一键最近写/删自目标向上作用域限定状态,无写/删→初始(def 字段/内建/组件槽必有,未知键必无);resolveCellDataReadType 下标→字段型、get 必有→字段型、get 非必有无 default→字段|None、get 非必有有 default(类型已知)→字段|default 去重、default 类型未知→null 不猜、字段型未知→null 能推才显;cellDataHintPosition 纯赋值 RHS→目标变量后,其余→表达式尾后);cellDataKeyAccess.ts 增补导出 parseCellDataKeyAccess/ParsedKeyAccess+get defaultExpr(行为零变化,CELL-05 20 例保绿);inlay 接线 typeInlayHints.ts collectCellDataReadHints(cell/base 角色隔离、键宇宙与补全同源 cellScriptRoleAndEntity+collectCellDataDefUniverse+findDefinitionFileByCategory+fetchCellDataKeys RPC、flowVersionKey 版本缓存有界 200、typeData 开关同款;每读点 typeLabel 解析非 Any→存在性+get default 类型 inferDataDictValueType→resolveCellDataReadType→`: <type>` kind=Type;写/删只做存在性,写类型校验归 CELL-08);测试 28(纯模块 20+provider 全链 8);门禁 tsc 0/lint 0/定向回归 102/102/unit 净检出 15 红全为基线已知(6 并发会话 5200bfc0/3b10568b 归因+selfAttributeFlowRustParity 既有分歧,hotfixSpellingGate 负载抖动单独绿)零新回归/demo 25 RC=0;prove-red 净检出 HEAD+新模块+改动版 cellDataKeyAccess+HEAD 版 typeInlayHints(无 collector)集成 6 红纯模块 22 绿。
-- [x] KSEM-CELL-07 [P1] 传播字典别名。验收：支持 data=self.cellData 及可确定常量键；重新绑定和动态逃逸后降低确定性。——已收口(7952b271 纪实 docs/review/2026-11-12-ksem-cell-07.md):cellDataReadType.ts 别名流四件(cellDataAliasNames `NAME = self.cellData` 词法域候选序;cellDataAliasState 最近赋值核定+逃逸走查 def/class 体跳过+`NAME[...]`/`.get(`/裸局部整体引用不算逃逸+for·with-as·增强·海象重绑定即断;resolveCellDataConstantKey 常量键字面量直解+标识符最近字面量赋值解引,推不出 null 不猜;scanCellDataKeyOperations receiverNames 别名同形入列 op 增 receiver,合并文档序);cellDataKeyProvablyPresent escape 入参+无效别名写/删不作证据继续向早找;cellDataKeyAccess.ts ParsedKeyAccess 增 rawKey/keyLiteral 非常量键不返 null(CELL-05 跳转/引用面零变化,别名访问不入索引);typeInlayHints collectCellDataReadHints 别名接收者核定无效不出/逃逸传 escape get 降可空下标型不变;测试 31 新增(纯模块 21+provider 10,文件 28→59);门禁 tsc 0/lint 0/unit 净检出 7952b271 全绿 8860+25skip/demo 25 RC=0;prove-red stash 三 src 25 红恢复 79/79 绿;坑=逃逸走查 def/class 闸「比别名更深」误判改任意头行起体跳过/布尔 keyLiteral 不收窄 key 可空。
-- [x] KSEM-CELL-08 [P1] 检查字段写入类型。验收：已知字段赋值校验结构与引擎标量范围；提示实际/期望类型及声明来源。——已收口(525bb686 纪实 docs/review/2026-11-12-ksem-cell-08.md):纯模块 backend/cellDataWriteCheck.ts(code kbengine.cellDataWriteType;SCALAR_FAMILIES 引擎标量表=datatypes.cpp 注册表,UINT/INT 8 档 BigInt 精确封闭区间(target<ES2020 禁 0n 字面量,全 BigInt() 构造,64 位界字符串入参)/FLOAT/DOUBLE/STRING/UNICODE/BLOB/VECTOR2-3-4 定元数;classifyCellDataWriteValue RHS 整段恰一字面量才给类(十进制/0x/0o/0b BigInt 精确解析、浮点分数可缺 `10.`、引号闭后须收尾、`(5)` 括号表达式非元组/`(5,)` 才是、`{}` 空 dict、顶层冒号引号深度感知分 dict/set、元素含 unknown 只保元数);checkWriteAgainstFamily unknown 一律不查(测试抓出真缺陷:compute()/未闭合列表曾误报 actual=unknown 的错配)、integer 族 bool 入/int 入+BigInt 区间 range 面、float 字面量入整数族报 structure、vector 元数不符/元素含非数值字面量报而 elements=null 不猜;analyzeCellDataFieldWrites 写点/别名/常量键全复用 CELL-06/07 同面,只查 write 型,别名逃逸不豁免写型(字典形状不变)而重绑定不查,键须 CELL-04 宇宙+有 typeLabel+在标量表,消息附实际/期望类型及声明来源(Avatar.def:5));接线诊断族先例同款(activate/diagnostics.ts postDestroy 后注册 kbengine-celldata-write 独立集+scheduler+capturedVersion 守卫;extension.ts open 即时/change 排队/close 删除+releaseDocument/总闸 setEnabled/diagnosticsInputsChanged/配置面即时重跑);package.json setting+nls en/zh+configuration.md en/zh 表行;lintRuleRegistry 新 KBE-PY-018(孤儿开关闸)+lint-rules.md en/zh 行与详节+features.md en/zh Settings 表行与主题 bullet(docsCommands Settings 全量对账闸+lintRuleRegistry 孤儿开关闸集成抓漏已补);测试 25 新增(纯模块;extension.test.ts 注册序钉增 kbengine-celldata-write)+2 闸复绿;ANCHORS 锁步 diagnostics.ts 124/137→129/142、extension.ts 385→393、465→475(+5/+8/+10 hunk 计数对照 da34656d)+2026-baseline.md 三处引用;门禁 tsc 0/lint 0/unit 736 文件 8916+8skip RC=0/xvfb demo 25 RC=0;prove-red=模块移出整套件红 RC=1 恢复 25/25 绿;坑=PY_ 族列举文案含 `*/` 序列提前终止块注释改「PYTHON 族、ARRAY、FIXED_DICT、自定义别名」。
-- [x] KSEM-CELL-09 [P1] 跟踪脚本附加键。验收：区分声明键、内建键、局部已写键和未知键；有显式新增键的合法代码不得误报。——已收口(a636fbe2 纪实 docs/review/2026-11-12-celldata-key-lifetime-trace.md):纯模块 backend/cellDataKeyTracking.ts(无 vscode/无引擎依赖)cellDataKeyPresent 复用 CELL-06/07 的 findNearestKeyMutation(cellDataReadType 本批导出),判据=自读点向上找**最近**有效写/删:有效键操作(CELL-07 已剔除无效别名写/删)与伪写点(del/解包删/clear)合并同一次走查按行序比较,删除即否定证据与真实 del 同形入列;越过 def/async def/class 边界即停返回 null(作用域外的写对当前读不是证据,不硬造,回 null 不猜);重绑定别名下的写跳过继续向更早找;读点之后的写不算证据;注释剥离复用 buildPythonCodeMask 不另造解析。四键面区分:声明键/内建键由 kbengine.cellDataKeys 宇宙先给,局部已写键仅在其作用域内读点算存在,未知键保持未赋值;显式新增键有 write 证据即判存在,不报缺失(验收第二句)。测试 34 例(存在/删除/作用域限/别名/不硬造/伪操作合并);门禁 tsc 0/lint 0/unit 738 文件 8952+8skip RC=0/demo 25 RC=0;prove-red 去作用域边界闸→作用域专例红,恢复 34/34 绿;坑=按全文写过判存在会误报跨作用域读,只按顶层写又误报闭包内合法新增,故取最近证据+边界停。
-- [x] KSEM-CELL-10 [P1] 提示可证明的错键。验收：未赋值且结构可封闭时提示缺失/拼写候选；开放字典只给低置信建议，get 不按必然 KeyError 报错。——已收口(82074f05 检测面+接线,纪实 docs/review/2026-11-12-ksem-cell-10.md):纯模块 backend/cellDataWrongKey.ts(CELL-09 事实→提示分级,无 vscode);三级判据=裸下标读 presence=absent 且世界封闭→confirmed(附候选)、世界开放/不可证→hint、get 形态永不给 confirmed(不按必然 KeyError 报错,只给低置信建议+带默认值点明「不会因缺失抛错」);候选只在键宇宙(声明∪内建)内算 Levenshtein(公共前后缀修剪),距离上限 3 且平局不给(不硬造唯一性),scriptAdded/未知键不进候选;声明/内建键与写点(写即引入键)与已证存在键一律不报,声明键中途被删归 CELL-12 生命周期面不猜成因;CELL-09 的 hasDynamicKeyAddition 导出为 cellDataKeyWorldOpen 供事实面/提示面同源不重算;接线镜像 CELL-08 五件套(独立集合 kbengine-celldata-wrongkey+独立调度器;open immediate/change queued/close 摘除/主开关 setEnabled 清集合/本项开关即时重算并进 diagnosticsInputsChanged);诊断码 kbengine.cellDataWrongKey(KBE-PY-019 lintRuleRegistry 非孤儿)+设置 kbengine.cellDataWrongKeyDiagnostics 默认开(package.json+nls en/zh 含闸令字面「默认值」「详见 [」+configuration en/zh 表行+features en/zh 行+lint-rules zh KBE-PY-019 行);测试 13 例(封闭世界缺失+候选/无候选仍报缺失/开放世界只给建议/update( 判开放/get 不给 confirmed/get 带默认值措辞/get 已知键不报/写点不报/声明键不报/先写后读不报/平局无候选/超距无候选/事实面契约);prove-red=摘 extension.test 注册序数组行→该闸红(13 vs 12)补回 22/22 绿;门禁 tsc 0/lint 0/unit 740 文件 8967+8skip RC=0/xvfb demo 25 RC=0;ANCHORS 锁步 diagnostics.ts 129/142→142/155、extension.ts 393→401、475→485(+13/+8/+10 hunk 计数对照);坑=英文 nls 也须含字面「默认值」「详见 [」(configMarkdownDescription 闸不分语言)、get 整条 continue 会漏掉 .get("hpe") 这类真实笔误故拆成「hint 面进、confirmed 面不进」。
-- [x] KSEM-CELL-11 [P1] 核实生命周期状态表。验收：源码核实创建中/获得 Cell/丢失 Cell/恢复/销毁入口及回调前后顺序；不能根据一次异步创建调用断定已有 Cell。——已收口(纪实=知识库 `docs/knowledge/entity-lifecycle-reference.md` 新增「Cell state table」节 + zh 同款,行号逐个对真源码核过):六态表=无 cell/创建中/持有 cell/cell 丢失/恢复中/已销毁,每态给置位行、清除行、脚本回调行(base 侧 `baseapp/entity.cpp`);五入口=创建 `createCellEntity :1416`、获得 `onGetCell :1014`、丢失 `onLoseCell :1052`、恢复 `RestoreEntityHandler::process restore_entity_handler.cpp:89`←`baseapp.cpp:709,723`(每实体 `:159`/`:304` 喂入)、销毁 base `Entity::onDestroy :164`+cellapp `:204`;回调前后顺序=恢复路 `restoreCell`→`onGetCell`(置 `creatingCell_=false`、`destroyCellData()`、建 `cellEntityCall_`,但 `inRestore_` 时**脚本 `onGetCell` 被跳过** `:1030`)→**之后** handler 才触发 `onRestore`(`:173`/`:266`);**顺修** `docs/knowledge/api-core-concepts.md`+zh 第 86 行 ASCII 图原写 `onRestore → onGetCell` 顺序画反,改 `onGetCell / onLoseCell; onRestore last` 并把引文行号对齐源码(`Entity.md:285-298,310-318`);验收第二句「不能根据一次异步创建调用断定已有 Cell」=源码依据落成一段专述:`createCellEntity` 收尾置 `creatingCell_ = true`(`:1463`)后**同步返回**、`cellEntityCall_` 仍 `NULL`,唯一可观测点是 `entity.cell`(getter `:750`),在途标志 `creatingCell_`(`entity.h:295`)仅经 `creatingCell()`(`entity.h:107`)可见、**无 Python 面**;并钉死引擎**无** `isOnCell`/`isOnDB`/`isPersisted` 谓词(属性面 `:35-41`+`entity_macro.h:33-35` 枚举即无);另记 `creatingCell_` 期间 `destroy()` 是延迟而非拒绝(`:641` 警告+`ENTITY_FLAGS_DESTROY_AFTER_GETCELL` `entity_macro.h:268`),且兑现该标志的两路销毁对象**不同**(`onGetCell :1037-1041` 走 `destroyCellEntity()` 摘 cell、`onLoseCell :1069-1074` 走 `destroy()` 毁 base),`onGetCell` 还跑 `destroyCellData()`(`:1024`)即 cell 建成时 `cellData` 属性被删(归 CELL-12/13 消费面);门禁 lint 0/tsc 0/unit 740 文件 8984+8skip RC=0/xvfb demo 25 RC=0(纯 markdown,未动 src/crates);坑=引擎 C++ 源码在 `~/workspaces/kbengine/kbe/src/server/`(深度 5),`find -maxdepth 4` 会漏致误判「源码不可用」,已写入记忆 `kbengine-cell-holding-predicate.md`;另注 `entity-lifecycle-reference.md` 文件头注记锚定 `kbengine@c2a3b8f` 而迁移篇与本机检出为 `3082ab5`,本批行号按本机 `3082ab5` 核,两版并存已在表内显式声明未改文件头。
-- [x] KSEM-CELL-12 [P1] 检查明确回调入口。验收：onGetCell 中 self.cellData 访问根据引擎删除行为诊断；未知调用时机不做确定结论。——已收口(085370cf 检测面+接线+docs,纪实 docs/review/2026-11-12-ksem-cell-12.md):纯模块 backend/cellDataCallbackCheck.ts(无 vscode);确定窗口封闭性论证=onGetCell 先 destroyCellData(baseapp/entity.cpp:1024,PyObject_DelAttrString :564)再调脚本回调(:1030-1032,inRestore_ 跳过),脚本单线程使方法内普通赋值成唯一重建途径、异步备份回写(:1122)插不进执行中方法体——出 onGetCell 论证即失效,其余回调(onLoseCell/onRestore/任意方法)按「未知调用时机不做确定结论」一律沉默;两态流判定=深度 0 普通赋值(排除 ==/<=/>=/!=/增强/walrus,链式/元组解包目标位算存)→present、del 报缺失并转 absent(存→删→读在读取处再报)、缺失态任何读取(裸读/下标写/.get/迭代/别名)报 kbengine.cellDataLifecycle Warning 并引引擎行为+出路文案「请求 cell 前存入 base 自有属性」;范围闸=roles base(cellScriptRoleAndEntity 非 base 零发现,组件脚本不报——引擎 convertDictDataToEntityComponent entity_component.cpp:1461 只填 dict 不挂 cellData 属性)、模块级 onGetCell 不分析、注释字符串掩码;接线镜像 CELL-08/10 七点(独立集合 kbengine-celldata-callback+独立调度器;open immediate/change queued/close 摘除/主开关 setEnabled/开关进 diagnosticsInputsChanged/recompute 逐键 immediate);设置 kbengine.cellDataCallbackDiagnostics 默认开(package.json+nls en/zh 含闸令字面「默认值」「详见 [」)+configuration en/zh 表行+features en/zh 行+lint-rules zh KBE-PY-020 行+详节+lintRuleRegistry KBE-PY-020(非孤儿);测试 18 例(读取四形态/存不报/存后读静默/存删读再报/del 措辞/下标写/增强赋值/元组解包静默/onLoseCell/onRestore/任意方法静默/模块级忽略/掩码/双类/闭包/空集/item 形状/默认开);prove-red=stash diagnostics.ts+extension.ts→extension.test 注册序闸红(缺 kbengine-celldata-callback)pop 回 23 例绿;开发期测试抓出两实现缺陷(includes('') 恒真误判读/del 缺状态转移漏报)即二次 prove-red;门禁 tsc 0/lint 0/unit 742 文件 9002+8skip RC=0(首轮 3 例满载抖动 solo 复跑绿)/xvfb demo 25 RC=0/mocha 烟测 12 RC=0;ANCHORS 锁步 diagnostics.ts 142→151、155→164、extension.ts 401→409、485→495(+9/+9/+8/+10 hunk 计数对照)+2026-baseline.md 锁步;顺修(独立外科 commit c2f86d1c)=主线 CI 自 74ab5dc3 起红的 mocha manifest 闸(热更 lane c0eeda35 漏登记 onCommand:kbengine.hotReload.materializeGlobs,docs-only 推送不触发 CI 故红未现)一行补登记,临时索引分拆不混本批。
-- [x] KSEM-CELL-13 [P1] 区分持久化回调参数。验收：onWriteToDB(cellData) 参数绑定内部数据结构及可空条件；不得等同 self.cellData 属性可见性。——已收口(96c42f70 纯取证/文档批,纪实 docs/review/2026-11-12-ksem-cell-13.md,行号逐一对真源码 baseapp/entity.cpp @3082ab5):触发链=onCellWriteToDBCompleted 内 onPreArchive(:1298)→脚本 onWriteToDB(:1305,分发 :1397-1405)→addPersistentsDataToStream 序列化(:1329),即入库前最后变更点而非写库完成回调(完成回调=writeToDB(callback) 的 callback, onWriteToDBCallback :1239-1289;persistentDigest_ 去重 :1353 相同则跳过整个写库用户 callback 不触发);参数绑定=cd=cellDataDict_(entity.h:276) 内部快照 dict,:1401-1403 `if(!cd) cd=Py_None` 可空条件=None ⟺ cellDataDict_ 从未创建 ⟺ 脚本模块无 cell 面(createCellData :250 hasCell 假早退;有 cell 面构造 :71 即建 dict 填默认值+position/direction :307/:308 永不为 None);快照语义=最后备份回写(onBackupCellData isDirty :1108-1123)或构造默认值,非 cellapp 活值;有活 cell 入库序列化在 cellapp 侧(reqWriteToDBFromBaseapp :1229-1236),快照兜 base 无 cell 写库面(addPersistentsDataToStream 优先 cellDataDict_ :431-433 回落 __dict__ 再回落默认值+告警 :523);属性可见性区分=onGetCell destroyCellData(:1024) 删属性不删 dict(:562-563 注释),参数在场≠self.cellData 属性在场(属性此刻通常已删,CELL-12 已证),组件同收回调但组件对象从无 cellData 属性;双签名陷阱=同名回调 cellapp 0 参(cellapp/entity.cpp:1238,分发 :1255-1262)/base 1 参(:1405 "O"),def onWriteToDB(self,cellData) 在 cellapp 抛 TypeError 须 cellData=None 兜;递归=DBID_>0 时 isArchiveing_ 回调后即复位(:1310-1311)无条件再写无限循环;交付面=api-baseapp-entity en/zh 节重写(首段 hover 抽取面 600 字帽内不截断)+api-cellapp-entity en/zh writeToDB 条目补 0 参签名与陷阱互引+apiDocs 生成面重生成(api-docs.json+apiDocs.ts,225 条目仅 onWriteToDB 条目变更,--check 过)+向导骨架核对不改(entityWizard.ts:236 只在 base 段发 1 参签名,cell 段不发,目录分部署天然规避陷阱);门禁 lint 0/tsc 0/unit 742 文件全量 RC=0/xvfb demo 25 RC=0/generate-api-docs --check ok;坑=apiDocsRustParity 3 例红是 Rust 二进制 include_str 编译期嵌入旧资产,改 crates/kode-server/assets/api-docs.json 必须 cargo build -p kode-server 重编(重编后 7/7 绿);prove-red 口径=旧二进制对新 TS 表 3 例红即闸在捕获本批变更,重编转绿为反证。
-- [x] KSEM-CELL-14 [P1] 呈现副本和生命周期解释。验收：hover 展示 Cell 字段来源/快照含义/当前可证明状态；诊断带引擎证据与可执行跳转。——已收口(162e54c5 检测面+接线+docs,纪实 docs/review/2026-11-12-ksem-cell-14.md):hover 面=纯构建器 backend/cellDataHover.ts(零 vscode/零 RPC,双语 `---` 分段与 C-23 behaviorNote 同形)挂 provideHover 出口第三挂靠(同步探针仅 self.cellData 单段接收者 token+复用 kbengine.hover.behaviorNotes 知识通道闸(shared.ts:38 读取的未 declared 隐藏开关,默认开);命中才变异步,其余 hover 保持既有同步返回口径;键宇宙 RPC 按文档版本键缓存有界 8(同 typeInlayHints 口径);单 MarkdownString 重建新实例防 memo 共享实例重复叠加);四段=来源(Rust cellDataKeys 键宇宙,sourceLine 1 基原样展示,null=不造键/空集=声明集为空如实说/>12 键折叠计数)+快照含义(role 分支:base=内部快照 dict cellDataDict_ 语义引 entity.h:276/entity.cpp:1108-1123/:1024/:562-563;cell=cellapp 不安装属性 entity_macro.h:408-412,静态面与引擎安装面分层如实呈现)+可证明状态(cellDataProvenStateAtLine 与 CELL-12 同一两态流推进器,状态=进入查询行前的两态值,窗口外不证;测试与诊断面互证:每个报点位置 proven 态必 absent)+跳转(发布站真实路径 zh/en 各挂);诊断跳转面=wrongkey/writecheck finding 增 candidateFile/declaredFile(内建键如实 null)+item 增 related?(CellDataRelatedLocation,resolveCellDataDeclAnchor:{from}.def→宇宙类别→真实路径,内建引擎证据路径不造假跳转),两 computeAsync 切 collectCellDataDefUniverseWithCategory(fetchCellDataKeys 结构兼容超集,零 RPC 变更)+1 基→0 基换算,两 publish 映射 DiagnosticRelatedInformation(与 DEF_METHOD_MISSING 同款);callback 族证据在消息文案(引擎 C++ 行号无工作区落点),跳转由 hover 知识链接承担;顺修①=cellDataWrongKey sourceSegment 去 +1(sourceLine 已 1 基,kode-parser LineMap::line_of `lo+1`,pythonDefinition.ts:393+cellDataKeyAccess.test.ts:217 双证,旧码错位显示一位,消息与关联跳转同源一致);顺修②(CELL-13 §3 顺延件)=entityWizard onWriteToDB 头注释+骨架 docstring 写明快照语义(内部快照 dict 非属性/无 cell 面 None/循环调 writeToDB 无限递归/cellapp 同名回调 0 参勿手工进 cell 段),签名不变(base 段 1 参正确);测试+27(cellDataHover 12/proven-state 8/wrongkey 锚点 4/writecheck 锚点 2/向导注释 1);prove-red=stash 三后端模块 13 例红恢复 70/70 绿;门禁 lint 0/tsc 0/unit 742 文件 9029+8skip RC=0/xvfb demo 25 RC=0;ANCHORS 锁步=hover.ts provideHover 186→277(顶部 fs import +1+cellData 三行 import +3+attach 块 +87),perfCallChainDoc ANCHORS 表+2026-baseline.md §7.1 出处锁步;坑=门禁管道 `| grep` 取计数照样吞 vitest 非 0 RC(grep 命中失败行 RC 仍 0,&& 链照走),必须 set -o pipefail/PIPESTATUS 取真 RC(已写入记忆 unit-gate-pipefail-discipline)。
-- [x] KSEM-CELL-15 [P1] 验收真实 Provider 全链。验收：未保存 def 改字段后 Python 键补全/跳转/类型/诊断一起更新；覆盖继承、组件、附加键、别名和跨根负例。——已收口(94e35199 检测面+四顺修+真机套件,纪实 docs/review/2026-11-13-ksem-cell-15.md):脏 overlay 读面=findDefinitionTextByCategory(打开 def 文档缓冲优先/关闭回落磁盘,读失败=缺席贡献不猜)+defBufferStampForRoot(相对路径#版本#脏标 签名进键宇宙缓存键,编辑/保存/关闭三态换代)+retriggerCellDataDiagnosticsForDefChange(def 变更→三调度器 invalidateAll 强制同版本 python 重算→同根角色文档逐个 queued 重排,跨根不串扰/def 自身跳过);真机验收套件 cellDataFullChain.test.ts(真实编辑器宿主+真实 bin/kode-server 门,runTest.ts 双根装台+角色分工夹具+二进制预检 serverBinaryHasCellDataKeys):基线五面按磁盘 def(补全三边键齐/跨根双向隔离/inlay 继承键 UINT16/错键 bonus+ghost/写入面无 bonus)→applyEdit 真实插入 <bonus> UINT8 不保存断言脏态→五面联动断言+九行证据 docs/perf/2026-11-12-cell15-fullchain-run.txt 全绿(补全含 bonus/F12 落脏缓冲行/inlay UINT8/hover 键集含 bonus/错键 bonus 收编 ghost 保留/写入类型点名 str→UINT8/跨根隔离不变);覆盖面:继承(Parent)+接口(ROLE)+组件槽(BagBox)三边供给、别名面(inlay+错键 score=data["bonus"])、附加键(插入的 bonus)、跨根负例双向;**真机抓出四个生产缺陷**(单元 mock 结构性抓不住,每修一个失败点前移一面):①serde tagged enum 线上形状 kind 是嵌套对象 {"kind":"defField"},TS isKeyEntry 按扁平字符串判→五面自 CELL-02/03 起生产静默死亡,顺修 fetchCellDataKeys 边界校验+解包+4 个门 mock 迁线上形状(坑:bin/ 产物 git-ignored 不随 cargo build 刷新,须 cargo build -p kode-server --release && cp target/release/kode-server bin/,预检拦截给指引);②languageServices hover 适配器直调 provideHoverTimed 绕过类包装→C-23 注记与 CELL-14 生命周期注记生产全不挂,顺修共享入口 provideHoverWithNotes(类委托+适配器同走,计时打点保留);③真实 vscode.Hover.contents 是数组 [md],单对象判断静默丢注记,顺修数组归一化;④cellData 三调度器全仓无 flushQueued 调用点→queued 任务(CELL-08/10/12 python 编辑重排+本条 def 重排)永远滞留,只有打开路径 immediate 发布过,与 KODE-AUD-001 同形,顺修共享冲刷定时器补三行;夹具方法论:世界开闭角色分工(base 只读=封闭世界错键成立/cell 承载写入,写入面不受开闭影响)+F12 靶点须 self.cellData 直读行(CELL-05 口径);门禁 lint 0/tsc 0/unit 全量 RC=0(743 文件 9037+8skip)/xvfb celldata 1 passing RC=0/xvfb demo 25 RC=0;ANCHORS 锁步两波(hover.ts 277→271→295→299,languageServices 五打点 200/257/320/124/707,diagnostics 152/165,extension 410/499,pythonDefinition 308/765/871,completion 766)+2026-baseline.md §7 出处同步;坑重申=门禁管道 | tail 吞 vitest 非 0 RC(本批单元红被掩盖真机白跑一轮),必须 set -o pipefail;挂账=features.md en/zh 族级 cellData 段落缺失(CELL-01..14 同缺,等用户点火)、其余 runInRust 命令面 serde tagged enum 同族契约审计。
-- [ ] KDB-EXPORT-001 [P1] 用户报(2026-11-12):导出用户数据提示找不到 t_account 表,查明原因。初步侦察(代码面,待用户补充报错原文复现):kode 侧零处出现字面 `t_account`(全仓 TS/Rust/docs grep 空);引擎真身=kbe/src/lib/db_interface/entity_table.h:37 `KBE_TABLE_PERFIX "kbe"` → 账号表 `kbe_accountinfos`(kbe_table_mysql.cpp:584 建表),实体表前缀=kode DB_TABLE_PREFIX `tbl_`(databaseSchemaCore.ts:59,entity_table_mysql.cpp TABLE_PREFIX 同源);导出链=clone.export resolveEntityTables(def 推导 tbl_<Entity>)→probePhysicalTables(精确名查 information_schema)→Rust planner 缺表不入计划(planner.rs:148 resolved_names 过滤,不会对缺表发 SELECT,MySQL ER_NO_SUCH_TABLE 理论上到不了);候选因:①用户库真有/需要 `t_account`(工程自定义或旧版前缀,db.tablePrefix 配置缺口/大小写)②导出的实体在用户工程非持久化实体(表从未建)③报错来自用户侧 MySQL 原文转述。待定:用户给的精确报错文本+所用命令面+真实库 `SHOW TABLES LIKE '%account%'`+kbengine.db.tablePrefix 当前值。
 
 ### KSEM-STRUCT · P1 · 嵌套结构类型传播
 
@@ -237,112 +973,10 @@
 - [x] KSEM-CREATE-05 [P2] 检查初始化参数字典。验收：已知实体字段做类型校验；源码核实 params 自定义键、Cell 数据和普通属性路径后再定缺键/多键规则。（7137f60f）
 - [x] KSEM-CREATE-06 [P2] 检查 Cell 创建目标。验收：核实 space/目标 EntityCall 的 API 前置条件；仅报告静态可证明的角色和类型错误。（e55e2025）
 
-### KSEM-SER · P1 · 固定格式序列化和反序列化
-
-依赖：BAS + STRUCT；优先引擎契约，项目格式需显式来源。
-
-- [x] KSEM-SER-01 [P1] 盘点序列化入口与格式来源。验收：分别登记引擎 wire、FIXED_DICT implementedBy、PYTHON/pickle、项目 JSON/自定义 pack/unpack；列出现有 codec 和缺失消费入口。——已收口(a9a7a555,盘点文档 docs/review/2026-11-13-ksem-ser-01-serialization-inventory.md,引擎树 /home/cui/workspaces/kbengine @ 3082ab5 检出实测):四来源登记=①引擎 wire(DataType addToStream/createFromStream/isSameType datatype.h:46/:48/:50 纯虚,datatype.cpp ~80 实现;帧形=消息id→实体id→alias uint8/UID uint32 二选一(usePropertyDescrAlias)→类型载荷 baseapp/entity.cpp:128-151;属性同步/ghost 广播(cellapp:705)/方法实参(entity_remotemethod.cpp:68)/反向 createFromStream(baseapp entity.cpp:994)调用点全列;DB blob 同一流序 entity_table.h:145/:150/:230/:330/:340,PYTHON 等复杂类型→BLOB 列 entity_table_mysql.cpp:699-711,ARRAY/FIXED_DICT/Component/ENTITYCALL/VECTOR 各有展开)②FIXED_DICT implementedBy(loadImplModule datatype.cpp:2331-2357 两段值,三契约 setImplModule :2383-2397 GetAttrString,转换入口 impl_createObjFromDict :2031,字段槽 :1917/:1918/:1935/:1936)③PYTHON/pickle(Pickler pickler.h:11 代理 cPickle;datatype.cpp:1185/:1227/:1240/:1296/:1352/:1408;实体 initData baseapp.cpp:2661/:2722/:2891/:2956;baseapp 共享数据 :3734/:3754;pickle 桶不透明无字段结构=SER-11 边界的引擎依据)④项目 JSON/自定义 pack/unpack(引擎不拦截 stdlib json 无 hook,kode 现有 JSON 面仅 hotReloadTransport.ts:557/:564 传输脚本非分析面);现有 codec 盘点=TS 7 模块(userTypeContract/implementedByBinding/fixedDictConstructCheck/fixedDictSubscript/fixedDictMutationDiagnostics/hoverMarkdown 双视图/playerDataCloneWire=kode 自有通道)+Rust 2 面(implemented_by_symbol 字段/refs·rpcargs Arg 面);缺失消费入口 13 条逐项映射 SER-02..14(契约模型/双向绑定输出输入/成员·往返/isSameType 边界/项目 schema/静态字典/JSON 传播/pickle 传递证据/wire 布局解释·兼容/往返样本均未建);纯盘点零代码改动;门禁 lint 0/tsc 0/unit 748 文件 9187+8skip RC=0/xvfb demo 25 RC=0。
-- [x] KSEM-SER-02 [P1] 登记序列化契约模型。验收：记录编码器/解码器、逻辑对象结构、传输结构、字段序、版本、证据；字节格式与对象结构分别表达。——已收口(55980256,模型文档 docs/review/2026-11-13-ksem-ser-02-contract-model.md,引擎树 3082ab5 锚点逐一实测):六维记录(编码器解码器/逻辑对象/传输结构/字段序/版本/证据);**字节格式与对象结构分表表达**=§2 传输结构(底写原语 memorystream.h:599 memcpy 主机序无规范化/operator<< string NUL 终止 :221/appendBlob uint32 长度前缀 :543;逐类型布局表:整数族 sizeof(T) 原样 IntType<T> datatype.h:874-898 转换失败写 0 不中止/STRING NUL 终止无长度前缀 datatype.cpp:1050 内嵌 NUL 截断/UNICODE·PYTHON·BLOB uint32 长度+载荷 :1129/:1225/:1448/PYTHON 空 blob 解出 None :1234/ENTITYCALL id int32→cid uint64→type uint16→utype uint16 :1573-1577 None 写四零/FIXED_ARRAY uint32 数+序列序 :1837/FIXED_DICT 无键名无键数按声明序连排 :2592;FD 三条编码器行为契约=hasImpl 先 impl_getDictFromObj :2595/缺键或 isSameType 失败**静默 parseDefaultStr 默认值顶替** :2627/:2642/嵌套递归 onlyPersistents 下传)§3 对象结构(整数族 isSameType 范围检查 datatype.h:858-867/FD 有 impl=用户类实例过 isSameType 校验等);**通道分叉表**(wire vs DB 三者全不同:字节集/字段序/自描述性——wire=帧头+裸载荷事件驱动,DB=utype 标签记录[uint16 0 alias 槽+uint16 utype+payload] baseapp/entity.cpp:440/:456/:471/:491+hasCell 先装 position·direction 保留 utype entity_macro.h:1501-1513+persistent 子集 addToStreamEx(true) property.cpp:277/:336);字段序=FD 声明序 vs **DB 顶层属性名字典序**(std::map<std::string> scriptdef_module.h:31,非声明序——属性重名改动 DB 记录序不触 FD 序,SER-13 两条判据);版本维=defs-md5(entitydef.h:185/:255+entitydef.cpp:243+baseapp.cpp:4910)/alias·UID 双布局 baseapp entity.cpp:139-148/onlyPersistents 通道分叉/转换实现变更不改布局只改语义;消费映射 SER-03..14 逐条到 §2..§5;边界=纯模型文档零代码,物化批次以本表为契约真源,冲突先改表注明证据。门禁 lint 0/tsc 0/unit 748 文件 9187+8skip RC=0/xvfb demo 25 RC=0(首轮 hoverDeadlineContext·次轮 debugConfigAttach 各超时一例=满载抖动族,外部 dotnet/meshlet 构建 load 66→35,两例隔离均绿,第三轮全量绿)。
-- [x] KSEM-SER-03 [P1] 绑定 getDictFromObj 输出。验收：将明确 implementedBy 转换输出关联 FIXED_DICT schema；缺键/多键/字段类型错误定位到 return 或构造写点。——已收口(673a61ae,新纯核 src/backend/getDictFromObjReturnCheck.ts,引擎契约真源=SER-02 模型 §2:FixedDictType::addToStreamEx hasImpl 先 impl_getDictFromObj datatype.cpp:2595,**缺键/isSameType 失败静默 parseDefaultStr 默认值顶替** :2627/:2642——序列化出口的结构错误引擎侧零提示,静态面是唯一可见面):绑定推导=CustomTypeInfo.implementedBy 指向**本文档**(pythonFilePath===fsPath)+符号末段,类形态才判(函数形/歧义/缺失→零产出不猜);三面发现=缺键(宇宙封闭才判,声明集−字面量键,声明序逗号串)/多键(展开开放宇宙也照报单键)/字段值结构(复用 CELL-08 同一标量真源 classify+judge,仅内置标量裁定);锚位=直接 `return {…}` 锚 return 字面量,裸名 `return d` 锚构造写点(验收原句「定位到 return 或构造写点」),名字重绑定非字面量→作废不猜;嵌套 def 域诚实跳过;docstring/注释假阳性=pythonCodeLines 掩码行做语句形状判定(掩码行 `___` 挡住 `^\s*return`),**花括号配对与键串校验走原文 realLines**(掩码行串内容被抹空会致配对失败全报缺键——实测坑,已修);接线=diagnostics.ts scheduleFixedDictConstructDiagnostics 组装面追加(items.push),同开关 kbengine.fixedDictConstructDiagnostics,发布集合 kbengine-fixeddict-construct;规则 KBE-PY-023 code kbengine.fixedDictReturnSchema 入 lintRuleRegistry;l10n 三模板双语(缺键/多键/字段值结构,zh 说明静默默认值语义);features en+zh 新条目+开关行补 getDictFromObj 子句;测试=新 getDictFromObjReturnCheck.test.ts 15 例(三面×锚位×开放宇宙×嵌套 def×歧义×缺失方法×重绑定作废×掩码)+covDiagnosticsFindings 真接线端到端例(types.xml VectorBag implementedBy→serializers_impl.py 缺 y→collection 含 fixedDictReturnSchema);prove-red 两刀=M1 纯核删除 8 红/M2 接线移除 fixture 例红,恢复字节一致双绿;perfCallChainDoc ANCHORS 锚点 +4 位移锁步(diagnostics.ts 顶部 import 4 行,172/185→176/189,表内历史注带批号);门禁 lint 0/tsc 0/unit 740 文件 8967+8skip RC=0/xvfb demo 25 RC=0(categoryI18n 首轮真红=3 模板缺 bundle 条目已补,perfCallChainDoc 锚点真红已修,均非满载抖动)。
-- [x] KSEM-SER-04 [P1] 绑定 createObjFromDict 输入。验收：转换函数输入字典获得 schema，内部 key 补全/跳转/读取类型可用；错误 key 有可靠上下文时诊断。——已收口(f24f6bc4,新纯核 src/backend/createObjFromDictInput.ts,引擎契约真源=SER-01 实测 datatype.cpp:2673 FixedDictType::createFromStreamEx:hasImpl 先按 keyTypes_ 声明序建好 wire FixedDict(嵌套 FD 递归同建)再 impl_createObjFromDict 交给实现——入参收到的正是声明键位传输字典,与 STRUCT-07「内存形态键位不接管」是同一注册表两套语义:fixedDictSubscript 抽 walkFixedDictChainKeys 键步进核心,内存形态 chainStateFromAnnotation 设 implementedBy 门/wire 形态新 wireChainStateFromAnnotation 不设——嵌套 implementedBy 容器 wire 面照收);绑定面=pythonFilePath===fsPath+implementedBy 末段符号与 SER-03 同口径,新增入参名/方法体域(签名括号跨行平衡解析收括号行+1 起体,尾随空行不延长域);三面=completion/hover/pythonDefinition 输入面先于内存形态根解析接管,补全面抽 fixedDictKeyCompletionsOf 两 lane 共用;诊断=入参名字符串键读取(`d["k"]`/`d.get("k")` 含嵌套链)对声明集校验,首段未声明即报并止链,可靠上下文门(绑定唯一/方法缺失/只有 self/*args/收括号未闭→零产出,入参重绑 =/for/with-as 后不判,嵌套 def 域跳过,注释/字符串位掩码核验,赋值目标键不判而 +=/==/!= 照判),code kbengine.fixedDictInputKeySchema 挂既有 kbengine.fixedDictConstructDiagnostics 开关与 kbengine-fixeddict-construct 集合(零新开关),规则 KBE-PY-024 入表;测试=新 createObjFromDictInput.test.ts 35 例(绑定/接收者/wire 链/发现/三面真 workspace 含嵌套 implementedBy 穿透与重绑诚实边界)+covDiagnosticsFindings 端到端 fixtures 扩展;prove-red=接收者与发现面早退双刀 16 例红恢复字节一致;perfCallChainDoc ANCHORS 七锚真位重探锁步(diagnostics 176/189→182/195、hover 307→313、pythonDefinition 312/829/935→313/869/975、completion 855→897)+baseline §7 出处随锁步;门禁 lint 0/tsc 0/unit 770 文件 9473+8skip RC=0/xvfb demo 25 RC=0。
-- [x] KSEM-SER-05 [P1] 检查转换后的对象成员。验收：将可解析构造/赋值与输出对象成员关联；无法静态执行的自定义转换不凭函数名推定结构。——已收口(78262b3b,新纯核 src/backend/convertedObjMembers.ts,引擎真源=datatype.cpp:2435-2447 impl_getDictFromObj:Python 调用内异常→NULL→SCRIPT_ERROR_CHECK 记脚本错误且 parseDefaultStr("") **整体按默认值顶替**,.get 则静默返 None;addToStreamEx 调用处无 try/except——结构错误引擎侧零提示,静态面是唯一可见面,消息文案据此):**结构推导=createObjFromDict 可解析返回**(验收原句「将可解析构造/赋值与输出对象成员关联」)=①字典字面量(直返/别名返,多行 joinBalancedBraces 平衡接行;`**` 展开/字典推导/动态键→open 开放宇宙;`{1,2}` 集合字面量/`{x for …}` 集合推导→非字典→unknown)②wire 透传(`return dct` 未重绑→键集=types.xml 声明;`return dct["chain"]` 纯字符串键链→逐段解出嵌套 wire 容器)③其余一律 unknown——构造/方法调用/`return self`/None/属性读/无 return/混合分歧/重绑,**不凭函数名推定结构**(负验收面,苏格拉底式 callee 名字暗示样本钉零产出);检查面=getDictFromObj obj 入参字符串键读(`obj["k"]`/`obj.get("k")`)对推导键集裁定:字典形态只查首段(嵌套字面量形态是 SER-03 车道),wire 形态穿 wire 容器走全链;开放宇宙门(cellData 错键先例口径)=接收者动态键写/非字面量下标写/深度≥2 写/.setdefault(/.update( →缺键零产出,字面量单段写点并入键宇宙(obj 接收者文档级;createObjFromDict 入参+别名为体域级并折入结构——wire+动态写→降级 dict-open);**raw/masked 双流坑**=pythonCodeLines 掩码行串内容抹空(引号→_),键/字面量/链段必须读 RAW 行,def 跳过/重绑/位置判定走 MASKED 行,列对齐;SER-04 机器复用=resolveImplMethodInputs 泛化(ImplMethodInputBinding 两面同形,行为零变化 SER-04 测试未动),组装面 createInputs 提升共享;规则 KBE-PY-025 code kbengine.fixedDictOutputMemberSchema 入 lintRuleRegistry,挂既有 kbengine.fixedDictConstructDiagnostics 开关与 kbengine-fixeddict-construct 集合(零新开关);l10n 双语模板(EN 恒等键,ZH 记引擎默认值顶替语义);features en+zh 开关行补转换输出子句;测试=新 convertedObjMembers.test.ts 34 例(结构 16+发现 14+消息模板/finding→item 4)+covDiagnosticsFindings 真接线端到端(透传→推导 wire {x,y}→obj["w"] 缺失→fixedDictOutputMemberSchema 一条);prove-red=检查面入口早退一刀(纯核 4 红/30 绿+e2e SER-05 断言红),python count 断言还原;**纪实=还原后 sha256 与基线不符**(插入/还原窗口内并发会话外触本文件,函数区 cat -A 逐字节核对正确),按现字节全门禁复跑为准;perfCallChainDoc ANCHORS 打点 182/195→187/200 真位重探锁步+baseline §7 出处同步;门禁 lint 0/tsc 0/unit 771 文件 9507+8skip RC=0/xvfb demo 25 RC=0。
-- [x] KSEM-SER-06 [P1] 检查转换往返结构。验收：静态比较可确定的 encode/decode 字段对应，报告遗漏/错误字段映射；语义等价和数值往返需真实样本验证。——已收口(bc4693fb,新纯核 src/backend/roundTripFields.ts,引擎真源=addToStreamEx hasImpl 先 impl_getDictFromObj(datatype.cpp:2595)缺声明键静默 parseDefaultStr 整体顶替(:2627/:2642),createFromStreamEx 按声明序重建 wire 后交 impl_createObjFromDict(:2673);往返链 obj→getDictFromObj→wire→createObjFromDict→新 obj,encode 产出键集×decode 读取键集差集=单向缺失):**encode 键集**=getDictFromObj 全部 return 位闭合字面量并集(直返/别名返;字面量后单段字面量键写点并入;`**` 展开/动态键写/setdefault/update/`+=`/未知 return/无 return→整容器跳过不凭函数名推定)×**decode 键集**=createObjFromDict 入参+直接别名(`x = 入参`整行形态,重绑剔除,嵌套 def 域跳过)字符串键读取首段(`obj["k"]`/`obj.get("k")`;`return 入参`/`{**入参}` 透传→整容器跳过);**只在 ∩声明 键内裁差零重复**(E−声明=SER-03 多键车道、声明−E=SER-03 缺键车道、D−声明=SER-04 车道);D 域开放(动态下标读/setdefault/update/`+=`)只压 encodeOnly 方向;**值往返/语义等价不静态断言**(验收原句明文,归 SER-14 运行时样本车道);坑账=①测试 pair 夹具朝向反装(encodeBody 误挂 createObjFromDict、decodeBody 误挂 getDictFromObj)致 16 红,手排绑定探针逐字节证模块朝向白,翻转夹具方法序(行位不变)后绿——手排布局的手写用例(三键容器)反证夹具错;②锚列双口径=encode 字面量键锚引号列(parseDictPairs keyStart,SER-03 同族)/decode 读锚键内容列(keyAccessAt i+1,SER-04 同族),测试按侧断言;③**写点面真 bug**=writeMatch.index 恒 0(`^\s*` 锚)致掩码名位核验打在缩进列→字面量键写点并键面全死码,修复=匹配体内名首锚+键列改引号首现锚(名/键同名不撞 indexOf 前缀);④decodeOnly 差集键必须落在声明容器(PAIR x/y 装 z 键样本三处错装,改 TRIO/SINGLE 容器);嵌套链 `dct["x"]["hp"]` 首段 x 计入读取压 encodeOnly、次段不入对拍域;规则 KBE-PY-026 code kbengine.fixedDictRoundTripSchema 入 lintRuleRegistry,挂既有 kbengine.fixedDictConstructDiagnostics 开关与 kbengine-fixeddict-construct 集合(零新开关);l10n 双语模板 2 键(EN 恒等,ZH 记 wire 往返丢失/缺键整包默认值顶替语义);features en+zh 开关行补往返子句;测试=新 roundTripFields.test.ts 21 例(encodeOnly 7/decodeOnly 5/配对与诚实边界 7/消息模板·finding→item 2)+covDiagnosticsFindings 真接线端到端(serializers_impl 增 RoundTripBagSer:encode {x,y}、decode 读 x→fixedDictRoundTripSchema 一条,types.xml 增 RoundBag);prove-red=对拍门一刀(kind!=='literal'||keys.size===0→if(true))红 12/26,逆替换还原;纪实=跨命令手转 64hex 哈希比对不可信(HASH_MATCH 打印自不可靠字面量),弃比对改**现字节全门禁复跑**为准;ANCHORS 锁步=diagnostics.ts 顶部 import +3+push 面 +10,打点 187/200→191/204 真位重探,perfCallChainDoc.test+baseline §7 同步带日期注;门禁 eslint 0/tsc 0/unit 773 文件 9528+8skip RC=0/xvfb demo 25 RC=0。
-- [x] KSEM-SER-07 [P1] 验证 isSameType 契约边界(38f34fd8)。契约边界面落地:src/backend/isSameTypeContract.ts 纯核 + diagnostics.ts 发布(arity 面 Warning/证明状态面 Information,聚合 acceptAll>pending>fallback)。引擎真源 datatype.cpp:单位置实参绑定 PyObject_CallFunction "(O)"(:2450-2452)、判真=指针恒等 Py_True==pyRet(:2458)、impl True 短路免检/False 被无视回落内建(FixedDictType::isSameType :2497-2512)——isSameType 是转换链兼容性闸门(impl_createObjFromDict 后置校验 :2421)。静态判定:签名不符(零位置承接/多余无默认/仅关键字必需;*args 承接合法/**kwargs 不承接)恒 TypeError 锚 def 行方法名;恒 True=acceptAll 免检;全部返回位非 True 常量(指针恒等恒被无视)=fallback;动态返回=pending 待运行验证(不冒称已证明兼容,验收核心句);isinstance 全元素可解析(内建名∪本文件类名,元组叶子展开)→ 已证明零产出,任一未解析 → pending 锚该元素;嵌套 def 域跳过/注释字符串位掩码核验/签名不可解析零产出不猜。resolver 加 allowMissingObj 第四参(SER-04/05/06 默认不变)保缺 obj 绑定供 arity 裁定;30 单测 + e2e 断言(两类 acceptAll Information)+ ANCHORS 191/204→195/208 锁步(baseline §7 日期注);prove-red neuter→24+1 红/恢复全绿;门禁 lint 0/compile 0/unit 773 文件 9558+8skip/demo 25 RC=0。
-- [x] KSEM-SER-08 [P1] 支持项目显式序列化 schema。验收:设计项目级 schema/注解绑定方式及版本规则,避免污染业务代码;无 schema 时不声称 json.loads 返回固定类型。——已收口(8f98b676,设计文档 docs/review/2026-11-14-ksem-ser-08-project-schema-design.md,纯设计零代码改动):绑定方式=路线 A 声明式文件绑定 .kbengine/serialization.json(types 标量族复用 CELL-08 cellDataWriteCheck SCALAR_FAMILIES 真源:58 + bindings 按消费点证据 {path glob, type};路线 B 代码内注解否决=污染业务代码+双源真相,先例一致性=types.xml implementedBy 哲学);版本规则=schema_version 项目作者维护单调整数(仅展示不推断)+ 推导 LRU 键=(文档身份, schema 内容 md5)(flowVersionKey src/flowVersionKey.ts 协议同族,SER-02 §5 defs-md5 同哲学;绑定歧义→未知不猜);诚实契约=现状审计双引擎零声称(Rust crates/kode-python grep loads/pickle 零命中;TS 仅 hotReloadTransport 传输自用非分析面)→ 无 schema 时 json.loads 三禁(不凭名字推定/不给补全悬停字段面/诊断零产出=未知静默即诚实),pickle 零绑定能力(裸 PYTHON≠FIXED_DICT,SER-11 边界);SER-09/10/11 消费契约各一段;默认裁定表(固定 .kbengine/serialization.json/fnmatch glob/校验失败记诊断 configContract 车道形态);开放问题随批裁定给默认值。门禁 lint 0/tsc 0/unit 773 文件 9558+8skip RC=0/xvfb demo 25 RC=0。
-- [x] KSEM-SER-09 [P1] 推导项目静态字典格式。验收：从确定的 dict 构造/写点提取必有、可选及值类型；分支合流、多写者和动态 update 扩展为开放结构。——已收口(5493605f,src/backend/dictFormatDerivation.ts 纯核心 + tests/dictFormatDerivation.test.ts 35 例,零 vscode 依赖):推导模型=模块作用域 v1 写点收集(def/class 体绝不落入=同名跨作用域合流是谎报;if/elif/else/for/while/try/except/finally/with 体仍是模块作用域),执行保证三级 always(顶层无条件)> complete(带 else if 组全臂齐键,恰好一臂执行)> maybe(无 else if 臂/循环/try/with 体);必有 = always 键或 complete 全臂键,其余有证据键=可选;顺序语义=无条件字面量赋值重绑(先前条件证据作废)+ 增量写点(下标/update/setdefault/|=)并入不重置;无条件非字面量 RHS=unknown 终局(其后写点转 open+observed);开放结构=任意动态证据(变量键下标/update 非字面量/|=/del/**展开/推导式),observed 保留已观测键;值类型面=字面量分类 str/int/float/bool/none/list(元素同质收敛,空/混合→null)/嵌套 dict 递归(setdefault 的 dict 实参=被插入值非键面合并),跨写点同键类型分歧→unknown 不猜;坑账 8 件:else/elif 同缩进先收后找组恒落空需组帧豁免收缩(分支合流面死)、try:/finally: 单 token 带冒号恒不中 maybe 名单(头 token 剥尾冒号)、except/finally 体漏 maybe 名单、subWrite 形状匹配须走原文行(掩码抹引号成 _ 落 dynWrite 误开宇宙)+名位掩码核验、rebind 字段区分重绑/增量(否则 d={a};d|={x} 丢 a)、comprehension 检测须剥值自带外层括号(否则 for 恒深度 1 漏检)、open 零观测证据=无形状声称不入 map(缺键即未知)。门禁 lint 0/tsc 0/unit 774 文件 9593+8skip RC=0/xvfb demo 25 RC=0;prove-red=neuter 早退空 map 28 红(7 例缺席断言恒绿=空 map 正确敏感度)/byte-exact restore cmp=0 复绿。
-- [ ] KSEM-SER-10 [P1] 传播 JSON 编码解码结构。验收：仅对有绑定或可证明来源的 dumps/loads 链传播结构；处理 JSON key/tuple/数值转换，来源不明则未知。
-- [ ] KSEM-SER-11 [P1] 处理 pickle/PYTHON 边界。验收：保留已有对象类型可传递证据；不把裸 PYTHON 当 FIXED_DICT，不执行反序列化不可信数据来推断。
-- [ ] KSEM-SER-12 [P1] 接入 wire 布局解释。验收：复用现有编解码/跨度结果展示字段路径、类型、偏移及错误位置；不以能解析字节证明业务对象类型正确。
-- [ ] KSEM-SER-13 [P1] 检查 wire 布局兼容变化。验收：schema 变更比较字段顺序、类型、Arg 布局/版本；区分静态不兼容风险和引擎握手实际拒绝条件。
-- [ ] KSEM-SER-14 [P1] 建立引擎往返样本。验收：用可信夹具验证嵌套 ARRAY/FIXED_DICT/别名/自定义转换及边界值；引擎未运行的项不标成真实往返通过。
-
-### KSEM-CFG · P1 · 固定配置 key/value 与配置消费代码
-
-依赖：BAS + STRUCT；复用 configDerive/merge/catalog/schema。
-
-- [ ] KSEM-CFG-01 [P1] 盘点配置读取路径。验收：登记引擎 defaults/custom/覆盖层、项目 XML/JSON/JSONC/Python 配置对象及真实读取函数；区分 schema 已有和只存在文档目录。
-- [ ] KSEM-CFG-02 [P1] 提取配置权威契约。验收：关联引擎读取源码、默认 XML、已有 schema；记录类型、枚举、单位、范围、可重复节点、动态键和版本，不从默认值猜全部约束。
-- [ ] KSEM-CFG-03 [P1] 统一配置字段身份。验收：以配置根/层级路径/工程/版本定位字段；map 动态键与固定对象字段区分。
-- [ ] KSEM-CFG-04 [P1] 实现配置键和枚举补全。验收：父路径限定可用 key，value 按确定枚举/类型补全；已有 provider 复用，不重复注册冲突项。
-- [ ] KSEM-CFG-05 [P1] 实现配置值校验。验收：校验有源码/schema 依据的类型、范围、枚举和必填；引擎容忍/忽略未知 key 的行为与确实报错分级。
-- [ ] KSEM-CFG-06 [P1] 实现配置来源跳转。验收：代码配置读取 key 跳有效值及 schema/默认声明；hover 展示覆盖来源和单位，敏感值脱敏。
-- [ ] KSEM-CFG-07 [P1] 传播配置读取结果类型。验收：给可确定配置 loader 和字段访问绑定 schema；dict/get/别名/嵌套访问保留类型及缺省值联合。
-- [ ] KSEM-CFG-08 [P1] 提取项目配置结构。验收：显式 schema 优先，其次静态构造和可证明读取约束；动态 key/多文件冲突保持开放并提供来源。
-- [ ] KSEM-CFG-09 [P1] 检查配置关联约束。验收：逐条核实路径基准、字段组合、引用目标等可静态检查关系；端口冲突按绑定地址/协议/部署角色判断，不简单全局去重。
-- [ ] KSEM-CFG-10 [P1] 联动配置修改影响。验收：改 key/类型列出读取点、默认回退及受影响模块；修改未保存内容也刷新，禁止覆盖用户配置。
-- [ ] KSEM-CFG-11 [P1] 建立配置负例集。验收：覆盖自定义合法键、重复节点、环境覆盖、缺文件、多根、JSONC、敏感值和版本差异；不允许默认值推断产生伪错误。
-
-### KSEM-DATA · P2 · 共享数据与空间数据
-
-依赖：BAS + STRUCT；承接已有 globalDataIndex。
-
-- [ ] KSEM-DATA-01 [P2] 复核共享数据现有接线。验收：核实 globalData/baseAppData/cellAppData 的引用/跳转/类型消费和工程隔离；已有功能只记录差距不重复实施。
-- [ ] KSEM-DATA-02 [P2] 补共享数据键补全。验收：按工程和共享数据域列 key 与写入来源，静态常量按真实绑定解析，不把同名标识符恒当同一键值。
-- [ ] KSEM-DATA-03 [P2] 合并多写者类型。验收：不同写入点类型形成联合及来源说明；只有声明契约冲突才报错，正常多态不误报。
-- [ ] KSEM-DATA-04 [P2] 表达异步可用性。验收：共享数据发现写点不代表读时已存在；get/default、删除及进程域对类型和提示产生影响。
-- [ ] KSEM-DATA-05 [P2] 登记 spaceData 契约。验收：核实 key/value 字符串约束、空间范围、客户端可见路径和 _mapping 保护规则，记录出处。
-- [ ] KSEM-DATA-06 [P2] 实现空间数据读写关联。验收：可确定 spaceID 与 key 建索引/补全/跳转；动态空间不合并为同一确定对象，保护键写入有明确诊断。
-
-### KFLOW-CORE · P1 · 重做 Client 与进程流转模型及本地调用树
-
-依赖：用户反馈现有版本不可用；BAS/RPC 提供身份，不以旧图完成项抵扣。
-
-- [ ] KFLOW-CORE-01 [P1] 记录现有图失败样本。验收：选真实入口收集缺失本地帧、错误跨进程落点、合成 client 和同名混边；保留原图与预期路径做回归依据。
-- [ ] KFLOW-CORE-02 [P1] 定义三种图的产品契约。验收：明确进程流转图、本地调用树/静态调用路径、运行时调用栈的独立数据与入口；禁止将静态可能路径称为实际堆栈。
-- [ ] KFLOW-CORE-03 [P1] 定义流转节点和边协议。验收：节点含工程/角色/实例候选/实体/函数/源码；边含调用点、方向、同步/异步、条件、消息/RPC、证据及未解析原因。
-- [ ] KFLOW-CORE-04 [P1] 实现本地函数调用解析。验收：解析直接函数、self 方法、导入和可证明接收者；输出真实调用点及声明，不以方法名全局匹配。
-- [ ] KFLOW-CORE-05 [P1] 实现本地调用树展开。验收：支持入口向下/调用者向上、分支条件、递归环和深度截断；同一函数多次调用保留调用点，不直接压成一个帧。
-- [ ] KFLOW-CORE-06 [P1] 解析 Client 真实调用入口。验收：有客户端源代码时绑定实际调用点到 Exposed RPC；无客户端源码只显示外部入口和证据，不能伪造 Client 函数栈。
-- [ ] KFLOW-CORE-07 [P1] 连接 Base/Cell/Client RPC。验收：用角色化 EntityCall 与有效 def 找接收实现；消息发送与远端执行是独立边，不画成同步 Python 子栈。
-- [ ] KFLOW-CORE-08 [P1] 连接广播和组件调用。验收：展示单目标/多目标/AOI 受众及组件槽；广播不虚构一个固定接收实例。
-- [ ] KFLOW-CORE-09 [P1] 核实其他进程桥接契约。验收：逐条登记 loginapp/dbmgr/interfaces 等 API 请求/回调桥；machine/logger 等只在有真实业务边时出现，禁止拓扑全连接。
-- [ ] KFLOW-CORE-10 [P1] 连接引擎回调与异步续段。验收：创建实体、数据库返回、timer 等以契约关联请求和回调；回调未可确定绑定时保留断点与原因。
-- [ ] KFLOW-CORE-11 [P1] 保留外部及动态边。验收：动态 getattr、未知 receiver、第三方/native 函数显示未解析边及原因；不静默消失或猜唯一落点。
-- [ ] KFLOW-CORE-12 [P1] 构建一次业务场景路径。验收：选定入口查询 Client→Base→Cell→Client 的本地帧和跨进程边；分支为候选而非固定执行顺序。
-- [ ] KFLOW-CORE-13 [P1] 实现图增量失效。验收：改实现/def/角色映射只更新相关节点和调用方；删除、重命名、未保存文本及跨根隔离有验证。
-
-### KFLOW-UI · P1 · 进程泳道和可展开调用堆栈视图
-
-依赖：KFLOW-CORE 协议稳定；用户要求为实际流程可读。
-
-- [ ] KFLOW-UI-01 [P1] 制作评审用场景样图。验收：以真实调用夹具画泳道、消息和本地函数帧，标出分支/异步/未知；样图中每条边可追溯证据。
-- [ ] KFLOW-UI-02 [P1] 实现按角色分组泳道。验收：Client/Base/Cell 和已涉及其他进程按角色分泳道；静态角色不冒充运行中实例，运行实例带组件 ID。
-- [ ] KFLOW-UI-03 [P1] 实现本地帧折叠展开。验收：默认展示业务主要路径，展开能看到入口到 helper 的调用树；调用点与声明可分别跳转。
-- [ ] KFLOW-UI-04 [P1] 呈现跨进程消息。验收：边显示方法/方向/Arg 类型和来源；异步发送、接收、回调及广播可辨识，避免所有边一个箭头。
-- [ ] KFLOW-UI-05 [P1] 实现选中路径和反查。验收：从编辑器函数/调用点打开图，选择节点反查上游/下游，保留导航历史；未知和歧义结果可查看。
-- [ ] KFLOW-UI-06 [P1] 实现大图按需展开。验收：初次只加载有界场景子图，支持搜索/过滤/缩放/定位，截断有可继续入口；取消后停止后台扩展。
-- [ ] KFLOW-UI-07 [P1] 提供文本路径和错误恢复。验收：图和文本消费同一模型，渲染失败保留路径/未解析原因并可重试；中英文、键盘操作可用。
-- [ ] KFLOW-UI-08 [P1] 验收真实业务流转。验收：用登录/创建角色入场/一次战斗 RPC 三个项目实际存在的场景核对；缺场景则建明确测试夹具，不冒充真实项目覆盖。
-
-### KFLOW-TRACE · P2 · 真实调用栈与跨进程运行时追踪
-
-依赖：静态路径先交付；采集为单独增量，不以静态图替代。
-
-- [ ] KFLOW-TRACE-01 [P2] 核实运行时采集可行性。验收：评估 debugpy 停止栈、Python profile/trace、引擎消息钩子、日志和 py-spy 各自能获取的数据/代价；采样栈不冒充完整请求轨迹。
-- [ ] KFLOW-TRACE-02 [P2] 定义 trace 事件协议。验收：定义会话/进程/线程/实体/时间/帧/消息关联/来源及丢失标记；异步跨进程使用因果边，不伪装共享栈。
-- [ ] KFLOW-TRACE-03 [P2] 导入单进程真实堆栈。验收：先支持一个已验证来源的真实帧顺序、文件行和异常位置；字段缺失明示，栈展开可跳源码。
-- [ ] KFLOW-TRACE-04 [P2] 采集受控单进程调用事件。验收：独立可关闭的采集入口和有界缓冲，记录开始/结束/异常/丢弃；不默认开启高开销全量 trace。
-- [ ] KFLOW-TRACE-05 [P2] 验证跨进程关联方案。验收：核实消息是否已有可用关联 ID；没有则设计显式可选引擎/脚本适配，未经协议核实不得擅改 wire 消息。
-- [ ] KFLOW-TRACE-06 [P2] 串联发送接收与回调。验收：有可靠 ID 时连接事件，无 ID 只展示候选关联并解释；禁止仅按方法名/邻近时间宣称因果。
-- [ ] KFLOW-TRACE-07 [P2] 回放实例级流转图。验收：以真实组件实例泳道展示本地栈段和消息流；多次相同 RPC/乱序/广播/缺失事件可区分。
-- [ ] KFLOW-TRACE-08 [P2] 验收开销及失败清理。验收：预登记采集时间/容量/开销预算，测停止/断连/引擎退出/丢事件/时钟偏差；报告实际采样边界。
-
-### KSEM-QA · P1 · 分批验收与文档交付
-
-依赖：每个能力批次单独执行，不等全部实现。
-
-- [ ] KSEM-QA-01 [P1] 建立人工真值语料。验收：每类能力有引擎/声明依据的正例、反例、未知例；TS/Rust 一致不等于正确。
-- [ ] KSEM-QA-02 [P1] 建立 Provider 端到端验证。验收：同一文件实际走补全/hover/跳转/诊断/图入口，包含 RPC 缺失、旧二进制和失败降级，避免只测核心函数。
-- [ ] KSEM-QA-03 [P1] 验证编辑和跨工程隔离。验收：未保存修改、连续输入、同名跨根、关闭重开、重命名删除均不出过期结果。
-- [ ] KSEM-QA-04 [P1] 测量交互截止与降级。验收：记录排队/解析/查询/IPC/渲染分段及 P50/P95/P99；服务存活但无响应时真实超时，取消不能只改 UI。
-- [ ] KSEM-QA-05 [P1] 测量大仓及图资源预算。验收：测试冷/热态、索引重建、长 RPC 同时运行与大图展开；预登记阈值和样本，不挑最快一轮。
-- [ ] KSEM-QA-06 [P1] 交付每批用户能力说明。验收：更新中英功能/配置/限制说明及真实例图；只有生产接线和对应验收通过才勾任务，附提交和证据路径。
-
-
 ## v0.2.1 — Player Data Clone（2026-11-05 用户提供 ChatGPT 计划书，docs/design/v0.2.1-player-data-clone-plan.md）
 
 > 计划书自身的开发顺序铁律：先做 Phase 0（核实 KBEngine 真实 parentID 关联/嵌套 ARRAY 主键/Account-Avatar 引用结构），不直接写 ExportExecutor。
-- [x] CLONE-P0 · P0 · 核实 kode 类型图推导与 KBEngine 真实库表映射（主表/ARRAY/组件/parentID 归属），产出映射证据文档（对照 docs/design/v0.2.1-player-data-clone-plan.md——**完整版已落地**：§9 共 51 条 checkbox 为唯一细粒度任务基线，… [完整记录](docs/review/2026-11-08-todo-completed-history.md#done-0001)
+- [x] CLONE-P0 · P0 · 核实 kode 类型图推导与 KBEngine 真实库表映射（主表/ARRAY/组件/parentID 归属），产出映射证据文档（对照 docs/design/v0.2.1-player-data-clone-plan.md——**完整版已落地**：§9 共 51 条 checkbox 为唯一细粒度任务基线，… [完整记录](docs/review/2026-11-08-todo-completed-history.md#done-0001)（2026-11-14 重整核对：现树 §9 实为 54 条 checkbox（44 已勾），本行「51 条」为记账时点快照，以现树为准）
 - [x] CLONE-P1 · P1 · 新 crate kode-db-clone：SchemaResolver + RelationGraph + ExportPlanner（计划书 §3/§4）（fa770fe 完成：`crates/kode-db-clone` 自包含 crate（无 kode-server 依赖防循环）——`schema.rs`（CloneSchema/DerivedT… [完整记录](docs/review/2026-11-08-todo-completed-history.md#done-0002)
 - [x] CLONE-P2 · P1 · 只读导出与版本化归档（含 sha256/Schema 指纹/脱敏开关）（§5）（5d2f1d1 完成：`reader.rs` 只读导出——ReadOnlyExecutor 无 DML 方法+validate_readonly 白名单双防线,REPEATABLE READ 一致快照带回退,行/字节/墙钟预算+取消旗标,DFS 父先子后,… [完整记录](docs/review/2026-11-08-todo-completed-history.md#done-0003)
 - [x] CLONE-P3 · P1 · ImportPlanner + IDMapper + 冲突预览（Dry Run 先行）（§6/§7）（94d3613 完成：`crates/kode-db-clone` 导入计划期(Prepare,不触库)——`target.rs`（PDC-0301 TargetProfile 仅 local/test+mysql+可写三闸,… [完整记录](docs/review/2026-11-08-todo-completed-history.md#done-0004)
@@ -1377,9 +2011,9 @@
 - [x] KODE-FEAT-001 [P2] 评估 .def 原生 formatter（与 XML 解析器共享语法事实），先出评估结论再定实现。（评估文档已先行落盘 docs/design/def-formatter-evaluation.md;2026-11-07 核对结论=结论仍成立:结论「可行、推荐方案 B(Rust span 树+kode-server RPC+TS 薄 provider)」依据的源码事实复核无回潮——xml.rs 精确字节 span(open_span/close_span/content_span/name_span)仍在,mask_def_pseudo_comments 现位 xml.rs:803(文档行号 798→803 已随迁标注复核日期),defParser indexOf 重建偏移现位约 :596(541→596 同笔),package.json 无 prettier/xml formatter 依赖、`grep FormattingEdit src/` 零命中两点复核仍真;禁词合规=全文无 闭环/旨在/全方位;实现仍待后续批次,本批不改代码）
 - [x] KODE-FEAT-002 [P2] 明确性能分析能力边界：现有运行时指标/py-spy 快照 vs 未实现的 flamegraph/周期采样，分清已做与未做。（评估文档已先行落盘 docs/design/perf-analysis-boundary.md;… [完整记录](docs/review/2026-11-08-todo-completed-history.md#done-0377)
 - [x] KODE-DBG-001 [P2] debugpy 早期附加自动化（提案 docs/design/debugpy-attach.md，未实现）：不改引擎三方案=①入口脚本(scripts/base|cell/<entry>.py,… [完整记录](docs/review/2026-11-08-todo-completed-history.md#done-0378)
-- [x] KODE-I18N-001 [P1] package.nls.json + package.nls.zh-cn.json：95 命令/95 配置/7 视图的标题描述全部 manifest 国际化；验收：两语言文件 key 全等、无占位符遗漏。(228fec6;123 命令标题+111 配置描述+26 枚举说明+12 嵌套字段全部 %key% 外置,package.nls+zh-cn 两包 288 键全等,zh 人译非机翻)
+- [x] KODE-I18N-001 [P1] package.nls.json + package.nls.zh-cn.json：95 命令/95 配置/7 视图的标题描述全部 manifest 国际化；验收：两语言文件 key 全等、无占位符遗漏。(8cde654a 等 manifest-i18n 批（2026-11-14 重整核对：原记 228fec6 系无关 perf 提交误挂，已改）;123 命令标题+111 配置描述+26 枚举说明+12 嵌套字段全部 %key% 外置,package.nls+zh-cn 两包 288 键全等,zh 人译非机翻)
 - [x] KODE-I18N-002 [P1] 运行时文案国际化：Provider/Diagnostics/QuickPick/Notification/Output/Webview 全接入 l10n；验收：中文系统全中文、英文系统全英文、缺 key 回退行为测试。… [完整记录](docs/review/2026-11-08-todo-completed-history.md#done-0379)
-- [x] KODE-I18N-003 [P2] 翻译 key/占位符/回退一致性测试。(228fec6;manifestI18n 契约测试=key 全等/%key% 同名同数无死键/{N} 占位一致/缺 key 回退值级断言;真机 --manifestnls 无裸 token + --manifestfallback 删键重启回落两段断言;codex 4 轮 PASS)
+- [x] KODE-I18N-003 [P2] 翻译 key/占位符/回退一致性测试。(7dbca989；2026-11-14 重整核对：原记 228fec6 系无关 perf 提交误挂，实为 7dbca989 manifestI18n 契约测试;manifestI18n 契约测试=key 全等/%key% 同名同数无死键/{N} 占位一致/缺 key 回退值级断言;真机 --manifestnls 无裸 token + --manifestfallback 删键重启回落两段断言;codex 4 轮 PASS)
 - [x] KODE-ARCH-001 [P2] 拆分 languageProviders.ts（6766 行）为 def/python/navigation/inlay/codeAction/callHierarchy 六模块，共享语义查询走服务不互调；验收：拆后全量测试绿。（2026-11-07 feat/kode-arch-split:7343 行→18 行 barrel + src/languageProviders/ 下 13 模块(reveal/shared/validation/completion/inlay/hover/navigation/pythonDefinition/codeLens/callHierarchy/references/codeAction/rename),47 个公开导出逐名保持,10 个 commit 每步全量门禁绿;语义查询走 shared.ts,provider 间不互调）
 - [x] KODE-ARCH-002 [P2] 精简 extension.ts（5577 行）：命令/Provider/诊断/调试/数据库/热更新拆独立装配模块；验收：拆后全量测试绿。（已完成 2026-11-08：defAnalysisWiring/loggingWiring/databaseWiring 三装配模块先行（f0412150 前）；SRC-001 L0..L11 十一个激活器层（infrastructure/coreServices/languageServices/diagnostics/serverControls/views/hotReload/generators/monitoring/console/utilityCommands）将 6772 行 activate 全部抽出为 src/activate/*，extension.ts 现 1596 行（-76%），激活顺序由组合根调用点保持，共享实例经返回值注入，销毁所有权随 context.subscriptions 与返回句柄，deactivate 随组合根收口；门禁全绿）
 - [x] KODE-ARCH-003 [P2] 建立五索引（SemanticIndex/EntityMapping/PythonClassIndex/WorkspaceIndex/GlobalDataIndex）所有权与版本失效契约文档+断言。（2026-11-05 交付 docs/architecture/index-ownership.md + tests/indexOwnershipContracts.test.ts 16 断言;2026-11-07 拆分后复核全绿,装配行引用真位重探 extension.ts:782/:1125/:1317/:1037）
@@ -1450,7 +2084,7 @@
 
 ## 用户令 2026-11-03：stub 生成模式分层开关（默认生成+pyright，激进才复制代码）
 
-- [x] `IDE-STUB-001 [P1]` 新增设置 `kbengine.python.stubSourceMode`：`generated`（默认）| `real-source`（激进）。语义：generated=由内置生成链产出 `entity_types.pyi`/`KBEngine.pyi`（现 `entityTypeStubs.ts`/`pythonTypeStubs.ts` 生成链），**不复制真实代码**；real-source=现有「复制真实代码导出」路径（`exportEntityTypeStubs` real 分支/fantasydemoRealExport 所测路径）仅在此档执行。验收：默认 fresh workspace 不出现复制代码行为；切档生效有测试。
+- [x] `IDE-STUB-001 [P1]` 新增设置 `kbengine.python.stubSourceMode`：`generated`（默认）| `real-source`（激进）。语义：generated=由内置生成链产出 `entity_types.pyi`/`KBEngine.pyi`（现 `entityTypeStubs.ts`/`pythonTypeStubs.ts` 生成链），**不复制真实代码**；real-source=现有「复制真实代码导出」路径（`exportEntityTypeStubs` real 分支/fantasydemoRealExport 所测路径）仅在此档执行。验收：默认 fresh workspace 不出现复制代码行为；切档生效有测试。（2026-11-14 重整核对：该设置已随动态生成链退役——2026-11-11 静态模板桩车道落地后 kbengine.python.stubSourceMode/stubEngineTypings 自 package.json 移除，tests/featureToggles.test.ts:243 断言两键不存在；本行保留为历史凭证，设置现不存在）
 - [x] `IDE-STUB-002 [P1]` generated 档接 pyright：生成 stub 后调用 pyright（CLI 优先 `pyright --createstub`/`npx pyright`，探测不可用则降级纯生成并在输出面板提示），用 pyright 诊断校验/补齐生成 stub 的类型面。验收：pyright 在 PATH 时 stub 经其校验（测试 mock/真实二选一），不可用时降级不报错。
 - [x] `IDE-STUB-003 [P2]` 文档三处同步：`docs/guide/configuration.md`+`docs/zh/guide/configuration.md` 配置总览表、`docs/guide/features.md`+`docs/zh/guide/features.md` Settings 表（docsCommands 对账测试会查）。
 - [x] `IDE-STUB-004 [P1]` 测试：默认档不触发复制代码路径；real-source 档触发；fantasydemoRealExport 标注为 real-source 专属 fixture；`tests/fantasydemoRealExport.test.ts` 在默认档下 skip 理由更新。
@@ -1691,6 +2325,7 @@
 - [x] 审核发现：派生 scripts 根存在时排除整个外部 assetsRoot，使 scripts 之外的资源和定义文件不再被索引（src/scanRoots.ts:138）。（9ae1067；`getIndexScanRoots` 改为派生 scripts 根存在时仍包含 assetsRoot——两者同时入索引，containment dedup 只去 `assetsRoot ⊇ scriptsRoot` 时删宽者（保留较窄 scriptsRoot），scriptsRoot 与 assetsRoot 有交集但互不含时两个根都保留；tests/scanRoots.test.ts 新增 3 例+tests/configDeriveScanRoot.test.ts 调整 2 例。门禁：`npx vitest run tests/scanRoots.test.ts` 11/11 绿、`npx vitest run tests/configDeriveScanRoot.test.ts` 2/2 绿。）
 - [x] 审核发现：空间导航诊断在注释和字符串中也匹配调用，且把任意对象的 navigate 当作引擎方法，默认启用时会产生无关告警（src/spaceNavDiagnostics.ts:147）。（67d34aa；`computeSpaceNavFindings` 新增 `codeMask(text)` 逐字符词法掩码（行注释 `#`、单/双引号字符串含三引号→非代码区），… [完整记录](docs/review/2026-11-08-todo-completed-history.md#done-0427)
 - [x] 审核发现：共享在途 Git 查询仅使用首个调用方的取消令牌，一个视图取消会终止另一视图的相同查询，而后加入视图的取消不会生效（src/gitQueryGate.ts:200）。（4a989eb；`PendingEntry.addCaller(token)` 多调用方记账——cancel 仅当所有调用方都 cancel 才终止共享查询，任一调用方仍活跃则继续；后加入调用方的 cancel 生效于自身退出，不再透传给仍在等待的邻居；移除 `combineTokens`，首调用方不再独占令牌；tests/gitQueryGate.test.ts 新增共享取消 5 例。门禁：`npx vitest run tests/gitQueryGate.test.ts` 27/27 绿。）
+
 ## Windows 全量测试对齐（2026-11-05 全量 vitest 分析：6246 测试 194 失败/71 文件；CI=ubuntu 故 Windows 绿从未保证）
 
 - [x] WIN-1 [P1] 真 bug：entityDependency 用 Uri.parse 读 fsPath（18 失败）
@@ -1709,7 +2344,7 @@
   落点：测试断言 `/ws/...`、`/repo/...`，src path.join/dirname 在 win32 产出 `D:\repo\...`、`\ws\...`；gitRepoLocate.ts:62 `w + path.sep` 前缀匹配在混分隔符下必失配。
   验收：断言侧路径归一化（或 src 双分隔符兼容）；该批测试双平台绿。
 
-- [x] WIN-4 [P1] 仓库无 .gitattributes + core.autocrlf=true（CRLF 类：configParity/configMergeParity golden 逐字段差 \r，与既有 wire_golden 同根因）（2026-11-05 关闭：.gitattributes 提交 559ce2f——tests/fixtures/** 与 crates/**/tests/golden/** 强制 eol=lf，两份上游 CRLF kbemain.py 以 -text 豁免；重检出后 configParity/configMergeParity 6/6、wire 17/17、cargo --workspace 仅剩与本项无关的既有 3 失败。）
+- [x] WIN-4 [P1] 仓库无 .gitattributes + core.autocrlf=true（CRLF 类：configParity/configMergeParity golden 逐字段差 \r，与既有 wire_golden 同根因）（2026-11-05 关闭：.gitattributes 提交 ad770b4e——tests/fixtures/** 与 crates/**/tests/golden/** 强制 eol=lf，两份上游 CRLF kbemain.py 以 -text 豁免；重检出后 configParity/configMergeParity 6/6、wire 17/17、cargo --workspace 仅剩与本项无关的既有 3 失败。）（2026-11-14 重整核对：原记 hash 559ce2f 有误，实为 ad770b4e）
   落点：tests/fixtures/** 检出 CRLF、golden 按 LF 生成。
   验收：.gitattributes 强制关键目录 eol=lf（或比对前归一化）；golden 类测试双平台绿且不破坏既有检出。
 
@@ -1725,7 +2360,7 @@
   缺口：真实 Python（现为 WindowsApps 别名 exit 9009）+ pytest + ruff；Windows 开发者模式未开（symlink EPERM，2 失败：quickActionRunners/workspaceDiscovery）。
   验收：python --version/pytest --version 真实可用；symlink 探针 OK；相关测试绿。
 
-- [x] WIN-7 [P2] 全量并行超时（5 硬超时：debugConfigAttach/extension/processManager/pythonClassIndex 等，单跑绿）（2026-11-05 关闭：9b522f3 vitest maxWorkers=8。硬超时 6→1（余1为既有单点）；原「单跑绿全量挂」的 4 个（extension/processManager/pythonClassIndex 等）实为 WIN-2 spawn 失败假象，随 391864f 一并消失。）
+- [x] WIN-7 [P2] 全量并行超时（5 硬超时：debugConfigAttach/extension/processManager/pythonClassIndex 等，单跑绿）（2026-11-05 关闭：c65709b0 vitest maxWorkers=8。硬超时 6→1（余1为既有单点）；原「单跑绿全量挂」的 4 个（extension/processManager/pythonClassIndex 等）实为 WIN-2 spawn 失败假象，随 391864f 一并消失。）（2026-11-14 重整核对：原记 hash 9b522f3 有误，实为 c65709b0）
   落点：499 文件并行在 16C/8GB 挤爆；vitest 默认 maxWorkers 无上限保护。
   验收：vitest.config 限 maxWorkers（或提供 --maxWorkers 配方）；全量跑超时类清零。
 
@@ -1968,594 +2603,6 @@
 - [x] 实现 def Arg 文本到 `SemType` 的转换桥（`crates/kode-server/src/semantics/rpcargs.rs:78`）—— 打通真实 RPC 参数检查链并避免默认 PYTHON 过宽。【2026-11-13 收口 5224a257:`arg_text_to_sem_type(text, graph)`=两端 trim+内建直映(无图)+有图走 `from_type_graph` 递归(alias/ARRAY/FIXED_DICT/UserType→Entity);红线=无图未识别 `Unknown("unresolved:名;type-graph-missing")` 绝不默认 PYTHON(可 pickle 全接受,默认它=吞光 mismatch)、显式 `<Arg>PYTHON</Arg>` 才合法;+10 测试含端到端喂 `check_rpc_args`(UINT32 过/int→FLOAT 引擎真值不符/未识别位 Unknown);prove-red 三发=默认 PYTHON 2 红/去 trim 1 红/抹图臂 4 红,恢复 diff 字节一致;首轮快照误拍写测试前致变异恢复回滚新测试(14 passed 假象)已纠=重拍重发,细节 docs/review/2026-11-13-rpcargs-arg-text-bridge.md;门禁 clippy 0+cargo 1189 过 0 败 55 套件+tsc 0+lint 0+vitest RC=0+xvfb demo 25 RC=0】
 - [x] 将 `PYTHON_RECEIVER_SECTIONS` 改为按 caller face/entity owner 的逐面语义表（`src/backend/pythonLanguageUtils.ts:66`）—— 消除与 `bind_self_role` 的矛盾和跨实体误对账。【2026-11-13 收口 d634ae42:九面表落地=pythonLanguageUtils 新 PythonCallerFace+PYTHON_RECEIVER_FACES(引擎 getter 表 bind_self_role 同源:baseapp .cell/.client、cellapp .base/.client(CLIENT_VIA_BASE→ClientMethods)、client .base/.cell;同面无此属性→null)+pythonReceiverSectionFor(面未知保旧口径);面上无效引用(baseapp self.base/cellapp self.cell/client self.client)=AttributeError,从 receiver-none/段错配/RPC 实参数三 lane 发现面滤除(别名使用点同闸),不再当合法派发对账 def 段;receiverNoneRust RPC 契约加 callerFace,Rust receiver_none.rs receiver_not_on_face 循环头同闸;导航/展示面(hover/F12/CodeLens/inlay)不传 face 零行为变化=辅助面不是断言面;+15 测试例,真二进制 parity harness 两侧同喂 face(mock-vs-wire);真回归两起=闸生效活证据(covDiagnosticsFindings fixture self.base 在 base 文件误报→改 self.cell.cellMove 面对齐;parity 漂移=harness 未带 face);prove-red 三发=表翻格 8 红/滤除回落 6 红/Rust 闸抹除 1 红,恢复 diff 字节一致;门禁 cargo 429+297 全过/clippy 0/tsc 0/eslint 0/vitest 748 文件 9187+8skip/xvfb demo 25 RC=0;细节 docs/review/2026-11-13-python-receiver-face-table.md】
 - [x] 显式区分组件槽宿主缺失与结构缺失分诊（`crates/kode-server/src/semantics/rules.rs:64`）—— 防声明未就绪被误报为方向不可达。【2026-11-13 收口 e519e55b:两面同修——面一(根因)snapshot.rs 组件槽按引擎序合并 接口→自身→父链(entitydef.cpp:351/:363/:372,addComponentDescription :1070 后装覆盖=链上最深祖先胜),此前父/接口声明的槽在快照不可见→合法派发误报「槽未声明」;同名多来源记冲突 component-defined-in-multiple-sources,missing-component-type 逐来源登记(被覆盖槽引擎照样装属性 :742 不免检),平槽面保持声明序首现位(BTreeMap 键序曾击中 cell.rs 既有例=序契约活证据,即改 comp_order);面二 rules.rs 槽缺失臂分诊:宿主 issues 前缀命中 missing-parent/missing-interface/inheritance-cycle/inheritance-chain-overflow/interface-cycle-or-duplicate → NotReady(来源不完整不判结构缺失),链完整才 DirectionUnreachable(「全链无此槽」);+5 测试;prove-red 两发=comp_sources 削单源 2 红/缺失臂回退旧码 1 红,恢复 diff 字节一致;父实体接口不展开=模型缺口注释注明(与属性/方法口径一致);门禁 cargo 428+297 全过/clippy 0/tsc 0/eslint 0/unit 9173+8skip RC=0/xvfb demo 25 RC=0;细节 docs/review/2026-11-13-ksem-cell-16-component-slot-triage.md】
-## 账本合并核对（2026-11-13）
-
-> 用户令 `kode-ledger-merge.md`（优先于 kode2 推进）。只读核对+文档合并，不改功能代码。
-> 背景：主 todo.md 与 docs/kode2/KODE_2_COMPLETE_TODO.md 此前零交叉引用（kode2 无 KSEM/KFLOW 字样，grep=0 实证）。本节为统一视角：**kode2 = Rust Core 重构主体账，主 todo.md = 产品功能主体账**，关联面以指针互引，禁止双口径（同一工作两处状态不一）。
-
-### 两本账现状（核对时点 cbe9d3f2）
-- 主 todo.md：1089 项 checkbox，已勾 1021（93.8%），未勾 68。未勾 68 = 52 项 KSEM/KFLOW 六族（下方逐族判定）+ 16 项其他（KSEM-SER-04..14、NPM-PKG-07、DBG-COMPAT-08、HR-DEMO-06/07、KDB-EXPORT-001）。
-- kode2：449 项，已勾 60（13.4%），未勾 389；未勾中 **17 项**带「进行中/基础版/已落/已裁决」真实进度注且逐条带 PR 证据（行 130/149-152/159-160/183/186/188/195/197/230/374/376/380/438）。
-
-### 52 项逐族判定：重复合并 0 / 独立 52 / 已实现未勾 0
-
-| 族 | 项数 | kode2 关联章节（指针，非重复） | 判定 |
-| --- | --- | --- | --- |
-| KSEM-CFG-01..11 | 11 | §10 KBE-010（配置合并视图）/KBE-017（Project Doctor）、§8 LSP-001/LSP-004/LSP-009、§13 UI-011、§6.2 SEM-011 | 独立，归属主 todo。kode2 无配置契约/补全/校验专章，属产品线独有面 |
-| KSEM-DATA-01..06 | 6 | §6.2 SEM-007（分面）/SEM-009（多根同名）/SEM-010（base/cell/client 区分）、§8 LSP-001/002、§10 KBE-005 | 独立，归属主 todo。sharedData/spaceData 契约 kode2 无对应条目 |
-| KFLOW-CORE-01..13 | 13 | §8 LSP-012（CallHierarchy）、§9 PY-003（Python symbol 索引）、§7 IDX-002/003/015（DAG 边与增量失效）、§10 KBE-006（RPC 检查）/KBE-008（实体关系浏览器）、SEM-008 | 关联非重复。KFLOW=TS 侧产品功能线；CORE-04/05（本地调用解析/树）↔ LSP-012+PY-003 同族，CORE-07/08（RPC/广播边）↔ KBE-006+KBE-008 同族，CORE-13（增量失效）↔ IDX-003/015 同族 |
-| KFLOW-UI-01..08 | 8 | §13 UI-008（Graph view 按需加载/CSP）/UI-010（多根归属）、§8 LSP-017（虚拟列表） | 关联非重复。KFLOW-UI-06 大图按需展开与 UI-008/LSP-017 同一机制约束 |
-| KFLOW-TRACE-01..08 | 8 | §10 KBE-013（runtime adapter）/KBE-014（协议未验证不宣称）、§11 EXEC-006/007/008（日志事件模型/多源入口/ring buffer） | 关联非重复。TRACE-02 事件协议须与 EXEC-006 字段对齐，防两套事件模型 |
-| KSEM-QA-01..06 | 6 | §14 QA-001..017（golden/differential/e2e/性能门禁）、§15 Phase gates | 同类不同面。KSEM-QA 验收对象=语义精度战役现行为；kode2 QA=Rust 迁移门禁。QA-01 真值语料可作 QA-003 golden 输入，QA-02 端到端方法可复用 QA-005 手段 |
-
-- **重复合并 0**：逐项比对无任何一条与 kode2 已勾/未勾条目描述同一交付物。两账是不同实现层（TS 产品线 vs Rust Core 面）的不同工作，分账不构成双口径。
-- **已实现未勾 0**：六族 52 项均无实改痕迹（无对应 commit/测试/模块），无虚账也无可补勾项。
-- **防漂移约定（后续执行时强制）**：① KFLOW-CORE-02/03 图协议落地后，kode2 LSP-012/KBE-008 实现必须消费同一协议，不得另造；② KFLOW-TRACE-02 trace 事件协议与 EXEC-006 日志事件模型字段对齐；③ KSEM-QA-01 真值语料登记后同时登记为 kode2 QA-003 golden 候选输入。
-- 本节部分充当 kode2 AUDIT-014（旧账映射）的输入，但 AUDIT-014 本体（A1-A7→Phase 映射+永转/超时回归保留）仍未勾，不因本节视为完成。
-
-### kode2 已勾 60 项抽查（10/10 证据成立，虚勾 0）
-
-| 抽查项 | 勾行证据 | 复核结果（cbe9d3f2 实测） |
-| --- | --- | --- |
-| BUILD-003 | toolchain pin+MSRV+clippy 门 | rust-toolchain.toml pin 1.99.0 在；Cargo.toml rust-version 现 1.97（注释记录随 kode-python 升级，勾行「MSRV 1.82」数字过时但 pin/clippy 真实，维持勾选） |
-| CORE-001 | FrameDecoder+11 帧单测 | kode-protocol/src/lib.rs:391 FrameDecoder 在；tests/framing.rs 11 例精确吻合 |
-| VFS-002 | DocumentKey{root_id,uri} | kode-vfs/src/store.rs:29 在 |
-| VFS-004 | line_index+坐标对拍 | line_index.rs+tests/coordinates.rs 均在 |
-| SYNTAX-002 | xml 字节 span+pr-005 证据 | xml.rs 68 处 span；docs/kode2/pr-005.md 在 |
-| SEM-004 | alias 链环诊断 | kode-types/src/graph.rs:351 ChainStatus::Cycle 环截断在 |
-| IDX-006 | 倒排+反向依赖 | index.rs:81 by_name BTreeMap + :258 dependents_of 在 |
-| PR-011 | completion 链+证据文档 | server.rs:225 textDocument/completion 分发在；pr-011.md 在 |
-| PR-012 | gate2 FAIL→gate3 PASS 复判 | pr-012-gate2-run.txt/gate3-run.txt/perf-gate.md 三件在；perf-gate.md §门禁表 G-C FAIL→复判 PASS 与勾行逐字吻合 |
-| HR-HTTP-004 | 拼写门+双载口径 | tests/hotfixSpellingGate.test.ts 在；httpRequests.ts:55/58 query+body 双 `module_name=` 在 |
-
-### 统一视角与真实完成率
-- **kode2 主体（Rust Core 重构）**：449 项。严格勾选口径 60/449=**13.4%**；含 17 项有证据基础版/进行中的宽口径 77/449=**17.2%**。剩余大头：§8 LSP 全族、§9 PY 全族、§10 KBE 全族、§12 PLUG 全族、§13 UI 全族、§14 QA 全族、§19 HR-MOD/WATCH/HTTP/STATE/UI/HASH/EXT/QA 族。
-- **主 todo 主体（产品功能）**：1089 项，已勾 1021=**93.8%**；未勾 68 全部登记在案（52 项 2026-11-11 语义战役未启动面+KSEM-SER-04..14+4 项发布/验收散项）。
-- 结论：两账**无重复状态冲突**，无需互相改勾；统一视角=kode2 管 Rust Core 面、主 todo 管 TS 产品面，关联条目以本节指针维护。后续任何一侧实现到关联条目时，必须回写本节所列指针关系，防双口径回潮。
-
-# Kode 2.0 — Rust Core 高性能重构账本（自 docs/kode2/KODE_2_COMPLETE_TODO.md 合并，2026-11-13）
-
-> 来源文件已删除；设计红线/性能预算等叙述性内容见 git 历史（该文件 668 行版本）。此处保留全部 checklist 账本，勾选状态原样迁移。
->
-> **状态注（2026-11-13 整理）**：本段为 Rust Core 重构设计序列，执行以用户逐批点火为准，整段未勾≠债务；已落部分见各行「(落地/进行中/基础版…)」注（PR-003..010、kode-scheduler、kode-vfs 等）。取证阶段（PH0）的 AUDIT-001..015/PERF-001 已于 2026-11-13 复核补勾（证据=docs/architecture/current-state.md+migration-inventory.csv+docs/perf/hardware.md）；PR-001/PR-002 与主 todo 既有车道重复，对账注见 §17 各行。
-
-#### 0.2 严格设计原则
-- [ ] ARCH-001 扩展宿主不得同步执行全仓扫描、语义求解、全量 XML 解析、巨型日志处理。
-- [ ] ARCH-002 Core 是常驻进程，语言请求不得 spawn Python/Rust 进程；运行脚本须独立的可复用执行服务。
-- [ ] ARCH-003 文件快照按 root + canonical URI + document version 唯一标识；打开文件内存优先。
-- [ ] ARCH-004 索引查询无阻塞全量初始化前置；允许明确标注 partial/incomplete，禁止悄悄返回假完整结果。
-- [ ] ARCH-005 所有发布到编辑器的结果带请求/文档/索引版本，拒绝旧结果覆盖新结果。
-- [ ] ARCH-006 优先局部解析和受影响依赖更新；无理由的「任意改动→全仓重建」视为架构缺陷。
-- [ ] ARCH-007 语义正确性、内存上限、稳定性与尾延迟均为发布门槛。
-- [ ] ARCH-008 自有协议版本化，公共 API 与内部存储隔离；插件默认无文件写权限、无网络权限、无任意执行权限。
-- [ ] ARCH-009 UI 在降级、Core 崩溃、无 KBEngine 引擎源码时仍可用。
-- [ ] ARCH-010 支持 Windows/macOS/Linux、x64/arm64 和 Remote SSH/WSL/Containers 的正确执行位置。
-- [ ] ARCH-011 索引存储为派生缓存而非数据真相，损坏可以重建，不可静默修改用户文件。
-- [ ] ARCH-012 无实验数据不得声称 Rust 性能一定快 N 倍；禁止靠删功能换性能。
-
-#### 0.3 不做的事情
-- [ ] SCOPE-001 不重写 VS Code UI 为 Rust GUI。
-- [ ] SCOPE-002 不从零重写完整 Python 解释器或 Python 语言服务器。
-- [ ] SCOPE-003 不把服务器部署、集群调度、云资源与游戏业务运维塞入语言服务核心。
-- [ ] SCOPE-004 不允许没有协议隔离的第三方插件直接加载到高可信 Core 进程。
-- [ ] SCOPE-005 不承诺纯浏览器 VS Code 可以执行原生 Core；单独设计 Web 降级或远程部署。
-
-### 1. 验收性能预算及方法
-
-> > 所有数值为候选预算，必须附硬件、系统、数据集、时间窗口、样本数。P95/P99 与 cold/warm 区分；不要把合成基准误当真实 KBEngine 工程表现。 | 场景 | 候选目标 | 绝对规则 | |---|---|---| | 扩展激活（不含 Core 全量索引） | P95 ≤300ms | 不阻塞编辑器 UI | | Core 热启动至握手
-
-- [x] PERF-001 编写 docs/perf/hardware.md：CPU、核数、RAM、磁盘、OS、VS Code/Node/Rust/KBEngine 版本。——`36052c47`：docs/perf/hardware.md（2026-10-23 lscpu/free/lsblk 实测全表+版本面+测量偏差细则；本 tidy 2026-11-13 复核存在且面齐）。
-- [ ] PERF-002 fixtures 分 S(200 files)、M(2k)、L(10k)、XL(50k+)、XRoot(3+ resources 根)；附文件大小与符号数统计。(部分：S/L(30,005 文件)/XRoot(3 根) 已覆盖，M(2k)/XL(50k+) 待建——docs/perf/hardware.md §3+current-state.md §PERF-002/003/004)
-- [ ] PERF-003 fixtures 包含同名实体、跨 root 同名 Python class、深继承、循环别名、不完整 XML、非 ASCII 路径、符号冲突。(部分：同名实体/跨 root 同名类已覆盖；深继承/循环别名/不完整 XML/非 ASCII 路径待补——同上节)
-- [ ] PERF-004 fixtures 含真实 KBEngine 引擎样例（版权/版本可用时），与可合成开源样例隔离。
-- [ ] PERF-005 测量 extension activation、Core spawn、handshake、workspace discovery、parse、resolve、index、publish 的分段时延。(部分：分段纪律与已测/未测清单已立——current-state.md §PERF-005；Core spawn/handshake 量测随 Rust Core 落地)
-- [ ] PERF-006 延迟结果按 cold/warm、idle/busy、SSD/network FS、local/remote、root 数量分组。
-- [ ] PERF-007 每个关键请求采集 P50/P95/P99/max、队列耗时、执行耗时、排队长度、取消率、cache hit/miss。
-- [ ] PERF-008 统计文件枚举/读取/解析次数、局部失效节点数、索引版本和 RPC 消息字节数。
-- [ ] PERF-009 监测 VS Code extension host event loop delay、Core CPU/内存/线程及磁盘 IO。
-- [ ] PERF-010 CI 建立基准报告和可配置回归阈值；有噪声控制和重复执行。
-- [ ] PERF-011 自动生成基线 → PR 对比 → 历史趋势，不通过基准不得合并关键核心 PR。
-- [ ] PERF-012 做请求风暴：快速连续编辑、切换 tab、批量重命名、依赖变更、并发跳转补全。
-- [ ] PERF-013 做 1h soak test、OOM 限额、杀进程恢复、损坏索引自动回建、取消与重试。
-- [ ] PERF-014 对超大文件启用 degraded mode 并明示能力限制；不得锁死 UI。
-- [ ] PERF-015 跨机器不直接比较绝对速度；主报告使用固定基准机器和统计置信范围。(部分：固定基准机纪律已立——hardware.md §1/§2；统计置信区间/bench `--repeat` 待建——hardware.md §2#1)
-- [ ] PERF-016 在 docs/perf/decisions.md 记录每一项优化的 profiling 证据、取舍、回退策略。
-
-### 2. 现有代码取证与迁移清单（首个强制阶段）
-- [x] AUDIT-001 固定仓库 commit SHA / tag，保存 working tree 状态；确认旧 TODO 每条任务的真实完成状态。——current-state.md §AUDIT-001（审计基点 36052c47cb26 全 SHA+干净树+旧 TODO 逐项对账 PR1..PR7/B-1..B-5 commit 核实；本 tidy 2026-11-13 复核）。
-- [x] AUDIT-002 抽取 `src/` 模块树、入口 activation、各 provider 注册、manager 生命周期及 import 依赖图。——current-state.md §AUDIT-002。
-- [ ] AUDIT-003 标出 `onLanguage:python` 激活是否不必要地初始化 KBEngine 服务；增加无 KBEngine 工作区负案例。(部分：初始化面已标出=激活即建全套 KBEngine 机制、负案例未实现未测——current-state.md §AUDIT-003；负案例归 PR-006 root-discovery 范围)
-- [x] AUDIT-004 枚举 `.def` / types.xml / entities.xml / alias.xml 的所有解析器与调用方，找重复 parse/read。——current-state.md §AUDIT-004。
-- [x] AUDIT-005 枚举 PythonClassIndex、EntityMappingManager、type registry、composition root、definitionWorkspace 及实际名称/路径。——current-state.md §AUDIT-005。
-- [x] AUDIT-006 核查所有 `fs.*Sync`、`getText().split`、递归 workspace.findFiles、glob、statSync、首次查询 ensureScanned。——current-state.md §AUDIT-006（同步 IO 普查，非测试代码）。
-- [x] AUDIT-007 记录 hover/definition/completion/diagnostics/references 四层真实调用链与等待点。——current-state.md §AUDIT-007。
-- [x] AUDIT-008 枚举全部用户功能、commands、views、configuration、debug provider、test 清单，为迁移建立能力矩阵。——current-state.md §AUDIT-008（能力矩阵；细目=docs/architecture/migration-inventory.csv）。
-- [x] AUDIT-009 核查现有 `.pyi` 生成算法与类型来源，是否基于 Python AST、动态运行或文本正则。——current-state.md §AUDIT-009（结论：纯文本生成，无 AST/无动态执行）。
-- [x] AUDIT-010 核查代码生成向用户目录的写入行为、覆盖保护、源位置跳转、版本与冲突处理。——current-state.md §AUDIT-010（.def/.py 直写无覆盖保护等实证）。
-- [x] AUDIT-011 审核 log/terminal/HTTP/telnet/watcher 运行时边界和现存进程/连接生命周期。——current-state.md §AUDIT-011。
-- [x] AUDIT-012 产出 docs/architecture/current-state.md：事实、推断、已测结论分栏标记。——docs/architecture/current-state.md 本体（2026-10-23 取照 36052c4，【Fact】/【Inference】/【Tested】分栏；2026-11-05..07 state refresh 追加，本 tidy 2026-11-13 复核）。
-- [x] AUDIT-013 产出 docs/architecture/migration-inventory.csv：模块、owner、输入、输出、耗时、迁移方式、测试、风险。——docs/architecture/migration-inventory.csv（列=模块/路径/职责(输入→输出)/owner/耗时证据/迁移方式/测试/风险）。
-- [x] AUDIT-014 明确旧 A1-A7 对新 Phase 的映射；保留所有当前已修复的永转/超时问题回归测试。——current-state.md §AUDIT-014（A1..A7→Phase 映射表+永转/超时回归测试锁在案）。
-- [x] AUDIT-015 将产品已有 feature 进行 retained/moved/reworked/deferred 分类，避免重构丢能力。——current-state.md §AUDIT-015+CSV 迁移方式列。
-- [x] AUDIT-016 执行 HR-AUDIT，确认已有 HTTP/Watch/Hash 代码真相并建立差异清单。(HR-PR-01,6934c63a,docs/hotreload/current-implementation.md §1/§2+§3)
-
-### 3. Repository / 构建 / 发布基础设施
-
-> 建议的目标树（先做设计审查，确认后生成，不代表仓库当前已有）： ```text kode/ extension/                 # TypeScript VS Code extension and UI src/{activation,client,views,commands,debug,services,plugins}/ crates
-
-- [x] BUILD-001 决策记录 ADR-001：LSP stdio 为默认常驻本地/远端通信；扩展协议只处理非标准能力。(PR-003,docs/kode2/adr/ADR-001-stdio-default-transport.md)
-- [x] BUILD-002 ADR-002：Rust 解析器/查询核心 vs 现有 TS，先用基准决定是否逐模块替换。(PR-003,docs/kode2/adr/ADR-002-benchmark-first-rust-migration.md)
-- [x] BUILD-003 建 Cargo workspace，pin toolchain 与依赖，定义 MSRV；启用 cargo fmt/clippy/test。(PR-003:Cargo.toml+rust-toolchain.toml pin 1.99.0/MSRV 1.82,`cargo clippy --workspace --all-targets -- -D warnings` 过)
-- [ ] BUILD-004 Cargo features 分割 optional engines/runtime/plugin host，减小基础包和启动成本。
-- [ ] BUILD-005 TS client 统一 transport / reconnection / cancellation / diagnostics 管理。(PR-003 已落最小版 spawn/握手/取消/崩溃重启:src/kodeCoreClient.ts;Provider 接线与 diagnostics 管理留 PR-010)
-- [ ] BUILD-006 固定生成的协议 schema；Rust/TS types 从同一规范生成，CI 测兼容。
-- [ ] BUILD-007 对多平台目标构建 x64/arm64；单独核查 Windows path/casing 和 macOS 签名/隔离。
-- [ ] BUILD-008 VSIX 拆分 target-specific 原生包与统一扩展包的策略，明确 platform fallback。
-- [ ] BUILD-009 VS Code Remote：在 extension host 所在机器选择对应平台 Core，勿错误在 UI 本地启动。
-- [ ] BUILD-010 Web extension：检测环境后声明有限功能或连接远端 Core，不假装支持本地 native。
-- [ ] BUILD-011 发布产物 SHA256/来源审计/SBOM/license scanning，避免可执行文件被替换。
-- [ ] BUILD-012 构建缓存、依赖离线策略、可复现版本、CI 并行矩阵。
-- [ ] BUILD-013 Crash 报告只含脱敏本地 diagnostics；不默认上传源码、路径或日志。
-- [ ] BUILD-014 Profile release LTO/strip/codegen-units 等选项以测量为准，不盲目最大化编译优化。
-- [ ] BUILD-015 定义 Rust/TS 协议的版本不匹配提示、自动重启和回退机制。
-- [ ] BUILD-016 插件/缓存/临时文件路径兼容多工作区；清理不删除用户文件。
-
-### 4. Rust Core 运行时、请求调度与资源控制
-- [x] CORE-001 stdio LSP framed JSON-RPC：Content-Length 正确处理短读/分包/非法帧。(PR-003:crates/kode-protocol FrameDecoder,11 帧Codec单测)
-- [x] CORE-002 `initialize` 协商 capabilities、project roots、server version、extension capabilities。(PR-003:kode-server initialize 幂等协商,initializationOptions.restartGeneration 对账)
-- [x] CORE-003 所有请求 request_id/span_id；日志与 tracing 可串联扩展↔Core↔后台任务。(PR-003 最小版:request_id 数字/字符串保真贯穿响应/取消/日志(stderr 对账),span/tracing 体系留后续)
-- [ ] CORE-004 单实例一个 workspace session；多个 root 配隔离 root_id 与受控共享缓存。
-- [ ] CORE-005 工作优先级：打开文档小范围交互 > 直接语义查询 > 局部依赖刷新 > 后台首扫 > 大图/SDK/报表。(PR-009 基础版:crates/kode-scheduler 五级优先级+seq 公平序+交互冷却限流,与 TS indexScheduler 对拍;server 装配接线随 provider 单)
-- [ ] CORE-006 队列具备公平性和抗饥饿机制；不可永久推迟后台 indexing。(PR-009 基础版:kode-scheduler 同优 FIFO+有界队列淘汰+后台饥饿上限绕过冷却晋升;server 接线随装配单)
-- [ ] CORE-007 按 request/document/root 级 cancel token，传播至文件读取、解析、计算、响应封装。(PR-009 基础版:kode-scheduler CancelToken+句柄/批量取消,运行中不中断;向 IO/解析/响应的传播随 server 装配)
-- [ ] CORE-008 去重同文件同版本工作；singleflight 共享解析结果；异步结果晚到必须 version check。(PR-009 基础版:kode-scheduler 同文件同版本合并+过期版本丢弃/取消让位+keyed 单例;singleflight 随 provider 接线)
-- [ ] CORE-009 首扫后台完成，同时允许 on-demand target parse；冷请求绝不无期限等待全仓。
-- [ ] CORE-010 CPU pool 对交互请求预留容量；后台 worker 并发有硬上限，避免把 CPU 全核占满。
-- [ ] CORE-011 IO task 与 CPU task 分离，禁止锁跨 await，审计 contention/priority inversion。
-- [ ] CORE-012 大结果限流、分页、stream chunk + cancel；限制 JSON payload 体积。
-- [ ] CORE-013 缓存预算配置（resident bytes、LRU、idle aging）与内存压力下主动回收。
-- [ ] CORE-014 读写索引时使用一致快照，避免定义和引用来自不同 generation。
-- [ ] CORE-015 Core crash/restart 自动恢复，服务不可用时最小语法功能继续使用。(PR-003 已落最小版:TS client 崩溃检测+自动 respawn+重握手(10s 窗口 3 次);「最小语法功能兜底」留 Provider 接线时实现)
-- [ ] CORE-016 启动探针、健康状态、索引进度、可观察恢复原因。(PR-003 已落 `$/kode/health` 探针(status/pid/uptime/文档摘要/restartGeneration)+ stderr 诊断留痕;索引进度随索引模块)
-- [ ] CORE-017 文件通知合并 debounce + max latency；原子替换/rename、delete/create 合并处理。(PR-009 调度决策面:kode-scheduler StormBuffer 风暴合并(同文件并一/最新版本胜出/超限强制落批);didChange 接线与 debounce 参数随 server 单)
-- [ ] CORE-018 建立 long-running fuzz/load/stress CI，检测死锁、永久 pending 和取消泄漏。
-
-### 5. VFS / 文件发现 / 文档快照
-- [x] VFS-001 Path identity：URI、大小写规则、符号链接、Unicode normalization、Windows UNC、WSL 路径语义文档。(PR-004 基础版:crates/kode-vfs/src/uri.rs CanonicalUri——percent 解码/词法消解/盘符大写/非 file scheme 拒绝,语义文档化在模块头;PR-006:crates/kode-root/src/platform.rs 落 UNC/WSL(//wsl$ 与 //wsl.localhost 拆 distro 段)/Win+mac 大小写折叠身份比较,APFS case-sensitive 卷误合为已声明边界;Unicode normalization 与 symlink 的 fs 级 canonicalize 属 IO 专项,跟随模式护栏已落 scan.rs)
-- [x] VFS-002 root_id + canonical URI + open buffer version 作为查询身份，禁止仅以文件 basename 建索引。(PR-004:crates/kode-vfs/src/store.rs DocumentKey{root_id,uri};RootId::UNROOTED=0 保留)
-- [x] VFS-003 Open overlay 优先磁盘；didOpen/didChange/didClose 做正确 version transition。(PR-004:DocumentStore open/change/close,version 严格递增,stale 回 VersionConflict::Stale;kode-server 已切到该 store)
-- [x] VFS-004 增量文本编辑坐标 UTF-16 ↔ bytes ↔ line/column 精确转换；覆盖 emoji / CRLF。(PR-004:crates/kode-vfs/src/line_index.rs + tests/coordinates.rs 全坐标对拍,样例表见 docs/kode2/pr-004.md)
-- [x] VFS-005 文档 rope/line index，避免每个 hover 全文 split 与复制。(PR-004 基础版:LineIndex 行起点表+二分,查询零 split;编辑整段重建,增量 rope 待基准数据)
-- [x] VFS-006 Disk fingerprint 不只依赖 mtime；必要时 size/hash 做一致性校验。(PR-004 基础版:crates/kode-vfs/src/disk.rs mtime_secs+mtime_nanos+size 三元组;hash 留指纹专项)
-- [x] VFS-007 工作区 glob：排除 `.git`, `node_modules`, `.venv`, build, generated 及用户排除目录。(PR-004:crates/kode-vfs/src/walk.rs DEFAULT_EXCLUDED_DIRS + 用户通配追加)
-- [x] VFS-008 `.def`, `types.xml`, `entities.xml`, `alias.xml`, Python, KBEngine engine source 的独立发现规则。(PR-004 基础版:walk.rs FileKind 路径分类;引擎版本 profile 规则随 PR-005/006)
-- [x] VFS-009 资源根顺序显式定义（kbengine.xml/config/环境变量/用户配置/工作区推断），冲突出诊断。(PR-004 基础版:store.rs RootRegistry 注册顺序=优先顺序、最长前缀、overlapping_roots 冲突入口;PR-006:crates/kode-root/src/resolve.rs DiscoveryEngine 落 config/env 前的发现层——约定探针链/深扫描兜底/多根 PlatformRootRegistry 折叠感知归属与冲突入口;config/env 两个来源的接线随 server 装配层)
-- [x] VFS-010 遇到网络 FS、不可读取文件、符号链接循环、权限拒绝时安全处理。(PR-004:walk 读失败跳过并计数、目录 symlink 不跟随、深度封顶;disk 非法输入回 Err 不 panic)
-- [x] VFS-011 Document parse cache 仅保留最新有效快照并支持 recent successful AST、负缓存。(PR-004:crates/kode-vfs/src/parse_cache.rs `ParseCache<V>` + FNV-1a 输入指纹)
-- [x] VFS-012 删除/重命名/跨根移动应移除过期 symbol 与旧 diagnostics。(PR-004:store.rs remove/rename/invalidate_root 返回 RemovedDocument 回执 + ParseCache::invalidate;下游清理随 PR-007 接线)
-- [x] VFS-013 测试 100 次编辑、保存竞态、重命名过程、未保存变更、工作区根切换。(PR-004:crates/kode-vfs/tests/vfs.rs 五场景;cargo test --workspace 76 passed)
-
-#### 6.1 语法数据结构
-- [ ] SYNTAX-001 对 `.def`、`types.xml`、`entities.xml`、`alias.xml` 分别建立 grammar spec 和 invalid fixtures。(进行中:PR-005 已落 invalid fixtures/盲样变异;PR-008 pr-008.md 已定型四类文件的语义面口径(decls/aliases/composition/entities 抽取规则+对拍 golden),正式 grammar spec 文档仍待专单)
-- [x] SYNTAX-002 明确 XML 解析保持节点/属性/文本精确 Span：不可以只做值解析丢定位。(PR-005:crates/kode-parser/src/xml.rs 开/闭/内容/名称/属性字节 span,伪注释掩码字节长度不变;证据 docs/kode2/pr-005.md)
-- [x] SYNTAX-003 CST/AST 支持容错解析（缺闭合标签/临时不完整编辑），诊断精确位置。(PR-005 基础版:截断/坏标签/未闭合结构化诊断 13 码,树前缀不丢,逐字节截断扫描测试;CST 级增量重解析随 PR-007)
-- [ ] SYNTAX-004 验证 quick-xml + 自定义位置层 vs rowan CST 的成本与热更新性能；ADR 选型。(PR-005 已裁决 ADR-102:自研零依赖状态机,quick-xml/rowan 未引入;若增量基准证明成瓶颈按 ADR-002 重评)
-- [x] SYNTAX-005 AST 对未知字段保留以适应引擎分支/扩展，不因未知标签完全失败。(PR-005:extra_tags/extra_sections 保留 + 遗留拼写容忍)
-- [ ] SYNTAX-006 大文件解析/增量与缓存基准，禁止任何 debug build 性能结论代替 release。(进行中:PR-005 release bench 基线已立(P50 6µs/大样本 19.9MB/s/增量二扫零重建),热更新性能与增量 rope 基准随 PR-007/009)
-
-#### 6.2 类型与实体语义
-- [ ] SEM-001 定义稳定 `SymbolId`、`TypeId`、`EntityId`、`RootId`、`Location`、`Origin`。
-- [x] SEM-002 类型 IR：Builtin、Alias、Array、FixedDict、UserType、EntityRef、Component、Optional/Unknown/Error（以真实 KBEngine 支持语义落地）。(基础版:PR-008 crates/kode-types TypeNode 四类节点+六种边;Builtin=21 项引用终点清单,EntityRef/Component 以边种表达,Optional 随 LSP 面)
-- [ ] SEM-003 每个类型记录 deklaration/definition/reference/source span、原始 root/version、生成映射。
-- [x] SEM-004 解析引擎内建类型与 `types.xml` 自定义类型；alias 链与循环诊断。(PR-008:types.xml 重定向条目(alias 注册)与 alias.xml 条目成 Alias 节点;resolve_alias_chain 环截断 Cycle/终点未注册 Unknown 显式诊断)
-- [ ] SEM-005 容器嵌套、数组元素、FixedDict 字段、模块注册、自定义扩展类型解析。(进行中:PR-008 已落数组元素/FixedDict 字段/嵌套 ARRAY of 容器边;模块注册与自定义扩展类型解析随 SEM-008/PY 面)
-- [ ] SEM-006 `.def` 方法参数、返回类型、Cell/Base/Client methods、Property flags 与调用权限元数据。
-- [ ] SEM-007 组件、组件属性、实体继承、分面语义与方法可见性统一定义。(进行中:PR-008 已落实体继承链(环/未注册父显式诊断)与组件/属性类型引用边;分面语义与方法可见性随 LSP 面)
-- [ ] SEM-008 `entities.xml` 注册映射 → `.def` → Python 实现，跨语言可逆导航。
-- [ ] SEM-009 支持多个 root 的同名实体/组件/类型，显式查找顺序和歧义 diagnostics。
-- [ ] SEM-010 Python base/cell/client 文件与实体 `.def`、组件绑定区分、重复定义检测。
-- [ ] SEM-011 引擎关键 API、回调、内建对象、常量作为版本化 metadata layer，外部版本可覆盖。
-- [ ] SEM-012 symbol 名称重命名策略：用户代码可改，内建和生成代码不可直接改；冲突预检查。
-- [x] SEM-013 类型解析错误使用 Unknown/Error 并保留理由，不借用任意类型掩盖缺失。(PR-008:TypeClass::Unknown + ChainStatus::Unknown/Missing 均以终端名/该级名为理由,不冒充内建)
-- [ ] SEM-014 建立语义 fixture 金标数据，跨 Rust/TS 老逻辑差异必须人工分类审查。
-- [ ] SEM-015 引擎版本差异经 capability profile 决定，不用 `if version` 散落调用方。
-
-### 7. 增量索引、依赖图和缓存
-- [x] IDX-001 明确四层：文件目录索引、语法索引、符号/类型索引、跨文件关系图。(基础版:PR-007 crates/kode-index 符号/类型层+跨文件反向依赖;文件目录层=kode-vfs walk/store,语法层=kode-parser;证据 docs/kode2/pr-007.md)
-- [x] IDX-002 DAG 边类型：declaration/import/entity registration/type alias/component/inheritance/method binding/generation dependency。(基础版:PR-007 类型引用/Parent/组件/接口/entities 注册边(parser RefSet)+实体继承边;import/generation 边随 PR-008/009)
-- [x] IDX-003 区分文本改动、signature 改动、body-only 改动、声明删除；相应差异化失效。(基础版:PR-005 dep.rs+PR-007 指纹级零重建;文本/签名/正文细分随 CST 增量,PR-009 面)
-- [x] IDX-004 AST 和语义 query 采用 memoization + fingerprint + revision；测量是否选 Salsa。(基础版:PR-007 复用 VFS-011 ParseCache+FNV-1a 指纹+generation;ADR-101 Salsa 选型仍未裁决,不预设)
-- [x] IDX-005 对循环依赖与 SCC 计算提供终止保障和精确诊断。(基础版:PR-005 resolve_parent_chain 环截断诊断+PR-007 索引侧 entity_chain 互为 Parent 有限步终止)
-- [x] IDX-006 永久索引结构支持定向 symbol lookup 与 reverse reference lookup；杜绝每次 O(workspace files) 查询。(基础版:PR-007 名称倒排 BTreeMap+dependents_of 反向依赖+前缀 workspace_symbols 有序范围扫描)
-- [x] IDX-007 索引更新批量提交/原子 generation，读取并发不读到一半的关联。(基础版:PR-007 update_batch 全批应用后一次 bump,零改动空批不 bump)
-- [ ] IDX-008 非活跃文件懒加载；当前打开文件优先 warm；初扫扫描优先级按资源根/最近文件调整。
-- [ ] IDX-009 磁盘缓存 key 包含 Core schema、engine profile、root identity、workspace config、解析器版本。
-- [ ] IDX-010 缓存崩溃写入用临时文件+原子 rename/WAL 等，损坏可清理重建。
-- [ ] IDX-011 持久化格式候选 SQLite/redb/自定义二进制；先做 cold start、读写放大、文件数基准。
-- [ ] IDX-012 内存索引结构评测紧凑字符串 interning / arenas / small vectors，防止 50k 文件内存爆炸。
-- [x] IDX-013 热更新回归须断言“仅影响相关节点”和“文件读取/解析次数”，而非只看结果正确。(基础版:PR-007 rebuild 计数断言:6 文件首扫6/二扫0/单改1;200 文件 bench 同构,证据 docs/kode2/pr-007.md)
-- [x] IDX-014 文件 rename/delete 后引用、diagnostics、缓存和生成源映射自动清理。(基础版:PR-007 remove/rename 连带清符号/倒排/反向依赖/继承边/解析缓存;diagnostics 与生成源映射随对应模块接线)
-- [x] IDX-015 对 root 增删及 engine profile 切换使用 scoped invalidation，不总是全仓重算。(基础版:PR-007 invalidate_root 只触该根文件;profile 切换入口随 PR-006 root 模型接线)
-- [ ] IDX-016 记录索引缺口（unindexed / partial / stale），按需补齐，避免误报无法找到定义。
-
-### 8. LSP 与 IDE 编辑体验
-- [ ] LSP-001 Completion（声明、类型、实体属性/方法、RPC 参数、组件、内建 API）共享语义查询。
-- [ ] LSP-002 Completion 支持 resolve 延迟补详情，snippet、sortText、filterText、文档与来源。
-- [ ] LSP-003 Hover 展示完整类型、来源、可用分面、版本与注释，严禁阻塞等待全局索引。(基础版:PR-010 kode-server hover 响应链(定位/签名/继承链+成员展开,def 视图零 IO 应答;分面可见性/版本/注释随语义面扩展;证据 docs/kode2/pr-010.md)
-- [ ] LSP-004 Definition / Declaration / TypeDefinition：`.def` ↔ `types.xml` ↔ `.py` ↔ 引擎源码。
-- [ ] LSP-005 References：跨 root 实体/方法/组件/类型，区分语法同名和真实语义引用。
-- [ ] LSP-006 DocumentSymbol / WorkspaceSymbol 提供快速搜索与稳定排序。
-- [ ] LSP-007 SignatureHelp / parameter hints 使用类型 IR，不单独实现一套解析。
-- [ ] LSP-008 Rename 全工作区可编辑范围分析；合成 preview，避免重命名错误同名符号。
-- [ ] LSP-009 Diagnostics 分 local syntax / semantic / engine compatibility / runtime config，独立节流。
-- [ ] LSP-010 CodeAction 包含创建缺失定义、修复参数类型、定位冲突、调整 include/registry。
-- [ ] LSP-011 InlayHints (RPC 参数名/类型) 与 SemanticTokens；评测增量 token 更新成本。
-- [ ] LSP-012 CallHierarchy、TypeHierarchy、Entity dependency navigation 可借 LSP 标准能力。
-- [ ] LSP-013 Outline / breadcrumbs / folding / linked editing 不触发另一次完整 parse。
-- [ ] LSP-014 无 KBEngine 工作区的普通 Python 文件不得受到 Kode 语义劣化影响。
-- [ ] LSP-015 Pylance/Pyright 等 Python 语言服务间职责与冲突矩阵；禁止重复 diagnostics、重复 completion 轰炸。
-- [ ] LSP-016 所有 LSP 功能测 stale response、cancel、cold workspace、workspace root 变化和 Core 重启。
-- [ ] LSP-017 UI 大结果 views 采用虚拟列表和延迟节点加载，避免 Webview 一次渲染万级节点。
-
-### 9. Python 分析与 typings（关键产品能力）
-- [ ] PY-001 明确 Python version、语法方言与 KBEngine 引擎支持版本；以 workspace profile 区分。
-- [ ] PY-002 对接可复用的 Python AST/语言服务分析能力；如需 Rust parser，先验证覆盖率与来源定位。
-- [ ] PY-003 Python class / method / function / variable 分层 symbol 索引与 importer map。
-- [ ] PY-004 `entities.xml + *.def + types.xml + *.py` 映射在同一语义图中保留 sources。
-- [ ] PY-005 自定义 type（包括被 `types.xml` 引用的用户定义）生成有效 `.pyi`。
-- [ ] PY-006 所有 `.def` entity、组件及 Cell/Base/Client API 生成相应 `.pyi`，保留精确参数与容器类型。
-- [ ] PY-007 所有项目 Python 文件的 typings 策略：需要澄清是解析输出镜像、类型增强或导出 .pyi；先写产品 spec，禁止以空壳 `Any` 作为完整实现。
-- [ ] PY-008 为未注解 Python 签名按可置信信息推断；未知保留 `Any`/`Unknown` 并输出覆盖率与原因。
-- [ ] PY-009 KBEngine 引擎 builtin API `.pyi` 按版本/commit 生成，支持用户引擎分支覆盖。
-- [ ] PY-010 生成 `.pyi` 源映射记录生成符号→原文件 URI/span/root，含多源汇聚优先级。
-- [ ] PY-011 `.pyi` 跳转用户定义时配置拦截策略：从 stub 逆向跳源；适配 Python LS 的定义规则。
-- [ ] PY-012 `.pyi` 输出目录隔离、`pyrightconfig` / analysis.extraPaths 集成，禁止不经确认覆盖现有配置。
-- [ ] PY-013 增量生成仅刷新受影响 stubs；输出原子写入、不改未受影响文件 mtime。
-- [ ] PY-014 生成稳定排序/格式，避免无意义 diff；输出 manifest/hash/源映射/schema 版本。
-- [ ] PY-015 import 循环、自定义 alias、容器递归、同名类、重名实体和重复 root 测试。
-- [ ] PY-016 生成输出目录默认 `.gitignore` 建议而非擅自编辑；manifest 标注 Generated，不允许重命名覆盖用户自写 stubs。
-- [ ] PY-017 快速预览 API 类型树、typing coverage、缺失映射和来源跳转。
-- [ ] PY-018 开启/关闭 typings 时测试语言服务器行为、索引失效与诊断收敛。
-- [ ] PY-019 类型生成器作为 API provider 可扩展，但官方核心类型 IR 是唯一数据源。
-- [ ] PY-020 对 Pylance/Pyright 分别用真实环境验证导航和 stub 优先级，不凭猜测宣称跳源成功。
-
-### 10. KBEngine 工程、引擎版本与专业工具链
-- [ ] KBE-001 workspace discovery：从资源目录、环境变量、配置、源码结构识别 KBEngine 工程，明确优先级。
-- [ ] KBE-002 项目向导含引擎版本、资源 roots、脚本环境、component paths、server startup config。
-- [ ] KBE-003 Engine profile：官方版本、fork、commit、特性探测能力；unknown 时不伪造版本。
-- [ ] KBE-004 API metadata 与真实 engine source 绑定，支持导航到 engine C++/Python 定义和 version constraints。
-- [ ] KBE-005 校验 entities.xml 注册完整性，`.def`/Python 配对、组件缺失、属性与方法一致性。
-- [ ] KBE-006 KBEngine RPC 方法参数与序列化类型兼容性检查，指出 client/base/cell 分面。
-- [ ] KBE-007 检查别名循环、类型重定义、不可序列化字段、未知类型和覆盖规则。
-- [ ] KBE-008 实体关系浏览器：实体—组件—继承—引用双向探索和懒加载图谱。
-- [ ] KBE-009 创建实体/组件/RPC/数据类型的向导，预览实际受改文件并允许撤销。
-- [ ] KBE-010 配置合并视图（来源、优先级、冲突、最终值）不阻塞语言请求。
-- [ ] KBE-011 数据库 schema 视图和 drift 检查与语义 Core 相连，但 DB driver/SQL 操作走独立隔离服务。
-- [ ] KBE-012 Debug Adapter 边界：Python debug、远端 attach、engine session 生命周期，不让 Core 兼任 debugger。
-- [ ] KBE-013 运行时 Process/Telnet/Watcher/Log 的 service adapter 分离、权限校验、断线重连、资源清理。
-- [ ] KBE-014 Space/Watcher 按真实引擎协议实现：协议未验证前不得宣称支持 mutation/subscription。
-- [ ] KBE-015 集成示例项目和真实 engine fixture；与 KBEngine forks 差异测试。
-- [ ] KBE-016 Multi-workspace 子项目和多资源 root 的工程模型；显式配置文件示例。
-- [ ] KBE-017 Project Doctor：缺少引擎路径、Python 环境、错误 root 顺序、重复实体、索引状态。
-- [ ] KBE-018 保留现有 dashboard/monitor/log viewer 能力，迁移前后做功能 parity 表。
-
-### 11. 后台执行器、命令与日志（独立于 LSP）
-- [ ] EXEC-001 抽象 CommandDefinition / RunSession / ProcessHandle / TerminalHandle，不同执行语义各有适配器。
-- [ ] EXEC-002 提供“复用运行会话”与“每次隔离进程”两种模式，按任务性质选择。
-- [ ] EXEC-003 Python REPL 常驻 worker 用 JSON-RPC/有界消息、心跳、取消和异常恢复，绝不默认跨任务污染解释器状态。
-- [ ] EXEC-004 交互式程序使用 VS Code terminal/Pseudoterminal，后台批处理使用可见输出面板和 session 管理。
-- [ ] EXEC-005 后台执行时不弹出终端（如用户选择），但要清楚显示进程状态、退出码、可取消/可查看日志。
-- [ ] EXEC-006 日志统一事件模型：time、source、level、session、correlation_id、structured fields、line text。
-- [ ] EXEC-007 stdout/stderr/file/telnet/remote log 统一入口，保留流来源；去重仅在明确规则下执行。
-- [ ] EXEC-008 日志聚合 ring buffer、流式过滤、磁盘轮转、文件 tail；避免把全部日志导入 Webview。
-- [ ] EXEC-009 大日志 viewer 分页/virtualization/backpressure；搜索和导出可取消。
-- [ ] EXEC-010 执行命令必须遵守 workspace trust、用户确认、机密遮蔽；默认不自动运行项目脚本。
-- [ ] EXEC-011 Windows/Linux/macOS 环境变量、shell 引号、编码和终止进程树的测试。
-- [ ] EXEC-012 Session 重用与纯进程启动建立基准，准确分辨“terminal 窗口”与“Python 冷启动”耗时。
-- [ ] EXEC-013 诊断命令 hangs、空闲 session、进程退出、pipe 阻塞和输出丢失。
-
-#### 12.1 扩展层级
-
-> 1. Workspace declarative pack：schema/API metadata、模板、诊断规则描述符（无代码执行）。 2. TypeScript VS Code-side extension：UI、命令、导航面板，通过 VS Code extension API 及 Kode public API 协作。 3. Out-of-proces
-
-- [ ] PLUG-001 定义 `kode-plugin.json` schema：id/version/apiVersion/entrypoint/capabilities/contributions/permissions。
-- [ ] PLUG-002 扩展点：type provider、engine-version provider、diagnostic rule、code action、generator、project detector、template、runtime adapter、view contribution。
-- [ ] PLUG-003 插件只能请求 QueryService / TypeService / ProjectService / ArtifactService 的稳定 DTO，不暴露 mutable Rust graph。
-- [ ] PLUG-004 为 CPU、超时、内存、RPC 输出大小、并发配额制定 policy，阻止慢插件拖垮语言请求。
-- [ ] PLUG-005 安全隔离：默认 trusted built-in；第三方需要显式安装/授权，声明文件/网络/执行能力。
-- [ ] PLUG-006 Plugin host 崩溃、挂起、协议不兼容时自动停用插件并保留核心功能。
-- [ ] PLUG-007 插件贡献顺序显式：builtin < engine profile < workspace override（示例，最终按 ADR 审核）；冲突显示来源。
-- [ ] PLUG-008 插件 API SemVer、版本协商、弃用窗口、兼容性检查。
-- [ ] PLUG-009 配置隔离及密钥在 SecretStorage，禁止写插件 metadata 或 trace。
-- [ ] PLUG-010 诊断规则执行结果以 file version/generation 固定，废弃过期插件结果。
-- [ ] PLUG-011 generator 支持 dry-run/preview、权限列表、atomic write 和冲突合并。
-- [ ] PLUG-012 测试最小 sample 插件：新增自定义类型、诊断、生成器、version profile 四项。
-- [ ] PLUG-013 独立插件测试工具与 manifest validator，例子/文档/教程。
-- [ ] PLUG-014 插件市场属于远期选项，第一版优先稳定 SDK 与本地安装能力。
-- [ ] PLUG-015 对“Python 插件”采用独立 Python worker RPC，不把 CPython 嵌入语言 Core；验证启动/内存成本。
-- [ ] PLUG-016 插件基准：安装 0/5/20 插件下 hover/definition 尾延迟不超配额，恶意死循环隔离测试。
-
-### 13. UI / UX / 可观测与故障恢复
-- [ ] UI-001 Project Explorer lazy-load；实体、组件、类型、脚本视图共享 Core 索引。
-- [ ] UI-002 状态栏：Core ready/indexing/partial/error、engine profile、resource root、索引进度。
-- [ ] UI-003 专业性能面板：队列、缓存、索引生成、P95/P99、主要慢请求及处理建议。
-- [ ] UI-004 Core 重启功能、清缓存功能（展示范围/影响）、export diagnostics；勿要求用户清空 workspace 才能修。
-- [ ] UI-005 所有非即时能力使用 progress + cancel，避免「一直转圈」。
-- [ ] UI-006 生成 typings 的预览/路径/来源图/覆盖率与冲突说明。
-- [ ] UI-007 类型信息 UI 显示 Cell/Base/Client 上下文与版本差异，明确 unknown。
-- [ ] UI-008 Graph view 小图即时渲染，大图按需加载；Webview CSP 禁用远程 CDN。
-- [ ] UI-009 远端不可用、未安装 Core、协议不匹配、索引异常的可理解错误与修复操作。
-- [ ] UI-010 多根工作区用户可选择 active project/root，并在跨根跳转时展示完整归属。
-- [ ] UI-011 设置分组 performance/semantic/python/typings/engine/runtime/plugins，兼顾默认简洁和高级选项。
-- [ ] UI-012 记录用户可禁用重扫描的配置，但禁用后必须标明结果可能部分不可用。
-
-### 14. 测试、正确性、安全与发布门禁
-- [ ] QA-001 Unit: parser errors, byte spans, UTF-16 position, alias cycles, entity facets, source map。
-- [ ] QA-002 Property-based/fuzz: XML/DEF invalid input never panic/hang；path canonicalization 无碰撞。
-- [ ] QA-003 Golden: 基于真实引擎 fixtures 的 hover/definition/diagnostics/typings snapshot。
-- [ ] QA-004 Differential: 对旧 TS 输出与新 Rust 输出逐项差异审查，已知旧 bug 单独定标。
-- [ ] QA-005 Integration: VS Code Extension Host + native server e2e，对比用户可见结果。
-- [ ] QA-006 Python LS interoperability：Pylance / Pyright、不同 Python 环境和 .pyi 优先级。
-- [ ] QA-007 Workspace 兼容：Windows path、Linux case、macOS case-insensitive、WSL、SSH、containers。
-- [ ] QA-008 Engine 兼容：官方支持版本 + 用户 fork，profile 未知降级。
-- [ ] QA-009 Security：workspace trust、命令注入、路径穿越、生成文件覆盖、恶意插件、高频日志敏感数据。
-- [ ] QA-010 Resilience：Core kill、client disconnect、损坏缓存、文件 watcher flood、磁盘满、权限拒绝。
-- [ ] QA-011 Memory & race：1h 编辑负载、循环增删根、索引与 diagnostics 并发、高频 restart。
-- [ ] QA-012 Protocol compatibility：旧客户端/新 Core、新客户端/旧 Core 均有正确握手/错误。
-- [ ] QA-013 性能发布门槛同时检测 P95、P99、max、CPU、RAM、index correctness。
-- [ ] QA-014 生成覆盖率达到门槛前不得标“所有 Python 文件类型完整生成”。
-- [ ] QA-015 每个修复 PR 附复现脚本、测试证据、profile/perf delta、回退计划。
-- [ ] QA-016 大型功能启用 feature flag，只有 parity/perf 完成后再移除旧实现。
-- [ ] QA-017 自动发布必须遵循现有仓库的手动发布规则，避免重构顺手改变 release governance。
-
-#### Phase 0 — 基线与冻结（先于任何重写）
-- [ ] PH0-01 完成 AUDIT-001..015 与 PERF-001..016；生成现状架构图、基准报告、迁移表。(部分：AUDIT-001..015 已齐（见 §2 取证节，current-state.md+CSV）；PERF 余量=006..014 量测面+016 decisions.md)
-- [ ] PH0-02 锁定旧功能 parity fixture 和旧 TODO 完成状态；输出 release gate。
-- [ ] PH0-GATE 无完整基准和正确性 fixture **禁止进入 Rust 替换阶段**。
-
-#### Phase 1 — Core 骨架（最小垂直切片）
-- [ ] PH1-01 实现 BUILD-001..016、CORE-001..004、CORE-015..016。(进行中:PR-003 已落 BUILD-001/002/003、CORE-001/002/003、CORE-015/016 最小版,证据见 docs/kode2/pr-003.md;余项随 PR-004..007)
-- [x] PH1-02 Rust 服务与 TS client 握手、打开/编辑/关闭文件、cancel、健康状态 e2e。(PR-003:tests/kodeCoreE2E.test.ts 真实 kode-server 二进制,4 用例)
-- [ ] PH1-03 实现 VFS 基础；以单文件 `.def` Hover 或 Definition 做真实垂直切片。(进行中:PR-004 已落 VFS-001..013 基础版+kode-server 文档同步对接,证据 docs/kode2/pr-004.md;PR-010 已落 Hover 垂直切片(响应链+TS 面对拍 100%),Definition 随后续单)
-- [ ] PH1-GATE Rust 与旧实现同场景一致；无长任务阻塞 VS Code；跨平台可启动。
-
-#### Phase 2 — 解析与索引（最大性能收益路径）
-- [ ] PH2-01 完成 VFS、SYNTAX 与 IDX 的基础版本，先 `.def`/types.xml/entities.xml/alias.xml。
-- [ ] PH2-02 文件监听与增量失效；运行 10k fixture，不出现全仓 rebuild 风暴。
-- [ ] PH2-03 迁移 hover/definition/diagnostics 到 Rust 双轨模式；记录 latency correctness 差异。(口径：按 2026-11-08 服务轨道「直接切 rust」易帜——双轨 parity 对拍是迁移期安全网与验收手段，TS 兜底非长期态；hover 已有 PR-010 基础版对拍)
-- [ ] PH2-GATE 同输入与旧行为比对完成，增量命中率与尾延迟过关，无严重语义回归。
-
-#### Phase 3 — 专业 KBEngine 语义和完整 LSP
-- [ ] PH3-01 完成 SEM、LSP；实体/组件/继承/Cell/Base/Client 信息统一。
-- [ ] PH3-02 支持多 root 同名，引用、rename、代码操作与 CallHierarchy。
-- [ ] PH3-GATE 冷启动/热缓存/并发编辑/跨 root 场景全部性能和正确性过关。
-
-#### Phase 4 — Python 与 typings
-- [ ] PH4-01 完成 PY-001..020；与现有 Python LS 共同工作。
-- [ ] PH4-02 types.xml 自定义类型、用户 Python 文件、引擎 API stubs、生成→源导航全流程。
-- [ ] PH4-GATE 在实际 Pylance/Pyright 环境验证类型提示与源跳转，不只测输出文本。
-
-#### Phase 5 — KBEngine 专业 IDE
-- [ ] PH5-01 实现 KBE-001..018、UI-001..012，保持已有工具能力。
-- [ ] PH5-02 将运行时协议/DB/debug/log 控制拆成独立服务，避免影响 LSP latency。
-- [ ] PH5-02A 将 HR-PR-02..07 纳入专业 IDE 验收，先行交付的 TS 功能保持兼容。(等接线批：HR-PR-02..08 装配接线批进行中（06 在途），收官后按本行验收；行文写 02..07，实际巡检单范围=02..08)
-- [ ] PH5-GATE 界面功能 parity 与多个真实引擎工程测试通过。
-
-#### Phase 6 — 插件与执行管理
-- [ ] PH6-01 实现 PLUG-001..016、EXEC-001..013，提供 sample 插件和 SDK。
-- [ ] PH6-02 Python plugin 作为隔离进程 PoC，通过延迟与安全测试再正式发布。
-- [ ] PH6-GATE 三方插件负载不会导致核心 language latency 显著劣化；权限隔离有效。
-
-#### Phase 7 — 稳定发布与去旧
-- [ ] PH7-01 运行 QA-001..017 全套、48h 真实项目试用、跨平台打包与文档。
-- [ ] PH7-02 仅在双轨功能 parity 和回退措施成熟后删除旧 TS 全仓解析逻辑。
-- [ ] PH7-03 文档整理、版本说明、迁移配置、已知限制与性能对照报告。
-- [ ] PH7-04 完成 HR-DOD-001..010 与 HR-PR-09 的安全、性能和状态正确性门禁。(进行中:HR-PR-09 组合门禁套件已落=风暴/过期/断网/安全四门+缩放 soak 见 §19 HR-PR-09 行;DOD-004 连续保存不重复请求/旧回执不冒当前=套件风暴+过期门纯核级证据,装配级验收随接线批)
-- [ ] PH7-GATE 真实大型项目性能达标、无未解决阻塞缺陷，才发布稳定 2.0。
-
-### 17. 建议的首批 12 个 PR（严格顺序，避免大爆炸重构）
-- [ ] PR-001 `audit/perf-baseline`：现有入口/四主请求调用链、profile、fixtures、基线报告；不改行为。(对账：基线报告已由 KODE-PERF-007 实质落=`aa3cf8c` docs/perf/2026-11-04-v02-baseline.md+provider 级 bench（四主请求×三场景）；调用链取证已由 AUDIT-007/current-state.md 落；余量=PERF-002..004 fixture 矩阵补齐)
-- [ ] PR-002 `fix/ts-hotpath`：将旧 TODO A2/A3 已识别的明显阻塞路径止血并提供测量证据。(对账：A2/A3 阻塞路径已由主 todo A 车道 PR2/PR3 收官实质止血（7d8736b/2aca694，current-state.md §AUDIT-014 亦判定本行应改向消费基线 §6 余量清单），不另起 TS 止血 PR)
-- [x] PR-003 `infra/rust-workspace`：Cargo workspace + binary packaging + protocol handshake + e2e。(落地:crates/kode-{protocol,server}+rust-toolchain pin+ADR-001/002+src/kodeCoreClient.ts;证据 docs/kode2/pr-003.md)
-- [x] PR-004 `core/vfs-snapshot`：overlay + incremental edit + canonical paths + version tests。(落地:crates/kode-vfs+kode-server 文档同步对接+协议 Position/Range DTO;证据 docs/kode2/pr-004.md)
-- [x] PR-005 `core/def-xml-parser`：精确源位置与错误恢复 + fuzz + parser benchmarks。(落地:crates/kode-parser(自研零依赖字节级 XML 状态机,ADR-102)+ 对拍 golden 双向门禁(TS 28/28=100%)+ 增量零重建注册表 + release bench(P50 6µs/大样本 19.9MB/s)+ 盲样 1149 例 0 panic;fuzz 纲要随 fuzz 单;证据 docs/kode2/pr-005.md)
-- [x] PR-006 `core/root-discovery`：多 resource root / engine profile / URI scopes。(落地:crates/kode-root(ROOT-001..015 基础版:优先级链显式配置>记忆>约定>有界深扫描+宁缺勿猜;平台路径规则 Win 折叠/mac 折叠声明/Linux 敏感/WSL UNC 拆段;submodule/vendored 边界+mount/symlink 环护栏+别名身份+敏感目录台账;引擎配置规则自 TS workspaceDiscovery 移植并逐条 file:line 证据化;UR+Path 双支持;诊断仅新启;TS 对拍 golden 双向门禁 6 树 48/48 字段=100%,tests/kodeRootParity.test.ts;证据 docs/kode2/pr-006.md)
-- [x] PR-007 `core/symbol-index`：文件/符号索引、定向查找、generation 与删除清理。(落地:crates/kode-index(IDX-001..007+013/014/015 基础版,六类符号实体/属性/方法/类型/别名/组件,名称倒排+文件级增量复用 ParseCache 指纹零重建+原子 generation)+ 符号对拍 golden 双向门禁(TS 90/90=100%)+ 增量 rebuild 实测(200 文件首扫200/二扫0/单改1);证据 docs/kode2/pr-007.md)
-- [x] PR-008 `core/type-graph`：types.xml、alias、entity facets、component、inheritance。(落地:crates/kode-types(书命名 kode-semantic;SEM-002/004/005/007/013 基础版:类型图 IR+六种边+别名链/继承链/全图三色 DFS 环检测,有限步显式诊断)+ 类型面对拍 golden 双向门禁(文件面 28/28+图级 37/37=100%,TS 用现有 defParser/compositionRoots 复算;按 ARCH-012 不做性能对比);证据 docs/kode2/pr-008.md)
-- [x] PR-009 `core/invalidation-scheduler`：reverse DAG、任务优先级与 cancel。(落地:crates/kode-scheduler(SCHED-001..021 内部清单=§4 CORE-005..008/017+§7 IDX-003/013/015 调度面基础版,书无 SCHED 编号已如实映射;失效图文件→声明名→反向受影响集+分批重建+风暴合并+五级优先级+取消+有界队列+暂停恢复+崩溃恢复台账+指标)+ 调度面对拍 golden 双向门禁(10 场景,TS 真实 IndexScheduler 复算 148 字段=100%,tests/kodeSchedulerParity.test.ts);证据 docs/kode2/pr-009.md)
-- [ ] PR-010 `lsp/definition-hover`：首批 TS→Rust provider 双轨对比，逐步切流。(基础版落地:kode-server hover 响应链(定位→文档→签名→继承成员,textDocument/hover+hoverProvider capability+didOpen/Change/Close 语料视图联动)+对拍 golden 双向门禁(TS defParser/compositionRoots/defChain 复算:文件面 28/28+悬停面 90/90=100%)+环截断/缺父/UTF-16 词提取单测;Provider 切流随后续单;证据 docs/kode2/pr-010.md)
-- [x] PR-011 `lsp/completion-diagnostics`：版本化发布与可取消查询。(基础版落地:kode-server textDocument/completion 请求链(URI→position→上下文→条目集:实体/属性/方法分面/类型/别名/继承成员)+completionProvider capability+可取消(-32800)+版本化应答(overlay 严格 version 转移)+对拍 golden 双向门禁(TS defParser/defChain 复算:文件面 28/28+场景面 205/205=100%,671 条目/继承 13)+环截断/UTF-16/遮蔽单测;TS provider 零改动不切流,切流属 PR-012;证据 docs/kode2/pr-011.md)
-- [x] PR-012 `perf/gate-phase2`：真实大型数据压力测试和性能/正确性验收，不通过禁止继续扩大迁移。(gate2 61fe132 总判定 FAIL（G-C 201×1 别名面差）→ 修复 5db0a33 → gate3 复判 PASS 五门全绿: compDiverge 201→0、悬停双轮 404/404、双轨 P95<1ms、burst 0 错/RSS 4.97MB; 正本 pr-012-gate2-run.txt + pr-012-gate3-run.txt + pr-012-perf-gate.md 复判节; 剩余差异 §8 设计边界（.py 面归 PH1）; 扩大迁移禁止解除, 切流仍受 pr-012 §4 前置清单约束, serveFromRust 恒 false 不变)
-
-### 18. 关键架构决策待验证清单（不提前拍脑袋）
-- [ ] ADR-101 Salsa 与自研 revision query engine：根据 query DAG 大小、内存、工程维护成本决定。
-- [ ] ADR-102 quick-xml + spans / rowan / tree-sitter：根据错误恢复、源映射、增量表现决定。
-- [ ] ADR-103 SQLite vs redb vs mmap cache：用 2k/10k/50k 数据集比较 cold startup/写放大。
-- [ ] ADR-104 标准 LSP vs custom RPC：标准编辑器功能优先 LSP，专用交互使用命名空间协议。
-- [ ] ADR-105 Python engine AST/LS 方案：优先复用成熟 Python 工具的行为，避免维护第二套完整 Python LS。
-- [ ] ADR-106 Rust plugin runtime：进程隔离先于 WASM 嵌入；Python provider out-of-process PoC。
-- [ ] ADR-107 用户工作区引擎源码 metadata：自动索引范围与成本预算，允许仅需的 symbols。
-- [ ] ADR-108 插件规则优先级与文件写权限；明确可解释来源和冲突机制。
-- [ ] ADR-109 同名多根实体的判定/排序/冲突语义，由 fixture 和实际引擎加载行为确定。
-- [ ] ADR-110 `.pyi` navigation source mapping 接入方式：Pylance/Pyright 限制需要实测。
-
-#### 19.2 现状审计及兼容迁移（HR-AUDIT）
-- [x] HR-AUDIT-001 固定当前 commit SHA；核对 `package.json` commands/config/views/keybindings、README 和旧 todo 的 HTTP 热更新说明，建立逐项事实表。(HR-PR-01,6934c63a,锚定 SHA 6934c63a;§HR-AUDIT-001 事实表:package.json:846-968 命令/2058-2098 配置/12 onCommand 全齐;通道在部署档案 store 无 channel 键;BUILTIN 示例 enabled:false)
-- [x] HR-AUDIT-002 使用 `rg 'httpRequests|reload|hotfix|hotReload|watch|\.def|digest|md5|sha256|hash'` 以及 import graph 找出全部相关实现和注册入口。(HR-PR-01,6934c63a,§HR-AUDIT-002 模块清单:触发核心 hotReload.ts 1062L+activate 接线 742L(extension.ts:1360)+发送/回执/状态三簇 src/backend/*+legacy 快速请求 views.ts:233-303+接收侧 KodeHotReload.py/xreload.py)
-- [x] HR-AUDIT-003 追踪现有 Quick Request：用户操作→变量展开→URI/Body 组装→HTTP transport→错误处理→输出面板。(HR-PR-01,6934c63a,§HR-AUDIT-003 热更发射路径 6 步链:watcher→pendingTriggers→全局去抖→def 结构门拦截 RESTART_REQUIRED→通道/actionName/默认热修三派发→回执阶梯 sent→accepted→applied(摘要双证据+10s 沉降)→失败重试重入)
-- [x] HR-AUDIT-004 提取现有 `${module}` 的确切逻辑、资源根识别、大小写处理、特殊 `.py` 文件处理，记录所有现有模板变量。(HR-PR-01,6934c63a,§HR-AUDIT-004 双名模型:resolveModuleDualName 剥 base/cell/client/bots 角色目录(hotReloadTempEdit.ts:61-102)+resolvePythonModulePath 角色目录断链上溯(httpRequests.ts:130-156);变量清单 ${module}/${files}/${fileList}/${targetId} 等,URL 编码仍无)
-- [x] HR-AUDIT-005 搜索现有 VS Code `FileSystemWatcher` / `onDidSaveTextDocument` / 低层 fs watcher / config watcher 的创建、dispose、生命周期与功能归属。(HR-PR-01,6934c63a,§HR-AUDIT-005 watcher 生命周期表:热更挂载点 hotReload.ts:935 唯一,配置变更重建+复合 dispose;触发仍单一全局去抖;onDidSaveTextDocument 4 处注册无一触发发送,onWillSave=0)
-- [x] HR-AUDIT-006 确认 HTTP 快捷请求中支持的方法、header、URL、body、超时、重试、输出与 SecretStorage 等已有实现，避免重造。(HR-PR-01,6934c63a,§HR-AUDIT-006 三路能力对照表:legacy 快速请求/通道传输/默认热修;通道自动增附 targetId+sender_digests;超时 10s 固定,重试/取消/SecretStorage 三路皆无)
-- [x] HR-AUDIT-007 检查是否已存在热更新历史、状态栏、TreeView 装饰、通知、实时请求时序、失败重试。(HR-PR-01,6934c63a,§HR-AUDIT-007:灯 98 发送状态(hotReloadStatus.ts:168)+灯 96 通道(hotReloadChannelConfig.ts:434);5 态文件装饰+CodeLens+OUTPUT 台账;历史 webview/TreeView 无=缺失;首跑通知+重试命令已在)
-- [x] HR-AUDIT-008 搜索 `.def` Hash/Digest/协议签名与 KBEngine 引擎实际算法实现，区分文件哈希、语义指纹及引擎 Digest。(HR-PR-01,6934c63a,§HR-AUDIT-008 三分法定案:hashDefContent sha256 面在但零生产调用;活门=classifyDefChange 结构指纹;negotiateEngineDigest 仅 md5 32 字符,compareEngineDigest 永久拒比;三类修订证据互不可比)
-- [x] HR-AUDIT-009 找到引擎/HTTP 服务端实现或协议说明，确认请求参数拼写、响应 JSON 字段、目标进程、是否可查询 applied revision。(HR-PR-01,6934c63a,§HR-AUDIT-009:回执契约字段全录(file/status∈accepted|applied|failed/digest/targetId/revision 数字);官方通道 KODE_RELOAD_<uuid> 回声协议;applied-revision 轮询无;targetId 为通道附挂标签非服务端进程身份=unknown)
-- [x] HR-AUDIT-010 在真实项目测试手动更新成功、HTTP 200 但应用失败、服务器未响应、模块名冲突，记录原始响应供 fixture。(HR-PR-01,6934c63a,§HR-AUDIT-010:真实引擎/外部 HTTP 服务仍未测=如实记录阻塞于活服务;仓内已有 demo 回环桥+pytest xreload 220L+TS 往返 harness 覆盖 200-but-unapplied/摘要不符/过期 generation/非 JSON/非 2xx/targetId 不符)
-- [x] HR-AUDIT-011 建立保留/封装/替换矩阵；现有通用 Quick Requests 保留通用用途，Hot Reload 用 adapter 复用。(HR-PR-01,6934c63a,§HR-AUDIT-011 矩阵:quickRequests/httpRequestService/hotReloadTransport 三保留=adapter 接缝即 ReloadTransport 抽象;全局去抖 watcher 渐进替换;hashDefContent 待决接线或删除)
-- [x] HR-AUDIT-012 记录复用模块确切路径与 owner 到 `docs/hotreload/current-implementation.md`；没有源码证据的项目标 `unknown`。(HR-PR-01,6934c63a,§HR-AUDIT-012 九行路径+导出+owner 表已落 docs/hotreload/current-implementation.md(zh 镜像 docs/zh/ 同步);无证据项一律 unknown 不硬造)
-
-#### 19.3 模块识别、双名称模型与兼容配置（HR-MOD）
-- [x] HR-MOD-001 定义 `HotReloadModuleIdentity{workspaceId,rootId,fileUri,fullModule,requestModule,fileStem,parentName,language,sourceVersion}` DTO。(HR-PR-02,c120287c,src/backend/hotReloadModuleIdentity.ts:24 九字段只读 DTO,测试 toEqual 全形钉)
-- [x] HR-MOD-002 定义 `ModuleResolver` 纯函数；输入 URI、明确资源根、profile、user override；输出 Result/diagnostics，无隐式 IO。(HR-PR-02,c120287c,resolveHotReloadModuleIdentity 纯函数:根候选选择→委托 resolveModuleDualName→诊断映射,零 IO 零 vscode 导入;Result+结构化 diagnostics 十码;profile 输入槽未建随 HR-MOD-006 暂缓,余输入 URI/资源根/user override/fallback 开关齐)
-- [x] HR-MOD-003 Python 模块拆分保留大小写，`.py` 仅移除结尾后缀，不因 `.pyi`、`.pyc` 假匹配。(HR-PR-02,c120287c,核心仅剥结尾 .py 尾缀,.pyi/.pyc 拒解析(reason=not-python);其余大小写保留,规范化面只大写盘符)
-- [x] HR-MOD-004 生成完整模块名使用脚本根相对路径全部目录段；请求名只使用直接父目录+file stem。(HR-PR-02,c120287c,fullModule=根相对全部目录段+stem,requestModule=直接父目录+stem;角色目录 base/cell/client/bots 剥段=879f47d5 引擎实证(sys.modules 无角色前缀),书 §19.1 四示例草拟于该发现前,base/Avatar 实际=Avatar,测试钉住偏差并注因)
-- [x] HR-MOD-005 手动命令与 Watch 使用同一个 ModuleResolver，禁止复制两套字符串处理。(HR-PR-02,c120287c,单一字符串核心=resolveModuleDualName;身份面/httpRequests 模板双名/hotReloadDefaultHotfix/fileChangeMeta 四消费方全委托同函数,身份面只做根选择+规范化+诊断映射,零第二套字符串推导;Watch 侧随 HR-PR-04 复用同一入口)
-- [ ] HR-MOD-006 多 script roots 使用 engine profile 明确优先级；未唯一确定根则要求选择/配置，不猜测。(进行中:HR-PR-02,c120287c,解析器侧「不猜」本质已落=多根命中>1 一律 ambiguous-root 拒绝并列全候选,相邻目录假包含不命中;engine profile 优先级需 profile 配置面(kode2 §6)随该面点火)
-- [x] HR-MOD-007 `__init__.py` 专门规则经真实 HTTP 服务验证后实现；验证前跳过并给出诊断。(HR-PR-02,c120287c,本条验收=验证前跳过并给出诊断:核心判 unsupported(reason=init-file)+身份面诊断码透传;验证后专门规则仍开,真实 HTTP 服务验证阻塞于活服务(HR-AUDIT-010 同因))
-- [x] HR-MOD-008 脚本资源根直接包含 `Foo.py` 时，必须有显式 single-level fallback 配置；默认标 unresolved。(HR-PR-02,c120287c 纯核=allowRootLevelStem 显式开关,默认拒(reason=root-level)诊断消息附开启指引;HR-MOD-008 暴露面,50c9f9de:用户可见配置键 kbengine.hotReload.allowRootLevelStem(默认 false=默认拒,零配置行为不变)+发送路径接线(DefaultHotfixDeps.allowRootLevelStem 透传 resolveModuleDualName;自动发送经 resolveAllowRootLevelStem 逐次读容忍设置面;内置 provider 装配捕获)+四件套(NLS en+zh/features en+zh/configuration en+zh/manifest 默认锁 false)+容忍布尔循环钉;两态装配钉(未配→scripts.Lone/开→Lone)按构造自证;门禁 lint 0/tsc 0/unit 9431+8skip RC=0/xvfb demo 25 RC=0)
-- [x] HR-MOD-009 URI canonicalization 兼容 Windows、Linux、macOS、WSL、Remote SSH、symlink、大小写敏感差异。(HR-PR-02,c120287c,canonicalizeScriptFilePath 词法规范化:file:// 剥 scheme+有守卫 percent 解码(坏转义原样保留)、反斜杠、UNC // 保留(WSL //wsl$、//wsl.localhost、Remote SSH 形)、重复斜杠折叠、./.. 词法消解、盘符大写、大小写保留;symlink/fs 级大小写=IO 专项不在纯面(kode-vfs VFS-001 同边界),四平台实机验证随分发面)
-- [ ] HR-MOD-010 避免不同 root 的 `fight.FightAI` 请求映射错误；请求目标须包含 target 与 root/context（如服务端不支持则拒绝歧义自动更新）。（进行中:HR-PR-02,c120287c,解析器侧本质已落=rootId 入 DTO+多根歧义拒绝,跨根同名 fight.FightAI 误映射已不可能;请求线上 root/target 上下文=接收端契约冻结待真实服务验证(HR-AUDIT-009)）
-- [x] HR-MOD-011 UI 默认显示 `fullModule`，辅以工作区/目标环境；请求详情显示 `requestModule`，不因列宽缩短实体身份。(HR-PR-06,f7451a81 UI 面落=树行标题 fullModule+tooltip 双名/target;历史面板行 fullModule 与「发送: requestModule」并列(双名不同时)+目标列+requestId 列;双名字段=HR-PR-02,c120287c;纯核名称投影=90200003,tests/hotReloadHistoryCore.test.ts 钉;UI 钉=tests/hotReloadHistoryView.test.ts)
-- [x] HR-MOD-012 设计 `${reloadModule}`、`${fullModule}`、`${fileName}`、`${relativePath}`、`${workspaceRoot}`、`${targetId}` 模板变量；现有 `${module}` 先审计再决定兼容映射。(HR-PR-02,c120287c,六变量全落 buildTemplateVars/applyTemplate/applyTemplateWithContext:双名 scriptRoot 配置才解析否则如实空串、${fileName}=filename 别名、${relativePath}/${workspaceRoot} 首含根派生、${targetId} 透传;${module} 兼容映射决策=保持 legacy __init__.py 包边界语义不动(审计 HR-AUDIT-004 在案),双名走新占位不混语义,形状钉测试锁)
-- [x] HR-MOD-013 对旧配置提供兼容迁移和预览请求的功能；不静默篡改已保存 URL 模板。(fa4a2129:新命令 kbengine.httpRequest.preview=活动文件「将发什么」只构造不发送(全部条目含停用如实列出带原因+零配置默认热更面,三名字并列 fullModule/requestModule/legacy,HR-MOD-008 开关同口径);kbengine.httpRequests.migrateLegacyModule=原始条目扫描 ${module} 分布+显式选条目+显式二次确认才写(改写只动确认条目模板字符串→${fullModule},其余条目逐字保留,未配 scriptRoot 拒迁并点名原因);纯核零写配置=不静默篡改是结构性;命令奇偶闸覆盖装配面,NLS 双语言;tests/hotReloadRequestPreview.test.ts 7 钉,prove-red 两臂中和各转红逆向恢复;门禁 lint 0/tsc 0/unit 9438+8skip RC=0(首轮 5 例负载抖动复跑消失)/xvfb demo 25 RC=0;双名面+模板六变量=HR-PR-02,c120287c;${module} 默认语义保留=HR-AUDIT-004 口径)
-- [ ] HR-MOD-014 所有日志/历史同时存 fullModule/requestModule/fileUri/targetId，便于排查用户看到的名称与请求名称不同。(进行中:HR-PR-06,90200003,历史库纯核已落=HotReloadHistoryEntry 同存 fullModule/requestModule/fileUri/targetId/requestId/time/status/errorSummary 七字段,同 requestId 幂等替换不重复成行,tests/hotReloadHistoryCore.test.ts 钉;HR-PR-06,f7451a81 历史持久化面落=workspaceState 键 kbengine.hotReload.history 全量行落/启动回载,脏形状如实丢弃;差=版本事件日志面(noteDeliveryEvent)存 rootId/targetId/file 不存双名;identity DTO=HR-PR-02,c120287c)
-- [x] HR-MOD-015 纯函数单测覆盖上述四个示例及特殊文件、路径穿越、URL encoding、Unicode、同名根/文件。(HR-PR-02,c120287c,tests/hotReloadModuleIdentity.test.ts:§19.1 四示例(含 base/Avatar 引擎偏差钉)、特殊文件(__init__/.json/.pyi/.pyc)、路径穿越(词法上卷落根外拒)、URL encoding(%20 解码出空白短名拒/坏转义保留)、Unicode 短名合法(PEP 3130)、同名文件两根各自解析 rootId 区分+嵌套根歧义拒、override 合法/非法、root-level 默认拒/显式开;核心 reason/开关例在 tests/hotReloadTempEdit.test.ts)
-
-#### 19.4 Watch / Save 事件流水线（HR-WATCH）
-- [x] HR-WATCH-001 默认 `off`，用户按 workspace/target 显式启用 `onSave`（默认推荐）或 `onDiskChange`。(HR-PR-04,60ccc545 纯核+e54acba1 配置面:默认冲突已按 2026-11-06 用户令裁定(零配置默认开、保存即自动发)覆本条「默认 off」,readHotReloadSettings 默认 enabled=true 与令一致;模式选择配置面 kbengine.hotReload.triggerMode 枚举 onSave(默认)/onDiskChange=package.json 贡献(markdownDescription+逐选项 markdownEnumDescriptions 经 NLS 双语言文件)+容忍式读取(枚举外写法一律回落默认 onSave,不猜半态,reader 钉)+onDiskChange 才建磁盘面(缺省 onSave 注入也不建,wiring 钉)+设置暴露=features.md en+zh Settings 行(字符串默认值带引号 "onSave",对账闸)+configuration.md en+zh 指南行+configMarkdownDescription 默认值锁;docs/hotreload/current-implementation.md §14 en+zh)
-- [x] HR-WATCH-002 `onSave` 仅选择属于配置 script roots 且规则准许的 `.py` 文件；未保存的编辑不触发 HTTP。(HR-PR-04,60ccc545 纯过滤 isWatchableScriptFile=扩展名/根严格前缀整段边界(/ws/scripts 不认领 /ws/scripts2)/排除目录/备份名+e54acba1 装配钉:save watcher 面绑定配置 globs(既有面不变;显式收窄 globs 不被磁盘面放大=范围闸同界,disk wiring 钉);未保存的编辑不触发=wiring 钉 document-change 事件不进链,只有 watcher 写盘事件进(缓冲变更 fire 后 0 计时器 0 动作,hotReloadDiskWatchWiring 用例))
-- [x] HR-WATCH-003 `onDiskChange` 使用原生 VS Code FileSystemWatcher，外部改动/生成/Git checkout 与 save 重叠需去重。(HR-PR-05,60ccc545 纯核+edcfaeaf live 接线:磁盘监视装配核=watchRoots 按根建 watcher+change/create 经过滤规范化后 offer(disk-change)+delete 不进管线记 delete-ignored+与 save 重叠经真流水线归并记 disk-save-overlap 不双发;接线=setupHotReload 新 diskWatch 注入面控制器随 apply 重建+activate/hotReload.ts 真适配 vscode.createFileSystemWatcher(pattern) 薄包 uri→fsPath,事件汇入同一两级触发链(同进料级+合并窗,重叠纯核归并单批,wiring 钉磁盘+save 同文件单批不双发);范围闸与热更域同界(显式 globs=matchesHotReloadGlob 相对路径命中,派生=assetsRoot 规范化前缀),磁盘面绝不比既有 watcher 面宽;诊断路由=watch-created/dropped-before-arm/disposed 走通道日志,filtered/delete-ignored 不逐条刷(Git 批量爆发防刷屏,语义纯核钉);tests/hotReloadDiskWatch.test.ts 16 例纯核+tests/hotReloadDiskWatchWiring.test.ts 8 例接线钉;不注入 diskWatch=原装配行为不变)
-- [x] HR-WATCH-004 只监听已声明的脚本根；排除 `.git`, `.venv`, `node_modules`, generated stubs, caches, 临时文件、swp、备份文件。(HR-PR-05,60ccc545 纯核+edcfaeaf live 接线:watchRoots 每根派生递归 glob(根下全部 .py)根外事件到不了+filterOptions.roots 每次取当次工作区根规范化做深层防御(apply 重建不留陈根)+排除目录(.git/.hg/.svn/.venv/venv/node_modules/__pycache__/.kbengine(stubs)/.mypy_cache/.pytest_cache/.ruff_cache)经过滤层拦 filtered 诊断+备份/临时名(.swp/.swo/.bak/.tmp/尾~/#名#)过滤层拦+备份名 watcher glob 层拦(实测 .bak 不到过滤层);范围闸再收窄到热更域(显式 globs 匹配/派生 assetsRoot 前缀),磁盘面绝不放大既有 watcher 面(wiring 钉:显式收窄 globs 时域外磁盘事件如实不进))
-- [ ] HR-WATCH-005 监听生命周期绑定到 workspace/target/config，deactivate、root 移除、模式切换及时 dispose。（进行中:HR-PR-05,ae3a2c7a 控制器面+edcfaeaf live 绑定=dispose 全清(watcher disposeCalls 钉)后续事件不受理+rebuild 旧 watcher 全 dispose 按新根重建且 armed 保持(重建不重开基线窗)+dispose 后 watchRoots/arm/rebuild 拒收(纯核钉);接线=控制器随 apply 重建(配置/计划签名变更即拆旧建新,filterOptions.roots 每次取当次工作区根不留陈根)+context dispose 全清(wiring 钉:dispose 后磁盘事件不进)+配置关面拆(wiring 钉:enabled=false 旧 watcher 失效且不建新面);差=target 维根绑定(按部署 target 的脚本根监听);模式切换配置面已落(e54acba1:triggerMode 双向 wiring 钉——切 onDiskChange 建面、切回 onSave 拆面,随 apply 重建);流水线 dispose 面 HR-PR-04,60ccc545)
-- [x] HR-WATCH-006 实现 per-file debounce 与全局 max-delay 上限：防 save storm 也不无限推迟。(HR-PR-04,60ccc545,src/backend/hotReloadSavePipeline.ts:per-file 尾窗去抖=再发事件重排窗,排窗预算取 min(debounceMs, max(0, maxDelayMs-elapsed)) 封顶;首窗亦封顶故 maxDelay<debounce 时窗即封顶;截断如实记 max-delay-capped 因;pin tests/hotReloadSavePipeline.test.ts『max-delay 封顶』save storm 4 连发至多推迟到 1000ms 且 coalesceReason=debounced:4;max-delay-capped,prove-red 去掉封顶即红)
-- [x] HR-WATCH-007 等待写入稳定（短时间连续 stat/hash 一致）后再发送；尊重磁盘原子替换、rename 顺序。(HR-PR-04,60ccc545,src/backend/hotReloadSavePipeline.ts:两拍快照哈希一致才发(注入 readSnapshot)+探测次数有界超限如实发末拍记 unstable-after-N-probes+读不到/已删除如实丢弃不猜+settling 守卫防同 URI 异步两拍期间并行第二个定稿;pin tests/hotReloadSavePipeline.test.ts『两拍一致恰读 2 次』『持续变化超 3 探测记 unstable』『首拍读不到丢弃』『稳定窗内消失丢弃』四例;配置面 5939c549=stabilityWindowMs 键(容忍式读取,类型错/负值回落 0)+键>0 才注入快照读面(0=现有时序不变,装配钉 tests/hotReloadConfigFaces.test.ts)+装配 buildPipeline 直传键值(漏传即纯核缺省 200 潜生效,栈迹抓出后补直传)
-- [x] HR-WATCH-008 文件 hash 与最近已提交/已成功应用的版本指纹区分，不因一次失败永久跳过。（收官 2026-11-13,2c9bd350=forgetSent 装配接线落地——此前核心方法零调用点,一次投递失败在生产路径永久跳过同内容;五面如实撤:默认热更失败/拒绝整批撤、recordOutcomes failed 整批撤(不依赖台账在场)、通道逐文件精确撤(仅最新回执 failed 者撤,已送达文件去重不受影响)、整批异常无回执或 failed 者撤(回执查询抛错退化整批撤,绝不吞失败上报面——gapArms 既有钉抓出 resolveRootId 抛错掩盖上报回归)、handleResponse 非 2xx 逐文件撤;与「最近已提交/已成功应用」指纹台账的区分成立=台账记录锚定各自代际(内容事实不动),指纹账本只管重发资格,同内容重发推进流水线版本号;tests/hotReloadForgetSentWiring.test.ts 3 钉(失败照发/成功去重仍有效/通道混批只重发失败文件),prove-red=中和四处调用面失败钉+通道钉转红、成功钉按构造绿;门禁 eslint 0/tsc 0/unit 763 文件 9380+8skip/xvfb demo 25 RC=0)
-- [x] HR-WATCH-009 原始事件归并为 `FileChanged{uri,revision,diskHash,source,time}`，记录合并原因供诊断。(HR-PR-04,60ccc545,src/backend/hotReloadSavePipeline.ts:同 canonical URI 同 pending 归并为单条 FileChanged{uri,revision,diskHash,source,time,coalesced,coalesceReason},原因逐项记(单发=single,归并=debounced:N,写盘重叠=disk-save-overlap,封顶=max-delay-capped,不稳定=unstable-after-N-probes)并可加号;pin tests/hotReloadSavePipeline.test.ts『连发归并 coalesced=3』『save→disk 记 overlap 代表源=最新』『disk→save 不记 overlap』『file:// 与裸路径同 canonical 归并』)
-- [x] HR-WATCH-010 使用 canonical URI + targetId 合并待执行同文件更新；同内容同目标不重复发送。(HR-PR-04,60ccc545,src/backend/hotReloadSavePipeline.ts:去重键=canonical URI(HR-PR-02 canonicalizeScriptFilePath 复用)+targetId+内容哈希,三同即 deduped 不发;换目标(同内容新 targetId)不视为重复照发;pin tests/hotReloadSavePipeline.test.ts『同内容同目标 deduped』『同内容换目标照发 revision=2』+isDuplicateUpdate 纯判四形)
-- [x] HR-WATCH-011 当文件 A 更新请求执行时又保存 B 版本，保证最终版本被请求，不把旧响应写成新版本成功。(HR-PR-04,60ccc545 版本号语义=revision 只随实际发出的新内容版本递增(去重/拦截不占号,否则同内容在途响应被 isStaleResponse 误判 stale,测试钉 revision 边界)+同文件单 pending 归并保证末版本胜出+isStaleResponse 纯判;响应面执行点已落 88171384=runFire 发送时点版本快照(revisionOf 核心自省口,锚定发送代际流水线实例,apply 重建新实例不混代)+末版本必被请求(再定稿必再进合并窗再 fire,tests/hotReloadRevisionGate 钉两次定稿→两次请求)+旧响应不冒充=default-hotfix/通道面「响应过期」审计日志(每次响应至多一条点名文件)+动作响应路径 stale 注解追加进该代 attempt 绑定的 sent-unverified 台账记录(accepted/applied 锚定冻结基准不动,新代记录不背旧响应注解,tests/hotReloadResponseReceiptWiring 钉绑定);prove-red 中和 stale 判定三面转红)
-- [ ] HR-WATCH-012 先做轻量 Python 语法检查/配置检查；有错误时标 `blocked`，不默认发送半成品代码。（进行中:HR-PR-04,闸机制已落+钉=注入 checkSyntax 不通过出 blocked 诊断且不发送(测试钉 detail 带检查器错误)+每次定稿只检一次;真实轻量 Python 语法检查器/配置检查器由装配注入=随接线批;真实现+配置面已落 5939c549=syntaxGate 键(默认 false=不注入检查器如实不拦,装配钉)+createPythonSyntaxGate 装配核(src/backend/hotReloadSyntaxGate.ts,fail-open:解释器解析不到/子进程故障/超时一律放行并至多通知一次,绝不因检查器不可用拦热更,只有明确 ok=false 才拦)+runPythonCompile 真编译面(src/hotReloadPythonCompile.ts,spawn 解释器 -c 'compile(sys.stdin.read())' 只编译不执行,内容走 stdin,stderr 末行作错误,5s 超时)+窗 0 单拍直取内容面(内容原本只在稳定路径流动,闸开+窗 0=闸是死面——due() 条件与窗 0 单拍分支接通,拦截 probes=1 钉)+拦下不占版本号不进波次不排合并窗(零后续计时器钉);差=配置检查器(值域/一致性校验)随配置余面)
-- [ ] HR-WATCH-013 引擎脚本可热更规则支持 profile capabilities、路径 allowlist/denylist、自定义过滤器。（进行中:HR-PR-04,规则面的可注入形态已落=extensions/excludedDirs 追加/roots 严格前缀+targetOf 目标归属;profile capabilities 与 allowlist/denylist 配置键属配置面(HR-MOD-006 同因)随该面点火)
-- [ ] HR-WATCH-014 停用时清理待提交队列；处理中请求依据策略取消/自然完成并更新 UI，不再重新入队。（进行中:HR-PR-04,清队列已落+钉=dispose 清 pending/波次/预览滞留且停止受理(dispose 后 offer 进不来、波次与滞留一并清、放行不再发);在途请求取消/自然完成策略与 UI 更新=装配面随接线批)
-- [x] HR-WATCH-015 初次启动、切换分支、恢复窗口不默认对全仓历史文件触发更新；基线扫描不等于变更事件。(HR-PR-05,ae3a2c7a 基线闸=arm() 前到达的磁盘事件一律丢弃记 dropped-before-arm 诊断+rebuild 保持 armed 不重开基线窗(prove-red:拆闸该例红);激活时序装配已落 edcfaeaf=setupHotReload 磁盘面 watchRoots(建 watcher)后 arm() 同步块内先建后 arm(无事件空档,启动不把既有文件当变更,tests/hotReloadDiskWatchWiring 钉);切换分支=Git checkout 爆发经真流水线单波次一批+同内容还原去重不重发(tests/hotReloadDiskWatch 钉);恢复窗口=rebuild 保持 armed)
-- [x] HR-WATCH-016 大批量文件变化进入安全批次预览模式（可配置数量阈值），防无意向服务器发数百请求。(HR-PR-04,60ccc545,src/backend/hotReloadSavePipeline.ts:超 batchPreviewThreshold(可配)的批次只出 preview 诊断不自动发、releasePreview 显式放行才发(放行出 preview-release 模式)+滞留期间新批次并入同一滞留批次维持单一批次+dispose 一并清滞留;pin tests/hotReloadSavePipeline.test.ts『超阈值只预览』『放行原样发出』『滞留期新批次并入共 4』『无滞留放行如实空放』四例,prove-red 关阈值判断 3 例转红;配置面 5939c549=batchPreviewThreshold 键(默认 50 同纯核,0=一律滞留为合法值不回落)+kbengine.hotReload.releasePreview 命令(注册在 composite 前随 composite 内 dispose=恰一订阅契约不破;无滞留如实报空)+滞留可见性(批量预览滞留 上热更通道日志,HR-WATCH-017 preview 诊断面)+commands.md en+zh 小节)
-- [ ] HR-WATCH-017 写入用户可审查的诊断事件：trigger、filtered、debounced、deduped、blocked、scheduled。（进行中:HR-PR-04,诊断面已落=八型 trigger/filtered/debounced/deduped/blocked/scheduled/preview/flushed 全量可注入观察(测试钉典型序列 trigger→scheduled→debounced→flushed 与空路径 filtered 两例);「用户可审查」的呈现面(OutputChannel/面板)=装配面随接线批)
-- [ ] HR-WATCH-018 单测模拟 onSave、外部改动、原子覆盖、批量 rename、删除后重建、忽略目录、配置变更、远程 URI。（进行中:HR-PR-04,已模拟=外部改动(disk-change 源)+删除后重建(稳定窗内快照消失丢弃/首拍读不到丢弃)+忽略目录与备份名(过滤矩阵)+原子覆盖形态(内容哈希换档即新内容照发);未模拟=onSave 事件绑定/批量 rename/配置变更/远程 URI(依赖 vscode 装配面,随接线批)
-
-#### 19.5 HTTP 适配、调度、幂等与成功确认（HR-HTTP）
-- [x] HR-HTTP-001 从现有 Quick Requests 抽取可复用 RequestExecutor；不可破坏普通通用 HTTP 功能。(HR-PR-03,21cc4848,新纯核 src/backend/httpRequestExecutor.ts:快捷请求 HttpRequestService.runEntry 与默认热更 sendDefaultHotfix 统一走 executeHttpRequest+交换状态机,不再各带一套传输分支;服务层分支仍读 transportOk=传输面原始 ok 布尔,日志行/错误弹窗/布尔返回逐字不变=通用 HTTP 零回归,tests/httpRequestService.test.ts 既有钉全绿)
-- [ ] HR-HTTP-002 `HotReloadProvider` 接受 module identity、target、revision、request correlation id，产生结构化 outcome。
-- [ ] HR-HTTP-003 保持自定义 URL/method/headers/body/变量模板，处理 URL query encoding、JSON escaping 与 HTTP method semantics。
-- [x] HR-HTTP-004 HTTP 字段拼写口径：2026-11-06 用户令更正为 `http://127.0.0.1:8090/hotfix` + `module_name=`，旧错误拼写全仓清零（`tests/hotfixSpellingGate.test.ts` 门断言）。
-- [ ] HR-HTTP-005 所有自动 HTTP 请求仅能发送到用户明确批准的 target endpoint；Workspaces 未信任时禁止发送。
-- [ ] HR-HTTP-006 配置网络超时（连接/请求）、最大响应体、header/body redaction；HTTP client 连接池复用。
-- [ ] HR-HTTP-007 按目标维护有界并发队列，默认同目标串行；其他目标允许独立并发且全局上限。
-- [ ] HR-HTTP-008 支持请求取消和超时，明确取消不等于远端撤销；发送后未知状态必须显示 uncertain。
-- [ ] HR-HTTP-009 重试策略：默认不自动重试状态未知的非幂等更新；仅服务端提供 idempotency key 后开启有限退避重试。
-- [x] HR-HTTP-010 解析网络失败、DNS/connect、非 2xx、2xx 无回执、显式 `accepted`、显式 `applied`、应用失败。(HR-PR-03,21cc4848,传输层 classifyExecution 六分类 ok/non-2xx/timeout/network-error/invalid-url/unsupported-protocol+八细类(连接拒绝/DNS/重置/超时/URL/协议/http-status/unknown),事实决定分类推不出如实 unknown;回执层 accepted/applied/sent(无回执/非 JSON)经真网 e2e 验,failed 分支既有 tests/hotReloadTransport.test.ts:114 覆盖;本地超时绝不报成应用失败=服务端随后仍完成 200 有钉)
-- [ ] HR-HTTP-011 引擎端如能返回 appliedRevision/appliedHash/targetProcess，则验证与当前请求 fingerprint 匹配才显示已应用。
-- [ ] HR-HTTP-012 兼容老 HTTP 服务端纯文本/JSON 格式，通过 ResponseInterpreter 版本化策略解析，无法确证显示 `sent_unverified`。
-- [ ] HR-HTTP-013 防旧响应覆盖新任务：结果 CAS 对比 targetId + canonical URI + requestedVersion；按时间戳不能代替版本校验。
-- [ ] HR-HTTP-014 每次执行都生成 correlation_id，在日志、详情、服务端支持时贯穿；避免记录完整 token/header 凭证。(进行中:HR-PR-03,21cc4848,生成+贯穿 outcome 已落=每次执行 crypto.randomUUID(),外部可自带 id,测试钉两条 id 不同;HR-PR-06,f7451a81 展示面落=历史面板 requestId 列+树 tooltip requestId(correlation id 指纹全显),请求头贯穿刻意不做=线路字节变更(与「不做 URL 编码」同边界),待接收端契约解冻(HR-AUDIT-009);不落 token/header 凭证=outcome 无请求头字段(header 不回显),只含 status/durationMs/响应 body)
-- [ ] HR-HTTP-015 断连/重连更新 endpoint health；health success 不等于任何模块已更新成功。
-- [ ] HR-HTTP-016 在 HTTP 层额外提供 `Preview request`，用户确认精确 URL/method/参数后启用自动模式。
-- [x] HR-HTTP-017 Mock server e2e：慢响应、chunked、malformed JSON、状态码、断网、重复请求、服务端成功但本地超时。(HR-PR-03,21cc4848,tests/httpRequestExecutorMockServer.test.ts 10 例真网(node http 每例独立临时服务,端口 0 随机)打默认传输面:慢响应+短超时→timeout 且服务端随后仍完成 200/状态码 500→non-2xx/malformed JSON→2xx 已送达不 claim applied/chunked 拼接/chunk 重复请求 hits=2 且关联 id 独立/断网两形=端口已关 ECONNREFUSED+响应中途摧毁 socket→connection-reset/URL 无法解析+协议不支持;顺抓真缺陷=默认传输在服务端响应中断时 promise 永不结算(实测 node 在响应流发 aborted 而 req 已销毁,超时无法自救),已修 res.on('aborted')/('error') 显式收口)
-- [ ] HR-HTTP-018 使用真实引擎侧服务联调，文档化实际回执字段；无法改服务端时 UI 明确显示未验证。
-
-#### 19.6 热更新生命周期状态与历史（HR-STATE）
-- [ ] HR-STATE-001 定义 `disabled/idle/dirty/queued/checking/sending/accepted/applied/sent_unverified/failed/blocked/restart_required/unknown` 状态和迁移表。
-- [ ] HR-STATE-002 区分 `lastRequestedHash`、`lastAcceptedHash`、`lastVerifiedAppliedHash`、`currentDiskHash`，不混用。
-- [ ] HR-STATE-003 `applied` 仅在可信回执或引擎状态查询一致时赋值；旧版本已应用且磁盘又修改时显示 `dirty`。
-- [ ] HR-STATE-004 状态按 `(workspaceId, rootId, targetId, uri)` 分区，不允许切换目标后复用旧绿色状态。
-- [ ] HR-STATE-005 文件改名/移走/删除及时 tombstone 清理；旧 UI 不继续假显示成功。
-- [ ] HR-STATE-006 多服务器多进程返回部分成功时显示 partial，并详细列出失败目标；不要合并成绿色。
-- [ ] HR-STATE-007 保存可检索操作历史：time、trigger、fullModule、requestModule、target、duration、result、errorCategory、hash。
-- [ ] HR-STATE-008 历史存储大小与保留时间限额，支持导出脱敏 JSON；无需持久化所有 HTTP body。
-- [ ] HR-STATE-009 历史快照与当前文件状态分离；重启后不自动相信上一会话的 applied 状态，除非可复核运行时 revision。
-- [ ] HR-STATE-010 错误原因可操作：配置错误、模块冲突、语法错误、目标不可达、应用失败、回执不可信、需重启。
-- [ ] HR-STATE-011 接口支持 cancel、retry、retry-all-failed、pause、resume、clear-history；重试需要遵守幂等确认。
-- [ ] HR-STATE-012 event store/UI 更新批处理并限制频率；1000 事件/秒不得产生 1000 次完整 UI 渲染。
-- [ ] HR-STATE-013 reducer/property tests 覆盖乱序返回、重复回执、失败后文件再编辑、目标切换、Core 重启。
-
-#### 19.7 热更新 UI / 可视反馈（HR-UI）
-- [x] HR-UI-001 状态栏区分 `Watch Off`、`Ready`、`Sending`、`Sent (unverified)`、`Applied`、`Failed`、`Restart Required`。(live 面已齐=src/hotReloadStatus.ts 七态状态机 watch-off(按原因如实分 disabled/empty-globs 双注 §11.1)/ready(+error)/sending/sent-unverified/applied/failed/restart-required 全实现,依赖注入 StatusBarItemLike,pin tests/hotReloadStatus.test.ts;HR-PR-06 批核实勾)
-- [x] HR-UI-002 TreeView 提供最近更新/文件/目标分组，节点标题显示 **fullModule**，tooltip 显示 requestModule、URI、target、时间、请求 id。（HR-PR-06,f7451a81 树装配=src/hotReloadHistoryView.ts kbengine.hotReloadHistory 视图,根三组(最近更新最新在前页大小封顶/按文件/按目标)+键组套行,行标题=buildHistoryEntryLabel(fullModule),tooltip 双名/URI/target/时间/请求 id+status/error;台账事件经 onRecord 投影,重渲染 500ms 合并窗节流,受限宿主退化 registerTreeDataProvider;纯核分组=90200003,tests/hotReloadHistoryCore.test.ts;UI 钉=tests/hotReloadHistoryView.test.ts）
-- [x] HR-UI-003 编辑器使用文件装饰或 CodeLens/overview 合理呈现最近热更状态，避免长期污染每一行代码。(live 面已齐=src/hotReloadFileDecorations.ts 文件装饰+src/hotReloadFileStateLens.ts 定点 CodeLens(非逐行污染),pin tests/hotReloadFileDecorations.test.ts+tests/hotReloadFileStateLens.test.ts;HR-PR-06 批核实勾)
-- [ ] HR-UI-004 独立 Hot Reload 面板展示实时队列、历史、失败、当前目标、监听模式、请求详情和错误诊断。（进行中:HR-PR-06,f7451a81 面板已装配=historyPanel 命令 src/hotReloadHistoryView.ts(页头监听模式/目标/计数+过滤条+最新在前表格+分页+错误摘要列,数据面=投递台账逐条投影);纯核数据面=90200003,tests/hotReloadHistoryCore.test.ts;差=实时队列面(HR-PR-04 流水线 pendingFiles/waveFiles/previewHeldFiles 自省进 UI)未装配）
-- [ ] HR-UI-005 配置界面支持启用自动更新、监听模式、root、target、网络超时、语法检查、去抖参数、敏感操作警告。(进行中:配置键族已齐=kbengine.hotReload.enabled/triggerMode/sendViaProviders 等经 workspace settings 消费(package.json configuration 贡献+容忍式读取,HR-PR-04/05/08 批);差=面板化配置编辑 UI(表单化界面)未做,现面=VS Code 设置面+命令面板)
-- [x] HR-UI-006 UI 明确完整名称与发送名称：`entities.fight.FightAI`；详情 `发送模块 fight.FightAI`。（HR-PR-06,f7451a81 UI 消费面落=树行/面板行 fullModule 为主,双名不同时面板行并列「发送: requestModule」、tooltip 双名;纯核名称投影=90200003(buildHistoryEntryLabel 标题 fullModule,tooltip 双名不同才列 requestModule 行);双名字段=HR-PR-02,c120287c;UI 钉=tests/hotReloadHistoryView.test.ts）
-- [ ] HR-UI-007 事件变化时高频 UI 更新合并节流；列表上千记录采用虚拟滚动与增量加载。（进行中:HR-PR-06,f7451a81 节流+增量加载已落=树重渲染 500ms 合并窗(窗内多次台账事件一次 fire;dispose 清 pending 钟)+面板「加载更多」逐页增量;纯核=90200003(coalesceHistoryUpdates 同 requestId 窗内合并/page 分页窗口/容量有界环形淘汰缺省 200);差=webview 表格虚拟滚动(上千记录渲染面)未做）
-- [ ] HR-UI-008 失败点击定位文件、打开输出日志、查看 HTTP 概要（密钥遮蔽）、可选择重试。（进行中:重试面已齐=hotReloadRetry 纯核(只重失败目标/成功侧跳过/每跳取消探针)+RetryCommand+RetryChannel+DefGate 四文件 pin(hotReloadRetry*.test.ts);失败提示=hotReload.ts showErrorMessage;HTTP 概要密钥遮蔽=outcome 无请求头字段 header 不回显(HR-HTTP-014 注)按不存在遮蔽;定位文件/打开日志点击动作=接线批)
-- [x] HR-UI-009 成功状态只用在确认 `applied` 的情境；`2xx` 没有业务回执用“已发送，未确认”。(live 面已齐=hotReloadStatus setApplied 仅回执核验后(文件头注)=2xx 无回执走 setSentUnverified;历史库同口径迁移单向 sent-unverified→applied/failed 终态不回退伪造(HR-PR-06 src/backend/hotReloadHistoryCore.ts);pin tests/hotReloadStatus.test.ts+tests/hotReloadReceipt.test.ts+tests/hotReloadHistoryCore.test.ts;HR-PR-06 批核实勾)
-- [x] HR-UI-010 支持按 fullModule/target/status/时间范围过滤与搜索；路径相同但 target 不同分别显示。（HR-PR-06,f7451a81 UI 装配=historySearch 命令 fullModule 子串过滤树(大小写不敏/留空清除/取消不动)+面板过滤条(模块子串/目标 id/状态,计数随过滤更新);同路径不同 target 分行呈现(树目标键组+行身份含 targetId,面板目标列);纯核 filter 全条件 AND+时间含边界=90200003,tests/hotReloadHistoryCore.test.ts;UI 钉=tests/hotReloadHistoryView.test.ts）
-- [ ] HR-UI-011 全面支持主题、国际化中文/英文、无障碍快捷键与 screen reader 状态文本。
-- [ ] HR-UI-012 UI 关闭、隐藏、切换工作区不停止热更新服务，且不丢状态；deactivate 时可靠释放。(进行中:HR-PR-06,f7451a81 关闭面钉=面板 dispose 只清面板引用不停 feed(关后照常入账,重开见新行);deactivate 释放=全部句柄进 context.subscriptions,dispose 清节流 pending 钟;树隐藏不挂任何停机钩;持久化跨会话不丢=workspaceState 全量行;差=工作区切换场景(切换文件夹根)状态保持未钉)
-- [ ] HR-UI-013 热更新通知可配置：成功静默、失败提示、批量结果摘要；禁止每次保存弹通知风暴。
-- [ ] HR-UI-014 同一完整模块名归属多个 workspace 时显示 root/target，防用户误认更新哪个服务。（进行中:HR-PR-06,f7451a81 target 维度已落=树行 description/tooltip 带 target+按目标键组+面板目标列;纯核行身份含 targetId+groupByTarget=90200003;双名解析歧义拒判=HR-PR-02,c120287c;差=root 维度呈现(行/分组加 root 标注)未做）
-
-#### 19.8 `.def` / types.xml / entities.xml Hash 与运行时一致性（HR-HASH）
-- [x] HR-HASH-001 明确三层：`fileHash`（例如 SHA-256 原始字节）、`semanticHash`（稳定规范化语义结构）、`engineDigest`（实际引擎协议报告/确认的指纹）。(三层全在 live 且钉=hashDefContent sha256 原始字节(src/backend/hotReloadDefHash.ts)/structuralFingerprintHash 结构语义指纹(src/backend/hotReloadDefStructure.ts,版本化面 semanticFingerprintReport HR-PR-07)/negotiateEngineDigest 引擎 Digest(md5=C-18 规范推导或 unknown 退化);hotReloadRevisionEvidence.ts 三类证据各自带来源标签且跨类不比较;pin hotReloadDefHash.test.ts+hotReloadDefStructure.test.ts+hotReloadRevisionEvidence.test.ts;HR-PR-07 批核实勾)
-- [x] HR-HASH-002 fileHash 在变更时流式增量/批量读取，复用 VFS 已有字节；避免 UI 每次显示都重新读文件。(接线批收官 4b211068:def 指纹读面走 readSharedFileSnapshot 打开缓冲区优先(VFS 已有字节复用,未保存编辑参与指纹),来源标签 document/disk 如实入面板与台账;UI 显示与修改触发共用同一读面,绝不为显示单独重读磁盘;流式增量读不再欠账=字节已在内存驻留,单遍 hashDefContent 即终态,无流可增;pin tests/defFingerprintInspector.test.ts computeDefFingerprintSnapshot 节)
-- [x] HR-HASH-003 semanticHash 输入为解析后的规范化 AST/IR，规范版本、字段顺序、空白/注释处理规则文档化。(live 面=hotReloadDefStructure.ts 结构指纹:规范化规则(注释/空白/顺序/描述文本/默认值不进指纹;属性/方法/装载/未建模四段排序序列化)文档化于模块头并测试钉(重排/注释/空白=非结构性用例);规范版本=HR-PR-07,406b3268,新增 DEF_FINGERPRINT_SPEC_VERSION='def-structural-fp/1'+semanticFingerprintReport.specVersion(跨版本指纹不可比);pin tests/hotReloadDefStructure.test.ts)
-- [x] HR-HASH-004 语义 Hash 必须计入所依赖类型/引用定义的版本或在详情标明“仅本文件语义”，防误报完全一致。(HR-PR-07,406b3268,选「如实标注」臂=semanticFingerprintReport.scope='file-only-semantic'+note 点名 Parent/接口/组件被依赖文件版本不在指纹内、依赖变更需另行核验,解析失败 hash=null 如实不造;依赖版本计入指纹臂未选(依赖闭包收集=另一量级,如需再立账);prove-red=改 scope 标注该例红;pin tests/hotReloadDefStructure.test.ts『semanticFingerprintReport』节)
-- [x] HR-HASH-005 引擎 Digest 仅来自已验证引擎算法或服务端回执；不能把本地 SHA-256 错标为运行时协议 Hash。(live 面=hotReloadDefHash.ts:compareEngineDigest 闸=unknown/未协商一律拒比,md5 已协商也拒(客户端原文 sha256 与引擎复合 MD5 不同算法/不同输入跨类永不互比);negotiateEngineDigest 只认引擎回执报告的真实 32 位摘要形,缺省退化 unknown;engineDigest 一词只用于运行时回执(revisionEvidence 标签面);pin hotReloadDefHash.test.ts;HR-PR-07 批核实勾)
-- [x] HR-HASH-006 若项目 fork/引擎版本不同则交由 FingerprintProvider(profile) 解析；未知标 `not available`。(接线批收官 4b211068:profile 消费面落地=Inspector 命令与报告/HTML 三面均显算法档案(resolveFingerprintProfile;无摘要协商时如实标 not available 未协商,不替引擎猜算法);fork 侧具体 provider 实现已随 HR-PR-08(c7557bc5)落地=createHttpHotfixSendProvider 经注册表应答;pin hotReloadFingerprintCompare.test.ts+hotReloadPluginApi.test.ts+defFingerprintInspector.test.ts)
-- [x] HR-HASH-007 为 `.def` 增加 Hash Inspector：完整路径、三类值、算法/版本、计算时间、来源、复制按钮。(接线批收官 4b211068:新命令 kbengine.def.fingerprintInspector(活动编辑器须 .def)=完整路径+三类值(fileHash sha256/语义指纹/引擎面如实另账)+算法档案与插件 API 版本+计算耗时+读面来源+哈希复制按钮(webview postMessage→剪贴板),复用既有 createWebviewPanel 单列面板模式不新造框架;applied 维度如实 unknown 点名原因,工作区闭包 MD5+SDK 盖章=defMd5Check 另账转显(getLastDefMd5CheckOutcome),不冒充逐文件结论;pin tests/defFingerprintInspector.test.ts 11 例)
-- [x] HR-HASH-008 文件发生修改时比较上次本地指纹、当前语义指纹、服务端已应用 Digest（若可得），给出一致/不同/未知。(接线批收官 4b211068:触发接线落地=.def 保存事件(onDidSaveTextDocument)→台账上次快照 vs 当前快照三路判定→「KBEngine Def 分析」通道一行结论(def 指纹首见(只存底)/def 指纹变更判定 file=…|semantic=…|applied=…,unknown 面带归位原因);首见只存底绝不伪造变更结论;applied 维度 def 无逐文件回执=如实 unknown;命令与保存共用同一台账(命令首存后保存即出判定行);台账纯核 DefFingerprintLedger last/record/clear;pin tests/hotReloadDefFingerprintLedger.test.ts 8 例+defFingerprintInspector.test.ts;prove-red=中和台账 record 后变更判定钉 3 例红)
-- [ ] HR-HASH-009 `.def` 差异分类：字段新增/删除/重排、类型更改、方法参数/分面变化、继承/组件变化、纯空白/注释。
-- [ ] HR-HASH-010 对可能影响协议、序列化、Cell/Base/Client 兼容的更改默认标记 `restart_required`/`needs_review`，不自动热更。
-- [ ] HR-HASH-011 对 `types.xml` 自定义类型变化分析 reverse dependency 受影响的全部 `.def`；生成影响报告。
-- [ ] HR-HASH-012 `entities.xml` 注册项变化标注影响实体与版本状态；默认不发 Python 热更请求替代结构变更。
-- [ ] HR-HASH-013 显示信息入口：`.def` 编辑器 CodeLens、状态条 tooltip、Definition Explorer 面板；巨大工程懒加载。
-- [ ] HR-HASH-014 持久化仅必要 metadata 指纹，版本升级后需重新计算；不缓存敏感源码副本。
-- [ ] HR-HASH-015 单测：同内容路径不同、换行变化、注释变化、语义改变、依赖变更、编译器/引擎 Profile 不同。
-- [ ] HR-HASH-016 性能：单文件修改不触发全项目 Hash 重算；统计 bytes read、rehashed files、affected dependency nodes。
-- [ ] HR-HASH-017 Engine Digest 兼容性测试必须对真实引擎实现验证，缺乏证据时明示不可用，不允许宣称引擎已经同步。
-
-#### 19.9 扩展 API 与引擎适配器（HR-EXT）
-- [ ] HR-EXT-001 定义版本化 `HotReloadProvider`：canReload、resolveModule、prepareRequest、execute、interpretResponse、queryAppliedRevision。
-- [ ] HR-EXT-002 定义 `FingerprintProvider`：computeLocalFile、computeSemantic、fetchEngineDigest、compare；声明算法版本与可信度。
-- [ ] HR-EXT-003 定义 `HotReloadEligibilityRule`：按 engine profile、root、文件类型、上下文判定 auto/manual/restart。
-- [ ] HR-EXT-004 第三方扩展无权限直接截获所有保存事件并随意联网；声明 workspace/network/exec 权限。
-- [ ] HR-EXT-005 Python 插件通过隔离 Worker 可贡献 eligibility/response adapter，不允许在热路径无界阻塞。
-- [ ] HR-EXT-006 自定义 HTTP 模板也视为 runtime adapter 的一个实现，用户可替换，不把 `reload` URL 写死在 Rust Core。
-- [ ] HR-EXT-007 提供一个 stub provider 和 mock HTTP provider 的 SDK 示例、集成测试与权限用例。
-- [ ] HR-EXT-008 新增 Provider 不应影响已有语言服务 hover/definition 尾延迟；经调度隔离与基准验证。
-
-#### 19.10 性能、可靠性、安全专项门禁（HR-QA）
-
-> > 以下为**候选目标**，须用当前仓库真实基线和固定机器明确最终阈值：单文件 Save→队列（不含配置 debounce）P95≤30ms；热更新本地 pipeline CPU 时间 P95≤15ms；UI 单次状态更新节流后≤100ms；高频保存不导致 extension host 事件循环长阻塞；网络耗时单独统计，不混为本地性能。
-
-- [ ] HR-QA-001 基准定义：文件数 200/2k/10k/50k；单文件持续保存、Git checkout 500 文件、写入风暴、远端 SSH/workspace。
-- [ ] HR-QA-002 统计 Watch→过滤→哈希→语法检查→队列→HTTP→回执→UI 各段耗时、P95/P99/max、排队与丢弃原因。
-- [ ] HR-QA-003 连续保存 100 次同一文件验证 debouncing、最终版本提交、不会无限请求或错误绿色状态。
-- [ ] HR-QA-004 500 文件同时变动触发批次确认/限流机制，无全仓热更风暴；UI 不冻结。
-- [ ] HR-QA-005 模拟 10 秒 HTTP 超时+用户继续编辑；请求返回后不得把过期版本标成当前成功。
-- [ ] HR-QA-006 模拟 HTTP 200 body `error`：状态必须失败；HTTP 200 无规范回执为未确认。
-- [ ] HR-QA-007 endpoint 不可达、证书错误、代理错误、target 重启、部分节点成功各自输出可用错误。
-- [ ] HR-QA-008 默认只允许经确认的 loopback/trusted endpoint；若允许非 loopback，要有明确授权与安全警告。
-- [ ] HR-QA-009 确保 HTTP header/token 不出现在 output、trace、history、UI tooltip、导出数据中。
-- [ ] HR-QA-010 阻止配置模板造成 SSRF/任意 file URI 泄露、路径穿越、恶意脚本执行；workspace trust 强制生效。
-- [ ] HR-QA-011 Windows/macOS/Linux/WSL/SSH/DevContainer 路径与 localhost 指向测试，明确 HTTP 请求运行在本地还是远端。
-- [ ] HR-QA-012 模块名矩阵测试（根、两级、三级、`__init__`、Unicode、重复根），HTTP 正确传短名且 UI 永远完整名。
-- [ ] HR-QA-013 Rust Core 正在重建索引时热更新可继续工作，CPU/线程池/锁不可导致语言服务 tail latency 大幅恶化。
-- [ ] HR-QA-014 存在热更新插件 0/5/20 个分别做 load test，插件崩溃不影响核心与主线程。
-- [ ] HR-QA-015 用受控真实测试服务验证“accepted”与“applied”语义并固化协议 fixture。
-- [ ] HR-QA-016 24h Watch/HTTP soak：无 watcher 泄漏、状态增长无界、连接泄漏、错误重试风暴。
-- [ ] HR-QA-017 性能不达标时允许关 Watch 和回退至手动 Quick Requests；设置可恢复且无状态数据破坏。
-- [ ] HR-QA-018 安全与功能完成矩阵按 target、engine profile、文件类型、触发方式逐项签收。
-
-#### 19.11 建议的 Hot Reload PR 顺序及依赖（先复用现有功能）
-- [x] HR-PR-01 `audit/hotreload-current`：HR-AUDIT 全部；输出调用链和已实现/缺失矩阵，不改功能。(HR-PR-01,6934c63a,docs/hotreload/current-implementation.md 全量刷新+docs/zh/ 1:1 镜像;§HR-AUDIT-001..012 事实表+§2 已实现/缺失/unknown 矩阵+§3 对上期结转;零功能改动;审计发现一并记录未修=首跑通知『打开日志』locale 不匹配 src/hotReload.ts:1046)
-- [ ] HR-PR-02 `hotreload/module-identity`：HR-MOD 全部 + pure resolver tests；手动热更先使用双名称模型；兼容原 `${module}`。(进行中:HR-PR-02,c120287c,HR-MOD-001/002/003/004/005/007/009/012/015 已勾,006/008/010/011/013/014 部分落地暂缓注记见各行;手动热更双名=hotReloadDefaultHotfix 双名优先+${module} 回落已接线;UI/配置暴露/发送路径双名切换随 HR-PR-03+)
-- [ ] HR-PR-03 `hotreload/request-adapter`：抽取通用 RequestExecutor + 状态机 + mock server；保证旧 Quick Requests 不回归。(进行中:HR-PR-03,21cc4848,HR-HTTP-001/010/017 已勾+014 生成面已落;三件主体皆已交付=通用执行器+交换状态机+真网 mock server 套件;旧 Quick Requests 回归=既有 tests/httpRequestService.test.ts 钉逐字不变全绿;余=关联 id 线路贯穿(接收端契约)+002 provider 面(随 HR-PR-04/05))
-- [x] HR-PR-04 `hotreload/save-watch`：onSave 默认关闭，可开关、去抖、稳定性/幂等队列、基本语法检查。（收官:HR-PR-04 纯核已落=新 src/backend/hotReloadSavePipeline.ts 零 IO 零 vscode(时钟/定时器/快照读/语法闸全注入,与 VFS-001、hotReloadModuleIdentity 同边界)+tests/hotReloadSavePipeline.test.ts(时钟定时器全虚拟)+prove-red 闭环;HR-WATCH-006/007/009/010/011/016 已勾,002/003/004/005/008/012/013/014/017/018 部分落地见各行注记(015 见 HR-WATCH-015 行),001 已按 2026-11-06 用户令裁定=默认开;本批另纠正四处自身设计缺陷=批处理路径原为死代码(每次定稿只传 1 事件故批量阈值永不可达,改为波次归集)、去抖原为固定前置窗(改真尾窗+排窗封顶)、revision 原按 offer 占号致同内容在途响应被误判 stale(改仅实际发出的新内容版本递增)、投递指纹原在定稿时记致一次失败永久跳过同内容(HR-WATCH-008,改在交发送面那一刻记+forgetSent 撤回);**save 侧接线已落(2026-11-13 子批,dc24d825)**=live 触发链重接两级形态(src/hotReload.ts :825-859:进料级 HotReloadSavePipeline 每文件尾窗去抖/max-delay 封顶/去重指纹/版本号 + 合并窗 HotReloadTrigger 保 def 闸整批契约,混批 py 绕闸真缺陷被 wiring 测试抓出=合并窗必须存在的实证;0 冲口定稿即汇合并池,波次窗/预览阈/稳定窗/语法闸随配置面子批;fire 时机保「末次事件+窗」=pending() 查询防 emit 侧补排后移;核心 +1 钉 batchFlushMs=0;测试替身时钟 handle 撞号(handles.size 作 id,clear+set 覆写另一计时器)暴露=20 文件统一改单调 nextHandle++,真 setTimeout 语义对齐;在途计时 1→2 如实重钉 6 处,行为断言零改动;门禁 eslint 0/tsc 0/unit 759 文件 9345+8skip RC=0/xvfb demo 25 RC=0;001 冲突已按 2026-11-06 用户令裁定=默认开;revision 消费面已收官(2026-11-13,88171384,见 HR-WATCH-011 行);配置键面已收官(2026-11-13,5939c549=稳定窗/语法闸/波次冲口/预览阈四键装配钉 tests/hotReloadConfigFaces.test.ts 9 例(键开→面进/键关→替身想进也不进/命令→当前实例/真实现面删失如实)+语法闸真实现(fail-open 装配核+解释器 compile 真编译)+releasePreview 放行命令+滞留日志可见性+NLS 双语言+features/configuration/commands/current-implementation 文档对账全闸;模式选择见 HR-WATCH-001 行 e54acba1),disk 侧接线已落(2026-11-13,edcfaeaf,见 HR-WATCH-003/004/005 行注记),本行收官——子项余段各归各行(005 target 维根绑定/008 回执簇指纹台账/012 配置检查器/013 profile capabilities/014 在途取消/017 呈现面/018 余模拟,均见各行注记,不属本模块交付面))
-- [x] HR-PR-05 `hotreload/disk-watch`：外部变更、Git 批量变更、目录过滤、target 合并、远端环境。(收官:ae3a2c7a 装配核已落 src/backend/hotReloadDiskWatch.ts=零 vscode 导入,DiskWatcherFactory 注入,watchRoots/arm/rebuild/dispose,HR-WATCH-015 基线闸,过滤层接 isWatchableScriptFile,delete 忽略,UNC/WSL canonical;tests/hotReloadDiskWatch.test.ts 16 例钉含 Git checkout 爆发经真流水线(30 文件单波次一批/同内容还原去重不重发/超阈只预览 HR-WATCH-016 兜底/save+disk 重叠归并/dispose+rebuild 生命周期/file: 与 UNC 形态);prove-red 两轮=拆基线闸红/断过滤层红;真适配+接线已落 edcfaeaf=src/activate/hotReload.ts vscode.createFileSystemWatcher 薄适配(HR-WATCH-003:change/create 以 disk-change 进同一流水线,与 save 重叠纯核归并不双发;watcher dispose 只随控制器走不另挂 subscriptions)+triggerMode=onDiskChange 才建面(装配钉:缺省 onSave 不建/切换建拆双向/配置关拆面/context dispose 全清,tests/hotReloadDiskWatchWiring.test.ts 11 例含源锁钉真适配)+诊断只走生命周期类通道日志(filtered/delete-ignored 不逐条刷防 Git 爆发刷屏,语义纯核钉);坑账=块注释含 `/**/*.py` 的 `*/` 子串提前终止注释(TS1109 级联);门禁 lint 0/tsc 0/unit 全绿/xvfb demo 25 RC=0;target 维根绑定余段见 HR-WATCH-005 行注记)
-- [x] HR-PR-06 `hotreload/ui-status`：状态栏、资源树、历史面板、完整模块名、失败重试与可信回执。(收官:001 七态状态机/003 文件装饰+CodeLens/009 口径面=既有 live 面 HR-PR-06 批核实勾;90200003 历史库纯核(容量/幂等/迁移单向/过滤/分组/分页/合并/名称投影);f7451a81 UI 装配=kbengine.hotReloadHistory 视图(三组/键组/节流刷新/占位契约 13×2)+historySearch/historyPanel 两命令(过滤/分页/双名/requestId 列)+台账 onRecord 逐条投影+workspaceState 持久化回载;tests/hotReloadHistoryView.test.ts 16 钉,prove-red 中和投影面 10 钉红;门禁 lint 0/tsc 0/unit 768 文件 9429+8skip RC=0(首轮 2 例负载抖动复跑消失)/xvfb demo 25 RC=0;残余已注行内=HR-UI-004 实时队列面/HR-UI-005 配置面板化/HR-UI-007 虚拟滚动/HR-UI-012 工作区切换钉/HR-UI-014 root 维度/HR-HTTP-014 服务端贯穿(HR-AUDIT-009)/HR-MOD-014 版本事件双名)
-- [x] HR-PR-07 `hotreload/def-fingerprint`：file/semantic/engine 三种 Hash、影响分析、重启提示。(接线批收官 4b211068,推 main:差项全清=002 VFS 字节复用(readSharedFileSnapshot 缓冲区优先+来源标签)/006 profile 消费面(Inspector 三面显档案,未协商如实 not available)/007 完整 Inspector UI(kbengine.def.fingerprintInspector,三值+算法版本+耗时+来源+复制按钮,普通 webview 面板)/008 修改触发接线(.def 保存→台账三路判定→通道一行,首见只存底);新落 src/backend/hotReloadDefFingerprintLedger.ts 台账纯核+src/defFingerprintInspector.ts 编排(deps 注入,vscode 薄壳)+defMd5Check 加 getLastDefMd5CheckOutcome 供闭包面另账转显;门禁 lint 0/tsc 0/unit 767 文件 9413+8skip RC=0(+2 文件+19 例)/xvfb demo 25 RC=0;prove-red=中和台账 record 后变更判定钉红;接线期真缺陷一枚=通道装配期抢建同名通道会遮蔽 def-analyzer 断言首通道面,改惰性建与 defMd5Check 同口径;docs/guide/commands.md en+zh+docs/hotreload/current-implementation.md §19 en+zh 对账;009 差异分类与影响分析细化另账)
-- [x] HR-PR-08 `hotreload/plugin-api`：HotReloadProvider/FingerprintProvider/Engine Profile 版本化扩展。（进行中:HR-PR-08,5622af19,新纯核 src/backend/hotReloadPluginApi.ts 零 vscode=HOT_RELOAD_PLUGIN_API_VERSION='1' 版本钉形状+FingerprintProvider 接口(默认实现 defaultHotReloadFingerprintProvider 纯委托 hashDefContent/semanticFingerprintReport/negotiateEngineDigest 不自创不猜)+HotReloadProvider 发送插槽(canSend 按 profile 分派+send 透传 transport-faithful)+EngineProfile 版本化(engineVersion null=未知如实)+HotReloadProviderRegistry(重复 id/apiVersion 不符如实拒不静默替换;resolve 应答者胜无人应答 null 不回落——热更是写引擎内存动作,回落=拿默认实现冒充用户环境);tests/hotReloadPluginApi.test.ts 9 例;prove-red 三轮=拆重复 id 拒红/拆无人应答 null 红回退伪回落红/拆版本闸红);**装配接线已收官(2026-11-13,c7557bc5)**=真实扩展宿主装配落地(src/hotReload.ts:注册时机=装配时,宿主 createHotReloadProviderHost 批量注册+重复 id/apiVersion 不符经 onRejection 如实拒上日志不静默收编+dispose 随复合释放清册不半态;fork 侧具体 provider 实现=createHttpHotfixSendProvider 委托 sendDefaultHotfix 核零第二套发送语义,defaultHotfix 面在即注册,以 kbengine.http-hotfix 应答;注入序=应答序先到先应答,fork 注入实现排内置之前=fork 专属优先;新配置键 kbengine.hotReload.sendViaProviders 默认 false=键关面不进链行为不变,键开无动作名发送先问注册表无人应答回落默认热更面;provider 结果逐字映射既有面=ok→sent-unverified+审计 provider:<id>,失败/抛错→failed+HR-WATCH-008 指纹撤回+同步抛错 promise 边界收口;新装配核 src/backend/hotReloadProviderAssembly.ts 零 vscode;测试=hotReloadProviderAssembly.test.ts 6 钉+hotReloadProviderWiring.test.ts 8 装配钉,prove-red=中和 provider 臂咨询面键开钉 6 例转红;manifest 默认锁 false+容忍读取布尔循环+NLS 双包+features/configuration 双语对账+current-implementation §18 en+zh;门禁 lint 0/tsc 0/unit 765 文件 9394+8skip RC=0/xvfb demo 25 RC=0);本行收官)
-- [ ] HR-PR-09 `hotreload/reliability-gate`：风暴/过期/断网/安全/24h soak 与跨平台性能报告。(进行中:HR-PR-09,a14bd1a2,组合门禁套件已落=tests/hotReloadReliabilityGate.test.ts 7 例零新增生产代码(风暴归并不放大/超阈预览/过期拒记/断网撤回重发含风暴批/语法拦截不占版本号/10k 缩放 soak,虚拟时钟零 IO,prove-red=拆 forgetSent 撤回断网门恰红),真时钟吞吐实测 10k offer→37ms/全链 157ms+同内容第二波判重新发 0,报告 docs/perf/2026-11-13-hotreload-reliability-gate.md;如实边界:24h 真 soak 未跑(需装配面,缩放 soak 为本车道口径)/跨平台仅 Linux 实测不编造数字/端到端网络时延归 HR-HTTP-017;装配级风暴验收随接线批,docs b25774c5)
-
-#### 19.12 专项 Definition of Done（逐条不可跳过）
-- [ ] HR-DOD-001 更改 `scripts/entities/fight/FightAI.py`：自动模式启用后只送 `fight.FightAI`；UI 展示 `entities.fight.FightAI`。
-- [ ] HR-DOD-002 手动命令、onSave 和 onDiskChange 对同一模块生成完全一致的短名/全名。
-- [ ] HR-DOD-003 在 HTTP 返回 200 但未提供可验证应用回执时 UI **不显示已热更新成功**。
-- [ ] HR-DOD-004 连续保存 100 次不会导致同一旧版本无限请求或把旧回执当作当前结果。
-- [ ] HR-DOD-005 关闭自动更新、未知根/特殊脚本、未知协议或不可信 workspace 均不产生自动 HTTP。
-- [ ] HR-DOD-006 `.def` 编辑器能查看 File Hash / Semantic Hash / Engine Digest（不可得时明确标识），结构变化默认不自动应用。
-- [ ] HR-DOD-007 跨目标、多 root、远端 SSH 不串数据、不串状态、不误发 HTTP。
-- [ ] HR-DOD-008 热更新功能不拉高语言服务 P95/P99、无主线程同步文件风暴、内存/连接/watchers 不泄漏。
-- [ ] HR-DOD-009 保留现有手动通用 HTTP 请求功能，文档明确旧 `${module}` 迁移与模板预览。
-- [ ] HR-DOD-010 每一个任务附源码路径、commit、测试命令、结果截图或报告，未经验证不得打勾。
-
 
 ## 用户令 2026-11-13：文件顶部进程标签 + 跨进程同名文件快速切换
 

@@ -3,7 +3,7 @@
 // 归属(与内建属性 hover/inlay 同一底座),属性面表复用 getEntityBuiltin
 // PropertiesForFace(与 hover 元数据同源)。
 //
-// 验收断言(逐条对应 todo.md:721):
+// 验收断言(逐条对应 todo.md:1702):
 //   - 按源码 baseapp/cellapp/client 分面判断:当前面无该内建属性但注册于
 //     其他面 → 报 Warning(引注册面取证);
 //   - 角色不明(pathFace null + defFaces 空/多面歧义)和普通 Python 类

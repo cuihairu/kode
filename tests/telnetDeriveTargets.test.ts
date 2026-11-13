@@ -1,4 +1,4 @@
-﻿// KODE-CFG-007 验收(todo.md:1011):telnet 按配置启用。
+﻿// KODE-CFG-007 验收(todo.md:2035):telnet 按配置启用。
 //
 //   开:telnet 段开启 → 自动列出 Telnet/Debug Targets 目标(含派生端口);
 //   关:telnet 段不在 → 不列(空目标)。

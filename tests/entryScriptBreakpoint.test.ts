@@ -1,4 +1,4 @@
-﻿// KODE-CFG-006 验收(按 todo.md:1010):entryScriptFile 自动断点。
+﻿// KODE-CFG-006 验收(按 todo.md:2034):entryScriptFile 自动断点。
 //
 //   1. 断点预填:attach/端口模式调试目标启动 → 按配置派生结果在入口脚本
 //      (kbengine.py)自动预填断点——addBreakpoints 收到入口路径(行 0)。

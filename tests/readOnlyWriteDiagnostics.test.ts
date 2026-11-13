@@ -2,7 +2,7 @@
 // 纯逻辑层单测——实体身份/角色经 resolveEntityBuiltinPropertyHit(与内建属性
 // hover/inlay 同一底座),写入形态经掩码文本扫描(普通/增强/注解赋值 + del)。
 //
-// 验收断言(逐条对应 todo.md:707):
+// 验收断言(逐条对应 todo.md:1700):
 //   - 确认 Entity 身份及角色后检查普通/增强赋值和 del;
 //   - self.id 等只读属性报告(普通/增强/注解赋值与 del 四形);
 //   - 合法可写属性(self.position 等)与普通 Python 同名字段(非实体脚本)不报;

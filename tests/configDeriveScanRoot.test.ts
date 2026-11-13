@@ -1,6 +1,6 @@
 ﻿// KODE-CFG-005 验收:def 扫描根按配置派生(CFG-004 链消费端)。
 //
-// 两测试(按 todo.md:1009 验收):
+// 两测试(按 todo.md:2033 验收):
 //   1. 定位到不同 kbengine.xml 段时扫描根随之变化——workspace=工具子目录,
 //      assetsRoot 设置指向两个不同资产树(A: assets/、B: other/),各含
 //      res/server/kbengine.xml + scripts/;切换 + bump generation 后重新
