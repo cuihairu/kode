@@ -1954,7 +1954,7 @@
 - [x] KSEM-CREATE-04 [P2] 绑定异步创建回调。验收：传播明确回调实参的实体身份及失败值；支持可解析 bound method/函数，动态回调不猜。（4e67fe09）
 - [x] KSEM-CREATE-05 [P2] 检查初始化参数字典。验收：已知实体字段做类型校验；源码核实 params 自定义键、Cell 数据和普通属性路径后再定缺键/多键规则。（7137f60f）
 - [x] KSEM-CREATE-06 [P2] 检查 Cell 创建目标。验收：核实 space/目标 EntityCall 的 API 前置条件；仅报告静态可证明的角色和类型错误。（e55e2025）
-- [ ] 给 def 解析按引用类别分池并校验候选类别（`crates/kode-server/src/semantics/store.rs:138`）—— 防同名接口/父实体/组件/实体跨类别串接污染快照。
+- [x] 给 def 解析按引用类别分池并校验候选类别（`crates/kode-server/src/semantics/store.rs:138`）—— 防同名接口/父实体/组件/实体跨类别串接污染快照。（6f4e6f01）
 - [ ] 实现 def Arg 文本到 `SemType` 的转换桥（`crates/kode-server/src/semantics/rpcargs.rs:78`）—— 打通真实 RPC 参数检查链并避免默认 PYTHON 过宽。
 - [ ] 将 `PYTHON_RECEIVER_SECTIONS` 改为按 caller face/entity owner 的逐面语义表（`src/backend/pythonLanguageUtils.ts:66`）—— 消除与 `bind_self_role` 的矛盾和跨实体误对账。
 - [ ] 显式区分组件槽宿主缺失与结构缺失分诊（`crates/kode-server/src/semantics/rules.rs:64`）—— 防声明未就绪被误报为方向不可达。
