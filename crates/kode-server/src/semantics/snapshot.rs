@@ -85,27 +85,47 @@ pub struct EntitySnapshot {
     pub issues: Vec<Fact>,
 }
 
+/// def 引用类别(KBEngine 按类别分池:实体/接口/组件各在专目录,引擎
+/// Parent 按当前池递归——entities/ 下实体 parent 找实体、components/ 下
+/// 组件 parent 找组件,绝不跨池,entitydef.cpp:586/:681/:907/:774)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReferenceKind {
+    /// 实体 def(scripts/entities/*.def;Parent 引用同类)。
+    Entity,
+    /// 接口 def(scripts/interfaces/*.def;`<Implements>` 引用)。
+    Interface,
+    /// 组件 def(scripts/components/*.def;`<Components>` 槽类型引用)。
+    Component,
+}
+
 /// def 名 → def 文件解析器(对象安全;借回调用方的 def,不要求 'static)。
+///
+/// 解析按引用类别分池:同名接口/父实体/组件/实体互不串接——池内无此名
+/// 返回 None(诚实缺失),绝不从异类池借候选。
 pub trait DefResolver {
-    fn resolve(&self, name: &str) -> Option<&DefFile>;
+    fn resolve(&self, kind: ReferenceKind, name: &str) -> Option<&DefFile>;
 }
 
 impl EntitySnapshot {
     /// 构建快照。
     ///
-    /// - `own` 实体自身 DefFile;
+    /// - `own` 实体自身 DefFile;`own_kind` 自身类别(parent 链按此池解析——
+///   引擎实体 parent 找实体、组件 parent 找组件,entitydef.cpp:907/:774);
     /// - `resolve` 按名取 def(父/接口/组件类型;缺失返回 None → 诚实缺失);
     /// - `graph` 类型图(属性类型解析);
     /// - `root_id`/`entity_name` 用于身份证据。
     pub fn build(
         own: &DefFile,
+        own_kind: ReferenceKind,
         resolve: &dyn DefResolver,
         graph: &kode_types::TypeGraph,
         root_id: kode_vfs::store::RootId,
         entity_name: &str,
     ) -> EntitySnapshot {
         let mut snap = EntitySnapshot::default();
-        let mut visited: Vec<String> = Vec::new();
+        // 来源去重按 (类别, 名) 复合键:分池后同名父实体与同名接口是两个
+        // 不同来源,不互吞(池内重复/环仍按复合键命中)。
+        let mut visited: Vec<(ReferenceKind, String)> = Vec::new();
 
         // 继承链(含自环检测)。
         let mut chain = vec![entity_name.to_string()];
@@ -124,14 +144,14 @@ impl EntitySnapshot {
                 break;
             }
             chain.push(p.clone());
-            cur = resolve.resolve(&p).and_then(|d| d.parent.clone());
+            cur = resolve.resolve(own_kind, &p).and_then(|d| d.parent.clone());
         }
         snap.parent_chain = chain;
         if cycle {
             snap.issues.push(issue_fact(&format!("inheritance-cycle:{entity_name}"), root_id, entity_name));
         }
         if let Some(p) = &own.parent {
-            if resolve.resolve(p).is_none() {
+            if resolve.resolve(own_kind, p).is_none() {
                 snap.issues.push(issue_fact(&format!("missing-parent:{p}"), root_id, entity_name));
             }
         }
@@ -139,26 +159,28 @@ impl EntitySnapshot {
         // 收集来源定义(自身 + 父链 + 接口;顺序保留)。
         let mut sources: Vec<(String, &DefFile)> = Vec::new();
         
-        visited.push(entity_name.to_string());
+        visited.push((own_kind, entity_name.to_string()));
         sources.push((entity_name.to_string(), own));
         for name in snap.parent_chain.iter().skip(1) {
-            if visited.contains(name) {
+            let key = (own_kind, name.clone());
+            if visited.contains(&key) {
                 continue;
             }
-            if let Some(d) = resolve.resolve(name) {
-                visited.push(name.clone());
+            if let Some(d) = resolve.resolve(own_kind, name) {
+                visited.push(key);
                 sources.push((name.clone(), d));
             }
         }
         for name in &own.interfaces {
             snap.interfaces.push(name.clone());
-            if visited.contains(name) {
+            let key = (ReferenceKind::Interface, name.clone());
+            if visited.contains(&key) {
                 snap.issues.push(issue_fact(&format!("interface-cycle-or-duplicate:{name}"), root_id, entity_name));
                 continue;
             }
-            match resolve.resolve(name) {
+            match resolve.resolve(ReferenceKind::Interface, name) {
                 Some(d) => {
-                    visited.push(name.clone());
+                    visited.push(key);
                     sources.push((name.clone(), d));
                 }
                 None => snap.issues.push(issue_fact(&format!("missing-interface:{name}"), root_id, entity_name)),
@@ -249,7 +271,7 @@ impl EntitySnapshot {
         // 组件槽(自身声明;跳转面保留组件声明位置)。
         for c in &own.components {
             if let Some(ct) = &c.component_type {
-                if resolve.resolve(ct).is_none() {
+                if resolve.resolve(ReferenceKind::Component, ct).is_none() {
                     snap.issues.push(issue_fact(&format!("missing-component-type:{ct}"), root_id, entity_name));
                 }
             }
@@ -318,22 +340,26 @@ mod tests {
         }
     }
 
-    struct DefMap(Vec<(&'static str, DefFile)>);
+    struct DefMap(Vec<(super::ReferenceKind, &'static str, DefFile)>);
 
     impl DefMap {
         fn get(&self, name: &str) -> Option<&DefFile> {
-            self.0.iter().find(|(n, _)| *n == name).map(|(_, d)| d)
+            self.0.iter().find(|(_, n, _)| *n == name).map(|(_, _, d)| d)
         }
     }
 
     impl super::DefResolver for DefMap {
-        fn resolve(&self, name: &str) -> Option<&DefFile> {
-            self.get(name)
+        fn resolve(&self, kind: super::ReferenceKind, name: &str) -> Option<&DefFile> {
+            self.0
+                .iter()
+                .find(|(k, n, _)| *k == kind && *n == name)
+                .map(|(_, _, d)| d)
         }
     }
 
-    fn map_defs(defs: Vec<(&'static str, DefFile)>) -> DefMap {
-        DefMap(defs)
+    /// 单池便捷构造(全部同类别;跨池场景用 [`DefMap`] 直构)。
+    fn map_defs(defs: Vec<(&'static str, DefFile)>, kind: super::ReferenceKind) -> DefMap {
+        DefMap(defs.into_iter().map(|(n, d)| (kind, n, d)).collect())
     }
 
     #[test]
@@ -341,9 +367,12 @@ mod tests {
         let own = def(Some("Monster"), vec!["Mixin"], vec![prop("hp", "INT32")]);
         let monster = def(None, vec![], vec![prop("level", "UINT8")]);
         let mixin = def(None, vec![], vec![prop("soul", "INT32")]);
-        let resolve = map_defs(vec![("Monster", monster), ("Mixin", mixin)]);
+        let resolve = DefMap(vec![
+            (super::ReferenceKind::Entity, "Monster", monster),
+            (super::ReferenceKind::Interface, "Mixin", mixin),
+        ]);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(&own, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
         assert_eq!(snap.parent_chain, ["Avatar", "Monster"]);
         assert_eq!(snap.interfaces, ["Mixin"]);
         // 属性序:自身 hp → 父 level → 接口 soul。
@@ -356,9 +385,9 @@ mod tests {
     fn cycle_is_diagnosed_not_hang() {
         let a = def(Some("B"), vec![], vec![]);
         let b = def(Some("A"), vec![], vec![]);
-        let resolve = map_defs(vec![("A", a), ("B", b)]);
+        let resolve = map_defs(vec![("A", a), ("B", b)], super::ReferenceKind::Entity);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(resolve.get("A").unwrap(), &resolve, &g, kode_vfs::store::RootId(1), "A");
+        let snap = EntitySnapshot::build(resolve.get("A").unwrap(), super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "A");
         assert!(snap.issues.iter().any(|f| f.value.contains("inheritance-cycle")));
     }
 
@@ -366,19 +395,39 @@ mod tests {
     fn conflict_keeps_both_candidates() {
         let own = def(None, vec!["Mixin"], vec![prop("x", "INT32")]);
         let mixin = def(None, vec![], vec![prop("x", "STRING")]);
-        let resolve = map_defs(vec![("Mixin", mixin)]);
+        let resolve = map_defs(vec![("Mixin", mixin)], super::ReferenceKind::Interface);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(&own, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
         let conflict = snap.conflicts.iter().find(|c| c.name == "x").expect("同名属性必须冲突");
         assert_eq!(conflict.candidates.len(), 2, "多候选不任取一个");
     }
 
     #[test]
+    fn same_name_across_pools_keeps_parent_and_interface_split() {
+        // 同名 X:实体池(parent 链)与接口池(Implements)各一份——分池解析
+        // 互不串接,父链取实体、接口取接口。
+        let own = def(Some("X"), vec!["X"], vec![prop("hp", "INT32")]);
+        let x_entity = def(None, vec![], vec![prop("level", "UINT8")]);
+        let x_iface = def(None, vec![], vec![prop("soul", "INT32")]);
+        let resolve = DefMap(vec![
+            (super::ReferenceKind::Entity, "X", x_entity),
+            (super::ReferenceKind::Interface, "X", x_iface),
+        ]);
+        let g = kode_types::TypeGraph::new();
+        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        assert_eq!(snap.parent_chain, ["Avatar", "X"]);
+        let from_names: Vec<&str> = snap.properties.iter().map(|p| p.name.as_str()).collect();
+        // hp(自身) + level(父=实体池 X) + soul(接口=接口池 X)——两池各取各的。
+        assert_eq!(from_names, ["hp", "level", "soul"]);
+        assert!(snap.issues.iter().all(|f| !f.value.contains("missing-")), "分池齐备无缺失误报");
+    }
+
+    #[test]
     fn missing_parent_is_diagnosed_not_fabricated() {
         let own = def(Some("Ghost"), vec![], vec![]);
-        let resolve = map_defs(vec![]);
+        let resolve = map_defs(vec![], super::ReferenceKind::Entity);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(&own, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
         assert!(snap.issues.iter().any(|f| f.value.contains("missing-parent:Ghost")));
     }
 
@@ -388,9 +437,9 @@ mod tests {
         own.base_methods = vec![method("tp", false)];
         own.cell_methods = vec![method("tick", false)];
         own.client_methods = vec![method("move", true)];
-        let resolve = map_defs(vec![]);
+        let resolve = map_defs(vec![], super::ReferenceKind::Entity);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(&own, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
         assert_eq!(snap.base_methods.len(), 1);
         assert_eq!(snap.cell_methods[0].name, "tick");
         assert!(snap.client_methods[0].exposed);
@@ -406,9 +455,9 @@ mod tests {
             component_type: Some("Weapon".into()),
             persistent: Some(false),
         }];
-        let resolve = map_defs(vec![]);
+        let resolve = map_defs(vec![], super::ReferenceKind::Entity);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(&own, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
         assert_eq!(snap.components.len(), 1);
         assert!(snap.issues.iter().any(|f| f.value.contains("missing-component-type:Weapon")));
     }

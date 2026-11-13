@@ -79,6 +79,11 @@
 //!   角色和类型错误:目标 EntityCall 角色闸=cell 族要 CELL/remotely 族要
 //!   BASE 直连,角色未折叠=Unknown 不报;spaceID 存在性=运行时态登记
 //!   RuntimeGate 不判;inNewSpace 非 int 静默兜底 0/负数回绕=提示级)。
+//! - [`store`] 深审-1 def 解析按引用类别分池(`ReferenceKind` 三池=
+//!   entities/interfaces/components 目录约定,引擎 Parent 按当前池递归;
+//!   `def_kind_from_key` 按路径判池、resolve 类别+名双匹配,同名接口/
+//!   父实体/组件/实体跨类别不串接;`EntitySnapshot::build` 增 own_kind,
+//!   组件 def 的 parent 链走组件池)。
 
 pub mod broadcast;
 pub mod callers;

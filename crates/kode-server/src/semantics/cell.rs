@@ -177,14 +177,21 @@ fn expand_component_cell(
             issues.push(issue_fact("component-cell-depth-overflow", root_id, ct));
             (Vec::new(), Vec::new())
         }
-        Some(ct) => match resolve.resolve(ct) {
+        Some(ct) => match resolve.resolve(super::snapshot::ReferenceKind::Component, ct) {
             None => {
                 // 类型不在场:槽面保留,字段不造(owner 级 missing-component-type
                 // 已在 shape.issues,不重复记账)。
                 (Vec::new(), Vec::new())
             }
             Some(component_def) => {
-                let snap = EntitySnapshot::build(component_def, resolve, graph, root_id, ct);
+                let snap = EntitySnapshot::build(
+                    component_def,
+                    super::snapshot::ReferenceKind::Component,
+                    resolve,
+                    graph,
+                    root_id,
+                    ct,
+                );
                 let fields: Vec<PropertyView> = snap
                     .properties
                     .iter()
@@ -269,7 +276,14 @@ impl CellDataShape {
         entity_name: &str,
         scripts: Option<&dyn ScriptUniverse>,
     ) -> CellDataShape {
-        let snap = EntitySnapshot::build(own, resolve, graph, root_id, entity_name);
+        let snap = EntitySnapshot::build(
+            own,
+            super::snapshot::ReferenceKind::Entity,
+            resolve,
+            graph,
+            root_id,
+            entity_name,
+        );
 
         let fields: Vec<PropertyView> = snap
             .properties
@@ -431,11 +445,23 @@ mod tests {
         }
     }
 
-    struct DefMap(Vec<(&'static str, DefFile)>);
+    use super::super::snapshot::ReferenceKind as K;
+    const E: K = K::Entity;
+    const I: K = K::Interface;
+    const C: K = K::Component;
+
+    struct DefMap(Vec<(super::super::snapshot::ReferenceKind, &'static str, DefFile)>);
 
     impl super::super::snapshot::DefResolver for DefMap {
-        fn resolve(&self, name: &str) -> Option<&DefFile> {
-            self.0.iter().find(|(n, _)| *n == name).map(|(_, d)| d)
+        fn resolve(
+            &self,
+            kind: super::super::snapshot::ReferenceKind,
+            name: &str,
+        ) -> Option<&DefFile> {
+            self.0
+                .iter()
+                .find(|(k, n, _)| *k == kind && *n == name)
+                .map(|(_, _, d)| d)
         }
     }
 
@@ -481,7 +507,7 @@ mod tests {
         let own = def(Some("Monster"), vec!["Mixin"], vec![prop("hp", "UINT16", &["CELL_PUBLIC"])]);
         let monster = def(None, vec![], vec![prop("speed", "FLOAT32", &["CELL_PRIVATE"])]);
         let mixin = def(None, vec![], vec![prop("soul", "INT32", &["CELL_PUBLIC"])]);
-        let map = DefMap(vec![("Monster", monster), ("Mixin", mixin)]);
+        let map = DefMap(vec![(E, "Monster", monster), (I, "Mixin", mixin)]);
         let shape = build(&own, &map, None);
         let names: Vec<&str> = shape.fields.iter().map(|f| f.name.as_str()).collect();
         // 展开序:自身 hp → 父 speed → 接口 soul;来源保留。
@@ -507,7 +533,7 @@ mod tests {
         let own = def(Some("Monster"), vec![], vec![]);
         let mut monster = def(None, vec![], vec![]);
         monster.cell_methods = vec![method("tick")];
-        let map = DefMap(vec![("Monster", monster)]);
+        let map = DefMap(vec![(E, "Monster", monster)]);
         let shape = build(&own, &map, None);
         assert_ne!(shape.status, CellDataStatus::NoCellPart, "继承的 cell 方法即部件");
     }
@@ -554,7 +580,7 @@ mod tests {
     fn cell_field_conflict_keeps_all_candidates() {
         let own = def(None, vec!["Mixin"], vec![prop("x", "INT32", &["CELL_PUBLIC"])]);
         let mixin = def(None, vec![], vec![prop("x", "STRING", &["CELL_PUBLIC"])]);
-        let map = DefMap(vec![("Mixin", mixin)]);
+        let map = DefMap(vec![(I, "Mixin", mixin)]);
         let shape = build(&own, &map, None);
         assert_eq!(shape.fields.len(), 2, "同名冲突项逐条保留,不任取");
         assert_eq!(shape.conflict_names, ["x"]);
@@ -621,7 +647,7 @@ mod tests {
         weapon.base_methods = vec![method("onAttach")];
         let mut own = def(None, vec![], vec![]);
         own.components = vec![component("weapon", Some("Weapon"), 3)];
-        let map = DefMap(vec![("Weapon", weapon)]);
+        let map = DefMap(vec![(C, "Weapon", weapon)]);
         let shape = build(&own, &map, None);
         assert_eq!(shape.component_cells.len(), 1);
         let cell = &shape.component_cells[0];
@@ -653,7 +679,7 @@ mod tests {
         weapon.components = vec![component("sight", Some("Sight"), 5)];
         let mut own = def(None, vec![], vec![]);
         own.components = vec![component("weapon", Some("Weapon"), 3)];
-        let map = DefMap(vec![("Weapon", weapon), ("Sight", sight)]);
+        let map = DefMap(vec![(C, "Weapon", weapon), (C, "Sight", sight)]);
         let shape = build(&own, &map, None);
         let weapon_cell = &shape.component_cells[0];
         assert_eq!(weapon_cell.nested.len(), 1, "嵌套槽递归展开");
@@ -672,7 +698,7 @@ mod tests {
         mount.components = vec![component("weapon", Some("Weapon"), 4)];
         let mut own = def(None, vec![], vec![]);
         own.components = vec![component("weapon", Some("Weapon"), 3)];
-        let map = DefMap(vec![("Weapon", weapon), ("Mount", mount)]);
+        let map = DefMap(vec![(C, "Weapon", weapon), (C, "Mount", mount)]);
         let shape = build(&own, &map, None);
         // 环在 Mount 段再挂 Weapon 处闭:path=[Avatar,Weapon,Mount],Weapon
         // 已在 → 环记在 weapon 槽展开(Avatar>weapon>mount>weapon)。
@@ -706,7 +732,7 @@ mod tests {
         weapon_base.components = vec![];
         let mut own = def(None, vec![], vec![]);
         own.components = vec![component("weapon", Some("Weapon"), 3)];
-        let map = DefMap(vec![("Weapon", weapon), ("WeaponBase", weapon_base)]);
+        let map = DefMap(vec![(C, "Weapon", weapon), (C, "WeaponBase", weapon_base)]);
         let shape = build(&own, &map, None);
         let names: Vec<&str> = shape.component_cells[0].fields.iter().map(|f| f.name.as_str()).collect();
         assert_eq!(names, ["ammo", "durability"], "组件字段含继承面");

@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 use kode_vfs::store::DocumentKey;
 
-use super::snapshot::DefResolver;
+use super::snapshot::{DefResolver, ReferenceKind};
 use kode_parser::model::DefFile;
 
 /// 一次构建产物:事实 + 计算所依据的文档版本。
@@ -143,11 +143,30 @@ pub fn def_name_from_key(key: &DocumentKey) -> String {
     }
 }
 
+/// def 文档的引用类别(按 KBEngine 目录池约定判别:引擎按类别分池加载,
+/// entities/ vs interfaces/ vs components/ 各专目录,Parent 按当前池递归
+/// 绝不跨池,entitydef.cpp:586/:681/:907/:774)。
+///
+/// 判别规则:路径倒数第二段为池目录名——`entities` → Entity、`interfaces`
+/// → Interface、`components` → Component;无池目录段(根平铺)默认 Entity
+/// (引擎 defFilePath 即 entities 目录,实体 def 直接平铺其中)。
+pub fn def_kind_from_key(key: &DocumentKey) -> ReferenceKind {
+    let path = key.uri.as_path().trim_end_matches('/');
+    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    match segments.len().checked_sub(2).map(|i| segments[i]) {
+        Some("interfaces") => ReferenceKind::Interface,
+        Some("components") => ReferenceKind::Component,
+        _ => ReferenceKind::Entity,
+    }
+}
+
 /// 工程级 def 解析器:跨全部文档槽解析类型名(工程代数的具体面)。
 ///
-/// 解析规则:def 文档按 [`def_name_from_key`] 得类型名,与请求名相等即命中;
-/// 多槽同名的解析序 = 文档键升序(确定性,取首个;冲突裁决由快照层
-/// [`super::snapshot`] 的 conflicts 记录承担,此处不任取)。
+/// 解析规则:def 文档按 [`def_name_from_key`] 得类型名、按 [`def_kind_from_key`]
+/// 得引用类别,**两者皆匹配才命中**(同名接口/父实体/组件/实体跨类别不串接,
+/// 池内无此名 → None 诚实缺失);池内多槽同名的解析序 = 文档键升序(确定性,
+/// 取首个;冲突裁决由快照层 [`super::snapshot`] 的 conflicts 记录承担,此处
+/// 不任取)。
 #[derive(Debug)]
 pub struct ProjectDefResolver<'a> {
     store: &'a SnapshotStore<DefFile>,
@@ -160,11 +179,11 @@ impl<'a> ProjectDefResolver<'a> {
 }
 
 impl DefResolver for ProjectDefResolver<'_> {
-    fn resolve(&self, name: &str) -> Option<&DefFile> {
+    fn resolve(&self, kind: ReferenceKind, name: &str) -> Option<&DefFile> {
         let mut keys: Vec<&DocumentKey> = self.store.slots.keys().collect();
         keys.sort();
         keys.into_iter()
-            .find(|k| def_name_from_key(k) == name)
+            .find(|k| def_kind_from_key(k) == kind && def_name_from_key(k) == name)
             .and_then(|k| self.store.slots.get(k))
             .map(|(_, d)| d)
     }
@@ -284,9 +303,33 @@ mod tests {
         s.commit(Build::new(key("/defs/Avatar.def"), 1, def()));
         s.commit(Build::new(key("/defs/Monster.def"), 1, def()));
         let r = ProjectDefResolver::new(&s);
-        assert!(r.resolve("Avatar").is_some(), "跨文档解析命中");
-        assert!(r.resolve("Monster").is_some());
-        assert!(r.resolve("NoSuch").is_none(), "未知类型诚实 None");
+        let e = ReferenceKind::Entity;
+        assert!(r.resolve(e, "Avatar").is_some(), "跨文档解析命中");
+        assert!(r.resolve(e, "Monster").is_some());
+        assert!(r.resolve(e, "NoSuch").is_none(), "未知类型诚实 None");
+    }
+
+    #[test]
+    fn def_kind_from_key_by_directory_pool() {
+        assert_eq!(def_kind_from_key(&key("/proj/scripts/entities/Avatar.def")), ReferenceKind::Entity);
+        assert_eq!(def_kind_from_key(&key("/proj/scripts/entities/nested/Sub.def")), ReferenceKind::Entity);
+        assert_eq!(def_kind_from_key(&key("/proj/scripts/interfaces/Mixin.def")), ReferenceKind::Interface);
+        assert_eq!(def_kind_from_key(&key("/proj/scripts/components/Weapon.def")), ReferenceKind::Component);
+        // 根平铺默认实体(引擎 defFilePath 即 entities 目录)。
+        assert_eq!(def_kind_from_key(&key("/defs/Avatar.def")), ReferenceKind::Entity);
+    }
+
+    #[test]
+    fn same_name_across_pools_never_cross_resolves() {
+        // 实体与接口同名并存(不同池目录):解析按请求类别取池,互不串接。
+        let mut s = SnapshotStore::new();
+        s.commit(Build::new(key("/proj/entities/Avatar.def"), 1, def()));
+        s.commit(Build::new(key("/proj/interfaces/Avatar.def"), 1, def()));
+        let r = ProjectDefResolver::new(&s);
+        assert!(r.resolve(ReferenceKind::Entity, "Avatar").is_some(), "实体池命中");
+        assert!(r.resolve(ReferenceKind::Interface, "Avatar").is_some(), "接口池命中");
+        // 组件池无此名 → None 诚实缺失,绝不从异类池借候选。
+        assert!(r.resolve(ReferenceKind::Component, "Avatar").is_none(), "跨类别不串接");
     }
 
     #[test]
@@ -296,6 +339,6 @@ mod tests {
         s.commit(Build::new(key("/defs/a/X.def"), 1, def()));
         s.commit(Build::new(key("/defs/z/X.def"), 1, def()));
         let r = ProjectDefResolver::new(&s);
-        assert!(r.resolve("X").is_some(), "同名冲突取键序首个,不任取");
+        assert!(r.resolve(ReferenceKind::Entity, "X").is_some(), "同名冲突取键序首个,不任取");
     }
 }

@@ -55,7 +55,7 @@ fn handle_cell_data_keys(params: Value) -> Result<Value, String> {
         defs.commit(Build::new(key, (i + 1) as i64, kode_parser::parse_def(&d.text)));
     }
     let resolver = ProjectDefResolver::new(&defs);
-    let Some(own) = crate::semantics::snapshot::DefResolver::resolve(&resolver, &p.entity) else {
+    let Some(own) = crate::semantics::snapshot::DefResolver::resolve(&resolver, crate::semantics::snapshot::ReferenceKind::Entity, &p.entity) else {
         // 实体 def 不在供给宇宙:keys 空,不造(响应级状态,非 CellDataStatus)。
         return serde_json::to_value(CellDataKeysResponse {
             entity: p.entity,

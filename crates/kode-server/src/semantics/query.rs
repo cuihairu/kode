@@ -233,7 +233,8 @@ impl SemanticQueryService for ContractEngine {
                     return QueryResponse::EntitySnapshot(None);
                 };
                 let resolver = ProjectDefResolver::new(defs);
-                let snap = EntitySnapshot::build(own, &resolver, &self.graph, self.root, &def_name_from_key(&key));
+                let own_kind = crate::semantics::store::def_kind_from_key(&key);
+                let snap = EntitySnapshot::build(own, own_kind, &resolver, &self.graph, self.root, &def_name_from_key(&key));
                 QueryResponse::EntitySnapshot(Some(SnapshotView::from(&snap)))
             }
             QueryRequest::Invalidate { uri } => {
