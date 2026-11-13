@@ -63,7 +63,10 @@ export function buildDefaultHotfixRequest(
   const module = resolveDefaultHotfixModule(filePath, deps);
   const dot = module.lastIndexOf('.');
   const vars = {
-    ...buildTemplateVars({ filePath }, deps.isPackageDir),
+    ...buildTemplateVars(
+      { filePath, scriptRoot: deps.scriptRoot && deps.scriptRoot.length > 0 ? deps.scriptRoot : undefined },
+      deps.isPackageDir
+    ),
     module,
     moduleBasename: dot === -1 ? module : module.slice(dot + 1)
   };

@@ -157,3 +157,21 @@ Facts: trigger is **still a single global debounce** — per-file info accumulat
 ## 3. Facts vs Unknowns carry-over from 2026-11-11
 
 Resolved by implementation since the last audit: status/history surface (§19.6/§19.7 no longer greenfield — lamps/decorations/lens/ledger exist), success-confirmation model (accepted/applied contract + settle), def structural gate, dual-name module identity, channel model with default. Still `unknown`: server response contract of a production (non-demo) service, engine Digest algorithm, applied-revision query, target-process identity mapping, all real-network behaviors (HR-AUDIT-010).
+
+## 4. HR-PR-02 increment (2026-11-13, module identity pure facade)
+
+Landed in this block (pure logic + template layer; no new user-visible send path):
+
+- `src/backend/hotReloadModuleIdentity.ts` — `HotReloadModuleIdentity` 9-field DTO (HR-MOD-001) + `resolveHotReloadModuleIdentity` pure resolver (HR-MOD-002: root-candidate selection → delegation to `resolveModuleDualName` → diagnostics; zero IO, zero vscode imports) + `canonicalizeScriptFilePath` lexical canonicalization (HR-MOD-009: `file://` strip + guarded percent-decode, backslash→slash, UNC `//` preserved, slash collapse, `.`/`..` lexical resolution, drive-letter uppercase, case preserved; symlink/fs-level case semantics = IO face, explicitly out of pure scope, same boundary as kode-vfs VFS-001).
+- Core `resolveModuleDualName` (success shape unchanged, pinned by toEqual) now tags every unsupported return with a machine-readable `reason` code (HR-MOD-002 single mapping source) and accepts opt-in `allowRootLevelStem` (HR-MOD-008 explicit single-level fallback; default still refuses).
+- Template layer (HR-MOD-012): `${reloadModule}`/`${fullModule}`/`${fileName}`/`${relativePath}`/`${workspaceRoot}`/`${targetId}` added to `buildTemplateVars`/`applyTemplate`/`applyTemplateWithContext`. Dual names resolve only when `kbengine.hotReload.tempEdit.scriptRoot` is configured, else honest empty string — legacy `${module}` keeps its `__init__.py` package-walk semantics untouched (compat decision recorded at `buildTemplateVars`; URL encoding still not applied, repo-wide contract).
+- Tests: `tests/hotReloadModuleIdentity.test.ts` (§19.1 four examples incl. engine-verified deviation `base/Avatar.py → Avatar` per 879f47d5; canonicalization; multi-root unique/out-of-root/ambiguous-lists-all; adjacent-directory false containment; override valid/invalid; root-level default refuse + explicit fallback; `%20`-decoded space stem refused, dotted stem refused, Unicode stem allowed; diagnostic-code passthrough) + core reason/option cases in `tests/hotReloadTempEdit.test.ts` + template shape pins in `tests/httpRequests.test.ts`.
+
+Deferred with reasons (ledger lines stay unchecked, no fake completion):
+
+- HR-MOD-006 full engine-profile root priority: needs the engine-profile config face (kode2 §6); ambiguity refusal (the "don't guess" essence) already landed in the resolver.
+- HR-MOD-008 user-visible `allowRootLevelStem` config key + send-path wiring: would change zero-config default-hotfix behavior; core opt-in landed, exposure deferred.
+- HR-MOD-010 wire-level root/target context on the request: receiver contract frozen pending real-service validation (HR-AUDIT-009); resolver-side rootId + ambiguity refusal landed as essence.
+- HR-MOD-011 UI display of `fullModule`/`requestModule`: HR-UI cluster (HR-PR-06).
+- HR-MOD-013 old-config migration/preview UX: user-facing command deferred; pure core + template dual face exist.
+- HR-MOD-014 ledger/history dual-name fields: history shape extension deferred (HR-PR-06).

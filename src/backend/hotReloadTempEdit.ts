@@ -31,7 +31,36 @@ export interface ModuleDualName {
 }
 
 /** 双名称解析结果:解析失败给 explicit unsupported 原因,不擅自猜名 */
-export type ModuleDualNameResult = ModuleDualName | { readonly unsupported: string };
+export type ModuleDualNameResult =
+  | ModuleDualName
+  | { readonly unsupported: string; readonly reason: ModuleDualNameUnsupportedReason };
+
+/**
+ * unsupported 的机器可读归类(HR-MOD-002 诊断码,唯一实现=本函数的返回,
+ * 上层 ModuleResolver 面按码出 diagnostics,不再各写一套字符串判读):
+ * - no-root 未配置脚本资源根 / not-python 非 .py / out-of-root 根外文件
+ * - traversal 空段或 `..` 穿越 / empty-stem 短名为空
+ * - init-file `__init__.py` 特殊文件(HR-MOD-007 验证前跳过)
+ * - root-level 根下单层脚本(HR-MOD-008 默认 unresolved)
+ */
+export type ModuleDualNameUnsupportedReason =
+  | 'no-root'
+  | 'not-python'
+  | 'out-of-root'
+  | 'traversal'
+  | 'empty-stem'
+  | 'init-file'
+  | 'root-level';
+
+/** 双名称解析选项(HR-MOD-008:显式 single-level fallback 配置) */
+export interface ModuleDualNameOptions {
+  /**
+   * 根下单层脚本(`scripts/Foo.py`)默认判 unresolved;此开关显式打开时
+   * 回落裸短名 fullModule=requestModule=Foo(引擎进程根直下文件 sys.modules
+   * 里就是裸名)。默认关=书 §19.1「默认标 unresolved」口径。
+   */
+  readonly allowRootLevelStem?: boolean;
+}
 
 const toPosix = (value: string): string => value.replace(/\\/g, '/');
 
@@ -58,33 +87,44 @@ const splitSegments = (value: string): string[] => toPosix(value).split('/');
 export const PYTHON_PROCESS_ROLE_DIRS: ReadonlySet<string> =
   new Set(['base', 'cell', 'client', 'bots']);
 
-export function resolveModuleDualName(filePath: string, scriptRoot: string): ModuleDualNameResult {
+export function resolveModuleDualName(
+  filePath: string,
+  scriptRoot: string,
+  options: ModuleDualNameOptions = {}
+): ModuleDualNameResult {
   const root = trimSlashes(toPosix(scriptRoot));
   const file = toPosix(filePath);
   if (root.length === 0) {
-    return { unsupported: '未配置脚本资源根(kbengine.hotReload.tempEdit.scriptRoot)' };
+    return { unsupported: '未配置脚本资源根(kbengine.hotReload.tempEdit.scriptRoot)', reason: 'no-root' };
   }
   if (!file.toLowerCase().endsWith('.py')) {
-    return { unsupported: `非 .py 文件不可热更: ${file}` };
+    return { unsupported: `非 .py 文件不可热更: ${file}`, reason: 'not-python' };
   }
   // 严格前缀 + 边界整段:防止 /ws/scripts2 顶替 /ws/scripts 的假包含
   if (file !== root && !file.startsWith(`${root}/`)) {
-    return { unsupported: `文件不在脚本资源根内: ${file} ∉ ${root}` };
+    return { unsupported: `文件不在脚本资源根内: ${file} ∉ ${root}`, reason: 'out-of-root' };
   }
   const segments = splitSegments(file.slice(root.length === 0 ? 0 : root.length + 1));
   if (segments.some(segment => segment.length === 0 || segment === '.' || segment === '..')) {
-    return { unsupported: `路径含空段或穿越段,拒绝解析: ${file}` };
+    return { unsupported: `路径含空段或穿越段,拒绝解析: ${file}`, reason: 'traversal' };
   }
   const stem = segments[segments.length - 1].replace(/\.py$/i, '');
   if (stem.length === 0) {
-    return { unsupported: `文件短名为空: ${file}` };
+    return { unsupported: `文件短名为空: ${file}`, reason: 'empty-stem' };
   }
   if (stem === '__init__') {
-    return { unsupported: '__init__.py 特殊文件(HR-MOD-007:真实服务验证前跳过)' };
+    return { unsupported: '__init__.py 特殊文件(HR-MOD-007:真实服务验证前跳过)', reason: 'init-file' };
   }
   const directories = segments.slice(0, -1);
   if (directories.length === 0) {
-    return { unsupported: `脚本根下单层脚本(HR-MOD-008:需显式 single-level fallback): ${file}` };
+    if (options.allowRootLevelStem === true) {
+      // HR-MOD-008 显式 fallback:进程根直下文件引擎按裸短名装载
+      return { fullModule: stem, requestModule: stem, fileStem: stem, parentName: '' };
+    }
+    return {
+      unsupported: `脚本根下单层脚本(HR-MOD-008:需显式 single-level fallback): ${file}`,
+      reason: 'root-level'
+    };
   }
   const parentName = directories[directories.length - 1];
   // 进程角色目录(base/cell/client/bots)是引擎的进程装载根,不是 Python 模块段——

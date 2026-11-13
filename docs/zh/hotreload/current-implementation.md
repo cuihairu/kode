@@ -157,3 +157,21 @@
 ## 3. 与 2026-11-11 相比的事实/unknown 结转
 
 上次审计以来由实现解决的：状态/历史面（§19.6/§19.7 不再是空地——灯/装饰/lens/台账已存在）、成功确认模型（accepted/applied 契约 + 沉降）、def 结构门、双名模块身份、带默认值的通道模型。仍 `unknown`：生产（非 demo）服务的响应契约、引擎 Digest 算法、applied-revision 查询、目标进程身份映射、全部真实网络行为（HR-AUDIT-010）。
+
+## 4. HR-PR-02 增量（2026-11-13,模块身份纯面）
+
+本块落地(纯逻辑 + 模板层;无新增用户可见发送路径):
+
+- `src/backend/hotReloadModuleIdentity.ts` —— `HotReloadModuleIdentity` 九字段 DTO(HR-MOD-001)+ `resolveHotReloadModuleIdentity` 纯解析器(HR-MOD-002:根候选选择 → 委托 `resolveModuleDualName` → 诊断;零 IO、零 vscode 导入)+ `canonicalizeScriptFilePath` 词法规范化(HR-MOD-009:`file://` 剥 scheme + 有守卫的 percent 解码、反斜杠转正斜杠、UNC `//` 保留、重复斜杠折叠、`.`/`..` 词法消解、盘符大写、大小写保留;符号链接与 fs 级大小写语义属 IO 专项,明确不在纯面内,与 kode-vfs VFS-001 同边界)。
+- 核心 `resolveModuleDualName`(成功形状不变,toEqual 钉住)现给每个 unsupported 返回带机器可读 `reason` 码(HR-MOD-002 诊断映射单源),并接受显式 `allowRootLevelStem`(HR-MOD-008 single-level fallback;默认仍拒)。
+- 模板层(HR-MOD-012):`buildTemplateVars`/`applyTemplate`/`applyTemplateWithContext` 增 `${reloadModule}`/`${fullModule}`/`${fileName}`/`${relativePath}`/`${workspaceRoot}`/`${targetId}`。双名仅在配置 `kbengine.hotReload.tempEdit.scriptRoot` 后解析,否则如实空串——legacy `${module}` 保持 `__init__.py` 包边界扫描语义不动(兼容决策记录于 `buildTemplateVars`;照旧不做 URL 编码,全仓契约)。
+- 测试:`tests/hotReloadModuleIdentity.test.ts`(书 §19.1 四示例,含 879f47d5 引擎实证偏差 `base/Avatar.py → Avatar`;规范化;多根唯一/根外/歧义列全候选;相邻目录假包含;override 合法/非法;根下单层默认拒 + 显式 fallback;`%20` 解码出空白短名拒、点短名拒、Unicode 短名合法;诊断码透传)+ `tests/hotReloadTempEdit.test.ts` 核心 reason/开关例 + `tests/httpRequests.test.ts` 模板形状钉。
+
+暂缓项与原因(账本行保持未勾,不写假完成):
+
+- HR-MOD-006 完整 engine profile 根优先级:需要 engine-profile 配置面(kode2 §6);「不猜」的歧义拒绝本质已落解析器。
+- HR-MOD-008 用户可见 `allowRootLevelStem` 配置键 + 发送路径接线:会改零配置默认热更行为;核心开关已落,暴露面暂缓。
+- HR-MOD-010 请求线上的 root/target 上下文:接收端契约冻结待真实服务验证(HR-AUDIT-009);解析器侧 rootId + 歧义拒绝本质已落。
+- HR-MOD-011 UI 显示 `fullModule`/`requestModule`:HR-UI 簇(HR-PR-06)。
+- HR-MOD-013 旧配置迁移/预览 UX:用户可见命令暂缓;纯核心 + 模板双名面已存在。
+- HR-MOD-014 台账/历史双名字段:历史形状扩展暂缓(HR-PR-06)。

@@ -157,24 +157,57 @@ describe('buildTemplateVars', () => {
   const packaged = (dir: string): boolean =>
     dir === '/ws/entities' || dir === '/ws/entities/fight';
 
-  it('完整上下文:module/moduleBasename/filename/line(0 起转 1 起)/sel', () => {
+  it('完整上下文:module/moduleBasename/filename/line(0 起转 1 起)/sel+HR-MOD-012 双名/路径族', () => {
     const vars = buildTemplateVars({
       filePath: '/ws/entities/fight/FightAI.py',
       cursorLineZeroBased: 9,
       selection: 'self.hp',
-      workspaceRoots: ['/ws']
+      workspaceRoots: ['/ws'],
+      scriptRoot: '/ws',
+      targetId: 'cell-1'
     }, packaged);
     expect(vars).toEqual({
       module: 'entities.fight.FightAI',
       moduleBasename: 'FightAI',
       filename: 'FightAI.py',
       line: '10',
-      sel: 'self.hp'
+      sel: 'self.hp',
+      reloadModule: 'fight.FightAI',
+      fullModule: 'entities.fight.FightAI',
+      fileName: 'FightAI.py',
+      relativePath: 'entities/fight/FightAI.py',
+      workspaceRoot: '/ws',
+      targetId: 'cell-1'
     });
   });
 
   it('无编辑器:各值为空串(如实,不猜)', () => {
-    expect(buildTemplateVars({})).toEqual({ module: '', moduleBasename: '', filename: '', line: '', sel: '' });
+    expect(buildTemplateVars({})).toEqual({
+      module: '',
+      moduleBasename: '',
+      filename: '',
+      line: '',
+      sel: '',
+      reloadModule: '',
+      fullModule: '',
+      fileName: '',
+      relativePath: '',
+      workspaceRoot: '',
+      targetId: ''
+    });
+  });
+
+  it('HR-MOD-012:scriptRoot 未配置时 reloadModule/fullModule 如实空串,不混 legacy ${module} 语义', () => {
+    const vars = buildTemplateVars({ filePath: '/ws/scripts/base/Foo.py', workspaceRoots: ['/ws'] });
+    expect(vars.reloadModule).toBe('');
+    expect(vars.fullModule).toBe('');
+    expect(vars.module).toBe('Foo'); // legacy 面保持
+  });
+
+  it('HR-MOD-012:双名解析失败(根下单层)同样空串,不猜名', () => {
+    const vars = buildTemplateVars({ filePath: '/ws/scripts/Lone.py', scriptRoot: '/ws/scripts' });
+    expect(vars.reloadModule).toBe('');
+    expect(vars.fullModule).toBe('');
   });
 
   it('base/cell 无包边界形态:module 即文件名去壳,moduleBasename 与之一致', () => {

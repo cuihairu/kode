@@ -95,6 +95,36 @@ describe('resolveModuleDualName(书 §19.1 四示例与 explicit unsupported)', 
       parentName: 'base'
     });
   });
+
+  it('unsupported 带机器可读 reason 码(HR-MOD-002 诊断映射单源,成功形状不变)', () => {
+    const reasonOf = (result: ReturnType<typeof resolveModuleDualName>): string =>
+      'unsupported' in result ? result.reason : '';
+    expect(reasonOf(resolveModuleDualName(`${ROOT}/base/Avatar.py`, ''))).toBe('no-root');
+    expect(reasonOf(resolveModuleDualName(`${ROOT}/base/Avatar.json`, ROOT))).toBe('not-python');
+    expect(reasonOf(resolveModuleDualName('/elsewhere/base/Avatar.py', ROOT))).toBe('out-of-root');
+    expect(reasonOf(resolveModuleDualName('/ws/scripts2/base/Avatar.py', ROOT))).toBe('out-of-root');
+    expect(reasonOf(resolveModuleDualName(`${ROOT}/../secrets/x.py`, ROOT))).toBe('traversal');
+    expect(reasonOf(resolveModuleDualName(`${ROOT}/entities/.py`, ROOT))).toBe('empty-stem');
+    expect(reasonOf(resolveModuleDualName(`${ROOT}/entities/fight/__init__.py`, ROOT))).toBe('init-file');
+    expect(reasonOf(resolveModuleDualName(`${ROOT}/Lone.py`, ROOT))).toBe('root-level');
+    // 成功结果无 reason 字段(判别联合按 'unsupported' in result 收窄)
+    const ok = resolveModuleDualName(`${ROOT}/entities/fight/FightAI.py`, ROOT);
+    expect(ok && !('unsupported' in ok) && !('reason' in ok)).toBe(true);
+  });
+
+  it('allowRootLevelStem 显式 fallback(HR-MOD-008):开启才回落裸短名,默认仍拒', () => {
+    expect(resolveModuleDualName(`${ROOT}/Lone.py`, ROOT, { allowRootLevelStem: true })).toEqual({
+      fullModule: 'Lone',
+      requestModule: 'Lone',
+      fileStem: 'Lone',
+      parentName: ''
+    });
+    // 开关只放宽 root-level 一类:其余不支持形仍拒
+    const reasonOf = (result: ReturnType<typeof resolveModuleDualName>): string =>
+      'unsupported' in result ? result.reason : '';
+    expect(reasonOf(resolveModuleDualName(`${ROOT}/base/Avatar.py`, '', { allowRootLevelStem: true }))).toBe('no-root');
+    expect(reasonOf(resolveModuleDualName(`${ROOT}/entities/fight/__init__.py`, ROOT, { allowRootLevelStem: true }))).toBe('init-file');
+  });
 });
 
 describe('readTempEditReloadSettings(默认关与畸形回落)', () => {

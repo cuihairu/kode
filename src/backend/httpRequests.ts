@@ -19,7 +19,7 @@
  */
 
 import { resolveVariableExpression, type VariableContext } from './variableSubstitution';
-import { PYTHON_PROCESS_ROLE_DIRS } from './hotReloadTempEdit';
+import { PYTHON_PROCESS_ROLE_DIRS, resolveModuleDualName } from './hotReloadTempEdit';
 
 export interface HttpRequestEntry {
   /** 展示名(quick pick 与日志前缀) */
@@ -161,6 +161,10 @@ export interface TemplateEditorContext {
   cursorLineZeroBased?: number;
   selection?: string;
   workspaceRoots?: readonly string[];
+  /** 脚本资源根(HR-MOD-012 双名面 ${reloadModule}/${fullModule} 起点;缺省=未知,两值如实空串) */
+  scriptRoot?: string;
+  /** 通道/目标标签(HR-MOD-012 ${targetId});快速请求面通常无 target,缺省空串 */
+  targetId?: string;
 }
 
 export interface TemplateVars {
@@ -171,9 +175,28 @@ export interface TemplateVars {
   filename: string;
   line: string;
   sel: string;
+  /** 双名请求模块(HR-MOD-012):fight.FightAI;仅 scriptRoot 配置才解析,缺配置空串(不混 legacy ${module} 语义) */
+  reloadModule: string;
+  /** 双名完整模块(HR-MOD-012):entities.fight.FightAI;同上缺配置空串 */
+  fullModule: string;
+  /** ${fileName}(HR-MOD-012 拼写别名)=filename:FightAI.py */
+  fileName: string;
+  /** 相对首个含此文件的工作区根的路径;无命中根空串 */
+  relativePath: string;
+  /** 命中的工作区根(带尾斜杠裁剪);无命中空串 */
+  workspaceRoot: string;
+  /** 目标标签;未给空串 */
+  targetId: string;
 }
 
-/** 从编辑器上下文提取模板变量;无编辑器各值为空串(如实,不猜);包探针透传(批153) */
+/**
+ * 从编辑器上下文提取模板变量;无编辑器各值为空串(如实,不猜);包探针透传(批153)。
+ * ${module} 兼容映射决策(HR-MOD-012,审计见 HR-AUDIT-004):保持 legacy
+ * __init__.py 包边界扫描语义不变(既有模板零回归);双名模型走新占位
+ * ${reloadModule}/${fullModule},二者仅 scriptRoot 显式配置时经
+ * resolveModuleDualName 解析(HR-MOD-005 同一字符串核心),解析失败或未
+ * 配置一律空串——空串插进模板是可见的失败,好过把两套语义混在一个名里。
+ */
 export function buildTemplateVars(
   context: TemplateEditorContext,
   isPackageDir?: PackageDirProbe
@@ -186,23 +209,46 @@ export function buildTemplateVars(
     : String(context.cursorLineZeroBased + 1);
   const module = resolvePythonModulePath(filePath, isPackageDir);
   const dot = module.lastIndexOf('.');
+  const scriptRoot = context.scriptRoot ?? '';
+  const dual = scriptRoot.length > 0 ? resolveModuleDualName(filePath, scriptRoot) : undefined;
+  const dualOk = dual !== undefined && !('unsupported' in dual);
+  const posixPath = toPosix(filePath);
+  const workspaceRoot = (context.workspaceRoots ?? [])
+    .map(root => toPosix(root).replace(/\/+$/, ''))
+    .find(root => root.length > 0 && (posixPath === root || posixPath.startsWith(`${root}/`)))
+    ?? '';
+  const relativePath = workspaceRoot.length > 0 && posixPath.length > workspaceRoot.length
+    ? posixPath.slice(workspaceRoot.length + 1)
+    : '';
   return {
     module,
     moduleBasename: dot === -1 ? module : module.slice(dot + 1),
     filename: base,
     line,
-    sel: context.selection ?? ''
+    sel: context.selection ?? '',
+    reloadModule: dualOk ? dual.requestModule : '',
+    fullModule: dualOk ? dual.fullModule : '',
+    fileName: base,
+    relativePath,
+    workspaceRoot,
+    targetId: context.targetId ?? ''
   };
 }
 
-/** 字面替换五个已知占位(文件名占位批153 起叫 ${filename});未知占位原样保留;替换值不做 URL 编码 */
+/** 字面替换已知占位(文件名占位批153 起叫 ${filename};HR-MOD-012 增双名/路径/targetId 族);未知占位原样保留;替换值不做 URL 编码 */
 export function applyTemplate(text: string, vars: TemplateVars): string {
   return text
     .replace(/\$\{module\}/g, () => vars.module)
     .replace(/\$\{moduleBasename\}/g, () => vars.moduleBasename)
     .replace(/\$\{filename\}/g, () => vars.filename)
+    .replace(/\$\{fileName\}/g, () => vars.fileName)
     .replace(/\$\{line\}/g, () => vars.line)
-    .replace(/\$\{sel\}/g, () => vars.sel);
+    .replace(/\$\{sel\}/g, () => vars.sel)
+    .replace(/\$\{reloadModule\}/g, () => vars.reloadModule)
+    .replace(/\$\{fullModule\}/g, () => vars.fullModule)
+    .replace(/\$\{relativePath\}/g, () => vars.relativePath)
+    .replace(/\$\{workspaceRoot\}/g, () => vars.workspaceRoot)
+    .replace(/\$\{targetId\}/g, () => vars.targetId);
 }
 
 /**
@@ -239,7 +285,9 @@ export function applyTemplateWithContext(
 ): string {
   return text.replace(/\$\{([^${}]*)\}/g, (raw, expression: string) => {
     if (expression === 'module' || expression === 'moduleBasename' || expression === 'filename'
-      || expression === 'line' || expression === 'sel') {
+      || expression === 'fileName' || expression === 'line' || expression === 'sel'
+      || expression === 'reloadModule' || expression === 'fullModule' || expression === 'relativePath'
+      || expression === 'workspaceRoot' || expression === 'targetId') {
       return applyTemplate(raw, vars);
     }
     const value = resolveVariableExpression(expression, official);

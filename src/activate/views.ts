@@ -250,7 +250,10 @@ export function activateHttpRequestViews(deps: HttpRequestViewsDeps): HttpReques
         filePath: editor?.document.uri.fsPath,
         cursorLineZeroBased: editor?.selection.active.line,
         selection: editor ? editor.document.getText(editor.selection) : undefined,
-        workspaceRoots: (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath)
+        workspaceRoots: (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath),
+        // HR-MOD-012 双名面同源:与默认热修同一 scriptRoot 设置,模板可用
+        // ${reloadModule}/${fullModule};未配置时两占位如实展开空串
+        scriptRoot: vscode.workspace.getConfiguration('kbengine').get<string>('hotReload.tempEdit.scriptRoot', '')
       };
     },
     // ${module} 包边界探针:目录含 __init__.py 才算包段(base/cell 等
