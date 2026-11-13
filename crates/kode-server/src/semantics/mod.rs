@@ -65,10 +65,16 @@
 //!   七条异步 API 调用表达式=AsyncNone 绝不视作本地对象;回调交付面=
 //!   单参实体|ENTITYCALL 句柄联合、三参 Nullable 实体+DBID+wasActive、
 //!   cell 族 onGetCell 浮出;查无此 API=None 不猜)。
+//! - [`create_bind`] CREATE-04 异步创建回调绑定(可解析 bound method/
+//!   函数逐形参赋型:单参=实体|句柄联合、三参=Nullable+DBID+UINT8;
+//!   失败值面逐族登记=首参 None/id 分配失败单参 False/实体化失败不触发;
+//!   形参数错=ArityMismatch;动态回调=Unresolved 不猜;未传=合法缺省;
+//!   契约无参位=NoCallbackSlot,cell 族浮出走 onGetCell)。
 
 pub mod broadcast;
 pub mod callers;
 pub mod create_api;
+pub mod create_bind;
 pub mod create_return;
 pub mod entity_name;
 pub mod impact;
