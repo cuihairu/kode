@@ -1137,13 +1137,16 @@ callgraph 模式面板支持：
 ### `kbengine.python.syncExtraPaths`
 
 - 标题：`Sync Python Extra Paths`
-- 作用：把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`（WorkspaceFolder 级），让 Python 扩展（Pylance/pyright）能解析实体脚本里的 `import KBEngine`、`import common.*`
+- 作用：把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`（WorkspaceFolder 级），让 Python 扩展（Pylance/pyright）能解析实体脚本里的 `import KBEngine`、`import common.*`；存根布局是进程档模板（`<存根目录>/base/KBEngine/__init__.pyi` 在盘）时，同一同步还维护工作区 `pyrightconfig.json`
 - 入口：命令面板 `Sync Python Extra Paths`；扩展激活时也会自动同步一次（`kbengine.python.extraPathsSync` 默认开，激活期全程静默零提示）
 - 行为：
   - scripts 根候选与实体索引同口径：`<工作区>/scripts`、`<工作区>/assets/scripts`、`<工作区>/server_assets/scripts`、一级 `<xxx>_assets/scripts`（批129 资产根约定）；只收磁盘上真实存在的
   - `.kbengine/stubs`（存根导出目录）在 `kbengine.python.stubExport` 开且 `KBEngine.pyi` 在盘时一并并入管理段；`kbengine.python.stubDir` 配置的用户目录不并入管理段
   - 经带资源域的 `getConfiguration('python', folder).update(...)` 写入（WorkspaceFolder 级），settings.json 里的注释由宿主保全；只在发现结果与现值不同时写，无变化不碰文件
   - 只管理本扩展写入的那一段：上次写入的集合记在 workspaceState，再同步时先剔除再写新集合，用户手填的路径永不被动
+  - pyrightconfig 面（进程桩在盘时）：按 scripts 根 × 进程角色生成 `executionEnvironments`（对应进程桩包排各环境 `extraPaths` 首位），全局 `stubPath` = `<managedDir>/stubs/_shared`，`reportMissingModuleSource: false`——工作区里直接跑 `pyright` 与 Pylance 同口径
+  - pyrightconfig 面只管理自己记忆的那一段：用户键、用户 `extraPaths`、用户 executionEnvironments 一律原样保留；`pyproject.toml` 的 `[tool.pyright]` 段、`extends` 继承配置、冲突的用户全局 stubPath 一律不碰——同步如实播报并保留原文件
+  - `kbengine.managedDir` 或 `kbengine.python.stubDir` 变更即按新位置重导存根并静默重同步整套接线（settings 键 + `pyrightconfig.json`），挪动存根位置后无需重载窗口或手动重跑
   - 设置 `kbengine.python.extraPathsSync: false` 可整体关闭（关闭后命令只说明不写）；手动重跑会播报写入结果，激活期自动同步不打扰
 
 ### `kbengine.python.exportStubs`

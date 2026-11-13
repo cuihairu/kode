@@ -686,3 +686,164 @@ describe('syncPythonExtraPaths(装配层)', () => {
     stubWorkspace.workspaceFolders = [];
   });
 });
+
+describe('syncPythonExtraPaths × pyrightconfig.json(进程档自动配置,KODE-PYRIGHT-001)', () => {
+  /**
+   * pyrightconfig 面的内存 fs(ProcessConfigDeps 注入):dir 存在性用「目录路径
+   * 本身作为键」的标记法——buildProcessEnvironments 对角色根目录调 exists,
+   * 只有目录路径精确命中才算存在。
+   */
+  const makeMemoryDeps = (seed: Record<string, string> = {}): {
+    files: Map<string, string>;
+    writes: number;
+    exists: (file: string) => boolean;
+    readFile: (file: string) => string;
+    writeFile: (file: string, text: string) => void;
+    mkdir: (dir: string) => void;
+  } => {
+    const files = new Map(Object.entries(seed));
+    const state = { writes: 0 };
+    return {
+      files,
+      get writes(): number {
+        return state.writes;
+      },
+      exists: (file: string): boolean => files.has(file),
+      readFile: (file: string): string => {
+        const content = files.get(file);
+        if (content === undefined) {
+          throw new Error(`missing ${file}`);
+        }
+        return content;
+      },
+      writeFile: (file: string, text: string): void => {
+        state.writes += 1;
+        files.set(file, text);
+      },
+      mkdir: (): void => {}
+    };
+  };
+
+  beforeEach(() => {
+    messages.info.length = 0;
+    messages.warning.length = 0;
+    messages.error.length = 0;
+    windowState.reset();
+    workspaceState.reset();
+    memento.clear();
+  });
+
+  it('进程档(base 进程桩在盘)自动写出 pyrightconfig.json:角色环境/全局 stubPath/噪声压制基线', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    // 进程档判定面 = <存根目录>/base/KBEngine/__init__.pyi;角色根目录用标记键
+    const mem = makeMemoryDeps({
+      '/ws/.kbengine/stubs/base/KBEngine/__init__.pyi': '',
+      '/ws/.kbengine/stubs/cell/KBEngine/__init__.pyi': '',
+      '/ws/scripts/base': '',
+      '/ws/scripts/cell': ''
+    });
+
+    await syncPythonExtraPaths(makeContext(), {
+      exists: (): boolean => true,
+      listSubdirs: (): string[] => []
+    }, { processConfigDeps: mem });
+
+    const written = mem.files.get('/ws/pyrightconfig.json');
+    expect(written).toBeTruthy();
+    const config = JSON.parse(written!) as {
+      stubPath: string;
+      extraPaths: string[];
+      reportMissingModuleSource: boolean;
+      executionEnvironments: Array<{ root: string; extraPaths: string[] }>;
+    };
+    // 全局 stubPath = 进程共享桩目录(设计 python-process-typings §stubs/_shared)
+    expect(config.stubPath).toBe('.kbengine/stubs/_shared');
+    // C++ 内嵌模块磁盘无 .py 源,嵌套模块噪声在 pyrightconfig 里一并压制
+    expect(config.reportMissingModuleSource).toBe(false);
+    // 每个 scripts 根 × 进程角色一个环境,对应进程桩包排 extraPaths 首位
+    const baseEnv = config.executionEnvironments.find(env => env.root === 'scripts/base');
+    expect(baseEnv?.extraPaths[0]).toBe('.kbengine/stubs/base');
+    const cellEnv = config.executionEnvironments.find(env => env.root === 'scripts/cell');
+    expect(cellEnv?.extraPaths[0]).toBe('.kbengine/stubs/cell');
+    // 桩进程目录本体也各得一个分析环境(生成 entity_types.pyi 的消费语境)
+    expect(config.executionEnvironments.some(env => env.root === '.kbengine/stubs/base')).toBe(true);
+    // 全局 extraPaths:共享桩目录在前,scripts 根与存根根随后
+    expect(config.extraPaths[0]).toBe('.kbengine/stubs/shared');
+    expect(config.extraPaths).toContain('scripts');
+    expect(config.extraPaths).toContain('.kbengine/stubs');
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('用户键/用户 stubPath/用户 executionEnvironments 一律保留(只管自己那一段)', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const mem = makeMemoryDeps({
+      '/ws/.kbengine/stubs/base/KBEngine/__init__.pyi': '',
+      '/ws/scripts/base': '',
+      '/ws/pyrightconfig.json': JSON.stringify({
+        typeCheckingMode: 'basic',
+        stubPath: 'my-stubs',
+        extraPaths: ['/opt/libs'],
+        executionEnvironments: [{ root: 'scripts/common', extraPaths: ['my-stuff'] }]
+      })
+    });
+
+    await syncPythonExtraPaths(makeContext(), {
+      exists: (): boolean => true,
+      listSubdirs: (): string[] => []
+    }, { processConfigDeps: mem });
+
+    const config = JSON.parse(mem.files.get('/ws/pyrightconfig.json')!) as {
+      typeCheckingMode: string;
+      stubPath: string;
+      extraPaths: string[];
+      executionEnvironments: Array<{ root: string; extraPaths: string[] }>;
+    };
+    expect(config.typeCheckingMode).toBe('basic');
+    expect(config.stubPath).toBe('my-stubs');
+    expect(config.extraPaths).toEqual(['/opt/libs']);
+    expect(config.executionEnvironments.find(env => env.root === 'scripts/common'))
+      .toEqual({ root: 'scripts/common', extraPaths: ['my-stuff'] });
+    // 管理段照常并入:进程桩环境与用户环境共存
+    expect(config.executionEnvironments.find(env => env.root === 'scripts/base')?.extraPaths[0])
+      .toBe('.kbengine/stubs/base');
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('非进程档(无进程桩)不写 pyrightconfig.json,settings 面照常接线', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const mem = makeMemoryDeps();
+
+    await syncPythonExtraPaths(makeContext(), {
+      exists: (): boolean => true,
+      listSubdirs: (): string[] => []
+    }, { processConfigDeps: mem });
+
+    expect(mem.files.has('/ws/pyrightconfig.json')).toBe(false);
+    // settings 面不受影响:extraPaths/stubPath/噪声压制照常
+    expect(workspaceState.workspaceConfigurationUpdates.length).toBeGreaterThanOrEqual(3);
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('幂等:内容一致的第二轮同步零文件写(只在值有变化时落盘)', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const mem = makeMemoryDeps({
+      '/ws/.kbengine/stubs/base/KBEngine/__init__.pyi': '',
+      '/ws/scripts/base': ''
+    });
+    const context = makeContext();
+
+    await syncPythonExtraPaths(context, {
+      exists: (): boolean => true,
+      listSubdirs: (): string[] => []
+    }, { processConfigDeps: mem });
+    expect(mem.files.has('/ws/pyrightconfig.json')).toBe(true);
+    expect(mem.writes).toBe(1);
+
+    await syncPythonExtraPaths(context, {
+      exists: (): boolean => true,
+      listSubdirs: (): string[] => []
+    }, { processConfigDeps: mem });
+    expect(mem.writes).toBe(1);
+    stubWorkspace.workspaceFolders = [];
+  });
+});

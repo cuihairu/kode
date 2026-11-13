@@ -319,7 +319,7 @@ guiconsole 协议链（machined UDP 发现 + 直连各组件 TCP）：日志 tai
 
 kode 按进程导出独立桩包：`.kbengine/stubs/base`、`cell`、`bots`、`client`、`dbmgr`、`interfaces`、`logger`、`loginapp`。脚本目录 `scripts/base`、`scripts/cell` 分别对应引擎组件 `baseapp`、`cellapp`，选择同名的 `base`、`cell` 桩根。`pyrightconfig.json` 的 executionEnvironments 为每个脚本目录优先配置对应进程的 extraPaths。各进程还有独立的 `entity_types.pyi`，按属性 Flags、方法所属侧过滤，并分别声明远程句柄；不会在业务脚本旁生成遮蔽实现的同名桩。
 
-解析仍遵循同名 .pyi → stubPath → extraPaths。为防止旧混合 KBEngine 桩抢先命中，kode 管理的 `python.analysis.stubPath` 改为 `${workspaceFolder}/.kbengine/stubs/_shared`，项目配置使用等价相对路径；路径随 `kbengine.managedDir`、自定义 `kbengine.python.stubDir` 或 `KBENGINE_STUB_DIR` 解析。用户路径、JSONC 注释和其他配置保留。已有 TOML Pyright 配置、extends、冲突的用户执行环境或自设全局 stubPath 需要显式接入，kode 保留配置并报告冲突。同步还会键级合并 `python.analysis.diagnosticSeverityOverrides` 中的 `reportMissingModuleSource: none`，消除 C++ 内嵌模块没有 .py 源码的提示。导出与同步总开关继续生效。
+解析仍遵循同名 .pyi → stubPath → extraPaths。为防止旧混合 KBEngine 桩抢先命中，kode 管理的 `python.analysis.stubPath` 改为 `${workspaceFolder}/.kbengine/stubs/_shared`，项目配置使用等价相对路径；路径随 `kbengine.managedDir`、自定义 `kbengine.python.stubDir` 或 `KBENGINE_STUB_DIR` 解析。用户路径、JSONC 注释和其他配置保留。已有 TOML Pyright 配置、extends、冲突的用户执行环境或自设全局 stubPath 需要显式接入，kode 保留配置并报告冲突。同步还会键级合并 `python.analysis.diagnosticSeverityOverrides` 中的 `reportMissingModuleSource: none`，消除 C++ 内嵌模块没有 .py 源码的提示。导出与同步总开关继续生效。本车道在激活期跑一次，每次桩导出/重置/类型桩导出命令后也链一次；`kbengine.managedDir` 或 `kbengine.python.stubDir` 变更即按新位置重导存根并静默重同步整套接线（settings 键与 `pyrightconfig.json`）。
 
 已有桩文件仍遵守 copy-if-absent，新进程目录与旧副本并存；旧根桩不会覆盖进程分析。需要替换修改过的进程模板时，使用显式重置命令并核对确认提示。未归属具体进程的公共脚本只获得公共向量/容器类型，不再获得服务器与 bots API 的混合超集。详见[进程类型设计](../../design/python-process-typings.md)。
 

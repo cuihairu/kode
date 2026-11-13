@@ -1186,13 +1186,16 @@ The flow graph panel supports:
 ### `kbengine.python.syncExtraPaths`
 
 - Title: `Sync Python Extra Paths`
-- Purpose: write the workspace-discovered KBEngine scripts root into `python.analysis.extraPaths` (WorkspaceFolder level) so the Python extension (Pylance/pyright) can resolve `import KBEngine` and `import common.*` in entity scripts
+- Purpose: write the workspace-discovered KBEngine scripts root into `python.analysis.extraPaths` (WorkspaceFolder level) so the Python extension (Pylance/pyright) can resolve `import KBEngine` and `import common.*` in entity scripts; when the exported stub layout is the per-process template (`<stubDir>/base/KBEngine/__init__.pyi` on disk), the same sync also maintains the workspace `pyrightconfig.json`
 - Entries: command palette `Sync Python Extra Paths`; also synced once automatically at extension activation (`kbengine.python.extraPathsSync` default on, fully silent during activation)
 - Behavior:
   - The scripts-root candidates share the entity index's conventions: `<workspace>/scripts`, `<workspace>/assets/scripts`, `<workspace>/server_assets/scripts`, first-level `<xxx>_assets/scripts` (the batch 129 assets-root convention); only paths that really exist on disk are collected
   - `.kbengine/stubs` (the stub export directory) joins the managed segment when `kbengine.python.stubExport` is on and `KBEngine.pyi` is on disk; a user-configured `kbengine.python.stubDir` directory does not join the managed segment
   - Written via resource-scoped `getConfiguration('python', folder).update(...)` (WorkspaceFolder level); comments in settings.json are preserved by the host; written only when the discovery result differs from the current value — no change, no file touch
   - It manages only the segment this extension wrote: the last-written set is remembered in workspaceState, and the next sync removes the old set before writing the new one; user-entered paths are never touched
+  - pyrightconfig lane (process stubs on disk): per scripts-root × process-role `executionEnvironments` with the matching process stub package first in each `extraPaths`, global `stubPath` = `<managedDir>/stubs/_shared`, `reportMissingModuleSource: false` — running bare `pyright` in the workspace resolves on the same terms as Pylance
+  - pyrightconfig lane manages only its own remembered segment: user keys, user `extraPaths`, and user execution environments are preserved as-is; a `pyproject.toml` `[tool.pyright]` section, an `extends` config, or a conflicting user global stubPath is never touched — the sync reports and keeps the file unchanged
+  - Changing `kbengine.managedDir` or `kbengine.python.stubDir` re-exports the stubs and re-syncs this whole wiring silently (settings keys + `pyrightconfig.json`), so no reload window or manual rerun is needed after moving the stub location
   - Setting `kbengine.python.extraPathsSync: false` turns it all off (when off, the command only explains without writing); a manual rerun reports the write result, while activation-time auto sync stays quiet
 
 ### `kbengine.python.exportStubs`

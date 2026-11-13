@@ -167,13 +167,13 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
       .filter((root): root is string => root.length > 0),
     managedDirName: resolveManagedDirName(readManagedDirSetting()).name
   });
-  const regenerateManagedDirAssets = (): void => {
-    void exportKbeStubs(fileSystemStubExportDeps, {
+  const regenerateManagedDirAssets = async (): Promise<void> => {
+    await exportKbeStubs(fileSystemStubExportDeps, {
       silent: true,
       templateRoot: resolveKbengineStubTemplateRoot(context.extensionPath)
     });
-    void exportPythonTypeStubs(fileSystemStubExportDeps, { silent: true });
-    void exportEntityTypeStubs(entityMappingManager);
+    await exportPythonTypeStubs(fileSystemStubExportDeps, { silent: true });
+    await exportEntityTypeStubs(entityMappingManager);
     ensureDebugConfig(
       { ...fileSystemBootstrapDeps, log: (line: string): void => debugConfigChannel.appendLine(line) },
       bootstrapOptions()
@@ -194,14 +194,25 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
     return { dispose: (): void => watchers.forEach(watcher => watcher.dispose()) } as vscode.FileSystemWatcher;
   };
   let managedDirWatcher = createManagedDirWatcher();
+  // KODE-PYRIGHT-001:存根位置面设置变更即重建+同步——kbengine.managedDir /
+  // kbengine.python.stubDir 改了之后,先按新位置重导存根链,再静默同步
+  // Python 分析接线(extraPaths/stubPath/pyrightconfig.json 随新目录改写),
+  // 不再等下一次手动命令或重载窗口才跟上新位置。
+  const regenerateAndSyncPythonWiring = async (): Promise<void> => {
+    await regenerateManagedDirAssets();
+    await syncPythonExtraPaths(context, fileSystemScriptRootDeps, { silent: true });
+  };
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(event => {
-      if (!event.affectsConfiguration('kbengine.managedDir')) {
+      const touchesManagedDir = event.affectsConfiguration('kbengine.managedDir');
+      if (!touchesManagedDir && !event.affectsConfiguration('kbengine.python.stubDir')) {
         return;
       }
-      managedDirWatcher.dispose();
-      managedDirWatcher = createManagedDirWatcher();
-      regenerateManagedDirAssets();
+      if (touchesManagedDir) {
+        managedDirWatcher.dispose();
+        managedDirWatcher = createManagedDirWatcher();
+      }
+      void regenerateAndSyncPythonWiring();
     })
   );
   // 实体方法面开关变更即时重导(用户令 2026-10-21:配置开关变更即时生效):
@@ -212,7 +223,7 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(event => {
       if (event.affectsConfiguration('kbengine.python.entityStubMethods')) {
-        regenerateManagedDirAssets();
+        void regenerateManagedDirAssets();
       }
     })
   );
