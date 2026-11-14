@@ -26,6 +26,7 @@
 3. 进程内存(RSS 峰值)从未记录——待测(final-report §6#2)。
 4. 冷/热盘缓存未分离量测——待测。
 5. Windows/macOS、网络文件系统、Remote 场景:待测(ARCH-010 范围)。
+6. RUST-027(2026-11-15):nightly perf 门阈值可经 `KODE_PERF_BOUND_*` 环境变量覆盖(缺省=宽松上界表 tests/perf/gateBounds.ts;prove-red=紧界 0.001ms 三场景全红);nightly 上传基准运行文件 perf-baseline-run 产物(30 天)。噪声控制现状=宽松上界(只捕数量级回退)+暖态 n=100 采样+共享 runner 抖动余量 7-11x;多轮取中位(--repeat)仍待建(归 RUST-032)。
 
 ## 3. Fixtures 规格(PERF-002/003/004 现状)
 
