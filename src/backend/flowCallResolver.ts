@@ -1082,6 +1082,44 @@ export function resolveFlowCallSites(
         frame
       });
     }
+
+    // 动态分发:getattr(...)() ——属性名运行期才定,dispatch 目标不可静态证明
+    // (裸名臂只给 getattr 本身内建边;dispatch 目标若不显式立边就是静默消失)
+    const getattrRegex = /getattr\s*\([^()]*\)\s*\(/g;
+    let getattrMatch: RegExpExecArray | null;
+    while ((getattrMatch = getattrRegex.exec(lineText)) !== null) {
+      if (!spanIsCode(mask, lineStart + getattrMatch.index, getattrMatch[0].length)) {
+        continue;
+      }
+      const callerId = callerNodeFor(frame);
+      const target = unresolvedNodeFor({
+        code: 'dynamic-getattr',
+        detail: 'getattr(...)() 动态分发:属性名运行期才定,dispatch 目标不可静态证明',
+        role: callerRole,
+        nameHint: 'getattr()()'
+      });
+      edges.push(flowGraphEdge({
+        fromNodeId: callerId,
+        toNodeId: target,
+        callSite: { file: filePath, line: index, character: getattrMatch.index },
+        direction: {
+          fromRole: callerRole,
+          toRole: callerRole,
+          kind: 'downstream-call'
+        },
+        syncAsync: 'unknown',
+        messageKind: 'unresolved',
+        condition: branchConditionAt(lines, frame, index),
+        evidence: {
+          type: 'syntax-anchor',
+          detail: getattrMatch[0]
+        },
+        unresolvedReason: unresolved(
+          'dynamic-getattr',
+          'getattr 动态分发目标不可静态证明'
+        )
+      }));
+    }
   }
 
   return { nodes, edges };
