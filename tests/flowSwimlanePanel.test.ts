@@ -12,7 +12,8 @@ import type { FlowCallGraphSource } from '../src/flowCallGraphData';
 import {
   FlowSwimlanePanel,
   listEntryFunctions,
-  makeWorkspaceFlowSource
+  makeWorkspaceFlowSource,
+  resolveCursorFunction
 } from '../src/flowSwimlanePanel';
 
 // FLOW-015(旧 KFLOW-UI-02)泳道面板钉:入口选择、工作区数据源、面板
@@ -383,6 +384,167 @@ describe('FLOW-015 show() 命令入口', () => {
     await panel.show();
     expect(messages.error).toContainEqual('调用图装配失败');
     expect(panelRegistry.panels[0].webview.html).toBe('');
+  });
+});
+
+describe('FLOW-018 光标入口与节点反查', () => {
+  const tick = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+  const setEditorWithCursor = (fsPath: string, text: string, line: number): void => {
+    (stubWindow as { activeTextEditor?: unknown }).activeTextEditor = {
+      document: makeTextDocument(text, { fileName: fsPath, uri: Uri.file(fsPath) }),
+      selection: { active: { line } }
+    };
+  };
+  const stubWorkspaceFolder = (): void => {
+    (stubWorkspace as { getWorkspaceFolder?: unknown }).getWorkspaceFolder = () => ({
+      uri: Uri.file('/ws'),
+      name: 'ws',
+      index: 0
+    });
+  };
+  const makePanel = (): FlowSwimlanePanel =>
+    new FlowSwimlanePanel({
+      entityMappingManager: makeManager(),
+      sourceFactory: rootKey => fullSource(rootKey)
+    });
+
+  it('resolveCursorFunction:光标前最近 def 行语法锚', () => {
+    expect(resolveCursorFunction(CLIENT_TEXT, 4)).toBe('onEnterGame');
+    expect(resolveCursorFunction(CLIENT_TEXT, 1)).toBe('chooseRole');
+    expect(resolveCursorFunction(CLIENT_TEXT, 0)).toBeNull();
+    expect(resolveCursorFunction(CLIENT_TEXT, 99)).toBe('onEnterGame');
+    expect(resolveCursorFunction('', 0)).toBeNull();
+  });
+
+  it('光标所在函数在图面:免快选直开', async () => {
+    let quickPickCalls = 0;
+    stubWindow.showQuickPick = (async (): Promise<string | undefined> => {
+      quickPickCalls += 1;
+      return undefined;
+    }) as never;
+    setEditorWithCursor(CLIENT_AVATAR, CLIENT_TEXT, 4);
+    stubWorkspaceFolder();
+    await makePanel().show();
+    expect(quickPickCalls).toBe(0);
+    expect(panelRegistry.panels).toHaveLength(1);
+    expect(panelRegistry.panels[0].title).toBe('调用图(G2 泳道) · onEnterGame');
+  });
+
+  it('光标函数是叶(不在图面):回退快选,不虚构入口', async () => {
+    const text = [
+      'class Avatar:',
+      '    def chooseRole(self):',
+      '        self.base.ping()',
+      '    def other(self):',
+      '        self.client.ping()',
+      '    def ghost(self):',
+      '        pass'
+    ].join('\n');
+    let picked: string | null = null;
+    stubWindow.showQuickPick = (async (items: string[]): Promise<string | undefined> => {
+      picked = 'called';
+      return items[0];
+    }) as never;
+    setEditorWithCursor(CLIENT_AVATAR, text, 6);
+    stubWorkspaceFolder();
+    await makePanel().show();
+    expect(picked).toBe('called');
+    expect(panelRegistry.panels[0].title).toBe('调用图(G2 泳道) · chooseRole');
+  });
+
+  it('候选帧节点反查:inspect 视图三面齐;返回回泳道(缓存复用)', async () => {
+    const panel = makePanel();
+    await panel.open('/ws', { filePath: CLIENT_AVATAR, functionName: 'chooseRole' });
+    const fake = panelRegistry.panels[0];
+    const nodeId = fake.webview.html.match(/data-node="([^"]+)"/)![1];
+    for (const listener of [...fake.messageListeners]) {
+      listener({ command: 'flowInspect', nodeId });
+    }
+    await tick();
+    expect(fake.webview.html).toContain('反查:chooseRole');
+    expect(fake.webview.html).toContain('上游');
+    expect(fake.webview.html).toContain('下游');
+    expect(fake.webview.html).toContain('data-flow-open-file');
+    // 返回:回泳道走查(不走历史栈)
+    for (const listener of [...fake.messageListeners]) {
+      listener({ command: 'flowBack' });
+    }
+    await tick();
+    expect(fake.webview.html).toContain('泳道:client(静态角色,非运行实例)');
+    // 泳道上返回:空历史如实提示,不炸
+    for (const listener of [...fake.messageListeners]) {
+      listener({ command: 'flowBack' });
+    }
+    await tick();
+    expect(messages.info).toContainEqual('没有上一视图');
+  });
+
+  it('坏节点 id 反查:如实不动(不炸不换视图)', async () => {
+    const panel = makePanel();
+    await panel.open('/ws', { filePath: CLIENT_AVATAR, functionName: 'chooseRole' });
+    const fake = panelRegistry.panels[0];
+    const before = fake.webview.html;
+    for (const listener of [...fake.messageListeners]) {
+      listener({ command: 'flowInspect', nodeId: 'garbage' });
+    }
+    await tick();
+    expect(fake.webview.html).toBe(before);
+    for (const listener of [...fake.messageListeners]) {
+      listener({ command: 'flowInspect', nodeId: '/wsno-fnunresolvedno-entityno-fnnative-function' });
+    }
+    await tick();
+    expect(fake.webview.html).toBe(before);
+  });
+
+  it('「打开图」导航:旧入口压栈,返回出栈重开', async () => {
+    const panel = makePanel();
+    await panel.open('/ws', { filePath: CLIENT_AVATAR, functionName: 'chooseRole' });
+    const fake = panelRegistry.panels[0];
+    for (const listener of [...fake.messageListeners]) {
+      listener({ command: 'flowOpen', file: CELL_AVATAR, functionName: 'enterGame' });
+    }
+    await tick();
+    expect(fake.title).toBe('调用图(G2 泳道) · enterGame');
+    // 返回:出栈重开旧入口
+    for (const listener of [...fake.messageListeners]) {
+      listener({ command: 'flowBack' });
+    }
+    await tick();
+    expect(fake.title).toBe('调用图(G2 泳道) · chooseRole');
+    expect(messages.info).not.toContainEqual('没有上一视图');
+  });
+
+  it('导航目标装配失败:错误条如实,历史不入栈(视图停留)', async () => {
+    const panel = makePanel();
+    await panel.open('/ws', { filePath: CLIENT_AVATAR, functionName: 'chooseRole' });
+    const fake = panelRegistry.panels[0];
+    const before = fake.webview.html;
+    for (const listener of [...fake.messageListeners]) {
+      listener({ command: 'flowOpen', file: CLIENT_AVATAR, functionName: 'ghostFn' });
+    }
+    await tick();
+    expect(messages.error).toContainEqual('调用图装配失败');
+    expect(fake.webview.html).toBe(before);
+    expect(fake.title).toBe('调用图(G2 泳道) · chooseRole');
+  });
+
+  it('面板销毁清历史:重开后返回如实提示(不复活旧场景)', async () => {
+    const panel = makePanel();
+    await panel.open('/ws', { filePath: CLIENT_AVATAR, functionName: 'chooseRole' });
+    let fake = panelRegistry.panels[0];
+    for (const listener of [...fake.messageListeners]) {
+      listener({ command: 'flowOpen', file: CELL_AVATAR, functionName: 'enterGame' });
+    }
+    await tick();
+    panel.dispose();
+    await panel.open('/ws', { filePath: CLIENT_AVATAR, functionName: 'chooseRole' });
+    fake = panelRegistry.panels[panelRegistry.panels.length - 1];
+    for (const listener of [...fake.messageListeners]) {
+      listener({ command: 'flowBack' });
+    }
+    await tick();
+    expect(messages.info).toContainEqual('没有上一视图');
+    expect(fake.title).toBe('调用图(G2 泳道) · chooseRole');
   });
 });
 

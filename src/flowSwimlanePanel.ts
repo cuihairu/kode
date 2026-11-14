@@ -5,8 +5,9 @@
  * 运行中实例,运行实例带组件 ID。
  *
  * 口径:
- *   - 入口=活动 Python 编辑器:解析该文件函数清单 → 快速选择入口函数
- *     (节点无行域,光标映射归 FLOW-018 选中反查;v1 快选如实);
+ *   - 入口=活动 Python 编辑器:光标所在函数(def 声明行语法锚)直开,
+ *     免快选;光标不在函数内/目标不在图面(叶函数无调用不入图)回退
+ *     函数清单快选(FLOW-018);
  *   - 数据=assembleFlowCallGraph(FLOW-015 数据装配核):有界收集 workspace
  *     scripts 目录下全部 .py(确定序截断,上限与 KODE-PERF-004 同源
  *     10000),def/实现经 entityMappingManager 解析(实体×段×方法);
@@ -16,8 +17,13 @@
  *   - 渲染=flowReviewSample 自包含 HTML(CSP default-src 'none';工件本体
  *     零脚本,面板只注入 nonce 跳转桥:点击调用点/声明标注跳编辑器
  *     对应行,FLOW-016;R1/R3 词汇红线已由生成核锁定);
+ *   - 选中反查=点击候选帧节点(FLOW-018):flowNodeInspect 纯核全工作区
+ *     反查上游/下游,未知(原因码)与歧义(跨进程同名实体待证)可查看;
+ *   - 导航历史=反查视图里「打开图」跳到调用者/被调者场景,旧入口入栈,
+ *     「返回上一视图」出栈重开;面板关闭即清;
  *   - 面板只管 vscode 生命周期与装配调度;数据/HTML 全在纯核
- *     (flowCallGraphData.ts + backend/flowReviewSample.ts)。
+ *     (flowCallGraphData.ts + backend/flowReviewSample.ts +
+ *     backend/flowNodeInspect.ts)。
  */
 
 import * as vscode from 'vscode';
@@ -26,6 +32,8 @@ import {
   assembleFlowCallGraph,
   type FlowCallGraphSource
 } from './flowCallGraphData';
+import { buildFlowNodeInspect } from './backend/flowNodeInspect';
+import type { FlowReviewFrame } from './backend/flowReviewSample';
 import { randomNonce } from './webviewSecurity';
 import { resolvePanelLocale, strings } from './webviewStrings';
 import type { EntityMappingManager } from './entityMapping';
@@ -116,9 +124,9 @@ export function makeWorkspaceFlowSource(
 }
 
 /**
- * 面板跳转脚本(FLOW-016 调用点/声明分别跳转):评审工件 HTML 本身零脚本,
- * 跳转面只在面板内以 nonce 内联脚本激活——点击带 data-flow-jump 的调用点/
- * 声明标注,postMessage 给宿主打开对应文件行。值格式 `${file}:${0 基行}`。
+ * 面板跳转脚本(FLOW-016 调用点/声明跳转 + FLOW-018 节点反查/打开图/返回):
+ * 评审工件 HTML 本身零脚本,交互面只在面板内以 nonce 内联脚本激活。
+ * 优先级:跳转 > 打开图 > 返回 > 节点反查(帧节点)。
  */
 const FLOW_JUMP_SCRIPT = `
 (function() {
@@ -130,6 +138,25 @@ const FLOW_JUMP_SCRIPT = `
         vscode.postMessage({
           command: 'flowJump',
           target: target.getAttribute('data-flow-jump')
+        });
+        return;
+      }
+      if (target.getAttribute && target.getAttribute('data-flow-open-file')) {
+        vscode.postMessage({
+          command: 'flowOpen',
+          file: target.getAttribute('data-flow-open-file'),
+          functionName: target.getAttribute('data-flow-open-fn')
+        });
+        return;
+      }
+      if (target.hasAttribute && target.hasAttribute('data-flow-back')) {
+        vscode.postMessage({ command: 'flowBack' });
+        return;
+      }
+      if (target.getAttribute && target.getAttribute('data-node')) {
+        vscode.postMessage({
+          command: 'flowInspect',
+          nodeId: target.getAttribute('data-node')
         });
         return;
       }
@@ -171,8 +198,58 @@ export function listEntryFunctions(text: string, filePath: string, rootKey: stri
   }
 }
 
+/**
+ * 光标所在函数(FLOW-018):def 声明行语法锚——光标行之前(含)最近的
+ * `def name(` 行。语法锚是事实;「包含」判断在叶函数/类间空隙的边界
+ * 属启发,所以宿主只在结果同时出现在图面函数清单时才直开,否则回退快选。
+ */
+export function resolveCursorFunction(text: string, line0: number): string | null {
+  const lines = text.split('\n');
+  let best: { name: string; line: number } | null = null;
+  const defPattern = /^\s*def\s+([A-Za-z_]\w*)\s*\(/;
+  for (let i = 0; i <= line0 && i < lines.length; i++) {
+    const match = lines[i].match(defPattern);
+    if (match) {
+      best = { name: match[1], line: i };
+    }
+  }
+  return best?.name ?? null;
+}
+
+/** 帧节点 id → 反查目标(fn 段=`文件#函数名`;pending-def 声明节点不反查) */
+const inspectTargetOfNodeId = (
+  nodeId: string
+): { filePath: string; functionName: string } | null => {
+  const fnPart = nodeId.split('\u001f')[4];
+  if (!fnPart) {
+    return null;
+  }
+  const hash = fnPart.lastIndexOf('#');
+  if (hash <= 0) {
+    return null;
+  }
+  const filePath = fnPart.slice(0, hash);
+  const functionName = fnPart.slice(hash + 1);
+  if (!functionName || filePath.startsWith('pending-def:')) {
+    return null;
+  }
+  return { filePath, functionName };
+};
+
 export class FlowSwimlanePanel {
   private panel: vscode.WebviewPanel | null = null;
+  /** 当前渲染场景入口(反查/导航历史的基准;装配成功才更新) */
+  private currentEntry: { filePath: string; functionName: string } | null = null;
+  private currentRootKey: string | null = null;
+  private currentSource: FlowCallGraphSource | null = null;
+  /** 当前场景全部帧节点(候选帧选择反查用) */
+  private frameNodes: FlowReviewFrame[] = [];
+  /** 导航历史:反查视图「打开图」压栈,「返回上一视图」出栈 */
+  private history: Array<{ filePath: string; functionName: string }> = [];
+  /** 当前视图形态:walk=泳道走查;inspect=节点反查(back 回到 walk 不走历史) */
+  private viewMode: 'walk' | 'inspect' = 'walk';
+  /** 当前场景最近一次泳道 HTML(反查视图返回复用,不重装配) */
+  private lastWalkHtml: string | null = null;
 
   constructor(private readonly deps: FlowSwimlaneDeps) {}
 
@@ -192,10 +269,18 @@ export class FlowSwimlanePanel {
       void vscode.window.showInformationMessage(t.errorNoFunctions);
       return;
     }
+    // FLOW-018:光标所在函数(语法锚)且在图面 → 免快选直开;否则快选回退
+    const cursorLine = (editor.selection?.active as { line?: number } | undefined)?.line;
+    const cursorFn =
+      typeof cursorLine === 'number'
+        ? resolveCursorFunction(editor.document.getText(), cursorLine)
+        : null;
     const picked =
-      functions.length === 1
-        ? functions[0]
-        : await vscode.window.showQuickPick(functions, { placeHolder: t.pickEntry });
+      cursorFn !== null && functions.includes(cursorFn)
+        ? cursorFn
+        : functions.length === 1
+          ? functions[0]
+          : await vscode.window.showQuickPick(functions, { placeHolder: t.pickEntry });
     if (!picked) {
       return;
     }
@@ -214,8 +299,8 @@ export class FlowSwimlanePanel {
     const t = strings(resolvePanelLocale()).flowSwimlane;
     const title = `${t.title} · ${entry.functionName}`;
     if (this.panel) {
-      this.panel.title = title;
       this.panel.reveal();
+      // 标题在装配成功后更新(装配失败视图停留,标题不假装已切换)
     } else {
       this.panel = vscode.window.createWebviewPanel(
         'kbengine.flowSwimlane',
@@ -223,18 +308,44 @@ export class FlowSwimlanePanel {
         vscode.ViewColumn.Two,
         { enableScripts: true, retainContextWhenHidden: true }
       );
-      // FLOW-016:点击调用点/声明标注跳转编辑器(file:0 基行;行界钳制)
+      // FLOW-016/018:跳转编辑器/节点反查/打开图/返回上一视图
       this.panel.webview.onDidReceiveMessage(message => {
-        const jump = parseJumpTarget(
-          (message as { command?: string; target?: unknown })?.target
-        );
-        if ((message as { command?: string })?.command !== 'flowJump' || !jump) {
+        const cmd = (message as { command?: string } | null)?.command;
+        if (cmd === 'flowJump') {
+          const jump = parseJumpTarget((message as { target?: unknown }).target);
+          if (jump) {
+            void this.revealLocation(jump.file, jump.line0);
+          }
           return;
         }
-        void this.revealLocation(jump.file, jump.line0);
+        if (cmd === 'flowInspect') {
+          const nodeId = (message as { nodeId?: unknown }).nodeId;
+          if (typeof nodeId === 'string') {
+            void this.inspectByNodeId(nodeId);
+          }
+          return;
+        }
+        if (cmd === 'flowOpen') {
+          const file = (message as { file?: unknown }).file;
+          const functionName = (message as { functionName?: unknown }).functionName;
+          if (typeof file === 'string' && typeof functionName === 'string') {
+            void this.navigate(rootKey, { filePath: file, functionName });
+          }
+          return;
+        }
+        if (cmd === 'flowBack') {
+          void this.goBack();
+        }
       });
       this.panel.onDidDispose(() => {
         this.panel = null;
+        this.currentEntry = null;
+        this.currentRootKey = null;
+        this.currentSource = null;
+        this.frameNodes = [];
+        this.history = [];
+        this.viewMode = 'walk';
+        this.lastWalkHtml = null;
       });
     }
     const panel = this.panel;
@@ -243,17 +354,113 @@ export class FlowSwimlanePanel {
       : makeWorkspaceFlowSource(this.deps, rootKey);
     const html = await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Window, title: t.progress, cancellable: false },
-      () => assembleFlowCallGraph(source, entry).then(sample => sample.html)
+      () =>
+        assembleFlowCallGraph(source, entry).then(sample => {
+          return sample;
+        })
     );
     if (!this.panel || this.panel !== panel) {
       return; // 装配期间面板已关/换代:弃写
     }
+    const sample = html;
+    this.currentEntry = entry;
+    this.currentRootKey = rootKey;
+    this.currentSource = source;
+    this.frameNodes = sample.swimlanes.flatMap(lane => lane.frames);
+    this.viewMode = 'walk';
+    this.lastWalkHtml = sample.html;
     this.panel.title = title;
+    this.renderWebview(sample.html);
+  }
+
+  /** 节点反查(FLOW-018):全工作区上游/下游,未知与歧义可查看 */
+  private async inspectByNodeId(nodeId: string): Promise<void> {
+    const target = inspectTargetOfNodeId(nodeId);
+    const source = this.currentSource;
+    const rootKey = this.currentRootKey;
+    if (!target || !source || !rootKey) {
+      return; // 非函数帧(声明/未解析)不反查:如实不动
+    }
+    try {
+      const files = new Map<string, string>();
+      for (const filePath of await source.listScriptFiles()) {
+        const text = await source.readFile(filePath);
+        if (text !== null) {
+          files.set(filePath, text);
+        }
+      }
+      const entities = new Map<string, string | null>();
+      for (const filePath of files.keys()) {
+        entities.set(filePath, await source.entityForFile(filePath));
+      }
+      const inspect = buildFlowNodeInspect({
+        rootKey,
+        target,
+        files,
+        entityForFile: filePath => entities.get(filePath) ?? null,
+        canGoBack: this.lastWalkHtml !== null
+      });
+      if (!this.panel) {
+        return; // 反查期间面板已关:弃写
+      }
+      this.viewMode = 'inspect';
+      this.renderWebview(inspect.html);
+    } catch (error) {
+      void vscode.window.showWarningMessage(
+        `反查失败:${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  /** 「打开图」导航:旧入口压栈(装配成功才压),新场景重开 */
+  private async navigate(
+    rootKey: string,
+    entry: { filePath: string; functionName: string }
+  ): Promise<void> {
+    const previous = this.currentEntry;
+    try {
+      await this.open(rootKey, entry);
+    } catch {
+      void vscode.window.showErrorMessage('调用图装配失败');
+      return;
+    }
+    if (previous && this.currentEntry === entry) {
+      this.history.push(previous);
+    }
+  }
+
+  /** 「返回上一视图」:反查视图回泳道(缓存复用);泳道视图出栈重开 */
+  private async goBack(): Promise<void> {
+    if (this.viewMode === 'inspect') {
+      if (this.lastWalkHtml === null) {
+        return; // 无泳道在背后(罕见):如实不动
+      }
+      this.viewMode = 'walk';
+      this.renderWebview(this.lastWalkHtml);
+      return;
+    }
+    const previous = this.history.pop();
+    const rootKey = this.currentRootKey;
+    if (!previous || !rootKey) {
+      void vscode.window.showInformationMessage('没有上一视图');
+      return;
+    }
+    try {
+      await this.open(rootKey, previous);
+    } catch {
+      void vscode.window.showErrorMessage('调用图装配失败');
+    }
+  }
+
+  /** 渲染(CSP 注入 + nonce 交互桥;零外部面) */
+  private renderWebview(html: string): void {
+    if (!this.panel) {
+      return;
+    }
     const nonce = randomNonce();
-    // 零外部面 CSP;inline style 唯一样式来源;脚本只有本 nonce 的跳转桥
     this.panel.webview.html = html.replace(
       '<head>',
-      `<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';"><style>[data-flow-jump]{cursor:pointer;text-decoration:underline dotted;}</style><script nonce="${nonce}">${FLOW_JUMP_SCRIPT}</script>`
+      `<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';"><style>[data-flow-jump],[data-flow-open-file],[data-flow-back]{cursor:pointer;text-decoration:underline dotted;}</style><script nonce="${nonce}">${FLOW_JUMP_SCRIPT}</script>`
     );
   }
 
