@@ -172,6 +172,14 @@ const zh = {
     groupScale: '规模',
     groupQuality: '质量'
   },
+  flowSwimlane: {
+    title: '调用图(G2 泳道)',
+    progress: '正在装配调用图…',
+    pickEntry: '选择入口函数',
+    errorNoFile: '没有打开的 Python 编辑器:先打开实体脚本再打开调用图',
+    errorNoFunctions: '当前文件没有可作入口的函数',
+    errorAssemble: '调用图装配失败'
+  },
   entityFlow: {
     title: 'KBEngine 实体架构流程',
     statProperties: '属性',
@@ -470,6 +478,14 @@ const en: typeof zh = {
     groupHotspot: 'Reference hotspot',
     groupScale: 'Scale',
     groupQuality: 'Quality'
+  },
+  flowSwimlane: {
+    title: 'Call Graph (G2 swimlanes)',
+    progress: 'Assembling call graph…',
+    pickEntry: 'Pick entry function',
+    errorNoFile: 'No Python editor open: open an entity script first',
+    errorNoFunctions: 'No callable entry function in this file',
+    errorAssemble: 'Call graph assembly failed'
   },
   entityFlow: {
     title: 'KBEngine Entity Architecture Flow',

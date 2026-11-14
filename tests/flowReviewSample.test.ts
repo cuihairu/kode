@@ -260,6 +260,13 @@ describe('FLOW-014 R3 展示红线与 golden', () => {
     expect(sample.html).toContain('走查轨迹');
   });
 
+  it('静态角色不冒充运行实例:泳道头带静态角色标注', () => {
+    const sample = buildFlowReviewSample(input());
+    expect(sample.html).toContain('泳道:client(静态角色,非运行实例)');
+    expect(sample.html).toContain('泳道:base(静态角色,非运行实例)');
+    expect(sample.html).toContain('泳道:cell(静态角色,非运行实例)');
+  });
+
   it('golden 字节锁:docs/review 评审工件与生成器同步', () => {
     const sample = buildFlowReviewSample(input());
     if (UPDATE) {

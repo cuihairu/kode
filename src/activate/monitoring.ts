@@ -12,6 +12,7 @@ import { l10nText } from '../nlsRuntime';
 import { BackgroundWarmupController, WARMUP_SCAN_CONCURRENCY } from '../backend/backgroundWarmup';
 import { EntityDependencyWebView } from '../entityDependencyWebView';
 import { EntityFlowWebView } from '../entityFlowWebView';
+import { FlowSwimlanePanel } from '../flowSwimlanePanel';
 import { IndexTaskPriority } from '../backend/indexScheduler';
 import { MonitoringCollector } from '../monitoringCollector';
 import { MonitoringWebView } from '../monitoringWebView';
@@ -310,6 +311,17 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
     (entityName?: string) => flowWebView.show(entityName)
   );
   context.subscriptions.push(showEntityFlowCommand);
+
+  // KFLOW G2 静态调用路径泳道面板(FLOW-015):活动 Python 编辑器函数入口
+  // → 按角色分泳道(静态角色,不冒充运行实例),每边证据可追溯。
+  const flowSwimlanePanel = new FlowSwimlanePanel({
+    entityMappingManager
+  });
+  const openCallGraphCommand = vscode.commands.registerCommand(
+    'kbengine.flow.openCallGraph',
+    () => flowSwimlanePanel.show()
+  );
+  context.subscriptions.push(openCallGraphCommand);
 
   // BG-WARM:门控放行即启动后台预热(与索引机械同一门;纯 Python 工作区零启动)。
   // withProgress Window 位 = 状态栏进度,可取消:取消止步不写完成标记,下次激活

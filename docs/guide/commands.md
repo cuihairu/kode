@@ -604,6 +604,15 @@ The flow graph panel supports:
 - Export Markdown (written directly to a file)
 - Export SVG/PNG (rendered via webview, then exported)
 
+### `kbengine.flow.openCallGraph`
+
+- Title: `Open Call Graph (G2 swimlanes)`
+- Purpose: open the static call-path walk (G2) for a function in the active Python editor, rendered as swimlanes grouped by process role
+- Entry points: command palette with a Python entity script active; the entry function is picked from the parsed function list of that file (single function skips the picker)
+- The sample marks each swimlane header 静态角色（非运行实例） — static analysis has no running instances; running instances with component IDs belong to the G3/TRACE lane
+- Def declarations and implementations resolve through the entity mapping (entity × section × method); a missing declaration keeps the send edge unconnected and honest (no fabricated paths)
+- Every edge carries an EV-numbered evidence index entry; the source label is always 静态可能路径(G2) and the walk order is a 走查轨迹, not an execution order
+
 ### `kbengine.quickActions.runByName`
 
 - Title: `Run Quick Action By Name`

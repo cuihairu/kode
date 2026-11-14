@@ -506,7 +506,7 @@ footer { margin-top: 28px; color: #667; font-size: 12px; }
 <div class="note">${esc(input.unresolvedNote)}</div>
 <h2>泳道(按角色分列)· 走查轨迹</h2>
 <table class="swimlanes">
-<thead><tr>${roleColumns.map(role => `<th>泳道:${esc(role)}</th>`).join('')}</tr></thead>
+<thead><tr>${roleColumns.map(role => `<th>泳道:${esc(role)}(静态角色,非运行实例)</th>`).join('')}</tr></thead>
 <tbody>
 ${tableRows.join('\n')}
 </tbody>

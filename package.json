@@ -101,6 +101,7 @@
     "onCommand:kbengine.dependency.show",
     "onCommand:kbengine.pythonCallGraph.show",
     "onCommand:kbengine.flow.show",
+    "onCommand:kbengine.flow.openCallGraph",
     "onCommand:kbengine.generator.wizard",
     "onCommand:kbengine.generator.formWizard",
     "onCommand:kbengine.project.import",
@@ -680,6 +681,11 @@
         "command": "kbengine.flow.show",
         "title": "%kbengine.command.flow.show.title%",
         "icon": "$(circuit-board)"
+      },
+      {
+        "command": "kbengine.flow.openCallGraph",
+        "title": "%kbengine.command.flow.openCallGraph.title%",
+        "icon": "$(graph)"
       },
       {
         "command": "kbengine.generator.wizard",
