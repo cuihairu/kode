@@ -265,7 +265,7 @@
 ### 2. 现有代码取证与迁移清单（首个强制阶段）
 - [x] RUST-034 （旧 AUDIT-001） 固定仓库 commit SHA / tag，保存 working tree 状态；确认旧 TODO 每条任务的真实完成状态。——current-state.md §AUDIT-001（审计基点 36052c47cb26 全 SHA+干净树+旧 TODO 逐项对账 PR1..PR7/B-1..B-5 commit 核实；本 tidy 2026-11-13 复核）。
 - [x] RUST-035 （旧 AUDIT-002） 抽取 `src/` 模块树、入口 activation、各 provider 注册、manager 生命周期及 import 依赖图。——current-state.md §AUDIT-002。
-- [ ] RUST-036 （旧 AUDIT-003） 标出 `onLanguage:python` 激活是否不必要地初始化 KBEngine 服务；增加无 KBEngine 工作区负案例。(部分：初始化面已标出=激活即建全套 KBEngine 机制、负案例未实现未测——current-state.md §AUDIT-003；负案例归 PR-006 root-discovery 范围)
+- [x] RUST-036 （旧 AUDIT-003） 标出 `onLanguage:python` 激活是否不必要地初始化 KBEngine 服务；增加无 KBEngine 工作区负案例。（ef9be817,2026-11-15:负案例两面落 tests/extension.nonKbengineWorkspace.test.ts——①普通 python 项目(无 scripts/entity_defs/types.xml/entities.xml)激活不崩+机制空转无害=零 KBEngine 诊断/悬停提供器零 KBEngine 内容/零错误消息,带非空守卫(诊断集合与悬停提供器已注册才判空产出,防空表 vacuous);②命令面完整注册不因无资产缺席(降级发生在命令调用时,各有如实降级测试);prove-red=移除 activate 调用变异→非空守卫红→恢复 cmp 校验绿;初始化面结论维持 current-state.md §AUDIT-003 口径=激活即建全套机制,空转无害由本批钉住;门禁 lint 0/tsc 0/unit 829 文件 10206+8skip/xvfb demo 25 RC=0）
 - [x] RUST-037 （旧 AUDIT-004） 枚举 `.def` / types.xml / entities.xml / alias.xml 的所有解析器与调用方，找重复 parse/read。——current-state.md §AUDIT-004。
 - [x] RUST-038 （旧 AUDIT-005） 枚举 PythonClassIndex、EntityMappingManager、type registry、composition root、definitionWorkspace 及实际名称/路径。——current-state.md §AUDIT-005。
 - [x] RUST-039 （旧 AUDIT-006） 核查所有 `fs.*Sync`、`getText().split`、递归 workspace.findFiles、glob、statSync、首次查询 ensureScanned。——current-state.md §AUDIT-006（同步 IO 普查，非测试代码）。
