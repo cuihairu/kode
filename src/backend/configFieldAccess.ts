@@ -154,7 +154,8 @@ function stepCursor(
   return null; // scalar 基面再下标 → 不可证明
 }
 
-function mapSchemaType(ft: SchemaFieldType): ConfigFieldType {
+/** schema 字段类型 → 配置类型面(CFG-08 结构注册表同用)。 */
+export function mapSchemaType(ft: SchemaFieldType): ConfigFieldType {
   if (ft.kind === 'scalar') {
     return { kind: 'scalar', family: ft.family };
   }
@@ -183,7 +184,8 @@ function mapFmtFields(fmt: DictFormat): ReadonlyMap<string, ConfigFieldType> {
   return out;
 }
 
-function mapDictValueKind(vk: DictValueKind): ConfigFieldType {
+/** 推导值类型 → 配置类型面(unknown → 空字段面,不猜;CFG-08 同用)。 */
+export function mapDictValueKind(vk: DictValueKind): ConfigFieldType {
   if (vk.kind === 'scalar') {
     return { kind: 'scalar', family: vk.scalar };
   }
@@ -215,8 +217,8 @@ function cursorType(cursor: ChainCursor | null): ConfigFieldType | null {
   return mapDictValueKind(cursor.vk);
 }
 
-/** 掩码行内找匹配括号(嵌套计数;找不到 → -1)。 */
-function matchBracket(line: string, openAt: number): number {
+/** 掩码行内找匹配括号(嵌套计数;找不到 → -1;CFG-08 同用)。 */
+export function matchBracket(line: string, openAt: number): number {
   const open = line[openAt];
   const close = open === '(' ? ')' : open === '[' ? ']' : open === '{' ? '}' : null;
   if (close === null) {
@@ -237,8 +239,8 @@ function matchBracket(line: string, openAt: number): number {
   return -1;
 }
 
-/** 行内顶层逗号位置(括号深度 0;用于 get 实参切分)。 */
-function topLevelCommas(s: string): number[] {
+/** 行内顶层逗号位置(括号深度 0;get 实参切分/CFG-08 路径扫描同用)。 */
+export function topLevelCommas(s: string): number[] {
   const hits: number[] = [];
   let depth = 0;
   for (let i = 0; i < s.length; i += 1) {

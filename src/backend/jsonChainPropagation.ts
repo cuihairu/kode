@@ -933,3 +933,9 @@ function fnmatchToRegExp(pattern: string): RegExp {
   fnmatchCache.set(pattern, re);
   return re;
 }
+
+/** 绑定 glob(SER-08 fnmatch 语义)对具体路径命中(CFG-08 结构注册表
+ * 同用;RegExp 缓存共享)。 */
+export function schemaGlobMatches(pattern: string, path: string): boolean {
+  return fnmatchToRegExp(pattern).test(path);
+}
