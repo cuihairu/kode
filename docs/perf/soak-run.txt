@@ -1,0 +1,14 @@
+SOAK-ENV node=v24.21.0 platform=linux cpus=14 largeFiles=2000 seconds=60 window=5 heapGrowthCeilingMb=100 assets=/tmp/kode-soak-assets
+SOAK-METRIC window n=1 index=1 wall=101ms rssMb=170.11 heapUsedMb=45.47 hoverP50=0.31ms hoverP99=24.99ms requests=30
+SOAK-METRIC window n=1 index=2 wall=22ms rssMb=170.36 heapUsedMb=45.63 hoverP50=0.37ms hoverP99=0.78ms requests=30
+SOAK-METRIC window n=1 index=3 wall=18ms rssMb=170.36 heapUsedMb=45.7 hoverP50=0.28ms hoverP99=0.84ms requests=30
+SOAK-METRIC window n=1 index=4 wall=17ms rssMb=170.36 heapUsedMb=45.72 hoverP50=0.27ms hoverP99=0.72ms requests=30
+SOAK-METRIC window n=1 index=5 wall=22ms rssMb=170.36 heapUsedMb=45.74 hoverP50=0.39ms hoverP99=1ms requests=30
+SOAK-METRIC window n=1 index=6 wall=15ms rssMb=170.61 heapUsedMb=45.77 hoverP50=0.28ms hoverP99=0.75ms requests=30
+SOAK-METRIC window n=1 index=7 wall=19ms rssMb=170.61 heapUsedMb=45.78 hoverP50=0.33ms hoverP99=0.71ms requests=30
+SOAK-METRIC window n=1 index=8 wall=16ms rssMb=170.73 heapUsedMb=45.79 hoverP50=0.28ms hoverP99=0.84ms requests=30
+SOAK-METRIC window n=1 index=9 wall=15ms rssMb=170.73 heapUsedMb=45.85 hoverP50=0.27ms hoverP99=0.75ms requests=30
+SOAK-METRIC window n=1 index=10 wall=13ms rssMb=170.73 heapUsedMb=45.85 hoverP50=0.23ms hoverP99=0.67ms requests=30
+SOAK-METRIC window n=1 index=11 wall=15ms rssMb=170.73 heapUsedMb=45.88 hoverP50=0.26ms hoverP99=0.74ms requests=30
+SOAK-METRIC window n=1 index=12 wall=14ms rssMb=170.86 heapUsedMb=45.89 hoverP50=0.25ms hoverP99=0.68ms requests=30
+SOAK-SUMMARY windows=12 wall=60029ms requests=360 errors=0 hoverHits=360 gcApplied=1 rssFirstMb=170.11 rssLastMb=170.86 rssGrowthMb=0.75 heapFirstMb=45.47 heapLastMb=45.89 heapGrowthMb=0.42 hoverP50FirstMs=0.31 hoverP50LastMs=0.25 hoverP99MaxMs=24.99

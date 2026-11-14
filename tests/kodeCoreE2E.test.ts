@@ -288,4 +288,29 @@ suite('kode core e2e(真实 kode-server 二进制)', () => {
     expect((await client.health()).documents).toEqual([{ uri: URI, version: 1 }]);
     await client.dispose();
   }, 20_000);
+
+  it(
+    'RUST-030 Core 负载后资源快照:RSS 宽松上界(OOM 限额方向面)',
+    async () => {
+      const client = makeClient();
+      await client.start();
+      // 持续负载:200 次 echo(512B payload),进程稳态 RSS 不得无界增长
+      for (let seq = 0; seq < 200; seq++) {
+        const echoed = await client.request('$/kode/rpc', {
+          method: '$/kode/echo',
+          params: { seq, blob: 'x'.repeat(512) }
+        });
+        expect(echoed.seq).toBe(seq);
+      }
+      const health = await client.health();
+      expect(health.status).toBe('ok');
+      expect(health.resources).not.toBeNull();
+      // 宽松上界(泄漏方向界,非配额):空闲 Rust server 数 MB 量级,200 次请求后
+      // 仍在 200MB 内;硬 OOM 限额属部署侧(容器/ulimit),进程内不可设,如实记录。
+      expect(health.resources!.rssBytes).toBeLessThan(200 * 1024 * 1024);
+      expect(health.resources!.threads).toBeGreaterThanOrEqual(1);
+      await client.dispose();
+    },
+    30_000
+  );
 });
