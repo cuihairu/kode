@@ -235,9 +235,9 @@
 - [x] RUST-012 （旧 ARCH-012） 无实验数据不得声称 Rust 性能一定快 N 倍；禁止靠删功能换性能。(审计两判据 PASS:①用户面文档 README en+zh/features en+zh/configuration/commands 与 src/crates 注释零性能倍数声称,性能数字只在 docs/perf/ 实测文档(基线/拓扑/gate 回退上界),big-py 0-hit 如实登记,口径存照=未来声称必须指实测出处;②PERF-001..007 全保语义优化带 parity 回归,TS 引擎冻结为兜底非删除,功能数只增不减(G2 对账 152→154);同族修正=README 双语 backend 默认值仍写 ts 已改 rust(与 DEFAULT_CORE_GATE_CONFIG/configuration.md:499 对账);详见 docs/review/2026-11-15-rust-012-no-perf-claims-without-data.md)
 
 #### 0.3 不做的事情
-- [ ] RUST-013 （旧 SCOPE-001） 不重写 VS Code UI 为 Rust GUI。
-- [ ] RUST-014 （旧 SCOPE-002） 不从零重写完整 Python 解释器或 Python 语言服务器。
-- [ ] RUST-015 （旧 SCOPE-003） 不把服务器部署、集群调度、云资源与游戏业务运维塞入语言服务核心。
+- [x] RUST-013 （旧 SCOPE-001） 不重写 VS Code UI 为 Rust GUI。(审计成立:16 crate 全清单无 GUI 框架依赖(零 tauri/iced/egui),UI 全 VS Code 原生 TS 渲染,kode-server 只走 stdio LSP;详见 docs/review/2026-11-15-rust-013-015-scope-boundaries.md)
+- [x] RUST-014 （旧 SCOPE-002） 不从零重写完整 Python 解释器或 Python 语言服务器。(审计成立:kode-python 只 ruff AST 静态分析永不执行,pythonExecService compile-only 红线(:24),通用 Python 工具链交 Pylance/ruff,扩展只注册 KBEngine 感知 provider 集不做 LSAPI 重实现;同上文档)
+- [x] RUST-015 （旧 SCOPE-003） 不把服务器部署、集群调度、云资源与游戏业务运维塞入语言服务核心。(审计成立:全仓零 k8s/terraform/ansible/云资源面;边界读法登记=本地引擎进程控制与 telnet/HTTP 是本地开发调试工具不构成部署运维,业务逻辑永远是用户资产;同上文档)
 - [ ] RUST-016 （旧 SCOPE-004） 不允许没有协议隔离的第三方插件直接加载到高可信 Core 进程。
 - [ ] RUST-017 （旧 SCOPE-005） 不承诺纯浏览器 VS Code 可以执行原生 Core；单独设计 Web 降级或远程部署。
 
