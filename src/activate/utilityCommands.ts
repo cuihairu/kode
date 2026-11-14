@@ -49,6 +49,7 @@ import { scanVenvs, verifyVenvDirectory } from '../backend/venvDiscovery';
 import { showProfileHealthSummary } from '../profileHealth';
 import { wireDefAnalysis } from '../defAnalysisWiring';
 import { wireTrapLintDiagnostics } from '../trapDiagnosticsWiring';
+import { wireConfigValueDiagnostics } from '../configValueDiagnosticsWiring';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { EntityMappingManager } from '../entityMapping';
@@ -603,6 +604,10 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
   // self 属性悬停面接线。注册点放在全部既有诊断集合之后(集合创建序即
   // 注册表序,消费方按序取集合,不抢既有下标)
   wireTrapLintDiagnostics(context, entityMappingManager);
+  // KSEM-CFG-05 配置值校验诊断(独立集合 kbengine-config-value,自持监听,
+  // 证据分级类型 Error/枚举 Warning/未知键 Information;注册点在全部既有
+  // 诊断集合之后——集合创建序即注册表序,消费方按序取集合)
+  wireConfigValueDiagnostics(context);
   const ruffLintDeps = {
     getWorkspacePythonFiles: async () =>
       (

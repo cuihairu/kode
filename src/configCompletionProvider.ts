@@ -43,8 +43,14 @@ interface PreparedAnalysis {
 
 const analysisCache = new WeakMap<ConfigXmlNode, PreparedAnalysis>();
 
-/** 按默认树身份缓存分析产物(树对象随 resolve 缓存换代,WeakMap 自动失效) */
-function analysisFor(defaultsTree: ConfigXmlNode, customTree: ConfigXmlNode | null): PreparedAnalysis {
+/**
+ * 按默认树身份缓存分析产物(树对象随 resolve 缓存换代,WeakMap 自动失效)。
+ * 配置补全 provider 与配置值诊断接线(KSEM-CFG-05)共用同一份分析。
+ */
+export function prepareConfigAnalysis(
+  defaultsTree: ConfigXmlNode,
+  customTree: ConfigXmlNode | null,
+): PreparedAnalysis {
   const cached = analysisCache.get(defaultsTree);
   if (cached) {
     return cached;
@@ -88,7 +94,7 @@ export class ConfigCompletionProvider implements vscode.CompletionItemProvider {
     if (pair.defaultsTree === null) {
       return null;
     }
-    const { scan, extraction } = analysisFor(pair.defaultsTree, pair.customTree);
+    const { scan, extraction } = prepareConfigAnalysis(pair.defaultsTree, pair.customTree);
     const offset = document.offsetAt(position);
     return toCompletionItems(provideConfigCompletions(document.getText(), offset, scan, extraction));
   }

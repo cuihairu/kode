@@ -129,7 +129,7 @@ function childByName(node: ConfigXmlNode, name: string): ConfigXmlNode | undefin
  * parseConfigXml 产物是空名合成文档节点(真 <root> 是其子)——归一到
  * <root> 节点;调用方直接传 <root> 节点则原样返回。
  */
-function normalizeRootNode(tree: ConfigXmlNode): ConfigXmlNode {
+export function normalizeRootNode(tree: ConfigXmlNode): ConfigXmlNode {
   if (tree.name === '') {
     const rootChild = childByName(tree, 'root');
     if (rootChild !== undefined) {

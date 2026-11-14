@@ -234,7 +234,10 @@ describe('extension activate 装配', () => {
       'KBEngine 临时编辑热更新',
       'kbengine-def-analysis',
       'kode-ruff',
-      'kbengine-trap-lints'
+      'kbengine-trap-lints',
+      // KSEM-CFG-05 配置值校验诊断集再一份(kbengine-config-value,注册点在
+      // 全部既有集合之后——集合创建序即注册表序)
+      'kbengine-config-value'
     ]);
 
     // 虚拟文档提供者:数据库 schema + kbe 符号桩文档(批108,内容由桩索引出)

@@ -230,6 +230,34 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     trigger: '实时(open/edit)', quickFix: false,
     status: 'implemented', source: 'src/backend/configContractDiagnostics.ts'
   },
+  // ── 配置值校验(implemented,KSEM-CFG-05:证据分级——类型面 Error(引擎
+  // 读取点/类型声明证据,启动解析失败级)/枚举面 Warning(注释枚举块,引擎
+  // 掩码/忽略)/未知键 Information(custom 独有键被容忍);范围/必填无证据
+  // 源零产出)─────────────────────────────────────────────
+  {
+    id: 'KBE-CFG-007', code: 'kbengine.configValue.typeMismatch',
+    title: '配置值类型不符(引擎读取点/注释类型声明证据,坏值启动解析失败级)',
+    severity: 'Error', roles: 'kbengine.xml',
+    toggles: ['kbengine.configValueDiagnostics'],
+    trigger: '实时(open/edit)', quickFix: false,
+    status: 'implemented', source: 'src/backend/configValueValidation.ts'
+  },
+  {
+    id: 'KBE-CFG-008', code: 'kbengine.configValue.enumMismatch',
+    title: '配置值不在注释枚举块(引擎对未登记值按掩码/忽略处理)',
+    severity: 'Warning', roles: 'kbengine.xml',
+    toggles: ['kbengine.configValueDiagnostics'],
+    trigger: '实时(open/edit)', quickFix: false,
+    status: 'implemented', source: 'src/backend/configValueValidation.ts'
+  },
+  {
+    id: 'KBE-CFG-009', code: 'kbengine.configValue.unknownKey',
+    title: 'kbengine.xml 独有键(引擎配置层只读已知键,custom 独有键被容忍忽略)',
+    severity: 'Information', roles: 'kbengine.xml',
+    toggles: ['kbengine.configValueDiagnostics'],
+    trigger: '实时(open/edit)', quickFix: false,
+    status: 'implemented', source: 'src/backend/configValueValidation.ts'
+  },
   // ── def 按需分析(implemented,非实时)────────────────────────────
   {
     id: 'KBE-DEF-004', code: 'phantom-type',
