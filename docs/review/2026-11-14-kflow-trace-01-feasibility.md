@@ -40,7 +40,7 @@
 
 - **可获取的数据**:外部采样栈(进程不配合也能读);`dump` = 瞬时完整栈,`record --rate N` = N Hz 采样序列(speedscope 格式,样本含帧名/文件/行)。上游支持 Python 2.2–3.x 系列(含 3.7;具体以目标进程符号可读为准)。
 - **kode 已交付面**:PDBG-003 py-spy profiling entry(Servers 树 `py-spy dump --pid <pid> --nonblocking`,按解释器环境解析/安装 py-spy,权限失败附 ptrace 指引:Linux ptrace_scope=0/sudo/cap、容器 SYS_PTRACE、Windows 同用户/提权;出处:docs/features.md 255-256,PDBG-004/005 已覆盖 ssh 远程与远程进程选择)。
-- **本机实测(附录 A2)**:本次核实把 py-spy 0.4.3 装到 `~/.local/bin`(pip --user);**在当前沙箱 shell 内对外部 python 进程 dump/record 均 Permission Denied**(ptrace 被会话沙箱拒绝,yama=1 之上还有一层);目标进程即使 `prctl(PR_SET_PTRACER_ANY)` 仍被拒。判定:py-spy 能力本身成立(PDBG-003 测试链与上游文档),**本沙箱 shell 不可用作采集现场**,须在真实终端/CI 宿主按 PDBG-003 指引运行。~/.local/bin/py-spy 保留(正是 PDBG-003 会装的用户级入口)。
+- **本机实测(附录 A2)**:本次核实临时把 py-spy 0.4.3 装到 `~/.local/bin`(pip --user,探针后已卸载——`covExtensionCommands` 门禁钉着「本机未装 py-spy」形态,装着会打红两例);**在当前沙箱 shell 内对外部 python 进程 dump/record 均 Permission Denied**(ptrace 被会话沙箱拒绝,yama=1 之上还有一层);目标进程即使 `prctl(PR_SET_PTRACER_ANY)` 仍被拒。判定:py-spy 能力本身成立(PDBG-003 测试链与上游文档),**本沙箱 shell 不可用作采集现场**,须在真实终端/CI 宿主按 PDBG-003 指引运行(真需要时 PDBG-003 会按解释器环境一键安装)。
 - **边界**:采样必然漏样本间的调用——**采样栈不冒充完整请求轨迹**(任务原文);无逐请求关联;受 ptrace 权限约束。
 
 ## 汇总对照
