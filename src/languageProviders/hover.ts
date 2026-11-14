@@ -700,11 +700,25 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     const writeSites = queryDataDictSitesForAccess(index, access, scopeRoot)
       .filter(site => site.kind === 'write');
     const types: string[] = [];
+    // KSEM-DATA-03 来源说明:联合成员逐类型记产源写点(类型→file:line 标签),
+    // 类型推不出的写点不入联合、计数如实补记
+    const byType = new Map<string, string[]>();
+    let inferredSiteCount = 0;
     for (const write of writeSites) {
       const type = inferDataDictValueType(write.valueText);
-      if (type && !types.includes(type)) {
+      if (!type) {
+        continue;
+      }
+      inferredSiteCount += 1;
+      if (!types.includes(type)) {
         types.push(type);
       }
+      const label = `${path.basename(write.file)}:${write.line + 1}`;
+      const labels = byType.get(type) ?? [];
+      if (!labels.includes(label)) {
+        labels.push(label);
+      }
+      byType.set(type, labels);
     }
     if (access.kind === 'write' && types.length === 0) {
       return null;
@@ -722,6 +736,16 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       markdown.appendMarkdown(`${headline}\n\n读点 · 同键写点 ${writeSites.length} 处`);
       const first = writeSites[0];
       markdown.appendMarkdown(`\n\n首个写点 ${path.basename(first.file)}:${first.line + 1}`);
+      // 联合多成员(≥2 类)逐类型列产源——正常多态(int|str)如实并陈,
+      // 不裁不报错(共享数据键无声明契约面,类型分歧不构成错误)
+      if (types.length >= 2) {
+        for (const [type, labels] of byType) {
+          markdown.appendMarkdown(`\n\n- ${type} ← ${labels.join(', ')}`);
+        }
+        if (inferredSiteCount < writeSites.length) {
+          markdown.appendMarkdown(`\n\n- 另有 ${writeSites.length - inferredSiteCount} 处写点类型不可推(不入联合)`);
+        }
+      }
     }
     return new vscode.Hover(markdown);
   }
