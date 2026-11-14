@@ -126,14 +126,23 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
   // + .kbengine/inferred 副本同步 + 脚本变更 watcher + kbengine.infer.run 命令
   activateInferPipeline(context);
   void (async () => {
-    await exportKbeStubs(fileSystemStubExportDeps, {
-      silent: true,
-      templateRoot: resolveKbengineStubTemplateRoot(context.extensionPath)
-    });
-    await exportPythonTypeStubs(fileSystemStubExportDeps, { silent: true });
-    await syncPythonExtraPaths(context, fileSystemScriptRootDeps, { silent: true });
-    await exportEntityTypeStubs(entityMappingManager);
-    await syncJsoncAssociation(context, { silent: true });
+    // RUST-009 兜底:激活期桩导出链任何未预期失败不再成为未处理 rejection
+    // (链内各步已各自降级,这里是传播面保险);warning 存照,UI 照常可用。
+    try {
+      await exportKbeStubs(fileSystemStubExportDeps, {
+        silent: true,
+        templateRoot: resolveKbengineStubTemplateRoot(context.extensionPath)
+      });
+      await exportPythonTypeStubs(fileSystemStubExportDeps, { silent: true });
+      await syncPythonExtraPaths(context, fileSystemScriptRootDeps, { silent: true });
+      await exportEntityTypeStubs(entityMappingManager);
+      await syncJsoncAssociation(context, { silent: true });
+    } catch (error) {
+      console.error('[kbengine] stub export chain failed:', error);
+      void Promise.resolve(
+        vscode.window.showWarningMessage(`KBEngine 桩导出链失败: ${(error as Error).message}`)
+      ).catch(() => undefined);
+    }
   })();
   // 批143(用户单 kode-debug-json.md):`.kbengine/debug.json` 缺失即生成带注释
   // 的骨架,并按脚本扫描填 quickActions。放在首装扫描之前——骨架里已经有动作

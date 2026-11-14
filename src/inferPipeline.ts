@@ -541,7 +541,16 @@ export function activateInferPipeline(context: vscode.ExtensionContext): void {
   context.subscriptions.push(watcher);
   context.subscriptions.push({ dispose: () => copySyncScheduler.dispose() });
   void (async () => {
-    await applyManagedDirExclusions(context, fileSystemInferDeps, { silent: true });
-    await syncInferredCopy(context, fileSystemInferDeps, { silent: true });
+    // RUST-009 兜底:推断管道静默初始化链的未预期失败不再成为未处理
+    // rejection;warning 存照,provider 面照常走无富化路径。
+    try {
+      await applyManagedDirExclusions(context, fileSystemInferDeps, { silent: true });
+      await syncInferredCopy(context, fileSystemInferDeps, { silent: true });
+    } catch (error) {
+      console.error('[kbengine] infer pipeline init failed:', error);
+      void Promise.resolve(
+        vscode.window.showWarningMessage(`KBEngine 推断管道初始化失败: ${(error as Error).message}`)
+      ).catch(() => undefined);
+    }
   })();
 }

@@ -86,7 +86,15 @@ export function collectKbengineStubTemplateFiles(
       if (!name.endsWith('.pyi')) {
         continue;
       }
-      files.push({ relativePath: relative, content: deps.readFile(absolute) });
+      let content: string;
+      try {
+        content = deps.readFile(absolute);
+      } catch {
+        // RUST-009:单模板文件不可读跳过,不炸整条收集链(与上方 statSync
+        // 守护同风格);导出继续,缺文件面由调用方 copy-if-absent 语义补齐
+        continue;
+      }
+      files.push({ relativePath: relative, content });
     }
   };
   walk(templateRoot, '');

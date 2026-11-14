@@ -162,6 +162,27 @@ describe('collectKbengineStubTemplateFiles(内置模板清单)', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it('RUST-009:单模板文件不可读跳过,其余照收,不炸收集链', () => {
+    const root = makeTemplateRoot();
+    try {
+      const real = templateRealDeps(root);
+      const poison = join(root, 'KBEngine', 'Entity.pyi');
+      const files = collectKbengineStubTemplateFiles(root, {
+        ...real,
+        readFile: (candidate: string): string => {
+          if (candidate === poison) {
+            throw new Error('EACCES: poisoned template');
+          }
+          return real.readFile(candidate);
+        }
+      } as StubExportDeps);
+      expect(files).not.toBeNull();
+      expect(files!.map(file => file.relativePath)).toEqual(['KBEngine/Proxy.pyi', 'KBEngine/__init__.pyi']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('exportKbeStubs(copy-if-absent 复制)', () => {

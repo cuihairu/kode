@@ -427,53 +427,65 @@ export function activateServerControls(deps: ServerControlsDeps): ServerControls
       });
     };
     void (async () => {
-      if (autoDebugpyEnabled()) {
-        // 引擎目标逐工作区解析(设置 > 引擎二进制扫描;DBG-COMPAT-01),
-        // 预检按目标策略裁版本;资产树包读出版本核对策略,不再只查存在
-        // (DBG-COMPAT-04)
-        const pythonTarget = resolvePythonTarget(pythonTargetDeps(context.workspaceState));
-        const preflight = await checkInterpreterDebugpy(debugpyPreflightDeps(), pythonTarget);
-        const allows = debugpyPreflightAllowsInjection(
-          preflight,
-          pythonTarget,
-          readAssetsDebugpyVersion(serverManager.getConfigPath())
-        );
-        if (!allows) {
-          const componentName = typeof injectTarget === 'string' ? injectTarget : injectTarget.component;
-          log(componentName, 'warning', preflight.message);
-          recordInjection(
-            typeof injectTarget === 'string' ? injectTarget : `${injectTarget.component}#${injectTarget.targetId}`,
-            { outcome: 'failed', detail: preflight.message }
+      try {
+        if (autoDebugpyEnabled()) {
+          // 引擎目标逐工作区解析(设置 > 引擎二进制扫描;DBG-COMPAT-01),
+          // 预检按目标策略裁版本;资产树包读出版本核对策略,不再只查存在
+          // (DBG-COMPAT-04)
+          const pythonTarget = resolvePythonTarget(pythonTargetDeps(context.workspaceState));
+          const preflight = await checkInterpreterDebugpy(debugpyPreflightDeps(), pythonTarget);
+          const allows = debugpyPreflightAllowsInjection(
+            preflight,
+            pythonTarget,
+            readAssetsDebugpyVersion(serverManager.getConfigPath())
           );
+          if (!allows) {
+            const componentName = typeof injectTarget === 'string' ? injectTarget : injectTarget.component;
+            log(componentName, 'warning', preflight.message);
+            recordInjection(
+              typeof injectTarget === 'string' ? injectTarget : `${injectTarget.component}#${injectTarget.targetId}`,
+              { outcome: 'failed', detail: preflight.message }
+            );
+            return;
+          }
+          // DBG-COMPAT-05:3.7 目标 × 调试扩展线核查(ms-python.debugpy
+          // 2024.1 起移除 Python 3.7 调试支持,attach 必败)——只给固定版
+          // 本安装/禁自动更新步骤,绝不自动降级;非 3.7 目标/在线版本静默。
+          // 引擎侧注入照常(监听不依赖扩展,扩展是 attach 侧依赖);会话去重。
+          const extensionCompat = debugExtensionCompatFor(pythonTarget, readDebugpyExtensionVersion());
+          if (extensionCompat.message !== null && !extensionCompatWarned) {
+            extensionCompatWarned = true;
+            const componentName = typeof injectTarget === 'string' ? injectTarget : injectTarget.component;
+            log(componentName, 'warning', `autoDebugpy:${extensionCompat.message}`);
+          }
+        }
+        // DBG-004 等待连接模式:默认实例由入口脚本引导块在启动最早期
+        // listen+wait(端口同表),telnet 注入不再重复 listen,跳过并记一笔。
+        // DBG-008:引导块持有表口监听=「监听」态(表外组件 machine 无 env,不播)。
+        if (debugpyWaitAtStartupEnabled() && typeof injectTarget === 'string') {
+          const waitPort = debugpyPortFor(injectTarget);
+          log(injectTarget, 'info', 'autoDebugpy:等待连接模式已由启动引导监听,跳过 telnet 注入');
+          if (waitPort !== undefined) {
+            recordInjection(injectTarget, { outcome: 'listening', port: waitPort });
+          }
           return;
         }
-        // DBG-COMPAT-05:3.7 目标 × 调试扩展线核查(ms-python.debugpy
-        // 2024.1 起移除 Python 3.7 调试支持,attach 必败)——只给固定版
-        // 本安装/禁自动更新步骤,绝不自动降级;非 3.7 目标/在线版本静默。
-        // 引擎侧注入照常(监听不依赖扩展,扩展是 attach 侧依赖);会话去重。
-        const extensionCompat = debugExtensionCompatFor(pythonTarget, readDebugpyExtensionVersion());
-        if (extensionCompat.message !== null && !extensionCompatWarned) {
-          extensionCompatWarned = true;
-          const componentName = typeof injectTarget === 'string' ? injectTarget : injectTarget.component;
-          log(componentName, 'warning', `autoDebugpy:${extensionCompat.message}`);
-        }
-      }
-      // DBG-004 等待连接模式:默认实例由入口脚本引导块在启动最早期
-      // listen+wait(端口同表),telnet 注入不再重复 listen,跳过并记一笔。
-      // DBG-008:引导块持有表口监听=「监听」态(表外组件 machine 无 env,不播)。
-      if (debugpyWaitAtStartupEnabled() && typeof injectTarget === 'string') {
-        const waitPort = debugpyPortFor(injectTarget);
-        log(injectTarget, 'info', 'autoDebugpy:等待连接模式已由启动引导监听,跳过 telnet 注入');
-        if (waitPort !== undefined) {
-          recordInjection(injectTarget, { outcome: 'listening', port: waitPort });
-        }
-        return;
-      }
-      await injectDebugpyAfterStart([injectTarget], () => telnetService.getTargets(), {
-        log,
-        report: (serverKey, outcome, detail, port) =>
-          recordInjection(serverKey, { outcome, detail, port })
-      });
+        await injectDebugpyAfterStart([injectTarget], () => telnetService.getTargets(), {
+          log,
+          report: (serverKey, outcome, detail, port) =>
+            recordInjection(serverKey, { outcome, detail, port })
+        });
+        // RUST-009 兜底:autoDebugpy 自动注入链任何未预期失败不再成为未处理
+        // rejection;走同一 log/recordInjection 面如实留痕(不弹窗打断用户)。
+    } catch (error) {
+      const detail = (error as Error).message;
+      const componentName =
+        typeof injectTarget === 'string'
+          ? injectTarget
+          : `${injectTarget.component}#${injectTarget.targetId}`;
+      log(componentName, 'error', `autoDebugpy:${detail}`);
+      recordInjection(componentName, { outcome: 'failed', detail });
+    }
     })();
   };
   const serverStatusSubscription = serverManager.onDidChangeStatus(() => {
