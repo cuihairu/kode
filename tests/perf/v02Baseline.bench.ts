@@ -15,13 +15,20 @@
 // 宿主延迟口径:Provider 调用耗时 = 宿主事件循环阻塞段(全部在宿主线程执行);
 // 启动延迟 = 激活墙钟(构造→def 首扫收尾)+ 全量 .py 扫描墙钟。
 // 输出行以 V02-METRIC 前缀打印并落 docs/perf/v02-baseline-run.txt。只观测不改行为。
+//
+// RUST-007 发布门槛模式:KODE_PERF_GATE=1 时每场景收尾按 GATE_BOUNDS 断言——
+// 内存上限(扫描期 RSS 峰值/增量)+ 尾延迟(热态 p99/max)+ 启动墙钟 + 语义命中
+// (hover/definitionPy 必命中,命中=标注链与基类解析活的语义面)。边界 =
+// 2026-11-04 基线 × 7~30x 宽松上界(PERF-006 纪律:只捕数量级回退,不捕负载
+// 抖动——共享 CI runner 墙钟抖动大,RSS 几乎无抖动故内存界收得最紧 2.4~3x)。
+// nightly validate job 以 KODE_PERF_GATE=1 跑同一 bench;缺省(无 flag)纯观测。
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { performance } from 'perf_hooks';
-import { afterAll, beforeAll, describe, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Position, Uri, makeTextDocument } from '../fake-vscode/core';
 import { workspace as stubWorkspace } from '../fake-vscode/workspaceState';
 import {
@@ -58,6 +65,7 @@ const percentile = (samples: number[], rank: number): number => {
 };
 
 const metric = (name: string, values: number[]): void => {
+  recordMetric(name, values, 'ms');
   emit(
     `V02-METRIC ${name} n=${values.length} ` +
     `p50=${percentile(values, 0.5)}ms p95=${percentile(values, 0.95)}ms ` +
@@ -66,10 +74,120 @@ const metric = (name: string, values: number[]): void => {
 };
 
 const once = (name: string, value: number, unit = 'ms'): void => {
+  recordMetric(name, [value], unit);
   emit(`V02-METRIC ${name} n=1 ${Math.round(value * 100) / 100}${unit}`);
 };
 
 const mb = (bytes: number): number => Math.round((bytes / 1048576) * 100) / 100;
+
+// ---------------- RUST-007 发布门槛(KODE_PERF_GATE=1 启用) ----------------
+
+const PERF_GATE = process.env.KODE_PERF_GATE === '1';
+
+/** 指标记录面:metric/once 落出的每个 V02.<scenario>.<path> 都按场景收着,
+ *  供门禁评估;纯观测模式同样记录(开销可忽略),行为差异只在是否断言。 */
+const recordedMetrics = new Map<string, Map<string, { values: number[]; unit: string }>>();
+
+const recordMetric = (name: string, values: number[], unit: string): void => {
+  // 名形 V02.<scenario>.<path...>;V02-ENV 等非 V02. 前缀行不记录
+  if (!name.startsWith('V02.')) {
+    return;
+  }
+  const dot = name.indexOf('.');
+  const end = name.indexOf('.', dot + 1);
+  if (end < 0) {
+    return;
+  }
+  const scenario = name.slice(dot + 1, end);
+  let bucket = recordedMetrics.get(scenario);
+  if (!bucket) {
+    bucket = new Map();
+    recordedMetrics.set(scenario, bucket);
+  }
+  bucket.set(name, { values, unit });
+};
+
+/**
+ * 门禁边界(宽松上界纪律:只捕数量级回退)。基线=docs/perf/2026-11-04-v02-baseline.md:
+ * 交互热态最坏 p99 14.5ms / max 26.7ms(墙钟界 ~7x/11x 余量,吸收共享 runner 抖动);
+ * 全量 .py 扫描 10.4s(11.5x);扫描期 RSS 峰值 251-287MB、增量 +127.9MB(内存几乎
+ * 无抖动,界收最紧 2.4~3.1x);激活期增量基线 0MB(有留存即异常)。
+ */
+const GATE_BOUNDS = {
+  warmP99Ms: 100,
+  warmMaxMs: 300,
+  activationWallMs: 15000,
+  fullPyScanWallMs: 120000,
+  scanPeakRssMb: 700,
+  scanPeakRssDeltaMb: 400,
+  activationPeakRssDeltaMb: 200
+};
+
+interface GateViolation {
+  metric: string;
+  actual: string;
+  bound: string;
+}
+
+/** 语义命中面:命中=标注链与基类解析活——语义正确性随门禁一并上闸
+ *  (big-py definitionDef 0 hit 是已登记预期,不入闸;items 数随功能漂移,不入闸)。 */
+const GATE_MIN_HITS: Array<{ suffix: string; min: number }> = [
+  { suffix: '.warm.hoverHits', min: 1 },
+  { suffix: '.warm.definitionPyHits', min: 1 }
+];
+
+function collectGateViolations(scenario: string): GateViolation[] {
+  const violations: GateViolation[] = [];
+  const bucket = recordedMetrics.get(scenario);
+  if (!bucket) {
+    return [{ metric: `V02.${scenario}`, actual: 'no metrics recorded', bound: 'any' }];
+  }
+  const valueOf = (key: string): number | undefined => bucket.get(key)?.values[0];
+  for (const [key, { values }] of bucket) {
+    if (!key.includes('.warm.')) {
+      continue;
+    }
+    if (key.endsWith('Items') || key.endsWith('Hits')) {
+      continue;
+    }
+    const p99 = percentile(values, 0.99);
+    const max = percentile(values, 1);
+    if (p99 > GATE_BOUNDS.warmP99Ms) {
+      violations.push({ metric: key, actual: `p99=${p99}ms`, bound: `<=${GATE_BOUNDS.warmP99Ms}ms` });
+    }
+    if (max > GATE_BOUNDS.warmMaxMs) {
+      violations.push({ metric: key, actual: `max=${max}ms`, bound: `<=${GATE_BOUNDS.warmMaxMs}ms` });
+    }
+  }
+  const wallChecks: Array<{ key: string; bound: number }> = [
+    { key: `V02.${scenario}.activation.defScanWall`, bound: GATE_BOUNDS.activationWallMs },
+    { key: `V02.${scenario}.startup.fullPyScanWall`, bound: GATE_BOUNDS.fullPyScanWallMs }
+  ];
+  for (const { key, bound } of wallChecks) {
+    const value = valueOf(key);
+    if (value !== undefined && value > bound) {
+      violations.push({ metric: key, actual: `${Math.round(value)}ms`, bound: `<=${bound}ms` });
+    }
+  }
+  const rssChecks: Array<{ key: string; boundMb: number }> = [
+    { key: `V02.${scenario}.rss.scan.peakRssMb`, boundMb: GATE_BOUNDS.scanPeakRssMb },
+    { key: `V02.${scenario}.rss.scan.peakRssDeltaMb`, boundMb: GATE_BOUNDS.scanPeakRssDeltaMb },
+    { key: `V02.${scenario}.rss.activation.peakRssDeltaMb`, boundMb: GATE_BOUNDS.activationPeakRssDeltaMb }
+  ];
+  for (const { key, boundMb } of rssChecks) {
+    const value = valueOf(key);
+    if (value !== undefined && value > boundMb) {
+      violations.push({ metric: key, actual: `${value}MB`, bound: `<=${boundMb}MB` });
+    }
+  }
+  for (const { suffix, min } of GATE_MIN_HITS) {
+    const value = valueOf(`V02.${scenario}${suffix}`);
+    if (value !== undefined && value < min) {
+      violations.push({ metric: `V02.${scenario}${suffix}`, actual: `${value}`, bound: `>=${min}` });
+    }
+  }
+  return violations;
+}
 
 /** 阶段 RSS 采样器:25ms 周期记录 process.memoryUsage().rss(与 gate 口径一致) */
 const startRssSampler = (intervalMs = 25): { stop(): number[] } => {
@@ -401,6 +519,12 @@ async function measureScenario(scenario: Scenario): Promise<void> {
   once(`V02.${name}.warm.definitionPyHits`, warmPyDef ? 1 : 0, ' hit');
 
   manager.dispose();
+
+  // RUST-007 发布门槛:场景收尾按 GATE_BOUNDS 断言(缺省观测模式跳过)。
+  if (PERF_GATE) {
+    const violations = collectGateViolations(name);
+    expect(violations).toEqual([]);
+  }
 }
 
 describe('KODE-PERF-007 v0.2 最新性能基线(large/multi-root/big-py × 六维)', () => {

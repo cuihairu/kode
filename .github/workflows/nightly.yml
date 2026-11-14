@@ -97,6 +97,14 @@ jobs:
           pnpm exec tsc -p tsconfig.mocha.json
           node ./out/test/runTest.js
 
+      - name: Perf gate (memory ceiling + tail latency + startup walls)
+        # RUST-007 release gate: same bench as the 2026-11-04 baseline, with
+        # KODE_PERF_GATE=1 asserting loose ceilings (order-of-magnitude
+        # regressions only; RSS bounds are the tight ones at ~2.4-3x because
+        # memory does not jitter like wall clock on shared runners).
+        run: |
+          KODE_PERF_GATE=1 KODE_PERF_LARGE_FILES=30000 pnpm exec vitest run --config vitest.bench.config.ts tests/perf/v02Baseline.bench.ts
+
   packages:
     name: Native platform packages
     needs: plan
