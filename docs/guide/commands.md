@@ -612,6 +612,8 @@ The flow graph panel supports:
 - The sample marks each swimlane header 静态角色（非运行实例） — static analysis has no running instances; running instances with component IDs belong to the G3/TRACE lane
 - Def declarations and implementations resolve through the entity mapping (entity × section × method); a missing declaration keeps the send edge unconnected and honest (no fabricated paths)
 - Every edge carries an EV-numbered evidence index entry; the source label is always 静态可能路径(G2) and the walk order is a 走查轨迹, not an execution order
+- The main business path (swimlane walk) is the default view; per-frame local call trees (entry → helper) are collapsed by default and expand natively (zero-script `<details>`)
+- Each link marks 调用点 and 声明 separately; clicking either jumps to the exact file line in the editor (python declarations read 0-based +1, def-file declarations 1-based as declared)
 
 ### `kbengine.quickActions.runByName`
 

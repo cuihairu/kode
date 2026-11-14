@@ -249,6 +249,63 @@ describe('FLOW-014 证据可追溯', () => {
   });
 });
 
+describe('FLOW-016 调用点与声明分别跳转', () => {
+  it('每条链接带声明位置:行基随节点形态归一(python 0基+1 / def 文件 1基原样)', () => {
+    const sample = buildFlowReviewSample(input());
+    // 发送步声明=def 文件(1 基原样,回填 rpc 声明节点)
+    const send = sample.walkLinks.find(link => link.kind === 'send')!;
+    expect(send.declaration).toEqual({
+      file: '/ws/entity_defs/Avatar.def',
+      displayLine: 10,
+      line0: 9
+    });
+    // 远端执行段声明=python 实现(0 基 +1;impl line 1 → 人读 2)
+    const exec = sample.walkLinks.find(link => link.kind === 'remote-exec')!;
+    expect(exec.declaration).toEqual({ file: BASE_AVATAR, displayLine: 2, line0: 1 });
+    // 广播无声明点(不虚构);getattr 未解析无声明;def 缺口发送无声明
+    const broadcast = sample.walkLinks.find(link => link.kind === 'broadcast-send')!;
+    expect(broadcast.declaration).toBeNull();
+    const locals = sample.frameLocals.find(group => group.frameLabel.includes('playSkill'))!;
+    const unresolved = locals.links.find(link => link.kind === 'unresolved')!;
+    expect(unresolved.declaration).toBeNull();
+    const unconnected = sample.walkLinks[sample.walkLinks.length - 1];
+    expect(unconnected.declaration).toBeNull();
+    // 本地调用声明=helper def 行(python 0 基 6 → 人读 7)
+    const enterGameLocals = sample.frameLocals.find(group =>
+      group.frameLabel.includes('enterGame')
+    )!;
+    const localCall = enterGameLocals.links.find(link => link.kind === 'local-call')!;
+    expect(localCall.declaration).toEqual({ file: CELL_AVATAR, displayLine: 7, line0: 6 });
+  });
+
+  it('调用点与声明在 html 中分别标注且各带跳转面(0 基打开行)', () => {
+    const sample = buildFlowReviewSample(input());
+    const send = sample.walkLinks.find(link => link.kind === 'send')!;
+    expect(send.callSite).toBe(`${CLIENT_AVATAR}:3`);
+    // 调用点跳转面=0 基行(显示 3 → 打开行 2)
+    expect(sample.html).toContain(`data-flow-jump="${CLIENT_AVATAR}:2"`);
+    // 声明跳转面:def 文件 1 基显示 → 打开行 9;python 实现 → 打开行 1
+    expect(sample.html).toContain('声明 /ws/entity_defs/Avatar.def:10');
+    expect(sample.html).toContain('data-flow-jump="/ws/entity_defs/Avatar.def:9"');
+    expect(sample.html).toContain(`声明 ${BASE_AVATAR}:2`);
+    expect(sample.html).toContain(`data-flow-jump="${BASE_AVATAR}:1"`);
+    // 本地调用树内:调用点与声明分别标注
+    expect(sample.html).toContain(`声明 ${CELL_AVATAR}:7`);
+    expect(sample.html).toContain(`data-flow-jump="${CELL_AVATAR}:6"`);
+  });
+
+  it('帧内本地调用树默认折叠:主路径默认可见,展开才见 helper 树', () => {
+    const sample = buildFlowReviewSample(input());
+    // 泳道主路径表不在 details 内(默认可见);帧内组用 <details> 折叠(零脚本)
+    expect(sample.html.indexOf('<table class="swimlanes"')).toBeLessThan(
+      sample.html.indexOf('<details class="locals-group"')
+    );
+    expect(sample.html).not.toContain('<details class="locals-group" open');
+    expect(sample.html).toContain('<summary>帧内 ·');
+    expect(sample.html).toContain('本地调用树 2 条');
+  });
+});
+
 describe('FLOW-014 R3 展示红线与 golden', () => {
   it('来源标签恒挂静态可能路径;步序声明为走查轨迹非执行顺序', () => {
     const sample = buildFlowReviewSample(input());

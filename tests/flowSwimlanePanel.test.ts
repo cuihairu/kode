@@ -368,3 +368,93 @@ describe('FLOW-015 show() 命令入口', () => {
     expect(panelRegistry.panels[0].webview.html).toBe('');
   });
 });
+
+describe('FLOW-016 面板跳转面(调用点/声明分别跳转)', () => {
+  const stubOpenTextDocumentWithLines = (text: string): void => {
+    (stubWorkspace as { openTextDocument: unknown }).openTextDocument = async (uri: unknown) => ({
+      uri,
+      lineCount: text.split('\n').length,
+      lineAt: (line: number) => ({ text: text.split('\n')[line] ?? '' })
+    });
+  };
+
+  it('面板启用脚本并注入 nonce 跳转桥(CSP 带脚本源)', async () => {
+    const panel = new FlowSwimlanePanel({
+      entityMappingManager: makeManager(),
+      sourceFactory: rootKey => fullSource(rootKey)
+    });
+    await panel.open('/ws', { filePath: CLIENT_AVATAR, functionName: 'chooseRole' });
+    const fake = panelRegistry.panels[0];
+    expect((fake.options as { enableScripts?: boolean }).enableScripts).toBe(true);
+    expect(fake.webview.html).toContain('script-src \'nonce-');
+    expect(fake.webview.html).toContain('<script nonce=');
+    expect(fake.webview.html).toContain('data-flow-jump');
+  });
+
+  it('flowJump 消息:按 0 基行打开并选中(越界钳末行)', async () => {
+    stubOpenTextDocumentWithLines('l0\nl1\nl2');
+    const editors: Array<{ selection?: { start: { line: number } } }> = [];
+    const originalShow = stubWindow.showTextDocument;
+    stubWindow.showTextDocument = (async (): Promise<unknown> => {
+      const editor: { selection?: { start: { line: number } } } = {
+        revealRange: (): void => undefined
+      };
+      editors.push(editor);
+      return editor;
+    }) as never;
+    try {
+      const panel = new FlowSwimlanePanel({
+        entityMappingManager: makeManager(),
+        sourceFactory: rootKey => fullSource(rootKey)
+      });
+      await panel.open('/ws', { filePath: CLIENT_AVATAR, functionName: 'chooseRole' });
+      const fake = panelRegistry.panels[0];
+      const jump = async (target: string): Promise<void> => {
+        for (const listener of [...fake.messageListeners]) {
+          listener({ command: 'flowJump', target });
+        }
+        // 揭示链是异步(openTextDocument → showTextDocument),宏任务后结算
+        await new Promise(resolve => setTimeout(resolve, 0));
+      };
+      // 正常跳转:0 基行 2
+      await jump('/ws/scripts/cell/Avatar.py:2');
+      expect(editors).toHaveLength(1);
+      expect(editors[0].selection!.start.line).toBe(2);
+      // 越界:钳到末行(3 行文档 → 末行 2)
+      await jump('/ws/scripts/cell/Avatar.py:99');
+      expect(editors).toHaveLength(2);
+      expect(editors[1].selection!.start.line).toBe(2);
+      // 坏目标(行号非数字):不打开不炸
+      await jump('nofile.py:xx');
+      expect(editors).toHaveLength(2);
+      // 合法目标(替身文档任意 uri 可开):正常打开
+      await jump('/ws/scripts/base/Avatar.py:1');
+      expect(editors).toHaveLength(3);
+      expect(editors[2].selection!.start.line).toBe(1);
+      // 空目标:不打开
+      await jump('');
+      expect(editors).toHaveLength(3);
+    } finally {
+      stubWindow.showTextDocument = originalShow;
+    }
+  });
+
+  it('跳转目标文件打不开:警告如实', async () => {
+    (stubWorkspace as { openTextDocument: unknown }).openTextDocument = async () => {
+      throw new Error('missing');
+    };
+    const panel = new FlowSwimlanePanel({
+      entityMappingManager: makeManager(),
+      sourceFactory: rootKey => fullSource(rootKey)
+    });
+    await panel.open('/ws', { filePath: CLIENT_AVATAR, functionName: 'chooseRole' });
+    const fake = panelRegistry.panels[0];
+    for (const listener of [...fake.messageListeners]) {
+      listener({ command: 'flowJump', target: '/ws/scripts/base/Ghost.py:1' });
+    }
+    await Promise.resolve();
+    expect(messages.warning.some(w => w.includes('无法打开 /ws/scripts/base/Ghost.py'))).toBe(
+      true
+    );
+  });
+});

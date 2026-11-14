@@ -62,6 +62,10 @@ export interface FlowReviewLink {
   evidenceDetail: string;
   /** 人读 1 基(file:line);null=无调用点锚 */
   callSite: string | null;
+  /** 调用点跳转面(file+0 基打开行,FLOW-016);null=无锚不可跳 */
+  callSiteJump: { file: string; line0: number } | null;
+  /** 声明位置(调用点与声明分别呈现/跳转,FLOW-016);null=无声明点(广播/未解析,如实) */
+  declaration: FlowReviewDeclaration | null;
   /** 分支候选(不是固定执行顺序) */
   branchCandidate: { text: string; note: string } | null;
   unresolvedCode: string | null;
@@ -70,6 +74,14 @@ export interface FlowReviewLink {
   pairedSendEdgeId: string | null;
   /** 发送步是否有远端执行帧(false=def/实现缺口或广播,如实) */
   connectedToExec: boolean;
+}
+
+export interface FlowReviewDeclaration {
+  file: string;
+  /** 人读 1 基展示行(python 声明 0 基 +1;def 文件声明按源 1 基原样) */
+  displayLine: number;
+  /** 0 基打开行(面板跳转用;data-flow-jump 载此值) */
+  line0: number;
 }
 
 export interface FlowReviewSwimlane {
@@ -142,6 +154,21 @@ const LINK_KIND_BADGE: Record<FlowReviewLinkKind, string> = {
   unresolved: '未解析(原因码见明细)'
 };
 
+/**
+ * 声明位置归一:python 声明(解析帧/实现帧)0 基 → 人读 +1;def 文件声明
+ * (rpc 声明/外部入口,def 索引 1 基)原样。行基随节点形态,不猜。
+ */
+const declarationOf = (node: FlowGraphNode | undefined): FlowReviewDeclaration | null => {
+  if (!node || !node.declaration) {
+    return null;
+  }
+  const { file, line } = node.declaration;
+  if (node.kind === 'rpc-declaration' || node.kind === 'external-entry') {
+    return { file, displayLine: line, line0: Math.max(0, line - 1) };
+  }
+  return { file, displayLine: line + 1, line0: line };
+};
+
 export function buildFlowReviewSample(input: FlowReviewSampleInput): FlowReviewSample {
   const graphs = new Map<string, FlowCallResolverResult | null>();
   const graphFor = (filePath: string): FlowCallResolverResult | null => {
@@ -177,6 +204,12 @@ export function buildFlowReviewSample(input: FlowReviewSampleInput): FlowReviewS
     if (!nodesById.has(link.implNode.id)) {
       nodesById.set(link.implNode.id, link.implNode);
     }
+    // rpc 声明回填节点(带 def 声明位置,FLOW-016 声明跳转面)覆盖解析层
+    // 占位节点(同 id,回填面更全);未解析链接的声明节点同法
+    nodesById.set(link.rpcNode.id, link.rpcNode);
+  }
+  for (const unresolvedLink of rpc.unresolvedLinks) {
+    nodesById.set(unresolvedLink.rpcNode.id, unresolvedLink.rpcNode);
   }
 
   const scenario = buildScenarioPath({
@@ -254,6 +287,10 @@ export function buildFlowReviewSample(input: FlowReviewSampleInput): FlowReviewS
       evidenceType: evidence.evidenceType,
       evidenceDetail: evidence.evidenceDetail,
       callSite: evidence.callSite,
+      callSiteJump: edge.callSite
+        ? { file: edge.callSite.file, line0: edge.callSite.line }
+        : null,
+      declaration: declarationOf(nodesById.get(edge.toNodeId)),
       branchCandidate: edge.condition
         ? { text: edge.condition.text, note: '分支为候选路径,不是固定执行顺序' }
         : null,
@@ -406,6 +443,10 @@ const emitFrameRow = (frame: FlowReviewFrame, roleColumns: FlowProcessRole[]): s
   return `<tr class="frame-row">${tds.join('')}</tr>`;
 };
 
+/** 面板跳转属性(值=file:0 基打开行;评审工件内无脚本,属性惰性) */
+const jumpAttr = (file: string, line0: number): string =>
+  ` data-flow-jump="${esc(file)}:${line0}"`;
+
 const emitLinkRow = (link: FlowReviewLink, roleColumns: FlowProcessRole[]): string => {
   const branch = link.branchCandidate
     ? `<span class="branch">分支候选:${esc(link.branchCandidate.text)}(${esc(link.branchCandidate.note)})</span>`
@@ -421,7 +462,14 @@ const emitLinkRow = (link: FlowReviewLink, roleColumns: FlowProcessRole[]): stri
     link.kind === 'send' && !link.connectedToExec
       ? '<span class="pairing">未连接:无远端执行帧(def/实现缺口),只记发送步</span>'
       : '';
-  return `<tr class="link-row"><td colspan="${roleColumns.length}"><span class="badge ${link.kind}">${esc(LINK_KIND_BADGE[link.kind])}</span> <span class="arrow">${esc(link.fromLabel)} → ${esc(link.toLabel)}</span> <span class="ev">[${esc(link.evidenceId)}]</span>${branch}${unresolved}${pairing}${disconnected}<span class="callsite">${esc(link.callSite ?? '无调用点锚')}</span></td></tr>`;
+  const callSiteJump = link.callSiteJump ? jumpAttr(link.callSiteJump.file, link.callSiteJump.line0) : '';
+  const callSite = link.callSite
+    ? `<span class="callsite"${callSiteJump}>调用点 ${esc(link.callSite)}</span>`
+    : '<span class="callsite">无调用点锚</span>';
+  const declaration = link.declaration
+    ? `<span class="decl">声明 ${esc(link.declaration.file)}:${link.declaration.displayLine}</span>${jumpAttr(link.declaration.file, link.declaration.line0)}`
+    : '';
+  return `<tr class="link-row"><td colspan="${roleColumns.length}"><span class="badge ${link.kind}">${esc(LINK_KIND_BADGE[link.kind])}</span> <span class="arrow">${esc(link.fromLabel)} → ${esc(link.toLabel)}</span> <span class="ev">[${esc(link.evidenceId)}]</span>${branch}${unresolved}${pairing}${disconnected}${callSite}${declaration}</td></tr>`;
 };
 
 const renderHtml = (input: HtmlInput): string => {
@@ -432,21 +480,35 @@ const renderHtml = (input: HtmlInput): string => {
       : emitLinkRow(row.link, roleColumns)
   );
 
+  // FLOW-016:帧内本地调用树默认折叠(<details>,零脚本原生展开收起)——
+  // 默认视图=业务主路径(泳道走查);展开才见入口到 helper 的调用树。
   const localsHtml = input.frameLocals
-    .map(
-      group =>
-        `<div class="locals-group"><h3>帧内 · ${esc(group.frameLabel)} <span class="role-tag">${esc(group.role)}</span></h3><ul>${group.links
-          .map(link => {
-            const branch = link.branchCandidate
-              ? `<span class="branch">分支候选:${esc(link.branchCandidate.text)}</span>`
-              : '';
-            const unresolved = link.unresolvedCode
-              ? `<span class="unresolved">原因码 ${esc(link.unresolvedCode)}:${esc(link.unresolvedDetail ?? '')}</span>`
-              : '';
-            return `<li><span class="badge ${link.kind}">${esc(LINK_KIND_BADGE[link.kind])}</span> ${esc(link.fromLabel)} → ${esc(link.toLabel)} <span class="ev">[${esc(link.evidenceId)}]</span>${branch}${unresolved}<span class="callsite">${esc(link.callSite ?? '无调用点锚')}</span></li>`;
-          })
-          .join('')}</ul></div>`
-    )
+    .map(group => {
+      const unresolvedCount = group.links.filter(link => link.kind === 'unresolved').length;
+      const countLabel =
+        unresolvedCount > 0
+          ? `本地调用树 ${group.links.length} 条(含未解析 ${unresolvedCount})`
+          : `本地调用树 ${group.links.length} 条`;
+      const items = group.links
+        .map(link => {
+          const branch = link.branchCandidate
+            ? `<span class="branch">分支候选:${esc(link.branchCandidate.text)}</span>`
+            : '';
+          const unresolved = link.unresolvedCode
+            ? `<span class="unresolved">原因码 ${esc(link.unresolvedCode)}:${esc(link.unresolvedDetail ?? '')}</span>`
+            : '';
+          const callSiteJump = link.callSiteJump ? jumpAttr(link.callSiteJump.file, link.callSiteJump.line0) : '';
+          const callSite = link.callSite
+            ? `<span class="callsite"${callSiteJump}>调用点 ${esc(link.callSite)}</span>`
+            : '<span class="callsite">无调用点锚</span>';
+          const declaration = link.declaration
+            ? `<span class="decl">声明 ${esc(link.declaration.file)}:${link.declaration.displayLine}</span>${jumpAttr(link.declaration.file, link.declaration.line0)}`
+            : '';
+          return `<li><span class="badge ${link.kind}">${esc(LINK_KIND_BADGE[link.kind])}</span> ${esc(link.fromLabel)} → ${esc(link.toLabel)} <span class="ev">[${esc(link.evidenceId)}]</span>${branch}${unresolved}${callSite}${declaration}</li>`;
+        })
+        .join('');
+      return `<details class="locals-group"><summary>帧内 · ${esc(group.frameLabel)} <span class="role-tag">${esc(group.role)}</span> · ${esc(countLabel)}</summary><ul>${items}</ul></details>`;
+    })
     .join('');
 
   const evidenceHtml = input.evidenceIndex
@@ -485,10 +547,13 @@ tr.link-row td { background: #fffdf5; font-size: 13px; }
 .arrow { font-weight: 600; }
 .ev { color: #7a5b00; font-family: monospace; font-size: 12px; }
 .callsite { color: #556; font-family: monospace; font-size: 12px; margin-left: 8px; }
+.decl { color: #1c6b33; font-family: monospace; font-size: 12px; margin-left: 8px; }
 .branch { color: #8a6d00; margin-left: 8px; font-size: 12px; }
 .unresolved { color: #992222; margin-left: 8px; font-size: 12px; }
 .pairing { color: #3346c4; margin-left: 8px; font-size: 12px; }
 .role-tag { color: #889; font-size: 11px; }
+details.locals-group { margin: 6px 0; background: #fff; border: 1px solid #dde4ee; border-radius: 4px; padding: 4px 10px; }
+details.locals-group > summary { cursor: pointer; font-size: 13px; color: #2d5ba9; font-weight: 600; }
 .locals-group ul { margin: 4px 0 12px 20px; padding: 0; }
 .locals-group li { margin: 4px 0; font-size: 13px; }
 table.evidence { border-collapse: collapse; width: 100%; background: #fff; font-size: 12px; }
@@ -511,7 +576,7 @@ footer { margin-top: 28px; color: #667; font-size: 12px; }
 ${tableRows.join('\n')}
 </tbody>
 </table>
-<h2>帧内 · 本地调用与未解析</h2>
+<h2>帧内 · 本地调用与未解析(默认折叠;展开见入口到 helper 的调用树)</h2>
 ${localsHtml || '<p class="note">(无帧内本地调用/未解析链接)</p>'}
 <h2>证据索引(每边可追溯)</h2>
 <table class="evidence">

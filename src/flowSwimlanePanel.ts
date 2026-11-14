@@ -13,8 +13,9 @@
  *   - 泳道按角色分列(已涉及角色各一条);泳道头标注「静态角色(非运行
  *     实例)」——静态分析没有运行实例,不冒充;运行实例属 G3/TRACE
  *     泳道,届时带组件 ID;
- *   - 渲染=flowReviewSample 自包含 HTML(零脚本,CSP default-src 'none'
- *     + inline style;R1/R3 词汇红线已由生成核锁定);
+ *   - 渲染=flowReviewSample 自包含 HTML(CSP default-src 'none';工件本体
+ *     零脚本,面板只注入 nonce 跳转桥:点击调用点/声明标注跳编辑器
+ *     对应行,FLOW-016;R1/R3 词汇红线已由生成核锁定);
  *   - 面板只管 vscode 生命周期与装配调度;数据/HTML 全在纯核
  *     (flowCallGraphData.ts + backend/flowReviewSample.ts)。
  */
@@ -107,6 +108,46 @@ export function makeWorkspaceFlowSource(
   };
 }
 
+/**
+ * 面板跳转脚本(FLOW-016 调用点/声明分别跳转):评审工件 HTML 本身零脚本,
+ * 跳转面只在面板内以 nonce 内联脚本激活——点击带 data-flow-jump 的调用点/
+ * 声明标注,postMessage 给宿主打开对应文件行。值格式 `${file}:${0 基行}`。
+ */
+const FLOW_JUMP_SCRIPT = `
+(function() {
+  var vscode = acquireVsCodeApi();
+  document.addEventListener('click', function(event) {
+    var target = event.target;
+    while (target && target !== document.body) {
+      if (target.getAttribute && target.getAttribute('data-flow-jump')) {
+        vscode.postMessage({
+          command: 'flowJump',
+          target: target.getAttribute('data-flow-jump')
+        });
+        return;
+      }
+      target = target.parentNode;
+    }
+  });
+})();
+`;
+
+/** 解析 data-flow-jump 值(file:0 基行;file 含冒号按最后一个冒号切) */
+const parseJumpTarget = (target: unknown): { file: string; line0: number } | null => {
+  if (typeof target !== 'string') {
+    return null;
+  }
+  const lastColon = target.lastIndexOf(':');
+  if (lastColon <= 0) {
+    return null;
+  }
+  const line0 = Number.parseInt(target.slice(lastColon + 1), 10);
+  if (!Number.isInteger(line0) || line0 < 0) {
+    return null;
+  }
+  return { file: target.slice(0, lastColon), line0 };
+};
+
 /** 活动编辑器函数清单(解析核;解析失败/无函数=空) */
 export function listEntryFunctions(text: string, filePath: string, rootKey: string): string[] {
   try {
@@ -173,8 +214,18 @@ export class FlowSwimlanePanel {
         'kbengine.flowSwimlane',
         title,
         vscode.ViewColumn.Two,
-        { enableScripts: false, retainContextWhenHidden: true }
+        { enableScripts: true, retainContextWhenHidden: true }
       );
+      // FLOW-016:点击调用点/声明标注跳转编辑器(file:0 基行;行界钳制)
+      this.panel.webview.onDidReceiveMessage(message => {
+        const jump = parseJumpTarget(
+          (message as { command?: string; target?: unknown })?.target
+        );
+        if ((message as { command?: string })?.command !== 'flowJump' || !jump) {
+          return;
+        }
+        void this.revealLocation(jump.file, jump.line0);
+      });
       this.panel.onDidDispose(() => {
         this.panel = null;
       });
@@ -191,11 +242,26 @@ export class FlowSwimlanePanel {
       return; // 装配期间面板已关/换代:弃写
     }
     this.panel.title = title;
-    // 零脚本 HTML:CSP 关外部面;inline style 是唯一样式来源
+    const nonce = randomNonce();
+    // 零外部面 CSP;inline style 唯一样式来源;脚本只有本 nonce 的跳转桥
     this.panel.webview.html = html.replace(
       '<head>',
-      `<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';"><meta nonce="${randomNonce()}">`
+      `<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';"><style>[data-flow-jump]{cursor:pointer;text-decoration:underline dotted;}</style><script nonce="${nonce}">${FLOW_JUMP_SCRIPT}</script>`
     );
+  }
+
+  /** 跳转编辑器(file:0 基行;越界钳到末行,如实打开不虚构) */
+  private async revealLocation(file: string, line0: number): Promise<void> {
+    try {
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+      const line = Math.max(0, Math.min(line0, document.lineCount - 1));
+      const editor = await vscode.window.showTextDocument(document, { preview: false });
+      const position = new vscode.Position(line, 0);
+      editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+      editor.selection = new vscode.Selection(position, position);
+    } catch {
+      void vscode.window.showWarningMessage(`无法打开 ${file}`);
+    }
   }
 
   dispose(): void {
