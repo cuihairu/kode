@@ -178,7 +178,7 @@
 - [x] FLOW-018 （旧 KFLOW-UI-05） [P1] 实现选中路径和反查。验收：从编辑器函数/调用点打开图，选择节点反查上游/下游，保留导航历史；未知和歧义结果可查看。（a07639ea:flowNodeInspect 纯核=上游全工作区反查(本地节点身份精确匹配/跨进程角色+方法名,同名异实体并列实体待证候选)+下游+未解析面三面视图;光标所在函数 def 语法锚在图面直开免快选,叶函数回退快选;打开图导航历史压栈/返回出栈,反查视图返回泳道走缓存;跨进程声明节点不给打开图链接;9 钉核心+8 钉面板,4 prove-red）
 - [x] FLOW-019 （旧 KFLOW-UI-06） [P1] 实现大图按需展开。验收：初次只加载有界场景子图，支持搜索/过滤/缩放/定位，截断有可继续入口；取消后停止后台扩展。（7eb4448c：走查步携带 depth+结果带 maxDepth，截断边界帧标「截断边界/继续展开」=文件+函数名续开新场景；面板初装深度界 6；装配核 cancellationToken 阶段间停扩展，取消与失败分报「调用图装配已取消」；面板层工具条=搜索过滤回车定位+缩放 0.5–2+重置，工件本体仍零脚本；场景 2 钉+样图 2 钉+装配取消 3 钉+面板 4 钉，5 prove-red）
 - [x] FLOW-020 （旧 KFLOW-UI-07） [P1] 提供文本路径和错误恢复。验收：图和文本消费同一模型，渲染失败保留路径/未解析原因并可重试；中英文、键盘操作可用。（9a10e30d：flowTextPath 纯核只读 FlowReviewSample=图/文本同一模型,走查序列+帧内本地调用+分支候选+未解析/未连接+EV 证据索引全量入文+截断注记;面板图/文本切换+返回回泳道;装配失败保留状态+错误带「重试」动作重开同入口;交互桥 tabindex+Enter/Space 转点击;文案双语走 webviewStrings;文本 4 钉+面板 4 钉,5 prove-red 计数钉教训)
-- [ ] FLOW-021 （旧 KFLOW-UI-08） [P1] 验收真实业务流转。验收：用登录/创建角色入场/一次战斗 RPC 三个项目实际存在的场景核对；缺场景则建明确测试夹具，不冒充真实项目覆盖。
+- [x] FLOW-021 （旧 KFLOW-UI-08） [P1] 验收真实业务流转。验收：用登录/创建角色入场/一次战斗 RPC 三个项目实际存在的场景核对；缺场景则建明确测试夹具，不冒充真实项目覆盖。（27723d46：6 例全钉真实项目资产 scripts/{base,cell,client}/*.py+entity_defs/*.def,def 注册表运行时沿 <Parent> 链推导、实现沿 owner 链带 inheritedFrom,行号全运行时定位不手写;S1 登录 onClientEnabled→client.onLoginOK 三步全链;S2 入场 reqCreateAvatar 如实停引擎边界不虚构远端帧+onEnterSpace→reqRadarPing 本地可达/getattr 中继 unknown-receiver 无发送步+雷达基座腿 onRadarPush→onMonsterNear 发送面连接而客户端实现缺口只立发送步;S3 战斗 cell 本地结算帧可达/超类调用与 entities.get 奖励腿如实 unknown-receiver(FLOW-007 口径)/基座腿 cellAddExperience→client.onLevelUp 三步全链含 def 父链推导;3 prove-red:远端执行续走/未解析遍历闸/实现缺口闸;门禁 tsc 0/lint 0/unit 811 文件 10103+4skip/xvfb demo 25 RC=0)
 
 ### KFLOW-TRACE · P2 · 真实调用栈与跨进程运行时追踪
 

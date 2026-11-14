@@ -625,6 +625,7 @@ The flow graph panel supports:
 - Text path (文本路径): a toolbar toggle renders the same assembled sample as a plain-text walk (graph and text consume one model — no re-parsing, no invented evidence); the text face keeps every walk row, frame-local call, branch candidate, unresolved/未连接 reason, and the full EV evidence index with the truncation note
 - Error recovery: assembly failure keeps the previous view and all retained state (state changes only after a successful assembly); the error message carries a 重试 action that reopens the same entry; switching to the text face before any assembly honestly reports 没有已装配的调用图场景
 - Keyboard operable: interactive bridge elements (jump/open/back/view/node) are focusable and respond to Enter/Space as clicks; the panel chrome is fully bilingual via the webview locale setting
+- Real-business-flow acceptance (登录/创建角色入场/一次战斗): the three demo-project scenarios are pinned end-to-end against the real fixture assets (scripts/{base,cell,client}/*.py + entity_defs/*.def) — registries derived at runtime from the real files (def along the `<Parent>` chain, implementations along the owner chain with inheritedFrom); honest faces stay honest: engine-driven transitions (createEntityLocally/giveClientTo) stop the walk at the engine boundary (no fabricated remote-exec frames), getattr-relayed receivers and entities.get reward sends stay 未连接 (unknown-receiver), and the demo's missing client handler (onMonsterNear) keeps only the send step — no fabricated execution frame
 
 ### `kbengine.quickActions.runByName`
 
