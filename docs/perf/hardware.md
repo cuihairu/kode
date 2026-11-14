@@ -29,18 +29,19 @@
 
 ## 3. Fixtures 规格(PERF-002/003/004 现状)
 
-现有确定性生成器 `scripts/generate-perf-assets.mjs`(同机器同资产复现:`KODE_PERF_LARGE_FILES=30000 npx vitest run --config vitest.bench.config.ts tests/perf/baseline.bench.ts`):
+现有确定性生成器 `scripts/generate-perf-assets.mjs`(同机器同资产复现:`KODE_PERF_LARGE_FILES=30000 npx vitest run --config vitest.bench.config.ts tests/perf/baseline.bench.ts`;RUST-019 起 `--preset S|M|L|XL` 一键分档+每场景统计摘要,重复生成字节级一致已验)。
 
-| 书分档 | 现状 | 文件数/组成 |
+| 书分档 | 生成命令 | large 场景实测(2026-11-15,14 核 Linux) |
 |---|---|---|
-| S(200) | 部分≈small | 7(最小资产树,行为口径) |
-| M(2k) | **待建** | 生成器参数化即可 |
-| L(10k) | 覆盖超集 | 30,005(30,000 生成 .py,1 类 2 方法 + Avatar 骨架) |
-| XL(50k+) | **待建** | — |
-| XRoot(3+ 根) | 覆盖 | multi-root 18(3 根,同名实体 Avatar、同名类 Inventory) |
-| 专项 | 覆盖 | big-py 5(单文件 8,000 方法)、def-heavy 1,323(1,200 .def + 40 组 XML 变体)、noise 406(.git/build/third_party 干扰) |
+| S(200) | `--preset S` | 205 文件 / 19.7 KiB / 201 class / 401 def(+small 7 文件行为口径树) |
+| M(2k) | `--preset M` | 2,005 文件 / 194.7 KiB / 2,001 class / 4,001 def |
+| L(10k) | `--preset L` | 10,005 文件 / 975.9 KiB / 10,001 class / 20,001 def |
+| L 覆盖超集(缺省) | `--large-files 30000`(bench 同参) | 30,005 文件(30,000 生成 .py,1 类 2 方法 + Avatar 骨架) |
+| XL(50k+) | `--preset XL` | 50,005 文件 / 4,921.2 KiB / 50,001 class / 100,001 def |
+| XRoot(3+ 根) | multi-root 场景(与档无关) | 18 文件,3 根,同名实体 Avatar、同名类 Inventory |
+| 专项 | 场景缺省 | big-py 5(单文件 8,000 方法/754 KiB)、def-heavy 1,323(1,200 .def + 40 组 XML 变体/7,200 def 方法)、noise 406(.git/build/third_party 干扰/401 class) |
 
-符号数统计、深继承、循环别名、不完整 XML、非 ASCII 路径:待建;真实 KBEngine 引擎样例(PERF-004,fantasydemo 等):待测,须与合成样例隔离存放。
+统计口径=生成后全树走读:文件数/UTF-8 字节/`^class ` 与 `^\s+def ` 计数(.py)/`<onRpc` 计数(.def);生成器每次运行末尾打印同格式摘要。深继承、循环别名、不完整 XML、非 ASCII 路径:待建;真实 KBEngine 引擎样例(PERF-004,fantasydemo 等):待测,须与合成样例隔离存放。
 
 ## 4. 分段时延口径(PERF-005)
 

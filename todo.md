@@ -246,7 +246,7 @@
 > > 所有数值为候选预算，必须附硬件、系统、数据集、时间窗口、样本数。P95/P99 与 cold/warm 区分；不要把合成基准误当真实 KBEngine 工程表现。 | 场景 | 候选目标 | 绝对规则 | |---|---|---| | 扩展激活（不含 Core 全量索引） | P95 ≤300ms | 不阻塞编辑器 UI | | Core 热启动至握手
 
 - [x] RUST-018 （旧 PERF-001） 编写 docs/perf/hardware.md：CPU、核数、RAM、磁盘、OS、VS Code/Node/Rust/KBEngine 版本。——`36052c47`：docs/perf/hardware.md（2026-10-23 lscpu/free/lsblk 实测全表+版本面+测量偏差细则；本 tidy 2026-11-13 复核存在且面齐）。
-- [ ] RUST-019 （旧 PERF-002） fixtures 分 S(200 files)、M(2k)、L(10k)、XL(50k+)、XRoot(3+ resources 根)；附文件大小与符号数统计。(部分：S/L(30,005 文件)/XRoot(3 根) 已覆盖，M(2k)/XL(50k+) 待建——docs/perf/hardware.md §3+current-state.md §PERF-002/003/004)
+- [x] RUST-019 （旧 PERF-002） fixtures 分 S(200 files)、M(2k)、L(10k)、XL(50k+)、XRoot(3+ resources 根)；附文件大小与符号数统计。(see feat commit:生成器 --preset S|M|L|XL 一键分档(200/2000/10000/50000,缺省 30000 仍为 L 覆盖超集),每场景末尾打印 文件数/KiB/py class/def/.def 方法 统计摘要(全树走读口径),重复生成字节级一致已验(diff sha256),bench 消费向后兼容(--large-files 照旧,coldHover 2k 档实跑 RC=0);五档实测落 docs/perf/hardware.md §3 表=S 205 文件 19.7KiB 201class/M 2005 文件 194.7KiB 2001class/L 10005 文件 975.9KiB 10001class/XL 50005 文件 4921.2KiB 50001class 100001def/XRoot multi-root 18 文件 3 根不变)
 - [ ] RUST-020 （旧 PERF-003） fixtures 包含同名实体、跨 root 同名 Python class、深继承、循环别名、不完整 XML、非 ASCII 路径、符号冲突。(部分：同名实体/跨 root 同名类已覆盖；深继承/循环别名/不完整 XML/非 ASCII 路径待补——同上节)
 - [ ] RUST-021 （旧 PERF-004） fixtures 含真实 KBEngine 引擎样例（版权/版本可用时），与可合成开源样例隔离。
 - [ ] RUST-022 （旧 PERF-005） 测量 extension activation、Core spawn、handshake、workspace discovery、parse、resolve、index、publish 的分段时延。(部分：分段纪律与已测/未测清单已立——current-state.md §PERF-005；Core spawn/handshake 量测随 Rust Core 落地)
