@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 // "No definition found",与解析逻辑/包新旧无关。此测试锁住激活门。
 const pkg = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')
-) as { activationEvents: string[] };
+) as { activationEvents: string[]; extensionKind?: string[] };
 
 describe('activationEvents 激活门', () => {
   it('包含 onLanguage:python:打开 .py 即激活,python 定义提供者才能注册', () => {
@@ -24,5 +24,12 @@ describe('activationEvents 激活门', () => {
 
   it('declares Python call-chain command activation', () => {
     expect(pkg.activationEvents).toContain('onCommand:kbengine.python.showCallChain');
+  });
+
+  it('RUST-010:extensionKind 钉死 workspace——Remote SSH/WSL/Containers 下扩展落在工作区宿主(文件访问/kode-server spawn/telnet 全在远端机)', () => {
+    // 缺省虽自 VS Code 1.74 起同为 workspace(engines ^1.82),但「正确执行
+    // 位置」必须是显式声明而非依赖上游缺省漂移;identity 报告(extensionIdentity)
+    // 据此分列 workspace/ui 宿主侧。
+    expect(pkg.extensionKind).toEqual(['workspace']);
   });
 });

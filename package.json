@@ -195,6 +195,9 @@
   ],
   "main": "./out/extension.js",
   "l10n": "./l10n",
+  "extensionKind": [
+    "workspace"
+  ],
   "contributes": {
     "jsonValidation": [
       {
