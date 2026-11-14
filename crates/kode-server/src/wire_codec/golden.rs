@@ -14,7 +14,7 @@ use super::property_stream::{
     PropKind, PropertyEntry, PropertyMode,
 };
 use super::schema::WireSchema;
-use super::types::{EntityCallValue, WireLayout, WireValue};
+use super::types::{EntityCallValue, WireField, WireLayout, WireValue};
 use super::values::{decode_value, encode_value};
 
 // ---------------------------------------------------------------------------
@@ -27,7 +27,11 @@ pub const GOLDEN_REL_PATH: &str = "crates/kode-server/tests/golden/wire-parity.j
 /// schema 解析夹具(镜像 `tests/fixtures/kbengine-demo-assets/scripts/
 /// entity_defs/types.xml` 的声明;内联而非读盘,保证 golden 再生成不依赖 cwd):
 /// ITEM_ID→UINT16 别名链、SKILL_SLOT(FD:slot_list ARRAY<UINT32>+count)、
-/// POSITION(x,y,z FLOAT)、ITEM_IDS ARRAY<ITEM_ID>。
+/// POSITION(x,y,z FLOAT)、ITEM_IDS ARRAY<ITEM_ID>;SER-14 增补面=
+/// ITEM_CODE→ITEM_ID 深别名链、ROW/MATRIX 命名嵌套数组、MATRIX_INLINE
+/// 内联嵌套(<of>ARRAY 递归,FixedArrayType::initialize 同构)、PROFILE
+/// 嵌套 FD(POSITION 内嵌)、AVATAR_DATA(implementedBy 自定义转换,wire
+/// 形不变 datatype.cpp:2169-2172)。
 pub const SCHEMA_FIXTURE_XML: &str = r#"<root>
 	<ITEM_ID> UINT16 </ITEM_ID>
 	<ITEM_DESC> STRING </ITEM_DESC>
@@ -63,6 +67,49 @@ pub const SCHEMA_FIXTURE_XML: &str = r#"<root>
 		ARRAY
 		<of> ITEM_ID </of>
 	</ITEM_IDS>
+	<ITEM_CODE> ITEM_ID </ITEM_CODE>
+	<ITEM_CODES>
+		ARRAY
+		<of> ITEM_CODE </of>
+	</ITEM_CODES>
+	<ROW>
+		ARRAY
+		<of> UINT8 </of>
+	</ROW>
+	<MATRIX>
+		ARRAY
+		<of> ROW </of>
+	</MATRIX>
+	<MATRIX_INLINE>
+		ARRAY
+		<of>
+			ARRAY
+			<of> UINT8 </of>
+		</of>
+	</MATRIX_INLINE>
+	<PROFILE>
+		FIXED_DICT
+		<Properties>
+			<pos>
+				<Type> POSITION </Type>
+			</pos>
+			<badge>
+				<Type> UNICODE </Type>
+			</badge>
+		</Properties>
+	</PROFILE>
+	<AVATAR_DATA>
+		FIXED_DICT
+		<implementedBy> proj.avatar_data.AvatarData </implementedBy>
+		<Properties>
+			<level>
+				<Type> UINT32 </Type>
+			</level>
+			<code>
+				<Type> ITEM_CODE </Type>
+			</code>
+		</Properties>
+	</AVATAR_DATA>
 </root>"#;
 
 /// 黄金样本(规范推导,kbengine 源引在 provenance)。每样本先编码成 hex,
@@ -279,6 +326,153 @@ pub fn dump_wire_golden() -> String {
         "kind": "value",
         "layout": item_ids_layout,
         "value": item_ids_value,
+        "hex": to_hex(&out),
+    }));
+
+    // -- SER-14:嵌套 ARRAY/FD、深别名链、自定义转换、容器内边界值--
+
+    // 命名嵌套:ARRAY<ROW>,ROW=ARRAY<UINT8>;内嵌边界值 u8 max。
+    let matrix_layout = schema.resolve("MATRIX").expect("resolve MATRIX");
+    let matrix_value = WireValue::Array(vec![
+        WireValue::Array(vec![WireValue::U8(255), WireValue::U8(0)]),
+        WireValue::Array(vec![WireValue::U8(254), WireValue::U8(1)]),
+    ]);
+    let mut out = Vec::new();
+    encode_value(&matrix_layout, &matrix_value, &mut out).expect("golden MATRIX encode");
+    {
+        let mut cur = WireCursor::new(&out);
+        let back = decode_value(&matrix_layout, &mut cur).expect("golden MATRIX decode");
+        assert_eq!(back, matrix_value, "MATRIX round-trip mismatch");
+    }
+    let matrix_hex = to_hex(&out);
+    samples.push(serde_json::json!({
+        "name": "nested_array_matrix_named",
+        "provenance": "datatype.cpp FixedArrayType::initialize:<of> 命名类型按 DataTypes::getDataType 递归;夹具=ROW/MATRIX 命名两跳;u8=255 边界值内嵌",
+        "kind": "value",
+        "layout": matrix_layout,
+        "value": matrix_value,
+        "hex": matrix_hex,
+    }));
+
+    // 内联嵌套(<of>ARRAY 递归)与命名嵌套同布局同字节——两条路一条线。
+    let matrix_inline_layout = schema
+        .resolve("MATRIX_INLINE")
+        .expect("resolve MATRIX_INLINE");
+    let mut out = Vec::new();
+    encode_value(&matrix_inline_layout, &matrix_value, &mut out)
+        .expect("golden MATRIX_INLINE encode");
+    {
+        let mut cur = WireCursor::new(&out);
+        let back =
+            decode_value(&matrix_inline_layout, &mut cur).expect("golden MATRIX_INLINE decode");
+        assert_eq!(back, matrix_value, "MATRIX_INLINE round-trip mismatch");
+    }
+    let inline_hex = to_hex(&out);
+    assert_eq!(inline_hex, matrix_hex, "内联与命名嵌套布局必须同字节");
+    samples.push(serde_json::json!({
+        "name": "nested_array_inline_parity",
+        "provenance": "datatype.cpp FixedArrayType::initialize:strType==\"ARRAY\" 即内联递归(与命名同构);布局重解析两条路(schema.rs raw_type_from_element ARRAY 臂递归)同字节",
+        "kind": "value",
+        "layout": matrix_inline_layout,
+        "value": matrix_value,
+        "hex": inline_hex,
+    }));
+
+    // 空数组边界:count=0,仅 4B 计数前缀。
+    let mut out = Vec::new();
+    encode_value(&item_ids_layout, &WireValue::Array(vec![]), &mut out)
+        .expect("golden empty ARRAY encode");
+    {
+        let mut cur = WireCursor::new(&out);
+        let back = decode_value(&item_ids_layout, &mut cur).expect("golden empty ARRAY decode");
+        assert_eq!(back, WireValue::Array(vec![]), "empty ARRAY round-trip");
+    }
+    samples.push(serde_json::json!({
+        "name": "empty_array_count_zero",
+        "provenance": "datatype.cpp:1837-1846 ARRAY=u32 元素数(0 合法)+无元素字节;u16 max/0 边界值不入此样本(见 alias_chain_array)",
+        "kind": "value",
+        "layout": item_ids_layout,
+        "value": WireValue::Array(vec![]),
+        "hex": to_hex(&out),
+    }));
+
+    // 深别名链:ARRAY<ITEM_CODES 元素 ITEM_CODE→ITEM_ID→UINT16>;链端边界值。
+    let codes_layout = schema.resolve("ITEM_CODES").expect("resolve ITEM_CODES");
+    let codes_value = WireValue::Array(vec![WireValue::U16(65535), WireValue::U16(0)]);
+    let mut out = Vec::new();
+    encode_value(&codes_layout, &codes_value, &mut out).expect("golden ITEM_CODES encode");
+    {
+        let mut cur = WireCursor::new(&out);
+        let back = decode_value(&codes_layout, &mut cur).expect("golden ITEM_CODES decode");
+        assert_eq!(back, codes_value, "alias chain round-trip");
+    }
+    samples.push(serde_json::json!({
+        "name": "alias_chain_two_hop",
+        "provenance": "datatype.cpp resolve 别名链逐跳 DataTypes::getDataType(ITEM_CODE→ITEM_ID→UINT16);链端 u16 max/0 边界值;夹具=ITEM_CODE/ITEM_CODES",
+        "kind": "value",
+        "layout": codes_layout,
+        "value": codes_value,
+        "hex": to_hex(&out),
+    }));
+
+    // 嵌套 FIXED_DICT:FD 字段引用命名 FD(POSITION),声明序逐键无键名。
+    let profile_layout = schema.resolve("PROFILE").expect("resolve PROFILE");
+    let profile_value = WireValue::FixedDict(vec![
+        WireValue::FixedDict(vec![
+            WireValue::F32(1.5),
+            WireValue::F32(2.5),
+            WireValue::F32(3.5),
+        ]),
+        WireValue::Unicode("✓".as_bytes().to_vec()),
+    ]);
+    let mut out = Vec::new();
+    encode_value(&profile_layout, &profile_value, &mut out).expect("golden PROFILE encode");
+    {
+        let mut cur = WireCursor::new(&out);
+        let back = decode_value(&profile_layout, &mut cur).expect("golden PROFILE decode");
+        assert_eq!(back, profile_value, "PROFILE round-trip");
+    }
+    samples.push(serde_json::json!({
+        "name": "nested_fixed_dict_profile",
+        "provenance": "datatype.cpp:2592-2660 FixedDict=声明序逐键(嵌套键无键名);内嵌 UNICODE=u32 长度+UTF-8(「✓」3B 多字节边界);夹具=PROFILE(pos=POSITION,badge)",
+        "kind": "value",
+        "layout": profile_layout,
+        "value": profile_value,
+        "hex": to_hex(&out),
+    }));
+
+    // 自定义转换(implementedBy):wire 形=FD 布局原样(datatype.cpp:2169-2172
+    // implementedBy 只登记转换,wire 不变);布局重解析必须无视 implementedBy
+    // 元素,链端字段走别名 ITEM_CODE;u32 max 边界值内嵌。
+    let avatar_layout = schema.resolve("AVATAR_DATA").expect("resolve AVATAR_DATA");
+    assert_eq!(
+        avatar_layout,
+        WireLayout::FixedDict(vec![
+            WireField {
+                name: "level".to_string(),
+                layout: WireLayout::U32,
+            },
+            WireField {
+                name: "code".to_string(),
+                layout: WireLayout::U16,
+            },
+        ]),
+        "implementedBy 不得改变 wire 布局"
+    );
+    let avatar_value = WireValue::FixedDict(vec![WireValue::U32(4294967295), WireValue::U16(7)]);
+    let mut out = Vec::new();
+    encode_value(&avatar_layout, &avatar_value, &mut out).expect("golden AVATAR_DATA encode");
+    {
+        let mut cur = WireCursor::new(&out);
+        let back = decode_value(&avatar_layout, &mut cur).expect("golden AVATAR_DATA decode");
+        assert_eq!(back, avatar_value, "AVATAR_DATA round-trip");
+    }
+    samples.push(serde_json::json!({
+        "name": "implemented_by_conversion_wire_unchanged",
+        "provenance": "datatype.cpp:2169-2172/:2203-2208 implementedBy=内存侧转换登记(STRUCT-07:内存形式=实现类,键位面=传输形式);wire 形=FD 声明序原样,字段链 ITEM_CODE→UINT16;u32 max 边界值",
+        "kind": "value",
+        "layout": avatar_layout,
+        "value": avatar_value,
         "hex": to_hex(&out),
     }));
 
@@ -641,6 +835,11 @@ pub fn dump_wire_golden() -> String {
 
     let value = serde_json::json!({
         "generator": "kode-server dump-wire-golden",
+        // SER-14 诚实声明(验收:引擎未运行的项不标成真实往返通过):
+        // 全部样本 = 规范推导(引擎源码锚在 provenance)的编解码自洽往返;
+        // 「往返通过」= codec 双向自一致 + 源码读序锚,**非引擎执行捕获**。
+        // 引擎实测字节捕获(真跑 KBEngine dump 线上流)= 独立车道,未执行。
+        "engine_execution": "not-run: canonical-derivation self-round-trips only (engine source anchors in provenance); no engine-executed capture",
         "samples": samples,
     });
     serde_json::to_string(&value).expect("serialize wire golden")

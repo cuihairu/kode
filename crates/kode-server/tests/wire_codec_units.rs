@@ -78,6 +78,80 @@ fn wire_golden_value_samples_bidirectional() {
     }
 }
 
+/// SER-14 面:嵌套 ARRAY/FD、深别名链、自定义转换、容器内边界值样本落账;
+/// 诚实声明(engine_execution=not-run)在案——全部样本为规范推导自洽往返,
+/// 非引擎执行捕获,不冒称真实往返通过。
+#[test]
+fn wire_golden_ser14_nested_conversion_and_honesty_faces() {
+    let value = golden_json();
+
+    // 诚实声明:引擎未执行,往返 = 自洽 + 源码锚
+    let honesty = value["engine_execution"]
+        .as_str()
+        .expect("engine_execution field");
+    assert!(honesty.contains("not-run"), "honesty field: {honesty}");
+
+    let samples = value["samples"].as_array().unwrap();
+    let find = |name: &str| {
+        samples
+            .iter()
+            .find(|s| s["name"].as_str() == Some(name))
+            .unwrap_or_else(|| panic!("golden sample {name} missing"))
+    };
+
+    // 嵌套数组:命名/内联两路同字节(样本 hex 互等)
+    let named = find("nested_array_matrix_named");
+    let inline = find("nested_array_inline_parity");
+    assert_eq!(
+        named["hex"].as_str().unwrap(),
+        inline["hex"].as_str().unwrap(),
+        "命名与内联嵌套布局必须同字节"
+    );
+    // u8 max 边界值内嵌于最内层(带标签值:{"U8": n})
+    let mv = &named["value"]["Array"];
+    assert_eq!(mv[0]["Array"][0]["U8"], serde_json::json!(255));
+    assert_eq!(mv[1]["Array"][0]["U8"], serde_json::json!(254));
+
+    // 空数组边界:仅 4B 计数前缀
+    let empty = find("empty_array_count_zero");
+    assert_eq!(empty["hex"].as_str().unwrap(), "00000000");
+
+    // 深别名链:链端 u16 max
+    let chain = find("alias_chain_two_hop");
+    assert_eq!(chain["value"]["Array"][0]["U16"], serde_json::json!(65535));
+
+    // 嵌套 FD:内层 POSITION 3×f32 + unicode 多字节 badge
+    let profile = find("nested_fixed_dict_profile");
+    let pv = &profile["value"]["FixedDict"];
+    assert_eq!(
+        pv[0]["FixedDict"].as_array().unwrap().len(),
+        3,
+        "POSITION 3 分量"
+    );
+    assert!(
+        pv[1]["Unicode"].as_array().unwrap().len() >= 2,
+        "badge utf-8 多字节"
+    );
+
+    // 自定义转换:wire 布局无视 implementedBy,恒 FD[U32,U16]
+    let avatar = find("implemented_by_conversion_wire_unchanged");
+    let layout = &avatar["layout"];
+    assert_eq!(
+        serde_json::to_value(layout).unwrap(),
+        serde_json::json!({
+            "FixedDict": [
+                {"name": "level", "layout": "U32"},
+                {"name": "code", "layout": "U16"},
+            ]
+        }),
+        "implementedBy 不得改变 wire 布局序列化形"
+    );
+    assert_eq!(
+        avatar["value"]["FixedDict"][0]["U32"],
+        serde_json::json!(4294967295u32)
+    );
+}
+
 /// 属性流/方法/消息帧样本:decode(hex)==input 且 encode(input)==hex。
 #[test]
 fn wire_golden_stream_samples_bidirectional() {
