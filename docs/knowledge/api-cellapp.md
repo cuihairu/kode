@@ -140,12 +140,23 @@ set/del — matching the receive-only client path; the entry-hook registry
 registers `onSpaceData` (`src/backend/entryHooks.ts`); the shared-data
 dict index deliberately excludes spaceData (function form, not a dict
 attribute — `KBENGINE_DATA_DICTS = globalData/baseAppData/cellAppData`).
-Known honest gaps (no face, recorded not prebuilt): argument validation
-beyond the annotations (empty key, non-string value, `_mapping` write,
-spaceID existence) has no diagnostic emitter, and static `setSpaceData`
-call sites are not harvested into a key-completion face — spaceData keys
-would admit the same write-site indexing the three dicts have if a batch
-takes it.
+Space-data read/write linking (KSEM-DATA-06) closes the call-site side:
+a standalone workspace index (`src/spaceDataIndex.ts` + pure core
+`src/backend/spaceDataIndexCore.ts`) indexes calls whose spaceID is an
+int literal or module-level int constant binding and whose key is a
+string literal into `(spaceID, key)`-exact families — key-position
+completion, F12 (read/delete → first write site; set → first
+different-kind site) and Shift+F12 (whole family) consume it; dynamic
+spaceIDs never join a family (a dynamic space is not merged into one
+definite object), and the `_mapping` write protection has a diagnostic
+face (`kbengine.spaceDataProtectedKey` Error on set/del, get exempt —
+`src/backend/spaceDataProtectedKeyCheck.ts`, switch
+`kbengine.spaceDataProtectedKeyDiagnostics`). Known honest gaps (no
+face, recorded not prebuilt): the remaining argument-validation surface
+(empty key, non-string value, spaceID existence at runtime) still has no
+diagnostic emitter; key literals are indexed as raw inner text without
+escape decoding; calls spanning multiple lines and non-literal keys are
+out of the index.
 
 ## 3. KBEngine module callbacks (cellapp face)
 

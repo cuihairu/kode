@@ -84,6 +84,8 @@
 > 2026-11-14(KSEM-SER-07):isSameType 契约边面接线——diagnostics.ts 顶部 import 组累计 +4 行(推入块在打点锚之后不位移)→ def/entities 两处打点锚 191/204→195/208(真位重探,与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-14(KSEM-DATA-02):共享数据键位补全接线——completion.ts 顶部 +4 导入、KBEngineCompletionProvider ctor +4 注入、数据字典键位分支 +12、provideDataDictKeyCompletions 方法块 +56(均在 PythonCompletionProvider 之前)→ PythonCompletionProvider.provideCompletionItems 897→973(净 +76,出处随 baseline 锁步,与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-14(KSEM-DATA-04):provideDataDictKeyCompletions 进程域收窄重写(+16:域闸与族内域内访问点过滤/detail 域内计数重排,均在 PythonCompletionProvider 之前)→ PythonCompletionProvider.provideCompletionItems 973→989;hover.ts 数据字典面改动全在 provideHover(:313)之后无位移(出处随 baseline 锁步,与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
+>
+> 2026-11-14(KSEM-DATA-06):spaceData 键位分支 +14(KBEngineCompletionProvider.provideCompletionItems 内)与 provideSpaceDataKeyCompletions +61 → PythonCompletionProvider.provideCompletionItems 真位重探 989→1064;同批 diagnostics.ts 打点 195/208→200/213、extension.ts 421/518→430/529、pythonDefinition.ts 313/869/975→354/942/1048(均真位重探,出处随 baseline 锁步)。
 
 ### 7.1 Hover(Python → 实体标注 → 同步回退)
 
@@ -149,7 +151,7 @@ flowchart TD
   CB2["pythonClassIndex.resolveClassBase :1228<br/>(显式 import 绑定优先)"]
   CB3["findEntityDefinitionFile → .def<br/>getEntityRuntimeProfile → 实体脚本"]
   REV["types.xml implementedBy 反向跳转"]
-  L0["层0 接收者段闸(languageProviders/pythonDefinition.ts:869)<br/>self.段.方法:段不符即 miss"]
+  L0["层0 接收者段闸(languageProviders/pythonDefinition.ts:942)<br/>self.段.方法:段不符即 miss"]
   L1["层1 entity-def 属性子探<br/>resolvePropertyDefinitionForClass / resolvePropertyDefinition"]
   SCAN["indexScheduler 队列(首扫在途时)"]
   TY["findCustomTypeDeclarationInfo 自定义类型声明"]
@@ -175,7 +177,7 @@ flowchart TD
   MRO -- "①② 落空" --> PASS2 --> END2
   AD2 -.->|对拍| SHD
 
-  WAITB("等待点 B:withInitialScanTimeout 5s<br/>languageProviders/pythonDefinition.ts:975,层1 属性命中后补类型信息时")
+  WAITB("等待点 B:withInitialScanTimeout 5s<br/>languageProviders/pythonDefinition.ts:1048,层1 属性命中后补类型信息时")
   WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(backend/pythonClassIndex.ts:657,打点 :543)")
   WAITD("等待点 D:pass2 await ensureScanned<br/>①② 均落空才等全量收敛——PR5 主路径首查不等这里")
   L1 -.->|等待| WAITB
@@ -193,7 +195,7 @@ flowchart TD
 flowchart TD
   VC3["VS Code: provideCompletionItems(document, position)"]
   M3["activate/languageServices.ts:128 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :741 一路)"]
-  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders/completion.ts:989"]
+  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders/completion.ts:1064"]
   KBEC{"kbe./KBEngine. 模块语境?<br/>(已引入/已用别名)"}
   FILTER["filterKbeSymbols 前缀过滤 :4921<br/>(engineApiMetadata 目录)"]
   SELFC{"self. 语境?<br/>getPythonSelfCompletionContext :4935"}
@@ -222,15 +224,15 @@ flowchart TD
 ```mermaid
 flowchart TD
   CHG["VS Code: onDidChangeTextDocument"]
-  WATCH["extension.ts:421 文档事件适配<br/>(onSave/onOpen 同通道)"]
+  WATCH["extension.ts:430 文档事件适配<br/>(onSave/onOpen 同通道)"]
   RQ["DiagnosticScheduler.requestQueued<br/>backend/diagnosticScheduler.ts:228"]
   CO["同 URI 只留最新版本任务<br/>旧版本记 coalescedStale 永不执行"]
-  FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:518 → backend/diagnosticScheduler.ts:258"]
+  FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:529 → backend/diagnosticScheduler.ts:258"]
   VG{"版本令牌守卫:<br/>任务版本 == 文档当前版本?"}
   DROP["staleDropped 丢弃,不发布"]
   GEN{"同版本+同诊断输入代<br/>已发布?(A6-2 零重算)"}
   SKIP["skippedCurrentVersion 跳过"]
-  CALC["computeAndPublish<br/>def 侧打点 activate/diagnostics.ts:195 / entities 侧 :208"]
+  CALC["computeAndPublish<br/>def 侧打点 activate/diagnostics.ts:200 / entities 侧 :213"]
   VD["validateDocument(languageProviders/validation.ts:14)<br/>parseDefAst 一次结果共用标量+结构校验(languageProviders/validation.ts:14,批92)"]
   VEX["validateEntitiesXmlDocument(languageProviders/validation.ts:256)<br/>documentStore 'entities-analysis' 命名空间缓存(languageProviders/validation.ts:266,A6-3)"]
   SHDD["kode2 shadow 对拍+语料镜像腿<br/>shadowObserveDefDocument(:1873,fire-and-forget)"]
