@@ -74,6 +74,10 @@ export interface FlowReviewLink {
   pairedSendEdgeId: string | null;
   /** 发送步是否有远端执行帧(false=def/实现缺口或广播,如实) */
   connectedToExec: boolean;
+  /** 方向(角色面,FLOW-017);解析边恒有 */
+  direction: { from: string; to: string; kind: string };
+  /** Arg 类型注记(来源=def 声明;未声明/无契约如实,不猜) */
+  argNote: string | null;
 }
 
 export interface FlowReviewDeclaration {
@@ -268,6 +272,25 @@ export function buildFlowReviewSample(input: FlowReviewSampleInput): FlowReviewS
     return entry;
   };
 
+  // FLOW-017:边显 Arg 类型(来源=def 声明);发送边与远端执行段同契约;
+  // def 未声明/缺口如实「不猜」,广播无 def 契约(受众动态集合)不带注记
+  const argNoteByEdge = new Map<string, string>();
+  for (const link of rpc.links) {
+    const parts = [
+      link.declaredArgs.length > 0
+        ? `参数(def):${link.declaredArgs.join(', ')}`
+        : '参数:def 未声明(不猜)'
+    ];
+    if (link.declaredReturnType) {
+      parts.push(`返回(def):${link.declaredReturnType}`);
+    }
+    argNoteByEdge.set(link.sendEdge.id, parts.join(';'));
+    argNoteByEdge.set(link.execEdge.id, parts.join(';'));
+  }
+  for (const unresolvedLink of rpc.unresolvedLinks) {
+    argNoteByEdge.set(unresolvedLink.sendEdge.id, '参数:def 未声明(不猜)');
+  }
+
   const makeLink = (
     kind: FlowReviewLinkKind,
     edge: FlowGraphEdge,
@@ -298,6 +321,12 @@ export function buildFlowReviewSample(input: FlowReviewSampleInput): FlowReviewS
       unresolvedDetail: edge.unresolvedReason?.detail ?? null,
       pairedSendEdgeId: null,
       connectedToExec: true,
+      direction: {
+        from: edge.direction.fromRole,
+        to: edge.direction.toRole,
+        kind: edge.direction.kind
+      },
+      argNote: argNoteByEdge.get(edge.id) ?? null,
       ...extras
     };
   };
@@ -462,6 +491,13 @@ const emitLinkRow = (link: FlowReviewLink, roleColumns: FlowProcessRole[]): stri
     link.kind === 'send' && !link.connectedToExec
       ? '<span class="pairing">未连接:无远端执行帧(def/实现缺口),只记发送步</span>'
       : '';
+  // FLOW-017:跨进程边显方向;服务端角色 → client 的消息标回调(方向事实,
+  // 不含执行顺序语义——R3)
+  const direction =
+    link.direction.kind === 'cross-process'
+      ? `<span class="dir">方向 ${esc(link.direction.from)}→${esc(link.direction.to)}</span>${link.direction.to === 'client' && link.direction.from !== 'client' ? '<span class="callback">回调</span>' : ''}`
+      : '';
+  const args = link.argNote ? `<span class="args">${esc(link.argNote)}</span>` : '';
   const callSiteJump = link.callSiteJump ? jumpAttr(link.callSiteJump.file, link.callSiteJump.line0) : '';
   const callSite = link.callSite
     ? `<span class="callsite"${callSiteJump}>调用点 ${esc(link.callSite)}</span>`
@@ -469,7 +505,7 @@ const emitLinkRow = (link: FlowReviewLink, roleColumns: FlowProcessRole[]): stri
   const declaration = link.declaration
     ? `<span class="decl">声明 ${esc(link.declaration.file)}:${link.declaration.displayLine}</span>${jumpAttr(link.declaration.file, link.declaration.line0)}`
     : '';
-  return `<tr class="link-row"><td colspan="${roleColumns.length}"><span class="badge ${link.kind}">${esc(LINK_KIND_BADGE[link.kind])}</span> <span class="arrow">${esc(link.fromLabel)} → ${esc(link.toLabel)}</span> <span class="ev">[${esc(link.evidenceId)}]</span>${branch}${unresolved}${pairing}${disconnected}${callSite}${declaration}</td></tr>`;
+  return `<tr class="link-row"><td colspan="${roleColumns.length}"><span class="badge ${link.kind}">${esc(LINK_KIND_BADGE[link.kind])}</span> <span class="arrow">${esc(link.fromLabel)} → ${esc(link.toLabel)}</span> <span class="ev">[${esc(link.evidenceId)}]</span>${direction}${args}${branch}${unresolved}${pairing}${disconnected}${callSite}${declaration}</td></tr>`;
 };
 
 const renderHtml = (input: HtmlInput): string => {
@@ -551,6 +587,9 @@ tr.link-row td { background: #fffdf5; font-size: 13px; }
 .branch { color: #8a6d00; margin-left: 8px; font-size: 12px; }
 .unresolved { color: #992222; margin-left: 8px; font-size: 12px; }
 .pairing { color: #3346c4; margin-left: 8px; font-size: 12px; }
+.dir { color: #14538a; margin-left: 8px; font-size: 12px; font-family: monospace; }
+.callback { display: inline-block; background: #ffe9cc; color: #8a4d00; font-size: 11px; padding: 1px 8px; border-radius: 10px; font-weight: 600; margin-left: 8px; }
+.args { color: #1c6b33; margin-left: 8px; font-size: 12px; font-family: monospace; }
 .role-tag { color: #889; font-size: 11px; }
 details.locals-group { margin: 6px 0; background: #fff; border: 1px solid #dde4ee; border-radius: 4px; padding: 4px 10px; }
 details.locals-group > summary { cursor: pointer; font-size: 13px; color: #2d5ba9; font-weight: 600; }

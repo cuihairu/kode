@@ -39,7 +39,14 @@ export interface FlowCallGraphSource {
     entity: string,
     section: FlowRpcSection,
     methodName: string
-  ): Promise<{ defFile: string; line: number } | null>;
+  ): Promise<{
+    defFile: string;
+    line: number;
+    /** def 声明的 <Arg> 类型序列;缺省/空=未声明(如实,不猜) */
+    declaredArgs?: readonly string[];
+    /** def 声明的 <ReturnType>;null/缺=未声明 */
+    declaredReturnType?: string | null;
+  } | null>;
   resolveImplementation(
     entity: string,
     section: FlowRpcSection,
@@ -133,7 +140,15 @@ export async function assembleFlowCallGraph(
   const needed = await collectNeededRpcTriples(texts, source.rootKey, filePath =>
     source.entityForFile(filePath)
   );
-  const defRegistry = new Map<string, { defFile: string; line: number }>();
+  const defRegistry = new Map<
+    string,
+    {
+      defFile: string;
+      line: number;
+      declaredArgs?: readonly string[];
+      declaredReturnType?: string | null;
+    }
+  >();
   const implRegistry = new Map<
     string,
     {

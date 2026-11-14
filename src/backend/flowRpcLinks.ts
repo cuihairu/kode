@@ -43,7 +43,14 @@ export interface FlowRpcLinkInput {
     entity: string,
     section: 'BaseMethods' | 'CellMethods' | 'ClientMethods',
     methodName: string
-  ) => { defFile: string; line: number } | null;
+  ) => {
+    defFile: string;
+    line: number;
+    /** def 声明的 <Arg> 类型序列;缺省/空=未声明(如实,不猜) */
+    declaredArgs?: readonly string[];
+    /** def 声明的 <ReturnType> 直文本;null/缺=未声明 */
+    declaredReturnType?: string | null;
+  } | null;
   /** 实现解析:实体+段+方法名 → python 实现位置(宿主按全 owner 链解析);
    *  null=实现缺失 */
   resolveImplementation: (
@@ -69,6 +76,10 @@ export interface FlowRpcLink {
   /** 实现函数帧节点 */
   implNode: FlowGraphNode;
   callerEntity: string;
+  /** def 声明的 <Arg> 类型序列(空数组=def 未声明,如实不猜,FLOW-017) */
+  declaredArgs: readonly string[];
+  /** def 声明的 <ReturnType>;null=未声明 */
+  declaredReturnType: string | null;
 }
 
 export interface FlowRpcUnresolvedLink {
@@ -106,6 +117,11 @@ export function buildRpcLinks(input: FlowRpcLinkInput): FlowRpcLinkResult {
     for (const edge of result.edges) {
       const target = nodesById.get(edge.toNodeId);
       if (!target || target.kind !== 'rpc-declaration') {
+        continue;
+      }
+      // FLOW-008 机械保证:广播不产生远端执行帧(受众=AOI 动态集合,不虚构
+      // 固定接收)——广播发送行走查序独立呈现,def 契约面不进本链接器
+      if (edge.messageKind === 'broadcast') {
         continue;
       }
       // 只收合法发送边(语法锚、无未解析原因);face-invalid/engine-ref
@@ -274,7 +290,9 @@ export function buildRpcLinks(input: FlowRpcLinkInput): FlowRpcLinkResult {
         rpcNode,
         execEdge,
         implNode,
-        callerEntity
+        callerEntity,
+        declaredArgs: defDecl.declaredArgs ?? [],
+        declaredReturnType: defDecl.declaredReturnType ?? null
       });
     }
   }

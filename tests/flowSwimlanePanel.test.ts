@@ -51,8 +51,15 @@ const TEXTS: Record<string, string> = {
   [CELL_AVATAR]: CELL_TEXT
 };
 
-const DEF_REGISTRY: Record<string, { defFile: string; line: number }> = {
-  'Avatar\u001fBaseMethods\u001fchooseRole': { defFile: '/ws/entity_defs/Avatar.def', line: 10 },
+const DEF_REGISTRY: Record<
+  string,
+  { defFile: string; line: number; declaredArgs?: string[]; declaredReturnType?: string | null }
+> = {
+  'Avatar\u001fBaseMethods\u001fchooseRole': {
+    defFile: '/ws/entity_defs/Avatar.def',
+    line: 10,
+    declaredArgs: ['UINT32']
+  },
   'Avatar\u001fCellMethods\u001fenterGame': { defFile: '/ws/entity_defs/Avatar.def', line: 21 },
   'Avatar\u001fClientMethods\u001fonEnterGame': { defFile: '/ws/entity_defs/Avatar.def', line: 34 }
 };
@@ -221,7 +228,17 @@ describe('FLOW-015 工作区数据源', () => {
       '/ws'
     );
     const def = await source.resolveDefMethod('Avatar', 'CellMethods', 'enterGame');
-    expect(def).toEqual({ defFile: '/ws/entity_defs/Avatar.def', line: 21 });
+    // 未声明 Arg/返回的 def 归一为空数组/null(诚实缺省,FLOW-017)
+    expect(def).toEqual({
+      defFile: '/ws/entity_defs/Avatar.def',
+      line: 21,
+      declaredArgs: [],
+      declaredReturnType: null
+    });
+    // def 声明的 Arg/返回类型经宿主解析原样传通(FLOW-017)
+    const defWithArgs = await source.resolveDefMethod('Avatar', 'BaseMethods', 'chooseRole');
+    expect(defWithArgs!.declaredArgs).toEqual(['UINT32']);
+    expect(defWithArgs!.declaredReturnType).toBeNull();
     const impl = await source.resolveImplementation('Avatar', 'CellMethods', 'enterGame');
     expect(impl).not.toBeNull();
     expect(impl!.filePath).toBe(CELL_AVATAR);

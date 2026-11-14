@@ -52,8 +52,15 @@ const ENTITY_FOR_FILE = new Map<string, string>([
   [CELL_AVATAR, 'Avatar']
 ]);
 
-const DEF_REGISTRY: Record<string, { defFile: string; line: number }> = {
-  'Avatar\u001fBaseMethods\u001fchooseRole': { defFile: '/ws/entity_defs/Avatar.def', line: 10 },
+const DEF_REGISTRY: Record<
+  string,
+  { defFile: string; line: number; declaredArgs?: string[]; declaredReturnType?: string | null }
+> = {
+  'Avatar\u001fBaseMethods\u001fchooseRole': {
+    defFile: '/ws/entity_defs/Avatar.def',
+    line: 10,
+    declaredArgs: ['UINT32']
+  },
   'Avatar\u001fCellMethods\u001fenterGame': { defFile: '/ws/entity_defs/Avatar.def', line: 21 },
   'Avatar\u001fClientMethods\u001fonEnterGame': { defFile: '/ws/entity_defs/Avatar.def', line: 34 }
   // onChooseRoleFailed 缺席:def 未声明 → 未连接发送(FLOW-007 口径)
@@ -192,5 +199,15 @@ describe('FLOW-015 装配', () => {
     );
     expect(sample.truncated).toBe(true);
     expect(sample.html).toContain('走查深度截断');
+  });
+
+  it('def 声明的 Arg 类型经装配传通到边注记(FLOW-017)', async () => {
+    const sample = await assembleFlowCallGraph(makeSource(), {
+      filePath: CLIENT_AVATAR,
+      functionName: 'chooseRole'
+    });
+    const send = sample.walkLinks.find(link => link.kind === 'send')!;
+    expect(send.argNote).toBe('参数(def):UINT32');
+    expect(sample.html).toContain('参数(def):UINT32');
   });
 });

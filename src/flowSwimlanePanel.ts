@@ -77,7 +77,14 @@ export function makeWorkspaceFlowSource(
     },
     async resolveDefMethod(entity, section, methodName) {
       const def = await manager.resolveMethodDefinitionForClass(entity, methodName, section);
-      return def ? { defFile: def.defFile, line: def.line } : null;
+      return def
+        ? {
+            defFile: def.defFile,
+            line: def.line,
+            declaredArgs: def.declaredArgs ?? [],
+            declaredReturnType: def.declaredReturnType ?? null
+          }
+        : null;
     },
     async resolveImplementation(entity, section, methodName) {
       const def = await manager.resolveMethodDefinitionForClass(entity, methodName, section);

@@ -54,10 +54,26 @@ const FILES: Record<string, string> = {
   [CELL_AVATAR]: CELL_TEXT
 };
 
-const DEF_REGISTRY: Record<string, { defFile: string; line: number }> = {
-  'Avatar\u001fBaseMethods\u001fchooseRole': { defFile: '/ws/entity_defs/Avatar.def', line: 10 },
-  'Avatar\u001fCellMethods\u001fenterGame': { defFile: '/ws/entity_defs/Avatar.def', line: 21 },
-  'Avatar\u001fClientMethods\u001fonEnterGame': { defFile: '/ws/entity_defs/Avatar.def', line: 34 }
+const DEF_REGISTRY: Record<
+  string,
+  { defFile: string; line: number; declaredArgs?: string[]; declaredReturnType?: string | null }
+> = {
+  'Avatar\u001fBaseMethods\u001fchooseRole': {
+    defFile: '/ws/entity_defs/Avatar.def',
+    line: 10,
+    declaredArgs: ['UINT32']
+  },
+  'Avatar\u001fCellMethods\u001fenterGame': {
+    defFile: '/ws/entity_defs/Avatar.def',
+    line: 21,
+    declaredArgs: ['UINT32'],
+    declaredReturnType: 'None'
+  },
+  'Avatar\u001fClientMethods\u001fonEnterGame': {
+    defFile: '/ws/entity_defs/Avatar.def',
+    line: 34,
+    declaredArgs: ['UINT32']
+  }
   // onChooseRoleFailed 故意缺席:未连接发送面(def 缺口如实)
 };
 
@@ -303,6 +319,86 @@ describe('FLOW-016 调用点与声明分别跳转', () => {
     expect(sample.html).not.toContain('<details class="locals-group" open');
     expect(sample.html).toContain('<summary>帧内 ·');
     expect(sample.html).toContain('本地调用树 2 条');
+  });
+});
+
+describe('FLOW-017 跨进程消息呈现', () => {
+  it('边显方法/方向/Arg 类型与来源:def 契约随边,未声明如实不猜', () => {
+    const sample = buildFlowReviewSample(input());
+    // client→base 发送:方向 + def 参数(来源标注 def)
+    const send = sample.walkLinks.find(
+      link => link.kind === 'send' && link.direction.from === 'client'
+    )!;
+    expect(send.direction).toEqual({ from: 'client', to: 'base', kind: 'cross-process' });
+    expect(send.argNote).toBe('参数(def):UINT32');
+    // 远端执行段与发送边同契约(参数+返回)
+    const exec = sample.walkLinks.find(
+      link => link.kind === 'remote-exec' && link.toLabel.includes('enterGame')
+    )!;
+    expect(exec.argNote).toBe('参数(def):UINT32;返回(def):None');
+    // def 缺口发送:未声明如实
+    const unconnected = sample.walkLinks[sample.walkLinks.length - 1];
+    expect(unconnected.argNote).toBe('参数:def 未声明(不猜)');
+    // 广播不进 def 契约面(FLOW-008 机械保证):不带参数注记
+    const broadcast = sample.walkLinks.find(link => link.kind === 'broadcast-send')!;
+    expect(broadcast.argNote).toBeNull();
+  });
+
+  it('FLOW-008 机械保证:声明且已实现的广播也不产生远端执行帧', () => {
+    // showScene 声明+实现齐备:广播仍只记发送步(受众动态集合,不虚构接收帧)
+    const withDeclared = buildFlowReviewSample(input({
+      resolveDefMethod: (entity, section, methodName) =>
+        methodName === 'showScene'
+          ? { defFile: '/ws/entity_defs/Avatar.def', line: 34, declaredArgs: ['UINT64'] }
+          : DEF_REGISTRY[`${entity}\u001f${section}\u001f${methodName}`] ?? null,
+      resolveImplementation: (entity, section, methodName) =>
+        methodName === 'showScene'
+          ? { filePath: CLIENT_AVATAR, line: 4, signature: 'def showScene(self, sceneId)', className: 'Avatar', inheritedFrom: null }
+          : IMPL_REGISTRY[`${entity}\u001f${section}\u001f${methodName}`] ?? null
+    }));
+    // 有过滤器:轨迹与基线一致(广播不追加 send+remote-exec 两段)
+    const kinds = withDeclared.walkLinks.map(link => link.kind);
+    expect(kinds).toEqual([
+      'send',
+      'remote-exec',
+      'send',
+      'remote-exec',
+      'broadcast-send',
+      'send',
+      'remote-exec',
+      'send'
+    ]);
+    const broadcast = withDeclared.walkLinks.find(link => link.kind === 'broadcast-send')!;
+    expect(broadcast.connectedToExec).toBe(false);
+    expect(broadcast.argNote).toBeNull();
+    // 广播发起帧不带 def 参数注记(契约面不进广播)
+    expect(withDeclared.html).not.toContain('参数(def):UINT64');
+  });
+
+  it('服务端→client 消息标回调;client→服务端不标(方向事实,非执行顺序)', () => {
+    const sample = buildFlowReviewSample(input());
+    // 回调:cell→client 广播/onEnterGame、base→client onChooseRoleFailed
+    const callbackTargets = sample.walkLinks.filter(
+      link =>
+        link.direction.kind === 'cross-process' &&
+        link.direction.to === 'client' &&
+        link.direction.from !== 'client'
+    );
+    expect(callbackTargets.map(link => link.kind).sort()).toEqual([
+      'broadcast-send',
+      'send',
+      'send'
+    ]);
+    // client→base/cell 方向不标回调(整图恰好 3 处)
+    expect(sample.html.match(/回调/g)).toHaveLength(3);
+    expect(sample.html).toContain('方向 client→base');
+    expect(sample.html).toContain('方向 cell→client');
+    // 本地帧内方向不显示(downstream-call 非跨进程)
+    const localCall = sample.frameLocals
+      .flatMap(group => group.links)
+      .find(link => link.kind === 'local-call')!;
+    expect(localCall.direction.kind).toBe('downstream-call');
+    expect(localCall.argNote).toBeNull();
   });
 });
 
