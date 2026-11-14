@@ -614,6 +614,8 @@ The flow graph panel supports:
 - Every edge carries an EV-numbered evidence index entry; the source label is always 静态可能路径(G2) and the walk order is a 走查轨迹, not an execution order
 - The main business path (swimlane walk) is the default view; per-frame local call trees (entry → helper) are collapsed by default and expand natively (zero-script `<details>`)
 - Each link marks 调用点 and 声明 separately; clicking either jumps to the exact file line in the editor (python declarations read 0-based +1, def-file declarations 1-based as declared)
+- Cross-process links show direction (方向 from→to) and the def-declared `<Arg>` types plus `<ReturnType>` with the (def) source mark; an undeclared method stays honest (参数:def 未声明(不猜)); broadcasts never enter the def contract face (no fabricated receiver frames)
+- Server→client messages carry a 回调 badge — a direction fact only, never an execution-order claim
 
 ### `kbengine.quickActions.runByName`
 
