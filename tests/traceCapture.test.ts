@@ -295,6 +295,38 @@ describe('traceCaptureRun: 命令行组装与子进程交互(FLOW-025)', () => {
     expect(killed).toEqual(['SIGKILL']);
   });
 
+  it('断连面:子进程被外部信号杀掉(exit=null+signal)如实抛错,不读残缺产物', async () => {
+    const fakeSpawn = ((_cmd: string, _args: readonly string[]) => {
+      const child = {
+        stdout: { on: () => undefined },
+        stderr: { on: () => undefined },
+        on: (event: string, listener: (code: number | null, signal: string | null) => void) => {
+          if (event === 'exit') {
+            // 外部 SIGTERM(如宿主回收):非超时路径,exit 码为 null
+            setTimeout(() => listener(null, 'SIGTERM'), 0);
+          }
+        },
+        kill: () => true
+      };
+      return child;
+    }) as unknown as typeof import('node:child_process').spawn;
+
+    await expect(
+      runControlledCapture(
+        {
+          pythonPath: 'python3',
+          collectorScript: 'collector.py',
+          targetScript: 'workload.py',
+          maxEvents: 100,
+          timeoutMs: 5000,
+          cwd: REPO_ROOT,
+          sessionId: 's'
+        },
+        { spawn: fakeSpawn }
+      )
+    ).rejects.toThrow(/signal=SIGTERM/);
+  });
+
   it('spawn 成功路径:读产物→导入协议,组装参数含 --max-events 与 --out', async () => {
     const seenArgs: string[][] = [];
     const raw = {
@@ -408,5 +440,33 @@ describe.skipIf(!hasMonitoring)('traceCaptureRun: 真实受控采集端到端(FL
     expect(main!.parentSeq).toBeNull();
     expect(result.stderrTail).toContain('captured 11 events');
     expect(result.durationMs).toBeGreaterThan(0);
+  });
+
+  it('FLOW-029 开销预算实测:缺省预算跑 2000 环负载,每事件开销在预算数量级内', async () => {
+    // 2000 环=约 4k 事件(预算默认 20000 缓冲内);环境变量经继承传给子进程
+    const previous = process.env['TRACE_LOOP_N'];
+    process.env['TRACE_LOOP_N'] = '2000';
+    try {
+      const result = await runControlledCapture({
+        pythonPath: 'python3',
+        collectorScript: path.join(REPO_ROOT, 'scripts', 'trace', 'monitoring_capture.py'),
+        targetScript: path.join(REPO_ROOT, 'tests', 'fixtures', 'trace', 'workload_loop.py'),
+        // 缺省 maxEvents/timeoutMs:走 FLOW-029 预登记预算(真实链路消费默认值)
+        cwd: REPO_ROOT,
+        sessionId: 'real-overhead'
+      });
+      expect(result.session.events.length).toBeGreaterThanOrEqual(4000);
+      expect(result.session.loss.totalDropped).toBe(0);
+      // 宽松上界(防负载抖动误报):每事件 < 0.5ms = 预算 0.05ms 的 10 倍
+      // 护栏;实测值与预算对照见 docs/perf/kflow-029 报告
+      const perEventMs = result.durationMs / result.session.events.length;
+      expect(perEventMs).toBeLessThan(0.5);
+    } finally {
+      if (previous === undefined) {
+        delete process.env['TRACE_LOOP_N'];
+      } else {
+        process.env['TRACE_LOOP_N'] = previous;
+      }
+    }
   });
 });

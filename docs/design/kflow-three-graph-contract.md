@@ -26,7 +26,7 @@
 
 - **回答的问题**:「某次实际执行中,**真实**发生了什么?」——观察记录,不是推导。
 - **数据模型(独立)**:trace 事件 = 会话/进程/线程/实体/时间/帧序(真实帧顺序)/消息关联 ID/来源(采集器标识)/丢失标记。单进程栈是栈;跨进程拼接是**因果链**,二者分别展示(FLOW-023 验收同源);无可靠关联 ID 时不声称确定因果,只展示候选并解释(FLOW-027 验收同源);串联消费面已交付:`src/backend/traceCorrelation.ts`(causal 只认 ID 相等/候选带解释/回调段=派发帧全等落地+parentSeq 子树;令牌适配发射面按 FLOW-026 设计待真实引擎联验另立项);采样栈不冒充完整请求轨迹(FLOW-022 验收同源)。协议面已交付:`src/backend/traceEventModel.ts`(FLOW-023)——来源/采样面配对表(setprofile/settrace/sys-monitoring→complete-within-window、py-spy-record→sampled、py-spy-dump/debugpy-stop→stop-only、log-evidence→sparse-points)、同步栈边(parentSeq/return 链)构造期限同进程同线程、跨进程因果唯一载体 correlationId(缺侧/不一致只给候选)、丢失标记计数入账;渠道能力边界以 [FLOW-022 核实报告](../review/2026-11-14-kflow-trace-01-feasibility.md)为准。
-- **入口(独立)**:TRACE 采集/导入命令(FLOW-TRACE 泳道);采集为独立增量,默认不开启高开销全量 trace(FLOW-025 验收同源),不以静态图替代。受控采集入口已交付纯核心:`src/backend/traceCaptureController.ts`(默认关闭/显式启停/有界缓冲/开始结束异常丢弃记账)+ `src/backend/traceCaptureRun.ts`(子进程运行面,超时可关闭);UI 接线在 FLOW-028。
+- **入口(独立)**:TRACE 采集/导入命令(FLOW-TRACE 泳道);采集为独立增量,默认不开启高开销全量 trace(FLOW-025 验收同源),不以静态图替代。受控采集入口已交付纯核心:`src/backend/traceCaptureController.ts`(默认关闭/显式启停/有界缓冲/开始结束异常丢弃记账)+ `src/backend/traceCaptureRun.ts`(子进程运行面,超时可关闭;maxEvents/timeoutMs 缺省/硬顶走 FLOW-029 预登记预算 `src/backend/traceBudget.ts`,五失败形态钉与开销实测见 [FLOW-029 报告](../perf/2026-11-14-kflow-029-capture-budget-and-overhead.md));**采集命令 UI 未接线**(须解释器 ≥3.12 能力探测+真实引擎联验,另立项);回放入口已接线:`kbengine.flow.openTraceReplay`(FLOW-028,导入 JSON→泳道回放)。
 - **前置**:FLOW-022 先核实 debugpy/profile/引擎钩子/py-spy 各自能获取的数据与代价,再定采集面。
 
 ## 2. 防混淆红线(验收原文:「禁止将静态可能路径称为实际堆栈」的落地规则)

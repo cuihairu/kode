@@ -5,10 +5,8 @@
  * (timeoutMs 到点 kill)、有界缓冲(max-events 透传采集器)、产物经
  * FLOW-024 导入面过红线。命令行组装与子进程交互面注入(测试替身验证组装
  * 与失败路径,不起真子进程;真采集集成测试按解释器能力 skipIf)。
- *
- * 诚实边界:本面只做「起→收→关」编排;采集窗口内语义(装载不采集/帧锚/
- * 异常位置)属采集器;start/stop 记账属采集器输出 meta
- * (startedAtEpochMs/stoppedAtEpochMs/endReason)。
+ * FLOW-029:maxEvents/timeoutMs 缺省走预登记预算(traceBudget,默认值+
+ * 硬顶唯一出处),显式给值也受硬顶约束。
  */
 
 import { spawn as nodeSpawn } from 'node:child_process';
@@ -16,6 +14,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { importMonitoringSession } from './traceImport';
+import { resolveCaptureBudgets } from './traceBudget';
 import type { TraceSession } from './traceEventModel';
 
 export interface ControlledCaptureRequest {
@@ -25,10 +24,10 @@ export interface ControlledCaptureRequest {
   collectorScript: string;
   /** 采集目标脚本(其 main() 全程=受控窗口) */
   targetScript: string;
-  /** 有界缓冲透传采集器 --max-events */
-  maxEvents: number;
-  /** 可关闭红线:超时 kill;必须 >0 */
-  timeoutMs: number;
+  /** 有界缓冲透传采集器 --max-events(缺省/硬顶=FLOW-029 预登记预算) */
+  maxEvents?: number;
+  /** 可关闭红线:超时 kill(缺省/硬顶=FLOW-029 预登记预算) */
+  timeoutMs?: number;
   /** 采集 cwd(帧 file 以此为基准换相对路径) */
   cwd: string;
   sessionId: string;
@@ -43,15 +42,10 @@ export interface ControlledCaptureRunResult {
 
 /** 采集器命令行组装(--key=value 无空格 token 口径,透传安全)。 */
 export function buildCollectorArgs(request: ControlledCaptureRequest, outPath: string): string[] {
-  if (!(Number.isInteger(request.maxEvents) && request.maxEvents > 0)) {
-    throw new Error('受控采集必须有界:maxEvents 必须是正整数');
-  }
-  if (!(request.timeoutMs > 0)) {
-    throw new Error('受控采集必须可关闭:timeoutMs 必须 >0');
-  }
+  const budget = resolveCaptureBudgets({ maxEvents: request.maxEvents, timeoutMs: request.timeoutMs });
   return [
     request.collectorScript,
-    `--max-events=${request.maxEvents}`,
+    `--max-events=${budget.maxEvents}`,
     `--out=${outPath}`,
     request.targetScript
   ];
@@ -81,6 +75,7 @@ export async function runControlledCapture(
   const outPath = path.join(outDir, 'session.json');
 
   const args = buildCollectorArgs(request, outPath);
+  const budget = resolveCaptureBudgets({ maxEvents: request.maxEvents, timeoutMs: request.timeoutMs });
   const child = spawnFn(request.pythonPath, args, { cwd: request.cwd }) as SpawnableChild;
 
   let stderr = '';
@@ -97,7 +92,7 @@ export async function runControlledCapture(
   const timer = setTimeout(() => {
     timedOut = true;
     child.kill('SIGKILL');
-  }, request.timeoutMs);
+  }, budget.timeoutMs);
 
   let exit: { code: number | null; signal: string | null };
   try {
@@ -109,7 +104,7 @@ export async function runControlledCapture(
   try {
     if (timedOut) {
       throw new Error(
-        `受控采集超时关闭(${request.timeoutMs}ms,已 kill);窗口完整性不可宣称,产物丢弃`
+        `受控采集超时关闭(${budget.timeoutMs}ms,已 kill);窗口完整性不可宣称,产物丢弃`
       );
     }
     if (exit.code !== 0) {
