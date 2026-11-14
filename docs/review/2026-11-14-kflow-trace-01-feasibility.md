@@ -19,7 +19,7 @@
 
 ## B. Python sys.setprofile / sys.settrace(受控逐事件面)
 
-- **可获取的数据**:逐线程 call/return/exception 事件(函数/文件/行号),`frame.f_back` 可取真实帧链;纯 Python 机制,3.7.3 与 3.14 都可用,嵌入引擎的脚本线程同样生效(引擎每 tick 从 C++ 进入 Python,帧链从被调度的实体方法起)。
+- **可获取的数据**:逐线程 call/return 事件(函数/文件/行号),`frame.f_back` 可取真实帧链;纯 Python 机制,3.7.3 与 3.14 都可用,嵌入引擎的脚本线程同样生效(引擎每 tick 从 C++ 进入 Python,帧链从被调度的实体方法起)。**勘误(2026-11-14 实测,附录 A3)**:exception 位置**不在 setprofile 事件集**——Python 帧只发 call/return,`c_exception` 只覆盖 C 函数面;本文初稿写「call/return/exception 事件」系未实测的错引,已修正。异常位置须走 settrace(7.4x 代价)或 sys.monitoring(3.12+,见 A3)。
 - **实测代价(本机 Python 3.14.4,3 层调用×20k 次,附录 A1)**:baseline 19.8ms;`sys.setprofile` 55.0ms(**2.8x**);`sys.settrace` 146.7ms(**7.4x**)。单次 `frame(3,20)` 形态产生 5 call + 5 return 事件(事件量=帧数×2,不随循环体膨胀)。
 - **代价结论**:`settrace` 常开不采纳(逐行事件,7x 级);`setprofile` 围绕单个方法/单 tick 开关(受控入口,FLOW-025 形态)开销可承受,但**绝不默认开启**——采集入口必须独立可关、有界缓冲(FLOW-025 验收原文)。
 - **边界**:单进程;C++ 引擎 tick 之间的间隔不可见(Python 面只见被调度的调用);无跨进程消息语义。
@@ -48,7 +48,7 @@
 | 渠道 | 数据面 | 连续性 | 跨进程 | 开销 | 门槛/约束 |
 | --- | --- | --- | --- | --- | --- |
 | debugpy 停止栈 | 断点处完整帧+局部值+异常位置 | 断点间不可见 | 各进程独立会话 | 停世界/次 | 3.7.3 须 debugpy 1.7.0 锁定配对;kode 自动路径存在已知版本假设缺口 |
-| setprofile(受控) | 逐 call/return/exception 事件+帧链 | 开启期间完整(单线程) | 无 | 实测 2.8x | 纯 Python 可嵌入;绝不默认开启 |
+| setprofile(受控) | 逐 call/return 事件+帧链(异常位置本渠道拿不到,勘误见 A3) | 开启期间完整(单线程) | 无 | 实测 2.8x | 纯 Python 可嵌入;绝不默认开启 |
 | settrace | 逐行事件 | 完整 | 无 | 实测 7.4x | 常开不采纳 |
 | 引擎消息钩子 | Python 层只见派发后方法调用;wire 面 C++ | — | wire 关联 ID 未核实 | 需改引擎才能拿消息流 | FLOW-026 红线:未核实不改 wire |
 | 日志(evidenceLog) | 序列证据点 | 稀疏 | 仅时间戳候选关联 | 近零 | 无栈无时长 |
@@ -57,7 +57,7 @@
 ## 对后续条目的结论
 
 1. **FLOW-023 协议**:每渠道作为独立 `runtime-source` 证据类型建模,必带采集器标识+时间戳+采样率标记(R2);跨进程因果字段留给消息关联 ID 位,**无 ID 时只允许候选关联语义**。
-2. **FLOW-024 首选来源**:受控 setprofile(B)——真实帧顺序/文件行/异常位置都能拿到,且嵌入 3.7.3 可用;py-spy dump 作免停补充;debugpy 停止栈作交互深查。
+2. **FLOW-024 首选来源(勘误后口径)**:开发机(3.14.4)实测定案=**sys.monitoring**(A3)——帧顺序/文件行/异常位置/传播四面全可拿;初稿的「setprofile 拿异常位置」不成立(事件集就没有 exception)。引擎目标 3.7.3 无 sys.monitoring(该面 3.12+),届时异常位置走 settrace(7.4x)或 debugpy 停止栈,帧顺序/文件行仍可走 setprofile;按引擎实际版本再定,不预判。py-spy dump 作免停补充;debugpy 停止栈作交互深查。
 3. **FLOW-025 形态预定**:独立开关+有界缓冲+开始/结束/异常/丢弃计数;默认关闭;settrace 不进产品面。
 4. **红线重申**:任何采样/日志来源都不得在 G3 呈现成完整请求轨迹;因果只走 FLOW-026/027 核实过的关联 ID。
 
@@ -81,3 +81,12 @@ Permission Denied: Try running again with elevated permissions by going 'sudo en
 ```
 
 目标进程 `prctl(PR_SET_PTRACER_ANY)` 后同结果——判定为会话沙箱拒绝 ptrace(非 py-spy 能力问题);现场须按 PDBG-003 的 ptrace 指引在真实终端运行。
+
+### A3. setprofile 异常事件缺口与 sys.monitoring 定案(FLOW-024 实测,2026-11-14)
+
+本机 CPython 3.14.4(/usr/bin/python3)实测:
+
+- **setprofile 零 exception 事件**:对 Python 帧起 `sys.setprofile` 后分别跑纯 Python `raise ValueError` 与 `{}['k']`(C 侧 KeyError)探针,回调收到的只有序列 call/return(+c_call);两次探针 `exception` 事件均为 **0**。核对文档事件集(setprofile=call/return/c_call/c_return/c_exception)与本机实测一致——Python 帧异常从来不在 setprofile 面,初稿 §B 写「call/return/exception」系错引,已在上文勘误。
+- **sys.monitoring(PEP 669)是异常位置的真实来源**:同一负载改挂 `sys.monitoring` 回调,PY_START/PY_RETURN/PY_UNWIND/RAISE/EXCEPTION_HANDLED 五事件齐全;RAISE 给出精确抛点(code+offset,`co_lines()` 映射行号),UNWIND 标异常驱动返回,EXCEPTION_HANDLED 收口传播(被捕获=propagated false)。回调签名 PY_START 为 (code, offset),其余 (code, offset, arg)。该面 **3.12+ 才有**;引擎目标 3.7.3 无此面(§结论 2 的分版本口径依据)。
+- **工具 ID 位**:合法范围 0–5(探针期用 6 被拒;工具位先到先得,采集器按 5→1 取首个空位)。
+- **FLOW-024 落地物**:采集器 `scripts/trace/monitoring_capture.py`(窗口=负载 main() 全程,装载不采集;帧 file 换采集 cwd 基准,co_firstlineno=1 基 def 行)+ 真实采集工件 `tests/fixtures/trace/session-001.json`(登录序负载 `tests/fixtures/trace/workload_login.py`:4 层嵌套帧 + loadAccount KeyError 被 onClientEnabled 捕获,异常位置/传播均为真实文件行);导入面 `src/backend/traceImport.ts` 把该会话导入 traceEventModel 协议(测试钉 tests/traceImport.test.ts 全部运行时从真实工件与真实负载文件推导)。
