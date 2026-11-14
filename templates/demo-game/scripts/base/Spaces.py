@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import KBEngine
+import KodeHotReload
 from KBEDebug import *
 
 
@@ -18,6 +19,15 @@ class Spaces(KBEngine.Entity):
 		evidenceLog(msg)
 		# 迷你 ARPG:单一世界空间(索引 1);多空间扩展时往这里加号即可
 		self.createSpace(1)
+		# 热更接收器心跳:空闲 baseapp 主循环握 GIL,HTTP 守护线程会饿死;
+		# 常驻实体计时器给主循环周期性 Python 窗口(契约见 KodeHotReload)
+		KodeHotReload.ensure_heartbeat(self)
+
+	def onTimer(self, timerID, userArg):
+		"""
+		KBEngine method.(热更接收器心跳委托,见 KodeHotReload.ensure_heartbeat)
+		"""
+		KodeHotReload.on_entity_timer(self, timerID, userArg)
 
 	def createSpace(self, spaceIndex):
 		"""
@@ -38,4 +48,5 @@ class Spaces(KBEngine.Entity):
 		KBEngine method.
 		"""
 		DEBUG_MSG("Spaces[%i].onDestroy" % self.id)
+		KodeHotReload.stop_heartbeat(self)
 		spaceByIndex.clear()

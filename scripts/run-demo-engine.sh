@@ -17,6 +17,8 @@
 #   KBE_DEMO_RUN    运行目录(默认 ~/.cache/kode-demo-engine-run)
 #   KBE_DEMO_DB     MySQL 主机(默认 192.168.5.5:3306,库 kode_demo)
 #   KBE_DEMO_NIC    引擎 internalInterface(默认本机 192.168.5.x 首地址)
+#   KBE_DEMO_DB_RESET  start 前重建干净库(默认 1;=0 跳过,诊断脏库残留用)
+#   KBE_DEMO_MYSQL_BIN mysql 客户端(默认 mysql)
 #
 # 验收锚(起服后 grep 运行目录 logs/):
 #   "Spaces[?] created"                Spaces 空间管理器建立
@@ -82,6 +84,26 @@ write_kbengine_xml() {
 EOF
 }
 
+reset_database() {
+	# dbmgr 拒绝复用上一次跑过的库(残留表/账号会让 app::initialize 失败,
+	# 引擎各端口全部不监听):start 前先重建干净库。本库为本脚手架专用,
+	# KBE_DEMO_DB_RESET=0 可跳过(诊断脏库残留时用)。
+	if [ "${KBE_DEMO_DB_RESET:-1}" != "1" ]; then
+		echo "db reset skipped (KBE_DEMO_DB_RESET=0)"
+		return
+	fi
+	MYSQL_BIN=${KBE_DEMO_MYSQL_BIN:-mysql}
+	command -v "$MYSQL_BIN" >/dev/null 2>&1 || {
+		echo "run-demo-engine: mysql client not found (set KBE_DEMO_MYSQL_BIN)" >&2
+		exit 1
+	}
+	MYSQL_PWD="$DB_PASS" "$MYSQL_BIN" -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" <<SQL
+DROP DATABASE IF EXISTS $DB_NAME;
+CREATE DATABASE $DB_NAME;
+SQL
+	echo "database $DB_NAME reset on $DB_HOST:$DB_PORT"
+}
+
 prepare_run_dir() {
 	nic=$(detect_nic)
 	rm -rf "$RUN_DIR"
@@ -105,6 +127,7 @@ EOF
 
 do_start() {
 	prepare_run_dir
+	reset_database
 	eval "$(engine_env)"
 	export KBE_ROOT KBE_RES_PATH KBE_BIN_PATH KBE_DEMO_LOG_DIR KBE_DEMO_EVIDENCE
 	mkdir -p "$KBE_DEMO_LOG_DIR"

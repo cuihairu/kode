@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import KBEngine
+import KodeHotReload
 from KBEDebug import *
 
 
@@ -26,11 +27,17 @@ class Space(KBEngine.Entity):
 		# → initializeScript → __init__)直接嵌套 KBEngine.createEntity 会段错误
 		# cellapp(EntityDef context 状态被嵌套创建破坏);故延迟到 onTimer 再刷怪。
 		self.addTimer(0.1, 0, TIMER_ID_SPAWN)
+		# 热更接收器心跳:怪物全灭后 cellapp 无 Python 活动,主循环握 GIL
+		# 会饿死 HTTP 守护线程;常驻 Space 实体提供周期性窗口(KodeHotReload 契约)
+		KodeHotReload.ensure_heartbeat(self)
 
 	def onTimer(self, timerID, userArg):
 		"""
 		KBEngine method.
 		"""
+		if userArg == KodeHotReload.HEARTBEAT_TIMER_ARG:
+			KodeHotReload.on_entity_timer(self, timerID, userArg)
+			return
 		if userArg != TIMER_ID_SPAWN:
 			return
 		spawned = []

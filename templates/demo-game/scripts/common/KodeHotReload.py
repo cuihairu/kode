@@ -317,6 +317,56 @@ class ReloadServer:
         return result
 
 
+# --- Idle-baseapp GIL heartbeat -------------------------------------------
+# The engine C++ main loop holds the GIL while parked in epoll_wait (kbe/src
+# has no Py_BEGIN_ALLOW_THREADS release point), so on an idle app our HTTP
+# daemon threads never run. An entity timer keeps the main loop executing
+# Python bytecode; the tiny sleep inside hands the GIL to those threads.
+HEARTBEAT_INTERVAL = 0.2
+HEARTBEAT_WINDOW = 0.01
+HEARTBEAT_TIMER_ARG = 0x4B48  # "KH": no demo game timer uses this user arg
+_HEARTBEAT_STATE = "_kode_demo_hot_reload_heartbeat"
+_HEARTBEAT_TICKS = "_kode_demo_hot_reload_heartbeat_ticks"
+
+
+def ensure_heartbeat(entity):
+    """Register the receiver heartbeat on a long-lived entity (Spaces)."""
+    if getattr(KBEngine, _HEARTBEAT_STATE, None):
+        return
+    timer_id = int(entity.addTimer(HEARTBEAT_INTERVAL, HEARTBEAT_INTERVAL, HEARTBEAT_TIMER_ARG))
+    setattr(KBEngine, _HEARTBEAT_STATE, (entity, timer_id))
+    return timer_id
+
+
+def on_entity_timer(entity, timer_id, user_arg):
+    """Spaces.onTimer delegate; returns True when this tick was ours."""
+    if user_arg != HEARTBEAT_TIMER_ARG:
+        return False
+    state = getattr(KBEngine, _HEARTBEAT_STATE, None)
+    if not state or state[0] is not entity:
+        return False
+    import os
+    import time
+    ticks = getattr(KBEngine, _HEARTBEAT_TICKS, 0) + 1
+    setattr(KBEngine, _HEARTBEAT_TICKS, ticks)
+    if ticks == 1 or ticks % 300 == 0:
+        # First tick and every ~60s: prove the wakeup loop stays alive.
+        path = os.environ.get("KBE_DEMO_EVIDENCE")
+        if path:
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write("[demo-evidence] hot-reload heartbeat tick %i (main loop GIL window)\n" % ticks)
+    time.sleep(HEARTBEAT_WINDOW)
+    return True
+
+
+def stop_heartbeat(entity):
+    """Drop the heartbeat registration when its host entity is destroyed."""
+    state = getattr(KBEngine, _HEARTBEAT_STATE, None)
+    if state and state[0] is entity:
+        entity.delTimer(state[1])
+        delattr(KBEngine, _HEARTBEAT_STATE)
+
+
 def start(role, is_reload=False):
     server = getattr(KBEngine, _STATE, None)
     if server is not None:
