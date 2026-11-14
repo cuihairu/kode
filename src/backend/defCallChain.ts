@@ -1,5 +1,7 @@
 import * as fs from 'fs';
-import * as path from 'path';
+import * as vscode from 'vscode';
+import { normalizeDocumentKey } from './documentStore';
+import { normalizeFileIdentity } from './pathIdentity';
 import { findPythonReceiverCalls, PYTHON_RECEIVER_BY_SECTION } from './pythonLanguageUtils';
 import type { PythonReceiverCall, PythonReceiverSection } from './pythonLanguageUtils';
 import {
@@ -329,20 +331,41 @@ export function clearDefCallChainFileCache(): void {
   pythonFileCache.clear();
 }
 
+/**
+ * RUST-003 判据②「打开文件内存优先」:已打开的 .py 取编辑器缓冲区,不读盘、
+ * **不入盘缓存**——mtime/size 不随未保存编辑变化,入缓存会让缓冲区改动被一次
+ * 陈旧盘读永久盖回。未打开才回落磁盘。
+ *
+ * 身份键用 canonical identity(`normalizeFileIdentity`,词法折叠 `..`、盘符/UNC
+ * 大小写规则),非 `path.normalize`:后者不折叠 `..`、不套盘符规则,同一文件
+ * 的不同拼法会形成两个条目,缓存命中率与失效判定同时失真。
+ */
 function readPythonFileWithMtimeCache(filePath: string): string | null {
+  const identity = normalizeFileIdentity(filePath);
+  for (const document of vscode.workspace.textDocuments) {
+    if (normalizeDocumentKey(document.uri) !== identity) {
+      continue;
+    }
+    return document.getText();
+  }
+  // 文件系统访问仍用原拼写 filePath——identity 已折叠 `..`/`.` 段,不是
+  // 必然存在的盘路径;identity 只作缓存键。
+  return readDiskPythonFile(filePath, identity);
+}
+
+function readDiskPythonFile(filePath: string, identity: string): string | null {
   try {
     const stat = fs.statSync(filePath);
-    const cacheKey = path.normalize(filePath);
-    const cached = pythonFileCache.get(cacheKey);
+    const cached = pythonFileCache.get(identity);
     if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
       return cached.content;
     }
 
     const content = fs.readFileSync(filePath, 'utf8');
-    pythonFileCache.set(cacheKey, { mtimeMs: stat.mtimeMs, size: stat.size, content });
+    pythonFileCache.set(identity, { mtimeMs: stat.mtimeMs, size: stat.size, content });
     return content;
   } catch {
-    pythonFileCache.delete(path.normalize(filePath));
+    pythonFileCache.delete(identity);
     return null;
   }
 }
