@@ -96,6 +96,14 @@ suite('kode core e2e(真实 kode-server 二进制)', () => {
       expect(health.documents).toEqual([{ uri: URI, version: 7 }]);
       expect(health.pid).toBeGreaterThan(0);
       expect(health.serverVersion).toBe('0.2.0');
+      // RUST-026:Linux 下 health 携带 Core 资源快照(RSS/线程/磁盘 IO 累计);
+      // /proc/self/io 计数器 0 是合法读数(mmap 载入不经 read()),只断在场+正值字段
+      expect(health.resources).not.toBeNull();
+      expect(health.resources?.rssBytes).toBeGreaterThan(0);
+      expect(health.resources?.threads).toBeGreaterThanOrEqual(1);
+      expect(typeof health.resources?.diskReadBytes).toBe('number');
+      expect(typeof health.resources?.diskWriteBytes).toBe('number');
+      expect(typeof health.resources?.cpuTimeMs).toBe('number');
 
       client.closeDocument(URI);
       expect((await client.health()).documents).toEqual([]);

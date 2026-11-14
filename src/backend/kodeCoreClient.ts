@@ -78,6 +78,15 @@ export interface KodeCoreHealth {
   shutdownRequested: boolean;
   restartGeneration: number;
   documents: { uri: string; version: number }[];
+  /** RUST-026 Core 进程资源快照;非 Linux/解析失败=null 诚实降级 */
+  resources?: {
+    rssBytes: number;
+    threads: number;
+    diskReadBytes: number;
+    diskWriteBytes: number;
+    /** 累计 CPU 时间 ms;两次采样差分得速率;0 是合法读数(年轻进程) */
+    cpuTimeMs: number;
+  } | null;
 }
 
 /** transport 层错误:进程退出/重启放弃/协议损坏 */

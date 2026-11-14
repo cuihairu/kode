@@ -360,6 +360,22 @@ pub struct HealthReport {
     pub shutdown_requested: bool,
     pub restart_generation: u64,
     pub documents: Vec<DocumentSummary>,
+    /// RUST-026 Core 进程资源观测;非 Linux 或 /proc 解析失败 = None 诚实降级
+    #[serde(default)]
+    pub resources: Option<CoreResources>,
+}
+
+/// Core 进程资源快照(RUST-026):RSS/线程数/磁盘 IO 累计量。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoreResources {
+    pub rss_bytes: u64,
+    pub threads: u32,
+    pub disk_read_bytes: u64,
+    pub disk_write_bytes: u64,
+    /// 进程累计 CPU 时间 ms(utime+stime,CLK_TCK=100 Linux 标准假设);
+    /// 调用方两次采样差分得速率
+    pub cpu_time_ms: u64,
 }
 
 /// 打开文档摘要(只含 uri+version,不带正文)。

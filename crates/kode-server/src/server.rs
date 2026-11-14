@@ -15,10 +15,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use kode_protocol::{
-    error_codes, CompletionParams, ContentChangeEvent, DefinitionParams, DidChangeParams,
-    DidCloseParams, DidOpenParams, DocumentDiagnosticParams, DocumentSummary, HealthReport,
-    HoverParams, IncomingMessage, InitializeParams, InitializeResult, Notification, Request,
-    RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification,
+    error_codes, CompletionParams, ContentChangeEvent, CoreResources, DefinitionParams,
+    DidChangeParams, DidCloseParams, DidOpenParams, DocumentDiagnosticParams, DocumentSummary,
+    HealthReport, HoverParams, IncomingMessage, InitializeParams, InitializeResult, Notification,
+    Request, RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification,
     TextDocumentSyncOptions, PROTOCOL_VERSION,
 };
 use kode_vfs::{CanonicalUri, DocumentKey, DocumentStore, RootRegistry, TextChange};
@@ -661,6 +661,76 @@ fn health_report(state: &ServerState) -> serde_json::Value {
         shutdown_requested: state.shutdown_requested,
         restart_generation: state.restart_generation,
         documents,
+        resources: read_core_resources(),
     };
     serde_json::to_value(report).expect("serialize health report")
+}
+
+/// RUST-026 Core 进程资源快照(Linux /proc;非 Linux/解析失败=None 诚实降级,
+/// 绝不伪造零值)。disk read/write_bytes 来自 /proc/self/io,只计真实存储 IO
+/// (不含页缓存命中)。
+#[cfg(target_os = "linux")]
+fn read_core_resources() -> Option<CoreResources> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    let mut rss_kb: Option<u64> = None;
+    let mut threads: Option<u32> = None;
+    for line in status.lines() {
+        if let Some(rest) = line.strip_prefix("VmRSS:") {
+            rss_kb = rest.split_whitespace().next()?.parse().ok();
+        } else if let Some(rest) = line.strip_prefix("Threads:") {
+            threads = rest.trim().parse().ok();
+        }
+    }
+    let io = std::fs::read_to_string("/proc/self/io").ok()?;
+    let mut disk_read_bytes: Option<u64> = None;
+    let mut disk_write_bytes: Option<u64> = None;
+    for line in io.lines() {
+        if let Some(rest) = line.strip_prefix("read_bytes:") {
+            disk_read_bytes = rest.trim().parse().ok();
+        } else if let Some(rest) = line.strip_prefix("write_bytes:") {
+            disk_write_bytes = rest.trim().parse().ok();
+        }
+    }
+    // /proc/self/stat:pid (comm) 后首 token=state(field 3);utime=field 14,
+    // stime=field 15 → 去头后下标 11/12。CLK_TCK=100 为 Linux 标准假设。
+    let stat = std::fs::read_to_string("/proc/self/stat").ok()?;
+    let after_comm = stat.rsplit_once(')').map(|(_, rest)| rest.trim())?;
+    let stat_fields: Vec<&str> = after_comm.split_whitespace().collect();
+    let cpu_ticks: u64 = stat_fields
+        .get(11)
+        .and_then(|utime| utime.parse::<u64>().ok())
+        .zip(stat_fields.get(12).and_then(|stime| stime.parse::<u64>().ok()))
+        .map(|(utime, stime)| utime + stime)?;
+    Some(CoreResources {
+        rss_bytes: rss_kb? * 1024,
+        threads: threads?,
+        disk_read_bytes: disk_read_bytes?,
+        disk_write_bytes: disk_write_bytes?,
+        cpu_time_ms: cpu_ticks * 10,
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+fn read_core_resources() -> Option<CoreResources> {
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// RUST-026:Linux 下资源快照来自 /proc,字段齐全且非零(绝不伪造零值)。
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn core_resources_reads_proc_fields() {
+        let resources =
+            read_core_resources().expect("linux 下 /proc/self/status 与 /proc/self/io 应可读");
+        assert!(resources.rss_bytes > 0, "RSS 必须为正");
+        assert!(resources.threads >= 1, "至少主线程");
+        // cpu_time_ms=0 是合法读数:年轻进程 CPU 可能不足 1 tick(10ms),
+        // 断在场不断数值(与磁盘 IO 计数器同口径)
+        // /proc/self/io 计数器只计真实存储 IO 系统调用;mmap 载入的二进制
+        // 不经 read(),年轻进程两者都可能为 0——只断字段已解析,不断数值
+        // (观测语义诚实:0 是合法读数,不是缺数)
+    }
 }
