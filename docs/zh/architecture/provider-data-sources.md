@@ -19,7 +19,7 @@
 
 ## 2. Provider 清单
 
-### 2a. 语言 provider(vscode.languages.register\*,31 注册 / 30 类)
+### 2a. 语言 provider(vscode.languages.register\*,32 注册 / 31 类)
 
 注册位为 extension.ts 行号:
 
@@ -35,6 +35,7 @@
 | PythonCompletionProvider | languageProviders.ts:5787 | :1286 | EntityMappingManager + engineApiCatalog(:301 异步构建) | 纯读 |
 | StartupScriptCompletionProvider | kbengineStartupScript.ts:430 | :921 | 行级纯文本 token 扫描(`--` 补 CLI 参数、`KBE_` 补环境变量,KBEXP-1) | 纯读 |
 | ConfigCompletionProvider | configCompletionProvider.ts:75 | activate/languageServices.ts:255(KSEM-CFG-04) | buildConfigTreePair resolve 缓存树(分析缓存按 defaultsTree 身份键 WeakMap)+ CFG-02 契约提取 + CFG-03 字段身份扫描;上下文解析与键/值建议在纯核 backend/configCompletion | 纯读(开关 kbengine.configCompletion.enabled;null defaultsTree → 无建议) |
+| ConfigDefinitionProvider | configDefinitionProvider.ts:28 | activate/languageServices.ts:266(KSEM-CFG-06) | buildConfigTreePair defaults 树 + defaults 原文(声明行=CFG-05 行号表)+ buildFinalServerConfig 渲染文(生效值行);纯核 backend/configSourceFace 路径解析 | 纯读(路径解析不出 → 无跳转目标) |
 | RpcCodeLensProvider | languageProviders.ts:4651 | :1089 | EntityMappingManager(RPC 镜链) | 纯读 |
 | CallChainController | defCallChainProvider.ts:49 | :1096 | EntityMappingManager | webview 面板创建/更新(UI 副作用) |
 | PropertyCodeLensProvider | languageProviders.ts:4819 | :1114 | EntityMappingManager(types.xml 属性回指) | fireConfigurationChanged 事件 |

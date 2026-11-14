@@ -165,7 +165,8 @@ describe('extension activate 装配', () => {
     // 调用层级 1、重命名 1
     expect(languagesRegistry.completionRegistrations).toHaveLength(4);
     expect(languagesRegistry.hoverRegistrations).toHaveLength(3);
-    expect(languagesRegistry.definitionRegistrations).toHaveLength(2);
+    // 定义跳转 3(.def + Python,KSEM-CFG-06 起配置来源跳转再一份)
+    expect(languagesRegistry.definitionRegistrations).toHaveLength(3);
     // 引用提供者(Shift+F12)三份:IDE-NAV-001 def 文档选择器一份、
     // GLOBDATA-001 python 数据字典键选择器一份(同一实例双 selector 注册)、
     // IDE-NAV-017 types.xml 符号选择器一份

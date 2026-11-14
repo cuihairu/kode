@@ -265,11 +265,15 @@ const ANCHORS: Array<[string, number, string]> = [
   // (ConfigCompletionProvider)与 startupScript 注册块后配置补全注册块 +8
   // → 五打点 202/259/322/126/723 → 203/268/331/127/732(126→127 为 import
   // 位移,259/322/723 另加注册块 = +9;真位重探)。出处随 baseline 锁步。
-  ['src/activate/languageServices.ts', 203, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 268, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 331, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 127, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 732, "startLanguageServiceOperation('completion'"],
+  // 2026-11-14(KSEM-CFG-06):languageServices.ts 顶部 import +1
+  // (ConfigDefinitionProvider)与配置补全注册块后来源跳转注册块 +8 →
+  // 五打点 203/268/331/127/732 → 204/277/340/128/741(import 全体 +1,
+  // 268/331/732 三点另加注册块 = +9;真位重探)。出处随 baseline 锁步。
+  ['src/activate/languageServices.ts', 204, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 277, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 340, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 128, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 741, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import

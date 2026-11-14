@@ -52,6 +52,7 @@ import {
 } from '../languageProviders';
 import { StartupScriptCompletionProvider, StartupScriptHoverProvider } from '../kbengineStartupScript';
 import { ConfigCompletionProvider, CONFIG_COMPLETION_SELECTORS } from '../configCompletionProvider';
+import { ConfigDefinitionProvider, CONFIG_DEFINITION_SELECTORS } from '../configDefinitionProvider';
 import { PythonClassIndex } from '../backend/pythonClassIndex';
 import { PYTHON_TYPE_STUB_FILE_NAME, buildPythonTypeStubLineMap, buildPythonTypeStubPlan } from '../pythonTypeStubs';
 import { bumpRootConfigGeneration } from '../rootConfigGeneration';
@@ -257,6 +258,14 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     new ConfigCompletionProvider()
   );
   context.subscriptions.push(configCompletionProvider);
+
+  // 配置来源跳转(KSEM-CFG-06;配置 key → defaults 声明行 + 最终配置虚拟
+  // 文档生效值行;纯读,无开关,选择器同补全面)
+  const configDefinitionProvider = vscode.languages.registerDefinitionProvider(
+    CONFIG_DEFINITION_SELECTORS,
+    new ConfigDefinitionProvider()
+  );
+  context.subscriptions.push(configDefinitionProvider);
 
   // 注册定义跳转提供者（.def 文件）
   // PR1 打点:definition(.def 导航面)。结果原样透传。

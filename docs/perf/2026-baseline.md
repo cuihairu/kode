@@ -88,7 +88,7 @@
 ```mermaid
 flowchart TD
   VC1["VS Code: registerHoverProvider.provideHover(document, position, token)"]
-  M1["activate/languageServices.ts:203 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
+  M1["activate/languageServices.ts:204 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
   HP["KBEngineHoverProvider.provideHover<br/>languageProviders/hover.ts:313"]
   CFG["getLanguageFeatureConfig() 开关快照"]
   WORD["getWordRangeAtPosition + getText(range)<br/>读 VS Code 缓冲区,不读磁盘"]
@@ -136,7 +136,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC2["VS Code: provideDefinition(document, position)"]
-  M2["activate/languageServices.ts:268 打点 startLanguageServiceOperation('definition')<br/>(python 侧另有 :331 一路)"]
+  M2["activate/languageServices.ts:277 打点 startLanguageServiceOperation('definition')<br/>(python 侧另有 :340 一路)"]
   AD2["PythonDefinitionProvider.provideDefinition<br/>languageProviders/pythonDefinition.ts:261"]
   TR["provideDefinitionTraced → Impl<br/>semantic-query 打点 :4736 / Impl :4754"]
   CTX{"isPythonCodePosition<br/>注释/字符串内直接 skip"}
@@ -190,7 +190,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC3["VS Code: provideCompletionItems(document, position)"]
-  M3["activate/languageServices.ts:127 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :732 一路)"]
+  M3["activate/languageServices.ts:128 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :741 一路)"]
   CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders/completion.ts:897"]
   KBEC{"kbe./KBEngine. 模块语境?<br/>(已引入/已用别名)"}
   FILTER["filterKbeSymbols 前缀过滤 :4921<br/>(engineApiMetadata 目录)"]

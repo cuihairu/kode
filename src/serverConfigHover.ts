@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
 import { getHoverLanguage, HoverLanguage } from './hoverLocale';
+import { configPathAtText, configSourceInfo, renderSourceEvidenceBlock } from './backend/configSourceFace';
+import { buildConfigTreePair } from './serverConfigMerge';
+import { prepareConfigAnalysis } from './configCompletionProvider';
 
 /**
  * 元件 kbengine.xml / 引擎 kbengine_defaults.xml 字段悬浮文档(批112 用户令:
@@ -272,7 +275,37 @@ export function provideServerConfigHover(
   }
   const markdown = new vscode.MarkdownString();
   markdown.appendMarkdown(doc);
+  // KSEM-CFG-06:来源证据块(覆盖来源/生效值/单位;敏感值只给脱敏形态;
+  // 树不可得(纯单测替身/非工作区)或路径不存在时静默不追加)
+  const evidence = sourceEvidenceForHover(document, position);
+  if (evidence !== null) {
+    markdown.appendMarkdown(`\n\n${evidence}`);
+  }
   return new vscode.Hover(markdown);
+}
+
+/**
+ * KSEM-CFG-06:悬停证据块装配(文档+位置→纯核心)。构建失败/树缺失/
+ * 路径解析不出 → null(既有静态文案面不受影响)。
+ */
+export function sourceEvidenceForHover(
+  document: vscode.TextDocument,
+  position: vscode.Position
+): string | null {
+  const path = configPathAtText(document.getText(), document.offsetAt(position));
+  if (path === null) {
+    return null;
+  }
+  const pair = buildConfigTreePair();
+  if (pair.defaultsTree === null && pair.customTree === null) {
+    return null;
+  }
+  let extraction = null;
+  if (pair.defaultsTree !== null) {
+    extraction = prepareConfigAnalysis(pair.defaultsTree, pair.customTree).extraction;
+  }
+  const info = configSourceInfo(path, pair.customTree, pair.defaultsTree, extraction);
+  return renderSourceEvidenceBlock(info, getHoverLanguage() === 'en' ? 'en' : 'zh');
 }
 
 /** 悬停提供者(随扩展装配注册,dispose 挂订阅链) */
