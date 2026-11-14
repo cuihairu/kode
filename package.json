@@ -172,6 +172,7 @@
     "onCommand:kbengine.hotReload.switchChannel",
     "onCommand:kbengine.hotReload.confirmDefBaseline",
     "onCommand:kbengine.hotReload.materializeGlobs",
+    "onCommand:kbengine.hotReload.releasePreview",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.resetStubs",
     "onCommand:kbengine.python.exportTypeStubs",
