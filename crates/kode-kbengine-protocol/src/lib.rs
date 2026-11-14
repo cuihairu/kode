@@ -22,6 +22,7 @@ pub mod cursor;
 pub mod entity;
 pub mod error;
 pub mod framing;
+pub mod layout;
 pub mod messages;
 pub mod session;
 

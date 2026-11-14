@@ -2,8 +2,10 @@
 //! ①结构断言(偏移/长度/嵌套);②与 [`kode_kbengine_protocol::codec::decode_value`]
 //! 对拍(同语料同 Ok/Err、同消费字节数)——字段树数据面与值解码零行为漂移。
 
-use kode_kbengine_protocol::codec::{decode_spans, decode_value, DecodeLimits, SpanKind, ValueSpan};
 use kode_kbengine_protocol::codec::Value;
+use kode_kbengine_protocol::codec::{
+    decode_spans, decode_value, DecodeLimits, SpanKind, ValueSpan,
+};
 use kode_kbengine_protocol::cursor::Cursor;
 use kode_kbengine_schema::wire::{DictField, WireType};
 
@@ -82,7 +84,10 @@ fn prefixed_blocks_two_layer() {
     assert_eq!((spans[0].start, spans[0].len), (0, 4 + body.len()));
     assert_eq!(spans[0].children.len(), 2);
     leaf(&spans[0].children[0], SpanKind::U32);
-    assert_eq!((spans[0].children[0].start, spans[0].children[0].len), (0, 4));
+    assert_eq!(
+        (spans[0].children[0].start, spans[0].children[0].len),
+        (0, 4)
+    );
     leaf(&spans[0].children[1], SpanKind::Str);
     assert_eq!(
         (spans[0].children[1].start, spans[0].children[1].len),
@@ -124,7 +129,9 @@ fn vector_and_array_nesting() {
     a.extend_from_slice(&0x0304u16.to_le_bytes());
     a.extend_from_slice(&0x0506u16.to_le_bytes());
     let spans = decode_spans(
-        &[WireType::Array { of: Box::new(WireType::UInt16) }],
+        &[WireType::Array {
+            of: Box::new(WireType::UInt16),
+        }],
         &a,
         &limits(),
     )
@@ -167,9 +174,15 @@ fn fixed_dict_nested_offsets() {
     assert_eq!((spans[0].start, spans[0].len), (0, 4));
     assert_eq!(spans[0].children.len(), 2);
     leaf(&spans[0].children[0], SpanKind::U8);
-    assert_eq!((spans[0].children[0].start, spans[0].children[0].len), (0, 1));
+    assert_eq!(
+        (spans[0].children[0].start, spans[0].children[0].len),
+        (0, 1)
+    );
     leaf(&spans[0].children[1], SpanKind::Str);
-    assert_eq!((spans[0].children[1].start, spans[0].children[1].len), (1, 3));
+    assert_eq!(
+        (spans[0].children[1].start, spans[0].children[1].len),
+        (1, 3)
+    );
 }
 
 #[test]
@@ -259,11 +272,19 @@ fn corpus() -> Vec<(Vec<WireType>, Vec<u8>)> {
     let mut p = Vec::new();
     p.extend_from_slice(&1000u32.to_le_bytes());
     p.push(1);
-    cases.push((vec![WireType::Array { of: Box::new(WireType::UInt8) }], p));
+    cases.push((
+        vec![WireType::Array {
+            of: Box::new(WireType::UInt8),
+        }],
+        p,
+    ));
     // 截断:标量不足。
     cases.push((vec![WireType::UInt64], vec![0x01, 0x02]));
     // EntityCall 中段。
-    cases.push((vec![WireType::UInt8, WireType::EntityCall], vec![0xAA, 0xBB, 0xCC]));
+    cases.push((
+        vec![WireType::UInt8, WireType::EntityCall],
+        vec![0xAA, 0xBB, 0xCC],
+    ));
     cases
 }
 
@@ -307,9 +328,7 @@ fn depth_limit_errors_identically() {
     // 深嵌套数组超过 MAX_DECODE_DEPTH(64):两边同 Err。
     let mut ty = WireType::UInt8;
     for _ in 0..80 {
-        ty = WireType::Array {
-            of: Box::new(ty),
-        };
+        ty = WireType::Array { of: Box::new(ty) };
     }
     // 构造 payload:每层 u32 计数 1 + 末层 1B。
     let mut p = Vec::new();

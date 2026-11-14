@@ -60,14 +60,14 @@ impl Default for DecodeLimits {
 /// 解码递归深度上限(与 schema 侧 MAX_TYPE_DEPTH 同级,独立防线)。
 pub const MAX_DECODE_DEPTH: usize = MAX_TYPE_DEPTH;
 
-/// 内部计数器(值节点数限幅)。
+/// 内部计数器(值节点数限幅;layout 展示面共用同一记账)。
 #[derive(Debug, Clone, Copy)]
-struct Budget {
-    values: usize,
+pub(crate) struct Budget {
+    pub(crate) values: usize,
 }
 
 impl Budget {
-    fn take(&mut self, limits: &DecodeLimits, path: &str) -> Result<(), DecodeError> {
+    pub(crate) fn take(&mut self, limits: &DecodeLimits, path: &str) -> Result<(), DecodeError> {
         self.values += 1;
         if self.values > limits.max_values {
             return Err(DecodeError::new(
@@ -216,7 +216,7 @@ fn decode_inner(
 }
 
 /// 元素最小线字节数(数组预检;变长元素返回 1B 下限:至少能放 0 长度)。
-fn min_element_size(ty: &WireType) -> usize {
+pub(crate) fn min_element_size(ty: &WireType) -> usize {
     match ty {
         WireType::Bool | WireType::UInt8 | WireType::Int8 => 1,
         WireType::UInt16 | WireType::Int16 => 2,
