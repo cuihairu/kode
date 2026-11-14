@@ -99,6 +99,13 @@ export interface ConfigPathConflict {
 export interface ProjectConfigStructure {
   entries: ConfigStructureEntry[];
   pathConflicts: ConfigPathConflict[];
+  /** 代码读取路径但无任何绑定 glob 覆盖(零约束声称;CFG-09 路径基准
+   * 面消费:显式报出而非静默丢弃) */
+  uncoveredReads: ReadonlyArray<{
+    path: string;
+    loader: 'json.loads' | 'json.load';
+    sources: ConfigStructureSource[];
+  }>;
 }
 
 /** 代码内路径读取点(收集期中间面)。 */
@@ -319,6 +326,11 @@ export function deriveProjectConfigStructure(
 ): ProjectConfigStructure {
   const entries: ConfigStructureEntry[] = [];
   const pathConflicts: ConfigPathConflict[] = [];
+  const uncoveredReads: Array<{
+    path: string;
+    loader: 'json.loads' | 'json.load';
+    sources: ConfigStructureSource[];
+  }> = [];
 
   // ── 显式 schema 优先:绑定 glob → 条目(跨 loader 表 type 分歧 → 开放)
   if (schema !== null) {
@@ -401,10 +413,12 @@ export function deriveProjectConfigStructure(
         }
       }
     }
-    if (matches.length === 0) {
-      continue; // 未绑定路径:无约束声称(诚实缺口,不硬造)
-    }
     const sources: ConfigStructureSource[] = group.map((r) => ({ file: r.file, line: r.line }));
+    if (matches.length === 0) {
+      // 未绑定路径:零约束声称,但显式报出(CFG-09 路径基准面消费)
+      uncoveredReads.push({ path, loader, sources });
+      continue;
+    }
     const distinctTypes = [...new Set(matches.map((m) => m.typeId))];
     if (distinctTypes.length > 1) {
       // CFG-07 类型面在此静默双 null;CFG-08 显式报出并给来源
@@ -461,5 +475,5 @@ export function deriveProjectConfigStructure(
 
   const rank = (e: ConfigStructureEntry): number => (e.tier === 'explicit-schema' ? 0 : 1);
   entries.sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key));
-  return { entries, pathConflicts };
+  return { entries, pathConflicts, uncoveredReads };
 }
