@@ -616,6 +616,9 @@ The flow graph panel supports:
 - Each link marks 调用点 and 声明 separately; clicking either jumps to the exact file line in the editor (python declarations read 0-based +1, def-file declarations 1-based as declared)
 - Cross-process links show direction (方向 from→to) and the def-declared `<Arg>` types plus `<ReturnType>` with the (def) source mark; an undeclared method stays honest (参数:def 未声明(不猜)); broadcasts never enter the def contract face (no fabricated receiver frames)
 - Server→client messages carry a 回调 badge — a direction fact only, never an execution-order claim
+- Cursor-aware entry: the function at the cursor (nearest `def` line above, syntax anchor) opens directly when it is in the graph face; leaf functions fall back to the function quick pick (no fabricated entries)
+- Node reverse lookup (反查): clicking a candidate frame runs a workspace-wide query — 上游 callers (local matches are identity-exact; cross-process senders match by role+method name and stay listed as 实体待证 candidates when same-named methods exist), 下游 callees, and the unresolved face with reason codes — unknowns and ambiguities are viewable, never adjudicated
+- Navigation history: 打开图 from the inspect view pushes the previous entry; 返回上一视图 pops it back (the inspect view returns to the swimlane walk without touching the stack); closing the panel clears history
 
 ### `kbengine.quickActions.runByName`
 
