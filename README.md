@@ -204,7 +204,7 @@ Monitoring data requires both `machine` discovery and `watcher` queries. When th
 
 A Rust core runs alongside the TypeScript extension and speaks the same LSP surface over stdio; the backend is selectable and reversible:
 
-- [Dual-track backend (`kbengine.core.backend`: `ts` | `rust` | `shadow`): `ts` = TypeScript serves (default), `rust` = Rust serves, `shadow` = Rust computes and compares but TypeScript still serves; switch back to `ts` at any time]
+- [Dual-track backend (`kbengine.core.backend`: `ts` | `rust` | `shadow`): `rust` = Rust serves (default since the 2026-11-08 switch; falls back to TypeScript when the binary is missing or a call fails), `ts` = TypeScript serves (kill-switch), `shadow` = Rust computes and compares but TypeScript still serves; switch back to `ts` at any time]
 - [Shadow diff log (`kbengine.core.showShadowDiffLog`) reports Rust-vs-TypeScript divergence per feature surface]
 - [Rust-ported def analysis: message table (`message_table.rs`), dependency graph, component semantics, database tables, def MD5 replay, process topology, client SDK generation, and the KBEngine wire-format codec (`wire_codec.rs`)]
 - [Cargo workspace crates: `kode-server` (LSP), `kode-parser`, `kode-types`, `kode-index`, `kode-scheduler`, `kode-root`, `kode-vfs`, `kode-python` (ruff AST call graph and dataflow), `kode-corpus`]

@@ -204,7 +204,7 @@ CI 与本地开发按改动面三路分流——改一行文档不该全量编�
 
 Rust 核心与 TypeScript 扩展并行运行,经 stdio 讲同一套 LSP 面;后端可选且可回退:
 
-- [双轨后端(`kbengine.core.backend`:`ts` | `rust` | `shadow`):`ts` = TypeScript 服务(默认),`rust` = Rust 服务,`shadow` = Rust 计算比对但 TypeScript 仍服务;随时可切回 `ts`]
+- [双轨后端(`kbengine.core.backend`:`ts` | `rust` | `shadow`):`rust` = Rust 服务(2026-11-08 切换起的默认;缺二进制或调用失败回落 TypeScript),`ts` = TypeScript 服务(kill-switch),`shadow` = Rust 计算比对但 TypeScript 仍服务;随时可切回 `ts`]
 - [影子差异日志(`kbengine.core.showShadowDiffLog`)按功能面报告 Rust 与 TypeScript 的分歧]
 - [Rust 移植的 def 分析:消息表(`message_table.rs`)、依赖图、组件语义、数据库表、def MD5 重放、进程拓扑、客户端 SDK 生成,以及 KBEngine 线格式编解码(`wire_codec.rs`)]
 - [Cargo workspace crate:`kode-server`(LSP)、`kode-parser`、`kode-types`、`kode-index`、`kode-scheduler`、`kode-root`、`kode-vfs`、`kode-python`(ruff AST 调用图与数据流)、`kode-corpus`]
