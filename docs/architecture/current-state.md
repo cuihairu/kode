@@ -535,10 +535,18 @@
   query P95 0.02-22.1ms; def warm rescan 17-18.7ms; invalidation 6.7-11.3ms;
   diagnostic recompute 19→7. Sources: 89e8783 baseline + e6e8bc7 re-test,
   raw output docs/perf/*.txt.
-- 【Untested】extension activation (real VS Code activation), workspace
-  discovery, publish to editor (end-to-end), Core spawn/handshake (Rust Core
-  does not exist yet, N/A until PR-003). All service-layer numbers exclude UI
+- 【Untested】extension activation (real VS Code activation), publish to
+  editor (end-to-end). All service-layer numbers exclude UI
   serialization and provider dispatch overhead.
+- 【Tested (2026-11-15 RUST-022 update)】workspace discovery: v02 baseline
+  (2026-11-04) start-phase full .py scan 10,408.82ms (background; RSS
+  +127.91MB) + activation-phase def scan; Core spawn/handshake (Rust Core has
+  shipped since the 2026-11-08 switch): bench tests/perf/coreSpawn.bench.ts
+  over the real debug binary — start.total (spawn+handshake) p50 ~4.5ms/max
+  ~7.3ms (n=5), warm echo.rtt p50 0.30ms/max 0.48ms (n=20), warm
+  localReturnType analysis rtt p50 0.38ms/max 0.67ms faceSeen=1 (n=10),
+  handshake derived ≈ start.p50 − echo.p50 ~3.3ms; evidence
+  docs/perf/core-spawn-run.txt; protocol version gate asserted in-bench.
 
 ## PERF-015 Cross-machine discipline
 
