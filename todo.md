@@ -238,8 +238,8 @@
 - [x] RUST-013 （旧 SCOPE-001） 不重写 VS Code UI 为 Rust GUI。(审计成立:16 crate 全清单无 GUI 框架依赖(零 tauri/iced/egui),UI 全 VS Code 原生 TS 渲染,kode-server 只走 stdio LSP;详见 docs/review/2026-11-15-rust-013-015-scope-boundaries.md)
 - [x] RUST-014 （旧 SCOPE-002） 不从零重写完整 Python 解释器或 Python 语言服务器。(审计成立:kode-python 只 ruff AST 静态分析永不执行,pythonExecService compile-only 红线(:24),通用 Python 工具链交 Pylance/ruff,扩展只注册 KBEngine 感知 provider 集不做 LSAPI 重实现;同上文档)
 - [x] RUST-015 （旧 SCOPE-003） 不把服务器部署、集群调度、云资源与游戏业务运维塞入语言服务核心。(审计成立:全仓零 k8s/terraform/ansible/云资源面;边界读法登记=本地引擎进程控制与 telnet/HTTP 是本地开发调试工具不构成部署运维,业务逻辑永远是用户资产;同上文档)
-- [ ] RUST-016 （旧 SCOPE-004） 不允许没有协议隔离的第三方插件直接加载到高可信 Core 进程。
-- [ ] RUST-017 （旧 SCOPE-005） 不承诺纯浏览器 VS Code 可以执行原生 Core；单独设计 Web 降级或远程部署。
+- [x] RUST-016 （旧 SCOPE-004） 不允许没有协议隔离的第三方插件直接加载到高可信 Core 进程。(审计成立:16 crate 零 dlopen/libloading/插件宿主机制,进 Core 只两条数据通道(stdio LSP 带版本门+didOpen 文本不求值),生产 spawn 固定 binaryPath 无 args,扩展宿主对 ms-python 只读元数据不 import exports,MCP 面同口径;详见 docs/review/2026-11-15-rust-016-017-core-trust-and-web.md)
+- [x] RUST-017 （旧 SCOPE-005） 不承诺纯浏览器 VS Code 可以执行原生 Core；单独设计 Web 降级或远程部署。(审计成立=不承诺即诚实不支持:package.json 无 browser 入口 vscode.dev 不装载,README/features 双语零 web 承诺字样;未来两条诚实路线登记为设计注=TS 有限子集降级或远端 Core,当前刻意不建;同上文档)
 
 ### 1. 验收性能预算及方法
 
