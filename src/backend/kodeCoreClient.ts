@@ -129,6 +129,10 @@ export class KodeCoreClient {
   private restartTimestamps: number[] = [];
   private initParams: KodeCoreInitializeParams;
   private stderrTail: string[] = [];
+  // RUST-025 RPC 消息字节数(JSON body 双向累计,不含 LSP 帧头常量开销;
+  // 跨重启累加,观测进程生命周期总量口径)
+  private rpcBytesIn = 0;
+  private rpcBytesOut = 0;
 
   /** 崩溃重启代数:每次意外退出+成功重启 +1(CORE-015 对账字段) */
   restartGeneration = 0;
@@ -158,6 +162,11 @@ export class KodeCoreClient {
   /** 最近 stderr 行(崩溃诊断留痕,最多 50 行) */
   get recentStderr(): readonly string[] {
     return this.stderrTail;
+  }
+
+  /** RPC 消息字节流量(RUST-025;JSON body 双向,不含帧头) */
+  get rpcTraffic(): { bytesIn: number; bytesOut: number } {
+    return { bytesIn: this.rpcBytesIn, bytesOut: this.rpcBytesOut };
   }
 
   /** spawn + initialize 握手。已启动则幂等返回既有握手结果。 */
@@ -390,6 +399,7 @@ export class KodeCoreClient {
       stdin.write(
         Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'), body])
       );
+      this.rpcBytesOut += body.length;
     } catch {
       // exit 竞态窗口的同步写失败同上吞掉：响应已不可能，拒绝走 exit 路径
     }
@@ -414,6 +424,7 @@ export class KodeCoreClient {
       }
       const body = this.buffer.subarray(headerEnd, headerEnd + bodyLength);
       this.buffer = Buffer.from(this.buffer.subarray(headerEnd + bodyLength));
+      this.rpcBytesIn += body.length;
       this.dispatchMessage(body);
     }
   }

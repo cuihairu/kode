@@ -244,6 +244,29 @@ describe('kodeCoreClient transport(fake stdio server)', () => {
     ]);
   }, 10_000);
 
+  it('RUST-025 RPC 字节流量:JSON body 双向计数,随请求/响应增长', async () => {
+    const client = tracked(makeClient());
+    await client.start();
+    // 握手一来一回,两个方向都已有量
+    const afterStart = client.rpcTraffic;
+    expect(afterStart.bytesOut).toBeGreaterThan(0);
+    expect(afterStart.bytesIn).toBeGreaterThan(0);
+    // 一轮真实 RPC(delayRpc=0 替身回 {ret:{...}} 面):双向各增
+    const rpcClient = tracked(makeClient({ args: [FAKE_SERVER, 'delayRpc=0'] }));
+    await rpcClient.start();
+    const before = rpcClient.rpcTraffic;
+    const face = (await rpcClient.request('$/kode/rpc', {
+      method: '$/kode/python/localReturnType',
+      params: { lines: ['data = build()'], hoverLine: 0, word: 'data' }
+    })) as { ret?: { annotation?: string } | null };
+    expect(face.ret?.annotation).toBe('DATA');
+    const after = rpcClient.rpcTraffic;
+    expect(after.bytesOut).toBeGreaterThan(before.bytesOut);
+    expect(after.bytesIn).toBeGreaterThan(before.bytesIn);
+    await client.dispose();
+    await rpcClient.dispose();
+  }, 10_000);
+
   it('KodeCoreTransportError 携带分类码', () => {
     const error = new KodeCoreTransportError('boom', 'BAD_FRAME');
     expect(error.name).toBe('KodeCoreTransportError');
