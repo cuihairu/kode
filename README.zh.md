@@ -24,10 +24,14 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用分布式架构。
 | 资产 | 平台 | 安装 |
 |------|------|------|
 | `kode-*-win32-x64.vsix` / `kode-*-win32-arm64.vsix` | Windows x64 / ARM64（含 Rust 后台与协议 CLI） | 下载后执行 `code --install-extension <文件>` |
-| `kode-*-darwin-x64.vsix` / `kode-*-darwin-arm64.vsix` | macOS Intel / Apple Silicon（含 Rust 后台与协议 CLI） | 下载后执行 `code --install-extension <文件>` |
+| `kode-*-darwin-x64.vsix` / `kode-*-darwin-arm64.vsix` | macOS Intel / Apple Silicon（含 Rust 后台与协议 CLI，未签名——见下方说明） | 下载后执行 `code --install-extension <文件>` |
 | `kode-*-linux-x64.vsix` / `kode-*-linux-arm64.vsix` | Linux x64 / ARM64（musl 静态，含 Rust 后台与协议 CLI） | 下载后执行 `code --install-extension <文件>` |
 | `kode-*-pure-ts.vsix` | 全平台通用（VS Code ≥1.82；纯 TS、无二进制，Rust 独有能力受限） | 下载后执行 `code --install-extension <文件>` |
 | `SHA256SUMS` | 全平台 | 上述资产的完整性校验和 |
+
+> **macOS 说明**：内置二进制当前**未签名/未公证**（无 Apple 开发者证书）。Gatekeeper 首次运行可能拦截并报「无法打开」；安装 VSIX 后移除隔离属性即可：
+> `xattr -dr com.apple.quarantine ~/.vscode/extensions/cuihairu.kode-kbengine-*/`
+> `pure-ts` 包不含二进制，不受影响。
 
 > **已发布到 VSCode Marketplace**：[cuihairu.kode-kbengine](https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine)
 >

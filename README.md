@@ -24,10 +24,14 @@ The repository automatically builds from `main` every day and **publishes a roll
 | Asset | Platform | Install |
 |------|------|------|
 | `kode-*-win32-x64.vsix` / `kode-*-win32-arm64.vsix` | Windows x64 / ARM64 (bundled Rust backend + protocol CLI) | Download and run `code --install-extension <file>` |
-| `kode-*-darwin-x64.vsix` / `kode-*-darwin-arm64.vsix` | macOS Intel / Apple Silicon (bundled Rust backend + protocol CLI) | Download and run `code --install-extension <file>` |
+| `kode-*-darwin-x64.vsix` / `kode-*-darwin-arm64.vsix` | macOS Intel / Apple Silicon (bundled Rust backend + protocol CLI, unsigned — see note below) | Download and run `code --install-extension <file>` |
 | `kode-*-linux-x64.vsix` / `kode-*-linux-arm64.vsix` | Linux x64 / ARM64 (musl static, bundled Rust backend + protocol CLI) | Download and run `code --install-extension <file>` |
 | `kode-*-pure-ts.vsix` | Universal, any OS (VS Code ≥1.82; pure TS, no binaries — Rust-only tooling is limited) | Download and run `code --install-extension <file>` |
 | `SHA256SUMS` | All platforms | Integrity checksums for the assets above |
+
+> **macOS note:** the bundled binaries are currently **not signed / notarized** (no Apple Developer certificate). Gatekeeper may block them on first run with a "cannot be opened" error; remove the quarantine attribute after installing the VSIX:
+> `xattr -dr com.apple.quarantine ~/.vscode/extensions/cuihairu.kode-kbengine-*/`
+> The `pure-ts` VSIX has no binaries and is unaffected.
 
 > **Published on the VS Code Marketplace:** [cuihairu.kode-kbengine](https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine)
 >
