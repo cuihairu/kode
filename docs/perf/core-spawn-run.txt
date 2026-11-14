@@ -1,0 +1,4 @@
+CORE-METRIC start.total(spawn+handshake) n=5 p50=4.52ms p95=7.27ms p99=7.27ms max=7.27ms
+CORE-METRIC echo.rtt(warm transport) n=20 p50=0.3ms p95=0.45ms p99=0.48ms max=0.48ms
+CORE-METRIC localReturn.rtt(warm analysis) n=10 p50=0.38ms p95=0.67ms max=0.67ms faceSeen=1
+CORE-METRIC handshake(derived=start.p50-echo.p50) n=1 startTotal=3.64ms echo.p50=0.32ms derived=3.32ms
