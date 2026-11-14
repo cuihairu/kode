@@ -38,6 +38,7 @@ import {
   type FlowCallGraphSource
 } from './flowCallGraphData';
 import { buildFlowNodeInspect } from './backend/flowNodeInspect';
+import { buildFlowTextPath } from './backend/flowTextPath';
 import type { FlowReviewFrame, FlowReviewSample } from './backend/flowReviewSample';
 import { randomNonce } from './webviewSecurity';
 import { resolvePanelLocale, strings } from './webviewStrings';
@@ -142,6 +143,27 @@ export function makeWorkspaceFlowSource(
 const FLOW_JUMP_SCRIPT = `
 (function() {
   var vscode = acquireVsCodeApi();
+  // 键盘操作面(FLOW-020):交互元素可聚焦,Enter/Space 同点击
+  var interactive = document.querySelectorAll(
+    '[data-flow-jump],[data-flow-open-file],[data-flow-back],[data-flow-view],[data-node]'
+  );
+  for (var i = 0; i < interactive.length; i++) {
+    interactive[i].setAttribute('tabindex', '0');
+  }
+  document.addEventListener('keydown', function(event) {
+    if (event.key !== 'Enter' && event.key !== ' ') { return; }
+    var t = event.target;
+    if (!t || !t.getAttribute) { return; }
+    var hit = t.getAttribute('data-flow-jump') !== null ||
+      t.getAttribute('data-flow-open-file') !== null ||
+      t.hasAttribute('data-flow-back') ||
+      t.getAttribute('data-flow-view') !== null ||
+      t.getAttribute('data-node') !== null;
+    if (hit) {
+      event.preventDefault();
+      t.click();
+    }
+  });
   document.addEventListener('click', function(event) {
     var target = event.target;
     while (target && target !== document.body) {
@@ -162,6 +184,13 @@ const FLOW_JUMP_SCRIPT = `
       }
       if (target.hasAttribute && target.hasAttribute('data-flow-back')) {
         vscode.postMessage({ command: 'flowBack' });
+        return;
+      }
+      if (target.getAttribute && target.getAttribute('data-flow-view')) {
+        vscode.postMessage({
+          command: 'flowView',
+          mode: target.getAttribute('data-flow-view')
+        });
         return;
       }
       if (target.getAttribute && target.getAttribute('data-node')) {
@@ -309,10 +338,12 @@ export class FlowSwimlanePanel {
   private currentSource: FlowCallGraphSource | null = null;
   /** 当前场景全部帧节点(候选帧选择反查用) */
   private frameNodes: FlowReviewFrame[] = [];
+  /** 最近一次装配成功的样本(图/文本两面消费同一模型;装配失败保留旧值) */
+  private lastSample: FlowReviewSample | null = null;
   /** 导航历史:反查视图「打开图」压栈,「返回上一视图」出栈 */
   private history: Array<{ filePath: string; functionName: string }> = [];
-  /** 当前视图形态:walk=泳道走查;inspect=节点反查(back 回到 walk 不走历史) */
-  private viewMode: 'walk' | 'inspect' = 'walk';
+  /** 当前视图形态:walk=泳道走查;inspect=节点反查;text=文本路径;back 回 walk 不走历史 */
+  private viewMode: 'walk' | 'inspect' | 'text' = 'walk';
   /** 当前场景最近一次泳道 HTML(反查视图返回复用,不重装配) */
   private lastWalkHtml: string | null = null;
 
@@ -352,12 +383,10 @@ export class FlowSwimlanePanel {
     try {
       await this.open(rootKey, { filePath, functionName: picked });
     } catch (error) {
-      if (isCancelError(error)) {
-        void vscode.window.showInformationMessage(t.errorCancelled);
-        return;
-      }
-      // 装配失败如实告知(入口在装配间隙消失/文件不可读等),不静默
-      void vscode.window.showErrorMessage(t.errorAssemble);
+      // 装配失败如实告知并可重试;旧视图状态保留(状态只在装配成功后变更)
+      await this.reportAssembleFailure(error, () =>
+        this.open(rootKey, { filePath, functionName: picked })
+      );
     }
   }
 
@@ -404,6 +433,15 @@ export class FlowSwimlanePanel {
         }
         if (cmd === 'flowBack') {
           void this.goBack();
+          return;
+        }
+        if (cmd === 'flowView') {
+          const mode = (message as { mode?: unknown }).mode;
+          if (mode === 'text') {
+            this.renderTextFace();
+          } else if (mode === 'graph') {
+            this.renderGraphFace();
+          }
         }
       });
       this.panel.onDidDispose(() => {
@@ -412,6 +450,7 @@ export class FlowSwimlanePanel {
         this.currentRootKey = null;
         this.currentSource = null;
         this.frameNodes = [];
+        this.lastSample = null;
         this.history = [];
         this.viewMode = 'walk';
         this.lastWalkHtml = null;
@@ -441,6 +480,7 @@ export class FlowSwimlanePanel {
     this.currentRootKey = rootKey;
     this.currentSource = source;
     this.frameNodes = sample.swimlanes.flatMap(lane => lane.frames);
+    this.lastSample = sample;
     this.viewMode = 'walk';
     this.lastWalkHtml = sample.html;
     this.panel.title = title;
@@ -491,16 +531,11 @@ export class FlowSwimlanePanel {
     rootKey: string,
     entry: { filePath: string; functionName: string }
   ): Promise<void> {
-    const t = strings(resolvePanelLocale()).flowSwimlane;
     const previous = this.currentEntry;
     try {
       await this.open(rootKey, entry);
     } catch (error) {
-      if (isCancelError(error)) {
-        void vscode.window.showInformationMessage(t.errorCancelled);
-      } else {
-        void vscode.window.showErrorMessage(t.errorAssemble);
-      }
+      await this.reportAssembleFailure(error, () => this.open(rootKey, entry));
       return;
     }
     if (previous && this.currentEntry === entry) {
@@ -508,8 +543,59 @@ export class FlowSwimlanePanel {
     }
   }
 
-  /** 「返回上一视图」:反查视图回泳道(缓存复用);泳道视图出栈重开 */
+  /**
+   * 装配失败/取消如实上报(FLOW-020 错误恢复):取消=信息;失败=错误消息
+   * 带「重试」动作,选中即重开同一入口。已有视图与样本状态不受影响
+   * (open 只在装配成功后变更状态),重试再失败如实再报、不再递归弹重试。
+   */
+  private async reportAssembleFailure(
+    error: unknown,
+    retry: () => Promise<void>
+  ): Promise<void> {
+    const t = strings(resolvePanelLocale()).flowSwimlane;
+    if (isCancelError(error)) {
+      void vscode.window.showInformationMessage(t.errorCancelled);
+      return;
+    }
+    const picked = await vscode.window.showErrorMessage(t.errorAssemble, t.retry);
+    if (picked !== t.retry) {
+      return;
+    }
+    try {
+      await retry();
+    } catch (retryError) {
+      if (!isCancelError(retryError)) {
+        void vscode.window.showErrorMessage(t.errorAssemble);
+      }
+    }
+  }
+
+  /** 文本路径面(FLOW-020):与 HTML 面消费同一样本,渲染失败路径仍在 */
+  private renderTextFace(): void {
+    const t = strings(resolvePanelLocale()).flowSwimlane;
+    if (!this.panel || !this.lastSample) {
+      void vscode.window.showInformationMessage(t.noSample);
+      return;
+    }
+    this.viewMode = 'text';
+    this.renderWebview(buildFlowTextPath(this.lastSample).html);
+  }
+
+  /** 图面(泳道走查):文本面切回,缓存复用不重装配 */
+  private renderGraphFace(): void {
+    if (!this.panel || this.lastWalkHtml === null) {
+      return; // 无泳道在背后(罕见):如实不动
+    }
+    this.viewMode = 'walk';
+    this.renderWebview(this.lastWalkHtml);
+  }
+
+  /** 「返回上一视图」:反查/文本视图回泳道(缓存复用);泳道视图出栈重开 */
   private async goBack(): Promise<void> {
+    if (this.viewMode === 'text') {
+      this.renderGraphFace();
+      return;
+    }
     if (this.viewMode === 'inspect') {
       if (this.lastWalkHtml === null) {
         return; // 无泳道在背后(罕见):如实不动
@@ -524,15 +610,10 @@ export class FlowSwimlanePanel {
       void vscode.window.showInformationMessage('没有上一视图');
       return;
     }
-    const t = strings(resolvePanelLocale()).flowSwimlane;
     try {
       await this.open(rootKey, previous);
     } catch (error) {
-      if (isCancelError(error)) {
-        void vscode.window.showInformationMessage(t.errorCancelled);
-      } else {
-        void vscode.window.showErrorMessage(t.errorAssemble);
-      }
+      await this.reportAssembleFailure(error, () => this.open(rootKey, previous));
     }
   }
 
@@ -546,6 +627,8 @@ export class FlowSwimlanePanel {
     const toolbar =
       `<div class="flow-toolbar">` +
       `<input class="flow-search" placeholder="${t.searchPlaceholder}" />` +
+      `<button class="flow-view-graph" data-flow-view="graph">${t.viewGraph}</button>` +
+      `<button class="flow-view-text" data-flow-view="text">${t.viewText}</button>` +
       `<button class="flow-zoom-in">${t.zoomIn}</button>` +
       `<button class="flow-zoom-out">${t.zoomOut}</button>` +
       `<button class="flow-zoom-reset">${t.zoomReset}</button>` +

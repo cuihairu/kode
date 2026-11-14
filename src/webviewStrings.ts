@@ -183,7 +183,11 @@ const zh = {
     searchPlaceholder: '搜索/过滤(回车定位首个匹配)',
     zoomIn: '放大',
     zoomOut: '缩小',
-    zoomReset: '重置'
+    zoomReset: '重置',
+    viewGraph: '图',
+    viewText: '文本',
+    retry: '重试',
+    noSample: '没有已装配的调用图场景'
   },
   entityFlow: {
     title: 'KBEngine 实体架构流程',
@@ -495,7 +499,11 @@ const en: typeof zh = {
     searchPlaceholder: 'Search/filter (Enter locates first match)',
     zoomIn: 'Zoom in',
     zoomOut: 'Zoom out',
-    zoomReset: 'Reset'
+    zoomReset: 'Reset',
+    viewGraph: 'Graph',
+    viewText: 'Text',
+    retry: 'Retry',
+    noSample: 'No assembled call graph scenario yet'
   },
   entityFlow: {
     title: 'KBEngine Entity Architecture Flow',

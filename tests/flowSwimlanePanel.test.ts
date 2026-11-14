@@ -766,3 +766,133 @@ describe('FLOW-019 大图按需展开(有界初装/工具条/取消)', () => {
     }
   });
 });
+
+describe('FLOW-020 文本路径与错误恢复', () => {
+  it('图/文本切换消费同一模型:文本面携带同一样本的链接与走查序列', async () => {
+    const panel = new FlowSwimlanePanel({
+      entityMappingManager: makeManager(),
+      sourceFactory: rootKey => fullSource(rootKey)
+    });
+    await panel.open('/ws', { filePath: CLIENT_AVATAR, functionName: 'chooseRole' });
+    const fake = panelRegistry.panels[0];
+    const walkHtml = fake.webview.html;
+    expect(walkHtml).toContain('泳道:client(静态角色,非运行实例)');
+    for (const listener of [...fake.messageListeners]) {
+      listener({ command: 'flowView', mode: 'text' });
+    }
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const textHtml = fake.webview.html;
+    expect(textHtml).toContain('<pre>');
+    expect(textHtml).toContain('走查序列');
+    // 同一模型:泳道面出现过的证据编号(EV)同样在文本面
+    const evidenceIds = [...new Set(walkHtml.match(/EV-\d+/g))];
+    expect(evidenceIds.length).toBeGreaterThan(0);
+    for (const evidenceId of evidenceIds) {
+      expect(textHtml).toContain(evidenceId);
+    }
+    // 文本面回图:缓存复用(面板不重装配)
+    for (const listener of [...fake.messageListeners]) {
+      listener({ command: 'flowView', mode: 'graph' });
+    }
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(fake.webview.html).toContain('泳道:client(静态角色,非运行实例)');
+  });
+
+  it('工具条带图/文本切换按钮(面板层注入,工件零脚本)', async () => {
+    const panel = new FlowSwimlanePanel({
+      entityMappingManager: makeManager(),
+      sourceFactory: rootKey => fullSource(rootKey)
+    });
+    await panel.open('/ws', { filePath: CLIENT_AVATAR, functionName: 'chooseRole' });
+    const html = panelRegistry.panels[0].webview.html;
+    expect(html).toContain('data-flow-view="graph"');
+    expect(html).toContain('data-flow-view="text"');
+    // 键盘操作面:交互元素可聚焦 + Enter/Space 转点击
+    expect(html).toContain("setAttribute('tabindex', '0')");
+    expect(html).toContain("event.key !== 'Enter'");
+  });
+
+  it('无样本切文本面:如实提示,不渲染空场景', async () => {
+    const originalError = stubWindow.showErrorMessage;
+    (stubWindow as { showErrorMessage: unknown }).showErrorMessage = async (
+      message: string
+    ): Promise<undefined> => {
+      messages.error.push(message);
+      return undefined;
+    };
+    try {
+      const panel = new FlowSwimlanePanel({
+        entityMappingManager: makeManager(),
+        // 装配恒败:面板已建但 lastSample 为空(失败保留旧值语义)
+        sourceFactory: (rootKey): FlowCallGraphSource => ({
+          ...fullSource(rootKey),
+          listScriptFiles: async () => {
+            throw new Error('disk hiccup');
+          }
+        })
+      });
+      // 直接 open 不经 catch(上报归 show/navigate):失败如实拒,面板留存无样本
+      await expect(
+        panel.open('/ws', { filePath: CLIENT_AVATAR, functionName: 'chooseRole' })
+      ).rejects.toThrow(/disk hiccup/);
+      const fake = panelRegistry.panels[0];
+      for (const listener of [...fake.messageListeners]) {
+        listener({ command: 'flowView', mode: 'text' });
+      }
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(messages.info).toContainEqual('没有已装配的调用图场景');
+      expect(fake.webview.html).toBe('');
+    } finally {
+      (stubWindow as { showErrorMessage: unknown }).showErrorMessage = originalError;
+    }
+  });
+
+  it('装配失败可重试:错误消息带「重试」动作,选中后同一入口重开成功', async () => {
+    const originalError = stubWindow.showErrorMessage;
+    const originalGetWorkspaceFolder = (
+      stubWorkspace as { getWorkspaceFolder?: unknown }
+    ).getWorkspaceFolder;
+    (stubWorkspace as { getWorkspaceFolder: unknown }).getWorkspaceFolder = () => ({
+      uri: Uri.file('/ws'),
+      name: 'ws',
+      index: 0
+    });
+    (stubWindow as { activeTextEditor?: unknown }).activeTextEditor = {
+      document: makeTextDocument(BASE_TEXT, { fileName: BASE_AVATAR, uri: Uri.file(BASE_AVATAR) })
+    };
+    (stubWindow as { showErrorMessage: unknown }).showErrorMessage = async (
+      message: string,
+      item?: string
+    ): Promise<string | undefined> => {
+      messages.error.push(message);
+      return item;
+    };
+    let failed = true;
+    try {
+      const panel = new FlowSwimlanePanel({
+        entityMappingManager: makeManager(),
+        sourceFactory: (rootKey): FlowCallGraphSource => ({
+          ...fullSource(rootKey),
+          readFile: async filePath => {
+            if (failed) {
+              failed = false;
+              throw new Error('disk hiccup');
+            }
+            return TEXTS[filePath] ?? null;
+          }
+        })
+      });
+      await panel.show();
+      // 首次失败如实上报;重试动作被选中后同一入口重开成功
+      expect(messages.error).toContainEqual('调用图装配失败');
+      expect(panelRegistry.panels).toHaveLength(1);
+      const fake = panelRegistry.panels[0];
+      expect(fake.title).toBe('调用图(G2 泳道) · chooseRole');
+      expect(fake.webview.html).toContain('泳道:base(静态角色,非运行实例)');
+    } finally {
+      (stubWindow as { showErrorMessage: unknown }).showErrorMessage = originalError;
+      (stubWorkspace as { getWorkspaceFolder?: unknown }).getWorkspaceFolder =
+        originalGetWorkspaceFolder;
+    }
+  });
+});
