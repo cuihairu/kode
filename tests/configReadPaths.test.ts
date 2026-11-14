@@ -138,7 +138,7 @@ describe('KSEM-CFG-01 config read path registry', () => {
   it('serialization lane is honest: parser core only, wiring is docs-only', () => {
     const entry = configReadPathByLane('serialization-schema')!;
     expect(entry.status).toBe('parser-core-only');
-    expect(entry.readers.some((r) => r.anchor.includes('jsonChainPropagation.ts:78'))).toBe(true);
+    expect(entry.readers.some((r) => r.anchor.includes('jsonChainPropagation.ts:80'))).toBe(true);
     expect(
       entry.readers.some((r) => r.anchor.includes('无文件发现/读取接线')),
     ).toBe(true);

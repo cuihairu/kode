@@ -225,7 +225,7 @@ const SERIALIZATION_SCHEMA_ENTRY: ConfigReadPathEntry = {
     },
   ],
   readers: [
-    { role: 'tsCore', anchor: 'src/backend/jsonChainPropagation.ts:78 parseSerializationSchema(内容级纯核,SER-10;无文件发现/读取接线)' },
+    { role: 'tsCore', anchor: 'src/backend/jsonChainPropagation.ts:80 parseSerializationSchema(内容级纯核,SER-10;无文件发现/读取接线;CFG-07 起消费 json.load 面)' },
   ],
   schemaFaces: [],
   docsOnlyFaces: [

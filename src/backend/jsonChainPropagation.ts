@@ -59,12 +59,14 @@ export type SchemaFieldType =
   | { kind: 'list'; element: SchemaFieldType }
   | { kind: 'ref'; type: string };
 
-/** 解析后的 schema:types(type id → 字段表)+ json.loads 绑定表。 */
+/** 解析后的 schema:types(type id → 字段表)+ json.loads/json.load 绑定表。 */
 export interface SerializationSchema {
   /** schema_version(项目作者维护;缺失/非整数 → null,仅展示不推断)。 */
   version: number | null;
   types: ReadonlyMap<string, ReadonlyMap<string, SchemaFieldType>>;
   loadsBindings: ReadonlyArray<{ path: string; type: string }>;
+  /** json.load(open(...)) 面绑定(键 'json.load';KSEM-CFG-07 起消费)。 */
+  loadBindings: ReadonlyArray<{ path: string; type: string }>;
 }
 
 export interface SchemaParseResult {
@@ -133,45 +135,56 @@ export function parseSerializationSchema(text: string): SchemaParseResult {
       fieldsOf.delete(id);
     }
   }
-  // bindings:仅消费 'json.loads' 键(v1;json.load/module.func 是设计
-  // 预留后续车道键,不报错不消费)
-  const loadsBindings: Array<{ path: string; type: string }> = [];
+  // bindings:'json.loads'(SER-10)与 'json.load'(KSEM-CFG-07 起消费,
+  // open(串) 配装载面)两个键,条目形状与校验同构;其余键预留不报错不消费。
   const rawBindings = root['bindings'];
+  const loadsBindings: Array<{ path: string; type: string }> = [];
+  const loadBindings: Array<{ path: string; type: string }> = [];
   if (rawBindings !== undefined &&
       (rawBindings === null || typeof rawBindings !== 'object' || Array.isArray(rawBindings))) {
     errors.push('bindings must be an object');
   } else if (rawBindings !== undefined) {
-    const loadsRaw = (rawBindings as Record<string, unknown>)['json.loads'];
-    if (loadsRaw !== undefined) {
-      if (!Array.isArray(loadsRaw)) {
-        errors.push('bindings["json.loads"] must be an array');
-      } else {
-        const seen = new Set<string>();
-        for (const item of loadsRaw) {
-          const path = item !== null && typeof item === 'object' && !Array.isArray(item)
-            ? (item as Record<string, unknown>)['path'] : undefined;
-          const type = item !== null && typeof item === 'object' && !Array.isArray(item)
-            ? (item as Record<string, unknown>)['type'] : undefined;
-          if (typeof path !== 'string' || path.length === 0 || typeof type !== 'string') {
-            errors.push('binding entry must be {path, type}');
-            continue;
-          }
-          if (!fieldsOf.has(type)) {
-            errors.push(`binding ${path}: unknown type ${type}`);
-            continue;
-          }
-          const dupKey = `${path}\u0000${type}`;
-          if (seen.has(dupKey)) {
-            continue; // 全同条目去重(同 path 同 type 不算歧义)
-          }
-          seen.add(dupKey);
-          loadsBindings.push({ path, type });
+    const tables: Array<{
+      key: 'json.loads' | 'json.load';
+      into: Array<{ path: string; type: string }>;
+    }> = [
+      { key: 'json.loads', into: loadsBindings },
+      { key: 'json.load', into: loadBindings }
+    ];
+    for (const { key, into } of tables) {
+      const raw = (rawBindings as Record<string, unknown>)[key];
+      if (raw === undefined) {
+        continue;
+      }
+      if (!Array.isArray(raw)) {
+        errors.push(`bindings["${key}"] must be an array`);
+        continue;
+      }
+      const seen = new Set<string>();
+      for (const item of raw) {
+        const path = item !== null && typeof item === 'object' && !Array.isArray(item)
+          ? (item as Record<string, unknown>)['path'] : undefined;
+        const type = item !== null && typeof item === 'object' && !Array.isArray(item)
+          ? (item as Record<string, unknown>)['type'] : undefined;
+        if (typeof path !== 'string' || path.length === 0 || typeof type !== 'string') {
+          errors.push('binding entry must be {path, type}');
+          continue;
         }
+        if (!fieldsOf.has(type)) {
+          errors.push(`binding ${path}: unknown type ${type}`);
+          continue;
+        }
+        const dupKey = `${path}\u0000${type}`;
+        if (seen.has(dupKey)) {
+          continue; // 全同条目去重(同 path 同 type 不算歧义)
+        }
+        seen.add(dupKey);
+        into.push({ path, type });
       }
     }
   }
   return {
-    schema: { version, types: fieldsOf, loadsBindings },
+    schema: { version, types: fieldsOf, loadsBindings, loadBindings },
     errors
   };
 }
@@ -241,7 +254,7 @@ function wellFoundedTypes(
  * 产物/别名(dict 结构 fmt);dead = 不可证明。 */
 type ChainState =
   | { kind: 'carrier'; fmt: DictFormat }
-  | { kind: 'value'; fmt: DictFormat }
+  | { kind: 'value'; fmt: DictFormat; /** schema 绑定 type id(KSEM-CFG-07 起;SER-09 推导面无) */ typeId?: string | null }
   | { kind: 'dead' };
 
 interface BindingFlags {
@@ -253,17 +266,25 @@ interface BindingFlags {
  * JSON 链结构推导入口:模块作用域变量 → dict 结构 map(只含可证明的
  * loads 产物/别名;carrier 是 JSON 串不声称 dict,不入 map)。
  */
-export function deriveJsonChainStructures(
+function walkJsonChains(
   text: string,
-  schema: SerializationSchema | null
-): Map<string, DictFormat> {
+  schema: SerializationSchema | null,
+  interestLines?: ReadonlyArray<number>
+): {
+  states: ReadonlyMap<string, ChainState>;
+  /** 行前快照(该行尚未执行时的状态;行 ≥ 总行数 → 终态);未请求行无条目 */
+  snapshots: Map<number, ReadonlyMap<string, ChainState>>;
+} {
   const masked = pythonCodeLines(text);
   const realLines = text.split(/\r?\n/);
   const dictFormats = deriveDictFormats(text);
   const states = new Map<string, ChainState>();
+  const snapshots = new Map<number, ReadonlyMap<string, ChainState>>();
+  const interest = interestLines !== undefined ? new Set(interestLines) : null;
   const attrJson = new Map<string, BindingFlags>();   // import json [as X]
   const bareDumps = new Map<string, BindingFlags>();  // from json import dumps [as X]
   const bareLoads = new Map<string, BindingFlags>();
+  const bareLoad = new Map<string, BindingFlags>();   // from json import load [as X]
   const scopeIndents: number[] = [];
   const blockIndents: number[] = [];
   const bound = (
@@ -287,6 +308,10 @@ export function deriveJsonChainStructures(
     const l = bareLoads.get(name);
     if (l) {
       l.killed = true;
+    }
+    const f = bareLoad.get(name);
+    if (f) {
+      f.killed = true;
     }
   };
   const killTargets = (targetText: string): void => {
@@ -324,6 +349,9 @@ export function deriveJsonChainStructures(
 
   let line = 0;
   while (line < masked.length) {
+    if (interest !== null && interest.has(line)) {
+      snapshots.set(line, new Map(states)); // 行前快照:该行自身赋值未执行
+    }
     const m = masked[line] ?? '';
     if (m.trim().length === 0) {
       line += 1;
@@ -393,13 +421,15 @@ export function deriveJsonChainStructures(
           bareDumps.set(boundName, { from: line, killed: false });
         } else if (item[1] === 'loads') {
           bareLoads.set(boundName, { from: line, killed: false });
+        } else if (item[1] === 'load') {
+          bareLoad.set(boundName, { from: line, killed: false });
         }
       }
       line = endLine + 1;
       continue;
     }
 
-    // ── NAME = 调用(json.loads/dumps 属性形或绑定裸名;其余调用 =
+    // ── NAME = 调用(json.loads/dumps/load 属性形或绑定裸名;其余调用 =
     // 不可证明写点 → 作废)──
     const callAssign =
       /^([A-Za-z_]\w*)\s*(?::[^=]*?)?=(?![=>])\s*(?:([A-Za-z_]\w*)\s*\.\s*)?([A-Za-z_]\w*)\s*\(/.exec(trimmed);
@@ -407,18 +437,22 @@ export function deriveJsonChainStructures(
       const [, name, attr, fn] = callAssign;
       const parenAt = callAssign[0].length - 1;
       const argSpan = topLevelParenSpan(trimmed, parenAt);
-      // 绑定判定与实参形状解耦(跨行实参也要先认出 dumps/loads 角色)
-      let role: 'loads' | 'dumps' | null = null;
+      // 绑定判定与实参形状解耦(跨行实参也要先认出 dumps/loads/load 角色)
+      let role: 'loads' | 'dumps' | 'load' | null = null;
       if (attr !== undefined) {
         if (fn === 'loads' && bound(attrJson, attr, line)) {
           role = 'loads';
         } else if (fn === 'dumps' && bound(attrJson, attr, line)) {
           role = 'dumps';
+        } else if (fn === 'load' && bound(attrJson, attr, line)) {
+          role = 'load';
         }
       } else if (bound(bareLoads, fn, line)) {
         role = 'loads';
       } else if (bound(bareDumps, fn, line)) {
         role = 'dumps';
+      } else if (bound(bareLoad, fn, line)) {
+        role = 'load';
       }
       if (role === null) {
         killName(name); // 绑定不成立:写点作废
@@ -460,23 +494,35 @@ export function deriveJsonChainStructures(
         continue;
       }
       const argMaskedTrim = trimmed.slice(argSpan.start + 1, argSpan.end).trim();
-      if (role === 'loads') {
+      if (role === 'loads' || role === 'load') {
         let fmt: DictFormat | null = null;
-        if (argMaskedTrim.startsWith('_')) {
-          // 串字面量实参:掩码行首 '_' = 引号位,路径内容走原文行
-          const argRealTrim = (realLines[line] ?? '').trim().slice(argSpan.start + 1, argSpan.end);
-          if (isQuotedLiteral(argRealTrim.trim())) {
-            fmt = schemaPathFormat(argRealTrim.trim().slice(1, -1), schema);
+        let typeId: string | null = null;
+        if (role === 'loads') {
+          if (argMaskedTrim.startsWith('_')) {
+            // 串字面量实参:掩码行首 '_' = 引号位,路径内容走原文行
+            const argRealTrim = (realLines[line] ?? '').trim().slice(argSpan.start + 1, argSpan.end);
+            if (isQuotedLiteral(argRealTrim.trim())) {
+              const hit = schemaPathBinding(argRealTrim.trim().slice(1, -1), schema, 'json.loads');
+              fmt = hit.fmt;
+              typeId = hit.typeId;
+            }
+          } else if (/^[A-Za-z_]\w*$/.test(argMaskedTrim)) {
+            // 链 carrier(loads 只吃串;value/dict 名不是 JSON 串不传)
+            const state = states.get(argMaskedTrim);
+            fmt = state && state.kind === 'carrier' ? state.fmt : null;
           }
-        } else if (/^[A-Za-z_]\w*$/.test(argMaskedTrim)) {
-          // 链 carrier(loads 只吃串;value/dict 名不是 JSON 串不传)
-          const state = states.get(argMaskedTrim);
-          fmt = state && state.kind === 'carrier' ? state.fmt : null;
+        } else {
+          // json.load(open(串字面量)):open 首实参引号串才绑;其余形态
+          // (变量路径/非 open 实参)不可证明
+          const argRealTrim = (realLines[line] ?? '').trim().slice(argSpan.start + 1, argSpan.end);
+          const hit = loadOpenPath(argMaskedTrim, argRealTrim, schema);
+          fmt = hit.fmt;
+          typeId = hit.typeId;
         }
         if (conditional || fmt === null) {
           killName(name);
         } else {
-          states.set(name, { kind: 'value', fmt });
+          states.set(name, { kind: 'value', fmt, typeId });
         }
       } else {
         // 单实参收紧:顶层逗号 = 关键字/多实参形态 → 未知
@@ -543,6 +589,33 @@ export function deriveJsonChainStructures(
     }
     line += 1;
   }
+  // 快照补齐:跳过区(dumps/import 跨行字面量中段)行前状态 = 前一快照
+  // 顺延(该区不处理任何赋值,状态未变);行 ≥ 全文尾行 → 终态
+  if (interest !== null) {
+    for (const want of interest) {
+      if (!snapshots.has(want)) {
+        if (want >= masked.length) {
+          snapshots.set(want, new Map(states));
+          continue;
+        }
+        let prev = want;
+        while (prev >= 0 && !snapshots.has(prev)) {
+          prev -= 1;
+        }
+        snapshots.set(want, prev >= 0 ? snapshots.get(prev) as ReadonlyMap<string, ChainState> : new Map(states));
+      }
+    }
+  }
+  return { states, snapshots };
+}
+
+/** SER-10 契约面:模块作用域变量 → dict 结构 map(只含可证明的 loads
+ * 产物/别名;carrier 是 JSON 串不声称 dict,不入 map)。 */
+export function deriveJsonChainStructures(
+  text: string,
+  schema: SerializationSchema | null
+): Map<string, DictFormat> {
+  const { states } = walkJsonChains(text, schema);
   const out = new Map<string, DictFormat>();
   for (const [name, state] of states) {
     if (state.kind === 'value') {
@@ -552,25 +625,105 @@ export function deriveJsonChainStructures(
   return out;
 }
 
-/** schema 绑定解析:fnmatch 恰一命中 → type 结构;零命中/歧义/无
- * schema → null 零声称(三禁:不凭名字/路径推定)。 */
-function schemaPathFormat(path: string, schema: SerializationSchema | null): DictFormat | null {
-  if (schema === null) {
-    return null;
+/** CFG-07 字段访问面的链态供给:value 态附 schema 绑定 type id;
+ * 请求行的行前快照(该行赋值未执行;def 体行=入体态;行 ≥ 尾行=终态)。 */
+export interface JsonChainTypedValue {
+  fmt: DictFormat;
+  /** schema 绑定 type id(schema 绑定 loads/load 产物才有;SER-09 推导/链别名 = null) */
+  typeId: string | null;
+}
+
+export function deriveJsonChainTypedValues(
+  text: string,
+  schema: SerializationSchema | null,
+  interestLines: ReadonlyArray<number>
+): Map<number, ReadonlyMap<string, JsonChainTypedValue>> {
+  const { snapshots } = walkJsonChains(text, schema, interestLines);
+  const out = new Map<number, ReadonlyMap<string, JsonChainTypedValue>>();
+  for (const [line, states] of snapshots) {
+    const typed = new Map<string, JsonChainTypedValue>();
+    for (const [name, state] of states) {
+      if (state.kind === 'value') {
+        typed.set(name, { fmt: state.fmt, typeId: state.typeId ?? null });
+      }
+    }
+    out.set(line, typed);
   }
+  return out;
+}
+
+/** schema 绑定命中:fnmatch 恰一命中 → type id + 闭字面量结构;
+ * 零命中/歧义 → 双 null 零声称(三禁:不凭名字/路径推定)。 */
+interface SchemaPathHit {
+  fmt: DictFormat | null;
+  typeId: string | null;
+}
+
+function schemaPathBinding(
+  path: string,
+  schema: SerializationSchema | null,
+  loader: 'json.loads' | 'json.load'
+): SchemaPathHit {
+  if (schema === null) {
+    return { fmt: null, typeId: null };
+  }
+  const table = loader === 'json.loads' ? schema.loadsBindings : schema.loadBindings;
   let hit: string | null = null;
-  for (const binding of schema.loadsBindings) {
+  for (const binding of table) {
     if (fnmatchToRegExp(binding.path).test(path)) {
       if (hit !== null) {
-        return null; // 歧义:不取第一条、不取最长 glob(SER-08 §2.2)
+        return { fmt: null, typeId: null }; // 歧义:不取第一条、不取最长 glob(SER-08 §2.2)
       }
       hit = binding.type;
     }
   }
   if (hit === null) {
-    return null;
+    return { fmt: null, typeId: null };
   }
-  return schemaTypeFormat(hit, schema, new Set());
+  return { fmt: schemaTypeFormat(hit, schema, new Set()), typeId: hit };
+}
+
+/** json.load(open(...)) 实参面:open 首实参引号串字面量 → 路径绑定;
+ * open 其余实参(encoding 等)容忍不校验;变量路径/非引号串/非 open
+ * 形态 → 双 null 不可证明。掩码行与原文行等列。 */
+function loadOpenPath(
+  argMaskedTrim: string,
+  argRealTrim: string,
+  schema: SerializationSchema | null
+): SchemaPathHit {
+  const openParen = argMaskedTrim.indexOf('(');
+  if (!/^open\s*\(/.test(argMaskedTrim) || openParen < 0 || !argMaskedTrim.endsWith(')')) {
+    return { fmt: null, typeId: null };
+  }
+  const innerStart = openParen + 1;
+  let depth = 0;
+  let end = -1;
+  for (let i = innerStart; i < argMaskedTrim.length; i += 1) {
+    const ch = argMaskedTrim[i];
+    if (ch === '(' || ch === '[' || ch === '{') {
+      depth += 1;
+    } else if (ch === ')' && depth === 0) {
+      end = i;
+      break;
+    } else if (ch === ')') {
+      depth -= 1;
+    } else if (ch === ',' && depth === 0) {
+      end = i;
+      break;
+    }
+  }
+  if (end < 0) {
+    return { fmt: null, typeId: null };
+  }
+  const firstMasked = argMaskedTrim.slice(innerStart, end).trim();
+  if (!/^_+$/.test(firstMasked)) {
+    return { fmt: null, typeId: null }; // 变量路径/空/关键字形态 → 不可证明
+  }
+  const firstReal = argRealTrim.slice(innerStart, innerStart + (end - innerStart)).trim();
+  if (!isQuotedLiteral(firstReal)) {
+    return { fmt: null, typeId: null };
+  }
+  return schemaPathBinding(firstReal.slice(1, -1), schema, 'json.load');
 }
 
 /** schema type → 闭字面量格式(字段全必有;环/未定义 → null 零声称)。 */

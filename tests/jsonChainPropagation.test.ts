@@ -11,6 +11,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseSerializationSchema,
   deriveJsonChainStructures,
+  deriveJsonChainTypedValues,
   type SerializationSchema,
   type DictFormat,
   type DictValueKind
@@ -622,5 +623,80 @@ describe('链诚实边界', () => {
     expect(back.required.get('members')).toEqual({
       kind: 'list', element: scalar('int')
     });
+  });
+});
+
+describe('KSEM-CFG-07 json.load 面(配置 loader 绑定)', () => {
+  const LOAD_SCHEMA = {
+    schema_version: 1,
+    types: {
+      T: { fields: { cap: 'UINT16', open: 'STRING' } }
+    },
+    bindings: {
+      'json.load': [{ path: 'res/conf/*.json', type: 'T' }]
+    }
+  };
+
+  it('bindings["json.load"] 解析进 loadBindings(校验同 loads 面)', () => {
+    const ok = parseSerializationSchema(JSON.stringify(LOAD_SCHEMA));
+    expect(ok.schema?.loadBindings).toEqual([{ path: 'res/conf/*.json', type: 'T' }]);
+    expect(ok.schema?.loadsBindings).toEqual([]);
+    const bad = parseSerializationSchema(JSON.stringify({
+      schema_version: 1,
+      types: { T: { fields: { a: 'UINT8' } } },
+      bindings: { 'json.load': { path: 'p', type: 'T' } }
+    }));
+    expect(bad.errors).toContain('bindings["json.load"] must be an array');
+    expect(bad.schema?.loadBindings).toEqual([]);
+  });
+
+  it('json.load(open(串)) 经 loadBindings 绑定,typeId 附着在链态上', () => {
+    const schema = parseSerializationSchema(JSON.stringify(LOAD_SCHEMA)).schema;
+    const rows = [
+      'import json',
+      "cfg = json.load(open('res/conf/g.json'))",
+      'enc = json.load(open("res/conf/e.json", encoding="utf-8"))'
+    ];
+    const out = deriveJsonChainStructures(rows.join('\n'), schema);
+    expect(out.has('cfg')).toBe(true);
+    expect(out.has('enc')).toBe(true);
+    const typed = deriveJsonChainTypedValues(rows.join('\n'), schema, [1, 2, 3]);
+    const at2 = typed.get(2)?.get('cfg');
+    expect(at2?.typeId).toBe('T');
+    expect(at2?.fmt.kind).toBe('literal');
+  });
+
+  it('from json import load as L 裸名与变量路径面', () => {
+    const schema = parseSerializationSchema(JSON.stringify(LOAD_SCHEMA)).schema;
+    const rows = [
+      'from json import load as L',
+      "cfg = L(open('res/conf/g.json'))",
+      'p = "res/conf/x.json"',
+      'dyn = L(open(p))'
+    ];
+    const out = deriveJsonChainStructures(rows.join('\n'), schema);
+    expect(out.has('cfg')).toBe(true);
+    expect(out.has('dyn')).toBe(false); // 变量路径不可证明
+  });
+
+  it('同表歧义 glob 双命中 → 零声称(SER-08 §2.2 同律)', () => {
+    const schema = parseSerializationSchema(JSON.stringify({
+      schema_version: 1,
+      types: {
+        A: { fields: { a: 'UINT8' } },
+        B: { fields: { b: 'UINT8' } }
+      },
+      bindings: {
+        'json.load': [
+          { path: 'res/conf/*.json', type: 'A' },
+          { path: 'res/conf/g*.json', type: 'B' }
+        ]
+      }
+    })).schema;
+    const rows = [
+      'import json',
+      "cfg = json.load(open('res/conf/g1.json'))"
+    ];
+    expect(deriveJsonChainStructures(rows.join('\n'), schema).has('cfg')).toBe(false);
   });
 });
