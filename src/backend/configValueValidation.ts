@@ -258,7 +258,20 @@ export function computeConfigValueFindings(input: ConfigValueValidationInput): C
   }
 
   const severityOrder: Record<ConfigValueSeverity, number> = { error: 0, warning: 1, information: 2 };
-  return findings.sort(
+  // 重复节点去重(CFG-11 负例集口径):custom 重复同名叶会产生同路径同锚
+  // 的重复 finding——完全相同(路径/行/码/文案参数)的只留一条;值不同
+  // (args 不同)的两条都留(两处都是真坏值)。行锚=首现行(configPathLineIndex
+  // 只记首现),重复条目本就同锚。
+  const seen = new Set<string>();
+  const deduped = findings.filter((f) => {
+    const key = `${f.path}\u0000${f.line}\u0000${f.code}\u0000${JSON.stringify(f.args)}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+  return deduped.sort(
     (a, b) => a.line - b.line || severityOrder[a.severity] - severityOrder[b.severity] || a.path.localeCompare(b.path),
   );
 }
