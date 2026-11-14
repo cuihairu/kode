@@ -83,6 +83,7 @@
 > 2026-11-13(KSEM-STRUCT-07):implementedBy 两表示收口——hover.ts fixedDictSubscript import +1(implementedByFixedDictOfAnnotation)→ provideHover 306→307,出处随 baseline 锁步。
 > 2026-11-14(KSEM-SER-07):isSameType 契约边面接线——diagnostics.ts 顶部 import 组累计 +4 行(推入块在打点锚之后不位移)→ def/entities 两处打点锚 191/204→195/208(真位重探,与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 > 2026-11-14(KSEM-DATA-02):共享数据键位补全接线——completion.ts 顶部 +4 导入、KBEngineCompletionProvider ctor +4 注入、数据字典键位分支 +12、provideDataDictKeyCompletions 方法块 +56(均在 PythonCompletionProvider 之前)→ PythonCompletionProvider.provideCompletionItems 897→973(净 +76,出处随 baseline 锁步,与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
+> 2026-11-14(KSEM-DATA-04):provideDataDictKeyCompletions 进程域收窄重写(+16:域闸与族内域内访问点过滤/detail 域内计数重排,均在 PythonCompletionProvider 之前)→ PythonCompletionProvider.provideCompletionItems 973→989;hover.ts 数据字典面改动全在 provideHover(:313)之后无位移(出处随 baseline 锁步,与 tests/perfCallChainDoc.test.ts ANCHORS 表锁步)。
 
 ### 7.1 Hover(Python → 实体标注 → 同步回退)
 
@@ -192,7 +193,7 @@ flowchart TD
 flowchart TD
   VC3["VS Code: provideCompletionItems(document, position)"]
   M3["activate/languageServices.ts:128 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :741 一路)"]
-  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders/completion.ts:973"]
+  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders/completion.ts:989"]
   KBEC{"kbe./KBEngine. 模块语境?<br/>(已引入/已用别名)"}
   FILTER["filterKbeSymbols 前缀过滤 :4921<br/>(engineApiMetadata 目录)"]
   SELFC{"self. 语境?<br/>getPythonSelfCompletionContext :4935"}
