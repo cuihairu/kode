@@ -184,7 +184,7 @@
 
 依赖：静态路径先交付；采集为单独增量，不以静态图替代。
 
-- [ ] FLOW-022 （旧 KFLOW-TRACE-01） [P2] 核实运行时采集可行性。验收：评估 debugpy 停止栈、Python profile/trace、引擎消息钩子、日志和 py-spy 各自能获取的数据/代价；采样栈不冒充完整请求轨迹。
+- [x] FLOW-022 （旧 KFLOW-TRACE-01） [P2] 核实运行时采集可行性。验收：评估 debugpy 停止栈、Python profile/trace、引擎消息钩子、日志和 py-spy 各自能获取的数据/代价；采样栈不冒充完整请求轨迹。（100a7379：核实报告 docs/review/2026-11-14-kflow-trace-01-feasibility.md——五渠道各带数据面/实测代价/不得宣称边界+汇总对照表;setprofile 本机实测 2.8x/settrace 7.4x(3.14.4)/事件量=帧数×2;debugpy 3.7.3 锁 debugpy 1.7.0 配对+kode 自动路径版本假设缺口如实记录;引擎消息钩子=Python 层只见派发后方法调用,wire 关联 ID 归 FLOW-026 不预判;日志=evidenceLog 近零开销但只是点;py-spy=采样栈 PDBG-003 已交付 dump 面,沙箱 shell ptrace 被拒实测记录、现场按 PDBG-003 指引;红线重申=采样/日志不冒充完整请求轨迹,因果只走核实过的关联 ID(R2/R4);结论=FLOW-024 首选受控 setprofile+py-spy dump 补充,FLOW-025 预定独立开关+有界缓冲默认关）
 - [ ] FLOW-023 （旧 KFLOW-TRACE-02） [P2] 定义 trace 事件协议。验收：定义会话/进程/线程/实体/时间/帧/消息关联/来源及丢失标记；异步跨进程使用因果边，不伪装共享栈。
 - [ ] FLOW-024 （旧 KFLOW-TRACE-03） [P2] 导入单进程真实堆栈。验收：先支持一个已验证来源的真实帧顺序、文件行和异常位置；字段缺失明示，栈展开可跳源码。
 - [ ] FLOW-025 （旧 KFLOW-TRACE-04） [P2] 采集受控单进程调用事件。验收：独立可关闭的采集入口和有界缓冲，记录开始/结束/异常/丢弃；不默认开启高开销全量 trace。
