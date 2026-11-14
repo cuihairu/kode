@@ -44,7 +44,10 @@ import { EntityMappingManager } from '../../src/entityMapping';
 import { PythonClassIndex } from '../../src/backend/pythonClassIndex';
 import { resetScanRootCache } from '../../src/scanRoots';
 
-const ASSETS_OUT = path.join(os.tmpdir(), 'kode-perf-v02-assets');
+// RUST-023 存储介质轴:默认 tmpfs(os.tmpdir);KODE_PERF_ASSETS_OUT 可指向
+// 真实磁盘路径,同参数双跑即得 内存盘 vs 机械盘 分组对照。
+const ASSETS_OUT = process.env.KODE_PERF_ASSETS_OUT
+  ?? path.join(os.tmpdir(), 'kode-perf-v02-assets');
 const LARGE_FILES = Number(process.env.KODE_PERF_LARGE_FILES ?? '30000');
 
 const OUT_FILE = process.env.KODE_V02_OUT
