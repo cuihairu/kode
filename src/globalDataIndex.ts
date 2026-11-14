@@ -41,6 +41,7 @@ export {
   KBENGINE_DATA_DICTS,
   buildPythonCodeMask,
   extractFunctionReturns,
+  extractModuleConstantBindings,
   findKbeDataDictAccesses,
   findKbeDataDictAccessesSliced,
   findLineCommentIndex,
@@ -684,6 +685,26 @@ export class GlobalDataDictIndex {
   /** (作用域根, 字典, 键签名) 的全部写+读点(走内存索引,不重扫)。 */
   query(dict: string, keySignature: string, root = ''): KbeDataDictSite[] {
     return this.byKey.get(siteKey(root, dict, keySignature)) ?? [];
+  }
+
+  /**
+   * (作用域根, 字典) 的全部键族(键签名 → 站点),补全面用(KSEM-DATA-02)。
+   * 与 query 同根身份口径:别根/别字典的键族不入列(工程隔离与三字典
+   * 键空间不相混)。键签名确定序,补全项不随倒排遍历序漂移。
+   */
+  queryKeyFamilies(
+    dict: string,
+    root = ''
+  ): Array<{ keySignature: string; sites: KbeDataDictSite[] }> {
+    const prefix = `${root}\u0000${dict}\u0000`;
+    const families: Array<{ keySignature: string; sites: KbeDataDictSite[] }> = [];
+    for (const [key, sites] of this.byKey) {
+      if (!key.startsWith(prefix)) {
+        continue;
+      }
+      families.push({ keySignature: key.slice(prefix.length), sites });
+    }
+    return families.sort((a, b) => a.keySignature.localeCompare(b.keySignature));
   }
 
   /**

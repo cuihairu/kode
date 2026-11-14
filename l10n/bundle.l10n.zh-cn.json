@@ -667,5 +667,7 @@
   "{symbol}.isSameType returns a value whose compatibility cannot be proven statically (declared in {source}); object compatibility for {container} is unverified — runtime samples are required before treating this converter as verified": "{symbol}.isSameType 返回值无法静态证明兼容(声明于 {source});对 {container} 的对象兼容性未经验证——需运行时样本验证后才可视为已证明",
   "{path} expects {expected}, got '{value}'; the engine parses this key at startup": "{path} 应为 {expected},实际是 '{value}';引擎启动时解析该键,坏值会导致读取失败",
   "'{value}' is not a documented value of {path} (documented: {values}); the engine ignores undocumented values": "'{value}' 不是 {path} 的文档化枚举值(文档值:{values});引擎会忽略未登记的值",
-  "{path} is not an engine config key (absent from kbengine_defaults.xml); the engine ignores it — fine if your own tooling reads it": "{path} 不是引擎读取的配置键(kbengine_defaults.xml 中不存在);引擎会忽略它——若是你自己的工具在用可以不管"
+  "{path} is not an engine config key (absent from kbengine_defaults.xml); the engine ignores it — fine if your own tooling reads it": "{path} 不是引擎读取的配置键(kbengine_defaults.xml 中不存在);引擎会忽略它——若是你自己的工具在用可以不管",
+  "no write site": "无写点",
+  "{count} write site(s)": "{count} 个写点"
 }

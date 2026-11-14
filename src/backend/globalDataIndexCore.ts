@@ -68,6 +68,57 @@ const AUGMENTED_ASSIGN_OPS = [
 
 const NUMERIC_PATTERN = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 
+/** 裸标识符(键静态常量解析位:非数字字面量) */
+const IDENTIFIER_PATTERN = /^[A-Za-z_]\w*$/;
+
+/**
+ * 模块级静态常量绑定(KSEM-DATA-02):顶格 `NAME = "literal"` / 带注解
+ * `NAME: str = "literal"`。同名多次赋值:值全等 → 该值;值冲突 → null
+ * (条件分支序静态不可知,不猜运行时终值);RHS 非单段字符串字面量
+ * (f-string/拼接/调用/引用)不入绑定(动态,不解析)。缩进赋值(函数/
+ * 类体)不是模块作用域,不收——类常量解析需类域追踪,不在本面。
+ */
+export function extractModuleConstantBindings(text: string): Map<string, string | null> {
+  const bindings = new Map<string, string[]>();
+  for (const lineText of text.split(/\r?\n/)) {
+    const match = /^([A-Za-z_]\w*)\s*(?::[^=]*)?=\s*(\S.*)$/.exec(lineText);
+    if (!match) {
+      continue;
+    }
+    const rhs = match[2].replace(/\s+#.*$/, '').trim();
+    const literal = matchStringLiteral(rhs);
+    if (literal === null) {
+      continue;
+    }
+    const values = bindings.get(match[1]) ?? [];
+    values.push(literal);
+    bindings.set(match[1], values);
+  }
+  const resolved = new Map<string, string | null>();
+  for (const [name, values] of bindings) {
+    resolved.set(name, values.every(value => value === values[0]) ? values[0] : null);
+  }
+  return resolved;
+}
+
+/**
+ * 裸标识符键静态常量解析(KSEM-DATA-02 验收句「静态常量按真实绑定解析,
+ * 不把同名标识符恒当同一键值」):键表达式是裸标识符且本文件模块级绑定
+ * 值确定(全等)→ 解析为绑定值(两文件各自 `KEY` 绑不同字面量 → 两个
+ * 不同键族,不再按标识符名并作一族);无绑定/绑定冲突/非裸标识符 →
+ * 原签名(标识符名,现状语义)。
+ */
+function resolveIdentifierSignature(
+  signature: string,
+  rawKey: string,
+  bindings?: ReadonlyMap<string, string | null>
+): string {
+  if (!bindings || !IDENTIFIER_PATTERN.test(rawKey.trim())) {
+    return signature;
+  }
+  return bindings.get(signature) ?? signature;
+}
+
 /**
  * 归一化键签名。精确形态(字符串字面量解引/标识符/数字字面量)→原文;
  * f-string 与顶层 `+` 拼接(至少一个字面量段)→字面量骨架+`*` 通配
@@ -600,7 +651,8 @@ function scanLineDictAccesses(
   mask: Uint8Array,
   accesses: KbeDataDictAccess[],
   resolveCallKey?: (fn: string) => string[] | null,
-  onCallKey?: (fn: string) => void
+  onCallKey?: (fn: string) => void,
+  bindings?: ReadonlyMap<string, string | null>
 ): void {
   DATA_DICT_PATTERN.lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -623,7 +675,7 @@ function scanLineDictAccesses(
       if (keySignature !== null) {
         accesses.push({
           dict,
-          keySignature,
+          keySignature: resolveIdentifierSignature(keySignature, span.keyRaw, bindings),
           line,
           keyStart: span.keyStart,
           keyEnd: span.keyEnd,
@@ -689,7 +741,8 @@ export function findKbeDataDictAccesses(
   text: string,
   aliases: Set<string>,
   resolveCallKey?: (fn: string) => string[] | null,
-  onCallKey?: (fn: string) => void
+  onCallKey?: (fn: string) => void,
+  bindings?: ReadonlyMap<string, string | null>
 ): KbeDataDictAccess[] {
   if (aliases.size === 0) {
     return [];
@@ -697,6 +750,9 @@ export function findKbeDataDictAccesses(
   const mask = buildPythonCodeMask(text);
   const lineStarts = lineStartOffsets(text);
   const accesses: KbeDataDictAccess[] = [];
+  // 模块常量绑定缺省自本全文取(全文扫描=同一文件);逐行扫描的调用方
+  // (inlay 视口行)显式传全文绑定,单行自查无模块级赋值面
+  const moduleBindings = bindings ?? extractModuleConstantBindings(text);
   const lines = text.split(/\r?\n/);
   for (let line = 0; line < lines.length; line += 1) {
     scanLineDictAccesses(
@@ -707,7 +763,8 @@ export function findKbeDataDictAccesses(
       mask,
       accesses,
       resolveCallKey,
-      onCallKey
+      onCallKey,
+      moduleBindings
     );
   }
   return accesses;
@@ -732,11 +789,13 @@ export async function findKbeDataDictAccessesSliced(
   isCancelled: () => boolean,
   lineSlice = EDIT_SCAN_LINE_SLICE,
   resolveCallKey?: (fn: string) => string[] | null,
-  onCallKey?: (fn: string) => void
+  onCallKey?: (fn: string) => void,
+  bindings?: ReadonlyMap<string, string | null>
 ): Promise<{ accesses: KbeDataDictAccess[] | null } & SlicedScanStats> {
   if (aliases.size === 0) {
     return { accesses: [], sliceCount: 0, maxSliceMs: 0 };
   }
+  const moduleBindings = bindings ?? extractModuleConstantBindings(text);
   const mask = new Uint8Array(text.length);
   const maskState: MaskState = { inString: null, index: 0 };
   const accesses: KbeDataDictAccess[] = [];
@@ -761,7 +820,7 @@ export async function findKbeDataDictAccessesSliced(
       if (lineText.endsWith('\r')) {
         lineText = lineText.slice(0, -1);
       }
-      scanLineDictAccesses(lineText, line, cursor, aliases, mask, accesses, resolveCallKey, onCallKey);
+      scanLineDictAccesses(lineText, line, cursor, aliases, mask, accesses, resolveCallKey, onCallKey, moduleBindings);
       line += 1;
       cursor = lineEnd + 1;
     }
@@ -775,13 +834,18 @@ export async function findKbeDataDictAccessesSliced(
   return { accesses, sliceCount, maxSliceMs };
 }
 
-/** 落点命中某访问的键表达式区间(含首尾)时返回该访问;provider 定位用 */
+/**
+ * 落点命中某访问的键表达式区间(含首尾)时返回该访问;provider 定位用。
+ * 逐行定位时显式传所属文件的模块常量绑定——裸标识符键的签名要与索引
+ * 侧(全文绑定解析)一致,否则查询签名按标识符名查不到已解析键族。
+ */
 export function getKbeDataDictAccessAtPosition(
   lineText: string,
   character: number,
-  aliases: Set<string>
+  aliases: Set<string>,
+  bindings?: ReadonlyMap<string, string | null>
 ): KbeDataDictAccess | null {
-  for (const access of findKbeDataDictAccesses(lineText, aliases)) {
+  for (const access of findKbeDataDictAccesses(lineText, aliases, undefined, undefined, bindings)) {
     if (character >= access.keyStart && character <= access.keyEnd) {
       return access;
     }
@@ -826,14 +890,17 @@ export function getDataDictAccessInCodeContext(
   documentText: string,
   line: number,
   character: number,
-  aliases: Set<string>
+  aliases: Set<string>,
+  bindings?: ReadonlyMap<string, string | null>
 ): KbeDataDictAccess | null {
   const lineStart = lineStartOffsets(documentText)[line];
   if (lineStart === undefined) {
     return null;
   }
   const rawLine = documentText.slice(lineStart).split(/\r?\n/, 1)[0];
-  const access = getKbeDataDictAccessAtPosition(rawLine, character, aliases);
+  // 查询签名与索引侧同口径:裸标识符键按本文件模块常量绑定解析
+  const moduleBindings = bindings ?? extractModuleConstantBindings(documentText);
+  const access = getKbeDataDictAccessAtPosition(rawLine, character, aliases, moduleBindings);
   if (!access) {
     return null;
   }
@@ -845,8 +912,54 @@ export function getDataDictAccessInCodeContext(
   return spanIsCode(mask, lineStart + aliasSpan.start, aliasSpan.length) ? access : null;
 }
 
+/** 共享数据键补全上下文(KSEM-DATA-02:键位里列出本域已知键) */
+export interface DataDictKeyCompletionContext {
+  /** 目标共享数据域(globalData/baseAppData/cellAppData) */
+  dict: KbeDataDictName;
+  /** 引号内已输入片段(片段内无引号无反斜杠;光标刚过 `[`/`.get(` 时空) */
+  partial: string;
+  /** 片段首列(替换范围起,不含引号) */
+  replaceStart: number;
+}
+
 /**
- * 行内首个引号外 `#` 注释列;无注释返回 -1(引号内 `#` 是字面量不算)。
+ * 数据字典键位上下文(KSEM-DATA-02,cellData 键位同款口径):
+ * `alias.globalData["片段` / `alias.globalData.get("片段` / 光标刚过 `[`
+ * / `.get(`。接收者必须是已引入的 kbe 别名前缀(非 `x.KBEngine.globalData`
+ * 属性链,与扫描器同守卫);无引号片段(空区间)与未开引号的键位也返回
+ * 上下文(插入即引号后位置)。
+ */
+export function dataDictKeyCompletionContext(
+  lineText: string,
+  character: number,
+  aliases: ReadonlySet<string>
+): DataDictKeyCompletionContext | null {
+  const text = lineText.slice(0, character);
+  // 别名来自 import 解析(Python 标识符,无正则元字符)
+  for (const alias of aliases) {
+    const quoted = new RegExp(
+      `(?:^|[^.\\w])${alias}\\.(globalData|baseAppData|cellAppData)\\s*(?:\\[\\s*|\\.get\\s*\\(\\s*)(["'])([^"'\\\\]*)$`
+    );
+    const bare = new RegExp(
+      `(?:^|[^.\\w])${alias}\\.(globalData|baseAppData|cellAppData)\\s*(?:\\[\\s*|\\.get\\s*\\(\\s*)$`
+    );
+    const quotedMatch = quoted.exec(text);
+    if (quotedMatch) {
+      return {
+        dict: quotedMatch[1] as KbeDataDictName,
+        partial: quotedMatch[3],
+        replaceStart: character - quotedMatch[3].length
+      };
+    }
+    const bareMatch = bare.exec(text);
+    if (bareMatch) {
+      return { dict: bareMatch[1] as KbeDataDictName, partial: '', replaceStart: character };
+    }
+  }
+  return null;
+}
+
+/** 行内首个引号外 `#` 注释列;无注释返回 -1(引号内 `#` 是字面量不算)。
  * 供扫描器剥离 RHS 尾随注释与 provider 排除注释里的假访问。
  */
 export function findLineCommentIndex(lineText: string, from = 0): number {

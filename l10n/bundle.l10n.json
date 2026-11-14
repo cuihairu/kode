@@ -667,5 +667,7 @@
   "{symbol}.isSameType returns a value whose compatibility cannot be proven statically (declared in {source}); object compatibility for {container} is unverified — runtime samples are required before treating this converter as verified": "{symbol}.isSameType returns a value whose compatibility cannot be proven statically (declared in {source}); object compatibility for {container} is unverified — runtime samples are required before treating this converter as verified",
   "{path} expects {expected}, got '{value}'; the engine parses this key at startup": "{path} expects {expected}, got '{value}'; the engine parses this key at startup",
   "'{value}' is not a documented value of {path} (documented: {values}); the engine ignores undocumented values": "'{value}' is not a documented value of {path} (documented: {values}); the engine ignores undocumented values",
-  "{path} is not an engine config key (absent from kbengine_defaults.xml); the engine ignores it — fine if your own tooling reads it": "{path} is not an engine config key (absent from kbengine_defaults.xml); the engine ignores it — fine if your own tooling reads it"
+  "{path} is not an engine config key (absent from kbengine_defaults.xml); the engine ignores it — fine if your own tooling reads it": "{path} is not an engine config key (absent from kbengine_defaults.xml); the engine ignores it — fine if your own tooling reads it",
+  "no write site": "no write site",
+  "{count} write site(s)": "{count} write site(s)"
 }

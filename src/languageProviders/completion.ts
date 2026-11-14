@@ -16,6 +16,10 @@ import { KBENGINE_ENTRY_HOOKS, isComponentEntryScriptFile } from '../backend/ent
 import { DETAIL_LEVELS, KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, KBENGINE_TYPES } from '../backend/kbengineMetadata';
 import { formatEntityBuiltinPropertyDetail, getEntityBuiltinPropertiesForFace, hasKnownEntityBuiltinPropertyType, resolveEntityComponentFaceFromPath, type EntityComponentFace } from '../backend/entityBuiltinProperties';
 import { PYTHON_TYPE_STUB_FALLBACK, resolveCustomTypePropertyAnnotation } from '../pythonTypeStubs';
+import { GlobalDataDictIndex, resolveScopeRoot } from '../globalDataIndex';
+import { dataDictKeyCompletionContext, type DataDictKeyCompletionContext } from '../backend/globalDataIndexCore';
+import { awaitDataDictIndexReady, isPythonDataDictIndexEnabled } from './pythonDefinition';
+import { l10nText } from '../nlsRuntime';
 import { getPythonSelfCompletionContext } from '../backend/pythonLanguageUtils';
 import { filterKbeSymbols, getKbeAliases, getKbeCompletionContext, kbeCompletionDocumentation } from '../kbeModuleIndex';
 import { pythonProcessFromPath, processApiSymbols } from '../backend/pythonProcess';
@@ -302,7 +306,12 @@ export function lspCompletionToVscode(face: LspCompletionReportFace): vscode.Com
 export class KBEngineCompletionProvider implements vscode.CompletionItemProvider {
   // 内建属性补全(用户令 2026-10-21 内建属性单 ③):self. 上下文需要 def
   // 归属面兜底,可选注入;缺省时仅目录域判面(既有无参用例口径不变)。
-  constructor(private readonly entityMappingManager?: EntityMappingManager) {}
+  constructor(
+    private readonly entityMappingManager?: EntityMappingManager,
+    // KSEM-DATA-02:共享数据键补全消费面(可选注入;缺省时本面静默让位,
+    // 既有无参用例口径不变)
+    private readonly dataDictIndex?: GlobalDataDictIndex
+  ) {}
 
   provideCompletionItems(
     document: vscode.TextDocument,
@@ -321,6 +330,20 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     );
     if (cellCtx) {
       return this.provideCellDataKeyCompletions(document, position, cellCtx, token).then(
+        items => (items !== null ? items : this.provideCompletionItemsSync(document, position, token))
+      );
+    }
+    // KSEM-DATA-02:共享数据字典键位(`KBEngine.globalData["…"` / `.get("…"`
+    // 含别名)→ 索引键族补全(键 + 写入来源)。键位上下文里 def 链/Rust 面
+    // 均无效,先于 Rust-first 判定接管;无索引/开关关 → null,索引无此键族
+    // → [](键位不给项)均落回既有同步链——非键位路径同步契约不变。
+    const dataDictCtx = dataDictKeyCompletionContext(
+      document.lineAt(position.line).text,
+      position.character,
+      getKbeAliases(document.getText())
+    );
+    if (dataDictCtx) {
+      return this.provideDataDictKeyCompletions(document, position, dataDictCtx, token).then(
         items => (items !== null ? items : this.provideCompletionItemsSync(document, position, token))
       );
     }
@@ -554,6 +577,59 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
       item.range = range;
       return item;
     });
+  }
+
+  /**
+   * 共享数据字典键位补全(KSEM-DATA-02):globalData/baseAppData/cellAppData
+   * 字符串键位 → 同根同字典索引键族(键 = 归一化签名;标识符键按模块级
+   * 常量真实绑定解析,同名标识符不同值不同族)。detail = 写点数 · 首写点
+   * file:line(1 基);纯读键族诚实标「无写点」不造来源。诚实边界:无索引/
+   * 开关关 → null(不接管);索引无键族/过滤后无匹配 → [](键位不给项,
+   * 不造键)。工程隔离沿用 AUD-068 根身份键:只列本工程(根)的键族。
+   * 替换范围 = 引号内片段精确区间(不含引号)。
+   */
+  private async provideDataDictKeyCompletions(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    ctx: DataDictKeyCompletionContext,
+    token?: vscode.CancellationToken
+  ): Promise<vscode.CompletionItem[] | null> {
+    const index = this.dataDictIndex;
+    if (!index || !isPythonDataDictIndexEnabled()) {
+      return null;
+    }
+    // AUD-072:冷索引可取消等待——初扫在飞时键位补全等齐再列族(与
+    // hover/references 同款),不空手回装作无键
+    if (!(await awaitDataDictIndexReady(index, token))) {
+      return [];
+    }
+    const families = index.queryKeyFamilies(ctx.dict, resolveScopeRoot(document.uri.fsPath));
+    if (token?.isCancellationRequested) {
+      return [];
+    }
+    if (families.length === 0) {
+      return []; // 本工程此字典暂无键:键位不给项,不造键
+    }
+    const range = new vscode.Range(position.line, ctx.replaceStart, position.line, position.character);
+    return families
+      .filter(family => family.keySignature.startsWith(ctx.partial))
+      .map(family => {
+        const item = new vscode.CompletionItem(
+          family.keySignature,
+          vscode.CompletionItemKind.Variable
+        );
+        const writes = family.sites.filter(site => site.kind === 'write');
+        const firstWrite = writes[0];
+        const detailParts = [l10nText('{count} write site(s)', { count: writes.length })];
+        if (firstWrite) {
+          detailParts.push(`${path.basename(firstWrite.file)}:${firstWrite.line + 1}`);
+        } else {
+          detailParts.push(l10nText('no write site'));
+        }
+        item.detail = detailParts.join(' · ');
+        item.range = range;
+        return item;
+      });
   }
 
   /**

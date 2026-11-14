@@ -112,7 +112,7 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
   } = deps;
 
   // 注册智能提示提供者（.def 结构补全 + Python 热更 API 补全;PR1 起带 completion 打点）
-  const kbengineCompletionImpl = new KBEngineCompletionProvider(entityMappingManager);
+  const kbengineCompletionImpl = new KBEngineCompletionProvider(entityMappingManager, dataDictIndex);
   const completionProvider = vscode.languages.registerCompletionItemProvider(
     [
       ...defDocumentSelector,

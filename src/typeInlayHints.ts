@@ -18,6 +18,7 @@ import {
 import { getKbeAliases } from './kbeModuleIndex';
 import {
   GlobalDataDictIndex,
+  extractModuleConstantBindings,
   findKbeDataDictAccesses,
   inferDataDictValueType,
   isKeyInsideLineComment,
@@ -276,9 +277,12 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
     let ensured = false;
     const startLine = Math.max(0, range.start.line);
     const endLine = Math.min(documentLines.length - 1, range.end.line);
+    // 逐行扫描传所属文件全文的模块常量绑定(KSEM-DATA-02):裸标识符键的
+    // 签名要与索引侧一致,否则已解析键族的类型标注不出
+    const constantBindings = extractModuleConstantBindings(document.getText());
     for (let line = startLine; line <= endLine; line += 1) {
       const lineText = documentLines[line];
-      for (const access of findKbeDataDictAccesses(lineText, aliases)) {
+      for (const access of findKbeDataDictAccesses(lineText, aliases, undefined, undefined, constantBindings)) {
         if (isKeyInsideLineComment(lineText, access.keyStart)) {
           continue;
         }

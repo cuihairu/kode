@@ -457,7 +457,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // +3、fixedDictSubscript import 扩 1 符与 fdKeyCompletionsOf 抽取重排
   // (provideFixedDictKeyCompletions 内输入面臂 +27)→ provideCompletionItems
   // 真位重探 855→897,出处随 baseline 锁步。
-  ['src/languageProviders/completion.ts', 897, 'provideCompletionItems('],
+  // 2026-11-14(KSEM-DATA-02):顶部 +4 导入、KBEngineCompletionProvider ctor
+  // +4 注入、数据字典键位分支 +12、provideDataDictKeyCompletions +56
+  // (KBEngine 类域内,PythonCompletionProvider 之前)→ provideCompletionItems
+  // 真位重探 897→973,出处随 baseline 锁步。
+  ['src/languageProviders/completion.ts', 973, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)
