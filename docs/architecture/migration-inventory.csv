@@ -25,7 +25,7 @@
 "hotReload.ts","src/hotReload.ts","保存/监视→去抖→触发quick action(默认关)","code-agent","待测","moved(HR-WATCH复用触发器)","hotReload测试","与HTTP热更无连线"
 "telnetClient/telnetService/telnetTree","src/telnet*","telnet状态机+探测+面板","code-agent","待测","moved","telnet测试集","net.connect在扩展宿主内"
 "logHub/logParser/logWebView","src/log*","日志接收(sha256去重)/解析/webview","code-agent","待测","moved(→kode-runtime)","logHub测试","loggerPort接收在扩展宿主"
-"processManager/serverManager","src/*Manager.ts","KBE组件进程spawn/停止/重启","code-agent","待测","moved(→kode-runtime独立执行服务)","processManager测试","ARCH-002差距:语言与进程管理同宿主"
+"processManager/serverManager","src/*Manager.ts","KBE组件进程spawn/停止/重启","code-agent","待测","stays(engine进程管理留TS)+moved(判据③执行服务→src/backend/pythonExecService.ts)","processManager测试;pythonExecService.test.ts","ARCH-002:进程管理留TS未动;判据③可复用执行服务已由常驻解释器服务收口(2026-11-15 RUST-002)"
 "debugConfig/debugConfigBootstrap","src/debugConfig*","launch.json生成/附加配置","code-agent","待测","deferred(无debuggers contribution)","debugConfig测试","仅配置面,无debug provider"
 "kbeModuleIndex/engineApiMetadata","src/kbeModuleIndex.ts等","KBEngine API符号索引+引擎API目录","code-agent","待测","moved(→kode-python)","kbeModuleIndex测试",".pyi同源来源"
 "grammar/themes/snippets/schemas","resources/ snippets/ schemas/","语法定义/主题/片段/schema","code-agent","不适用","retained(不动)","—","无"
