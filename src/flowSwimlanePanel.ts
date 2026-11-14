@@ -21,6 +21,11 @@
  *     反查上游/下游,未知(原因码)与歧义(跨进程同名实体待证)可查看;
  *   - 导航历史=反查视图里「打开图」跳到调用者/被调者场景,旧入口入栈,
  *     「返回上一视图」出栈重开;面板关闭即清;
+ *   - 有界初装=FLOW-019:初次装配按 FLOW_DEFAULT_DEPTH 深度界走查,
+ *     超界帧标注「截断边界」并给「继续展开」入口(续开新场景);进度
+ *     可取消(token 传入装配核,各阶段间停扩展,取消与失败分报);
+ *     面板注入工具条=搜索/过滤(回车定位)/缩放/重置——工具条与脚本
+ *     只在面板层,工件本体仍零脚本;
  *   - 面板只管 vscode 生命周期与装配调度;数据/HTML 全在纯核
  *     (flowCallGraphData.ts + backend/flowReviewSample.ts +
  *     backend/flowNodeInspect.ts)。
@@ -33,13 +38,19 @@ import {
   type FlowCallGraphSource
 } from './flowCallGraphData';
 import { buildFlowNodeInspect } from './backend/flowNodeInspect';
-import type { FlowReviewFrame } from './backend/flowReviewSample';
+import type { FlowReviewFrame, FlowReviewSample } from './backend/flowReviewSample';
 import { randomNonce } from './webviewSecurity';
 import { resolvePanelLocale, strings } from './webviewStrings';
 import type { EntityMappingManager } from './entityMapping';
 
 /** 有界收集上限(与 KODE-PERF-004 callgraph 收集同源;截断在明细中如实) */
 const FLOW_FILE_LIMIT = 10_000;
+
+/**
+ * FLOW-019 初装深度界:初次只装配有界场景子图,超界截断在帧上标注
+ * 「截断边界/继续展开」,不一次性铺满大图(按需展开的入口在帧上)。
+ */
+const FLOW_DEFAULT_DEPTH = 6;
 
 export interface FlowSwimlaneDeps {
   entityMappingManager: EntityMappingManager;
@@ -166,6 +177,56 @@ const FLOW_JUMP_SCRIPT = `
 })();
 `;
 
+/**
+ * FLOW-019 工具条脚本(仅面板注入,工件本体仍零脚本):搜索/过滤行
+ * (回车定位首个匹配)+ 缩放(body zoom,0.5–2 夹取)+ 重置。
+ */
+const FLOW_TOOLBAR_SCRIPT = `
+(function() {
+  var body = document.body;
+  var level = 1;
+  var applyZoom = function() { body.style.zoom = String(level); };
+  var search = document.querySelector('.flow-search');
+  var rows = function() {
+    return Array.prototype.slice.call(document.querySelectorAll('li, tr'));
+  };
+  var filter = function() {
+    var query = search && search.value ? search.value.toLowerCase() : '';
+    var visible = [];
+    rows().forEach(function(row) {
+      var hit = !query || (row.textContent || '').toLowerCase().indexOf(query) >= 0;
+      row.style.display = hit ? '' : 'none';
+      if (hit) { visible.push(row); }
+    });
+    return visible;
+  };
+  if (search) {
+    search.addEventListener('input', filter);
+    search.addEventListener('keydown', function(event) {
+      if (event.key === 'Enter') {
+        var visible = filter();
+        if (visible.length > 0) { visible[0].scrollIntoView({ block: 'center' }); }
+      }
+    });
+  }
+  var bindZoom = function(selector, delta) {
+    var button = document.querySelector(selector);
+    if (button) {
+      button.addEventListener('click', function() {
+        level = Math.min(2, Math.max(0.5, level + delta));
+        applyZoom();
+      });
+    }
+  };
+  bindZoom('.flow-zoom-in', 0.1);
+  bindZoom('.flow-zoom-out', -0.1);
+  var reset = document.querySelector('.flow-zoom-reset');
+  if (reset) {
+    reset.addEventListener('click', function() { level = 1; applyZoom(); });
+  }
+})();
+`;
+
 /** 解析 data-flow-jump 值(file:0 基行;file 含冒号按最后一个冒号切) */
 const parseJumpTarget = (target: unknown): { file: string; line0: number } | null => {
   if (typeof target !== 'string') {
@@ -181,6 +242,10 @@ const parseJumpTarget = (target: unknown): { file: string; line0: number } | nul
   }
   return { file: target.slice(0, lastColon), line0 };
 };
+
+/** 装配取消(FLOW-019):纯核各阶段间检查抛出的哨兵错误,与装配失败分报 */
+const isCancelError = (error: unknown): boolean =>
+  error instanceof Error && error.message === 'flow assembly cancelled';
 
 /** 活动编辑器函数清单(解析核;解析失败/无函数=空) */
 export function listEntryFunctions(text: string, filePath: string, rootKey: string): string[] {
@@ -286,7 +351,11 @@ export class FlowSwimlanePanel {
     }
     try {
       await this.open(rootKey, { filePath, functionName: picked });
-    } catch {
+    } catch (error) {
+      if (isCancelError(error)) {
+        void vscode.window.showInformationMessage(t.errorCancelled);
+        return;
+      }
       // 装配失败如实告知(入口在装配间隙消失/文件不可读等),不静默
       void vscode.window.showErrorMessage(t.errorAssemble);
     }
@@ -352,17 +421,22 @@ export class FlowSwimlanePanel {
     const source = this.deps.sourceFactory
       ? this.deps.sourceFactory(rootKey)
       : makeWorkspaceFlowSource(this.deps, rootKey);
-    const html = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Window, title: t.progress, cancellable: false },
-      () =>
-        assembleFlowCallGraph(source, entry).then(sample => {
-          return sample;
+    // FLOW-019:初装有界深度;进度可取消,取消后各装配阶段间停扩展
+    const sample: FlowReviewSample = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Window,
+        title: t.progress,
+        cancellable: true
+      },
+      (_progress, token) =>
+        assembleFlowCallGraph(source, entry, {
+          maxDepth: FLOW_DEFAULT_DEPTH,
+          cancellationToken: token
         })
     );
     if (!this.panel || this.panel !== panel) {
       return; // 装配期间面板已关/换代:弃写
     }
-    const sample = html;
     this.currentEntry = entry;
     this.currentRootKey = rootKey;
     this.currentSource = source;
@@ -417,11 +491,16 @@ export class FlowSwimlanePanel {
     rootKey: string,
     entry: { filePath: string; functionName: string }
   ): Promise<void> {
+    const t = strings(resolvePanelLocale()).flowSwimlane;
     const previous = this.currentEntry;
     try {
       await this.open(rootKey, entry);
-    } catch {
-      void vscode.window.showErrorMessage('调用图装配失败');
+    } catch (error) {
+      if (isCancelError(error)) {
+        void vscode.window.showInformationMessage(t.errorCancelled);
+      } else {
+        void vscode.window.showErrorMessage(t.errorAssemble);
+      }
       return;
     }
     if (previous && this.currentEntry === entry) {
@@ -445,23 +524,38 @@ export class FlowSwimlanePanel {
       void vscode.window.showInformationMessage('没有上一视图');
       return;
     }
+    const t = strings(resolvePanelLocale()).flowSwimlane;
     try {
       await this.open(rootKey, previous);
-    } catch {
-      void vscode.window.showErrorMessage('调用图装配失败');
+    } catch (error) {
+      if (isCancelError(error)) {
+        void vscode.window.showInformationMessage(t.errorCancelled);
+      } else {
+        void vscode.window.showErrorMessage(t.errorAssemble);
+      }
     }
   }
 
-  /** 渲染(CSP 注入 + nonce 交互桥;零外部面) */
+  /** 渲染(CSP 注入 + nonce 交互桥 + FLOW-019 工具条;零外部面) */
   private renderWebview(html: string): void {
     if (!this.panel) {
       return;
     }
+    const t = strings(resolvePanelLocale()).flowSwimlane;
     const nonce = randomNonce();
-    this.panel.webview.html = html.replace(
-      '<head>',
-      `<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';"><style>[data-flow-jump],[data-flow-open-file],[data-flow-back]{cursor:pointer;text-decoration:underline dotted;}</style><script nonce="${nonce}">${FLOW_JUMP_SCRIPT}</script>`
-    );
+    const toolbar =
+      `<div class="flow-toolbar">` +
+      `<input class="flow-search" placeholder="${t.searchPlaceholder}" />` +
+      `<button class="flow-zoom-in">${t.zoomIn}</button>` +
+      `<button class="flow-zoom-out">${t.zoomOut}</button>` +
+      `<button class="flow-zoom-reset">${t.zoomReset}</button>` +
+      `</div>`;
+    this.panel.webview.html = html
+      .replace('<body>', `<body>${toolbar}`)
+      .replace(
+        '<head>',
+        `<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';"><style>[data-flow-jump],[data-flow-open-file],[data-flow-back]{cursor:pointer;text-decoration:underline dotted;}.flow-toolbar{position:sticky;top:0;display:flex;gap:6px;padding:6px 12px;background:#f6f6f6;border-bottom:1px solid #ddd;z-index:9;}.flow-toolbar input{flex:1;}</style><script nonce="${nonce}">${FLOW_JUMP_SCRIPT}</script><script nonce="${nonce}">${FLOW_TOOLBAR_SCRIPT}</script>`
+      );
   }
 
   /** 跳转编辑器(file:0 基行;越界钳到末行,如实打开不虚构) */

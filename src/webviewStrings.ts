@@ -178,7 +178,12 @@ const zh = {
     pickEntry: '选择入口函数',
     errorNoFile: '没有打开的 Python 编辑器:先打开实体脚本再打开调用图',
     errorNoFunctions: '当前文件没有可作入口的函数',
-    errorAssemble: '调用图装配失败'
+    errorAssemble: '调用图装配失败',
+    errorCancelled: '调用图装配已取消',
+    searchPlaceholder: '搜索/过滤(回车定位首个匹配)',
+    zoomIn: '放大',
+    zoomOut: '缩小',
+    zoomReset: '重置'
   },
   entityFlow: {
     title: 'KBEngine 实体架构流程',
@@ -485,7 +490,12 @@ const en: typeof zh = {
     pickEntry: 'Pick entry function',
     errorNoFile: 'No Python editor open: open an entity script first',
     errorNoFunctions: 'No callable entry function in this file',
-    errorAssemble: 'Call graph assembly failed'
+    errorAssemble: 'Call graph assembly failed',
+    errorCancelled: 'Call graph assembly cancelled',
+    searchPlaceholder: 'Search/filter (Enter locates first match)',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    zoomReset: 'Reset'
   },
   entityFlow: {
     title: 'KBEngine Entity Architecture Flow',

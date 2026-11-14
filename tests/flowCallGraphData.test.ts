@@ -211,3 +211,56 @@ describe('FLOW-015 装配', () => {
     expect(sample.html).toContain('参数(def):UINT32');
   });
 });
+
+describe('FLOW-019 装配取消(后台扩展停扩展)', () => {
+  it('预取消:一个文件都不读,抛取消哨兵(不假装装配完成)', async () => {
+    const reads: string[] = [];
+    await expect(
+      assembleFlowCallGraph(
+        makeSource({
+          readFile: async filePath => {
+            reads.push(filePath);
+            return TEXTS.get(filePath) ?? null;
+          }
+        }),
+        { filePath: CLIENT_AVATAR, functionName: 'chooseRole' },
+        { cancellationToken: { isCancellationRequested: true } }
+      )
+    ).rejects.toThrow(/cancelled/);
+    expect(reads).toEqual([]);
+  });
+
+  it('读取中途取消:剩余文件不读,不进 def/实现解析', async () => {
+    const reads: string[] = [];
+    const defCalls: string[] = [];
+    const token = { isCancellationRequested: false };
+    await expect(
+      assembleFlowCallGraph(
+        makeSource({
+          readFile: async filePath => {
+            reads.push(filePath);
+            token.isCancellationRequested = true; // 首读后即取消
+            return TEXTS.get(filePath) ?? null;
+          },
+          resolveDefMethod: async (entity, section, methodName) => {
+            defCalls.push(`${entity}\u001f${section}\u001f${methodName}`);
+            return DEF_REGISTRY[`${entity}\u001f${section}\u001f${methodName}`] ?? null;
+          }
+        }),
+        { filePath: CLIENT_AVATAR, functionName: 'chooseRole' },
+        { cancellationToken: token }
+      )
+    ).rejects.toThrow(/cancelled/);
+    expect(reads).toHaveLength(1);
+    expect(defCalls).toEqual([]);
+  });
+
+  it('未取消:令牌在位也完整装配(不误伤)', async () => {
+    const sample = await assembleFlowCallGraph(
+      makeSource(),
+      { filePath: CLIENT_AVATAR, functionName: 'chooseRole' },
+      { cancellationToken: { isCancellationRequested: false } }
+    );
+    expect(sample.swimlanes.map(lane => lane.role)).toEqual(['client', 'base', 'cell']);
+  });
+});

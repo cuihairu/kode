@@ -47,6 +47,8 @@ export interface FlowScenarioStep {
   role: FlowProcessRole;
   nodeId: string;
   label: string;
+  /** 走查深度(入口帧 0;深度界判定=本步 depth >= maxDepth 停) */
+  depth: number;
   /** 引到本步的边(入口帧无) */
   edge: FlowGraphEdge | null;
   /** 远端执行步对应的发送边 id(remote-exec 有) */
@@ -69,6 +71,8 @@ export interface FlowScenarioResult {
   steps: FlowScenarioStep[];
   branchCandidates: FlowScenarioBranchCandidate[];
   truncated: boolean;
+  /** 本次走查的深度界(截断边界判据:step.depth >= maxDepth) */
+  maxDepth: number;
 }
 
 export function buildScenarioPath(input: FlowScenarioInput): FlowScenarioResult {
@@ -136,6 +140,7 @@ export function buildScenarioPath(input: FlowScenarioInput): FlowScenarioResult 
       role: node.role,
       nodeId: node.id,
       label: node.label,
+      depth,
       edge: via?.edge ?? null,
       viaSendEdgeId: via?.sendEdgeId ?? null
     });
@@ -173,6 +178,7 @@ export function buildScenarioPath(input: FlowScenarioInput): FlowScenarioResult 
           role: edge.direction.toRole,
           nodeId: target.id,
           label: target.label,
+          depth,
           edge,
           viaSendEdgeId: edge.id
         });
@@ -191,6 +197,7 @@ export function buildScenarioPath(input: FlowScenarioInput): FlowScenarioResult 
     entryRole: entryNode.role,
     steps,
     branchCandidates,
-    truncated
+    truncated,
+    maxDepth
   };
 }

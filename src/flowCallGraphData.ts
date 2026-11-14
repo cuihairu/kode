@@ -118,6 +118,11 @@ export async function collectNeededRpcTriples(
 
 export interface AssembleOptions {
   maxDepth?: number;
+  /**
+   * FLOW-019 取消令牌(宿主 withProgress token 的最小形状):各异步阶段间
+   * 检查,已取消即抛错停止后台扩展;纯核不引入 vscode 依赖。
+   */
+  cancellationToken?: { isCancellationRequested: boolean };
 }
 
 /**
@@ -129,17 +134,27 @@ export async function assembleFlowCallGraph(
   entry: { filePath: string; functionName: string },
   options: AssembleOptions = {}
 ): Promise<FlowReviewSample> {
+  const cancelled = (): boolean => options.cancellationToken?.isCancellationRequested === true;
   const files = await source.listScriptFiles();
   const texts = new Map<string, string>();
   for (const filePath of files) {
+    if (cancelled()) {
+      throw new Error('flow assembly cancelled');
+    }
     const text = await source.readFile(filePath);
     if (text !== null) {
       texts.set(filePath, text);
     }
   }
+  if (cancelled()) {
+    throw new Error('flow assembly cancelled');
+  }
   const needed = await collectNeededRpcTriples(texts, source.rootKey, filePath =>
     source.entityForFile(filePath)
   );
+  if (cancelled()) {
+    throw new Error('flow assembly cancelled');
+  }
   const defRegistry = new Map<
     string,
     {
@@ -160,6 +175,9 @@ export async function assembleFlowCallGraph(
     }
   >();
   for (const triple of needed) {
+    if (cancelled()) {
+      throw new Error('flow assembly cancelled');
+    }
     const key = tripleKey(triple.entity, triple.section, triple.methodName);
     const def = await source.resolveDefMethod(triple.entity, triple.section, triple.methodName);
     if (def) {

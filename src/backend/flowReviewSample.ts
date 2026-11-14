@@ -40,6 +40,12 @@ export interface FlowReviewFrame {
   role: FlowProcessRole;
   kind: 'local-frame' | 'remote-exec';
   file: string | null;
+  /** 函数名(继续展开入口用;声明/外部帧无=null) */
+  functionName: string | null;
+  /** 走查深度(入口 0;截断边界判据) */
+  depth: number;
+  /** 截断边界帧(truncated 且 depth>=maxDepth;可继续展开入口) */
+  truncationBoundary: boolean;
 }
 
 export type FlowReviewLinkKind =
@@ -238,7 +244,10 @@ export function buildFlowReviewSample(input: FlowReviewSampleInput): FlowReviewS
       label: step.label,
       role: step.role,
       kind: step.kind,
-      file: node?.fn?.filePath ?? null
+      file: node?.fn?.filePath ?? null,
+      functionName: node?.fn?.name ?? null,
+      depth: step.depth,
+      truncationBoundary: scenario.truncated && step.depth >= scenario.maxDepth
     });
   }
 
@@ -467,7 +476,15 @@ const emitFrameRow = (frame: FlowReviewFrame, roleColumns: FlowProcessRole[]): s
     if (role !== frame.role) {
       return '<td class="empty"></td>';
     }
-    return `<td><div class="frame ${frame.kind === 'remote-exec' ? 'remote' : ''}" data-node="${esc(frame.nodeId)}"><span class="frame-kind">${frame.kind === 'remote-exec' ? '远端执行帧' : '候选帧'}</span> ${esc(frame.label.replace(/^候选帧 /, ''))}<span class="file">${esc(frame.file ?? '文件未解析')}</span></div></td>`;
+    // FLOW-019:截断边界帧带「继续展开」(以该帧为入口再走查;面板内激活)
+    const cont =
+      frame.truncationBoundary && frame.file && frame.functionName
+        ? `<span class="continue" data-flow-open-file="${esc(frame.file)}" data-flow-open-fn="${esc(frame.functionName)}">继续展开</span>`
+        : '';
+    const boundary = frame.truncationBoundary
+      ? '<span class="boundary-note">截断边界</span>'
+      : '';
+    return `<td><div class="frame ${frame.kind === 'remote-exec' ? 'remote' : ''}" data-node="${esc(frame.nodeId)}"><span class="frame-kind">${frame.kind === 'remote-exec' ? '远端执行帧' : '候选帧'}</span> ${esc(frame.label.replace(/^候选帧 /, ''))}<span class="file">${esc(frame.file ?? '文件未解析')}</span>${boundary}${cont}</div></td>`;
   });
   return `<tr class="frame-row">${tds.join('')}</tr>`;
 };
@@ -590,6 +607,8 @@ tr.link-row td { background: #fffdf5; font-size: 13px; }
 .dir { color: #14538a; margin-left: 8px; font-size: 12px; font-family: monospace; }
 .callback { display: inline-block; background: #ffe9cc; color: #8a4d00; font-size: 11px; padding: 1px 8px; border-radius: 10px; font-weight: 600; margin-left: 8px; }
 .args { color: #1c6b33; margin-left: 8px; font-size: 12px; font-family: monospace; }
+.boundary-note { display: inline-block; background: #f3e8ff; color: #6b21a8; font-size: 11px; padding: 1px 8px; border-radius: 10px; font-weight: 600; margin-left: 8px; }
+.continue { color: #6b21a8; font-size: 12px; margin-left: 8px; }
 .role-tag { color: #889; font-size: 11px; }
 details.locals-group { margin: 6px 0; background: #fff; border: 1px solid #dde4ee; border-radius: 4px; padding: 4px 10px; }
 details.locals-group > summary { cursor: pointer; font-size: 13px; color: #2d5ba9; font-weight: 600; }

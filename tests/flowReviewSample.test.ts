@@ -429,3 +429,38 @@ describe('FLOW-014 R3 展示红线与 golden', () => {
     expect(sample.html).toBe(committed);
   });
 });
+
+describe('FLOW-019 大图按需展开(截断边界帧)', () => {
+  it('帧携带函数名与走查深度:入口帧 depth 0,未截断时无边界帧无续开入口', () => {
+    const sample = buildFlowReviewSample(input());
+    expect(sample.truncated).toBe(false);
+    const allFrames = sample.swimlanes.flatMap(lane => lane.frames);
+    // 入口帧:函数名/深度可读(继续展开的定位面)
+    const entry = allFrames.find(frame => frame.label.includes('chooseRole'))!;
+    expect(entry.functionName).toBe('chooseRole');
+    expect(entry.depth).toBe(0);
+    expect(entry.truncationBoundary).toBe(false);
+    // 未截断:全部帧无边界标注,html 不给续开入口(诚实:没截断不假装)
+    expect(allFrames.every(frame => frame.truncationBoundary === false)).toBe(true);
+    expect(sample.html).not.toContain('继续展开');
+    expect(sample.html).not.toContain('截断边界');
+  });
+
+  it('小深度界:边界帧带截断标注与续开入口(文件+函数名),html 可定位', () => {
+    const sample = buildFlowReviewSample(input({ maxDepth: 1 }));
+    expect(sample.truncated).toBe(true);
+    const boundaries = sample.swimlanes.flatMap(lane => lane.frames).filter(f => f.truncationBoundary);
+    expect(boundaries.length).toBeGreaterThan(0);
+    for (const frame of boundaries) {
+      expect(frame.depth).toBeGreaterThanOrEqual(1);
+      expect(frame.file).not.toBeNull();
+      expect(frame.functionName).not.toBeNull();
+    }
+    const first = boundaries[0];
+    // 续开入口以 data-flow-open-file/fn 给出(面板点击续开新场景)
+    expect(sample.html).toContain('截断边界');
+    expect(sample.html).toContain('继续展开');
+    expect(sample.html).toContain(`data-flow-open-file="${first.file}"`);
+    expect(sample.html).toContain(`data-flow-open-fn="${first.functionName}"`);
+  });
+});

@@ -637,3 +637,132 @@ describe('FLOW-016 面板跳转面(调用点/声明分别跳转)', () => {
     );
   });
 });
+
+describe('FLOW-019 大图按需展开(有界初装/工具条/取消)', () => {
+  const CHAIN_CELL = [
+    'class Avatar:',
+    '    def enterGame(self, roleId):',
+    "        self.allClients.showScene('scene_1')",
+    '        self.client.onEnterGame(roleId)',
+    '        self.c1()',
+    '',
+    '    def c1(self):',
+    '        self.c2()',
+    '',
+    '    def c2(self):',
+    '        self.c3()',
+    '',
+    '    def c3(self):',
+    '        self.c4()',
+    '',
+    '    def c4(self):',
+    '        self.c5()',
+    '',
+    '    def c5(self):',
+    '        pass'
+  ].join('\n');
+
+  const patchWithProgressCancelled = (): void => {
+    (stubWindow as { withProgress: unknown }).withProgress = async (
+      _options: unknown,
+      task: (progress: unknown, token: { isCancellationRequested: boolean }) => Promise<unknown>
+    ): Promise<unknown> =>
+      task(undefined, {
+        isCancellationRequested: true,
+        onCancellationRequested: (): { dispose(): void } => ({ dispose: () => undefined })
+      });
+  };
+
+  it('工具条注入:搜索/缩放/重置只在面板层,随 CSP nonce 脚本生效', async () => {
+    const panel = new FlowSwimlanePanel({
+      entityMappingManager: makeManager(),
+      sourceFactory: rootKey => fullSource(rootKey)
+    });
+    await panel.open('/ws', { filePath: CLIENT_AVATAR, functionName: 'chooseRole' });
+    const html = panelRegistry.panels[0].webview.html;
+    expect(html).toContain('class="flow-toolbar"');
+    expect(html).toContain('class="flow-search"');
+    expect(html).toContain('搜索/过滤');
+    expect(html).toContain('flow-zoom-in');
+    expect(html).toContain('flow-zoom-out');
+    expect(html).toContain('flow-zoom-reset');
+    expect(html).toContain('applyZoom');
+    expect(html).toContain('.flow-toolbar{position:sticky');
+    // 工具条 DOM 在 <body> 之后(CSS/脚本注在 <head>,工件结构不被改写)
+    expect(html.indexOf('class="flow-toolbar"')).toBeGreaterThan(html.indexOf('<body>'));
+  });
+
+  it('默认深度界 6:超界走查在边界帧标「截断边界/继续展开」,入口给文件+函数名', async () => {
+    const sources: Record<string, string> = { ...TEXTS, [CELL_AVATAR]: CHAIN_CELL };
+    const panel = new FlowSwimlanePanel({
+      entityMappingManager: makeManager(),
+      sourceFactory: (rootKey): FlowCallGraphSource => ({
+        ...fullSource(rootKey),
+        readFile: async filePath => sources[filePath] ?? null
+      })
+    });
+    await panel.open('/ws', { filePath: CLIENT_AVATAR, functionName: 'chooseRole' });
+    const html = panelRegistry.panels[0].webview.html;
+    expect(html).toContain('截断边界');
+    expect(html).toContain('继续展开');
+    expect(html).toContain(`data-flow-open-file="${CELL_AVATAR}"`);
+    expect(html).toContain('data-flow-open-fn="c4"');
+    // 边界恰一处:深度 6 时触界的只有 c4;c5 叶函数无节点,不是帧
+    expect(html.match(/data-flow-open-fn=/g)).toHaveLength(1);
+    expect(html).not.toContain('data-flow-open-fn="c5"');
+  });
+
+  it('取消:open 停扩展弃写并抛取消哨兵(一个文件都不读)', async () => {
+    const originalWithProgress = (stubWindow as { withProgress: unknown }).withProgress;
+    patchWithProgressCancelled();
+    const reads: string[] = [];
+    try {
+      const panel = new FlowSwimlanePanel({
+        entityMappingManager: makeManager(),
+        sourceFactory: (rootKey): FlowCallGraphSource => ({
+          ...fullSource(rootKey),
+          readFile: async filePath => {
+            reads.push(filePath);
+            return TEXTS[filePath] ?? null;
+          }
+        })
+      });
+      await expect(
+        panel.open('/ws', { filePath: CLIENT_AVATAR, functionName: 'chooseRole' })
+      ).rejects.toThrow(/cancelled/);
+      expect(reads).toEqual([]);
+      expect(panelRegistry.panels[0].webview.html).toBe('');
+    } finally {
+      (stubWindow as { withProgress: unknown }).withProgress = originalWithProgress;
+    }
+  });
+
+  it('show() 取消:信息提示「已取消」,不误报装配失败', async () => {
+    const originalWithProgress = (stubWindow as { withProgress: unknown }).withProgress;
+    const originalGetWorkspaceFolder = (
+      stubWorkspace as { getWorkspaceFolder?: unknown }
+    ).getWorkspaceFolder;
+    patchWithProgressCancelled();
+    (stubWorkspace as { getWorkspaceFolder: unknown }).getWorkspaceFolder = () => ({
+      uri: Uri.file('/ws'),
+      name: 'ws',
+      index: 0
+    });
+    try {
+      (stubWindow as { activeTextEditor?: unknown }).activeTextEditor = {
+        document: makeTextDocument(BASE_TEXT, { fileName: BASE_AVATAR, uri: Uri.file(BASE_AVATAR) })
+      };
+      const panel = new FlowSwimlanePanel({
+        entityMappingManager: makeManager(),
+        sourceFactory: rootKey => fullSource(rootKey)
+      });
+      await panel.show();
+      expect(messages.info).toContainEqual('调用图装配已取消');
+      expect(messages.error.some(e => e.includes('装配失败'))).toBe(false);
+    } finally {
+      (stubWindow as { withProgress: unknown }).withProgress = originalWithProgress;
+      (stubWorkspace as { getWorkspaceFolder?: unknown }).getWorkspaceFolder =
+        originalGetWorkspaceFolder;
+    }
+  });
+});

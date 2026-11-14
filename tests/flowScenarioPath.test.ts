@@ -132,3 +132,31 @@ describe('FLOW-012 场景走查 Client→Base→Cell→Client', () => {
     ).toThrow(/not resolvable/);
   });
 });
+
+describe('FLOW-019 有界走查深度(截断边界判据面)', () => {
+  it('每步携带走查深度:入口 0,远端执行逐跳 +1;结果携带本次深度界', () => {
+    const result = buildScenarioPath(input());
+    expect(result.maxDepth).toBe(8);
+    expect(result.steps.map(step => step.depth)).toEqual([0, 0, 1, 1, 2, 2, 3]);
+    // 入口帧深度 0;remote-exec 深度 = 发送帧深度 + 1(锁步)
+    const sends = result.steps.filter(s => s.kind === 'cross-process-send');
+    const execs = result.steps.filter(s => s.kind === 'remote-exec');
+    expect(execs.map(s => s.depth)).toEqual(sends.map(s => s.depth + 1));
+  });
+
+  it('截断边界步可定位:小深度界下末步 depth >= maxDepth,且未越界前如实', () => {
+    const result = buildScenarioPath(input({ maxDepth: 1 }));
+    expect(result.truncated).toBe(true);
+    expect(result.maxDepth).toBe(1);
+    const boundary = result.steps.filter(step => step.depth >= result.maxDepth);
+    expect(boundary).toHaveLength(1);
+    expect(boundary[0].kind).toBe('remote-exec');
+    // 深度界 1:入口本地面走完发送步,首个远端执行帧(base 侧 requestMove)触界
+    expect(boundary[0].label).toContain('requestMove');
+    expect(boundary[0].role).toBe('base');
+    // 未截断的走查:无任何步触界(边界判据面与 truncated 同源)
+    const full = buildScenarioPath(input());
+    expect(full.truncated).toBe(false);
+    expect(full.steps.every(step => step.depth < full.maxDepth)).toBe(true);
+  });
+});
