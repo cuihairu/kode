@@ -48,6 +48,6 @@
 
 ## 4. 门禁
 
-`tsc` RC=0；`npm run lint`（`eslint src --ext ts`）RC=0；`tests/defCallChain*.test.ts` + `flowFailureSamples` 5 文件 39 passed；`defCallChainOpenDocument` prove-red 红→还原绿；`test:unit` 全量 **10185 total / 10177 passed / 8 skipped / 0 failed**，3303 套件全 passed（JSON 报告口径；两个整文件 skip 为环境门控——`playerDataCloneMysqlReal` 要 MySQL port、`runtimeCommands` 同类，非本批）；`xvfb-run -a test:demo:editor` **25 passing** RC=0。
+`tsc` RC=0；`npm run lint`（`eslint src --ext ts`）RC=0；`tests/defCallChain*.test.ts` + `flowFailureSamples` 5 文件 39 passed；`defCallChainOpenDocument` prove-red 红→还原绿；`test:unit` 全量 **10185 total / 10177 passed / 8 skipped / 0 failed**，3303 套件全 passed（JSON 报告口径；两个整文件 skip 为环境门控——`playerDataCloneMysqlReal` 要 MySQL port、`runtimeCommands` 同类，非本批）；`xvfb-run -a test:demo:editor` **25 passing** RC=0。与 RUST-002 当轮口径（822 文件 / 10184 例）比对：本次 823 文件 / 10185 例，差值恰为本批新增的 1 个测试文件 1 例，**零消失**（本批曾误记基线为 10225，已更正）。
 
 锚点：`perfCallChainDoc.test.ts` ANCHORS 表**不含** `src/backend/defCallChain.ts`（核过），本批改该行号不触发锁步。
