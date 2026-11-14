@@ -25,7 +25,7 @@ Registration sites are extension.ts line numbers (2026-11-07 真位复核:KODE-A
 
 | Provider | Class definition | Registration | Data sources | Allowed side effects |
 |---|---|---|---|---|
-| KBEngineCompletionProvider | languageProviders/completion.ts:260 | :960 | EntityMappingManager snapshot (def tag/attribute context) + documentStore line snapshots | Cache backfill |
+| KBEngineCompletionProvider | languageProviders/completion.ts:306 | :391 | EntityMappingManager snapshot (def tag/attribute context) + documentStore line snapshots + GlobalDataDictIndex key families (KSEM-DATA-02 shared-data key-position completions with write-source detail) | Cache backfill |
 | KBEngineSignatureHelpProvider | languageProviders/hover.ts:918 | :1006 | EntityMappingManager (def method signatures) | Pure read |
 | KBEngineHoverProvider | languageProviders/hover.ts:71 | :1043 | EntityMappingManager + documentStore line snapshots + hoverMarkdown pure formatting | shadowCompareDefinition shadow report |
 | ServerConfigHoverProvider | serverConfigHover.ts:366 | :233 (activate/languageServices.ts) | buildConfigTreePair resolve-cache trees + CFG-06 source-evidence face (backend/configSourceFace) + CFG-10 modification-impact face (backend/configImpact, computed from the hovered document's live text so unsaved edits refresh) | Pure read (presentation only; never writes the user's config) |

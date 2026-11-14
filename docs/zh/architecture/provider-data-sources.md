@@ -25,7 +25,7 @@
 
 | Provider | 类定义 | 注册位 | 数据源 | 允许副作用 |
 |---|---|---|---|---|
-| KBEngineCompletionProvider | languageProviders.ts:473 | :789 | EntityMappingManager 快照(def 标签/属性语境)+ documentStore 行快照 | 缓存回填 |
+| KBEngineCompletionProvider | languageProviders/completion.ts:306 | :391 | EntityMappingManager 快照(def 标签/属性语境)+ documentStore 行快照 + GlobalDataDictIndex 键族(KSEM-DATA-02 共享数据键位补全,带写点来源) | 缓存回填 |
 | KBEngineSignatureHelpProvider | languageProviders.ts:1264 | :835 | EntityMappingManager(def 方法签名) | 纯读 |
 | KBEngineHoverProvider | languageProviders.ts:697 | :872 | EntityMappingManager + documentStore 行快照 + hoverMarkdown 纯格式化 | shadowCompareDefinition 镜上报 |
 | ServerConfigHoverProvider | serverConfigHover.ts:366 | activate/languageServices.ts:233 | buildConfigTreePair resolve 缓存树 + CFG-06 来源证据面(backend/configSourceFace)+ CFG-10 修改影响面(backend/configImpact,按被悬停文档实文本计算,未保存修改也刷新) | 纯读(只出示数,绝不写用户配置) |
