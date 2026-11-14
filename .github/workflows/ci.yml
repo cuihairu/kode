@@ -221,3 +221,56 @@ jobs:
     - name: 运行 Rust clippy（-D warnings 门禁）
       timeout-minutes: 10
       run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # RUST-028(旧 PERF-011)PR 对比闸:每个 PR 跑与 nightly 发布门同一套 bench
+  # (KODE_PERF_GATE=1),档位取 M(2,000 文件)控制 PR 时长;断言的是
+  # docs/perf/2026-11-04-v02-baseline.md 推导的宽松上界(gateBounds.ts,
+  # 只捕数量级回退,CI runner 实测绿),不是跨机器绝对值对比(PERF-015 禁)。
+  # 本 job 红=基准不过=合并阻塞面;要强制化,请在仓库 Settings→Branches→
+  # protection 把「CI/CD / perf-gate」加入 required status checks(仓库设置
+  # 属主侧操作,workflow 文件无法代设)。
+  perf-gate:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
+
+    steps:
+    - name: Checkout 代码
+      timeout-minutes: 3
+      uses: actions/checkout@v7.0.1
+
+    - name: 安装 pnpm
+      timeout-minutes: 10
+      uses: pnpm/action-setup@v6.1.0
+      # 与 build/nightly 同源:version 由 package.json packageManager 单一来源
+
+    - name: 设置 Node.js
+      timeout-minutes: 5
+      uses: actions/setup-node@v7.1.0
+      with:
+        node-version-file: '.nvmrc'
+        cache: 'pnpm'
+
+    - name: 安装依赖
+      timeout-minutes: 5
+      run: pnpm install --frozen-lockfile
+
+    # bench 直跑 TS(vitest 自转换),无需 compile;资产按档生成到 tmp 后清理。
+    - name: Perf gate (PR comparison against baseline bounds)
+      timeout-minutes: 15
+      run: |
+        KODE_PERF_GATE=1 KODE_PERF_LARGE_FILES=2000 \
+        KODE_PERF_BASELINE_JSON_OUT=docs/perf/perf-baseline-snapshot.json \
+        pnpm exec vitest run --config vitest.bench.config.ts tests/perf/v02Baseline.bench.ts
+
+    # 门红也要把运行文件/快照传出来供归因(if: always())
+    - name: Upload perf run file and snapshot
+      if: always()
+      timeout-minutes: 3
+      uses: actions/upload-artifact@v7.0.2
+      with:
+        name: perf-pr-run
+        path: |
+          docs/perf/v02-baseline-run.txt
+          docs/perf/perf-baseline-snapshot.json
+        if-no-files-found: warn
+        retention-days: 30

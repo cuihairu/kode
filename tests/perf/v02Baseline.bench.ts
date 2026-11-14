@@ -44,6 +44,7 @@ import { EntityMappingManager } from '../../src/entityMapping';
 import { PythonClassIndex } from '../../src/backend/pythonClassIndex';
 import { resetScanRootCache } from '../../src/scanRoots';
 import { resolveGateBounds } from './gateBounds';
+import { buildBaselineSnapshot, serializeBaselineSnapshot } from './perfBaseline';
 
 // RUST-023 存储介质轴:默认 tmpfs(os.tmpdir);KODE_PERF_ASSETS_OUT 可指向
 // 真实磁盘路径,同参数双跑即得 内存盘 vs 机械盘 分组对照。
@@ -543,6 +544,30 @@ describe('KODE-PERF-007 v0.2 最新性能基线(large/multi-root/big-py × 六�
   }, 600000);
 
   afterAll(() => {
+    // RUST-028 自动生成基线:KODE_PERF_BASELINE_JSON_OUT 指定时,把本次运行
+    // recordedMetrics 全量投影成机器可读快照(schema kode-perf-baseline/1)。
+    // 原始记录照旧落 OUT_FILE;快照是它的结构化投影,nightly 上传产物(90 天)。
+    const baselineOut = process.env.KODE_PERF_BASELINE_JSON_OUT;
+    if (baselineOut) {
+      const snapshot = buildBaselineSnapshot(recordedMetrics, {
+        createdAt: new Date().toISOString(),
+        node: process.version,
+        platform: os.platform(),
+        cpus: os.cpus().length,
+        largeFiles: LARGE_FILES
+      });
+      fs.mkdirSync(path.dirname(baselineOut), { recursive: true });
+      fs.writeFileSync(baselineOut, serializeBaselineSnapshot(snapshot));
+      const metricCount = Object.values(snapshot.scenarios).reduce(
+        (sum, bucket) => sum + Object.keys(bucket).length,
+        0
+      );
+      emit(
+        `V02-BASELINE schema=kode-perf-baseline/1 largeFiles=${LARGE_FILES} ` +
+        `scenarios=${Object.keys(snapshot.scenarios).length} metrics=${metricCount} ` +
+        `path=${baselineOut}`
+      );
+    }
     fs.rmSync(ASSETS_OUT, { recursive: true, force: true });
     stubWorkspace.workspaceFolders = [];
   });

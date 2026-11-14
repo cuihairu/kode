@@ -105,8 +105,13 @@ jobs:
         # RUST-027: thresholds overridable via KODE_PERF_BOUND_* (defaults =
         # loose ceilings in tests/perf/gateBounds.ts); the raw metric run file
         # is uploaded below as the nightly baseline report.
+        # RUST-028: KODE_PERF_BASELINE_JSON_OUT additionally emits a
+        # machine-readable snapshot (schema kode-perf-baseline/1) of the same
+        # run; uploaded below with 90-day retention as the trend series.
         run: |
-          KODE_PERF_GATE=1 KODE_PERF_LARGE_FILES=30000 pnpm exec vitest run --config vitest.bench.config.ts tests/perf/v02Baseline.bench.ts
+          KODE_PERF_GATE=1 KODE_PERF_LARGE_FILES=30000 \
+          KODE_PERF_BASELINE_JSON_OUT=docs/perf/perf-baseline-snapshot.json \
+          pnpm exec vitest run --config vitest.bench.config.ts tests/perf/v02Baseline.bench.ts
 
       - name: Upload perf baseline run file
         uses: actions/upload-artifact@v7.0.2
@@ -115,6 +120,14 @@ jobs:
           path: docs/perf/v02-baseline-run.txt
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Upload perf baseline snapshot (machine-readable)
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: perf-baseline-snapshot
+          path: docs/perf/perf-baseline-snapshot.json
+          if-no-files-found: warn
+          retention-days: 90
 
   packages:
     name: Native platform packages
