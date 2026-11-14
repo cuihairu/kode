@@ -171,7 +171,7 @@
 
 依赖：KFLOW-CORE 协议稳定；用户要求为实际流程可读。
 
-- [ ] FLOW-014 （旧 KFLOW-UI-01） [P1] 制作评审用场景样图。验收：以真实调用夹具画泳道、消息和本地函数帧，标出分支/异步/未知；样图中每条边可追溯证据。
+- [x] FLOW-014 （旧 KFLOW-UI-01） [P1] 制作评审用场景样图。验收：以真实调用夹具画泳道、消息和本地函数帧，标出分支/异步/未知；样图中每条边可追溯证据。（2026-11-14 收口 8126ccd7：src/backend/flowReviewSample.ts 评审样图生成核(零 vscode 依赖,消费 FLOW-004/007/008/011/012 面不新造证据)+工件 docs/review/2026-11-14-kflow-014-review-sample.html(自包含离线 HTML,golden 字节锁 FLOW_REVIEW_UPDATE=1 重生成)——选角入场真实夹具 Client→Base→Cell→Client:泳道按角色分列(client/base/cell,角色首现序)+候选帧/远端执行帧文件路径+跨进程发送两段锁步+广播只记发送步+未连接发送(def 缺口)如实+分支候选标注+self.ready 条件+未知边原因码保留+每边 EV 编号可追溯证据表(人读 1 基调用点)；R1/R3 红线=全篇无栈帧/调用栈/堆栈词汇、来源标签恒挂静态可能路径、步序=走查轨迹非执行顺序非时间轴；tests/flowReviewSample.test.ts 11 钉;顺修 FLOW-011 真缺陷=getattr 带字符串实参被整段掩码击落静默消失(getattr(self,'x')() 最常见真实形态;纠偏=结构 token 头+尾 dispatch '(' 须代码域,参数区字符串掩码不否决;flowUnresolvedRetention 补回归钉)；坑=发送步发起帧取 edge.fromNodeId 真实标签(DFS 回溯后游标帧指错)；prove-red×2=getattr 掩码回退 3 红/EV 标注剥离 2 红,还原 cmp 字节一致；门禁 lint 0/tsc 0/unit 806 文件 10028+4skip/xvfb demo 25 RC=0）
 - [ ] FLOW-015 （旧 KFLOW-UI-02） [P1] 实现按角色分组泳道。验收：Client/Base/Cell 和已涉及其他进程按角色分泳道；静态角色不冒充运行中实例，运行实例带组件 ID。
 - [ ] FLOW-016 （旧 KFLOW-UI-03） [P1] 实现本地帧折叠展开。验收：默认展示业务主要路径，展开能看到入口到 helper 的调用树；调用点与声明可分别跳转。
 - [ ] FLOW-017 （旧 KFLOW-UI-04） [P1] 呈现跨进程消息。验收：边显示方法/方向/Arg 类型和来源；异步发送、接收、回调及广播可辨识，避免所有边一个箭头。
