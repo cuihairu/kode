@@ -207,7 +207,7 @@
 - [x] HOT-004 （旧 HR-DEMO-20261111-04） 修复官方预设与执行观察：端口和默认密码对齐引擎 Baseapp 默认值，明确进入 Python、先监听后发送、等待唯一完整执行标记；带 demo observer 时原生 reloadScript+onInit 确认及指纹回执。验收：官方适配仿真 3 项、控制台分片/异常回执用例通过；官方路径不调用 xreload。
 - [x] HOT-005 （旧 HR-DEMO-20261111-05） 补文档与旧审计指向：记录安装/启动日志、GET 状态、手工请求、进程路由、两方案区别及重启/状态迁移边界。验收：`docs/design/demo-hot-reload.md` 与 README 中英入口在库；类型检查/涉及文件 ESLint 通过，热更与模板 50 文件 622 测试通过。
 - [x] HOT-006 （旧 HR-DEMO-20261111-06） 完整真实 KBEngine demo 验收 HTTP/xreload：启动真实 Base/Cell 与游戏角色，修改实体方法和 common 战斗常量，记录更新前后实际游戏行为、两侧日志/回执/指纹和扩展状态；失败、Cell 未启动及同尺寸连续保存不能假成功。前置：同步接收器并重启一次；现有本机二进制链接 Python 3.14，需另测目标 3.7.3 嵌入式引擎，不用纯解释器测试抵扣。（e3ca0c9f;真机通过:实体计时器心跳破空闲 baseapp GIL wedge(/status 28s 死挂→0.125s),更新前 70×dmg=15→热更后 dmg=7+[hot-v2] 活实体不重启生效,回执 applied×2 进程/revision 1..5 单调/digest=sha256 双证,同尺寸三连与 digest 不匹配与 Cell 未启动三负例如实失败;3.7.17≠3.7.3 偏差如实;dbmgr 脏库缺陷一并修进 start;纪实 docs/acceptance-evidence/HOT-006.md）
-- [ ] HOT-007 （旧 HR-DEMO-20261111-07） 完整真实 KBEngine demo 验收官方通道：分别配置 Base/Cell 实际控制台地址/密码，修改现存实体逻辑并记录 reloadScript 后真实行为与 onInit 观察；区分单进程确认和全部署确认，验证结构变化需重启。前置：可运行的 demo/控制台；不以控制台替身回显测试抵扣。
+- [x] HOT-007 （旧 HR-DEMO-20261111-07） 完整真实 KBEngine demo 验收官方通道：分别配置 Base/Cell 实际控制台地址/密码，修改现存实体逻辑并记录 reloadScript 后真实行为与 onInit 观察；区分单进程确认和全部署确认，验证结构变化需重启。前置：可运行的 demo/控制台；不以控制台替身回显测试抵扣。（0d79c1cc;真机通过:telnet 控制台按进程分别配址/密码(base 33300/cell 33301,错密码负例),console official_reload 后活 bots 跑新方法体([hot-v3]×7)+强制死亡走新 onAvatarDead([hot-v3-base][21]→5s RESPAWN 回世界),onInit::isReload:1 回执直观察,回执 applied/revision 单调/digest=sha256;结构面实测:属性新增与新增实体类型单进程 reloadScript 即热接(cell created:2009)不需重启,未 reload 的 baseapp TypeError not found 实证 per-app 通道,全部署一致以重启一次成立(revision 0 空回执 boot-native);不以控制台回显抵扣,行为证据全在 evidence.log;纪实 docs/acceptance-evidence/HOT-007.md）
 
 <a id="kode-bug-audit-20261111"></a>
 
