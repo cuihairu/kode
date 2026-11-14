@@ -343,3 +343,65 @@ describe('deriveDictFormats 作用域诚实', () => {
     expect(fmts([]).size).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 元组值类型(SER-10 JSON 转换面的序列化方向证据;dumps 后 tuple→list)
+// ---------------------------------------------------------------------------
+
+describe('classifyValue 元组面', () => {
+  it('(1, 2) 双元素同质 → tuple{int}', () => {
+    const fmt = asLiteral('d', ['d = {"t": (1, 2)}']);
+    expect(fmt.required.get('t')).toEqual({ kind: 'tuple', element: scalar('int') });
+  });
+
+  it("('a', 'b') → tuple{str}", () => {
+    const fmt = asLiteral('d', ['d = {"t": (\'a\', \'b\')}']);
+    expect(fmt.required.get('t')).toEqual({ kind: 'tuple', element: scalar('str') });
+  });
+
+  it('(1,) 单元素尾逗号 → tuple{int}', () => {
+    const fmt = asLiteral('d', ['d = {"t": (1,)}']);
+    expect(fmt.required.get('t')).toEqual({ kind: 'tuple', element: scalar('int') });
+  });
+
+  it('(1) 纯括号标量 → int 非元组', () => {
+    const fmt = asLiteral('d', ['d = {"t": (1)}']);
+    expect(fmt.required.get('t')).toEqual(scalar('int'));
+  });
+
+  it('(1, "x") 混合元素 → 元素未收敛(element null)', () => {
+    const fmt = asLiteral('d', ['d = {"t": (1, "x")}']);
+    expect(fmt.required.get('t')).toEqual({ kind: 'tuple', element: null });
+  });
+
+  it('嵌套元组递归:((1, 2), (3, 4)) → tuple{tuple{int}}', () => {
+    const fmt = asLiteral('d', ['d = {"t": ((1, 2), (3, 4))}']);
+    expect(fmt.required.get('t')).toEqual({
+      kind: 'tuple',
+      element: { kind: 'tuple', element: scalar('int') }
+    });
+  });
+
+  it('(x for x in xs) 生成器表达式不是元组:嵌套值 unknown', () => {
+    const fmt = asLiteral('d', ['d = {"t": {"inner": (x for x in xs)}}']);
+    const t = fmt.required.get('t');
+    if (!t || t.kind !== 'dict' || t.dict.kind !== 'literal') {
+      throw new Error(`t expected literal dict, got ${t?.kind ?? 'absent'}`);
+    }
+    expect(t.dict.required.get('inner')).toEqual({ kind: 'unknown' });
+  });
+
+  it('顶层生成器值 → 推导式开放宇宙零观测(缺席,既有语义)', () => {
+    expect(fmts(['d = {"t": (x for x in xs)}']).has('d')).toBe(false);
+  });
+
+  it('元组跨写点类型分歧 → unknown', () => {
+    const fmt = asLiteral('d', [
+      'if c:',
+      '    d["t"] = (1, 2)',
+      'else:',
+      '    d["t"] = ("a", "b")'
+    ]);
+    expect(fmt.required.get('t')).toEqual({ kind: 'unknown' });
+  });
+});

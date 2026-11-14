@@ -22,17 +22,20 @@
  *  - 开放结构 = 任意动态写点/展开/推导式/动态键 → kind 'open',
  *    observed 保留已观测键面(宇宙开放但观测证据仍真);
  *  - 值类型面 = 字面量分类:带引号串/int/float/True/False/None/list
- *    (元素类型取首元素,混合/空 → unknown)/嵌套 dict(递归
- *    parseDictPairs,单写点全键必有;** 展开/推导式 → 嵌套 open)/
- *    其余(名字/调用/f 串)→ unknown。
+ *    (元素类型取首元素,混合/空 → unknown)/tuple(SER-10 JSON 转换面
+ *    的序列化方向证据;dumps 后 tuple→list,详见 jsonChainPropagation;
+ *    (1,) /(1, 2) 是元组,(1) 是括号标量,`(... for …)` 生成器表达式
+ *    不是元组 → unknown)/嵌套 dict(递归 parseDictPairs,单写点全键
+ *    必有;** 展开/推导式 → 嵌套 open)/其余(名字/调用/f 串)→ unknown。
  *
  * raw/masked 双行口径:结构判定(def/class/分支行/写点形状)走掩码行,
  * 键串/值字面量内容走原文行(pythonCodeLines 掩码把引号抹成 '_',串值
  * 只在原文可见;matchDictBraces 自带注释剥离)。SER-04/05/06 同构坑。
  *
- * 消费契约:KSEM-SER-10(JSON dumps/loads 链传播)按本模块输出裁结构;
- * 无写点变量不入 map(调用侧缺键即未知);schema 绑定(KSEM-SER-08 设计)
- * 命中时优先 schema,推导只是代码事实侧的证据源。
+ * 消费契约:KSEM-SER-10(JSON dumps/loads 链传播,jsonChainPropagation)
+ * 按本模块输出裁结构;无写点变量不入 map(调用侧缺键即未知);schema
+ * 绑定(KSEM-SER-08 设计)命中时优先 schema,推导只是代码事实侧的
+ * 证据源。
  */
 
 import { pythonCodeLines } from './pythonParser';
@@ -46,6 +49,7 @@ import {
 export type DictValueKind =
   | { kind: 'scalar'; scalar: 'str' | 'int' | 'float' | 'bool' | 'none' }
   | { kind: 'list'; element: DictValueKind | null }
+  | { kind: 'tuple'; element: DictValueKind | null }
   | { kind: 'dict'; dict: DictFormat }
   | { kind: 'unknown' };
 
@@ -491,8 +495,8 @@ function isComprehensionValue(valueText: string): boolean {
   return false;
 }
 
-/** 值字面量分类(原文 valueText;引号完整可见)。 */
-function classifyValue(valueText: string): DictValueKind {
+/** 值字面量分类(原文 valueText;引号完整可见;SER-10 内联字典实参复用)。 */
+export function classifyValue(valueText: string): DictValueKind {
   const v = valueText.trim();
   if (v.length === 0) {
     return { kind: 'unknown' };
@@ -532,6 +536,35 @@ function classifyValue(valueText: string): DictValueKind {
     }
     return { kind: 'list', element: first };
   }
+  if (v[0] === '(') {
+    // 元组 vs 括号表达式:(1,) / (1, 2) 是元组;(1) 只是括号标量,
+    // 递归分类内层;Python 无元组推导式——`(... for …)` 是生成器
+    // 表达式不是元组,诚实 unknown(生成器套列表等同)
+    if (isComprehensionValue(v)) {
+      return { kind: 'unknown' };
+    }
+    const inner = unwrapBracket(v, '(', ')');
+    if (inner === null) {
+      return { kind: 'unknown' };
+    }
+    const items = splitTopLevel(inner);
+    if (items === null) {
+      return { kind: 'unknown' };
+    }
+    if (items.length >= 2) {
+      const firstItem = classifyValue(items[0]);
+      for (const item of items.slice(1)) {
+        if (!sameKind(firstItem, classifyValue(item))) {
+          return { kind: 'tuple', element: null }; // 混合元素 → 未收敛
+        }
+      }
+      return { kind: 'tuple', element: firstItem };
+    }
+    if (inner.trim().endsWith(',')) {
+      return { kind: 'tuple', element: classifyValue(items[0]) }; // 单元素尾逗号
+    }
+    return classifyValue(inner.trim()); // 纯括号表达式:非元组
+  }
   if (v[0] === '{') {
     const inner = unwrapBracket(v, '{', '}');
     if (inner === null || isComprehensionValue(v)) {
@@ -569,7 +602,7 @@ function classifyValue(valueText: string): DictValueKind {
 }
 
 /** 带引号字面量(首尾同引号;转义闭口容忍)。 */
-function isQuotedLiteral(v: string): boolean {
+export function isQuotedLiteral(v: string): boolean {
   const q = v[0];
   if (q !== '\'' && q !== '"') {
     return false;
@@ -661,6 +694,12 @@ function sameKind(a: DictValueKind, b: DictValueKind): boolean {
     return a.scalar === b.scalar;
   }
   if (a.kind === 'list' && b.kind === 'list') {
+    if (a.element === null || b.element === null) {
+      return a.element === b.element;
+    }
+    return sameKind(a.element, b.element);
+  }
+  if (a.kind === 'tuple' && b.kind === 'tuple') {
     if (a.element === null || b.element === null) {
       return a.element === b.element;
     }
