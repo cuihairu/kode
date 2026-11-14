@@ -72,6 +72,7 @@
   "kbengine.command.pythonCallGraph.show.title": "Show Python Call Graph",
   "kbengine.command.flow.show.title": "Show Entity Flow Graph",
   "kbengine.command.flow.openCallGraph.title": "Open Call Graph (G2 swimlanes)",
+  "kbengine.command.flow.openTraceReplay.title": "Open Trace Replay (G3 instance lanes)",
   "kbengine.command.generator.wizard.title": "Create Entity from Wizard",
   "kbengine.command.entity.new.title": "New KBEngine Entity",
   "kbengine.command.generator.formWizard.title": "Create Def Form from Wizard",

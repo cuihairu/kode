@@ -614,6 +614,16 @@ callgraph 模式面板支持：
 - 键盘可用：交互桥元素（跳转/打开图/返回/视图切换/节点）可聚焦，Enter/Space 等效点击；面板文案经 webview locale 设置中英文双语
 - 真实业务流转验收（登录/创建角色入场/一次战斗）：三个场景端到端钉在真实项目资产上（scripts/{base,cell,client}/*.py + entity_defs/*.def）——注册表运行时从真实文件推导（def 沿 `<Parent>` 链、实现沿 owner 链带 inheritedFrom）；诚实面保持诚实：引擎驱动转场（createEntityLocally/giveClientTo）走查如实停在引擎边界（不虚构远端执行帧），getattr 中继接收者与 entities.get 奖励发送保持「未连接」（unknown-receiver），演示工程缺失的客户端实现（onMonsterNear）只立发送步、不虚构执行帧
 
+### `kbengine.flow.openTraceReplay`
+
+- 标题：`Open Trace Replay (G3 instance lanes)`
+- 作用：选择一份已采集的 trace 会话 JSON（`sys-monitoring` 采集器工件，FLOW-024/025 产物），按真实组件实例泳道回放——真实观察到的进程实例、本地栈段与消息流
+- 四条可区分性验收逐一落地：多次相同 RPC 保持两条独立流（各自带 send/receive 事件 seq 锚，不合并）；乱序到达不做跨进程时间排序（泳道与流一律按会话 seq 序；各进程时钟不可比）；广播逐接收者各一条流并全标 `broadcast`；缺失侧以独立「缺失」标记呈现（send-without-receive / receive-without-send），不混入流
+- 本地栈段两类：回调段（message-receive 派发帧落地+其子树，帧按深度缩进）与入口链（未被回调段覆盖的根调用；与回调段重叠处注记、不重复展示）
+- causal 只认关联 ID 相等；ID 不一致保持候选流且原因可见（悬停 reason 行）；绝不按方法名/邻近时间宣称因果
+- 诚实面：未观察到实体 ID 的泳道如实标「实例身份:来源未观察」，不虚构实例；页头带采集器与采样面备注（窗口外未知,不宣称全程轨迹）
+- 零脚本页：`enableScripts: false` + CSP `default-src 'none'`——回放为纯静态文本、无交互桥；导入/串联失败原样报错，绝不打开空面板
+
 ## 代码生成器
 
 ### `kbengine.generator.wizard`

@@ -13,6 +13,7 @@ import { BackgroundWarmupController, WARMUP_SCAN_CONCURRENCY } from '../backend/
 import { EntityDependencyWebView } from '../entityDependencyWebView';
 import { EntityFlowWebView } from '../entityFlowWebView';
 import { FlowSwimlanePanel } from '../flowSwimlanePanel';
+import { TraceReplayPanel } from '../traceReplayPanel';
 import { IndexTaskPriority } from '../backend/indexScheduler';
 import { MonitoringCollector } from '../monitoringCollector';
 import { MonitoringWebView } from '../monitoringWebView';
@@ -322,6 +323,16 @@ export function activateMonitoring(deps: MonitoringDeps): MonitoringShared {
     () => flowSwimlanePanel.show()
   );
   context.subscriptions.push(openCallGraphCommand);
+
+  // KFLOW G3 回放实例级流转面板(FLOW-028):选 trace 会话 JSON → 真实
+  // 组件实例泳道展示本地栈段与消息流(causal/candidate/广播/缺失可区分);
+  // 零脚本静态页。
+  const traceReplayPanel = new TraceReplayPanel();
+  const openTraceReplayCommand = vscode.commands.registerCommand(
+    'kbengine.flow.openTraceReplay',
+    () => traceReplayPanel.show()
+  );
+  context.subscriptions.push(openTraceReplayCommand);
 
   // BG-WARM:门控放行即启动后台预热(与索引机械同一门;纯 Python 工作区零启动)。
   // withProgress Window 位 = 状态栏进度,可取消:取消止步不写完成标记,下次激活

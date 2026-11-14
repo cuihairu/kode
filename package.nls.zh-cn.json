@@ -72,6 +72,7 @@
   "kbengine.command.pythonCallGraph.show.title": "查看 Python 调用图",
   "kbengine.command.flow.show.title": "查看实体流转图",
   "kbengine.command.flow.openCallGraph.title": "打开调用图(G2 泳道)",
+  "kbengine.command.flow.openTraceReplay.title": "打开回放流转图(G3 实例泳道)",
   "kbengine.command.generator.wizard.title": "通过向导创建实体",
   "kbengine.command.entity.new.title": "新建 KBEngine 实体",
   "kbengine.command.generator.formWizard.title": "通过向导创建 Def 形态",

@@ -627,6 +627,16 @@ The flow graph panel supports:
 - Keyboard operable: interactive bridge elements (jump/open/back/view/node) are focusable and respond to Enter/Space as clicks; the panel chrome is fully bilingual via the webview locale setting
 - Real-business-flow acceptance (登录/创建角色入场/一次战斗): the three demo-project scenarios are pinned end-to-end against the real fixture assets (scripts/{base,cell,client}/*.py + entity_defs/*.def) — registries derived at runtime from the real files (def along the `<Parent>` chain, implementations along the owner chain with inheritedFrom); honest faces stay honest: engine-driven transitions (createEntityLocally/giveClientTo) stop the walk at the engine boundary (no fabricated remote-exec frames), getattr-relayed receivers and entities.get reward sends stay 未连接 (unknown-receiver), and the demo's missing client handler (onMonsterNear) keeps only the send step — no fabricated execution frame
 
+### `kbengine.flow.openTraceReplay`
+
+- Title: `Open Trace Replay (G3 instance lanes)`
+- Purpose: pick a captured trace session JSON (the `sys-monitoring` collector artifact, FLOW-024/025) and replay it as per-instance swimlanes — real observed process instances, their local stack segments, and message flows
+- The replay distinguishes the four acceptance cases: repeated identical RPCs stay separate flows (each anchored by its own send/receive event seq), out-of-order arrivals never get cross-process time sorting (lanes and flows order by session seq; per-process clocks are not comparable), broadcasts fan out one flow per receiver (each marked `broadcast`), and missing sides show as distinct 缺失 markers (send-without-receive / receive-without-send) instead of being merged into flows
+- Local stack segments come in two kinds: 回调段 (callback segment — the dispatch frame landed from a message receive plus its subtree, frames indented by depth) and 入口链 (entry chain — root calls not covered by any callback segment; overlap with callback segments is annotated, not duplicated)
+- Causal links only come from matching correlation IDs; ID mismatches stay candidate flows with the reason visible (hover the reason line); no method-name or time-proximity pairing is ever claimed as causal
+- Honesty faces: lanes with no observed entity IDs keep 实例身份:来源未观察 instead of fabricating instances; the header carries the collector kind and the sample-face note (窗口外未知,不宣称全程轨迹)
+- Zero-script page: `enableScripts: false` and CSP `default-src 'none'` — the replay is fully static text, no interaction bridge; import or correlation failures show the raw error and never open an empty panel
+
 ### `kbengine.quickActions.runByName`
 
 - Title: `Run Quick Action By Name`

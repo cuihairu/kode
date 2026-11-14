@@ -102,6 +102,7 @@
     "onCommand:kbengine.pythonCallGraph.show",
     "onCommand:kbengine.flow.show",
     "onCommand:kbengine.flow.openCallGraph",
+    "onCommand:kbengine.flow.openTraceReplay",
     "onCommand:kbengine.generator.wizard",
     "onCommand:kbengine.generator.formWizard",
     "onCommand:kbengine.project.import",
@@ -686,6 +687,11 @@
         "command": "kbengine.flow.openCallGraph",
         "title": "%kbengine.command.flow.openCallGraph.title%",
         "icon": "$(graph)"
+      },
+      {
+        "command": "kbengine.flow.openTraceReplay",
+        "title": "%kbengine.command.flow.openTraceReplay.title%",
+        "icon": "$(vm-connect)"
       },
       {
         "command": "kbengine.generator.wizard",
