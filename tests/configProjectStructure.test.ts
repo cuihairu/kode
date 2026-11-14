@@ -254,3 +254,52 @@ describe('KSEM-CFG-08 project config structure', () => {
     expect(out.entries).toEqual([]);
   });
 });
+
+// KSEM-CFG-10 加宽面:pathReads 路径级读取点(与 entries 的 glob 聚合
+// readers 区分:改单个 json 文件的影响只列读它的点)。
+describe('KSEM-CFG-08 pathReads(path-level readers, CFG-10 消费)', () => {
+  it('covered reads are registered per path with sources; uncovered reads stay out', () => {
+    const out = run([
+      {
+        file: 'a.py',
+        text: "import json\nc1 = json.loads('res/guild/g1.json')\nc2 = json.loads('res/guild/g2.json')"
+      },
+      { file: 'b.py', text: "import json\nx = json.load(open('res/world/w1.json'))" }
+    ]);
+    expect(out.pathReads).toEqual([
+      {
+        path: 'res/guild/g1.json',
+        loader: 'json.loads',
+        sources: [{ file: 'a.py', line: 1 }]
+      },
+      {
+        path: 'res/guild/g2.json',
+        loader: 'json.loads',
+        sources: [{ file: 'a.py', line: 2 }]
+      },
+      {
+        path: 'res/world/w1.json',
+        loader: 'json.load',
+        sources: [{ file: 'b.py', line: 1 }]
+      }
+    ]);
+    expect(out.uncoveredReads).toEqual([]);
+  });
+
+  it('uncovered reads are not path evidence (zero claim stays in uncoveredReads)', () => {
+    const out = run([
+      { file: 'a.py', text: "import json\nx = json.loads('res/other/x.json')" }
+    ]);
+    expect(out.pathReads).toEqual([]);
+    expect(out.uncoveredReads).toHaveLength(1);
+  });
+
+  it('schema=null makes no path-level claim at all', () => {
+    const out = run(
+      [{ file: 'a.py', text: "import json\ncfg = json.loads('res/guild/g1.json')" }],
+      null
+    );
+    expect(out.pathReads).toEqual([]);
+    expect(out.uncoveredReads).toEqual([]);
+  });
+});

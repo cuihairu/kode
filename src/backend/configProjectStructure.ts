@@ -106,6 +106,14 @@ export interface ProjectConfigStructure {
     loader: 'json.loads' | 'json.load';
     sources: ConfigStructureSource[];
   }>;
+  /** 已覆盖具体路径的读取点(命中绑定 glob 的读取,按路径逐条;entries 的
+   * readers 是 glob 聚合面,具体路径的读取点要路径级证据——CFG-10 键影响
+   * 面消费:改一个 json 文件的影响=只列读它的点,不夸大到同 glob 全体) */
+  pathReads: ReadonlyArray<{
+    path: string;
+    loader: 'json.loads' | 'json.load';
+    sources: ConfigStructureSource[];
+  }>;
 }
 
 /** 代码内路径读取点(收集期中间面)。 */
@@ -331,6 +339,11 @@ export function deriveProjectConfigStructure(
     loader: 'json.loads' | 'json.load';
     sources: ConfigStructureSource[];
   }> = [];
+  const pathReads: Array<{
+    path: string;
+    loader: 'json.loads' | 'json.load';
+    sources: ConfigStructureSource[];
+  }> = [];
 
   // ── 显式 schema 优先:绑定 glob → 条目(跨 loader 表 type 分歧 → 开放)
   if (schema !== null) {
@@ -419,6 +432,9 @@ export function deriveProjectConfigStructure(
       uncoveredReads.push({ path, loader, sources });
       continue;
     }
+    // 已覆盖路径:路径级读取点登记(区别于 entries 的 glob 聚合 readers;
+    // CFG-10 键影响面按具体路径取读取点)
+    pathReads.push({ path, loader, sources });
     const distinctTypes = [...new Set(matches.map((m) => m.typeId))];
     if (distinctTypes.length > 1) {
       // CFG-07 类型面在此静默双 null;CFG-08 显式报出并给来源
@@ -475,5 +491,8 @@ export function deriveProjectConfigStructure(
 
   const rank = (e: ConfigStructureEntry): number => (e.tier === 'explicit-schema' ? 0 : 1);
   entries.sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key));
-  return { entries, pathConflicts, uncoveredReads };
+  pathReads.sort(
+    (a, b) => a.path.localeCompare(b.path) || a.loader.localeCompare(b.loader)
+  );
+  return { entries, pathConflicts, uncoveredReads, pathReads };
 }

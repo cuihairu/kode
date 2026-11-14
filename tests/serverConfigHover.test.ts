@@ -4,9 +4,11 @@ import {
   SERVER_CONFIG_FIELD_DOCS_EN,
   SERVER_CONFIG_SELECTOR,
   ServerConfigHoverProvider,
+  configImpactForHover,
   provideServerConfigHover,
   serverConfigFieldDoc
 } from '../src/serverConfigHover';
+import { parseConfigXml } from '../src/serverConfigFallbackCore';
 import { configurationOverrides, makeTextDocument, Position } from './helpers/vscodeStub';
 
 // 元件 kbengine.xml / 引擎 kbengine_defaults.xml 字段悬浮文档(批112 用户令):
@@ -195,5 +197,123 @@ describe('hover 文案语言面(IDE-I18N-002)', () => {
     // 两语言面皆未登记 → undefined → 悬停面交回既有体系(null)
     expect(serverConfigFieldDoc('unregistered.key', 'unknown', 'en')).toBeUndefined();
     expect(serverConfigFieldDoc('unregistered.key', 'unknown', 'zh-cn')).toBeUndefined();
+  });
+});
+
+// KSEM-CFG-10 修改影响块(联动配置修改影响):受影响模块/默认回退/读取点,
+// 只读示数零写入;修改未保存内容也刷新(被悬停文档=配置文件本身时,实文本
+// 现解析顶替盘树——悬停面拿文档实文本算,不读盘)。pairOverride 注入盘树,
+// 钉「未保存实文本 ≠ 盘树」的分离样本。
+describe('KSEM-CFG-10 configImpactForHover(修改影响块/未保存也刷新)', () => {
+  beforeEach(() => {
+    configurationOverrides.set('kbengine', { 'hover.language': 'zh-cn' });
+  });
+  afterEach(() => {
+    configurationOverrides.delete('kbengine');
+  });
+
+  const defaultsDocText = (port: string) =>
+    [
+      '<root>',
+      '  <dbmgr>',
+      '    <telnet_service>',
+      `      <port>${port}</port>`,
+      '      <password>pwd123456</password>',
+      '    </telnet_service>',
+      '  </dbmgr>',
+      '</root>'
+    ].join('\n');
+
+  const hoverOn = (doc: ReturnType<typeof makeTextDocument>, line: number, needle: string) => {
+    // 路径解析口径(CFG-06 同款):光标落在标签名内部才解析出该标签的完整
+    // 路径;恰好 '<' 或首字符处落父路径/null,不悬停语义要锚的名字面
+    const character = doc.lineAt(line).text.indexOf(needle) + 3;
+    return configImpactForHover(
+      doc as never,
+      new Position(line, character),
+      pairOverrideDefaults()
+    );
+  };
+
+  /** 盘树:telnet 端口 32000(与实文本编辑值分离) */
+  const pairOverrideDefaults = () => {
+    const defaultsTree = parseConfigXml(defaultsDocText('32000'));
+    const customTree = parseConfigXml('<root>\n  <baseapp>\n  </baseapp>\n</root>');
+    return {
+      customTree,
+      defaultsTree,
+      customPath: '/proj/kbengine.xml',
+      defaultsPath: '/proj/kbengine_defaults.xml'
+    };
+  };
+
+  it('未保存 defaults 实文本生效:悬停文档就是 defaults 文件时,回退值取实文本(非盘树)', () => {
+    // 实文本 31999 ≠ 盘树 32000:块出 31999 证明未保存内容也刷新
+    const doc = makeTextDocument(defaultsDocText('31999'), {
+      fileName: '/proj/kbengine_defaults.xml',
+      languageId: 'xml'
+    });
+    const block = hoverOn(doc, 3, '<port');
+    expect(block).not.toBeNull();
+    expect(block).toContain('`31999`');
+    expect(block).not.toContain('`32000`');
+    expect(block).toContain('受影响模块:`dbmgr`');
+  });
+
+  it('未保存 custom 实文本生效:仅元件键只存在于实文本(盘树无此路径仍能出块)', () => {
+    // 盘 custom 树无 customThing,defaults 亦无;实文本有 → 出块靠实文本顶替
+    const doc = makeTextDocument(
+      [
+        '<root>',
+        '  <baseapp>',
+        '    <customThing>7</customThing>',
+        '  </baseapp>',
+        '</root>'
+      ].join('\n'),
+      { fileName: '/proj/kbengine.xml', languageId: 'xml' }
+    );
+    const block = hoverOn(doc, 2, '<customThing');
+    expect(block).not.toBeNull();
+    expect(block).toContain('无引擎默认');
+  });
+
+  it('非配置文件本身:用 pair 盘树(实文本值不顶替)', () => {
+    // 文档 uri ≠ pair 两路径:块取盘树 32000,实文本 12345 不顶替
+    const doc = makeTextDocument(defaultsDocText('12345'), {
+      fileName: '/other/kbengine.xml',
+      languageId: 'xml'
+    });
+    const block = hoverOn(doc, 3, '<port');
+    expect(block).not.toBeNull();
+    expect(block).toContain('`32000`');
+    expect(block).not.toContain('`12345`');
+  });
+
+  it('敏感回退值只出脱敏形态', () => {
+    const doc = makeTextDocument(defaultsDocText('32000'), {
+      fileName: '/proj/kbengine_defaults.xml',
+      languageId: 'xml'
+    });
+    const block = hoverOn(doc, 4, '<password');
+    expect(block).not.toBeNull();
+    expect(block).not.toContain('pwd123456');
+    expect(block).toContain('p***');
+  });
+
+  it('provideServerConfigHover 追加影响块(静态文案+证据块+影响块三段合一)', () => {
+    // 树可得性由 pairOverride 之外面承担:纯替身环境盘树为 null → 静默零追加,
+    // 既有断言(悬停值=纯文案)已锁此口径;此处锁追加次序面的可组合性
+    const doc = makeTextDocument(defaultsDocText('32000'), {
+      fileName: '/proj/kbengine.xml',
+      languageId: 'xml'
+    });
+    const standalone = configImpactForHover(
+      doc as never,
+      new Position(3, doc.lineAt(3).text.indexOf('<port') + 3),
+      pairOverrideDefaults()
+    );
+    expect(standalone).not.toBeNull();
+    expect(standalone).toContain('---');
+    expect(standalone).toContain('修改影响');
   });
 });

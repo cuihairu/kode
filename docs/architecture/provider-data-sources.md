@@ -28,7 +28,7 @@ Registration sites are extension.ts line numbers (2026-11-07 真位复核:KODE-A
 | KBEngineCompletionProvider | languageProviders/completion.ts:260 | :960 | EntityMappingManager snapshot (def tag/attribute context) + documentStore line snapshots | Cache backfill |
 | KBEngineSignatureHelpProvider | languageProviders/hover.ts:918 | :1006 | EntityMappingManager (def method signatures) | Pure read |
 | KBEngineHoverProvider | languageProviders/hover.ts:71 | :1043 | EntityMappingManager + documentStore line snapshots + hoverMarkdown pure formatting | shadowCompareDefinition shadow report |
-| ServerConfigHoverProvider | serverConfigHover.ts:151 | :906 | kbengine.xml merged tree synthesized by serverConfigMerge | Pure read |
+| ServerConfigHoverProvider | serverConfigHover.ts:366 | :233 (activate/languageServices.ts) | buildConfigTreePair resolve-cache trees + CFG-06 source-evidence face (backend/configSourceFace) + CFG-10 modification-impact face (backend/configImpact, computed from the hovered document's live text so unsaved edits refresh) | Pure read (presentation only; never writes the user's config) |
 | StartupScriptHoverProvider | kbengineStartupScript.ts:409 | :916 | Line-level plain-text token scan (CLI `--args` + `$VAR`/`VAR=` env vars, KBEXP-1) | Pure read |
 | KBEngineDefinitionProvider | languageProviders/navigation.ts:15 | :1101 | EntityMappingManager → SemanticIndex snapshot (no repo-wide wait) | Pure read |
 | PythonDefinitionProvider | languageProviders/pythonDefinition.ts:237 | :1159 | EntityMappingManager + PythonClassIndex (classes/bases/methods/mro/compositionRoots five axes) | ensureScanned background completion enqueue + shadowObserveDefDocument shadow observation |

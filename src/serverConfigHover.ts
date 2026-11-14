@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
 import { getHoverLanguage, HoverLanguage } from './hoverLocale';
 import { configPathAtText, configSourceInfo, renderSourceEvidenceBlock } from './backend/configSourceFace';
-import { buildConfigTreePair } from './serverConfigMerge';
+import { computeKeyImpact, renderImpactBlock } from './backend/configImpact';
+import { buildConfigTreePair, type ConfigTreePair } from './serverConfigMerge';
 import { prepareConfigAnalysis } from './configCompletionProvider';
+import { parseConfigXml } from './serverConfigFallbackCore';
 
 /**
  * 元件 kbengine.xml / 引擎 kbengine_defaults.xml 字段悬浮文档(批112 用户令:
@@ -281,6 +283,12 @@ export function provideServerConfigHover(
   if (evidence !== null) {
     markdown.appendMarkdown(`\n\n${evidence}`);
   }
+  // KSEM-CFG-10:修改影响块(受影响模块/默认回退/读取点;只读示数,
+  // 零写入面;树不可得/路径不存在时静默不追加)
+  const impact = configImpactForHover(document, position);
+  if (impact !== null) {
+    markdown.appendMarkdown(`\n\n${impact}`);
+  }
   return new vscode.Hover(markdown);
 }
 
@@ -306,6 +314,52 @@ export function sourceEvidenceForHover(
   }
   const info = configSourceInfo(path, pair.customTree, pair.defaultsTree, extraction);
   return renderSourceEvidenceBlock(info, getHoverLanguage() === 'en' ? 'en' : 'zh');
+}
+
+/**
+ * KSEM-CFG-10:修改影响块装配(文档+位置→纯核心)。构造零写入:只读树、
+ * 只产出示数据。**修改未保存内容也刷新**:被悬停文档若是 custom/defaults
+ * 配置文件本身,以其实文本现解析顶替盘上缓存树(盘树不含未保存编辑),
+ * 默认回退/受影响模块随文档当前内容实时变化;其他文档不顶替(读别的
+ * 文件的盘树是正确语义,不猜工作区外文本)。构建失败/路径解析不出 →
+ * null(既有静态文案面不受影响)。
+ */
+export function configImpactForHover(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  pairOverride?: ConfigTreePair
+): string | null {
+  const path = configPathAtText(document.getText(), document.offsetAt(position));
+  if (path === null) {
+    return null;
+  }
+  const pair = pairOverride ?? buildConfigTreePair();
+  if (pair.customTree === null && pair.defaultsTree === null) {
+    return null;
+  }
+  let customTree = pair.customTree;
+  let defaultsTree = pair.defaultsTree;
+  // 未保存内容也刷新:被悬停文档是配置文件本身 → 实文本现解析顶替盘树
+  const docPath = document.uri.fsPath;
+  const live = parseConfigXml(document.getText());
+  if (live !== null) {
+    if (pair.customPath !== null && docPath === pair.customPath) {
+      customTree = live;
+    }
+    if (pair.defaultsPath !== null && docPath === pair.defaultsPath) {
+      defaultsTree = live;
+    }
+  }
+  const impact = computeKeyImpact({
+    path,
+    face: 'engine-xml',
+    customTree,
+    defaultsTree
+  });
+  if (impact === null) {
+    return null;
+  }
+  return renderImpactBlock(impact, getHoverLanguage() === 'en' ? 'en' : 'zh');
 }
 
 /** 悬停提供者(随扩展装配注册,dispose 挂订阅链) */
