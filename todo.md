@@ -138,7 +138,7 @@
 
 依赖：BAS + STRUCT；承接已有 globalDataIndex。
 
-- [ ] SEM-042 （旧 KSEM-DATA-01） [P2] 复核共享数据现有接线。验收：核实 globalData/baseAppData/cellAppData 的引用/跳转/类型消费和工程隔离；已有功能只记录差距不重复实施。
+- [x] SEM-042 （旧 KSEM-DATA-01） [P2] 复核共享数据现有接线。验收：核实 globalData/baseAppData/cellAppData 的引用/跳转/类型消费和工程隔离；已有功能只记录差距不重复实施。（2026-11-14 收口 feat 7e3794e6:9 例审计钉 zero 生产码改动——装配面单例四处消费(coreServices:65→definition/hover/inlay/references)/开关面默认开+代际拦截/引用跳转含自身读点/类型消费多写者 union int|str/工程隔离双根不互链+三字典键空间不相混;差距账七项记录在案——无补全面(→SEM-043)/del 归读点无删除态·get default 丢弃·进程域不收窄(→SEM-045)/hover 文案中文硬编码无 l10n/多写者来源说明未做(→SEM-044)/静态常量真实绑定未做(→SEM-043);prove-red 不适用=零生产码,断言即当前真值;docs/review/2026-11-14-ksem-data-01-audit.md)）
 - [ ] SEM-043 （旧 KSEM-DATA-02） [P2] 补共享数据键补全。验收：按工程和共享数据域列 key 与写入来源，静态常量按真实绑定解析，不把同名标识符恒当同一键值。
 - [ ] SEM-044 （旧 KSEM-DATA-03） [P2] 合并多写者类型。验收：不同写入点类型形成联合及来源说明；只有声明契约冲突才报错，正常多态不误报。
 - [ ] SEM-045 （旧 KSEM-DATA-04） [P2] 表达异步可用性。验收：共享数据发现写点不代表读时已存在；get/default、删除及进程域对类型和提示产生影响。
