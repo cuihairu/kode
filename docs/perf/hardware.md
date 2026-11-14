@@ -21,12 +21,12 @@
 
 ## 2. 已知测量偏差(PERF-015 执行细则)
 
-1. 单轮机械盘抖动大:U4 全量口径同代码两轮 130.3s / 89.9s(docs/perf/2026-final-report.md §5);**判定回归必须多轮取中位,bench `--repeat`/置信区间待建**。
+1. 单轮机械盘抖动大:U4 全量口径同代码两轮 130.3s / 89.9s(docs/perf/2026-final-report.md §5);**判定回归必须多轮取中位;RUST-032(2026-11-15)已建 `KODE_PERF_REPEAT`(1-10,>1 时每场景整跑 R 遍、每指标取代表值落账,场景收尾汇 V02-REPEAT 行 median/p05/p95/min/max/spreadPct,纯核 tests/perf/repeatStats.ts nearest-rank 与主 bench 百分位同源;M 档 REPEAT=3 实测 34 指标×3 场景 102 行,散布 0-20% 区间)。散布只观测不做门禁硬闸;跨机器绝对比较依旧禁止。**
 2. 全部 PR1-7 数字为服务层(fake-vscode + 真实索引),不含真实 VS Code UI 序列化、provider 调度、extension host 事件循环延迟——端到端口径待测(基线 §5、final-report §6#6)。
 3. 进程内存(RSS 峰值)从未记录——待测(final-report §6#2)。
 4. 冷/热盘缓存未分离量测——待测。
 5. Windows/macOS、网络文件系统、Remote 场景:待测(ARCH-010 范围)。
-6. RUST-027(2026-11-15):nightly perf 门阈值可经 `KODE_PERF_BOUND_*` 环境变量覆盖(缺省=宽松上界表 tests/perf/gateBounds.ts;prove-red=紧界 0.001ms 三场景全红);nightly 上传基准运行文件 perf-baseline-run 产物(30 天)。噪声控制现状=宽松上界(只捕数量级回退)+暖态 n=100 采样+共享 runner 抖动余量 7-11x;多轮取中位(--repeat)仍待建(归 RUST-032)。
+6. RUST-027(2026-11-15):nightly perf 门阈值可经 `KODE_PERF_BOUND_*` 环境变量覆盖(缺省=宽松上界表 tests/perf/gateBounds.ts;prove-red=紧界 0.001ms 三场景全红);nightly 上传基准运行文件 perf-baseline-run 产物(30 天)。噪声控制现状=宽松上界(只捕数量级回退)+暖态 n=100 采样+共享 runner 抖动余量 7-11x;多轮取中位已建(RUST-032 `KODE_PERF_REPEAT`,V02-REPEAT 置信行;散布只观测不硬闸)。
 7. RUST-028(2026-11-15)基线管道三面:①基线自动生成——bench 经 `KODE_PERF_BASELINE_JSON_OUT` 把当次 recordedMetrics 投影成机器可读快照(schema kode-perf-baseline/1,tests/perf/perfBaseline.ts 纯函数,M 档实测 3 场景 102 指标),nightly 上传 perf-baseline-snapshot 产物(90 天滚动=趋势序列);原始记录仍 v02-baseline-run.txt(提交在库追加制,已补 M 档 CI 档位记录)。②PR 对比闸——ci.yml 新 perf-gate job,每 PR 跑同一 bench(M 档 2000 文件,KODE_PERF_GATE=1),断言 2026-11-04 基线推导的宽松上界(CI runner 实测绿的同套界),红=基准不过=合并阻塞面;强制化需在仓库 Settings→Branches→protection 把「CI/CD / perf-gate」加入 required status checks(属主侧设置,workflow 无法代设)。③趋势纪律——只有同机同档可比(PERF-015 禁跨机器绝对值比较):PR 闸对比的是上界而非跨机 delta;本机 L 档记录(2026-11-04 起)与 CI M 档记录分轨,互不换算。
 
 ## 3. Fixtures 规格(PERF-002/003/004 现状)
