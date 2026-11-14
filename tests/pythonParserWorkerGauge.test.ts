@@ -149,6 +149,17 @@ describe('解析 worker 队列与字节占用(IDE-REV-030)', () => {
     expect(over.queuedBytes).toBeLessThanOrEqual(over.maxQueuedBytes);
     expect(over.budgetRejects).toBe(18);
     expect(over.peakQueuedBytes).toBe(over.queuedBytes);
+    // RUST-031:降级台账按文件落账——被拒的是文件 f31..f39(各首份+次份两笔),
+    // 台账只记这 9 个文件,bytes=最近一次被拒源码串大小
+    expect(over.degradedFiles).toHaveLength(9);
+    const degradedPaths = over.degradedFiles.map(entry => entry.filePath);
+    expect(degradedPaths).toContain('/over/f31.py');
+    expect(degradedPaths).toContain('/over/f39.py');
+    expect(degradedPaths).not.toContain('/over/f30.py');
+    for (const entry of over.degradedFiles) {
+      expect(entry.rejects).toBe(2);
+      expect(entry.bytes).toBe(bigContent.length);
+    }
 
     // 18 笔拒绝立即结算(可解释错误);在途/待派发部分回包后结算
     drainPosted(host);
@@ -162,6 +173,11 @@ describe('解析 worker 队列与字节占用(IDE-REV-030)', () => {
     expect(recoveredAll.postedBytes).toBe(0);
     expect(recoveredAll.budgetRejects).toBe(18);
     expect(recoveredAll.peakQueuedBytes).toBe(31 * bigContent.length);
+    // 台账与拒绝计数同语义:恢复后保留,供现场报告辨认哪些文件能力受限
+    expect(recoveredAll.degradedFiles).toHaveLength(9);
+    // 重置清台账(测试隔离口径与计数一致)
+    host.resetPythonParserWorkerGaugeCountersForTests();
+    expect(host.getPythonParserWorkerGauge().degradedFiles).toHaveLength(0);
   });
 
   it('恢复可辨认:排干后 queued/字节归零,峰值与拒绝计数保留(积压史不抹)', async () => {

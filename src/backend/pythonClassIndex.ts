@@ -165,6 +165,37 @@ const SCAN_CHUNK_SIZE = 16;
 /** 分块失败遗留文件的待补解析重试上限(永久不可读文件不无限重试) */
 const MAX_SCAN_RETRY_ATTEMPTS = 3;
 
+/**
+ * RUST-031:超大文件/积压超预算的降级明示面。解析积压字节预算(IDE-RES-002,
+ * host 侧 8MiB)拒绝属能力限制而非故障——该文件本次不入索引,悬停/定义/补全
+ * 可能缺失或不更新,必须让用户看得见,不能只落在默认关闭的日志里。会话内
+ * 每文件只警示一次(有界 50,超出逐出最旧);worker 停用等非能力限制错误
+ * (关窗阶段 dispose 全量拒绝)不警示,零噪声。
+ */
+const DEGRADED_NOTICE_LIMIT = 50;
+const degradedNoticed = new Set<string>();
+const DEGRADED_BUDGET_PREFIX = 'Python parse backlog byte budget exceeded';
+
+/** 测试用:清空降级警示去重表(不影响索引实例本身) */
+export function resetDegradedParseNoticeForTests(): void {
+  degradedNoticed.clear();
+}
+
+function noteDegradedParse(filePath: string, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!message.startsWith(DEGRADED_BUDGET_PREFIX)) { return; }
+  if (degradedNoticed.has(filePath)) { return; }
+  degradedNoticed.add(filePath);
+  if (degradedNoticed.size > DEGRADED_NOTICE_LIMIT) {
+    const oldest = degradedNoticed.values().next().value;
+    if (oldest !== undefined) { degradedNoticed.delete(oldest); }
+  }
+  void vscode.window.showWarningMessage(
+    `KBEngine: ${path.basename(filePath)} 超出解析积压预算,该文件的索引解析已降级`
+    + '(悬停/定义/补全可能缺失或不更新);后续编辑会自动重试。'
+  );
+}
+
 export class PythonClassIndex {
   private fileCache = new Map<string, { version: number; parsed: ParsedPythonFile }>();
   private byName = new Map<string, PythonClassDef[]>();
@@ -1198,9 +1229,11 @@ export class PythonClassIndex {
     const revision = this.revisions.get(document.fileName)!;
     try {
       await this.updateFileResponsive(document.fileName, document.getText(), document.version, revision);
-    } catch {
+    } catch (error) {
       // 解析线程停用/积压字节上限拒绝(IDE-RES-002)等:本次编辑不入索引,
       // 版本号已前进,下一次编辑自然重试同通道;拒绝不当 unhandled rejection 上抛。
+      // 积压超预算属能力限制,额外走用户明示面(RUST-031,每文件一次)。
+      noteDegradedParse(document.fileName, error);
       jumpLog('info', () => `py 解析未入索引(待下次编辑重试): ${document.fileName}`);
     }
   }
@@ -1250,11 +1283,14 @@ export class PythonClassIndex {
       await this.updateFileResponsive(
         document.fileName, document.getText(), document.version ?? -1, revision
       );
-    } catch {
+    } catch (error) {
       this.stagedRequests.delete(document.fileName);
       if (!this.pendingScanRetries.has(document.fileName)) {
         this.pendingScanRetries.set(document.fileName, 1);
       }
+      // 同一能力限制只明示一次(与 onDocumentChanged 共用去重表);只打开
+      // 不编辑的超大文件走此面也能被用户看见。
+      noteDegradedParse(document.fileName, error);
       jumpLog('info', () => `py 异步共享解析未入索引(保留旧索引,已登记待补重试): ${document.fileName}`);
       return null;
     }

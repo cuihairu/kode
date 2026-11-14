@@ -65,6 +65,37 @@ let budgetRejects = 0;
 /** IDE-AUD-022:在途(已派发未回包)源码串字节总量(派发时计,回包/失败冲销) */
 let postedBytes = 0;
 
+/** RUST-031:单文件降级台账项——哪个文件因超预算被拒、最近一次被拒的
+ *  源码串大小、累计被拒笔数。 */
+export interface PythonParseDegradedFile {
+  filePath: string;
+  bytes: number;
+  rejects: number;
+}
+
+/** RUST-031:超预算降级台账(会话内有界,只留最新 DEGRADED_LEDGER_LIMIT 个
+ *  文件;恢复后保留,供状态报告明示「哪些文件能力受限」——budgetRejects
+ *  只有总量,说不出是哪个文件)。 */
+const DEGRADED_LEDGER_LIMIT = 20;
+const degradedFiles = new Map<string, PythonParseDegradedFile>();
+
+/** 记一笔超预算拒绝:计数 +1 并落台账(已知文件只累计,新文件入表,
+ *  超界逐出最旧)。 */
+function noteBudgetReject(filePath: string, bytes: number): void {
+  budgetRejects += 1;
+  const existing = degradedFiles.get(filePath);
+  if (existing) {
+    existing.rejects += 1;
+    existing.bytes = bytes;
+    return;
+  }
+  degradedFiles.set(filePath, { filePath, bytes, rejects: 1 });
+  if (degradedFiles.size > DEGRADED_LEDGER_LIMIT) {
+    const oldest = degradedFiles.keys().next().value;
+    if (oldest !== undefined) { degradedFiles.delete(oldest); }
+  }
+}
+
 function failPending(error: Error): void {
   for (const job of posted.values()) {
     for (const waiter of job.waiters) { waiter.reject(error); }
@@ -98,6 +129,8 @@ export interface PythonParserWorkerGauge {
   peakQueuedBytes: number;
   /** 因超预算被拒的请求累计数 */
   budgetRejects: number;
+  /** RUST-031:超预算降级台账快照(会话内有界,最新在表;恢复后保留) */
+  degradedFiles: PythonParseDegradedFile[];
   /** 在途(已派发未回包)源码串字节总量(AUD-022) */
   postedBytes: number;
   /** 在途任务数硬上限(即 MAX_POSTED_PARSE_JOBS) */
@@ -118,16 +151,18 @@ export function getPythonParserWorkerGauge(): PythonParserWorkerGauge {
     maxQueuedBytes: MAX_QUEUED_PARSE_BYTES,
     peakQueuedBytes,
     budgetRejects,
+    degradedFiles: [...degradedFiles.values()],
     postedBytes,
     maxPostedJobs: MAX_POSTED_PARSE_JOBS,
     maxPostedBytes: MAX_POSTED_PARSE_BYTES
   };
 }
 
-/** 测试用:清峰值/拒绝计数(不影响在途队列本身) */
+/** 测试用:清峰值/拒绝计数与降级台账(不影响在途队列本身) */
 export function resetPythonParserWorkerGaugeCountersForTests(): void {
   peakQueuedBytes = 0;
   budgetRejects = 0;
+  degradedFiles.clear();
 }
 
 /** 测试用:fileQueues 当前条目数(PAR-1/KR-AUD-07 回收验收面) */
@@ -236,7 +271,7 @@ export async function parsePythonFileResponsive(
     const superseded = queue.pendingLatest;
     const freedBytes = superseded ? superseded.content.length : 0;
     if (queuedBytes - freedBytes + content.length > MAX_QUEUED_PARSE_BYTES) {
-      budgetRejects += 1;
+      noteBudgetReject(filePath, content.length);
       return Promise.reject(new Error(
         `Python parse backlog byte budget exceeded (${MAX_QUEUED_PARSE_BYTES} bytes queued)`
       ));
@@ -268,7 +303,7 @@ export async function parsePythonFileResponsive(
     if (queuedBytes > peakQueuedBytes) { peakQueuedBytes = queuedBytes; }
     queue.pendingLatest = job;
   } else {
-    budgetRejects += 1;
+    noteBudgetReject(filePath, content.length);
     return Promise.reject(new Error(
       `Python parse backlog byte budget exceeded (${MAX_QUEUED_PARSE_BYTES} bytes queued)`
     ));

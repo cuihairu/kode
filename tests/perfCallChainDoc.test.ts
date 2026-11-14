@@ -489,11 +489,14 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/backend/diagnosticScheduler.ts', 258, 'flushQueued'],
   ['src/hoverBudget.ts', 59, 'raceWithBudget'],
   ['src/backend/documentStore.ts', 155, 'getDocumentLines'],
-  ['src/backend/pythonClassIndex.ts', 657, 'ensureCompositionRoots'],
-  ['src/backend/pythonClassIndex.ts', 1264, 'resolveClassBase'],
+  // 2026-11-15:RUST-031 降级明示面——pythonClassIndex.ts 模块级降级警示块 +31
+  // (657→688,543 打点注释同段),onDocumentChanged/asyncDocumentParse 两 catch
+  // 注释再 +5(1264→1300,1384→1420,非均匀位移逐段探测)。出处随 baseline 锁步。
+  ['src/backend/pythonClassIndex.ts', 688, 'ensureCompositionRoots'],
+  ['src/backend/pythonClassIndex.ts', 1300, 'resolveClassBase'],
   // 2026-11-07:DEMO-GAME-001 夹具扩容——pythonClassIndex.ts 组合根缓存注释块
   // +8 行(1345 前锚点),1376→1384(出处随 baseline 锁步)
-  ['src/backend/pythonClassIndex.ts', 1384, '①② 两段查询']
+  ['src/backend/pythonClassIndex.ts', 1420, '①② 两段查询']
   // 2026-11-06:KBE-CFG-001..005(2a87d77)工作区配置契约诊断——extension.ts
   // 顶部 import +4(1014 前锚点全 +4),activate 装配块 +136 落在 1432 之后:
   // onDidChangeTextDocument/flushQueued 锚点 +140(2155→2295/2235→2375);
