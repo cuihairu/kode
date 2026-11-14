@@ -45,6 +45,7 @@ import { PythonClassIndex } from '../../src/backend/pythonClassIndex';
 import { resetScanRootCache } from '../../src/scanRoots';
 import { resolveGateBounds } from './gateBounds';
 import { buildBaselineSnapshot, serializeBaselineSnapshot } from './perfBaseline';
+import { repeatStats } from './repeatStats';
 
 // RUST-023 存储介质轴:默认 tmpfs(os.tmpdir);KODE_PERF_ASSETS_OUT 可指向
 // 真实磁盘路径,同参数双跑即得 内存盘 vs 机械盘 分组对照。
@@ -71,6 +72,7 @@ const percentile = (samples: number[], rank: number): number => {
 
 const metric = (name: string, values: number[]): void => {
   recordMetric(name, values, 'ms');
+  noteRepeatSample(name, percentile(values, 0.5));
   emit(
     `V02-METRIC ${name} n=${values.length} ` +
     `p50=${percentile(values, 0.5)}ms p95=${percentile(values, 0.95)}ms ` +
@@ -80,10 +82,54 @@ const metric = (name: string, values: number[]): void => {
 
 const once = (name: string, value: number, unit = 'ms'): void => {
   recordMetric(name, [value], unit);
+  noteRepeatSample(name, value);
   emit(`V02-METRIC ${name} n=1 ${Math.round(value * 100) / 100}${unit}`);
 };
 
 const mb = (bytes: number): number => Math.round((bytes / 1048576) * 100) / 100;
+
+// ---------------- RUST-032 统计置信面(KODE_PERF_REPEAT) ----------------
+
+/** 重复次数:缺省 1(单跑,历史口径不变);>1 时每个场景整跑 R 遍,
+ *  每遍对每个指标取代表值(序列=p50,单值=原值)落账,场景收尾时汇出
+ *  V02-REPEAT 行(median/p05/p95/min/max/spreadPct)。固定基准机纪律下
+ *  主报告引用区间;散布只观测不做门禁硬闸,跨机器绝对比较依旧禁止。 */
+const PERF_REPEAT = Math.max(1, Math.min(10, Number(process.env.KODE_PERF_REPEAT ?? '1')));
+
+/** 每指标每遍一个代表值;场景收尾消费后清段,场景间互不混样 */
+const repeatLedger = new Map<string, number[]>();
+
+const noteRepeatSample = (name: string, value: number): void => {
+  if (PERF_REPEAT <= 1) {
+    return;
+  }
+  let samples = repeatLedger.get(name);
+  if (!samples) {
+    samples = [];
+    repeatLedger.set(name, samples);
+  }
+  samples.push(value);
+};
+
+/** 场景收尾:把该场景全部指标的重复样本汇成置信行并清段 */
+const flushRepeatStats = (scenario: string): void => {
+  if (PERF_REPEAT <= 1) {
+    return;
+  }
+  const prefix = `V02.${scenario}.`;
+  for (const [name, samples] of repeatLedger) {
+    if (!name.startsWith(prefix) || samples.length === 0) {
+      continue;
+    }
+    const stats = repeatStats(samples);
+    emit(
+      `V02-REPEAT ${name} r=${stats.n} median=${stats.median} ` +
+      `p05=${stats.p05} p95=${stats.p95} min=${stats.min} max=${stats.max} ` +
+      `spreadPct=${stats.spreadPct}`
+    );
+    repeatLedger.delete(name);
+  }
+};
 
 // ---------------- RUST-007 发布门槛(KODE_PERF_GATE=1 启用) ----------------
 
@@ -580,7 +626,11 @@ describe('KODE-PERF-007 v0.2 最新性能基线(large/multi-root/big-py × 六�
       'scripts/base/Avatar.py',
       'scripts/entity_defs/Avatar.def'
     );
-    await measureScenario(scenario);
+    for (let r = 1; r <= PERF_REPEAT; r++) {
+      if (PERF_REPEAT > 1) { emit(`V02-REPEAT-BEGIN large-30k repeat=${r}/${PERF_REPEAT}`); }
+      await measureScenario(scenario);
+    }
+    flushRepeatStats('large-30k');
   }, 900000);
 
   it('multi-root:3 独立资产根(同名 Avatar/Inventory)× 六维', async () => {
@@ -592,7 +642,11 @@ describe('KODE-PERF-007 v0.2 最新性能基线(large/multi-root/big-py × 六�
       'scripts/base/Avatar.py',
       'scripts/entity_defs/Avatar.def'
     );
-    await measureScenario(scenario);
+    for (let r = 1; r <= PERF_REPEAT; r++) {
+      if (PERF_REPEAT > 1) { emit(`V02-REPEAT-BEGIN multi-root repeat=${r}/${PERF_REPEAT}`); }
+      await measureScenario(scenario);
+    }
+    flushRepeatStats('multi-root');
   }, 600000);
 
   it('big-py:8000 方法单文件 × 六维(大 Python 文件压力)', async () => {
@@ -603,6 +657,10 @@ describe('KODE-PERF-007 v0.2 最新性能基线(large/multi-root/big-py × 六�
       'scripts/cell/BigEntity.py',
       'scripts/entity_defs/BigEntity.def'
     );
-    await measureScenario(scenario);
+    for (let r = 1; r <= PERF_REPEAT; r++) {
+      if (PERF_REPEAT > 1) { emit(`V02-REPEAT-BEGIN big-py repeat=${r}/${PERF_REPEAT}`); }
+      await measureScenario(scenario);
+    }
+    flushRepeatStats('big-py');
   }, 600000);
 });
