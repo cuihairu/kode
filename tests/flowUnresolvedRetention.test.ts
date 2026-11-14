@@ -46,6 +46,24 @@ describe('FLOW-011 动态分发不静默', () => {
     expect(edge!.unresolvedReason!.detail).toContain('不可静态证明');
   });
 
+  it('getattr 带字符串实参:结构 token 在代码域即立边(参数区字符串掩码不否决)', () => {
+    const result = resolveFlowCallSites({
+      text: [
+        'class Avatar:',
+        '    def fire(self):',
+        "        getattr(self, 'onFire')()"
+      ].join('\n'),
+      filePath: BASE_AVATAR,
+      rootKey: '/ws'
+    });
+    const edge = result.edges.find(e => e.unresolvedReason?.code === 'dynamic-getattr');
+    expect(edge).toBeDefined();
+    expect(edge!.callSite?.line).toBe(2);
+    // getattr 内建本身仍有边:两条未解析边并存,不静默
+    const native = result.edges.find(e => e.unresolvedReason?.code === 'native-function');
+    expect(native).toBeDefined();
+  });
+
   it('getattr 赋值后调用:裸名无绑定如实 third-party-function,不猜目标', () => {
     const result = resolve();
     const edge = result.edges.find(e => e.callSite?.line === 8);

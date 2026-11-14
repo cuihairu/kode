@@ -1085,10 +1085,18 @@ export function resolveFlowCallSites(
 
     // 动态分发:getattr(...)() ——属性名运行期才定,dispatch 目标不可静态证明
     // (裸名臂只给 getattr 本身内建边;dispatch 目标若不显式立边就是静默消失)
+    // 结构 token(getattr 头+尾部 dispatch '(')必须在代码域;参数区的字符串
+    // 掩码不否决——getattr(self, 'name')() 是最常见真实形态,整段 spanIsCode
+    // 会把它静默击落(FLOW-014 夹具抓出)。
     const getattrRegex = /getattr\s*\([^()]*\)\s*\(/g;
     let getattrMatch: RegExpExecArray | null;
     while ((getattrMatch = getattrRegex.exec(lineText)) !== null) {
-      if (!spanIsCode(mask, lineStart + getattrMatch.index, getattrMatch[0].length)) {
+      const headLength = getattrMatch[0].indexOf('(') + 1;
+      const tailStart = lineStart + getattrMatch.index + getattrMatch[0].length - 1;
+      if (
+        !spanIsCode(mask, lineStart + getattrMatch.index, headLength) ||
+        !spanIsCode(mask, tailStart, 1)
+      ) {
         continue;
       }
       const callerId = callerNodeFor(frame);
