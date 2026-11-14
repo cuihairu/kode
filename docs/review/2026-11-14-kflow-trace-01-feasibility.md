@@ -58,7 +58,7 @@
 
 1. **FLOW-023 协议**:每渠道作为独立 `runtime-source` 证据类型建模,必带采集器标识+时间戳+采样率标记(R2);跨进程因果字段留给消息关联 ID 位,**无 ID 时只允许候选关联语义**。
 2. **FLOW-024 首选来源(勘误后口径)**:开发机(3.14.4)实测定案=**sys.monitoring**(A3)——帧顺序/文件行/异常位置/传播四面全可拿;初稿的「setprofile 拿异常位置」不成立(事件集就没有 exception)。引擎目标 3.7.3 无 sys.monitoring(该面 3.12+),届时异常位置走 settrace(7.4x)或 debugpy 停止栈,帧顺序/文件行仍可走 setprofile;按引擎实际版本再定,不预判。py-spy dump 作免停补充;debugpy 停止栈作交互深查。
-3. **FLOW-025 形态预定**:独立开关+有界缓冲+开始/结束/异常/丢弃计数;默认关闭;settrace 不进产品面。
+3. **FLOW-025 形态预定**:独立开关+有界缓冲+开始/结束/异常/丢弃计数;默认关闭;settrace 不进产品面。**(2026-11-14 已交付更新)**:`src/backend/traceCaptureController.ts`(构造即 idle 默认关闭,ingest 拒收;maxEvents 有界缓冲打满只计丢弃;start/stop/fail 记账 startedAtEpochMs/stoppedAtEpochMs/endReason)+ `src/backend/traceCaptureRun.ts`(子进程入口,timeoutMs 到点 kill,产物经 FLOW-024 导入面过红线);真采集端到端测试按解释器能力(≥3.12+sys.monitoring)skipIf。
 4. **红线重申**:任何采样/日志来源都不得在 G3 呈现成完整请求轨迹;因果只走 FLOW-026/027 核实过的关联 ID。
 
 ## 附录:本机实测记录
