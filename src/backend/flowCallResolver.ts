@@ -51,7 +51,22 @@ export interface FlowCallResolverInput {
     module: string,
     name: string
   ) => { filePath: string; line: number } | null;
+  /** 组件槽注册表(def <Components> 段,槽名→组件实体):命中→组件调用边,
+   *  未命中→unknown-receiver 如实(不猜) */
+  componentSlots?: ReadonlyMap<string, FlowComponentSlot>;
 }
+
+export interface FlowComponentSlot {
+  /** 组件实体类型名(def Components 的 type) */
+  entity: string;
+  /** 组件实体所在面(通常 cell) */
+  role: FlowProcessRole;
+  defFile: string;
+  line: number;
+}
+
+/** 广播接收面(cellapp 实体专有 API;baseapp 无此属性) */
+const BROADCAST_RECEIVERS = new Set(['allClients', 'otherClients']);
 
 export interface FlowCallResolverResult {
   nodes: FlowGraphNode[];
@@ -676,8 +691,104 @@ export function resolveFlowCallSites(
       return;
     }
 
-    // ③ 点链(非 self):可证明接收者 / 引擎实体引用角色发送 / 未知
+    // ③ 点链(非 self):广播 / 组件槽 / 可证明接收者 / 引擎实体引用角色发送 / 未知
     if (args.chain.length >= 1) {
+      // 广播接收面:self.allClients.X / self.otherClients.X(三段链)——
+      // 受众是运行期动态集合(AOI),不虚构固定接收实例
+      if (
+        args.chain.length === 2 &&
+        args.chain[0] === 'self' &&
+        BROADCAST_RECEIVERS.has(args.chain[1])
+      ) {
+        const audienceDetail =
+          args.chain[1] === 'allClients'
+            ? 'allClients:AOI 范围内全部持有客户端的实体(cellapp AOI 受众)'
+            : 'otherClients:AOI 内除指定实体(id 入参)外的全部持有客户端';
+        const faceValidBroadcast = face !== 'base';
+        if (!faceValidBroadcast) {
+          const target = unresolvedNodeFor({
+            code: 'face-invalid-receiver',
+            detail: `${args.chain[1]} 仅 cellapp 实体有(cellapp/entity.cpp CLIENT_VIA_BASE 面);baseapp 无此属性,运行期必 AttributeError`,
+            role: 'client',
+            nameHint: `self.${args.chain[1]}.${args.callee}`
+          });
+          edges.push(flowGraphEdge({
+            fromNodeId: callerId,
+            toNodeId: target,
+            callSite,
+            direction: { fromRole: callerRole, toRole: 'client', kind: 'cross-process' },
+            syncAsync: 'unknown',
+            messageKind: 'unresolved',
+            condition,
+            evidence: syntaxEvidence,
+            unresolvedReason: unresolved(
+              'face-invalid-receiver',
+              `${args.chain[1]} 仅 cellapp 有;base 面非法`
+            )
+          }));
+          return;
+        }
+        const target = pushNode(flowGraphNode({
+          rootKey,
+          role: 'client',
+          kind: 'rpc-declaration',
+          fn: { name: args.callee, filePath: 'pending-def:client', signature: '' },
+          // 契约红线:广播不虚构固定接收实例——候选集保持空
+          label: `广播声明:${args.callee}(client ClientMethods;${audienceDetail})`
+        }));
+        edges.push(flowGraphEdge({
+          fromNodeId: callerId,
+          toNodeId: target,
+          callSite,
+          direction: { fromRole: callerRole, toRole: 'client', kind: 'cross-process' },
+          syncAsync: 'async-send',
+          messageKind: 'broadcast',
+          condition,
+          evidence: {
+            type: 'syntax-anchor',
+            detail: `${calleeRef}(${audienceDetail})`
+          }
+        }));
+        return;
+      }
+
+      // 组件槽调用:self.<slot>.X(注册表命中→组件实体发送边,带组件槽候选;
+      // 未命中走通用 unknown-receiver,不猜)
+      if (
+        args.chain.length === 2 &&
+        args.chain[0] === 'self' &&
+        !ROLE_KEYWORDS.has(args.chain[1]) &&
+        input.componentSlots?.has(args.chain[1])
+      ) {
+        const slot = input.componentSlots.get(args.chain[1]);
+        if (slot) {
+          const target = pushNode(flowGraphNode({
+            rootKey,
+            role: slot.role,
+            kind: 'rpc-declaration',
+            entity: { name: slot.entity, defFile: slot.defFile },
+            fn: { name: args.callee, filePath: `pending-def:${slot.role}`, signature: '' },
+            instanceCandidates: [{ kind: 'component-slot', identity: args.chain[1] }],
+            declaration: { file: slot.defFile, line: slot.line, character: 0 },
+            label: `组件调用:${slot.entity}.${args.callee}(槽 ${args.chain[1]})`
+          }));
+          edges.push(flowGraphEdge({
+            fromNodeId: callerId,
+            toNodeId: target,
+            callSite,
+            direction: { fromRole: callerRole, toRole: slot.role, kind: 'cross-process' },
+            syncAsync: 'async-send',
+            messageKind: 'rpc',
+            condition,
+            evidence: {
+              type: 'syntax-anchor',
+              detail: `${calleeRef}(组件槽 ${args.chain[1]}→${slot.entity})`
+            }
+          }));
+          return;
+        }
+      }
+
       // 引擎 API 调用(KBEngine.entities.get 等):native 面,不进静态树
       // (其赋值结果的**使用**才建模,见 engine-ref 分支)
       if (args.chain[0] === 'KBEngine' || args.chain[0] === 'BigWorld') {
