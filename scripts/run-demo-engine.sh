@@ -76,10 +76,22 @@ write_kbengine_xml() {
 	<interfaces><internalInterface> $nic </internalInterface></interfaces>
 	<baseappmgr><internalInterface> $nic </internalInterface></baseappmgr>
 	<cellappmgr><internalInterface> $nic </internalInterface></cellappmgr>
-	<cellapp><internalInterface> $nic </internalInterface></cellapp>
+	<cellapp><internalInterface> $nic </internalInterface>
+		<telnet_service>
+			<port> 33301 </port>
+			<password> kbe-demo-cell </password>
+			<default_layer> python </default_layer>
+		</telnet_service>
+	</cellapp>
 	<loginapp><internalInterface> $nic </internalInterface></loginapp>
 	<bots><internalInterface> $nic </internalInterface></bots>
-	<baseapp><backupPeriod> 500 </backupPeriod><internalInterface> $nic </internalInterface></baseapp>
+	<baseapp><backupPeriod> 500 </backupPeriod><internalInterface> $nic </internalInterface>
+		<telnet_service>
+			<port> 33300 </port>
+			<password> kbe-demo-base </password>
+			<default_layer> python </default_layer>
+		</telnet_service>
+	</baseapp>
 </root>
 EOF
 }
