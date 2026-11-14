@@ -31,6 +31,7 @@ import {
 import {
   flowGraphEdge,
   flowGraphNode,
+  type FlowEdgeCondition,
   type FlowGraphEdge,
   type FlowGraphNode,
   type FlowProcessRole,
@@ -317,6 +318,42 @@ function enclosingFrameAt(
   return best;
 }
 
+/**
+ * 分支条件候选(FLOW-005 验收「分支条件」的解析面):调用点向上找最近一处
+ * 缩进更小的 if/elif 头行;else 分支语义不展开(elif 链取反非简单 not),
+ * 如实标 other。候选标记——不是执行顺序。
+ */
+function branchConditionAt(
+  lines: string[],
+  frame: EnclosingFrame | null,
+  callLine: number
+): FlowEdgeCondition | null {
+  if (!frame) {
+    return null;
+  }
+  const callIndent = lines[callLine].match(/^\s*/)?.[0].length ?? 0;
+  let elseIndent: number | null = null;
+  for (let line = callLine - 1; line > frame.startLine; line -= 1) {
+    const text = lines[line];
+    const indent = text.match(/^\s*/)?.[0].length ?? 0;
+    if (indent >= callIndent) {
+      continue;
+    }
+    const header = /^\s*(?:if|elif)\s+(.+):/.exec(text);
+    if (header) {
+      const expr = header[1].trim().slice(0, 80);
+      if (elseIndent !== null && elseIndent === indent) {
+        return { text: `else(否分支,语义未展开): ${expr}`, kind: 'other' };
+      }
+      return { text: expr, kind: 'if-branch' };
+    }
+    if (/^\s*else\s*:/.test(text)) {
+      elseIndent = indent;
+    }
+  }
+  return null;
+}
+
 type VarBinding =
   | { kind: 'class'; className: string }
   | { kind: 'engine-ref' }
@@ -504,6 +541,7 @@ export function resolveFlowCallSites(
     };
     const callerId = callerNodeFor(args.frame);
     const frame = args.frame;
+    const condition = branchConditionAt(lines, frame, args.line);
     const frameClass = frame?.className ?? null;
     const calleeRef = [...args.chain, args.callee].join('.');
     const syntaxEvidence = {
@@ -528,6 +566,7 @@ export function resolveFlowCallSites(
         edges.push(flowGraphEdge({
           fromNodeId: callerId,
           toNodeId: target,
+          condition,
           callSite,
           direction: localDirection,
           syncAsync: 'unknown',
@@ -552,6 +591,7 @@ export function resolveFlowCallSites(
         edges.push(flowGraphEdge({
           fromNodeId: callerId,
           toNodeId: target,
+          condition,
           callSite,
           direction: localDirection,
           syncAsync: 'sync',
@@ -568,6 +608,7 @@ export function resolveFlowCallSites(
         edges.push(flowGraphEdge({
           fromNodeId: callerId,
           toNodeId: target,
+          condition,
           callSite,
           direction: localDirection,
           syncAsync: 'unknown',
@@ -608,6 +649,7 @@ export function resolveFlowCallSites(
         edges.push(flowGraphEdge({
           fromNodeId: callerId,
           toNodeId: target,
+          condition,
           callSite,
           direction: crossDirection,
           syncAsync: 'unknown',
@@ -624,6 +666,7 @@ export function resolveFlowCallSites(
       edges.push(flowGraphEdge({
         fromNodeId: callerId,
         toNodeId: target,
+        condition,
         callSite,
         direction: crossDirection,
         syncAsync: 'async-send',
@@ -647,6 +690,7 @@ export function resolveFlowCallSites(
         edges.push(flowGraphEdge({
           fromNodeId: callerId,
           toNodeId: target,
+          condition,
           callSite,
           direction: localDirection,
           syncAsync: 'unknown',
@@ -673,6 +717,7 @@ export function resolveFlowCallSites(
         edges.push(flowGraphEdge({
           fromNodeId: callerId,
           toNodeId: target,
+          condition,
           callSite,
           direction: { fromRole: callerRole, toRole, kind: 'cross-process' },
           syncAsync: 'async-send',
@@ -703,6 +748,7 @@ export function resolveFlowCallSites(
           edges.push(flowGraphEdge({
             fromNodeId: callerId,
             toNodeId: target,
+            condition,
             callSite,
             direction: localDirection,
             syncAsync: 'sync',
@@ -719,6 +765,7 @@ export function resolveFlowCallSites(
           edges.push(flowGraphEdge({
             fromNodeId: callerId,
             toNodeId: target,
+            condition,
             callSite,
             direction: localDirection,
             syncAsync: 'unknown',
@@ -743,6 +790,7 @@ export function resolveFlowCallSites(
       edges.push(flowGraphEdge({
         fromNodeId: callerId,
         toNodeId: target,
+        condition,
         callSite,
         direction: localDirection,
         syncAsync: 'unknown',
@@ -771,6 +819,7 @@ export function resolveFlowCallSites(
       edges.push(flowGraphEdge({
         fromNodeId: callerId,
         toNodeId: target,
+        condition,
         callSite,
         direction: localDirection,
         syncAsync: 'sync',
@@ -797,6 +846,7 @@ export function resolveFlowCallSites(
         edges.push(flowGraphEdge({
           fromNodeId: callerId,
           toNodeId: target,
+          condition,
           callSite,
           direction: localDirection,
           syncAsync: 'sync',
@@ -814,6 +864,7 @@ export function resolveFlowCallSites(
       edges.push(flowGraphEdge({
         fromNodeId: callerId,
         toNodeId: target,
+        condition,
         callSite,
         direction: localDirection,
         syncAsync: 'sync',
@@ -836,6 +887,7 @@ export function resolveFlowCallSites(
       edges.push(flowGraphEdge({
         fromNodeId: callerId,
         toNodeId: target,
+        condition,
         callSite,
         direction: localDirection,
         syncAsync: 'unknown',
@@ -854,6 +906,7 @@ export function resolveFlowCallSites(
     edges.push(flowGraphEdge({
       fromNodeId: callerId,
       toNodeId: target,
+      condition,
       callSite,
       direction: localDirection,
       syncAsync: 'unknown',
