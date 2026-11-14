@@ -43,6 +43,8 @@ import { ROLE_MISUSE_DIAGNOSTICS_ENABLED_DEFAULT, roleMisuseDiagnosticItemsAsync
 import { POST_DESTROY_DIAGNOSTICS_ENABLED_DEFAULT, postDestroyDiagnosticItemsAsync, type PostDestroyDiagnosticItem } from '../backend/postDestroyDiagnostics';
 import { buildPostDestroyItemsWithRust } from '../backend/postDestroyRust';
 import { CELL_DATA_WRITE_DIAGNOSTICS_ENABLED_DEFAULT, analyzeCellDataFieldWrites, cellDataWriteFindingToItem, type CellDataWriteDiagnosticItem } from '../backend/cellDataWriteCheck';
+import { SPACE_DATA_PROTECTED_KEY_DIAGNOSTICS_ENABLED_DEFAULT, analyzeSpaceDataProtectedKeys, type SpaceDataProtectedKeyDiagnosticItem } from '../backend/spaceDataProtectedKeyCheck';
+import { getKbeAliases } from '../kbeModuleIndex';
 import {
   FIXED_DICT_CONSTRUCT_DIAGNOSTICS_ENABLED_DEFAULT,
   analyzeFixedDictConstructWrites,
@@ -153,6 +155,7 @@ export interface DiagnosticsShared {
   scheduleRoleMisuseDiagnostics: ScheduleDiagnostics;
   schedulePostDestroyDiagnostics: ScheduleDiagnostics;
   scheduleCellDataWriteDiagnostics: ScheduleDiagnostics;
+  scheduleSpaceDataProtectedKeyDiagnostics: ScheduleDiagnostics;
   scheduleFixedDictConstructDiagnostics: ScheduleDiagnostics;
   rescheduleFixedDictConstructForRegistryChange: () => void;
   scheduleProcessTopologyDiagnostics: ScheduleDiagnostics;
@@ -170,6 +173,8 @@ export interface DiagnosticsShared {
   postDestroyScheduler: DiagnosticScheduler;
   cellDataWriteDiagnostics: vscode.DiagnosticCollection;
   cellDataWriteScheduler: DiagnosticScheduler;
+  spaceDataProtectedKeyDiagnostics: vscode.DiagnosticCollection;
+  spaceDataProtectedKeyScheduler: DiagnosticScheduler;
   fixedDictConstructDiagnostics: vscode.DiagnosticCollection;
   fixedDictConstructScheduler: DiagnosticScheduler;
   scheduleScalarAssignDiagnostics: ScheduleDiagnostics;
@@ -1160,6 +1165,60 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     }
   };
 
+  // KSEM-DATA-06:spaceData 保护键写入诊断(_mapping)。引擎 AssertionError
+  // 契约的静态呈现:set/del 大小写不敏感拒(spacememory.cpp:740-742/:862-864),
+  // get 放行(几何映射引擎自读路径,不发);键保护与 spaceID 可解性正交,
+  // 动态 spaceID 照报。独立集合 + 独立调度器(同 C-19 范式);开关
+  // kbengine.spaceDataProtectedKeyDiagnostics 默认开。
+  const spaceDataProtectedKeyDiagnostics = vscode.languages.createDiagnosticCollection(
+    'kbengine-space-data-protected-key'
+  );
+  context.subscriptions.push(spaceDataProtectedKeyDiagnostics);
+  const spaceDataProtectedKeyScheduler = new DiagnosticScheduler();
+  const scheduleSpaceDataProtectedKeyDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    if (!isPythonDocument(document)) {
+      return;
+    }
+    const capturedVersion = document.version;
+    const options = {
+      layer: 'local' as const,
+      computeAsync: async (): Promise<readonly SpaceDataProtectedKeyDiagnosticItem[] | null> => {
+        if (document.version !== capturedVersion) {
+          return [];
+        }
+        const enabled = vscode.workspace.getConfiguration('kbengine')
+          .get<boolean>('spaceDataProtectedKeyDiagnostics', SPACE_DATA_PROTECTED_KEY_DIAGNOSTICS_ENABLED_DEFAULT);
+        if (!enabled) {
+          return [];
+        }
+        return analyzeSpaceDataProtectedKeys(document.getText(), getKbeAliases(document.getText()));
+      },
+      publish: (items: readonly SpaceDataProtectedKeyDiagnosticItem[]) => {
+        spaceDataProtectedKeyDiagnostics.set(document.uri, items.map(item => {
+          const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(
+              item.range.start.line, item.range.start.character,
+              item.range.end.line, item.range.end.character
+            ),
+            item.message,
+            vscode.DiagnosticSeverity.Error
+          );
+          diagnostic.source = item.source;
+          diagnostic.code = item.code;
+          return diagnostic;
+        }));
+      }
+    };
+    if (channel === 'queued') {
+      spaceDataProtectedKeyScheduler.requestQueued(document, options);
+    } else {
+      spaceDataProtectedKeyScheduler.request(document, options);
+    }
+  };
+
   // KSEM-STRUCT-04:FIXED_DICT 构造点诊断(缺键/多键/字段值结构)。确定结构
   // 消费点 = 赋值目标可解析为 FD 容器(`self.<属性> = {…}` /
   // `self.<属性>["键"]… = {…}`,键链复用 STRUCT-02 单一解析链);普通 dict
@@ -1777,6 +1836,7 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     scheduleRoleMisuseDiagnostics,
     schedulePostDestroyDiagnostics,
     scheduleCellDataWriteDiagnostics,
+    scheduleSpaceDataProtectedKeyDiagnostics,
     scheduleFixedDictConstructDiagnostics,
     rescheduleFixedDictConstructForRegistryChange,
     scheduleScalarAssignDiagnostics,
@@ -1796,6 +1856,8 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     postDestroyScheduler,
     cellDataWriteDiagnostics,
     cellDataWriteScheduler,
+    spaceDataProtectedKeyDiagnostics,
+    spaceDataProtectedKeyScheduler,
     fixedDictConstructDiagnostics,
     fixedDictConstructScheduler,
     scalarAssignDiagnostics,

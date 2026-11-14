@@ -10,6 +10,8 @@ import { cellScriptRoleAndEntity, collectCellDataDefUniverseWithCategory, fetchC
 import { cellDataKeyAccessAtPosition, isCellDataKeyInsideLineComment } from '../backend/cellDataKeyAccess';
 import { fixedDictChainRootType, fixedDictSubscriptContextAt, resolveFixedDictSubscriptKey, resolveWireDictSubscriptKeyFromContainer } from '../backend/fixedDictSubscript';
 import { implBindingsForDocument, resolveCreateObjFromDictInputBindings, resolveCreateObjFromDictInputReceiver } from '../backend/createObjFromDictInput';
+import { extractModuleIntConstantBindings, findKbeSpaceDataCallAtPosition, type KbeSpaceDataCall } from '../backend/spaceDataIndexCore';
+import { getSpaceDataIndex, isSpaceDataIndexEnabled, type SpaceDataFamilySite } from '../spaceDataIndex';
 import { jumpLog, jumpTimeStart } from '../navigationLog';
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonMemberAccessAtPosition, type PythonMemberAccess } from '../backend/pythonLanguageUtils';
@@ -162,6 +164,43 @@ export async function resolveDataDictSitesAtPosition(
 }
 
 /**
+ * spaceData 键定位的共享实现(KSEM-DATA-06):落点命中 spaceData 调用的
+ * key 字面量时,经空间数据索引取同 (spaceID, key) 族全部站点。跳转(首个
+ * 异类点)与引用(全量含自身)同源;开关关/冷索引取消/动态 spaceID/
+ * 非字面量键 → null。词法掩码在纯核内已剔注释/字符串伪调用,无行内注释
+ * 复查面。
+ */
+export async function resolveSpaceDataSitesAtPosition(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  token?: vscode.CancellationToken
+): Promise<{ call: KbeSpaceDataCall; sites: SpaceDataFamilySite[] } | null> {
+  if (!isSpaceDataIndexEnabled()) {
+    return null;
+  }
+  const index = getSpaceDataIndex();
+  if (!(await index.awaitReady(token))) {
+    return null;
+  }
+  index.syncDocument(document); // 当前文档编辑即时入索引,自档零陈旧
+  if (token?.isCancellationRequested) {
+    return null;
+  }
+  const text = document.getText();
+  const call = findKbeSpaceDataCallAtPosition(
+    text,
+    position.line,
+    position.character,
+    getKbeAliases(text),
+    extractModuleIntConstantBindings(text)
+  );
+  if (!call || call.spaceIdSignature === null || call.keySignature === null) {
+    return null; // 动态空间/非字面量键:不建族,不导航(动态不合并)
+  }
+  return { call, sites: index.queryFamilySites(call.spaceIdSignature, call.keySignature) };
+}
+
+/**
  * 跳转分层追踪(用户 2026-10-16「放弃范围必须逐层收窄,对象级不是文件级」):
  * 记录本次跳转查过的每一层与命中/落空原因,全部落空时可据此说明「查过哪些层」。
  */
@@ -171,9 +210,10 @@ export interface JumpLayerTrace {
    * python-mro = PythonClassIndex 跨文件 C3-MRO + 组合根;
    * file-scope = 当前文件类作用域 / 本文件 MRO;
    * kbe-stub / class-base / types-reverse / globaldata-key / cellData-key /
-   * fixeddict-key = 前置契约分支(命中即终点);globaldata-key = 数据字典键
+   * fixeddict-key / spacedata-key = 前置契约分支(命中即终点);globaldata-key = 数据字典键
    * 跨进程互链(GLOBDATA-001);cellData-key = cellData 字符串键来源 def 跳转
-   * (KSEM-CELL-05);fixeddict-key = FIXED_DICT 下标链键 → types.xml 字段声明
+   * (KSEM-CELL-05);spacedata-key = spaceData 键族互链(KSEM-DATA-06);
+   * fixeddict-key = FIXED_DICT 下标链键 → types.xml 字段声明
    * 跳转(KSEM-STRUCT-02);
    * member-access = 非 self 接收者成员调用(avatar.SendErrorInfo,批158);
    * context = 入参形态判定(既非 self 访问/成员调用也非方法声明)。
@@ -185,6 +225,7 @@ export interface JumpLayerTrace {
     | 'globaldata-key'
     | 'cellData-key'
     | 'fixeddict-key'
+    | 'spacedata-key'
     | 'entity-def'
     | 'python-mro'
     | 'file-scope'
@@ -356,6 +397,38 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
               query: `${access.dict}[${keyLabel}]`,
               status: 'hit',
               detail: `${access.kind} → ${path.basename(target.file)}:${target.line + 1}`
+            }]
+          };
+        }
+      }
+    }
+
+    // KSEM-DATA-06:spaceData(spaceID,key) 键族互链。置于 isPythonCodePosition
+    // 守卫之前(键是字符串字面量,同 globaldata-key 理由)。引擎逐空间存储,
+    // 键身份=(spaceID, key) 全等;get/del F12 → 首个写点(set),set F12 →
+    // 首个异类点(get/del);无异类则同类首点(含自身,与 globaldata-key 同款
+    // 回退)。动态 spaceID/非字面量键不建族不导航(动态空间不合并)。
+    if (isSpaceDataIndexEnabled()) {
+      const spaceHit = await resolveSpaceDataSitesAtPosition(document, position, token);
+      if (spaceHit) {
+        const { call, sites } = spaceHit;
+        const otherFn = sites.find(site => site.fn !== call.fn) ?? sites.find(site => site.fn === call.fn);
+        if (otherFn) {
+          const keyLabel = `${call.spaceIdSignature}, ${call.keySignature}`;
+          jumpLog('info', () =>
+            `前置命中 spacedata-key:${call.fn}(${keyLabel}) → ` +
+            `${path.basename(otherFn.file)}:${otherFn.line + 1}`
+          );
+          return {
+            location: new vscode.Location(
+              vscode.Uri.file(otherFn.file),
+              new vscode.Position(otherFn.line, otherFn.keyStart)
+            ),
+            layers: [{
+              layer: 'spacedata-key',
+              query: `${call.fn}(${keyLabel})`,
+              status: 'hit',
+              detail: `${path.basename(otherFn.file)}:${otherFn.line + 1}`
             }]
           };
         }

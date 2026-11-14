@@ -11,7 +11,8 @@ import { PYTHON_RECEIVER_BY_SECTION, getPythonSelfAccessAtPosition } from '../ba
 import { GlobalDataDictIndex, isKeyInsideLineComment } from '../globalDataIndex';
 import { DEF_SYMBOL_SECTIONS, METHOD_SECTIONS, elementFullRange, elementTagRange, parseDefAst, toSectionName } from './shared';
 import { findDefSymbolInfo } from './navigation';
-import { resolveDataDictSitesAtPosition } from './pythonDefinition';
+import { resolveDataDictSitesAtPosition, resolveSpaceDataSitesAtPosition } from './pythonDefinition';
+import { isSpaceDataIndexEnabled } from '../spaceDataIndex';
 import { createSelectionRange } from './callHierarchy';
 import { cellScriptRoleAndEntity, collectCellDataDefUniverseWithCategory, fetchCellDataKeys } from '../backend/cellDataCompletion';
 import { cellDataKeyAccessAtPosition, isCellDataKeyInsideLineComment, scanCellDataKeyAccesses } from '../backend/cellDataKeyAccess';
@@ -48,6 +49,19 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
             vscode.Uri.file(site.file),
             new vscode.Position(site.line, site.keyStart)
           ));
+      }
+      // KSEM-DATA-06:spaceData 键 Shift+F12 → 同 (spaceID, key) 族全部站点
+      // (set/get/del,含自身)。词法掩码在纯核内已剔注释/字符串伪调用;
+      // 动态 spaceID/非字面量键不建族不列(动态空间不合并)。
+      if (isSpaceDataIndexEnabled()) {
+        const spaceHit = await resolveSpaceDataSitesAtPosition(document, position, token);
+        if (spaceHit) {
+          return spaceHit.sites.map(site =>
+            new vscode.Location(
+              vscode.Uri.file(site.file),
+              new vscode.Position(site.line, site.keyStart)
+            ));
+        }
       }
       // KSEM-CELL-05:cellData 字符串键 Shift+F12 → 当前实体脚本(cell/base
       // 面)内同键全部字面量访问点(含自身)。实体身份隔离:仅扫当前实体

@@ -113,6 +113,7 @@ import {
   setDefinitionInFlightGateForTests,
   setDefinitionDispatchGateForTests,
 } from './languageProviders';
+import { setSpaceDataIndexEnabled } from './spaceDataIndex';
 
 
 
@@ -270,6 +271,7 @@ export function activate(context: vscode.ExtensionContext) {
     scheduleRoleMisuseDiagnostics,
     schedulePostDestroyDiagnostics,
     scheduleCellDataWriteDiagnostics,
+    scheduleSpaceDataProtectedKeyDiagnostics,
     scheduleFixedDictConstructDiagnostics,
     rescheduleFixedDictConstructForRegistryChange,
     scheduleScalarAssignDiagnostics,
@@ -289,6 +291,8 @@ export function activate(context: vscode.ExtensionContext) {
     postDestroyScheduler,
     cellDataWriteDiagnostics,
     cellDataWriteScheduler,
+    spaceDataProtectedKeyDiagnostics,
+    spaceDataProtectedKeyScheduler,
     scheduleCellDataWrongKeyDiagnostics,
     cellDataWrongKeyDiagnostics,
     cellDataWrongKeyScheduler,
@@ -367,6 +371,8 @@ export function activate(context: vscode.ExtensionContext) {
       scheduleCellDataWrongKeyDiagnostics(document, 'immediate');
       // KSEM-CELL-12:打开 python 文档即回调入口访问诊断(immediate)
       scheduleCellDataCallbackDiagnostics(document, 'immediate');
+      // KSEM-DATA-06:打开 python 文档即 spaceData 保护键写入诊断(immediate)
+      scheduleSpaceDataProtectedKeyDiagnostics(document, 'immediate');
     }));
     const closeWatcher = vscode.workspace.onDidCloseTextDocument(document => {
       releaseDocument(document);
@@ -401,6 +407,9 @@ export function activate(context: vscode.ExtensionContext) {
       // KSEM-CELL-12:回调入口访问诊断同生命周期。
       cellDataCallbackDiagnostics.delete(document.uri);
       cellDataCallbackScheduler.releaseDocument(document);
+      // KSEM-DATA-06:spaceData 保护键诊断随文档生命周期(关闭即摘除)。
+      spaceDataProtectedKeyDiagnostics.delete(document.uri);
+      spaceDataProtectedKeyScheduler.releaseDocument(document);
       // E-4:撤 Rust 侧镜像 overlay 与版本账(连续开合不积累)
       shadowReleaseCorpusDocument(document);
       // IDE-HOV-011:弃当前文件注解桶(未保存修改随关闭消失,回磁盘口径)
@@ -476,6 +485,8 @@ export function activate(context: vscode.ExtensionContext) {
         scheduleCellDataWrongKeyDiagnostics(event.document, 'queued');
         // KSEM-CELL-12:编辑排队重算(queued)
         scheduleCellDataCallbackDiagnostics(event.document, 'queued');
+        // KSEM-DATA-06:python 改动 → 重排本文件的 spaceData 保护键诊断
+        scheduleSpaceDataProtectedKeyDiagnostics(event.document, 'queued');
         const owningDefFile = entityMappingManager.getDefFileForPythonFile(
           event.document.uri.fsPath
         );
@@ -681,6 +692,12 @@ export function activate(context: vscode.ExtensionContext) {
     if (event.affectsConfiguration('kbengine.python.enableDataDictIndex')) {
       setPythonDataDictIndexEnabled(
         vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableDataDictIndex', true)
+      );
+    }
+    // KSEM-DATA-06:空间数据键索引开关变更即时生效(补全/definition/引用查索引前现读)
+    if (event.affectsConfiguration('kbengine.python.enableSpaceDataIndex')) {
+      setSpaceDataIndexEnabled(
+        vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableSpaceDataIndex', true)
       );
     }
 

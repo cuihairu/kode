@@ -9,6 +9,7 @@ import * as vscode from 'vscode';
 import { setAnnotationSourceLogEnabled, setAnnotationSourceLogSink } from '../backend/annotationSourceLog';
 import { KBENGINE_DATABASE_SIMULATION_SCHEME, KBEngineDatabaseSimulationProvider } from '../databaseSimulator';
 import { setPythonDataDictIndexEnabled, setPythonMroJumpEnabled } from '../languageProviders';
+import { setSpaceDataIndexEnabled } from '../spaceDataIndex';
 import { KBEngineDatabaseSchemaProvider } from '../databaseSchemaPresentation';
 import { buildEngineApiCatalog } from '../backend/engineApiMetadata';
 import { setupKodeCoreGate } from '../kodeCoreGateWiring';
@@ -102,6 +103,10 @@ export function activateInfrastructure(
   // GLOBDATA-001:数据字典键索引开关(默认开;kbengine.python.enableDataDictIndex)
   setPythonDataDictIndexEnabled(
     vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableDataDictIndex', true)
+  );
+  // KSEM-DATA-06:空间数据键索引开关(默认开;kbengine.python.enableSpaceDataIndex)
+  setSpaceDataIndexEnabled(
+    vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableSpaceDataIndex', true)
   );
   // kode2 PR-012:双轨切流门(kill-switch/shadow;kbengine.core.backend 默认 ts,
   // Rust 仅影子比对不服务,默认装配下用户可见行为与纯 TS 单轨一致)。

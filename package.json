@@ -1439,6 +1439,11 @@
           "default": true,
           "markdownDescription": "%kbengine.config.cellDataWriteDiagnostics.description%"
         },
+        "kbengine.spaceDataProtectedKeyDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.spaceDataProtectedKeyDiagnostics.description%"
+        },
         "kbengine.cellDataWrongKeyDiagnostics": {
           "type": "boolean",
           "default": true,
@@ -2084,6 +2089,11 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "%kbengine.config.python.enableDataDictIndex.description%"
+        },
+        "kbengine.python.enableSpaceDataIndex": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.python.enableSpaceDataIndex.description%"
         },
         "kbengine.python.callChainHints": {
           "type": "boolean",

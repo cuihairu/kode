@@ -644,6 +644,7 @@
   "Retry connection test": "重试连接测试",
   "internal attribute": "内部属性",
   "cellData[\"{key}\"] expects {expected} as declared in {source}; got {actual}": "cellData[\"{key}\"] 期望 {expected}（声明于 {source}），实际为 {actual}",
+  "{fn}(\"{key}\") raises AssertionError at runtime — \"{key}\" is a protected spaceData key (space geometry mapping; engine rejects it case-insensitively; reading it via getSpaceData is allowed)": "{fn}(\"{key}\") 运行期抛 AssertionError——\"{key}\" 是受保护的 spaceData 键（空间几何映射；引擎大小写不敏感拒收；用 getSpaceData 读取是允许的）",
   "cellData[\"{key}\"] value {value} is out of range for {expected} as declared in {source}": "cellData[\"{key}\"] 的值 {value} 超出 {expected}（声明于 {source}）的范围",
   "{target} constructs {container} but is missing field(s) {fields} declared in {source}": "{target} 构造 {container} 缺少在 {source} 声明的字段：{fields}",
   "\"{key}\" is not a field of {container} (declared in {source}); a FIXED_DICT construction accepts only declared fields": "“{key}”不是 {container}（声明于 {source}）的字段；FIXED_DICT 构造只接受声明字段",

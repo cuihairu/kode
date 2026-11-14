@@ -18,6 +18,8 @@ import { formatEntityBuiltinPropertyDetail, getEntityBuiltinPropertiesForFace, h
 import { PYTHON_TYPE_STUB_FALLBACK, resolveCustomTypePropertyAnnotation } from '../pythonTypeStubs';
 import { GlobalDataDictIndex, resolveScopeRoot } from '../globalDataIndex';
 import { dataDictKeyCompletionContext, type DataDictKeyCompletionContext } from '../backend/globalDataIndexCore';
+import { spaceDataKeyCompletionContext, type SpaceDataKeyCompletionContext } from '../backend/spaceDataIndexCore';
+import { getSpaceDataIndex, isSpaceDataIndexEnabled } from '../spaceDataIndex';
 import { awaitDataDictIndexReady, isPythonDataDictIndexEnabled } from './pythonDefinition';
 import { l10nText } from '../nlsRuntime';
 import { getPythonSelfCompletionContext } from '../backend/pythonLanguageUtils';
@@ -347,6 +349,21 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
         items => (items !== null ? items : this.provideCompletionItemsSync(document, position, token))
       );
     }
+    // KSEM-DATA-06:spaceData 键位(`KBEngine.setSpaceData(<sid>, "…"` / get /
+    // del,含别名)→ 空间数据键族补全。键位上下文里 def 链/Rust 面均无效,
+    // 先于 Rust-first 判定接管;开关关 → null,动态 spaceID(不可解)→ []
+    // (动态空间不合并为同一确定对象,不造键),族空/过滤后空 → [](键位
+    // 不给项)均落回既有同步链——非键位路径同步契约不变。
+    const spaceDataCtx = spaceDataKeyCompletionContext(
+      document.lineAt(position.line).text,
+      position.character,
+      getKbeAliases(document.getText())
+    );
+    if (spaceDataCtx) {
+      return this.provideSpaceDataKeyCompletions(document, position, spaceDataCtx, token).then(
+        items => (items !== null ? items : this.provideCompletionItemsSync(document, position, token))
+      );
+    }
     // KSEM-STRUCT-02:FIXED_DICT 子字段下标链键位(嵌套 ["k"]["k2"] / .get("k")
     // 与任意 FIXED_DICT 型 def 属性首层)→ types.xml 字段补全。与 cellData 键位
     // 同理先于 Rust-first 判定(字符串键位里 def 链/Rust 补全面均无效);
@@ -630,6 +647,64 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
         continue;
       }
       const writes = inDomainSites.filter(site => site.kind === 'write');
+      const firstWrite = writes[0];
+      const detailParts = [l10nText('{count} write site(s)', { count: writes.length })];
+      if (firstWrite) {
+        detailParts.push(`${path.basename(firstWrite.file)}:${firstWrite.line + 1}`);
+      } else {
+        detailParts.push(l10nText('no write site'));
+      }
+      const item = new vscode.CompletionItem(
+        family.keySignature,
+        vscode.CompletionItemKind.Variable
+      );
+      item.detail = detailParts.join(' · ');
+      item.range = range;
+      items.push(item);
+    }
+    return items;
+  }
+
+  /**
+   * spaceData 键位补全(KSEM-DATA-06):`alias.setSpaceData(<sid>, "` /
+   * get / del 第二实参 → 同 spaceID 键族(引擎逐空间存储,键身份 =
+   * (spaceID, key) 全等)。detail = 写点数 · 首写点 file:line(1 基),
+   * 纯读键族诚实标「无写点」。诚实边界:开关关 → null(不接管);
+   * 动态 spaceID(int 字面量/int 常量绑定都解析不出)→ [](动态空间不
+   * 合并为同一确定对象,不造键、不跨空间借族);族空/片段无前缀匹配 →
+   * []。替换范围 = 引号内片段精确区间(不含引号;未开引号=光标位)。
+   */
+  private async provideSpaceDataKeyCompletions(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    ctx: SpaceDataKeyCompletionContext,
+    token?: vscode.CancellationToken
+  ): Promise<vscode.CompletionItem[] | null> {
+    if (!isSpaceDataIndexEnabled()) {
+      return null;
+    }
+    const index = getSpaceDataIndex();
+    if (!(await index.awaitReady(token))) {
+      return [];
+    }
+    index.syncDocument(document); // 当前文档编辑即时入索引,自档零陈旧
+    if (token?.isCancellationRequested) {
+      return [];
+    }
+    if (ctx.spaceIdSignature === null) {
+      return []; // 动态空间:不合并为同一确定对象,键位不给项
+    }
+    const families = index.queryFamiliesForSpace(ctx.spaceIdSignature);
+    if (families.length === 0) {
+      return []; // 此空间暂无键:键位不给项,不造键
+    }
+    const range = new vscode.Range(position.line, ctx.replaceStart, position.line, position.character);
+    const items: vscode.CompletionItem[] = [];
+    for (const family of families) {
+      if (!family.keySignature.startsWith(ctx.partial)) {
+        continue;
+      }
+      const writes = family.sites.filter(site => site.fn === 'setSpaceData');
       const firstWrite = writes[0];
       const detailParts = [l10nText('{count} write site(s)', { count: writes.length })];
       if (firstWrite) {

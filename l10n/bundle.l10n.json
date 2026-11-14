@@ -644,6 +644,7 @@
   "Retry connection test": "Retry connection test",
   "internal attribute": "internal attribute",
   "cellData[\"{key}\"] expects {expected} as declared in {source}; got {actual}": "cellData[\"{key}\"] expects {expected} as declared in {source}; got {actual}",
+  "{fn}(\"{key}\") raises AssertionError at runtime — \"{key}\" is a protected spaceData key (space geometry mapping; engine rejects it case-insensitively; reading it via getSpaceData is allowed)": "{fn}(\"{key}\") raises AssertionError at runtime — \"{key}\" is a protected spaceData key (space geometry mapping; engine rejects it case-insensitively; reading it via getSpaceData is allowed)",
   "cellData[\"{key}\"] value {value} is out of range for {expected} as declared in {source}": "cellData[\"{key}\"] value {value} is out of range for {expected} as declared in {source}",
   "{target} constructs {container} but is missing field(s) {fields} declared in {source}": "{target} constructs {container} but is missing field(s) {fields} declared in {source}",
   "\"{key}\" is not a field of {container} (declared in {source}); a FIXED_DICT construction accepts only declared fields": "\"{key}\" is not a field of {container} (declared in {source}); a FIXED_DICT construction accepts only declared fields",

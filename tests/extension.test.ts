@@ -211,6 +211,8 @@ describe('extension activate 装配', () => {
     // IDE-LINT-009 角色错用诊断集再一份(kbengine-role-misuse);
     // IDE-LINT-010 销毁后访问诊断集再一份(kbengine-post-destroy);
     // KSEM-CELL-08 cellData 已知字段写入类型诊断集再一份(kbengine-celldata-write);
+    // KSEM-DATA-06 spaceData 保护键诊断集再一份(kbengine-space-data-protected-key,
+    // 注册点紧随 kbengine-celldata-write——集合创建序即注册表序,消费方按序取集合);
     // KSEM-STRUCT-04 FD 构造点诊断集再一份(kbengine-fixeddict-construct,注册点
     // 紧随 kbengine-celldata-write——集合创建序即注册表序,消费方按序取集合);
     // KSEM-STRUCT-05 标量赋值诊断集再一份(kbengine-scalar-assign,注册点紧随
@@ -227,6 +229,7 @@ describe('extension activate 装配', () => {
       'kbengine-role-misuse',
       'kbengine-post-destroy',
       'kbengine-celldata-write',
+      'kbengine-space-data-protected-key',
       'kbengine-fixeddict-construct',
       'kbengine-scalar-assign',
       'kbengine-celldata-wrongkey',

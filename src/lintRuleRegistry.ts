@@ -423,6 +423,14 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     quickFix: false, status: 'implemented',
     source: 'src/backend/isSameTypeContract.ts(发布 src/activate/diagnostics.ts,KSEM-SER-07)'
   },
+  {
+    id: 'KBE-PY-028', code: 'kbengine.spaceDataProtectedKey',
+    title: 'spaceData 保护键写入诊断(_mapping 写/删必抛 AssertionError,get 豁免)',
+    severity: 'Error', roles: 'cell',
+    toggles: ['kbengine.spaceDataProtectedKeyDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/backend/spaceDataProtectedKeyCheck.ts'
+  },
   // ── KB-001 行为知识流水线(C-23,数据源=src/knowledge/trapsKnowledge.ts)
   {
     id: 'KBE-PY-015', code: 'kbengine.fixedDictNestedMutation',
