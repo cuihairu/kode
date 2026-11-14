@@ -3,7 +3,7 @@
 <h1 align="center">Kode — KBEngine Development Environment</h1>
 
 <p align="center">
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a> <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.82.0+-blue.svg" alt="VS Code" /></a> <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a> <a href="https://github.com/cuihairu/kode/blob/v0.2/docs/kode2/KODE_2_COMPLETE_TODO.md"><img src="https://img.shields.io/badge/Rust%20Core-v0.2%20WIP-CE422B.svg" alt="Rust Core (v0.2, work in progress)" /></a> <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.3-blue" alt="VS Code Marketplace" /></a> <a href="https://codecov.io/gh/cuihairu/kode"><img src="https://codecov.io/gh/cuihairu/kode/branch/main/graph/badge.svg" alt="codecov" /></a> <a href="https://cuihairu.github.io/kode/zh/"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a> <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.82.0+-blue.svg" alt="VS Code" /></a> <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a> <a href="https://github.com/cuihairu/kode/blob/main/todo.md"><img src="https://img.shields.io/badge/Rust%20Core-v0.2%20WIP-CE422B.svg" alt="Rust Core (v0.2, work in progress)" /></a> <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.3-blue" alt="VS Code Marketplace" /></a> <a href="https://codecov.io/gh/cuihairu/kode"><img src="https://codecov.io/gh/cuihairu/kode/branch/main/graph/badge.svg" alt="codecov" /></a> <a href="https://cuihairu.github.io/kode/zh/"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
 </p>
 
 [English](README.md) | [中文](README.zh.md)
@@ -20,14 +20,18 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用分布式架构。
 
 ## 每日构建
 
-仓库每日自动从 `main` 构建并**滚动发布**到 [Releases 的 `nightly` 标签](https://github.com/cuihairu/kode/releases/tag/nightly)：每次构建替换上一版资产与说明（含构建时间、commit 与资产表），tag 恒为 `nightly`；正式版本（`v0.1.0`–`v0.1.3`）由已发布的 `0.1.x` 线手动出 tag。默认分支 48 小时无新提交时当天定时构建自动跳过；构建流程见 [.github/workflows/daily-build.yml](.github/workflows/daily-build.yml)。
+仓库每日自动从 `main` 构建并**滚动发布**到 [Releases 的 `nightly` 标签](https://github.com/cuihairu/kode/releases/tag/nightly)：每次构建替换上一版资产与说明（含构建时间、commit 与资产表），tag 恒为 `nightly`；正式版本（`v0.1.0`–`v0.1.3`）由已发布的 `0.1.x` 线手动出 tag。默认分支 48 小时无新提交时当天定时构建自动跳过；构建流程见 [.github/workflows/nightly.yml](.github/workflows/nightly.yml)。
 | 资产 | 平台 | 安装 |
 |------|------|------|
-| `kode-nightly.vsix` | Windows / macOS / Linux（VS Code ≥1.82 通用） | 下载后执行 `code --install-extension kode-nightly.vsix` |
+| `kode-*-win32-x64.vsix` / `kode-*-win32-arm64.vsix` | Windows x64 / ARM64（含 Rust 后台与协议 CLI） | 下载后执行 `code --install-extension <文件>` |
+| `kode-*-darwin-x64.vsix` / `kode-*-darwin-arm64.vsix` | macOS Intel / Apple Silicon（含 Rust 后台与协议 CLI） | 下载后执行 `code --install-extension <文件>` |
+| `kode-*-linux-x64.vsix` / `kode-*-linux-arm64.vsix` | Linux x64 / ARM64（musl 静态，含 Rust 后台与协议 CLI） | 下载后执行 `code --install-extension <文件>` |
+| `kode-*-pure-ts.vsix` | 全平台通用（VS Code ≥1.82；纯 TS、无二进制，Rust 独有能力受限） | 下载后执行 `code --install-extension <文件>` |
+| `SHA256SUMS` | 全平台 | 上述资产的完整性校验和 |
 
 > **已发布到 VSCode Marketplace**：[cuihairu.kode-kbengine](https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine)
 >
-> 免本地构建也可用[每日构建](#每日构建)的 `kode-nightly.vsix`；或按下文「安装」从源码构建。
+> 免本地构建也可用[每日构建](#每日构建)中对应平台的 VSIX（或全平台的 `kode-*-pure-ts.vsix`）；或按下文「安装」从源码构建。
 
 ## 本地测试口径
 
@@ -261,7 +265,7 @@ Rust 核心与 TypeScript 扩展并行运行,经 stdio 讲同一套 LSP 面;后�
 
 ## 安装
 
-> **已发布到 VSCode Marketplace**：[cuihairu.kode-kbengine](https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine)。免本地构建可直接使用[每日构建](#每日构建)的 `kode-nightly.vsix`;或按下列步骤从源码构建后本地安装。
+> **已发布到 VSCode Marketplace**：[cuihairu.kode-kbengine](https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine)。免本地构建可直接使用[每日构建](#每日构建)中对应平台的 VSIX(或全平台的 `kode-*-pure-ts.vsix`);或按下列步骤从源码构建后本地安装。
 
 ### 从源码构建并本地安装
 
@@ -440,7 +444,7 @@ pnpm test:coverage  # vitest + 覆盖率
 
 ---
 
-当前发布版本 v0.1.3，已以 `cuihairu.kode-kbengine` 发布到 Marketplace。已落地 121 条命令、110 个配置项；[COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) 的功能清单是 0.1.x 时点快照，测试口径见 [TESTING.md](./TESTING.md)。
+当前发布版本 v0.1.3，已以 `cuihairu.kode-kbengine` 发布到 Marketplace。已落地 154 条命令、150 个配置项（口径：`main` 的 `package.json` contributes）；[COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) 的功能清单是 0.1.x 时点快照，测试口径见 [TESTING.md](./TESTING.md)。
 
 ### Demo 热更新接收器
 

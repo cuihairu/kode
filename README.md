@@ -3,7 +3,7 @@
 <h1 align="center">Kode — KBEngine Development Environment</h1>
 
 <p align="center">
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a> <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.82.0+-blue.svg" alt="VS Code" /></a> <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a> <a href="https://github.com/cuihairu/kode/blob/v0.2/docs/kode2/KODE_2_COMPLETE_TODO.md"><img src="https://img.shields.io/badge/Rust%20Core-v0.2%20WIP-CE422B.svg" alt="Rust Core (v0.2, work in progress)" /></a> <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.3-blue" alt="VS Code Marketplace" /></a> <a href="https://codecov.io/gh/cuihairu/kode"><img src="https://codecov.io/gh/cuihairu/kode/branch/main/graph/badge.svg" alt="codecov" /></a> <a href="https://cuihairu.github.io/kode/"><img src="https://img.shields.io/badge/docs-blue" alt="docs"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a> <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.82.0+-blue.svg" alt="VS Code" /></a> <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a> <a href="https://github.com/cuihairu/kode/blob/main/todo.md"><img src="https://img.shields.io/badge/Rust%20Core-v0.2%20WIP-CE422B.svg" alt="Rust Core (v0.2, work in progress)" /></a> <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.3-blue" alt="VS Code Marketplace" /></a> <a href="https://codecov.io/gh/cuihairu/kode"><img src="https://codecov.io/gh/cuihairu/kode/branch/main/graph/badge.svg" alt="codecov" /></a> <a href="https://cuihairu.github.io/kode/"><img src="https://img.shields.io/badge/docs-blue" alt="docs"></a>
 </p>
 
 [English](README.md) | [中文](README.zh.md)
@@ -20,10 +20,14 @@ KBEngine is an open-source MMO game server framework built on a distributed arch
 
 ## Daily Builds
 
-The repository automatically builds from `main` every day and **publishes a rolling release** to [the `nightly` tag on Releases](https://github.com/cuihairu/kode/releases/tag/nightly): each build replaces the previous release's assets and notes (including build time, commit, and an asset table). The tag stays `nightly`; versioned releases (`v0.1.0`–`v0.1.3`) are cut manually from the released `0.1.x` line. The scheduled build skips automatically for that day when the default branch has no new commits within 48 hours. The build pipeline lives in [.github/workflows/daily-build.yml](.github/workflows/daily-build.yml).
+The repository automatically builds from `main` every day and **publishes a rolling release** to [the `nightly` tag on Releases](https://github.com/cuihairu/kode/releases/tag/nightly): each build replaces the previous release's assets and notes (including build time, commit, and an asset table). The tag stays `nightly`; versioned releases (`v0.1.0`–`v0.1.3`) are cut manually from the released `0.1.x` line. The scheduled build skips automatically for that day when the default branch has no new commits within 48 hours. The build pipeline lives in [.github/workflows/nightly.yml](.github/workflows/nightly.yml).
 | Asset | Platform | Install |
 |------|------|------|
-| `kode-nightly.vsix` | Windows / macOS / Linux (universal for VS Code ≥1.82) | Download and run `code --install-extension kode-nightly.vsix` |
+| `kode-*-win32-x64.vsix` / `kode-*-win32-arm64.vsix` | Windows x64 / ARM64 (bundled Rust backend + protocol CLI) | Download and run `code --install-extension <file>` |
+| `kode-*-darwin-x64.vsix` / `kode-*-darwin-arm64.vsix` | macOS Intel / Apple Silicon (bundled Rust backend + protocol CLI) | Download and run `code --install-extension <file>` |
+| `kode-*-linux-x64.vsix` / `kode-*-linux-arm64.vsix` | Linux x64 / ARM64 (musl static, bundled Rust backend + protocol CLI) | Download and run `code --install-extension <file>` |
+| `kode-*-pure-ts.vsix` | Universal, any OS (VS Code ≥1.82; pure TS, no binaries — Rust-only tooling is limited) | Download and run `code --install-extension <file>` |
+| `SHA256SUMS` | All platforms | Integrity checksums for the assets above |
 
 > **Published on the VS Code Marketplace:** [cuihairu.kode-kbengine](https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine)
 >
@@ -257,7 +261,7 @@ Runs a static check over all `.def` files in the workspace and reports optimizat
 
 > **Published on the VS Code Marketplace:** [cuihairu.kode-kbengine](https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine)
 >
-> To skip local builds, grab `kode-nightly.vsix` from the [Daily Builds](#daily-builds) section; otherwise build from source and install locally as follows.
+> To skip local builds, grab the platform VSIX for your OS (or the universal `kode-*-pure-ts.vsix`) from the [Daily Builds](#daily-builds) section; otherwise build from source and install locally as follows.
 
 ### Build from Source and Install Locally
 
@@ -431,7 +435,7 @@ If this project helps you, consider giving it a star.
 
 ---
 
-Latest release v0.1.3, published to the Marketplace as `cuihairu.kode-kbengine`. 152 commands and 146 configuration settings are in place; the feature catalog in [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) is a 0.1.x snapshot, and [TESTING.md](./TESTING.md) carries the testing record.
+Latest release v0.1.3, published to the Marketplace as `cuihairu.kode-kbengine`. 154 commands and 150 configuration settings are in place (per `package.json` contributes on `main`); the feature catalog in [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) is a 0.1.x snapshot, and [TESTING.md](./TESTING.md) carries the testing record.
 
 ### Demo hot reload receiver
 
