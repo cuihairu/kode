@@ -622,6 +622,9 @@ The flow graph panel supports:
 - Bounded initial assembly (按需展开): the first walk runs at a fixed depth bound (6) — frames past the bound are marked 截断边界 with a 继续展开 entry that reopens the boundary frame's file+function as a new scenario (the panel never pretends to show the whole graph at once)
 - Panel toolbar (injected only by the panel; the generated artifact stays zero-script): a search box filters rows by text with Enter locating the first match, plus zoom in/out/reset buttons (body zoom 0.5–2, clamped)
 - Cancellable assembly: the progress notification is cancellable — the assembler checks the token between phases (file reads / triple collection / def+impl resolution) and stops the background extension; a cancel reports 调用图装配已取消 (distinct from an assembly failure)
+- Text path (文本路径): a toolbar toggle renders the same assembled sample as a plain-text walk (graph and text consume one model — no re-parsing, no invented evidence); the text face keeps every walk row, frame-local call, branch candidate, unresolved/未连接 reason, and the full EV evidence index with the truncation note
+- Error recovery: assembly failure keeps the previous view and all retained state (state changes only after a successful assembly); the error message carries a 重试 action that reopens the same entry; switching to the text face before any assembly honestly reports 没有已装配的调用图场景
+- Keyboard operable: interactive bridge elements (jump/open/back/view/node) are focusable and respond to Enter/Space as clicks; the panel chrome is fully bilingual via the webview locale setting
 
 ### `kbengine.quickActions.runByName`
 
