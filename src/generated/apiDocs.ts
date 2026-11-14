@@ -1752,7 +1752,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "kind": "method",
     "signature": "delSpaceData",
     "qualifier": "",
-    "summaryEn": "Space key/value strings; change broadcast → callback onSpaceData (§3)",
+    "summaryEn": "Space key/value strings; string-only, _mapping write-protected — full contract below (§2 spaceData contract); change broadcast → callback onSpaceData (§3)",
     "summaryZh": "",
     "sourceRefs": [],
     "page": "api-cellapp"
@@ -1850,7 +1850,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "kind": "method",
     "signature": "getSpaceData",
     "qualifier": "",
-    "summaryEn": "Space key/value strings; change broadcast → callback onSpaceData (§3)",
+    "summaryEn": "Space key/value strings; string-only, _mapping write-protected — full contract below (§2 spaceData contract); change broadcast → callback onSpaceData (§3)",
     "summaryZh": "",
     "sourceRefs": [],
     "page": "api-cellapp"
@@ -2104,7 +2104,7 @@ export const API_DOC_ENTRIES: readonly ApiDocEntry[] = [
     "kind": "method",
     "signature": "setSpaceData",
     "qualifier": "",
-    "summaryEn": "Space key/value strings; change broadcast → callback onSpaceData (§3)",
+    "summaryEn": "Space key/value strings; string-only, _mapping write-protected — full contract below (§2 spaceData contract); change broadcast → callback onSpaceData (§3)",
     "summaryZh": "",
     "sourceRefs": [],
     "page": "api-cellapp"

@@ -71,7 +71,7 @@ actually provides them. "Layer" values: **cell** = `cellapp.cpp:172-189`,
 | `registerReadFileDescriptor` / `registerWriteFileDescriptor` / `deregisterReadFileDescriptor` / `deregisterWriteFileDescriptor` | cell `cellapp.cpp:176-179` | FD callbacks; shared impl `lib/server/py_file_descriptor.cpp` |
 | `addSpaceGeometryMapping(spaceID, mapper, path, shouldLoadOnServer, params)` | cell `cellapp.cpp:180` → `SpaceMemory::__py_AddSpaceGeometryMapping` | Binds navmesh/geometry to a space; `params` maps layers→navmesh files; completion callbacks §3 |
 | `getSpaceGeometryMapping(spaceID)` | cell `cellapp.cpp:181` | Current mapping name of a space |
-| `setSpaceData` / `getSpaceData` / `delSpaceData` | cell `cellapp.cpp:182-184` | Space key/value strings; change broadcast → callback `onSpaceData` (§3) |
+| `setSpaceData` / `getSpaceData` / `delSpaceData` | cell `cellapp.cpp:183-185` | Space key/value strings; string-only, `_mapping` write-protected — full contract below (§2 spaceData contract); change broadcast → callback `onSpaceData` (§3) |
 | `isShuttingDown()` | cell `cellapp.cpp:185` | Shutdown state; also checked inside `createEntity` (`cellapp.cpp:505-508`) |
 | `address()` | cell `cellapp.cpp:186` | Internal network interface address |
 | `raycast(spaceID, layer, src, dst)` | cell `cellapp.cpp:187`, impl `cellapp.cpp:2158` | Geometry ray cast; requires the space to have geometry loaded via `addSpaceGeometryMapping` |
@@ -90,6 +90,62 @@ actually provides them. "Layer" values: **cell** = `cellapp.cpp:172-189`,
 Source-material functions accounted for elsewhere: the material's intro
 mentions `KBEngine.createCellEntity` — that is the **baseapp** face
 (KB-API-003 scope), not registered on cellapp.
+
+### spaceData contract (`setSpaceData` / `getSpaceData` / `delSpaceData`, KSEM-DATA-05)
+
+Space data is **not a dict attribute** — three module functions, each
+space-scoped by a leading `spaceID` (`cellapp.cpp:183-185`, bindings
+`SpaceMemory::__py_SetSpaceData/__py_GetSpaceData/__py_DelSpaceData`,
+`spacememory.cpp:697/754/810`):
+
+- **String-only values** (engine intent: client compatibility,
+  `spacememory.h:127` "只能存储字符串资源"): `PyArg_ParseTuple("Iss"/"Is")`
+  rejects non-string key/value at parse time (`spacememory.cpp:709`,
+  `:766` for get, `:822` for del), empty key is rejected on all three
+  (set `:725`, get `:782`, del `:838`); `getSpaceData` returns `str`
+  (`PyUnicode_FromString`, `:806`) and raises `AssertionError` on a
+  missing `(spaceID, key)` (`:799`) — the binding checks presence before
+  reading, so the C++-level "missing key returns empty string" path
+  (`:582-590`) never reaches scripts.
+- **Space range**: storage is per-`SpaceMemory` (one per space);
+  `SpaceMemorys::findSpace(spaceID) == NULL` raises `AssertionError` on
+  all three (set `:733`, get `:790`, del `:846`). Same key in different
+  spaces is independent state; there is no process-global spaceData face.
+- **Client visibility path (receive-only)**: every change notifies
+  entities in the space that have a witness — per-change
+  `ClientInterface::setSpaceData`/`delSpaceData`
+  (`spacememory.cpp:636-653`) plus a full `initSpaceData` snapshot when
+  the witness attaches (`_addSpaceDatasToEntityClient`,
+  `spacememory.cpp:658-684`). Clients keep a local copy (js template
+  `app.spacedata`, `sdk_templates/client/js/kbengine.js:4846-4870`;
+  UE4 `KBEngineApp::getSpaceData(key)` reads it,
+  `KBEngine.cpp:1132`) and expose a **single-key** read form — the
+  client SDKs have no set/del API, the client cannot write space data.
+  A `_mapping` set delivered to a client additionally triggers the local
+  geometry mapping (`kbengine.js:4856`, `KBEngine.cpp:1097`).
+- **`_mapping` protection**: set and del reject the key case-insensitively
+  (`kbe_stricmp`) with `AssertionError "key{_mapping} is protected!"`
+  (set `spacememory.cpp:740-742`, del `:862-864`); **get is allowed** —
+  `_mapping` holds the space geometry mapping path, written by the engine
+  itself via `addSpaceGeometryMapping` → `setGeometryPath`
+  (`spacememory.cpp:543-554`), and `getSpaceGeometryMapping` reads it.
+- **Callback**: `onSpaceData(spaceID, key, value)` on the entry script;
+  the delete dispatch carries `None` (§3).
+
+Kode-side current faces: the three functions ship as cell process-API
+symbols with the str-annotated signatures (`typings/cell/KBEngine/_module.pyi:124-130`,
+embedded in `typings/process-api.json`); bots/client typings carry the
+single-key client read form (`getSpaceData(__key: str) -> str`) and **no**
+set/del — matching the receive-only client path; the entry-hook registry
+registers `onSpaceData` (`src/backend/entryHooks.ts`); the shared-data
+dict index deliberately excludes spaceData (function form, not a dict
+attribute — `KBENGINE_DATA_DICTS = globalData/baseAppData/cellAppData`).
+Known honest gaps (no face, recorded not prebuilt): argument validation
+beyond the annotations (empty key, non-string value, `_mapping` write,
+spaceID existence) has no diagnostic emitter, and static `setSpaceData`
+call sites are not harvested into a key-completion face — spaceData keys
+would admit the same write-site indexing the three dicts have if a batch
+takes it.
 
 ## 3. KBEngine module callbacks (cellapp face)
 
