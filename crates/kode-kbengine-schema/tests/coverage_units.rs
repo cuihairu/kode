@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use kode_kbengine_schema::compat::{check, Change, CompatReport};
+use kode_kbengine_schema::compat::{check, check_classified, Change, CompatReport};
 use kode_kbengine_schema::layout::{
     collect_raw_types, def_file_name, entity_registered, entity_wire_info, is_builtin_type,
     resolve_alias_map, resolve_ref,
@@ -922,14 +922,15 @@ fn compat_identical_is_compatible_no_changes() {
 
 #[test]
 fn compat_property_only_in_old_is_not_a_change() {
-    // 旧实体独有属性(新实体已删)→ 不产变更(旧端仍按旧签名解码自身流)
+    // 旧实体独有属性(新实体已删)→ SER-13 起显式落账:PropertyRemoved
+    // (属性删=合并序漂移,旧端按位解码新流错位;md5 可见 property.cpp:53-64
+    // → 握手拒绝)。仍不是 PropertyTypeChanged(类型未动)。
     let old = base_schema();
     let mut new = old.clone();
     let avatar = new.entities.get_mut("Avatar").unwrap();
     assert_eq!(avatar.properties.len(), 1);
     avatar.properties.clear();
     let report = check(&old, &new);
-    assert!(report.compatible);
     assert!(
         !report
             .changes
@@ -938,6 +939,16 @@ fn compat_property_only_in_old_is_not_a_change() {
         "missing property is not a type change: {:?}",
         report.changes
     );
+    assert!(report.changes.iter().any(|c| matches!(
+        c,
+        Change::PropertyRemoved { property, .. } if property == "hp"
+    )));
+    assert!(!report.compatible);
+    let classified = check_classified(&old, &new);
+    assert!(classified
+        .classified
+        .iter()
+        .any(|c| c.gate == kode_kbengine_schema::compat::EngineGate::HandshakeRejected));
 }
 
 #[test]
