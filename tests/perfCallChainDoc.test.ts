@@ -461,7 +461,10 @@ const ANCHORS: Array<[string, number, string]> = [
   // +4 注入、数据字典键位分支 +12、provideDataDictKeyCompletions +56
   // (KBEngine 类域内,PythonCompletionProvider 之前)→ provideCompletionItems
   // 真位重探 897→973,出处随 baseline 锁步。
-  ['src/languageProviders/completion.ts', 973, 'provideCompletionItems('],
+  // 2026-11-14(KSEM-DATA-04):provideDataDictKeyCompletions 进程域收窄重写
+  // (+16:域闸 +7/族内域内访问点过滤与 detail 域内计数重排 +9)→
+  // provideCompletionItems 真位重探 973→989,出处随 baseline 锁步。
+  ['src/languageProviders/completion.ts', 989, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)

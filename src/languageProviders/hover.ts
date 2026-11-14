@@ -39,7 +39,7 @@ import { cellScriptRoleAndEntity, collectCellDataDefUniverse, fetchCellDataKeys,
 import { cellDataProvenStateAtLine } from '../backend/cellDataCallbackCheck';
 import { cellDataHoverMarkdown } from '../backend/cellDataHover';
 import { getKbeAliases, getKbeSymbol, resolveKbeAccessAtPosition } from '../kbeModuleIndex';
-import { pythonProcessFromPath } from '../backend/pythonProcess';
+import { dataDictProcessDomain, dataDictSiteInDomain, pythonProcessFromPath } from '../backend/pythonProcess';
 import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, inferDataDictValueType, isKeyInsideLineComment, queryDataDictSitesForAccess, resolveScopeRoot } from '../globalDataIndex';
 import { createHoverRequestDeadline, createWaiterUnionToken, raceWithBudget } from '../hoverBudget';
 import { TAG_HOVER_DOCS, getLanguageFeatureConfig } from './shared';
@@ -664,7 +664,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
             ) {
               return null;
             }
-            const hover = this.buildDataDictHover(dictAccess, dataDictIndex, resolveScopeRoot(document.uri.fsPath));
+            const hover = this.buildDataDictHover(dictAccess, dataDictIndex, resolveScopeRoot(document.uri.fsPath), document);
             if (hover) {
               return hover;
             }
@@ -689,16 +689,49 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
    * RHS 推导类型;读点显示同键写点值类型(union)与首个写点位置。写点类型
    * 推不出→null(交回普通链);读点无同键写点→null;读点有写点但类型推
    * 不出→只给写点位置。
+   *
+   * KSEM-DATA-04 追加:①进程域——查询文件出域(base 进程读 cellAppData
+   * 等)时运行期无此模块属性,给机制说明而非类型;域内写点照常,跨进程域
+   * 写点不入类型面并如实计数。②可用性——发现写点不代表读时已存在:读点
+   * 恒带运行时序 caveat,删除点计数并提示读取可能落在删除之后。③get 默认
+   * 值——`.get(K, D)` 读点有效类型=写点类型 union ∪ default 类型,来源行
+   * 单列。
    */
   private buildDataDictHover(
     access: NonNullable<ReturnType<typeof getKbeDataDictAccessAtPosition>>,
     index: GlobalDataDictIndex,
-    scopeRoot: string
+    scopeRoot: string,
+    document: vscode.TextDocument
   ): vscode.Hover | null {
+    const keyLabel = access.callFn ? `${access.callFn}(...)` : access.keySignature;
+    // KSEM-DATA-04 进程域:查询文件出域 = 运行期无此属性(AttributeError),
+    // 机制说明优先于类型 union(引擎真域见 dataDictProcessDomain)
+    const domain = dataDictProcessDomain(access.dict);
+    const docRole = pythonProcessFromPath(document.fileName);
+    if (domain && docRole && !domain.has(docRole)) {
+      const markdown = new vscode.MarkdownString();
+      markdown.appendMarkdown(`**KBEngine.${access.dict}\`${keyLabel}\`**\n\n`);
+      markdown.appendMarkdown(
+        `本字典仅 ${[...domain].join('/')} 进程注册;本文件属 ${docRole} 进程——运行期无此属性,读取会抛 AttributeError`
+      );
+      return new vscode.Hover(markdown);
+    }
     // AUD-068 同款(与 definition/references 同口径):查询带根身份——
     // 索引按 workspace 根身份键提交,查询不带根会落在 '' 空根键上永远查空
-    const writeSites = queryDataDictSitesForAccess(index, access, scopeRoot)
-      .filter(site => site.kind === 'write');
+    const allSites = queryDataDictSitesForAccess(index, access, scopeRoot);
+    // KSEM-DATA-04 删除点无值面:del 位不出「读点」标注(误导),删除计数
+    // 由同键读点悬停承载(del x.get(k) 非法语法不判,delete 恒下标形态)
+    if (access.kind === 'delete') {
+      return null;
+    }
+    // 跨进程域写点(base 文件写 cellAppData)不参与类型面(运行期该进程无此键)
+    const writeSites = allSites.filter(
+      site => site.kind === 'write' && dataDictSiteInDomain(site.file, access.dict)
+    );
+    const excludedByDomain = allSites.filter(
+      site => site.kind === 'write' && !dataDictSiteInDomain(site.file, access.dict)
+    ).length;
+    const deleteCount = allSites.filter(site => site.kind === 'delete').length;
     const types: string[] = [];
     // KSEM-DATA-03 来源说明:联合成员逐类型记产源写点(类型→file:line 标签),
     // 类型推不出的写点不入联合、计数如实补记
@@ -720,13 +753,20 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       }
       byType.set(type, labels);
     }
+    // KSEM-DATA-04 get 默认值:读点有效类型并入 default 类型(缺省时返回它)
+    const defaultType =
+      access.kind === 'read' && access.defaultText
+        ? inferDataDictValueType(access.defaultText)
+        : null;
+    if (defaultType && !types.includes(defaultType)) {
+      types.push(defaultType);
+    }
     if (access.kind === 'write' && types.length === 0) {
       return null;
     }
-    if (access.kind === 'read' && writeSites.length === 0) {
+    if (access.kind === 'read' && writeSites.length === 0 && !defaultType) {
       return null;
     }
-    const keyLabel = access.callFn ? `${access.callFn}(...)` : access.keySignature;
     const markdown = new vscode.MarkdownString();
     const headline =
       `**KBEngine.${access.dict}\`${keyLabel}\`${types.length > 0 ? `: ${types.join(' | ')}` : ''}**`;
@@ -734,17 +774,33 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       markdown.appendMarkdown(`${headline}\n\n推导自本写点右侧表达式`);
     } else {
       markdown.appendMarkdown(`${headline}\n\n读点 · 同键写点 ${writeSites.length} 处`);
-      const first = writeSites[0];
-      markdown.appendMarkdown(`\n\n首个写点 ${path.basename(first.file)}:${first.line + 1}`);
+      if (writeSites.length > 0) {
+        const first = writeSites[0];
+        markdown.appendMarkdown(`\n\n首个写点 ${path.basename(first.file)}:${first.line + 1}`);
+      }
+      // KSEM-DATA-04 可用性:发现写点不代表读时已存在(运行时序静态不可知)
+      markdown.appendMarkdown(`\n\n写点运行时可能晚于本读点执行——键可能尚未存在`);
+      if (deleteCount > 0) {
+        markdown.appendMarkdown(`\n\n同键删除点 ${deleteCount} 处(读取可能落在删除之后)`);
+      }
+      if (excludedByDomain > 0) {
+        markdown.appendMarkdown(`\n\n另有 ${excludedByDomain} 处跨进程域写点不入类型(该进程不注册本字典)`);
+      }
       // 联合多成员(≥2 类)逐类型列产源——正常多态(int|str)如实并陈,
       // 不裁不报错(共享数据键无声明契约面,类型分歧不构成错误)
       if (types.length >= 2) {
         for (const [type, labels] of byType) {
           markdown.appendMarkdown(`\n\n- ${type} ← ${labels.join(', ')}`);
         }
+        if (defaultType) {
+          markdown.appendMarkdown(`\n\n- ${defaultType} ← 本读点 .get 默认值`);
+        }
         if (inferredSiteCount < writeSites.length) {
           markdown.appendMarkdown(`\n\n- 另有 ${writeSites.length - inferredSiteCount} 处写点类型不可推(不入联合)`);
         }
+      } else if (defaultType && writeSites.length > 0) {
+        // 单写点类型 + default 凑成联合时也补来源行(否则 default 来源无处可看)
+        markdown.appendMarkdown(`\n\n- ${defaultType} ← 本读点 .get 默认值`);
       }
     }
     return new vscode.Hover(markdown);

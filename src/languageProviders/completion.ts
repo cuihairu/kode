@@ -22,7 +22,7 @@ import { awaitDataDictIndexReady, isPythonDataDictIndexEnabled } from './pythonD
 import { l10nText } from '../nlsRuntime';
 import { getPythonSelfCompletionContext } from '../backend/pythonLanguageUtils';
 import { filterKbeSymbols, getKbeAliases, getKbeCompletionContext, kbeCompletionDocumentation } from '../kbeModuleIndex';
-import { pythonProcessFromPath, processApiSymbols } from '../backend/pythonProcess';
+import { dataDictProcessDomain, dataDictSiteInDomain, pythonProcessFromPath, processApiSymbols } from '../backend/pythonProcess';
 import { EngineApiCatalog } from '../backend/engineApiMetadata';
 import { getEngineVersion } from '../engineVersion';
 import { getLanguageFeatureConfig } from './shared';
@@ -603,6 +603,11 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     if (!(await awaitDataDictIndexReady(index, token))) {
       return [];
     }
+    // KSEM-DATA-04 进程域:查询文件出域(base 进程敲 cellAppData 键)运行期
+    // 无此属性,键位不给项(悬停侧给机制说明);角色不可知不拦
+    const domain = dataDictProcessDomain(ctx.dict);
+    const docRole = pythonProcessFromPath(document.fileName);
+    const docOutOfDomain = !!(domain && docRole && !domain.has(docRole));
     const families = index.queryKeyFamilies(ctx.dict, resolveScopeRoot(document.uri.fsPath));
     if (token?.isCancellationRequested) {
       return [];
@@ -611,25 +616,36 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
       return []; // 本工程此字典暂无键:键位不给项,不造键
     }
     const range = new vscode.Range(position.line, ctx.replaceStart, position.line, position.character);
-    return families
-      .filter(family => family.keySignature.startsWith(ctx.partial))
-      .map(family => {
-        const item = new vscode.CompletionItem(
-          family.keySignature,
-          vscode.CompletionItemKind.Variable
-        );
-        const writes = family.sites.filter(site => site.kind === 'write');
-        const firstWrite = writes[0];
-        const detailParts = [l10nText('{count} write site(s)', { count: writes.length })];
-        if (firstWrite) {
-          detailParts.push(`${path.basename(firstWrite.file)}:${firstWrite.line + 1}`);
-        } else {
-          detailParts.push(l10nText('no write site'));
-        }
-        item.detail = detailParts.join(' · ');
-        item.range = range;
-        return item;
-      });
+    const items: vscode.CompletionItem[] = [];
+    for (const family of families) {
+      if (!family.keySignature.startsWith(ctx.partial)) {
+        continue;
+      }
+      // 域化字典:只认域内访问点——纯跨域写点的键族运行期该进程无此键不给项;
+      // 写点数/首写点也只数域内(跨域写点不出 detail,如实不造来源)
+      const inDomainSites = docOutOfDomain
+        ? []
+        : family.sites.filter(site => dataDictSiteInDomain(site.file, ctx.dict));
+      if (inDomainSites.length === 0) {
+        continue;
+      }
+      const writes = inDomainSites.filter(site => site.kind === 'write');
+      const firstWrite = writes[0];
+      const detailParts = [l10nText('{count} write site(s)', { count: writes.length })];
+      if (firstWrite) {
+        detailParts.push(`${path.basename(firstWrite.file)}:${firstWrite.line + 1}`);
+      } else {
+        detailParts.push(l10nText('no write site'));
+      }
+      const item = new vscode.CompletionItem(
+        family.keySignature,
+        vscode.CompletionItemKind.Variable
+      );
+      item.detail = detailParts.join(' · ');
+      item.range = range;
+      items.push(item);
+    }
+    return items;
   }
 
   /**

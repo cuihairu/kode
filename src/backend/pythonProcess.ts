@@ -36,3 +36,33 @@ export function processApiSymbols(process: PythonProcess): readonly ProcessApiSy
 export function processStubRoot(stubRoot: string, process: PythonProcess): string {
   return `${stubRoot.replace(/[\\/]+$/, '')}/${process}`.replace(/\\/g, '/');
 }
+
+/**
+ * 共享数据字典的引擎真域(KSEM-DATA-04/SEM-045):`KBEngine.baseAppData`
+ * 仅 baseapp 进程注册(baseapp.cpp:461)、`cellAppData` 仅 cellapp 进程注册
+ * (cellapp.cpp:200);`globalData` 全进程注册(entity_app.h:419)不收窄。
+ * 返回 null = 全进程可见,不做进程域过滤。
+ */
+export function dataDictProcessDomain(dict: string): ReadonlySet<PythonProcess> | null {
+  if (dict === 'baseAppData') {
+    return new Set<PythonProcess>(['base']);
+  }
+  if (dict === 'cellAppData') {
+    return new Set<PythonProcess>(['cell']);
+  }
+  return null;
+}
+
+/**
+ * 单文件是否在字典进程域内:globalData 恒真;域化字典的文件角色不在域内
+ * = 运行期无此模块属性(false);scripts/ 目录之外角色不可知 = 不声称出域
+ * (true,与「不猜」口径一致)。
+ */
+export function dataDictSiteInDomain(file: string, dict: string): boolean {
+  const domain = dataDictProcessDomain(dict);
+  if (!domain) {
+    return true;
+  }
+  const role = pythonProcessFromPath(file);
+  return role === null ? true : domain.has(role);
+}

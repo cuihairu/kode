@@ -16,6 +16,7 @@ import {
   type PythonReceiverCallWithArguments
 } from './backend/pythonLanguageUtils';
 import { getKbeAliases } from './kbeModuleIndex';
+import { dataDictProcessDomain, dataDictSiteInDomain, pythonProcessFromPath } from './backend/pythonProcess';
 import {
   GlobalDataDictIndex,
   extractModuleConstantBindings,
@@ -286,6 +287,13 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
         if (isKeyInsideLineComment(lineText, access.keyStart)) {
           continue;
         }
+        // KSEM-DATA-04 进程域:查询文件出域(base 进程访问 cellAppData 等)
+        // = 运行期无此属性,不出类型提示(悬停侧给机制说明);角色不可知不拦
+        const domain = dataDictProcessDomain(access.dict);
+        const docRole = pythonProcessFromPath(document.fileName);
+        if (domain && docRole && !domain.has(docRole)) {
+          continue;
+        }
         if (access.kind === 'write') {
           const annotation = inferDataDictValueType(access.valueText);
           if (annotation !== null) {
@@ -295,6 +303,10 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
               vscode.InlayHintKind.Type
             ));
           }
+          continue;
+        }
+        // KSEM-DATA-04 删除点:无值类型面(del 无 RHS;读点 union 不受污染)
+        if (access.kind === 'delete') {
           continue;
         }
         // 读点:同键写点值类型 union(能推才显,无写点/全未知不出)
@@ -308,9 +320,20 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
           if (site.kind !== 'write') {
             continue;
           }
+          // 跨进程域写点不参与类型(该进程不注册本字典)
+          if (!dataDictSiteInDomain(site.file, access.dict)) {
+            continue;
+          }
           const type = inferDataDictValueType(site.valueText);
           if (type !== null && !types.includes(type)) {
             types.push(type);
+          }
+        }
+        // KSEM-DATA-04 get 默认值:读点有效类型=写点 union ∪ default 类型
+        if (access.kind === 'read' && access.defaultText) {
+          const defaultType = inferDataDictValueType(access.defaultText);
+          if (defaultType !== null && !types.includes(defaultType)) {
+            types.push(defaultType);
           }
         }
         if (types.length > 0) {

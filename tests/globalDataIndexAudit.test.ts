@@ -266,15 +266,16 @@ describe('KSEM-DATA-01 复核:类型消费面(多写者联合现状)', () => {
   });
 });
 
-describe('KSEM-DATA-01 差距钉(当前行为如实,后续项域不修)', () => {
-  it('del 访问当前归读点(无删除态):SEM-045 域', () => {
+describe('KSEM-DATA-01 差距钉(SEM-045 已收 del/default/进程域三钉;余钉如实)', () => {
+  it('del 下标访问=delete 态(SEM-045 已落地):keySignature 照常入索引', () => {
     const sites = findKbeDataDictAccesses('import KBEngine\ndel KBEngine.globalData["k"]\n', ALIASES);
     expect(sites).toHaveLength(1);
-    expect(sites[0].kind).toBe('read');
+    expect(sites[0].kind).toBe('delete');
     expect(sites[0].keySignature).toBe('k');
+    expect(sites[0].valueText).toBeNull();
   });
 
-  it('.get(k, default) 的 default 当前不入面:valueText 恒 null(SEM-045 域)', () => {
+  it('.get(k, default) 的 default 已入面(SEM-045):valueText 恒 null、defaultText 取第二参', () => {
     const sites = findKbeDataDictAccesses(
       'import KBEngine\nv = KBEngine.globalData.get("k", {})\n',
       ALIASES
@@ -282,9 +283,10 @@ describe('KSEM-DATA-01 差距钉(当前行为如实,后续项域不修)', () => 
     expect(sites).toHaveLength(1);
     expect(sites[0].kind).toBe('read');
     expect(sites[0].valueText).toBeNull();
+    expect(sites[0].defaultText).toBe('{}');
   });
 
-  it('进程域不收窄:scripts/base 读点与 scripts/cell 写点同键互链(引擎真域 cellapp-only)', async () => {
+  it('进程域收窄只落类型/补全面:references 导航如实跨角色互链不收窄(SEM-045 裁定)', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'da01-role-'));
     const cellWriter = path.join(root, 'scripts', 'cell', 'Avatar.py');
     const baseReader = path.join(root, 'scripts', 'base', 'Avatar.py');
@@ -302,7 +304,8 @@ describe('KSEM-DATA-01 差距钉(当前行为如实,后续项域不修)', () => 
     const references = new KBEngineReferencesProvider(stubManager(), index);
     try {
       // 引擎真域:cellAppData 只在 cellapp 注册(baseapp/cellapp.cpp:200),
-      // base 脚本运行期读不到;当前索引无进程域收窄——跨角色互链如实钉住。
+      // base 脚本运行期读不到。SEM-045 进程域收窄落在类型/提示/补全信息面,
+      // 导航(references)按键身份如实跨角色互链——域过滤不偷换导航面。
       const baseText = 'import KBEngine\nvalue = KBEngine.cellAppData["k"]\n';
       const baseDoc = vscode.makeTextDocument(baseText, { fileName: baseReader, languageId: 'python' });
       const refs = await references.provideReferences(

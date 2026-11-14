@@ -28,9 +28,14 @@ export interface KbeDataDictAccess {
   keyStart: number;
   /** 键表达式尾后一列 */
   keyEnd: number;
-  kind: 'write' | 'read';
+  kind: 'write' | 'read' | 'delete';
   /** 写点 RHS 直文本(增强赋值/无值时 null) */
   valueText: string | null;
+  /**
+   * `.get(KEY, DEFAULT)` 读点的 DEFAULT 直文本(KSEM-DATA-04:读点有效
+   * 类型=写点类型 union ∪ default 类型);非 get 读点/写点缺省(不设)。
+   */
+  defaultText?: string | null;
   /** 访问表达式尾后一列(写点=RHS 尾、读点=`]`/`)` 尾);inlay/hover 标注位 */
   exprEnd: number;
 }
@@ -460,10 +465,15 @@ function matchCloseParen(lineText: string, openParen: number): number {
 }
 
 /**
- * `.get(KEY[, default])` 读点:只取首个实参(首个顶层逗号或闭括号为界),
- * 括号不闭合(跨行)不取;exprEnd=闭括号尾后一列(inlay/hover 标注位)。
+ * `.get(KEY[, default])` 读点:取首个实参为键(首个顶层逗号或闭括号为界),
+ * 括号不闭合(跨行)不取;有顶层逗号时逗号后到闭括号的 trim 文本为
+ * default(KSEM-DATA-04:读点有效类型 union ∪ default 类型;缺省不取
+ * default 为 null)。exprEnd=闭括号尾后一列(inlay/hover 标注位)。
  */
-function parseGetAccess(lineText: string, from: number): AccessSpan | null {
+function parseGetAccess(
+  lineText: string,
+  from: number
+): (AccessSpan & { defaultText: string | null }) | null {
   const head = /^\.get[ \t]*\(/.exec(lineText.slice(from));
   if (!head) {
     return null;
@@ -475,6 +485,8 @@ function parseGetAccess(lineText: string, from: number): AccessSpan | null {
   }
   let depth = 0;
   let inString: string | null = null;
+  let firstComma = -1;
+  let secondComma = -1;
   for (let index = openParen + 1; index < close; index += 1) {
     const ch = lineText[index];
     if (inString) {
@@ -500,12 +512,24 @@ function parseGetAccess(lineText: string, from: number): AccessSpan | null {
       continue;
     }
     if (depth === 0 && ch === ',') {
-      const span = trimSpan(lineText, openParen + 1, index);
-      return span ? { ...span, exprEnd: close + 1 } : null;
+      if (firstComma < 0) {
+        firstComma = index;
+      } else if (secondComma < 0) {
+        secondComma = index;
+        break;
+      }
     }
   }
-  const span = trimSpan(lineText, openParen + 1, close);
-  return span ? { ...span, exprEnd: close + 1 } : null;
+  const span = trimSpan(lineText, openParen + 1, firstComma < 0 ? close : firstComma);
+  if (!span) {
+    return null;
+  }
+  // default=第二实参(首顶层逗号到次顶层逗号/闭括号);超参形态只取第二参
+  const defaultText =
+    firstComma >= 0
+      ? trimSpan(lineText, firstComma + 1, secondComma < 0 ? close : secondComma)?.keyRaw ?? null
+      : null;
+  return { ...span, defaultText, exprEnd: close + 1 };
 }
 
 /** 区间去首尾空白;空区间 → null */
@@ -670,7 +694,16 @@ function scanLineDictAccesses(
     }
     const dict = match[2] as KbeDataDictName;
     const after = skipWhitespace(lineText, match.index + match[0].length);
-    const push = (span: AccessSpan, kind: 'write' | 'read', valueText: string | null): void => {
+    // KSEM-DATA-04:`del alias.dict[...]` 删除点(行内前缀 del 令牌;`del
+    // x.get(k)` 非法语法不判——.get 臂不落 delete)。词法掩码已剔注释/
+    // 字符串里的伪 del(访问段必须是代码)。
+    const isDelete = /(?:^|[^\w])del[ \t]+$/.test(lineText.slice(0, match.index));
+    const push = (
+      span: AccessSpan,
+      kind: 'write' | 'read' | 'delete',
+      valueText: string | null,
+      defaultText?: string | null
+    ): void => {
       const keySignature = normalizeKeySignature(span.keyRaw);
       if (keySignature !== null) {
         accesses.push({
@@ -681,6 +714,7 @@ function scanLineDictAccesses(
           keyEnd: span.keyEnd,
           kind,
           valueText,
+          defaultText,
           exprEnd: span.exprEnd
         });
         return;
@@ -704,6 +738,7 @@ function scanLineDictAccesses(
               keyEnd: span.keyEnd,
               kind,
               valueText,
+              defaultText,
               exprEnd: span.exprEnd
             });
           }
@@ -720,19 +755,20 @@ function scanLineDictAccesses(
         keyEnd: span.keyEnd,
         kind,
         valueText,
+        defaultText,
         exprEnd: span.exprEnd
       });
     };
     if (lineText[after] === '[') {
       const subscript = parseSubscriptAccess(lineText, after);
       if (subscript) {
-        push(subscript, subscript.kind, subscript.valueText);
+        push(subscript, isDelete ? 'delete' : subscript.kind, isDelete ? null : subscript.valueText);
       }
       continue;
     }
     const getCall = parseGetAccess(lineText, after);
     if (getCall) {
-      push(getCall, 'read', null);
+      push(getCall, 'read', null, getCall.defaultText);
     }
   }
 }
