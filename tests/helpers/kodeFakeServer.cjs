@@ -26,6 +26,8 @@ const exitOnShutdown = args.includes('exitOnShutdown');
 const traceCancels = args.includes('traceCancels');
 const failHandshakeAfterCrash = args.includes('failHandshakeAfterCrash');
 const silentRpc = args.includes('silentRpc');
+// RUST-008 协议版本门禁替身:wrongVersion 时回与 TS 侧 KODE_PROTOCOL_VERSION 不一致的版本
+const wrongVersion = args.includes('wrongVersion');
 const silentInitialize = args.includes('silentInitialize');
 const delayRpcMs = msArg(args, 'delayRpc=');
 const delayInitializeMs = msArg(args, 'delayInitialize=');
@@ -86,7 +88,7 @@ function handle(msg) {
         setTimeout(() => {
           reply(initId, {
             capabilities: { textDocumentSync: { openClose: true, change: 1 } },
-            serverInfo: { name: 'kode-fake-server', version: '0.0.0-test' },
+            serverInfo: { name: 'kode-fake-server', version: wrongVersion ? '0.0.0-test' : '0.2.0' },
           });
         }, delayInitializeMs);
         return;
@@ -97,7 +99,7 @@ function handle(msg) {
       }
       return reply(msg.id, {
         capabilities: { textDocumentSync: { openClose: true, change: 1 } },
-        serverInfo: { name: 'kode-fake-server', version: '0.0.0-test' },
+        serverInfo: { name: 'kode-fake-server', version: wrongVersion ? '0.0.0-test' : '0.2.0' },
         // KBUG-ROOT:回显握手携带的 workspaceFolders,供客户端侧验证根归属参数真的上路
         receivedWorkspaceFolders: msg.params && msg.params.workspaceFolders
           ? msg.params.workspaceFolders

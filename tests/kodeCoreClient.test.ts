@@ -46,6 +46,25 @@ describe('kodeCoreClient transport(fake stdio server)', () => {
     await client.dispose();
   }, 10_000);
 
+  it('RUST-008 版本门:握手回包版本不一致 → PROTOCOL_VERSION_MISMATCH,子进程被杀、client 可再 spawn', async () => {
+    const client = tracked(makeClient({ args: [FAKE_SERVER, 'wrongVersion'] }));
+    const error = await client.start().then(
+      () => null,
+      (e: unknown) => e
+    );
+    expect(error).toBeInstanceOf(KodeCoreTransportError);
+    expect((error as KodeCoreTransportError).code).toBe('PROTOCOL_VERSION_MISMATCH');
+    expect((error as Error).message).toContain('0.2.0');
+    // 子进程已被杀(不留一个只会说旧协议的进程挂着);client 本体未 disposed,
+    // 换上版本一致的二进制后下一次 start() 可自然恢复——复用假替身验证可再 spawn。
+    expect(client.childProcess).toBeNull();
+    const recovered = tracked(makeClient());
+    await expect(recovered.start()).resolves.toMatchObject({
+      serverInfo: { version: '0.2.0' }
+    });
+    await recovered.dispose();
+  }, 10_000);
+
   it('request_id 贯穿 + didOpen/didChange/didClose 全生命周期', async () => {
     const client = tracked(makeClient());
     await client.start();

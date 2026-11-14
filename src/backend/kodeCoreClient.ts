@@ -19,6 +19,14 @@ const DISPOSE_SHUTDOWN_TIMEOUT_MS_DEFAULT = 5_000;
  */
 const START_TIMEOUT_MS_DEFAULT = 10_000;
 
+/**
+ * RUST-008 判据①:自有协议版本化。TS 侧期望版本,与 Rust 侧
+ * `crates/kode-protocol/src/lib.rs` 的 `PROTOCOL_VERSION` **钉死同步**(两侧
+ * 同批改:RPC 形状漂移的任何一侧改动都必须同时推进两侧常量)。握手回包
+ * serverInfo.version 不一致 = 两侧形状可能互不认识,拒绝以旧形状对讲。
+ */
+export const KODE_PROTOCOL_VERSION = '0.2.0';
+
 export interface KodeCoreClientOptions {
   /** kode-server 二进制路径(cargo build 产物) */
   binaryPath: string;
@@ -84,6 +92,7 @@ export class KodeCoreTransportError extends Error {
       | 'TIMEOUT'
       | 'REQUEST_CANCELLED'
       | 'SERVER_ERROR'
+      | 'PROTOCOL_VERSION_MISMATCH'
   ) {
     super(message);
     this.name = 'KodeCoreTransportError';
@@ -188,7 +197,23 @@ export class KodeCoreClient {
     // KBUG-TIME-02:握手带预算(存活不响应时 start() 以 TIMEOUT 拒绝,
     // 不无限挂起;重启路径的握手失败语义不变,走既有 catch 处理)
     const startTimeoutMs = this.options.startTimeoutMs ?? START_TIMEOUT_MS_DEFAULT;
-    return (await this.request('initialize', params, { timeoutMs: startTimeoutMs })) as KodeCoreInitializeResult;
+    const result = (await this.request('initialize', params, {
+      timeoutMs: startTimeoutMs
+    })) as KodeCoreInitializeResult;
+    // RUST-008 判据①:协议版本不一致 = 两侧 RPC 形状可能互不认识,拒绝对讲。
+    // 杀掉子进程但保留 client 可再 spawn——版本对上(如用户原地换了二进制)
+    // 后下一次 start() 自然恢复;gate 侧现有 catch 把本错误归入回落 TS 面。
+    const serverVersion = result.serverInfo?.version;
+    if (serverVersion !== KODE_PROTOCOL_VERSION) {
+      this.child?.kill();
+      this.child = null;
+      throw new KodeCoreTransportError(
+        `protocol version mismatch: extension expects ${KODE_PROTOCOL_VERSION}, ` +
+        `kode-server reports ${serverVersion ?? 'unknown'}`,
+        'PROTOCOL_VERSION_MISMATCH'
+      );
+    }
+    return result;
   }
 
   /** 发送请求并等待响应;opts.timeoutMs 超时先发 $/cancelRequest 再硬超时 */

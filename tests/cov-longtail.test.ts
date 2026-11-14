@@ -181,7 +181,7 @@ process.stdin.on('data', chunk => {
       if (MODE === 'genfail' && gen > 0) {
         frame({ jsonrpc: '2.0', id: msg.id, error: { code: -32000, message: 'generation mismatch' } });
       } else {
-        frame({ jsonrpc: '2.0', id: msg.id, result: { capabilities: { textDocumentSync: { openClose: true, change: 1 } }, serverInfo: { name: 'kode-matrix', version: '0.0.0-test' } } });
+        frame({ jsonrpc: '2.0', id: msg.id, result: { capabilities: { textDocumentSync: { openClose: true, change: 1 } }, serverInfo: { name: 'kode-matrix', version: '0.2.0' } } }); // RUST-008 版本门:须与 KODE_PROTOCOL_VERSION 一致
         if (MODE === 'noisy') {
           frame({ jsonrpc: '2.0', method: 'window/logMessage', params: { text: 'hello' } });
           frame({ jsonrpc: '2.0', id: 424242, result: { ignored: true } });
