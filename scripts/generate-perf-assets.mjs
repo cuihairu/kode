@@ -2,18 +2,23 @@
 // PR1 性能基线测试资产集生成器(docs/review/2026-10-22 §2.3)。
 //
 // 用法:
-//   node scripts/generate-perf-assets.mjs [--out DIR] [--large-files N] [--keep]
+//   node scripts/generate-perf-assets.mjs [--out DIR] [--large-files N] [--preset S|M|L|XL] [--keep]
 //
 // 场景(与评审基线矩阵一一对应):
 //   small        小型项目:行为正确性口径
-//   large        数万级源文件模拟(.py,默认 30000,--large-files 可调)
+//   large        数万级源文件模拟(.py,默认 30000,--large-files/--preset 可调)
 //   multi-root   三个互相独立的资产根,含同名实体(Avatar)与同名 Python 类(Inventory)
 //   big-py       单个超大 Python 文件(局部变量推导/Definition 压力)
 //   def-heavy    大量 .def + entities.xml/types.xml/alias.xml
 //   noise        含 .git/build/third_party 噪声目录(排除式扫描口径)
 //
+// RUST-019 分档(preset 只改 large 场景的生成文件数):
+//   S=200  M=2000  L=10000  XL=50000(XRoot=multi-root 场景,与档无关)
+//   缺省 30000 是 L 的覆盖超集(v02Baseline bench 同参数)。
+//
 // 输出为确定性内容(无随机),同参数重复生成结果一致;默认打印每个场景
-// 的文件计数摘要。目录已存在时先删除重建,保证可重复。
+// 的文件计数+体积+符号数(.py class/def 与 .def 方法)摘要。
+// 目录已存在时先删除重建,保证可重复。
 
 import { cpus } from 'node:os';
 import fs from 'node:fs';
@@ -26,8 +31,18 @@ function argValue(name, fallback) {
 }
 const flagOn = name => args.includes(name);
 
+const PRESET_LARGE_FILES = { S: 200, M: 2000, L: 10000, XL: 50000 };
+const presetRaw = argValue('--preset', '');
+const preset = presetRaw.toUpperCase();
+if (presetRaw && !(preset in PRESET_LARGE_FILES)) {
+  console.error(`unknown preset '${presetRaw}' (expected S|M|L|XL)`);
+  process.exit(2);
+}
+
 const outRoot = path.resolve(argValue('--out', '.perf-assets'));
-const largeFileCount = Number(argValue('--large-files', '30000'));
+const largeFileCount = Number(
+  argValue('--large-files', preset ? String(PRESET_LARGE_FILES[preset]) : '30000')
+);
 const keepExisting = flagOn('--keep');
 
 const PY_SCAN_EXCLUDED_DIRS = new Set(['.git', 'build', 'third_party', '__pycache__']);
@@ -39,25 +54,6 @@ function writeFileSyncp(file, content) {
 
 function rmdirForceSafe(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
-}
-
-function countFiles(root) {
-  let count = 0;
-  const walk = dir => {
-    let entries = [];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (entry.isFile()) count += 1;
-    }
-  };
-  walk(root);
-  return count;
 }
 
 /** KBEngine 资产树骨架:scripts/{entity_defs,base,cell} + entities/types/alias.xml */
@@ -184,12 +180,53 @@ if (!keepExisting) {
 }
 fs.mkdirSync(parent, { recursive: true });
 
+/** 场景统计:文件数/总字节/py 符号(class/def)/def 方法数(RUST-019 附统计口径) */
+function scenarioStats(root) {
+  let files = 0;
+  let bytes = 0;
+  let pyClasses = 0;
+  let pyDefs = 0;
+  let defMethods = 0;
+  const walk = dir => {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.isFile()) {
+        files += 1;
+        const content = fs.readFileSync(full, 'utf8');
+        bytes += Buffer.byteLength(content, 'utf8');
+        if (entry.name.endsWith('.py')) {
+          pyClasses += (content.match(/^class /gm) ?? []).length;
+          pyDefs += (content.match(/^\s+def /gm) ?? []).length;
+        } else if (entry.name.endsWith('.def')) {
+          defMethods += (content.match(/<onRpc/g) ?? []).length;
+        }
+      }
+    }
+  };
+  walk(root);
+  return { files, bytes, pyClasses, pyDefs, defMethods };
+}
+
 for (const [name, build] of Object.entries(scenarios)) {
   const target = path.join(parent, name);
   if (fs.existsSync(target)) {
     rmdirForceSafe(target);
   }
   build(target);
-  console.log(`${name.padEnd(10)} ${String(countFiles(target)).padStart(7)} files -> ${target}`);
+  const stats = scenarioStats(target);
+  const kib = (stats.bytes / 1024).toFixed(1);
+  console.log(
+    `${name.padEnd(10)} ${String(stats.files).padStart(7)} files ${kib.padStart(10)} KiB`
+    + ` py-class=${stats.pyClasses} py-def=${stats.pyDefs} def-method=${stats.defMethods}`
+    + ` -> ${target}`
+  );
 }
-console.log(`cpus=${cpus().length} largeFiles=${largeFileCount}`);
+console.log(`cpus=${cpus().length} largeFiles=${largeFileCount}${preset ? ` preset=${preset}` : ''}`);
