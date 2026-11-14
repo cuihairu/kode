@@ -61,6 +61,10 @@
 | `entityCallGraphView` / `pythonCallGraphRust` | 函数级调用图,不是业务流转;归入 G2 的候选边源,不得独立冒充 G2 产品 |
 | `entityFlowWebView` 现有泳道视觉 | 供 FLOW-014 样图参考;其「所有边一个箭头」形态违反 R3/FLOW-017,重做 |
 
-## 5. 验收映射
+## 6. 协议落地(FLOW-003)
+
+G2 节点/边协议已落为纯协议模块 `src/backend/flowGraphModel.ts`(零 vscode 依赖):节点六面 = rootKey/role/instanceCandidates/entity/fn/declaration;边七面 = callSite/direction/syncAsync/condition/messageKind/evidence/unresolvedReason;§2-R2 证据分型以判别联合锁定(syntax-anchor/declaration-contract/external-source,无 runtime 型);§2-R1 以 external-entry 拒绝 fn 构造与「候选帧」词汇落地;边身份含调用点(同节点对多次调用=多条边);未解析节点/边构造器强制带原因码(九面非法 face-invalid-receiver、无客户端源 no-client-source 等十个码,含 FLOW-001 S1-S6 全谱)。协议钉:tests/flowGraphModel.test.ts。消费面在 FLOW-004(解析)/FLOW-005(展开)/FLOW-014+(呈现)接线。
+
+## 7. 验收映射
 
 验收原文「明确进程流转图、本地调用树/静态调用路径、运行时调用栈的独立数据与入口」→ §1 每图的数据模型/入口小节 + §3 登记表;「禁止将静态可能路径称为实际堆栈」→ §2 R1-R5。FLOW-003 节点/边协议(节点含工程/角色/实例候选/实体/函数/源码;边含调用点/方向/同步异步/条件/消息RPC/证据及未解析原因)以 §1-G2 与 §2-R2 为输入。
