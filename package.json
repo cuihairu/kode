@@ -1589,6 +1589,11 @@
           "default": true,
           "markdownDescription": "%kbengine.config.hover.startupScript.description%"
         },
+        "kbengine.configCompletion.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.configCompletion.enabled.description%"
+        },
         "kbengine.hover.asyncBudgetMs": {
           "type": "number",
           "default": 2500,

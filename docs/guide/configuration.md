@@ -139,6 +139,12 @@ Diagnostics trigger only when a `.def` file is opened or edited; `kbengine.recei
 
 With the first three off, `.def` hover keeps only syntax highlighting. Since batch 154 (2026-10-20) the other six faces each get an independent per-feature switch — no master switch cutting everything off at once; mute only the noisy face and the rest carry on.
 
+### Server Config Completion
+
+| Setting | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `kbengine.configCompletion.enabled` | boolean | `true` | Key and enum-value completion in server config XML (`kbengine.xml` / `kbengine_defaults.xml` / `messages_fixed*.xml`): key suggestions are limited to exactly one more segment under the cursor's parent path (from the engine defaults snapshot field identities, KSEM-CFG-03); value suggestions come only from certain evidence — comment enum blocks suggest value-by-value with meanings, a `Type: Boolean` annotation suggests `true`/`false`, every other type stays empty (no default echo, no guessing) |
+
 ### CodeLens and inlay hints
 
 | Setting | Type | Default | Purpose |

@@ -51,6 +51,7 @@ import {
   TypesXmlCodeLensProvider
 } from '../languageProviders';
 import { StartupScriptCompletionProvider, StartupScriptHoverProvider } from '../kbengineStartupScript';
+import { ConfigCompletionProvider, CONFIG_COMPLETION_SELECTORS } from '../configCompletionProvider';
 import { PythonClassIndex } from '../backend/pythonClassIndex';
 import { PYTHON_TYPE_STUB_FILE_NAME, buildPythonTypeStubLineMap, buildPythonTypeStubPlan } from '../pythonTypeStubs';
 import { bumpRootConfigGeneration } from '../rootConfigGeneration';
@@ -248,6 +249,14 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     new StartupScriptCompletionProvider()
   );
   context.subscriptions.push(startupScriptCompletionProvider);
+
+  // 配置 XML 键/枚举补全(KSEM-CFG-04;kbengine*.xml / messages_fixed*.xml,
+  // 选择器与上面 def/python/shell 补全零交集;开关 kbengine.configCompletion)。
+  const configCompletionProvider = vscode.languages.registerCompletionItemProvider(
+    CONFIG_COMPLETION_SELECTORS,
+    new ConfigCompletionProvider()
+  );
+  context.subscriptions.push(configCompletionProvider);
 
   // 注册定义跳转提供者（.def 文件）
   // PR1 打点:definition(.def 导航面)。结果原样透传。

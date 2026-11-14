@@ -139,6 +139,12 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 
 前三项全关后 `.def` 悬停只剩语法高亮。批154(2026-10-20)起其余六面按功能各一枚独立开关,不设总闸一刀切——只关吵的那一面,其余照常。
 
+### 配置补全
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.configCompletion.enabled` | boolean | `true` | 配置 XML 键与枚举值补全(`kbengine.xml` / `kbengine_defaults.xml` / `messages_fixed*.xml`):键名按光标父路径限定为恰一层子键(取自引擎 defaults 快照的字段身份,KSEM-CFG-03);值只按确定证据补全——注释枚举块逐值建议(附含义)、`Type: Boolean` 注解建议 `true`/`false`,其余类型不给值建议(不回填默认值,不猜) |
+
 ### CodeLens 与 inlay hints
 
 | 配置项 | 类型 | 默认值 | 说明 |

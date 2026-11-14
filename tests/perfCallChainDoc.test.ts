@@ -261,11 +261,15 @@ const ANCHORS: Array<[string, number, string]> = [
   // codeLens fire 块 +1 → onDidChangeTextDocument 420→421、flushQueued
   // 517→518(+1,均在其前仅解构位移;fire 块在两锚点之后不再位移)。出处随
   // baseline 锁步。
-  ['src/activate/languageServices.ts', 202, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 259, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 322, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 126, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 723, "startLanguageServiceOperation('completion'"],
+  // 2026-11-14(KSEM-CFG-04):languageServices.ts 顶部 import +1
+  // (ConfigCompletionProvider)与 startupScript 注册块后配置补全注册块 +8
+  // → 五打点 202/259/322/126/723 → 203/268/331/127/732(126→127 为 import
+  // 位移,259/322/723 另加注册块 = +9;真位重探)。出处随 baseline 锁步。
+  ['src/activate/languageServices.ts', 203, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 268, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 331, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 127, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 732, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import

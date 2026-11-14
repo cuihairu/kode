@@ -415,6 +415,7 @@
 | `kbengine.hover.serverConfig` | `true` | 悬停显示 kbengine.xml 服务配置取值与说明 |
 | `kbengine.hover.language` | `"auto"` | 悬停文案语言:auto 探测中文界面语言/系统 locale 或 UTC+8 时区,否则英文;可显式 `en`/`zh-cn`(服务配置悬停面已接入) |
 | `kbengine.hover.startupScript` | `true` | .sh/.bat 启动脚本里 KBEngine 启动参数的悬浮/补全说明——CLI 参数与环境变量,双语附引擎源码行(`--` 补全参数、`KBE_` 补全环境变量) |
+| `kbengine.configCompletion.enabled` | `true` | 配置 XML 的键与枚举值补全——键按父路径限定为恰一层子键(defaults 快照),值只按确定证据(注释枚举块逐值、`Type: Boolean` 注解 true/false);不回填默认值,不猜 |
 | `kbengine.hover.asyncBudgetMs` | `2500` | 悬停 def 方法 / 接收者调用 / 内建属性三条异步链的总预算（毫秒）；超预算截断该层不再永转，超时行写 LogHub（`[kode-hover][timeout]`）；`<= 0` 关闸（src/hoverBudget.ts、src/languageProviders.ts） |
 | `kbengine.codeLens.rpc` | `true` | Python 实现脚本中 def 声明方法的 RPC 标记 CodeLens |
 | `kbengine.codeLens.eventCallbacks` | `true` | Python 脚本中事件回调/订阅 CodeLens |

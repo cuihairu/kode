@@ -72,7 +72,8 @@ export interface ConfigContractRecord {
 export interface ConfigContractBaseline {
   /** 引擎默认配置快照(版本维度钉死处) */
   file: string;
-  lineCount: number;
+  /** 原文行数;null=运行时仅持解析树未读原文(快照行数未知,诚实标注) */
+  lineCount: number | null;
   note: string;
 }
 
@@ -303,15 +304,13 @@ function walk(node: ConfigXmlNode, prefix: string[], state: WalkState): void {
 }
 
 /**
- * 提取契约。defaultsXmlText 用于版本基线行数;tree 为 parseConfigXml 产物
- * (KODE-CFG-002 Rust 核或 TS 回落核,单一事实源);catalogSources 传
- * SERVER_CONFIG_ITEM_DOCS 的 path→source(目录取证,serverconfig.cpp 锚
- * 升档 engine-read-site)。
+ * 提取契约(树入口;运行时 provider 只持解析树不读原文——baseline 行数
+ * 如实传 null,勿编)。file/note 由调用方按其快照来源自述。
  */
-export function extractConfigContracts(
-  defaultsXmlText: string,
+export function extractConfigContractsFromTree(
   tree: ConfigXmlNode,
-  catalogSources: Readonly<Record<string, string>> = {},
+  catalogSources: Readonly<Record<string, string>>,
+  baseline: ConfigContractBaseline,
 ): ConfigContractExtraction {
   const engineReadSiteKeys = new Set(
     Object.entries(catalogSources)
@@ -351,20 +350,29 @@ export function extractConfigContracts(
     }
   }
 
+  return { records: state.records, baseline, stats };
+}
+
+/**
+ * 提取契约。defaultsXmlText 用于版本基线行数;tree 为 parseConfigXml 产物
+ * (KODE-CFG-002 Rust 核或 TS 回落核,单一事实源);catalogSources 传
+ * SERVER_CONFIG_ITEM_DOCS 的 path→source(目录取证,serverconfig.cpp 锚
+ * 升档 engine-read-site)。
+ */
+export function extractConfigContracts(
+  defaultsXmlText: string,
+  tree: ConfigXmlNode,
+  catalogSources: Readonly<Record<string, string>> = {},
+): ConfigContractExtraction {
   const rawLines = defaultsXmlText.split('\n');
   const lineCount = rawLines.length > 0 && rawLines[rawLines.length - 1] === ''
     ? rawLines.length - 1
     : rawLines.length;
-
-  return {
-    records: state.records,
-    baseline: {
-      file: 'tests/fixtures/config/kbengine_defaults.xml',
-      lineCount,
-      note: '契约版本=引擎默认配置快照钉死(仓库字节镜像);逐键 since-version 无证据不记(见 unproven.version-per-key)',
-    },
-    stats,
-  };
+  return extractConfigContractsFromTree(tree, catalogSources, {
+    file: 'tests/fixtures/config/kbengine_defaults.xml',
+    lineCount,
+    note: '契约版本=引擎默认配置快照钉死(仓库字节镜像);逐键 since-version 无证据不记(见 unproven.version-per-key)',
+  });
 }
 
 /** 按点分路径取契约记录(补全/校验/悬停消费面入口)。 */

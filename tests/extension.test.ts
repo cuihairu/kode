@@ -160,9 +160,10 @@ describe('extension activate 装配', () => {
     expect(registeredViewIds.slice(0, declaredViewIds.length).sort()).toEqual(declaredViewIds);
     expect(registeredViewIds.slice(declaredViewIds.length).sort()).toEqual(declaredViewIds);
 
-    // 语言服务:补全 3(.def + Python + 启动脚本,KBEXP-1)、悬停 3(.def/hook +
-    // 引擎配置字段,批112 + 启动脚本,KBEXP-1)、定义 2、调用层级 1、重命名 1
-    expect(languagesRegistry.completionRegistrations).toHaveLength(3);
+    // 语言服务:补全 4(.def + Python + 启动脚本,KBEXP-1 + 配置 XML,KSEM-CFG-04)、
+    // 悬停 3(.def/hook + 引擎配置字段,批112 + 启动脚本,KBEXP-1)、定义 2、
+    // 调用层级 1、重命名 1
+    expect(languagesRegistry.completionRegistrations).toHaveLength(4);
     expect(languagesRegistry.hoverRegistrations).toHaveLength(3);
     expect(languagesRegistry.definitionRegistrations).toHaveLength(2);
     // 引用提供者(Shift+F12)三份:IDE-NAV-001 def 文档选择器一份、

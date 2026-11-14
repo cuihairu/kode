@@ -19,7 +19,7 @@ Read-path general rule (set by ARC-005, source-level lock tests/typeStorageWatch
 
 ## 2. Provider inventory
 
-### 2a. Language providers (vscode.languages.register\*, 30 registrations / 29 classes)
+### 2a. Language providers (vscode.languages.register\*, 31 registrations / 30 classes)
 
 Registration sites are extension.ts line numbers (2026-11-07 真位复核:KODE-ARCH-001 将 languageProviders.ts 拆为 src/languageProviders/* 子模块,类定义列与注册行已按当前代码逐行重探):
 
@@ -34,6 +34,7 @@ Registration sites are extension.ts line numbers (2026-11-07 真位复核:KODE-A
 | PythonDefinitionProvider | languageProviders/pythonDefinition.ts:237 | :1159 | EntityMappingManager + PythonClassIndex (classes/bases/methods/mro/compositionRoots five axes) | ensureScanned background completion enqueue + shadowObserveDefDocument shadow observation |
 | PythonCompletionProvider | languageProviders/completion.ts:627 | :1482 | EntityMappingManager + engineApiCatalog (built async at :301) | Pure read |
 | StartupScriptCompletionProvider | kbengineStartupScript.ts:430 | :921 | Line-level plain-text token scan (`--` completes CLI args, `KBE_` completes env vars, KBEXP-1) | Pure read |
+| ConfigCompletionProvider | configCompletionProvider.ts:75 | activate/languageServices.ts:255 (KSEM-CFG-04) | buildConfigTreePair resolve-cache trees (analysis WeakMap keyed on defaultsTree identity) + CFG-02 contract extraction + CFG-03 field-identity scan; context parse + key/value suggestions in pure core backend/configCompletion | Pure read (toggle kbengine.configCompletion.enabled; null defaultsTree → no suggestions) |
 | RpcCodeLensProvider | languageProviders/codeLens.ts:14 | :1279 | EntityMappingManager (RPC mirror chain) | Pure read |
 | CallChainController | defCallChainProvider.ts:49 | :1096 | EntityMappingManager | webview panel creation/update (UI side effect) |
 | PropertyCodeLensProvider | languageProviders/codeLens.ts:182 | :1304 | EntityMappingManager (types.xml property back-references) | fireConfigurationChanged event |

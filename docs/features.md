@@ -451,6 +451,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.hover.serverConfig` | `true` | Show kbengine.xml server config values and explanations on hover |
 | `kbengine.hover.language` | `"auto"` | Hover text language: auto detects Chinese UI language/system locale or UTC+8 timezone, otherwise English; explicit `en`/`zh-cn` (server-config hover face wired) |
 | `kbengine.hover.startupScript` | `true` | Hover and completion docs for KBEngine startup parameters in `.sh`/`.bat` scripts — CLI params and env vars, bilingual with the engine source line cited (`--` prefix completes params, `KBE_` prefix completes env vars) |
+| `kbengine.configCompletion.enabled` | `true` | Key and enum-value completion in server config XML — keys limited to exactly one more segment under the cursor's parent path (defaults snapshot), values only from certain evidence (comment enum blocks value-by-value, `Type: Boolean` annotation true/false); no default echo, no guessing |
 | `kbengine.hover.asyncBudgetMs` | `2500` | Total budget (ms) for the hover def-method / receiver-call / builtin-property async chains; past the budget the layer is cut short instead of spinning forever and a timeout line lands in LogHub (`[kode-hover][timeout]`); `<= 0` disables the gate (src/hoverBudget.ts, src/languageProviders.ts) |
 | `kbengine.codeLens.rpc` | `true` | RPC method CodeLens at def-declared methods in Python implementation scripts |
 | `kbengine.codeLens.eventCallbacks` | `true` | Event callback/subscription CodeLens in Python scripts |
