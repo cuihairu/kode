@@ -67,7 +67,7 @@ const walk = (dir: string, out: string[] = []): string[] => {
 
 /**
  * fs 背书依赖:findFiles 按真实目录树跑 glob 家族(与引擎发现链同语义的
- * 最小替身),readText 直读磁盘(deps 覆盖面模拟缓冲区优先),assetsRoot
+ * 最小替身),readText 直读磁盘(deps 覆盖面模拟缓冲区优先,异步面与生产同契约),assetsRoot
  * 锁定夹具根。extraFiles 额外声明 SDK 扫描面的命中清单。
  */
 const makeDeps = (root: string, overrides: Partial<DefMd5CheckDeps> = {}): DefMd5CheckDeps => {
@@ -88,7 +88,7 @@ const makeDeps = (root: string, overrides: Partial<DefMd5CheckDeps> = {}): DefMd
       }
       return matched.map((p) => Uri.file(p));
     },
-    readText: (fsPath: string): string | null => {
+    readText: async (fsPath: string): Promise<string | null> => {
       try {
         return fs.readFileSync(fsPath, 'utf-8');
       } catch {
@@ -192,13 +192,56 @@ describe('AUDIT-003:collectDefMd5Inputs(引擎喂入序收集)', () => {
     }
   });
 
+  it('def corpus reads concurrently and bounded (RUST-001 async corpus)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'defmd5-conc-'));
+    try {
+      const defs = path.join(root, 'scripts', 'entity_defs');
+      fs.mkdirSync(defs, { recursive: true });
+      fs.writeFileSync(path.join(defs, 'types.xml'), '<root> types </root>');
+      fs.writeFileSync(path.join(root, 'scripts', 'entities.xml'), '<root/>');
+      fs.writeFileSync(path.join(defs, 'alias.xml'), '<root> alias </root>');
+      for (let i = 0; i < 24; i += 1) {
+        fs.writeFileSync(path.join(defs, `E${i}.def`), `<root> e${i} </root>`);
+      }
+      // 并发面:只数 def 语料读(顶层 types.xml/entities.xml/alias.xml 三件
+      // 另有独立并发,不进门)。同步/逐文件实现峰值恒 1;异步有界并发下
+      // 同一批最多 8 路同时在场,峰值 >1 且不超过并发上限。
+      let inFlight = 0;
+      let peak = 0;
+      const deps: DefMd5CheckDeps = makeDeps(root, {
+        readText: async (fsPath: string): Promise<string | null> => {
+          const counted = fsPath.endsWith('.def');
+          if (counted) {
+            inFlight += 1;
+            peak = Math.max(peak, inFlight);
+          }
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          if (counted) {
+            inFlight -= 1;
+          }
+          return fs.readFileSync(fsPath, 'utf-8');
+        }
+      });
+      const result = await collectDefMd5Inputs(deps);
+      expect(result.kind).toBe('ready');
+      if (result.kind !== 'ready') {
+        return;
+      }
+      expect(peak).toBeGreaterThan(1);
+      expect(peak).toBeLessThanOrEqual(8);
+      expect(Object.keys(result.params.defs).length).toBe(24);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('unreadable def is skipped with a note, not fed as empty silently', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'defmd5-dead-'));
     try {
       makeAssets(root);
       const avatarPath = path.join(root, 'scripts', 'entity_defs', 'Avatar.def');
       const deps = makeDeps(root, {
-        readText: (fsPath: string): string | null => (fsPath === avatarPath ? null : fs.readFileSync(fsPath, 'utf-8'))
+        readText: async (fsPath: string): Promise<string | null> => (fsPath === avatarPath ? null : fs.readFileSync(fsPath, 'utf-8'))
       });
       const result = await collectDefMd5Inputs(deps);
       expect(result.kind).toBe('ready');
@@ -220,7 +263,7 @@ describe('AUDIT-003:collectDefMd5Inputs(引擎喂入序收集)', () => {
       // 打开缓冲区优先:readSharedFileSnapshot 返回编辑器全文——这里以替身
       // 锁定「readText 说什么,摘要输入就是什么」的契约。
       const deps = makeDeps(root, {
-        readText: (fsPath: string): string | null =>
+        readText: async (fsPath: string): Promise<string | null> =>
           fsPath === avatarPath ? '<root> unsaved-buffer </root>' : fs.readFileSync(fsPath, 'utf-8')
       });
       const result = await collectDefMd5Inputs(deps);
@@ -281,7 +324,7 @@ describe('AUDIT-003:findEngineSdkStamps(js/cs 两盖章面)', () => {
       const uris = Array.from({ length: 51 }, (_, i) => Uri.file(`/w/sdk_${String(i).padStart(2, '0')}/kbengine.js`));
       const deps = makeDeps(root, {
         findFiles: async (glob: string) => (glob === '**/kbengine.js' ? uris : []),
-        readText: () => stampJs(MD5_A)
+        readText: async () => stampJs(MD5_A)
       });
       const notes: string[] = [];
       const stamps = await findEngineSdkStamps(deps, notes);

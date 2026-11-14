@@ -269,11 +269,13 @@ const ANCHORS: Array<[string, number, string]> = [
   // (ConfigDefinitionProvider)与配置补全注册块后来源跳转注册块 +8 →
   // 五打点 203/268/331/127/732 → 204/277/340/128/741(import 全体 +1,
   // 268/331/732 三点另加注册块 = +9;真位重探)。出处随 baseline 锁步。
+  // 2026-11-15(RUST-001):激活预热块改异步入口(preheatDiscoveryScanActivation)
+  // 注释 +4 行 → 预热块后的两点 +4(340/741 → 344/745;204/277/128 在块前不动)。
   ['src/activate/languageServices.ts', 204, "startLanguageServiceOperation('hover'"],
   ['src/activate/languageServices.ts', 277, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 340, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 344, "startLanguageServiceOperation('definition'"],
   ['src/activate/languageServices.ts', 128, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 741, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 745, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import

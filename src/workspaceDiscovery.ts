@@ -303,6 +303,37 @@ export function preheatDiscoveryScan(workspaceRoot: string): void {
   cachedScan(workspaceRoot);
 }
 
+/**
+ * RUST-001:激活链上的预热入口(异步)。有界 Rust 扫描器优先;Rust 不可用
+ * 时**不在激活同步段**做全仓 walk——改由 setImmediate 让出一个宏任务再走
+ * 既有同源 scanCache 兜底,激活同步段不付 20000 条目有界 walk(巨仓
+ * 实测 40.5ms/次)。
+ *
+ * 诚实边界:该兜底本身仍是一段有界同步 walk(深度 ≤7 × 条目 ≤20000,与
+ * 交互冷触发同口径),本入口只保证它不在激活同步段上执行;逐目录
+ * fs.promises.readdir 的真异步 walk 属后续批次,本批不声称该兜底段非阻塞。
+ */
+export async function preheatDiscoveryScanActivation(workspaceRoot: string): Promise<void> {
+  const cached = scanCache.get(workspaceRoot);
+  if (cached && isFresh(cached)) {
+    return;
+  }
+  await preheatDiscoveryScanInRust(workspaceRoot);
+  if (isFresh(scanCache.get(workspaceRoot) ?? { value: undefined, at: 0 })) {
+    return;
+  }
+  const generation = discoveryGeneration;
+  await new Promise<void>(resolve => setImmediate(resolve));
+  if (generation !== discoveryGeneration) {
+    return;
+  }
+  const warmed = scanCache.get(workspaceRoot);
+  if (warmed && isFresh(warmed)) {
+    return;
+  }
+  cachedScan(workspaceRoot);
+}
+
 function cachedScan(workspaceRoot: string, options?: ScanOptions): DiscoveredCandidateSet {
   const cached = scanCache.get(workspaceRoot);
   if (cached && isFresh(cached)) {

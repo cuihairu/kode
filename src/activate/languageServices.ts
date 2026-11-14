@@ -66,7 +66,7 @@ import { registerTypeStorageIndexWatchers } from '../typeStorageIndexWatchers';
 import { PythonTypeInlayHintsProvider } from '../typeInlayHints';
 import { shouldStartKbEngineIndexing } from '../workspaceGate';
 import { WorkspaceIndex } from '../workspaceIndex';
-import { preheatDiscoveryScan } from '../workspaceDiscovery';
+import { preheatDiscoveryScanActivation } from '../workspaceDiscovery';
 import { releaseDocumentsUnderRoot } from '../backend/documentStore';
 import { readTempEditReloadSettings, tempEditSectionReader } from '../backend/hotReloadTempEdit';
 import { GeneratedSourceCodeLensProvider } from '../generatedSourceLenses';
@@ -303,9 +303,13 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     }
     // 书 PR-002 ③:深扫描缓存激活期预热——首查交互不再付 20000 条目有界
     // walk(巨仓实测 40.5ms/次);结果同源 scanCache,只挪时机不挪语义。
+    // RUST-001:激活段不得同步执行全仓 walk——预热改走 Rust 有界扫描器
+    // (异步、5s 超时、代际/缓存新值守卫),Rust 不可用则留给交互路径
+    // 既有冷扫描兜底,不在激活链上阻塞宿主事件循环。
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
-      if (folder?.uri?.fsPath) {
-        preheatDiscoveryScan(folder.uri.fsPath);
+      const rootPath = folder?.uri?.fsPath;
+      if (rootPath) {
+        void preheatDiscoveryScanActivation(rootPath).catch(() => undefined);
       }
     }
     // IDE-SCH-006:schema 快照后台预热——首扫完成后逐实体以非交互优先级入队,

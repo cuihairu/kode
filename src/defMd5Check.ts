@@ -34,20 +34,24 @@ import * as vscode from 'vscode';
 import { computeDefMd5InRust, type DefMd5RustParams } from './backend/defMd5Rust';
 import { negotiateEngineDigest, type DefDigestHandshake } from './backend/hotReloadDefHash';
 import { findFilesAcrossRoots, resolveAssetsRootForWorkspace } from './scanRoots';
-import { readSharedFileSnapshot } from './sharedFileSnapshot';
+import { readSharedFileSnapshotAsync } from './sharedFileSnapshot';
 
 export const DEF_MD5_CHECK_COMMAND = 'kbengine.def.checkEngineMd5';
 /** 与 def 静态分析共用通道名(vscode 按名合并;测试按名查找)。 */
 export const DEF_MD5_CHANNEL_NAME = 'KBEngine Def 分析';
 /** SDK 盖章扫描单 glob 文件数上限(防御性有界;超限如实记备注不再扩扫)。 */
 const SDK_SCAN_FILE_CAP = 50;
+/** def 语料并发读上限(与 globalDataIndex 初扫同口径:8 路)。 */
+const DEF_MD5_READ_CONCURRENCY = 8;
 /** js(kbengine.js)与 unity(KBEngine.cs)盖章面的赋值形态(大小写差异照录)。 */
 const SDK_STAMP_PATTERN = /serverEntity[Dd]efMD5\s*=\s*"([0-9a-fA-F]{32})"/;
 
 /** 收集/扫描依赖(注入面;默认走真实 vscode 通道)。 */
 export interface DefMd5CheckDeps {
   findFiles: (glob: string) => Promise<vscode.Uri[]>;
-  readText: (fsPath: string) => string | null;
+  /** 异步读:未打开文件的磁盘补载必须让出宿主事件循环(RUST-001 设计原则,
+   * 命令期 def 语料逐文件同步补载曾是唯一的命令期同步载入面)。 */
+  readText: (fsPath: string) => Promise<string | null>;
   assetsRoot: () => string;
 }
 
@@ -55,7 +59,7 @@ export interface DefMd5CheckDeps {
 export function defaultDefMd5CheckDeps(): DefMd5CheckDeps {
   return {
     findFiles: (glob) => findFilesAcrossRoots(glob),
-    readText: (fsPath) => readSharedFileSnapshot(fsPath)?.content ?? null,
+    readText: async (fsPath) => (await readSharedFileSnapshotAsync(fsPath))?.content ?? null,
     assetsRoot: () => {
       const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
       return workspaceRoot === '' ? '' : resolveAssetsRootForWorkspace(workspaceRoot);
@@ -81,19 +85,24 @@ export async function collectDefMd5Inputs(deps: DefMd5CheckDeps): Promise<DefMd5
   const scriptsDir = path.join(root, 'scripts');
   const entityDefsDir = path.join(scriptsDir, 'entity_defs');
   const notes: string[] = [];
-  const readOr = (fsPath: string, label: string): string => {
-    const content = deps.readText(fsPath);
+  const readOr = async (fsPath: string, label: string): Promise<string> => {
+    const content = await deps.readText(fsPath);
     if (content === null) {
       notes.push(`${label}: 缺失(以空串入流)`);
       return '';
     }
     return content;
   };
+  const [typesXml, entitiesXml, aliasXml] = await Promise.all([
+    readOr(path.join(entityDefsDir, 'types.xml'), 'entity_defs/types.xml'),
+    readOr(path.join(scriptsDir, 'entities.xml'), 'scripts/entities.xml'),
+    readOr(path.join(entityDefsDir, 'alias.xml'), 'entity_defs/alias.xml')
+  ]);
   const params: DefMd5RustParams = {
-    typesXml: readOr(path.join(entityDefsDir, 'types.xml'), 'entity_defs/types.xml'),
-    entitiesXml: readOr(path.join(scriptsDir, 'entities.xml'), 'scripts/entities.xml'),
+    typesXml,
+    entitiesXml,
     defs: {},
-    aliasXml: readOr(path.join(entityDefsDir, 'alias.xml'), 'entity_defs/alias.xml'),
+    aliasXml,
     componentScripts: []
   };
 
@@ -118,19 +127,32 @@ export async function collectDefMd5Inputs(deps: DefMd5CheckDeps): Promise<DefMd5
     }
     return null;
   };
+  // RUST-001:命令期 def 语料逐文件补载曾是唯一的同步载入面。改异步读 +
+  // 有界并发(循环在批间让出宿主事件循环)。入表结果与读取次序无关——
+  // Rust 侧 defs 收进 HashMap 聚合(crates/kode-server/src/def_md5/mod.rs),
+  // 故并发不影响摘要。
+  const reads: Array<Promise<void>> = [];
   for (const uri of defUris) {
     const kind = typeOf(uri.fsPath);
     if (kind === null) {
       continue;
     }
     const stem = path.basename(uri.fsPath, path.extname(uri.fsPath));
-    const content = deps.readText(uri.fsPath);
-    if (content === null) {
-      notes.push(`${path.relative(root, uri.fsPath)}: 不可读(不入表)`);
-      continue;
+    const read = async (): Promise<void> => {
+      const content = await deps.readText(uri.fsPath);
+      if (content === null) {
+        notes.push(`${path.relative(root, uri.fsPath)}: 不可读(不入表)`);
+        return;
+      }
+      params.defs[stem] = content;
+    };
+    reads.push(read());
+    if (reads.length >= DEF_MD5_READ_CONCURRENCY) {
+      await Promise.all(reads);
+      reads.length = 0;
     }
-    params.defs[stem] = content;
   }
+  await Promise.all(reads);
 
   // 组件脚本存在性(scripts/{base,cell}/components/*.py → base:X/cell:X)。
   for (const glob of ['**/base/components/*.py', '**/cell/components/*.py']) {
@@ -166,7 +188,9 @@ export async function findEngineSdkStamps(
       notes.push(`${glob}: 命中 ${uris.length} 个文件,超上限只扫前 ${SDK_SCAN_FILE_CAP} 个`);
     }
     for (const uri of uris.slice(0, SDK_SCAN_FILE_CAP)) {
-      const content = deps.readText(uri.fsPath);
+      // RUST-001:逐文件 await 让出事件循环(盖章面至多 SDK_SCAN_FILE_CAP 个,
+      // 顺序 await 即有界;结果按 path 排序,与读取次序无关)。
+      const content = await deps.readText(uri.fsPath);
       if (content === null) {
         continue;
       }

@@ -18,7 +18,7 @@
 
 import * as fs from 'fs';
 import * as vscode from 'vscode';
-import { readFileSyncUtf8Recorded } from './backend/fileReadMetrics';
+import { readFileUtf8Recorded, readFileSyncUtf8Recorded } from './backend/fileReadMetrics';
 import { normalizeDocumentKey } from './backend/documentStore';
 import { normalizeFileIdentity } from './backend/pathIdentity';
 import { getSemanticIndex } from './backend/semanticIndex';
@@ -138,6 +138,50 @@ export function readSharedFileSnapshot(
     uri: identity,
     fsPath,
     version: deps.statDiskFile(fsPath)?.mtimeMs,
+    content,
+    source: 'disk'
+  };
+}
+
+/**
+ * RUST-001:异步快照读(与 readSharedFileSnapshot 同一契约,磁盘补载改
+ * fs.promises)。供**语料级**命令面用——def md5 收集按 entity_defs 全量
+ * 逐文件补载,同步版本在该循环里把整仓 def 载入压成一个阻塞段;异步版
+ * 让循环在每个文件之间让出宿主事件循环。缓冲区优先语义不变(打开文档
+ * 零 IO),磁盘版本文本经 readFileUtf8Recorded(与同步入口同记账口径)。
+ * 单文件交互链(hover/schema/loader)继续用同步版本,本变体只服务命令期
+ * 语料面,不改变既有同步消费端。
+ */
+export async function readSharedFileSnapshotAsync(
+  fsPath: string
+): Promise<SharedFileSnapshot | null> {
+  const identity = normalizeFileIdentity(fsPath);
+  for (const document of defaultDeps.listOpenDocuments()) {
+    if (normalizeDocumentKey(document.uri) !== identity) {
+      continue;
+    }
+    return {
+      rootId: defaultDeps.resolveRootId(document.uri.fsPath),
+      uri: identity,
+      fsPath: document.uri.fsPath,
+      version: typeof document.version === 'number' && Number.isFinite(document.version)
+        ? document.version
+        : undefined,
+      content: document.getText(),
+      source: 'document'
+    };
+  }
+  let content: string;
+  try {
+    content = await readFileUtf8Recorded(fsPath);
+  } catch {
+    return null;
+  }
+  return {
+    rootId: defaultDeps.resolveRootId(fsPath),
+    uri: identity,
+    fsPath,
+    version: defaultDeps.statDiskFile(fsPath)?.mtimeMs,
     content,
     source: 'disk'
   };
