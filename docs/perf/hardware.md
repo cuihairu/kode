@@ -41,7 +41,9 @@
 | XRoot(3+ 根) | multi-root 场景(与档无关) | 18 文件,3 根,同名实体 Avatar、同名类 Inventory |
 | 专项 | 场景缺省 | big-py 5(单文件 8,000 方法/754 KiB)、def-heavy 1,323(1,200 .def + 40 组 XML 变体/7,200 def 方法)、noise 406(.git/build/third_party 干扰/401 class) |
 
-统计口径=生成后全树走读:文件数/UTF-8 字节/`^class ` 与 `^\s+def ` 计数(.py)/`<onRpc` 计数(.def);生成器每次运行末尾打印同格式摘要。深继承、循环别名、不完整 XML、非 ASCII 路径:待建;真实 KBEngine 引擎样例(PERF-004,fantasydemo 等):待测,须与合成样例隔离存放。
+统计口径=生成后全树走读:文件数/UTF-8 字节/`^class ` 与 `^\s+def ` 计数(.py)/`<onRpc` 计数(.def);生成器每次运行末尾打印同格式摘要。
+
+RUST-020 对抗性样例已建:adversarial 场景(63 文件/9.5 KiB/54 class;`--only adversarial` 单独生成)=深继承(Chain0..Chain50 def Parent 链+py 同构链)、循环别名(TYPE_A↔TYPE_B 类型环+LoopA↔LoopB Parent 环)、不完整 XML(截断 def+截断 entities 两形)、非 ASCII 路径(scripts/base/怪物/武器库/宝剑.py)、符号冲突(base/cell 同名 Avatar 两实现);六钉 tests/generatePerfAssets.test.ts 走真实解析通路(buildDefChain 深链 50 层无截断/Parent 环 visited 截断/两种截断形在解析位抛错且调用方 try/catch 跳过为真实容错语义)。真实 KBEngine 引擎样例(PERF-004,fantasydemo 等):待测,须与合成样例隔离存放。
 
 ## 4. 分段时延口径(PERF-005)
 

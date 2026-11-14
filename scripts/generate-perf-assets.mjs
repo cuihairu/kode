@@ -171,6 +171,44 @@ const scenarios = {
       writeFileSyncp(path.join(root, 'build/obj', `Obj${i}.py`), pyModuleContent(`Obj${i}`, 1, 2));
       writeFileSyncp(path.join(root, 'third_party/lib', `Lib${i}.py`), pyModuleContent(`Lib${i}`, 1, 2));
     }
+  },
+
+  // RUST-020 对抗性样例:深继承/循环别名/不完整 XML/非 ASCII 路径/符号冲突
+  adversarial(root) {
+    scaffoldAssetRoot(root);
+    // 深继承:def Parent 链 Chain50→…→Chain0(51 层)+ py 同构继承链
+    for (let i = 0; i <= 50; i += 1) {
+      const parent = i === 0 ? '' : `\n  <Parent>Chain${i - 1}</Parent>`;
+      writeFileSyncp(
+        path.join(root, 'scripts/entity_defs', `Chain${i}.def`),
+        `<root>${parent}\n  <Properties>\n    <depth type="UINT32" flags="BASE"/>\n  </Properties>\n</root>\n`
+      );
+    }
+    const pyChain = [];
+    for (let i = 0; i <= 50; i += 1) {
+      pyChain.push(`class Chain${i}${i === 0 ? '' : `(Chain${i - 1})`}:\n    def depth_of(self):\n        return ${i}\n`);
+    }
+    writeFileSyncp(path.join(root, 'scripts/base/deepchain.py'), pyChain.join(''));
+    // 循环别名:类型环(TYPE_A↔TYPE_B)与 Parent 环(LoopA↔LoopB,visited 截断口径)
+    writeFileSyncp(path.join(root, 'scripts/entity_defs/circular_alias.xml'),
+      '<root>\n  <TYPE_A type="ARRAY" of="TYPE_B"/>\n  <TYPE_B type="ARRAY" of="TYPE_A"/>\n</root>\n');
+    writeFileSyncp(path.join(root, 'scripts/entity_defs/LoopA.def'),
+      '<root>\n  <Parent>LoopB</Parent>\n</root>\n');
+    writeFileSyncp(path.join(root, 'scripts/entity_defs/LoopB.def'),
+      '<root>\n  <Parent>LoopA</Parent>\n</root>\n');
+    // 不完整 XML:截断 def 与截断 entities(容错解析必须不炸不挂)
+    writeFileSyncp(path.join(root, 'scripts/entity_defs/Truncated.def'),
+      '<root>\n  <Properties>\n    <hp type="UINT32" flags="BASE"/>\n  <BaseMethods>\n    <onPartial args="UInt32"/>\n');
+    writeFileSyncp(path.join(root, 'scripts/broken_entities.xml'),
+      '<root>\n  <Avatar config="kbengine_avatar_defaults"/>\n  <Mon');
+    // 非 ASCII 路径:CJK 目录/文件名,内容为合法类
+    writeFileSyncp(path.join(root, 'scripts/base/怪物/武器库/宝剑.py'),
+      'class 宝剑:\n    def 挥舞(self):\n        return \'swish\'\n');
+    // 符号冲突:base/cell 同类名不同体(同名 Avatar 两种实现)
+    writeFileSyncp(path.join(root, 'scripts/base/Avatar.py'),
+      'class Avatar:\n    def base_only(self):\n        return \'base\'\n');
+    writeFileSyncp(path.join(root, 'scripts/cell/Avatar.py'),
+      'class Avatar:\n    def cell_only(self):\n        return \'cell\'\n');
   }
 };
 
@@ -215,7 +253,11 @@ function scenarioStats(root) {
   return { files, bytes, pyClasses, pyDefs, defMethods };
 }
 
+const onlyScenario = argValue('--only', '');
 for (const [name, build] of Object.entries(scenarios)) {
+  if (onlyScenario && name !== onlyScenario) {
+    continue;
+  }
   const target = path.join(parent, name);
   if (fs.existsSync(target)) {
     rmdirForceSafe(target);
