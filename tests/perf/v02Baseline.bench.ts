@@ -43,6 +43,7 @@ import {
 import { EntityMappingManager } from '../../src/entityMapping';
 import { PythonClassIndex } from '../../src/backend/pythonClassIndex';
 import { resetScanRootCache } from '../../src/scanRoots';
+import { resolveGateBounds } from './gateBounds';
 
 // RUST-023 存储介质轴:默认 tmpfs(os.tmpdir);KODE_PERF_ASSETS_OUT 可指向
 // 真实磁盘路径,同参数双跑即得 内存盘 vs 机械盘 分组对照。
@@ -111,20 +112,10 @@ const recordMetric = (name: string, values: number[], unit: string): void => {
 };
 
 /**
- * 门禁边界(宽松上界纪律:只捕数量级回退)。基线=docs/perf/2026-11-04-v02-baseline.md:
- * 交互热态最坏 p99 14.5ms / max 26.7ms(墙钟界 ~7x/11x 余量,吸收共享 runner 抖动);
- * 全量 .py 扫描 10.4s(11.5x);扫描期 RSS 峰值 251-287MB、增量 +127.9MB(内存几乎
- * 无抖动,界收最紧 2.4~3.1x);激活期增量基线 0MB(有留存即异常)。
+ * 门禁边界(宽松上界纪律:只捕数量级回退)。缺省表与环境变量覆盖解析在
+ * ./gateBounds(RUST-027 可配置回归阈值,KODE_PERF_BOUND_* 形)。
  */
-const GATE_BOUNDS = {
-  warmP99Ms: 100,
-  warmMaxMs: 300,
-  activationWallMs: 15000,
-  fullPyScanWallMs: 120000,
-  scanPeakRssMb: 700,
-  scanPeakRssDeltaMb: 400,
-  activationPeakRssDeltaMb: 200
-};
+const GATE_BOUNDS = resolveGateBounds();
 
 interface GateViolation {
   metric: string;
