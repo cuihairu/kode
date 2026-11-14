@@ -40,6 +40,10 @@ export interface RawMonitoringSession {
     windowNote: string;
     clock: string;
     startedAtEpochMs?: number;
+    /** 受控采集收口记账(FLOW-025 控制器面;最小采集器可不带) */
+    stoppedAtEpochMs?: number;
+    endReason?: string;
+    endNote?: string;
   };
   processes: Array<{
     processId: string;
