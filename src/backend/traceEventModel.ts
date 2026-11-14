@@ -35,10 +35,12 @@ export type TraceProcessRole =
   | 'bridge:other'
   | 'unknown';
 
-/** 采集器形态(与 FLOW-022 五渠道一一对应;settrace 只进协议不进产品面)。 */
+/** 采集器形态(与 FLOW-022 五渠道一一对应;settrace 只进协议不进产品面;
+ *  sys-monitoring=PEP 669 受控逐事件面,3.12+,FLOW-024 已验证来源)。 */
 export type TraceCollectorKind =
   | 'setprofile'
   | 'settrace'
+  | 'sys-monitoring'
   | 'py-spy-dump'
   | 'py-spy-record'
   | 'debugpy-stop'
@@ -107,7 +109,8 @@ export type TraceDropReason =
 
 export interface TraceDropEvent {
   seq: number;
-  timestamp: number;
+  /** 记账时间;采集侧结束时汇总的丢失可能无时间戳=省略(不造假时间轴) */
+  timestamp?: number;
   /** 归属进程;会话级丢失=null */
   processId: string | null;
   reason: TraceDropReason;
@@ -199,6 +202,7 @@ export interface TraceSession {
 const COLLECTOR_FACE_TABLE: Record<TraceCollectorKind, TraceSampleFace> = {
   setprofile: 'complete-within-window',
   settrace: 'complete-within-window',
+  'sys-monitoring': 'complete-within-window',
   'py-spy-dump': 'stop-only',
   'py-spy-record': 'sampled',
   'debugpy-stop': 'stop-only',
@@ -221,7 +225,8 @@ export function describeSampleFace(face: TraceSampleFace): string {
 
 /** 分布式 Omit(联合类型逐成员去掉 seq,保住判别字段) */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
-type TraceEventInput = DistributiveOmit<TraceEvent, 'seq'>;
+/** 事件输入面(不携带 seq,构造器统一分配);导入面/采集装配共用。 */
+export type TraceEventInput = DistributiveOmit<TraceEvent, 'seq'>;
 
 export interface TraceSessionInput {
   sessionId: string;
@@ -232,7 +237,7 @@ export interface TraceSessionInput {
   /** 事件(不携带 seq,构造器统一分配) */
   events: TraceEventInput[];
   /** 会话级/进程级丢弃记录(不携带 seq/timestamp 的简式 + 可选时间戳) */
-  drops?: Array<Omit<TraceDropEvent, 'seq'> & { timestamp?: number }>;
+  drops?: Array<Omit<TraceDropEvent, 'seq' | 'timestamp'> & { timestamp?: number }>;
   completenessNote?: string;
 }
 

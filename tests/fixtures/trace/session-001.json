@@ -1,0 +1,150 @@
+{
+ "meta": {
+  "collector": "sys-monitoring",
+  "monitoringToolId": 5,
+  "pythonVersion": "3.14.4",
+  "interpreter": "/usr/bin/python3",
+  "windowNote": "workload main() 全程(装载不采集;sys.monitoring PY_START/PY_RETURN/PY_UNWIND/RAISE/EXCEPTION_HANDLED)",
+  "clock": "process-mono",
+  "startedAtEpochMs": 1794661739596
+ },
+ "processes": [
+  {
+   "processId": "py-1",
+   "role": "unknown",
+   "name": "scripts/trace/monitoring_capture.py",
+   "enginePythonVersion": null
+  }
+ ],
+ "threads": [
+  {
+   "threadId": "MainThread",
+   "processId": "py-1",
+   "name": "MainThread"
+  }
+ ],
+ "events": [
+  {
+   "kind": "call",
+   "timestamp": 0.249042,
+   "processId": "py-1",
+   "threadId": "MainThread",
+   "entityId": null,
+   "frame": {
+    "file": "tests/fixtures/trace/workload_login.py",
+    "line": 31,
+    "function": "main",
+    "className": null
+   },
+   "parentSeq": null
+  },
+  {
+   "kind": "call",
+   "timestamp": 0.329784,
+   "processId": "py-1",
+   "threadId": "MainThread",
+   "entityId": null,
+   "frame": {
+    "file": "tests/fixtures/trace/workload_login.py",
+    "line": 11,
+    "function": "onClientEnabled",
+    "className": "Account"
+   },
+   "parentSeq": 0
+  },
+  {
+   "kind": "call",
+   "timestamp": 0.380732,
+   "processId": "py-1",
+   "threadId": "MainThread",
+   "entityId": null,
+   "frame": {
+    "file": "tests/fixtures/trace/workload_login.py",
+    "line": 19,
+    "function": "buildLoginMsg",
+    "className": "Account"
+   },
+   "parentSeq": 1
+  },
+  {
+   "kind": "call",
+   "timestamp": 0.416135,
+   "processId": "py-1",
+   "threadId": "MainThread",
+   "entityId": null,
+   "frame": {
+    "file": "tests/fixtures/trace/workload_login.py",
+    "line": 27,
+    "function": "sanitizeName",
+    "className": null
+   },
+   "parentSeq": 2
+  },
+  {
+   "kind": "return",
+   "timestamp": 0.446469,
+   "processId": "py-1",
+   "threadId": "MainThread",
+   "entityId": null,
+   "unwound": false
+  },
+  {
+   "kind": "return",
+   "timestamp": 0.469317,
+   "processId": "py-1",
+   "threadId": "MainThread",
+   "entityId": null,
+   "unwound": false
+  },
+  {
+   "kind": "call",
+   "timestamp": 0.475106,
+   "processId": "py-1",
+   "threadId": "MainThread",
+   "entityId": null,
+   "frame": {
+    "file": "tests/fixtures/trace/workload_login.py",
+    "line": 22,
+    "function": "loadAccount",
+    "className": "Account"
+   },
+   "parentSeq": 1
+  },
+  {
+   "kind": "exception",
+   "timestamp": 0.548826,
+   "processId": "py-1",
+   "threadId": "MainThread",
+   "entityId": null,
+   "atSeq": 6,
+   "exceptionType": "KeyError",
+   "message": "'hero'",
+   "propagated": true
+  },
+  {
+   "kind": "return",
+   "timestamp": 0.566351,
+   "processId": "py-1",
+   "threadId": "MainThread",
+   "entityId": null,
+   "unwound": true
+  },
+  {
+   "kind": "return",
+   "timestamp": 0.576771,
+   "processId": "py-1",
+   "threadId": "MainThread",
+   "entityId": null,
+   "unwound": false
+  },
+  {
+   "kind": "return",
+   "timestamp": 0.579904,
+   "processId": "py-1",
+   "threadId": "MainThread",
+   "entityId": null,
+   "unwound": false
+  }
+ ],
+ "drops": []
+}
