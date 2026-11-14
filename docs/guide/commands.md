@@ -619,6 +619,9 @@ The flow graph panel supports:
 - Cursor-aware entry: the function at the cursor (nearest `def` line above, syntax anchor) opens directly when it is in the graph face; leaf functions fall back to the function quick pick (no fabricated entries)
 - Node reverse lookup (反查): clicking a candidate frame runs a workspace-wide query — 上游 callers (local matches are identity-exact; cross-process senders match by role+method name and stay listed as 实体待证 candidates when same-named methods exist), 下游 callees, and the unresolved face with reason codes — unknowns and ambiguities are viewable, never adjudicated
 - Navigation history: 打开图 from the inspect view pushes the previous entry; 返回上一视图 pops it back (the inspect view returns to the swimlane walk without touching the stack); closing the panel clears history
+- Bounded initial assembly (按需展开): the first walk runs at a fixed depth bound (6) — frames past the bound are marked 截断边界 with a 继续展开 entry that reopens the boundary frame's file+function as a new scenario (the panel never pretends to show the whole graph at once)
+- Panel toolbar (injected only by the panel; the generated artifact stays zero-script): a search box filters rows by text with Enter locating the first match, plus zoom in/out/reset buttons (body zoom 0.5–2, clamped)
+- Cancellable assembly: the progress notification is cancellable — the assembler checks the token between phases (file reads / triple collection / def+impl resolution) and stops the background extension; a cancel reports 调用图装配已取消 (distinct from an assembly failure)
 
 ### `kbengine.quickActions.runByName`
 
