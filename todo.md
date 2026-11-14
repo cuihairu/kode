@@ -287,7 +287,7 @@
 - [x] RUST-050 （旧 BUILD-001） 决策记录 ADR-001：LSP stdio 为默认常驻本地/远端通信；扩展协议只处理非标准能力。(PR-003,docs/kode2/adr/ADR-001-stdio-default-transport.md)
 - [x] RUST-051 （旧 BUILD-002） ADR-002：Rust 解析器/查询核心 vs 现有 TS，先用基准决定是否逐模块替换。(PR-003,docs/kode2/adr/ADR-002-benchmark-first-rust-migration.md)
 - [x] RUST-052 （旧 BUILD-003） 建 Cargo workspace，pin toolchain 与依赖，定义 MSRV；启用 cargo fmt/clippy/test。(PR-003:Cargo.toml+rust-toolchain.toml pin 1.99.0/MSRV 1.82,`cargo clippy --workspace --all-targets -- -D warnings` 过)
-- [ ] RUST-053 （旧 BUILD-004） Cargo features 分割 optional engines/runtime/plugin host，减小基础包和启动成本。
+- [x] RUST-053 （旧 BUILD-004） Cargo features 分割 optional engines/runtime/plugin host，减小基础包和启动成本。（3af78d8f,2026-11-15 证据裁定收口:结构面前提**已满足**——engines(kode-kbengine*/4 crate)与 plugin host(kode-mcp)在 workspace 本就以独立 crate 存在且**不被 kode-server 依赖闭包引用**(逐 crate [dependencies] path 边 BFS 实证:server 闭包=protocol/db-clone/vfs/parser/python/index/root/types 全第一方+serde/ruff,零 kbengine/mcp 边),无 [features] 段即无需分割;启动成本实测已小(core-spawn-run.txt start.total p50 4.5ms/handshake ~3.3ms)、release 二进制 ~7.8MB——「减小启动成本」无优化对象,真实瘦身空间=VSIX 平台拆分(归 RUST-057);本批交付=守卫钉 tests/crateClosure.test.ts 两例:①server 闭包 BFS 不连 kode-kbengine*/kode-mcp(防引擎面无声回基础二进制,[dependencies] 段解析不含 dev-deps);②engines/plugin-host crate 在场钉(守卫靶子真实性);prove-red=闭包注入 kode-mcp 依赖→红→恢复 cmp 校验绿;门禁 lint 0/tsc 0/unit 830 文件 10208+8skip/xvfb demo 25 RC=0）
 - [ ] RUST-054 （旧 BUILD-005） TS client 统一 transport / reconnection / cancellation / diagnostics 管理。(PR-003 已落最小版 spawn/握手/取消/崩溃重启:src/kodeCoreClient.ts;Provider 接线与 diagnostics 管理留 PR-010)
 - [ ] RUST-055 （旧 BUILD-006） 固定生成的协议 schema；Rust/TS types 从同一规范生成，CI 测兼容。
 - [ ] RUST-056 （旧 BUILD-007） 对多平台目标构建 x64/arm64；单独核查 Windows path/casing 和 macOS 签名/隔离。
