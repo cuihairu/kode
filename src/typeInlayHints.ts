@@ -10,6 +10,7 @@ import {
   defBufferStampForRoot
 } from './definitionWorkspace';
 import { PYTHON_TYPE_STUB_FALLBACK, resolveAnnotationTypeWithReason } from './pythonTypeStubs';
+import { awaitDataDictIndexReady } from './languageProviders/pythonDefinition';
 import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from './backend/selfPropertyTypeInference';
 import {
   findPythonReceiverCallArguments,
@@ -182,7 +183,7 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
     }
     await this.collectSelfPropertyElementHints(document, range, documentLines, propertyWorkspaceRoot, hints);
     await this.collectRpcParameterHints(document, range, hints);
-    await this.collectDataDictHints(document, range, documentLines, hints);
+    await this.collectDataDictHints(document, range, documentLines, hints, token);
     await this.collectCellDataReadHints(document, range, documentLines, hints);
     return hints;
   }
@@ -263,7 +264,8 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
     document: vscode.TextDocument,
     range: vscode.Range,
     documentLines: string[],
-    hints: vscode.InlayHint[]
+    hints: vscode.InlayHint[],
+    token?: vscode.CancellationToken
   ): Promise<void> {
     if (!this.dataDictIndex) {
       return;
@@ -311,8 +313,14 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
         }
         // 读点:同键写点值类型 union(能推才显,无写点/全未知不出)
         if (!ensured) {
-          await this.dataDictIndex.ensureStarted();
-          ensured = true;
+          // AUD-072 同款(与 hover/definition/completion 同口径):冷索引等待可取消。
+          // 旧实现 await 全量 ensureStarted 且不接 token——宿主换页/关文档时 inlay
+          // 仍挂着等整轮扫描结束,取消无效。改为与共享初扫竞速,取消先到即弃查。
+          // 懒触发位保持在 read 访问点(非 write/delete):只有真需读点反查才起扫。
+          ensured = await awaitDataDictIndexReady(this.dataDictIndex, token);
+          if (!ensured) {
+            return;
+          }
         }
         const types: string[] = [];
         // AUD-068 同款:查询带根身份(索引按 workspace 根身份键提交)
