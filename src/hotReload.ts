@@ -40,7 +40,8 @@ import {
 } from './backend/hotReloadProviderAssembly';
 import { buildEngineProfile, type HotReloadProvider } from './backend/hotReloadPluginApi';
 import { createPythonSyntaxGate } from './backend/hotReloadSyntaxGate';
-import { runPythonCompile } from './hotReloadPythonCompile';
+import { createPythonExecService } from './backend/pythonExecService';
+import { createExecServiceCompile } from './backend/pythonExecSyntaxCompile';
 import { resolveProfileInterpreter } from './profileInterpreter';
 import {
   HotReloadDiskWatchController,
@@ -1091,16 +1092,36 @@ export function setupHotReload(
     runFire(triggers);
   }, timers);
   let pipeline: HotReloadSavePipeline | undefined;
+  // RUST-002 判据③:热更语法闸是最高频的 Python 脚本执行面(每次定稿一次),
+  // 原来每次 spawn 一个新解释器进程。改用常驻执行服务承载:一个解释器进程跑
+  // 任意多次 compile(),只在故障/超时后重建。失败语义两路分叉(纯核
+  // pythonExecSyntaxCompile):执行服务故障 reject → 闸门 fail-open 放行;
+  // 真语法错误 resolve ok:false → 闸门拦下。
+  let execCompile: ReturnType<typeof createExecServiceCompile> | undefined;
   // HR-WATCH-012 真语法闸:解释器解析一次随面建立(venv 深扫不进热更链路);
-  // 配置面重建 apply 时闸随建,解释器变更自然刷新
-  const buildRealSyntaxGate = (): SyntaxCheck =>
-    createPythonSyntaxGate({
+  // 配置面重建 apply 时闸随建,执行服务随之换句柄(解释器路径变更自然刷新)
+  const buildRealSyntaxGate = (): SyntaxCheck => {
+    const previous = execCompile;
+    // 捕获局部句柄:外层的 execCompile 会被后续重建重新赋值,闭包里读它
+    // 不会保住这里的赋值收窄(TS 不按「调用时已赋值」推断),局部 const 才稳。
+    const handle = createExecServiceCompile({
       resolveInterpreter: () => resolveProfileInterpreter().interpreterPath,
-      compile: runPythonCompile,
+      createService: interpreter => createPythonExecService({ interpreter })
+    });
+    execCompile = handle;
+    previous?.dispose();
+    return createPythonSyntaxGate({
+      resolveInterpreter: () => resolveProfileInterpreter().interpreterPath,
+      // 闸门契约是 compile(interpreter, content) 两参;常驻服务在创建时已按同一
+      // 解析器固定解释器,故闸门解析出的解释器形参在此显式忽略。
+      // **不可**直接写 handle.compile(单参):TS 少参数容忍会让 interpreter
+      // 落进 content 位,把解释器路径当源码编译,一切内容都被判成语法错。
+      compile: (_interpreter, content) => handle.compile(content),
       onUnavailable: reason => {
         status.log(`热更语法闸不可用: ${reason}`);
       }
     });
+  };
   const buildPipeline = (current: HotReloadSettings): HotReloadSavePipeline =>
     new HotReloadSavePipeline({
       debounceMs: current.debounceMs,
@@ -1457,6 +1478,9 @@ export function setupHotReload(
       diskScope = null;
       providerHost.dispose();
       pipeline?.dispose();
+      // RUST-002:常驻解释器随装配释放,不留孤儿进程
+      execCompile?.dispose();
+      execCompile = undefined;
       trigger.dispose();
       pendingOut.clear();
       for (const handle of settleHandles) {
