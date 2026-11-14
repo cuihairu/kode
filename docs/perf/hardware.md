@@ -43,7 +43,9 @@
 
 统计口径=生成后全树走读:文件数/UTF-8 字节/`^class ` 与 `^\s+def ` 计数(.py)/`<onRpc` 计数(.def);生成器每次运行末尾打印同格式摘要。
 
-RUST-020 对抗性样例已建:adversarial 场景(63 文件/9.5 KiB/54 class;`--only adversarial` 单独生成)=深继承(Chain0..Chain50 def Parent 链+py 同构链)、循环别名(TYPE_A↔TYPE_B 类型环+LoopA↔LoopB Parent 环)、不完整 XML(截断 def+截断 entities 两形)、非 ASCII 路径(scripts/base/怪物/武器库/宝剑.py)、符号冲突(base/cell 同名 Avatar 两实现);六钉 tests/generatePerfAssets.test.ts 走真实解析通路(buildDefChain 深链 50 层无截断/Parent 环 visited 截断/两种截断形在解析位抛错且调用方 try/catch 跳过为真实容错语义)。真实 KBEngine 引擎样例(PERF-004,fantasydemo 等):待测,须与合成样例隔离存放。
+RUST-020 对抗性样例已建:adversarial 场景(63 文件/9.5 KiB/54 class;`--only adversarial` 单独生成)=深继承(Chain0..Chain50 def Parent 链+py 同构链)、循环别名(TYPE_A↔TYPE_B 类型环+LoopA↔LoopB Parent 环)、不完整 XML(截断 def+截断 entities 两形)、非 ASCII 路径(scripts/base/怪物/武器库/宝剑.py)、符号冲突(base/cell 同名 Avatar 两实现);六钉 tests/generatePerfAssets.test.ts 走真实解析通路(buildDefChain 深链 50 层无截断/Parent 环 visited 截断/两种截断形在解析位抛错且调用方 try/catch 跳过为真实容错语义)。
+
+RUST-021 真实引擎样例车道(env 隔离,样例永不入库):`KODE_PERF_REAL_ENGINE_ROOT` 指向引擎 checkout,tests/perf/realEngineCorpus.bench.ts 经 `hasEngineTreeMarker`(kbe/src/lib/common/version.h)校验后在引擎自带脚本语料上量测盘点(.py/.def 计数+字节+class 符号)+全量 .def 容错解析(解析位 throw 按调用方口径计 parse-fail);未配置=`engine=not-configured` 如实申报零声称不红,指错目录=红出来让人修。输出落 docs/perf/real-engine-corpus-run.txt(KODE_REAL_ENGINE_OUT 可覆盖,配置了真引擎才开新记录窗)。本地 fork(BigWorld-Engine-14.4.1)实测(2026-11-15)=语料稀疏如实入账:py=12(19.1 KiB,class=4) def=1(Account.def,parse-fail=0)——引擎树主体是 C++,Python 资产仅 sdk_templates 样例;fantasydemo 级大语料不在本 fork,取得授权后指向同 env 即得实测,无需改码。隔离纪律:引擎树自带许可条款,**任何引擎文件绝不提交本仓**;与合成样例(generate-perf-assets.mjs,本仓自有)物理隔离。
 
 ## 4. 分段时延口径(PERF-005)
 
