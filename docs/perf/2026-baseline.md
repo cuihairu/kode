@@ -140,7 +140,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC2["VS Code: provideDefinition(document, position)"]
-  M2["activate/languageServices.ts:277 打点 startLanguageServiceOperation('definition')<br/>(python 侧另有 :340 一路)"]
+  M2["activate/languageServices.ts:277 打点 startLanguageServiceOperation('definition')<br/>(python 侧另有 :344 一路)"]
   AD2["PythonDefinitionProvider.provideDefinition<br/>languageProviders/pythonDefinition.ts:261"]
   TR["provideDefinitionTraced → Impl<br/>semantic-query 打点 :4736 / Impl :4754"]
   CTX{"isPythonCodePosition<br/>注释/字符串内直接 skip"}
@@ -194,7 +194,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC3["VS Code: provideCompletionItems(document, position)"]
-  M3["activate/languageServices.ts:128 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :741 一路)"]
+  M3["activate/languageServices.ts:128 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :745 一路)"]
   CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders/completion.ts:1064"]
   KBEC{"kbe./KBEngine. 模块语境?<br/>(已引入/已用别名)"}
   FILTER["filterKbeSymbols 前缀过滤 :4921<br/>(engineApiMetadata 目录)"]

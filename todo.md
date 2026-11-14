@@ -221,7 +221,7 @@
 > **状态注（2026-11-13 整理）**：本段为 Rust Core 重构设计序列，执行以用户逐批点火为准，整段未勾≠债务；已落部分见各行「(落地/进行中/基础版…)」注（PR-003..010、kode-scheduler、kode-vfs 等）。取证阶段（PH0）的 AUDIT-001..015/PERF-001 已于 2026-11-13 复核补勾（证据=docs/architecture/current-state.md+migration-inventory.csv+docs/perf/hardware.md）；PR-001/PR-002 与主 todo 既有车道重复，对账注见 §17 各行。
 
 #### 0.2 严格设计原则
-- [ ] RUST-001 （旧 ARCH-001） 扩展宿主不得同步执行全仓扫描、语义求解、全量 XML 解析、巨型日志处理。
+- [ ] RUST-001 （旧 ARCH-001） 扩展宿主不得同步执行全仓扫描、语义求解、全量 XML 解析、巨型日志处理。(部分,e0b639ee;四轴已全树审:②语义求解④巨型日志两轴通过;①全仓扫描查出激活同步段违规已修=preheatDiscoveryScanActivation 走 Rust 有界扫描器+setImmediate 兜底让出宏任务(诚实边界:兜底段仍是同一条有界同步 walk 40.5ms/巨仓,只保证不在激活同步段跑,真异步 walk 待后续);③全量 XML 查出 defMd5Check 命令期 def 语料同步逐文件补载已修=readText 异步签名+8 路有界并发(Rust defs 收 HashMap 与次序无关)+readSharedFileSnapshotAsync 复用既有记账异步入口(未新增 fileReadMetrics 函数);prove-red 旧形态峰值 1→红、还原 22/22 绿;残余 7 面如实登记不修=defReferenceGraph:156/defRenamer:630/diagnostics:1678/defAnalyzer:478/defChain:61/entityMappingHelpers:355+entityMapping:1929 同步读+解析、debugConfig:1089 execSync 列进程、pythonReturnTypeInference:144 休眠全仓 readdirSync 无深度上限;审计 docs/review/2026-11-15-rust-001-host-synchronous-faces.md)
 - [ ] RUST-002 （旧 ARCH-002） Core 是常驻进程，语言请求不得 spawn Python/Rust 进程；运行脚本须独立的可复用执行服务。
 - [ ] RUST-003 （旧 ARCH-003） 文件快照按 root + canonical URI + document version 唯一标识；打开文件内存优先。
 - [ ] RUST-004 （旧 ARCH-004） 索引查询无阻塞全量初始化前置；允许明确标注 partial/incomplete，禁止悄悄返回假完整结果。
