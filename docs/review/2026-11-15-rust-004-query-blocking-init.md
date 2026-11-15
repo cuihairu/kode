@@ -56,3 +56,24 @@
 **prove-red**:变异 SpaceDataIndex 两标注面恒 `ready: true` + 摘 WorkspaceIndex 未就绪早退分支 → 未就绪三例红(3 failed);`cp` 还原 + `cmp` 字节一致 → 7 例复绿。测试 `tests/indexMarkedAxisRound2.test.ts` 7 例(SpaceDataIndex isReady 三态/未就绪标注×2/就绪同源×2;WorkspaceIndex isReady 三态/未就绪零阻塞不触发初扫/就绪同源)。
 
 **剩余登记**(整行保持未勾的唯一原因):`allEventCalls` 硬 await——eventApi 无 token 可传,取消需消费面接线设计,非机械批;标注面已给后续消费端「免阻塞区分未建/空」的迁移面。
+
+## 7. 第四批(2026-11-15 W3,dc65e05b)+ 收官勾账(2026-11-16 逐面验读)
+
+§6 尾「整行保持未勾的唯一原因」(allEventCalls 硬 await / eventApi 无 token 可传)已由第四批 dc65e05b(feat: budget event index cold waits,RUST-004-W3)收口:
+
+**落地面**:
+- `src/eventApi.ts` —— CodeLens provider 签名接 LSP `CancellationToken`(`provideCodeLenses(document, token)` 第三参穿透),监听镜读点从(无 token 的)索引等待改为 `sharedIndex.allEventCallsMarked(token)`:取消→null 只退监听镜(本地回调镜保留)、初扫失败退本地镜 provider 不整体缺席、预算耗尽已蓄真实监听照流(partial-real)、初扫落地经 `onReady` 通知自动重渲染;
+- `src/coldIndexReadiness.ts`(新)—— 冷索引就绪竞速公共核(入口预检 + 预算竞速 + 取消/超时/落定三态);
+- `src/workspaceIndex.ts` —— `allEventCallsMarked(token, budgetMs=resolveColdIndexReadyBudgetMs())`:带 token 走预算竞速(取消→null;超时→部分内容+`ready:false`,初扫后台继续),无 token 等全量(离线程序化语义,文档面如实标注);`allEventCalls()` 原语义保留为离线面;
+- `src/backend/eventIndexTypes.ts` —— 接口面锁步。
+
+**prove-red**(dc65e05b 批内):挂死索引 + 竞速订阅落定后中途取消(预取消不构成 prove 同 §2 方法论)→ 断言抵达读点门(`ensureStartedCalls===1`)且调用返回;回归旧形则永挂 2s 超时红。测试 `tests/eventIndexReadyBudget.test.ts`(351 行)。
+
+**2026-11-16 逐面验读(勾账依据,零新生产码)**:
+1. 生产面无标记硬等待调用点 = 零:`allEventCalls()` 无标记变体在 `src/` 生产码零调用(grep 证据;接口面保留=离线程序化语义);
+2. token 穿透链:`provideCodeLenses(token)` → `allEventCallsMarked(token)` → `raceColdIndexReadiness`(预算 `KODE_DATA_DICT_READY_BUDGET_MS` 竞速)全链在读;
+3. 判据三面全落:「查询无阻塞」=provider 四家取消竞速(§1)+事件监听镜预算竞速(§7);「允许明确标注」=GlobalDataDictIndex/SpaceDataIndex/WorkspaceIndex 三侧标注轴(§5/§6)+事件面 `{calls, ready}`(§6/§7);「禁止悄悄返回假完整结果」=`query()` 原语义重定性(增量事件驱动,严格就绪门会误伤,§5)+标注轴区分「未建/空」,未就绪 partial-real 恒带 `ready:false`;
+4. 登记面三笔全销:`defReferenceGraph 同步扫`=RUST-001 批 B 异步化(登记行陈旧);`query() 无就绪门`=重定性+标注轴(§5);`allEventCalls 硬 await`=W3 消费面接线(本节);
+5. 验读门禁:六套件 43 例全绿(eventIndexReadyBudget/indexMarkedAxisRound2/globalDataIndexMarkedQuery/eventIndexSeam/typeInlayHintsDataDictCancel/dataDictReadyBudget,2026-11-16 实跑 exit 0)。
+
+整行 `[x]` 勾账:判据原文两侧(无阻塞+标注)全落,登记面全销,消费面接线生产实测(dc65e05b)。
