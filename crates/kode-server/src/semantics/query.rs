@@ -39,11 +39,24 @@ use kode_types::TypeGraph;
 #[serde(tag = "kind", content = "params", rename_all = "camelCase")]
 pub enum QueryRequest {
     /// 位置表达式来源(BAS-07;`source` = 文档全文)。
-    ExprKind { uri: String, line: usize, col: usize },
+    ExprKind {
+        uri: String,
+        line: usize,
+        col: usize,
+    },
     /// 位置类型显示(BAS-04;当前未接线 → Unavailable 诚实降级)。
-    TypeAt { uri: String, line: usize, col: usize },
+    TypeAt {
+        uri: String,
+        line: usize,
+        col: usize,
+    },
     /// 名称局部绑定(BAS-07;`source` = 文档全文)。
-    BindingAt { uri: String, line: usize, col: usize, name: String },
+    BindingAt {
+        uri: String,
+        line: usize,
+        col: usize,
+        name: String,
+    },
     /// 实体声明快照(BAS-05;按文档键)。
     EntitySnapshot { uri: String },
     /// 依赖失效集(BAS-09;单文件变更相关项)。
@@ -66,10 +79,20 @@ pub enum ExprKindView {
 impl From<&ExprKind> for ExprKindView {
     fn from(k: &ExprKind) -> Self {
         match k {
-            ExprKind::Attribute { base, attr } => ExprKindView::Attribute { base: base.clone(), attr: attr.clone() },
-            ExprKind::Subscript { base, key } => ExprKindView::Subscript { base: base.clone(), key: key.clone() },
-            ExprKind::Call { callee } => ExprKindView::Call { callee: callee.clone() },
-            ExprKind::LocalAssign { target } => ExprKindView::LocalAssign { target: target.clone() },
+            ExprKind::Attribute { base, attr } => ExprKindView::Attribute {
+                base: base.clone(),
+                attr: attr.clone(),
+            },
+            ExprKind::Subscript { base, key } => ExprKindView::Subscript {
+                base: base.clone(),
+                key: key.clone(),
+            },
+            ExprKind::Call { callee } => ExprKindView::Call {
+                callee: callee.clone(),
+            },
+            ExprKind::LocalAssign { target } => ExprKindView::LocalAssign {
+                target: target.clone(),
+            },
             ExprKind::Unknown(r) => ExprKindView::Unknown { reason: r.clone() },
         }
     }
@@ -105,7 +128,11 @@ impl From<&EntitySnapshot> for SnapshotView {
             interfaces: s.interfaces.clone(),
             property_names: s.properties.iter().map(|p| p.name.clone()).collect(),
             conflict_names: s.conflicts.iter().map(|c| c.name.clone()).collect(),
-            issue_severities: s.issues.iter().map(|i| i.severity().as_str().to_string()).collect(),
+            issue_severities: s
+                .issues
+                .iter()
+                .map(|i| i.severity().as_str().to_string())
+                .collect(),
         }
     }
 }
@@ -119,9 +146,13 @@ pub enum QueryResponse {
     BindingAt(Option<BindingView>),
     EntitySnapshot(Option<SnapshotView>),
     Invalidate(Vec<String>),
-    Ping { available: bool },
+    Ping {
+        available: bool,
+    },
     /// 缺服务可降级(未接线/服务不在 → 该值,不报错)。
-    Unavailable { reason: String },
+    Unavailable {
+        reason: String,
+    },
 }
 
 impl QueryResponse {
@@ -197,7 +228,9 @@ impl SemanticQueryService for ContractEngine {
         match req {
             QueryRequest::ExprKind { uri: _, line, col } => {
                 let Some(src) = source else {
-                    return QueryResponse::Unavailable { reason: "source-missing".into() };
+                    return QueryResponse::Unavailable {
+                        reason: "source-missing".into(),
+                    };
                 };
                 let ast = ParsedAst::new(src);
                 match expr_kind_at(&ast, *line, *col) {
@@ -205,9 +238,16 @@ impl SemanticQueryService for ContractEngine {
                     None => QueryResponse::ExprKind(None),
                 }
             }
-            QueryRequest::BindingAt { uri: _, line, col, name } => {
+            QueryRequest::BindingAt {
+                uri: _,
+                line,
+                col,
+                name,
+            } => {
                 let Some(src) = source else {
-                    return QueryResponse::Unavailable { reason: "source-missing".into() };
+                    return QueryResponse::Unavailable {
+                        reason: "source-missing".into(),
+                    };
                 };
                 let ast = ParsedAst::new(src);
                 let events = collect_assign_events(&ast);
@@ -221,12 +261,14 @@ impl SemanticQueryService for ContractEngine {
                     None => QueryResponse::BindingAt(None),
                 }
             }
-            QueryRequest::TypeAt { .. } => {
-                QueryResponse::Unavailable { reason: "type-resolution-not-wired".into() }
-            }
+            QueryRequest::TypeAt { .. } => QueryResponse::Unavailable {
+                reason: "type-resolution-not-wired".into(),
+            },
             QueryRequest::EntitySnapshot { uri } => {
                 let Some(defs) = &self.defs else {
-                    return QueryResponse::Unavailable { reason: "def-store-absent".into() };
+                    return QueryResponse::Unavailable {
+                        reason: "def-store-absent".into(),
+                    };
                 };
                 let key = self.key(uri);
                 let Some(own) = defs.get(&key) else {
@@ -234,17 +276,33 @@ impl SemanticQueryService for ContractEngine {
                 };
                 let resolver = ProjectDefResolver::new(defs);
                 let own_kind = crate::semantics::store::def_kind_from_key(&key);
-                let snap = EntitySnapshot::build(own, own_kind, &resolver, &self.graph, self.root, &def_name_from_key(&key));
+                let snap = EntitySnapshot::build(
+                    own,
+                    own_kind,
+                    &resolver,
+                    &self.graph,
+                    self.root,
+                    &def_name_from_key(&key),
+                );
                 QueryResponse::EntitySnapshot(Some(SnapshotView::from(&snap)))
             }
             QueryRequest::Invalidate { uri } => {
                 let Some(deps) = &self.deps else {
-                    return QueryResponse::Unavailable { reason: "deps-absent".into() };
+                    return QueryResponse::Unavailable {
+                        reason: "deps-absent".into(),
+                    };
                 };
                 let key = self.key(uri);
-                QueryResponse::Invalidate(deps.consumers_of(&key).iter().map(|k| k.uri.to_uri_string()).collect())
+                QueryResponse::Invalidate(
+                    deps.consumers_of(&key)
+                        .iter()
+                        .map(|k| k.uri.to_uri_string())
+                        .collect(),
+                )
             }
-            QueryRequest::Ping => QueryResponse::Ping { available: self.available() },
+            QueryRequest::Ping => QueryResponse::Ping {
+                available: self.available(),
+            },
         }
     }
 }
@@ -255,7 +313,9 @@ mod tests {
 
     #[test]
     fn expr_kind_contract_round_trip() {
-        let e = QueryResponse::ExprKind(Some(ExprKindView::Call { callee: "self.load()".into() }));
+        let e = QueryResponse::ExprKind(Some(ExprKindView::Call {
+            callee: "self.load()".into(),
+        }));
         let v = serde_json::to_value(&e).unwrap();
         // 契约面:kind-tagged,TS 可判型。
         assert_eq!(v["kind"], "exprKind");
@@ -268,7 +328,11 @@ mod tests {
 
     #[test]
     fn request_round_trip_shape() {
-        let r = QueryRequest::ExprKind { uri: "file:///a.py".into(), line: 1, col: 2 };
+        let r = QueryRequest::ExprKind {
+            uri: "file:///a.py".into(),
+            line: 1,
+            col: 2,
+        };
         let v = serde_json::to_value(&r).unwrap();
         assert_eq!(v["kind"], "exprKind");
         assert_eq!(v["params"]["line"], 1);
@@ -279,28 +343,56 @@ mod tests {
     #[test]
     fn unavailable_is_defined_degradation() {
         let e = ContractEngine::new(RootId(1));
-        let r = e.query(&QueryRequest::TypeAt { uri: "x".into(), line: 0, col: 0 }, None);
+        let r = e.query(
+            &QueryRequest::TypeAt {
+                uri: "x".into(),
+                line: 0,
+                col: 0,
+            },
+            None,
+        );
         assert!(r.is_unavailable(), "未接线查询 = 定义好降级,不报错");
-        assert_eq!(e.query(&QueryRequest::Ping, None), QueryResponse::Ping { available: false });
+        assert_eq!(
+            e.query(&QueryRequest::Ping, None),
+            QueryResponse::Ping { available: false }
+        );
     }
 
     #[test]
     fn ping_reflects_wired_state() {
         let e = ContractEngine::new(RootId(1)).with_deps(DependencyGraph::new());
-        assert_eq!(e.query(&QueryRequest::Ping, None), QueryResponse::Ping { available: true });
+        assert_eq!(
+            e.query(&QueryRequest::Ping, None),
+            QueryResponse::Ping { available: true }
+        );
     }
 
     #[test]
     fn source_query_served_via_contract() {
         let e = ContractEngine::new(RootId(1)).with_defs(SnapshotStore::new());
         let src = "v = self.mgr.fetch()\n";
-        match e.query(&QueryRequest::ExprKind { uri: "u".into(), line: 0, col: 4 }, Some(src)) {
+        match e.query(
+            &QueryRequest::ExprKind {
+                uri: "u".into(),
+                line: 0,
+                col: 4,
+            },
+            Some(src),
+        ) {
             QueryResponse::ExprKind(Some(ExprKindView::Call { callee })) => {
                 assert!(callee.contains("self.mgr.fetch"), "callee 全形态: {callee}");
             }
             other => panic!("expected Call view, got {other:?}"),
         }
-        match e.query(&QueryRequest::BindingAt { uri: "u".into(), line: 0, col: 5, name: "v".into() }, Some(src)) {
+        match e.query(
+            &QueryRequest::BindingAt {
+                uri: "u".into(),
+                line: 0,
+                col: 5,
+                name: "v".into(),
+            },
+            Some(src),
+        ) {
             QueryResponse::BindingAt(Some(b)) => {
                 assert_eq!(b.target, "v");
                 assert!(matches!(b.value, ExprKindView::Call { .. }));
@@ -312,19 +404,45 @@ mod tests {
     #[test]
     fn source_missing_is_degraded() {
         let e = ContractEngine::new(RootId(1));
-        assert!(e.query(&QueryRequest::ExprKind { uri: "u".into(), line: 0, col: 0 }, None).is_unavailable());
-        assert!(e.query(&QueryRequest::BindingAt { uri: "u".into(), line: 0, col: 0, name: "x".into() }, None).is_unavailable());
+        assert!(e
+            .query(
+                &QueryRequest::ExprKind {
+                    uri: "u".into(),
+                    line: 0,
+                    col: 0
+                },
+                None
+            )
+            .is_unavailable());
+        assert!(e
+            .query(
+                &QueryRequest::BindingAt {
+                    uri: "u".into(),
+                    line: 0,
+                    col: 0,
+                    name: "x".into()
+                },
+                None
+            )
+            .is_unavailable());
     }
 
     #[test]
     fn entity_snapshot_served_from_store() {
         let mut defs = SnapshotStore::new();
         let k = DocumentKey::new(RootId(1), CanonicalUri::from_path("/defs/Avatar.def"));
-        defs.commit(super::super::store::Build::new(k, 1, kode_parser::model::parse_def(
-            "<root><Properties><hp>INT32</hp></Properties></root>",
-        )));
+        defs.commit(super::super::store::Build::new(
+            k,
+            1,
+            kode_parser::model::parse_def("<root><Properties><hp>INT32</hp></Properties></root>"),
+        ));
         let e = ContractEngine::new(RootId(1)).with_defs(defs);
-        match e.query(&QueryRequest::EntitySnapshot { uri: "/defs/Avatar.def".into() }, None) {
+        match e.query(
+            &QueryRequest::EntitySnapshot {
+                uri: "/defs/Avatar.def".into(),
+            },
+            None,
+        ) {
             QueryResponse::EntitySnapshot(Some(s)) => {
                 assert_eq!(s.name, "Avatar");
                 assert!(s.property_names.iter().any(|p| p == "hp"));
@@ -340,7 +458,12 @@ mod tests {
         let c = DocumentKey::new(RootId(1), CanonicalUri::from_path("/scripts/avatar.py"));
         deps.add_edge(&p, &c);
         let e = ContractEngine::new(RootId(1)).with_deps(deps);
-        match e.query(&QueryRequest::Invalidate { uri: "/defs/Monster.def".into() }, None) {
+        match e.query(
+            &QueryRequest::Invalidate {
+                uri: "/defs/Monster.def".into(),
+            },
+            None,
+        ) {
             QueryResponse::Invalidate(v) => assert_eq!(v.len(), 1),
             other => panic!("expected invalidate list, got {other:?}"),
         }
@@ -349,6 +472,13 @@ mod tests {
     #[test]
     fn defs_absent_snapshot_degrades() {
         let e = ContractEngine::new(RootId(1));
-        assert!(e.query(&QueryRequest::EntitySnapshot { uri: "/defs/A.def".into() }, None).is_unavailable());
+        assert!(e
+            .query(
+                &QueryRequest::EntitySnapshot {
+                    uri: "/defs/A.def".into()
+                },
+                None
+            )
+            .is_unavailable());
     }
 }

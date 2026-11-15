@@ -115,7 +115,10 @@ fn dispatch_probes_face_crlf_and_indent() {
         "sources": {"/w/impl.py": source},
         "statuses": [],
     }));
-    assert_eq!(out["probes"]["/w/impl.py"]["createObjFromDict"], json!(true));
+    assert_eq!(
+        out["probes"]["/w/impl.py"]["createObjFromDict"],
+        json!(true)
+    );
     assert_eq!(out["probes"]["/w/impl.py"]["isSameType"], json!(false));
     assert_eq!(out["items"].as_array().unwrap().len(), 0);
 }

@@ -71,9 +71,7 @@ fn return_annotations(params: Value) -> Result<Value, String> {
             .position(|&c| c == 0x0A)
             .map_or(masked.len(), |off| line_start + off);
         let line = &masked[line_start..end];
-        if let Some(call) =
-            kode_python::return_annotations::parse_local_assignment_call(line)
-        {
+        if let Some(call) = kode_python::return_annotations::parse_local_assignment_call(line) {
             local_assignment_calls.push(json!({
                 "line": line_no,
                 "target": call.target,
@@ -150,13 +148,7 @@ mod tests {
     fn empty_text_zero_facts() {
         let out = run("");
         assert_eq!(out["facts"].as_array().unwrap().len(), 0);
-        assert_eq!(
-            out["imports"]["names"].as_array().unwrap().len(),
-            0
-        );
-        assert_eq!(
-            out["localAssignmentCalls"].as_array().unwrap().len(),
-            0
-        );
+        assert_eq!(out["imports"]["names"].as_array().unwrap().len(), 0);
+        assert_eq!(out["localAssignmentCalls"].as_array().unwrap().len(), 0);
     }
 }

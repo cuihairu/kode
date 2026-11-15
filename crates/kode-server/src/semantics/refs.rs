@@ -112,7 +112,10 @@ pub enum EntityRef {
     /// 本地实体对象(同进程;引擎 API + 全 def 方法面可用)。
     Local { class: Option<String> },
     /// 远程 EntityCall 句柄(仅可调 def 声明方法;class Option,None 不猜)。
-    Remote { class: Option<String>, call: CallType },
+    Remote {
+        class: Option<String>,
+        call: CallType,
+    },
     /// 引擎交出的确定 None(未绑定面如 `self.cell` 无 cell 时;
     /// ENTITYCALL 字段默认值 `datatype.cpp:1506-1508`)。
     None,
@@ -168,10 +171,17 @@ pub struct SelfRoleBinding {
 ///   :787/:860/:903,直连类型)。
 ///
 /// 其余属性名不是角色引用(组件槽/方法/内建属性归各自批次),None 不猜。
-pub fn bind_self_role(face: ScriptFace, attr: &str, class: Option<&str>) -> Option<SelfRoleBinding> {
+pub fn bind_self_role(
+    face: ScriptFace,
+    attr: &str,
+    class: Option<&str>,
+) -> Option<SelfRoleBinding> {
     let bind = |call: CallType, note: &'static str| {
         Some(SelfRoleBinding {
-            reference: EntityRef::Remote { class: class.map(str::to_string), call },
+            reference: EntityRef::Remote {
+                class: class.map(str::to_string),
+                call,
+            },
             none_possible: true,
             note,
         })
@@ -259,7 +269,13 @@ impl AliasTable {
     }
 
     /// `dst = <src>` 传播(self 角色/别名复制/别名取面/非引用形态)。
-    pub fn apply(&mut self, dst: &str, src: AliasSource, face: ScriptFace, self_class: Option<&str>) {
+    pub fn apply(
+        &mut self,
+        dst: &str,
+        src: AliasSource,
+        face: ScriptFace,
+        self_class: Option<&str>,
+    ) {
         let value = match src {
             AliasSource::SelfRole { attr } => match bind_self_role(face, &attr, self_class) {
                 Some(binding) => AliasValue::Ref(binding.reference),
@@ -311,12 +327,18 @@ impl AliasTable {
                 let lv = left.lookup(name).expect("order 与 latest 同步");
                 out.assign(name.clone(), merge_value(lv, rv));
             } else {
-                out.assign(name.clone(), left.latest.get(name).expect("order 同步").clone());
+                out.assign(
+                    name.clone(),
+                    left.latest.get(name).expect("order 同步").clone(),
+                );
             }
         }
         for name in &right.order {
             if left.lookup(name).is_none() {
-                out.assign(name.clone(), right.latest.get(name).expect("order 同步").clone());
+                out.assign(
+                    name.clone(),
+                    right.latest.get(name).expect("order 同步").clone(),
+                );
             }
         }
         out
@@ -359,9 +381,10 @@ impl EntityRef {
     /// EntityCall 面跳(本地 `self.base` 等逐面绑定归 RPC-02)。
     pub fn hop_attr(&self, attr: &str) -> Option<EntityRef> {
         match self {
-            EntityRef::Remote { class, call } => call
-                .hop(attr)
-                .map(|c| EntityRef::Remote { class: class.clone(), call: c }),
+            EntityRef::Remote { class, call } => call.hop(attr).map(|c| EntityRef::Remote {
+                class: class.clone(),
+                call: c,
+            }),
             _ => None,
         }
     }
@@ -414,41 +437,49 @@ mod tests {
     fn hop_full_matrix_pinned() {
         type Row = [(CallType, &'static str, Option<CallType>); 3];
         let cell: Row = [
-            (CallType::Cell, "cell", None),                     // 自名闸(:136)
+            (CallType::Cell, "cell", None), // 自名闸(:136)
             (CallType::Cell, "base", Some(CallType::BaseViaCell)),
             (CallType::Cell, "client", Some(CallType::ClientViaCell)),
         ];
         let base: Row = [
             (CallType::Base, "cell", Some(CallType::CellViaBase)),
-            (CallType::Base, "base", None),                     // 自名闸
+            (CallType::Base, "base", None), // 自名闸
             (CallType::Base, "client", Some(CallType::ClientViaBase)),
         ];
         let client: Row = [
-            (CallType::Client, "cell", Some(CallType::CellViaBase)),   // 默认臂
-            (CallType::Client, "base", Some(CallType::BaseViaCell)),   // 默认臂
-            (CallType::Client, "client", None),                        // 自名闸+分支 -1
+            (CallType::Client, "cell", Some(CallType::CellViaBase)), // 默认臂
+            (CallType::Client, "base", Some(CallType::BaseViaCell)), // 默认臂
+            (CallType::Client, "client", None),                      // 自名闸+分支 -1
         ];
         let cell_via_base: Row = [
-            (CallType::CellViaBase, "cell", None),              // 自名闸(TO 表="cell")
-            (CallType::CellViaBase, "base", Some(CallType::Base)),     // 去直连
-            (CallType::CellViaBase, "client", None),            // client 分支只认 BASE/CELL
+            (CallType::CellViaBase, "cell", None), // 自名闸(TO 表="cell")
+            (CallType::CellViaBase, "base", Some(CallType::Base)), // 去直连
+            (CallType::CellViaBase, "client", None), // client 分支只认 BASE/CELL
         ];
         let base_via_cell: Row = [
-            (CallType::BaseViaCell, "cell", Some(CallType::Cell)),     // 去直连
-            (CallType::BaseViaCell, "base", None),              // 自名闸(TO 表="base")
-            (CallType::BaseViaCell, "client", None),            // client 分支只认 BASE/CELL
+            (CallType::BaseViaCell, "cell", Some(CallType::Cell)), // 去直连
+            (CallType::BaseViaCell, "base", None),                 // 自名闸(TO 表="base")
+            (CallType::BaseViaCell, "client", None),               // client 分支只认 BASE/CELL
         ];
         let client_via_cell: Row = [
             (CallType::ClientViaCell, "cell", Some(CallType::CellViaBase)),
             (CallType::ClientViaCell, "base", Some(CallType::BaseViaCell)),
-            (CallType::ClientViaCell, "client", None),          // 自名闸
+            (CallType::ClientViaCell, "client", None), // 自名闸
         ];
         let client_via_base: Row = [
             (CallType::ClientViaBase, "cell", Some(CallType::CellViaBase)),
             (CallType::ClientViaBase, "base", Some(CallType::BaseViaCell)),
-            (CallType::ClientViaBase, "client", None),          // 自名闸
+            (CallType::ClientViaBase, "client", None), // 自名闸
         ];
-        for row in [cell, base, client, cell_via_base, base_via_cell, client_via_cell, client_via_base] {
+        for row in [
+            cell,
+            base,
+            client,
+            cell_via_base,
+            base_via_cell,
+            client_via_cell,
+            client_via_base,
+        ] {
             for (from, attr, expected) in row {
                 assert_eq!(from.hop(attr), expected, "{from:?}.{attr}");
             }
@@ -458,7 +489,10 @@ mod tests {
     #[test]
     fn hop_preserves_class_and_unknown_stays_unknown() {
         // 同模块构造(entity_call.cpp:166)→ 类型保留;类未知保持未知,不猜。
-        let known = EntityRef::Remote { class: Some("Avatar".into()), call: CallType::Cell };
+        let known = EntityRef::Remote {
+            class: Some("Avatar".into()),
+            call: CallType::Cell,
+        };
         match known.hop_attr("base") {
             Some(EntityRef::Remote { class, call }) => {
                 assert_eq!(class.as_deref(), Some("Avatar"));
@@ -466,10 +500,16 @@ mod tests {
             }
             other => panic!("expected Remote, got {other:?}"),
         }
-        let unknown = EntityRef::Remote { class: None, call: CallType::Base };
+        let unknown = EntityRef::Remote {
+            class: None,
+            call: CallType::Base,
+        };
         assert_eq!(
             unknown.hop_attr("client"),
-            Some(EntityRef::Remote { class: None, call: CallType::ClientViaBase }),
+            Some(EntityRef::Remote {
+                class: None,
+                call: CallType::ClientViaBase
+            }),
             "类未知必须保持 None,绝不伪造具体实体类(RPC-01 验收)"
         );
     }
@@ -477,7 +517,9 @@ mod tests {
     #[test]
     fn hop_only_on_remote() {
         // 本地引用/None 不发生 EntityCall 面跳(本地 self 角色绑定归 RPC-02)。
-        let local = EntityRef::Local { class: Some("Avatar".into()) };
+        let local = EntityRef::Local {
+            class: Some("Avatar".into()),
+        };
         assert_eq!(local.hop_attr("cell"), None);
         assert_eq!(EntityRef::None.hop_attr("cell"), None);
     }
@@ -494,16 +536,26 @@ mod tests {
     #[test]
     fn display_honest_unknown_class() {
         assert_eq!(
-            EntityRef::Local { class: Some("Avatar".into()) }.display(),
+            EntityRef::Local {
+                class: Some("Avatar".into())
+            }
+            .display(),
             "Entity<Avatar>"
         );
         assert_eq!(
-            EntityRef::Remote { class: Some("Avatar".into()), call: CallType::CellViaBase }
-                .display(),
+            EntityRef::Remote {
+                class: Some("Avatar".into()),
+                call: CallType::CellViaBase
+            }
+            .display(),
             "EntityCall<Avatar@cell>"
         );
         assert_eq!(
-            EntityRef::Remote { class: None, call: CallType::ClientViaBase }.display(),
+            EntityRef::Remote {
+                class: None,
+                call: CallType::ClientViaBase
+            }
+            .display(),
             "EntityCall<?@client>",
             "类未知以 ? 标注,不伪造具体类"
         );
@@ -519,40 +571,72 @@ mod tests {
         assert_eq!(
             bind_self_role(ScriptFace::Base, "cell", Some("Avatar")),
             Some(SelfRoleBinding {
-                reference: EntityRef::Remote { class: class(), call: CallType::Cell },
+                reference: EntityRef::Remote {
+                    class: class(),
+                    call: CallType::Cell
+                },
                 none_possible: true,
-                note: bind_self_role(ScriptFace::Base, "cell", Some("Avatar")).unwrap().note,
+                note: bind_self_role(ScriptFace::Base, "cell", Some("Avatar"))
+                    .unwrap()
+                    .note,
             })
         );
         assert_eq!(
             bind_self_role(ScriptFace::Base, "client", Some("Avatar"))
                 .unwrap()
                 .reference,
-            EntityRef::Remote { class: class(), call: CallType::Client }
+            EntityRef::Remote {
+                class: class(),
+                call: CallType::Client
+            }
         );
-        assert_eq!(bind_self_role(ScriptFace::Base, "base", Some("Avatar")), None);
+        assert_eq!(
+            bind_self_role(ScriptFace::Base, "base", Some("Avatar")),
+            None
+        );
         // cell 面:.base=BASE / .client=CLIENT_VIA_BASE(经 base 路由的陷阱钉)/
         // .cell 无(自身即 cell 面)。
         assert_eq!(
-            bind_self_role(ScriptFace::Cell, "base", Some("Avatar")).unwrap().reference,
-            EntityRef::Remote { class: class(), call: CallType::Base }
+            bind_self_role(ScriptFace::Cell, "base", Some("Avatar"))
+                .unwrap()
+                .reference,
+            EntityRef::Remote {
+                class: class(),
+                call: CallType::Base
+            }
         );
         assert_eq!(
             bind_self_role(ScriptFace::Cell, "client", Some("Avatar")).unwrap().reference,
             EntityRef::Remote { class: class(), call: CallType::ClientViaBase },
             "cellapp 的 self.client 必是 CLIENT_VIA_BASE(onGetWitness 经 baseEntityCall() 读 .client 构造),不是直连 CLIENT"
         );
-        assert_eq!(bind_self_role(ScriptFace::Cell, "cell", Some("Avatar")), None);
+        assert_eq!(
+            bind_self_role(ScriptFace::Cell, "cell", Some("Avatar")),
+            None
+        );
         // client 面:.base=BASE / .cell=CELL / .client 无(.clientapp 另物)。
         assert_eq!(
-            bind_self_role(ScriptFace::Client, "base", Some("Avatar")).unwrap().reference,
-            EntityRef::Remote { class: class(), call: CallType::Base }
+            bind_self_role(ScriptFace::Client, "base", Some("Avatar"))
+                .unwrap()
+                .reference,
+            EntityRef::Remote {
+                class: class(),
+                call: CallType::Base
+            }
         );
         assert_eq!(
-            bind_self_role(ScriptFace::Client, "cell", Some("Avatar")).unwrap().reference,
-            EntityRef::Remote { class: class(), call: CallType::Cell }
+            bind_self_role(ScriptFace::Client, "cell", Some("Avatar"))
+                .unwrap()
+                .reference,
+            EntityRef::Remote {
+                class: class(),
+                call: CallType::Cell
+            }
         );
-        assert_eq!(bind_self_role(ScriptFace::Client, "client", Some("Avatar")), None);
+        assert_eq!(
+            bind_self_role(ScriptFace::Client, "client", Some("Avatar")),
+            None
+        );
     }
 
     #[test]
@@ -587,13 +671,19 @@ mod tests {
         let cell_client = bind_self_role(ScriptFace::Cell, "client", Some("Avatar")).unwrap();
         assert_eq!(
             cell_client.reference.hop_attr("base"),
-            Some(EntityRef::Remote { class: Some("Avatar".into()), call: CallType::BaseViaCell })
+            Some(EntityRef::Remote {
+                class: Some("Avatar".into()),
+                call: CallType::BaseViaCell
+            })
         );
         // cellapp:self.client(CLIENT_VIA_BASE).cell → CELL_VIA_BASE("cell" 分支
         // 默认臂;TO 表[CLIENT_VIA_BASE]="client" 不挡 .cell——挡的是 .client)。
         assert_eq!(
             cell_client.reference.hop_attr("cell"),
-            Some(EntityRef::Remote { class: Some("Avatar".into()), call: CallType::CellViaBase })
+            Some(EntityRef::Remote {
+                class: Some("Avatar".into()),
+                call: CallType::CellViaBase
+            })
         );
         // 同句柄 .client → 自名闸(TO 表[CLIENT_VIA_BASE]="client")拒 → None。
         assert_eq!(cell_client.reference.hop_attr("client"), None);
@@ -601,13 +691,19 @@ mod tests {
         let base_cell = bind_self_role(ScriptFace::Base, "cell", Some("Avatar")).unwrap();
         assert_eq!(
             base_cell.reference.hop_attr("client"),
-            Some(EntityRef::Remote { class: Some("Avatar".into()), call: CallType::ClientViaCell })
+            Some(EntityRef::Remote {
+                class: Some("Avatar".into()),
+                call: CallType::ClientViaCell
+            })
         );
         // baseapp:self.client(CLIENT).cell → CELL_VIA_BASE(:144 else 臂)。
         let base_client = bind_self_role(ScriptFace::Base, "client", Some("Avatar")).unwrap();
         assert_eq!(
             base_client.reference.hop_attr("cell"),
-            Some(EntityRef::Remote { class: Some("Avatar".into()), call: CallType::CellViaBase })
+            Some(EntityRef::Remote {
+                class: Some("Avatar".into()),
+                call: CallType::CellViaBase
+            })
         );
         // 不存在的链:baseapp self.cell 是 CELL,无 .cell(自名闸)。
         assert_eq!(base_cell.reference.hop_attr("cell"), None);
@@ -618,7 +714,10 @@ mod tests {
         let b = bind_self_role(ScriptFace::Cell, "client", None).unwrap();
         assert_eq!(
             b.reference,
-            EntityRef::Remote { class: None, call: CallType::ClientViaBase },
+            EntityRef::Remote {
+                class: None,
+                call: CallType::ClientViaBase
+            },
             "脚本面在但实体类未知 → class 保持 None 不猜"
         );
         assert_eq!(b.reference.display(), "EntityCall<?@client>");
@@ -630,12 +729,18 @@ mod tests {
         ScriptFace::Cell
     }
 
-
     #[test]
     fn alias_keeps_entity_and_role() {
         // peer = self.cell 后保留实体/角色(RPC-03 验收首句;base 面 self.cell=CELL)。
         let mut t = AliasTable::default();
-        t.apply("peer", AliasSource::SelfRole { attr: "cell".into() }, ScriptFace::Base, Some("Avatar"));
+        t.apply(
+            "peer",
+            AliasSource::SelfRole {
+                attr: "cell".into(),
+            },
+            ScriptFace::Base,
+            Some("Avatar"),
+        );
         assert_eq!(
             t.lookup("peer"),
             Some(&AliasValue::Ref(EntityRef::Remote {
@@ -650,7 +755,14 @@ mod tests {
     fn alias_keeps_role_cellapp_client_via_base() {
         // cellapp 面的 peer = self.client → CLIENT_VIA_BASE 原样保留。
         let mut t = AliasTable::default();
-        t.apply("peer", AliasSource::SelfRole { attr: "client".into() }, cell_face(), Some("Avatar"));
+        t.apply(
+            "peer",
+            AliasSource::SelfRole {
+                attr: "client".into(),
+            },
+            cell_face(),
+            Some("Avatar"),
+        );
         assert_eq!(
             t.lookup("peer"),
             Some(&AliasValue::Ref(EntityRef::Remote {
@@ -664,9 +776,21 @@ mod tests {
     fn rebind_shadows_old_ref() {
         // 重绑定(含非引用形态)即遮蔽:旧引用不得再被查到。
         let mut t = AliasTable::default();
-        t.apply("peer", AliasSource::SelfRole { attr: "client".into() }, cell_face(), Some("Avatar"));
+        t.apply(
+            "peer",
+            AliasSource::SelfRole {
+                attr: "client".into(),
+            },
+            cell_face(),
+            Some("Avatar"),
+        );
         assert!(matches!(t.lookup("peer"), Some(AliasValue::Ref(_))));
-        t.apply("peer", AliasSource::NonReference("字面量赋值:42".into()), cell_face(), Some("Avatar"));
+        t.apply(
+            "peer",
+            AliasSource::NonReference("字面量赋值:42".into()),
+            cell_face(),
+            Some("Avatar"),
+        );
         assert_eq!(
             t.lookup("peer"),
             Some(&AliasValue::Unknown("字面量赋值:42".into())),
@@ -677,12 +801,34 @@ mod tests {
     #[test]
     fn alias_copy_and_hop() {
         let mut t = AliasTable::default();
-        t.apply("peer", AliasSource::SelfRole { attr: "client".into() }, cell_face(), Some("Avatar"));
+        t.apply(
+            "peer",
+            AliasSource::SelfRole {
+                attr: "client".into(),
+            },
+            cell_face(),
+            Some("Avatar"),
+        );
         // p2 = peer → 同引用。
-        t.apply("p2", AliasSource::LocalName { name: "peer".into() }, cell_face(), Some("Avatar"));
+        t.apply(
+            "p2",
+            AliasSource::LocalName {
+                name: "peer".into(),
+            },
+            cell_face(),
+            Some("Avatar"),
+        );
         assert_eq!(t.lookup("p2"), t.lookup("peer"));
         // base2 = peer.base → CLIENT_VIA_BASE + base → BASE_VIA_CELL(已证明链经别名)。
-        t.apply("base2", AliasSource::LocalHop { name: "peer".into(), attr: "base".into() }, cell_face(), Some("Avatar"));
+        t.apply(
+            "base2",
+            AliasSource::LocalHop {
+                name: "peer".into(),
+                attr: "base".into(),
+            },
+            cell_face(),
+            Some("Avatar"),
+        );
         assert_eq!(
             t.lookup("base2"),
             Some(&AliasValue::Ref(EntityRef::Remote {
@@ -691,26 +837,65 @@ mod tests {
             }))
         );
         // hop2 = p2.client → 自名闸(TO 表[CLIENT_VIA_BASE]="client")拒 → Unknown。
-        t.apply("hop2", AliasSource::LocalHop { name: "p2".into(), attr: "client".into() }, cell_face(), Some("Avatar"));
-        assert!(matches!(t.lookup("hop2"), Some(AliasValue::Unknown(_))), "面跳被闸拒 → 未知,不造调用类型");
+        t.apply(
+            "hop2",
+            AliasSource::LocalHop {
+                name: "p2".into(),
+                attr: "client".into(),
+            },
+            cell_face(),
+            Some("Avatar"),
+        );
+        assert!(
+            matches!(t.lookup("hop2"), Some(AliasValue::Unknown(_))),
+            "面跳被闸拒 → 未知,不造调用类型"
+        );
     }
 
     #[test]
     fn unknown_receiver_not_guessed() {
         // 未知接收者不按同名方法猜对象:未绑定名/非引用来源 → Unknown。
         let mut t = AliasTable::default();
-        t.apply("x", AliasSource::LocalName { name: "never_bound".into() }, cell_face(), None);
-        assert_eq!(t.lookup("x"), Some(&AliasValue::Unknown("never_bound:未绑定,不猜".into())));
+        t.apply(
+            "x",
+            AliasSource::LocalName {
+                name: "never_bound".into(),
+            },
+            cell_face(),
+            None,
+        );
+        assert_eq!(
+            t.lookup("x"),
+            Some(&AliasValue::Unknown("never_bound:未绑定,不猜".into()))
+        );
         // Unknown 上的取面传播保持 Unknown(原因不丢)。
-        t.apply("y", AliasSource::LocalHop { name: "x".into(), attr: "base".into() }, cell_face(), None);
-        assert_eq!(t.lookup("y"), Some(&AliasValue::Unknown("never_bound:未绑定,不猜".into())));
+        t.apply(
+            "y",
+            AliasSource::LocalHop {
+                name: "x".into(),
+                attr: "base".into(),
+            },
+            cell_face(),
+            None,
+        );
+        assert_eq!(
+            t.lookup("y"),
+            Some(&AliasValue::Unknown("never_bound:未绑定,不猜".into()))
+        );
     }
 
     #[test]
     fn self_role_absent_on_face_is_unknown_not_ref() {
         // cell 面 self.cell 无此属性 → Unknown(该面无此角色属性),不是引用。
         let mut t = AliasTable::default();
-        t.apply("peer", AliasSource::SelfRole { attr: "cell".into() }, cell_face(), Some("Avatar"));
+        t.apply(
+            "peer",
+            AliasSource::SelfRole {
+                attr: "cell".into(),
+            },
+            cell_face(),
+            Some("Avatar"),
+        );
         assert_eq!(
             t.lookup("peer"),
             Some(&AliasValue::Unknown("self.cell:该面无此角色属性".into()))
@@ -722,19 +907,55 @@ mod tests {
         // 合流:同值保留为 Ref;异值 → Candidates(顺序=分支序)。
         let mut a = AliasTable::default();
         let mut b = AliasTable::default();
-        a.apply("peer", AliasSource::SelfRole { attr: "client".into() }, cell_face(), Some("Avatar"));
-        b.apply("peer", AliasSource::SelfRole { attr: "client".into() }, cell_face(), Some("Avatar"));
+        a.apply(
+            "peer",
+            AliasSource::SelfRole {
+                attr: "client".into(),
+            },
+            cell_face(),
+            Some("Avatar"),
+        );
+        b.apply(
+            "peer",
+            AliasSource::SelfRole {
+                attr: "client".into(),
+            },
+            cell_face(),
+            Some("Avatar"),
+        );
         let m = AliasTable::merge(&a, &b);
-        assert!(matches!(m.lookup("peer"), Some(AliasValue::Ref(_))), "同值合流保持 Ref 不升级候选");
+        assert!(
+            matches!(m.lookup("peer"), Some(AliasValue::Ref(_))),
+            "同值合流保持 Ref 不升级候选"
+        );
         // 异值:peer=cell 面 self.client(CLIENT_VIA_BASE) vs base 面 self.cell(CELL)。
         let mut c = AliasTable::default();
-        c.apply("peer", AliasSource::SelfRole { attr: "cell".into() }, ScriptFace::Base, Some("Avatar"));
+        c.apply(
+            "peer",
+            AliasSource::SelfRole {
+                attr: "cell".into(),
+            },
+            ScriptFace::Base,
+            Some("Avatar"),
+        );
         let m2 = AliasTable::merge(&a, &c);
         match m2.lookup("peer") {
             Some(AliasValue::Candidates(v)) => {
                 assert_eq!(v.len(), 2);
-                assert_eq!(v[0], EntityRef::Remote { class: Some("Avatar".into()), call: CallType::ClientViaBase });
-                assert_eq!(v[1], EntityRef::Remote { class: Some("Avatar".into()), call: CallType::Cell });
+                assert_eq!(
+                    v[0],
+                    EntityRef::Remote {
+                        class: Some("Avatar".into()),
+                        call: CallType::ClientViaBase
+                    }
+                );
+                assert_eq!(
+                    v[1],
+                    EntityRef::Remote {
+                        class: Some("Avatar".into()),
+                        call: CallType::Cell
+                    }
+                );
             }
             other => panic!("异值合流必须成候选,got {other:?}"),
         }
@@ -745,8 +966,20 @@ mod tests {
         // 任一侧 Unknown → Unknown 吞并(候选∪任意=任意,不假装确定)。
         let mut a = AliasTable::default();
         let mut b = AliasTable::default();
-        a.apply("peer", AliasSource::SelfRole { attr: "client".into() }, cell_face(), Some("Avatar"));
-        b.apply("peer", AliasSource::NonReference("分支内重绑定为调用结果".into()), cell_face(), Some("Avatar"));
+        a.apply(
+            "peer",
+            AliasSource::SelfRole {
+                attr: "client".into(),
+            },
+            cell_face(),
+            Some("Avatar"),
+        );
+        b.apply(
+            "peer",
+            AliasSource::NonReference("分支内重绑定为调用结果".into()),
+            cell_face(),
+            Some("Avatar"),
+        );
         let m = AliasTable::merge(&a, &b);
         assert_eq!(
             m.lookup("peer"),
@@ -763,10 +996,32 @@ mod tests {
         // peer=self.base → BASE,再 peer=peer.cell → CELL_VIA_BASE(BASE.cell
         // 路由臂)。合流双候选 [CELL, CELL_VIA_BASE]。
         let mut a = AliasTable::default();
-        a.apply("peer", AliasSource::SelfRole { attr: "cell".into() }, ScriptFace::Base, Some("Avatar"));
+        a.apply(
+            "peer",
+            AliasSource::SelfRole {
+                attr: "cell".into(),
+            },
+            ScriptFace::Base,
+            Some("Avatar"),
+        );
         let mut b = AliasTable::default();
-        b.apply("peer", AliasSource::SelfRole { attr: "base".into() }, ScriptFace::Cell, Some("Avatar"));
-        b.apply("peer", AliasSource::LocalHop { name: "peer".into(), attr: "cell".into() }, ScriptFace::Cell, Some("Avatar"));
+        b.apply(
+            "peer",
+            AliasSource::SelfRole {
+                attr: "base".into(),
+            },
+            ScriptFace::Cell,
+            Some("Avatar"),
+        );
+        b.apply(
+            "peer",
+            AliasSource::LocalHop {
+                name: "peer".into(),
+                attr: "cell".into(),
+            },
+            ScriptFace::Cell,
+            Some("Avatar"),
+        );
         let mut t = AliasTable::merge(&a, &b);
         match t.lookup("peer") {
             Some(AliasValue::Candidates(v)) => assert_eq!(v.len(), 2, "合流必须双候选"),
@@ -774,12 +1029,26 @@ mod tests {
         }
         // 取面 .base:CELL.base → BASE_VIA_CELL、CELL_VIA_BASE.base → BASE(去直连):
         // 异值 → 保持双候选,不合并。
-        t.apply("hop", AliasSource::LocalHop { name: "peer".into(), attr: "base".into() }, ScriptFace::Base, Some("Avatar"));
+        t.apply(
+            "hop",
+            AliasSource::LocalHop {
+                name: "peer".into(),
+                attr: "base".into(),
+            },
+            ScriptFace::Base,
+            Some("Avatar"),
+        );
         match t.lookup("hop") {
             Some(AliasValue::Candidates(v)) => {
                 assert_eq!(v.len(), 2);
-                assert!(v.contains(&EntityRef::Remote { class: Some("Avatar".into()), call: CallType::Base }));
-                assert!(v.contains(&EntityRef::Remote { class: Some("Avatar".into()), call: CallType::BaseViaCell }));
+                assert!(v.contains(&EntityRef::Remote {
+                    class: Some("Avatar".into()),
+                    call: CallType::Base
+                }));
+                assert!(v.contains(&EntityRef::Remote {
+                    class: Some("Avatar".into()),
+                    call: CallType::BaseViaCell
+                }));
             }
             other => panic!("异 hop 结果必须保持候选,got {other:?}"),
         }
@@ -787,10 +1056,32 @@ mod tests {
         // CLIENT_VIA_CELL → 仅一路成功 → 确定 Ref。
         let mut c = AliasTable::default();
         let mut d = AliasTable::default();
-        c.apply("peer", AliasSource::SelfRole { attr: "client".into() }, ScriptFace::Cell, Some("Avatar"));
-        d.apply("peer", AliasSource::SelfRole { attr: "cell".into() }, ScriptFace::Base, Some("Avatar"));
+        c.apply(
+            "peer",
+            AliasSource::SelfRole {
+                attr: "client".into(),
+            },
+            ScriptFace::Cell,
+            Some("Avatar"),
+        );
+        d.apply(
+            "peer",
+            AliasSource::SelfRole {
+                attr: "cell".into(),
+            },
+            ScriptFace::Base,
+            Some("Avatar"),
+        );
         let mut t2 = AliasTable::merge(&c, &d);
-        t2.apply("hop3", AliasSource::LocalHop { name: "peer".into(), attr: "client".into() }, ScriptFace::Cell, Some("Avatar"));
+        t2.apply(
+            "hop3",
+            AliasSource::LocalHop {
+                name: "peer".into(),
+                attr: "client".into(),
+            },
+            ScriptFace::Cell,
+            Some("Avatar"),
+        );
         assert_eq!(
             t2.lookup("hop3"),
             Some(&AliasValue::Ref(EntityRef::Remote {

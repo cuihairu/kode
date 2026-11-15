@@ -51,7 +51,8 @@ struct LocalReturnPayload {
 }
 
 fn local_return(params: Value) -> Result<Value, String> {
-    let params: LocalReturnParams = serde_json::from_value(params).map_err(|err| err.to_string())?;
+    let params: LocalReturnParams =
+        serde_json::from_value(params).map_err(|err| err.to_string())?;
     let ret = if params.hover_line < 0 {
         None
     } else {

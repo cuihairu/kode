@@ -2,6 +2,7 @@
 //! Phase2 定义/诊断面供 bin 与集成测试共用(bin 只是 stdio 泵)。
 
 pub mod api_docs;
+pub mod attribute_none;
 pub mod client_sdk;
 pub mod completion;
 pub mod config_rpc;
@@ -13,31 +14,30 @@ pub mod dependency_graph;
 pub mod diagnostics;
 pub mod flag_domains;
 pub(crate) mod golden_corpus;
-pub mod attribute_none;
-pub mod local_return;
-pub mod self_attribute_flow;
-pub mod return_annotations;
-pub mod user_type_contract;
 pub mod hover;
 pub mod lint;
+pub mod local_return;
 pub mod message_table;
 pub mod post_destroy;
 pub mod process_topology;
 pub mod property_direction;
-pub mod rpc_arg_count;
 pub mod python_callgraph;
-pub mod python_process;
 pub mod python_lexical_mask;
+pub mod python_process;
 pub mod readonly_write;
 pub mod receiver_none;
+pub mod return_annotations;
 pub mod role_misuse;
 pub mod rpc;
+pub mod rpc_arg_count;
 pub mod ruff_lint;
+pub mod self_attribute_flow;
 pub mod semantics;
 pub mod semantics_rpc;
 pub mod server;
 pub mod space_nav;
 pub mod trap_lints;
+pub mod user_type_contract;
 pub mod wire_codec;
 pub mod workspace_discovery;
 

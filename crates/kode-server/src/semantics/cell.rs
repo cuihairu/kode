@@ -68,7 +68,9 @@ pub struct ScriptNameSet {
 
 impl ScriptNameSet {
     pub fn from_names<I: IntoIterator<Item = String>>(names: I) -> Self {
-        Self { names: names.into_iter().collect() }
+        Self {
+            names: names.into_iter().collect(),
+        }
     }
 }
 
@@ -120,12 +122,16 @@ pub fn builtin_cell_fields() -> &'static [BuiltinField] {
     &[
         BuiltinField {
             name: "position",
-            shape: BuiltinShape::Vector3 { axes: ["x", "y", "z"] },
+            shape: BuiltinShape::Vector3 {
+                axes: ["x", "y", "z"],
+            },
             source: "server/baseapp/entity.cpp:250",
         },
         BuiltinField {
             name: "direction",
-            shape: BuiltinShape::Vector3 { axes: ["roll", "pitch", "yaw"] },
+            shape: BuiltinShape::Vector3 {
+                axes: ["roll", "pitch", "yaw"],
+            },
             source: "server/baseapp/entity.cpp:250",
         },
     ]
@@ -170,7 +176,11 @@ fn expand_component_cell(
     let (fields, nested) = match &slot.component_type {
         None => (Vec::new(), Vec::new()),
         Some(ct) if path.contains(ct) => {
-            issues.push(issue_fact(&format!("component-cell-cycle:{ct}"), root_id, ct));
+            issues.push(issue_fact(
+                &format!("component-cell-cycle:{ct}"),
+                root_id,
+                ct,
+            ));
             (Vec::new(), Vec::new())
         }
         Some(ct) if depth >= COMPONENT_CELL_MAX_DEPTH => {
@@ -300,9 +310,8 @@ impl CellDataShape {
 
         // Cell 部件判定(def 面):cell 字段 / cell 方法任一即有;组件槽
         // 「另建 Cell 数据」(entity.cpp),槽在即潜在嵌套面(字段归 CELL-03)。
-        let has_cell_part = !fields.is_empty()
-            || !snap.cell_methods.is_empty()
-            || !snap.components.is_empty();
+        let has_cell_part =
+            !fields.is_empty() || !snap.cell_methods.is_empty() || !snap.components.is_empty();
 
         let mut issues = snap.issues;
         let status = if !has_cell_part {
@@ -426,7 +435,13 @@ mod tests {
     }
 
     fn method(name: &str) -> MethodDef {
-        MethodDef { name: name.into(), name_span: kode_parser::Span::new(0, 0), line: 2, args: vec![], exposed: false }
+        MethodDef {
+            name: name.into(),
+            name_span: kode_parser::Span::new(0, 0),
+            line: 2,
+            args: vec![],
+            exposed: false,
+        }
     }
 
     fn def(parent: Option<&str>, interfaces: Vec<&str>, props: Vec<PropertyDef>) -> DefFile {
@@ -465,11 +480,7 @@ mod tests {
         }
     }
 
-    fn build(
-        own: &DefFile,
-        map: &DefMap,
-        scripts: Option<&dyn ScriptUniverse>,
-    ) -> CellDataShape {
+    fn build(own: &DefFile, map: &DefMap, scripts: Option<&dyn ScriptUniverse>) -> CellDataShape {
         let g = TypeGraph::new();
         CellDataShape::build(own, map, &g, kode_vfs::store::RootId(1), "Avatar", scripts)
     }
@@ -490,7 +501,11 @@ mod tests {
         let names: Vec<&str> = shape.fields.iter().map(|f| f.name.as_str()).collect();
         assert_eq!(names, ["hp"], "仅 cell 域进字段表");
         assert!(shape.fields[0].domains.contains(&"cell"));
-        assert_eq!(shape.status, CellDataStatus::ScriptUnknown, "脚本宇宙未供 → 诚实未知");
+        assert_eq!(
+            shape.status,
+            CellDataStatus::ScriptUnknown,
+            "脚本宇宙未供 → 诚实未知"
+        );
     }
 
     #[test]
@@ -504,8 +519,16 @@ mod tests {
 
     #[test]
     fn parent_and_interface_cell_fields_expanded() {
-        let own = def(Some("Monster"), vec!["Mixin"], vec![prop("hp", "UINT16", &["CELL_PUBLIC"])]);
-        let monster = def(None, vec![], vec![prop("speed", "FLOAT32", &["CELL_PRIVATE"])]);
+        let own = def(
+            Some("Monster"),
+            vec!["Mixin"],
+            vec![prop("hp", "UINT16", &["CELL_PUBLIC"])],
+        );
+        let monster = def(
+            None,
+            vec![],
+            vec![prop("speed", "FLOAT32", &["CELL_PRIVATE"])],
+        );
         let mixin = def(None, vec![], vec![prop("soul", "INT32", &["CELL_PUBLIC"])]);
         let map = DefMap(vec![(E, "Monster", monster), (I, "Mixin", mixin)]);
         let shape = build(&own, &map, None);
@@ -522,10 +545,21 @@ mod tests {
         let mut own = def(None, vec![], vec![prop("level", "UINT8", &["BASE"])]);
         own.base_methods = vec![method("tp")];
         let map = DefMap(vec![]);
-        let shape = build(&own, &map, Some(&ScriptNameSet::from_names(vec!["Avatar".into()])));
-        assert_eq!(shape.status, CellDataStatus::NoCellPart, "无 cell 面 → 引擎不建 cellData");
+        let shape = build(
+            &own,
+            &map,
+            Some(&ScriptNameSet::from_names(vec!["Avatar".into()])),
+        );
+        assert_eq!(
+            shape.status,
+            CellDataStatus::NoCellPart,
+            "无 cell 面 → 引擎不建 cellData"
+        );
         assert!(shape.fields.is_empty());
-        assert!(shape.issues.iter().any(|f| f.value == "no-cell-part"), "判定事实留痕");
+        assert!(
+            shape.issues.iter().any(|f| f.value == "no-cell-part"),
+            "判定事实留痕"
+        );
     }
 
     #[test]
@@ -535,7 +569,11 @@ mod tests {
         monster.cell_methods = vec![method("tick")];
         let map = DefMap(vec![(E, "Monster", monster)]);
         let shape = build(&own, &map, None);
-        assert_ne!(shape.status, CellDataStatus::NoCellPart, "继承的 cell 方法即部件");
+        assert_ne!(
+            shape.status,
+            CellDataStatus::NoCellPart,
+            "继承的 cell 方法即部件"
+        );
     }
 
     #[test]
@@ -550,8 +588,16 @@ mod tests {
         }];
         let map = DefMap(vec![]);
         let shape = build(&own, &map, None);
-        assert_ne!(shape.status, CellDataStatus::NoCellPart, "组件另建 Cell 数据 → 非「无部件」");
-        assert_eq!(shape.component_slots.len(), 1, "槽面登记,字段展开归 CELL-03");
+        assert_ne!(
+            shape.status,
+            CellDataStatus::NoCellPart,
+            "组件另建 Cell 数据 → 非「无部件」"
+        );
+        assert_eq!(
+            shape.component_slots.len(),
+            1,
+            "槽面登记,字段展开归 CELL-03"
+        );
         assert!(shape.fields.is_empty());
     }
 
@@ -564,7 +610,10 @@ mod tests {
         let shape = build(&own, &map, Some(&scripts));
         assert_eq!(shape.status, CellDataStatus::CellScriptMissing);
         assert!(!shape.fields.is_empty(), "def 面字段表仍构建,状态另记");
-        assert!(shape.issues.iter().any(|f| f.value == "missing-cell-script:Avatar"));
+        assert!(shape
+            .issues
+            .iter()
+            .any(|f| f.value == "missing-cell-script:Avatar"));
     }
 
     #[test]
@@ -578,7 +627,11 @@ mod tests {
 
     #[test]
     fn cell_field_conflict_keeps_all_candidates() {
-        let own = def(None, vec!["Mixin"], vec![prop("x", "INT32", &["CELL_PUBLIC"])]);
+        let own = def(
+            None,
+            vec!["Mixin"],
+            vec![prop("x", "INT32", &["CELL_PUBLIC"])],
+        );
         let mixin = def(None, vec![], vec![prop("x", "STRING", &["CELL_PUBLIC"])]);
         let map = DefMap(vec![(I, "Mixin", mixin)]);
         let shape = build(&own, &map, None);
@@ -590,8 +643,15 @@ mod tests {
     fn builtin_registry_is_verified_closed_set() {
         let reg = builtin_cell_fields();
         let names: Vec<&str> = reg.iter().map(|b| b.name).collect();
-        assert_eq!(names, ["position", "direction"], "封闭表=已核对集;其余内建未核对不入");
-        assert!(reg.iter().all(|b| b.source.contains("entity.cpp")), "内建键带引擎取证");
+        assert_eq!(
+            names,
+            ["position", "direction"],
+            "封闭表=已核对集;其余内建未核对不入"
+        );
+        assert!(
+            reg.iter().all(|b| b.source.contains("entity.cpp")),
+            "内建键带引擎取证"
+        );
     }
 
     #[test]
@@ -599,8 +659,18 @@ mod tests {
         let reg = builtin_cell_fields();
         let pos = reg.iter().find(|b| b.name == "position").unwrap();
         let dir = reg.iter().find(|b| b.name == "direction").unwrap();
-        assert_eq!(pos.shape, BuiltinShape::Vector3 { axes: ["x", "y", "z"] });
-        assert_eq!(dir.shape, BuiltinShape::Vector3 { axes: ["roll", "pitch", "yaw"] });
+        assert_eq!(
+            pos.shape,
+            BuiltinShape::Vector3 {
+                axes: ["x", "y", "z"]
+            }
+        );
+        assert_eq!(
+            dir.shape,
+            BuiltinShape::Vector3 {
+                axes: ["roll", "pitch", "yaw"]
+            }
+        );
         assert_eq!(pos.shape.type_label(), "Vector3Like");
     }
 
@@ -609,13 +679,24 @@ mod tests {
         let cell_own = def(None, vec![], vec![prop("hp", "UINT16", &["CELL_PUBLIC"])]);
         let map = DefMap(vec![]);
         let with = build(&cell_own, &map, None);
-        assert_eq!(with.builtins.len(), 2, "有部件 → 引擎自塞键恒在(与脚本面无关)");
+        assert_eq!(
+            with.builtins.len(),
+            2,
+            "有部件 → 引擎自塞键恒在(与脚本面无关)"
+        );
 
         let mut base_own = def(None, vec![], vec![prop("level", "UINT8", &["BASE"])]);
         base_own.base_methods = vec![method("tp")];
-        let without = build(&base_own, &map, Some(&ScriptNameSet::from_names(vec!["Avatar".into()])));
+        let without = build(
+            &base_own,
+            &map,
+            Some(&ScriptNameSet::from_names(vec!["Avatar".into()])),
+        );
         assert_eq!(without.status, CellDataStatus::NoCellPart);
-        assert!(without.builtins.is_empty(), "无部件 → 引擎不建 cellData,无内建键");
+        assert!(
+            without.builtins.is_empty(),
+            "无部件 → 引擎不建 cellData,无内建键"
+        );
     }
 
     #[test]
@@ -623,8 +704,14 @@ mod tests {
         let own = def(None, vec![], vec![prop("hp", "UINT16", &["CELL_PUBLIC"])]);
         let map = DefMap(vec![]);
         let shape = build(&own, &map, None);
-        assert!(shape.fields.iter().all(|f| f.name != "position"), "def 字段面不含内建键");
-        assert!(shape.builtins.iter().all(|b| b.name != "hp"), "内建键面不含 def 字段");
+        assert!(
+            shape.fields.iter().all(|f| f.name != "position"),
+            "def 字段面不含内建键"
+        );
+        assert!(
+            shape.builtins.iter().all(|b| b.name != "hp"),
+            "内建键面不含 def 字段"
+        );
     }
 
     fn component(name: &str, component_type: Option<&str>, line: usize) -> ComponentDef {
@@ -639,11 +726,15 @@ mod tests {
 
     #[test]
     fn component_slot_expands_only_cell_fields() {
-        let mut weapon = def(None, vec![], vec![
-            prop("ammo", "UINT16", &["CELL_PUBLIC"]),
-            prop("skin", "STRING", &["BASE"]),
-            prop("uid", "UINT64", &["BASE_AND_CLIENT"]),
-        ]);
+        let mut weapon = def(
+            None,
+            vec![],
+            vec![
+                prop("ammo", "UINT16", &["CELL_PUBLIC"]),
+                prop("skin", "STRING", &["BASE"]),
+                prop("uid", "UINT64", &["BASE_AND_CLIENT"]),
+            ],
+        );
         weapon.base_methods = vec![method("onAttach")];
         let mut own = def(None, vec![], vec![]);
         own.components = vec![component("weapon", Some("Weapon"), 3)];
@@ -673,7 +764,11 @@ mod tests {
     #[test]
     fn nested_component_recursion() {
         // Weapon 组件段再挂 Sight → cellData["weapon"]["sight"] 递归。
-        let mut sight = def(None, vec![], vec![prop("zoom", "FLOAT32", &["CELL_PUBLIC"])]);
+        let mut sight = def(
+            None,
+            vec![],
+            vec![prop("zoom", "FLOAT32", &["CELL_PUBLIC"])],
+        );
         sight.cell_methods = vec![method("track")];
         let mut weapon = def(None, vec![], vec![prop("ammo", "UINT16", &["CELL_PUBLIC"])]);
         weapon.components = vec![component("sight", Some("Sight"), 5)];
@@ -703,7 +798,13 @@ mod tests {
         // 环在 Mount 段再挂 Weapon 处闭:path=[Avatar,Weapon,Mount],Weapon
         // 已在 → 环记在 weapon 槽展开(Avatar>weapon>mount>weapon)。
         let mount_cell = &shape.component_cells[0].nested[0];
-        assert!(mount_cell.nested[0].issues.iter().any(|f| f.value.contains("component-cell-cycle")), "环记事实");
+        assert!(
+            mount_cell.nested[0]
+                .issues
+                .iter()
+                .any(|f| f.value.contains("component-cell-cycle")),
+            "环记事实"
+        );
         assert!(mount_cell.nested[0].fields.is_empty(), "环内不 hang 不展开");
     }
 
@@ -718,23 +819,41 @@ mod tests {
         let map = DefMap(vec![]);
         let shape = build(&own, &map, None);
         assert_eq!(shape.component_cells.len(), 2);
-        assert!(shape.component_cells[0].fields.is_empty(), "类型缺 → 不造字段");
-        assert!(shape.component_cells[1].fields.is_empty(), "无类型 → 不造字段");
+        assert!(
+            shape.component_cells[0].fields.is_empty(),
+            "类型缺 → 不造字段"
+        );
+        assert!(
+            shape.component_cells[1].fields.is_empty(),
+            "无类型 → 不造字段"
+        );
         assert!(shape.component_cells[1].component_type.is_none());
     }
 
     #[test]
     fn component_fields_expand_parent_and_interfaces() {
         // 组件 def 的继承/接口 cell 字段同样展开(BAS-05 展开语义复用)。
-        let mut weapon = def(Some("WeaponBase"), vec![], vec![prop("ammo", "UINT16", &["CELL_PUBLIC"])]);
+        let mut weapon = def(
+            Some("WeaponBase"),
+            vec![],
+            vec![prop("ammo", "UINT16", &["CELL_PUBLIC"])],
+        );
         weapon.components = vec![];
-        let mut weapon_base = def(None, vec![], vec![prop("durability", "UINT16", &["CELL_PUBLIC"])]);
+        let mut weapon_base = def(
+            None,
+            vec![],
+            vec![prop("durability", "UINT16", &["CELL_PUBLIC"])],
+        );
         weapon_base.components = vec![];
         let mut own = def(None, vec![], vec![]);
         own.components = vec![component("weapon", Some("Weapon"), 3)];
         let map = DefMap(vec![(C, "Weapon", weapon), (C, "WeaponBase", weapon_base)]);
         let shape = build(&own, &map, None);
-        let names: Vec<&str> = shape.component_cells[0].fields.iter().map(|f| f.name.as_str()).collect();
+        let names: Vec<&str> = shape.component_cells[0]
+            .fields
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect();
         assert_eq!(names, ["ammo", "durability"], "组件字段含继承面");
         assert!(shape.component_cells[0].fields[1].inherited);
     }

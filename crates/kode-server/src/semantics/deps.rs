@@ -35,7 +35,9 @@ pub fn producer_kind(key: &DocumentKey) -> Option<ProducerKind> {
     match b.rsplit_once('.') {
         Some((_, "def")) => Some(ProducerKind::Def),
         Some((_, "types")) => Some(ProducerKind::Types),
-        Some((_, "xml")) | Some((_, "yaml")) | Some((_, "yml")) | Some((_, "json")) => Some(ProducerKind::Config),
+        Some((_, "xml")) | Some((_, "yaml")) | Some((_, "yml")) | Some((_, "json")) => {
+            Some(ProducerKind::Config)
+        }
         Some((_, "py")) => Some(ProducerKind::Python),
         _ => None,
     }
@@ -62,18 +64,30 @@ impl DependencyGraph {
 
     /// 登记 producer → consumer 边(幂等;同边重复登记无副作用)。
     pub fn add_edge(&mut self, producer: &DocumentKey, consumer: &DocumentKey) {
-        self.reverse.entry(producer.clone()).or_default().insert(consumer.clone());
-        self.forward.entry(consumer.clone()).or_default().insert(producer.clone());
+        self.reverse
+            .entry(producer.clone())
+            .or_default()
+            .insert(consumer.clone());
+        self.forward
+            .entry(consumer.clone())
+            .or_default()
+            .insert(producer.clone());
     }
 
     /// producer 的直接消费者(升序;无消费者 → 空)。
     pub fn consumers_of(&self, producer: &DocumentKey) -> Vec<DocumentKey> {
-        self.reverse.get(producer).map(|s| s.iter().cloned().collect()).unwrap_or_default()
+        self.reverse
+            .get(producer)
+            .map(|s| s.iter().cloned().collect())
+            .unwrap_or_default()
     }
 
     /// consumer 的直接 producer(升序;无 → 空)。
     pub fn producers_of(&self, consumer: &DocumentKey) -> Vec<DocumentKey> {
-        self.forward.get(consumer).map(|s| s.iter().cloned().collect()).unwrap_or_default()
+        self.forward
+            .get(consumer)
+            .map(|s| s.iter().cloned().collect())
+            .unwrap_or_default()
     }
 
     /// 单文件变更的失效集:直接消费者(相关项;不含 producer 自身)。
@@ -155,14 +169,39 @@ mod tests {
 
     #[test]
     fn producer_kind_classifies_by_extension() {
-        assert_eq!(producer_kind(&key("/defs/Avatar.def")), Some(ProducerKind::Def));
-        assert_eq!(producer_kind(&key("/types/Pos.types")), Some(ProducerKind::Types));
-        assert_eq!(producer_kind(&key("/res/server.xml")), Some(ProducerKind::Config));
-        assert_eq!(producer_kind(&key("/res/game.yml")), Some(ProducerKind::Config));
-        assert_eq!(producer_kind(&key("/res/game.yaml")), Some(ProducerKind::Config));
-        assert_eq!(producer_kind(&key("/res/paths.json")), Some(ProducerKind::Config));
-        assert_eq!(producer_kind(&key("/scripts/avatar.py")), Some(ProducerKind::Python));
-        assert_eq!(producer_kind(&key("/docs/readme.md")), None, "非 producer 无分类");
+        assert_eq!(
+            producer_kind(&key("/defs/Avatar.def")),
+            Some(ProducerKind::Def)
+        );
+        assert_eq!(
+            producer_kind(&key("/types/Pos.types")),
+            Some(ProducerKind::Types)
+        );
+        assert_eq!(
+            producer_kind(&key("/res/server.xml")),
+            Some(ProducerKind::Config)
+        );
+        assert_eq!(
+            producer_kind(&key("/res/game.yml")),
+            Some(ProducerKind::Config)
+        );
+        assert_eq!(
+            producer_kind(&key("/res/game.yaml")),
+            Some(ProducerKind::Config)
+        );
+        assert_eq!(
+            producer_kind(&key("/res/paths.json")),
+            Some(ProducerKind::Config)
+        );
+        assert_eq!(
+            producer_kind(&key("/scripts/avatar.py")),
+            Some(ProducerKind::Python)
+        );
+        assert_eq!(
+            producer_kind(&key("/docs/readme.md")),
+            None,
+            "非 producer 无分类"
+        );
     }
 
     #[test]
@@ -173,10 +212,22 @@ mod tests {
         let py = key("/scripts/avatar.py");
         g.add_edge(&def, &avatar);
         g.add_edge(&def, &py);
-        assert_eq!(g.consumers_of(&def), vec![avatar.clone(), py.clone()], "升序消费者");
+        assert_eq!(
+            g.consumers_of(&def),
+            vec![avatar.clone(), py.clone()],
+            "升序消费者"
+        );
         assert_eq!(g.producers_of(&avatar), vec![def.clone()]);
-        assert_eq!(g.invalidate(&def), vec![avatar.clone(), py.clone()], "单文件变更只失效相关项");
-        assert_eq!(g.consumers_of(&key("/defs/None.def")), Vec::<DocumentKey>::new(), "无消费者 → 空");
+        assert_eq!(
+            g.invalidate(&def),
+            vec![avatar.clone(), py.clone()],
+            "单文件变更只失效相关项"
+        );
+        assert_eq!(
+            g.consumers_of(&key("/defs/None.def")),
+            Vec::<DocumentKey>::new(),
+            "无消费者 → 空"
+        );
     }
 
     #[test]
@@ -216,9 +267,21 @@ mod tests {
         let c = key("/defs/C.def");
         g.add_edge(&a, &b);
         g.add_edge(&b, &c);
-        assert_eq!(g.invalidate_closure(&a, 0), Vec::<DocumentKey>::new(), "0 = 无(producer 不计)");
-        assert_eq!(g.invalidate_closure(&a, 1), vec![b.clone()], "1 = 直接消费者");
-        assert_eq!(g.invalidate_closure(&a, 2), vec![b.clone(), c.clone()], "2 = 含二级");
+        assert_eq!(
+            g.invalidate_closure(&a, 0),
+            Vec::<DocumentKey>::new(),
+            "0 = 无(producer 不计)"
+        );
+        assert_eq!(
+            g.invalidate_closure(&a, 1),
+            vec![b.clone()],
+            "1 = 直接消费者"
+        );
+        assert_eq!(
+            g.invalidate_closure(&a, 2),
+            vec![b.clone(), c.clone()],
+            "2 = 含二级"
+        );
     }
 
     #[test]
@@ -231,9 +294,21 @@ mod tests {
         g.add_edge(&b, &c);
         // 删除中间消费者 b:其入边(a→b)与出边(b→c)全清。
         assert!(g.remove(&b));
-        assert_eq!(g.consumers_of(&a), Vec::<DocumentKey>::new(), "a 的出边随 b 删除清理");
-        assert_eq!(g.consumers_of(&b), Vec::<DocumentKey>::new(), "b 的出边清除");
-        assert_eq!(g.producers_of(&c), Vec::<DocumentKey>::new(), "c 的入边清除");
+        assert_eq!(
+            g.consumers_of(&a),
+            Vec::<DocumentKey>::new(),
+            "a 的出边随 b 删除清理"
+        );
+        assert_eq!(
+            g.consumers_of(&b),
+            Vec::<DocumentKey>::new(),
+            "b 的出边清除"
+        );
+        assert_eq!(
+            g.producers_of(&c),
+            Vec::<DocumentKey>::new(),
+            "c 的入边清除"
+        );
         assert!(g.is_empty() || g.edge_count() == 0, "无残留悬空键");
         // 重复删除幂等。
         assert!(!g.remove(&b));

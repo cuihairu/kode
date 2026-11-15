@@ -32,7 +32,11 @@ pub struct Build<T> {
 
 impl<T> Build<T> {
     pub fn new(key: DocumentKey, version: i64, facts: T) -> Self {
-        Self { key, version, facts }
+        Self {
+            key,
+            version,
+            facts,
+        }
     }
 }
 
@@ -67,7 +71,9 @@ pub struct SnapshotStore<T> {
 
 impl<T> Default for SnapshotStore<T> {
     fn default() -> Self {
-        Self { slots: HashMap::new() }
+        Self {
+            slots: HashMap::new(),
+        }
     }
 }
 
@@ -84,7 +90,8 @@ impl<T> SnapshotStore<T> {
                 incoming: build.version,
             },
             _ => {
-                self.slots.insert(build.key.clone(), (build.version, build.facts));
+                self.slots
+                    .insert(build.key.clone(), (build.version, build.facts));
                 CommitVerdict::Accepted
             }
         }
@@ -102,7 +109,11 @@ impl<T> SnapshotStore<T> {
 
     /// 文档删除/关闭:清槽,返回被清事实(下游据此传播失效)。
     pub fn remove(&mut self, key: &DocumentKey) -> Option<RemovedFacts<T>> {
-        self.slots.remove(key).map(|(version, facts)| RemovedFacts { key: key.clone(), version, facts })
+        self.slots.remove(key).map(|(version, facts)| RemovedFacts {
+            key: key.clone(),
+            version,
+            facts,
+        })
     }
 
     /// 全清(工程/工作区关闭)。
@@ -219,7 +230,10 @@ mod tests {
     fn commit_then_get_returns_facts() {
         let mut s = SnapshotStore::new();
         let k = key("/defs/avatar.def");
-        assert_eq!(s.commit(Build::new(k.clone(), 1, "v1")), CommitVerdict::Accepted);
+        assert_eq!(
+            s.commit(Build::new(k.clone(), 1, "v1")),
+            CommitVerdict::Accepted
+        );
         assert_eq!(s.get(&k), Some(&"v1"));
         assert_eq!(s.version_of(&k), Some(1));
         assert_eq!(s.len(), 1);
@@ -233,7 +247,10 @@ mod tests {
         // 过期构建(v1 < v2)被拒,现有 v2 保留。
         assert_eq!(
             s.commit(Build::new(k.clone(), 1, "stale")),
-            CommitVerdict::Stale { current: 2, incoming: 1 }
+            CommitVerdict::Stale {
+                current: 2,
+                incoming: 1
+            }
         );
         assert_eq!(s.get(&k), Some(&"v2"), "过期不得覆盖新版本");
         assert_eq!(s.version_of(&k), Some(2));
@@ -245,7 +262,10 @@ mod tests {
         let k = key("/defs/avatar.def");
         s.commit(Build::new(k.clone(), 3, "first"));
         // 同版本幂等重算接受(同文本重导)。
-        assert_eq!(s.commit(Build::new(k.clone(), 3, "recomputed")), CommitVerdict::Accepted);
+        assert_eq!(
+            s.commit(Build::new(k.clone(), 3, "recomputed")),
+            CommitVerdict::Accepted
+        );
         assert_eq!(s.get(&k), Some(&"recomputed"));
     }
 
@@ -261,7 +281,10 @@ mod tests {
         assert_eq!(s.version_of(&k), None);
         assert!(s.is_empty());
         // 重开后可重新提交,不残留旧事实。
-        assert_eq!(s.commit(Build::new(k.clone(), 1, "fresh")), CommitVerdict::Accepted);
+        assert_eq!(
+            s.commit(Build::new(k.clone(), 1, "fresh")),
+            CommitVerdict::Accepted
+        );
         assert_eq!(s.get(&k), Some(&"fresh"));
     }
 
@@ -311,12 +334,27 @@ mod tests {
 
     #[test]
     fn def_kind_from_key_by_directory_pool() {
-        assert_eq!(def_kind_from_key(&key("/proj/scripts/entities/Avatar.def")), ReferenceKind::Entity);
-        assert_eq!(def_kind_from_key(&key("/proj/scripts/entities/nested/Sub.def")), ReferenceKind::Entity);
-        assert_eq!(def_kind_from_key(&key("/proj/scripts/interfaces/Mixin.def")), ReferenceKind::Interface);
-        assert_eq!(def_kind_from_key(&key("/proj/scripts/components/Weapon.def")), ReferenceKind::Component);
+        assert_eq!(
+            def_kind_from_key(&key("/proj/scripts/entities/Avatar.def")),
+            ReferenceKind::Entity
+        );
+        assert_eq!(
+            def_kind_from_key(&key("/proj/scripts/entities/nested/Sub.def")),
+            ReferenceKind::Entity
+        );
+        assert_eq!(
+            def_kind_from_key(&key("/proj/scripts/interfaces/Mixin.def")),
+            ReferenceKind::Interface
+        );
+        assert_eq!(
+            def_kind_from_key(&key("/proj/scripts/components/Weapon.def")),
+            ReferenceKind::Component
+        );
         // 根平铺默认实体(引擎 defFilePath 即 entities 目录)。
-        assert_eq!(def_kind_from_key(&key("/defs/Avatar.def")), ReferenceKind::Entity);
+        assert_eq!(
+            def_kind_from_key(&key("/defs/Avatar.def")),
+            ReferenceKind::Entity
+        );
     }
 
     #[test]
@@ -326,10 +364,19 @@ mod tests {
         s.commit(Build::new(key("/proj/entities/Avatar.def"), 1, def()));
         s.commit(Build::new(key("/proj/interfaces/Avatar.def"), 1, def()));
         let r = ProjectDefResolver::new(&s);
-        assert!(r.resolve(ReferenceKind::Entity, "Avatar").is_some(), "实体池命中");
-        assert!(r.resolve(ReferenceKind::Interface, "Avatar").is_some(), "接口池命中");
+        assert!(
+            r.resolve(ReferenceKind::Entity, "Avatar").is_some(),
+            "实体池命中"
+        );
+        assert!(
+            r.resolve(ReferenceKind::Interface, "Avatar").is_some(),
+            "接口池命中"
+        );
         // 组件池无此名 → None 诚实缺失,绝不从异类池借候选。
-        assert!(r.resolve(ReferenceKind::Component, "Avatar").is_none(), "跨类别不串接");
+        assert!(
+            r.resolve(ReferenceKind::Component, "Avatar").is_none(),
+            "跨类别不串接"
+        );
     }
 
     #[test]
@@ -339,6 +386,9 @@ mod tests {
         s.commit(Build::new(key("/defs/a/X.def"), 1, def()));
         s.commit(Build::new(key("/defs/z/X.def"), 1, def()));
         let r = ProjectDefResolver::new(&s);
-        assert!(r.resolve(ReferenceKind::Entity, "X").is_some(), "同名冲突取键序首个,不任取");
+        assert!(
+            r.resolve(ReferenceKind::Entity, "X").is_some(),
+            "同名冲突取键序首个,不任取"
+        );
     }
 }

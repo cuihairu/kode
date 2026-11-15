@@ -124,9 +124,7 @@ fn face_scan(
             .then(a.end_line.cmp(&b.end_line))
     });
     for domain in &chain {
-        if domain.globals.iter().any(|n| n == word)
-            || domain.nonlocals.iter().any(|n| n == word)
-        {
+        if domain.globals.iter().any(|n| n == word) || domain.nonlocals.iter().any(|n| n == word) {
             continue; // global/nonlocal:本域不绑定该名,解向外层
         }
         if domain.params.iter().any(|n| n == word) {
@@ -137,11 +135,7 @@ fn face_scan(
         // 合流多候选全同才答;KBUG-ORDER:同行按列,悬停 RHS 内读旧值);
         // 无可达写点 → UnboundLocal 位,诚实空,绝不外借模块/外层绑定
         // (KBUG-SCOPE-02)。
-        let domain_writes = fp
-            .bare_writes
-            .get(word)
-            .map(Vec::as_slice)
-            .unwrap_or(&[]);
+        let domain_writes = fp.bare_writes.get(word).map(Vec::as_slice).unwrap_or(&[]);
 
         let binds_here = |w: &BareWrite| w.method_start == Some(domain.header_line);
         if domain_writes.iter().any(binds_here) {
@@ -155,7 +149,16 @@ fn face_scan(
                     None => FlowVal::Unbound,
                 },
             };
-            return resolve_flow_val(fp, state, lines, val, &domain_write_refs, word, depth, visited);
+            return resolve_flow_val(
+                fp,
+                state,
+                lines,
+                val,
+                &domain_write_refs,
+                word,
+                depth,
+                visited,
+            );
         }
         // 本域无该名绑定 → 向外层函数域继续
     }
@@ -194,7 +197,16 @@ fn face_scan(
                         None => FlowVal::Unbound,
                     },
                 };
-                return resolve_flow_val(fp, state, lines, val, &class_writes, word, depth, visited);
+                return resolve_flow_val(
+                    fp,
+                    state,
+                    lines,
+                    val,
+                    &class_writes,
+                    word,
+                    depth,
+                    visited,
+                );
             }
             // 本类体未绑定 → 落模块域(类体执行期可见模块名)
         }
@@ -349,10 +361,7 @@ fn face_from_callee(
                 .and_then(|cls| state.method_atom(cls, method))
                 .map(|ann| (ann, method.to_string()));
             match static_hit {
-                Some(hit)
-                    if state.callee_binding(class, write.line)
-                        == CalleeBinding::Unbound =>
-                {
+                Some(hit) if state.callee_binding(class, write.line) == CalleeBinding::Unbound => {
                     hit
                 }
                 _ => {
@@ -414,11 +423,15 @@ mod tests {
 
     #[test]
     fn module_def_call_annotation_hit() {
-        let lines = lines_of(
-            "def make_repo() -> Repo:\n    return None\n\ndata = make_repo()\n",
-        );
-        let face = local_return_type(&lines, 3, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-            .expect("同文件 def 注解应命中");
+        let lines = lines_of("def make_repo() -> Repo:\n    return None\n\ndata = make_repo()\n");
+        let face = local_return_type(
+            &lines,
+            3,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("同文件 def 注解应命中");
         assert_eq!(face.annotation, "Repo");
         assert_eq!(face.method_name, "make_repo");
         assert_eq!(face.target, "data");
@@ -429,8 +442,14 @@ mod tests {
         let lines = lines_of(
             "class A:\n    def get(self) -> Row:\n        return None\n\n    def tick(self):\n        data = self.get()\n        return data\n",
         );
-        let face = local_return_type(&lines, 5, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-            .expect("self.m() 所在类限定应命中");
+        let face = local_return_type(
+            &lines,
+            5,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("self.m() 所在类限定应命中");
         assert_eq!(face.annotation, "Row");
         assert_eq!(face.method_name, "get");
     }
@@ -440,8 +459,14 @@ mod tests {
         let lines = lines_of(
             "class Repo:\n    @staticmethod\n    def load() -> Row:\n        return None\n\nr = Repo.load()\n",
         );
-        let face = local_return_type(&lines, 5, None, &"r".encode_utf16().collect::<Vec<u16>>(), None)
-            .expect("类限定方法应命中");
+        let face = local_return_type(
+            &lines,
+            5,
+            None,
+            &"r".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("类限定方法应命中");
         assert_eq!(face.annotation, "Row");
         assert_eq!(face.method_name, "load");
     }
@@ -452,13 +477,23 @@ mod tests {
         let lines = lines_of(
             "class A:\n    def get(self) -> X:\n        return None\n\nclass B:\n    def get(self) -> Y:\n        return None\n\na = A()\na_val = A.get(a)\nb_val = B.get(a)\n",
         );
-        let face_a =
-            local_return_type(&lines, 9, None, &"a_val".encode_utf16().collect::<Vec<u16>>(), None)
-                .expect("A.get 应命中");
+        let face_a = local_return_type(
+            &lines,
+            9,
+            None,
+            &"a_val".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("A.get 应命中");
         assert_eq!(face_a.annotation, "X");
-        let face_b =
-            local_return_type(&lines, 10, None, &"b_val".encode_utf16().collect::<Vec<u16>>(), None)
-                .expect("B.get 应命中");
+        let face_b = local_return_type(
+            &lines,
+            10,
+            None,
+            &"b_val".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("B.get 应命中");
         assert_eq!(face_b.annotation, "Y");
     }
 
@@ -467,8 +502,14 @@ mod tests {
         let lines = lines_of(
             "class Repo:\n    def load(self) -> Row:\n        return None\n\ndef make_repo() -> Repo:\n    return None\n\nrepo = make_repo()\nrow = repo.load()\n",
         );
-        let face = local_return_type(&lines, 8, None, &"row".encode_utf16().collect::<Vec<u16>>(), None)
-            .expect("局部接收者链应命中(Repo 原子 → load 注解)");
+        let face = local_return_type(
+            &lines,
+            8,
+            None,
+            &"row".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("局部接收者链应命中(Repo 原子 → load 注解)");
         assert_eq!(face.annotation, "Row");
         assert_eq!(face.method_name, "load");
     }
@@ -478,8 +519,14 @@ mod tests {
         let lines = lines_of(
             "class Repo:\n    def load(self) -> Row:\n        return None\n\ndef make_repo() -> Repo:\n    return None\n\nrow = make_repo().load()\n",
         );
-        let face = local_return_type(&lines, 7, None, &"row".encode_utf16().collect::<Vec<u16>>(), None)
-            .expect("内联链 f().g() 应命中");
+        let face = local_return_type(
+            &lines,
+            7,
+            None,
+            &"row".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("内联链 f().g() 应命中");
         assert_eq!(face.annotation, "Row");
         assert_eq!(face.method_name, "load");
     }
@@ -487,11 +534,15 @@ mod tests {
     /// 别名链:x = y;y = f() → x 面答 f 注解。
     #[test]
     fn alias_chain_resolves_through() {
-        let lines = lines_of(
-            "def make() -> Tree:\n    return None\n\nt = make()\nx = t\n",
-        );
-        let face = local_return_type(&lines, 4, None, &"x".encode_utf16().collect::<Vec<u16>>(), None)
-            .expect("别名链应穿透到 f 注解");
+        let lines = lines_of("def make() -> Tree:\n    return None\n\nt = make()\nx = t\n");
+        let face = local_return_type(
+            &lines,
+            4,
+            None,
+            &"x".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("别名链应穿透到 f 注解");
         assert_eq!(face.annotation, "Tree");
         assert_eq!(face.method_name, "make");
     }
@@ -500,21 +551,28 @@ mod tests {
     #[test]
     fn identity_alias_honest_empty() {
         let lines = lines_of("x = x\n");
-        assert!(
-            local_return_type(&lines, 0, None, &"x".encode_utf16().collect::<Vec<u16>>(), None).is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            0,
+            None,
+            &"x".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// 最近写点胜且不可解即止:重赋值字面量后不再借更早调用答案(R2-F16 同语义)。
     #[test]
     fn overwritten_by_literal_stops_earlier_answer() {
-        let lines = lines_of(
-            "def make() -> Tree:\n    return None\n\ndata = make()\ndata = 1\n",
-        );
-        assert!(
-            local_return_type(&lines, 4, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        let lines = lines_of("def make() -> Tree:\n    return None\n\ndata = make()\ndata = 1\n");
+        assert!(local_return_type(
+            &lines,
+            4,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// 域门:兄弟方法体的同名写点不借;方法内 hover 只认本方法体写点。
@@ -523,10 +581,14 @@ mod tests {
         let lines = lines_of(
             "class A:\n    def m(self):\n        data = 1\n\n    def n(self):\n        return data\n",
         );
-        assert!(
-            local_return_type(&lines, 5, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            5,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// 模块层写点放行:hover 在方法体、写点在模块层(def/class 头窄化后域内)。
@@ -535,8 +597,14 @@ mod tests {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\ndata = make()\n\nclass A:\n    def n(self):\n        return data\n",
         );
-        let face = local_return_type(&lines, 7, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-            .expect("模块层写点应被方法体 hover 借到(外层域放行)");
+        let face = local_return_type(
+            &lines,
+            7,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("模块层写点应被方法体 hover 借到(外层域放行)");
         assert_eq!(face.annotation, "Tree");
     }
 
@@ -549,19 +617,28 @@ mod tests {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\nclass A:\n    data = make()\n\n    def n(self):\n        return data\n",
         );
-        assert!(
-            local_return_type(&lines, 6, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            6,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// hover 行上的写点即候选(TS `line <= hoverLine` 含端)。
     #[test]
     fn write_on_hover_line_counts() {
         let lines = lines_of("def make() -> Tree:\n    return None\n\ndata = make()\n");
-        let face =
-            local_return_type(&lines, 3, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .expect("写点行即 hover 行应命中");
+        let face = local_return_type(
+            &lines,
+            3,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("写点行即 hover 行应命中");
         assert_eq!(face.annotation, "Tree");
     }
 
@@ -569,10 +646,14 @@ mod tests {
     #[test]
     fn unannotated_def_honest_empty() {
         let lines = lines_of("def make():\n    return None\n\ndata = make()\n");
-        assert!(
-            local_return_type(&lines, 3, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            3,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// 重名 def 歧义 → 诚实空(不取首定义硬猜)。
@@ -581,20 +662,28 @@ mod tests {
         let lines = lines_of(
             "def make() -> A:\n    return None\n\ndef make() -> B:\n    return None\n\ndata = make()\n",
         );
-        assert!(
-            local_return_type(&lines, 5, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            5,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// 类实例化不是返回注解面:`data = Repo()` → 诚实空(流面产原子,本面不答)。
     #[test]
     fn class_instantiation_not_a_return_annotation() {
         let lines = lines_of("class Repo:\n    pass\n\ndata = Repo()\n");
-        assert!(
-            local_return_type(&lines, 3, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            3,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// self.属性读不是调用:诚实空(与旧 TS 同为 null,零回退)。
@@ -603,20 +692,28 @@ mod tests {
         let lines = lines_of(
             "class A:\n    def __init__(self):\n        self.counter = 1\n\n    def n(self):\n        data = self.counter\n        return data\n",
         );
-        assert!(
-            local_return_type(&lines, 5, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            5,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// 常量名守卫(全大写)不查询。
     #[test]
     fn constant_name_skipped() {
         let lines = lines_of("def make() -> Tree:\n    return None\n\nDATA = make()\n");
-        assert!(
-            local_return_type(&lines, 3, None, &"DATA".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            3,
+            None,
+            &"DATA".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// 接收者推不出唯一类原子 → 诚实空(不猜方法名)。
@@ -625,20 +722,29 @@ mod tests {
         let lines = lines_of(
             "class Repo:\n    def load(self) -> Row:\n        return None\n\nrow = mystery.load()\n",
         );
-        assert!(
-            local_return_type(&lines, 4, None, &"row".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            4,
+            None,
+            &"row".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// 前向引用:hovers 行在写点之前 → 诚实空(流序)。
     #[test]
     fn forward_reference_honest_empty() {
-        let lines = lines_of("def make() -> Tree:\n    return None\n\nprint(data)\ndata = make()\n");
-        assert!(
-            local_return_type(&lines, 3, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        let lines =
+            lines_of("def make() -> Tree:\n    return None\n\nprint(data)\ndata = make()\n");
+        assert!(local_return_type(
+            &lines,
+            3,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// 装饰器 def 名行域门:装饰器行不窄化,名行窄化(与名行口径同)。
@@ -647,31 +753,44 @@ mod tests {
         let lines = lines_of(
             "def deco(fn):\n    return fn\n\n@deco\ndef make() -> Tree:\n    return None\n\ndata = make()\n",
         );
-        let face = local_return_type(&lines, 7, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-            .expect("装饰器 def 的注解应命中(名行登记)");
+        let face = local_return_type(
+            &lines,
+            7,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("装饰器 def 的注解应命中(名行登记)");
         assert_eq!(face.annotation, "Tree");
     }
 
     /// 三引号字符串体里的伪赋值不产写点(AST 真语句;旧行扫描的假象面消除)。
     #[test]
     fn string_body_fake_write_not_registered() {
-        let lines = lines_of(
-            "def make() -> Tree:\n    return None\n\nDOC = '''\ndata = make()\n'''\n",
-        );
-        assert!(
-            local_return_type(&lines, 4, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        let lines =
+            lines_of("def make() -> Tree:\n    return None\n\nDOC = '''\ndata = make()\n'''\n");
+        assert!(local_return_type(
+            &lines,
+            4,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// hover 行越界 → None(与流面同守卫)。
     #[test]
     fn out_of_range_hover_line() {
         let lines = lines_of("data = 1\n");
-        assert!(
-            local_return_type(&lines, 9, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            9,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// 别名链环:`x = y` 与 `y = x` 互指 → 诚实空(每跳严格下行,天然有界;
@@ -679,9 +798,14 @@ mod tests {
     #[test]
     fn mutual_alias_cycle_honest_empty() {
         let lines = lines_of("x = y\ny = x\n");
-        assert!(
-            local_return_type(&lines, 1, None, &"x".encode_utf16().collect::<Vec<u16>>(), None).is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            1,
+            None,
+            &"x".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// 版本键缓存协议:同键同文命中缓存(两次查询同值)。
@@ -689,10 +813,22 @@ mod tests {
     fn version_key_cache_hit() {
         let lines = lines_of("def make() -> Tree:\n    return None\n\ndata = make()\n");
         let key = "local-return:cache-hit";
-        let first = local_return_type(&lines, 3, None, &"data".encode_utf16().collect::<Vec<u16>>(), Some(key))
-            .expect("首查命中");
-        let second = local_return_type(&lines, 3, None, &"data".encode_utf16().collect::<Vec<u16>>(), Some(key))
-            .expect("缓存复用命中");
+        let first = local_return_type(
+            &lines,
+            3,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            Some(key),
+        )
+        .expect("首查命中");
+        let second = local_return_type(
+            &lines,
+            3,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            Some(key),
+        )
+        .expect("缓存复用命中");
         assert_eq!(first, second);
         crate::self_flow::reset_self_attribute_flow_parse_cache_for_tests();
     }
@@ -705,9 +841,14 @@ mod tests {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\nx = make()\n\ndef run(x):\n    return x\n",
         );
-        assert!(
-            local_return_type(&lines, 5, None, &"x".encode_utf16().collect::<Vec<u16>>(), None).is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            5,
+            None,
+            &"x".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// SCOPE-01:vararg/仅关键字/kwarg 参数同员遮蔽(全参数位一律本域绑定)。
@@ -716,9 +857,14 @@ mod tests {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\nx = make()\n\ndef run(a: Widget, *rest, x=None, **kw):\n    return x\n",
         );
-        assert!(
-            local_return_type(&lines, 5, None, &"x".encode_utf16().collect::<Vec<u16>>(), None).is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            5,
+            None,
+            &"x".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// SCOPE-02:读前于写(UnboundLocal 位)不借模块层同名绑定。
@@ -727,9 +873,14 @@ mod tests {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\nx = make()\n\ndef run():\n    return x\n\n    x = mystery()\n",
         );
-        assert!(
-            local_return_type(&lines, 6, None, &"x".encode_utf16().collect::<Vec<u16>>(), None).is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            6,
+            None,
+            &"x".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// SCOPE-02:函数内写点不可解即止,不退借外层有类型绑定。
@@ -738,20 +889,29 @@ mod tests {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\nx = make()\n\ndef run():\n    x = mystery()\n    return x\n",
         );
-        assert!(
-            local_return_type(&lines, 6, None, &"x".encode_utf16().collect::<Vec<u16>>(), None).is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            6,
+            None,
+            &"x".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// SCOPE-02:lambda 参数遮蔽模块层绑定(直接赋值 lambda 自成一域)。
     #[test]
     fn kbug_scope_lambda_param_shadow_blocks() {
-        let lines = lines_of(
-            "def make() -> Tree:\n    return None\n\nx = make()\n\nfn = lambda x: x\n",
-        );
-        assert!(
-            local_return_type(&lines, 5, None, &"x".encode_utf16().collect::<Vec<u16>>(), None).is_none()
-        );
+        let lines =
+            lines_of("def make() -> Tree:\n    return None\n\nx = make()\n\nfn = lambda x: x\n");
+        assert!(local_return_type(
+            &lines,
+            5,
+            None,
+            &"x".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// SCOPE-02:嵌套函数参数遮蔽(祖先链上参数同样阻断外层解)。
@@ -760,9 +920,14 @@ mod tests {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\nx = make()\n\ndef outer():\n    def inner(x):\n        return x\n    return inner\n",
         );
-        assert!(
-            local_return_type(&lines, 6, None, &"x".encode_utf16().collect::<Vec<u16>>(), None).is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            6,
+            None,
+            &"x".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// SCOPE-02:嵌套函数体内的写点不得被外层行借(函数边界,不外溢)。
@@ -771,10 +936,14 @@ mod tests {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\ndef outer():\n    def inner():\n        data = make()\n    return data\n",
         );
-        assert!(
-            local_return_type(&lines, 6, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            6,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// SCOPE-02:def 体写点不得借给 def 结束后的模块层读。
@@ -783,10 +952,14 @@ mod tests {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\ndef run():\n    data = make()\n\nprint(data)\n",
         );
-        assert!(
-            local_return_type(&lines, 6, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            6,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// SCOPE-03:global 声明的读透传模块绑定(合法借位保留)。
@@ -795,9 +968,14 @@ mod tests {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\ndata = make()\n\ndef run():\n    global data\n    return data\n",
         );
-        let face =
-            local_return_type(&lines, 7, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .expect("global 声明的读应透传模块层写点");
+        let face = local_return_type(
+            &lines,
+            7,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("global 声明的读应透传模块层写点");
         assert_eq!(face.annotation, "Tree");
     }
 
@@ -808,10 +986,14 @@ mod tests {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\ndata = make()\n\ndef run():\n    global data\n    data = 1\n    return data\n",
         );
-        assert!(
-            local_return_type(&lines, 8, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            8,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// SCOPE-03:nonlocal 透传外层函数域写点(闭包链合法读保留)。
@@ -820,9 +1002,14 @@ mod tests {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\ndef outer():\n    data = make()\n    def inner():\n        nonlocal data\n        return data\n    return inner\n",
         );
-        let face =
-            local_return_type(&lines, 7, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .expect("nonlocal 读应解向外层函数域写点");
+        let face = local_return_type(
+            &lines,
+            7,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("nonlocal 读应解向外层函数域写点");
         assert_eq!(face.annotation, "Tree");
     }
 
@@ -832,9 +1019,14 @@ mod tests {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\nclass A:\n    data = make()\n    more = data\n",
         );
-        let face =
-            local_return_type(&lines, 5, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .expect("类体直系读应读本类体写点");
+        let face = local_return_type(
+            &lines,
+            5,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("类体直系读应读本类体写点");
         assert_eq!(face.annotation, "Tree");
     }
 
@@ -844,10 +1036,14 @@ mod tests {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\nclass A:\n    data = make()\n\nclass B:\n    more = data\n",
         );
-        assert!(
-            local_return_type(&lines, 7, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            7,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     // ---- KBUG-BIND(调用目标绑定先于声明表)----
@@ -859,10 +1055,14 @@ mod tests {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\ndef run(make):\n    data = make()\n    return data\n",
         );
-        assert!(
-            local_return_type(&lines, 4, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            4,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// BIND-01 守卫:未遮蔽的 `make()` 照常命中模块 def 注解。
@@ -871,9 +1071,14 @@ mod tests {
         let lines = lines_of(
             "def make() -> Tree:\n    return None\n\ndef run():\n    data = make()\n    return data\n",
         );
-        let face =
-            local_return_type(&lines, 4, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .expect("未遮蔽调用应命中");
+        let face = local_return_type(
+            &lines,
+            4,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("未遮蔽调用应命中");
         assert_eq!(face.annotation, "Tree");
     }
 
@@ -884,10 +1089,14 @@ mod tests {
         let lines = lines_of(
             "def fetch() -> Tree:\n    return None\n\ndef run():\n    fetch = mystery\n    data = fetch()\n    return data\n",
         );
-        assert!(
-            local_return_type(&lines, 5, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            5,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// BIND-02:域内局部 def 遮蔽模块同名声明表(无注解局部 def → 诚实空)。
@@ -896,10 +1105,14 @@ mod tests {
         let lines = lines_of(
             "def fetch() -> Tree:\n    return None\n\ndef run():\n    def fetch():\n        pass\n    data = fetch()\n    return data\n",
         );
-        assert!(
-            local_return_type(&lines, 6, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            6,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// BIND-02 守卫:调用位置在绑定之前 → 声明表照常(前向合法,不因
@@ -909,9 +1122,14 @@ mod tests {
         let lines = lines_of(
             "def fetch() -> Tree:\n    return None\n\ndef run():\n    data = fetch()\n    fetch = mystery\n    return data\n",
         );
-        let face =
-            local_return_type(&lines, 4, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .expect("绑定前的调用应照常走声明表");
+        let face = local_return_type(
+            &lines,
+            4,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("绑定前的调用应照常走声明表");
         assert_eq!(face.annotation, "Tree");
     }
 
@@ -922,9 +1140,14 @@ mod tests {
         let lines = lines_of(
             "def real() -> Tree:\n    return None\n\ndef run():\n    fetch = real\n    data = fetch()\n    return data\n",
         );
-        let face =
-            local_return_type(&lines, 5, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .expect("别名绑定到有注解函数应透传注解");
+        let face = local_return_type(
+            &lines,
+            5,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("别名绑定到有注解函数应透传注解");
         assert_eq!(face.annotation, "Tree");
     }
 
@@ -935,10 +1158,14 @@ mod tests {
         let lines = lines_of(
             "class A:\n    def load(self) -> int:\n        return None\n\nclass B:\n    def load(self) -> str:\n        return None\n\nA = B\ndata = A.load(A())\n",
         );
-        assert!(
-            local_return_type(&lines, 9, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            9,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// BIND-03:模块层重绑定为未知名 `A = unknown` 后同样不沿用原类。
@@ -947,10 +1174,14 @@ mod tests {
         let lines = lines_of(
             "class A:\n    def load(self) -> int:\n        return None\n\nA = unknown\ndata = A.load(A())\n",
         );
-        assert!(
-            local_return_type(&lines, 5, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        assert!(local_return_type(
+            &lines,
+            5,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     /// BIND-04 守卫:原始类静态方法(名未绑定)照常命中类限定面。
@@ -959,9 +1190,14 @@ mod tests {
         let lines = lines_of(
             "class Repo:\n    @staticmethod\n    def load() -> Row:\n        return None\n\nr = Repo.load()\n",
         );
-        let face =
-            local_return_type(&lines, 5, None, &"r".encode_utf16().collect::<Vec<u16>>(), None)
-                .expect("未绑定类名的类限定调用应命中");
+        let face = local_return_type(
+            &lines,
+            5,
+            None,
+            &"r".encode_utf16().collect::<Vec<u16>>(),
+            None,
+        )
+        .expect("未绑定类名的类限定调用应命中");
         assert_eq!(face.annotation, "Row");
         assert_eq!(face.method_name, "load");
     }
@@ -970,13 +1206,16 @@ mod tests {
     /// 模块 def 注解。
     #[test]
     fn kbug_bind_module_name_rebind_blocks_def_annotation() {
-        let lines = lines_of(
-            "def make() -> Tree:\n    return None\n\nmake = mystery\ndata = make()\n",
-        );
-        assert!(
-            local_return_type(&lines, 4, None, &"data".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none()
-        );
+        let lines =
+            lines_of("def make() -> Tree:\n    return None\n\nmake = mystery\ndata = make()\n");
+        assert!(local_return_type(
+            &lines,
+            4,
+            None,
+            &"data".encode_utf16().collect::<Vec<u16>>(),
+            None
+        )
+        .is_none());
     }
 
     // ---- KBUG-CFGFLOW(分支可达性/合流/终止/循环异常保守/查询位)----
@@ -1041,8 +1280,14 @@ mod tests {
             "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\nif cond:\n    x = make()\nelse:\n    x = other()\nprint(x)\n",
         );
         assert!(
-            local_return_type(&lines, 10, None, &"x".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none(),
+            local_return_type(
+                &lines,
+                10,
+                None,
+                &"x".encode_utf16().collect::<Vec<u16>>(),
+                None
+            )
+            .is_none(),
             "两支不同面应未知"
         );
     }
@@ -1054,8 +1299,14 @@ mod tests {
             "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\nx = make()\nif cond:\n    x = other()\nprint(x)\n",
         );
         assert!(
-            local_return_type(&lines, 9, None, &"x".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none(),
+            local_return_type(
+                &lines,
+                9,
+                None,
+                &"x".encode_utf16().collect::<Vec<u16>>(),
+                None
+            )
+            .is_none(),
             "无 else 分支候选不同应未知"
         );
     }
@@ -1067,8 +1318,14 @@ mod tests {
             "def make() -> Tree:\n    return None\n\nif cond:\n    x = make()\nprint(x)\n",
         );
         assert!(
-            local_return_type(&lines, 5, None, &"x".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none(),
+            local_return_type(
+                &lines,
+                5,
+                None,
+                &"x".encode_utf16().collect::<Vec<u16>>(),
+                None
+            )
+            .is_none(),
             "可能未绑定路径应诚实空"
         );
     }
@@ -1097,8 +1354,14 @@ mod tests {
             "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\ndef run():\n    x = make()\n    if cond:\n        def inner():\n            return\n        x = other()\n    print(x)\n",
         );
         assert!(
-            local_return_type(&lines, 12, None, &"x".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none(),
+            local_return_type(
+                &lines,
+                12,
+                None,
+                &"x".encode_utf16().collect::<Vec<u16>>(),
+                None
+            )
+            .is_none(),
             "嵌套 return 不终止外层:两支候选不同应未知"
         );
     }
@@ -1110,8 +1373,14 @@ mod tests {
             "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\ndef run():\n    x = make()\n    return\n    x = other()\n    print(x)\n",
         );
         assert!(
-            local_return_type(&lines, 10, None, &"x".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none(),
+            local_return_type(
+                &lines,
+                10,
+                None,
+                &"x".encode_utf16().collect::<Vec<u16>>(),
+                None
+            )
+            .is_none(),
             "终止后不可达写点不应命中"
         );
     }
@@ -1124,8 +1393,14 @@ mod tests {
             "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\nx = make()\nfor i in items:\n    x = other()\nprint(x)\n",
         );
         assert!(
-            local_return_type(&lines, 9, None, &"x".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none(),
+            local_return_type(
+                &lines,
+                9,
+                None,
+                &"x".encode_utf16().collect::<Vec<u16>>(),
+                None
+            )
+            .is_none(),
             "循环后候选不同应未知"
         );
     }
@@ -1138,8 +1413,14 @@ mod tests {
             "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\nx = make()\nfor i in items:\n    print(x)\n    x = other()\n",
         );
         assert!(
-            local_return_type(&lines, 8, None, &"x".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none(),
+            local_return_type(
+                &lines,
+                8,
+                None,
+                &"x".encode_utf16().collect::<Vec<u16>>(),
+                None
+            )
+            .is_none(),
             "循环体环回候选应未知"
         );
     }
@@ -1152,8 +1433,14 @@ mod tests {
             "def make() -> Tree:\n    return None\n\ndef other() -> Rock:\n    return None\n\nx = make()\ntry:\n    x = other()\nexcept ValueError:\n    pass\nprint(x)\n",
         );
         assert!(
-            local_return_type(&lines, 11, None, &"x".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none(),
+            local_return_type(
+                &lines,
+                11,
+                None,
+                &"x".encode_utf16().collect::<Vec<u16>>(),
+                None
+            )
+            .is_none(),
             "try 保守候选不同应未知"
         );
     }
@@ -1187,8 +1474,14 @@ mod tests {
         assert_eq!(face.annotation, "Tree");
         // 合流后:候选不同 → 未知
         assert!(
-            local_return_type(&lines, 10, None, &"x".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none(),
+            local_return_type(
+                &lines,
+                10,
+                None,
+                &"x".encode_utf16().collect::<Vec<u16>>(),
+                None
+            )
+            .is_none(),
             "合流后候选不同应未知"
         );
     }
@@ -1200,8 +1493,14 @@ mod tests {
             "def make() -> Tree:\n    return None\n\nif False:\n    x = make()\n    print(x)\n",
         );
         assert!(
-            local_return_type(&lines, 5, None, &"x".encode_utf16().collect::<Vec<u16>>(), None)
-                .is_none(),
+            local_return_type(
+                &lines,
+                5,
+                None,
+                &"x".encode_utf16().collect::<Vec<u16>>(),
+                None
+            )
+            .is_none(),
             "死分支内查询应诚实空"
         );
     }
@@ -1242,8 +1541,8 @@ mod tests {
         let lines = lines_of(
             "def a() -> int:\n    return None\n\ndef b() -> str:\n    return None\n\ndef run():\n    y = a()\n    x = y\n    y = b()\n    return x\n",
         );
-        let face = local_return_type(&lines, 10, Some(11), &wu16("x"), None)
-            .expect("别名应命中 a 的 int");
+        let face =
+            local_return_type(&lines, 10, Some(11), &wu16("x"), None).expect("别名应命中 a 的 int");
         assert_eq!(face.annotation, "int");
     }
 
@@ -1253,17 +1552,16 @@ mod tests {
     /// 默认整行末写点。
     #[test]
     fn kbug_order_read_before_write_same_line() {
-        let lines = lines_of(
-            "def b() -> str:\n    return None\n\ndef run():\n    print(x); x = b()\n",
-        );
+        let lines =
+            lines_of("def b() -> str:\n    return None\n\ndef run():\n    print(x); x = b()\n");
         // 悬 print(x) 的 x(列 10):写点未执行 → UnboundLocal 诚实空
         assert!(
             local_return_type(&lines, 4, Some(10), &wu16("x"), None).is_none(),
             "读前写点应诚实空"
         );
         // 悬 x 目标(列 14):目标位先于 RHS = 新值 str
-        let face = local_return_type(&lines, 4, Some(14), &wu16("x"), None)
-            .expect("悬目标应见新值");
+        let face =
+            local_return_type(&lines, 4, Some(14), &wu16("x"), None).expect("悬目标应见新值");
         assert_eq!(face.annotation, "str");
         // 悬 x = b() 的 RHS 内(列 18):语句内读旧值 → 无旧绑定诚实空
         assert!(
@@ -1279,20 +1577,19 @@ mod tests {
         let lines2 = lines_of(
             "def b() -> str:\n    return None\n\ndef run():\n    print(x); x = b()\n    return x\n",
         );
-        let face = local_return_type(&lines2, 5, Some(11), &wu16("x"), None)
-            .expect("写后读应命中 str");
+        let face =
+            local_return_type(&lines2, 5, Some(11), &wu16("x"), None).expect("写后读应命中 str");
         assert_eq!(face.annotation, "str");
     }
 
     /// ORDER-05:写后读同行不混。`x = a(); print(x)` 悬 print 内 x → int。
     #[test]
     fn kbug_order_write_then_read_same_line() {
-        let lines = lines_of(
-            "def a() -> int:\n    return None\n\ndef run():\n    x = a(); print(x)\n",
-        );
+        let lines =
+            lines_of("def a() -> int:\n    return None\n\ndef run():\n    x = a(); print(x)\n");
         // `    x = a(); print(x)`:print 内 x 列 14
-        let face = local_return_type(&lines, 4, Some(14), &wu16("x"), None)
-            .expect("写后读应命中 int");
+        let face =
+            local_return_type(&lines, 4, Some(14), &wu16("x"), None).expect("写后读应命中 int");
         assert_eq!(face.annotation, "int");
     }
 
@@ -1322,17 +1619,13 @@ mod tests {
     /// 后续别名 z = y 照常透传。
     #[test]
     fn kbug_order_chained_assignment_targets() {
-        let lines = lines_of(
-            "def make() -> Tree:\n    return None\n\nx = y = make()\nz = y\n",
-        );
-        let face = local_return_type(&lines, 3, Some(0), &wu16("x"), None)
-            .expect("链式 x 应命中");
+        let lines = lines_of("def make() -> Tree:\n    return None\n\nx = y = make()\nz = y\n");
+        let face = local_return_type(&lines, 3, Some(0), &wu16("x"), None).expect("链式 x 应命中");
         assert_eq!(face.annotation, "Tree");
-        let face = local_return_type(&lines, 3, Some(4), &wu16("y"), None)
-            .expect("链式 y 应命中");
+        let face = local_return_type(&lines, 3, Some(4), &wu16("y"), None).expect("链式 y 应命中");
         assert_eq!(face.annotation, "Tree");
-        let face = local_return_type(&lines, 4, Some(0), &wu16("z"), None)
-            .expect("链式后别名应命中");
+        let face =
+            local_return_type(&lines, 4, Some(0), &wu16("z"), None).expect("链式后别名应命中");
         assert_eq!(face.annotation, "Tree");
     }
 
@@ -1341,16 +1634,14 @@ mod tests {
     /// 解出前值)。
     #[test]
     fn kbug_order_self_reference_reads_prior_binding() {
-        let lines = lines_of(
-            "def a() -> int:\n    return None\n\nx = a()\nx = x\n",
-        );
+        let lines = lines_of("def a() -> int:\n    return None\n\nx = a()\nx = x\n");
         // 悬 x = x 的目标(列 0):新值 = 旧值 = int(自引用保面)
-        let face = local_return_type(&lines, 3, Some(0), &wu16("x"), None)
-            .expect("自引用应保留前值 int");
+        let face =
+            local_return_type(&lines, 3, Some(0), &wu16("x"), None).expect("自引用应保留前值 int");
         assert_eq!(face.annotation, "int");
         // 悬下一行(写后):同 int
-        let face = local_return_type(&lines, 4, Some(0), &wu16("x"), None)
-            .expect("自引用后读应命中 int");
+        let face =
+            local_return_type(&lines, 4, Some(0), &wu16("x"), None).expect("自引用后读应命中 int");
         assert_eq!(face.annotation, "int");
     }
 
@@ -1370,8 +1661,8 @@ mod tests {
             .expect("续行参数区读应见旧值 int");
         assert_eq!(face.annotation, "int");
         // 悬语句完成后的 print(x)(行 9 列 6):新值 Tree
-        let face = local_return_type(&lines, 9, Some(6), &wu16("x"), None)
-            .expect("语句后读应见新值 Tree");
+        let face =
+            local_return_type(&lines, 9, Some(6), &wu16("x"), None).expect("语句后读应见新值 Tree");
         assert_eq!(face.annotation, "Tree");
     }
 

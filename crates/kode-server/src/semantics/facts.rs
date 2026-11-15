@@ -23,7 +23,12 @@ pub struct Evidence {
 
 impl Evidence {
     pub fn new(file: impl Into<String>, line: Option<usize>, col: Option<usize>) -> Self {
-        Self { file: file.into(), line, col, symbol: None }
+        Self {
+            file: file.into(),
+            line,
+            col,
+            symbol: None,
+        }
     }
 
     pub fn with_symbol(mut self, symbol: impl Into<String>) -> Self {
@@ -57,7 +62,10 @@ pub enum Origin {
     /// 未知(原因;空原因也允许 = 单纯无信息)。
     Unknown { reason: String },
     /// 冲突(候选值 + 原因;不任取一个)。
-    Conflict { candidates: Vec<String>, reason: String },
+    Conflict {
+        candidates: Vec<String>,
+        reason: String,
+    },
 }
 
 impl Origin {
@@ -70,11 +78,16 @@ impl Origin {
     }
 
     pub fn unknown(reason: impl Into<String>) -> Self {
-        Origin::Unknown { reason: reason.into() }
+        Origin::Unknown {
+            reason: reason.into(),
+        }
     }
 
     pub fn conflict(candidates: Vec<String>, reason: impl Into<String>) -> Self {
-        Origin::Conflict { candidates, reason: reason.into() }
+        Origin::Conflict {
+            candidates,
+            reason: reason.into(),
+        }
     }
 
     pub fn is_unknown(&self) -> bool {
@@ -123,7 +136,11 @@ pub struct Fact {
 
 impl Fact {
     pub fn new(value: impl Into<String>, origin: Origin) -> Self {
-        Self { value: value.into(), origin, evidence: Vec::new() }
+        Self {
+            value: value.into(),
+            origin,
+            evidence: Vec::new(),
+        }
     }
 
     pub fn with_evidence(mut self, ev: Evidence) -> Self {
@@ -154,7 +171,11 @@ mod tests {
     #[test]
     fn unknown_never_escalates_to_error() {
         let f = Fact::new("?", Origin::unknown("no def"));
-        assert_eq!(f.severity(), Severity::Warning, "未知不能自动转成错误(BAS-06)");
+        assert_eq!(
+            f.severity(),
+            Severity::Warning,
+            "未知不能自动转成错误(BAS-06)"
+        );
         assert!(!f.origin.may_be_error());
     }
 
@@ -171,7 +192,10 @@ mod tests {
 
     #[test]
     fn derived_keeps_chain() {
-        let f = Fact::new("DATA", Origin::derived(vec!["r".into(), "Repo.load".into()]));
+        let f = Fact::new(
+            "DATA",
+            Origin::derived(vec!["r".into(), "Repo.load".into()]),
+        );
         assert_eq!(f.severity(), Severity::Error);
         match f.origin {
             Origin::Derived { chain } => assert_eq!(chain, ["r", "Repo.load"]),
@@ -181,7 +205,8 @@ mod tests {
 
     #[test]
     fn evidence_display_is_one_based() {
-        let ev = Evidence::new("defs/avatar.def", Some(0), Some(2)).with_symbol("Avatar/Properties/hp");
+        let ev =
+            Evidence::new("defs/avatar.def", Some(0), Some(2)).with_symbol("Avatar/Properties/hp");
         assert_eq!(ev.display(), "defs/avatar.def:1:3 [Avatar/Properties/hp]");
     }
 

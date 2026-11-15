@@ -270,10 +270,7 @@ pub fn apis_for(side: ApiSide) -> Vec<&'static CreateApiContract> {
 
 /// 全表索引(side+name → 契约)。
 pub fn index() -> HashMap<(ApiSide, &'static str), &'static CreateApiContract> {
-    contracts()
-        .iter()
-        .map(|c| ((c.side, c.name), c))
-        .collect()
+    contracts().iter().map(|c| ((c.side, c.name), c)).collect()
 }
 
 #[cfg(test)]
@@ -284,7 +281,11 @@ mod tests {
     fn registry_covers_all_three_sides_and_names_unique() {
         let all = contracts();
         assert!(all.len() >= 9);
-        for side in [ApiSide::KBEngineBaseapp, ApiSide::Base, ApiSide::KBEngineCellapp] {
+        for side in [
+            ApiSide::KBEngineBaseapp,
+            ApiSide::Base,
+            ApiSide::KBEngineCellapp,
+        ] {
             assert!(!apis_for(side).is_empty(), "{side:?} 无登记");
         }
         let mut names: Vec<_> = all.iter().map(|c| (c.side, c.name)).collect();
@@ -328,7 +329,11 @@ mod tests {
             "createEntityRemotelyFromDBID",
         ] {
             let c = lookup(ApiSide::KBEngineBaseapp, name).unwrap();
-            assert_eq!(c.callback, CallbackShape::ThreeArgRefDbidWasActive, "{name}");
+            assert_eq!(
+                c.callback,
+                CallbackShape::ThreeArgRefDbidWasActive,
+                "{name}"
+            );
             assert_eq!(c.callable_gate, CallableGate::AssertionError, "{name}");
             assert!(c.kind != CreateKind::Local);
         }
@@ -382,11 +387,18 @@ mod tests {
     fn every_contract_records_engine_source_with_lines() {
         // 验收「记录引擎出处」:出处必带文件名与行号。
         for c in contracts() {
-            assert!(c.source.contains(".cpp:"), "{} 出处缺行号: {}", c.name, c.source);
+            assert!(
+                c.source.contains(".cpp:"),
+                "{} 出处缺行号: {}",
+                c.name,
+                c.source
+            );
             assert!(!c.guards.is_empty(), "{} 缺失败/前置面", c.name);
             let joined = c.guards.join(";");
             assert!(
-                joined.contains("AssertionError") || joined.contains("TypeError") || joined.contains("ERROR"),
+                joined.contains("AssertionError")
+                    || joined.contains("TypeError")
+                    || joined.contains("ERROR"),
                 "{} 缺失败面登记",
                 c.name
             );
@@ -404,7 +416,9 @@ mod tests {
     fn index_roundtrip() {
         let idx = index();
         assert_eq!(idx.len(), contracts().len());
-        let c = idx.get(&(ApiSide::KBEngineBaseapp, "createEntityFromDBID")).unwrap();
+        let c = idx
+            .get(&(ApiSide::KBEngineBaseapp, "createEntityFromDBID"))
+            .unwrap();
         assert_eq!(c.kind, CreateKind::FromDbid);
     }
 }

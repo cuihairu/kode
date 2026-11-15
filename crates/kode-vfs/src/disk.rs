@@ -193,7 +193,9 @@ mod tests {
                 .write(true)
                 .open(file)
                 .unwrap()
-                .set_times(std::fs::FileTimes::new().set_modified(std::time::UNIX_EPOCH - before_epoch))
+                .set_times(
+                    std::fs::FileTimes::new().set_modified(std::time::UNIX_EPOCH - before_epoch),
+                )
                 .unwrap();
         };
         set_mtime(&whole, std::time::Duration::from_secs(1));

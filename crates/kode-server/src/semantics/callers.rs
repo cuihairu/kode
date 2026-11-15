@@ -193,14 +193,23 @@ pub fn expected_arity(check: &CallerCheck, side: AritySide) -> Option<usize> {
 mod tests {
     use super::*;
 
-    fn facts(facet: Facet, exposed: bool, declared: usize, impl_params: Option<usize>) -> CallerFacts {
+    fn facts(
+        facet: Facet,
+        exposed: bool,
+        declared: usize,
+        impl_params: Option<usize>,
+    ) -> CallerFacts {
         CallerFacts {
             facet,
             exposed,
             declared_args: declared,
             impl_arity: impl_params.map(|p| ImplArity {
                 params: p,
-                first_param: if p == 0 { None } else { Some("arg0".to_string()) },
+                first_param: if p == 0 {
+                    None
+                } else {
+                    Some("arg0".to_string())
+                },
             }),
         }
     }

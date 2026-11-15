@@ -36,7 +36,9 @@ impl Fixture {
 
     fn copy_fixture(&self, name: &str) {
         std::fs::copy(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/kb").join(name),
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/kb")
+                .join(name),
             self.root.join(name),
         )
         .unwrap();
@@ -113,7 +115,10 @@ fn query_excel_filters_by_sheet_text_and_file() {
     }));
 
     // Unknown sheet and unknown file are honestly empty, not errors.
-    assert_eq!(index.query_excel(None, Some("NoSuchSheet"), None, 50)["count"], 0);
+    assert_eq!(
+        index.query_excel(None, Some("NoSuchSheet"), None, 50)["count"],
+        0
+    );
     assert_eq!(
         index.query_excel(Some("no/such/file.csv"), None, None, 50)["count"],
         0
@@ -166,8 +171,7 @@ fn excel_and_csv_cells_matching_symbols_yield_unknown_edges() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|e| e["rule"] == "excel-cell-name-match"
-            && e["to"].as_str().unwrap() == target));
+        .any(|e| e["rule"] == "excel-cell-name-match" && e["to"].as_str().unwrap() == target));
 }
 
 // ------------------------------------------------------- get_dependencies
@@ -181,10 +185,7 @@ fn get_dependencies_traverses_def_types_python_chain() {
 
     let deps = index.get_dependencies("Avatar.slot", 6, 256).unwrap();
     let edges = deps["edges"].as_array().unwrap();
-    let rules: Vec<&str> = edges
-        .iter()
-        .map(|e| e["rule"].as_str().unwrap())
-        .collect();
+    let rules: Vec<&str> = edges.iter().map(|e| e["rule"].as_str().unwrap()).collect();
     assert!(rules.contains(&"types.xml type-reference"), "{deps}");
     assert!(rules.contains(&"implementedBy"), "{deps}");
     // Confidence provenance rides every hop (property→type is Inferred,
@@ -252,7 +253,10 @@ fn get_dependencies_depth_and_node_bounds_report_truncation() {
         .iter()
         .map(|e| e["rule"].as_str().unwrap())
         .collect();
-    assert!(shallow_rules.contains(&"excel-cell-name-match"), "{shallow}");
+    assert!(
+        shallow_rules.contains(&"excel-cell-name-match"),
+        "{shallow}"
+    );
     assert!(!shallow_rules.contains(&"implementedBy"), "{shallow}");
     assert_eq!(shallow["nodeCount"], 2);
     assert_eq!(shallow["truncated"], false);
@@ -324,7 +328,9 @@ fn get_dependencies_unknown_symbol_is_honest_error() {
     let index = fx.index();
     index.build();
 
-    let err = index.get_dependencies("NoSuchSymbolAnywhere", 6, 256).unwrap_err();
+    let err = index
+        .get_dependencies("NoSuchSymbolAnywhere", 6, 256)
+        .unwrap_err();
     assert!(err.contains("not found"), "{err}");
 }
 
@@ -353,7 +359,10 @@ fn csv_tables_are_indexed_with_quoting_and_delimiter_detection() {
         .iter()
         .find(|m| m["kind"] == "excel-row")
         .expect("csv data row indexed");
-    assert!(row["snippet"].as_str().unwrap().contains("Red,Potion"), "{row}");
+    assert!(
+        row["snippet"].as_str().unwrap().contains("Red,Potion"),
+        "{row}"
+    );
     // A1 location reflects the ';' layout (row 2, first column).
     assert!(row["location"].as_str().unwrap().contains("A2"), "{row}");
 }
@@ -370,5 +379,8 @@ fn csv_non_utf8_is_reported_honestly() {
     assert_eq!(hits["count"], 1, "{hits}");
     let sheet = &hits["matches"].as_array().unwrap()[0];
     assert_eq!(sheet["kind"], "excel-sheet");
-    assert!(sheet["snippet"].as_str().unwrap().contains("not valid UTF-8"));
+    assert!(sheet["snippet"]
+        .as_str()
+        .unwrap()
+        .contains("not valid UTF-8"));
 }

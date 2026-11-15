@@ -76,24 +76,23 @@ struct PostDestroyItem {
 fn analyze_post_destroy(params: Value) -> Result<Value, String> {
     let params: PostDestroyParams =
         serde_json::from_value(params).map_err(|err| err.to_string())?;
-    let items = compute_post_destroy_items(&params.text, params.destroy_declared, &params.statements);
+    let items =
+        compute_post_destroy_items(&params.text, params.destroy_declared, &params.statements);
     Ok(json!({ "items": items }))
 }
 
 // ---- 基础词元/空白判定 -------------------------------------------------------
 
 fn is_js_space(code: u16) -> bool {
-    matches!(code,
-        0x09 | 0x0A | 0x0B | 0x0C | 0x0D | 0x20
-        | 0xA0 | 0x1680
-        | 0x2000..=0x200A
-        | 0x2028 | 0x2029 | 0x202F | 0x205F | 0x3000 | 0xFEFF)
+    matches!(
+        code,
+        0x09 | 0x0A | 0x0B | 0x0C | 0x0D | 0x20 | 0xA0 | 0x1680 | 0x2000
+            ..=0x200A | 0x2028 | 0x2029 | 0x202F | 0x205F | 0x3000 | 0xFEFF
+    )
 }
 
 fn is_name_start(code: u16) -> bool {
-    code == 0x5F
-        || (0x41..=0x5A).contains(&code)
-        || (0x61..=0x7A).contains(&code)
+    code == 0x5F || (0x41..=0x5A).contains(&code) || (0x61..=0x7A).contains(&code)
 }
 
 fn is_name_char(code: u16) -> bool {
@@ -330,9 +329,7 @@ fn early_exit_statement(trimmed: &[u16]) -> bool {
 fn contains_self_access(text: &[u16]) -> bool {
     let mut i = 0usize;
     while i + 5 <= text.len() {
-        if starts_with(text, i, "self.")
-            && (i == 0 || !is_word(text[i - 1]))
-        {
+        if starts_with(text, i, "self.") && (i == 0 || !is_word(text[i - 1])) {
             return true;
         }
         i += 1;
@@ -378,7 +375,11 @@ fn destroy_column_of(masked: &[u16]) -> Option<usize> {
         return None;
     }
     for i in 0..=masked.len() - word.len() {
-        if masked[i..i + word.len()].iter().copied().eq(word.iter().copied()) {
+        if masked[i..i + word.len()]
+            .iter()
+            .copied()
+            .eq(word.iter().copied())
+        {
             return Some(i);
         }
     }
@@ -388,11 +389,7 @@ fn destroy_column_of(masked: &[u16]) -> Option<usize> {
 // ---- 块/销毁/早退分析(TS findPostDestroyFindings 同构) ----------------------
 
 /// 同一函数体同一块:同缩进,且两者间无缩进 < 本层的语句(无 dedent)
-fn same_block(
-    from: &StatementInput,
-    to: &StatementInput,
-    body: &[&StatementInput],
-) -> bool {
+fn same_block(from: &StatementInput, to: &StatementInput, body: &[&StatementInput]) -> bool {
     if from.indent != to.indent {
         return false;
     }
@@ -567,7 +564,12 @@ mod tests {
         let statements = vec![
             stmt("def f(self):", 0, 0, 0),
             stmt("self.destroy()", 1, 1, 4),
-            stmt("a = [self.id, self.isDestroyed, self.className, self.destroy]", 2, 2, 4),
+            stmt(
+                "a = [self.id, self.isDestroyed, self.className, self.destroy]",
+                2,
+                2,
+                4,
+            ),
         ];
         let items = compute_post_destroy_items(text, false, &statements);
         assert!(items.is_empty());
@@ -724,7 +726,8 @@ mod tests {
             ]
         }))
         .expect("params decode");
-        let items = compute_post_destroy_items(&params.text, params.destroy_declared, &params.statements);
+        let items =
+            compute_post_destroy_items(&params.text, params.destroy_declared, &params.statements);
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].member, "hp");
         let encoded = serde_json::to_value(&items[0]).expect("item encode");
@@ -736,4 +739,3 @@ mod tests {
         assert_eq!(encoded["length"], json!(7));
     }
 }
-

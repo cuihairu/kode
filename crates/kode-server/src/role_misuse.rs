@@ -125,7 +125,13 @@ fn find_self_property_accesses(line: &[u16]) -> Vec<(usize, String)> {
         // `\b` 左界:前码元非词元或行首;`self` 后须紧跟 `.`(ASCII 码元序列)
         if line[i] == b's' as u16
             && (i == 0 || !is_word(line[i - 1]))
-            && line[i..].starts_with(&[b's' as u16, b'e' as u16, b'l' as u16, b'f' as u16, b'.' as u16])
+            && line[i..].starts_with(&[
+                b's' as u16,
+                b'e' as u16,
+                b'l' as u16,
+                b'f' as u16,
+                b'.' as u16,
+            ])
         {
             // `(\w+)`:词元最大游程(至少 1;`\b` 已在 `self` 前判)
             let run_start = i + "self.".len();
@@ -229,6 +235,9 @@ mod tests {
         assert_eq!(items[0]["code"], CODE_ROLE_MISUSE);
         assert_eq!(items[0]["line"], 0);
         assert_eq!(items[0]["propertyName"], "position");
-        assert_eq!(items[0]["registeredFaces"], serde_json::json!(["cellapp", "client"]));
+        assert_eq!(
+            items[0]["registeredFaces"],
+            serde_json::json!(["cellapp", "client"])
+        );
     }
 }

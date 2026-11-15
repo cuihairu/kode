@@ -110,7 +110,7 @@ impl EntitySnapshot {
     /// 构建快照。
     ///
     /// - `own` 实体自身 DefFile;`own_kind` 自身类别(parent 链按此池解析——
-///   引擎实体 parent 找实体、组件 parent 找组件,entitydef.cpp:907/:774);
+    ///   引擎实体 parent 找实体、组件 parent 找组件,entitydef.cpp:907/:774);
     /// - `resolve` 按名取 def(父/接口/组件类型;缺失返回 None → 诚实缺失);
     /// - `graph` 类型图(属性类型解析);
     /// - `root_id`/`entity_name` 用于身份证据。
@@ -135,7 +135,11 @@ impl EntitySnapshot {
         while let Some(p) = cur {
             depth += 1;
             if depth > 64 {
-                snap.issues.push(issue_fact(&format!("inheritance-chain-overflow:{entity_name}"), root_id, entity_name));
+                snap.issues.push(issue_fact(
+                    &format!("inheritance-chain-overflow:{entity_name}"),
+                    root_id,
+                    entity_name,
+                ));
                 break;
             }
             if p == entity_name || chain.contains(&p) {
@@ -148,17 +152,25 @@ impl EntitySnapshot {
         }
         snap.parent_chain = chain;
         if cycle {
-            snap.issues.push(issue_fact(&format!("inheritance-cycle:{entity_name}"), root_id, entity_name));
+            snap.issues.push(issue_fact(
+                &format!("inheritance-cycle:{entity_name}"),
+                root_id,
+                entity_name,
+            ));
         }
         if let Some(p) = &own.parent {
             if resolve.resolve(own_kind, p).is_none() {
-                snap.issues.push(issue_fact(&format!("missing-parent:{p}"), root_id, entity_name));
+                snap.issues.push(issue_fact(
+                    &format!("missing-parent:{p}"),
+                    root_id,
+                    entity_name,
+                ));
             }
         }
 
         // 收集来源定义(自身 + 父链 + 接口;顺序保留)。
         let mut sources: Vec<(String, &DefFile)> = Vec::new();
-        
+
         visited.push((own_kind, entity_name.to_string()));
         sources.push((entity_name.to_string(), own));
         for name in snap.parent_chain.iter().skip(1) {
@@ -175,7 +187,11 @@ impl EntitySnapshot {
             snap.interfaces.push(name.clone());
             let key = (ReferenceKind::Interface, name.clone());
             if visited.contains(&key) {
-                snap.issues.push(issue_fact(&format!("interface-cycle-or-duplicate:{name}"), root_id, entity_name));
+                snap.issues.push(issue_fact(
+                    &format!("interface-cycle-or-duplicate:{name}"),
+                    root_id,
+                    entity_name,
+                ));
                 continue;
             }
             match resolve.resolve(ReferenceKind::Interface, name) {
@@ -183,7 +199,11 @@ impl EntitySnapshot {
                     visited.push(key);
                     sources.push((name.clone(), d));
                 }
-                None => snap.issues.push(issue_fact(&format!("missing-interface:{name}"), root_id, entity_name)),
+                None => snap.issues.push(issue_fact(
+                    &format!("missing-interface:{name}"),
+                    root_id,
+                    entity_name,
+                )),
             }
         }
 
@@ -292,7 +312,8 @@ impl EntitySnapshot {
             }
         }
         let mut comp_seen: BTreeMap<&str, Vec<String>> = BTreeMap::new();
-        let mut comp_winner: std::collections::HashMap<&str, ComponentView> = std::collections::HashMap::new();
+        let mut comp_winner: std::collections::HashMap<&str, ComponentView> =
+            std::collections::HashMap::new();
         let mut comp_order: Vec<&str> = Vec::new();
         for (from, def) in &comp_sources {
             for c in &def.components {
@@ -305,7 +326,11 @@ impl EntitySnapshot {
                 }
                 if let Some(ct) = &c.component_type {
                     if resolve.resolve(ReferenceKind::Component, ct).is_none() {
-                        snap.issues.push(issue_fact(&format!("missing-component-type:{ct}"), root_id, entity_name));
+                        snap.issues.push(issue_fact(
+                            &format!("missing-component-type:{ct}"),
+                            root_id,
+                            entity_name,
+                        ));
                     }
                 }
                 comp_winner.insert(
@@ -351,7 +376,7 @@ fn issue_fact(reason: &str, _root: kode_vfs::store::RootId, entity: &str) -> Fac
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kode_parser::model::{ComponentDef, PropertyDef, MethodDef};
+    use kode_parser::model::{ComponentDef, MethodDef, PropertyDef};
 
     fn prop(name: &str, ty: &str) -> PropertyDef {
         PropertyDef {
@@ -373,7 +398,13 @@ mod tests {
     }
 
     fn method(name: &str, exposed: bool) -> MethodDef {
-        MethodDef { name: name.into(), name_span: kode_parser::Span::new(0, 0), line: 2, args: vec![], exposed }
+        MethodDef {
+            name: name.into(),
+            name_span: kode_parser::Span::new(0, 0),
+            line: 2,
+            args: vec![],
+            exposed,
+        }
     }
 
     fn def(parent: Option<&str>, interfaces: Vec<&str>, props: Vec<PropertyDef>) -> DefFile {
@@ -396,7 +427,10 @@ mod tests {
 
     impl DefMap {
         fn get(&self, name: &str) -> Option<&DefFile> {
-            self.0.iter().find(|(_, n, _)| *n == name).map(|(_, _, d)| d)
+            self.0
+                .iter()
+                .find(|(_, n, _)| *n == name)
+                .map(|(_, _, d)| d)
         }
     }
 
@@ -424,7 +458,14 @@ mod tests {
             (super::ReferenceKind::Interface, "Mixin", mixin),
         ]);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        let snap = EntitySnapshot::build(
+            &own,
+            super::ReferenceKind::Entity,
+            &resolve,
+            &g,
+            kode_vfs::store::RootId(1),
+            "Avatar",
+        );
         assert_eq!(snap.parent_chain, ["Avatar", "Monster"]);
         assert_eq!(snap.interfaces, ["Mixin"]);
         // 属性序:自身 hp → 父 level → 接口 soul。
@@ -439,8 +480,18 @@ mod tests {
         let b = def(Some("A"), vec![], vec![]);
         let resolve = map_defs(vec![("A", a), ("B", b)], super::ReferenceKind::Entity);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(resolve.get("A").unwrap(), super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "A");
-        assert!(snap.issues.iter().any(|f| f.value.contains("inheritance-cycle")));
+        let snap = EntitySnapshot::build(
+            resolve.get("A").unwrap(),
+            super::ReferenceKind::Entity,
+            &resolve,
+            &g,
+            kode_vfs::store::RootId(1),
+            "A",
+        );
+        assert!(snap
+            .issues
+            .iter()
+            .any(|f| f.value.contains("inheritance-cycle")));
     }
 
     #[test]
@@ -449,8 +500,19 @@ mod tests {
         let mixin = def(None, vec![], vec![prop("x", "STRING")]);
         let resolve = map_defs(vec![("Mixin", mixin)], super::ReferenceKind::Interface);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
-        let conflict = snap.conflicts.iter().find(|c| c.name == "x").expect("同名属性必须冲突");
+        let snap = EntitySnapshot::build(
+            &own,
+            super::ReferenceKind::Entity,
+            &resolve,
+            &g,
+            kode_vfs::store::RootId(1),
+            "Avatar",
+        );
+        let conflict = snap
+            .conflicts
+            .iter()
+            .find(|c| c.name == "x")
+            .expect("同名属性必须冲突");
         assert_eq!(conflict.candidates.len(), 2, "多候选不任取一个");
     }
 
@@ -466,12 +528,22 @@ mod tests {
             (super::ReferenceKind::Interface, "X", x_iface),
         ]);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        let snap = EntitySnapshot::build(
+            &own,
+            super::ReferenceKind::Entity,
+            &resolve,
+            &g,
+            kode_vfs::store::RootId(1),
+            "Avatar",
+        );
         assert_eq!(snap.parent_chain, ["Avatar", "X"]);
         let from_names: Vec<&str> = snap.properties.iter().map(|p| p.name.as_str()).collect();
         // hp(自身) + level(父=实体池 X) + soul(接口=接口池 X)——两池各取各的。
         assert_eq!(from_names, ["hp", "level", "soul"]);
-        assert!(snap.issues.iter().all(|f| !f.value.contains("missing-")), "分池齐备无缺失误报");
+        assert!(
+            snap.issues.iter().all(|f| !f.value.contains("missing-")),
+            "分池齐备无缺失误报"
+        );
     }
 
     #[test]
@@ -479,8 +551,18 @@ mod tests {
         let own = def(Some("Ghost"), vec![], vec![]);
         let resolve = map_defs(vec![], super::ReferenceKind::Entity);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
-        assert!(snap.issues.iter().any(|f| f.value.contains("missing-parent:Ghost")));
+        let snap = EntitySnapshot::build(
+            &own,
+            super::ReferenceKind::Entity,
+            &resolve,
+            &g,
+            kode_vfs::store::RootId(1),
+            "Avatar",
+        );
+        assert!(snap
+            .issues
+            .iter()
+            .any(|f| f.value.contains("missing-parent:Ghost")));
     }
 
     #[test]
@@ -491,7 +573,14 @@ mod tests {
         own.client_methods = vec![method("move", true)];
         let resolve = map_defs(vec![], super::ReferenceKind::Entity);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        let snap = EntitySnapshot::build(
+            &own,
+            super::ReferenceKind::Entity,
+            &resolve,
+            &g,
+            kode_vfs::store::RootId(1),
+            "Avatar",
+        );
         assert_eq!(snap.base_methods.len(), 1);
         assert_eq!(snap.cell_methods[0].name, "tick");
         assert!(snap.client_methods[0].exposed);
@@ -509,9 +598,19 @@ mod tests {
         }];
         let resolve = map_defs(vec![], super::ReferenceKind::Entity);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        let snap = EntitySnapshot::build(
+            &own,
+            super::ReferenceKind::Entity,
+            &resolve,
+            &g,
+            kode_vfs::store::RootId(1),
+            "Avatar",
+        );
         assert_eq!(snap.components.len(), 1);
-        assert!(snap.issues.iter().any(|f| f.value.contains("missing-component-type:Weapon")));
+        assert!(snap
+            .issues
+            .iter()
+            .any(|f| f.value.contains("missing-component-type:Weapon")));
     }
 
     fn comp(name: &str, ty: Option<&str>) -> ComponentDef {
@@ -538,12 +637,31 @@ mod tests {
         let resolve = DefMap(vec![
             (super::ReferenceKind::Entity, "Monster", monster),
             (super::ReferenceKind::Interface, "Mixin", mixin),
-            (super::ReferenceKind::Component, "Weapon", def(None, vec![], vec![])),
-            (super::ReferenceKind::Component, "Aura", def(None, vec![], vec![])),
-            (super::ReferenceKind::Component, "Tail", def(None, vec![], vec![])),
+            (
+                super::ReferenceKind::Component,
+                "Weapon",
+                def(None, vec![], vec![]),
+            ),
+            (
+                super::ReferenceKind::Component,
+                "Aura",
+                def(None, vec![], vec![]),
+            ),
+            (
+                super::ReferenceKind::Component,
+                "Tail",
+                def(None, vec![], vec![]),
+            ),
         ]);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        let snap = EntitySnapshot::build(
+            &own,
+            super::ReferenceKind::Entity,
+            &resolve,
+            &g,
+            kode_vfs::store::RootId(1),
+            "Avatar",
+        );
         let mut names: Vec<&str> = snap.components.iter().map(|c| c.name.as_str()).collect();
         names.sort_unstable();
         assert_eq!(names, ["aura", "tail", "weapon"]);
@@ -563,16 +681,42 @@ mod tests {
         let resolve = DefMap(vec![
             (super::ReferenceKind::Entity, "Monster", monster),
             (super::ReferenceKind::Interface, "Mixin", mixin),
-            (super::ReferenceKind::Component, "OwnW", def(None, vec![], vec![])),
-            (super::ReferenceKind::Component, "MonsterW", def(None, vec![], vec![])),
-            (super::ReferenceKind::Component, "MixinW", def(None, vec![], vec![])),
+            (
+                super::ReferenceKind::Component,
+                "OwnW",
+                def(None, vec![], vec![]),
+            ),
+            (
+                super::ReferenceKind::Component,
+                "MonsterW",
+                def(None, vec![], vec![]),
+            ),
+            (
+                super::ReferenceKind::Component,
+                "MixinW",
+                def(None, vec![], vec![]),
+            ),
         ]);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        let snap = EntitySnapshot::build(
+            &own,
+            super::ReferenceKind::Entity,
+            &resolve,
+            &g,
+            kode_vfs::store::RootId(1),
+            "Avatar",
+        );
         assert_eq!(snap.components.len(), 1);
-        assert_eq!(snap.components[0].component_type.as_deref(), Some("MonsterW"));
+        assert_eq!(
+            snap.components[0].component_type.as_deref(),
+            Some("MonsterW")
+        );
         assert_eq!(snap.components[0].file, "Monster.def");
-        let conflict = snap.conflicts.iter().find(|c| c.name == "weapon").expect("conflict recorded");
+        let conflict = snap
+            .conflicts
+            .iter()
+            .find(|c| c.name == "weapon")
+            .expect("conflict recorded");
         assert_eq!(conflict.reason, "component-defined-in-multiple-sources");
         assert_eq!(conflict.candidates, ["Mixin", "Avatar", "Monster"]);
     }
@@ -586,11 +730,26 @@ mod tests {
         mixin.components = vec![comp("weapon", Some("MixinW"))];
         let resolve = DefMap(vec![
             (super::ReferenceKind::Interface, "Mixin", mixin),
-            (super::ReferenceKind::Component, "OwnW", def(None, vec![], vec![])),
-            (super::ReferenceKind::Component, "MixinW", def(None, vec![], vec![])),
+            (
+                super::ReferenceKind::Component,
+                "OwnW",
+                def(None, vec![], vec![]),
+            ),
+            (
+                super::ReferenceKind::Component,
+                "MixinW",
+                def(None, vec![], vec![]),
+            ),
         ]);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
+        let snap = EntitySnapshot::build(
+            &own,
+            super::ReferenceKind::Entity,
+            &resolve,
+            &g,
+            kode_vfs::store::RootId(1),
+            "Avatar",
+        );
         assert_eq!(snap.components.len(), 1);
         assert_eq!(snap.components[0].component_type.as_deref(), Some("OwnW"));
         assert_eq!(snap.components[0].file, "Avatar.def");
@@ -606,11 +765,25 @@ mod tests {
         monster.components = vec![comp("weapon", Some("RealW"))];
         let resolve = DefMap(vec![
             (super::ReferenceKind::Entity, "Monster", monster),
-            (super::ReferenceKind::Component, "RealW", def(None, vec![], vec![])),
+            (
+                super::ReferenceKind::Component,
+                "RealW",
+                def(None, vec![], vec![]),
+            ),
         ]);
         let g = kode_types::TypeGraph::new();
-        let snap = EntitySnapshot::build(&own, super::ReferenceKind::Entity, &resolve, &g, kode_vfs::store::RootId(1), "Avatar");
-        assert!(snap.issues.iter().any(|f| f.value.contains("missing-component-type:Ghost")));
+        let snap = EntitySnapshot::build(
+            &own,
+            super::ReferenceKind::Entity,
+            &resolve,
+            &g,
+            kode_vfs::store::RootId(1),
+            "Avatar",
+        );
+        assert!(snap
+            .issues
+            .iter()
+            .any(|f| f.value.contains("missing-component-type:Ghost")));
         assert_eq!(snap.components[0].component_type.as_deref(), Some("RealW"));
     }
 }

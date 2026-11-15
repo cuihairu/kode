@@ -284,7 +284,11 @@ fn match_subscript_target(line: &str) -> Option<String> {
 /// TS buildFinding:character = 行首缩进列,length = 目标表达式长
 /// (`^\s*(self\.\w+(?:\.\w+)*(?:\[[^\]]+\])*)\s*(?:=…)` 的 group 1;
 /// 匹配失败回落脚 trimStart 余行)。
-fn build_fixed_dict_finding(index: usize, raw: &str, property: &str) -> (usize, usize, usize, String) {
+fn build_fixed_dict_finding(
+    index: usize,
+    raw: &str,
+    property: &str,
+) -> (usize, usize, usize, String) {
     let indent = indent_of(raw);
     let target_len = match match_fixed_dict_expression(raw) {
         Some((_, length)) => length,
@@ -343,7 +347,10 @@ fn subscript_key_of(target: &str) -> Option<String> {
         };
         let mut i = open + 2;
         let key_start = i;
-        while bytes.get(i).is_some_and(|&byte| byte != b'\'' && byte != b'"') {
+        while bytes
+            .get(i)
+            .is_some_and(|&byte| byte != b'\'' && byte != b'"')
+        {
             i += 1;
         }
         if i == key_start {
@@ -379,13 +386,22 @@ fn analyze_destroyed_entity_captures(lines: &[&str]) -> Vec<(usize, usize, Strin
         // call 分支先行:命中(即便实参无 self)即 continue,下标形不再判
         if let Some((container, args, arg_start)) = match_container_call(trimmed, &containers) {
             if let Some(self_offset) = standalone_self_offset(args) {
-                findings.push((index, line_indent + arg_start + self_offset, container.to_string()));
+                findings.push((
+                    index,
+                    line_indent + arg_start + self_offset,
+                    container.to_string(),
+                ));
             }
             continue;
         }
-        if let Some((container, rhs, target_len)) = match_container_subscript(trimmed, &containers) {
+        if let Some((container, rhs, target_len)) = match_container_subscript(trimmed, &containers)
+        {
             if let Some(self_offset) = standalone_self_offset(rhs) {
-                findings.push((index, line_indent + target_len + self_offset, container.to_string()));
+                findings.push((
+                    index,
+                    line_indent + target_len + self_offset,
+                    container.to_string(),
+                ));
             }
         }
     }
@@ -638,7 +654,8 @@ mod tests {
 
     #[test]
     fn fixed_dict_hits_subkey_and_misses_whole_assign() {
-        let lines = split_lines("self.profile.name = 'x'\nself.profile = {}\nself.other.name = 'y'\n");
+        let lines =
+            split_lines("self.profile.name = 'x'\nself.profile = {}\nself.other.name = 'y'\n");
         let table = table(&[("profile", &["name"])]);
         let findings = analyze_fixed_dict_mutations(&lines, &table);
         assert_eq!(findings.len(), 1);

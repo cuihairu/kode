@@ -96,25 +96,43 @@ pub fn classify(ast: &ParsedAst, e: &Expr) -> ExprKind {
         Expr::Call(c) => ExprKind::Call {
             callee: expr_text(ast, &c.func),
         },
-        Expr::Name(n) => ExprKind::LocalAssign { target: n.id.to_string() },
+        Expr::Name(n) => ExprKind::LocalAssign {
+            target: n.id.to_string(),
+        },
         Expr::Await(a) => classify(ast, &a.value),
         Expr::Named(ne) => classify(ast, &ne.value),
         Expr::BoolOp(b) => {
             let first = b.values.first();
-            first.map(|v| classify(ast, v)).unwrap_or_else(|| ExprKind::Unknown("empty-boolop".into()))
+            first
+                .map(|v| classify(ast, v))
+                .unwrap_or_else(|| ExprKind::Unknown("empty-boolop".into()))
         }
         Expr::BinOp(b) => classify(ast, &b.left),
         Expr::UnaryOp(u) => classify(ast, &u.operand),
         Expr::If(ie) => classify(ast, &ie.body),
-        Expr::List(l) => l.elts.first().map(|v| classify(ast, v)).unwrap_or_else(|| ExprKind::Unknown("empty-list".into())),
-        Expr::Tuple(t) => t.elts.first().map(|v| classify(ast, v)).unwrap_or_else(|| ExprKind::Unknown("empty-tuple".into())),
-        Expr::Set(s) => s.elts.first().map(|v| classify(ast, v)).unwrap_or_else(|| ExprKind::Unknown("empty-set".into())),
+        Expr::List(l) => l
+            .elts
+            .first()
+            .map(|v| classify(ast, v))
+            .unwrap_or_else(|| ExprKind::Unknown("empty-list".into())),
+        Expr::Tuple(t) => t
+            .elts
+            .first()
+            .map(|v| classify(ast, v))
+            .unwrap_or_else(|| ExprKind::Unknown("empty-tuple".into())),
+        Expr::Set(s) => s
+            .elts
+            .first()
+            .map(|v| classify(ast, v))
+            .unwrap_or_else(|| ExprKind::Unknown("empty-set".into())),
         Expr::Dict(d) => d
             .items
             .first()
             .map(|i| classify(ast, &i.value))
             .unwrap_or_else(|| ExprKind::Unknown("empty-dict".into())),
-        Expr::StringLiteral(c) => ExprKind::LocalAssign { target: c.value.to_str().to_string() },
+        Expr::StringLiteral(c) => ExprKind::LocalAssign {
+            target: c.value.to_str().to_string(),
+        },
         Expr::NumberLiteral(c) => ExprKind::LocalAssign {
             target: match &c.value {
                 ast::Number::Int(i) => i.to_string(),
@@ -122,8 +140,12 @@ pub fn classify(ast: &ParsedAst, e: &Expr) -> ExprKind {
                 ast::Number::Complex { real, imag } => format!("{real}+{imag}j"),
             },
         },
-        Expr::BooleanLiteral(c) => ExprKind::LocalAssign { target: c.value.to_string() },
-        Expr::NoneLiteral(_) => ExprKind::LocalAssign { target: "None".into() },
+        Expr::BooleanLiteral(c) => ExprKind::LocalAssign {
+            target: c.value.to_string(),
+        },
+        Expr::NoneLiteral(_) => ExprKind::LocalAssign {
+            target: "None".into(),
+        },
         Expr::BytesLiteral(c) => ExprKind::LocalAssign {
             // 多段隐式拼接的 bytes 也无损失(逐段字面文本串接)。
             target: c
@@ -133,7 +155,9 @@ pub fn classify(ast: &ParsedAst, e: &Expr) -> ExprKind {
                 .collect::<Vec<_>>()
                 .join(""),
         },
-        Expr::EllipsisLiteral(_) => ExprKind::LocalAssign { target: "...".into() },
+        Expr::EllipsisLiteral(_) => ExprKind::LocalAssign {
+            target: "...".into(),
+        },
         Expr::Lambda(_) => ExprKind::Unknown("lambda".into()),
         Expr::Generator(_) | Expr::ListComp(_) | Expr::SetComp(_) | Expr::DictComp(_) => {
             ExprKind::Unknown("comprehension".into())
@@ -173,10 +197,20 @@ fn walk_stmts(ast: &ParsedAst, stmts: &[Stmt], out: &mut Vec<AssignEvent>) {
 }
 
 /// 登记一组绑定名(位置 = 各自名 span)。
-fn push_names(ast: &ParsedAst, names: Vec<(String, TextRange)>, value: ExprKind, out: &mut Vec<AssignEvent>) {
+fn push_names(
+    ast: &ParsedAst,
+    names: Vec<(String, TextRange)>,
+    value: ExprKind,
+    out: &mut Vec<AssignEvent>,
+) {
     for (target, r) in names {
         let (line, col) = ast.line_col(r.start().to_u32());
-        out.push(AssignEvent { line, col, target, value: value.clone() });
+        out.push(AssignEvent {
+            line,
+            col,
+            target,
+            value: value.clone(),
+        });
     }
 }
 
@@ -244,7 +278,12 @@ fn walk_stmt(ast: &ParsedAst, s: &Stmt, out: &mut Vec<AssignEvent>) {
                         if let Some(target) = name_text(t) {
                             let r = a.value.range();
                             let (line, col) = ast.line_col(r.start().to_u32());
-                            out.push(AssignEvent { line, col, target, value: kind.clone() });
+                            out.push(AssignEvent {
+                                line,
+                                col,
+                                target,
+                                value: kind.clone(),
+                            });
                         }
                     }
                 }
@@ -252,11 +291,20 @@ fn walk_stmt(ast: &ParsedAst, s: &Stmt, out: &mut Vec<AssignEvent>) {
             walk_expr(ast, &a.value, out);
         }
         Stmt::AnnAssign(a) => {
-            let kind = a.value.as_ref().map(|v| classify(ast, v)).unwrap_or_else(|| ExprKind::Unknown("annassign-no-value".into()));
+            let kind = a
+                .value
+                .as_ref()
+                .map(|v| classify(ast, v))
+                .unwrap_or_else(|| ExprKind::Unknown("annassign-no-value".into()));
             if let Some(target) = name_text(&a.target) {
                 let r = a.target.range();
                 let (line, col) = ast.line_col(r.start().to_u32());
-                out.push(AssignEvent { line, col, target, value: kind });
+                out.push(AssignEvent {
+                    line,
+                    col,
+                    target,
+                    value: kind,
+                });
             }
             if let Some(v) = &a.value {
                 walk_expr(ast, v, out);
@@ -266,7 +314,12 @@ fn walk_stmt(ast: &ParsedAst, s: &Stmt, out: &mut Vec<AssignEvent>) {
             if let Some(target) = name_text(&a.target) {
                 let r = a.target.range();
                 let (line, col) = ast.line_col(r.start().to_u32());
-                out.push(AssignEvent { line, col, target, value: classify(ast, &a.value) });
+                out.push(AssignEvent {
+                    line,
+                    col,
+                    target,
+                    value: classify(ast, &a.value),
+                });
             }
             walk_expr(ast, &a.value, out);
         }
@@ -320,7 +373,12 @@ fn walk_stmt(ast: &ParsedAst, s: &Stmt, out: &mut Vec<AssignEvent>) {
                         .map(|te| classify(ast, te))
                         .unwrap_or_else(|| ExprKind::Unknown("bare-except".into()));
                     let (line, col) = ast.line_col(n.range.start().to_u32());
-                    out.push(AssignEvent { line, col, target: n.as_str().to_string(), value: kind });
+                    out.push(AssignEvent {
+                        line,
+                        col,
+                        target: n.as_str().to_string(),
+                        value: kind,
+                    });
                 }
                 walk_stmts(ast, &h.body, out);
             }
@@ -395,7 +453,12 @@ fn walk_expr(ast: &ParsedAst, e: &Expr, out: &mut Vec<AssignEvent>) {
             binding_target_names(&ne.target, &mut names);
             for (target, r) in names {
                 let (line, col) = ast.line_col(r.start().to_u32());
-                out.push(AssignEvent { line, col, target, value: classify(ast, &ne.value) });
+                out.push(AssignEvent {
+                    line,
+                    col,
+                    target,
+                    value: classify(ast, &ne.value),
+                });
             }
             walk_expr(ast, &ne.value, out);
         }
@@ -505,7 +568,8 @@ fn find_expr_in_stmt(ast: &ParsedAst, s: &Stmt, line: usize, col: usize) -> Opti
             if range_contains(f.iter.range(), line, col, ast) {
                 return Some(classify(ast, &f.iter));
             }
-            find_expr_at(ast, &f.body, line, col).or_else(|| find_expr_at(ast, &f.orelse, line, col))
+            find_expr_at(ast, &f.body, line, col)
+                .or_else(|| find_expr_at(ast, &f.orelse, line, col))
         }
         Stmt::While(w) => {
             if range_contains(w.test.range(), line, col, ast) {
@@ -562,7 +626,12 @@ fn find_expr_in_stmt(ast: &ParsedAst, s: &Stmt, line: usize, col: usize) -> Opti
     }
 }
 
-fn find_expr_in_list(ast: &ParsedAst, exprs: &[&Expr], line: usize, col: usize) -> Option<ExprKind> {
+fn find_expr_in_list(
+    ast: &ParsedAst,
+    exprs: &[&Expr],
+    line: usize,
+    col: usize,
+) -> Option<ExprKind> {
     for e in exprs {
         if range_contains(e.range(), line, col, ast) {
             return Some(classify(ast, e));
@@ -595,18 +664,33 @@ mod tests {
     fn classifies_call_subscript_attribute() {
         let a = ast("x = repo.load()\ny = data['hp']\nz = self.cell\n");
         // x 行:调用。
-        assert!(matches!(expr_kind_at(&a, 0, 4), Some(ExprKind::Call { .. })));
+        assert!(matches!(
+            expr_kind_at(&a, 0, 4),
+            Some(ExprKind::Call { .. })
+        ));
         // y 行:下标。
-        assert!(matches!(expr_kind_at(&a, 1, 4), Some(ExprKind::Subscript { .. })));
+        assert!(matches!(
+            expr_kind_at(&a, 1, 4),
+            Some(ExprKind::Subscript { .. })
+        ));
         // z 行:属性读。
-        assert!(matches!(expr_kind_at(&a, 2, 4), Some(ExprKind::Attribute { .. })));
+        assert!(matches!(
+            expr_kind_at(&a, 2, 4),
+            Some(ExprKind::Attribute { .. })
+        ));
     }
 
     #[test]
     fn local_assign_recognized() {
         let a = ast("x = build()\n");
         let ev = collect_assign_events(&a);
-        assert!(matches!(local_binding_at(&ev, 0, 5, "x"), Some(AssignEvent { value: ExprKind::Call { .. }, .. })));
+        assert!(matches!(
+            local_binding_at(&ev, 0, 5, "x"),
+            Some(AssignEvent {
+                value: ExprKind::Call { .. },
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -640,7 +724,10 @@ mod tests {
         assert_eq!(events[0].target, "a");
         assert_eq!(events[1].target, "b");
         assert!(events[0].col < events[1].col, "同行按列序");
-        assert!(matches!(events[0].value, ExprKind::LocalAssign { .. }), "字面量 RHS");
+        assert!(
+            matches!(events[0].value, ExprKind::LocalAssign { .. }),
+            "字面量 RHS"
+        );
     }
 
     #[test]
@@ -649,7 +736,9 @@ mod tests {
         let events = collect_assign_events(&a);
         let targets: Vec<&str> = events.iter().map(|e| e.target.as_str()).collect();
         assert_eq!(targets, ["a", "b", "rest"], "嵌套/Starred 展开登记");
-        assert!(events.iter().all(|e| matches!(e.value, ExprKind::LocalAssign { .. })));
+        assert!(events
+            .iter()
+            .all(|e| matches!(e.value, ExprKind::LocalAssign { .. })));
     }
 
     #[test]
@@ -666,7 +755,9 @@ mod tests {
         let a = ast("x = y = build()\n");
         let events = collect_assign_events(&a);
         assert_eq!(events.len(), 2, "链式多目标逐名登记");
-        assert!(events.iter().all(|e| matches!(e.value, ExprKind::Call { .. })));
+        assert!(events
+            .iter()
+            .all(|e| matches!(e.value, ExprKind::Call { .. })));
         assert_eq!(events[0].target, "x");
         assert_eq!(events[1].target, "y");
     }
@@ -677,7 +768,10 @@ mod tests {
         let events = collect_assign_events(&a);
         let targets: Vec<&str> = events.iter().map(|e| e.target.as_str()).collect();
         assert_eq!(targets, ["i", "k", "v"], "循环变量与解构展开");
-        assert!(matches!(events[0].value, ExprKind::LocalAssign { .. }), "iter 名归局部赋值形态");
+        assert!(
+            matches!(events[0].value, ExprKind::LocalAssign { .. }),
+            "iter 名归局部赋值形态"
+        );
     }
 
     #[test]
@@ -689,7 +783,10 @@ mod tests {
         assert!(targets.contains(&"x"), "序列模式绑定:x in {targets:?}");
         assert!(targets.contains(&"y"), "序列模式绑定:y in {targets:?}");
         assert!(targets.contains(&"a"), "列表模式绑定:a in {targets:?}");
-        assert!(targets.contains(&"rest"), "Star 模式绑定:rest in {targets:?}");
+        assert!(
+            targets.contains(&"rest"),
+            "Star 模式绑定:rest in {targets:?}"
+        );
         assert!(targets.contains(&"v"), "映射模式值绑定:v in {targets:?}");
         assert!(targets.contains(&"s"), "As 捕获:s in {targets:?}");
         assert!(!targets.contains(&"_"), "通配 `_` 不产生绑定");
@@ -697,12 +794,20 @@ mod tests {
 
     #[test]
     fn with_as_and_except_as_registered() {
-        let a = ast("with open(p) as f:\n    pass\ntry:\n    pass\nexcept ValueError as e:\n    pass\n");
+        let a = ast(
+            "with open(p) as f:\n    pass\ntry:\n    pass\nexcept ValueError as e:\n    pass\n",
+        );
         let events = collect_assign_events(&a);
         let targets: Vec<&str> = events.iter().map(|e| e.target.as_str()).collect();
         assert_eq!(targets, ["f", "e"], "with-as/except-as 均为局部绑定");
-        assert!(matches!(events[0].value, ExprKind::Call { .. }), "as 值形态=上下文表达式");
-        assert!(matches!(&events[1].value, ExprKind::LocalAssign { target } if target == "ValueError"), "except 值形态=异常类型名表达式");
+        assert!(
+            matches!(events[0].value, ExprKind::Call { .. }),
+            "as 值形态=上下文表达式"
+        );
+        assert!(
+            matches!(&events[1].value, ExprKind::LocalAssign { target } if target == "ValueError"),
+            "except 值形态=异常类型名表达式"
+        );
     }
 
     #[test]
@@ -715,7 +820,10 @@ mod tests {
     fn call_receiver_text_preserved() {
         let a = ast("v = self.mgr.fetch()\n");
         if let Some(ExprKind::Call { callee }) = expr_kind_at(&a, 0, 4) {
-            assert!(callee.contains("self.mgr.fetch"), "callee 全形态保留: {callee}");
+            assert!(
+                callee.contains("self.mgr.fetch"),
+                "callee 全形态保留: {callee}"
+            );
         } else {
             panic!("必须 Call");
         }

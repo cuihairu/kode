@@ -23,7 +23,7 @@
 //! baseapp.cpp:1678-1690;实体化失败不通知 baseapp.cpp:1428-1436;
 //! onGetCell 浮出 baseapp/entity.cpp:1032。
 
-use super::create_api::{ApiSide, CallbackShape, lookup};
+use super::create_api::{lookup, ApiSide, CallbackShape};
 use super::types::SemType;
 
 /// callback 实参形态(消费方从调用点 AST 折叠后传入)。
@@ -115,7 +115,10 @@ pub fn bind_callback(
                     target: target.clone(),
                     params: vec![(
                         params[0].clone(),
-                        SemType::Union(vec![entity_ty(), SemType::Builtin("ENTITYCALL".to_string())]),
+                        SemType::Union(vec![
+                            entity_ty(),
+                            SemType::Builtin("ENTITYCALL".to_string()),
+                        ]),
                     )],
                     failure_notices: vec![],
                 }
@@ -175,7 +178,11 @@ mod tests {
         )
         .unwrap();
         match b {
-            BindCheck::Bound { target, params, failure_notices } => {
+            BindCheck::Bound {
+                target,
+                params,
+                failure_notices,
+            } => {
                 assert_eq!(target, "self.onCreated");
                 assert_eq!(failure_notices, vec![]);
                 assert_eq!(
@@ -212,7 +219,11 @@ mod tests {
     #[test]
     fn dynamic_callback_never_binds() {
         // 验收红线:动态回调不猜,绝不产 Bound。
-        for api in ["createEntityAnywhere", "createEntityRemotely", "createEntityFromDBID"] {
+        for api in [
+            "createEntityAnywhere",
+            "createEntityRemotely",
+            "createEntityFromDBID",
+        ] {
             let b = bind_callback(
                 ApiSide::KBEngineBaseapp,
                 api,
@@ -246,7 +257,11 @@ mod tests {
         )
         .unwrap();
         match b {
-            BindCheck::Bound { params, failure_notices, .. } => {
+            BindCheck::Bound {
+                params,
+                failure_notices,
+                ..
+            } => {
                 assert!(matches!(&params[0].1, SemType::Nullable(_)));
                 assert_eq!(params[1].1, SemType::Builtin("DBID".to_string()));
                 assert_eq!(params[2].1, SemType::Builtin("UINT8".to_string()));
@@ -269,7 +284,9 @@ mod tests {
         )
         .unwrap();
         match b {
-            BindCheck::Bound { failure_notices, .. } => assert_eq!(
+            BindCheck::Bound {
+                failure_notices, ..
+            } => assert_eq!(
                 failure_notices,
                 vec![
                     FailureNotice::FirstArgNone,
@@ -293,7 +310,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             b,
-            BindCheck::ArityMismatch { target: "cb".to_string(), expected: 3, actual: 1 }
+            BindCheck::ArityMismatch {
+                target: "cb".to_string(),
+                expected: 3,
+                actual: 1
+            }
         );
         // 单参契约收三参回调。
         let b = bind_callback(
@@ -305,7 +326,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             b,
-            BindCheck::ArityMismatch { target: "cb".to_string(), expected: 1, actual: 3 }
+            BindCheck::ArityMismatch {
+                target: "cb".to_string(),
+                expected: 1,
+                actual: 3
+            }
         );
     }
 
@@ -341,7 +366,13 @@ mod tests {
             &resolvable("cb", 1)
         )
         .is_none());
-        assert!(bind_callback(ApiSide::Base, "createEntityAnywhere", None, &CallbackArg::Absent).is_none());
+        assert!(bind_callback(
+            ApiSide::Base,
+            "createEntityAnywhere",
+            None,
+            &CallbackArg::Absent
+        )
+        .is_none());
     }
 
     #[test]

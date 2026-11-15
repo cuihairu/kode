@@ -503,7 +503,10 @@ impl KnowledgeIndex {
         }
         let mut by_name: HashMap<&str, Vec<&str>> = HashMap::new();
         for s in &symbols {
-            by_name.entry(s.name.as_str()).or_default().push(s.id.as_str());
+            by_name
+                .entry(s.name.as_str())
+                .or_default()
+                .push(s.id.as_str());
         }
         let rows = self.store.nodes_of_kinds(&["excel-row"]);
         let mut out: Vec<Reference> = Vec::new();
@@ -708,7 +711,12 @@ impl KnowledgeIndex {
         if seeds.is_empty() {
             return Err(format!("symbol not found in the knowledge index: {symbol}"));
         }
-        seeds.sort_by(|a, b| a.kind.rank().cmp(&b.kind.rank()).then_with(|| a.id.cmp(&b.id)));
+        seeds.sort_by(|a, b| {
+            a.kind
+                .rank()
+                .cmp(&b.kind.rank())
+                .then_with(|| a.id.cmp(&b.id))
+        });
         seeds.truncate(8);
 
         let max_depth = max_depth.clamp(1, MAX_DEP_DEPTH);
@@ -717,15 +725,13 @@ impl KnowledgeIndex {
         let edges = self.store.edges();
         let mut adjacency: HashMap<&str, Vec<&Reference>> = HashMap::new();
         for e in &edges {
-            adjacency
-                .entry(e.source_node.as_str())
-                .or_default()
-                .push(e);
+            adjacency.entry(e.source_node.as_str()).or_default().push(e);
         }
 
         let mut visited: std::collections::HashSet<String> =
             seeds.iter().map(|n| n.id.clone()).collect();
-        let mut queue: std::collections::VecDeque<(String, usize)> = std::collections::VecDeque::new();
+        let mut queue: std::collections::VecDeque<(String, usize)> =
+            std::collections::VecDeque::new();
         for s in &seeds {
             queue.push_back((s.id.clone(), 0));
         }

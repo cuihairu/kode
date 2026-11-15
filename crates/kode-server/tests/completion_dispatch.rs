@@ -366,8 +366,11 @@ fn did_close_of_deleted_file_drops_corpus() {
     std::fs::create_dir_all(&tmp).expect("mkdir");
     let types_uri = format!("file://{}/types.xml", tmp.display());
     let avatar_uri = format!("file://{}/entity_defs/Avatar.def", tmp.display());
-    std::fs::write(tmp.join("types.xml"), "<root>\n\t<MYTYPE> UINT32 </MYTYPE>\n</root>\n")
-        .expect("write types.xml");
+    std::fs::write(
+        tmp.join("types.xml"),
+        "<root>\n\t<MYTYPE> UINT32 </MYTYPE>\n</root>\n",
+    )
+    .expect("write types.xml");
 
     let mut state = ServerState::new();
     handle_message(

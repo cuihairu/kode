@@ -46,16 +46,27 @@ struct CellDataKeysResponse {
 }
 
 fn handle_cell_data_keys(params: Value) -> Result<Value, String> {
-    let p: CellDataKeysParams = serde_json::from_value(params)
-        .map_err(|e| format!("bad params: {e}"))?;
+    let p: CellDataKeysParams =
+        serde_json::from_value(params).map_err(|e| format!("bad params: {e}"))?;
     let root = RootId(0);
     let mut defs = SnapshotStore::new();
     for (i, d) in p.defs.iter().enumerate() {
-        let key = DocumentKey::new(root, CanonicalUri::from_path(&format!("/defs/{}.def", d.name)));
-        defs.commit(Build::new(key, (i + 1) as i64, kode_parser::parse_def(&d.text)));
+        let key = DocumentKey::new(
+            root,
+            CanonicalUri::from_path(&format!("/defs/{}.def", d.name)),
+        );
+        defs.commit(Build::new(
+            key,
+            (i + 1) as i64,
+            kode_parser::parse_def(&d.text),
+        ));
     }
     let resolver = ProjectDefResolver::new(&defs);
-    let Some(own) = crate::semantics::snapshot::DefResolver::resolve(&resolver, crate::semantics::snapshot::ReferenceKind::Entity, &p.entity) else {
+    let Some(own) = crate::semantics::snapshot::DefResolver::resolve(
+        &resolver,
+        crate::semantics::snapshot::ReferenceKind::Entity,
+        &p.entity,
+    ) else {
         // 实体 def 不在供给宇宙:keys 空,不造(响应级状态,非 CellDataStatus)。
         return serde_json::to_value(CellDataKeysResponse {
             entity: p.entity,
@@ -92,11 +103,22 @@ mod tests {
         let keys = v["keys"].as_array().unwrap();
         let kinds: Vec<(&str, &str)> = keys
             .iter()
-            .map(|k| (k["key"].as_str().unwrap(), k["kind"]["kind"].as_str().unwrap()))
+            .map(|k| {
+                (
+                    k["key"].as_str().unwrap(),
+                    k["kind"]["kind"].as_str().unwrap(),
+                )
+            })
             .collect();
         assert!(kinds.contains(&("hp", "defField")), "def 字段面: {kinds:?}");
-        assert!(kinds.contains(&("position", "builtin")), "内建键面: {kinds:?}");
-        assert!(kinds.contains(&("weapon", "componentSlot")), "组件槽面: {kinds:?}");
+        assert!(
+            kinds.contains(&("position", "builtin")),
+            "内建键面: {kinds:?}"
+        );
+        assert!(
+            kinds.contains(&("weapon", "componentSlot")),
+            "组件槽面: {kinds:?}"
+        );
         // 组件槽类型标签 = 组件类型名。
         let weapon = keys.iter().find(|k| k["key"] == "weapon").unwrap();
         assert_eq!(weapon["typeLabel"], "Weapon");
@@ -113,8 +135,17 @@ mod tests {
         });
         // 组件槽下字段不在顶层键宇宙(嵌套面),顶层只有槽名。
         let v = handle_cell_data_keys(params).unwrap();
-        let keys: Vec<&str> = v["keys"].as_array().unwrap().iter().map(|k| k["key"].as_str().unwrap()).collect();
-        assert_eq!(keys, ["position", "direction", "weapon"], "顶层=内建键+槽;组件字段在嵌套面");
+        let keys: Vec<&str> = v["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|k| k["key"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            keys,
+            ["position", "direction", "weapon"],
+            "顶层=内建键+槽;组件字段在嵌套面"
+        );
     }
 
     #[test]
@@ -122,7 +153,10 @@ mod tests {
         let params = json!({"entity": "Ghost", "defs": []});
         let v = handle_cell_data_keys(params).unwrap();
         assert_eq!(v["keys"].as_array().unwrap().len(), 0);
-        assert_eq!(v["status"], "entity-missing", "实体不在宇宙 → 响应级状态,不冒充无部件");
+        assert_eq!(
+            v["status"], "entity-missing",
+            "实体不在宇宙 → 响应级状态,不冒充无部件"
+        );
     }
 
     #[test]

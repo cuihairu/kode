@@ -1,4 +1,4 @@
-﻿//! kb_index 行为补测(2026-11-11 覆盖率批次:基线 llvm-cov 最低两模块
+//! kb_index 行为补测(2026-11-11 覆盖率批次:基线 llvm-cov 最低两模块
 //! fts.rs 84.4% / kb_index.rs 88.0% 之一):向量 P3 seam 诚实面与融合、
 //! watcher 注册幂等、kind 过滤轴。每条断言锁定真实行为——无 mock 索引、
 //! 无凑数用例(与 kb_p2/kb_p4/kb_assets 同一口径)。
@@ -18,8 +18,7 @@ struct Fixture {
 
 impl Fixture {
     fn new(tag: &str) -> Fixture {
-        let root =
-            std::env::temp_dir().join(format!("kode-mcp-kbb-{tag}-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("kode-mcp-kbb-{tag}-{}", std::process::id()));
         let index_dir =
             std::env::temp_dir().join(format!("kode-mcp-kbb-idx-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
@@ -88,10 +87,7 @@ fn natural_language_query_reports_vector_seam_honestly() {
         .expect("nl search");
     assert_eq!(out["route"], "bm25");
     assert_eq!(out["vector"]["configured"], false);
-    assert!(out["vector"]["deferred"]
-        .as_str()
-        .unwrap()
-        .contains("P3"));
+    assert!(out["vector"]["deferred"].as_str().unwrap().contains("P3"));
     assert_eq!(out["deterministic"], true);
 }
 

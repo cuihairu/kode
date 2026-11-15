@@ -41,7 +41,8 @@ struct RpcArgCountReport {
 }
 
 fn analyze_rpc_arg_count(params: Value) -> Result<Value, String> {
-    let params: RpcArgCountParams = serde_json::from_value(params).map_err(|err| err.to_string())?;
+    let params: RpcArgCountParams =
+        serde_json::from_value(params).map_err(|err| err.to_string())?;
     let lines = split_lines(&params.text);
     let counts = params
         .calls
@@ -265,7 +266,12 @@ mod tests {
 
     fn count(text: &str, line: usize, character: usize, method: &str) -> Option<u64> {
         let lines = split_lines(text);
-        count_call_arguments(&lines, line, character, method.encode_utf16().collect::<Vec<u16>>().as_slice())
+        count_call_arguments(
+            &lines,
+            line,
+            character,
+            method.encode_utf16().collect::<Vec<u16>>().as_slice(),
+        )
     }
 
     fn count_first(text: &str, method: &str) -> Option<u64> {
@@ -310,7 +316,10 @@ mod tests {
         assert_eq!(count_first("self.cell.foo(\"a,b\", 2)", "foo"), Some(2));
         assert_eq!(count_first("self.cell.foo(\"(x)\")", "foo"), Some(1));
         assert_eq!(count_first("self.cell.foo('a\\'b', 1)", "foo"), Some(2));
-        assert_eq!(count_first("self.cell.foo(\"\"\"a,b(c)\"\"\", 1)", "foo"), Some(2));
+        assert_eq!(
+            count_first("self.cell.foo(\"\"\"a,b(c)\"\"\", 1)", "foo"),
+            Some(2)
+        );
     }
 
     #[test]
@@ -329,7 +338,10 @@ mod tests {
 
     #[test]
     fn cross_line_and_unclosed() {
-        assert_eq!(count("x = self.cell.foo(\n  1,\n  2\n)", 0, P.len() + 4, "foo"), Some(2));
+        assert_eq!(
+            count("x = self.cell.foo(\n  1,\n  2\n)", 0, P.len() + 4, "foo"),
+            Some(2)
+        );
         assert_eq!(count("x = self.cell.foo(1,", 0, P.len() + 4, "foo"), None);
     }
 
@@ -347,7 +359,9 @@ mod tests {
 
     #[test]
     fn report_shape_serializes_nulls() {
-        let report = RpcArgCountReport { counts: vec![Some(2), None] };
+        let report = RpcArgCountReport {
+            counts: vec![Some(2), None],
+        };
         let encoded = serde_json::to_value(&report).unwrap();
         assert_eq!(encoded["counts"], json!([2, null]));
     }

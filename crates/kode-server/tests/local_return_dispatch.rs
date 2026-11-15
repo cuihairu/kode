@@ -48,7 +48,6 @@ fn query(lines: &[&str], hover_line: i64, word: &str) -> Value {
     response_of(&out).clone()
 }
 
-
 /// ORDER-04:带显式 hoverColumn(0 基 UTF-16 列)的查询。
 fn query_col(lines: &[&str], hover_line: i64, hover_column: i64, word: &str) -> Value {
     let mut state = ServerState::new();
@@ -121,8 +120,7 @@ fn kbug_scope_rpc_nested_closure_read_hit() {
     ];
     let out = query(&lines, 7, "data");
     assert_eq!(
-        out["ret"]["annotation"],
-        "Tree",
+        out["ret"]["annotation"], "Tree",
         "闭包读应命中外层函数域写点,实得 {:?}",
         out["ret"]
     );
@@ -141,7 +139,11 @@ fn kbug_scope_rpc_def_body_write_not_borrowed_after_def() {
         "print(data)",
     ];
     let out = query(&lines, 6, "data");
-    assert!(out["ret"].is_null(), "函数体写点不应外溢,实得 {:?}", out["ret"]);
+    assert!(
+        out["ret"].is_null(),
+        "函数体写点不应外溢,实得 {:?}",
+        out["ret"]
+    );
 }
 
 /// SCOPE-03:global 声明的读透传模块绑定 → 注解命中。
@@ -175,7 +177,11 @@ fn kbug_scope_rpc_method_body_skips_class_body() {
         "        return data",
     ];
     let out = query(&lines, 7, "data");
-    assert!(out["ret"].is_null(), "类体属性表不应被方法体借用,实得 {:?}", out["ret"]);
+    assert!(
+        out["ret"].is_null(),
+        "类体属性表不应被方法体借用,实得 {:?}",
+        out["ret"]
+    );
 }
 
 /// SCOPE-04 已知面记录:类体直系读读本类体写点 → 注解命中。
@@ -218,7 +224,11 @@ fn kbug_bind_rpc_param_shadow_honest_null() {
         "    return data",
     ];
     let out = query(&lines, 4, "data");
-    assert!(out["ret"].is_null(), "参数遮蔽的被调应诚实空,实得 {:?}", out["ret"]);
+    assert!(
+        out["ret"].is_null(),
+        "参数遮蔽的被调应诚实空,实得 {:?}",
+        out["ret"]
+    );
 }
 
 /// BIND-01 守卫:未遮蔽调用照常命中(RPC 面)。
@@ -253,7 +263,11 @@ fn kbug_bind_rpc_module_class_rebind_not_old_annotation() {
         "data = A.load(A())",
     ];
     let out = query(&lines, 9, "data");
-    assert!(out["ret"].is_null(), "重绑定后不应沿用旧类注解,实得 {:?}", out["ret"]);
+    assert!(
+        out["ret"].is_null(),
+        "重绑定后不应沿用旧类注解,实得 {:?}",
+        out["ret"]
+    );
 }
 
 /// BIND-02:别名透传——`fetch = real`(real 有注解)后 `fetch()` 命中
@@ -271,8 +285,7 @@ fn kbug_bind_rpc_alias_pass_through_hit() {
     ];
     let out = query(&lines, 5, "data");
     assert_eq!(
-        out["ret"]["annotation"],
-        "Tree",
+        out["ret"]["annotation"], "Tree",
         "别名绑定应透传 real 注解,实得 {:?}",
         out["ret"]
     );
@@ -297,8 +310,7 @@ fn kbug_cfgflow_rpc_if_false_reachable_hit() {
     ];
     let out = query(&lines, 9, "x");
     assert_eq!(
-        out["ret"]["annotation"],
-        "Tree",
+        out["ret"]["annotation"], "Tree",
         "死分支写点不应污染,实得 {:?}",
         out["ret"]
     );
@@ -375,7 +387,10 @@ fn kbug_order_rpc_explicit_column_distinguishes_same_line() {
     // 缺列(query 无 hoverColumn):保守回退行首非空白列 0 → 首语句 x=a()
     // 目标位 → int(不是整行末写点的 str)
     let out = query(&lines, 6, "x");
-    assert_eq!(out["ret"]["annotation"], "int", "缺列应保守回退,非整行末写点");
+    assert_eq!(
+        out["ret"]["annotation"], "int",
+        "缺列应保守回退,非整行末写点"
+    );
 }
 
 /// ORDER-05 RPC:同行读前于写——`print(x); x = b()` 悬 print 内 x(显式列)
@@ -391,7 +406,11 @@ fn kbug_order_rpc_read_before_write_honest_null() {
     ];
     // 行 4:print 内 x 列 10
     let out = query_col(&lines, 4, 10, "x");
-    assert!(out["ret"].is_null(), "读前写点应诚实空,实得 {:?}", out["ret"]);
+    assert!(
+        out["ret"].is_null(),
+        "读前写点应诚实空,实得 {:?}",
+        out["ret"]
+    );
     // 缺列:保守回退列 4(print 语句内)→ 诚实空
     let out = query(&lines, 4, "x");
     assert!(out["ret"].is_null(), "缺列应保守,实得 {:?}", out["ret"]);

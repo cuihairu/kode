@@ -44,11 +44,7 @@ fn probe_line_start(source: &[u16], start: usize, method: &[u16]) -> bool {
         i += 1;
     }
     // `def`
-    if i + 3 > source.len()
-        || source[i] != 0x64
-        || source[i + 1] != 0x65
-        || source[i + 2] != 0x66
-    {
+    if i + 3 > source.len() || source[i] != 0x64 || source[i + 1] != 0x65 || source[i + 2] != 0x66 {
         return false;
     }
     i += 3;
@@ -102,12 +98,7 @@ fn js_trim(raw: &str) -> &str {
 
 /// 符号名 = implementedBy 后段(引擎 GetAttrString 取后段);缺省回退类型名。
 pub fn contract_symbol_name(name: &str, implemented_by: Option<&str>) -> String {
-    let last = implemented_by.map(|raw| {
-        js_trim(raw)
-            .split('.')
-            .next_back()
-            .unwrap_or("")
-    });
+    let last = implemented_by.map(|raw| js_trim(raw).split('.').next_back().unwrap_or(""));
     match last {
         Some(segment) if !segment.is_empty() => segment.to_string(),
         _ => name.to_string(),
@@ -210,8 +201,14 @@ mod tests {
         assert!(!probe("deffoo(self):\n    pass\n", "isSameType"));
         assert!(!probe("def isSameType x(self):\n    pass\n", "isSameType"));
         assert!(!probe("x def isSameType(self):\n    pass\n", "isSameType"));
-        assert!(!probe("def getDictFromObjOnly(self):\n    pass\n", "getDictFromObj"));
-        assert!(!probe("def isSameTypeOnly(self):\n    pass\n", "isSameType"));
+        assert!(!probe(
+            "def getDictFromObjOnly(self):\n    pass\n",
+            "getDictFromObj"
+        ));
+        assert!(!probe(
+            "def isSameTypeOnly(self):\n    pass\n",
+            "isSameType"
+        ));
     }
 
     #[test]
@@ -225,7 +222,10 @@ mod tests {
     #[test]
     fn probe_line_starts_cover_cr_lf_and_unicode_separators() {
         // 孤立 \r / \u2028 / \u2029 都是 JS m 模式 ^ 行起点
-        assert!(probe("x = 1\rdef isSameType(self):\r    pass", "isSameType"));
+        assert!(probe(
+            "x = 1\rdef isSameType(self):\r    pass",
+            "isSameType"
+        ));
         assert!(probe(
             "x = 1\u{2028}def isSameType(self):\u{2028}    pass",
             "isSameType"
@@ -268,14 +268,25 @@ mod tests {
 
     #[test]
     fn collect_all_missing_three_items_in_declaration_order() {
-        let items = status_with("TalentTree", Some("talent.TalentTreeImpl"), Some("/w/impl.py"), [false; 3]);
+        let items = status_with(
+            "TalentTree",
+            Some("talent.TalentTreeImpl"),
+            Some("/w/impl.py"),
+            [false; 3],
+        );
         assert_eq!(items.len(), 3);
         assert_eq!(items[0].method, "createObjFromDict");
         assert_eq!(items[1].method, "getDictFromObj");
         assert_eq!(items[2].method, "isSameType");
-        assert!(items[0].message.contains("无法从网络/DB 构造该类型(反序列化入口缺失)"));
-        assert!(items[1].message.contains("无法写网络/持久化该类型(序列化出口缺失)"));
-        assert!(items[2].message.contains("类型判定失效(createObjFromDict 结果无法通过校验)"));
+        assert!(items[0]
+            .message
+            .contains("无法从网络/DB 构造该类型(反序列化入口缺失)"));
+        assert!(items[1]
+            .message
+            .contains("无法写网络/持久化该类型(序列化出口缺失)"));
+        assert!(items[2]
+            .message
+            .contains("类型判定失效(createObjFromDict 结果无法通过校验)"));
         assert!(items[0]
             .message
             .contains("——引擎 setImplModule 取不到该方法,装载实现模块必失败"));
@@ -288,7 +299,12 @@ mod tests {
 
     #[test]
     fn collect_partial_missing_only() {
-        let items = status_with("T", Some("pkg.Impl"), Some("/w/impl.py"), [true, false, true]);
+        let items = status_with(
+            "T",
+            Some("pkg.Impl"),
+            Some("/w/impl.py"),
+            [true, false, true],
+        );
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].method, "getDictFromObj");
     }
@@ -312,14 +328,24 @@ mod tests {
     #[test]
     fn collect_symbol_length_counts_utf16_units() {
         // 代理对计 2:TS `.length` 语义
-        let items = status_with("T\u{1D400}x", Some("m.T\u{1D400}x"), Some("/w/i.py"), [false; 3]);
+        let items = status_with(
+            "T\u{1D400}x",
+            Some("m.T\u{1D400}x"),
+            Some("/w/i.py"),
+            [false; 3],
+        );
         assert_eq!(items[0].symbol_name, "T\u{1D400}x");
         assert_eq!(items[0].symbol_length, 4);
     }
 
     #[test]
     fn collect_basename_handles_windows_separators() {
-        let items = status_with("T", Some("pkg.Impl"), Some(r"C:\w\scripts\impl.py"), [false; 3]);
+        let items = status_with(
+            "T",
+            Some("pkg.Impl"),
+            Some(r"C:\w\scripts\impl.py"),
+            [false; 3],
+        );
         assert_eq!(items[0].related_label, "实现文件 impl.py");
         let items = status_with("T", Some("pkg.Impl"), Some("no-sep"), [false; 3]);
         assert_eq!(items[0].related_label, "实现文件 no-sep");

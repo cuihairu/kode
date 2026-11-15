@@ -67,7 +67,8 @@ struct AttributeNoneItemFace {
 }
 
 fn analyze_attribute_none(params: Value) -> Result<Value, String> {
-    let params: AttributeNoneParams = serde_json::from_value(params).map_err(|err| err.to_string())?;
+    let params: AttributeNoneParams =
+        serde_json::from_value(params).map_err(|err| err.to_string())?;
     let items = compute_attribute_none_items(&params.text);
     let faces = attach_flow_faces(&params.text, &items, params.version_key.as_deref());
     Ok(json!({ "items": faces }))
@@ -183,9 +184,10 @@ fn compute_attribute_none_items(masked_text: &str) -> Vec<AttributeNoneItem> {
                                     String::from_utf16(&text[member_start..k]).unwrap_or_default();
                                 // 内建 receiver 跳过(按 attr 名集)
                                 let attr_u16: Vec<u16> = attr.encode_utf16().collect();
-                                let is_builtin = BUILTIN_RECEIVERS
-                                    .iter()
-                                    .any(|name| attr_u16.as_slice() == name.encode_utf16().collect::<Vec<u16>>().as_slice());
+                                let is_builtin = BUILTIN_RECEIVERS.iter().any(|name| {
+                                    attr_u16.as_slice()
+                                        == name.encode_utf16().collect::<Vec<u16>>().as_slice()
+                                });
                                 if !is_builtin {
                                     while line_idx + 1 < line_starts.len()
                                         && line_starts[line_idx + 1] <= i
@@ -399,5 +401,4 @@ mod tests {
         assert_eq!(encoded["flow"]["annotation"], json!("None"));
         assert_eq!(encoded["flow"]["types"], json!(["None"]));
     }
-
 }

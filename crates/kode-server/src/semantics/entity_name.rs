@@ -117,9 +117,7 @@ pub fn check_entity_name(
         }
         NameArg::Literal(name) => {
             let Some(declared) = catalog.facets_of(name) else {
-                return NameCheck::Missing {
-                    name: name.clone(),
-                };
+                return NameCheck::Missing { name: name.clone() };
             };
             let required = if is_cellapp_local {
                 required_facets_cellapp_local()
@@ -171,7 +169,10 @@ mod tests {
     fn catalog() -> Catalog {
         Catalog {
             entities: vec![
-                ("Avatar".to_string(), vec![Facet::Base, Facet::Cell, Facet::Client]),
+                (
+                    "Avatar".to_string(),
+                    vec![Facet::Base, Facet::Cell, Facet::Client],
+                ),
                 ("Monster".to_string(), vec![Facet::Base]),
                 ("SpawnPoint".to_string(), vec![Facet::Cell]),
                 ("Ghost".to_string(), vec![]),
@@ -226,8 +227,10 @@ mod tests {
             &NameArg::Literal("Monster".to_string()),
             Some(&catalog()),
         );
-        assert!(matches!(&check, NameCheck::Resolved { missing_facets, engine_gated, .. }
-            if missing_facets == &vec![Facet::Cell] && engine_gated.is_empty()));
+        assert!(
+            matches!(&check, NameCheck::Resolved { missing_facets, engine_gated, .. }
+            if missing_facets == &vec![Facet::Cell] && engine_gated.is_empty())
+        );
     }
 
     #[test]
@@ -239,8 +242,10 @@ mod tests {
             &NameArg::Literal("SpawnPoint".to_string()),
             Some(&catalog()),
         );
-        assert!(matches!(&check, NameCheck::Resolved { missing_facets, engine_gated, .. }
-            if missing_facets == &vec![Facet::Base] && engine_gated.is_empty()));
+        assert!(
+            matches!(&check, NameCheck::Resolved { missing_facets, engine_gated, .. }
+            if missing_facets == &vec![Facet::Base] && engine_gated.is_empty())
+        );
     }
 
     #[test]
@@ -252,7 +257,9 @@ mod tests {
             &NameArg::Literal("SpawnPoint".to_string()),
             Some(&catalog()),
         );
-        assert!(matches!(&ok, NameCheck::Resolved { missing_facets, .. } if missing_facets.is_empty()));
+        assert!(
+            matches!(&ok, NameCheck::Resolved { missing_facets, .. } if missing_facets.is_empty())
+        );
         let bad = check_entity_name(
             CreateKind::Local,
             true,
@@ -272,8 +279,10 @@ mod tests {
             &NameArg::Literal("Ghost".to_string()),
             Some(&catalog()),
         );
-        assert!(matches!(&base_side, NameCheck::Resolved { missing_facets, .. }
-            if missing_facets == &vec![Facet::Base]));
+        assert!(
+            matches!(&base_side, NameCheck::Resolved { missing_facets, .. }
+            if missing_facets == &vec![Facet::Base])
+        );
     }
 
     #[test]

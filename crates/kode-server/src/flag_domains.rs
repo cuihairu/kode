@@ -40,7 +40,10 @@ pub fn dump_flag_domains_golden() -> String {
         ("BASE", normalize_flag_tokens("BASE")),
         ("CELL", normalize_flag_tokens("CELL")),
         ("CELL_AND_CLIENT", normalize_flag_tokens("CELL_AND_CLIENT")),
-        ("CELL_AND_CLIENTS", normalize_flag_tokens("CELL_AND_CLIENTS")),
+        (
+            "CELL_AND_CLIENTS",
+            normalize_flag_tokens("CELL_AND_CLIENTS"),
+        ),
         (
             "CELL_AND_OTHER_CLIENTS",
             normalize_flag_tokens("CELL_AND_OTHER_CLIENTS"),

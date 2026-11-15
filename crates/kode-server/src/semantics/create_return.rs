@@ -19,7 +19,7 @@
 //! (baseapp.cpp:1024/:1084/:1206 等);anywhere 回调两分支实体/句柄
 //! (baseapp.cpp:2798-2859);FromDBID 三参 "OKi"(baseapp.cpp:1375)。
 
-use super::create_api::{ApiSide, CallbackShape, SyncReturn, contracts, lookup};
+use super::create_api::{contracts, lookup, ApiSide, CallbackShape, SyncReturn};
 use super::types::SemType;
 
 /// 创建 API 调用表达式的求值形态。
@@ -52,15 +52,17 @@ pub enum Delivery {
 }
 
 /// 创建 API 调用表达式的返回值形态;查无此 API(side+name 不在表)→ None。
-pub fn call_value_of(side: ApiSide, api: &str, entity_type_literal: Option<&str>) -> Option<CallValue> {
+pub fn call_value_of(
+    side: ApiSide,
+    api: &str,
+    entity_type_literal: Option<&str>,
+) -> Option<CallValue> {
     let contract = lookup(side, api)?;
     match contract.sync_return {
         SyncReturn::EntityDirect => {
             let ty = match entity_type_literal {
                 Some(name) => SemType::Entity(name.to_string()),
-                None => SemType::Unknown(
-                    "本地实体引用成立,但实体名为动态形态,类未知".to_string(),
-                ),
+                None => SemType::Unknown("本地实体引用成立,但实体名为动态形态,类未知".to_string()),
             };
             Some(CallValue::LocalEntity(ty))
         }
@@ -69,7 +71,11 @@ pub fn call_value_of(side: ApiSide, api: &str, entity_type_literal: Option<&str>
 }
 
 /// 异步 API 的回调交付面;查无此 API → None。
-pub fn delivery_type_of(side: ApiSide, api: &str, entity_type_literal: Option<&str>) -> Option<Delivery> {
+pub fn delivery_type_of(
+    side: ApiSide,
+    api: &str,
+    entity_type_literal: Option<&str>,
+) -> Option<Delivery> {
     let contract = lookup(side, api)?;
     let entity_ty = || match entity_type_literal {
         Some(name) => SemType::Entity(name.to_string()),
@@ -113,7 +119,10 @@ mod tests {
     #[test]
     fn baseapp_local_create_returns_local_entity_with_literal_class() {
         let v = call_value_of(ApiSide::KBEngineBaseapp, "createEntity", Some("Avatar")).unwrap();
-        assert_eq!(v, CallValue::LocalEntity(SemType::Entity("Avatar".to_string())));
+        assert_eq!(
+            v,
+            CallValue::LocalEntity(SemType::Entity("Avatar".to_string()))
+        );
     }
 
     #[test]
@@ -124,8 +133,12 @@ mod tests {
 
     #[test]
     fn cellapp_local_create_returns_local_entity() {
-        let v = call_value_of(ApiSide::KBEngineCellapp, "createEntity", Some("SpawnPoint")).unwrap();
-        assert_eq!(v, CallValue::LocalEntity(SemType::Entity("SpawnPoint".to_string())));
+        let v =
+            call_value_of(ApiSide::KBEngineCellapp, "createEntity", Some("SpawnPoint")).unwrap();
+        assert_eq!(
+            v,
+            CallValue::LocalEntity(SemType::Entity("SpawnPoint".to_string()))
+        );
     }
 
     #[test]
@@ -157,7 +170,12 @@ mod tests {
 
     #[test]
     fn anywhere_delivery_is_entity_or_mailbox_union() {
-        let d = delivery_type_of(ApiSide::KBEngineBaseapp, "createEntityAnywhere", Some("Avatar")).unwrap();
+        let d = delivery_type_of(
+            ApiSide::KBEngineBaseapp,
+            "createEntityAnywhere",
+            Some("Avatar"),
+        )
+        .unwrap();
         assert_eq!(
             d,
             Delivery::EntityOrMailbox {
@@ -178,8 +196,11 @@ mod tests {
             match d {
                 Delivery::RefDbidWasActive { entity, .. } => {
                     // 查库失败为 None → Nullable 包实体型。
-                    assert!(matches!(entity, SemType::Nullable(inner)
-                        if matches!(&*inner, SemType::Unknown(_))), "{api}");
+                    assert!(
+                        matches!(entity, SemType::Nullable(inner)
+                        if matches!(&*inner, SemType::Unknown(_))),
+                        "{api}"
+                    );
                 }
                 other => panic!("{api} 交付面错: {other:?}"),
             }
@@ -203,7 +224,11 @@ mod tests {
             (ApiSide::KBEngineBaseapp, "createEntity"),
             (ApiSide::KBEngineCellapp, "createEntity"),
         ] {
-            assert_eq!(delivery_type_of(side, api, None), Some(Delivery::NoCallback), "{api}");
+            assert_eq!(
+                delivery_type_of(side, api, None),
+                Some(Delivery::NoCallback),
+                "{api}"
+            );
         }
     }
 

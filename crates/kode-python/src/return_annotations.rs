@@ -226,7 +226,7 @@ fn parse_assignment_head(line: &[u16]) -> Option<(Vec<u16>, usize)> {
         return None;
     }
     let eq = i; // '=' 位
-    // `\s*` 贪婪:吞满 '=' 后空白
+                // `\s*` 贪婪:吞满 '=' 后空白
     let mut e = eq + 1;
     while e < line.len() && is_js_space(line[e]) {
         e += 1;
@@ -665,7 +665,10 @@ pub fn extract_file_imports(lines: &[Vec<u16>]) -> FileImportBindings {
                 .unwrap_or(dotted.len());
             let first_segment = &dotted[..first_end];
             let module: Vec<u16> = if alias.is_some() {
-                dotted.iter().map(|&c| if c == 0x2E { 0x2F } else { c }).collect()
+                dotted
+                    .iter()
+                    .map(|&c| if c == 0x2E { 0x2F } else { c })
+                    .collect()
             } else {
                 first_segment.to_vec()
             };
@@ -970,11 +973,7 @@ mod tests {
 
     #[test]
     fn mixed_names_and_receivers_order() {
-        let lines = vec![
-            u("import base"),
-            u("from mods import Good"),
-            u("x = 1"),
-        ];
+        let lines = vec![u("import base"), u("from mods import Good"), u("x = 1")];
         let out = extract_file_imports(&lines);
         assert_eq!(out.receivers.len(), 1);
         assert_eq!(out.names.len(), 1);

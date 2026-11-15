@@ -112,15 +112,8 @@ fn analyze_receiver_none(params: Value) -> Result<Value, String> {
 fn is_js_space(code: u16) -> bool {
     matches!(
         code,
-        0x09 | 0x0A | 0x0B | 0x0C | 0x0D | 0x20
-            | 0xA0
-            | 0x1680
-            | 0x2000..=0x200A
-            | 0x2028
-            | 0x2029
-            | 0x202F
-            | 0x205F
-            | 0x3000
+        0x09 | 0x0A | 0x0B | 0x0C | 0x0D | 0x20 | 0xA0 | 0x1680 | 0x2000
+            ..=0x200A | 0x2028 | 0x2029 | 0x202F | 0x205F | 0x3000
     )
 }
 
@@ -275,10 +268,18 @@ fn rebind_match(line: &[u16], subject: &[u16]) -> bool {
                 break;
             }
         }
-        if k < line.len() && matches!(line[k], 0x2D | 0x2B | 0x2A | 0x2F | 0x25 | 0x26 | 0x7C | 0x5E) {
+        if k < line.len()
+            && matches!(
+                line[k],
+                0x2D | 0x2B | 0x2A | 0x2F | 0x25 | 0x26 | 0x7C | 0x5E
+            )
+        {
             k += 1;
         }
-        if k < line.len() && line[k] == b'=' as u16 && (k + 1 >= line.len() || line[k + 1] != b'=' as u16) {
+        if k < line.len()
+            && line[k] == b'=' as u16
+            && (k + 1 >= line.len() || line[k + 1] != b'=' as u16)
+        {
             return true;
         }
     }
@@ -288,7 +289,10 @@ fn rebind_match(line: &[u16], subject: &[u16]) -> bool {
 /// TS nameRebindExtras(name):`\b(?:for|del|as)\s+NAME\b`。
 fn name_rebind_extras(line: &[u16], name: &[u16]) -> bool {
     for keyword in ["for", "del", "as"] {
-        for at in find_word_occurrences(line, keyword.encode_utf16().collect::<Vec<u16>>().as_slice()) {
+        for at in find_word_occurrences(
+            line,
+            keyword.encode_utf16().collect::<Vec<u16>>().as_slice(),
+        ) {
             let mut j = at + keyword.len();
             let ws_start = j;
             while j < line.len() && is_js_space(line[j]) {
@@ -502,7 +506,12 @@ fn condition_verdict(condition: &[u16], subject: &[u16]) -> Option<ConditionVerd
     let conjuncts = split_top_level(&expr, "and");
     let positive_atom = |atom_raw: &[u16]| -> bool {
         let atom = strip_outer_parens(atom_raw);
-        if atom == subject || eq_u16(&atom, &format!("{} is not None", String::from_utf16_lossy(subject))) {
+        if atom == subject
+            || eq_u16(
+                &atom,
+                &format!("{} is not None", String::from_utf16_lossy(subject)),
+            )
+        {
             return true;
         }
         if is_engine_validator_call(&atom, subject) {
@@ -510,7 +519,10 @@ fn condition_verdict(condition: &[u16], subject: &[u16]) -> Option<ConditionVerd
         }
         // `not (subject is None)` 是唯一认定的正向 not 形态
         if is_not_prefixed(&atom) {
-            return eq_u16(&strip_outer_parens(&atom[3..]), &format!("{} is None", String::from_utf16_lossy(subject)));
+            return eq_u16(
+                &strip_outer_parens(&atom[3..]),
+                &format!("{} is None", String::from_utf16_lossy(subject)),
+            );
         }
         false
     };
@@ -531,7 +543,10 @@ fn condition_verdict(condition: &[u16], subject: &[u16]) -> Option<ConditionVerd
             return Some(ConditionVerdict::EarlyExit);
         }
     }
-    if eq_u16(&atom, &format!("{} is None", String::from_utf16_lossy(subject))) {
+    if eq_u16(
+        &atom,
+        &format!("{} is None", String::from_utf16_lossy(subject)),
+    ) {
         return Some(ConditionVerdict::EarlyExit);
     }
     None
@@ -760,7 +775,11 @@ fn first_dedent_after(lines: &[&[u16]], span: &MethodSpan, candidate: &GuardCand
 
 /// TS firstExitAfter:块体内首个无条件 return/raise 行(块级语句顺序扫;
 /// 首个块级复合语句即不确定;更深缩进跳过)。
-fn first_exit_after(lines: &[&[u16]], span: &MethodSpan, candidate: &GuardCandidate) -> Option<usize> {
+fn first_exit_after(
+    lines: &[&[u16]],
+    span: &MethodSpan,
+    candidate: &GuardCandidate,
+) -> Option<usize> {
     let mut body_indent: Option<usize> = None;
     for j in candidate.line + 1..=span.end_line {
         let Some(text) = lines.get(j) else {
@@ -848,11 +867,7 @@ fn crosses_nested_scope(scan: &MethodGuardScan, from_line: usize, to_line: usize
 
 /// TS hasReceiverGuardFromScan:候选过闸(位置闸 + 重绑/跨作用域失效闸,
 /// 零文本重扫)+ 同行 guard(单行 if / 三元前置判空)。
-fn has_receiver_guard_from_scan(
-    lines: &[&[u16]],
-    scan: &MethodGuardScan,
-    use_line: usize,
-) -> bool {
+fn has_receiver_guard_from_scan(lines: &[&[u16]], scan: &MethodGuardScan, use_line: usize) -> bool {
     let Some(use_text) = lines.get(use_line) else {
         return false;
     };
@@ -867,8 +882,7 @@ fn has_receiver_guard_from_scan(
         let Some(proof_start) = proof_window_start(scan, candidate) else {
             continue;
         };
-        let self_subject: Vec<u16> =
-            format!("self.{}", scan.receiver).encode_utf16().collect();
+        let self_subject: Vec<u16> = format!("self.{}", scan.receiver).encode_utf16().collect();
         if !binding_stable_between(scan, &candidate.subject, proof_start, use_line)
             // 别名值与接收者属性同源:期间 self.<role> 被重赋值则旧证明同失效
             || !binding_stable_between(scan, &self_subject, proof_start, use_line)
@@ -876,9 +890,7 @@ fn has_receiver_guard_from_scan(
             continue;
         }
         if candidate.kind == ConditionVerdict::Positive {
-            if candidate.indent < use_indent
-                && candidate.block_end.unwrap_or(0) > use_line
-            {
+            if candidate.indent < use_indent && candidate.block_end.unwrap_or(0) > use_line {
                 return true;
             }
         } else if candidate.indent <= use_indent
@@ -1194,9 +1206,9 @@ fn compute_receiver_none_items(params: &ReceiverNoneParams) -> Vec<ReceiverNoneI
         }
         if let Some(span) = enclosing_method_span(&classes, line) {
             let key = (span.start_line, span.end_line, receiver);
-            let scan = scan_cache.entry(key).or_insert_with(|| {
-                scan_guard_candidates(&lines, &span, receiver)
-            });
+            let scan = scan_cache
+                .entry(key)
+                .or_insert_with(|| scan_guard_candidates(&lines, &span, receiver));
             if !has_receiver_guard_from_scan(&lines, scan, line) {
                 items.push(ReceiverNoneItem {
                     code: CODE_RECEIVER_NONE,
@@ -1385,14 +1397,14 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].method_name, "foo");
         // client 面:self.client 滤除(本样本无),base/cell 都报
-        assert_eq!(run_face(text, methods(), HashMap::new(), Some("client")).len(), 2);
+        assert_eq!(
+            run_face(text, methods(), HashMap::new(), Some("client")).len(),
+            2
+        );
         // 段错配面同闸:cell 面 self.cell 段外声明也不报
         let mut decls = HashMap::new();
         decls.insert("foo".to_string(), vec!["BaseMethods".to_string()]);
-        assert_eq!(
-            run_face(text, methods(), decls, Some("cell")).len(),
-            1
-        );
+        assert_eq!(run_face(text, methods(), decls, Some("cell")).len(), 1);
     }
 
     #[test]

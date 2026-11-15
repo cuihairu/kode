@@ -108,7 +108,10 @@ pub enum KeyCheck {
 /// 单键发现。
 #[derive(Debug, Clone, PartialEq)]
 pub enum KeyFinding {
-    Named { key: String, check: KeyCheck },
+    Named {
+        key: String,
+        check: KeyCheck,
+    },
     /// 动态键不对拍不猜。
     Dynamic,
 }
@@ -120,7 +123,8 @@ pub const MISSING_KEYS_RULE: &str = "缺键不报:def 属性先经 initProperty 
 /// 多键规则(源码钉死):不报错。createNamespace 对 def 未声明键走
 /// PyObject_SetAttr 动态造实例属性(entity_macro.h:486-502),引擎不拦;
 /// UndeclaredDynamicAttr 为提示级。
-pub const EXTRA_KEYS_RULE: &str = "多键不报错:def 未声明键走 PyObject_SetAttr 动态造属性,引擎不拦;UndeclaredDynamicAttr 为提示级";
+pub const EXTRA_KEYS_RULE: &str =
+    "多键不报错:def 未声明键走 PyObject_SetAttr 动态造属性,引擎不拦;UndeclaredDynamicAttr 为提示级";
 
 /// 字面量值家族。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,7 +219,7 @@ fn check_literal(lit: ParamLiteral, ty: &SemType) -> ValueCheck {
     let ok = match (value_f, field_f) {
         (ValueFamily::Numeric, ValueFamily::Numeric) => true, // bool 是 int 子类,数值互认
         (ValueFamily::Text, ValueFamily::Text) => true,
-        (ValueFamily::Seq, ValueFamily::Seq) => true,        // 形态级,元素不展开
+        (ValueFamily::Seq, ValueFamily::Seq) => true, // 形态级,元素不展开
         (ValueFamily::TupleLike, ValueFamily::TupleLike) => true, // VECTOR 以 tuple 传
         (ValueFamily::Mapping, ValueFamily::Mapping) => true, // FIXED_DICT 键面嵌套不展开
         _ => false,
@@ -297,11 +301,17 @@ mod tests {
             fields: vec![
                 (
                     "level".to_string(),
-                    FieldInfo { ty: SemType::Builtin("INT32".into()), channel: FieldChannel::Property },
+                    FieldInfo {
+                        ty: SemType::Builtin("INT32".into()),
+                        channel: FieldChannel::Property,
+                    },
                 ),
                 (
                     "name".to_string(),
-                    FieldInfo { ty: SemType::Builtin("STRING".into()), channel: FieldChannel::Property },
+                    FieldInfo {
+                        ty: SemType::Builtin("STRING".into()),
+                        channel: FieldChannel::Property,
+                    },
                 ),
                 (
                     "hp".to_string(),
@@ -312,11 +322,17 @@ mod tests {
                 ),
                 (
                     "movSpeed".to_string(),
-                    FieldInfo { ty: SemType::Builtin("FLOAT".into()), channel: FieldChannel::CellData },
+                    FieldInfo {
+                        ty: SemType::Builtin("FLOAT".into()),
+                        channel: FieldChannel::CellData,
+                    },
                 ),
                 (
                     "position".to_string(),
-                    FieldInfo { ty: SemType::Builtin("VECTOR3".into()), channel: FieldChannel::CellData },
+                    FieldInfo {
+                        ty: SemType::Builtin("VECTOR3".into()),
+                        channel: FieldChannel::CellData,
+                    },
                 ),
                 (
                     "equipment".to_string(),
@@ -337,7 +353,10 @@ mod tests {
                 ),
                 (
                     "mailbox".to_string(),
-                    FieldInfo { ty: SemType::Builtin("ENTITYCALL".into()), channel: FieldChannel::Property },
+                    FieldInfo {
+                        ty: SemType::Builtin("ENTITYCALL".into()),
+                        channel: FieldChannel::Property,
+                    },
                 ),
                 (
                     "mode".to_string(),
@@ -354,7 +373,10 @@ mod tests {
     }
 
     fn named(key: &str, lit: ParamLiteral) -> ParamEntry {
-        ParamEntry::Named { key: key.to_string(), value: ValueArg::Literal(lit) }
+        ParamEntry::Named {
+            key: key.to_string(),
+            value: ValueArg::Literal(lit),
+        }
     }
 
     #[test]
@@ -364,7 +386,9 @@ mod tests {
             findings,
             vec![KeyFinding::Named {
                 key: "level".to_string(),
-                check: KeyCheck::PropertyPath { value: ValueCheck::Ok },
+                check: KeyCheck::PropertyPath {
+                    value: ValueCheck::Ok
+                },
             }]
         );
     }
@@ -374,7 +398,13 @@ mod tests {
         // 静态纪律提示级:创建面引擎原样 setattr,不查类型。
         let findings = check_params(&[named("level", ParamLiteral::Str)], Some(&catalog()));
         match &findings[0] {
-            KeyFinding::Named { check: KeyCheck::PropertyPath { value: ValueCheck::Suspicious { .. } }, .. } => {}
+            KeyFinding::Named {
+                check:
+                    KeyCheck::PropertyPath {
+                        value: ValueCheck::Suspicious { .. },
+                    },
+                ..
+            } => {}
             other => panic!("{other:?}"),
         }
     }
@@ -383,7 +413,13 @@ mod tests {
     fn numeric_cross_family_int_vs_float_is_ok() {
         let findings = check_params(&[named("movSpeed", ParamLiteral::Int)], Some(&catalog()));
         match &findings[0] {
-            KeyFinding::Named { check: KeyCheck::CellDataPath { value: ValueCheck::Ok }, .. } => {}
+            KeyFinding::Named {
+                check:
+                    KeyCheck::CellDataPath {
+                        value: ValueCheck::Ok,
+                    },
+                ..
+            } => {}
             other => panic!("{other:?}"),
         }
     }
@@ -393,7 +429,12 @@ mod tests {
         let findings = check_params(&[named("movSpeed", ParamLiteral::Float)], Some(&catalog()));
         assert!(matches!(
             &findings[0],
-            KeyFinding::Named { check: KeyCheck::CellDataPath { value: ValueCheck::Ok }, .. }
+            KeyFinding::Named {
+                check: KeyCheck::CellDataPath {
+                    value: ValueCheck::Ok
+                },
+                ..
+            }
         ));
     }
 
@@ -404,7 +445,9 @@ mod tests {
             findings,
             vec![KeyFinding::Named {
                 key: "cellData".to_string(),
-                check: KeyCheck::CellDataDict { is_dict_literal: Some(true) },
+                check: KeyCheck::CellDataDict {
+                    is_dict_literal: Some(true)
+                },
             }]
         );
     }
@@ -417,7 +460,9 @@ mod tests {
             findings,
             vec![KeyFinding::Named {
                 key: "cellData".to_string(),
-                check: KeyCheck::CellDataDict { is_dict_literal: Some(false) },
+                check: KeyCheck::CellDataDict {
+                    is_dict_literal: Some(false)
+                },
             }]
         );
     }
@@ -435,7 +480,9 @@ mod tests {
             findings,
             vec![KeyFinding::Named {
                 key: "cellData".to_string(),
-                check: KeyCheck::CellDataDict { is_dict_literal: None },
+                check: KeyCheck::CellDataDict {
+                    is_dict_literal: None
+                },
             }]
         );
     }
@@ -456,10 +503,22 @@ mod tests {
     #[test]
     fn missing_catalog_never_reports_undeclared() {
         // 验收红线:目录未就绪绝不判「def 未声明」。
-        let findings = check_params(&[named("customField", ParamLiteral::Int), named("level", ParamLiteral::Int)], None);
+        let findings = check_params(
+            &[
+                named("customField", ParamLiteral::Int),
+                named("level", ParamLiteral::Int),
+            ],
+            None,
+        );
         for f in &findings {
             assert!(
-                matches!(f, KeyFinding::Named { check: KeyCheck::IndexMissing, .. }),
+                matches!(
+                    f,
+                    KeyFinding::Named {
+                        check: KeyCheck::IndexMissing,
+                        ..
+                    }
+                ),
                 "{f:?}"
             );
         }
@@ -468,16 +527,24 @@ mod tests {
     #[test]
     fn dynamic_key_and_value_not_judged() {
         let findings = check_params(
-            &[ParamEntry::DynamicKey, ParamEntry::Named {
-                key: "level".to_string(),
-                value: ValueArg::Dynamic,
-            }],
+            &[
+                ParamEntry::DynamicKey,
+                ParamEntry::Named {
+                    key: "level".to_string(),
+                    value: ValueArg::Dynamic,
+                },
+            ],
             Some(&catalog()),
         );
         assert!(matches!(findings[0], KeyFinding::Dynamic));
         assert!(matches!(
             &findings[1],
-            KeyFinding::Named { check: KeyCheck::PropertyPath { value: ValueCheck::Unknown }, .. }
+            KeyFinding::Named {
+                check: KeyCheck::PropertyPath {
+                    value: ValueCheck::Unknown
+                },
+                ..
+            }
         ));
     }
 
@@ -485,32 +552,96 @@ mod tests {
     fn nullable_and_union_and_entitycall_null_acceptance() {
         // Nullable 接受 None。
         let f = check_params(&[named("hp", ParamLiteral::None)], Some(&catalog()));
-        assert!(matches!(&f[0], KeyFinding::Named { check: KeyCheck::PropertyPath { value: ValueCheck::Ok }, .. }));
+        assert!(matches!(
+            &f[0],
+            KeyFinding::Named {
+                check: KeyCheck::PropertyPath {
+                    value: ValueCheck::Ok
+                },
+                ..
+            }
+        ));
         // None 对标量 → Suspicious。
         let f = check_params(&[named("level", ParamLiteral::None)], Some(&catalog()));
-        assert!(matches!(&f[0], KeyFinding::Named { check: KeyCheck::PropertyPath { value: ValueCheck::Suspicious { .. } }, .. }));
+        assert!(matches!(
+            &f[0],
+            KeyFinding::Named {
+                check: KeyCheck::PropertyPath {
+                    value: ValueCheck::Suspicious { .. }
+                },
+                ..
+            }
+        ));
         // ENTITYCALL 接受 None(RPC-01 真值)。
         let f = check_params(&[named("mailbox", ParamLiteral::None)], Some(&catalog()));
-        assert!(matches!(&f[0], KeyFinding::Named { check: KeyCheck::PropertyPath { value: ValueCheck::Ok }, .. }));
+        assert!(matches!(
+            &f[0],
+            KeyFinding::Named {
+                check: KeyCheck::PropertyPath {
+                    value: ValueCheck::Ok
+                },
+                ..
+            }
+        ));
         // Union 任一成员相容即 Ok。
         let f = check_params(&[named("mode", ParamLiteral::Int)], Some(&catalog()));
-        assert!(matches!(&f[0], KeyFinding::Named { check: KeyCheck::PropertyPath { value: ValueCheck::Ok }, .. }));
+        assert!(matches!(
+            &f[0],
+            KeyFinding::Named {
+                check: KeyCheck::PropertyPath {
+                    value: ValueCheck::Ok
+                },
+                ..
+            }
+        ));
     }
 
     #[test]
     fn shape_level_containers() {
         // List vs Array 形态级 Ok(元素不展开)。
         let f = check_params(&[named("equipment", ParamLiteral::List)], Some(&catalog()));
-        assert!(matches!(&f[0], KeyFinding::Named { check: KeyCheck::PropertyPath { value: ValueCheck::Ok }, .. }));
+        assert!(matches!(
+            &f[0],
+            KeyFinding::Named {
+                check: KeyCheck::PropertyPath {
+                    value: ValueCheck::Ok
+                },
+                ..
+            }
+        ));
         // Tuple vs VECTOR3 Ok(引擎 VECTOR 以 tuple 传)。
         let f = check_params(&[named("position", ParamLiteral::Tuple)], Some(&catalog()));
-        assert!(matches!(&f[0], KeyFinding::Named { check: KeyCheck::CellDataPath { value: ValueCheck::Ok }, .. }));
+        assert!(matches!(
+            &f[0],
+            KeyFinding::Named {
+                check: KeyCheck::CellDataPath {
+                    value: ValueCheck::Ok
+                },
+                ..
+            }
+        ));
         // Dict vs FIXED_DICT 形态级 Ok(键面嵌套不展开)。
         let f = check_params(&[named("tags", ParamLiteral::Dict)], Some(&catalog()));
-        assert!(matches!(&f[0], KeyFinding::Named { check: KeyCheck::PropertyPath { value: ValueCheck::Ok }, .. }));
+        assert!(matches!(
+            &f[0],
+            KeyFinding::Named {
+                check: KeyCheck::PropertyPath {
+                    value: ValueCheck::Ok
+                },
+                ..
+            }
+        ));
         // Set 无引擎 datatype → Suspicious。
         let f = check_params(&[named("level", ParamLiteral::Set)], Some(&catalog()));
-        assert!(matches!(&f[0], KeyFinding::Named { check: KeyCheck::PropertyPath { value: ValueCheck::Suspicious { .. } }, .. }));
+        assert!(matches!(
+            &f[0],
+            KeyFinding::Named {
+                check: KeyCheck::PropertyPath {
+                    value: ValueCheck::Suspicious { .. }
+                },
+                ..
+            }
+        ));
     }
 
     #[test]

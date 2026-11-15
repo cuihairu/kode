@@ -58,15 +58,8 @@ fn analyze_space_nav(params: Value) -> Result<Value, String> {
 fn is_js_space(code: u16) -> bool {
     matches!(
         code,
-        0x09 | 0x0A | 0x0B | 0x0C | 0x0D | 0x20
-            | 0xA0
-            | 0x1680
-            | 0x2000..=0x200A
-            | 0x2028
-            | 0x2029
-            | 0x202F
-            | 0x205F
-            | 0x3000
+        0x09 | 0x0A | 0x0B | 0x0C | 0x0D | 0x20 | 0xA0 | 0x1680 | 0x2000
+            ..=0x200A | 0x2028 | 0x2029 | 0x202F | 0x205F | 0x3000
     )
 }
 
@@ -175,14 +168,34 @@ fn match_mapping_key(text: &[u16], at: usize) -> Option<(usize, usize, usize)> {
     let kw = at + 4 < text.len()
         && is_ascii_letter(text[at])
         && text[at..].starts_with(&[
-            b's' as u16, b'e' as u16, b't' as u16, b'S' as u16, b'p' as u16, b'a' as u16,
-            b'c' as u16, b'e' as u16, b'D' as u16, b'a' as u16, b't' as u16, b'a' as u16,
+            b's' as u16,
+            b'e' as u16,
+            b't' as u16,
+            b'S' as u16,
+            b'p' as u16,
+            b'a' as u16,
+            b'c' as u16,
+            b'e' as u16,
+            b'D' as u16,
+            b'a' as u16,
+            b't' as u16,
+            b'a' as u16,
         ]);
     let kw_del = at + 4 < text.len()
         && is_ascii_letter(text[at])
         && text[at..].starts_with(&[
-            b'd' as u16, b'e' as u16, b'l' as u16, b'S' as u16, b'p' as u16, b'a' as u16,
-            b'c' as u16, b'e' as u16, b'D' as u16, b'a' as u16, b't' as u16, b'a' as u16,
+            b'd' as u16,
+            b'e' as u16,
+            b'l' as u16,
+            b'S' as u16,
+            b'p' as u16,
+            b'a' as u16,
+            b'c' as u16,
+            b'e' as u16,
+            b'D' as u16,
+            b'a' as u16,
+            b't' as u16,
+            b'a' as u16,
         ]);
     if at > 0 && is_word(text[at - 1]) {
         return None;
@@ -191,7 +204,7 @@ fn match_mapping_key(text: &[u16], at: usize) -> Option<(usize, usize, usize)> {
         return None;
     }
     let mut i = at + 12; // setSpaceData/delSpaceData 均 12 字符
-    // \s*(
+                         // \s*(
     while i < text.len() && is_js_space(text[i]) {
         i += 1;
     }
@@ -229,8 +242,13 @@ fn match_mapping_key(text: &[u16], at: usize) -> Option<(usize, usize, usize)> {
     if body_start + "_mapping".len() > text.len() {
         return None;
     }
-    if !text[body_start..].starts_with(b"_mapping".iter().map(|&b| b as u16).collect::<Vec<u16>>().as_slice())
-    {
+    if !text[body_start..].starts_with(
+        b"_mapping"
+            .iter()
+            .map(|&b| b as u16)
+            .collect::<Vec<u16>>()
+            .as_slice(),
+    ) {
         return None;
     }
     let after = body_start + "_mapping".len();
@@ -249,7 +267,15 @@ fn match_nav_call(text: &[u16], at: usize) -> Option<(usize, usize, usize)> {
     if at > 0 && is_word(text[at - 1]) {
         return None;
     }
-    if at + 4 > text.len() || !text[at..].starts_with(b"self".iter().map(|&b| b as u16).collect::<Vec<u16>>().as_slice()) {
+    if at + 4 > text.len()
+        || !text[at..].starts_with(
+            b"self"
+                .iter()
+                .map(|&b| b as u16)
+                .collect::<Vec<u16>>()
+                .as_slice(),
+        )
+    {
         return None;
     }
     let mut i = at + 4;
@@ -266,10 +292,20 @@ fn match_nav_call(text: &[u16], at: usize) -> Option<(usize, usize, usize)> {
     }
     // (navigate|navigatePathPoints)
     let method_start = i;
-    let nav = text[i..].starts_with(b"navigate".iter().map(|&b| b as u16).collect::<Vec<u16>>().as_slice())
-        && (i + 8 >= text.len() || !is_word(text[i + 8]));
-    let nav_pp = text[i..].starts_with(b"navigatePathPoints".iter().map(|&b| b as u16).collect::<Vec<u16>>().as_slice())
-        && (i + 18 >= text.len() || !is_word(text[i + 18]));
+    let nav = text[i..].starts_with(
+        b"navigate"
+            .iter()
+            .map(|&b| b as u16)
+            .collect::<Vec<u16>>()
+            .as_slice(),
+    ) && (i + 8 >= text.len() || !is_word(text[i + 8]));
+    let nav_pp = text[i..].starts_with(
+        b"navigatePathPoints"
+            .iter()
+            .map(|&b| b as u16)
+            .collect::<Vec<u16>>()
+            .as_slice(),
+    ) && (i + 18 >= text.len() || !is_word(text[i + 18]));
     let method_len = if nav {
         8
     } else if nav_pp {
@@ -293,7 +329,13 @@ fn match_can_navigate(text: &[u16], at: usize) -> bool {
         return false;
     }
     if at + 11 > text.len()
-        || !text[at..].starts_with(b"canNavigate".iter().map(|&b| b as u16).collect::<Vec<u16>>().as_slice())
+        || !text[at..].starts_with(
+            b"canNavigate"
+                .iter()
+                .map(|&b| b as u16)
+                .collect::<Vec<u16>>()
+                .as_slice(),
+        )
     {
         return false;
     }
@@ -309,7 +351,10 @@ fn match_mapping_call(text: &[u16], at: usize) -> Option<usize> {
     if at > 0 && is_word(text[at - 1]) {
         return None;
     }
-    let kw = b"addSpaceGeometryMapping".iter().map(|&b| b as u16).collect::<Vec<u16>>();
+    let kw = b"addSpaceGeometryMapping"
+        .iter()
+        .map(|&b| b as u16)
+        .collect::<Vec<u16>>();
     if at + kw.len() > text.len() || !text[at..].starts_with(&kw) {
         return None;
     }

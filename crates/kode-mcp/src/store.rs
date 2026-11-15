@@ -338,12 +338,10 @@ impl KbStore {
             .collect::<Vec<_>>()
             .join(", ");
         let conn = self.conn.lock().expect("store lock");
-        let mut stmt = match conn
-            .prepare(&format!(
-                "SELECT {NODE_COLS} FROM nodes WHERE kind IN ({placeholders})
+        let mut stmt = match conn.prepare(&format!(
+            "SELECT {NODE_COLS} FROM nodes WHERE kind IN ({placeholders})
                  ORDER BY file_path, id"
-            ))
-        {
+        )) {
             Ok(s) => s,
             Err(_) => return Vec::new(),
         };
@@ -369,9 +367,8 @@ impl KbStore {
                 .replace('_', "\\_")
         });
         let conn = self.conn.lock().expect("store lock");
-        let mut stmt = match conn
-            .prepare(&format!(
-                "SELECT {NODE_COLS} FROM nodes
+        let mut stmt = match conn.prepare(&format!(
+            "SELECT {NODE_COLS} FROM nodes
                  WHERE kind IN ('excel-sheet', 'excel-column', 'excel-row')
                    AND (?1 IS NULL OR file_path = ?1)
                    AND (?2 IS NULL OR name = ?2
@@ -379,8 +376,7 @@ impl KbStore {
                    AND (?3 IS NULL OR content LIKE '%' || ?3 || '%' ESCAPE '\\')
                  ORDER BY file_path, id
                  LIMIT ?4"
-            ))
-        {
+        )) {
             Ok(s) => s,
             Err(_) => return Vec::new(),
         };
@@ -458,7 +454,11 @@ impl KbStore {
             name.map(|n| rusqlite::types::Value::Text(n.to_string()))
                 .unwrap_or(rusqlite::types::Value::Null),
         );
-        params.push(escaped.map(rusqlite::types::Value::Text).unwrap_or(rusqlite::types::Value::Null));
+        params.push(
+            escaped
+                .map(rusqlite::types::Value::Text)
+                .unwrap_or(rusqlite::types::Value::Null),
+        );
         params.push(rusqlite::types::Value::Integer(limit.max(1) as i64));
         stmt.query_map(rusqlite::params_from_iter(params), row_to_node)
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())

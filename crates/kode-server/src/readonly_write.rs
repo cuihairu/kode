@@ -29,7 +29,8 @@ pub const CODE_READ_ONLY_WRITE: &str = "kbengine.readOnlyWrite";
 
 /// TS COMPOUND_KEYWORDS:引入复合语句套件(一行体 `:`)的语句头关键字。
 const COMPOUND_KEYWORDS: [&str; 13] = [
-    "if", "elif", "else", "for", "while", "with", "try", "except", "finally", "def", "class", "match", "case",
+    "if", "elif", "else", "for", "while", "with", "try", "except", "finally", "def", "class",
+    "match", "case",
 ];
 
 /// TS AUGMENTED_OPS 两字符项(`//= **= <<= >>=` 三字符项单独补判)
@@ -76,9 +77,7 @@ fn is_line_space(code: u16) -> bool {
 
 /// TS 词首字符类 `[A-Za-z_]`(语句头词/del 判定用,不含数字)
 fn is_name_start(code: u16) -> bool {
-    code == 0x5F
-        || (0x41..=0x5A).contains(&code)
-        || (0x61..=0x7A).contains(&code)
+    code == 0x5F || (0x41..=0x5A).contains(&code) || (0x61..=0x7A).contains(&code)
 }
 
 fn is_name_char(code: u16) -> bool {
@@ -299,7 +298,8 @@ fn compute_read_only_write_items(text: &str, readonly_names: &[String]) -> Vec<R
             while after_first < line.len() && is_line_space(line[after_first]) {
                 after_first += 1;
             }
-            if after_first < line.len() && (line[after_first] == 0x2E || line[after_first] == 0x5B) {
+            if after_first < line.len() && (line[after_first] == 0x2E || line[after_first] == 0x5B)
+            {
                 pos = name_end;
                 continue;
             }
@@ -337,7 +337,15 @@ mod tests {
     use super::*;
 
     fn items(text: &str) -> Vec<ReadOnlyWriteItem> {
-        let names = ["id", "isDestroyed", "className", "cell", "base", "client", "databaseID"];
+        let names = [
+            "id",
+            "isDestroyed",
+            "className",
+            "cell",
+            "base",
+            "client",
+            "databaseID",
+        ];
         compute_read_only_write_items(
             text,
             &names.iter().map(|n| n.to_string()).collect::<Vec<_>>(),
@@ -441,8 +449,10 @@ mod tests {
             "readonlyNames": ["id"]
         }))
         .expect("params decode");
-        let encoded = serde_json::to_value(&compute_read_only_write_items(&params.text, &params.readonly_names)[0])
-            .expect("item encode");
+        let encoded = serde_json::to_value(
+            &compute_read_only_write_items(&params.text, &params.readonly_names)[0],
+        )
+        .expect("item encode");
         assert_eq!(encoded["code"], json!("kbengine.readOnlyWrite"));
         assert_eq!(encoded["line"], json!(0));
         assert_eq!(encoded["character"], json!(0));

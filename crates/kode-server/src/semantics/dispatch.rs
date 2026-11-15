@@ -166,9 +166,7 @@ fn resolve_component_slot(
     };
     let comp_view = match owner.components.iter().find(|c| c.name == slot) {
         Some(c) => c,
-        None => {
-            return DispatchTarget::Unknown(format!("组件槽 {slot} 未声明(槽宿主 def 无此槽)"))
-        }
+        None => return DispatchTarget::Unknown(format!("组件槽 {slot} 未声明(槽宿主 def 无此槽)")),
     };
     let comp_type = match &comp_view.component_type {
         Some(t) => t,
@@ -225,7 +223,11 @@ fn enrich_def_candidate(view: &MethodView, py: &dyn PyClassResolver) -> MethodCa
     let (py_file, py_line) = match py.resolve(face, &view.from) {
         Some(facts) => (
             Some(format!("scripts/{}/{}.py", face_dir(face), view.from)),
-            facts.methods.iter().find(|m| m.name == view.name).map(|m| m.line),
+            facts
+                .methods
+                .iter()
+                .find(|m| m.name == view.name)
+                .map(|m| m.line),
         ),
         None => (None, None),
     };
@@ -269,7 +271,9 @@ fn local_component_candidates(
         candidates.push(MethodCandidate {
             name: m.name.clone(),
             facet,
-            args: def_view.map(|v| v.args.clone()).unwrap_or_else(|| m.params.clone()),
+            args: def_view
+                .map(|v| v.args.clone())
+                .unwrap_or_else(|| m.params.clone()),
             exposed: def_view.map(|v| v.exposed).unwrap_or(false),
             def_file: def_view.map(|v| v.file.clone()),
             def_line: def_view.and_then(|v| v.line),
@@ -363,7 +367,8 @@ mod tests {
 
     impl StubPy {
         fn with(mut self, face: ScriptFace, facts: PyClassFacts) -> Self {
-            self.0.insert((face_dir(face), facts.class_name.clone()), facts);
+            self.0
+                .insert((face_dir(face), facts.class_name.clone()), facts);
             self
         }
     }
@@ -601,8 +606,14 @@ mod tests {
             ..Default::default()
         };
         let py = StubPy(HashMap::new())
-            .with(ScriptFace::Cell, py_class("Avatar", vec![py_method("onPick", 210)]))
-            .with(ScriptFace::Cell, py_class("Pickable", vec![py_method("onPick", 50)]));
+            .with(
+                ScriptFace::Cell,
+                py_class("Avatar", vec![py_method("onPick", 210)]),
+            )
+            .with(
+                ScriptFace::Cell,
+                py_class("Pickable", vec![py_method("onPick", 50)]),
+            );
         let cands = resolved(resolve_dispatch(
             &Receiver::Role {
                 reference: EntityRef::Remote {
@@ -777,11 +788,14 @@ mod tests {
         };
         let py = StubPy(HashMap::new()).with(
             ScriptFace::Cell,
-            py_class("Weapon", vec![
-                py_method("swing", 70),
-                // py-only:任何 def 段都未声明,本地照样可调。
-                py_method("polish", 90),
-            ]),
+            py_class(
+                "Weapon",
+                vec![
+                    py_method("swing", 70),
+                    // py-only:任何 def 段都未声明,本地照样可调。
+                    py_method("polish", 90),
+                ],
+            ),
         );
         let host = slot_host("weapon", Some("Weapon"));
         // def 已声明:双跳转齐。
@@ -884,8 +898,10 @@ mod tests {
         );
         assert!(unknown_reason(no_class).contains("脚本/类未解析到"));
         // 类在而方法不在。
-        let py2 = StubPy(HashMap::new())
-            .with(ScriptFace::Cell, py_class("Weapon", vec![py_method("other", 1)]));
+        let py2 = StubPy(HashMap::new()).with(
+            ScriptFace::Cell,
+            py_class("Weapon", vec![py_method("other", 1)]),
+        );
         let no_method = resolve_dispatch(
             &Receiver::ComponentSlot {
                 parent: EntityRef::Local {

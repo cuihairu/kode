@@ -604,7 +604,11 @@ async fn read_node_and_get_dependencies_dispatch() {
     assert!(edges
         .iter()
         .all(|e| e["rule"].is_string() && e["confidence"].is_string()));
-    assert!(payload["nodes"].as_array().unwrap().iter().any(|n| n["kind"].is_string()));
+    assert!(payload["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|n| n["kind"].is_string()));
 
     // get_dependencies:未知符号诚实 Err;空参缺参 Err。
     for args in [

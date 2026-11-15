@@ -16,8 +16,7 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
 use kode_python::user_type_contract::{
-    collect_user_type_contract_missing, impl_file_has_contract_method,
-    USER_TYPE_CONTRACT_METHODS,
+    collect_user_type_contract_missing, impl_file_has_contract_method, USER_TYPE_CONTRACT_METHODS,
 };
 
 use crate::rpc::RpcRegistry;
@@ -80,10 +79,7 @@ fn user_type_contract(params: Value) -> Result<Value, String> {
         if impl_file != params.file {
             continue;
         }
-        let source = sources
-            .get(impl_file)
-            .map(Vec::as_slice)
-            .unwrap_or(&[]);
+        let source = sources.get(impl_file).map(Vec::as_slice).unwrap_or(&[]);
         let mut methods = [false; 3];
         for (idx, method) in USER_TYPE_CONTRACT_METHODS.iter().enumerate() {
             methods[idx] = impl_file_has_contract_method(source, method);

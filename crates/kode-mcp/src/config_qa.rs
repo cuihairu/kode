@@ -32,9 +32,17 @@ const KBE_RES_PATH_ENV: &str = "KBE_RES_PATH";
 /// 被切开)。空段剔除,段尾补 `/`(与引擎 `respaths_` 一致)。
 fn split_res_path(raw: &str) -> Vec<String> {
     let mut segments: Vec<String> = if raw.contains(';') {
-        raw.split(';').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect()
+        raw.split(';')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect()
     } else if raw.contains(':') {
-        raw.split(':').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect()
+        raw.split(':')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect()
     } else if !raw.trim().is_empty() {
         vec![raw.trim().to_string()]
     } else {
@@ -67,9 +75,8 @@ fn match_res_path(relative: &str) -> Option<PathBuf> {
 /// 同口径);环境变量未设/无命中 → 资产根 `{root}/res/server/kbengine.xml`
 /// (与扩展侧 `resolveCustomConfigXmlPath` 的资产根语义一致)。
 fn custom_config_path(root: &Path) -> PathBuf {
-    match_res_path("server/kbengine.xml").unwrap_or_else(|| {
-        root.join("res").join("server").join("kbengine.xml")
-    })
+    match_res_path("server/kbengine.xml")
+        .unwrap_or_else(|| root.join("res").join("server").join("kbengine.xml"))
 }
 
 /// 引擎 defaults 定位:引擎 `KBE_RES_PATH` 命中优先(`matchRes(
@@ -222,8 +229,7 @@ pub fn final_config(root: &Path) -> Value {
     }
     if defaults_text.is_none() {
         notes.push(
-            "engine defaults xml not present (asset root res/server/ nor any "
-                .to_string()
+            "engine defaults xml not present (asset root res/server/ nor any ".to_string()
                 + "ancestor kbe/res/server/); values below are the component "
                 + "side only; engine default telnet ports come from the "
                 + "built-in table",
@@ -275,9 +281,7 @@ fn entry_module_override(tree: Option<&ConfigNode>, component: &str) -> Option<S
 /// 约定:`scripts/kbengine.py`)。路径/存在性如实读盘,不预填不猜。
 pub fn entry_scripts(root: &Path) -> Value {
     let custom_text = read_opt(&custom_config_path(root));
-    let defaults_text = defaults_config_path(root)
-        .as_deref()
-        .and_then(read_opt);
+    let defaults_text = defaults_config_path(root).as_deref().and_then(read_opt);
     let resolved = resolve_config(defaults_text.as_deref(), custom_text.as_deref());
     // entryScriptFile 是引擎 defaults 键:合并树在则查合并,否则查元件侧。
     let tree = resolved.merged.as_ref().or(resolved.custom_tree.as_ref());
@@ -590,7 +594,10 @@ mod tests {
         .unwrap();
         // 资产根下再放一份「假的」defaults,验证环境变量优先于资产根
         std::fs::write(
-            assets.join("res").join("server").join("kbengine_defaults.xml"),
+            assets
+                .join("res")
+                .join("server")
+                .join("kbengine_defaults.xml"),
             "<root><dbmgr><databaseInterfaces><default><host>asset-defaults-host</host>\
              </default></databaseInterfaces></dbmgr></root>",
         )

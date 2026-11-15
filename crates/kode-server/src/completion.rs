@@ -352,12 +352,7 @@ impl HoverEngine {
         }
     }
 
-    fn push_entity_items(
-        &self,
-        items: &mut Vec<CompletionItemFace>,
-        fragment: &str,
-        root: RootId,
-    ) {
+    fn push_entity_items(&self, items: &mut Vec<CompletionItemFace>, fragment: &str, root: RootId) {
         for ((candidate_root, name), paths) in &self.def_by_name {
             if *candidate_root != root {
                 continue;

@@ -14,7 +14,9 @@
 //!   但宿主继承·接口链有缺口)一律 [`RpcCheck::NotReady`],绝不判确定
 //!   缺失(验收红线)。
 
-use super::dispatch::{resolve_dispatch, DispatchTarget, MethodCandidate, PyClassResolver, Receiver};
+use super::dispatch::{
+    resolve_dispatch, DispatchTarget, MethodCandidate, PyClassResolver, Receiver,
+};
 use super::refs::{bind_self_role, CallType, EntityRef, ScriptFace};
 use super::snapshot::EntitySnapshot;
 use super::Facet;
@@ -23,9 +25,7 @@ use super::Facet;
 #[derive(Debug, Clone, PartialEq)]
 pub enum RpcCheck {
     /// 调用可达:候选(含 def+Python 双跳转;多候选 = 歧义全列)。
-    Reachable {
-        candidates: Vec<MethodCandidate>,
-    },
+    Reachable { candidates: Vec<MethodCandidate> },
     /// 客户端进服调用未 Exposed(仅远程引用路径;client/bots 进程非
     /// Exposed 回落普通属性臂 → 属性错误)。
     ClientNotExposed { method: String, facet: Facet },
@@ -158,7 +158,9 @@ pub fn check_rpc_call(
             // Exposed 闸仅远程引用路径(client/bots 进程);本地实体/本地
             // 组件是 plain Python 派发,无闸。任一候选 Exposed 即可达。
             let remote_path = matches!(reference, EntityRef::Remote { .. });
-            if caller_face == ScriptFace::Client && remote_path && candidates.iter().all(|c| !c.exposed)
+            if caller_face == ScriptFace::Client
+                && remote_path
+                && candidates.iter().all(|c| !c.exposed)
             {
                 if let Some(first) = candidates.first() {
                     return RpcCheck::ClientNotExposed {
@@ -475,7 +477,10 @@ mod tests {
             Some(&EntitySnapshot::default()),
             &py,
         );
-        assert!(matches!(client_direct, RpcCheck::DirectionUnreachable { .. }));
+        assert!(matches!(
+            client_direct,
+            RpcCheck::DirectionUnreachable { .. }
+        ));
         // BASE 直连可得(client 面种子)→ 方向通,进落点面。
         let ok = check(
             ScriptFace::Client,
@@ -766,7 +771,13 @@ mod tests {
             "missing-parent:Base".to_string(),
             Origin::unknown("missing-parent:Base"),
         ));
-        let r = check(ScriptFace::Cell, &recv(CallType::Cell), "swing", Some(&missing_parent), &py);
+        let r = check(
+            ScriptFace::Cell,
+            &recv(CallType::Cell),
+            "swing",
+            Some(&missing_parent),
+            &py,
+        );
         match r {
             RpcCheck::NotReady { reason } => assert!(reason.contains("来源不完整")),
             other => panic!("期望 NotReady,得 {other:?}"),
@@ -776,7 +787,13 @@ mod tests {
             "inheritance-cycle:Avatar".to_string(),
             Origin::unknown("inheritance-cycle:Avatar"),
         ));
-        let r = check(ScriptFace::Cell, &recv(CallType::Cell), "swing", Some(&cycle), &py);
+        let r = check(
+            ScriptFace::Cell,
+            &recv(CallType::Cell),
+            "swing",
+            Some(&cycle),
+            &py,
+        );
         assert!(matches!(r, RpcCheck::NotReady { .. }));
     }
 

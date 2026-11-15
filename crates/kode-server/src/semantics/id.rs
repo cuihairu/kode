@@ -65,7 +65,12 @@ pub struct SemId {
 
 impl SemId {
     pub fn new(root: RootId, kind: SemKind, name: impl Into<String>, facet: Option<Facet>) -> Self {
-        Self { root, kind, name: name.into(), facet }
+        Self {
+            root,
+            kind,
+            name: name.into(),
+            facet,
+        }
     }
 
     pub fn entity(root: RootId, name: impl Into<String>) -> Self {
@@ -112,14 +117,23 @@ mod tests {
     #[test]
     fn kind_isolation() {
         let r = root(1);
-        assert_ne!(SemId::entity(r, "Foo"), SemId::new(r, SemKind::Type, "Foo", None));
-        assert_ne!(SemId::entity(r, "Foo"), SemId::new(r, SemKind::Alias, "Foo", None));
+        assert_ne!(
+            SemId::entity(r, "Foo"),
+            SemId::new(r, SemKind::Type, "Foo", None)
+        );
+        assert_ne!(
+            SemId::entity(r, "Foo"),
+            SemId::new(r, SemKind::Alias, "Foo", None)
+        );
     }
 
     #[test]
     fn same_signature_equals() {
         let r = root(7);
-        assert_eq!(SemId::method(r, "tick", Facet::Cell), SemId::method(r, "tick", Facet::Cell));
+        assert_eq!(
+            SemId::method(r, "tick", Facet::Cell),
+            SemId::method(r, "tick", Facet::Cell)
+        );
     }
 
     #[test]

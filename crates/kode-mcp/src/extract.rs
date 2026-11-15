@@ -595,14 +595,13 @@ pub fn csv_nodes(project: &str, rel_path: &str, path: &Path) -> Result<Vec<Index
         .unwrap_or("csv")
         .to_string();
     let bytes = std::fs::read(path).map_err(|e| format!("{rel_path}: {e}"))?;
-    let bom_stripped = bytes
-        .strip_prefix(b"\xEF\xBB\xBF")
-        .unwrap_or(&bytes);
+    let bom_stripped = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
     let text = match std::str::from_utf8(bom_stripped) {
         Ok(t) => t.to_string(),
         Err(_) => {
             let mut used = std::collections::HashMap::new();
-            let note = format!("sheet {stem} unreadable (not valid UTF-8; only UTF-8 CSV is indexed)");
+            let note =
+                format!("sheet {stem} unreadable (not valid UTF-8; only UTF-8 CSV is indexed)");
             return Ok(vec![node(
                 project,
                 rel_path,
@@ -681,8 +680,12 @@ pub fn csv_nodes(project: &str, rel_path: &str, path: &Path) -> Result<Vec<Index
         }
     }
     let truncated_note = match (malformed, total_rows > indexed_rows) {
-        (Some(row), _) => format!(" (stopped at malformed record {row}; {indexed_rows} rows indexed)"),
-        (None, true) => format!(" (rows indexed {indexed_rows}/{total_rows}, capped at {MAX_EXCEL_ROWS})"),
+        (Some(row), _) => {
+            format!(" (stopped at malformed record {row}; {indexed_rows} rows indexed)")
+        }
+        (None, true) => {
+            format!(" (rows indexed {indexed_rows}/{total_rows}, capped at {MAX_EXCEL_ROWS})")
+        }
         (None, false) => String::new(),
     };
     let end = col_letter(max_cols.saturating_sub(1));
@@ -816,7 +819,14 @@ fn walk_json(
                 } else {
                     format!("{path}.{key}")
                 };
-                walk_json(&child_path, child, depth + 1, sink, discovered, depth_capped);
+                walk_json(
+                    &child_path,
+                    child,
+                    depth + 1,
+                    sink,
+                    discovered,
+                    depth_capped,
+                );
             }
         }
         serde_json::Value::Array(items) => {
@@ -826,7 +836,14 @@ fn walk_json(
                 } else {
                     format!("{path}.{i}")
                 };
-                walk_json(&child_path, child, depth + 1, sink, discovered, depth_capped);
+                walk_json(
+                    &child_path,
+                    child,
+                    depth + 1,
+                    sink,
+                    discovered,
+                    depth_capped,
+                );
             }
         }
         _ => {}
@@ -843,8 +860,8 @@ fn walk_json(
 /// reconcile errors), not an empty index.
 pub fn json_nodes(project: &str, rel_path: &str, text: &str) -> Result<Vec<IndexNode>, String> {
     let stripped = text.strip_prefix('\u{FEFF}').unwrap_or(text);
-    let value: serde_json::Value = serde_json::from_str(stripped)
-        .map_err(|e| format!("{rel_path}: invalid JSON: {e}"))?;
+    let value: serde_json::Value =
+        serde_json::from_str(stripped).map_err(|e| format!("{rel_path}: invalid JSON: {e}"))?;
     let mut sink = Vec::new();
     let mut discovered = 0usize;
     let mut depth_capped = false;
@@ -896,7 +913,10 @@ pub fn json_nodes(project: &str, rel_path: &str, text: &str) -> Result<Vec<Index
             NodeKind::JsonKey,
             &name,
             &content,
-            SourceLocation::Lines { start: 1, end: line_count },
+            SourceLocation::Lines {
+                start: 1,
+                end: line_count,
+            },
             &mut used,
         ));
     }
@@ -1029,7 +1049,9 @@ pub fn tmx_nodes(project: &str, rel_path: &str, text: &str) -> Result<Vec<IndexN
                         rel_path,
                         NodeKind::TmxLayer,
                         &name,
-                        &format!("{kind_label} {name}{size} encoding={encoding} (tile data not indexed)"),
+                        &format!(
+                            "{kind_label} {name}{size} encoding={encoding} (tile data not indexed)"
+                        ),
                         SourceLocation::Lines {
                             start: line_of(el.open_span.start),
                             end: line_of(el.close_span.end.max(el.open_span.end)),
@@ -1145,8 +1167,17 @@ pub fn extract_file(project: &str, root: &Path, path: &Path) -> Result<Vec<Index
 pub fn is_indexable_ext(ext: &str) -> bool {
     matches!(
         ext,
-        "md" | "py" | "xlsx" | "xlsm" | "xls" | "ods" | "xlsb" | "csv" | "def" | "xml"
-        | "json" | "tmx"
+        "md" | "py"
+            | "xlsx"
+            | "xlsm"
+            | "xls"
+            | "ods"
+            | "xlsb"
+            | "csv"
+            | "def"
+            | "xml"
+            | "json"
+            | "tmx"
     )
 }
 
@@ -1452,7 +1483,10 @@ mod tests {
         );
         // ids unique + kind/format faces
         let ids: Vec<_> = nodes.iter().map(|n| n.id.clone()).collect();
-        assert_eq!(ids.len(), std::collections::HashSet::<_>::from_iter(ids.iter()).len());
+        assert_eq!(
+            ids.len(),
+            std::collections::HashSet::<_>::from_iter(ids.iter()).len()
+        );
         assert_eq!(nodes[0].kind.format(), "json");
     }
 

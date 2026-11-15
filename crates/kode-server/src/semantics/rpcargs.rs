@@ -147,7 +147,10 @@ pub fn check_rpc_args(
 /// 单位置兼容判定(引擎 isSameType 源码语义)。
 fn check_one(declared: &SemType, arg: &CallArg) -> ArgVerdict {
     match arg {
-        CallArg::Variable { derived: None, name } => {
+        CallArg::Variable {
+            derived: None,
+            name,
+        } => {
             return ArgVerdict::Unknown(format!("变量 {name} 类型推不出,保留未知"));
         }
         CallArg::StarArgs | CallArg::KwArgs => {
@@ -224,9 +227,7 @@ fn collect_declared_shapes(
         SemType::Alias(_, inner) | SemType::Range { base: inner, .. } => {
             collect_declared_shapes(inner, expected, any, unrecognized)
         }
-        SemType::Nullable(inner) => {
-            collect_declared_shapes(inner, expected, any, unrecognized)
-        }
+        SemType::Nullable(inner) => collect_declared_shapes(inner, expected, any, unrecognized),
         SemType::Union(ts) => {
             for t in ts {
                 collect_declared_shapes(t, expected, any, unrecognized);
@@ -350,9 +351,7 @@ fn none_accepts(ty: &SemType) -> bool {
 fn int_bounds(ty: &SemType) -> Option<(i128, i128)> {
     let n = match ty {
         SemType::Builtin(n) => n.as_str(),
-        SemType::Alias(_, inner) | SemType::Range { base: inner, .. } => {
-            return int_bounds(inner)
-        }
+        SemType::Alias(_, inner) | SemType::Range { base: inner, .. } => return int_bounds(inner),
         _ => return None,
     };
     match n {
@@ -372,8 +371,12 @@ fn int_bounds(ty: &SemType) -> Option<(i128, i128)> {
 fn range_bounds(ty: &SemType) -> Option<(i128, i128)> {
     match ty {
         SemType::Range { min, max, .. } => Some((
-            min.as_ref().and_then(|s| s.trim().parse::<i128>().ok()).unwrap_or(i128::MIN),
-            max.as_ref().and_then(|s| s.trim().parse::<i128>().ok()).unwrap_or(i128::MAX),
+            min.as_ref()
+                .and_then(|s| s.trim().parse::<i128>().ok())
+                .unwrap_or(i128::MIN),
+            max.as_ref()
+                .and_then(|s| s.trim().parse::<i128>().ok())
+                .unwrap_or(i128::MAX),
         )),
         SemType::Alias(_, inner) => range_bounds(inner),
         _ => None,
@@ -399,7 +402,10 @@ fn describe_arg(arg: &CallArg) -> String {
             name,
             derived: Some(t),
         } => format!("变量 {name}:{}", t.display()),
-        CallArg::Variable { name, derived: None } => format!("变量 {name}(类型推不出)"),
+        CallArg::Variable {
+            name,
+            derived: None,
+        } => format!("变量 {name}(类型推不出)"),
         CallArg::StarArgs => "*args".into(),
         CallArg::KwArgs => "**kwargs".into(),
         CallArg::Opaque { reason } => format!("不可推导表达式({reason})"),
@@ -444,20 +450,40 @@ mod tests {
 
     #[test]
     fn int_literal_within_family_bounds() {
-        let r = check_rpc_args(&[bt("INT32")], Some(10), 42, &[CallArg::Literal(LiteralValue::Int(5))]);
+        let r = check_rpc_args(
+            &[bt("INT32")],
+            Some(10),
+            42,
+            &[CallArg::Literal(LiteralValue::Int(5))],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::Compatible);
         assert_eq!(r[0].call_line, 42);
         assert_eq!(r[0].decl_line, Some(10));
         assert_eq!(r[0].expected, "INT32");
         assert_eq!(r[0].actual, "int 字面量 5");
         // 值域精查:INT8 装 300 不行。
-        let r = check_rpc_args(&[bt("INT8")], None, 7, &[CallArg::Literal(LiteralValue::Int(300))]);
+        let r = check_rpc_args(
+            &[bt("INT8")],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Int(300))],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::DefiniteMismatch);
         // UINT 族负数拒(datatype.cpp:279-289)。
-        let r = check_rpc_args(&[bt("UINT32")], None, 7, &[CallArg::Literal(LiteralValue::Int(-1))]);
+        let r = check_rpc_args(
+            &[bt("UINT32")],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Int(-1))],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::DefiniteMismatch);
         // UINT64 上界不溢 i128。
-        let r = check_rpc_args(&[bt("UINT64")], None, 7, &[CallArg::Literal(LiteralValue::Int(u64::MAX as i128))]);
+        let r = check_rpc_args(
+            &[bt("UINT64")],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Int(u64::MAX as i128))],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::Compatible);
     }
 
@@ -465,26 +491,52 @@ mod tests {
     fn int_literal_to_float_is_mismatch_engine_truth() {
         // 引擎真值陷阱:FLOAT/DOUBLE 只 PyFloat_Check(:497/:587),
         // int 字面量不接受——不是直觉的「数值可转」。
-        let r = check_rpc_args(&[bt("FLOAT")], None, 7, &[CallArg::Literal(LiteralValue::Int(5))]);
+        let r = check_rpc_args(
+            &[bt("FLOAT")],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Int(5))],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::DefiniteMismatch);
-        let r = check_rpc_args(&[bt("FLOAT")], None, 7, &[CallArg::Literal(LiteralValue::Float(1.5))]);
+        let r = check_rpc_args(
+            &[bt("FLOAT")],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Float(1.5))],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::Compatible);
     }
 
     #[test]
     fn bool_literal_is_int_family_not_float() {
         // bool ⊂ PyLong(PyLong_Check 接受)。
-        let r = check_rpc_args(&[bt("INT8")], None, 7, &[CallArg::Literal(LiteralValue::Bool(true))]);
+        let r = check_rpc_args(
+            &[bt("INT8")],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Bool(true))],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::Compatible);
         // 但 bool 不是 PyFloat → FLOAT 拒。
-        let r = check_rpc_args(&[bt("FLOAT")], None, 7, &[CallArg::Literal(LiteralValue::Bool(true))]);
+        let r = check_rpc_args(
+            &[bt("FLOAT")],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Bool(true))],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::DefiniteMismatch);
     }
 
     #[test]
     fn str_and_container_shapes() {
         let r = check_rpc_args(
-            &[bt("STRING"), bt("UNICODE"), bt("BLOB"), bt("PY_DICT"), bt("PY_TUPLE")],
+            &[
+                bt("STRING"),
+                bt("UNICODE"),
+                bt("BLOB"),
+                bt("PY_DICT"),
+                bt("PY_TUPLE"),
+            ],
             None,
             7,
             &[
@@ -497,19 +549,39 @@ mod tests {
         );
         assert!(r.iter().all(|x| x.verdict == ArgVerdict::Compatible));
         // str → INT32 不符。
-        let r = check_rpc_args(&[bt("INT32")], None, 7, &[CallArg::Literal(LiteralValue::Str("1".into()))]);
+        let r = check_rpc_args(
+            &[bt("INT32")],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Str("1".into()))],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::DefiniteMismatch);
     }
 
     #[test]
     fn none_literal_entity_and_nullable() {
         // EntityRef 三形态含 None(datatype.cpp:1484,RPC-01 已钉)。
-        let r = check_rpc_args(&[SemType::Entity("Avatar".into())], None, 7, &[CallArg::Literal(LiteralValue::NoneLiteral)]);
+        let r = check_rpc_args(
+            &[SemType::Entity("Avatar".into())],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::NoneLiteral)],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::Compatible);
-        let r = check_rpc_args(&[SemType::Nullable(Box::new(bt("INT32")))], None, 7, &[CallArg::Literal(LiteralValue::NoneLiteral)]);
+        let r = check_rpc_args(
+            &[SemType::Nullable(Box::new(bt("INT32")))],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::NoneLiteral)],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::Compatible);
         // None → INT32 不符(NULL 一律拒)。
-        let r = check_rpc_args(&[bt("INT32")], None, 7, &[CallArg::Literal(LiteralValue::NoneLiteral)]);
+        let r = check_rpc_args(
+            &[bt("INT32")],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::NoneLiteral)],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::DefiniteMismatch);
     }
 
@@ -519,7 +591,10 @@ mod tests {
             &[bt("STRING")],
             None,
             7,
-            &[CallArg::Variable { name: "s".into(), derived: Some(bt("STRING")) }],
+            &[CallArg::Variable {
+                name: "s".into(),
+                derived: Some(bt("STRING")),
+            }],
         );
         assert_eq!(r[0].verdict, ArgVerdict::Compatible);
         assert_eq!(r[0].actual, "变量 s:STRING");
@@ -528,7 +603,10 @@ mod tests {
             &[bt("INT32")],
             None,
             7,
-            &[CallArg::Variable { name: "s".into(), derived: Some(bt("STRING")) }],
+            &[CallArg::Variable {
+                name: "s".into(),
+                derived: Some(bt("STRING")),
+            }],
         );
         assert_eq!(r[0].verdict, ArgVerdict::DefiniteMismatch);
         // 推不出 = 未知,绝不硬判。
@@ -536,7 +614,10 @@ mod tests {
             &[bt("INT32")],
             None,
             7,
-            &[CallArg::Variable { name: "x".into(), derived: None }],
+            &[CallArg::Variable {
+                name: "x".into(),
+                derived: None,
+            }],
         );
         assert!(matches!(r[0].verdict, ArgVerdict::Unknown(_)));
     }
@@ -549,12 +630,20 @@ mod tests {
             &[bt("INT32")],
             None,
             7,
-            &[CallArg::Variable { name: "x".into(), derived: Some(u) }],
+            &[CallArg::Variable {
+                name: "x".into(),
+                derived: Some(u),
+            }],
         );
         assert!(matches!(r[0].verdict, ArgVerdict::Unknown(_)));
         // 联合声明:任一分支兼容即通过。
         let d = SemType::Union(vec![bt("FLOAT"), bt("STRING")]);
-        let r = check_rpc_args(&[d], None, 7, &[CallArg::Literal(LiteralValue::Str("a".into()))]);
+        let r = check_rpc_args(
+            &[d],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Str("a".into()))],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::Compatible);
     }
 
@@ -564,10 +653,14 @@ mod tests {
         let declared = vec![bt("INT32"), bt("STRING"), bt("FLOAT")];
         let r = check_rpc_args(&declared, Some(20), 9, &[CallArg::StarArgs]);
         assert_eq!(r.len(), 3);
-        assert!(r.iter().all(|x| matches!(x.verdict, ArgVerdict::Unknown(_))));
+        assert!(r
+            .iter()
+            .all(|x| matches!(x.verdict, ArgVerdict::Unknown(_))));
         // **kwargs 同。
         let r = check_rpc_args(&declared, None, 9, &[CallArg::KwArgs]);
-        assert!(r.iter().all(|x| matches!(x.verdict, ArgVerdict::Unknown(_))));
+        assert!(r
+            .iter()
+            .all(|x| matches!(x.verdict, ArgVerdict::Unknown(_))));
     }
 
     #[test]
@@ -576,7 +669,9 @@ mod tests {
             &[bt("INT32")],
             None,
             7,
-            &[CallArg::Opaque { reason: "调用结果".into() }],
+            &[CallArg::Opaque {
+                reason: "调用结果".into(),
+            }],
         );
         assert!(matches!(r[0].verdict, ArgVerdict::Unknown(_)));
     }
@@ -588,7 +683,10 @@ mod tests {
             &[bt("INT32")],
             Some(10),
             7,
-            &[CallArg::Literal(LiteralValue::Int(1)), CallArg::Literal(LiteralValue::Int(2))],
+            &[
+                CallArg::Literal(LiteralValue::Int(1)),
+                CallArg::Literal(LiteralValue::Int(2)),
+            ],
         );
         assert_eq!(r.len(), 2);
         assert_eq!(r[0].verdict, ArgVerdict::Compatible);
@@ -609,7 +707,12 @@ mod tests {
     #[test]
     fn python_type_accepts_anything() {
         // PYTHON:可 pickle 即接受(:1177)。
-        let r = check_rpc_args(&[bt("PYTHON")], None, 7, &[CallArg::Literal(LiteralValue::Dict)]);
+        let r = check_rpc_args(
+            &[bt("PYTHON")],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Dict)],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::Compatible);
     }
 
@@ -620,18 +723,36 @@ mod tests {
         let arr = SemType::Array(Box::new(bt("INT32")));
         let r = check_rpc_args(&[arr], None, 7, &[CallArg::Literal(LiteralValue::List)]);
         assert_eq!(r[0].verdict, ArgVerdict::Compatible);
-        let fd = SemType::FixedDict { name: Some("D".into()), fields: Vec::new() };
-        let r = check_rpc_args(std::slice::from_ref(&fd), None, 7, &[CallArg::Literal(LiteralValue::Dict)]);
+        let fd = SemType::FixedDict {
+            name: Some("D".into()),
+            fields: Vec::new(),
+        };
+        let r = check_rpc_args(
+            std::slice::from_ref(&fd),
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Dict)],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::Compatible);
         // list → FIXED_DICT 不符。
-        let r = check_rpc_args(std::slice::from_ref(&fd), None, 7, &[CallArg::Literal(LiteralValue::List)]);
+        let r = check_rpc_args(
+            std::slice::from_ref(&fd),
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::List)],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::DefiniteMismatch);
     }
 
     #[test]
     fn unknown_declaration_and_alias_recurse() {
         // 未知声明 → 保留未知,不判。
-        let r = check_rpc_args(&[SemType::Unknown("未注册类型".into())], None, 7, &[CallArg::Literal(LiteralValue::Int(1))]);
+        let r = check_rpc_args(
+            &[SemType::Unknown("未注册类型".into())],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Int(1))],
+        );
         assert!(matches!(r[0].verdict, ArgVerdict::Unknown(_)));
         // 别名穿透。
         let alias = SemType::Alias("HP".into(), Box::new(bt("INT32")));
@@ -647,14 +768,24 @@ mod tests {
             min: Some("1".into()),
             max: Some("100".into()),
         };
-        let r = check_rpc_args(&[ranged], None, 7, &[CallArg::Literal(LiteralValue::Int(150))]);
+        let r = check_rpc_args(
+            &[ranged],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Int(150))],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::DefiniteMismatch);
         let ranged_ok = SemType::Range {
             base: Box::new(bt("INT32")),
             min: Some("1".into()),
             max: Some("100".into()),
         };
-        let r = check_rpc_args(&[ranged_ok], None, 7, &[CallArg::Literal(LiteralValue::Int(50))]);
+        let r = check_rpc_args(
+            &[ranged_ok],
+            None,
+            7,
+            &[CallArg::Literal(LiteralValue::Int(50))],
+        );
         assert_eq!(r[0].verdict, ArgVerdict::Compatible);
     }
 
@@ -710,7 +841,10 @@ mod tests {
         assert!(
             matches!(arg_text_to_sem_type("", None), SemType::Unknown(ref r) if r.contains("empty-arg-text"))
         );
-        assert!(matches!(arg_text_to_sem_type("   ", None), SemType::Unknown(_)));
+        assert!(matches!(
+            arg_text_to_sem_type("   ", None),
+            SemType::Unknown(_)
+        ));
     }
 
     #[test]
@@ -762,7 +896,10 @@ mod tests {
         );
         match arg_text_to_sem_type("Pos", Some(&g)) {
             SemType::FixedDict { fields, .. } => {
-                assert_eq!(fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["x", "y"]);
+                assert_eq!(
+                    fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+                    ["x", "y"]
+                );
             }
             other => panic!("expected FixedDict, got {other:?}"),
         }
@@ -771,8 +908,16 @@ mod tests {
     #[test]
     fn bridge_user_type_via_graph_is_entity() {
         let mut g = kode_types::TypeGraph::new();
-        push_node(&mut g, kode_types::TypeNode::UserType { name: "Avatar".into() });
-        assert_eq!(arg_text_to_sem_type("Avatar", Some(&g)), SemType::Entity("Avatar".into()));
+        push_node(
+            &mut g,
+            kode_types::TypeNode::UserType {
+                name: "Avatar".into(),
+            },
+        );
+        assert_eq!(
+            arg_text_to_sem_type("Avatar", Some(&g)),
+            SemType::Entity("Avatar".into())
+        );
     }
 
     #[test]

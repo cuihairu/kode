@@ -66,18 +66,12 @@ pub enum BroadcastCheck {
     /// 名字不在 client 段:引擎取属性时回落普通属性臂
     /// (all_clients.cpp onScriptGetAttribute 尾),不构成广播调用;
     /// 是否报错归消费面(与 RPC-04 本地派发同纪律)。
-    NotBroadcastTarget {
-        component: Option<String>,
-    },
+    NotBroadcastTarget { component: Option<String> },
     /// 非 cellapp 进程语境:baseapp/client 进程实体无 allClients/otherClients
     /// 属性(运行时 AttributeError;组件路径转发宿主同错)。
-    UnavailableOnProcess {
-        caller_face: ScriptFace,
-    },
+    UnavailableOnProcess { caller_face: ScriptFace },
     /// 声明尚未就绪(实体快照缺/组件快照缺)——不判确定性缺失。
-    NotReady {
-        reason: String,
-    },
+    NotReady { reason: String },
 }
 
 /// 核查一次广播调用(`self.allClients[.<组件>].<方法>(...)` 形态)。
@@ -109,10 +103,7 @@ pub fn check_broadcast(
     let (snapshot, is_component) = match component {
         Some(name) => match component_snapshot {
             Some(snap) => (Some(snap), Some(name.to_string())),
-            None => (
-                None,
-                Some(name.to_string()),
-            ),
+            None => (None, Some(name.to_string())),
         },
         None => (owner_snapshot, None),
     };
@@ -209,8 +200,13 @@ mod tests {
             Some(&snap),
             None,
         );
-        assert!(matches!(check,
-            BroadcastCheck::Delivered { recipients: RecipientSet::WitnessesOnly, .. }));
+        assert!(matches!(
+            check,
+            BroadcastCheck::Delivered {
+                recipients: RecipientSet::WitnessesOnly,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -227,8 +223,22 @@ mod tests {
             }
         }
         // 且 allClients 与 otherClients 互不相同。
-        let a = check_broadcast(ScriptFace::Cell, BroadcastAttr::AllClients, None, "hit", Some(&snap), None);
-        let b = check_broadcast(ScriptFace::Cell, BroadcastAttr::OtherClients, None, "hit", Some(&snap), None);
+        let a = check_broadcast(
+            ScriptFace::Cell,
+            BroadcastAttr::AllClients,
+            None,
+            "hit",
+            Some(&snap),
+            None,
+        );
+        let b = check_broadcast(
+            ScriptFace::Cell,
+            BroadcastAttr::OtherClients,
+            None,
+            "hit",
+            Some(&snap),
+            None,
+        );
         assert_ne!(a, b);
     }
 
@@ -258,8 +268,12 @@ mod tests {
             None,
             None,
         );
-        assert!(matches!(check,
-            BroadcastCheck::UnavailableOnProcess { caller_face: ScriptFace::Client }));
+        assert!(matches!(
+            check,
+            BroadcastCheck::UnavailableOnProcess {
+                caller_face: ScriptFace::Client
+            }
+        ));
     }
 
     #[test]
@@ -404,7 +418,11 @@ mod tests {
             None,
             Some(&comp),
         );
-        assert!(matches!(check,
-            BroadcastCheck::UnavailableOnProcess { caller_face: ScriptFace::Base }));
+        assert!(matches!(
+            check,
+            BroadcastCheck::UnavailableOnProcess {
+                caller_face: ScriptFace::Base
+            }
+        ));
     }
 }

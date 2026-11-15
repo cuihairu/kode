@@ -132,7 +132,11 @@ fn hover_markdown(state: &mut ServerState, id: i64, entities_uri: &str) -> Strin
         .to_string()
 }
 
-fn completion_labels(state: &mut ServerState, id: i64, entities_uri: &str) -> Vec<(String, Option<String>)> {
+fn completion_labels(
+    state: &mut ServerState,
+    id: i64,
+    entities_uri: &str,
+) -> Vec<(String, Option<String>)> {
     // 开标签位:第 2 行光标停在 `<` 之后(行前缀 `  <` → Entities 开标签上下文)。
     let out = handle_message(
         state,
@@ -145,7 +149,10 @@ fn completion_labels(state: &mut ServerState, id: i64, entities_uri: &str) -> Ve
             }),
         ),
     );
-    let items = response_of(&out)["items"].as_array().expect("items").clone();
+    let items = response_of(&out)["items"]
+        .as_array()
+        .expect("items")
+        .clone();
     items
         .into_iter()
         .map(|item| {
@@ -259,7 +266,11 @@ fn kbug_root_02_unattributed_documents_are_isolated() {
     handle_message(&mut state, initialize_message(1));
     // 根外文档(无注册根覆盖)与根 A 同名实体互不借用。
     open_def(&mut state, DEF_A, AVATAR_DEF_A);
-    open_def(&mut state, "file:///tmp/standalone/Avatar.def", AVATAR_DEF_B);
+    open_def(
+        &mut state,
+        "file:///tmp/standalone/Avatar.def",
+        AVATAR_DEF_B,
+    );
     open_entities(&mut state, "file:///tmp/standalone/entities.xml");
 
     let result = definition_request(&mut state, 2, "file:///tmp/standalone/entities.xml");

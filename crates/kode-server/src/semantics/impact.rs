@@ -43,7 +43,9 @@ impl RpcChange {
     /// 目标方法名(两态共用)。
     pub fn method(&self) -> &str {
         match self {
-            RpcChange::MethodChanged { method, .. } | RpcChange::ArgChanged { method, .. } => method,
+            RpcChange::MethodChanged { method, .. } | RpcChange::ArgChanged { method, .. } => {
+                method
+            }
         }
     }
 
@@ -180,7 +182,11 @@ enum SiteVerdict {
 }
 
 /// 构建影响报告(分诊 + 覆盖声明)。
-pub fn impact_query(change: RpcChange, sites: &[RpcUsageSite], coverage: IndexCoverage) -> ImpactReport {
+pub fn impact_query(
+    change: RpcChange,
+    sites: &[RpcUsageSite],
+    coverage: IndexCoverage,
+) -> ImpactReport {
     let mut definite = Vec::new();
     let mut uncertain = Vec::new();
     for site in sites {
@@ -308,7 +314,11 @@ mod tests {
         let mut spread = site(Some("attack"), Some("Avatar"), true);
         spread.has_dynamic_args = true;
         let plain = site(Some("attack"), Some("Avatar"), true);
-        let report = impact_query(arg_change, &[spread, plain.clone()], IndexCoverage::Complete);
+        let report = impact_query(
+            arg_change,
+            &[spread, plain.clone()],
+            IndexCoverage::Complete,
+        );
         assert_eq!(report.definite.len(), 1);
         assert_eq!(report.uncertain.len(), 1);
         assert!(report.definite[0].file == plain.file && !report.definite[0].has_dynamic_args);
@@ -369,11 +379,11 @@ mod tests {
     #[test]
     fn mixed_sites_partition_into_three_buckets() {
         let sites = vec![
-            site(Some("attack"), Some("Avatar"), true),    // 确定
-            site(None, Some("Avatar"), true),              // 动态名 → 候选
-            site(Some("attack"), Some("Avatar"), false),   // 未解析 → 候选
-            site(Some("heal"), Some("Avatar"), true),      // 异名 → 不受影响
-            site(Some("attack"), Some("Monster"), true),   // 别类 → 不受影响
+            site(Some("attack"), Some("Avatar"), true),  // 确定
+            site(None, Some("Avatar"), true),            // 动态名 → 候选
+            site(Some("attack"), Some("Avatar"), false), // 未解析 → 候选
+            site(Some("heal"), Some("Avatar"), true),    // 异名 → 不受影响
+            site(Some("attack"), Some("Monster"), true), // 别类 → 不受影响
         ];
         let report = impact_query(change(), &sites, IndexCoverage::Complete);
         assert_eq!(report.definite.len(), 1);

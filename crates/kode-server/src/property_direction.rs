@@ -21,7 +21,10 @@ use serde_json::{json, Value};
 use crate::rpc::RpcRegistry;
 
 pub fn register(reg: &mut RpcRegistry) {
-    reg.register("$/kode/lint/analyzePropertyDirection", analyze_property_direction);
+    reg.register(
+        "$/kode/lint/analyzePropertyDirection",
+        analyze_property_direction,
+    );
 }
 
 #[derive(Deserialize, Default)]
@@ -194,10 +197,7 @@ fn scan_self_accesses(text: &str) -> Vec<AccessItem> {
                         }
                         // (?:\.\w+)*:每段 '.' 后必须紧跟词元
                         let mut end = j;
-                        while end + 1 < line.len()
-                            && line[end] == 0x2E
-                            && is_word(line[end + 1])
-                        {
+                        while end + 1 < line.len() && line[end] == 0x2E && is_word(line[end + 1]) {
                             end += 1;
                             while end < line.len() && is_word(line[end]) {
                                 end += 1;
@@ -249,7 +249,9 @@ fn cell_data_key_after(text: &[u16]) -> Option<String> {
                             m += 1;
                         }
                         if m > key_start && text.get(m) == Some(&q) {
-                            return Some(String::from_utf16(&text[key_start..m]).unwrap_or_default());
+                            return Some(
+                                String::from_utf16(&text[key_start..m]).unwrap_or_default(),
+                            );
                         }
                     }
                 }
@@ -271,7 +273,9 @@ fn cell_data_key_after(text: &[u16]) -> Option<String> {
                                 n += 1;
                             }
                             if n > key_start && text.get(n) == Some(&q) {
-                                return Some(String::from_utf16(&text[key_start..n]).unwrap_or_default());
+                                return Some(
+                                    String::from_utf16(&text[key_start..n]).unwrap_or_default(),
+                                );
                             }
                         }
                     }
@@ -603,8 +607,8 @@ mod tests {
         assert_ne!(stripped[0].last(), Some(&0x0D)); // \r\n 对剥
         assert_eq!(raw[1].last(), Some(&0x0D));
         assert_eq!(stripped[1].last(), Some(&0x0D)); // 末行不剥
-        // 无收口引号 + 尾 \r:键类 [^"')]+ 吞 \r 但回引收口失败,与 TS 回溯
-        // 同判(空面)
+                                                     // 无收口引号 + 尾 \r:键类 [^"')]+ 吞 \r 但回引收口失败,与 TS 回溯
+                                                     // 同判(空面)
         assert!(scan_cell_data_accesses("self.cellData.get(\"hp\r").is_empty());
         // 有收口引号:匹配止于引号,尾 \r 在匹配外(两侧同有键 hp)
         let items = scan_cell_data_accesses("self.cellData.get(\"hp\"\r");
@@ -653,7 +657,10 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].key, "hp");
         // 无闭 ) 的形态也命中(TS 形式二无闭括号要求)
-        assert_eq!(scan_cell_data_accesses("v = self.cellData.get('hp'\n").len(), 1);
+        assert_eq!(
+            scan_cell_data_accesses("v = self.cellData.get('hp'\n").len(),
+            1
+        );
         // 形式一无闭 ] 不命中(形式一须闭 ])
         assert!(scan_cell_data_accesses("v = self.cellData[\"hp\"\n").is_empty());
     }

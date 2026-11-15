@@ -802,7 +802,10 @@ fn verify_undercount_surfaces_post_commit_drift_and_records_run() {
             &local_target(),
             &mut db,
             &mut store2,
-            &ApplyControl { allow_duplicate: true, ..ApplyControl::default() },
+            &ApplyControl {
+                allow_duplicate: true,
+                ..ApplyControl::default()
+            },
         )
         .unwrap_err();
     assert!(

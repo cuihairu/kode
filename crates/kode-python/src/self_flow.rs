@@ -72,8 +72,6 @@ pub(crate) fn is_word(code: u16) -> bool {
     is_name_start(code) || (0x30..=0x39).contains(&code)
 }
 
-
-
 // ---- pythonCodeLines 掩码(pythonParser.ts:26-51 逐字移植) -----------------
 
 /// `content.split(/\r?\n/)`(尾随 `\r` 剥离)。attributeNone 诊断面复用:
@@ -408,7 +406,10 @@ pub(crate) enum CalleeShape {
     /// self.m(...) —— 所在类限定
     SelfMethod(String),
     /// <expr>.m(...) —— 接收者推导出唯一同类名时取该方法注解
-    Chained { receiver: Box<RhsShape>, method: String },
+    Chained {
+        receiver: Box<RhsShape>,
+        method: String,
+    },
 }
 
 /// RHS 形态快照(owned;AST 在解析派生后即弃,只留可推导面)。
@@ -485,7 +486,10 @@ pub(crate) struct FnDomain {
 /// 并集;Loop 保守(0 次 + ≥1 次并集);Return/Raise/Break/Continue = 终止。
 #[derive(Debug, Clone)]
 pub(crate) enum FlowStmt {
-    Simple { start: Pos, end: Pos },
+    Simple {
+        start: Pos,
+        end: Pos,
+    },
     Branch {
         start: Pos,
         end: Pos,
@@ -510,7 +514,10 @@ pub(crate) enum FlowStmt {
         end: Pos,
         blocks: Vec<(Vec<FlowStmt>, (Pos, Pos))>,
     },
-    Terminator { pos: Pos, end: Pos },
+    Terminator {
+        pos: Pos,
+        end: Pos,
+    },
 }
 
 impl FlowStmt {
@@ -572,14 +579,22 @@ fn tree_span(stmts: &[FlowStmt]) -> (Pos, Pos) {
             (fs, le)
         }
         _ => (
-            Pos { line: usize::MAX, col: usize::MAX },
-            Pos { line: usize::MAX, col: usize::MAX },
+            Pos {
+                line: usize::MAX,
+                col: usize::MAX,
+            },
+            Pos {
+                line: usize::MAX,
+                col: usize::MAX,
+            },
         ),
     }
 }
 
 fn span_has_write(writes: &[&BareWrite], span: (Pos, Pos)) -> bool {
-    writes.iter().any(|w| w.pos() >= span.0 && w.pos() <= span.1)
+    writes
+        .iter()
+        .any(|w| w.pos() >= span.0 && w.pos() <= span.1)
 }
 
 /// 静态可证测试真值:仅字面量折叠(布尔/None/数值/字符串/bytes + 一元 not;
@@ -595,9 +610,7 @@ fn constant_bool(expr: &ast::Expr) -> Option<bool> {
         },
         ast::Expr::StringLiteral(s) => Some(!s.value.is_empty()),
         ast::Expr::BytesLiteral(b) => Some(!b.value.is_empty()),
-        ast::Expr::UnaryOp(u) if u.op == ast::UnaryOp::Not => {
-            constant_bool(&u.operand).map(|b| !b)
-        }
+        ast::Expr::UnaryOp(u) if u.op == ast::UnaryOp::Not => constant_bool(&u.operand).map(|b| !b),
         _ => None,
     }
 }
@@ -677,7 +690,9 @@ fn build_flow_tree(ast: &ParsedAst, body: &[ast::Stmt]) -> Vec<FlowStmt> {
                 out.push(FlowStmt::Simple { start, end: start });
                 out.extend(build_flow_tree(ast, &s.body));
             }
-            ast::Stmt::Return(_) | ast::Stmt::Raise(_) | ast::Stmt::Break(_)
+            ast::Stmt::Return(_)
+            | ast::Stmt::Raise(_)
+            | ast::Stmt::Break(_)
             | ast::Stmt::Continue(_) => {
                 // 终止语句整句为域(悬 return x 的表达式位仍在句内,不误判
                 // 「终止后不可达」;句尾之后的位才是不可达)
@@ -702,8 +717,7 @@ fn build_if_chain(
     let then_span = tree_span(&then_body);
     let (else_body, else_span, end) = match clauses.split_first() {
         None => {
-            let end =
-                stmt_end_pos(ast, body.last().map(|s| s.range()).unwrap_or(test.range()));
+            let end = stmt_end_pos(ast, body.last().map(|s| s.range()).unwrap_or(test.range()));
             (None, None, end)
         }
         Some((first, rest)) => match &first.test {
@@ -752,14 +766,22 @@ fn eval_block(
                 FlowStmt::Simple { .. } => {
                     // 整句已执行完:句内全部写点生效(执行序后写胜;无 RHS
                     // 边界问题——query 已越过整句)
-                    if let Some(w) =
-                        writes.iter().rev().find(|w| w.pos() >= start && w.pos() <= end)
+                    if let Some(w) = writes
+                        .iter()
+                        .rev()
+                        .find(|w| w.pos() >= start && w.pos() <= end)
                     {
                         cur = FlowVal::One(w.pos());
                     }
                 }
                 FlowStmt::Terminator { .. } => {
-                    return (None, BlockExit { val: cur, terminated: true });
+                    return (
+                        None,
+                        BlockExit {
+                            val: cur,
+                            terminated: true,
+                        },
+                    );
                 }
                 FlowStmt::Branch {
                     test_const,
@@ -773,8 +795,7 @@ fn eval_block(
                     let mut live: Vec<FlowVal> = Vec::new();
                     let mut any_live = false;
                     if *test_const != Some(false) {
-                        let (_, e) =
-                            eval_block(then_body, writes, cur.clone(), END_OF_FILE);
+                        let (_, e) = eval_block(then_body, writes, cur.clone(), END_OF_FILE);
                         if !e.terminated {
                             live.push(e.val);
                             any_live = true;
@@ -782,8 +803,7 @@ fn eval_block(
                     }
                     match else_body {
                         Some(eb) if *test_const != Some(true) => {
-                            let (_, e) =
-                                eval_block(eb, writes, cur.clone(), END_OF_FILE);
+                            let (_, e) = eval_block(eb, writes, cur.clone(), END_OF_FILE);
                             if !e.terminated {
                                 live.push(e.val);
                                 any_live = true;
@@ -796,7 +816,13 @@ fn eval_block(
                         _ => {}
                     }
                     if !any_live {
-                        return (None, BlockExit { val: cur, terminated: true });
+                        return (
+                            None,
+                            BlockExit {
+                                val: cur,
+                                terminated: true,
+                            },
+                        );
                     }
                     cur = fold_vals(live);
                 }
@@ -836,11 +862,17 @@ fn eval_block(
                 }) {
                     cur = FlowVal::One(w.pos());
                 }
-                let exit = BlockExit { val: cur.clone(), terminated: false };
+                let exit = BlockExit {
+                    val: cur.clone(),
+                    terminated: false,
+                };
                 return (Some(cur), exit);
             }
             FlowStmt::Terminator { .. } => {
-                let exit = BlockExit { val: cur.clone(), terminated: true };
+                let exit = BlockExit {
+                    val: cur.clone(),
+                    terminated: true,
+                };
                 return (Some(cur), exit);
             }
             FlowStmt::Branch {
@@ -856,7 +888,10 @@ fn eval_block(
                         // 静态死分支内查询 = 不可达,诚实未绑定
                         return (
                             Some(FlowVal::Unbound),
-                            BlockExit { val: cur, terminated: true },
+                            BlockExit {
+                                val: cur,
+                                terminated: true,
+                            },
                         );
                     }
                     return eval_block(then_body, writes, cur, query);
@@ -866,17 +901,25 @@ fn eval_block(
                         if *test_const == Some(true) {
                             return (
                                 Some(FlowVal::Unbound),
-                                BlockExit { val: cur, terminated: true },
+                                BlockExit {
+                                    val: cur,
+                                    terminated: true,
+                                },
                             );
                         }
                         return eval_block(eb, writes, cur, query);
                     }
                 }
                 // 头行/行间隙:语句起点值
-                let exit = BlockExit { val: cur.clone(), terminated: false };
+                let exit = BlockExit {
+                    val: cur.clone(),
+                    terminated: false,
+                };
                 return (Some(cur), exit);
             }
-            FlowStmt::Loop { body, body_span, .. } => {
+            FlowStmt::Loop {
+                body, body_span, ..
+            } => {
                 if query >= body_span.0 && query <= body_span.1 {
                     let (qv, _) = eval_block(body, writes, cur.clone(), query);
                     let qv = qv.unwrap_or_else(|| cur.clone());
@@ -891,13 +934,22 @@ fn eval_block(
                         );
                         return (
                             Some(fold_vals(vals)),
-                            BlockExit { val: cur, terminated: false },
+                            BlockExit {
+                                val: cur,
+                                terminated: false,
+                            },
                         );
                     }
-                    let exit = BlockExit { val: cur.clone(), terminated: false };
+                    let exit = BlockExit {
+                        val: cur.clone(),
+                        terminated: false,
+                    };
                     return (Some(qv), exit);
                 }
-                let exit = BlockExit { val: cur.clone(), terminated: false };
+                let exit = BlockExit {
+                    val: cur.clone(),
+                    terminated: false,
+                };
                 return (Some(cur), exit);
             }
             FlowStmt::Join { blocks, .. } => {
@@ -906,21 +958,36 @@ fn eval_block(
                         let (qv, _) = eval_block(blk, writes, cur.clone(), query);
                         let qv = qv.unwrap_or_else(|| cur.clone());
                         // 异常/匹配路径保守:入口值并存
-                        let exit = BlockExit { val: cur.clone(), terminated: false };
+                        let exit = BlockExit {
+                            val: cur.clone(),
+                            terminated: false,
+                        };
                         return (Some(fold_vals(vec![qv, cur])), exit);
                     }
                 }
-                let exit = BlockExit { val: cur.clone(), terminated: false };
+                let exit = BlockExit {
+                    val: cur.clone(),
+                    terminated: false,
+                };
                 return (Some(cur), exit);
             }
         }
     }
-    (None, BlockExit { val: cur, terminated: false })
+    (
+        None,
+        BlockExit {
+            val: cur,
+            terminated: false,
+        },
+    )
 }
 
 /// 「整块执行到出口」哨兵位(usize::MAX 行;任何真实写点位/span 都先于它,
 /// eval_block 只做大小比较,不触文件真实末行)。
-static END_OF_FILE: Pos = Pos { line: usize::MAX, col: 0 };
+static END_OF_FILE: Pos = Pos {
+    line: usize::MAX,
+    col: 0,
+};
 
 /// 域流树查询:hover 位该名的流敏感可达写点值(终止后查询 = 不可达,诚实
 /// 未绑定;位间隙 = 前语句出口值)。
@@ -1046,12 +1113,7 @@ fn record_walrus_locals(
 
 /// KBUG-SCOPE:直接赋值 lambda 的词法域登记(header=赋值行 = 写点归属键;
 /// 体域 = lambda 表达式行域;无 global/nonlocal 面)。
-fn record_lambda_domain(
-    ast: &ParsedAst,
-    l: &ast::ExprLambda,
-    line: usize,
-    ctx: &mut BuildContext,
-) {
+fn record_lambda_domain(ast: &ParsedAst, l: &ast::ExprLambda, line: usize, ctx: &mut BuildContext) {
     let start_line = ast.line_col(l.range.start().to_u32()).0;
     let end_line = last_char_line(ast, l.range);
     ctx.fn_domains.push(FnDomain {
@@ -1072,10 +1134,7 @@ fn record_lambda_domain(
 /// 参数名全量(位置/仅位置/仅关键字/vararg/kwarg;注解与默认值无关——
 /// 参数位一律本域绑定)。
 fn param_names(parameters: &ast::Parameters) -> Vec<String> {
-    parameters
-        .iter()
-        .map(|p| p.name().id.to_string())
-        .collect()
+    parameters.iter().map(|p| p.name().id.to_string()).collect()
 }
 
 /// 函数/类体 `global`/`nonlocal` 声明名(控制块内声明仍归属直接宿主域;
@@ -1135,9 +1194,7 @@ fn collect_declared_def_names(body: &[ast::Stmt], out: &mut Vec<String>) {
 fn collect_declared(body: &[ast::Stmt], global: bool, nonlocal: bool, out: &mut Vec<String>) {
     for stmt in body {
         match stmt {
-            ast::Stmt::Global(s) if global => {
-                out.extend(s.names.iter().map(|n| n.id.to_string()))
-            }
+            ast::Stmt::Global(s) if global => out.extend(s.names.iter().map(|n| n.id.to_string())),
             ast::Stmt::Nonlocal(s) if nonlocal => {
                 out.extend(s.names.iter().map(|n| n.id.to_string()))
             }
@@ -1434,14 +1491,7 @@ fn walk_assignments(
                     }
                     match direct {
                         ast::Stmt::Assign(a) => {
-                            index_assign(
-                                ast,
-                                a,
-                                Some(cls_line),
-                                ctx,
-                                Some(cls_line),
-                                None,
-                            );
+                            index_assign(ast, a, Some(cls_line), ctx, Some(cls_line), None);
                         }
                         ast::Stmt::AnnAssign(a) => {
                             index_ann_assign(ast, a, Some(cls_line), ctx, Some(cls_line), None);
@@ -1479,32 +1529,88 @@ fn walk_assignments(
                 // KBUG-CFGFLOW:本域直系语句流树(写点流敏感裁定素材)
                 ctx.fn_trees
                     .insert(fun_line, build_flow_tree(ast, &fun.body));
-                walk_assignments(ast, &fun.body, Some(start_line), ctx, class_start, Some(fun_line));
+                walk_assignments(
+                    ast,
+                    &fun.body,
+                    Some(start_line),
+                    ctx,
+                    class_start,
+                    Some(fun_line),
+                );
             }
             ast::Stmt::If(s) => {
-                walk_assignments(ast, &s.body, Some(start_line), ctx, class_start, method_start);
+                walk_assignments(
+                    ast,
+                    &s.body,
+                    Some(start_line),
+                    ctx,
+                    class_start,
+                    method_start,
+                );
                 for clause in &s.elif_else_clauses {
                     let clause_line = stmt_start_line(ast, clause.range);
-                    walk_assignments(ast, &clause.body, Some(clause_line), ctx, class_start, method_start);
+                    walk_assignments(
+                        ast,
+                        &clause.body,
+                        Some(clause_line),
+                        ctx,
+                        class_start,
+                        method_start,
+                    );
                 }
             }
             ast::Stmt::For(s) => {
-                walk_assignments(ast, &s.body, Some(start_line), ctx, class_start, method_start);
+                walk_assignments(
+                    ast,
+                    &s.body,
+                    Some(start_line),
+                    ctx,
+                    class_start,
+                    method_start,
+                );
                 walk_assignments(ast, &s.orelse, None, ctx, class_start, method_start);
             }
             ast::Stmt::While(s) => {
-                walk_assignments(ast, &s.body, Some(start_line), ctx, class_start, method_start);
+                walk_assignments(
+                    ast,
+                    &s.body,
+                    Some(start_line),
+                    ctx,
+                    class_start,
+                    method_start,
+                );
                 walk_assignments(ast, &s.orelse, None, ctx, class_start, method_start);
             }
             ast::Stmt::With(s) => {
-                walk_assignments(ast, &s.body, Some(start_line), ctx, class_start, method_start);
+                walk_assignments(
+                    ast,
+                    &s.body,
+                    Some(start_line),
+                    ctx,
+                    class_start,
+                    method_start,
+                );
             }
             ast::Stmt::Try(s) => {
-                walk_assignments(ast, &s.body, Some(start_line), ctx, class_start, method_start);
+                walk_assignments(
+                    ast,
+                    &s.body,
+                    Some(start_line),
+                    ctx,
+                    class_start,
+                    method_start,
+                );
                 for h in &s.handlers {
                     let ast::ExceptHandler::ExceptHandler(inner) = h;
                     let handler_line = stmt_start_line(ast, inner.range);
-                    walk_assignments(ast, &inner.body, Some(handler_line), ctx, class_start, method_start);
+                    walk_assignments(
+                        ast,
+                        &inner.body,
+                        Some(handler_line),
+                        ctx,
+                        class_start,
+                        method_start,
+                    );
                 }
                 walk_assignments(ast, &s.orelse, None, ctx, class_start, method_start);
                 walk_assignments(ast, &s.finalbody, None, ctx, class_start, method_start);
@@ -1512,7 +1618,14 @@ fn walk_assignments(
             ast::Stmt::Match(s) => {
                 for case in &s.cases {
                     let case_line = stmt_start_line(ast, case.range);
-                    walk_assignments(ast, &case.body, Some(case_line), ctx, class_start, method_start);
+                    walk_assignments(
+                        ast,
+                        &case.body,
+                        Some(case_line),
+                        ctx,
+                        class_start,
+                        method_start,
+                    );
                 }
             }
             _ => {}
@@ -1835,18 +1948,16 @@ impl ResolveState<'_> {
             {
                 continue; // global/nonlocal:名属模块/外层名空间,声明表可用
             }
-            if domain.params.iter().any(|n| n == name)
-                || domain.def_names.iter().any(|n| n == name)
+            if domain.params.iter().any(|n| n == name) || domain.def_names.iter().any(|n| n == name)
             {
                 return Bound(None); // 参数/局部 def 调用目标不定 → 声明表不可用
             }
             // 域内写点绑定(读前于写 = 调用位置在前,声明表可用)
-            let writes = self
-                .bare_writes
-                .get(name)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
-            if writes.iter().any(|w| w.method_start == Some(domain.header_line)) {
+            let writes = self.bare_writes.get(name).map(Vec::as_slice).unwrap_or(&[]);
+            if writes
+                .iter()
+                .any(|w| w.method_start == Some(domain.header_line))
+            {
                 // 绑定值 = 域内最近先行写点(别名链:Local 形态收值;调用/属性
                 // 形态不按声明表猜,收 None)
                 return match writes
@@ -1872,21 +1983,19 @@ impl ResolveState<'_> {
             .filter(|c| c.start_line <= flow_line && flow_line < c.end_line)
             .max_by_key(|c| c.start_line);
         if let Some(cls) = class_direct {
-            let writes = self
-                .bare_writes
-                .get(name)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
-            let in_class = |w: &BareWrite| {
-                w.method_start.is_none() && w.class_start == Some(cls.start_line)
-            };
+            let writes = self.bare_writes.get(name).map(Vec::as_slice).unwrap_or(&[]);
+            let in_class =
+                |w: &BareWrite| w.method_start.is_none() && w.class_start == Some(cls.start_line);
             let bound = writes.iter().any(in_class)
-                || self
-                    .fn_domains
-                    .iter()
-                    .any(|d| d.header_line == cls.start_line && d.def_names.iter().any(|n| n == name));
+                || self.fn_domains.iter().any(|d| {
+                    d.header_line == cls.start_line && d.def_names.iter().any(|n| n == name)
+                });
             if bound {
-                return match writes.iter().rev().find(|w| in_class(w) && w.line < flow_line) {
+                return match writes
+                    .iter()
+                    .rev()
+                    .find(|w| in_class(w) && w.line < flow_line)
+                {
                     Some(w) => match &w.shape {
                         RhsShape::Local(alias) => Bound(self.local_atom(alias, w.line)),
                         _ => Bound(None),
@@ -1898,14 +2007,14 @@ impl ResolveState<'_> {
         }
         // 模块域(KBUG-BIND-03:模块层重绑定 A=B / A=unknown 一样遮蔽
         // 声明表;绑定在调用位置之后 = 前向引用,声明表照常)
-        let writes = self
-            .bare_writes
-            .get(name)
-            .map(Vec::as_slice)
-            .unwrap_or(&[]);
+        let writes = self.bare_writes.get(name).map(Vec::as_slice).unwrap_or(&[]);
         let in_module = |w: &BareWrite| w.method_start.is_none() && w.class_start.is_none();
         if writes.iter().any(in_module) {
-            return match writes.iter().rev().find(|w| in_module(w) && w.line < flow_line) {
+            return match writes
+                .iter()
+                .rev()
+                .find(|w| in_module(w) && w.line < flow_line)
+            {
                 Some(w) => match &w.shape {
                     RhsShape::Local(alias) => Bound(self.local_atom(alias, w.line)),
                     _ => Bound(None),
@@ -1978,15 +2087,12 @@ pub(crate) fn resolve_shape(
             // 方法域内最近写点(类体直系 method_start=None 无局部链——模块层
             // 回退仍可解,见下)
             let method_found = method_start.and_then(|ms| {
-                state
-                    .locals
-                    .get(&(ms, name.clone()))
-                    .and_then(|v| {
-                        v.iter()
-                            .rev()
-                            .find(|(l, _)| *l < flow_line)
-                            .map(|(l, s)| (*l, s))
-                    })
+                state.locals.get(&(ms, name.clone())).and_then(|v| {
+                    v.iter()
+                        .rev()
+                        .find(|(l, _)| *l < flow_line)
+                        .map(|(l, s)| (*l, s))
+                })
             });
             let found = method_found.or_else(|| {
                 // 模块层写点回退(批 D):模块域裸名对方法体/类体可见(Python
@@ -2003,15 +2109,9 @@ pub(crate) fn resolve_shape(
                 })
             });
             match found {
-                Some((l, s)) => resolve_shape(
-                    state,
-                    s,
-                    l,
-                    class_start,
-                    method_start,
-                    depth + 1,
-                    visited,
-                ),
+                Some((l, s)) => {
+                    resolve_shape(state, s, l, class_start, method_start, depth + 1, visited)
+                }
                 None => TypeSet::new(),
             }
         }
@@ -2241,7 +2341,11 @@ fn union_types(sets: &[&TypeSet]) -> TypeSet {
 }
 
 fn without_none(types: &TypeSet) -> TypeSet {
-    types.iter().filter(|t| t.as_str() != "None").cloned().collect()
+    types
+        .iter()
+        .filter(|t| t.as_str() != "None")
+        .cloned()
+        .collect()
 }
 
 /// 排序 + ` | ` 联接(BTreeSet 迭代即升序;空集 → None)
@@ -2253,8 +2357,6 @@ fn format_types(types: &TypeSet) -> Option<String> {
 }
 
 // ---- 行形态扫描器(正则手工展开,左优先 + 回溯语义) -------------------------
-
-
 
 /// `^\s*if\s+self\.ESC\s+is\s+None\s*:`
 fn none_guard(line: &[u16], attr: &[u16]) -> bool {
@@ -2416,14 +2518,11 @@ fn terminal_line(line: &[u16]) -> bool {
     false
 }
 
-
-
 fn atom(name: &str) -> TypeSet {
     let mut set = TypeSet::new();
     set.insert(name.to_string());
     set
 }
-
 
 // ---- 方法域定位与流走查器 ---------------------------------------------------
 
@@ -2445,8 +2544,7 @@ fn enclosing_method(classes: &[ClassSpan], line: usize) -> Option<(MethodSpan, u
             let better = match &best {
                 None => true,
                 Some((current, _)) => {
-                    domain.end_line - domain.start_line
-                        < current.end_line - current.start_line
+                    domain.end_line - domain.start_line < current.end_line - current.start_line
                 }
             };
             if better {
@@ -2671,11 +2769,7 @@ fn block_body_indent(lines: &[Vec<u16>], start_line: usize, end_line: usize) -> 
             return indent_of(text);
         }
     }
-    lines
-        .get(start_line)
-        .map(|l| indent_of(l))
-        .unwrap_or(0)
-        + 1
+    lines.get(start_line).map(|l| indent_of(l)).unwrap_or(0) + 1
 }
 
 /// 收敛基类:类级声明(注解 `X: T` T 优先 + 赋值 `X = ...` 推导)∪ __init__
@@ -2723,8 +2817,6 @@ fn converged_baseline(
     }
     baseline
 }
-
-
 
 /// 查询位自管属性流敏感类型(纯函数;与 TS inferSelfAttributeFlow 等值)。
 /// None 当:attr 空 / 查询行越界。
@@ -2798,9 +2890,7 @@ mod tests {
     use super::*;
 
     fn lines_of(body: &[&str]) -> Vec<Vec<u16>> {
-        body.iter()
-            .map(|l| l.encode_utf16().collect())
-            .collect()
+        body.iter().map(|l| l.encode_utf16().collect()).collect()
     }
 
     fn attr_u16(name: &str) -> Vec<u16> {
@@ -3367,8 +3457,9 @@ mod tests {
         let b = infer_self_attribute_flow(&lines, 5, &attr_u16("X"), Some(key)).unwrap();
         assert_eq!(a.annotation, b.annotation);
         // 异键/无键照常
-        assert!(infer_self_attribute_flow(&lines, 5, &attr_u16("X"), Some("file:///a.py|10"))
-            .is_some());
+        assert!(
+            infer_self_attribute_flow(&lines, 5, &attr_u16("X"), Some("file:///a.py|10")).is_some()
+        );
         assert!(infer_self_attribute_flow(&lines, 5, &attr_u16("X"), None).is_some());
     }
 
@@ -4040,6 +4131,4 @@ mod tests {
         assert_eq!(flow(&body, 3, "s").types, vec!["str"]);
         assert_eq!(flow(&body, 3, "x").types, Vec::<String>::new());
     }
-
-
 }

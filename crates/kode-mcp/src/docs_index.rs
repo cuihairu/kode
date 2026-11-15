@@ -225,7 +225,11 @@ mod tests {
         let out = search_docs(&root, &[], "登录", 20).expect("answer");
         assert_eq!(out["count"], 1);
         let m = &out["matches"][0];
-        assert!(m["file"].as_str().unwrap().replace('\\', "/").ends_with("docs/design.md"));
+        assert!(m["file"]
+            .as_str()
+            .unwrap()
+            .replace('\\', "/")
+            .ends_with("docs/design.md"));
         assert_eq!(m["title"], "设计文档");
         assert!(m["headings"].as_array().unwrap().len() >= 2);
         assert!(m["snippet"].as_str().unwrap().contains("登录流程"));

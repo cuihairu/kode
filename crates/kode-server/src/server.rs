@@ -245,11 +245,20 @@ fn handle_request(
                 health_report(state),
             ))]
         }
-        "$/kode/wait" => vec![Outgoing::Response(handle_wait(state, request, poll, cancelled_early))],
+        "$/kode/wait" => vec![Outgoing::Response(handle_wait(
+            state,
+            request,
+            poll,
+            cancelled_early,
+        ))],
         "$/kode/rpc" => vec![Outgoing::Response(handle_rpc(state, request))],
         "textDocument/hover" => vec![Outgoing::Response(handle_hover(state, request))],
         "textDocument/completion" => {
-            vec![Outgoing::Response(handle_completion(state, request, cancelled_early))]
+            vec![Outgoing::Response(handle_completion(
+                state,
+                request,
+                cancelled_early,
+            ))]
         }
         "textDocument/definition" => vec![Outgoing::Response(handle_definition(state, request))],
         "textDocument/diagnostic" => vec![Outgoing::Response(handle_diagnostic(state, request))],
@@ -451,7 +460,10 @@ fn handle_hover(state: &mut ServerState, request: Request) -> Response {
     };
     let text = buffer.text().to_string();
     if let Some(hover) = crate::python_process::hover(
-        key.uri.as_path(), &text, params.position.line, params.position.character,
+        key.uri.as_path(),
+        &text,
+        params.position.line,
+        params.position.character,
     ) {
         return Response::success(request.id, hover);
     }
@@ -736,7 +748,11 @@ fn read_core_resources() -> Option<CoreResources> {
     let cpu_ticks: u64 = stat_fields
         .get(11)
         .and_then(|utime| utime.parse::<u64>().ok())
-        .zip(stat_fields.get(12).and_then(|stime| stime.parse::<u64>().ok()))
+        .zip(
+            stat_fields
+                .get(12)
+                .and_then(|stime| stime.parse::<u64>().ok()),
+        )
         .map(|(utime, stime)| utime + stime)?;
     Some(CoreResources {
         rss_bytes: rss_kb? * 1024,

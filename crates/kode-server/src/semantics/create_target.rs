@@ -22,7 +22,7 @@
 //!
 //! 全部引擎出处承 CREATE-01 逐行核,本批复核角色闸与 inNewSpace 兜底语义。
 
-use super::create_api::{ApiSide, lookup};
+use super::create_api::{lookup, ApiSide};
 
 /// EntityCall 目标角色(消费方从源码折叠:属性名/构造形态)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,7 +50,10 @@ pub enum EntityCallArg {
 pub enum TargetCheck {
     Ok,
     /// 角色与 API 要求不符 → 引擎 TypeError(静态可证)。
-    RoleMismatch { expected: CallRole, actual: CallRole },
+    RoleMismatch {
+        expected: CallRole,
+        actual: CallRole,
+    },
     /// 实参不是 EntityCall → 引擎 TypeError「argN is not xxxEntityCall!」。
     NotEntityCall,
     /// 必传参缺失 → 引擎 TypeError(args error)。
@@ -152,7 +155,9 @@ mod tests {
         let c = check_call_target(
             ApiSide::Base,
             "createCellEntity",
-            &EntityCallArg::EntityCall { role: Some(CallRole::Cell) },
+            &EntityCallArg::EntityCall {
+                role: Some(CallRole::Cell),
+            },
         )
         .unwrap();
         assert_eq!(c, TargetCheck::Ok);
@@ -164,12 +169,17 @@ mod tests {
         let c = check_call_target(
             ApiSide::Base,
             "createCellEntity",
-            &EntityCallArg::EntityCall { role: Some(CallRole::Base) },
+            &EntityCallArg::EntityCall {
+                role: Some(CallRole::Base),
+            },
         )
         .unwrap();
         assert_eq!(
             c,
-            TargetCheck::RoleMismatch { expected: CallRole::Cell, actual: CallRole::Base }
+            TargetCheck::RoleMismatch {
+                expected: CallRole::Cell,
+                actual: CallRole::Base
+            }
         );
     }
 
@@ -178,17 +188,24 @@ mod tests {
         let bad = check_call_target(
             ApiSide::KBEngineBaseapp,
             "createEntityRemotely",
-            &EntityCallArg::EntityCall { role: Some(CallRole::Cell) },
+            &EntityCallArg::EntityCall {
+                role: Some(CallRole::Cell),
+            },
         )
         .unwrap();
         assert_eq!(
             bad,
-            TargetCheck::RoleMismatch { expected: CallRole::Base, actual: CallRole::Cell }
+            TargetCheck::RoleMismatch {
+                expected: CallRole::Base,
+                actual: CallRole::Cell
+            }
         );
         let ok = check_call_target(
             ApiSide::KBEngineBaseapp,
             "createEntityRemotelyFromDBID",
-            &EntityCallArg::EntityCall { role: Some(CallRole::Base) },
+            &EntityCallArg::EntityCall {
+                role: Some(CallRole::Base),
+            },
         )
         .unwrap();
         assert_eq!(ok, TargetCheck::Ok);
@@ -219,7 +236,8 @@ mod tests {
 
     #[test]
     fn absent_mandatory_arg_is_definite() {
-        let c = check_call_target(ApiSide::Base, "createCellEntity", &EntityCallArg::Absent).unwrap();
+        let c =
+            check_call_target(ApiSide::Base, "createCellEntity", &EntityCallArg::Absent).unwrap();
         assert_eq!(c, TargetCheck::MissingArg);
         let c = check_call_target(
             ApiSide::KBEngineBaseapp,
@@ -232,18 +250,16 @@ mod tests {
 
     #[test]
     fn dynamic_target_not_judged() {
-        let c = check_call_target(
-            ApiSide::Base,
-            "createCellEntity",
-            &EntityCallArg::Dynamic,
-        )
-        .unwrap();
+        let c =
+            check_call_target(ApiSide::Base, "createCellEntity", &EntityCallArg::Dynamic).unwrap();
         assert_eq!(c, TargetCheck::Unknown);
     }
 
     #[test]
     fn call_target_unknown_api_is_none() {
-        assert!(check_call_target(ApiSide::Base, "createCellEntity", &EntityCallArg::Dynamic).is_some());
+        assert!(
+            check_call_target(ApiSide::Base, "createCellEntity", &EntityCallArg::Dynamic).is_some()
+        );
         // 非 EntityCall 族 → None 不猜。
         assert!(check_call_target(
             ApiSide::KBEngineBaseapp,
@@ -251,7 +267,12 @@ mod tests {
             &EntityCallArg::Dynamic,
         )
         .is_none());
-        assert!(check_call_target(ApiSide::Base, "createEntityMagically", &EntityCallArg::Dynamic).is_none());
+        assert!(check_call_target(
+            ApiSide::Base,
+            "createEntityMagically",
+            &EntityCallArg::Dynamic
+        )
+        .is_none());
     }
 
     #[test]
@@ -266,12 +287,8 @@ mod tests {
             .unwrap();
             assert!(matches!(c, SpaceCheck::RuntimeGate { .. }), "{v}");
         }
-        let c = check_space_target(
-            ApiSide::KBEngineCellapp,
-            "createEntity",
-            &SpaceArg::Dynamic,
-        )
-        .unwrap();
+        let c = check_space_target(ApiSide::KBEngineCellapp, "createEntity", &SpaceArg::Dynamic)
+            .unwrap();
         assert_eq!(c, SpaceCheck::Unknown);
     }
 
@@ -314,12 +331,9 @@ mod tests {
 
     #[test]
     fn space_target_unknown_api_is_none() {
-        assert!(check_space_target(
-            ApiSide::Base,
-            "createCellEntity",
-            &SpaceArg::Literal(0)
-        )
-        .is_none());
+        assert!(
+            check_space_target(ApiSide::Base, "createCellEntity", &SpaceArg::Literal(0)).is_none()
+        );
         assert!(check_space_target(
             ApiSide::KBEngineCellapp,
             "createEntityMagically",
@@ -336,8 +350,15 @@ mod tests {
             (ApiSide::KBEngineBaseapp, "createEntityRemotely"),
             (ApiSide::KBEngineBaseapp, "createEntityRemotelyFromDBID"),
         ] {
-            let c = check_call_target(side, api, &EntityCallArg::EntityCall { role: None }).unwrap();
-            assert_ne!(c, TargetCheck::RoleMismatch { expected: CallRole::Base, actual: CallRole::Base });
+            let c =
+                check_call_target(side, api, &EntityCallArg::EntityCall { role: None }).unwrap();
+            assert_ne!(
+                c,
+                TargetCheck::RoleMismatch {
+                    expected: CallRole::Base,
+                    actual: CallRole::Base
+                }
+            );
             assert!(matches!(c, TargetCheck::Unknown), "{api}");
         }
     }

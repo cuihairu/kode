@@ -38,7 +38,11 @@ pub struct FieldDef {
 
 impl FieldDef {
     pub fn new(name: impl Into<String>, span: Option<Span>, ty: SemType) -> Self {
-        Self { name: name.into(), span, ty }
+        Self {
+            name: name.into(),
+            span,
+            ty,
+        }
     }
 }
 
@@ -48,13 +52,20 @@ pub enum SemType {
     /// 内建标量/容器名(INT32/FLOAT/VECTOR3/STRING/...;不含容器展开)。
     Builtin(String),
     /// 标量值范围(`<Range>` 等;min/max 原样保留,单位由引用方解释)。
-    Range { base: Box<SemType>, min: Option<String>, max: Option<String> },
+    Range {
+        base: Box<SemType>,
+        min: Option<String>,
+        max: Option<String>,
+    },
     /// 别名(名字 + 已解析指向;环/缺终点 → Unknown 原因)。
     Alias(String, Box<SemType>),
     /// 数组元素。
     Array(Box<SemType>),
     /// 固定字典(字段序保留;name = 类型名,无名(匿名 dict)为 None)。
-    FixedDict { name: Option<String>, fields: Vec<FieldDef> },
+    FixedDict {
+        name: Option<String>,
+        fields: Vec<FieldDef>,
+    },
     /// 实体引用(名字;身份绑定由 snapshot 以 SemId 完成)。
     Entity(String),
     /// 组件类型引用(经 ComponentOf 边解析;裸名在类型图不可解析时→Unknown)。
@@ -84,7 +95,10 @@ impl SemType {
             SemType::Alias(n, inner) => format!("{n}={}", inner.display()),
             SemType::Array(e) => format!("ARRAY<{}>", e.display()),
             SemType::FixedDict { name, fields } => {
-                let body: Vec<String> = fields.iter().map(|f| format!("{}:{}", f.name, f.ty.display())).collect();
+                let body: Vec<String> = fields
+                    .iter()
+                    .map(|f| format!("{}:{}", f.name, f.ty.display()))
+                    .collect();
                 match name {
                     Some(n) => format!("{n}{{{}}}", body.join(",")),
                     None => format!("{{{}}}", body.join(",")),
@@ -93,7 +107,10 @@ impl SemType {
             SemType::Entity(n) => format!("Entity<{n}>"),
             SemType::Component(n) => format!("Component<{n}>"),
             SemType::Nullable(t) => format!("{}?", t.display()),
-            SemType::Union(ts) => format!("Union({})", ts.iter().map(|t| t.display()).collect::<Vec<_>>().join("|")),
+            SemType::Union(ts) => format!(
+                "Union({})",
+                ts.iter().map(|t| t.display()).collect::<Vec<_>>().join("|")
+            ),
             SemType::Unknown(r) => format!("Unknown({r})"),
         }
     }
@@ -134,9 +151,18 @@ impl SemType {
             kode_types::TypeNode::FixedDict { field_refs, .. } => {
                 let fields = field_refs
                     .iter()
-                    .map(|r| FieldDef::new(r.clone(), None, Self::resolve(graph, r, max_hops, depth + 1)))
+                    .map(|r| {
+                        FieldDef::new(
+                            r.clone(),
+                            None,
+                            Self::resolve(graph, r, max_hops, depth + 1),
+                        )
+                    })
                     .collect();
-                SemType::FixedDict { name: Some(name.to_string()), fields }
+                SemType::FixedDict {
+                    name: Some(name.to_string()),
+                    fields,
+                }
             }
             // 用户类型节点 = 实体 .def 引用 → 实体引用。
             kode_types::TypeNode::UserType { .. } => SemType::Entity(name.to_string()),
@@ -160,7 +186,10 @@ mod tests {
     fn unresolved_is_unknown_not_fabricated() {
         let g = TypeGraph::new();
         let t = SemType::from_type_graph(&g, "NoSuchType", 4);
-        assert!(matches!(t, SemType::Unknown(_)), "未知引用必须降级 Unknown 不伪造");
+        assert!(
+            matches!(t, SemType::Unknown(_)),
+            "未知引用必须降级 Unknown 不伪造"
+        );
         assert!(t.display().contains("unresolved"));
     }
 
@@ -173,7 +202,10 @@ mod tests {
             line: 1,
             alias_type: tgt.into(),
         };
-        g.add_alias(&AliasFile { aliases: vec![mk("A", "B"), mk("B", "INT32")], ..Default::default() });
+        g.add_alias(&AliasFile {
+            aliases: vec![mk("A", "B"), mk("B", "INT32")],
+            ..Default::default()
+        });
         let t = SemType::from_type_graph(&g, "A", 4);
         match t {
             SemType::Alias(_, inner) => match *inner {
@@ -197,11 +229,17 @@ mod tests {
             field_refs: vec!["x".into(), "y".into(), "z".into()],
             element_ref: None,
         };
-        g.add_types(&TypesFile { types: vec![decl], ..Default::default() });
+        g.add_types(&TypesFile {
+            types: vec![decl],
+            ..Default::default()
+        });
         let t = SemType::from_type_graph(&g, "Pos", 4);
         match t {
             SemType::FixedDict { fields, .. } => {
-                assert_eq!(fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["x", "y", "z"]);
+                assert_eq!(
+                    fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+                    ["x", "y", "z"]
+                );
             }
             other => panic!("expected FixedDict, got {other:?}"),
         }
@@ -220,15 +258,26 @@ mod tests {
             field_refs: vec![],
             element_ref: Some("UINT32".into()),
         };
-        g.add_types(&TypesFile { types: vec![decl], ..Default::default() });
+        g.add_types(&TypesFile {
+            types: vec![decl],
+            ..Default::default()
+        });
         let t = SemType::from_type_graph(&g, "Ints", 4);
-        assert!(matches!(t, SemType::Array(e) if matches!(&*e, SemType::Builtin(n) if n == "UINT32")));
+        assert!(
+            matches!(t, SemType::Array(e) if matches!(&*e, SemType::Builtin(n) if n == "UINT32"))
+        );
     }
 
     #[test]
     fn nullable_and_union_display() {
-        assert_eq!(SemType::Nullable(Box::new(SemType::Builtin("INT32".into()))).display(), "INT32?");
-        let u = SemType::Union(vec![SemType::Builtin("INT32".into()), SemType::Builtin("STRING".into())]);
+        assert_eq!(
+            SemType::Nullable(Box::new(SemType::Builtin("INT32".into()))).display(),
+            "INT32?"
+        );
+        let u = SemType::Union(vec![
+            SemType::Builtin("INT32".into()),
+            SemType::Builtin("STRING".into()),
+        ]);
         assert_eq!(u.display(), "Union(INT32|STRING)");
     }
 
@@ -241,7 +290,10 @@ mod tests {
             line: 1,
             alias_type: tgt.into(),
         };
-        g.add_alias(&AliasFile { aliases: vec![mk("A", "B"), mk("B", "A")], ..Default::default() });
+        g.add_alias(&AliasFile {
+            aliases: vec![mk("A", "B"), mk("B", "A")],
+            ..Default::default()
+        });
         let t = SemType::from_type_graph(&g, "A", 4);
         assert!(matches!(t, SemType::Unknown(r) if r.contains("alias-chain-overflow")));
     }
@@ -257,15 +309,22 @@ mod tests {
         };
         assert_eq!(r.display(), "UINT8[0..100]");
         assert_eq!(
-            SemType::Range { base: Box::new(SemType::Builtin("INT32".into())), min: None, max: Some("5".into()) }
-                .display(),
+            SemType::Range {
+                base: Box::new(SemType::Builtin("INT32".into())),
+                min: None,
+                max: Some("5".into())
+            }
+            .display(),
             "INT32[..5]"
         );
     }
 
     #[test]
     fn component_and_entity_display() {
-        assert_eq!(SemType::Component("Weapon".into()).display(), "Component<Weapon>");
+        assert_eq!(
+            SemType::Component("Weapon".into()).display(),
+            "Component<Weapon>"
+        );
         assert_eq!(SemType::Entity("Avatar".into()).display(), "Entity<Avatar>");
     }
 }

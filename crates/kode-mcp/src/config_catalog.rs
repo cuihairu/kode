@@ -2406,8 +2406,8 @@ mod tests {
         // 分组契约:group 只取 server.rs list_config_settings 过滤文案列出的
         // 功能组(两处同步,越界分组会让过滤器静默漏结果)。
         const GROUPS: &[&str] = &[
-            "process", "net", "db", "account", "telnet", "log", "view", "backup", "perf",
-            "test", "general", "custom",
+            "process", "net", "db", "account", "telnet", "log", "view", "backup", "perf", "test",
+            "general", "custom",
         ];
         for (key, doc) in SERVER_CONFIG_ITEM_DOCS {
             assert!(
