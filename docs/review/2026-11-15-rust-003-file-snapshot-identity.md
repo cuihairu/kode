@@ -46,8 +46,20 @@
 
 **未修不声称**：`definitionSemantics.ts:151`/`:244` 的缓存键不含 version 且 src 内无 `.clear()`/失效调用；`entityMapping.ts:1938`/`:2685`、`entityMappingHelpers.ts:361` 直读盘（与同文件 `:2336`/`:2389` 走快照面形成两套读面，但 `:2434-2449` 用 `collectOpenDocumentTexts` 在查询时补正——缺陷被下游兜住，首扫本身仍读盘）。登记为后续批次，不在本批改。
 
+## 3.1 后续批次（2026-11-15 收口）：definitionSemantics 缓存身份化
+
+上表「未修不声称」中登记的 definitionSemantics 缓存面已收口：`localCache`/`resolvedCache` 条目从裸语义改为**身份集合条目**（`identitySet: 归一路径键 → 快照 {source,version} 令牌`），命中前逐文件重探令牌，任一漂移即重解析——键内身份替代失效调用，`src` 内依旧零 `.clear()`，结构性吃不到旧值。
+
+- **消费集事实源**：`ResolutionContext` 新增 `consumed` 集（只增不减），与 `visited`（环守卫，进出回退）分离——首批实现曾误把 `visited` 当消费集，而它在解析完成时恰好回退为空集，身份集合恒空 → 空集合命中恒真 → 永久假新鲜（tests/definitionSemanticsIdentityCache.test.ts 逼出）。入口/父/接口/组件全部经 `resolveSemanticsFromLocal` 登记，三个子上下文构造位透传 `consumed`。
+- **轻量身份探针**：`sharedFileSnapshot.ts` 新增 `readSharedFileSnapshotIdentity`（document 域=编辑序号零 IO、disk 域=一次 stat），与快照读同一 deps/归一键，不养第二套打开文档判定。
+- **入口根修复**：`loadResolvedAt` 恒传 context 后旧内部的 `originRootOf(defPath)` 兜底不再可达——双根同名父回解退化逐根首命中（IDE-IDX-002 既有钉 A/B 串根红逼出），context 显式携带 `originRoot`。
+- **测试**：`tests/definitionSemanticsIdentityCache.test.ts` 五例全走「同一 loader、文件在两次查询间被改」：入口 mtime 漂移（loadLocal/loadResolvedAt）、入口未变父变了（visited≠consumed 的红面）、打开文档 version 前进、删除后不落陈旧 null。**prove-red**：剥 `context.consumed.add` → 身份集合恒空 → 空命中恒真 → 2 红；cp/cmp 字节还原复绿。
+- 门禁：tsc 0 / eslint 0 / unit 834 文件 10246+8skip 0 红 / xvfb demo 25 RC=0。
+- 剩余登记面（不在本批改）：25/28 快照调用点只取 content（消费点未承接身份，正确性无需）；`hotReloadDefFingerprintLedger` 裸 fsPath 键（热更回执面）；entityMapping 首扫读盘+查询兜底双面（下游兜住）。
+
 ## 4. 门禁
 
 `tsc` RC=0；`npm run lint`（`eslint src --ext ts`）RC=0；`tests/defCallChain*.test.ts` + `flowFailureSamples` 5 文件 39 passed；`defCallChainOpenDocument` prove-red 红→还原绿；`test:unit` 全量 **10185 total / 10177 passed / 8 skipped / 0 failed**，3303 套件全 passed（JSON 报告口径；两个整文件 skip 为环境门控——`playerDataCloneMysqlReal` 要 MySQL port、`runtimeCommands` 同类，非本批）；`xvfb-run -a test:demo:editor` **25 passing** RC=0。与 RUST-002 当轮口径（822 文件 / 10184 例）比对：本次 823 文件 / 10185 例，差值恰为本批新增的 1 个测试文件 1 例，**零消失**（本批曾误记基线为 10225，已更正）。
 
 锚点：`perfCallChainDoc.test.ts` ANCHORS 表**不含** `src/backend/defCallChain.ts`（核过），本批改该行号不触发锁步。
+身份化批次改 `definitionSemantics.ts`/`sharedFileSnapshot.ts` 行号——ANCHORS 表两者均不含（核过），不触发锁步。
