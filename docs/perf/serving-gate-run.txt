@@ -1,0 +1,32 @@
+SERVING-GATE-METRIC spawn.start n=5 p50=4.27ms p95=23.04ms p99=23.04ms max=23.04ms
+SERVING-GATE-METRIC mirror3000.total n=1 62.5ms
+SERVING-GATE-METRIC steady.definition n=100 p50=0.25ms p95=0.4ms p99=0.46ms max=12.77ms
+SERVING-GATE-METRIC steady.completion n=100 p50=0.5ms p95=0.74ms p99=0.95ms max=1.07ms
+SERVING-GATE-METRIC steady.diagnostic n=100 p50=0.24ms p95=0.42ms p99=0.48ms max=0.53ms
+SERVING-GATE-METRIC rss.afterSteady n=1 11.17 MB
+SERVING-GATE-SUMMARY violations=0 all-bounds-met
+SERVING-GATE-METRIC spawn.start n=5 p50=3.85ms p95=9.31ms p99=9.31ms max=9.31ms
+SERVING-GATE-METRIC mirror3000.total n=1 53.19ms
+SERVING-GATE-METRIC rss.afterMirror n=1 95.38 MB
+SERVING-GATE-METRIC steady.definition n=100 p50=0.21ms p95=0.35ms p99=0.42ms max=10.11ms
+SERVING-GATE-METRIC steady.completion n=100 p50=0.48ms p95=0.68ms p99=0.74ms max=0.74ms
+SERVING-GATE-METRIC steady.diagnostic n=100 p50=0.22ms p95=0.34ms p99=0.36ms max=0.37ms
+SERVING-GATE-METRIC rss.afterSteady n=1 11.16 MB
+SERVING-GATE-SUMMARY violations=0 all-bounds-met
+SERVING-GATE-METRIC spawn.start n=5 p50=4.71ms p95=12.18ms p99=12.18ms max=12.18ms
+SERVING-GATE-METRIC mirror3000.total n=1 67.85ms
+SERVING-GATE-METRIC rss.afterMirror n=1 95.37 MB
+SERVING-GATE-METRIC steady.definition n=100 p50=0.41ms p95=0.61ms p99=1.16ms max=17.33ms
+SERVING-GATE-METRIC steady.completion n=100 p50=0.87ms p95=1.08ms p99=1.41ms max=1.6ms
+SERVING-GATE-METRIC steady.diagnostic n=100 p50=0.44ms p95=0.61ms p99=0.91ms max=0.92ms
+SERVING-GATE-METRIC rss.afterSteady n=1 11.29 MB
+SERVING-GATE-SUMMARY violations=1 steadyDiagnosticP99Ms observed=0.91 > bound=0.001 (env KODE_SERVING_BOUND_STEADY_DIAGNOSTIC_P99_MS)
+SERVING-GATE-METRIC spawn.start n=5 p50=3.6ms p95=9.48ms p99=9.48ms max=9.48ms
+SERVING-GATE-METRIC mirror3000.total n=1 56.02ms
+SERVING-GATE-METRIC rss.afterMirror n=1 95.27 MB
+SERVING-GATE-METRIC editRoundTrip.diagnostic n=50 p50=2.16ms p95=3.03ms p99=3.13ms max=3.13ms
+SERVING-GATE-METRIC steady.definition n=100 p50=1.09ms p95=1.47ms p99=1.9ms max=2395.02ms
+SERVING-GATE-METRIC steady.completion n=100 p50=0.5ms p95=0.7ms p99=0.77ms max=0.79ms
+SERVING-GATE-METRIC steady.diagnostic n=100 p50=1.23ms p95=1.63ms p99=1.86ms max=1.95ms
+SERVING-GATE-METRIC rss.afterSteady n=1 94.24 MB
+SERVING-GATE-SUMMARY violations=0 all-bounds-met

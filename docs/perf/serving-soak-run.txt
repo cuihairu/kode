@@ -1,0 +1,30 @@
+SERVING-SOAK-ENV seconds=10 window=5 files=2000 rssGrowthCeilingMb=100 binary=/home/cui/workspaces/kode/target/debug/kode-server
+SERVING-SOAK-METRIC window n=1 index=1 wall=5001ms requests=5235 errors=0 defP50=1.08ms diagP50=1.23ms rssMb=64.19
+SERVING-SOAK-METRIC window n=1 index=2 wall=5000ms requests=5539 errors=0 defP50=1.04ms diagP50=1.18ms rssMb=64.19
+SERVING-SOAK-SUMMARY windows=2 wall=10005ms requests=10774 errors=0 compRequests=10774 defP50FirstMs=1.08 defP50LastMs=1.04 rssFirstMb=67.58 rssLastMb=64.19 rssGrowthMb=-3.39
+SERVING-SOAK-ENV seconds=10 window=5 files=2000 rssGrowthCeilingMb=0 binary=/home/cui/workspaces/kode/target/debug/kode-server
+SERVING-SOAK-METRIC window n=1 index=1 wall=5000ms requests=5065 errors=0 defP50=1.11ms diagP50=1.26ms rssMb=64.1
+SERVING-SOAK-METRIC window n=1 index=2 wall=5001ms requests=5562 errors=0 defP50=1.03ms diagP50=1.18ms rssMb=64.1
+SERVING-SOAK-SUMMARY windows=2 wall=10005ms requests=10627 errors=0 compRequests=10627 defP50FirstMs=1.11 defP50LastMs=1.03 rssFirstMb=67.6 rssLastMb=64.1 rssGrowthMb=-3.5
+SERVING-SOAK-ENV seconds=10 window=5 files=2000 rssGrowthCeilingMb=-1 binary=/home/cui/workspaces/kode/target/debug/kode-server
+SERVING-SOAK-METRIC window n=1 index=1 wall=5001ms requests=5244 errors=0 defP50=1.08ms diagP50=1.23ms rssMb=64.07
+SERVING-SOAK-METRIC window n=1 index=2 wall=5004ms requests=5162 errors=0 defP50=1.09ms diagP50=1.26ms rssMb=64.07
+SERVING-SOAK-SUMMARY windows=2 wall=10008ms requests=10406 errors=0 compRequests=10406 defP50FirstMs=1.08 defP50LastMs=1.09 rssFirstMb=67.59 rssLastMb=64.07 rssGrowthMb=-3.52
+SERVING-SOAK-ENV seconds=10 window=5 files=2000 rssGrowthCeilingMb=-1000 binary=/home/cui/workspaces/kode/target/debug/kode-server
+SERVING-SOAK-METRIC window n=1 index=1 wall=5004ms requests=4848 errors=0 defP50=1.17ms diagP50=1.32ms rssMb=64.15
+SERVING-SOAK-METRIC window n=1 index=2 wall=5001ms requests=4630 errors=0 defP50=1.19ms diagP50=1.35ms rssMb=64.15
+SERVING-SOAK-SUMMARY windows=2 wall=10009ms requests=9478 errors=0 compRequests=9478 defP50FirstMs=1.17 defP50LastMs=1.19 rssFirstMb=67.65 rssLastMb=64.15 rssGrowthMb=-3.5
+SERVING-SOAK-ENV seconds=60 window=5 files=2000 rssGrowthCeilingMb=100 binary=/home/cui/workspaces/kode/target/debug/kode-server
+SERVING-SOAK-METRIC window n=1 index=1 wall=5002ms requests=5404 errors=0 defP50=1.06ms diagP50=1.21ms rssMb=64.18
+SERVING-SOAK-METRIC window n=1 index=2 wall=5001ms requests=5354 errors=0 defP50=1.06ms diagP50=1.21ms rssMb=64.18
+SERVING-SOAK-METRIC window n=1 index=3 wall=5001ms requests=5491 errors=0 defP50=1.04ms diagP50=1.2ms rssMb=64.18
+SERVING-SOAK-METRIC window n=1 index=4 wall=5002ms requests=5130 errors=0 defP50=1.09ms diagP50=1.24ms rssMb=64.18
+SERVING-SOAK-METRIC window n=1 index=5 wall=5002ms requests=5168 errors=0 defP50=1.1ms diagP50=1.26ms rssMb=64.18
+SERVING-SOAK-METRIC window n=1 index=6 wall=5003ms requests=5017 errors=0 defP50=1.11ms diagP50=1.26ms rssMb=64.18
+SERVING-SOAK-METRIC window n=1 index=7 wall=5003ms requests=4180 errors=0 defP50=1.11ms diagP50=1.27ms rssMb=64.23
+SERVING-SOAK-METRIC window n=1 index=8 wall=5003ms requests=4300 errors=0 defP50=1.04ms diagP50=1.18ms rssMb=64.25
+SERVING-SOAK-METRIC window n=1 index=9 wall=5002ms requests=4020 errors=0 defP50=1.09ms diagP50=1.24ms rssMb=64.3
+SERVING-SOAK-METRIC window n=1 index=10 wall=5002ms requests=4179 errors=0 defP50=1.04ms diagP50=1.19ms rssMb=64.33
+SERVING-SOAK-METRIC window n=1 index=11 wall=5001ms requests=4198 errors=0 defP50=1.03ms diagP50=1.18ms rssMb=64.34
+SERVING-SOAK-METRIC window n=1 index=12 wall=5001ms requests=4026 errors=0 defP50=1.05ms diagP50=1.2ms rssMb=64.39
+SERVING-SOAK-SUMMARY windows=12 wall=60038ms requests=56467 errors=0 compRequests=56467 defP50FirstMs=1.06 defP50LastMs=1.04 rssFirstMb=67.7 rssLastMb=64.39 rssGrowthMb=-3.31

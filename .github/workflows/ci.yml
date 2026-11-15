@@ -65,6 +65,42 @@ jobs:
     - name: 安装依赖
       timeout-minutes: 5
       run: pnpm install --frozen-lockfile
+    # Rust 服务态门(P1-3 审计收口,2026-11-15):perf-gate 此前只跑 TS
+    # v02Baseline,真实 kode-server 的服务面从未进合并门。第一方 cache 同
+    # 覆盖率 job 口径(registry/git/target 跨 run 复用);工具链由
+    # rust-toolchain.toml 钉死,rustup 首次调用自动安装。
+    - name: Cache Rust builds (serving gate)
+      timeout-minutes: 5
+      uses: actions/cache@v4.2.4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: rust-serving-gate-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: rust-serving-gate-${{ runner.os }}-
+
+    - name: Build kode-server
+      timeout-minutes: 10
+      run: cargo build -p kode-server
+
+    - name: Serving gate (Rust faces vs loose bounds)
+      # KODE_SERVING_GATE=1 才启用断言(缺省整套 skip,bench 目录整跑不重放);
+      # KODE_SERVING_BOUND_* 可覆盖(servingBounds.ts 缺省=宽松上界,只捕
+      # 数量级回退;spawn/mirror/steady/editRoundTrip/RSS 五面,任一超界即红)。
+      timeout-minutes: 10
+      run: |
+        KODE_SERVING_GATE=1 \
+        pnpm exec vitest run --config vitest.bench.config.ts tests/perf/servingGate.bench.ts
+
+    - name: Serving soak (Rust steady mixed load, 60s tier)
+      # Rust 服务态 soak(审计发现 soak 只挂 TS 侧):真实二进制稳态混合负载,
+      # 闸=零错误+每窗有请求+RSS 增量在界+无数量级退化;60s 档守 PR 时长,
+      # 更长档走 nightly(600s)。KODE_SERVING_SOAK_* 可调档。
+      timeout-minutes: 10
+      run: |
+        pnpm exec vitest run --config vitest.bench.config.ts tests/perf/servingSoak.bench.ts
+
 
     - name: 编译 TypeScript
       timeout-minutes: 15
@@ -246,7 +282,7 @@ jobs:
   # 属主侧操作,workflow 文件无法代设)。
   perf-gate:
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
     - name: Checkout 代码
@@ -287,6 +323,8 @@ jobs:
         path: |
           docs/perf/v02-baseline-run.txt
           docs/perf/perf-baseline-snapshot.json
+          docs/perf/serving-gate-run.txt
+          docs/perf/serving-soak-run.txt
         if-no-files-found: warn
         retention-days: 30
 

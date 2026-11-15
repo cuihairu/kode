@@ -47,7 +47,7 @@ jobs:
 
   validate:
     name: Existing full correctness gate
-    timeout-minutes: 45
+    timeout-minutes: 60
     needs: plan
     if: needs.plan.outputs.skip != 'true'
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
@@ -112,6 +112,52 @@ jobs:
           KODE_PERF_GATE=1 KODE_PERF_LARGE_FILES=30000 \
           KODE_PERF_BASELINE_JSON_OUT=docs/perf/perf-baseline-snapshot.json \
           pnpm exec vitest run --config vitest.bench.config.ts tests/perf/v02Baseline.bench.ts
+
+      # 第一方 cache 与 ci.yml 覆盖率 job 同口径;工具链 rust-toolchain.toml
+      # 钉死,rustup 首次调用自动安装(runner 预装 rustup)。
+      - name: Cache Rust builds (serving gate)
+        timeout-minutes: 5
+        uses: actions/cache@v4.2.4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-serving-gate-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: rust-serving-gate-${{ runner.os }}-
+
+      - name: Build kode-server
+        timeout-minutes: 10
+        run: cargo build -p kode-server
+
+
+      - name: Serving gate (Rust faces vs loose bounds)
+        # Rust 服务态发布门(2026-11-15 P1-3 审计收口):真实 kode-server 五面
+        # (spawn/mirror/steady/editRoundTrip/RSS)按 servingBounds.ts 宽松上界
+        # 断言,KODE_SERVING_BOUND_* 可覆盖;与 perf-gate(PR 门)同套界。
+        timeout-minutes: 10
+        run: |
+          KODE_SERVING_GATE=1 \
+          pnpm exec vitest run --config vitest.bench.config.ts tests/perf/servingGate.bench.ts
+
+      - name: Serving soak (Rust steady mixed load, 600s nightly tier)
+        # Rust 服务态长跑档(PR 门 60s,发布门 600s=10x),闸=零错误+每窗有
+        # 请求+RSS 增量在界+无数量级退化;运行文件下方上传留档。
+        timeout-minutes: 15
+        run: |
+          KODE_SERVING_SOAK_SECONDS=600 \
+          pnpm exec vitest run --config vitest.bench.config.ts tests/perf/servingSoak.bench.ts
+
+      - name: Upload serving gate and soak run files
+        uses: actions/upload-artifact@v4.2.4
+        with:
+          name: serving-run-files
+          path: |
+            docs/perf/serving-gate-run.txt
+            docs/perf/serving-soak-run.txt
+          if-no-files-found: warn
+          retention-days: 30
+
 
       - name: Upload perf baseline run file
         uses: actions/upload-artifact@v7.0.2
