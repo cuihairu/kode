@@ -498,6 +498,52 @@ describe('serveInRust 服务面(2026-11-08 用户令「直接切」)', () => {
     );
     expect(gate.state.clientAlive).toBe(false);
   });
+
+  it('CORE-015 连续性:崩溃窗口内请求回落 TS 续服务,恢复后 rust 轨道续轨', async () => {
+    // 崩溃时序(与 kodeCoreClient.handleExit 语义对齐):进程退出 → 在飞
+    // 请求以 EXITED 拒绝 → respawn+重握手完成后 start() 恢复成功。
+    const calls: string[] = [];
+    let phase: 'serving' | 'down' | 'recovered' = 'serving';
+    const client = {
+      start: vi.fn(async () => {
+        if (phase === 'down') {
+          throw new Error('server exited (signal=SIGKILL)');
+        }
+        return {};
+      }),
+      request: vi.fn(async (_method: string, params?: unknown) => {
+        calls.push(phase);
+        void params;
+        return { rust: phase };
+      }),
+      dispose: vi.fn(async () => undefined),
+    } as unknown as ShadowClientLike;
+    const gate = new KodeCoreGate({ clientFactory: () => client });
+    gate.setConfig({ backend: 'rust', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+
+    // 崩溃前:rust 轨道正常服务。
+    await expect(gate.serveInRust('textDocument/definition', {}, null)).resolves.toEqual({
+      rust: 'serving',
+    });
+    expect(calls).toEqual(['serving']);
+
+    // 崩溃窗口:EXITED 拒绝 → fallback(provider 走 TS 实现链,语法功能
+    // 继续使用,不抛不悬挂),留 notice 存照。
+    phase = 'down';
+    await expect(gate.serveInRust('textDocument/definition', {}, 'ts-fallback')).resolves.toBe(
+      'ts-fallback'
+    );
+    expect(calls).toEqual(['serving'], '崩溃窗口内请求不落 rust(request 未达)');
+    expect(gate.state.notices.some(note => note.includes('server exited'))).toBe(true);
+
+    // respawn+重握手完成:同一 client 实例恢复,rust 轨道续服务(换实例由
+    // ensureClient 按 serverPath 处理,此处钉同实例恢复语义)。
+    phase = 'recovered';
+    await expect(gate.serveInRust('textDocument/definition', {}, null)).resolves.toEqual({
+      rust: 'recovered',
+    });
+    expect(calls).toEqual(['serving', 'recovered']);
+  });
 });
 
 describe('notifyFileChanged 通知面(热更旁路 §11.3)', () => {
