@@ -34,8 +34,9 @@ pub use invalidation::{plan_dependency_tasks, CallReverseIndex, InvalidationGrap
 pub use journal::{load_journal, write_journal, RecoveryReport, TaskRecord};
 pub use model::{SchedulerMetrics, SchedulerStatus, TaskKind, TaskState};
 pub use scheduler::{
-    CancelToken, EnqueueDecision, EnsureDecision, Pump, Scheduler, SchedulerOptions, StormBuffer,
-    TaskSpec, MAX_RETAINED_TERMINAL_TASKS,
+    CancelToken, ColdRequestOutcome, EnqueueDecision, EnsureDecision, Pump, Scheduler,
+    SchedulerOptions, StormBuffer, TaskSpec, WarmState, BACKGROUND_SCAN_KEY,
+    MAX_RETAINED_TERMINAL_TASKS,
 };
 pub use session::{RootInvalidationSink, RootRemoval, WorkspaceSession};
 

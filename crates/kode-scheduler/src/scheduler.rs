@@ -11,6 +11,8 @@
 //! - 有界队列:满时先淘汰最低优/最新序的旧任务;新任务自己最低优则拒入队;
 //! - 抗饥饿:后台任务排队超过饥饿上限绕过冷却晋升(CORE-006);
 //! - 暂停/恢复:暂停时 pump 不出活,入队照常,恢复后继续;
+//! - 冷请求暖门(CORE-009):首扫 keyed 后台入队,冷请求 REQUEST_LOCAL 即时
+//!   放行——交互优先级恒先于后台首扫出队,冷请求绝不无期限等待全仓;
 //! - 逻辑时钟:对拍/测试可注入推进,真实接入时由调用方喂时钟。
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -270,6 +272,9 @@ pub struct Scheduler {
     paused: bool,
     /// 风暴合并缓冲(与本调度器共享计数面)。
     pub storm: StormBuffer,
+    /// CORE-009 观测:首扫未完成期间即时放行的冷请求数(rust_ext,不进
+    /// TS 对拍 metrics 面;golden 输出零变化)。
+    cold_while_warming: u64,
 }
 
 const NEVER_MS: i64 = -1_000_000_000;
@@ -278,6 +283,34 @@ const NEVER_MS: i64 = -1_000_000_000;
 /// 只保留最近这么多条终态记录供 `task_state` 查询,更早的摘除释放,
 /// 长会话高频 didChange 下 `tasks` 不再无界增长。
 pub const MAX_RETAINED_TERMINAL_TASKS: usize = 1024;
+
+/// CORE-009 首扫 keyed 单例键(暖门约定:begin_background_scan 恒用此键,
+/// warm_state 按它观测)。
+pub const BACKGROUND_SCAN_KEY: &str = "background-scan";
+
+/// 暖门状态(CORE-009 可观测面)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WarmState {
+    /// 首扫未开始(或上次失败/取消——失败不缓存成暖态假象,可重开首扫)。
+    Idle,
+    /// 首扫在队/在跑(后台优先级,交互请求随时插队)。
+    Warming,
+    /// 首扫完成。
+    Warm,
+}
+
+/// CORE-009 冷请求决策回执(ARCH-004:明确告知)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ColdRequestOutcome {
+    /// 底层入队决策(同文件同版本合并/过期丢弃/队列满拒)。
+    pub decision: EnqueueDecision,
+    /// 任务 id(决策非 Queued/Merged 时为 0)。
+    pub id: u64,
+    /// true = 首扫尚未完成时该请求已即时入交互队。调度级承诺:请求一经
+    /// Queued 即为可执行位,REQUEST_LOCAL 恒先于 BACKGROUND_FULL 出队,
+    /// 绝不无期限等待全仓(排队上限语义另见有界队列)。
+    pub while_warming: bool,
+}
 
 impl Default for Scheduler {
     fn default() -> Self {
@@ -331,6 +364,7 @@ impl Scheduler {
             last_interactive_end_ms: NEVER_MS,
             paused: false,
             storm: StormBuffer::new(1024),
+            cold_while_warming: 0,
         }
     }
 
@@ -541,6 +575,58 @@ impl Scheduler {
             self.cancel_queued(id, reason);
         }
         count
+    }
+
+    /// CORE-009:首扫后台化入口。首扫以 keyed 单例([`BACKGROUND_SCAN_KEY`])
+    /// 入队(调用方给后台优先级 BACKGROUND_FULL 即首扫后台化);进行中复用,
+    /// 失败/取消后可重开。冷请求不经此入口。
+    pub fn begin_background_scan(&mut self, spec: TaskSpec) -> (EnsureDecision, u64) {
+        self.ensure(BACKGROUND_SCAN_KEY, spec)
+    }
+
+    /// 暖门状态(见 [`WarmState`])。
+    pub fn warm_state(&self) -> WarmState {
+        match self.keyed.get(BACKGROUND_SCAN_KEY).map(|e| e.state) {
+            None => WarmState::Idle,
+            Some(TaskState::Queued) | Some(TaskState::Running) => WarmState::Warming,
+            Some(TaskState::Completed) => WarmState::Warm,
+            // 失败/取消不缓存成暖态假象:keyed 已回落,重开首扫即可再暖
+            //(与「失败不缓存成永久 pending」同口径)。
+            Some(TaskState::Failed) | Some(TaskState::Cancelled) => WarmState::Idle,
+        }
+    }
+
+    /// CORE-009:冷请求 = 单文件 on-demand 解析,即时以 REQUEST_LOCAL 入队。
+    /// 首扫在途也不等待:交互优先级恒先于后台首扫出队(pick_next 决策面);
+    /// 同文件同版本与在队任务合并,不重复解析。回执带 warming 观测位。
+    pub fn cold_request(
+        &mut self,
+        file: impl Into<String>,
+        version: u64,
+        run: Box<RunFn>,
+    ) -> ColdRequestOutcome {
+        let while_warming = self.warm_state() == WarmState::Warming;
+        let outcome = self.enqueue(TaskSpec {
+            kind: TaskKind::SingleFileUpdate,
+            priority: priority::REQUEST_LOCAL,
+            file: Some(file.into()),
+            version: Some(version),
+            target: None,
+            run,
+        });
+        if while_warming && matches!(outcome.decision, EnqueueDecision::Queued) {
+            self.cold_while_warming += 1;
+        }
+        ColdRequestOutcome {
+            decision: outcome.decision,
+            id: outcome.id,
+            while_warming,
+        }
+    }
+
+    /// rust_ext:首扫未完成期间即时放行的冷请求数(观测面)。
+    pub fn cold_while_warming_count(&self) -> u64 {
+        self.cold_while_warming
     }
 
     /// 单步执行:取队首可执行任务并同步跑至终态。

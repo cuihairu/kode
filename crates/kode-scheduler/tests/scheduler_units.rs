@@ -6,9 +6,10 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use kode_scheduler::model::priority;
 use kode_scheduler::{
     CancelToken, EnqueueDecision, EnsureDecision, Pump, Scheduler, SchedulerOptions, StormBuffer,
-    TaskKind, TaskSpec, MAX_RETAINED_TERMINAL_TASKS,
+    TaskKind, TaskSpec, TaskState, WarmState, MAX_RETAINED_TERMINAL_TASKS,
 };
 
 fn spec(kind: TaskKind, priority: u8, file: Option<&str>, version: Option<u64>) -> TaskSpec {
@@ -740,4 +741,113 @@ fn pending_records_sort_by_priority_then_file() {
     assert_eq!(recs[1].file.as_deref(), Some("/b.def"));
     assert_eq!(recs[2].priority, 3);
     assert!(recs[2].file.is_none());
+}
+
+// ---- CORE-009 冷请求暖门 ----
+
+#[test]
+fn cold_request_never_waits_for_pending_background_scan() {
+    let mut sched = Scheduler::new(SchedulerOptions::default());
+    // 首扫后台化:后台优先级入队(未执行)。
+    let (d, scan_id) = sched.begin_background_scan(spec(
+        TaskKind::InitialScan,
+        priority::BACKGROUND_FULL,
+        None,
+        None,
+    ));
+    assert_eq!(d, EnsureDecision::Queued);
+    assert_eq!(sched.warm_state(), WarmState::Warming);
+    // 冷请求到达:即时入交互队,绝不排在首扫后面等全仓。
+    let cold_ran = Rc::new(Cell::new(0));
+    let outcome = sched.cold_request(
+        "/w/alpha/Hot.def",
+        1,
+        Box::new({
+            let ran = cold_ran.clone();
+            move |_| {
+                ran.set(ran.get() + 1);
+                Ok(())
+            }
+        }),
+    );
+    assert_eq!(outcome.decision, EnqueueDecision::Queued);
+    assert!(outcome.while_warming, "首扫在途 → while_warming 位必须亮");
+    // 第一 pump 必是冷请求;首扫仍留在队里。
+    assert!(matches!(sched.pump_once(), Pump::Ran));
+    assert_eq!(cold_ran.get(), 1, "冷请求先于首扫执行");
+    assert_eq!(sched.task_state(scan_id), Some(TaskState::Queued));
+    assert_eq!(sched.cold_while_warming_count(), 1);
+    assert_eq!(sched.warm_state(), WarmState::Warming);
+    // 过交互冷却窗(冷请求刚执行,后台首扫须等冷却)再 pump:首扫完成 → Warm。
+    sched.advance_clock(50);
+    assert!(matches!(sched.pump_once(), Pump::Ran));
+    assert_eq!(sched.warm_state(), WarmState::Warm);
+}
+
+#[test]
+fn cold_request_merges_same_file_same_version_while_warming() {
+    let mut sched = Scheduler::new(SchedulerOptions::default());
+    sched.begin_background_scan(spec(
+        TaskKind::InitialScan,
+        priority::BACKGROUND_FULL,
+        None,
+        None,
+    ));
+    let parsed = Rc::new(Cell::new(0));
+    let first = sched.cold_request(
+        "/w/alpha/A.def",
+        7,
+        Box::new({
+            let parsed = parsed.clone();
+            move |_| {
+                parsed.set(parsed.get() + 1);
+                Ok(())
+            }
+        }),
+    );
+    assert_eq!(first.decision, EnqueueDecision::Queued);
+    // 同文件同版本:第二请求合并进在队任务(不重复解析)。
+    let second = sched.cold_request("/w/alpha/A.def", 7, Box::new(|_| Ok(())));
+    assert_eq!(second.decision, EnqueueDecision::Merged);
+    assert_eq!(second.id, first.id, "合并必须指回同一条在队任务");
+    assert!(matches!(sched.pump_once(), Pump::Ran));
+    assert_eq!(parsed.get(), 1, "同文件同版本只解析一次");
+}
+
+#[test]
+fn failed_background_scan_does_not_cache_warm_state() {
+    let mut sched = Scheduler::new(SchedulerOptions::default());
+    let mut scan = spec(TaskKind::InitialScan, priority::BACKGROUND_FULL, None, None);
+    scan.run = Box::new(|_| Err("boom".into()));
+    sched.begin_background_scan(scan);
+    assert_eq!(sched.warm_state(), WarmState::Warming);
+    assert!(matches!(sched.pump_once(), Pump::Ran));
+    // 失败不缓存成暖态假象:keyed 回落,可重开首扫。
+    assert_eq!(sched.warm_state(), WarmState::Idle);
+    let (d, _) = sched.begin_background_scan(spec(
+        TaskKind::InitialScan,
+        priority::BACKGROUND_FULL,
+        None,
+        None,
+    ));
+    assert_eq!(d, EnsureDecision::Recovered);
+    assert!(matches!(sched.pump_once(), Pump::Ran));
+    assert_eq!(sched.warm_state(), WarmState::Warm);
+}
+
+#[test]
+fn cold_request_after_warm_is_immediate_and_unmarked() {
+    let mut sched = Scheduler::new(SchedulerOptions::default());
+    sched.begin_background_scan(spec(
+        TaskKind::InitialScan,
+        priority::BACKGROUND_FULL,
+        None,
+        None,
+    ));
+    assert!(matches!(sched.pump_once(), Pump::Ran));
+    assert_eq!(sched.warm_state(), WarmState::Warm);
+    let outcome = sched.cold_request("/w/beta/B.def", 2, Box::new(|_| Ok(())));
+    assert_eq!(outcome.decision, EnqueueDecision::Queued);
+    assert!(!outcome.while_warming, "暖态冷请求不得亮 warming 位");
+    assert_eq!(sched.cold_while_warming_count(), 0);
 }
