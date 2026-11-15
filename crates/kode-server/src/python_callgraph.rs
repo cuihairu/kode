@@ -52,6 +52,106 @@ struct CallgraphParams {
     files: Vec<FileInput>,
     #[serde(default)]
     manifest_xml_text: Option<String>,
+    /// RUST-077-W:边分页续取游标(CORE-012 输入序偏移)。缺省 0 = 首页;
+    /// 同输入同游标必得同页(handler text-in 纯函数,确定性重跑)。旧调用
+    /// 方不发此键 = 全量(小结果契约零变化)。
+    #[serde(default)]
+    edge_offset: usize,
+    /// RUST-077-W:节点数组分页游标(同语义)。
+    #[serde(default)]
+    node_offset: usize,
+    /// RUST-077-W:数据流数组分页游标(同语义)。
+    #[serde(default)]
+    dataflow_offset: usize,
+    /// RUST-077-W:跨文件反索引条目分页游标(BTreeMap 键序确定性;条目 =
+    /// {callee: callers} 键值对,切片不改对象形状)。
+    #[serde(default)]
+    reverse_offset: usize,
+}
+
+/// RUST-077-W:单页边限额(服务端策略常量;配置化接线随 RUST-078-W 预算
+/// 构造落,本批不伪造配置面)。条目硬限防极端碎片页,字节硬限 = 真实
+/// serde 序列化字节(逐边实测,非权重估算)。256 KiB:已知生产大面
+/// (万文件工作区 callgraph)单响应远超此限,分页在生产真实生效。
+const EDGE_PAGE_MAX_ITEMS: usize = 20_000;
+const EDGE_PAGE_MAX_BYTES: usize = 256 * 1024;
+
+/// RUST-077-W:按 CORE-012 纯核切一页数组(边/节点/数据流通用)。weight =
+/// 逐条真实 serde 序列化字节(「真实输出字节限制」的字面口径);协作取消
+/// 桥 = worker 线程探针(kode_python::cancel)在逐条计量点拉响 scheduler
+/// CancelToken——触发条目保留、下一检查点停收,与纯核文档语义一致。
+fn slice_json_page(
+    items: &[Value],
+    offset: usize,
+    cancel_probe: bool,
+) -> (Vec<Value>, EdgePageMeta) {
+    use kode_scheduler::results::{paginate, PageCursor, PageLimits};
+    use kode_scheduler::scheduler::CancelToken;
+    let bridge = CancelToken::new();
+    let weight = |item: &Value| {
+        if cancel_probe && kode_python::cancel::is_cancelled() && !bridge.is_cancelled() {
+            bridge.cancel();
+        }
+        serde_json::to_string(item).map(|s| s.len()).unwrap_or(0)
+    };
+    let page = paginate(
+        items,
+        PageCursor { offset },
+        PageLimits {
+            max_items: EDGE_PAGE_MAX_ITEMS,
+            max_bytes: EDGE_PAGE_MAX_BYTES,
+        },
+        weight,
+        &bridge,
+    );
+    let meta = EdgePageMeta {
+        offset: page.offset,
+        next_offset: page.next_offset,
+        oversized_at: page.oversized_at,
+        cancelled: page.cancelled,
+        bytes_estimate: page.bytes_estimate,
+        total: items.len(),
+    };
+    (page.items, meta)
+}
+
+/// RUST-077-W:反索引条目切片(BTreeMap 键序确定性 → 输入序偏移语义成立;
+/// 条目序列化为单键对象 {callee: callers},形状与全量一致)。
+fn slice_reverse_page(
+    reverse_index: &BTreeMap<String, Vec<String>>,
+    offset: usize,
+    cancel_probe: bool,
+) -> (BTreeMap<String, Vec<String>>, EdgePageMeta) {
+    let entries: Vec<Value> = reverse_index
+        .iter()
+        .map(|(callee, callers)| serde_json::json!({ callee: callers }))
+        .collect();
+    let (paged, meta) = slice_json_page(&entries, offset, cancel_probe);
+    let mut out = BTreeMap::new();
+    for entry in &paged {
+        if let Some(obj) = entry.as_object() {
+            for (callee, callers) in obj {
+                if let Ok(callers) = serde_json::from_value::<Vec<String>>(callers.clone()) {
+                    out.insert(callee.clone(), callers);
+                }
+            }
+        }
+    }
+    (out, meta)
+}
+
+/// 分页元信息(响应 `edgePage` 键;全量小结果不携带此键 = 旧契约零变化)。
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EdgePageMeta {
+    offset: usize,
+    next_offset: Option<usize>,
+    oversized_at: Option<usize>,
+    cancelled: bool,
+    /// 本页真实序列化字节合计(与切页计量同源)。
+    bytes_estimate: usize,
+    /// 全量边数(消费方续取进度对账)。
+    total: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -193,7 +293,86 @@ fn kind_table() -> BTreeMap<&'static str, usize> {
 fn build_handler(params: Value) -> Result<Value, String> {
     let input: CallgraphParams =
         serde_json::from_value(params).map_err(|e| format!("python/callgraph params: {e}"))?;
-    serde_json::to_value(build_callgraph(&input)).map_err(|e| e.to_string())
+    let cancel_probe = kode_python::cancel::is_cancelled();
+    let mut result = serde_json::to_value(build_callgraph(&input)).map_err(|e| e.to_string())?;
+    // RUST-077-W:大结果分页接生产——四个大维度(边/节点/数据流/反索引)
+    // 按 CORE-012 纯核切片,单页 payload 有界;同输入同游标必得同页(纯
+    // 函数确定性),续取语义成立。被切片的维度携带 `*Page` 元信息键。
+    if let Some(obj) = result.as_object_mut() {
+        // (响应键, 游标, 切片器)逐维处理;任一维非首页/未到底/有取消/
+        // 超大条目即插入对应 `*Page` 元信息,全量维不携带键(旧契约零变)。
+        for (key, page_key, offset, sliced) in [
+            (
+                "edges",
+                "edgePage",
+                input.edge_offset,
+                SliceKind::Array(
+                    obj.get("edges").and_then(|v| v.as_array()).cloned().unwrap_or_default(),
+                ),
+            ),
+            (
+                "nodes",
+                "nodePage",
+                input.node_offset,
+                SliceKind::Array(
+                    obj.get("nodes").and_then(|v| v.as_array()).cloned().unwrap_or_default(),
+                ),
+            ),
+            (
+                "dataflow",
+                "dataflowPage",
+                input.dataflow_offset,
+                SliceKind::Array(
+                    obj.get("dataflow").and_then(|v| v.as_array()).cloned().unwrap_or_default(),
+                ),
+            ),
+            (
+                "reverseIndex",
+                "reversePage",
+                input.reverse_offset,
+                SliceKind::Reverse(
+                    serde_json::from_value::<BTreeMap<String, Vec<String>>>(
+                        obj.get("reverseIndex").cloned().unwrap_or(Value::Null),
+                    )
+                    .unwrap_or_default(),
+                ),
+            ),
+        ] {
+            let (value, meta) = match sliced {
+                SliceKind::Array(items) => {
+                    let (paged, meta) = slice_json_page(&items, offset, cancel_probe);
+                    (Value::Array(paged), meta)
+                }
+                SliceKind::Reverse(map) => {
+                    let (paged, meta) = slice_reverse_page(&map, offset, cancel_probe);
+                    (
+                        serde_json::to_value(paged).map_err(|e| e.to_string())?,
+                        meta,
+                    )
+                }
+            };
+            // 全量小结果(首页且到底且无取消/超大条目)不携带 `*Page` 键;
+            // 非首页(offset>0)即使到底也如实携带(续取尾页)。
+            let full_page = offset == 0
+                && meta.next_offset.is_none()
+                && meta.oversized_at.is_none()
+                && !meta.cancelled;
+            if !full_page {
+                obj.insert(key.to_string(), value);
+                obj.insert(
+                    page_key.to_string(),
+                    serde_json::to_value(meta).map_err(|e| e.to_string())?,
+                );
+            }
+        }
+    }
+    Ok(result)
+}
+
+/// RUST-077-W:分页维度载荷(数组维或反索引映射维)。
+enum SliceKind {
+    Array(Vec<Value>),
+    Reverse(BTreeMap<String, Vec<String>>),
 }
 
 fn symbol_id(path: &str, kind: &str, scope: &str, name: &str) -> String {

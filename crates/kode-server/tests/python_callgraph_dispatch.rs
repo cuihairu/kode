@@ -494,3 +494,157 @@ fn process_roles_skip_roleless_and_non_process_elements() {
         "仅非空 role 的 process 进角色集:{names:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// RUST-077-W:大结果分页(四维切片,CORE-012 纯核生产接线)
+// ---------------------------------------------------------------------------
+
+/// 单文件 N 方法生成器:每方法 1 条属性读链(dataflow)+ 1 条 self 调用(边)。
+fn wide_class_source(methods: usize) -> String {
+    let mut lines = vec!["class Wide:".to_string()];
+    for i in 0..methods {
+        lines.push(format!("    def m{i}(self):"));
+        lines.push(format!("        y = self.a{i}"));
+        lines.push(format!("        self.m{}()", (i + 1) % methods));
+    }
+    lines.join("\n")
+}
+
+fn page_next(result: &Value, key: &str) -> Option<u64> {
+    result
+        .get(key)
+        .and_then(|p| p.get("nextOffset"))
+        .and_then(|v| v.as_u64())
+}
+
+#[test]
+fn callgraph_small_result_has_no_page_keys() {
+    let out = callgraph(json!({
+        "files": [{ "path": "/w/small.py", "text": "def a():\n    pass\n" }]
+    }));
+    for key in ["edgePage", "nodePage", "dataflowPage", "reversePage"] {
+        assert!(
+            out.get(key).is_none(),
+            "全量小结果不得携带 {key}(旧契约零变化): {out}"
+        );
+    }
+}
+
+#[test]
+fn callgraph_oversized_arrays_page_and_resume_exactly() {
+    let text = wide_class_source(3000);
+    let params = json!({ "files": [{ "path": "/w/wide.py", "text": text }] });
+    let first = callgraph(params.clone());
+    let stats = first.get("stats").expect("stats 键在");
+    let edge_total = stats.get("edgeCount").and_then(|v| v.as_u64()).expect("edgeCount");
+    let node_total = stats.get("nodeCount").and_then(|v| v.as_u64()).expect("nodeCount");
+    let dataflow_total = stats
+        .get("dataflowCount")
+        .and_then(|v| v.as_u64())
+        .expect("dataflowCount");
+    assert!(edge_total >= 3000, "3000 方法应产 ≥3000 边: {edge_total}");
+    // 三数组维全部超限入页。
+    for key in ["edgePage", "nodePage", "dataflowPage"] {
+        assert!(first.get(key).is_some(), "大结果应携带 {key}");
+    }
+    assert!(
+        first.get("edges").and_then(|v| v.as_array()).map(|a| a.len() as u64).unwrap_or(0)
+            < edge_total,
+        "首页边必为有界子集"
+    );
+    // 确定性:同输入同游标必得同页。
+    let again = callgraph(params);
+    assert_eq!(first.get("edges"), again.get("edges"), "同输入同游标同页");
+    // 续取循环:各维累计 == stats 总数,游标恒前进。
+    for (key, page_key, total) in [
+        ("edges", "edgePage", edge_total),
+        ("nodes", "nodePage", node_total),
+        ("dataflow", "dataflowPage", dataflow_total),
+    ] {
+        let mut collected = first
+            .get(key)
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut len = collected.len() as u64;
+        let mut cursor = page_next(&first, page_key);
+        while let Some(off) = cursor {
+            let page = callgraph(json!({
+                "files": [{ "path": "/w/wide.py", "text": text }],
+                "edgeOffset": if page_key == "edgePage" { off } else { 0 },
+                "nodeOffset": if page_key == "nodePage" { off } else { 0 },
+                "dataflowOffset": if page_key == "dataflowPage" { off } else { 0 },
+            }));
+            let arr = page
+                .get(key)
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let next = page_next(&page, page_key);
+            assert!(
+                next.is_none() || next.unwrap() > off,
+                "{page_key} 游标必须前进: {off} -> {next:?}"
+            );
+            len += arr.len() as u64;
+            collected.extend(arr);
+            cursor = next;
+        }
+        assert_eq!(len, total, "{key} 分页续取必须恰好累计全量");
+        assert!(!collected.is_empty());
+    }
+}
+
+#[test]
+fn callgraph_reverse_index_pages_across_many_files() {
+    // N 个单边文件(每文件 1 条 local 边)→ 反索引 N 键;条目超 256KiB 入页。
+    let n = 6000usize;
+    // 跨文件裸名调用(调用方文件不定义被调函数 → find_module_function 跨
+    // 文件解析)→ 反索引 n 个不同被调文件键。
+    let rev_text = |i: usize| -> String {
+        format!(
+            "def f{i}():\n    pass\n\ndef caller{i}():\n    f{}()\n",
+            (i + 1) % n
+        )
+    };
+    let files: Vec<Value> = (0..n)
+        .map(|i| {
+            json!({ "path": format!("/w/rev/very/deep/directory/segment/f{i}.py"), "text": rev_text(i) })
+        })
+        .collect();
+    let first = callgraph(json!({ "files": files }));
+    let rp = first
+        .get("reversePage")
+        .unwrap_or_else(|| panic!("反索引应入页(6000 键): keys={}", {
+            first.get("reverseIndex").and_then(|v| v.as_object())
+                .map(|m| m.len()).unwrap_or(0)
+        }));
+    let total = rp.get("total").and_then(|v| v.as_u64()).expect("total");
+    assert_eq!(total, n as u64, "反索引条目总数 = 文件数");
+    // 续取累计全量键。
+    let mut keys = first
+        .get("reverseIndex")
+        .and_then(|v| v.as_object())
+        .map(|m| m.keys().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    let mut cursor = page_next(&first, "reversePage");
+    while let Some(off) = cursor {
+        let files: Vec<Value> = (0..n)
+            .map(|i| {
+                json!({ "path": format!("/w/rev/very/deep/directory/segment/f{i}.py"), "text": rev_text(i) })
+            })
+            .collect();
+        let page = callgraph(json!({ "files": files, "reverseOffset": off }));
+        keys.extend(
+            page.get("reverseIndex")
+                .and_then(|v| v.as_object())
+                .map(|m| m.keys().cloned().collect::<Vec<_>>())
+                .unwrap_or_default(),
+        );
+        let next = page_next(&page, "reversePage");
+        assert!(next.is_none() || next.unwrap() > off, "游标必须前进");
+        cursor = next;
+    }
+    keys.sort();
+    keys.dedup();
+    assert_eq!(keys.len() as u64, total, "续取恰好累计全量键");
+}
