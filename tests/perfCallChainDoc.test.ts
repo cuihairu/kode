@@ -449,15 +449,20 @@ const ANCHORS: Array<[string, number, string]> = [
   // globaldata 块之后)→ provideDefinitionTracedImpl 313→354(+41)、其后的
   // 层0 接收者段闸/withInitialScanTimeout +73(869/975 → 942/1048,真位重探);
   // 出处随 baseline 锁步。
-  ['src/languageProviders/pythonDefinition.ts', 354, 'provideDefinitionTracedImpl'],
+  // 2026-11-15(RUST-004-W1):顶部 dataDictReadyBudget import +3、
+  // resolveDataDictReadyBudgetMs/awaitDataDictIndexReady 预算竞速重写 +56
+  // (均在 provideDefinitionTracedImpl 之前)→ 真位重探 354→413;其后
+  // 层0 接收者段闸/withInitialScanTimeout +59(942/1048 → 1001/1107),
+  // 出处随 baseline 锁步。
+  ['src/languageProviders/pythonDefinition.ts', 413, 'provideDefinitionTracedImpl'],
   // 2026-11-06(六):二次并入 origin main(KR-AUD-84 引擎整串开关表在 4725 后
   // +13)——层0 接收者段闸/withInitialScanTimeout/provideCompletionItems 锚点
   // 再 +13(真位重探 5146/5252/7063,出处随 baseline 锁步)。
   // 2026-11-13(KSEM-STRUCT-03):fdKeyHit 臂注册表前移 +2 行(注释+customTypes
   // const,provideDefinition 260/provideDefinitionTracedImpl 312 不变)→ 其后锚点
   // +2(真位重探 829/935,出处随 baseline 锁步)。
-  ['src/languageProviders/pythonDefinition.ts', 942, '层0 接收者段闸'],
-  ['src/languageProviders/pythonDefinition.ts', 1048, 'withInitialScanTimeout'],
+  ['src/languageProviders/pythonDefinition.ts', 1001, '层0 接收者段闸'],
+  ['src/languageProviders/pythonDefinition.ts', 1107, 'withInitialScanTimeout'],
   // 2026-11-06:IDE-LINT-012 快速修复边界——languageProviders.ts 在 receiver
   // 守卫 provider 前新增 receiverFromDiagnosticLine helper(区间归属提取)+
   // 提取块重写,+31 行,7007 后锚点随之 +31(真位重探 7038;其余 languageProviders
@@ -484,7 +489,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-14(KSEM-DATA-06):KBEngineCompletionProvider 键位分支 +14 与
   // provideSpaceDataKeyCompletions +61(均在 PythonCompletionProvider 之前)
   // → provideCompletionItems 真位重探 989→1064,出处随 baseline 锁步。
-  ['src/languageProviders/completion.ts', 1064, 'provideCompletionItems('],
+  // 2026-11-15(RUST-004-W1):provideDataDictKeyCompletions marked 路由改写
+  // (+9:queryKeyFamiliesMarked 调用 + isIncomplete 分支三处,均在
+  // PythonCompletionProvider 之前)→ provideCompletionItems 真位重探
+  // 1064→1073,出处随 baseline 锁步。
+  ['src/languageProviders/completion.ts', 1073, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)

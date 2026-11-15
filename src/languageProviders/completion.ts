@@ -319,7 +319,7 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     document: vscode.TextDocument,
     position: vscode.Position,
     token?: vscode.CancellationToken
-  ): vscode.ProviderResult<vscode.CompletionItem[]> {
+  ): vscode.ProviderResult<vscode.CompletionItem[] | vscode.CompletionList> {
     if (token?.isCancellationRequested) return null;
     // KSEM-CELL-04: cellData 字符串键位(`self.cellData["…"` / `.get("…"`)
     // → Rust 键宇宙补全。键位上下文里 def 链成员补全无效,先于 Rust-first
@@ -346,7 +346,8 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     );
     if (dataDictCtx) {
       return this.provideDataDictKeyCompletions(document, position, dataDictCtx, token).then(
-        items => (items !== null ? items : this.provideCompletionItemsSync(document, position, token))
+        async items =>
+          items !== null ? items : this.provideCompletionItemsSync(document, position, token)
       );
     }
     // KSEM-DATA-06:spaceData 键位(`KBEngine.setSpaceData(<sid>, "…"` / get /
@@ -610,14 +611,17 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     position: vscode.Position,
     ctx: DataDictKeyCompletionContext,
     token?: vscode.CancellationToken
-  ): Promise<vscode.CompletionItem[] | null> {
+  ): Promise<vscode.CompletionItem[] | vscode.CompletionList | null> {
     const index = this.dataDictIndex;
     if (!index || !isPythonDataDictIndexEnabled()) {
       return null;
     }
-    // AUD-072:冷索引可取消等待——初扫在飞时键位补全等齐再列族(与
-    // hover/references 同款),不空手回装作无键
-    if (!(await awaitDataDictIndexReady(index, token))) {
+    // AUD-072+RUST-004-W1:取消即停;预算耗尽(pending)不再无界等初扫——
+    // 走 queryKeyFamiliesMarked 取已入索引的部分真实键族,列表标
+    // isIncomplete(编辑器后续输入会重查,初扫完成后自然刷新),不把
+    // 冷空集装成完整空结果。
+    const readiness = await awaitDataDictIndexReady(index, token);
+    if (readiness === 'cancelled') {
       return [];
     }
     // KSEM-DATA-04 进程域:查询文件出域(base 进程敲 cellAppData 键)运行期
@@ -625,12 +629,15 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     const domain = dataDictProcessDomain(ctx.dict);
     const docRole = pythonProcessFromPath(document.fileName);
     const docOutOfDomain = !!(domain && docRole && !domain.has(docRole));
-    const families = index.queryKeyFamilies(ctx.dict, resolveScopeRoot(document.uri.fsPath));
+    const marked = index.queryKeyFamiliesMarked(ctx.dict, resolveScopeRoot(document.uri.fsPath));
+    const families = marked.families;
     if (token?.isCancellationRequested) {
       return [];
     }
     if (families.length === 0) {
-      return []; // 本工程此字典暂无键:键位不给项,不造键
+      // 未就绪:isIncomplete 空列表(编辑器继续输入会重查,初扫完成后刷新),
+      // 不装终答;就绪真空:[](本工程此字典暂无键:键位不给项,不造键)
+      return marked.ready ? [] : new vscode.CompletionList([], true);
     }
     const range = new vscode.Range(position.line, ctx.replaceStart, position.line, position.character);
     const items: vscode.CompletionItem[] = [];
@@ -662,7 +669,9 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
       item.range = range;
       items.push(item);
     }
-    return items;
+    // RUST-004-W1:未就绪的部分键族照样列出(部分真实内容),列表标
+    // isIncomplete——编辑器后续输入重查,初扫完成后自然补全,不装终答
+    return marked.ready ? items : new vscode.CompletionList(items, true);
   }
 
   /**

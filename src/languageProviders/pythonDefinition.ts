@@ -17,7 +17,7 @@ import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonMemberAccessAtPosition, type PythonMemberAccess } from '../backend/pythonLanguageUtils';
 import { buildKbeStubDocument, buildKbeStubUriString, getKbeAliases, getKbeFromImportedSymbols, getKbeSymbol, getPythonClassBaseAtPosition, resolveKbeAccessAtPosition } from '../kbeModuleIndex';
 import { pythonProcessFromPath } from '../backend/pythonProcess';
-import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, isKeyInsideLineComment, queryDataDictSitesForAccess, resolveScopeRoot, type KbeDataDictSite } from '../globalDataIndex';
+import { GlobalDataDictIndex, getDataDictAccessInCodeContext, getKbeDataDictAccessAtPosition, isKeyInsideLineComment, queryDataDictSitesForAccessMarked, resolveScopeRoot, type KbeDataDictSite } from '../globalDataIndex';
 import { withInitialScanTimeout } from '../hoverBudget';
 import { getLanguageFeatureConfig } from './shared';
 import { getPythonMethodDeclarationAtPosition } from './callHierarchy';
@@ -63,28 +63,72 @@ export function getPythonDataDictIndexGeneration(): number {
   return pythonDataDictIndexGeneration;
 }
 
-// AUD-072(R4-F07):冷索引等待可取消——旧实现先 await 全量 ensureStarted
-// 再查 token,初扫在飞时取消要等整轮扫描结束才返回。改为竞速:取消信号先
-// 到即放行当前调用(返回 false,不再查索引),共享初扫原样继续服务其他请求
-// (单次取消不中止、不破坏索引);初扫先到仍复检取消。返回 false = 已取消,
-// 调用方应停止后续查找工作。
+// RUST-004-W1:请求不得无界阻塞在全量初始化前置上(AUD-072 取消竞速之上
+// 加预算轴)。三态:'ready'=初扫在预算内完成(快扫描路径与旧行为完全一致);
+// 'pending'=预算耗尽而初扫仍在飞——请求立即返回,消费面走 marked 查询拿
+// 已入索引的部分真实内容(partial-real,不装完整),初扫作为后台预热单独
+// 继续跑(完成后的下一次请求自然拿到全量);"cancelled"=取消先到(与旧
+// false 同义,调用方停止后续查找工作)。无 token 的程序化调用仍等全量
+// (离线语义:要完整数据,无请求预算可讲)。预算经
+// KODE_DATA_DICT_READY_BUDGET_MS 覆盖(测试挂死初扫用),非法值诚实回缺省。
+export type DataDictIndexReadiness = 'ready' | 'pending' | 'cancelled';
+
+export const DATA_DICT_READY_DEFAULT_BUDGET_MS = 1500;
+
+export function resolveDataDictReadyBudgetMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.KODE_DATA_DICT_READY_BUDGET_MS;
+  if (raw === undefined || raw === '') {
+    return DATA_DICT_READY_DEFAULT_BUDGET_MS;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DATA_DICT_READY_DEFAULT_BUDGET_MS;
+}
+
 export async function awaitDataDictIndexReady(
   index: GlobalDataDictIndex,
-  token?: vscode.CancellationToken
-): Promise<boolean> {
+  token?: vscode.CancellationToken,
+  budgetMs = resolveDataDictReadyBudgetMs()
+): Promise<DataDictIndexReadiness> {
   if (token?.isCancellationRequested) {
-    return false;
+    return 'cancelled';
+  }
+  // 已就绪快路径:不起计时器,零开销返回(大量常见请求都在这条线上)
+  if (index.isReady) {
+    return 'ready';
   }
   const starting = index.ensureStarted();
   if (!token) {
     await starting;
-    return true;
+    return 'ready';
   }
   let onDone: (() => void) | undefined;
-  // 取消订阅面缺失(手写桩 token 只有旗标)→ 退化为先检后检,不竞速
+  let budgetTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearBudgetTimer = (): void => {
+    if (budgetTimer !== undefined) {
+      clearTimeout(budgetTimer);
+      budgetTimer = undefined;
+    }
+  };
+  // 取消订阅面缺失(手写桩 token 只有旗标)→ 退化为预算竞速+收尾取消复检
   if (typeof token.onCancellationRequested !== 'function') {
-    await starting;
-    return !token.isCancellationRequested;
+    try {
+      const winner = await Promise.race([
+        starting.then(() => 'ready' as const),
+        new Promise<'pending'>(resolve => {
+          budgetTimer = setTimeout(() => resolve('pending'), budgetMs);
+        })
+      ]);
+      if (winner === 'pending') {
+        // 初扫继续后台跑(预热单独调度);其失败无人消费时会成 unhandled
+        // rejection——挂 no-op 兜底(ensureStarted 失败自清 starting,下次
+        // 请求会重试初扫,错误不被吞进静默成功)
+        void starting.catch(() => undefined);
+        return token.isCancellationRequested ? 'cancelled' : 'pending';
+      }
+      return token.isCancellationRequested ? 'cancelled' : 'ready';
+    } finally {
+      clearBudgetTimer();
+    }
   }
   const cancelWins = new Promise<null>(resolve => {
     const d = token.onCancellationRequested(() => resolve(null));
@@ -93,12 +137,23 @@ export async function awaitDataDictIndexReady(
   try {
     const winner = await Promise.race([
       starting.then(() => 'ready' as const),
-      cancelWins
+      cancelWins,
+      new Promise<'pending'>(resolve => {
+        budgetTimer = setTimeout(() => resolve('pending'), budgetMs);
+      })
     ]);
     if (winner === null) {
-      return false;
+      return 'cancelled';
     }
-    return !token.isCancellationRequested;
+    if (winner === 'pending') {
+      // 同上:初扫继续后台跑,失败挂 no-op 兜底防 unhandled rejection
+      void starting.catch(() => undefined);
+    }
+    clearBudgetTimer();
+    if (winner === null) {
+      return 'cancelled';
+    }
+    return winner === 'pending' && token.isCancellationRequested ? 'cancelled' : winner;
   } finally {
     onDone?.();
   }
@@ -114,7 +169,7 @@ export async function resolveDataDictSitesAtPosition(
   document: vscode.TextDocument,
   position: vscode.Position,
   token?: vscode.CancellationToken
-): Promise<{ access: NonNullable<ReturnType<typeof getKbeDataDictAccessAtPosition>>; sites: KbeDataDictSite[] } | null> {
+): Promise<{ access: NonNullable<ReturnType<typeof getKbeDataDictAccessAtPosition>>; sites: KbeDataDictSite[]; ready: boolean } | null> {
   if (!dataDictIndex || !isPythonDataDictIndexEnabled()) {
     return null;
   }
@@ -137,8 +192,10 @@ export async function resolveDataDictSitesAtPosition(
   if (!access) {
     return null;
   }
-  // AUD-072:冷索引等待可取消——取消即放行,不查索引(共享初扫继续)。
-  if (!(await awaitDataDictIndexReady(dataDictIndex, token))) {
+  // AUD-072+RUST-004-W1:取消即放行不查索引;预算耗尽(pending)不再无界等
+  // 全量初扫——继续走 marked 查询取已入索引的部分真实内容(partial-real),
+  // 键族查空时消费面按既有「交回常规链」口径降级,初扫后台预热照常推进。
+  if ((await awaitDataDictIndexReady(dataDictIndex, token)) === 'cancelled') {
     return null;
   }
   if (getPythonDataDictIndexGeneration() !== enabledGeneration) {
@@ -152,10 +209,12 @@ export async function resolveDataDictSitesAtPosition(
     return null;
   }
   // AUD-068:查询带根身份——跨进程字典不跨工程共享命名空间,同根内互链。
-  // 函数调用键(callFn)→ 现解签名取并集;普通键走单键查询。
+  // 函数调用键(callFn)→ 现解签名取并集;普通键走单键查询。RUST-004-W1:
+  // marked 路由——ready=false 表示初扫仍在飞(部分真实内容),消费面可辨
+  // 「索引未就绪的部分集」与「就绪后的真空集」。
   return {
     access,
-    sites: queryDataDictSitesForAccess(
+    ...queryDataDictSitesForAccessMarked(
       dataDictIndex,
       access,
       resolveScopeRoot(document.uri.fsPath)

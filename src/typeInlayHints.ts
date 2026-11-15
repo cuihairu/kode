@@ -317,10 +317,12 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
           // 旧实现 await 全量 ensureStarted 且不接 token——宿主换页/关文档时 inlay
           // 仍挂着等整轮扫描结束,取消无效。改为与共享初扫竞速,取消先到即弃查。
           // 懒触发位保持在 read 访问点(非 write/delete):只有真需读点反查才起扫。
-          ensured = await awaitDataDictIndexReady(this.dataDictIndex, token);
-          if (!ensured) {
+          // RUST-004-W1:预算耗尽(pending)不再无界等初扫——用已入索引的部分
+          // 真实写点出 union(不伪造类型),预热后台照常推进;只取消才弃查。
+          if ((await awaitDataDictIndexReady(this.dataDictIndex, token)) === 'cancelled') {
             return;
           }
+          ensured = true;
         }
         const types: string[] = [];
         // AUD-068 同款:查询带根身份(索引按 workspace 根身份键提交)

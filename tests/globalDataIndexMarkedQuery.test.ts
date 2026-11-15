@@ -53,12 +53,30 @@ describe('GlobalDataDictIndex marked query (RUST-004)', () => {
     expect(index.isReady).toBe(false);
   });
 
-  it('queryMarked:未就绪 {sites:[], ready:false},不把「未建」装成「空结果」', () => {
+  it('queryMarked:未就绪且无内容 {sites:[], ready:false}(空集只代表「还没有内容」)', () => {
     const index = new GlobalDataDictIndex();
     try {
       const marked = index.queryMarked('globalData', 'cfg');
       expect(marked.ready).toBe(false);
       expect(marked.sites).toEqual([]);
+    } finally {
+      index.dispose();
+    }
+  });
+
+  it('queryMarked:未就绪但已有部分真实内容 → partial 照常流出,ready:false 如实标注(W1 审计修正:不藏已索引内容)', () => {
+    const index = new GlobalDataDictIndex();
+    try {
+      index.noteSaved(
+        vscode.makeTextDocument('import KBEngine\nKBEngine.globalData["cfg"] = 1\n', {
+          fileName: path.join(root, 'writer.py'),
+          languageId: 'python'
+        })
+      );
+      const marked = index.queryMarked('globalData', 'cfg');
+      expect(marked.ready, '初扫未完成如实标 false').toBe(false);
+      expect(marked.sites.length, '已索引部分真实内容照常流出').toBeGreaterThan(0);
+      expect(marked.sites.map(site => site.kind)).toEqual(index.query('globalData', 'cfg').map(site => site.kind));
     } finally {
       index.dispose();
     }
@@ -79,12 +97,23 @@ describe('GlobalDataDictIndex marked query (RUST-004)', () => {
     }
   });
 
-  it('queryKeyFamiliesMarked:未就绪 {families:[], ready:false};初扫后键族流出', async () => {
+  it('queryKeyFamiliesMarked:未就绪且无内容 {families:[], ready:false};部分内容不藏;初扫后键族流出', async () => {
     const index = new GlobalDataDictIndex();
     try {
       const before = index.queryKeyFamiliesMarked('globalData');
       expect(before.ready).toBe(false);
       expect(before.families).toEqual([]);
+
+      // W1 审计修正:未就绪不强制空族——事件驱动面已蓄的真实键照常流出
+      index.noteSaved(
+        vscode.makeTextDocument('import KBEngine\nKBEngine.globalData["cfg"] = 1\n', {
+          fileName: path.join(root, 'writer.py'),
+          languageId: 'python'
+        })
+      );
+      const partial = index.queryKeyFamiliesMarked('globalData');
+      expect(partial.ready).toBe(false);
+      expect(partial.families.map(family => family.keySignature)).toEqual(['cfg']);
 
       await index.ensureStarted();
       const after = index.queryKeyFamiliesMarked('globalData');

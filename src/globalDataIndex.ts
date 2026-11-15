@@ -695,17 +695,17 @@ export class GlobalDataDictIndex {
     return this.started && !this.disposed;
   }
 
-  /** RUST-004:显式标注查询——未就绪返回 {sites:[], ready:false},绝不
-   * 让调用方把「索引未建」读成「查询结果为空」。判据「允许明确标注
-   * partial/incomplete」的落地面;plain query() 语义不变(生产消费面都
-   * 先过 ensureStarted 门,marked 面给未来无门调用方用)。 */
+  /** RUST-004:显式标注查询——ready=false 标注「初扫未完成」,sites 仍是
+   * 已入索引的部分真实内容(partial-real),调用方据此可辨「未就绪的部分集」
+   * 与「就绪后的真空集」,绝不把「索引未建」读成「查询结果为空」,也不把
+   * 已索引内容藏成空族(W1 审计修正:强制空族会丢事件驱动面已蓄的真实键)。
+   * plain query() 语义不变(生产消费面都先过 ensureStarted 门)。 */
   queryMarked(
     dict: string,
     keySignature: string,
     root = ''
   ): { sites: KbeDataDictSite[]; ready: boolean } {
-    const ready = this.isReady;
-    return { sites: ready ? (this.byKey.get(siteKey(root, dict, keySignature)) ?? []) : [], ready };
+    return { sites: this.query(dict, keySignature, root), ready: this.isReady };
   }
 
   /**
@@ -728,13 +728,14 @@ export class GlobalDataDictIndex {
     return families.sort((a, b) => a.keySignature.localeCompare(b.keySignature));
   }
 
-  /** RUST-004:键族面显式标注变体(与 queryMarked 同口径;补全面用)。 */
+  /** RUST-004:键族面显式标注变体(与 queryMarked 同口径;补全面用)。
+   * 未就绪时 families 流出已索引的部分真实键族(W1 审计修正:强制空族
+   * 丢内容),ready=false 由消费面标 isIncomplete/降级呈现。 */
   queryKeyFamiliesMarked(
     dict: string,
     root = ''
   ): { families: Array<{ keySignature: string; sites: KbeDataDictSite[] }>; ready: boolean } {
-    const ready = this.isReady;
-    return { families: ready ? this.queryKeyFamilies(dict, root) : [], ready };
+    return { families: this.queryKeyFamilies(dict, root), ready: this.isReady };
   }
 
   /**
@@ -897,4 +898,19 @@ export function queryDataDictSitesForAccess(
     }
   }
   return sites;
+}
+
+/**
+ * RUST-004-W1:上式的显式标注变体——definition/references 生产路由走这里,
+ * ready=false 表示初扫仍在飞、sites 是已入索引的部分真实内容(partial-real),
+ * 调用方可辨「未就绪的部分集」与「就绪后的真空集」,不把冷空集当已完整。
+ * 与 queryMarked 同口径(ready 单源=index.isReady),站点路由复用原函数
+ * (同一查询身份与根隔离,不另造第二套解析)。
+ */
+export function queryDataDictSitesForAccessMarked(
+  index: GlobalDataDictIndex,
+  access: KbeDataDictAccess,
+  root = ''
+): { sites: KbeDataDictSite[]; ready: boolean } {
+  return { sites: queryDataDictSitesForAccess(index, access, root), ready: index.isReady };
 }

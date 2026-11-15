@@ -652,9 +652,14 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         const sourceUri = document.uri.toString();
         const sourceVersion = document.version;
         return respond(
-          // AUD-072:冷索引等待可取消——取消即放行 null,共享初扫继续
-          awaitDataDictIndexReady(dataDictIndex, token).then(ready => {
-            if (!ready || getPythonDataDictIndexGeneration() !== enabledGeneration) {
+          // AUD-072+RUST-004-W1:取消即放行 null;预算耗尽(pending)带部分
+          // 真实索引内容继续(推不出交回普通 hover 链的既有口径不变),不无界
+          // 等全量初扫,预热后台照常推进
+          awaitDataDictIndexReady(dataDictIndex, token).then(readiness => {
+            if (
+              readiness === 'cancelled' ||
+              getPythonDataDictIndexGeneration() !== enabledGeneration
+            ) {
               return null;
             }
             if (

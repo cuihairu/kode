@@ -111,7 +111,7 @@ afterAll(() => {
 describe('pythonDefinition 缺口臂:dataDict 冷索引就绪(L69/L94)', () => {
   const doc = makeDoc('import KBEngine\nKBEngine.globalData["cfg"] = 1\n');
 
-  it('入口取消 → 立即 false,不 ensureStarted(L69)', async () => {
+  it("入口取消 → 立即 'cancelled',不 ensureStarted(L69)", async () => {
     let ensureStartedCalled = false;
     const index = {
       ensureStarted: async () => {
@@ -120,7 +120,7 @@ describe('pythonDefinition 缺口臂:dataDict 冷索引就绪(L69/L94)', () => {
     } as never as GlobalDataDictIndex;
     const token = { isCancellationRequested: true };
     const ready = await awaitDataDictIndexReady(index, token as never);
-    expect(ready).toBe(false);
+    expect(ready).toBe('cancelled');
     expect(ensureStartedCalled).toBe(false);
   });
 
