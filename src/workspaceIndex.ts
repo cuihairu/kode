@@ -348,6 +348,19 @@ export class WorkspaceIndex implements EventCallIndex {
     return out;
   }
 
+  /** 就绪标注:未初扫完成前 allEventCalls 会硬 await 全量扫描,标注面免阻塞区分「未建」与「空结果」。 */
+  get isReady(): boolean {
+    return this.started && !this.disposed;
+  }
+
+  /** 标注面:未就绪零阻塞返回 ready=false;就绪走 allEventCalls 原语义(硬 await 接线另项设计)。 */
+  async allEventCallsMarked(): Promise<{ calls: IndexedEventCall[]; ready: boolean }> {
+    if (!this.isReady) {
+      return { calls: [], ready: false };
+    }
+    return { calls: await this.allEventCalls(), ready: true };
+  }
+
   /** 某文件的方法行（当前编辑文件走内存文本，外部文件走缓存）。 */
   async methodsOf(document: vscode.TextDocument): Promise<Array<{ name: string; line: number }>> {
     const text = document.getText();

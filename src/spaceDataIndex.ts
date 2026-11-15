@@ -241,6 +241,23 @@ export class SpaceDataIndex {
     return [...(this.families.get(spaceDataFamilyKey(spaceIdSignature, keySignature)) ?? [])];
   }
 
+  /** 就绪标注:增量事件驱动索引没有「未初扫=未建」的严格分界,标注面让调用方区分「未建」与「空结果」。 */
+  get isReady(): boolean {
+    return this.started && !this.disposed;
+  }
+
+  /** 标注面:同空间键族;未就绪时 families 空 + ready=false(查询原语义不动,门在上游 ensureStarted/awaitReady 纪律)。 */
+  queryFamiliesForSpaceMarked(spaceIdSignature: string): { families: SpaceDataFamily[]; ready: boolean } {
+    const ready = this.isReady;
+    return { families: ready ? this.queryFamiliesForSpace(spaceIdSignature) : [], ready };
+  }
+
+  /** 标注面:同 (spaceID, key) 族站点;未就绪时 sites 空 + ready=false(查询原语义不动)。 */
+  queryFamilySitesMarked(spaceIdSignature: string, keySignature: string): { sites: SpaceDataFamilySite[]; ready: boolean } {
+    const ready = this.isReady;
+    return { sites: ready ? this.queryFamilySites(spaceIdSignature, keySignature) : [], ready };
+  }
+
   /** 测试面:登记文件数。 */
   fileCountForTests(): number {
     return this.files.size;
