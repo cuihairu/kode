@@ -403,6 +403,8 @@ mod tests {
             name_span: kode_parser::Span::new(0, 0),
             line: 2,
             args: vec![],
+            arg_type_refs: vec![],
+            return_type: None,
             exposed,
         }
     }

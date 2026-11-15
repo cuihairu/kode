@@ -87,6 +87,12 @@ pub struct MethodDef {
     pub line: usize,
     /// `<Arg>` 文本(按出现顺序)。
     pub args: Vec<String>,
+    /// 逐 `<Arg>` 的类型引用(collect_type_refs 同口径,ARRAY/FIXED_DICT
+    /// 指令剥离 + `<of>` 文本;RUST-108 方法元数据消费;不进 parser golden)。
+    pub arg_type_refs: Vec<Vec<String>>,
+    /// `<ReturnType>` 子值直文本(TS definitionSemantics getScalarChildValue
+    /// 同口径;缺/空 = None。RUST-108;不进 parser golden)。
+    pub return_type: Option<String>,
     /// `<Exposed>` truthy。
     pub exposed: bool,
 }
@@ -301,6 +307,8 @@ fn extract_methods(doc: &Document, section: usize, lines: &LineMap) -> Vec<Metho
     for m in doc.child_elements(section) {
         let me = doc.element(m);
         let mut args = Vec::new();
+        let mut arg_type_refs = Vec::new();
+        let mut return_type: Option<String> = None;
         let mut exposed = false;
         for child in doc.child_elements(m) {
             let ce = doc.element(child);
@@ -309,6 +317,15 @@ fn extract_methods(doc: &Document, section: usize, lines: &LineMap) -> Vec<Metho
                     let t = ce.text(doc).trim().to_string();
                     if !t.is_empty() {
                         args.push(t);
+                        // 与属性 type_refs 同口径(ARRAY/FIXED_DICT 剥离 +
+                        // `<of>` 文本);指令独占的 Arg 产出空 ref,如实。
+                        arg_type_refs.push(collect_type_refs(doc, child));
+                    }
+                }
+                "returntype" => {
+                    let t = ce.text(doc).trim().to_string();
+                    if !t.is_empty() {
+                        return_type = Some(t);
                     }
                 }
                 "exposed" => exposed = doc.truthy_child(m, &ce.name),
@@ -320,6 +337,8 @@ fn extract_methods(doc: &Document, section: usize, lines: &LineMap) -> Vec<Metho
             name_span: me.name_span,
             line: lines.line_of(me.name_span.start),
             args,
+            arg_type_refs,
+            return_type,
             exposed,
         });
     }

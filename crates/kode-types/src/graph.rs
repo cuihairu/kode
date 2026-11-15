@@ -247,6 +247,8 @@ pub struct TypeGraph {
     pub entity_registrations: BTreeMap<String, TypeOrigin>,
     /// 生成映射(RUST-105;opt-in 注册,构建器永不自动填充)。
     pub generation_links: BTreeMap<String, Vec<GenerationTarget>>,
+    /// .def 方法元数据(RUST-108;add_def 登记序,重复实体不重复登记)。
+    pub methods: Vec<crate::methods::MethodMeta>,
     /// 灌入上下文([`TypeGraph::set_ingest`] 设置;add_* 盖章携带)。
     pub(crate) ingest: IngestContext,
 }
@@ -272,7 +274,7 @@ impl TypeGraph {
     }
 
     /// 出处盖章:灌入上下文(root/version)+ 来源种类 + 声明 site。
-    fn origin_for(
+    pub(crate) fn origin_for(
         &self,
         source: TypeSourceKind,
         span: Option<Span>,
@@ -489,6 +491,7 @@ impl TypeGraph {
                 });
             }
         }
+        self.record_methods(name, def);
     }
 
     /// 灌入 entities.xml 注册面(解析输出已排除 root 伪条目)。注册出处

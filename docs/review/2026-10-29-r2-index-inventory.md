@@ -18,7 +18,7 @@
 
 - `DefFile`:root_tag parent interfaces volatile properties components base_methods cell_methods client_methods extra_sections diagnostics
 - `PropertyDef`:name name_span line type_name type_refs flags_raw flags default_value detail_level database_length identifier persistent sensitive extra_tags(type_refs 与 TS collectTypeReferences 同口径;persistent truthy 语义同 TS)
-- `MethodDef`:name name_span line args exposed——**仅保留这五个字段**(见 §4 缺失)
+- `MethodDef`:name name_span line args arg_type_refs return_type exposed——只保留这七个字段(name/name_span/line/args/arg_type_refs/return_type/exposed;RUST-108 补逐 Arg 类型引用与 ReturnType 直文本声明,均不进 parser golden;见 §4 缺失)
 - `ComponentDef`:name name_span line component_type persistent
 - `EntityEntry`:name name_span line attributes(hasBase/hasCell/hasClient 等,文档顺序;root 伪条目排除)
 - `TypeDecl`:name name_span line kind(FixedDict|Array|Builtin) directive implemented_by_symbol field_refs element_ref
@@ -41,7 +41,7 @@ SymbolIndex 公开方法:new update update_batch remove invalidate_root generati
 
 - 【缺失】当前文档缓冲区/未保存内容:索引吃文本字符串,不含 VS Code 打开文档的脏缓冲区与版本(defAnalyzer 需要未保存缓冲区同步口径)。
 - 【缺失】VS Code 配置:aliasIdEnabled、表名前缀、各功能开关、数据库配置均在 TS 配置面(messageTable/databaseSchema 消费)。
-- 【缺失】消息编号规则与 def 树装配顺序:messageTable 需要;MethodDef 仅保留 name/name_span/line/args/exposed 五字段,无编号、无返回、无段落外信息。
+- 【缺失】消息编号规则与 def 树装配顺序:messageTable 需要;MethodDef 现为 name/name_span/line/args/arg_type_refs/return_type/exposed 七字段(RUST-108 起 return_type/arg_type_refs 在册),仍无编号、无段落外信息。
 - 【缺失】接口/组件/缺失文件标记在链出口的表达:TS defChain 结果含接口、组件、缺失文件标记及环截断信息;Rust `ChainNode` 只有 entity/parent,环诊断 Span 为 0,0(无文件位)。
 - 【缺失】Python 语义:compositionRoots 需要 entities.xml+def+types.xml **加** Python 类/实例赋值;Python 面无 Rust 解析器(R1 §5 范围判断)。
 - 【缺失】项目布局与文件存在性:entities.xml 域位、脚本文件存在性、外部 assetsRoot 关系(databaseSchema/entityFlow 需要;kode-root 只对齐了 TS discovery 的根发现)。
