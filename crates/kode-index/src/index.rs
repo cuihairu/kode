@@ -211,6 +211,26 @@ impl SymbolIndex {
         self.generation
     }
 
+    /// CORE-014 一致快照读:捕获当前 generation 并返回只读查询视图。
+    ///
+    /// 快照存活期间,`&mut` 变更路径(update/update_batch/remove/
+    /// invalidate_root)被借用检查器**编译期拒绝**——读写不一致(定义与
+    /// 引用来自不同 generation)在本核内结构性不可能。响应绑定面:装配层
+    /// 把 `generation()` 钉在响应上,晚到旧代结果用 [`SymbolIndex::is_current`]
+    /// 判旧即弃(绝不发布)。
+    pub fn read_snapshot(&self) -> IndexSnapshot<'_> {
+        IndexSnapshot {
+            index: self,
+            generation: self.generation,
+        }
+    }
+
+    /// 陈旧响应检测:`generation` 是否仍是当前代际。晚到旧代结果
+    /// (generation 落后)必须丢弃,不得覆盖新代视图(ARCH-005)。
+    pub fn is_current(&self, generation: u64) -> bool {
+        self.generation == generation
+    }
+
     /// 名称定向查找(IDX-006;结果按 name/kind/file/line 确定性排序)。
     pub fn lookup(&self, name: &str) -> Vec<Symbol> {
         self.ids_of_name(name)
@@ -370,6 +390,45 @@ impl SymbolIndex {
     }
 }
 
+/// CORE-014 一致快照读视图(见 [`SymbolIndex::read_snapshot`])。
+#[derive(Debug)]
+pub struct IndexSnapshot<'a> {
+    index: &'a SymbolIndex,
+    generation: u64,
+}
+
+impl IndexSnapshot<'_> {
+    /// 捕获时点的 generation(响应绑定与陈旧检测的判定值)。
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// 名称查找(转发 [`SymbolIndex::lookup`],同确定性排序)。
+    pub fn lookup(&self, name: &str) -> Vec<Symbol> {
+        self.index.lookup(name)
+    }
+
+    /// 名称+种类定向查找。
+    pub fn lookup_kind(&self, name: &str, kind: SymbolKind) -> Vec<Symbol> {
+        self.index.lookup_kind(name, kind)
+    }
+
+    /// 文件内符号。
+    pub fn symbols_in_file(&self, key: &DocumentKey) -> Vec<Symbol> {
+        self.index.symbols_in_file(key)
+    }
+
+    /// 反向受影响集。
+    pub fn dependents_of(&self, name: &str) -> Vec<DocumentKey> {
+        self.index.dependents_of(name)
+    }
+
+    /// 符号总数。
+    pub fn symbol_count(&self) -> usize {
+        self.index.symbol_count()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use kode_vfs::store::{DocumentKey, RootId};
@@ -379,6 +438,55 @@ mod tests {
 
     fn key(path: &str) -> DocumentKey {
         DocumentKey::new(RootId(1), CanonicalUri::from_path(path))
+    }
+
+    // ---- CORE-014 一致快照读 ----
+
+    #[test]
+    fn snapshot_captures_generation_and_queries_frozen_view() {
+        let mut index = SymbolIndex::new();
+        let text = "<root>\n  <Properties>\n    <hp>\n      <Type>UINT32</Type>\n    </hp>\n  </Properties>\n</root>\n";
+        index.update(key("/proj/A.def"), text);
+        index.update(key("/proj/B.def"), text);
+        let gen = index.generation();
+        {
+            let snapshot = index.read_snapshot();
+            assert_eq!(snapshot.generation(), gen, "快照钉住捕获时点代际");
+            assert_eq!(snapshot.lookup("hp").len(), 2, "只读视图照常可查");
+            assert_eq!(snapshot.symbol_count(), index.symbol_count());
+            // 借用检查器结构性保证:snapshot 存活期间 update/remove/
+            // update_batch/invalidate_root 等 &mut 路径编译期拒绝(读写
+            // 不一致在核内不可能);作用域结束借用即终止。
+        }
+        index.update(key("/proj/C.def"), text);
+        // 捕获代际已陈旧:is_current 识别旧代,晚到旧代结果必须丢弃。
+        assert!(!index.is_current(gen), "变更后旧代必须被判陈旧");
+        assert!(index.is_current(index.generation()));
+    }
+
+    #[test]
+    fn zero_rebuild_update_does_not_bump_generation() {
+        let mut index = SymbolIndex::new();
+        let k = key("/proj/A.def");
+        index.update(k.clone(), "<root>\n</root>\n");
+        let gen = index.generation();
+        // 同键同文本:指纹命中零重建,generation 不动(改文档既定语义)。
+        let report = index.update(k.clone(), "<root>\n</root>\n");
+        assert!(!report.rebuilt);
+        assert_eq!(index.generation(), gen, "零重建不 bump generation");
+        assert!(index.is_current(gen));
+    }
+
+    #[test]
+    fn stale_generation_rejects_late_results() {
+        let mut index = SymbolIndex::new();
+        index.update(key("/proj/A.def"), "<root>\n</root>\n");
+        let pinned = index.generation();
+        // 模拟装配层把 pinned 钉在响应上,期间索引又被推进一代。
+        index.update(key("/proj/B.def"), "<root>\n</root>\n");
+        // 晚到响应携 pinned:判旧 → 调用方必须丢弃,不得覆盖新代视图。
+        assert!(!index.is_current(pinned));
+        assert_eq!(index.generation(), pinned + 1);
     }
 
     /// replace_file(key, None) 契约:无解析产物时只摘旧符号、零新增,返回
