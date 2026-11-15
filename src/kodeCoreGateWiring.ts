@@ -3,6 +3,7 @@ import { discoverNativeBinary } from './backend/nativeBinary';
 
 import { KodeCoreGate, type KodeCoreGateConfig, ShadowDiffEntry } from './backend/kodeCoreGate';
 import { mirrorCorpusToRust } from './kodeCoreCorpusMirror';
+import { getIndexScanRoots, resetScanRootCache } from './scanRoots';
 import { setKodeCoreShadowGate } from './backend/kodeCoreShadowFaces';
 
 // kode2 PR-012:双轨切流门的扩展装配(设置项默认关,装配零行为差异)。
@@ -49,6 +50,31 @@ export function readCoreGateConfig(extensionRoot?: string): KodeCoreGateConfig {
   };
 }
 
+/**
+ * RUST-069-W:扫描根集差量(上次同步快照 → 当前)——folder 增删 /
+ * assetsRoot 切换统一走这一面,新增 registerRoot、移除 removeRoot。
+ * 纯函数(单测面);路径为规范 fsPath,集合语义不做大小写归一。
+ */
+export function diffScanRoots(
+  previous: ReadonlySet<string>,
+  current: readonly string[]
+): { added: string[]; removed: string[] } {
+  const currentSet = new Set(current);
+  const removed = [...previous].filter(root => !currentSet.has(root));
+  const added = current.filter(root => !previous.has(root));
+  return { added, removed };
+}
+
+/** 当前扫描根全集(缓存先失效防拿到切换前旧值;异常回空数组不外抛) */
+function currentScanRootsSafe(): string[] {
+  try {
+    resetScanRootCache();
+    return getIndexScanRoots();
+  } catch {
+    return [];
+  }
+}
+
 export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGate {
   const gate = new KodeCoreGate();
   const extensionRoot = context.extensionUri.fsPath;
@@ -66,8 +92,33 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
   });
   // 2026-11-08 用户令「直接切」:服务轨道生效时把工作区语料全量镜像给 Rust
   // (类型/实体/别名/继承链只由已镜像文档入库)。fire-and-forget,不阻塞
-  // 激活;非服务轨道零开销。
+  // 激活;非服务轨道零开销。(镜像入口先注册扫描根再镜像,见 corpusMirror。)
   void mirrorCorpusToRust(gate);
+
+  // RUST-069-W:工作区根生命周期接入 Rust 唯一根注册表——folder 增删 /
+  // assetsRoot 切换的根集差量(rootAdded/rootRemoved)同步给 Rust,移除
+  // 扇出共享缓存清理(镜像/符号/解析候选)。快照对账,不依赖各处 reset
+  // 顺序;gate 内账去重 + server 幂等兜底。
+  let lastSyncedRoots = new Set<string>(currentScanRootsSafe());
+  const syncRootsToRust = (): void => {
+    const current = currentScanRootsSafe();
+    const { added, removed } = diffScanRoots(lastSyncedRoots, current);
+    lastSyncedRoots = new Set(current);
+    for (const root of removed) {
+      void gate.removeRoot(root);
+    }
+    for (const root of added) {
+      void gate.registerRoot(root);
+    }
+    if (added.length > 0) {
+      // 新根就位后补镜像该根语料(镜像入口先注册根再镜像;账内已镜像
+      // 文件按账跳过,新根文件走 didOpen 入库)。
+      void mirrorCorpusToRust(gate);
+    }
+  };
+  const foldersWatcher = vscode.workspace.onDidChangeWorkspaceFolders(() => {
+    syncRootsToRust();
+  });
 
   // 输出通道只在 shadow 模式存在(默认 ts 下用户不可见任何新面板)
   let channel: vscode.OutputChannel | null = null;
@@ -112,11 +163,17 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
       // 配置变更可能切进服务轨道(或换 serverPath 重启空库):补镜像语料。
       void mirrorCorpusToRust(gate);
     }
+    if (event.affectsConfiguration('kbengine.assetsRoot')) {
+      // RUST-069-W:assetsRoot 切换 = 根集输入变化,差量同步给 Rust
+      // (旧外部根移除扇出清理,新外部根注册)。
+      syncRootsToRust();
+    }
   });
 
   context.subscriptions.push(
     gate,
     configWatcher,
+    foldersWatcher,
     showDiffLogCommand,
     unsubscribe
   );

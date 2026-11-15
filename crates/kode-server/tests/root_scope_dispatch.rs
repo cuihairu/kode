@@ -212,7 +212,7 @@ fn kbug_root_workspace_folders_initialize_registers_roots() {
 fn kbug_root_01_definition_lands_in_querying_root() {
     let mut state = ServerState::new();
     handle_message(&mut state, initialize_message(1));
-    state.roots.register("/workspace/b");
+    state.session.add_root("/workspace/b");
     open_def(&mut state, DEF_A, AVATAR_DEF_A);
     open_def(&mut state, DEF_B, AVATAR_DEF_B);
     open_entities(&mut state, ENTITIES_B);
@@ -239,7 +239,7 @@ fn kbug_root_01_definition_lands_in_querying_root() {
 fn kbug_root_01b_open_order_invariance() {
     let mut state = ServerState::new();
     handle_message(&mut state, initialize_message(1));
-    state.roots.register("/workspace/b");
+    state.session.add_root("/workspace/b");
     // 交换入库顺序:B 先、A 后 —— 两根查询仍各自落各自根。
     open_def(&mut state, DEF_B, AVATAR_DEF_B);
     open_def(&mut state, DEF_A, AVATAR_DEF_A);
@@ -290,7 +290,7 @@ fn kbug_root_02_unattributed_documents_are_isolated() {
 fn kbug_root_04_hover_reports_querying_root_candidate() {
     let mut state = ServerState::new();
     handle_message(&mut state, initialize_message(1));
-    state.roots.register("/workspace/b");
+    state.session.add_root("/workspace/b");
     open_def(&mut state, DEF_A, AVATAR_DEF_A);
     open_def(&mut state, DEF_B, AVATAR_DEF_B);
     open_entities(&mut state, ENTITIES_B);
@@ -312,7 +312,7 @@ fn kbug_root_04_hover_reports_querying_root_candidate() {
 fn kbug_root_05_close_releases_only_own_root_candidates() {
     let mut state = ServerState::new();
     handle_message(&mut state, initialize_message(1));
-    state.roots.register("/workspace/b");
+    state.session.add_root("/workspace/b");
     open_def(&mut state, DEF_A, AVATAR_DEF_A);
     open_def(&mut state, DEF_B, AVATAR_DEF_B);
     open_entities(&mut state, ENTITIES_B);
@@ -393,7 +393,7 @@ fn kbug_root_03_same_root_ambiguity_is_unknown_not_first_seen() {
 fn kbug_root_06_completion_scoped_to_querying_root() {
     let mut state = ServerState::new();
     handle_message(&mut state, initialize_message(1));
-    state.roots.register("/workspace/b");
+    state.session.add_root("/workspace/b");
     // A 根只有 Avatar,B 根只有 Monster:在 B 根 entities.xml 上补全不得
     // 冒出 A 根的 Avatar。
     open_def(&mut state, DEF_A, AVATAR_DEF_A);

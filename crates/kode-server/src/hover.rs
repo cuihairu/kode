@@ -354,11 +354,26 @@ pub struct HoverEngine {
     pub(crate) types_files: BTreeMap<String, kode_parser::model::TypesFile>,
     /// alias.xml 语料视图(PR-011 补全别名面)。
     pub(crate) alias_files: BTreeMap<String, kode_parser::model::AliasFile>,
+    /// 路径 → 所属根(RUST-069-W):路径键语料视图不记根,撤根扇出靠这张
+    /// 归属表定域清除;update 登记,remove/invalidate_root 摘除。
+    path_roots: BTreeMap<String, RootId>,
 }
 
 impl Default for HoverEngine {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// RUST-069-W:HoverEngine 以共享缓存消费面身份登记进 WorkspaceSession,
+/// 撤根时由 session 按登记序扇出根级失效(回执名 hover-engine)。
+impl kode_scheduler::RootInvalidationSink for HoverEngine {
+    fn invalidate_root(&mut self, root: RootId) -> usize {
+        HoverEngine::invalidate_root(self, root)
+    }
+
+    fn sink_name(&self) -> &'static str {
+        "hover-engine"
     }
 }
 
@@ -373,6 +388,7 @@ impl HoverEngine {
             entities_files: BTreeMap::new(),
             types_files: BTreeMap::new(),
             alias_files: BTreeMap::new(),
+            path_roots: BTreeMap::new(),
         }
     }
 
@@ -380,6 +396,8 @@ impl HoverEngine {
     pub fn update(&mut self, key: DocumentKey, text: &str) {
         self.index.update(key.clone(), text);
         let path = key.uri.as_path().to_string();
+        // RUST-069-W:登记路径归属(撤根扇出的定域依据)。
+        self.path_roots.insert(path.clone(), key.root);
         match file_kind_of_uri(&key.uri) {
             FileKind::Def => {
                 self.corpus_defs.insert(path.clone());
@@ -411,6 +429,7 @@ impl HoverEngine {
     pub fn remove(&mut self, key: &DocumentKey) -> usize {
         let removed = self.index.remove(key);
         let path = key.uri.as_path().to_string();
+        self.path_roots.remove(&path);
         self.corpus_defs.remove(&path);
         self.def_files.remove(&path);
         self.entities_files.remove(&path);
@@ -430,6 +449,39 @@ impl HoverEngine {
             .get(&(root, name.to_string()))
             .map(Vec::as_slice)
             .unwrap_or(&[])
+    }
+
+    /// 根级失效(RUST-069-W 撤根扇出):清该根全部驻留——符号索引 + 路径键
+    /// 语料视图(按 path_roots 归属定域,不误伤留存根)+ 根键 def 候选 +
+    /// entities 目录派生集(目录无根身份,按幸存 entities.xml 重算)。
+    /// 返回清除条目数(回执记账:索引清除数 + 路径键条目数 + def 候选键数)。
+    pub fn invalidate_root(&mut self, root: RootId) -> usize {
+        let mut cleared = self.index.invalidate_root(root);
+        let owned: Vec<String> = self
+            .path_roots
+            .iter()
+            .filter(|(_, owner)| **owner == root)
+            .map(|(path, _)| path.clone())
+            .collect();
+        for path in &owned {
+            self.path_roots.remove(path);
+            self.corpus_defs.remove(path);
+            self.def_files.remove(path);
+            self.entities_files.remove(path);
+            self.types_files.remove(path);
+            self.alias_files.remove(path);
+            cleared += 1;
+        }
+        let before = self.def_by_name.len();
+        self.def_by_name
+            .retain(|candidate_root, _| candidate_root.0 != root);
+        cleared += before - self.def_by_name.len();
+        self.entities_dirs = self
+            .entities_files
+            .keys()
+            .filter_map(|path| parent_dir(path).map(|dir| dir.to_string()))
+            .collect();
+        cleared
     }
 
     /// 交互入口:UTF-16 position → 词 → 响应链。

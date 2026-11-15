@@ -303,7 +303,7 @@ fn notifications_before_initialize_are_dropped() {
         ),
     );
     assert!(out.is_empty());
-    assert_eq!(state.store.open_count(), 0);
+    assert_eq!(state.store.borrow().open_count(), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -337,6 +337,7 @@ fn stale_did_change_is_rejected_and_text_preserved() {
     assert_eq!(docs[0]["version"], json!(3));
     let (version, buffer) = state
         .store
+        .borrow()
         .open_buffer(&kode_vfs::DocumentKey::new(
             kode_vfs::RootId::UNROOTED,
             kode_vfs::CanonicalUri::parse(uri).unwrap(),
@@ -376,7 +377,7 @@ fn ranged_did_change_applies_utf16_precise_edit() {
         kode_vfs::RootId::UNROOTED,
         kode_vfs::CanonicalUri::parse(uri).unwrap(),
     );
-    let (_, buffer) = state.store.open_buffer(&key).unwrap();
+    let (_, buffer) = state.store.borrow().open_buffer(&key).unwrap();
     assert_eq!(buffer.text(), "标题\r\nab🔥c");
 }
 
@@ -386,7 +387,7 @@ fn initialize_root_uri_registers_root_and_documents_attach_to_it() {
     let mut state = ServerState::new();
     handle_message(&mut state, initialize_message(1));
     let root_id = state
-        .roots
+        .session
         .root_for(&kode_vfs::CanonicalUri::from_path("/workspace/demo"));
     assert_ne!(root_id, kode_vfs::RootId::UNROOTED);
     let uri = "file:///workspace/demo/entities/Monster.def";
@@ -398,7 +399,7 @@ fn initialize_root_uri_registers_root_and_documents_attach_to_it() {
         ),
     );
     let key = kode_vfs::DocumentKey::new(root_id, kode_vfs::CanonicalUri::parse(uri).unwrap());
-    assert!(state.store.is_open(&key));
+    assert!(state.store.borrow().is_open(&key));
     // 根外的文档落到 UNROOTED,不与根内同名文件混淆身份。
     let outside = "file:///elsewhere/Monster.def";
     handle_message(
@@ -408,7 +409,7 @@ fn initialize_root_uri_registers_root_and_documents_attach_to_it() {
             json!({"textDocument": {"uri": outside, "languageId": "kbengine-def", "version": 1, "text": "x"}}),
         ),
     );
-    assert!(state.store.is_open(&kode_vfs::DocumentKey::new(
+    assert!(state.store.borrow().is_open(&kode_vfs::DocumentKey::new(
         kode_vfs::RootId::UNROOTED,
         kode_vfs::CanonicalUri::parse(outside).unwrap()
     )));
@@ -430,7 +431,7 @@ fn stale_did_open_is_ignored() {
         kode_vfs::RootId::UNROOTED,
         kode_vfs::CanonicalUri::parse("file:///w/a.def").unwrap(),
     );
-    let (version, buffer) = state.store.open_buffer(&key).unwrap();
+    let (version, buffer) = state.store.borrow().open_buffer(&key).unwrap();
     assert_eq!(version, 5);
     assert_eq!(buffer.text(), "newest");
 }
@@ -753,7 +754,7 @@ fn unparsable_uri_requests_degrade_and_notifications_are_dropped() {
         .as_array()
         .unwrap()
         .is_empty());
-    assert_eq!(state.store.open_count(), 0);
+    assert_eq!(state.store.borrow().open_count(), 0);
 }
 
 #[test]
@@ -797,7 +798,7 @@ fn malformed_document_sync_notifications_are_ignored() {
     handle_message(&mut state, initialize_message(1));
     // didOpen:缺 textDocument → 反序列化失败,忽略。
     handle_message(&mut state, notification("textDocument/didOpen", json!({})));
-    assert_eq!(state.store.open_count(), 0);
+    assert_eq!(state.store.borrow().open_count(), 0);
     // 非 file URI 的 canonical 解析仍成功 → 照常入 VFS(VFS 与协议层不挑
     // scheme;语言层才按 Other 类处理)。不 panic。
     handle_message(
@@ -807,7 +808,7 @@ fn malformed_document_sync_notifications_are_ignored() {
             json!({"textDocument": {"uri": "not-a-uri", "languageId": "x", "version": 1, "text": "a"}}),
         ),
     );
-    assert_eq!(state.store.open_count(), 1);
+    assert_eq!(state.store.borrow().open_count(), 1);
     // didChange:缺 textDocument → 忽略,不 panic。
     handle_message(
         &mut state,

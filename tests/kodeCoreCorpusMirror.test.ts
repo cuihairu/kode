@@ -230,3 +230,59 @@ describe('kodeCoreCorpusMirror 服务轨道语料镜像', () => {
     expect(calls.length).toBeLessThanOrEqual(1);
   });
 });
+
+// RUST-069-W:根生命周期先行——镜像入口先注册扫描根(registerRoot),再镜像
+// 语料(didOpen 根归属依赖根已注册)。外部 assetsRoot 根不在 initialize
+// 握手里,只能走这条先行面。
+describe('kodeCoreCorpusMirror 根生命周期先行(RUST-069-W)', () => {
+  it('先 registerRoot 全部扫描根,再镜像首个文档(顺序不可倒置)', async () => {
+    const defPath = path.join(tempRoot, 'Avatar.def');
+    await writeCorpusFile(defPath, '<root/>\n');
+    const ops: string[] = [];
+    const registeredRoots: string[] = [];
+    const gate = {
+      serveFromRust: () => true,
+      registerRoot: async (fsPath: string) => {
+        ops.push(`registerRoot:${fsPath}`);
+        registeredRoots.push(fsPath);
+        return { root: registeredRoots.length };
+      },
+      mirrorDocument: async (uri: string) => {
+        ops.push(`mirror:${uri}`);
+      }
+    } as unknown as KodeCoreGate;
+    await mirrorCorpusToRust(
+      gate,
+      makeFinder({ '**/*.def': [defPath] }, []),
+      () => ['/ws/a', '/assets/external']
+    );
+    const firstMirrorAt = ops.findIndex(op => op.startsWith('mirror:'));
+    expect(firstMirrorAt).toBeGreaterThan(-1);
+    expect(ops.slice(0, firstMirrorAt)).toEqual([
+      'registerRoot:/ws/a',
+      'registerRoot:/assets/external'
+    ]);
+    expect(ops[firstMirrorAt]).toBe(`mirror:${defPath}`);
+  });
+
+  it('扫描根提供者异常:回空数组继续镜像(根面静默,不误伤语料)', async () => {
+    const defPath = path.join(tempRoot, 'Avatar.def');
+    await writeCorpusFile(defPath, '<root/>\n');
+    const calls: MirroredCall[] = [];
+    const gate = {
+      serveFromRust: () => true,
+      registerRoot: async () => {
+        throw new Error('roots failed');
+      },
+      mirrorDocument: async (uri: string, languageId: string, version: number, text: string) => {
+        calls.push({ uri, languageId, version, text });
+      }
+    } as unknown as KodeCoreGate;
+    await expect(
+      mirrorCorpusToRust(gate, makeFinder({ '**/*.def': [defPath] }, []), () => {
+        throw new Error('scan roots provider failed');
+      })
+    ).resolves.toBeUndefined();
+    expect(calls.map(call => call.uri)).toEqual([defPath]);
+  });
+});

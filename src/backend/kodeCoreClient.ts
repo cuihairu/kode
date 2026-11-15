@@ -323,6 +323,33 @@ export class KodeCoreClient {
     this.notify('textDocument/didClose', { textDocument: { uri } });
   }
 
+  /**
+   * RUST-069-W 根生命周期:新增根注册(幂等,同路径重复注册返回既有 id)。
+   * 请求面带回执(根 id),装配/测试可断言根身份。
+   */
+  async addWorkspaceRoot(fsPath: string): Promise<{ root: number }> {
+    return (await this.request('$/kode/workspace/rootAdded', { path: fsPath })) as {
+      root: number;
+    };
+  }
+
+  /**
+   * RUST-069-W 根生命周期:根移除——服务端撤注册并扇出共享缓存清理
+   * (镜像/符号/解析候选),已注册根回执带每消费面清除数(document-store /
+   * hover-engine 按登记序);未知根 removed:false(不扇出)。
+   */
+  async removeWorkspaceRoot(fsPath: string): Promise<{
+    removed: boolean;
+    root?: number;
+    invalidated?: Array<[string, number]>;
+  }> {
+    return (await this.request('$/kode/workspace/rootRemoved', { path: fsPath })) as {
+      removed: boolean;
+      root?: number;
+      invalidated?: Array<[string, number]>;
+    };
+  }
+
   /** 优雅停止:shutdown → exit → 宽限后 SIGKILL;in-flight 请求以 DISPOSED 拒绝 */
   async dispose(): Promise<void> {
     if (this.disposed) {

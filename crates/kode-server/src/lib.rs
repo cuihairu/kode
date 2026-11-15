@@ -28,6 +28,7 @@ pub mod readonly_write;
 pub mod receiver_none;
 pub mod return_annotations;
 pub mod role_misuse;
+pub mod root_lifecycle;
 pub mod rpc;
 pub mod rpc_arg_count;
 pub mod ruff_lint;

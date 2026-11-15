@@ -91,6 +91,13 @@ function truncate(text: string, max = 80): string {
   return text.length <= max ? text : `${text.slice(0, max)}…`;
 }
 
+/** 镜像账键是否落在被撤根下(键可能是 fsPath 或 file:// URI;前缀判定,
+ * 与 server 侧 root_for 最长前缀同语义;/ws 不误伤 /wsX) */
+export function uriUnderRoot(uri: string, fsPath: string): boolean {
+  const plain = uri.startsWith('file://') ? uri.slice('file://'.length) : uri;
+  return plain === fsPath || plain.startsWith(`${fsPath}/`);
+}
+
 function preview(value: unknown): string {
   try {
     return truncate(JSON.stringify(value) ?? String(value));
@@ -213,6 +220,9 @@ export interface ShadowClientLike {
   getRestartGeneration?(): number;
   /** 通知面(§11.3 可选):单向通知,不回包;KodeCoreClient 同名方法 */
   notify?(method: string, params?: unknown): void;
+  /** 根生命周期(RUST-069-W 可选):新增/移除工作区根,请求面带回执 */
+  addWorkspaceRoot?(fsPath: string): Promise<unknown>;
+  removeWorkspaceRoot?(fsPath: string): Promise<unknown>;
 }
 
 export interface KodeCoreGateOptions {
@@ -248,6 +258,8 @@ export class KodeCoreGate {
     string,
     { languageId: string; version: number; text: string }
   >();
+  /** 已注册根账(RUST-069-W):fsPath 集合——重启重放补注册依据;kill-switch 清空 */
+  private registeredRoots = new Set<string>();
   /** 上次见到的重启代数(null = 尚未对账;变化即判定自动重启) */
   private lastRestartGeneration: number | null = null;
   private readonly notices: string[] = [];
@@ -444,6 +456,7 @@ export class KodeCoreGate {
     this.clientServerPath = '';
     this.mirroredVersions.clear();
     this.mirrorSnapshots.clear();
+    this.registeredRoots.clear();
     this.lastRestartGeneration = null;
     if (client) {
       void client.dispose().catch(() => undefined);
@@ -470,9 +483,90 @@ export class KodeCoreGate {
     }
     this.lastRestartGeneration = generation;
     this.mirroredVersions.clear();
+    // RUST-069-W:新进程根注册表是空的(握手只带 workspaceFolders)——
+    // 运行期注册过的根(外部 assetsRoot / 运行期新增 folder)先补注册,
+    // 再重放语料快照(文件根归属依赖根已注册,顺序不可倒置)。
+    for (const fsPath of this.registeredRoots) {
+      const sent = client.addWorkspaceRoot?.(fsPath);
+      if (sent) {
+        sent.catch(() => undefined);
+      }
+    }
     for (const [uri, snapshot] of this.mirrorSnapshots) {
       client.openDocument?.(uri, snapshot.languageId, snapshot.version, snapshot.text);
       this.mirroredVersions.set(uri, snapshot.version);
+    }
+  }
+
+  /**
+   * 根生命周期(RUST-069-W):把工作区根(运行期新增 folder / 外部
+   * assetsRoot)注册进 Rust 唯一根注册表。请求面带回执(根 id);账内
+   * 去重不重发(server 侧幂等兜底)。非服务轨道/未配 serverPath 零开销
+   * 直通 null;失败静默(尽力而为,不误伤服务),账保留——重启重放补注册。
+   */
+  async registerRoot(fsPath: string): Promise<{ root: number } | null> {
+    if (!this.shouldMirrorCorpus() || !this.config.serverPath) {
+      return null;
+    }
+    const client = this.ensureClient();
+    if (!client) {
+      return null;
+    }
+    try {
+      await client.start();
+      this.syncRestartGeneration(client);
+    } catch {
+      return null;
+    }
+    if (this.registeredRoots.has(fsPath)) {
+      return null;
+    }
+    this.registeredRoots.add(fsPath);
+    if (!client.addWorkspaceRoot) {
+      return null;
+    }
+    try {
+      return (await client.addWorkspaceRoot(fsPath)) as { root: number };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 根生命周期(RUST-069-W):移除工作区根——Rust 侧撤注册并扇出共享缓存
+   * 清理(镜像/符号/解析候选),回执带 removed。镜像账同步摘除该根条目:
+   * 服务端已清,账不摘则重加根后的语料重镜像按「已镜像」跳过 didOpen,
+   * 新化身空库永不补齐(移除→重加即静默降级)。未注册过的根照发(server
+   * 幂等:未知根 removed:false,不扇出)。非服务轨道零开销直通 null。
+   */
+  async removeRoot(fsPath: string): Promise<{ removed: boolean } | null> {
+    if (!this.shouldMirrorCorpus() || !this.config.serverPath) {
+      return null;
+    }
+    this.registeredRoots.delete(fsPath);
+    for (const uri of [...this.mirroredVersions.keys()]) {
+      if (uriUnderRoot(uri, fsPath)) {
+        this.mirroredVersions.delete(uri);
+        this.mirrorSnapshots.delete(uri);
+      }
+    }
+    const client = this.ensureClient();
+    if (!client) {
+      return null;
+    }
+    try {
+      await client.start();
+      this.syncRestartGeneration(client);
+    } catch {
+      return null;
+    }
+    if (!client.removeWorkspaceRoot) {
+      return null;
+    }
+    try {
+      return (await client.removeWorkspaceRoot(fsPath)) as { removed: boolean };
+    } catch {
+      return null;
     }
   }
 

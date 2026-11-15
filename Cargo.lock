@@ -1854,6 +1854,7 @@ dependencies = [
  "kode-protocol",
  "kode-python",
  "kode-root",
+ "kode-scheduler",
  "kode-types",
  "kode-vfs",
  "ruff_python_ast",

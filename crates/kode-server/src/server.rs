@@ -11,6 +11,8 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -21,7 +23,8 @@ use kode_protocol::{
     Request, RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification,
     TextDocumentSyncOptions, PROTOCOL_VERSION,
 };
-use kode_vfs::{CanonicalUri, DocumentKey, DocumentStore, RootRegistry, TextChange};
+use kode_scheduler::{RootInvalidationSink, WorkspaceSession};
+use kode_vfs::{CanonicalUri, DocumentKey, DocumentStore, TextChange};
 
 use crate::completion::to_lsp_items;
 use crate::diagnostics::DiagnosticFace;
@@ -202,11 +205,14 @@ pub struct ServerState {
     pub started_at: Instant,
     /// 文档同步(VFS-002/003):身份 = (root_id, canonical URI),
     /// open overlay + 严格 version 转移在 kode-vfs DocumentStore。
-    pub store: DocumentStore,
-    /// 资源根注册(VFS-009 基础版):initialize.rootUri 起注册,最长前缀归属。
-    pub roots: RootRegistry,
+    /// RUST-069-W:经 Rc 供 WorkspaceSession 撤根扇出(共享所有权)。
+    pub store: Rc<RefCell<DocumentStore>>,
+    /// RUST-069-W:唯一根注册表 = WorkspaceSession——全部 RootId 只经它发号,
+    /// 撤根扇出共享缓存(document-store / hover-engine),id 永不复用(化身隔离)。
+    pub session: WorkspaceSession,
     /// hover 响应链(PR-010/LSP-003):符号索引 + def 语料视图,纯内存应答。
-    pub hover: HoverEngine,
+    /// RUST-069-W:经 Rc 供 WorkspaceSession 撤根扇出(共享所有权)。
+    pub hover: Rc<RefCell<HoverEngine>>,
     pub cancels: Arc<CancelRegistry>,
     /// 通用命令 RPC 面(Phase0 接线):`$/kode/rpc` 单臂 dispatch + 注册表。
     pub rpc: crate::rpc::RpcRegistry,
@@ -247,15 +253,22 @@ impl ServerState {
         crate::receiver_none::register(&mut rpc);
         crate::space_nav::register(&mut rpc);
         crate::workspace_discovery::register(&mut rpc);
+        // RUST-069-W:根生命周期唯一注册表装配——共享缓存经 Rc 登记为撤根扇出
+        // sink(按登记序:先镜像仓库后 hover 引擎),回执按此序列出清除数。
+        let store = Rc::new(RefCell::new(DocumentStore::new()));
+        let hover = Rc::new(RefCell::new(HoverEngine::new()));
+        let mut session = WorkspaceSession::new();
+        session.register_sink(Rc::clone(&store) as Rc<RefCell<dyn RootInvalidationSink>>);
+        session.register_sink(Rc::clone(&hover) as Rc<RefCell<dyn RootInvalidationSink>>);
         ServerState {
             initialized: false,
             shutdown_requested: false,
             exit_requested: false,
             restart_generation: 0,
             started_at: Instant::now(),
-            store: DocumentStore::new(),
-            roots: RootRegistry::new(),
-            hover: HoverEngine::new(),
+            store,
+            session,
+            hover,
             cancels: Arc::new(CancelRegistry::default()),
             rpc,
         }
@@ -367,6 +380,23 @@ fn handle_request_inner(
         }
         "textDocument/definition" => vec![Outgoing::Response(handle_definition(state, request))],
         "textDocument/diagnostic" => vec![Outgoing::Response(handle_diagnostic(state, request))],
+        // RUST-069-W 根生命周期:新增/移除根落 WorkspaceSession 唯一注册表
+        // (移除扇出共享缓存清镜像/符号/语料候选),roots 列表供装配对账。
+        "$/kode/workspace/rootAdded" => {
+            vec![Outgoing::Response(crate::root_lifecycle::handle_root_added(
+                state, request,
+            ))]
+        }
+        "$/kode/workspace/rootRemoved" => {
+            vec![Outgoing::Response(crate::root_lifecycle::handle_root_removed(
+                state, request,
+            ))]
+        }
+        "$/kode/workspace/roots" => {
+            vec![Outgoing::Response(crate::root_lifecycle::handle_roots_list(
+                state, request,
+            ))]
+        }
         _ => vec![Outgoing::Response(Response::error(
             Some(request.id),
             error_codes::METHOD_NOT_FOUND,
@@ -414,16 +444,17 @@ fn handle_initialize(state: &mut ServerState, request: Request) -> Response {
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
     // VFS-009:rootUri 注册为首个资源根(注册顺序 = 显式优先顺序)。
+    // RUST-069-W:注册走 WorkspaceSession 唯一发号器(重复 initialize 幂等)。
     if let Some(root_uri) = params.root_uri.as_deref() {
         if let Ok(root) = CanonicalUri::parse(root_uri) {
-            state.roots.register(root.as_path());
+            state.session.add_root(root.as_path());
         }
     }
     // KBUG-ROOT:多工作区文件夹逐个注册(LSP workspaceFolders);归属依据,
     // 跨根同名实体隔离依赖此注册齐全。
     for folder in params.workspace_folders.into_iter().flatten() {
         if let Ok(root) = CanonicalUri::parse(&folder.uri) {
-            state.roots.register(root.as_path());
+            state.session.add_root(root.as_path());
         }
     }
     state.initialized = true;
@@ -558,9 +589,9 @@ fn handle_hover(state: &mut ServerState, request: Request) -> Response {
     let Ok(uri) = CanonicalUri::parse(&params.text_document.uri) else {
         return Response::success(request.id, serde_json::Value::Null);
     };
-    let root = state.roots.root_for(&uri);
+    let root = state.session.root_for(&uri);
     let key = DocumentKey::new(root, uri);
-    let Some((_, buffer)) = state.store.open_buffer(&key) else {
+    let Some((_, buffer)) = state.store.borrow().open_buffer(&key) else {
         return Response::success(request.id, serde_json::Value::Null);
     };
     let text = buffer.text().to_string();
@@ -574,6 +605,7 @@ fn handle_hover(state: &mut ServerState, request: Request) -> Response {
     }
     let hover = state
         .hover
+        .borrow()
         .hover(&key, &text, params.position.line, params.position.character);
     match hover {
         Some(response) => Response::success(
@@ -620,15 +652,16 @@ fn handle_completion(state: &mut ServerState, request: Request, cancelled_early:
     let Ok(uri) = CanonicalUri::parse(&params.text_document.uri) else {
         return Response::success(request.id, serde_json::Value::Null);
     };
-    let root = state.roots.root_for(&uri);
+    let root = state.session.root_for(&uri);
     let key = DocumentKey::new(root, uri);
-    let Some((_, buffer)) = state.store.open_buffer(&key) else {
+    let Some((_, buffer)) = state.store.borrow().open_buffer(&key) else {
         return Response::success(request.id, serde_json::Value::Null);
     };
     let text = buffer.text().to_string();
     let completion =
         state
             .hover
+            .borrow()
             .completion(&key, &text, params.position.line, params.position.character);
     match completion {
         Some(response) => Response::success(request.id, to_lsp_items(&response)),
@@ -655,15 +688,16 @@ fn handle_definition(state: &mut ServerState, request: Request) -> Response {
     let Ok(uri) = CanonicalUri::parse(&params.text_document.uri) else {
         return Response::success(request.id, serde_json::Value::Null);
     };
-    let root = state.roots.root_for(&uri);
+    let root = state.session.root_for(&uri);
     let key = DocumentKey::new(root, uri);
-    let Some((_, buffer)) = state.store.open_buffer(&key) else {
+    let Some((_, buffer)) = state.store.borrow().open_buffer(&key) else {
         return Response::success(request.id, serde_json::Value::Null);
     };
     let text = buffer.text().to_string();
     let definition =
         state
             .hover
+            .borrow()
             .definition(&key, &text, params.position.line, params.position.character);
     match definition {
         Some(location) => Response::success(
@@ -695,16 +729,19 @@ fn handle_diagnostic(state: &mut ServerState, request: Request) -> Response {
             serde_json::json!({ "kind": "full", "items": [] }),
         );
     };
-    let root = state.roots.root_for(&uri);
+    let root = state.session.root_for(&uri);
     let key = DocumentKey::new(root, uri);
-    let Some((_, buffer)) = state.store.open_buffer(&key) else {
+    let Some((_, buffer)) = state.store.borrow().open_buffer(&key) else {
         return Response::success(
             request.id,
             serde_json::json!({ "kind": "full", "items": [] }),
         );
     };
     let text = buffer.text().to_string();
-    let items: Vec<DiagnosticFace> = state.hover.diagnostics(key.uri.as_path(), &text);
+    let items: Vec<DiagnosticFace> = state
+        .hover
+        .borrow()
+        .diagnostics(key.uri.as_path(), &text);
     Response::success(
         request.id,
         serde_json::json!({ "kind": "full", "items": items }),
@@ -720,10 +757,11 @@ fn handle_did_open(state: &mut ServerState, params: Option<serde_json::Value>) {
     let Ok(uri) = CanonicalUri::parse(&params.text_document.uri) else {
         return;
     };
-    let root = state.roots.root_for(&uri);
+    let root = state.session.root_for(&uri);
     let key = DocumentKey::new(root, uri.clone());
     if state
         .store
+        .borrow_mut()
         .open(
             key.clone(),
             params.text_document.version,
@@ -732,7 +770,7 @@ fn handle_did_open(state: &mut ServerState, params: Option<serde_json::Value>) {
         .is_ok()
     {
         // hover 语料视图同步入库(PR-010:链面需要 def 视图)。
-        state.hover.update(key, &params.text_document.text);
+        state.hover.borrow_mut().update(key, &params.text_document.text);
     }
 }
 
@@ -746,7 +784,7 @@ fn handle_did_change(state: &mut ServerState, params: Option<serde_json::Value>)
     let Ok(uri) = CanonicalUri::parse(&params.text_document.uri) else {
         return;
     };
-    let root = state.roots.root_for(&uri);
+    let root = state.session.root_for(&uri);
     let key = DocumentKey::new(root, uri);
     let changes: Vec<TextChange> = params
         .content_changes
@@ -767,11 +805,12 @@ fn handle_did_change(state: &mut ServerState, params: Option<serde_json::Value>)
         .collect();
     let _ = state
         .store
+        .borrow_mut()
         .change(&key, params.text_document.version, changes);
     // hover 语料视图跟随 overlay 最新文本(PR-010;VFS-003 open 优先)。
-    if let Some((_, buffer)) = state.store.open_buffer(&key) {
+    if let Some((_, buffer)) = state.store.borrow().open_buffer(&key) {
         let text = buffer.text().to_string();
-        state.hover.update(key, &text);
+        state.hover.borrow_mut().update(key, &text);
     }
 }
 
@@ -783,17 +822,17 @@ fn handle_did_close(state: &mut ServerState, params: Option<serde_json::Value>) 
     let Ok(uri) = CanonicalUri::parse(&params.text_document.uri) else {
         return;
     };
-    let root = state.roots.root_for(&uri);
+    let root = state.session.root_for(&uri);
     let key = DocumentKey::new(root, uri);
-    state.store.close(&key);
+    state.store.borrow_mut().close(&key);
     // VFS-012 下游清理(修订):关闭 ≠ 删除。盘上仍在的语料文件回读磁盘
     // 重蓄语料视图(符号/def/types 继续喂补全与悬停),读盘失败(已删除/
     // 不可读)才真正逐出 —— 此前连带 hover.remove,盘上类型凭空消失,
     // 消费文件补全静默空。
     match std::fs::read_to_string(key.uri.as_path()) {
-        Ok(text) => state.hover.update(key, &text),
+        Ok(text) => state.hover.borrow_mut().update(key, &text),
         Err(_) => {
-            state.hover.remove(&key);
+            state.hover.borrow_mut().remove(&key);
         }
     }
 }
@@ -802,6 +841,7 @@ fn handle_did_close(state: &mut ServerState, params: Option<serde_json::Value>) 
 fn health_report(state: &ServerState) -> serde_json::Value {
     let documents: Vec<DocumentSummary> = state
         .store
+        .borrow()
         .open_summaries()
         .into_iter()
         .map(|(uri, version)| DocumentSummary { uri, version })

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 import type { KodeCoreGate } from './backend/kodeCoreGate';
-import { findFilesAcrossRoots } from './scanRoots';
+import { findFilesAcrossRoots, getIndexScanRoots } from './scanRoots';
 
 // kode2 服务轨道语料镜像(2026-11-08 用户令「直接切到 rust」)。
 // Rust 的语料环境(实体注册/自定义类型/别名/继承链)只由已镜像文档的
@@ -18,6 +18,11 @@ export const CORPUS_MIRROR_GLOBS = [
   '**/entities.xml',
   '**/alias.xml',
 ];
+
+/** 扫描根提供者(可注入替身;缺省走索引扫描根全集) */
+export type ScanRootsProvider = () => string[];
+
+const defaultScanRoots: ScanRootsProvider = () => getIndexScanRoots();
 
 /** 语料文档的 languageId(Rust 面分类:def → kbengine-def,语料 XML → xml) */
 export function corpusMirrorLanguageId(fsPath: string): string {
@@ -41,10 +46,23 @@ const defaultFinder: CorpusFileFinder = (glob, token) =>
  */
 export async function mirrorCorpusToRust(
   gate: KodeCoreGate,
-  findFiles: CorpusFileFinder = defaultFinder
+  findFiles: CorpusFileFinder = defaultFinder,
+  scanRoots: ScanRootsProvider = defaultScanRoots
 ): Promise<void> {
   if (!gate.serveFromRust()) {
     return;
+  }
+  // RUST-069-W:根生命周期先行——语料 didOpen 的根归属(server 侧
+  // root_for 最长前缀)依赖根已注册;外部 assetsRoot 根不在 initialize
+  // 握手里,不先注册则外部根语料落 UNROOTED(与 workspace 根互不隔离)。
+  let roots: string[] = [];
+  try {
+    roots = scanRoots();
+  } catch {
+    roots = [];
+  }
+  for (const root of roots) {
+    await gate.registerRoot(root).catch(() => undefined);
   }
   // 枚举 + 去重(同一文件可能被多个 glob 命中;路径为规范 fsPath)。
   const corpusUris = new Map<string, vscode.Uri>();
