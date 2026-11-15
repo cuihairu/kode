@@ -315,7 +315,7 @@
 - [ ] RUST-075 （旧 CORE-010） CPU pool 对交互请求预留容量；后台 worker 并发有硬上限，避免把 CPU 全核占满。
 - [ ] RUST-076 （旧 CORE-011） IO task 与 CPU task 分离，禁止锁跨 await，审计 contention/priority inversion。
 - [ ] RUST-077 （旧 CORE-012） 大结果限流、分页、stream chunk + cancel；限制 JSON payload 体积。
-- [ ] RUST-078 （旧 CORE-013） 缓存预算配置（resident bytes、LRU、idle aging）与内存压力下主动回收。
+- [x] RUST-078 （旧 CORE-013） 缓存预算配置（resident bytes、LRU、idle aging）与内存压力下主动回收。(基础版:kode-vfs ParseCache::with_budget 驻留预算+二次机会近似 LRU(时钟环+recent 位命中缓刑+失效陈旧键惰性压缩+终局保守清空不卡死),kode-parser ParseRegistry::with_resident_budget 权重=驻留产物自有字符串字节(下界代理;RUST-129 实测 def 形态 RSS≈权重×3 换算归配置面)+evictions 镜像进 RegistryStats,kode-index SymbolIndex::with_parse_budget 透传;缺省 new() 无界既有调用面零变化;预算 11 例+注册表 2 例+索引 1 例,prove-red=摘 enforce 驱逐面 3 例红 cp/cmp 字节还原复绿;门禁 clippy -D warnings 0/rustfmt 过/三 crate 231 绿/工作区(除并发脏 kode-server,已过编译兼容)1346 绿 0 红;余项=RSS 直测权重与 idle aging 随 server 配置面接线)
 - [ ] RUST-079 （旧 CORE-014） 读写索引时使用一致快照，避免定义和引用来自不同 generation。
 - [ ] RUST-080 （旧 CORE-015） Core crash/restart 自动恢复，服务不可用时最小语法功能继续使用。(PR-003 已落最小版:TS client 崩溃检测+自动 respawn+重握手(10s 窗口 3 次);「最小语法功能兜底」留 Provider 接线时实现)
 - [ ] RUST-081 （旧 CORE-016） 启动探针、健康状态、索引进度、可观察恢复原因。(PR-003 已落 `$/kode/health` 探针(status/pid/uptime/文档摘要/restartGeneration)+ stderr 诊断留痕;索引进度随索引模块)

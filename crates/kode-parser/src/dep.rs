@@ -14,6 +14,7 @@ use kode_vfs::parse_cache::{content_fingerprint, ParseCache};
 use kode_vfs::store::{DocumentKey, RootId};
 use kode_vfs::uri::CanonicalUri;
 
+use crate::diag::Diagnostic;
 use crate::model::{
     parse_alias, parse_def, parse_entities, parse_types, AliasFile, DefFile, EntitiesFile,
     TypesFile,
@@ -120,6 +121,8 @@ pub struct RegistryStats {
     pub cache_hits: u64,
     pub negative_hits: u64,
     pub failures: u64,
+    /// CORE-013:预算驱逐次数(缓存预算启用后观测)。
+    pub evictions: u64,
 }
 
 impl Default for ParseRegistry {
@@ -136,6 +139,17 @@ impl Default for ParseRegistry {
 impl ParseRegistry {
     pub fn new() -> ParseRegistry {
         ParseRegistry::default()
+    }
+
+    /// CORE-013 基础版:带驻留预算的注册表。预算单位 = 驻留产物自有字符串
+    /// 字节(下界代理,非 RSS 直测;RUST-129 实测 def 形态 RSS ≈ 该权重 ×3)。
+    /// 超预算按二次机会近似 LRU 驱逐,驱逐后同文档再 update 即重建(缓存丢
+    /// 失不丢正确性);`new()` 保持无界,既有调用面零变化。
+    pub fn with_resident_budget(max_bytes: u64) -> ParseRegistry {
+        ParseRegistry {
+            cache: ParseCache::with_budget(max_bytes, resident_weight_of_unit),
+            ..ParseRegistry::default()
+        }
     }
 
     /// 增量入口:同 (key, fingerprint) 直接回缓存,零重建。
@@ -256,6 +270,9 @@ impl ParseRegistry {
         self.forward.insert(key.clone(), refs);
         self.cache.insert(key, fingerprint, unit.clone());
         self.stats.rebuilds += 1;
+        // CORE-013:预算驱逐数镜像进统计(update 末尾折叠,失效路径的下一次
+        // update 也会把驱逐带出来)。
+        self.stats.evictions = self.cache.evictions();
         (
             UpdateReport {
                 rebuilt: true,
@@ -302,6 +319,83 @@ impl ParseRegistry {
 
     pub fn tracked_files(&self) -> usize {
         self.forward.len()
+    }
+}
+
+/// CORE-013 预算权重:驻留产物「自有字符串字节」合计 + 每条目 64B 结构
+/// 松弛(下界代理,不含堆分配头与对齐;RUST-129 实测该权重 ≈ RSS 的 1/3,
+/// 上限换算归调用方)。逐字段遍历,新增字段漏计只影响预算精度不影响正确性。
+fn resident_weight_of_unit(unit: &ParsedUnit) -> u64 {
+    fn w(text: &str) -> u64 {
+        text.len() as u64
+    }
+    fn opt(text: &Option<String>) -> u64 {
+        text.as_ref().map_or(0, |t| t.len() as u64)
+    }
+    fn diags(diags: &[Diagnostic]) -> u64 {
+        const PER_ENTRY: u64 = 64;
+        diags.iter().map(|d| w(&d.message) + PER_ENTRY).sum()
+    }
+    const PER_ENTRY: u64 = 64;
+    match unit {
+        ParsedUnit::Def(def) => {
+            let mut total = opt(&def.root_tag) + opt(&def.parent) + diags(&def.diagnostics);
+            total += def.interfaces.iter().map(|t| w(t)).sum::<u64>();
+            for p in &def.properties {
+                total += PER_ENTRY
+                    + w(&p.name)
+                    + opt(&p.type_name)
+                    + p.type_refs.iter().map(|t| w(t)).sum::<u64>()
+                    + opt(&p.flags_raw)
+                    + p.flags.iter().map(|t| w(t)).sum::<u64>()
+                    + opt(&p.default_value)
+                    + opt(&p.detail_level)
+                    + opt(&p.database_length)
+                    + opt(&p.identifier)
+                    + p.extra_tags.iter().map(|(t, _)| w(t)).sum::<u64>();
+            }
+            for c in &def.components {
+                total += PER_ENTRY + w(&c.name) + opt(&c.component_type);
+            }
+            for methods in [&def.base_methods, &def.cell_methods, &def.client_methods] {
+                for m in methods {
+                    total += PER_ENTRY + w(&m.name) + m.args.iter().map(|t| w(t)).sum::<u64>();
+                }
+            }
+            total += def.extra_sections.iter().map(|(t, _)| w(t)).sum::<u64>();
+            total
+        }
+        ParsedUnit::Entities(entities) => {
+            let mut total = diags(&entities.diagnostics);
+            for e in &entities.entities {
+                total += PER_ENTRY
+                    + w(&e.name)
+                    + e.attributes.iter().map(|(k, v)| w(k) + w(v)).sum::<u64>();
+            }
+            total
+        }
+        ParsedUnit::Types(types) => {
+            let mut total = diags(&types.diagnostics);
+            for t in &types.types {
+                total += PER_ENTRY
+                    + w(&t.name)
+                    + opt(&t.directive)
+                    + opt(&t.implemented_by_symbol)
+                    + t.field_refs.iter().map(|r| w(r)).sum::<u64>()
+                    + opt(&t.element_ref);
+            }
+            total
+        }
+        ParsedUnit::Alias(alias) => {
+            let mut total = diags(&alias.diagnostics);
+            for a in &alias.aliases {
+                total += PER_ENTRY + w(&a.name) + w(&a.alias_type);
+            }
+            for (name, attrs) in &alias.attribute_aliases {
+                total += PER_ENTRY + w(name) + attrs.iter().map(|(k, v)| w(k) + w(v)).sum::<u64>();
+            }
+            total
+        }
     }
 }
 

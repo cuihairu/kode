@@ -166,3 +166,37 @@ fn reparse_cleans_stale_reverse_entries_and_helpers_work() {
     assert_eq!(reg.stats.update_calls, 0);
     assert_eq!(reg.stats.rebuilds, 0);
 }
+
+// ---- CORE-013 基础版:解析层驻留预算 ----
+
+#[test]
+fn resident_budget_mirror_and_rebuild_correctness() {
+    // 预算 1B:任何产物都超限,插入即驱逐——确定性形态,统计镜像可精钉。
+    let mut reg = ParseRegistry::with_resident_budget(1);
+    let keys: Vec<_> = (0..30)
+        .map(|i| key(&format!("/w/scripts/entity_defs/E{i}.def")))
+        .collect();
+    for (i, k) in keys.iter().enumerate() {
+        let text = format!("<root><p{i}><Type>UINT32</Type></p{i}></root>");
+        let (report, unit) = reg.update(k.clone(), &text);
+        assert!(report.rebuilt);
+        assert!(unit.is_some());
+    }
+    assert_eq!(reg.stats.evictions, 30, "每条插入都被预算驱逐");
+    // 驱逐后同文档再 update 即重建:缓存丢失不丢正确性。
+    let (report, unit) = reg.update(keys[7].clone(), "<root><p7><Type>UINT32</Type></p7></root>");
+    assert!(report.rebuilt, "被驱逐条目必须重建");
+    assert!(unit.is_some());
+    assert_eq!(reg.stats.evictions, 31);
+}
+
+#[test]
+fn unbounded_registry_has_zero_evictions() {
+    let mut reg = ParseRegistry::new();
+    for i in 0..30 {
+        let k = key(&format!("/w/scripts/entity_defs/E{i}.def"));
+        reg.update(k, &format!("<root><p{i}><Type>UINT32</Type></p{i}></root>"));
+    }
+    assert_eq!(reg.stats.evictions, 0, "缺省无界,不得驱逐");
+    assert_eq!(reg.stats.rebuilds, 30);
+}

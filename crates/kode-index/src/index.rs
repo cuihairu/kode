@@ -107,6 +107,17 @@ impl SymbolIndex {
         SymbolIndex::default()
     }
 
+    /// CORE-013 基础版:解析层驻留预算的索引。预算单位 = 驻留解析产物自有
+    /// 字符串字节(下界代理,非 RSS 直测;RUST-129 实测 def 形态 RSS ≈ 该
+    /// 权重 ×3)。超预算按二次机会近似 LRU 驱逐,被驱逐文件再 update 即
+    /// 重建(缓存丢失不丢正确性);`new()` 保持无界,既有行为零变化。
+    pub fn with_parse_budget(max_bytes: u64) -> SymbolIndex {
+        SymbolIndex {
+            registry: ParseRegistry::with_resident_budget(max_bytes),
+            ..SymbolIndex::default()
+        }
+    }
+
     /// 单文件增量入口:指纹命中零重建(不 bump generation)。
     pub fn update(&mut self, key: DocumentKey, text: &str) -> IndexUpdateReport {
         self.stats.update_calls += 1;
@@ -403,5 +414,31 @@ mod tests {
             index.entity_declarations().get("Avatar").is_none(),
             ".def 继承边跟随摘除(IDX-014)"
         );
+    }
+
+    #[test]
+    fn parse_budget_preserves_lookup_correctness() {
+        // 预算 1B:任何产物都超限,插入即驱逐——最保守形态下查询面必须完好。
+        let mut index = SymbolIndex::with_parse_budget(1);
+        let mut keys = Vec::new();
+        for i in 0..5 {
+            let k = DocumentKey::new(
+                RootId(1),
+                CanonicalUri::from_path(&format!("/w/entities/E{i}.def")),
+            );
+            keys.push(k.clone());
+            index.update(k, "<root><Properties><hp><Type>UINT32</Type><Flags>BASE</Flags></hp></Properties></root>");
+        }
+        // 全部被驱逐:符号表仍有各文件产物(符号层独立于解析缓存),lookup 正常。
+        let found = index.lookup("hp");
+        assert_eq!(found.len(), 5, "符号层不受解析缓存驱逐影响");
+        // 被驱逐文件再 update:重建(解析层缓存丢失面),符号结果不双份。
+        let report = index.update(
+            keys[2].clone(),
+            "<root><Properties><hp><Type>UINT32</Type><Flags>BASE</Flags></hp></Properties></root>",
+        );
+        assert!(report.rebuilt, "被驱逐条目必须重建");
+        let again = index.lookup("hp");
+        assert_eq!(again.len(), 5, "重建后符号不重复");
     }
 }
