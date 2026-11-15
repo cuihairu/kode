@@ -648,6 +648,23 @@ impl Scheduler {
         }
     }
 
+    /// RUST-070/073 生产接线面:指名插队执行——队列中指定 id 的任务立即
+    /// 执行(跳过优先序),用于「请求所需文件先刷新」(打开文档小范围交互
+    /// 优先于局部刷新);非 Queued 态(不存在/在跑/已终态)一律 false 不动作。
+    /// 暂停期不出活(pump_once 同语义)。
+    pub fn promote_and_run(&mut self, id: u64) -> bool {
+        if self.paused {
+            return false;
+        }
+        match self.tasks.get(&id) {
+            Some(task) if task.state == TaskState::Queued => {
+                self.execute(id);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// 排水:连续执行直至队列空/暂停/冷却阻塞;冷却阻塞时按建议推进逻辑时钟,
     /// 但不超过 `max_wait_ms` 预算(对拍 drain op)。
     pub fn drain(&mut self, max_wait_ms: u64) {
@@ -972,6 +989,51 @@ mod task_debug_tests {
 
     /// RUST-078-W:idle aging——超龄终态摘除、新鲜终态保留、queued 永不动、
     /// keyed 台账永不动(ensure 复用语义不受影响)、metrics 零变化。
+    /// RUST-070/073:指名插队执行——跳过优先序立即执行指定 id;非 Queued
+    /// 态(未知 id/已终态)一律 false;插队不吞队列其余任务。
+    #[test]
+    fn promote_and_run_executes_named_queued_task_out_of_order() {
+        use crate::model::priority::{BACKGROUND_FULL, REQUEST_LOCAL};
+        let mut s = Scheduler::new(SchedulerOptions::default());
+        let run = |_token: &crate::scheduler::CancelToken| Ok(());
+        // 同优先级先入者 seq 小;先入 REQUEST_LOCAL、后入 BACKGROUND_FULL,
+        // 正常 pick_next 会先跑 REQUEST_LOCAL——promote 指名后者即插队。
+        let first = s
+            .enqueue(TaskSpec {
+                kind: TaskKind::SingleFileUpdate,
+                priority: REQUEST_LOCAL,
+                file: Some("/a.def".into()),
+                version: Some(1),
+                target: None,
+                run: Box::new(run),
+            })
+            .id;
+        let second = s
+            .enqueue(TaskSpec {
+                kind: TaskKind::FullReindex,
+                priority: BACKGROUND_FULL,
+                file: Some("/b.def".into()),
+                version: Some(1),
+                target: None,
+                run: Box::new(run),
+            })
+            .id;
+        assert!(s.promote_and_run(second), "Queued 态指名执行应成功");
+        assert_eq!(s.task_state(second), Some(TaskState::Completed));
+        assert_eq!(
+            s.task_state(first),
+            Some(TaskState::Queued),
+            "插队不吞其余任务"
+        );
+        // 非 Queued 态:未知 id / 已终态 → false。
+        assert!(!s.promote_and_run(999), "未知 id 拒绝");
+        assert!(!s.promote_and_run(second), "已终态拒绝");
+        // 队列其余任务照常排水。
+        s.drain(10_000);
+        assert_eq!(s.task_state(first), Some(TaskState::Completed));
+        assert_eq!(s.status().queued, 0);
+    }
+
     #[test]
     fn age_out_terminal_drops_only_expired_and_never_touches_live_or_keyed() {
         use crate::model::priority::{BACKGROUND_FULL, REQUEST_LOCAL};

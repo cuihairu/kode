@@ -97,6 +97,23 @@ export interface KodeCoreHealth {
     /** 最近一次压力采样 RSS;从未采样/非 Linux=null 诚实降级 */
     lastRssBytes: number | null;
   };
+  /** RUST-070/071/073:索引刷新队列观测(ingest 装配线记账);恒装配 */
+  ingest: {
+    /** 当前在队条数 */
+    queued: number;
+    /** 累计入队(让位重入队计入) */
+    enqueued: number;
+    /** 同文件同版本合并 */
+    merged: number;
+    /** 过期版本丢弃 */
+    staleDropped: number;
+    /** 队列满拒绝 */
+    rejectedQueueFull: number;
+    /** 累计执行成功 */
+    executed: number;
+    /** 撤根清除的待执行条目 */
+    purged: number;
+  };
 }
 
 /** transport 层错误:进程退出/重启放弃/协议损坏 */

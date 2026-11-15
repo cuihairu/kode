@@ -10,7 +10,7 @@
 
 use serde_json::{json, Value};
 
-use kode_protocol::{Request, Response, error_codes};
+use kode_protocol::{error_codes, Request, Response};
 
 use crate::server::ServerState;
 
@@ -42,6 +42,9 @@ pub fn handle_root_removed(state: &mut ServerState, request: Request) -> Respons
     let Some(removal) = state.session.remove_root(&path) else {
         return Response::success(request.id, json!({ "removed": false }));
     };
+    // RUST-069-W 撤根清缓存的队列侧延伸(RUST-070/071/073):该根的待执行
+    // 索引刷新全部摘除——撤根后残留刷新会把旧根语料重新灌回(复活缺陷)。
+    let purged = state.index.purge_root(removal.root);
     let invalidated: Vec<Value> = removal
         .invalidated
         .iter()
@@ -53,6 +56,7 @@ pub fn handle_root_removed(state: &mut ServerState, request: Request) -> Respons
             "removed": true,
             "root": removal.root.0,
             "invalidated": invalidated,
+            "purgedPendingRefresh": purged,
         }),
     )
 }

@@ -313,9 +313,16 @@ fn main() {
                 Ok(Some(chunk)) => {
                     let outcomes = decoder.push(&chunk);
                     process_outcomes(&mut state, &executor, outcomes, &rx, &mut decoder, &mut deferred);
+                    // 索引刷新小切片(RUST-070/071/073):帧间让 ingest 走步,
+                    // 不逐文件内联压住交互帧(CORE-005)。
+                    state.index.pump_budgeted(8);
                 }
                 Ok(None) | Err(RecvTimeoutError::Disconnected) => eof = true,
-                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Timeout) => {
+                    // 空闲 tick:大切片追赶(CORE-006 后台不可永久推迟;
+                    // DEPENDENCY_UPDATE 优先级恒交互级,冷却不适用)。
+                    state.index.pump_budgeted(64);
+                }
             }
         } else if deferred.is_empty() {
             break;

@@ -86,9 +86,9 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
     client.openDocument(URI, 'kbengine-def', 1, '<Entity><GroupName>mob</GroupName></Entity>');
     const health = await client.health();
     expect(sortedKeys(health)).toEqual(
-      ['documents', 'initialized', 'maintenance', 'pid', 'pool', 'resources',
-       'restartGeneration', 'serverVersion', 'shutdownRequested', 'status',
-       'uptimeMs', 'warm']
+      ['documents', 'ingest', 'initialized', 'maintenance', 'pid', 'pool',
+       'resources', 'restartGeneration', 'serverVersion', 'shutdownRequested',
+       'status', 'uptimeMs', 'warm']
     );
     // RUST-074-W:暖门观测恒装配(fresh server 未 begin = idle 全形状)。
     expect(health.warm).toEqual({
@@ -98,6 +98,17 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
     expect(health.maintenance).toEqual({
       agedTerminal: 0, pressureReclaims: 0, lastRssBytes: null
     });
+    // RUST-070/071/073:索引刷新队列观测恒装配(open 一文件后:该文件
+    // 的 ingest 已入队;请求入口 freshen 使其可执行,queued 0/1 均为合法
+    // 瞬态,只钉累计计数形状与 open 的入队事实)。
+    expect(sortedKeys(health.ingest)).toEqual(
+      ['enqueued', 'executed', 'merged', 'purged', 'queued',
+       'rejectedQueueFull', 'staleDropped']
+    );
+    expect(health.ingest.enqueued).toBeGreaterThanOrEqual(1);
+    for (const value of Object.values(health.ingest ?? {})) {
+      expect(typeof value).toBe('number');
+    }
     // RUST-075-W:worker 执行器默认装配,健康面带池记账键。
     // RUST-076-W:LaneGate 泳道记账键(ioRunning/cpuRunning)入池形状。
     expect(sortedKeys(health.pool)).toEqual(

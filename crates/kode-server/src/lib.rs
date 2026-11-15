@@ -16,6 +16,7 @@ pub mod executor;
 pub mod flag_domains;
 pub(crate) mod golden_corpus;
 pub mod hover;
+pub mod index_queue;
 pub mod lint;
 pub mod local_return;
 pub mod message_table;

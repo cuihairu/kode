@@ -222,6 +222,10 @@ pub struct ServerState {
     /// RUST-074-W:暖门状态机(首扫 keyed 单例 + Warming 期冷请求观测)。
     /// 恒装配(健康面 `warm` 键恒在);四状态面走顶层请求臂(warm_gate)。
     pub warm: crate::warm_gate::WarmGate,
+    /// RUST-070/071/073:索引刷新队列(hover 语料 ingest 装配线)。恒装配
+    /// (健康面 `ingest` 键恒在);didOpen/didChange/didClose 入队,主循环
+    /// 空闲切片 + 请求入口 freshen 自键驱动(打开文档小范围交互 > 局部刷新)。
+    pub index: crate::index_queue::IndexQueue,
 }
 
 impl ServerState {
@@ -280,6 +284,7 @@ impl ServerState {
             // RUST-075-W:main 装配执行器后注入健康面记账;直连构造 None。
             pool_stats: None,
             warm: crate::warm_gate::WarmGate::new(),
+            index: crate::index_queue::IndexQueue::new(),
         }
     }
 }
@@ -603,6 +608,17 @@ fn handle_notification(state: &mut ServerState, notification: Notification) -> V
     }
 }
 
+/// RUST-070/071/073:请求入口刷新(freshen 自键 + 有界追赶)。请求所需
+/// 文件先于服务执行(打开文档小范围交互 > 局部刷新,CORE-005);小语料
+/// 单请求即全量就绪(同步语义形状不变),大语料余量留给空闲切片。
+fn drain_index_for_request(state: &mut ServerState, key: &DocumentKey) {
+    let identity = crate::index_queue::identity_of(key);
+    state.index.freshen(&identity);
+    state
+        .index
+        .pump_budgeted(crate::index_queue::REQUEST_DRAIN_BUDGET);
+}
+
 /// textDocument/hover(PR-010/LSP-003):文档须已打开(open overlay 优先,
 /// VFS-003);未打开/未知词一律回 null 结果(LSP 允许),不报错不阻塞。
 /// 响应结构:contents.markdown(LSP 兼容)+ 结构化链面在 kode-server 侧
@@ -623,6 +639,7 @@ fn handle_hover(state: &mut ServerState, request: Request) -> Response {
     };
     let root = state.session.root_for(&uri);
     let key = DocumentKey::new(root, uri);
+    drain_index_for_request(state, &key);
     let Some((_, buffer)) = state.store.borrow().open_buffer(&key) else {
         return Response::success(request.id, serde_json::Value::Null);
     };
@@ -686,6 +703,7 @@ fn handle_completion(state: &mut ServerState, request: Request, cancelled_early:
     };
     let root = state.session.root_for(&uri);
     let key = DocumentKey::new(root, uri);
+    drain_index_for_request(state, &key);
     let Some((_, buffer)) = state.store.borrow().open_buffer(&key) else {
         return Response::success(request.id, serde_json::Value::Null);
     };
@@ -722,6 +740,7 @@ fn handle_definition(state: &mut ServerState, request: Request) -> Response {
     };
     let root = state.session.root_for(&uri);
     let key = DocumentKey::new(root, uri);
+    drain_index_for_request(state, &key);
     let Some((_, buffer)) = state.store.borrow().open_buffer(&key) else {
         return Response::success(request.id, serde_json::Value::Null);
     };
@@ -763,6 +782,7 @@ fn handle_diagnostic(state: &mut ServerState, request: Request) -> Response {
     };
     let root = state.session.root_for(&uri);
     let key = DocumentKey::new(root, uri);
+    drain_index_for_request(state, &key);
     let Some((_, buffer)) = state.store.borrow().open_buffer(&key) else {
         return Response::success(
             request.id,
@@ -801,8 +821,17 @@ fn handle_did_open(state: &mut ServerState, params: Option<serde_json::Value>) {
         )
         .is_ok()
     {
-        // hover 语料视图同步入库(PR-010:链面需要 def 视图)。
-        state.hover.borrow_mut().update(key, &params.text_document.text);
+        // hover 语料 ingest 入索引刷新队列(RUST-070/071/073:DEPENDENCY_
+        // UPDATE keyed 去重)——不再内联解析,镜像洪水不再压住交互帧;请求
+        // 入口 freshen 自键保打开文档即时新鲜。版本 = 打开版本(同版本重发
+        // 在队即合并)。
+        let version = u64::try_from(params.text_document.version).unwrap_or(0);
+        let run = crate::index_queue::ingest_refresh_task(
+            Rc::clone(&state.store),
+            Rc::clone(&state.hover),
+            key.clone(),
+        );
+        state.index.request_refresh(&key, Some(version), run);
     }
 }
 
@@ -839,11 +868,16 @@ fn handle_did_change(state: &mut ServerState, params: Option<serde_json::Value>)
         .store
         .borrow_mut()
         .change(&key, params.text_document.version, changes);
-    // hover 语料视图跟随 overlay 最新文本(PR-010;VFS-003 open 优先)。
-    if let Some((_, buffer)) = state.store.borrow().open_buffer(&key) {
-        let text = buffer.text().to_string();
-        state.hover.borrow_mut().update(key, &text);
-    }
+    // hover 语料 ingest 入队(RUST-070/071/073):执行时刻按 overlay 最新
+    // 文本重放(open 优先),同版本重发在队即合并,连续编辑旧版本让位——
+    // 输入风暴收敛为至多一个待执行 ingest。
+    let version = u64::try_from(params.text_document.version).unwrap_or(0);
+    let run = crate::index_queue::ingest_refresh_task(
+        Rc::clone(&state.store),
+        Rc::clone(&state.hover),
+        key.clone(),
+    );
+    state.index.request_refresh(&key, Some(version), run);
 }
 
 /// didClose → 移除 overlay,文档回落磁盘真相(VFS-003 close 转移)。
@@ -857,16 +891,17 @@ fn handle_did_close(state: &mut ServerState, params: Option<serde_json::Value>) 
     let root = state.session.root_for(&uri);
     let key = DocumentKey::new(root, uri);
     state.store.borrow_mut().close(&key);
-    // VFS-012 下游清理(修订):关闭 ≠ 删除。盘上仍在的语料文件回读磁盘
-    // 重蓄语料视图(符号/def/types 继续喂补全与悬停),读盘失败(已删除/
-    // 不可读)才真正逐出 —— 此前连带 hover.remove,盘上类型凭空消失,
-    // 消费文件补全静默空。
-    match std::fs::read_to_string(key.uri.as_path()) {
-        Ok(text) => state.hover.borrow_mut().update(key, &text),
-        Err(_) => {
-            state.hover.borrow_mut().remove(&key);
-        }
-    }
+    // VFS-012 下游清理(修订):关闭 ≠ 删除。刷新入队(RUST-070/071/073):
+    // 执行时刻真相 = 盘上仍在回读磁盘重蓄语料视图(符号/def/types 继续喂
+    // 补全与悬停),读盘失败(已删除/不可读)才真正逐出 —— 此前连带
+    // hover.remove,盘上类型凭空消失,消费文件补全静默空。version=None
+    // 与打开/编辑的 Some(version) 不同键:close 后必让位重入队,不合并。
+    let run = crate::index_queue::ingest_refresh_task(
+        Rc::clone(&state.store),
+        Rc::clone(&state.hover),
+        key.clone(),
+    );
+    state.index.request_refresh(&key, None, run);
 }
 
 /// CORE-016 健康报告:status/pid/版本/uptime/文档摘要,按 uri 排序保证确定性。
@@ -912,6 +947,17 @@ fn health_report(state: &ServerState) -> serde_json::Value {
         "agedTerminal": maintenance.aged_terminal,
         "pressureReclaims": maintenance.pressure_reclaims,
         "lastRssBytes": maintenance.last_rss_bytes,
+    });
+    // RUST-070/071/073:索引刷新队列观测(CORE-005/006/008 生产面)。
+    let ingest = state.index.snapshot();
+    value["ingest"] = serde_json::json!({
+        "queued": ingest.queued,
+        "enqueued": ingest.enqueued,
+        "merged": ingest.merged,
+        "staleDropped": ingest.stale_dropped,
+        "rejectedQueueFull": ingest.rejected_queue_full,
+        "executed": ingest.executed,
+        "purged": ingest.purged,
     });
     value
 }

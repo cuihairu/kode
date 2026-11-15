@@ -104,6 +104,12 @@ fn open_entities(state: &mut ServerState, uri: &str) {
     open_document(state, uri, "xml", "<root>\n  <Avatar/>\n</root>\n");
 }
 
+/// RUST-070/071/073:模拟主循环空闲切片——didOpen 的语料 ingest 已入
+/// 索引刷新队列,泵过后才真正入库(与生产时序一致)。
+fn pump_index(state: &mut ServerState) {
+    state.index.pump_budgeted(64);
+}
+
 fn definition_at(state: &mut ServerState, id: i64, uri: &str) -> serde_json::Value {
     response_of(&handle_message(
         state,
@@ -158,7 +164,10 @@ fn root_added_updates_registry_and_isolates_same_name_entities() {
     assert_eq!(again["root"].as_u64(), Some(root_b), "同路径幂等");
     assert_eq!(
         roots_list(&mut state, 4),
-        vec![(1, "/workspace/a".to_string()), (root_b, "/workspace/b".to_string())],
+        vec![
+            (1, "/workspace/a".to_string()),
+            (root_b, "/workspace/b".to_string())
+        ],
         "注册表应含两个根"
     );
 
@@ -196,6 +205,9 @@ fn root_removed_clears_root_and_fans_out_with_receipt() {
     open_def(&mut state, def_b, &avatar_def(false));
     open_entities(&mut state, ENTITIES_A);
     open_entities(&mut state, entities_b);
+    // 空闲切片先落账(语料 ingest 入队后由泵执行,撤根扇出才有 hover
+    // 条目可清——与生产时序一致:open → 泵 → remove)。
+    pump_index(&mut state);
 
     let removal = root_removed(&mut state, 3, "/workspace/b");
     assert_eq!(removal["removed"], json!(true), "已注册根移除如实回执");
@@ -235,7 +247,11 @@ fn root_removed_clears_root_and_fans_out_with_receipt() {
             }),
         ),
     ));
-    assert_eq!(hover, serde_json::Value::Null, "被撤根文档查询回 null: {hover}");
+    assert_eq!(
+        hover,
+        serde_json::Value::Null,
+        "被撤根文档查询回 null: {hover}"
+    );
 
     // 保留根仍可查(镜像/候选未被误伤)。
     let result = definition_at(&mut state, 6, ENTITIES_A);
@@ -266,7 +282,43 @@ fn root_removed_unknown_reports_removed_false_without_fan_out() {
     );
     // 无扇出:留存根数据原样可查
     let result = definition_at(&mut state, 3, ENTITIES_A);
-    assert_eq!(result["uri"], json!("/workspace/a/scripts/entity_defs/Avatar.def"));
+    assert_eq!(
+        result["uri"],
+        json!("/workspace/a/scripts/entity_defs/Avatar.def")
+    );
+}
+
+#[test]
+fn root_removed_purges_pending_refresh_and_blocks_resurrection() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize(1, "file:///workspace/a"));
+    let root_b = root_added(&mut state, 2, "/workspace/b")["root"]
+        .as_u64()
+        .expect("root id");
+    let def_b = "file:///workspace/b/scripts/entity_defs/Avatar.def";
+    // 入队但不泵:撤根时该根仍有待执行刷新。
+    open_def(&mut state, def_b, &avatar_def(false));
+    assert!(
+        state.index.snapshot().queued >= 1,
+        "didOpen 后应有待执行 ingest"
+    );
+
+    let removal = root_removed(&mut state, 3, "/workspace/b");
+    assert_eq!(removal["removed"], json!(true));
+    let purged = removal["purgedPendingRefresh"]
+        .as_u64()
+        .expect("purgedPendingRefresh receipt");
+    assert!(purged >= 1, "撤根回执应带待执行刷新清除数: {removal}");
+    assert_eq!(state.index.snapshot().queued, 0, "该根待执行刷新应清空");
+
+    // 泵不复活:被撤根的语料不再灌回(RUST-069-W 撤根语义的队列侧延伸)。
+    pump_index(&mut state);
+    assert_eq!(
+        state.hover.borrow().index.symbol_count(),
+        0,
+        "purge 后泵不得把旧根语料灌回"
+    );
+    let _ = root_b;
 }
 
 #[test]
@@ -282,7 +334,10 @@ fn root_re_added_gets_new_identity_and_old_incarnation_does_not_resurrect() {
     open_entities(&mut state, entities_b);
 
     // 撤根(清镜像+候选)→ 重加同路径:必须取得新身份(id 永不复用)。
-    assert_eq!(root_removed(&mut state, 3, "/workspace/b")["removed"], json!(true));
+    assert_eq!(
+        root_removed(&mut state, 3, "/workspace/b")["removed"],
+        json!(true)
+    );
     let root_b2 = root_added(&mut state, 4, "/workspace/b")["root"]
         .as_u64()
         .expect("root id");
@@ -346,11 +401,9 @@ fn nested_root_removal_falls_back_to_parent_root() {
         json!("/workspace/a/nested/scripts/entity_defs/Avatar.def"),
         "嵌套根撤除后同路径回落父根归属(候选仍指 nested 路径): {result}"
     );
-    let root_for = state
-        .session
-        .root_for(&kode_vfs::CanonicalUri::from_path(
-            "/workspace/a/nested/scripts/entities.xml",
-        ));
+    let root_for = state.session.root_for(&kode_vfs::CanonicalUri::from_path(
+        "/workspace/a/nested/scripts/entities.xml",
+    ));
     assert_eq!(root_for.0, 1, "同路径现在归属父根 A(id=1,注册序第二个根)");
 }
 
@@ -390,10 +443,7 @@ fn root_lifecycle_requires_initialized_and_validates_params() {
     handle_message(&mut state, initialize(2, "file:///workspace/a"));
     // 缺 path / 空 path → -32602
     for params in [json!({}), json!({ "path": "" })] {
-        let out = handle_message(
-            &mut state,
-            request(3, "$/kode/workspace/rootAdded", params),
-        );
+        let out = handle_message(&mut state, request(3, "$/kode/workspace/rootAdded", params));
         match &out[0] {
             Outgoing::Response(response) => {
                 assert!(response.error.is_some(), "缺/空 path 必须拒绝");
