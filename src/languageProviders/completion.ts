@@ -20,7 +20,7 @@ import { GlobalDataDictIndex, resolveScopeRoot } from '../globalDataIndex';
 import { dataDictKeyCompletionContext, type DataDictKeyCompletionContext } from '../backend/globalDataIndexCore';
 import { spaceDataKeyCompletionContext, type SpaceDataKeyCompletionContext } from '../backend/spaceDataIndexCore';
 import { getSpaceDataIndex, isSpaceDataIndexEnabled } from '../spaceDataIndex';
-import { awaitDataDictIndexReady, isPythonDataDictIndexEnabled } from './pythonDefinition';
+import { awaitDataDictIndexReady, awaitSpaceDataIndexReady, isPythonDataDictIndexEnabled } from './pythonDefinition';
 import { l10nText } from '../nlsRuntime';
 import { getPythonSelfCompletionContext } from '../backend/pythonLanguageUtils';
 import { filterKbeSymbols, getKbeAliases, getKbeCompletionContext, kbeCompletionDocumentation } from '../kbeModuleIndex';
@@ -362,7 +362,8 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     );
     if (spaceDataCtx) {
       return this.provideSpaceDataKeyCompletions(document, position, spaceDataCtx, token).then(
-        items => (items !== null ? items : this.provideCompletionItemsSync(document, position, token))
+        async items =>
+          items !== null ? items : this.provideCompletionItemsSync(document, position, token)
       );
     }
     // KSEM-STRUCT-02:FIXED_DICT 子字段下标链键位(嵌套 ["k"]["k2"] / .get("k")
@@ -681,19 +682,26 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
    * 纯读键族诚实标「无写点」。诚实边界:开关关 → null(不接管);
    * 动态 spaceID(int 字面量/int 常量绑定都解析不出)→ [](动态空间不
    * 合并为同一确定对象,不造键、不跨空间借族);族空/片段无前缀匹配 →
-   * []。替换范围 = 引号内片段精确区间(不含引号;未开引号=光标位)。
+   * [];冷索引未就绪(预算耗尽)→ isIncomplete 列表 + 部分真实键族
+   * (RUST-004-W2,初扫完成后编辑器重查自然补全)。替换范围 = 引号内
+   * 片段精确区间(不含引号;未开引号=光标位)。
    */
   private async provideSpaceDataKeyCompletions(
     document: vscode.TextDocument,
     position: vscode.Position,
     ctx: SpaceDataKeyCompletionContext,
     token?: vscode.CancellationToken
-  ): Promise<vscode.CompletionItem[] | null> {
+  ): Promise<vscode.CompletionItem[] | vscode.CompletionList | null> {
     if (!isSpaceDataIndexEnabled()) {
       return null;
     }
     const index = getSpaceDataIndex();
-    if (!(await index.awaitReady(token))) {
+    // RUST-004-W2:取消即停;预算耗尽(pending)不再无界等初扫——走
+    // queryFamiliesForSpaceMarked 取已入索引的部分真实键族,列表标
+    // isIncomplete(编辑器后续输入会重查,初扫完成后自然刷新),不把
+    // 冷空集装成完整空结果。
+    const readiness = await awaitSpaceDataIndexReady(index, token);
+    if (readiness === 'cancelled') {
       return [];
     }
     index.syncDocument(document); // 当前文档编辑即时入索引,自档零陈旧
@@ -703,9 +711,12 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     if (ctx.spaceIdSignature === null) {
       return []; // 动态空间:不合并为同一确定对象,键位不给项
     }
-    const families = index.queryFamiliesForSpace(ctx.spaceIdSignature);
+    const marked = index.queryFamiliesForSpaceMarked(ctx.spaceIdSignature);
+    const families = marked.families;
     if (families.length === 0) {
-      return []; // 此空间暂无键:键位不给项,不造键
+      // 未就绪:isIncomplete 空列表(编辑器继续输入重查,初扫完成后刷新),
+      // 不装终答;就绪真空:[](此空间暂无键:键位不给项,不造键)
+      return marked.ready ? [] : new vscode.CompletionList([], true);
     }
     const range = new vscode.Range(position.line, ctx.replaceStart, position.line, position.character);
     const items: vscode.CompletionItem[] = [];
@@ -729,7 +740,9 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
       item.range = range;
       items.push(item);
     }
-    return items;
+    // RUST-004-W2:未就绪的部分键族照样列出(部分真实内容),列表标
+    // isIncomplete——编辑器后续输入重查,初扫完成后自然补全,不装终答
+    return marked.ready ? items : new vscode.CompletionList(items, true);
   }
 
   /**

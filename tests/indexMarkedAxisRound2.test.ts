@@ -11,6 +11,10 @@ import { WorkspaceIndex } from '../src/workspaceIndex';
 // 严格就绪门会误伤事件驱动用法,门在上游 ensureStarted/awaitReady 纪律,
 // 标注面在这里;WorkspaceIndex.allEventCallsMarked 未就绪零阻塞返回
 // (plain allEventCalls 的硬 await 接线另项设计)。
+// RUST-004-W2(2026-11-15):SpaceData 标注面改 partial-real——内容恒真实
+// 流出,ready 只做标注(强制空族丢事件蓄的真实键=审计⑤同款);消费端
+// 预算/取消接线见 spaceDataReadyBudget.test.ts。本文件两例未就绪场景
+// 无已蓄内容,期望形态不变。
 
 describe('SpaceDataIndex marked query (RUST-004 round 2)', () => {
   it('isReady:未启动 false → 初扫完成 true → 弃置 false', async () => {

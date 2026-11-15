@@ -246,16 +246,17 @@ export class SpaceDataIndex {
     return this.started && !this.disposed;
   }
 
-  /** 标注面:同空间键族;未就绪时 families 空 + ready=false(查询原语义不动,门在上游 ensureStarted/awaitReady 纪律)。 */
+  /** 标注面:同空间键族;内容始终真实流出(部分已入索引,partial-real),
+   * ready 只做标注(RUST-004-W2 审计同款:强制空族丢事件驱动面已蓄的
+   * 真实键;四态=未就绪 ready:false+部分内容/空就绪 ready:true+空/
+   * 扫描完成 ready:true+全量/弃置 ready:false+空)。 */
   queryFamiliesForSpaceMarked(spaceIdSignature: string): { families: SpaceDataFamily[]; ready: boolean } {
-    const ready = this.isReady;
-    return { families: ready ? this.queryFamiliesForSpace(spaceIdSignature) : [], ready };
+    return { families: this.queryFamiliesForSpace(spaceIdSignature), ready: this.isReady };
   }
 
-  /** 标注面:同 (spaceID, key) 族站点;未就绪时 sites 空 + ready=false(查询原语义不动)。 */
+  /** 标注面:同 (spaceID, key) 族站点;内容恒真实流出,ready 只做标注。 */
   queryFamilySitesMarked(spaceIdSignature: string, keySignature: string): { sites: SpaceDataFamilySite[]; ready: boolean } {
-    const ready = this.isReady;
-    return { sites: ready ? this.queryFamilySites(spaceIdSignature, keySignature) : [], ready };
+    return { sites: this.queryFamilySites(spaceIdSignature, keySignature), ready: this.isReady };
   }
 
   /** 测试面:登记文件数。 */

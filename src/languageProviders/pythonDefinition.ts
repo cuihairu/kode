@@ -11,7 +11,7 @@ import { cellDataKeyAccessAtPosition, isCellDataKeyInsideLineComment } from '../
 import { fixedDictChainRootType, fixedDictSubscriptContextAt, resolveFixedDictSubscriptKey, resolveWireDictSubscriptKeyFromContainer } from '../backend/fixedDictSubscript';
 import { implBindingsForDocument, resolveCreateObjFromDictInputBindings, resolveCreateObjFromDictInputReceiver } from '../backend/createObjFromDictInput';
 import { extractModuleIntConstantBindings, findKbeSpaceDataCallAtPosition, type KbeSpaceDataCall } from '../backend/spaceDataIndexCore';
-import { getSpaceDataIndex, isSpaceDataIndexEnabled, type SpaceDataFamilySite } from '../spaceDataIndex';
+import { getSpaceDataIndex, isSpaceDataIndexEnabled, type SpaceDataFamilySite, type SpaceDataIndex } from '../spaceDataIndex';
 import { jumpLog, jumpTimeStart } from '../navigationLog';
 import { startLanguageServiceOperation } from '../languageServiceMetrics';
 import { getPythonReceiverCallAtPosition, type PythonReceiverCall, getPythonSelfAccessAtPosition, getPythonMemberAccessAtPosition, type PythonMemberAccess } from '../backend/pythonLanguageUtils';
@@ -84,23 +84,15 @@ export function resolveDataDictReadyBudgetMs(env: NodeJS.ProcessEnv = process.en
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DATA_DICT_READY_DEFAULT_BUDGET_MS;
 }
 
-export async function awaitDataDictIndexReady(
-  index: GlobalDataDictIndex,
-  token?: vscode.CancellationToken,
-  budgetMs = resolveDataDictReadyBudgetMs()
+/**
+ * 冷索引就绪竞速共享核(W1/W2 同判据):初扫完成 ready / 预算耗尽 pending
+ * (初扫继续后台跑,预热单独调度)/ 取消 cancelled。
+ */
+async function raceColdIndexReadiness(
+  starting: Promise<void>,
+  token: vscode.CancellationToken,
+  budgetMs: number
 ): Promise<DataDictIndexReadiness> {
-  if (token?.isCancellationRequested) {
-    return 'cancelled';
-  }
-  // 已就绪快路径:不起计时器,零开销返回(大量常见请求都在这条线上)
-  if (index.isReady) {
-    return 'ready';
-  }
-  const starting = index.ensureStarted();
-  if (!token) {
-    await starting;
-    return 'ready';
-  }
   let onDone: (() => void) | undefined;
   let budgetTimer: ReturnType<typeof setTimeout> | undefined;
   const clearBudgetTimer = (): void => {
@@ -157,6 +149,51 @@ export async function awaitDataDictIndexReady(
   } finally {
     onDone?.();
   }
+}
+
+export async function awaitDataDictIndexReady(
+  index: GlobalDataDictIndex,
+  token?: vscode.CancellationToken,
+  budgetMs = resolveDataDictReadyBudgetMs()
+): Promise<DataDictIndexReadiness> {
+  if (token?.isCancellationRequested) {
+    return 'cancelled';
+  }
+  // 已就绪快路径:不起计时器,零开销返回(大量常见请求都在这条线上)
+  if (index.isReady) {
+    return 'ready';
+  }
+  const starting = index.ensureStarted();
+  if (!token) {
+    await starting;
+    return 'ready';
+  }
+  return raceColdIndexReadiness(starting, token, budgetMs);
+}
+
+/**
+ * SpaceData 冷索引等待(RUST-004-W2;与 awaitDataDictIndexReady 同判据同
+ * 预算口径):'ready' 初扫完成 / 'pending' 预算耗尽(初扫继续后台跑)/
+ * 'cancelled' 取消;无 token=离线程序化语义,无视预算等全量。
+ */
+export async function awaitSpaceDataIndexReady(
+  index: SpaceDataIndex,
+  token?: vscode.CancellationToken,
+  budgetMs = resolveDataDictReadyBudgetMs()
+): Promise<DataDictIndexReadiness> {
+  if (token?.isCancellationRequested) {
+    return 'cancelled';
+  }
+  // 已就绪快路径:不起计时器,零开销返回(大量常见请求都在这条线上)
+  if (index.isReady) {
+    return 'ready';
+  }
+  const starting = index.ensureStarted();
+  if (!token) {
+    await starting;
+    return 'ready';
+  }
+  return raceColdIndexReadiness(starting, token, budgetMs);
 }
 
 /**
@@ -227,18 +264,21 @@ export async function resolveDataDictSitesAtPosition(
  * key 字面量时,经空间数据索引取同 (spaceID, key) 族全部站点。跳转(首个
  * 异类点)与引用(全量含自身)同源;开关关/冷索引取消/动态 spaceID/
  * 非字面量键 → null。词法掩码在纯核内已剔注释/字符串伪调用,无行内注释
- * 复查面。
+ * 复查面。RUST-004-W2:ready 随结果返回(初扫未完如实 false),站点内容
+ * 始终真实流出(partial-real,不把冷空集装成完整空结果)。
  */
 export async function resolveSpaceDataSitesAtPosition(
   document: vscode.TextDocument,
   position: vscode.Position,
   token?: vscode.CancellationToken
-): Promise<{ call: KbeSpaceDataCall; sites: SpaceDataFamilySite[] } | null> {
+): Promise<{ call: KbeSpaceDataCall; sites: SpaceDataFamilySite[]; ready: boolean } | null> {
   if (!isSpaceDataIndexEnabled()) {
     return null;
   }
   const index = getSpaceDataIndex();
-  if (!(await index.awaitReady(token))) {
+  // RUST-004-W2:取消即停;预算耗尽(pending)不再无界等初扫——走
+  // queryFamilySitesMarked 出部分真实站点,ready 如实标注。
+  if ((await awaitSpaceDataIndexReady(index, token)) === 'cancelled') {
     return null;
   }
   index.syncDocument(document); // 当前文档编辑即时入索引,自档零陈旧
@@ -256,7 +296,8 @@ export async function resolveSpaceDataSitesAtPosition(
   if (!call || call.spaceIdSignature === null || call.keySignature === null) {
     return null; // 动态空间/非字面量键:不建族,不导航(动态不合并)
   }
-  return { call, sites: index.queryFamilySites(call.spaceIdSignature, call.keySignature) };
+  const marked = index.queryFamilySitesMarked(call.spaceIdSignature, call.keySignature);
+  return { call, sites: marked.sites, ready: marked.ready };
 }
 
 /**
