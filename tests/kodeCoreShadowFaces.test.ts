@@ -582,6 +582,23 @@ describe('serveCompletionFromRust 服务面(2026-11-08 用户令「直接切」)
     expect(report).toBeNull();
   });
 
+  it('Rust 空条目集(isIncomplete:false)不权威:返回 null 回 TS(RUST-021 关闭面修订)', async () => {
+    // 非空响应壳 + 空 items:语料缺位与真无候选不可区分 —— 不把「语料
+    // 缺位」装成「无候选」,回 TS 兜底(Rust 侧已改盘上语料回落,此处
+    // 是接收面纵深:删除文件等残留空集路径不饿死补全)。
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/completion', { isIncomplete: false, items: [] });
+    const { gate } = makeGate(client, 'rust');
+    setKodeCoreShadowGate(gate);
+    const report = await serveCompletionFromRust(makeDocument() as never, {
+      line: 3,
+      character: 0,
+    });
+    expect(report).toBeNull();
+    // Rust 侧确实应答过(非直通):请求发出,只是空集不被采信
+    expect(client.calls.some(call => call.method === 'request:textDocument/completion')).toBe(true);
+  });
+
   it('非语料文档(schema/python):零请求直通 null', async () => {
     const { client } = makeStubClient();
     const { gate } = makeGate(client, 'rust');

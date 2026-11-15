@@ -279,3 +279,157 @@ fn did_close_drops_completion() {
     );
     assert_eq!(response_of(&out), &serde_json::Value::Null);
 }
+
+#[test]
+fn did_close_keeps_disk_types_in_corpus() {
+    // VFS-003 close 转移(修订钉):didClose 逐出 overlay,但盘上仍在的语料
+    // 文件必须回落磁盘真相继续喂补全。此前 hover.remove 连带逐出语料视图,
+    // 消费文件补全静默空 —— 盘上类型凭空消失(用户可见正确性缺陷)。
+    // 盘上无文件的关闭仍逐出(did_close_drops_completion 钉)。
+    let tmp = std::env::temp_dir().join(format!("kode-close-corpus-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).expect("mkdir");
+    let types_body = "<root>\n\t<MYTYPE> UINT32 </MYTYPE>\n</root>\n";
+    std::fs::write(tmp.join("types.xml"), types_body).expect("write types.xml");
+    let types_uri = format!("file://{}/types.xml", tmp.display());
+    let avatar_uri = format!("file://{}/entity_defs/Avatar.def", tmp.display());
+
+    let mut state = ServerState::new();
+    handle_message(
+        &mut state,
+        request(
+            1,
+            "initialize",
+            json!({
+                "processId": 1234,
+                "rootUri": format!("file://{}", tmp.display()),
+                "capabilities": {}
+            }),
+        ),
+    );
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didOpen",
+            json!({
+                "textDocument": {
+                    "uri": types_uri,
+                    "languageId": "xml",
+                    "version": 1,
+                    "text": types_body
+                }
+            }),
+        ),
+    );
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didClose",
+            json!({ "textDocument": { "uri": types_uri } }),
+        ),
+    );
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didOpen",
+            json!({
+                "textDocument": {
+                    "uri": avatar_uri,
+                    "languageId": "kbengine-def",
+                    "version": 1,
+                    "text": "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> MY"
+                }
+            }),
+        ),
+    );
+    let out = handle_message(
+        &mut state,
+        request(
+            2,
+            "textDocument/completion",
+            completion_params(&avatar_uri, 3, 12),
+        ),
+    );
+    let items = response_of(&out)["items"].as_array().expect("items array");
+    assert!(
+        items.iter().any(|item| item["label"] == json!("MYTYPE")),
+        "didClose 后盘上 types.xml 仍应喂补全: {items:?}"
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn did_close_of_deleted_file_drops_corpus() {
+    // 读盘失败(盘上已删除)→ 真逐出:非空响应壳不装「磁盘真相仍在」。
+    let tmp = std::env::temp_dir().join(format!("kode-close-gone-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).expect("mkdir");
+    let types_uri = format!("file://{}/types.xml", tmp.display());
+    let avatar_uri = format!("file://{}/entity_defs/Avatar.def", tmp.display());
+    std::fs::write(tmp.join("types.xml"), "<root>\n\t<MYTYPE> UINT32 </MYTYPE>\n</root>\n")
+        .expect("write types.xml");
+
+    let mut state = ServerState::new();
+    handle_message(
+        &mut state,
+        request(
+            1,
+            "initialize",
+            json!({
+                "processId": 1234,
+                "rootUri": format!("file://{}", tmp.display()),
+                "capabilities": {}
+            }),
+        ),
+    );
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didOpen",
+            json!({
+                "textDocument": {
+                    "uri": types_uri,
+                    "languageId": "xml",
+                    "version": 1,
+                    "text": "<root>\n\t<MYTYPE> UINT32 </MYTYPE>\n</root>\n"
+                }
+            }),
+        ),
+    );
+    std::fs::remove_file(tmp.join("types.xml")).expect("remove types.xml");
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didClose",
+            json!({ "textDocument": { "uri": types_uri } }),
+        ),
+    );
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didOpen",
+            json!({
+                "textDocument": {
+                    "uri": avatar_uri,
+                    "languageId": "kbengine-def",
+                    "version": 1,
+                    "text": "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> MY"
+                }
+            }),
+        ),
+    );
+    let out = handle_message(
+        &mut state,
+        request(
+            2,
+            "textDocument/completion",
+            completion_params(&avatar_uri, 3, 12),
+        ),
+    );
+    let items = response_of(&out)["items"].as_array().expect("items array");
+    assert!(
+        !items.iter().any(|item| item["label"] == json!("MYTYPE")),
+        "盘上已删除的语料不得复活: {items:?}"
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+}

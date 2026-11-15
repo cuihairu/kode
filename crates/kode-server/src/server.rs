@@ -640,8 +640,16 @@ fn handle_did_close(state: &mut ServerState, params: Option<serde_json::Value>) 
     let root = state.roots.root_for(&uri);
     let key = DocumentKey::new(root, uri);
     state.store.close(&key);
-    // VFS-012 下游清理:符号与 def 语料视图连带移除(PR-010)。
-    state.hover.remove(&key);
+    // VFS-012 下游清理(修订):关闭 ≠ 删除。盘上仍在的语料文件回读磁盘
+    // 重蓄语料视图(符号/def/types 继续喂补全与悬停),读盘失败(已删除/
+    // 不可读)才真正逐出 —— 此前连带 hover.remove,盘上类型凭空消失,
+    // 消费文件补全静默空。
+    match std::fs::read_to_string(key.uri.as_path()) {
+        Ok(text) => state.hover.update(key, &text),
+        Err(_) => {
+            state.hover.remove(&key);
+        }
+    }
 }
 
 /// CORE-016 健康报告:status/pid/版本/uptime/文档摘要,按 uri 排序保证确定性。

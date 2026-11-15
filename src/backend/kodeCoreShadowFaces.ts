@@ -268,9 +268,11 @@ export async function serveDefinitionFromRust(
 /**
  * 补全面 rust 服务(2026-11-08 用户令「直接切到 rust」):服务轨道下先镜像
  * 语料文档(Rust 侧要有本文件 buffer 才可能应答),再请求 kode-server
- * textDocument/completion。Rust 判定出上下文即返回条目集(即使空);未判定
- * 上下文(接口段/属性子标签/def 顶层/非语料)或任何失败返回 null —— 调用方
- * 回 TS。Rust 条目集优先于 TS(直接切语义)。
+ * textDocument/completion。Rust 判定出上下文且条目集非空时返回条目集;
+ * 未判定上下文(接口段/属性子标签/def 顶层/非语料)、任何失败、或
+ * 「空条目集+isIncomplete:false」(语料缺位与真无候选不可区分,RUST-021
+ * 关闭面修订)返回 null —— 调用方回 TS。Rust 条目集优先于 TS(直接切语义),
+ * 但空集不装权威结果。
  */
 export async function serveCompletionFromRust(
   document: DocumentLike,
@@ -303,6 +305,12 @@ export async function serveCompletionFromRust(
   }
   const face = result as Partial<LspCompletionReportFace>;
   if (typeof face.isIncomplete !== 'boolean' || !Array.isArray(face.items)) {
+    return null;
+  }
+  // 空条目集不权威(RUST-021 关闭面修订):语料缺位也会产「判定上下文+
+  // 零条目」,与「真无候选」不可区分 —— 非空响应壳里的空集一律回 TS,
+  // 不把「语料缺位」装成「无候选」。
+  if (face.items.length === 0 && face.isIncomplete === false) {
     return null;
   }
   return face as LspCompletionReportFace;
