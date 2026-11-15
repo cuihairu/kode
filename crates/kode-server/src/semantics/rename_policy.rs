@@ -109,12 +109,14 @@ pub fn classify_symbol_owner(
     }
 }
 
-/// 全类别确定性扫描序(枚举声明序)。
-const ALL_CATEGORIES: [MetaCategory; 4] = [
+/// 全类别确定性扫描序(枚举声明序;能力差键 `cap/` 前缀名空间化,
+/// 与语料符号名不撞)。
+const ALL_CATEGORIES: [MetaCategory; 5] = [
     MetaCategory::Api,
     MetaCategory::Callback,
     MetaCategory::BuiltinObject,
     MetaCategory::Constant,
+    MetaCategory::Capability,
 ];
 
 /// 托管生成物路径判定:路径含 `<managed_dir>/stubs/` 段(段级匹配防前缀

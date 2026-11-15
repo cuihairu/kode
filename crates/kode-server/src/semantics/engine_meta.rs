@@ -31,6 +31,9 @@ pub enum MetaCategory {
     Callback,
     BuiltinObject,
     Constant,
+    /// 能力差事实(RUST-117 capability profile 消费;键约定:`cap/<id>` =
+    /// 能力在,`cap/no/<id>` = 实证缺席,两键都无 = Unknown 不猜)。
+    Capability,
 }
 
 impl MetaCategory {
@@ -40,6 +43,7 @@ impl MetaCategory {
             MetaCategory::Callback => "callback",
             MetaCategory::BuiltinObject => "builtin-object",
             MetaCategory::Constant => "constant",
+            MetaCategory::Capability => "capability",
         }
     }
 }
@@ -316,6 +320,29 @@ pub fn seed_entries() -> Vec<MetaEntry> {
             "script.cpp:248",
             Some("进程组件名常量(Script::install 每进程注册)"),
         ),
+        // ---- 能力差事实(RUST-117 capability profile 消费;seed = 本树
+        // 2.5.10 实证基线,其它版本差异由 OverrideSet 外部供给)----
+        MetaEntry::new(
+            "cap/no/entitycall-type-python-constants",
+            MetaCategory::Capability,
+            &[],
+            "common.h:283-292",
+            Some("ENTITYCALL_TYPE 为内部枚举,本 lineage 无 Python 常量注册点(2026-11-16 实证)= 能力缺"),
+        ),
+        MetaEntry::new(
+            "cap/component-string-constant",
+            MetaCategory::Capability,
+            &[],
+            "script.cpp:248",
+            Some("KBEngine.component 每进程注册 = 能力在"),
+        ),
+        MetaEntry::new(
+            "cap/math-module-vectors",
+            MetaCategory::Capability,
+            &[],
+            "math.cpp:17-21, script.cpp:291",
+            Some("Math.Vector2/3/4 脚本类安装 = 能力在"),
+        ),
     ]
 }
 
@@ -428,7 +455,7 @@ mod tests {
     #[test]
     fn seed_table_representative_four_categories() {
         let table = seed_entries();
-        assert_eq!(table.len(), 29, "seed 表代表性登记数(漂移即钉)");
+        assert_eq!(table.len(), 32, "seed 表代表性登记数(漂移即钉)");
         // 四类各验一条锚点。
         let layer = EngineMetaLayer::new();
         let time = layer
@@ -577,7 +604,7 @@ mod tests {
                 None
             )
             .is_none());
-        assert_eq!(layer.entries(Some("3.7.3")).len(), 29);
+        assert_eq!(layer.entries(Some("3.7.3")).len(), 32);
         assert!(layer
             .entries(Some("3.7.3"))
             .iter()
@@ -631,7 +658,7 @@ mod tests {
             )],
         });
         let at = layer.entries(Some("9.9.9"));
-        assert_eq!(at.len(), 30, "seed 29 + override 专有 1");
+        assert_eq!(at.len(), 33, "seed 32 + override 专有 1");
         let pairs: Vec<(MetaCategory, &str)> = at
             .iter()
             .map(|r| (r.entry.category, r.entry.name.as_str()))
@@ -645,7 +672,7 @@ mod tests {
             .expect("override 专有键入表");
         assert_eq!(forked.origin, Origin::ExternalOverride);
         // 未声明版本:override 专有键不入表(不猜)。
-        assert_eq!(layer.entries(None).len(), 29);
+        assert_eq!(layer.entries(None).len(), 32);
         assert!(layer
             .entries(None)
             .iter()
