@@ -18,15 +18,29 @@
 
 ## 3. 登记未修(判据后半 + 其余阻塞面,整行保持未勾)
 
-| 面 | 位置 | 缺口 |
-|---|---|---|
-| `query()` 无就绪门 | `src/globalDataIndex.ts:686-688` | 索引未建时静默返回 `[]`——判据「禁止悄悄返回假完整结果」的直接靶子。当前生产消费面都先过 `ensureStarted`/`awaitDataDictIndexReady` 门所以不可达,但面本身无门、无 partial 标注,属潜伏假完整 |
-| `allEventCalls` 硬 await | `src/workspaceIndex.ts:342-343` | 全量事件调用索引同步等完整初始化,无取消/无 partial |
-| `defReferenceGraph` 同步扫 | `src/workspaceIndex.ts:363-371` | 同步全量扫描,无 partial 面 |
-| partial/incomplete 标注缺失 | GlobalDataDictIndex / SpaceDataIndex / WorkspaceIndex 各查询返回 | 返回形状无 partial/incomplete 维度,判据「允许明确标注」一侧未落地 |
+| 面 | 位置 | 缺口 | 第二批(§5)处置 |
+|---|---|---|---|
+| `query()` 无就绪门 | `src/globalDataIndex.ts:686-688` | 索引未建时静默返回 `[]`——判据「禁止悄悄返回假完整结果」的直接靶子。当前生产消费面都先过 `ensureStarted`/`awaitDataDictIndexReady` 门所以不可达,但面本身无门、无 partial 标注,属潜伏假完整 | **重定性+标注面落地**:`query()` 原语义保持(增量事件驱动索引,严格就绪门会误伤 noteSaved 驱动用法,见 §5);标注轴 `queryMarked`/`queryKeyFamiliesMarked`/`isReady` 落地,新消费端走标注面 |
+| `allEventCalls` 硬 await | `src/workspaceIndex.ts:342-343` | 全量事件调用索引同步等完整初始化,无取消/无 partial | 维持登记:eventApi 无 token 可传,取消需消费面接线设计,非机械批 |
+| `defReferenceGraph` 同步扫 | `src/workspaceIndex.ts:363-371` | 同步全量扫描,无 partial 面 | **审计已陈旧**:RUST-001 批 B(1d9a76c3)已把该扫描异步化(fs.promises+8 路有界并发+逐文件让位),登记行失效 |
+| partial/incomplete 标注缺失 | GlobalDataDictIndex / SpaceDataIndex / WorkspaceIndex 各查询返回 | 返回形状无 partial/incomplete 维度,判据「允许明确标注」一侧未落地 | GlobalDataDictIndex 一侧已落地(`*Marked` 返回 `ready` 布尔);SpaceDataIndex / WorkspaceIndex 维持登记 |
 
 ## 4. 门禁
 
 `tsc` RC=0;`npm run lint`(`eslint src --ext ts`)RC=0;`test:unit` 全量 **10186 total / 10178 passed / 0 failed / 8 skipped**(与 RUST-003 当轮 10185 比对:差值恰为本批新增 1 例,零消失);`xvfb-run -a test:demo:editor` **25 passing** RC=0。
 
 锚点:`perfCallChainDoc.test.ts` ANCHORS 表不含 `src/typeInlayHints.ts`(核过),本批行号位移不触发锁步。
+
+## 5. 第二批(2026-11-15 续):GlobalDataDictIndex 标注轴落地
+
+**判定方法论**:第一批的 `query()` 缺口按「build-then-serve 前提缺失」处置——重新读码核实,GlobalDataDictIndex 是**增量事件驱动索引**(`noteSaved` 不经初扫也能蓄内容,`gapArms` 钉死「已销毁查询静默空」为既有语义),不存在「未初扫 = 未建」的严格分界:严格就绪门(未就绪即 throw / 拒答)会误伤事件驱动用法,也破坏钉死语义。判据原文「允许明确标注 partial/incomplete,禁止悄悄返回假完整结果」的正解在**标注轴**:让调用方能区分「未建」与「空结果」,而不是把查询锁在门后。
+
+**落地面**(`src/globalDataIndex.ts`):
+- `get isReady(): boolean` —— `started && !disposed`,就绪语义=工作区初扫完成且未弃置;
+- `queryMarked(dict, keySignature, root?)` —— 返回 `{sites, ready}`,未就绪 `{sites: [], ready: false}`,就绪时与 `query()` 同源;
+- `queryKeyFamiliesMarked(dict, root?)` —— 同口径的键族标注变体;
+- `query()` / `queryKeyFamilies()` **原语义一行不动**(既有消费面与钉死测试全保)——生产消费面现状都先过 `ensureStarted`/`awaitDataDictIndexReady` 门,标注面供后续消费端迁移时用,门仍在上游纪律。
+
+**prove-red**:变异 `queryMarked`/`queryKeyFamiliesMarked` 恒返 `ready: true`(摘标注=退回「未建装成空结果」)→ 未就绪两例红(`Failed Tests 2`);`cp` 还原 + `cmp` 字节一致 → 4 例复绿。测试 `tests/globalDataIndexMarkedQuery.test.ts` 4 例(isReady 三态 / 未就绪标注 / 就绪同源 / 键族标注)。
+
+**剩余登记**(整行保持未勾的原因):`allEventCalls` 硬 await(eventApi 无 token 可传,取消需消费面接线设计)+ SpaceDataIndex / WorkspaceIndex 标注轴未落。
