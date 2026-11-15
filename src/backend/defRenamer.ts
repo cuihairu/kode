@@ -71,7 +71,7 @@ export interface DefRenameOptions {
   newName: string;
   /** IDE-NAV-009:跨文件内容读取口——在位打开文档返回缓冲区全文,未打开回落磁盘;
    *  缺省走 readFileOrNull。目标文件本身不经过此口(用 targetText)。 */
-  readCrossFileContent?: (filePath: string) => string | null;
+  readCrossFileContent?: (filePath: string) => string | null | Promise<string | null>;
 }
 
 /**
@@ -441,7 +441,7 @@ export interface DefRenameClosureConflictOptions {
   symbol: DefRenameSymbol;
   newName: string;
   /** 跨文件读取口(在位打开文档返回缓冲区全文,未打开回落磁盘);缺省读盘 */
-  readCrossFileContent?: (filePath: string) => string | null;
+  readCrossFileContent?: (filePath: string) => string | null | Promise<string | null>;
 }
 
 /**
@@ -455,9 +455,9 @@ export interface DefRenameClosureConflictOptions {
  * 找不到定义根(无 entities.xml)、目标无法解析、名字非法/改名即本名 → null
  * (调用方仍保留 NAV-008 的声明文件检查,这里只补闭包)。
  */
-export function findDefRenameConflictInClosure(
+export async function findDefRenameConflictInClosure(
   options: DefRenameClosureConflictOptions
-): DefRenameConflict | null {
+): Promise<DefRenameConflict | null> {
   const { targetFilePath, targetText, symbol, newName } = options;
   if (!DEF_IDENTIFIER_PATTERN.test(newName) || newName === symbol.name) {
     return null;
@@ -473,13 +473,13 @@ export function findDefRenameConflictInClosure(
     return null;
   }
 
-  const files = listDefFilesRecursive(defsRoot);
+  const files = await listDefFilesRecursive(defsRoot);
   const fileIndex = new Map<string, DefFileEntry>();
   for (const entry of files) {
     fileIndex.set(entry.filePath, entry);
   }
-  const contentCache = new Map<string, string | null>();
-  const readContent = (filePath: string): string | null => {
+  const contentCache = new Map<string, string | null | Promise<string | null>>();
+  const readContent = async (filePath: string): Promise<string | null> => {
     const resolved = path.resolve(filePath);
     if (!contentCache.has(resolved)) {
       contentCache.set(
@@ -489,27 +489,30 @@ export function findDefRenameConflictInClosure(
           : readFileOrNull(resolved)
       );
     }
-    return contentCache.get(resolved) ?? null;
+    return (await contentCache.get(resolved)) ?? null;
   };
-  const loadSemantics = (filePath: string): DefFileSemantics | null => {
-    const content = readContent(filePath);
+  const loadSemantics = async (filePath: string): Promise<DefFileSemantics | null> => {
+    const content = await readContent(filePath);
     return content === null ? null : parseDefFileSemantics(content);
   };
 
   const targetEntry = classifyDefFile(defsRoot, resolvedTarget);
-  const ancestorClosure = collectOwnerClosure(targetEntry, defsRoot, fileIndex, loadSemantics);
+  const ancestorClosure = await collectOwnerClosure(targetEntry, defsRoot, fileIndex, loadSemantics);
 
   for (const entry of files) {
     if (entry.filePath === targetEntry.filePath) {
       continue;
     }
-    const content = readContent(entry.filePath);
+    // RUST-001:逐文件让出宿主宏任务,闭包走查不再整段阻塞。
+    await yieldToHost();
+    const content = await readContent(entry.filePath);
     if (content === null) {
       continue;
     }
     const isAncestor = ancestorClosure.has(entry.filePath);
-    const isDescendant = collectOwnerClosure(entry, defsRoot, fileIndex, loadSemantics)
-      .has(targetEntry.filePath);
+    const isDescendant = (
+      await collectOwnerClosure(entry, defsRoot, fileIndex, loadSemantics)
+    ).has(targetEntry.filePath);
     if (!isAncestor && !isDescendant) {
       continue;
     }
@@ -569,9 +572,13 @@ export function collectRenameEditsInText(text: string, symbol: DefRenameSymbol):
   return ranges.sort((left, right) => left.start - right.start);
 }
 
-function readFileOrNull(filePath: string): string | null {
+// RUST-001:def 语料读/解析异步化——读走 fs.promises,解析段逐文件让出宿主
+// (yieldToHost),闭包走查不再把 defs 根压成宿主同步段。
+const yieldToHost = (): Promise<void> => new Promise<void>(resolve => setImmediate(resolve));
+
+async function readFileOrNull(filePath: string): Promise<string | null> {
   try {
-    return fs.readFileSync(filePath, 'utf8');
+    return await fs.promises.readFile(filePath, 'utf8');
   } catch {
     return null;
   }
@@ -622,25 +629,25 @@ function classifyDefFile(defsRoot: string, filePath: string): DefFileEntry {
   };
 }
 
-function listDefFilesRecursive(defsRoot: string): DefFileEntry[] {
+async function listDefFilesRecursive(defsRoot: string): Promise<DefFileEntry[]> {
   const entries: DefFileEntry[] = [];
-  const walk = (dir: string): void => {
+  const walk = async (dir: string): Promise<void> => {
     let dirents: Array<{ name: string; isDirectory(): boolean; isFile(): boolean }>;
     try {
-      dirents = fs.readdirSync(dir, { withFileTypes: true }) as fs.Dirent[];
+      dirents = await fs.promises.readdir(dir, { withFileTypes: true });
     } catch {
       return;
     }
     for (const dirent of dirents) {
       const fullPath = path.join(dir, dirent.name);
       if (dirent.isDirectory()) {
-        walk(fullPath);
+        await walk(fullPath);
       } else if (dirent.isFile() && dirent.name.toLowerCase().endsWith('.def')) {
         entries.push(classifyDefFile(defsRoot, fullPath));
       }
     }
   };
-  walk(defsRoot);
+  await walk(defsRoot);
   return entries.sort((left, right) => left.filePath.localeCompare(right.filePath));
 }
 
@@ -753,18 +760,18 @@ function resolveLinkPaths(defsRoot: string, entry: DefFileEntry, semantics: DefF
  * 文件 owner 的祖先闭包(Parent 链 + Interfaces 混入,传递),值为命中文件
  * 的绝对路径——按引擎装载路径精确解析,悬空引用不产生边。
  */
-function collectOwnerClosure(
+async function collectOwnerClosure(
   entry: DefFileEntry,
   defsRoot: string,
   fileIndex: Map<string, DefFileEntry>,
-  loadSemantics: (filePath: string) => DefFileSemantics | null
-): Set<string> {
+  loadSemantics: (filePath: string) => Promise<DefFileSemantics | null>
+): Promise<Set<string>> {
   const closure = new Set<string>();
   const seen = new Set<string>([entry.filePath]);
   const queue: DefFileEntry[] = [entry];
   while (queue.length > 0) {
     const current = queue.shift() as DefFileEntry;
-    const semantics = loadSemantics(current.filePath);
+    const semantics = await loadSemantics(current.filePath);
     if (!semantics) {
       continue;
     }
@@ -791,7 +798,7 @@ function collectOwnerClosure(
  * 计算重命名的全部编辑:目标文件的同名符号 + 后代 def 里的同名复述。
  * 新名非法或与原名相同、无法解析目标文件时返回空数组(provider 层归一为 null)。
  */
-export function computeDefRenameEdits(options: DefRenameOptions): DefRenameFileEdits[] {
+export async function computeDefRenameEdits(options: DefRenameOptions): Promise<DefRenameFileEdits[]> {
   const { targetFilePath, targetText, symbol, newName } = options;
   if (!DEF_IDENTIFIER_PATTERN.test(newName) || newName === symbol.name) {
     return [];
@@ -812,7 +819,7 @@ export function computeDefRenameEdits(options: DefRenameOptions): DefRenameFileE
   }
   const targetEntry = classifyDefFile(defsRoot, resolvedTarget);
 
-  const files = listDefFilesRecursive(defsRoot);
+  const files = await listDefFilesRecursive(defsRoot);
   const fileIndex = new Map<string, DefFileEntry>();
   for (const entry of files) {
     fileIndex.set(entry.filePath, entry);
@@ -820,8 +827,8 @@ export function computeDefRenameEdits(options: DefRenameOptions): DefRenameFileE
 
   // 每个文件至多读一次:语义面与编辑面共用同一份内容(不可读即 null)。
   // IDE-NAV-009:注入读口在位时优先走它(脏缓冲区),否则读盘
-  const contentCache = new Map<string, string | null>();
-  const readContent = (filePath: string): string | null => {
+  const contentCache = new Map<string, string | null | Promise<string | null>>();
+  const readContent = async (filePath: string): Promise<string | null> => {
     if (!contentCache.has(filePath)) {
       contentCache.set(
         filePath,
@@ -830,10 +837,10 @@ export function computeDefRenameEdits(options: DefRenameOptions): DefRenameFileE
           : readFileOrNull(filePath)
       );
     }
-    return contentCache.get(filePath) ?? null;
+    return (await contentCache.get(filePath)) ?? null;
   };
-  const loadSemantics = (filePath: string): DefFileSemantics | null => {
-    const content = readContent(filePath);
+  const loadSemantics = async (filePath: string): Promise<DefFileSemantics | null> => {
+    const content = await readContent(filePath);
     return content === null ? null : parseDefFileSemantics(content);
   };
 
@@ -841,11 +848,13 @@ export function computeDefRenameEdits(options: DefRenameOptions): DefRenameFileE
     if (entry.filePath === targetEntry.filePath) {
       continue;
     }
-    const content = readContent(entry.filePath);
+    // RUST-001:逐文件让出宿主宏任务,跨文件编辑计算不再整段阻塞。
+    await yieldToHost();
+    const content = await readContent(entry.filePath);
     if (content === null) {
       continue;
     }
-    const closure = collectOwnerClosure(entry, defsRoot, fileIndex, loadSemantics);
+    const closure = await collectOwnerClosure(entry, defsRoot, fileIndex, loadSemantics);
     if (!closure.has(targetEntry.filePath)) {
       continue;
     }

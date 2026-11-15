@@ -413,7 +413,7 @@ afterAll(() => {
 });
 
 describe('resolveRenameSymbolAtOffset 符号解析', () => {
-  it('开标签上的属性名解析为 property 符号', () => {
+  it('开标签上的属性名解析为 property 符号', async () => {
     const offset = cursorAt(HERO_DEF, '<hp>');
     const symbol = resolveRenameSymbolAtOffset(HERO_DEF, offset);
     expect(symbol).toEqual({
@@ -425,7 +425,7 @@ describe('resolveRenameSymbolAtOffset 符号解析', () => {
     });
   });
 
-  it('闭标签上的属性名也可发起重命名,词区间指向闭标签名字', () => {
+  it('闭标签上的属性名也可发起重命名,词区间指向闭标签名字', async () => {
     const closeOffset = cursorAt(HERO_DEF, '</hp>', 1);
     const symbol = resolveRenameSymbolAtOffset(HERO_DEF, closeOffset);
     expect(symbol?.kind).toBe('property');
@@ -439,7 +439,7 @@ describe('resolveRenameSymbolAtOffset 符号解析', () => {
   // 'hp',与元素名 'max_hp' 不等 → 解析直接返回 null,蛇形符号的重命名功能整体
   // 失效,而定向面/全量/编译/mocha 四层皆不可见。本例把光标放在下划线**之后**,
   // 强制词区间跨越 '_',并锁定整名编辑与词尾退化位。
-  it('snake_case 符号名整体成一个词,光标落在下划线之后同样命中', () => {
+  it('snake_case 符号名整体成一个词,光标落在下划线之后同样命中', async () => {
     const snakeDef = [
       '<root>',
       '  <Properties>',
@@ -471,20 +471,20 @@ describe('resolveRenameSymbolAtOffset 符号解析', () => {
     ).toBe('max_hp');
   });
 
-  it('方法名解析为 method 符号并携带所属段', () => {
+  it('方法名解析为 method 符号并携带所属段', async () => {
     const symbol = resolveRenameSymbolAtOffset(HERO_DEF, cursorAt(HERO_DEF, '<move>'));
     expect(symbol?.kind).toBe('method');
     expect(symbol?.name).toBe('move');
     expect(symbol?.section).toBe('BaseMethods');
   });
 
-  it('词尾右侧一格仍算命中该词', () => {
+  it('词尾右侧一格仍算命中该词', async () => {
     const openStart = occurrences(HERO_DEF, '<mp>')[0] + 1;
     const symbol = resolveRenameSymbolAtOffset(HERO_DEF, openStart + 2);
     expect(symbol?.name).toBe('mp');
   });
 
-  it('类型值、Flags 标签、Parent 值与空白处都不是可重命名符号', () => {
+  it('类型值、Flags 标签、Parent 值与空白处都不是可重命名符号', async () => {
     const typeValue = HERO_DEF.indexOf('UINT32') + 1;
     expect(resolveRenameSymbolAtOffset(HERO_DEF, typeValue)).toBeNull();
     const flagsTag = HERO_DEF.indexOf('<Flags>') + 3;
@@ -495,12 +495,12 @@ describe('resolveRenameSymbolAtOffset 符号解析', () => {
     expect(resolveRenameSymbolAtOffset(HERO_DEF, blank)).toBeNull();
   });
 
-  it('坏 XML 文本返回 null', () => {
+  it('坏 XML 文本返回 null', async () => {
     expect(resolveRenameSymbolAtOffset('<root><hp>', 10)).toBeNull();
     expect(resolveRenameSymbolAtOffset('', 0)).toBeNull();
   });
 
-  it('越界光标返回 null,自闭合标签名可解析', () => {
+  it('越界光标返回 null,自闭合标签名可解析', async () => {
     const selfCloseText = '<root><Properties><mp /></Properties></root>';
     expect(resolveRenameSymbolAtOffset(selfCloseText, -1)).toBeNull();
     expect(resolveRenameSymbolAtOffset(selfCloseText, selfCloseText.length)).toBeNull();
@@ -510,7 +510,7 @@ describe('resolveRenameSymbolAtOffset 符号解析', () => {
     expect(resolveRenameSymbolAtOffset(openText, openText.indexOf('hp') + 2)?.name).toBe('hp');
   });
 
-  it('无根元素(非 def 文本)返回 null/空编辑', () => {
+  it('无根元素(非 def 文本)返回 null/空编辑', async () => {
     const text = 'just some words here';
     expect(resolveRenameSymbolAtOffset(text, 1)).toBeNull();
     const symbol = { kind: 'property', name: 'hp', section: null } as DefRenameSymbol;
@@ -519,18 +519,18 @@ describe('resolveRenameSymbolAtOffset 符号解析', () => {
 });
 
 describe('findEntityDefsRootFromFile 定义根定位', () => {
-  it('常规布局:entities.xml 在 entity_defs 父目录', () => {
+  it('常规布局:entities.xml 在 entity_defs 父目录', async () => {
     const defsRoot = path.join(root, 'scripts', 'entity_defs');
     expect(findEntityDefsRootFromFile(heroPath)).toBe(defsRoot);
     expect(findEntityDefsRootFromFile(moveIfacePath)).toBe(defsRoot);
   });
 
-  it('entities.xml 位于 entity_defs 内的布局取该目录为根', () => {
+  it('entities.xml 位于 entity_defs 内的布局取该目录为根', async () => {
     expect(findEntityDefsRootFromFile(path.join(innerXmlDir, 'entity_defs', 'Inner.def')))
       .toBe(path.join(innerXmlDir, 'entity_defs'));
   });
 
-  it('找不到 entities.xml 返回 null', () => {
+  it('找不到 entities.xml 返回 null', async () => {
     expect(findEntityDefsRootFromFile(path.join(noRootDir, 'Lone.def'))).toBeNull();
   });
 });
@@ -542,8 +542,8 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     return symbol!;
   };
 
-  it('属性重命名覆盖同文件全部 Flags 变体与后代复述,无关实体不动', () => {
-    const results = computeDefRenameEdits({
+  it('属性重命名覆盖同文件全部 Flags 变体与后代复述,无关实体不动', async () => {
+    const results = await computeDefRenameEdits({
       targetFilePath: heroPath,
       targetText: HERO_DEF,
       symbol: heroHpSymbol(),
@@ -572,9 +572,9 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     expect(results.find(entry => entry.filePath === beastPath)).toBeUndefined();
   });
 
-  it('方法重命名限同段:同文件跨段与后代其他段的同名方法都不动', () => {
+  it('方法重命名限同段:同文件跨段与后代其他段的同名方法都不动', async () => {
     const symbol = resolveRenameSymbolAtOffset(HERO_DEF, cursorAt(HERO_DEF, '<move>'))!;
-    const results = computeDefRenameEdits({
+    const results = await computeDefRenameEdits({
       targetFilePath: heroPath,
       targetText: HERO_DEF,
       symbol,
@@ -595,9 +595,9 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     expect(monsterRenamed).toContain('<CellMethods>\n    <move/>');
   });
 
-  it('接口属性经 Interfaces 传递闭包更新混入实体(wrapper 四种拼写与文本/元素两种取名)', () => {
+  it('接口属性经 Interfaces 传递闭包更新混入实体(wrapper 四种拼写与文本/元素两种取名)', async () => {
     const symbol = resolveRenameSymbolAtOffset(IBASE_DEF, cursorAt(IBASE_DEF, '<drift>'))!;
-    const results = computeDefRenameEdits({
+    const results = await computeDefRenameEdits({
       targetFilePath: ibasePath,
       targetText: IBASE_DEF,
       symbol,
@@ -622,12 +622,12 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     expect(renamed).toContain('<own> <Type> UINT8 </Type> </own>');
   });
 
-  it('以接口名直接命名的 <Interfaces> 子元素引擎不装载,不产生传播边', () => {
+  it('以接口名直接命名的 <Interfaces> 子元素引擎不装载,不产生传播边', async () => {
     // entitydef.cpp loadInterfaces 只认 wrapper 拼写的子元素,直取形态被跳过;
     // DirectIface 复述了 drift 但闭包不含 IBase——旧实现对齐 definitionSemantics
     // 三形态时会误跟随,引擎语义下必须缺席(负向锁)
     const symbol = resolveRenameSymbolAtOffset(IBASE_DEF, cursorAt(IBASE_DEF, '<drift>'))!;
-    const results = computeDefRenameEdits({
+    const results = await computeDefRenameEdits({
       targetFilePath: ibasePath,
       targetText: IBASE_DEF,
       symbol,
@@ -638,10 +638,10 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     expect(results.find(entry => entry.filePath === beastPath)).toBeUndefined();
   });
 
-  it('接口文件的 <Parent> 不被跟随:引擎 loadInterfaces 不走 loadParentClass', () => {
+  it('接口文件的 <Parent> 不被跟随:引擎 loadInterfaces 不走 loadParentClass', async () => {
     // Parented.def 位于 interfaces/,声明 <Parent> Hero 并复述 hp;引擎装载接口
     // 文件时不读 Parent(entitydef.cpp L551-640),该复述对 Hero 的重命名不可见
-    const results = computeDefRenameEdits({
+    const results = await computeDefRenameEdits({
       targetFilePath: heroPath,
       targetText: HERO_DEF,
       symbol: heroHpSymbol(),
@@ -650,12 +650,12 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     expect(results.find(entry => entry.filePath === ifaceParentedPath)).toBeUndefined();
   });
 
-  it('混合排版 Parent(标签间换行缩进)引擎照常装载,产生边', () => {
+  it('混合排版 Parent(标签间换行缩进)引擎照常装载,产生边', async () => {
     // 批111 核对 tinyxml 源修正:condenseWhiteSpace=true(默认)下纯空白文本
     // 节点在 TiXmlElement::Parse 的 Blank() 分支被丢弃(tinyxmlparser.cpp:
     // 1204-1213),loadParentClass 的 enterNode 首子节点是 <Hero/> 元素,
     // getKey 取标签名 'Hero'——MixedParent 复述的 hp 参与 Hero 重命名传播
-    const results = computeDefRenameEdits({
+    const results = await computeDefRenameEdits({
       targetFilePath: heroPath,
       targetText: HERO_DEF,
       symbol: heroHpSymbol(),
@@ -666,10 +666,10 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     expect(editsByFile([mixedEntry!])).toEqual({ 'MixedParent.def': 2 });
   });
 
-  it('组件 def 的 Parent 在 components/ 内解析:命中同目录组件、不误连同名根实体', () => {
+  it('组件 def 的 Parent 在 components/ 内解析:命中同目录组件、不误连同名根实体', async () => {
     // 正向:BaseGun(组件)的 power 经 ChildGun(Parent BaseGun)复述传播
     const powerSymbol = resolveRenameSymbolAtOffset(BASE_GUN_DEF, cursorAt(BASE_GUN_DEF, '<power>'))!;
-    const results = computeDefRenameEdits({
+    const results = await computeDefRenameEdits({
       targetFilePath: baseGunPath,
       targetText: BASE_GUN_DEF,
       symbol: powerSymbol,
@@ -679,7 +679,7 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
 
     // 负向:Wand(组件)的 <Parent> Hero 在 components/ 内不存在(定义根的
     // Hero.def 是实体命名空间),引擎装载不到父类,重命名 Hero 的 hp 不传播
-    const heroResults = computeDefRenameEdits({
+    const heroResults = await computeDefRenameEdits({
       targetFilePath: heroPath,
       targetText: HERO_DEF,
       symbol: heroHpSymbol(),
@@ -688,9 +688,9 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     expect(heroResults.find(entry => entry.filePath === wandPath)).toBeUndefined();
   });
 
-  it('在复述处发起只更新该文件与其后代,不复改祖先源头(如实边界)', () => {
+  it('在复述处发起只更新该文件与其后代,不复改祖先源头(如实边界)', async () => {
     const symbol = resolveRenameSymbolAtOffset(MONSTER_DEF, cursorAt(MONSTER_DEF, '<hp>'))!;
-    const results = computeDefRenameEdits({
+    const results = await computeDefRenameEdits({
       targetFilePath: monsterPath,
       targetText: MONSTER_DEF,
       symbol,
@@ -700,9 +700,9 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     expect(results.find(entry => entry.filePath === heroPath)).toBeUndefined();
   });
 
-  it('找不到定义根时退化为仅同文件', () => {
+  it('找不到定义根时退化为仅同文件', async () => {
     const symbol = resolveRenameSymbolAtOffset(HERO_DEF, cursorAt(HERO_DEF, '<hp>'))!;
-    const results = computeDefRenameEdits({
+    const results = await computeDefRenameEdits({
       targetFilePath: path.join(noRootDir, 'Lone.def'),
       targetText: HERO_DEF,
       symbol,
@@ -712,10 +712,10 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     expect(results[0].edits).toHaveLength(4);
   });
 
-  it('非法新名与原样新名返回空编辑', () => {
+  it('非法新名与原样新名返回空编辑', async () => {
     const symbol = heroHpSymbol();
     for (const newName of ['9bad', 'x-y', '', 'a b', 'hp']) {
-      expect(computeDefRenameEdits({
+      expect(await computeDefRenameEdits({
         targetFilePath: heroPath,
         targetText: HERO_DEF,
         symbol,
@@ -724,8 +724,8 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     }
   });
 
-  it('目标文本不含该符号时返回空编辑,不再扫描引用', () => {
-    const results = computeDefRenameEdits({
+  it('目标文本不含该符号时返回空编辑,不再扫描引用', async () => {
+    const results = await computeDefRenameEdits({
       targetFilePath: heroPath,
       targetText: '<root>\n</root>\n',
       symbol: heroHpSymbol(),
@@ -734,8 +734,8 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     expect(results).toEqual([]);
   });
 
-  it('无该符号的后代、坏 XML 后代、悬空引用与组件 def 都不产生编辑', () => {
-    const results = computeDefRenameEdits({
+  it('无该符号的后代、坏 XML 后代、悬空引用与组件 def 都不产生编辑', async () => {
+    const results = await computeDefRenameEdits({
       targetFilePath: heroPath,
       targetText: HERO_DEF,
       symbol: heroHpSymbol(),
@@ -761,12 +761,12 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
   });
 
   // Windows:chmod 000 不产生 EACCES,故障注入手法不可用,跳过
-  it.skipIf(process.platform === 'win32')('扫描中途不可读的后代文件被跳过', () => {
+  it.skipIf(process.platform === 'win32')('扫描中途不可读的后代文件被跳过', async () => {
     // chmod 000 让 readFileSync 抛 EACCES(批24 同款故障注入手法);
     // 内容读盘即失败,闭包与编辑面共用缓存,Boss 整体缺席
     fs.chmodSync(bossPath, 0o000);
     try {
-      const results = computeDefRenameEdits({
+      const results = await computeDefRenameEdits({
         targetFilePath: heroPath,
         targetText: HERO_DEF,
         symbol: heroHpSymbol(),
@@ -783,11 +783,11 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     }
   });
 
-  it('不可枚举的子目录不影响其余文件的重命名', () => {
+  it('不可枚举的子目录不影响其余文件的重命名', async () => {
     // locked/ 目录 chmod 000 后 readdirSync 抛 EACCES,枚举静默跳过该目录
     fs.chmodSync(lockedDir, 0o000);
     try {
-      const results = computeDefRenameEdits({
+      const results = await computeDefRenameEdits({
         targetFilePath: heroPath,
         targetText: HERO_DEF,
         symbol: heroHpSymbol(),
@@ -805,8 +805,8 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     }
   });
 
-  it('编辑区间升序且互不重叠,并携带基准文本', () => {
-    const results = computeDefRenameEdits({
+  it('编辑区间升序且互不重叠,并携带基准文本', async () => {
+    const results = await computeDefRenameEdits({
       targetFilePath: heroPath,
       targetText: HERO_DEF,
       symbol: heroHpSymbol(),
@@ -825,7 +825,7 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
 });
 
 describe('collectRenameEditsInText 与偏移换算纯函数', () => {
-  it('同文件收集按符号种类与段过滤', () => {
+  it('同文件收集按符号种类与段过滤', async () => {
     const property = { kind: 'property', name: 'hp', section: null } as DefRenameSymbol;
     expect(collectRenameEditsInText(HERO_DEF, property)).toHaveLength(4);
 
@@ -837,7 +837,7 @@ describe('collectRenameEditsInText 与偏移换算纯函数', () => {
     expect(collectRenameEditsInText('<root>\n</root>\n', property)).toHaveLength(0);
   });
 
-  it('getLineCharacterAtOffset 按 \\n 分行并钳制越界偏移', () => {
+  it('getLineCharacterAtOffset 按 \\n 分行并钳制越界偏移', async () => {
     expect(getLineCharacterAtOffset('abc', 0)).toEqual({ line: 0, character: 0 });
     expect(getLineCharacterAtOffset('a\nbc', 2)).toEqual({ line: 1, character: 0 });
     expect(getLineCharacterAtOffset('a\nbc', 4)).toEqual({ line: 1, character: 2 });
@@ -845,7 +845,7 @@ describe('collectRenameEditsInText 与偏移换算纯函数', () => {
     expect(getLineCharacterAtOffset('a\nbc', -3)).toEqual({ line: 0, character: 0 });
   });
 
-  it('DEF_IDENTIFIER_PATTERN 拒绝非 C 风格标识符', () => {
+  it('DEF_IDENTIFIER_PATTERN 拒绝非 C 风格标识符', async () => {
     expect(DEF_IDENTIFIER_PATTERN.test('_hp2')).toBe(true);
     expect(DEF_IDENTIFIER_PATTERN.test('2hp')).toBe(false);
     expect(DEF_IDENTIFIER_PATTERN.test('h-p')).toBe(false);
@@ -858,7 +858,7 @@ describe('KBEngineRenameProvider 装配', () => {
   const heroDocument = (): MinimalTextDocument =>
     makeTextDocument(HERO_DEF, { fileName: heroPath });
 
-  it('prepareRename 返回词区间与占位名', () => {
+  it('prepareRename 返回词区间与占位名', async () => {
     const document = heroDocument();
     const offset = cursorAt(HERO_DEF, '<hp>');
     const result = provider.prepareRename(document, document.positionAt(offset));
@@ -869,7 +869,7 @@ describe('KBEngineRenameProvider 装配', () => {
     expect(document.offsetAt(result!.range.end)).toBe(offset + 1);
   });
 
-  it('非符号位置 prepareRename 返回 null', () => {
+  it('非符号位置 prepareRename 返回 null', async () => {
     const document = heroDocument();
     const typeValue = HERO_DEF.indexOf('UINT32') + 1;
     expect(provider.prepareRename(document, document.positionAt(typeValue))).toBeNull();

@@ -639,7 +639,7 @@ describe('defReferenceGraph 补测(接口/组件边与坏文件跳过)', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('Interfaces/Components 引用解析为 interface/component 边;畸形 .def 被跳过', () => {
+  it('Interfaces/Components 引用解析为 interface/component 边;畸形 .def 被跳过', async () => {
     root = mkdtempSync(join(tmpdir(), 'cov-defgraph-'));
     put('scripts/entities.xml', '<root/>\n');
     put('scripts/entity_defs/Hero.def', [
@@ -674,7 +674,7 @@ describe('defReferenceGraph 补测(接口/组件边与坏文件跳过)', () => {
     // 未闭合元素:parseDefDocument 抛错 → parseDef 吞为 null → 整文件不进索引
     put('scripts/entity_defs/Broken.def', '<root>\n  <BaseMethods>\n    <move>\n</root>');
 
-    const graph = buildDefReferenceGraphFromFile(join(root, 'scripts', 'entity_defs', 'Hero.def'));
+    const graph = await buildDefReferenceGraphFromFile(join(root, 'scripts', 'entity_defs', 'Hero.def'));
     expect(graph).not.toBeNull();
 
     const relations = graph!.edges.map(edge => ({
@@ -695,7 +695,7 @@ describe('defReferenceGraph 补测(接口/组件边与坏文件跳过)', () => {
   });
 
   describe.skipIf(runsAsRoot || process.platform === 'win32')('只读失败面(root 下 chmod 不生效,跳过)', () => {
-    it('不可读 .def:readFile 吞错为 null,整文件跳过', () => {
+    it('不可读 .def:readFile 吞错为 null,整文件跳过', async () => {
       root = mkdtempSync(join(tmpdir(), 'cov-defgraph-perm-'));
       put('scripts/entities.xml', '<root/>\n');
       // 可达性说明:definitions 只保留进了连通分量的文件,Base 把 A/B 都挂进图
@@ -704,14 +704,14 @@ describe('defReferenceGraph 补测(接口/组件边与坏文件跳过)', () => {
       const bDef = put('scripts/entity_defs/B.def', '<root>\n  <Parent> Base </Parent>\n  <BaseMethods>\n    <halt/>\n  </BaseMethods>\n</root>\n');
       chmodSync(bDef, 0o000);
 
-      const graph = buildDefReferenceGraphFromFile(join(root, 'scripts', 'entity_defs', 'A.def'));
+      const graph = await buildDefReferenceGraphFromFile(join(root, 'scripts', 'entity_defs', 'A.def'));
       const owners = graph!.definitions.map(definition => definition.ownerName);
       expect(owners).toContain('A');
       // B 若可读会经 Parent 进图;缺席即证明读失败被吞、整文件跳过
       expect(owners).not.toContain('B');
     });
 
-    it('不可读子目录:readdir 吞错返回,目录整体跳过不炸', () => {
+    it('不可读子目录:readdir 吞错返回,目录整体跳过不炸', async () => {
       root = mkdtempSync(join(tmpdir(), 'cov-defgraph-dir-'));
       put('scripts/entities.xml', '<root/>\n');
       put('scripts/entity_defs/Base.def', '<root>\n  <BaseMethods>\n    <root/>\n  </BaseMethods>\n</root>\n');
@@ -719,7 +719,7 @@ describe('defReferenceGraph 补测(接口/组件边与坏文件跳过)', () => {
       put('scripts/entity_defs/locked/C.def', '<root>\n  <Parent> Base </Parent>\n  <BaseMethods>\n    <hidden/>\n  </BaseMethods>\n</root>\n');
       chmodSync(join(root, 'scripts', 'entity_defs', 'locked'), 0o000);
 
-      const graph = buildDefReferenceGraphFromFile(join(root, 'scripts', 'entity_defs', 'A.def'));
+      const graph = await buildDefReferenceGraphFromFile(join(root, 'scripts', 'entity_defs', 'A.def'));
       const owners = graph!.definitions.map(definition => definition.ownerName);
       expect(owners).toContain('A');
       expect(owners).not.toContain('C');

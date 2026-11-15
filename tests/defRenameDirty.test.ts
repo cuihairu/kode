@@ -96,10 +96,10 @@ const monsterEditsFrom = (workspaceEdit: {
 };
 
 describe('跨文件重命名读脏 def 缓冲区(IDE-NAV-009)', () => {
-  it('注入读口在位时用缓冲区文本:Monster 编辑区间落缓冲版位置(0 基行 3)', () => {
+  it('注入读口在位时用缓冲区文本:Monster 编辑区间落缓冲版位置(0 基行 3)', async () => {
     const offset = resolveRenameSymbolAtOffset(HERO_DEF, HERO_DEF.indexOf('<hp>') + 1)!;
     openDirtyMonster();
-    const edits = computeDefRenameEdits({
+    const edits = await computeDefRenameEdits({
       targetFilePath: heroPath,
       targetText: HERO_DEF,
       symbol: offset,

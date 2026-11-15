@@ -139,10 +139,10 @@ const hpSymbol = (): DefRenameSymbol => ({
 });
 
 describe('computeDefRenameEdits branch gaps (批68)', () => {
-  it('skips non-def files, nameless interface refs and dedupes cyclic ancestors', () => {
+  it('skips non-def files, nameless interface refs and dedupes cyclic ancestors', async () => {
     // 目标文件重命名照常;循环里顺带走过 Nameless/CycleA/CycleB 等条目,
     // 触发后缀过滤、无名 Interface 跳过与 seen 去重假臂
-    const results = computeDefRenameEdits({
+    const results = await computeDefRenameEdits({
       targetFilePath: soloPath,
       targetText: SOLO_DEF,
       symbol: hpSymbol(),
@@ -156,7 +156,7 @@ describe('computeDefRenameEdits branch gaps (批68)', () => {
 
     // BlankParent 的 <Parent> 只含换行缩进:跳过空白文本后无剩余子节点,
     // 取空名(与引擎 enterNode 取到空首子节点同口径),闭包不含它
-    expect(computeDefRenameEdits({
+    expect(await computeDefRenameEdits({
       targetFilePath: path.join(root, 'scripts', 'entity_defs', 'BlankParent.def'),
       targetText: BLANK_PARENT_DEF,
       symbol: hpSymbol(),
@@ -164,12 +164,12 @@ describe('computeDefRenameEdits branch gaps (批68)', () => {
     })).toHaveLength(1);
   });
 
-  it('survives an unreadable ancestor queued through a readable parent chain', () => {
+  it('survives an unreadable ancestor queued through a readable parent chain', async () => {
     // Ghosty.def 不可读:外层循环按 null 内容跳过它,但 Distant→Mid→Ghosty
     // 的闭包行走把 Ghosty 从 fileIndex 入队,loadSemantics 拿到 null
     fs.chmodSync(ghostyPath, 0o000);
     try {
-      const results = computeDefRenameEdits({
+      const results = await computeDefRenameEdits({
         targetFilePath: soloPath,
         targetText: SOLO_DEF,
         symbol: hpSymbol(),

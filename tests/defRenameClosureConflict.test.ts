@@ -148,7 +148,7 @@ const symbolAt = (text: string, tag: string): ReturnType<typeof resolveRenameSym
   resolveRenameSymbolAtOffset(text, text.indexOf(`<${tag}`) + 1);
 
 describe('findDefRenameConflictInClosure 判重矩阵与边界', () => {
-  it('后代属性同域位同名:改 Hero.hp→vigor 拒绝并指明后代文件+行', () => {
+  it('后代属性同域位同名:改 Hero.hp→vigor 拒绝并指明后代文件+行', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-closure-prop-'));
     writeFixtures(root, {
       'scripts/entities.xml': '<root><Hero/><Monster/></root>\n',
@@ -157,7 +157,7 @@ describe('findDefRenameConflictInClosure 判重矩阵与边界', () => {
     });
     const heroPath = path.join(root, 'scripts', 'entity_defs', 'Hero.def');
     const heroText = propertyDef('hp', 'ALL_CLIENTS');
-    const conflict = findDefRenameConflictInClosure({
+    const conflict = await findDefRenameConflictInClosure({
       targetFilePath: heroPath,
       targetText: heroText,
       symbol: symbolAt(heroText, 'hp')!,
@@ -170,7 +170,7 @@ describe('findDefRenameConflictInClosure 判重矩阵与边界', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it('后代属性异域位同名:改 Hero.hp→vigor 撞 BASE 域属性不误拒', () => {
+  it('后代属性异域位同名:改 Hero.hp→vigor 撞 BASE 域属性不误拒', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-closure-prop2-'));
     writeFixtures(root, {
       'scripts/entities.xml': '<root><Hero/><Monster/></root>\n',
@@ -179,7 +179,7 @@ describe('findDefRenameConflictInClosure 判重矩阵与边界', () => {
     });
     const heroPath = path.join(root, 'scripts', 'entity_defs', 'Hero.def');
     const heroText = propertyDef('hp', 'ALL_CLIENTS');
-    const conflict = findDefRenameConflictInClosure({
+    const conflict = await findDefRenameConflictInClosure({
       targetFilePath: heroPath,
       targetText: heroText,
       symbol: symbolAt(heroText, 'hp')!,
@@ -189,7 +189,7 @@ describe('findDefRenameConflictInClosure 判重矩阵与边界', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it('后代组件槽同名无条件冲突:改 Hero.hp→vigor 撞组件槽也拒', () => {
+  it('后代组件槽同名无条件冲突:改 Hero.hp→vigor 撞组件槽也拒', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-closure-comp-'));
     writeFixtures(root, {
       'scripts/entities.xml': '<root><Hero/><Monster/></root>\n',
@@ -198,7 +198,7 @@ describe('findDefRenameConflictInClosure 判重矩阵与边界', () => {
     });
     const heroPath = path.join(root, 'scripts', 'entity_defs', 'Hero.def');
     const heroText = propertyDef('hp', 'ALL_CLIENTS');
-    const conflict = findDefRenameConflictInClosure({
+    const conflict = await findDefRenameConflictInClosure({
       targetFilePath: heroPath,
       targetText: heroText,
       symbol: symbolAt(heroText, 'hp')!,
@@ -209,7 +209,7 @@ describe('findDefRenameConflictInClosure 判重矩阵与边界', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it('方法改名撞后代属性全局拒绝:改 Hero.attack→vigor 撞属性 vigor 也拒', () => {
+  it('方法改名撞后代属性全局拒绝:改 Hero.attack→vigor 撞属性 vigor 也拒', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-closure-mp-'));
     writeFixtures(root, {
       'scripts/entities.xml': '<root><Hero/><Monster/></root>\n',
@@ -218,7 +218,7 @@ describe('findDefRenameConflictInClosure 判重矩阵与边界', () => {
     });
     const heroPath = path.join(root, 'scripts', 'entity_defs', 'Hero.def');
     const heroText = methodDef('BaseMethods', 'attack');
-    const conflict = findDefRenameConflictInClosure({
+    const conflict = await findDefRenameConflictInClosure({
       targetFilePath: heroPath,
       targetText: heroText,
       symbol: symbolAt(heroText, 'attack')!,
@@ -229,7 +229,7 @@ describe('findDefRenameConflictInClosure 判重矩阵与边界', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it('接口混入闭包:目标实现的接口同名也拒(接口是祖先面)', () => {
+  it('接口混入闭包:目标实现的接口同名也拒(接口是祖先面)', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-closure-iface-'));
     writeFixtures(root, {
       'scripts/entities.xml': '<root><Hero/></root>\n',
@@ -238,7 +238,7 @@ describe('findDefRenameConflictInClosure 判重矩阵与边界', () => {
     });
     const heroPath = path.join(root, 'scripts', 'entity_defs', 'Hero.def');
     const heroText = `<root>\n  <Interfaces>\n    <Interface>ICombat</Interface>\n  </Interfaces>\n  <BaseMethods>\n    <attack/>\n  </BaseMethods>\n</root>\n`;
-    const conflict = findDefRenameConflictInClosure({
+    const conflict = await findDefRenameConflictInClosure({
       targetFilePath: heroPath,
       targetText: heroText,
       symbol: symbolAt(heroText, 'attack')!,
@@ -249,7 +249,7 @@ describe('findDefRenameConflictInClosure 判重矩阵与边界', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it('同名非 newName 不误报:后代同名 symbol.name(attack)不挡 attack→vigor', () => {
+  it('同名非 newName 不误报:后代同名 symbol.name(attack)不挡 attack→vigor', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-closure-same-'));
     writeFixtures(root, {
       'scripts/entities.xml': '<root><Hero/><Monster/></root>\n',
@@ -258,7 +258,7 @@ describe('findDefRenameConflictInClosure 判重矩阵与边界', () => {
     });
     const heroPath = path.join(root, 'scripts', 'entity_defs', 'Hero.def');
     const heroText = methodDef('BaseMethods', 'attack');
-    const conflict = findDefRenameConflictInClosure({
+    const conflict = await findDefRenameConflictInClosure({
       targetFilePath: heroPath,
       targetText: heroText,
       symbol: symbolAt(heroText, 'attack')!,
@@ -268,8 +268,8 @@ describe('findDefRenameConflictInClosure 判重矩阵与边界', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it('无定义根(无 entities.xml)退化为不报:虚拟路径返回 null', () => {
-    const conflict = findDefRenameConflictInClosure({
+  it('无定义根(无 entities.xml)退化为不报:虚拟路径返回 null', async () => {
+    const conflict = await findDefRenameConflictInClosure({
       targetFilePath: '/tmp/nowhere/scripts/entity_defs/Hero.def',
       targetText: methodDef('BaseMethods', 'attack'),
       symbol: symbolAt(methodDef('BaseMethods', 'attack'), 'attack')!,
@@ -278,7 +278,7 @@ describe('findDefRenameConflictInClosure 判重矩阵与边界', () => {
     expect(conflict).toBeNull();
   });
 
-  it('改名即本名 / 非法名返回 null', () => {
+  it('改名即本名 / 非法名返回 null', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-closure-edge-'));
     writeFixtures(root, {
       'scripts/entities.xml': '<root><Hero/><Monster/></root>\n',
@@ -288,10 +288,10 @@ describe('findDefRenameConflictInClosure 判重矩阵与边界', () => {
     const heroPath = path.join(root, 'scripts', 'entity_defs', 'Hero.def');
     const heroText = methodDef('BaseMethods', 'attack');
     const symbol = symbolAt(heroText, 'attack')!;
-    expect(findDefRenameConflictInClosure({
+    expect(await findDefRenameConflictInClosure({
       targetFilePath: heroPath, targetText: heroText, symbol, newName: 'attack'
     })).toBeNull();
-    expect(findDefRenameConflictInClosure({
+    expect(await findDefRenameConflictInClosure({
       targetFilePath: heroPath, targetText: heroText, symbol, newName: 'not-valid'
     })).toBeNull();
     fs.rmSync(root, { recursive: true, force: true });
