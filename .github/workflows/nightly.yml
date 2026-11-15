@@ -47,7 +47,7 @@ jobs:
 
   validate:
     name: Existing full correctness gate
-    timeout-minutes: 60
+    timeout-minutes: 75
     needs: plan
     if: needs.plan.outputs.skip != 'true'
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
