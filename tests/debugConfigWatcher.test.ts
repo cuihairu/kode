@@ -128,13 +128,24 @@ afterEach(() => {
 
 const latestWatcher = (): FakeWatcher => watchers[watchers.length - 1];
 
+// RUST-065 起 watchConfig 传 RelativePattern(每根一个);断言面归一成
+// 「根/.kbengine/debug.json」路径串,字符串形态(旧口径)同样可读。
+const patternText = (pattern: unknown): string => {
+  if (typeof pattern === 'string') {
+    return pattern;
+  }
+  const relative = pattern as { base: string | { fsPath: string }; pattern: string };
+  const base = typeof relative.base === 'string' ? relative.base : relative.base.fsPath;
+  return `${base}/${relative.pattern}`;
+};
+
 describe('DebugConfigManager config watcher', () => {
   it('watches .kbengine/debug.json and reloads on change with an info message', async () => {
     const manager = makeManager();
     await settle();
 
     const watcher = latestWatcher();
-    expect(watcher.pattern).toContain('.kbengine/debug.json');
+    expect(patternText(watcher.pattern)).toContain('.kbengine/debug.json');
     expect(manager.getConfig().defaultTelnetPort).toBe(0);
 
     await writeConfig({ defaultTelnetPort: 12345 });

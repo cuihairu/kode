@@ -201,6 +201,25 @@ export function resolveDebugWorkspaceRoot(
   return { root: folders[0].fsPath, source: 'default', overridden: [] };
 }
 
+/**
+ * 装配面(RUST-065):按既有链(环境变量 > 文件 workspaceRoot > 首个工作区根)
+ * 解析当前生效工作目录。DebugConfigManager 的 debug.json 读写/watch、launch.json
+ * 写入、pathMappings 默认值与 debugpy 预检统一经此取根——替换散落的「首个工作区
+ * 根」硬编码:多根工作区或 KBENGINE_WORKSPACE/workspaceRoot 指到别的根时,
+ * 读写不再落错根。同步面:fileConfig 读走真实 fs(与 ensureDebugConfig 同一套)。
+ */
+export function resolveManagerWorkspaceRoot(
+  folders: readonly WorkspaceFolderLike[],
+  managedDirName?: string
+): ResolvedDebugWorkspace | null {
+  const dirName = resolveManagedDirName(managedDirName).name;
+  return resolveDebugWorkspaceRoot({
+    env: process.env,
+    fileConfig: readWorkspaceConfig(fileSystemBootstrapDeps, folders[0]?.fsPath ?? '', dirName),
+    workspaceFolders: folders
+  });
+}
+
 function fileConfigNote(fileConfig: Record<string, unknown> | null | undefined): string[] {
   const raw = fileConfig?.workspaceRoot;
   return typeof raw === 'string' && raw.trim() !== ''

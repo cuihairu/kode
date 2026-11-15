@@ -6,7 +6,8 @@ import {
   attachWithDeadline,
   type AttachGuardOutcome
 } from './backend/debugAttachGuard';
-import { parseDebugConfigText } from './backend/debugConfigBootstrap';
+import { parseDebugConfigText, resolveManagerWorkspaceRoot } from './backend/debugConfigBootstrap';
+import { MANAGED_DIR_DEFAULT, MANAGED_DIR_SETTING_KEY, resolveManagedDirName } from './backend/managedDir';
 import {
   DEBUGPY_PORT_PROBE_TIMEOUT_MS,
   PORT_NEXT_STEP_ACTION_LIST,
@@ -154,6 +155,12 @@ export class DebugConfigManager {
       /** IDE-PDBG-004:隧道进程注入面(缺省真实 spawn ssh -N -L) */
       spawnTunnel?: (args: string[]) => { onExit(cb: () => void): void; kill(): void };
       /**
+       * RUST-065:生效工作目录注入面(缺省走既有链:KBENGINE_WORKSPACE >
+       * 文件 workspaceRoot > 首个工作区根)。多根工作区下读写/watch/预检
+       * 统一经 currentWorkspaceRoot 取根,不再散落「首个工作区根」硬编码。
+       */
+      resolveWorkspaceRoot?: () => string | null;
+      /**
        * 端口模式下一步(死路修复):一键起 debugpy 监听——装配层负责同步
        * debugpy 进资产树并经该组件 telnet 发 `debugpy.listen`,回执如实
        * (ok=false 带原因)。缺省(未接线)= 一键动作退化为起监听指引,
@@ -171,7 +178,7 @@ export class DebugConfigManager {
   }
 
   private getDefaultConfig(): KBEngineDebugConfig {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+    const workspaceFolder = this.currentWorkspaceRoot() ?? '';
     const defaultPathMappings = [{
       localRoot: workspaceFolder,
       remoteRoot: workspaceFolder
@@ -201,12 +208,14 @@ export class DebugConfigManager {
   }
 
   private async loadConfig(): Promise<void> {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (!workspaceFolder) {
+    // RUST-065:生效根经既有链裁定(env > 文件 workspaceRoot > 首个工作区根),
+    // 路径带托管目录名(kbengine.managedDir);根可在工作区外(vscode.workspace.fs 不限根)。
+    const root = this.currentWorkspaceRoot();
+    if (root === null || root === '') {
       return;
     }
 
-    const configPath = vscode.Uri.joinPath(workspaceFolder.uri, '.kbengine', 'debug.json');
+    const configPath = vscode.Uri.joinPath(vscode.Uri.file(root), this.managedDirName(), 'debug.json');
 
     try {
       const configData = await vscode.workspace.fs.readFile(configPath);
@@ -226,33 +235,74 @@ export class DebugConfigManager {
   }
 
   private watchConfig(): void {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (!workspaceFolder) {
+    const folders = vscode.workspace.workspaceFolders ?? [];
+    if (folders.length === 0) {
       return;
     }
 
-    const configPattern = vscode.Uri.joinPath(workspaceFolder.uri, '.kbengine', 'debug.json');
-    this.configWatcher = vscode.workspace.createFileSystemWatcher(configPattern.toString());
+    // RUST-065:每个工作区根的 debug.json 都盯(多根下任一根的配置变更都
+    // 重载;生效根经 currentWorkspaceRoot 裁定,监听面宽于裁定面——根间
+    // 迁移也触发重载)。生效根在工作区外(KBENGINE_WORKSPACE 指向)时补盯。
+    const dirName = this.managedDirName();
+    const roots = new Map<string, vscode.Uri>(
+      folders.map(folder => [folder.uri.toString(), folder.uri])
+    );
+    const resolvedRoot = this.currentWorkspaceRoot();
+    if (resolvedRoot !== null && resolvedRoot !== '') {
+      const rootUri = vscode.Uri.file(resolvedRoot);
+      roots.set(rootUri.toString(), rootUri);
+    }
 
-    this.configWatcher.onDidChange(() => {
-      this.loadConfig();
-      vscode.window.showInformationMessage('KBEngine 调试配置已更新');
-    });
-    this.configWatcher.onDidCreate(() => {
-      this.loadConfig();
-      vscode.window.showInformationMessage('KBEngine 调试配置已创建');
-    });
-    this.configWatcher.onDidDelete(() => {
-      this.loadConfig();
-      vscode.window.showWarningMessage('KBEngine 调试配置已删除，已恢复默认配置');
-    });
+    for (const rootUri of roots.values()) {
+      const watcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(rootUri, `${dirName}/debug.json`)
+      );
+      watcher.onDidChange(() => {
+        this.loadConfig();
+        vscode.window.showInformationMessage('KBEngine 调试配置已更新');
+      });
+      watcher.onDidCreate(() => {
+        this.loadConfig();
+        vscode.window.showInformationMessage('KBEngine 调试配置已创建');
+      });
+      watcher.onDidDelete(() => {
+        this.loadConfig();
+        vscode.window.showWarningMessage('KBEngine 调试配置已删除，已恢复默认配置');
+      });
+      this.context.subscriptions.push(watcher);
+      this.configWatcher = watcher;
+    }
+  }
 
-    this.context.subscriptions.push(this.configWatcher);
+  /**
+   * RUST-065:当前生效工作目录(KBENGINE_WORKSPACE > 文件 workspaceRoot >
+   * 首个工作区根,与激活期 ensureDebugConfig 同一条链);无工作区返回 null。
+   * 注入面供测试替换;缺省经 bootstrap 同步链(真实 fs 读 folder[0] 的
+   * debug.json 取 workspaceRoot)。
+   */
+  private currentWorkspaceRoot(): string | null {
+    if (this.deps.resolveWorkspaceRoot) {
+      return this.deps.resolveWorkspaceRoot();
+    }
+    return resolveManagerWorkspaceRoot(
+      (vscode.workspace.workspaceFolders ?? []).map(folder => ({
+        name: folder.name,
+        fsPath: folder.uri.fsPath
+      })),
+      this.managedDirName()
+    )?.root ?? null;
+  }
+
+  /** 托管目录名(kbengine.managedDir 生效值;默认 .kbengine,与存根导出同链) */
+  private managedDirName(): string {
+    return resolveManagedDirName(
+      vscode.workspace.getConfiguration('kbengine').get(MANAGED_DIR_SETTING_KEY, MANAGED_DIR_DEFAULT)
+    ).name;
   }
 
   getComponentConfig(componentName: string): ComponentDebugConfig {
     const userConfig = this.config.components[componentName];
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+    const workspaceFolder = this.currentWorkspaceRoot() ?? '';
 
     return {
       telnetHost: userConfig?.telnetHost || this.config.defaultTelnetHost,
@@ -295,7 +345,7 @@ export class DebugConfigManager {
    */
   generateLaunchConfigurations(runningInstances: ReadonlyArray<{ component: string; targetId: string; port: number }> = []): any[] {
     const configurations: any[] = [];
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+    const workspaceFolder = this.currentWorkspaceRoot() ?? '';
 
     for (const [componentName, componentConfig] of Object.entries(this.config.components)) {
       configurations.push({
@@ -511,13 +561,14 @@ export class DebugConfigManager {
     port: number
   ): Promise<{ ok: boolean; detail: string; entryName: string }> {
     const entryName = portLaunchEntryName(componentName, port);
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (!workspaceFolder) {
+    const root = this.currentWorkspaceRoot();
+    if (root === null || root === '') {
       return { ok: false, detail: '没有打开的工作区,未写 launch.json', entryName };
     }
+    const workspaceUri = vscode.Uri.file(root);
     return this.queueLaunchWrite(async () => {
-      const vscodeDir = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode');
-      const launchJsonPath = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode', 'launch.json');
+      const vscodeDir = vscode.Uri.joinPath(workspaceUri, '.vscode');
+      const launchJsonPath = vscode.Uri.joinPath(workspaceUri, '.vscode', 'launch.json');
       try {
         await vscode.workspace.fs.createDirectory(vscodeDir);
         const read = await this.readLaunchConfig(launchJsonPath);
@@ -562,14 +613,15 @@ export class DebugConfigManager {
   }
 
   async updateLaunchJson(runningInstances: ReadonlyArray<{ component: string; targetId: string; port: number }> = []): Promise<boolean> {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (!workspaceFolder) {
+    const root = this.currentWorkspaceRoot();
+    if (root === null || root === '') {
       vscode.window.showErrorMessage('没有打开的工作区');
       return false;
     }
 
-    const vscodeDir = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode');
-    const launchJsonPath = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode', 'launch.json');
+    const workspaceUri = vscode.Uri.file(root);
+    const vscodeDir = vscode.Uri.joinPath(workspaceUri, '.vscode');
+    const launchJsonPath = vscode.Uri.joinPath(workspaceUri, '.vscode', 'launch.json');
 
     return this.queueLaunchWrite(async () => {
       try {
@@ -610,13 +662,14 @@ export class DebugConfigManager {
   }
 
   async createExampleConfig(): Promise<boolean> {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (!workspaceFolder) {
+    const root = this.currentWorkspaceRoot();
+    if (root === null || root === '') {
       vscode.window.showErrorMessage('没有打开的工作区');
       return false;
     }
 
-    const kbengineDir = vscode.Uri.joinPath(workspaceFolder.uri, '.kbengine');
+    const dirName = this.managedDirName();
+    const kbengineDir = vscode.Uri.joinPath(vscode.Uri.file(root), dirName);
 
     try {
       await vscode.workspace.fs.createDirectory(kbengineDir);
@@ -664,7 +717,7 @@ export class DebugConfigManager {
         Buffer.from(JSON.stringify(exampleConfig, null, 2), 'utf8')
       );
 
-      vscode.window.showInformationMessage('示例调试配置已创建: .kbengine/debug.json');
+      vscode.window.showInformationMessage(`示例调试配置已创建: ${dirName}/debug.json`);
       return true;
     } catch (error) {
       vscode.window.showErrorMessage(`创建调试配置失败: ${error}`);
@@ -1047,7 +1100,8 @@ export class DebugConfigManager {
    * 兼容性按引擎目标策略裁定(DBG-COMPAT-03:设置/引擎二进制解析目标,
    * 不再拿全局常量判所有工程) */
   private async defaultCheckDebugpy(): Promise<DebugpyPreflightStatus> {
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    // RUST-065:预检目标根与 debug.json/launch.json 同一条生效根链
+    const workspaceRoot = this.currentWorkspaceRoot() ?? undefined;
     // context 可能缺位(探针/测试装配不经 context 构造)——缺位时目标解析
     // 走无 workspaceState 的生产装配(活动 profile 链照常)
     const pythonTarget = resolvePythonTarget(pythonTargetDeps(this.context?.workspaceState));
