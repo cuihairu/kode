@@ -82,6 +82,15 @@ RUST-033:每一项优化的 profiling 证据、取舍、回退策略集中记账
 - 回退:常量可在源码调大(不建议放开);台账/警示面随量规走,删面即回
   静默(不建议)。
 
+### RUST-063 release profile 调优(Cargo.toml [profile.release])
+- 证据:docs/perf/2026-11-15-release-profile.md(A/B 同 HEAD 同负载:
+  spawn/定义往返/CLI 墙钟全部噪声带内,二进制 −29%/−32%);新 profile 下
+  lib 测试 430+35+189 全绿。
+- 取舍:采纳 thin LTO+codegen-units=1+strip(测量支持);拒绝 fat LTO/
+  opt-level 最大化/panic=abort(无测量动机);编译时长 +~80s 由 RUST-061
+  CI 缓存摊销。
+- 回退:删除 Cargo.toml `[profile.release]` 节,回默认 profile。
+
 ### RUST-027 门禁阈值可配置(nightly/ci.yml)
 - 证据:gateBounds.ts 缺省宽松上界表 + `KODE_PERF_BOUND_*` 覆盖;
   prove-red=紧界 0.001ms 三场景全红。

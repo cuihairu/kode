@@ -1,0 +1,24 @@
+# RUST-063 release profile A/B 实测(2026-11-15,L 档 14 CPU)
+# A=默认 release(B=thin LTO+codegen-units=1+strip=symbols)
+# 工作负载:kode-server spawn+handshake+100 次定义往返(def p50);kode-kbengine schema validate x20;二进制体积
+
+== A 默认 release ==
+SERVER spawn+handshake=3.27ms def p50=1.461ms p95=1.637ms max=2.089ms n=100
+CLI schema p50=4.3ms p95=5.0ms min=3.8ms max=5.2ms n=20
+SIZE kode-server=7.50MB
+SIZE kode-kbengine=1.61MB
+
+== B thin LTO + cg-units=1 + strip(4 passes) ==
+SERVER spawn+handshake=3.88ms def p50=1.576ms p95=1.815ms max=2.188ms n=100
+CLI schema p50=4.1ms p95=5.2ms min=3.5ms max=5.5ms n=20
+SIZE kode-server=5.32MB
+SIZE kode-kbengine=1.10MB
+-- pass 1 --
+-- pass 2 --
+-- pass 3 --
+-- B pass 2: SERVER spawn+handshake=3.70ms def p50=1.469ms p95=1.701ms max=2.228ms | CLI p50=4.0ms
+-- B pass 3: SERVER spawn+handshake=3.00ms def p50=1.521ms p95=2.164ms max=3.792ms | CLI p50=4.5ms
+-- B pass 4: SERVER spawn+handshake=4.64ms def p50=1.484ms p95=1.697ms max=2.409ms | CLI p50=4.1ms
+
+== release-profile lib 测试(新 profile 下行为不变) ==
+kode-server 430 passed / kode-kbengine 35 passed / kode-python 189 passed, 0 failed

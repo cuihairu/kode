@@ -27,3 +27,13 @@ missing_debug_implementations = "warn"
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 # CI/本地门禁:cargo clippy --workspace --all-targets -- -D warnings
+
+# RUST-063(旧 BUILD-014):release profile 以测量为准,不盲目最大化。
+# 2026-11-15 A/B 实测(默认 vs 本节,docs/perf/2026-11-15-release-profile.md):
+# thin LTO + codegen-units=1 + strip=symbols 对 spawn/RPC/CLI 墙钟零可测回退,
+# 二进制体积大幅下降(strip 主导);不追 fat LTO/opt-level=max/panic=abort 等
+# 激进项(无可测收益,徒增编译时长与排查成本)。
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
