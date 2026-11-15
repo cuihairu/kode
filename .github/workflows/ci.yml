@@ -289,3 +289,32 @@ jobs:
           docs/perf/perf-baseline-snapshot.json
         if-no-files-found: warn
         retention-days: 30
+
+  # RUST-083(旧 CORE-018)调度器长期压力车道:确定性随机混合负载下断言
+  # kode-scheduler 调度核结构不变量(死锁/永久 pending/计数守恒/取消泄漏/
+  # 内存无界/keyed 假 pending),任一破坏即 job 红。检测面与 cargo test
+  # (crates/kode-scheduler/tests/stress_units.rs,小规模默认门)同源;此处
+  # 为 release 长跑。随机源按 --seed 固定,失败可原样回放。
+  scheduler-stress:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+
+    steps:
+    - name: Checkout 代码
+      timeout-minutes: 3
+      uses: actions/checkout@v7.0.1
+
+    - name: Cache Rust builds (cargo registry + target)
+      timeout-minutes: 5
+      uses: actions/cache@v4.2.4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: scheduler-stress-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: scheduler-stress-${{ runner.os }}-
+
+    - name: 运行调度器压力长跑（release）
+      timeout-minutes: 10
+      run: cargo run --release -p kode-scheduler --bin kode-scheduler-stress -- --ops 500000 --check-every 5000

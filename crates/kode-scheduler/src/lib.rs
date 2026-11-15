@@ -27,6 +27,7 @@ pub mod invalidation;
 pub mod journal;
 pub mod model;
 pub mod scheduler;
+pub mod stress;
 
 pub use invalidation::{plan_dependency_tasks, CallReverseIndex, InvalidationGraph};
 pub use journal::{load_journal, write_journal, RecoveryReport, TaskRecord};
