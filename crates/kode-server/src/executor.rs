@@ -6,11 +6,16 @@
 //! 先回。准入不变量(交互预留/后台硬顶/总量守恒/释放记账)全部由
 //! kode-scheduler `WorkerPoolGate` 持有,本模块只接线不另立决策核。
 //!
-//! 取消(CORE-007 面):排队未启动的 job 即刻摘除回 -32800(容量未占);
-//! 在途 job 打丢弃标记,执行完成后容量释放、结果丢弃回 -32800。计算中断
-//! 级传播归 RUST-072,不在本装配面。
+//! 取消(CORE-007 + RUST-072):排队未启动的 job 即刻摘除回 -32800(容量
+//! 未占);在途 job 登记丢弃标记 + 置位该请求的取消令牌——handler 协作点
+//! (kode-python cancel 探针)查询令牌提前退出,绝不产出部分结果;终态
+//! (含被中断的 Err)一律释放容量,结算按三源裁定 Cancelled(-32800):
+//! 弹出前登记表/在途丢弃登记表/handler 自报取消文案(无 span 的 job 以
+//! handler 文案为诚实源)。丢弃登记只在确有本池 job(排队摘除命中或
+//! submit 登记过 span)时写入——未知 id/重复/迟到取消不入表,表有界。
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Condvar, Mutex};
 
@@ -141,6 +146,10 @@ struct ExecState {
     /// RUST-068-W:在途/排队 job 的 span 表(submit 插入,终态摘除)——
     /// 取消/回包日志按 id 回捞 span;容量=未决 job 数,天然有界。
     spans: std::collections::HashMap<RequestId, String>,
+    /// RUST-072:在途 job 的取消令牌(worker 弹出时登记,终态摘除)——
+    /// cancel 命中即置位,handler 经 kode-python 探针协作点提前退出;
+    /// 容量=在途 job 数,天然有界。
+    running_tokens: HashMap<RequestId, Arc<AtomicBool>>,
     draining: bool,
 }
 
@@ -181,6 +190,7 @@ impl PoolExecutor {
                 background: VecDeque::new(),
                 running_cancelled: HashSet::new(),
                 spans: std::collections::HashMap::new(),
+                running_tokens: HashMap::new(),
                 draining: false,
             }),
             signal: Condvar::new(),
@@ -225,9 +235,10 @@ impl PoolExecutor {
         self.shared.signal.notify_all();
     }
 
-    /// 取消一个请求:排队未启动 → 摘除回 -32800(容量未占);在途 → 丢弃
-    /// 标记,执行完成后容量照常释放、结果丢弃回 -32800。未提交的 id 登记
-    /// 无害(弹出时按取消短路,不执行 handler)。
+    /// 取消一个请求:排队未启动 → 摘除回 -32800(容量未占,不入丢弃登记
+    /// ——离队 job 永不执行,登记无人结算);在途 → 置位取消令牌 + 丢弃
+    /// 标记,执行完成后容量照常释放、结果丢弃回 -32800。未知/重复/迟到
+    /// id 不入任何表(RUST-072 有界化,长跑不膨胀)。
     pub fn cancel(&self, id: &RequestId) {
         let (removed, span) = {
             let mut state = self.shared.state.lock().expect("pool state lock");
@@ -237,7 +248,19 @@ impl PoolExecutor {
                 bump_stats(&self.shared.stats_cell, &state, |stats| {
                     stats.jobs_cancelled += 1;
                 });
-            } else {
+            }
+            // RUST-072:在途令牌命中即置位(handler 协作点查询提前退出)。
+            if let Some(token) = state.running_tokens.get(id) {
+                token.store(true, Ordering::SeqCst);
+            }
+            // RUST-072 有界化:丢弃标记只在 job 仍可能被执行时写入——在途
+            // 令牌表命中,或弹出未登记令牌的窄窗(已离队但 worker 手里,
+            // span 表命中)。排队摘除的 job 已离队永不执行,不入表(否则
+            // 登记无人结算摘除,长跑排队取消泄漏);未知 id(内联请求/重复/
+            // 迟到取消)同样不入表。表容量 ≤ 在途 job 数,长跑有界。
+            if state.running_tokens.contains_key(id)
+                || (!removed.is_some() && state.spans.contains_key(id))
+            {
                 state.running_cancelled.insert(id.clone());
             }
             // RUST-068-W:排队摘除与在途丢弃都按 id 回捞 span(表内即有)。
@@ -262,6 +285,17 @@ impl PoolExecutor {
             .lock()
             .expect("pool state lock")
             .spans
+            .len()
+    }
+
+    /// RUST-072:取消丢弃登记表深度(测试口;验收「长跑登记表有界」——
+    /// 未知 id/迟到取消不入表,终态即摘除,容量 ≤ 未决+在途 job 数)。
+    pub fn pending_cancel_registrations_for_tests(&self) -> usize {
+        self.shared
+            .state
+            .lock()
+            .expect("pool state lock")
+            .running_cancelled
             .len()
     }
 
@@ -346,6 +380,16 @@ fn worker_loop(shared: Arc<ExecShared>) {
                     .expect("pool state lock poisoned");
             }
         };
+        // RUST-072:登记本 job 取消令牌(锁内登记,cancel 三查窗口一致)并
+        // 设进本线程探针——handler 协作点(kode-python)据此提前退出。
+        let cancel_token = Arc::new(AtomicBool::new(false));
+        {
+            let mut state = shared.state.lock().expect("pool state lock");
+            state
+                .running_tokens
+                .insert(job.id.clone(), Arc::clone(&cancel_token));
+        }
+        kode_python::cancel::set_probe(Some(Arc::clone(&cancel_token)));
         // RUST-068-W:worker 侧起跑留痕(跨任务追踪面;只印 id/method/span)。
         eprintln!(
             "[kode-server] pool job {} {} start (span={})",
@@ -368,8 +412,14 @@ fn worker_loop(shared: Arc<ExecShared>) {
             }
         };
         // 结算段:释放记账 + 终态计数 + 回包(在途取消在此丢弃结果)。
+        // RUST-072:取消裁定三源并列——弹出前登记表、在途丢弃登记表、
+        // handler 自报取消文案(协作点 Err;无 span 的 job 不经 span 表,
+        // 以 handler 文案为诚实源,绝不落 -32602 冒充参数错)。
         let mut state = shared.state.lock().expect("pool state lock");
-        let cancelled = cancelled_before || state.running_cancelled.remove(&job.id);
+        let cancelled = cancelled_before
+            || state.running_cancelled.remove(&job.id)
+            || matches!(&outcome_status, JobStatus::Failed(msg)
+                if msg == kode_python::cancel::CANCELLED_MSG);
         let final_status = if cancelled {
             JobStatus::Cancelled
         } else {
@@ -388,9 +438,12 @@ fn worker_loop(shared: Arc<ExecShared>) {
             JobStatus::Failed(_) => stats.jobs_failed += 1,
             JobStatus::Cancelled => stats.jobs_cancelled += 1,
         });
-        // span 表随终态摘除(容量=未决 job 数,天然有界)。
+        // span/令牌表随终态摘除(容量=未决/在途 job 数,天然有界)。
         let span = state.spans.remove(&job.id);
+        state.running_tokens.remove(&job.id);
         drop(state);
+        // RUST-072:清本线程探针(worker 线程复用,防串 job)。
+        kode_python::cancel::set_probe(None);
         let _ = shared.done_tx.send(JobOutcome {
             id: job.id,
             lane: job.lane,
@@ -452,6 +505,36 @@ mod tests {
         hold().1.notify_all();
     }
 
+    /// RUST-072 可取消 handler:登记 ticket 后轮询本线程取消探针(与生产
+    /// kode-python 协作点同一查询通道);取消 → Err(取消文案),否则等放行。
+    fn cancellable_polling_handler(params: Value) -> Result<Value, String> {
+        let ticket = params.get("ticket").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        {
+            let mut waiting = hold().0.lock().expect("hold lock");
+            waiting.push(ticket);
+        }
+        hold().1.notify_all();
+        let mut ticks = 0usize;
+        loop {
+            if kode_python::cancel::is_cancelled() {
+                return Err(kode_python::cancel::CANCELLED_MSG.to_string());
+            }
+            {
+                let waiting = hold().0.lock().expect("hold lock");
+                if waiting.contains(&(ticket + 1000)) {
+                    break;
+                }
+            }
+            assert!(
+                ticks < 3000,
+                "cancellable handler ticket {ticket} never resolved"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+            ticks += 1;
+        }
+        Ok(serde_json::json!({ "ticket": ticket }))
+    }
+
     /// 等到 handler 登记了指定 ticket(worker 真正开跑的可观察面)。
     /// 有界等待:调度面回归(交互永不入)时红而非挂死。
     fn wait_started(ticket: u32) {
@@ -474,6 +557,7 @@ mod tests {
     fn registry_with_test_handlers() -> RegistrySnapshot {
         let mut reg = RpcRegistry::new();
         reg.register("$/kode/test/blocking", blocking_handler);
+        reg.register("$/kode/test/cancellable", cancellable_polling_handler);
         reg.register(
             "$/kode/test/failing",
             |_params: Value| -> Result<Value, String> {
@@ -752,6 +836,194 @@ mod tests {
     }
 
     #[test]
+    fn cancel_running_flips_token_handler_exits_early_and_settles_cancelled() {
+        // RUST-072 核心面:在途取消 → cancel 置位令牌 → handler 协作点探针
+        // 提前退出(真中断,不等 handler 自然跑完)→ 结算 Cancelled(-32800),
+        // 容量即刻回收,轻请求不被占用。
+        let (executor, rx) = PoolExecutor::spawn(
+            registry_with_test_handlers(),
+            PoolBudget::from_total(1),
+        );
+        executor.submit(job(801, "$/kode/test/cancellable", PoolLane::Interactive));
+        wait_started(801);
+        let cancel_at = std::time::Instant::now();
+        executor.cancel(&RequestId::Number(801));
+        let outcome = recv_outcome(&rx);
+        // handler 每 10ms 查一次探针:提前退出应在秒级内到账(自然跑完也
+        // 有界,但取消路径必须明显快于放行路径——这里没有放行,唯一出口
+        // 就是取消)。
+        assert!(
+            cancel_at.elapsed() < Duration::from_secs(5),
+            "在途取消应经令牌提前退出,实测 {:?}",
+            cancel_at.elapsed()
+        );
+        assert!(
+            matches!(outcome.status, JobStatus::Cancelled),
+            "协作中断结算 Cancelled,实际 {outcome:?}"
+        );
+        let response = rpc_response_for(outcome.id, outcome.status);
+        assert_eq!(
+            response.error.as_ref().map(|e| e.code),
+            Some(-32800),
+            "协作中断回 -32800,绝不落 -32602 冒充参数错"
+        );
+        assert_eq!(
+            executor.pending_cancel_registrations_for_tests(),
+            0,
+            "终态摘除:登记表排空"
+        );
+        assert_eq!(stats_of(&executor).interactive_running, 0, "容量已回收");
+        // 回收后轻请求照常立即可入。
+        executor.submit(job(802, "$/kode/echo", PoolLane::Interactive));
+        let outcome = recv_outcome(&rx);
+        assert!(matches!(outcome.status, JobStatus::Done(_)));
+        drop(executor);
+    }
+
+    #[test]
+    fn cancel_handler_message_settles_cancelled_even_without_span() {
+        // 无 span 的 job(submit 未带 span → span 表无登记):在途取消的
+        // 裁定走在途令牌表(worker 弹出即登记,与 span 无关)——结算
+        // Cancelled,不落 Failed(-32602)。
+        let (executor, rx) = PoolExecutor::spawn(
+            registry_with_test_handlers(),
+            PoolBudget::from_total(1),
+        );
+        let bare = Job {
+            id: RequestId::Number(811),
+            method: "$/kode/test/cancellable".to_string(),
+            params: serde_json::json!({ "ticket": 811 }),
+            lane: PoolLane::Interactive,
+            span: None,
+        };
+        executor.submit(bare);
+        wait_started(811);
+        executor.cancel(&RequestId::Number(811));
+        let outcome = recv_outcome(&rx);
+        assert!(
+            matches!(outcome.status, JobStatus::Cancelled),
+            "无 span 在途取消仍按令牌表裁定 Cancelled,实际 {outcome:?}"
+        );
+        assert_eq!(stats_of(&executor).jobs_cancelled, 1);
+        drop(executor);
+    }
+
+    #[test]
+    fn handler_reported_cancellation_message_settles_cancelled() {
+        // 结算三源的诚实源臂可观察面:executor 从未取消(令牌表/丢弃表双
+        // 缺),handler 自己经探针观测取消并报取消文案 → 结算 Cancelled,
+        // 绝不落 Failed(-32602)冒充参数错。
+        fn self_reporting_cancel_handler(_params: Value) -> Result<Value, String> {
+            let token = Arc::new(AtomicBool::new(true));
+            kode_python::cancel::set_probe(Some(token));
+            let verdict = kode_python::cancel::check_point();
+            kode_python::cancel::set_probe(None);
+            Err(verdict.expect_err("probe flipped true must cancel").to_string())
+        }
+        let mut reg = RpcRegistry::new();
+        reg.register("$/kode/test/selfcancel", self_reporting_cancel_handler);
+        let (executor, rx) = PoolExecutor::spawn(reg.snapshot(), PoolBudget::from_total(1));
+        executor.submit(job(812, "$/kode/test/selfcancel", PoolLane::Interactive));
+        let outcome = recv_outcome(&rx);
+        assert!(
+            matches!(outcome.status, JobStatus::Cancelled),
+            "handler 自报取消文案应裁定 Cancelled,实际 {outcome:?}"
+        );
+        let response = rpc_response_for(outcome.id, outcome.status);
+        assert_eq!(
+            response.error.as_ref().map(|e| e.code),
+            Some(-32800),
+            "handler 自报取消映射 -32800"
+        );
+        drop(executor);
+    }
+
+    #[test]
+    fn cancel_unknown_and_duplicate_ids_never_grow_registration_table() {
+        // 验收「长跑登记表有界」:未知 id(内联请求/没提交过的 id)、排队
+        // 摘除(离队即永不执行,登记无人结算不入表)、终态后重复/迟到取消
+        // 都不入表——表容量 ≤ 在途 job 数,长跑不膨胀。
+        let (executor, _rx) = PoolExecutor::spawn(
+            registry_with_test_handlers(),
+            PoolBudget::from_total(2),
+        );
+        // 占满两个 worker:821/823 在途,822 排队。
+        executor.submit(job(821, "$/kode/test/cancellable", PoolLane::Interactive));
+        executor.submit(job(823, "$/kode/test/cancellable", PoolLane::Interactive));
+        wait_started(821);
+        wait_started(823);
+        executor.submit(job(822, "$/kode/test/cancellable", PoolLane::Interactive));
+        let unknown = RequestId::Number(99_999);
+        for _ in 0..1000 {
+            executor.cancel(&unknown);
+        }
+        assert_eq!(
+            executor.pending_cancel_registrations_for_tests(),
+            0,
+            "未知 id 千次取消不入表"
+        );
+        assert_eq!(
+            executor.outstanding_spans_for_tests(),
+            3,
+            "未知 id 不动在途 job 的 span"
+        );
+        // 排队摘除:job 离队永不执行,登记不入表(泄漏臂——旧口径在此入表
+        // 且无人结算,长跑排队取消无限膨胀)。
+        executor.cancel(&RequestId::Number(822));
+        assert_eq!(
+            executor.pending_cancel_registrations_for_tests(),
+            0,
+            "排队摘除不入表(离队即永不执行)"
+        );
+        // 在途取消:命中登记,终态(协作中断)即摘除;其后重复取消(未知
+        // id 臂)不再膨胀。
+        executor.cancel(&RequestId::Number(821));
+        assert_eq!(
+            executor.pending_cancel_registrations_for_tests(),
+            1,
+            "在途取消入表"
+        );
+        let mut ticks = 0;
+        while executor.pending_cancel_registrations_for_tests() > 0 {
+            assert!(ticks < 300, "登记表终态不摘除");
+            std::thread::sleep(Duration::from_millis(10));
+            ticks += 1;
+        }
+        executor.cancel(&RequestId::Number(821));
+        executor.cancel(&RequestId::Number(821));
+        assert_eq!(
+            executor.pending_cancel_registrations_for_tests(),
+            0,
+            "终态后重复取消不入表"
+        );
+        release(823);
+        drop(executor);
+    }
+
+    #[test]
+    fn late_cancel_after_terminal_never_grows_registration_table() {
+        // 迟到取消(终态后):表已摘除,取消落「未知 id」臂,不入表。
+        let (executor, rx) = PoolExecutor::spawn(
+            registry_with_test_handlers(),
+            PoolBudget::from_total(1),
+        );
+        executor.submit(job(831, "$/kode/test/cancellable", PoolLane::Interactive));
+        wait_started(831);
+        release(831);
+        let outcome = recv_outcome(&rx);
+        assert!(matches!(outcome.status, JobStatus::Done(_)));
+        assert_eq!(executor.pending_cancel_registrations_for_tests(), 0);
+        assert_eq!(executor.outstanding_spans_for_tests(), 0);
+        executor.cancel(&RequestId::Number(831));
+        assert_eq!(
+            executor.pending_cancel_registrations_for_tests(),
+            0,
+            "迟到取消不入表"
+        );
+        drop(executor);
+    }
+
+    #[test]
     fn failed_job_maps_error_and_releases_capacity() {
         let (executor, rx) = PoolExecutor::spawn(
             registry_with_test_handlers(),
@@ -773,7 +1045,7 @@ mod tests {
     #[test]
     fn snapshot_dispatch_matches_registry_methods() {
         let snapshot = registry_with_test_handlers();
-        assert_eq!(snapshot.len(), 3, "echo 内建 + 两个测试 handler");
+        assert_eq!(snapshot.len(), 4, "echo 内建 + 三个测试 handler");
         for method in snapshot.methods() {
             assert!(method.starts_with("$/kode/"), "method 全带前缀: {method}");
         }

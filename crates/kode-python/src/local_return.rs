@@ -53,26 +53,27 @@ pub fn local_return_type(
     hover_column: Option<usize>,
     word: &[u16],
     version_key: Option<&str>,
-) -> Option<LocalReturnFace> {
+) -> Result<Option<LocalReturnFace>, &'static str> {
     if word.is_empty() || lines.is_empty() || hover_line >= lines.len() {
-        return None;
+        return Ok(None);
     }
     let word = String::from_utf16_lossy(word);
     // TS Impl 同款守卫:全大写/下划线常量名不查询(装配面同守卫,双保险)
     if is_constant_name(&word) {
-        return None;
+        return Ok(None);
     }
-    let fp = crate::self_flow::flow_parse(lines, version_key);
+    // RUST-072:取消(Err)透传,绝不伪装诚实空。
+    let fp = crate::self_flow::flow_parse(lines, version_key)?;
     let mut state = ResolveState::from_flow_parse(&fp, lines);
     let mut visited = HashSet::new();
     let query = Pos {
         line: hover_line,
         col: hover_column.unwrap_or_else(|| first_non_blank_col(&lines[hover_line])),
     };
-    face_scan(&fp, &mut state, lines, query, &word, 0, &mut visited).map(|mut face| {
+    Ok(face_scan(&fp, &mut state, lines, query, &word, 0, &mut visited).map(|mut face| {
         face.target = word.clone();
         face
-    })
+    }))
 }
 
 /// 全大写/数字/下划线常量名守卫(TS `/^[A-Z_][A-Z0-9_]*$/` 同语义)。
@@ -431,6 +432,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("同文件 def 注解应命中");
         assert_eq!(face.annotation, "Repo");
         assert_eq!(face.method_name, "make_repo");
@@ -449,6 +451,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("self.m() 所在类限定应命中");
         assert_eq!(face.annotation, "Row");
         assert_eq!(face.method_name, "get");
@@ -466,6 +469,7 @@ mod tests {
             &"r".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("类限定方法应命中");
         assert_eq!(face.annotation, "Row");
         assert_eq!(face.method_name, "load");
@@ -484,6 +488,7 @@ mod tests {
             &"a_val".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("A.get 应命中");
         assert_eq!(face_a.annotation, "X");
         let face_b = local_return_type(
@@ -493,6 +498,7 @@ mod tests {
             &"b_val".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("B.get 应命中");
         assert_eq!(face_b.annotation, "Y");
     }
@@ -509,6 +515,7 @@ mod tests {
             &"row".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("局部接收者链应命中(Repo 原子 → load 注解)");
         assert_eq!(face.annotation, "Row");
         assert_eq!(face.method_name, "load");
@@ -526,6 +533,7 @@ mod tests {
             &"row".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("内联链 f().g() 应命中");
         assert_eq!(face.annotation, "Row");
         assert_eq!(face.method_name, "load");
@@ -542,6 +550,7 @@ mod tests {
             &"x".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("别名链应穿透到 f 注解");
         assert_eq!(face.annotation, "Tree");
         assert_eq!(face.method_name, "make");
@@ -558,6 +567,7 @@ mod tests {
             &"x".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -572,6 +582,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -588,6 +599,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -604,6 +616,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("模块层写点应被方法体 hover 借到(外层域放行)");
         assert_eq!(face.annotation, "Tree");
     }
@@ -624,6 +637,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -638,6 +652,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("写点行即 hover 行应命中");
         assert_eq!(face.annotation, "Tree");
     }
@@ -653,6 +668,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -669,6 +685,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -683,6 +700,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -699,6 +717,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -713,6 +732,7 @@ mod tests {
             &"DATA".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -729,6 +749,7 @@ mod tests {
             &"row".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -744,6 +765,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -760,6 +782,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("装饰器 def 的注解应命中(名行登记)");
         assert_eq!(face.annotation, "Tree");
     }
@@ -776,6 +799,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -790,6 +814,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -805,6 +830,7 @@ mod tests {
             &"x".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -820,6 +846,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             Some(key),
         )
+        .expect("not cancelled")
         .expect("首查命中");
         let second = local_return_type(
             &lines,
@@ -828,6 +855,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             Some(key),
         )
+        .expect("not cancelled")
         .expect("缓存复用命中");
         assert_eq!(first, second);
         crate::self_flow::reset_self_attribute_flow_parse_cache_for_tests();
@@ -848,6 +876,7 @@ mod tests {
             &"x".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -864,6 +893,7 @@ mod tests {
             &"x".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -880,6 +910,7 @@ mod tests {
             &"x".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -896,6 +927,7 @@ mod tests {
             &"x".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -911,6 +943,7 @@ mod tests {
             &"x".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -927,6 +960,7 @@ mod tests {
             &"x".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -943,6 +977,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -959,6 +994,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -975,6 +1011,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("global 声明的读应透传模块层写点");
         assert_eq!(face.annotation, "Tree");
     }
@@ -993,6 +1030,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -1009,6 +1047,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("nonlocal 读应解向外层函数域写点");
         assert_eq!(face.annotation, "Tree");
     }
@@ -1026,6 +1065,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("类体直系读应读本类体写点");
         assert_eq!(face.annotation, "Tree");
     }
@@ -1043,6 +1083,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -1062,6 +1103,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -1078,6 +1120,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("未遮蔽调用应命中");
         assert_eq!(face.annotation, "Tree");
     }
@@ -1096,6 +1139,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -1112,6 +1156,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -1129,6 +1174,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("绑定前的调用应照常走声明表");
         assert_eq!(face.annotation, "Tree");
     }
@@ -1147,6 +1193,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("别名绑定到有注解函数应透传注解");
         assert_eq!(face.annotation, "Tree");
     }
@@ -1165,6 +1212,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -1181,6 +1229,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -1197,6 +1246,7 @@ mod tests {
             &"r".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("未绑定类名的类限定调用应命中");
         assert_eq!(face.annotation, "Row");
         assert_eq!(face.method_name, "load");
@@ -1215,6 +1265,7 @@ mod tests {
             &"data".encode_utf16().collect::<Vec<u16>>(),
             None
         )
+        .expect("not cancelled")
         .is_none());
     }
 
@@ -1234,6 +1285,7 @@ mod tests {
             &"x".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("可达 int 写点应命中");
         assert_eq!(face.annotation, "Tree");
         assert_eq!(face.method_name, "make");
@@ -1252,6 +1304,7 @@ mod tests {
             &"x".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("if True 确定写点应命中");
         assert_eq!(face.annotation, "Rock");
     }
@@ -1269,6 +1322,7 @@ mod tests {
             &"x".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("两支同面合流应命中");
         assert_eq!(face.annotation, "Tree");
     }
@@ -1287,6 +1341,7 @@ mod tests {
                 &"x".encode_utf16().collect::<Vec<u16>>(),
                 None
             )
+            .expect("not cancelled")
             .is_none(),
             "两支不同面应未知"
         );
@@ -1306,6 +1361,7 @@ mod tests {
                 &"x".encode_utf16().collect::<Vec<u16>>(),
                 None
             )
+            .expect("not cancelled")
             .is_none(),
             "无 else 分支候选不同应未知"
         );
@@ -1325,6 +1381,7 @@ mod tests {
                 &"x".encode_utf16().collect::<Vec<u16>>(),
                 None
             )
+            .expect("not cancelled")
             .is_none(),
             "可能未绑定路径应诚实空"
         );
@@ -1343,6 +1400,7 @@ mod tests {
             &"x".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("终止分支剔除后应命中可达路径");
         assert_eq!(face.annotation, "Tree");
     }
@@ -1361,6 +1419,7 @@ mod tests {
                 &"x".encode_utf16().collect::<Vec<u16>>(),
                 None
             )
+            .expect("not cancelled")
             .is_none(),
             "嵌套 return 不终止外层:两支候选不同应未知"
         );
@@ -1380,6 +1439,7 @@ mod tests {
                 &"x".encode_utf16().collect::<Vec<u16>>(),
                 None
             )
+            .expect("not cancelled")
             .is_none(),
             "终止后不可达写点不应命中"
         );
@@ -1400,6 +1460,7 @@ mod tests {
                 &"x".encode_utf16().collect::<Vec<u16>>(),
                 None
             )
+            .expect("not cancelled")
             .is_none(),
             "循环后候选不同应未知"
         );
@@ -1420,6 +1481,7 @@ mod tests {
                 &"x".encode_utf16().collect::<Vec<u16>>(),
                 None
             )
+            .expect("not cancelled")
             .is_none(),
             "循环体环回候选应未知"
         );
@@ -1440,6 +1502,7 @@ mod tests {
                 &"x".encode_utf16().collect::<Vec<u16>>(),
                 None
             )
+            .expect("not cancelled")
             .is_none(),
             "try 保守候选不同应未知"
         );
@@ -1460,6 +1523,7 @@ mod tests {
             &"x".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("分支前直线写点应命中");
         assert_eq!(face.annotation, "Tree");
         // 分支内读位前于写:入口值直达
@@ -1470,6 +1534,7 @@ mod tests {
             &"x".encode_utf16().collect::<Vec<u16>>(),
             None,
         )
+        .expect("not cancelled")
         .expect("分支内入口值应命中");
         assert_eq!(face.annotation, "Tree");
         // 合流后:候选不同 → 未知
@@ -1481,6 +1546,7 @@ mod tests {
                 &"x".encode_utf16().collect::<Vec<u16>>(),
                 None
             )
+            .expect("not cancelled")
             .is_none(),
             "合流后候选不同应未知"
         );
@@ -1500,6 +1566,7 @@ mod tests {
                 &"x".encode_utf16().collect::<Vec<u16>>(),
                 None
             )
+            .expect("not cancelled")
             .is_none(),
             "死分支内查询应诚实空"
         );
@@ -1521,6 +1588,7 @@ mod tests {
         );
         // 悬 return x 的 x(行 8 列 11):x 写点在同行 y=b() 之前,别名解 y=a() 的 int
         let face = local_return_type(&lines, 8, Some(11), &wu16("x"), None)
+            .expect("not cancelled")
             .expect("同行别名应命中 a 的 int");
         assert_eq!(face.annotation, "int");
         assert_eq!(face.method_name, "a");
@@ -1530,6 +1598,7 @@ mod tests {
             "def a() -> int:\n    return None\n\ndef b() -> str:\n    return None\n\ndef run():\n    y = b(); x = y; y = a()\n    return x\n",
         );
         let face = local_return_type(&lines, 8, Some(11), &wu16("x"), None)
+            .expect("not cancelled")
             .expect("同行别名应命中 b 的 str");
         assert_eq!(face.annotation, "str");
         assert_eq!(face.method_name, "b");
@@ -1542,7 +1611,7 @@ mod tests {
             "def a() -> int:\n    return None\n\ndef b() -> str:\n    return None\n\ndef run():\n    y = a()\n    x = y\n    y = b()\n    return x\n",
         );
         let face =
-            local_return_type(&lines, 10, Some(11), &wu16("x"), None).expect("别名应命中 a 的 int");
+            local_return_type(&lines, 10, Some(11), &wu16("x"), None).expect("not cancelled").expect("别名应命中 a 的 int");
         assert_eq!(face.annotation, "int");
     }
 
@@ -1556,21 +1625,21 @@ mod tests {
             lines_of("def b() -> str:\n    return None\n\ndef run():\n    print(x); x = b()\n");
         // 悬 print(x) 的 x(列 10):写点未执行 → UnboundLocal 诚实空
         assert!(
-            local_return_type(&lines, 4, Some(10), &wu16("x"), None).is_none(),
+            local_return_type(&lines, 4, Some(10), &wu16("x"), None).expect("not cancelled").is_none(),
             "读前写点应诚实空"
         );
         // 悬 x 目标(列 14):目标位先于 RHS = 新值 str
         let face =
-            local_return_type(&lines, 4, Some(14), &wu16("x"), None).expect("悬目标应见新值");
+            local_return_type(&lines, 4, Some(14), &wu16("x"), None).expect("not cancelled").expect("悬目标应见新值");
         assert_eq!(face.annotation, "str");
         // 悬 x = b() 的 RHS 内(列 18):语句内读旧值 → 无旧绑定诚实空
         assert!(
-            local_return_type(&lines, 4, Some(18), &wu16("x"), None).is_none(),
+            local_return_type(&lines, 4, Some(18), &wu16("x"), None).expect("not cancelled").is_none(),
             "RHS 内读应见旧值(此处未绑定)"
         );
         // 缺列:保守回退行首非空白列(列 4 = print 语句内)→ 诚实空
         assert!(
-            local_return_type(&lines, 4, None, &wu16("x"), None).is_none(),
+            local_return_type(&lines, 4, None, &wu16("x"), None).expect("not cancelled").is_none(),
             "缺列应保守,不得默认整行末写点"
         );
         // 写后读(下一行):str 照常命中
@@ -1578,7 +1647,7 @@ mod tests {
             "def b() -> str:\n    return None\n\ndef run():\n    print(x); x = b()\n    return x\n",
         );
         let face =
-            local_return_type(&lines2, 5, Some(11), &wu16("x"), None).expect("写后读应命中 str");
+            local_return_type(&lines2, 5, Some(11), &wu16("x"), None).expect("not cancelled").expect("写后读应命中 str");
         assert_eq!(face.annotation, "str");
     }
 
@@ -1589,7 +1658,7 @@ mod tests {
             lines_of("def a() -> int:\n    return None\n\ndef run():\n    x = a(); print(x)\n");
         // `    x = a(); print(x)`:print 内 x 列 14
         let face =
-            local_return_type(&lines, 4, Some(14), &wu16("x"), None).expect("写后读应命中 int");
+            local_return_type(&lines, 4, Some(14), &wu16("x"), None).expect("not cancelled").expect("写后读应命中 int");
         assert_eq!(face.annotation, "int");
     }
 
@@ -1602,15 +1671,18 @@ mod tests {
         );
         // 悬 x 目标(行 8 列 0):解旧 y → str
         let face = local_return_type(&lines, 8, Some(0), &wu16("x"), None)
+            .expect("not cancelled")
             .expect("交换悬 x 应见旧 y 的 str");
         assert_eq!(face.annotation, "str");
         // 悬 y 目标(行 8 列 3):解旧 x → int
         let face = local_return_type(&lines, 8, Some(3), &wu16("y"), None)
+            .expect("not cancelled")
             .expect("交换悬 y 应见旧 x 的 int");
         assert_eq!(face.annotation, "int");
         // 悬同行 RHS 元素区(行 8 列 9,x 元素前):同时赋值未完成 → 旧值
         // (x=a() 的 int),不吞本句新绑定
         let face = local_return_type(&lines, 8, Some(9), &wu16("x"), None)
+            .expect("not cancelled")
             .expect("交换 RHS 域内读旧值应见 int");
         assert_eq!(face.annotation, "int");
     }
@@ -1620,12 +1692,12 @@ mod tests {
     #[test]
     fn kbug_order_chained_assignment_targets() {
         let lines = lines_of("def make() -> Tree:\n    return None\n\nx = y = make()\nz = y\n");
-        let face = local_return_type(&lines, 3, Some(0), &wu16("x"), None).expect("链式 x 应命中");
+        let face = local_return_type(&lines, 3, Some(0), &wu16("x"), None).expect("not cancelled").expect("链式 x 应命中");
         assert_eq!(face.annotation, "Tree");
-        let face = local_return_type(&lines, 3, Some(4), &wu16("y"), None).expect("链式 y 应命中");
+        let face = local_return_type(&lines, 3, Some(4), &wu16("y"), None).expect("not cancelled").expect("链式 y 应命中");
         assert_eq!(face.annotation, "Tree");
         let face =
-            local_return_type(&lines, 4, Some(0), &wu16("z"), None).expect("链式后别名应命中");
+            local_return_type(&lines, 4, Some(0), &wu16("z"), None).expect("not cancelled").expect("链式后别名应命中");
         assert_eq!(face.annotation, "Tree");
     }
 
@@ -1637,11 +1709,11 @@ mod tests {
         let lines = lines_of("def a() -> int:\n    return None\n\nx = a()\nx = x\n");
         // 悬 x = x 的目标(列 0):新值 = 旧值 = int(自引用保面)
         let face =
-            local_return_type(&lines, 3, Some(0), &wu16("x"), None).expect("自引用应保留前值 int");
+            local_return_type(&lines, 3, Some(0), &wu16("x"), None).expect("not cancelled").expect("自引用应保留前值 int");
         assert_eq!(face.annotation, "int");
         // 悬下一行(写后):同 int
         let face =
-            local_return_type(&lines, 4, Some(0), &wu16("x"), None).expect("自引用后读应命中 int");
+            local_return_type(&lines, 4, Some(0), &wu16("x"), None).expect("not cancelled").expect("自引用后读应命中 int");
         assert_eq!(face.annotation, "int");
     }
 
@@ -1654,15 +1726,17 @@ mod tests {
         );
         // 悬 RHS 首行 (7,4):x = make( 语句域内且过 RHS 起始位 → 旧值 int
         let face = local_return_type(&lines, 7, Some(4), &wu16("x"), None)
+            .expect("not cancelled")
             .expect("多行 RHS 内读应见旧值 int");
         assert_eq!(face.annotation, "int");
         // 悬续行参数区 (8,5):语句仍未完成 → 旧值 int
         let face = local_return_type(&lines, 8, Some(5), &wu16("x"), None)
+            .expect("not cancelled")
             .expect("续行参数区读应见旧值 int");
         assert_eq!(face.annotation, "int");
         // 悬语句完成后的 print(x)(行 9 列 6):新值 Tree
         let face =
-            local_return_type(&lines, 9, Some(6), &wu16("x"), None).expect("语句后读应见新值 Tree");
+            local_return_type(&lines, 9, Some(6), &wu16("x"), None).expect("not cancelled").expect("语句后读应见新值 Tree");
         assert_eq!(face.annotation, "Tree");
     }
 
@@ -1677,14 +1751,17 @@ mod tests {
         );
         // 悬第一个 x 目标(列 14)→ int
         let face = local_return_type(&lines, 7, Some(14), &wu16("x"), None)
+            .expect("not cancelled")
             .expect("emoji 行第一写点应命中 int");
         assert_eq!(face.annotation, "int");
         // 悬第二个 x 前空位(列 22):x = b() 未到 → 仍 int
         let face = local_return_type(&lines, 7, Some(22), &wu16("x"), None)
+            .expect("not cancelled")
             .expect("列 22 应仍在第一写点 int");
         assert_eq!(face.annotation, "int");
         // 悬第二个 x 目标(列 23,UTF-16)→ str
         let face = local_return_type(&lines, 7, Some(23), &wu16("x"), None)
+            .expect("not cancelled")
             .expect("emoji 行第二写点应命中 str");
         assert_eq!(face.annotation, "str");
     }
@@ -1696,6 +1773,7 @@ mod tests {
         let lines = lines_of("def a() -> int:\n    return None\n\nx = a()  # x\n");
         // `x = a()  # x`:注释内 x 列 11
         let face = local_return_type(&lines, 3, Some(11), &wu16("x"), None)
+            .expect("not cancelled")
             .expect("注释悬停应见已生效写点");
         assert_eq!(face.annotation, "int");
     }
@@ -1707,7 +1785,7 @@ mod tests {
     fn kbug_order_unsupported_tuple_shape_honest() {
         let lines = lines_of("def pair() -> tuple:\n    return None\n\nx, y = pair()\n");
         assert!(
-            local_return_type(&lines, 3, Some(0), &wu16("x"), None).is_none(),
+            local_return_type(&lines, 3, Some(0), &wu16("x"), None).expect("not cancelled").is_none(),
             "非配对元组解包应诚实空"
         );
     }

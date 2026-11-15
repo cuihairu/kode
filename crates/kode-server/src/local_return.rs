@@ -61,6 +61,7 @@ fn local_return(params: Value) -> Result<Value, String> {
             .iter()
             .map(|line| line.encode_utf16().collect())
             .collect();
+        // RUST-072:取消(Err)经 worker 结算按取消表裁定 -32800,在此透传。
         local_return_type(
             &lines,
             params.hover_line as usize,
@@ -68,7 +69,7 @@ fn local_return(params: Value) -> Result<Value, String> {
             params.hover_column.filter(|c| *c >= 0).map(|c| c as usize),
             &params.word.encode_utf16().collect::<Vec<u16>>(),
             params.version_key.as_deref(),
-        )
+        )?
         .map(
             |LocalReturnFace {
                  target,

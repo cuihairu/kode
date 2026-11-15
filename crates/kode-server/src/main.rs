@@ -150,6 +150,15 @@ fn dispatch_outcome(
                                 request.id,
                                 span.as_deref().unwrap_or("-")
                             ));
+                            // RUST-072:预取消(取消通知先于请求,LSP 允许)——
+                            // 作业不入池,即刻 -32800,不占池容量。
+                            if state.cancels.consume_early(&request.id) {
+                                return write_outgoing(&[Outgoing::Response(Response::error(
+                                    Some(request.id.clone()),
+                                    error_codes::REQUEST_CANCELLED,
+                                    "request cancelled via $/cancelRequest",
+                                ))]);
+                            }
                             executor.submit(Job {
                                 id: request.id.clone(),
                                 method: inner_method,

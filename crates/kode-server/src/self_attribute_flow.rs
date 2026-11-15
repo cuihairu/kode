@@ -60,12 +60,13 @@ fn self_attribute_flow(params: Value) -> Result<Value, String> {
             .iter()
             .map(|line| line.encode_utf16().collect())
             .collect();
+        // RUST-072:取消(Err)经 worker 结算按取消表裁定 -32800,在此透传。
         infer_self_attribute_flow(
             &lines,
             params.query_line as usize,
             &params.attr.encode_utf16().collect::<Vec<u16>>(),
             params.version_key.as_deref(),
-        )
+        )?
         .map(
             |SelfAttributeFlow {
                  types,

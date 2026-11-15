@@ -70,7 +70,9 @@ fn analyze_attribute_none(params: Value) -> Result<Value, String> {
     let params: AttributeNoneParams =
         serde_json::from_value(params).map_err(|err| err.to_string())?;
     let items = compute_attribute_none_items(&params.text);
-    let faces = attach_flow_faces(&params.text, &items, params.version_key.as_deref());
+    // RUST-072:取消(Err)经 worker 结算按取消表裁定 -32800,在此透传,
+    // 不产部分 items 冒充完整面。
+    let faces = attach_flow_faces(&params.text, &items, params.version_key.as_deref())?;
     Ok(json!({ "items": faces }))
 }
 
@@ -80,37 +82,40 @@ fn attach_flow_faces(
     masked_text: &str,
     items: &[AttributeNoneItem],
     version_key: Option<&str>,
-) -> Vec<AttributeNoneItemFace> {
+) -> Result<Vec<AttributeNoneItemFace>, &'static str> {
     let text: Vec<u16> = masked_text.encode_utf16().collect();
     let lines = kode_python::self_flow::split_crlf(&text);
     let mut cache: std::collections::HashMap<(usize, String), Option<AttributeNoneFlowFace>> =
         std::collections::HashMap::new();
-    items
-        .iter()
-        .map(|item| {
-            let flow = cache
-                .entry((item.line, item.attr.clone()))
-                .or_insert_with(|| {
-                    kode_python::self_flow::infer_self_attribute_flow(
-                        &lines,
-                        item.line,
-                        &item.attr.encode_utf16().collect::<Vec<u16>>(),
-                        version_key,
-                    )
-                    .map(|flow| AttributeNoneFlowFace {
-                        types: flow.types,
-                        annotation: flow.annotation,
-                        has_none: flow.has_none,
-                        narrowed: flow.narrowed,
-                    })
-                })
-                .clone();
-            AttributeNoneItemFace {
-                item: item.clone(),
-                flow,
+    let mut faces = Vec::with_capacity(items.len());
+    for item in items {
+        let flow = match cache.get(&(item.line, item.attr.clone())) {
+            Some(hit) => hit.clone(),
+            None => {
+                // RUST-072:取消即中止全响应(Err 透传),不缓存部分态;
+                // 缓存随本次调用局部死亡,不跨请求。
+                let flow = kode_python::self_flow::infer_self_attribute_flow(
+                    &lines,
+                    item.line,
+                    &item.attr.encode_utf16().collect::<Vec<u16>>(),
+                    version_key,
+                )?
+                .map(|flow| AttributeNoneFlowFace {
+                    types: flow.types,
+                    annotation: flow.annotation,
+                    has_none: flow.has_none,
+                    narrowed: flow.narrowed,
+                });
+                cache.insert((item.line, item.attr.clone()), flow.clone());
+                flow
             }
-        })
-        .collect()
+        };
+        faces.push(AttributeNoneItemFace {
+            item: item.clone(),
+            flow,
+        });
+    }
+    Ok(faces)
 }
 
 /// 内建 receiver 属性(receiverNone 专责,此处跳过避免重复/口径分叉)
@@ -359,7 +364,7 @@ mod tests {
         // __init__ 仅 = None,无守卫 → hasNone true
         let text = "class Foo:\n    def __init__(self):\n        self.TalentTree = None\n    def method(self):\n        self.TalentTree.get(0)\n";
         let items = compute_attribute_none_items(text);
-        let faces = attach_flow_faces(text, &items, None);
+        let faces = attach_flow_faces(text, &items, None).expect("not cancelled");
         assert_eq!(faces.len(), 1);
         let flow = faces[0].flow.as_ref().expect("flow face present");
         assert!(flow.has_none);
@@ -372,7 +377,7 @@ mod tests {
         // 守卫后收窄 → hasNone false/narrowed true,条目流事实即裁定依据
         let text = "class Foo:\n    def __init__(self):\n        self.TalentTree = None\n    def method(self):\n        if self.TalentTree is None:\n            self.TalentTree = make_tree()\n        self.TalentTree.get(0)\n";
         let items = compute_attribute_none_items(text);
-        let faces = attach_flow_faces(text, &items, None);
+        let faces = attach_flow_faces(text, &items, None).expect("not cancelled");
         let flow = faces[0].flow.as_ref().expect("flow face present");
         assert!(!flow.has_none);
         assert!(flow.narrowed);
@@ -384,7 +389,7 @@ mod tests {
         let text = "class Foo:\n    def __init__(self):\n        self.x = None\n    def m(self):\n        self.x.a(); self.x.b()\n";
         let items = compute_attribute_none_items(text);
         assert_eq!(items.len(), 2);
-        let faces = attach_flow_faces(text, &items, None);
+        let faces = attach_flow_faces(text, &items, None).expect("not cancelled");
         let f0 = faces[0].flow.as_ref().unwrap();
         let f1 = faces[1].flow.as_ref().unwrap();
         assert!(f0.has_none && f1.has_none);
@@ -394,7 +399,7 @@ mod tests {
     fn flow_face_encoded_shape_is_camel_case() {
         let text = "class Foo:\n    def __init__(self):\n        self.v = None\n    def m(self):\n        self.v.read()\n";
         let items = compute_attribute_none_items(text);
-        let faces = attach_flow_faces(text, &items, None);
+        let faces = attach_flow_faces(text, &items, None).expect("not cancelled");
         let encoded = serde_json::to_value(&faces[0]).unwrap();
         assert_eq!(encoded["flow"]["hasNone"], json!(true));
         assert_eq!(encoded["flow"]["narrowed"], json!(false));

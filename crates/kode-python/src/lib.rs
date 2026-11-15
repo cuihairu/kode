@@ -15,6 +15,7 @@
 //! 保持零第三方依赖(见 crate 根 `Cargo.toml` 注)。
 
 pub mod callgraph;
+pub mod cancel;
 pub mod dataflow;
 pub mod graph;
 pub mod local_return;

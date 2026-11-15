@@ -33,6 +33,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Mutex;
 
+use crate::cancel;
 use crate::parse::ParsedAst;
 use ruff_python_ast as ast;
 use ruff_text_size::Ranged;
@@ -1253,7 +1254,11 @@ struct FlowTables {
     module_tree: Vec<FlowStmt>,
 }
 
-fn assignments_from_ast(ast: &ParsedAst, lines: &[Vec<u16>], classes: &[ClassSpan]) -> FlowTables {
+fn assignments_from_ast(
+    ast: &ParsedAst,
+    lines: &[Vec<u16>],
+    classes: &[ClassSpan],
+) -> Result<FlowTables, &'static str> {
     let mut ctx = BuildContext::default();
     // 模块级 def `-> T` 表(控制块内的模块级 def 同员;类/函数体内不入)
     let mut module_defs: HashMap<String, Vec<Option<String>>> = HashMap::new();
@@ -1272,6 +1277,7 @@ fn assignments_from_ast(ast: &ParsedAst, lines: &[Vec<u16>], classes: &[ClassSpa
     // 保证基线与条目解耦、无解析顺序依赖)
     let mut raw = AssignmentTypes::default();
     let mut raw_direct = ClassAssignmentTypes::default();
+    cancel::check_point()?;
     for e in &ctx.entries {
         let mut types = TypeSet::new();
         if let Some(a) = &e.ann {
@@ -1304,6 +1310,7 @@ fn assignments_from_ast(ast: &ParsedAst, lines: &[Vec<u16>], classes: &[ClassSpa
     };
     let mut final_map = AssignmentTypes::default();
     let mut final_direct = ClassAssignmentTypes::default();
+    cancel::check_point()?;
     for e in &ctx.entries {
         let mut types = TypeSet::new();
         if let Some(a) = &e.ann {
@@ -1325,7 +1332,9 @@ fn assignments_from_ast(ast: &ParsedAst, lines: &[Vec<u16>], classes: &[ClassSpa
             }
         }
     }
-    FlowTables {
+    // RUST-072:终检——取消落在最后一个 entry 推导中也不产部分表。
+    cancel::check_point()?;
+    Ok(FlowTables {
         assignments: final_map,
         class_direct: final_direct,
         locals: ctx.locals,
@@ -1343,7 +1352,7 @@ fn assignments_from_ast(ast: &ParsedAst, lines: &[Vec<u16>], classes: &[ClassSpa
         fn_trees: ctx.fn_trees,
         class_trees: ctx.class_trees,
         module_tree: build_flow_tree(ast, &ast.module().body),
-    }
+    })
 }
 
 /// 模块级 def 收集(控制块内同员;类/函数体内 def 不入裸名调用表)。
@@ -1453,6 +1462,10 @@ fn walk_assignments(
     method_start: Option<usize>,
 ) {
     for stmt in body {
+        // RUST-072:已取消即静默短路(签名不变;外层协作点拦住不产部分表)
+        if cancel::is_cancelled() {
+            return;
+        }
         let start_line = stmt_start_line(ast, stmt.range());
         if header_line == Some(start_line) {
             continue; // 同行复合语句体的赋值不收集(条件执行不硬套)
@@ -1888,7 +1901,10 @@ impl ResolveState<'_> {
                 self.lines,
                 cls,
                 &attr.encode_utf16().collect::<Vec<u16>>(),
-            ),
+            )
+            // RUST-072:取消即空集占位——外层推导循环头 check_point 会
+            // 立即 Err,memo 随本 ResolveState 局部死亡,部分值零外泄。
+            .unwrap_or_default(),
             None => TypeSet::new(),
         };
         self.baseline_memo.insert(key, out.clone());
@@ -2243,7 +2259,7 @@ struct ParseCacheEntry {
 static PARSE_CACHE: Mutex<Option<ParseCacheEntry>> = Mutex::new(None);
 
 /// 行列表 → 解析派生(UTF-16 行 join('\n') → String → ruff 容错解析)。
-fn flow_parse_from_lines(lines: &[Vec<u16>]) -> FlowParse {
+fn flow_parse_from_lines(lines: &[Vec<u16>]) -> Result<FlowParse, &'static str> {
     let mut content: Vec<u16> = Vec::new();
     for (idx, line) in lines.iter().enumerate() {
         if idx > 0 {
@@ -2251,11 +2267,14 @@ fn flow_parse_from_lines(lines: &[Vec<u16>]) -> FlowParse {
         }
         content.extend_from_slice(line);
     }
+    cancel::check_point()?;
     let source = String::from_utf16_lossy(&content);
     let parsed = ParsedAst::new(source);
+    cancel::check_point()?;
     let classes = class_spans_from_ast(&parsed);
-    let tables = assignments_from_ast(&parsed, lines, &classes);
-    FlowParse {
+    cancel::check_point()?;
+    let tables = assignments_from_ast(&parsed, lines, &classes)?;
+    Ok(FlowParse {
         classes,
         assignments: tables.assignments,
         class_direct: tables.class_direct,
@@ -2269,15 +2288,21 @@ fn flow_parse_from_lines(lines: &[Vec<u16>]) -> FlowParse {
         class_names: tables.class_names,
         class_methods: tables.class_methods,
         locals: tables.locals,
-    }
+    })
 }
 
 /// 行列表 → 全量派生(localReturnType 面 entry;versionKey 协议同流面)。
-pub fn flow_parse(lines: &[Vec<u16>], version_key: Option<&str>) -> FlowParse {
+pub fn flow_parse(
+    lines: &[Vec<u16>],
+    version_key: Option<&str>,
+) -> Result<FlowParse, &'static str> {
     parse_with_version_cache(lines, version_key)
 }
 
-fn parse_with_version_cache(lines: &[Vec<u16>], version_key: Option<&str>) -> FlowParse {
+fn parse_with_version_cache(
+    lines: &[Vec<u16>],
+    version_key: Option<&str>,
+) -> Result<FlowParse, &'static str> {
     let key = match version_key {
         Some(key) => key,
         None => {
@@ -2297,9 +2322,10 @@ fn parse_with_version_cache(lines: &[Vec<u16>], version_key: Option<&str>) -> Fl
             entry.order.remove(pos);
         }
         entry.order.push_back(key.to_string());
-        return cached;
+        return Ok(cached);
     }
-    let parsed = flow_parse_from_lines(lines);
+    // RUST-072:取消(Err)早穿——部分解析绝不入缓存。
+    let parsed = flow_parse_from_lines(lines)?;
     entry.map.insert(key.to_string(), parsed.clone());
     entry.order.push_back(key.to_string());
     while entry.order.len() > PARSE_CACHE_MAX_ENTRIES {
@@ -2307,7 +2333,7 @@ fn parse_with_version_cache(lines: &[Vec<u16>], version_key: Option<&str>) -> Fl
             entry.map.remove(&oldest);
         }
     }
-    parsed
+    Ok(parsed)
 }
 
 /// 清缓存(测试注入口;生产不用)
@@ -2780,7 +2806,7 @@ fn converged_baseline(
     lines: &[Vec<u16>],
     cls: &ClassSpan,
     attr: &[u16],
-) -> TypeSet {
+) -> Result<TypeSet, &'static str> {
     let mut baseline = TypeSet::new();
     let first_method_line = cls
         .method_lines
@@ -2792,6 +2818,7 @@ fn converged_baseline(
     // = 注解 + RHS 推导)
     let mut j = cls.start_line + 1;
     while j < first_method_line && j < cls.end_line {
+        cancel::check_point()?;
         if let Some(types) = class_direct.get(cls.start_line, j, attr) {
             baseline.extend(types.iter().cloned());
         }
@@ -2815,7 +2842,7 @@ fn converged_baseline(
         );
         baseline = result.state;
     }
-    baseline
+    Ok(baseline)
 }
 
 /// 查询位自管属性流敏感类型(纯函数;与 TS inferSelfAttributeFlow 等值)。
@@ -2825,11 +2852,11 @@ pub fn infer_self_attribute_flow(
     query_line: usize,
     attr: &[u16],
     version_key: Option<&str>,
-) -> Option<SelfAttributeFlow> {
+) -> Result<Option<SelfAttributeFlow>, &'static str> {
     if attr.is_empty() || query_line >= lines.len() {
-        return None;
+        return Ok(None);
     }
-    let flow_parse = parse_with_version_cache(lines, version_key);
+    let flow_parse = parse_with_version_cache(lines, version_key)?;
     let classes = &flow_parse.classes;
     let enclosing = enclosing_method(classes, query_line);
     let (flow, baseline) = if let Some((method, cls_idx)) = enclosing {
@@ -2839,7 +2866,7 @@ pub fn infer_self_attribute_flow(
             lines,
             &classes[cls_idx],
             attr,
-        );
+        )?;
         let base_indent = method_base_indent(lines, &method);
         let result = scan_sequence(
             &flow_parse.assignments,
@@ -2866,7 +2893,7 @@ pub fn infer_self_attribute_flow(
                     lines,
                     cls,
                     attr,
-                );
+                )?;
                 (baseline.clone(), baseline)
             }
             None => (TypeSet::new(), TypeSet::new()),
@@ -2874,12 +2901,12 @@ pub fn infer_self_attribute_flow(
     };
     let has_none = flow.contains("None");
     let narrowed = baseline.contains("None") && !has_none;
-    Some(SelfAttributeFlow {
+    Ok(Some(SelfAttributeFlow {
         types: flow.iter().cloned().collect(),
         annotation: format_types(&flow),
         has_none,
         narrowed,
-    })
+    }))
 }
 
 // ---- 单测(TS tests/selfAttributeFlowTypes.test.ts 关键例移植;回调面用例
@@ -2904,7 +2931,8 @@ mod tests {
             &attr.encode_utf16().collect::<Vec<u16>>(),
             None,
         )
-        .unwrap()
+        .expect("infer not cancelled")
+        .expect("flow exists")
     }
 
     #[test]
@@ -3218,8 +3246,10 @@ mod tests {
     #[test]
     fn invalid_inputs_return_none() {
         let lines = lines_of(&["class Foo:", "    def m(self):", "        self.x = 1"]);
-        assert!(infer_self_attribute_flow(&lines, 1, &[], None).is_none());
-        assert!(infer_self_attribute_flow(&lines, usize::MAX, &attr_u16("x"), None).is_none());
+        assert!(infer_self_attribute_flow(&lines, 1, &[], None)
+            .expect("infer not cancelled")
+            .is_none());
+        assert!(infer_self_attribute_flow(&lines, usize::MAX, &attr_u16("x"), None).expect("not cancelled").is_none());
     }
 
     #[test]
@@ -3236,6 +3266,7 @@ mod tests {
         ]);
         assert_eq!(
             infer_self_attribute_flow(&outside, 4, &attr_u16("x"), None)
+                .expect("not cancelled")
                 .unwrap()
                 .annotation,
             None
@@ -3248,6 +3279,7 @@ mod tests {
         ]);
         assert_eq!(
             infer_self_attribute_flow(&docstring, 1, &attr_u16("x"), None)
+                .expect("not cancelled")
                 .unwrap()
                 .annotation,
             None
@@ -3265,6 +3297,7 @@ mod tests {
         ]);
         assert_eq!(
             infer_self_attribute_flow(&commented, 4, &attr_u16("x"), None)
+                .expect("not cancelled")
                 .unwrap()
                 .annotation,
             Some("int".to_string())
@@ -3278,6 +3311,7 @@ mod tests {
         ]);
         assert_eq!(
             infer_self_attribute_flow(&empty_body, 4, &attr_u16("x"), None)
+                .expect("not cancelled")
                 .unwrap()
                 .annotation,
             Some("int".to_string())
@@ -3292,6 +3326,7 @@ mod tests {
         ]);
         assert_eq!(
             infer_self_attribute_flow(&blank_body, 2, &attr_u16("x"), None)
+                .expect("not cancelled")
                 .unwrap()
                 .annotation,
             None
@@ -3311,6 +3346,7 @@ mod tests {
         ]);
         assert_eq!(
             infer_self_attribute_flow(&terminal, 6, &attr_u16("x"), None)
+                .expect("not cancelled")
                 .unwrap()
                 .annotation,
             Some("int".to_string())
@@ -3326,12 +3362,14 @@ mod tests {
         ]);
         assert_eq!(
             infer_self_attribute_flow(&block_stop, 6, &attr_u16("x"), None)
+                .expect("not cancelled")
                 .unwrap()
                 .annotation,
             Some("int".to_string())
         );
         assert_eq!(
             infer_self_attribute_flow(&block_stop, 5, &attr_u16("x"), None)
+                .expect("not cancelled")
                 .unwrap()
                 .annotation,
             Some("str".to_string())
@@ -3351,6 +3389,7 @@ mod tests {
         ]);
         assert_eq!(
             infer_self_attribute_flow(&terminal, 6, &attr_u16("x"), None)
+                .expect("not cancelled")
                 .unwrap()
                 .annotation,
             Some("int".to_string())
@@ -3368,12 +3407,14 @@ mod tests {
         ]);
         assert_eq!(
             infer_self_attribute_flow(&block_stop, 6, &attr_u16("x"), None)
+                .expect("not cancelled")
                 .unwrap()
                 .annotation,
             Some("str".to_string())
         );
         assert_eq!(
             infer_self_attribute_flow(&block_stop, 8, &attr_u16("x"), None)
+                .expect("not cancelled")
                 .unwrap()
                 .annotation,
             Some("int".to_string())
@@ -3389,7 +3430,7 @@ mod tests {
             "        if other:",
             "",
         ]);
-        assert!(infer_self_attribute_flow(&lines, 4, &attr_u16("x"), None).is_some());
+        assert!(infer_self_attribute_flow(&lines, 4, &attr_u16("x"), None).expect("not cancelled").is_some());
     }
 
     #[test]
@@ -3405,6 +3446,7 @@ mod tests {
         ]);
         assert_eq!(
             infer_self_attribute_flow(&lines, 6, &attr_u16("x"), None)
+                .expect("not cancelled")
                 .unwrap()
                 .annotation,
             Some("int".to_string())
@@ -3423,6 +3465,7 @@ mod tests {
         ]);
         assert_eq!(
             infer_self_attribute_flow(&annotated, 5, &attr_u16("x"), None)
+                .expect("not cancelled")
                 .unwrap()
                 .types,
             vec!["str"]
@@ -3435,6 +3478,7 @@ mod tests {
         ]);
         assert_eq!(
             infer_self_attribute_flow(&bare_annotated, 3, &attr_u16("x"), None)
+                .expect("not cancelled")
                 .unwrap()
                 .types,
             vec!["list"]
@@ -3453,14 +3497,14 @@ mod tests {
             "        y = self.X",
         ]);
         let key = "file:///a.py|9";
-        let a = infer_self_attribute_flow(&lines, 5, &attr_u16("X"), Some(key)).unwrap();
-        let b = infer_self_attribute_flow(&lines, 5, &attr_u16("X"), Some(key)).unwrap();
+        let a = infer_self_attribute_flow(&lines, 5, &attr_u16("X"), Some(key)).expect("not cancelled").unwrap();
+        let b = infer_self_attribute_flow(&lines, 5, &attr_u16("X"), Some(key)).expect("not cancelled").unwrap();
         assert_eq!(a.annotation, b.annotation);
         // 异键/无键照常
         assert!(
-            infer_self_attribute_flow(&lines, 5, &attr_u16("X"), Some("file:///a.py|10")).is_some()
+            infer_self_attribute_flow(&lines, 5, &attr_u16("X"), Some("file:///a.py|10")).expect("not cancelled").is_some()
         );
-        assert!(infer_self_attribute_flow(&lines, 5, &attr_u16("X"), None).is_some());
+        assert!(infer_self_attribute_flow(&lines, 5, &attr_u16("X"), None).expect("not cancelled").is_some());
     }
 
     // ---- 精确性主车道批 A:AST 真域 ------------------------------------

@@ -443,3 +443,144 @@ fn pool_span_id_traces_across_tasks_without_param_leaks() {
     };
     assert!(status.success(), "shutdown+exit 应干净退出: {status}");
 }
+
+/// RUST-072:在途取消真中断 E2E——重任务在飞时 $/cancelRequest 到泵,
+/// executor 置位取消令牌,handler 协作点提前退出;结算 -32800(绝不落
+/// Done/-32602),容量释放,轻通道照常服务;预取消(取消先于请求)作业
+/// 不入池即回 -32800;迟到取消不扰后续服务。stderr_lines 收干,行本地累积。
+#[test]
+fn pool_cancel_interrupts_inflight_and_keeps_light_lane_served() {
+    let mut proc = spawn_server_with_stderr();
+
+    // 握手:initialize → initialized。
+    send(&mut proc, &request(1, "initialize", json!({ "capabilities": {} })));
+    wait_response(&proc, 1, Duration::from_secs(30));
+    send(&mut proc, &json!({ "jsonrpc": "2.0", "method": "initialized", "params": {} }));
+
+    // 重任务 id 10:大语料无 versionKey(不缓存,每次现解析,数百毫秒)。
+    send(
+        &mut proc,
+        &request(
+            10,
+            "$/kode/rpc",
+            json!({
+                "method": "$/kode/python/selfAttributeFlow",
+                "params": { "lines": big_lines(), "queryLine": 4, "attr": "hp" }
+            }),
+        ),
+    );
+
+    // 等 worker 起跑(stderr start 行)再取消:打「在途」而非「排队」。
+    let mut stderr_log: Vec<String> = Vec::new();
+    let start_deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        for line in proc.stderr_lines() {
+            stderr_log.push(line);
+        }
+        if stderr_log
+            .iter()
+            .any(|l| l.contains("pool job #10 ") && l.contains(" start (span="))
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < start_deadline,
+            "worker start line never observed:\n{}",
+            stderr_log.join("\n")
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let cancel_at = Instant::now();
+    send(
+        &mut proc,
+        &json!({ "jsonrpc": "2.0", "method": "$/cancelRequest", "params": { "id": 10 } }),
+    );
+
+    // 在途协作中断:-32800(取消表裁定),绝不落 Done/-32602。
+    let cancelled = wait_response(&proc, 10, Duration::from_secs(30));
+    assert!(
+        cancel_at.elapsed() < Duration::from_secs(30),
+        "取消回包应在有界时间内到账,实测 {:?}",
+        cancel_at.elapsed()
+    );
+    assert_eq!(
+        cancelled.pointer("/error/code").and_then(|c| c.as_i64()),
+        Some(-32800),
+        "在途取消应结算 -32800(协作中断非参数错): {cancelled}"
+    );
+
+    // 轻通道不被占用:取消后健康面即刻可用,记账 jobsCancelled、容量归零。
+    send(&mut proc, &request(11, "$/kode/health", json!({})));
+    let health = wait_response(&proc, 11, Duration::from_secs(30));
+    let pool = health
+        .pointer("/result/pool")
+        .expect("pool 键在(默认装配真执行器)");
+    assert!(
+        pool.get("jobsCancelled")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0)
+            >= 1,
+        "jobsCancelled >= 1(取消结算记账): {pool}"
+    );
+    assert_eq!(
+        pool.get("interactiveRunning").and_then(|v| v.as_u64()),
+        Some(0),
+        "取消后容量释放: {pool}"
+    );
+
+    // stderr 留痕:取消日志行(span 缺省 -,不印 params)。
+    for line in proc.stderr_lines() {
+        stderr_log.push(line);
+    }
+    assert!(
+        stderr_log.iter().any(|l| l.contains("cancelled")),
+        "取消应有 stderr 留痕:\n{}",
+        stderr_log.join("\n")
+    );
+
+    // 迟到取消(应答后才到):不扰后续服务。
+    send(
+        &mut proc,
+        &json!({ "jsonrpc": "2.0", "method": "$/cancelRequest", "params": { "id": 10 } }),
+    );
+
+    // 预取消(取消通知先于请求):作业不入池,即刻 -32800。
+    send(
+        &mut proc,
+        &json!({ "jsonrpc": "2.0", "method": "$/cancelRequest", "params": { "id": 21 } }),
+    );
+    send(
+        &mut proc,
+        &request(21, "$/kode/rpc", json!({ "method": "$/kode/echo", "params": {} })),
+    );
+    let pre = wait_response(&proc, 21, Duration::from_secs(30));
+    assert_eq!(
+        pre.pointer("/error/code").and_then(|c| c.as_i64()),
+        Some(-32800),
+        "预取消应不入池即回 -32800: {pre}"
+    );
+
+    // 通道自净:后续轻请求照常。
+    send(&mut proc, &request(22, "$/kode/health", json!({})));
+    let health = wait_response(&proc, 22, Duration::from_secs(30));
+    assert!(
+        health.get("result").is_some(),
+        "迟到/预取消后通道照常服务: {health}"
+    );
+
+    // 收尾干净退出。
+    send(&mut proc, &request(30, "shutdown", json!({})));
+    wait_response(&proc, 30, Duration::from_secs(30));
+    send(&mut proc, &json!({ "jsonrpc": "2.0", "method": "exit" }));
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let status = loop {
+        match proc.child.try_wait().expect("try_wait") {
+            Some(status) => break status,
+            None => {
+                assert!(Instant::now() < deadline, "server did not exit in time");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    };
+    assert!(status.success(), "shutdown+exit 应干净退出: {status}");
+}
