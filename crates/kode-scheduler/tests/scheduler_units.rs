@@ -643,6 +643,22 @@ fn storm_buffer_merge_never_downgrades_version() {
 }
 
 #[test]
+fn storm_buffer_take_file_moves_exactly_the_named_event() {
+    let mut b = StormBuffer::new(4);
+    b.record("/a.def", 1, 3);
+    b.record("/b.def", 2, 3);
+    assert!(b.record("/a.def", 3, 3), "同文件合并");
+    // 指名摘取:取 a 的最新版本事件,b 不受影响。
+    let ev = b.take_file("/a.def").expect("named event");
+    assert_eq!((ev.file.as_str(), ev.version), ("/a.def", 3));
+    assert_eq!(b.buffered(), 1, "其余文件不受影响");
+    assert_eq!(b.flush()[0].file, "/b.def");
+    // 无缓冲事件 None;摘取后重复摘取 None。
+    assert!(b.take_file("/a.def").is_none());
+    assert!(b.take_file("/none.def").is_none());
+}
+
+#[test]
 fn clock_ms_getter_reflects_advance() {
     let mut s = Scheduler::default();
     assert_eq!(s.clock_ms(), 0);

@@ -101,9 +101,12 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
     // RUST-070/071/073:索引刷新队列观测恒装配(open 一文件后:该文件
     // 的 ingest 已入队;请求入口 freshen 使其可执行,queued 0/1 均为合法
     // 瞬态,只钉累计计数形状与 open 的入队事实)。
+    // RUST-082:didChange 风暴缓冲五记账键同笔恒装配。
     expect(sortedKeys(health.ingest)).toEqual(
       ['enqueued', 'executed', 'merged', 'purged', 'queued',
-       'rejectedQueueFull', 'staleDropped']
+       'rejectedQueueFull', 'staleDropped', 'stormBuffered',
+       'stormDeadlineFlushes', 'stormForcedFlushes', 'stormMerged',
+       'stormSeen']
     );
     expect(health.ingest.enqueued).toBeGreaterThanOrEqual(1);
     for (const value of Object.values(health.ingest ?? {})) {

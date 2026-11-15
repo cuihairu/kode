@@ -314,13 +314,17 @@ fn main() {
                     let outcomes = decoder.push(&chunk);
                     process_outcomes(&mut state, &executor, outcomes, &rx, &mut decoder, &mut deferred);
                     // 索引刷新小切片(RUST-070/071/073):帧间让 ingest 走步,
-                    // 不逐文件内联压住交互帧(CORE-005)。
+                    // 不逐文件内联压住交互帧(CORE-005);风暴窗到期先移交
+                    // (RUST-082 max latency 兑现)。
+                    state.index.flush_due(std::time::Instant::now());
                     state.index.pump_budgeted(8);
                 }
                 Ok(None) | Err(RecvTimeoutError::Disconnected) => eof = true,
                 Err(RecvTimeoutError::Timeout) => {
-                    // 空闲 tick:大切片追赶(CORE-006 后台不可永久推迟;
-                    // DEPENDENCY_UPDATE 优先级恒交互级,冷却不适用)。
+                    // 空闲 tick:风暴窗到期移交(RUST-082)+ 大切片追赶
+                    // (CORE-006 后台不可永久推迟;DEPENDENCY_UPDATE 优先级
+                    // 恒交互级,冷却不适用)。
+                    state.index.flush_due(std::time::Instant::now());
                     state.index.pump_budgeted(64);
                 }
             }

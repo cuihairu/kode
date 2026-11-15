@@ -1,10 +1,12 @@
 //! RUST-070/071/073 真子进程 E2E:索引刷新队列(todo 验收口径)。
+//! RUST-082:didChange 风暴缓冲——同文件并一(最新版胜出)、请求入口
+//! take_buffered 立即移交(严格收敛一次执行)、窗口到期 flush_due 落批
+//! (max latency 兑现),健康面 storm* 记账全程对账。
 //!
 //! 「不能仅调用队列纯函数验收」:本套件走真实 stdio 子进程——didOpen 后
 //! 立即 hover 命中新语料(请求入口 freshen 自键);连续 didChange 风暴
-//! (v2/v3/v4)收敛为至多一次执行(executed 增量 = 1,展示最新版);
-//! didClose 后盘上文件回读磁盘重蓄(关闭 ≠ 删除,候选不消失)——
-//! 全程健康面 `ingest` 记账对账。
+//! (v2/v3/v4)收敛为一次执行(展示最新版);didClose 后盘上文件回读
+//! 磁盘重蓄(关闭 ≠ 删除,候选不消失)——全程健康面 `ingest` 记账对账。
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
@@ -204,7 +206,8 @@ fn index_queue_open_fresh_storm_converges_and_close_replays_disk() {
         open_md.contains("**openmark**"),
         "打开文档 hover 应立即反映 ingest(请求入口 freshen): {open_md}"
     );
-    let base = {
+    // 基线记账(open 两文件各入队即执行;open 不进风暴窗,storm 计数应为零)。
+    let (base_enq, base_exec, base_seen, base_merged, base_df, base_ff) = {
         send(&mut proc, &request(11, "$/kode/health", json!({})));
         let health = result_of(wait_response(&proc, 11, Duration::from_secs(30)));
         let ingest = health
@@ -216,24 +219,47 @@ fn index_queue_open_fresh_storm_converges_and_close_replays_disk() {
             Some(2),
             "两文件 open 各执行一次 ingest: {ingest}"
         );
-        ingest
-            .get("enqueued")
-            .and_then(|v| v.as_u64())
-            .expect("enqueued counter")
+        let counter = |name: &str| -> u64 {
+            ingest
+                .get(name)
+                .and_then(|v| v.as_u64())
+                .unwrap_or_else(|| panic!("missing {name}: {ingest}"))
+        };
+        (
+            counter("enqueued"),
+            counter("executed"),
+            counter("stormSeen"),
+            counter("stormMerged"),
+            counter("stormDeadlineFlushes"),
+            counter("stormForcedFlushes"),
+        )
     };
+    assert_eq!(
+        (base_seen, base_merged, base_df, base_ff),
+        (0, 0, 0, 0),
+        "open/close 直接入队,不进风暴窗"
+    );
 
-    // 连续编辑风暴 v2/v3/v4:同文件 keyed 让位收敛,至多一次执行。
+    // 连续编辑风暴 v2/v3/v4(RUST-082):三帧拼进一次 write(单 chunk 一
+    // 次 process,泵无从穿插)——didChange 全部入风暴缓冲(同文件并一、
+    // 最新版本胜出),不直接入队。
+    let mut burst = Vec::new();
     for (version, prop) in [(2, "openmark2"), (3, "openmark3"), (4, "openmark4")] {
-        send(
-            &mut proc,
-            &notify(
-                "textDocument/didChange",
-                json!({ "textDocument": { "uri": def_uri, "version": version },
-                    "contentChanges": [ { "text": def_with(prop) } ] }),
-            ),
+        let frame = notify(
+            "textDocument/didChange",
+            json!({ "textDocument": { "uri": def_uri, "version": version },
+                "contentChanges": [ { "text": def_with(prop) } ] }),
         );
+        let body = serde_json::to_string(&frame).expect("serialize frame");
+        let _ = write!(burst, "Content-Length: {}\r\n\r\n{body}", body.len());
     }
-    // 最新版胜出(hover 面只在 overlay 打开态成立)。
+    {
+        let stdin = proc.child.stdin.as_mut().expect("stdin piped");
+        stdin.write_all(&burst).expect("write burst");
+        stdin.flush().expect("flush burst");
+    }
+    // 最新版胜出(hover 面只在 overlay 打开态成立);请求入口 take_buffered
+    // 把缓冲事件立即移交并随 freshen 执行——语料严格更新到 v4。
     send(
         &mut proc,
         &request(
@@ -256,34 +282,124 @@ fn index_queue_open_fresh_storm_converges_and_close_replays_disk() {
         !storm_md.contains("openmark2") && !storm_md.contains("openmark3"),
         "旧版本不得残留: {storm_md}"
     );
-    // 风暴 v2/v3/v4 = 三次让位重入队。stdio 泵会在帧间穿插执行(空闲
-    // 切片),故执行数 ∈ [1,3]:连发在一批内则让位收敛为 1 次(严格收敛
-    // 由队列单测钉死),逐帧到达则各执行一次——两者都诚实,上界 3 防
-    // 重复执行/重复入队回归;展示面恒最新版(上文已钉)。
+    // 请求入口 take_buffered:缓冲事件在 hover 时立即移交(不等窗口)并
+    // 随 freshen 执行——严格收敛为一次执行(单 write 已消除泵穿插)。
     send(&mut proc, &request(13, "$/kode/health", json!({})));
     let health = result_of(wait_response(&proc, 13, Duration::from_secs(30)));
     let ingest = health
         .get("ingest")
         .cloned()
         .expect("health missing ingest");
-    let executed = ingest
-        .get("executed")
-        .and_then(|v| v.as_u64())
-        .expect("executed");
-    assert!(
-        (base + 1..=base + 3).contains(&executed),
-        "风暴执行数应有界且至少一次(队列让位/帧间泵二选一): {ingest}"
+    let counter = |name: &str| -> u64 {
+        ingest
+            .get(name)
+            .and_then(|v| v.as_u64())
+            .unwrap_or_else(|| panic!("missing {name}: {ingest}"))
+    };
+    assert_eq!(
+        counter("executed"),
+        base_exec + 1,
+        "风暴经 take_buffered 严格收敛为一次执行: {ingest}"
     );
     assert_eq!(
-        ingest.get("enqueued").and_then(|v| v.as_u64()),
-        Some(base + 3),
-        "每次让位重入队计入 enqueued: {ingest}"
+        counter("enqueued"),
+        base_enq + 1,
+        "缓冲移交恰好入队一次: {ingest}"
+    );
+    assert_eq!(counter("queued"), 0, "移交任务已执行,不得积压: {ingest}");
+    assert_eq!(
+        counter("stormSeen"),
+        base_seen + 3,
+        "三次 didChange 全部计入风暴 seen: {ingest}"
     );
     assert_eq!(
-        ingest.get("queued").and_then(|v| v.as_u64()),
-        Some(0),
-        "风暴后不得积压(至多一个待执行): {ingest}"
+        counter("stormMerged"),
+        base_merged + 2,
+        "同文件并一,v2/v3 被 v4 吸收: {ingest}"
     );
+    assert_eq!(
+        counter("stormBuffered"),
+        0,
+        "缓冲已被请求入口摘走: {ingest}"
+    );
+    assert_eq!(
+        counter("stormDeadlineFlushes"),
+        base_df,
+        "窗口未到期,不得有到期落批: {ingest}"
+    );
+
+    // 窗口到期落批(max latency 兑现):此段无缓冲事件(已被摘走),到期
+    // 计数不得再动——严格性钉在下方 close 段之后的独立风暴里。
+    send(&mut proc, &request(14, "$/kode/health", json!({})));
+    let health = result_of(wait_response(&proc, 14, Duration::from_secs(30)));
+    let ingest = health
+        .get("ingest")
+        .cloned()
+        .expect("health missing ingest");
+    assert_eq!(
+        ingest.get("stormDeadlineFlushes").and_then(|v| v.as_u64()),
+        Some(base_df),
+        "无缓冲时到期 tick 不得虚增落批计数: {ingest}"
+    );
+
+    // 窗口到期落批(max latency 兑现):v5/v6 单 write 入缓冲后睡眠越过
+    // deadline(300ms),主循环空闲 tick flush_due 移交并执行——缓冲清空、
+    // 到期落批恰一次、不依赖任何请求触发。
+    let mut burst = Vec::new();
+    for (version, prop) in [(5, "openmark5"), (6, "openmark6")] {
+        let frame = notify(
+            "textDocument/didChange",
+            json!({ "textDocument": { "uri": def_uri, "version": version },
+                "contentChanges": [ { "text": def_with(prop) } ] }),
+        );
+        let body = serde_json::to_string(&frame).expect("serialize frame");
+        let _ = write!(burst, "Content-Length: {}\r\n\r\n{body}", body.len());
+    }
+    {
+        let stdin = proc.child.stdin.as_mut().expect("stdin piped");
+        stdin.write_all(&burst).expect("write burst");
+        stdin.flush().expect("flush burst");
+    }
+    std::thread::sleep(Duration::from_millis(450));
+    send(&mut proc, &request(15, "$/kode/health", json!({})));
+    let health = result_of(wait_response(&proc, 15, Duration::from_secs(30)));
+    let ingest = health
+        .get("ingest")
+        .cloned()
+        .expect("health missing ingest");
+    let counter = |name: &str| -> u64 {
+        ingest
+            .get(name)
+            .and_then(|v| v.as_u64())
+            .unwrap_or_else(|| panic!("missing {name}: {ingest}"))
+    };
+    assert_eq!(
+        counter("stormDeadlineFlushes"),
+        base_df + 1,
+        "窗口到期应恰好落批一次(空闲 tick 驱动): {ingest}"
+    );
+    assert_eq!(counter("stormBuffered"), 0, "到期落批后缓冲清空: {ingest}");
+    assert_eq!(
+        counter("stormSeen"),
+        base_seen + 5,
+        "v5/v6 计入风暴 seen: {ingest}"
+    );
+    assert_eq!(
+        counter("stormMerged"),
+        base_merged + 3,
+        "v5 被 v6 吸收: {ingest}"
+    );
+    assert_eq!(
+        counter("enqueued"),
+        base_enq + 2,
+        "到期落批移交入队恰一次: {ingest}"
+    );
+    assert_eq!(
+        counter("executed"),
+        base_exec + 2,
+        "落批任务由空闲切片执行: {ingest}"
+    );
+    assert_eq!(counter("queued"), 0, "落批任务已执行,不得积压: {ingest}");
 
     // 关闭 ≠ 删除:didClose 后语料回读磁盘重蓄(哨兵文件链接面幸存,
     // 指回盘上 Avatar.def——若被逐出则链接面消失)。
@@ -297,12 +413,12 @@ fn index_queue_open_fresh_storm_converges_and_close_replays_disk() {
     send(
         &mut proc,
         &request(
-            14,
+            16,
             "textDocument/hover",
             json!({ "textDocument": { "uri": entities_uri }, "position": { "line": 1, "character": 3 } }),
         ),
     );
-    let hover = result_of(wait_response(&proc, 14, Duration::from_secs(30)));
+    let hover = result_of(wait_response(&proc, 16, Duration::from_secs(30)));
     let link_md = hover
         .pointer("/contents/value")
         .and_then(|v| v.as_str())
@@ -317,12 +433,12 @@ fn index_queue_open_fresh_storm_converges_and_close_replays_disk() {
     send(
         &mut proc,
         &request(
-            15,
+            17,
             "textDocument/hover",
             json!({ "textDocument": { "uri": def_uri }, "position": { "line": 2, "character": 3 } }),
         ),
     );
-    let hover = wait_response(&proc, 15, Duration::from_secs(30));
+    let hover = wait_response(&proc, 17, Duration::from_secs(30));
     assert!(
         hover
             .pointer("/result")

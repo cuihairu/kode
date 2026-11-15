@@ -113,6 +113,16 @@ export interface KodeCoreHealth {
     executed: number;
     /** 撤根清除的待执行条目 */
     purged: number;
+    /** RUST-082:didChange 进入风暴缓冲的累计事件数 */
+    stormSeen: number;
+    /** 风暴缓冲内同文件并一吸收的事件数 */
+    stormMerged: number;
+    /** 当前仍在缓冲内的条数 */
+    stormBuffered: number;
+    /** 窗口到期整批移交次数(max latency 兑现记账) */
+    stormDeadlineFlushes: number;
+    /** 缓冲超限强制落批次数 */
+    stormForcedFlushes: number;
   };
 }
 

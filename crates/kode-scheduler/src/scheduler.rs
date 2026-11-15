@@ -247,6 +247,14 @@ impl StormBuffer {
         std::mem::take(&mut self.events)
     }
 
+    /// RUST-082 生产接线面:指名摘取单文件缓冲事件(请求所需文件先刷新
+    /// ——debounce 窗口内收到该文件请求,立即把缓冲事件移交调度队列,不
+    /// 等窗口到期)。无缓冲事件返回 None;摘取计入 seen/merged 记账不变。
+    pub fn take_file(&mut self, file: &str) -> Option<StormEvent> {
+        let index = self.events.iter().position(|e| e.file == file)?;
+        Some(self.events.remove(index))
+    }
+
     pub fn buffered(&self) -> usize {
         self.events.len()
     }

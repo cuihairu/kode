@@ -270,6 +270,10 @@ impl ServerState {
         let mut session = WorkspaceSession::new();
         session.register_sink(Rc::clone(&store) as Rc<RefCell<dyn RootInvalidationSink>>);
         session.register_sink(Rc::clone(&hover) as Rc<RefCell<dyn RootInvalidationSink>>);
+        // RUST-070/071/073:索引刷新队列持有引擎句柄(入队时构建执行时刻
+        // 真相执行体);RUST-082:didChange 风暴缓冲在队列内。
+        let index_queue =
+            crate::index_queue::IndexQueue::new(Rc::clone(&store), Rc::clone(&hover));
         ServerState {
             initialized: false,
             shutdown_requested: false,
@@ -284,7 +288,7 @@ impl ServerState {
             // RUST-075-W:main 装配执行器后注入健康面记账;直连构造 None。
             pool_stats: None,
             warm: crate::warm_gate::WarmGate::new(),
-            index: crate::index_queue::IndexQueue::new(),
+            index: index_queue,
         }
     }
 }
@@ -613,6 +617,9 @@ fn handle_notification(state: &mut ServerState, notification: Notification) -> V
 /// 单请求即全量就绪(同步语义形状不变),大语料余量留给空闲切片。
 fn drain_index_for_request(state: &mut ServerState, key: &DocumentKey) {
     let identity = crate::index_queue::identity_of(key);
+    // RUST-082:该文件还在风暴窗内则立即移交(不等窗口到期),随后的
+    // freshen 即可执行它——打开文档请求即新鲜。
+    state.index.take_buffered(&identity);
     state.index.freshen(&identity);
     state
         .index
@@ -824,14 +831,9 @@ fn handle_did_open(state: &mut ServerState, params: Option<serde_json::Value>) {
         // hover 语料 ingest 入索引刷新队列(RUST-070/071/073:DEPENDENCY_
         // UPDATE keyed 去重)——不再内联解析,镜像洪水不再压住交互帧;请求
         // 入口 freshen 自键保打开文档即时新鲜。版本 = 打开版本(同版本重发
-        // 在队即合并)。
+        // 在队即合并)。open 不过风暴窗(交互即时需求)。
         let version = u64::try_from(params.text_document.version).unwrap_or(0);
-        let run = crate::index_queue::ingest_refresh_task(
-            Rc::clone(&state.store),
-            Rc::clone(&state.hover),
-            key.clone(),
-        );
-        state.index.request_refresh(&key, Some(version), run);
+        state.index.request_open(&key, version);
     }
 }
 
@@ -868,16 +870,12 @@ fn handle_did_change(state: &mut ServerState, params: Option<serde_json::Value>)
         .store
         .borrow_mut()
         .change(&key, params.text_document.version, changes);
-    // hover 语料 ingest 入队(RUST-070/071/073):执行时刻按 overlay 最新
-    // 文本重放(open 优先),同版本重发在队即合并,连续编辑旧版本让位——
-    // 输入风暴收敛为至多一个待执行 ingest。
+    // hover 语料 ingest 入风暴缓冲(RUST-082:时间窗合并,max latency 有界
+    // ——连续敲键至多每窗一批;CORE-008 keyed 让位仍兜底)。窗口到期由主
+    // 循环 flush_due 移交调度队列;请求入口对该文件立即移交(take_buffered)
+    // 保打开文档请求即新鲜。
     let version = u64::try_from(params.text_document.version).unwrap_or(0);
-    let run = crate::index_queue::ingest_refresh_task(
-        Rc::clone(&state.store),
-        Rc::clone(&state.hover),
-        key.clone(),
-    );
-    state.index.request_refresh(&key, Some(version), run);
+    state.index.record_change(&key, version);
 }
 
 /// didClose → 移除 overlay,文档回落磁盘真相(VFS-003 close 转移)。
@@ -895,13 +893,9 @@ fn handle_did_close(state: &mut ServerState, params: Option<serde_json::Value>) 
     // 执行时刻真相 = 盘上仍在回读磁盘重蓄语料视图(符号/def/types 继续喂
     // 补全与悬停),读盘失败(已删除/不可读)才真正逐出 —— 此前连带
     // hover.remove,盘上类型凭空消失,消费文件补全静默空。version=None
-    // 与打开/编辑的 Some(version) 不同键:close 后必让位重入队,不合并。
-    let run = crate::index_queue::ingest_refresh_task(
-        Rc::clone(&state.store),
-        Rc::clone(&state.hover),
-        key.clone(),
-    );
-    state.index.request_refresh(&key, None, run);
+    // 与打开/编辑的 Some(version) 不同键:close 后必让位重入队,不合并
+    // (close 不过风暴窗:状态转移)。
+    state.index.request_close(&key);
 }
 
 /// CORE-016 健康报告:status/pid/版本/uptime/文档摘要,按 uri 排序保证确定性。
@@ -958,6 +952,11 @@ fn health_report(state: &ServerState) -> serde_json::Value {
         "rejectedQueueFull": ingest.rejected_queue_full,
         "executed": ingest.executed,
         "purged": ingest.purged,
+        "stormSeen": ingest.storm_seen,
+        "stormMerged": ingest.storm_merged,
+        "stormBuffered": ingest.storm_buffered,
+        "stormDeadlineFlushes": ingest.storm_deadline_flushes,
+        "stormForcedFlushes": ingest.storm_forced_flushes,
     });
     value
 }
