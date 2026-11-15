@@ -12,7 +12,7 @@ describe('perf 门禁阈值解析(RUST-027)', () => {
     const bounds = resolveGateBounds({});
     expect(bounds).toEqual({
       warmP99Ms: 100,
-      warmMaxMs: 300,
+      warmMaxMs: 1000,
       activationWallMs: 15000,
       fullPyScanWallMs: 120000,
       scanPeakRssMb: 700,
@@ -48,7 +48,7 @@ describe('perf 门禁阈值解析(RUST-027)', () => {
       KODE_PERF_BOUND_FULL_PY_SCAN_WALL_MS: ''
     });
     expect(bounds.warmP99Ms).toBe(100);
-    expect(bounds.warmMaxMs).toBe(300);
+    expect(bounds.warmMaxMs).toBe(1000);
     expect(bounds.activationWallMs).toBe(15000);
     expect(bounds.fullPyScanWallMs).toBe(120000);
     // 其余未提及的键照常缺省
