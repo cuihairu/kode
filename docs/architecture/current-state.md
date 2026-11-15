@@ -535,9 +535,21 @@
   query P95 0.02-22.1ms; def warm rescan 17-18.7ms; invalidation 6.7-11.3ms;
   diagnostic recompute 19→7. Sources: 89e8783 baseline + e6e8bc7 re-test,
   raw output docs/perf/*.txt.
-- 【Untested】extension activation (real VS Code activation), publish to
-  editor (end-to-end). All service-layer numbers exclude UI
-  serialization and provider dispatch overhead.
+- 【Tested (2026-11-15 RUST-022 round 2)】extension activation:
+  activate() synchronous body now instrumented with resident stage marks
+  (activationProfile, env-gated KODE_ACTIVATE_PROFILE_OUT, zero-cost
+  passthrough when unset): total min 134.69ms / p50 156.08ms / max 522.84ms
+  over 5 real-host activations (largest = startup contention outlier; L0
+  infrastructure 60-68ms is the largest single stage; details
+  docs/perf/2026-11-15-activation-latency.md §续批). Publish to editor
+  (end-to-end, the UI-serialization + provider-dispatch segment service-layer
+  numbers exclude): new real-editor suite --pubbench (publishBench.test.ts) —
+  open→first diagnostic visible 845ms; edit→new-version diagnostic visible
+  n=6 p50 25ms / max 71ms (25ms = poll quantization floor); evidence
+  docs/perf/publish-run.txt. Cold-open note: the def registry loads async
+  after activation, so a doc opened before warm-up shows the receiverNone
+  warning but the section-mismatch face only re-fires on the first edit
+  (documented in-suite, not a publish-pipeline defect).
 - 【Tested (2026-11-15 RUST-022 update)】workspace discovery: v02 baseline
   (2026-11-04) start-phase full .py scan 10,408.82ms (background; RSS
   +127.91MB) + activation-phase def scan; Core spawn/handshake (Rust Core has

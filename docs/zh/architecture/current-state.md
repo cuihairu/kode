@@ -221,7 +221,7 @@
 ## PERF-005 分段时延口径(已测/待测)
 
 - 【已测】服务层分段(PR1 埋点 11 类事件:completion/hover/definition/diagnostics/python-index-scan/entity-mapping-scan/type-registry-query/file-discovery/document-parse 等):冷索引 107,737→100,493ms;去阻塞首查 475.34ms;热查询 P95 0.02-22.1ms;def 热复扫 17-18.7ms;失效 6.7-11.3ms;诊断重算 19→7。来源:89e8783 基线 + e6e8bc7 复测,原始输出 docs/perf/*.txt。
-- 【待测】extension activation(真实 VS Code 激活)、workspace discovery、publish 到编辑器(端到端)、Core spawn/handshake(Rust Core 尚不存在,N/A 直至 PR-003)。所有服务层数字不含 UI 序列化与 provider 调度开销。
+- 【已测(2026-11-15 RUST-022 两轮)】workspace discovery:v02 基线(2026-11-04)启动期全量 .py 扫描 10,408.82ms(后台;RSS +127.91MB)+ 激活期 def 扫描;Core spawn/handshake(2026-11-08 已直接切 rust):bench tests/perf/coreSpawn.bench.ts 真二进制——start.total(spawn+握手)p50 ~4.5ms/max ~7.3ms(n=5),暖 echo.rtt p50 0.30ms/max 0.48ms(n=20),暖 localReturnType 分析 rtt p50 0.38ms/max 0.67ms faceSeen=1(n=10),握手推导 ≈ start.p50 − echo.p50 ~3.3ms;证据 docs/perf/core-spawn-run.txt;extension activation:activate() 同步体已接常驻分段埋点(activationProfile,环境变量 KODE_ACTIVATE_PROFILE_OUT 门控,未设置零开销直通):5 次真实宿主激活 total min 134.69ms / p50 156.08ms / max 522.84ms(最大值为启动争用离群;L0 基础设施 60-68ms 为最大单段;详见 docs/perf/2026-11-15-activation-latency.md 续批);publish 到编辑器(端到端,服务层数字不含的 UI 序列化+provider 派发段):新真机套件 --pubbench(publishBench.test.ts)——open→首个诊断可见 845ms;edit→新版本诊断可见 n=6 p50 25ms / max 71ms(25ms=轮询量化地板);证据 docs/perf/publish-run.txt。冷开注:def 注册表激活后异步装载,先于装载完成的 open 只见 receiverNone 警告,段错配面要等首个编辑事件补触发(套件注释在案,非发布管道缺陷)。
 
 ## PERF-015 跨机器口径
 
