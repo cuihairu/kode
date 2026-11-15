@@ -25,18 +25,50 @@ interface MirroredCall {
   text: string;
 }
 
+/** 暖门调用记录(RUST-074-W):begin 总数 / complete [done,failed] / cancel 次数 */
+interface WarmGateCalls {
+  begins: number[];
+  completions: Array<[number, number]>;
+  cancels: number;
+}
+
+/** ad-hoc gate 补齐暖门四面(镜像现在直调 begin/complete/cancel,缺桩即炸) */
+function makeWarmStubs(warm: WarmGateCalls): Record<string, unknown> {
+  return {
+    beginBackgroundScan: async (total: number) => {
+      warm.begins.push(total);
+      return { state: 'warming' };
+    },
+    scanComplete: async (done: number, failed: number) => {
+      warm.completions.push([done, failed]);
+      return { state: 'warm' };
+    },
+    scanCancel: async () => {
+      warm.cancels += 1;
+      return { state: 'idle' };
+    }
+  };
+}
+
 function makeFakeGate(serving = true): {
-  gate: Pick<KodeCoreGate, 'serveFromRust' | 'mirrorDocument'>;
+  gate: Pick<
+    KodeCoreGate,
+    'serveFromRust' | 'mirrorDocument' | 'beginBackgroundScan' | 'scanComplete' | 'scanCancel'
+  >;
   calls: MirroredCall[];
+  warm: WarmGateCalls;
   servingFlag: { value: boolean };
 } {
   const calls: MirroredCall[] = [];
+  const warm: WarmGateCalls = { begins: [], completions: [], cancels: 0 };
   const servingFlag = { value: serving };
   return {
     servingFlag,
     calls,
+    warm,
     gate: {
       serveFromRust: () => servingFlag.value,
+      ...makeWarmStubs(warm),
       mirrorDocument: async (uri, languageId, version, text) => {
         calls.push({ uri, languageId, version, text });
       }
@@ -182,16 +214,18 @@ describe('kodeCoreCorpusMirror 服务轨道语料镜像', () => {
     expect(calls.map(call => call.uri)).toEqual([defPath]);
   });
 
-  it('镜像失败静默(不抛,不中断后续文件)', async () => {
+  it('镜像失败静默(不抛,不中断后续文件),计入 failed', async () => {
     const defPath = path.join(tempRoot, 'Avatar.def');
     const typesPath = path.join(tempRoot, 'types.xml');
-    
+
     await writeCorpusFile(defPath, '<root/>\n');
-    
+
     await writeCorpusFile(typesPath, '<types/>\n');
     const calls: MirroredCall[] = [];
+    const warm: WarmGateCalls = { begins: [], completions: [], cancels: 0 };
     const gate = {
       serveFromRust: () => true,
+      ...makeWarmStubs(warm),
       mirrorDocument: async (uri: string, languageId: string, version: number, text: string) => {
         calls.push({ uri, languageId, version, text });
         if (uri === defPath) {
@@ -203,16 +237,18 @@ describe('kodeCoreCorpusMirror 服务轨道语料镜像', () => {
       mirrorCorpusToRust(gate, makeFinder({ '**/*.def': [defPath], '**/types.xml': [typesPath] }, []))
     ).resolves.toBeUndefined();
     expect(calls).toHaveLength(2); // 失败的不中断后续
+    // RUST-074-W:完成回执带真实计数(1 成功 1 失败)。
+    expect(warm.completions).toEqual([[1, 1]]);
   });
 
-  it('镜像期间切走服务轨道:停止补镜像', async () => {
+  it('镜像期间切走服务轨道:cancel 回 Idle 不留假 pending,不发 complete', async () => {
     const defPath = path.join(tempRoot, 'Avatar.def');
     const typesPath = path.join(tempRoot, 'types.xml');
-    
+
     await writeCorpusFile(defPath, '<root/>\n');
-    
+
     await writeCorpusFile(typesPath, '<types/>\n');
-    const { gate, calls, servingFlag } = makeFakeGate(true);
+    const { gate, calls, servingFlag, warm } = makeFakeGate(true);
     const gateWithStop = {
       serveFromRust: () => {
         // 第一个文件镜像后切走服务轨道
@@ -221,6 +257,7 @@ describe('kodeCoreCorpusMirror 服务轨道语料镜像', () => {
         }
         return servingFlag.value;
       },
+      ...makeWarmStubs(warm),
       mirrorDocument: gate.mirrorDocument
     } as unknown as KodeCoreGate;
     await mirrorCorpusToRust(
@@ -228,6 +265,62 @@ describe('kodeCoreCorpusMirror 服务轨道语料镜像', () => {
       makeFinder({ '**/*.def': [defPath], '**/types.xml': [typesPath] }, [])
     );
     expect(calls.length).toBeLessThanOrEqual(1);
+    // RUST-074-W:中断走 cancel(回 Idle),绝不 complete(Warm 假账)。
+    expect(warm.begins).toEqual([2]);
+    expect(warm.cancels).toBe(1);
+    expect(warm.completions).toEqual([]);
+  });
+
+  it('暖门接线:begin(总数) 先于镜像,complete(done,failed) 后于镜像', async () => {
+    const defPath = path.join(tempRoot, 'Avatar.def');
+    const typesPath = path.join(tempRoot, 'types.xml');
+
+    await writeCorpusFile(defPath, '<root/>\n');
+
+    await writeCorpusFile(typesPath, '<types/>\n');
+    const ops: string[] = [];
+    const gate = {
+      serveFromRust: () => true,
+      beginBackgroundScan: async (total: number) => {
+        ops.push(`begin:${total}`);
+        return { state: 'warming' };
+      },
+      scanComplete: async (done: number, failed: number) => {
+        ops.push(`complete:${done},${failed}`);
+        return { state: 'warm' };
+      },
+      scanCancel: async () => {
+        ops.push('cancel');
+        return { state: 'idle' };
+      },
+      mirrorDocument: async (uri: string) => {
+        ops.push(`mirror:${uri}`);
+      }
+    } as unknown as KodeCoreGate;
+    await mirrorCorpusToRust(
+      gate,
+      makeFinder({ '**/*.def': [defPath], '**/types.xml': [typesPath] }, [])
+    );
+    // begin 在任何镜像前;complete 收尾且计数齐全;全程无 cancel。
+    expect(ops[0]).toBe('begin:2');
+    expect(ops[ops.length - 1]).toBe('complete:2,0');
+    expect(ops.filter(op => op.startsWith('mirror:'))).toHaveLength(2);
+    expect(ops).not.toContain('cancel');
+  });
+
+  it('暖门计数:读盘失败计入 failed(成功文件数+失败数=begin 总数)', async () => {
+    const defPath = path.join(tempRoot, 'Avatar.def');
+    const missingPath = path.join(tempRoot, 'Ghost.def');
+
+    await writeCorpusFile(defPath, '<root/>\n');
+    const { gate, warm } = makeFakeGate(true);
+    // Ghost.def 被发现但读盘失败(内存表无内容)。
+    await mirrorCorpusToRust(
+      gate,
+      makeFinder({ '**/*.def': [defPath, missingPath] }, [])
+    );
+    expect(warm.begins).toEqual([2]);
+    expect(warm.completions).toEqual([[1, 1]]);
   });
 });
 
@@ -242,6 +335,7 @@ describe('kodeCoreCorpusMirror 根生命周期先行(RUST-069-W)', () => {
     const registeredRoots: string[] = [];
     const gate = {
       serveFromRust: () => true,
+      ...makeWarmStubs({ begins: [], completions: [], cancels: 0 }),
       registerRoot: async (fsPath: string) => {
         ops.push(`registerRoot:${fsPath}`);
         registeredRoots.push(fsPath);
@@ -271,6 +365,7 @@ describe('kodeCoreCorpusMirror 根生命周期先行(RUST-069-W)', () => {
     const calls: MirroredCall[] = [];
     const gate = {
       serveFromRust: () => true,
+      ...makeWarmStubs({ begins: [], completions: [], cancels: 0 }),
       registerRoot: async () => {
         throw new Error('roots failed');
       },

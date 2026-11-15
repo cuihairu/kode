@@ -81,16 +81,27 @@ export async function mirrorCorpusToRust(
   for (const doc of vscode.workspace.textDocuments) {
     openByFsPath.set(doc.uri.fsPath, doc);
   }
+  // RUST-074-W:暖门接线——本镜像全程即生产首扫。begin 入队(Warming),
+  // 完成泵至 Warm,中断 cancel(不留假 pending)。尽力而为:失败静默,
+  // 不阻塞镜像本体;Warming 期真实 RPC 照常(server 池交互优先级)。
+  let mirrored = 0;
+  let failed = 0;
+  await gate.beginBackgroundScan(corpusUris.size).catch(() => undefined);
   for (const fsPath of corpusUris.keys()) {
     if (!gate.serveFromRust()) {
-      // 镜像期间配置切走服务轨道(杀进程/回 ts):停止补镜像,不写新账。
+      // 镜像期间配置切走服务轨道(杀进程/回 ts):取消首扫(回 Idle,
+      // 不留假 pending),停止补镜像,不写新账。
+      await gate.scanCancel().catch(() => undefined);
       return;
     }
     const open = openByFsPath.get(fsPath);
     if (open) {
-      await gate
-        .mirrorDocument(fsPath, open.languageId, open.version, open.getText())
-        .catch(() => undefined);
+      try {
+        await gate.mirrorDocument(fsPath, open.languageId, open.version, open.getText());
+        mirrored += 1;
+      } catch {
+        failed += 1;
+      }
       continue;
     }
     let bytes: Uint8Array | null = null;
@@ -100,10 +111,20 @@ export async function mirrorCorpusToRust(
       bytes = null;
     }
     if (bytes === null) {
+      failed += 1;
       continue;
     }
-    await gate
-      .mirrorDocument(fsPath, corpusMirrorLanguageId(fsPath), 1, Buffer.from(bytes).toString('utf8'))
-      .catch(() => undefined);
+    try {
+      await gate.mirrorDocument(
+        fsPath,
+        corpusMirrorLanguageId(fsPath),
+        1,
+        Buffer.from(bytes).toString('utf8')
+      );
+      mirrored += 1;
+    } catch {
+      failed += 1;
+    }
   }
+  await gate.scanComplete(mirrored, failed).catch(() => undefined);
 }

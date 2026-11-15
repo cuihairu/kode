@@ -87,8 +87,12 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
     const health = await client.health();
     expect(sortedKeys(health)).toEqual(
       ['documents', 'initialized', 'pid', 'pool', 'resources', 'restartGeneration',
-       'serverVersion', 'shutdownRequested', 'status', 'uptimeMs']
+       'serverVersion', 'shutdownRequested', 'status', 'uptimeMs', 'warm']
     );
+    // RUST-074-W:暖门观测恒装配(fresh server 未 begin = idle 全形状)。
+    expect(health.warm).toEqual({
+      state: 'idle', coldWhileWarming: 0, done: 0, failed: 0, total: null
+    });
     // RUST-075-W:worker 执行器默认装配,健康面带池记账键。
     expect(sortedKeys(health.pool)).toEqual(
       ['backgroundRunning', 'interactiveRunning', 'jobsCancelled',
@@ -105,6 +109,53 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
     for (const value of Object.values(health.resources ?? {})) {
       expect(typeof value).toBe('number');
     }
+    await client.dispose();
+  }, 20_000);
+
+  it('$/kode/index 暖门四面:屏障期真实 RPC 照常解析,incomplete 显式,刷新与取消无假 pending', async () => {
+    const client = makeClient();
+    await client.start();
+    expect(await client.warmState()).toEqual({
+      state: 'idle', coldWhileWarming: 0, done: 0, failed: 0, total: null
+    });
+    // 可控屏障:begin 后不发 complete——首扫挂住 = Warming;进行中复用。
+    expect(await client.beginBackgroundScan(1000)).toEqual({
+      state: 'warming', decision: 'queued', scanId: 1
+    });
+    expect(await client.beginBackgroundScan(1000)).toEqual({
+      state: 'warming', decision: 'reused', scanId: 1
+    });
+    // 屏障期真实 RPC:目标文件照常解析(池交互优先级,请求不等首扫)。
+    const flow = (await client.request('$/kode/rpc', {
+      method: '$/kode/python/selfAttributeFlow',
+      params: {
+        lines: [
+          'class Avatar:',
+          '    def __init__(self):',
+          '        self.hp = 100',
+          '    def take_damage(self, n):',
+          '        self.hp -= n'
+        ],
+        queryLine: 4,
+        attr: 'hp'
+      }
+    })) as { flow: { types: string[] } };
+    expect(flow.flow.types).toContain('int');
+    // 未覆盖显式 incomplete:warming + 冷请求计数(真实 RPC 记账)。
+    const warming = await client.warmState();
+    expect(warming.state).toBe('warming');
+    expect(warming.coldWhileWarming).toBeGreaterThanOrEqual(1);
+    // 完成 → Warm;刷新循环:Warm 后再 begin = 全新入队。
+    expect(await client.scanComplete(1000, 0)).toEqual({ state: 'warm', done: 1000, failed: 0 });
+    expect((await client.warmState()).state).toBe('warm');
+    expect((await client.beginBackgroundScan(5)).decision).toBe('queued');
+    // 取消 → Idle 不留假 pending;迟到 complete 诚实拒(-32602)。
+    expect(await client.scanCancel()).toEqual({ state: 'idle' });
+    await expect(client.scanComplete(5, 0)).rejects.toThrow(/no background scan in progress/);
+    const idle = await client.warmState();
+    expect(idle.state).toBe('idle');
+    expect(idle.coldWhileWarming).toBeGreaterThanOrEqual(1);
+    expect(await client.scanCancel()).toEqual({ state: 'idle' });
     await client.dispose();
   }, 20_000);
 

@@ -40,6 +40,7 @@ pub mod server;
 pub mod space_nav;
 pub mod trap_lints;
 pub mod user_type_contract;
+pub mod warm_gate;
 pub mod wire_codec;
 pub mod workspace_discovery;
 

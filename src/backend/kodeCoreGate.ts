@@ -223,6 +223,10 @@ export interface ShadowClientLike {
   /** 根生命周期(RUST-069-W 可选):新增/移除工作区根,请求面带回执 */
   addWorkspaceRoot?(fsPath: string): Promise<unknown>;
   removeWorkspaceRoot?(fsPath: string): Promise<unknown>;
+  /** 暖门(RUST-074-W 可选):首扫状态机 begin/complete/cancel,请求面带回执 */
+  beginBackgroundScan?(total: number): Promise<unknown>;
+  scanComplete?(done: number, failed: number): Promise<unknown>;
+  scanCancel?(): Promise<unknown>;
 }
 
 export interface KodeCoreGateOptions {
@@ -565,6 +569,94 @@ export class KodeCoreGate {
     }
     try {
       return (await client.removeWorkspaceRoot(fsPath)) as { removed: boolean };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 暖门(RUST-074-W):首扫开始——server 侧 keyed 状态机入队(Warming)。
+   * 生产首扫 = 语料镜像全程(见 kodeCoreCorpusMirror);begin 带镜像总数
+   * 供观测对账。尽力而为:非镜像轨道/未配 serverPath 零开销直通 null,
+   * 失败静默(不误伤服务)。
+   */
+  async beginBackgroundScan(total: number): Promise<{ state: string } | null> {
+    if (!this.shouldMirrorCorpus() || !this.config.serverPath) {
+      return null;
+    }
+    const client = this.ensureClient();
+    if (!client) {
+      return null;
+    }
+    try {
+      await client.start();
+      this.syncRestartGeneration(client);
+    } catch {
+      return null;
+    }
+    if (!client.beginBackgroundScan) {
+      return null;
+    }
+    try {
+      return (await client.beginBackgroundScan(total)) as { state: string };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 暖门(RUST-074-W):首扫完成——镜像全程结束,server 泵至 Warm 并落
+   * done/failed 计数。迟到/无进行中首扫时 server 侧 -32602 诚实拒,这里
+   * 静默(尽力而为);非镜像轨道零开销直通 null。
+   */
+  async scanComplete(done: number, failed: number): Promise<{ state: string } | null> {
+    if (!this.shouldMirrorCorpus() || !this.config.serverPath) {
+      return null;
+    }
+    const client = this.ensureClient();
+    if (!client) {
+      return null;
+    }
+    try {
+      await client.start();
+      this.syncRestartGeneration(client);
+    } catch {
+      return null;
+    }
+    if (!client.scanComplete) {
+      return null;
+    }
+    try {
+      return (await client.scanComplete(done, failed)) as { state: string };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 暖门(RUST-074-W):首扫取消——镜像中断(轨道切走/枚举失败)时回
+   * Idle,不留假 pending。幂等:server 非 Warming 期返回当前真实状态;
+   * 非镜像轨道零开销直通 null,失败静默。
+   */
+  async scanCancel(): Promise<{ state: string } | null> {
+    if (!this.shouldMirrorCorpus() || !this.config.serverPath) {
+      return null;
+    }
+    const client = this.ensureClient();
+    if (!client) {
+      return null;
+    }
+    try {
+      await client.start();
+      this.syncRestartGeneration(client);
+    } catch {
+      return null;
+    }
+    if (!client.scanCancel) {
+      return null;
+    }
+    try {
+      return (await client.scanCancel()) as { state: string };
     } catch {
       return null;
     }

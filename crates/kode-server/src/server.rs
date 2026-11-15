@@ -219,6 +219,9 @@ pub struct ServerState {
     /// RUST-075-W:worker 池记账快照(健康面 `pool` 键)。main 装配执行器后
     /// 注入;直连构造(单测)为 None,健康面省略该键(既有形状不变)。
     pub pool_stats: Option<Arc<Mutex<crate::executor::PoolStats>>>,
+    /// RUST-074-W:暖门状态机(首扫 keyed 单例 + Warming 期冷请求观测)。
+    /// 恒装配(健康面 `warm` 键恒在);四状态面走顶层请求臂(warm_gate)。
+    pub warm: crate::warm_gate::WarmGate,
 }
 
 impl ServerState {
@@ -276,6 +279,7 @@ impl ServerState {
             rpc,
             // RUST-075-W:main 装配执行器后注入健康面记账;直连构造 None。
             pool_stats: None,
+            warm: crate::warm_gate::WarmGate::new(),
         }
     }
 }
@@ -399,6 +403,29 @@ fn handle_request_inner(
         }
         "$/kode/workspace/roots" => {
             vec![Outgoing::Response(crate::root_lifecycle::handle_roots_list(
+                state, request,
+            ))]
+        }
+        // RUST-074-W 暖门四面:首扫 keyed 状态机(begin/complete/cancel)+
+        // 暖态观测。要动 &mut ServerState 里的状态机,走顶层臂(root_lifecycle
+        // 同先例),不经 RpcRegistry(池快照面无状态)。
+        "$/kode/index/beginBackgroundScan" => {
+            vec![Outgoing::Response(
+                crate::warm_gate::handle_begin_background_scan(state, request),
+            )]
+        }
+        "$/kode/index/scanComplete" => {
+            vec![Outgoing::Response(crate::warm_gate::handle_scan_complete(
+                state, request,
+            ))]
+        }
+        "$/kode/index/scanCancel" => {
+            vec![Outgoing::Response(crate::warm_gate::handle_scan_cancel(
+                state, request,
+            ))]
+        }
+        "$/kode/index/warmState" => {
+            vec![Outgoing::Response(crate::warm_gate::handle_warm_state(
                 state, request,
             ))]
         }
@@ -869,6 +896,16 @@ fn health_report(state: &ServerState) -> serde_json::Value {
             value["pool"] = serde_json::to_value(*stats).expect("serialize pool stats");
         }
     }
+    // RUST-074-W:暖门观测(首扫状态机 + Warming 期冷请求数)。暖门恒装配,
+    // 该键恒在。
+    let warm = state.warm.snapshot();
+    value["warm"] = serde_json::json!({
+        "state": warm.state,
+        "coldWhileWarming": warm.cold_while_warming,
+        "done": warm.done,
+        "failed": warm.failed,
+        "total": warm.total,
+    });
     value
 }
 

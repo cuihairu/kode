@@ -375,6 +375,57 @@ export class KodeCoreClient {
     };
   }
 
+  /**
+   * RUST-074-W 暖门:首扫开始——server 侧 keyed 状态机入队(Warming)。
+   * 进行中复用(同 scanId);失败/取消后重开 decision=recovered。
+   */
+  async beginBackgroundScan(total: number): Promise<{
+    state: string;
+    decision: string;
+    scanId: number;
+  }> {
+    return (await this.request('$/kode/index/beginBackgroundScan', { total })) as {
+      state: string;
+      decision: string;
+      scanId: number;
+    };
+  }
+
+  /** RUST-074-W 暖门:首扫完成——泵至 Warm;无进行中首扫 -32602(迟到回执) */
+  async scanComplete(done: number, failed: number): Promise<{
+    state: string;
+    done: number;
+    failed: number;
+  }> {
+    return (await this.request('$/kode/index/scanComplete', { done, failed })) as {
+      state: string;
+      done: number;
+      failed: number;
+    };
+  }
+
+  /** RUST-074-W 暖门:首扫取消(镜像中断)——回 Idle 不留假 pending;幂等 */
+  async scanCancel(): Promise<{ state: string }> {
+    return (await this.request('$/kode/index/scanCancel')) as { state: string };
+  }
+
+  /** RUST-074-W 暖门:暖态观测(state/coldWhileWarming/done/failed/total) */
+  async warmState(): Promise<{
+    state: string;
+    coldWhileWarming: number;
+    done: number;
+    failed: number;
+    total: number | null;
+  }> {
+    return (await this.request('$/kode/index/warmState')) as {
+      state: string;
+      coldWhileWarming: number;
+      done: number;
+      failed: number;
+      total: number | null;
+    };
+  }
+
   /** 优雅停止:shutdown → exit → 宽限后 SIGKILL;in-flight 请求以 DISPOSED 拒绝 */
   async dispose(): Promise<void> {
     if (this.disposed) {

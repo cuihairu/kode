@@ -159,6 +159,12 @@ fn dispatch_outcome(
                                     "request cancelled via $/cancelRequest",
                                 ))]);
                             }
+                            // RUST-074-W:暖门观测——首扫未完成(Warming)期
+                            // 派发的真实 RPC 记入冷请求计数;「请求不等首扫」
+                            // 由池交互优先级兑现(RUST-075-W)。scheduler
+                            // cold_request 入队形态随解析缓存消费者接线启用
+                            // (RUST-070/071/073),此处不伪造入队。
+                            state.warm.note_cold_request();
                             executor.submit(Job {
                                 id: request.id.clone(),
                                 method: inner_method,
