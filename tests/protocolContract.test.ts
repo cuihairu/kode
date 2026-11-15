@@ -1,9 +1,11 @@
 import { spawnSync } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
+import { KODE_FILE_CHANGED_METHOD } from '../src/backend/fileChangeBypass';
 import { KodeCoreClient, KODE_PROTOCOL_VERSION } from '../src/backend/kodeCoreClient';
 
 // RUST-055(部分,第一增量):协议契约门——TS 消费的 RPC 面对着真实
@@ -160,4 +162,250 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
     }
     await client.dispose();
   }, 20_000);
+});
+
+// RUST-055 第二增量:全协议面清单——TS 消费的 32 个 `$/kode/*` 请求方法逐一
+// 入契约门(TS 侧方法字面量 grep 全集 vs Rust RpcRegistry 注册集零漂移已由
+// 构建 probe 对齐;`$/kode/fileChanged` 是单向通知无应答面,`$/kode/rpc` 信封
+// 与 health 已在上文钉)。方法级应答形状钉法:**递归形状指纹**(对象=排序键集
+// 逐键递归,数组=首元素形状,叶子=JSON 类型),值不钉(值属各分析面单测);
+// 复杂输入面(dbClone 家族)钉错误信封面(INVALID_PARAMS/-32602),深度往返
+// 形状由 Rust dispatch 测试与 kode-kbengine cli_acceptance 承载。ruff/lint
+// 因 ruff 可用性机器相关,只钉结构面不钉指纹。prove-red 面:改 Rust 任一应答
+// 键名 → 本门红(由首条 lint/* 指纹承载)。
+suite('全协议面:32 方法逐一形状钉(真实 kode-server)', () => {
+  const PROBE = process.env.KODE_CONTRACT_PROBE === '1';
+
+  /** 递归形状指纹:对象→{键:形状} 键排序;数组→[首元素形状] 或 [];叶子→JSON 类型名(null 单列,不与 object 混) */
+  const shapeOf = (value: unknown): unknown => {
+    if (Array.isArray(value)) {
+      return value.length === 0 ? [] : [shapeOf(value[0])];
+    }
+    if (value !== null && typeof value === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+        out[key] = shapeOf((value as Record<string, unknown>)[key]);
+      }
+      return out;
+    }
+    return value === null ? 'null' : typeof value;
+  };
+
+  const PY_FIXTURE = [
+    'class Avatar:',
+    '    def __init__(self):',
+    '        self.hp = None',
+    '        self.name = "avatar"',
+    '',
+    '    def onLevelUp(self, amount):',
+    '        self.hp = (self.hp or 0) + amount',
+    '        self.base.cellReq("teleport", 1)',
+    '        self.client.onLevelOk()',
+    '',
+    '    @property',
+    '    def level(self):',
+    '        return 1',
+    ''
+  ].join('\n');
+  const PY_LINES = PY_FIXTURE.split('\n');
+  const DEF_FIXTURE =
+    '<Entity><GroupName>mob</GroupName><Properties><Property name="level" type="UINT8"/></Properties></Entity>';
+
+  interface SurfaceProbe {
+    method: string;
+    params: () => Record<string, unknown>;
+    /** 'pin' = 全指纹钉;'ruff' = 结构面钉(ruff 可用性机器相关) */
+    face: 'pin' | 'ruff';
+  }
+
+  const probes: SurfaceProbe[] = [
+    { method: '$/kode/lint/analyzeDef', face: 'pin', params: () => ({ text: DEF_FIXTURE }) },
+    { method: '$/kode/lint/analyzeAttributeNone', face: 'pin', params: () => ({ text: PY_FIXTURE }) },
+    { method: '$/kode/lint/analyzePostDestroy', face: 'pin', params: () => ({ text: PY_FIXTURE }) },
+    { method: '$/kode/lint/analyzePropertyDirection', face: 'pin', params: () => ({ text: PY_FIXTURE }) },
+    { method: '$/kode/lint/analyzeReadOnlyWrite', face: 'pin', params: () => ({ text: PY_FIXTURE }) },
+    { method: '$/kode/lint/analyzeReceiverNone', face: 'pin', params: () => ({ text: PY_FIXTURE }) },
+    { method: '$/kode/lint/analyzeRoleMisuse', face: 'pin', params: () => ({ text: PY_FIXTURE, face: 'baseapp' }) },
+    {
+      method: '$/kode/lint/analyzeRpcArgCount', face: 'pin',
+      params: () => ({ text: PY_FIXTURE, calls: [{ line: PY_LINES.findIndex(l => l.includes('cellReq')), character: 8, methodName: 'cellReq' }] })
+    },
+    { method: '$/kode/lint/analyzeSpaceNav', face: 'pin', params: () => ({ text: PY_FIXTURE }) },
+    { method: '$/kode/lint/analyzeTraps', face: 'pin', params: () => ({ text: PY_FIXTURE }) },
+    { method: '$/kode/python/symbols', face: 'pin', params: () => ({ files: [{ path: '/ws/Avatar.py', text: PY_FIXTURE }] }) },
+    { method: '$/kode/python/callgraph', face: 'pin', params: () => ({ files: [{ path: '/ws/Avatar.py', text: PY_FIXTURE }], manifestXmlText: '' }) },
+    { method: '$/kode/python/selfAttributeFlow', face: 'pin', params: () => ({ lines: PY_LINES, queryLine: 2, attr: 'hp' }) },
+    { method: '$/kode/python/returnAnnotations', face: 'pin', params: () => ({ text: PY_FIXTURE }) },
+    {
+      method: '$/kode/python/localReturnType', face: 'pin',
+      params: () => ({ lines: PY_LINES, hoverLine: 6, hoverColumn: 8 })
+    },
+    {
+      method: '$/kode/python/userTypeContract', face: 'pin',
+      params: () => ({ file: '/ws/Avatar.py', sources: { Avatar: PY_FIXTURE }, statuses: [{ name: 'onLevelOk' }] })
+    },
+    {
+      method: '$/kode/config/resolve', face: 'pin',
+      params: () => ({ defaultsXml: '<root/>', customXml: '<root/>' })
+    },
+    {
+      method: '$/kode/config/derive', face: 'pin',
+      params: () => ({ tree: { root: {} }, defaultsTree: { root: {} }, facts: { workspaceRoot: '/ws', customConfigPath: null, entryScripts: [] } })
+    },
+    {
+      method: '$/kode/databaseSchema/build', face: 'pin',
+      params: () => ({ entityName: 'Avatar', defFilePath: '/ws/entity_defs/Avatar.def', properties: [], hasCellContent: false, tablePrefix: 'tbl_' })
+    },
+    {
+      method: '$/kode/def/md5', face: 'pin',
+      params: () => ({ typesXml: '', entitiesXml: '', defs: {}, aliasXml: '', componentScripts: {} })
+    },
+    {
+      method: '$/kode/dependency/graph', face: 'pin',
+      params: () => ({
+        entitiesXml: '', typesXml: '', defsRoot: '', entitiesXmlPath: '', typesXmlPath: '',
+        defs: {}, paths: {}, categories: {}, pythonFiles: {}, typeImpls: {}
+      })
+    },
+    {
+      method: '$/kode/messageTable/build', face: 'pin',
+      params: () => ({ entityName: 'Avatar', defText: DEF_FIXTURE, typesXml: '', defs: {}, paths: {}, aliasIdEnabled: false })
+    },
+    {
+      method: '$/kode/processTopology/validate', face: 'pin',
+      params: () => ({ manifestText: '<root/>', entitiesXmlText: '', defs: [] })
+    },
+    {
+      method: '$/kode/sdk/generate', face: 'pin',
+      params: () => ({ language: 'csharp', entities: [], defs: {}, typesXml: '', generatedAt: '2026-11-15T00:00:00Z', engineTrace: false, namespace: 'KbEngine.Client' })
+    },
+    {
+      method: '$/kode/semantics/cellDataKeys', face: 'pin',
+      params: () => ({ entity: 'Avatar', defs: [{ name: 'Avatar', text: DEF_FIXTURE }] })
+    },
+    {
+      method: '$/kode/workspace/scanAnchors', face: 'pin',
+      params: () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kode-scan-anchors-'));
+        return { root: dir };
+      }
+    },
+    { method: '$/kode/ruff/lint', face: 'ruff', params: () => ({ files: [] }) },
+    // dbClone 家族:输入面复杂(derivation/schema 由 CloneSchema::from_derivation
+    // 解析),契约门钉错误信封面;深度往返由 Rust dispatch 测试承载
+    { method: '$/kode/dbClone/planExport', face: 'pin', params: () => ({ derivation: {}, physicalTables: [] }) },
+    { method: '$/kode/dbClone/planImport', face: 'pin', params: () => ({ path: '/nonexistent.kdpclone', target: {}, derivation: {}, physicalTables: [], snapshot: {} }) },
+    { method: '$/kode/dbClone/inspectArchive', face: 'pin', params: () => ({ path: '/nonexistent.kdpclone', keyRoot: undefined }) },
+    { method: '$/kode/dbClone/readArchiveRows', face: 'pin', params: () => ({ path: '/nonexistent.kdpclone', keyRoot: undefined }) },
+    { method: '$/kode/dbClone/export', face: 'pin', params: () => ({ path: '', entity: '', rows: [], plan: {}, redactSensitive: true, keyRoot: undefined }) }
+  ];
+
+  it('方法清单完整:32 方法与 TS 侧调用全集逐一对齐(git 字面量全集)', () => {
+    // TS 侧 `$/kode/...` 字面量全集(src/ 下 35 项)减去:信封 rpc、通知
+    // fileChanged、health(上文已钉)= 32 请求方法,与本表一一对应。
+    expect(probes).toHaveLength(32);
+    expect(new Set(probes.map(probe => probe.method)).size).toBe(32);
+  });
+
+  it('fileChanged:单向通知跨语言字面量锁(TS KODE_FILE_CHANGED_METHOD = Rust FILE_CHANGED_NOTIFICATION)', () => {
+    const rust = /FILE_CHANGED_NOTIFICATION:\s*&str\s*=\s*"([^"]+)"/.exec(
+      readFileSync(join(repoRoot, 'crates', 'kode-protocol', 'src', 'lib.rs'), 'utf8')
+    );
+    expect(rust).not.toBeNull();
+    expect(rust?.[1]).toBe(KODE_FILE_CHANGED_METHOD);
+  });
+
+  it('逐方法应答形状指纹(错误面钉 -32602 信封)', async () => {
+    const client = new KodeCoreClient({
+      binaryPath,
+      initializeParams: { processId: process.pid, rootUri: 'file:///workspace/contract', capabilities: {} },
+      onStderr: () => undefined
+    });
+    await client.start();
+    const shapes: Record<string, unknown> = {};
+    const loose: Record<string, unknown> = {};
+
+    for (const probe of probes) {
+      const params = probe.params();
+      if (probe.face === 'ruff') {
+        const result = (await client.request('$/kode/rpc', { method: probe.method, params })) as Record<string, unknown>;
+        // ruff 未装时响应只有 {available:false, diags:[]}——version 键随可用性
+        // 有无(CI/本机都可能两态),结构面只钉恒在键
+        loose[probe.method] = {
+          available: typeof result.available,
+          diags: Array.isArray(result.diags) ? 'array' : typeof result.diags,
+          extraKeys: Object.keys(result).filter(k => !['available', 'diags', 'version'].includes(k))
+        };
+        continue;
+      }
+      try {
+        const result = await client.request('$/kode/rpc', { method: probe.method, params });
+        shapes[probe.method] = shapeOf(result);
+      } catch (error) {
+        // 错误面也是契约:INVALID_PARAMS(-32602)信封,message 非空串
+        shapes[probe.method] = { __error__: (error as { message: string }).message };
+      }
+      // scanAnchors 的临时目录用后即清
+      const root = params.root;
+      if (typeof root === 'string' && root.length > 0) {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+
+    if (PROBE) {
+      // 探针模式:指纹落盘供人工核对固化(vitest 吞 console.log,坑在案)
+      writeFileSync('/tmp/kode-contract-shapes.json', JSON.stringify({ shapes, loose }, null, 2));
+      return;
+    }
+
+    for (const [method, pinned] of Object.entries(SURFACE_PINS)) {
+      expect(shapes[method], `形状漂移: ${method}`).toEqual(pinned);
+    }
+    expect(Object.keys(shapes).sort()).toEqual(Object.keys(SURFACE_PINS).sort());
+    expect(loose['$/kode/ruff/lint']).toEqual({
+      available: 'boolean',
+      diags: 'array',
+      extraKeys: []
+    });
+    await client.dispose();
+  }, 120_000);
+
+  /**
+   * 钉面:探针产物(2026-11-15,KODE_CONTRACT_PROBE=1 对真实 target/debug
+   * kode-server 采集,人工核对后固化)。重生成:KODE_CONTRACT_PROBE=1 跑本
+   * 文件,指纹落 /tmp/kode-contract-shapes.json。
+   */
+  const SURFACE_PINS: Record<string, unknown> = {
+    "$/kode/config/derive": {"derive": {"database": {"available": "boolean", "characterSet": "string", "databaseName": "string", "dbType": "string", "encrypt": "boolean", "host": "string", "passwordAvailable": "boolean", "port": "number", "username": "string"}, "debug": {"ready": "boolean", "reasons": ["string"]}, "defScanRoots": {"degraded": "boolean", "fallback": "string", "roots": ["string"]}, "entryScripts": [], "telnet": {"enabled": "boolean", "endpoints": []}}, "diagnostics": [{"message": "string", "scope": "string", "severity": "string"}]},
+    "$/kode/config/resolve": {"customTelnet": "null", "customTree": {"children": [{"children": [], "name": "string", "text": "string"}], "name": "string", "text": "string"}, "dbInterface": "null", "defaultsTree": {"children": [{"children": [], "name": "string", "text": "string"}], "name": "string", "text": "string"}, "merged": {"children": [{"children": [], "name": "string", "text": "string"}], "name": "string", "text": "string"}, "telnetDefaultPorts": {"baseapp": "number", "bots": "number", "cellapp": "number", "dbmgr": "number", "interfaces": "number", "logger": "number", "loginapp": "number"}, "telnetSummary": [{"component": "string", "password": "null", "port": "null"}]},
+    "$/kode/databaseSchema/build": {"tableIndex": {"tbl_Avatar": {"fields": [{"identifier": "boolean", "indexType": "string", "name": "string", "source": {"category": "string", "filePath": "string", "line": "number", "path": "string"}, "sourcePath": "string", "synthetic": "boolean", "typeLabel": "string"}], "kind": "string", "name": "string", "propertyPath": "string", "source": {"category": "string", "filePath": "string", "line": "number", "path": "string"}, "title": "string"}}, "tables": [{"fields": [{"identifier": "boolean", "indexType": "string", "name": "string", "source": {"category": "string", "filePath": "string", "line": "number", "path": "string"}, "sourcePath": "string", "synthetic": "boolean", "typeLabel": "string"}], "kind": "string", "name": "string", "propertyPath": "string", "source": {"category": "string", "filePath": "string", "line": "number", "path": "string"}, "title": "string"}]},
+    "$/kode/dbClone/export": {"__error__": "$/kode/rpc failed (-32602): missing field `entity_name`"},
+    "$/kode/dbClone/inspectArchive": {"__error__": "$/kode/rpc failed (-32602): archive error: open archive: No such file or directory (os error 2)"},
+    "$/kode/dbClone/planExport": {"__error__": "$/kode/rpc failed (-32602): invalid relation rule: cannot parse kode-server derivation output: missing field `tables` at line 1 column 2"},
+    "$/kode/dbClone/planImport": {"__error__": "$/kode/rpc failed (-32602): missing field `uniqueKeys`"},
+    "$/kode/dbClone/readArchiveRows": {"__error__": "$/kode/rpc failed (-32602): archive error: open archive: No such file or directory (os error 2)"},
+    "$/kode/def/md5": {"algorithm": "string", "md5": "string", "streamHex": "string", "trace": [{"bytes": "string", "field": "string", "source": "string"}]},
+    "$/kode/dependency/graph": {"edges": [], "nodes": [], "paths": {"defsRoot": "string", "entitiesXml": "string", "typesXml": "string"}, "reverseEdges": {}, "stats": {"componentCount": "number", "defCount": "number", "edgeCount": "number", "entityCount": "number", "interfaceCount": "number", "nodeCount": "number", "pythonCount": "number", "typeCount": "number"}},
+    "$/kode/lint/analyzeAttributeNone": {"items": []},
+    "$/kode/lint/analyzeDef": {"findings": [{"check": "string", "code": "string", "length": "number", "line": "number", "message": "string", "name": "string", "offset": "number", "range": {"length": "number", "offset": "number"}, "severity": "string"}]},
+    "$/kode/lint/analyzePostDestroy": {"items": []},
+    "$/kode/lint/analyzePropertyDirection": {"scan": {"accesses": [{"character": "number", "fullPath": "string", "line": "number"}], "cellDataAccesses": [], "initCellDataKeys": [], "initNames": ["string"], "initSites": [{"character": "number", "line": "number", "name": "string"}]}},
+    "$/kode/lint/analyzeReadOnlyWrite": {"items": []},
+    "$/kode/lint/analyzeReceiverNone": {"items": []},
+    "$/kode/lint/analyzeRoleMisuse": {"items": []},
+    "$/kode/lint/analyzeRpcArgCount": {"counts": ["null"]},
+    "$/kode/lint/analyzeSpaceNav": {"items": []},
+    "$/kode/lint/analyzeTraps": {"items": []},
+    "$/kode/messageTable/build": {"aliasIdEnabled": "boolean", "clientMethods": [], "clientProperties": [], "fatalCount": "number", "generatedAt": "string", "issues": [{"fatal": "boolean", "kind": "string", "line": "number", "message": "string"}], "loadFailed": "boolean", "methods": [], "module": "string", "properties": [{"aliasID": "null", "declaredUtype": "null", "flags": "string", "hasClient": "boolean", "line": "number", "name": "string", "origin": "string", "originKind": "string", "persistent": "null", "typeName": "null", "utype": "null"}], "sources": [{"filePath": "string", "kind": "string", "name": "string"}], "types": [{"aliasedTo": "null", "kind": "string", "line": "null", "name": "string", "origin": "string", "utype": "number"}]},
+    "$/kode/processTopology/validate": {"findings": []},
+    "$/kode/python/callgraph": {"dataflow": [{"chains": [{"defLine": "number", "isParam": "boolean", "useLines": [], "var": "string"}], "class": "string", "filePath": "string", "method": "string"}], "edges": [{"callee": "string", "calleeId": "string", "caller": "string", "callerClass": "string", "callerId": "string", "callerLine": "number", "filePath": "string", "kind": "string", "receiver": "string"}], "nodes": [{"className": "string", "filePath": "string", "id": "string", "isAsync": "boolean", "kind": "string", "line": "number", "name": "string", "params": []}], "processRoles": [], "reverseIndex": {}, "stats": {"byKind": {"kbe-api": "number", "kbe-base-clients": "number", "kbe-broadcast": "number", "kbe-cross-process": "number", "local": "number", "method": "number", "self-method": "number", "unknown": "number"}, "dataflowCount": "number", "edgeCount": "number", "errorCount": "number", "fileCount": "number", "nodeCount": "number"}},
+    "$/kode/python/localReturnType": {"ret": "null"},
+    "$/kode/python/returnAnnotations": {"facts": [{"annotation": "null", "name": "string"}], "imports": {"names": [], "receivers": []}, "localAssignmentCalls": []},
+    "$/kode/python/selfAttributeFlow": {"flow": {"annotation": "string", "hasNone": "boolean", "narrowed": "boolean", "types": ["string"]}},
+    "$/kode/python/symbols": [{"classes": [{"attributes": [{"character": "number", "line": "number", "name": "string"}], "bases": [], "decorators": [], "endLine": "number", "methods": [{"calls": [], "character": "number", "decorators": [], "endLine": "number", "isAsync": "boolean", "line": "number", "name": "string", "params": []}], "name": "string", "qualifiedName": "string", "startLine": "number"}], "errors": [], "filePath": "string", "functions": [], "imports": [], "lineCount": "number"}],
+    "$/kode/python/userTypeContract": {"items": [], "probes": {"Avatar": {"createObjFromDict": "boolean", "getDictFromObj": "boolean", "isSameType": "boolean"}}},
+    "$/kode/sdk/generate": [],
+    "$/kode/semantics/cellDataKeys": {"entity": "string", "keys": [], "status": "string"},
+    "$/kode/workspace/scanAnchors": {"configRoots": [], "entitiesXml": [], "entityDefs": [], "kbeSourceRoots": [], "messagesXml": [], "scanTruncated": "boolean", "scanVisited": "number", "typesXml": []}
+  };
 });
