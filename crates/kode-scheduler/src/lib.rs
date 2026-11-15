@@ -27,6 +27,7 @@ pub mod invalidation;
 pub mod journal;
 pub mod model;
 pub mod scheduler;
+pub mod session;
 pub mod stress;
 
 pub use invalidation::{plan_dependency_tasks, CallReverseIndex, InvalidationGraph};
@@ -36,6 +37,7 @@ pub use scheduler::{
     CancelToken, EnqueueDecision, EnsureDecision, Pump, Scheduler, SchedulerOptions, StormBuffer,
     TaskSpec, MAX_RETAINED_TERMINAL_TASKS,
 };
+pub use session::{RootInvalidationSink, RootRemoval, WorkspaceSession};
 
 pub use kode_index::DocumentKey;
 pub use kode_vfs::store::RootId;

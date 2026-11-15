@@ -74,6 +74,18 @@ impl RootRegistry {
         id
     }
 
+    /// 撤销一个根(CORE-004 会话面):条目移除,id **永不复用**(next_id 单调)——
+    /// 撤销后重新注册同一路径必得新 id,新化身与旧化身的缓存身份永不重合
+    /// (受控共享缓存的隔离前提)。未知路径返回 None,不做任何变更。
+    pub fn unregister(&mut self, path: &str) -> Option<RootId> {
+        let canonical = CanonicalUri::from_path(path);
+        let pos = self
+            .roots
+            .iter()
+            .position(|(_, existing)| *existing == canonical.as_path())?;
+        Some(self.roots.remove(pos).0)
+    }
+
     pub fn roots(&self) -> &[(RootId, String)] {
         &self.roots
     }
@@ -347,6 +359,21 @@ mod tests {
 
     fn key(root: u32, path: &str) -> DocumentKey {
         DocumentKey::new(RootId(root), CanonicalUri::from_path(path))
+    }
+
+    #[test]
+    fn unregister_then_reregister_same_path_gets_fresh_id() {
+        let mut registry = RootRegistry::new();
+        let first = registry.register("/w/alpha");
+        assert_ne!(first, RootId::UNROOTED);
+        assert_eq!(registry.unregister("/w/alpha"), Some(first));
+        // 未知路径撤销:None,零变更。
+        assert_eq!(registry.unregister("/w/alpha"), None);
+        assert_eq!(registry.unregister("/w/other"), None);
+        // 重新注册同一路径必得新 id:新旧化身缓存身份永不重合(CORE-004)。
+        let second = registry.register("/w/alpha");
+        assert_ne!(first, second, "id 不得复用,化身必须隔离");
+        assert_eq!(registry.roots().len(), 1);
     }
 
     #[test]
