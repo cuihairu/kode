@@ -49,6 +49,44 @@ impl RpcRegistry {
     pub fn methods(&self) -> impl Iterator<Item = &str> {
         self.handlers.keys().map(|k| k.as_str())
     }
+
+    /// RUST-075-W:可跨线程快照(fn 指针 Send+Sync)——worker 池持有这份
+    /// 快照执行纯 handler,与主线程 ServerState 零共享。同一注册源派生,
+    /// 一致性由 snapshot_matches_registry 锁定。
+    pub fn snapshot(&self) -> RegistrySnapshot {
+        RegistrySnapshot { handlers: self.handlers.clone() }
+    }
+}
+
+/// 注册表快照(worker 池的派发依据):字段与 RpcRegistry 同源同形,
+/// 快照后注册表再变化不回流(注册只发生在构造期,无运行期增注册)。
+#[derive(Debug, Default, Clone)]
+pub struct RegistrySnapshot {
+    handlers: BTreeMap<String, RpcHandler>,
+}
+
+impl RegistrySnapshot {
+    /// 派发一个命令;未注册 method → Err(与 RpcRegistry 同口径文案)。
+    pub fn dispatch(&self, method: &str, params: Value) -> Result<Value, String> {
+        match self.handlers.get(method) {
+            Some(handler) => handler(params),
+            None => Err(format!("method not found: {method}")),
+        }
+    }
+
+    /// 已注册 method 列表(对账面)。
+    pub fn methods(&self) -> impl Iterator<Item = &str> {
+        self.handlers.keys().map(|k| k.as_str())
+    }
+
+    /// 已注册 method 数。
+    pub fn len(&self) -> usize {
+        self.handlers.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.handlers.is_empty()
+    }
 }
 
 /// 内建 handler(Phase0 自检):echo 原样回显,验 dispatch 链路贯穿。

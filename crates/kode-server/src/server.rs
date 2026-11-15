@@ -216,6 +216,9 @@ pub struct ServerState {
     pub cancels: Arc<CancelRegistry>,
     /// 通用命令 RPC 面(Phase0 接线):`$/kode/rpc` 单臂 dispatch + 注册表。
     pub rpc: crate::rpc::RpcRegistry,
+    /// RUST-075-W:worker 池记账快照(健康面 `pool` 键)。main 装配执行器后
+    /// 注入;直连构造(单测)为 None,健康面省略该键(既有形状不变)。
+    pub pool_stats: Option<Arc<Mutex<crate::executor::PoolStats>>>,
 }
 
 impl ServerState {
@@ -271,6 +274,8 @@ impl ServerState {
             hover,
             cancels: Arc::new(CancelRegistry::default()),
             rpc,
+            // RUST-075-W:main 装配执行器后注入健康面记账;直连构造 None。
+            pool_stats: None,
         }
     }
 }
@@ -857,7 +862,14 @@ fn health_report(state: &ServerState) -> serde_json::Value {
         documents,
         resources: read_core_resources(),
     };
-    serde_json::to_value(report).expect("serialize health report")
+    let mut value = serde_json::to_value(report).expect("serialize health report");
+    // RUST-075-W:worker 池记账(执行器装配后存在;直连构造省略该键)。
+    if let Some(stats_cell) = &state.pool_stats {
+        if let Ok(stats) = stats_cell.lock() {
+            value["pool"] = serde_json::to_value(*stats).expect("serialize pool stats");
+        }
+    }
+    value
 }
 
 /// RUST-026 Core 进程资源快照(Linux /proc;非 Linux/解析失败=None 诚实降级,

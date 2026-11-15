@@ -12,6 +12,7 @@ pub mod def_md5;
 pub mod definition;
 pub mod dependency_graph;
 pub mod diagnostics;
+pub mod executor;
 pub mod flag_domains;
 pub(crate) mod golden_corpus;
 pub mod hover;

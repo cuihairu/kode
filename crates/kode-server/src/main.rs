@@ -15,6 +15,10 @@ use std::time::Duration;
 use kode_protocol::{
     encode_frame, error_codes, FrameDecoder, FrameOutcome, IncomingMessage, RequestId, Response,
 };
+use kode_scheduler::PoolBudget;
+use kode_server::executor::{
+    execution_lane, rpc_response_for, ExecutionLane, Job, JobOutcome, PoolExecutor,
+};
 use kode_server::{cancel_target, handle_message_with_poll, Outgoing, ServerState};
 
 const READ_CHUNK_BYTES: usize = 8192;
@@ -96,14 +100,62 @@ fn write_outgoing(outgoing: &[Outgoing]) {
 }
 
 /// 分派单个解码结果;长请求经 `poll` 泵入新到输入(取消通道)。
+/// RUST-075-W:`$/kode/rpc` 纯 handler 面按执行归属交 worker 池(已初始化
+/// 前仍走内联,保 SERVER_NOT_INITIALIZED 闸);`$/cancelRequest` 统一登记
+/// 取消表并通知执行器(排队摘除/在途丢弃),不经 handler。
 fn dispatch_outcome(
     state: &mut ServerState,
+    executor: &PoolExecutor,
     outcome: FrameOutcome,
     poll: &mut dyn FnMut() -> bool,
 ) {
     let outgoing: Vec<Outgoing> = match outcome {
         FrameOutcome::Message(value) => match serde_json::from_value(value.clone()) {
             Ok(message) => {
+                if let IncomingMessage::Notification(ref notification) = message {
+                    if notification.method == "$/cancelRequest" {
+                        if let Some(id) = cancel_target(&value) {
+                            state.cancels.request_cancel(&id);
+                            executor.cancel(&id);
+                        }
+                        return;
+                    }
+                }
+                if let IncomingMessage::Request(ref request) = message {
+                    if state.initialized {
+                        if let ExecutionLane::Pool(lane) =
+                            execution_lane(&request.method, request.params.as_ref())
+                        {
+                            // lane 归池 ⇒ 内层 method 必为字符串(与分类同源);
+                            // worker 提交内层 method/params(handler 才在快照里)。
+                            let inner_method = request
+                                .params
+                                .as_ref()
+                                .and_then(|p| p.get("method"))
+                                .and_then(|m| m.as_str())
+                                .expect("pool lane implies inner method string")
+                                .to_string();
+                            let inner_params = request
+                                .params
+                                .as_ref()
+                                .and_then(|p| p.get("params"))
+                                .cloned()
+                                .unwrap_or(serde_json::Value::Null);
+                            // CORE-003:request_id 贯穿——池路径同日志口径。
+                            log(&format!(
+                                "request {} dispatched (pool: {inner_method})",
+                                request.id
+                            ));
+                            executor.submit(Job {
+                                id: request.id.clone(),
+                                method: inner_method,
+                                params: inner_params,
+                                lane,
+                            });
+                            return;
+                        }
+                    }
+                }
                 // CORE-003:request_id 贯穿——请求与响应 id 对账日志(stderr)。
                 if let Some(id) = request_id(&message) {
                     log(&format!("request {id} dispatched"));
@@ -133,10 +185,28 @@ fn dispatch_outcome(
     write_outgoing(&outgoing);
 }
 
+/// 池回包线程:worker 一完成即写出响应,不等主循环 tick(重任务在飞时
+/// 健康/轻请求微秒级先回;EOF/exit 后在途 job 回包照常落盘,与内联路径
+/// 回包平价)。乱序回包,LSP 按 id 对账(TS client pending Map 同口径)。
+/// 与主线程各帧独立加锁写出,帧内不交错。
+fn spawn_pool_drainer(pool_rx: Receiver<JobOutcome>) -> std::thread::JoinHandle<()> {
+    std::thread::Builder::new()
+        .name("kode-pool-drain".to_string())
+        .spawn(move || {
+            while let Ok(outcome) = pool_rx.recv() {
+                let response = rpc_response_for(outcome.id, outcome.status);
+                write_outgoing(&[Outgoing::Response(response)]);
+            }
+        })
+        .expect("spawn pool drainer thread")
+}
+
 /// 处理解码结果序列;poll 闭包把 wait 期间新到的帧排入 `deferred`,
-/// `$/cancelRequest` 即刻登记进取消表(长请求取消的唯一通道)。
+/// `$/cancelRequest` 即刻登记进取消表并通知执行器(长请求取消唯一通道;
+/// 池路径在途 job 同刻丢弃标记)。
 fn process_outcomes(
     state: &mut ServerState,
+    executor: &PoolExecutor,
     outcomes: Vec<FrameOutcome>,
     rx: &Receiver<Chunk>,
     decoder: &mut FrameDecoder,
@@ -151,6 +221,7 @@ fn process_outcomes(
                     if let FrameOutcome::Message(ref value) = next {
                         if let Some(id) = cancel_target(value) {
                             cancels.request_cancel(&id);
+                            executor.cancel(&id);
                             saw_cancel = true;
                             continue;
                         }
@@ -160,7 +231,7 @@ fn process_outcomes(
             }
             saw_cancel
         };
-        dispatch_outcome(state, outcome, &mut poll);
+        dispatch_outcome(state, executor, outcome, &mut poll);
     }
 }
 
@@ -178,6 +249,14 @@ fn main() {
     ));
 
     let mut state = ServerState::new();
+    // RUST-075-W:worker 执行器装配(预算=可用核数;交互预留/后台硬顶由
+    // WorkerPoolGate 持有)。快照与注册表同源;健康面共享记账 cell。
+    let snapshot = state.rpc.snapshot();
+    let workers = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
+    let (executor, pool_rx) = PoolExecutor::spawn(snapshot, PoolBudget::from_total(workers));
+    state.pool_stats = Some(executor.stats_cell());
+    // 池回包由专职线程泵出(不占主循环 tick;worker 完成 → 回包微秒级落盘)。
+    let drainer = spawn_pool_drainer(pool_rx);
     let mut decoder = FrameDecoder::new();
     let rx = spawn_reader();
     // 长请求期间暂存的解码结果(wait 结束后回主循环处理)。
@@ -186,12 +265,12 @@ fn main() {
 
     loop {
         if let Some(outcome) = deferred.pop_front() {
-            process_outcomes(&mut state, vec![outcome], &rx, &mut decoder, &mut deferred);
+            process_outcomes(&mut state, &executor, vec![outcome], &rx, &mut decoder, &mut deferred);
         } else if !eof {
             match rx.recv_timeout(PUMP_TICK) {
                 Ok(Some(chunk)) => {
                     let outcomes = decoder.push(&chunk);
-                    process_outcomes(&mut state, outcomes, &rx, &mut decoder, &mut deferred);
+                    process_outcomes(&mut state, &executor, outcomes, &rx, &mut decoder, &mut deferred);
                 }
                 Ok(None) | Err(RecvTimeoutError::Disconnected) => eof = true,
                 Err(RecvTimeoutError::Timeout) => {}
@@ -204,6 +283,10 @@ fn main() {
             break;
         }
     }
+    // drop → shutdown:worker 排空已受理队列退出;全部 sender 落后回包
+    // 线程见 EOF 自己退出(join 收口,在途响应绝不丢)。
+    drop(executor);
+    let _ = drainer.join();
 
     // CORE-015:未走 shutdown 的退出视为异常,stderr 留痕;TS client 据此重启。
     if !state.shutdown_requested {

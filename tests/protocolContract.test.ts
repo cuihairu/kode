@@ -86,9 +86,17 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
     client.openDocument(URI, 'kbengine-def', 1, '<Entity><GroupName>mob</GroupName></Entity>');
     const health = await client.health();
     expect(sortedKeys(health)).toEqual(
-      ['documents', 'initialized', 'pid', 'resources', 'restartGeneration',
+      ['documents', 'initialized', 'pid', 'pool', 'resources', 'restartGeneration',
        'serverVersion', 'shutdownRequested', 'status', 'uptimeMs']
     );
+    // RUST-075-W:worker 执行器默认装配,健康面带池记账键。
+    expect(sortedKeys(health.pool)).toEqual(
+      ['backgroundRunning', 'interactiveRunning', 'jobsCancelled',
+       'jobsDone', 'jobsFailed', 'workers']
+    );
+    for (const value of Object.values(health.pool ?? {})) {
+      expect(typeof value).toBe('number');
+    }
     expect(Array.isArray(health.documents)).toBe(true);
     expect(health.documents[0]).toEqual({ uri: URI, version: 1 });
     expect(sortedKeys(health.resources)).toEqual(
