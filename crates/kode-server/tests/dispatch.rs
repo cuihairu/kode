@@ -464,6 +464,97 @@ fn cancel_registry_begin_after_early_cancel_reports_early() {
 }
 
 #[test]
+fn cancel_registry_note_finished_drops_late_cancel() {
+    // P1-1 迟到取消:请求已应答(note_finished)后同 id 取消不再落先到账。
+    let reg = CancelRegistry::default();
+    let id = RequestId::Number(3);
+    reg.request_cancel(&id);
+    assert_eq!(reg.before_start_len_for_tests(), 1);
+    assert!(reg.consume_early(&id));
+    reg.note_finished(&id);
+    reg.request_cancel(&id);
+    reg.request_cancel(&id);
+    assert_eq!(
+        reg.before_start_len_for_tests(),
+        0,
+        "迟到取消被墓碑丢弃,不落先到账"
+    );
+    assert_eq!(reg.finished_len_for_tests(), 1);
+}
+
+#[test]
+fn late_cancel_after_answered_request_is_dropped_not_ledgered() {
+    // P1-1 三序之三(集成):请求正常应答后取消才到 → 丢弃,零残留。
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(0));
+    let out = handle_message(&mut state, request(11, "$/kode/health", json!({})));
+    assert!(matches!(&out[0], Outgoing::Response(_)));
+    handle_message(
+        &mut state,
+        notification("$/cancelRequest", json!({ "id": 11 })),
+    );
+    assert_eq!(
+        state.cancels.before_start_len_for_tests(),
+        0,
+        "已应答请求的迟到取消不得进先到账"
+    );
+}
+
+#[test]
+fn late_cancels_after_many_answered_requests_leave_zero_residue() {
+    // P1-1 用户实测口径:1000 个完成请求 + 各自迟到取消 → 零残留
+    // (此前每条迟到取消永久落 before_start,留 1000 条记录)。
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(0));
+    for i in 0..1000i64 {
+        handle_message(&mut state, request(i, "$/kode/health", json!({})));
+    }
+    assert_eq!(state.cancels.before_start_len_for_tests(), 0);
+    for i in 0..1000i64 {
+        state.cancels.request_cancel(&RequestId::Number(i));
+    }
+    assert_eq!(
+        state.cancels.before_start_len_for_tests(),
+        0,
+        "全部迟到取消必须被墓碑环吸收"
+    );
+}
+
+#[test]
+fn cancel_ledgers_stay_bounded_under_overflow() {
+    // 有界性:墓碑环只保最近 4096 条;更早 id 的迟到取消落先到账,
+    // 但先到账自身有界(1024 丢最旧)——总内存有界,无无界泄漏。
+    let reg = CancelRegistry::default();
+    for i in 0..(4096 + 512) {
+        reg.note_finished(&RequestId::Number(i));
+    }
+    assert_eq!(reg.finished_len_for_tests(), 4096, "墓碑环上限");
+    for i in 0..(4096 + 512) {
+        reg.request_cancel(&RequestId::Number(i));
+    }
+    assert!(
+        reg.before_start_len_for_tests() <= 1024,
+        "环外迟到取消落先到账但有界丢最旧:实际 {}",
+        reg.before_start_len_for_tests()
+    );
+
+    // 先到账自身溢出:未到达请求的先到取消超上限 → 丢最旧,新条目保留。
+    let reg2 = CancelRegistry::default();
+    for i in 0..1500 {
+        reg2.request_cancel(&RequestId::Number(10_000 + i));
+    }
+    assert!(reg2.before_start_len_for_tests() <= 1024);
+    assert!(
+        !reg2.consume_early(&RequestId::Number(10_000)),
+        "最旧条目已被丢弃"
+    );
+    assert!(
+        reg2.consume_early(&RequestId::Number(10_000 + 1499)),
+        "最新条目仍在"
+    );
+}
+
+#[test]
 fn early_cancel_for_plain_request_is_consumed_not_accumulated() {
     // 生产接线审计批(泄漏修):取消先到 + 普通 RPC(hover)→ 请求照常
     // 应答,先到账随请求到达消费 —— 此前普通 RPC 从不消费,标记无界累积。

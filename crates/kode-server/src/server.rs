@@ -9,7 +9,7 @@
 //!   身份 (root_id, canonical URI)、open overlay、严格 version 转移、
 //!   full/ranged 双模式 change、根注册与最长前缀归属。
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -33,28 +33,110 @@ pub const SERVER_NAME: &str = "kode-server";
 /// `$/kode/wait` 单次等待上限(ms):防误用把泵挂死。
 const WAIT_MAX_MS: u64 = 10_000;
 
+/// 已应答请求墓碑环上限:迟到取消(请求应答之后才到的 $/cancelRequest)
+/// 据此判「请求已完」。只保最近 N 条,更早 id 的迟到取消落先到账的
+/// 有界丢弃(总内存仍有界)。
+const FINISHED_TOMBSTONE_CAP: usize = 4096;
+/// 先到账上限:合法形态是「取消先到、请求紧随」,窗口极小;溢出丢最旧
+/// 条目——丢弃只会退化为「正常应答该请求」,不会误取消。
+const BEFORE_START_CAP: usize = 1024;
+
+/// 有界插入序集合(先到账):live 查重/查在,order 定淘汰序。
+#[derive(Debug, Default)]
+struct BeforeStartLedger {
+    live: HashSet<RequestId>,
+    order: VecDeque<RequestId>,
+}
+
+impl BeforeStartLedger {
+    fn insert(&mut self, id: RequestId) {
+        if self.live.insert(id.clone()) {
+            self.order.push_back(id);
+        }
+        while self.order.len() > BEFORE_START_CAP {
+            if let Some(old) = self.order.pop_front() {
+                self.live.remove(&old);
+            }
+        }
+    }
+    fn remove(&mut self, id: &RequestId) -> bool {
+        self.live.remove(id)
+    }
+    fn len(&self) -> usize {
+        self.live.len()
+    }
+}
+
+/// 已应答请求墓碑环(有界):判迟到取消。
+#[derive(Debug, Default)]
+struct FinishedTombstones {
+    seen: HashSet<RequestId>,
+    order: VecDeque<RequestId>,
+}
+
+impl FinishedTombstones {
+    fn note(&mut self, id: RequestId) {
+        if self.seen.insert(id.clone()) {
+            self.order.push_back(id);
+        }
+        while self.order.len() > FINISHED_TOMBSTONE_CAP {
+            if let Some(old) = self.order.pop_front() {
+                self.seen.remove(&old);
+            }
+        }
+    }
+    fn contains(&self, id: &RequestId) -> bool {
+        self.seen.contains(id)
+    }
+}
+
 /// 取消登记表:与 ServerState 分离成可 Arc 共享的单元,
 /// 让 stdio 泵在长请求(`$/kode/wait`)睡眠期间也能登记先到的取消通知
 /// (单线程阻塞泵的取消通道,CORE-007 最小实现)。
+///
+/// 三序全覆盖(生产接线审计 P1-1):
+/// - 取消先到、请求后到 → 先到账,请求分派入口消费;
+/// - 请求在途(pending)→ 置取消标志,handler 轮询点观测;
+/// - 请求已应答、取消迟到 → 墓碑环判已完直接丢弃,不落账
+///   (此前永久落 before_start 无界泄漏)。
 #[derive(Debug, Default)]
 pub struct CancelRegistry {
     /// 进行中可取消请求 → 取消标志。
     pending: Mutex<HashMap<RequestId, Arc<AtomicBool>>>,
-    /// 取消通知先于请求到达(LSP 允许):先记账,请求到达时核对。
-    before_start: Mutex<HashSet<RequestId>>,
+    /// 取消通知先于请求到达(LSP 允许):先记账,请求到达时核对。有界。
+    before_start: Mutex<BeforeStartLedger>,
+    /// 已应答请求(有界环):其取消一律迟到,丢弃。
+    finished: Mutex<FinishedTombstones>,
 }
 
 impl CancelRegistry {
-    /// 取消标志:已 pending 则置位;否则记入先到账。
+    /// 取消标志:已 pending 则置位;请求已应答则迟到丢弃;否则记入先到账。
     pub fn request_cancel(&self, id: &RequestId) {
         if let Some(flag) = self.pending.lock().expect("cancel map").get(id) {
             flag.store(true, Ordering::SeqCst);
+            return;
+        }
+        if self
+            .finished
+            .lock()
+            .expect("cancel-finished set")
+            .contains(id)
+        {
+            // 迟到取消:请求已应答(LSP 语义为 no-op),墓碑直接丢弃。
             return;
         }
         self.before_start
             .lock()
             .expect("cancel-before set")
             .insert(id.clone());
+    }
+
+    /// 请求应答收尾(分派尾部统一调用):此后同 id 的取消是迟到取消。
+    pub fn note_finished(&self, id: &RequestId) {
+        self.finished
+            .lock()
+            .expect("cancel-finished set")
+            .note(id.clone());
     }
 
     /// 请求分派入口统一消费先到账:请求到达即清账(可取消方法把早到结果
@@ -96,6 +178,15 @@ impl CancelRegistry {
     /// 测试面:先到账深度(泄漏钉)。
     pub fn before_start_len_for_tests(&self) -> usize {
         self.before_start.lock().expect("cancel-before set").len()
+    }
+
+    /// 测试面:墓碑环深度。
+    pub fn finished_len_for_tests(&self) -> usize {
+        self.finished
+            .lock()
+            .expect("cancel-finished set")
+            .seen
+            .len()
     }
 }
 
@@ -214,6 +305,20 @@ pub fn cancel_target(value: &serde_json::Value) -> Option<RequestId> {
 }
 
 fn handle_request(
+    state: &mut ServerState,
+    request: Request,
+    poll: &mut dyn FnMut() -> bool,
+) -> Vec<Outgoing> {
+    let request_id = request.id.clone();
+    let outgoings = handle_request_inner(state, request, poll);
+    // 取消生命周期收尾(P1-1):本请求已应答(含 -32002/-32601 错误应答),
+    // 此后同 id 的 $/cancelRequest 全是迟到取消,墓碑环判已完直接丢弃,
+    // 不再永久落先到账(此前 1000 完成请求+迟到取消留 1000 条记录)。
+    state.cancels.note_finished(&request_id);
+    outgoings
+}
+
+fn handle_request_inner(
     state: &mut ServerState,
     request: Request,
     poll: &mut dyn FnMut() -> bool,
