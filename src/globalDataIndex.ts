@@ -687,6 +687,27 @@ export class GlobalDataDictIndex {
     return this.byKey.get(siteKey(root, dict, keySignature)) ?? [];
   }
 
+  /** RUST-004:就绪判定=初扫完成且未弃置。本索引是增量事件驱动面
+   * (noteSaved 无需初扫即可蓄内容),就绪语义只指「工作区初扫」,不指
+   * 「内容可用」——严格就绪门会误伤事件驱动用法,门只在上游
+   * ensureStarted 纪律 + 本 marked 面的显式标注。 */
+  get isReady(): boolean {
+    return this.started && !this.disposed;
+  }
+
+  /** RUST-004:显式标注查询——未就绪返回 {sites:[], ready:false},绝不
+   * 让调用方把「索引未建」读成「查询结果为空」。判据「允许明确标注
+   * partial/incomplete」的落地面;plain query() 语义不变(生产消费面都
+   * 先过 ensureStarted 门,marked 面给未来无门调用方用)。 */
+  queryMarked(
+    dict: string,
+    keySignature: string,
+    root = ''
+  ): { sites: KbeDataDictSite[]; ready: boolean } {
+    const ready = this.isReady;
+    return { sites: ready ? (this.byKey.get(siteKey(root, dict, keySignature)) ?? []) : [], ready };
+  }
+
   /**
    * (作用域根, 字典) 的全部键族(键签名 → 站点),补全面用(KSEM-DATA-02)。
    * 与 query 同根身份口径:别根/别字典的键族不入列(工程隔离与三字典
@@ -705,6 +726,15 @@ export class GlobalDataDictIndex {
       families.push({ keySignature: key.slice(prefix.length), sites });
     }
     return families.sort((a, b) => a.keySignature.localeCompare(b.keySignature));
+  }
+
+  /** RUST-004:键族面显式标注变体(与 queryMarked 同口径;补全面用)。 */
+  queryKeyFamiliesMarked(
+    dict: string,
+    root = ''
+  ): { families: Array<{ keySignature: string; sites: KbeDataDictSite[] }>; ready: boolean } {
+    const ready = this.isReady;
+    return { families: ready ? this.queryKeyFamilies(dict, root) : [], ready };
   }
 
   /**
