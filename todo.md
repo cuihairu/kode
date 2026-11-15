@@ -374,7 +374,7 @@
 - [ ] RUST-126 （旧 IDX-009） 磁盘缓存 key 包含 Core schema、engine profile、root identity、workspace config、解析器版本。
 - [ ] RUST-127 （旧 IDX-010） 缓存崩溃写入用临时文件+原子 rename/WAL 等，损坏可清理重建。
 - [ ] RUST-128 （旧 IDX-011） 持久化格式候选 SQLite/redb/自定义二进制；先做 cold start、读写放大、文件数基准。
-- [ ] RUST-129 （旧 IDX-012） 内存索引结构评测紧凑字符串 interning / arenas / small vectors，防止 50k 文件内存爆炸。
+- [x] RUST-129 （旧 IDX-012） 内存索引结构评测紧凑字符串 interning / arenas / small vectors，防止 50k 文件内存爆炸。(基础版:56f344be examples/bench_memory.rs 分层归因(parse vs full)+ 四档线性检验 + 名字去重率,docs/perf/2026-11-15-index-memory-eval.md 实测:50k 文件 2.61GB 全量驻留(53KB/文件、693B/符号、线性 ±1%),解析层占 65%(DefFile 胖节点 ~10 次堆分配/属性、5.4× 源文本)为真凶,三候选结构合计上限 <5% 均非杠杆,真杠杆=冷热分层(RUST-125)/落盘持久化(RUST-126..128);RSS 绝对驻留为唯一可比口径——同进程扫档 delta 被分配器驻留页污染实测低估一半)
 - [x] RUST-130 （旧 IDX-013） 热更新回归须断言“仅影响相关节点”和“文件读取/解析次数”，而非只看结果正确。(基础版:PR-007 rebuild 计数断言:6 文件首扫6/二扫0/单改1;200 文件 bench 同构,证据 docs/kode2/pr-007.md)
 - [x] RUST-131 （旧 IDX-014） 文件 rename/delete 后引用、diagnostics、缓存和生成源映射自动清理。(基础版:PR-007 remove/rename 连带清符号/倒排/反向依赖/继承边/解析缓存;diagnostics 与生成源映射随对应模块接线)
 - [x] RUST-132 （旧 IDX-015） 对 root 增删及 engine profile 切换使用 scoped invalidation，不总是全仓重算。(基础版:PR-007 invalidate_root 只触该根文件;profile 切换入口随 PR-006 root 模型接线)
