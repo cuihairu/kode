@@ -1,0 +1,18 @@
+# RUST-022 extension activation 段实测
+# runs=5 date=2026-11-15T05:41:10.585Z
+# loadavg=5.57 7.48 15.65 3/25817 295342
+# 口径:宿主日志时间戳(每次全新 user-data 冷启)。
+# 非 activate() 同步体精确耗时(那需扩展内埋点,见 docs/perf/2026-11-07-activation-views-first.md)。
+# activateToEager 若带 trailingStartup>0 则是混合窗(含其他扩展激活体),
+# 不可单读本扩展——两者必须同看。
+run#1: hostStartToActivate=1110ms activateToEager=1043ms hostStartToEager=2153ms trailingStartup=1 (wall=9902ms)
+run#2: hostStartToActivate=1134ms activateToEager=943ms hostStartToEager=2077ms trailingStartup=1 (wall=9725ms)
+run#3: hostStartToActivate=877ms activateToEager=949ms hostStartToEager=1826ms trailingStartup=1 (wall=9949ms)
+run#4: hostStartToActivate=853ms activateToEager=948ms hostStartToEager=1801ms trailingStartup=1 (wall=10206ms)
+run#5: hostStartToActivate=901ms activateToEager=863ms hostStartToEager=1764ms trailingStartup=0 (wall=10317ms)
+
+METRIC hostStartToActivateMs: n=5 p50=901ms p90=1134ms max=1134ms min=853ms
+METRIC activateToEagerMs: n=5 p50=948ms p90=1043ms max=1043ms min=863ms
+METRIC hostStartToEagerMs: n=5 p50=1826ms p90=2153ms max=2153ms min=1764ms
+ACTIVATION_EVENT: workspaceContains:**/*.def
+TRAILING_STARTUP_ACTIVATIONS: 0-1

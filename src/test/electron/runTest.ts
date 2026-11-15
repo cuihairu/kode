@@ -971,7 +971,8 @@ async function main(): Promise<void> {
       // 关掉欢迎页/恢复提示,保证工作区按参数打开
       '--disable-workspace-trust',
       '--skip-welcome',
-      '--skip-release-notes'
+      '--skip-release-notes',
+      ...(process.env.KODE_ACTIVATION_BENCH_UD ? ['--user-data-dir', process.env.KODE_ACTIVATION_BENCH_UD] : [])
     ]
   });
   if (manifestFallbackMode || bundleFallbackMode) {
