@@ -155,7 +155,7 @@ describe('门 1:保存风暴(HR-WATCH-006/016 组合)', () => {
     h.pipeline.releasePreview();
     expect(h.emitted).toHaveLength(1);
     expect(h.emitted[0].mode).toBe('preview-release');
-  });
+  }, 60_000); // 5001 文件风暴属 CPU 密集循环,CI 覆盖率插桩下 5s 缺省超时不够(2026-11-15 实测超时)
 });
 
 describe('门 2:过期响应(HR-WATCH-011)', () => {
