@@ -99,7 +99,10 @@ RUST-033:每一项优化的 profiling 证据、取舍、回退策略集中记账
 ### RUST-029/030 风暴/浸泡车道
 - 证据:docs/perf/2026-11-15-request-storm.md(五面风暴,泄漏判定=gc 后
   heapUsed 非 RSS——探针实证 heapUsed 平坦而 RSS +77MB 属 V8 段预留);
-  soak-run.txt 60s 官方记录(errors=0/heapGrowthMb=0.42)。
+  soak-run.txt 60s 档官方记录(errors=0/heapGrowthMb=0.42)+soak-1h-run.txt
+  1h 档官方记录(2026-11-15:windows=720/requests=21600/errors=0/hover 命中
+  100%/heapGrowthMb=1.39/P50 0.3→0.24ms 无退化,报告
+  2026-11-15-soak-1h.md)。
 - 取舍:泄漏硬闸只在 `--expose-gc` 下生效(gc 不可用诚实跳过内存闸);
   退化守卫只捕 10x 量级;RSS 只记录不断言。
 - 回退:不适用(bench 车道,零生产影响)。
