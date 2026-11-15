@@ -87,6 +87,10 @@
 //! - [`nav`] NAV-01/RUST-110 实体跨语言可逆导航链(entities.xml 注册位 →
 //!   def 声明位 → Python 实现位三腿,标准布局路径推断腿别;Python 文件反向
 //!   回链实体;类缺失不造行号/未在册不产幽灵条目/多 root 歧义归 RUST-111)。
+//! - [`roots`] ROOTS-01/RUST-111 多 root 同名消解(显式优先序=消费方供给
+//!   的 IDE 约定,引擎每进程只装一个 assets root 不合并;逐 kind 消解
+//!   winner+shadowed 歧义事实,消解决定性「歧义」不改变 winner;跨类别
+//!   同名不互歧义;同 root 内重复定义检测归 RUST-112 另面)。
 //! - [`store`] 深审-1 def 解析按引用类别分池(`ReferenceKind` 三池=
 //!   entities/interfaces/components 目录约定,引擎 Parent 按当前池递归;
 //!   `def_kind_from_key` 按路径判池、resolve 类别+名双匹配,同名接口/
@@ -111,6 +115,7 @@ pub mod impact;
 pub mod nav;
 pub mod query;
 pub mod refs;
+pub mod roots;
 pub mod rpcargs;
 pub mod rules;
 pub mod snapshot;
