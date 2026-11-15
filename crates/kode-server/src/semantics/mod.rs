@@ -84,6 +84,10 @@
 //!   `from_type_graph` 递归(alias/ARRAY/FIXED_DICT/UserType);无图或图缺
 //!   =Unknown 带原文,绝不默认 PYTHON——PYTHON 可 pickle 全接受,默认它
 //!   =吞光全部 mismatch;显式 `<Arg>PYTHON</Arg>` 才是合法 PYTHON)。
+//! - [`doclass`] DOCLASS-01/RUST-112 文档类别区分与重复定义检测(Python
+//!   实体脚本/组件脚本/def 三池/XML 语料路径判别;跨文件同池同名 def、
+//!   entities.xml 重复条目、同文件重复类定义三重复面——只报事实不选
+//!   winner;def 属性引用三池归类=组件绑定区分,多池命中歧义全列)。
 //! - [`nav`] NAV-01/RUST-110 实体跨语言可逆导航链(entities.xml 注册位 →
 //!   def 声明位 → Python 实现位三腿,标准布局路径推断腿别;Python 文件反向
 //!   回链实体;类缺失不造行号/未在册不产幽灵条目/多 root 歧义归 RUST-111)。
@@ -107,6 +111,7 @@ pub mod create_return;
 pub mod create_target;
 pub mod deps;
 pub mod dispatch;
+pub mod doclass;
 pub mod entity_name;
 pub mod expr;
 pub mod facts;
