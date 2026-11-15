@@ -28,6 +28,7 @@ pub mod journal;
 pub mod lane;
 pub mod model;
 pub mod pool;
+pub mod results;
 pub mod scheduler;
 pub mod session;
 pub mod stress;
@@ -37,6 +38,7 @@ pub use journal::{load_journal, write_journal, RecoveryReport, TaskRecord};
 pub use lane::{LaneBudget, LaneBudgetError, LaneGate, TaskLane};
 pub use model::{SchedulerMetrics, SchedulerStatus, TaskKind, TaskState};
 pub use pool::{PoolBudget, PoolBudgetError, WorkerPoolGate};
+pub use results::{paginate, Page, PageCursor, PageLimits, PageLimitsError};
 pub use scheduler::{
     CancelToken, ColdRequestOutcome, EnqueueDecision, EnsureDecision, Pump, Scheduler,
     SchedulerOptions, StormBuffer, TaskSpec, WarmState, BACKGROUND_SCAN_KEY,
