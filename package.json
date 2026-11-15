@@ -198,6 +198,9 @@
   "extensionKind": [
     "workspace"
   ],
+  "capabilities": {
+    "virtualWorkspaces": false
+  },
   "contributes": {
     "jsonValidation": [
       {
