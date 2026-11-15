@@ -311,7 +311,7 @@
 - [ ] RUST-071 （旧 CORE-006） 队列具备公平性和抗饥饿机制；不可永久推迟后台 indexing。(PR-009 基础版:kode-scheduler 同优 FIFO+有界队列淘汰+后台饥饿上限绕过冷却晋升;server 接线随装配单)
 - [ ] RUST-072 （旧 CORE-007） 按 request/document/root 级 cancel token，传播至文件读取、解析、计算、响应封装。(PR-009 基础版:kode-scheduler CancelToken+句柄/批量取消,运行中不中断;向 IO/解析/响应的传播随 server 装配)
 - [ ] RUST-073 （旧 CORE-008） 去重同文件同版本工作；singleflight 共享解析结果；异步结果晚到必须 version check。(PR-009 基础版:kode-scheduler 同文件同版本合并+过期版本丢弃/取消让位+keyed 单例;singleflight 随 provider 接线)
-- [ ] RUST-074 （旧 CORE-009） 首扫后台完成，同时允许 on-demand target parse；冷请求绝不无期限等待全仓。
+- [x] RUST-074 （旧 CORE-009） 首扫后台完成，同时允许 on-demand target parse；冷请求绝不无期限等待全仓。(基础版,fdbbc462,2026-11-15:kode-scheduler 暖门三件——begin_background_scan(首扫 keyed 单例 BACKGROUND_SCAN_KEY 后台入队,进行中复用失败可重开)/cold_request(冷请求即时以 REQUEST_LOCAL 入交互队,同文件同版本与在队任务合并不重复解析,回执 ColdRequestOutcome{decision,id,while_warming} ARCH-004 明示;调度级承诺=交互优先级恒先于后台首扫出队 pick_next 决策面,冷请求一经 Queued 即可执行位绝不无期限等全仓,排队上限语义另见有界队列)/warm_state() 三态可观测 Idle/Warming/Warm(失败/取消不缓存成暖态假象,与「失败不缓存成永久 pending」同口径,可重开再暖)+cold_while_warming_count 观测(rust_ext 不进 TS 对拍 metrics 面,golden 零变化);测试 4 例(冷请求绝不排首扫后[冷先执行首扫仍在队]+同文件同版本合并指回同 id+失败不缓存暖态[Recovered 重开→Warm]+暖后常态不亮位),坑=第二 pump 撞交互冷却窗属正确限流须 advance_clock 过窗;prove-red=冷请求降级 BACKGROUND_FULL→2 例红→cp/cmp 字节还原复绿;门禁 clippy -D warnings 0/fmt 过/ crate 70 绿/工作区(exclude kode-server)1358 绿 0 红/server 编译兼容;server 装配接线随 provider 单)
 - [ ] RUST-075 （旧 CORE-010） CPU pool 对交互请求预留容量；后台 worker 并发有硬上限，避免把 CPU 全核占满。
 - [ ] RUST-076 （旧 CORE-011） IO task 与 CPU task 分离，禁止锁跨 await，审计 contention/priority inversion。
 - [ ] RUST-077 （旧 CORE-012） 大结果限流、分页、stream chunk + cancel；限制 JSON payload 体积。
