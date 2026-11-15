@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { findEventCalls } from './eventApi';
-import type { EventCall, EventCallIndex, IndexedEventCall } from './backend/eventIndexTypes';
+import { raceColdIndexReadiness, resolveColdIndexReadyBudgetMs, type ColdIndexToken } from './coldIndexReadiness';
+import type { EventCall, EventCallIndex, EventCallsMarkedQuery, EventIndexReadySubscription, IndexedEventCall } from './backend/eventIndexTypes';
 import { findFilesAcrossRoots, getExternalScanRoots } from './scanRoots';
 import { PY_SCAN_EXCLUDE } from './backend/pythonScanRules';
 
@@ -69,6 +70,9 @@ export class WorkspaceIndex implements EventCallIndex {
   private closeListener?: vscode.Disposable;
   private renameListener?: vscode.Disposable;
   private readonly revisions = new Map<string, number>();
+  // RUST-004-W3:就绪广播(初扫完成/弃置)——冷启动 pending 面的消费端
+  // (事件 CodeLens)据此重渲染,完成后能刷新
+  private readonly readyEmitter = new vscode.EventEmitter<void>();
   // AUD-034(R2-F10):在途任务被复用时的尾随读记账(同文件只安排一条)。
   private readonly trailingReads = new Set<string>();
 
@@ -147,6 +151,9 @@ export class WorkspaceIndex implements EventCallIndex {
     // (切根可重建),与实体面 refreshExternalRootWatchers 同口径。
     this.refreshExternalWatchers();
     this.started = true;
+    // 初扫完成广播(未就绪→就绪):等待期消费端(预算耗尽 pending 面)
+    // 收到通知后自动重渲染
+    this.readyEmitter.fire();
   }
 
   /**
@@ -191,6 +198,9 @@ export class WorkspaceIndex implements EventCallIndex {
 
   dispose(): void {
     this.disposed = true;
+    // 弃置也广播:消费端重渲染(缓存已清,重查得空面),不遗留陈旧镜头
+    this.readyEmitter.fire();
+    this.readyEmitter.dispose();
     this.documentListener?.dispose();
     this.documentListener = undefined;
     this.closeListener?.dispose();
@@ -341,6 +351,10 @@ export class WorkspaceIndex implements EventCallIndex {
   /** 全仓事件调用（走缓存，不再每次读盘）。 */
   async allEventCalls(): Promise<IndexedEventCall[]> {
     await this.ensureStarted();
+    return this.collectIndexedCalls();
+  }
+
+  private collectIndexedCalls(): IndexedEventCall[] {
     const out: IndexedEventCall[] = [];
     for (const [file, indexed] of this.cache) {
       indexed.eventCalls.forEach((call, i) => out.push({ file, call, line: indexed.eventLines[i] ?? 0 }));
@@ -353,12 +367,36 @@ export class WorkspaceIndex implements EventCallIndex {
     return this.started && !this.disposed;
   }
 
-  /** 标注面:未就绪零阻塞返回 ready=false;就绪走 allEventCalls 原语义(硬 await 接线另项设计)。 */
-  async allEventCallsMarked(): Promise<{ calls: IndexedEventCall[]; ready: boolean }> {
-    if (!this.isReady) {
-      return { calls: [], ready: false };
+  /** 就绪通知订阅(RUST-004-W3):初扫完成或弃置时回调,消费端据此重渲染(完成后能刷新)。 */
+  onReady(listener: () => void): EventIndexReadySubscription {
+    const disposable = this.readyEmitter.event(listener);
+    return { dispose: () => disposable.dispose() };
+  }
+
+  /**
+   * 标注查询(RUST-004-W3,接线消费端而非只加标注方法):内容恒真实流出——
+   * 未就绪时事件驱动面已蓄的真实调用照流(partial-real;强制空族丢真实
+   * 内容=W1 审计同款),ready 只做标注。带 token 走冷索引预算竞速(取消→
+   * null;预算耗尽→部分内容+ready:false,初扫继续后台预热);无 token 等
+   * 全量(离线程序化语义);初扫失败原样抛出。
+   */
+  async allEventCallsMarked(
+    token?: ColdIndexToken,
+    budgetMs = resolveColdIndexReadyBudgetMs()
+  ): Promise<EventCallsMarkedQuery | null> {
+    if (token?.isCancellationRequested) {
+      return null;
     }
-    return { calls: await this.allEventCalls(), ready: true };
+    const starting = this.ensureStarted();
+    if (!token) {
+      await starting;
+      return { calls: this.collectIndexedCalls(), ready: this.isReady };
+    }
+    const readiness = await raceColdIndexReadiness(starting, token, budgetMs);
+    if (readiness === 'cancelled') {
+      return null;
+    }
+    return { calls: this.collectIndexedCalls(), ready: this.isReady };
   }
 
   /** 某文件的方法行（当前编辑文件走内存文本，外部文件走缓存）。 */

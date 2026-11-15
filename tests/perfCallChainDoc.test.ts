@@ -458,15 +458,19 @@ const ANCHORS: Array<[string, number, string]> = [
   // awaitSpaceDataIndexReady 面净 +41(均在 provideDefinitionTracedImpl
   // 之前)→ 真位重探 413→454;其后 层0 接收者段闸/withInitialScanTimeout
   // +41(1001/1107 → 1042/1148),出处随 baseline 锁步。
-  ['src/languageProviders/pythonDefinition.ts', 454, 'provideDefinitionTracedImpl'],
+  // 2026-11-15(RUST-004-W3):冷索引竞速核抽 src/coldIndexReadiness.ts 共享
+  // 模块(事件索引面接入,三面同判据)——pythonDefinition 净 −80(删竞速核/
+  // 预算解析/类型块 87 行,补共享模块 import +7,均在三锚之前)→ 三锚真位
+  // 重探 454/1042/1148 → 374/962/1068,出处随 baseline 锁步。
+  ['src/languageProviders/pythonDefinition.ts', 374, 'provideDefinitionTracedImpl'],
   // 2026-11-06(六):二次并入 origin main(KR-AUD-84 引擎整串开关表在 4725 后
   // +13)——层0 接收者段闸/withInitialScanTimeout/provideCompletionItems 锚点
   // 再 +13(真位重探 5146/5252/7063,出处随 baseline 锁步)。
   // 2026-11-13(KSEM-STRUCT-03):fdKeyHit 臂注册表前移 +2 行(注释+customTypes
   // const,provideDefinition 260/provideDefinitionTracedImpl 312 不变)→ 其后锚点
   // +2(真位重探 829/935,出处随 baseline 锁步)。
-  ['src/languageProviders/pythonDefinition.ts', 1042, '层0 接收者段闸'],
-  ['src/languageProviders/pythonDefinition.ts', 1148, 'withInitialScanTimeout'],
+  ['src/languageProviders/pythonDefinition.ts', 962, '层0 接收者段闸'],
+  ['src/languageProviders/pythonDefinition.ts', 1068, 'withInitialScanTimeout'],
   // 2026-11-06:IDE-LINT-012 快速修复边界——languageProviders.ts 在 receiver
   // 守卫 provider 前新增 receiverFromDiagnosticLine helper(区间归属提取)+
   // 提取块重写,+31 行,7007 后锚点随之 +31(真位重探 7038;其余 languageProviders

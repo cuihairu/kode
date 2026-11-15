@@ -22,9 +22,11 @@ import { EntityMappingManager } from '../src/entityMapping';
 import { KBEngineCompletionProvider } from '../src/languageProviders';
 import { GlobalDataDictIndex } from '../src/globalDataIndex';
 import {
-  awaitDataDictIndexReady,
   DATA_DICT_READY_DEFAULT_BUDGET_MS,
-  resolveDataDictReadyBudgetMs,
+  resolveColdIndexReadyBudgetMs as resolveDataDictReadyBudgetMs
+} from '../src/coldIndexReadiness';
+import {
+  awaitDataDictIndexReady,
   resolveDataDictSitesAtPosition
 } from '../src/languageProviders/pythonDefinition';
 

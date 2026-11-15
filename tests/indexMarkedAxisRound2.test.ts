@@ -9,12 +9,15 @@ import { WorkspaceIndex } from '../src/workspaceIndex';
 // (禁止悄悄返回假完整结果的标注轴)。查询原语义不动,就绪=初扫完成且未
 // 弃置。SpaceDataIndex 是增量事件驱动面(updateFile 无初扫也可蓄内容),
 // 严格就绪门会误伤事件驱动用法,门在上游 ensureStarted/awaitReady 纪律,
-// 标注面在这里;WorkspaceIndex.allEventCallsMarked 未就绪零阻塞返回
-// (plain allEventCalls 的硬 await 接线另项设计)。
+// 标注面在这里。
 // RUST-004-W2(2026-11-15):SpaceData 标注面改 partial-real——内容恒真实
 // 流出,ready 只做标注(强制空族丢事件蓄的真实键=审计⑤同款);消费端
 // 预算/取消接线见 spaceDataReadyBudget.test.ts。本文件两例未就绪场景
 // 无已蓄内容,期望形态不变。
+// RUST-004-W3(2026-11-15):WorkspaceIndex.allEventCallsMarked 接预算/取消/
+// 就绪通知并改 partial-real(旧「未就绪零阻塞零副作用、强制空族」口径退役
+// ——只加标注方法不改调用者=W3 红线);消费端(CodeLens)接线与
+// pending/取消/刷新面见 eventIndexReadyBudget.test.ts。
 
 describe('SpaceDataIndex marked query (RUST-004 round 2)', () => {
   it('isReady:未启动 false → 初扫完成 true → 弃置 false', async () => {
@@ -119,7 +122,7 @@ describe('WorkspaceIndex marked query (RUST-004 round 2)', () => {
     expect(index.isReady).toBe(false);
   });
 
-  it('allEventCallsMarked:未就绪零阻塞 {calls:[], ready:false},不触发初扫', async () => {
+  it('allEventCallsMarked:无 token 等全量(离线语义),查询自身踢初扫预热', async () => {
     findCalls = 0;
     vscode.workspace.findFiles = async () => {
       findCalls += 1;
@@ -127,12 +130,12 @@ describe('WorkspaceIndex marked query (RUST-004 round 2)', () => {
     };
     const index = new WorkspaceIndex();
     try {
+      // 无 token = 离线程序化语义:无视预算硬等初扫;标注查询自身踢初扫
+      // (W3 接线消费端,旧「零副作用」口径退役)
       const marked = await index.allEventCallsMarked();
-      expect(marked.ready).toBe(false);
-      expect(marked.calls).toEqual([]);
-      // 零阻塞且零副作用:未触发初扫(findFiles 零次,isReady 不翻真)
-      expect(findCalls).toBe(0);
-      expect(index.isReady).toBe(false);
+      expect(marked.ready).toBe(true);
+      expect(marked.calls.map(call => call.call.event)).toEqual(['EV_TICK']);
+      expect(findCalls, '标注查询自身已踢初扫预热').toBeGreaterThan(0);
     } finally {
       index.dispose();
     }

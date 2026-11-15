@@ -15,14 +15,16 @@ const root = join(__dirname, '..');
 
 describe('事件索引小接口(IDE-ARC-002)', () => {
   it('provider 只依赖小接口:最小桩索引(无 WorkspaceIndex)即可驱动监听 CodeLens', async () => {
+    const record: IndexedEventCall = {
+      file: '/ws/entity.py',
+      call: { api: 'addEvent', event: 'ev_ready', callback: 'on_ready', eventOffset: 0, callbackOffset: 0 },
+      line: 3,
+    };
     const stub: EventCallIndex = {
-      allEventCalls: async () => [
-        {
-          file: '/ws/entity.py',
-          call: { api: 'addEvent', event: 'ev_ready', callback: 'on_ready', eventOffset: 0, callbackOffset: 0 },
-          line: 3,
-        } satisfies IndexedEventCall,
-      ],
+      allEventCalls: async () => [record],
+      // RUST-004-W3:标注查询 + 就绪通知进接口后,最小桩同形补齐
+      allEventCallsMarked: async () => ({ calls: [record], ready: true }),
+      onReady: () => ({ dispose: () => undefined }),
     };
     const doc = makeTextDocument('self.emitEvent("ev_ready")\n', { fileName: '/ws/emit.py', languageId: 'python' }) as unknown as vscode.TextDocument;
     const lenses = await new EventCodeLensProvider(stub).provideCodeLenses(doc);

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fsp from 'node:fs/promises';
 import type { EntityMappingManager } from './entityMapping';
-import type { EventCall, EventCallIndex } from './backend/eventIndexTypes';
+import type { EventCall, EventCallIndex, EventCallsMarkedQuery } from './backend/eventIndexTypes';
 import { KBENGINE_SOURCE_REVEAL_COMMAND } from './sourceRevealCommand';
 
 // 只认三种实参形态：标识符/点名（self.EV_X、on_ready）与字符串字面量；表达式保持沉默。
@@ -184,12 +184,21 @@ export async function eventDefinitionAt(document: vscode.TextDocument, position:
 
 export class EventCodeLensProvider implements vscode.CodeLensProvider {
   private disposed = false;
+  private readonly readySubscription: { dispose(): void };
 
   /** IDE-EVT-012:索引由扩展宿主统一持有一份并注入(共享缓存);provider
    * 不再自持实例,全仓扫描入口只有共享索引一个。索引生命周期归注入方。
-   * IDE-ARC-002:注入面收窄为小接口 EventCallIndex(只消费 allEventCalls),
-   * 不再依赖 WorkspaceIndex 实现。 */
-  constructor(private readonly sharedIndex: EventCallIndex) {}
+   * IDE-ARC-002:注入面收窄为小接口 EventCallIndex,
+   * 不再依赖 WorkspaceIndex 实现。
+   * RUST-004-W3:就绪/取消语义接线——冷索引初扫完成(或弃置)后重渲染
+   * (pending 面先按已蓄真实调用出镜,完成后自动刷新)。 */
+  constructor(private readonly sharedIndex: EventCallIndex) {
+    this.readySubscription = sharedIndex.onReady(() => {
+      if (!this.disposed) {
+        this.onDidChangeCodeLensesEmitter.fire();
+      }
+    });
+  }
 
   private readonly onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
@@ -202,19 +211,17 @@ export class EventCodeLensProvider implements vscode.CodeLensProvider {
 
   dispose(): void {
     this.disposed = true;
+    this.readySubscription.dispose();
     this.onDidChangeCodeLensesEmitter.dispose();
   }
 
-  async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
+  async provideCodeLenses(document: vscode.TextDocument, token?: vscode.CancellationToken): Promise<vscode.CodeLens[]> {
     if (this.disposed || !vscode.workspace.getConfiguration('kbengine').get<boolean>('codeLens.eventCallbacks', true)) {
       return [];
     }
     const text = document.getText();
     const calls = findEventCalls(text);
     if (calls.length === 0) return [];
-    // IDE-EVT-012:事件记录来源只走注入的共享索引(不每次全仓读盘)。
-    const all = await this.sharedIndex.allEventCalls();
-    if (this.disposed) return [];
     const methods = [...text.matchAll(/^[ \t]*(?:async[ \t]+)?def[ \t]+(\w+)[ \t]*\(/gm)];
     const lenses: vscode.CodeLens[] = [];
     const eventsByCallback = new Map<string, string[]>();
@@ -224,6 +231,7 @@ export class EventCodeLensProvider implements vscode.CodeLensProvider {
       if (!events.includes(call.event)) events.push(call.event);
       eventsByCallback.set(call.callback, events);
     }
+    // 本地回调镜先出(纯文档面,不依赖索引);监听面等标注查询
     for (const method of methods) {
       const name = method[1];
       const events = eventsByCallback.get(name);
@@ -236,14 +244,27 @@ export class EventCodeLensProvider implements vscode.CodeLensProvider {
       const lineStart = new vscode.Position(line, 0);
       lenses.push(new vscode.CodeLens(new vscode.Range(lineStart, lineStart), { title, command: KBENGINE_SOURCE_REVEAL_COMMAND, arguments: [document.uri, { selection: new vscode.Range(target, target) }] }));
     }
-    for (const call of calls.filter(c => c.api === 'emitEvent')) {
-      const listeners = all.filter(item => (item.call.api === 'addEvent' || item.call.api === 'registerEvent') && item.call.event === call.event);
-      if (!listeners.length) continue;
-      const line = document.positionAt(call.eventOffset).line;
-      const first = listeners[0];
-      const target = new vscode.Position(first.line, 0);
-      const lineStart = new vscode.Position(line, 0);
-      lenses.push(new vscode.CodeLens(new vscode.Range(lineStart, lineStart), { title: `${listeners.length} 处监听`, command: KBENGINE_SOURCE_REVEAL_COMMAND, arguments: [vscode.Uri.file(first.file), { selection: new vscode.Range(target, target) }] }));
+    // RUST-004-W3:监听面走标注查询——取消→null 只退监听镜(本地镜保留);
+    // 初扫失败也退监听镜(provider 不因冷索引失败整体缺席);未就绪时部分
+    // 真实监听照流(partial-real,强制空=丢真实内容),就绪通知后自动补全。
+    let marked: EventCallsMarkedQuery | null = null;
+    try {
+      marked = await this.sharedIndex.allEventCallsMarked(token);
+    } catch {
+      marked = null;
+    }
+    if (this.disposed) return [];
+    if (marked) {
+      const all = marked.calls;
+      for (const call of calls.filter(c => c.api === 'emitEvent')) {
+        const listeners = all.filter(item => (item.call.api === 'addEvent' || item.call.api === 'registerEvent') && item.call.event === call.event);
+        if (!listeners.length) continue;
+        const line = document.positionAt(call.eventOffset).line;
+        const first = listeners[0];
+        const target = new vscode.Position(first.line, 0);
+        const lineStart = new vscode.Position(line, 0);
+        lenses.push(new vscode.CodeLens(new vscode.Range(lineStart, lineStart), { title: `${listeners.length} 处监听`, command: KBENGINE_SOURCE_REVEAL_COMMAND, arguments: [vscode.Uri.file(first.file), { selection: new vscode.Range(target, target) }] }));
+      }
     }
     return lenses;
   }
