@@ -93,6 +93,13 @@
 //!   精确串不猜 semver;外部版本覆盖=OverrideSet 后登记者优先,被遮蔽
 //!   进 shadowed 事实不删除;未声明版本不猜——版本域 override 不生效,
 //!   全版本集照常;查无=None 绝不硬造;完整普查归 pyi 静态模板车道)。
+//! - [`rename_policy`] RENAME-01/RUST-114 symbol 重命名策略(归属三分=
+//!   用户代码可改/引擎内建不可直接改(RUST-113 元数据命中即契约,锚点随
+//!   detail)/托管生成物不可直接改(`<managed_dir>/stubs/` 路径判定优先于
+//!   内建名,零覆盖铁律)/查无 Unknown 诚实;冲突预检=复用 roots 消解面,
+//!   新名同 kind 占用即冲突事实(winner+shadowed 全携带),跨 kind 同名
+//!   不冲突,旧名未登记照报不 deny,old==new noop 旗标;def 成员级冲突
+//!   归 TS defRenamer 不重复建模)。
 //! - [`nav`] NAV-01/RUST-110 实体跨语言可逆导航链(entities.xml 注册位 →
 //!   def 声明位 → Python 实现位三腿,标准布局路径推断腿别;Python 文件反向
 //!   回链实体;类缺失不造行号/未在册不产幽灵条目/多 root 歧义归 RUST-111)。
@@ -126,6 +133,7 @@ pub mod impact;
 pub mod nav;
 pub mod query;
 pub mod refs;
+pub mod rename_policy;
 pub mod roots;
 pub mod rpcargs;
 pub mod rules;
