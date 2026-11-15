@@ -166,6 +166,12 @@ fn dispatch_outcome(
                             // cold_request 入队形态随解析缓存消费者接线启用
                             // (RUST-070/071/073),此处不伪造入队。
                             state.warm.note_cold_request();
+                            // RUST-078-W:池分派点即维护点(驻留老化+压力回收
+                            // 随生产流量推进;health 只读快照不触发维护)。
+                            state.warm.maintain(
+                                kode_server::warm_gate::unix_now_ms(),
+                                kode_server::server::self_rss_bytes(),
+                            );
                             // RUST-076-W:LaneGate 类别与池泳道同源分类
                             // (rpc_lane_class 单一源;worker 准入按 kind
                             // 过 IO/CPU 泳道硬顶,交互面恒走预留位)。

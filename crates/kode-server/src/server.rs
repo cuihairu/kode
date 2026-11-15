@@ -906,6 +906,13 @@ fn health_report(state: &ServerState) -> serde_json::Value {
         "failed": warm.failed,
         "total": warm.total,
     });
+    // RUST-078-W:驻留维护观测(idle aging + 内存压力主动回收),恒装配。
+    let maintenance = state.warm.maintenance_snapshot();
+    value["maintenance"] = serde_json::json!({
+        "agedTerminal": maintenance.aged_terminal,
+        "pressureReclaims": maintenance.pressure_reclaims,
+        "lastRssBytes": maintenance.last_rss_bytes,
+    });
     value
 }
 
@@ -960,6 +967,12 @@ fn read_core_resources() -> Option<CoreResources> {
 #[cfg(not(target_os = "linux"))]
 fn read_core_resources() -> Option<CoreResources> {
     None
+}
+
+/// RUST-078-W:进程 RSS 字节(暖门维护面压力采样;非 Linux/读失败 = None,
+/// 绝不伪造零值)。
+pub fn self_rss_bytes() -> Option<u64> {
+    read_core_resources().map(|r| r.rss_bytes)
 }
 
 #[cfg(test)]

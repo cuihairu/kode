@@ -6,6 +6,7 @@
 use kode_server::hover::{
     render_markdown, word_at, ChainNodeInfo, HoverEngine, HoverFace, HoverResponse, HoverSignature,
     HoverSymbol, InheritedChain, MemberMethod, MemberProperty, MemberSummary,
+    HOVER_PARSE_BUDGET_BYTES,
 };
 use kode_vfs::store::{DocumentKey, RootId};
 use kode_vfs::uri::CanonicalUri;
@@ -691,4 +692,14 @@ fn render_markdown_generic_fields_are_emitted() {
     assert!(md.contains("**参数个数**: 3"));
     assert!(md.contains("**Args**: `UINT32, STRING, VECTOR3`"));
     assert!(md.contains("**Exposed**: `true`"));
+}
+
+#[test]
+fn hover_engine_constructs_with_parse_budget() {
+    // RUST-078-W:缺省服务预算构造——hover 引擎解析驻留不再无界(new()
+    // 无界路径在服务端生产装配零残留)。
+    assert_eq!(
+        HoverEngine::new().index.parse_budget_bytes(),
+        Some(HOVER_PARSE_BUDGET_BYTES)
+    );
 }

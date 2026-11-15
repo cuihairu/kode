@@ -333,6 +333,12 @@ fn chain_node_label(node: &ChainNodeInfo) -> String {
 // HoverEngine:语料视图 + 定位 + 响应链
 // ---------------------------------------------------------------------------
 
+/// RUST-078-W:hover 解析驻留预算(权重单位 = 驻留解析产物自有字符串字节;
+/// RUST-129 实测 def 形态 RSS ≈ 权重 ×3,256 MiB 权重 ≈ 768 MiB RSS,与暖门
+/// 压力预算同量级)。超预算按二次机会近似 LRU 驱逐,缓存丢失不丢正确性
+/// (被驱逐文件再 update 即重建)。
+pub const HOVER_PARSE_BUDGET_BYTES: u64 = 256 * 1024 * 1024;
+
 /// hover 引擎:持有符号索引与已入库 def 语料视图,纯内存应答。
 #[derive(Debug)]
 pub struct HoverEngine {
@@ -380,7 +386,7 @@ impl kode_scheduler::RootInvalidationSink for HoverEngine {
 impl HoverEngine {
     pub fn new() -> HoverEngine {
         HoverEngine {
-            index: kode_index::SymbolIndex::new(),
+            index: kode_index::SymbolIndex::with_parse_budget(HOVER_PARSE_BUDGET_BYTES),
             def_files: BTreeMap::new(),
             def_by_name: BTreeMap::new(),
             corpus_defs: BTreeSet::new(),

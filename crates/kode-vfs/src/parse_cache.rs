@@ -208,6 +208,11 @@ impl<V> ParseCache<V> {
         self.evictions
     }
 
+    /// 驻留预算上限(无界缓存 = None;装配观测面用,不改行为)。
+    pub fn budget_bytes(&self) -> Option<u64> {
+        self.budget.as_ref().map(|b| b.max_weight)
+    }
+
     pub fn valid_len(&self) -> usize {
         self.valid.len()
     }

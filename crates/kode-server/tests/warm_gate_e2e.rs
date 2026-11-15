@@ -237,6 +237,28 @@ fn warm_gate_full_lifecycle_with_barrier_and_real_rpc() {
         Some("warming"),
         "健康面应带 warming 暖态: {health}"
     );
+    // RUST-078-W:maintenance 键恒装配(暖门臂/池分派维护点已跑)。
+    let maintenance = health
+        .pointer("/result/maintenance")
+        .cloned()
+        .expect("health missing maintenance");
+    let maintenance_obj = maintenance.as_object().expect("maintenance object");
+    assert_eq!(maintenance_obj.len(), 3, "maintenance 三键形状: {maintenance}");
+    assert!(
+        maintenance.get("agedTerminal").and_then(|v| v.as_u64()).is_some(),
+        "agedTerminal 计数: {maintenance}"
+    );
+    assert!(
+        maintenance.get("pressureReclaims").and_then(|v| v.as_u64()).is_some(),
+        "pressureReclaims 计数: {maintenance}"
+    );
+    assert!(
+        maintenance
+            .get("lastRssBytes")
+            .map(|v| v.is_u64() || v.is_null())
+            .unwrap_or(false),
+        "lastRssBytes = number|null(非 Linux/读失败诚实 null): {maintenance}"
+    );
 
     // 首扫完成 → Warm(刷新 = 计数落账)。
     send(
@@ -308,6 +330,22 @@ fn warm_gate_full_lifecycle_with_barrier_and_real_rpc() {
         health.pointer("/result/warm/state").and_then(|s| s.as_str()),
         Some("idle"),
         "健康面应回 idle: {health}"
+    );
+    // RUST-078-W 收官面:cancel 终态记录戳记于本用例窗口内(墙钟 timebase),
+    // 60s 老化窗内不得被摘;常态 RSS 远低于预算零压力回收。
+    let maintenance = health
+        .pointer("/result/maintenance")
+        .cloned()
+        .expect("health missing maintenance at idle");
+    assert_eq!(
+        maintenance.get("agedTerminal").and_then(|v| v.as_u64()),
+        Some(0),
+        "60s 老化窗内终态记录不得被摘: {maintenance}"
+    );
+    assert_eq!(
+        maintenance.get("pressureReclaims").and_then(|v| v.as_u64()),
+        Some(0),
+        "常态零压力回收: {maintenance}"
     );
 
     assert_clean_exit(proc);

@@ -90,6 +90,13 @@ export interface KodeCoreHealth {
     /** 累计 CPU 时间 ms;两次采样差分得速率;0 是合法读数(年轻进程) */
     cpuTimeMs: number;
   } | null;
+  /** RUST-078-W:服务端驻留维护观测(idle aging + 内存压力主动回收);恒装配 */
+  maintenance: {
+    agedTerminal: number;
+    pressureReclaims: number;
+    /** 最近一次压力采样 RSS;从未采样/非 Linux=null 诚实降级 */
+    lastRssBytes: number | null;
+  };
 }
 
 /** transport 层错误:进程退出/重启放弃/协议损坏 */

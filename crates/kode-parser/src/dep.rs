@@ -152,6 +152,11 @@ impl ParseRegistry {
         }
     }
 
+    /// 驻留预算上限透传(无界 = None;装配观测面用)。
+    pub fn resident_budget_bytes(&self) -> Option<u64> {
+        self.cache.budget_bytes()
+    }
+
     /// 增量入口:同 (key, fingerprint) 直接回缓存,零重建。
     pub fn update(
         &mut self,

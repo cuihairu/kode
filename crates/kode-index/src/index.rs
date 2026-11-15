@@ -118,6 +118,11 @@ impl SymbolIndex {
         }
     }
 
+    /// 解析驻留预算上限透传(无界 = None;装配观测面用)。
+    pub fn parse_budget_bytes(&self) -> Option<u64> {
+        self.registry.resident_budget_bytes()
+    }
+
     /// 单文件增量入口:指纹命中零重建(不 bump generation)。
     pub fn update(&mut self, key: DocumentKey, text: &str) -> IndexUpdateReport {
         self.stats.update_calls += 1;

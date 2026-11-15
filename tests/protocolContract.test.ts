@@ -86,12 +86,17 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
     client.openDocument(URI, 'kbengine-def', 1, '<Entity><GroupName>mob</GroupName></Entity>');
     const health = await client.health();
     expect(sortedKeys(health)).toEqual(
-      ['documents', 'initialized', 'pid', 'pool', 'resources', 'restartGeneration',
-       'serverVersion', 'shutdownRequested', 'status', 'uptimeMs', 'warm']
+      ['documents', 'initialized', 'maintenance', 'pid', 'pool', 'resources',
+       'restartGeneration', 'serverVersion', 'shutdownRequested', 'status',
+       'uptimeMs', 'warm']
     );
     // RUST-074-W:暖门观测恒装配(fresh server 未 begin = idle 全形状)。
     expect(health.warm).toEqual({
       state: 'idle', coldWhileWarming: 0, done: 0, failed: 0, total: null
+    });
+    // RUST-078-W:驻留维护观测恒装配(新进程零老化零回收;RSS 未采样=null)。
+    expect(health.maintenance).toEqual({
+      agedTerminal: 0, pressureReclaims: 0, lastRssBytes: null
     });
     // RUST-075-W:worker 执行器默认装配,健康面带池记账键。
     // RUST-076-W:LaneGate 泳道记账键(ioRunning/cpuRunning)入池形状。

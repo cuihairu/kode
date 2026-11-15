@@ -123,6 +123,9 @@ struct Task {
     state: TaskState,
     cancel_reason: Option<String>,
     enqueued_ms: u64,
+    /// 终态时刻(调度器逻辑时钟 ms;RUST-078-W idle aging 按它与调用方
+    /// 给的 now 比较——timebase 必须一致)。queued/running 恒 None。
+    terminal_at_ms: Option<u64>,
     #[allow(dead_code)] // 运行体执行后即释放;保留字段对齐 TS 生命周期语义
     run: Option<Box<RunFn>>,
     cancel: CancelToken,
@@ -493,6 +496,7 @@ impl Scheduler {
             state: TaskState::Queued,
             cancel_reason: None,
             enqueued_ms: self.clock_ms,
+            terminal_at_ms: None,
             run: Some(spec.run),
             cancel: CancelToken::new(),
         };
@@ -854,6 +858,9 @@ impl Scheduler {
     /// id 单调递增且每任务至多到达一次终态(取消只作用于 Queued,执行先摘队),
     /// 故窗口内 id 不重不漏;防御性仅摘确为终态的条目。
     fn record_terminal(&mut self, id: u64) {
+        if let Some(task) = self.tasks.get_mut(&id) {
+            task.terminal_at_ms = Some(self.clock_ms);
+        }
         self.terminal_order.push_back(id);
         while self.terminal_order.len() > MAX_RETAINED_TERMINAL_TASKS {
             let Some(oldest) = self.terminal_order.pop_front() else {
@@ -869,6 +876,50 @@ impl Scheduler {
                 self.tasks.remove(&oldest);
             }
         }
+    }
+
+    /// RUST-078-W:idle aging——摘除终态时刻早于 `now_ms - max_idle_ms` 的
+    /// 终态记录(terminal_order front = 最旧终态,首条未超龄即停)。queued/
+    /// running 永不动;keyed 台账永不动(ensure 复用/恢复语义不受影响);
+    /// metrics/golden 对拍面零变化(只摘 `tasks` 历史与 `task_state` 查询
+    /// 面)。`now_ms` 与终态时刻同一 timebase(调度器逻辑时钟;生产调用方
+    /// 先把逻辑钟同步到墙钟)。返回摘除数。
+    pub fn age_out_terminal(&mut self, now_ms: u64, max_idle_ms: u64) -> usize {
+        let mut aged = 0usize;
+        while let Some(&oldest) = self.terminal_order.front() {
+            let expired = self
+                .tasks
+                .get(&oldest)
+                .and_then(|t| t.terminal_at_ms)
+                .is_some_and(|at| now_ms.saturating_sub(at) > max_idle_ms);
+            if !expired {
+                break;
+            }
+            self.terminal_order.pop_front();
+            self.tasks.remove(&oldest);
+            aged += 1;
+        }
+        aged
+    }
+
+    /// RUST-078-W:内存压力主动回收——摘除全部终态记录(`tasks` 历史 +
+    /// `task_state` 查询面归零)。queued/running/keyed/metrics 永不动(同
+    /// [`Self::age_out_terminal`] 红线)。返回摘除数。
+    pub fn reclaim_history(&mut self) -> usize {
+        let mut reclaimed = 0usize;
+        while let Some(oldest) = self.terminal_order.pop_front() {
+            let is_terminal = self.tasks.get(&oldest).is_some_and(|t| {
+                matches!(
+                    t.state,
+                    TaskState::Completed | TaskState::Failed | TaskState::Cancelled
+                )
+            });
+            if is_terminal {
+                self.tasks.remove(&oldest);
+                reclaimed += 1;
+            }
+        }
+        reclaimed
     }
 }
 
@@ -897,6 +948,7 @@ mod task_debug_tests {
             state: TaskState::Cancelled,
             cancel_reason: Some("stale-version".into()),
             enqueued_ms: 42,
+            terminal_at_ms: Some(42),
             run: None,
             cancel: CancelToken::new(),
         };
@@ -916,5 +968,137 @@ mod task_debug_tests {
         assert!(dbg.contains("enqueued_ms: 42"), "{dbg}");
         // finish_non_exhaustive:run/cancel 不外泄进诊断输出。
         assert!(dbg.contains(".."), "{dbg}");
+    }
+
+    /// RUST-078-W:idle aging——超龄终态摘除、新鲜终态保留、queued 永不动、
+    /// keyed 台账永不动(ensure 复用语义不受影响)、metrics 零变化。
+    #[test]
+    fn age_out_terminal_drops_only_expired_and_never_touches_live_or_keyed() {
+        use crate::model::priority::{BACKGROUND_FULL, REQUEST_LOCAL};
+        let mut s = Scheduler::new(SchedulerOptions::default());
+        let run = |_token: &crate::scheduler::CancelToken| Ok(());
+        let a = s.enqueue(TaskSpec {
+            kind: TaskKind::SingleFileUpdate,
+            priority: REQUEST_LOCAL,
+            file: Some("/a.def".into()),
+            version: Some(1),
+            target: None,
+            run: Box::new(run),
+        });
+        s.drain(10_000);
+        assert_eq!(s.task_state(a.id), Some(TaskState::Completed));
+        s.advance_clock(1_000);
+        let b = s.enqueue(TaskSpec {
+            kind: TaskKind::SingleFileUpdate,
+            priority: REQUEST_LOCAL,
+            file: Some("/b.def".into()),
+            version: Some(1),
+            target: None,
+            run: Box::new(run),
+        });
+        s.drain(10_000);
+        // keyed 台账在场(ensure 复用语义面),aging 之后必须原样。
+        let (_, k) = s.ensure(
+            "age-key",
+            TaskSpec {
+                kind: TaskKind::SingleFileUpdate,
+                priority: BACKGROUND_FULL,
+                file: Some("/k.def".into()),
+                version: Some(1),
+                target: None,
+                run: Box::new(run),
+            },
+        );
+        s.drain(10_000);
+        let retained_before = s.retained_task_count();
+        let metrics_before = {
+            let st = s.status();
+            (st.completed, st.failed, st.cancelled)
+        };
+
+        // 新鲜窗口(两者都 ≤60s)一个不摘。
+        assert_eq!(s.age_out_terminal(1_000 + 500, 60_000), 0);
+        assert_eq!(s.retained_task_count(), retained_before);
+        // a 终态于 clock 0;b 终态于 clock 1000。now=60_001:a 超龄(60001>
+        // 60000),b(59001)保留。
+        assert_eq!(s.age_out_terminal(60_001, 60_000), 1);
+        assert_eq!(s.task_state(a.id), None, "超龄终态记录已摘");
+        assert_eq!(
+            s.task_state(b.id),
+            Some(TaskState::Completed),
+            "新鲜终态保留"
+        );
+        assert_eq!(s.retained_task_count(), retained_before - 1, "只摘超龄条目");
+        // keyed 复用语义不受 aging 影响:同键再 ensure 落 Warm 类判定(Completed
+        // 台账原样),不产生假 pending。
+        assert!(s.is_keyed_complete("age-key"), "keyed 台账必须原样");
+        let _ = k;
+        // metrics/golden 对拍面零变化。
+        let st = s.status();
+        assert_eq!((st.completed, st.failed, st.cancelled), metrics_before);
+    }
+
+    /// RUST-078-W:内存压力主动回收——终态历史全摘(retained 归零),queued
+    /// 永不动(取消只作用于终态),keyed/metrics 零变化。
+    #[test]
+    fn reclaim_history_drops_all_terminal_and_keeps_live_and_keyed() {
+        use crate::model::priority::REQUEST_LOCAL;
+        let mut s = Scheduler::new(SchedulerOptions::default());
+        let run = |_token: &crate::scheduler::CancelToken| Ok(());
+        for i in 0..3 {
+            let id = s.enqueue(TaskSpec {
+                kind: TaskKind::SingleFileUpdate,
+                priority: REQUEST_LOCAL,
+                file: Some(format!("/r{i}.def")),
+                version: Some(1),
+                target: None,
+                run: Box::new(run),
+            });
+            let _ = id.id;
+        }
+        s.drain(10_000);
+        // 一个 queued 任务留场(压力回收绝不碰)。
+        let live = s.enqueue(TaskSpec {
+            kind: TaskKind::SingleFileUpdate,
+            priority: REQUEST_LOCAL,
+            file: Some("/live.def".into()),
+            version: Some(1),
+            target: None,
+            run: Box::new(run),
+        });
+        assert_eq!(s.task_state(live.id), Some(TaskState::Queued));
+        // 一个 queued 取消 → 终态(Cancelled 也属回收面);单点取消,不波及
+        // live(cancel_queued_tasks 会全队清场)。
+        let cancelme = s.enqueue(TaskSpec {
+            kind: TaskKind::SingleFileUpdate,
+            priority: REQUEST_LOCAL,
+            file: Some("/cancelme.def".into()),
+            version: Some(1),
+            target: None,
+            run: Box::new(run),
+        });
+        assert!(s.cancel(cancelme.id, "pressure-test"), "queued 取消应成功");
+        let keyed_before = {
+            let st = s.status();
+            (st.completed, st.failed, st.cancelled)
+        };
+
+        let reclaimed = s.reclaim_history();
+        assert_eq!(reclaimed, 4, "3 完成 + 1 取消终态全摘");
+        assert_eq!(s.retained_task_count(), 1, "只留 queued 活任务");
+        assert_eq!(
+            s.task_state(live.id),
+            Some(TaskState::Queued),
+            "queued 永不动"
+        );
+        let st = s.status();
+        assert_eq!(
+            (st.completed, st.failed, st.cancelled),
+            keyed_before,
+            "metrics 零变化"
+        );
+        // 回收后再跑仍正常(队列/台账活着)。
+        s.drain(10_000);
+        assert_eq!(s.task_state(live.id), Some(TaskState::Completed));
     }
 }
