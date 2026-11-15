@@ -173,6 +173,21 @@ jobs:
       timeout-minutes: 3
       uses: actions/checkout@v7.0.1
 
+    # RUST-061 构建缓存:GitHub 第一方 cache(仓库口径「不引第三方 install
+    # action」,缓存步同样走第一方),registry/git 下载与 target 编译产物跨
+    # run 复用;Cargo.lock 变更经 key 失配全量重建,restore-keys 前缀命中做
+    # 增量。缓存损坏/超限被逐出=回落冷构建(即本批前行为),不影响正确性。
+    - name: Cache Rust builds (cargo registry + target)
+      timeout-minutes: 5
+      uses: actions/cache@v4.2.4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: rust-coverage-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: rust-coverage-${{ runner.os }}-
+
     # 工具链版本由 rust-toolchain.toml 钉死（1.99.0），rustup 进入该目录后
     # 首次调用自动安装；llvm-tools-preview 提供 llvm-profdata/llvm-cov，
     # 是 cargo-llvm-cov 采集 profraw→lcov 的必需组件。

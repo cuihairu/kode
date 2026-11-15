@@ -58,6 +58,18 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7.0.1
+      # RUST-061 构建缓存:按 target triple 分键(六腿互不覆盖),registry/git
+      # 与该 target 的编译产物跨 run 复用;Cargo.lock 变更全量重建,restore-keys
+      # 前缀命中做增量;缓存逐出=回落冷构建,不影响正确性。
+      - name: Cache Rust builds (cargo registry + target)
+        uses: actions/cache@v4.2.4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: rust-${{ matrix.rust }}-
       - uses: pnpm/action-setup@v6.1.0
       - uses: actions/setup-node@v7.1.0
         with:
