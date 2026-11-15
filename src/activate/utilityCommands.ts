@@ -85,7 +85,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
         return;
       }
 
-      const graph = buildDefReferenceGraphFromFile(candidateUri.fsPath);
+      const graph = await buildDefReferenceGraphFromFile(candidateUri.fsPath);
       if (!graph) {
         vscode.window.showWarningMessage(l10nText('entity_defs root not found; Project Doctor only supports the standard definition layout'));
         return;
@@ -119,7 +119,7 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
         return;
       }
 
-      const graph = buildDefReferenceGraphFromFile(candidateUri.fsPath);
+      const graph = await buildDefReferenceGraphFromFile(candidateUri.fsPath);
       if (!graph) {
         vscode.window.showWarningMessage(l10nText('entity_defs root not found; the symbol reference graph only supports the standard definition layout'));
         return;

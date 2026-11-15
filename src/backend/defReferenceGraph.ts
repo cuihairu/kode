@@ -90,9 +90,15 @@ interface Link {
 
 const METHOD_SECTIONS = new Set(['BaseMethods', 'CellMethods', 'ClientMethods']);
 
-function readFile(filePath: string): string | null {
+// RUST-001:def 语料读走有界并发(8 路,同 defMd5Check/globalDataIndex 口径),
+// 解析段逐文件让出宿主——全 defs 根的读+解析不再压成宿主同步段。
+const DEF_CORPUS_READ_CONCURRENCY = 8;
+
+const yieldToHost = (): Promise<void> => new Promise<void>(resolve => setImmediate(resolve));
+
+async function readFile(filePath: string): Promise<string | null> {
   try {
-    return fs.readFileSync(filePath, 'utf8');
+    return await fs.promises.readFile(filePath, 'utf8');
   } catch {
     return null;
   }
@@ -113,22 +119,22 @@ function classify(defsRoot: string, filePath: string): FileEntry['category'] {
   return 'entity';
 }
 
-function listDefFiles(defsRoot: string): string[] {
+async function listDefFiles(defsRoot: string): Promise<string[]> {
   const files: string[] = [];
-  const walk = (dir: string): void => {
+  const walk = async (dir: string): Promise<void> => {
     let dirents;
     try {
-      dirents = fs.readdirSync(dir, { withFileTypes: true });
+      dirents = await fs.promises.readdir(dir, { withFileTypes: true });
     } catch {
       return;
     }
     for (const dirent of dirents) {
       const fullPath = path.join(dir, dirent.name);
-      if (dirent.isDirectory()) walk(fullPath);
+      if (dirent.isDirectory()) await walk(fullPath);
       else if (dirent.isFile() && dirent.name.toLowerCase().endsWith('.def')) files.push(fullPath);
     }
   };
-  walk(defsRoot);
+  await walk(defsRoot);
   return files.sort((left, right) => left.localeCompare(right));
 }
 
@@ -152,20 +158,39 @@ function declarationNodes(
   return result;
 }
 
-function buildFileIndex(defsRoot: string): FileEntry[] | null {
+async function buildFileIndex(defsRoot: string): Promise<FileEntry[] | null> {
+  const files = await listDefFiles(defsRoot);
+  const contents: Array<{ filePath: string; content: string }> = [];
+  let cursor = 0;
+  const workers = Array.from(
+    { length: Math.min(DEF_CORPUS_READ_CONCURRENCY, files.length) },
+    async () => {
+      while (cursor < files.length) {
+        const filePath = files[cursor];
+        cursor += 1;
+        const content = await readFile(filePath);
+        if (content !== null) {
+          contents.push({ filePath, content });
+        }
+      }
+    }
+  );
+  await Promise.all(workers);
+  // 枚举序已确定性排序;并发读完成序随 IO 翻动,按路径重排恢复确定序。
+  contents.sort((left, right) => left.filePath.localeCompare(right.filePath));
   const entries: FileEntry[] = [];
-  for (const filePath of listDefFiles(defsRoot)) {
-    const content = readFile(filePath);
-    if (content === null) continue;
-    const document = parseDef(content);
+  for (const item of contents) {
+    // RUST-001:解析让位——逐文件间让出宿主宏任务,不再是整段阻塞。
+    await yieldToHost();
+    const document = parseDef(item.content);
     if (!document?.root) continue;
-    const semantics = parseDefFileSemantics(content);
+    const semantics = parseDefFileSemantics(item.content);
     if (!semantics) continue;
     entries.push({
-      filePath: path.resolve(filePath),
-      ownerName: path.basename(filePath, '.def'),
-      category: classify(defsRoot, filePath),
-      content,
+      filePath: path.resolve(item.filePath),
+      ownerName: path.basename(item.filePath, '.def'),
+      category: classify(defsRoot, item.filePath),
+      content: item.content,
       document,
       semantics
     });
@@ -360,12 +385,12 @@ function collectReferences(
   return { references: references.sort((left, right) => left.start - right.start), edges };
 }
 
-export function buildDefReferenceGraphFromFile(filePath: string): DefReferenceGraph | null {
+export async function buildDefReferenceGraphFromFile(filePath: string): Promise<DefReferenceGraph | null> {
   const resolved = path.resolve(filePath);
   const defsRoot = findEntityDefsRootFromFile(resolved);
   if (!defsRoot) return null;
 
-  const entries = buildFileIndex(defsRoot);
+  const entries = await buildFileIndex(defsRoot);
   if (!entries) return null;
   const { links, issues: linkIssues } = resolveLinks(entries, defsRoot);
   const definitions: DefSymbolDeclaration[] = [];

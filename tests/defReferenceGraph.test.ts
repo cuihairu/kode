@@ -72,8 +72,8 @@ afterAll(() => {
 });
 
 describe('def reference graph', () => {
-  it('shares rename-safe declarations across inherited files', () => {
-    const graph = buildDefReferenceGraphFromFile(path.join(root, 'scripts/entity_defs/Boss.def'));
+  it('shares rename-safe declarations across inherited files', async () => {
+    const graph = await buildDefReferenceGraphFromFile(path.join(root, 'scripts/entity_defs/Boss.def'));
     expect(graph).not.toBeNull();
 
     const edges = graph!.edges.map(edge => ({
@@ -100,8 +100,8 @@ describe('def reference graph', () => {
     expect(definitions).not.toContain('Orphan.own');
   });
 
-  it('reports project doctor diagnostics and connected edges', () => {
-    const graph = buildDefReferenceGraphFromFile(path.join(root, 'scripts/entity_defs/Hero.def'))!;
+  it('reports project doctor diagnostics and connected edges', async () => {
+    const graph = await buildDefReferenceGraphFromFile(path.join(root, 'scripts/entity_defs/Hero.def'))!;
     const report = buildProjectDoctorReport(graph);
     expect(report.checkedDefinitions).toBeGreaterThan(0);
     expect(report.checkedFiles).toBe(3);
@@ -112,7 +112,7 @@ describe('def reference graph', () => {
     expect(formatProjectDoctorReport(report)).toMatch(/^Project Doctor:/);
   });
 
-  it('AUD-058 同段真实重复声明仍定位正确且经 Project Doctor 同结果', () => {
+  it('AUD-058 同段真实重复声明仍定位正确且经 Project Doctor 同结果', async () => {
     // 自成一根的连边 def 树(Dup->DupBase),避免混入主 fixture 的
     // Hero/Monster/Boss 分量影响 checkedFiles=3
     const dupRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-def-dup-'));
@@ -134,7 +134,7 @@ describe('def reference graph', () => {
         '</root>'
       ].join('\n'));
 
-      const graph = buildDefReferenceGraphFromFile(path.join(dupRoot, 'scripts/entity_defs/Dup.def'))!;
+      const graph = await buildDefReferenceGraphFromFile(path.join(dupRoot, 'scripts/entity_defs/Dup.def'))!;
       const report = buildProjectDoctorReport(graph);
       const duplicates = report.warnings.filter(issue => issue.code === 'duplicate-symbol');
       expect(duplicates).toHaveLength(1);
@@ -146,8 +146,8 @@ describe('def reference graph', () => {
     }
   });
 
-  it('AUD-059 无链接的当前实体(seed)仍保留:图含 Solo.hp,Doctor 统计含当前文件', () => {
-    const graph = buildDefReferenceGraphFromFile(path.join(root, 'scripts/entity_defs/Solo.def'))!;
+  it('AUD-059 无链接的当前实体(seed)仍保留:图含 Solo.hp,Doctor 统计含当前文件', async () => {
+    const graph = await buildDefReferenceGraphFromFile(path.join(root, 'scripts/entity_defs/Solo.def'))!;
     expect(graph.definitions.map(definition => `${definition.ownerName}.${definition.name}`))
       .toContain('Solo.hp');
 
@@ -158,13 +158,13 @@ describe('def reference graph', () => {
     expect(report.checkedDefinitions).toBeGreaterThan(0);
 
     // 既有约束:无关孤立实体(Orphan)不误纳入——非 seed 的孤点仍被排除
-    const orphanGraph = buildDefReferenceGraphFromFile(path.join(root, 'scripts/entity_defs/Hero.def'))!;
+    const orphanGraph = await buildDefReferenceGraphFromFile(path.join(root, 'scripts/entity_defs/Hero.def'))!;
     expect(orphanGraph.definitions.map(definition => `${definition.ownerName}.${definition.name}`))
       .not.toContain('Orphan.own');
   });
 
-  it('renders graph symbols, edges and unresolved targets in both forms', () => {
-    const graph = buildDefReferenceGraphFromFile(path.join(root, 'scripts/entity_defs/Boss.def'))!;
+  it('renders graph symbols, edges and unresolved targets in both forms', async () => {
+    const graph = await buildDefReferenceGraphFromFile(path.join(root, 'scripts/entity_defs/Boss.def'))!;
     const preview = formatDefReferenceGraphPreview(graph);
 
     expect(preview.mermaid).toContain('Hero.def\\nmethod move\\nproperty hp');
@@ -203,8 +203,8 @@ describe('KR-AUD-71 parent link directories', () => {
     fs.rmSync(krRoot, { recursive: true, force: true });
   });
 
-  it('component parent resolves against components/, not the defs root', () => {
-    const graph = buildDefReferenceGraphFromFile(path.join(krRoot, 'scripts/entity_defs/components/Inventory.def'))!;
+  it('component parent resolves against components/, not the defs root', async () => {
+    const graph = await buildDefReferenceGraphFromFile(path.join(krRoot, 'scripts/entity_defs/components/Inventory.def'))!;
     expect(graph).not.toBeNull();
     expect(graph.issues.filter(issue => issue.code === 'dangling-parent')).toEqual([]);
 
@@ -213,8 +213,8 @@ describe('KR-AUD-71 parent link directories', () => {
     expect(path.basename(inherit[0].target)).toBe('BaseComp.def');
   });
 
-  it('interface parent is ignored (engine never loads it)', () => {
-    const graph = buildDefReferenceGraphFromFile(path.join(krRoot, 'scripts/entity_defs/interfaces/Role.def'))!;
+  it('interface parent is ignored (engine never loads it)', async () => {
+    const graph = await buildDefReferenceGraphFromFile(path.join(krRoot, 'scripts/entity_defs/interfaces/Role.def'))!;
     expect(graph.issues.filter(issue => issue.code === 'dangling-parent')).toEqual([]);
     // 图含全部连通分量( Inventory→BaseComp 合法),按 seed 过滤后必须为空
     const roleInherit = graph.edges.filter(
