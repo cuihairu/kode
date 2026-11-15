@@ -6,8 +6,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use kode_parser::model::{AliasFile, DefFile, EntityEntry, TypeKind, TypesFile};
+use kode_parser::Span;
 
 use crate::builtin::is_known_terminal;
+use crate::provenance::{GenerationTarget, IngestContext, TypeOrigin, TypeRefSite, TypeSourceKind};
 
 /// 稳定节点 id = 节点表下标(构建完成后不变;SEM-001 的 TypeId 基础版)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -235,6 +237,18 @@ pub struct TypeGraph {
     pub entity_parents: BTreeMap<String, String>,
     /// entities.xml 注册名(注册面;可与 .def 交叠)。
     pub registered_entities: BTreeSet<String>,
+    /// 节点出处平行表(RUST-105;`push_node` 单隘口锁步;绕过 push_node
+    /// 直接写节点表不锁步,读面 [`TypeGraph::origin_of`] 防御性返 None)。
+    pub origins: Vec<TypeOrigin>,
+    /// 引用点记录(RUST-105;锚 = 引用方声明 name span,统一口径见
+    /// [`crate::provenance`] 模块doc)。
+    pub ref_sites: Vec<TypeRefSite>,
+    /// entities.xml 注册出处(RUST-105;注册面无节点,纯侧表,同名先到先得)。
+    pub entity_registrations: BTreeMap<String, TypeOrigin>,
+    /// 生成映射(RUST-105;opt-in 注册,构建器永不自动填充)。
+    pub generation_links: BTreeMap<String, Vec<GenerationTarget>>,
+    /// 灌入上下文([`TypeGraph::set_ingest`] 设置;add_* 盖章携带)。
+    pub(crate) ingest: IngestContext,
 }
 
 impl TypeGraph {
@@ -243,16 +257,34 @@ impl TypeGraph {
     }
 
     /// 节点入图;同名先到先得(与 TS 侧 Map 首写优先同口径),重复返回 None
-    /// 且其边一并跳过(声明与边同源,避免双份)。
-    fn push_node(&mut self, node: TypeNode) -> Option<TypeId> {
+    /// 且其边一并跳过(声明与边同源,避免双份)。出处随入 [`TypeOrigin`]
+    /// 平行表(下标锁步)。
+    fn push_node(&mut self, node: TypeNode, origin: TypeOrigin) -> Option<TypeId> {
         let name = node.name().to_string();
         if self.by_name.contains_key(&name) {
             return None;
         }
         let id = TypeId(self.nodes.len() as u32);
         self.nodes.push(node);
+        self.origins.push(origin);
         self.by_name.insert(name, id);
         Some(id)
+    }
+
+    /// 出处盖章:灌入上下文(root/version)+ 来源种类 + 声明 site。
+    fn origin_for(
+        &self,
+        source: TypeSourceKind,
+        span: Option<Span>,
+        line: Option<usize>,
+    ) -> TypeOrigin {
+        TypeOrigin {
+            source,
+            span,
+            line,
+            root: self.ingest.root.clone(),
+            version: self.ingest.version,
+        }
     }
 
     /// 灌入 types.xml(kode_parser::model::parse_types 输出)。
@@ -262,21 +294,35 @@ impl TypeGraph {
     /// `kind: 'builtin'` 条目一一对应)。空 directive 条目 parser 已跳过。
     pub fn add_types(&mut self, types: &TypesFile) {
         for decl in &types.types {
+            let origin = self.origin_for(
+                TypeSourceKind::TypesXml,
+                Some(decl.name_span),
+                Some(decl.line),
+            );
             let Some(id) = (match &decl.kind {
-                TypeKind::FixedDict => self.push_node(TypeNode::FixedDict {
-                    name: decl.name.clone(),
-                    implemented_by: decl.implemented_by_symbol.clone(),
-                    field_refs: decl.field_refs.clone(),
-                }),
-                TypeKind::Array => self.push_node(TypeNode::Array {
-                    name: decl.name.clone(),
-                    element: decl.element_ref.clone(),
-                }),
-                TypeKind::Builtin => self.push_node(TypeNode::Alias {
-                    name: decl.name.clone(),
-                    // directive 首 token 即重定向目标;取不到时按无指向别名保留。
-                    target: decl.directive.clone().unwrap_or_default(),
-                }),
+                TypeKind::FixedDict => self.push_node(
+                    TypeNode::FixedDict {
+                        name: decl.name.clone(),
+                        implemented_by: decl.implemented_by_symbol.clone(),
+                        field_refs: decl.field_refs.clone(),
+                    },
+                    origin,
+                ),
+                TypeKind::Array => self.push_node(
+                    TypeNode::Array {
+                        name: decl.name.clone(),
+                        element: decl.element_ref.clone(),
+                    },
+                    origin,
+                ),
+                TypeKind::Builtin => self.push_node(
+                    TypeNode::Alias {
+                        name: decl.name.clone(),
+                        // directive 首 token 即重定向目标;取不到时按无指向别名保留。
+                        target: decl.directive.clone().unwrap_or_default(),
+                    },
+                    origin,
+                ),
             }) else {
                 continue;
             };
@@ -288,7 +334,16 @@ impl TypeGraph {
                             self.edges.push(TypeEdge {
                                 from: id,
                                 kind: EdgeKind::Field,
-                                to: r,
+                                to: r.clone(),
+                            });
+                            self.ref_sites.push(TypeRefSite {
+                                from: id,
+                                kind: EdgeKind::Field,
+                                name: r,
+                                // 锚 = 引用方(容器)声明名;parser 不暴露
+                                // `<Type>` 文本独立 span。
+                                span: Some(decl.name_span),
+                                line: Some(decl.line),
                             });
                         }
                     }
@@ -300,6 +355,13 @@ impl TypeGraph {
                                 from: id,
                                 kind: EdgeKind::ArrayElement,
                                 to: element.clone(),
+                            });
+                            self.ref_sites.push(TypeRefSite {
+                                from: id,
+                                kind: EdgeKind::ArrayElement,
+                                name: element.clone(),
+                                span: Some(decl.name_span),
+                                line: Some(decl.line),
                             });
                         }
                     }
@@ -313,6 +375,13 @@ impl TypeGraph {
                                 kind: EdgeKind::AliasTarget,
                                 to: target.clone(),
                             });
+                            self.ref_sites.push(TypeRefSite {
+                                from: id,
+                                kind: EdgeKind::AliasTarget,
+                                name: target.clone(),
+                                span: Some(decl.name_span),
+                                line: Some(decl.line),
+                            });
                         }
                     }
                 }
@@ -324,10 +393,18 @@ impl TypeGraph {
     /// parser 已结构化隔离,不进图,与 TS 现实现同口径)。
     pub fn add_alias(&mut self, alias: &AliasFile) {
         for decl in &alias.aliases {
-            let Some(id) = self.push_node(TypeNode::Alias {
-                name: decl.name.clone(),
-                target: decl.alias_type.clone(),
-            }) else {
+            let origin = self.origin_for(
+                TypeSourceKind::AliasXml,
+                Some(decl.name_span),
+                Some(decl.line),
+            );
+            let Some(id) = self.push_node(
+                TypeNode::Alias {
+                    name: decl.name.clone(),
+                    target: decl.alias_type.clone(),
+                },
+                origin,
+            ) else {
                 continue;
             };
             if !decl.alias_type.is_empty() {
@@ -336,15 +413,28 @@ impl TypeGraph {
                     kind: EdgeKind::AliasTarget,
                     to: decl.alias_type.clone(),
                 });
+                self.ref_sites.push(TypeRefSite {
+                    from: id,
+                    kind: EdgeKind::AliasTarget,
+                    name: decl.alias_type.clone(),
+                    span: Some(decl.name_span),
+                    line: Some(decl.line),
+                });
             }
         }
     }
 
     /// 灌入实体 .def(name = 文件名去 .def,与 kode-index::def_entity_name 同口径)。
+    /// 出处 = 定义出处;实体名来自文件名,正文无声明 site → span/line 为
+    /// None(不虚构)。
     pub fn add_def(&mut self, name: &str, def: &DefFile) {
-        let Some(id) = self.push_node(TypeNode::UserType {
-            name: name.to_string(),
-        }) else {
+        let origin = self.origin_for(TypeSourceKind::Def, None, None);
+        let Some(id) = self.push_node(
+            TypeNode::UserType {
+                name: name.to_string(),
+            },
+            origin,
+        ) else {
             return;
         };
         if let Some(parent) = &def.parent {
@@ -356,6 +446,14 @@ impl TypeGraph {
                 kind: EdgeKind::Inherits,
                 to: parent.clone(),
             });
+            // DefFile.parent 不带 span,引用点如实无锚。
+            self.ref_sites.push(TypeRefSite {
+                from: id,
+                kind: EdgeKind::Inherits,
+                name: parent.clone(),
+                span: None,
+                line: None,
+            });
         }
         for comp in &def.components {
             if let Some(t) = &comp.component_type {
@@ -363,6 +461,14 @@ impl TypeGraph {
                     from: id,
                     kind: EdgeKind::ComponentOf,
                     to: t.clone(),
+                });
+                // 锚 = 引用方(组件槽)声明名。
+                self.ref_sites.push(TypeRefSite {
+                    from: id,
+                    kind: EdgeKind::ComponentOf,
+                    name: t.clone(),
+                    span: Some(comp.name_span),
+                    line: Some(comp.line),
                 });
             }
         }
@@ -373,14 +479,28 @@ impl TypeGraph {
                     kind: EdgeKind::TypeRef,
                     to: r.clone(),
                 });
+                // 锚 = 引用方(属性)声明名;`<Type>` 文本无独立 span。
+                self.ref_sites.push(TypeRefSite {
+                    from: id,
+                    kind: EdgeKind::TypeRef,
+                    name: r.clone(),
+                    span: Some(prop.name_span),
+                    line: Some(prop.line),
+                });
             }
         }
     }
 
-    /// 灌入 entities.xml 注册面(解析输出已排除 root 伪条目)。
+    /// 灌入 entities.xml 注册面(解析输出已排除 root 伪条目)。注册出处
+    /// 落 [`TypeGraph::entity_registrations`] 侧表(同名先到先得)。
     pub fn register_entities(&mut self, entries: &[EntityEntry]) {
         for e in entries {
             self.registered_entities.insert(e.name.clone());
+            let origin =
+                self.origin_for(TypeSourceKind::EntitiesXml, Some(e.name_span), Some(e.line));
+            self.entity_registrations
+                .entry(e.name.clone())
+                .or_insert(origin);
         }
     }
 
@@ -443,9 +563,12 @@ impl TypeGraph {
         {
             return None;
         }
-        self.push_node(TypeNode::Unknown {
-            name: name.to_string(),
-        })
+        self.push_node(
+            TypeNode::Unknown {
+                name: name.to_string(),
+            },
+            TypeOrigin::direct(),
+        )
     }
 
     /// 显式登记引擎拒收形态(RUST-104-W;opt-in,带 [`TypeErrorReason`]
@@ -454,10 +577,13 @@ impl TypeGraph {
         if name.is_empty() {
             return None;
         }
-        self.push_node(TypeNode::Error {
-            name: name.to_string(),
-            reason,
-        })
+        self.push_node(
+            TypeNode::Error {
+                name: name.to_string(),
+                reason,
+            },
+            TypeOrigin::direct(),
+        )
     }
 
     /// 全图悬挂引用枚举(RUST-104-W;SEM-013 Unknown 保留不冒充):每条边

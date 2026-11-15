@@ -26,9 +26,13 @@
 pub mod builtin;
 pub mod golden;
 pub mod graph;
+pub mod provenance;
 
 pub use builtin::{is_builtin, is_container_directive, is_known_terminal, BUILTIN_TYPES};
 pub use graph::{
     ChainStatus, ConformanceReport, EdgeKind, OptionalFace, OptionalSlot, TypeClass, TypeEdge,
     TypeErrorReason, TypeGraph, TypeId, TypeNode,
+};
+pub use provenance::{
+    GenerationKind, GenerationTarget, IngestContext, TypeOrigin, TypeRefSite, TypeSourceKind,
 };
