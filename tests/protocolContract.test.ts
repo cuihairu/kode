@@ -1,10 +1,10 @@
 import { spawnSync } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { KodeCoreClient } from '../src/backend/kodeCoreClient';
+import { KodeCoreClient, KODE_PROTOCOL_VERSION } from '../src/backend/kodeCoreClient';
 
 // RUST-055(部分,第一增量):协议契约门——TS 消费的 RPC 面对着真实
 // kode-server 二进制钉**应答形状**(键集+类型,不钉数值),把 mock-vs-wire
@@ -27,6 +27,20 @@ const sortedKeys = (value: unknown): string[] =>
 
 const suite = binaryReady ? describe : describe.skip;
 const URI = 'file:///workspace/contract/entities/Monster.def';
+
+// RUST-064:协议版本双源同步守卫(无需二进制,恒跑)——TS 侧
+// KODE_PROTOCOL_VERSION 与 Rust 侧 kode-protocol PROTOCOL_VERSION 任一侧
+// 独自升版,运行时版本门(kodeCoreClient RUST-008 判据①)会让每个会话
+// 拒绝对讲回落 ts;本守卫把这类漂移提前到单测门暴露。
+describe('协议版本双源同步(无需二进制)', () => {
+  it('TS KODE_PROTOCOL_VERSION 与 Rust kode-protocol PROTOCOL_VERSION 一致', () => {
+    const rust = /PROTOCOL_VERSION:\s*&str\s*=\s*"([^"]+)"/.exec(
+      readFileSync(join(repoRoot, 'crates', 'kode-protocol', 'src', 'lib.rs'), 'utf8')
+    );
+    expect(rust).not.toBeNull();
+    expect(rust?.[1]).toBe(KODE_PROTOCOL_VERSION);
+  });
+});
 
 suite('协议契约门(真实 kode-server 应答形状)', () => {
   const clients: KodeCoreClient[] = [];
@@ -58,6 +72,9 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
     expect((result.capabilities.completionProvider as { triggerCharacters: string[] }).triggerCharacters)
       .toEqual(['<']);
     expect(sortedKeys(result.serverInfo)).toEqual(['name', 'version']);
+    // RUST-064:真二进制上报版本必须与 TS 侧常量一致(运行时版本门的
+    // 上游事实面;漂移时 RUST-008 版本门会在扩展侧拒绝对讲)
+    expect(result.serverInfo.version).toBe(KODE_PROTOCOL_VERSION);
     await client.dispose();
   }, 20_000);
 
