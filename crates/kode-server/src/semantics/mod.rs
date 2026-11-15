@@ -84,6 +84,9 @@
 //!   `from_type_graph` 递归(alias/ARRAY/FIXED_DICT/UserType);无图或图缺
 //!   =Unknown 带原文,绝不默认 PYTHON——PYTHON 可 pickle 全接受,默认它
 //!   =吞光全部 mismatch;显式 `<Arg>PYTHON</Arg>` 才是合法 PYTHON)。
+//! - [`nav`] NAV-01/RUST-110 实体跨语言可逆导航链(entities.xml 注册位 →
+//!   def 声明位 → Python 实现位三腿,标准布局路径推断腿别;Python 文件反向
+//!   回链实体;类缺失不造行号/未在册不产幽灵条目/多 root 歧义归 RUST-111)。
 //! - [`store`] 深审-1 def 解析按引用类别分池(`ReferenceKind` 三池=
 //!   entities/interfaces/components 目录约定,引擎 Parent 按当前池递归;
 //!   `def_kind_from_key` 按路径判池、resolve 类别+名双匹配,同名接口/
@@ -105,6 +108,7 @@ pub mod expr;
 pub mod facts;
 pub mod id;
 pub mod impact;
+pub mod nav;
 pub mod query;
 pub mod refs;
 pub mod rpcargs;
