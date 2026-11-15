@@ -9,6 +9,10 @@
 // 本文件是门:任一面超界 = perf-gate job 红 = 合并阻塞面。
 // 断言位:各测量面只记账 violations,收尾 it 统一断言全集——任何一面超界
 // 都让门红,不只最后一面。
+// 语义断言面(2026-11-15 审计 P1-2):steady it 内钉五面——已知声明落点
+// (SKILL_SLOT→types.xml)、必有补全项(开标签位全部属性名)、诊断反例
+// (干净语料零诊断)与正例(未注册类型 Error 点名)、编辑后结果变化(插入
+// 属性进补全面+编辑流零诊断)。「所有语义请求回 null 的替身」在此红。
 
 import * as fs from 'fs';
 import * as os from 'os';
@@ -65,7 +69,10 @@ const serverRssMb = (pid: number): number | null => {
 };
 
 const repoRoot = path.resolve(__dirname, '../..');
-const binaryPath = path.join(repoRoot, 'target', 'debug', 'kode-server');
+// KODE_SERVING_BINARY:红队替身入口(语义断言面的 prove-red 用——
+// 「所有语义请求回 null/空」的替身必须把本门打红;缺省真二进制)。
+const binaryPath =
+  process.env.KODE_SERVING_BINARY ?? path.join(repoRoot, 'target', 'debug', 'kode-server');
 const hasBinary = fs.existsSync(binaryPath);
 // 门模式需要较新二进制:build 缺失时现场编译一次(CI 的 perf-gate job 在
 // 本 bench 前已有显式 cargo build 步,这里兜底本地直跑)。
@@ -144,13 +151,24 @@ const makeWorkspace = (dir: string, defCount: number): GateWorkspace => {
   return { dir, corpusUris, defUris, defTexts };
 };
 
-// 探针:servingState 同位——首属性 <Type> 行(0 基第 3 行)UINT32 词起点。
-const DEF_PROBE = { line: 3, character: 12 };
-const COMPLETION_TEXT_SUFFIX = '\n\t\t<';
-const completionProbe = (text: string): { line: number; character: number } => ({
-  line: text.split('\n').length - 1,
-  character: 3
-});
+// 探针:p2 属性 <Type> 行(0 基第 11 行)SKILL_SLOT 词内(词起点列 10,
+// 探 +1)。SKILL_SLOT 在 types.xml 第 1 行注册 → definition 必须命中该
+// 已知声明落点(内建类型 UINT32 无落点恒 null,不能当断言面)。
+const DEF_PROBE = { line: 11, character: 11 };
+/** 补全上下文文档:开标签探针行「\t\t<」插在 </Properties> 之前(标签栈顶
+ * =Properties,成员补全真上下文;旧夹具把「<」放文档尾,栈空恒 null——
+ * 2026-11-15 审计 P1-2 实证,gate 此前量的是恒空面)。 */
+const completionDocOf = (defText: string): {
+  text: string;
+  probe: { line: number; character: number };
+} => {
+  const lines = defText.split('\n');
+  const at = lines.indexOf('\t</Properties>');
+  const text = [...lines.slice(0, at), '\t\t<', ...lines.slice(at)].join('\n');
+  return { text, probe: { line: at, character: 3 } };
+};
+/** 当前文本里开标签探针行号(编辑插入行后重算,防漂移)。 */
+const openTagLineOf = (text: string): number => text.split('\n').lastIndexOf('\t\t<');
 
 suite(`Rust 服务态门禁(${DEF_COUNT} def,KODE_SERVING_BOUND_* 宽松上界)`, () => {
   const ws = makeWorkspace(path.join(os.tmpdir(), 'kode-serving-gate'), DEF_COUNT);
@@ -206,10 +224,13 @@ suite(`Rust 服务态门禁(${DEF_COUNT} def,KODE_SERVING_BOUND_* 宽松上界)`
     for (let i = 0; i < ws.defUris.length; i += 1) {
       await client.openDocument(ws.defUris[i], 'kbengine-def', 1, ws.defTexts[i]);
     }
-    const total = performance.now() - t0;
-    once(`mirror${DEF_COUNT}.total`, total);
+    // 端到端镜像计时必须含服务端入库(P1-4 审计修正):didOpen 是通知,
+    // 旧口径在 health() 屏障前停表,数字只反映客户端投递。health 请求与
+    // 通知同管道 FIFO——其应答回来即证明此前的 didOpen 已全部处理入库。
     const health = await client.health();
     expect(health.documents).toHaveLength(DEF_COUNT + 3);
+    const total = performance.now() - t0;
+    once(`mirror${DEF_COUNT}.total`, total);
     const rssAfter = serverRssMb(health.pid);
     once('rss.afterMirror', rssAfter ?? -1, ' MB');
     violations.push(
@@ -235,13 +256,25 @@ suite(`Rust 服务态门禁(${DEF_COUNT} def,KODE_SERVING_BOUND_* 宽松上界)`
     }
     const compUris: string[] = [];
     const compTexts: string[] = [];
+    const compProbes: Array<{ line: number; character: number }> = [];
     for (let i = 0; i < Math.min(10, ws.defUris.length); i += 1) {
-      const text = ws.defTexts[i] + COMPLETION_TEXT_SUFFIX;
+      const { text, probe } = completionDocOf(ws.defTexts[i]);
       const uri = `${ws.defUris[i]}.comp.def`;
       compUris.push(uri);
       compTexts.push(text);
+      compProbes.push(probe);
       await client.openDocument(uri, 'kbengine-def', 1, text);
     }
+    // 诊断正例夹具:未注册自定义类型(干净语料全零诊断,本文件承载反例)。
+    const brokenUri = `${ws.defUris[0]}.broken.def`;
+    const brokenText = ws.defTexts[0].replace('SKILL_SLOT', 'NOT_A_KNOWN_TYPE');
+    await client.openDocument(brokenUri, 'kbengine-def', 1, brokenText);
+    // 语义面首响应捕获(P1-2 审计修正:gate 此前只量速度不断内容,
+    // 「语义请求全 null 的替身」照样 5/5 通过;现钉已知落点/必有项/正反例,
+    // 断言在热循环外统一执行,不给计时面掺断言开销)。
+    let defHit: unknown;
+    let compHit: unknown;
+    let diagHit: unknown;
     const defSamples: number[] = [];
     const compSamples: number[] = [];
     const diagSamples: number[] = [];
@@ -249,36 +282,90 @@ suite(`Rust 服务态门禁(${DEF_COUNT} def,KODE_SERVING_BOUND_* 宽松上界)`
       for (let i = 0; i < 10; i += 1) {
         const defUri = ws.defUris[(round * 10 + i) % ws.defUris.length];
         let t = performance.now();
-        await client.request('textDocument/definition', {
+        const defResponse = await client.request('textDocument/definition', {
           textDocument: { uri: defUri },
           position: DEF_PROBE
         });
         defSamples.push(performance.now() - t);
+        if (round === 0 && i === 0) {
+          defHit = defResponse;
+        }
         t = performance.now();
-        await client.request('textDocument/completion', {
+        const compResponse = await client.request('textDocument/completion', {
           textDocument: { uri: compUris[i] },
-          position: completionProbe(compTexts[i])
+          position: compProbes[i]
         });
         compSamples.push(performance.now() - t);
+        if (round === 0 && i === 0) {
+          compHit = compResponse;
+        }
         t = performance.now();
-        await client.request('textDocument/diagnostic', { textDocument: { uri: defUri } });
+        const diagResponse = await client.request('textDocument/diagnostic', { textDocument: { uri: defUri } });
         diagSamples.push(performance.now() - t);
+        if (round === 0 && i === 0) {
+          diagHit = diagResponse;
+        }
       }
     }
-    // 每编辑服务成本(didChange+diagnostic 往返 ×50,界=editRoundTripDiagnosticP99Ms)
+    // 每编辑服务成本(didChange+diagnostic 往返 ×50,界=editRoundTripDiagnosticP99Ms);
+    // 编辑=在 </Properties> 前插入配平属性块(名逐轮唯一,类型已知,保持零诊断)。
     const editSamples: number[] = [];
     let editVersion = 1;
     for (let i = 0; i < 50; i += 1) {
       editVersion += 1;
-      const edited = `${compTexts[0]}<GateEdit_p${i % 10}> UINT8 </GateEdit_p${i % 10}>\n`;
-      await client.openDocument(compUris[0], 'kbengine-def', editVersion, edited);
-      compTexts[0] = edited;
+      const lines = compTexts[0].split('\n');
+      const at = openTagLineOf(compTexts[0]);
+      const block = [
+        `\t\t<GateEdit_p${i}>`,
+        '\t\t\t<Type> UINT8 </Type>',
+        '\t\t\t<Flags> BASE </Flags>',
+        `\t\t</GateEdit_p${i}>`
+      ];
+      compTexts[0] = [...lines.slice(0, at), ...block, ...lines.slice(at)].join('\n');
+      await client.openDocument(compUris[0], 'kbengine-def', editVersion, compTexts[0]);
       const t = performance.now();
       await client.request('textDocument/diagnostic', {
         textDocument: { uri: compUris[0] }
       });
       editSamples.push(performance.now() - t);
     }
+    // ── 语义断言面(P1-2):任一断言红=语义能力退化=门红,不只是速度门 ──
+    // ① 已知声明落点:SKILL_SLOT → types.xml 第 1 行注册位。
+    expect(defHit, 'definition 命中已知声明落点(替身 null 在此红)').toMatchObject({
+      uri: expect.stringContaining('types.xml')
+    });
+    expect((defHit as { range: { start: { line: number } } }).range.start.line).toBe(1);
+    // ② 必有补全项:开标签位成员补全须含本实体全部属性名。
+    const compItems = (compHit as { items?: Array<{ label: string }> }).items;
+    expect(compHit, 'completion 非空(替身 null 在此红)').not.toBeNull();
+    const labels = new Set((compItems ?? []).map(item => item.label));
+    for (let i = 0; i < 10; i += 1) {
+      expect(labels.has(`Gate0_p${i}`), `补全缺必有项 Gate0_p${i}`).toBe(true);
+    }
+    // ③ 诊断反例:干净语料零诊断。
+    expect(diagHit, '干净 def 零诊断(反例)').toMatchObject({ items: [] });
+    // ④ 诊断正例:未注册自定义类型 → Error 级且消息点名。
+    const brokenDiag = (await client.request('textDocument/diagnostic', {
+      textDocument: { uri: brokenUri }
+    })) as { items: Array<{ severity: number; message: string }> };
+    expect(brokenDiag.items.length, '破型 def 必须有诊断(正例)').toBeGreaterThan(0);
+    expect(brokenDiag.items.every(item => item.severity === 1)).toBe(true);
+    expect(brokenDiag.items.some(item => item.message.includes('NOT_A_KNOWN_TYPE'))).toBe(true);
+    // ⑤ 编辑后结果变化:50 轮属性插入后,补全面必须出现新插入的属性名,
+    //    且编辑流未引入诊断(配平插入=零诊断)。
+    const editedComp = (await client.request('textDocument/completion', {
+      textDocument: { uri: compUris[0] },
+      position: { line: openTagLineOf(compTexts[0]), character: 3 }
+    })) as { items: Array<{ label: string }> };
+    expect(
+      (editedComp.items ?? []).map(item => item.label),
+      '编辑后补全面必须反映插入的属性(编辑前基线无 GateEdit)'
+    ).toContain('GateEdit_p49');
+    expect(labels.has('GateEdit_p0'), '编辑前基线不含编辑后属性(增量真实性)').toBe(false);
+    const editedDiag = (await client.request('textDocument/diagnostic', {
+      textDocument: { uri: compUris[0] }
+    })) as { items: unknown[] };
+    expect(editedDiag.items, '配平编辑流零诊断').toHaveLength(0);
     metric('editRoundTrip.diagnostic', editSamples);
     metric('steady.definition', defSamples);
     metric('steady.completion', compSamples);

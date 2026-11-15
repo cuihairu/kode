@@ -60,7 +60,9 @@ const serverRssMb = (pid: number): number | null => {
 };
 
 const repoRoot = path.resolve(__dirname, '../..');
-const binaryPath = path.join(repoRoot, 'target', 'debug', 'kode-server');
+// KODE_SERVING_BINARY:红队替身入口(与 servingGate 同口径;缺省真二进制)。
+const binaryPath =
+  process.env.KODE_SERVING_BINARY ?? path.join(repoRoot, 'target', 'debug', 'kode-server');
 const hasBinary = fs.existsSync(binaryPath);
 if (!hasBinary && spawnSync('cargo', ['--version'], { encoding: 'utf8' }).status === 0) {
   spawnSync('cargo', ['build', '-p', 'kode-server'], { cwd: repoRoot, stdio: 'ignore' });
@@ -109,6 +111,7 @@ const ALIAS_XML = [
 
 interface SoakWorkspace {
   dir: string;
+  corpusUris: string[];
   defUris: string[];
   defTexts: string[];
 }
@@ -130,15 +133,31 @@ const makeWorkspace = (dir: string, defCount: number): SoakWorkspace => {
   fs.writeFileSync(path.join(defs, 'types.xml'), TYPES_XML);
   fs.writeFileSync(path.join(defs, 'entities.xml'), ENTITIES_XML);
   fs.writeFileSync(path.join(defs, 'alias.xml'), ALIAS_XML);
-  return { dir, defUris, defTexts };
+  // 三类 XML 也是镜像面(servingGate 同账本):服务器是纯 overlay 无盘扫,
+  // 不镜像 types.xml 则 DIALOG_VAR 无注册面——definition 恒 null、诊断误报
+  // 未注册(2026-11-15 语义断言面接线时实证)。
+  const corpusUris = ['types.xml', 'entities.xml', 'alias.xml'].map(base =>
+    `file://${path.join(defs, base)}`
+  );
+  return { dir, corpusUris, defUris, defTexts };
 };
 
-const DEF_PROBE = { line: 3, character: 12 };
-const COMPLETION_TEXT_SUFFIX = '\n\t\t<';
-const completionProbe = (text: string): { line: number; character: number } => ({
-  line: text.split('\n').length - 1,
-  character: 3
-});
+// 探针:p2 属性 <Type> 行(0 基第 11 行)DIALOG_VAR 词内(词起点列 10,
+// 探 +1);DIALOG_VAR 在 types.xml 第 1 行注册 → definition 已知声明落点
+// (语义断言面,P1-2 审计修正)。
+const DEF_PROBE = { line: 11, character: 11 };
+/** 补全上下文文档:开标签探针行「\t\t<」插在 </Properties> 之前(标签栈顶
+ * =Properties,成员补全真上下文;旧夹具「<」在文档尾,栈空恒 null——
+ * 2026-11-15 审计 P1-2 实证)。 */
+const completionDocOf = (defText: string): {
+  text: string;
+  probe: { line: number; character: number };
+} => {
+  const lines = defText.split('\n');
+  const at = lines.indexOf('\t</Properties>');
+  const text = [...lines.slice(0, at), '\t\t<', ...lines.slice(at)].join('\n');
+  return { text, probe: { line: at, character: 3 } };
+};
 
 suite(`Rust 服务态 soak(${SOAK_SECONDS}s,零错误+驻留界+无病态退化)`, () => {
   const ws = makeWorkspace(path.join(os.tmpdir(), 'kode-serving-soak'), DEF_COUNT);
@@ -156,17 +175,28 @@ suite(`Rust 服务态 soak(${SOAK_SECONDS}s,零错误+驻留界+无病态退化)
     client = new KodeCoreClient({ binaryPath });
     clients.push(client);
     await client.start();
-    // 镜像语料(编辑/查询的底座)+ 10 个补全上下文文档(轮转面)
+    // 镜像语料(编辑/查询的底座):三类 XML 先行 + 全量 def + 10 个补全
+    // 上下文文档(轮转面)。
+    for (const corpusUri of ws.corpusUris) {
+      client.openDocument(
+        corpusUri,
+        'xml',
+        1,
+        fs.readFileSync(corpusUri.slice('file://'.length), 'utf8')
+      );
+    }
     for (let i = 0; i < ws.defUris.length; i += 1) {
-      await client.openDocument(ws.defUris[i], 'kbengine-def', 1, ws.defTexts[i]);
+      client.openDocument(ws.defUris[i], 'kbengine-def', 1, ws.defTexts[i]);
     }
     const compUris: string[] = [];
     const compTexts: string[] = [];
+    const compProbes: Array<{ line: number; character: number }> = [];
     for (let i = 0; i < Math.min(10, ws.defUris.length); i += 1) {
-      const text = ws.defTexts[i] + COMPLETION_TEXT_SUFFIX;
+      const { text, probe } = completionDocOf(ws.defTexts[i]);
       const uri = `${ws.defUris[i]}.comp.def`;
       compUris.push(uri);
       compTexts.push(text);
+      compProbes.push(probe);
       await client.openDocument(uri, 'kbengine-def', 1, text);
     }
     const startHealth = await client.health();
@@ -189,6 +219,13 @@ suite(`Rust 服务态 soak(${SOAK_SECONDS}s,零错误+驻留界+无病态退化)
     const windows: WindowStats[] = [];
     let editVersion = 1;
     let iteration = 0;
+    // 语义面捕获(P1-2 审计修正:soak 此前只断速度/存活/驻留,「语义请求
+    // 全 null 的替身」照样通过;首迭代+首个编辑轮各捕一组,循环后统一断言)。
+    let defHit: unknown;
+    let compHit: unknown;
+    let diagHit: unknown;
+    let postEditCompLabels: string[] = [];
+    let preEditLabels4: string[] = [];
     const soakStarted = performance.now();
     const deadline = soakStarted + SOAK_SECONDS * 1000;
 
@@ -205,16 +242,16 @@ suite(`Rust 服务态 soak(${SOAK_SECONDS}s,零错误+驻留界+无病态退化)
         const defUri = ws.defUris[(iteration * 7) % ws.defUris.length];
         try {
           let t = performance.now();
-          await client.request('textDocument/definition', {
+          const defResponse = await client.request('textDocument/definition', {
             textDocument: { uri: defUri },
             position: DEF_PROBE
           });
           defSamples.push(performance.now() - t);
           windowRequests += 1;
           t = performance.now();
-          await client.request('textDocument/completion', {
+          const compResponse = await client.request('textDocument/completion', {
             textDocument: { uri: compUris[i] },
-            position: completionProbe(compTexts[i])
+            position: compProbes[i]
           });
           compSamples.push(performance.now() - t);
           windowRequests += 1;
@@ -229,13 +266,30 @@ suite(`Rust 服务态 soak(${SOAK_SECONDS}s,零错误+驻留界+无病态退化)
             compTexts[i] = edited;
             await client.openDocument(compUris[i], 'kbengine-def', editVersion, edited);
             windowRequests += 1;
+            if (iteration === 4) {
+              // 首个编辑轮(改的是 i=4 即 Soak4 文档):编辑前基线取本轮编辑
+              // 前的补全应答,编辑后再查——编辑后结果变化面。
+              preEditLabels4 = ((compResponse as { items?: Array<{ label: string }> } | null)?.items ?? []).map(
+                item => item.label
+              );
+              const postEdit = (await client.request('textDocument/completion', {
+                textDocument: { uri: compUris[i] },
+                position: compProbes[i]
+              })) as { items?: Array<{ label: string }> } | null;
+              postEditCompLabels = (postEdit?.items ?? []).map(item => item.label);
+            }
           }
           t = performance.now();
-          await client.request('textDocument/diagnostic', {
+          const diagResponse = await client.request('textDocument/diagnostic', {
             textDocument: { uri: defUri }
           });
           diagSamples.push(performance.now() - t);
           windowRequests += 1;
+          if (iteration === 0) {
+            defHit = defResponse;
+            compHit = compResponse;
+            diagHit = diagResponse;
+          }
         } catch (error) {
           windowErrors += 1;
           emit(
@@ -301,5 +355,33 @@ suite(`Rust 服务态 soak(${SOAK_SECONDS}s,零错误+驻留界+无病态退化)
     expect(rssGrowthMb).toBeLessThan(RSS_GROWTH_CEILING_MB);
     // 闸④:无病态退化(末季度 p50 < 首季度×10+5ms)
     expect(lastQuarterDefP50).toBeLessThan(firstQuarterDefP50 * 10 + 5);
+    // 闸⑤:语义面(P1-2 审计修正——「语义请求全 null 的替身」在此红):
+    //   ① 已知声明落点 DIALOG_VAR→types.xml 第 1 行;② 必有补全项
+    //   (开标签位本实体全部属性名);③ 干净语料零诊断;④ 首个编辑轮
+    //   后补全面反映属性改名(编辑后结果变化)。
+    expect(defHit, 'definition 命中已知声明落点(替身 null 在此红)').toMatchObject({
+      uri: expect.stringContaining('types.xml')
+    });
+    expect((defHit as { range: { start: { line: number } } }).range.start.line).toBe(1);
+    const baseLabels = ((compHit as { items?: Array<{ label: string }> }).items ?? []).map(
+      item => item.label
+    );
+    expect(compHit, 'completion 非空(替身 null 在此红)').not.toBeNull();
+    for (let i = 0; i < 10; i += 1) {
+      expect(baseLabels.includes(`Soak0_p${i}`), `补全缺必有项 Soak0_p${i}`).toBe(true);
+    }
+    expect(diagHit, '干净 def 零诊断').toMatchObject({ items: [] });
+    expect(
+      preEditLabels4.includes('Soak4_p0'),
+      '编辑前基线(Soak4)含原属性名'
+    ).toBe(true);
+    expect(
+      postEditCompLabels.includes('Soak4_p0_v2'),
+      `首个编辑轮后补全面必须含改名属性 Soak4_p0_v2(编辑后结果变化);实际: ${postEditCompLabels.slice(0, 12).join(',')}`
+    ).toBe(true);
+    expect(
+      preEditLabels4.includes('Soak4_p0_v2'),
+      '编辑前基线不含改名属性(增量真实性)'
+    ).toBe(false);
   }, SOAK_SECONDS * 1000 + 120_000);
 });
