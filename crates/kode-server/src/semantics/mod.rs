@@ -88,6 +88,11 @@
 //!   实体脚本/组件脚本/def 三池/XML 语料路径判别;跨文件同池同名 def、
 //!   entities.xml 重复条目、同文件重复类定义三重复面——只报事实不选
 //!   winner;def 属性引用三池归类=组件绑定区分,多池命中歧义全列)。
+//! - [`engine_meta`] EMETA-01/RUST-113 引擎关键 API/回调/内建对象/常量
+//!   版本化 metadata layer(四类 seed 表逐条引擎出处+进程面;版本匹配=
+//!   精确串不猜 semver;外部版本覆盖=OverrideSet 后登记者优先,被遮蔽
+//!   进 shadowed 事实不删除;未声明版本不猜——版本域 override 不生效,
+//!   全版本集照常;查无=None 绝不硬造;完整普查归 pyi 静态模板车道)。
 //! - [`nav`] NAV-01/RUST-110 实体跨语言可逆导航链(entities.xml 注册位 →
 //!   def 声明位 → Python 实现位三腿,标准布局路径推断腿别;Python 文件反向
 //!   回链实体;类缺失不造行号/未在册不产幽灵条目/多 root 歧义归 RUST-111)。
@@ -112,6 +117,7 @@ pub mod create_target;
 pub mod deps;
 pub mod dispatch;
 pub mod doclass;
+pub mod engine_meta;
 pub mod entity_name;
 pub mod expr;
 pub mod facts;
