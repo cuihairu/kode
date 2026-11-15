@@ -464,6 +464,52 @@ fn cancel_registry_begin_after_early_cancel_reports_early() {
 }
 
 #[test]
+fn early_cancel_for_plain_request_is_consumed_not_accumulated() {
+    // 生产接线审计批(泄漏修):取消先到 + 普通 RPC(hover)→ 请求照常
+    // 应答,先到账随请求到达消费 —— 此前普通 RPC 从不消费,标记无界累积。
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(0));
+    state.cancels.request_cancel(&RequestId::Number(7));
+    assert_eq!(state.cancels.before_start_len_for_tests(), 1);
+    let out = handle_message(
+        &mut state,
+        request(
+            7,
+            "textDocument/hover",
+            json!({
+                "textDocument": { "uri": "file:///w/a.def" },
+                "position": { "line": 0, "character": 0 }
+            }),
+        ),
+    );
+    // hover 正常应答(本批不改普通请求响应语义;取消登记随线程池贯穿批接入)
+    assert!(matches!(&out[0], Outgoing::Response(_)));
+    assert_eq!(state.cancels.before_start_len_for_tests(), 0);
+}
+
+#[test]
+fn early_cancel_for_wait_still_cancels_immediately() {
+    // wait 面例外保留:先到取消 → begin_cancellable 消费 → 立即回
+    // RequestCancelled(入口对 wait 跳过预消费,先到语义不被抢)。
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(0));
+    handle_message(
+        &mut state,
+        notification("$/cancelRequest", json!({ "id": 9 })),
+    );
+    let out = handle_message(&mut state, request(9, "$/kode/wait", json!({ "ms": 1000 })));
+    match &out[0] {
+        Outgoing::Response(response) => {
+            assert_eq!(
+                response.error.as_ref().expect("cancelled error").code,
+                error_codes::REQUEST_CANCELLED
+            );
+        }
+        Outgoing::Notification(_) => panic!("expected response"),
+    }
+}
+
+#[test]
 fn cancel_target_extracts_or_rejects_id() {
     let msg = json!({"method": "$/cancelRequest", "params": {"id": 42}});
     assert_eq!(cancel_target(&msg), Some(RequestId::Number(42)));

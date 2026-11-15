@@ -57,13 +57,19 @@ impl CancelRegistry {
             .insert(id.clone());
     }
 
-    /// 请求开始:登记取消标志;若取消通知已先到,立即返回已取消。
-    pub fn begin_cancellable(&self, id: &RequestId) -> (Arc<AtomicBool>, bool) {
-        let early = self
-            .before_start
+    /// 请求分派入口统一消费先到账:请求到达即清账(可取消方法把早到结果
+    /// 传入 handler;普通方法消费即弃——取消语义随线程池贯穿批全面接入)。
+    /// 此前普通 RPC 从不消费,先到取消标记无界累积(生产接线审计批)。
+    pub fn consume_early(&self, id: &RequestId) -> bool {
+        self.before_start
             .lock()
             .expect("cancel-before set")
-            .remove(id);
+            .remove(id)
+    }
+
+    /// 请求开始:登记取消标志;若取消通知已先到,立即返回已取消。
+    pub fn begin_cancellable(&self, id: &RequestId) -> (Arc<AtomicBool>, bool) {
+        let early = self.consume_early(id);
         let flag = Arc::new(AtomicBool::new(false));
         self.pending
             .lock()
@@ -72,8 +78,24 @@ impl CancelRegistry {
         (flag, early)
     }
 
+    /// 只登记取消标志,不消费先到账(早到判定统一由分派入口消费后传参,
+    /// 避免 handler 各自消费时被入口抢账)。
+    pub fn register_cancellable(&self, id: &RequestId) -> Arc<AtomicBool> {
+        let flag = Arc::new(AtomicBool::new(false));
+        self.pending
+            .lock()
+            .expect("cancel map")
+            .insert(id.clone(), Arc::clone(&flag));
+        flag
+    }
+
     pub fn end_cancellable(&self, id: &RequestId) {
         self.pending.lock().expect("cancel map").remove(id);
+    }
+
+    /// 测试面:先到账深度(泄漏钉)。
+    pub fn before_start_len_for_tests(&self) -> usize {
+        self.before_start.lock().expect("cancel-before set").len()
     }
 }
 
@@ -204,6 +226,10 @@ fn handle_request(
             "server is not initialized",
         ))];
     }
+    // 先到取消账随请求到达统一消费一次(防无界累积;handler 不再各自消费,
+    // 避免抢账)。可取消方法把早到结果用于立即取消;其余方法本批消费即弃
+    // (取消登记面随线程池贯穿批统一接线)。
+    let cancelled_early = state.cancels.consume_early(&request.id);
     match request.method.as_str() {
         "initialize" => vec![Outgoing::Response(handle_initialize(state, request))],
         "shutdown" => {
@@ -219,10 +245,12 @@ fn handle_request(
                 health_report(state),
             ))]
         }
-        "$/kode/wait" => vec![Outgoing::Response(handle_wait(state, request, poll))],
+        "$/kode/wait" => vec![Outgoing::Response(handle_wait(state, request, poll, cancelled_early))],
         "$/kode/rpc" => vec![Outgoing::Response(handle_rpc(state, request))],
         "textDocument/hover" => vec![Outgoing::Response(handle_hover(state, request))],
-        "textDocument/completion" => vec![Outgoing::Response(handle_completion(state, request))],
+        "textDocument/completion" => {
+            vec![Outgoing::Response(handle_completion(state, request, cancelled_early))]
+        }
         "textDocument/definition" => vec![Outgoing::Response(handle_definition(state, request))],
         "textDocument/diagnostic" => vec![Outgoing::Response(handle_diagnostic(state, request))],
         _ => vec![Outgoing::Response(Response::error(
@@ -316,6 +344,7 @@ fn handle_wait(
     state: &mut ServerState,
     request: Request,
     poll: &mut dyn FnMut() -> bool,
+    cancelled_early: bool,
 ) -> Response {
     let ms = request
         .params
@@ -324,7 +353,7 @@ fn handle_wait(
         .and_then(|v| v.as_u64())
         .unwrap_or(0)
         .min(WAIT_MAX_MS);
-    let (flag, cancelled_early) = state.cancels.begin_cancellable(&request.id);
+    let flag = state.cancels.register_cancellable(&request.id);
     let outcome = (|| {
         if cancelled_early || flag.load(Ordering::SeqCst) {
             return Err(());
@@ -449,7 +478,7 @@ fn handle_hover(state: &mut ServerState, request: Request) -> Response {
 /// 计算本身纯内存,取消检查在入口判定(不为纯同步计算开轮询间隙)。
 /// 版本化:应答只基于 DocumentStore 严格 version 转移后的 overlay 真相
 /// (VFS-003/004;过期版本改动被拒,请求永不见旧文本)。
-fn handle_completion(state: &mut ServerState, request: Request) -> Response {
+fn handle_completion(state: &mut ServerState, request: Request, cancelled_early: bool) -> Response {
     let params: CompletionParams = match request.params.and_then(|p| serde_json::from_value(p).ok())
     {
         Some(params) => params,
@@ -461,7 +490,7 @@ fn handle_completion(state: &mut ServerState, request: Request) -> Response {
             )
         }
     };
-    let (flag, cancelled_early) = state.cancels.begin_cancellable(&request.id);
+    let flag = state.cancels.register_cancellable(&request.id);
     let cancelled = cancelled_early || flag.load(Ordering::SeqCst);
     state.cancels.end_cancellable(&request.id);
     if cancelled {
