@@ -71,17 +71,19 @@ export function pidFromPick(picked: { description?: string } | undefined): numbe
 /**
  * 进程清单器(批112 用户令):win32 走 tasklist CSV,其余走 ps;
  * 命令失败(无 ps/无权限)返回空清单,不抛——attach 流程自己提示。
+ * RUST-001:命令面承诺式(run 可返回 Promise),清单器异步化,缺省实现
+ * 由调用方以 execFile 注入,不再 execSync 阻塞宿主。
  */
 export function makeProcessLister(
   run: ProcessCommandRunner,
   platform: NodeJS.Platform = process.platform
-): () => ProcessEntry[] {
-  return () => {
+): () => Promise<ProcessEntry[]> {
+  return async () => {
     try {
       if (platform === 'win32') {
-        return parseTasklistProcesses(run('tasklist /fo csv /nh'));
+        return parseTasklistProcesses(await run('tasklist /fo csv /nh'));
       }
-      return parsePsProcesses(run('ps -axo pid=,comm='));
+      return parsePsProcesses(await run('ps -axo pid=,comm='));
     } catch {
       return [];
     }

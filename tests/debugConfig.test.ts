@@ -424,9 +424,11 @@ describe('进程清单解析(批112 attach 进程过滤)', () => {
     ]);
   });
 
-  it('makeProcessLister:posix 走 ps,win32 走 tasklist,命令失败返回空清单', () => {
+  it('makeProcessLister:posix 走 ps,win32 走 tasklist,命令失败返回空清单', async () => {
+    // (RUST-001:清单器异步化,runner 承诺式——同步字符串注入仍兼容,
+    //  断言逐字同原钉,仅加 await。)
     const psLister = makeProcessLister(() => '4321 baseapp\n1 systemd\n', 'linux');
-    expect(psLister()).toEqual([
+    expect(await psLister()).toEqual([
       { pid: 4321, name: 'baseapp' },
       { pid: 1, name: 'systemd' }
     ]);
@@ -435,12 +437,30 @@ describe('进程清单解析(批112 attach 进程过滤)', () => {
       () => '"baseapp.exe","4321","Console","1","100,000 K"\n',
       'win32'
     );
-    expect(tasklistLister()).toEqual([{ pid: 4321, name: 'baseapp.exe' }]);
+    expect(await tasklistLister()).toEqual([{ pid: 4321, name: 'baseapp.exe' }]);
 
-    // 无 ps/无权限:命令抛错,清单返空,不抛给调用方
+    // 无 ps/无权限:命令抛错(含承诺拒绝),清单返空,不抛给调用方
     const brokenLister = makeProcessLister(() => {
       throw new Error('spawn ps ENOENT');
     });
-    expect(brokenLister()).toEqual([]);
+    expect(await brokenLister()).toEqual([]);
+
+    // 承诺式 runner(异步 execFile 缺省形态):拒绝同样归空清单不悬挂
+    const rejectingLister = makeProcessLister(async () => {
+      throw new Error('execFile ps ENOENT');
+    });
+    expect(await rejectingLister()).toEqual([]);
+
+    // 异步 runner 成功路径(真 execFile 形态):承诺解包是解析的前提——
+    // 摘 await(Promise 直入解析器 → TypeError → 归空)必红,即 RUST-001
+    // 异步化的 prove-red 面。
+    const asyncLister = makeProcessLister(
+      async () => {
+        await new Promise(resolve => setImmediate(resolve));
+        return '4321 baseapp\n';
+      },
+      'linux'
+    );
+    expect(await asyncLister()).toEqual([{ pid: 4321, name: 'baseapp' }]);
   });
 });

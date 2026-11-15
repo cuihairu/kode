@@ -140,38 +140,9 @@ export function extractDefReturnAnnotation(source: string, methodName: string): 
   return null;
 }
 
-/** 项目 python 文件清单(同步走根树,排除面同 PY_SCAN_EXCLUDE 口径),排序保确定 */
-export function collectProjectPythonFiles(workspaceRoot: string, limit = 20000): string[] {
-  const files: string[] = [];
-  const visit = (dir: string): void => {
-    if (files.length >= limit) {
-      return;
-    }
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (files.length >= limit) {
-        return;
-      }
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (!SCAN_EXCLUDED_DIRS.has(entry.name)) {
-          visit(full);
-        }
-      } else if (entry.isFile() && entry.name.endsWith('.py')) {
-        files.push(full);
-      }
-    }
-  };
-  visit(workspaceRoot);
-  return files.sort();
-}
-
-/** 异步目录发现；取消后不再访问后续目录。 */
+/** 项目 python 文件清单(异步走根树;取消后不再访问后续目录),排序保确定。
+ *  RUST-001:原同步全仓 readdirSync 版无生产调用者已删——休眠违规面不留,
+ *  调用方统一走本函数。 */
 export async function collectProjectPythonFilesAsync(
   workspaceRoot: string,
   limit = 20000,

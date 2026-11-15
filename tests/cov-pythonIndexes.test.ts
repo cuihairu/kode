@@ -10,7 +10,7 @@ import * as path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import {
-  collectProjectPythonFiles,
+  collectProjectPythonFilesAsync,
   extractDefReturnAnnotation,
   extractFileReturnAnnotations,
   extractFileReturnAnnotationsAsync,
@@ -287,7 +287,7 @@ describe('pythonReturnTypeInference 覆盖补齐', () => {
     expect([...(await extractFileReturnAnnotationsAsync(source))]).toEqual([['real', 'SYNC_RES']]);
   });
 
-  it('collectProjectPythonFiles:排除目录不走、排序保确定、limit 截断、文件当根返回空', () => {
+  it('collectProjectPythonFilesAsync:排除目录不走、排序保确定、limit 截断、文件当根返回空', async () => {
     const paths = makeRoot({
       'keep0.py': 'x = 0\n',
       'sub/keep.py': 'x = 1\n',
@@ -296,12 +296,13 @@ describe('pythonReturnTypeInference 覆盖补齐', () => {
       'notes.txt': 'not python\n'
     });
     const root = rootDirOf(paths['keep0.py']);
-    const files = collectProjectPythonFiles(root);
+    // (RUST-001:同步版已删,本例迁异步变体,断言逐字同原钉。)
+    const files = await collectProjectPythonFilesAsync(root);
     expect(files).toEqual([paths['keep0.py'], paths['sub/keep.py']]);
     // limit 在目录进入与文件收集两处都生效(顺序随 readdir,只锁数量)
-    expect(collectProjectPythonFiles(root, 2)).toHaveLength(2);
+    expect(await collectProjectPythonFilesAsync(root, 2)).toHaveLength(2);
     // 传文件路径当根:readdir ENOTDIR → 空清单不抛
-    expect(collectProjectPythonFiles(paths['keep0.py'])).toEqual([]);
+    expect(await collectProjectPythonFilesAsync(paths['keep0.py'])).toEqual([]);
   });
 
   it('updateDocumentReturnAnnotationsAsync:提取期间文档已关,弃桶不复活', async () => {

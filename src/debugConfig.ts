@@ -115,8 +115,9 @@ export interface ProcessEntry {
   name: string;
 }
 
-/** 执行进程清单命令并返回 stdout(注入便于测试,不真跑 ps/tasklist) */
-export type ProcessCommandRunner = (command: string) => string;
+/** 执行进程清单命令并返回 stdout(注入便于测试,不真跑 ps/tasklist);
+ * RUST-001:承诺式返回面,缺省实现走 execFile 异步,不再 execSync 阻塞宿主 */
+export type ProcessCommandRunner = (command: string) => string | Promise<string>;
 
 export class DebugConfigManager {
   private config: KBEngineDebugConfig;
@@ -140,7 +141,7 @@ export class DebugConfigManager {
   constructor(
     private context: vscode.ExtensionContext,
     private readonly deps: {
-      listProcesses?: () => ProcessEntry[];
+      listProcesses?: () => ProcessEntry[] | Promise<ProcessEntry[]>;
       /** IDE-PDBG-002:端口探测注入面(缺省真实 net.connect) */
       probeTcpPort?: TcpConnectFn;
       /** IDE-PDBG-002:本机 debugpy 预检注入面(缺省既有 debugpyPreflight 链) */
@@ -1137,11 +1138,35 @@ export class DebugConfigManager {
     }
   }
 
-  /** 列出本机进程(ps/tasklist;命令失败返回空清单;清单器可注入便于测试) */
-  private listProcesses(): ProcessEntry[] {
-    return this.deps.listProcesses?.() ?? makeProcessLister(command =>
-      child_process.execSync(command, { encoding: 'utf8' })
-    )();
+  /** 列出本机进程(ps/tasklist;命令失败返回空清单;清单器可注入便于测试)。
+   * RUST-001:execFile 异步替代 execSync——清单命令期不再阻塞扩展宿主;
+   * 命令面是两条固定字面量,按首个空格拆 file/args(无引号形态,确定性)。 */
+  private async listProcesses(): Promise<ProcessEntry[]> {
+    if (this.deps.listProcesses) {
+      return this.deps.listProcesses();
+    }
+    const lister = makeProcessLister(command =>
+      new Promise<string>((resolve, reject) => {
+        const separator = command.indexOf(' ');
+        if (separator <= 0) {
+          reject(new Error(`unexpected process command: ${command}`));
+          return;
+        }
+        child_process.execFile(
+          command.slice(0, separator),
+          command.slice(separator + 1).split(' '),
+          { encoding: 'utf8' },
+          (error, stdout) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve(stdout);
+            }
+          }
+        );
+      })
+    );
+    return lister();
   }
 
   /**
@@ -1151,7 +1176,7 @@ export class DebugConfigManager {
    * 置顶 + 图标呈现);取消/未选返回 undefined,附加流程就此终止。
    */
   async pickProcessId(componentName: string): Promise<number | undefined> {
-    const processes = this.listProcesses();
+    const processes = await this.listProcesses();
     if (processes.length === 0) {
       vscode.window.showErrorMessage('未获取到进程列表,无法附加(请确认目标机器上进程可见)');
       return undefined;

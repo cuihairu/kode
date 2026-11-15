@@ -11,7 +11,7 @@ import { EntityMappingManager } from '../src/entityMapping';
 import {
   applySavedFileAnnotations,
   buildReturnAnnotationIndex,
-  collectProjectPythonFiles,
+  collectProjectPythonFilesAsync,
   extractFileReturnAnnotations,
   extractFileReturnAnnotationsAsync,
   flushPendingDocumentReturnAnnotationsForTests,
@@ -1203,18 +1203,19 @@ describe('IDE-REV-037:注解来源日志', () => {
   });
 });
 
-// collectProjectPythonFiles 的 limit 早退(138/148):上限命中的两处 return。
+// collectProjectPythonFilesAsync 的 limit 早退:上限命中的两处 return。
 // 与主链扫描面同口径:超过 limit 即截断,不再进目录、不再收文件。
-describe('collectProjectPythonFiles 上限截断(覆盖率)', () => {
-  it('limit=0 立即返回;积满后目录内中途返回', () => {
+// (RUST-001:同步版已删,本例迁异步变体,语义逐字同原钉。)
+describe('collectProjectPythonFilesAsync 上限截断(覆盖率)', () => {
+  it('limit=0 立即返回;积满后目录内中途返回', async () => {
     const { root, put } = setupWorkspace();
     put('a.py', 'x = 1\n');
     put('b.py', 'y = 2\n');
     put('c.py', 'z = 3\n');
     // limit=0:visit 入口 files(0)>=0 → 立即返回空
-    expect(collectProjectPythonFiles(root, 0)).toEqual([]);
-    // limit=1:收满 1 个后,下一目录项(147-148)即返回,只收 1
-    expect(collectProjectPythonFiles(root, 1)).toHaveLength(1);
+    expect(await collectProjectPythonFilesAsync(root, 0)).toEqual([]);
+    // limit=1:收满 1 个后,下一目录项即返回,只收 1
+    expect(await collectProjectPythonFilesAsync(root, 1)).toHaveLength(1);
   });
 });
 

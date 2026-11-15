@@ -102,7 +102,7 @@ import { EntityMappingManager, pythonScriptDomain } from '../entityMapping';
 import { PythonClassIndex } from '../backend/pythonClassIndex';
 import { getWorkspaceRootForDocument, findDefinitionFileByCategory, findDefinitionTextByCategory, getEntityCustomTypesSnapshot } from '../definitionWorkspace';
 import { getDefinitionWorkspaceLayout, listDefinitionFiles } from '../definitionWorkspace';
-import { readSharedFileSnapshot } from '../sharedFileSnapshot';
+import { readSharedFileSnapshot, readSharedFileSnapshotAsync } from '../sharedFileSnapshot';
 import { isPythonMroJumpEnabled, validateDocument, validateEntitiesXmlDocument } from '../languageProviders';
 import { DiagnosticScheduler, getDiagnosticScheduler } from '../backend/diagnosticScheduler';
 import { validateProcessTopologyInRust } from '../backend/processTopologyRust';
@@ -1674,26 +1674,50 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
   };
 
   /** 收集 defs 原文集合(实体/接口/组件三根,闭包走查用)。KR-AUD-54:同
-   *  清单路径口径,根随触发文档定位,不无参回落第一根。 */
-  const collectTopologyDefInputs = (document?: vscode.TextDocument): Array<{ name: string; category: string; filePath: string; text: string }> => {
+   *  清单路径口径,根随触发文档定位,不无参回落第一根。RUST-001:读相
+   *  异步化——打开文档仍取缓冲,磁盘补载走 readSharedFileSnapshotAsync,
+   *  8 路有界并发(同 defMd5Check 口径),不再把全项目 def 读压成宿主
+   *  同步段;完成序随 IO 翻动,按 filePath 排序恢复确定性。 */
+  const TOPOLOGY_DEF_READ_CONCURRENCY = 8;
+  const collectTopologyDefInputs = async (
+    document?: vscode.TextDocument
+  ): Promise<Array<{ name: string; category: string; filePath: string; text: string }>> => {
     const root = getWorkspaceRootForDocument(document);
     if (!root) {
       return [];
     }
     const layout = getDefinitionWorkspaceLayout(root);
-    const defs: Array<{ name: string; category: string; filePath: string; text: string }> = [];
+    const paths: Array<{ filePath: string; category: string }> = [];
     const push = (directory: string | null, category: string) => {
       for (const filePath of listDefinitionFiles(directory)) {
-        const name = filePath.split(/[\\/]/).pop()?.replace(/\.def$/i, '') ?? '';
-        const text = readTextForPath(filePath);
-        if (text !== null) {
-          defs.push({ name, category, filePath, text });
-        }
+        paths.push({ filePath, category });
       }
     };
     push(layout.entityDefsRoot, 'entity');
     push(layout.interfacesRoot, 'interface');
     push(layout.componentsRoot, 'component');
+    const defs: Array<{ name: string; category: string; filePath: string; text: string }> = [];
+    let cursor = 0;
+    const workers = Array.from(
+      { length: Math.min(TOPOLOGY_DEF_READ_CONCURRENCY, paths.length) },
+      async () => {
+        while (cursor < paths.length) {
+          const item = paths[cursor];
+          cursor += 1;
+          const open = vscode.workspace.textDocuments.find(doc => doc.uri.fsPath === item.filePath);
+          const text = open
+            ? open.getText()
+            : ((await readSharedFileSnapshotAsync(item.filePath))?.content ?? null);
+          if (text === null) {
+            continue;
+          }
+          const name = item.filePath.split(/[\\/]/).pop()?.replace(/\.def$/i, '') ?? '';
+          defs.push({ name, category: item.category, filePath: item.filePath, text });
+        }
+      }
+    );
+    await Promise.all(workers);
+    defs.sort((left, right) => left.filePath.localeCompare(right.filePath));
     return defs;
   };
 
@@ -1790,7 +1814,7 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
         const result = await validateProcessTopologyInRust({
           manifestText,
           entitiesXmlText,
-          defs: collectTopologyDefInputs(document)
+          defs: await collectTopologyDefInputs(document)
         });
         if (!result) {
           // Rust 不可用/失败 → 零发现(静默,不误报)。
