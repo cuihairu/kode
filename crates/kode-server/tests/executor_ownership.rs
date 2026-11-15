@@ -1,8 +1,10 @@
-//! RUST-075-W 执行归属登记完整性:生产注册表(与 `ServerState::new()` 同源)
-//! 全量断言——每个 `$/kode/rpc` 内层 method 归池(交互泳道),顶层 serving/
-//! 顺序面一律内联。新增 handler 注册即自动进断言面,漏登记/误登记直接红。
+//! RUST-075-W / RUST-076-W 执行归属登记完整性:生产注册表(与
+//! `ServerState::new()` 同源)全量断言——每个 `$/kode/rpc` 内层 method 归池
+//! 并按单一分类源(`rpc_lane_class`)拿到 (泳道, LaneGate 类别);顶层
+//! serving/顺序面一律内联。新增 handler 注册即自动进断言面,漏登记(缺省
+//! Cpu 仍能跑但可审计)/陈旧 IO 登记(表内面已注销)直接红。
 
-use kode_server::executor::{execution_lane, ExecutionLane, PoolLane};
+use kode_server::executor::{execution_lane, rpc_job_kind, rpc_lane_class, ExecutionLane, PoolLane};
 use kode_server::ServerState;
 
 /// 顶层 method 面(非池):serving(hover/completion/definition/diagnostic/
@@ -23,7 +25,7 @@ const INLINE_METHODS: &[&str] = &[
 ];
 
 #[test]
-fn every_registered_rpc_handler_is_routed_to_pool_interactive() {
+fn every_registered_rpc_handler_is_routed_to_pool_with_lane_class() {
     let state = ServerState::new();
     let snapshot = state.rpc.snapshot();
     assert!(
@@ -32,19 +34,71 @@ fn every_registered_rpc_handler_is_routed_to_pool_interactive() {
         snapshot.len()
     );
     let mut count = 0;
+    let mut io_count = 0;
     for method in snapshot.methods() {
         let lane = execution_lane(
             "$/kode/rpc",
             Some(&serde_json::json!({ "method": method })),
         );
-        assert_eq!(
-            lane,
-            ExecutionLane::Pool(PoolLane::Interactive),
+        assert!(
+            matches!(lane, ExecutionLane::Pool(_)),
             "注册 handler {method} 未归池(登记漏项)"
         );
+        // 单一分类源:池泳道与 LaneGate 类别同源成对;每面必属三类之一。
+        let (pool_lane, kind) = rpc_lane_class(method);
+        assert_eq!(
+            pool_lane,
+            match lane {
+                ExecutionLane::Pool(l) => l,
+                ExecutionLane::Inline => unreachable!("matched above"),
+            },
+            "{method} 池泳道与 execution_lane 决策不一致"
+        );
+        assert!(
+            matches!(
+                kind,
+                kode_scheduler::lane::TaskLane::Io
+                    | kode_scheduler::lane::TaskLane::Cpu
+            ),
+            "{method} 类别须 Io/Cpu(交互面走池交互预留位,不单列)"
+        );
+        assert_eq!(rpc_job_kind(method), kind, "{method} 双投影须一致");
+        if matches!(kind, kode_scheduler::lane::TaskLane::Io) {
+            assert_eq!(
+                pool_lane,
+                PoolLane::Background,
+                "{method} IO 面须归后台泳道(不占交互位)"
+            );
+            io_count += 1;
+        }
         count += 1;
     }
     assert!(count > 10, "断言面非空: {count} 个 handler 全数核过");
+    assert!(
+        io_count >= 5,
+        "IO 显式表应有真实登记面(实测 {io_count}),表清空即分类源断了"
+    );
+}
+
+#[test]
+fn io_table_has_no_stale_registrations() {
+    // 陈旧登记检查:IO 表里每个面都必须仍存在于生产注册表——方法改名/
+    // 注销后忘清表,该面将永远按 IO 装配(静默漂移),此处直接红。
+    let state = ServerState::new();
+    let snapshot = state.rpc.snapshot();
+    let registered: std::collections::HashSet<&str> = snapshot.methods().collect();
+    for method in [
+        "$/kode/dbClone/export",
+        "$/kode/dbClone/inspectArchive",
+        "$/kode/dbClone/readArchiveRows",
+        "$/kode/ruff/lint",
+        "$/kode/workspace/scanAnchors",
+    ] {
+        assert!(
+            registered.contains(method),
+            "IO 表登记面 {method} 已不在生产注册表(陈旧登记,清表或改名)"
+        );
+    }
 }
 
 #[test]

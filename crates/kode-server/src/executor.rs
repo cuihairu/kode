@@ -20,7 +20,8 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Condvar, Mutex};
 
 use kode_protocol::{error_codes, RequestId, Response};
-use kode_scheduler::{PoolBudget, WorkerPoolGate};
+use kode_scheduler::lane::TaskLane;
+use kode_scheduler::{LaneBudget, LaneGate, PoolBudget, WorkerPoolGate};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -45,11 +46,59 @@ pub enum PoolLane {
     Background,
 }
 
-/// `$/kode/rpc` 内层 method 执行归属登记:全部注册 handler 归池、交互泳道。
-/// 归属登记完整性由 tests/executor_ownership.rs 对 snapshot.methods() 全量
-/// 断言(漏登记即红);RUST-074-W 引入后台首扫时在此分支出 Background。
-pub fn rpc_pool_lane(_inner: &str) -> PoolLane {
-    PoolLane::Interactive
+/// RUST-076-W:真实阻塞 IO / 外部进程等待的内层 method 显式登记表。表内
+/// 面归 `LaneGate::Io`(阻塞读盘/子进程 shell-out),其余注册面一律
+/// `Cpu`(纯解析)。归属完整性由 tests/executor_ownership.rs 对
+/// snapshot.methods() 全量断言:漏登记的面走 Cpu 缺省(仍能跑),表内
+/// 登记了已注销的面则红(防陈旧登记)。
+const IO_TASK_METHODS: &[&str] = &[
+    "$/kode/dbClone/export",
+    "$/kode/dbClone/inspectArchive",
+    "$/kode/dbClone/readArchiveRows",
+    "$/kode/ruff/lint",
+    "$/kode/workspace/scanAnchors",
+];
+
+/// 单一分类源:`$/kode/rpc` 内层 method → (池泳道, LaneGate 类别)。
+/// 表内 IO 面 → Background+Io(慢 IO 不占交互预留位);其余 → Interactive
+/// +Cpu。cpu_max/io_max 之外,交互请求恒经 WorkerPoolGate 交互预留位准入
+/// (LaneGate::Interactive 恒可入),两类硬顶都拦不住交互面。
+pub fn rpc_lane_class(inner: &str) -> (PoolLane, TaskLane) {
+    if IO_TASK_METHODS.contains(&inner) {
+        (PoolLane::Background, TaskLane::Io)
+    } else {
+        (PoolLane::Interactive, TaskLane::Cpu)
+    }
+}
+
+/// 池泳道归类(IO 表面归后台泳道,与 RUST-074-W 暖门首扫同池不占交互位)。
+pub fn rpc_pool_lane(inner: &str) -> PoolLane {
+    rpc_lane_class(inner).0
+}
+
+/// LaneGate 准入类别归类(分类单一源的第二投影)。
+pub fn rpc_job_kind(inner: &str) -> TaskLane {
+    rpc_lane_class(inner).1
+}
+
+/// RUST-076-W:worker 数 → LaneGate 预算。结构性约束:io+cpu ≤ total-1
+/// (恒留 ≥1 个 worker 给交互预留位;WorkerPoolGate 的 interactive 配额
+/// 是准入闸,LaneGate 预算是 worker 占用闸,两层叠加)。库
+/// `LaneBudget::from_total` 在 N=2 会给出 io_max=0(饿死 2 核 CI 的 IO
+/// 面),此处自定:≥2 核 io ≥ 1;1 核机两泳道皆 0(全给交互)。
+pub fn lane_budget_for_workers(workers: usize) -> LaneBudget {
+    let remaining = workers.saturating_sub(1);
+    let io_max = if remaining == 0 {
+        0
+    } else {
+        (remaining / 2).max(1)
+    };
+    let cpu_max = remaining - io_max;
+    LaneBudget {
+        total: workers,
+        io_max,
+        cpu_max,
+    }
 }
 
 /// 主分派环入口的执行归属决策。`$/kode/rpc` 按内层 method 归池;params
@@ -66,12 +115,16 @@ pub fn execution_lane(method: &str, params: Option<&Value>) -> ExecutionLane {
 }
 
 /// 池记账快照(健康面 `$/kode/health` 的 `pool` 键;无执行器装配时省略)。
+/// RUST-076-W:`ioRunning`/`cpuRunning` = LaneGate 泳道在飞(准入/释放
+/// 观测;交互预留位经 WorkerPoolGate interactive 口径呈现,不重复计)。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PoolStats {
     pub workers: usize,
     pub interactive_running: usize,
     pub background_running: usize,
+    pub io_running: usize,
+    pub cpu_running: usize,
     pub jobs_done: u64,
     pub jobs_failed: u64,
     pub jobs_cancelled: u64,
@@ -84,6 +137,10 @@ pub struct Job {
     pub method: String,
     pub params: Value,
     pub lane: PoolLane,
+    /// RUST-076-W:LaneGate 准入类别(真实 IO/外部进程等待 = Io,CPU 解析
+    /// = Cpu)。生产路径经 `rpc_job_kind` 分类;交互队列 job 的准入恒走
+    /// Interactive 预留位(kind 只作登记,CPU/IO 硬顶绝不拦交互)。
+    pub kind: TaskLane,
     /// RUST-068-W:跨任务追踪 id(TS 请求入口生成,信封级透传;缺省 None
     /// =无 span 的纯服务端发起调用)。日志面只印 span 不印 params(脱敏)。
     pub span: Option<String>,
@@ -139,6 +196,10 @@ struct ExecShared {
 
 struct ExecState {
     gate: WorkerPoolGate,
+    /// RUST-076-W:IO/CPU 泳道准入记账(真实阻塞面与 CPU 解析面各持独立
+    /// 硬顶,io+cpu ≤ workers-1 结构性保交互预留)。准入/释放全在此锁内,
+    /// 与队列同锁——无锁跨线程重排。
+    lane_gate: LaneGate,
     interactive: VecDeque<Job>,
     background: VecDeque<Job>,
     /// 取消时在途(或刚弹出未启动)的 job id;执行前/后按此丢弃。
@@ -186,6 +247,8 @@ impl PoolExecutor {
             stats_cell: Arc::clone(&stats_cell),
             state: Mutex::new(ExecState {
                 gate: WorkerPoolGate::new(budget).expect("pool budget must be valid"),
+                lane_gate: LaneGate::new(lane_budget_for_workers(workers))
+                    .expect("lane budget must be valid"),
                 interactive: VecDeque::new(),
                 background: VecDeque::new(),
                 running_cancelled: HashSet::new(),
@@ -334,12 +397,16 @@ fn remove_queued(queue: &mut VecDeque<Job>, id: &RequestId) -> Option<Job> {
     queue.remove(index)
 }
 
-/// 按闭包改记账并同步健康面 cell(gate 运行数在每次记账变更后刷新;
-/// cell 只在队列锁内短持,健康路径只持 cell 锁,无反向持锁)。
+/// 按闭包改记账并同步健康面 cell(gate 与 lane_gate 运行数在每次记账变更
+/// 后刷新;cell 只在队列锁内短持,健康路径只持 cell 锁,无反向持锁)。
+/// RUST-076-W:交互在飞经 WorkerPoolGate interactive 口径呈现,LaneGate
+/// 的 Interactive 记数不重复出表;io/cpu 两泳道由 LaneGate 直接对账。
 fn bump_stats(cell: &Mutex<PoolStats>, state: &ExecState, f: impl FnOnce(&mut PoolStats)) {
     if let Ok(mut stats) = cell.lock() {
         stats.interactive_running = state.gate.interactive_running();
         stats.background_running = state.gate.background_running();
+        stats.io_running = state.lane_gate.running(TaskLane::Io);
+        stats.cpu_running = state.lane_gate.running(TaskLane::Cpu);
         f(&mut stats);
     }
 }
@@ -347,7 +414,10 @@ fn bump_stats(cell: &Mutex<PoolStats>, state: &ExecState, f: impl FnOnce(&mut Po
 fn worker_loop(shared: Arc<ExecShared>) {
     loop {
         // 取 job 段:锁内只做队列摘取与准入记账,handler 在锁外执行。
-        let job = {
+        // RUST-076-W:准入分两层——LaneGate(IO/CPU/交互泳道记账,先)+
+        // WorkerPoolGate(交互预留位配额,后);任一层拒即按已准入侧回滚,
+        // job 如实回队等容量(condvar wait,不忙旋)。
+        let (job, admitted_lane) = {
             let mut state = shared.state.lock().expect("pool state lock");
             'pick: loop {
                 // draining(退出中):排空已受理队列再退——受理过的请求都欠
@@ -357,22 +427,39 @@ fn worker_loop(shared: Arc<ExecShared>) {
                     return;
                 }
                 // 交互优先:预留位语义——后台满载/排队也拦不住交互请求。
+                // 交互面准入恒走 LaneGate::Interactive(恒可入,直至总量
+                // 满),kind 只是登记,CPU/IO 硬顶绝不拦交互。
                 if let Some(job) = state.interactive.pop_front() {
-                    if state.gate.try_admit_interactive() {
+                    let lane_admitted = state.lane_gate.try_admit(TaskLane::Interactive);
+                    let gate_admitted = lane_admitted && state.gate.try_admit_interactive();
+                    if gate_admitted {
                         bump_stats(&shared.stats_cell, &state, |_| {});
-                        break 'pick job;
+                        break 'pick (job, TaskLane::Interactive);
                     }
                     // 理论不可达(worker=total,空闲线程弹出时必有余位);
-                    // 如实回队等容量,绝不越记账。
+                    // 如实回队等容量,绝不越记账(已准入侧先回滚)。
+                    if lane_admitted && !gate_admitted {
+                        state.lane_gate.release(TaskLane::Interactive);
+                    }
                     state.interactive.push_front(job);
-                } else if !state.background.is_empty() && state.gate.try_admit_background()
-                {
-                    let job = state
-                        .background
-                        .pop_front()
-                        .expect("background non-empty checked");
-                    bump_stats(&shared.stats_cell, &state, |_| {});
-                    break 'pick job;
+                } else if let Some(&head_kind) = state.background.front().map(|job| &job.kind) {
+                    // 后台队:按队头 job 的 kind 准入泳道(IO/CPU 各持硬顶,
+                    // 分离语义——IO 饱和不压 CPU,反之亦然),再过 gate 配额。
+                    // 队头不动(FIFO 保序),泳道拒绝即整队等待——不重排
+                    // 不插队,与空队列同走 condvar wait。
+                    let lane_admitted = state.lane_gate.try_admit(head_kind);
+                    let gate_admitted = lane_admitted && state.gate.try_admit_background();
+                    if lane_admitted && gate_admitted {
+                        let job = state
+                            .background
+                            .pop_front()
+                            .expect("background non-empty checked");
+                        bump_stats(&shared.stats_cell, &state, |_| {});
+                        break 'pick (job, head_kind);
+                    }
+                    if lane_admitted && !gate_admitted {
+                        state.lane_gate.release(head_kind);
+                    }
                 }
                 state = shared
                     .signal
@@ -429,7 +516,10 @@ fn worker_loop(shared: Arc<ExecShared>) {
             PoolLane::Interactive => state.gate.release_interactive(),
             PoolLane::Background => state.gate.release_background(),
         };
-        if !released {
+        // RUST-076-W:泳道位与 gate 配额同批释放(取消/失败照常释放——
+        // 无占位泄漏;release 拒下溢即准入/释放错配 = 装配 bug)。
+        let lane_released = state.lane_gate.release(admitted_lane);
+        if !released || !lane_released {
             // 准入/释放错配 = 装配 bug:stderr 留痕不 panic(server 健壮性)。
             eprintln!("[kode-server] pool release without admission (bug)");
         }
@@ -568,13 +658,181 @@ mod tests {
     }
 
     fn job(id: u32, method: &str, lane: PoolLane) -> Job {
+        // 缺省 kind 与生产分类同构:后台队列=Io 面,交互队列=Cpu 面
+        // (交互准入恒走 Interactive 预留位,kind 只登记)。
+        let kind = match lane {
+            PoolLane::Interactive => TaskLane::Cpu,
+            PoolLane::Background => TaskLane::Io,
+        };
+        job_with_kind(id, method, lane, kind)
+    }
+
+    fn job_with_kind(id: u32, method: &str, lane: PoolLane, kind: TaskLane) -> Job {
         Job {
             id: RequestId::Number(id as i64),
             method: method.to_string(),
             params: serde_json::json!({ "ticket": id }),
             lane,
+            kind,
             span: Some(format!("span-{id:04x}")),
         }
+    }
+
+    #[test]
+    fn lane_budget_for_workers_keeps_interactive_reserve_and_io_floor() {
+        // 结构性约束:io+cpu ≤ workers-1(恒留交互预留位);≥2 核 io ≥ 1
+        // (库 from_total 在 N=2 给 io=0 会饿死 IO 面);1 核全给交互。
+        let cases = [
+            (1usize, (0usize, 0usize)),
+            (2, (1, 0)),
+            (3, (1, 1)),
+            (4, (1, 2)),
+            (8, (3, 4)),
+        ];
+        for (workers, (io, cpu)) in cases {
+            let b = lane_budget_for_workers(workers);
+            assert_eq!((b.io_max, b.cpu_max), (io, cpu), "workers={workers}");
+            assert_eq!(b.total, workers);
+            assert!(b.validate().is_ok(), "workers={workers} 预算须自洽");
+        }
+    }
+
+    #[test]
+    fn rpc_lane_class_routes_io_table_and_defaults_cpu() {
+        // IO 表五面 → Background+Io(慢 IO 不占交互位)。
+        for method in [
+            "$/kode/dbClone/export",
+            "$/kode/dbClone/inspectArchive",
+            "$/kode/dbClone/readArchiveRows",
+            "$/kode/ruff/lint",
+            "$/kode/workspace/scanAnchors",
+        ] {
+            assert_eq!(
+                rpc_lane_class(method),
+                (PoolLane::Background, TaskLane::Io),
+                "{method} 须归 IO 表"
+            );
+        }
+        // 其余注册面缺省 Interactive+Cpu(纯解析)。
+        assert_eq!(
+            rpc_lane_class("$/kode/echo"),
+            (PoolLane::Interactive, TaskLane::Cpu)
+        );
+        assert_eq!(
+            rpc_lane_class("$/kode/python/selfAttributeFlow"),
+            (PoolLane::Interactive, TaskLane::Cpu)
+        );
+        // 单一分类源的两投影一致。
+        for method in ["$/kode/ruff/lint", "$/kode/echo"] {
+            assert_eq!(rpc_pool_lane(method), rpc_lane_class(method).0);
+            assert_eq!(rpc_job_kind(method), rpc_lane_class(method).1);
+        }
+    }
+
+    #[test]
+    fn io_saturation_does_not_block_cpu_and_interactive_lanes() {
+        // total=4 → io_max=1, cpu_max=2。IO 满 + CPU 满 + 交互在飞同时成立
+        // (4 worker 全占),且 CPU 满载后第 4 个 CPU job 排队——交互仍立入。
+        let budget = PoolBudget {
+            total: 4,
+            interactive_reserved: 1,
+            background_max: 3,
+        };
+        let (executor, _rx) = PoolExecutor::spawn(registry_with_test_handlers(), budget);
+        executor.submit(job_with_kind(
+            501,
+            "$/kode/test/blocking",
+            PoolLane::Background,
+            TaskLane::Io,
+        ));
+        wait_started(501);
+        executor.submit(job_with_kind(
+            502,
+            "$/kode/test/blocking",
+            PoolLane::Background,
+            TaskLane::Cpu,
+        ));
+        wait_started(502);
+        executor.submit(job_with_kind(
+            503,
+            "$/kode/test/blocking",
+            PoolLane::Background,
+            TaskLane::Cpu,
+        ));
+        wait_started(503);
+        // 第 4 个 CPU job:CPU 泳道硬顶(2)与 gate 后台配额(3)双双满载
+        // ——排队等容量,绝不越记账(80ms 静置观察期;若越权启动,505 交互
+        // 将无 worker 可用,wait_started 红即越权面)。
+        executor.submit(job_with_kind(
+            504,
+            "$/kode/test/blocking",
+            PoolLane::Background,
+            TaskLane::Cpu,
+        ));
+        std::thread::sleep(Duration::from_millis(80));
+        // 交互面在 CPU 满 + IO 满时仍立即可入(预留位语义)。
+        executor.submit(job(505, "$/kode/test/blocking", PoolLane::Interactive));
+        wait_started(505);
+        let stats = stats_of(&executor);
+        assert_eq!(
+            (stats.io_running, stats.cpu_running, stats.interactive_running),
+            (1, 2, 1),
+            "IO 满+CPU 满+交互在飞并存(4 worker 全占)"
+        );
+        release(505);
+        release(502);
+        // CPU 位释放:排队 CPU job 依序入(IO 位仍满不拦 CPU)。
+        wait_started(504);
+        let stats = stats_of(&executor);
+        assert_eq!(stats.cpu_running, 2, "CPU 位释放后补位");
+        assert_eq!(stats.io_running, 1, "IO 泳道仍满");
+        release(504);
+        release(503);
+        release(501);
+        drop(executor);
+    }
+
+    #[test]
+    fn cancel_queued_io_job_leaves_no_lane_slot() {
+        // total=2 → io_max=1。排队 IO job 取消:即刻回 -32800,泳道零占位;
+        // 后续 IO job 在位释放后照常准入(无占位泄漏)。
+        let (executor, rx) = PoolExecutor::spawn(
+            registry_with_test_handlers(),
+            PoolBudget::from_total(2),
+        );
+        executor.submit(job(601, "$/kode/test/blocking", PoolLane::Background));
+        wait_started(601);
+        executor.submit(job(602, "$/kode/test/blocking", PoolLane::Background));
+        executor.cancel(&RequestId::Number(602));
+        let outcome = recv_outcome(&rx);
+        assert!(matches!(outcome.status, JobStatus::Cancelled));
+        let stats = stats_of(&executor);
+        assert_eq!(stats.jobs_cancelled, 1);
+        assert_eq!(stats.io_running, 1, "在途 601 泳道位未受影响");
+        release(601);
+        // 泳道位已释放:新 IO job 可执行(取消不留占位)。
+        executor.submit(job(603, "$/kode/test/blocking", PoolLane::Background));
+        wait_started(603);
+        assert_eq!(stats_of(&executor).io_running, 1);
+        release(603);
+        drop(executor);
+    }
+
+    #[test]
+    fn failing_io_job_releases_lane_slot() {
+        // IO job 失败(handler Err):泳道位照常释放,后续 IO job 不饿死。
+        let (executor, rx) = PoolExecutor::spawn(
+            registry_with_test_handlers(),
+            PoolBudget::from_total(2),
+        );
+        executor.submit(job(611, "$/kode/test/failing", PoolLane::Background));
+        let outcome = recv_outcome(&rx);
+        assert!(matches!(outcome.status, JobStatus::Failed(_)));
+        assert_eq!(stats_of(&executor).io_running, 0, "失败即释放泳道位");
+        executor.submit(job(612, "$/kode/test/blocking", PoolLane::Background));
+        wait_started(612);
+        release(612);
+        drop(executor);
     }
 
     #[test]
@@ -894,6 +1152,7 @@ mod tests {
             method: "$/kode/test/cancellable".to_string(),
             params: serde_json::json!({ "ticket": 811 }),
             lane: PoolLane::Interactive,
+            kind: TaskLane::Cpu,
             span: None,
         };
         executor.submit(bare);

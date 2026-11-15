@@ -17,7 +17,8 @@ use kode_protocol::{
 };
 use kode_scheduler::PoolBudget;
 use kode_server::executor::{
-    execution_lane, rpc_response_for, ExecutionLane, Job, JobOutcome, JobStatus, PoolExecutor,
+    execution_lane, rpc_job_kind, rpc_response_for, ExecutionLane, Job, JobOutcome, JobStatus,
+    PoolExecutor,
 };
 use kode_server::{cancel_target, handle_message_with_poll, rpc::span_id_of, Outgoing, ServerState};
 
@@ -165,11 +166,15 @@ fn dispatch_outcome(
                             // cold_request 入队形态随解析缓存消费者接线启用
                             // (RUST-070/071/073),此处不伪造入队。
                             state.warm.note_cold_request();
+                            // RUST-076-W:LaneGate 类别与池泳道同源分类
+                            // (rpc_lane_class 单一源;worker 准入按 kind
+                            // 过 IO/CPU 泳道硬顶,交互面恒走预留位)。
                             executor.submit(Job {
                                 id: request.id.clone(),
-                                method: inner_method,
+                                method: inner_method.clone(),
                                 params: inner_params,
                                 lane,
+                                kind: rpc_job_kind(&inner_method),
                                 span,
                             });
                             return;

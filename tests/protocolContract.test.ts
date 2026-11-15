@@ -94,10 +94,16 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
       state: 'idle', coldWhileWarming: 0, done: 0, failed: 0, total: null
     });
     // RUST-075-W:worker 执行器默认装配,健康面带池记账键。
+    // RUST-076-W:LaneGate 泳道记账键(ioRunning/cpuRunning)入池形状。
     expect(sortedKeys(health.pool)).toEqual(
-      ['backgroundRunning', 'interactiveRunning', 'jobsCancelled',
-       'jobsDone', 'jobsFailed', 'workers']
+      ['backgroundRunning', 'cpuRunning', 'interactiveRunning', 'ioRunning',
+       'jobsCancelled', 'jobsDone', 'jobsFailed', 'workers']
     );
+    // 空闲池:泳道在飞全 0(交互预留位经 interactiveRunning 口径呈现,
+    // LaneGate 的 Interactive 记数不重复出表)。
+    expect(health.pool).toMatchObject({
+      ioRunning: 0, cpuRunning: 0, interactiveRunning: 0, backgroundRunning: 0
+    });
     for (const value of Object.values(health.pool ?? {})) {
       expect(typeof value).toBe('number');
     }
