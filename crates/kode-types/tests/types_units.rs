@@ -292,3 +292,264 @@ fn def_components_and_property_refs_become_edges() {
     );
     assert_eq!(g.classify("InventoryComp"), TypeClass::Unknown);
 }
+
+// ---------------------------------------------------------------------------
+// RUST-104-W:Optional/Unknown/Error 节点形态补齐(IR 覆盖原条目全部节点形态)
+// ---------------------------------------------------------------------------
+
+/// Unknown/Error 节点 opt-in:构建器灌入产物永不自带,物化/登记后分类
+/// 仍是 Unknown(SEM-013 不冒充可用类型类)。
+#[test]
+fn unknown_and_error_nodes_are_opt_in_and_classified_unknown() {
+    let g = graph_with_types("<root><A> UINT16 </A></root>");
+    assert!(
+        !g.nodes
+            .iter()
+            .any(|n| matches!(n, TypeNode::Unknown { .. } | TypeNode::Error { .. })),
+        "构建器产物不含 Unknown/Error 节点"
+    );
+
+    let mut g = g;
+    let id = g.materialize_unknown("Ghost").expect("悬挂名可物化");
+    assert!(matches!(&g.nodes[id.0 as usize], TypeNode::Unknown { name } if name == "Ghost"));
+    assert_eq!(g.classify("Ghost"), TypeClass::Unknown);
+
+    let eid = g
+        .push_error_node(
+            "_Bad",
+            kode_types::TypeErrorReason::ReservedUnderscorePrefix,
+        )
+        .expect("拒收形态可登记");
+    assert!(matches!(
+        &g.nodes[eid.0 as usize],
+        TypeNode::Error { name, .. } if name == "_Bad"
+    ));
+    assert_eq!(g.classify("_Bad"), TypeClass::Unknown, "引擎拒收不是可用类");
+}
+
+/// materialize_unknown 拒绝已知名:内置终点/已有节点/注册实体/空名。
+#[test]
+fn materialize_unknown_refuses_known_names() {
+    let mut g = graph_with_types("<root><A> UINT32 </A></root>");
+    g.registered_entities.insert("Avatar".to_string());
+    assert_eq!(g.materialize_unknown("UINT32"), None, "内置终点");
+    assert_eq!(g.materialize_unknown("A"), None, "已有节点");
+    assert_eq!(g.materialize_unknown("Avatar"), None, "注册实体");
+    assert_eq!(g.materialize_unknown(""), None, "空名");
+    assert_eq!(g.nodes.len(), 1, "全部拒绝,零物化");
+}
+
+/// 物化前后链求值语义一致:终点未注册 = Unknown,物化不把它洗成 Resolved
+/// (known_terminal 变体感知,不撒谎)。
+#[test]
+fn materialized_unknown_is_not_a_known_chain_terminal() {
+    let mut g = graph_with_types("<root><A> B </A></root>");
+    let before = g.resolve_alias_chain("A");
+    assert_eq!(before.chain, ["A", "B"]);
+    assert_eq!(before.status, ChainStatus::Unknown);
+    g.materialize_unknown("B").expect("物化 B");
+    let after = g.resolve_alias_chain("A");
+    assert_eq!(after.chain, ["A", "B"]);
+    assert_eq!(after.status, ChainStatus::Unknown, "物化后仍 Unknown");
+}
+
+/// unknown_terminals:悬挂边终点枚举(字母序去重;内置/已知/注册实体排除;
+/// 空指向不计——空指向归 EmptyTarget 符合性报告)。
+#[test]
+fn unknown_terminals_enumerate_dangling_edge_targets() {
+    let mut g = graph_with_types(
+        "<root>\n\
+         \x20 <ITEM_ID> UINT16 </ITEM_ID>\n\
+         \x20 <BROKEN>\n ARRAY\n <of> GHOST_ELEM </of>\n </BROKEN>\n\
+         \x20 <FD>\n FIXED_DICT\n  <Properties>\n\
+         \x20    <x><Type> GHOST_FIELD </Type></x>\n\
+         \x20    <y><Type> ITEM_ID </Type></y>\n\
+         \x20  </Properties>\n\
+         \x20 </FD>\n\
+         </root>",
+    );
+    g.add_def(
+        "Hero",
+        &kode_parser::model::parse_def(
+            "<root>\n <Properties>\n  <bag><Type> GHOST_PROP </Type></bag>\n </Properties>\n</root>",
+        ),
+    );
+    g.registered_entities.insert("KnownEntity".to_string());
+    let mut def = kode_parser::model::parse_def("<root><Parent>KnownEntity</Parent></root>");
+    def.parent = Some("KnownEntity".to_string());
+    g.add_def("Hero2", &def);
+
+    assert_eq!(
+        g.unknown_terminals(),
+        ["GHOST_ELEM", "GHOST_FIELD", "GHOST_PROP"],
+        "字母序去重;UINT16/ITEM_ID/KnownEntity 不入列"
+    );
+    assert!(
+        !g.unknown_terminals().iter().any(|n| n.is_empty()),
+        "空指向不计"
+    );
+}
+
+/// optional_faces:Option 槽位按引擎真源两义标注(implementedBy 缺席=引擎
+/// 可选;<of> 缺席=引擎拒收;两者缺席才入面,有值不入)。
+#[test]
+fn optional_faces_mark_none_slots_with_engine_truth() {
+    let g = graph_with_types(
+        "<root>\n\
+         \x20 <FD_OPT>\n FIXED_DICT\n  <Properties><x><Type> UINT8 </Type></x></Properties>\n\
+         \x20 </FD_OPT>\n\
+         \x20 <FD_BOUND>\n FIXED_DICT\n  <Properties><x><Type> UINT8 </Type></x></Properties>\n\
+         \x20   <implementedBy> M.C </implementedBy>\n\
+         \x20 </FD_BOUND>\n\
+         \x20 <ARR_OPT>\n ARRAY\n </ARR_OPT>\n\
+         \x20 <ARR_BOUND>\n ARRAY\n <of> UINT8 </of>\n </ARR_BOUND>\n\
+         </root>",
+    );
+    use kode_types::OptionalSlot;
+    let faces: Vec<String> = g
+        .optional_faces()
+        .into_iter()
+        .map(|f| format!("{}:{}", f.name, f.slot.as_str()))
+        .collect();
+    assert_eq!(
+        faces,
+        [
+            format!("FD_OPT:{}", OptionalSlot::FixedDictImplementedBy.as_str()),
+            format!("ARR_OPT:{}", OptionalSlot::ArrayElement.as_str()),
+        ],
+        "FD_BOUND 有 implementedBy 不入面;ARR_BOUND 有 <of> 不入面;按节点序"
+    );
+}
+
+/// engine_conformance_reports:图内可证拒收形态逐类枚举;不可证的不谎报
+/// (Properties 为空 ≠ 缺 Properties,同形不区分)。
+#[test]
+fn engine_conformance_reports_enumerate_rejected_shapes() {
+    use kode_types::{ConformanceReport, TypeErrorReason};
+    let g = graph_with_types(
+        "<root>\n\
+         \x20 <GOOD> UINT16 </GOOD>\n\
+         \x20 <ARR_NO_OF>\n ARRAY\n </ARR_NO_OF>\n\
+         \x20 <FD_REF_UNKNOWN>\n FIXED_DICT\n  <Properties>\n\
+         \x20    <x><Type> GHOST_TYPE </Type></x>\n\
+         \x20  </Properties>\n\
+         \x20 </FD_REF_UNKNOWN>\n\
+         \x20 <FD_EMPTY_PROPS>\n FIXED_DICT\n  <Properties>\n  </Properties>\n\
+         \x20 </FD_EMPTY_PROPS>\n\
+         </root>",
+    );
+    // 直接灌图容错形态:`_` 前缀名与空指向别名(parser 不会产出,仅可达
+    // 于手工构造;既有钉语义保留)。
+    let mut g = g;
+    // `_` 前缀名走真实解析面(parser 不校验名,引擎侧才拒)。
+    let shadow = graph_with_types("<root>\n <_shadow> UINT8 </_shadow>\n</root>");
+    let sid = kode_types::TypeId(g.nodes.len() as u32);
+    g.nodes.push(shadow.nodes[0].clone());
+    g.by_name.insert("_shadow".to_string(), sid);
+    // 空指向别名:直接构造容错形态(push_node 私有,节点表为 pub 字段)。
+    let eid = kode_types::TypeId(g.nodes.len() as u32);
+    g.nodes.push(TypeNode::Alias {
+        name: "EmptyAlias".to_string(),
+        target: String::new(),
+    });
+    g.by_name.insert("EmptyAlias".to_string(), eid);
+
+    let reports = g.engine_conformance_reports();
+    let reasons: Vec<String> = reports
+        .iter()
+        .map(|r| r.reason.as_str().to_string())
+        .collect();
+    assert_eq!(
+        reasons,
+        [
+            "array_missing_of",
+            "fixed_dict_key_unknown_type",
+            "reserved_underscore_prefix",
+            "empty_target",
+        ],
+        "按节点序;FD_EMPTY_PROPS 不报(Properties 为空≠缺 Properties)"
+    );
+    assert!(
+        matches!(
+            &reports[1],
+            ConformanceReport { name, reason: TypeErrorReason::FixedDictKeyUnknownType { target }, .. }
+                if name == "FD_REF_UNKNOWN" && target == "GHOST_TYPE"
+        ),
+        "FD 键类型引用未注册只报类型名(键名 IR 已折平)"
+    );
+}
+
+/// 验收口径:IR 覆盖原条目全部节点形态——Alias/Array/FixedDict/UserType
+/// (构建器)+ Unknown/Error(opt-in)+ Optional 槽位面,六种边齐备。
+#[test]
+fn ir_covers_all_node_forms_of_original_entry() {
+    use kode_types::{OptionalSlot, TypeErrorReason};
+    let mut g = graph_with_types(
+        "<root>\n\
+         \x20 <ITEM_ID> UINT16 </ITEM_ID>\n\
+         \x20 <BAG_LIST>\n ARRAY\n <of> ITEM_ID </of>\n </BAG_LIST>\n\
+         \x20 <POSITION>\n FIXED_DICT\n  <Properties>\n\
+         \x20    <x><Type> FLOAT </Type></x>\n\
+         \x20  </Properties>\n\
+         \x20 </POSITION>\n\
+         </root>",
+    );
+    let def = kode_parser::model::parse_def(
+        "<root>\n <Properties>\n  <hp><Type> UINT16 </Type></hp>\n </Properties>\n\
+         <Components>\n  <Inv><Type> InventoryComp </Type></Inv>\n </Components>\n\
+         <Parent> Monster </Parent>\n</root>",
+    );
+    g.add_def("Hero", &def);
+    g.materialize_unknown("InventoryComp")
+        .expect("组件类型悬挂可物化");
+    g.push_error_node("_Bad", TypeErrorReason::ArrayMissingOf)
+        .expect("拒收形态可登记");
+
+    let mut forms = std::collections::BTreeSet::new();
+    for n in &g.nodes {
+        forms.insert(match n {
+            TypeNode::Alias { .. } => "alias",
+            TypeNode::Array { .. } => "array",
+            TypeNode::FixedDict { .. } => "fixed_dict",
+            TypeNode::UserType { .. } => "user_type",
+            TypeNode::Unknown { .. } => "unknown",
+            TypeNode::Error { .. } => "error",
+        });
+    }
+    assert_eq!(
+        forms,
+        [
+            "alias",
+            "array",
+            "error",
+            "fixed_dict",
+            "unknown",
+            "user_type"
+        ]
+        .into_iter()
+        .collect(),
+        "原条目全部节点形态齐备(Builtin=引用终点,无节点)"
+    );
+    let mut kinds = std::collections::BTreeSet::new();
+    for e in &g.edges {
+        kinds.insert(e.kind.as_str());
+    }
+    assert_eq!(
+        kinds,
+        [
+            "alias_target",
+            "array_element",
+            "component_of",
+            "field",
+            "inherits",
+            "type_ref"
+        ]
+        .into_iter()
+        .collect(),
+        "六种边齐备(EntityRef/Component 以边种表达)"
+    );
+    assert!(g
+        .optional_faces()
+        .iter()
+        .any(|f| f.name == "POSITION" && f.slot == OptionalSlot::FixedDictImplementedBy));
+}

@@ -2,12 +2,15 @@
 //!
 //! 四类输入(types.xml / alias.xml / *.def / entities.xml,由 kode-parser 解析)
 //! 归一成一张有向类型图:
-//! - 节点 [`TypeNode`]:别名(重定向)、数组、FixedDict、用户类型(实体);
-//!   引擎内建标量不建节点,只作引用终点(见 [`builtin`])。变体集与 SEM-002
-//!   的 IR 清单(Builtin/Alias/Array/FixedDict/UserType/EntityRef/Component/
-//!   Unknown/Error)对齐:Builtin 以引用终点表示,EntityRef/Component 为边种
-//!   (见 [`EdgeKind`]),Unknown/Error 以 [`TypeClass::Unknown`] + 理由保留
-//!   (SEM-013,不借用任意类型掩盖缺失)。
+//! - 节点 [`TypeNode`]:别名(重定向)、数组、FixedDict、用户类型(实体)、
+//!   Unknown/Error(RUST-104-W opt-in 形态);引擎内建标量不建节点,只作
+//!   引用终点(见 [`builtin`])。变体集与 SEM-002 的 IR 清单(Builtin/Alias/
+//!   Array/FixedDict/UserType/EntityRef/Component/Unknown/Error)对齐:
+//!   Builtin 以引用终点表示,EntityRef/Component 为边种(见 [`EdgeKind`]),
+//!   Unknown/Error 为显式节点变体(构建器永不自动物化,分类仍
+//!   [`TypeClass::Unknown`],SEM-013 不借用任意类型掩盖缺失);Optional 为
+//!   槽位面 [`OptionalSlot`]——引擎无 Optional 类型节点,可选性只在
+//!   implementedBy/<of> 槽位且两义分明(引擎可选 vs 引擎拒收)。
 //! - 边 [`TypeEdge`]:别名指向 / 数组元素 / FixedDict 字段 / 属性类型引用 /
 //!   组件归属 / 实体继承。
 //! - 链求值:[`TypeGraph::resolve_alias_chain`](SEM-004 别名链+循环诊断)、
@@ -25,4 +28,7 @@ pub mod golden;
 pub mod graph;
 
 pub use builtin::{is_builtin, is_container_directive, is_known_terminal, BUILTIN_TYPES};
-pub use graph::{ChainStatus, EdgeKind, TypeClass, TypeEdge, TypeGraph, TypeId, TypeNode};
+pub use graph::{
+    ChainStatus, ConformanceReport, EdgeKind, OptionalFace, OptionalSlot, TypeClass, TypeEdge,
+    TypeErrorReason, TypeGraph, TypeId, TypeNode,
+};

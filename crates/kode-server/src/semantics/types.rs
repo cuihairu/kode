@@ -166,6 +166,14 @@ impl SemType {
             }
             // 用户类型节点 = 实体 .def 引用 → 实体引用。
             kode_types::TypeNode::UserType { .. } => SemType::Entity(name.to_string()),
+            // Unknown/Error 节点(RUST-104-W opt-in 形态)= 不可用类型:
+            // 未注册终点 / 引擎 load 即拒收,诚实 Unknown 带因,不冒充可用类。
+            kode_types::TypeNode::Unknown { .. } => {
+                SemType::Unknown(format!("unknown-terminal:{name}"))
+            }
+            kode_types::TypeNode::Error { .. } => {
+                SemType::Unknown(format!("engine-rejected:{name}"))
+            }
         }
     }
 }
@@ -191,6 +199,28 @@ mod tests {
             "未知引用必须降级 Unknown 不伪造"
         );
         assert!(t.display().contains("unresolved"));
+    }
+
+    /// RUST-104-W:物化 Unknown/Error 节点经桥解析仍是诚实 Unknown 带因,
+    /// 不冒充任何可用类。
+    #[test]
+    fn unknown_and_error_nodes_resolve_to_reasoned_unknown() {
+        let mut g = TypeGraph::new();
+        g.materialize_unknown("Ghost").expect("悬挂名可物化");
+        g.push_error_node("_Bad", kode_types::TypeErrorReason::ArrayMissingOf)
+            .expect("拒收形态可登记");
+        let t = SemType::from_type_graph(&g, "Ghost", 4);
+        assert!(
+            t.display().contains("unknown-terminal:Ghost"),
+            "{}",
+            t.display()
+        );
+        let t = SemType::from_type_graph(&g, "_Bad", 4);
+        assert!(
+            t.display().contains("engine-rejected:_Bad"),
+            "{}",
+            t.display()
+        );
     }
 
     #[test]

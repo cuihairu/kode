@@ -32,6 +32,58 @@ pub enum TypeNode {
     },
     /// 用户类型:实体 .def(可被属性类型/组件/继承引用)。
     UserType { name: String },
+    /// 未注册引用终点(RUST-104-W;SEM-013 Unknown 的 IR 节点形态):名字
+    /// 被引用但不在任何注册表。引擎侧该名不可用——别名目标查无 = loadTypes
+    /// 整体失败 abort(datatypes.cpp:170),def 属性查无 = DataType is NULL
+    /// (property.cpp:70)。**opt-in 物化**:构建器永不自动建此节点
+    /// (first-write-wins 与链求值语义不变),由 [`TypeGraph::materialize_unknown`]
+    /// 或直接构造进入图;物化后分类仍为 [`TypeClass::Unknown`]、链求值终点
+    /// 不算「已知」([`TypeGraph::known_terminal`] 对其返 false)。
+    Unknown { name: String },
+    /// 引擎拒收形态(RUST-104-W):结构上存在但引擎 load 即 abort 的类型
+    /// (理由见 [`TypeErrorReason`] 引擎锚)。同样 opt-in(构建器不自动建);
+    /// 分类为 [`TypeClass::Unknown`](引擎拒收 = 该名在运行引擎中不存在,
+    /// 不是可用类型类),诊断面经 [`TypeGraph::engine_conformance_reports`]
+    /// 如实枚举。
+    Error {
+        name: String,
+        reason: TypeErrorReason,
+    },
+}
+
+/// 引擎拒收理由(RUST-104-W;「以真实 KBEngine 支持语义落地」——每变体
+/// 括注引擎真源锚点,全部 = 引擎 load 阶段 abort,该形态不可用)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeErrorReason {
+    /// 名以前缀 `_`:引擎禁用(datatypes.cpp:43-50 validTypeName;
+    /// :124-127 非法名 abort)。
+    ReservedUnderscorePrefix,
+    /// 别名/重定向指向为空:引擎目标查无即 loadTypes 整体失败 abort
+    /// (datatypes.cpp:170-177)。解析器对空 directive 条目已跳过 →
+    /// 此形态仅直接灌图的容错输入可达(既有钉测试语义保留)。
+    EmptyTarget,
+    /// ARRAY 缺 `<of>`(datatype.cpp:1665 `not found "of"` abort)。
+    ArrayMissingOf,
+    /// FIXED_DICT 缺 `Properties` 子节点(datatype.cpp:2053 abort)。
+    /// 图内不可与「Properties 存在但为空」区分(均 = field_refs 空)
+    /// → 符合性报告不谎报此理由,仅供直接构造标注。
+    FixedDictMissingProperties,
+    /// FIXED_DICT 键引用未注册类型(datatype.cpp:2153
+    /// `key[N] did not find type[X]` abort)。`target` = 类型引用名;
+    /// 键名在 IR 中已折平丢失(wire_codec 同口径),如实只报类型名。
+    FixedDictKeyUnknownType { target: String },
+}
+
+impl TypeErrorReason {
+    pub fn as_str(&self) -> &str {
+        match self {
+            TypeErrorReason::ReservedUnderscorePrefix => "reserved_underscore_prefix",
+            TypeErrorReason::EmptyTarget => "empty_target",
+            TypeErrorReason::ArrayMissingOf => "array_missing_of",
+            TypeErrorReason::FixedDictMissingProperties => "fixed_dict_missing_properties",
+            TypeErrorReason::FixedDictKeyUnknownType { .. } => "fixed_dict_key_unknown_type",
+        }
+    }
 }
 
 impl TypeNode {
@@ -40,7 +92,9 @@ impl TypeNode {
             TypeNode::Alias { name, .. }
             | TypeNode::Array { name, .. }
             | TypeNode::FixedDict { name, .. }
-            | TypeNode::UserType { name } => name,
+            | TypeNode::UserType { name }
+            | TypeNode::Unknown { name } => name,
+            TypeNode::Error { name, .. } => name,
         }
     }
 }
@@ -130,6 +184,45 @@ pub struct AliasChain {
 pub struct InheritanceChain {
     pub chain: Vec<String>,
     pub status: ChainStatus,
+}
+
+/// Optionality 所在的结构槽位(RUST-104-W)。引擎没有 Optional 类型节点
+/// ——可选性只存在于槽位,且两义分明,按引擎真源分类:
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptionalSlot {
+    /// FIXED_DICT 的 `implementedBy` 缺席:**引擎可选**(官方 types.md
+    /// "Optional implementation" —— 缺席 = 字典内存表示,自定义类仅接管
+    /// 序列化)。图内每个 `implemented_by: None` 的 FixedDict 均属此形态。
+    FixedDictImplementedBy,
+    /// ARRAY 的 `<of>` 缺席:**引擎拒收**(datatype.cpp:1665 abort)。
+    /// IR 的 Option 槽承接容错半成品输入(既有钉:保留节点不产边),
+    /// 此槽位不代表引擎可用形态,诊断归 [`TypeErrorReason::ArrayMissingOf`]。
+    ArrayElement,
+}
+
+impl OptionalSlot {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OptionalSlot::FixedDictImplementedBy => "fixed_dict_implemented_by",
+            OptionalSlot::ArrayElement => "array_element",
+        }
+    }
+}
+
+/// Optionality 面:节点 + 槽位(查询面枚举,不发明 Optional 节点歪曲引擎)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OptionalFace {
+    pub node: TypeId,
+    pub name: String,
+    pub slot: OptionalSlot,
+}
+
+/// 引擎符合性报告:图内引擎 load 即拒收的形态(纯查询,构建语义零改动)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConformanceReport {
+    pub node: TypeId,
+    pub name: String,
+    pub reason: TypeErrorReason,
 }
 
 /// 类型图。
@@ -309,6 +402,9 @@ impl TypeGraph {
                 TypeNode::Array { .. } => TypeClass::Array,
                 TypeNode::FixedDict { .. } => TypeClass::FixedDict,
                 TypeNode::UserType { .. } => TypeClass::Entity,
+                // Unknown/Error 节点(物化/标注形态)都不是可用类型类:
+                // Unknown = 未注册;Error = 引擎 load 即 abort。
+                TypeNode::Unknown { .. } | TypeNode::Error { .. } => TypeClass::Unknown,
             },
         }
     }
@@ -321,10 +417,154 @@ impl TypeGraph {
         }
     }
 
+    /// 终点已知性(变体感知,RUST-104-W):物化的 Unknown/Error 节点虽在
+    /// `by_name`,但不是「已知终点」——否则链求值会把未注册/拒收形态判成
+    /// Resolved(撒谎);既有四类节点与注册实体语义不变。
     fn known_terminal(&self, name: &str) -> bool {
-        is_known_terminal(name)
+        if is_known_terminal(name) || self.registered_entities.contains(name) {
+            return true;
+        }
+        match self.by_name.get(name).map(|id| &self.nodes[id.0 as usize]) {
+            Some(TypeNode::Unknown { .. }) | Some(TypeNode::Error { .. }) => false,
+            Some(_) => true,
+            None => false,
+        }
+    }
+
+    /// 显式物化 Unknown 节点(RUST-104-W;opt-in,构建器永不自动调用):
+    /// 名字非空、非内置终点、无节点、非注册实体 → 建 [`TypeNode::Unknown`]
+    /// 入图;否则 `None`(已知名重复物化拒绝)。物化前后分类/链求值语义
+    /// 一致(仍 Unknown),只是 IR 里有了显式节点形态供诊断枚举。
+    pub fn materialize_unknown(&mut self, name: &str) -> Option<TypeId> {
+        if name.is_empty()
+            || is_known_terminal(name)
             || self.by_name.contains_key(name)
             || self.registered_entities.contains(name)
+        {
+            return None;
+        }
+        self.push_node(TypeNode::Unknown {
+            name: name.to_string(),
+        })
+    }
+
+    /// 显式登记引擎拒收形态(RUST-104-W;opt-in,带 [`TypeErrorReason`]
+    /// 引擎锚)。同名先到先得(与 [`TypeGraph::push_node`] 同口径)。
+    pub fn push_error_node(&mut self, name: &str, reason: TypeErrorReason) -> Option<TypeId> {
+        if name.is_empty() {
+            return None;
+        }
+        self.push_node(TypeNode::Error {
+            name: name.to_string(),
+            reason,
+        })
+    }
+
+    /// 全图悬挂引用枚举(RUST-104-W;SEM-013 Unknown 保留不冒充):每条边
+    /// 的 `to` 名,凡非内置终点、无节点、非注册实体 → Unknown。引擎侧该名
+    /// load 即不可用(别名目标 datatypes.cpp:170 / def 属性 property.cpp:70)。
+    /// 输出按字母序去重;纯查询,不自动物化。
+    pub fn unknown_terminals(&self) -> Vec<String> {
+        let mut out: BTreeSet<String> = BTreeSet::new();
+        for edge in &self.edges {
+            let n = &edge.to;
+            if !n.is_empty()
+                && !is_known_terminal(n)
+                && !self.by_name.contains_key(n)
+                && !self.registered_entities.contains(n)
+            {
+                out.insert(n.clone());
+            }
+        }
+        out.into_iter().collect()
+    }
+
+    /// Optionality 面枚举(RUST-104-W):图内全部 `Option` 结构槽位,按
+    /// [`OptionalSlot`] 的引擎真源两义标注。输出按节点序稳定。
+    pub fn optional_faces(&self) -> Vec<OptionalFace> {
+        let mut out = Vec::new();
+        for (i, node) in self.nodes.iter().enumerate() {
+            let face = match node {
+                TypeNode::FixedDict {
+                    name,
+                    implemented_by: None,
+                    ..
+                } => OptionalFace {
+                    node: TypeId(i as u32),
+                    name: name.clone(),
+                    slot: OptionalSlot::FixedDictImplementedBy,
+                },
+                TypeNode::Array {
+                    name,
+                    element: None,
+                } => OptionalFace {
+                    node: TypeId(i as u32),
+                    name: name.clone(),
+                    slot: OptionalSlot::ArrayElement,
+                },
+                _ => continue,
+            };
+            out.push(face);
+        }
+        out
+    }
+
+    /// 全图引擎符合性报告(RUST-104-W;纯查询,构建语义零改动):枚举图内
+    /// 引擎 load 即拒收的形态。只认图内数据可证的检测面——`_` 前缀名
+    /// (datatypes.cpp:43-50)、空指向别名(容错输入,datatypes.cpp:170)、
+    /// ARRAY 缺 `<of>`(datatype.cpp:1665)、FIXED_DICT 键类型引用未注册
+    /// (datatype.cpp:2153,键名 IR 已折平只报类型名)。FIXED_DICT 缺
+    /// Properties(datatype.cpp:2053)与「Properties 为空」在图内同形,
+    /// 不可区分 → 不谎报。输出按节点序稳定。
+    pub fn engine_conformance_reports(&self) -> Vec<ConformanceReport> {
+        let mut out = Vec::new();
+        for (i, node) in self.nodes.iter().enumerate() {
+            let id = TypeId(i as u32);
+            let name = node.name();
+            if name.starts_with('_') {
+                out.push(ConformanceReport {
+                    node: id,
+                    name: name.to_string(),
+                    reason: TypeErrorReason::ReservedUnderscorePrefix,
+                });
+            }
+            match node {
+                TypeNode::Alias { target, .. } if target.is_empty() => {
+                    out.push(ConformanceReport {
+                        node: id,
+                        name: name.to_string(),
+                        reason: TypeErrorReason::EmptyTarget,
+                    });
+                }
+                TypeNode::Array { element, .. } if element.as_deref().is_none_or(str::is_empty) => {
+                    out.push(ConformanceReport {
+                        node: id,
+                        name: name.to_string(),
+                        reason: TypeErrorReason::ArrayMissingOf,
+                    });
+                }
+                TypeNode::FixedDict { field_refs, .. } => {
+                    for target in field_refs {
+                        if target.is_empty()
+                            || is_known_terminal(target)
+                            || self.by_name.contains_key(target)
+                            || self.registered_entities.contains(target)
+                        {
+                            continue;
+                        }
+                        out.push(ConformanceReport {
+                            node: id,
+                            name: name.to_string(),
+                            reason: TypeErrorReason::FixedDictKeyUnknownType {
+                                target: target.clone(),
+                            },
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+        out
     }
 
     /// 别名链(SEM-004):从别名名沿 AliasTarget 走到非别名终点。
