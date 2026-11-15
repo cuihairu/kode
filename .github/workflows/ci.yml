@@ -101,6 +101,21 @@ jobs:
       run: |
         pnpm exec vitest run --config vitest.bench.config.ts tests/perf/servingSoak.bench.ts
 
+    - name: Upload serving gate/soak run files
+      # 门红也要把本次运行日志传出来归因(P2 审计修正:此前上传挂在
+      # perf-gate job,两 job 工作区独立,上传拿到的只是仓库里已提交的
+      # 历史日志而非本次运行记录——上传必须在执行所在 job 且 if: always())。
+      if: always()
+      timeout-minutes: 3
+      uses: actions/upload-artifact@v7.0.2
+      with:
+        name: serving-gate-run
+        path: |
+          docs/perf/serving-gate-run.txt
+          docs/perf/serving-soak-run.txt
+        if-no-files-found: warn
+        retention-days: 30
+
 
     - name: 编译 TypeScript
       timeout-minutes: 15
@@ -323,8 +338,6 @@ jobs:
         path: |
           docs/perf/v02-baseline-run.txt
           docs/perf/perf-baseline-snapshot.json
-          docs/perf/serving-gate-run.txt
-          docs/perf/serving-soak-run.txt
         if-no-files-found: warn
         retention-days: 30
 
