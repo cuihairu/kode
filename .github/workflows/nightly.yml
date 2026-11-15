@@ -149,7 +149,7 @@ jobs:
           pnpm exec vitest run --config vitest.bench.config.ts tests/perf/servingSoak.bench.ts
 
       - name: Upload serving gate and soak run files
-        uses: actions/upload-artifact@v4.2.4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: serving-run-files
           path: |
