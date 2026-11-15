@@ -343,7 +343,7 @@
 - [x] RUST-099 （旧 SYNTAX-003） CST/AST 支持容错解析（缺闭合标签/临时不完整编辑），诊断精确位置。(PR-005 基础版:截断/坏标签/未闭合结构化诊断 13 码,树前缀不丢,逐字节截断扫描测试;CST 级增量重解析随 PR-007)
 - [ ] RUST-100 （旧 SYNTAX-004） 验证 quick-xml + 自定义位置层 vs rowan CST 的成本与热更新性能；ADR 选型。(PR-005 已裁决 ADR-102:自研零依赖状态机,quick-xml/rowan 未引入;若增量基准证明成瓶颈按 ADR-002 重评)
 - [x] RUST-101 （旧 SYNTAX-005） AST 对未知字段保留以适应引擎分支/扩展，不因未知标签完全失败。(PR-005:extra_tags/extra_sections 保留 + 遗留拼写容忍)
-- [ ] RUST-102 （旧 SYNTAX-006） 大文件解析/增量与缓存基准，禁止任何 debug build 性能结论代替 release。(进行中:PR-005 release bench 基线已立(P50 6µs/大样本 19.9MB/s/增量二扫零重建),热更新性能与增量 rope 基准随 PR-007/009)
+- [x] RUST-102 （旧 SYNTAX-006） 大文件解析/增量与缓存基准，禁止任何 debug build 性能结论代替 release。(c24e0870,2026-11-15 收口=索引层墙钟基准补齐(余项「热更新性能与增量基准随 PR-007/009」——两 PR 均已落地,前置齐):新增 crates/kode-index/examples/bench_increment.rs(release 铁律)五块车道=2000 真实形态实体 def(64 属性+12 方法+继承链)首扫全量 update_batch 825.0ms/13.9MB/s(154000 符号)+**热更新稳态交互面**(单文件真实改文本→update 必重建,300 次)P50=402µs/P95=672µs/max=757µs+同文本零重建对照(1000 次全 cache-hit 9.5µs/次,generation 不变,断言双证防假增量)+rename 318µs/次·未注册 remove 零副作用+invalidate_root 清 155450 符号 81.5ms→全量重扫 739.7ms(与首扫同路径同量级,无超线性回退)+巨型单文件 2 万属性 1.6MB 首插 148.1ms/热更重解析 169.3ms;报告 docs/perf/2026-11-15-index-increment-bench.md 含解读与边界(热更新亚毫秒非瓶颈/增量有效性双证/巨型文件增量到 CST 级才有空间随 ADR-102/ARCH-012 只立 Rust 自身基线不做跨实现对比);**历史账**:PR-007 既有 examples/bench_index.rs 是 rebuild 计数正确性车道(数字进 pr-007.md)——本批曾误覆盖,cp 暂存+git restore 字节还原(HEAD 对拍 cmp 一致)+墙钟车道独立落 bench_increment.rs 两个 example 互不覆盖;门禁 cargo test -p kode-index 全绿+clippy -D warnings 0+cargo fmt)
 
 #### 6.2 类型与实体语义
 - [ ] RUST-103 （旧 SEM-001） 定义稳定 `SymbolId`、`TypeId`、`EntityId`、`RootId`、`Location`、`Origin`。
