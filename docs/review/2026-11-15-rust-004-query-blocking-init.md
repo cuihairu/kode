@@ -23,7 +23,7 @@
 | `query()` 无就绪门 | `src/globalDataIndex.ts:686-688` | 索引未建时静默返回 `[]`——判据「禁止悄悄返回假完整结果」的直接靶子。当前生产消费面都先过 `ensureStarted`/`awaitDataDictIndexReady` 门所以不可达,但面本身无门、无 partial 标注,属潜伏假完整 | **重定性+标注面落地**:`query()` 原语义保持(增量事件驱动索引,严格就绪门会误伤 noteSaved 驱动用法,见 §5);标注轴 `queryMarked`/`queryKeyFamiliesMarked`/`isReady` 落地,新消费端走标注面 |
 | `allEventCalls` 硬 await | `src/workspaceIndex.ts:342-343` | 全量事件调用索引同步等完整初始化,无取消/无 partial | 维持登记:eventApi 无 token 可传,取消需消费面接线设计,非机械批 |
 | `defReferenceGraph` 同步扫 | `src/workspaceIndex.ts:363-371` | 同步全量扫描,无 partial 面 | **审计已陈旧**:RUST-001 批 B(1d9a76c3)已把该扫描异步化(fs.promises+8 路有界并发+逐文件让位),登记行失效 |
-| partial/incomplete 标注缺失 | GlobalDataDictIndex / SpaceDataIndex / WorkspaceIndex 各查询返回 | 返回形状无 partial/incomplete 维度,判据「允许明确标注」一侧未落地 | GlobalDataDictIndex 一侧已落地(`*Marked` 返回 `ready` 布尔);SpaceDataIndex / WorkspaceIndex 维持登记 |
+| partial/incomplete 标注缺失 | GlobalDataDictIndex / SpaceDataIndex / WorkspaceIndex 各查询返回 | 返回形状无 partial/incomplete 维度,判据「允许明确标注」一侧未落地 | **三侧全落地**:GlobalDataDictIndex(§5 `queryMarked`/`queryKeyFamiliesMarked`)+ SpaceDataIndex(§6 `queryFamiliesForSpaceMarked`/`queryFamilySitesMarked`)+ WorkspaceIndex(§6 `allEventCallsMarked`),均返回 `ready` 布尔 |
 
 ## 4. 门禁
 
@@ -43,4 +43,16 @@
 
 **prove-red**:变异 `queryMarked`/`queryKeyFamiliesMarked` 恒返 `ready: true`(摘标注=退回「未建装成空结果」)→ 未就绪两例红(`Failed Tests 2`);`cp` 还原 + `cmp` 字节一致 → 4 例复绿。测试 `tests/globalDataIndexMarkedQuery.test.ts` 4 例(isReady 三态 / 未就绪标注 / 就绪同源 / 键族标注)。
 
-**剩余登记**(整行保持未勾的原因):`allEventCalls` 硬 await(eventApi 无 token 可传,取消需消费面接线设计)+ SpaceDataIndex / WorkspaceIndex 标注轴未落。
+**剩余登记**(整行保持未勾的原因):SpaceDataIndex / WorkspaceIndex 标注轴未落(→ §6 已落)+ `allEventCalls` 硬 await(eventApi 无 token 可传,取消需消费面接线设计,非机械批)。
+
+## 6. 第三批(2026-11-15 续):SpaceDataIndex / WorkspaceIndex 标注轴落地
+
+同款模式机械复制(判定方法论见 §5,增量事件驱动语义不变,查询原语义一行不动):
+
+**落地面**:
+- `src/spaceDataIndex.ts` —— `get isReady()`(`started && !disposed`)+ `queryFamiliesForSpaceMarked(sid)` → `{families, ready}` + `queryFamilySitesMarked(sid, key)` → `{sites, ready}`;未就绪 `{…: [], ready: false}`,就绪与 plain 查询同源;`awaitReady`(取消闸)上游纪律不变;
+- `src/workspaceIndex.ts` —— `get isReady()` + `allEventCallsMarked()` → `Promise<{calls, ready}>`:未就绪**零阻塞零副作用**返回(不触发 `ensureStarted`,findFiles 零次),就绪走 `allEventCalls()` 原语义;`methodsOf` 是文档文本直取面,不依赖索引状态,无标注轴需求。
+
+**prove-red**:变异 SpaceDataIndex 两标注面恒 `ready: true` + 摘 WorkspaceIndex 未就绪早退分支 → 未就绪三例红(3 failed);`cp` 还原 + `cmp` 字节一致 → 7 例复绿。测试 `tests/indexMarkedAxisRound2.test.ts` 7 例(SpaceDataIndex isReady 三态/未就绪标注×2/就绪同源×2;WorkspaceIndex isReady 三态/未就绪零阻塞不触发初扫/就绪同源)。
+
+**剩余登记**(整行保持未勾的唯一原因):`allEventCalls` 硬 await——eventApi 无 token 可传,取消需消费面接线设计,非机械批;标注面已给后续消费端「免阻塞区分未建/空」的迁移面。
