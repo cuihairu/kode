@@ -36,6 +36,7 @@ pub mod rpc_arg_count;
 pub mod ruff_lint;
 pub mod self_attribute_flow;
 pub mod semantics;
+pub mod semantics_golden;
 pub mod semantics_rpc;
 pub mod server;
 pub mod space_nav;

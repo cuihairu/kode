@@ -1,0 +1,1045 @@
+{
+  "corpusCount": 65,
+  "doclass": [
+    {
+      "class": "other",
+      "path": "play_demo.py"
+    },
+    {
+      "class": "python-entity/base",
+      "path": "scripts/base/Account.py"
+    },
+    {
+      "class": "python-entity/base",
+      "path": "scripts/base/Avatar.py"
+    },
+    {
+      "class": "python-entity/base",
+      "path": "scripts/base/Space.py"
+    },
+    {
+      "class": "python-entity/base",
+      "path": "scripts/base/Spaces.py"
+    },
+    {
+      "class": "python-entity/base",
+      "path": "scripts/base/TrainingAvatar.py"
+    },
+    {
+      "class": "python-entity/base",
+      "path": "scripts/base/kbemain.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/bots/Account.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/bots/Avatar.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/bots/TrainingAvatar.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/bots/kbemain.py"
+    },
+    {
+      "class": "python-entity/cell",
+      "path": "scripts/cell/Avatar.py"
+    },
+    {
+      "class": "python-entity/cell",
+      "path": "scripts/cell/EliteMonster.py"
+    },
+    {
+      "class": "python-entity/cell",
+      "path": "scripts/cell/Inventory.py"
+    },
+    {
+      "class": "python-entity/cell",
+      "path": "scripts/cell/Monster.py"
+    },
+    {
+      "class": "python-entity/cell",
+      "path": "scripts/cell/Space.py"
+    },
+    {
+      "class": "python-entity/cell",
+      "path": "scripts/cell/TrainingAvatar.py"
+    },
+    {
+      "class": "python-entity/cell",
+      "path": "scripts/cell/TrainingMonster.py"
+    },
+    {
+      "class": "python-entity/cell",
+      "path": "scripts/cell/kbemain.py"
+    },
+    {
+      "class": "python-entity/cell",
+      "path": "scripts/cell/monster_ai.py"
+    },
+    {
+      "class": "python-entity/client",
+      "path": "scripts/client/Account.py"
+    },
+    {
+      "class": "python-entity/client",
+      "path": "scripts/client/Avatar.py"
+    },
+    {
+      "class": "python-entity/client",
+      "path": "scripts/client/TrainingAvatar.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/DemoConsts.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/Functor.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/KBEDebug.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/KodeHotReload.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/training/__init__.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/training/alias_probe.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/training/legacy/__init__.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/training/legacy/health.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/training/mixins/__init__.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/training/mixins/brain.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/training/mixins/combat.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/training/mixins/critical.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/training/mixins/damage.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/training/mixins/elite.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/training/mixins/health.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/training/mixins/history.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/training/mixins/inventory.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/training/mixins/movement.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/training/mixins/rewards.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/training/probes.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/common/xreload.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/db/kbemain.py"
+    },
+    {
+      "class": "entities-xml",
+      "path": "scripts/entities.xml"
+    },
+    {
+      "class": "def/entity",
+      "path": "scripts/entity_defs/Account.def"
+    },
+    {
+      "class": "def/entity",
+      "path": "scripts/entity_defs/Avatar.def"
+    },
+    {
+      "class": "def/entity",
+      "path": "scripts/entity_defs/Critical.def"
+    },
+    {
+      "class": "def/entity",
+      "path": "scripts/entity_defs/EliteMonster.def"
+    },
+    {
+      "class": "def/entity",
+      "path": "scripts/entity_defs/Monster.def"
+    },
+    {
+      "class": "def/entity",
+      "path": "scripts/entity_defs/Space.def"
+    },
+    {
+      "class": "def/entity",
+      "path": "scripts/entity_defs/Spaces.def"
+    },
+    {
+      "class": "def/entity",
+      "path": "scripts/entity_defs/TrainingAvatar.def"
+    },
+    {
+      "class": "def/entity",
+      "path": "scripts/entity_defs/TrainingMonster.def"
+    },
+    {
+      "class": "def/component",
+      "path": "scripts/entity_defs/components/Inventory.def"
+    },
+    {
+      "class": "def/interface",
+      "path": "scripts/entity_defs/interfaces/ROLE.def"
+    },
+    {
+      "class": "def/interface",
+      "path": "scripts/entity_defs/interfaces/TRAINING_ACTOR.def"
+    },
+    {
+      "class": "other",
+      "path": "scripts/interface/Poller.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/interface/kbemain.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/interfaces/ROLE.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/logger/kbemain.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/login/kbemain.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/user_type/POSITION_DATA.py"
+    },
+    {
+      "class": "other",
+      "path": "scripts/user_type/SKILL_SLOT_DATA.py"
+    }
+  ],
+  "duplicateDefs": [],
+  "duplicatePyClasses": [],
+  "duplicateRegistrations": [],
+  "fixture": "tests/fixtures/kbengine-demo-assets",
+  "nav": [
+    {
+      "def_facets": [
+        "client"
+      ],
+      "def_file": "scripts/entity_defs/Account.def",
+      "entity": "Account",
+      "python": [
+        {
+          "bases": [
+            "KBEngine.Proxy"
+          ],
+          "class_end_line": 57,
+          "class_line": 4,
+          "facet": "base",
+          "file": "scripts/base/Account.py"
+        },
+        {
+          "bases": [],
+          "class_end_line": 3,
+          "class_line": 1,
+          "facet": "client",
+          "file": "scripts/client/Account.py"
+        }
+      ],
+      "registration": {
+        "attributes": [
+          [
+            "hasClient",
+            "true"
+          ]
+        ],
+        "file": "scripts/entities.xml",
+        "line": 9
+      }
+    },
+    {
+      "def_facets": [
+        "base",
+        "cell",
+        "client"
+      ],
+      "def_file": "scripts/entity_defs/Avatar.def",
+      "entity": "Avatar",
+      "python": [
+        {
+          "bases": [
+            "KBEngine.Proxy"
+          ],
+          "class_end_line": 134,
+          "class_line": 16,
+          "facet": "base",
+          "file": "scripts/base/Avatar.py"
+        },
+        {
+          "bases": [
+            "KBEngine.Entity"
+          ],
+          "class_end_line": 234,
+          "class_line": 7,
+          "facet": "cell",
+          "file": "scripts/cell/Avatar.py"
+        },
+        {
+          "bases": [],
+          "class_end_line": 11,
+          "class_line": 3,
+          "facet": "client",
+          "file": "scripts/client/Avatar.py"
+        }
+      ],
+      "registration": {
+        "attributes": [
+          [
+            "hasBase",
+            "true"
+          ],
+          [
+            "hasCell",
+            "true"
+          ],
+          [
+            "hasClient",
+            "true"
+          ]
+        ],
+        "file": "scripts/entities.xml",
+        "line": 12
+      }
+    },
+    {
+      "def_facets": [],
+      "def_file": "scripts/entity_defs/Critical.def",
+      "entity": "Critical",
+      "python": [],
+      "registration": null
+    },
+    {
+      "def_facets": [
+        "cell"
+      ],
+      "def_file": "scripts/entity_defs/EliteMonster.def",
+      "entity": "EliteMonster",
+      "python": [
+        {
+          "bases": [
+            "EliteDamageMixin",
+            "TrainingMonster"
+          ],
+          "class_end_line": 6,
+          "class_line": 4,
+          "facet": "cell",
+          "file": "scripts/cell/EliteMonster.py"
+        }
+      ],
+      "registration": {
+        "attributes": [
+          [
+            "hasCell",
+            "true"
+          ]
+        ],
+        "file": "scripts/entities.xml",
+        "line": 16
+      }
+    },
+    {
+      "def_facets": [],
+      "def_file": "scripts/entity_defs/components/Inventory.def",
+      "entity": "Inventory",
+      "python": [
+        {
+          "bases": [
+            "KBEngine.EntityComponent"
+          ],
+          "class_end_line": 15,
+          "class_line": 10,
+          "facet": "cell",
+          "file": "scripts/cell/Inventory.py"
+        }
+      ],
+      "registration": null
+    },
+    {
+      "def_facets": [
+        "cell"
+      ],
+      "def_file": "scripts/entity_defs/Monster.def",
+      "entity": "Monster",
+      "python": [
+        {
+          "bases": [
+            "Avatar"
+          ],
+          "class_end_line": 186,
+          "class_line": 16,
+          "facet": "cell",
+          "file": "scripts/cell/Monster.py"
+        }
+      ],
+      "registration": {
+        "attributes": [
+          [
+            "hasCell",
+            "true"
+          ]
+        ],
+        "file": "scripts/entities.xml",
+        "line": 13
+      }
+    },
+    {
+      "def_facets": [],
+      "def_file": "scripts/entity_defs/interfaces/ROLE.def",
+      "entity": "ROLE",
+      "python": [],
+      "registration": null
+    },
+    {
+      "def_facets": [
+        "base",
+        "cell"
+      ],
+      "def_file": "scripts/entity_defs/Space.def",
+      "entity": "Space",
+      "python": [
+        {
+          "bases": [
+            "KBEngine.Entity"
+          ],
+          "class_end_line": 34,
+          "class_line": 5,
+          "facet": "base",
+          "file": "scripts/base/Space.py"
+        },
+        {
+          "bases": [
+            "KBEngine.Entity"
+          ],
+          "class_end_line": 63,
+          "class_line": 21,
+          "facet": "cell",
+          "file": "scripts/cell/Space.py"
+        }
+      ],
+      "registration": {
+        "attributes": [
+          [
+            "hasBase",
+            "true"
+          ],
+          [
+            "hasCell",
+            "true"
+          ]
+        ],
+        "file": "scripts/entities.xml",
+        "line": 11
+      }
+    },
+    {
+      "def_facets": [
+        "base"
+      ],
+      "def_file": "scripts/entity_defs/Spaces.def",
+      "entity": "Spaces",
+      "python": [
+        {
+          "bases": [
+            "KBEngine.Entity"
+          ],
+          "class_end_line": 51,
+          "class_line": 12,
+          "facet": "base",
+          "file": "scripts/base/Spaces.py"
+        }
+      ],
+      "registration": {
+        "attributes": [
+          [
+            "hasBase",
+            "true"
+          ]
+        ],
+        "file": "scripts/entities.xml",
+        "line": 10
+      }
+    },
+    {
+      "def_facets": [],
+      "def_file": "scripts/entity_defs/interfaces/TRAINING_ACTOR.def",
+      "entity": "TRAINING_ACTOR",
+      "python": [],
+      "registration": null
+    },
+    {
+      "def_facets": [
+        "base",
+        "cell",
+        "client"
+      ],
+      "def_file": "scripts/entity_defs/TrainingAvatar.def",
+      "entity": "TrainingAvatar",
+      "python": [
+        {
+          "bases": [
+            "KBEngine.Entity"
+          ],
+          "class_end_line": 11,
+          "class_line": 3,
+          "facet": "base",
+          "file": "scripts/base/TrainingAvatar.py"
+        },
+        {
+          "bases": [
+            "Critical",
+            "CombatMixin",
+            "vitals.HealthMixin",
+            "HistoryMixin",
+            "InventoryMixin",
+            "MovementMixin",
+            "BoundsMixin",
+            "RewardMixin",
+            "KBEngine.Entity"
+          ],
+          "class_end_line": 46,
+          "class_line": 12,
+          "facet": "cell",
+          "file": "scripts/cell/TrainingAvatar.py"
+        },
+        {
+          "bases": [],
+          "class_end_line": 3,
+          "class_line": 0,
+          "facet": "client",
+          "file": "scripts/client/TrainingAvatar.py"
+        }
+      ],
+      "registration": {
+        "attributes": [
+          [
+            "hasBase",
+            "true"
+          ],
+          [
+            "hasCell",
+            "true"
+          ],
+          [
+            "hasClient",
+            "true"
+          ]
+        ],
+        "file": "scripts/entities.xml",
+        "line": 14
+      }
+    },
+    {
+      "def_facets": [
+        "cell"
+      ],
+      "def_file": "scripts/entity_defs/TrainingMonster.def",
+      "entity": "TrainingMonster",
+      "python": [
+        {
+          "bases": [
+            "BrainMixin",
+            "CombatMixin",
+            "HealthMixin",
+            "HistoryMixin",
+            "InventoryMixin",
+            "RewardMixin",
+            "KBEngine.Entity"
+          ],
+          "class_end_line": 23,
+          "class_line": 9,
+          "facet": "cell",
+          "file": "scripts/cell/TrainingMonster.py"
+        }
+      ],
+      "registration": {
+        "attributes": [
+          [
+            "hasCell",
+            "true"
+          ]
+        ],
+        "file": "scripts/entities.xml",
+        "line": 15
+      }
+    }
+  ],
+  "navIgnored": [
+    {
+      "path": "play_demo.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/base/kbemain.py",
+      "reason": "entity-not-registered"
+    },
+    {
+      "path": "scripts/bots/Account.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/bots/Avatar.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/bots/TrainingAvatar.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/bots/kbemain.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/cell/kbemain.py",
+      "reason": "entity-not-registered"
+    },
+    {
+      "path": "scripts/cell/monster_ai.py",
+      "reason": "entity-not-registered"
+    },
+    {
+      "path": "scripts/common/DemoConsts.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/Functor.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/KBEDebug.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/KodeHotReload.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/training/__init__.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/training/alias_probe.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/training/legacy/__init__.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/training/legacy/health.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/training/mixins/__init__.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/training/mixins/brain.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/training/mixins/combat.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/training/mixins/critical.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/training/mixins/damage.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/training/mixins/elite.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/training/mixins/health.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/training/mixins/history.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/training/mixins/inventory.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/training/mixins/movement.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/training/mixins/rewards.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/training/probes.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/common/xreload.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/db/kbemain.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/interface/Poller.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/interface/kbemain.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/interfaces/ROLE.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/logger/kbemain.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/login/kbemain.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/user_type/POSITION_DATA.py",
+      "reason": "not-script-layout"
+    },
+    {
+      "path": "scripts/user_type/SKILL_SLOT_DATA.py",
+      "reason": "not-script-layout"
+    }
+  ],
+  "renameOwnership": [
+    {
+      "name": "createEntity",
+      "owner": "generated",
+      "path": ".kbengine/stubs/KBEngine.pyi",
+      "probe": "generated-stub"
+    },
+    {
+      "name": "play_demo",
+      "owner": "unknown",
+      "path": "play_demo.py"
+    },
+    {
+      "name": "Account",
+      "owner": "user-code",
+      "path": "scripts/base/Account.py"
+    },
+    {
+      "name": "Avatar",
+      "owner": "user-code",
+      "path": "scripts/base/Avatar.py"
+    },
+    {
+      "name": "createEntity",
+      "owner": "engine-builtin",
+      "path": "scripts/base/Avatar.py",
+      "probe": "builtin-api"
+    },
+    {
+      "name": "Space",
+      "owner": "user-code",
+      "path": "scripts/base/Space.py"
+    },
+    {
+      "name": "Spaces",
+      "owner": "user-code",
+      "path": "scripts/base/Spaces.py"
+    },
+    {
+      "name": "TrainingAvatar",
+      "owner": "user-code",
+      "path": "scripts/base/TrainingAvatar.py"
+    },
+    {
+      "name": "kbemain",
+      "owner": "user-code",
+      "path": "scripts/base/kbemain.py"
+    },
+    {
+      "name": "Account",
+      "owner": "unknown",
+      "path": "scripts/bots/Account.py"
+    },
+    {
+      "name": "Avatar",
+      "owner": "unknown",
+      "path": "scripts/bots/Avatar.py"
+    },
+    {
+      "name": "TrainingAvatar",
+      "owner": "unknown",
+      "path": "scripts/bots/TrainingAvatar.py"
+    },
+    {
+      "name": "kbemain",
+      "owner": "unknown",
+      "path": "scripts/bots/kbemain.py"
+    },
+    {
+      "name": "Avatar",
+      "owner": "user-code",
+      "path": "scripts/cell/Avatar.py"
+    },
+    {
+      "name": "EliteMonster",
+      "owner": "user-code",
+      "path": "scripts/cell/EliteMonster.py"
+    },
+    {
+      "name": "Inventory",
+      "owner": "user-code",
+      "path": "scripts/cell/Inventory.py"
+    },
+    {
+      "name": "Monster",
+      "owner": "user-code",
+      "path": "scripts/cell/Monster.py"
+    },
+    {
+      "name": "Space",
+      "owner": "user-code",
+      "path": "scripts/cell/Space.py"
+    },
+    {
+      "name": "TrainingAvatar",
+      "owner": "user-code",
+      "path": "scripts/cell/TrainingAvatar.py"
+    },
+    {
+      "name": "TrainingMonster",
+      "owner": "user-code",
+      "path": "scripts/cell/TrainingMonster.py"
+    },
+    {
+      "name": "kbemain",
+      "owner": "user-code",
+      "path": "scripts/cell/kbemain.py"
+    },
+    {
+      "name": "monster_ai",
+      "owner": "user-code",
+      "path": "scripts/cell/monster_ai.py"
+    },
+    {
+      "name": "Account",
+      "owner": "user-code",
+      "path": "scripts/client/Account.py"
+    },
+    {
+      "name": "Avatar",
+      "owner": "user-code",
+      "path": "scripts/client/Avatar.py"
+    },
+    {
+      "name": "TrainingAvatar",
+      "owner": "user-code",
+      "path": "scripts/client/TrainingAvatar.py"
+    },
+    {
+      "name": "DemoConsts",
+      "owner": "unknown",
+      "path": "scripts/common/DemoConsts.py"
+    },
+    {
+      "name": "Functor",
+      "owner": "unknown",
+      "path": "scripts/common/Functor.py"
+    },
+    {
+      "name": "KBEDebug",
+      "owner": "unknown",
+      "path": "scripts/common/KBEDebug.py"
+    },
+    {
+      "name": "KodeHotReload",
+      "owner": "unknown",
+      "path": "scripts/common/KodeHotReload.py"
+    },
+    {
+      "name": "__init__",
+      "owner": "unknown",
+      "path": "scripts/common/training/__init__.py"
+    },
+    {
+      "name": "alias_probe",
+      "owner": "unknown",
+      "path": "scripts/common/training/alias_probe.py"
+    },
+    {
+      "name": "__init__",
+      "owner": "unknown",
+      "path": "scripts/common/training/legacy/__init__.py"
+    },
+    {
+      "name": "health",
+      "owner": "unknown",
+      "path": "scripts/common/training/legacy/health.py"
+    },
+    {
+      "name": "__init__",
+      "owner": "unknown",
+      "path": "scripts/common/training/mixins/__init__.py"
+    },
+    {
+      "name": "brain",
+      "owner": "unknown",
+      "path": "scripts/common/training/mixins/brain.py"
+    },
+    {
+      "name": "combat",
+      "owner": "unknown",
+      "path": "scripts/common/training/mixins/combat.py"
+    },
+    {
+      "name": "critical",
+      "owner": "unknown",
+      "path": "scripts/common/training/mixins/critical.py"
+    },
+    {
+      "name": "damage",
+      "owner": "unknown",
+      "path": "scripts/common/training/mixins/damage.py"
+    },
+    {
+      "name": "elite",
+      "owner": "unknown",
+      "path": "scripts/common/training/mixins/elite.py"
+    },
+    {
+      "name": "health",
+      "owner": "unknown",
+      "path": "scripts/common/training/mixins/health.py"
+    },
+    {
+      "name": "history",
+      "owner": "unknown",
+      "path": "scripts/common/training/mixins/history.py"
+    },
+    {
+      "name": "inventory",
+      "owner": "unknown",
+      "path": "scripts/common/training/mixins/inventory.py"
+    },
+    {
+      "name": "movement",
+      "owner": "unknown",
+      "path": "scripts/common/training/mixins/movement.py"
+    },
+    {
+      "name": "rewards",
+      "owner": "unknown",
+      "path": "scripts/common/training/mixins/rewards.py"
+    },
+    {
+      "name": "probes",
+      "owner": "unknown",
+      "path": "scripts/common/training/probes.py"
+    },
+    {
+      "name": "xreload",
+      "owner": "unknown",
+      "path": "scripts/common/xreload.py"
+    },
+    {
+      "name": "kbemain",
+      "owner": "unknown",
+      "path": "scripts/db/kbemain.py"
+    },
+    {
+      "name": "Poller",
+      "owner": "unknown",
+      "path": "scripts/interface/Poller.py"
+    },
+    {
+      "name": "kbemain",
+      "owner": "unknown",
+      "path": "scripts/interface/kbemain.py"
+    },
+    {
+      "name": "ROLE",
+      "owner": "unknown",
+      "path": "scripts/interfaces/ROLE.py"
+    },
+    {
+      "name": "kbemain",
+      "owner": "unknown",
+      "path": "scripts/logger/kbemain.py"
+    },
+    {
+      "name": "kbemain",
+      "owner": "unknown",
+      "path": "scripts/login/kbemain.py"
+    },
+    {
+      "name": "POSITION_DATA",
+      "owner": "unknown",
+      "path": "scripts/user_type/POSITION_DATA.py"
+    },
+    {
+      "name": "SKILL_SLOT_DATA",
+      "owner": "unknown",
+      "path": "scripts/user_type/SKILL_SLOT_DATA.py"
+    }
+  ]
+}
