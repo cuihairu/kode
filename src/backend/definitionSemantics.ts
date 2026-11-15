@@ -1,6 +1,6 @@
 import { normalizeFileIdentity } from './pathIdentity';
 import { propertyFlagDomainList } from './defAnalyzer';
-import { readSharedFileSnapshot } from '../sharedFileSnapshot';
+import { readSharedFileSnapshot, readSharedFileSnapshotIdentity } from '../sharedFileSnapshot';
 import {
   DefDocument,
   DefElementNode,
@@ -140,16 +140,61 @@ export interface ResolvedDefinitionSemantics {
   components: ResolvedDefinitionComponentSlot[];
 }
 
+/**
+ * RUST-003:身份集合化缓存条目——identitySet 是本次语义消费过的全部文件
+ * (归一路径键 → 快照 {source,version} 令牌)。命中前逐文件重探令牌,任一
+ * 漂移即判过期重解析;消费文件集取自 ResolutionContext.visited(解析链每
+ * 进一个 def 即登记),入口与父/接口文件一并兜住——只验入口会漏掉「入口
+ * 没变、父文件变了」的窗口。键内身份替代失效调用,不依赖任何 clear()。
+ */
+interface IdentityCachedEntry<T> {
+  readonly identitySet: ReadonlyMap<string, string>;
+  readonly value: T;
+}
+
 interface ResolutionContext {
   allowComponents: boolean;
+  /** 环守卫:进入即登记、离开即回退(DFS 回溯),不代表消费集 */
   visited: Set<string>;
+  /** RUST-003:消费记录——解析全程触及过的 def 文件(只增不减),缓存
+   * 身份集合的事实源;visited 是环守卫会回退,不能当消费集用。 */
+  consumed: Set<string>;
   /** IDE-IDX-002:解析起点根(精确路径入口带):父/接口按名回解先本根,缓存按根分区 */
   originRoot?: string;
 }
 
 export class DefinitionSemanticsLoader {
-  private localCache = new Map<string, LocalDefinitionSemantics | null>();
-  private resolvedCache = new Map<string, ResolvedDefinitionSemantics | null>();
+  // RUST-003:缓存条目身份化——值是「身份令牌+语义」而非裸语义。命中前
+  // 重探入口文件身份,漂移即重解析:键内身份替代失效调用,loader 实例
+  // 短命(单查询/单轮扫描),存续期内文件被改也吃不到旧值。
+  private localCache = new Map<string, IdentityCachedEntry<LocalDefinitionSemantics | null>>();
+  private resolvedCache = new Map<string, IdentityCachedEntry<ResolvedDefinitionSemantics | null>>();
+
+  /** RUST-003:身份集合全量重探——任一消费文件的令牌漂移即判过期。 */
+  private identitySetMatches(identitySet: ReadonlyMap<string, string>): boolean {
+    for (const [pathKey, token] of identitySet) {
+      if (this.identityTokenFor(pathKey) !== token) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** RUST-003:visited(解析消费文件集)→ 身份集合;任一文件探不到身份
+   * (已删除等)返回 null,调用方不落缓存、后续每次现解析(诚实口径)。 */
+  private identitySetFromVisited(
+    visited: ReadonlySet<string>
+  ): ReadonlyMap<string, string> | null {
+    const identitySet = new Map<string, string>();
+    for (const pathKey of visited) {
+      const token = this.identityTokenFor(pathKey);
+      if (token === null) {
+        return null;
+      }
+      identitySet.set(pathKey, token);
+    }
+    return identitySet;
+  }
 
   /** 单根(既有口径)或多根(workspace 顶层 ∪ assetsRoot,2026-10-16 扫描根修正) */
   constructor(private readonly workspaceRoot: string | string[]) {}
@@ -158,36 +203,72 @@ export class DefinitionSemanticsLoader {
     return Array.isArray(this.workspaceRoot) ? this.workspaceRoot : [this.workspaceRoot];
   }
 
+  /** RUST-003:轻量身份令牌——快照 {source,version} 字符串化;探不到返回
+   * null,调用方对 null 一律不落缓存(无身份不记忆,诚实口径)。 */
+  private identityTokenFor(filePath: string): string | null {
+    const identity = readSharedFileSnapshotIdentity(filePath);
+    if (!identity) {
+      return null;
+    }
+    return `${identity.source}:${identity.version ?? 'unknown'}`;
+  }
+
   loadLocal(
     name: string,
     category: DefinitionSemanticCategory,
     originRoot?: string
   ): LocalDefinitionSemantics | null {
     const cacheKey = this.partitionedCacheKey(buildCacheKey(category, name), originRoot);
-    if (this.localCache.has(cacheKey)) {
-      return this.localCache.get(cacheKey) || null;
-    }
-
     const filePath = this.resolveDefinitionFile(name, category, originRoot);
     if (!filePath) {
-      this.localCache.set(cacheKey, null);
+      // 路径解析失败不记负缓存:根集合在 loader 生命周期内稳定,重走解析
+      // 只付逐根 existsSync,换来文件后建当轮可见(RUST-003 身份化口径)。
       return null;
+    }
+
+    // RUST-003:命中前重探入口文件身份——磁盘 mtime 变/缓冲区 version 前进
+    // 都算漂移,漂移即重解析;探不到身份(文件消失)不落缓存每次现读。
+    const identityToken = this.identityTokenFor(filePath);
+    const entryKey = normalizeLookupPath(filePath);
+    const cached = this.localCache.get(cacheKey);
+    if (
+      cached !== undefined &&
+      identityToken !== null &&
+      cached.identitySet.get(entryKey) === identityToken
+    ) {
+      return cached.value;
     }
 
     // IDE-SNP-002:文本事实源走共享快照——打开的 def 以编辑器缓冲区优先
     // (未保存的属性/方法声明可见),未打开文件照旧磁盘补载。
     const content = readSharedFileSnapshot(filePath)?.content ?? null;
     if (!content) {
-      this.localCache.set(cacheKey, null);
+      // 无内容(读盘失败):仅在身份在探时记账 null——身份漂移后当轮重试
+      if (identityToken !== null) {
+        this.localCache.set(cacheKey, {
+          identitySet: new Map([[entryKey, identityToken]]),
+          value: null
+        });
+      }
       return null;
     }
 
     try {
       const parsed = parseLocalDefinition(content, category, name, filePath);
-      this.localCache.set(cacheKey, parsed);
+      if (identityToken !== null) {
+        this.localCache.set(cacheKey, {
+          identitySet: new Map([[entryKey, identityToken]]),
+          value: parsed
+        });
+      }
       return parsed;
     } catch {
-      this.localCache.set(cacheKey, null);
+      if (identityToken !== null) {
+        this.localCache.set(cacheKey, {
+          identitySet: new Map([[entryKey, identityToken]]),
+          value: null
+        });
+      }
       return null;
     }
   }
@@ -217,15 +298,23 @@ export class DefinitionSemanticsLoader {
     allowComponents = true
   ): ResolvedDefinitionSemantics | null {
     const cacheKey = `${buildCacheKey(category, name)}::${allowComponents ? 'components' : 'plain'}`;
-    if (this.resolvedCache.has(cacheKey)) {
-      return this.resolvedCache.get(cacheKey) || null;
+    // RUST-003:解析消费集(入口+父/接口/组件链)身份全量重探——visited
+    // 由解析链逐文件登记,是完整消费集;身份漂移即重解析。
+    const cached = this.resolvedCache.get(cacheKey);
+    if (cached && this.identitySetMatches(cached.identitySet)) {
+      return cached.value;
     }
 
-    const resolved = this.loadResolvedInternal(name, category, {
+    const context: ResolutionContext = {
       allowComponents,
-      visited: new Set<string>()
-    });
-    this.resolvedCache.set(cacheKey, resolved);
+      visited: new Set<string>(),
+      consumed: new Set<string>()
+    };
+    const resolved = this.loadResolvedInternal(name, category, context);
+    const identitySet = this.identitySetFromVisited(context.consumed);
+    if (identitySet !== null) {
+      this.resolvedCache.set(cacheKey, { identitySet, value: resolved });
+    }
     return resolved;
   }
 
@@ -241,11 +330,25 @@ export class DefinitionSemanticsLoader {
     allowComponents = true
   ): ResolvedDefinitionSemantics | null {
     const cacheKey = `at:${normalizeLookupPath(defPath)}::${buildCacheKey(category, name)}::${allowComponents ? 'components' : 'plain'}`;
-    if (this.resolvedCache.has(cacheKey)) {
-      return this.resolvedCache.get(cacheKey) || null;
+    // RUST-003:同名字入口——消费集(入口文件+链内父/接口)身份全量重探。
+    const cached = this.resolvedCache.get(cacheKey);
+    if (cached && this.identitySetMatches(cached.identitySet)) {
+      return cached.value;
     }
-    const resolved = this.loadResolvedAtInternal(defPath, name, category, allowComponents);
-    this.resolvedCache.set(cacheKey, resolved);
+    const context: ResolutionContext = {
+      allowComponents,
+      visited: new Set<string>(),
+      consumed: new Set<string>(),
+      // IDE-IDX-002:精确路径入口的起点根——父/接口按名回解先本根(旧内部
+      // 兜底建上下文时携带;恒传 context 后必须在这里补齐,否则双根同名父
+      // 回解退化为逐根首命中,A/B 同名定义串根)
+      originRoot: this.originRootOf(defPath)
+    };
+    const resolved = this.loadResolvedAtInternal(defPath, name, category, allowComponents, context);
+    const identitySet = this.identitySetFromVisited(context.consumed);
+    if (identitySet !== null) {
+      this.resolvedCache.set(cacheKey, { identitySet, value: resolved });
+    }
     return resolved;
   }
 
@@ -253,7 +356,8 @@ export class DefinitionSemanticsLoader {
     defPath: string,
     name: string,
     category: DefinitionSemanticCategory,
-    allowComponents: boolean
+    allowComponents: boolean,
+    context?: ResolutionContext
   ): ResolvedDefinitionSemantics | null {
     // IDE-SNP-002:精确路径入口同样走共享快照(打开文档缓冲区优先)。
     const content = readSharedFileSnapshot(defPath)?.content ?? null;
@@ -262,9 +366,10 @@ export class DefinitionSemanticsLoader {
     }
     try {
       const local = parseLocalDefinition(content, category, name, defPath);
-      return this.resolveSemanticsFromLocal(local, {
+      return this.resolveSemanticsFromLocal(local, context ?? {
         allowComponents,
         visited: new Set<string>(),
+        consumed: new Set<string>(),
         originRoot: this.originRootOf(defPath)
       });
     } catch {
@@ -314,6 +419,7 @@ export class DefinitionSemanticsLoader {
     }
 
     context.visited.add(visitKey);
+    context.consumed.add(visitKey);
     try {
       const inheritanceGroups: DefinitionInheritanceGroup[] = [];
       const effectivePropertyMap = new Map<string, DefinitionProperty>();
@@ -351,6 +457,7 @@ export class DefinitionSemanticsLoader {
             resolved: this.loadResolvedInternal(component.typeName, 'component', {
               allowComponents: false,
               visited: context.visited,
+          consumed: context.consumed,
               originRoot: context.originRoot
             }),
             source: createSource('local')
@@ -363,6 +470,7 @@ export class DefinitionSemanticsLoader {
         const interfaceResolved = this.loadResolvedInternal(interfaceRef.name, 'interface', {
           allowComponents: interfaceAllowComponents,
           visited: context.visited,
+          consumed: context.consumed,
           originRoot: context.originRoot
         });
         if (!interfaceResolved) {
@@ -447,6 +555,7 @@ export class DefinitionSemanticsLoader {
         const parentResolved = this.loadResolvedInternal(local.parentName, parentCategory, {
           allowComponents: context.allowComponents,
           visited: context.visited,
+          consumed: context.consumed,
           originRoot: context.originRoot
         });
 

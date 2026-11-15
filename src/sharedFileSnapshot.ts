@@ -106,6 +106,36 @@ export function collectOpenDocumentTexts(
 }
 
 /**
+ * RUST-003:轻量身份探针——只取 {source,version} 身份对,不读文件内容。
+ * 打开文档=document:version(缓冲区编辑序号,零 IO);未打开=disk:mtimeMs
+ * (一次 stat);双侧皆无(未打开且 stat 失败)返回 null。身份口径与
+ * readSharedFileSnapshot 完全同源(同一 deps/归一键)——语义 loader 缓存
+ * 用它做键内身份:身份漂移即重解析,不需要失效调用也结构性地吃不到旧值。
+ */
+export function readSharedFileSnapshotIdentity(
+  fsPath: string,
+  deps: SharedFileSnapshotDeps = defaultDeps
+): SharedFileVersionRef | null {
+  const identity = normalizeFileIdentity(fsPath);
+  for (const document of deps.listOpenDocuments()) {
+    if (normalizeDocumentKey(document.uri) !== identity) {
+      continue;
+    }
+    return {
+      source: 'document',
+      version: typeof document.version === 'number' && Number.isFinite(document.version)
+        ? document.version
+        : undefined
+    };
+  }
+  const stat = deps.statDiskFile(fsPath);
+  if (stat === null) {
+    return null;
+  }
+  return { source: 'disk', version: stat.mtimeMs };
+}
+
+/**
  * 读共享文件快照:打开文档优先(缓冲区全文+编辑序号),未打开文件磁盘补载
  * (utf8 文本+mtimeMs),双侧皆无返回 null。读取不打开任何文档。
  */
