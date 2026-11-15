@@ -25,6 +25,7 @@
 pub mod golden;
 pub mod invalidation;
 pub mod journal;
+pub mod lane;
 pub mod model;
 pub mod pool;
 pub mod scheduler;
@@ -33,6 +34,7 @@ pub mod stress;
 
 pub use invalidation::{plan_dependency_tasks, CallReverseIndex, InvalidationGraph};
 pub use journal::{load_journal, write_journal, RecoveryReport, TaskRecord};
+pub use lane::{LaneBudget, LaneBudgetError, LaneGate, TaskLane};
 pub use model::{SchedulerMetrics, SchedulerStatus, TaskKind, TaskState};
 pub use pool::{PoolBudget, PoolBudgetError, WorkerPoolGate};
 pub use scheduler::{
