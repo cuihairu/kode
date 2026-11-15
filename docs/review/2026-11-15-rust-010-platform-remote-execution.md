@@ -23,3 +23,10 @@
 ## 4. 门禁
 
 activationEvents+platformPackageSet+npmPackage+bundleLoadSmoke 四契约文件 26 例绿(package.json 触面全量);`tsc` RC=0;`eslint` RC=0;prove-red 闭环。
+
+## 5. RUST-059 追加面(2026-11-15):web/虚拟工作区显式拒绝
+
+- package.json 新增 `"capabilities": { "virtualWorkspaces": false }`:本扩展需要真实文件系统(bin/ 二进制 fs.statSync 发现、workspace 磁盘路径、子进程 spawn),浏览器宿主物理不可执行;声明后 VS Code 在虚拟工作区(vscode.dev/github.dev 直接开仓)显式停用,而非静默半残。
+- 无 `browser` 字段=非 web 扩展,市场不在 web 环境投放(「不假装支持本地 native」)。
+- 「连接远端 Core」路径由 §2 的 `extensionKind: ['workspace']` 承载:Remote SSH/WSL 从 web 客户端进入时远端是真 Node 宿主,不受 virtualWorkspaces 影响——扩展与 Core 都在远端机,浏览器只是 UI。
+- 契约钉:tests/activationEvents.test.ts 新例钉 `capabilities.virtualWorkspaces === false` 且无 `browser`;prove-red=摘 capabilities 字段→钉红→cp/cmp 还原复绿。

@@ -12,6 +12,7 @@
 ## 账本现状总览（2026-11-14 功能域重整）
 
 - 全账 1563 条（已勾 1173 / 未勾 390），与重整前一致；本次核对零取消勾选、零删除，仅结构重整与编号迁移。
+- 2026-11-15 复核：全账 1564 条（已勾 1259 / 未勾 305）——较重整时点 +1 新登记（G2-LANG-001，2026-11-14 G2 文档审计新增）、86 项新勾（SEM −22 / FLOW −29 / HOT −2 / RUST −33），零取消勾选、零删除；下表已按本时点更新。
 - 账本按功能域分节：七个 Active 域（SEM/FLOW/HOT/RUST/EXEC/DIST/QA）承载全部未勾条目；全部已勾历史分节整节搬入尾部 Archive（编号为旧制，不改不引）。
 - 编号规则：域内条目按原账本出现顺序重编为 `<域>-NNN`，旧编号以（旧 X）随行保留一次；「进行中：」注记原样保留。
 - Kode 2.0 Rust Core 账本已并入 RUST 域（2026-11-13 自 docs/kode2/KODE_2_COMPLETE_TODO.md 合并，该文件已不存在）；合并核对结论见下节。
@@ -19,10 +20,10 @@
 
 | 域 | 名称 | 未勾 | 已勾 |
 |---|---|---|---|
-| SEM | KBEngine 语义分析（KSEM 族：cellData / 序列化 / 配置 / 共享数据） | 23 | 24 |
-| FLOW | 进程流转与调用树（KFLOW 族） | 29 | 0 |
-| HOT | 热更新（Demo 双通道与 Python 3.7.3 联验） | 2 | 5 |
-| RUST | Kode 2.0 Rust Core 高性能重构账本（自 docs/kode2/KODE_2_COMPLETE_TODO.md 合并，2026-11-13） | 328 | 121 |
+| SEM | KBEngine 语义分析（KSEM 族：cellData / 序列化 / 配置 / 共享数据） | 1 | 46 |
+| FLOW | 进程流转与调用树（KFLOW 族） | 0 | 29 |
+| HOT | 热更新（Demo 双通道与 Python 3.7.3 联验） | 0 | 7 |
+| RUST | Kode 2.0 Rust Core 高性能重构账本（自 docs/kode2/KODE_2_COMPLETE_TODO.md 合并，2026-11-13） | 295 | 154 |
 | EXEC | 后台执行与调试（Python 3.7.3 调试工具链） | 1 | 7 |
 | DIST | 分发与平台包（kode-mcp 上 npm） | 1 | 6 |
 | QA | 验收与文档交付（KSEM-QA） | 6 | 0 |
@@ -293,7 +294,7 @@
 - [x] RUST-056 （旧 BUILD-007） 对多平台目标构建 x64/arm64；单独核查 Windows path/casing 和 macOS 签名/隔离。（2026-11-15 证据裁定收口:**构建面已满足**——platform-vsix.yml 六目标矩阵全在**真原生 runner**上构建(linux-x64 musl@ubuntu-22.04/linux-arm64 musl@ubuntu-24.04-arm/win32-x64 msvc@windows-2025/win32-arm64 msvc@windows-11-arm/darwin-x64@macos-15-intel/darwin-arm64@macos-15),非交叉编译;每平台跑 `cargo test --locked --target`(--lib)+kode-kbengine cli_acceptance+kode-server windows_document_uri(跨目标逐平台)+`scripts/platform-vsix.mjs`(三二进制 kode-server/kode-kbengine/kode-mcp + smokeBinaries 真二进制 RPC 冒烟 initialize/initialized/didOpen/definition)再上传;nightly.yml release 段 verify-platform-set.mjs 验 7 包(6 平台+pure-ts)+SHA256SUMS。**Windows path/casing 核查面已覆盖**:windows_document_uri.rs 每平台跑+TS 侧 win 往返记录(docs/perf/2026-11-06/08)。**macOS 签名/隔离=如实缺口**:全管线无 codesign/notarize 步骤,签名需 Apple 开发者证书=用户侧资产(agent 不可代置,登记待用户提供);本批交付=两 README(en/zh)每日构建表加 macOS 未签名说明+xattr 移除隔离属性的用户解法(`xattr -dr com.apple.quarantine ~/.vscode/extensions/cuihairu.kode-kbengine-*/`),pure-ts 包无二进制不受影响）
 - [x] RUST-057 （旧 BUILD-008） VSIX 拆分 target-specific 原生包与统一扩展包的策略，明确 platform fallback。（2026-11-15 证据裁定收口:**拆分策略已在产线**——`scripts/vsix-staging.mjs` 临时目录 staging(不碰工作区 manifest,不扫 worktree),平台包携 `bin/`(三二进制+manifest.json target/rustTarget/version/commit/文件 SHA256)且 vsce `--target <platform>`(安装器级平台强制,错平台装不进);pure-ts 包**删 bin/**+省略 --target(通用)+**把 staged package.json 的 `kbengine.core.backend` 默认值改为 'ts'**(=pure-ts 平台 fallback 在打包面钉死,同一扩展 ID 互替安装,用户显式 backend 配置优先于包默认);验证面 verify-platform-vsix.mjs 开 ZIP 钉平台标识/版本/commit/可执行位/SHA256+解出二进制原生跑 LSP 全链冒烟+防 target/crates/plugins 泄漏,verify-platform-set.mjs 7 包全集+SHA256SUMS 一包失败不发布;策略文档=docs/review/2026-11-08-nightly-platform-packaging.md(含 7 包表/发现序/pure-ts 不自下载不编译 Rust/纯 TS 不保证 Rust 独有命令)。**运行时 platform fallback 链已明确且测试钉**:`discoverNativeBinary` bin/→target/debug→target/release(win32 加 .exe)(tests/nativeBinary.test.ts 三平台钉 bin 优先)→发现落空=gate notice+回落 ts(kodeCoreGate.ts:280)→rust 进程 spawn/请求失败=serveInRust 逐请求回 TS fallback+noticeOnce+spawn 重试冷却(kodeCoreGate.ts:380-396),Rust 失败不误伤服务;本批零生产改动=纯证据对账勾行）
 - [x] RUST-058 （旧 BUILD-009） VS Code Remote：在 extension host 所在机器选择对应平台 Core，勿错误在 UI 本地启动。（2026-11-15 证据裁定收口(RUST-010 Remote 轴已审计修+本轴复核):**执行位置声明面**=package.json 显式 `"extensionKind": ["workspace"]`(RUST-010 收口,此前仅靠 VS Code 1.74+ 缺省)——Remote SSH/WSL/Containers 窗口扩展常驻工作区(远端)宿主,UI 宿主零逻辑,子进程 spawn(child_process)落在 extension host 同机=Core 永远在 extension host 所在机器起,不存在 UI 本地起 Core 的路径;**平台选择面**=discoverNativeBinary 用 extension host 进程的 process.platform(+win32 .exe)(src/backend/nativeBinary.ts:5 注释明示「including SSH/WSL」),bin/→target/debug→target/release 序(tests/nativeBinary.test.ts 三平台钉),包内 bin 与平台一致由打包面保证(verify-platform-vsix 开 ZIP 钉 manifest target/权限/SHA256,vsce --target 安装器级错平台拒装);**远端无二进制兜底**=发现落空 gate notice+回落 ts,Rust 失败逐请求 TS fallback(identity 报告 IDE-MET-001 分列 host: remote/local+side=workspace 供用户对账执行位置);本批零生产改动=纯证据对账勾行,详见 docs/review/2026-11-15-rust-010-platform-remote-execution.md §2)
-- [ ] RUST-059 （旧 BUILD-010） Web extension：检测环境后声明有限功能或连接远端 Core，不假装支持本地 native。
+- [x] RUST-059 （旧 BUILD-010） Web extension：检测环境后声明有限功能或连接远端 Core，不假装支持本地 native。（2026-11-15 收口,生产面=package.json 显式 `"capabilities": { "virtualWorkspaces": false }`——本扩展需要真实文件系统(bin/ 二进制 fs.statSync 发现、workspace 磁盘路径、子进程 spawn),浏览器宿主物理不可执行,声明后 VS Code 在虚拟工作区(vscode.dev/github.dev 直接开仓)显式停用而非静默半残;无 `browser` 字段=非 web 扩展,市场不在 web 环境投放=「不假装支持本地 native」;「连接远端 Core」路径已由 extensionKind:['workspace'] 承载(RUST-010/058):Remote SSH/WSL 从 web 客户端进入时远端是真 Node 宿主、不受 virtualWorkspaces 影响,扩展+Core 都在远端机;契约钉=tests/activationEvents.test.ts 新例钉 capabilities.virtualWorkspaces===false 且无 browser;prove-red=摘 capabilities 字段→钉红→cp/cmp 还原复绿;门禁 lint 0/tsc 0/unit 831 文件 10214+8skip/xvfb demo 25 RC=0,manifest 契约族 activationEvents 5/platformPackageSet/npmPackage/bundleLoadSmoke 22 全绿）
 - [ ] RUST-060 （旧 BUILD-011） 发布产物 SHA256/来源审计/SBOM/license scanning，避免可执行文件被替换。
 - [ ] RUST-061 （旧 BUILD-012） 构建缓存、依赖离线策略、可复现版本、CI 并行矩阵。
 - [ ] RUST-062 （旧 BUILD-013） Crash 报告只含脱敏本地 diagnostics；不默认上传源码、路径或日志。
