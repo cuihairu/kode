@@ -37,6 +37,8 @@ export function run(): Promise<void> {
             ? file === 'freshFileNavigation.test.js'
             : suite === 'storm'
               ? file === 'stormRecovery.test.js'
+          : suite === 'pubbench'
+            ? file === 'publishBench.test.js'
           : suite === 'vsix'
             ? file === 'vsixSmoke.test.js'
             : suite === 'history'

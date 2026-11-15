@@ -1,0 +1,8 @@
+PUB-METRIC open.publish(any) n=1 ms=845 waitMs=0 message=self.cell may be None (the engine returns None directly once
+PUB-SAMPLE edit.publish round=1 method=mB waitMs=25
+PUB-SAMPLE edit.publish round=2 method=mA waitMs=26
+PUB-SAMPLE edit.publish round=3 method=mB waitMs=71
+PUB-SAMPLE edit.publish round=4 method=mA waitMs=25
+PUB-SAMPLE edit.publish round=5 method=mB waitMs=26
+PUB-SAMPLE edit.publish round=6 method=mA waitMs=25
+PUB-METRIC edit.publish n=6 p50=25ms max=71ms samples=25/26/71/25/26/25

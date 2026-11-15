@@ -96,6 +96,11 @@ async function main(): Promise<void> {
   // KSEM-CELL-15:cellData 全链(未保存 def 编辑 → 补全/F12/inlay/hover/诊断
   // 五面联动;真实 Rust 门)。kode-server 二进制缺席时整模式自动降级。
   const celldataMode = process.argv.includes('--celldata');
+  // RUST-022 publish 端到端:诊断从分析到编辑器可见的全链时延(PERF-005 记
+  // Untested 的 publish-to-editor 段),夹具=storm 同形最小工作区,套件测
+  // open→首诊断可见与 edit→新版本诊断可见;KODE_ACTIVATE_PROFILE_OUT 可由
+  // 调用方同轮注入(activate 同步体分段表同轮采两段证据)。
+  const pubBenchMode = process.argv.includes('--pubbench');
   let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
   let dbgLaunchArgs: string[] = [];
@@ -944,6 +949,45 @@ async function main(): Promise<void> {
     }, null, 2));
     process.env.KODE_ELECTRON_SUITE = 'storm';
     process.env.KODE_STORM_ROOT = temporaryRoot;
+    process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  } else if (pubBenchMode) {
+    // RUST-022 publish 端到端:夹具与 storm 同形(def BaseMethods 声明 mA/mB、
+    // python 经 self.cell 调用必出「段错配」诊断),套件交替改写被调方法名
+    // 采 edit→新版本诊断可见样本。实体更名与 storm 互不相扰。
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-pubbench-'));
+    workspacePath = temporaryRoot;
+    fs.mkdirSync(path.join(temporaryRoot, 'scripts', 'entity_defs'), { recursive: true });
+    fs.mkdirSync(path.join(temporaryRoot, 'scripts', 'base'), { recursive: true });
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'entities.xml'), [
+      '<root>',
+      '\t<PublishBenchEntity hasBase="true"></PublishBenchEntity>',
+      '</root>'
+    ].join('\n'));
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'entity_defs', 'PublishBenchEntity.def'), [
+      '<root>',
+      '    <BaseMethods>',
+      '        <mA>',
+      '            <Arg>UINT8</Arg>',
+      '        </mA>',
+      '        <mB>',
+      '            <Arg>UINT8</Arg>',
+      '        </mB>',
+      '    </BaseMethods>',
+      '</root>'
+    ].join('\n'));
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'base', 'PublishBenchEntity.py'), [
+      'class PublishBenchEntity:',
+      '    def tick(self):',
+      '        self.cell.mA()'
+    ].join('\n'));
+    fs.mkdirSync(path.join(temporaryRoot, '.vscode'), { recursive: true });
+    fs.writeFileSync(path.join(temporaryRoot, '.vscode/settings.json'), JSON.stringify({
+      'kbengine.showFinalConfigOnOpen': false,
+      'kbengine.python.stubExport': false,
+      'kbengine.python.extraPathsSync': false
+    }, null, 2));
+    process.env.KODE_ELECTRON_SUITE = 'pubbench';
+    process.env.KODE_PUBBENCH_ROOT = temporaryRoot;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
   }
 

@@ -3,6 +3,7 @@ import { getExternalScanRoots, resetScanRootCache } from './scanRoots';
 import { bumpRootConfigGeneration } from './rootConfigGeneration';
 import { disposePythonParserWorker, getPythonParserWorkerGauge } from './backend/pythonParserWorkerHost';
 import { disposeDefParserWorker } from './backend/defParserWorkerHost';
+import { flushActivateProfile, markActivateStage } from './backend/activationProfile';
 
 
 
@@ -152,6 +153,11 @@ import { getFileReadTotals } from './backend/fileReadMetrics';
  */
 
 export function activate(context: vscode.ExtensionContext) {
+  // RUST-022:activate() 同步体分段计时常驻埋点——markActivateStage 落标签、
+  // 返回前 flushActivateProfile 落盘(step/total 逐段)。仅在调用方设置了
+  // KODE_ACTIVATE_PROFILE_OUT(输出文件路径)时有行为,未设置时全部调用
+  // 零开销直通(常态门禁与生产零影响)。段名与下方装配层序一一对应。
+  markActivateStage('enter');
   // SRC-001 L0 基础设施层(KODE-ARCH 纯移动):启动占位视图、引擎 API 目录、
   // 只读虚拟文档 provider、日志开关、kode core 门、文档选择器与文档形态谓词
   // 装配在 src/activate/infrastructure.ts,装配顺序由本调用点保持(activate
@@ -171,6 +177,7 @@ export function activate(context: vscode.ExtensionContext) {
     isProcessTopologyManifestDocument
   } = activateInfrastructure({ context });
   context.subscriptions.push(...infrastructureDisposables);
+  markActivateStage('l0-infrastructure');
 
   // PR1 性能观测:请求级打点只看「结果是否为空」定 ok/miss(vscode Hover /
   // Location / CompletionItem[] 约定),结果对象原样透传,不改任何语义。
@@ -210,6 +217,7 @@ export function activate(context: vscode.ExtensionContext) {
     dataDictIndex
   } = activateCoreServices({ context });
   context.subscriptions.push(...coreServicesDisposables);
+  markActivateStage('l1-core-services');
 
 
   // SRC-001 L2 语言服务层(KODE-ARCH 纯移动):20+ 语言 provider 装配与
@@ -241,6 +249,7 @@ export function activate(context: vscode.ExtensionContext) {
     pythonDocumentSelector,
     emptyResultStatus
   });
+  markActivateStage('l2-language-services');
 
   // Python 类索引编辑事件合并(IDE-SNP 线):三件状态被 didChange 事件面
   // 写值(+=/赋值),留组合根作用域;pythonIndexWatchers 闭包私有,随 L2 模块。
@@ -311,6 +320,7 @@ export function activate(context: vscode.ExtensionContext) {
     isDefDocument,
     isPythonDocument
   });
+  markActivateStage('l3-diagnostics');
 
 
   // IDE-NAV-013:未知类型诊断的 QuickFix 替换候选(只出已注册类型的近似替换)
@@ -955,6 +965,7 @@ export function activate(context: vscode.ExtensionContext) {
   // 句柄消费(subscriptions push 原文随迁,销毁所有权不变)。
   const { serverManager, telnetService, telnetWebView, debugConfigManager } =
     activateServerControls({ context });
+  markActivateStage('l4-server-controls');
 
   // IDE-TSK-001 构建任务描述预览:活动 profile → 脚本编译检查任务的
   // command/args/cwd/env 四要素逐字预览(所见即所跑;TSK-002 起任务
@@ -1328,6 +1339,7 @@ export function activate(context: vscode.ExtensionContext) {
   // activate 期 watcher 创建次序契约不变;watcher census 随迁见
   // provider-data-sources §5)。
   activateFinalConfigTreeViews({ context, finalConfigProvider });
+  markActivateStage('l5-views');
 
   // SRC-001 L9:console 层(machined 发现共享链 hub、日志实时 tail、
   // 组件状态面板)迁 activate/console.ts(纯移动,装配顺序由本调用点保持);
@@ -1413,6 +1425,7 @@ export function activate(context: vscode.ExtensionContext) {
     serverManager,
     indexScheduler
   });
+  markActivateStage('l5-tools');
 
   // 默认开启令:激活即出最终配置视图(后台标签,不抢焦点);定位不到
   // defaults(未配 binPath 或引擎目录不在)静默跳过,不弹错。
@@ -1449,6 +1462,11 @@ export function activate(context: vscode.ExtensionContext) {
       outputChannel.dispose();
     }
   });
+
+  // activate 同步体收尾:落盘分段表后进入探针面(装配已全部完成,
+  // 此后只有 activate 返回值构造)。
+  markActivateStage('end');
+  flushActivateProfile();
 
   // P0-4b/4c 审核重开(2026-10-28)验收面:激活返回值即现场探针 API——
   // ①probeHover:请求级 hover 取消路径,走与注册 provider 同一 KBEngineHoverProvider

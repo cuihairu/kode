@@ -344,8 +344,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-14(KSEM-DATA-06):extension.ts 顶部 import +1(spaceDataIndex 开关
   // )、诊断解构 +3、onDidOpen immediate +2、closeWatcher 生命周期 +3(均在其
   // 前)→ 421/518 → 430/529,真位重探;出处随 baseline 锁步。
-  ['src/extension.ts', 430, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 529, 'flushQueued()'],
+  // 2026-11-15(RUST-022):extension.ts 顶部 import +1(activationProfile)、
+  // activate 同步体分段埋点 +10(enter 注释+标记 5、l0/l1/l2/l3 各 1、其余
+  // 段位在后)→ 430/529 → 440/539,真位重探;出处随 baseline 锁步。
+  ['src/extension.ts', 440, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 539, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。

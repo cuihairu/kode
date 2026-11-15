@@ -56,6 +56,23 @@ describe('activationProfile(激活分阶段计时落盘)', () => {
     expect(fs.existsSync(path.join(dir, 'profile.tsv'))).toBe(false);
   });
 
+  it('首标记即 t0:第一段 total=0.00ms,后段 total 单调不减', async () => {
+    vi.stubEnv('KODE_ACTIVATE_PROFILE_OUT', outPath);
+    const mod = await import('../src/backend/activationProfile');
+    mod.markActivateStage('enter');
+    mod.markActivateStage('l0-infrastructure');
+    mod.markActivateStage('end');
+    mod.flushActivateProfile();
+    const rows = fs.readFileSync(outPath, 'utf8').trim().split('\n');
+    expect(rows).toHaveLength(3);
+    // flush 以首标记时间戳为原点(t0)→ 第一行 total=0.00ms;
+    // performance.now 单调 → 后段 total 不减
+    expect(rows[0]).toContain('stage\tenter\tstep=0.00ms\ttotal=0.00ms');
+    const totals = rows.map(row => Number(row.match(/total=([\d.]+)ms/)![1]));
+    expect(totals[1]).toBeGreaterThanOrEqual(totals[0]);
+    expect(totals[2]).toBeGreaterThanOrEqual(totals[1]);
+  });
+
   it('未设环境变量:mark/flush 全直通零副作用', async () => {
     vi.stubEnv('KODE_ACTIVATE_PROFILE_OUT', '');
     const mod = await import('../src/backend/activationProfile');
