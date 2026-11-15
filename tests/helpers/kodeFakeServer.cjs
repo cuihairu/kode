@@ -14,11 +14,14 @@
 //     silentInitialize — initialize 请求永不回包(测 start 端到端预算)
 //     delayRpc=<ms>   — $/kode/rpc 延迟 ms 后回正常结果(测慢队列降级/快路径)
 //     delayInitialize=<ms> — initialize 延迟 ms 后再回包(测慢启动)
+//     echoParams      — RUST-068-W:$ /kode/rpc 原样回显信封 params(含
+//                       spanId;测客户端信封注入),其余顶层请求回
+//                       {method, params} 回显(测非 $ /kode/rpc 不注入)
 'use strict';
 
 const fs = require('fs');
 
-const MODE_TOKENS = ['hangShutdown', 'exitOnShutdown', 'traceCancels', 'failHandshakeAfterCrash', 'silentRpc', 'silentInitialize'];
+const MODE_TOKENS = ['hangShutdown', 'exitOnShutdown', 'traceCancels', 'failHandshakeAfterCrash', 'silentRpc', 'silentInitialize', 'echoParams'];
 const args = process.argv.slice(2);
 const crashMethod = args.find(a => !MODE_TOKENS.includes(a) && !a.startsWith('markerPath=') && !a.startsWith('delayRpc=') && !a.startsWith('delayInitialize=')) || null;
 const hangShutdown = args.includes('hangShutdown');
@@ -30,6 +33,7 @@ const silentRpc = args.includes('silentRpc');
 const wrongVersion = args.includes('wrongVersion');
 const silentInitialize = args.includes('silentInitialize');
 const delayRpcMs = msArg(args, 'delayRpc=');
+const echoParams = args.includes('echoParams');
 const delayInitializeMs = msArg(args, 'delayInitialize=');
 const markerPath = (args.find(a => a.startsWith('markerPath=')) || '').slice('markerPath='.length) || null;
 
@@ -110,6 +114,10 @@ function handle(msg) {
         // KBUG-TIME 替身:进程存活但目标 RPC 永不回包
         return;
       }
+      if (echoParams) {
+        // RUST-068-W 替身:原样回显信封(spanId 在不在、内层 params 动没动)
+        return reply(msg.id, { envelope: msg.params });
+      }
       if (delayRpcMs !== null) {
         const rpcId = msg.id;
         setTimeout(() => {
@@ -181,6 +189,10 @@ function handle(msg) {
     case 'kode/cancels':
       return reply(msg.id, { ids: [...cancelTrace].sort((a, b) => a - b) });
     default:
+      if (echoParams && isRequest) {
+        // RUST-068-W 替身:顶层非 $/kode/rpc 请求回显 method+params
+        return reply(msg.id, { method: msg.method, params: msg.params });
+      }
       if (isRequest) {
         return replyError(msg.id, -32601, `method not found: ${msg.method}`);
       }

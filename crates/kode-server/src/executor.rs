@@ -79,6 +79,9 @@ pub struct Job {
     pub method: String,
     pub params: Value,
     pub lane: PoolLane,
+    /// RUST-068-W:跨任务追踪 id(TS 请求入口生成,信封级透传;缺省 None
+    /// =无 span 的纯服务端发起调用)。日志面只印 span 不印 params(脱敏)。
+    pub span: Option<String>,
 }
 
 /// 执行终态:Done=成功回值 / Failed=handler Err(映射 -32602 或 -32601) /
@@ -95,6 +98,8 @@ pub struct JobOutcome {
     pub id: RequestId,
     pub lane: PoolLane,
     pub status: JobStatus,
+    /// RUST-068-W:回包侧日志携带同一 span(与 Job 同源透传)。
+    pub span: Option<String>,
 }
 
 /// 终态 → LSP 响应映射:与 server.rs `handle_rpc` 同口径(Err 文案
@@ -133,6 +138,9 @@ struct ExecState {
     background: VecDeque<Job>,
     /// 取消时在途(或刚弹出未启动)的 job id;执行前/后按此丢弃。
     running_cancelled: HashSet<RequestId>,
+    /// RUST-068-W:在途/排队 job 的 span 表(submit 插入,终态摘除)——
+    /// 取消/回包日志按 id 回捞 span;容量=未决 job 数,天然有界。
+    spans: std::collections::HashMap<RequestId, String>,
     draining: bool,
 }
 
@@ -172,6 +180,7 @@ impl PoolExecutor {
                 interactive: VecDeque::new(),
                 background: VecDeque::new(),
                 running_cancelled: HashSet::new(),
+                spans: std::collections::HashMap::new(),
                 draining: false,
             }),
             signal: Condvar::new(),
@@ -206,6 +215,9 @@ impl PoolExecutor {
         if state.draining {
             return;
         }
+        if let Some(span) = &job.span {
+            state.spans.insert(job.id.clone(), span.clone());
+        }
         match job.lane {
             PoolLane::Interactive => state.interactive.push_back(job),
             PoolLane::Background => state.background.push_back(job),
@@ -217,7 +229,7 @@ impl PoolExecutor {
     /// 标记,执行完成后容量照常释放、结果丢弃回 -32800。未提交的 id 登记
     /// 无害(弹出时按取消短路,不执行 handler)。
     pub fn cancel(&self, id: &RequestId) {
-        let removed = {
+        let (removed, span) = {
             let mut state = self.shared.state.lock().expect("pool state lock");
             let removed = remove_queued(&mut state.interactive, id)
                 .or_else(|| remove_queued(&mut state.background, id));
@@ -228,15 +240,29 @@ impl PoolExecutor {
             } else {
                 state.running_cancelled.insert(id.clone());
             }
-            removed
+            // RUST-068-W:排队摘除与在途丢弃都按 id 回捞 span(表内即有)。
+            let span = state.spans.remove(id);
+            (removed, span)
         };
+        log_cancel(id, span.as_deref());
         if let Some(job) = removed {
             let _ = self.shared.done_tx.send(JobOutcome {
                 id: id.clone(),
                 lane: job.lane,
                 status: JobStatus::Cancelled,
+                span,
             });
         }
+    }
+
+    /// 未决 job 的 span 表深度(测试/健康对账口;终态即摘除,天然有界)。
+    pub fn outstanding_spans_for_tests(&self) -> usize {
+        self.shared
+            .state
+            .lock()
+            .expect("pool state lock")
+            .spans
+            .len()
     }
 
     /// 停止受理新 job,worker 排空已受理队列后退出(受理即欠回包,不弃置),
@@ -258,6 +284,14 @@ impl Drop for PoolExecutor {
     fn drop(&mut self) {
         self.shutdown();
     }
+}
+
+/// RUST-068-W:取消留痕(span 缺省印 `-`;只印 id/span,不印 params——脱敏)。
+fn log_cancel(id: &RequestId, span: Option<&str>) {
+    eprintln!(
+        "[kode-server] request {id} cancelled (pool span={})",
+        span.unwrap_or("-")
+    );
 }
 
 /// 从队列摘除目标 id 的排队 job(取消路径;容量未占,无需记账释放)。
@@ -312,6 +346,13 @@ fn worker_loop(shared: Arc<ExecShared>) {
                     .expect("pool state lock poisoned");
             }
         };
+        // RUST-068-W:worker 侧起跑留痕(跨任务追踪面;只印 id/method/span)。
+        eprintln!(
+            "[kode-server] pool job {} {} start (span={})",
+            job.id,
+            job.method,
+            job.span.as_deref().unwrap_or("-")
+        );
         // 弹出前已取消(排队摘除窗口外)的 id:按取消短路,不执行 handler。
         let cancelled_before = {
             let mut state = shared.state.lock().expect("pool state lock");
@@ -347,11 +388,14 @@ fn worker_loop(shared: Arc<ExecShared>) {
             JobStatus::Failed(_) => stats.jobs_failed += 1,
             JobStatus::Cancelled => stats.jobs_cancelled += 1,
         });
+        // span 表随终态摘除(容量=未决 job 数,天然有界)。
+        let span = state.spans.remove(&job.id);
         drop(state);
         let _ = shared.done_tx.send(JobOutcome {
             id: job.id,
             lane: job.lane,
             status: final_status,
+            span,
         });
         // 容量已释放:等待中的后台/交互可以取 job。
         shared.signal.notify_all();
@@ -445,7 +489,55 @@ mod tests {
             method: method.to_string(),
             params: serde_json::json!({ "ticket": id }),
             lane,
+            span: Some(format!("span-{id:04x}")),
         }
+    }
+
+    #[test]
+    fn span_table_tracks_outstanding_jobs_and_drains_on_terminal() {
+        let (executor, rx) = PoolExecutor::spawn(
+            registry_with_test_handlers(),
+            PoolBudget::from_total(2),
+        );
+        executor.submit(job(701, "$/kode/test/blocking", PoolLane::Interactive));
+        wait_started(701);
+        executor.submit(job(702, "$/kode/test/blocking", PoolLane::Interactive));
+        assert_eq!(executor.outstanding_spans_for_tests(), 2, "未决=2");
+        executor.cancel(&RequestId::Number(702));
+        assert_eq!(
+            executor.outstanding_spans_for_tests(),
+            1,
+            "排队取消摘除 span"
+        );
+        release(701);
+        // 通道里先到的可能是 702 的取消回执:按 id 捞 701 的完成回执。
+        let expected_701 = format!("span-{:04x}", 701);
+        let expected_702 = format!("span-{:04x}", 702);
+        let mut cancelled_span: Option<String> = None;
+        let outcome = loop {
+            let o = recv_outcome(&rx);
+            match o.id {
+                RequestId::Number(701) => break o,
+                RequestId::Number(702) => cancelled_span = Some(o.span.expect("702 取消回执带 span")),
+                _ => {}
+            }
+        };
+        assert_eq!(
+            cancelled_span.as_deref(),
+            Some(expected_702.as_str()),
+            "排队取消回执携带同源 span"
+        );
+        assert_eq!(
+            outcome.span.as_deref(),
+            Some(expected_701.as_str()),
+            "回包携带同源 span"
+        );
+        assert_eq!(
+            executor.outstanding_spans_for_tests(),
+            0,
+            "终态后 span 表排空(有界面)"
+        );
+        drop(executor);
     }
 
     fn stats_of(executor: &PoolExecutor) -> PoolStats {

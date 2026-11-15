@@ -58,6 +58,16 @@ impl RpcRegistry {
     }
 }
 
+/// RUST-068-W:信封级 span id(`$/kode/rpc` params 顶层 `spanId` 字符串,
+/// TS 请求入口生成)。缺省/非字符串 = None(纯服务端发起调用无 span)。
+/// 只回捞不校验语义,日志面只印值不印 params(脱敏)。
+pub fn span_id_of(params: Option<&Value>) -> Option<&str> {
+    params
+        .and_then(|p| p.get("spanId"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+}
+
 /// 注册表快照(worker 池的派发依据):字段与 RpcRegistry 同源同形,
 /// 快照后注册表再变化不回流(注册只发生在构造期,无运行期增注册)。
 #[derive(Debug, Default, Clone)]

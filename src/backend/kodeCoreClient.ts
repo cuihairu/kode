@@ -1,4 +1,5 @@
 import { ChildProcess, spawn } from 'child_process';
+import { randomBytes } from 'crypto';
 
 // kode2 Rust Core 统一 transport(BUILD-005 最小版,书 §3/§4/§15 PH1-02):
 // spawn kode-server 二进制 + LSP stdio 帧读写 + initialize 握手 + 请求取消 +
@@ -48,6 +49,8 @@ export interface KodeCoreClientOptions {
   onRestart?: (generation: number) => void;
   /** stderr 诊断行回调(默认丢弃;CORE-016 可观察恢复原因的入口) */
   onStderr?: (line: string) => void;
+  /** RUST-068-W 客户端追踪行回调(发送/响应/取消,带 span;默认丢弃) */
+  onTrace?: (line: string) => void;
 }
 
 export interface KodeCoreInitializeParams {
@@ -112,6 +115,8 @@ interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   method: string;
+  /** RUST-068-W:请求 span(信封级透传 + 追踪行/取消行回捞) */
+  span: string;
 }
 
 /** request() 返回值:普通 promise + cancel() 句柄(CORE-007 客户端入口) */
@@ -128,6 +133,11 @@ function rejectedRequest(error: KodeCoreTransportError): KodeCoreRequest {
 
 /** 帧头:Content-Length 值 */
 const HEADER_PATTERN = /^Content-Length: (\d+)\r\n\r\n/;
+
+/** RUST-068-W:请求 span 生成(8 字节随机 hex;跨进程唯一,无语义不含敏感面) */
+function newSpanId(): string {
+  return randomBytes(8).toString('hex');
+}
 
 export class KodeCoreClient {
   private child: ChildProcess | null = null;
@@ -246,6 +256,18 @@ export class KodeCoreClient {
       );
     }
     const id = this.nextId++;
+    // RUST-068-W:信封级 span(`$/kode/rpc` 顶层 spanId;浅拷贝不碰调用方
+    // 对象,内层 params 原样——worker handler 契约零感知)。其余 method 不注
+    // 入(LSP 标准面零污染;追踪行仍带 span 供端到端对账)。
+    const span = newSpanId();
+    let wireParams = params;
+    if (method === '$/kode/rpc') {
+      wireParams =
+        params !== null && typeof params === 'object' && !Array.isArray(params)
+          ? { ...(params as Record<string, unknown>), spanId: span }
+          : params;
+    }
+    this.trace(`request ${id} ${method} send (span=${span})`);
     const promise = new Promise<unknown>((resolve, reject) => {
       // 硬超时:cancel 之后服务器仍不回(挂死)时兜底拒绝
       let hardTimer: NodeJS.Timeout | undefined;
@@ -280,8 +302,9 @@ export class KodeCoreClient {
           reject(error);
         },
         method,
+        span,
       });
-      this.sendRaw({ jsonrpc: '2.0', id, method, params });
+      this.sendRaw({ jsonrpc: '2.0', id, method, params: wireParams });
     }) as KodeCoreRequest;
     // 取消句柄挂在 promise 上:调用方无需知道内部数字 id
     promise.cancel = () => this.cancelRequest(id);
@@ -298,6 +321,8 @@ export class KodeCoreClient {
 
   /** 取消进行中的请求(CORE-007 最小版:$ /cancelRequest 通知) */
   cancelRequest(id: number): void {
+    const span = this.pending.get(id)?.span;
+    this.trace(`request ${id} cancel sent (span=${span ?? '-'})`);
     this.notify('$/cancelRequest', { id });
   }
 
@@ -417,8 +442,10 @@ export class KodeCoreClient {
   private rawRequest(method: string, params?: unknown): Promise<unknown> {
     // dispose 路径绕过 disposed 检查
     const id = this.nextId++;
+    const span = newSpanId();
+    this.trace(`request ${id} ${method} send (span=${span})`);
     const promise = new Promise<unknown>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, method });
+      this.pending.set(id, { resolve, reject, method, span });
     });
     this.sendRaw({ jsonrpc: '2.0', id, method, params });
     return promise;
@@ -482,6 +509,10 @@ export class KodeCoreClient {
     }
     this.pending.delete(Number(message.id));
     if (message.error) {
+      // RUST-068-W:错误面留痕(取消/服务错误都带同一 span)。
+      this.trace(
+        `request ${message.id} ${pending.method} failed ${message.error.code} (span=${pending.span})`
+      );
       pending.reject(
         new KodeCoreTransportError(
           `${pending.method} failed (${message.error.code}): ${message.error.message}`,
@@ -489,6 +520,7 @@ export class KodeCoreClient {
         )
       );
     } else {
+      this.trace(`request ${message.id} ${pending.method} done (span=${pending.span})`);
       pending.resolve(message.result);
     }
   }
@@ -499,6 +531,11 @@ export class KodeCoreClient {
         this.recordStderrLine(line);
       }
     }
+  }
+
+  /** RUST-068-W:客户端追踪行(onTrace 回调;默认丢弃) */
+  private trace(line: string): void {
+    this.options.onTrace?.(line);
   }
 
   private recordStderrLine(line: string): void {

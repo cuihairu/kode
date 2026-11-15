@@ -272,4 +272,81 @@ describe('kodeCoreClient transport(fake stdio server)', () => {
     expect(error.name).toBe('KodeCoreTransportError');
     expect(error.code).toBe('BAD_FRAME');
   });
+
+  it('RUST-068-W: $/kode/rpc 信封带 spanId(hex16),内层 params 原样', async () => {
+    const client = tracked(makeClient({ args: [FAKE_SERVER, 'echoParams'] }));
+    await client.start();
+    const result = (await client.request('$/kode/rpc', {
+      method: 'echoInner',
+      params: { lines: ['SECRETPAYLOAD'], queryLine: 1 },
+    })) as {
+      envelope: { method: string; params: Record<string, unknown>; spanId?: unknown };
+    };
+    // 信封顶层新增 spanId;内层 method/params 原样(worker 契约零感知)
+    expect(result.envelope.method).toBe('echoInner');
+    expect(result.envelope.params).toEqual({ lines: ['SECRETPAYLOAD'], queryLine: 1 });
+    expect(result.envelope.spanId).toMatch(/^[0-9a-f]{16}$/);
+    await client.dispose();
+  }, 10_000);
+
+  it('RUST-068-W: 非 $/kode/rpc 顶层请求不注入 spanId(LSP 标准面零污染)', async () => {
+    const client = tracked(makeClient({ args: [FAKE_SERVER, 'echoParams'] }));
+    await client.start();
+    const result = (await client.request('kode/echoTop', { y: 2 })) as {
+      method: string;
+      params: Record<string, unknown>;
+    };
+    expect(result.method).toBe('kode/echoTop');
+    expect(result.params).toEqual({ y: 2 });
+    expect(JSON.stringify(result)).not.toContain('spanId');
+    await client.dispose();
+  }, 10_000);
+
+  it('RUST-068-W: onTrace send/done 同 span,并发请求不串 span,params 不进日志', async () => {
+    const lines: string[] = [];
+    const client = tracked(
+      makeClient({
+        args: [FAKE_SERVER, 'echoParams'],
+        onTrace: line => lines.push(line),
+      })
+    );
+    await client.start();
+    const r1 = client.request('$/kode/rpc', { method: 'm1', params: { tag: 'SECRETPAYLOAD' } });
+    const r2 = client.request('$/kode/rpc', { method: 'm2', params: {} });
+    await Promise.all([r1, r2]);
+    const sendLines = lines.filter(l => l.includes(' $/kode/rpc send '));
+    expect(sendLines).toHaveLength(2);
+    const spans = sendLines.map(l => /\(span=([0-9a-f]{16})\)/.exec(l)?.[1]);
+    expect(spans[0]).toMatch(/^[0-9a-f]{16}$/);
+    expect(spans[1]).toMatch(/^[0-9a-f]{16}$/);
+    expect(spans[0]).not.toBe(spans[1]);
+    // 每个请求的 done 行与其 send 行同 span(跨 send→done 端到端可追踪)
+    for (const span of spans) {
+      expect(lines.some(l => l.includes(` $/kode/rpc done (span=${span})`))).toBe(true);
+    }
+    // 脱敏:params 内容(SECRETPAYLOAD)绝不进追踪行
+    expect(lines.join('\n')).not.toContain('SECRETPAYLOAD');
+    await client.dispose();
+  }, 10_000);
+
+  it('RUST-068-W: 取消请求的追踪行带同请求 span', async () => {
+    const lines: string[] = [];
+    const client = tracked(
+      makeClient({ args: [FAKE_SERVER, 'traceCancels'], onTrace: line => lines.push(line) })
+    );
+    await client.start();
+    const request = client.request('$/kode/wait', { ms: 5000 });
+    await sleep(150); // 等服务器注册 wait
+    request.cancel();
+    await expect(request).rejects.toMatchObject({ code: 'REQUEST_CANCELLED' });
+    const sendLine = lines.find(l => l.includes(' $/kode/wait send '));
+    const cancelLine = lines.find(l => l.includes(' cancel sent '));
+    expect(sendLine).toBeTruthy();
+    expect(cancelLine).toBeTruthy();
+    const sendSpan = /\(span=([0-9a-f]{16})\)/.exec(sendLine ?? '')?.[1];
+    const cancelSpan = /\(span=([0-9a-f-]+)\)/.exec(cancelLine ?? '')?.[1];
+    expect(sendSpan).toMatch(/^[0-9a-f]{16}$/);
+    expect(cancelSpan).toBe(sendSpan);
+    await client.dispose();
+  }, 10_000);
 });

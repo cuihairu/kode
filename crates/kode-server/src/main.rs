@@ -17,9 +17,9 @@ use kode_protocol::{
 };
 use kode_scheduler::PoolBudget;
 use kode_server::executor::{
-    execution_lane, rpc_response_for, ExecutionLane, Job, JobOutcome, PoolExecutor,
+    execution_lane, rpc_response_for, ExecutionLane, Job, JobOutcome, JobStatus, PoolExecutor,
 };
-use kode_server::{cancel_target, handle_message_with_poll, Outgoing, ServerState};
+use kode_server::{cancel_target, handle_message_with_poll, rpc::span_id_of, Outgoing, ServerState};
 
 const READ_CHUNK_BYTES: usize = 8192;
 /// 主循环空闲轮询间隔:退出/取消的最大感知延迟上界。
@@ -141,16 +141,21 @@ fn dispatch_outcome(
                                 .and_then(|p| p.get("params"))
                                 .cloned()
                                 .unwrap_or(serde_json::Value::Null);
+                            // RUST-068-W:信封级 span 透传进 job(跨任务追踪)。
+                            let span =
+                                span_id_of(request.params.as_ref()).map(str::to_string);
                             // CORE-003:request_id 贯穿——池路径同日志口径。
                             log(&format!(
-                                "request {} dispatched (pool: {inner_method})",
-                                request.id
+                                "request {} dispatched (pool: {inner_method} span={})",
+                                request.id,
+                                span.as_deref().unwrap_or("-")
                             ));
                             executor.submit(Job {
                                 id: request.id.clone(),
                                 method: inner_method,
                                 params: inner_params,
                                 lane,
+                                span,
                             });
                             return;
                         }
@@ -194,6 +199,17 @@ fn spawn_pool_drainer(pool_rx: Receiver<JobOutcome>) -> std::thread::JoinHandle<
         .name("kode-pool-drain".to_string())
         .spawn(move || {
             while let Ok(outcome) = pool_rx.recv() {
+                // RUST-068-W:回包侧留痕(span 与 Job 同源;状态名即终态面)。
+                let status_name = match outcome.status {
+                    JobStatus::Done(_) => "done",
+                    JobStatus::Failed(_) => "failed",
+                    JobStatus::Cancelled => "cancelled",
+                };
+                eprintln!(
+                    "[kode-server] pool response {} {status_name} (span={})",
+                    outcome.id,
+                    outcome.span.as_deref().unwrap_or("-")
+                );
                 let response = rpc_response_for(outcome.id, outcome.status);
                 write_outgoing(&[Outgoing::Response(response)]);
             }
