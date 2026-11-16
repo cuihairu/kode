@@ -10,7 +10,8 @@ import {
   planPythonExtraPaths,
   pythonScriptRootCandidates,
   syncPythonExtraPaths,
-  toWorkspaceFolderVar
+  toWorkspaceFolderVar,
+  WORKSPACE_FOLDER_VAR
 } from '../src/pythonExtraPaths';
 import {
   configurationOverrides,
@@ -844,6 +845,93 @@ describe('syncPythonExtraPaths × pyrightconfig.json(进程档自动配置,KODE-
       listSubdirs: (): string[] => []
     }, { processConfigDeps: mem });
     expect(mem.writes).toBe(1);
+    stubWorkspace.workspaceFolders = [];
+  });
+});
+
+// RUST-168:typings 开关(kbengine.python.stubExport 总闸)开启/关闭时的行为矩阵。
+// 关=下次同步(激活期静默链或手动命令)把存根目录撤出 extraPaths 管理段、
+// stubPath/噪声压制不再写;开=复线一并恢复;盘上文件两态都保留(导出开关
+// 不是删除开关)。记忆键是撤线/复线的唯一驱动,盘上文件只作「在盘」判据。
+describe('RUST-168 typings 开关切换:接线撤复/记忆/诊断面', () => {
+  const STUB_VAR = '${workspaceFolder}/.kbengine/stubs';
+  const LEGACY_STUB_FILE = '/ws/.kbengine/stubs/KBEngine.pyi';
+  const roots = ['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts'];
+  const rootVars = roots.map(root => `${WORKSPACE_FOLDER_VAR}${root.slice(3)}`);
+  const managedKey = `${PYTHON_EXTRA_PATHS_MANAGED_KEY}:/ws`;
+
+  beforeEach(() => {
+    messages.info.length = 0;
+    messages.warning.length = 0;
+    messages.error.length = 0;
+    windowState.reset();
+    workspaceState.reset();
+    memento.clear();
+  });
+
+  const openWs = (): void => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+  };
+  const depsWith = (extra: string[] = []): Parameters<typeof syncPythonExtraPaths>[1] => ({
+    exists: (candidate: string): boolean => [...roots, ...extra].includes(candidate),
+    listSubdirs: (): string[] => []
+  });
+
+  it('stubExport 关:上次管理的存根段在下次同步时撤出 extraPaths,记忆同步收敛,stubPath/噪声压制不再写', async () => {
+    configurationOverrides.set('kbengine', { 'python.stubExport': false });
+    configurationOverrides.set('python', { 'analysis.extraPaths': [STUB_VAR] });
+    memento.set(managedKey, [STUB_VAR]);
+    openWs();
+
+    await syncPythonExtraPaths(makeContext(), depsWith([LEGACY_STUB_FILE]));
+
+    const updates = workspaceState.workspaceConfigurationUpdates;
+    expect(updates).toHaveLength(1);
+    expect(updates[0].key).toBe(PYTHON_EXTRA_PATHS_SETTING);
+    expect(updates[0].value).toEqual(rootVars);
+    // 记忆键收敛成撤线后的管理段:下次再同步零写
+    expect(memento.get(managedKey)).toEqual(rootVars);
+    expect(updates.some(update => update.key === PYTHON_STUB_PATH_SETTING)).toBe(false);
+    expect(updates.some(update => update.key === PYTHON_DIAG_SEVERITY_OVERRIDES_SETTING)).toBe(false);
+    configurationOverrides.delete('kbengine');
+    configurationOverrides.delete('python');
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('stubExport 关且无任何可发现根:撤线不发生(不写配置不打扰是既定契约,陈旧记忆保留到下次有段可写)', async () => {
+    configurationOverrides.set('kbengine', { 'python.stubExport': false });
+    configurationOverrides.set('python', { 'analysis.extraPaths': [STUB_VAR] });
+    memento.set(managedKey, [STUB_VAR]);
+    openWs();
+
+    await syncPythonExtraPaths(makeContext(), {
+      exists: (): boolean => false,
+      listSubdirs: (): string[] => []
+    });
+
+    expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(0);
+    expect(memento.get(managedKey)).toEqual([STUB_VAR]);
+    configurationOverrides.delete('kbengine');
+    configurationOverrides.delete('python');
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('stubExport 重新开启:下次同步复线——存根目录回到管理段+stubPath+噪声压制一并恢复,记忆收敛', async () => {
+    // 关闭期间的记忆形态:撤线后只剩发现根(由上一钉的收敛面留下)
+    configurationOverrides.set('python', { 'analysis.extraPaths': rootVars });
+    memento.set(managedKey, rootVars);
+    openWs();
+
+    await syncPythonExtraPaths(makeContext(), depsWith([LEGACY_STUB_FILE]));
+
+    const updates = workspaceState.workspaceConfigurationUpdates;
+    const extra = updates.find(update => update.key === PYTHON_EXTRA_PATHS_SETTING);
+    expect(extra?.value).toEqual([...rootVars, STUB_VAR]);
+    expect(memento.get(managedKey)).toEqual(extra?.value);
+    expect(updates.find(update => update.key === PYTHON_STUB_PATH_SETTING)?.value).toBe(STUB_VAR);
+    expect(
+      updates.find(update => update.key === PYTHON_DIAG_SEVERITY_OVERRIDES_SETTING)?.value
+    ).toEqual({ reportMissingModuleSource: 'none' });
     stubWorkspace.workspaceFolders = [];
   });
 });
