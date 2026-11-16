@@ -3,12 +3,57 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 
+/**
+ * Cold-start spawn outcomes that CI runners produce under load and that a
+ * single retry on a warm process recovers (nightly win32-x64 43817266345:
+ * `spawnSync kode-mcp.exe ETIMEDOUT` at exactly the 20 s smoke budget while
+ * every cargo suite passed and the other six platforms passed). Permanent
+ * failures (ENOENT, EACCES, bad exit status) are never retried.
+ */
+const TRANSIENT_SPAWN_CODES = new Set(['ETIMEDOUT', 'ESRCH']);
+const MAX_SPAWN_ATTEMPTS = 3;
+const SPAWN_BACKOFF_MS = [20, 60, 150];
+
+export function isTransientSpawnError(error) {
+  return !!error && typeof error.code === 'string' && TRANSIENT_SPAWN_CODES.has(error.code);
+}
+
+/** Keep the child's own output: the old message discarded stdout/stderr, so a
+ * failing smoke could not be attributed from the workflow log. */
+function outputTail(result) {
+  const stdout = typeof result.stdout === 'string' ? result.stdout.trimEnd() : '';
+  const stderr = typeof result.stderr === 'string' ? result.stderr.trimEnd() : '';
+  const tail = [stdout.slice(-4000), stderr.slice(-4000)].filter(Boolean).join('\n');
+  return tail ? `\n<output>\n${tail}\n</output>` : '';
+}
+
+function sleepMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 export function run(command, args, options = {}) {
-  const result = spawnSync(command, args, { stdio: 'inherit', ...options });
-  if (result.error || result.status !== 0) {
-    throw new Error(`${command} failed (${result.status}): ${result.error?.message ?? ''}`);
+  const { maxAttempts = MAX_SPAWN_ATTEMPTS, ...spawnOptions } = options;
+  for (let attempt = 0; ; attempt += 1) {
+    const result = spawnSync(command, args, { stdio: 'inherit', ...spawnOptions });
+    const transient = isTransientSpawnError(result.error);
+    const exhausted = !transient || attempt + 1 >= maxAttempts;
+    if (exhausted) {
+      if (result.error) {
+        const error = new Error(
+          `${command} failed (${result.error.code}): ${result.error.message}${outputTail(result)}`,
+        );
+        error.code = result.error.code;
+        throw error;
+      }
+      if (result.status !== 0) {
+        const error = new Error(`${command} failed (${result.status})${outputTail(result)}`);
+        error.code = `EXIT_${result.status}`;
+        throw error;
+      }
+      return result;
+    }
+    sleepMs(SPAWN_BACKOFF_MS[attempt] ?? 150);
   }
-  return result;
 }
 
 /** Stage only runtime assets: never scan a checkout's worktrees or change its manifest. */
