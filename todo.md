@@ -581,7 +581,7 @@
 - [x] RUST-287 （旧 PR-012） `perf/gate-phase2`：真实大型数据压力测试和性能/正确性验收，不通过禁止继续扩大迁移。(gate2 61fe132 总判定 FAIL（G-C 201×1 别名面差）→ 修复 5db0a33 → gate3 复判 PASS 五门全绿: compDiverge 201→0、悬停双轮 404/404、双轨 P95<1ms、burst 0 错/RSS 4.97MB; 正本 pr-012-gate2-run.txt + pr-012-gate3-run.txt + pr-012-perf-gate.md 复判节; 剩余差异 §8 设计边界（.py 面归 PH1）; 扩大迁移禁止解除, 切流仍受 pr-012 §4 前置清单约束, serveFromRust 恒 false 不变)
 
 ### 18. 关键架构决策待验证清单（不提前拍脑袋）
-- [ ] RUST-288 （旧 ADR-101） Salsa 与自研 revision query engine：根据 query DAG 大小、内存、工程维护成本决定。
+- [x] RUST-288 （旧 ADR-101） Salsa 与自研 revision query engine：根据 query DAG 大小、内存、工程维护成本决定。(2026-11-17 裁决落档:docs/kode2/adr/ADR-101-query-engine-choice.md 已接受——维持自研不引 Salsa,追认 de-facto 在役面(kode-index 指纹+generation+倒排/kode-types TypeGraph/kode-server snapshot 消费);三轴实测裁决=query 形态(request-storm S1 单版吸收 p50 0.06ms/S5 并发 p99 2.31ms+增量热更新 P50 402µs/P99 739µs)·内存(50k RSS after_kb 口径,RUST-129/IDX-012+soak 1h 无无界增长实证)·维护成本(自研测试网 index_units/types_units/methods_units+golden 族 vs 第三方依赖铁律对价);pr-007 IDX-004「Salsa 选型仍未裁决,不预设」悬置就此关闭;reopen 条款=表达式级跨文件 query 依赖或 memoization 维护成本超对价,推翻须基准证据)
 - [x] RUST-289 （旧 ADR-102） quick-xml + spans / rowan / tree-sitter：根据错误恢复、源映射、增量表现决定。(2026-11-17 对账收口:裁决档已在库=docs/kode2/adr/ADR-102-parser-tech-choice.md(已接受 2026-10-23,自研零依赖字节级状态机);三轴覆盖=错误恢复(SYNTAX-003 结构化诊断+局部跳过,树前缀永不丢)·源映射(字节级 span 精确+伪注释掩码长度不变)·增量表现(指纹+零重建断言+2026-11-15 增量基准检验 reopen 未触发);与 RUST-100 同证据链,文法细则见 docs/kode2/grammar-spec.md)
 - [ ] RUST-290 （旧 ADR-103） SQLite vs redb vs mmap cache：用 2k/10k/50k 数据集比较 cold startup/写放大。
 - [ ] RUST-291 （旧 ADR-104） 标准 LSP vs custom RPC：标准编辑器功能优先 LSP，专用交互使用命名空间协议。
