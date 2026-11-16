@@ -226,8 +226,8 @@
 ## PERF-015 跨机器口径
 
 - 【事实】PR1-7 全部数字出自同一台机器(docs/perf/hardware.md);final-report §5 如实记录单轮抖动(机械盘 + 热缓存口径下 U4 两轮 130.3s/89.9s,同代码)。
-- 【规则(采纳书 PERF-015)】跨机器不比较绝对速度;主报告用本机固定基准;现所有结论为单轮,**多轮取中位/置信区间待建**(bench `--repeat`)。
+- 【规则(采纳书 PERF-015)】跨机器不比较绝对速度;主报告用本机固定基准。多轮中位/置信区间已建:bench 侧 `KODE_PERF_REPEAT`(RUST-032)重复观测 + 2026-gate-baseline.md 热态 5 轮×20 样本分位聚合与全量扫描 3 轮轮中位实践;CI(M 档)与本机(L 档)记录分轨互不换算(RUST-028,hardware.md §2#7)。(2026-11-17 RUST-247 对账注)
 
 ## PERF-016 decisions.md
 
-- 【事实】docs/perf/decisions.md 尚不存在;现有优化证据分散于 docs/perf/2026-pr2/3/5/6-*.md 与 docs/review/2026-10-22-unified-semantic-index-refactor.md。受本 PR「只产三文件」约束未建——待建,建时逐项迁移(证据、取舍、回退)。
+- 【事实(2026-11-17 对账)】docs/perf/decisions.md 已建立(RUST-033):决策账本按合入时间记账(KODE-PERF-001..007 优化/测量项 + IDE-RES-002/AUD-022 + RUST-027/028/032、RUST-029/030、RUST-031、RUST-061/063),每条带证据锚(commit hash/报告/测试名)、取舍、回退;维护规则=新优化合入必须追加条目,无证据链不收账。早期 PR2/3/5/6 报告(docs/perf/2026-pr*.md)与评审跟踪(docs/review/2026-10-22-unified-semantic-index-refactor.md)仍是历史证据源。

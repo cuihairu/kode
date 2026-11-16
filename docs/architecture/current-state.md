@@ -567,14 +567,22 @@
   (mechanical disk + warm-cache discipline: U4 two runs 130.3s/89.9s, same
   code).
 - 【Rule (adopting the book's PERF-015)】Do not compare absolute speed across
-  machines; the main report uses this machine's fixed baseline; all current
-  conclusions are single-run, **multi-run median/confidence interval to
-  build** (bench `--repeat`).
+  machines; the main report uses this machine's fixed baseline. Multi-run
+  median/confidence interval is built: bench-side `KODE_PERF_REPEAT` (RUST-032)
+  repeat observation plus the gate-baseline hot-state 5-round × 20-sample
+  quantile aggregation and the full-scan 3-run median practice; CI (M tier)
+  and local (L tier) records run on separate tracks and never convert
+  (RUST-028, hardware.md §2 #7). (2026-11-17 RUST-247 reconciliation)
 
 ## PERF-016 decisions.md
 
-- 【Fact】docs/perf/decisions.md does not exist yet; existing optimization
-  evidence is scattered across docs/perf/2026-pr2/3/5/6-*.md and
-  docs/review/2026-10-22-unified-semantic-index-refactor.md. Not built due to
-  this PR's "produce only three files" constraint — to build, migrating items
-  one by one when created (evidence, trade-offs, rollback).
+- 【Fact (2026-11-17 reconciliation)】docs/perf/decisions.md is established
+  (RUST-033): the decision ledger records entries by merge time
+  (KODE-PERF-001..007 optimization/measurement items + IDE-RES-002/AUD-022 +
+  RUST-027/028/032, RUST-029/030, RUST-031, RUST-061/063), each with evidence
+  anchors (commit hash / report / test name), trade-offs, and rollback. The
+  maintenance rule: every newly merged optimization must append an entry, and
+  no entry without an evidence chain. Early PR2/3/5/6 reports
+  (docs/perf/2026-pr*.md) and the review tracking doc
+  (docs/review/2026-10-22-unified-semantic-index-refactor.md) remain the
+  historical evidence sources.

@@ -55,4 +55,4 @@ RUST-021 真实引擎样例车道(env 隔离,样例永不入库):`KODE_PERF_REAL
 
 ## 5. 优化决策记录(PERF-016)
 
-docs/perf/decisions.md 待建(本 PR 文件范围受限);现有证据位置:PR2/3/5/6 报告 docs/perf/2026-pr*.md、评审跟踪表 docs/review/2026-10-22-unified-semantic-index-refactor.md、复测对照 docs/perf/2026-final-report.md §3-§5。
+docs/perf/decisions.md 已建立(RUST-033;2026-11-17 对账注):优化决策账本正本,每项带证据锚/取舍/回退,新优化合入必须追加条目。历史证据位置:PR2/3/5/6 报告 docs/perf/2026-pr*.md、评审跟踪表 docs/review/2026-10-22-unified-semantic-index-refactor.md、复测对照 docs/perf/2026-final-report.md §3-§5。

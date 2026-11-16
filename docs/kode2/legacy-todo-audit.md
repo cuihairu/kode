@@ -29,7 +29,7 @@ PR1-7 commit 链:PR1 89e8783 → PR2 7d8736b → PR3 2aca694 → PR4 4bfba9b →
 | A1-4 四请求埋点接线 | [ ] | ✅ | hover/definition/completion/诊断入口(extension.ts:263-271 validateDocumentTimed 打点;provideDefinitionTraced;89e8783) |
 | A1-5 资产集生成器 | [ ] | ✅ | `scripts/generate-perf-assets.mjs`(6 场景,确定性,89e8783) |
 | A1-6 基线报告 | [ ] | ✅ | docs/perf/2026-baseline.md(七场景实测+待测项如实标注)+ baseline-run.txt |
-| A1-7 Mermaid 调用链图落同报告 | [ ] | ❌ | **未完成**:grep docs/perf/ 全目录无 mermaid,baseline.md 无调用链图;与 todo 未勾一致(见 ph0-gate.md 门 1 缺口) |
+| A1-7 Mermaid 调用链图落同报告 | [ ] | ❌ | **未完成**:grep docs/perf/ 全目录无 mermaid,baseline.md 无调用链图;与 todo 未勾一致(见 ph0-gate.md 门 1 缺口)。(2026-11-17 对账:本行 ❌ 过时——本审计为 2026-10-30 时点,§7「主要调用链图」其时未落;现已落=2026-baseline.md §7 四 mermaid 块+tests/perfCallChainDoc.test.ts:566 硬断言,见 ph0-gate.md 门 1 对账注) |
 
 ### A2 PR2 · documentStore(commit 7d8736b)
 
@@ -132,7 +132,7 @@ PR1-7 commit 链:PR1 89e8783 → PR2 7d8736b → PR3 2aca694 → PR4 4bfba9b →
 ## 可勾清单(建议 todo.md 维护方按此勾,证据即上表)
 
 1. A1-1..A1-6、A2-1..A2-6、A3-1..A3-6、A5-1..A5-5、A7-1..A7-4(共 27 条)→ 勾,证据列照抄。
-2. A1-7 保持未勾(未完成;唯一 PR1 缺口,已入 ph0-gate.md 门 1 缺口清单)。
+2. A1-7 保持未勾(未完成;唯一 PR1 缺口,已入 ph0-gate.md 门 1 缺口清单)。(2026-11-17 对账:A1-7 已闭,§7 落地晚于本审计,见 A1 表行对账注与 ph0-gate.md 门 1)
 3. C-8、C-9、D-3 → 勾(完成早于重拆,漏勾)。
 4. C-4/C-5/C-6/D-1/D-4 保持未勾但可加「◐ 部分」注记指向本表行。
 
