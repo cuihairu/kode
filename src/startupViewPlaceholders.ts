@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 // KODE-PERF 视图先行(KBEngine Explorer「There is no data provider registered
-// that can provide view data」排查):activate 是同步函数,十个侧栏视图的
+// that can provide view data」排查):activate 是同步函数,全部侧栏视图的
 // registerTreeDataProvider/createTreeView 分散在数千行装配体的尾段——任何一段
 // 同步装配抛错或被拖死,视图就停在「已声明、无提供者」状态,宿主报上述错误且
 // 视图全空。修复口径:activate 最前(任何重活之前)先为全部侧栏视图 id 注册
@@ -26,6 +26,8 @@ export const KBENGINE_SIDEBAR_VIEW_IDS: readonly string[] = [
   'kbengine.playerData',
   'kbengine.remoteServers',
   'kbengine.entityExplorer',
+  // RUST-167 类型预览(API 类型树/typing 覆盖/缺失映射/来源跳转)
+  'kbengine.typePreview',
   'kbengine.debugTargets',
   'kbengine.config',
   'kbengine.gitHistory',

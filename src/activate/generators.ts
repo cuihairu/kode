@@ -18,7 +18,7 @@ import { buildEntityTypeStubLineMap, buildEntityTypeStubPlan, exportEntityTypeSt
 import { bumpRootConfigGeneration } from '../rootConfigGeneration';
 import { createDemoGameProject, createMinimalProject } from '../projectCreate';
 import { disableJsoncAssociation, syncJsoncAssociation } from '../jsoncAssociation';
-import { exportPythonTypeStubs } from '../pythonTypeStubs';
+import { buildPythonTypeStubPlan, exportPythonTypeStubs } from '../pythonTypeStubs';
 import { fileSystemScriptRootDeps, syncPythonExtraPaths } from '../pythonExtraPaths';
 import { getCustomTypeInfos } from '../definitionWorkspace';
 import { getDefinitionWorkspaceLayout, getRegisteredEntities, readWorkspaceTextFile } from '../definitionWorkspace';
@@ -26,6 +26,7 @@ import { getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace
 import { getIndexScanRoots } from '../scanRoots';
 import { importExistingProject } from '../projectImport';
 import { isPythonMroJumpEnabled } from '../languageProviders';
+import { registerTypePreviewView, openTypePreviewSource, buildTypePreviewModel } from '../typePreviewView';
 import { makeSdkEngineTrace } from '../sdk-gen/sdkGenerationTrace';
 import { offerDemoGameScaffoldFromVscode } from '../demoGameScaffoldPrompt';
 import { onDidChangeActiveProfile, resolveActiveProfile, selectActiveProfile } from '../activeProfile';
@@ -79,6 +80,7 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
         templateRoot: resolveKbengineStubTemplateRoot(context.extensionPath)
       });
       await syncPythonExtraPaths(context);
+      typePreviewHandle.refresh();
     }
   );
   context.subscriptions.push(exportKbeStubsCommand);
@@ -101,9 +103,34 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
     async () => {
       await exportPythonTypeStubs();
       await syncPythonExtraPaths(context);
+      typePreviewHandle.refresh();
     }
   );
   context.subscriptions.push(exportPythonTypeStubsCommand);
+  // RUST-167 类型预览(API 类型树/typing 覆盖/缺失映射/来源跳转):数据不
+  // 缓存——getChildren 与刷新命令经 getModel 现算(实体注册表+自定义类型
+  // 注册表),导出命令尾链一次刷新;跳转一律真实源行,解析不出如实不跳
+  const typePreviewHandle = registerTypePreviewView({
+    registerTreeDataProvider: (viewId, provider) => vscode.window.registerTreeDataProvider(viewId, provider),
+    registerCommand: (id, callback) => vscode.commands.registerCommand(id, callback as never),
+    openSource: openTypePreviewSource,
+    getModel: () => {
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+      const customTypes = getCustomTypeInfos(workspaceRoot);
+      const plan = buildPythonTypeStubPlan(customTypes);
+      return buildTypePreviewModel({
+        entities: buildEntityTypeStubPlan(entityMappingManager.getAllMappings(), customTypes).entries,
+        entityDefFiles: new Map(
+          entityMappingManager.getAllMappings().map(mapping => [mapping.name, mapping.defFile])
+        ),
+        customTypes,
+        typeEntries: plan.entries,
+        typeSkipped: plan.skipped,
+        typesXmlPath: customTypes.find(info => info.filePath.endsWith('/types.xml'))?.filePath
+      });
+    }
+  });
+  context.subscriptions.push(typePreviewHandle);
   const generatedEntityPlanEntries = buildEntityTypeStubPlan(
     entityMappingManager.getAllMappings(),
     getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')

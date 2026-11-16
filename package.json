@@ -388,6 +388,10 @@
           "id": "kbengine.gitRangeHistory",
           "name": "%kbengine.view.gitRangeHistory%",
           "when": "kode.gitHistoryEnabled"
+        },
+        {
+          "id": "kbengine.typePreview",
+          "name": "%kbengine.view.typePreview%"
         }
       ]
     },
@@ -1099,6 +1103,15 @@
       {
         "command": "kbengine.hotReload.releasePreview",
         "title": "%kbengine.command.hotReload.releasePreview.title%"
+      },
+      {
+        "command": "kbengine.typePreview.refresh",
+        "title": "%kbengine.command.typePreview.refresh%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "kbengine.typePreview.jump",
+        "title": "%kbengine.command.typePreview.jump%"
       }
     ],
     "menus": {

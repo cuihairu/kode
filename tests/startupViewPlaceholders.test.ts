@@ -55,7 +55,7 @@ afterEach(() => {
 // 该提示 = 视图 id 对应的数据提供者尚未注册(activate 同步体晚段才注册,
 // 中途任何一步抛错/被重活拖死,视图就停在无提供者状态)。本面锁定:
 // ① 占位注册面覆盖 package.json 声明的全部侧栏视图 id;
-// ② 激活中途失败时十个视图也已先行注册(占位兜底,真 provider 随后接管);
+// ② 激活中途失败时全部视图也已先行注册(占位兜底,真 provider 随后接管);
 // ③ 正常激活下每个视图恰两笔注册(占位 + 真 provider)。
 
 describe('KODE-PERF 视图先行:侧栏视图占位注册', () => {
@@ -85,7 +85,7 @@ describe('KODE-PERF 视图先行:侧栏视图占位注册', () => {
     registration.dispose();
   });
 
-  it('激活中途失败(watcher 创建抛错)时十个侧栏视图仍已注册(修前红)', () => {
+  it('激活中途失败(watcher 创建抛错)时全部侧栏视图仍已注册(修前红)', () => {
     const context = makeContext();
     vi.spyOn(workspace, 'createFileSystemWatcher').mockImplementation(() => {
       throw new Error('injected watcher failure');
