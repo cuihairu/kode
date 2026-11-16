@@ -275,10 +275,12 @@ describe('extension activate 装配', () => {
     // 优先级 96/命令指向三选切换,无激活 profile 时显示未配置)、
     // KB-GC-001 日志 tail 灯(优先级 95/命令指向 tail 切换,连接态文本)、
     // Kode 核心灯(2026-11-10,优先级 94/命令指向影子对拍日志,显示 LSP
-    // 服务轨道)与 Kode MCP 灯(优先级 93,二进制在位探测,无命令——事实
-    // 在 tooltip);无运行组件时 server 灯隐藏。批111 用户令:配置未开
-    // telnet 时 telnet 灯同样隐藏,context key 落 false
-    expect(windowState.statusBars).toHaveLength(8);
+    // 服务轨道)、Kode MCP 灯(优先级 93,二进制在位探测,无命令——事实
+    // 在 tooltip)与语言服务灯(RUST-219,优先级 92,Core/索引生命周期+
+    // profile+资源根,点击开 Project Doctor 健康汇总);无运行组件时
+    // server 灯隐藏。批111 用户令:配置未开 telnet 时 telnet 灯同样隐藏,
+    // context key 落 false
+    expect(windowState.statusBars).toHaveLength(9);
     const tailBar = windowState.statusBars.find(item => item.priority === 95)!;
     expect(tailBar.alignment).toBe(StatusBarAlignment.Right);
     // tail 状态灯显示连接态文本(connecting/connected/backoff);2026-11-10
@@ -332,6 +334,15 @@ describe('extension activate 装配', () => {
     const kodeMcpBar = windowState.statusBars.find(item => item.priority === 93)!;
     expect(kodeMcpBar.alignment).toBe(StatusBarAlignment.Right);
     expect(kodeMcpBar.visible).toBe(true);
+    // 语言服务灯(RUST-219):四态诚实脸(就绪/推进/失败/未知),激活瞬间的
+    // 索引队列状态不作竞速断言,只钉形状(icon+「Kode 索引」前缀+点击入口)
+    const languageServiceBar = windowState.statusBars.find(item => item.priority === 92)!;
+    expect(languageServiceBar.alignment).toBe(StatusBarAlignment.Right);
+    expect(languageServiceBar.command).toBe('kbengine.profile.health');
+    expect(languageServiceBar.visible).toBe(true);
+    expect(languageServiceBar.text).toMatch(
+      /\$\((check|sync~spin|error|circle-slash)\) Kode 索引: (就绪|运行 \d+ 排队 \d+|失败 \d+（排队 \d+\/运行 \d+）|未知)/
+    );
     expect(commandRegistry.contexts.get('kbengine.telnetConfigured')).toBe(false);
 
     // 所有 subscription 都可 dispose

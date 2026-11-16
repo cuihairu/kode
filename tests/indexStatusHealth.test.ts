@@ -103,4 +103,23 @@ describe('index-stalled health check (RUST-187)', () => {
     });
     expect(issues.filter(issue => issue.kind === 'index-stalled')).toHaveLength(1);
   });
+
+  it('wire 形状回钉:running 是活动任务对象,消息渲染 运行 1 而非 [object Object]', () => {
+    // mock-vs-wire 漂移回钉:单测 mock 曾把 running 当数字,线上
+    // SchedulerStatus.running 是活动任务对象(RUST-219 侦察发现),
+    // 消息面按活动任务归一成 0/1,不得把对象插值进文案。
+    const wireStatus = {
+      failed: 1,
+      queued: 2,
+      running: { id: 7, kind: 'file' as const, priority: 10 }
+    };
+    const issues = collectProfileHealth(healthyProfile, activeServiceFacts, {
+      ...baseDeps(),
+      indexStatus: () => wireStatus
+    });
+    const stalled = issues.filter(issue => issue.kind === 'index-stalled');
+    expect(stalled).toHaveLength(1);
+    expect(stalled[0].message).toContain('运行 1');
+    expect(stalled[0].message).not.toContain('object Object');
+  });
 });

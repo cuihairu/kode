@@ -131,7 +131,7 @@ export function collectProfileHealth(
   if (indexStatus && indexStatus.failed > 0) {
     issues.push({
       kind: 'index-stalled',
-      message: `索引任务失败 ${indexStatus.failed} 个（排队 ${indexStatus.queued}/运行 ${indexStatus.running}）`,
+      message: `索引任务失败 ${indexStatus.failed} 个（排队 ${indexStatus.queued}/运行 ${indexStatus.running ? 1 : 0}）`,
       entry: {
         kind: 'command',
         target: 'workbench.action.reloadWindow',

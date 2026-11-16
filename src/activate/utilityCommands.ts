@@ -61,11 +61,12 @@ import { getParsedDocumentCacheGauge } from '../backend/defParser';
 import { getPythonParserWorkerGauge } from '../backend/pythonParserWorkerHost';
 import { hostLabel, renderExtensionIdentityReport, sideLabel } from '../backend/extensionIdentity';
 import { joinWorkspacePath } from '../backend/workspacePath';
+import { LanguageServiceStatusController } from '../backend/languageServiceStatus';
 import { locateInterpreterOnPath, resolveInterpreterWith, resolveProfileInterpreter } from '../profileInterpreter';
 import { normalizeVenvDirectoryNames } from '../backend/quickActionConfig';
 import { readBuildCommit } from '../backend/buildCommit';
 import { renderReproductionSummary } from '../backend/reproductionSummary';
-import { resolveActiveProfile } from '../activeProfile';
+import { onDidChangeActiveProfile, resolveActiveProfile } from '../activeProfile';
 import { StartEntryController } from '../startEntry';
 import { resolveDatabaseInterfaceConfig } from '../serverConfigMerge';
 import { scanVenvs, verifyVenvDirectory } from '../backend/venvDiscovery';
@@ -672,6 +673,52 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
       })
   );
   context.subscriptions.push(profileHealthCommand);
+
+  // 语言服务状态栏(RUST-219,旧 UI-002):Core/索引生命周期+engine profile+
+  // 资源根+索引进度,单状态栏项。判定与 profile 健康汇总同源(索引计数=
+  // indexScheduler.getStatus,RUST-187 同源探针;profile=resolveActiveProfile,
+  // IDE-PRJ-010)。优先级 92 空档(server 100/telnet 99/热更 98/解释器 97/
+  // 热更通道 96/日志 tail 95/核心 94/MCP 93)。触发=激活+活动 profile 切换+
+  // kbengine.* 配置变化+保存文件(索引入队驱动)+根变化;忙碌期由控制器
+  // 保活轮询(落定即停),不做逐键刷新。partial(部分索引)无数据面,
+  // 纯核不冒充该态(如实三计数)。
+  const languageServiceStatusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    92
+  );
+  const languageServiceStatus = new LanguageServiceStatusController({
+    createItem: () => languageServiceStatusBarItem,
+    collectInputs: () => {
+      const profile = resolveActiveProfile(context.workspaceState);
+      const status = indexScheduler.getStatus();
+      return {
+        profileName: profile?.displayName ?? null,
+        resourceRoot: profile ? path.basename(profile.assetsRoot) : null,
+        // SchedulerStatus.running 是活动任务对象(非计数),归一成 0/1;
+        // 失败/排队沿用原计数(判定与 profile 健康汇总同口径)
+        index: {
+          failed: status.failed,
+          queued: status.queued,
+          running: status.running ? 1 : 0
+        }
+      };
+    },
+    timers: {
+      setInterval: (handler, ms) => setInterval(handler, ms),
+      clearInterval: handle => clearInterval(handle as ReturnType<typeof setInterval>)
+    }
+  });
+  context.subscriptions.push(languageServiceStatus);
+  context.subscriptions.push(
+    onDidChangeActiveProfile(() => languageServiceStatus.refresh()),
+    vscode.workspace.onDidChangeConfiguration(event => {
+      if (event.affectsConfiguration('kbengine')) {
+        languageServiceStatus.refresh();
+      }
+    }),
+    vscode.workspace.onDidSaveTextDocument(() => languageServiceStatus.refresh()),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => languageServiceStatus.refresh())
+  );
 
   // 解释器状态栏与选择(PY-ENV 二期):状态栏项显示当前解释器(venv 名/
   // 版本/来源徽标 auto|configured|PATH|缺失),点击进 QuickPick——选中写入
