@@ -26,6 +26,9 @@ import {
   shouldShowInterpreterStatusBar
 } from '../backend/venvInterpreterPicker';
 import { detectDualActivation, formatDualActivationWarning } from '../backend/dualActivationConflict';
+import { readEngineApiMetadata } from '../backend/engineApiMetadata';
+import { buildEngineProfileReport, renderEngineProfileReport } from '../backend/engineProfile';
+import { getEngineVersion } from '../engineVersion';
 import { execFile } from 'child_process';
 import { findFilesAcrossRoots } from '../scanRoots';
 import { getActiveOperationCounts } from '../languageServiceMetrics';
@@ -336,6 +339,20 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
     identityChannel.show(true);
   });
   context.subscriptions.push(identityCommand, identityChannel);
+
+  // RUST-173 Engine profile:官方版本/分类(fork·custom)/版本宏探测/git
+  // commit+describe/KB-VER-002 特性分层聚合一屏汇报;unknown 面如实写
+  // 「未探测到/未知」,绝不占位编造(纯模型 engineProfile.ts,可钉)。
+  const engineProfileChannel = vscode.window.createOutputChannel('Kode Engine Profile');
+  const engineProfileCommand = vscode.commands.registerCommand('kbengine.engine.profile', async () => {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+    const metadata = await readEngineApiMetadata(workspaceRoot);
+    const report = buildEngineProfileReport({ settingVersion: getEngineVersion(), metadata });
+    engineProfileChannel.clear();
+    engineProfileChannel.appendLine(renderEngineProfileReport(report, vscode.env.language));
+    engineProfileChannel.show(true);
+  });
+  context.subscriptions.push(engineProfileCommand, engineProfileChannel);
 
   // IDE-REL-001 两个 Kode ID 共激活检测:激活时查一次当前宿主窗口的
   // Kode 系扩展(cuihairu. 名下 id 含 kode),只有「实际共激活」(两个

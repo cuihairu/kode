@@ -115,6 +115,7 @@
   "kbengine.command.discovery.report.title": "查看发现报告",
   "kbengine.command.start.retryDiscovery.title": "重新识别项目",
   "kbengine.command.extension.identity.title": "查看扩展身份报告",
+  "kbengine.command.engine.profile.title": "显示引擎档案",
   "kbengine.command.diagnostics.exportReproSummary.title": "导出复现配置摘要",
   "kbengine.command.quickActions.show.title": "运行快速动作",
   "kbengine.command.quickActions.scanScripts.title": "重新扫描脚本生成快速动作",

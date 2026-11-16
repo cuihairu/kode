@@ -115,6 +115,7 @@
   "kbengine.command.discovery.report.title": "Show Discovery Report",
   "kbengine.command.start.retryDiscovery.title": "Rescan Project",
   "kbengine.command.extension.identity.title": "Show Extension Identity Report",
+  "kbengine.command.engine.profile.title": "Show Engine Profile",
   "kbengine.command.diagnostics.exportReproSummary.title": "Export reproduction config summary",
   "kbengine.command.quickActions.show.title": "Run Quick Actions",
   "kbengine.command.quickActions.scanScripts.title": "Rescan Scripts for Quick Actions",
