@@ -115,6 +115,8 @@
     "onCommand:kbengine.project.create",
     "onCommand:kbengine.project.createDemoGame",
     "onCommand:kbengine.project.selectActive",
+    "onCommand:kbengine.typePreview.refresh",
+    "onCommand:kbengine.typePreview.jump",
     "onCommand:kbengine.profile.health",
     "onCommand:kbengine.python.serviceStatus",
     "onCommand:kbengine.protocol.showStatus",
