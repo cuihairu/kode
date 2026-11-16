@@ -2084,6 +2084,11 @@
           "default": true,
           "markdownDescription": "%kbengine.config.infer.exclusionsSync.description%"
         },
+        "kbengine.python.stubCopy": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%kbengine.config.python.stubCopy.description%"
+        },
         "kbengine.python.stubExport": {
           "type": "boolean",
           "default": true,

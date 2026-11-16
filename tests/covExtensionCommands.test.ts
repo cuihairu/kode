@@ -700,6 +700,8 @@ describe('extension 激活链命令面(补测)', () => {
     // 批 ③ 起桩面是静态模板 copy-if-absent:配置变更触发重导时,模板同名
     // 已有文件一个字节不动;托管目录里带 kode 生成标记的旧单文件 KBEngine.pyi
     // 被一次性迁移移除(KBEngine/ 桩包取代)
+    // stubCopy 窄闸默认关(2026-11-16):本例钉的正是自动复制路径行为,显式开
+    configurationOverrides.set('kbengine', { 'python.stubCopy': true });
     const stubFile = path.join(root, '.kbengine', 'stubs', 'KBEngine.pyi');
     fs.mkdirSync(path.dirname(stubFile), { recursive: true });
     fs.writeFileSync(
@@ -707,6 +709,8 @@ describe('extension 激活链命令面(补测)', () => {
       '# KBEngine.pyi — kode generated\n# 旧动态生成内容\nclass Entity:\n    id: int\n',
       'utf8'
     );
+    // 窄闸默认关后激活期不再自动复制,桩包目录由本例自建(用户魔改副本前置)
+    fs.mkdirSync(path.join(path.dirname(stubFile), 'KBEngine'), { recursive: true });
     fs.writeFileSync(path.join(path.dirname(stubFile), 'KBEngine', 'Entity.pyi'), '# 用户魔改版\n', 'utf8');
     workspaceEvents.configurationChanged.fire({
       affectsConfiguration: (key: string) => key === 'kbengine' || key === 'kbengine.python.entityStubMethods'
@@ -718,6 +722,7 @@ describe('extension 激活链命令面(补测)', () => {
     expect(fs.existsSync(path.join(path.dirname(stubFile), 'KBEngine', '__init__.pyi'))).toBe(true);
     // 用户魔改的副本:一个字节不动
     expect(fs.readFileSync(path.join(path.dirname(stubFile), 'KBEngine', 'Entity.pyi'), 'utf8')).toBe('# 用户魔改版\n');
+    configurationOverrides.delete('kbengine');
   });
 
   it('文档事件面:def/types.xml 编辑失效 schema 缓存,python 开合走诊断与注解释放', () => {

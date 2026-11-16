@@ -7,6 +7,8 @@ import {
   KBENGINE_STUB_TEMPLATE_RELATIVE_ROOT,
   KBE_STUB_FILE_NAME,
   KBE_STUB_GENERATED_MARKER,
+  PYTHON_STUB_COPY_ENABLED_DEFAULT,
+  PYTHON_STUB_COPY_SETTING,
   PYTHON_STUB_EXPORT_ENABLED_DEFAULT,
   collectKbengineStubTemplateFiles,
   exportKbeStubs,
@@ -19,6 +21,7 @@ import {
 } from '../src/pythonStubExport';
 import {
   configurationOverrides,
+  globalConfigurationOverrides,
   messages,
   Uri,
   windowState,
@@ -186,6 +189,12 @@ describe('collectKbengineStubTemplateFiles(内置模板清单)', () => {
 });
 
 describe('exportKbeStubs(copy-if-absent 复制)', () => {
+  // 窄闸 stubCopy(默认关)在本组用全局覆写常开:本组钉的是复制行为面本身;
+  // 窄闸自己的默认关/manual 绕过/显式开在下方专属 describe 里钉。
+  beforeEach(() => {
+    globalConfigurationOverrides.set('kbengine', { 'python.stubCopy': true });
+  });
+
   it('默认设置为开', () => {
     expect(PYTHON_STUB_EXPORT_ENABLED_DEFAULT).toBe(true);
   });
@@ -197,7 +206,8 @@ describe('exportKbeStubs(copy-if-absent 复制)', () => {
     try {
       const deps = makeDeps(root);
       await exportKbeStubs(deps, { templateRoot: root });
-      expect(messages.info[0]).toContain('已关闭');
+      // 总闸先行:报 stubExport(窄闸的文案报 stubCopy,两者可区分)
+      expect(messages.info[0]).toContain('stubExport');
       expect(writes).toHaveLength(0);
 
       await exportKbeStubs(deps, { templateRoot: root, silent: true });
@@ -332,6 +342,58 @@ describe('exportKbeStubs(copy-if-absent 复制)', () => {
       expect(writes).toHaveLength(3);
       expect(messages.info).toHaveLength(0);
       expect(messages.warning).toHaveLength(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('stubCopy 窄闸(用户令 2026-11-16:复制这一步默认关)', () => {
+  it('开关常量:键名 python.stubCopy,默认 false(总闸默认开不变)', () => {
+    expect(PYTHON_STUB_COPY_SETTING).toBe('python.stubCopy');
+    expect(PYTHON_STUB_COPY_ENABLED_DEFAULT).toBe(false);
+    expect(PYTHON_STUB_EXPORT_ENABLED_DEFAULT).toBe(true);
+  });
+
+  it('默认(零配置):激活期静默复制零写零提示;非静默报 stubCopy 文案', async () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const root = makeTemplateRoot();
+    try {
+      // 外层 beforeEach 清过配置,这里不放任何覆写=默认关
+      await exportKbeStubs(makeDeps(root), { templateRoot: root, silent: true });
+      expect(writes).toHaveLength(0);
+      expect(mkdirs).toHaveLength(0);
+      expect(messages.info).toHaveLength(0);
+
+      await exportKbeStubs(makeDeps(root), { templateRoot: root });
+      expect(writes).toHaveLength(0);
+      expect(messages.info[0]).toContain('stubCopy');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('显式开启(stubCopy=true)恢复自动复制', async () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const root = makeTemplateRoot();
+    try {
+      configurationOverrides.set('kbengine', { 'python.stubCopy': true });
+      const copied = await exportKbeStubs(makeDeps(root), { templateRoot: root, silent: true });
+      expect(copied).toEqual(['ws']);
+      expect(writes).toHaveLength(3);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('manual 位(显式命令)绕过窄闸,默认关也照复制', async () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const root = makeTemplateRoot();
+    try {
+      const copied = await exportKbeStubs(makeDeps(root), { templateRoot: root, manual: true });
+      expect(copied).toEqual(['ws']);
+      expect(writes).toHaveLength(3);
+      expect(messages.info.some(line => line.includes('复制 KBEngine 桩包'))).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

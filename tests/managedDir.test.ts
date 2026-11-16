@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -23,6 +23,7 @@ import {
 } from '../src/backend/debugConfigBootstrap';
 import {
   configurationOverrides,
+  globalConfigurationOverrides,
   Uri,
   workspace as stubWorkspace
 } from './helpers/vscodeStub';
@@ -60,6 +61,11 @@ describe('resolveManagedDirName(默认/配置解析)', () => {
 });
 
 describe('托管目录落点(pythonStubExport 面)', () => {
+  // stubCopy 窄闸(默认关)本组常开:导出链按配置目录落盘的钉面不经窄闸红
+  beforeEach(() => {
+    globalConfigurationOverrides.set('kbengine', { 'python.stubCopy': true });
+  });
+
   afterEach(() => {
     configurationOverrides.clear();
   });

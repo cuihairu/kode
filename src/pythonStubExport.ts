@@ -29,6 +29,17 @@ export const PYTHON_STUB_EXPORT_SETTING = 'python.stubExport';
 /** 导出开关(kbengine.python.stubExport,默认开) */
 export const PYTHON_STUB_EXPORT_ENABLED_DEFAULT = true;
 /**
+ * 内置 KBEngine 桩包**复制**开关(kbengine.python.stubCopy,默认关)。
+ * 总闸 python.stubExport 仍管四件事(桩包复制 / 自定义类型 .pyi 生成 /
+ * python.analysis.extraPaths 同步 / 实体存根方法面);这个键只切其中往工作区
+ * 写桩文件那一步——默认不再在激活期往 `.kbengine/stubs/` 复制内置模板。
+ * 显式命令(kbengine.python.exportStubs / resetStubs)带 manual 位照跑,
+ * 默认关闭不等于不可恢复。
+ */
+export const PYTHON_STUB_COPY_SETTING = 'python.stubCopy';
+/** 内置桩包复制开关(默认关:不自动往工作区写桩文件) */
+export const PYTHON_STUB_COPY_ENABLED_DEFAULT = false;
+/**
  * 旧单文件产物名(迁移面):托管目录里带 kode 生成标记的 KBEngine.pyi 会被
  * 一次性移除,由 KBEngine/ 桩包取代;用户目录里同名文件一律不碰。
  */
@@ -278,6 +289,12 @@ export const fileSystemStubExportDeps: StubExportDeps = {
 export interface StubExportOptions {
   /** 激活期自动导出传 true:全程零提示;命令面板手动导出保持播报 */
   silent?: boolean;
+  /**
+   * 命令面板显式调用传 true:绕过 kbengine.python.stubCopy 闸门。
+   * 默认关闭只关**自动**复制路径(激活期 + 托管目录自动重建),用户显式要
+   * 一份桩包时仍得拿得到——否则默认关闭就变成不可恢复。
+   */
+  manual?: boolean;
   /** 内置模板根(装配层传 extensionPath/typings;缺省不复制并如实告警) */
   templateRoot?: string;
 }
@@ -344,9 +361,17 @@ function copyTemplateIntoFolder(
 
 /**
  * 逐工作区把内置 KBEngine 桩包复制到存根目录(copy-if-absent 零覆盖)。
- * 设置 `kbengine.python.stubExport` 关闭时只说明不动手;模板根缺失告警;
- * 目录不可写(只读工作区等)记账并继续其余文件夹。返回实际有复制的文件夹名。
+ * 两道闸:总闸 `kbengine.python.stubExport`(管四件事,默认开)先行;
+ * 窄闸 `kbengine.python.stubCopy`(只管往工作区复制这一步,默认关)其次,
+ * 显式命令经 manual 位绕过。模板根缺失告警;目录不可写(只读工作区等)
+ * 记账并继续其余文件夹。返回实际有复制的文件夹名。
  */
+function readStubCopyEnabled(): boolean {
+  return vscode.workspace
+    .getConfiguration('kbengine')
+    .get<boolean>(PYTHON_STUB_COPY_SETTING, PYTHON_STUB_COPY_ENABLED_DEFAULT);
+}
+
 export async function exportKbeStubs(
   deps: StubExportDeps = fileSystemStubExportDeps,
   options: StubExportOptions = {}
@@ -358,6 +383,14 @@ export async function exportKbeStubs(
     if (!options.silent) {
       await vscode.window.showInformationMessage(
         'KBEngine 桩包复制已关闭(kbengine.python.stubExport)'
+      );
+    }
+    return [];
+  }
+  if (!options.manual && !readStubCopyEnabled()) {
+    if (!options.silent) {
+      await vscode.window.showInformationMessage(
+        'KBEngine 桩包自动复制已关闭(kbengine.python.stubCopy,开启即激活期自动复制)'
       );
     }
     return [];

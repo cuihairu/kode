@@ -72,7 +72,10 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
   const exportKbeStubsCommand = vscode.commands.registerCommand(
     'kbengine.python.exportStubs',
     async () => {
+      // manual: 显式命令绕过 kbengine.python.stubCopy(默认关)——默认关闭只关
+      // 激活期/托管目录自动重建这两条自动路径,用户手点要桩包时仍拿得到。
       await exportKbeStubs(fileSystemStubExportDeps, {
+        manual: true,
         templateRoot: resolveKbengineStubTemplateRoot(context.extensionPath)
       });
       await syncPythonExtraPaths(context);
