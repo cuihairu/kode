@@ -50,6 +50,7 @@ import {
   renderEntitiesRegistrationAudit
 } from '../backend/entitiesRegistrationAudit';
 import { execFile } from 'child_process';
+import type { ChildProcess } from 'child_process';
 import { findFilesAcrossRoots } from '../scanRoots';
 import { getActiveOperationCounts } from '../languageServiceMetrics';
 import { getAnnotationBuildWorkload, getPendingDocumentUpdateCount, getReturnAnnotationCacheGauge, resetPythonReturnAnnotationCache } from '../backend/pythonReturnTypeInference';
@@ -834,11 +835,19 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
           return false;
         }
       },
-      // withProgress 返回 Thenable,await 归一成 Promise(依赖面签名)
+      // withProgress 返回 Thenable,await 归一成 Promise(依赖面签名);
+      // RUST-222 补取消:令牌接子进程柄,取消=kill(半成品 venv 由验真面如实拒)
       runVenvModule: async (base, target) =>
         await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: l10nText('Creating venv: python -m venv {target}', { target }) },
-          () => runVenvModuleProcess(base, target)
+          { location: vscode.ProgressLocation.Notification, title: l10nText('Creating venv: python -m venv {target}', { target }), cancellable: true },
+          (_progress, token) =>
+            new Promise<{ exitCode: number | null; stderr: string }>(resolve => {
+              let child: ChildProcess | null = null;
+              token.onCancellationRequested(() => child?.kill());
+              runVenvModuleProcess(base, target, spawned => {
+                child = spawned;
+              }).then(resolve, resolve);
+            })
         ),
       // 直接对目标验真(不依赖扫描范围,深层/工作区外目标照常选用)
       verifyTarget: dir => verifyVenvDirectory(dir, process.platform),

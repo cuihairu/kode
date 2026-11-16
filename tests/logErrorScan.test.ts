@@ -298,6 +298,56 @@ describe('scanRawLogErrors', () => {
     ]);
   });
 
+  it('RUST-222 hooks: beforeFile 逐文件回调带序号与总数', async () => {
+    const fileB = Uri.file('/mem/logs/baseapp.log');
+    const deps = depsOf({
+      stats: new Map([
+        [FILE_A.fsPath, { size: 0, type: RAW_LOG_ENTRY_KIND_FILE }],
+        [fileB.fsPath, { size: 0, type: RAW_LOG_ENTRY_KIND_FILE }]
+      ]),
+      files: new Map([
+        [FILE_A.fsPath, Buffer.from(FILE_A_CONTENT, 'utf8')],
+        [fileB.fsPath, Buffer.from('[2026-03-26 18:30:00][ERROR][baseapp] out of memory', 'utf8')]
+      ])
+    });
+    const calls: Array<[string, number, number]> = [];
+    const report = await scanRawLogErrors([FILE_A, fileB], deps, {
+      beforeFile: (uri, index, total) => calls.push([uri.fsPath, index, total])
+    });
+    expect(calls).toEqual([
+      [FILE_A.fsPath, 0, 2],
+      [fileB.fsPath, 1, 2]
+    ]);
+    expect(report.files).toHaveLength(2);
+  });
+
+  it('RUST-222 取消:探针为真时止步,已扫文件如实留在报告', async () => {
+    const fileB = Uri.file('/mem/logs/baseapp.log');
+    const fileC = Uri.file('/mem/logs/cellapp.log');
+    const deps = depsOf({
+      stats: new Map([
+        [FILE_A.fsPath, { size: 0, type: RAW_LOG_ENTRY_KIND_FILE }],
+        [fileB.fsPath, { size: 0, type: RAW_LOG_ENTRY_KIND_FILE }],
+        [fileC.fsPath, { size: 0, type: RAW_LOG_ENTRY_KIND_FILE }]
+      ]),
+      files: new Map([
+        [FILE_A.fsPath, Buffer.from(FILE_A_CONTENT, 'utf8')],
+        [fileB.fsPath, Buffer.from('[2026-03-26 18:30:00][ERROR][baseapp] out of memory', 'utf8')],
+        [fileC.fsPath, Buffer.from('[2026-03-26 18:31:00][ERROR][cellapp] boom', 'utf8')]
+      ])
+    });
+    let scanned = 0;
+    const report = await scanRawLogErrors([FILE_A, fileB, fileC], deps, {
+      beforeFile: (_uri, index) => {
+        scanned = index + 1;
+      },
+      isCancelled: () => scanned >= 1
+    });
+    expect(report.files.map(file => file.name)).toEqual(['server.log']);
+    expect(report.files.some(file => file.name === 'baseapp.log')).toBe(false);
+    expect(report.totalErrors).toBe(7);
+  });
+
   it('超上限文件与读取失败文件记入 readError,不中断其余文件', async () => {
     const bigFile = Uri.file('/mem/logs/big.log');
     const badFile = Uri.file('/mem/logs/bad.log');

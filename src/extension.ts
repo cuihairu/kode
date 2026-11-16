@@ -51,7 +51,7 @@ import {
   LogErrorScanView,
   realLogErrorScanDeps,
   runLogErrorScanCommand,
-  scanRawLogErrors,
+  scanRawLogErrorsWithProgress,
 } from './logErrorScan';
 
 
@@ -1362,12 +1362,12 @@ export function activate(context: vscode.ExtensionContext) {
   const { logCollector, logViewer, logHub } = wireLogging(context, serverManager, indexScheduler);
 
   // 原始日志 ERROR 扫描(盘点 G6):离线聚合日志文件里的 ERROR/CRITICAL 行;
-  // 重扫按上一批文件重跑,不再弹对话框
+  // 重扫按上一批文件重跑,不再弹对话框;RUST-222 进度+取消封装
   const logErrorScanView = new LogErrorScanView(context, previous =>
-    scanRawLogErrors(
+    scanRawLogErrorsWithProgress(
       previous.files.map(file => file.uri),
       realLogErrorScanDeps
-    )
+    ).then(({ report }) => report)
   );
   const scanRawLogErrorsCommand = vscode.commands.registerCommand(
     'kbengine.logs.scanErrors',

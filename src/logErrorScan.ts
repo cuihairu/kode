@@ -228,15 +228,26 @@ export async function collectScanTargets(
   return targets;
 }
 
-/** 整批扫描:每文件一行报告 + 跨文件合并的命中表 */
+/** RUST-222 进度/取消钩子:命令层 withProgress 逐文件报进度,取消探针每文件一发 */
+export interface RawScanHooks {
+  beforeFile?(uri: vscode.Uri, index: number, total: number): void;
+  isCancelled?(): boolean;
+}
+
+/** 整批扫描:每文件一行报告 + 跨文件合并的命中表;取消=止步,已扫文件如实留在报告 */
 export async function scanRawLogErrors(
   targets: readonly vscode.Uri[],
-  deps: LogErrorScanDeps
+  deps: LogErrorScanDeps,
+  hooks?: RawScanHooks
 ): Promise<RawLogScanReport> {
   const hits = new Map<string, RawErrorHit>();
   const files: RawLogScanFileReport[] = [];
 
-  for (const uri of targets) {
+  for (const [index, uri] of targets.entries()) {
+    if (hooks?.isCancelled?.()) {
+      break;
+    }
+    hooks?.beforeFile?.(uri, index, targets.length);
     try {
       const stat = await deps.stat(uri);
       if (stat.size > ERROR_SCAN_MAX_FILE_BYTES) {
@@ -288,6 +299,34 @@ export const realOpenLogScanTarget = async (uri: vscode.Uri, line: number): Prom
 };
 
 /** 命令层编排:对话框 → 目标展开 → 扫描 → 面板 */
+/** RUST-222 带进度与取消的扫描封装:withProgress Notification 位逐文件报进度,
+ * 取消止步(已扫文件如实留在报告),完成后取消旗标由调用方如实提示 */
+export async function scanRawLogErrorsWithProgress(
+  targets: readonly vscode.Uri[],
+  deps: LogErrorScanDeps
+): Promise<{ report: RawLogScanReport; cancelled: boolean }> {
+  let cancelled = false;
+  const report = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: '正在扫描日志文件错误',
+      cancellable: true
+    },
+    async (progress, token) => {
+      token.onCancellationRequested(() => {
+        cancelled = true;
+      });
+      return scanRawLogErrors(targets, deps, {
+        beforeFile: (uri, index, total) => {
+          progress.report({ message: `${index + 1}/${total} ${baseNameOf(uri.fsPath)}` });
+        },
+        isCancelled: () => cancelled
+      });
+    }
+  );
+  return { report, cancelled };
+}
+
 export async function runLogErrorScanCommand(
   view: LogErrorScanView,
   deps: LogErrorScanDeps = realLogErrorScanDeps,
@@ -303,8 +342,14 @@ export async function runLogErrorScanCommand(
     await vscode.window.showInformationMessage('所选位置没有可扫描的日志文件(.log/.txt/.out)');
     return;
   }
-  const report = await scanRawLogErrors(targets, deps);
+  const { report, cancelled } = await scanRawLogErrorsWithProgress(targets, deps);
   view.show(report);
+  if (cancelled) {
+    const scanned = report.files.filter(file => file.readError === null).length;
+    await vscode.window.showWarningMessage(
+      `扫描已取消:报告含已扫描的 ${scanned}/${targets.length} 个文件,其余文件未扫描。`
+    );
+  }
 }
 
 function formatScanTime(time: number | null): string {

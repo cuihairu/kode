@@ -16,6 +16,7 @@
 import { l10nText } from '../nlsRuntime';
 import * as path from 'path';
 import { execFile, spawn } from 'child_process';
+import type { ChildProcess } from 'child_process';
 import {
   type DiscoveredVenv,
   parsePythonVersionOutput,
@@ -262,12 +263,14 @@ export async function createVenvFlow(deps: CreateVenvDeps): Promise<'created' | 
 const runProcess = (
   file: string,
   args: string[],
-  timeoutMs: number
+  timeoutMs: number,
+  onSpawn?: (child: ChildProcess) => void
 ): Promise<{ exitCode: number | null; stderr: string }> =>
   new Promise(resolve => {
     let stderrTail = '';
     let settled = false;
     const child = spawn(file, args, { timeout: timeoutMs });
+    onSpawn?.(child);
     child.stderr?.on('data', (chunk: Buffer) => {
       stderrTail = `${stderrTail}${chunk}`.slice(-2000);
     });
@@ -282,9 +285,14 @@ const runProcess = (
     child.on('close', code => finish(code, stderrTail));
   });
 
-/** 真实依赖侧:进度态里跑 python -m venv(异步,超时 kill) */
-export const runVenvModuleProcess = (base: string, target: string): Promise<{ exitCode: number | null; stderr: string }> =>
-  runProcess(base, ['-m', 'venv', target], 300_000);
+/** 真实依赖侧:进度态里跑 python -m venv(异步,超时 kill);onSpawn 供
+ * withProgress 取消令牌接子进程柄(RUST-222,取消=kill,半成品由验真面如实拒) */
+export const runVenvModuleProcess = (
+  base: string,
+  target: string,
+  onSpawn?: (child: ChildProcess) => void
+): Promise<{ exitCode: number | null; stderr: string }> =>
+  runProcess(base, ['-m', 'venv', target], 300_000, onSpawn);
 
 /** 真实依赖侧:异步探 <python> --version(5s 超时);失败如实 null */
 export const probePythonVersion = async (interpreterPath: string): Promise<string | null> => {

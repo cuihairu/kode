@@ -323,6 +323,20 @@ describe('selectInterpreter 缺口臂与真实进程依赖面', () => {
     }
     expect(await probePythonVersion('kode-no-such-python-xyz')).toBeNull();
   });
+
+  it('RUST-222:onSpawn 钩子收到子进程柄,取消令牌可据此 kill', async () => {
+    let spawned: { pid?: number; kill: () => boolean } | null = null;
+    const result = await runVenvModuleProcess(
+      process.execPath,
+      '/tmp/kode-venv-onspawn-x',
+      child => {
+        spawned = child as unknown as { pid?: number; kill: () => boolean };
+      }
+    );
+    expect(spawned).not.toBeNull();
+    expect(typeof spawned!.pid).toBe('number');
+    expect(result.exitCode).not.toBe(0);
+  });
 });
 
 });
