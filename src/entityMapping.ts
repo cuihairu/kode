@@ -14,6 +14,10 @@ import { getRootConfigGeneration } from './rootConfigGeneration';
 import { readFileUtf8Recorded, readFileSyncUtf8Recorded } from './backend/fileReadMetrics';
 import { collectOpenDocumentTexts, readSharedFileSnapshot } from './sharedFileSnapshot';
 import {
+  resolveIncomingPythonMethodCalls,
+  resolveOutgoingPythonMethodCalls
+} from './backend/pythonMethodCallQueries';
+import {
   findFilesAcrossRoots,
   getExternalScanRoots,
   getIndexScanRoots,
@@ -2216,44 +2220,11 @@ export class EntityMappingManager {
       return [];
     }
 
-    const targetMethod = index.pythonMethods.find(method =>
-      normalizeLookupPath(method.filePath) === normalizeLookupPath(pythonFile)
-      && method.methodName === methodName
-    );
-    if (!targetMethod) {
-      return [];
-    }
-
-    const references: PythonMethodCallReference[] = [];
-    const seen = new Set<string>();
-    for (const reference of targetMethod.calls) {
-      if (token?.isCancellationRequested) return [];
-      const binding = index.pythonMethods.find(candidate =>
-        normalizeLookupPath(candidate.filePath) === normalizeLookupPath(reference.filePath)
-        && candidate.methodName === reference.methodName
-      );
-
-      const resolved = binding
-        || index.pythonMethods.find(candidate => candidate.methodName === reference.methodName);
-      if (!resolved) {
-        continue;
-      }
-
-      const key = `${normalizeLookupPath(resolved.filePath)}:${resolved.methodName}:${resolved.line}:${resolved.character}`;
-      if (seen.has(key)) {
-        continue;
-      }
-      seen.add(key);
-
-      references.push({
-        filePath: resolved.filePath,
-        methodName: resolved.methodName,
-        line: resolved.line,
-        character: resolved.character
-      });
-    }
-
-    return references;
+    // RUST-145 批 1:决策核下沉 backend 纯库(Rust python_method_calls.rs
+    // golden 对拍同源),包装面只留索引获取+取消检查。取消语义与原实现等
+    // 价:中途取消原为循环内立即空表,现为算毕后复查空表(调用方所见一致)。
+    if (token?.isCancellationRequested) return [];
+    return resolveOutgoingPythonMethodCalls(index.pythonMethods, pythonFile, methodName);
   }
 
   /**
@@ -2418,76 +2389,16 @@ export class EntityMappingManager {
       return [];
     }
 
-    const incoming: Array<{ caller: PythonMethodLocation; callLine: number; callCharacter: number }> = [];
-    const normalizedTarget = normalizeLookupPath(pythonFile);
-    // 2026-11-05 用户反馈(def 方法 Shift+F12):本地调用按方法自身区块/进程作用域
-    // 收录——baseapp 的 self.x() 不计入 cellapp 同名方法引用。KBEngine def 方法
-    // 不可跨进程,本进程 self.x() 是本地调用,跨进程是 self.cell/base/client.x()
-    // (RPC,另走 getIncomingPythonReceiverCalls)。目标区块由实现文件路径推断;
-    // 调用方区块已知且不同 → 跨进程伪引用,跳过。调用方区块未知(common/ 等共享
-    // 脚本,可被目标进程导入)→ 保守保留;目标区块未知 → 全保留(现状行为)。
-    const targetSection = inferMethodSectionFromPythonFile(normalizedTarget);
-
-    // IDE-NAV-004:未保存文档跟随——在位打开文档以缓冲区当前版重解析方法块
-    // (parsePythonMethodBlocks 与索引首扫同一纯函数),覆盖该文件的索引条目
-    // 后再扫:新增/删除调用点随缓冲区,未打开文件走磁盘索引原样。逐文件
-    // 快照会把磁盘补载放大成整索引读盘,故清单一次取(collectOpenDocumentTexts)。
-    const methodsByFile = new Map<string, IndexedPythonMethodLocation[]>();
-    for (const method of index.pythonMethods) {
-      const key = normalizeLookupPath(method.filePath);
-      const bucket = methodsByFile.get(key);
-      if (bucket) {
-        bucket.push(method);
-      } else {
-        methodsByFile.set(key, [method]);
-      }
-    }
-    for (const openText of collectOpenDocumentTexts()) {
-      const key = normalizeLookupPath(openText.fsPath);
-      const bucket = methodsByFile.get(key);
-      if (bucket) {
-        methodsByFile.set(key, parsePythonMethodBlocks(openText.content, bucket[0].filePath));
-      }
-    }
-    const methods = [...methodsByFile.values()].flat();
-
-    for (const method of methods) {
-      if (token?.isCancellationRequested) return [];
-      for (const call of method.calls) {
-        if (token?.isCancellationRequested) return [];
-        if (call.methodName !== methodName) {
-          continue;
-        }
-
-        const resolved = methods.find(candidate =>
-          candidate.methodName === call.methodName
-          && normalizeLookupPath(candidate.filePath) === normalizedTarget
-        );
-        if (!resolved) {
-          continue;
-        }
-
-        // 2026-11-05:进程作用域过滤(见上方 targetSection 注释)。调用方文件
-        // 区块与目标区块都已知且不同 → 跨进程伪引用(如 base 调 cell 方法),跳过。
-        const callerSection = inferMethodSectionFromPythonFile(method.filePath);
-        if (targetSection && callerSection && callerSection !== targetSection) {
-          continue;
-        }
-
-        incoming.push({
-          caller: {
-            filePath: method.filePath,
-            methodName: method.methodName,
-            line: method.line,
-            character: method.character
-          },
-          callLine: call.line,
-          callCharacter: call.character
-        });
-      }
-    }
-
-    return incoming;
+    // RUST-145 批 1:决策核下沉 backend 纯库(打开文档清单一次取,与原实现
+    // 同时机;取消语义与原实现等价——中途取消原为循环内立即空表,现为算毕
+    // 后复查空表,调用方所见一致)。
+    if (token?.isCancellationRequested) return [];
+    return resolveIncomingPythonMethodCalls(
+      index.pythonMethods,
+      collectOpenDocumentTexts(),
+      pythonFile,
+      methodName
+    );
   }
 
   /**
@@ -2954,5 +2865,5 @@ export class EntityMappingManager {
   }
 }
 
-import { bindPythonMethods, buildFallbackPythonPath, filterMethodDefinitionsBySection, sameIdentity, inferOwnerNameFromPythonFile, inferOwnerKindFromPythonFile, inferMethodSectionFromPythonFile, uniqueFilePaths, escapeRegExp, hasMethodImplementationInSnapshot, collectPythonMethods, getLineNumber, getColumnNumber, normalizePropertyLookupPath, parsePythonMethodBlocks } from './entityMappingHelpers';
+import { bindPythonMethods, buildFallbackPythonPath, filterMethodDefinitionsBySection, sameIdentity, inferOwnerNameFromPythonFile, inferOwnerKindFromPythonFile, inferMethodSectionFromPythonFile, uniqueFilePaths, escapeRegExp, hasMethodImplementationInSnapshot, collectPythonMethods, getLineNumber, getColumnNumber, normalizePropertyLookupPath } from './entityMappingHelpers';
 export { filterMethodDefinitionsBySection, buildMethodOwnerBindingKey, sameIdentity, inferOwnerKindFromPythonFile, inferMethodSectionFromPythonFile, uniqueFilePaths, escapeRegExp, getLineNumber, getColumnNumber, rustSymbolsToIndexedMethodLocations, parsePythonMethodBlocks } from './entityMappingHelpers';

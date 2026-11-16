@@ -18,6 +18,15 @@ import { buildPythonSymbolsInRust } from './backend/pythonCallGraphRust';
 import type { PythonSymbolCall, PythonSymbolsRustResult } from './backend/pythonCallGraphRust';
 import type { DefinitionSemanticCategory } from './backend/definitionSemantics';
 import { normalizeLookupPath } from './backend/definitionSemantics';
+// RUST-145 批 1:方法块解析/区块推断/调用层次 resolve 决策核迁入
+// backend 纯库(Rust python_method_calls.rs golden 对拍同源),此处导入
+// 回注+re-export 保持既有导入路径不变(消费者零改动)。
+import {
+  inferMethodSectionFromPythonFile,
+  parsePythonMethodBlocks
+} from './backend/pythonMethodCallQueries';
+
+export { inferMethodSectionFromPythonFile, parsePythonMethodBlocks };
 import { joinWorkspacePath } from './backend/workspacePath';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 
@@ -84,39 +93,6 @@ export function inferOwnerKindFromPythonFile(
   if (normalizedPath.endsWith('.py')) {
     return 'entity';
   }
-  return undefined;
-}
-
-export function inferMethodSectionFromPythonFile(pythonFile: string): EntityMethodSection | undefined {
-  const normalizedPath = normalizeLookupPath(pythonFile).toLowerCase();
-
-  // demo 资产目录名(scripts/base|cell|client|bots,官方资产模板形态;引擎
-  // baseapp→scripts/base、cellapp→scripts/cell、bots→scripts/bots 装载,
-  // bots.cpp:211-228)。此前只认 base/cell/client,demo 资产里实有的
-  // scripts/bots 文件全落 undefined——段过滤/作用域推断/调用图分段一并瞎
-  // (2026-11-11 用户报障收编)。bots 的脚本面是 client 面(KB-API-007:
-  // ClientObjectBase 组装)。引擎进程名(baseapp/cellapp)不是目录名,两层
-  // 名不得混称——目录只按资产层认。
-  if (normalizedPath.includes('/scripts/bots/') || normalizedPath.includes('/assets/scripts/bots/')
-    || normalizedPath.startsWith('bots/') || normalizedPath.includes('/bots/')) {
-    return 'ClientMethods';
-  }
-
-  if (normalizedPath.includes('/scripts/base/') || normalizedPath.includes('/assets/scripts/base/')
-    || normalizedPath.startsWith('base/') || normalizedPath.includes('/base/')) {
-    return 'BaseMethods';
-  }
-
-  if (normalizedPath.includes('/scripts/cell/') || normalizedPath.includes('/assets/scripts/cell/')
-    || normalizedPath.startsWith('cell/') || normalizedPath.includes('/cell/')) {
-    return 'CellMethods';
-  }
-
-  if (normalizedPath.includes('/scripts/client/') || normalizedPath.includes('/assets/scripts/client/')
-    || normalizedPath.startsWith('client/') || normalizedPath.includes('/client/')) {
-    return 'ClientMethods';
-  }
-
   return undefined;
 }
 
@@ -269,79 +245,6 @@ function locatePythonDefBlock(
   return null;
 }
 
-export function parsePythonMethodBlocks(
-  content: string,
-  pythonFile: string
-): IndexedPythonMethodLocation[] {
-  const lines = content.split('\n');
-  const methods: IndexedPythonMethodLocation[] = [];
-  const definitionRegex = /^(\s*)(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const lineText = lines[index];
-    const match = definitionRegex.exec(lineText);
-    if (!match) {
-      continue;
-    }
-
-    const indent = match[1].length;
-    const methodName = match[2];
-    const character = lineText.indexOf(methodName);
-    let endLine = lines.length;
-
-    for (let nextLine = index + 1; nextLine < lines.length; nextLine += 1) {
-      const nextText = lines[nextLine];
-      if (!nextText.trim()) {
-        continue;
-      }
-
-      const nextIndent = nextText.match(/^\s*/)?.[0].length || 0;
-      if (nextIndent <= indent) {
-        endLine = nextLine;
-        break;
-      }
-    }
-
-    const bodyLines = lines.slice(index + 1, endLine);
-    methods.push({
-      filePath: pythonFile,
-      methodName,
-      line: index + 1,
-      character,
-      endLine,
-      calls: parsePythonSelfCalls(bodyLines, index + 2, pythonFile)
-    });
-  }
-
-  return methods;
-}
-
-function parsePythonSelfCalls(
-  bodyLines: string[],
-  startLine: number,
-  pythonFile: string
-): Array<{ methodName: string; line: number; character: number; filePath: string }> {
-  const calls: Array<{ methodName: string; line: number; character: number; filePath: string }> = [];
-  const callRegex = /\bself\.([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
-
-  for (let index = 0; index < bodyLines.length; index += 1) {
-    const lineText = bodyLines[index];
-    let match: RegExpExecArray | null;
-
-    while ((match = callRegex.exec(lineText)) !== null) {
-      calls.push({
-        methodName: match[1],
-        line: startLine + index,
-        // match[0] 恒以 'self.' 开头,名字紧跟前缀(批86 M7 同类:indexOf(name)
-        // 在 name 为 'self' 子串时命中前缀内部,self.e/self.self 列错位)
-        character: match.index + 'self.'.length,
-        filePath: pythonFile
-      });
-    }
-  }
-
-  return calls;
-}
 export { buildFallbackPythonPath, inferOwnerNameFromPythonFile, hasMethodImplementationInSnapshot, normalizePropertyLookupPath };
 
 // ---------------------------------------------------------------------------

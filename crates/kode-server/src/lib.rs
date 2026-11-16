@@ -33,6 +33,7 @@ pub mod property_direction;
 pub mod python_call_at;
 pub mod python_callgraph;
 pub mod python_lexical_mask;
+pub mod python_method_calls;
 pub mod python_process;
 pub mod readonly_write;
 pub mod receiver_none;
