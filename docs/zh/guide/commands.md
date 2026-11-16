@@ -576,6 +576,20 @@ callgraph 模式面板支持：
 - 点击节点打开对应 `.py` 文件
 - 导出 SVG / PNG
 
+### `kbengine.entityRelations.show`
+
+- 标题：`Show Entity Relations Browser`
+- 作用：打开实体关系浏览器（与实体依赖图同一面板，relations 模式）
+
+relations 模式从 Rust 全图（复用 `$/kode/dependency/graph` 的反向边；支持 TS 兜底图）渲染懒展开的邻接子图：
+
+- 焦点节点默认取活跃 `.def` 编辑器（实体名干）；定位不到时 QuickPick 列候选（实体优先，其后组件/接口/类型/python）
+- 焦点初始展开并带全部双向直接邻接；其余可见节点带 `+N` 邻接徽标
+- 点击已展开节点打开其文件；点击未展开节点把该节点的邻接就地并入子图（幂等——重放不重渲染）
+- 边 kind 各有专属箭头（inheritance / registration / is-a / has-a / implements / property-type / method-impl）；TS 兜底用朴素箭头加传统类型着色
+- 面板统计按可见子图口径，绝不冒充全图
+- 导出 SVG / PNG
+
 ### `kbengine.flow.show`
 
 - 标题：`Show Entity Flow Graph`

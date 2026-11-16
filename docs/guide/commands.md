@@ -589,6 +589,20 @@ The callgraph mode panel supports:
 - Clicking a node opens the corresponding `.py` file
 - Export SVG / PNG
 
+### `kbengine.entityRelations.show`
+
+- Title: `Show Entity Relations Browser`
+- Purpose: open the entity relations browser (same panel as the entity dependency graph, in relations mode)
+
+The relations mode renders a lazily expanded neighborhood subgraph from the Rust full graph (reusing the reverse edges of `$/kode/dependency/graph`; TS fallback graph supported):
+
+- The focus node defaults to the active `.def` editor (entity name stem); when it cannot be located a QuickPick lists candidates (entities first, then components / interfaces / types / python)
+- The focus starts expanded with all bidirectional direct neighbors visible; every other visible node carries a `+N` neighbor badge
+- Clicking an expanded node opens its file; clicking an unexpanded node merges that node's neighborhood into the subgraph in place (idempotent — replays do not re-render)
+- Edge kinds keep dedicated arrows (inheritance / registration / is-a / has-a / implements / property-type / method-impl); the TS fallback keeps plain arrows with legacy type coloring
+- Panel statistics reflect the visible subgraph, never the full graph
+- Export SVG / PNG
+
 ### `kbengine.flow.show`
 
 - Title: `Show Entity Flow Graph`
