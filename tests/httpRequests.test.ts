@@ -78,9 +78,18 @@ describe('parseHttpRequestEntries', () => {
 
 describe('内置示例与 package.json 默认值同步', () => {
   it('kbengine.httpRequests 默认值与代码常量逐字段一致(防漂移)', () => {
-    const properties = (packageJson as unknown as {
-      contributes: { configuration: { properties: Record<string, { default: unknown }> } };
-    }).contributes.configuration.properties;
+    // RUST-228 起 configuration 是分组块数组,聚合键集合同旧单块口径
+    const configRaw = (packageJson as unknown as {
+      contributes: {
+        configuration:
+          | { properties: Record<string, { default: unknown }> }
+          | Array<{ properties: Record<string, { default: unknown }> }>;
+      };
+    }).contributes.configuration;
+    const properties = Object.assign(
+      {},
+      ...(Array.isArray(configRaw) ? configRaw : [configRaw]).map(section => section.properties)
+    );
     expect(properties['kbengine.httpRequests'].default).toEqual([BUILTIN_HTTP_REQUEST_EXAMPLE]);
     expect(BUILTIN_HTTP_REQUEST_EXAMPLE.enabled).toBe(false); // 内置示例默认停用
     // 用户令 2026-11-06:默认示例端点与参数名硬契约(127.0.0.1:8090/hotfix +

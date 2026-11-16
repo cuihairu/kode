@@ -370,13 +370,25 @@ describe('setupHotReload(装配)', () => {
 
   it('package.json 默认 enabled=true,markdownDescription 不再是「默认关防误触」', () => {
     const raw = packageJson as unknown as {
-      contributes: { configuration: { properties: Record<string, { default: unknown; markdownDescription: string }> } };
+      contributes: {
+        configuration:
+          | { properties: Record<string, { default: unknown; markdownDescription: string }> }
+          | Array<{ properties: Record<string, { default: unknown; markdownDescription: string }> }>;
+      };
     };
     // KODE-I18N-001 起描述文案外置 package.nls*.json(%key% 占位),契约按解析后默认包文案断言
     const nls = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.nls.json'), 'utf8')) as Record<string, string>;
-    const desc = raw.contributes.configuration.properties['kbengine.hotReload.enabled'].markdownDescription
+    // RUST-228 起 configuration 是分组块数组,聚合键集合同旧单块口径
+    const hotReloadProps = Object.assign(
+      {},
+      ...(Array.isArray(raw.contributes.configuration)
+        ? raw.contributes.configuration
+        : [raw.contributes.configuration]
+      ).map(section => section.properties)
+    );
+    const desc = hotReloadProps['kbengine.hotReload.enabled'].markdownDescription
       .replace(/^%([^%]+)%$/, (_m, key: string) => nls[key] ?? key);
-    expect(raw.contributes.configuration.properties['kbengine.hotReload.enabled'].default).toBe(true);
+    expect(hotReloadProps['kbengine.hotReload.enabled'].default).toBe(true);
     // 2026-11-06 起配置键提示统一 markdownDescription,裸 description 已移除
     expect(desc).not.toContain('默认关防误触');
     expect(desc).toContain('127.0.0.1:8090/hotfix');

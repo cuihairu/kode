@@ -37,10 +37,23 @@ describe('package.json 开关注册(默认值断言)', () => {
   ) as Record<string, string>;
   const pkg = JSON.parse(
     readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')
-  ) as { contributes: { configuration: { properties: Record<string, { type: string; default: boolean; markdownDescription: string }> } } };
+  ) as {
+    contributes: {
+      configuration:
+        | { properties: Record<string, { type: string; default: boolean; markdownDescription: string }> }
+        | Array<{ properties: Record<string, { type: string; default: boolean; markdownDescription: string }> }>;
+    };
+  };
   const resolveNls = (value: string): string =>
     value.replace(/^%([^%]+)%$/, (_m, key: string) => nls[key] ?? key);
-  const properties = pkg.contributes.configuration.properties;
+  // RUST-228 起 configuration 是分组块数组,聚合键集合同旧单块口径
+  const properties = Object.assign(
+    {},
+    ...(Array.isArray(pkg.contributes.configuration)
+      ? pkg.contributes.configuration
+      : [pkg.contributes.configuration]
+    ).map(section => section.properties)
+  );
 
   const expectedKeys = [
     'kbengine.entity.builtinProperties',
@@ -243,11 +256,18 @@ describe('批 ③ 退役面(静态模板定案)', () => {
   it('stubSourceMode/stubEngineTypings 随动态生成链退役,不再出现在 package.json', () => {
     const pkg = JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as {
       contributes: {
-        configuration: { properties: Record<string, unknown> };
+        configuration: { properties: Record<string, unknown> } | Array<{ properties: Record<string, unknown> }>;
         commands: Array<{ command: string }>;
       };
     };
-    const props = pkg.contributes.configuration.properties;
+    // RUST-228 起 configuration 是分组块数组,聚合键集合同旧单块口径
+    const props = Object.assign(
+      {},
+      ...(Array.isArray(pkg.contributes.configuration)
+        ? pkg.contributes.configuration
+        : [pkg.contributes.configuration]
+      ).map(section => section.properties)
+    );
     expect(props['kbengine.python.stubSourceMode']).toBeUndefined();
     expect(props['kbengine.python.stubEngineTypings']).toBeUndefined();
     // 新配置面:内部属性提示开关 + 模板集重置命令

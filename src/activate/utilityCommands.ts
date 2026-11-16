@@ -589,8 +589,24 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
       const configuration = vscode.workspace.getConfiguration('kbengine');
       const contributed = JSON.parse(
         fs.readFileSync(path.join(context.extensionPath, 'package.json'), 'utf8')
-      ) as { contributes?: { configuration?: { properties?: Record<string, { type?: string }> } } };
-      const switchKeys = Object.entries(contributed.contributes?.configuration?.properties ?? {})
+      ) as {
+        contributes?: {
+          configuration?:
+            | { properties?: Record<string, { type?: string }> }
+            | Array<{ properties?: Record<string, { type?: string }> }>;
+        };
+      };
+      // RUST-228 起 configuration 是分组块数组,聚合后枚举布尔开关(自动随贡献面增长)
+      const configurationBlocks = contributed.contributes?.configuration;
+      const contributedProperties = Object.assign(
+        {},
+        ...(Array.isArray(configurationBlocks)
+          ? configurationBlocks
+          : configurationBlocks
+            ? [configurationBlocks]
+            : []
+      ).map(block => block.properties ?? {})) as Record<string, { type?: string }>;
+      const switchKeys = Object.entries(contributedProperties)
         .filter(([, schema]) => schema.type === 'boolean')
         .map(([key]) => key)
         .sort();

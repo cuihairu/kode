@@ -383,5 +383,13 @@
   "kbengine.config.configValueDiagnostics.description": "配置值校验诊断(kbengine.xml,只查有源码/schema 依据的维度):类型不符(引擎读取点/注释类型声明证据)报 Error——引擎启动解析该键;枚举不合(注释枚举块证据)报 Warning——引擎对未登记值按掩码/忽略处理;kbengine.xml 独有键报 Information——引擎配置层只读已知键,custom 独有键被容忍忽略(自己工具在用可无视)。范围/必填无机器可判证据源,不虚构,零产出\n\n默认值：开启（`true`）\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#诊断)",
   "kbengine.view.typePreview": "类型预览",
   "kbengine.command.typePreview.refresh": "刷新类型预览",
-  "kbengine.command.typePreview.jump": "跳转来源(类型预览)"
+  "kbengine.command.typePreview.jump": "跳转来源(类型预览)",
+  "kbengine.configuration.performance.title": "性能与监控",
+  "kbengine.configuration.semantic.title": "语义检查",
+  "kbengine.configuration.python.title": "Python 语言服务",
+  "kbengine.configuration.typings.title": "类型桩",
+  "kbengine.configuration.engine.title": "引擎与项目路径",
+  "kbengine.configuration.runtime.title": "运行时与热更",
+  "kbengine.configuration.tools.title": "生成与工具",
+  "kbengine.configuration.general.title": "通用与视图"
 }

@@ -425,9 +425,18 @@ describe('RuntimeQueryWebView 操作面(增删 watcher、结果订阅流)', () =
 
 describe('kbengine.runtimeQuery.* 配置项', () => {
   it('操作面开关默认关,轮询间隔默认 2000ms 且声明下限 500', () => {
-    const props = (JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as {
-      contributes: { configuration: { properties: Record<string, Record<string, unknown>> } };
-    }).contributes.configuration.properties;
+    // RUST-228 起 configuration 是分组块数组,聚合键集合同旧单块口径
+    const configRaw = (JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as {
+      contributes: {
+        configuration:
+          | { properties: Record<string, Record<string, unknown>> }
+          | Array<{ properties: Record<string, Record<string, unknown>> }>;
+      };
+    }).contributes.configuration;
+    const props = Object.assign(
+      {},
+      ...(Array.isArray(configRaw) ? configRaw : [configRaw]).map(section => section.properties)
+    );
     expect(props['kbengine.runtimeQuery.enabled']).toMatchObject({ type: 'boolean', default: false });
     expect(props['kbengine.runtimeQuery.pollIntervalMs']).toMatchObject({
       type: 'number',

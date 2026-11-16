@@ -53,8 +53,15 @@ const manifest: ManifestEntry[] = JSON.parse(
 
 const pkg = JSON.parse(
   fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')
-) as { contributes: { configuration: { properties: Record<string, unknown> } } };
-const declaredProps = pkg.contributes.configuration.properties;
+) as { contributes: { configuration: { properties: Record<string, unknown> } | Array<{ properties: Record<string, unknown> }> } };
+// RUST-228 起 configuration 是分组块数组,聚合键集合同旧单块口径
+const declaredProps = Object.assign(
+  {},
+  ...(Array.isArray(pkg.contributes.configuration)
+    ? pkg.contributes.configuration
+    : [pkg.contributes.configuration]
+  ).map(section => section.properties)
+);
 
 const byKey = new Map(switchList.map(s => [s.key, s]));
 

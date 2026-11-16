@@ -1430,997 +1430,1042 @@
         "mac": "cmd+alt+r"
       }
     ],
-    "configuration": {
-      "title": "KBEngine",
-      "properties": {
-        "kbengine.engineVersion": {
-          "type": "string",
-          "default": "3.7.3",
-          "scope": "window",
-          "markdownDescription": "%kbengine.config.engineVersion.description%"
-        },
-        "kbengine.gitHistory.enabled": {
-          "type": "boolean",
-          "default": true,
-          "scope": "resource",
-          "markdownDescription": "%kbengine.config.gitHistory.enabled.description%"
-        },
-        "kbengine.clone.archiveEncryption": {
-          "type": "string",
-          "enum": [
-            "encrypted",
-            "plain"
-          ],
-          "default": "encrypted",
-          "scope": "window",
-          "markdownDescription": "%kbengine.config.clone.archiveEncryption.description%",
-          "markdownEnumDescriptions": [
-            "%kbengine.config.clone.archiveEncryption.enum.0%",
-            "%kbengine.config.clone.archiveEncryption.enum.1%"
-          ]
-        },
-        "kbengine.metrics.fileReadDetail": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%kbengine.config.metrics.fileReadDetail.description%"
-        },
-        "kbengine.db.tablePrefix": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "%kbengine.config.db.tablePrefix.description%"
-        },
-        "kbengine.databaseQueryTimeoutMs": {
-          "type": "number",
-          "default": 10000,
-          "minimum": 0,
-          "markdownDescription": "%kbengine.config.databaseQueryTimeoutMs.description%"
-        },
-        "kbengine.enableDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.enableDiagnostics.description%"
-        },
-        "kbengine.enableStructureDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.enableStructureDiagnostics.description%"
-        },
-        "kbengine.receiverNoneDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.receiverNoneDiagnostics.description%"
-        },
-        "kbengine.configContractDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.configContractDiagnostics.description%"
-        },
-        "kbengine.attributeNoneDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.attributeNoneDiagnostics.description%"
-        },
-        "kbengine.propertyDirectionDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.propertyDirectionDiagnostics.description%"
-        },
-        "kbengine.readOnlyWriteDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.readOnlyWriteDiagnostics.description%"
-        },
-        "kbengine.startupScriptDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.startupScriptDiagnostics.description%"
-        },
-        "kbengine.spaceNavDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.spaceNavDiagnostics.description%"
-        },
-        "kbengine.rpcArgCountDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.rpcArgCountDiagnostics.description%"
-        },
-        "kbengine.rpcArgTypeDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.rpcArgTypeDiagnostics.description%"
-        },
-        "kbengine.roleMisuseDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.roleMisuseDiagnostics.description%"
-        },
-        "kbengine.postDestroyDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.postDestroyDiagnostics.description%"
-        },
-        "kbengine.cellDataWriteDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.cellDataWriteDiagnostics.description%"
-        },
-        "kbengine.spaceDataProtectedKeyDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.spaceDataProtectedKeyDiagnostics.description%"
-        },
-        "kbengine.cellDataWrongKeyDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.cellDataWrongKeyDiagnostics.description%"
-        },
-        "kbengine.cellDataCallbackDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.cellDataCallbackDiagnostics.description%"
-        },
-        "kbengine.fixedDictMutationDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.fixedDictMutationDiagnostics.description%"
-        },
-        "kbengine.fixedDictConstructDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.fixedDictConstructDiagnostics.description%"
-        },
-        "kbengine.scalarAssignDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.scalarAssignDiagnostics.description%"
-        },
-        "kbengine.destroyedEntityReferenceDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.destroyedEntityReferenceDiagnostics.description%"
-        },
-        "kbengine.timerCleanupDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.timerCleanupDiagnostics.description%"
-        },
-        "kbengine.diagnostics.checkUnknownTypes": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.diagnostics.checkUnknownTypes.description%"
-        },
-        "kbengine.diagnostics.checkUnknownFlags": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.diagnostics.checkUnknownFlags.description%"
-        },
-        "kbengine.diagnostics.checkUnknownDetailLevels": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.diagnostics.checkUnknownDetailLevels.description%"
-        },
-        "kbengine.diagnostics.checkDuplicateDefinitions": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.diagnostics.checkDuplicateDefinitions.description%"
-        },
-        "kbengine.diagnostics.checkMissingPropertyFields": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.diagnostics.checkMissingPropertyFields.description%"
-        },
-        "kbengine.diagnostics.checkDefMethodMissingInPython": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.diagnostics.checkDefMethodMissingInPython.description%"
-        },
-        "kbengine.diagnostics.checkPythonMethodNotInDef": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%kbengine.config.diagnostics.checkPythonMethodNotInDef.description%"
-        },
-        "kbengine.diagnostics.checkProcessTopology": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.diagnostics.checkProcessTopology.description%"
-        },
-        "kbengine.hover.showTagDocs": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.hover.showTagDocs.description%"
-        },
-        "kbengine.hover.showValueDocs": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.hover.showValueDocs.description%"
-        },
-        "kbengine.hover.showSymbolDocs": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.hover.showSymbolDocs.description%"
-        },
-        "kbengine.hover.returnTypeInference": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.hover.returnTypeInference.description%"
-        },
-        "kbengine.hover.typeStorage": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.hover.typeStorage.description%"
-        },
-        "kbengine.hover.implementedBy": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.hover.implementedBy.description%"
-        },
-        "kbengine.hover.entityRegistration": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.hover.entityRegistration.description%"
-        },
-        "kbengine.hover.defChain": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.hover.defChain.description%"
-        },
-        "kbengine.hover.eventStats": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.hover.eventStats.description%"
-        },
-        "kbengine.hover.apiDocs": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.hover.apiDocs.description%"
-        },
-        "kbengine.hover.serverConfig": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.hover.serverConfig.description%"
-        },
-        "kbengine.hover.language": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "en",
-            "zh-cn"
-          ],
-          "default": "auto",
-          "markdownDescription": "%kbengine.config.hover.language.description%",
-          "markdownEnumDescriptions": [
-            "%kbengine.config.hover.language.enum.auto%",
-            "%kbengine.config.hover.language.enum.en%",
-            "%kbengine.config.hover.language.enum.zh-cn%"
-          ]
-        },
-        "kbengine.hover.startupScript": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.hover.startupScript.description%"
-        },
-        "kbengine.configCompletion.enabled": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.configCompletion.enabled.description%"
-        },
-        "kbengine.configValueDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.configValueDiagnostics.description%"
-        },
-        "kbengine.hover.asyncBudgetMs": {
-          "type": "number",
-          "default": 2500,
-          "minimum": 0,
-          "markdownDescription": "%kbengine.config.hover.asyncBudgetMs.description%"
-        },
-        "kbengine.codeLens.rpc": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.codeLens.rpc.description%"
-        },
-        "kbengine.codeLens.eventCallbacks": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.codeLens.eventCallbacks.description%"
-        },
-        "kbengine.codeLens.property": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.codeLens.property.description%"
-        },
-        "kbengine.codeLens.propertyInitOrder": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.codeLens.propertyInitOrder.description%"
-        },
-        "kbengine.codeLens.typesXml": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.codeLens.typesXml.description%"
-        },
-        "kbengine.codeLens.processOwnership": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.codeLens.processOwnership.description%"
-        },
-        "kbengine.inlayHints.typeData": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.inlayHints.typeData.description%"
-        },
-        "kbengine.inlayHints.defParams": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.inlayHints.defParams.description%"
-        },
-        "kbengine.inlayHints.defProps": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.inlayHints.defProps.description%"
-        },
-        "kbengine.semanticTokens.enabled": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%kbengine.config.semanticTokens.enabled.description%"
-        },
-        "kbengine.inlayHints.propertyShadow": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.inlayHints.propertyShadow.description%"
-        },
-        "kbengine.entityDefsPath": {
-          "type": "string",
-          "default": "scripts/entity_defs",
-          "markdownDescription": "%kbengine.config.entityDefsPath.description%"
-        },
-        "kbengine.entitiesXmlPath": {
-          "type": "string",
-          "default": "scripts/entities.xml",
-          "markdownDescription": "%kbengine.config.entitiesXmlPath.description%"
-        },
-        "kbengine.binPath": {
-          "type": "string",
-          "default": "${workspaceFolder}/kbe/bin/server",
-          "markdownDescription": "%kbengine.config.binPath.description%"
-        },
-        "kbengine.assetsRoot": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "%kbengine.config.assetsRoot.description%"
-        },
-        "kbengine.jumpLog": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%kbengine.config.jumpLog.description%"
-        },
-        "kbengine.showFinalConfigOnOpen": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.showFinalConfigOnOpen.description%"
-        },
-        "kbengine.finalConfigView": {
-          "type": "string",
-          "enum": [
-            "gui",
-            "text"
-          ],
-          "default": "gui",
-          "markdownDescription": "%kbengine.config.finalConfigView.description%",
-          "markdownEnumDescriptions": [
-            "%kbengine.config.finalConfigView.enum.gui%",
-            "%kbengine.config.finalConfigView.enum.text%"
-          ]
-        },
-        "kbengine.autoRefreshFinalConfig": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.autoRefreshFinalConfig.description%"
-        },
-        "kbengine.finalConfigComments": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.finalConfigComments.description%"
-        },
-        "kbengine.debug.remoteTargets": {
-          "type": "array",
-          "default": [],
-          "items": {
-            "type": "object",
-            "required": [
-              "name",
-              "host"
-            ],
-            "properties": {
-              "name": {
-                "type": "string",
-                "description": "%kbengine.config.debug.remoteTargets.items.name.description%"
-              },
-              "host": {
-                "type": "string",
-                "description": "%kbengine.config.debug.remoteTargets.items.host.description%"
-              },
-              "port": {
-                "type": "number",
-                "description": "%kbengine.config.debug.remoteTargets.items.port.description%"
-              },
-              "localRoot": {
-                "type": "string",
-                "description": "%kbengine.config.debug.remoteTargets.items.localRoot.description%"
-              },
-              "remoteRoot": {
-                "type": "string",
-                "description": "%kbengine.config.debug.remoteTargets.items.remoteRoot.description%"
-              }
-            }
+    "configuration": [
+      {
+        "title": "%kbengine.configuration.performance.title%",
+        "order": 1,
+        "properties": {
+          "kbengine.componentStatusPanel.cpuThresholdPercent": {
+            "type": "number",
+            "default": 90,
+            "minimum": 1,
+            "maximum": 100,
+            "markdownDescription": "%kbengine.config.componentStatusPanel.cpuThresholdPercent.description%"
           },
-          "markdownDescription": "%kbengine.config.debug.remoteTargets.description%"
-        },
-        "kbengine.debug.autoDebugpy": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%kbengine.config.debug.autoDebugpy.description%"
-        },
-        "kbengine.debug.pythonTarget": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "%kbengine.config.debug.pythonTarget.description%"
-        },
-        "kbengine.debug.debugpyInject": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.debug.debugpyInject.description%"
-        },
-        "kbengine.debug.waitAtStartup": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%kbengine.config.debug.waitAtStartup.description%"
-        },
-        "kbengine.debug.sessionEndBehavior": {
-          "type": "string",
-          "enum": [
-            "detach",
-            "stop-process"
-          ],
-          "default": "detach",
-          "markdownEnumDescriptions": [
-            "%kbengine.config.debug.sessionEndBehavior.enum.0%",
-            "%kbengine.config.debug.sessionEndBehavior.enum.1%"
-          ],
-          "markdownDescription": "%kbengine.config.debug.sessionEndBehavior.description%"
-        },
-        "kbengine.debug.attachTimeoutMs": {
-          "type": "number",
-          "default": 15000,
-          "markdownDescription": "%kbengine.config.debug.attachTimeoutMs.description%"
-        },
-        "kbengine.jsoncAssociation": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.jsoncAssociation.description%"
-        },
-        "kbengine.autoStart": {
-          "type": "array",
-          "default": [
-            "machine",
-            "logger",
-            "dbmgr"
-          ],
-          "items": {
+          "kbengine.componentStatusPanel.memThresholdMb": {
+            "type": "number",
+            "default": 1024,
+            "minimum": 1,
+            "markdownDescription": "%kbengine.config.componentStatusPanel.memThresholdMb.description%"
+          },
+          "kbengine.componentStatusPanel.refreshSeconds": {
+            "type": "number",
+            "default": 5,
+            "minimum": 1,
+            "markdownDescription": "%kbengine.config.componentStatusPanel.refreshSeconds.description%"
+          },
+          "kbengine.consoleLogTail.components": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "markdownDescription": "%kbengine.config.consoleLogTail.components.description%"
+          },
+          "kbengine.consoleLogTail.enabled": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.consoleLogTail.enabled.description%"
+          },
+          "kbengine.jumpLog": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.jumpLog.description%"
+          },
+          "kbengine.logAutoConnect": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.logAutoConnect.description%"
+          },
+          "kbengine.loggerPort": {
+            "type": "number",
+            "default": 20022,
+            "markdownDescription": "%kbengine.config.loggerPort.description%"
+          },
+          "kbengine.maxLogEntries": {
+            "type": "number",
+            "default": 10000,
+            "markdownDescription": "%kbengine.config.maxLogEntries.description%"
+          },
+          "kbengine.metrics.fileReadDetail": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.metrics.fileReadDetail.description%"
+          },
+          "kbengine.runtimeQuery.enabled": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.runtimeQuery.enabled.description%"
+          },
+          "kbengine.runtimeQuery.pollIntervalMs": {
+            "type": "number",
+            "minimum": 500,
+            "default": 2000,
+            "markdownDescription": "%kbengine.config.runtimeQuery.pollIntervalMs.description%"
+          },
+          "kbengine.webviewConsoleLogs": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.webviewConsoleLogs.description%"
+          }
+        }
+      },
+      {
+        "title": "%kbengine.configuration.semantic.title%",
+        "order": 2,
+        "properties": {
+          "kbengine.attributeNoneDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.attributeNoneDiagnostics.description%"
+          },
+          "kbengine.cellDataCallbackDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.cellDataCallbackDiagnostics.description%"
+          },
+          "kbengine.cellDataWriteDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.cellDataWriteDiagnostics.description%"
+          },
+          "kbengine.cellDataWrongKeyDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.cellDataWrongKeyDiagnostics.description%"
+          },
+          "kbengine.configContractDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.configContractDiagnostics.description%"
+          },
+          "kbengine.configValueDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.configValueDiagnostics.description%"
+          },
+          "kbengine.destroyedEntityReferenceDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.destroyedEntityReferenceDiagnostics.description%"
+          },
+          "kbengine.diagnostics.checkDefMethodMissingInPython": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.diagnostics.checkDefMethodMissingInPython.description%"
+          },
+          "kbengine.diagnostics.checkDuplicateDefinitions": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.diagnostics.checkDuplicateDefinitions.description%"
+          },
+          "kbengine.diagnostics.checkMissingPropertyFields": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.diagnostics.checkMissingPropertyFields.description%"
+          },
+          "kbengine.diagnostics.checkProcessTopology": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.diagnostics.checkProcessTopology.description%"
+          },
+          "kbengine.diagnostics.checkPythonMethodNotInDef": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.diagnostics.checkPythonMethodNotInDef.description%"
+          },
+          "kbengine.diagnostics.checkUnknownDetailLevels": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.diagnostics.checkUnknownDetailLevels.description%"
+          },
+          "kbengine.diagnostics.checkUnknownFlags": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.diagnostics.checkUnknownFlags.description%"
+          },
+          "kbengine.diagnostics.checkUnknownTypes": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.diagnostics.checkUnknownTypes.description%"
+          },
+          "kbengine.enableDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.enableDiagnostics.description%"
+          },
+          "kbengine.enableStructureDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.enableStructureDiagnostics.description%"
+          },
+          "kbengine.fixedDictConstructDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.fixedDictConstructDiagnostics.description%"
+          },
+          "kbengine.fixedDictMutationDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.fixedDictMutationDiagnostics.description%"
+          },
+          "kbengine.postDestroyDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.postDestroyDiagnostics.description%"
+          },
+          "kbengine.propertyDirectionDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.propertyDirectionDiagnostics.description%"
+          },
+          "kbengine.readOnlyWriteDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.readOnlyWriteDiagnostics.description%"
+          },
+          "kbengine.receiverNoneDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.receiverNoneDiagnostics.description%"
+          },
+          "kbengine.roleMisuseDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.roleMisuseDiagnostics.description%"
+          },
+          "kbengine.rpcArgCountDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.rpcArgCountDiagnostics.description%"
+          },
+          "kbengine.rpcArgTypeDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.rpcArgTypeDiagnostics.description%"
+          },
+          "kbengine.scalarAssignDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.scalarAssignDiagnostics.description%"
+          },
+          "kbengine.semanticTokens.enabled": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.semanticTokens.enabled.description%"
+          },
+          "kbengine.spaceDataProtectedKeyDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.spaceDataProtectedKeyDiagnostics.description%"
+          },
+          "kbengine.spaceNavDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.spaceNavDiagnostics.description%"
+          },
+          "kbengine.startupScriptDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.startupScriptDiagnostics.description%"
+          },
+          "kbengine.timerCleanupDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.timerCleanupDiagnostics.description%"
+          }
+        }
+      },
+      {
+        "title": "%kbengine.configuration.python.title%",
+        "order": 3,
+        "properties": {
+          "kbengine.codeLens.eventCallbacks": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.codeLens.eventCallbacks.description%"
+          },
+          "kbengine.codeLens.processOwnership": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.codeLens.processOwnership.description%"
+          },
+          "kbengine.codeLens.property": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.codeLens.property.description%"
+          },
+          "kbengine.codeLens.propertyInitOrder": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.codeLens.propertyInitOrder.description%"
+          },
+          "kbengine.codeLens.rpc": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.codeLens.rpc.description%"
+          },
+          "kbengine.codeLens.typesXml": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.codeLens.typesXml.description%"
+          },
+          "kbengine.hover.apiDocs": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.hover.apiDocs.description%"
+          },
+          "kbengine.hover.asyncBudgetMs": {
+            "type": "number",
+            "default": 2500,
+            "minimum": 0,
+            "markdownDescription": "%kbengine.config.hover.asyncBudgetMs.description%"
+          },
+          "kbengine.hover.defChain": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.hover.defChain.description%"
+          },
+          "kbengine.hover.entityRegistration": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.hover.entityRegistration.description%"
+          },
+          "kbengine.hover.eventStats": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.hover.eventStats.description%"
+          },
+          "kbengine.hover.implementedBy": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.hover.implementedBy.description%"
+          },
+          "kbengine.hover.language": {
             "type": "string",
             "enum": [
-              "machine",
-              "logger",
-              "dbmgr",
-              "baseappmgr",
-              "cellappmgr",
-              "loginapp",
-              "baseapp",
-              "cellapp",
-              "bots",
-              "interfaces"
+              "auto",
+              "en",
+              "zh-cn"
             ],
+            "default": "auto",
+            "markdownDescription": "%kbengine.config.hover.language.description%",
             "markdownEnumDescriptions": [
-              "%kbengine.config.autoStart.items.enum.0%",
-              "%kbengine.config.autoStart.items.enum.1%",
-              "%kbengine.config.autoStart.items.enum.2%",
-              "%kbengine.config.autoStart.items.enum.3%",
-              "%kbengine.config.autoStart.items.enum.4%",
-              "%kbengine.config.autoStart.items.enum.5%",
-              "%kbengine.config.autoStart.items.enum.6%",
-              "%kbengine.config.autoStart.items.enum.7%",
-              "%kbengine.config.autoStart.items.enum.8%",
-              "%kbengine.config.autoStart.items.enum.9%"
+              "%kbengine.config.hover.language.enum.auto%",
+              "%kbengine.config.hover.language.enum.en%",
+              "%kbengine.config.hover.language.enum.zh-cn%"
             ]
           },
-          "markdownDescription": "%kbengine.config.autoStart.description%"
-        },
-        "kbengine.loggerPort": {
-          "type": "number",
-          "default": 20022,
-          "markdownDescription": "%kbengine.config.loggerPort.description%"
-        },
-        "kbengine.logAutoConnect": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.logAutoConnect.description%"
-        },
-        "kbengine.webviewLocale": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "zh",
-            "en"
-          ],
-          "default": "auto",
-          "markdownDescription": "%kbengine.config.webviewLocale.description%",
-          "markdownEnumDescriptions": [
-            "%kbengine.config.webviewLocale.enum.0%",
-            "%kbengine.config.webviewLocale.enum.1%",
-            "%kbengine.config.webviewLocale.enum.2%"
-          ]
-        },
-        "kbengine.webviewConsoleLogs": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.webviewConsoleLogs.description%"
-        },
-        "kbengine.maxLogEntries": {
-          "type": "number",
-          "default": 10000,
-          "markdownDescription": "%kbengine.config.maxLogEntries.description%"
-        },
-        "kbengine.consoleLogTail.enabled": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.consoleLogTail.enabled.description%"
-        },
-        "kbengine.console.discoveryHost": {
-          "type": "string",
-          "default": "127.0.0.1",
-          "markdownDescription": "%kbengine.config.console.discoveryHost.description%"
-        },
-        "kbengine.consoleLogTail.components": {
-          "type": "array",
-          "items": {
-            "type": "string"
+          "kbengine.hover.returnTypeInference": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.hover.returnTypeInference.description%"
           },
-          "default": [],
-          "markdownDescription": "%kbengine.config.consoleLogTail.components.description%"
-        },
-        "kbengine.componentStatusPanel.refreshSeconds": {
-          "type": "number",
-          "default": 5,
-          "minimum": 1,
-          "markdownDescription": "%kbengine.config.componentStatusPanel.refreshSeconds.description%"
-        },
-        "kbengine.componentStatusPanel.cpuThresholdPercent": {
-          "type": "number",
-          "default": 90,
-          "minimum": 1,
-          "maximum": 100,
-          "markdownDescription": "%kbengine.config.componentStatusPanel.cpuThresholdPercent.description%"
-        },
-        "kbengine.componentStatusPanel.memThresholdMb": {
-          "type": "number",
-          "default": 1024,
-          "minimum": 1,
-          "markdownDescription": "%kbengine.config.componentStatusPanel.memThresholdMb.description%"
-        },
-        "kbengine.generator.defOutputPath": {
-          "type": "string",
-          "default": "scripts/entity_defs",
-          "markdownDescription": "%kbengine.config.generator.defOutputPath.description%"
-        },
-        "kbengine.generator.pythonOutputPath": {
-          "type": "string",
-          "default": "scripts",
-          "markdownDescription": "%kbengine.config.generator.pythonOutputPath.description%"
-        },
-        "kbengine.generator.generatePython": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.generator.generatePython.description%"
-        },
-        "kbengine.generator.registerInEntitiesXml": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.generator.registerInEntitiesXml.description%"
-        },
-        "kbengine.clientSdk.outputDir": {
-          "type": "string",
-          "default": "scripts/client_entities",
-          "markdownDescription": "%kbengine.config.clientSdk.outputDir.description%"
-        },
-        "kbengine.telnet.host": {
-          "type": "string",
-          "default": "127.0.0.1",
-          "markdownDescription": "%kbengine.config.telnet.host.description%"
-        },
-        "kbengine.telnet.port": {
-          "type": "number",
-          "default": 0,
-          "markdownDescription": "%kbengine.config.telnet.port.description%"
-        },
-        "kbengine.telnet.password": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "%kbengine.config.telnet.password.description%"
-        },
-        "kbengine.telnet.enableCommands": {
-          "type": "array",
-          "default": [],
-          "items": {
-            "type": "string"
+          "kbengine.hover.serverConfig": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.hover.serverConfig.description%"
           },
-          "markdownDescription": "%kbengine.config.telnet.enableCommands.description%"
-        },
-        "kbengine.telnet.configXmlPath": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "%kbengine.config.telnet.configXmlPath.description%"
-        },
-        "kbengine.telnet.probeIntervalSeconds": {
-          "type": "number",
-          "default": 5,
-          "markdownDescription": "%kbengine.config.telnet.probeIntervalSeconds.description%"
-        },
-        "kbengine.httpRequests": {
-          "type": "array",
-          "default": [
-            {
-              "name": "热更新(示例)",
-              "url": "http://127.0.0.1:8090/hotfix?module_name=${module}",
-              "method": "POST",
-              "headers": {
-                "Content-Type": "application/x-www-form-urlencoded"
-              },
-              "body": "module_name=${module}",
-              "enabled": false,
-              "keybinding": ""
-            }
-          ],
-          "items": {
-            "type": "object",
-            "required": [
-              "name",
-              "url"
+          "kbengine.hover.showSymbolDocs": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.hover.showSymbolDocs.description%"
+          },
+          "kbengine.hover.showTagDocs": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.hover.showTagDocs.description%"
+          },
+          "kbengine.hover.showValueDocs": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.hover.showValueDocs.description%"
+          },
+          "kbengine.hover.startupScript": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.hover.startupScript.description%"
+          },
+          "kbengine.hover.typeStorage": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.hover.typeStorage.description%"
+          },
+          "kbengine.infer.enabled": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.infer.enabled.description%"
+          },
+          "kbengine.infer.exclusionsSync": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.infer.exclusionsSync.description%"
+          },
+          "kbengine.infer.pyreflyPath": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "%kbengine.config.infer.pyreflyPath.description%"
+          },
+          "kbengine.infer.pythonVersion": {
+            "type": "string",
+            "default": "3.7",
+            "markdownDescription": "%kbengine.config.infer.pythonVersion.description%"
+          },
+          "kbengine.infer.sourceWrite": {
+            "type": "string",
+            "enum": [
+              "managed",
+              "user"
             ],
-            "properties": {
-              "name": {
-                "type": "string",
-                "description": "%kbengine.config.httpRequests.items.name.description%"
-              },
-              "url": {
-                "type": "string",
-                "description": "%kbengine.config.httpRequests.items.url.description%"
-              },
-              "method": {
-                "type": "string",
-                "description": "%kbengine.config.httpRequests.items.method.description%"
-              },
-              "headers": {
-                "type": "object",
-                "description": "%kbengine.config.httpRequests.items.headers.description%"
-              },
-              "body": {
-                "type": "string",
-                "description": "%kbengine.config.httpRequests.items.body.description%"
-              },
-              "enabled": {
-                "type": "boolean",
-                "description": "%kbengine.config.httpRequests.items.enabled.description%"
-              },
-              "keybinding": {
-                "type": "string",
-                "description": "%kbengine.config.httpRequests.items.keybinding.description%"
+            "default": "managed",
+            "markdownEnumDescriptions": [
+              "%kbengine.config.infer.sourceWrite.enum.0%",
+              "%kbengine.config.infer.sourceWrite.enum.1%"
+            ],
+            "markdownDescription": "%kbengine.config.infer.sourceWrite.description%"
+          },
+          "kbengine.inlayHints.defParams": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.inlayHints.defParams.description%"
+          },
+          "kbengine.inlayHints.defProps": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.inlayHints.defProps.description%"
+          },
+          "kbengine.inlayHints.propertyShadow": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.inlayHints.propertyShadow.description%"
+          },
+          "kbengine.inlayHints.typeData": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.inlayHints.typeData.description%"
+          },
+          "kbengine.python.builtinTypeInlayHints": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.python.builtinTypeInlayHints.description%"
+          },
+          "kbengine.python.callChainHints": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.python.callChainHints.description%"
+          },
+          "kbengine.python.callChainView": {
+            "type": "string",
+            "enum": [
+              "graph",
+              "text"
+            ],
+            "default": "graph",
+            "markdownDescription": "%kbengine.config.python.callChainView.description%",
+            "markdownEnumDescriptions": [
+              "%kbengine.config.python.callChainView.enum.0%",
+              "%kbengine.config.python.callChainView.enum.1%"
+            ]
+          },
+          "kbengine.python.enableDataDictIndex": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.python.enableDataDictIndex.description%"
+          },
+          "kbengine.python.enableMroJump": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.python.enableMroJump.description%"
+          },
+          "kbengine.python.enableSpaceDataIndex": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.python.enableSpaceDataIndex.description%"
+          },
+          "kbengine.python.extraPathsSync": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.python.extraPathsSync.description%"
+          },
+          "kbengine.python.interpreterPath": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "%kbengine.config.python.interpreterPath.description%"
+          },
+          "kbengine.python.proxyInternalAttrHints": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.python.proxyInternalAttrHints.description%"
+          },
+          "kbengine.python.venvDirectories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              ".venv",
+              "venv",
+              ".kbenv"
+            ],
+            "markdownDescription": "%kbengine.config.python.venvDirectories.description%"
+          }
+        }
+      },
+      {
+        "title": "%kbengine.configuration.typings.title%",
+        "order": 4,
+        "properties": {
+          "kbengine.python.apiMetadata": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.python.apiMetadata.description%"
+          },
+          "kbengine.python.entityStubMethods": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.python.entityStubMethods.description%"
+          },
+          "kbengine.python.stubCopy": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.python.stubCopy.description%"
+          },
+          "kbengine.python.stubDir": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "%kbengine.config.python.stubDir.description%"
+          },
+          "kbengine.python.stubExport": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.python.stubExport.description%"
+          },
+          "kbengine.types.aliasDiscovery": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.types.aliasDiscovery.description%"
+          }
+        }
+      },
+      {
+        "title": "%kbengine.configuration.engine.title%",
+        "order": 5,
+        "properties": {
+          "kbengine.assetsRoot": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "%kbengine.config.assetsRoot.description%"
+          },
+          "kbengine.binPath": {
+            "type": "string",
+            "default": "${workspaceFolder}/kbe/bin/server",
+            "markdownDescription": "%kbengine.config.binPath.description%"
+          },
+          "kbengine.core.backend": {
+            "type": "string",
+            "enum": [
+              "ts",
+              "rust",
+              "shadow"
+            ],
+            "default": "rust",
+            "markdownDescription": "%kbengine.config.core.backend.description%",
+            "markdownEnumDescriptions": [
+              "%kbengine.config.core.backend.enum.0%",
+              "%kbengine.config.core.backend.enum.1%",
+              "%kbengine.config.core.backend.enum.2%"
+            ]
+          },
+          "kbengine.core.serverPath": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "%kbengine.config.core.serverPath.description%"
+          },
+          "kbengine.core.shadow.timeoutMs": {
+            "type": "number",
+            "default": 2000,
+            "minimum": 0,
+            "markdownDescription": "%kbengine.config.core.shadow.timeoutMs.description%"
+          },
+          "kbengine.engineVersion": {
+            "type": "string",
+            "default": "3.7.3",
+            "scope": "window",
+            "markdownDescription": "%kbengine.config.engineVersion.description%"
+          },
+          "kbengine.entitiesXmlPath": {
+            "type": "string",
+            "default": "scripts/entities.xml",
+            "markdownDescription": "%kbengine.config.entitiesXmlPath.description%"
+          },
+          "kbengine.entityDefsPath": {
+            "type": "string",
+            "default": "scripts/entity_defs",
+            "markdownDescription": "%kbengine.config.entityDefsPath.description%"
+          }
+        }
+      },
+      {
+        "title": "%kbengine.configuration.runtime.title%",
+        "order": 6,
+        "properties": {
+          "kbengine.autoStart": {
+            "type": "array",
+            "default": [
+              "machine",
+              "logger",
+              "dbmgr"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "machine",
+                "logger",
+                "dbmgr",
+                "baseappmgr",
+                "cellappmgr",
+                "loginapp",
+                "baseapp",
+                "cellapp",
+                "bots",
+                "interfaces"
+              ],
+              "markdownEnumDescriptions": [
+                "%kbengine.config.autoStart.items.enum.0%",
+                "%kbengine.config.autoStart.items.enum.1%",
+                "%kbengine.config.autoStart.items.enum.2%",
+                "%kbengine.config.autoStart.items.enum.3%",
+                "%kbengine.config.autoStart.items.enum.4%",
+                "%kbengine.config.autoStart.items.enum.5%",
+                "%kbengine.config.autoStart.items.enum.6%",
+                "%kbengine.config.autoStart.items.enum.7%",
+                "%kbengine.config.autoStart.items.enum.8%",
+                "%kbengine.config.autoStart.items.enum.9%"
+              ]
+            },
+            "markdownDescription": "%kbengine.config.autoStart.description%"
+          },
+          "kbengine.clone.archiveEncryption": {
+            "type": "string",
+            "enum": [
+              "encrypted",
+              "plain"
+            ],
+            "default": "encrypted",
+            "scope": "window",
+            "markdownDescription": "%kbengine.config.clone.archiveEncryption.description%",
+            "markdownEnumDescriptions": [
+              "%kbengine.config.clone.archiveEncryption.enum.0%",
+              "%kbengine.config.clone.archiveEncryption.enum.1%"
+            ]
+          },
+          "kbengine.console.discoveryHost": {
+            "type": "string",
+            "default": "127.0.0.1",
+            "markdownDescription": "%kbengine.config.console.discoveryHost.description%"
+          },
+          "kbengine.databaseQueryTimeoutMs": {
+            "type": "number",
+            "default": 10000,
+            "minimum": 0,
+            "markdownDescription": "%kbengine.config.databaseQueryTimeoutMs.description%"
+          },
+          "kbengine.db.tablePrefix": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "%kbengine.config.db.tablePrefix.description%"
+          },
+          "kbengine.debug.attachTimeoutMs": {
+            "type": "number",
+            "default": 15000,
+            "markdownDescription": "%kbengine.config.debug.attachTimeoutMs.description%"
+          },
+          "kbengine.debug.autoDebugpy": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.debug.autoDebugpy.description%"
+          },
+          "kbengine.debug.debugpyInject": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.debug.debugpyInject.description%"
+          },
+          "kbengine.debug.pythonTarget": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "%kbengine.config.debug.pythonTarget.description%"
+          },
+          "kbengine.debug.remoteTargets": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "host"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "%kbengine.config.debug.remoteTargets.items.name.description%"
+                },
+                "host": {
+                  "type": "string",
+                  "description": "%kbengine.config.debug.remoteTargets.items.host.description%"
+                },
+                "port": {
+                  "type": "number",
+                  "description": "%kbengine.config.debug.remoteTargets.items.port.description%"
+                },
+                "localRoot": {
+                  "type": "string",
+                  "description": "%kbengine.config.debug.remoteTargets.items.localRoot.description%"
+                },
+                "remoteRoot": {
+                  "type": "string",
+                  "description": "%kbengine.config.debug.remoteTargets.items.remoteRoot.description%"
+                }
               }
-            }
+            },
+            "markdownDescription": "%kbengine.config.debug.remoteTargets.description%"
           },
-          "markdownDescription": "%kbengine.config.httpRequests.description%"
-        },
-        "kbengine.python.interpreterPath": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "%kbengine.config.python.interpreterPath.description%"
-        },
-        "kbengine.python.venvDirectories": {
-          "type": "array",
-          "items": {
-            "type": "string"
+          "kbengine.debug.sessionEndBehavior": {
+            "type": "string",
+            "enum": [
+              "detach",
+              "stop-process"
+            ],
+            "default": "detach",
+            "markdownEnumDescriptions": [
+              "%kbengine.config.debug.sessionEndBehavior.enum.0%",
+              "%kbengine.config.debug.sessionEndBehavior.enum.1%"
+            ],
+            "markdownDescription": "%kbengine.config.debug.sessionEndBehavior.description%"
           },
-          "default": [
-            ".venv",
-            "venv",
-            ".kbenv"
-          ],
-          "markdownDescription": "%kbengine.config.python.venvDirectories.description%"
-        },
-        "kbengine.python.extraPathsSync": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.python.extraPathsSync.description%"
-        },
-        "kbengine.infer.enabled": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.infer.enabled.description%"
-        },
-        "kbengine.infer.pyreflyPath": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "%kbengine.config.infer.pyreflyPath.description%"
-        },
-        "kbengine.infer.pythonVersion": {
-          "type": "string",
-          "default": "3.7",
-          "markdownDescription": "%kbengine.config.infer.pythonVersion.description%"
-        },
-        "kbengine.infer.sourceWrite": {
-          "type": "string",
-          "enum": [
-            "managed",
-            "user"
-          ],
-          "default": "managed",
-          "markdownEnumDescriptions": [
-            "%kbengine.config.infer.sourceWrite.enum.0%",
-            "%kbengine.config.infer.sourceWrite.enum.1%"
-          ],
-          "markdownDescription": "%kbengine.config.infer.sourceWrite.description%"
-        },
-        "kbengine.infer.exclusionsSync": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.infer.exclusionsSync.description%"
-        },
-        "kbengine.python.stubCopy": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%kbengine.config.python.stubCopy.description%"
-        },
-        "kbengine.python.stubExport": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.python.stubExport.description%"
-        },
-        "kbengine.python.stubDir": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "%kbengine.config.python.stubDir.description%"
-        },
-        "kbengine.python.proxyInternalAttrHints": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.python.proxyInternalAttrHints.description%"
-        },
-        "kbengine.python.enableMroJump": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.python.enableMroJump.description%"
-        },
-        "kbengine.python.enableDataDictIndex": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.python.enableDataDictIndex.description%"
-        },
-        "kbengine.python.enableSpaceDataIndex": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.python.enableSpaceDataIndex.description%"
-        },
-        "kbengine.python.callChainHints": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.python.callChainHints.description%"
-        },
-        "kbengine.python.callChainView": {
-          "type": "string",
-          "enum": [
-            "graph",
-            "text"
-          ],
-          "default": "graph",
-          "markdownDescription": "%kbengine.config.python.callChainView.description%",
-          "markdownEnumDescriptions": [
-            "%kbengine.config.python.callChainView.enum.0%",
-            "%kbengine.config.python.callChainView.enum.1%"
-          ]
-        },
-        "kbengine.python.apiMetadata": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.python.apiMetadata.description%"
-        },
-        "kbengine.hotReload.enabled": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.hotReload.enabled.description%"
-        },
-        "kbengine.hotReload.actionName": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "%kbengine.config.hotReload.actionName.description%"
-        },
-        "kbengine.hotReload.globs": {
-          "type": "array",
-          "items": {
-            "type": "string"
+          "kbengine.debug.waitAtStartup": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.debug.waitAtStartup.description%"
           },
-          "markdownDescription": "%kbengine.config.hotReload.globs.description%"
-        },
-        "kbengine.hotReload.debounceMs": {
-          "type": "number",
-          "default": 500,
-          "markdownDescription": "%kbengine.config.hotReload.debounceMs.description%"
-        },
-        "kbengine.hotReload.triggerMode": {
-          "type": "string",
-          "enum": [
-            "onSave",
-            "onDiskChange"
-          ],
-          "default": "onSave",
-          "markdownDescription": "%kbengine.config.hotReload.triggerMode.description%",
-          "markdownEnumDescriptions": [
-            "%kbengine.config.hotReload.triggerMode.onSave%",
-            "%kbengine.config.hotReload.triggerMode.onDiskChange%"
-          ]
-        },
-        "kbengine.hotReload.tempEdit.enabled": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%kbengine.config.hotReload.tempEdit.enabled.description%"
-        },
-        "kbengine.hotReload.tempEdit.actionName": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "%kbengine.config.hotReload.tempEdit.actionName.description%"
-        },
-        "kbengine.hotReload.tempEdit.autoRestore": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.hotReload.tempEdit.autoRestore.description%"
-        },
-        "kbengine.hotReload.tempEdit.scriptRoot": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "%kbengine.config.hotReload.tempEdit.scriptRoot.description%"
-        },
-        "kbengine.core.backend": {
-          "type": "string",
-          "enum": [
-            "ts",
-            "rust",
-            "shadow"
-          ],
-          "default": "rust",
-          "markdownDescription": "%kbengine.config.core.backend.description%",
-          "markdownEnumDescriptions": [
-            "%kbengine.config.core.backend.enum.0%",
-            "%kbengine.config.core.backend.enum.1%",
-            "%kbengine.config.core.backend.enum.2%"
-          ]
-        },
-        "kbengine.core.serverPath": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "%kbengine.config.core.serverPath.description%"
-        },
-        "kbengine.core.shadow.timeoutMs": {
-          "type": "number",
-          "default": 2000,
-          "minimum": 0,
-          "markdownDescription": "%kbengine.config.core.shadow.timeoutMs.description%"
-        },
-        "kbengine.entity.builtinProperties": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.entity.builtinProperties.description%"
-        },
-        "kbengine.entity.receiverSections": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.entity.receiverSections.description%"
-        },
-        "kbengine.entity.methodStubBody": {
-          "type": "string",
-          "enum": [
-            "pass",
-            "raise"
-          ],
-          "default": "pass",
-          "markdownEnumDescriptions": [
-            "%kbengine.config.entity.methodStubBody.enum.0%",
-            "%kbengine.config.entity.methodStubBody.enum.1%"
-          ],
-          "markdownDescription": "%kbengine.config.entity.methodStubBody.description%"
-        },
-        "kbengine.python.entityStubMethods": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.python.entityStubMethods.description%"
-        },
-        "kbengine.python.builtinTypeInlayHints": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.python.builtinTypeInlayHints.description%"
-        },
-        "kbengine.types.aliasDiscovery": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.types.aliasDiscovery.description%"
-        },
-        "kbengine.runtimeQuery.enabled": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%kbengine.config.runtimeQuery.enabled.description%"
-        },
-        "kbengine.runtimeQuery.pollIntervalMs": {
-          "type": "number",
-          "minimum": 500,
-          "default": 2000,
-          "markdownDescription": "%kbengine.config.runtimeQuery.pollIntervalMs.description%"
-        },
-        "kbengine.protocol.tsharkPath": {
-          "type": "string",
-          "default": "tshark",
-          "markdownDescription": "%kbengine.config.protocol.tsharkPath.description%"
-        },
-        "kbengine.protocol.wiresharkPath": {
-          "type": "string",
-          "default": "wireshark",
-          "markdownDescription": "%kbengine.config.protocol.wiresharkPath.description%"
-        },
-        "kbengine.protocol.cliPath": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "%kbengine.config.protocol.cliPath.description%"
-        },
-        "kbengine.protocol.schemaAutoBuild": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.protocol.schemaAutoBuild.description%"
-        },
-        "kbengine.mcp.enabled": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%kbengine.config.mcp.enabled.description%"
-        },
-        "kbengine.hotReload.stabilityWindowMs": {
-          "type": "number",
-          "default": 0,
-          "markdownDescription": "%kbengine.config.hotReload.stabilityWindowMs.description%"
-        },
-        "kbengine.hotReload.syntaxGate": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%kbengine.config.hotReload.syntaxGate.description%"
-        },
-        "kbengine.hotReload.batchFlushMs": {
-          "type": "number",
-          "default": 0,
-          "markdownDescription": "%kbengine.config.hotReload.batchFlushMs.description%"
-        },
-        "kbengine.hotReload.batchPreviewThreshold": {
-          "type": "number",
-          "default": 50,
-          "markdownDescription": "%kbengine.config.hotReload.batchPreviewThreshold.description%"
-        },
-        "kbengine.hotReload.sendViaProviders": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%kbengine.config.hotReload.sendViaProviders.description%"
-        },
-        "kbengine.hotReload.allowRootLevelStem": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%kbengine.config.hotReload.allowRootLevelStem.description%"
+          "kbengine.hotReload.actionName": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "%kbengine.config.hotReload.actionName.description%"
+          },
+          "kbengine.hotReload.allowRootLevelStem": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.hotReload.allowRootLevelStem.description%"
+          },
+          "kbengine.hotReload.batchFlushMs": {
+            "type": "number",
+            "default": 0,
+            "markdownDescription": "%kbengine.config.hotReload.batchFlushMs.description%"
+          },
+          "kbengine.hotReload.batchPreviewThreshold": {
+            "type": "number",
+            "default": 50,
+            "markdownDescription": "%kbengine.config.hotReload.batchPreviewThreshold.description%"
+          },
+          "kbengine.hotReload.debounceMs": {
+            "type": "number",
+            "default": 500,
+            "markdownDescription": "%kbengine.config.hotReload.debounceMs.description%"
+          },
+          "kbengine.hotReload.enabled": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.hotReload.enabled.description%"
+          },
+          "kbengine.hotReload.globs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "markdownDescription": "%kbengine.config.hotReload.globs.description%"
+          },
+          "kbengine.hotReload.sendViaProviders": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.hotReload.sendViaProviders.description%"
+          },
+          "kbengine.hotReload.stabilityWindowMs": {
+            "type": "number",
+            "default": 0,
+            "markdownDescription": "%kbengine.config.hotReload.stabilityWindowMs.description%"
+          },
+          "kbengine.hotReload.syntaxGate": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.hotReload.syntaxGate.description%"
+          },
+          "kbengine.hotReload.tempEdit.actionName": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "%kbengine.config.hotReload.tempEdit.actionName.description%"
+          },
+          "kbengine.hotReload.tempEdit.autoRestore": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.hotReload.tempEdit.autoRestore.description%"
+          },
+          "kbengine.hotReload.tempEdit.enabled": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%kbengine.config.hotReload.tempEdit.enabled.description%"
+          },
+          "kbengine.hotReload.tempEdit.scriptRoot": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "%kbengine.config.hotReload.tempEdit.scriptRoot.description%"
+          },
+          "kbengine.hotReload.triggerMode": {
+            "type": "string",
+            "enum": [
+              "onSave",
+              "onDiskChange"
+            ],
+            "default": "onSave",
+            "markdownDescription": "%kbengine.config.hotReload.triggerMode.description%",
+            "markdownEnumDescriptions": [
+              "%kbengine.config.hotReload.triggerMode.onSave%",
+              "%kbengine.config.hotReload.triggerMode.onDiskChange%"
+            ]
+          },
+          "kbengine.protocol.cliPath": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "%kbengine.config.protocol.cliPath.description%"
+          },
+          "kbengine.protocol.schemaAutoBuild": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.protocol.schemaAutoBuild.description%"
+          },
+          "kbengine.protocol.tsharkPath": {
+            "type": "string",
+            "default": "tshark",
+            "markdownDescription": "%kbengine.config.protocol.tsharkPath.description%"
+          },
+          "kbengine.protocol.wiresharkPath": {
+            "type": "string",
+            "default": "wireshark",
+            "markdownDescription": "%kbengine.config.protocol.wiresharkPath.description%"
+          },
+          "kbengine.telnet.configXmlPath": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "%kbengine.config.telnet.configXmlPath.description%"
+          },
+          "kbengine.telnet.enableCommands": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "markdownDescription": "%kbengine.config.telnet.enableCommands.description%"
+          },
+          "kbengine.telnet.host": {
+            "type": "string",
+            "default": "127.0.0.1",
+            "markdownDescription": "%kbengine.config.telnet.host.description%"
+          },
+          "kbengine.telnet.password": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "%kbengine.config.telnet.password.description%"
+          },
+          "kbengine.telnet.port": {
+            "type": "number",
+            "default": 0,
+            "markdownDescription": "%kbengine.config.telnet.port.description%"
+          },
+          "kbengine.telnet.probeIntervalSeconds": {
+            "type": "number",
+            "default": 5,
+            "markdownDescription": "%kbengine.config.telnet.probeIntervalSeconds.description%"
+          }
+        }
+      },
+      {
+        "title": "%kbengine.configuration.tools.title%",
+        "order": 7,
+        "properties": {
+          "kbengine.clientSdk.outputDir": {
+            "type": "string",
+            "default": "scripts/client_entities",
+            "markdownDescription": "%kbengine.config.clientSdk.outputDir.description%"
+          },
+          "kbengine.configCompletion.enabled": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.configCompletion.enabled.description%"
+          },
+          "kbengine.entity.builtinProperties": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.entity.builtinProperties.description%"
+          },
+          "kbengine.entity.methodStubBody": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "raise"
+            ],
+            "default": "pass",
+            "markdownEnumDescriptions": [
+              "%kbengine.config.entity.methodStubBody.enum.0%",
+              "%kbengine.config.entity.methodStubBody.enum.1%"
+            ],
+            "markdownDescription": "%kbengine.config.entity.methodStubBody.description%"
+          },
+          "kbengine.entity.receiverSections": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.entity.receiverSections.description%"
+          },
+          "kbengine.generator.defOutputPath": {
+            "type": "string",
+            "default": "scripts/entity_defs",
+            "markdownDescription": "%kbengine.config.generator.defOutputPath.description%"
+          },
+          "kbengine.generator.generatePython": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.generator.generatePython.description%"
+          },
+          "kbengine.generator.pythonOutputPath": {
+            "type": "string",
+            "default": "scripts",
+            "markdownDescription": "%kbengine.config.generator.pythonOutputPath.description%"
+          },
+          "kbengine.generator.registerInEntitiesXml": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.generator.registerInEntitiesXml.description%"
+          },
+          "kbengine.gitHistory.enabled": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%kbengine.config.gitHistory.enabled.description%"
+          },
+          "kbengine.httpRequests": {
+            "type": "array",
+            "default": [
+              {
+                "name": "热更新(示例)",
+                "url": "http://127.0.0.1:8090/hotfix?module_name=${module}",
+                "method": "POST",
+                "headers": {
+                  "Content-Type": "application/x-www-form-urlencoded"
+                },
+                "body": "module_name=${module}",
+                "enabled": false,
+                "keybinding": ""
+              }
+            ],
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "url"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "%kbengine.config.httpRequests.items.name.description%"
+                },
+                "url": {
+                  "type": "string",
+                  "description": "%kbengine.config.httpRequests.items.url.description%"
+                },
+                "method": {
+                  "type": "string",
+                  "description": "%kbengine.config.httpRequests.items.method.description%"
+                },
+                "headers": {
+                  "type": "object",
+                  "description": "%kbengine.config.httpRequests.items.headers.description%"
+                },
+                "body": {
+                  "type": "string",
+                  "description": "%kbengine.config.httpRequests.items.body.description%"
+                },
+                "enabled": {
+                  "type": "boolean",
+                  "description": "%kbengine.config.httpRequests.items.enabled.description%"
+                },
+                "keybinding": {
+                  "type": "string",
+                  "description": "%kbengine.config.httpRequests.items.keybinding.description%"
+                }
+              }
+            },
+            "markdownDescription": "%kbengine.config.httpRequests.description%"
+          },
+          "kbengine.mcp.enabled": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.mcp.enabled.description%"
+          }
+        }
+      },
+      {
+        "title": "%kbengine.configuration.general.title%",
+        "order": 8,
+        "properties": {
+          "kbengine.autoRefreshFinalConfig": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.autoRefreshFinalConfig.description%"
+          },
+          "kbengine.finalConfigComments": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.finalConfigComments.description%"
+          },
+          "kbengine.finalConfigView": {
+            "type": "string",
+            "enum": [
+              "gui",
+              "text"
+            ],
+            "default": "gui",
+            "markdownDescription": "%kbengine.config.finalConfigView.description%",
+            "markdownEnumDescriptions": [
+              "%kbengine.config.finalConfigView.enum.gui%",
+              "%kbengine.config.finalConfigView.enum.text%"
+            ]
+          },
+          "kbengine.jsoncAssociation": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.jsoncAssociation.description%"
+          },
+          "kbengine.showFinalConfigOnOpen": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%kbengine.config.showFinalConfigOnOpen.description%"
+          },
+          "kbengine.webviewLocale": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "zh",
+              "en"
+            ],
+            "default": "auto",
+            "markdownDescription": "%kbengine.config.webviewLocale.description%",
+            "markdownEnumDescriptions": [
+              "%kbengine.config.webviewLocale.enum.0%",
+              "%kbengine.config.webviewLocale.enum.1%",
+              "%kbengine.config.webviewLocale.enum.2%"
+            ]
+          }
         }
       }
-    },
+    ],
     "problemMatchers": [
       {
         "name": "kbengine-compileall",

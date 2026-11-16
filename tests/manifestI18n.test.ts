@@ -19,7 +19,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json')
     commands: Array<{ command: string; title: string }>;
     viewsContainers?: Record<string, Array<{ id: string; title: string }>>;
     views?: Record<string, Array<{ id: string; name: string }>>;
-    configuration: { properties: Record<string, ConfigProperty> };
+    configuration: { properties: Record<string, ConfigProperty> } | Array<{ properties: Record<string, ConfigProperty> }>;
   };
 };
 
@@ -35,7 +35,14 @@ const nlsZhCn = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.nls.zh-
 const NLS_TOKEN = /^%([^%]+)%$/;
 
 const commands = manifest.contributes.commands;
-const properties = manifest.contributes.configuration.properties;
+// RUST-228 起 configuration 是分组块数组(每块 title/order/properties),聚合键集合同旧单块口径
+const configurationRaw = manifest.contributes.configuration;
+const properties = Object.assign(
+  {},
+  ...(Array.isArray(configurationRaw) ? configurationRaw : [configurationRaw]).map(
+    section => section.properties
+  )
+);
 
 /** 全量收集 %key% 引用:直接扫 package.json 原文,覆盖任意嵌套路径
  * (displayName/description、命令、视图、配置含 items.properties 字段说明) */

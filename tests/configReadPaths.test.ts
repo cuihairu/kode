@@ -166,7 +166,14 @@ describe('KSEM-CFG-01 config read path registry', () => {
 
   it('settings declaration count matches package.json (drift gate)', () => {
     const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf8'));
-    const props = pkg.contributes.configuration.properties;
+    // RUST-228 起 configuration 是分组块数组,聚合键集合同旧单块口径
+    const configRaw = pkg.contributes.configuration;
+    const props = Object.assign(
+      {},
+      ...(Array.isArray(configRaw) ? configRaw : [configRaw]).map(
+        (section: { properties: Record<string, unknown> }) => section.properties
+      )
+    ) as Record<string, unknown>;
     expect(Object.keys(props).length).toBeGreaterThanOrEqual(140);
     expect(props['kbengine.assetsRoot']).toBeDefined();
     expect(props['kbengine.entityDefsPath']).toBeDefined();

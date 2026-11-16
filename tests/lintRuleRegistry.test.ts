@@ -27,7 +27,14 @@ const root = join(__dirname, '..');
 const srcDir = join(root, 'src');
 
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
-const configProps = pkg.contributes.configuration.properties as Record<string, unknown>;
+// RUST-228 起 configuration 是分组块数组,聚合键集合同旧单块口径
+const configRaw = pkg.contributes.configuration;
+const configProps = Object.assign(
+  {},
+  ...(Array.isArray(configRaw) ? configRaw : [configRaw]).map(
+    (section: { properties: Record<string, unknown> }) => section.properties
+  )
+) as Record<string, unknown>;
 
 /** 全部 src 下递归 .ts 源码文本(含子目录,排除注册表自身) */
 const collectSrcTsFiles = (dir: string): string[] => {
