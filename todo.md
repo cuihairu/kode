@@ -505,7 +505,7 @@
 ### 14. 测试、正确性、安全与发布门禁
 - [x] RUST-230 （旧 QA-001） Unit: parser errors, byte spans, UTF-16 position, alias cycles, entity facets, source map。（纯对账：六维全有既有面+测试钉——parse.rs 容错双钉/行域嵌入断言 300 例/utf16_columns 中文例/local_return 别名环诚实空/symbols_test 12 例实体面/generatedSourceMap+lenses 7 例；cargo test kode-python 300 全绿，TS 侧在 10659 门禁内；纪要 docs/review/2026-11-17-rust-230-parser-unit-coverage-acceptance.md）
 - [x] RUST-231 （旧 QA-002） Property-based/fuzz: XML/DEF invalid input never panic/hang；path canonicalization 无碰撞。（纯对账：kode-parser blind.rs 头注即 QA-002 基础版——LCG 确定性变异语料不 panic+span 在界内+树不丢，parser_units 容错族，db-clone fuzz.rs 环检出终止，framing_fuzz PRNG 驱动；canonicalization=HR-MOD-009 词法规范化+HR-MOD-006 多命中拒绝不猜+假包含不命中；三 crate cargo test 全绿+moduleIdentity vitest 绿；纪要 docs/review/2026-11-17-rust-231-fuzz-canonicalization-acceptance.md）
-- [ ] RUST-232 （旧 QA-003） Golden: 基于真实引擎 fixtures 的 hover/definition/diagnostics/typings snapshot。
+- [x] RUST-232 （旧 QA-003） Golden: 基于真实引擎 fixtures 的 hover/definition/diagnostics/typings snapshot。（纯对账：17 个 golden 对拍测试+18 个金标 JSON，语料=kbengine-demo-assets 真引擎夹具，Rust dump 真值+TS parity 复算双向对拍；typings 三层承载=语义金标 stub probe+桩包模板物理在仓+生成面内容锚；四 parity 套件 14 例绿；纪要 docs/review/2026-11-17-rust-232-golden-snapshots-acceptance.md）
 - [ ] RUST-233 （旧 QA-004） Differential: 对旧 TS 输出与新 Rust 输出逐项差异审查，已知旧 bug 单独定标。
 - [ ] RUST-234 （旧 QA-005） Integration: VS Code Extension Host + native server e2e，对比用户可见结果。
 - [ ] RUST-235 （旧 QA-006） Python LS interoperability：Pylance / Pyright、不同 Python 环境和 .pyi 优先级。
