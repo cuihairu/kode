@@ -208,7 +208,11 @@
     "workspace"
   ],
   "capabilities": {
-    "virtualWorkspaces": false
+    "virtualWorkspaces": false,
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "%kbengine.capability.untrustedWorkspaces.description%"
+    }
   },
   "contributes": {
     "jsonValidation": [

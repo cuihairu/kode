@@ -325,6 +325,7 @@
   "kbengine.config.runtimeQuery.pollIntervalMs.description": "Result subscription stream interval in milliseconds for the Runtime Queries panel (default: 2000); applies only when kbengine.runtimeQuery.enabled is on\n\n默认值：`2000`\n\n详见 [配置指南](https://cuihairu.github.io/kode/guide/configuration#runtime-queries)",
   "kbengine.displayName": "Kode - KBEngine 开发环境",
   "kbengine.description": "KBEngine 游戏服务器框架的完整语言支持:语法高亮、智能感知、热更、调试与运维面板等",
+  "kbengine.capability.untrustedWorkspaces.description": "KBEngine 会按工作区配置拉起引擎与 Python 进程(引擎组件/快速动作/测试运行),因此不在不受信任的工作区运行;请信任工作区以启用本扩展。",
   "kbengine.config.debug.remoteTargets.items.name.description": "目标名（quick pick 展示，如「外网 baseapp」）",
   "kbengine.config.debug.remoteTargets.items.host.description": "服务器 IP / 主机名",
   "kbengine.config.debug.remoteTargets.items.port.description": "debugpy 监听端口，缺省 5678",
