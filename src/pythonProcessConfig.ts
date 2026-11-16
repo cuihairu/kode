@@ -26,7 +26,10 @@ export interface ProcessEnvironment {
 const portable = (root: string, file: string): string => path.relative(root, file).replace(/\\/g, '/') || '.';
 
 /** A common script must use its own analysis context. Only the role directory
- * and its KBEngine package enter a role environment; sibling roles never do. */
+ * and its KBEngine package enter a role environment; sibling roles never do,
+ * and the shared script tree stays out too (each role environment would
+ * otherwise re-analyze the whole tree; loose scripts keep it via the top-level
+ * extraPaths). */
 export function buildProcessEnvironments(
   workspaceRoot: string,
   scriptsRoots: readonly string[],
@@ -40,7 +43,7 @@ export function buildProcessEnvironments(
     return roots.filter(exists).map(root => ({
       root: portable(workspaceRoot, root),
       extraPaths: [...new Set([
-        processStubRoot(stubRoot, role), path.join(stubRoot, 'shared'), root, path.join(scriptsRoot, 'common'), scriptsRoot,
+        processStubRoot(stubRoot, role), path.join(stubRoot, 'shared'), root, path.join(scriptsRoot, 'common'),
         stubRoot, ...userExtraPaths.map(p => p.replace('${workspaceFolder}', workspaceRoot))
       ].map(p => path.isAbsolute(p) ? portable(workspaceRoot, p) : p))]
     }));

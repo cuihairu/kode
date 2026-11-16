@@ -43,10 +43,11 @@
 
 ## 4. 已知风险与未决事项(如实登记,非本矩阵裁定解决)
 
-1. **HEAD pyrightconfig executionEnvironments 分析倍增风险**:每个角色环境 extraPaths 含 scriptsRoot+stubRoot 全树(pythonProcessConfig.ts:42-48),N 角色在场时共享树被重复分析 N 份,Pylance 内存/CPU 随角色数放大。属 HEAD 新面(0.1.2 发布包无此面,2026-10-21 包核实)。候选改进(未实现,需独立批+测试):角色环境 extraPaths 收敛为 角色目录+角色桩+common,靠 stubPath 供桩,消共享树重复。**用户 Pylance 崩溃事件与本风险的关系待日志实证**——0.1.2 无 pyrightconfig 面,崩溃机证据(日志)未到位,本机已卸载两扩展并清理其写入的 liv-ws extraPaths(2026-11-16)。
+1. **HEAD pyrightconfig executionEnvironments 分析倍增风险(批 2 已收敛,2026-11-17)**:0.1.2..批 1 期间每个角色环境 extraPaths 含 scriptsRoot 全树(pythonProcessConfig.ts:42-48),N 角色在场时共享树被重复分析 N 份,Pylance 内存/CPU 随角色数放大。**批 2 收敛落地**:角色环境 extraPaths 移除 scriptsRoot 全树(保留 角色桩首位+shared 桩+root+common+stubRoot+userExtraPaths;stubRoot 为 .pyi 声明树保留,体量小非倍增源);松散脚本与 common 的全树可达由顶层 extraPaths(scriptsRoots)兜底;跨角色 import(角色脚本引兄弟角色目录)从「静默可解析」变为 Missing import 诊断——这是引擎运行时 sys.path 全角色互见的静态收紧,工程上跨角色 import 属架构违例,报错是矫正不是劣化。真 pyright 1.1.414 隔离面验收:跨进程 API 误用诊断 expected 集合不变;升级路径天然兼容(same() 基于 workspaceState previous 记忆全等比对,生成形态变更自动替换非冲突,用户编辑过的条目仍走 root 冲突闸归用户)。**用户 Pylance 崩溃事件与本风险的关系仍待日志实证**——0.1.2 无 pyrightconfig 面,崩溃机证据(日志)未到位,本机已卸载两扩展并清理其写入的 liv-ws extraPaths(2026-11-16)。
 2. **severity override 写入**是跨工具干预(Pylance 的诊断键被 Kode 改)——有键级保护与可关性,登记为已知干预面。
 3. Pylance 缺席场景的 Kode semanticTokens 自动启用:候选未实现。
 
 ## 5. 修订记录
 
 - 2026-11-17 首版:代码审计基线(94790af6..f732df03 线);崩溃事件待用户日志,证据到位后修订 §4.1。
+- 2026-11-17 批 2:§4.1 executionEnvironments 分析倍增风险收敛落地(角色环境去 scriptsRoot 全树,顶层兜底;真 pyright 隔离面验收 expected 不变;升级路径 previous 记忆全等比对天然兼容)。

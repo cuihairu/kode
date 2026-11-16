@@ -67,6 +67,10 @@ describe('process Python configuration', () => {
     expect(base.extraPaths[0]).toBe('.kbengine/stubs/base');
     expect(base.extraPaths).not.toContain('scripts/cell');
     expect(base.extraPaths).not.toContain('.kbengine/stubs/cell');
+    // The shared script tree must not enter a role environment (each role
+    // would re-analyze the whole tree); common stays reachable.
+    expect(base.extraPaths).not.toContain('scripts');
+    expect(base.extraPaths).toContain('scripts/common');
   });
 
   it('preserves JSONC and user settings, is idempotent, and retains edited environments', async () => {
