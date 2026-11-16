@@ -191,21 +191,35 @@ feat(completion): add support for FIXED_DICT type
 
 ### PR 描述
 
+GitHub 上创建 PR 时会自动载入 `.github/PULL_REQUEST_TEMPLATE.md`（守卫测试
+`tests/pullRequestTemplate.test.ts` 锁四字段齐全），字段如下：
+
 ```markdown
 ## 变更类型
 - [ ] Bug 修复
-- [x] 新功能
+- [ ] 新功能
 - [ ] 破坏性变更
 - [ ] 文档更新
 
 ## 描述
 简要描述你的更改...
 
+## 复现脚本
+Bug 修复必须附最小复现（脚本/步骤/语料文件皆可）；无法构造复现时，
+说明缺陷面与已排除的原因。
+
+## 测试证据
+贴测试命令与输出摘要（通过计数/关键断言）；合并前全量门禁必须绿。
+
+## Profile/Perf delta
+性能敏感改动附前后对比（bench 数字/profile 截图皆可）；不涉及性能时写「不涉及」。
+
+## 回退计划
+出问题如何回退（独立可 revert 的 commit/配置开关/数据面处理）；
+写「直接 revert <hash>」亦可。
+
 ## 相关 Issue
 Closes #123
-
-## 测试
-描述你如何测试这些更改...
 
 ## 截图
 如果适用，添加截图...
@@ -219,6 +233,21 @@ Closes #123
 - [ ] 所有测试通过
 - [ ] 没有新的警告
 - [ ] 提交消息遵循规范
+
+## 发布规则
+
+版本号只能由维护者手动给出，自动化只跟随，不自行发起正式发布：
+
+- **正式 GitHub Release**：维护者手动推送版本号 tag（`v*`）后，`ci.yml` 跟随 tag
+  自动创建 Release 并附 VSIX 资产；不给分支建 Release。
+- **Marketplace / npm**：仅 `workflow_dispatch` 手动触发（`publish.yml` / `npm.yml`），
+  请求版本必须与 `package.json` 一致（不一致直接失败），且 `publish` 输入默认
+  `false`（只验证不发布）；发布命令只存在于这两个 workflow。
+- **nightly**：每日滚动构建（48 小时无新提交则跳过），tag 恒为 `nightly` 且恒标
+  `--prerelease`，不带版本号，不发布到 Marketplace。
+
+守卫测试 `tests/releaseGovernance.test.ts` 锁上述触发面与发布命令通道唯一性，
+改动 release governance 会直接红。
 
 ## 资源
 
