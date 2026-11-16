@@ -1225,6 +1225,17 @@ The flow graph panel supports:
 - Detection and provenance faces: the version marker probe and the git `rev-parse HEAD` / `describe --tags --always --dirty` reuse the shared engine metadata chain (`readEngineApiMetadata`, the same probe the SDK generation trace and the stub documents use); every unknown face is reported honestly as 「未探测到/未知」 (not detected / unknown) — no value is ever fabricated
 - Feature layer face: aggregates the curated `KBE_SYMBOLS` subset into the KB-VER-002 three layers (baseline / fork / pending-to-be-evidenced; the subset is labeled as curated, not a complete engine API catalog) and states whether fork-layer symbols currently carry the 「需 fork」 annotation under the configured version (suppressed when the setting reads as a fork context)
 
+### `kbengine.api.engineSource`
+
+- Title: `Open Engine API Source`
+- Purpose: navigate a curated KBEngine symbol to its definition in a real engine checkout — the engine Python typings declaration line, and for the `Vector2/3/4` family the engine C++ class declaration (bounded header scan under `kbe/src/lib`)
+- Symbol source: pass the symbol name as an argument, or run with the cursor on a KBEngine module access (`KBEngine.entities` etc.); a non-module cursor position is refused with an honest warning
+- Honesty rules: each Python anchor is re-verified at runtime against the engine checkout (the declaration line must still start with `class|def <name>`); a drifted anchor opens the typings file only — the line is never claimed; with no engine checkout detected the built-in stub document opens directly with an honest notice
+- Version constraints: the QuickPick header shows the symbol's KB-VER-002 layer and, when applicable, the 「需 fork」 annotation (the same rule the hover annotations use)
+- The engine C++ face only appears for symbols that carry a `cppClassName` anchor; a bounded scan that finds no declaration says so instead of guessing a location
+
+### `kbengine.extension.identity`
+
 ### `kbengine.extension.identity`
 
 - Title: `Show Extension Identity Report`

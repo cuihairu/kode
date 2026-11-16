@@ -1184,6 +1184,15 @@ callgraph 模式面板支持：
 - 探测与溯源面：版本宏探测与 git `rev-parse HEAD` / `describe --tags --always --dirty` 复用共享引擎元数据链（`readEngineApiMetadata`，SDK 生成溯源与桩文档同源）；每个 unknown 面如实写「未探测到/未知」——绝不编造任何值
 - 特性分层面：把策展的 `KBE_SYMBOLS` 子集聚合成 KB-VER-002 三档（baseline / fork / 待取证；如实标注是策展子集、非完整引擎 API 目录），并报出当前配置版本下 fork 档符号是否带「需 fork」标注（设置按 fork 语境读取时关闭）
 
+### `kbengine.api.engineSource`
+
+- 标题：`Open Engine API Source`
+- 用途：把策展 KBEngine 符号导航到真实引擎检出上的定义——引擎 Python typings 声明行，以及 `Vector2/3/4` 族的引擎 C++ 类声明（`kbe/src/lib` 下有界头文件扫描）
+- 符号来源：以参数传入符号名，或把光标放在 KBEngine 模块访问上运行（`KBEngine.entities` 等）；非模块光标位置以诚实警告拒绝
+- 诚实规则：每条 Python 锚点在运行时对引擎检出复验（声明行仍须以 `class|def <名>` 开头）；锚点漂移只打开 typings 文件——绝不声称行号；未检测到引擎检出时直接打开内置桩文档并如实提示
+- 版本约束：QuickPick 头部呈现符号的 KB-VER-002 分层，适用时附「需 fork」标注（与悬停标注同一口径）
+- 引擎 C++ 面只对带 `cppClassName` 锚名的符号出现；有界扫描未见声明时如实说明，不猜位置
+
 ### `kbengine.extension.identity`
 
 - 标题：`Show Extension Identity Report`
