@@ -35,6 +35,7 @@ import { readEngineApiMetadata } from '../backend/engineApiMetadata';
 import { resolveDemoGameTemplateRoot } from '../demoGameTemplate';
 import { runClientSdkGenerateCommand } from '../sdk-gen/clientSdkGenerator';
 import { runGeneratorFormWizard } from '../generatorForms';
+import { registerEntityCreateCommands } from '../entityCreateCommands';
 import type { EntityMappingManager } from '../entityMapping';
 import type { QuickActionManager } from '../quickActions';
 import type { PythonClassIndex } from '../backend/pythonClassIndex';
@@ -300,6 +301,10 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
     () => codeGenerator.showTemplates()
   );
   context.subscriptions.push(showTemplatesCommand);
+
+  // RUST-179 创建向导四命令:RPC 追加/组件/类型别名 + 撤销最近一次生成,
+  // 插入计算在 entityCreateWizard 纯核,落盘与撤销走 codeGenerator 同一套账本
+  registerEntityCreateCommands(context, codeGenerator);
 
   // 定义形态生成(盘点 G7):代理/空间/组件/固定字典四种形态的向导,实体向导之外
   // 的定义面(此前只能手写)。已代决按「先出骨架 + 引擎装载口径附带改写」落地

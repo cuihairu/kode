@@ -149,6 +149,16 @@ export function createGenerationRollbackLedger(): GenerationRollbackLedger {
   return { createdFiles: [], overwrittenFiles: [], bufferEdits: [] };
 }
 
+/** 已提交事务账本的 workspaceState 键(RUST-179 用户主动撤销) */
+const LAST_GENERATION_LEDGER_KEY = 'kbengine.generation.lastLedger';
+
+/** 账本持久化形状:bufferEdits 的 uri 折叠为 fsPath,回滚时按 Uri.file 重建 */
+interface SerializedGenerationLedger {
+  createdFiles: string[];
+  overwrittenFiles: Array<{ filePath: string; previous: string }>;
+  bufferEdits: Array<{ filePath: string; offset: number; text: string }>;
+}
+
 /**
  * 代码生成器
  */
@@ -895,6 +905,8 @@ export class KBEngineCodeGenerator {
     // 已提交;此后的"打开生成文件"是已提交事务的 UI 后续,失败只提示打开
     // 失败,绝不回滚——旧实现把打开步骤留在回滚 try 里,打开失败会删掉已
     // 成功的产物,还会在重叠调用时误删另一调用的文件(R3-F08)。
+    // RUST-179:已提交事务登记撤销账本,供 kbengine.generator.undoLast 撤销
+    this.persistGenerationLedger(ledger);
     const openFile = await vscode.window.showInformationMessage(
       '是否打开生成的文件？',
       '是',
@@ -1059,6 +1071,8 @@ export class KBEngineCodeGenerator {
     }
 
     // 提交边界(AUD-064 同口径):此后是已提交事务的 UI 后续,失败不回滚
+    // RUST-179:已提交事务登记撤销账本,供 kbengine.generator.undoLast 撤销
+    this.persistGenerationLedger(ledger);
     // ④ def 注册表同步:新文件由 fs watcher 自动入索引;此处主动刷新
     // 实体树让新实体立即可见(命令未注册时静默跳过,不影响生成结果)
     try {
@@ -1324,6 +1338,9 @@ export class KBEngineCodeGenerator {
         vscode.window.showInformationMessage(`✅ 已在 entities.xml 中注册 ${entityName}`);
       }
 
+      // 提交边界(RUST-179):模板产物全部落盘,登记撤销账本(catch 无 return,
+      // 故登记必须在 try 内——放 catch 后会把回滚后的空账本当成功)
+      this.persistGenerationLedger(ledger);
     } catch (error) {
       // IDE-GEN-006:回收本次新增文件与注册项,不留半套
       await this.rollbackGeneration(ledger);
@@ -1337,5 +1354,95 @@ export class KBEngineCodeGenerator {
   dispose(): void {
     // 清理资源
     this.profileSwitchSubscription.dispose();
+  }
+
+  /**
+   * 创建向导目标路径(RUST-179):三类创建命令(RPC/组件/类型别名)与
+   * 计划预览共用的同源路径——预览路径=写入路径,与既有生成面同一解析链
+   * (config/profile 感知,非 discovery 链)。
+   */
+  resolveCreationTargetPaths(): { workspaceRoot: string; defRoot: string; pythonRoot: string; typesXmlPath: string } {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+      throw new Error('没有打开的工作区');
+    }
+    return {
+      workspaceRoot: workspaceFolder.uri.fsPath,
+      defRoot: this.resolveDefOutputRoot(workspaceFolder.uri.fsPath),
+      pythonRoot: this.resolvePythonOutputRoot(workspaceFolder.uri.fsPath),
+      typesXmlPath: this.resolveTypesXmlPath(workspaceFolder.uri.fsPath)
+    };
+  }
+
+  /**
+   * 已提交事务的账本登记(AUD-064):成功边界把回滚账本序列化进
+   * workspaceState,供 kbengine.generator.undoLast 用户主动撤销;失败路径
+   * 已就地回滚并清空,不在此登记。bufferEdits 的 uri 按 fsPath 重建,
+   * 回滚时与 textDocuments 的 fsPath 对齐。
+   */
+  persistGenerationLedger(ledger: GenerationRollbackLedger): void {
+    const hasEntries =
+      ledger.createdFiles.length > 0 ||
+      ledger.overwrittenFiles.length > 0 ||
+      ledger.bufferEdits.length > 0;
+    if (!hasEntries) {
+      return;
+    }
+    // 宿主没给 workspaceState(嵌入/烟测替身,同 quickActionManager 首装扫描
+    // 口径):无处登记,如实放弃——不把替身宿主当成功事务记账
+    if (!this.context.workspaceState) {
+      return;
+    }
+    const serialized: SerializedGenerationLedger = {
+      createdFiles: [...ledger.createdFiles],
+      overwrittenFiles: ledger.overwrittenFiles.map(item => ({ filePath: item.filePath, previous: item.previous })),
+      bufferEdits: ledger.bufferEdits.map(item => ({
+        filePath: item.filePath,
+        offset: item.offset,
+        text: item.text
+      }))
+    };
+    void this.context.workspaceState.update(LAST_GENERATION_LEDGER_KEY, JSON.stringify(serialized));
+  }
+
+  /**
+   * 回滚指定账本(RUST-179):命令层 apply 中途失败的回收通道——
+   * rollbackGeneration 是事务回收的唯一实现,命令层不得自带第二套删除逻辑。
+   */
+  async rollbackLedger(ledger: GenerationRollbackLedger): Promise<void> {
+    await this.rollbackGeneration(ledger);
+  }
+
+  /**
+   * 撤销最近一次生成(RUST-179):读回 workspaceState 账本,复用
+   * rollbackGeneration(缓冲插入按「恰好含该插入」守卫撤回,覆盖文件还原
+   * 前值,新建文件逆序删除);撤销后账本清空——一次性,不可重复撤销。
+   * 无账本(未生成过/已撤销)如实返回 false 不装成功。
+   */
+  async undoLastGeneration(): Promise<boolean> {
+    if (!this.context.workspaceState) {
+      return false;
+    }
+    const raw = this.context.workspaceState.get<string>(LAST_GENERATION_LEDGER_KEY);
+    if (!raw) {
+      return false;
+    }
+    let serialized: SerializedGenerationLedger;
+    try {
+      serialized = JSON.parse(raw) as SerializedGenerationLedger;
+    } catch {
+      // 账本损坏:清掉,不把坏数据当可回滚事实
+      void this.context.workspaceState.update(LAST_GENERATION_LEDGER_KEY, undefined);
+      return false;
+    }
+    const ledger = createGenerationRollbackLedger();
+    ledger.createdFiles.push(...serialized.createdFiles);
+    ledger.overwrittenFiles.push(...serialized.overwrittenFiles);
+    for (const item of serialized.bufferEdits) {
+      ledger.bufferEdits.push({ filePath: item.filePath, uri: vscode.Uri.file(item.filePath), offset: item.offset, text: item.text });
+    }
+    await this.rollbackGeneration(ledger);
+    void this.context.workspaceState.update(LAST_GENERATION_LEDGER_KEY, undefined);
+    return true;
   }
 }

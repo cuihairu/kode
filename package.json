@@ -46,6 +46,10 @@
     "onView:kbengine.componentStatus",
     "onCommand:kbengine.entity.open",
     "onCommand:kbengine.entity.new",
+    "onCommand:kbengine.entity.addRpc",
+    "onCommand:kbengine.component.new",
+    "onCommand:kbengine.types.new",
+    "onCommand:kbengine.generator.undoLast",
     "onCommand:kbengine.entity.method.open",
     "onCommand:kbengine.defMethodConsistency.revalidate",
     "onCommand:kbengine.database.open",
@@ -776,6 +780,26 @@
         "command": "kbengine.generator.templates",
         "title": "%kbengine.command.generator.templates.title%",
         "icon": "$(file-template)"
+      },
+      {
+        "command": "kbengine.entity.addRpc",
+        "title": "%kbengine.command.entity.addRpc.title%",
+        "icon": "$(radio-tower)"
+      },
+      {
+        "command": "kbengine.component.new",
+        "title": "%kbengine.command.component.new.title%",
+        "icon": "$(package)"
+      },
+      {
+        "command": "kbengine.types.new",
+        "title": "%kbengine.command.types.new.title%",
+        "icon": "$(symbol-variable)"
+      },
+      {
+        "command": "kbengine.generator.undoLast",
+        "title": "%kbengine.command.generator.undoLast.title%",
+        "icon": "$(discard)"
       },
       {
         "command": "kbengine.clientSdk.generate",
