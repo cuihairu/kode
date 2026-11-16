@@ -21,7 +21,8 @@
 | KBE-PY-007 | 写入引擎只读属性，如 `self.id = 1` | 已实现（IDE-LINT-007）：普通/增强/注解赋值与 `del` 报 Warning，可写属性与非实体同名字段不报 | `kbengine.readOnlyWrite`；`readOnlyWriteDiagnostics.ts`（表 `entityBuiltinProperties.ts`，注册面 `entity_macro.h` 等） |
 | KBE-PY-008 | 在错误角色访问引擎 API（方法） | 仅 hover/补全元数据（角色面表未建立）；属性错用已由 KBE-PY-008b 实现 | `kbengine.entity.builtinProperties`；API 保持仅提示 |
 | KBE-PY-008b | 在错误角色访问引擎属性 | 已实现（IDE-LINT-009）：`self.<内建属性>` 注册于其他角色面而当前面没有时报 Warning，引注册面引擎源码取证；角色不明/非实体脚本/非内建属性不报 | `kbengine.roleMisuse`；`roleMisuseDiagnostics.ts`（属性面表取 `entityBuiltinProperties.ts`，与 hover 元数据同源） |
-| KBE-PY-009 | RPC 参数数量/类型与 `.def` 不一致 | 已有实时 Warning（参数数量）；类型不符仍只有签名/提示面 | `kbengine.rpcArgCount`；`rpcArgCountDiagnostics.ts` |
+| KBE-PY-009 | RPC 参数数量与 `.def` 不一致 | 已实现（IDE-LINT-008）：调用所属 section 的 `<Arg>` 数与调用点顶层实参数对账，明确不符报 Warning | `kbengine.rpcArgCount`；`rpcArgCountDiagnostics.ts` |
+| KBE-PY-009b | RPC 参数序列化类型与 `.def` 不一致（client/base/cell 分面） | 已实现（RUST-176）：字面量实参与调用所属 section 声明的 `<Arg>` 内建类型族对账（整数族传错型静默打 0 `datatype.h:875-898`，FLOAT/STRING 族不写流致远端错位 `datatype.cpp:540-549/1050-1062`，BLOB 只收 bytes `datatype.cpp:1448-1468`，VECTOR 序列协议逐分量 `datatype.cpp:841-856`），明确不兼容报 Warning | `kbengine.rpcArgType`；`rpcArgTypeCompat.ts` |
 | KBE-PY-010 | 销毁后或跨异步回调继续访问 Entity | 已实现（IDE-LINT-010）：同函数同块内确定的 `self.destroy()` 之后直接访问 `self.<成员>` 报 Warning；条件销毁/跨块/跨回调/异常/def 声明 destroy（动态分派）不猜 | `kbengine.postDestroy`；`postDestroyDiagnostics.ts`（引擎 `entity_macro.h:20` destroy 宏公共） |
 | KBE-PY-011 | 用户自管 `self.<attr>` 含 None 且未窄化（如构造期赋值被早退绕过） | 已有实时 Warning | `kbengine.attributeNone`；`selfAttributeNoneDiagnostics.ts` |
 | KBE-PY-012 | def 属性访问方向违规（访问位置不在 Flags 域位内） | 已有实时 Warning | `kbengine.propertyDirectionViolation`；`propertyDirectionDiagnostics.ts` |
@@ -129,6 +130,19 @@ if self.cell is not None:
 - **括号不闭合**到文件尾、方法名与 `(` 之间有其他 token：形态不明，未知。
 
 实现口径：调用点发现面走词法掩码（去字符串/注释里的伪调用，`findPythonReceiverCalls` 同款）；实参计数面走原文并自带字符串/注释词法态（字符串里的逗号不当分隔，`countCallArguments`）——掩码把字符串整体空白会吞掉字符串实参导致计数偏少，故计数面不复用掩码。跨行调用按括号深度计数到配对 `)`；空括号计 0；尾随逗号不多计。参数数量**类型**不符仍只有签名/提示面（`kbengine.rpcArgCount` 只对数量），inlay 提示不替代诊断。开关 `kbengine.rpcArgCountDiagnostics=true`（默认开启），关闭只停止提示，不改变引擎行为。
+
+## RPC 参数序列化类型：字面量可判才判（client/base/cell 分面）
+
+已实现（RUST-176）：`self.base/cell/client.<method>(...)` 调用点实参为**字面量形态可判定**时，与调用所属 section 声明的 `<Arg>` 内建类型族对账，明确不兼容报 `kbengine.rpcArgType`（Warning），锚定实参段。引擎打包真源（参数真正上流的路径，`datatype addToStream`）按族：
+
+- **整数族** INT8/16/32/64、UINT8/16/32/64（`datatype.h:875-898`；UINT32/64、INT64 专类同构 `datatype.cpp:324-341/199-225/440-468`）：`PyLong_AsLong→AsUnsignedLong` 逐级回退，全失败打印 TypeError 后 **v=0 写流继续**——传错型不中止，静默打 0；`bool` 是 PyLong 子类，合法。
+- **FLOAT/DOUBLE**（`datatype.cpp:540-549/630-641`）：`PyFloat_Check` 闸门失败打印 TypeError 后 **return 不写流**——字段缺席，远端按定宽读取错位；`int` 不被 `PyFloat_Check` 接受。
+- **STRING/UNICODE**（`datatype.cpp:1050-1062/1129-1141`）：`PyUnicode_AsUTF8AndSize`，`bytes` 同样失败（不写流）。
+- **BLOB**（`datatype.cpp:1448-1468`）：只有 `bytes` 是受支持形态，其他对象被无检强转产生未定义字节。
+- **VECTOR2/3/4**（`datatype.cpp:841-856` 同构）：逐分量 `PySequence_GetItem` + `PyFloat_AsDouble`——`str` 逐分量转换产生垃圾值，非序列直接失败；`list`/`tuple` 结构上可行（分量可转 float 即合法），**留未知不判**。
+- **PYTHON/PY_DICT/PY_TUPLE/PY_LIST**（pickle 全收 `datatype.cpp:1225-1230`）与 **ENTITYCALL**：永不声称。
+
+只报**明确不兼容**，以下保留未知一律不报：非字面量形态（名字/普通调用/表达式）推不出；`types.xml` 别名、ARRAY/FIXED_DICT 未解析到内建族不声称；跨行调用无槽位文本；声明未就绪/多来源类型不一致/段外声明（段错配归 `kbengine.sectionMismatch`）；数量不符（含超声明槽位）归 `kbengine.rpcArgCount`。声明读型口径：def `<Arg>` 只认直文本（`<Arg> STRING </Arg>`），元素形态 `<Arg><Type>STRING</Type></Arg>` 的首子节点是元素，引擎 `getValStr` 只认文本节点（`xml.cpp:121-127`）得空串 → `dataType[] not found` → 启动中止（`entitydef.cpp:1629-1643`）。开关 `kbengine.rpcArgTypeDiagnostics=true`（默认开启）。
 
 ## 角色错用：属性面表有据可查才判
 
