@@ -1276,6 +1276,16 @@ callgraph 模式面板支持：
 - `.def` 新建/修改/删除自动再生 `entity_types.pyi`（C-22）：400ms 尾沿去抖把连发合并为一次再生,共用 `kbengine.python.stubExport` 总闸与内容比对零写纪律;再生成功后 `entity_types.pyi` 来源镜 CodeLens 计划原地刷新(失败不刷新)。口径:只盯 `.def`——`entities.xml` 未接线
 - 设置 `kbengine.python.stubExport: false` 可整体关闭（与 KBEngine.pyi 存根共用开关）
 
+### `kbengine.typePreview.refresh`
+
+- 标题：`刷新类型预览`（视图标题按钮，刷新图标）
+- 作用：按实体注册表与自定义类型注册表现场重算 `kbengine-explorer` 视图容器里的「类型预览」树——不缓存任何状态，`exportStubs` / `exportTypeStubs`（命令尾链本刷新）或注册表变动后视图即时跟上。视图一眼回答四件事（RUST-167）：API 类型树（实体 → 属性/方法、自定义类型 → 字段）、typing 覆盖（`已解析/总数` 注解位与 Any 计数）、缺失映射（每一处落到 `Any` 的注解位 + 被跳过的类型及其原因——别名成环、同名拒注册）、来源跳转（真实源行已知的叶子点击即打开真实 `.def` / `types.xml` 定位到该行；真实路径解析不出的面如实不跳，绝不拿生成行号充当来源）
+
+### `kbengine.typePreview.jump`
+
+- 标题：`跳转来源(类型预览)`（内部命令；由预览叶子点击触发，不进命令面板）
+- 作用：打开叶子的真实源文件（`.def` 实体声明 / `types.xml` 类型或属性行 / 别名节点）并 reveal 到桩计划记录的 1 基行——与生成源 CodeLens 同一族判别（RUST-160）：带 `customTypeLine` 的属性跳 `types.xml`，否则跳实体 `.def`；类型面的真实路径由 `CustomTypeInfo.filePath` 携带
+
 ### `kbengine.source.reveal`
 
 - 标题：`Reveal Source Location`

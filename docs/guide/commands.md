@@ -1327,6 +1327,16 @@ The flow graph panel supports:
 
 ## Git History
 
+### `kbengine.typePreview.refresh`
+
+- Title: `Refresh Type Preview` (view title button, refresh icon)
+- Purpose: recompute the Type Preview tree in the `kbengine-explorer` view container from the live entity registry and the custom-type registry — no cached state, so after `exportStubs` / `exportTypeStubs` (whose command tails call this) or any registry change the tree reflects current data. The view answers four questions at a glance (RUST-167): the API type tree (entities → properties/methods, custom types → fields), typing coverage (`resolved/total` annotation positions with the Any count), missing mappings (every annotation position that fell back to `Any`, plus skipped types with their skip reasons — alias cycles, duplicate-name rejections), and source jumps (every leaf whose real source line is known opens the real `.def` / `types.xml` file at that line; positions whose real path cannot be resolved honestly do not jump, and generated line numbers are never used as source lines)
+
+### `kbengine.typePreview.jump`
+
+- Title: `Jump to Source (Type Preview)` (internal; fired by clicking a preview leaf, not surfaced in the Command Palette)
+- Purpose: open the leaf's real source file (`.def` entity declaration / `types.xml` type or property node / alias node) and reveal the 1-based line recorded by the stub plan — the same family rule as the generated-source CodeLens (RUST-160): a property with a `customTypeLine` jumps into `types.xml`, otherwise into the entity's `.def`; `CustomTypeInfo.filePath` carries the real path for type faces
+
 ### `kbengine.git.showHistory`
 
 - Title: `Kode: 查看文件历史 (View File History)`
