@@ -1193,6 +1193,16 @@ callgraph 模式面板支持：
 - 版本约束：QuickPick 头部呈现符号的 KB-VER-002 分层，适用时附「需 fork」标注（与悬停标注同一口径）
 - 引擎 C++ 面只对带 `cppClassName` 锚名的符号出现；有界扫描未见声明时如实说明，不猜位置
 
+### `kbengine.entities.checkRegistration`
+
+- 标题：`Check Entity Registration`
+- 用途：审计 `entities.xml` 注册完整性并把发现汇报到输出通道（「Kode Entity Registration」）——清单↔`.def` 配对与 base/cell 面脚本在盘，每条发现都引用引擎源码锚
+- `entry-without-def`（错误）：已登记实体缺 `entity_defs/<Name>.def`——引擎打开该 def 失败即中止启动（`entitydef.cpp:207-210`）
+- `def-without-entry`（警告）：`.def` 文件从未进清单——def 只按清单装载（`entitydef.cpp:199-210`），该实体拿不到 utype（`entitydef.cpp:253-265`），运行期 `createEntity` 找不到它
+- `face-script-missing`（警告）：引擎视为存在的 base/cell 面缺 `scripts/<face>/<Name>.py` 且无显式 `hasBase/hasCell="false"` 声明（`scriptdef_module.cpp:452-460`）；对应进程 import 失败会中止启动（`entitydef.cpp:2273-2280`）——显式 `false` 是干净的豁出口；client 面如实排除（由 def-context 覆写裁定，`scriptdef_module.cpp:366-373`）
+- 脚本在盘口径与引擎 `matchRes` 同构：`<Name>.py` 与 `<Name>.pyc` 都算在盘；重复条目不入本报告（既有 KBE-DEF-009 诊断负责该面），方法一致性仍归既有 C-19 诊断
+- 盘上无 `entities.xml` 时如实说明（纯脚本定义资产可缺省，引擎允许：`entitydef.cpp:2261-2263`）
+
 ### `kbengine.extension.identity`
 
 - 标题：`Show Extension Identity Report`

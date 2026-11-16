@@ -1234,6 +1234,16 @@ The flow graph panel supports:
 - Version constraints: the QuickPick header shows the symbol's KB-VER-002 layer and, when applicable, the 「需 fork」 annotation (the same rule the hover annotations use)
 - The engine C++ face only appears for symbols that carry a `cppClassName` anchor; a bounded scan that finds no declaration says so instead of guessing a location
 
+### `kbengine.entities.checkRegistration`
+
+- Title: `Check Entity Registration`
+- Purpose: audit `entities.xml` registration integrity and report the findings to an output channel (「Kode Entity Registration」) — manifest↔`.def` pairing and the base/cell face script presence, each finding citing its engine source anchor
+- `entry-without-def` (error): a registered entity whose `entity_defs/<Name>.def` is missing — the engine aborts startup when this def fails to open (`entitydef.cpp:207-210`)
+- `def-without-entry` (warning): a `.def` file never listed in the manifest — defs load per manifest only (`entitydef.cpp:199-210`), so the entity never receives a utype (`entitydef.cpp:253-265`) and `createEntity` cannot find it
+- `face-script-missing` (warning): a base/cell face the engine treats as present while `scripts/<face>/<Name>.py` is absent and no explicit `hasBase/hasCell="false"` is declared (`scriptdef_module.cpp:452-460`); an import failure on that process aborts startup (`entitydef.cpp:2273-2280`) — the explicit `false` attribute is the clean opt-out; the client face is excluded honestly (a def-context override decides it, `scriptdef_module.cpp:366-373`)
+- Script presence matches the engine's `matchRes` semantics: `<Name>.py` and `<Name>.pyc` both count; duplicate entries stay out of this report (the existing KBE-DEF-009 diagnostic owns that face), and method consistency stays with the existing C-19 diagnostics
+- With no `entities.xml` on disk the report says so honestly (pure-script assets may omit it; the engine allows absence, `entitydef.cpp:2261-2263`)
+
 ### `kbengine.extension.identity`
 
 ### `kbengine.extension.identity`
