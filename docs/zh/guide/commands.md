@@ -1176,6 +1176,14 @@ callgraph 模式面板支持：
   - 全部健康 → 一条健康消息，无警告无选择器
   - 有问题 → 警告报出问题数，QuickPick 逐条列出（标签=类别，description=判定事实，detail=定位入口）；选中一行跳到对应入口（命令或设置），Esc 只看不跳
 
+### `kbengine.engine.profile`
+
+- 标题：`Show Engine Profile`
+- 用途：把引擎的四道档案面一次性汇报到输出通道（「Kode Engine Profile」）——配置的版本、其分类、探测到的版本标记、git commit/describe、KB-VER-002 特性分层计数
+- 版本面：读 `kbengine.engineVersion`（容错归一；非字符串/空串回落官方默认），报出是否命中预设，并做分类——预设且无 `fork-` 前缀=官方、`fork-` 前缀（大小写不敏感，与版本标注同口径）=fork、其余=自定义（不猜是官方旧版还是魔改 fork）
+- 探测与溯源面：版本宏探测与 git `rev-parse HEAD` / `describe --tags --always --dirty` 复用共享引擎元数据链（`readEngineApiMetadata`，SDK 生成溯源与桩文档同源）；每个 unknown 面如实写「未探测到/未知」——绝不编造任何值
+- 特性分层面：把策展的 `KBE_SYMBOLS` 子集聚合成 KB-VER-002 三档（baseline / fork / 待取证；如实标注是策展子集、非完整引擎 API 目录），并报出当前配置版本下 fork 档符号是否带「需 fork」标注（设置按 fork 语境读取时关闭）
+
 ### `kbengine.extension.identity`
 
 - 标题：`Show Extension Identity Report`

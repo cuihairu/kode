@@ -1217,6 +1217,14 @@ The flow graph panel supports:
   - All healthy → a single health message, no warnings, no picker
   - Issues → a warning with the count, then a QuickPick listing each issue (label = kind, description = the deciding fact, detail = the navigation entry); picking a row navigates to its entry (command or settings), Esc leaves the list without navigating
 
+### `kbengine.engine.profile`
+
+- Title: `Show Engine Profile`
+- Purpose: report the engine's four profile faces in one output channel (「Kode Engine Profile」) — the configured version, its classification, the detected version marker, the git commit/describe, and the KB-VER-002 feature layer counts
+- Version face: reads `kbengine.engineVersion` (fault-tolerant normalize; non-string/empty falls back to the official default), reports whether it matches a preset, and classifies it — preset without a `fork-` prefix = official, `fork-` prefix (case-insensitive, the same rule the version annotations use) = fork, anything else = custom (never guessed to be an old official build or a fork)
+- Detection and provenance faces: the version marker probe and the git `rev-parse HEAD` / `describe --tags --always --dirty` reuse the shared engine metadata chain (`readEngineApiMetadata`, the same probe the SDK generation trace and the stub documents use); every unknown face is reported honestly as 「未探测到/未知」 (not detected / unknown) — no value is ever fabricated
+- Feature layer face: aggregates the curated `KBE_SYMBOLS` subset into the KB-VER-002 three layers (baseline / fork / pending-to-be-evidenced; the subset is labeled as curated, not a complete engine API catalog) and states whether fork-layer symbols currently carry the 「需 fork」 annotation under the configured version (suppressed when the setting reads as a fork context)
+
 ### `kbengine.extension.identity`
 
 - Title: `Show Extension Identity Report`
