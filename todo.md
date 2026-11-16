@@ -392,7 +392,7 @@
 
 ### 8. LSP 与 IDE 编辑体验
 - [x] RUST-134 （旧 LSP-001） Completion（声明、类型、实体属性/方法、RPC 参数、组件、内建 API）共享语义查询。（feat 68593cdd；py self. 实体成员面收编 Rust 共享查询：实体归属 stem 唯一命中+本类属性/三分面方法/继承链同名遮蔽；TS 补全专用 Rust 文档门 .py 其余面不动；8 例 + prove-red 三靶；验收 docs/review/2026-11-16-rust-134-py-self-completion.md）
-- [ ] RUST-135 （旧 LSP-002） Completion 支持 resolve 延迟补详情，snippet、sortText、filterText、文档与来源。
+- [x] RUST-135 （旧 LSP-002） Completion 支持 resolve 延迟补详情，snippet、sortText、filterText、文档与来源。（2026-11-16 feat 5ef5dcbd：结构化对拍面零变化全下沉 LSP 投影+resolve；四靶 prove-red；ANCHORS 209/282/349/750/1134 锁步；docs/review/2026-11-16-rust-135-completion-resolve.md）
 - [ ] RUST-136 （旧 LSP-003） Hover 展示完整类型、来源、可用分面、版本与注释，严禁阻塞等待全局索引。(基础版:PR-010 kode-server hover 响应链(定位/签名/继承链+成员展开,def 视图零 IO 应答;分面可见性/版本/注释随语义面扩展;证据 docs/kode2/pr-010.md)
 - [ ] RUST-137 （旧 LSP-004） Definition / Declaration / TypeDefinition：`.def` ↔ `types.xml` ↔ `.py` ↔ 引擎源码。
 - [ ] RUST-138 （旧 LSP-005） References：跨 root 实体/方法/组件/类型，区分语法同名和真实语义引用。
