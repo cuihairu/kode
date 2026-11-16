@@ -47,7 +47,7 @@ export const ENTITIES_XML_SECTIONS = new Set([
   ENTITIES_XML_SECTION_SERVER_ONLY
 ]);
 
-function collectEntityEntries(root: DefElementNode): DefElementNode[] {
+export function collectEntityEntries(root: DefElementNode): DefElementNode[] {
   const entries: DefElementNode[] = [];
   for (const child of getDirectChildElements(root)) {
     if (ENTITIES_XML_SECTIONS.has(child.name)) {

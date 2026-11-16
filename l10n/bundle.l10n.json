@@ -738,5 +738,6 @@
   "Engine typings file (anchor drifted; line not claimed)": "Engine typings file (anchor drifted; line not claimed)",
   "Engine C++ declaration": "Engine C++ declaration",
   "Built-in stub document": "Built-in stub document",
-  "No engine checkout detected; opening the built-in stub document": "No engine checkout detected; opening the built-in stub document"
+  "No engine checkout detected; opening the built-in stub document": "No engine checkout detected; opening the built-in stub document",
+  "Entity registration check needs an open workspace folder": "Entity registration check needs an open workspace folder"
 }

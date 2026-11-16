@@ -44,6 +44,11 @@ import {
   resolveKbeAccessAtPosition
 } from '../kbeModuleIndex';
 import { KBENGINE_SOURCE_REVEAL_COMMAND } from '../sourceRevealCommand';
+import {
+  auditEntitiesRegistration,
+  collectAuditStats,
+  renderEntitiesRegistrationAudit
+} from '../backend/entitiesRegistrationAudit';
 import { execFile } from 'child_process';
 import { findFilesAcrossRoots } from '../scanRoots';
 import { getActiveOperationCounts } from '../languageServiceMetrics';
@@ -482,6 +487,75 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
     }
   );
   context.subscriptions.push(engineSourceCommand);
+
+  // RUST-175 entities.xml 注册完整性审计:清单↔.def 配对与 base/cell 面
+  // 脚本在盘(引擎真源锚见 entitiesRegistrationAudit.ts 头注)。报告面,
+  // 只记事实不发诊断——方法一致性走 C-19 既有诊断,重复条目走 KBE-DEF-009。
+  const entityRegistrationChannel = vscode.window.createOutputChannel('Kode Entity Registration');
+  const entityRegistrationCommand = vscode.commands.registerCommand(
+    'kbengine.entities.checkRegistration',
+    () => {
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+      if (!workspaceRoot) {
+        void vscode.window.showWarningMessage(
+          l10nText('Entity registration check needs an open workspace folder')
+        );
+        return;
+      }
+      const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+      const zh = vscode.env.language?.startsWith('zh');
+      if (!layout.entitiesXmlPath || !fs.existsSync(layout.entitiesXmlPath)) {
+        entityRegistrationChannel.clear();
+        entityRegistrationChannel.appendLine(
+          zh
+            ? '未见 entities.xml(纯脚本定义资产可无此文件,引擎允许缺省:entitydef.cpp:2261-2263)'
+            : 'entities.xml not found (pure-script assets may omit it; the engine allows absence: entitydef.cpp:2261-2263)'
+        );
+        entityRegistrationChannel.show(true);
+        return;
+      }
+      const entitiesXmlText = fs.readFileSync(layout.entitiesXmlPath, 'utf8');
+      const defNames = layout.entityDefsRoot && fs.existsSync(layout.entityDefsRoot)
+        ? fs.readdirSync(layout.entityDefsRoot)
+          .filter(name => name.endsWith('.def'))
+          .map(name => name.slice(0, -4))
+        : [];
+      // 脚本在盘口径与引擎 matchRes 同构:<Name>.py 与 <Name>.pyc 都算在盘
+      const faceScriptNames = (face: 'base' | 'cell'): Set<string> => {
+        const names = new Set<string>();
+        const directory = layout.entityScriptsRoot
+          ? path.join(layout.entityScriptsRoot, face)
+          : null;
+        if (!directory || !fs.existsSync(directory)) {
+          return names;
+        }
+        for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+          if (!entry.isFile()) {
+            continue;
+          }
+          if (entry.name.endsWith('.py')) {
+            names.add(entry.name.slice(0, -3));
+          } else if (entry.name.endsWith('.pyc')) {
+            names.add(entry.name.slice(0, -4));
+          }
+        }
+        return names;
+      };
+      const input = {
+        entitiesXmlText,
+        defNames,
+        baseScriptNames: faceScriptNames('base'),
+        cellScriptNames: faceScriptNames('cell')
+      };
+      const findings = auditEntitiesRegistration(input);
+      entityRegistrationChannel.clear();
+      entityRegistrationChannel.appendLine(
+        renderEntitiesRegistrationAudit(findings, collectAuditStats(input), vscode.env.language)
+      );
+      entityRegistrationChannel.show(true);
+    }
+  );
+  context.subscriptions.push(entityRegistrationCommand, entityRegistrationChannel);
 
   // IDE-REL-001 两个 Kode ID 共激活检测:激活时查一次当前宿主窗口的
   // Kode 系扩展(cuihairu. 名下 id 含 kode),只有「实际共激活」(两个

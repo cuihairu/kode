@@ -151,6 +151,7 @@
     "onCommand:kbengine.extension.identity",
     "onCommand:kbengine.engine.profile",
     "onCommand:kbengine.api.engineSource",
+    "onCommand:kbengine.entities.checkRegistration",
     "onCommand:kbengine.diagnostics.exportReproSummary",
     "onCommand:kbengine.quickActions.show",
     "onCommand:kbengine.quickActions.scanScripts",
@@ -933,6 +934,10 @@
       {
         "command": "kbengine.api.engineSource",
         "title": "%kbengine.command.api.engineSource.title%"
+      },
+      {
+        "command": "kbengine.entities.checkRegistration",
+        "title": "%kbengine.command.entities.checkRegistration.title%"
       },
       {
         "command": "kbengine.diagnostics.exportReproSummary",

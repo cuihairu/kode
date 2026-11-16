@@ -448,7 +448,7 @@ pnpm test:coverage  # vitest + 覆盖率
 
 ---
 
-当前发布版本 v0.1.3，已以 `cuihairu.kode-kbengine` 发布到 Marketplace。已落地 159 条命令、150 个配置项（口径：`main` 的 `package.json` contributes）；[COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) 的功能清单是 0.1.x 时点快照，测试口径见 [TESTING.md](./TESTING.md)。
+当前发布版本 v0.1.3，已以 `cuihairu.kode-kbengine` 发布到 Marketplace。已落地 160 条命令、150 个配置项（口径：`main` 的 `package.json` contributes）；[COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) 的功能清单是 0.1.x 时点快照，测试口径见 [TESTING.md](./TESTING.md)。
 
 ### Demo 热更新接收器
 

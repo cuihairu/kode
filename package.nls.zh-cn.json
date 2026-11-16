@@ -117,6 +117,7 @@
   "kbengine.command.extension.identity.title": "查看扩展身份报告",
   "kbengine.command.engine.profile.title": "显示引擎档案",
   "kbengine.command.api.engineSource.title": "打开引擎 API 源码",
+  "kbengine.command.entities.checkRegistration.title": "检查实体注册完整性",
   "kbengine.command.diagnostics.exportReproSummary.title": "导出复现配置摘要",
   "kbengine.command.quickActions.show.title": "运行快速动作",
   "kbengine.command.quickActions.scanScripts.title": "重新扫描脚本生成快速动作",
