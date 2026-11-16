@@ -479,7 +479,7 @@
 - [ ] RUST-207 （旧 PLUG-006） Plugin host 崩溃、挂起、协议不兼容时自动停用插件并保留核心功能（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记——插件宿主崩溃/挂起/协议不兼容的自动停用面以宿主存在为前提,无宿主则无被管对象;产品核心功能本就不经插件(kbengine 扩展单体),「保留核心功能」天然成立;拍板同 RUST-202。）
 - [ ] RUST-208 （旧 PLUG-007） 插件贡献顺序显式：builtin < engine profile < workspace override（示例，最终按 ADR 审核）；冲突显示来源（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记;既有等价形态=配置合并视图(RUST-180 来源/优先级/冲突四维)+VS Code 设置分层(user<workspace)——builtin<profile<workspace 的贡献顺序语义在配置面已是现役形态;拍板同 RUST-202。）
 - [ ] RUST-209 （旧 PLUG-008） 插件 API SemVer、版本协商、弃用窗口、兼容性检查（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记;既有相邻面=KB-VER-001 引擎版本链(fork-3.12+自由串)+$/kode RPC 形状契约门(RUST-055 SURFACE_PINS 递归指纹)——插件 API SemVer/协商落地时可复用该骨架;拍板同 RUST-202。）
-- [ ] RUST-210 （旧 PLUG-009） 配置隔离及密钥在 SecretStorage，禁止写插件 metadata 或 trace。
+- [ ] RUST-210 （旧 PLUG-009） 配置隔离及密钥在 SecretStorage，禁止写插件 metadata 或 trace（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记;既有相邻面=kode 自身现状:DB 密码 RSA 密文流转/引擎配置文件读取,kode 零明文密钥落 settings.json,SecretStorage 方向在 AI 档位分析(BYOK)已定未实施;插件密钥隔离以插件面存在为前提;拍板同 RUST-202。）
 - [ ] RUST-211 （旧 PLUG-010） 诊断规则执行结果以 file version/generation 固定，废弃过期插件结果。
 - [ ] RUST-212 （旧 PLUG-011） generator 支持 dry-run/preview、权限列表、atomic write 和冲突合并。
 - [ ] RUST-213 （旧 PLUG-012） 测试最小 sample 插件：新增自定义类型、诊断、生成器、version profile 四项。
