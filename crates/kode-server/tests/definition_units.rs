@@ -371,3 +371,244 @@ fn definition_golden_dump_processes_alias_corpus() {
     assert!(dump.contains("\"definitionCount\":1"));
     std::fs::remove_dir_all(&tmp).expect("cleanup");
 }
+
+// ---------------------------------------------------------------------------
+// RUST-137 批 1:Arg / Interfaces / Type 回落 / types.xml 取值词 四新臂
+// ---------------------------------------------------------------------------
+
+const AVATAR_WITH_ARG_DEF: &str = "<root>\n\
+\t<Properties>\n\
+\t\t<hp>\n\
+\t\t\t<Type> UINT32 </Type>\n\
+\t\t</hp>\n\
+\t</Properties>\n\
+\t<BaseMethods>\n\
+\t\t<onKill>\n\
+\t\t\t<Arg> UINT32 </Arg>\n\
+\t\t\t<Arg> MailBox </Arg>\n\
+\t\t</onKill>\n\
+\t</BaseMethods>\n\
+</root>\n";
+
+const AVATAR_WITH_INTERFACES_DEF: &str = "<root>\n\
+\t<Interfaces>\n\
+\t\t<Combat />\n\
+\t</Interfaces>\n\
+\t<Properties>\n\
+\t\t<hp>\n\
+\t\t\t<Type> UINT32 </Type>\n\
+\t\t</hp>\n\
+\t</Properties>\n\
+</root>\n";
+
+const AVATAR_MOVE_TYPE_DEF: &str = "<root>\n\
+\t<Properties>\n\
+\t\t<speed>\n\
+\t\t\t<Type> Move </Type>\n\
+\t\t</speed>\n\
+\t</Properties>\n\
+</root>\n";
+
+const AVATAR_LOWERCASE_TYPE_DEF: &str = "<root>\n\
+\t<Properties>\n\
+\t\t<hp>\n\
+\t\t\t<Type> moveRecord </Type>\n\
+\t\t</hp>\n\
+\t</Properties>\n\
+</root>\n";
+
+const NESTED_TYPES_XML: &str = "<root>\n\
+\t<ITEM_BAG>\n\
+\t\t<implementedBy> user_types.ItemBag </implementedBy>\n\
+\t\t<State>\n\
+\t\t\t<Type> SHADOW_TYPE </Type>\n\
+\t\t</State>\n\
+\t</ITEM_BAG>\n\
+\t<SHADOW_TYPE> UINT32 </SHADOW_TYPE>\n\
+</root>\n";
+
+const MOVE_NESTED_TYPES_XML: &str = "<root>\n\
+\t<ITEM_BAG>\n\
+\t\t<State>\n\
+\t\t\t<Type> Move </Type>\n\
+\t\t</State>\n\
+\t</ITEM_BAG>\n\
+</root>\n";
+
+const LOWERCASE_TYPES_XML: &str = "<root>\n\t<moveRecord> UINT32 </moveRecord>\n</root>\n";
+
+/// `<Arg>` 取值词 → 语料内同名实体 def 首行(唯一候选)。
+#[test]
+fn def_arg_value_word_lands_on_corpus_entity_def_head() {
+    let engine = engine_with(&[
+        ("/w/scripts/entities.xml", "<root>\n\t<Avatar/>\n</root>\n"),
+        ("/w/scripts/entity_defs/Avatar.def", AVATAR_WITH_ARG_DEF),
+        ("/w/scripts/entity_defs/MailBox.def", MOB_DEF),
+    ]);
+    let key = key_of("/w/scripts/entity_defs/Avatar.def");
+    // 第 10 行(1 起) `\t\t\t<Arg> MailBox </Arg>`,词首列 9(0 起)。
+    let location = engine
+        .definition(&key, AVATAR_WITH_ARG_DEF, 9, 9)
+        .expect("Arg 取值词应落语料实体 def 首行");
+    assert_eq!(location.uri, "/w/scripts/entity_defs/MailBox.def");
+    assert_eq!(location.range.start.line, 0);
+}
+
+/// gate 域:内建类型词(`UINT32`)直接 null,不进 Arg/Type 臂(TS 生产
+/// looksLikeEntityName 同拒)。
+#[test]
+fn def_arg_value_builtin_word_is_gated_null() {
+    let engine = engine_with(&[
+        ("/w/scripts/entities.xml", "<root>\n\t<Avatar/>\n</root>\n"),
+        ("/w/scripts/entity_defs/Avatar.def", AVATAR_WITH_ARG_DEF),
+        ("/w/scripts/entity_defs/MailBox.def", MOB_DEF),
+    ]);
+    let key = key_of("/w/scripts/entity_defs/Avatar.def");
+    // 第 9 行 `<Arg> UINT32 </Arg>`,词首列 9。
+    assert!(engine.definition(&key, AVATAR_WITH_ARG_DEF, 8, 9).is_none());
+}
+
+/// Arg 取值词无语料实体 → null,不虚构落点。
+#[test]
+fn def_arg_value_without_corpus_entity_is_null() {
+    let engine = engine_with(&[
+        ("/w/scripts/entities.xml", "<root>\n\t<Avatar/>\n</root>\n"),
+        ("/w/scripts/entity_defs/Avatar.def", AVATAR_WITH_ARG_DEF),
+    ]);
+    let key = key_of("/w/scripts/entity_defs/Avatar.def");
+    assert!(engine.definition(&key, AVATAR_WITH_ARG_DEF, 9, 9).is_none());
+}
+
+/// 同根同名多候选(实体 def + 接口目录同名)→ 歧义不硬猜,null(KBUG-ROOT
+/// 定域口径,与 entities 面同)。
+#[test]
+fn def_arg_value_ambiguous_entity_candidates_is_null() {
+    let engine = engine_with(&[
+        ("/w/scripts/entities.xml", "<root>\n\t<Avatar/>\n</root>\n"),
+        ("/w/scripts/entity_defs/Avatar.def", AVATAR_WITH_ARG_DEF),
+        ("/w/scripts/entity_defs/MailBox.def", MOB_DEF),
+        ("/w/scripts/entity_defs/interfaces/MailBox.def", MOB_DEF),
+    ]);
+    let key = key_of("/w/scripts/entity_defs/Avatar.def");
+    assert!(engine.definition(&key, AVATAR_WITH_ARG_DEF, 9, 9).is_none());
+}
+
+/// `<Interfaces>` 段内元素词 → 语料内 interfaces/<词>.def 首行。
+#[test]
+fn def_interfaces_segment_word_lands_on_interfaces_def_head() {
+    let engine = engine_with(&[
+        ("/w/scripts/entities.xml", "<root>\n\t<Avatar/>\n</root>\n"),
+        ("/w/scripts/entity_defs/Avatar.def", AVATAR_WITH_INTERFACES_DEF),
+        ("/w/scripts/entity_defs/interfaces/Combat.def", MOB_DEF),
+    ]);
+    let key = key_of("/w/scripts/entity_defs/Avatar.def");
+    // 第 3 行 `\t\t<Combat />`,词首 'C' 列 3(0 起)。
+    let location = engine
+        .definition(&key, AVATAR_WITH_INTERFACES_DEF, 2, 3)
+        .expect("Interfaces 段词应落接口 def 首行");
+    assert_eq!(location.uri, "/w/scripts/entity_defs/interfaces/Combat.def");
+    assert_eq!(location.range.start.line, 0);
+}
+
+/// `<Interfaces>` 段词无语料接口 def → null。
+#[test]
+fn def_interfaces_word_without_corpus_interface_is_null() {
+    let engine = engine_with(&[
+        ("/w/scripts/entities.xml", "<root>\n\t<Avatar/>\n</root>\n"),
+        ("/w/scripts/entity_defs/Avatar.def", AVATAR_WITH_INTERFACES_DEF),
+    ]);
+    let key = key_of("/w/scripts/entity_defs/Avatar.def");
+    assert!(engine.definition(&key, AVATAR_WITH_INTERFACES_DEF, 2, 3).is_none());
+}
+
+/// `<Type>` 取值词 types 未命中 → component def 回落(TS
+/// findTypeValueDefinitionReference 顺序:type 条目 → component → entity)。
+#[test]
+fn def_type_value_falls_back_to_component_def_head() {
+    let engine = engine_with(&[
+        ("/w/scripts/entities.xml", "<root>\n\t<Avatar/>\n</root>\n"),
+        ("/w/scripts/entity_defs/Avatar.def", AVATAR_MOVE_TYPE_DEF),
+        ("/w/scripts/entity_defs/components/Move.def", MOB_DEF),
+    ]);
+    let key = key_of("/w/scripts/entity_defs/Avatar.def");
+    // 第 4 行 `\t\t\t<Type> Move </Type>`,词首列 10(0 起)。
+    let location = engine
+        .definition(&key, AVATAR_MOVE_TYPE_DEF, 3, 10)
+        .expect("Type 取值词应回落组件 def 首行");
+    assert_eq!(location.uri, "/w/scripts/entity_defs/components/Move.def");
+    assert_eq!(location.range.start.line, 0);
+}
+
+/// `<Type>` 取值词 types/components 均未命中 → 实体 def 回落(唯一候选)。
+#[test]
+fn def_type_value_falls_back_to_entity_def_head() {
+    let engine = engine_with(&[
+        ("/w/scripts/entities.xml", "<root>\n\t<Avatar/>\n</root>\n"),
+        ("/w/scripts/entity_defs/Avatar.def", AVATAR_MOVE_TYPE_DEF),
+        ("/w/scripts/entity_defs/Move.def", MOB_DEF),
+    ]);
+    let key = key_of("/w/scripts/entity_defs/Avatar.def");
+    let location = engine
+        .definition(&key, AVATAR_MOVE_TYPE_DEF, 3, 10)
+        .expect("Type 取值词应回落实体 def 首行");
+    assert_eq!(location.uri, "/w/scripts/entity_defs/Move.def");
+    assert_eq!(location.range.start.line, 0);
+}
+
+/// gate 对齐钉:小写自定义类型词 TS 生产 null(looksLikeEntityName 拒),
+/// 即使 types.xml 有同名声明,Rust 不再单侧落点。
+#[test]
+fn def_type_value_lowercase_custom_type_gated_null() {
+    let engine = engine_with(&[
+        ("/w/scripts/entities.xml", "<root>\n\t<Avatar/>\n</root>\n"),
+        ("/w/scripts/entity_defs/Avatar.def", AVATAR_LOWERCASE_TYPE_DEF),
+        ("/w/scripts/types.xml", LOWERCASE_TYPES_XML),
+    ]);
+    let key = key_of("/w/scripts/entity_defs/Avatar.def");
+    assert!(engine.definition(&key, AVATAR_LOWERCASE_TYPE_DEF, 3, 10).is_none());
+}
+
+/// types.xml 嵌套 `<Type>` 取值词 → 本文件顶层声明行
+/// (findTypeValueDefinitionInTypesXml 触发面;声明词臂先行不误触——
+/// 嵌套行 ≠ 声明行)。
+#[test]
+fn types_type_value_word_lands_on_local_declaration() {
+    let engine = engine_with(&[("/w/scripts/types.xml", NESTED_TYPES_XML)]);
+    let key = key_of("/w/scripts/types.xml");
+    // 第 5 行 `\t\t\t<Type> SHADOW_TYPE </Type>`,词首列 10。
+    let location = engine
+        .definition(&key, NESTED_TYPES_XML, 4, 10)
+        .expect("嵌套 Type 取值词应落本文件声明行");
+    assert_eq!(location.uri, "/w/scripts/types.xml");
+    assert_eq!(location.range.start.line, 7); // SHADOW_TYPE 声明在第 8 行(1 起)
+}
+
+/// types.xml 取值词 types 未命中 → component def 回落(entity_defs_root
+/// 对非 def 文件的折算路径)。
+#[test]
+fn types_type_value_falls_back_to_component_def_head() {
+    let engine = engine_with(&[
+        ("/w/scripts/entities.xml", "<root>\n\t<Avatar/>\n</root>\n"),
+        ("/w/scripts/types.xml", MOVE_NESTED_TYPES_XML),
+        ("/w/scripts/entity_defs/components/Move.def", MOB_DEF),
+    ]);
+    let key = key_of("/w/scripts/types.xml");
+    let location = engine
+        .definition(&key, MOVE_NESTED_TYPES_XML, 3, 10)
+        .expect("嵌套 Type 取值词应回落组件 def 首行");
+    assert_eq!(location.uri, "/w/scripts/entity_defs/components/Move.def");
+    assert_eq!(location.range.start.line, 0);
+}
+
+/// 能力边界钉:implementedBy 值词(py 符号行落点)Rust 不触发任何臂,
+/// null 回落 TS(TS findCustomTypeAtPosition isImplementedByValue → py)。
+#[test]
+fn types_implemented_by_value_word_is_null_falls_to_ts_py_layer() {
+    let engine = engine_with(&[
+        ("/w/scripts/entities.xml", "<root>\n\t<Avatar/>\n</root>\n"),
+        ("/w/scripts/types.xml", NESTED_TYPES_XML),
+    ]);
+    let key = key_of("/w/scripts/types.xml");
+    // 第 3 行 `\t\t<implementedBy> user_types.ItemBag ...`,user_types 词首列 18。
+    assert!(engine.definition(&key, NESTED_TYPES_XML, 2, 18).is_none());
+}

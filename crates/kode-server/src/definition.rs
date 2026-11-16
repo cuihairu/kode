@@ -22,6 +22,31 @@
 //! TS F12 全脸中的 Python 脚本落点(402 声明词探针实测 401 命中 / 1 条分歧 =
 //! 属性链真实存在的 `scripts/base/Avatar.py` 脚本层,见 §1 表)、
 //! 数据库 schema 虚拟文档、kbe 桩;Rust 语料面一律 null/直接落下一层。
+//!
+//! RUST-137 批 1(2026-11-16)语料面补全(TS findDefinitionReferenceInDef
+//! 的纯语料半边全下沉,零 IO 红线保持):
+//! - `<Arg>` 取值词 → 语料内同名实体 def 首行(TS isPositionInsideTagValue
+//!   'Arg' + findEntityDefinitionFile 同构;root 定域唯一候选才落,歧义 null);
+//! - `<Interfaces>` 段内任一元素跨度上的词 → `<defs_root>/interfaces/<word>.def`
+//!   首行(TS isPositionInsideChildTag + findDefinitionFileByCategory('interface')
+//!   同构;TS interfacesRoot = entityDefsRoot/interfaces 单规则);
+//! - `<Type>`/`<of>` 取值词的 types.xml 未命中回落:component def → 实体 def
+//!   (TS findTypeValueDefinitionReference 顺序 type 条目 → component → entity
+//!   的语料化;components = defs_root/components 目录存在性);
+//! - `types.xml` 的 `<Type>` 取值词面(TS findTypeValueDefinitionInTypesXml
+//!   同构,无 gate):本文件顶层声明行 → component/entity 回落;implementedBy
+//!   值词面(py 符号行)仍属能力边界,null 回落 TS;
+//! - gate 对齐:TS findDefinitionReferenceInDef 顶部 looksLikeEntityName
+//!   (非内建 && 首字母大写)统一拒 Parent/Type/Arg/Interfaces 四臂——
+//!   既有 Parent/Type 臂补挂同 gate(小写词 TS 生产 null,曾单侧落点=增强,
+//!   本批收回对齐;golden 重生成审计无意外 diff)。
+//!
+//! 产品面事实:TS 只注册 DefinitionProvider(config/def/def+语料/python 四路,
+//! activate/languageServices.ts),无独立 Declaration/TypeDefinition provider;
+//! 账本 LSP-004 三方法名按产品现实收敛为 definition 单方法全链。
+//! 方法段/属性声明词的 py 落点仍 null(TS 先试 py 实现,注册回落见既有臂),
+//! golden 探针带列(Type/of、Arg 取值词词首列;Interfaces 标签 `<` 列),
+//! 位置判定型臂在 golden 语境真正触发。
 
 use kode_index::symbol::{def_entity_name, extract_records, SymbolKind};
 use kode_parser::dep::{file_kind_of_uri, FileKind, ParsedUnit};
@@ -126,11 +151,24 @@ impl HoverEngine {
         line1: usize,
         word: &str,
     ) -> Option<DefinitionLocation> {
+        self.definition_at_position(key, text, line1, 0, word)
+    }
+
+    /// 声明行+列入口(golden 生成用;RUST-137 批 1 起位置判定型探针带词首列,
+    /// `<Type>`/`<of>`/`<Arg>`/`<Interfaces>` 臂在 golden 语境真正触发)。
+    pub fn definition_at_position(
+        &self,
+        key: &DocumentKey,
+        text: &str,
+        line1: usize,
+        character: u32,
+        word: &str,
+    ) -> Option<DefinitionLocation> {
         if matches!(file_kind_of_uri(&key.uri), FileKind::Other) {
             return None;
         }
         let line0 = line1 as u32 - 1;
-        self.definition_word(key, text, word, line1, line0, 0)
+        self.definition_word(key, text, word, line1, line0, character)
     }
 
     fn definition_word(
@@ -147,20 +185,29 @@ impl HoverEngine {
             FileKind::Def => {
                 let def = parse_def(text);
                 // ①`<DetailLevel>` 取值词 → 本文件 `<DetailLevels>` 档位声明行
-                // (TS findDetailLevelDefinitionInDef 同口径)。
+                // (TS findDetailLevelDefinitionInDef 同口径;gate 外,TS 生产
+                // 链首臂同位)。
                 if let Some(pos) = self.detail_level_landing(text, path, line0, character) {
                     return Some(pos);
                 }
+                // gate 域(TS findDefinitionReferenceInDef 顶部 looksLikeEntityName
+                // 同拒:Parent/Type/Arg/Interfaces 四臂;内建类型与小写词 null)。
+                let gate = looks_like_entity_name(word);
                 // ②`<Parent>` 取值词 → 语料内父 def 首行(接口/组件目录规则
                 // 与 chain_face 同源;语料缺失即 null)。
-                if let Some(parent) = def.parent.as_deref().filter(|p| !p.is_empty()) {
-                    if word == parent {
-                        return self.parent_landing(path, word);
+                if gate {
+                    if let Some(parent) = def.parent.as_deref().filter(|p| !p.is_empty()) {
+                        if word == parent {
+                            if let Some(pos) = self.parent_landing(path, word) {
+                                return Some(pos);
+                            }
+                        }
                     }
-                }
-                // ③`<Type>`/`<of>` 取值词 → 语料内 types 声明行(内建 null)。
-                if let Some(pos) = self.type_value_landing(text, line0, character, word) {
-                    return Some(pos);
+                    // ③`<Type>`/`<of>` 取值词 → 语料内 types 声明行(内建 null),
+                    // 未命中回落 component/实体 def(RUST-137 批 1)。
+                    if let Some(pos) = self.type_value_landing(key, text, line0, character, word) {
+                        return Some(pos);
+                    }
                 }
                 // ④段内声明词:Properties 声明词按 TS F12 落**注册**而非声明
                 // span(声明 span 见 hover 面);三方法段声明词 → null(能力
@@ -169,12 +216,25 @@ impl HoverEngine {
                 // 验收面);组件段落 TS provider 链末尾返 null,不产出落点
                 // (不单侧增强)。
                 let (records, _) = extract_records(key, &ParsedUnit::Def(parse_def(text)));
-                let record = records.iter().find(|r| r.name == word && r.line == line1)?;
-                match record.kind {
-                    SymbolKind::Property => Some(self.registry_landing(path)),
-                    // 实体本体/组件/类型/别名在 .def 无 F12 落点(TS 同)。
-                    _ => None,
+                if let Some(record) = records.iter().find(|r| r.name == word && r.line == line1) {
+                    return match record.kind {
+                        SymbolKind::Property => Some(self.registry_landing(path)),
+                        // 实体本体/组件/类型/别名在 .def 无 F12 落点(TS 同)。
+                        _ => None,
+                    };
                 }
+                // ⑤`<Arg>` 取值词 → 语料内实体 def 首行(RUST-137 批 1;gate 域)。
+                if gate {
+                    if let Some(pos) = self.arg_value_landing(key, text, line0, character, word) {
+                        return Some(pos);
+                    }
+                    // ⑥`<Interfaces>` 段内词 → interfaces 目录 def 首行
+                    // (RUST-137 批 1;gate 域)。
+                    if let Some(pos) = self.interfaces_segment_landing(text, path, line0, character, word) {
+                        return Some(pos);
+                    }
+                }
+                None
             }
             FileKind::Entities => {
                 let entities = parse_entities(text);
@@ -194,11 +254,26 @@ impl HoverEngine {
             }
             FileKind::Types => {
                 let types = parse_types(text);
-                let decl = types
+                if let Some(decl) = types
                     .types
                     .iter()
-                    .find(|t| t.name == word && t.line == line1)?;
-                Some(line_start_location(path, decl.line))
+                    .find(|t| t.name == word && t.line == line1)
+                {
+                    return Some(line_start_location(path, decl.line));
+                }
+                // RUST-137 批 1:`<Type>` 取值词面(TS findTypeValueDefinitionInTypesXml
+                // 同构,无 gate——TS types.xml 分支不经 findDefinitionReferenceInDef):
+                // 本文件顶层声明行(findCurrentDocumentCustomTypeReference 同口径;
+                // 同 root types 条目链与其同效,合并)→ component/entity 回落;
+                // 无落点 null。implementedBy 值词(py 符号行)属能力边界,不触发
+                // 本臂(位置判定只认 `<Type>` 元素),null 回落 TS。
+                if types_type_value_at(text, line0, character) {
+                    if let Some(decl) = types.types.iter().find(|t| t.name == word) {
+                        return Some(line_start_location(path, decl.line));
+                    }
+                    return self.category_def_landing(key, word);
+                }
+                None
             }
             FileKind::Alias => {
                 let aliases = parse_alias(text);
@@ -285,9 +360,12 @@ impl HoverEngine {
     }
 
     /// 位置(UTF-16)落在 `<Type>`/`<of>` 取值内且词命中类型名 → 语料内
-    /// types.xml 声明行首落点。内建类型无定义文件(引擎 C++ 内建)→ None。
+    /// types.xml 声明行首落点。内建类型无定义文件(引擎 C++ 内建)→ None;
+    /// types 未命中回落 component/实体 def(TS findTypeValueDefinitionReference
+    /// 顺序 type 条目 → component → entity 的语料化;RUST-137 批 1,gate 在调用方)。
     fn type_value_landing(
         &self,
+        key: &DocumentKey,
         text: &str,
         line0: u32,
         character: u32,
@@ -314,8 +392,145 @@ impl HoverEngine {
                 return Some(line_start_location(tpath, decl.line));
             }
         }
+        self.category_def_landing(key, word)
+    }
+
+    /// `<Arg>` 取值内词 → 语料内同名实体 def 首行(TS isPositionInsideTagValue
+    /// 'Arg' + findEntityDefinitionFile 同构;root 定域唯一候选才落,同根同名
+    /// 歧义不硬猜 → null)。gate 在调用方(RUST-137 批 1)。
+    fn arg_value_landing(
+        &self,
+        key: &DocumentKey,
+        text: &str,
+        line0: u32,
+        character: u32,
+        word: &str,
+    ) -> Option<DefinitionLocation> {
+        let byte_offset = position_to_byte_offset(text, line0, character);
+        let doc = xml::parse(text, true);
+        let root = doc.root()?;
+        let node = deepest_element_at(&doc, root, byte_offset)?;
+        if doc.element(node).name != "Arg" {
+            return None;
+        }
+        let content = doc.element(node).content_span;
+        if byte_offset < content.start || byte_offset > content.end {
+            return None;
+        }
+        let candidates = self.def_candidates(key.root, word);
+        let def_path = if candidates.len() == 1 {
+            Some(&candidates[0])
+        } else {
+            None
+        }?;
+        Some(file_head_location(def_path))
+    }
+
+    /// `<Interfaces>` 段内(任一后代元素跨度上,含起止标签)的词 → 语料内
+    /// `<defs_root>/interfaces/<word>.def` 首行。TS isPositionInsideChildTag
+    /// ('Interfaces') + findDefinitionFileByCategory('interface') 同构
+    /// (TS interfacesRoot = entityDefsRoot/interfaces 单规则;fs 存在性检查
+    /// 语料化为 corpus_defs 判定)。gate 在调用方(RUST-137 批 1)。
+    fn interfaces_segment_landing(
+        &self,
+        text: &str,
+        path: &str,
+        line0: u32,
+        character: u32,
+        word: &str,
+    ) -> Option<DefinitionLocation> {
+        let byte_offset = position_to_byte_offset(text, line0, character);
+        let doc = xml::parse(text, true);
+        let root = doc.root()?;
+        let (_hit, chain) = deepest_element_with_chain(&doc, root, byte_offset)?;
+        if !chain
+            .iter()
+            .any(|&n| doc.element(n).name == "Interfaces")
+        {
+            return None;
+        }
+        let defs_root = self.entity_defs_root(path)?;
+        let iface = format!("{defs_root}/interfaces/{word}.def");
+        if !self.corpus_defs.contains(&iface) {
+            return None;
+        }
+        Some(file_head_location(&iface))
+    }
+
+    /// TS findTypeValueDefinitionReference 的 component/entity 回落(语料化;
+    /// RUST-137 批 1):本 root `components/<word>.def` 存在 → 文件首行;
+    /// 否则实体 def(root 定域唯一候选,歧义 null——与 entities 面
+    /// def_candidates 同口径)。TS findEntityDefinitionFile 已对拍语义
+    /// (entities 面在用),components 半边对应 findDefinitionFileByCategory
+    /// ('component') 的 layout.componentsRoot/<word>.def 存在性检查。
+    fn category_def_landing(&self, key: &DocumentKey, word: &str) -> Option<DefinitionLocation> {
+        let path = key.uri.as_path();
+        if let Some(defs_root) = self.entity_defs_root(path) {
+            let comp = format!("{defs_root}/components/{word}.def");
+            if self.corpus_defs.contains(&comp) {
+                return Some(file_head_location(&comp));
+            }
+        }
+        let candidates = self.def_candidates(key.root, word);
+        if let [only] = candidates {
+            return Some(file_head_location(only));
+        }
         None
     }
+
+    /// entity_defs 根解析(TS layout.entityDefsRoot 同口径):`entity_defs/`
+    /// 内文件经 defs_root 已取该目录;types.xml 等非 def 文件的 defs_root
+    /// 返回 entities 目录本身,此处统一折算 `{entities_dir}/entity_defs`
+    /// (目录在语料中存在才算——corpus 有其下任一 def)。RUST-137 批 1。
+    fn entity_defs_root(&self, path: &str) -> Option<String> {
+        let defs_root = self.defs_root(path)?;
+        if path.starts_with(&format!("{defs_root}/")) {
+            return Some(defs_root.to_string());
+        }
+        let candidate = format!("{defs_root}/entity_defs");
+        if self
+            .corpus_defs
+            .iter()
+            .any(|p| p.starts_with(&format!("{candidate}/")))
+        {
+            Some(candidate)
+        } else {
+            None
+        }
+    }
+}
+
+/// TS looksLikeEntityName 同构:非内建类型 && 首字母 ASCII 大写、其余
+/// ASCII 字母/数字/下划线(gate 域 = TS findDefinitionReferenceInDef 顶部
+/// 同拒;RUST-137 批 1 起既有 Parent/Type 臂一并挂 gate 对齐)。
+pub(crate) fn looks_like_entity_name(word: &str) -> bool {
+    if is_builtin_type(word) {
+        return false;
+    }
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_uppercase() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// types.xml 的 `<Type>` 元素取值内位置判定(TS isPositionInsideTagValue
+/// 'Type' 同构;只认 `Type` 精确名——implementedBy 值不触发)。RUST-137 批 1。
+fn types_type_value_at(text: &str, line0: u32, character: u32) -> bool {
+    let byte_offset = position_to_byte_offset(text, line0, character);
+    let doc = xml::parse(text, true);
+    let Some(root) = doc.root() else {
+        return false;
+    };
+    let Some(node) = deepest_element_at(&doc, root, byte_offset) else {
+        return false;
+    };
+    if doc.element(node).name != "Type" {
+        return false;
+    }
+    let content = doc.element(node).content_span;
+    byte_offset >= content.start && byte_offset <= content.end
 }
 
 /// 内建类型表(与 TS kbengineMetadata::KBENGINE_TYPES 同表,ARRAY/FIXED_DICT
@@ -402,6 +617,29 @@ fn deepest_element_at(doc: &xml::Document, node: usize, offset: usize) -> Option
     Some(node)
 }
 
+/// 同 deepest_element_at,附根→自身的祖先链(元素节点序;TS findAncestorElement
+/// 含自身的祖先判定同域)。RUST-137 批 1(`<Interfaces>` 段判定)。
+fn deepest_element_with_chain(
+    doc: &xml::Document,
+    node: usize,
+    offset: usize,
+) -> Option<(usize, Vec<usize>)> {
+    let data = doc.element(node);
+    if offset < data.open_span.start || offset > data.close_span.end {
+        return None;
+    }
+    for &child in &data.children {
+        if let NodeHit::Element(found) = probe_node(doc, child, offset) {
+            let (hit, chain) = deepest_element_with_chain(doc, found, offset)
+                .unwrap_or((found, vec![found]));
+            let mut full = vec![node];
+            full.extend(chain);
+            return Some((hit, full));
+        }
+    }
+    Some((node, vec![node]))
+}
+
 enum NodeHit {
     Element(usize),
     Miss,
@@ -430,8 +668,56 @@ pub const GOLDEN_REL_PATH: &str = "crates/kode-server/tests/golden/definition-pa
 #[derive(Debug, serde::Serialize)]
 struct GoldenDefinition {
     line: usize,
+    character: u32,
     word: String,
     definition: DefinitionLocation,
+}
+
+/// golden 探针:(1 基行,UTF-16 列,词)。位置判定型臂(Type/of、Arg 取值词、
+/// Interfaces 段词)带词首/标签首列,词比对型臂(Parent、声明词)列 = 0。
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GoldenProbe {
+    line: usize,
+    character: u32,
+    word: String,
+}
+
+/// 元素文本内容首 token 探针(词首行列;TS 镜像
+/// `getElementText(node).trim().split(/\s+/)[0]` + contentStart 前导空白同算术)。
+fn value_token_probe(doc: &xml::Document, node: usize, text: &str) -> Option<GoldenProbe> {
+    let el = doc.element(node);
+    let content = text.get(el.content_span.start..el.content_span.end)?;
+    let trimmed = content.trim_start();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let token_end = trimmed.find(char::is_whitespace).unwrap_or(trimmed.len());
+    let lead = content.len() - trimmed.len();
+    let pos = byte_offset_to_position(text, el.content_span.start + lead);
+    Some(GoldenProbe {
+        line: pos.line as usize + 1,
+        character: pos.character,
+        word: trimmed[..token_end].to_string(),
+    })
+}
+
+/// 先序遍历全部元素节点(文本节点不递归)。
+fn walk_elements(doc: &xml::Document, node: usize, visit: &mut impl FnMut(usize)) {
+    visit(node);
+    for &child in &doc.element(node).children {
+        if matches!(doc.nodes[child].data, xml::NodeData::Element(_)) {
+            walk_elements(doc, child, visit);
+        }
+    }
+}
+
+/// 探针定序(行,列,词 全序;TS 镜像同键)+ 去重相邻全等项。
+fn order_probes(mut probes: Vec<GoldenProbe>) -> Vec<GoldenProbe> {
+    probes.sort_by(|a, b| {
+        (&a.line, &a.character, &a.word).cmp(&(&b.line, &b.character, &b.word))
+    });
+    probes.dedup();
+    probes
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -469,54 +755,116 @@ pub fn dump_definition_golden(repo_root: &std::path::Path) -> String {
     };
     for (path, (kind, text)) in &files {
         let key = crate::golden_corpus::corpus_key(&registry, path);
-        let mut probes: Vec<(usize, String)> = Vec::new();
+        let mut probes: Vec<GoldenProbe> = Vec::new();
         match *kind {
             "def" => {
                 let def = parse_def(text);
                 if let Some(parent) = &def.parent {
                     if !parent.is_empty() {
-                        // 探针行 = `<Parent>` 出现行(取值词触发面)。
+                        // 探针行 = `<Parent>` 出现行(取值词触发面;词比对臂,列 0)。
                         if let Some(idx) = text.lines().position(|l| l.contains(parent)) {
-                            probes.push((idx + 1, parent.clone()));
+                            probes.push(GoldenProbe {
+                                line: idx + 1,
+                                character: 0,
+                                word: parent.clone(),
+                            });
                         }
-                    }
-                }
-                for prop in &def.properties {
-                    if let Some(t) = &prop.type_name {
-                        probes.push((prop.line, t.clone()));
                     }
                 }
                 let unit = ParsedUnit::Def(parse_def(text));
                 let (records, _) = extract_records(&key, &unit);
                 for record in &records {
-                    probes.push((record.line, record.name.clone()));
+                    probes.push(GoldenProbe {
+                        line: record.line,
+                        character: 0,
+                        word: record.name.clone(),
+                    });
+                }
+                // RUST-137 批 1 位置判定型探针:全树 `<Type>`/`<of>`/`<Arg>` 取值
+                // 词 + `<Interfaces>` 段内元素的内容首词(词首行列,生产触发面
+                // 是取值词而非元素名)——既有属性 Type 词探针(声明行+列 0)由
+                // 本采集取代,类型落点面在 golden 语境真正触发。
+                let doc = xml::parse(text, true);
+                if let Some(root) = doc.root() {
+                    let mut value_tags: Vec<usize> = Vec::new();
+                    let mut interface_segments: Vec<usize> = Vec::new();
+                    walk_elements(&doc, root, &mut |node| {
+                        match doc.element(node).name.as_str() {
+                            "Type" | "of" | "Arg" => value_tags.push(node),
+                            "Interfaces" => interface_segments.push(node),
+                            _ => {}
+                        }
+                    });
+                    for node in value_tags {
+                        if let Some(probe) = value_token_probe(&doc, node, text) {
+                            probes.push(probe);
+                        }
+                    }
+                    for segment in interface_segments {
+                        // 生产臂语义 = 取值词(光标在 `<interface> ROLE </interface>`
+                        // 的 ROLE 上,F12 word=ROLE);探针取段内元素的内容首词,
+                        // 元素名本身(interface,小写)会被 gate 拒、非生产触发面。
+                        walk_elements(&doc, segment, &mut |inner| {
+                            if inner != segment {
+                                if let Some(probe) = value_token_probe(&doc, inner, text) {
+                                    probes.push(probe);
+                                }
+                            }
+                        });
+                    }
                 }
             }
             "entities" => {
                 for entry in parse_entities(text).entities {
-                    probes.push((entry.line, entry.name));
+                    probes.push(GoldenProbe {
+                        line: entry.line,
+                        character: 0,
+                        word: entry.name,
+                    });
                 }
             }
             "types" => {
                 for decl in parse_types(text).types {
-                    probes.push((decl.line, decl.name));
+                    probes.push(GoldenProbe {
+                        line: decl.line,
+                        character: 0,
+                        word: decl.name,
+                    });
+                }
+                // RUST-137 批 1:全树 `<Type>` 取值词探针(嵌套 FIXED_DICT 字段;
+                // 词首行列,findTypeValueDefinitionInTypesXml 触发面)。
+                let doc = xml::parse(text, true);
+                if let Some(root) = doc.root() {
+                    walk_elements(&doc, root, &mut |node| {
+                        if doc.element(node).name == "Type" {
+                            if let Some(probe) = value_token_probe(&doc, node, text) {
+                                probes.push(probe);
+                            }
+                        }
+                    });
                 }
             }
             "alias" => {
                 for alias in parse_alias(text).aliases {
-                    probes.push((alias.line, alias.name));
+                    probes.push(GoldenProbe {
+                        line: alias.line,
+                        character: 0,
+                        word: alias.name,
+                    });
                 }
             }
             _ => {}
         }
-        probes.sort_by_key(|(line, _)| *line);
-        probes.dedup();
+        let probes = order_probes(probes);
         let mut definitions = Vec::new();
-        for (line1, word) in probes {
-            if let Some(definition) = engine.definition_at_line(&key, text, line1, &word) {
+        for probe in probes {
+            if let Some(definition) =
+                engine.definition_at_position(&key, text, probe.line, probe.character, &probe.word)
+            {
                 definitions.push(GoldenDefinition {
-                    line: line1,
-                    word,
+                    line: probe.line,
+                    character: probe.character,
+                    word: probe.word,
                     definition,
                 });
             }

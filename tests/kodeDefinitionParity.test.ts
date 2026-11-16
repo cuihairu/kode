@@ -270,6 +270,137 @@ const parentNameOf = (root: DefElementNode): string => {
   return parent ? getElementText(parent).trim() : '';
 };
 
+// ---- RUST-137 批 1 镜像(gate / 位置判定 / category 回落) ------------------
+
+// TS looksLikeEntityName 同构:非内建 && 首字母大写、其余字母/数字/下划线。
+const looksLikeEntityName = (word: string): boolean => {
+  if (BUILTIN_TYPES.has(word)) {
+    return false;
+  }
+  if (!/^[A-Z][A-Za-z0-9_]*$/.test(word)) {
+    return false;
+  }
+  return true;
+};
+
+// 行(1 起)+ UTF-16 列 → 字符串偏移(与 Rust position_to_byte_offset 同语义:
+// 首个累计 utf16 ≥ character 的字符起点;行尾/换行/文末 clamp)。
+const offsetOfPos = (text: string, line1: number, character: number): number => {
+  let lineStart = 0;
+  let line = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    if (line === line1 - 1) {
+      break;
+    }
+    if (text[i] === '\n') {
+      line += 1;
+      lineStart = i + 1;
+    }
+  }
+  let utf16 = 0;
+  let i = lineStart;
+  while (i < text.length && text[i] !== '\n' && utf16 < character) {
+    utf16 += text.charCodeAt(i) >= 0x10000 ? 2 : 1;
+    i += 1;
+  }
+  return i;
+};
+
+// 最深含偏移元素(偏移 ∈ [tagStart, closeTagEnd];与 Rust deepest_element_at 同域)。
+const deepestElementAtNode = (node: DefElementNode, offset: number): DefElementNode | null => {
+  if (offset < node.tagStart || offset > node.closeTagEnd) {
+    return null;
+  }
+  for (const child of node.children) {
+    if (child.kind !== 'element') {
+      continue;
+    }
+    const deeper = deepestElementAtNode(child, offset);
+    if (deeper) {
+      return deeper;
+    }
+    if (offset >= child.tagStart && offset <= child.closeTagEnd) {
+      return child;
+    }
+  }
+  return node;
+};
+
+// entity_defs 根折算(Rust entity_defs_root 同口径):文件在 defsRoot/ 内取
+// defsRoot;否则 {entitiesDir}/entity_defs(目录下有语料 def 才算)。
+const entityDefsRootFor = (engine: Engine, filePath: string): string | null => {
+  const defsRoot = defsRootFor(engine, filePath);
+  if (!defsRoot) {
+    return null;
+  }
+  if (filePath.startsWith(`${defsRoot}/`)) {
+    return defsRoot;
+  }
+  const candidate = `${defsRoot}/entity_defs`;
+  for (const path of engine.corpusDefs) {
+    if (path.startsWith(`${candidate}/`)) {
+      return candidate;
+    }
+  }
+  return null;
+};
+
+// TS findTypeValueDefinitionReference 的 component/entity 回落(语料化):
+// components/<word>.def → 实体 def(root 定域唯一候选)。
+const categoryDefLanding = (engine: Engine, filePath: string, word: string): LocationFace | null => {
+  const defsRoot = entityDefsRootFor(engine, filePath);
+  if (defsRoot) {
+    const comp = `${defsRoot}/components/${word}.def`;
+    if (engine.corpusDefs.has(comp)) {
+      return headLocation(comp);
+    }
+  }
+  const candidates =
+    engine.defCandidates.get(corpusRootOf(filePath))?.get(word) ?? [];
+  return candidates.length === 1 ? headLocation(candidates[0]) : null;
+};
+
+// Rust type_value_landing 的 types 语料查找(路径字典序首见,跨 root;
+// engine.typesDecls 按语料字典序构建 = 同序)+ 内建短路 + category 回落。
+const typeValueLanding = (engine: Engine, file: CorpusFile, word: string): LocationFace | null => {
+  if (BUILTIN_TYPES.has(word)) {
+    return null;
+  }
+  for (const [typesPath, decls] of engine.typesDecls) {
+    const decl = decls.find(d => d.name === word);
+    if (decl) {
+      return lineStartLocation(typesPath, decl.line1);
+    }
+  }
+  return categoryDefLanding(engine, file.file, word);
+};
+
+// 元素文本内容首 token 探针(词首行列;Rust value_token_probe 同算术)。
+const valueTokenProbeOf = (node: DefElementNode, text: string): { line1: number; character: number; word: string } | null => {
+  const content = text.slice(node.contentStart, node.contentEnd);
+  const trimmed = content.trimStart();
+  if (!trimmed) {
+    return null;
+  }
+  const tokenMatch = trimmed.split(/\s+/)[0] ?? '';
+  if (!tokenMatch) {
+    return null;
+  }
+  const lead = content.length - trimmed.length;
+  const pos = offsetToPos(text, node.contentStart + lead);
+  return { line1: pos.line + 1, character: pos.character, word: tokenMatch };
+};
+
+// 先序遍历全部元素。
+const walkElementNodes = (node: DefElementNode, visit: (n: DefElementNode) => void): void => {
+  visit(node);
+  for (const child of node.children) {
+    if (child.kind === 'element') {
+      walkElementNodes(child, visit);
+    }
+  }
+};
+
 // Rust `registry_landing`:Properties 声明词 → entities.xml 声明行
 // (先 `<scripts>/entities.xml`,再 `<defs>/entities.xml`),缺注册 → def 首行。
 // 与 TS F12 的注册回落层同口径;TS 上的 Python 脚本层/DB schema 层是 Rust
@@ -301,35 +432,72 @@ const sectionSymbols = (section: DefElementNode): DefElementNode[] =>
 
 // ---- 逐文件复算 ------------------------------------------------------------
 
-interface ExpectedDefinition { line: number; word: string; definition: LocationFace }
+interface ExpectedDefinition { line: number; character: number; word: string; definition: LocationFace }
 
 const recomputeFile = (engine: Engine, file: CorpusFile): ExpectedDefinition[] => {
-  const probes: { line1: number; word: string }[] = [];
+  const probes: { line1: number; character: number; word: string }[] = [];
   const root = file.parsed.root;
   if (!root) {
     return [];
   }
-  const landingFor = (line1: number, word: string): LocationFace | null => {
+  const landingFor = (line1: number, character: number, word: string): LocationFace | null => {
+    const offset = offsetOfPos(file.text, line1, character);
     if (file.kind === 'def') {
-      // Parent 取值词。
+      // gate 域(TS findDefinitionReferenceInDef 顶部 looksLikeEntityName 同拒)。
+      const gate = looksLikeEntityName(word);
+      // ① Parent 取值词(词比对,gate 域;语料缺失 null 继续后续臂)。
       const parent = parentNameOf(root);
-      if (parent && word === parent) {
-        return parentLanding(engine, file.file, parent);
+      if (gate && parent && word === parent) {
+        const landed = parentLanding(engine, file.file, parent);
+        if (landed) {
+          return landed;
+        }
       }
-      // 探针位(行首)不在 Type/of 内容内 → 类型落点不触发(与 Rust
-      // definition_at_line 的 char=0 同口径);回到声明本体。
+      // ② Type/of 取值词(gate 域):位置在取值内 → types 声明 →
+      // component/entity 回落(RUST-137 批 1;内建类型无定义文件 null)。
+      const deepest = deepestElementAtNode(root, offset);
+      const inValue = !!deepest && offset >= deepest.contentStart && offset <= deepest.contentEnd;
+      if (gate && deepest && inValue && (deepest.name === 'Type' || deepest.name === 'of')) {
+        const landed = typeValueLanding(engine, file, word);
+        if (landed) {
+          return landed;
+        }
+      }
+      // ③ 声明词:Properties 声明词按 TS F12 落注册(entities.xml 行)而非
+      // 声明 span;三方法段声明词 → null(2026-11-08 demo 验收:TS 下一层取
+      // py 实现落点,Rust 不虚构注册落点挡路);组件段落 TS provider 链末尾
+      // 返 null(languageProviders.ts:2344)。命中声明词即终止(Arg/Interfaces
+      // 臂不再试,与 Rust match 早退同口径)。
       for (const section of sectionsOf(root)) {
         for (const symbol of sectionSymbols(section)) {
           const line = line1Of(file.text, symbol.tagStart + 1);
           if (line === line1 && symbol.name === word) {
-            // Properties 声明词:TS F12 落注册(entities.xml 行)而非声明 span;
-            // 三方法段声明词 → null(2026-11-08 demo 验收:TS 下一层取 py 实现
-            // 落点,Rust 不虚构注册落点挡路);组件段落 TS provider 链末尾返
-            // null(languageProviders.ts:2344)。
             if (section.name === 'Properties') {
               return registryLanding(engine, file.file);
             }
             return null;
+          }
+        }
+      }
+      if (gate) {
+        // ④ Arg 取值词 → 语料实体 def 首行(唯一候选,歧义 null)。
+        if (deepest && deepest.name === 'Arg' && inValue) {
+          const candidates =
+            engine.defCandidates.get(corpusRootOf(file.file))?.get(word) ?? [];
+          if (candidates.length === 1) {
+            return headLocation(candidates[0]);
+          }
+        }
+        // ⑤ Interfaces 段内词 → interfaces/<word>.def 首行(语料存在性)。
+        if (deepest) {
+          let cursor: DefElementNode | null = deepest;
+          while (cursor) {
+            if (cursor.name === 'Interfaces') {
+              const defsRoot = entityDefsRootFor(engine, file.file);
+              const iface = defsRoot ? `${defsRoot}/interfaces/${word}.def` : null;
+              return iface && engine.corpusDefs.has(iface) ? headLocation(iface) : null;
+            }
+            cursor = cursor.parent;
           }
         }
       }
@@ -343,7 +511,23 @@ const recomputeFile = (engine: Engine, file: CorpusFile): ExpectedDefinition[] =
       return candidates.length === 1 ? headLocation(candidates[0]) : null;
     }
     if (file.kind === 'types') {
-      return lineStartLocation(file.file, line1);
+      // 声明词臂(词 + 行)。
+      const atDeclaration = typesDeclsOf(file).some(d => d.name === word && d.line1 === line1);
+      if (atDeclaration) {
+        return lineStartLocation(file.file, line1);
+      }
+      // RUST-137 批 1:Type 取值词臂(无 gate——TS types.xml 分支不经
+      // findDefinitionReferenceInDef):本文件顶层声明行 → component/entity
+      // 回落;implementedBy 值词不触发(只认 Type 元素值内)。
+      const deepest = deepestElementAtNode(root, offset);
+      if (deepest && deepest.name === 'Type' && offset >= deepest.contentStart && offset <= deepest.contentEnd) {
+        const local = typesDeclsOf(file).find(d => d.name === word);
+        if (local) {
+          return lineStartLocation(file.file, local.line1);
+        }
+        return categoryDefLanding(engine, file.file, word);
+      }
+      return null;
     }
     if (file.kind === 'alias') {
       return lineStartLocation(file.file, line1);
@@ -352,65 +536,83 @@ const recomputeFile = (engine: Engine, file: CorpusFile): ExpectedDefinition[] =
   };
 
   if (file.kind === 'def') {
-    // ①Parent 探针(`<Parent>` 出现行)。
+    // ①Parent 探针(`<Parent>` 出现行;词比对臂,列 0)。
     const parent = parentNameOf(root);
     if (parent) {
       const idx = file.text.split('\n').findIndex(l => l.includes(parent));
       if (idx >= 0) {
-        probes.push({ line1: idx + 1, word: parent });
+        probes.push({ line1: idx + 1, character: 0, word: parent });
       }
     }
-    // ②属性 `<Type>` 首 token 探针。
-    for (const section of sectionsOf(root)) {
-      if (section.name !== 'Properties') {
-        continue;
-      }
-      for (const symbol of sectionSymbols(section)) {
-        const typeNode = getDirectChildElements(symbol).find(n => n.name === 'Type');
-        if (!typeNode) {
-          continue;
-        }
-        const typeToken = getElementText(typeNode).trim().split(/\s+/)[0] ?? '';
-        if (!typeToken) {
-          continue;
-        }
-        probes.push({ line1: line1Of(file.text, symbol.tagStart + 1), word: typeToken });
-      }
-    }
-  }
-  if (file.kind === 'entities') {
-    probes.push(...entitiesEntriesOf(file).map(entry => ({ line1: entry.line1, word: entry.name })));
-  }
-  if (file.kind === 'types') {
-    probes.push(...typesDeclsOf(file).map(decl => ({ line1: decl.line1, word: decl.name })));
-  }
-  if (file.kind === 'alias') {
-    probes.push(...aliasDeclsOf(file).map(decl => ({ line1: decl.line1, word: decl.name })));
-  }
-  if (file.kind === 'def') {
-    // ③声明符号探针(Properties/三方法段/Components 段内声明;与 Rust
+    // ②声明符号探针(Properties/三方法段/Components 段内声明;与 Rust
     // extract_records 同集合 —— Interfaces/Parent/Volatile 段无声明符号)。
     for (const section of sectionsOf(root)) {
       if (!['Properties', 'BaseMethods', 'CellMethods', 'ClientMethods', 'Components'].includes(section.name)) {
         continue;
       }
       for (const symbol of sectionSymbols(section)) {
-        probes.push({ line1: line1Of(file.text, symbol.tagStart + 1), word: symbol.name });
+        probes.push({ line1: line1Of(file.text, symbol.tagStart + 1), character: 0, word: symbol.name });
       }
     }
+    // ③RUST-137 批 1 位置判定型探针:全树 `<Type>`/`<of>`/`<Arg>` 取值词
+    // (词首行列)——类型落点面在 golden 语境真正触发。
+    walkElementNodes(root, node => {
+      if (node.name === 'Type' || node.name === 'of' || node.name === 'Arg') {
+        const probe = valueTokenProbeOf(node, file.text);
+        if (probe) {
+          probes.push(probe);
+        }
+      }
+    });
+    // ④`<Interfaces>` 段内元素的内容首词(生产触发面是取值词而非元素名)。
+    for (const section of sectionsOf(root)) {
+      if (section.name !== 'Interfaces') {
+        continue;
+      }
+      walkElementNodes(section, inner => {
+        if (inner !== section) {
+          const probe = valueTokenProbeOf(inner, file.text);
+          if (probe) {
+            probes.push(probe);
+          }
+        }
+      });
+    }
   }
-  // 稳定排序(按行)+ 去重相邻同项(与 Rust sort_by_key + dedup 同口径)。
-  probes.sort((a, b) => a.line1 - b.line1);
+  if (file.kind === 'entities') {
+    probes.push(...entitiesEntriesOf(file).map(entry => ({ line1: entry.line1, character: 0, word: entry.name })));
+  }
+  if (file.kind === 'types') {
+    probes.push(...typesDeclsOf(file).map(decl => ({ line1: decl.line1, character: 0, word: decl.name })));
+    // RUST-137 批 1:全树 `<Type>` 取值词探针(嵌套 FIXED_DICT 字段)。
+    walkElementNodes(root, node => {
+      if (node.name === 'Type') {
+        const probe = valueTokenProbeOf(node, file.text);
+        if (probe) {
+          probes.push(probe);
+        }
+      }
+    });
+  }
+  if (file.kind === 'alias') {
+    probes.push(...aliasDeclsOf(file).map(decl => ({ line1: decl.line1, character: 0, word: decl.name })));
+  }
+  // 全序排序(行,列,词)+ 去重相邻全等项(与 Rust order_probes 同口径)。
+  probes.sort((a, b) =>
+    (a.line1 - b.line1) ||
+    (a.character - b.character) ||
+    (a.word < b.word ? -1 : a.word > b.word ? 1 : 0)
+  );
   const out: ExpectedDefinition[] = [];
-  let previous: { line1: number; word: string } | null = null;
+  let previous: { line1: number; character: number; word: string } | null = null;
   for (const probe of probes) {
-    if (previous && previous.line1 === probe.line1 && previous.word === probe.word) {
+    if (previous && previous.line1 === probe.line1 && previous.character === probe.character && previous.word === probe.word) {
       continue;
     }
     previous = probe;
-    const definition = landingFor(probe.line1, probe.word);
+    const definition = landingFor(probe.line1, probe.character, probe.word);
     if (definition) {
-      out.push({ line: probe.line1, word: probe.word, definition });
+      out.push({ line: probe.line1, character: probe.character, word: probe.word, definition });
     }
   }
   return out;
