@@ -665,6 +665,38 @@ relations 模式从 Rust 全图（复用 `$/kode/dependency/graph` 的反向边�
 - 标题：`Create Entity from Template`
 - 作用：从预定义模板快速生成实体（账号、角色、NPC、物品、怪物、场景、公会、队伍、邮件、空实体共 10 个）
 
+### `kbengine.entity.addRpc`
+
+- 标题：`Add RPC Method to Entity`
+- 作用：往既有实体 def 追加 RPC 方法（含 Python 实现），不必手改文件
+- 入口：命令面板；当前编辑器是 `.def` 时直接选中该实体，否则走 def 快速选择
+- 流程：方法段（`BaseMethods`/`CellMethods`/`ClientMethods`）→ 方法名 → 参数类型（留空结束）→ `Exposed` 选择（仅 Base/Cell；ClientMethods 永不暴露）
+- 落点：所选 def 段（缺段则整块创建），外加同名脚本 `scripts/base|cell|client/<实体>.py`（存在时在类体末追加方法骨架；类后的模块级代码绝不被吞进类体）
+- 诚实边界：三个方法段任一段已有同名方法即中止并指明所在段；脚本缺失时明确提供「仅改 def（声明无实现）」选项，绝不静默新建脚本
+- 行为：写盘前列出全部受改文件供确认；已提交事务登记撤销账本（见 `kbengine.generator.undoLast`）
+
+### `kbengine.component.new`
+
+- 标题：`New KBEngine Component`
+- 作用：在 `entity_defs/components/` 下创建组件 def，可选挂载到宿主实体 def
+- 落点：`entity_defs/components/<名称>.def`（已存在绝不覆盖），外加宿主 `<Components>` 段的槽（缺段创建；槽形态对齐真资产 `bag`/`Inventory`，`Persistent` 可选）
+- 行为：写盘前计划预览；已提交事务登记撤销账本
+
+### `kbengine.types.new`
+
+- 标题：`New Type Alias`
+- 作用：往 `types.xml` 追加普通类型别名（`<名称> 类型 </名称>`）
+- 流程：别名 → 从内建类型清单选目标类型（`ARRAY`/`FIXED_DICT` 需手写结构，不提供）
+- 诚实边界：同名别名即中止；`types.xml` 缺失时中止而非新建
+- 行为：写盘前计划预览；已提交事务登记撤销账本
+
+### `kbengine.generator.undoLast`
+
+- 标题：`Undo Last Generation`
+- 作用：回滚最近一次已提交的生成事务（向导 / 新建实体 / 模板 / RPC / 组件 / 类型别名通用）
+- 范围：缓冲插入仅在缓冲仍恰好含该插入时撤回；被覆盖文件还原前值；新建文件按写入逆序删除
+- 诚实边界：一次性（每个已提交事务只能撤销一次）；无账本时如实回话，不装成功
+
 ### `kbengine.generator.formWizard`
 
 - 标题：`Create Def Form from Wizard`

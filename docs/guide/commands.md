@@ -683,6 +683,38 @@ The flow graph panel supports:
 - Title: `Create Entity from Template`
 - Purpose: quickly generate an entity from a preset template (10 total: account, character, NPC, item, monster, scene, guild, team, mail, empty entity)
 
+### `kbengine.entity.addRpc`
+
+- Title: `Add RPC Method to Entity`
+- Purpose: append an RPC method to an existing entity def (and its Python implementation) without hand-editing
+- Entry points: command palette, or with a `.def` editor active (that entity is picked directly; otherwise a def QuickPick)
+- Flow: method section (`BaseMethods`/`CellMethods`/`ClientMethods`) → method name → argument types (empty input ends) → `Exposed` choice (Base/Cell only; ClientMethods is never exposed)
+- Landing spots: the chosen def section (a missing section is created as one whole block), plus the matching `scripts/base|cell|client/<Entity>.py` when it exists (method skeleton appended at the class body end; module-level code after the class is never swallowed)
+- Honest edges: a same-name method in any of the three sections aborts with the owning section named; a missing script offers an explicit "def only (declaration without implementation)" choice and never silently creates script files
+- Behavior: the plan preview lists every touched file before writing; committed passes register an undo ledger (see `kbengine.generator.undoLast`)
+
+### `kbengine.component.new`
+
+- Title: `New KBEngine Component`
+- Purpose: create a component def under `entity_defs/components/` and optionally mount it into a host entity def
+- Landing spots: `entity_defs/components/<Name>.def` (never overwrites an existing one), plus a slot in the host's `<Components>` section (missing section created; slot shape mirrors the real asset `bag`/`Inventory` with an optional `Persistent` line)
+- Behavior: plan preview before writing; committed passes register an undo ledger
+
+### `kbengine.types.new`
+
+- Title: `New Type Alias`
+- Purpose: append a plain type alias (`<NAME> TYPE </NAME>`) to `types.xml`
+- Flow: alias name → builtin target type from a curated list (`ARRAY`/`FIXED_DICT` need hand-written structure and are not offered)
+- Honest edges: a duplicate alias aborts; a missing `types.xml` aborts instead of creating one
+- Behavior: plan preview before writing; committed passes register an undo ledger
+
+### `kbengine.generator.undoLast`
+
+- Title: `Undo Last Generation`
+- Purpose: roll back the most recent committed generation pass (wizard / new-entity / templates / add-RPC / component / type-alias alike)
+- Scope: buffer insertions are withdrawn only when the buffer still contains exactly that insertion; overwritten files restore their previous content; created files are deleted in reverse write order
+- Honest edges: one-shot only (each committed pass can be undone once); with no ledger it reports plainly instead of pretending
+
 ### `kbengine.generator.formWizard`
 
 - Title: `Create Def Form from Wizard`
