@@ -47,7 +47,7 @@ pub mod wire_codec;
 pub mod workspace_discovery;
 
 pub use completion::{
-    dump_completion_golden, to_lsp_items, CompletionContextFace, CompletionItemFace,
+    dump_completion_golden, resolve_item, to_lsp_items, CompletionContextFace, CompletionItemFace,
     CompletionResponse,
 };
 pub use definition::{dump_definition_golden, DefinitionLocation, LspPosition, LspRange};

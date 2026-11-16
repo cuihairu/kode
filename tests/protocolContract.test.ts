@@ -70,9 +70,14 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
       ['completionProvider', 'definitionProvider', 'hoverProvider', 'textDocumentSync']
     );
     expect(result.capabilities.textDocumentSync).toEqual({ openClose: true, change: 1 });
-    // completion triggerCharacters 面随契约钉死(def 标签补全 '<' 触发)
-    expect((result.capabilities.completionProvider as { triggerCharacters: string[] }).triggerCharacters)
-      .toEqual(['<']);
+    // completion triggerCharacters 面随契约钉死(def 标签补全 '<' 触发);
+    // RUST-135:resolveProvider 延迟补详情面(complationItem/resolve)同契约。
+    const completionProvider = result.capabilities.completionProvider as {
+      triggerCharacters: string[];
+      resolveProvider: boolean;
+    };
+    expect(completionProvider.triggerCharacters).toEqual(['<']);
+    expect(completionProvider.resolveProvider).toBe(true);
     expect(sortedKeys(result.serverInfo)).toEqual(['name', 'version']);
     // RUST-064:真二进制上报版本必须与 TS 侧常量一致(运行时版本门的
     // 上游事实面;漂移时 RUST-008 版本门会在扩展侧拒绝对讲)

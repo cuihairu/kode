@@ -87,11 +87,19 @@ pub struct CompletionItemFace {
 
 /// LSP items 投影(label/kind/detail;CompletionItemKind 数值):
 /// method=2,type/entity/alias=7(Class),property=10(Property)。
-pub fn to_lsp_items(response: &CompletionResponse) -> Value {
+/// RUST-135 增补面(全部在本投影层产出,结构化对拍面零变化):
+/// - sortText:条目序锁(响应序 = 声明序/链序,零填充序列钉死;客户端
+///   有 sortText 就不再按 label 字典序重排);
+/// - filterText:显式键入过滤面(= label);
+/// - insertText/insertTextFormat:py 面(self/module)方法条目 snippet
+///   `name($0)`(def XML 面标签补全保持 plain,XML 机制自己接管插入);
+/// - data:resolve 往返载荷(来源面按 context.kind × item.kind 判别)。
+pub fn to_lsp_items(response: &CompletionResponse, root: RootId) -> Value {
     let items: Vec<Value> = response
         .items
         .iter()
-        .map(|item| {
+        .enumerate()
+        .map(|(seq, item)| {
             let kind = match item.kind {
                 "method" => 2,
                 "function" => 3,
@@ -99,14 +107,161 @@ pub fn to_lsp_items(response: &CompletionResponse) -> Value {
                 "property" => 10,
                 _ => 7,
             };
-            let mut obj = serde_json::json!({ "label": item.label, "kind": kind });
+            let mut obj = serde_json::json!({
+                "label": item.label,
+                "kind": kind,
+                "sortText": format!("{:04}", seq),
+                "filterText": item.label,
+            });
             if let Some(detail) = &item.detail {
                 obj["detail"] = Value::String(detail.clone());
             }
+            let snippet = matches!(response.context.kind, "self" | "module")
+                && matches!(item.kind, "method" | "function");
+            if snippet {
+                obj["insertTextFormat"] = Value::from(2);
+                obj["insertText"] = Value::from(format!("{}($0)", item.label));
+            }
+            obj["data"] = resolve_data_face(response, item, root);
             obj
         })
         .collect();
     serde_json::json!({ "isIncomplete": false, "items": items })
+}
+
+/// resolve 往返载荷(来源面判别):context.kind × item.kind → source。
+/// 载荷只装 resolve 复算所需的确定事实(实体归属/分面/继承源/签名),
+/// 语料缺位时 resolve 原样返回不补文档,绝不虚构。
+fn resolve_data_face(
+    response: &CompletionResponse,
+    item: &CompletionItemFace,
+    root: RootId,
+) -> Value {
+    let name = &item.label;
+    match (response.context.kind, item.kind) {
+        (_, "entity") => serde_json::json!({
+            "source": "entity", "name": name, "path": item.detail,
+        }),
+        (_, "type") => serde_json::json!({
+            "source": "type", "name": name, "typeKind": item.detail,
+        }),
+        (_, "alias") => serde_json::json!({
+            "source": "alias", "name": name, "target": item.detail,
+        }),
+        ("module", _) => serde_json::json!({
+            "source": "module", "name": name,
+            "process": response.context.facet, "signature": item.detail,
+        }),
+        (_, "property" | "method") => serde_json::json!({
+            "source": "def", "root": root.0, "name": name,
+            "entity": response.context.entity,
+            "facet": item.facet,
+            "inheritedFrom": item.inherited_from,
+            "typeKind": item.detail,
+        }),
+        _ => Value::Null,
+    }
+}
+
+/// completionItem/resolve 延迟补详情(RUST-135):按 data 载荷复算文档面
+/// (类型/Flags/签名/分面/来源路径),零 IO——只碰已入库语料视图。
+/// 载荷不可判/语料缺位/歧义归属 → 输入原样返回(不装空文档,客户端
+/// 显示 label/detail 既有面)。
+pub fn resolve_item(engine: &HoverEngine, item: &Value) -> Value {
+    let data = item.get("data");
+    let label = item.get("label").and_then(Value::as_str);
+    let Some(data) = data else {
+        return item.clone();
+    };
+    let Some(label) = label else {
+        return item.clone();
+    };
+    let source = data.get("source").and_then(Value::as_str);
+    let documentation = match source {
+        Some("entity") => data
+            .get("path")
+            .and_then(Value::as_str)
+            .map(|path| format!("**{label}**\n\n实体声明:`{path}`")),
+        Some("type") => data.get("typeKind").and_then(Value::as_str).map(|kind| {
+            format!("**{label}**\n\n{kind} — types.xml 自定义类型。")
+        }),
+        Some("alias") => data.get("target").and_then(Value::as_str).map(|target| {
+            format!("**{label}**\n\n别名指向:`{target}`。")
+        }),
+        Some("module") => {
+            let process = data.get("process").and_then(Value::as_str).unwrap_or("");
+            data.get("signature").and_then(Value::as_str).map(|signature| {
+                format!(
+                    "**{label}**\n\n```python\n{signature}\n```\n\nKBEngine {process} API。"
+                )
+            })
+        }
+        Some("def") => resolve_def_member_documentation(engine, data, label),
+        _ => None,
+    };
+    let Some(documentation) = documentation else {
+        return item.clone();
+    };
+    let mut resolved = item.clone();
+    resolved["documentation"] = serde_json::json!({
+        "kind": "markdown",
+        "value": documentation,
+    });
+    resolved
+}
+
+/// def 成员文档面:实体归属(root + entity,继承成员定位祖先)→ 语料
+/// def 视图 → 按名找属性/方法声明。归属歧义/语料缺位 → None。
+fn resolve_def_member_documentation(engine: &HoverEngine, data: &Value, label: &str) -> Option<String> {
+    let root = data.get("root").and_then(Value::as_u64).map(|v| v as u32)?;
+    let root = RootId(root);
+    let owner = data
+        .get("inheritedFrom")
+        .and_then(Value::as_str)
+        .or_else(|| data.get("entity").and_then(Value::as_str))?;
+    let def_path = engine.corpus_def_for_entity(root, owner)?;
+    let def = engine.corpus_def(def_path.as_str())?;
+    let inherited = data.get("inheritedFrom").and_then(Value::as_str);
+    let mut lines = vec![format!("**{label}**")];
+    if let Some(prop) = def.properties.iter().find(|p| p.name == label) {
+        if let Some(ty) = &prop.type_name {
+            lines.push(String::new());
+            lines.push(format!("类型:`{ty}`"));
+        }
+        if let Some(flags) = &prop.flags_raw {
+            lines.push(format!("Flags:`{flags}`"));
+        }
+        if let Some(default) = &prop.default_value {
+            lines.push(format!("默认:`{default}`"));
+        }
+    } else {
+        let sections = [MethodSection::Base, MethodSection::Cell, MethodSection::Client];
+        let method = sections.iter().find_map(|section| {
+            def.methods(*section)
+                .iter()
+                .find(|m| m.name == label)
+                .map(|m| (*section, m))
+        });
+        let (section, method) = method?;
+        lines.push(String::new());
+        lines.push(format!("分面:{}", section.as_str()));
+        let mut args = method.args.clone();
+        if args.is_empty() {
+            args.push("self".to_string());
+        }
+        let mut signature = format!("{}({})", method.name, args.join(", "));
+        if let Some(ret) = &method.return_type {
+            signature.push_str(&format!(" -> {ret}"));
+        }
+        lines.push(format!("```python\n{signature}\n```"));
+    }
+    if let Some(inherited) = inherited {
+        lines.push(String::new());
+        lines.push(format!("继承自 {inherited}"));
+    }
+    lines.push(String::new());
+    lines.push(format!("来源:`{def_path}`"));
+    Some(lines.join("\n"))
 }
 
 // ---------------------------------------------------------------------------

@@ -141,6 +141,11 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
           operation.end('error');
           throw error;
         }
+      },
+      // RUST-135:resolve 延迟补详情(Rust 条目 → completionItem/resolve
+      // 文档面;TS 条目原样返回,documentation 已在 provide 时装配)。
+      async resolveCompletionItem(item: vscode.CompletionItem, token: vscode.CancellationToken) {
+        return kbengineCompletionImpl.resolveCompletionItem(item, token);
       }
     },
     '<', ' ', '\t', '>', '/', ':', '.'

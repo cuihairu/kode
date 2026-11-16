@@ -353,6 +353,8 @@ pub struct CompletionParams {
 #[serde(rename_all = "camelCase")]
 pub struct CompletionOptions {
     pub trigger_characters: Vec<String>,
+    /// RUST-135:completionItem/resolve 延迟补详情面(文档/来源按需补)。
+    pub resolve_provider: bool,
 }
 
 // ---------------------------------------------------------------------------

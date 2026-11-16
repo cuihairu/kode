@@ -271,11 +271,14 @@ const ANCHORS: Array<[string, number, string]> = [
   // 268/331/732 三点另加注册块 = +9;真位重探)。出处随 baseline 锁步。
   // 2026-11-15(RUST-001):激活预热块改异步入口(preheatDiscoveryScanActivation)
   // 注释 +4 行 → 预热块后的两点 +4(340/741 → 344/745;204/277/128 在块前不动)。
-  ['src/activate/languageServices.ts', 204, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 277, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 344, "startLanguageServiceOperation('definition'"],
+  // 2026-11-16(RUST-135):inline 补全 provider 对象加 resolveCompletionItem 委托
+  // +5 行(位于 128 打点之后)→ 其后四点 +5(204/277/344/745 → 209/282/349/750,
+  // 真位重探)。出处随 baseline 锁步。
+  ['src/activate/languageServices.ts', 209, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 282, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 349, "startLanguageServiceOperation('definition'"],
   ['src/activate/languageServices.ts', 128, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 745, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 750, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
@@ -505,7 +508,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // .then 改 async、provideSpaceDataKeyCompletions 预算/marked/isIncomplete
   // 面净 +12(均在 PythonCompletionProvider 之前)→ 真位重探 1073→1086,
   // 出处随 baseline 锁步。
-  ['src/languageProviders/completion.ts', 1086, 'provideCompletionItems('],
+  // 2026-11-16(RUST-135):顶部 import +1、rustResolveData WeakMap 块 +9、
+  // lspCompletionToVscode sortText/filterText/snippet/data 面 +12、
+  // KBEngineCompletionProvider.resolveCompletionItem +26(均在
+  // PythonCompletionProvider 之前)→ 真位重探 1086→1134,出处随 baseline 锁步。
+  ['src/languageProviders/completion.ts', 1134, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)

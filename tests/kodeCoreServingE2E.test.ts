@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { KodeCoreClient } from '../src/backend/kodeCoreClient';
 import { KodeCoreGate } from '../src/backend/kodeCoreGate';
-import { serveCompletionFromRust, serveDefinitionFromRust, serveDiagnosticsFromRust, serveHoverFromRust, setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
+import { serveCompletionFromRust, serveCompletionResolveFromRust, serveDefinitionFromRust, serveDiagnosticsFromRust, serveHoverFromRust, setKodeCoreShadowGate } from '../src/backend/kodeCoreShadowFaces';
 
 // 2026-11-08 用户令「直接切到 rust」:定义面 rust 服务 e2e(真实 kode-server
 // 二进制)。证明 switch 不是纸面:gate 服务轨道 + serveDefinitionFromRust
@@ -337,5 +337,23 @@ suite('kode 定义面 rust 服务 e2e(真实二进制)', () => {
     // 方法条目 kind=2(method)。
     const methodItem = report!.items.find(item => item.label === 'onAvatarDead');
     expect(methodItem!.kind).toBe(2);
+
+    // RUST-135:resolve 延迟补详情——hp 条目经 serve 面(与 provider 同口)
+    // 回传 completionItem/resolve,文档面(类型 + 来源 def 路径)由语料复算;
+    // data 往返载荷原样保留。
+    const hp = report!.items.find(item => item.label === 'hp');
+    expect(hp!.data).toBeTruthy();
+    expect(hp!.sortText).toBe(String(report!.items.indexOf(hp!)).padStart(4, '0'));
+    expect(hp!.filterText).toBe('hp');
+    const resolved = await serveCompletionResolveFromRust({
+      label: hp!.label,
+      detail: hp!.detail,
+      data: hp!.data
+    });
+    expect(resolved).not.toBeNull();
+    const doc = resolved!.documentation?.value ?? '';
+    expect(doc).toContain('**hp**');
+    expect(doc).toContain('`UINT32`');
+    expect(doc).toContain('entity_defs/Avatar.def');
   }, 20_000);
 });

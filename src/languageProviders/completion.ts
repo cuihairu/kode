@@ -31,6 +31,7 @@ import { getLanguageFeatureConfig } from './shared';
 import {
   getKodeCoreShadowGate,
   serveCompletionFromRust,
+  serveCompletionResolveFromRust,
   type LspCompletionReportFace
 } from '../backend/kodeCoreShadowFaces';
 export const TOP_LEVEL_DEF_TAGS = [
@@ -294,12 +295,33 @@ function completionKindFromLsp(lspKind: number): vscode.CompletionItemKind {
   }
 }
 
-/** kode-server 补全面 → vscode.CompletionItem[](label/kind/detail 投影) */
+/**
+ * Rust 条目 → resolve 往返载荷登记(RUST-135):resolveCompletionItem 用它
+ * 判别「Rust 出条目」(走 completionItem/resolve 延迟补文档)与「TS 既有链
+ * 条目」(documentation 已在 provide 时装配,原样返回)。进程内对象引用
+ * 直存,不往 CompletionItem 上挂私有字段。
+ */
+const rustResolveData = new WeakMap<vscode.CompletionItem, { label: string; detail?: string; data: Record<string, unknown> }>();
+
+/** kode-server 补全面 → vscode.CompletionItem[](label/kind/detail + RUST-135
+ * sortText/filterText/snippet 投影;data 登记 resolve 往返) */
 export function lspCompletionToVscode(face: LspCompletionReportFace): vscode.CompletionItem[] {
   return face.items.map(item => {
     const completion = new vscode.CompletionItem(item.label, completionKindFromLsp(item.kind));
     if (item.detail) {
       completion.detail = item.detail;
+    }
+    if (item.sortText) {
+      completion.sortText = item.sortText;
+    }
+    if (item.filterText) {
+      completion.filterText = item.filterText;
+    }
+    if (item.insertText && item.insertTextFormat === 2) {
+      completion.insertText = new vscode.SnippetString(item.insertText);
+    }
+    if (item.data) {
+      rustResolveData.set(completion, { label: item.label, detail: item.detail, data: item.data });
     }
     return completion;
   });
@@ -404,6 +426,32 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     }
     const tsResult = await this.provideCompletionItemsSync(document, position, token);
     return tsResult ?? [];
+  }
+
+  /**
+   * resolve 延迟补详情(RUST-135):Rust 出条目(rustResolveData 登记)→
+   * completionItem/resolve 复算文档面(类型/Flags/签名/分面/来源),补上
+   * documentation;TS 既有链条目(documentation 在 provide 时已装配)原样
+   * 返回。resolve 失败/语料缺位不装空文档,条目保持既有面(LSP 允许
+   * resolve 原样返回)。
+   */
+  async resolveCompletionItem(
+    item: vscode.CompletionItem,
+    token?: vscode.CancellationToken
+  ): Promise<vscode.CompletionItem> {
+    const registered = rustResolveData.get(item);
+    if (!registered) {
+      return item;
+    }
+    const enrichment = await serveCompletionResolveFromRust(registered);
+    if (token?.isCancellationRequested || !enrichment?.documentation) {
+      return item;
+    }
+    item.documentation = new vscode.MarkdownString(enrichment.documentation.value);
+    if (enrichment.detail) {
+      item.detail = enrichment.detail;
+    }
+    return item;
   }
 
   /** TS 既有补全链路(原 provideCompletionItems 主体,Rust 回落复用)。 */

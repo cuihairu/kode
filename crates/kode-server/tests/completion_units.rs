@@ -392,7 +392,7 @@ fn lsp_projection_maps_kinds_and_details() {
         9,
     )
     .expect("Type 取值位");
-    let lsp = kode_server::to_lsp_items(&response);
+    let lsp = kode_server::to_lsp_items(&response, RootId::UNROOTED);
     assert_eq!(lsp["isIncomplete"], serde_json::json!(false));
     assert_eq!(lsp["items"][2]["label"], serde_json::json!("MY_ALIAS"));
     assert_eq!(lsp["items"][2]["kind"], serde_json::json!(7));
@@ -584,4 +584,171 @@ fn py_module_alias_face_still_wins_over_self_arm() {
         .expect("KBEngine. 位应判面");
     assert_eq!(response.context.kind, "module");
     assert_eq!(response.context.section, "KBEngine");
+}
+
+// ---------------------------------------------------------------------------
+// RUST-135:LSP 投影增补面(sortText/filterText/snippet/data)+ resolve 延迟补详情
+// ---------------------------------------------------------------------------
+
+#[test]
+fn lsp_projection_locks_order_and_emits_def_resolve_data() {
+    let engine = loaded_engine();
+    // 行 4 = `\t\t<hp>`:Properties 开标签全量点(本类 + 继承链)。
+    let response = complete_at(
+        &engine,
+        "ws/scripts/entity_defs/Avatar.def",
+        AVATAR_DEF,
+        4,
+        3,
+    )
+    .expect("Properties 开标签位应判面");
+    let lsp = kode_server::to_lsp_items(&response, RootId::UNROOTED);
+    let items = lsp["items"].as_array().expect("items");
+    // sortText = 零填充响应序(声明序/链序锁死,客户端不按 label 重排);
+    // filterText = label。
+    for (seq, item) in items.iter().enumerate() {
+        assert_eq!(item["sortText"], serde_json::json!(format!("{:04}", seq)));
+        assert_eq!(item["filterText"], item["label"]);
+    }
+    // 本类属性 data:source=def + 实体归属 + 类型;无 snippet(XML 面)。
+    let hp = items.iter().find(|i| i["label"] == serde_json::json!("hp")).unwrap();
+    assert_eq!(hp["data"]["source"], serde_json::json!("def"));
+    assert_eq!(hp["data"]["root"], serde_json::json!(0));
+    assert_eq!(hp["data"]["entity"], serde_json::json!("Avatar"));
+    assert_eq!(hp["data"]["typeKind"], serde_json::json!("UINT32"));
+    assert_eq!(hp["data"]["inheritedFrom"], serde_json::Value::Null);
+    assert!(hp.get("insertText").is_none(), "def XML 面无 snippet");
+    // 继承属性 data:inheritedFrom 定位祖先。
+    let name = items.iter().find(|i| i["label"] == serde_json::json!("name")).unwrap();
+    assert_eq!(name["data"]["inheritedFrom"], serde_json::json!("BaseApp"));
+}
+
+#[test]
+fn lsp_projection_py_self_and_module_method_items_get_snippets() {
+    let engine = loaded_engine();
+    // py self 面:method 条目 snippet `name($0)`(format 2),property plain。
+    let py = "import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):\n\t\tself.\n";
+    let response = complete_at(&engine, "ws/scripts/base/Avatar.py", py, 6, 7)
+        .expect("py self. 位应判面");
+    let lsp = kode_server::to_lsp_items(&response, RootId::UNROOTED);
+    let items = lsp["items"].as_array().expect("items");
+    let method = items.iter().find(|i| i["kind"] == serde_json::json!(2)).unwrap();
+    assert_eq!(method["insertTextFormat"], serde_json::json!(2));
+    assert_eq!(method["insertText"], serde_json::json!(format!("{}($0)", method["label"].as_str().unwrap())));
+    let prop = items.iter().find(|i| i["kind"] == serde_json::json!(10)).unwrap();
+    assert!(prop.get("insertText").is_none(), "属性条目 plain");
+    // module 面:function 条目 snippet + signature 进 data。
+    let py_mod = "import KBEngine\n\n\nclass Avatar:\n\tdef onTick(self):\n\t\tKBEngine.\n";
+    let response = complete_at(&engine, "ws/scripts/base/Avatar.py", py_mod, 6, 13)
+        .expect("KBEngine. 位应判面");
+    let lsp = kode_server::to_lsp_items(&response, RootId::UNROOTED);
+    let items = lsp["items"].as_array().expect("items");
+    let function = items.iter().find(|i| i["kind"] == serde_json::json!(3)).unwrap();
+    assert_eq!(function["insertTextFormat"], serde_json::json!(2));
+    assert_eq!(function["data"]["source"], serde_json::json!("module"));
+    assert_eq!(function["data"]["process"], serde_json::json!("base"));
+    assert!(function["data"]["signature"].is_string(), "签名进 data");
+}
+
+#[test]
+fn resolve_enriches_def_property_and_inherited_member_documentation() {
+    let engine = loaded_engine();
+    let response = complete_at(
+        &engine,
+        "ws/scripts/entity_defs/Avatar.def",
+        AVATAR_DEF,
+        4,
+        3,
+    )
+    .expect("Properties 开标签位应判面");
+    let lsp = kode_server::to_lsp_items(&response, RootId::UNROOTED);
+    // 本类属性:类型 + 来源 def 路径。
+    let hp = lsp["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["label"] == serde_json::json!("hp"))
+        .unwrap()
+        .clone();
+    let resolved = kode_server::resolve_item(&engine, &hp);
+    let doc = resolved["documentation"]["value"].as_str().expect("documentation");
+    assert!(doc.contains("**hp**"), "标题: {doc}");
+    assert!(doc.contains("`UINT32`"), "类型面: {doc}");
+    assert!(doc.contains("`BASE_AND_CLIENT`"), "Flags 面: {doc}");
+    assert!(doc.contains("ws/scripts/entity_defs/Avatar.def"), "来源路径: {doc}");
+    // 继承成员:定位祖先 def,文档带「继承自」+ 祖先来源。
+    let name = lsp["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["label"] == serde_json::json!("name"))
+        .unwrap()
+        .clone();
+    let resolved = kode_server::resolve_item(&engine, &name);
+    let doc = resolved["documentation"]["value"].as_str().expect("documentation");
+    assert!(doc.contains("`STRING`"), "祖先类型: {doc}");
+    assert!(doc.contains("继承自 BaseApp"), "继承标注: {doc}");
+    assert!(doc.contains("ws/scripts/entity_defs/BaseApp.def"), "祖先来源: {doc}");
+}
+
+#[test]
+fn resolve_enriches_method_signature_and_facet_documentation() {
+    let engine = loaded_engine();
+    // 行 13(1 起)= `\t\t<reqCastSkill>`:BaseMethods 开标签全量点 col 3。
+    let response = complete_at(
+        &engine,
+        "ws/scripts/entity_defs/Avatar.def",
+        AVATAR_DEF,
+        13,
+        3,
+    )
+    .expect("BaseMethods 开标签位应判面");
+    assert_eq!(response.context.section, "BaseMethods");
+    let lsp = kode_server::to_lsp_items(&response, RootId::UNROOTED);
+    let item = lsp["items"][0].clone();
+    assert_eq!(item["label"], serde_json::json!("reqCastSkill"));
+    let resolved = kode_server::resolve_item(&engine, &item);
+    let doc = resolved["documentation"]["value"].as_str().expect("documentation");
+    assert!(doc.contains("分面:base"), "分面: {doc}");
+    assert!(doc.contains("reqCastSkill(skillId)"), "签名(带 Arg): {doc}");
+    assert!(doc.contains("来源:"), "来源: {doc}");
+}
+
+#[test]
+fn resolve_enriches_type_alias_entity_documentation() {
+    let engine = loaded_engine();
+    // 类型/别名:Type 取值位 fragment=UINT32 → 无命中空集,改全量点。
+    let response = complete_at(
+        &engine,
+        "ws/scripts/entity_defs/Avatar.def",
+        AVATAR_DEF,
+        2,
+        9,
+    )
+    .expect("Parent 取值位应判面");
+    let lsp = kode_server::to_lsp_items(&response, RootId::UNROOTED);
+    let item = lsp["items"][0].clone();
+    assert_eq!(item["data"]["source"], serde_json::json!("entity"));
+    let resolved = kode_server::resolve_item(&engine, &item);
+    let doc = resolved["documentation"]["value"].as_str().expect("documentation");
+    assert!(doc.contains("实体声明:"), "实体文档: {doc}");
+    assert!(doc.contains(".def"), "声明路径: {doc}");
+}
+
+#[test]
+fn resolve_without_usable_payload_echoes_input_unchanged() {
+    let engine = loaded_engine();
+    let base = serde_json::json!({ "label": "mystery", "kind": 7 });
+    let resolved = kode_server::resolve_item(&engine, &base);
+    assert_eq!(resolved, base, "无 data → 原样返回");
+    let bad = serde_json::json!({ "label": "x", "kind": 7, "data": { "source": "elsewhere" } });
+    let resolved = kode_server::resolve_item(&engine, &bad);
+    assert_eq!(resolved, bad, "未知 source → 原样返回");
+    // 语料缺位(def 归属落空)→ 原样返回,不装空文档。
+    let ghost = serde_json::json!({
+        "label": "hp", "kind": 10,
+        "data": { "source": "def", "root": 7, "entity": "Ghost", "name": "hp" }
+    });
+    let resolved = kode_server::resolve_item(&engine, &ghost);
+    assert_eq!(resolved, ghost, "语料缺位 → 原样返回");
 }

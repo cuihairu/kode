@@ -170,3 +170,93 @@ describe('lspCompletionToVscode 转换', () => {
     expect(items[1].detail).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// RUST-135:sortText/filterText/snippet 投影 + resolve 延迟补详情
+// ---------------------------------------------------------------------------
+
+describe('lspCompletionToVscode RUST-135 增补面', () => {
+  it('sortText/filterText 透传;snippet insertTextFormat=2 → SnippetString', async () => {
+    const items = lspCompletionToVscode({
+      isIncomplete: false,
+      items: [
+        {
+          label: 'reqCastSkill', kind: 2, detail: 'base',
+          sortText: '0003', filterText: 'reqCastSkill',
+          insertText: 'reqCastSkill($0)', insertTextFormat: 2,
+          data: { source: 'def', name: 'reqCastSkill' },
+        },
+        { label: 'hp', kind: 10, detail: 'UINT32', sortText: '0000', filterText: 'hp' },
+      ],
+    });
+    expect(items[0].sortText).toBe('0003');
+    expect(items[0].filterText).toBe('reqCastSkill');
+    const snippet = items[0].insertText as { value: string };
+    expect(snippet.value).toBe('reqCastSkill($0)');
+    // 无 insertText 的条目不设插入面(plain)。
+    expect(items[1].insertText).toBeUndefined();
+  });
+
+  it('resolveCompletionItem:Rust 条目走 completionItem/resolve 补 documentation', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/completion', {
+      isIncomplete: false,
+      items: [
+        {
+          label: 'hp', kind: 10, detail: 'UINT32',
+          data: { source: 'def', root: 1, entity: 'Avatar', name: 'hp' },
+        },
+      ],
+    });
+    responses.set('completionItem/resolve', {
+      label: 'hp',
+      kind: 10,
+      detail: 'UINT32',
+      documentation: { kind: 'markdown', value: '**hp**\n\n类型:`UINT32`' },
+    });
+    setKodeCoreShadowGate(makeGate(client));
+    const provider = new KBEngineCompletionProvider();
+    const document = makeDefDocument('    <');
+    const items = (await provider.provideCompletionItems(document, new Position(0, 5))) as {
+      label: string;
+    }[];
+    expect(items).toHaveLength(1);
+    const resolved = await provider.resolveCompletionItem(items[0] as never);
+    const doc = (resolved as { documentation?: { value: string } }).documentation;
+    expect(doc?.value).toContain('`UINT32`');
+    expect(client.calls.some(call => call.method === 'request:completionItem/resolve')).toBe(true);
+  });
+
+  it('resolveCompletionItem:TS 条目(无登记)原样返回,零 Rust 调用', async () => {
+    const { client } = makeStubClient();
+    setKodeCoreShadowGate(makeGate(client));
+    const provider = new KBEngineCompletionProvider();
+    const document = makeDefDocument('    <');
+    const items = (await provider.provideCompletionItems(document, new Position(0, 5))) as {
+      label: string;
+    }[];
+    expect(items.length).toBeGreaterThan(0);
+    const callsBefore = client.calls.length;
+    for (const item of items) {
+      await provider.resolveCompletionItem(item as never);
+    }
+    expect(client.calls.slice(callsBefore)).toEqual([]);
+  });
+
+  it('resolveCompletionItem:Rust 失败/无 documentation → 条目原样返回,不抛', async () => {
+    const { client, responses } = makeStubClient();
+    responses.set('textDocument/completion', {
+      isIncomplete: false,
+      items: [{ label: 'hp', kind: 10, detail: 'UINT32', data: { source: 'def', root: 1, entity: 'Ghost', name: 'hp' } }],
+    });
+    // resolve 无 stub → request 抛 → serve 面 null。
+    setKodeCoreShadowGate(makeGate(client));
+    const provider = new KBEngineCompletionProvider();
+    const document = makeDefDocument('    <');
+    const items = (await provider.provideCompletionItems(document, new Position(0, 5))) as {
+      label: string;
+    }[];
+    const resolved = await provider.resolveCompletionItem(items[0] as never);
+    expect((resolved as { documentation?: unknown }).documentation).toBeUndefined();
+  });
+});

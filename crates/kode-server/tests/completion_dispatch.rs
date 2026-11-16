@@ -621,3 +621,78 @@ fn completion_on_py_non_self_or_non_entity_is_null() {
     );
     assert_eq!(response_of(&out), &serde_json::Value::Null);
 }
+
+/// RUST-135:capabilities 广播 resolveProvider(complationItem/resolve 面)。
+#[test]
+fn initialize_advertises_completion_resolve_provider() {
+    let mut state = ServerState::new();
+    let out = handle_message(&mut state, initialize_message(1));
+    let provider = &response_of(&out)["capabilities"]["completionProvider"];
+    assert_eq!(provider["triggerCharacters"], json!(["<"]));
+    assert_eq!(provider["resolveProvider"], json!(true));
+}
+
+/// resolve 往返(LSP 级):completion 出条目 → completionItem/resolve 回传
+/// → documentation 文档面(类型/来源)。语料缺位条目原样返回不装空文档。
+#[test]
+fn completion_resolve_roundtrip_enriches_documentation() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    open_self_fixture(&mut state);
+    let out = handle_message(
+        &mut state,
+        request(
+            41,
+            "textDocument/completion",
+            completion_params(
+                "file:///workspace/demo/scripts/base/Avatar.py",
+                5,
+                7,
+            ),
+        ),
+    );
+    let items = response_of(&out)["items"].as_array().expect("items");
+    let hp = items
+        .iter()
+        .find(|i| i["label"] == json!("hp"))
+        .expect("hp 条目")
+        .clone();
+    let out = handle_message(
+        &mut state,
+        request(42, "completionItem/resolve", hp.clone()),
+    );
+    let resolved = response_of(&out);
+    assert_eq!(resolved["label"], json!("hp"));
+    let doc = resolved["documentation"]["value"].as_str().expect("documentation");
+    assert!(doc.contains("`UINT32`"), "类型面: {doc}");
+    assert!(
+        doc.contains("scripts/entity_defs/Avatar.def"),
+        "来源路径: {doc}"
+    );
+    // resolve 后 data 原样保留(客户端二次 resolve 场景)。
+    assert_eq!(resolved["data"], hp["data"]);
+}
+
+#[test]
+fn completion_resolve_without_payload_echoes_input() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    let out = handle_message(
+        &mut state,
+        request(
+            43,
+            "completionItem/resolve",
+            json!({ "label": "mystery", "kind": 7 }),
+        ),
+    );
+    assert_eq!(response_of(&out), &json!({ "label": "mystery", "kind": 7 }));
+    // params 缺失(非 item 形)→ INVALID_PARAMS(params None 走坏参臂)。
+    let missing = IncomingMessage::Request(Request {
+        jsonrpc: "2.0".into(),
+        id: RequestId::Number(45),
+        method: "completionItem/resolve".into(),
+        params: None,
+    });
+    let out = handle_message(&mut state, missing);
+    assert_eq!(error_code_of(&out), error_codes::INVALID_PARAMS);
+}

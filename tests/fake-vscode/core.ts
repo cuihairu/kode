@@ -539,9 +539,18 @@ export interface CompletionItemLabel {
   detail?: string;
 }
 
+// RUST-135:snippet 插入文本(真实 vscode API 同形:构造 value,.value 读回)
+export class SnippetString {
+  constructor(public value: string) {}
+}
+
 export class CompletionItem {
   detail?: string;
   documentation?: string | MarkdownString;
+  // RUST-135:排序/过滤/插入面(真实 vscode API 同形;缺省不设)
+  sortText?: string;
+  filterText?: string;
+  insertText?: string | SnippetString;
   // 真实 vscode API 第二参兼收 string | CompletionItemLabel(批形升级单:
   // 内建属性补全 label 右列灰字类型传对象形态)
   constructor(public label: string | CompletionItemLabel, public kind?: CompletionItemKind) {}

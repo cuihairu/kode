@@ -70,7 +70,7 @@ export interface LspDiagnosticReportFace {
   items: { range: RangeLike; severity: number; message: string }[];
 }
 
-/** kode-server textDocument/completion 应答面(to_lsp_items 投影:label/kind/detail) */
+/** kode-server textDocument/completion 应答面(to_lsp_items 投影) */
 export interface LspCompletionReportFace {
   isIncomplete: boolean;
   items: {
@@ -78,7 +78,56 @@ export interface LspCompletionReportFace {
     /** LSP CompletionItemKind 数值(method=2/type/entity/alias=7/property=10) */
     kind: number;
     detail?: string;
+    /** RUST-135:条目序锁(响应序 = 声明序/链序,零填充序列) */
+    sortText?: string;
+    /** RUST-135:键入过滤面(= label) */
+    filterText?: string;
+    /** RUST-135:snippet 插入文本(py 方法/函数面 `name($0)`) */
+    insertText?: string;
+    /** RUST-135:插入格式(2 = snippet) */
+    insertTextFormat?: number;
+    /** RUST-135:completionItem/resolve 往返载荷(来源面判别) */
+    data?: Record<string, unknown>;
   }[];
+}
+
+/** completionItem/resolve 应答面:文档面(markdown)与可选 detail 更新 */
+export interface LspCompletionResolveFace {
+  documentation?: { kind: string; value: string };
+  detail?: string;
+}
+
+/**
+ * resolve 延迟补详情 rust 服务(RUST-135):服务轨道下请求 kode-server
+ * completionItem/resolve(params = completion 出条目的 {label,detail,data}
+ * 子集)。Rust 复算出文档面返回之;载荷不可判/语料缺位/任何失败返回
+ * null —— 调用方保持条目既有面(不装空文档)。零镜像(resolve 无文档
+ * 上下文,语料在 completion 时已由镜像腿入库)。
+ */
+export async function serveCompletionResolveFromRust(
+  item: { label: string; detail?: string; data?: Record<string, unknown> }
+): Promise<LspCompletionResolveFace | null> {
+  const gate = shadowGate;
+  if (!gate || !gate.serveFromRust() || !item.data) {
+    return null;
+  }
+  const result = await awaitWithInteractiveBudget(
+    async opts =>
+      gate.serveInRust<unknown>('completionItem/resolve', item, null, opts),
+    INTERACTIVE_SERVE_BUDGET_MS
+  );
+  if (!result || typeof result !== 'object') {
+    return null;
+  }
+  const face = result as { documentation?: { kind?: unknown; value?: unknown } };
+  if (
+    face.documentation &&
+    typeof face.documentation === 'object' &&
+    typeof face.documentation.value === 'string'
+  ) {
+    return face as LspCompletionResolveFace;
+  }
+  return null;
 }
 
 /** vscode.Location(单/数组)→ LSP Location 面;null/落空 → null */

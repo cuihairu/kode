@@ -396,6 +396,13 @@ fn handle_request_inner(
                 cancelled_early,
             ))]
         }
+        "completionItem/resolve" => {
+            vec![Outgoing::Response(handle_completion_resolve(
+                state,
+                request,
+                cancelled_early,
+            ))]
+        }
         "textDocument/definition" => vec![Outgoing::Response(handle_definition(state, request))],
         "textDocument/diagnostic" => vec![Outgoing::Response(handle_diagnostic(state, request))],
         // RUST-069-W 根生命周期:新增/移除根落 WorkspaceSession 唯一注册表
@@ -516,6 +523,8 @@ fn handle_initialize(state: &mut ServerState, request: Request) -> Response {
             // PR-011:completion 触发字符 `<`(def 标签位)。
             completion_provider: Some(kode_protocol::CompletionOptions {
                 trigger_characters: vec!["<".to_string()],
+                // RUST-135:completionItem/resolve 延迟补详情面。
+                resolve_provider: true,
             }),
         },
         server_info: ServerInfo {
@@ -734,9 +743,46 @@ fn handle_completion(state: &mut ServerState, request: Request, cancelled_early:
             .borrow()
             .completion(&key, &text, params.position.line, params.position.character);
     match completion {
-        Some(response) => Response::success(request.id, to_lsp_items(&response)),
+        Some(response) => Response::success(request.id, to_lsp_items(&response, key.root)),
         None => Response::success(request.id, serde_json::Value::Null),
     }
+}
+
+/// completionItem/resolve(RUST-135 延迟补详情):params = 客户端回传的
+/// CompletionItem(含 completion 时嵌入的 data 往返载荷);按载荷复算
+/// 文档面(类型/Flags/签名/分面/来源),零 IO——只碰已入库语料视图。
+/// 载荷不可判/语料缺位/归属歧义 → 输入原样返回(不装空文档)。可取消
+/// (同 completion 入口判定口径)。
+fn handle_completion_resolve(
+    state: &mut ServerState,
+    request: Request,
+    cancelled_early: bool,
+) -> Response {
+    let item: serde_json::Value = match request.params.and_then(|p| serde_json::from_value(p).ok())
+    {
+        Some(item) => item,
+        None => {
+            return Response::error(
+                Some(request.id),
+                error_codes::INVALID_PARAMS,
+                "invalid completionItem/resolve params",
+            )
+        }
+    };
+    let flag = state.cancels.register_cancellable(&request.id);
+    let cancelled = cancelled_early || flag.load(Ordering::SeqCst);
+    state.cancels.end_cancellable(&request.id);
+    if cancelled {
+        return Response::error(
+            Some(request.id),
+            error_codes::REQUEST_CANCELLED,
+            "request cancelled via $/cancelRequest",
+        );
+    }
+    Response::success(
+        request.id,
+        crate::completion::resolve_item(&state.hover.borrow(), &item),
+    )
 }
 
 /// textDocument/definition(Phase2 首片):文档须已打开;未打开/未知词/
