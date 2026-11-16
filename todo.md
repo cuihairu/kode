@@ -508,7 +508,7 @@
 - [x] RUST-232 （旧 QA-003） Golden: 基于真实引擎 fixtures 的 hover/definition/diagnostics/typings snapshot。（纯对账：17 个 golden 对拍测试+18 个金标 JSON，语料=kbengine-demo-assets 真引擎夹具，Rust dump 真值+TS parity 复算双向对拍；typings 三层承载=语义金标 stub probe+桩包模板物理在仓+生成面内容锚；四 parity 套件 14 例绿；纪要 docs/review/2026-11-17-rust-232-golden-snapshots-acceptance.md）
 - [x] RUST-233 （旧 QA-004） Differential: 对旧 TS 输出与新 Rust 输出逐项差异审查，已知旧 bug 单独定标。（纯对账：RUST-PRECISION-001 战役四批每批全语料 diff 逐条过目+批 A 七类裁决表在案，误导账本 5 项逐项立靶分批收口，split-parity 策展定标钉 selfAttributeFlowPrecision 16 例+parity 回归网 19 套件；13 例当日绿；纪要 docs/review/2026-11-17-rust-233-differential-audit-acceptance.md）
 - [x] RUST-234 （旧 QA-005） Integration: VS Code Extension Host + native server e2e，对比用户可见结果。（纯对账：mocha Extension Host 套件 29 文件+cellDataFullChain 真实 Rust 门（kode-server spawn+cellDataKeys，五面联动=补全/F12/inlay/hover/诊断，二进制缺席自动降级不假绿）；本日 xvfb demo 25 例实测 RC=0（兼作 229 hover 改动真机回归）；纪要 docs/review/2026-11-17-rust-234-integration-e2e-acceptance.md）
-- [ ] RUST-235 （旧 QA-006） Python LS interoperability：Pylance / Pyright、不同 Python 环境和 .pyi 优先级。
+- [x] RUST-235 （旧 QA-006） Python LS interoperability：Pylance / Pyright、不同 Python 环境和 .pyi 优先级。（纯对账整合验收：矩阵 RUST-148（f732df03 冲突矩阵决策记录）+拦截不劫持 RUST-161+pyrightconfig 五闸 RUST-162+真机 stub 优先级阶梯 RUST-170（106b5990，stubPath→extraPaths→同目录）+venv 三套件/双 OS 布局/坏环境不认领+profileHealth interpreter 面；纪要 docs/review/2026-11-17-rust-235-python-ls-interop-acceptance.md）
 - [ ] RUST-236 （旧 QA-007） Workspace 兼容：Windows path、Linux case、macOS case-insensitive、WSL、SSH、containers。
 - [ ] RUST-237 （旧 QA-008） Engine 兼容：官方支持版本 + 用户 fork，profile 未知降级。
 - [ ] RUST-238 （旧 QA-009） Security：workspace trust、命令注入、路径穿越、生成文件覆盖、恶意插件、高频日志敏感数据。
