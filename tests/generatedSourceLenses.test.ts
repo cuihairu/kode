@@ -118,6 +118,40 @@ describe('GeneratedSourceCodeLensProvider', () => {
     expect(lens.command?.title).toContain('原始定义: Avatar types.xml:30');
   });
 
+  // RUST-160:标量属性(无 types.xml 自定义类型)来源是 .def——镜目标须
+  // 解析到实体注册表 defFile(旧行为恒跳 types.xml,把 .def 行号落错文件),
+  // 缺注册表映射时不出镜(绝不造错误跳转)。
+  it('def 来源镜跳实体注册表 defFile,缺映射不出镜', () => {
+    const scalarEntries: EntityTypeStubEntry[] = [{
+      entity: 'Avatar',
+      methods: [],
+      properties: [{ name: 'level', sourceLine: 24 }]
+    }];
+    const entityLineMap = buildEntityTypeStubLineMap(scalarEntries);
+    const doc = () => makeDoc(path.join(root, 'stub_types.py'), buildEntityTypeStubContent(scalarEntries));
+    const defFile = path.join(root, 'scripts/entity_defs/Avatar.def');
+    const defFiles = new Map([['Avatar', defFile]]);
+
+    const withMap = new GeneratedSourceCodeLensProvider(
+      'stub_types.py', [], scalarEntries, null, entityLineMap, defFiles
+    );
+    const lenses = withMap.provideCodeLenses(doc()) as Array<{
+      range?: { start: { line: number } };
+      command?: { title: string; arguments: unknown[] };
+    }>;
+    expect(lenses).toHaveLength(1);
+    expect(lenses[0].range?.start.line).toBe(entityLineMap.propertyLines.get('Avatar')!['level']);
+    expect(lenses[0].command?.title).toContain('原始定义: Avatar .def:24');
+    const [uriArg, optionsArg] = lenses[0].command!.arguments as [{ path: string }, { selection: { start: { line: number } } }];
+    expect(uriArg.path.endsWith('Avatar.def')).toBe(true);
+    expect(optionsArg.selection.start.line).toBe(23);
+
+    const withoutMap = new GeneratedSourceCodeLensProvider(
+      'stub_types.py', [], scalarEntries, null, entityLineMap
+    );
+    expect(withoutMap.provideCodeLenses(doc())).toEqual([]);
+  });
+
   // C-22 交付①补:def 再生后计划刷新:旧计划指向重写前桩文件的旧行,
   // updateEntityPlan 换新条目/行映射并 fire 变更事件让已打开文档重询。
   it('updateEntityPlan:def 再生后刷新条目与行映射,并 fire 变更事件', () => {

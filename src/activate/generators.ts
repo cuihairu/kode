@@ -104,21 +104,20 @@ export function activateGenerators(deps: GeneratorsDeps): GeneratorsShared {
     }
   );
   context.subscriptions.push(exportPythonTypeStubsCommand);
+  const generatedEntityPlanEntries = buildEntityTypeStubPlan(
+    entityMappingManager.getAllMappings(),
+    getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
+  ).entries;
   const generatedEntitySourceLensProviderImpl = new GeneratedSourceCodeLensProvider(
     'entity_types.pyi',
     [],
-    buildEntityTypeStubPlan(
-      entityMappingManager.getAllMappings(),
-      getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
-    ).entries,
+    generatedEntityPlanEntries,
     null,
     // KR-AUD-78:同 python 侧——渲染期记录的真实行映射
-    buildEntityTypeStubLineMap(
-      buildEntityTypeStubPlan(
-        entityMappingManager.getAllMappings(),
-        getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
-      ).entries
-    )
+    buildEntityTypeStubLineMap(generatedEntityPlanEntries),
+    // RUST-160:def 来源镜按实体注册表 defFile 解析跳转目标(旧行为恒跳
+    // types.xml,标量属性的 .def 行号落错文件)
+    new Map(entityMappingManager.getAllMappings().map(mapping => [mapping.name, mapping.defFile]))
   );
   const generatedEntitySourceLensProvider = vscode.languages.registerCodeLensProvider(
     pythonDocumentSelector,

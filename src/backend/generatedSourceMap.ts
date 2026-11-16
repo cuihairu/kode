@@ -10,6 +10,10 @@ import type {
 export interface GeneratedSourceLocation {
   origin: string;
   line: number;
+  /** 来源文件族:types.xml 自定义类型声明,或 .def 实体声明(RUST-160 判别面) */
+  sourceKind: 'types.xml' | 'def';
+  /** 实体面命中时携带属性名(供 lens 按逐属性 defFile 解析跳转目标) */
+  propertyName?: string;
 }
 
 /**
@@ -28,7 +32,7 @@ export function resolvePythonTypeStubSource(
   for (const entry of entries) {
     const declaredLine = lineMap.entryLines.get(entry.name);
     if (declaredLine === documentLine && entry.sourceLine !== null && entry.sourceLine !== undefined) {
-      return { origin: entry.name, line: entry.sourceLine };
+      return { origin: entry.name, line: entry.sourceLine, sourceKind: 'types.xml' };
     }
     if (entry.kind !== 'class') {
       continue;
@@ -43,7 +47,7 @@ export function resolvePythonTypeStubSource(
       }
       const sourceLine = entry.propertySourceLines?.[property.name];
       if (sourceLine !== null && sourceLine !== undefined) {
-        return { origin: entry.name, line: sourceLine };
+        return { origin: entry.name, line: sourceLine, sourceKind: 'types.xml' };
       }
     }
   }
@@ -67,10 +71,9 @@ export function resolveEntityTypeStubSource(
       if (propertyLines[property.name] !== documentLine) {
         continue;
       }
-      return {
-        origin: entry.entity,
-        line: property.customTypeLine ?? property.sourceLine
-      };
+      return property.customTypeLine !== undefined
+        ? { origin: entry.entity, line: property.customTypeLine, sourceKind: 'types.xml', propertyName: property.name }
+        : { origin: entry.entity, line: property.sourceLine, sourceKind: 'def', propertyName: property.name };
     }
   }
   return null;

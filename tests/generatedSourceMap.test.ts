@@ -52,11 +52,13 @@ describe('generated source map (KR-AUD-78 real generated lines)', () => {
 
     expect(resolvePythonTypeStubSource(entries, map, classLine)).toEqual({
       origin: 'ITEM_INFO',
-      line: 4
+      line: 4,
+      sourceKind: 'types.xml'
     });
     expect(resolvePythonTypeStubSource(entries, map, aliasLine)).toEqual({
       origin: 'ITEM_IDS',
-      line: 12
+      line: 12,
+      sourceKind: 'types.xml'
     });
     // 行 0 不再是魔法键:两条目都不在行 0 时无映射
     if (classLine !== 0 && aliasLine !== 0) {
@@ -71,7 +73,8 @@ describe('generated source map (KR-AUD-78 real generated lines)', () => {
     expect(ownerLine).toBeDefined();
     expect(resolvePythonTypeStubSource(entries, map, ownerLine)).toEqual({
       origin: 'ITEM_INFO',
-      line: 8
+      line: 8,
+      sourceKind: 'types.xml'
     });
   });
 
@@ -88,9 +91,12 @@ describe('generated source map (KR-AUD-78 real generated lines)', () => {
 
     expect(resolveEntityTypeStubSource(entries, map, profileLine)).toEqual({
       origin: 'Avatar',
-      line: 4
+      line: 4,
+      sourceKind: 'types.xml',
+      propertyName: 'profile'
     });
-    // 无自定义类型时回落 .def 行
+    // 无自定义类型时回落 .def 行——RUST-160:来源族判别随行返回,lens
+    // 据此跳 .def 文件而非恒跳 types.xml(旧行为的真缺陷)。
     const fallbackEntry: EntityTypeStubEntry = {
       ...entityEntry,
       properties: [{ ...entityEntry.properties[0], customTypeLine: undefined }]
@@ -98,7 +104,9 @@ describe('generated source map (KR-AUD-78 real generated lines)', () => {
     expect(resolveEntityTypeStubSource([fallbackEntry], buildEntityTypeStubLineMap([fallbackEntry]), profileLine))
       .toEqual({
         origin: 'Avatar',
-        line: 24
+        line: 24,
+        sourceKind: 'def',
+        propertyName: 'profile'
       });
   });
 });
