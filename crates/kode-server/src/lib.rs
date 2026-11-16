@@ -10,6 +10,7 @@ pub mod database_schema;
 pub mod db_clone;
 pub mod def_md5;
 pub mod definition;
+pub mod document_symbols;
 pub mod dependency_graph;
 pub mod diagnostics;
 pub mod executor;
@@ -52,6 +53,7 @@ pub use completion::{
     CompletionResponse,
 };
 pub use definition::{dump_definition_golden, DefinitionLocation, LspPosition, LspRange};
+pub use document_symbols::{dump_document_symbols_golden, DocumentSymbolFace};
 pub use references::dump_references_golden;
 pub use diagnostics::{
     dump_diagnostics_golden, DiagnosticFace, SEVERITY_ERROR, SEVERITY_INFORMATION, SEVERITY_WARNING,
