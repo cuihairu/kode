@@ -489,7 +489,7 @@
 - [ ] RUST-217 （旧 PLUG-016） 插件基准：安装 0/5/20 插件下 hover/definition 尾延迟不超配额，恶意死循环隔离测试（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记——0/5/20 插件尾延迟基准与死循环隔离以插件宿主存在为前提,0 插件基准=现状本体(hover/definition 尾延迟由 LSP 面自身预算断言族看护);拍板同 RUST-202。）
 
 ### 13. UI / UX / 可观测与故障恢复
-- [ ] RUST-218 （旧 UI-001） Project Explorer lazy-load；实体、组件、类型、脚本视图共享 Core 索引。
+- [x] RUST-218 （旧 UI-001） Project Explorer lazy-load；实体、组件、类型、脚本视图共享 Core 索引。（2026-11-17 纯对账收口勾行:lazy-load=entityExplorer 树惰性展开逐层兑现(根层只回分组项 getRootGroups,展开分组才取该 category 条目,展开条目才构造 summary+sections,无全量预构建 explorerProviders.ts:97-140);实体/组件/类型视图=kbengine.entityExplorer 单视图四 category 分组(type/entity/interface/component,DefinitionCategory definitionWorkspace.ts:51);共享 Core 索引=数据面 definitionWorkspace(getDefinitionEntries/getWorkspaceRootForDocument)+definitionSemantics loader,与 hover/definition/references/诊断同一共享语义层(Rust Core 同源+TS 兜底冻结,多 root 经 RUST-069-W 根注册表);脚本视图=启动入口脚本面 kbengine.start(startEntry),入口脚本由 def 扫描派生(telnetDeriveTargets def_scan_roots+entry_scripts 直传)与 def 索引同源;诚实条款=脚本视图形态是启动入口面非全量 scripts 浏览树(全量脚本浏览器属新视图需求另批),「共享 Core 索引」指单一数据源多消费面不是「索引已全部在 Rust」(收编进度见精确性主车道台账);对账 docs/review/2026-11-17-rust-218-explorer-lazy-shared-index-acceptance.md;零代码。）
 - [ ] RUST-219 （旧 UI-002） 状态栏：Core ready/indexing/partial/error、engine profile、resource root、索引进度。
 - [ ] RUST-220 （旧 UI-003） 专业性能面板：队列、缓存、索引生成、P95/P99、主要慢请求及处理建议。
 - [ ] RUST-221 （旧 UI-004） Core 重启功能、清缓存功能（展示范围/影响）、export diagnostics；勿要求用户清空 workspace 才能修。
