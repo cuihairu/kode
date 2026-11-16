@@ -730,5 +730,13 @@
   "launch.json updated": "launch.json 已更新",
   "Project wizard needs an open workspace folder": "项目向导需要已打开的工作区文件夹",
   "Seeded default deployment profile {id}": "已生成默认部署 profile {id}",
-  "Project wizard needs an active profile; none exists": "项目向导需要活动 profile;当前不存在"
+  "Project wizard needs an active profile; none exists": "项目向导需要活动 profile;当前不存在",
+  "No KBEngine module symbol here; run from a KBEngine access or pass a symbol name": "此处没有 KBEngine 模块符号;请将光标放在 KBEngine 访问上,或传入符号名",
+  "Engine source for {name} (layer: {layer})": "{name} 的引擎源码(分层: {layer})",
+  "Engine Python definition (typings)": "引擎 Python 定义(typings)",
+  "Engine source anchor (header)": "引擎源码锚(头文件)",
+  "Engine typings file (anchor drifted; line not claimed)": "引擎 typings 文件(锚点已漂移;不声称行号)",
+  "Engine C++ declaration": "引擎 C++ 声明",
+  "Built-in stub document": "内置桩文档",
+  "No engine checkout detected; opening the built-in stub document": "未检测到引擎检出;打开内置桩文档"
 }

@@ -150,6 +150,7 @@
     "onCommand:kbengine.start.retryDiscovery",
     "onCommand:kbengine.extension.identity",
     "onCommand:kbengine.engine.profile",
+    "onCommand:kbengine.api.engineSource",
     "onCommand:kbengine.diagnostics.exportReproSummary",
     "onCommand:kbengine.quickActions.show",
     "onCommand:kbengine.quickActions.scanScripts",
@@ -928,6 +929,10 @@
       {
         "command": "kbengine.engine.profile",
         "title": "%kbengine.command.engine.profile.title%"
+      },
+      {
+        "command": "kbengine.api.engineSource",
+        "title": "%kbengine.command.api.engineSource.title%"
       },
       {
         "command": "kbengine.diagnostics.exportReproSummary",

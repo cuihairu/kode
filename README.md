@@ -439,7 +439,7 @@ If this project helps you, consider giving it a star.
 
 ---
 
-Latest release v0.1.3, published to the Marketplace as `cuihairu.kode-kbengine`. 158 commands and 150 configuration settings are in place (per `package.json` contributes on `main`); the feature catalog in [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) is a 0.1.x snapshot, and [TESTING.md](./TESTING.md) carries the testing record.
+Latest release v0.1.3, published to the Marketplace as `cuihairu.kode-kbengine`. 159 commands and 150 configuration settings are in place (per `package.json` contributes on `main`); the feature catalog in [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) is a 0.1.x snapshot, and [TESTING.md](./TESTING.md) carries the testing record.
 
 ### Demo hot reload receiver
 

@@ -29,6 +29,21 @@ import { detectDualActivation, formatDualActivationWarning } from '../backend/du
 import { readEngineApiMetadata } from '../backend/engineApiMetadata';
 import { buildEngineProfileReport, renderEngineProfileReport } from '../backend/engineProfile';
 import { getEngineVersion } from '../engineVersion';
+import { findEngineRoot } from '../backend/engineCompatibility';
+import {
+  describeEngineApiConstraint,
+  resolveEngineCppDefinition,
+  resolveEnginePythonDefinition
+} from '../backend/engineSourceBinding';
+import { pythonProcessFromPath } from '../backend/pythonProcess';
+import {
+  buildKbeStubDocument,
+  buildKbeStubUriString,
+  getKbeAliases,
+  getKbeSymbol,
+  resolveKbeAccessAtPosition
+} from '../kbeModuleIndex';
+import { KBENGINE_SOURCE_REVEAL_COMMAND } from '../sourceRevealCommand';
 import { execFile } from 'child_process';
 import { findFilesAcrossRoots } from '../scanRoots';
 import { getActiveOperationCounts } from '../languageServiceMetrics';
@@ -353,6 +368,120 @@ export function activateUtilityCommands(deps: UtilityCommandsDeps): void {
     engineProfileChannel.show(true);
   });
   context.subscriptions.push(engineProfileCommand, engineProfileChannel);
+
+  // RUST-174 API metadata 与真实 engine source 绑定:把策展 KBE 符号导航到
+  // 真实引擎检出上的定义(Python=引擎 typings 声明行,锚点运行时复验;
+  // C++=cppClassName 在 kbe/src/lib 头文件里有界扫描)。目标由纯核解析
+  // (engineSourceBinding):锚点漂移只给文件不声称行,引擎检出缺席时直接
+  // 开内置桩并如实说明,绝不伪造位置。version constraints 标注随面板呈现。
+  interface EngineSourcePickItem extends vscode.QuickPickItem {
+    target?: { file: string; line: number | null };
+    stub?: boolean;
+  }
+  const engineSourceCommand = vscode.commands.registerCommand(
+    'kbengine.api.engineSource',
+    async (symbolArg?: string) => {
+      const editor = vscode.window.activeTextEditor;
+      let symbolName = typeof symbolArg === 'string' && symbolArg.trim() ? symbolArg.trim() : undefined;
+      if (!symbolName && editor) {
+        const aliases = getKbeAliases(editor.document.getText());
+        const active = editor.selection.active;
+        const access = resolveKbeAccessAtPosition(
+          editor.document.lineAt(active.line).text,
+          active.character,
+          aliases
+        );
+        symbolName = access?.symbol;
+      }
+      const stubProcess = editor ? pythonProcessFromPath(editor.document.fileName) : null;
+      const entry = symbolName ? getKbeSymbol(symbolName, stubProcess) : null;
+      if (!entry) {
+        void vscode.window.showWarningMessage(
+          l10nText('No KBEngine module symbol here; run from a KBEngine access or pass a symbol name')
+        );
+        return;
+      }
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+      const engineRoot = workspaceRoot ? findEngineRoot(workspaceRoot) : null;
+      const fsDeps = {
+        existsSync: (candidate: string) => fs.existsSync(candidate),
+        readFileSync: (candidate: string) => fs.readFileSync(candidate, 'utf8')
+      };
+      const pythonTarget = resolveEnginePythonDefinition(entry, engineRoot, fsDeps);
+      const cppTarget = resolveEngineCppDefinition(entry, engineRoot, {
+        ...fsDeps,
+        readdirSync: (candidate: string) => fs.readdirSync(candidate, { withFileTypes: true })
+      });
+      const constraint = describeEngineApiConstraint(entry, getEngineVersion(), vscode.env.language);
+
+      const items: EngineSourcePickItem[] = [];
+      if (pythonTarget.kind === 'engine-typings') {
+        // Vector2/3/4 的策展锚点直接落在引擎 C++ 头文件(非 .pyi),标签如实分型
+        items.push({
+          label: entry.sourceFile.endsWith('.pyi')
+            ? l10nText('Engine Python definition (typings)')
+            : l10nText('Engine source anchor (header)'),
+          description: `${pythonTarget.file}:${pythonTarget.line}`,
+          target: { file: pythonTarget.file, line: pythonTarget.line }
+        });
+      } else if (pythonTarget.kind === 'engine-typings-drifted') {
+        items.push({
+          label: l10nText('Engine typings file (anchor drifted; line not claimed)'),
+          description: pythonTarget.file,
+          target: { file: pythonTarget.file, line: null }
+        });
+      }
+      if (cppTarget.kind === 'engine-cpp') {
+        items.push({
+          label: l10nText('Engine C++ declaration'),
+          description: `${cppTarget.file}:${cppTarget.line}`,
+          target: { file: cppTarget.file, line: cppTarget.line }
+        });
+      }
+      const stubUriString = buildKbeStubUriString(stubProcess);
+      const placeholderParts = [
+        l10nText('Engine source for {name} (layer: {layer})', { name: entry.name, layer: constraint.layer })
+      ];
+      if (constraint.annotation) {
+        placeholderParts.push(constraint.annotation);
+      }
+      if (items.length === 0) {
+        // 引擎检出缺席/目标全未命中:内置桩兜底,缺席面如实说明,不静默装引擎
+        void vscode.window.showInformationMessage(
+          l10nText('No engine checkout detected; opening the built-in stub document')
+        );
+        const stubLine = buildKbeStubDocument(stubProcess).symbolLines[entry.name] ?? 0;
+        await vscode.commands.executeCommand(KBENGINE_SOURCE_REVEAL_COMMAND, vscode.Uri.parse(stubUriString), {
+          selection: new vscode.Range(stubLine, 0, stubLine, 0)
+        });
+        return;
+      }
+      items.push({ label: l10nText('Built-in stub document'), description: stubUriString, stub: true });
+      const picked = (await vscode.window.showQuickPick(items, { placeHolder: placeholderParts.join(' — ') })) as
+        | EngineSourcePickItem
+        | undefined;
+      if (!picked) {
+        return;
+      }
+      if (picked.stub) {
+        const stubLine = buildKbeStubDocument(stubProcess).symbolLines[entry.name] ?? 0;
+        await vscode.commands.executeCommand(KBENGINE_SOURCE_REVEAL_COMMAND, vscode.Uri.parse(stubUriString), {
+          selection: new vscode.Range(stubLine, 0, stubLine, 0)
+        });
+        return;
+      }
+      if (picked.target) {
+        await vscode.commands.executeCommand(
+          KBENGINE_SOURCE_REVEAL_COMMAND,
+          vscode.Uri.file(picked.target.file),
+          picked.target.line !== null
+            ? { selection: new vscode.Range(picked.target.line - 1, 0, picked.target.line - 1, 0) }
+            : undefined
+        );
+      }
+    }
+  );
+  context.subscriptions.push(engineSourceCommand);
 
   // IDE-REL-001 两个 Kode ID 共激活检测:激活时查一次当前宿主窗口的
   // Kode 系扩展(cuihairu. 名下 id 含 kode),只有「实际共激活」(两个

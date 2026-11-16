@@ -730,5 +730,13 @@
   "launch.json updated": "launch.json updated",
   "Project wizard needs an open workspace folder": "Project wizard needs an open workspace folder",
   "Seeded default deployment profile {id}": "Seeded default deployment profile {id}",
-  "Project wizard needs an active profile; none exists": "Project wizard needs an active profile; none exists"
+  "Project wizard needs an active profile; none exists": "Project wizard needs an active profile; none exists",
+  "No KBEngine module symbol here; run from a KBEngine access or pass a symbol name": "No KBEngine module symbol here; run from a KBEngine access or pass a symbol name",
+  "Engine source for {name} (layer: {layer})": "Engine source for {name} (layer: {layer})",
+  "Engine Python definition (typings)": "Engine Python definition (typings)",
+  "Engine source anchor (header)": "Engine source anchor (header)",
+  "Engine typings file (anchor drifted; line not claimed)": "Engine typings file (anchor drifted; line not claimed)",
+  "Engine C++ declaration": "Engine C++ declaration",
+  "Built-in stub document": "Built-in stub document",
+  "No engine checkout detected; opening the built-in stub document": "No engine checkout detected; opening the built-in stub document"
 }
