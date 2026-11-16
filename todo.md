@@ -391,7 +391,7 @@
 - [x] RUST-133 （旧 IDX-016） 记录索引缺口（unindexed / partial / stale），按需补齐，避免误报无法找到定义。（feat 1e7117ca；聚合三族+per-URI 四态裁定+fill 按需补齐；health indexGaps 顶层键；17 例 + prove-red 四靶；验收 docs/review/2026-11-16-rust-133-index-gaps.md）
 
 ### 8. LSP 与 IDE 编辑体验
-- [ ] RUST-134 （旧 LSP-001） Completion（声明、类型、实体属性/方法、RPC 参数、组件、内建 API）共享语义查询。
+- [x] RUST-134 （旧 LSP-001） Completion（声明、类型、实体属性/方法、RPC 参数、组件、内建 API）共享语义查询。（feat 68593cdd；py self. 实体成员面收编 Rust 共享查询：实体归属 stem 唯一命中+本类属性/三分面方法/继承链同名遮蔽；TS 补全专用 Rust 文档门 .py 其余面不动；8 例 + prove-red 三靶；验收 docs/review/2026-11-16-rust-134-py-self-completion.md）
 - [ ] RUST-135 （旧 LSP-002） Completion 支持 resolve 延迟补详情，snippet、sortText、filterText、文档与来源。
 - [ ] RUST-136 （旧 LSP-003） Hover 展示完整类型、来源、可用分面、版本与注释，严禁阻塞等待全局索引。(基础版:PR-010 kode-server hover 响应链(定位/签名/继承链+成员展开,def 视图零 IO 应答;分面可见性/版本/注释随语义面扩展;证据 docs/kode2/pr-010.md)
 - [ ] RUST-137 （旧 LSP-004） Definition / Declaration / TypeDefinition：`.def` ↔ `types.xml` ↔ `.py` ↔ 引擎源码。
