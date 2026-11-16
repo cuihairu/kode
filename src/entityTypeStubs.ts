@@ -157,10 +157,11 @@ export async function exportEntityTypeStubs(
   const pyrightGateActive = true;
   for (const folder of folders) {
     const managedDirName = resolveManagedDirName(readManagedDirSetting()).name;
-    const stubDir = resolveStubDir(folder.uri.fsPath, {
+    const resolved = resolveStubDir(folder.uri.fsPath, {
       managedDir: managedDirName, setting: readStubDirSetting(),
       folders: [{ fsPath: folder.uri.fsPath, name: folder.name }]
-    }).dir;
+    });
+    const stubDir = resolved.dir;
     const isolated = deps.exists(`${processStubRoot(stubDir, 'base')}/KBEngine/__init__.pyi`);
     const outputs = isolated
       ? (['base', 'cell', 'bots', 'client'] as const).map(process => ({
@@ -172,6 +173,10 @@ export async function exportEntityTypeStubs(
         { includeMethods, workspaceRoot: folder.uri.fsPath, role: output.role });
       if (!plan.content) { continue; }
       const target = `${output.dir}/${ENTITY_TYPE_STUB_FILE_NAME}`;
+      // RUST-166:用户指定目录是用户资产——目标文件已在就不碰（与 kbe_types
+      // 分件闸同口径,也兑现配置文档「目录里已有任何 .pyi 一律当用户资产不
+      // 碰」的承诺）;默认托管目录归 kode 自管,走内容比对零写。
+      if (resolved.userOwned && deps.exists(target)) { continue; }
       // 陈旧探测单独成段:读现有存根抛错(权限/IO)= 按陈旧处理,捕获后照常
       // 重写(契约钉在 cov-entity-schema「读现有存根抛错按陈旧处理」);写盘
       // 失败才是「导出失败」警告面。两段不可合并——合并后读失败会连写盘

@@ -19,6 +19,7 @@ import {
   lastFileSystemWatcher,
   messages,
   Uri,
+  window,
   workspace as stubWorkspace,
   workspaceState
 } from './helpers/vscodeStub';
@@ -107,6 +108,17 @@ function makeDeps(input: MakeDepsInput): InferPipelineDeps {
 
 let tmpRoots: string[] = [];
 
+// RUST-166:.gitignore 建议弹窗脚本化应答——fake-vscode 默认桩恒 undefined
+// (=「暂不」拒答);断言「点击加入」路径的用例先换桩。afterEach 统一还原。
+const defaultShowInformationMessage = window.showInformationMessage;
+
+function scriptGitignoreChoice(choice: string): void {
+  window.showInformationMessage = (async (message: string) => {
+    messages.info.push(message);
+    return choice;
+  }) as typeof window.showInformationMessage;
+}
+
 function makeTmpWorkspace(): { root: string; scriptsRoot: string; files: Map<string, string> } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-infer-'));
   tmpRoots.push(root);
@@ -123,6 +135,7 @@ function makeTmpWorkspace(): { root: string; scriptsRoot: string; files: Map<str
 }
 
 afterEach(() => {
+  window.showInformationMessage = defaultShowInformationMessage;
   messages.info.length = 0;
   messages.warning.length = 0;
   messages.error.length = 0;
@@ -150,25 +163,49 @@ describe('applyManagedDirExclusions(隔离面执行器)', () => {
       searchWritten: [],
       watcherWritten: [],
       gitignoreWritten: [],
-      gitignoreSkippedMissing: []
+      gitignoreSkippedMissing: [],
+      gitignoreSuggested: []
     });
     expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(0);
   });
 
-  it('git 仓且 .gitignore 存在:写 search/watcher + 幂等追加 gitignore', async () => {
+  it('git 仓且 .gitignore 存在:先建议不擅写;拒答记定局,激活期不再重复问', async () => {
     const { root } = makeTmpWorkspace();
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     const files = new Map<string, string>([[path.join(root, '.gitignore'), 'node_modules/\n']]);
     const deps = makeDeps({ files, findGitRoot: () => root });
-    const result = await applyManagedDirExclusions(makeContext(), deps, { silent: true });
+    const context = makeContext();
+    const result = await applyManagedDirExclusions(context, deps, { silent: true });
+    // search/watcher 隔离不受建议流影响,照常写
     expect(result.searchWritten).toEqual(['ws']);
     expect(result.watcherWritten).toEqual(['ws']);
-    expect(result.gitignoreWritten).toEqual([root]);
+    // RUST-166:建议而非擅自编辑——默认应答(暂不/关闭)不写 .gitignore
+    expect(result.gitignoreWritten).toEqual([]);
+    expect(result.gitignoreSuggested).toEqual([root]);
     expect(result.gitignoreSkippedMissing).toEqual([]);
+    expect(files.get(path.join(root, '.gitignore'))).toBe('node_modules/\n');
     const search = workspaceState.workspaceConfigurationUpdates.find((u) => u.key === 'search.exclude');
     expect(search?.value).toEqual({ '.kbengine/**': true });
     const watcher = workspaceState.workspaceConfigurationUpdates.find((u) => u.key === 'files.watcherExclude');
     expect(watcher?.value).toEqual({ '.kbengine/**': true });
+    // 拒答也是表态:记「已定局」,此后条目缺失=用户意图,不再弹不再写
+    expect(memento.get(`infer.gitignore.writeOnce:${root}:.kbengine`)).toBe(true);
+    files.set(path.join(root, '.gitignore'), 'node_modules/\n');
+    const second = await applyManagedDirExclusions(context, deps, { silent: true });
+    expect(second.gitignoreSuggested).toEqual([]);
+    expect(second.gitignoreWritten).toEqual([]);
+    expect(files.get(path.join(root, '.gitignore'))).toBe('node_modules/\n');
+  });
+
+  it('建议点击「加入 .gitignore」后才写盘(建议而非擅自编辑)', async () => {
+    const { root } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const files = new Map<string, string>([[path.join(root, '.gitignore'), 'node_modules/\n']]);
+    const deps = makeDeps({ files, findGitRoot: () => root });
+    scriptGitignoreChoice('加入 .gitignore');
+    const result = await applyManagedDirExclusions(makeContext(), deps, { silent: true });
+    expect(result.gitignoreSuggested).toEqual([root]);
+    expect(result.gitignoreWritten).toEqual([root]);
     expect(files.get(path.join(root, '.gitignore'))).toContain('# kode managed dir (auto-generated)');
     expect(files.get(path.join(root, '.gitignore'))).toContain('.kbengine/');
   });
@@ -191,6 +228,7 @@ describe('applyManagedDirExclusions(隔离面执行器)', () => {
     const files = new Map<string, string>([[gitignorePath, 'node_modules/\n']]);
     const deps = makeDeps({ files, findGitRoot: () => root });
     const context = makeContext();
+    scriptGitignoreChoice('加入 .gitignore');
     await applyManagedDirExclusions(context, deps, { silent: true });
     expect(files.get(gitignorePath)).toContain('.kbengine/');
     expect(memento.get(`infer.gitignore.writeOnce:${root}:.kbengine`)).toBe(true);
@@ -241,6 +279,7 @@ describe('applyManagedDirExclusions(隔离面执行器)', () => {
     const context = makeContext();
     await applyManagedDirExclusions(context, deps, { silent: true });
     configurationOverrides.set('kbengine', { 'managedDir': '.kbe2' });
+    scriptGitignoreChoice('加入 .gitignore');
     const result = await applyManagedDirExclusions(context, deps, { silent: true });
     expect(result.gitignoreWritten).toEqual([root]);
     expect(files.get(gitignorePath)).toContain('.kbe2/');
@@ -273,6 +312,7 @@ describe('applyManagedDirExclusions(隔离面执行器)', () => {
     const files = new Map<string, string>([[path.join(root, '.gitignore'), 'node_modules/\n']]);
     const deps = makeDeps({ files, findGitRoot: () => root });
     const context = makeContext();
+    scriptGitignoreChoice('加入 .gitignore');
     await applyManagedDirExclusions(context, deps, { silent: true });
     // 模拟真环境里 update 已生效(fake 的 update 只记账不回落 get),再跑一次
     configurationOverrides.set('search', { exclude: { '.kbengine/**': true } });
@@ -288,9 +328,26 @@ describe('applyManagedDirExclusions(隔离面执行器)', () => {
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     const files = new Map<string, string>([[path.join(root, '.gitignore'), 'node_modules/\n']]);
     const deps = makeDeps({ files, findGitRoot: () => root });
+    scriptGitignoreChoice('加入 .gitignore');
     await applyManagedDirExclusions(makeContext(), deps);
-    expect(messages.info[0]).toContain('.kbengine 隔离已接线');
-    expect(messages.info[0]).toContain('search.exclude');
+    // 首条是建议弹窗本体,其后是汇总播报
+    expect(messages.info[0]).toContain('建议将');
+    const broadcast = messages.info.find((message) => message.includes('.kbengine 隔离已接线'));
+    expect(broadcast).toContain('search.exclude');
+    expect(broadcast).toContain('.gitignore');
+  });
+
+  it('拒答路径不写 .gitignore,汇总播报不含 gitignore 面', async () => {
+    const { root } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const files = new Map<string, string>([[path.join(root, '.gitignore'), 'node_modules/\n']]);
+    const deps = makeDeps({ files, findGitRoot: () => root });
+    await applyManagedDirExclusions(makeContext(), deps);
+    expect(messages.info[0]).toContain('建议将');
+    expect(messages.info.some((message) => message.includes('.kbengine 隔离已接线'))).toBe(true);
+    const broadcast = messages.info.find((message) => message.includes('.kbengine 隔离已接线'));
+    expect(broadcast).not.toContain('.gitignore');
+    expect(files.get(path.join(root, '.gitignore'))).toBe('node_modules/\n');
   });
 });
 

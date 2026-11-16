@@ -160,15 +160,17 @@ export interface ExclusionsApplyResult {
   gitignoreWritten: string[];
   /** gitignore 因文件不存在而跳过（绝不创建） */
   gitignoreSkippedMissing: string[];
+  /** RUST-166:弹过「加入 .gitignore」建议的仓根（未写盘，等用户表态） */
+  gitignoreSuggested: string[];
 }
 
 /**
  * 同步 `.kbengine` 隔离：search.exclude + files.watcherExclude（只管理自己
- * 那一段）+ gitignore（git 仓 + 已存在才追加，绝不创建；**写一次记忆**——
- * 激活期每 仓根×托管目录名 至多补写一次，条目曾在场即记「已定局」，此后
- * 缺失 = 用户删除 = 尊重不再补回）。激活期静默，命令面板手动跑
- * （`kbengine.managedDir.syncExclusions`，userRequested）显式请求绕过记忆，
- * 补写并播报。
+ * 那一段）+ gitignore（git 仓 + 已存在才**建议**追加，绝不创建；RUST-166
+ * 用户令「建议而非擅自编辑」——激活期弹询问，用户点击「加入」才写；拒答/
+ * 关闭同样记**写一次记忆**「已定局」，此后缺失 = 用户表态过 = 尊重不再弹，
+ * 命令面板手动跑（`kbengine.managedDir.syncExclusions`，userRequested）是
+ * 显式请求=已表态，直接补写并播报）。
  */
 export async function applyManagedDirExclusions(
   context: vscode.ExtensionContext,
@@ -179,7 +181,8 @@ export async function applyManagedDirExclusions(
     searchWritten: [],
     watcherWritten: [],
     gitignoreWritten: [],
-    gitignoreSkippedMissing: []
+    gitignoreSkippedMissing: [],
+    gitignoreSuggested: []
   };
   if (!exclusionsSyncEnabled()) {
     return result;
@@ -224,9 +227,26 @@ export async function applyManagedDirExclusions(
     }
     const plan = planGitignoreAdd(gitignoreContent, managedDir);
     if (plan.action === 'append') {
-      deps.writeText(gitignorePath, plan.nextContent);
-      await context.workspaceState?.update(writeOnce, true);
-      result.gitignoreWritten.push(root);
+      // RUST-166:建议而非擅自编辑。手动命令（userRequested）=用户显式请求
+      // 已表态，直接写；其余路径先弹询问，用户点击「加入」才写。
+      let confirmed = options.userRequested === true;
+      if (!confirmed) {
+        const choice = await vscode.window.showInformationMessage(
+          `建议将 ${managedDir}/ 加入 .gitignore（KBEngine 生成产物不建议入库；确认前 .gitignore 不会被修改）`,
+          '加入 .gitignore', '暂不'
+        );
+        result.gitignoreSuggested.push(root);
+        confirmed = choice === '加入 .gitignore';
+      }
+      if (confirmed) {
+        deps.writeText(gitignorePath, plan.nextContent);
+        await context.workspaceState?.update(writeOnce, true);
+        result.gitignoreWritten.push(root);
+      } else {
+        // 拒答/关闭也是表态：记「已定局」，激活期不再重复弹窗（条目缺失 =
+        // 用户意图）；syncExclusions 命令始终是显式再入口。
+        await context.workspaceState?.update(writeOnce, true);
+      }
     } else {
       // 条目已在场（kode 段或用户手写等价条目）：记「已定局」，从此激活期
       // 不再碰这条目（删除=用户意图）。
