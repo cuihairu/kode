@@ -35,6 +35,12 @@
 4. **inlay 7 族 stale/cancel/cold 大面积 GAP、codeLens 7 族 cancel GAP、references/workspaceSymbol/implementation stale GAP**:批 3+ 候选,按用户影响排序。
 5. **semanticTokensProvider 签名不带 token**(RUST-144 批 4 如实边界):同步零 await 计算,cancel 维度结构性 N-A;若批 2 引入 Rust 异步取数须同步补 token 面。
 
+## 批 2(同日续):root-change 摘除处理器 + gate 根差量接线测试
+
+1. **发现①裁定=补处理器落地**:extension.ts closeWatcher body 提取为 `teardownDocumentState`(逐族 collection.delete+scheduler.releaseDocument+documentStore 快照+Rust 镜像 overlay/版本账+注解桶+schema 缓存,幂等可重建);closeWatcher 与新增 `rootRemovalWatcher`(onDidChangeWorkspaceFolders removed 段,枚举 `vscode.workspace.textDocuments` 前缀匹配被移除根)共用——VSCode 不随根移除关 tab,映射链已拆(languageServices 同事件面),仍开着的文档其已发布诊断是过期语义,与 close 同口径摘除;文档保留打开,后续编辑走既有重算链(映射空=零产出)。钉:tests/covExtensionCommands.test.ts 根移除扇出钉(seed 13 族双文档→fire removed→被移除根文档逐族清+其他根文档保留)。prove-red:恒 false 变异→钉红,cp+cmp 还原。
+2. **发现②落地:kodeCoreGateWiring 接线测试**:根差量→gate 动作序列提取为 `syncRootDiffToGate`(export,移除先于注册、仅新增触发补镜像、返回新快照滚动基准),setupKodeCoreGate 内行为等价改写;钉:tests/cov-longtail.test.ts diffScanRoots 纯差量五例(增/删/混合/空基线/重复输入)+syncRootDiffToGate 序列三拍(移除+注册+镜像/同输入零差量零镜像/纯移除不镜像)。prove-red:remirror 条件变异→钉红,cp+cmp 还原。
+3. ANCHORS 锁步:extension.ts 449/548→472/571(teardown 提取+rootRemovalWatcher 净 +23),perfCallChainDoc 历史注+2026-baseline.md §7 两出处同步。
+
 ## 门禁
 
 eslint 0 / tsc 0 / vitest 全量 860 文件 EXIT=0(首轮唯一红=AUD-076 墙钟 330ms>200ms,在案负载抖动族,solo 61 绿+全量复跑 EXIT=0,与本批触碰面无关)/ xvfb demo 25 RC=0;ANCHORS 锁步=extension.ts 440/539→449/548+perfCallChainDoc 历史注+2026-baseline.md §7 两出处同步;todo.md 批注带 d124e7a4;prove-red 一靶(cp+cmp 还原)。
