@@ -22,13 +22,15 @@ pub mod disk;
 pub mod line_index;
 pub mod parse_cache;
 pub mod persist_key;
+pub mod persist_store;
 pub mod store;
 pub mod uri;
 pub mod walk;
 
 pub use disk::{DiskCache, DiskFingerprint};
 pub use line_index::{utf16_len, DocumentBuffer, LineIndex, Position, Range, TextChange};
-pub use parse_cache::{content_fingerprint, ParseCache};
+pub use parse_cache::{content_fingerprint, content_fingerprint_bytes, ParseCache};
+pub use persist_store::PersistStore;
 pub use store::{
     ContentSource, DocumentKey, DocumentSnapshot, DocumentStore, RemovedDocument, RootId,
     RootRegistry, VersionConflict,

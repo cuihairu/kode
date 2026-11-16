@@ -23,12 +23,18 @@ use crate::store::{DocumentKey, RootId};
 
 /// 内容指纹(FNV-1a 64;含长度防尾碰撞)。
 pub fn content_fingerprint(text: &str) -> u64 {
+    content_fingerprint_bytes(text.as_bytes())
+}
+
+/// 字节面内容指纹(与 [`content_fingerprint`] 同算法同长度混合;RUST-127
+/// 持久化帧的损坏检测走这里,payload 是任意字节非 UTF-8)。
+pub fn content_fingerprint_bytes(bytes: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in text.as_bytes() {
+    for byte in bytes {
         hash ^= *byte as u64;
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
-    hash ^ (text.len() as u64).rotate_left(32)
+    hash ^ (bytes.len() as u64).rotate_left(32)
 }
 
 struct ValidEntry<V> {
