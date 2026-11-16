@@ -24,6 +24,12 @@ const signatureHelpRegistrations: ProviderRegistration[] = [];
 const codeLensRegistrations: ProviderRegistration[] = [];
 const codeActionsRegistrations: ProviderRegistration[] = [];
 const inlayHintsRegistrations: ProviderRegistration[] = [];
+// 语义 token 注册第三参是 legend 不是触发字符,独立形态记账
+const semanticTokensRegistrations: Array<{
+  selector: unknown;
+  provider: unknown;
+  legend: unknown;
+}> = [];
 const diagnosticCollections: Array<{ name: string; collection: DiagnosticCollection }> = [];
 
 const register = (bucket: ProviderRegistration[]) =>
@@ -56,6 +62,22 @@ export const languages = {
   registerCodeLensProvider: register(codeLensRegistrations),
   registerCodeActionsProvider: register(codeActionsRegistrations),
   registerInlayHintsProvider: register(inlayHintsRegistrations),
+  registerDocumentSemanticTokensProvider: (
+    selector: unknown,
+    provider: unknown,
+    legend: unknown
+  ): { dispose(): void } => {
+    const registration = { selector, provider, legend };
+    semanticTokensRegistrations.push(registration);
+    return {
+      dispose: (): void => {
+        const index = semanticTokensRegistrations.indexOf(registration);
+        if (index >= 0) {
+          semanticTokensRegistrations.splice(index, 1);
+        }
+      }
+    };
+  },
   createDiagnosticCollection: (name: string): DiagnosticCollection => {
     const collection = new DiagnosticCollection();
     diagnosticCollections.push({ name, collection });
@@ -77,6 +99,7 @@ export const languagesRegistry = {
   codeLensRegistrations,
   codeActionsRegistrations,
   inlayHintsRegistrations,
+  semanticTokensRegistrations,
   diagnosticCollections,
   reset: (): void => {
     completionRegistrations.length = 0;
@@ -92,6 +115,7 @@ export const languagesRegistry = {
     codeLensRegistrations.length = 0;
     codeActionsRegistrations.length = 0;
     inlayHintsRegistrations.length = 0;
+    semanticTokensRegistrations.length = 0;
     diagnosticCollections.length = 0;
   }
 };

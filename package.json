@@ -1674,6 +1674,11 @@
           "default": true,
           "markdownDescription": "%kbengine.config.inlayHints.defProps.description%"
         },
+        "kbengine.semanticTokens.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%kbengine.config.semanticTokens.enabled.description%"
+        },
         "kbengine.inlayHints.propertyShadow": {
           "type": "boolean",
           "default": true,

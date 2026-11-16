@@ -15,6 +15,7 @@ import * as vscode from 'vscode';
 import { CallChainController } from '../defCallChainProvider';
 import { DefParamInlayHintsProvider } from '../defParamInlayHints';
 import { DefPropsInlayHintsProvider } from '../defPropsInlayHints';
+import { SemanticTokensProvider, buildSemanticTokensLegend } from '../semanticTokensProvider';
 import { getCustomTypeInfos, getRegisteredEntities } from '../definitionWorkspace';
 import { createFileChangeMetaResolver } from '../backend/fileChangeMeta';
 import { logIndexFileChangeMeta } from '../backend/fileChangeMetaLog';
@@ -630,6 +631,20 @@ export function activateLanguageServices(deps: LanguageServicesDeps): LanguageSe
     new DefPropsInlayHintsProvider(entityMappingManager)
   );
   context.subscriptions.push(defPropsInlayHintsProvider);
+
+  // RUST-144 批 4 语义 token:python 结构符号(class/function/method/
+  // parameter/macro+declaration/async)交 VSCode 语义高亮;决策核在
+  // backend/semanticTokens.ts(与 Rust golden 对拍同源),类型/修饰全用
+  // 标准内建名无 contributes 声明面;独立开关 kbengine.semanticTokens.
+  // enabled 默认关(python 语义 token 常由 Pylance 提供,冲突矩阵
+  // RUST-148 裁定前 opt-in),provider 内按文档版本缓存(批 3 成本评测
+  // 结论:重算只发生在版本变更),现读配置下一次请求即生效
+  const semanticTokensProvider = vscode.languages.registerDocumentSemanticTokensProvider(
+    pythonDocumentSelector,
+    new SemanticTokensProvider(),
+    buildSemanticTokensLegend()
+  );
+  context.subscriptions.push(semanticTokensProvider);
 
   // KODE-CFG-017-R 推断镜像行内提示:源行未标注而 .kbengine/inferred 副本
   // 同行有 pyrefly 注解处 `: <type>` / `-> <type>`;开关复用 infer.enabled

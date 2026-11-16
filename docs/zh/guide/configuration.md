@@ -160,6 +160,7 @@ VS Code 设置界每个键的提示都以 `markdownDescription` 写成:一句话
 | `kbengine.inlayHints.typeData` | boolean | `true` | python 侧 `self.<属性>` 访问处以内联提示显示解析到底的类型注解(types.xml 别名逐层解析到底层内建,如 SERVER_ID→int;PYTHON/未知落 Any 不显示);`self.base/cell/client` RPC 调用点每实参后内联显示 def 已声明的形参类型(`: 类型`,只显类型不带合成形参名,只做已声明的,过段闸);数组 `<of>` 元素类型在 `for item in self.<属性>:` 迭代目标与 `x = self.<属性>[i]` 下标赋值局部变量后内联显示(同一解析链),与属性 F12 同一解析索引(批154;解析到底口径 2026-10-29;元素类型 2026-11-04) |
 | `kbengine.inlayHints.defParams` | boolean | `true` | entity 脚本区块(ClientMethods/BaseMethods/CellMethods)内 def 定义点的内联提示:未手写标注的形参名后内联 def 声明的 `<Arg>` 类型(`: 类型`),声明 `<ReturnType>` 时闭括号后内联 `-> 类型`;跨行 def 不出(与调用点 inlay 同规则) |
 | `kbengine.inlayHints.defProps` | boolean | `true` | entity 脚本内整行注释锚 `# kode:props-from-def` 行尾内联渲染该实体 def 根级属性只读清单(逐属性名+解析类型;段悬停给 def 声明出处)。纯渲染层,不写代码,属性唯一事实源仍为 .def |
+| `kbengine.semanticTokens.enabled` | boolean | `false` | Python 结构符号语义 token:class/function/method/parameter 名与装饰器(macro),declaration/async 修饰;决策核与 Rust golden 对拍同源(RUST-144)。默认关闭——Python 语义高亮通常由 Pylance 提供,冲突矩阵(RUST-148)裁定前按需开启;关闭时零 token |
 | `kbengine.inlayHints.propertyShadow` | boolean | `true` | 淡色内嵌提示,永不下划线:`self.y = self.cellData["x"]` 赋值行与裸的域外读取处渲染「复制属性 x: <类型> · cell」;`self.cellData["key"]` 访问后渲染 key 的 def 面(标签只显 cell 面,域位不含 cell 保持原域位并追加「不在 cellData」,完整并集留悬停);解析得出 def 声明的提示把声明落点作导航目标(Ctrl+点击,与非复制提示一致);受 `kbengine.propertyDirectionDiagnostics` 双控 |
 
 四类 CodeLens 开关变更即时生效,不用重载窗口;inlay 无变更事件,关掉后下一次渲染生效。

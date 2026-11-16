@@ -274,11 +274,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-16(RUST-135):inline 补全 provider 对象加 resolveCompletionItem 委托
   // +5 行(位于 128 打点之后)→ 其后四点 +5(204/277/344/745 → 209/282/349/750,
   // 真位重探)。出处随 baseline 锁步。
-  ['src/activate/languageServices.ts', 209, "startLanguageServiceOperation('hover'"],
-  ['src/activate/languageServices.ts', 282, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 349, "startLanguageServiceOperation('definition'"],
-  ['src/activate/languageServices.ts', 128, "startLanguageServiceOperation('completion'"],
-  ['src/activate/languageServices.ts', 750, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 210, "startLanguageServiceOperation('hover'"],
+  ['src/activate/languageServices.ts', 283, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 350, "startLanguageServiceOperation('definition'"],
+  ['src/activate/languageServices.ts', 129, "startLanguageServiceOperation('completion'"],
+  ['src/activate/languageServices.ts', 765, "startLanguageServiceOperation('completion'"],
   // 2026-11-10(SPN-R1):diagnostics.ts spaceNav 臂 Rust-first 接线顶部 import
   // +1 行 → 两处诊断打点锚点 +1(117/130 → 118/131,真位重探)。
   // 2026-11-10(RN-R1):diagnostics.ts receiverNone 臂 Rust-first 接线顶部 import
@@ -537,6 +537,11 @@ const ANCHORS: Array<[string, number, string]> = [
   // src/languageProviders/* 子模块——languageProviders.ts 锚点随拆分轮次逐轮
   // 真位重探到新模块文件,出处随 baseline 锁步;行映射由拆分脚本机械推导,
   // 零行为变更。
+
+  // 2026-11-16(RUST-144 批 4):languageServices.ts 顶部 import +1
+  // (SemanticTokensProvider/buildSemanticTokensLegend)与语义 token 注册块
+  // +14(defProps 注册块之后)——前四打点 128/209/282/349 → 129/210/283/
+  // 350(+1),750 → 765(+15,真位重探);出处随 baseline 锁步。
 ];
 
   // 2026-11-14(KSEM-SER-07):diagnostics.ts SER-07 push 块 + import 组累计

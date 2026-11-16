@@ -49,6 +49,7 @@
 | InferredMirrorTypeInlayHintsProvider | languageProviders/inlay.ts:68 | :584 | 托管目录推断镜像注解文件(kbengine.infer.enabled 闸;定义点行差分) | 纯读 |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | 纯读 |
 | DefPropsInlayHintsProvider | defPropsInlayHints.ts:126 | :1432 | EntityMappingManager(`listPropertyDefinitionsForFile` 锚点所属实体的根级属性清单) | 纯读 |
+| SemanticTokensProvider | semanticTokensProvider.ts:35 | activate/languageServices.ts:644(RUST-144 批 4) | 无(纯文本决策核 backend/semanticTokens.ts,与 Rust golden 对拍同源;按文档版本缓存;kbengine.semanticTokens.enabled 闸,默认关待 RUST-148 冲突矩阵裁定) | 纯读 |
 | KBEnginePropertyShadowInlayHintsProvider | languageProviders/inlay.ts:122 | :600 | EntityMappingManager(`resolvePropertyDefinitionInfo` 复制属性与 cellData 键提示的域位/类型面;`kbengine.inlayHints.propertyShadow` × `kbengine.propertyDirectionDiagnostics` 双控) | 纯读 |
 | KBEngineProxyInternalAttrHintsProvider | languageProviders/inlay.ts:225 | :609 | 项目桩副本 Proxy.pyi(声明行现场扫描;`kbengine.python.proxyInternalAttrHints` 单闸;仅 demo 资产脚本域) | 纯读 |
 | KBEngineCallHierarchyProvider | languageProviders.ts:5013 | :1223 | EntityMappingManager(def/python 双选区调用层级) | 纯读 |

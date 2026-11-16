@@ -427,6 +427,7 @@
 | `kbengine.inlayHints.typeData` | `true` | `self.<属性>` 访问处内联显示 def 声明的 types.xml 数据类型;`self.base/cell/client` RPC 调用点内联显示 def 已声明的形参类型;数组 `<of>` 元素类型在 `for ... in self.<属性>` 目标与下标赋值局部变量后内联显示 |
 | `kbengine.inlayHints.defParams` | `true` | entity 脚本区块内 def 未标注形参内联 def 声明的 `<Arg>` 类型;声明 `<ReturnType>` 时内联 `-> 类型` |
 | `kbengine.inlayHints.defProps` | `true` | 整行注释锚 `# kode:props-from-def` 行尾内联渲染该实体 def 根级属性只读清单(名+类型;悬停给声明出处) |
+| `kbengine.semanticTokens.enabled` | `false` | Python 结构符号语义 token(class/function/method/parameter 名,装饰器 macro,declaration/async 修饰;决策核与 Rust golden 对拍同源)。默认关闭——Python 语义高亮通常由 Pylance 提供,RUST-148 冲突矩阵裁定前按需开启 |
 | `kbengine.inlayHints.propertyShadow` | `true` | 淡色内嵌提示(永不下划线):`self.y = self.cellData["x"]` 赋值行与裸的域外读取处渲染「复制属性 x: <类型> · <域位>」;`self.cellData["key"]` 访问后渲染 key 的 def 面(域位不含 cell 追加「不在 cellData」);受 `kbengine.propertyDirectionDiagnostics` 双控 |
 | `kbengine.entityDefsPath` | `"scripts/entity_defs"` | 实体定义文件默认路径 |
 | `kbengine.entitiesXmlPath` | `"scripts/entities.xml"` | entities.xml 默认路径 |

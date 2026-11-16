@@ -49,6 +49,7 @@ Registration sites are extension.ts line numbers (2026-11-07 真位复核:KODE-A
 | InferredMirrorTypeInlayHintsProvider | languageProviders/inlay.ts:68 | :584 | Inferred mirror annotation files under managed dir (kbengine.infer.enabled gate; definition-point line diff) | Pure read |
 | DefParamInlayHintsProvider | defParamInlayHints.ts:226 | :1217 | EntityMappingManager | Pure read |
 | DefPropsInlayHintsProvider | defPropsInlayHints.ts:126 | :1432 | EntityMappingManager (`listPropertyDefinitionsForFile` root-level properties for the anchor's entity) | Pure read |
+| SemanticTokensProvider | semanticTokensProvider.ts:35 | activate/languageServices.ts:644 (RUST-144 batch 4) | None (pure-text decision core `backend/semanticTokens.ts`, Rust parity golden; version-keyed cache; `kbengine.semanticTokens.enabled` gate, default off pending RUST-148 conflict matrix) | Pure read |
 | KBEnginePropertyShadowInlayHintsProvider | languageProviders/inlay.ts:122 | :600 | EntityMappingManager (`resolvePropertyDefinitionInfo` domain/type faces for copy-property and cellData-key hints; `kbengine.inlayHints.propertyShadow` × `kbengine.propertyDirectionDiagnostics` dual gate) | Pure read |
 | KBEngineProxyInternalAttrHintsProvider | languageProviders/inlay.ts:225 | :609 | Project stub-copy Proxy.pyi (line-scanned declaration rows; `kbengine.python.proxyInternalAttrHints` gate; demo asset script domains only) | Pure read |
 | KBEngineCallHierarchyProvider | languageProviders/callHierarchy.ts:9 | :1425 | EntityMappingManager (def/python dual-selection call hierarchy) | Pure read |

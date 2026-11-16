@@ -84,6 +84,19 @@ export class FileDecoration {
 
 const URI_SCHEME_PATTERN = /^([A-Za-z][A-Za-z0-9+.-]*):\/?\/?/;
 
+// 语义 token 装配面(RUST-144 批 4):与真实 API 同形的最小占位——
+// data 只读传递,legend 记录构造入参供注册断言。
+export class SemanticTokens {
+  constructor(public readonly data: Uint32Array) {}
+}
+
+export class SemanticTokensLegend {
+  constructor(
+    public readonly tokenTypes: string[],
+    public readonly tokenModifiers: string[]
+  ) {}
+}
+
 export class Uri {
   readonly scheme: string;
   readonly path: string;

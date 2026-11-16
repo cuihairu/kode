@@ -201,6 +201,12 @@ describe('extension activate 装配', () => {
     // 批 ③ Proxy 内部属性提示(内部属性 · Proxy + 项目副本 Proxy.pyi 导航)
     // 再一份独立注册(proxyInternalAttrHints 开关)
     expect(languagesRegistry.inlayHintsRegistrations).toHaveLength(7);
+  // RUST-144 批 4:python 结构符号语义 token 单注册(默认关,RUST-148
+  // 冲突矩阵裁定前 opt-in;legend 与决策核常量同源)
+  expect(languagesRegistry.semanticTokensRegistrations).toHaveLength(1);
+  expect(languagesRegistry.semanticTokensRegistrations[0].legend.tokenTypes).toEqual([
+    'class', 'function', 'method', 'parameter', 'macro'
+  ]);
     // 批91 起:def 分析命令的独立诊断集合与语言侧诊断并存;
     // 书 §19 HR-PR-02:临时编辑热更新问题通道诊断集并存一份;
     // C-19 起 def↔Python 方法一致性独立诊断集再一份(不并 kbengine 主集);
