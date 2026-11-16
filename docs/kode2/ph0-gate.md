@@ -8,7 +8,7 @@
 
 | 门 | 状态 | 一句话 |
 |---|---|---|
-| 门 1 基准(bench) | 🟡 | TS 侧基准正本已立(PR1/PR7);Hover/Completion 端到端、内存、多轮中位已实测关闭(2026-gate-baseline.md);**Rust 双轨对拍基准已实测关闭(servingGate 五面:语义 parity+P99/RSS/CPU 界,nightly perf gate 接线,RUST-242 CPU 门 2026-11-17);余:A1-7 调用链图 Mermaid(真缺口,legacy-todo-audit 同记 ❌)、VS Code UI 层端口径(真机走查腿已覆盖,脚本口径仍留白)** |
+| 门 1 基准(bench) | 🟡 | TS 侧基准正本已立(PR1/PR7);Hover/Completion 端到端、内存、多轮中位已实测关闭(2026-gate-baseline.md);**Rust 双轨对拍基准已实测关闭(servingGate 五面:语义 parity+P99/RSS/CPU 界,nightly perf gate 接线,RUST-242 CPU 门 2026-11-17);A1-7 调用链图已闭(2026-11-17 修正:图在 2026-baseline.md §7 四 mermaid 块,legacy-todo-audit 记 ❌ 系 §7 落地前旧审计);余:VS Code UI 层端口径(真机走查腿已覆盖,脚本口径仍留白)** |
 | 门 2 正确性 fixture(parity) | 🟢(最小集+扩面过半) | 四主请求 golden 已锁定(11 请求);**Rust 对拍执行器实质在库(18 golden:crates/kode-server/tests/golden/,hover/completion/definition/diagnostics/document-symbols/references/rename/semantic-tokens/call-at/method-calls/code-action/flag-domains/wire/def-md5/param-hints/props/diagnostic-pipeline/semantics-facts);余:signatureHelp 独立 golden、多根同名顺序 golden、规模轴 parity** |
 | 门 3 回退方案(rollback) | 🟡 | kill-switch 三值+shadow 对拍+差异日志+演练判据已落(PR-012);`kbengine.core.backend` 默认已按 2026-11-08 用户令切 rust 服务轨道(TS 冻结为杀开关兜底,docs/kode2/feature-flags.md 台账);**provider 逐面接入 compare 后的首次实战回退演练未执行** |
 
@@ -30,7 +30,7 @@
 - [x] 🟢 冷启动内存占用已记录(同上 §4,RSS 峰值口径,25ms 采样):激活期峰值 **115.40 MB**(+32.40 MB);全量扫描期(30,001 .py)峰值 **687.19 MB**(+571.64 MB;3 轮峰值 488.63/653.26/661.83 MB,轮间爬升列入待跟踪)。原 §9.2 #8 内存子项关闭。
 - [x] 🟢 bench 单轮抖动多轮中位已建立(同上 §2.2/§4):热态每指标 5 轮×20 样本报聚合分位+逐轮中位;全量扫描 3 轮墙钟 126.4/151.5/166.0s(极差 39.6s,机械盘抖动实证)轮中位 **151.5s**。原 §5.1「判回归必须多轮取中位」口径闭环。
 - [x] 🟢 附加:失效后首重查已实测(同上 §3):.def 定向失效映射重建 1.85 ms、失效后首次 Hover 0.29 ms(1 hit);删除 .py 失效 28.04 ms、首次重查 0.56 ms(旧项 0 命中,阳性对照 1 hit)。
-- [ ] A1-7 调用链图(Mermaid)未落(对账:legacy-todo-audit.md A1 行)——架构文档项,本轮未动。**2026-11-17 对账复核仍缺**(current-state.md grep 无 mermaid,两文件一致记 ❌);调用链文本取证已由 AUDIT-007(current-state.md §AUDIT-007)与 tests/perfCallChainDoc.test.ts 锚点面覆盖,Mermaid 图形式仍为真缺口。
+- [x] 🟢 A1-7 调用链图(Mermaid)已落(2026-11-17 对账修正,原「仍缺」判错文件):docs/perf/2026-baseline.md **§7「主要调用链图(真实路径取证,Mermaid)」**四条链(hover/definition/completion/diagnostics,四个 mermaid 块),tests/perfCallChainDoc.test.ts:566 硬断言 `mermaidBlocks.length === 4`+结构面(flowchart TD/节点引号配平/边算子/classDef waitPoint)+取证面(`file:line` 出处逐锚核对真实文件,代码迁移即红);legacy-todo-audit.md:32/:135 记 ❌ 系 §7 落地(2026-11-03 前后)之前的旧审计(2026-10-30 时点),已过时;此前「current-state.md grep 无 mermaid」系找错承载件——A1-7 的承载件是 2026-baseline.md 非 current-state.md。
 - [x] **Rust 双轨对拍基准定义**已实测关闭(2026-11-15..17 演进,原「未立项」过时):servingGate 五面=语义 parity(hover/completion/definition/diagnostics/serving)+P99/RSS 界+CPU 界(steadyCpuPercentMax 200%,RUST-242 2026-11-17)+ nightly perf gate 接线(KODE_PERF_GATE=1);同 fixture 同口径跑 Rust 服务轨道实测,界的纪律=RUST-027 宽松上界;PERF-006..016 量测面已全收口(RUST-023..033,2026-11-15 批)。
 - [x] 端到端口径边界大部分已关闭(2026-11-17 对账):soak 1h/OOM/杀进程恢复/损坏回建已实测(RUST-030,SOAK-SUMMARY 722 行全绿);extension activation 九段位+publish 端到端已实测(PERF-005 b3582459+a6cd06b1);Core spawn/handshake 已实测(d6e5be97);扫描期 RSS 轮间爬升列入 soak 长跑观测。**余下留白(如实):VS Code electron UI 序列化层不在脚本口径,以 009b imac/009c Linux 真机走查腿覆盖(2026-11-10 纪要),脚本化 electron 端到端仍未立项。**
 
