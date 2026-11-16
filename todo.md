@@ -472,10 +472,10 @@
 > 1. Workspace declarative pack：schema/API metadata、模板、诊断规则描述符（无代码执行）。 2. TypeScript VS Code-side extension：UI、命令、导航面板，通过 VS Code extension API 及 Kode public API 协作。 3. Out-of-proces
 
 - [ ] RUST-202 （旧 PLUG-001） 定义 `kode-plugin.json` schema：id/version/apiVersion/entrypoint/capabilities/contributions/permissions。（2026-11-17 侦察对账未勾行待拍板:全仓零 kode-plugin 面——src/docs 无 kode-plugin.json 任何出现,无插件宿主/loader/schema 消费方,无插件作者与插件生态;本行要求定义 manifest schema,但为不存在加载器与作者的生态定义 schema=死工件(比无更糟:诱导插件作者写无人加载的清单);同 RUST-189 CommandDefinition/RUST-191 REPL 判例:无消费者的新抽象属仪式性架构不建;且 PLUG 家族(202..206)是连贯子系统——202 schema/203 扩展点/204 DTO 服务面/205 资源配额/206 安全隔离,五项同进退,单独交付任何一项都无法形成可用插件面(只有 schema 无 loader、只有配额策略无宿主可管);拍板项=①PLUG 家族整体撤销(产品当前无插件需求,kode 的扩展点角色由 VS Code 扩展自身承载:kbengine.* 设置键族+package.json contributes+Rust RPC 注册表已是受控扩展面)或②立真消费场景(明确第一位插件作者与要解决的真扩展需求)后按家族逐行产品化,届时 202 先行(203..206 均依赖 schema)。）
-- [ ] RUST-203 （旧 PLUG-002） 扩展点：type provider、engine-version provider、diagnostic rule、code action、generator、project detector、template、runtime adapter、view contribution。
-- [ ] RUST-204 （旧 PLUG-003） 插件只能请求 QueryService / TypeService / ProjectService / ArtifactService 的稳定 DTO，不暴露 mutable Rust graph。
-- [ ] RUST-205 （旧 PLUG-004） 为 CPU、超时、内存、RPC 输出大小、并发配额制定 policy，阻止慢插件拖垮语言请求。
-- [ ] RUST-206 （旧 PLUG-005） 安全隔离：默认 trusted built-in；第三方需要显式安装/授权，声明文件/网络/执行能力。
+- [ ] RUST-203 （旧 PLUG-002） 扩展点：type provider、engine-version provider、diagnostic rule、code action、generator、project detector、template、runtime adapter、view contribution。（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记——无插件宿主无作者生态,九类扩展点为不存在生态设计属仪式性;产品现有等价扩展机制=kbengine.* 设置键族+package.json contributes+Rust $/kode RPC 注册表(受控面);拍板同 RUST-202(①家族撤销②立真场景后产品化,九类扩展点届时按真实需求裁剪,不为齐全而齐全)。）
+- [ ] RUST-204 （旧 PLUG-003） 插件只能请求 QueryService / TypeService / ProjectService / ArtifactService 的稳定 DTO，不暴露 mutable Rust graph。（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记;顺带诚实盘点=既有 Rust RPC 面($/kode/* 全集 35 项,RUST-055 契约门钉形状)已经是 DTO-only 形态——请求/响应信封+纯数据结构,零 mutable graph 暴露,插件面若落地四服务 DTO 通道的现成等价物就是该 RPC 面;拍板同 RUST-202。）
+- [ ] RUST-205 （旧 PLUG-004） 为 CPU、超时、内存、RPC 输出大小、并发配额制定 policy，阻止慢插件拖垮语言请求。（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记——无宿主则无被管对象,配额策略无标的;既有相邻治理面=IndexScheduler 交互冷却+RPC lane 划分(Interactive/Cpu)+墙钟预算断言族,插件面落地时资源治理可复用该骨架;拍板同 RUST-202。）
+- [ ] RUST-206 （旧 PLUG-005） 安全隔离：默认 trusted built-in；第三方需要显式安装/授权，声明文件/网络/执行能力。（2026-11-17 侦察对账未勾行待拍板:同 PLUG 家族判定见 RUST-202 注记——插件安全模型依赖宿主与清单(202/203)先行;既有信任面=workspace trust manifest 闸(RUST-198 本日落闸,扩展自身未信任工作区零执行);拍板同 RUST-202。）
 - [ ] RUST-207 （旧 PLUG-006） Plugin host 崩溃、挂起、协议不兼容时自动停用插件并保留核心功能。
 - [ ] RUST-208 （旧 PLUG-007） 插件贡献顺序显式：builtin < engine profile < workspace override（示例，最终按 ADR 审核）；冲突显示来源。
 - [ ] RUST-209 （旧 PLUG-008） 插件 API SemVer、版本协商、弃用窗口、兼容性检查。
