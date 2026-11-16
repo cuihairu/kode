@@ -125,6 +125,43 @@ describe('profile health collection (IDE-PRJ-009)', () => {
     );
     expect(issues.map(issue => issue.kind)).toEqual(['service-unavailable']);
   });
+
+  it('RUST-229:键索引开关禁用逐开关如实登记,修复入口直指设置键', () => {
+    const issues = collectProfileHealth(healthyProfile, activeServiceFacts, {
+      ...deps,
+      indexToggles: () => ({ dataDict: false, spaceData: false })
+    });
+    const disabled = issues.filter(issue => issue.kind === 'index-disabled');
+    expect(disabled).toHaveLength(2);
+    expect(disabled[0].entry).toMatchObject({
+      kind: 'setting',
+      target: 'kbengine.python.enableDataDictIndex'
+    });
+    expect(disabled[1].entry).toMatchObject({
+      kind: 'setting',
+      target: 'kbengine.python.enableSpaceDataIndex'
+    });
+    expect(disabled[0].message).toContain('部分不可用');
+    expect(disabled[1].message).toContain('部分不可用');
+    expect(PROFILE_HEALTH_ISSUE_LABELS['index-disabled']).toBe('索引开关已禁用');
+  });
+
+  it('RUST-229:开关全开/探针缺省/null 都不登记(向后兼容不冒充判定)', () => {
+    expect(
+      collectProfileHealth(healthyProfile, activeServiceFacts, {
+        ...deps,
+        indexToggles: () => ({ dataDict: true, spaceData: true })
+      })
+    ).toEqual([]);
+    // 探针缺省:既有调用方零感知(旧 deps 形状不动)
+    expect(collectProfileHealth(healthyProfile, activeServiceFacts, deps)).toEqual([]);
+    expect(
+      collectProfileHealth(healthyProfile, activeServiceFacts, {
+        ...deps,
+        indexToggles: () => null
+      })
+    ).toEqual([]);
+  });
 });
 
 describe('profile health summary command (IDE-PRJ-009)', () => {

@@ -588,6 +588,34 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         )
         : null;
     const isDataDictPosition = dictAccess !== null;
+    // RUST-229 禁用标注:键索引开关关闭时上方 dictAccess 判定恒 null(共享
+    // 口径不动),此处本地重算落点——光标命中键位不再静默落普通链,给机制
+    // 说明(结果部分不可用+重开入口);非键位零打扰。禁用态无需等索引就绪,
+    // 不触发懒建。
+    if (
+      document.languageId === 'python' &&
+      this.dataDictIndex &&
+      !isPythonDataDictIndexEnabled()
+    ) {
+      const disabledAccess = getKbeDataDictAccessAtPosition(dictLineText, position.character, dictAliases)
+        ? getDataDictAccessInCodeContext(
+          dictDocumentText,
+          position.line,
+          position.character,
+          dictAliases
+        )
+        : null;
+      if (disabledAccess && !isKeyInsideLineComment(dictLineText, disabledAccess.keyStart)) {
+        const keyLabel = disabledAccess.callFn ? `${disabledAccess.callFn}(...)` : disabledAccess.keySignature;
+        const markdown = new vscode.MarkdownString();
+        markdown.appendMarkdown(`**KBEngine.${disabledAccess.dict}\`${keyLabel}\`**\n\n`);
+        markdown.appendMarkdown(
+          '数据字典键索引已禁用（kbengine.python.enableDataDictIndex=false）：本键的类型/写点位置结果不可用，相关视图可能部分不可用。在设置中启用该索引后恢复。'
+        );
+        deadline.dispose();
+        return new vscode.Hover(markdown);
+      }
+    }
     // KSEM-STRUCT-02:FIXED_DICT 子字段下标链键类型悬停 —— 落点在下标链键串
     // 内容上时,键的 types.xml 字段注解与声明位置(嵌套层逐段解析;引擎实际
     // 支持的读取面=字符串下标+字典方法,属性透传不在引擎面,本面同口径)。

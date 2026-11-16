@@ -1,10 +1,12 @@
 /**
  * profile 健康状态汇总(IDE-PRJ-009):活动 profile(经 PRJ-010 稳定 ID
- * 解析)的五类健康问题——缺引擎/缺解释器/缺语言服务/根歧义/索引停滞——各自带
- * 具体定位入口(命令 id 或设置键),汇总命令逐条列出,选中即跳入口,
- * Esc 只看不跳。判定复用既有单一来源:引擎/解释器/根只做存在性与记录
- * 事实检查,语言服务走 PRJ-005 三态判定(collectPythonServiceFacts 同源
- * 采集),索引状态走 IndexScheduler.getStatus 同源计数(RUST-187)。没有
+ * 解析)的六类健康问题——缺引擎/缺解释器/缺语言服务/根歧义/索引停滞/索引
+ * 开关禁用——各自带具体定位入口(命令 id 或设置键),汇总命令逐条列出,
+ * 选中即跳入口,Esc 只看不跳。判定复用既有单一来源:引擎/解释器/根只做
+ * 存在性与记录事实检查,语言服务走 PRJ-005 三态判定(collectPythonServiceFacts
+ * 同源采集),索引状态走 IndexScheduler.getStatus 同源计数(RUST-187),
+ * 索引开关禁用=RUST-229 用户主动关掉键扫描,相关结果部分不可用如实登记。
+ * 没有
  * 活动 profile 如实说明;全部健康不打扰。
  */
 
@@ -24,14 +26,16 @@ export type ProfileHealthIssueKind =
   | 'interpreter-missing'
   | 'service-unavailable'
   | 'roots-ambiguous'
-  | 'index-stalled';
+  | 'index-stalled'
+  | 'index-disabled';
 
 export const PROFILE_HEALTH_ISSUE_LABELS: Record<ProfileHealthIssueKind, string> = {
   'engine-missing': '缺引擎',
   'interpreter-missing': '缺解释器',
   'service-unavailable': '缺语言服务',
   'roots-ambiguous': '根歧义',
-  'index-stalled': '索引停滞'
+  'index-stalled': '索引停滞',
+  'index-disabled': '索引开关已禁用'
 };
 
 /** 定位入口:命令(executeCommand)或设置键(openSettings) */
@@ -51,6 +55,8 @@ export interface ProfileHealthDeps {
   exists: (path: string) => boolean;
   /** 索引调度状态同源探针(IndexScheduler.getStatus);缺省/返回 null=面不可用,不冒充判定 */
   indexStatus?: () => Pick<SchedulerStatus, 'failed' | 'queued' | 'running'> | null;
+  /** RUST-229 键索引开关探针(数据字典/空间数据);缺省/返回 null=面不可用,不冒充判定 */
+  indexToggles?: () => { dataDict: boolean; spaceData: boolean } | null;
 }
 
 const IMPORT_ENTRY: ProfileHealthEntry = {
@@ -139,6 +145,33 @@ export function collectProfileHealth(
       }
     });
   }
+  // RUST-229:键索引开关禁用=用户主动关掉键扫描,相关结果部分不可用——
+  // 逐开关如实登记(修复入口直指设置键);探针缺省/返回 null 不判定
+  const indexToggles = deps.indexToggles?.() ?? null;
+  if (indexToggles) {
+    if (!indexToggles.dataDict) {
+      issues.push({
+        kind: 'index-disabled',
+        message: '数据字典键索引已禁用:键类型/写点/定义引用结果可能部分不可用',
+        entry: {
+          kind: 'setting',
+          target: 'kbengine.python.enableDataDictIndex',
+          label: '在设置中启用数据字典键索引'
+        }
+      });
+    }
+    if (!indexToggles.spaceData) {
+      issues.push({
+        kind: 'index-disabled',
+        message: '空间数据键索引已禁用:键补全/定义/引用结果可能部分不可用',
+        entry: {
+          kind: 'setting',
+          target: 'kbengine.python.enableSpaceDataIndex',
+          label: '在设置中启用空间数据键索引'
+        }
+      });
+    }
+  }
   return issues;
 }
 
@@ -148,6 +181,8 @@ export interface ProfileHealthSummaryDeps {
   resolveServiceFacts?: () => PythonServiceFacts;
   navigate?: (entry: ProfileHealthEntry) => Promise<void>;
   indexStatus?: () => Pick<SchedulerStatus, 'failed' | 'queued' | 'running'> | null;
+  /** RUST-229 缺省走真实配置读取;测试注入覆盖 */
+  indexToggles?: () => { dataDict: boolean; spaceData: boolean } | null;
 }
 
 /**
@@ -171,9 +206,21 @@ export async function showProfileHealthSummary(
   }
 
   const serviceFacts = (deps.resolveServiceFacts ?? collectPythonServiceFacts)();
+  // RUST-229 缺省探针:现读两个键索引开关(与 hover/补全/定义引用同源口径)
+  const indexToggles =
+    deps.indexToggles ??
+    ((): { dataDict: boolean; spaceData: boolean } => ({
+      dataDict: vscode.workspace
+        .getConfiguration('kbengine.python')
+        .get<boolean>('enableDataDictIndex', true),
+      spaceData: vscode.workspace
+        .getConfiguration('kbengine.python')
+        .get<boolean>('enableSpaceDataIndex', true)
+    }));
   const issues = collectProfileHealth(profile, serviceFacts, {
     exists: deps.exists ?? (candidate => fs.existsSync(candidate)),
-    indexStatus: deps.indexStatus
+    indexStatus: deps.indexStatus,
+    indexToggles
   });
   if (issues.length === 0) {
     await vscode.window.showInformationMessage(`活动 profile 健康: ${profile.displayName} (${profile.id})`);

@@ -124,6 +124,37 @@ describe('hover 缺口臂:同步段口闸与数据字典就绪复核', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it('RUST-229 禁用标注:键索引关闭时命中键位给机制说明,不再静默', async () => {
+    // 禁用态不触发懒建/不查索引:无需 findFiles/readFile 桩,零打扰面(非
+    // 键位)照旧走普通链
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-hover-dd-off-'));
+    const reader = path.join(root, 'cell', 'reader.py');
+    fs.mkdirSync(path.dirname(reader), { recursive: true });
+    const readerText = 'import KBEngine\nvalue = KBEngine.globalData.get("cfg")\n';
+    fs.writeFileSync(reader, readerText);
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const index = new GlobalDataDictIndex();
+    try {
+      setPythonDataDictIndexEnabled(false);
+      const provider = new KBEngineHoverProvider(undefined, index);
+      const doc = makeTextDocument(readerText, { fileName: reader, languageId: 'python' });
+      const keyPos = new Position(1, readerText.split('\n')[1].indexOf('cfg') + 1);
+      const result = await provider.provideHover(doc, keyPos);
+      expect(result).not.toBeNull();
+      const text = JSON.stringify(result);
+      expect(text).toContain('已禁用');
+      expect(text).toContain('kbengine.python.enableDataDictIndex');
+      expect(text).toContain('部分不可用');
+      // 零打扰面:光标不在键位上(变量名)不出禁用标注
+      const offKey = await provider.provideHover(doc, new Position(1, 2));
+      expect(offKey === null || !JSON.stringify(offKey).includes('已禁用')).toBe(true);
+    } finally {
+      setPythonDataDictIndexEnabled(true);
+      index.dispose();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('hover 缺口臂:三条异步面的预算到期 onStop 面', () => {
