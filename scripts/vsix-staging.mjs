@@ -62,7 +62,16 @@ export function packageVsix({ target, pureTS = false }) {
     run(command, [], { shell: true }); // Fixed commands; Windows pnpm is a .cmd shim.
   }
   const manifest = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-  if (pureTS) { manifest.contributes.configuration.properties['kbengine.core.backend'].default = 'ts'; }
+  if (pureTS) {
+    // RUST-228 数组化配置块(8 带标题分组)后 properties 在每块内;兼容新旧两形态。
+    const configs = Array.isArray(manifest.contributes.configuration)
+      ? manifest.contributes.configuration
+      : [manifest.contributes.configuration];
+    const backend = configs
+      .map(config => config?.properties?.['kbengine.core.backend'])
+      .find(prop => prop !== undefined);
+    backend.default = 'ts';
+  }
   delete manifest.scripts['vscode:prepublish']; // Already built above, before staging.
   fs.mkdirSync('.vtmp', { recursive: true });
   const stage = fs.mkdtempSync(path.resolve('.vtmp/vsix-'));

@@ -39,7 +39,14 @@ await new Promise((resolve, reject) => {
 });
 const pkg = JSON.parse(seen.get('extension/package.json') ?? 'null');
 assertRuntimeAssets(pkg, allEntries);
-if (pkg?.contributes?.configuration?.properties?.['kbengine.core.backend']?.default !== 'ts'
+// RUST-228 数组化配置块(8 带标题分组)后 properties 在每块内;兼容新旧两形态。
+const pureTsConfigs = Array.isArray(pkg?.contributes?.configuration)
+  ? pkg.contributes.configuration
+  : [pkg?.contributes?.configuration].filter(Boolean);
+const backendDefault = pureTsConfigs
+  .map(config => config?.properties?.['kbengine.core.backend'])
+  .find(prop => prop !== undefined)?.default;
+if (backendDefault !== 'ts'
     || !seen.has('extension/out/extension.js')
     || !seen.has('extension/out/pythonParserWorker.js')
     || !seen.has('extension/out/defParserWorker.js')
