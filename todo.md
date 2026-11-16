@@ -2623,3 +2623,11 @@
 ## G2 文档审计（2026-11-14）：文档站语言自动识别（增强项，待拍板）
 
 - [ ] G2-LANG-001 [P2] docs 站浏览器语言自动识别跳转：首页 JS 探测 `navigator.language` 以 `zh` 开头且未显式选择过语言时 → `/zh/`（localStorage 记忆显式切换），否则留在 `/`。现状：VitePress locales root(en-US)+zh(zh-CN) 双语齐、语言菜单手动切换、README 双语对完整——「手动切换+显式链接」受规基线已满足；自动识别属增强项，舰队级是否上、哪些仓上待用户拍板，不自行实现。来源：舰队文档一致性+语言切换审计 G2 轮（docs/审计-文档一致性.md G2 节 G2-05）。
+
+## 用户令 2026-11-17：大模型接入（方案 C + 对话框）
+
+- [ ] AI-001 [P1] 接入底座（方案 C）：配置 `kbengine.ai.*` 组——`baseUrl`/`model`/`temperature` 等走 settings（OpenAI-compatible `/v1/chat/completions`，自带 fetch 客户端，零新依赖）；未配置 baseUrl 时回退 `vscode.lm`（provider 扩展模型如 Copilot BYOK，kode 零 key 管理）；API key 只存 SecretStorage 绝不落 settings.json；默认全关——未配置且无 vscode.lm 模型时不注册 AI 命令（惰性激活，零成本）；请求带超时/取消（CancellationToken 贯穿）/重试上限；遥测零，除用户显式触发外零代码外发且只发该命令所需片段。
+- [ ] AI-002 [P1] 对话框面板（webview chat 形态）：会话式交互复用既有 webview 基建（消息协议/nonce/enableScripts 先例，KODE-PERF-005 代际守卫口径）；输出永不直写盘——代码建议一律 diff 预览 + 确认按钮（应用=走 WorkspaceEdit 正常通道，可撤销）；多轮会话历史驻留面板不落盘；流式输出可中断。
+- [ ] AI-003 [P2] 快速修复方案（explainFix）：诊断码+代码片段喂 LLM 生成修复建议 diff 预览（CodeAction「AI 解释/修复建议」建议层）；引擎判定不变——诊断正确性不依赖 AI，AI 面全离线可用（未配置时该 CodeAction 不出）。
+- [ ] AI-004 [P2] stub/typings 建议层（generateStub 建议）：AI 补注释/使用示例只作建议层输出到 diff 预览，绝不替代模板真源（typings/README 钉死 fork commit 的真源口径不动，用户设计资产红线）。
+- [ ] AI-005 [P2] 架构框架分析（analyzeArchitecture）：把 Rust 引擎结构化摘要（依赖图/调用图/关系图/流程图——`$/kode/dependency/graph`、callgraph、flowGraph 既有数据面，非源码全文）喂 LLM 生成叙述性架构报告（Markdown 输出到预览面板）；数据真源在引擎，LLM 只做总结；big-py/超限工程按既有截断策略显式声明。
