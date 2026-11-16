@@ -9,11 +9,15 @@ license.workspace = true
 [dependencies]
 
 [dev-dependencies]
-# RUST-128 持久化格式基准候选(仅基准面消费,不进生产 lib 依赖):
+# RUST-128/RUST-290 持久化格式基准候选(仅基准面消费,不进生产 lib 依赖):
 # rusqlite 与 kode-mcp 同版(bundled,零系统依赖);redb 为纯 Rust 嵌入式
-# B-tree 候选。基准与选型结论见 docs/perf/2026-11-16-persist-format-bench.md。
+# B-tree 候选;fmmap 为安全 API 的 mmap 包装(workspace 禁 unsafe,候选 6
+# mmap-snapshot 经其读面访问映射,底层即 memmap2)。
+# 基准与选型结论见 docs/perf/2026-11-16-persist-format-bench.md 与
+# docs/perf/2026-11-17-persist-matrix-bench.md。
 rusqlite = { version = "0.41", default-features = false, features = ["bundled"] }
 redb = "2"
+fmmap = { version = "0.3", default-features = false, features = ["sync"] }
 
 [lints]
 workspace = true

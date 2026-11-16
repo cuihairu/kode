@@ -10,7 +10,11 @@
 //! - `redb` = 纯 Rust 嵌入式 B-tree,默认耐久性(每次 commit fsync);
 //! - `packed-log` = 自定义单文件追加日志([key16][len][payload][checksum],
 //!   批量 fsync,开库全扫建索引,撕裂尾按校验和截断)——「文件数」轴的
-//!   家族内答案。
+//!   家族内答案;
+//! - `mmap-snapshot`(RUST-290 行逐名)= 单文件快照([u32 count][索引
+//!   high/low/offset/len ×count][记录区]),写=单文件就地重建+单次 fsync,
+//!   冷启动=只读索引建映射(记录区零读,mmap 惰性),随机读=映射内切片
+//!   拷出(fmmap 安全 API,workspace 禁 unsafe,底层 memmap2)。
 //!
 //! 口径(诚实边界):
 //! - **暖缓存 cold start**:非 root 无法 drop caches;测得是页缓存命中下的
@@ -201,7 +205,11 @@ fn bench_persist_store(
     let t1 = Instant::now();
     for (key, payload) in keys.iter().zip(payloads.iter()) {
         let got = store.read(key).unwrap();
-        assert_eq!(got.as_deref(), Some(payload.as_slice()), "persist-store 字节全等闸");
+        assert_eq!(
+            got.as_deref(),
+            Some(payload.as_slice()),
+            "persist-store 字节全等闸"
+        );
     }
     let read_all_ms = t1.elapsed().as_secs_f64() * 1000.0;
 
@@ -264,7 +272,8 @@ fn bench_sqlite(
             .prepare("INSERT INTO cache(key, payload) VALUES (?1, ?2)")
             .unwrap();
         for (key, payload) in keys.iter().zip(payloads.iter()) {
-            stmt.execute(rusqlite::params![key_high_low_bytes(key), payload]).unwrap();
+            stmt.execute(rusqlite::params![key_high_low_bytes(key), payload])
+                .unwrap();
         }
     }
     let write_ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -298,7 +307,9 @@ fn bench_sqlite(
         for &i in sample {
             let t = Instant::now();
             let got: Option<Vec<u8>> = stmt
-                .query_row(rusqlite::params![key_high_low_bytes(&keys[i])], |r| r.get(0))
+                .query_row(rusqlite::params![key_high_low_bytes(&keys[i])], |r| {
+                    r.get(0)
+                })
                 .unwrap();
             assert_eq!(got.as_deref(), Some(payloads[i].as_slice()));
             us.push(t.elapsed().as_secs_f64() * 1e6);
@@ -308,7 +319,11 @@ fn bench_sqlite(
     drop(conn);
     let (disk, files) = dir_stats(dir);
     BenchResult {
-        name: if durable { "sqlite-durable" } else { "sqlite-relaxed" },
+        name: if durable {
+            "sqlite-durable"
+        } else {
+            "sqlite-relaxed"
+        },
         write_ms,
         read_all_ms,
         random_p50_us: p50,
@@ -379,7 +394,10 @@ fn bench_redb(
         let t = Instant::now();
         let txn = db.begin_read().unwrap();
         let table = txn.open_table(REDB_TABLE).unwrap();
-        let got = table.get(redb_key(&keys[i])).unwrap().map(|g| g.value().to_vec());
+        let got = table
+            .get(redb_key(&keys[i]))
+            .unwrap()
+            .map(|g| g.value().to_vec());
         assert_eq!(got.as_deref(), Some(payloads[i].as_slice()));
         us.push(t.elapsed().as_secs_f64() * 1e6);
     }
@@ -415,10 +433,7 @@ struct PackedLog {
 impl PackedLog {
     /// 开库全扫建索引;`collect` = 同时顺序收集各键最新 payload
     /// (生产冷启动形态:单遍顺序读回全部条目进内存缓存)。
-    fn open_with(
-        path: &Path,
-        mut collect: Option<&mut HashMap<(u64, u64), Vec<u8>>>,
-    ) -> PackedLog {
+    fn open_with(path: &Path, mut collect: Option<&mut HashMap<(u64, u64), Vec<u8>>>) -> PackedLog {
         let mut file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -453,8 +468,10 @@ impl PackedLog {
             if kode_vfs::content_fingerprint_bytes(&payload) != stored {
                 break; // 校验不过 = 撕裂尾:截断点停在上一好记录。
             }
-            let key = (u64::from_le_bytes(key_buf[..8].try_into().unwrap()),
-                       u64::from_le_bytes(key_buf[8..].try_into().unwrap()));
+            let key = (
+                u64::from_le_bytes(key_buf[..8].try_into().unwrap()),
+                u64::from_le_bytes(key_buf[8..].try_into().unwrap()),
+            );
             let offset = size;
             index.insert(key, (offset, len as u32));
             if let Some(map) = collect.as_deref_mut() {
@@ -481,7 +498,8 @@ impl PackedLog {
         record.extend_from_slice(payload);
         record.extend_from_slice(&kode_vfs::content_fingerprint_bytes(payload).to_le_bytes());
         self.file.write_all(&record).unwrap();
-        self.index.insert((key.high, key.low), (self.size, payload.len() as u32));
+        self.index
+            .insert((key.high, key.low), (self.size, payload.len() as u32));
         self.size += record.len() as u64;
     }
 
@@ -575,6 +593,119 @@ fn bench_packed_log(
     }
 }
 
+// ---------- 候选 6:mmap-snapshot(RUST-290 行逐名) ----------
+
+const MMAP_INDEX_ENTRY: usize = 8 + 8 + 8 + 4;
+
+fn bench_mmap_snapshot(
+    dir: &Path,
+    keys: &[kode_vfs::persist_key::PersistCacheKey],
+    payloads: &[Vec<u8>],
+    sample: &[usize],
+) -> BenchResult {
+    use fmmap::sync::MmapFile;
+    use fmmap::MmapFileExt;
+    use std::io::{Seek, SeekFrom, Write};
+
+    let path = dir.join("cache.mmap");
+    let io0 = read_proc_io_write_bytes();
+    let t0 = Instant::now();
+    {
+        let mut file = std::fs::File::create(&path).unwrap();
+        let records_start = (4 + MMAP_INDEX_ENTRY * keys.len()) as u64;
+        // 头部+索引占位一次写(计数已知,记录区 offset 前向可定)。
+        let mut head = Vec::with_capacity(records_start as usize);
+        head.extend_from_slice(&(keys.len() as u32).to_le_bytes());
+        head.resize(records_start as usize, 0);
+        file.write_all(&head).unwrap();
+        // 记录区顺序追加,offset 记内存索引。
+        let mut offsets: Vec<(u64, u64, u64, u32)> = Vec::with_capacity(keys.len());
+        let mut pos = records_start;
+        {
+            let mut w = std::io::BufWriter::new(&file);
+            for (key, payload) in keys.iter().zip(payloads.iter()) {
+                w.write_all(payload).unwrap();
+                offsets.push((key.high, key.low, pos, payload.len() as u32));
+                pos += payload.len() as u64;
+            }
+            w.flush().unwrap();
+        }
+        // 回填真实索引(单次写)+ 单次 fsync——快照语义:整文件一次成形。
+        let mut idx = Vec::with_capacity(MMAP_INDEX_ENTRY * keys.len());
+        for (h, l, off, len) in &offsets {
+            idx.extend_from_slice(&h.to_le_bytes());
+            idx.extend_from_slice(&l.to_le_bytes());
+            idx.extend_from_slice(&off.to_le_bytes());
+            idx.extend_from_slice(&len.to_le_bytes());
+        }
+        file.seek(SeekFrom::Start(4)).unwrap();
+        file.write_all(&idx).unwrap();
+        file.sync_all().unwrap();
+    }
+    let write_ms = t0.elapsed().as_secs_f64() * 1000.0;
+    let io1 = read_proc_io_write_bytes();
+
+    // 冷启动 = mmap 整文件 + 读头部索引建映射 + 全量取回(记录区零读建库,
+    // 惰性按页进;与 packed-log「开库全扫+收集」同口径计时)。
+    let t1 = Instant::now();
+    let file = MmapFile::open(&path).unwrap();
+    let count = u32::from_le_bytes({
+        let mut b = [0u8; 4];
+        file.read_exact(&mut b, 0).unwrap();
+        b
+    }) as usize;
+    assert_eq!(count, keys.len(), "mmap 头部计数闸");
+    let mut index: HashMap<(u64, u64), (u64, u32)> = HashMap::with_capacity(count);
+    {
+        let mut raw = vec![0u8; MMAP_INDEX_ENTRY * count];
+        file.read_exact(&mut raw, 4).unwrap();
+        for slot in raw.as_chunks::<MMAP_INDEX_ENTRY>().0 {
+            let high = u64::from_le_bytes(slot[0..8].try_into().unwrap());
+            let low = u64::from_le_bytes(slot[8..16].try_into().unwrap());
+            let off = u64::from_le_bytes(slot[16..24].try_into().unwrap());
+            let len = u32::from_le_bytes(slot[24..28].try_into().unwrap());
+            index.insert((high, low), (off, len));
+        }
+    }
+    let open_ms = t1.elapsed().as_secs_f64() * 1000.0;
+    println!(
+        "    mmap open(索引建映射,记录区零读)={open_ms:.1}ms(口径附录:下表冷读=开库+全量取回)",
+    );
+
+    let mut us = Vec::with_capacity(sample.len());
+    {
+        let mut buf = Vec::with_capacity(payloads.iter().map(|p| p.len()).max().unwrap_or(0));
+        for (key, payload) in keys.iter().zip(payloads.iter()) {
+            let (off, len) = index.get(&(key.high, key.low)).copied().unwrap();
+            buf.resize(len as usize, 0);
+            file.read_exact(&mut buf, off as usize).unwrap();
+            assert_eq!(&buf[..], payload, "mmap-snapshot 字节全等闸");
+        }
+        let read_all_ms = t1.elapsed().as_secs_f64() * 1000.0;
+        for &i in sample {
+            let t = Instant::now();
+            let (off, len) = index.get(&(keys[i].high, keys[i].low)).copied().unwrap();
+            buf.resize(len as usize, 0);
+            file.read_exact(&mut buf, off as usize).unwrap();
+            assert_eq!(&buf[..], payloads[i]);
+            us.push(t.elapsed().as_secs_f64() * 1e6);
+        }
+        let (p50, p95) = percentiles(us);
+        let (disk, files) = dir_stats(dir);
+        BenchResult {
+            name: "mmap-snapshot",
+            write_ms,
+            read_all_ms,
+            random_p50_us: p50,
+            random_p95_us: p95,
+            disk_bytes: disk,
+            payload_bytes: payloads.iter().map(|p| p.len() as u64).sum(),
+            file_count: files,
+            io_write_bytes: io1.saturating_sub(io0),
+        }
+    }
+}
+
 fn run_scenario(scenario: &Scenario, base: &Path) {
     let count = scenario.count;
     let size = scenario.size;
@@ -608,12 +739,14 @@ fn run_scenario(scenario: &Scenario, base: &Path) {
     let dir = fresh_dir("packed", base);
     bench_packed_log(&dir, &keys, &payloads, &sample).print();
     std::fs::remove_dir_all(dir).unwrap();
+
+    let dir = fresh_dir("mmap", base);
+    bench_mmap_snapshot(&dir, &keys, &payloads, &sample).print();
+    std::fs::remove_dir_all(dir).unwrap();
 }
 
 fn parse_num_list(arg: &str) -> Vec<usize> {
-    arg.split(',')
-        .map(|s| s.trim().parse().unwrap())
-        .collect()
+    arg.split(',').map(|s| s.trim().parse().unwrap()).collect()
 }
 
 fn main() {
@@ -633,7 +766,9 @@ fn main() {
             other => panic!("unknown arg: {other}"),
         }
     }
-    println!("persist format bench(RUST-128):sizes={sizes:?} counts={counts:?} random={random}");
+    println!(
+        "persist format bench(RUST-128/RUST-290):sizes={sizes:?} counts={counts:?} random={random}"
+    );
     println!("口径:暖缓存 cold start(非 root 无 drop_caches)/ write_bytes 真实下盘 / LCG 非零 payload / read-all 字节全等闸");
     let mut scenarios = Vec::new();
     for &size in &sizes {
@@ -641,8 +776,15 @@ fn main() {
             scenarios.push(Scenario { size, count });
         }
     }
-    println!("base-dir={} fs={}", base.display(),
-        if base.starts_with("/tmp") { "tmpfs?" } else { "disk" });
+    println!(
+        "base-dir={} fs={}",
+        base.display(),
+        if base.starts_with("/tmp") {
+            "tmpfs?"
+        } else {
+            "disk"
+        }
+    );
     for scenario in &scenarios {
         run_scenario(scenario, &base);
     }
