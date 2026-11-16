@@ -374,7 +374,7 @@
 - [x] RUST-118 （旧 IDX-001） 明确四层：文件目录索引、语法索引、符号/类型索引、跨文件关系图。(基础版:PR-007 crates/kode-index 符号/类型层+跨文件反向依赖;文件目录层=kode-vfs walk/store,语法层=kode-parser;证据 docs/kode2/pr-007.md)
 - [x] RUST-119 （旧 IDX-002） DAG 边类型：declaration/import/entity registration/type alias/component/inheritance/method binding/generation dependency。(基础版:PR-007 类型引用/Parent/组件/接口/entities 注册边(parser RefSet)+实体继承边;import/generation 边随 PR-008/009)
 - [x] RUST-120 （旧 IDX-003） 区分文本改动、signature 改动、body-only 改动、声明删除；相应差异化失效。(基础版:PR-005 dep.rs+PR-007 指纹级零重建;文本/签名/正文细分随 CST 增量,PR-009 面)
-- [ ] RUST-120-W (生产接线/验收,2026-11-15 用户审计拆项) signature/body-only 等变化分类的差异化失效接生产(现指纹级零重建,细分随 CST 增量);验收口径=按变化类别差异化失效生产实测。
+- [x] RUST-120-W (生产接线/验收,2026-11-15 用户审计拆项) signature/body-only 等变化分类的差异化失效接生产(现指纹级零重建,细分随 CST 增量);验收口径=按变化类别差异化失效生产实测。(f1abf6c3:三层分类=index ingest_classified 签名事实全等 BodyOnly/hover 引擎 ChangeCategory+generation 仅 Signature bump/队列计数经 health ingest 4 键(契约 12→16);验收=dispatch 层+真二进制 TS e2e 按类别分化实测,悬停 identical/body-only 保持旧事实、signature 重灌;位置位移=Signature 正确语义(name_span 行锚),BodyOnly 真样本=尾注;golden 字节不变实证+prove-red 三靶;验收纪实 docs/review/2026-11-16-rust-120-w-differential-invalidation.md)
 - [x] RUST-121 （旧 IDX-004） AST 和语义 query 采用 memoization + fingerprint + revision；测量是否选 Salsa。(基础版:PR-007 复用 VFS-011 ParseCache+FNV-1a 指纹+generation;ADR-101 Salsa 选型仍未裁决,不预设)
 - [x] RUST-122 （旧 IDX-005） 对循环依赖与 SCC 计算提供终止保障和精确诊断。(基础版:PR-005 resolve_parent_chain 环截断诊断+PR-007 索引侧 entity_chain 互为 Parent 有限步终止)
 - [x] RUST-123 （旧 IDX-006） 永久索引结构支持定向 symbol lookup 与 reverse reference lookup；杜绝每次 O(workspace files) 查询。(基础版:PR-007 名称倒排 BTreeMap+dependents_of 反向依赖+前缀 workspace_symbols 有序范围扫描)
