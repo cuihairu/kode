@@ -6,6 +6,12 @@ import { getOrParseDocumentSync } from '../backend/documentStore';
 import { getKodeCoreShadowGate, serveDiagnosticsFromRust, shadowObserveDefDocument, type LspDiagnosticReportFace } from '../backend/kodeCoreShadowFaces';
 import { analyzeDefDocumentInRust, type DefAnalysisFinding } from '../backend/defAnalyzer';
 import { collectDefPythonParityInput } from '../backend/defPythonParity';
+import { computeTypesXmlStructureFindings } from '../backend/typesXmlStructureCheck';
+import {
+  computePersistentEntityCallFindings,
+  PERSISTENT_ENTITY_CALL_DIAGNOSTIC_CODE
+} from '../backend/persistentEntityCallCheck';
+import { getEntityCustomTypesSnapshot, getWorkspaceRootForDocument } from '../definitionWorkspace';
 import { DETAIL_LEVELS, KBENGINE_FLAGS } from '../backend/kbengineMetadata';
 import { FLAG_DOMAIN_ALIAS, normalizeFlagTokens } from '../generated/flagDomains';
 import { ALLOWED_TOP_LEVEL_SECTIONS, KBEngineSectionName, createNodeRange, getLanguageFeatureConfig, getNodeValue, getSectionLabel, parseDefAst, pushDiagnosticForNodeValue, toSectionName, visitElementNodes } from './shared';
@@ -43,6 +49,9 @@ export function validateDocument(
   // TS 同步面先落(首绘零延迟不变),Rust 面异步到达后按 message 键替换
   // 自身码、保留外来码(lint 并集 / missingPythonFile)。服务轨道外零开销。
   serveRustDiagnosticsFace(document, diagnostics, featureConfig);
+  // RUST-177:def 属性 Persistent×ENTITYCALL 静默降级(主 collection 追加,
+  // 不进对拍输入面,见函数注)
+  appendPersistentEntityCallDiagnostics(document, diagnostics);
 }
 
 // ---- 诊断面 rust 服务腿 -----------------------------------------------------
@@ -281,6 +290,96 @@ export function validateEntitiesXmlDocument(
       );
     })
   );
+}
+
+// types.xml 结构完整性诊断(RUST-177/KBE-007):别名装载序敏(前向引用/
+// 循环)、`_` 保留前缀、重定义(Warning,引擎非致命)、ARRAY <of> 缺失/
+// 未知、FIXED_DICT 结构(缺 Properties/字段缺 Type=Warning/字段类型未知)
+// 与 FD 字段 ENTITYCALL 静默降持久化。引擎真源锚见模块头注
+// (src/backend/typesXmlStructureCheck.ts)。与 entities.xml 面同款:共用
+// 主 collection,开关与 validateDocument 共用 kbengine.enableDiagnostics,
+// 分析结果经 documentStore 命名空间化版本缓存('types-analysis')。
+export function validateTypesXmlDocument(
+  document: vscode.TextDocument,
+  diagnostics: vscode.DiagnosticCollection
+): void {
+  const featureConfig = getLanguageFeatureConfig();
+  if (!featureConfig.enableDiagnostics) {
+    diagnostics.delete(document.uri);
+    return;
+  }
+
+  const { result: findings } = getOrParseDocumentSync(
+    document,
+    text => computeTypesXmlStructureFindings(text),
+    'types-analysis'
+  );
+
+  diagnostics.set(
+    document.uri,
+    findings.map(item => {
+      const start = document.positionAt(item.offset);
+      const end = document.positionAt(item.offset + item.length);
+      const diagnostic = new vscode.Diagnostic(
+        new vscode.Range(start, end),
+        item.message,
+        item.severity === 'warning'
+          ? vscode.DiagnosticSeverity.Warning
+          : vscode.DiagnosticSeverity.Error
+      );
+      diagnostic.code = item.code;
+      return diagnostic;
+    })
+  );
+}
+
+// .def 属性 Persistent×ENTITYCALL 静默降级诊断(RUST-177/KBE-007 诊断面,
+// 「不可序列化字段」子项):validateDocument 主面落定后**追加进主
+// collection**——不进 diagnosticsList(那是对拍/服务腿的 Rust 可复刻面,
+// 本码不在其内,保持影子对拍输入形状不变,与 lint 并集/missingPythonFile
+// 同「外来码保留」架构)。types.xml 注册表快照与 scalarAssign 等消费面
+// 同一来源(getEntityCustomTypesSnapshot);注册表空(不可解析)不造诊断。
+// 重入幂等:先剔除自身码旧项再追加。
+export function appendPersistentEntityCallDiagnostics(
+  document: vscode.TextDocument,
+  diagnostics: vscode.DiagnosticCollection
+): void {
+  const featureConfig = getLanguageFeatureConfig();
+  if (!featureConfig.enableDiagnostics) {
+    return;
+  }
+  const customTypes = getEntityCustomTypesSnapshot(getWorkspaceRootForDocument(document) ?? '');
+  if (customTypes.length === 0) {
+    return; // types.xml 不可解析:注册表空,不造诊断
+  }
+  const findings = computePersistentEntityCallFindings(document.getText(), customTypes);
+  // 真机 DiagnosticCollection 恒有 get;测试替身可能是只 set/delete 的最小桩
+  // ——无 get 读不到既有项,零发现清旧项面跳过(不抛)
+  const hasGet = typeof diagnostics.get === 'function';
+  if (findings.length === 0) {
+    // 零发现也要落:清掉上一轮可能存在的自身码旧项(修掉别名后诊断即消)
+    if (!hasGet) {
+      return;
+    }
+    const existing = diagnostics.get(document.uri) ?? [];
+    const kept = existing.filter(diagnostic => diagnostic.code !== PERSISTENT_ENTITY_CALL_DIAGNOSTIC_CODE);
+    if (kept.length !== existing.length) {
+      diagnostics.set(document.uri, kept);
+    }
+    return;
+  }
+  const existing = hasGet ? diagnostics.get(document.uri) ?? [] : [];
+  const kept = existing.filter(diagnostic => diagnostic.code !== PERSISTENT_ENTITY_CALL_DIAGNOSTIC_CODE);
+  const additions = findings.map(item => {
+    const diagnostic = new vscode.Diagnostic(
+      new vscode.Range(document.positionAt(item.offset), document.positionAt(item.offset + item.length)),
+      item.message,
+      vscode.DiagnosticSeverity.Warning
+    );
+    diagnostic.code = PERSISTENT_ENTITY_CALL_DIAGNOSTIC_CODE;
+    return diagnostic;
+  });
+  diagnostics.set(document.uri, [...kept, ...additions]);
 }
 
 export function validateScalarTagValues(

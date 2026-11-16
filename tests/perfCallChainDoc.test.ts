@@ -335,8 +335,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // +5(195/208 → 200/213,真位重探);出处随 baseline 锁步。
   // 2026-11-17(RUST-176):diagnostics.ts 顶部 import +1(rpcArgTypeCompat)
   // → 两处打点锚点 +1(200/213 → 201/214,真位重探);出处随 baseline 锁步。
-  ['src/activate/diagnostics.ts', 201, "startLanguageServiceOperation('diagnostics'"],
-  ['src/activate/diagnostics.ts', 214, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 204, "startLanguageServiceOperation('diagnostics'"],
+  ['src/activate/diagnostics.ts', 217, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
   // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
   // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
@@ -358,8 +358,8 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-17(RUST-149 批 2):closeWatcher body 提取 teardownDocumentState
   // +新增 rootRemovalWatcher 根移除扇出(净 +23,均在其前)→ 449/548 →
   // 472/571,真位重探;出处随 baseline 锁步。
-  ['src/extension.ts', 472, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 571, 'flushQueued()'],
+  ['src/extension.ts', 476, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 581, 'flushQueued()'],
   // 2026-11-07(IDE-LIV-007):extension.ts 顶部 import +1(exceptionSourceLocator)
   // → 上列全部 extension.ts 锚点再 +1(真位重探 691/704/988/1070/1121/1184/1507/2376/2456),
   // LIV-007 命令装配约 5361 起在全部锚点之后不再位移;出处随 baseline 锁步。
@@ -435,12 +435,12 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-09(flags 别名归一批):validation.ts 顶部加 FLAG_DOMAIN_ALIAS
   // import(+1 行),其后 validation.ts 三锚点真位重探 13→14/37→38/255→256,
   // 出处随 baseline 锁步。
-  ['src/languageProviders/validation.ts', 14, 'export function validateDocument('],
-  ['src/languageProviders/validation.ts', 38, 'shadowObserveDefDocument'],
+  ['src/languageProviders/validation.ts', 20, 'export function validateDocument('],
+  ['src/languageProviders/validation.ts', 44, 'shadowObserveDefDocument'],
   // 2026-11-08(诊断面切流):validateDocument 后插入 rust 服务腿块
   // (serveRustDiagnosticsFace/mergeRustDiagnosticsFace/lspSeverityToVscode,
   // 约 +105 行),其后锚点真位重探 165→255,出处随 baseline 锁步。
-  ['src/languageProviders/validation.ts', 256, 'validateEntitiesXmlDocument'],
+  ['src/languageProviders/validation.ts', 265, 'validateEntitiesXmlDocument'],
   // 2026-11-06(十六):IDE-DB-001 持久字段容量说明——languageProviders.ts
   // describeTypeStorageShape 各形态分支附容量行,2776 后 +11;其后锚点
   // 随之 +11(真位重探 4741/5162/5268/7112;2005 前不受影响;出处随 baseline
@@ -555,6 +555,12 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-14(KSEM-SER-07):diagnostics.ts SER-07 push 块 + import 组累计
   // +4 行 → 两处打点锚 +4(191/204→195/208,真位重探),baseline §7 同步  // 2026-11-14(KSEM-SER-06):diagnostics.ts 顶部 import +3 + push 面锚定线移位(187/200→191/204),baseline §7 同步
 
+  // 2026-11-17(RUST-177/KBE-007):types.xml 结构诊断与 def Persistent×ENTITYCALL
+  // 诊断接线——diagnostics.ts import 并入既有行(打点锚 +3:201/214→204/217,
+  // types 打点块在其后)、extension.ts 五调用点累计(onDidChangeTextDocument
+  // 472→476,flushQueued 571→581)、validation.ts types 面两函数前插(validateDocument
+  // 14→20、shadowObserveDefDocument 调用 38→44、validateEntitiesXmlDocument 256→265),
+  // baseline §7 出处随本批锁步。
 describe('perf baseline §7 调用链图结构面', () => {
   it('四条调用链的 mermaid 块齐备且都是 flowchart TD', () => {
     expect(mermaidBlocks.length).toBe(4);

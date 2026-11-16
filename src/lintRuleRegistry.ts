@@ -180,6 +180,22 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     trigger: '实时(open/edit)', quickFix: false,
     status: 'implemented', source: 'src/backend/processTopologyDiagnostics.ts'
   },
+  {
+    id: 'KBE-DEF-014', code: 'kbengine.types.forwardRef',
+    title: 'types.xml 结构完整性(前向引用/循环·_保留前缀·重定义·ARRAY of 缺失或未知·FIXED_DICT 缺 Properties/字段缺 Type/字段类型未知·FD 字段 ENTITYCALL 静默降持久化,共 8 码;按引擎单遍序敏装载真源逐条取证)',
+    severity: 'Error', roles: 'types.xml',
+    toggles: [],
+    trigger: '实时(open/edit)', quickFix: false,
+    status: 'implemented', source: 'src/backend/typesXmlStructureCheck.ts(发布 src/languageProviders/validation.ts,RUST-177/KBE-007)'
+  },
+  {
+    id: 'KBE-DEF-015', code: 'kbengine.persistentEntityCall',
+    title: 'def 属性 Persistent=true × 类型解析到 ENTITYCALL(引擎构造 PropertyDescription 无日志静默 isPersistent=false——以为在持久化其实不会持久化;别名链末端 ENTITYCALL 同判,内联 ARRAY 属性不触发引擎判定不报)',
+    severity: 'Warning', roles: 'def',
+    toggles: [],
+    trigger: '实时(open/edit)', quickFix: false,
+    status: 'implemented', source: 'src/backend/persistentEntityCallCheck.ts(发布 src/languageProviders/validation.ts,RUST-177/KBE-007)'
+  },
   // ── 工作区配置层实时诊断(implemented,内网开发机环境适配审核
   // docs/analysis/intranet-env-audit.md §4/§5)────────────────────
   {

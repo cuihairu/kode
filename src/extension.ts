@@ -173,6 +173,7 @@ export function activate(context: vscode.ExtensionContext) {
     getEngineApiCatalog,
     isDefDocument,
     isEntitiesXmlDocument,
+    isTypesXmlDocument,
     isPythonDocument,
     isProcessTopologyManifestDocument
   } = activateInfrastructure({ context });
@@ -270,6 +271,7 @@ export function activate(context: vscode.ExtensionContext) {
     diagnosticScheduler,
     scheduleDefDiagnostics,
     scheduleEntitiesDiagnostics,
+    scheduleTypesDiagnostics,
     scheduleReceiverNoneDiagnostics,
     scheduleStartupScriptDiagnostics,
     scheduleDefMethodConsistencyDiagnostics,
@@ -285,6 +287,7 @@ export function activate(context: vscode.ExtensionContext) {
     rescheduleFixedDictConstructForRegistryChange,
     scheduleScalarAssignDiagnostics,
     rescheduleScalarAssignForRegistryChange,
+    rescheduleDefForTypesRegistryChange,
     scheduleProcessTopologyDiagnostics,
     defMethodConsistencyDiagnostics,
     defMethodConsistencyScheduler,
@@ -320,7 +323,8 @@ export function activate(context: vscode.ExtensionContext) {
     entityMappingManager,
     pythonClassIndex,
     isDefDocument,
-    isPythonDocument
+    isPythonDocument,
+    isTypesXmlDocument
   });
   markActivateStage('l3-diagnostics');
 
@@ -498,6 +502,9 @@ export function activate(context: vscode.ExtensionContext) {
         scheduleEntitiesDiagnostics(event.document, 'queued');
         // C-17:entities.xml 变更 → 拓扑校验(实体注册信息是输入)。
         scheduleProcessTopologyDiagnostics(event.document, 'queued');
+      } else if (isTypesXmlDocument(event.document)) {
+        // RUST-177:types.xml 结构完整性诊断(装载序敏/ARRAY/FIXED_DICT 面)
+        scheduleTypesDiagnostics(event.document, 'queued');
       } else if (isProcessTopologyManifestDocument(event.document)) {
         // C-17:清单变更 → 拓扑校验(全量重排,拓扑是全局输入)。
         scheduleProcessTopologyDiagnostics(event.document, 'queued');
@@ -548,6 +555,9 @@ export function activate(context: vscode.ExtensionContext) {
         rescheduleFixedDictConstructForRegistryChange();
         // KSEM-STRUCT-05:types.xml 注册表变 → 标量赋值诊断重排
         rescheduleScalarAssignForRegistryChange();
+        // RUST-177:types.xml 注册表变 → def 属性 Persistent×ENTITYCALL 面
+        // 重排(别名链末端解析输入变,全部已打开 def 文档)
+        rescheduleDefForTypesRegistryChange();
       } else if (isStartupScriptDocument(event.document)) {
         // KBEXP-1:启动脚本改动 → 重排本文件启动参数诊断(行级纯文本扫描)。
         scheduleStartupScriptDiagnostics(event.document, 'queued');
@@ -673,6 +683,9 @@ export function activate(context: vscode.ExtensionContext) {
       } else if (isEntitiesXmlDocument(document)) {
         scheduleEntitiesDiagnostics(document, 'immediate');
         scheduleProcessTopologyDiagnostics(document, 'immediate');
+      } else if (isTypesXmlDocument(document)) {
+        // RUST-177:打开 types.xml 即发布结构完整性诊断(立即通道)
+        scheduleTypesDiagnostics(document, 'immediate');
       } else if (isProcessTopologyManifestDocument(document)) {
         // C-17:清单打开 → 全量重排(拓扑是全局输入)。
         scheduleProcessTopologyDiagnostics(document, 'immediate');
@@ -698,6 +711,9 @@ export function activate(context: vscode.ExtensionContext) {
       } else if (isEntitiesXmlDocument(document)) {
         scheduleEntitiesDiagnostics(document, 'immediate');
         scheduleProcessTopologyDiagnostics(document, 'immediate');
+      } else if (isTypesXmlDocument(document)) {
+        // RUST-177:已开 types.xml 档(激活期补发)结构完整性诊断。
+        scheduleTypesDiagnostics(document, 'immediate');
       } else if (isProcessTopologyManifestDocument(document)) {
         scheduleProcessTopologyDiagnostics(document, 'immediate');
       } else if (isPythonDocument(document)) {
@@ -921,6 +937,9 @@ export function activate(context: vscode.ExtensionContext) {
           if (processTopologyInputsChanged) {
             scheduleProcessTopologyDiagnostics(doc, 'immediate');
           }
+        } else if (isTypesXmlDocument(doc)) {
+          // RUST-177:配置切换重算 types.xml 结构诊断面。
+          scheduleTypesDiagnostics(doc, 'immediate');
         } else if (isProcessTopologyManifestDocument(doc)) {
           if (processTopologyInputsChanged) {
             scheduleProcessTopologyDiagnostics(doc, 'immediate');

@@ -104,7 +104,7 @@ import { PythonClassIndex } from '../backend/pythonClassIndex';
 import { getWorkspaceRootForDocument, findDefinitionFileByCategory, findDefinitionTextByCategory, getEntityCustomTypesSnapshot } from '../definitionWorkspace';
 import { getDefinitionWorkspaceLayout, listDefinitionFiles } from '../definitionWorkspace';
 import { readSharedFileSnapshot, readSharedFileSnapshotAsync } from '../sharedFileSnapshot';
-import { isPythonMroJumpEnabled, validateDocument, validateEntitiesXmlDocument } from '../languageProviders';
+import { isPythonMroJumpEnabled, validateDocument, validateEntitiesXmlDocument, validateTypesXmlDocument } from '../languageProviders';
 import { DiagnosticScheduler, getDiagnosticScheduler } from '../backend/diagnosticScheduler';
 import { validateProcessTopologyInRust } from '../backend/processTopologyRust';
 import { mapFindingsToDiagnostics, type ProcessTopologyDiagnosticSpec } from '../backend/processTopologyDiagnostics';
@@ -138,6 +138,7 @@ export interface DiagnosticsDeps {
   pythonClassIndex: PythonClassIndex;
   isDefDocument(document: vscode.TextDocument): boolean;
   isPythonDocument(document: vscode.TextDocument): boolean;
+  isTypesXmlDocument(document: vscode.TextDocument): boolean;
 }
 
 /** L3 产出的调度句柄/集合——文档事件面经组合根注入消费 */
@@ -146,6 +147,7 @@ export interface DiagnosticsShared {
   diagnosticScheduler: DiagnosticScheduler;
   scheduleDefDiagnostics: ScheduleDiagnostics;
   scheduleEntitiesDiagnostics: ScheduleDiagnostics;
+  scheduleTypesDiagnostics: ScheduleDiagnostics;
   scheduleReceiverNoneDiagnostics: ScheduleDiagnostics;
   scheduleStartupScriptDiagnostics: ScheduleDiagnostics;
   scheduleDefMethodConsistencyDiagnostics: ScheduleDiagnostics;
@@ -180,6 +182,7 @@ export interface DiagnosticsShared {
   fixedDictConstructScheduler: DiagnosticScheduler;
   scheduleScalarAssignDiagnostics: ScheduleDiagnostics;
   rescheduleScalarAssignForRegistryChange: () => void;
+  rescheduleDefForTypesRegistryChange: () => void;
   scalarAssignDiagnostics: vscode.DiagnosticCollection;
   scalarAssignScheduler: DiagnosticScheduler;
   scheduleCellDataWrongKeyDiagnostics: ScheduleDiagnostics;
@@ -194,7 +197,7 @@ export interface DiagnosticsShared {
 }
 
 export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
-  const { context, entityMappingManager, pythonClassIndex, isDefDocument, isPythonDocument } = deps;
+  const { context, entityMappingManager, pythonClassIndex, isDefDocument, isPythonDocument, isTypesXmlDocument } = deps;
   // PR1 打点:diagnostics = validateDocument/validateEntitiesXmlDocument 的
   // 同步耗时(保持同步调用,不改发布时序)。
   const validateDocumentTimed = (document: vscode.TextDocument, collection: vscode.DiagnosticCollection): void => {
@@ -217,6 +220,20 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     });
     try {
       validateEntitiesXmlDocument(document, collection);
+      operation.end('ok');
+    } catch (error) {
+      operation.end('error');
+      throw error;
+    }
+  };
+  // RUST-177:types.xml 结构诊断打点(同 def/entities 计时面)
+  const validateTypesXmlDocumentTimed = (document: vscode.TextDocument, collection: vscode.DiagnosticCollection): void => {
+    const operation = startLanguageServiceOperation('diagnostics', {
+      fileKind: 'types',
+      documentVersion: document.version
+    });
+    try {
+      validateTypesXmlDocument(document, collection);
       operation.end('ok');
     } catch (error) {
       operation.end('error');
@@ -265,6 +282,31 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
       },
       publish: () => {
         /* validateEntitiesXmlDocument 直接写 collection,无独立发布面 */
+      }
+    };
+    if (channel === 'queued') {
+      diagnosticScheduler.requestQueued(document, options);
+    } else {
+      diagnosticScheduler.request(document, options);
+    }
+  };
+  // RUST-177:types.xml 结构完整性诊断(同 def/entities 走共享调度器单排队槽)
+  const scheduleTypesDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    if (!isTypesXmlDocument(document)) {
+      return;
+    }
+    const options = {
+      layer: 'local' as const,
+      compute: () => {
+        const list: vscode.Diagnostic[] = [];
+        validateTypesXmlDocumentTimed(document, diagnostics);
+        return list;
+      },
+      publish: () => {
+        /* validateTypesXmlDocument 直接写 collection,无独立发布面 */
       }
     };
     if (channel === 'queued') {
@@ -1468,6 +1510,20 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     }
   };
 
+  // RUST-177:def 属性 Persistent×ENTITYCALL 面消费 types.xml 注册表快照
+  // (别名链末端解析)——注册表变更即重排全部已打开 def 文档。def 面走共享
+  // 主调度器(每 URI 单排队槽),同版本重请求会被 skippedCurrentVersion
+  // 吞掉,故先 invalidateAll 抬诊断输入代(A6-4 范式,同 scalarAssign 族;
+  // 同代内的 entities/types 文档随之多算一轮,代价一次同步解析、缓存面吸收)。
+  const rescheduleDefForTypesRegistryChange = (): void => {
+    diagnosticScheduler.invalidateAll();
+    for (const doc of vscode.workspace.textDocuments) {
+      if (isDefDocument(doc)) {
+        scheduleDefDiagnostics(doc, 'queued');
+      }
+    }
+  };
+
   // KSEM-CELL-10:cellData 错键提示。键宇宙与 CELL-08 同源(Rust cellDataKeys),
   // 判据用 CELL-09 的键跟踪事实:裸下标读已证 absent 且世界封闭 → 确定性缺失;
   // 世界开放(动态键写/update/setdefault)或 .get 形态 → 只给低置信建议(get
@@ -1873,6 +1929,7 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     diagnosticScheduler,
     scheduleDefDiagnostics,
     scheduleEntitiesDiagnostics,
+    scheduleTypesDiagnostics,
     scheduleReceiverNoneDiagnostics,
     scheduleStartupScriptDiagnostics,
     scheduleDefMethodConsistencyDiagnostics,
@@ -1888,6 +1945,7 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
     rescheduleFixedDictConstructForRegistryChange,
     scheduleScalarAssignDiagnostics,
     rescheduleScalarAssignForRegistryChange,
+    rescheduleDefForTypesRegistryChange,
     scheduleProcessTopologyDiagnostics,
     defMethodConsistencyDiagnostics,
     defMethodConsistencyScheduler,
