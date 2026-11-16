@@ -300,6 +300,12 @@ impl ParseRegistry {
         self.forward.get(key)
     }
 
+    /// RUST-133:解析失败文件全量枚举(索引缺口 partial 面)——负缓存
+    /// 委托,按 (root, 路径) 字典序。
+    pub fn negative_entries(&self) -> Vec<(DocumentKey, String)> {
+        self.cache.negative_entries()
+    }
+
     /// 删除/改名失效(VFS-012 对齐)。
     pub fn invalidate(&mut self, key: &DocumentKey) {
         if let Some(old) = self.forward.remove(key) {

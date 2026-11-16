@@ -24,7 +24,7 @@ use kode_protocol::{
     RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification,
     TextDocumentSyncOptions, PROTOCOL_VERSION,
 };
-use kode_scheduler::{RootInvalidationSink, WorkspaceSession};
+use kode_scheduler::{EnqueueDecision, RootInvalidationSink, WorkspaceSession};
 use kode_vfs::{CanonicalUri, DocumentKey, DocumentStore, TextChange};
 
 use crate::completion::to_lsp_items;
@@ -437,6 +437,11 @@ fn handle_request_inner(
             vec![Outgoing::Response(crate::warm_gate::handle_warm_state(
                 state, request,
             ))]
+        }
+        // RUST-133:索引缺口报告(per-URI 裁定 + fill 按需补齐;聚合面与
+        // health indexGaps 键同源)。要动 ServerState(fill 入队),走顶层臂。
+        "$/kode/indexGaps" => {
+            vec![Outgoing::Response(handle_index_gaps(state, request))]
         }
         _ => vec![Outgoing::Response(Response::error(
             Some(request.id),
@@ -961,6 +966,124 @@ fn evict_uri(state: &mut ServerState, uri: &str) {
     state.hover.borrow_mut().remove(&key);
 }
 
+/// RUST-133:索引缺口聚合报告(health `indexGaps` 键与 `$/kode/indexGaps`
+/// 无 uri 形态同源)。三族:unindexed(暖扫计划的未完成量;暖扫之外无全量
+/// 计划账,known/missing 诚实 null 不虚构 0)/ partial(解析失败负缓存,
+/// count + 有界样本)/ stale(刷新在途:调度队列 + 风暴缓冲)。
+fn index_gaps_report(state: &ServerState) -> serde_json::Value {
+    let negatives = state.hover.borrow().index.negative_entries();
+    const SAMPLE_MAX: usize = 8;
+    let samples: Vec<serde_json::Value> = negatives
+        .iter()
+        .take(SAMPLE_MAX)
+        .map(|(key, reason)| {
+            serde_json::json!({ "uri": key.uri.to_string(), "reason": reason })
+        })
+        .collect();
+    let warm = state.warm.snapshot();
+    let ingest = state.index.snapshot();
+    let (known, missing) = match warm.total {
+        Some(total) => (
+            serde_json::Value::from(total),
+            serde_json::Value::from(
+                total.saturating_sub(warm.done).saturating_sub(warm.failed),
+            ),
+        ),
+        None => (serde_json::Value::Null, serde_json::Value::Null),
+    };
+    serde_json::json!({
+        "unindexed": { "known": known, "indexed": warm.done, "missing": missing },
+        "partial": { "count": negatives.len(), "samples": samples },
+        "stale": { "queued": ingest.queued, "stormBuffered": ingest.storm_buffered },
+    })
+}
+
+/// RUST-133:$/kode/indexGaps——索引缺口报告与按需补齐。无 uri = 聚合报告;
+/// 带 uri = per-URI 裁定 {uri, tracked, parseError, pendingRefresh, gap,
+/// filled}:gap 四态 unindexed(索引不知晓)/ partial(负缓存,解析失败)/
+/// stale(刷新在途)/ none;裁定序 stale → unindexed → partial(在途刷新
+/// 会改写驻留真相,先报;真缺口才轮到 fill);fill=true 且 unindexed 时
+/// request_close 按需补齐(执行时刻真相重放:盘上有合法文件即回读入库)。
+fn handle_index_gaps(state: &mut ServerState, request: Request) -> Response {
+    let params: serde_json::Value = request.params.clone().unwrap_or_default();
+    let Some(uri) = params.get("uri").and_then(|v| v.as_str()) else {
+        return Response::success(request.id, index_gaps_report(state));
+    };
+    let fill = params
+        .get("fill")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let Ok(parsed) = CanonicalUri::parse(uri) else {
+        return Response::success(
+            request.id,
+            serde_json::json!({
+                "uri": uri,
+                "tracked": false,
+                "parseError": serde_json::Value::Null,
+                "pendingRefresh": false,
+                "filled": false,
+                "gap": "unindexed",
+            }),
+        );
+    };
+    let Some(key) = state.session.key_for(&parsed) else {
+        return Response::success(
+            request.id,
+            serde_json::json!({
+                "uri": uri,
+                "tracked": false,
+                "parseError": serde_json::Value::Null,
+                "pendingRefresh": false,
+                "filled": false,
+                "gap": "unindexed",
+            }),
+        );
+    };
+    let known = state.hover.borrow().index.known_to_registry(&key);
+    let parse_error = state
+        .hover
+        .borrow()
+        .index
+        .negative_entries()
+        .into_iter()
+        .find(|(k, _)| *k == key)
+        .map(|(_, reason)| reason);
+    let pending_refresh = state.index.has_pending(&crate::index_queue::identity_of(&key));
+    // tracked = 索引以任何形态知晓(成功入库或已记解析失败);负缓存文件
+    // 不进注册表前向表,只按 known 判会把 partial 误报成 unindexed。
+    let tracked = known || parse_error.is_some();
+    // 裁定序:stale 先于一切(在途刷新会改写驻留真相,消费者无须行动);
+    // 真缺口 unindexed(fill 的适用面)先于 partial(缺口是解析失败,处置
+    // 链是改文件重解析,非重放入库)。
+    let gap = if pending_refresh {
+        "stale"
+    } else if !tracked {
+        "unindexed"
+    } else if parse_error.is_some() {
+        "partial"
+    } else {
+        "none"
+    };
+    // fill 只对 unindexed 生效:partial/stale/none 都有自己的既有处置链
+    // (负缓存重解析 / 刷新在途 / 无缺口),fill 不越权重放。
+    let mut filled = false;
+    if fill && gap == "unindexed" {
+        let decision = state.index.request_close(&key);
+        filled = matches!(decision, EnqueueDecision::Queued | EnqueueDecision::Merged);
+    }
+    Response::success(
+        request.id,
+        serde_json::json!({
+            "uri": uri,
+            "tracked": tracked,
+            "parseError": parse_error,
+            "pendingRefresh": pending_refresh,
+            "filled": filled,
+            "gap": gap,
+        }),
+    )
+}
+
 /// CORE-016 健康报告:status/pid/版本/uptime/文档摘要,按 uri 排序保证确定性。
 fn health_report(state: &ServerState) -> serde_json::Value {
     let documents: Vec<DocumentSummary> = state
@@ -1035,6 +1158,9 @@ fn health_report(state: &ServerState) -> serde_json::Value {
         "valid": pc.valid,
         "negative": pc.negative,
     });
+    // RUST-133:索引缺口观测(unindexed/partial/stale 三族聚合;与
+    // $/kode/indexGaps 无 uri 形态同源)。
+    value["indexGaps"] = index_gaps_report(state);
     value
 }
 

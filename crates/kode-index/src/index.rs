@@ -164,6 +164,25 @@ impl SymbolIndex {
         self.registry.parse_cache_stats()
     }
 
+    /// RUST-133:解析失败文件全量枚举(索引缺口 partial 面)——注册表
+    /// 负缓存委托,按 (root, 路径) 字典序。
+    pub fn negative_entries(&self) -> Vec<(DocumentKey, String)> {
+        self.registry.negative_entries()
+    }
+
+    /// RUST-133:文件是否已入库(tracked 判定,per-URI 缺口裁定面;
+    /// by_file 直查,不枚举符号)。
+    pub fn tracks(&self, key: &DocumentKey) -> bool {
+        self.by_file.contains_key(key)
+    }
+
+    /// RUST-133:文件是否被解析注册表知晓(tracked 判定的完整口径——
+    /// 解析成功但零符号的文件 by_file 为空,tracks 会误判 unindexed;
+    /// 注册表前向表对每个成功解析文件都有登记,失败/非声明文件没有)。
+    pub fn known_to_registry(&self, key: &DocumentKey) -> bool {
+        self.registry.refs_of(key).is_some()
+    }
+
     /// 单文件增量入口(RUST-120-W 差异化失效):指纹命中 = Identical 零重建
     /// 零失效;重解析后签名事实(records + Parent + 引用集)全等 = BodyOnly,
     /// 索引态零变异、generation 不 bump——持有快照的读者全部存活;事实有变

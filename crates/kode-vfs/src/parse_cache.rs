@@ -243,6 +243,21 @@ impl<V> ParseCache<V> {
         self.negative.len()
     }
 
+    /// RUST-133:负缓存全量枚举(索引缺口 partial 面的记录源)——按
+    /// (root, 路径) 字典序,HashMap 遍历序不稳定故排序产出,reason 拷贝。
+    pub fn negative_entries(&self) -> Vec<(DocumentKey, String)> {
+        let mut entries: Vec<(DocumentKey, String)> = self
+            .negative
+            .iter()
+            .map(|(key, entry)| (key.clone(), entry.reason.clone()))
+            .collect();
+        entries.sort_by(|a, b| {
+            (a.0.root.0, a.0.uri.as_path())
+                .cmp(&(b.0.root.0, b.0.uri.as_path()))
+        });
+        entries
+    }
+
     /// 超预算驱逐:二次机会时钟扫描,recent 条目清位缓刑一轮,再遇才驱逐;
     /// 时钟环里的陈旧键(条目已失效)惰性跳过,比例失衡时压缩。
     ///
@@ -342,6 +357,25 @@ mod tests {
         // 成功解析清掉负缓存。
         cache.insert(k.clone(), fp, "ast".into());
         assert_eq!(cache.negative_len(), 0);
+    }
+
+    #[test]
+    fn negative_entries_sorted_and_reason_copied() {
+        // RUST-133:HashMap 遍历序不稳定 → 枚举必须按 (root, 路径) 字典序;
+        // reason 是拷贝非借用(消费面拿走 Vec 后缓存仍可变)。
+        let mut cache: ParseCache<String> = ParseCache::new();
+        cache.insert_negative(key(2, "/w/zz.def"), 1, "root-2");
+        cache.insert_negative(key(1, "/w/aa.def"), 2, "root-1-aa");
+        cache.insert_negative(key(1, "/w/mm.def"), 3, "root-1-mm");
+        let entries = cache.negative_entries();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].1, "root-1-aa");
+        assert_eq!(entries[1].1, "root-1-mm");
+        assert_eq!(entries[2].1, "root-2");
+        assert_eq!(entries[0].0.uri.as_path(), "/w/aa.def");
+        // 成功写入清掉负缓存后枚举同步收缩。
+        cache.insert(key(1, "/w/aa.def"), 2, "ast".into());
+        assert_eq!(cache.negative_entries().len(), 2);
     }
 
     #[test]

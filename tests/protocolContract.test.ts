@@ -86,10 +86,17 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
     client.openDocument(URI, 'kbengine-def', 1, '<Entity><GroupName>mob</GroupName></Entity>');
     const health = await client.health();
     expect(sortedKeys(health)).toEqual(
-      ['documents', 'ingest', 'initialized', 'maintenance', 'parseCache',
+      ['documents', 'indexGaps', 'ingest', 'initialized', 'maintenance', 'parseCache',
        'pid', 'pool', 'resources', 'restartGeneration', 'serverVersion',
        'shutdownRequested', 'status', 'uptimeMs', 'warm']
     );
+    // RUST-133:索引缺口观测恒装配(unindexed/partial/stale 三族;fresh
+    // server 零缺口,partial 计数 0 且暖扫外 known/missing 诚实 null)。
+    expect(health.indexGaps).toEqual({
+      unindexed: { known: null, indexed: 0, missing: null },
+      partial: { count: 0, samples: [] },
+      stale: { queued: expect.any(Number), stormBuffered: expect.any(Number) },
+    });
     // RUST-074-W:暖门观测恒装配(fresh server 未 begin = idle 全形状)。
     expect(health.warm).toEqual({
       state: 'idle', coldWhileWarming: 0, done: 0, failed: 0, total: null

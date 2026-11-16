@@ -401,6 +401,12 @@ impl IndexQueue {
         purged
     }
 
+    /// RUST-133:该身份是否仍有待执行刷新(排程 pending 或风暴缓冲)——
+    /// 索引缺口 stale 面的判据(缺口=刷新已在路上,非真缺)。
+    pub fn has_pending(&self, identity: &str) -> bool {
+        self.pending.contains_key(identity) || self.storm_roots.contains_key(identity)
+    }
+
     /// 观测快照(健康面同源)。
     pub fn snapshot(&self) -> IndexQueueSnapshot {
         let ingest = self.ingest_counts.borrow();
