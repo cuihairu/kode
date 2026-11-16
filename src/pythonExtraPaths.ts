@@ -15,8 +15,9 @@
  * CFG-02:生成的条目一律 `${workspaceFolder}/...` 变量形态(换机器/换盘符
  * 不失效),存量绝对路径带工作区前缀的在下次同步时自动迁移,不可迁移的
  * 绝对路径由配置契约诊断 extraPathsAbsolute 报;CFG-03:同一次同步显式写
- * `python.analysis.stubPath`(Pylance 三级优先级:同名 .pyi → stubPath →
- * extraPaths),用户已自设的 stubPath 永不覆盖;CFG-04:同一次同步键级合并
+ * `python.analysis.stubPath`(真机实测解析序:stubPath → extraPaths → 同目录
+ * .pyi,importer 目录不参与绝对 import,RUST-170),用户已自设的 stubPath
+ * 永不覆盖;CFG-04:同一次同步键级合并
  * `python.analysis.diagnosticSeverityOverrides` 加 reportMissingModuleSource
  * =none——KBEngine 是 C++ 内嵌注册模块(PyImport_AddModule),磁盘上永远没有
  * 对应 .py 源,.pyi 落地后 Pylance 的「已找到类型声明、无法从源码解析」是
@@ -338,8 +339,8 @@ export async function syncPythonExtraPaths(
       written.push(folder.name);
     }
     // CFG-03:显式写 python.analysis.stubPath(默认约定 ${workspaceFolder}/.kbengine/stubs,
-    // 随 kbengine.managedDir 同迁)——Pylance 三级优先级(同名 .pyi → stubPath →
-    // extraPaths)由此确定。只管自己那段:用户已自设的值永不覆盖;存根导出关
+    // 随 kbengine.managedDir 同迁)——真机实测解析序(stubPath → extraPaths →
+    // 同目录 .pyi,RUST-170)stubPath 排第一,由此确定。只管自己那段:用户已自设的值永不覆盖;存根导出关
     // 时 kode 的存根面整个关掉,也不写。与 extraPaths 差量解耦:现值已对齐即零写。
     let userStubPath: string | undefined;
     if (stubExportEnabled) {

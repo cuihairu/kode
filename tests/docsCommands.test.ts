@@ -209,24 +209,26 @@ describe('features.md Settings 表与 package.json 对账', () => {
 });
 
 // CFG-02/CFG-03 文档对账锁:extraPaths 变量形态 + 存量迁移、stubPath 显式值、
-// Pylance 三级优先级必须同时写进中英 configuration.md;features.md 的接线/
-// 契约条目同步。与上方 Settings 表锁同一形状——防只补一边或改代码忘改文档。
+// Pylance 解析序(RUST-170 真机实测:stubPath → extraPaths → 同目录 .pyi,
+// importer 目录不参与绝对 import)必须同时写进中英 configuration.md;
+// features.md 的接线/契约条目同步。与上方 Settings 表锁同一形状——防只补
+// 一边或改代码忘改文档。
 describe('configuration.md / features.md 的 Pylance 解析面锁(CFG-02/CFG-03)', () => {
   const enFeatures = readFileSync(join(root, 'docs', 'features.md'), 'utf8');
   const zhFeatures = readFileSync(join(root, 'docs', 'zh', 'features.md'), 'utf8');
 
-  it('中英 configuration.md 都写明 stubPath 显式值与 Pylance 三级优先级', () => {
+  it('中英 configuration.md 都写明 stubPath 显式值与 Pylance 真机实测解析序', () => {
     for (const [label, text] of [
       ['docs/guide/configuration.md', enConfigurationMd],
       ['docs/zh/guide/configuration.md', zhConfigurationMd]
     ] as const) {
       expect(text, `${label}: 缺 python.analysis.stubPath`).toContain('python.analysis.stubPath');
       expect(text, `${label}: 缺 stubPath 显式值`).toContain('${workspaceFolder}/.kbengine/stubs');
-      expect(text, `${label}: 缺三级优先级链`).toContain('→ stubPath → extraPaths');
+      expect(text, `${label}: 缺解析序链`).toContain('stubPath → extraPaths');
     }
-    // 优先级链的完整语义(同名 .pyi 打头)双语各写一遍
-    expect(enConfigurationMd).toContain('same-name .pyi → stubPath → extraPaths');
-    expect(zhConfigurationMd).toContain('同名 .pyi → stubPath → extraPaths');
+    // 解析序链的完整语义(同目录 .pyi 垫底,importer 目录不参与绝对 import)双语各写一遍
+    expect(enConfigurationMd).toContain('stubPath → extraPaths → importer-directory .pyi');
+    expect(zhConfigurationMd).toContain('stubPath → extraPaths → 同目录 .pyi');
   });
 
   it('中英 configuration.md 都写明 extraPaths 变量形态与存量绝对路径迁移', () => {
@@ -248,7 +250,7 @@ describe('configuration.md / features.md 的 Pylance 解析面锁(CFG-02/CFG-03)
     ] as const) {
       expect(text, `${label}: 缺变量形态`).toContain('${workspaceFolder}');
       expect(text, `${label}: 缺 stubPath`).toContain('stubPath');
-      expect(text, `${label}: 缺三级优先级`).toContain('→ stubPath → extraPaths');
+      expect(text, `${label}: 缺解析序`).toContain('stubPath → extraPaths');
     }
     expect(enFeatures).toContain('legacy absolute paths');
     expect(zhFeatures).toContain('存量绝对路径');

@@ -104,6 +104,23 @@ async function main(): Promise<void> {
   let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
   let dbgLaunchArgs: string[] = [];
+  let pylLaunchArgs: string[] = [];
+  // RUST-170 Pylance 真机验证:工作区=KODE_PYLANCE_WORKSPACE(scripts/verify/
+  // lsp-stub-priority.mjs --emit-fixture 预建的三层 stub 夹具),套件逐级裁层
+  // 轮询真实定义跳转落位。Pylance 不在纯下载的测试 VS Code 里,与 dbglive
+  // 同法显式挂 .vscode-test/extensions(已装 ms-python.vscode-pylance)。
+  const pylanceMode = process.argv.includes('--pylance');
+  if (pylanceMode) {
+    process.env.KODE_ELECTRON_SUITE = 'pylance';
+    if (!process.env.KODE_PYLANCE_WORKSPACE) {
+      throw new Error('--pylance 需要 KODE_PYLANCE_WORKSPACE(三层 stub 夹具工作区)');
+    }
+    workspacePath = process.env.KODE_PYLANCE_WORKSPACE;
+    pylLaunchArgs = [
+      '--extensions-dir',
+      path.join(extensionDevelopmentPath, '.vscode-test', 'extensions')
+    ];
+  }
   // IDE-LIV-003..007 真机运行观测联验:工作区=KODE_LIV_WORKSPACE(引擎资产根,
   // 供 LIV-007 源码解析),引擎日志目录=KODE_LIV_ENGINE_LOG_DIR,证据出=
   // KODE_LIV_OUT;引擎须已在本机运行(组件发现走真实广播)。
@@ -1008,6 +1025,7 @@ async function main(): Promise<void> {
       workspacePath,
       ...localeArgs,
       ...dbgLaunchArgs,
+      ...pylLaunchArgs,
       // 无显示环境(headless/CI)必需:xvfb 下禁 GPU 与沙箱
       '--disable-gpu',
       '--no-sandbox',
