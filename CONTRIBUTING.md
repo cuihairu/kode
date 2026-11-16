@@ -191,35 +191,21 @@ feat(completion): add support for FIXED_DICT type
 
 ### PR 描述
 
-GitHub 上创建 PR 时会自动载入 `.github/PULL_REQUEST_TEMPLATE.md`（守卫测试
-`tests/pullRequestTemplate.test.ts` 锁四字段齐全），字段如下：
-
 ```markdown
 ## 变更类型
 - [ ] Bug 修复
-- [ ] 新功能
+- [x] 新功能
 - [ ] 破坏性变更
 - [ ] 文档更新
 
 ## 描述
 简要描述你的更改...
 
-## 复现脚本
-Bug 修复必须附最小复现（脚本/步骤/语料文件皆可）；无法构造复现时，
-说明缺陷面与已排除的原因。
-
-## 测试证据
-贴测试命令与输出摘要（通过计数/关键断言）；合并前全量门禁必须绿。
-
-## Profile/Perf delta
-性能敏感改动附前后对比（bench 数字/profile 截图皆可）；不涉及性能时写「不涉及」。
-
-## 回退计划
-出问题如何回退（独立可 revert 的 commit/配置开关/数据面处理）；
-写「直接 revert <hash>」亦可。
-
 ## 相关 Issue
 Closes #123
+
+## 测试
+描述你如何测试这些更改...
 
 ## 截图
 如果适用，添加截图...
