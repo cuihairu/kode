@@ -19,6 +19,7 @@ import { ATTRIBUTE_NONE_DIAGNOSTICS_ENABLED_DEFAULT, attributeNoneDiagnosticItem
 import { SPACE_NAV_DIAGNOSTICS_ENABLED_DEFAULT, SPACE_NAV_DIAGNOSTIC_CODE, computeSpaceNavFindings } from '../backend/spaceNavDiagnostics';
 import { buildSpaceNavItemsWithRust } from '../backend/spaceNavRust';
 import { RPC_ARG_COUNT_DIAGNOSTICS_ENABLED_DEFAULT, RPC_ARG_COUNT_DIAGNOSTIC_CODE, computeRpcArgCountFindingsAsync } from '../backend/rpcArgCountDiagnostics';
+import { RPC_ARG_TYPE_DIAGNOSTICS_ENABLED_DEFAULT, RPC_ARG_TYPE_DIAGNOSTIC_CODE, computeRpcArgTypeCompatFindings } from '../backend/rpcArgTypeCompat';
 import { flowVersionKeyForDocument } from '../flowVersionKey';
 import {
   DEF_METHOD_MISSING_DIAGNOSTIC_CODE,
@@ -397,7 +398,29 @@ export function activateDiagnostics(deps: DiagnosticsDeps): DiagnosticsShared {
               code: RPC_ARG_COUNT_DIAGNOSTIC_CODE
             }))
           : [];
-        return [...receiverItems, ...attrItems, ...spaceNavItems, ...rpcArgCountItems];
+        // RUST-176:RPC 参数序列化类型兼容 lint——字面量实参与调用所属
+        // section 声明的 <Arg> 内建类型族对账(整数族静默打 0、FLOAT/STRING
+        // 族 return 不写流,锚见 rpcArgTypeCompat 头注);字面量推不出/非内
+        // 建类型/声明未就绪保留未知一律不报,数量不符归 rpcArgCount 不重复。
+        const rpcArgTypeEnabled = config
+          .get<boolean>('rpcArgTypeDiagnostics', RPC_ARG_TYPE_DIAGNOSTICS_ENABLED_DEFAULT);
+        const rpcArgTypeItems = rpcArgTypeEnabled
+          ? computeRpcArgTypeCompatFindings(
+              document.getText(),
+              entityMapping,
+              pythonScriptDomain(document.uri.fsPath) ?? undefined
+            ).map(finding => ({
+              range: {
+                start: { line: finding.line, character: finding.character },
+                end: { line: finding.line, character: finding.character + finding.length }
+              },
+              message: finding.message,
+              severity: 'Warning' as const,
+              source: 'kbengine' as const,
+              code: RPC_ARG_TYPE_DIAGNOSTIC_CODE
+            }))
+          : [];
+        return [...receiverItems, ...attrItems, ...spaceNavItems, ...rpcArgCountItems, ...rpcArgTypeItems];
       },
       publish: (items: readonly ReceiverDiagnosticItem[]) => {
         diagnostics.set(document.uri, items.map(item => {

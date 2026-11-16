@@ -1476,6 +1476,11 @@
           "default": true,
           "markdownDescription": "%kbengine.config.rpcArgCountDiagnostics.description%"
         },
+        "kbengine.rpcArgTypeDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%kbengine.config.rpcArgTypeDiagnostics.description%"
+        },
         "kbengine.roleMisuseDiagnostics": {
           "type": "boolean",
           "default": true,

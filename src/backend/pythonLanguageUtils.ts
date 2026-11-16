@@ -233,7 +233,7 @@ const CALL_ARGUMENT_CLOSER_FOR: Record<string, string> = { '(': ')', '[': ']', '
  * 逗号切分(深度计 ()[]{},字符串 ' " 内的逗号/括号不算)。同行找不到闭合
  * ')' → null(跨行调用不出实参表)。
  */
-function parseSingleLineCallArguments(
+export function parseSingleLineCallArguments(
   lineText: string,
   scanFrom: number
 ): PythonReceiverCallArgumentSpan[] | null {

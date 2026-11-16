@@ -88,9 +88,12 @@ describe('IDE-LINT-011 规则注册与能力清单', () => {
   });
 
   it('状态三档明确区分,严重度合法', () => {
-    expect(new Set(LINT_RULES.map(rule => rule.status))).toEqual(
-      new Set(['implemented', 'hint-only', 'pending'])
-    );
+    // RUST-176 起注册表内 pending 清零(KBE-PY-009b 转正):三档仍是唯一合法
+    // 值域,断言改为子集;不再要求三档齐活(不为凑档位留假 pending 规则)
+    expect(new Set(LINT_RULES.map(rule => rule.status))).toBeInstanceOf(Set);
+    for (const rule of LINT_RULES) {
+      expect(['implemented', 'hint-only', 'pending']).toContain(rule.status);
+    }
     expect(implemented.length).toBeGreaterThan(0);
     for (const rule of implemented) {
       expect(['Error', 'Warning', 'Information']).toContain(rule.severity);

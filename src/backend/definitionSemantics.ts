@@ -916,6 +916,12 @@ function parseMethods(
       const args: string[] = [];
       const argTypes: DefinitionArgType[] = [];
       for (const argNode of getDirectChildElementsByName(methodNode, 'Arg')) {
+        // 引擎读型口径(entitydef.cpp:1625-1643 + xml.cpp:121-127 getValStr
+        // 只认文本节点,元素节点 ToText()=NULL 返回空串):Arg 的第一个子节点
+        // 必须是直文本(`<Arg> STRING </Arg>`);元素形态 `<Arg><Type>STRING</Type>`
+        // 的首子节点是元素 → getValStr 得空串 → dataType[] not found → 引擎
+        // 启动中止。直文本为空=未声明(空文本 Arg 两处一致剔除),不认元素形态
+        // (与引擎同口径,不让解析器接受引擎视为致命的形态)。
         const argName = getElementText(argNode).trim();
         if (!argName) {
           continue;

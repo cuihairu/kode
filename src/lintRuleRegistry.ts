@@ -458,12 +458,12 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
   },
   // ── 待实现(pending)────────────────────────────────────────────
   {
-    id: 'KBE-PY-009b', code: null,
-    title: 'RPC 参数类型与 .def 不一致(数量已实现;类型仍仅签名/提示面)',
-    severity: null, roles: 'base/cell/client',
-    toggles: [], trigger: '实时(open/edit)',
-    quickFix: false, status: 'pending',
-    source: 'KBE-PY-009b(待实现,类型面无参数名对账依据)'
+    id: 'KBE-PY-009b', code: 'kbengine.rpcArgType',
+    title: 'RPC 参数序列化类型与 .def 不一致(字面量实参对账,client/base/cell 分面)',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.rpcArgTypeDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/backend/rpcArgTypeCompat.ts(类型族锚=datatype addToStream:整数族静默打 0 datatype.h:875-898,FLOAT/STRING 族 return 不写流 datatype.cpp:540-549/1050-1062)'
   }
 ];
 
