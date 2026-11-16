@@ -11,6 +11,7 @@ pub mod db_clone;
 pub mod def_md5;
 pub mod def_rename;
 pub mod definition;
+pub mod diagnostic_pipeline;
 pub mod document_symbols;
 pub mod dependency_graph;
 pub mod diagnostics;
@@ -56,6 +57,7 @@ pub use completion::{
 };
 pub use definition::{dump_definition_golden, DefinitionLocation, LspPosition, LspRange};
 pub use def_rename::dump_def_rename_golden;
+pub use diagnostic_pipeline::dump_diagnostic_pipeline_golden;
 pub use document_symbols::{dump_document_symbols_golden, DocumentSymbolFace};
 pub use python_call_at::dump_python_call_at_golden;
 pub use references::dump_references_golden;
