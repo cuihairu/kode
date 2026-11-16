@@ -18,6 +18,7 @@ pub use symbol::{
     def_entity_name, extract_records, MethodFacet, Symbol, SymbolId, SymbolKind, SymbolRecord,
 };
 
+pub use kode_parser::dep::ParseCacheStats;
 pub use kode_parser::diag::Diagnostic;
 pub use kode_parser::model::ChainNode;
 pub use kode_vfs::store::{DocumentKey, RootId};

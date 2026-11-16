@@ -325,6 +325,41 @@ impl ParseRegistry {
     pub fn tracked_files(&self) -> usize {
         self.forward.len()
     }
+
+    /// RUST-125:缓冲活跃通知(打开/编辑触达面)——缓存条目驱逐缓刑一轮。
+    /// 语义口径见 [`ParseCache::mark_recent`](缓刑非硬 pin:硬 pin 超预算
+    /// 无界驻留违背冷热分层;正编辑文件经 didChange→update 高频重置缓刑,
+    /// 长置未动的打开文件缓刑后被逐=诚实冷逐出,请求自带文本即重建)。
+    pub fn note_buffer_activity(&mut self, key: &DocumentKey) {
+        self.cache.mark_recent(key);
+    }
+
+    /// RUST-125:解析驻留观测(健康面 `parseCache` 键同源;预算面三计数 +
+    /// 条目数,无界缓存 budget=None 且 resident 恒 0)。
+    pub fn parse_cache_stats(&self) -> ParseCacheStats {
+        ParseCacheStats {
+            budget_bytes: self.cache.budget_bytes(),
+            resident_bytes: self.cache.resident_weight(),
+            evictions: self.cache.evictions(),
+            valid: self.cache.valid_len(),
+            negative: self.cache.negative_len(),
+        }
+    }
+}
+
+/// RUST-125:解析驻留观测快照(健康面 `parseCache` 键)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParseCacheStats {
+    /// 驻留预算上限(字节权重口径;无界缓存 = None)。
+    pub budget_bytes: Option<u64>,
+    /// 当前有效条目权重合计(无界缓存恒 0,不追踪)。
+    pub resident_bytes: u64,
+    /// 累计驱逐条目数。
+    pub evictions: u64,
+    /// 有效(最新快照)条目数。
+    pub valid: usize,
+    /// 负缓存条目数。
+    pub negative: usize,
 }
 
 /// CORE-013 预算权重:驻留产物「自有字符串字节」合计 + 每条目 64B 结构

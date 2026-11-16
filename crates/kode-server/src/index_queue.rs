@@ -178,6 +178,13 @@ impl IndexQueue {
         self.enqueue_refresh(key, Some(version))
     }
 
+    /// RUST-125:打开事件触达解析缓存(驱逐缓刑一轮)——「当前打开文件
+    /// 优先」的索引侧兑现。编辑面由 didChange→update 自然触达;长置未动
+    /// 的打开文件缓刑后被逐=诚实冷逐出(缓刑非硬 pin,超预算不无界驻留)。
+    pub fn note_buffer_open(&self, key: &DocumentKey) {
+        self.hover.borrow_mut().index.note_buffer_activity(key);
+    }
+
     /// didClose:刷新入队(version=None 与 Some 不同键,close 后必让位重
     /// 入队,不合并;执行时刻真相决定回读磁盘还是逐出)。
     pub fn request_close(&mut self, key: &DocumentKey) -> EnqueueDecision {

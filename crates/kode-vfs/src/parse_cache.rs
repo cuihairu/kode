@@ -121,6 +121,16 @@ impl<V> ParseCache<V> {
         }
     }
 
+    /// RUST-125:缓冲活跃通知(打开/编辑触达面)——置「近期用过」位给一次
+    /// 驱逐缓刑。条目无效(未驻留/已驱逐)时零操作。缓刑而非硬 pin:硬 pin
+    /// 会在超预算时形成无界驻留(违背冷热分层初衷);有效键恒在时钟环
+    /// (insert/enforce 清位均回环),置位即可被下一轮扫描保护。
+    pub fn mark_recent(&mut self, key: &DocumentKey) {
+        if let Some(entry) = self.valid.get_mut(key) {
+            entry.recent = true;
+        }
+    }
+
     /// 记录一次成功解析:覆盖同文档旧值(仅保留最新有效快照);预算面下
     /// 超限即按近似 LRU 驱逐。
     pub fn insert(&mut self, key: DocumentKey, input_fingerprint: u64, value: V) {
@@ -215,6 +225,12 @@ impl<V> ParseCache<V> {
 
     pub fn valid_len(&self) -> usize {
         self.valid.len()
+    }
+
+    /// 条目是否有效驻留(纯观测,**不置近期位**——get 的命中置位会续缓刑,
+    /// 断言驱逐行为必须走这里)。
+    pub fn contains(&self, key: &DocumentKey) -> bool {
+        self.valid.contains_key(key)
     }
 
     pub fn negative_len(&self) -> usize {
@@ -397,6 +413,37 @@ mod tests {
         assert!(cache.get(&b, 1).is_none(), "最久未用条目必须被驱逐");
         assert_eq!(cache.evictions(), 1);
         assert_eq!(cache.resident_weight(), 20);
+    }
+
+    #[test]
+    fn mark_recent_grants_one_round_reprieve() {
+        let mut cache: ParseCache<String> = ParseCache::with_budget(20, len_weight);
+        let a = key(1, "/w/a.def");
+        let b = key(2, "/w/b.def");
+        cache.insert(a.clone(), 1, "0123456789".into());
+        cache.insert(b.clone(), 1, "9876543210".into());
+        // RUST-125:打开事件触达(无指纹 get,纯 mark_recent)。
+        cache.mark_recent(&a);
+        cache.insert(key(3, "/w/c.def"), 1, "abcdefghij".into());
+        // b(未触达)被逐,a 因 mark_recent 缓刑存活(contains 纯观测,
+        // get 的命中置位会污染断言)。
+        assert!(cache.contains(&a), "mark_recent 必须缓刑一轮");
+        assert!(!cache.contains(&b), "未触达条目先被驱逐");
+        // 缓刑窗口有限:清位后 a 移至环尾,后续超限轮次先逐环头(c),
+        // 持续超限最终轮到 a——长置未动的打开文件最终让位,不虚构硬 pin
+        // (二次机会时钟的近似 LRU 语义,牺牲者序=环序非严格 LRU 序)。
+        cache.insert(key(4, "/w/d.def"), 1, "klmnopqrst".into());
+        assert!(!cache.contains(&key(3, "/w/c.def")), "环头未触达条目先逐");
+        cache.insert(key(5, "/w/e.def"), 1, "uvwxyz0123".into());
+        assert!(!cache.contains(&a), "持续超限最终逐出缓刑条目");
+    }
+
+    #[test]
+    fn mark_recent_unknown_key_is_noop() {
+        let mut cache: ParseCache<String> = ParseCache::with_budget(20, len_weight);
+        cache.mark_recent(&key(9, "/w/ghost.def"));
+        assert_eq!(cache.valid_len(), 0);
+        assert_eq!(cache.evictions(), 0);
     }
 
     #[test]

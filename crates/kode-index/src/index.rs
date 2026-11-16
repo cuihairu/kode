@@ -17,7 +17,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use kode_parser::dep::{file_kind_of_uri, FileKind, ParseRegistry};
+use kode_parser::dep::{file_kind_of_uri, FileKind, ParseCacheStats, ParseRegistry};
 use kode_parser::diag::Diagnostic;
 use kode_parser::model::{resolve_parent_chain, ChainNode};
 use kode_vfs::store::{DocumentKey, RootId};
@@ -150,6 +150,18 @@ impl SymbolIndex {
     /// 解析驻留预算上限透传(无界 = None;装配观测面用)。
     pub fn parse_budget_bytes(&self) -> Option<u64> {
         self.registry.resident_budget_bytes()
+    }
+
+    /// RUST-125:缓冲活跃通知(打开/编辑触达面)——解析缓存条目驱逐缓刑
+    /// 一轮(缓刑非硬 pin,口径见 kode-parser ParseRegistry::note_buffer_
+    /// activity)。打开事件由队列装配面调用;didChange 经 update 自身触达。
+    pub fn note_buffer_activity(&mut self, key: &DocumentKey) {
+        self.registry.note_buffer_activity(key);
+    }
+
+    /// RUST-125:解析驻留观测(健康面 `parseCache` 键同源)。
+    pub fn parse_cache_stats(&self) -> ParseCacheStats {
+        self.registry.parse_cache_stats()
     }
 
     /// 单文件增量入口(RUST-120-W 差异化失效):指纹命中 = Identical 零重建
@@ -667,6 +679,31 @@ mod tests {
         format!(
             "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type> {dtype} </Type>\n\t\t\t<Flags> BASE </Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n"
         )
+    }
+
+    #[test]
+    fn parse_cache_stats_forward_budget_resident_and_evictions() {
+        // 无界构造:budget None、resident 恒 0(不追踪)。
+        let stats = SymbolIndex::new().parse_cache_stats();
+        assert_eq!(stats.budget_bytes, None);
+        assert_eq!(stats.resident_bytes, 0);
+        assert_eq!(stats.evictions, 0);
+        // 有预算构造:budget 透传;入库后 resident/valid 增长。
+        let mut index = SymbolIndex::with_parse_budget(4096);
+        let stats = index.parse_cache_stats();
+        assert_eq!(stats.budget_bytes, Some(4096));
+        let k = key("/proj/A.def");
+        index.update(k.clone(), &def_with_property("UINT32"));
+        let stats = index.parse_cache_stats();
+        assert!(stats.resident_bytes > 0, "入库后驻留权重必须增长");
+        assert_eq!(stats.valid, 1);
+        assert_eq!(stats.negative, 0);
+        // 极小预算:插入即逐(单条目超限),驱逐计数透传;触达无效条目
+        // =零操作不 panic。
+        let mut tiny = SymbolIndex::with_parse_budget(1);
+        tiny.update(key("/proj/T.def"), &def_with_property("UINT32"));
+        assert!(tiny.parse_cache_stats().evictions >= 1);
+        tiny.note_buffer_activity(&key("/proj/ghost.def"));
     }
 
     #[test]

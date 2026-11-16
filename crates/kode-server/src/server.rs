@@ -832,6 +832,8 @@ fn handle_did_open(state: &mut ServerState, params: Option<serde_json::Value>) {
         // 入口 freshen 自键保打开文档即时新鲜。版本 = 打开版本(同版本重发
         // 在队即合并)。open 不过风暴窗(交互即时需求)。
         let version = u64::try_from(params.text_document.version).unwrap_or(0);
+        // RUST-125:打开触达解析缓存(驱逐缓刑;「当前打开文件优先」)。
+        state.index.note_buffer_open(&key);
         state.index.request_open(&key, version);
     }
 }
@@ -961,6 +963,15 @@ fn health_report(state: &ServerState) -> serde_json::Value {
         "ingestBodyOnly": ingest.ingest_body_only,
         "ingestSignature": ingest.ingest_signature,
         "ingestRemoved": ingest.ingest_removed,
+    });
+    // RUST-125:解析驻留观测(冷热分层运行面:预算/驻留/驱逐三计数)。
+    let pc = state.hover.borrow().index.parse_cache_stats();
+    value["parseCache"] = serde_json::json!({
+        "budgetBytes": pc.budget_bytes,
+        "residentBytes": pc.resident_bytes,
+        "evictions": pc.evictions,
+        "valid": pc.valid,
+        "negative": pc.negative,
     });
     value
 }

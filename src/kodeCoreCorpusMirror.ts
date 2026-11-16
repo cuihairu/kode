@@ -81,13 +81,28 @@ export async function mirrorCorpusToRust(
   for (const doc of vscode.workspace.textDocuments) {
     openByFsPath.set(doc.uri.fsPath, doc);
   }
+  // RUST-125:初扫优先级——已打开的语料文档排前镜像(「当前打开文件优先
+  // warm」的镜像顺序面:交互文件首个就绪;其余文件保持发现序)。非语料
+  // 打开文档不进镜像流,打开集合中不在发现结果的条目自然缺席。
+  const mirrorOrder: string[] = [
+    ...vscode.workspace.textDocuments
+      .map(doc => doc.uri.fsPath)
+      .filter(fsPath => corpusUris.has(fsPath)),
+    ...corpusUris.keys()
+  ];
   // RUST-074-W:暖门接线——本镜像全程即生产首扫。begin 入队(Warming),
   // 完成泵至 Warm,中断 cancel(不留假 pending)。尽力而为:失败静默,
   // 不阻塞镜像本体;Warming 期真实 RPC 照常(server 池交互优先级)。
   let mirrored = 0;
   let failed = 0;
   await gate.beginBackgroundScan(corpusUris.size).catch(() => undefined);
-  for (const fsPath of corpusUris.keys()) {
+  // 顺序去重(打开文档在 keys 集合中,前段已镜像后段跳过)。
+  const seenFsPaths = new Set<string>();
+  for (const fsPath of mirrorOrder) {
+    if (seenFsPaths.has(fsPath)) {
+      continue;
+    }
+    seenFsPaths.add(fsPath);
     if (!gate.serveFromRust()) {
       // 镜像期间配置切走服务轨道(杀进程/回 ts):取消首扫(回 Idle,
       // 不留假 pending),停止补镜像,不写新账。

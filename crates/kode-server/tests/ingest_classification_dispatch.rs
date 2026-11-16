@@ -100,6 +100,21 @@ fn did_change_classification_matches_category_over_dispatch() {
     assert!(hover1.contains("UINT32"), "悬停应出 UINT32: {hover1}");
     let after_open = ingest(&mut state);
     assert_eq!(after_open["ingestSignature"], 1, "首次入库 = signature");
+    // RUST-125:解析驻留观测键恒在(预算构造下 budget=256MB 常量口径)。
+    let pc = request_result(&mut state, 99, "$/kode/health", json!({}))["parseCache"].clone();
+    assert_eq!(
+        pc,
+        json!({
+            "budgetBytes": 268435456u64,
+            "residentBytes": pc["residentBytes"],
+            "evictions": pc["evictions"],
+            "valid": pc["valid"],
+            "negative": pc["negative"]
+        }),
+        "parseCache 观测键形状(预算常量透传)"
+    );
+    assert!(pc["valid"].as_u64().unwrap() >= 1, "入库后有效条目 >= 1");
+    assert!(pc["residentBytes"].as_u64().unwrap() > 0, "入库后驻留权重 > 0");
 
     // 同文本 didChange(新版本)= identical;悬停不变。
     let _ = handle_message(

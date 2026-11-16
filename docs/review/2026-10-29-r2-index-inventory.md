@@ -28,7 +28,7 @@
 
 ## 3. 公开索引接口面(kode-index/src/index.rs)
 
-SymbolIndex 公开方法:new update update_batch remove invalidate_root generation with_parse_budget parse_budget_bytes read_snapshot is_current lookup lookup_kind workspace_symbols symbols_in_file dependents_of entity_chain symbol_count tracked_files entity_declarations as_str
+SymbolIndex 公开方法:new update update_batch remove invalidate_root generation with_parse_budget parse_budget_bytes note_buffer_activity parse_cache_stats read_snapshot is_current lookup lookup_kind workspace_symbols symbols_in_file dependents_of entity_chain symbol_count tracked_files entity_declarations as_str
 
 - 出口符号 `Symbol`:id(SymbolId=arena 槽位号,删除后复用,**不得跨 generation 缓存**)/name/kind(Entity|Property|Method|Type|Alias|Component)/file(DocumentKey)/line(1 起;.def 实体本体约定 1)/facet(Base|Cell|Client)/detail;查询返回 owned 拷贝,不暴露内部 arena/倒排。
 - 增量语义:文件级差量替换(replace_file:摘旧装新),`IndexUpdateReport`/`BatchReceipt` 计数;`generation()` 单调递增;`invalidate_root`/`remove` 按文件/根摘除。

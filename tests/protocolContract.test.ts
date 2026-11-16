@@ -86,9 +86,9 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
     client.openDocument(URI, 'kbengine-def', 1, '<Entity><GroupName>mob</GroupName></Entity>');
     const health = await client.health();
     expect(sortedKeys(health)).toEqual(
-      ['documents', 'ingest', 'initialized', 'maintenance', 'pid', 'pool',
-       'resources', 'restartGeneration', 'serverVersion', 'shutdownRequested',
-       'status', 'uptimeMs', 'warm']
+      ['documents', 'ingest', 'initialized', 'maintenance', 'parseCache',
+       'pid', 'pool', 'resources', 'restartGeneration', 'serverVersion',
+       'shutdownRequested', 'status', 'uptimeMs', 'warm']
     );
     // RUST-074-W:暖门观测恒装配(fresh server 未 begin = idle 全形状)。
     expect(health.warm).toEqual({
@@ -114,6 +114,15 @@ suite('协议契约门(真实 kode-server 应答形状)', () => {
     for (const value of Object.values(health.ingest ?? {})) {
       expect(typeof value).toBe('number');
     }
+    // RUST-125:解析驻留观测恒装配(预算构造 256MB 常量口径;打开一文件
+    // 后驻留增长,驱逐未发生=0)。
+    expect(sortedKeys(health.parseCache)).toEqual(
+      ['budgetBytes', 'evictions', 'negative', 'residentBytes', 'valid']
+    );
+    expect(health.parseCache.budgetBytes).toBe(256 * 1024 * 1024);
+    expect(health.parseCache.valid).toBeGreaterThanOrEqual(1);
+    expect(health.parseCache.residentBytes).toBeGreaterThan(0);
+    expect(health.parseCache.evictions).toBe(0);
     // RUST-075-W:worker 执行器默认装配,健康面带池记账键。
     // RUST-076-W:LaneGate 泳道记账键(ioRunning/cpuRunning)入池形状。
     expect(sortedKeys(health.pool)).toEqual(

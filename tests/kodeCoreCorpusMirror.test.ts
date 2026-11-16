@@ -183,6 +183,33 @@ describe('kodeCoreCorpusMirror 服务轨道语料镜像', () => {
     expect(calls[0].text).toContain('unsaved edits');
   });
 
+  it('初扫优先级:已打开语料文档排前镜像,其余保持发现序(RUST-125)', async () => {
+    const a = path.join(tempRoot, 'a.def');
+    const b = path.join(tempRoot, 'b.def');
+    const c = path.join(tempRoot, 'c.def');
+    for (const p of [a, b, c]) {
+      await writeCorpusFile(p, '<root/>\n');
+    }
+    // 打开 b(发现序 = a,b,c):镜像顺序须为 b,a,c。
+    workspace.textDocuments = [
+      {
+        uri: Uri.file(b),
+        languageId: 'kbengine-def',
+        version: 3,
+        getText: () => '<root>unsaved</root>\n'
+      }
+    ];
+    const { gate, calls } = makeFakeGate(true);
+    await mirrorCorpusToRust(
+      gate as KodeCoreGate,
+      makeFinder({ '**/*.def': [a, b, c] }, [])
+    );
+    const mirrored = calls.map(call => call.uri);
+    expect(mirrored).toEqual([Uri.file(b).fsPath, Uri.file(a).fsPath, Uri.file(c).fsPath]);
+    // 打开文档镜像用编辑器内容(优先面不只顺序,内容同口径)。
+    expect(calls[0].text).toContain('unsaved');
+  });
+
   it('同一文件被多 glob 命中:按路径去重不重复镜像', async () => {
     const defPath = path.join(tempRoot, 'Avatar.def');
     
