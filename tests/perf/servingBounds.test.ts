@@ -16,17 +16,21 @@ describe('servingBounds resolver(Rust 服务态门禁界)', () => {
     expect(bounds.editRoundTripDiagnosticP99Ms).toBe(60);
     expect(bounds.mirrorRssDeltaMb).toBe(300);
     expect(bounds.steadyRssMb).toBe(400);
+    expect(bounds.steadyCpuPercentMax).toBe(200);
   });
 
   it('env 覆盖生效且不影响缺省表(每次解析独立)', () => {
     const bounds = resolveServingBounds({
       KODE_SERVING_BOUND_STEADY_COMPLETION_P99_MS: '25',
-      KODE_SERVING_BOUND_MIRROR_RSS_DELTA_MB: '500'
+      KODE_SERVING_BOUND_MIRROR_RSS_DELTA_MB: '500',
+      KODE_SERVING_BOUND_STEADY_CPU_PERCENT_MAX: '150'
     });
     expect(bounds.steadyCompletionP99Ms).toBe(25);
     expect(bounds.mirrorRssDeltaMb).toBe(500);
+    expect(bounds.steadyCpuPercentMax).toBe(150);
     expect(bounds.steadyDiagnosticP99Ms).toBe(40);
     expect(resolveServingBounds({}).steadyCompletionP99Ms).toBe(15);
+    expect(resolveServingBounds({}).steadyCpuPercentMax).toBe(200);
   });
 
   it('非法/负/空值诚实回退缺省,不抛不猜', () => {
@@ -46,14 +50,17 @@ describe('servingBounds resolver(Rust 服务态门禁界)', () => {
       servingGateViolations(bounds, {
         steadyCompletionP99Ms: 15,
         steadyDiagnosticP99Ms: 40.01,
-        mirrorRssDeltaMb: 300.5
+        mirrorRssDeltaMb: 300.5,
+        steadyCpuPercentMax: 250
       })
     ).toEqual([
       'steadyDiagnosticP99Ms observed=40.01 > bound=40 (env KODE_SERVING_BOUND_STEADY_DIAGNOSTIC_P99_MS)',
-      'mirrorRssDeltaMb observed=300.5 > bound=300 (env KODE_SERVING_BOUND_MIRROR_RSS_DELTA_MB)'
+      'mirrorRssDeltaMb observed=300.5 > bound=300 (env KODE_SERVING_BOUND_MIRROR_RSS_DELTA_MB)',
+      'steadyCpuPercentMax observed=250 > bound=200 (env KODE_SERVING_BOUND_STEADY_CPU_PERCENT_MAX)'
     ]);
     expect(servingGateViolations(bounds, {})).toEqual([]);
     // 边界=等值不过界(宽松上界语义:恰在界上不算回退)
     expect(servingGateViolations(bounds, { steadyDefinitionP99Ms: 30 })).toEqual([]);
+    expect(servingGateViolations(bounds, { steadyCpuPercentMax: 200 })).toEqual([]);
   });
 });
