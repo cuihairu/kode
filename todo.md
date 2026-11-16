@@ -507,7 +507,7 @@
 - [x] RUST-231 （旧 QA-002） Property-based/fuzz: XML/DEF invalid input never panic/hang；path canonicalization 无碰撞。（纯对账：kode-parser blind.rs 头注即 QA-002 基础版——LCG 确定性变异语料不 panic+span 在界内+树不丢，parser_units 容错族，db-clone fuzz.rs 环检出终止，framing_fuzz PRNG 驱动；canonicalization=HR-MOD-009 词法规范化+HR-MOD-006 多命中拒绝不猜+假包含不命中；三 crate cargo test 全绿+moduleIdentity vitest 绿；纪要 docs/review/2026-11-17-rust-231-fuzz-canonicalization-acceptance.md）
 - [x] RUST-232 （旧 QA-003） Golden: 基于真实引擎 fixtures 的 hover/definition/diagnostics/typings snapshot。（纯对账：17 个 golden 对拍测试+18 个金标 JSON，语料=kbengine-demo-assets 真引擎夹具，Rust dump 真值+TS parity 复算双向对拍；typings 三层承载=语义金标 stub probe+桩包模板物理在仓+生成面内容锚；四 parity 套件 14 例绿；纪要 docs/review/2026-11-17-rust-232-golden-snapshots-acceptance.md）
 - [x] RUST-233 （旧 QA-004） Differential: 对旧 TS 输出与新 Rust 输出逐项差异审查，已知旧 bug 单独定标。（纯对账：RUST-PRECISION-001 战役四批每批全语料 diff 逐条过目+批 A 七类裁决表在案，误导账本 5 项逐项立靶分批收口，split-parity 策展定标钉 selfAttributeFlowPrecision 16 例+parity 回归网 19 套件；13 例当日绿；纪要 docs/review/2026-11-17-rust-233-differential-audit-acceptance.md）
-- [ ] RUST-234 （旧 QA-005） Integration: VS Code Extension Host + native server e2e，对比用户可见结果。
+- [x] RUST-234 （旧 QA-005） Integration: VS Code Extension Host + native server e2e，对比用户可见结果。（纯对账：mocha Extension Host 套件 29 文件+cellDataFullChain 真实 Rust 门（kode-server spawn+cellDataKeys，五面联动=补全/F12/inlay/hover/诊断，二进制缺席自动降级不假绿）；本日 xvfb demo 25 例实测 RC=0（兼作 229 hover 改动真机回归）；纪要 docs/review/2026-11-17-rust-234-integration-e2e-acceptance.md）
 - [ ] RUST-235 （旧 QA-006） Python LS interoperability：Pylance / Pyright、不同 Python 环境和 .pyi 优先级。
 - [ ] RUST-236 （旧 QA-007） Workspace 兼容：Windows path、Linux case、macOS case-insensitive、WSL、SSH、containers。
 - [ ] RUST-237 （旧 QA-008） Engine 兼容：官方支持版本 + 用户 fork，profile 未知降级。
