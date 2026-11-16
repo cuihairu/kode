@@ -46,12 +46,15 @@ fn ruff_lint_handler(params: Value) -> Result<Value, String> {
 /// 探测可用性并执行 lint。缺二进制 → `available:false`(不报错);文件空 →
 /// 只探测版本;其余失败(present 但坏输出/坏旗标/非零退出)如实 Err。
 /// spawn 出完整输出;满载下 fork 偶发 EAGAIN(WouldBlock)/ENOMEM(OutOfMemory)
-/// 是暂态而非「未安装」,短退避重试(20/60/150ms 三拍),仍败才按原错误回落
+/// 是暂态而非「未安装」,短退避重试,仍败才按原错误回落
 /// (2026-11-08 CI 观察:llvm-cov 全 workspace 并行下 probe spawn 瞬败被
 /// `.ok()?` 吞成 available:false,误报 ruff 未安装;2026-11-13 nightly
-/// linux-arm64 实测单拍 20ms 仍可被打穿,同测试上一轮全绿、下一轮红=纯暂态)。
+/// linux-arm64 实测单拍 20ms 仍可被打穿,同测试上一轮全绿、下一轮红=纯暂态;
+/// 2026-11-16 nightly linux-x64 三拍窗口再次被打穿,补 EMFILE/ENFILE(文件表
+/// 耗尽,raw_os_error 判定——std ErrorKind 无稳定映射,仅 unix 数值)同入
+/// 暂态族,退避加宽为 20/60/150/400ms 四拍)。
 fn spawn_output(command: &mut std::process::Command) -> std::io::Result<std::process::Output> {
-    const BACKOFF_MS: [u64; 3] = [20, 60, 150];
+    const BACKOFF_MS: [u64; 4] = [20, 60, 150, 400];
     for backoff in BACKOFF_MS {
         match command.output() {
             Ok(output) => return Ok(output),
@@ -59,7 +62,11 @@ fn spawn_output(command: &mut std::process::Command) -> std::io::Result<std::pro
                 if matches!(
                     error.kind(),
                     std::io::ErrorKind::WouldBlock | std::io::ErrorKind::OutOfMemory
-                ) =>
+                ) || (cfg!(unix)
+                    && matches!(
+                        error.raw_os_error(),
+                        Some(11 | 12 | 23 | 24) // EAGAIN/ENOMEM/ENFILE/EMFILE
+                    )) =>
             {
                 std::thread::sleep(std::time::Duration::from_millis(backoff));
             }
@@ -248,6 +255,19 @@ mod tests {
         assert!(error.contains("Some(3)"), "{error}");
         assert!(error.contains("ruff 0.0.0-fake"), "{error}");
         assert!(error.contains("boom"), "{error}");
+        std::fs::remove_dir_all(&dir).expect("cleanup");
+    }
+
+    /// 缺二进制(NotFound,永久性失败)不进退避重试,如实回落
+    /// `available:false` 面(2026-11-16 nightly linux-x64 暂态族修复同笔钉:
+    /// 重试族只收暂态错误,NotFound 必须短路)。
+    #[test]
+    fn missing_binary_falls_back_to_unavailable_face() {
+        let dir = temp_dir("missing");
+        let missing = dir.join("no-such-ruff");
+        let face = lint(&["/w/x.py".to_string()], Some(missing.to_str().expect("utf8 path")))
+            .expect("缺二进制如实回退不报错");
+        assert_eq!(face["available"], serde_json::json!(false));
         std::fs::remove_dir_all(&dir).expect("cleanup");
     }
 }

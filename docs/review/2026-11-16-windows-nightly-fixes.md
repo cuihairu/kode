@@ -86,3 +86,25 @@ skipped RC=0;xvfb-run -a npm run test:demo:editor RC=0(kode-server 二进制
   仍可读到 span,摘除后日志落 `-`(既有语义);
 - nightly 的 linux-x64 腿 43706311233 一度红属另一批次时点问题,本批未触
   (当前 main CI/CD 全绿)。
+
+## 后续:nightly 43811733704(修复验证)linux-x64 一例暂态红处置
+
+win32-x64/win32-arm64 双腿转绿=上文 Windows 修复真验收通过(7/8 腿绿,
+publish 因 linux-x64 红自动 skip,零版本面动作)。唯一红例:
+`ruff_lint::tests::nonzero_check_exit_is_surfaced_as_err`(probe 返
+`available:false`,533 passed/1 failed)——**既有暂态族再被打穿**(模块 doc
+自记 2026-11-13 nightly linux-arm64 同测试上轮绿下轮红),非本批引入
+(本批未触 ruff_lint.rs)。
+
+根因:`spawn_output` 退避只盖 EAGAIN(WouldBlock)/ENOMEM 两暂态,且 20/60/
+150ms 三拍窗口在满载 runner 仍可被持续 fork 风暴打穿;EMFILE/ENFILE(文件
+表耗尽)不在重试族(std ErrorKind 无稳定映射,当时未按 raw_os_error 判定)。
+
+修复:`spawn_output` 暂态族补 EMFILE/ENFILE(unix raw_os_error 23/24,连同
+11/12 数值臂)+退避加宽 20/60/150/400ms 四拍;新确定性钉
+`missing_binary_falls_back_to_unavailable_face`(NotFound 永久性失败必须
+短路直落 `available:false`,不进重试)。
+
+诚实边界:暂态族修复无法本地复现 runner 满载 fork 风暴(变异不出确定性
+红)——验收=后续 nightly linux-x64 腿转绿;fake-script 探测成功路径测试
+本就是该族的真验收。
