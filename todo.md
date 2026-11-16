@@ -379,7 +379,7 @@
 - [x] RUST-122 （旧 IDX-005） 对循环依赖与 SCC 计算提供终止保障和精确诊断。(基础版:PR-005 resolve_parent_chain 环截断诊断+PR-007 索引侧 entity_chain 互为 Parent 有限步终止)
 - [x] RUST-123 （旧 IDX-006） 永久索引结构支持定向 symbol lookup 与 reverse reference lookup；杜绝每次 O(workspace files) 查询。(基础版:PR-007 名称倒排 BTreeMap+dependents_of 反向依赖+前缀 workspace_symbols 有序范围扫描)
 - [x] RUST-124 （旧 IDX-007） 索引更新批量提交/原子 generation，读取并发不读到一半的关联。(基础版:PR-007 update_batch 全批应用后一次 bump,零改动空批不 bump)
-- [ ] RUST-125 （旧 IDX-008） 非活跃文件懒加载；当前打开文件优先 warm；初扫扫描优先级按资源根/最近文件调整。
+- [x] RUST-125 （旧 IDX-008） 非活跃文件懒加载；当前打开文件优先 warm；初扫扫描优先级按资源根/最近文件调整。(32a047a3:懒加载=解析层冷热分层生产化——CORE-013 预算(256MB 权重,RSS≈×3)已在生产构造+本批 health parseCache 观测键(budgetBytes/residentBytes/evictions/valid/negative);打开优先=TS 镜像打开文档排前镜像+Rust didOpen 触达 mark_recent 驱逐缓刑(缓刑非硬 pin:硬 pin 超预算无界驻留违背分层初衷,正编辑文件高频重置缓刑天然存活,长置未动持续超限最终逐出=诚实冷逐出);初扫优先级=扫描根序(既有)+打开排前,mtime 不做=诚实边界(全量 stat 50k 换镜像内部序不成立,冷启动走 RUST-126..128 持久化车道);census 同笔+2 方法;prove-red 三靶(mark_recent 变异/镜像排序回退/health 键删除双红);验收纪实 docs/review/2026-11-16-rust-125-lazy-load-open-priority.md)
 - [ ] RUST-126 （旧 IDX-009） 磁盘缓存 key 包含 Core schema、engine profile、root identity、workspace config、解析器版本。
 - [ ] RUST-127 （旧 IDX-010） 缓存崩溃写入用临时文件+原子 rename/WAL 等，损坏可清理重建。
 - [ ] RUST-128 （旧 IDX-011） 持久化格式候选 SQLite/redb/自定义二进制；先做 cold start、读写放大、文件数基准。
